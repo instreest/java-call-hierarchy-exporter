@@ -1,0 +1,137 @@
+plugins {
+    id 'java'
+}
+
+group = 'jp.co.example'
+version = '0.1.0'
+
+// ---------------------------------------------------------------------------
+// Eclipse JDT Core のバージョン
+//
+// 新しい版ほど、動かすのに新しいJDKを要求します。手元のJDKで動く版を選んでください。
+// コマンドラインから上書きできます:
+//     gradle -PjdtVersion=3.29.0 dist
+// ---------------------------------------------------------------------------
+ext {
+    jdtVersion = project.findProperty('jdtVersion') ?: '3.33.0'
+    mainClassName = 'jp.co.example.callhierarchy.CallHierarchyExporter'
+}
+
+repositories {
+    mavenCentral()
+
+    // 社内Nexus等を使う場合はこちらを追加し、mavenCentral() を外してください
+    // maven {
+    //     url 'https://nexus.example.co.jp/repository/maven-public/'
+    //     allowInsecureProtocol = false
+    // }
+}
+
+dependencies {
+    implementation "org.eclipse.jdt:org.eclipse.jdt.core:${jdtVersion}"
+}
+
+java {
+    // 解析対象のJavaバージョンとは無関係です（このツール自身が動くJVMの話）
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // 行番号情報は必須。false にすると出力CSVからソース行が消えます
+    options.debug = true
+    options.compilerArgs << '-Xlint:all'
+}
+
+jar {
+    manifest {
+        attributes(
+            'Main-Class': mainClassName,
+            'Implementation-Title': 'java-call-hierarchy-exporter',
+            'Implementation-Version': project.version
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ant / コマンドライン実行のための配布物
+//
+// build/dist/
+//   ├── java-call-hierarchy-exporter-<version>.jar
+//   ├── lib/                （依存jar一式）
+//   ├── config/config.properties
+//   ├── run.sh / run.bat
+//   └── build.xml           （Antで再ビルドしたい場合用）
+// ---------------------------------------------------------------------------
+tasks.register('copyDeps', Copy) {
+    description = '依存jarを build/dist/lib に集める（Ant・コマンドライン実行用）'
+    group = 'distribution'
+    from configurations.runtimeClasspath
+    into layout.buildDirectory.dir('dist/lib')
+}
+
+tasks.register('dist', Copy) {
+    description = 'jar・依存jar・設定サンプル・実行スクリプトを build/dist にまとめる'
+    group = 'distribution'
+    dependsOn tasks.jar, tasks.named('copyDeps')
+    from tasks.jar.archiveFile
+    from('config') { into 'config' }
+    from('scripts')
+    from('build.xml')
+    into layout.buildDirectory.dir('dist')
+    doLast {
+        println "配布物: ${layout.buildDirectory.dir('dist').get().asFile}"
+    }
+}
+
+tasks.register('printClasspath') {
+    description = '実行時クラスパスを出力する（Antのpath定義やjava -cp にそのまま使える）'
+    group = 'help'
+    doLast {
+        println configurations.runtimeClasspath.asPath
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 検証用ハーネス
+//
+// JUnitは使わず、main()を持つ検証クラスを順に実行して OK/NG を集計します。
+// 依存を増やさないための割り切りです。
+//     gradle verify
+// ---------------------------------------------------------------------------
+sourceSets {
+    test {
+        java.srcDirs = ['src/test/java']
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+tasks.register('verify') {
+    description = '同梱の検証クラスを順に実行する'
+    group = 'verification'
+    dependsOn tasks.testClasses
+    doLast {
+        def targets = [
+            'SmokeTest', 'ResolveTest', 'OutputFormatTest', 'WholeProjectTest', 'CycleTest'
+        ]
+        def failed = []
+        targets.each { name ->
+            println "--- ${name} ---"
+            def result = javaexec {
+                classpath = sourceSets.test.runtimeClasspath
+                mainClass = "jp.co.example.callhierarchy.${name}"
+                systemProperty 'file.encoding', 'UTF-8'
+                ignoreExitValue = true
+            }
+            if (result.exitValue != 0) {
+                failed << name
+            }
+        }
+        if (!failed.isEmpty()) {
+            throw new GradleException("検証に失敗: ${failed}")
+        }
+        println '検証: 全て成功'
+    }
+}
