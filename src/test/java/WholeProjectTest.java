@@ -13,8 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package jp.co.example.callhierarchy;
-import jp.co.example.callhierarchy.CallHierarchyExporter.*;
 import java.nio.file.*; import java.nio.charset.*; import java.util.*;
 
 /** 全体モード（entry.packages 未指定）の検証 */
@@ -54,10 +52,10 @@ public class WholeProjectTest {
         Files.writeString(cfg,String.join("\n","project.root=.","cache.file=./c.tsv",
           "output.csv=./ch.csv","methods.csv=./m.csv","edges.csv=./e.csv","resolutions.csv=./r.csv",
           "hub.threshold=20"),StandardCharsets.UTF_8);
-        Config cf=new Config(cfg);
+        CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(cfg);
         check("entry.packages未指定で全体モード", cf.wholeProjectMode, "");
 
-        CallGraph g=CallGraph.buildFrom(cache);
+        CallHierarchyExporter.CallGraph g=CallHierarchyExporter.CallGraph.buildFrom(cache);
         int[] roots=g.selectEntryPoints(cf);
         Set<String> rootNames=new TreeSet<>();
         for(int r:roots) rootNames.add(g.methods.shortLabel(r));
@@ -68,8 +66,8 @@ public class WholeProjectTest {
             !rootNames.contains("OrderDaoImpl.select"), rootNames.toString());
         check("相互再帰は起点にならない", !rootNames.contains("A.f")&&!rootNames.contains("B.g"), rootNames.toString());
 
-        InventoryStats st=InventoryReport.writeMethods(g,cf,roots);
-        long edges=InventoryReport.writeEdges(g,cf);
+        CallHierarchyExporter.InventoryStats st=CallHierarchyExporter.InventoryReport.writeMethods(g,cf,roots);
+        long edges=CallHierarchyExporter.InventoryReport.writeEdges(g,cf);
         System.out.println("      "+st+" / edges="+edges);
 
         Charset ms=Charset.forName("MS932");
@@ -102,8 +100,8 @@ public class WholeProjectTest {
         Path cfg2=d.resolve("c2.properties");
         Files.writeString(cfg2,String.join("\n","project.root=.","cache.file=./c.tsv",
           "output.csv=./ch2.csv","entry.auto=false"),StandardCharsets.UTF_8);
-        Config cf2=new Config(cfg2);
-        check("起点0になる", CallGraph.buildFrom(cache).selectEntryPoints(cf2).length==0, "");
+        CallHierarchyExporter.Config cf2=new CallHierarchyExporter.Config(cfg2);
+        check("起点0になる", CallHierarchyExporter.CallGraph.buildFrom(cache).selectEntryPoints(cf2).length==0, "");
 
         System.out.println("\n=== "+(ng==0?"全項目OK":ng+"件 NG")+" ===");
         if(ng>0) System.exit(1);

@@ -14,4 +14,4 @@ fi
 exec java ${JAVA_OPTS:--Xmx2g} \
   -Dfile.encoding=UTF-8 \
   -cp "$DIR/*:$DIR/lib/*" \
-  jp.co.example.callhierarchy.CallHierarchyExporter "$1"
+  CallHierarchyExporter "$1"

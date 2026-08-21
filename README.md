@@ -84,12 +84,12 @@ gradle printClasspath
 # Linux / macOS
 java -Xmx2g -Dfile.encoding=UTF-8 \
      -cp "java-call-hierarchy-exporter-0.1.0.jar:lib/*" \
-     jp.co.example.callhierarchy.CallHierarchyExporter config/config.properties
+     CallHierarchyExporter config/config.properties
 
 # Windows（クラスパス区切りが ; になります）
 java -Xmx2g -Dfile.encoding=UTF-8 ^
      -cp "java-call-hierarchy-exporter-0.1.0.jar;lib\*" ^
-     jp.co.example.callhierarchy.CallHierarchyExporter config\config.properties
+     CallHierarchyExporter config\config.properties
 ```
 
 同梱の `run.sh` / `run.bat` は上記をラップしたものです。

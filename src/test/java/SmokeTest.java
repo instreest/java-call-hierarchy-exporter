@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package jp.co.example.callhierarchy;
 
-import jp.co.example.callhierarchy.CallHierarchyExporter.*;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -51,19 +49,19 @@ public class SmokeTest {
             "cache.file=./cache/c.tsv"), StandardCharsets.UTF_8);
 
         System.out.println("[1] 相対パス解決");
-        Config c = new Config(cfg);
+        CallHierarchyExporter.Config c = new CallHierarchyExporter.Config(cfg);
         check("project.root", c.projectRoot.equals(tmp.resolve("proj").normalize()), ""+c.projectRoot);
         check("output.csv",  c.outputCsv.equals(cfgDir.resolve("out/call-hierarchy.csv").normalize()), ""+c.outputCsv);
 
         System.out.println("[2] .classpath 読み取り");
-        EclipseProjectLayout ly = new EclipseProjectLayout(c);
+        CallHierarchyExporter.EclipseProjectLayout ly = new CallHierarchyExporter.EclipseProjectLayout(c);
         check("src検出", ly.sourceFolders.size()==1, ly.sourceFolders.toString());
 
         System.out.println("[3] パターンマッチ");
-        check("* 直下", PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.action","jp.co.xxx.action.UserAction","execute"),"");
-        check("* 内部クラス", PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.action","jp.co.xxx.action.UserAction.Helper","calc"),"");
-        check("* サブpkg非マッチ", !PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.action.sub","jp.co.xxx.action.sub.S","run"),"");
-        check("** サブpkgマッチ", PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.batch.night","jp.co.xxx.batch.night.N","run"),"");
+        check("* 直下", CallHierarchyExporter.PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.action","jp.co.xxx.action.UserAction","execute"),"");
+        check("* 内部クラス", CallHierarchyExporter.PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.action","jp.co.xxx.action.UserAction.Helper","calc"),"");
+        check("* サブpkg非マッチ", !CallHierarchyExporter.PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.action.sub","jp.co.xxx.action.sub.S","run"),"");
+        check("** サブpkgマッチ", CallHierarchyExporter.PackagePattern.matchesAny(c.entryPatterns,"jp.co.xxx.batch.night","jp.co.xxx.batch.night.N","run"),"");
 
         System.out.println("[4] キャッシュのストリーミングマージ（再解析なし）");
         long mt = Files.getLastModifiedTime(srcFile).toMillis(), sz = Files.size(srcFile);
@@ -80,21 +78,21 @@ public class SmokeTest {
             String.join(T,"U","99","jp.co.xxx.action.UserAction#execute()","doIt","型解決に失敗")));
         Files.write(c.cacheFile, cache, StandardCharsets.UTF_8);
 
-        CachePhaseResult r = new CacheUpdater(ly, c).run();
+        CallHierarchyExporter.CachePhaseResult r = new CallHierarchyExporter.CacheUpdater(ly, c).run();
         check("再利用=1", r.reused==1, "reused="+r.reused);
         check("新規解析=0", r.parsed==0, "parsed="+r.parsed);
         check("未解決も逐次出力", r.unresolvedCount==1, ""+r.unresolvedCount);
         check("unresolved.csv生成", Files.readAllLines(c.unresolvedCsv, java.nio.charset.Charset.forName("MS932")).size()==2, "");
 
         System.out.println("[5] CSRグラフ構築 + DFS逐次出力");
-        CallGraph g = CallGraph.buildFrom(c.cacheFile);
+        CallHierarchyExporter.CallGraph g = CallHierarchyExporter.CallGraph.buildFrom(c.cacheFile);
         check("メソッド数=4", g.methodCount()==4, ""+g.methodCount());
         check("エッジ数=3", g.edgeCount()==3, ""+g.edgeCount());
         int[] es = g.selectEntryPoints(c);
         check("エントリ=1", es.length==1, ""+es.length);
 
-        CallHierarchyCsvWriter w = new CallHierarchyCsvWriter(c.outputCsv,c.outputEncoding);
-        long rows = new StreamingTreeWalker(g,c,w).walkAll(es);
+        CallHierarchyExporter.CallHierarchyCsvWriter w = new CallHierarchyExporter.CallHierarchyCsvWriter(c.outputCsv,c.outputEncoding);
+        long rows = new CallHierarchyExporter.StreamingTreeWalker(g,c,w).walkAll(es);
         w.close();
         List<String> L = Files.readAllLines(c.outputCsv, java.nio.charset.Charset.forName("MS932"));
         L.forEach(s->System.out.println("      "+s));
@@ -109,10 +107,10 @@ public class SmokeTest {
         String[] A=M("p","p.A","f"), B=M("p","p.B","g");
         Files.write(c2, List.of("jche-cache-v1", F("A.java",1,1),
             D("p","p.A","f","",1), D("p","p.B","g","",1), C(A,B,2), C(B,A,3)), StandardCharsets.UTF_8);
-        CallGraph g2=CallGraph.buildFrom(c2);
+        CallHierarchyExporter.CallGraph g2=CallHierarchyExporter.CallGraph.buildFrom(c2);
         Path o2=c.outputCsv.getParent().resolve("cyc.csv");
-        CallHierarchyCsvWriter w2=new CallHierarchyCsvWriter(o2,c.outputEncoding);
-        long r2=new StreamingTreeWalker(g2,c,w2).walkAll(new int[]{0}); w2.close();
+        CallHierarchyExporter.CallHierarchyCsvWriter w2=new CallHierarchyExporter.CallHierarchyCsvWriter(o2,c.outputEncoding);
+        long r2=new CallHierarchyExporter.StreamingTreeWalker(g2,c,w2).walkAll(new int[]{0}); w2.close();
         check("無限ループしない", r2<20, ""+r2);
         check("循環注記あり", Files.readAllLines(o2, java.nio.charset.Charset.forName("MS932")).stream().anyMatch(s->s.contains("[CYCLE]")), "");
 
@@ -134,11 +132,11 @@ public class SmokeTest {
         Files.writeString(cfg3,String.join("\n","project.root=../proj","entry.packages=q.*",
             "max.depth=6","max.children.per.node=50","max.rows.per.entry=5000",
             "output.csv=./out/big.csv","cache.file=./cache/big.tsv"),StandardCharsets.UTF_8);
-        Config c3c=new Config(cfg3);
-        CallGraph g3=CallGraph.buildFrom(c3);
+        CallHierarchyExporter.Config c3c=new CallHierarchyExporter.Config(cfg3);
+        CallHierarchyExporter.CallGraph g3=CallHierarchyExporter.CallGraph.buildFrom(c3);
         long before=used();
-        CallHierarchyCsvWriter w3=new CallHierarchyCsvWriter(c3c.outputCsv,c3c.outputEncoding);
-        long r3=new StreamingTreeWalker(g3,c3c,w3).walkAll(new int[]{0}); w3.close();
+        CallHierarchyExporter.CallHierarchyCsvWriter w3=new CallHierarchyExporter.CallHierarchyCsvWriter(c3c.outputCsv,c3c.outputEncoding);
+        long r3=new CallHierarchyExporter.StreamingTreeWalker(g3,c3c,w3).walkAll(new int[]{0}); w3.close();
         long after=used();
         check("行数上限で打ち切られる", r3<=5000+10, ""+r3);
         check("ヒープ増加が小さい(<30MB)", (after-before)<30*1024*1024, ((after-before)/1048576)+"MB");

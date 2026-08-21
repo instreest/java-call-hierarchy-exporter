@@ -21,7 +21,7 @@
     <property name="build.dir" value="build/ant/classes"/>
     <property name="dist.dir" value="build/ant/dist"/>
     <property name="lib.dir" value="lib"/>
-    <property name="main.class" value="jp.co.example.callhierarchy.CallHierarchyExporter"/>
+    <property name="main.class" value="CallHierarchyExporter"/>
 
     <path id="classpath">
         <fileset dir="${lib.dir}">

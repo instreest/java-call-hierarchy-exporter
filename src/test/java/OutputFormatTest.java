@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package jp.co.example.callhierarchy;
 
-import jp.co.example.callhierarchy.CallHierarchyExporter.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.util.*;
@@ -47,10 +45,10 @@ public class OutputFormatTest {
         Files.writeString(cfg,String.join("\n","project.root=.","entry.packages=jp.co.xxx.action.*",
             "output.csv=./call-hierarchy.csv","cache.file=./c.tsv","resolutions.csv=./r.csv",
             "unresolved.csv=./u.csv"),StandardCharsets.UTF_8);
-        Config cf=new Config(cfg);
-        CallGraph g=CallGraph.buildFrom(cache);
-        CallHierarchyCsvWriter w=new CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
-        new StreamingTreeWalker(g,cf,w).walkAll(g.selectEntryPoints(cf)); w.close();
+        CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(cfg);
+        CallHierarchyExporter.CallGraph g=CallHierarchyExporter.CallGraph.buildFrom(cache);
+        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
+        new CallHierarchyExporter.StreamingTreeWalker(g,cf,w).walkAll(g.selectEntryPoints(cf)); w.close();
 
         Charset ms932=Charset.forName("MS932");
         List<String> L=Files.readAllLines(cf.outputCsv,ms932);
@@ -83,7 +81,7 @@ public class OutputFormatTest {
         check("MS932で復号できる", new String(raw,ms932).contains("caller,callee"), "");
         // 日本語ノートを含む行を作って往復確認
         Path p2=d.resolve("jp.csv");
-        java.io.BufferedWriter bw=Csv.writer(p2,ms932);
+        java.io.BufferedWriter bw=CallHierarchyExporter.Csv.writer(p2,ms932);
         bw.write("循環参照のため打ち切り,深さ制限,ソースなし（展開不可）"); bw.newLine(); bw.close();
         byte[] jb=Files.readAllBytes(p2);
         check("日本語がMS932バイト列になる",
@@ -93,12 +91,12 @@ public class OutputFormatTest {
 
         System.out.println("[5] 変換不可文字でも落ちない");
         Path p3=d.resolve("emoji.csv");
-        java.io.BufferedWriter bw3=Csv.writer(p3,ms932);
+        java.io.BufferedWriter bw3=CallHierarchyExporter.Csv.writer(p3,ms932);
         bw3.write("A\uD83D\uDE00B"); bw3.newLine(); bw3.close();
         check("例外にならず置換される", Files.readAllBytes(p3).length>0, "");
 
         System.out.println("[6] 他のCSVも同じ文字コード");
-        ResolutionReport.write(g,cf);
+        CallHierarchyExporter.ResolutionReport.write(g,cf);
         check("resolutions.csv も読める",
             Files.readAllLines(cf.resolutionsCsv,ms932).get(0).startsWith("declaredMethod"), "");
 

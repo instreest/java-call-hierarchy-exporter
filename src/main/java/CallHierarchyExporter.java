@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package jp.co.example.callhierarchy;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.JavaCore;
@@ -87,7 +86,7 @@ import java.util.zip.ZipInputStream;
  *
  * 使い方:
  *   java -cp "java-call-hierarchy-exporter.jar:lib/*" \
- *        jp.co.example.callhierarchy.CallHierarchyExporter config.propertiesのパス
+ *        CallHierarchyExporter config.propertiesのパス
  *   （Windowsの場合、クラスパス区切りは ; ）
  *
  * ====================================================================

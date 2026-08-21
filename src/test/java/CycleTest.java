@@ -13,8 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package jp.co.example.callhierarchy;
-import jp.co.example.callhierarchy.CallHierarchyExporter.*;
 import java.nio.file.*; import java.nio.charset.*; import java.util.*;
 
 /** [CYCLE] の経路単位判定を検証 */
@@ -34,11 +32,11 @@ public class CycleTest {
             "cache.file=./"+name+".tsv","output.csv=./"+name+".csv","resolutions.csv=./"+name+"r.csv"));
         props.addAll(List.of(extra));
         Files.writeString(d.resolve(name+".properties"),String.join("\n",props),StandardCharsets.UTF_8);
-        Config cf=new Config(d.resolve(name+".properties"));
-        CallGraph g=CallGraph.buildFrom(cf.cacheFile);
+        CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(d.resolve(name+".properties"));
+        CallHierarchyExporter.CallGraph g=CallHierarchyExporter.CallGraph.buildFrom(cf.cacheFile);
         int[] roots={g.methods.idOf("p.Root#run()")};
-        CallHierarchyCsvWriter w=new CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
-        new StreamingTreeWalker(g,cf,w).walkAll(roots); w.close();
+        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
+        new CallHierarchyExporter.StreamingTreeWalker(g,cf,w).walkAll(roots); w.close();
         List<String> L=Files.readAllLines(cf.outputCsv,Charset.forName("MS932"));
         L.forEach(x->System.out.println("      "+x));
         return L;
