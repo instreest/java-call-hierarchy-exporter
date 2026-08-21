@@ -14,7 +14,7 @@ version = '0.1.0'
 // ---------------------------------------------------------------------------
 ext {
     jdtVersion = project.findProperty('jdtVersion') ?: '3.33.0'
-    mainClassName = 'jp.co.example.callhierarchy.CallHierarchyExporter'
+    mainClassName = 'CallHierarchyExporter'
 }
 
 repositories {
@@ -121,7 +121,7 @@ tasks.register('verify') {
             println "--- ${name} ---"
             def result = javaexec {
                 classpath = sourceSets.test.runtimeClasspath
-                mainClass = "jp.co.example.callhierarchy.${name}"
+                mainClass = name
                 systemProperty 'file.encoding', 'UTF-8'
                 ignoreExitValue = true
             }

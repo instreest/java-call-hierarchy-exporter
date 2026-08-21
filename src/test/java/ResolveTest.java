@@ -13,9 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package jp.co.example.callhierarchy;
 
-import jp.co.example.callhierarchy.CallHierarchyExporter.*;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -31,14 +29,14 @@ public class ResolveTest {
         return String.join(T,"C",pkg(ct),ct,cm,"",pkg(et),et,em,"",""+ln,""+bk,"");}
     static String pkg(String fqn){int i=fqn.lastIndexOf('.');return i<0?"":fqn.substring(0,i);}
 
-    static Config cfg(Path dir,String name,String... extra) throws Exception {
+    static CallHierarchyExporter.Config cfg(Path dir,String name,String... extra) throws Exception {
         List<String> L=new ArrayList<>(List.of("project.root=.","entry.packages=p.*",
           "output.csv=./"+name+".csv","cache.file=./"+name+".tsv","resolutions.csv=./"+name+"-res.csv",
           "max.depth=6"));
         L.addAll(List.of(extra));
         Path f=dir.resolve(name+".properties");
         Files.writeString(f,String.join("\n",L),StandardCharsets.UTF_8);
-        return new Config(f);
+        return new CallHierarchyExporter.Config(f);
     }
 
     public static void main(String[] a) throws Exception {
@@ -53,9 +51,9 @@ public class ResolveTest {
             D("p.UserDaoImpl","exec",10,true),
             D("p.Svc","run",20,true),
             C("p.Svc","run","p.Dao","exec",21,'V')), StandardCharsets.UTF_8);
-        CallGraph g1=CallGraph.buildFrom(c1);
+        CallHierarchyExporter.CallGraph g1=CallHierarchyExporter.CallGraph.buildFrom(c1);
         int dao=g1.methods.idOf("p.Dao#exec()");
-        CallGraph.Resolution r1=g1.resolve(dao,'V');
+        CallHierarchyExporter.CallGraph.Resolution r1=g1.resolve(dao,'V');
         check("SINGLE_IMPL に解決", "SINGLE_IMPL".equals(r1.label), r1.label);
         check("解決先が UserDaoImpl", g1.methods.typeFqn(r1.targets[0]).equals("p.UserDaoImpl"), g1.methods.typeFqn(r1.targets[0]));
         check("IFの抽象メソッドは候補外", r1.targets.length==1, ""+r1.targets.length);
@@ -70,9 +68,9 @@ public class ResolveTest {
             D("p.Svc","run",20,true), H("p.Svc",'C'),
             C("p.Svc","run","p.Base","m",21,'V'),
             C("p.Svc","run","p.Base","util",22,'S')), StandardCharsets.UTF_8);
-        CallGraph g2=CallGraph.buildFrom(c2);
-        CallGraph.Resolution rv=g2.resolve(g2.methods.idOf("p.Base#m()"),'V');
-        CallGraph.Resolution rs=g2.resolve(g2.methods.idOf("p.Base#util()"),'S');
+        CallHierarchyExporter.CallGraph g2=CallHierarchyExporter.CallGraph.buildFrom(c2);
+        CallHierarchyExporter.CallGraph.Resolution rv=g2.resolve(g2.methods.idOf("p.Base#m()"),'V');
+        CallHierarchyExporter.CallGraph.Resolution rs=g2.resolve(g2.methods.idOf("p.Base#util()"),'S');
         check("具象宣言型でも仮想ならCHA", "CHA".equals(rv.label) && rv.targets.length==2, rv.label+"/"+rv.targets.length);
         check("静的束縛は宣言のまま確定", "STATIC_BOUND".equals(rs.label) && rs.targets.length==1, rs.label);
         System.out.println("[3] 候補数は「サブクラス数」でなく「オーバーライド数」");
@@ -81,11 +79,11 @@ public class ResolveTest {
         check("推移的サブタイプは3件", g2.transitiveSubtypes("p.Base").size()==3, ""+g2.transitiveSubtypes("p.Base"));
 
         System.out.println("[4] CHA未展開ポリシー（記録するが降りない）");
-        Config cf=cfg(d,"t2","cha.expand=false");
+        CallHierarchyExporter.Config cf=cfg(d,"t2","cha.expand=false");
         Files.copy(c2,cf.cacheFile,StandardCopyOption.REPLACE_EXISTING);
-        CallGraph g4=CallGraph.buildFrom(cf.cacheFile);
-        CallHierarchyCsvWriter w=new CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
-        long rows=new StreamingTreeWalker(g4,cf,w).walkAll(new int[]{g4.methods.idOf("p.Svc#run()")});
+        CallHierarchyExporter.CallGraph g4=CallHierarchyExporter.CallGraph.buildFrom(cf.cacheFile);
+        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
+        long rows=new CallHierarchyExporter.StreamingTreeWalker(g4,cf,w).walkAll(new int[]{g4.methods.idOf("p.Svc#run()")});
         w.close();
         List<String> L=Files.readAllLines(cf.outputCsv, java.nio.charset.Charset.forName("MS932"));
         L.forEach(x->System.out.println("      "+x));
@@ -93,18 +91,18 @@ public class ResolveTest {
         check("静的束縛は普通に展開", L.stream().anyMatch(x->x.contains("Base.util")),"");
 
         System.out.println("[5] CHA展開ポリシー");
-        Config cf5=cfg(d,"t5","cha.expand=true","cha.max.candidates=20");
+        CallHierarchyExporter.Config cf5=cfg(d,"t5","cha.expand=true","cha.max.candidates=20");
         Files.copy(c2,cf5.cacheFile,StandardCopyOption.REPLACE_EXISTING);
-        CallGraph g5=CallGraph.buildFrom(cf5.cacheFile);
-        CallHierarchyCsvWriter w5=new CallHierarchyCsvWriter(cf5.outputCsv,cf5.outputEncoding);
-        new StreamingTreeWalker(g5,cf5,w5).walkAll(new int[]{g5.methods.idOf("p.Svc#run()")}); w5.close();
+        CallHierarchyExporter.CallGraph g5=CallHierarchyExporter.CallGraph.buildFrom(cf5.cacheFile);
+        CallHierarchyExporter.CallHierarchyCsvWriter w5=new CallHierarchyExporter.CallHierarchyCsvWriter(cf5.outputCsv,cf5.outputEncoding);
+        new CallHierarchyExporter.StreamingTreeWalker(g5,cf5,w5).walkAll(new int[]{g5.methods.idOf("p.Svc#run()")}); w5.close();
         List<String> L5=Files.readAllLines(cf5.outputCsv, java.nio.charset.Charset.forName("MS932"));
         check("Base.m と Derived.m の両方が出る",
             L5.stream().anyMatch(x->x.contains("Base.m"))&&L5.stream().anyMatch(x->x.contains("Derived.m")),"");
         check("CHA候補である旨の注記", L5.stream().anyMatch(x->x.contains("CHA候補2件中")),"");
 
         System.out.println("[6] 解決レポート");
-        ResolutionStats st=ResolutionReport.write(g5,cf5);
+        CallHierarchyExporter.ResolutionStats st=CallHierarchyExporter.ResolutionReport.write(g5,cf5);
         System.out.println("      "+st);
         check("静的束縛1件", st.staticBound==1, ""+st.staticBound);
         check("CHA1件", st.cha==1, ""+st.cha);
@@ -117,8 +115,8 @@ public class ResolveTest {
             H("p.Task",'I'), H("p.Outer$1",'C',"p.Task"), H("p.Outer",'C'),
             D("p.Task","run",1,false), D("p.Outer$1","run",8,true), D("p.Outer","go",5,true),
             C("p.Outer","go","p.Task","run",6,'V')), StandardCharsets.UTF_8);
-        CallGraph g7=CallGraph.buildFrom(c7);
-        CallGraph.Resolution r7=g7.resolve(g7.methods.idOf("p.Task#run()"),'V');
+        CallHierarchyExporter.CallGraph g7=CallHierarchyExporter.CallGraph.buildFrom(c7);
+        CallHierarchyExporter.CallGraph.Resolution r7=g7.resolve(g7.methods.idOf("p.Task#run()"),'V');
         check("匿名クラスに解決", "SINGLE_IMPL".equals(r7.label)
             && g7.methods.typeFqn(r7.targets[0]).equals("p.Outer$1"), r7.label);
 
@@ -126,7 +124,7 @@ public class ResolveTest {
         Path c8=d.resolve("t8.tsv");
         Files.write(c8,List.of("jche-cache-v1",String.join(T,"F","w.java","1","1"),
             H("p.A",'C',"p.B"), H("p.B",'C',"p.A"), D("p.A","m",1,true)), StandardCharsets.UTF_8);
-        CallGraph g8=CallGraph.buildFrom(c8);
+        CallHierarchyExporter.CallGraph g8=CallHierarchyExporter.CallGraph.buildFrom(c8);
         check("無限ループしない", g8.transitiveSubtypes("p.A").size()<=2, ""+g8.transitiveSubtypes("p.A"));
 
         System.out.println("\n=== "+(ng==0?"全項目OK":ng+"件 NG")+" ===");

@@ -15,5 +15,5 @@ if "%~1"=="" (
 if "%JAVA_OPTS%"=="" set JAVA_OPTS=-Xmx2g
 java %JAVA_OPTS% -Dfile.encoding=UTF-8 ^
   -cp "%DIR%*;%DIR%lib\*" ^
-  jp.co.example.callhierarchy.CallHierarchyExporter %1
+  CallHierarchyExporter %1
 endlocal
