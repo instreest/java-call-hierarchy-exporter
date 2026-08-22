@@ -89,8 +89,8 @@ java -cp "classes;<Pleiadesのインストール先>\eclipse\plugins\*" ^
 （`<Pleiadesのインストール先>/jre/bin/java` 等）をフルパスで指定してください。
 
 大量のjarが一度にクラスパスへ乗るため、まれにクラスの衝突で動かないことがあります。
-その場合は [Gradleを使わない場合](#gradleを使わない場合) にある、必要なjarだけを
-`lib/` に集める手順を試してください。
+その場合は、`org.eclipse.jdt.core_*.jar` を中心に必要なjarだけを別フォルダへ集めて
+クラスパスを絞り込んでください。
 
 ### 出力されるファイル
 
@@ -408,105 +408,6 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 手元のJDKで動く版を選んでください。バージョンはビルド時に指定できます。
 
 ```
-gradle -PjdtVersion=3.29.0 dist
+gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 ```
-
----
-
-## ビルド（Gradle）
-
-Gradleからそのまま実行するだけなら、ビルドは不要です（[Getting Started](#getting-started)参照）。
-
-```bash
-gradle run --args="config/config.properties"
-```
-
-jarを作って他の端末に配布したい場合や、Antで実行したい場合は、次のようにビルドします。
-
-```bash
-gradle dist
-```
-
-`build/dist/` に、実行に必要な一式が出力されます。
-
-```
-build/dist/
-├── java-call-hierarchy-exporter-0.1.0.jar
-├── lib/                         依存jar一式
-├── config/config.properties     設定サンプル
-├── run.sh / run.bat
-└── build.xml
-```
-
-社内Nexus等を使う場合は `build.gradle` の `repositories` を書き換えてください。
-
----
-
-## Ant・コマンドラインで実行する
-
-**Gradleは依存jarを集めるためだけに使い、実行はAntやコマンドラインで行う**という使い方を想定しています。
-
-### 1. 依存jarを集める
-
-```bash
-gradle copyDeps
-```
-
-`build/dist/lib/` に依存jarが集まります。ネットワークが使える環境で一度実行しておけば、
-以降はこのフォルダごと持ち込むだけで動きます。
-
-クラスパス文字列がほしい場合はこちらです。
-
-```bash
-gradle printClasspath
-```
-
-### 2-a. コマンドラインから実行
-
-```bash
-# Linux / macOS
-java -Xmx2g -Dfile.encoding=UTF-8 \
-     -cp "java-call-hierarchy-exporter-0.1.0.jar:lib/*" \
-     CallHierarchyExporter config/config.properties
-
-# Windows（クラスパス区切りが ; になります）
-java -Xmx2g -Dfile.encoding=UTF-8 ^
-     -cp "java-call-hierarchy-exporter-0.1.0.jar;lib\*" ^
-     CallHierarchyExporter config\config.properties
-```
-
-同梱の `run.sh` / `run.bat` は上記をラップしたものです。
-
-```bash
-./run.sh config/config.properties
-JAVA_OPTS="-Xmx8g" ./run.sh config/config.properties   # ヒープを増やす場合
-```
-
-### 2-b. Antから実行
-
-同梱の `build.xml` を使います。`lib.dir` に、Gradleで集めた依存jarの場所を指定してください。
-
-```bash
-ant -Dlib.dir=build/dist/lib dist
-ant -Dlib.dir=build/dist/lib run -Dconfig.file=config/config.properties
-```
-
-既存プロジェクトの `build.xml` に取り込む場合は、`<path id="classpath">` の中身を
-既存の `path refid` に差し替えるか、`<import>` して既存定義を参照してください。
-
-> **注意**: Antの `<javac>` は `debug` の既定値が `false` です。この場合
-> `-g:none` 相当となり**行番号情報が失われ**、出力CSVからソース行が消えます。
-> 同梱の `build.xml` では `debug="true"` を明示しています。
-
-### Gradleを使わない場合
-
-社内からMaven Centralにも社内Nexusにもアクセスできない場合、
-Pleiades（Eclipse）のインストールフォルダから直接jarをコピーしても動きます。
-
-`plugins/` 配下から `org.eclipse.jdt.core_*.jar` を中心に `lib/` へコピーし、
-ビルド時に `NoClassDefFoundError` が出たら、そのクラスを含むプラグインjarを
-追加でコピーする、という手順になります。
-
-> この方法で必要になるjarの正確な一覧は環境によって変わります。
-> 試行錯誤が前提の手段だと考えてください。
 

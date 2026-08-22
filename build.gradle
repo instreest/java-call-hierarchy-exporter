@@ -9,7 +9,7 @@ version = '0.1.0'
 //
 // 新しい版ほど、動かすのに新しいJDKを要求します。手元のJDKで動く版を選んでください。
 // コマンドラインから上書きできます:
-//     gradle -PjdtVersion=3.29.0 dist
+//     gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 // ---------------------------------------------------------------------------
 ext {
     jdtVersion = project.findProperty('jdtVersion') ?: '3.33.0'
@@ -53,39 +53,8 @@ jar {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Ant / コマンドライン実行のための配布物
-//
-// build/dist/
-//   ├── java-call-hierarchy-exporter-<version>.jar
-//   ├── lib/                （依存jar一式）
-//   ├── config/config.properties
-//   ├── run.sh / run.bat
-//   └── build.xml           （Antで再ビルドしたい場合用）
-// ---------------------------------------------------------------------------
-tasks.register('copyDeps', Copy) {
-    description = '依存jarを build/dist/lib に集める（Ant・コマンドライン実行用）'
-    group = 'distribution'
-    from configurations.runtimeClasspath
-    into layout.buildDirectory.dir('dist/lib')
-}
-
-tasks.register('dist', Copy) {
-    description = 'jar・依存jar・設定サンプル・実行スクリプトを build/dist にまとめる'
-    group = 'distribution'
-    dependsOn tasks.jar, tasks.named('copyDeps')
-    from tasks.jar.archiveFile
-    from('config') { into 'config' }
-    from('scripts')
-    from('build.xml')
-    into layout.buildDirectory.dir('dist')
-    doLast {
-        println "配布物: ${layout.buildDirectory.dir('dist').get().asFile}"
-    }
-}
-
 tasks.register('printClasspath') {
-    description = '実行時クラスパスを出力する（Antのpath定義やjava -cp にそのまま使える）'
+    description = '実行時クラスパスを出力する（java -cp にそのまま使える）'
     group = 'help'
     doLast {
         println configurations.runtimeClasspath.asPath
