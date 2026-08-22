@@ -32,7 +32,7 @@ public class ResolveTest {
     static CallHierarchyExporter.Config cfg(Path dir,String name,String... extra) throws Exception {
         List<String> L=new ArrayList<>(List.of("project.root=.","entry.packages=p.*",
           "output.csv=./"+name+".csv","cache.file=./"+name+".tsv","resolutions.csv=./"+name+"-res.csv",
-          "max.depth=6","output.delimiter=COMMA"));
+          "max.depth=6"));
         L.addAll(List.of(extra));
         Path f=dir.resolve(name+".properties");
         Files.writeString(f,String.join("\n",L),StandardCharsets.UTF_8);

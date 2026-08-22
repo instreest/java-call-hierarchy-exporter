@@ -1,7 +1,6 @@
 # java-call-hierarchy-exporter
 
-Eclipseプロジェクトを対象に、Javaのメソッド呼び出し階層を一括抽出してファイルに出力するツールです
-（既定はタブ区切りのTSV）。
+Eclipseプロジェクトを対象に、Javaのメソッド呼び出し階層を一括抽出してCSVに出力するツールです。
 Eclipse IDE の起動は不要で、通常のJavaアプリとして動作します。
 
 Eclipse標準の「呼び出し階層」ビューに対して、次の点を解決することを目的にしています。
@@ -14,16 +13,15 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 
 | 機能 | 出力 |
 |---|---|
-| 指定した起点からの呼び出し階層 | `call-hierarchy.tsv` |
-| ソース上の全メソッドの呼び出し状況（全体モード） | `methods.tsv` |
-| 解決後の全呼び出し関係 | `edges.tsv` |
-| インターフェース経由の呼び出しの具象クラス解決 | `resolutions.tsv` |
-| 型解決できなかった呼び出しの記録 | `unresolved-calls.tsv` |
-| 他チーム・他リポジトリのjarからの被参照 | `external-usage.tsv` |
+| 指定した起点からの呼び出し階層 | `call-hierarchy.csv` |
+| ソース上の全メソッドの呼び出し状況（全体モード） | `methods.csv` |
+| 解決後の全呼び出し関係 | `edges.csv` |
+| インターフェース経由の呼び出しの具象クラス解決 | `resolutions.csv` |
+| 型解決できなかった呼び出しの記録 | `unresolved-calls.csv` |
+| 他チーム・他リポジトリのjarからの被参照 | `external-usage.csv` |
 
-出力は既定でタブ区切り（TSV）です。grepした行をそのままExcelに貼り付けてもセルに分割されます。
-文字コードは既定でMS932（Shift_JIS）なので、Excelでそのまま開けます。
-カンマ区切り（CSV）やUTF-8（BOM付き）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
+出力はすべてMS932（Shift_JIS）のCSVが既定なので、Excelでそのまま開けます。
+タブ区切りやUTF-8（BOM付き）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
 
 ---
 
@@ -66,42 +64,40 @@ project.root=../../my-legacy-project
 最小構成（`entry.packages` 未指定の全体モード）では、次の3ファイルが自動的に出力されます。
 列の詳しい意味は後述の [出力ファイル](#出力ファイル) を参照してください。
 
-#### `methods.tsv` — ソース上の全メソッドと呼び出し状況
+#### `methods.csv` — ソース上の全メソッドと呼び出し状況
 
-タブ区切りです（下記は分かりやすさのため列を揃えて表示しています）。
-
-```tsv
-method	declaringType	typeKind	file	line	hasBody	inDegree	outDegree	role	reachable
-OrderAction.execute	jp.co.xxx.action.OrderAction	C	OrderAction.java	45	1	0	1	ENTRY_CANDIDATE	1
-OrderService.findOrder	jp.co.xxx.service.OrderService	C	OrderService.java	20	1	1	1	NORMAL	1
-OrderDao.selectById	jp.co.xxx.dao.OrderDao	I	OrderDao.java	8	0	0	0	ISOLATED	0
-OrderDaoImpl.selectById	jp.co.xxx.dao.OrderDaoImpl	C	OrderDaoImpl.java	15	1	1	0	LEAF	1
+```csv
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable
+OrderAction.execute,jp.co.xxx.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1
+OrderService.findOrder,jp.co.xxx.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1
+OrderDao.selectById,jp.co.xxx.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0
+OrderDaoImpl.selectById,jp.co.xxx.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1
 ```
 
 `role` 列を見るだけで、「呼び出し元が無い箇所（`ENTRY_CANDIDATE`）」「共通処理で改修時の
 影響範囲が広い箇所（`HUB`）」などを一覧で仕分けできます。
 
-#### `edges.tsv` — 解決後の全呼び出し関係
+#### `edges.csv` — 解決後の全呼び出し関係
 
-```tsv
-caller	callee	callerFile	callLine	bindKind	resolution	candidateCount	declaredCallee
-OrderAction.execute	OrderService.findOrder	OrderAction.java	50	V	NO_OVERRIDE	1	jp.co.xxx.service.OrderService#findOrder()
-OrderService.findOrder	OrderDaoImpl.selectById	OrderService.java	25	V	SINGLE_IMPL	1	jp.co.xxx.dao.OrderDao#selectById()
+```csv
+caller,callee,callerFile,callLine,bindKind,resolution,candidateCount,declaredCallee
+OrderAction.execute,OrderService.findOrder,OrderAction.java,50,V,NO_OVERRIDE,1,jp.co.xxx.service.OrderService#findOrder()
+OrderService.findOrder,OrderDaoImpl.selectById,OrderService.java,25,V,SINGLE_IMPL,1,jp.co.xxx.dao.OrderDao#selectById()
 ```
 
 インターフェース経由の呼び出し（`OrderDao#selectById()`）が、実装クラス
 （`OrderDaoImpl.selectById`）に解決されていることが分かります。
 
-#### `call-hierarchy.tsv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
+#### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
-`entry.auto=true`（既定）のため、`methods.tsv` で `ENTRY_CANDIDATE` になったメソッドを
-自動的に起点にして、`call-hierarchy.tsv` も合わせて出力されます。
+`entry.auto=true`（既定）のため、`methods.csv` で `ENTRY_CANDIDATE` になったメソッドを
+自動的に起点にして、`call-hierarchy.csv` も合わせて出力されます。
 
-```tsv
-caller	callee	note	callHierarchy
-	OrderAction.execute		OrderAction.execute
-at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50)	OrderService.findOrder		OrderAction.execute	OrderService.findOrder
-at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25)	OrderDaoImpl.selectById	解決:SINGLE_IMPL	OrderAction.execute	OrderService.findOrder	OrderDaoImpl.selectById
+```csv
+caller,callee,note,callHierarchy
+,OrderAction.execute,,OrderAction.execute
+at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,,OrderAction.execute,OrderService.findOrder
+at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,解決:SINGLE_IMPL,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 ---
@@ -264,13 +260,13 @@ entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
 
 ### 区切り文字・文字コードのカスタマイズ
 
-すべての出力ファイル（`call-hierarchy.tsv`・`methods.tsv`・`edges.tsv`・`resolutions.tsv`・
-`unresolved-calls.tsv`・`external-usage.tsv`・`external-unmatched.tsv`）は、次の2つの設定で
+すべての出力ファイル（`call-hierarchy.csv`・`methods.csv`・`edges.csv`・`resolutions.csv`・
+`unresolved-calls.csv`・`external-usage.csv`・`external-unmatched.csv`）は、次の2つの設定で
 形式を変更できます。
 
 ```properties
-# 区切り文字。既定は TAB（タブ区切り）。
-output.delimiter=TAB
+# 区切り文字。COMMA（既定・通常のCSV）か TAB。
+output.delimiter=COMMA
 
 # 文字コード。既定は MS932（Shift_JIS）。
 #   UTF-8-BOM … BOM付きUTF-8。ExcelがUTF-8と正しく認識して開ける
@@ -278,29 +274,25 @@ output.delimiter=TAB
 output.encoding=MS932
 ```
 
-**既定はタブ区切り（TSV）です**。grepなどで抽出した行をそのままコピーしてExcelに
-貼り付けると、タブの位置で自動的にセルへ分割されます。フィールドにカンマを含む
-データ（Javaの引数リストや日本語の説明文など）が多くても、区切り文字と衝突しないため
-確実に列を分けられます。
-
-**カンマ区切り（CSV）に戻したい場合**（`output.delimiter=COMMA`）: 出力先の拡張子も
-`.tsv` から `.csv` に変更してください（`output.csv=./output/call-hierarchy.csv` の
-ように指定）。拡張子と中身の区切り文字が食い違うと紛らわしいためです。
-また、ダブルクリックでExcelに開かせる場合、`.csv` はOSの「リスト区切り記号」設定に
-従ってカンマ区切りとして解釈される点に注意してください。
+**タブ区切りにしたい場合**（`output.delimiter=TAB`）: フィールドにカンマを含むデータが
+多く見づらい場合や、区切り文字の面で確実にExcelへ取り込みたい場合に使います。
+**ダブルクリックでExcelに開かせたい場合は、出力先の拡張子を `.csv` のままにせず `.txt` に
+してください**（`output.csv=./output/call-hierarchy.txt` のように指定）。`.csv` のまま
+だとOSの「リスト区切り記号」設定に従ってカンマ区切りとして解釈されてしまい、タブ区切りに
+なりません。
 
 **UTF-8で開きたい場合**（`output.encoding=UTF-8-BOM`）: 既定のMS932はJIS第一・第二水準外の
 文字（一部の人名・機種依存文字など）を `?` に置換してしまいますが、UTF-8ならその制約が
 ありません。`UTF-8-BOM` を指定するとファイル先頭にBOMが付き、Excelでダブルクリックしても
 文字化けせずに開けます（BOM無しの `UTF-8` は、Excelで直接開くと文字化けするため非推奨です）。
 
-### `call-hierarchy.tsv` — 呼び出し階層
+### `call-hierarchy.csv` — 呼び出し階層
 
-```tsv
-caller	callee	note	callHierarchy
-	OrderAction.execute		OrderAction.execute
-at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50)	OrderService.findOrder		OrderAction.execute	OrderService.findOrder
-at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25)	OrderDaoImpl.selectById	解決:SINGLE_IMPL	OrderAction.execute	OrderService.findOrder	OrderDaoImpl.selectById
+```csv
+caller,callee,note,callHierarchy
+,OrderAction.execute,,OrderAction.execute
+at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,,OrderAction.execute,OrderService.findOrder
+at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,解決:SINGLE_IMPL,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 |
@@ -316,13 +308,13 @@ at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25)	OrderDaoImpl.s
 **grep**: `callHierarchy` が最終列なので、行末マッチでそのメソッドに至る経路を抽出できます。
 
 ```bash
-grep "OrderDaoImpl.selectById$" call-hierarchy.tsv
+grep "OrderDaoImpl.selectById$" call-hierarchy.csv
 ```
 
 > `callHierarchy` より後ろに列を追加しないでください。行末マッチが壊れます。
 > 列を足す場合は `callHierarchy` より前に挿入します。
 
-### `methods.tsv` — 全メソッドの呼び出し状況（全体モードのみ）
+### `methods.csv` — 全メソッドの呼び出し状況（全体モードのみ）
 
 `entry.packages` を空にすると全体モードになります。
 
@@ -336,30 +328,30 @@ grep "OrderDaoImpl.selectById$" call-hierarchy.tsv
 `reachable=0` の行は、起点候補から到達できないメソッドです。
 相互再帰だけで閉じたクラスタ（デッドコードの塊）を見つけるのに使えます。
 
-### `edges.tsv` — 解決後の全呼び出し関係（全体モードのみ）
+### `edges.csv` — 解決後の全呼び出し関係（全体モードのみ）
 
 呼び出しルートを全部展開すると `分岐^深さ` で爆発しますが、
 エッジ一覧はエッジ数に比例した線形サイズで収まり、
 **任意の起点からのルートを後から再構成できます**。網羅を目指す場合はこちらが一次成果物です。
 
-### `resolutions.tsv` — 具象クラスの解決結果
+### `resolutions.csv` — 具象クラスの解決結果
 
-```tsv
-declaredMethod	bindKind	label	candidateCount	candidates
-jp.co.xxx.dao.OrderDao#selectById()	V	SINGLE_IMPL	1	jp.co.xxx.dao.impl.OrderDaoImpl
-jp.co.xxx.dao.CommonDao#execute()	V	CHA	2	jp.co.xxx.dao.impl.UserDaoImpl / jp.co.xxx.dao.impl.ItemDaoImpl
+```csv
+declaredMethod,bindKind,label,candidateCount,candidates
+jp.co.xxx.dao.OrderDao#selectById(),V,SINGLE_IMPL,1,jp.co.xxx.dao.impl.OrderDaoImpl
+jp.co.xxx.dao.CommonDao#execute(),V,CHA,2,jp.co.xxx.dao.impl.UserDaoImpl / jp.co.xxx.dao.impl.ItemDaoImpl
 ```
 
 `CHA` の行が「静的に絞りきれなかった箇所」です。`candidateCount` の降順に並べると、
 拡張（後述）を作る価値が高い順になります。
 
-### `unresolved-calls.tsv` — 型解決できなかった呼び出し
+### `unresolved-calls.csv` — 型解決できなかった呼び出し
 
 クラスパス不足、リフレクション、フレームワーク経由の呼び出しなどが記録されます。
 **最初の実行では、まずこの件数を確認してください。** 異常に多い場合は
 `extra.classpath.entries` の設定漏れが疑われます。
 
-### `external-usage.tsv` — 他リポジトリからの被参照
+### `external-usage.csv` — 他リポジトリからの被参照
 
 自分のコードを呼んでいる側のjarを `external.jars` に指定すると出力されます。
 
@@ -367,11 +359,11 @@ jp.co.xxx.dao.CommonDao#execute()	V	CHA	2	jp.co.xxx.dao.impl.UserDaoImpl / jp.co
 external.jars=//shared/teamjars
 ```
 
-```tsv
-method	declaringType	jar	referencingClass	matchKind
-OrderService.findOrder	p.svc.OrderService	team-b-batch.jar	jp.teamb.NightJob	EXACT
-Base.inherited	p.base.Base	team-b-batch.jar	jp.teamb.NightJob	INHERITED
-OrderService.<init>	p.svc.OrderService	team-b-batch.jar	jp.teamb.NightJob	IMPLICIT_CTOR
+```csv
+method,declaringType,jar,referencingClass,matchKind
+OrderService.findOrder,p.svc.OrderService,team-b-batch.jar,jp.teamb.NightJob,EXACT
+Base.inherited,p.base.Base,team-b-batch.jar,jp.teamb.NightJob,INHERITED
+OrderService.<init>,p.svc.OrderService,team-b-batch.jar,jp.teamb.NightJob,IMPLICIT_CTOR
 ```
 
 classファイルの定数プールだけを読むため、外部ライブラリは不要です。
@@ -381,7 +373,7 @@ classファイルの定数プールだけを読むため、外部ライブラリ
 > **これらのjarは自分の `.classpath` には現れません**。依存の向きが逆だからです。
 > 共有フォルダやNexusから別途集めてください。
 
-`external-unmatched.tsv` には、自分の型を参照しているのにメソッドが一致しなかったものが出ます。
+`external-unmatched.csv` には、自分の型を参照しているのにメソッドが一致しなかったものが出ます。
 **相手のjarが古い版に対してビルドされている可能性があるため、
 「使われていない」と判断する前にここを確認してください。**
 
@@ -471,7 +463,7 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 | DIコンテナ | 設定ファイルを読む拡張が別途必要です |
 | キャッシュの差分判定 | 最終更新時刻とサイズが両方一致する改変は検出できません。バージョン管理がタイムスタンプを復元する設定（SVNの `use-commit-times` 等）では特に注意。疑わしいときは `cache.enabled=false` にしてください |
 | 定数のインライン展開 | `public static final` の定数は呼び出し側に埋め込まれるため、被参照スキャンで検出できません |
-| オーバーロード | `call-hierarchy.tsv` の表示上は同名で並びます。厳密に区別する場合は `edges.tsv` の `declaredCallee` 列を参照してください |
+| オーバーロード | `call-hierarchy.csv` の表示上は同名で並びます。厳密に区別する場合は `edges.csv` の `declaredCallee` 列を参照してください |
 
 ---
 
@@ -489,7 +481,7 @@ gradle verify
 > **実際のJDT jarに対するコンパイル・実行の確認はできていません。**
 > 特に `ASTParser.setEnvironment()` + `setUnitName()` によるバインディング解決が
 > 実環境で効くかは、最初に確認してください。
-> `unresolved-calls.tsv` が異常に多い場合、ここが効いていない可能性が高いです。
+> `unresolved-calls.csv` が異常に多い場合、ここが効いていない可能性が高いです。
 
 ---
 

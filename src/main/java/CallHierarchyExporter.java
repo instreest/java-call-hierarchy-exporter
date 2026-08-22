@@ -537,20 +537,20 @@ public class CallHierarchyExporter {
             this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
             this.cacheFile = resolvePath(p.getProperty("cache.file", "./.cache/analysis-cache.tsv"));
 
-            this.outputCsv = resolvePath(p.getProperty("output.csv", "./output/call-hierarchy.tsv"));
-            this.unresolvedCsv = resolvePath(p.getProperty("unresolved.csv", "./output/unresolved-calls.tsv"));
-            this.resolutionsCsv = resolvePath(p.getProperty("resolutions.csv", "./output/resolutions.tsv"));
-            this.methodsCsv = resolvePath(p.getProperty("methods.csv", "./output/methods.tsv"));
-            this.edgesCsv = resolvePath(p.getProperty("edges.csv", "./output/edges.tsv"));
+            this.outputCsv = resolvePath(p.getProperty("output.csv", "./output/call-hierarchy.csv"));
+            this.unresolvedCsv = resolvePath(p.getProperty("unresolved.csv", "./output/unresolved-calls.csv"));
+            this.resolutionsCsv = resolvePath(p.getProperty("resolutions.csv", "./output/resolutions.csv"));
+            this.methodsCsv = resolvePath(p.getProperty("methods.csv", "./output/methods.csv"));
+            this.edgesCsv = resolvePath(p.getProperty("edges.csv", "./output/edges.csv"));
             List<Path> ex = new ArrayList<>();
             for (String v : splitList(p.getProperty("external.jars", ""))) {
                 ex.add(resolvePath(v));
             }
             this.externalJars = ex;
             this.externalUsageCsv =
-                    resolvePath(p.getProperty("external.usage.csv", "./output/external-usage.tsv"));
+                    resolvePath(p.getProperty("external.usage.csv", "./output/external-usage.csv"));
             this.externalUnmatchedCsv =
-                    resolvePath(p.getProperty("external.unmatched.csv", "./output/external-unmatched.tsv"));
+                    resolvePath(p.getProperty("external.unmatched.csv", "./output/external-unmatched.csv"));
             String encRaw = p.getProperty("output.encoding", "MS932").trim();
             if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
                 this.outputEncoding = StandardCharsets.UTF_8;
@@ -560,10 +560,7 @@ public class CallHierarchyExporter {
                 this.outputBom = false;
             }
 
-            // 既定はタブ区切り（.tsv）。grepした結果をそのままExcelに貼り付けたときに
-            // セルへ分割されるようにするため。カンマ区切りのCSVで扱いたい場合は
-            // output.delimiter=COMMA にし、出力パスの拡張子も .csv に変更すること。
-            String delimRaw = p.getProperty("output.delimiter", "TAB").trim().toUpperCase();
+            String delimRaw = p.getProperty("output.delimiter", "COMMA").trim().toUpperCase();
             if ("TAB".equals(delimRaw)) {
                 this.outputDelimiter = "\t";
             } else if ("COMMA".equals(delimRaw)) {
@@ -3480,24 +3477,25 @@ cache.file=./.cache/analysis-cache.tsv
 #   UTF-8-BOM  … BOM付きUTF-8。ExcelがUTF-8と正しく認識して開ける
 output.encoding=MS932
 
-# 出力ファイルの区切り文字。既定はタブ区切り（TSV）。
-#   TAB   … タブ区切り（既定）。grepした行をそのままExcelに貼り付けても
-#           セルに分割される。ファイルの拡張子も既定で .tsv にしている。
-#   COMMA … 通常のカンマ区切り（CSV）に変更したい場合。その場合は
-#           下記の各出力パスの拡張子も .csv に変更すること
-#           （拡張子と中身の区切り文字が食い違うと紛らわしいため）。
-output.delimiter=TAB
+# 出力ファイルの区切り文字。既定はカンマ区切り（CSV）。
+#   COMMA … 通常のCSV（既定）
+#   TAB   … タブ区切り。フィールドにカンマを含むデータが多い場合や、
+#           MS932とExcelの相性問題を避けたい場合に有効。
+#           ダブルクリックでExcelに開かせたい場合は、拡張子を.csvのままにせず
+#           .txtにしてください（.csvはOSの「リスト区切り記号」設定でカンマ区切り
+#           として解釈されるため、拡張子を変えないとタブ区切りとして開かれません）
+output.delimiter=COMMA
 
-output.csv=./output/call-hierarchy.tsv
-unresolved.csv=./output/unresolved-calls.tsv
+output.csv=./output/call-hierarchy.csv
+unresolved.csv=./output/unresolved-calls.csv
 
 # 具象クラス解決の内訳。CHAになった箇所＝静的に絞りきれなかった箇所なので、
 # カスタム解決を作るかどうかの投資判断はこのファイルの件数を見て決める。
-resolutions.csv=./output/resolutions.tsv
+resolutions.csv=./output/resolutions.csv
 
 # 全体モードの出力
-methods.csv=./output/methods.tsv
-edges.csv=./output/edges.tsv
+methods.csv=./output/methods.csv
+edges.csv=./output/edges.csv
 
 # --- 他チーム・他リポジトリからの被参照スキャン -----------------------
 # 自分のコードを呼んでいる側のjarを指定する（カンマ区切り。ファイルでもディレクトリでも可）。
@@ -3509,11 +3507,11 @@ edges.csv=./output/edges.tsv
 external.jars=
 
 # 被参照一覧。matchKind は EXACT / INHERITED / IMPLICIT_CTOR
-external.usage.csv=./output/external-usage.tsv
+external.usage.csv=./output/external-usage.csv
 
 # 自分の型を参照しているのにメソッドが一致しなかったもの。
 # 相手のjarが古い版に対してビルドされている可能性があるため、
 # 「使われていない」と判断する前にここを確認する。
-external.unmatched.csv=./output/external-unmatched.tsv
+external.unmatched.csv=./output/external-unmatched.csv
 
  * ==================================================================== */

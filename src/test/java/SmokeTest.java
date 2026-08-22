@@ -46,7 +46,7 @@ public class SmokeTest {
             "exclude.packages=java.**, jp.co.xxx.common.util.**",
             "exclude.mode=PRUNE","max.depth=6","max.children.per.node=50",
             "output.csv=./out/call-hierarchy.csv","unresolved.csv=./out/unresolved.csv",
-            "cache.file=./cache/c.tsv","output.delimiter=COMMA"), StandardCharsets.UTF_8);
+            "cache.file=./cache/c.tsv"), StandardCharsets.UTF_8);
 
         System.out.println("[1] 相対パス解決");
         CallHierarchyExporter.Config c = new CallHierarchyExporter.Config(cfg);
