@@ -25,37 +25,25 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 
 ---
 
-## Getting Started
+## Quick start
 
-このリポジトリを最小構成でとりあえず試す手順です。実行しなくても、下記のサンプルを見るだけで
-出力のイメージがつかめるようにしています。各設定項目のカスタマイズ方法や出力ファイルの詳細な
-意味・注意点は、このセクション以降にまとめています。
+このリポジトリを最小構成で試す手順です。
 
 ### 1. 設定ファイルを編集する
 
-`config/config.properties` をコピーし、**`project.root` だけ**書き換えます。他の項目は
-空・既定値のままで構いません。
+`config/config.properties` の **`project.root`** を書き換えます。
 
 ```properties
 # Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
 project.root=../../my-legacy-project
 ```
 
-`entry.packages`（起点にするパッケージ）を空のままにすると「全体モード」になり、起点を
-意識せずソース上の全メソッドの呼び出し状況を一括で出力します。**まず試すだけならこれが
-一番手間のかからない方法です。**
-
 ### 2. 実行する
-
-Gradleが使える環境かどうかで手順が変わります。
-
 #### Gradleが使える場合
 
 ```bash
 gradle run --args="config/config.properties"
 ```
-
-jarのビルドや配置は不要です。依存の解決から実行まで、この1コマンドで完結します。
 
 #### Gradleが使えない場合（Pleiades/Eclipse環境など）
 
@@ -65,18 +53,18 @@ Gradleもネットワーク接続も無しに実行できます。
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bat
-rem Windows（クラスパス区切りが ; になります）
-rem 環境に合わせて次の2行だけ書き換えてください
-set PLEIADES_HOME=C:\pleiades\2026-06
-set PLEIADES_JAVA_HOME=%PLEIADES_HOME%\java\17
+rem java-call-hierarchy-exporterをカレントディレクトリとしてください
+rem 環境に合わせて次の2行を書き換えてください
+set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
+set JAVA_HOME=C:\pleiades\2026-06\java\17
 
 mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
-do copy "%PLEIADES_HOME%\eclipse\plugins\%P_*.jar" lib\
+do copy "%ECLIPSE_HOME%\eclipse\plugins\%P_*.jar" lib\
 
-"%PLEIADES_JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
 
-"%PLEIADES_JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
 ### 出力されるファイル
@@ -407,8 +395,8 @@ gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 jarを確認し、足りないものを同様に `lib` へ追加してください。
 
 ```bat
-rem PLEIADES_JAVA_HOME は Getting Started で設定したものと同じです
-"%PLEIADES_JAVA_HOME%\bin\java" ^
+set JAVA_HOME=C:\pleiades\2026-06\java\17
+"%JAVA_HOME%\bin\java" ^
      -Xlog:class+load=info:file=classload.log ^
      -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
