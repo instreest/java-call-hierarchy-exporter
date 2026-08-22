@@ -45,7 +45,7 @@ gradle dist
 
 ```properties
 # Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
-project.root=../my-legacy-project
+project.root=../../my-legacy-project
 ```
 
 `entry.packages`（起点にするパッケージ）を空のままにすると「全体モード」になり、起点を
