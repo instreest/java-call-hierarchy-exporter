@@ -25,41 +25,49 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 
 ---
 
-## Getting Started
+## Quick start
 
-このリポジトリを最小構成でとりあえず試す手順です。実行しなくても、下記のサンプルを見るだけで
-出力のイメージがつかめるようにしています。各設定項目のカスタマイズ方法や出力ファイルの詳細な
-意味・注意点は、このセクション以降にまとめています。
+このリポジトリを最小構成で試す手順です。
 
-### 1. ビルドする
+### 1. 設定ファイルを編集する
 
-```bash
-gradle dist
-```
-
-`build/dist/` に、実行に必要な一式（jar・依存jar・設定サンプル・実行スクリプト）がまとまります。
-
-### 2. 設定ファイルを用意する
-
-`config/config.properties` をコピーし、**`project.root` だけ**書き換えます。他の項目は
-空・既定値のままで構いません。
+`config/config.properties` の **`project.root`** を書き換えます。
 
 ```properties
 # Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
 project.root=../../my-legacy-project
 ```
 
-`entry.packages`（起点にするパッケージ）を空のままにすると「全体モード」になり、起点を
-意識せずソース上の全メソッドの呼び出し状況を一括で出力します。**まず試すだけならこれが
-一番手間のかからない方法です。**
-
-### 3. 実行する
+### 2. 実行する
+#### Gradleが使える場合
 
 ```bash
-./run.sh config/config.properties
+gradle run --args="config/config.properties"
 ```
 
-### 4. 出力されるファイル
+#### Gradleが使えない場合（Pleiades/Eclipse環境など）
+
+Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式を使って、
+Gradleもネットワーク接続も無しに実行できます。
+実行に必要なプラグインjarを`lib` フォルダに集めて使います（元のEclipseインストールは変更しません）。
+バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
+
+```bat
+rem java-call-hierarchy-exporterをカレントディレクトリとしてください
+rem 環境に合わせて次の2行を書き換えてください
+set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
+set JAVA_HOME=C:\pleiades\2026-06\java\17
+
+mkdir lib
+for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
+do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
+
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
+
+"%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
+```
+
+### 出力されるファイル
 
 最小構成（`entry.packages` 未指定の全体モード）では、次の3ファイルが自動的に出力されます。
 列の詳しい意味は後述の [出力ファイル](#出力ファイル) を参照してください。
@@ -109,7 +117,7 @@ at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.s
 
 ## 使い方
 
-とりあえず試すだけなら [Getting Started](#getting-started) の手順（`project.root` のみ設定
+とりあえず試すだけなら [Quick start](#quick-start) の手順（`project.root` のみ設定
 する全体モード）で十分です。ここでは、特定のパッケージだけを起点にしたい場合など、設定を
 作り込みたいときの詳細を説明します。
 
@@ -375,97 +383,33 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 手元のJDKで動く版を選んでください。バージョンはビルド時に指定できます。
 
 ```
-gradle -PjdtVersion=3.29.0 dist
+gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 ```
 
 ---
 
-## ビルド（Gradle）
+## トラブルシューティング
 
-```bash
-gradle dist
+実行時に別のクラスが必要になり `NoClassDefFoundError` が出た場合、
+`lib` が不足している可能性があります。
+その場合は、次のようにクラスロードログを取って実際に使われた
+jarを確認し、足りないものを同様に `lib` へ追加してください。
+
+```bat
+set JAVA_HOME=C:\pleiades\2026-06\java\17
+"%JAVA_HOME%\bin\java" ^
+     -Xlog:class+load=info:file=classload.log ^
+     -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
-`build/dist/` に、実行に必要な一式が出力されます。
-
-```
-build/dist/
-├── java-call-hierarchy-exporter-0.1.0.jar
-├── lib/                         依存jar一式
-├── config/config.properties     設定サンプル
-├── run.sh / run.bat
-└── build.xml
+```powershell
+Get-Content classload.log |
+  Select-String -Pattern 'source:\s*file:/*(.+\.jar)$' |
+  ForEach-Object { Split-Path -Leaf $_.Matches[0].Groups[1].Value } |
+  Sort-Object -Unique
 ```
 
-社内Nexus等を使う場合は `build.gradle` の `repositories` を書き換えてください。
-
----
-
-## Ant・コマンドラインで実行する
-
-**Gradleは依存jarを集めるためだけに使い、実行はAntやコマンドラインで行う**という使い方を想定しています。
-
-### 1. 依存jarを集める
-
-```bash
-gradle copyDeps
-```
-
-`build/dist/lib/` に依存jarが集まります。ネットワークが使える環境で一度実行しておけば、
-以降はこのフォルダごと持ち込むだけで動きます。
-
-クラスパス文字列がほしい場合はこちらです。
-
-```bash
-gradle printClasspath
-```
-
-### 2-a. コマンドラインから実行
-
-```bash
-# Linux / macOS
-java -Xmx2g -Dfile.encoding=UTF-8 \
-     -cp "java-call-hierarchy-exporter-0.1.0.jar:lib/*" \
-     CallHierarchyExporter config/config.properties
-
-# Windows（クラスパス区切りが ; になります）
-java -Xmx2g -Dfile.encoding=UTF-8 ^
-     -cp "java-call-hierarchy-exporter-0.1.0.jar;lib\*" ^
-     CallHierarchyExporter config\config.properties
-```
-
-同梱の `run.sh` / `run.bat` は上記をラップしたものです。
-
-```bash
-./run.sh config/config.properties
-JAVA_OPTS="-Xmx8g" ./run.sh config/config.properties   # ヒープを増やす場合
-```
-
-### 2-b. Antから実行
-
-同梱の `build.xml` を使います。`lib.dir` に、Gradleで集めた依存jarの場所を指定してください。
-
-```bash
-ant -Dlib.dir=build/dist/lib dist
-ant -Dlib.dir=build/dist/lib run -Dconfig.file=config/config.properties
-```
-
-既存プロジェクトの `build.xml` に取り込む場合は、`<path id="classpath">` の中身を
-既存の `path refid` に差し替えるか、`<import>` して既存定義を参照してください。
-
-> **注意**: Antの `<javac>` は `debug` の既定値が `false` です。この場合
-> `-g:none` 相当となり**行番号情報が失われ**、出力CSVからソース行が消えます。
-> 同梱の `build.xml` では `debug="true"` を明示しています。
-
-### Gradleを使わない場合
-
-社内からMaven Centralにも社内Nexusにもアクセスできない場合、
-Pleiades（Eclipse）のインストールフォルダから直接jarをコピーしても動きます。
-
-`plugins/` 配下から `org.eclipse.jdt.core_*.jar` を中心に `lib/` へコピーし、
-ビルド時に `NoClassDefFoundError` が出たら、そのクラスを含むプラグインjarを
-追加でコピーする、という手順になります。
-
-> この方法で必要になるjarの正確な一覧は環境によって変わります。
-> 試行錯誤が前提の手段だと考えてください。
+出力に並んだjarの一覧が、そのときの実行で本当に必要だったプラグインです。
+`plugins` フォルダを丸ごとクラスパスに乗せているわけではないので、EGitのSSH関連jar
+のような無関係なプラグインが混入して `ServiceConfigurationError` になる心配もありません。
 
