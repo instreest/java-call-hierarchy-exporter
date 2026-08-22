@@ -1769,7 +1769,13 @@ public class CallHierarchyExporter {
         String simpleTypeName(int id) {
             String t = typeFqn(id);
             String p = pkgs.get(id);
-            if (!p.isEmpty() && t.startsWith(p + ".")) {
+            if (p.isEmpty()) {
+                // パッケージが無いので、typeFqn全体がそのままクラスの入れ子構造を表す
+                // （lastIndexOf('.')で末尾だけ切り出すと、デフォルトパッケージ上の
+                //   内部クラスで外側のクラス名が失われてしまう）
+                return t;
+            }
+            if (t.startsWith(p + ".")) {
                 return t.substring(p.length() + 1);
             }
             int i = t.lastIndexOf('.');
@@ -3295,14 +3301,26 @@ public class CallHierarchyExporter {
             writer.newLine();
         }
 
-        /** Java のスタックトレースと同じ "at 完全修飾名.メソッド(ファイル:行)" 形式 */
+        /**
+         * Java のスタックトレースと同じ "at バイナリ名.メソッド(ファイル:行)" 形式。
+         *
+         * typeFqn() はソース上の正規名（内部クラスも Outer.Inner のようにドット区切り）
+         * を返すが、実際のJVMスタックトレースやEclipseの「Javaスタック・トレース・
+         * コンソール」が期待するのは内部クラスを $ で区切ったバイナリ名（Outer$Inner）。
+         * ドットのままだと内部クラスのメソッドへのジャンプが解決できない。
+         */
         private static String stackTrace(MethodTable mt, int id, int line) {
             String file = mt.declFile(id);
             if (file == null || line < 0) {
                 return mt.shortLabel(id) + " (unknown)";
             }
             String fileName = file.substring(file.lastIndexOf('/') + 1);
-            return "at " + mt.typeFqn(id) + "." + mt.methodName(id)
+            String pkg = mt.pkg(id);
+            String binaryType = mt.simpleTypeName(id).replace('.', '$');
+            if (!pkg.isEmpty()) {
+                binaryType = pkg + "." + binaryType;
+            }
+            return "at " + binaryType + "." + mt.methodName(id)
                     + "(" + fileName + ":" + line + ")";
         }
 
