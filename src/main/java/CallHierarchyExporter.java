@@ -64,6 +64,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -156,6 +157,11 @@ public class CallHierarchyExporter {
         System.out.println("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
         long t2 = System.currentTimeMillis();
         CallGraph graph = CallGraph.buildFrom(config.cacheFile);
+        List<String> sourceFolderOrder = new ArrayList<>();
+        for (Path sf : layout.sourceFolders) {
+            sourceFolderOrder.add(layout.relativeOf(sf));
+        }
+        graph.setSourceFolderOrder(sourceFolderOrder);
         List<TypeCandidateProvider> providers =
                 Plugins.load(config.candidateProviderClasses, TypeCandidateProvider.class);
         for (TypeCandidateProvider pv : providers) {
@@ -1839,6 +1845,37 @@ public class CallHierarchyExporter {
             this.providers = p;
         }
 
+        /**
+         * 全体モードの起点の並び替え用。.classpath に書かれたソースフォルダの順
+         * （プロジェクトルートからの相対パス。例: "src/main/java"）。
+         * main/test 等のソースフォルダが混在して出力されるのを避けるために使う。
+         */
+        private List<String> sourceFolderOrder = Collections.emptyList();
+
+        void setSourceFolderOrder(List<String> order) {
+            this.sourceFolderOrder = order;
+        }
+
+        /** declFile が属するソースフォルダの、sourceFolderOrder 上のインデックス */
+        private int sourceFolderIndexOf(String declFile) {
+            if (declFile == null) {
+                return Integer.MAX_VALUE;
+            }
+            String norm = declFile.replace('\\', '/');
+            int bestIndex = Integer.MAX_VALUE;
+            int bestLen = -1;
+            for (int i = 0; i < sourceFolderOrder.size(); i++) {
+                String prefix = sourceFolderOrder.get(i);
+                boolean matches = prefix.isEmpty()
+                        || norm.equals(prefix) || norm.startsWith(prefix + "/");
+                if (matches && prefix.length() > bestLen) {
+                    bestLen = prefix.length();
+                    bestIndex = i;
+                }
+            }
+            return bestIndex;
+        }
+
         static CallGraph buildFrom(Path cacheFile) throws IOException {
             CallGraph g = new CallGraph();
 
@@ -2337,7 +2374,31 @@ public class CallHierarchyExporter {
                     hits.add(id);
                 }
             }
-            return Arrays.copyOf(hits.a, hits.size());
+            Integer[] boxed = new Integer[hits.size()];
+            for (int i = 0; i < boxed.length; i++) {
+                boxed[i] = Integer.valueOf(hits.get(i));
+            }
+            // 出力順: 1) ソースフォルダの宣言順（.classpath の記載順。main/testの混在を防ぐ）
+            //         2) 型FQN順（'.'は英数字よりコード上小さいため、文字列比較だけで
+            //            「パッケージ自身 -> そのサブパッケージ -> 次のパッケージ」の順になる）
+            //         3) 同じ型内では、ソースファイル上の宣言順
+            Arrays.sort(boxed, (x, y) -> {
+                int fx = sourceFolderIndexOf(methods.declFile(x.intValue()));
+                int fy = sourceFolderIndexOf(methods.declFile(y.intValue()));
+                if (fx != fy) {
+                    return Integer.compare(fx, fy);
+                }
+                int t = methods.typeFqn(x.intValue()).compareTo(methods.typeFqn(y.intValue()));
+                if (t != 0) {
+                    return t;
+                }
+                return Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
+            });
+            int[] result = new int[boxed.length];
+            for (int i = 0; i < result.length; i++) {
+                result[i] = boxed[i].intValue();
+            }
+            return result;
         }
 
         /** 設定にマッチする、ソース上に宣言のあるメソッドをエントリポイントとして選ぶ */
