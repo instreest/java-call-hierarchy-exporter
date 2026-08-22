@@ -31,15 +31,7 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 出力のイメージがつかめるようにしています。各設定項目のカスタマイズ方法や出力ファイルの詳細な
 意味・注意点は、このセクション以降にまとめています。
 
-### 1. ビルドする
-
-```bash
-gradle dist
-```
-
-`build/dist/` に、実行に必要な一式（jar・依存jar・設定サンプル・実行スクリプト）がまとまります。
-
-### 2. 設定ファイルを用意する
+### 1. 設定ファイルを編集する
 
 `config/config.properties` をコピーし、**`project.root` だけ**書き換えます。他の項目は
 空・既定値のままで構いません。
@@ -53,13 +45,57 @@ project.root=../../my-legacy-project
 意識せずソース上の全メソッドの呼び出し状況を一括で出力します。**まず試すだけならこれが
 一番手間のかからない方法です。**
 
-### 3. 実行する
+### 2. 実行する
+
+Gradleが使える環境かどうかで手順が変わります。
+
+#### Gradleが使える場合
 
 ```bash
-./run.sh config/config.properties
+gradle dist
+cd build/dist
+./run.sh config/config.properties     # Windowsは run.bat
 ```
 
-### 4. 出力されるファイル
+`gradle dist` で、実行に必要な一式（jar・依存jar・設定サンプル・実行スクリプト）が
+`build/dist/` にまとまります。
+
+#### Gradleが使えない場合（Pleiades/Eclipse環境など）
+
+Eclipse(Pleiades)がインストールされていれば、その `plugins` フォルダをそのまま
+クラスパスに指定することで、Gradleもネットワーク接続も無しに実行できます
+（実行に必要なJDT Core一式がここに含まれているため、個別にjarを集める必要はありません）。
+
+```bash
+# <Pleiadesのインストール先> は環境に合わせて書き換えてください
+# 例: C:\pleiades\2024-03\java\eclipse
+
+# コンパイル（初回のみ）
+javac -cp "<Pleiadesのインストール先>/eclipse/plugins/*" \
+      -d classes src/main/java/CallHierarchyExporter.java
+
+# 実行
+java -cp "classes:<Pleiadesのインストール先>/eclipse/plugins/*" \
+     CallHierarchyExporter config/config.properties
+```
+
+```bat
+rem Windows（クラスパス区切りが ; になります）
+javac -cp "<Pleiadesのインストール先>\eclipse\plugins\*" ^
+      -d classes src\main\java\CallHierarchyExporter.java
+
+java -cp "classes;<Pleiadesのインストール先>\eclipse\plugins\*" ^
+     CallHierarchyExporter config\config.properties
+```
+
+`java` / `javac` コマンド自体が見つからない場合は、Pleiadesに同梱のJRE
+（`<Pleiadesのインストール先>/jre/bin/java` 等）をフルパスで指定してください。
+
+大量のjarが一度にクラスパスへ乗るため、まれにクラスの衝突で動かないことがあります。
+その場合は [Gradleを使わない場合](#gradleを使わない場合) にある、必要なjarだけを
+`lib/` に集める手順を試してください。
+
+### 出力されるファイル
 
 最小構成（`entry.packages` 未指定の全体モード）では、次の3ファイルが自動的に出力されます。
 列の詳しい意味は後述の [出力ファイル](#出力ファイル) を参照してください。
