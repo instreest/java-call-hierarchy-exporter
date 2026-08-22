@@ -3055,7 +3055,6 @@ public class CallHierarchyExporter {
                 pathMethod[0] = rootId;
                 pathCallLine[0] = -1;
                 pathNote[0] = (graph.methods.declFile(rootId) == null) ? "ソースなし（展開不可）" : null;
-                emit(0);
                 descend(0);
                 pg.step(i + 1);
             }
@@ -3244,7 +3243,7 @@ public class CallHierarchyExporter {
      * ヘッダー:
      *   caller,callee,note,callHierarchy...
      *
-     * - 1ノードにつき1行（root自身も depth=0 の行として出力）
+     * - 呼び出し1件につき1行（起点自身は呼び出し元が無いため出力しない）
      * - caller / callee は Eclipse の Java Stack Trace Console が認識する
      *   "at Class.method(File.java:行)" 形式。貼り付けるだけでソースへ飛べる
      * - callHierarchy 以降は root から現ノードまでを1ノード1列で展開するため、
@@ -3276,12 +3275,9 @@ public class CallHierarchyExporter {
 
             // caller: 呼び出し元が「このノードを呼んでいる行」を指すスタックトレース形式。
             // Eclipse の Java Stack Trace Console に貼ればソースへ飛べる。
-            if (depth == 0) {
-                buf.append(delim);
-            } else {
-                int parent = pathMethod[depth - 1];
-                buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(delim);
-            }
+            // 起点自身（depth==0）は出力しないため、depth は必ず1以上。
+            int parent = pathMethod[depth - 1];
+            buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(delim);
 
             // callee: Excelのフィルタで選べるよう、行番号を含まない安定した表記にする。
             // 行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばって使えなくなる。

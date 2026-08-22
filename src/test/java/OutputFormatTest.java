@@ -57,22 +57,22 @@ public class OutputFormatTest {
         System.out.println("[1] ヘッダーと列構成");
         check("ヘッダー=caller,callee,note,callHierarchy",
             L.get(0).equals("caller,callee,note,callHierarchy"), L.get(0));
-        String[] f2=L.get(2).split(",",-1);
+        String[] f2=L.get(1).split(",",-1);
         check("caller列はスタックトレース形式",
             f2[0].matches("^at jp\\.co\\.xxx\\.action\\.UserAction\\.execute\\([\\w.]+:50\\)$"), f2[0]);
         check("callee列は短縮表記(フィルタ可)", f2[1].equals("UserService.findUser"), f2[1]);
-        check("root行はcallerが空", L.get(1).startsWith(","), L.get(1));
+        check("呼び出し元がない行(起点自身)は出力しない", L.stream().skip(1).noneMatch(x->x.startsWith(",")), L.toString());
 
         System.out.println("[2] Excelフィルタ: callee列の値が安定している");
         Set<String> callees=new LinkedHashSet<>();
         for(int i=1;i<L.size();i++) callees.add(L.get(i).split(",",-1)[1]);
         System.out.println("      callee候補="+callees);
         check("行番号を含まない", callees.stream().noneMatch(x->x.matches(".*:\\d+.*")), callees.toString());
-        check("呼び出し箇所ごとに散らばらない", callees.size()==3, ""+callees.size());
+        check("呼び出し箇所ごとに散らばらない", callees.size()==2, ""+callees.size());
 
         System.out.println("[3] grep 末尾一致");
         check("末尾がcallHierarchy最終要素",
-            L.get(3).endsWith("UserDaoImpl.findUserById"), L.get(3));
+            L.get(2).endsWith("UserDaoImpl.findUserById"), L.get(2));
         long hit=L.stream().filter(x->x.endsWith("UserDaoImpl.findUserById")).count();
         check("grep \"findUserById$\" で1行ヒット", hit==1, ""+hit);
 

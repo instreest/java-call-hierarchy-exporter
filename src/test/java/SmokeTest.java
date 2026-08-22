@@ -96,11 +96,11 @@ public class SmokeTest {
         w.close();
         List<String> L = Files.readAllLines(c.outputCsv, java.nio.charset.Charset.forName("MS932"));
         L.forEach(s->System.out.println("      "+s));
-        check("3行(除外1件を除く)", rows==3 && L.size()==4, "rows="+rows);
+        check("2行(起点行と除外1件を除く)", rows==2 && L.size()==3, "rows="+rows);
         check("除外が出力されない", L.stream().noneMatch(s->s.contains("StrUtil")), "");
-        check("行末grep可", L.get(3).endsWith("UserDaoImpl.findUserById"), L.get(3));
-        check("caller=呼出行50", L.get(2).contains("UserAction.java:50"), L.get(2));
-        check("callee列がフィルタ可能な短縮表記", L.get(2).split(",")[1].equals("UserService.findUser"), L.get(2));
+        check("行末grep可", L.get(2).endsWith("UserDaoImpl.findUserById"), L.get(2));
+        check("caller=呼出行50", L.get(1).contains("UserAction.java:50"), L.get(1));
+        check("callee列がフィルタ可能な短縮表記", L.get(1).split(",")[1].equals("UserService.findUser"), L.get(1));
 
         System.out.println("[6] 循環検出");
         Path c2=c.cacheFile.getParent().resolve("cyc.tsv");
