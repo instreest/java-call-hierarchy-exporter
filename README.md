@@ -73,16 +73,22 @@ java.nio.file.spi.FileSystemProvider: Provider
 org.apache.sshd.common.file.root.RootedFileSystemProvider could not be instantiated
 ```
 
-そこで、`plugins` フォルダをいったん作業用の `lib` フォルダへコピーしたうえで、
-原因のSSH関連jarだけを取り除いてから使います（元のEclipseインストールは変更しません）。
+そこで、`plugins` フォルダ全部ではなく、実行に必要なプラグインjarだけを
+`lib` フォルダに集めて使います（元のEclipseインストールは変更しません）。
+次の一覧は実機（Pleiades 2026-06）での実行時クラスロードログから確認したものです。
+バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bash
 # <Pleiadesのインストール先> は環境に合わせて書き換えてください
-# 例: C:\pleiades\2026-06\eclipse
+# 例: /c/pleiades/2026-06/eclipse
 
 mkdir -p lib
-cp <Pleiadesのインストール先>/plugins/*.jar lib/
-rm lib/org.apache.sshd*.jar lib/org.eclipse.jgit.ssh.apache*.jar
+for p in org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs \
+         org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common \
+         org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch \
+         org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs; do
+  cp <Pleiadesのインストール先>/plugins/${p}_*.jar lib/
+done
 
 # コンパイル（初回のみ）
 javac -cp "lib/*" -d classes src/main/java/CallHierarchyExporter.java
@@ -94,9 +100,7 @@ java -cp "classes:lib/*" CallHierarchyExporter config/config.properties
 ```bat
 rem Windows（クラスパス区切りが ; になります）
 mkdir lib
-copy "<Pleiadesのインストール先>\plugins\*.jar" lib\
-del lib\org.apache.sshd*.jar
-del lib\org.eclipse.jgit.ssh.apache*.jar
+for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) do copy "<Pleiadesのインストール先>\plugins\%P_*.jar" lib\
 
 javac -cp "lib\*" -d classes src\main\java\CallHierarchyExporter.java
 
@@ -107,9 +111,28 @@ java -cp "classes;lib\*" CallHierarchyExporter config\config.properties
 （`<Pleiadesのインストール先>/../java/<バージョン>/bin/java` 等）をフルパスで
 指定してください。
 
-同様の `ServiceConfigurationError` が別のjarで再発した場合は、そのエラーメッセージに
-出てくるクラス名からjarを特定し、同じように `lib` から取り除いてください
-（ssh・sftp・git関連のプラグイン名であることが多いです）。
+上記の一覧はASTパース・キャッシュ更新・CSV出力の基本経路で確認したものです。
+`entry.packages` を絞ったり `external.jars` ・ `resolver.hint.collectors` 等の
+拡張機能を使ったりすると、別のクラスが必要になり `NoClassDefFoundError` が出る
+ことがあります。その場合は、次のようにクラスロードログを取って実際に使われた
+jarを確認し、足りないものを同様に `lib` へ追加してください。
+
+```bat
+"<Pleiadesのインストール先>\..\java\<バージョン>\bin\java" ^
+     -Xlog:class+load=info:file=classload.log ^
+     -cp "classes;lib\*" CallHierarchyExporter config\config.properties
+```
+
+```powershell
+Get-Content classload.log |
+  Select-String -Pattern 'source:\s*file:/*(.+\.jar)$' |
+  ForEach-Object { Split-Path -Leaf $_.Matches[0].Groups[1].Value } |
+  Sort-Object -Unique
+```
+
+出力に並んだjarの一覧が、そのときの実行で本当に必要だったプラグインです。
+`plugins` フォルダを丸ごとクラスパスに乗せているわけではないので、EGitのSSH関連jar
+のような無関係なプラグインが混入して `ServiceConfigurationError` になる心配もありません。
 
 ### 出力されるファイル
 
