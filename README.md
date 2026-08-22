@@ -62,7 +62,7 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\main\java\CallHierarchyExporter.java
 
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
@@ -209,8 +209,15 @@ at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.s
 | `note` | 打ち切り理由や解決の由来（`[CYCLE]`、`CHA候補2件（未展開）` 等） |
 | `callHierarchy` | 起点から現ノードまでを1ノード1列で展開（**可変長・最終列**） |
 
-**Eclipseへのジャンプ**: `caller` 列の値をコピーし、Consoleビューのドロップダウンから
-「Java Stack Trace Console」を選んで貼り付けると、クリックでソースへ飛べます。
+**Eclipseへのジャンプ**: `caller` 列の値をコピーし、「Javaスタック・トレース・コンソール」に
+貼り付けると、`at 完全修飾名.メソッド(ファイル:行)` の部分がハイパーリンクになり、
+クリックでソースへ飛べます。
+
+1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
+2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
+   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
+   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `caller` 列の値（`at ...` の行）をそのコンソールに貼り付ける
 
 **grep**: `callHierarchy` が最終列なので、行末マッチでそのメソッドに至る経路を抽出できます。
 
