@@ -61,78 +61,19 @@ jarのビルドや配置は不要です。依存の解決から実行まで、�
 
 Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式を使って、
 Gradleもネットワーク接続も無しに実行できます。
-
-**`plugins` フォルダをそのままクラスパスに指定しないでください。** EGit（Eclipseの
-Git連携）が同梱するSSH関連jar（`org.apache.sshd.*` 等）が、無関係にもかかわらず
-`java.nio.file.spi.FileSystemProvider` の実装として登録されており、クラスパスに
-乗っただけで次のように起動時エラーになります。
-
-```
-Exception in thread "main" java.util.ServiceConfigurationError:
-java.nio.file.spi.FileSystemProvider: Provider
-org.apache.sshd.common.file.root.RootedFileSystemProvider could not be instantiated
-```
-
-そこで、`plugins` フォルダ全部ではなく、実行に必要なプラグインjarだけを
-`lib` フォルダに集めて使います（元のEclipseインストールは変更しません）。
-次の一覧は実機（Pleiades 2026-06）での実行時クラスロードログから確認したものです。
+実行に必要なプラグインjarを`lib` フォルダに集めて使います（元のEclipseインストールは変更しません）。
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
-
-```bash
-# <Pleiadesのインストール先> は環境に合わせて書き換えてください
-# 例: /c/pleiades/2026-06/eclipse
-
-mkdir -p lib
-for p in org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs \
-         org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common \
-         org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch \
-         org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs; do
-  cp <Pleiadesのインストール先>/plugins/${p}_*.jar lib/
-done
-
-# コンパイル（初回のみ）
-javac -cp "lib/*" -d classes src/main/java/CallHierarchyExporter.java
-
-# 実行
-java -cp "classes:lib/*" CallHierarchyExporter config/config.properties
-```
 
 ```bat
 rem Windows（クラスパス区切りが ; になります）
 mkdir lib
-for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) do copy "<Pleiadesのインストール先>\plugins\%P_*.jar" lib\
+for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
+do copy "C:\pleiades\2026-06\eclipse\plugins\%P_*.jar" lib\
 
-javac -cp "lib\*" -d classes src\main\java\CallHierarchyExporter.java
+"C:\pleiades\2026-06\java\17\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
 
-java -cp "classes;lib\*" CallHierarchyExporter config\config.properties
+"C:\pleiades\2026-06\java\17\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
-
-`java` / `javac` コマンド自体が見つからない場合は、Pleiadesに同梱のJRE
-（`<Pleiadesのインストール先>/../java/<バージョン>/bin/java` 等）をフルパスで
-指定してください。
-
-上記の一覧はASTパース・キャッシュ更新・CSV出力の基本経路で確認したものです。
-`entry.packages` を絞ったり `external.jars` ・ `resolver.hint.collectors` 等の
-拡張機能を使ったりすると、別のクラスが必要になり `NoClassDefFoundError` が出る
-ことがあります。その場合は、次のようにクラスロードログを取って実際に使われた
-jarを確認し、足りないものを同様に `lib` へ追加してください。
-
-```bat
-"<Pleiadesのインストール先>\..\java\<バージョン>\bin\java" ^
-     -Xlog:class+load=info:file=classload.log ^
-     -cp "classes;lib\*" CallHierarchyExporter config\config.properties
-```
-
-```powershell
-Get-Content classload.log |
-  Select-String -Pattern 'source:\s*file:/*(.+\.jar)$' |
-  ForEach-Object { Split-Path -Leaf $_.Matches[0].Groups[1].Value } |
-  Sort-Object -Unique
-```
-
-出力に並んだjarの一覧が、そのときの実行で本当に必要だったプラグインです。
-`plugins` フォルダを丸ごとクラスパスに乗せているわけではないので、EGitのSSH関連jar
-のような無関係なプラグインが混入して `ServiceConfigurationError` になる心配もありません。
 
 ### 出力されるファイル
 
@@ -452,4 +393,29 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 ```
 gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 ```
+
+---
+
+## トラブルシューティング
+実行時に別のクラスが必要になり `NoClassDefFoundError` が出た場合、
+`lib` が不足している可能性があります。
+その場合は、次のようにクラスロードログを取って実際に使われた
+jarを確認し、足りないものを同様に `lib` へ追加してください。
+
+```bat
+"<Pleiadesのインストール先>\..\java\<バージョン>\bin\java" ^
+     -Xlog:class+load=info:file=classload.log ^
+     -cp "classes;lib\*" CallHierarchyExporter config\config.properties
+```
+
+```powershell
+Get-Content classload.log |
+  Select-String -Pattern 'source:\s*file:/*(.+\.jar)$' |
+  ForEach-Object { Split-Path -Leaf $_.Matches[0].Groups[1].Value } |
+  Sort-Object -Unique
+```
+
+出力に並んだjarの一覧が、そのときの実行で本当に必要だったプラグインです。
+`plugins` フォルダを丸ごとクラスパスに乗せているわけではないので、EGitのSSH関連jar
+のような無関係なプラグインが混入して `ServiceConfigurationError` になる心配もありません。
 
