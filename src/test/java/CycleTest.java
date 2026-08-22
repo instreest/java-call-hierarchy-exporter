@@ -35,7 +35,7 @@ public class CycleTest {
         CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(d.resolve(name+".properties"));
         CallHierarchyExporter.CallGraph g=CallHierarchyExporter.CallGraph.buildFrom(cf.cacheFile);
         int[] roots={g.methods.idOf("p.Root#run()")};
-        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding,cf.outputBom,cf.outputDelimiter);
         new CallHierarchyExporter.StreamingTreeWalker(g,cf,w).walkAll(roots); w.close();
         List<String> L=Files.readAllLines(cf.outputCsv,Charset.forName("MS932"));
         L.forEach(x->System.out.println("      "+x));

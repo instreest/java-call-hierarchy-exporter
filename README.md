@@ -20,7 +20,8 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 | 型解決できなかった呼び出しの記録 | `unresolved-calls.csv` |
 | 他チーム・他リポジトリのjarからの被参照 | `external-usage.csv` |
 
-出力はすべてMS932（Shift_JIS）なので、Excelでそのまま開けます。
+出力はすべてMS932（Shift_JIS）のCSVが既定なので、Excelでそのまま開けます。
+タブ区切りやUTF-8（BOM付き）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
 
 ---
 
@@ -256,6 +257,34 @@ entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
 ---
 
 ## 出力ファイル
+
+### 区切り文字・文字コードのカスタマイズ
+
+すべての出力ファイル（`call-hierarchy.csv`・`methods.csv`・`edges.csv`・`resolutions.csv`・
+`unresolved-calls.csv`・`external-usage.csv`・`external-unmatched.csv`）は、次の2つの設定で
+形式を変更できます。
+
+```properties
+# 区切り文字。COMMA（既定・通常のCSV）か TAB。
+output.delimiter=COMMA
+
+# 文字コード。既定は MS932（Shift_JIS）。
+#   UTF-8-BOM … BOM付きUTF-8。ExcelがUTF-8と正しく認識して開ける
+#   UTF-8     … BOM無し。Excelで直接開くと文字化けする点に注意
+output.encoding=MS932
+```
+
+**タブ区切りにしたい場合**（`output.delimiter=TAB`）: フィールドにカンマを含むデータが
+多く見づらい場合や、区切り文字の面で確実にExcelへ取り込みたい場合に使います。
+**ダブルクリックでExcelに開かせたい場合は、出力先の拡張子を `.csv` のままにせず `.txt` に
+してください**（`output.csv=./output/call-hierarchy.txt` のように指定）。`.csv` のまま
+だとOSの「リスト区切り記号」設定に従ってカンマ区切りとして解釈されてしまい、タブ区切りに
+なりません。
+
+**UTF-8で開きたい場合**（`output.encoding=UTF-8-BOM`）: 既定のMS932はJIS第一・第二水準外の
+文字（一部の人名・機種依存文字など）を `?` に置換してしまいますが、UTF-8ならその制約が
+ありません。`UTF-8-BOM` を指定するとファイル先頭にBOMが付き、Excelでダブルクリックしても
+文字化けせずに開けます（BOM無しの `UTF-8` は、Excelで直接開くと文字化けするため非推奨です）。
 
 ### `call-hierarchy.csv` — 呼び出し階層
 
