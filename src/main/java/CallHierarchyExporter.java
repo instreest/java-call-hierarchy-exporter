@@ -51,6 +51,7 @@ import java.io.IOException;
 import java.io.DataInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
@@ -216,7 +217,8 @@ public class CallHierarchyExporter {
         }
 
         long rows;
-        CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(config.outputCsv, config.outputEncoding);
+        CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
+                config.outputCsv, config.outputEncoding, config.outputBom, config.outputDelimiter);
         try {
             rows = new StreamingTreeWalker(graph, config, writer).walkAll(entries);
         } finally {
@@ -474,6 +476,10 @@ public class CallHierarchyExporter {
 
         /** CSVの出力文字コード。Excelでそのまま開けるよう既定はMS932(Shift_JIS) */
         final Charset outputEncoding;
+        /** output.encoding=UTF-8-BOM のとき、ファイル先頭にBOMを書くか */
+        final boolean outputBom;
+        /** 出力ファイルの区切り文字（既定はカンマ=CSV）。TABにするとタブ区切りになる */
+        final String outputDelimiter;
 
         Config(Path configPath) throws IOException {
             Path abs = configPath.toAbsolutePath().normalize();
@@ -545,7 +551,24 @@ public class CallHierarchyExporter {
                     resolvePath(p.getProperty("external.usage.csv", "./output/external-usage.csv"));
             this.externalUnmatchedCsv =
                     resolvePath(p.getProperty("external.unmatched.csv", "./output/external-unmatched.csv"));
-            this.outputEncoding = Charset.forName(p.getProperty("output.encoding", "MS932").trim());
+            String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
+            if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
+                this.outputEncoding = StandardCharsets.UTF_8;
+                this.outputBom = true;
+            } else {
+                this.outputEncoding = Charset.forName(encRaw);
+                this.outputBom = false;
+            }
+
+            String delimRaw = p.getProperty("output.delimiter", "COMMA").trim().toUpperCase();
+            if ("TAB".equals(delimRaw)) {
+                this.outputDelimiter = "\t";
+            } else if ("COMMA".equals(delimRaw)) {
+                this.outputDelimiter = ",";
+            } else {
+                throw new IllegalArgumentException(
+                        "output.delimiter は COMMA か TAB を指定してください: " + delimRaw);
+            }
         }
 
         /** 相対パスは設定ファイルのあるディレクトリを起点に解決する */
@@ -905,11 +928,12 @@ public class CallHierarchyExporter {
 
             BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
             BufferedWriter unresolvedOut =
-                    Csv.writer(config.unresolvedCsv, config.outputEncoding);
+                    Csv.writer(config.unresolvedCsv, config.outputEncoding, config.outputBom);
             try {
                 cacheOut.write(CacheFormat.VERSION);
                 cacheOut.newLine();
-                unresolvedOut.write("file,line,callerMethod,expression,reason");
+                unresolvedOut.write(String.join(config.outputDelimiter,
+                        "file", "line", "callerMethod", "expression", "reason"));
                 unresolvedOut.newLine();
 
                 // --- パス1: 旧キャッシュのストリーミングコピー ---
@@ -931,7 +955,7 @@ public class CallHierarchyExporter {
                         // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
                         FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
                         writeBlock(fa, cacheOut);
-                        result.unresolvedCount += writeUnresolved(fa, unresolvedOut);
+                        result.unresolvedCount += writeUnresolved(fa, unresolvedOut, config.outputDelimiter);
                         result.parsed++;
                     } catch (Exception e) {
                         result.failed++;
@@ -1002,7 +1026,8 @@ public class CallHierarchyExporter {
                         if (t == 'U') {
                             String[] f = line.split(CacheFormat.SEP, -1);
                             if (f.length >= 5) {
-                                unresolvedOut.write(String.join(",", Csv.esc(currentPath), f[1],
+                                unresolvedOut.write(String.join(config.outputDelimiter,
+                                        Csv.esc(currentPath), f[1],
                                         Csv.esc(f[2]), Csv.esc(f[3]), Csv.esc(f[4])));
                                 unresolvedOut.newLine();
                                 unresolved++;
@@ -1051,9 +1076,10 @@ public class CallHierarchyExporter {
             }
         }
 
-        private static long writeUnresolved(FileAnalysis fa, BufferedWriter w) throws IOException {
+        private static long writeUnresolved(FileAnalysis fa, BufferedWriter w, String delimiter)
+                throws IOException {
             for (UnresolvedCall u : fa.unresolved) {
-                w.write(String.join(",", Csv.esc(fa.relativePath), String.valueOf(u.line),
+                w.write(String.join(delimiter, Csv.esc(fa.relativePath), String.valueOf(u.line),
                         Csv.esc(u.callerMethodKey), Csv.esc(u.expression), Csv.esc(u.reason)));
                 w.newLine();
             }
@@ -2389,9 +2415,10 @@ public class CallHierarchyExporter {
             // 同じ呼び出し先は何度も現れるので、メソッド単位で1行にまとめる
             boolean[] done = new boolean[g.methodCount()];
             Progress pg = new Progress("具象クラス解決", g.methodCount());
-            BufferedWriter w = Csv.writer(config.resolutionsCsv, config.outputEncoding);
+            BufferedWriter w = Csv.writer(config.resolutionsCsv, config.outputEncoding, config.outputBom);
             try {
-                w.write("declaredMethod,bindKind,label,candidateCount,candidates");
+                w.write(String.join(config.outputDelimiter,
+                        "declaredMethod", "bindKind", "label", "candidateCount", "candidates"));
                 w.newLine();
                 for (int caller = 0; caller < g.methodCount(); caller++) {
                     pg.step(caller + 1);
@@ -2432,7 +2459,7 @@ public class CallHierarchyExporter {
                             }
                             cands.append(g.methods.typeFqn(r.targets[i]));
                         }
-                        w.write(String.join(",",
+                        w.write(String.join(config.outputDelimiter,
                                 Csv.esc(g.methods.typeFqn(callee) + "#" + g.methods.signature(callee)),
                                 String.valueOf(bk), r.label,
                                 String.valueOf(r.targets.length), Csv.esc(cands.toString())));
@@ -2498,10 +2525,10 @@ public class CallHierarchyExporter {
             boolean[] reachable = g.reachableFrom(roots);
 
             Progress pg = new Progress("メソッド一覧の出力", g.methodCount());
-            BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding);
+            BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding, config.outputBom);
             try {
-                w.write("method,declaringType,typeKind,file,line,hasBody,"
-                        + "inDegree,outDegree,role,reachable");
+                w.write(String.join(config.outputDelimiter, "method", "declaringType", "typeKind",
+                        "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable"));
                 w.newLine();
                 for (int id = 0; id < g.methodCount(); id++) {
                     pg.step(id + 1);
@@ -2531,7 +2558,7 @@ public class CallHierarchyExporter {
                     if (!reachable[id]) {
                         st.unreachable++;
                     }
-                    w.write(String.join(",",
+                    w.write(String.join(config.outputDelimiter,
                             Csv.esc(g.methods.shortLabel(id)),
                             Csv.esc(g.methods.typeFqn(id)),
                             String.valueOf(g.kindOf(g.methods.typeFqn(id))),
@@ -2561,10 +2588,10 @@ public class CallHierarchyExporter {
         static long writeEdges(CallGraph g, Config config) throws IOException {
             long rows = 0;
             Progress pg = new Progress("エッジ一覧の出力", g.methodCount());
-            BufferedWriter w = Csv.writer(config.edgesCsv, config.outputEncoding);
+            BufferedWriter w = Csv.writer(config.edgesCsv, config.outputEncoding, config.outputBom);
             try {
-                w.write("caller,callee,callerFile,callLine,bindKind,resolution,"
-                        + "candidateCount,declaredCallee");
+                w.write(String.join(config.outputDelimiter, "caller", "callee", "callerFile",
+                        "callLine", "bindKind", "resolution", "candidateCount", "declaredCallee"));
                 w.newLine();
                 for (int caller = 0; caller < g.methodCount(); caller++) {
                     pg.step(caller + 1);
@@ -2574,7 +2601,7 @@ public class CallHierarchyExporter {
                         CallGraph.Resolution r = g.resolveEdge(e, bk);
                         int declared = g.calleeIds[e];
                         for (int t : r.targets) {
-                            w.write(String.join(",",
+                            w.write(String.join(config.outputDelimiter,
                                     Csv.esc(g.methods.shortLabel(caller)),
                                     Csv.esc(g.methods.shortLabel(t)),
                                     Csv.esc(callerFile == null ? "" : callerFile),
@@ -2797,12 +2824,14 @@ public class CallHierarchyExporter {
             int[] refCount = new int[g.methodCount()];
 
             Progress pg = new Progress("外部jarの被参照スキャン", jars.size());
-            BufferedWriter hit = Csv.writer(config.externalUsageCsv, config.outputEncoding);
-            BufferedWriter miss = Csv.writer(config.externalUnmatchedCsv, config.outputEncoding);
+            BufferedWriter hit = Csv.writer(config.externalUsageCsv, config.outputEncoding, config.outputBom);
+            BufferedWriter miss = Csv.writer(config.externalUnmatchedCsv, config.outputEncoding, config.outputBom);
             try {
-                hit.write("method,declaringType,jar,referencingClass,matchKind");
+                hit.write(String.join(config.outputDelimiter,
+                        "method", "declaringType", "jar", "referencingClass", "matchKind"));
                 hit.newLine();
-                miss.write("jar,referencingClass,ownerType,method,params,reason");
+                miss.write(String.join(config.outputDelimiter,
+                        "jar", "referencingClass", "ownerType", "method", "params", "reason"));
                 miss.newLine();
 
                 for (int j = 0; j < jars.size(); j++) {
@@ -2838,7 +2867,7 @@ public class CallHierarchyExporter {
                                 if (id >= 0) {
                                     String kind = g.methods.typeFqn(id).equals(normalize(owner))
                                             ? "EXACT" : "INHERITED";
-                                    hit.write(String.join(",",
+                                    hit.write(String.join(config.outputDelimiter,
                                             Csv.esc(g.methods.shortLabel(id)),
                                             Csv.esc(g.methods.typeFqn(id)),
                                             Csv.esc(jarName),
@@ -2854,7 +2883,7 @@ public class CallHierarchyExporter {
                                     // 照合先が存在しないが、これは版の食い違いではない。
                                     // 「誰がこのクラスを生成しているか」は影響調査で有用なので
                                     // 被参照として記録する。
-                                    hit.write(String.join(",",
+                                    hit.write(String.join(config.outputDelimiter,
                                             Csv.esc(simpleOf(owner) + ".<init>"),
                                             Csv.esc(owner), Csv.esc(jarName),
                                             Csv.esc(refs.thisClass), "IMPLICIT_CTOR"));
@@ -2864,7 +2893,7 @@ public class CallHierarchyExporter {
                                     // 自分の型への参照なのに一致するメソッドが無い。
                                     // 相手が古い版のjarに対してビルドされている可能性がある。
                                     // 「使われていない」と即断しないための記録。
-                                    miss.write(String.join(",",
+                                    miss.write(String.join(config.outputDelimiter,
                                             Csv.esc(jarName), Csv.esc(refs.thisClass),
                                             Csv.esc(owner), Csv.esc(r[1]), Csv.esc(r[2]),
                                             "自分の型だが一致するメソッドが無い（版differ等）"));
@@ -3225,10 +3254,13 @@ public class CallHierarchyExporter {
 
         private final BufferedWriter writer;
         private final StringBuilder buf = new StringBuilder(512);
+        private final String delim;
 
-        CallHierarchyCsvWriter(Path outputCsv, Charset encoding) throws IOException {
-            this.writer = Csv.writer(outputCsv, encoding);
-            writer.write("caller,callee,note,callHierarchy");
+        CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom, String delimiter)
+                throws IOException {
+            this.writer = Csv.writer(outputCsv, encoding, bom);
+            this.delim = delimiter;
+            writer.write(String.join(delim, "caller", "callee", "note", "callHierarchy"));
             writer.newLine();
         }
 
@@ -3239,16 +3271,16 @@ public class CallHierarchyExporter {
             // caller: 呼び出し元が「このノードを呼んでいる行」を指すスタックトレース形式。
             // Eclipse の Java Stack Trace Console に貼ればソースへ飛べる。
             if (depth == 0) {
-                buf.append(',');
+                buf.append(delim);
             } else {
                 int parent = pathMethod[depth - 1];
-                buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(',');
+                buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(delim);
             }
 
             // callee: Excelのフィルタで選べるよう、行番号を含まない安定した表記にする。
             // 行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばって使えなくなる。
             int self = pathMethod[depth];
-            buf.append(Csv.esc(mt.shortLabel(self))).append(',');
+            buf.append(Csv.esc(mt.shortLabel(self))).append(delim);
 
             // note: 打ち切り理由や解決の由来。callee列に混ぜるとフィルタが壊れ、
             // callHierarchyの末尾に付けると行末grepが壊れるため独立した列に置く。
@@ -3257,7 +3289,7 @@ public class CallHierarchyExporter {
             // callHierarchy: rootから現ノードまでを1ノード1列で展開。
             // 必ず最終列に置く（grep "メソッド名$" の行末マッチを成立させるため）。
             for (int i = 0; i <= depth; i++) {
-                buf.append(',').append(Csv.esc(mt.shortLabel(pathMethod[i])));
+                buf.append(delim).append(Csv.esc(mt.shortLabel(pathMethod[i])));
             }
             writer.write(buf.toString());
             writer.newLine();
@@ -3289,8 +3321,11 @@ public class CallHierarchyExporter {
          * 内部キーに紛れ込む記号など）が来ても落ちないよう、置換動作にしている。
          * 既定の Files.newBufferedWriter は変換不可文字で例外を投げるため、
          * ここでエンコーダを明示的に組み立てている。
+         *
+         * bom=true のときは、ExcelがUTF-8と正しく認識できるよう
+         * ファイル先頭にUTF-8のBOM（EF BB BF）を書く。
          */
-        static BufferedWriter writer(Path path, Charset cs) throws IOException {
+        static BufferedWriter writer(Path path, Charset cs, boolean bom) throws IOException {
             Path parent = path.toAbsolutePath().getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
@@ -3298,14 +3333,23 @@ public class CallHierarchyExporter {
             CharsetEncoder enc = cs.newEncoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE);
-            return new BufferedWriter(new OutputStreamWriter(Files.newOutputStream(path), enc));
+            OutputStream os = Files.newOutputStream(path);
+            if (bom) {
+                os.write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
+            }
+            return new BufferedWriter(new OutputStreamWriter(os, enc));
         }
 
+        /**
+         * CSV/TSVエスケープ。区切り文字がカンマ・タブのどちらであっても安全なように、
+         * カンマ・タブ・ダブルクォート・改行のいずれかを含む場合はダブルクォートで囲む。
+         */
         static String esc(String s) {
             if (s == null) {
                 return "";
             }
-            if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+            if (s.indexOf(',') >= 0 || s.indexOf('\t') >= 0
+                    || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
                 return "\"" + s.replace("\"", "\"\"") + "\"";
             }
             return s;
@@ -3427,10 +3471,20 @@ cache.enabled=true
 cache.file=./.cache/analysis-cache.tsv
 
 # --- 出力 -----------------------------------------------------------
-# CSVの出力文字コード。Excelでそのまま開けるよう既定は MS932（Shift_JIS）。
-# UTF-8 で扱いたい場合は UTF-8 を指定する（Excelで開くとBOM無しのため文字化けする点に注意）。
-# MS932に変換できない文字は '?' に置換される（例外にはしない）。
-output.encoding=MS932
+# 出力ファイルの文字コード。既定はUTF-8-BOM（BOM付きUTF-8）。
+#   UTF-8-BOM  … BOM付きUTF-8。既定。ExcelがUTF-8と正しく認識して開ける
+#   UTF-8      … BOM無しのUTF-8。Excelで直接開くと文字化けする点に注意
+#   MS932      … Shift_JIS。MS932に変換できない文字は '?' に置換される（例外にはしない）
+output.encoding=UTF-8-BOM
+
+# 出力ファイルの区切り文字。既定はカンマ区切り（CSV）。
+#   COMMA … 通常のCSV（既定）
+#   TAB   … タブ区切り。フィールドにカンマを含むデータが多い場合や、
+#           MS932とExcelの相性問題を避けたい場合に有効。
+#           ダブルクリックでExcelに開かせたい場合は、拡張子を.csvのままにせず
+#           .txtにしてください（.csvはOSの「リスト区切り記号」設定でカンマ区切り
+#           として解釈されるため、拡張子を変えないとタブ区切りとして開かれません）
+output.delimiter=COMMA
 
 output.csv=./output/call-hierarchy.csv
 unresolved.csv=./output/unresolved-calls.csv

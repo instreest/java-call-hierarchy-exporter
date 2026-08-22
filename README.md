@@ -20,12 +20,98 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 | 型解決できなかった呼び出しの記録 | `unresolved-calls.csv` |
 | 他チーム・他リポジトリのjarからの被参照 | `external-usage.csv` |
 
-出力はすべてMS932（Shift_JIS）なので、Excelでそのまま開けます。
+出力はすべてUTF-8（BOM付き）のCSVが既定なので、Excelでそのまま開けます。
+タブ区切りやMS932（Shift_JIS）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
 
 ---
+
+## Getting Started
+
+このリポジトリを最小構成でとりあえず試す手順です。実行しなくても、下記のサンプルを見るだけで
+出力のイメージがつかめるようにしています。各設定項目のカスタマイズ方法や出力ファイルの詳細な
+意味・注意点は、このセクション以降にまとめています。
+
+### 1. ビルドする
+
+```bash
+gradle dist
+```
+
+`build/dist/` に、実行に必要な一式（jar・依存jar・設定サンプル・実行スクリプト）がまとまります。
+
+### 2. 設定ファイルを用意する
+
+`config/config.properties` をコピーし、**`project.root` だけ**書き換えます。他の項目は
+空・既定値のままで構いません。
+
+```properties
+# Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
+project.root=../../my-legacy-project
+```
+
+`entry.packages`（起点にするパッケージ）を空のままにすると「全体モード」になり、起点を
+意識せずソース上の全メソッドの呼び出し状況を一括で出力します。**まず試すだけならこれが
+一番手間のかからない方法です。**
+
+### 3. 実行する
+
+```bash
+./run.sh config/config.properties
+```
+
+### 4. 出力されるファイル
+
+最小構成（`entry.packages` 未指定の全体モード）では、次の3ファイルが自動的に出力されます。
+列の詳しい意味は後述の [出力ファイル](#出力ファイル) を参照してください。
+
+#### `methods.csv` — ソース上の全メソッドと呼び出し状況
+
+```csv
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable
+OrderAction.execute,jp.co.xxx.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1
+OrderService.findOrder,jp.co.xxx.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1
+OrderDao.selectById,jp.co.xxx.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0
+OrderDaoImpl.selectById,jp.co.xxx.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1
+```
+
+`role` 列を見るだけで、「呼び出し元が無い箇所（`ENTRY_CANDIDATE`）」「共通処理で改修時の
+影響範囲が広い箇所（`HUB`）」などを一覧で仕分けできます。
+
+#### `edges.csv` — 解決後の全呼び出し関係
+
+```csv
+caller,callee,callerFile,callLine,bindKind,resolution,candidateCount,declaredCallee
+OrderAction.execute,OrderService.findOrder,OrderAction.java,50,V,NO_OVERRIDE,1,jp.co.xxx.service.OrderService#findOrder()
+OrderService.findOrder,OrderDaoImpl.selectById,OrderService.java,25,V,SINGLE_IMPL,1,jp.co.xxx.dao.OrderDao#selectById()
+```
+
+インターフェース経由の呼び出し（`OrderDao#selectById()`）が、実装クラス
+（`OrderDaoImpl.selectById`）に解決されていることが分かります。
+
+#### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
+
+`entry.auto=true`（既定）のため、`methods.csv` で `ENTRY_CANDIDATE` になったメソッドを
+自動的に起点にして、`call-hierarchy.csv` も合わせて出力されます。
+
+```csv
+caller,callee,note,callHierarchy
+,OrderAction.execute,,OrderAction.execute
+at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,,OrderAction.execute,OrderService.findOrder
+at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,解決:SINGLE_IMPL,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+```
+
+---
+
+特定のパッケージだけを起点にしたい場合の設定や、各出力ファイルの列の意味・既知の限界などは
+以降のセクションで説明します。
+
 ---
 
 ## 使い方
+
+とりあえず試すだけなら [Getting Started](#getting-started) の手順（`project.root` のみ設定
+する全体モード）で十分です。ここでは、特定のパッケージだけを起点にしたい場合など、設定を
+作り込みたいときの詳細を説明します。
 
 ### 1. 設定ファイルを用意する
 
@@ -66,6 +152,38 @@ entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
 ---
 
 ## 出力ファイル
+
+### 区切り文字・文字コードのカスタマイズ
+
+すべての出力ファイル（`call-hierarchy.csv`・`methods.csv`・`edges.csv`・`resolutions.csv`・
+`unresolved-calls.csv`・`external-usage.csv`・`external-unmatched.csv`）は、次の2つの設定で
+形式を変更できます。
+
+```properties
+# 区切り文字。COMMA（既定・通常のCSV）か TAB。
+output.delimiter=COMMA
+
+# 文字コード。既定は UTF-8-BOM（BOM付きUTF-8）。
+#   UTF-8-BOM … BOM付きUTF-8。既定。ExcelがUTF-8と正しく認識して開ける
+#   UTF-8     … BOM無し。Excelで直接開くと文字化けする点に注意
+#   MS932     … Shift_JIS。SJIS前提の既存ツールと連携したい場合
+output.encoding=UTF-8-BOM
+```
+
+**タブ区切りにしたい場合**（`output.delimiter=TAB`）: フィールドにカンマを含むデータが
+多く見づらい場合や、区切り文字の面で確実にExcelへ取り込みたい場合に使います。
+**ダブルクリックでExcelに開かせたい場合は、出力先の拡張子を `.csv` のままにせず `.txt` に
+してください**（`output.csv=./output/call-hierarchy.txt` のように指定）。`.csv` のまま
+だとOSの「リスト区切り記号」設定に従ってカンマ区切りとして解釈されてしまい、タブ区切りに
+なりません。
+
+**既定はUTF-8（BOM付き）です**。BOMが付いているため、ExcelでダブルクリックしてもUTF-8と
+正しく認識され、文字化けせずに開けます。BOM無しの `UTF-8` は、Excelで直接開くと文字化け
+するため注意してください。
+
+**MS932（Shift_JIS）に変更したい場合**（`output.encoding=MS932`）: 既存のExcelマクロや
+社内ツールがSJIS前提で作られている場合などに使います。ただしMS932はJIS第一・第二水準外の
+文字（一部の人名・機種依存文字など）を `?` に置換してしまう点に注意してください。
 
 ### `call-hierarchy.csv` — 呼び出し階層
 

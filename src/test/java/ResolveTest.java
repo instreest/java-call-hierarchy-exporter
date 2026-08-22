@@ -32,7 +32,7 @@ public class ResolveTest {
     static CallHierarchyExporter.Config cfg(Path dir,String name,String... extra) throws Exception {
         List<String> L=new ArrayList<>(List.of("project.root=.","entry.packages=p.*",
           "output.csv=./"+name+".csv","cache.file=./"+name+".tsv","resolutions.csv=./"+name+"-res.csv",
-          "max.depth=6"));
+          "max.depth=6","output.encoding=MS932"));
         L.addAll(List.of(extra));
         Path f=dir.resolve(name+".properties");
         Files.writeString(f,String.join("\n",L),StandardCharsets.UTF_8);
@@ -82,7 +82,7 @@ public class ResolveTest {
         CallHierarchyExporter.Config cf=cfg(d,"t2","cha.expand=false");
         Files.copy(c2,cf.cacheFile,StandardCopyOption.REPLACE_EXISTING);
         CallHierarchyExporter.CallGraph g4=CallHierarchyExporter.CallGraph.buildFrom(cf.cacheFile);
-        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding,cf.outputBom,cf.outputDelimiter);
         long rows=new CallHierarchyExporter.StreamingTreeWalker(g4,cf,w).walkAll(new int[]{g4.methods.idOf("p.Svc#run()")});
         w.close();
         List<String> L=Files.readAllLines(cf.outputCsv, java.nio.charset.Charset.forName("MS932"));
@@ -94,7 +94,7 @@ public class ResolveTest {
         CallHierarchyExporter.Config cf5=cfg(d,"t5","cha.expand=true","cha.max.candidates=20");
         Files.copy(c2,cf5.cacheFile,StandardCopyOption.REPLACE_EXISTING);
         CallHierarchyExporter.CallGraph g5=CallHierarchyExporter.CallGraph.buildFrom(cf5.cacheFile);
-        CallHierarchyExporter.CallHierarchyCsvWriter w5=new CallHierarchyExporter.CallHierarchyCsvWriter(cf5.outputCsv,cf5.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w5=new CallHierarchyExporter.CallHierarchyCsvWriter(cf5.outputCsv,cf5.outputEncoding,cf5.outputBom,cf5.outputDelimiter);
         new CallHierarchyExporter.StreamingTreeWalker(g5,cf5,w5).walkAll(new int[]{g5.methods.idOf("p.Svc#run()")}); w5.close();
         List<String> L5=Files.readAllLines(cf5.outputCsv, java.nio.charset.Charset.forName("MS932"));
         check("Base.m と Derived.m の両方が出る",

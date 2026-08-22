@@ -46,7 +46,7 @@ public class SmokeTest {
             "exclude.packages=java.**, jp.co.xxx.common.util.**",
             "exclude.mode=PRUNE","max.depth=6","max.children.per.node=50",
             "output.csv=./out/call-hierarchy.csv","unresolved.csv=./out/unresolved.csv",
-            "cache.file=./cache/c.tsv"), StandardCharsets.UTF_8);
+            "cache.file=./cache/c.tsv","output.encoding=MS932"), StandardCharsets.UTF_8);
 
         System.out.println("[1] 相対パス解決");
         CallHierarchyExporter.Config c = new CallHierarchyExporter.Config(cfg);
@@ -91,7 +91,7 @@ public class SmokeTest {
         int[] es = g.selectEntryPoints(c);
         check("エントリ=1", es.length==1, ""+es.length);
 
-        CallHierarchyExporter.CallHierarchyCsvWriter w = new CallHierarchyExporter.CallHierarchyCsvWriter(c.outputCsv,c.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w = new CallHierarchyExporter.CallHierarchyCsvWriter(c.outputCsv,c.outputEncoding,c.outputBom,c.outputDelimiter);
         long rows = new CallHierarchyExporter.StreamingTreeWalker(g,c,w).walkAll(es);
         w.close();
         List<String> L = Files.readAllLines(c.outputCsv, java.nio.charset.Charset.forName("MS932"));
@@ -109,7 +109,7 @@ public class SmokeTest {
             D("p","p.A","f","",1), D("p","p.B","g","",1), C(A,B,2), C(B,A,3)), StandardCharsets.UTF_8);
         CallHierarchyExporter.CallGraph g2=CallHierarchyExporter.CallGraph.buildFrom(c2);
         Path o2=c.outputCsv.getParent().resolve("cyc.csv");
-        CallHierarchyExporter.CallHierarchyCsvWriter w2=new CallHierarchyExporter.CallHierarchyCsvWriter(o2,c.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w2=new CallHierarchyExporter.CallHierarchyCsvWriter(o2,c.outputEncoding,c.outputBom,c.outputDelimiter);
         long r2=new CallHierarchyExporter.StreamingTreeWalker(g2,c,w2).walkAll(new int[]{0}); w2.close();
         check("無限ループしない", r2<20, ""+r2);
         check("循環注記あり", Files.readAllLines(o2, java.nio.charset.Charset.forName("MS932")).stream().anyMatch(s->s.contains("[CYCLE]")), "");
@@ -135,7 +135,7 @@ public class SmokeTest {
         CallHierarchyExporter.Config c3c=new CallHierarchyExporter.Config(cfg3);
         CallHierarchyExporter.CallGraph g3=CallHierarchyExporter.CallGraph.buildFrom(c3);
         long before=used();
-        CallHierarchyExporter.CallHierarchyCsvWriter w3=new CallHierarchyExporter.CallHierarchyCsvWriter(c3c.outputCsv,c3c.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w3=new CallHierarchyExporter.CallHierarchyCsvWriter(c3c.outputCsv,c3c.outputEncoding,c3c.outputBom,c3c.outputDelimiter);
         long r3=new CallHierarchyExporter.StreamingTreeWalker(g3,c3c,w3).walkAll(new int[]{0}); w3.close();
         long after=used();
         check("行数上限で打ち切られる", r3<=5000+10, ""+r3);

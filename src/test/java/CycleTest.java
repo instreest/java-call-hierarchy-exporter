@@ -29,13 +29,14 @@ public class CycleTest {
     static List<String> run(Path d,String name,List<String> cache,String... extra) throws Exception {
         Files.write(d.resolve(name+".tsv"),cache,StandardCharsets.UTF_8);
         List<String> props=new ArrayList<>(List.of("project.root=.","entry.packages=p.*",
-            "cache.file=./"+name+".tsv","output.csv=./"+name+".csv","resolutions.csv=./"+name+"r.csv"));
+            "cache.file=./"+name+".tsv","output.csv=./"+name+".csv","resolutions.csv=./"+name+"r.csv",
+            "output.encoding=MS932"));
         props.addAll(List.of(extra));
         Files.writeString(d.resolve(name+".properties"),String.join("\n",props),StandardCharsets.UTF_8);
         CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(d.resolve(name+".properties"));
         CallHierarchyExporter.CallGraph g=CallHierarchyExporter.CallGraph.buildFrom(cf.cacheFile);
         int[] roots={g.methods.idOf("p.Root#run()")};
-        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding);
+        CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding,cf.outputBom,cf.outputDelimiter);
         new CallHierarchyExporter.StreamingTreeWalker(g,cf,w).walkAll(roots); w.close();
         List<String> L=Files.readAllLines(cf.outputCsv,Charset.forName("MS932"));
         L.forEach(x->System.out.println("      "+x));
