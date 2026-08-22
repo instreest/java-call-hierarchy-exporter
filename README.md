@@ -59,38 +59,57 @@ jarのビルドや配置は不要です。依存の解決から実行まで、�
 
 #### Gradleが使えない場合（Pleiades/Eclipse環境など）
 
-Eclipse(Pleiades)がインストールされていれば、その `plugins` フォルダをそのまま
-クラスパスに指定することで、Gradleもネットワーク接続も無しに実行できます
-（実行に必要なJDT Core一式がここに含まれているため、個別にjarを集める必要はありません）。
+Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式を使って、
+Gradleもネットワーク接続も無しに実行できます。
+
+**`plugins` フォルダをそのままクラスパスに指定しないでください。** EGit（Eclipseの
+Git連携）が同梱するSSH関連jar（`org.apache.sshd.*` 等）が、無関係にもかかわらず
+`java.nio.file.spi.FileSystemProvider` の実装として登録されており、クラスパスに
+乗っただけで次のように起動時エラーになります。
+
+```
+Exception in thread "main" java.util.ServiceConfigurationError:
+java.nio.file.spi.FileSystemProvider: Provider
+org.apache.sshd.common.file.root.RootedFileSystemProvider could not be instantiated
+```
+
+そこで、`plugins` フォルダをいったん作業用の `lib` フォルダへコピーしたうえで、
+原因のSSH関連jarだけを取り除いてから使います（元のEclipseインストールは変更しません）。
 
 ```bash
 # <Pleiadesのインストール先> は環境に合わせて書き換えてください
-# 例: C:\pleiades\2024-03\java\eclipse
+# 例: C:\pleiades\2026-06\eclipse
+
+mkdir -p lib
+cp <Pleiadesのインストール先>/plugins/*.jar lib/
+rm lib/org.apache.sshd*.jar lib/org.eclipse.jgit.ssh.apache*.jar
 
 # コンパイル（初回のみ）
-javac -cp "<Pleiadesのインストール先>/eclipse/plugins/*" \
-      -d classes src/main/java/CallHierarchyExporter.java
+javac -cp "lib/*" -d classes src/main/java/CallHierarchyExporter.java
 
 # 実行
-java -cp "classes:<Pleiadesのインストール先>/eclipse/plugins/*" \
-     CallHierarchyExporter config/config.properties
+java -cp "classes:lib/*" CallHierarchyExporter config/config.properties
 ```
 
 ```bat
 rem Windows（クラスパス区切りが ; になります）
-javac -cp "<Pleiadesのインストール先>\eclipse\plugins\*" ^
-      -d classes src\main\java\CallHierarchyExporter.java
+mkdir lib
+copy "<Pleiadesのインストール先>\plugins\*.jar" lib\
+del lib\org.apache.sshd*.jar
+del lib\org.eclipse.jgit.ssh.apache*.jar
 
-java -cp "classes;<Pleiadesのインストール先>\eclipse\plugins\*" ^
-     CallHierarchyExporter config\config.properties
+javac -cp "lib\*" -d classes src\main\java\CallHierarchyExporter.java
+
+java -cp "classes;lib\*" CallHierarchyExporter config\config.properties
 ```
 
 `java` / `javac` コマンド自体が見つからない場合は、Pleiadesに同梱のJRE
-（`<Pleiadesのインストール先>/jre/bin/java` 等）をフルパスで指定してください。
+（`<Pleiadesのインストール先>/../java/<バージョン>/bin/java` 等）をフルパスで
+指定してください。
 
-大量のjarが一度にクラスパスへ乗るため、まれにクラスの衝突で動かないことがあります。
-その場合は、`org.eclipse.jdt.core_*.jar` を中心に必要なjarだけを別フォルダへ集めて
-クラスパスを絞り込んでください。
+同様の `ServiceConfigurationError` が別のjarで再発した場合は、そのエラーメッセージに
+出てくるクラス名からjarを特定し、同じように `lib` から取り除いてください
+（ssh・sftp・git関連のプラグイン名であることが多いです）。
 
 ### 出力されるファイル
 
