@@ -70,7 +70,10 @@ tasks.register('run', JavaExec) {
     group = 'application'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = mainClassName
-    jvmArgs = ['-Dfile.encoding=UTF-8']
+    // 標準出力の文字コードは明示的に固定しない。設定ファイルやCSVの読み書きは
+    // コード側で常に明示的な文字コードを使っており、ここでの指定はコンソールの
+    // ログ表示にしか効かない。固定すると、Windowsのコンソール（既定はShift_JIS系）
+    // と食い違って文字化けするため、JVM/OSの既定（＝端末に合わせた文字コード）に任せる。
 }
 
 // ---------------------------------------------------------------------------
