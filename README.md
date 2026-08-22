@@ -52,13 +52,10 @@ Gradleが使える環境かどうかで手順が変わります。
 #### Gradleが使える場合
 
 ```bash
-gradle dist
-cd build/dist
-./run.sh config/config.properties     # Windowsは run.bat
+gradle run --args="config/config.properties"
 ```
 
-`gradle dist` で、実行に必要な一式（jar・依存jar・設定サンプル・実行スクリプト）が
-`build/dist/` にまとまります。
+jarのビルドや配置は不要です。依存の解決から実行まで、この1コマンドで完結します。
 
 #### Gradleが使えない場合（Pleiades/Eclipse環境など）
 
@@ -417,6 +414,14 @@ gradle -PjdtVersion=3.29.0 dist
 ---
 
 ## ビルド（Gradle）
+
+Gradleからそのまま実行するだけなら、ビルドは不要です（[Getting Started](#getting-started)参照）。
+
+```bash
+gradle run --args="config/config.properties"
+```
+
+jarを作って他の端末に配布したい場合や、Antで実行したい場合は、次のようにビルドします。
 
 ```bash
 gradle dist

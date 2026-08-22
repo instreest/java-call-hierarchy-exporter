@@ -93,6 +93,18 @@ tasks.register('printClasspath') {
 }
 
 // ---------------------------------------------------------------------------
+// Gradleからそのまま実行する（jarのビルドやrun.shの用意が不要）
+//     gradle run --args="config/config.properties"
+// ---------------------------------------------------------------------------
+tasks.register('run', JavaExec) {
+    description = 'ツールを実行する（例: gradle run --args="config/config.properties"）'
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = mainClassName
+    jvmArgs = ['-Dfile.encoding=UTF-8']
+}
+
+// ---------------------------------------------------------------------------
 // 検証用ハーネス
 //
 // JUnitは使わず、main()を持つ検証クラスを順に実行して OK/NG を集計します。
