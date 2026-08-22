@@ -62,7 +62,7 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\main\java\CallHierarchyExporter.java
 
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
