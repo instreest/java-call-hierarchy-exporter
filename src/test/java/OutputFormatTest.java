@@ -44,7 +44,7 @@ public class OutputFormatTest {
         Path cfg=d.resolve("c.properties");
         Files.writeString(cfg,String.join("\n","project.root=.","entry.packages=jp.co.xxx.action.*",
             "output.csv=./call-hierarchy.csv","cache.file=./c.tsv","resolutions.csv=./r.csv",
-            "unresolved.csv=./u.csv"),StandardCharsets.UTF_8);
+            "unresolved.csv=./u.csv","output.delimiter=COMMA"),StandardCharsets.UTF_8);
         CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(cfg);
         CallHierarchyExporter.CallGraph g=CallHierarchyExporter.CallGraph.buildFrom(cache);
         CallHierarchyExporter.CallHierarchyCsvWriter w=new CallHierarchyExporter.CallHierarchyCsvWriter(cf.outputCsv,cf.outputEncoding,cf.outputBom,cf.outputDelimiter);
