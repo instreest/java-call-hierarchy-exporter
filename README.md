@@ -66,13 +66,17 @@ Gradleもネットワーク接続も無しに実行できます。
 
 ```bat
 rem Windows（クラスパス区切りが ; になります）
+rem 環境に合わせて次の2行だけ書き換えてください
+set PLEIADES_HOME=C:\pleiades\2026-06
+set PLEIADES_JAVA_HOME=%PLEIADES_HOME%\java\17
+
 mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
-do copy "C:\pleiades\2026-06\eclipse\plugins\%P_*.jar" lib\
+do copy "%PLEIADES_HOME%\eclipse\plugins\%P_*.jar" lib\
 
-"C:\pleiades\2026-06\java\17\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
+"%PLEIADES_JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
 
-"C:\pleiades\2026-06\java\17\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
+"%PLEIADES_JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
 ### 出力されるファイル
@@ -403,9 +407,10 @@ gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 jarを確認し、足りないものを同様に `lib` へ追加してください。
 
 ```bat
-"<Pleiadesのインストール先>\..\java\<バージョン>\bin\java" ^
+rem PLEIADES_JAVA_HOME は Getting Started で設定したものと同じです
+"%PLEIADES_JAVA_HOME%\bin\java" ^
      -Xlog:class+load=info:file=classload.log ^
-     -cp "classes;lib\*" CallHierarchyExporter config\config.properties
+     -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
 ```powershell
