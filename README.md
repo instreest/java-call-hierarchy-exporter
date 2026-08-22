@@ -60,7 +60,7 @@ set JAVA_HOME=C:\pleiades\2026-06\java\17
 
 mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
-do copy "%ECLIPSE_HOME%\eclipse\plugins\%P_*.jar" lib\
+do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
 "%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin src\main\java\CallHierarchyExporter.java
 
@@ -117,7 +117,7 @@ at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.s
 
 ## 使い方
 
-とりあえず試すだけなら [Getting Started](#getting-started) の手順（`project.root` のみ設定
+とりあえず試すだけなら [Quick start](#quick-start) の手順（`project.root` のみ設定
 する全体モード）で十分です。ここでは、特定のパッケージだけを起点にしたい場合など、設定を
 作り込みたいときの詳細を説明します。
 
@@ -389,6 +389,7 @@ gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 ---
 
 ## トラブルシューティング
+
 実行時に別のクラスが必要になり `NoClassDefFoundError` が出た場合、
 `lib` が不足している可能性があります。
 その場合は、次のようにクラスロードログを取って実際に使われた
