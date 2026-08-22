@@ -20,8 +20,8 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 | 型解決できなかった呼び出しの記録 | `unresolved-calls.csv` |
 | 他チーム・他リポジトリのjarからの被参照 | `external-usage.csv` |
 
-出力はすべてMS932（Shift_JIS）のCSVが既定なので、Excelでそのまま開けます。
-タブ区切りやUTF-8（BOM付き）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
+出力はすべてUTF-8（BOM付き）のCSVが既定なので、Excelでそのまま開けます。
+タブ区切りやMS932（Shift_JIS）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
 
 ---
 
@@ -163,10 +163,11 @@ entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
 # 区切り文字。COMMA（既定・通常のCSV）か TAB。
 output.delimiter=COMMA
 
-# 文字コード。既定は MS932（Shift_JIS）。
-#   UTF-8-BOM … BOM付きUTF-8。ExcelがUTF-8と正しく認識して開ける
+# 文字コード。既定は UTF-8-BOM（BOM付きUTF-8）。
+#   UTF-8-BOM … BOM付きUTF-8。既定。ExcelがUTF-8と正しく認識して開ける
 #   UTF-8     … BOM無し。Excelで直接開くと文字化けする点に注意
-output.encoding=MS932
+#   MS932     … Shift_JIS。SJIS前提の既存ツールと連携したい場合
+output.encoding=UTF-8-BOM
 ```
 
 **タブ区切りにしたい場合**（`output.delimiter=TAB`）: フィールドにカンマを含むデータが
@@ -176,10 +177,13 @@ output.encoding=MS932
 だとOSの「リスト区切り記号」設定に従ってカンマ区切りとして解釈されてしまい、タブ区切りに
 なりません。
 
-**UTF-8で開きたい場合**（`output.encoding=UTF-8-BOM`）: 既定のMS932はJIS第一・第二水準外の
-文字（一部の人名・機種依存文字など）を `?` に置換してしまいますが、UTF-8ならその制約が
-ありません。`UTF-8-BOM` を指定するとファイル先頭にBOMが付き、Excelでダブルクリックしても
-文字化けせずに開けます（BOM無しの `UTF-8` は、Excelで直接開くと文字化けするため非推奨です）。
+**既定はUTF-8（BOM付き）です**。BOMが付いているため、ExcelでダブルクリックしてもUTF-8と
+正しく認識され、文字化けせずに開けます。BOM無しの `UTF-8` は、Excelで直接開くと文字化け
+するため注意してください。
+
+**MS932（Shift_JIS）に変更したい場合**（`output.encoding=MS932`）: 既存のExcelマクロや
+社内ツールがSJIS前提で作られている場合などに使います。ただしMS932はJIS第一・第二水準外の
+文字（一部の人名・機種依存文字など）を `?` に置換してしまう点に注意してください。
 
 ### `call-hierarchy.csv` — 呼び出し階層
 

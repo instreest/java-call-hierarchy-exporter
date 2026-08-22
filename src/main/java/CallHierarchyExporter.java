@@ -551,7 +551,7 @@ public class CallHierarchyExporter {
                     resolvePath(p.getProperty("external.usage.csv", "./output/external-usage.csv"));
             this.externalUnmatchedCsv =
                     resolvePath(p.getProperty("external.unmatched.csv", "./output/external-unmatched.csv"));
-            String encRaw = p.getProperty("output.encoding", "MS932").trim();
+            String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
             if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
                 this.outputEncoding = StandardCharsets.UTF_8;
                 this.outputBom = true;
@@ -3471,11 +3471,11 @@ cache.enabled=true
 cache.file=./.cache/analysis-cache.tsv
 
 # --- 出力 -----------------------------------------------------------
-# 出力ファイルの文字コード。Excelでそのまま開けるよう既定は MS932（Shift_JIS）。
-#   MS932      … Shift_JIS。既定。MS932に変換できない文字は '?' に置換される（例外にはしない）
+# 出力ファイルの文字コード。既定はUTF-8-BOM（BOM付きUTF-8）。
+#   UTF-8-BOM  … BOM付きUTF-8。既定。ExcelがUTF-8と正しく認識して開ける
 #   UTF-8      … BOM無しのUTF-8。Excelで直接開くと文字化けする点に注意
-#   UTF-8-BOM  … BOM付きUTF-8。ExcelがUTF-8と正しく認識して開ける
-output.encoding=MS932
+#   MS932      … Shift_JIS。MS932に変換できない文字は '?' に置換される（例外にはしない）
+output.encoding=UTF-8-BOM
 
 # 出力ファイルの区切り文字。既定はカンマ区切り（CSV）。
 #   COMMA … 通常のCSV（既定）

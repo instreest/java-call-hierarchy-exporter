@@ -51,7 +51,7 @@ public class WholeProjectTest {
         Path cfg=d.resolve("c.properties");
         Files.writeString(cfg,String.join("\n","project.root=.","cache.file=./c.tsv",
           "output.csv=./ch.csv","methods.csv=./m.csv","edges.csv=./e.csv","resolutions.csv=./r.csv",
-          "hub.threshold=20"),StandardCharsets.UTF_8);
+          "hub.threshold=20","output.encoding=MS932"),StandardCharsets.UTF_8);
         CallHierarchyExporter.Config cf=new CallHierarchyExporter.Config(cfg);
         check("entry.packages未指定で全体モード", cf.wholeProjectMode, "");
 
