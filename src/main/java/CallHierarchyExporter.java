@@ -61,6 +61,7 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -839,12 +840,48 @@ public class CallHierarchyExporter {
             return a;
         }
 
+        /**
+         * classpathEntries をクラスパス文字列配列にする。
+         *
+         * .classpath は kind="con"（Gradle/Mavenのクラスパス・コンテナ等）を
+         * 解決できないため、そういったプロジェクトでは .classpath だけでは
+         * 依存jarが1つも分からない。その場合は、依存jarを集めたフォルダ
+         * （Gradleの application/distribution プラグインが作る lib フォルダ、
+         * 手動で集めた lib フォルダ等）を extra.classpath.entries に指定すれば、
+         * ここで直下の *.jar を自動的に展開してクラスパスに加える。
+         * （.classpath の kind="lib" と両方指定された場合は単純に合算する）
+         */
         String[] classpathArray() {
-            String[] a = new String[classpathEntries.size()];
-            for (int i = 0; i < a.length; i++) {
-                a[i] = classpathEntries.get(i).toString();
+            List<String> expanded = new ArrayList<>();
+            for (Path p : classpathEntries) {
+                if (Files.isDirectory(p)) {
+                    List<Path> jars = listJarsIn(p);
+                    if (jars.isEmpty()) {
+                        log("[WARN] クラスパスのディレクトリにjarが見つかりません: " + p);
+                    }
+                    for (Path jar : jars) {
+                        expanded.add(jar.toString());
+                    }
+                } else {
+                    expanded.add(p.toString());
+                }
             }
-            return a;
+            return expanded.toArray(new String[0]);
+        }
+
+        /** ディレクトリ直下（サブフォルダは見ない）の *.jar を、ファイル名順で列挙する */
+        private static List<Path> listJarsIn(Path dir) {
+            List<Path> jars = new ArrayList<>();
+            try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.jar")) {
+                for (Path p : ds) {
+                    jars.add(p);
+                }
+            } catch (IOException e) {
+                log("[WARN] クラスパスのディレクトリを読み取れません: " + dir + " (" + e + ")");
+                return jars;
+            }
+            jars.sort((a, b) -> a.getFileName().toString().compareTo(b.getFileName().toString()));
+            return jars;
         }
 
         /** ASTParser.setUnitName に渡すための、ソースフォルダからの相対パス */

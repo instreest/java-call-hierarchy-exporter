@@ -273,6 +273,16 @@ jp.co.xxx.dao.CommonDao#execute(),V,CHA,2,jp.co.xxx.dao.impl.UserDaoImpl / jp.co
 **最初の実行では、まずこの件数を確認してください。** 異常に多い場合は
 `extra.classpath.entries` の設定漏れが疑われます。
 
+**GradleやMavenをEclipse連携（Buildship / m2e）で使っているプロジェクト**は
+特に注意してください。`.classpath` の依存jarは `kind="con"`（クラスパス・
+コンテナへの参照）になっており、実際のjarパスがファイルに書かれないため、
+このツールは依存関係を1つも認識できません（`kind="src"` によるソース
+フォルダの特定だけは引き続き機能します）。この場合は、依存jarを1か所に
+集めたフォルダ（Gradleの`application`/`distribution`プラグインが作る
+`lib`フォルダ等）を `extra.classpath.entries` に指定してください。
+ディレクトリを指定すると、直下の `*.jar` が自動的に全部クラスパスへ
+追加されます。
+
 ### `external-usage.csv` — 他リポジトリからの被参照
 
 自分のコードを呼んでいる側のjarを `external.jars` に指定すると出力されます。
