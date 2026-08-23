@@ -1,5 +1,7 @@
 build/
 .gradle/
+.gradle-home/
+gradle/wrapper/dists/
 lib/
 out/
 dist/
