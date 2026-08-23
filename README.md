@@ -41,8 +41,18 @@ project.root=../../my-legacy-project
 ### 2. 実行する
 #### Gradleが使える場合
 
+同梱のGradle Wrapperを使います。Gradle本体・依存jarとも初回実行時にプロジェクト
+フォルダ内（`gradle/wrapper/dists/`・`.gradle-home/`）にダウンロードされ、
+`~/.gradle` 等の外部は汚しません。事前にGradleをインストールしておく必要もありません。
+
 ```bash
-gradle run --args="config/config.properties"
+# Linux/macOS
+./gradlew run --args="config/config.properties"
+```
+
+```bat
+rem Windows
+gradlew.bat run --args="config/config.properties"
 ```
 
 #### Gradleが使えない場合（Pleiades/Eclipse環境など）
@@ -388,7 +398,7 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 手元のJDKで動く版を選んでください。バージョンはビルド時に指定できます。
 
 ```
-gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
+./gradlew -PjdtVersion=3.29.0 run --args="config/config.properties"
 ```
 
 ---
