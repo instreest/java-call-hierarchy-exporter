@@ -140,17 +140,15 @@ public class CallHierarchyExporter {
     // ================================================================
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
-            System.err.println("エラー: 起動に失敗しました。config.propertiesのパスが指定されていません。");
-            System.err.println("使い方: java ... "
-                    + CallHierarchyExporter.class.getName() + " <config.propertiesのパス>");
-            System.exit(1);
-            return;
+    	String confitPath = (args.length > 0) ? args[0] : "config/config.properties";
+        if (!(args.length > 0)) {
+            System.err.println("config.propertiesのパスが指定されていません。");
+            System.err.println("既定値の「config/config.properties」で実行します。");
         }
 
         long start = System.currentTimeMillis();
-        Config config = new Config(Paths.get(args[0]));
-        log("[main] 設定: " + Paths.get(args[0]).toAbsolutePath().normalize());
+        Config config = new Config(Paths.get(confitPath));
+        log("[main] 設定: " + Paths.get(confitPath).toAbsolutePath().normalize());
         log("[main] プロジェクトルート: " + config.projectRoot);
 
         EclipseProjectLayout layout = new EclipseProjectLayout(config);
