@@ -1,27 +1,6 @@
 # java-call-hierarchy-exporter
 
-Eclipseプロジェクトを対象に、Javaのメソッド呼び出し階層を一括抽出してCSVに出力するツールです。
-Eclipse IDE の起動は不要で、通常のJavaアプリとして動作します。
-
-Eclipse標準の「呼び出し階層」ビューに対して、次の点を解決することを目的にしています。
-
-- コピーすると階層構造が失われる
-- 再帰的に一括でリスト化できない
-- ワークスペース全体の呼び出し階層を作れない
-
-## できること
-
-| 機能 | 出力 |
-|---|---|
-| 指定した起点からの呼び出し階層 | `call-hierarchy.csv` |
-| ソース上の全メソッドの呼び出し状況（全体モード） | `methods.csv` |
-| 解決後の全呼び出し関係 | `edges.csv` |
-| インターフェース経由の呼び出しの具象クラス解決 | `resolutions.csv` |
-| 型解決できなかった呼び出しの記録 | `unresolved-calls.csv` |
-| 他チーム・他リポジトリのjarからの被参照 | `external-usage.csv` |
-
-出力はすべてUTF-8（BOM付き）のCSVが既定なので、Excelでそのまま開けます。
-タブ区切りやMS932（Shift_JIS）への変更も可能です（[出力ファイル](#出力ファイル)参照）。
+Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSVに出力するツールです。
 
 ---
 
@@ -31,35 +10,14 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 
 ### 1. 設定ファイルを編集する
 
-`config/config.properties` の **`project.root`** を書き換えます。
-
-```properties
-# 解析対象プロジェクトのルート
-project.root=../../my-legacy-project
-```
+`config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。
 
 ### 2. 実行する
-#### Gradleが使える場合
 
-同梱のGradle Wrapperを使います。Gradle本体・依存jarとも初回実行時にプロジェクト
-フォルダ内（`gradle/wrapper/dists/`・`.gradle-home/`）にダウンロードされ、
-`~/.gradle` 等の外部は汚しません。事前にGradleをインストールしておく必要もありません。
+#### Pleiades/Eclipse環境
 
-```bash
-# Linux/macOS
-./gradlew run --args="config/config.properties"
-```
-
-```bat
-rem Windows
-gradlew.bat run --args="config/config.properties"
-```
-
-#### Gradleが使えない場合（Pleiades/Eclipse環境など）
-
-Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式を使って、
-Gradleもネットワーク接続も無しに実行できます。
-実行に必要なプラグインjarを`lib` フォルダに集めて使います（元のEclipseインストールは変更しません）。
+Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
+実行に必要なjarを`lib` フォルダに集めて使います。
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bat
@@ -68,53 +26,48 @@ rem 環境に合わせて次の2行を書き換えてください
 set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
 set JAVA_HOME=C:\pleiades\2026-06\java\17
 
+rem　実行に必要なjarの収集
 mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
+rem コンパイル
 "%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\main\java\CallHierarchyExporter.java
 
+rem 実行
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
 ### 出力されるファイル
 
-最小構成（`entry.packages` 未指定の全体モード）では、次の3ファイルが自動的に出力されます。
-列の詳しい意味は後述の [出力ファイル](#出力ファイル) を参照してください。
+| ファイル | 既定出力先 |
+|---|---|
+| 呼び出し階層リスト | `./config/output/call-hierarchy.csv` |
+| メソッド全体リスト | `./config/output/methods.csv` |
 
-#### `methods.csv` — ソース上の全メソッドと呼び出し状況
-
-```csv
-method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable
-OrderAction.execute,jp.co.xxx.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1
-OrderService.findOrder,jp.co.xxx.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1
-OrderDao.selectById,jp.co.xxx.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0
-OrderDaoImpl.selectById,jp.co.xxx.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1
-```
-
-`role` 列を見るだけで、「呼び出し元が無い箇所（`ENTRY_CANDIDATE`）」「共通処理で改修時の
-影響範囲が広い箇所（`HUB`）」などを一覧で仕分けできます。
-
-#### `edges.csv` — 解決後の全呼び出し関係
-
-```csv
-caller,callee,callerFile,callLine,bindKind,resolution,candidateCount,declaredCallee
-OrderAction.execute,OrderService.findOrder,OrderAction.java,50,V,NO_OVERRIDE,1,jp.co.xxx.service.OrderService#findOrder()
-OrderService.findOrder,OrderDaoImpl.selectById,OrderService.java,25,V,SINGLE_IMPL,1,jp.co.xxx.dao.OrderDao#selectById()
-```
-
-インターフェース経由の呼び出し（`OrderDao#selectById()`）が、実装クラス
-（`OrderDaoImpl.selectById`）に解決されていることが分かります。
+出力はすべてUTF-8（BOM付き）のCSVで、Excelでそのまま開けます。
 
 #### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
-`entry.auto=true`（既定）のため、`methods.csv` で `ENTRY_CANDIDATE` になったメソッドを
-自動的に起点にして、`call-hierarchy.csv` も合わせて出力されます。
+呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を1行としたCSVです。
+呼び出し先ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
+呼び出し元はEclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。（後述）
 
 ```csv
-caller,callee,note,callHierarchy
-at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,,OrderAction.execute,OrderService.findOrder
-at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,解決:SINGLE_IMPL,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+```
+
+#### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+
+```csv
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable
+OrderAction.execute,jp.co.example.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1
+OrderService.findOrder,jp.co.example.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1
+OrderDao.selectById,jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0
+OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1
 ```
 
 ---
@@ -126,122 +79,58 @@ at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.s
 
 ## 使い方
 
-とりあえず試すだけなら [Quick start](#quick-start) の手順（`project.root` のみ設定
-する全体モード）で十分です。ここでは、特定のパッケージだけを起点にしたい場合など、設定を
-作り込みたいときの詳細を説明します。
-
 ### 1. 設定ファイルを用意する
 
 `config/config.properties` をコピーして編集します。
 **相対パスは「設定ファイルが置かれているディレクトリ」を起点に解決されます**
-（カレントディレクトリには依存しません）。
-
-最低限の設定は次の2つです。
-
-```properties
-# 解析対象プロジェクトのルート
-project.root=../my-legacy-project
-
-# 起点にするパッケージ（空にすると全体モード）
-entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
-```
-
-ソースフォルダ・依存jarは `project.src` / `project.lib` で明示できます
-（Eclipse以外のプロジェクトでも使えます）。空欄のままなら、`project.root` に
-`.classpath` があればそこから（`kind="src"` をソースフォルダ、`kind="lib"` を
-依存jarとして）自動で読み取ります。
 
 ### 2. 実行する
 
 処理の進捗は標準出力に出ます。
 
 ```
-=== フェーズ1/3: ソース解析 ===
-[main] Javaファイル数: 12000
-[main] キャッシュ再利用 8500 件 / 新規解析対象 3500 件
-[進捗] ソース解析 500/3500 (14.3%)  経過 42.1s  直近500件 42.1s  残り約 4分12s
-...
-[heap] フェーズ1完了: 使用 45MB / 上限 2048MB
+[00:00.033s] === フェーズ1/3: ソース解析 ===
+[00:00.037s] Javaファイル数: 900
+[00:00.047s] ソース解析 500/900 （直近500件: 1s）
+[00:00.057s] ソース解析 900/900 （直近400件: 1s）
+[00:00.457s] ソース解析: 再利用=900 新規解析=0 失敗=0
+[00:00.457s] === フェーズ1完了: [heap] 使用 45MB / 上限 2048MB
 ```
 
-「直近500件」の時間を見ると、特定の箇所で急に遅くなっていないかが分かります。
-
-2回目以降は、更新されたファイルだけを解析し直します
-（差分判定は最終更新時刻とファイルサイズ）。
+ソース解析に時間がかかるため解析結果のキャッシュを作成します。
+２回目以降はキャッシュを利用し、差異のあるファイルだけを解析し直します。
+差分判定は最終更新時刻とファイルサイズによります。
 
 ---
 
 ## 出力ファイル
 
-### 区切り文字・文字コードのカスタマイズ
-
-すべての出力ファイル（`call-hierarchy.csv`・`methods.csv`・`edges.csv`・`resolutions.csv`・
-`unresolved-calls.csv`・`external-usage.csv`・`external-unmatched.csv`）は、次の2つの設定で
-形式を変更できます。
-
-```properties
-# 区切り文字。COMMA（既定・通常のCSV）か TAB。
-output.delimiter=COMMA
-
-# 文字コード。既定は UTF-8-BOM（BOM付きUTF-8）。
-#   UTF-8-BOM … BOM付きUTF-8。既定。ExcelがUTF-8と正しく認識して開ける
-#   UTF-8     … BOM無し。Excelで直接開くと文字化けする点に注意
-#   MS932     … Shift_JIS。SJIS前提の既存ツールと連携したい場合
-output.encoding=UTF-8-BOM
-```
-
-**タブ区切りにしたい場合**（`output.delimiter=TAB`）: フィールドにカンマを含むデータが
-多く見づらい場合や、区切り文字の面で確実にExcelへ取り込みたい場合に使います。
-**ダブルクリックでExcelに開かせたい場合は、出力先の拡張子を `.csv` のままにせず `.txt` に
-してください**（`output.csv=./output/call-hierarchy.txt` のように指定）。`.csv` のまま
-だとOSの「リスト区切り記号」設定に従ってカンマ区切りとして解釈されてしまい、タブ区切りに
-なりません。
-
-**既定はUTF-8（BOM付き）です**。BOMが付いているため、ExcelでダブルクリックしてもUTF-8と
-正しく認識され、文字化けせずに開けます。BOM無しの `UTF-8` は、Excelで直接開くと文字化け
-するため注意してください。
-
-**MS932（Shift_JIS）に変更したい場合**（`output.encoding=MS932`）: 既存のExcelマクロや
-社内ツールがSJIS前提で作られている場合などに使います。ただしMS932はJIS第一・第二水準外の
-文字（一部の人名・機種依存文字など）を `?` に置換してしまう点に注意してください。
-
 ### `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,note,callHierarchy
-at jp.co.xxx.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,,OrderAction.execute,OrderService.findOrder
-at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,解決:SINGLE_IMPL,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 |
 |---|---|
-| `caller` | Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
-| `callee` | 呼び出し先。行番号を含まないのでExcelのフィルタに使える |
-| `note` | 打ち切り理由や解決の由来（`[CYCLE]`、`CHA候補2件（未展開）` 等） |
-| `callHierarchy` | 起点から現ノードまでを1ノード1列で展開（**可変長・最終列**） |
+| `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
+| `callee` | 呼び出し先。クラス名.メソッド名の形式でExcelのフィルタに使える |
+| `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
+| `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
-**Eclipseへのジャンプ**: `caller` 列の値をコピーし、「Javaスタック・トレース・コンソール」に
-貼り付けると、`at 完全修飾名.メソッド(ファイル:行)` の部分がハイパーリンクになり、
-クリックでソースへ飛べます。
+### **Eclipseへのジャンプ**
+`caller` 列の値をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
 
 1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
 2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
    （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
    「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `caller` 列の値（`at ...` の行）をそのコンソールに貼り付ける
+3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
-**grep**: `callHierarchy` が最終列なので、行末マッチでそのメソッドに至る経路を抽出できます。
-
-```bash
-grep "OrderDaoImpl.selectById$" call-hierarchy.csv
-```
-
-> `callHierarchy` より後ろに列を追加しないでください。行末マッチが壊れます。
-> 列を足す場合は `callHierarchy` より前に挿入します。
-
-### `methods.csv` — 全メソッドの呼び出し状況（全体モードのみ）
-
-`entry.packages` を空にすると全体モードになります。
+### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
 | role | 意味 |
 |---|---|
@@ -250,67 +139,16 @@ grep "OrderDaoImpl.selectById$" call-hierarchy.csv
 | `HUB` | 入次数が `hub.threshold` 以上。改修時の影響範囲が広い |
 | `LEAF` | 呼び出し先が無い |
 
-`reachable=0` の行は、起点候補から到達できないメソッドです。
-相互再帰だけで閉じたクラスタ（デッドコードの塊）を見つけるのに使えます。
+### 他リポジトリからの被参照
 
-### `edges.csv` — 解決後の全呼び出し関係（全体モードのみ）
-
-呼び出しルートを全部展開すると `分岐^深さ` で爆発しますが、
-エッジ一覧はエッジ数に比例した線形サイズで収まり、
-**任意の起点からのルートを後から再構成できます**。網羅を目指す場合はこちらが一次成果物です。
-
-### `resolutions.csv` — 具象クラスの解決結果
-
-```csv
-declaredMethod,bindKind,label,candidateCount,candidates
-jp.co.xxx.dao.OrderDao#selectById(),V,SINGLE_IMPL,1,jp.co.xxx.dao.impl.OrderDaoImpl
-jp.co.xxx.dao.CommonDao#execute(),V,CHA,2,jp.co.xxx.dao.impl.UserDaoImpl / jp.co.xxx.dao.impl.ItemDaoImpl
-```
-
-`CHA` の行が「静的に絞りきれなかった箇所」です。`candidateCount` の降順に並べると、
-拡張（後述）を作る価値が高い順になります。
-
-### `unresolved-calls.csv` — 型解決できなかった呼び出し
-
-クラスパス不足、リフレクション、フレームワーク経由の呼び出しなどが記録されます。
-**最初の実行では、まずこの件数を確認してください。** 異常に多い場合は
-`project.lib` の設定漏れが疑われます。
-
-**GradleやMavenをEclipse連携（Buildship / m2e）で使っているプロジェクト**は
-特に注意してください。`.classpath` の依存jarは `kind="con"`（クラスパス・
-コンテナへの参照）になっており、実際のjarパスがファイルに書かれないため、
-`.classpath` 頼みでは依存関係を1つも認識できません（`kind="src"` による
-ソースフォルダの特定だけは引き続き機能します）。この場合は、依存jarを
-1か所に集めたフォルダ（Gradleの`application`/`distribution`プラグインが
-作る`lib`フォルダ等）を `project.lib` に指定してください。
-ディレクトリを指定すると、直下の `*.jar` が自動的に全部クラスパスへ
-追加されます。
-
-### `external-usage.csv` — 他リポジトリからの被参照
-
-自分のコードを呼んでいる側のjarを `external.jars` に指定すると出力されます。
+自分のコードを呼んでいる側のjarを `external.library.folders` に指定すると出力されます。
 
 ```properties
-external.jars=//shared/teamjars
+external.library.folders=./lib
 ```
 
-```csv
-method,declaringType,jar,referencingClass,matchKind
-OrderService.findOrder,p.svc.OrderService,team-b-batch.jar,jp.teamb.NightJob,EXACT
-Base.inherited,p.base.Base,team-b-batch.jar,jp.teamb.NightJob,INHERITED
-OrderService.<init>,p.svc.OrderService,team-b-batch.jar,jp.teamb.NightJob,IMPLICIT_CTOR
-```
-
-classファイルの定数プールだけを読むため、外部ライブラリは不要です。
-「どのjar・どのクラスが参照しているか」までが分かります
-（呼び出し元メソッドまでは分かりません）。
-
-> **これらのjarは自分の `.classpath` には現れません**。依存の向きが逆だからです。
-> 共有フォルダやNexusから別途集めてください。
-
-`external-unmatched.csv` には、自分の型を参照しているのにメソッドが一致しなかったものが出ます。
-**相手のjarが古い版に対してビルドされている可能性があるため、
-「使われていない」と判断する前にここを確認してください。**
+classファイルの定数プールだけを読むため、「どのjar・どのクラスが参照しているか」までが分かります。
+呼び出し元メソッドまでは分かりません。
 
 ---
 
@@ -330,50 +168,6 @@ classファイルの定数プールだけを読むため、外部ライブラリ
 **候補数は「サブクラス数」ではなく「そのメソッドをオーバーライドしている宣言の数」です。**
 サブクラスが多くても、オーバーライドが1件なら候補は1件のままになります。
 
-CHAは記録と展開を分けています。
-
-```properties
-cha.record=true    # 候補をエッジ一覧に記録する（漏れ防止のため既定true）
-cha.expand=false   # 呼び出し階層で降りる（候補数^深さで爆発するため既定false）
-```
-
-`cha.expand=false` のとき、CHA候補は `CHA候補N件（未展開）` という葉として1行だけ出力されます。
-**「解決できなかった」事実が残るので、静かに消えることはありません。**
-
----
-
-## 拡張ポイント
-
-具象クラスの特定方法はプロジェクトごとに異なるため、差し込み口を2つ用意しています。
-必要な情報が手に入るタイミングが2つに分かれているためです。
-
-| フェーズ | インターフェース | 見えるもの |
-|---|---|---|
-| A（抽出時） | `CallSiteHintCollector` | AST・呼び出し箇所の文脈 |
-| B（構築時） | `TypeCandidateProvider` | 型階層・全体像・外部ファイル |
-
-ファクトリメソッドの例では、両方を使います。
-
-```
-フェーズA: DaoFactory.get("USER_DAO") の文字列リテラルを、
-           その戻り値を受けているローカル変数に紐づけて記録
-フェーズB: "USER_DAO" -> jp.co.xxx.dao.UserDaoImpl の対応表を引く
-```
-
-実装クラスのFQNを設定に書くと、リフレクションで読み込まれます。
-
-```properties
-resolver.hint.collectors=jp.co.xxx.FactoryKeyCollector
-resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
-```
-
-拡張は `init(Properties, Path)` で設定ファイルの内容と置き場所を受け取れるので、
-独自の設定キー（対応表のパス等）を自由に追加できます。
-
-`TypeCandidateProvider#appliesToStaticBound()` に `true` を返すと、
-段0（静的束縛）と判定された呼び出しにも解決を差し込めます。
-バイトコード織り込み（AspectJのCTW等）で前提が崩れる場合の逃げ道です。
-
 ---
 
 ## メモリ設計
@@ -385,7 +179,7 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
 
 各フェーズの終わりにヒープ使用量が出るので、`-Xmx` の目安に使えます。
-最大になるのは通常フェーズ2です。
+最大になるのはおそらくフェーズ2です。
 
 ---
 
@@ -401,43 +195,3 @@ resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
 | オーバーロード | `call-hierarchy.csv` の表示上は同名で並びます。厳密に区別する場合は `edges.csv` の `declaredCallee` 列を参照してください |
 
 ---
-
-## 必要環境
-
-- JDK 11以上（このツール自身を動かすJVM。解析対象のJavaバージョンとは無関係です）
-- Eclipse JDT Core
-
-**JDT Coreは、新しい版ほど動かすのに新しいJDKを要求します。**
-手元のJDKで動く版を選んでください。バージョンはビルド時に指定できます。
-
-```
-./gradlew -PjdtVersion=3.29.0 run --args="config/config.properties"
-```
-
----
-
-## トラブルシューティング
-
-実行時に別のクラスが必要になり `NoClassDefFoundError` が出た場合、
-`lib` が不足している可能性があります。
-その場合は、次のようにクラスロードログを取って実際に使われた
-jarを確認し、足りないものを同様に `lib` へ追加してください。
-
-```bat
-set JAVA_HOME=C:\pleiades\2026-06\java\17
-"%JAVA_HOME%\bin\java" ^
-     -Xlog:class+load=info:file=classload.log ^
-     -cp "bin;lib\*" CallHierarchyExporter config\config.properties
-```
-
-```powershell
-Get-Content classload.log |
-  Select-String -Pattern 'source:\s*file:/*(.+\.jar)$' |
-  ForEach-Object { Split-Path -Leaf $_.Matches[0].Groups[1].Value } |
-  Sort-Object -Unique
-```
-
-出力に並んだjarの一覧が、そのときの実行で本当に必要だったプラグインです。
-`plugins` フォルダを丸ごとクラスパスに乗せているわけではないので、EGitのSSH関連jar
-のような無関係なプラグインが混入して `ServiceConfigurationError` になる心配もありません。
-
