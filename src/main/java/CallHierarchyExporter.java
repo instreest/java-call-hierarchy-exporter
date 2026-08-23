@@ -30,6 +30,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
@@ -1732,7 +1733,8 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n));
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n),
+                        externalGuessRef(n));
 
                 // フェーズAの拡張に、この呼び出し箇所を見せる。
                 // 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
@@ -1771,20 +1773,54 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(SuperMethodInvocation n) {
                 // super.m() は静的束縛（オーバーライドの影響を受けない）
-                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "");
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "", null);
                 return true;
             }
 
             @Override
             public boolean visit(ClassInstanceCreation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "");
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", null);
                 return true;
             }
 
             @Override
             public boolean visit(ConstructorInvocation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "");
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", null);
                 return true;
+            }
+
+            /**
+             * バインディング解決が完全に失敗した場合の最後の手段。
+             * レシーバの単純名が、このファイルの単一型インポート（{@code import a.b.C;}）と
+             * 一致すれば、そのFQNを型として採用する。あくまでソース上のテキストからの
+             * 推定であり、JDTによる検証済みの型解決ではない
+             * （メンバの実在・オーバーロードの妥当性までは確認できない）。
+             * ワイルドカードimport・static import・型不明のレシーバでは使わない。
+             */
+            private String[] externalGuessRef(MethodInvocation n) {
+                Expression recv = n.getExpression();
+                if (!(recv instanceof SimpleName)) {
+                    return null;
+                }
+                String simple = ((SimpleName) recv).getIdentifier();
+                String fqn = null;
+                for (Object o : cu.imports()) {
+                    ImportDeclaration imp = (ImportDeclaration) o;
+                    if (imp.isOnDemand() || imp.isStatic()) {
+                        continue;
+                    }
+                    String name = imp.getName().getFullyQualifiedName();
+                    if (name.equals(simple) || name.endsWith("." + simple)) {
+                        fqn = name;
+                        break;
+                    }
+                }
+                if (fqn == null) {
+                    return null;
+                }
+                int dot = fqn.lastIndexOf('.');
+                String pkg = (dot >= 0) ? fqn.substring(0, dot) : "";
+                return new String[]{pkg, fqn, n.getName().getIdentifier(), ""};
             }
 
             /**
@@ -1822,8 +1858,15 @@ public class CallHierarchyExporter {
                 return 'V';
             }
 
+            /**
+             * @param externalGuess バインディング解決が失敗した場合の代替の呼び出し先。
+             *                      null なら従来通りunresolved-calls.csvに記録する。
+             *                      非null なら「外部ライブラリ（import推定・未検証）」の
+             *                      注記付きでcall-hierarchy.csv側へ記録する
+             *                      （{@link #externalGuessRef} 参照）
+             */
             private void record(IMethodBinding binding, ASTNode node, String displayName,
-                                 char bindKind, String recvKey) {
+                                 char bindKind, String recvKey, String[] externalGuess) {
                 int line = cu.getLineNumber(node.getStartPosition());
                 List<String[]> callers = current();
                 if (callers == null) {
@@ -1835,6 +1878,17 @@ public class CallHierarchyExporter {
                 }
                 String[] callee = toRef(binding);
                 if (callee == null) {
+                    if (externalGuess != null) {
+                        // クラスパス不足で消えるより、未検証と分かる形で残す方針。
+                        // bindKind='G' は resolveEdge() 側で「候補は常にこの1件」として
+                        // 扱われ、CHA展開の対象にはしない（型階層情報を持たないため）
+                        for (String[] caller : callers) {
+                            out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
+                                    externalGuess[0], externalGuess[1], externalGuess[2],
+                                    externalGuess[3], line, 'G', recvKey));
+                        }
+                        return;
+                    }
                     // 呼び出し先の型解決に失敗したケース。呼び出し元が複数あっても
                     // 原因は呼び出し先側なので、1件だけ記録すれば足りる
                     String[] caller = callers.get(0);
@@ -2317,6 +2371,12 @@ public class CallHierarchyExporter {
         Resolution resolveEdge(int edgeIndex, char bindKind) {
             int calleeId = calleeIds[edgeIndex];
 
+            // --- importからの推定（未検証の外部ライブラリ呼び出し） ---
+            // 型階層情報を一切持たない合成メソッドのため、CHA拡張の対象にはしない
+            if (bindKind == 'G') {
+                return new Resolution(new int[]{calleeId}, "EXTERNAL_GUESS");
+            }
+
             // --- 段0: 静的束縛 ---
             if (bindKind != 'V') {
                 // 既定では確定として扱うが、ここで打ち切ると拡張に到達せず
@@ -2712,6 +2772,8 @@ public class CallHierarchyExporter {
         long custom;
         long cha;
         long chaCandidatesMax;
+        /** importからの推定（未検証の外部ライブラリ呼び出し）に解決した件数 */
+        long externalGuess;
 
         @Override
         public String toString() {
@@ -2721,7 +2783,8 @@ public class CallHierarchyExporter {
                     + " 実装なし=" + noImpl
                     + " new追跡=" + localNew
                     + " 拡張=" + custom
-                    + " CHA=" + cha + "(最大候補" + chaCandidatesMax + "件)";
+                    + " CHA=" + cha + "(最大候補" + chaCandidatesMax + "件)"
+                    + " 外部推定=" + externalGuess;
         }
     }
 
@@ -2761,6 +2824,8 @@ public class CallHierarchyExporter {
                             st.noImpl++;
                         } else if (r.label.startsWith("LOCAL_NEW")) {
                             st.localNew++;
+                        } else if ("EXTERNAL_GUESS".equals(r.label)) {
+                            st.externalGuess++;
                         } else if (!"CHA".equals(r.label)) {
                             st.custom++;   // 拡張が返したラベル
                         } else {
@@ -3479,7 +3544,12 @@ public class CallHierarchyExporter {
         private String noteFor(int target, int declaredCallee,
                                 CallGraph.Resolution res, int depth) {
             StringBuilder sb = new StringBuilder();
-            if (graph.methods.declFile(target) == null) {
+            if ("EXTERNAL_GUESS".equals(res.label)) {
+                // クラスパス不足でバインディング解決自体ができなかった呼び出し。
+                // importの単一型インポートから型名を推定しただけで、JDTによる
+                // 検証は経ていない（メンバの実在・オーバーロードは未確認）
+                sb.append("外部ライブラリ（import推定・未検証）");
+            } else if (graph.methods.declFile(target) == null) {
                 sb.append("ソースなし（展開不可）");
             } else if (depth + 1 >= config.maxDepth) {
                 sb.append("深さ制限(").append(config.maxDepth).append(")のため打ち切り");
