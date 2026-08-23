@@ -32,7 +32,7 @@ for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs 
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
 rem コンパイル
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\main\java\CallHierarchyExporter.java
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\CallHierarchyExporter.java
 
 rem 実行
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
