@@ -209,20 +209,6 @@ public class CallHierarchyExporter {
         log(inv.toString());
         log("メソッド一覧: " + config.methodsCsv);
 
-        if (!config.externalLibraryFolders.isEmpty()) {
-            System.out.println();
-            log("=== 外部jarからの被参照スキャン ===");
-            ExternalUsageStats ex = ExternalUsageScanner.scan(graph, config);
-            log(ex.toString());
-            log("被参照一覧: " + config.externalUsageCsv);
-            if (ex.unmatched > 0) {
-                log("※ 自分の型への参照なのにメソッドが一致しなかったものが "
-                        + ex.unmatched + " 件あります。");
-                log("   相手が古い版のjarに対してビルドされている可能性があるため、");
-                log("   「使われていない」と即断せず確認してください。");
-            }
-        }
-
         log("エントリポイント数: " + entries.length);
         if (entries.length == 0 && !config.wholeProjectMode) {
             log("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
@@ -230,14 +216,29 @@ public class CallHierarchyExporter {
         if (config.wholeProjectMode) {
             log("  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに");
             log("     デッドコード・テスト・リフレクション経由が混ざるため、");
-            log("     methods.csv の role 列で仕分けてください。");
+            log("     methods.csv の inDegree / outDegree / role 列で仕分けてください。");
         }
 
+        // 呼び出し階層と被参照スキャンは同じ call-hierarchy.csv に出す
         long rows;
         CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
                 config.outputCsv, config.outputEncoding, config.outputBom);
         try {
             rows = new StreamingTreeWalker(graph, config, writer).walkAll(entries);
+
+            if (!config.externalLibraryFolders.isEmpty()) {
+                System.out.println();
+                log("=== 外部jarからの被参照スキャン ===");
+                ExternalUsageStats ex = ExternalUsageScanner.scan(graph, config, writer);
+                log(ex.toString());
+                rows += ex.hits + ex.implicitCtors;
+                if (ex.unmatched > 0) {
+                    log("※ 自分の型への参照なのにメソッドが一致しなかったものが "
+                            + ex.unmatched + " 件あります。");
+                    log("   相手が古い版のjarに対してビルドされている可能性があるため、");
+                    log("   「使われていない」と即断せず確認してください。");
+                }
+            }
         } finally {
             writer.close();
         }
@@ -427,8 +428,6 @@ public class CallHierarchyExporter {
      */
     static final class Config {
 
-        /** 入次数がこの値以上のメソッドを HUB とみなす（methods.csv の role 列） */
-        static final int HUB_THRESHOLD = 20;
         /** CHA候補を呼び出し階層で展開する際の候補数の上限 */
         static final int CHA_MAX_CANDIDATES = 20;
         /** キャッシュフォルダ内に置くインデックスファイルの名前 */
@@ -465,8 +464,6 @@ public class CallHierarchyExporter {
 
         final Path outputCsv;
         final Path methodsCsv;
-        /** 被参照スキャンの出力。output.csv と同じフォルダに固定名で出す */
-        final Path externalUsageCsv;
 
         /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
         final Charset outputEncoding;
@@ -530,9 +527,6 @@ public class CallHierarchyExporter {
 
             this.outputCsv = resolvePath(p.getProperty("output.csv", "./output/call-hierarchy.csv"));
             this.methodsCsv = resolvePath(p.getProperty("methods.csv", "./output/methods.csv"));
-            Path outDir = outputCsv.getParent();
-            this.externalUsageCsv = (outDir == null)
-                    ? resolvePath("./external-usage.csv") : outDir.resolve("external-usage.csv");
 
             String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
             if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
@@ -2736,7 +2730,6 @@ public class CallHierarchyExporter {
         long entryCandidates;
         long isolated;
         long leaves;
-        long hubs;
         long unreachable;
 
         @Override
@@ -2745,7 +2738,6 @@ public class CallHierarchyExporter {
                     + " 起点候補=" + entryCandidates
                     + " 孤立=" + isolated
                     + " 末端=" + leaves
-                    + " ハブ=" + hubs
                     + " 未到達=" + unreachable;
         }
     }
@@ -2768,8 +2760,6 @@ public class CallHierarchyExporter {
          *                   テスト・リフレクション経由が混ざる（要仕分け）
          *   ISOLATED        呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い
          *   LEAF            呼び出し先が無い。末端処理
-         *   HUB             入次数が HUB_THRESHOLD 以上。共通処理。
-         *                   改修時の影響範囲が広い箇所
          *   NORMAL          上記以外
          */
         static InventoryStats writeMethods(CallGraph g, Config config, int[] roots)
@@ -2800,9 +2790,6 @@ public class CallHierarchyExporter {
                     } else if (in[id] == 0) {
                         role = "ENTRY_CANDIDATE";
                         st.entryCandidates++;
-                    } else if (in[id] >= Config.HUB_THRESHOLD) {
-                        role = "HUB";
-                        st.hubs++;
                     } else if (out == 0) {
                         role = "LEAF";
                         st.leaves++;
@@ -3006,7 +2993,8 @@ public class CallHierarchyExporter {
      */
     static final class ExternalUsageScanner {
 
-        static ExternalUsageStats scan(CallGraph g, Config config) throws IOException {
+        static ExternalUsageStats scan(CallGraph g, Config config,
+                                        CallHierarchyCsvWriter out) throws IOException {
             ExternalUsageStats st = new ExternalUsageStats();
 
             List<Path> jars = collectJars(config.externalLibraryFolders);
@@ -3034,12 +3022,7 @@ public class CallHierarchyExporter {
             int[] refCount = new int[g.methodCount()];
 
             Progress pg = new Progress("外部jarの被参照スキャン", jars.size());
-            BufferedWriter hit = Csv.writer(config.externalUsageCsv, config.outputEncoding, config.outputBom);
-            try {
-                hit.write(String.join(Csv.DELIM,
-                        "method", "declaringType", "jar", "referencingClass", "matchKind"));
-                hit.newLine();
-
+            {
                 for (int j = 0; j < jars.size(); j++) {
                     Path jarPath = jars.get(j);
                     String jarName = jarPath.getFileName().toString();
@@ -3073,13 +3056,8 @@ public class CallHierarchyExporter {
                                 if (id >= 0) {
                                     String kind = g.methods.typeFqn(id).equals(normalize(owner))
                                             ? "EXACT" : "INHERITED";
-                                    hit.write(String.join(Csv.DELIM,
-                                            Csv.esc(g.methods.shortLabel(id)),
-                                            Csv.esc(g.methods.typeFqn(id)),
-                                            Csv.esc(jarName),
-                                            Csv.esc(refs.thisClass),
-                                            kind));
-                                    hit.newLine();
+                                    out.writeExternalUsageRow(refs.thisClass,
+                                            g.methods.shortLabel(id), jarName, kind);
                                     if (refCount[id]++ == 0) {
                                         st.usedMethods++;
                                     }
@@ -3089,11 +3067,8 @@ public class CallHierarchyExporter {
                                     // 照合先が存在しないが、これは版の食い違いではない。
                                     // 「誰がこのクラスを生成しているか」は影響調査で有用なので
                                     // 被参照として記録する。
-                                    hit.write(String.join(Csv.DELIM,
-                                            Csv.esc(simpleOf(owner) + ".<init>"),
-                                            Csv.esc(owner), Csv.esc(jarName),
-                                            Csv.esc(refs.thisClass), "IMPLICIT_CTOR"));
-                                    hit.newLine();
+                                    out.writeExternalUsageRow(refs.thisClass,
+                                            simpleOf(owner) + ".<init>", jarName, "IMPLICIT_CTOR");
                                     st.implicitCtors++;
                                 } else {
                                     // 自分の型への参照なのに一致するメソッドが無い。
@@ -3109,8 +3084,6 @@ public class CallHierarchyExporter {
                     st.jars++;
                     pg.step(j + 1);
                 }
-            } finally {
-                hit.close();
             }
             pg.finish();
             return st;
@@ -3211,6 +3184,8 @@ public class CallHierarchyExporter {
 
         /** max.depth が 0以下（無制限）のときの、経路配列の実装上の上限 */
         private static final int DEPTH_HARD_CAP = 4096;
+        /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
+        static final String CYCLE_MARK = "[CYCLE]";
 
         private final CallGraph graph;
         private final Config config;
@@ -3220,6 +3195,7 @@ public class CallHierarchyExporter {
         // 現在の経路（深さぶんだけ確保）
         private final int[] pathMethod;
         private final int[] pathCallLine;
+        private final String[] pathNote;
 
         private int rootId;
         private long totalRows;
@@ -3233,6 +3209,7 @@ public class CallHierarchyExporter {
             int cap = Math.max(2, this.maxDepth + 2);
             this.pathMethod = new int[cap];
             this.pathCallLine = new int[cap];
+            this.pathNote = new String[cap];
         }
 
         long walkAll(int[] entries) throws IOException {
@@ -3241,6 +3218,7 @@ public class CallHierarchyExporter {
                 rootId = entries[i];
                 pathMethod[0] = rootId;
                 pathCallLine[0] = -1;
+                pathNote[0] = null;
                 descend(0);
                 pg.step(i + 1);
                 if (isRowLimitReached()) {
@@ -3264,6 +3242,7 @@ public class CallHierarchyExporter {
                 if (isRowLimitReached()) {
                     return;
                 }
+                int declaredCallee = graph.calleeIds[e];
                 int callLine = graph.callLines[e];
                 CallGraph.Resolution res =
                         graph.resolveEdge(e, (char) graph.bindKinds[e]);
@@ -3288,11 +3267,13 @@ public class CallHierarchyExporter {
                         continue;
                     }
 
-                    push(depth + 1, target, callLine);
+                    boolean cycle = onCurrentPath(target, depth);
+                    push(depth + 1, target, callLine,
+                            noteFor(target, declaredCallee, res, depth, cycle));
                     emit(depth + 1);
 
                     // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
-                    if (expand && !onCurrentPath(target, depth)) {
+                    if (expand && !cycle) {
                         descend(depth + 1);
                     }
                 }
@@ -3319,9 +3300,47 @@ public class CallHierarchyExporter {
             }
         }
 
-        private void push(int depth, int methodId, int callLine) {
+        private void push(int depth, int methodId, int callLine, String note) {
             pathMethod[depth] = methodId;
             pathCallLine[depth] = callLine;
+            pathNote[depth] = note;
+        }
+
+        /**
+         * ノードに付ける注記。call-hierarchy列の最後の要素として出す。
+         *
+         * 独立した列にすると call-hierarchy より後ろに列ができてしまい、
+         * 「可変長の階層を最終列に置く」という構成が崩れるため、
+         * 階層の末尾に追記する形にしている（そのぶん行末grepは効かなくなる）。
+         */
+        private String noteFor(int target, int declaredCallee,
+                                CallGraph.Resolution res, int depth, boolean cycle) {
+            StringBuilder sb = new StringBuilder();
+            if (cycle) {
+                // この経路上で既に呼んでいるメソッドへ戻る辺。ここから先へは降りない
+                sb.append(CYCLE_MARK);
+            } else if ("EXTERNAL_GUESS".equals(res.label)) {
+                // クラスパス不足でバインディング解決自体ができなかった呼び出し。
+                // importの単一型インポートから型名を推定しただけで、JDTによる
+                // 検証は経ていない（メンバの実在・オーバーロードは未確認）
+                sb.append("外部ライブラリ（import推定・未検証）");
+            } else if (graph.methods.declFile(target) == null) {
+                sb.append("ソースなし（展開不可）");
+            } else if (depth + 1 >= maxDepth) {
+                sb.append("深さ制限(").append(maxDepth).append(")のため打ち切り");
+            }
+            if (res.targets.length > 1) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                sb.append("CHA候補").append(res.targets.length).append("件（未展開）");
+            } else if (target != declaredCallee) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                sb.append("解決:").append(res.label);
+            }
+            return (sb.length() == 0) ? null : sb.toString();
         }
 
         /**
@@ -3353,7 +3372,7 @@ public class CallHierarchyExporter {
 
         /** 1行を即座に書き出す（溜め込まない） */
         private void emit(int depth) throws IOException {
-            writer.writeRow(graph.methods, rootId, pathMethod, pathCallLine, depth);
+            writer.writeRow(graph.methods, rootId, pathMethod, pathCallLine, pathNote, depth);
             totalRows++;
         }
     }
@@ -3387,7 +3406,7 @@ public class CallHierarchyExporter {
         }
 
         void writeRow(MethodTable mt, int rootId, int[] pathMethod, int[] pathCallLine,
-                      int depth) throws IOException {
+                      String[] pathNote, int depth) throws IOException {
             buf.setLength(0);
 
             // caller: 呼び出し元が「このノードを呼んでいる行」を指すスタックトレース形式。
@@ -3404,10 +3423,39 @@ public class CallHierarchyExporter {
             buf.append(Csv.esc(mt.shortLabel(rootId)));
 
             // call-hierarchy: 起点の次のノードから現ノードまでを1ノード1列で展開。
-            // 必ず最終列に置く（grep "メソッド名$" の行末マッチを成立させるため）。
+            // 必ず最終列に置く（後ろに固定列を足すと可変長の階層が途中で切れるため）。
             for (int i = 1; i <= depth; i++) {
                 buf.append(Csv.DELIM).append(Csv.esc(mt.shortLabel(pathMethod[i])));
             }
+            // 注記（[CYCLE]・深さ制限・CHA候補・import推定 等）は階層の最後に付ける
+            if (pathNote[depth] != null) {
+                buf.append(Csv.DELIM).append(Csv.esc(pathNote[depth]));
+            }
+            writer.write(buf.toString());
+            writer.newLine();
+        }
+
+        /**
+         * 被参照スキャンの1行。呼び出し階層とは意味が違うため専用の詰め方をする。
+         *
+         * classファイルの定数プールしか読まないため、呼び出し元のメソッドも行番号も
+         * 分からない。よって caller はスタックトレース形式にはせず、参照している
+         * クラス名をそのまま置く。起点も呼び出し階層も無いので、root には
+         * 「どのjarから参照されているか」を入れる。
+         *
+         * @param referencingClass 参照している側のクラス（外部jar内）
+         * @param callee           参照されている自分のメソッド
+         * @param jarName          参照元のjar名
+         * @param note             照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
+         */
+        void writeExternalUsageRow(String referencingClass, String callee,
+                                    String jarName, String note) throws IOException {
+            buf.setLength(0);
+            buf.append(Csv.esc(referencingClass)).append(Csv.DELIM);
+            buf.append(Csv.esc(callee)).append(Csv.DELIM);
+            buf.append(Csv.esc(jarName));
+            buf.append(Csv.DELIM).append(Csv.esc(callee));
+            buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));
             writer.write(buf.toString());
             writer.newLine();
         }
