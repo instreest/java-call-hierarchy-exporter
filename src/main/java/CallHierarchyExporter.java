@@ -119,11 +119,29 @@ import java.util.zip.ZipInputStream;
 public class CallHierarchyExporter {
 
     // ================================================================
+    // 標準出力ログ
+    // ================================================================
+
+    /** 経過時間表示の基準点。クラス初期化（実行開始）時点に固定する */
+    private static final long START_NANOS = System.nanoTime();
+
+    /** 行頭に [分:秒.ミリ秒s] を付けて標準出力へ1行書き出す */
+    private static void log(Object message) {
+        System.out.println(elapsedStamp() + " " + message);
+    }
+
+    private static String elapsedStamp() {
+        long ms = (System.nanoTime() - START_NANOS) / 1_000_000L;
+        return String.format("[%02d:%02d.%03ds]", ms / 60000, (ms / 1000) % 60, ms % 1000);
+    }
+
+    // ================================================================
     // エントリポイント
     // ================================================================
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
+            System.err.println("エラー: 起動に失敗しました。config.propertiesのパスが指定されていません。");
             System.err.println("使い方: java ... "
                     + CallHierarchyExporter.class.getName() + " <config.propertiesのパス>");
             System.exit(1);
@@ -132,29 +150,29 @@ public class CallHierarchyExporter {
 
         long start = System.currentTimeMillis();
         Config config = new Config(Paths.get(args[0]));
-        System.out.println("[main] 設定: " + Paths.get(args[0]).toAbsolutePath().normalize());
-        System.out.println("[main] プロジェクトルート: " + config.projectRoot);
+        log("[main] 設定: " + Paths.get(args[0]).toAbsolutePath().normalize());
+        log("[main] プロジェクトルート: " + config.projectRoot);
 
         EclipseProjectLayout layout = new EclipseProjectLayout(config);
-        System.out.println("[main] ソースフォルダ: " + layout.sourceFolders);
-        System.out.println("[main] クラスパス数: " + layout.classpathEntries.size());
+        log("[main] ソースフォルダ: " + layout.sourceFolders);
+        log("[main] クラスパス数: " + layout.classpathEntries.size());
 
         // --- フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄） ---
         System.out.println();
-        System.out.println("=== フェーズ1/3: ソース解析 ===");
+        log("=== フェーズ1/3: ソース解析 ===");
         long t1 = System.currentTimeMillis();
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
-        System.out.println("[main] 解析: 再利用=" + phase1.reused
+        log("[main] 解析: 再利用=" + phase1.reused
                 + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
-        System.out.println("[main] 未解決呼び出し: " + phase1.unresolvedCount
+        log("[main] 未解決呼び出し: " + phase1.unresolvedCount
                 + " 件 -> " + config.unresolvedCsv);
-        System.out.println("[main] フェーズ1 所要 "
+        log("[main] フェーズ1 所要 "
                 + Progress.fmt((System.currentTimeMillis() - t1) / 1000.0));
         printHeap("フェーズ1完了");
 
         // --- フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 ---
         System.out.println();
-        System.out.println("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
+        log("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
         long t2 = System.currentTimeMillis();
         CallGraph graph = CallGraph.buildFrom(config.cacheFile);
         List<String> sourceFolderOrder = new ArrayList<>();
@@ -168,58 +186,58 @@ public class CallHierarchyExporter {
             try {
                 pv.init(config.raw, config.configDir);
             } catch (RuntimeException e) {
-                System.out.println("[WARN] provider の初期化に失敗: "
+                log("[WARN] provider の初期化に失敗: "
                         + pv.getClass().getName() + " (" + e + ")");
             }
         }
         graph.setProviders(providers);
-        System.out.println("[main] 型数=" + graph.typeCount()
+        log("[main] 型数=" + graph.typeCount()
                 + " メソッド数=" + graph.methodCount()
                 + " エッジ数=" + graph.edgeCount());
         ResolutionStats stats = ResolutionReport.write(graph, config);
-        System.out.println("[main] 解決内訳: " + stats
+        log("[main] 解決内訳: " + stats
                 + " -> " + config.resolutionsCsv);
-        System.out.println("[main] フェーズ2 所要 "
+        log("[main] フェーズ2 所要 "
                 + Progress.fmt((System.currentTimeMillis() - t2) / 1000.0));
         printHeap("フェーズ2完了");
 
         // --- フェーズ3: エントリポイントごとにDFSしながら1行ずつ出力 ---
         System.out.println();
-        System.out.println("=== フェーズ3/3: 出力 ===");
+        log("=== フェーズ3/3: 出力 ===");
         long t3 = System.currentTimeMillis();
         int[] entries = graph.selectEntryPoints(config);
         if (config.wholeProjectMode) {
-            System.out.println("[main] 全体モード（entry.packages 未指定）");
+            log("[main] 全体モード（entry.packages 未指定）");
             InventoryStats inv = InventoryReport.writeMethods(graph, config, entries);
             long edgeRows = InventoryReport.writeEdges(graph, config);
             inv.edges = edgeRows;
-            System.out.println("[main] " + inv);
-            System.out.println("[main] メソッド一覧: " + config.methodsCsv);
-            System.out.println("[main] エッジ一覧  : " + config.edgesCsv + "（" + edgeRows + " 行）");
-            System.out.println("[main] 起点候補は「呼び出し元が無いメソッド」です。");
-            System.out.println("       画面入口のほかにデッドコード・テスト・リフレクション経由が");
-            System.out.println("       混ざるため、methods.csv の role 列で仕分けてください。");
+            log("[main] " + inv);
+            log("[main] メソッド一覧: " + config.methodsCsv);
+            log("[main] エッジ一覧  : " + config.edgesCsv + "（" + edgeRows + " 行）");
+            log("[main] 起点候補は「呼び出し元が無いメソッド」です。");
+            log("       画面入口のほかにデッドコード・テスト・リフレクション経由が");
+            log("       混ざるため、methods.csv の role 列で仕分けてください。");
         }
         if (!config.externalJars.isEmpty()) {
             System.out.println();
-            System.out.println("=== 外部jarからの被参照スキャン ===");
+            log("=== 外部jarからの被参照スキャン ===");
             ExternalUsageStats ex = ExternalUsageScanner.scan(graph, config);
-            System.out.println("[main] " + ex);
-            System.out.println("[main] 被参照一覧: " + config.externalUsageCsv);
+            log("[main] " + ex);
+            log("[main] 被参照一覧: " + config.externalUsageCsv);
             if (ex.unmatched > 0) {
-                System.out.println("[main] 未照合 : " + config.externalUnmatchedCsv);
-                System.out.println("       自分の型への参照なのにメソッドが一致しなかったものです。");
-                System.out.println("       相手が古い版のjarに対してビルドされている可能性があるため、");
-                System.out.println("       「使われていない」と即断せず確認してください。");
+                log("[main] 未照合 : " + config.externalUnmatchedCsv);
+                log("       自分の型への参照なのにメソッドが一致しなかったものです。");
+                log("       相手が古い版のjarに対してビルドされている可能性があるため、");
+                log("       「使われていない」と即断せず確認してください。");
             }
         }
-        System.out.println("[main] エントリポイント数: " + entries.length);
+        log("[main] エントリポイント数: " + entries.length);
         if (entries.length == 0 && !config.wholeProjectMode) {
-            System.out.println("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
+            log("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
         }
         if (config.wholeProjectMode && entries.length > 1000) {
-            System.out.println("  ※ 起点が多いため call-hierarchy.csv が大きくなります。");
-            System.out.println("     不要なら entry.auto=false でツリー生成を止められます。");
+            log("  ※ 起点が多いため call-hierarchy.csv が大きくなります。");
+            log("     不要なら entry.auto=false でツリー生成を止められます。");
         }
 
         long rows;
@@ -230,13 +248,13 @@ public class CallHierarchyExporter {
         } finally {
             writer.close();
         }
-        System.out.println("[main] フェーズ3 所要 "
+        log("[main] フェーズ3 所要 "
                 + Progress.fmt((System.currentTimeMillis() - t3) / 1000.0));
         printHeap("フェーズ3完了");
 
         System.out.println();
-        System.out.println("[main] 出力: " + config.outputCsv + "（" + rows + " 行）");
-        System.out.println("[main] 完了 (" + (System.currentTimeMillis() - start) + " ms)");
+        log("[main] 出力: " + config.outputCsv + "（" + rows + " 行）");
+        log("[main] 完了 (" + (System.currentTimeMillis() - start) + " ms)");
     }
 
     /**
@@ -262,7 +280,7 @@ public class CallHierarchyExporter {
         Progress(String label, long total) {
             this.label = label;
             this.total = total;
-            System.out.println("[進捗] " + label + " 開始"
+            log("[進捗] " + label + " 開始"
                     + (total > 0 ? ": 対象 " + total + " 件" : ""));
         }
 
@@ -291,14 +309,14 @@ public class CallHierarchyExporter {
             if (total > 0 && done > 0 && done < total) {
                 sb.append(String.format("  残り約 %s", fmt(elapsed / done * (total - done))));
             }
-            System.out.println(sb);
+            log(sb);
             lastNanos = now;
             lastDone = done;
         }
 
         long finish() {
             long ms = (System.nanoTime() - startNanos) / 1000000L;
-            System.out.println("[進捗] " + label + " 完了: " + done + " 件 / " + fmt(ms / 1000.0));
+            log("[進捗] " + label + " 完了: " + done + " 件 / " + fmt(ms / 1000.0));
             return ms;
         }
 
@@ -315,7 +333,7 @@ public class CallHierarchyExporter {
         Runtime rt = Runtime.getRuntime();
         long usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
         long maxMb = rt.maxMemory() / (1024 * 1024);
-        System.out.println("[heap] " + label + ": 使用 " + usedMb + "MB / 上限 " + maxMb + "MB");
+        log("[heap] " + label + ": 使用 " + usedMb + "MB / 上限 " + maxMb + "MB");
     }
 
     // ================================================================
@@ -689,11 +707,11 @@ public class CallHierarchyExporter {
                 try {
                     Object o = Class.forName(cn).getDeclaredConstructor().newInstance();
                     out.add(type.cast(o));
-                    System.out.println("[plugin] 読み込み: " + cn + " (" + type.getSimpleName() + ")");
+                    log("[plugin] 読み込み: " + cn + " (" + type.getSimpleName() + ")");
                 } catch (Exception e) {
                     // 拡張の読み込み失敗は致命的ではないが、黙って無視すると
                     // 「設定したのに効いていない」ことに気づけないため必ず出力する
-                    System.out.println("[WARN] 拡張の読み込みに失敗: " + cn + " (" + e + ")");
+                    log("[WARN] 拡張の読み込みに失敗: " + cn + " (" + e + ")");
                 }
             }
             return out;
@@ -766,7 +784,7 @@ public class CallHierarchyExporter {
                     if ("src".equals(kind)) {
                         // 他プロジェクトへの参照（path が "/" 始まり）は未対応
                         if (path.startsWith("/")) {
-                            System.out.println("[WARN] 他プロジェクト参照はスキップします: " + path);
+                            log("[WARN] 他プロジェクト参照はスキップします: " + path);
                             continue;
                         }
                         Path sf = projectRoot.resolve(path).normalize();
@@ -779,7 +797,7 @@ public class CallHierarchyExporter {
                         if (Files.exists(jar)) {
                             classpathEntries.add(jar);
                         } else {
-                            System.out.println("[WARN] .classpath のlibが見つかりません: " + jar);
+                            log("[WARN] .classpath のlibが見つかりません: " + jar);
                         }
                     }
                     // con / output / var は無視
@@ -915,7 +933,7 @@ public class CallHierarchyExporter {
             CachePhaseResult result = new CachePhaseResult();
 
             List<Path> javaFiles = layout.listJavaFiles();
-            System.out.println("[main] Javaファイル数: " + javaFiles.size());
+            log("[main] Javaファイル数: " + javaFiles.size());
 
             // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）
             Map<String, FileStat> live = new LinkedHashMap<>();
@@ -965,11 +983,11 @@ public class CallHierarchyExporter {
                         result.parsed++;
                     } catch (Exception e) {
                         result.failed++;
-                        System.out.println("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+                        log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
                     }
                     done++;
                     if (done % 200 == 0) {
-                        System.out.println("  ... " + done + "/" + live.size());
+                        log("  ... " + done + "/" + live.size());
                     }
                 }
             } finally {
@@ -993,7 +1011,7 @@ public class CallHierarchyExporter {
             try {
                 String first = in.readLine();
                 if (first == null || !CacheFormat.VERSION.equals(first.trim())) {
-                    System.out.println("[cache] 形式が異なるため既存キャッシュを破棄します");
+                    log("[cache] 形式が異なるため既存キャッシュを破棄します");
                     return 0L;
                 }
                 boolean keeping = false;
@@ -1510,7 +1528,7 @@ public class CallHierarchyExporter {
                             collectors.get(i).collect(n, cu, callerKey, sink);
                         } catch (RuntimeException e) {
                             // 拡張の失敗で解析全体を止めない
-                            System.out.println("[WARN] hint collector 失敗: "
+                            log("[WARN] hint collector 失敗: "
                                     + collectors.get(i).getClass().getName() + " (" + e + ")");
                         }
                     }
@@ -1958,7 +1976,7 @@ public class CallHierarchyExporter {
                 in.close();
             }
             pg1.finish();
-            System.out.println("[main] 収集: 型 " + g.typeKind.size()
+            log("[main] 収集: 型 " + g.typeKind.size()
                     + " / メソッド " + g.methods.size() + " / エッジ " + edgeCount);
 
             if (edgeCount > Integer.MAX_VALUE) {
@@ -2133,7 +2151,7 @@ public class CallHierarchyExporter {
                 try {
                     cands = pv.candidates(declType, sig, hints);
                 } catch (RuntimeException e) {
-                    System.out.println("[WARN] candidate provider 失敗: "
+                    log("[WARN] candidate provider 失敗: "
                             + pv.getClass().getName() + " (" + e + ")");
                     continue;
                 }
@@ -2867,7 +2885,7 @@ public class CallHierarchyExporter {
             ExternalUsageStats st = new ExternalUsageStats();
 
             List<Path> jars = collectJars(config.externalJars);
-            System.out.println("[main] 外部jar: " + jars.size() + " 件");
+            log("[main] 外部jar: " + jars.size() + " 件");
             if (jars.isEmpty()) {
                 return st;
             }
@@ -2918,7 +2936,7 @@ public class CallHierarchyExporter {
                             try {
                                 refs = ClassFileRefs.parse(is);
                             } catch (Exception ex) {
-                                System.out.println("[WARN] class解析に失敗（スキップ）: "
+                                log("[WARN] class解析に失敗（スキップ）: "
                                         + jarName + "!" + e.getName() + " (" + ex.getMessage() + ")");
                                 continue;
                             } finally {
@@ -3046,7 +3064,7 @@ public class CallHierarchyExporter {
                         w.close();
                     }
                 } else {
-                    System.out.println("[WARN] external.jars の指定が見つかりません: " + r);
+                    log("[WARN] external.jars の指定が見つかりません: " + r);
                 }
             }
             return new ArrayList<>(out);
@@ -3120,7 +3138,7 @@ public class CallHierarchyExporter {
                 pg.step(i + 1);
             }
             pg.finish();
-            System.out.println("[main] 出力行数: " + totalRows);
+            log("[main] 出力行数: " + totalRows);
             return totalRows;
         }
 
@@ -3283,7 +3301,7 @@ public class CallHierarchyExporter {
             }
             if (!limitWarned) {
                 limitWarned = true;
-                System.out.println("[WARN] 出力行数の上限("
+                log("[WARN] 出力行数の上限("
                         + config.maxRowsPerEntry + ")に達したため打ち切りました: "
                         + graph.methods.shortLabel(rootId));
             }
