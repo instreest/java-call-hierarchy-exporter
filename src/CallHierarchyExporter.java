@@ -46,14 +46,11 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.InputStream;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.DataInputStream;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -78,12 +75,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * java-call-hierarchy-exporter
@@ -173,6 +167,12 @@ public class CallHierarchyExporter {
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
         log("ソース解析: 再利用=" + phase1.reused
                 + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
+        if (phase1.unresolved > 0) {
+            log("※ 型解決できなかった呼び出しが " + phase1.unresolved + " 件あります。");
+            log("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
+            log("   解決できた呼び出しだけが call-hierarchy.csv に出るため、");
+            log("   件数が多いまま使うと呼び出し階層に抜けが出ます。");
+        }
         printHeap("フェーズ1完了");
 
         // --- フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 ---
@@ -902,6 +902,8 @@ public class CallHierarchyExporter {
         int reused;
         int parsed;
         int failed;
+        /** 型解決できなかった呼び出しの件数。クラスパス不足の検知に使う */
+        long unresolved;
     }
 
     /**
@@ -956,7 +958,7 @@ public class CallHierarchyExporter {
 
                 // --- パス1: 旧キャッシュのストリーミングコピー ---
                 if (config.cacheEnabled) {
-                    copyValidBlocks(live, copied, cacheOut);
+                    result.unresolved += copyValidBlocks(live, copied, cacheOut);
                 }
                 result.reused = copied.size();
 
@@ -974,6 +976,7 @@ public class CallHierarchyExporter {
                         // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
                         FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
                         writeBlock(fa, cacheOut);
+                        result.unresolved += fa.unresolved.size();
                         result.parsed++;
                     } catch (Exception e) {
                         result.failed++;
@@ -991,19 +994,24 @@ public class CallHierarchyExporter {
             return result;
         }
 
-        /** 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す */
-        private void copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
+        /**
+         * 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す。
+         *
+         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+         */
+        private long copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
                                       BufferedWriter cacheOut)
                 throws IOException {
+            long unresolved = 0L;
             if (!Files.isRegularFile(config.cacheFile)) {
-                return;
+                return unresolved;
             }
             BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
             try {
                 String first = in.readLine();
                 if (first == null || !CacheFormat.VERSION.equals(first.trim())) {
                     log("[cache] 形式が異なるため既存キャッシュを破棄します");
-                    return;
+                    return unresolved;
                 }
                 boolean keeping = false;
                 String line;
@@ -1035,11 +1043,15 @@ public class CallHierarchyExporter {
                     } else if (keeping) {
                         cacheOut.write(line);
                         cacheOut.newLine();
+                        if (t == 'U') {
+                            unresolved++;
+                        }
                     }
                 }
             } finally {
                 in.close();
             }
+            return unresolved;
         }
 
         private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
@@ -1447,16 +1459,12 @@ public class CallHierarchyExporter {
             private static final class TypeContext {
                 final ITypeBinding binding;
                 final List<String[]> rootConstructors;
-                final boolean usesImplicitConstructor;
                 final int declLine;
                 boolean clinitDeclared;
-                boolean implicitConstructorDeclared;
 
-                TypeContext(ITypeBinding binding, List<String[]> rootConstructors,
-                            boolean usesImplicitConstructor, int declLine) {
+                TypeContext(ITypeBinding binding, List<String[]> rootConstructors, int declLine) {
                     this.binding = binding;
                     this.rootConstructors = rootConstructors;
-                    this.usesImplicitConstructor = usesImplicitConstructor;
                     this.declLine = declLine;
                 }
             }
@@ -1502,15 +1510,19 @@ public class CallHierarchyExporter {
                         roots.add(ref);
                     }
                 }
-                boolean usesImplicit = false;
                 if (!anyConstructor) {
+                    // 明示コンストラクタが無い型には、暗黙のデフォルトコンストラクタが
+                    // 1つ存在する。ソース上に宣言が無いのでここで合成しておく。
+                    // new B() のような生成はこの <init> を呼ぶため、宣言を作っておかないと
+                    // 「ソースなし（展開不可）」の未知メソッド扱いになってしまう
                     String[] implicitRef = implicitConstructorRef(tb);
                     if (implicitRef != null) {
                         roots.add(implicitRef);
-                        usesImplicit = true;
+                        out.declarations.add(new MethodDecl(implicitRef[0], implicitRef[1],
+                                implicitRef[2], implicitRef[3], declLine, true));
                     }
                 }
-                return new TypeContext(tb, roots, usesImplicit, declLine);
+                return new TypeContext(tb, roots, declLine);
             }
 
             /** コンストラクタ本体の先頭文が this(...) か（=他のコンストラクタへの委譲か） */
@@ -1564,20 +1576,11 @@ public class CallHierarchyExporter {
                 return java.util.Collections.singletonList(new String[]{pkg, typeFqn, "<clinit>", ""});
             }
 
-            /**
-             * 現在の型の、this(...)委譲していないコンストラクタ一覧（インスタンス初期化子用）。
-             * 暗黙のデフォルトコンストラクタをこの型で初めて使う場合は、
-             * methods.csv 等に載るようD行も合成する。
-             */
+            /** 現在の型の、this(...)委譲していないコンストラクタ一覧（インスタンス初期化子用） */
             private List<String[]> instanceInitContext() {
                 TypeContext ctx = typeContextStack.peek();
                 if (ctx == null || ctx.rootConstructors.isEmpty()) {
                     return UNKNOWN;
-                }
-                if (ctx.usesImplicitConstructor && !ctx.implicitConstructorDeclared) {
-                    ctx.implicitConstructorDeclared = true;
-                    String[] ref = ctx.rootConstructors.get(0);
-                    out.declarations.add(new MethodDecl(ref[0], ref[1], ref[2], ref[3], ctx.declLine, true));
                 }
                 return ctx.rootConstructors;
             }
@@ -3182,8 +3185,14 @@ public class CallHierarchyExporter {
      */
     static final class StreamingTreeWalker {
 
-        /** max.depth が 0以下（無制限）のときの、経路配列の実装上の上限 */
-        private static final int DEPTH_HARD_CAP = 4096;
+        /**
+         * max.depth が 0以下（無制限指定）のときに使う実効上限。
+         *
+         * 探索は再帰なので、本当に無制限にするとスタックオーバーフローになる。
+         * 循環は経路単位で検出して打ち切るため深さは「相異なるメソッド数」で
+         * 頭打ちになるが、大規模プロジェクトではそれでも数千に達しうる。
+         */
+        private static final int DEPTH_HARD_CAP = 512;
         /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
         static final String CYCLE_MARK = "[CYCLE]";
 

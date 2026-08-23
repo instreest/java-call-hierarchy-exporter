@@ -2,6 +2,10 @@
 
 Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSVに出力するツールです。
 
+- 使い方・出力形式 … このファイル
+- 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
+- 内部設計・再実装のための情報 … [docs/DESIGN.md](docs/DESIGN.md)
+
 ---
 
 ## Quick start
@@ -46,6 +50,8 @@ rem 実行
 | メソッド全体リスト | `./config/output/methods.csv` |
 
 出力はすべてUTF-8（BOM付き）のCSVで、Excelでそのまま開けます。
+出力先は設定ファイルからの相対パスなので、`config/config.properties` を使う場合は
+`config/output/` の下に出ます。
 
 #### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
@@ -81,8 +87,19 @@ OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,
 
 ### 1. 設定ファイルを用意する
 
-`config/config.properties` をコピーして編集します。
-**相対パスは「設定ファイルが置かれているディレクトリ」を起点に解決されます**
+`config/config.properties` をコピーして編集します。設定できる項目と意味は
+そのファイルにコメントで書いてあります。
+
+相対パスの起点は項目によって異なります。
+
+| 項目 | 相対パスの起点 |
+|---|---|
+| `project.root` / `cache.folders` / `output.csv` / `methods.csv` / `external.library.folders` | 設定ファイルが置かれているディレクトリ |
+| `source.folders` / `library.folders` | `project.root` |
+
+`library.folders` が不足していると型解決に失敗し、その呼び出しが
+`call-hierarchy.csv` から丸ごと抜け落ちます。失敗件数は実行ログに出るので、
+**初回は必ずこの件数を確認してください**（[既知の限界](#既知の限界)参照）。
 
 ### 2. 実行する
 
@@ -206,6 +223,20 @@ NightJob,OrderService.<init>,team-b-batch.jar,OrderService.<init>,被参照:IMPL
 **候補数は「サブクラス数」ではなく「そのメソッドをオーバーライドしている宣言の数」です。**
 サブクラスが多くても、オーバーライドが1件なら候補は1件のままになります。
 
+段4（`CHA`）になった呼び出しは、候補を列挙するだけでその先へは降りません
+（候補数^深さで爆発するため）。`call-hierarchy` 列の最後に
+`CHA候補N件（未展開）` と付きます。
+
+段3の拡張は、ファクトリメソッドやDI設定など**プロジェクト固有の解決手法**を
+差し込むための口です。同梱の `config/config.properties` には設定キーを載せて
+いないので、使う場合は自分で次のキーを追加してください
+（実装の詳細は [docs/DESIGN.md](docs/DESIGN.md) を参照）。
+
+```properties
+resolver.hint.collectors=jp.co.xxx.MyHintCollector
+resolver.candidate.providers=jp.co.xxx.MyCandidateProvider
+```
+
 ---
 
 ## メモリ設計
@@ -229,6 +260,7 @@ NightJob,OrderService.<init>,team-b-batch.jar,OrderService.<init>,被参照:IMPL
 | リフレクション | 検出できません |
 | DIコンテナ | 設定ファイルを読む拡張が別途必要です |
 | キャッシュの差分判定 | 最終更新時刻とサイズが両方一致する改変は検出できません。バージョン管理がタイムスタンプを復元する設定（SVNの `use-commit-times` 等）では特に注意。疑わしいときは `cache.enabled=false` にしてください |
+| クラスパス不足 | 依存jarが足りないと型解決に失敗し、その呼び出しは出力から抜け落ちます。件数は実行ログに出るので `library.folders` を見直してください |
 | 定数のインライン展開 | `public static final` の定数は呼び出し側に埋め込まれるため、被参照スキャンで検出できません |
 | オーバーロード | 引数が違う同名メソッドは、`callee` 列では同じ表記で並びます。区別するには `caller` 列の行番号からソースを確認してください |
 
