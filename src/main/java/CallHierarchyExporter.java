@@ -158,7 +158,11 @@ public class CallHierarchyExporter {
 
         EclipseProjectLayout layout = new EclipseProjectLayout(config);
         log("[main] ソースフォルダ: " + layout.sourceFolders);
-        log("[main] クラスパス数: " + layout.classpathEntries.size());
+        // classpathEntries は project.lib 等の「指定件数」（ディレクトリ指定なら1件のまま）。
+        // 実際にJDTへ渡すのは classpathArray() で *.jar に展開した後の件数なので、
+        // ディレクトリ指定がjar単位に展開されているかをここで確認できるようにする
+        log("[main] クラスパス指定件数: " + layout.classpathEntries.size()
+                + " → 展開後のjar数: " + layout.classpathArray().length);
 
         // --- フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄） ---
         System.out.println();
