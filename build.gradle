@@ -9,7 +9,7 @@ version = '0.1.0'
 //
 // 新しい版ほど、動かすのに新しいJDKを要求します。手元のJDKで動く版を選んでください。
 // コマンドラインから上書きできます:
-//     ./gradlew -PjdtVersion=3.29.0 run --args="config/config.properties"
+//     gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
 // ---------------------------------------------------------------------------
 ext {
     jdtVersion = project.findProperty('jdtVersion') ?: '3.33.0'
@@ -28,6 +28,13 @@ repositories {
 
 dependencies {
     implementation "org.eclipse.jdt:org.eclipse.jdt.core:${jdtVersion}"
+}
+
+// ソースは src 直下に1ファイル。Mavenレイアウト（src/main/java）ではない
+sourceSets {
+    main {
+        java.srcDirs = ['src']
+    }
 }
 
 java {
@@ -54,38 +61,26 @@ jar {
 }
 
 // ---------------------------------------------------------------------------
-// Gradle Wrapper本体（zipとその展開先）をプロジェクトフォルダ内に閉じ込める
+// 依存jarを lib フォルダに集める。
 //
-// 既定ではGRADLE_USER_HOME（通常ユーザーのホーム配下）に保存されるが、
-// 「プロジェクト固有の部分のみで完結させ、他を汚さない」ため、
-// プロジェクト直下に保存する。`gradle wrapper` で再生成しても
-// gradle-wrapper.properties にこの設定が反映される。
-//
-// 依存jar（org.eclipse.jdt.core等）のキャッシュ先（GRADLE_USER_HOME全体を
-// ./.gradle-home に向ける設定）は gradlew / gradlew.bat 側で行っている
-// （Gradle本体の起動より前に決める必要があり、build.gradle側では制御できないため）。
+// README の「Pleiades/Eclipse環境」の手順は、Eclipseのpluginsから必要なjarを
+// lib へコピーして javac / java を直接叩く。Gradleが使える環境では、
+// 代わりにこのタスクで同じ lib フォルダを用意できる。
+//     gradle copyLibs
 // ---------------------------------------------------------------------------
-tasks.named('wrapper', Wrapper) {
-    distributionBase = Wrapper.PathBase.PROJECT
-    distributionPath = 'gradle/wrapper/dists'
-    archiveBase = Wrapper.PathBase.PROJECT
-    archivePath = 'gradle/wrapper/dists'
-}
-
-tasks.register('printClasspath') {
-    description = '実行時クラスパスを出力する（java -cp にそのまま使える）'
-    group = 'help'
-    doLast {
-        println configurations.runtimeClasspath.asPath
-    }
+tasks.register('copyLibs', Copy) {
+    description = '依存jarを lib フォルダに集める'
+    group = 'build'
+    from configurations.runtimeClasspath
+    into "$projectDir/lib"
 }
 
 // ---------------------------------------------------------------------------
-// Gradleからそのまま実行する（jarのビルドやrun.shの用意が不要）
-//     ./gradlew run --args="config/config.properties"
+// Gradleからそのまま実行する
+//     gradle run --args="config/config.properties"
 // ---------------------------------------------------------------------------
 tasks.register('run', JavaExec) {
-    description = 'ツールを実行する（例: ./gradlew run --args="config/config.properties"）'
+    description = 'ツールを実行する（例: gradle run --args="config/config.properties"）'
     group = 'application'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = mainClassName
@@ -93,47 +88,4 @@ tasks.register('run', JavaExec) {
     // コード側で常に明示的な文字コードを使っており、ここでの指定はコンソールの
     // ログ表示にしか効かない。固定すると、Windowsのコンソール（既定はShift_JIS系）
     // と食い違って文字化けするため、JVM/OSの既定（＝端末に合わせた文字コード）に任せる。
-}
-
-// ---------------------------------------------------------------------------
-// 検証用ハーネス
-//
-// JUnitは使わず、main()を持つ検証クラスを順に実行して OK/NG を集計します。
-// 依存を増やさないための割り切りです。
-//     ./gradlew verify
-// ---------------------------------------------------------------------------
-sourceSets {
-    test {
-        java.srcDirs = ['src/test/java']
-        compileClasspath += sourceSets.main.output
-        runtimeClasspath += sourceSets.main.output
-    }
-}
-
-tasks.register('verify') {
-    description = '同梱の検証クラスを順に実行する'
-    group = 'verification'
-    dependsOn tasks.testClasses
-    doLast {
-        def targets = [
-            'SmokeTest', 'ResolveTest', 'OutputFormatTest', 'WholeProjectTest', 'CycleTest'
-        ]
-        def failed = []
-        targets.each { name ->
-            println "--- ${name} ---"
-            def result = javaexec {
-                classpath = sourceSets.test.runtimeClasspath
-                mainClass = name
-                systemProperty 'file.encoding', 'UTF-8'
-                ignoreExitValue = true
-            }
-            if (result.exitValue != 0) {
-                failed << name
-            }
-        }
-        if (!failed.isEmpty()) {
-            throw new GradleException("検証に失敗: ${failed}")
-        }
-        println '検証: 全て成功'
-    }
 }

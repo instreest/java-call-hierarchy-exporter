@@ -153,34 +153,31 @@ public class CallHierarchyExporter {
 
         long start = System.currentTimeMillis();
         Config config = new Config(Paths.get(confitPath));
-        log("[main] 設定: " + Paths.get(confitPath).toAbsolutePath().normalize());
-        log("[main] プロジェクトルート: " + config.projectRoot);
+        log("設定: " + Paths.get(confitPath).toAbsolutePath().normalize());
+        log("プロジェクトルート: " + config.projectRoot);
 
-        EclipseProjectLayout layout = new EclipseProjectLayout(config);
-        log("[main] ソースフォルダ: " + layout.sourceFolders);
-        // classpathEntries は project.lib 等の「指定件数」（ディレクトリ指定なら1件のまま）。
-        // 実際にJDTへ渡すのは classpathArray() で *.jar に展開した後の件数なので、
-        // ディレクトリ指定がjar単位に展開されているかをここで確認できるようにする
-        log("[main] クラスパス指定件数: " + layout.classpathEntries.size()
-                + " → 展開後のjar数: " + layout.classpathArray().length);
+        ProjectLayout layout = new ProjectLayout(config);
+        log("ソースフォルダ: " + layout.sourceFolders);
+        // 依存jarは library.folders でフォルダごと指定できる。ここで出すのは
+        // 実際にJDTへ渡す「*.jar に展開した後」の一覧なので、
+        // フォルダ指定がjar単位に展開されているかを確認できる
+        String[] classpath = layout.classpathArray();
+        log("依存jar: " + classpath.length + " 件");
+        for (String cp : classpath) {
+            log("  " + cp);
+        }
 
         // --- フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄） ---
         System.out.println();
         log("=== フェーズ1/3: ソース解析 ===");
-        long t1 = System.currentTimeMillis();
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
-        log("[main] 解析: 再利用=" + phase1.reused
+        log("ソース解析: 再利用=" + phase1.reused
                 + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
-        log("[main] 未解決呼び出し: " + phase1.unresolvedCount
-                + " 件 -> " + config.unresolvedCsv);
-        log("[main] フェーズ1 所要 "
-                + Progress.fmt((System.currentTimeMillis() - t1) / 1000.0));
         printHeap("フェーズ1完了");
 
         // --- フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 ---
         System.out.println();
         log("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
-        long t2 = System.currentTimeMillis();
         CallGraph graph = CallGraph.buildFrom(config.cacheFile);
         List<String> sourceFolderOrder = new ArrayList<>();
         for (Path sf : layout.sourceFolders) {
@@ -198,70 +195,58 @@ public class CallHierarchyExporter {
             }
         }
         graph.setProviders(providers);
-        log("[main] 型数=" + graph.typeCount()
+        log("型数=" + graph.typeCount()
                 + " メソッド数=" + graph.methodCount()
                 + " エッジ数=" + graph.edgeCount());
-        ResolutionStats stats = ResolutionReport.write(graph, config);
-        log("[main] 解決内訳: " + stats
-                + " -> " + config.resolutionsCsv);
-        log("[main] フェーズ2 所要 "
-                + Progress.fmt((System.currentTimeMillis() - t2) / 1000.0));
         printHeap("フェーズ2完了");
 
         // --- フェーズ3: エントリポイントごとにDFSしながら1行ずつ出力 ---
         System.out.println();
         log("=== フェーズ3/3: 出力 ===");
-        long t3 = System.currentTimeMillis();
         int[] entries = graph.selectEntryPoints(config);
-        if (config.wholeProjectMode) {
-            log("[main] 全体モード（entry.packages 未指定）");
-            InventoryStats inv = InventoryReport.writeMethods(graph, config, entries);
-            long edgeRows = InventoryReport.writeEdges(graph, config);
-            inv.edges = edgeRows;
-            log("[main] " + inv);
-            log("[main] メソッド一覧: " + config.methodsCsv);
-            log("[main] エッジ一覧  : " + config.edgesCsv + "（" + edgeRows + " 行）");
-            log("[main] 起点候補は「呼び出し元が無いメソッド」です。");
-            log("       画面入口のほかにデッドコード・テスト・リフレクション経由が");
-            log("       混ざるため、methods.csv の role 列で仕分けてください。");
-        }
-        if (!config.externalJars.isEmpty()) {
-            System.out.println();
-            log("=== 外部jarからの被参照スキャン ===");
-            ExternalUsageStats ex = ExternalUsageScanner.scan(graph, config);
-            log("[main] " + ex);
-            log("[main] 被参照一覧: " + config.externalUsageCsv);
-            if (ex.unmatched > 0) {
-                log("[main] 未照合 : " + config.externalUnmatchedCsv);
-                log("       自分の型への参照なのにメソッドが一致しなかったものです。");
-                log("       相手が古い版のjarに対してビルドされている可能性があるため、");
-                log("       「使われていない」と即断せず確認してください。");
-            }
-        }
-        log("[main] エントリポイント数: " + entries.length);
+
+        InventoryStats inv = InventoryReport.writeMethods(graph, config, entries);
+        log(inv.toString());
+        log("メソッド一覧: " + config.methodsCsv);
+
+        log("エントリポイント数: " + entries.length);
         if (entries.length == 0 && !config.wholeProjectMode) {
             log("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
         }
-        if (config.wholeProjectMode && entries.length > 1000) {
-            log("  ※ 起点が多いため call-hierarchy.csv が大きくなります。");
-            log("     不要なら entry.auto=false でツリー生成を止められます。");
+        if (config.wholeProjectMode) {
+            log("  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに");
+            log("     デッドコード・テスト・リフレクション経由が混ざるため、");
+            log("     methods.csv の inDegree / outDegree / role 列で仕分けてください。");
         }
 
+        // 呼び出し階層と被参照スキャンは同じ call-hierarchy.csv に出す
         long rows;
         CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
-                config.outputCsv, config.outputEncoding, config.outputBom, config.outputDelimiter);
+                config.outputCsv, config.outputEncoding, config.outputBom);
         try {
             rows = new StreamingTreeWalker(graph, config, writer).walkAll(entries);
+
+            if (!config.externalLibraryFolders.isEmpty()) {
+                System.out.println();
+                log("=== 外部jarからの被参照スキャン ===");
+                ExternalUsageStats ex = ExternalUsageScanner.scan(graph, config, writer);
+                log(ex.toString());
+                rows += ex.hits + ex.implicitCtors;
+                if (ex.unmatched > 0) {
+                    log("※ 自分の型への参照なのにメソッドが一致しなかったものが "
+                            + ex.unmatched + " 件あります。");
+                    log("   相手が古い版のjarに対してビルドされている可能性があるため、");
+                    log("   「使われていない」と即断せず確認してください。");
+                }
+            }
         } finally {
             writer.close();
         }
-        log("[main] フェーズ3 所要 "
-                + Progress.fmt((System.currentTimeMillis() - t3) / 1000.0));
         printHeap("フェーズ3完了");
 
         System.out.println();
-        log("[main] 出力: " + config.outputCsv + "（" + rows + " 行）");
-        log("[main] 完了 (" + (System.currentTimeMillis() - start) + " ms)");
+        log("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");
+        log("完了 (" + (System.currentTimeMillis() - start) + " ms)");
     }
 
     /**
@@ -287,8 +272,6 @@ public class CallHierarchyExporter {
         Progress(String label, long total) {
             this.label = label;
             this.total = total;
-            log("[進捗] " + label + " 開始"
-                    + (total > 0 ? ": 対象 " + total + " 件" : ""));
         }
 
         void step(long current) {
@@ -300,31 +283,26 @@ public class CallHierarchyExporter {
 
         private void report() {
             long now = System.nanoTime();
-            double elapsed = (now - startNanos) / 1e9;
-            double recent = (now - lastNanos) / 1e9;
             long recentCount = done - lastDone;
             StringBuilder sb = new StringBuilder();
-            sb.append("[進捗] ").append(label).append(' ').append(done);
+            sb.append(label).append(' ').append(done);
             if (total > 0) {
                 sb.append('/').append(total);
-                sb.append(String.format(" (%.1f%%)", done * 100.0 / total));
             } else {
                 sb.append("件");
             }
-            sb.append(String.format("  経過 %s", fmt(elapsed)));
-            sb.append(String.format("  直近%d件 %s", recentCount, fmt(recent)));
-            if (total > 0 && done > 0 && done < total) {
-                sb.append(String.format("  残り約 %s", fmt(elapsed / done * (total - done))));
-            }
+            sb.append(String.format(" （直近%d件: %s）", recentCount, fmt((now - lastNanos) / 1e9)));
             log(sb);
             lastNanos = now;
             lastDone = done;
         }
 
+        /** 最後の端数ぶんも1行出して締める */
         long finish() {
-            long ms = (System.nanoTime() - startNanos) / 1000000L;
-            log("[進捗] " + label + " 完了: " + done + " 件 / " + fmt(ms / 1000.0));
-            return ms;
+            if (done > lastDone) {
+                report();
+            }
+            return (System.nanoTime() - startNanos) / 1000000L;
         }
 
         static String fmt(double sec) {
@@ -340,7 +318,7 @@ public class CallHierarchyExporter {
         Runtime rt = Runtime.getRuntime();
         long usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
         long maxMb = rt.maxMemory() / (1024 * 1024);
-        log("[heap] " + label + ": 使用 " + usedMb + "MB / 上限 " + maxMb + "MB");
+        log("=== " + label + ": [heap] 使用 " + usedMb + "MB / 上限 " + maxMb + "MB");
     }
 
     // ================================================================
@@ -450,69 +428,47 @@ public class CallHierarchyExporter {
      */
     static final class Config {
 
-        enum ExcludeMode {
-            /** 除外対象のノードとその配下をまるごと切り捨てる */
-            PRUNE,
-            /** 除外対象のノードは出力しないが、その先は親に繋ぎ直して辿り続ける */
-            SKIP
-        }
+        /** CHA候補を呼び出し階層で展開する際の候補数の上限 */
+        static final int CHA_MAX_CANDIDATES = 20;
+        /** キャッシュフォルダ内に置くインデックスファイルの名前 */
+        static final String CACHE_FILE_NAME = "analysis-cache.tsv";
 
         final Path configDir;
         final Path projectRoot;
         /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
-        final List<String> projectSrc;
-        /** 依存jar・依存jarを集めたフォルダ。.classpath の kind="lib" があれば合算する */
-        final List<Path> projectLib;
+        final List<Path> sourceFolders;
+        /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
+        final List<Path> libraryFolders;
         final String sourceEncoding;
 
         final List<PackagePattern> entryPatterns;
-        final Pattern entryClassNamePattern;
-
         final List<PackagePattern> excludePatterns;
-        final ExcludeMode excludeMode;
 
         /** 全体モードか（entry.packages 未指定） */
         final boolean wholeProjectMode;
-        /** 全体モードで、呼び出し元が無いメソッドを自動的に起点にするか */
-        final boolean entryAuto;
-        /** 入次数がこの値以上のメソッドを HUB とみなす */
-        final int hubThreshold;
 
         final int maxDepth;
-        final int maxChildrenPerNode;
-        final long maxRowsPerEntry;
+        /** 出力行数の上限（0以下で無制限） */
+        final long maxRows;
 
-        /** CHA候補をエッジとして記録するか（漏れ防止のため既定true） */
-        final boolean chaRecord;
-        /** CHA候補を呼び出し階層で展開するか。展開すると候補数^深さで爆発する */
-        final boolean chaExpand;
-        final int chaMaxCandidates;
-
-        final List<String> hintCollectorClasses;
-        final List<String> candidateProviderClasses;
         /** 拡張の init() に渡す。プロジェクト固有のキーを自由に読ませるため */
         final Properties raw;
+        final List<String> hintCollectorClasses;
+        final List<String> candidateProviderClasses;
 
         final boolean cacheEnabled;
         final Path cacheFile;
 
-        final Path outputCsv;
-        final Path unresolvedCsv;
-        final Path resolutionsCsv;
-        /** 全体モードの出力: メソッド一覧と全エッジ一覧 */
-        final Path methodsCsv;
-        final Path edgesCsv;
         /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
-        final List<Path> externalJars;
-        final Path externalUsageCsv;
-        final Path externalUnmatchedCsv;
+        final List<Path> externalLibraryFolders;
 
-        /** CSVの出力文字コード。Excelでそのまま開けるよう既定はMS932(Shift_JIS) */
+        final Path outputCsv;
+        final Path methodsCsv;
+
+        /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
         final Charset outputEncoding;
         /** output.encoding=UTF-8-BOM のとき、ファイル先頭にBOMを書くか */
         final boolean outputBom;
-        /** 出力ファイルの区切り文字（既定はカンマ=CSV）。TABにするとタブ区切りになる */
-        final String outputDelimiter;
 
         Config(Path configPath) throws IOException {
             Path abs = configPath.toAbsolutePath().normalize();
@@ -528,62 +484,50 @@ public class CallHierarchyExporter {
             }
 
             this.projectRoot = resolvePath(require(p, "project.root"));
-            this.projectSrc = splitList(p.getProperty("project.src", ""));
+
+            // source.folders / library.folders は project.root からの相対
+            List<Path> srcs = new ArrayList<>();
+            for (String s : splitList(p.getProperty("source.folders", ""))) {
+                srcs.add(resolveUnder(projectRoot, s));
+            }
+            this.sourceFolders = srcs;
 
             List<Path> libs = new ArrayList<>();
-            for (String s : splitList(p.getProperty("project.lib", ""))) {
-                libs.add(resolvePath(s));
+            for (String s : splitList(p.getProperty("library.folders", ""))) {
+                libs.add(resolveUnder(projectRoot, s));
             }
-            this.projectLib = libs;
+            this.libraryFolders = libs;
 
             this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
 
             // entry.packages が空の場合は「全体モード」に入る。
-            // 起点を指定せず、ソース上の全メソッドの呼び出し状況を一覧化する。
+            // 起点を指定せず、呼び出し元が無いメソッドを自動的に起点にする。
             this.entryPatterns = PackagePattern.parseAll(splitList(p.getProperty("entry.packages", "")));
-            String namePat = p.getProperty("entry.class.name.pattern", "").trim();
-            this.entryClassNamePattern = namePat.isEmpty() ? null : Pattern.compile(namePat);
-
             this.excludePatterns = PackagePattern.parseAll(splitList(p.getProperty("exclude.packages", "")));
-            this.excludeMode = ExcludeMode.valueOf(
-                    p.getProperty("exclude.mode", "PRUNE").trim().toUpperCase());
-
             this.wholeProjectMode = this.entryPatterns.isEmpty();
-            this.entryAuto = Boolean.parseBoolean(p.getProperty("entry.auto", "true").trim());
-            this.hubThreshold = Integer.parseInt(p.getProperty("hub.threshold", "20").trim());
-            Progress.interval = Integer.parseInt(p.getProperty("progress.interval", "500").trim());
 
-            this.maxDepth = Integer.parseInt(p.getProperty("max.depth", "6").trim());
-            this.maxChildrenPerNode = Integer.parseInt(p.getProperty("max.children.per.node", "50").trim());
-            // 1エントリポイントあたりの出力行数の上限。組合せ爆発でCSVが
-            // 際限なく肥大化するのを防ぐ最後の砦（0以下で無制限）
-            this.maxRowsPerEntry = Long.parseLong(p.getProperty("max.rows.per.entry", "200000").trim());
+            this.maxDepth = Integer.parseInt(p.getProperty("max.depth", "50").trim());
+            this.maxRows = Long.parseLong(p.getProperty("max.rows", "5000000").trim());
 
-            this.chaRecord = Boolean.parseBoolean(p.getProperty("cha.record", "true").trim());
-            this.chaExpand = Boolean.parseBoolean(p.getProperty("cha.expand", "false").trim());
-            this.chaMaxCandidates = Integer.parseInt(p.getProperty("cha.max.candidates", "20").trim());
-
+            // 拡張（フェーズA/B）は設定ファイルには載せていない。
+            // 使う場合はこのキーを足せば読み込まれる
             this.hintCollectorClasses = splitList(p.getProperty("resolver.hint.collectors", ""));
             this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
             this.raw = p;
 
             this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
-            this.cacheFile = resolvePath(p.getProperty("cache.file", "./.cache/analysis-cache.tsv"));
+            this.cacheFile = resolvePath(p.getProperty("cache.folders", "./.cache"))
+                    .resolve(CACHE_FILE_NAME);
 
-            this.outputCsv = resolvePath(p.getProperty("output.csv", "./output/call-hierarchy.csv"));
-            this.unresolvedCsv = resolvePath(p.getProperty("unresolved.csv", "./output/unresolved-calls.csv"));
-            this.resolutionsCsv = resolvePath(p.getProperty("resolutions.csv", "./output/resolutions.csv"));
-            this.methodsCsv = resolvePath(p.getProperty("methods.csv", "./output/methods.csv"));
-            this.edgesCsv = resolvePath(p.getProperty("edges.csv", "./output/edges.csv"));
             List<Path> ex = new ArrayList<>();
-            for (String v : splitList(p.getProperty("external.jars", ""))) {
+            for (String v : splitList(p.getProperty("external.library.folders", ""))) {
                 ex.add(resolvePath(v));
             }
-            this.externalJars = ex;
-            this.externalUsageCsv =
-                    resolvePath(p.getProperty("external.usage.csv", "./output/external-usage.csv"));
-            this.externalUnmatchedCsv =
-                    resolvePath(p.getProperty("external.unmatched.csv", "./output/external-unmatched.csv"));
+            this.externalLibraryFolders = ex;
+
+            this.outputCsv = resolvePath(p.getProperty("output.csv", "./output/call-hierarchy.csv"));
+            this.methodsCsv = resolvePath(p.getProperty("methods.csv", "./output/methods.csv"));
+
             String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
             if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
                 this.outputEncoding = StandardCharsets.UTF_8;
@@ -592,22 +536,18 @@ public class CallHierarchyExporter {
                 this.outputEncoding = Charset.forName(encRaw);
                 this.outputBom = false;
             }
-
-            String delimRaw = p.getProperty("output.delimiter", "COMMA").trim().toUpperCase();
-            if ("TAB".equals(delimRaw)) {
-                this.outputDelimiter = "\t";
-            } else if ("COMMA".equals(delimRaw)) {
-                this.outputDelimiter = ",";
-            } else {
-                throw new IllegalArgumentException(
-                        "output.delimiter は COMMA か TAB を指定してください: " + delimRaw);
-            }
         }
 
         /** 相対パスは設定ファイルのあるディレクトリを起点に解決する */
         private Path resolvePath(String raw) {
             Path p = Paths.get(raw.trim());
             return (p.isAbsolute() ? p : configDir.resolve(p)).normalize();
+        }
+
+        /** 相対パスを指定の基準ディレクトリ（project.root）から解決する */
+        private static Path resolveUnder(Path base, String raw) {
+            Path p = Paths.get(raw.trim());
+            return (p.isAbsolute() ? p : base.resolve(p)).normalize();
         }
 
         private static List<String> splitList(String raw) {
@@ -734,32 +674,38 @@ public class CallHierarchyExporter {
     /**
      * プロジェクトの構成（ソースフォルダ・依存jar）を読み取る。
      *
-     * project.src / project.lib が主たる指定方法。Eclipseの .classpath が
+     * source.folders / library.folders が主たる指定方法。Eclipseの .classpath が
      * 無いプロジェクト（GradleやMaven単体の構成等）でも使える。
-     *   - project.src が空なら、.classpath があれば kind="src" から読む
-     *   - project.lib は、.classpath の kind="lib"（あれば）と合算する
+     *   - source.folders が空なら、.classpath があれば kind="src" から読む
+     *   - library.folders は、.classpath の kind="lib"（あれば）と合算する
      *
      * .classpath の kind="con"（Gradle/Mavenのクラスパス・コンテナ等）は
      * 解決しない。JDK標準クラスは setEnvironment の
      * includeRunningVMBootclasspath=true で実行中のJVMから解決させる。
      * kind="var" やリンクリソース、ユーザーライブラリコンテナも未対応のため、
-     * 必要な場合は project.lib で明示的に追加すること。
+     * 必要な場合は library.folders で明示的に追加すること。
      */
-    static final class EclipseProjectLayout {
+    static final class ProjectLayout {
 
         final Path projectRoot;
         final List<Path> sourceFolders = new ArrayList<>();
         final List<Path> classpathEntries = new ArrayList<>();
 
-        EclipseProjectLayout(Config config) throws IOException {
+        ProjectLayout(Config config) throws IOException {
             this.projectRoot = config.projectRoot;
 
             if (!Files.isDirectory(projectRoot)) {
                 throw new IOException("project.root がディレクトリとして存在しません: " + projectRoot);
             }
 
-            for (String rel : config.projectSrc) {
-                sourceFolders.add(projectRoot.resolve(rel).normalize());
+            for (Path sf : config.sourceFolders) {
+                if (!Files.isDirectory(sf)) {
+                    log("[WARN] source.folders のフォルダが見つかりません: " + sf);
+                    continue;
+                }
+                if (!sourceFolders.contains(sf)) {
+                    sourceFolders.add(sf);
+                }
             }
 
             Path dotClasspath = projectRoot.resolve(".classpath");
@@ -767,10 +713,16 @@ public class CallHierarchyExporter {
                 readDotClasspath(dotClasspath);
             } else if (sourceFolders.isEmpty()) {
                 throw new IOException(
-                        ".classpath が見つからず、project.src の指定もありません: " + dotClasspath);
+                        ".classpath が見つからず、source.folders の指定もありません: " + dotClasspath);
             }
 
-            classpathEntries.addAll(config.projectLib);
+            for (Path lib : config.libraryFolders) {
+                if (!Files.exists(lib)) {
+                    log("[WARN] library.folders のフォルダが見つかりません: " + lib);
+                    continue;
+                }
+                classpathEntries.add(lib);
+            }
 
             if (sourceFolders.isEmpty()) {
                 throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot);
@@ -855,7 +807,7 @@ public class CallHierarchyExporter {
          * 解決できないため、そういったプロジェクトでは .classpath だけでは
          * 依存jarが1つも分からない。その場合は、依存jarを集めたフォルダ
          * （Gradleの application/distribution プラグインが作る lib フォルダ、
-         * 手動で集めた lib フォルダ等）を project.lib に指定すれば、
+         * 手動で集めた lib フォルダ等）を library.folders に指定すれば、
          * ここで直下の *.jar を自動的に展開してクラスパスに加える。
          * （.classpath の kind="lib" と両方指定された場合は単純に合算する）
          */
@@ -950,7 +902,6 @@ public class CallHierarchyExporter {
         int reused;
         int parsed;
         int failed;
-        long unresolvedCount;
     }
 
     /**
@@ -968,10 +919,10 @@ public class CallHierarchyExporter {
      */
     static final class CacheUpdater {
 
-        private final EclipseProjectLayout layout;
+        private final ProjectLayout layout;
         private final Config config;
 
-        CacheUpdater(EclipseProjectLayout layout, Config config) {
+        CacheUpdater(ProjectLayout layout, Config config) {
             this.layout = layout;
             this.config = config;
         }
@@ -980,7 +931,7 @@ public class CallHierarchyExporter {
             CachePhaseResult result = new CachePhaseResult();
 
             List<Path> javaFiles = layout.listJavaFiles();
-            log("[main] Javaファイル数: " + javaFiles.size());
+            log("Javaファイル数: " + javaFiles.size());
 
             // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）
             Map<String, FileStat> live = new LinkedHashMap<>();
@@ -996,26 +947,23 @@ public class CallHierarchyExporter {
             Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
 
             Set<String> copied = new LinkedHashSet<>();
+            Progress pg = new Progress("ソース解析", javaFiles.size());
 
             BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
-            BufferedWriter unresolvedOut =
-                    Csv.writer(config.unresolvedCsv, config.outputEncoding, config.outputBom);
             try {
                 cacheOut.write(CacheFormat.VERSION);
                 cacheOut.newLine();
-                unresolvedOut.write(String.join(config.outputDelimiter,
-                        "file", "line", "callerMethod", "expression", "reason"));
-                unresolvedOut.newLine();
 
                 // --- パス1: 旧キャッシュのストリーミングコピー ---
                 if (config.cacheEnabled) {
-                    result.unresolvedCount += copyValidBlocks(live, copied, cacheOut, unresolvedOut);
+                    copyValidBlocks(live, copied, cacheOut);
                 }
                 result.reused = copied.size();
 
                 // --- パス2: 未処理のファイルだけ解析 ---
                 CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
                 int done = result.reused;
+                pg.step(done);
                 for (Map.Entry<String, FileStat> en : live.entrySet()) {
                     String rel = en.getKey();
                     if (copied.contains(rel)) {
@@ -1026,43 +974,38 @@ public class CallHierarchyExporter {
                         // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
                         FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
                         writeBlock(fa, cacheOut);
-                        result.unresolvedCount += writeUnresolved(fa, unresolvedOut, config.outputDelimiter);
                         result.parsed++;
                     } catch (Exception e) {
                         result.failed++;
                         log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
                     }
                     done++;
-                    if (done % 200 == 0) {
-                        log("  ... " + done + "/" + live.size());
-                    }
+                    pg.step(done);
                 }
             } finally {
                 cacheOut.close();
-                unresolvedOut.close();
             }
+            pg.finish();
 
             Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
             return result;
         }
 
         /** 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す */
-        private long copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
-                                      BufferedWriter cacheOut, BufferedWriter unresolvedOut)
+        private void copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
+                                      BufferedWriter cacheOut)
                 throws IOException {
             if (!Files.isRegularFile(config.cacheFile)) {
-                return 0L;
+                return;
             }
-            long unresolved = 0L;
             BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
             try {
                 String first = in.readLine();
                 if (first == null || !CacheFormat.VERSION.equals(first.trim())) {
                     log("[cache] 形式が異なるため既存キャッシュを破棄します");
-                    return 0L;
+                    return;
                 }
                 boolean keeping = false;
-                String currentPath = null;
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.isEmpty()) {
@@ -1072,15 +1015,13 @@ public class CallHierarchyExporter {
                     if (t == 'F') {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         keeping = false;
-                        currentPath = null;
                         if (f.length >= 4) {
                             FileStat st = live.get(f[1]);
                             try {
                                 if (st != null && st.mtime == Long.parseLong(f[2])
                                         && st.size == Long.parseLong(f[3])) {
                                     keeping = true;
-                                    currentPath = f[1];
-                                    copied.add(currentPath);
+                                    copied.add(f[1]);
                                 }
                             } catch (NumberFormatException ignore) {
                                 // 壊れたF行 -> このブロックは破棄し、後で再解析される
@@ -1094,22 +1035,11 @@ public class CallHierarchyExporter {
                     } else if (keeping) {
                         cacheOut.write(line);
                         cacheOut.newLine();
-                        if (t == 'U') {
-                            String[] f = line.split(CacheFormat.SEP, -1);
-                            if (f.length >= 5) {
-                                unresolvedOut.write(String.join(config.outputDelimiter,
-                                        Csv.esc(currentPath), f[1],
-                                        Csv.esc(f[2]), Csv.esc(f[3]), Csv.esc(f[4])));
-                                unresolvedOut.newLine();
-                                unresolved++;
-                            }
-                        }
                     }
                 }
             } finally {
                 in.close();
             }
-            return unresolved;
         }
 
         private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
@@ -1145,16 +1075,6 @@ public class CallHierarchyExporter {
                         CacheFormat.clean(u.reason)));
                 w.newLine();
             }
-        }
-
-        private static long writeUnresolved(FileAnalysis fa, BufferedWriter w, String delimiter)
-                throws IOException {
-            for (UnresolvedCall u : fa.unresolved) {
-                w.write(String.join(delimiter, Csv.esc(fa.relativePath), String.valueOf(u.line),
-                        Csv.esc(u.callerMethodKey), Csv.esc(u.expression), Csv.esc(u.reason)));
-                w.newLine();
-            }
-            return fa.unresolved.size();
         }
 
         static final class FileStat {
@@ -1305,7 +1225,7 @@ public class CallHierarchyExporter {
      */
     static final class CallEdgeExtractor {
 
-        private final EclipseProjectLayout layout;
+        private final ProjectLayout layout;
         private final Charset encoding;
         private final Map<String, String> compilerOptions;
         private final String[] classpath;
@@ -1314,7 +1234,7 @@ public class CallHierarchyExporter {
 
         private final List<CallSiteHintCollector> collectors;
 
-        CallEdgeExtractor(EclipseProjectLayout layout, Config config) {
+        CallEdgeExtractor(ProjectLayout layout, Config config) {
             this.collectors = Plugins.load(config.hintCollectorClasses, CallSiteHintCollector.class);
             this.layout = layout;
             this.encoding = Charset.forName(config.sourceEncoding);
@@ -2314,7 +2234,7 @@ public class CallHierarchyExporter {
                 in.close();
             }
             pg1.finish();
-            log("[main] 収集: 型 " + g.typeKind.size()
+            log("収集: 型 " + g.typeKind.size()
                     + " / メソッド " + g.methods.size() + " / エッジ " + edgeCount);
 
             if (edgeCount > Integer.MAX_VALUE) {
@@ -2766,7 +2686,8 @@ public class CallHierarchyExporter {
         /** 設定にマッチする、ソース上に宣言のあるメソッドをエントリポイントとして選ぶ */
         int[] selectEntryPoints(Config config) {
             if (config.entryPatterns.isEmpty()) {
-                return config.entryAuto ? autoEntryPoints() : new int[0];
+                // 全体モード: 呼び出し元が無いメソッドを自動的に起点にする
+                return autoEntryPoints();
             }
             IntArray hits = new IntArray(256);
             for (int id = 0; id < methods.size(); id++) {
@@ -2777,10 +2698,6 @@ public class CallHierarchyExporter {
                 String type = methods.typeFqn(id);
                 String name = methods.methodName(id);
                 if (!PackagePattern.matchesAny(config.entryPatterns, pkg, type, name)) {
-                    continue;
-                }
-                if (config.entryClassNamePattern != null
-                        && !config.entryClassNamePattern.matcher(methods.simpleTypeName(id)).matches()) {
                     continue;
                 }
                 hits.add(id);
@@ -2807,116 +2724,13 @@ public class CallHierarchyExporter {
         }
     }
 
-    /** 解決の内訳（どの段でどれだけ確定できたかの集計） */
-    static final class ResolutionStats {
-        long staticBound;
-        long noOverride;
-        long singleImpl;
-        long noImpl;
-        long localNew;
-        long custom;
-        long cha;
-        long chaCandidatesMax;
-        /** importからの推定（未検証の外部ライブラリ呼び出し）に解決した件数 */
-        long externalGuess;
-
-        @Override
-        public String toString() {
-            return "静的束縛=" + staticBound
-                    + " オーバーライドなし=" + noOverride
-                    + " 単一実装=" + singleImpl
-                    + " 実装なし=" + noImpl
-                    + " new追跡=" + localNew
-                    + " 拡張=" + custom
-                    + " CHA=" + cha + "(最大候補" + chaCandidatesMax + "件)"
-                    + " 外部推定=" + externalGuess;
-        }
-    }
-
-    /**
-     * 全エッジについて解決を実行し、内訳を集計しつつCSVに出力する。
-     *
-     * CHAになった箇所＝「静的には絞りきれなかった箇所」なので、
-     * カスタム解決（ファクトリ解析・DI設定など）を作る際の投資判断は
-     * このファイルの件数を見て決めるとよい。
-     */
-    static final class ResolutionReport {
-
-        static ResolutionStats write(CallGraph g, Config config) throws IOException {
-            ResolutionStats st = new ResolutionStats();
-            // 同じ呼び出し先は何度も現れるので、メソッド単位で1行にまとめる
-            boolean[] done = new boolean[g.methodCount()];
-            Progress pg = new Progress("具象クラス解決", g.methodCount());
-            BufferedWriter w = Csv.writer(config.resolutionsCsv, config.outputEncoding, config.outputBom);
-            try {
-                w.write(String.join(config.outputDelimiter,
-                        "declaredMethod", "bindKind", "label", "candidateCount", "candidates"));
-                w.newLine();
-                for (int caller = 0; caller < g.methodCount(); caller++) {
-                    pg.step(caller + 1);
-                    for (int e = g.edgeStart(caller); e < g.edgeEnd(caller); e++) {
-                        int callee = g.calleeIds[e];
-                        char bk = (char) g.bindKinds[e];
-                        CallGraph.Resolution r = g.resolveEdge(e, bk);
-
-                        if (r.label.startsWith("STATIC_BOUND")) {
-                            st.staticBound++;
-                        } else if ("NO_OVERRIDE".equals(r.label)) {
-                            st.noOverride++;
-                        } else if ("SINGLE_IMPL".equals(r.label)) {
-                            st.singleImpl++;
-                        } else if ("NO_IMPL".equals(r.label)) {
-                            st.noImpl++;
-                        } else if (r.label.startsWith("LOCAL_NEW")) {
-                            st.localNew++;
-                        } else if ("EXTERNAL_GUESS".equals(r.label)) {
-                            st.externalGuess++;
-                        } else if (!"CHA".equals(r.label)) {
-                            st.custom++;   // 拡張が返したラベル
-                        } else {
-                            st.cha++;
-                            if (r.targets.length > st.chaCandidatesMax) {
-                                st.chaCandidatesMax = r.targets.length;
-                            }
-                        }
-
-                        // 静的束縛の行も出力する。ここを省くと
-                        // 「段0で確定して階層が切れた箇所」を後から監査できなくなる
-                        if (done[callee]) {
-                            continue;
-                        }
-                        done[callee] = true;
-                        StringBuilder cands = new StringBuilder();
-                        for (int i = 0; i < r.targets.length; i++) {
-                            if (i > 0) {
-                                cands.append(" / ");
-                            }
-                            cands.append(g.methods.typeFqn(r.targets[i]));
-                        }
-                        w.write(String.join(config.outputDelimiter,
-                                Csv.esc(g.methods.typeFqn(callee) + "#" + g.methods.signature(callee)),
-                                String.valueOf(bk), r.label,
-                                String.valueOf(r.targets.length), Csv.esc(cands.toString())));
-                        w.newLine();
-                    }
-                }
-            } finally {
-                w.close();
-            }
-            pg.finish();
-            return st;
-        }
-    }
-
-    /** 全体モードの集計 */
+    /** methods.csv の集計 */
     static final class InventoryStats {
         long methods;
         long entryCandidates;
         long isolated;
         long leaves;
-        long hubs;
         long unreachable;
-        long edges;
 
         @Override
         public String toString() {
@@ -2924,19 +2738,17 @@ public class CallHierarchyExporter {
                     + " 起点候補=" + entryCandidates
                     + " 孤立=" + isolated
                     + " 末端=" + leaves
-                    + " ハブ=" + hubs
-                    + " 未到達=" + unreachable
-                    + " エッジ=" + edges;
+                    + " 未到達=" + unreachable;
         }
     }
 
     /**
-     * 全体モードの出力。
+     * methods.csv の出力。
      *
-     * エントリポイントを指定しない場合、呼び出しルートを全部展開すると
-     * 分岐^深さで爆発する。一方でエッジ一覧とメソッド一覧はエッジ数・メソッド数に
-     * 比例した線形サイズで収まり、しかも任意の起点からのルートを後から
-     * 再構成できる。よって全体モードでは「一覧」を一次成果物とする。
+     * 呼び出し階層（call-hierarchy.csv）は起点からの経路を展開するため
+     * 分岐^深さで膨らむが、こちらはメソッド数に比例した線形サイズで収まる。
+     * 「どのメソッドが誰からも呼ばれていないか」「どこがハブか」を
+     * 俯瞰したいときはこちらを見る。
      */
     static final class InventoryReport {
 
@@ -2948,8 +2760,6 @@ public class CallHierarchyExporter {
          *                   テスト・リフレクション経由が混ざる（要仕分け）
          *   ISOLATED        呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い
          *   LEAF            呼び出し先が無い。末端処理
-         *   HUB             入次数が hub.threshold 以上。共通処理。
-         *                   改修時の影響範囲が広い箇所
          *   NORMAL          上記以外
          */
         static InventoryStats writeMethods(CallGraph g, Config config, int[] roots)
@@ -2961,13 +2771,13 @@ public class CallHierarchyExporter {
             Progress pg = new Progress("メソッド一覧の出力", g.methodCount());
             BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding, config.outputBom);
             try {
-                w.write(String.join(config.outputDelimiter, "method", "declaringType", "typeKind",
+                w.write(String.join(Csv.DELIM, "method", "declaringType", "typeKind",
                         "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable"));
                 w.newLine();
                 for (int id = 0; id < g.methodCount(); id++) {
                     pg.step(id + 1);
                     // ソースが無いメソッド（jar内など）は一覧の対象外。
-                    // 呼ばれている事実は edges.csv 側に残る
+                    // 呼ばれている事実は call-hierarchy.csv 側に残る
                     if (g.methods.declFile(id) == null) {
                         continue;
                     }
@@ -2980,9 +2790,6 @@ public class CallHierarchyExporter {
                     } else if (in[id] == 0) {
                         role = "ENTRY_CANDIDATE";
                         st.entryCandidates++;
-                    } else if (in[id] >= config.hubThreshold) {
-                        role = "HUB";
-                        st.hubs++;
                     } else if (out == 0) {
                         role = "LEAF";
                         st.leaves++;
@@ -2992,7 +2799,7 @@ public class CallHierarchyExporter {
                     if (!reachable[id]) {
                         st.unreachable++;
                     }
-                    w.write(String.join(config.outputDelimiter,
+                    w.write(String.join(Csv.DELIM,
                             Csv.esc(g.methods.shortLabel(id)),
                             Csv.esc(g.methods.typeFqn(id)),
                             String.valueOf(g.kindOf(g.methods.typeFqn(id))),
@@ -3012,50 +2819,6 @@ public class CallHierarchyExporter {
             return st;
         }
 
-        /**
-         * edges.csv … 解決後の全呼び出し関係。
-         *
-         * 1行 = 1つの呼び出し先候補。CHAで候補が複数になった呼び出しは
-         * 候補の数だけ行が出る（resolution 列で由来が分かる）。
-         * この一覧があれば、任意のメソッドを起点にしたルートを後から再構成できる。
-         */
-        static long writeEdges(CallGraph g, Config config) throws IOException {
-            long rows = 0;
-            Progress pg = new Progress("エッジ一覧の出力", g.methodCount());
-            BufferedWriter w = Csv.writer(config.edgesCsv, config.outputEncoding, config.outputBom);
-            try {
-                w.write(String.join(config.outputDelimiter, "caller", "callee", "callerFile",
-                        "callLine", "bindKind", "resolution", "candidateCount", "declaredCallee"));
-                w.newLine();
-                for (int caller = 0; caller < g.methodCount(); caller++) {
-                    pg.step(caller + 1);
-                    String callerFile = g.methods.declFile(caller);
-                    for (int e = g.edgeStart(caller); e < g.edgeEnd(caller); e++) {
-                        char bk = (char) g.bindKinds[e];
-                        CallGraph.Resolution r = g.resolveEdge(e, bk);
-                        int declared = g.calleeIds[e];
-                        for (int t : r.targets) {
-                            w.write(String.join(config.outputDelimiter,
-                                    Csv.esc(g.methods.shortLabel(caller)),
-                                    Csv.esc(g.methods.shortLabel(t)),
-                                    Csv.esc(callerFile == null ? "" : callerFile),
-                                    String.valueOf(g.callLines[e]),
-                                    String.valueOf(bk),
-                                    r.label,
-                                    String.valueOf(r.targets.length),
-                                    Csv.esc(g.methods.typeFqn(declared)
-                                            + "#" + g.methods.signature(declared))));
-                            w.newLine();
-                            rows++;
-                        }
-                    }
-                }
-            } finally {
-                w.close();
-            }
-            pg.finish();
-            return rows;
-        }
     }
 
     // ================================================================
@@ -3230,11 +2993,12 @@ public class CallHierarchyExporter {
      */
     static final class ExternalUsageScanner {
 
-        static ExternalUsageStats scan(CallGraph g, Config config) throws IOException {
+        static ExternalUsageStats scan(CallGraph g, Config config,
+                                        CallHierarchyCsvWriter out) throws IOException {
             ExternalUsageStats st = new ExternalUsageStats();
 
-            List<Path> jars = collectJars(config.externalJars);
-            log("[main] 外部jar: " + jars.size() + " 件");
+            List<Path> jars = collectJars(config.externalLibraryFolders);
+            log("外部jar: " + jars.size() + " 件");
             if (jars.isEmpty()) {
                 return st;
             }
@@ -3258,16 +3022,7 @@ public class CallHierarchyExporter {
             int[] refCount = new int[g.methodCount()];
 
             Progress pg = new Progress("外部jarの被参照スキャン", jars.size());
-            BufferedWriter hit = Csv.writer(config.externalUsageCsv, config.outputEncoding, config.outputBom);
-            BufferedWriter miss = Csv.writer(config.externalUnmatchedCsv, config.outputEncoding, config.outputBom);
-            try {
-                hit.write(String.join(config.outputDelimiter,
-                        "method", "declaringType", "jar", "referencingClass", "matchKind"));
-                hit.newLine();
-                miss.write(String.join(config.outputDelimiter,
-                        "jar", "referencingClass", "ownerType", "method", "params", "reason"));
-                miss.newLine();
-
+            {
                 for (int j = 0; j < jars.size(); j++) {
                     Path jarPath = jars.get(j);
                     String jarName = jarPath.getFileName().toString();
@@ -3301,13 +3056,8 @@ public class CallHierarchyExporter {
                                 if (id >= 0) {
                                     String kind = g.methods.typeFqn(id).equals(normalize(owner))
                                             ? "EXACT" : "INHERITED";
-                                    hit.write(String.join(config.outputDelimiter,
-                                            Csv.esc(g.methods.shortLabel(id)),
-                                            Csv.esc(g.methods.typeFqn(id)),
-                                            Csv.esc(jarName),
-                                            Csv.esc(refs.thisClass),
-                                            kind));
-                                    hit.newLine();
+                                    out.writeExternalUsageRow(refs.thisClass,
+                                            g.methods.shortLabel(id), jarName, kind);
                                     if (refCount[id]++ == 0) {
                                         st.usedMethods++;
                                     }
@@ -3317,21 +3067,13 @@ public class CallHierarchyExporter {
                                     // 照合先が存在しないが、これは版の食い違いではない。
                                     // 「誰がこのクラスを生成しているか」は影響調査で有用なので
                                     // 被参照として記録する。
-                                    hit.write(String.join(config.outputDelimiter,
-                                            Csv.esc(simpleOf(owner) + ".<init>"),
-                                            Csv.esc(owner), Csv.esc(jarName),
-                                            Csv.esc(refs.thisClass), "IMPLICIT_CTOR"));
-                                    hit.newLine();
+                                    out.writeExternalUsageRow(refs.thisClass,
+                                            simpleOf(owner) + ".<init>", jarName, "IMPLICIT_CTOR");
                                     st.implicitCtors++;
                                 } else {
                                     // 自分の型への参照なのに一致するメソッドが無い。
                                     // 相手が古い版のjarに対してビルドされている可能性がある。
-                                    // 「使われていない」と即断しないための記録。
-                                    miss.write(String.join(config.outputDelimiter,
-                                            Csv.esc(jarName), Csv.esc(refs.thisClass),
-                                            Csv.esc(owner), Csv.esc(r[1]), Csv.esc(r[2]),
-                                            "自分の型だが一致するメソッドが無い（版differ等）"));
-                                    miss.newLine();
+                                    // 「使われていない」と即断しないよう件数だけ残す
                                     st.unmatched++;
                                 }
                             }
@@ -3342,9 +3084,6 @@ public class CallHierarchyExporter {
                     st.jars++;
                     pg.step(j + 1);
                 }
-            } finally {
-                hit.close();
-                miss.close();
             }
             pg.finish();
             return st;
@@ -3432,34 +3171,33 @@ public class CallHierarchyExporter {
      * メモリ使用量は深さに比例した一定量にとどまる。
      *
      * 安全策:
-     * - maxDepth            … 深さ制限
-     * - maxChildrenPerNode  … 共通ユーティリティ等「ハブ」メソッドでの爆発防止
-     * - maxRowsPerEntry     … 1起点あたりの出力行数の上限（組合せ爆発への最後の砦）
-     * - 循環検出 [CYCLE]    … 「現在の経路（rootからそのノードまでの祖先）」に
-     *                          同じメソッドが既にあれば、その辺を [CYCLE] として1行出力し、
-     *                          そこから先へは降りない。
-     *                          判定は経路単位なので、別の経路で同じ呼び出しが
-     *                          現れた場合はそちらでも改めて出力する
-     *                          （グローバルな訪問済み集合は持たない）
-     * - 除外パッケージ      … PRUNE=ノードと配下を切り捨て / SKIP=ノードは出さず配下を
-     *                          親に繋ぎ直して辿り続ける
+     * - max.depth  … 深さ制限（0以下で無制限だが、循環検出があるため止まる）
+     * - max.rows   … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）
+     * - 循環検出   … 「現在の経路（rootからそのノードまでの祖先）」に同じメソッドが
+     *                既にあれば、その辺を1行だけ出力してそこから先へは降りない。
+     *                判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
+     *                そちらでも改めて出力する（グローバルな訪問済み集合は持たない）
+     * - 除外パッケージ … 除外対象のノード自身は出力しないが、その先は親に
+     *                    繋ぎ直して辿り続ける
      */
     static final class StreamingTreeWalker {
+
+        /** max.depth が 0以下（無制限）のときの、経路配列の実装上の上限 */
+        private static final int DEPTH_HARD_CAP = 4096;
+        /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
+        static final String CYCLE_MARK = "[CYCLE]";
 
         private final CallGraph graph;
         private final Config config;
         private final CallHierarchyCsvWriter writer;
+        private final int maxDepth;
 
         // 現在の経路（深さぶんだけ確保）
         private final int[] pathMethod;
         private final int[] pathCallLine;
         private final String[] pathNote;
 
-        /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
-        static final String CYCLE_MARK = "[CYCLE]";
-
         private int rootId;
-        private long rowsForEntry;
         private long totalRows;
         private boolean limitWarned;
 
@@ -3467,7 +3205,8 @@ public class CallHierarchyExporter {
             this.graph = graph;
             this.config = config;
             this.writer = writer;
-            int cap = Math.max(2, config.maxDepth + 2);
+            this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
+            int cap = Math.max(2, this.maxDepth + 2);
             this.pathMethod = new int[cap];
             this.pathCallLine = new int[cap];
             this.pathNote = new String[cap];
@@ -3477,27 +3216,25 @@ public class CallHierarchyExporter {
             Progress pg = new Progress("呼び出し階層の展開", entries.length);
             for (int i = 0; i < entries.length; i++) {
                 rootId = entries[i];
-                rowsForEntry = 0;
-                limitWarned = false;
-
                 pathMethod[0] = rootId;
                 pathCallLine[0] = -1;
-                pathNote[0] = (graph.methods.declFile(rootId) == null) ? "ソースなし（展開不可）" : null;
+                pathNote[0] = null;
                 descend(0);
                 pg.step(i + 1);
+                if (isRowLimitReached()) {
+                    break;
+                }
             }
             pg.finish();
-            log("[main] 出力行数: " + totalRows);
             return totalRows;
         }
 
         /** depth のノードから、その呼び出し先を辿る */
         private void descend(int depth) throws IOException {
-            if (depth >= config.maxDepth || depth + 1 >= pathMethod.length) {
+            if (depth >= maxDepth || depth + 1 >= pathMethod.length) {
                 return;
             }
             int callerId = pathMethod[depth];
-            int emitted = 0;
             int from = graph.edgeStart(callerId);
             int to = graph.edgeEnd(callerId);
 
@@ -3510,63 +3247,35 @@ public class CallHierarchyExporter {
                 CallGraph.Resolution res =
                         graph.resolveEdge(e, (char) graph.bindKinds[e]);
 
-                // --- CHA候補が複数、かつ展開しない設定 ---
-                // 記録（線形）と展開（候補数^深さ）を分離する。ここでは
-                // 「解決できなかった」事実を1行だけ残し、静かに消さない。
-                if (res.targets.length > 1 && !config.chaExpand) {
-                    if (!config.chaRecord || isExcluded(declaredCallee)) {
-                        continue;
-                    }
-                    if (emitted >= config.maxChildrenPerNode) {
-                        emitOverflow(depth, declaredCallee, callLine, to - e);
-                        return;
-                    }
-                    push(depth + 1, declaredCallee, callLine,
-                            "CHA候補" + res.targets.length + "件（未展開）");
-                    emit(depth + 1);
-                    emitted++;
-                    continue;
-                }
-
-                int limit = config.chaExpand
-                        ? Math.min(res.targets.length, config.chaMaxCandidates)
-                        : res.targets.length;
+                // CHAで候補が複数になった呼び出しは、候補の数だけ展開すると
+                // 候補数^深さ で爆発する。宣言型のまま1行だけ残して先へは降りない
+                int[] targets = res.targets;
+                boolean expand = (targets.length == 1);
+                int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
 
                 for (int ti = 0; ti < limit; ti++) {
                     if (isRowLimitReached()) {
                         return;
                     }
-                    int target = res.targets[ti];
+                    int target = targets[ti];
 
                     if (isExcluded(target)) {
-                        if (config.excludeMode == Config.ExcludeMode.PRUNE) {
-                            continue;   // ノードごと切り捨て、配下も辿らない
-                        }
-                        // SKIP: このノードは出力しないが、その先は親に繋ぎ直して辿る
+                        // 除外対象のノード自身は出力しないが、その先は親に繋ぎ直して辿る
                         if (!onCurrentPath(target, depth)) {
                             skipThrough(depth, target);
                         }
                         continue;
                     }
 
-                    if (emitted >= config.maxChildrenPerNode) {
-                        emitOverflow(depth, target, callLine, to - e);
-                        return;
-                    }
-
-                    if (onCurrentPath(target, depth)) {
-                        // [CYCLE]: この経路上で既に呼んでいるメソッドへ戻る辺。
-                        // 辺自体は1行として出力し、そこから先へは降りない。
-                        push(depth + 1, target, callLine, CYCLE_MARK);
-                        emit(depth + 1);
-                        emitted++;
-                        continue;
-                    }
-
-                    push(depth + 1, target, callLine, noteFor(target, declaredCallee, res, depth));
+                    boolean cycle = onCurrentPath(target, depth);
+                    push(depth + 1, target, callLine,
+                            noteFor(target, declaredCallee, res, depth, cycle));
                     emit(depth + 1);
-                    emitted++;
-                    descend(depth + 1);
+
+                    // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
+                    if (expand && !cycle) {
+                        descend(depth + 1);
+                    }
                 }
             }
         }
@@ -3577,44 +3286,8 @@ public class CallHierarchyExporter {
                     graph.methods.methodName(id));
         }
 
-        private void emitOverflow(int depth, int id, int callLine, int remaining)
-                throws IOException {
-            push(depth + 1, id, callLine,
-                    "上限(" + config.maxChildrenPerNode + "件)超過のため以降省略。残り"
-                            + remaining + "件");
-            emit(depth + 1);
-        }
-
-        /** ノードに付ける注記。解決の由来もここに載せる（CSVの列構成は変えない） */
-        private String noteFor(int target, int declaredCallee,
-                                CallGraph.Resolution res, int depth) {
-            StringBuilder sb = new StringBuilder();
-            if ("EXTERNAL_GUESS".equals(res.label)) {
-                // クラスパス不足でバインディング解決自体ができなかった呼び出し。
-                // importの単一型インポートから型名を推定しただけで、JDTによる
-                // 検証は経ていない（メンバの実在・オーバーロードは未確認）
-                sb.append("外部ライブラリ（import推定・未検証）");
-            } else if (graph.methods.declFile(target) == null) {
-                sb.append("ソースなし（展開不可）");
-            } else if (depth + 1 >= config.maxDepth) {
-                sb.append("深さ制限(").append(config.maxDepth).append(")のため打ち切り");
-            }
-            if (res.targets.length > 1) {
-                if (sb.length() > 0) {
-                    sb.append(" / ");
-                }
-                sb.append("CHA候補").append(res.targets.length).append("件中");
-            } else if (target != declaredCallee) {
-                if (sb.length() > 0) {
-                    sb.append(" / ");
-                }
-                sb.append("解決:").append(res.label);
-            }
-            return (sb.length() == 0) ? null : sb.toString();
-        }
-
         /**
-         * SKIPモード用。除外されたノード自身は出力せず、
+         * 除外されたノード自身は出力せず、
          * その呼び出し先を「1つ上の親の子」として辿り直す。
          */
         private void skipThrough(int parentDepth, int skippedId) throws IOException {
@@ -3634,6 +3307,43 @@ public class CallHierarchyExporter {
         }
 
         /**
+         * ノードに付ける注記。call-hierarchy列の最後の要素として出す。
+         *
+         * 独立した列にすると call-hierarchy より後ろに列ができてしまい、
+         * 「可変長の階層を最終列に置く」という構成が崩れるため、
+         * 階層の末尾に追記する形にしている（そのぶん行末grepは効かなくなる）。
+         */
+        private String noteFor(int target, int declaredCallee,
+                                CallGraph.Resolution res, int depth, boolean cycle) {
+            StringBuilder sb = new StringBuilder();
+            if (cycle) {
+                // この経路上で既に呼んでいるメソッドへ戻る辺。ここから先へは降りない
+                sb.append(CYCLE_MARK);
+            } else if ("EXTERNAL_GUESS".equals(res.label)) {
+                // クラスパス不足でバインディング解決自体ができなかった呼び出し。
+                // importの単一型インポートから型名を推定しただけで、JDTによる
+                // 検証は経ていない（メンバの実在・オーバーロードは未確認）
+                sb.append("外部ライブラリ（import推定・未検証）");
+            } else if (graph.methods.declFile(target) == null) {
+                sb.append("ソースなし（展開不可）");
+            } else if (depth + 1 >= maxDepth) {
+                sb.append("深さ制限(").append(maxDepth).append(")のため打ち切り");
+            }
+            if (res.targets.length > 1) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                sb.append("CHA候補").append(res.targets.length).append("件（未展開）");
+            } else if (target != declaredCallee) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                sb.append("解決:").append(res.label);
+            }
+            return (sb.length() == 0) ? null : sb.toString();
+        }
+
+        /**
          * そのメソッドが「現在の経路」に既に現れているか。
          *
          * 見るのは root から depth までの祖先だけで、探索済みの他の経路は見ない。
@@ -3650,14 +3360,12 @@ public class CallHierarchyExporter {
         }
 
         private boolean isRowLimitReached() {
-            if (config.maxRowsPerEntry <= 0 || rowsForEntry < config.maxRowsPerEntry) {
+            if (config.maxRows <= 0 || totalRows < config.maxRows) {
                 return false;
             }
             if (!limitWarned) {
                 limitWarned = true;
-                log("[WARN] 出力行数の上限("
-                        + config.maxRowsPerEntry + ")に達したため打ち切りました: "
-                        + graph.methods.shortLabel(rootId));
+                log("[WARN] 出力行数の上限(" + config.maxRows + ")に達したため打ち切りました");
             }
             return true;
         }
@@ -3665,7 +3373,6 @@ public class CallHierarchyExporter {
         /** 1行を即座に書き出す（溜め込まない） */
         private void emit(int depth) throws IOException {
             writer.writeRow(graph.methods, rootId, pathMethod, pathCallLine, pathNote, depth);
-            rowsForEntry++;
             totalRows++;
         }
     }
@@ -3674,31 +3381,27 @@ public class CallHierarchyExporter {
      * 呼び出し階層のCSVを1行ずつ書き出す。
      *
      * ヘッダー:
-     *   caller,callee,note,callHierarchy...
+     *   caller,callee,root,call-hierarchy...
      *
      * - 呼び出し1件につき1行（起点自身は呼び出し元が無いため出力しない）
-     * - caller / callee は Eclipse の Java Stack Trace Console が認識する
+     * - caller は Eclipse の Java Stack Trace Console が認識する
      *   "at Class.method(File.java:行)" 形式。貼り付けるだけでソースへ飛べる
-     * - callHierarchy 以降は root から現ノードまでを1ノード1列で展開するため、
-     *   ヘッダー行とデータ行の列数は一致しない（意図した仕様。
-     *   grep の行末マッチのしやすさを優先している）
-     * - callHierarchy より後ろに列を追加してはならない（行末マッチが壊れるため）
+     * - call-hierarchy 以降は起点の次のノードから現ノードまでを1ノード1列で
+     *   展開するため、ヘッダー行とデータ行の列数は一致しない（意図した仕様）
+     * - call-hierarchy より後ろに列を追加してはならない（行末マッチが壊れるため）
      *
      * 行番号の使い分け（実際のスタックトレースと同じ考え方）:
-     * - callerClass_Method … 呼び出し元が「このノードを呼んでいる行」＝呼び出し箇所
-     * - calleeClass_Method … そのメソッド自身の「宣言行」
+     * - caller … 呼び出し元が「このノードを呼んでいる行」＝呼び出し箇所
      */
     static final class CallHierarchyCsvWriter {
 
         private final BufferedWriter writer;
         private final StringBuilder buf = new StringBuilder(512);
-        private final String delim;
 
-        CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom, String delimiter)
+        CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom)
                 throws IOException {
             this.writer = Csv.writer(outputCsv, encoding, bom);
-            this.delim = delimiter;
-            writer.write(String.join(delim, "caller", "callee", "note", "callHierarchy"));
+            writer.write(String.join(Csv.DELIM, "caller", "callee", "root", "call-hierarchy"));
             writer.newLine();
         }
 
@@ -3710,22 +3413,49 @@ public class CallHierarchyExporter {
             // Eclipse の Java Stack Trace Console に貼ればソースへ飛べる。
             // 起点自身（depth==0）は出力しないため、depth は必ず1以上。
             int parent = pathMethod[depth - 1];
-            buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(delim);
+            buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(Csv.DELIM);
 
             // callee: Excelのフィルタで選べるよう、行番号を含まない安定した表記にする。
             // 行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばって使えなくなる。
-            int self = pathMethod[depth];
-            buf.append(Csv.esc(mt.shortLabel(self))).append(delim);
+            buf.append(Csv.esc(mt.shortLabel(pathMethod[depth]))).append(Csv.DELIM);
 
-            // note: 打ち切り理由や解決の由来。callee列に混ぜるとフィルタが壊れ、
-            // callHierarchyの末尾に付けると行末grepが壊れるため独立した列に置く。
-            buf.append(Csv.esc(pathNote[depth] == null ? "" : pathNote[depth]));
+            // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
+            buf.append(Csv.esc(mt.shortLabel(rootId)));
 
-            // callHierarchy: rootから現ノードまでを1ノード1列で展開。
-            // 必ず最終列に置く（grep "メソッド名$" の行末マッチを成立させるため）。
-            for (int i = 0; i <= depth; i++) {
-                buf.append(delim).append(Csv.esc(mt.shortLabel(pathMethod[i])));
+            // call-hierarchy: 起点の次のノードから現ノードまでを1ノード1列で展開。
+            // 必ず最終列に置く（後ろに固定列を足すと可変長の階層が途中で切れるため）。
+            for (int i = 1; i <= depth; i++) {
+                buf.append(Csv.DELIM).append(Csv.esc(mt.shortLabel(pathMethod[i])));
             }
+            // 注記（[CYCLE]・深さ制限・CHA候補・import推定 等）は階層の最後に付ける
+            if (pathNote[depth] != null) {
+                buf.append(Csv.DELIM).append(Csv.esc(pathNote[depth]));
+            }
+            writer.write(buf.toString());
+            writer.newLine();
+        }
+
+        /**
+         * 被参照スキャンの1行。呼び出し階層とは意味が違うため専用の詰め方をする。
+         *
+         * classファイルの定数プールしか読まないため、呼び出し元のメソッドも行番号も
+         * 分からない。よって caller はスタックトレース形式にはせず、参照している
+         * クラス名をそのまま置く。起点も呼び出し階層も無いので、root には
+         * 「どのjarから参照されているか」を入れる。
+         *
+         * @param referencingClass 参照している側のクラス（外部jar内）
+         * @param callee           参照されている自分のメソッド
+         * @param jarName          参照元のjar名
+         * @param note             照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
+         */
+        void writeExternalUsageRow(String referencingClass, String callee,
+                                    String jarName, String note) throws IOException {
+            buf.setLength(0);
+            buf.append(Csv.esc(referencingClass)).append(Csv.DELIM);
+            buf.append(Csv.esc(callee)).append(Csv.DELIM);
+            buf.append(Csv.esc(jarName));
+            buf.append(Csv.DELIM).append(Csv.esc(callee));
+            buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));
             writer.write(buf.toString());
             writer.newLine();
         }
@@ -3760,6 +3490,9 @@ public class CallHierarchyExporter {
 
     /** CSVエスケープと、Excel向け出力ライタの生成 */
     static final class Csv {
+
+        /** 出力の区切り文字。CSV固定（Excelでそのまま開ける形にするため） */
+        static final String DELIM = ",";
 
         /**
          * 指定文字コードでCSVを書くライタを作る。
@@ -3805,162 +3538,19 @@ public class CallHierarchyExporter {
 }
 
 /* ====================================================================
- * 付録: config.properties のサンプル
+ * 設定ファイル（config.properties）について
  * --------------------------------------------------------------------
- * 下記を config.properties として保存し、実行時に引数で渡してください。
- * 相対パスは「この設定ファイルが置かれているディレクトリ」が起点です。
- * ====================================================================
-
-# --- 解析対象 -------------------------------------------------------
-# 解析対象プロジェクトのルート
-project.root=../my-legacy-project
-
-# ソースフォルダ（project.root からの相対、カンマ区切り）。
-# 空欄で .classpath があれば、その kind="src" を使う
-project.src=
-
-# 依存jar、または依存jarを集めたフォルダ（カンマ区切り、この設定ファイルからの
-# 相対可）。フォルダを指定すると直下の *.jar を自動的に全部使う。
-# .classpath の kind="lib" があれば合算する
-project.lib=
-
-source.encoding=UTF-8
-
-# --- モード切り替え -------------------------------------------------
-# entry.packages を空にすると「全体モード」になり、起点を指定せずに
-# ソース上の全メソッドの呼び出し状況を一覧化する。
-#   methods.csv … 全メソッドと入次数・出次数・役割（role）
-#   edges.csv   … 解決後の全呼び出し関係（線形サイズ。任意起点のルートを後から再構成可能）
-#
-# 全体モードでは、呼び出し元が無いメソッドを自動的に起点にして
-# call-hierarchy.csv も生成する。不要なら entry.auto=false にする。
-entry.auto=true
-
-# 入次数がこの値以上のメソッドを HUB とみなす（改修時の影響範囲が広い箇所）
-hub.threshold=20
-
-# --- エントリポイント（複数指定可・カンマ区切り） -----------------------
-#   jp.co.xxx.action.*                  … そのパッケージ直下のクラス全部
-#   jp.co.xxx.action.**                 … そのパッケージ配下（サブパッケージ含む）全部
-#   jp.co.xxx.action.UserAction         … クラス指定
-#   jp.co.xxx.action.UserAction#execute … メソッド指定
-entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
-
-# 上記に加えクラス名（単純名）で絞り込む正規表現。空欄なら未使用
-entry.class.name.pattern=
-
-# --- 出力から除外するパッケージ（書式は entry.packages と同じ） -----------
-exclude.packages=java.**, javax.**, jp.co.xxx.common.util.**
-
-# PRUNE … 除外対象のノードとその配下をまるごと出力しない
-# SKIP  … 除外対象のノードは出力しないが、その先は親に繋ぎ直して辿り続ける
-#         （共通基底クラス経由でDAOを呼ぶ場合など、PRUNEだと先が見えなくなるとき）
-exclude.mode=PRUNE
-
-# --- 探索の安全策 ---------------------------------------------------
-max.depth=6
-max.children.per.node=50
-
-# 1エントリポイントあたりの出力行数の上限（0以下で無制限）。
-# 組合せ爆発でCSVが際限なく肥大化するのを防ぐ最後の砦。
-max.rows.per.entry=200000
-
-# --- 具象クラスの解決（CHA） ---------------------------------------
-# 解決の順序:
-#   段0 STATIC_BOUND … private/static/final、finalクラス、コンストラクタ、super呼び出し
-#   段1 NO_OVERRIDE  … オーバーライドしている型が無い
-#       SINGLE_IMPL  … 候補が1つだけ（IFに実装が1つ等）
-#   段4 CHA          … 候補が複数（低確度）
-#
-# CHA候補を記録するか。falseにすると「解決できなかった箇所」が
-# 出力から消えるため、既定はtrue（漏れ防止）。
-cha.record=true
-
-# CHA候補を呼び出し階層で展開するか。
-# trueにすると 候補数^深さ で爆発するため既定はfalse。
-# falseのときは「CHA候補N件（未展開）」という葉を1行だけ出力する。
-cha.expand=false
-cha.max.candidates=20
-
-# --- 拡張ポイント（プロジェクト固有の具象クラス特定手法） -------------
-# 具象クラスの特定方法はプロジェクトごとに異なるため、2フェーズの差し込み口を
-# 用意している。実装クラスのFQNをカンマ区切りで指定するとリフレクションで読み込む。
-#
-#   フェーズA CallSiteHintCollector … ASTから証拠を拾う（抽出時）
-#     例) DaoFactory.get("USER_DAO") の文字列リテラルを、その戻り値を受けている
-#         ローカル変数のキーに紐づけて記録する
-#   フェーズB TypeCandidateProvider … 証拠から具象型を返す（グラフ構築時）
-#     例) "USER_DAO" -> jp.co.xxx.dao.UserDaoImpl の対応表を引く
-#         SpringのDI設定を読む / 外部の紐付けリストを読む など
-#
-# 拡張クラスは init(Properties, Path) でこの設定ファイルの内容と置き場所を
-# 受け取れるので、独自の設定キーを自由に追加してよい。
-resolver.hint.collectors=
-resolver.candidate.providers=
-
-# 段0（静的束縛）について
-#   private / static / final メソッド、finalクラス、コンストラクタ、super呼び出しは
-#   仮想ディスパッチされないため、既定では確定として扱う。
-#   DIコンテナのプロキシ（CGLIBはサブクラス生成、JDK動的プロキシはインターフェース実装）は
-#   オーバーライドで実現されるため、これらを書き換えることはできない。
-#
-#   ただしバイトコード織り込み（AspectJのCTW等）や独自フレームワークの仕掛けで
-#   前提が崩れる場合は、TypeCandidateProvider#appliesToStaticBound() に true を返す
-#   実装を用意すれば、段0の呼び出しにも解決を差し込める。
-#   （段0で打ち切ると拡張に到達せず、呼び出し階層がそこで切れてしまうため）
-#
-#   判定理由は resolutions.csv の label 列に STATIC_BOUND:PRIVATE のように出力されるので、
-#   「この確定は妥当か」を後から監査できる。
-
-# --- キャッシュ -----------------------------------------------------
-# 差分判定は「最終更新時刻」と「ファイルサイズ」の両方が一致するかで行う。
-# バージョン管理がタイムスタンプを復元する設定だと検出漏れの可能性があるため、
-# 疑わしいときは false にするかキャッシュファイルを削除すること。
-cache.enabled=true
-cache.file=./.cache/analysis-cache.tsv
-
-# --- 出力 -----------------------------------------------------------
-# 出力ファイルの文字コード。既定はUTF-8-BOM（BOM付きUTF-8）。
-#   UTF-8-BOM  … BOM付きUTF-8。既定。ExcelがUTF-8と正しく認識して開ける
-#   UTF-8      … BOM無しのUTF-8。Excelで直接開くと文字化けする点に注意
-#   MS932      … Shift_JIS。MS932に変換できない文字は '?' に置換される（例外にはしない）
-output.encoding=UTF-8-BOM
-
-# 出力ファイルの区切り文字。既定はカンマ区切り（CSV）。
-#   COMMA … 通常のCSV（既定）
-#   TAB   … タブ区切り。フィールドにカンマを含むデータが多い場合や、
-#           MS932とExcelの相性問題を避けたい場合に有効。
-#           ダブルクリックでExcelに開かせたい場合は、拡張子を.csvのままにせず
-#           .txtにしてください（.csvはOSの「リスト区切り記号」設定でカンマ区切り
-#           として解釈されるため、拡張子を変えないとタブ区切りとして開かれません）
-output.delimiter=COMMA
-
-output.csv=./output/call-hierarchy.csv
-unresolved.csv=./output/unresolved-calls.csv
-
-# 具象クラス解決の内訳。CHAになった箇所＝静的に絞りきれなかった箇所なので、
-# カスタム解決を作るかどうかの投資判断はこのファイルの件数を見て決める。
-resolutions.csv=./output/resolutions.csv
-
-# 全体モードの出力
-methods.csv=./output/methods.csv
-edges.csv=./output/edges.csv
-
-# --- 他チーム・他リポジトリからの被参照スキャン -----------------------
-# 自分のコードを呼んでいる側のjarを指定する（カンマ区切り。ファイルでもディレクトリでも可）。
-# これらは自分の .classpath には現れない点に注意（依存の向きが逆のため）。
-# 共有フォルダやNexusから集めて、まとめてディレクトリ指定するのが簡単。
-#
-# classファイルの定数プールだけを読むため、外部ライブラリは不要。
-# 「どのjar・どのクラスが参照しているか」までが分かる（呼び出し元メソッドまでは分からない）。
-external.jars=
-
-# 被参照一覧。matchKind は EXACT / INHERITED / IMPLICIT_CTOR
-external.usage.csv=./output/external-usage.csv
-
-# 自分の型を参照しているのにメソッドが一致しなかったもの。
-# 相手のjarが古い版に対してビルドされている可能性があるため、
-# 「使われていない」と判断する前にここを確認する。
-external.unmatched.csv=./output/external-unmatched.csv
-
+ * 設定できる項目とその意味は config/config.properties にコメント付きで
+ * まとめてあります。あちらを唯一の一覧として扱い、ここには複製しません
+ * （二重管理になって片方が古くなるのを避けるため）。
+ *
+ * 実行時は設定ファイルのパスを引数で渡します。省略した場合は
+ * config/config.properties を使います。
+ *
+ *     java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
+ *
+ * 相対パスの起点は項目ごとに異なります。
+ *   - project.root / cache.folders / output.csv / methods.csv
+ *     / external.library.folders … この設定ファイルが置かれているディレクトリ
+ *   - source.folders / library.folders … project.root
  * ==================================================================== */

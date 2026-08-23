@@ -32,7 +32,7 @@ for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs 
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
 rem コンパイル
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\main\java\CallHierarchyExporter.java
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\CallHierarchyExporter.java
 
 rem 実行
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
@@ -120,6 +120,19 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
+注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。列を間に挟むと
+可変長の階層が途中で切れてしまうためです。
+
+| 注記 | 意味 |
+|---|---|
+| `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
+| `深さ制限(N)のため打ち切り` | `max.depth` に達した |
+| `CHA候補N件（未展開）` | 実装を1つに絞れなかった。候補数^深さで爆発するため展開しない |
+| `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
+| `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
+| `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
+| `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
+
 ### **Eclipseへのジャンプ**
 `caller` 列の値をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
 `(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
@@ -136,19 +149,44 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 |---|---|
 | `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・デッドコード・テスト・リフレクション経由が混ざる |
 | `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
-| `HUB` | 入次数が `hub.threshold` 以上。改修時の影響範囲が広い |
 | `LEAF` | 呼び出し先が無い |
+| `NORMAL` | 上記以外 |
+
+「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 
 ### 他リポジトリからの被参照
 
-自分のコードを呼んでいる側のjarを `external.library.folders` に指定すると出力されます。
+自分のコードを呼んでいる側のjarを `external.library.folders` に指定すると、
+`call-hierarchy.csv` に追記されます。
 
 ```properties
 external.library.folders=./lib
 ```
 
 classファイルの定数プールだけを読むため、「どのjar・どのクラスが参照しているか」までが分かります。
-呼び出し元メソッドまでは分かりません。
+呼び出し元メソッドと行番号までは分かりません。そのため呼び出し階層の行とは列の詰め方が異なります。
+
+```csv
+caller,callee,root,call-hierarchy
+NightJob,OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+NightJob,OrderService.<init>,team-b-batch.jar,OrderService.<init>,被参照:IMPLICIT_CTOR
+```
+
+| 列 | 内容 |
+|---|---|
+| `caller` | 参照している側のクラス。行番号もメソッドも分からないためスタックトレース形式にはならない |
+| `callee` | 参照されている自分のメソッド |
+| `root` | 参照元のjar名（起点メソッドが無いため、代わりにjar名を入れる） |
+| `call-hierarchy` | `callee` と、照合の種類を表す注記 |
+
+| 注記 | 意味 |
+|---|---|
+| `被参照:EXACT` | そのクラスで宣言されているメソッドへの参照 |
+| `被参照:INHERITED` | 親クラスから継承したメソッドへの参照 |
+| `被参照:IMPLICIT_CTOR` | 暗黙のデフォルトコンストラクタ（＝そのクラスを生成している） |
+
+自分の型を参照しているのにメソッドが一致しなかったものは、相手のjarが古い版に対して
+ビルドされている可能性があります。件数のみ実行ログに出力されます。
 
 ---
 
@@ -192,6 +230,6 @@ classファイルの定数プールだけを読むため、「どのjar・どの
 | DIコンテナ | 設定ファイルを読む拡張が別途必要です |
 | キャッシュの差分判定 | 最終更新時刻とサイズが両方一致する改変は検出できません。バージョン管理がタイムスタンプを復元する設定（SVNの `use-commit-times` 等）では特に注意。疑わしいときは `cache.enabled=false` にしてください |
 | 定数のインライン展開 | `public static final` の定数は呼び出し側に埋め込まれるため、被参照スキャンで検出できません |
-| オーバーロード | `call-hierarchy.csv` の表示上は同名で並びます。厳密に区別する場合は `edges.csv` の `declaredCallee` 列を参照してください |
+| オーバーロード | 引数が違う同名メソッドは、`callee` 列では同じ表記で並びます。区別するには `caller` 列の行番号からソースを確認してください |
 
 ---
