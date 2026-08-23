@@ -1273,6 +1273,13 @@ public class CallHierarchyExporter {
             this.layout = layout;
             this.encoding = Charset.forName(config.sourceEncoding);
             this.compilerOptions = JavaCore.getOptions();
+            // JavaCore.getOptions() の既定はJDTの古いデフォルト（source=1.3等）のままで、
+            // これだとgenerics・diamond演算子・ラムダ式・enum等が軒並み構文/型解決に
+            // 失敗し、unresolved-calls.csvに大量の「型解決に失敗」が出てしまう。
+            // 解析対象のJavaバージョンを事前には知り得ないため、読み込んでいる
+            // JDT Core自身が対応する最新バージョンに合わせる（新しい言語機能を
+            // 許可するだけで、対象コードが実際にそれを使うかは関係ない）。
+            JavaCore.setComplianceOptions(JavaCore.latestSupportedJavaVersion(), this.compilerOptions);
             this.classpath = layout.classpathArray();
             this.sourcepath = layout.sourcePathArray();
             this.encodings = new String[sourcepath.length];
