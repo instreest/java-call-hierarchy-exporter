@@ -141,6 +141,7 @@ public class CallHierarchyExporter {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
+            System.err.println("エラー: 起動に失敗しました。config.propertiesのパスが指定されていません。");
             System.err.println("使い方: java ... "
                     + CallHierarchyExporter.class.getName() + " <config.propertiesのパス>");
             System.exit(1);
