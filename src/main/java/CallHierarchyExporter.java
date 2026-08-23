@@ -22,12 +22,15 @@ import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
@@ -1311,13 +1314,23 @@ public class CallHierarchyExporter {
          */
         static final class Visitor extends ASTVisitor {
 
-            /** 解決できないメソッド宣言を表す番兵（ArrayDequeはnullを保持できないため） */
-            private static final String[] UNKNOWN = new String[0];
+            /** 呼び出し元を特定できないことを表す番兵（ArrayDequeはnullを保持できないため） */
+            private static final List<String[]> UNKNOWN = java.util.Collections.emptyList();
 
             private final CompilationUnit cu;
             private final FileAnalysis out;
             private final List<CallSiteHintCollector> collectors;
-            private final ArrayDeque<String[]> methodStack = new ArrayDeque<>();
+
+            /**
+             * 現在の呼び出し元のスタック。通常は要素1件（そのメソッド自身）だが、
+             * インスタンスフィールド初期化子・インスタンス初期化ブロックの中では
+             * 「そのクラスの、this(...)委譲していない全コンストラクタ」が
+             * 複数件入る（コンパイル後、実際にそれら全部に複製されるため）。
+             */
+            private final ArrayDeque<List<String[]>> methodStack = new ArrayDeque<>();
+
+            /** 現在囲まれている型ごとの状態（{@link TypeContext} 参照） */
+            private final ArrayDeque<TypeContext> typeContextStack = new ArrayDeque<>();
 
             Visitor(CompilationUnit cu, FileAnalysis out) {
                 this(cu, out, java.util.Collections.<CallSiteHintCollector>emptyList());
@@ -1327,12 +1340,6 @@ public class CallHierarchyExporter {
                 this.cu = cu;
                 this.out = out;
                 this.collectors = collectors;
-            }
-
-            /** 現在囲まれているメソッドのキー（typeFqn#name(params)）。不明なら null */
-            private String currentKey() {
-                String[] c = current();
-                return (c == null) ? null : (c[1] + "#" + c[2] + "(" + c[3] + ")");
             }
 
             // ------------------------------------------------------------
@@ -1374,13 +1381,18 @@ public class CallHierarchyExporter {
             }
 
             private void addNewHint(String varKey, ClassInstanceCreation cic) {
-                String callerKey = currentKey();
-                if (callerKey == null || varKey == null) {
+                List<String[]> callers = current();
+                if (callers == null || varKey == null) {
                     return;
                 }
                 String type = createdTypeOf(cic);
-                if (type != null) {
-                    out.hints.add(new HintRec(callerKey, varKey, "NEW", type));
+                if (type == null) {
+                    return;
+                }
+                // 呼び出し元が複数（インスタンス初期化子等）でも全件に紐づける。
+                // 一部にしか付けないと、その呼び出し元経由の解決だけ証拠を見つけられなくなる。
+                for (String[] c : callers) {
+                    out.hints.add(new HintRec(c[1] + "#" + c[2] + "(" + c[3] + ")", varKey, "NEW", type));
                 }
             }
 
@@ -1425,15 +1437,219 @@ public class CallHierarchyExporter {
 
             @Override
             public boolean visit(TypeDeclaration node) {
-                recordType(node.resolveBinding());
+                ITypeBinding tb = node.resolveBinding();
+                recordType(tb);
+                pushTypeContext(tb, node.bodyDeclarations(),
+                        cu.getLineNumber(node.getName().getStartPosition()));
                 return true;
+            }
+
+            @Override
+            public void endVisit(TypeDeclaration node) {
+                popTypeContext();
             }
 
             @Override
             public boolean visit(AnonymousClassDeclaration node) {
                 // 匿名クラスも型階層に載せる。載せないとオーバーライド候補から漏れる
-                recordType(node.resolveBinding());
+                ITypeBinding tb = node.resolveBinding();
+                recordType(tb);
+                // 匿名クラスには名前が無いため、本体の開始位置を代わりに使う
+                pushTypeContext(tb, node.bodyDeclarations(), cu.getLineNumber(node.getStartPosition()));
                 return true;
+            }
+
+            @Override
+            public void endVisit(AnonymousClassDeclaration node) {
+                popTypeContext();
+            }
+
+            /**
+             * 型ごとの合成メソッド（{@code <clinit>}・暗黙のデフォルトコンストラクタ）の状態。
+             * これらはソース上に対応するAST宣言が無いため、初めて呼び出し元として
+             * 使われた時点で1回だけ methods.csv 用の宣言（D行相当）を合成する。
+             * 常に合成すると、静的初期化子もフィールド初期化子も持たない大多数の
+             * クラスにまで {@code <clinit>} 等が現れてノイズになるため。
+             */
+            private static final class TypeContext {
+                final ITypeBinding binding;
+                final List<String[]> rootConstructors;
+                final boolean usesImplicitConstructor;
+                final int declLine;
+                boolean clinitDeclared;
+                boolean implicitConstructorDeclared;
+
+                TypeContext(ITypeBinding binding, List<String[]> rootConstructors,
+                            boolean usesImplicitConstructor, int declLine) {
+                    this.binding = binding;
+                    this.rootConstructors = rootConstructors;
+                    this.usesImplicitConstructor = usesImplicitConstructor;
+                    this.declLine = declLine;
+                }
+            }
+
+            private void pushTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
+                typeContextStack.push(buildTypeContext(tb, bodyDeclarations, declLine));
+            }
+
+            private void popTypeContext() {
+                if (!typeContextStack.isEmpty()) {
+                    typeContextStack.pop();
+                }
+            }
+
+            /**
+             * その型の、this(...)委譲していないコンストラクタ一覧を集計する。
+             * インスタンスフィールド初期化子・インスタンス初期化ブロックは、
+             * コンパイル後これら全部の先頭（super(...)の直後）に複製される。
+             * this(...)委譲するコンストラクタには複製されない
+             * （委譲先で二重に初期化されるのを防ぐルールのため）。
+             *
+             * 明示コンストラクタが1つも無ければ、暗黙のデフォルトコンストラクタが
+             * 1つ存在する。匿名クラスは明示コンストラクタを書けない言語仕様のため、
+             * 常にこちらに倒れる（曖昧さは生じない）。
+             */
+            private TypeContext buildTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
+                List<String[]> roots = new ArrayList<>();
+                boolean anyConstructor = false;
+                for (Object o : bodyDeclarations) {
+                    if (!(o instanceof MethodDeclaration)) {
+                        continue;
+                    }
+                    MethodDeclaration md = (MethodDeclaration) o;
+                    if (!md.isConstructor()) {
+                        continue;
+                    }
+                    anyConstructor = true;
+                    if (delegatesToThis(md)) {
+                        continue;
+                    }
+                    String[] ref = toRef(md.resolveBinding());
+                    if (ref != null) {
+                        roots.add(ref);
+                    }
+                }
+                boolean usesImplicit = false;
+                if (!anyConstructor) {
+                    String[] implicitRef = implicitConstructorRef(tb);
+                    if (implicitRef != null) {
+                        roots.add(implicitRef);
+                        usesImplicit = true;
+                    }
+                }
+                return new TypeContext(tb, roots, usesImplicit, declLine);
+            }
+
+            /** コンストラクタ本体の先頭文が this(...) か（=他のコンストラクタへの委譲か） */
+            private boolean delegatesToThis(MethodDeclaration md) {
+                Block body = md.getBody();
+                if (body == null || body.statements().isEmpty()) {
+                    return false;
+                }
+                return body.statements().get(0) instanceof ConstructorInvocation;
+            }
+
+            /** 明示コンストラクタが無い型の、暗黙のデフォルトコンストラクタの参照を合成する */
+            private String[] implicitConstructorRef(ITypeBinding typeBinding) {
+                if (typeBinding == null) {
+                    return null;
+                }
+                ITypeBinding erased = typeBinding.getErasure();
+                if (erased == null) {
+                    erased = typeBinding;
+                }
+                String typeFqn = typeNameOf(erased);
+                if (typeFqn == null) {
+                    return null;
+                }
+                String pkg = (erased.getPackage() != null) ? erased.getPackage().getName() : "";
+                return new String[]{pkg, typeFqn, "<init>", ""};
+            }
+
+            /**
+             * 現在の型の {@code <clinit>}（静的初期化子）への参照を1件だけ含むリスト。
+             * この型で初めて使う場合は、methods.csv 等に載るようD行も合成する。
+             */
+            private List<String[]> clinitContext() {
+                TypeContext ctx = typeContextStack.peek();
+                if (ctx == null || ctx.binding == null) {
+                    return UNKNOWN;
+                }
+                ITypeBinding erased = ctx.binding.getErasure();
+                if (erased == null) {
+                    erased = ctx.binding;
+                }
+                String typeFqn = typeNameOf(erased);
+                if (typeFqn == null) {
+                    return UNKNOWN;
+                }
+                String pkg = (erased.getPackage() != null) ? erased.getPackage().getName() : "";
+                if (!ctx.clinitDeclared) {
+                    ctx.clinitDeclared = true;
+                    out.declarations.add(new MethodDecl(pkg, typeFqn, "<clinit>", "", ctx.declLine, true));
+                }
+                return java.util.Collections.singletonList(new String[]{pkg, typeFqn, "<clinit>", ""});
+            }
+
+            /**
+             * 現在の型の、this(...)委譲していないコンストラクタ一覧（インスタンス初期化子用）。
+             * 暗黙のデフォルトコンストラクタをこの型で初めて使う場合は、
+             * methods.csv 等に載るようD行も合成する。
+             */
+            private List<String[]> instanceInitContext() {
+                TypeContext ctx = typeContextStack.peek();
+                if (ctx == null || ctx.rootConstructors.isEmpty()) {
+                    return UNKNOWN;
+                }
+                if (ctx.usesImplicitConstructor && !ctx.implicitConstructorDeclared) {
+                    ctx.implicitConstructorDeclared = true;
+                    String[] ref = ctx.rootConstructors.get(0);
+                    out.declarations.add(new MethodDecl(ref[0], ref[1], ref[2], ref[3], ctx.declLine, true));
+                }
+                return ctx.rootConstructors;
+            }
+
+            @Override
+            public boolean visit(FieldDeclaration node) {
+                methodStack.push(isStaticField(node) ? clinitContext() : instanceInitContext());
+                return true;
+            }
+
+            @Override
+            public void endVisit(FieldDeclaration node) {
+                if (!methodStack.isEmpty()) {
+                    methodStack.pop();
+                }
+            }
+
+            @Override
+            public boolean visit(Initializer node) {
+                boolean isStatic = Modifier.isStatic(node.getModifiers());
+                methodStack.push(isStatic ? clinitContext() : instanceInitContext());
+                return true;
+            }
+
+            @Override
+            public void endVisit(Initializer node) {
+                if (!methodStack.isEmpty()) {
+                    methodStack.pop();
+                }
+            }
+
+            /**
+             * フィールドがstaticかどうか。構文上のキーワードでなくバインディングを見るのは、
+             * インターフェースのフィールドが暗黙にstaticになる（キーワードが無くても）
+             * ケースを正しく扱うため。
+             */
+            private boolean isStaticField(FieldDeclaration node) {
+                List<?> fragments = node.fragments();
+                if (!fragments.isEmpty() && fragments.get(0) instanceof VariableDeclarationFragment) {
+                    IVariableBinding vb = ((VariableDeclarationFragment) fragments.get(0)).resolveBinding();
+                    if (vb != null) {
+                        return Modifier.isStatic(vb.getModifiers());
+                    }
+                }
+                return Modifier.isStatic(node.getModifiers());
             }
 
             /** 型階層（H行）を記録する */
@@ -1480,7 +1696,7 @@ public class CallHierarchyExporter {
                     int line = cu.getLineNumber(node.getName().getStartPosition());
                     out.declarations.add(new MethodDecl(r[0], r[1], r[2], r[3], line,
                             node.getBody() != null));
-                    methodStack.push(r);
+                    methodStack.push(java.util.Collections.singletonList(r));
                 } else {
                     methodStack.push(UNKNOWN);
                 }
@@ -1496,10 +1712,14 @@ public class CallHierarchyExporter {
                 }
             }
 
-            /** 現在囲まれているメソッド。特定できない場合は null */
-            private String[] current() {
-                String[] top = methodStack.peek();
-                return (top == null || top.length == 0) ? null : top;
+            /**
+             * 現在の呼び出し元一覧。特定できない場合は null。
+             * 通常は要素1件だが、インスタンス初期化子の中では複数件になりうる
+             * （{@link #computeRootConstructors} 参照）。
+             */
+            private List<String[]> current() {
+                List<String[]> top = methodStack.peek();
+                return (top == null || top.isEmpty()) ? null : top;
             }
 
             @Override
@@ -1507,27 +1727,34 @@ public class CallHierarchyExporter {
                 IMethodBinding b = n.resolveMethodBinding();
                 record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n));
 
-                // フェーズAの拡張に、この呼び出し箇所を見せる
-                final String callerKey = currentKey();
-                if (callerKey != null && !collectors.isEmpty()) {
-                    HintSink sink = new HintSink() {
-                        @Override
-                        public void add(String scopeKey, String kind, String value) {
-                            if (scopeKey == null || kind == null || value == null) {
-                                return;
+                // フェーズAの拡張に、この呼び出し箇所を見せる。
+                // 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
+                // 見せる。一部にしか見せないと、その呼び出し元経由の解決だけ証拠を
+                // 見つけられなくなるため。CallSiteHintCollector のインターフェースは
+                // 呼び出し元1件を前提にしているため、呼び出し元ごとに1回ずつ呼ぶ。
+                List<String[]> callers = current();
+                if (callers != null && !collectors.isEmpty()) {
+                    for (String[] c : callers) {
+                        final String callerKey = c[1] + "#" + c[2] + "(" + c[3] + ")";
+                        HintSink sink = new HintSink() {
+                            @Override
+                            public void add(String scopeKey, String kind, String value) {
+                                if (scopeKey == null || kind == null || value == null) {
+                                    return;
+                                }
+                                out.hints.add(new HintRec(callerKey,
+                                        CacheFormat.clean(scopeKey),
+                                        CacheFormat.clean(kind), CacheFormat.clean(value)));
                             }
-                            out.hints.add(new HintRec(callerKey,
-                                    CacheFormat.clean(scopeKey),
-                                    CacheFormat.clean(kind), CacheFormat.clean(value)));
-                        }
-                    };
-                    for (int i = 0; i < collectors.size(); i++) {
-                        try {
-                            collectors.get(i).collect(n, cu, callerKey, sink);
-                        } catch (RuntimeException e) {
-                            // 拡張の失敗で解析全体を止めない
-                            log("[WARN] hint collector 失敗: "
-                                    + collectors.get(i).getClass().getName() + " (" + e + ")");
+                        };
+                        for (int i = 0; i < collectors.size(); i++) {
+                            try {
+                                collectors.get(i).collect(n, cu, callerKey, sink);
+                            } catch (RuntimeException e) {
+                                // 拡張の失敗で解析全体を止めない
+                                log("[WARN] hint collector 失敗: "
+                                        + collectors.get(i).getClass().getName() + " (" + e + ")");
+                            }
                         }
                     }
                 }
@@ -1591,23 +1818,30 @@ public class CallHierarchyExporter {
             private void record(IMethodBinding binding, ASTNode node, String displayName,
                                  char bindKind, String recvKey) {
                 int line = cu.getLineNumber(node.getStartPosition());
-                String[] caller = current();
-                if (caller == null) {
-                    // フィールド初期化子・staticイニシャライザ等、メソッド外からの呼び出し。
-                    // 呼び出し元メソッドを特定できないため未解決として記録する
+                List<String[]> callers = current();
+                if (callers == null) {
+                    // 呼び出し元の型・コンストラクタ自体を特定できないケース
+                    // （型のバインディング解決に失敗した等）。未解決として記録する
                     out.unresolved.add(new UnresolvedCall(line,
                             "(メソッド外)", displayName, "メソッド本体の外からの呼び出し"));
                     return;
                 }
                 String[] callee = toRef(binding);
                 if (callee == null) {
+                    // 呼び出し先の型解決に失敗したケース。呼び出し元が複数あっても
+                    // 原因は呼び出し先側なので、1件だけ記録すれば足りる
+                    String[] caller = callers.get(0);
                     out.unresolved.add(new UnresolvedCall(line,
                             caller[1] + "#" + caller[2] + "(" + caller[3] + ")", displayName,
                             "型解決に失敗（クラスパス不足・動的呼び出し等の可能性）"));
                     return;
                 }
-                out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
-                        callee[0], callee[1], callee[2], callee[3], line, bindKind, recvKey));
+                // 呼び出し元が複数（インスタンス初期化子等）でも全件をエッジにする。
+                // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
+                for (String[] caller : callers) {
+                    out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
+                            callee[0], callee[1], callee[2], callee[3], line, bindKind, recvKey));
+                }
             }
 
             /**
