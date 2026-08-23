@@ -455,8 +455,10 @@ public class CallHierarchyExporter {
 
         final Path configDir;
         final Path projectRoot;
-        final List<String> sourceFolderOverride;
-        final List<Path> extraClasspathEntries;
+        /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
+        final List<String> projectSrc;
+        /** 依存jar・依存jarを集めたフォルダ。.classpath の kind="lib" があれば合算する */
+        final List<Path> projectLib;
         final String sourceEncoding;
 
         final List<PackagePattern> entryPatterns;
@@ -522,13 +524,13 @@ public class CallHierarchyExporter {
             }
 
             this.projectRoot = resolvePath(require(p, "project.root"));
-            this.sourceFolderOverride = splitList(p.getProperty("source.folders", ""));
+            this.projectSrc = splitList(p.getProperty("project.src", ""));
 
-            List<Path> extras = new ArrayList<>();
-            for (String s : splitList(p.getProperty("extra.classpath.entries", ""))) {
-                extras.add(resolvePath(s));
+            List<Path> libs = new ArrayList<>();
+            for (String s : splitList(p.getProperty("project.lib", ""))) {
+                libs.add(resolvePath(s));
             }
-            this.extraClasspathEntries = extras;
+            this.projectLib = libs;
 
             this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
 
@@ -726,16 +728,18 @@ public class CallHierarchyExporter {
     // ================================================================
 
     /**
-     * Eclipseプロジェクトルートから、解析に必要な構成を読み取る。
+     * プロジェクトの構成（ソースフォルダ・依存jar）を読み取る。
      *
-     * - .classpath の kind="src" からソースフォルダ
-     * - .classpath の kind="lib" からjar（他社製の共通化クラス等）
-     * - kind="con"（JREコンテナ等）は解決しない。JDK標準クラスは
-     *   setEnvironment の includeRunningVMBootclasspath=true で
-     *   実行中のJVMから解決させる
+     * project.src / project.lib が主たる指定方法。Eclipseの .classpath が
+     * 無いプロジェクト（GradleやMaven単体の構成等）でも使える。
+     *   - project.src が空なら、.classpath があれば kind="src" から読む
+     *   - project.lib は、.classpath の kind="lib"（あれば）と合算する
      *
-     * kind="var" やリンクリソース、ユーザーライブラリコンテナは未対応。
-     * 必要な場合は extra.classpath.entries で明示的に追加すること。
+     * .classpath の kind="con"（Gradle/Mavenのクラスパス・コンテナ等）は
+     * 解決しない。JDK標準クラスは setEnvironment の
+     * includeRunningVMBootclasspath=true で実行中のJVMから解決させる。
+     * kind="var" やリンクリソース、ユーザーライブラリコンテナも未対応のため、
+     * 必要な場合は project.lib で明示的に追加すること。
      */
     static final class EclipseProjectLayout {
 
@@ -750,7 +754,7 @@ public class CallHierarchyExporter {
                 throw new IOException("project.root がディレクトリとして存在しません: " + projectRoot);
             }
 
-            for (String rel : config.sourceFolderOverride) {
+            for (String rel : config.projectSrc) {
                 sourceFolders.add(projectRoot.resolve(rel).normalize());
             }
 
@@ -759,10 +763,10 @@ public class CallHierarchyExporter {
                 readDotClasspath(dotClasspath);
             } else if (sourceFolders.isEmpty()) {
                 throw new IOException(
-                        ".classpath が見つからず、source.folders の指定もありません: " + dotClasspath);
+                        ".classpath が見つからず、project.src の指定もありません: " + dotClasspath);
             }
 
-            classpathEntries.addAll(config.extraClasspathEntries);
+            classpathEntries.addAll(config.projectLib);
 
             if (sourceFolders.isEmpty()) {
                 throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot);
@@ -847,7 +851,7 @@ public class CallHierarchyExporter {
          * 解決できないため、そういったプロジェクトでは .classpath だけでは
          * 依存jarが1つも分からない。その場合は、依存jarを集めたフォルダ
          * （Gradleの application/distribution プラグインが作る lib フォルダ、
-         * 手動で集めた lib フォルダ等）を extra.classpath.entries に指定すれば、
+         * 手動で集めた lib フォルダ等）を project.lib に指定すれば、
          * ここで直下の *.jar を自動的に展開してクラスパスに加える。
          * （.classpath の kind="lib" と両方指定された場合は単純に合算する）
          */
@@ -3804,15 +3808,17 @@ public class CallHierarchyExporter {
  * ====================================================================
 
 # --- 解析対象 -------------------------------------------------------
-# Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
+# 解析対象プロジェクトのルート
 project.root=../my-legacy-project
 
-# ソースフォルダを .classpath から読まず明示指定する場合（project.root からの相対）
-# 空欄なら .classpath の kind="src" を使用
-source.folders=
+# ソースフォルダ（project.root からの相対、カンマ区切り）。
+# 空欄で .classpath があれば、その kind="src" を使う
+project.src=
 
-# .classpath に載っていないjarを追加する場合（カンマ区切り、この設定ファイルからの相対可）
-extra.classpath.entries=
+# 依存jar、または依存jarを集めたフォルダ（カンマ区切り、この設定ファイルからの
+# 相対可）。フォルダを指定すると直下の *.jar を自動的に全部使う。
+# .classpath の kind="lib" があれば合算する
+project.lib=
 
 source.encoding=UTF-8
 
