@@ -34,7 +34,7 @@ Eclipse標準の「呼び出し階層」ビューに対して、次の点を解�
 `config/config.properties` の **`project.root`** を書き換えます。
 
 ```properties
-# Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
+# 解析対象プロジェクトのルート
 project.root=../../my-legacy-project
 ```
 
@@ -139,14 +139,17 @@ at jp.co.xxx.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.s
 最低限の設定は次の2つです。
 
 ```properties
-# Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
+# 解析対象プロジェクトのルート
 project.root=../my-legacy-project
 
 # 起点にするパッケージ（空にすると全体モード）
 entry.packages=jp.co.xxx.action.*, jp.co.xxx.batch.**
 ```
 
-`.classpath` から、ソースフォルダ（`kind="src"`）と依存jar（`kind="lib"`）を自動で読み取ります。
+ソースフォルダ・依存jarは `project.src` / `project.lib` で明示できます
+（Eclipse以外のプロジェクトでも使えます）。空欄のままなら、`project.root` に
+`.classpath` があればそこから（`kind="src"` をソースフォルダ、`kind="lib"` を
+依存jarとして）自動で読み取ります。
 
 ### 2. 実行する
 
@@ -271,7 +274,17 @@ jp.co.xxx.dao.CommonDao#execute(),V,CHA,2,jp.co.xxx.dao.impl.UserDaoImpl / jp.co
 
 クラスパス不足、リフレクション、フレームワーク経由の呼び出しなどが記録されます。
 **最初の実行では、まずこの件数を確認してください。** 異常に多い場合は
-`extra.classpath.entries` の設定漏れが疑われます。
+`project.lib` の設定漏れが疑われます。
+
+**GradleやMavenをEclipse連携（Buildship / m2e）で使っているプロジェクト**は
+特に注意してください。`.classpath` の依存jarは `kind="con"`（クラスパス・
+コンテナへの参照）になっており、実際のjarパスがファイルに書かれないため、
+`.classpath` 頼みでは依存関係を1つも認識できません（`kind="src"` による
+ソースフォルダの特定だけは引き続き機能します）。この場合は、依存jarを
+1か所に集めたフォルダ（Gradleの`application`/`distribution`プラグインが
+作る`lib`フォルダ等）を `project.lib` に指定してください。
+ディレクトリを指定すると、直下の `*.jar` が自動的に全部クラスパスへ
+追加されます。
 
 ### `external-usage.csv` — 他リポジトリからの被参照
 

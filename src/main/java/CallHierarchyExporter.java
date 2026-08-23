@@ -30,6 +30,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
@@ -60,6 +61,7 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -453,8 +455,10 @@ public class CallHierarchyExporter {
 
         final Path configDir;
         final Path projectRoot;
-        final List<String> sourceFolderOverride;
-        final List<Path> extraClasspathEntries;
+        /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
+        final List<String> projectSrc;
+        /** 依存jar・依存jarを集めたフォルダ。.classpath の kind="lib" があれば合算する */
+        final List<Path> projectLib;
         final String sourceEncoding;
 
         final List<PackagePattern> entryPatterns;
@@ -520,13 +524,13 @@ public class CallHierarchyExporter {
             }
 
             this.projectRoot = resolvePath(require(p, "project.root"));
-            this.sourceFolderOverride = splitList(p.getProperty("source.folders", ""));
+            this.projectSrc = splitList(p.getProperty("project.src", ""));
 
-            List<Path> extras = new ArrayList<>();
-            for (String s : splitList(p.getProperty("extra.classpath.entries", ""))) {
-                extras.add(resolvePath(s));
+            List<Path> libs = new ArrayList<>();
+            for (String s : splitList(p.getProperty("project.lib", ""))) {
+                libs.add(resolvePath(s));
             }
-            this.extraClasspathEntries = extras;
+            this.projectLib = libs;
 
             this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
 
@@ -724,16 +728,18 @@ public class CallHierarchyExporter {
     // ================================================================
 
     /**
-     * Eclipseプロジェクトルートから、解析に必要な構成を読み取る。
+     * プロジェクトの構成（ソースフォルダ・依存jar）を読み取る。
      *
-     * - .classpath の kind="src" からソースフォルダ
-     * - .classpath の kind="lib" からjar（他社製の共通化クラス等）
-     * - kind="con"（JREコンテナ等）は解決しない。JDK標準クラスは
-     *   setEnvironment の includeRunningVMBootclasspath=true で
-     *   実行中のJVMから解決させる
+     * project.src / project.lib が主たる指定方法。Eclipseの .classpath が
+     * 無いプロジェクト（GradleやMaven単体の構成等）でも使える。
+     *   - project.src が空なら、.classpath があれば kind="src" から読む
+     *   - project.lib は、.classpath の kind="lib"（あれば）と合算する
      *
-     * kind="var" やリンクリソース、ユーザーライブラリコンテナは未対応。
-     * 必要な場合は extra.classpath.entries で明示的に追加すること。
+     * .classpath の kind="con"（Gradle/Mavenのクラスパス・コンテナ等）は
+     * 解決しない。JDK標準クラスは setEnvironment の
+     * includeRunningVMBootclasspath=true で実行中のJVMから解決させる。
+     * kind="var" やリンクリソース、ユーザーライブラリコンテナも未対応のため、
+     * 必要な場合は project.lib で明示的に追加すること。
      */
     static final class EclipseProjectLayout {
 
@@ -748,7 +754,7 @@ public class CallHierarchyExporter {
                 throw new IOException("project.root がディレクトリとして存在しません: " + projectRoot);
             }
 
-            for (String rel : config.sourceFolderOverride) {
+            for (String rel : config.projectSrc) {
                 sourceFolders.add(projectRoot.resolve(rel).normalize());
             }
 
@@ -757,10 +763,10 @@ public class CallHierarchyExporter {
                 readDotClasspath(dotClasspath);
             } else if (sourceFolders.isEmpty()) {
                 throw new IOException(
-                        ".classpath が見つからず、source.folders の指定もありません: " + dotClasspath);
+                        ".classpath が見つからず、project.src の指定もありません: " + dotClasspath);
             }
 
-            classpathEntries.addAll(config.extraClasspathEntries);
+            classpathEntries.addAll(config.projectLib);
 
             if (sourceFolders.isEmpty()) {
                 throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot);
@@ -838,12 +844,48 @@ public class CallHierarchyExporter {
             return a;
         }
 
+        /**
+         * classpathEntries をクラスパス文字列配列にする。
+         *
+         * .classpath は kind="con"（Gradle/Mavenのクラスパス・コンテナ等）を
+         * 解決できないため、そういったプロジェクトでは .classpath だけでは
+         * 依存jarが1つも分からない。その場合は、依存jarを集めたフォルダ
+         * （Gradleの application/distribution プラグインが作る lib フォルダ、
+         * 手動で集めた lib フォルダ等）を project.lib に指定すれば、
+         * ここで直下の *.jar を自動的に展開してクラスパスに加える。
+         * （.classpath の kind="lib" と両方指定された場合は単純に合算する）
+         */
         String[] classpathArray() {
-            String[] a = new String[classpathEntries.size()];
-            for (int i = 0; i < a.length; i++) {
-                a[i] = classpathEntries.get(i).toString();
+            List<String> expanded = new ArrayList<>();
+            for (Path p : classpathEntries) {
+                if (Files.isDirectory(p)) {
+                    List<Path> jars = listJarsIn(p);
+                    if (jars.isEmpty()) {
+                        log("[WARN] クラスパスのディレクトリにjarが見つかりません: " + p);
+                    }
+                    for (Path jar : jars) {
+                        expanded.add(jar.toString());
+                    }
+                } else {
+                    expanded.add(p.toString());
+                }
             }
-            return a;
+            return expanded.toArray(new String[0]);
+        }
+
+        /** ディレクトリ直下（サブフォルダは見ない）の *.jar を、ファイル名順で列挙する */
+        private static List<Path> listJarsIn(Path dir) {
+            List<Path> jars = new ArrayList<>();
+            try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.jar")) {
+                for (Path p : ds) {
+                    jars.add(p);
+                }
+            } catch (IOException e) {
+                log("[WARN] クラスパスのディレクトリを読み取れません: " + dir + " (" + e + ")");
+                return jars;
+            }
+            jars.sort((a, b) -> a.getFileName().toString().compareTo(b.getFileName().toString()));
+            return jars;
         }
 
         /** ASTParser.setUnitName に渡すための、ソースフォルダからの相対パス */
@@ -1732,7 +1774,8 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n));
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n),
+                        externalGuessRef(n));
 
                 // フェーズAの拡張に、この呼び出し箇所を見せる。
                 // 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
@@ -1771,20 +1814,54 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(SuperMethodInvocation n) {
                 // super.m() は静的束縛（オーバーライドの影響を受けない）
-                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "");
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "", null);
                 return true;
             }
 
             @Override
             public boolean visit(ClassInstanceCreation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "");
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", null);
                 return true;
             }
 
             @Override
             public boolean visit(ConstructorInvocation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "");
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", null);
                 return true;
+            }
+
+            /**
+             * バインディング解決が完全に失敗した場合の最後の手段。
+             * レシーバの単純名が、このファイルの単一型インポート（{@code import a.b.C;}）と
+             * 一致すれば、そのFQNを型として採用する。あくまでソース上のテキストからの
+             * 推定であり、JDTによる検証済みの型解決ではない
+             * （メンバの実在・オーバーロードの妥当性までは確認できない）。
+             * ワイルドカードimport・static import・型不明のレシーバでは使わない。
+             */
+            private String[] externalGuessRef(MethodInvocation n) {
+                Expression recv = n.getExpression();
+                if (!(recv instanceof SimpleName)) {
+                    return null;
+                }
+                String simple = ((SimpleName) recv).getIdentifier();
+                String fqn = null;
+                for (Object o : cu.imports()) {
+                    ImportDeclaration imp = (ImportDeclaration) o;
+                    if (imp.isOnDemand() || imp.isStatic()) {
+                        continue;
+                    }
+                    String name = imp.getName().getFullyQualifiedName();
+                    if (name.equals(simple) || name.endsWith("." + simple)) {
+                        fqn = name;
+                        break;
+                    }
+                }
+                if (fqn == null) {
+                    return null;
+                }
+                int dot = fqn.lastIndexOf('.');
+                String pkg = (dot >= 0) ? fqn.substring(0, dot) : "";
+                return new String[]{pkg, fqn, n.getName().getIdentifier(), ""};
             }
 
             /**
@@ -1822,8 +1899,15 @@ public class CallHierarchyExporter {
                 return 'V';
             }
 
+            /**
+             * @param externalGuess バインディング解決が失敗した場合の代替の呼び出し先。
+             *                      null なら従来通りunresolved-calls.csvに記録する。
+             *                      非null なら「外部ライブラリ（import推定・未検証）」の
+             *                      注記付きでcall-hierarchy.csv側へ記録する
+             *                      （{@link #externalGuessRef} 参照）
+             */
             private void record(IMethodBinding binding, ASTNode node, String displayName,
-                                 char bindKind, String recvKey) {
+                                 char bindKind, String recvKey, String[] externalGuess) {
                 int line = cu.getLineNumber(node.getStartPosition());
                 List<String[]> callers = current();
                 if (callers == null) {
@@ -1835,6 +1919,17 @@ public class CallHierarchyExporter {
                 }
                 String[] callee = toRef(binding);
                 if (callee == null) {
+                    if (externalGuess != null) {
+                        // クラスパス不足で消えるより、未検証と分かる形で残す方針。
+                        // bindKind='G' は resolveEdge() 側で「候補は常にこの1件」として
+                        // 扱われ、CHA展開の対象にはしない（型階層情報を持たないため）
+                        for (String[] caller : callers) {
+                            out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
+                                    externalGuess[0], externalGuess[1], externalGuess[2],
+                                    externalGuess[3], line, 'G', recvKey));
+                        }
+                        return;
+                    }
                     // 呼び出し先の型解決に失敗したケース。呼び出し元が複数あっても
                     // 原因は呼び出し先側なので、1件だけ記録すれば足りる
                     String[] caller = callers.get(0);
@@ -2317,6 +2412,12 @@ public class CallHierarchyExporter {
         Resolution resolveEdge(int edgeIndex, char bindKind) {
             int calleeId = calleeIds[edgeIndex];
 
+            // --- importからの推定（未検証の外部ライブラリ呼び出し） ---
+            // 型階層情報を一切持たない合成メソッドのため、CHA拡張の対象にはしない
+            if (bindKind == 'G') {
+                return new Resolution(new int[]{calleeId}, "EXTERNAL_GUESS");
+            }
+
             // --- 段0: 静的束縛 ---
             if (bindKind != 'V') {
                 // 既定では確定として扱うが、ここで打ち切ると拡張に到達せず
@@ -2712,6 +2813,8 @@ public class CallHierarchyExporter {
         long custom;
         long cha;
         long chaCandidatesMax;
+        /** importからの推定（未検証の外部ライブラリ呼び出し）に解決した件数 */
+        long externalGuess;
 
         @Override
         public String toString() {
@@ -2721,7 +2824,8 @@ public class CallHierarchyExporter {
                     + " 実装なし=" + noImpl
                     + " new追跡=" + localNew
                     + " 拡張=" + custom
-                    + " CHA=" + cha + "(最大候補" + chaCandidatesMax + "件)";
+                    + " CHA=" + cha + "(最大候補" + chaCandidatesMax + "件)"
+                    + " 外部推定=" + externalGuess;
         }
     }
 
@@ -2761,6 +2865,8 @@ public class CallHierarchyExporter {
                             st.noImpl++;
                         } else if (r.label.startsWith("LOCAL_NEW")) {
                             st.localNew++;
+                        } else if ("EXTERNAL_GUESS".equals(r.label)) {
+                            st.externalGuess++;
                         } else if (!"CHA".equals(r.label)) {
                             st.custom++;   // 拡張が返したラベル
                         } else {
@@ -3479,7 +3585,12 @@ public class CallHierarchyExporter {
         private String noteFor(int target, int declaredCallee,
                                 CallGraph.Resolution res, int depth) {
             StringBuilder sb = new StringBuilder();
-            if (graph.methods.declFile(target) == null) {
+            if ("EXTERNAL_GUESS".equals(res.label)) {
+                // クラスパス不足でバインディング解決自体ができなかった呼び出し。
+                // importの単一型インポートから型名を推定しただけで、JDTによる
+                // 検証は経ていない（メンバの実在・オーバーロードは未確認）
+                sb.append("外部ライブラリ（import推定・未検証）");
+            } else if (graph.methods.declFile(target) == null) {
                 sb.append("ソースなし（展開不可）");
             } else if (depth + 1 >= config.maxDepth) {
                 sb.append("深さ制限(").append(config.maxDepth).append(")のため打ち切り");
@@ -3697,15 +3808,17 @@ public class CallHierarchyExporter {
  * ====================================================================
 
 # --- 解析対象 -------------------------------------------------------
-# Eclipseプロジェクトのルート（.classpath / .project があるディレクトリ）
+# 解析対象プロジェクトのルート
 project.root=../my-legacy-project
 
-# ソースフォルダを .classpath から読まず明示指定する場合（project.root からの相対）
-# 空欄なら .classpath の kind="src" を使用
-source.folders=
+# ソースフォルダ（project.root からの相対、カンマ区切り）。
+# 空欄で .classpath があれば、その kind="src" を使う
+project.src=
 
-# .classpath に載っていないjarを追加する場合（カンマ区切り、この設定ファイルからの相対可）
-extra.classpath.entries=
+# 依存jar、または依存jarを集めたフォルダ（カンマ区切り、この設定ファイルからの
+# 相対可）。フォルダを指定すると直下の *.jar を自動的に全部使う。
+# .classpath の kind="lib" があれば合算する
+project.lib=
 
 source.encoding=UTF-8
 
