@@ -45,6 +45,7 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -235,11 +236,12 @@ public class CallHierarchyExporter {
         try {
             StreamingTreeWalker walker = new StreamingTreeWalker(graph, config, writer);
             rows = walker.walkAll(entries);
-            if (config.dataflowEnabled
-                    && (walker.factoryHits() > 0 || walker.paramHits() > 0)) {
+            if (config.dataflowEnabled && (walker.factoryHits() > 0
+                    || walker.paramHits() > 0 || walker.fieldHits() > 0)) {
                 log("データフローで具象クラスを特定: "
                         + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
-                        + "呼び出し元から渡された引数から " + walker.paramHits() + " 件");
+                        + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
+                        + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
             }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
@@ -912,10 +914,11 @@ public class CallHierarchyExporter {
      *      argOrigins: 実引数の出所。"0=T:jp.co.X;2=A:1" のように 位置=出所 を;で並べる。
      *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
      *   R  pkg  typeFqn  method  paramSig  origin   （そのメソッドが返しうる値の出所）
+     *   J  typeFqn  fieldName  origin                （コンストラクタ注入されたフィールド）
      *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
      *   U  行  呼び出し元メソッドキー  式  理由
      *
-     * F行が現れるたびに、以降のH/D/C/R/U行はそのファイルに属する。
+     * F行が現れるたびに、以降のH/D/C/R/J/U行はそのファイルに属する。
      *
      * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
      * インターフェース・抽象クラスの実装クラスを特定できない。
@@ -984,10 +987,35 @@ public class CallHierarchyExporter {
         static final char PARAM = 'A';
         /** メソッドの戻り値。値はメソッドキー（typeFqn#method(params)） */
         static final char RETURN = 'M';
+        /** フィールド変数。値は typeFqn#fieldName */
+        static final char FIELD = 'F';
+        /** 文字列リテラル（またはコンパイル時定数）。値はその文字列 */
+        static final char LITERAL = 'L';
+        /** Class.forName(引数) で名前指定された型。値は0始まりの引数位置 */
+        static final char REFLECT = 'C';
         /** 追跡できない。「分からない」を明示的に持つのが重要（後述） */
         static final char UNKNOWN = 'U';
 
         static final String UNKNOWN_S = "U";
+
+        /**
+         * 実引数リストの区切り。
+         *
+         *   T:jp.co.Service|0=T:jp.co.UserDaoImpl
+         *   M:jp.co.Factory#create(java.lang.String)|0=L:jp.co.UserDaoImpl
+         *
+         * new やメソッド呼び出しの出所には、その呼び出しの実引数の出所も付ける。
+         * コンストラクタ注入されたフィールドや、クラス名の文字列を受け取る
+         * ファクトリを追うのに必要なため。
+         *
+         * '(' ではなく '|' で区切るのは、値の側（メソッドキー）が既に括弧を
+         * 含んでいて、括弧だと対応の判定が必要になるから。'|' はFQNにも
+         * メソッドキーにも現れない。
+         *
+         * 引数の出所は入れ子にしない（付いていたら剥がす）。段数を増やすほど
+         * 「どの推測が結論に効いたか」が追えなくなるうえ、文字列も長くなる。
+         */
+        static final char ARGS = '|';
 
         private Origin() {
         }
@@ -1000,21 +1028,56 @@ public class CallHierarchyExporter {
             return isUnknown(origin) ? UNKNOWN : origin.charAt(0);
         }
 
-        /** "T:jp.co.X" の "jp.co.X" の部分 */
+        /** "T:jp.co.X|0=..." の "jp.co.X" の部分（実引数リストは含まない） */
         static String valueOf(String origin) {
             int i = (origin == null) ? -1 : origin.indexOf(':');
-            return (i < 0) ? "" : origin.substring(i + 1);
+            if (i < 0) {
+                return "";
+            }
+            int bar = origin.indexOf(ARGS, i);
+            return (bar < 0) ? origin.substring(i + 1) : origin.substring(i + 1, bar);
+        }
+
+        /** "T:jp.co.X|0=..." の "0=..." の部分。無ければ null */
+        static String argsOf(String origin) {
+            int bar = (origin == null) ? -1 : origin.indexOf(ARGS);
+            return (bar < 0) ? null : origin.substring(bar + 1);
+        }
+
+        /** 実引数リストを落とした形。引数の出所を入れ子にしないために使う */
+        static String head(String origin) {
+            int bar = (origin == null) ? -1 : origin.indexOf(ARGS);
+            return (bar < 0) ? origin : origin.substring(0, bar);
         }
 
         static String of(char kind, String value) {
             return kind + ":" + value;
+        }
+
+        static String of(char kind, String value, String args) {
+            return (args == null || args.isEmpty())
+                    ? of(kind, value) : (kind + ":" + value + ARGS + args);
+        }
+
+        /** "0=T:jp.co.X;2=A:1" から指定位置の出所を取り出す。無ければ null */
+        static String argAt(String args, int index) {
+            if (args == null || args.isEmpty()) {
+                return null;
+            }
+            String prefix = index + "=";
+            for (String entry : args.split(";")) {
+                if (entry.startsWith(prefix)) {
+                    return entry.substring(prefix.length());
+                }
+            }
+            return null;
         }
     }
 
     static final class CacheFormat {
         static final String SEP = "\t";
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v3";
+        static final String VERSION = "jche-cache-v4";
 
         /** タブ・改行が値に混ざると形式が壊れるため除去する */
         static String clean(String s) {
@@ -1205,6 +1268,11 @@ public class CallHierarchyExporter {
                 w.newLine();
             }
             writeReturns(fa, w);
+            for (FieldInjectionRec j : fa.fieldInjections) {
+                w.write(String.join(CacheFormat.SEP, "J",
+                        j.typeFqn, j.fieldName, j.origin));
+                w.newLine();
+            }
             for (HintRec h : fa.hints) {
                 w.write(String.join(CacheFormat.SEP, "X", h.callerKey, h.scopeKey, h.kind, h.value));
                 w.newLine();
@@ -1346,6 +1414,22 @@ public class CallHierarchyExporter {
         }
     }
 
+    /**
+     * コンストラクタ注入されたフィールド1件（J行の元データ）。
+     * 「このフィールドには必ずこれが入る」と言い切れるものだけが作られる。
+     */
+    static final class FieldInjectionRec {
+        final String typeFqn;
+        final String fieldName;
+        final String origin;
+
+        FieldInjectionRec(String typeFqn, String fieldName, String origin) {
+            this.typeFqn = typeFqn;
+            this.fieldName = fieldName;
+            this.origin = origin;
+        }
+    }
+
     /** そのメソッドが返しうる値の出所1件（R行の元データ） */
     static final class ReturnRec {
         final String pkg;
@@ -1411,6 +1495,7 @@ public class CallHierarchyExporter {
         final List<MethodDecl> declarations = new ArrayList<>();
         final List<CallEdgeRec> edges = new ArrayList<>();
         final List<ReturnRec> returns = new ArrayList<>();
+        final List<FieldInjectionRec> fieldInjections = new ArrayList<>();
         final List<UnresolvedCall> unresolved = new ArrayList<>();
 
         FileAnalysis(String relativePath, long lastModified, long size) {
@@ -1652,22 +1737,148 @@ public class CallHierarchyExporter {
                     return null;
                 }
                 if (e instanceof ClassInstanceCreation) {
-                    String t = createdTypeOf((ClassInstanceCreation) e);
-                    return (t == null) ? null : Origin.of(Origin.NEW, t);
+                    ClassInstanceCreation cic = (ClassInstanceCreation) e;
+                    String t = createdTypeOf(cic);
+                    // 実引数も付ける。コンストラクタ注入されたフィールドを追うのに要る
+                    return (t == null) ? null
+                            : Origin.of(Origin.NEW, t, argOriginsOf(cic.arguments()));
                 }
                 if (e instanceof MethodInvocation) {
-                    String[] r = toRef(((MethodInvocation) e).resolveMethodBinding());
-                    return (r == null) ? null
-                            : Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")");
-                }
-                if (e instanceof SimpleName) {
-                    IBinding b = ((SimpleName) e).resolveBinding();
-                    if (b instanceof IVariableBinding) {
-                        Map<String, String> scope = originScopes.peek();
-                        String o = (scope == null) ? null
-                                : scope.get(((IVariableBinding) b).getKey());
-                        return Origin.isUnknown(o) ? null : o;
+                    MethodInvocation mi = (MethodInvocation) e;
+                    String reflected = reflectiveOriginOf(mi);
+                    if (reflected != null) {
+                        return reflected;
                     }
+                    String[] r = toRef(mi.resolveMethodBinding());
+                    // 実引数も付ける。クラス名の文字列を受け取るファクトリを追うのに要る
+                    return (r == null) ? null
+                            : Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")",
+                                    argOriginsOf(mi.arguments()));
+                }
+                if (e instanceof StringLiteral) {
+                    return classNameLiteral(((StringLiteral) e).getLiteralValue());
+                }
+                if (e instanceof SimpleName || e instanceof QualifiedName) {
+                    IBinding b = (e instanceof SimpleName)
+                            ? ((SimpleName) e).resolveBinding()
+                            : ((QualifiedName) e).resolveBinding();
+                    if (b instanceof IVariableBinding) {
+                        return variableOriginOf((IVariableBinding) b);
+                    }
+                }
+                if (e instanceof FieldAccess) {
+                    IVariableBinding vb = ((FieldAccess) e).resolveFieldBinding();
+                    if (vb != null) {
+                        return variableOriginOf(vb);
+                    }
+                }
+                return null;
+            }
+
+            /** ローカル変数・引数はスコープ表から、フィールドは宣言型から出所を決める */
+            private String variableOriginOf(IVariableBinding vb) {
+                if (!vb.isField()) {
+                    Map<String, String> scope = originScopes.peek();
+                    String o = (scope == null) ? null : scope.get(vb.getKey());
+                    return Origin.isUnknown(o) ? null : o;
+                }
+                // static final String などのコンパイル時定数は、その文字列そのもの。
+                // Factory.create(Names.USER_DAO) のような書き方を追えるようにする
+                Object cv = vb.getConstantValue();
+                if (cv instanceof String) {
+                    return classNameLiteral((String) cv);
+                }
+                ITypeBinding owner = vb.getDeclaringClass();
+                if (owner == null) {
+                    return null;
+                }
+                String ownerFqn = typeNameOf(owner.getErasure() != null
+                        ? owner.getErasure() : owner);
+                return (ownerFqn == null) ? null
+                        : Origin.of(Origin.FIELD, ownerFqn + "#" + vb.getName());
+            }
+
+            /**
+             * 文字列リテラルのうち、完全修飾クラス名の形をしたものだけ出所にする。
+             *
+             * ログの文言やSQLまで記録すると、キャッシュが文字列で埋まる割に
+             * 何の役にも立たない。「ドットを含み、各要素が識別子で、最後の要素が
+             * 英大文字で始まる」を条件にする。誤って拾っても、解決時に
+             * その型がプロジェクトに無ければ使われないだけで害はない。
+             */
+            private String classNameLiteral(String value) {
+                if (value == null || value.isEmpty() || value.indexOf('.') < 0) {
+                    return null;
+                }
+                int last = 0;
+                for (int i = 0; i <= value.length(); i++) {
+                    if (i < value.length() && value.charAt(i) != '.') {
+                        char c = value.charAt(i);
+                        if (!Character.isJavaIdentifierPart(c) && c != '$') {
+                            return null;
+                        }
+                        continue;
+                    }
+                    if (i == last) {
+                        return null;   // 空の要素（先頭・末尾・連続するドット）
+                    }
+                    if (!Character.isJavaIdentifierStart(value.charAt(last))) {
+                        return null;
+                    }
+                    last = i + 1;
+                }
+                int dot = value.lastIndexOf('.');
+                return Character.isUpperCase(value.charAt(dot + 1))
+                        ? Origin.of(Origin.LITERAL, value) : null;
+            }
+
+            /**
+             * {@code Class.forName(x).newInstance()} 系の生成を出所にする。
+             *
+             * 対応する形:
+             *   Class.forName(x).newInstance()
+             *   Class.forName(x).getDeclaredConstructor().newInstance()
+             *   Class.forName(x).getConstructor().newInstance()
+             *
+             * x が文字列リテラルなら型が確定するので T、
+             * 囲みメソッドの引数なら「その引数で名前指定された型」として C を返す。
+             * C は、そのメソッドを呼んでいる側の実引数を見て初めて確定する。
+             */
+            private String reflectiveOriginOf(MethodInvocation mi) {
+                if (!"newInstance".equals(mi.getName().getIdentifier())) {
+                    return null;
+                }
+                Expression recv = unwrap(mi.getExpression());
+                // getDeclaredConstructor() / getConstructor() を挟む形を1段だけ剥がす
+                if (recv instanceof MethodInvocation) {
+                    String n = ((MethodInvocation) recv).getName().getIdentifier();
+                    if ("getDeclaredConstructor".equals(n) || "getConstructor".equals(n)) {
+                        recv = unwrap(((MethodInvocation) recv).getExpression());
+                    }
+                }
+                if (!(recv instanceof MethodInvocation)) {
+                    return null;
+                }
+                MethodInvocation forName = (MethodInvocation) recv;
+                if (!"forName".equals(forName.getName().getIdentifier())) {
+                    return null;
+                }
+                IMethodBinding fb = forName.resolveMethodBinding();
+                if (fb == null || fb.getDeclaringClass() == null
+                        || !"java.lang.Class".equals(fb.getDeclaringClass().getQualifiedName())) {
+                    return null;
+                }
+                if (forName.arguments().isEmpty()) {
+                    return null;
+                }
+                Expression arg = unwrap((Expression) forName.arguments().get(0));
+                String argOrigin = originOf(arg);
+                if (Origin.kindOf(argOrigin) == Origin.LITERAL) {
+                    // クラス名が determined。生成される型そのものが分かる
+                    return Origin.of(Origin.NEW, Origin.valueOf(argOrigin));
+                }
+                if (Origin.kindOf(argOrigin) == Origin.PARAM) {
+                    return Origin.of(Origin.REFLECT, Origin.valueOf(argOrigin));
                 }
                 return null;
             }
@@ -1698,7 +1909,8 @@ public class CallHierarchyExporter {
                     if (!(o instanceof Expression)) {
                         continue;
                     }
-                    String origin = originOf((Expression) o);
+                    // 引数の出所は入れ子にしない（実引数リストが付いていたら剥がす）
+                    String origin = Origin.head(originOf((Expression) o));
                     if (origin == null) {
                         continue;
                     }
@@ -1894,7 +2106,198 @@ public class CallHierarchyExporter {
             }
 
             private void pushTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
-                typeContextStack.push(buildTypeContext(tb, bodyDeclarations, declLine));
+                TypeContext ctx = buildTypeContext(tb, bodyDeclarations, declLine);
+                typeContextStack.push(ctx);
+                collectFieldInjections(tb, bodyDeclarations, ctx.rootConstructors);
+            }
+
+            // ------------------------------------------------------------
+            // コンストラクタ注入されたフィールド（J行）
+            //
+            // 「このフィールドには、必ずコンストラクタの何番目の引数が入る」と
+            // 言い切れるフィールドだけを記録する。呼び出し階層を降りるときに
+            // new の実引数と突き合わせて具象クラスを決めるのに使う。
+            //
+            // 言い切るには次を全部満たす必要がある。1つでも崩れたら記録しない。
+            //   (a) private または final（クラスの外から代入されない）
+            //   (b) 代入がコンストラクタの本体か、フィールド初期化子の中だけにある
+            //       （setterや他のメソッドで後から差し替わらない）
+            //   (c) 初期化子を持つか、this(...)委譲していない全てのコンストラクタで
+            //       代入されている（代入されない生成経路が無い）
+            //   (d) それらの代入の出所が全て一致する
+            // ------------------------------------------------------------
+
+            /** 集計中の1フィールド分の状態 */
+            private static final class FieldInjection {
+                String origin;                 // 一致している出所。食い違ったら null
+                boolean broken;                // 上の条件を満たさなくなった
+                boolean hasInitializer;
+                final Set<String> assignedIn = new HashSet<>();   // 代入したコンストラクタ
+
+                void merge(String o) {
+                    if (o == null || (origin != null && !origin.equals(o))) {
+                        broken = true;
+                        return;
+                    }
+                    origin = o;
+                }
+            }
+
+            private void collectFieldInjections(ITypeBinding tb, List<?> bodyDeclarations,
+                                                 List<String[]> rootConstructors) {
+                if (tb == null || bodyDeclarations.isEmpty()) {
+                    return;
+                }
+                ITypeBinding erased = (tb.getErasure() != null) ? tb.getErasure() : tb;
+                final String typeFqn = typeNameOf(erased);
+                if (typeFqn == null) {
+                    return;
+                }
+                Map<String, FieldInjection> fields = new LinkedHashMap<>();
+                Set<String> rootKeys = new HashSet<>();
+                for (String[] r : rootConstructors) {
+                    rootKeys.add(r[2] + "(" + r[3] + ")");
+                }
+
+                for (Object o : bodyDeclarations) {
+                    if (o instanceof FieldDeclaration) {
+                        scanFieldInitializers((FieldDeclaration) o, typeFqn, fields);
+                    } else if (o instanceof MethodDeclaration) {
+                        MethodDeclaration md = (MethodDeclaration) o;
+                        String key = keyOf(md);
+                        boolean isRootCtor = md.isConstructor() && rootKeys.contains(key);
+                        scanAssignments(md, typeFqn, fields, isRootCtor ? key : null);
+                    }
+                }
+                emitFieldInjections(typeFqn, fields, rootKeys.size());
+            }
+
+            private String keyOf(MethodDeclaration md) {
+                String[] ref = toRef(md.resolveBinding());
+                return (ref == null) ? "?" : ref[2] + "(" + ref[3] + ")";
+            }
+
+            /** フィールド初期化子（private Dao dao = new UserDao();）を拾う */
+            private void scanFieldInitializers(FieldDeclaration fd, String typeFqn,
+                                                Map<String, FieldInjection> fields) {
+                for (Object f : fd.fragments()) {
+                    if (!(f instanceof VariableDeclarationFragment)) {
+                        continue;
+                    }
+                    VariableDeclarationFragment frag = (VariableDeclarationFragment) f;
+                    IVariableBinding vb = frag.resolveBinding();
+                    if (vb == null || !isTrackableField(vb, typeFqn)) {
+                        continue;
+                    }
+                    FieldInjection fi = injectionOf(fields, vb.getName());
+                    if (frag.getInitializer() == null) {
+                        continue;
+                    }
+                    fi.hasInitializer = true;
+                    fi.merge(Origin.head(originOf(frag.getInitializer())));
+                }
+            }
+
+            /**
+             * メソッド本体の中のフィールドへの代入を拾う。
+             *
+             * @param ctorKey 根のコンストラクタならそのキー。それ以外（setter・
+             *                通常のメソッド・this()委譲するコンストラクタ）なら null。
+             *                null の場合、代入されたフィールドは追跡対象から外す
+             */
+            private void scanAssignments(MethodDeclaration md, final String typeFqn,
+                                          final Map<String, FieldInjection> fields,
+                                          final String ctorKey) {
+                Block body = md.getBody();
+                if (body == null) {
+                    return;
+                }
+                enterScope(paramScopeOf(md));
+                try {
+                    body.accept(new ASTVisitor() {
+                        @Override
+                        public boolean visit(Assignment n) {
+                            IVariableBinding vb = assignedFieldOf(n.getLeftHandSide());
+                            if (vb == null || !isTrackableField(vb, typeFqn)) {
+                                return true;
+                            }
+                            FieldInjection fi = injectionOf(fields, vb.getName());
+                            if (ctorKey == null) {
+                                fi.broken = true;   // 生成後に差し替わりうる
+                                return true;
+                            }
+                            fi.assignedIn.add(ctorKey);
+                            fi.merge(Origin.head(originOf(n.getRightHandSide())));
+                            return true;
+                        }
+                    });
+                } finally {
+                    leaveScope();
+                }
+            }
+
+            /** 代入先がこの型のフィールドなら、そのバインディング */
+            private IVariableBinding assignedFieldOf(Expression lhs) {
+                Expression e = unwrap(lhs);
+                if (e instanceof FieldAccess) {
+                    return ((FieldAccess) e).resolveFieldBinding();
+                }
+                IBinding b = null;
+                if (e instanceof SimpleName) {
+                    b = ((SimpleName) e).resolveBinding();
+                } else if (e instanceof QualifiedName) {
+                    b = ((QualifiedName) e).resolveBinding();
+                }
+                return (b instanceof IVariableBinding && ((IVariableBinding) b).isField())
+                        ? (IVariableBinding) b : null;
+            }
+
+            /**
+             * 追跡対象のフィールドか。
+             *
+             * この型自身のインスタンスフィールドで、private または final のものだけ。
+             * それ以外は、このファイルを読んだだけでは代入箇所を数え上げられない。
+             */
+            private boolean isTrackableField(IVariableBinding vb, String typeFqn) {
+                if (!vb.isField() || Modifier.isStatic(vb.getModifiers())) {
+                    return false;
+                }
+                int mods = vb.getModifiers();
+                if (!Modifier.isPrivate(mods) && !Modifier.isFinal(mods)) {
+                    return false;
+                }
+                ITypeBinding owner = vb.getDeclaringClass();
+                if (owner == null) {
+                    return false;
+                }
+                ITypeBinding er = (owner.getErasure() != null) ? owner.getErasure() : owner;
+                return typeFqn.equals(typeNameOf(er));
+            }
+
+            private FieldInjection injectionOf(Map<String, FieldInjection> fields, String name) {
+                FieldInjection fi = fields.get(name);
+                if (fi == null) {
+                    fi = new FieldInjection();
+                    fields.put(name, fi);
+                }
+                return fi;
+            }
+
+            private void emitFieldInjections(String typeFqn, Map<String, FieldInjection> fields,
+                                              int rootConstructorCount) {
+                for (Map.Entry<String, FieldInjection> e : fields.entrySet()) {
+                    FieldInjection fi = e.getValue();
+                    if (fi.broken || fi.origin == null) {
+                        continue;
+                    }
+                    // 代入されない生成経路があると、そのフィールドの中身は別物になる
+                    boolean coveredByCtors = fi.assignedIn.size() >= rootConstructorCount;
+                    if (!fi.hasInitializer && !coveredByCtors) {
+                        continue;
+                    }
+                    out.fieldInjections.add(
+                            new FieldInjectionRec(typeFqn, e.getKey(), fi.origin));
+                }
             }
 
             private void popTypeContext() {
@@ -2636,6 +3039,8 @@ public class CallHierarchyExporter {
 
         /** メソッドIDごとの「返しうる値の出所」。null は情報なし */
         private String[][] returnOrigins;
+        /** "typeFqn#fieldName" -> 出所。コンストラクタ注入されたフィールドだけが入る */
+        private final HashMap<String, String> fieldOrigins = new HashMap<>();
 
         /** 型階層: 親型 -> 直接の子型 */
         private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
@@ -2772,6 +3177,11 @@ public class CallHierarchyExporter {
                             ensure(outDegree, callee);
                             outDegree.set(caller, outDegree.get(caller) + 1);
                             edgeCount++;
+                        }
+                    } else if (t == 'J') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 4) {
+                            g.fieldOrigins.put(f[1] + "#" + f[2], f[3]);
                         }
                     } else if (t == 'R') {
                         String[] f = line.split(CacheFormat.SEP, -1);
@@ -2923,65 +3333,113 @@ public class CallHierarchyExporter {
             return dataflowEnabled;
         }
 
-        /** factoryReturnType のメモ。未計算と「計算したが不明」を区別する */
-        private String[] factoryReturnType;
-        private byte[] factoryReturnState;   // 0=未計算 / 1=計算中 / 2=計算済み
+        /** factoryReturnOrigin のメモ。未計算と「計算したが不明」を区別する */
+        private String[] factoryOrigin;
+        private byte[] factoryOriginState;   // 0=未計算 / 1=計算中 / 2=計算済み
 
         /**
-         * そのメソッドが必ず返す具象型。特定できなければ null。
+         * そのメソッドが必ず返す値の出所。特定できなければ null。
          *
-         * 「1つでも追跡できない return があれば null」「複数の型を返すなら null」。
-         * ファクトリメソッドの戻り値に対する呼び出しを具象クラスまで辿るために使う。
-         * 委譲（{@code return create();}）は dataflowMaxDepth まで辿る。
+         * 「1つでも追跡できない return があれば null」「複数の出所を返すなら null」。
+         * 委譲（{@code return create();}）は dataflowMaxDepth まで辿って畳む。
+         *
+         * 返すのは具象型（{@code T:}）とは限らない。クラス名の文字列を受け取る
+         * ファクトリは {@code C:引数位置}、引数をそのまま返すメソッドは {@code A:引数位置}
+         * になる。これらは**そのファクトリを呼んでいる箇所の実引数**を見て初めて
+         * 確定するので、ここではそのまま返して呼び出し側で解決する。
          */
-        String factoryReturnType(int methodId) {
+        String factoryReturnOrigin(int methodId) {
             if (returnOrigins == null || methodId < 0 || methodId >= returnOrigins.length) {
                 return null;
             }
-            if (factoryReturnType == null) {
-                factoryReturnType = new String[returnOrigins.length];
-                factoryReturnState = new byte[returnOrigins.length];
+            if (factoryOrigin == null) {
+                factoryOrigin = new String[returnOrigins.length];
+                factoryOriginState = new byte[returnOrigins.length];
             }
-            return factoryReturnType(methodId, 0);
+            return factoryReturnOrigin(methodId, 0);
         }
 
-        private String factoryReturnType(int methodId, int depth) {
-            if (factoryReturnState[methodId] == 2) {
-                return factoryReturnType[methodId];
+        private String factoryReturnOrigin(int methodId, int depth) {
+            if (factoryOriginState[methodId] == 2) {
+                return factoryOrigin[methodId];
             }
-            if (factoryReturnState[methodId] == 1) {
+            if (factoryOriginState[methodId] == 1) {
                 return null;   // 委譲が循環している
             }
             String[] origins = returnOrigins[methodId];
             if (origins == null || origins.length == 0) {
                 return null;
             }
-            factoryReturnState[methodId] = 1;
+            factoryOriginState[methodId] = 1;
             String found = null;
             for (String o : origins) {
-                String fqn = null;
-                char kind = Origin.kindOf(o);
-                if (kind == Origin.NEW) {
-                    fqn = Origin.valueOf(o);
-                } else if (kind == Origin.RETURN && depth < dataflowMaxDepth) {
-                    int delegate = methods.idOf(Origin.valueOf(o));
-                    if (delegate >= 0) {
-                        fqn = factoryReturnType(delegate, depth + 1);
-                    }
-                }
-                // 引数をそのまま返すメソッド（A）や追跡できない return（U）が1つでも
-                // あれば、このメソッドの戻り値は決められない。分かった分だけで
-                // 決め打ちすると、実際には別の型を返す経路を取りこぼす
-                if (fqn == null || (found != null && !found.equals(fqn))) {
-                    factoryReturnState[methodId] = 2;
-                    factoryReturnType[methodId] = null;
+                String reduced = reduceReturnOrigin(o, depth);
+                // 1つでも畳めない return があれば、このメソッドの戻り値は決められない。
+                // 分かった分だけで決め打ちすると、別の型を返す経路を取りこぼす
+                if (reduced == null || (found != null && !found.equals(reduced))) {
+                    factoryOriginState[methodId] = 2;
+                    factoryOrigin[methodId] = null;
                     return null;
                 }
-                found = fqn;
+                found = reduced;
             }
-            factoryReturnState[methodId] = 2;
-            factoryReturnType[methodId] = found;
+            factoryOriginState[methodId] = 2;
+            factoryOrigin[methodId] = found;
             return found;
+        }
+
+        /** return 1件の出所を、具象型か「呼び出し箇所依存の形」まで畳む */
+        private String reduceReturnOrigin(String origin, int depth) {
+            char kind = Origin.kindOf(origin);
+            if (kind == Origin.NEW || kind == Origin.REFLECT || kind == Origin.PARAM) {
+                return Origin.head(origin);
+            }
+            if (kind != Origin.RETURN || depth >= dataflowMaxDepth) {
+                return null;
+            }
+            // 別のファクトリへの委譲。委譲先の出所を、この return が書いている
+            // 実引数で解決する（return create("jp.co.X"); のような形を畳むため）
+            int delegate = methods.idOf(Origin.valueOf(origin));
+            if (delegate < 0) {
+                return null;
+            }
+            String inner = factoryReturnOrigin(delegate, depth + 1);
+            if (Origin.kindOf(inner) == Origin.NEW) {
+                return inner;
+            }
+            String fqn = applyInvocationArgs(inner, Origin.argsOf(origin), null);
+            return (fqn == null) ? null : Origin.of(Origin.NEW, fqn);
+        }
+
+        /**
+         * 呼び出し箇所依存の戻り値の出所（C/A）を、その呼び出しの実引数で解決する。
+         *
+         * @param args 呼び出し箇所の実引数の出所（"0=L:jp.co.X" など）
+         * @param ctx  実引数がさらに外側に依存する場合に使う文脈。無ければ null
+         */
+        private String applyInvocationArgs(String returnOrigin, String args, DataflowContext ctx) {
+            char kind = Origin.kindOf(returnOrigin);
+            if (kind == Origin.NEW) {
+                return Origin.valueOf(returnOrigin);
+            }
+            int index = parseIndex(Origin.valueOf(returnOrigin));
+            if (index < 0) {
+                return null;
+            }
+            String arg = Origin.argAt(args, index);
+            if (kind == Origin.REFLECT) {
+                // Class.forName(引数) 形式。実引数がクラス名の文字列なら型が決まる
+                if (Origin.kindOf(arg) != Origin.LITERAL) {
+                    return null;
+                }
+                String fqn = Origin.valueOf(arg);
+                // 解析対象に存在しない型名は使わない（文字列の見た目だけで決めない）
+                return typeKind.containsKey(fqn) ? fqn : null;
+            }
+            if (kind == Origin.PARAM) {
+                return concreteTypeOf(arg, ctx);
+            }
+            return null;
         }
 
         /**
@@ -3019,44 +3477,120 @@ public class CallHierarchyExporter {
         }
 
         /**
-         * 出所から具象型を求める。
-         *
-         * @param callerParamTypes 呼び出し元メソッドの引数の具象型（経路から確定した分）。
-         *                         null なら引数由来の出所は追えない
+         * 経路から確定している情報。どれも「1本の経路に対して」の値であり、
+         * 別の経路では別の値になる。
          */
-        String concreteTypeOf(String origin, String[] callerParamTypes) {
+        static final class DataflowContext {
+            /** 囲みメソッドの引数の具象型 */
+            final String[] paramTypes;
+            /** レシーバのオブジェクトの、コンストラクタ実引数の具象型 */
+            final String[] ctorArgs;
+            /** ctorArgs が属する型。取り違え防止のため必ず突き合わせる */
+            final String ctorOwner;
+
+            DataflowContext(String[] paramTypes, String[] ctorArgs, String ctorOwner) {
+                this.paramTypes = paramTypes;
+                this.ctorArgs = ctorArgs;
+                this.ctorOwner = ctorOwner;
+            }
+
+            static DataflowContext of(String[] paramTypes, String[] ctorArgs, String ctorOwner) {
+                return (paramTypes == null && ctorArgs == null)
+                        ? null : new DataflowContext(paramTypes, ctorArgs, ctorOwner);
+            }
+        }
+
+        /** 出所から具象型を求める。経路に依存する部分は ctx から取る */
+        String concreteTypeOf(String origin, DataflowContext ctx) {
             char kind = Origin.kindOf(origin);
             if (kind == Origin.NEW) {
                 return Origin.valueOf(origin);
             }
             if (kind == Origin.RETURN) {
                 int factory = methods.idOf(Origin.valueOf(origin));
-                return (factory < 0) ? null : factoryReturnType(factory);
-            }
-            if (kind == Origin.PARAM && callerParamTypes != null) {
-                int idx = parseIndex(Origin.valueOf(origin));
-                if (idx >= 0 && idx < callerParamTypes.length) {
-                    return callerParamTypes[idx];
+                if (factory < 0) {
+                    return null;
                 }
+                return applyInvocationArgs(factoryReturnOrigin(factory),
+                        Origin.argsOf(origin), ctx);
+            }
+            if (kind == Origin.PARAM && ctx != null && ctx.paramTypes != null) {
+                int idx = parseIndex(Origin.valueOf(origin));
+                if (idx >= 0 && idx < ctx.paramTypes.length) {
+                    return ctx.paramTypes[idx];
+                }
+                return null;
+            }
+            if (kind == Origin.FIELD) {
+                return fieldTypeOf(Origin.valueOf(origin), ctx);
             }
             return null;
         }
 
         /**
-         * そのメソッドが引数を「レシーバとして使う」か「そのまま次へ渡す」か。
+         * コンストラクタ注入されたフィールドの具象型。
          *
-         * どちらでもないメソッドに引数の具象型を渡しても使い道が無いので、
-         * 経路を降りる前にここで打ち切る。データフロー解析を
-         * 「必要な場合のみ」に絞るための入口。
+         * J行が「このフィールドには必ずコンストラクタのn番目の引数が入る」と
+         * 言っているので、経路上で分かっているコンストラクタの実引数と突き合わせる。
+         * 引数ではなく初期化子の new で決まっているフィールドは、経路を見ずに決まる。
          */
-        boolean usesParameters(int methodId) {
-            if (!dataflowEnabled) {
+        private String fieldTypeOf(String fieldKey, DataflowContext ctx) {
+            String origin = fieldOrigins.get(fieldKey);
+            if (origin == null) {
+                return null;
+            }
+            if (Origin.kindOf(origin) == Origin.NEW) {
+                return Origin.valueOf(origin);
+            }
+            if (Origin.kindOf(origin) != Origin.PARAM || ctx == null || ctx.ctorArgs == null) {
+                return null;
+            }
+            // このコンストラクタ実引数が、本当にこのフィールドを持つ型のものか。
+            // 親クラスのフィールドにサブクラスのコンストラクタ実引数を当てないため
+            String owner = fieldKey.substring(0, fieldKey.indexOf('#'));
+            if (!owner.equals(ctx.ctorOwner)) {
+                return null;
+            }
+            int idx = parseIndex(Origin.valueOf(origin));
+            return (idx >= 0 && idx < ctx.ctorArgs.length) ? ctx.ctorArgs[idx] : null;
+        }
+
+        /** その型がコンストラクタ注入されたフィールドを持つか */
+        boolean hasInjectedFields(String typeFqn) {
+            if (typeFqn == null || fieldOrigins.isEmpty()) {
+                return false;
+            }
+            if (typesWithInjectedFields == null) {
+                typesWithInjectedFields = new HashSet<>();
+                for (String key : fieldOrigins.keySet()) {
+                    typesWithInjectedFields.add(key.substring(0, key.indexOf('#')));
+                }
+            }
+            return typesWithInjectedFields.contains(typeFqn);
+        }
+
+        private Set<String> typesWithInjectedFields;
+
+        /**
+         * そのメソッドに経路の情報を渡す意味があるか。
+         *
+         * 意味が無いメソッドには渡さないことで、データフロー解析を
+         * 「必要な場合のみ」に絞る。次のいずれかなら意味がある。
+         *   ・引数をレシーバとして使う、または引数をそのまま次へ渡す
+         *   ・コンストラクタ注入されたフィールドを持つ型のメソッド
+         *     （自分のメソッドを呼び合った先でフィールドを使うことがある）
+         */
+        boolean usesContext(int methodId) {
+            if (!dataflowEnabled || methodId < 0) {
                 return false;
             }
             if (usesParameters == null) {
                 usesParameters = computeUsesParameters();
             }
-            return methodId >= 0 && methodId < usesParameters.length && usesParameters[methodId];
+            if (methodId < usesParameters.length && usesParameters[methodId]) {
+                return true;
+            }
+            return hasInjectedFields(methods.typeFqn(methodId));
         }
 
         private boolean[] usesParameters;
@@ -3174,14 +3708,17 @@ public class CallHierarchyExporter {
 
             // --- 段4: ファクトリメソッドの戻り値（Issue #17） ---
             // レシーバがメソッドの戻り値なら、その宣言の return を見て具象型を決める。
-            // 経路に依存しないのでここでメモ化できる（引数由来は経路依存なので
-            // ここでは扱えない。StreamingTreeWalker 側で解決する）
+            // 呼び出し箇所の実引数までは出所に含まれているので、クラス名の文字列を
+            // 受け取るファクトリもここで決まる。経路に依存しないのでメモ化できる。
+            // （引数・フィールド由来は経路依存なので StreamingTreeWalker 側で解決する）
             if (dataflowEnabled) {
-                int fromFactory = dataflowTarget(recvOrigin(edgeIndex), calleeId, null);
-                if (fromFactory >= 0) {
-                    return new Resolution(new int[]{fromFactory}, "DATAFLOW_FACTORY");
+                String recv = recvOrigin(edgeIndex);
+                int resolved = dataflowTarget(recv, calleeId, null);
+                if (resolved >= 0) {
+                    return new Resolution(new int[]{resolved}, dataflowLabel(recv));
                 }
             }
+
 
             // --- 段5: CHA ---
             return base;
@@ -3192,11 +3729,20 @@ public class CallHierarchyExporter {
          *
          * @param callerParamTypes 経路から確定した呼び出し元の引数の具象型（無ければ null）
          */
-        int dataflowTarget(String recvOrigin, int calleeId, String[] callerParamTypes) {
+        /** どの材料で具象クラスを決めたかを表すラベル */
+        static String dataflowLabel(String recvOrigin) {
+            switch (Origin.kindOf(recvOrigin)) {
+                case Origin.FIELD:  return "DATAFLOW_FIELD";
+                case Origin.PARAM:  return "DATAFLOW_PARAM";
+                default:            return "DATAFLOW_FACTORY";
+            }
+        }
+
+        int dataflowTarget(String recvOrigin, int calleeId, DataflowContext ctx) {
             if (!dataflowEnabled || recvOrigin == null) {
                 return -1;
             }
-            String fqn = concreteTypeOf(recvOrigin, callerParamTypes);
+            String fqn = concreteTypeOf(recvOrigin, ctx);
             if (fqn == null) {
                 return -1;
             }
@@ -4159,9 +4705,18 @@ public class CallHierarchyExporter {
          * ——それがこの解析の意味であり、メモ化できない理由でもある。
          */
         private final String[][] pathParamTypes;
+        /**
+         * 経路上の各深さで、「今メソッドを実行しているオブジェクト」の
+         * コンストラクタ実引数の具象型（Issue #17/#18 のフィールドへの延長）。
+         * コンストラクタ注入されたフィールドは、これと突き合わせて具象型が決まる。
+         */
+        private final String[][] pathCtorArgs;
+        /** pathCtorArgs が属する型。親クラスのフィールドに取り違えて当てないため */
+        private final String[] pathCtorOwner;
         /** データフローで具象クラスを特定した件数（ログ用） */
         private long paramHits;
         private long factoryHits;
+        private long fieldHits;
 
         private int rootId;
         private long totalRows;
@@ -4177,6 +4732,8 @@ public class CallHierarchyExporter {
             this.pathCallLine = new int[cap];
             this.pathNote = new String[cap];
             this.pathParamTypes = new String[cap][];
+            this.pathCtorArgs = new String[cap][];
+            this.pathCtorOwner = new String[cap];
         }
 
         long paramHits() {
@@ -4187,14 +4744,21 @@ public class CallHierarchyExporter {
             return factoryHits;
         }
 
+        long fieldHits() {
+            return fieldHits;
+        }
+
         long walkAll(int[] entries) throws IOException {
             for (int i = 0; i < entries.length; i++) {
                 rootId = entries[i];
                 pathMethod[0] = rootId;
                 pathCallLine[0] = -1;
                 pathNote[0] = null;
-                // 起点メソッドの引数は「誰が何を渡すか」が分からない
+                // 起点メソッドの引数も、そのオブジェクトの生成箇所も、
+                // 経路の中に無いので分からない
                 pathParamTypes[0] = null;
+                pathCtorArgs[0] = null;
+                pathCtorOwner[0] = null;
                 descend(0);
                 if (isRowLimitReached()) {
                     break;
@@ -4225,14 +4789,15 @@ public class CallHierarchyExporter {
                 // 引数の具象型を使って解決を試みる。「必要なときだけ」にするのは、
                 // 全呼び出しで試すと解析コストが呼び出し数に比例して効いてくるため
                 if (res.targets.length > 1 && graph.dataflowEnabled()) {
-                    int viaParam = graph.dataflowTarget(
-                            graph.recvOrigin(e), declaredCallee, pathParamTypes[depth]);
-                    if (viaParam >= 0) {
-                        res = new CallGraph.Resolution(new int[]{viaParam}, "DATAFLOW_PARAM");
-                        paramHits++;
+                    String recvOrigin = graph.recvOrigin(e);
+                    int viaPath = graph.dataflowTarget(recvOrigin, declaredCallee, contextAt(depth));
+                    if (viaPath >= 0) {
+                        String label = CallGraph.dataflowLabel(recvOrigin);
+                        res = new CallGraph.Resolution(new int[]{viaPath}, label);
+                        countDataflow(label);
                     }
-                } else if ("DATAFLOW_FACTORY".equals(res.label)) {
-                    factoryHits++;
+                } else if (res.label.startsWith("DATAFLOW_")) {
+                    countDataflow(res.label);
                 }
 
                 // CHAで候補が複数になった呼び出しは、候補の数だけ展開すると
@@ -4248,11 +4813,12 @@ public class CallHierarchyExporter {
                     int target = targets[ti];
 
                     String[] targetParams = bindArguments(e, depth, target);
+                    String[] targetCtorArgs = bindConstructorArguments(e, depth, target);
 
                     if (isExcluded(target)) {
                         // 除外対象のノード自身は出力しないが、その先は親に繋ぎ直して辿る
                         if (!onCurrentPath(target, depth)) {
-                            skipThrough(depth, target, targetParams);
+                            skipThrough(depth, target, targetParams, targetCtorArgs);
                         }
                         continue;
                     }
@@ -4262,6 +4828,9 @@ public class CallHierarchyExporter {
                             noteFor(target, declaredCallee, res, depth, cycle,
                                     (char) graph.recvKinds[e]));
                     pathParamTypes[depth + 1] = targetParams;
+                    pathCtorArgs[depth + 1] = targetCtorArgs;
+                    pathCtorOwner[depth + 1] = (targetCtorArgs == null)
+                            ? null : graph.methods.typeFqn(target);
 
                     // コンストラクタ呼び出しそのものは行にしない。
                     // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
@@ -4289,14 +4858,48 @@ public class CallHierarchyExporter {
          * null を返せば以降の深さでは何もしないので、解析コストが必要な箇所だけに絞れる。
          */
         private String[] bindArguments(int edgeIndex, int depth, int target) {
-            if (!graph.dataflowEnabled() || !graph.usesParameters(target)) {
+            if (!graph.dataflowEnabled() || !graph.usesContext(target)) {
                 return null;
             }
-            String spec = graph.argOrigins(edgeIndex);
+            return resolveArgs(graph.argOrigins(edgeIndex), depth);
+        }
+
+        /**
+         * 呼び出し先のオブジェクトが、この経路でどう生成されたかを求める。
+         *
+         * レシーバが {@code new X(...)} なら、その実引数の具象型が
+         * コンストラクタ注入されたフィールドの中身になる。
+         * レシーバが無い（this への呼び出し）場合は、同じオブジェクトの
+         * 別のメソッドを呼んでいるので、今の環境をそのまま引き継ぐ。
+         */
+        private String[] bindConstructorArguments(int edgeIndex, int depth, int target) {
+            if (!graph.dataflowEnabled()) {
+                return null;
+            }
+            String targetType = graph.methods.typeFqn(target);
+            if (!graph.hasInjectedFields(targetType)) {
+                return null;   // 注入されたフィールドを持たない型には渡す意味が無い
+            }
+            String recvOrigin = graph.recvOrigin(edgeIndex);
+            if (recvOrigin == null) {
+                // レシーバなし = this。同じ型のメソッドを呼んでいる間だけ引き継ぐ
+                return targetType.equals(pathCtorOwner[depth]) ? pathCtorArgs[depth] : null;
+            }
+            if (Origin.kindOf(recvOrigin) != Origin.NEW
+                    || !targetType.equals(Origin.valueOf(recvOrigin))) {
+                // new 以外（引数・フィールド・戻り値）から来たオブジェクトは、
+                // どのコンストラクタ実引数で作られたかがこの経路では分からない
+                return null;
+            }
+            return resolveArgs(Origin.argsOf(recvOrigin), depth);
+        }
+
+        /** "位置=出所;..." を、この経路で分かっている具象型の配列に変換する */
+        private String[] resolveArgs(String spec, int depth) {
             if (spec == null || spec.isEmpty()) {
                 return null;
             }
-            String[] callerTypes = pathParamTypes[depth];
+            CallGraph.DataflowContext ctx = contextAt(depth);
             String[] bound = null;
             for (String entry : spec.split(";")) {
                 int eq = entry.indexOf('=');
@@ -4309,7 +4912,7 @@ public class CallHierarchyExporter {
                 } catch (NumberFormatException ignore) {
                     continue;
                 }
-                String fqn = graph.concreteTypeOf(entry.substring(eq + 1), callerTypes);
+                String fqn = graph.concreteTypeOf(entry.substring(eq + 1), ctx);
                 if (fqn == null) {
                     continue;
                 }
@@ -4321,6 +4924,22 @@ public class CallHierarchyExporter {
                 bound[index] = fqn;
             }
             return bound;
+        }
+
+        private void countDataflow(String label) {
+            if ("DATAFLOW_FIELD".equals(label)) {
+                fieldHits++;
+            } else if ("DATAFLOW_PARAM".equals(label)) {
+                paramHits++;
+            } else {
+                factoryHits++;
+            }
+        }
+
+        /** この深さで経路から分かっていること */
+        private CallGraph.DataflowContext contextAt(int depth) {
+            return CallGraph.DataflowContext.of(
+                    pathParamTypes[depth], pathCtorArgs[depth], pathCtorOwner[depth]);
         }
 
         /** コンストラクタか（this(...)/super(...)/new いずれも呼び出し先は <init>） */
@@ -4338,19 +4957,27 @@ public class CallHierarchyExporter {
          * 除外されたノード自身は出力せず、
          * その呼び出し先を「1つ上の親の子」として辿り直す。
          */
-        private void skipThrough(int parentDepth, int skippedId, String[] skippedParams)
+        private void skipThrough(int parentDepth, int skippedId,
+                                 String[] skippedParams, String[] skippedCtorArgs)
                 throws IOException {
             int saved = pathMethod[parentDepth];
             String[] savedParams = pathParamTypes[parentDepth];
+            String[] savedCtorArgs = pathCtorArgs[parentDepth];
+            String savedOwner = pathCtorOwner[parentDepth];
             pathMethod[parentDepth] = skippedId;   // 一時的に呼び出し元を差し替える
-            // 引数の環境も一緒に差し替える。元のまま残すと、除外されたメソッドの中の
+            // 経路の環境も一緒に差し替える。元のまま残すと、除外されたメソッドの中の
             // 呼び出しに、その呼び出し元の引数を当ててしまう
             pathParamTypes[parentDepth] = skippedParams;
+            pathCtorArgs[parentDepth] = skippedCtorArgs;
+            pathCtorOwner[parentDepth] = (skippedCtorArgs == null)
+                    ? null : graph.methods.typeFqn(skippedId);
             try {
                 descend(parentDepth);
             } finally {
                 pathMethod[parentDepth] = saved;
                 pathParamTypes[parentDepth] = savedParams;
+                pathCtorArgs[parentDepth] = savedCtorArgs;
+                pathCtorOwner[parentDepth] = savedOwner;
             }
         }
 

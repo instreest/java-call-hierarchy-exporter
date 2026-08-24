@@ -170,6 +170,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,jp.co.example.Sample.i
 | `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
 | `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
+| `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
@@ -181,7 +182,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,jp.co.example.Sample.i
 |---|---|---|
 | `戻り値（ファクトリメソッド等）` | `getService().run()` のように、別のメソッドの戻り値に対する呼び出し | そのファクトリメソッドが何を `return` しているか |
 | `引数（メソッド外から渡される）` | 引数で受け取ったインスタンスに対する呼び出し | このメソッドの呼び出し元が何を渡しているか |
-| `フィールド変数` | フィールドに対する呼び出し。DIやsetterで外から入る。追跡の対象外 | フィールドの代入箇所・DI設定 |
+| `フィールド変数` | フィールドに対する呼び出し。コンストラクタで確定しないもの（setter/DI設定で入る等） | フィールドの代入箇所・DI設定 |
 | `ローカル変数` | ローカル変数に対する呼び出し。同一メソッド内の `new` では絞れなかった場合 | その変数への代入箇所 |
 | `自クラス（this）` | レシーバ省略。自分自身かサブクラスのオーバーライド | サブクラスのオーバーライド |
 | `型名（static）` | `static` 呼び出し。通常はここまで来ない | — |
@@ -219,9 +220,10 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,jp.co.example.Sample.i
 **呼び出し階層を追う前にこの列で穴のあるメソッドを把握しておくと、
 「出ていないのは呼んでいないからなのか、絞れなかったからなのか」を取り違えずに済みます。**
 
-ただし理由が `引数（メソッド外から渡される）` の場合は、
+ただし理由が `引数（メソッド外から渡される）` や `フィールド変数` の場合は、
 `call-hierarchy.csv` 側では**解決できていることがあります**。
-引数の追跡は起点からの経路ごとに行うのに対し、この列はメソッド単体で見た結果だからです
+引数とフィールドの追跡は起点からの経路ごとに行うのに対し、
+この列はメソッド単体で見た結果だからです
 （誰が何を渡すか分からないメソッド、という意味になります）。
 
 ### 型解決に失敗した呼び出し
@@ -300,6 +302,7 @@ NightJob,OrderService.OrderService,jp.co.example.service.OrderService.OrderServi
 | 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等 |
 | 4 | `DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から特定（後述） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
+| — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `CHA` | 候補が複数のまま（低確度） |
 
 **候補数は「サブクラス数」ではなく「そのメソッドをオーバーライドしている宣言の数」です。**
@@ -311,18 +314,37 @@ NightJob,OrderService.OrderService,jp.co.example.service.OrderService.OrderServi
 
 ### データフローによる特定
 
-CHAで候補が複数になった呼び出しのうち、次の2つは値の流れを追って1つに絞ります。
+CHAで候補が複数になった呼び出しのうち、次の3つは値の流れを追って1つに絞ります。
 
 ```java
-// ファクトリメソッドの戻り値（DATAFLOW_FACTORY）
+// 1. ファクトリメソッドの戻り値（DATAFLOW_FACTORY）
 DaoFactory.createUser().select();     // createUser() の return new UserDao() から UserDao.select と判定
 
-// 呼び出し元から渡された引数（DATAFLOW_PARAM）
+// 2. 呼び出し元から渡された引数（DATAFLOW_PARAM）
 void root()          { useDao(new UserDao()); }
 void useDao(Dao dao) { dao.select(); }   // この経路では UserDao.select と判定
+
+// 3. コンストラクタ注入されたフィールド（DATAFLOW_FIELD）
+class Service {
+    private final Dao dao;
+    Service(Dao dao) { this.dao = dao; }
+    void exec() { dao.select(); }        // この経路では UserDao.select と判定
+}
+new Service(new UserDao()).exec();
 ```
 
-引数の追跡は**起点からの経路ごと**に行います。同じメソッドでも、
+ファクトリは、**クラス名の文字列を受け取ってリフレクションで生成する形**にも
+対応しています。`static final String` の定数を渡す書き方も追えます。
+
+```java
+static Dao create(String className) {
+    return (Dao) Class.forName(className).newInstance();          // getDeclaredConstructor() を挟む形も可
+}
+create("jp.co.example.dao.UserDaoImpl").select();                  // -> UserDaoImpl.select
+create(Names.USER_DAO).select();                                   // 定数フィールドでも同じ
+```
+
+引数とフィールドの追跡は**起点からの経路ごと**に行います。同じメソッドでも、
 別の起点から別の具象クラスを渡されていれば、そちらはそちらで判定されます。
 逆に、呼び出し元の候補を遡って集めるようなことはしません
 （実際には通らない経路の型が混ざるため）。
@@ -332,9 +354,18 @@ void useDao(Dao dao) { dao.select(); }   // この経路では UserDao.select �
 「1つに絞ったが実は違った」は調査対象の取りこぼしになるためです。
 
 - ファクトリが複数の型を返しうる／追跡できない `return` を1つでも含む
+- クラス名が実行時にしか決まらない（`Class.forName(System.getProperty(...))` など）
 - ループや分岐でローカル変数が別の型に再代入される
-- フィールド変数（DIで注入される等、代入がメソッドの外にある）
-- 起点メソッドの引数（経路の中に渡し元がない）
+- フィールドが setter やDI設定で入る、代入しないコンストラクタがある、
+  `private` でも `final` でもない、親クラスで宣言されている
+- 起点メソッドの引数、起点オブジェクトの生成箇所（経路の中に渡し元がない）
+
+コンストラクタ注入されたフィールドを追う条件は、
+**「このフィールドには必ずこれが入る」と言い切れること**です。
+具体的には (a)`private` または `final`、(b) 代入がコンストラクタ本体か
+フィールド初期化子の中だけ、(c) 初期化子を持つか `this(...)`委譲していない
+全てのコンストラクタで代入される、(d) それらの出所が一致する、の4つを
+全て満たす場合だけです。
 
 `dataflow.enabled=false` で、この特定を丸ごと止められます
 （従来どおりの出力に戻ります）。実装上の判断は
