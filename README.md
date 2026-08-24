@@ -61,19 +61,19 @@ rem 実行
 `(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。（後述）
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,calleeSignature,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,jp.co.example.service.OrderService.findOrder(java.lang.String),OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 #### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
 ```csv
-method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable
-OrderAction.execute,jp.co.example.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1
-OrderService.findOrder,jp.co.example.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1
-OrderDao.selectById,jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0
-OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
+OrderAction.execute,jp.co.example.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
+OrderService.findOrder,jp.co.example.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
+OrderDao.selectById,jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0,0,
+OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
 
 ---
@@ -94,8 +94,8 @@ OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,
 
 | 項目 | 相対パスの起点 |
 |---|---|
-| `project.root` / `cache.folders` / `output.csv` / `methods.csv` / `external.library.folders` | 設定ファイルが置かれているディレクトリ |
-| `source.folders` / `library.folders` | `project.root` |
+| `project.root` / `cache.folders` / `output.csv` / `methods.csv` | 設定ファイルが置かれているディレクトリ |
+| `source.folders` / `library.folders` / `external.library.folders` | `project.root` |
 
 `library.folders` が不足していると型解決に失敗し、その呼び出しが
 `call-hierarchy.csv` から丸ごと抜け落ちます。失敗件数は実行ログに出るので、
@@ -103,7 +103,8 @@ OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,
 
 ### 2. 実行する
 
-処理の進捗は標準出力に出ます。
+処理の進捗は標準出力に出ます。件数単位の進捗が出るのはフェーズ1（ソース解析）だけです。
+以降のフェーズは1件あたりが十分速いため、フェーズごとの集計だけを出します。
 
 ```
 [00:00.033s] === フェーズ1/3: ソース解析 ===
@@ -125,26 +126,35 @@ OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,
 ### `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,calleeSignature,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,jp.co.example.service.OrderService.findOrder(java.lang.String),OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 |
 |---|---|
 | `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。クラス名.メソッド名の形式でExcelのフィルタに使える |
+| `calleeSignature` | 呼び出し先の**完全修飾クラス名**と引数リスト。同名クラスやオーバーロードを区別する |
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
+
+`callee` は短い名前なので、別パッケージの同名クラスやオーバーロードが混ざります。
+`calleeSignature` はそれを一意に特定できる形（完全修飾クラス名＋引数の型）で出すので、
+**フィルタは `callee`、特定は `calleeSignature`** という使い分けができます。
 
 **コンストラクタの呼び出し自体は行になりません。** `new` したこと自体より
 「そのコンストラクタの中で何を呼んでいるか」が知りたいためです。
 経路には残るので、コンストラクタ内からの呼び出しは
-`call-hierarchy` 列に `<init>` を含んだ形で出力されます。
+`call-hierarchy` 列にコンストラクタを含んだ形で出力されます。
+`callee` や `call-hierarchy` でのコンストラクタの表示は `<init>` ではなく
+**クラス名**です（`Sample.Sample`）。ソースに宣言が無い暗黙のデフォルト
+コンストラクタも、補完される名前（＝クラス名）で出ます。
+`caller` 列だけはEclipseのスタックトレース形式に合わせるため `<init>` のままです。
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,Sample.<init>,Sample.init
+caller,callee,calleeSignature,root,call-hierarchy
+at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,jp.co.example.Sample.init(),Sample.Sample,Sample.init
 ```
 
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。列を間に挟むと
@@ -154,12 +164,26 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,Sample.<init>,Sample.i
 |---|---|
 | `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
 | `深さ制限(N)のため打ち切り` | `max.depth` に達した |
-| `CHA候補N件（未展開）` | 実装を1つに絞れなかった。候補数^深さで爆発するため展開しない |
+| `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補数^深さで爆発するため展開しない。理由は下表 |
+| `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
 | `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
+
+絞り込めなかったときの「理由」は、**レシーバ（呼び出し先のインスタンス）がどこから
+来たか**です。次にどこを調べれば具象クラスが分かるかが変わるため、この単位で出します。
+
+| 理由 | 意味 | 次に見る場所 |
+|---|---|---|
+| `戻り値（ファクトリメソッド等）` | `getService().run()` のように、別のメソッドの戻り値に対する呼び出し | そのファクトリメソッドが何を `return` しているか |
+| `引数（メソッド外から渡される）` | 引数で受け取ったインスタンスに対する呼び出し | このメソッドの呼び出し元が何を渡しているか |
+| `フィールド変数` | フィールドに対する呼び出し。DIやsetterで外から入る | フィールドの代入箇所・DI設定 |
+| `ローカル変数` | ローカル変数に対する呼び出し。同一メソッド内の `new` では絞れなかった場合 | その変数への代入箇所 |
+| `自クラス（this）` | レシーバ省略。自分自身かサブクラスのオーバーライド | サブクラスのオーバーライド |
+| `型名（static）` | `static` 呼び出し。通常はここまで来ない | — |
+| `レシーバ不明` | 上記のいずれにも当てはまらない式 | 呼び出し箇所のソース |
 
 ### **Eclipseへのジャンプ**
 `caller` 列の値をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
@@ -182,6 +206,17 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,Sample.<init>,Sample.i
 
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 
+`call-hierarchy.csv` と揃えて、**コンストラクタ（`<init>`）は出力しません**。
+
+| 列 | 内容 |
+|---|---|
+| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
+| `unresolvedCause` | その理由（上の「理由」表と同じ。複数ある場合は `;` 区切り） |
+
+`unresolvedCalls` が0でないメソッドは、`call-hierarchy.csv` 側でもそこから先が
+展開されていません。**呼び出し階層を追う前にこの列で穴のあるメソッドを把握しておくと、
+「出ていないのは呼んでいないからなのか、絞れなかったからなのか」を取り違えずに済みます。**
+
 ### 型解決に失敗した呼び出し
 
 依存jarが足りないなどで呼び出し先の型を特定できなかった呼び出しも、
@@ -189,14 +224,15 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,Sample.<init>,Sample.i
 「呼び出しが無い」ように見えてしまう**ためです。
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.Foo.bar(Foo.java:42),getOptions,(型解決失敗),getOptions,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+caller,callee,calleeSignature,root,call-hierarchy
+at jp.co.example.Foo.bar(Foo.java:42),getOptions,,(型解決失敗),getOptions,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 ```
 
 | 列 | 内容 |
 |---|---|
 | `caller` | 呼び出し元。呼び出し箇所の行が分かるのでEclipseからジャンプできる |
 | `callee` | ソースに書かれていた式（メソッド名）。型が特定できていないのでクラス名は付かない |
+| `calleeSignature` | 空。型が特定できていないため出せない |
 | `root` | `(型解決失敗)` 固定。ここでフィルタすると失敗箇所だけを一覧できる |
 | `call-hierarchy` | 式と、失敗の理由 |
 
@@ -215,17 +251,23 @@ classファイルの定数プールだけを読むため、「どのjar・どの
 呼び出し元メソッドと行番号までは分かりません。そのため呼び出し階層の行とは列の詰め方が異なります。
 
 ```csv
-caller,callee,root,call-hierarchy
-NightJob,OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-NightJob,OrderService.<init>,team-b-batch.jar,OrderService.<init>,被参照:IMPLICIT_CTOR
+caller,callee,calleeSignature,root,call-hierarchy
+NightJob,OrderService.findOrder,jp.co.example.service.OrderService.findOrder(java.lang.String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+NightJob,OrderService.OrderService,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:IMPLICIT_CTOR
 ```
 
 | 列 | 内容 |
 |---|---|
 | `caller` | 参照している側のクラス。行番号もメソッドも分からないためスタックトレース形式にはならない |
 | `callee` | 参照されている自分のメソッド |
+| `calleeSignature` | 参照されている自分のメソッドの完全修飾クラス名と引数リスト |
 | `root` | 参照元のjar名（起点メソッドが無いため、代わりにjar名を入れる） |
 | `call-hierarchy` | `callee` と、照合の種類を表す注記 |
+
+**指定したフォルダに自プロジェクトのjar（自分のビルド成果物）が混ざっていても、
+それは「他リポジトリからの被参照」ではないので読み飛ばします。**
+除外した件数は実行ログに出ます。`build/libs` や `dist` を丸ごと指定しても、
+自分から自分への呼び出しが被参照として出ることはありません。
 
 | 注記 | 意味 |
 |---|---|
