@@ -27,6 +27,7 @@ import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
@@ -37,6 +38,7 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
@@ -46,14 +48,11 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.InputStream;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.DataInputStream;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -78,12 +77,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * java-call-hierarchy-exporter
@@ -173,6 +169,12 @@ public class CallHierarchyExporter {
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
         log("ソース解析: 再利用=" + phase1.reused
                 + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
+        if (phase1.unresolved > 0) {
+            log("※ 型解決できなかった呼び出しが " + phase1.unresolved + " 件あります。");
+            log("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
+            log("   解決できた呼び出しだけが call-hierarchy.csv に出るため、");
+            log("   件数が多いまま使うと呼び出し階層に抜けが出ます。");
+        }
         printHeap("フェーズ1完了");
 
         // --- フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 ---
@@ -226,6 +228,9 @@ public class CallHierarchyExporter {
         try {
             rows = new StreamingTreeWalker(graph, config, writer).walkAll(entries);
 
+            // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
+            rows += UnresolvedReport.write(graph, config, writer);
+
             if (!config.externalLibraryFolders.isEmpty()) {
                 System.out.println();
                 log("=== 外部jarからの被参照スキャン ===");
@@ -256,6 +261,9 @@ public class CallHierarchyExporter {
      * 「直近の一定件数に何秒かかったか」を出して、止まっていないことが分かるようにする。
      * 直近の所要時間を出すのは、途中で急に遅くなる箇所（巨大ファイル、ハブメソッド等）を
      * 見つけやすくするため。
+     *
+     * 使うのはフェーズ1（ソース解析）だけ。以降のフェーズは1件あたりが十分速く、
+     * 件数だけが多いので、進捗を出すとログが流れて肝心の警告が埋もれる。
      */
     static final class Progress {
 
@@ -519,9 +527,11 @@ public class CallHierarchyExporter {
             this.cacheFile = resolvePath(p.getProperty("cache.folders", "./.cache"))
                     .resolve(CACHE_FILE_NAME);
 
+            // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
+            // ソースや依存jarと同じく project.root からの相対で書けるようにする
             List<Path> ex = new ArrayList<>();
             for (String v : splitList(p.getProperty("external.library.folders", ""))) {
-                ex.add(resolvePath(v));
+                ex.add(resolveUnder(projectRoot, v));
             }
             this.externalLibraryFolders = ex;
 
@@ -871,9 +881,10 @@ public class CallHierarchyExporter {
      *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型をカンマ区切り
      *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)
      *   C  callerPkg callerType callerMethod callerParams
-     *      calleePkg calleeType calleeMethod calleeParams  callLine  bindKind  recvKey
+     *      calleePkg calleeType calleeMethod calleeParams  callLine  bindKind  recvKey  recvKind
      *      bindKind: V=仮想 / P=private / T=static / F=finalメソッド
      *                L=finalクラス / C=コンストラクタ / U=super呼び出し（V以外は静的束縛）
+     *      recvKind: レシーバの由来（RecvKind参照）。CHAで絞れない理由の説明に使う
      *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
      *   U  行  呼び出し元メソッドキー  式  理由
      *
@@ -884,10 +895,46 @@ public class CallHierarchyExporter {
      * D行のhasBodyは、インターフェースの抽象メソッド（本体なし）と
      * デフォルトメソッド（本体あり）を区別するために必要。
      */
+    /**
+     * レシーバ（呼び出しの受け手）の由来。
+     *
+     * CHAで実装を1つに絞れなかったとき、「なぜ絞れないのか」を説明するために使う。
+     * 絞れない理由はレシーバがどこから来たかでほぼ決まる。
+     */
+    static final class RecvKind {
+        /** メソッドの戻り値（ファクトリメソッド等） */
+        static final char RETURN = 'M';
+        /** 呼び出し元メソッドの引数（メソッド外からインスタンスが渡される） */
+        static final char PARAM = 'P';
+        /** フィールド変数 */
+        static final char FIELD = 'F';
+        /** ローカル変数（同一メソッド内の new は追跡済み。それでも絞れなかったもの） */
+        static final char LOCAL = 'L';
+        /** レシーバなし（this / 暗黙） */
+        static final char THIS = 'T';
+        /** 型名（static呼び出し） */
+        static final char TYPE = 'S';
+        /** 配列要素・キャスト式・条件式など、上記に当てはまらないもの */
+        static final char OTHER = 'O';
+
+        /** 出力に載せる説明。CHAで絞れなかった理由として使う */
+        static String describe(char kind) {
+            switch (kind) {
+                case RETURN: return "戻り値（ファクトリメソッド等）";
+                case PARAM:  return "引数（メソッド外から渡される）";
+                case FIELD:  return "フィールド変数";
+                case LOCAL:  return "ローカル変数";
+                case THIS:   return "自クラス（this）";
+                case TYPE:   return "型名（static）";
+                default:     return "レシーバ不明";
+            }
+        }
+    }
+
     static final class CacheFormat {
         static final String SEP = "\t";
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v1";
+        static final String VERSION = "jche-cache-v2";
 
         /** タブ・改行が値に混ざると形式が壊れるため除去する */
         static String clean(String s) {
@@ -902,6 +949,8 @@ public class CallHierarchyExporter {
         int reused;
         int parsed;
         int failed;
+        /** 型解決できなかった呼び出しの件数。クラスパス不足の検知に使う */
+        long unresolved;
     }
 
     /**
@@ -956,7 +1005,7 @@ public class CallHierarchyExporter {
 
                 // --- パス1: 旧キャッシュのストリーミングコピー ---
                 if (config.cacheEnabled) {
-                    copyValidBlocks(live, copied, cacheOut);
+                    result.unresolved += copyValidBlocks(live, copied, cacheOut);
                 }
                 result.reused = copied.size();
 
@@ -974,6 +1023,7 @@ public class CallHierarchyExporter {
                         // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
                         FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
                         writeBlock(fa, cacheOut);
+                        result.unresolved += fa.unresolved.size();
                         result.parsed++;
                     } catch (Exception e) {
                         result.failed++;
@@ -991,19 +1041,24 @@ public class CallHierarchyExporter {
             return result;
         }
 
-        /** 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す */
-        private void copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
+        /**
+         * 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す。
+         *
+         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+         */
+        private long copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
                                       BufferedWriter cacheOut)
                 throws IOException {
+            long unresolved = 0L;
             if (!Files.isRegularFile(config.cacheFile)) {
-                return;
+                return unresolved;
             }
             BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
             try {
                 String first = in.readLine();
                 if (first == null || !CacheFormat.VERSION.equals(first.trim())) {
                     log("[cache] 形式が異なるため既存キャッシュを破棄します");
-                    return;
+                    return unresolved;
                 }
                 boolean keeping = false;
                 String line;
@@ -1035,11 +1090,15 @@ public class CallHierarchyExporter {
                     } else if (keeping) {
                         cacheOut.write(line);
                         cacheOut.newLine();
+                        if (t == 'U') {
+                            unresolved++;
+                        }
                     }
                 }
             } finally {
                 in.close();
             }
+            return unresolved;
         }
 
         private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
@@ -1061,7 +1120,8 @@ public class CallHierarchyExporter {
                 w.write(String.join(CacheFormat.SEP, "C",
                         c.callerPkg, c.callerType, c.callerMethod, c.callerParams,
                         c.calleePkg, c.calleeType, c.calleeMethod, c.calleeParams,
-                        String.valueOf(c.callLine), String.valueOf(c.bindKind), c.recvKey));
+                        String.valueOf(c.callLine), String.valueOf(c.bindKind), c.recvKey,
+                    String.valueOf(c.recvKind)));
                 w.newLine();
             }
             for (HintRec h : fa.hints) {
@@ -1146,10 +1206,12 @@ public class CallHierarchyExporter {
         final char bindKind;
         /** レシーバの識別キー（ローカル変数のバインディングキー、または "@位置"）。無ければ空 */
         final String recvKey;
+        /** レシーバの由来（{@link RecvKind}）。CHAで絞れなかった理由の説明に使う */
+        final char recvKind;
 
         CallEdgeRec(String callerPkg, String callerType, String callerMethod, String callerParams,
                     String calleePkg, String calleeType, String calleeMethod, String calleeParams,
-                    int callLine, char bindKind, String recvKey) {
+                    int callLine, char bindKind, String recvKey, char recvKind) {
             this.callerPkg = callerPkg;
             this.callerType = callerType;
             this.callerMethod = callerMethod;
@@ -1161,6 +1223,7 @@ public class CallHierarchyExporter {
             this.callLine = callLine;
             this.bindKind = bindKind;
             this.recvKey = (recvKey == null) ? "" : recvKey;
+            this.recvKind = recvKind;
         }
     }
 
@@ -1408,6 +1471,47 @@ public class CallHierarchyExporter {
                 return "@" + ex.getStartPosition();
             }
 
+            /**
+             * レシーバがどこから来たかを判定する（{@link RecvKind}）。
+             *
+             * CHAで実装を絞れなかったときに「なぜ絞れないのか」を出力へ載せるため。
+             * 例: 戻り値ならファクトリメソッド、引数ならメソッド外から渡されている、
+             * という具合に、利用者が次に何を調べるべきかが変わる。
+             */
+            private char recvKindOf(Expression ex) {
+                if (ex == null) {
+                    return RecvKind.THIS;
+                }
+                if (ex instanceof MethodInvocation) {
+                    return RecvKind.RETURN;
+                }
+                if (ex instanceof ClassInstanceCreation) {
+                    return RecvKind.LOCAL;   // new した直後に呼ぶ形。型は確定している
+                }
+                if (ex instanceof FieldAccess) {
+                    return RecvKind.FIELD;
+                }
+                if (ex instanceof SimpleName || ex instanceof QualifiedName) {
+                    IBinding b = (ex instanceof SimpleName)
+                            ? ((SimpleName) ex).resolveBinding()
+                            : ((QualifiedName) ex).resolveBinding();
+                    if (b instanceof ITypeBinding) {
+                        return RecvKind.TYPE;
+                    }
+                    if (b instanceof IVariableBinding) {
+                        IVariableBinding vb = (IVariableBinding) b;
+                        if (vb.isField()) {
+                            return RecvKind.FIELD;
+                        }
+                        if (vb.isParameter()) {
+                            return RecvKind.PARAM;
+                        }
+                        return RecvKind.LOCAL;
+                    }
+                }
+                return RecvKind.OTHER;
+            }
+
             @Override
             public boolean visit(TypeDeclaration node) {
                 ITypeBinding tb = node.resolveBinding();
@@ -1447,16 +1551,12 @@ public class CallHierarchyExporter {
             private static final class TypeContext {
                 final ITypeBinding binding;
                 final List<String[]> rootConstructors;
-                final boolean usesImplicitConstructor;
                 final int declLine;
                 boolean clinitDeclared;
-                boolean implicitConstructorDeclared;
 
-                TypeContext(ITypeBinding binding, List<String[]> rootConstructors,
-                            boolean usesImplicitConstructor, int declLine) {
+                TypeContext(ITypeBinding binding, List<String[]> rootConstructors, int declLine) {
                     this.binding = binding;
                     this.rootConstructors = rootConstructors;
-                    this.usesImplicitConstructor = usesImplicitConstructor;
                     this.declLine = declLine;
                 }
             }
@@ -1502,15 +1602,19 @@ public class CallHierarchyExporter {
                         roots.add(ref);
                     }
                 }
-                boolean usesImplicit = false;
                 if (!anyConstructor) {
+                    // 明示コンストラクタが無い型には、暗黙のデフォルトコンストラクタが
+                    // 1つ存在する。ソース上に宣言が無いのでここで合成しておく。
+                    // new B() のような生成はこの <init> を呼ぶため、宣言を作っておかないと
+                    // 「ソースなし（展開不可）」の未知メソッド扱いになってしまう
                     String[] implicitRef = implicitConstructorRef(tb);
                     if (implicitRef != null) {
                         roots.add(implicitRef);
-                        usesImplicit = true;
+                        out.declarations.add(new MethodDecl(implicitRef[0], implicitRef[1],
+                                implicitRef[2], implicitRef[3], declLine, true));
                     }
                 }
-                return new TypeContext(tb, roots, usesImplicit, declLine);
+                return new TypeContext(tb, roots, declLine);
             }
 
             /** コンストラクタ本体の先頭文が this(...) か（=他のコンストラクタへの委譲か） */
@@ -1564,20 +1668,11 @@ public class CallHierarchyExporter {
                 return java.util.Collections.singletonList(new String[]{pkg, typeFqn, "<clinit>", ""});
             }
 
-            /**
-             * 現在の型の、this(...)委譲していないコンストラクタ一覧（インスタンス初期化子用）。
-             * 暗黙のデフォルトコンストラクタをこの型で初めて使う場合は、
-             * methods.csv 等に載るようD行も合成する。
-             */
+            /** 現在の型の、this(...)委譲していないコンストラクタ一覧（インスタンス初期化子用） */
             private List<String[]> instanceInitContext() {
                 TypeContext ctx = typeContextStack.peek();
                 if (ctx == null || ctx.rootConstructors.isEmpty()) {
                     return UNKNOWN;
-                }
-                if (ctx.usesImplicitConstructor && !ctx.implicitConstructorDeclared) {
-                    ctx.implicitConstructorDeclared = true;
-                    String[] ref = ctx.rootConstructors.get(0);
-                    out.declarations.add(new MethodDecl(ref[0], ref[1], ref[2], ref[3], ctx.declLine, true));
                 }
                 return ctx.rootConstructors;
             }
@@ -1699,7 +1794,7 @@ public class CallHierarchyExporter {
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
                 record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n),
-                        externalGuessRef(n));
+                        recvKindOf(n.getExpression()), externalGuessRef(n));
 
                 // フェーズAの拡張に、この呼び出し箇所を見せる。
                 // 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
@@ -1738,19 +1833,20 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(SuperMethodInvocation n) {
                 // super.m() は静的束縛（オーバーライドの影響を受けない）
-                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "", null);
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
+                        RecvKind.THIS, null);
                 return true;
             }
 
             @Override
             public boolean visit(ClassInstanceCreation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", null);
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null);
                 return true;
             }
 
             @Override
             public boolean visit(ConstructorInvocation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", null);
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null);
                 return true;
             }
 
@@ -1831,7 +1927,8 @@ public class CallHierarchyExporter {
              *                      （{@link #externalGuessRef} 参照）
              */
             private void record(IMethodBinding binding, ASTNode node, String displayName,
-                                 char bindKind, String recvKey, String[] externalGuess) {
+                                 char bindKind, String recvKey, char recvKind,
+                                 String[] externalGuess) {
                 int line = cu.getLineNumber(node.getStartPosition());
                 List<String[]> callers = current();
                 if (callers == null) {
@@ -1850,7 +1947,7 @@ public class CallHierarchyExporter {
                         for (String[] caller : callers) {
                             out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
                                     externalGuess[0], externalGuess[1], externalGuess[2],
-                                    externalGuess[3], line, 'G', recvKey));
+                                    externalGuess[3], line, 'G', recvKey, recvKind));
                         }
                         return;
                     }
@@ -1866,7 +1963,8 @@ public class CallHierarchyExporter {
                 // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
                 for (String[] caller : callers) {
                     out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
-                            callee[0], callee[1], callee[2], callee[3], line, bindKind, recvKey));
+                            callee[0], callee[1], callee[2], callee[3], line, bindKind,
+                            recvKey, recvKind));
                 }
             }
 
@@ -2065,8 +2163,32 @@ public class CallHierarchyExporter {
         }
 
         /** CSVのcallHierarchy列で使う簡潔表記 */
+        /**
+         * 表示用のメソッド名。
+         *
+         * コンストラクタは内部的には <init> だが、ソース上の名前はクラスの単純名。
+         * 利用者が読むのはソースなので、表示は単純名に寄せる。
+         * 暗黙のデフォルトコンストラクタも、補完されるとクラス名になるので同じ扱い。
+         */
+        String displayMethodName(int id) {
+            String m = methodName(id);
+            if (!"<init>".equals(m)) {
+                return m;
+            }
+            String simple = simpleTypeName(id);
+            int dot = simple.lastIndexOf('.');
+            return (dot >= 0) ? simple.substring(dot + 1) : simple;
+        }
+
         String shortLabel(int id) {
-            return simpleTypeName(id) + "." + methodName(id);
+            return simpleTypeName(id) + "." + displayMethodName(id);
+        }
+
+        /** 完全修飾クラス名 + 表示用メソッド名 + 引数リスト（オーバーロードを識別できる形） */
+        String fullSignature(int id) {
+            String k = keys.get(id);
+            String params = k.substring(k.indexOf('(') + 1, k.lastIndexOf(')'));
+            return typeFqn(id) + "." + displayMethodName(id) + "(" + params + ")";
         }
 
         String declFile(int id) {
@@ -2100,6 +2222,7 @@ public class CallHierarchyExporter {
         int[] calleeIds;    // 長さ = エッジ数
         int[] callLines;    // 長さ = エッジ数
         byte[] bindKinds;   // 長さ = エッジ数。'S'=静的束縛 / 'V'=仮想
+        byte[] recvKinds;   // 長さ = エッジ数。レシーバの由来（RecvKind）
 
         /** 型階層: 親型 -> 直接の子型 */
         private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
@@ -2158,8 +2281,7 @@ public class CallHierarchyExporter {
             // --- 1回目: ID化と本数カウント ---
             IntArray outDegree = new IntArray(1 << 16);
             long edgeCount = 0;
-            long fileCount = 0;
-            Progress pg1 = new Progress("グラフ構築 1/2（型階層とメソッドの収集）", 0);
+
             BufferedReader in = open(cacheFile);
             try {
                 String currentFile = null;
@@ -2172,7 +2294,6 @@ public class CallHierarchyExporter {
                     if (t == 'F') {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         currentFile = (f.length >= 2) ? f[1] : null;
-                        pg1.step(++fileCount);
                     } else if (t == 'H') {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         if (f.length >= 3) {
@@ -2233,7 +2354,6 @@ public class CallHierarchyExporter {
             } finally {
                 in.close();
             }
-            pg1.finish();
             log("収集: 型 " + g.typeKind.size()
                     + " / メソッド " + g.methods.size() + " / エッジ " + edgeCount);
 
@@ -2251,13 +2371,13 @@ public class CallHierarchyExporter {
             g.calleeIds = new int[(int) edgeCount];
             g.callLines = new int[(int) edgeCount];
             g.bindKinds = new byte[(int) edgeCount];
+            g.recvKinds = new byte[(int) edgeCount];
             g.edgeHint = new int[(int) edgeCount];
             Arrays.fill(g.edgeHint, -1);
 
             // --- 2回目: エッジを流し込む ---
             int[] cursor = Arrays.copyOf(g.offsets, n == 0 ? 0 : n);
-            Progress pg2 = new Progress("グラフ構築 2/2（呼び出し関係の展開）", fileCount);
-            long seenFiles = 0;
+
             in = open(cacheFile);
             try {
                 String line;
@@ -2266,7 +2386,6 @@ public class CallHierarchyExporter {
                         continue;
                     }
                     if (line.charAt(0) == 'F') {
-                        pg2.step(++seenFiles);
                         continue;
                     }
                     if (line.charAt(0) != 'C') {
@@ -2289,6 +2408,8 @@ public class CallHierarchyExporter {
                             ? f[10].charAt(0) : 'V');
 
                     // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
+                    g.recvKinds[pos] = (byte) ((f.length >= 13 && !f[12].isEmpty())
+                            ? f[12].charAt(0) : RecvKind.OTHER);
                     String recvKey = (f.length >= 12) ? f[11] : "";
                     if (!recvKey.isEmpty()) {
                         String callerKey = f[2] + "#" + f[3] + "(" + f[4] + ")";
@@ -2302,7 +2423,6 @@ public class CallHierarchyExporter {
             } finally {
                 in.close();
             }
-            pg2.finish();
             return g;
         }
 
@@ -2731,6 +2851,8 @@ public class CallHierarchyExporter {
         long isolated;
         long leaves;
         long unreachable;
+        long constructors;
+        long withUnresolved;
 
         @Override
         public String toString() {
@@ -2738,7 +2860,9 @@ public class CallHierarchyExporter {
                     + " 起点候補=" + entryCandidates
                     + " 孤立=" + isolated
                     + " 末端=" + leaves
-                    + " 未到達=" + unreachable;
+                    + " 未到達=" + unreachable
+                    + " 未解決の呼び出しを含む=" + withUnresolved
+                    + "（コンストラクタ " + constructors + " 個は出力対象外）";
         }
     }
 
@@ -2761,6 +2885,14 @@ public class CallHierarchyExporter {
          *   ISOLATED        呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い
          *   LEAF            呼び出し先が無い。末端処理
          *   NORMAL          上記以外
+         *
+         * コンストラクタ（<init>）は出力しない。call-hierarchy.csv 側でも
+         * 行にしていないため、両方の一覧で扱いを揃える。
+         *
+         * unresolvedCalls / unresolvedCause は「このメソッドの中に、
+         * 具象クラスを1つに絞れなかった呼び出しがいくつあり、その理由は何か」。
+         * call-hierarchy.csv の note と同じ判定を使っているので、
+         * まずここで穴のあるメソッドを絞ってから階層を追う、という使い方ができる。
          */
         static InventoryStats writeMethods(CallGraph g, Config config, int[] roots)
                 throws IOException {
@@ -2768,17 +2900,21 @@ public class CallHierarchyExporter {
             int[] in = g.inDegrees();
             boolean[] reachable = g.reachableFrom(roots);
 
-            Progress pg = new Progress("メソッド一覧の出力", g.methodCount());
             BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding, config.outputBom);
             try {
                 w.write(String.join(Csv.DELIM, "method", "declaringType", "typeKind",
-                        "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable"));
+                        "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable",
+                        "unresolvedCalls", "unresolvedCause"));
                 w.newLine();
                 for (int id = 0; id < g.methodCount(); id++) {
-                    pg.step(id + 1);
                     // ソースが無いメソッド（jar内など）は一覧の対象外。
                     // 呼ばれている事実は call-hierarchy.csv 側に残る
                     if (g.methods.declFile(id) == null) {
+                        continue;
+                    }
+                    // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
+                    if ("<init>".equals(g.methods.methodName(id))) {
+                        st.constructors++;
                         continue;
                     }
                     st.methods++;
@@ -2799,6 +2935,10 @@ public class CallHierarchyExporter {
                     if (!reachable[id]) {
                         st.unreachable++;
                     }
+                    Unresolved un = unresolvedOf(g, id);
+                    if (un.count > 0) {
+                        st.withUnresolved++;
+                    }
                     w.write(String.join(Csv.DELIM,
                             Csv.esc(g.methods.shortLabel(id)),
                             Csv.esc(g.methods.typeFqn(id)),
@@ -2809,16 +2949,119 @@ public class CallHierarchyExporter {
                             String.valueOf(in[id]),
                             String.valueOf(out),
                             role,
-                            reachable[id] ? "1" : "0"));
+                            reachable[id] ? "1" : "0",
+                            String.valueOf(un.count),
+                            Csv.esc(un.cause)));
                     w.newLine();
                 }
             } finally {
                 w.close();
             }
-            pg.finish();
             return st;
         }
 
+        /** 1メソッド分の「絞れなかった呼び出し」の件数と理由 */
+        private static final class Unresolved {
+            int count;
+            String cause = "";
+        }
+
+        /**
+         * そのメソッドが出している呼び出しのうち、具象クラスを1つに絞れなかったものを数え、
+         * レシーバの由来（RecvKind）で理由を並べる。
+         *
+         * 判定は call-hierarchy.csv の note と同じ resolveEdge を使う。
+         * 結果はメモ化されるので、階層展開と二重に解決コストがかかることはない。
+         */
+        private static Unresolved unresolvedOf(CallGraph g, int id) {
+            Unresolved u = new Unresolved();
+            StringBuilder sb = new StringBuilder();
+            int from = g.edgeStart(id);
+            int to = g.edgeEnd(id);
+            for (int e = from; e < to; e++) {
+                CallGraph.Resolution res = g.resolveEdge(e, (char) g.bindKinds[e]);
+                boolean multi = res.targets.length > 1;
+                boolean noImpl = "NO_IMPL".equals(res.label);
+                if (!multi && !noImpl) {
+                    continue;
+                }
+                u.count++;
+                String d = noImpl ? "実装なし（宣言のまま）"
+                        : RecvKind.describe((char) g.recvKinds[e]);
+                // 同じ理由は1回だけ並べる。件数はcount側で分かる
+                if (sb.indexOf(d) < 0) {
+                    if (sb.length() > 0) {
+                        sb.append(';');
+                    }
+                    sb.append(d);
+                }
+            }
+            u.cause = sb.toString();
+            return u;
+        }
+
+    }
+
+    /**
+     * 型解決に失敗した呼び出しを call-hierarchy.csv に書き出す。
+     *
+     * これらは呼び出し先の型が特定できていないため、呼び出し階層としては辿れない。
+     * しかし「解決できなかったせいで階層から抜け落ちている」こと自体が
+     * 重要な情報（依存jarの不足を示す）なので、静かに消さずに行として残す。
+     *
+     * キャッシュのU行を読み直して出力する。件数ぶんをヒープに載せないための
+     * ストリーミング処理。
+     */
+    static final class UnresolvedReport {
+
+        static long write(CallGraph g, Config config, CallHierarchyCsvWriter out)
+                throws IOException {
+            if (!Files.isRegularFile(config.cacheFile)) {
+                return 0L;
+            }
+            long rows = 0L;
+            BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
+            try {
+                in.readLine();   // バージョン行
+                String currentFile = null;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        currentFile = (f.length >= 2) ? f[1] : null;
+                        continue;
+                    }
+                    if (t != 'U') {
+                        continue;
+                    }
+                    String[] f = line.split(CacheFormat.SEP, -1);
+                    if (f.length < 5) {
+                        continue;
+                    }
+                    int callLine;
+                    try {
+                        callLine = Integer.parseInt(f[1]);
+                    } catch (NumberFormatException ignore) {
+                        callLine = -1;
+                    }
+                    // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
+                    // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
+                    int callerId = g.methods.idOf(f[2]);
+                    String location = (currentFile == null)
+                            ? f[2] : currentFile + ":" + callLine;
+                    out.writeUnresolvedRow(g.methods, callerId, location,
+                            callLine, f[3], f[4]);
+                    rows++;
+                }
+            } finally {
+                in.close();
+            }
+            return rows;
+        }
     }
 
     // ================================================================
@@ -2972,6 +3215,7 @@ public class CallHierarchyExporter {
     static final class ExternalUsageStats {
         long jars;
         long classes;
+        long selfClasses;
         long hits;
         long implicitCtors;
         long unmatched;
@@ -2982,7 +3226,8 @@ public class CallHierarchyExporter {
             return "jar=" + jars + " クラス=" + classes
                     + " 被参照=" + hits + "件（自分のメソッド " + usedMethods + " 個）"
                     + " 暗黙コンストラクタ=" + implicitCtors
-                    + " 未照合=" + unmatched;
+                    + " 未照合=" + unmatched
+                    + " 自プロジェクトクラスを除外=" + selfClasses;
         }
     }
 
@@ -3021,7 +3266,6 @@ public class CallHierarchyExporter {
             }
             int[] refCount = new int[g.methodCount()];
 
-            Progress pg = new Progress("外部jarの被参照スキャン", jars.size());
             {
                 for (int j = 0; j < jars.size(); j++) {
                     Path jarPath = jars.get(j);
@@ -3034,7 +3278,6 @@ public class CallHierarchyExporter {
                             if (e.isDirectory() || !e.getName().endsWith(".class")) {
                                 continue;
                             }
-                            st.classes++;
                             ClassFileRefs refs;
                             InputStream is = jf.getInputStream(e);
                             try {
@@ -3046,6 +3289,14 @@ public class CallHierarchyExporter {
                             } finally {
                                 is.close();
                             }
+                            // 自プロジェクトのクラスが混ざったjar（自分のビルド成果物が
+                            // 同じフォルダにある等）は「他リポジトリからの被参照」ではない。
+                            // 自分自身からの呼び出しを被参照として出さないよう読み飛ばす
+                            if (isOurType(ourTypes, refs.thisClass)) {
+                                st.selfClasses++;
+                                continue;
+                            }
+                            st.classes++;
                             for (String[] r : refs.methodRefs) {
                                 String owner = r[0];
                                 if (!isOurType(ourTypes, owner)) {
@@ -3057,7 +3308,8 @@ public class CallHierarchyExporter {
                                     String kind = g.methods.typeFqn(id).equals(normalize(owner))
                                             ? "EXACT" : "INHERITED";
                                     out.writeExternalUsageRow(refs.thisClass,
-                                            g.methods.shortLabel(id), jarName, kind);
+                                            g.methods.shortLabel(id),
+                                            g.methods.fullSignature(id), jarName, kind);
                                     if (refCount[id]++ == 0) {
                                         st.usedMethods++;
                                     }
@@ -3067,8 +3319,11 @@ public class CallHierarchyExporter {
                                     // 照合先が存在しないが、これは版の食い違いではない。
                                     // 「誰がこのクラスを生成しているか」は影響調査で有用なので
                                     // 被参照として記録する。
+                                    String simple = simpleOf(owner);
                                     out.writeExternalUsageRow(refs.thisClass,
-                                            simpleOf(owner) + ".<init>", jarName, "IMPLICIT_CTOR");
+                                            simple + "." + simple,
+                                            normalize(owner) + "." + simple + "()",
+                                            jarName, "IMPLICIT_CTOR");
                                     st.implicitCtors++;
                                 } else {
                                     // 自分の型への参照なのに一致するメソッドが無い。
@@ -3082,10 +3337,8 @@ public class CallHierarchyExporter {
                         jf.close();
                     }
                     st.jars++;
-                    pg.step(j + 1);
                 }
             }
-            pg.finish();
             return st;
         }
 
@@ -3182,8 +3435,14 @@ public class CallHierarchyExporter {
      */
     static final class StreamingTreeWalker {
 
-        /** max.depth が 0以下（無制限）のときの、経路配列の実装上の上限 */
-        private static final int DEPTH_HARD_CAP = 4096;
+        /**
+         * max.depth が 0以下（無制限指定）のときに使う実効上限。
+         *
+         * 探索は再帰なので、本当に無制限にするとスタックオーバーフローになる。
+         * 循環は経路単位で検出して打ち切るため深さは「相異なるメソッド数」で
+         * 頭打ちになるが、大規模プロジェクトではそれでも数千に達しうる。
+         */
+        private static final int DEPTH_HARD_CAP = 512;
         /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
         static final String CYCLE_MARK = "[CYCLE]";
 
@@ -3213,19 +3472,16 @@ public class CallHierarchyExporter {
         }
 
         long walkAll(int[] entries) throws IOException {
-            Progress pg = new Progress("呼び出し階層の展開", entries.length);
             for (int i = 0; i < entries.length; i++) {
                 rootId = entries[i];
                 pathMethod[0] = rootId;
                 pathCallLine[0] = -1;
                 pathNote[0] = null;
                 descend(0);
-                pg.step(i + 1);
                 if (isRowLimitReached()) {
                     break;
                 }
             }
-            pg.finish();
             return totalRows;
         }
 
@@ -3269,8 +3525,16 @@ public class CallHierarchyExporter {
 
                     boolean cycle = onCurrentPath(target, depth);
                     push(depth + 1, target, callLine,
-                            noteFor(target, declaredCallee, res, depth, cycle));
-                    emit(depth + 1);
+                            noteFor(target, declaredCallee, res, depth, cycle,
+                                    (char) graph.recvKinds[e]));
+
+                    // コンストラクタ呼び出しそのものは行にしない。
+                    // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
+                    // 経路には積むので、コンストラクタ内からの呼び出しは
+                    // call-hierarchy 列に <init> を含んだ形で出力される
+                    if (!isConstructor(target)) {
+                        emit(depth + 1);
+                    }
 
                     // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
                     if (expand && !cycle) {
@@ -3278,6 +3542,11 @@ public class CallHierarchyExporter {
                     }
                 }
             }
+        }
+
+        /** コンストラクタか（this(...)/super(...)/new いずれも呼び出し先は <init>） */
+        private boolean isConstructor(int id) {
+            return "<init>".equals(graph.methods.methodName(id));
         }
 
         private boolean isExcluded(int id) {
@@ -3314,7 +3583,8 @@ public class CallHierarchyExporter {
          * 階層の末尾に追記する形にしている（そのぶん行末grepは効かなくなる）。
          */
         private String noteFor(int target, int declaredCallee,
-                                CallGraph.Resolution res, int depth, boolean cycle) {
+                                CallGraph.Resolution res, int depth, boolean cycle,
+                                char recvKind) {
             StringBuilder sb = new StringBuilder();
             if (cycle) {
                 // この経路上で既に呼んでいるメソッドへ戻る辺。ここから先へは降りない
@@ -3333,7 +3603,16 @@ public class CallHierarchyExporter {
                 if (sb.length() > 0) {
                     sb.append(" / ");
                 }
-                sb.append("CHA候補").append(res.targets.length).append("件（未展開）");
+                // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる
+                sb.append("CHA候補").append(res.targets.length).append("件（未展開）: ")
+                        .append(RecvKind.describe(recvKind));
+            } else if ("NO_IMPL".equals(res.label)) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                // 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけで、
+                // 実行時に何が動くかはこのツールでは分からない
+                sb.append("実装なし（宣言のまま）: ").append(RecvKind.describe(recvKind));
             } else if (target != declaredCallee) {
                 if (sb.length() > 0) {
                     sb.append(" / ");
@@ -3395,13 +3674,17 @@ public class CallHierarchyExporter {
      */
     static final class CallHierarchyCsvWriter {
 
+        /** 型解決に失敗した行の root 列。起点が無いことを示す固定マーカー */
+        static final String UNRESOLVED_ROOT = "(型解決失敗)";
+
         private final BufferedWriter writer;
         private final StringBuilder buf = new StringBuilder(512);
 
         CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom)
                 throws IOException {
             this.writer = Csv.writer(outputCsv, encoding, bom);
-            writer.write(String.join(Csv.DELIM, "caller", "callee", "root", "call-hierarchy"));
+            writer.write(String.join(Csv.DELIM,
+                    "caller", "callee", "calleeSignature", "root", "call-hierarchy"));
             writer.newLine();
         }
 
@@ -3418,6 +3701,10 @@ public class CallHierarchyExporter {
             // callee: Excelのフィルタで選べるよう、行番号を含まない安定した表記にする。
             // 行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばって使えなくなる。
             buf.append(Csv.esc(mt.shortLabel(pathMethod[depth]))).append(Csv.DELIM);
+
+            // calleeSignature: 完全修飾クラス名＋引数リスト。
+            // callee 列だけではオーバーロードも同名別パッケージも区別できないため
+            buf.append(Csv.esc(mt.fullSignature(pathMethod[depth]))).append(Csv.DELIM);
 
             // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
             buf.append(Csv.esc(mt.shortLabel(rootId)));
@@ -3436,6 +3723,35 @@ public class CallHierarchyExporter {
         }
 
         /**
+         * 型解決に失敗した呼び出しの1行。
+         *
+         * 呼び出し「元」はソース上のメソッドなので分かるが、呼び出し「先」の型が
+         * 特定できていない。よって callee にはソースに書かれていた式（メソッド名）を
+         * そのまま置き、root には起点が無いことを示す固定マーカーを入れる。
+         * root でフィルタすれば、型解決に失敗した箇所だけをまとめて見られる。
+         *
+         * @param mt         呼び出し元の解決に使うメソッド表
+         * @param callerId   呼び出し元メソッドのID。-1 なら特定できていない
+         * @param location   callerId が -1 のときに caller 列へ出す位置情報
+         * @param line       呼び出し箇所の行番号
+         * @param expression ソースに書かれていた呼び出しの式（メソッド名）
+         * @param reason     失敗の理由
+         */
+        void writeUnresolvedRow(MethodTable mt, int callerId, String location,
+                                 int line, String expression, String reason) throws IOException {
+            buf.setLength(0);
+            String caller = (callerId >= 0) ? stackTrace(mt, callerId, line) : location;
+            buf.append(Csv.esc(caller)).append(Csv.DELIM);
+            buf.append(Csv.esc(expression)).append(Csv.DELIM);
+            buf.append(Csv.DELIM);   // calleeSignature: 型が特定できていないので空
+            buf.append(Csv.esc(UNRESOLVED_ROOT));
+            buf.append(Csv.DELIM).append(Csv.esc(expression));
+            buf.append(Csv.DELIM).append(Csv.esc(reason));
+            writer.write(buf.toString());
+            writer.newLine();
+        }
+
+        /**
          * 被参照スキャンの1行。呼び出し階層とは意味が違うため専用の詰め方をする。
          *
          * classファイルの定数プールしか読まないため、呼び出し元のメソッドも行番号も
@@ -3449,10 +3765,12 @@ public class CallHierarchyExporter {
          * @param note             照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
          */
         void writeExternalUsageRow(String referencingClass, String callee,
-                                    String jarName, String note) throws IOException {
+                                    String calleeSignature, String jarName, String note)
+                throws IOException {
             buf.setLength(0);
             buf.append(Csv.esc(referencingClass)).append(Csv.DELIM);
             buf.append(Csv.esc(callee)).append(Csv.DELIM);
+            buf.append(Csv.esc(calleeSignature)).append(Csv.DELIM);
             buf.append(Csv.esc(jarName));
             buf.append(Csv.DELIM).append(Csv.esc(callee));
             buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));
@@ -3551,6 +3869,6 @@ public class CallHierarchyExporter {
  *
  * 相対パスの起点は項目ごとに異なります。
  *   - project.root / cache.folders / output.csv / methods.csv
- *     / external.library.folders … この設定ファイルが置かれているディレクトリ
- *   - source.folders / library.folders … project.root
+ *     … この設定ファイルが置かれているディレクトリ
+ *   - source.folders / library.folders / external.library.folders … project.root
  * ==================================================================== */
