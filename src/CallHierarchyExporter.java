@@ -23,6 +23,7 @@ import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.CastExpression;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
@@ -35,11 +36,15 @@ import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
+import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
+import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -70,6 +75,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -197,6 +203,7 @@ public class CallHierarchyExporter {
             }
         }
         graph.setProviders(providers);
+        graph.setDataflow(config.dataflowEnabled, config.dataflowMaxDepth);
         log("型数=" + graph.typeCount()
                 + " メソッド数=" + graph.methodCount()
                 + " エッジ数=" + graph.edgeCount());
@@ -226,7 +233,14 @@ public class CallHierarchyExporter {
         CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
                 config.outputCsv, config.outputEncoding, config.outputBom);
         try {
-            rows = new StreamingTreeWalker(graph, config, writer).walkAll(entries);
+            StreamingTreeWalker walker = new StreamingTreeWalker(graph, config, writer);
+            rows = walker.walkAll(entries);
+            if (config.dataflowEnabled
+                    && (walker.factoryHits() > 0 || walker.paramHits() > 0)) {
+                log("データフローで具象クラスを特定: "
+                        + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
+                        + "呼び出し元から渡された引数から " + walker.paramHits() + " 件");
+            }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
             rows += UnresolvedReport.write(graph, config, writer);
@@ -465,6 +479,10 @@ public class CallHierarchyExporter {
         final List<String> candidateProviderClasses;
 
         final boolean cacheEnabled;
+        /** データフロー解析（ファクトリの戻り値・引数から具象クラスを特定）を使うか */
+        final boolean dataflowEnabled;
+        /** ファクトリの委譲（return create();）を何段まで辿るか */
+        final int dataflowMaxDepth;
         final Path cacheFile;
 
         /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
@@ -524,6 +542,10 @@ public class CallHierarchyExporter {
             this.raw = p;
 
             this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
+            this.dataflowEnabled =
+                    Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
+            this.dataflowMaxDepth =
+                    Integer.parseInt(p.getProperty("dataflow.max.depth", "5").trim());
             this.cacheFile = resolvePath(p.getProperty("cache.folders", "./.cache"))
                     .resolve(CACHE_FILE_NAME);
 
@@ -882,18 +904,29 @@ public class CallHierarchyExporter {
      *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)
      *   C  callerPkg callerType callerMethod callerParams
      *      calleePkg calleeType calleeMethod calleeParams  callLine  bindKind  recvKey  recvKind
+     *      recvOrigin  argOrigins
      *      bindKind: V=仮想 / P=private / T=static / F=finalメソッド
      *                L=finalクラス / C=コンストラクタ / U=super呼び出し（V以外は静的束縛）
      *      recvKind: レシーバの由来（RecvKind参照）。CHAで絞れない理由の説明に使う
+     *      recvOrigin: レシーバの出所（Origin参照）。データフローで具象型を追うのに使う
+     *      argOrigins: 実引数の出所。"0=T:jp.co.X;2=A:1" のように 位置=出所 を;で並べる。
+     *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
+     *   R  pkg  typeFqn  method  paramSig  origin   （そのメソッドが返しうる値の出所）
      *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
      *   U  行  呼び出し元メソッドキー  式  理由
      *
-     * F行が現れるたびに、以降のH/D/C/U行はそのファイルに属する。
+     * F行が現れるたびに、以降のH/D/C/R/U行はそのファイルに属する。
      *
      * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
      * インターフェース・抽象クラスの実装クラスを特定できない。
      * D行のhasBodyは、インターフェースの抽象メソッド（本体なし）と
      * デフォルトメソッド（本体あり）を区別するために必要。
+     *
+     * R行は「1つでも追跡できないreturnがあれば、そのメソッドの戻り値は特定しない」と
+     * 判定するために、追跡できないreturnも U として書き出す。分かった分だけを
+     * 書いて残りを黙って捨てると、実際には複数の型を返しうるメソッドを
+     * 1つに決め打ちしてしまう。ただし全てのreturnが U のメソッドは
+     * 判定に寄与しないので、行そのものを書かない（キャッシュを膨らませないため）。
      */
     /**
      * レシーバ（呼び出しの受け手）の由来。
@@ -931,10 +964,57 @@ public class CallHierarchyExporter {
         }
     }
 
+    /**
+     * 式の「出所」。データフロー解析で具象クラスを特定するための最小の表現。
+     *
+     * {@link RecvKind} が「絞れなかった理由の説明」なのに対し、こちらは
+     * 「追跡するための材料」。1つの文字列に詰めてキャッシュへ書き出す。
+     *
+     *   T:jp.co.xxx.UserDaoImpl   new された具象型（その場で確定）
+     *   A:2                       囲みメソッドの3番目の引数（呼び出し元まで遡って初めて分かる）
+     *   M:jp.co.xxx.Factory#create()  メソッドの戻り値（その宣言のreturnを見れば分かる）
+     *   U                         追跡できない
+     *
+     * 種別ごとに「次にどこを見れば確定するか」が違うので、この3種を分けている。
+     */
+    static final class Origin {
+        /** new された具象型。値はFQN */
+        static final char NEW = 'T';
+        /** 囲みメソッドの引数。値は0始まりの引数位置 */
+        static final char PARAM = 'A';
+        /** メソッドの戻り値。値はメソッドキー（typeFqn#method(params)） */
+        static final char RETURN = 'M';
+        /** 追跡できない。「分からない」を明示的に持つのが重要（後述） */
+        static final char UNKNOWN = 'U';
+
+        static final String UNKNOWN_S = "U";
+
+        private Origin() {
+        }
+
+        static boolean isUnknown(String origin) {
+            return origin == null || origin.isEmpty() || origin.charAt(0) == UNKNOWN;
+        }
+
+        static char kindOf(String origin) {
+            return isUnknown(origin) ? UNKNOWN : origin.charAt(0);
+        }
+
+        /** "T:jp.co.X" の "jp.co.X" の部分 */
+        static String valueOf(String origin) {
+            int i = (origin == null) ? -1 : origin.indexOf(':');
+            return (i < 0) ? "" : origin.substring(i + 1);
+        }
+
+        static String of(char kind, String value) {
+            return kind + ":" + value;
+        }
+    }
+
     static final class CacheFormat {
         static final String SEP = "\t";
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v2";
+        static final String VERSION = "jche-cache-v3";
 
         /** タブ・改行が値に混ざると形式が壊れるため除去する */
         static String clean(String s) {
@@ -1121,9 +1201,10 @@ public class CallHierarchyExporter {
                         c.callerPkg, c.callerType, c.callerMethod, c.callerParams,
                         c.calleePkg, c.calleeType, c.calleeMethod, c.calleeParams,
                         String.valueOf(c.callLine), String.valueOf(c.bindKind), c.recvKey,
-                    String.valueOf(c.recvKind)));
+                    String.valueOf(c.recvKind), c.recvOrigin, c.argOrigins));
                 w.newLine();
             }
+            writeReturns(fa, w);
             for (HintRec h : fa.hints) {
                 w.write(String.join(CacheFormat.SEP, "X", h.callerKey, h.scopeKey, h.kind, h.value));
                 w.newLine();
@@ -1133,6 +1214,37 @@ public class CallHierarchyExporter {
                         CacheFormat.clean(u.callerMethodKey),
                         CacheFormat.clean(u.expression),
                         CacheFormat.clean(u.reason)));
+                w.newLine();
+            }
+        }
+
+        /**
+         * R行を書き出す。
+         *
+         * 全てのreturnが「追跡できない」メソッドは書かない。書いても解決には
+         * 使えないうえ、returnを持つメソッドは大量にあるためキャッシュだけが膨らむ。
+         * 逆に、1つでも追跡できたメソッドは U のreturnも含めて全部書く
+         * （分かった分だけを書くと、複数の型を返しうるメソッドを1つに決め打ちしてしまう）。
+         */
+        private static void writeReturns(FileAnalysis fa, BufferedWriter w) throws IOException {
+            if (fa.returns.isEmpty()) {
+                return;
+            }
+            Set<String> useful = new HashSet<>();
+            for (ReturnRec r : fa.returns) {
+                if (!Origin.isUnknown(r.origin)) {
+                    useful.add(r.methodKey());
+                }
+            }
+            if (useful.isEmpty()) {
+                return;
+            }
+            for (ReturnRec r : fa.returns) {
+                if (!useful.contains(r.methodKey())) {
+                    continue;
+                }
+                w.write(String.join(CacheFormat.SEP, "R",
+                        r.pkg, r.typeFqn, r.methodName, r.paramSig, r.origin));
                 w.newLine();
             }
         }
@@ -1208,10 +1320,15 @@ public class CallHierarchyExporter {
         final String recvKey;
         /** レシーバの由来（{@link RecvKind}）。CHAで絞れなかった理由の説明に使う */
         final char recvKind;
+        /** レシーバの出所（{@link Origin}）。データフローで具象型を追うのに使う。無ければ空 */
+        final String recvOrigin;
+        /** 実引数の出所。"位置=出所" を ; で並べたもの。無ければ空 */
+        final String argOrigins;
 
         CallEdgeRec(String callerPkg, String callerType, String callerMethod, String callerParams,
                     String calleePkg, String calleeType, String calleeMethod, String calleeParams,
-                    int callLine, char bindKind, String recvKey, char recvKind) {
+                    int callLine, char bindKind, String recvKey, char recvKind,
+                    String recvOrigin, String argOrigins) {
             this.callerPkg = callerPkg;
             this.callerType = callerType;
             this.callerMethod = callerMethod;
@@ -1224,6 +1341,29 @@ public class CallHierarchyExporter {
             this.bindKind = bindKind;
             this.recvKey = (recvKey == null) ? "" : recvKey;
             this.recvKind = recvKind;
+            this.recvOrigin = (recvOrigin == null) ? "" : recvOrigin;
+            this.argOrigins = (argOrigins == null) ? "" : argOrigins;
+        }
+    }
+
+    /** そのメソッドが返しうる値の出所1件（R行の元データ） */
+    static final class ReturnRec {
+        final String pkg;
+        final String typeFqn;
+        final String methodName;
+        final String paramSig;
+        final String origin;
+
+        ReturnRec(String pkg, String typeFqn, String methodName, String paramSig, String origin) {
+            this.pkg = pkg;
+            this.typeFqn = typeFqn;
+            this.methodName = methodName;
+            this.paramSig = paramSig;
+            this.origin = origin;
+        }
+
+        String methodKey() {
+            return typeFqn + "#" + methodName + "(" + paramSig + ")";
         }
     }
 
@@ -1270,6 +1410,7 @@ public class CallHierarchyExporter {
         final List<HintRec> hints = new ArrayList<>();
         final List<MethodDecl> declarations = new ArrayList<>();
         final List<CallEdgeRec> edges = new ArrayList<>();
+        final List<ReturnRec> returns = new ArrayList<>();
         final List<UnresolvedCall> unresolved = new ArrayList<>();
 
         FileAnalysis(String relativePath, long lastModified, long size) {
@@ -1368,6 +1509,25 @@ public class CallHierarchyExporter {
             /** 現在囲まれている型ごとの状態（{@link TypeContext} 参照） */
             private final ArrayDeque<TypeContext> typeContextStack = new ArrayDeque<>();
 
+            /**
+             * 現在のメソッドの「変数の出所」（IVariableBinding.getKey() -> {@link Origin}）。
+             * methodStack と対で push/pop する。
+             */
+            private final ArrayDeque<Map<String, String>> originScopes = new ArrayDeque<>();
+
+            /**
+             * 現在のラムダ式の入れ子の深さ。
+             *
+             * ラムダ式の中の return は、囲みメソッドの return ではなくラムダ自身の
+             * 戻り値。これを囲みメソッドの戻り値として記録すると、ファクトリメソッドの
+             * 戻り値型を誤って狭めてしまうため、0 のときだけ R行を記録する。
+             * （呼び出しの帰属はこれまで通り囲みメソッドのままでよい。
+             *   ラムダの中の呼び出しは、実際にその囲みメソッドの一部として書かれている）
+             */
+            private int lambdaDepth;
+            /** MethodDeclaration をまたぐときに lambdaDepth を退避するスタック */
+            private final ArrayDeque<Integer> lambdaDepthStack = new ArrayDeque<>();
+
             Visitor(CompilationUnit cu, FileAnalysis out) {
                 this(cu, out, java.util.Collections.<CallSiteHintCollector>emptyList());
             }
@@ -1376,6 +1536,178 @@ public class CallHierarchyExporter {
                 this.cu = cu;
                 this.out = out;
                 this.collectors = collectors;
+            }
+
+            // ------------------------------------------------------------
+            // データフロー解析（引数・ファクトリの戻り値から具象クラスを特定する）
+            //
+            // メソッドに入る直前に、そのメソッド本体を1回だけ先読みして
+            // 「変数 -> 出所」の表を作る（scanOrigins）。走査しながら作らないのは、
+            // 同じ変数への代入が後ろにある場合に取りこぼすため。
+            //
+            //     X x = new A();
+            //     for (...) { x.m(); x = new B(); }
+            //
+            // 走査順に作ると x.m() の時点では x は A に見えるが、2周目は B。
+            // 先読みして「複数の出所があれば U（不明）」に倒すことで、
+            // 具象クラスを誤って1つに決め打ちすることを防ぐ。
+            // 段2の new 追跡と同じく、フロー非依存・安全側の方針。
+            // ------------------------------------------------------------
+
+            /** 引数を出所として登録した、メソッド用の初期スコープ */
+            private Map<String, String> paramScopeOf(MethodDeclaration node) {
+                Map<String, String> scope = new HashMap<>();
+                List<?> params = node.parameters();
+                for (int i = 0; i < params.size(); i++) {
+                    Object o = params.get(i);
+                    if (!(o instanceof SingleVariableDeclaration)) {
+                        continue;
+                    }
+                    IVariableBinding vb = ((SingleVariableDeclaration) o).resolveBinding();
+                    if (vb != null && vb.getKey() != null) {
+                        scope.put(vb.getKey(), Origin.of(Origin.PARAM, String.valueOf(i)));
+                    }
+                }
+                return scope;
+            }
+
+            /**
+             * 本体を先読みして、ローカル変数の出所を集める。
+             *
+             * 同じ変数に出所の違う代入が複数あれば U（不明）にする。
+             * ローカル変数どうしの別名付け（{@code Y y = x;}）は、先読みが1回のため
+             * x が y より後ろで宣言されていると追えない。安全側（U）に倒れるだけなので
+             * 実害は「解決できない」に留まる。
+             */
+            private Map<String, String> scanOrigins(ASTNode body, final Map<String, String> scope) {
+                if (body == null) {
+                    return scope;
+                }
+                // 先読み中は originOf() が参照するスコープを差し替える
+                enterScope(scope);
+                try {
+                    body.accept(new ASTVisitor() {
+                        @Override
+                        public boolean visit(VariableDeclarationFragment n) {
+                            IVariableBinding vb = n.resolveBinding();
+                            if (vb != null && !vb.isField()) {
+                                mergeOrigin(scope, vb.getKey(), n.getInitializer());
+                            }
+                            return true;
+                        }
+
+                        @Override
+                        public boolean visit(Assignment n) {
+                            Expression lhs = n.getLeftHandSide();
+                            if (!(lhs instanceof SimpleName)) {
+                                return true;
+                            }
+                            IBinding b = ((SimpleName) lhs).resolveBinding();
+                            if (b instanceof IVariableBinding && !((IVariableBinding) b).isField()) {
+                                mergeOrigin(scope, ((IVariableBinding) b).getKey(),
+                                        n.getRightHandSide());
+                            }
+                            return true;
+                        }
+                    });
+                } finally {
+                    leaveScope();
+                }
+                return scope;
+            }
+
+            /** 同じ変数に別の出所が現れたら U（不明）に落とす */
+            private void mergeOrigin(Map<String, String> scope, String varKey, Expression value) {
+                if (varKey == null) {
+                    return;
+                }
+                String origin = originOf(value);
+                if (origin == null) {
+                    origin = Origin.UNKNOWN_S;
+                }
+                String prev = scope.get(varKey);
+                scope.put(varKey, (prev == null || prev.equals(origin))
+                        ? origin : Origin.UNKNOWN_S);
+            }
+
+            private void enterScope(Map<String, String> scope) {
+                originScopes.push(scope);
+            }
+
+            private void leaveScope() {
+                if (!originScopes.isEmpty()) {
+                    originScopes.pop();
+                }
+            }
+
+            /**
+             * 式の出所（{@link Origin}）。追跡できなければ null。
+             *
+             * ここで返せるのは「どこから来たか」までで、具象型が確定するとは限らない。
+             * A（引数）は呼び出し元、M（戻り値）はその宣言のreturnを見て初めて決まる。
+             */
+            private String originOf(Expression ex) {
+                Expression e = unwrap(ex);
+                if (e == null) {
+                    return null;
+                }
+                if (e instanceof ClassInstanceCreation) {
+                    String t = createdTypeOf((ClassInstanceCreation) e);
+                    return (t == null) ? null : Origin.of(Origin.NEW, t);
+                }
+                if (e instanceof MethodInvocation) {
+                    String[] r = toRef(((MethodInvocation) e).resolveMethodBinding());
+                    return (r == null) ? null
+                            : Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")");
+                }
+                if (e instanceof SimpleName) {
+                    IBinding b = ((SimpleName) e).resolveBinding();
+                    if (b instanceof IVariableBinding) {
+                        Map<String, String> scope = originScopes.peek();
+                        String o = (scope == null) ? null
+                                : scope.get(((IVariableBinding) b).getKey());
+                        return Origin.isUnknown(o) ? null : o;
+                    }
+                }
+                return null;
+            }
+
+            /** 括弧とキャストを剥がす。どちらも実体のインスタンスは変えない */
+            private Expression unwrap(Expression ex) {
+                Expression e = ex;
+                for (int guard = 0; guard < 8; guard++) {
+                    if (e instanceof ParenthesizedExpression) {
+                        e = ((ParenthesizedExpression) e).getExpression();
+                    } else if (e instanceof CastExpression) {
+                        e = ((CastExpression) e).getExpression();
+                    } else {
+                        return e;
+                    }
+                }
+                return e;
+            }
+
+            /** 実引数の出所を "位置=出所;位置=出所" にまとめる。追跡できない引数は載せない */
+            private String argOriginsOf(List<?> args) {
+                if (args == null || args.isEmpty()) {
+                    return "";
+                }
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < args.size(); i++) {
+                    Object o = args.get(i);
+                    if (!(o instanceof Expression)) {
+                        continue;
+                    }
+                    String origin = originOf((Expression) o);
+                    if (origin == null) {
+                        continue;
+                    }
+                    if (sb.length() > 0) {
+                        sb.append(';');
+                    }
+                    sb.append(i).append('=').append(origin);
+                }
+                return sb.toString();
             }
 
             // ------------------------------------------------------------
@@ -1680,6 +2012,7 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(FieldDeclaration node) {
                 methodStack.push(isStaticField(node) ? clinitContext() : instanceInitContext());
+                enterScope(scanOrigins(node, new HashMap<String, String>()));
                 return true;
             }
 
@@ -1688,12 +2021,14 @@ public class CallHierarchyExporter {
                 if (!methodStack.isEmpty()) {
                     methodStack.pop();
                 }
+                leaveScope();
             }
 
             @Override
             public boolean visit(Initializer node) {
                 boolean isStatic = Modifier.isStatic(node.getModifiers());
                 methodStack.push(isStatic ? clinitContext() : instanceInitContext());
+                enterScope(scanOrigins(node.getBody(), new HashMap<String, String>()));
                 return true;
             }
 
@@ -1702,6 +2037,7 @@ public class CallHierarchyExporter {
                 if (!methodStack.isEmpty()) {
                     methodStack.pop();
                 }
+                leaveScope();
             }
 
             /**
@@ -1768,6 +2104,11 @@ public class CallHierarchyExporter {
                 } else {
                     methodStack.push(UNKNOWN);
                 }
+                enterScope(scanOrigins(node.getBody(), paramScopeOf(node)));
+                // 匿名クラスのメソッドはラムダ式の中に現れうる。その中の return は
+                // ラムダではなくこのメソッドの return なので、深さを一旦0に戻す
+                lambdaDepthStack.push(Integer.valueOf(lambdaDepth));
+                lambdaDepth = 0;
                 return true;
             }
 
@@ -1778,6 +2119,58 @@ public class CallHierarchyExporter {
                 if (!methodStack.isEmpty()) {
                     methodStack.pop();
                 }
+                leaveScope();
+                if (!lambdaDepthStack.isEmpty()) {
+                    lambdaDepth = lambdaDepthStack.pop().intValue();
+                }
+            }
+
+            @Override
+            public boolean visit(LambdaExpression node) {
+                lambdaDepth++;
+                return true;
+            }
+
+            @Override
+            public void endVisit(LambdaExpression node) {
+                if (lambdaDepth > 0) {
+                    lambdaDepth--;
+                }
+            }
+
+            /**
+             * このメソッドの return が返しうる値の出所を記録する（R行）。
+             *
+             * ファクトリメソッド（{@code Factory.create()}）の戻り値に対する呼び出しを
+             * 具象クラスまで辿るために使う。追跡できない return も U として
+             * 記録するのが重要で、そうしないと「実は複数の型を返しうるメソッド」を
+             * 分かった分だけで1つに決め打ちしてしまう。
+             */
+            @Override
+            public boolean visit(ReturnStatement node) {
+                Expression ex = node.getExpression();
+                if (ex == null || lambdaDepth > 0) {
+                    // void の return、またはラムダ式自身の戻り値
+                    return true;
+                }
+                ITypeBinding tb = ex.resolveTypeBinding();
+                if (tb != null && (tb.isPrimitive() || tb.isArray()
+                        || "java.lang.String".equals(tb.getQualifiedName()))) {
+                    // 具象クラスの絞り込みに使えない戻り値。記録しても嵩むだけ
+                    return true;
+                }
+                List<String[]> callers = current();
+                if (callers == null) {
+                    return true;
+                }
+                String origin = originOf(ex);
+                if (origin == null) {
+                    origin = Origin.UNKNOWN_S;
+                }
+                for (String[] c : callers) {
+                    out.returns.add(new ReturnRec(c[0], c[1], c[2], c[3], origin));
+                }
+                return true;
             }
 
             /**
@@ -1794,7 +2187,8 @@ public class CallHierarchyExporter {
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
                 record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n),
-                        recvKindOf(n.getExpression()), externalGuessRef(n));
+                        recvKindOf(n.getExpression()), externalGuessRef(n),
+                        originOf(n.getExpression()), argOriginsOf(n.arguments()));
 
                 // フェーズAの拡張に、この呼び出し箇所を見せる。
                 // 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
@@ -1834,19 +2228,21 @@ public class CallHierarchyExporter {
             public boolean visit(SuperMethodInvocation n) {
                 // super.m() は静的束縛（オーバーライドの影響を受けない）
                 record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
-                        RecvKind.THIS, null);
+                        RecvKind.THIS, null, null, argOriginsOf(n.arguments()));
                 return true;
             }
 
             @Override
             public boolean visit(ClassInstanceCreation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null);
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null,
+                        null, argOriginsOf(n.arguments()));
                 return true;
             }
 
             @Override
             public boolean visit(ConstructorInvocation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null);
+                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null,
+                        null, argOriginsOf(n.arguments()));
                 return true;
             }
 
@@ -1928,7 +2324,7 @@ public class CallHierarchyExporter {
              */
             private void record(IMethodBinding binding, ASTNode node, String displayName,
                                  char bindKind, String recvKey, char recvKind,
-                                 String[] externalGuess) {
+                                 String[] externalGuess, String recvOrigin, String argOrigins) {
                 int line = cu.getLineNumber(node.getStartPosition());
                 List<String[]> callers = current();
                 if (callers == null) {
@@ -1947,7 +2343,8 @@ public class CallHierarchyExporter {
                         for (String[] caller : callers) {
                             out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
                                     externalGuess[0], externalGuess[1], externalGuess[2],
-                                    externalGuess[3], line, 'G', recvKey, recvKind));
+                                    externalGuess[3], line, 'G', recvKey, recvKind,
+                                    recvOrigin, argOrigins));
                         }
                         return;
                     }
@@ -1964,7 +2361,7 @@ public class CallHierarchyExporter {
                 for (String[] caller : callers) {
                     out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
                             callee[0], callee[1], callee[2], callee[3], line, bindKind,
-                            recvKey, recvKind));
+                            recvKey, recvKind, recvOrigin, argOrigins));
                 }
             }
 
@@ -2224,8 +2621,26 @@ public class CallHierarchyExporter {
         byte[] bindKinds;   // 長さ = エッジ数。'S'=静的束縛 / 'V'=仮想
         byte[] recvKinds;   // 長さ = エッジ数。レシーバの由来（RecvKind）
 
+        /**
+         * エッジごとのレシーバ・実引数の出所（{@link Origin}）。
+         * 値は originPool のインデックスで、-1 なら情報なし。
+         *
+         * 文字列の配列をエッジ数ぶん持つとメモリ設計が崩れるため、
+         * 実体は共有プールに1つずつだけ置き、エッジ側は int で参照する
+         * （出所の文字列は "A:0" や型名なので、実際には激しく重複する）。
+         */
+        int[] recvOriginIds;
+        int[] argOriginIds;
+        private final ArrayList<String> originPool = new ArrayList<>();
+        private final HashMap<String, Integer> originPoolIndex = new HashMap<>();
+
+        /** メソッドIDごとの「返しうる値の出所」。null は情報なし */
+        private String[][] returnOrigins;
+
         /** 型階層: 親型 -> 直接の子型 */
         private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
+        /** 型階層: 子型 -> 直接の親型。具象型からメソッド実装を探すのに使う */
+        private final HashMap<String, List<String>> directSupertypes = new HashMap<>();
         /** 型 -> 種別（I/A/C） */
         private final HashMap<String, Character> typeKind = new HashMap<>();
         /** 解決結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
@@ -2280,6 +2695,7 @@ public class CallHierarchyExporter {
 
             // --- 1回目: ID化と本数カウント ---
             IntArray outDegree = new IntArray(1 << 16);
+            HashMap<Integer, List<String>> returnsById = new HashMap<>();
             long edgeCount = 0;
 
             BufferedReader in = open(cacheFile);
@@ -2310,6 +2726,14 @@ public class CallHierarchyExporter {
                                     }
                                     if (!subs.contains(f[1])) {
                                         subs.add(f[1]);
+                                    }
+                                    List<String> sups = g.directSupertypes.get(f[1]);
+                                    if (sups == null) {
+                                        sups = new ArrayList<>();
+                                        g.directSupertypes.put(f[1], sups);
+                                    }
+                                    if (!sups.contains(sup)) {
+                                        sups.add(sup);
                                     }
                                 }
                             }
@@ -2349,6 +2773,20 @@ public class CallHierarchyExporter {
                             outDegree.set(caller, outDegree.get(caller) + 1);
                             edgeCount++;
                         }
+                    } else if (t == 'R') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 6) {
+                            int id = g.methods.intern(f[1], f[2], f[3], f[4]);
+                            ensure(outDegree, id);
+                            List<String> os = returnsById.get(Integer.valueOf(id));
+                            if (os == null) {
+                                os = new ArrayList<>(2);
+                                returnsById.put(Integer.valueOf(id), os);
+                            }
+                            if (!os.contains(f[5])) {
+                                os.add(f[5]);
+                            }
+                        }
                     }
                 }
             } finally {
@@ -2374,6 +2812,20 @@ public class CallHierarchyExporter {
             g.recvKinds = new byte[(int) edgeCount];
             g.edgeHint = new int[(int) edgeCount];
             Arrays.fill(g.edgeHint, -1);
+            g.recvOriginIds = new int[(int) edgeCount];
+            Arrays.fill(g.recvOriginIds, -1);
+            g.argOriginIds = new int[(int) edgeCount];
+            Arrays.fill(g.argOriginIds, -1);
+
+            // R行（戻り値の出所）をメソッドIDの配列に移す。
+            // 1回目のスキャンで全メソッドがID化されているのでここで確定できる
+            g.returnOrigins = new String[n][];
+            for (Map.Entry<Integer, List<String>> e : returnsById.entrySet()) {
+                int id = e.getKey().intValue();
+                if (id < n) {
+                    g.returnOrigins[id] = e.getValue().toArray(new String[0]);
+                }
+            }
 
             // --- 2回目: エッジを流し込む ---
             int[] cursor = Arrays.copyOf(g.offsets, n == 0 ? 0 : n);
@@ -2419,11 +2871,225 @@ public class CallHierarchyExporter {
                             g.edgeHint[pos] = g.hintTable.size() - 1;
                         }
                     }
+                    g.recvOriginIds[pos] = g.internOrigin((f.length >= 14) ? f[13] : "");
+                    g.argOriginIds[pos] = g.internOrigin((f.length >= 15) ? f[14] : "");
                 }
             } finally {
                 in.close();
             }
             return g;
+        }
+
+        // ================================================================
+        // データフロー（Issue #17 ファクトリの戻り値 / #18 引数）
+        // ================================================================
+
+        /** 出所の文字列を共有プールに入れてインデックスを返す。空なら -1 */
+        int internOrigin(String origin) {
+            if (origin == null || origin.isEmpty()) {
+                return -1;
+            }
+            Integer i = originPoolIndex.get(origin);
+            if (i != null) {
+                return i.intValue();
+            }
+            int id = originPool.size();
+            originPool.add(origin);
+            originPoolIndex.put(origin, Integer.valueOf(id));
+            return id;
+        }
+
+        /** エッジのレシーバの出所。無ければ null */
+        String recvOrigin(int edgeIndex) {
+            int i = recvOriginIds[edgeIndex];
+            return (i < 0) ? null : originPool.get(i);
+        }
+
+        /** エッジの実引数の出所（"位置=出所;..."）。無ければ null */
+        String argOrigins(int edgeIndex) {
+            int i = argOriginIds[edgeIndex];
+            return (i < 0) ? null : originPool.get(i);
+        }
+
+        private boolean dataflowEnabled;
+        private int dataflowMaxDepth = 5;
+
+        void setDataflow(boolean enabled, int maxDepth) {
+            this.dataflowEnabled = enabled;
+            this.dataflowMaxDepth = (maxDepth > 0) ? maxDepth : 1;
+        }
+
+        boolean dataflowEnabled() {
+            return dataflowEnabled;
+        }
+
+        /** factoryReturnType のメモ。未計算と「計算したが不明」を区別する */
+        private String[] factoryReturnType;
+        private byte[] factoryReturnState;   // 0=未計算 / 1=計算中 / 2=計算済み
+
+        /**
+         * そのメソッドが必ず返す具象型。特定できなければ null。
+         *
+         * 「1つでも追跡できない return があれば null」「複数の型を返すなら null」。
+         * ファクトリメソッドの戻り値に対する呼び出しを具象クラスまで辿るために使う。
+         * 委譲（{@code return create();}）は dataflowMaxDepth まで辿る。
+         */
+        String factoryReturnType(int methodId) {
+            if (returnOrigins == null || methodId < 0 || methodId >= returnOrigins.length) {
+                return null;
+            }
+            if (factoryReturnType == null) {
+                factoryReturnType = new String[returnOrigins.length];
+                factoryReturnState = new byte[returnOrigins.length];
+            }
+            return factoryReturnType(methodId, 0);
+        }
+
+        private String factoryReturnType(int methodId, int depth) {
+            if (factoryReturnState[methodId] == 2) {
+                return factoryReturnType[methodId];
+            }
+            if (factoryReturnState[methodId] == 1) {
+                return null;   // 委譲が循環している
+            }
+            String[] origins = returnOrigins[methodId];
+            if (origins == null || origins.length == 0) {
+                return null;
+            }
+            factoryReturnState[methodId] = 1;
+            String found = null;
+            for (String o : origins) {
+                String fqn = null;
+                char kind = Origin.kindOf(o);
+                if (kind == Origin.NEW) {
+                    fqn = Origin.valueOf(o);
+                } else if (kind == Origin.RETURN && depth < dataflowMaxDepth) {
+                    int delegate = methods.idOf(Origin.valueOf(o));
+                    if (delegate >= 0) {
+                        fqn = factoryReturnType(delegate, depth + 1);
+                    }
+                }
+                // 引数をそのまま返すメソッド（A）や追跡できない return（U）が1つでも
+                // あれば、このメソッドの戻り値は決められない。分かった分だけで
+                // 決め打ちすると、実際には別の型を返す経路を取りこぼす
+                if (fqn == null || (found != null && !found.equals(fqn))) {
+                    factoryReturnState[methodId] = 2;
+                    factoryReturnType[methodId] = null;
+                    return null;
+                }
+                found = fqn;
+            }
+            factoryReturnState[methodId] = 2;
+            factoryReturnType[methodId] = found;
+            return found;
+        }
+
+        /**
+         * 具象型 typeFqn で、シグネチャ sig の実装を持つメソッドIDを返す。無ければ -1。
+         *
+         * その型自身に宣言が無くても、親クラスから継承していれば親の実装が動く。
+         * 親を辿らないと「ファクトリが UserDaoImpl を返すと分かったのに、
+         * selectById は AbstractDao で宣言されているので見つからない」となる。
+         */
+        int implementationIn(String typeFqn, String sig) {
+            if (typeFqn == null || typeFqn.isEmpty()) {
+                return -1;
+            }
+            ArrayDeque<String> queue = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            queue.add(typeFqn);
+            seen.add(typeFqn);
+            while (!queue.isEmpty()) {
+                String t = queue.poll();
+                int id = methods.idOf(t + "#" + sig);
+                if (id >= 0 && methods.hasBody(id)) {
+                    return id;
+                }
+                List<String> sups = directSupertypes.get(t);
+                if (sups == null) {
+                    continue;
+                }
+                for (String sup : sups) {
+                    if (seen.add(sup)) {
+                        queue.add(sup);
+                    }
+                }
+            }
+            return -1;
+        }
+
+        /**
+         * 出所から具象型を求める。
+         *
+         * @param callerParamTypes 呼び出し元メソッドの引数の具象型（経路から確定した分）。
+         *                         null なら引数由来の出所は追えない
+         */
+        String concreteTypeOf(String origin, String[] callerParamTypes) {
+            char kind = Origin.kindOf(origin);
+            if (kind == Origin.NEW) {
+                return Origin.valueOf(origin);
+            }
+            if (kind == Origin.RETURN) {
+                int factory = methods.idOf(Origin.valueOf(origin));
+                return (factory < 0) ? null : factoryReturnType(factory);
+            }
+            if (kind == Origin.PARAM && callerParamTypes != null) {
+                int idx = parseIndex(Origin.valueOf(origin));
+                if (idx >= 0 && idx < callerParamTypes.length) {
+                    return callerParamTypes[idx];
+                }
+            }
+            return null;
+        }
+
+        /**
+         * そのメソッドが引数を「レシーバとして使う」か「そのまま次へ渡す」か。
+         *
+         * どちらでもないメソッドに引数の具象型を渡しても使い道が無いので、
+         * 経路を降りる前にここで打ち切る。データフロー解析を
+         * 「必要な場合のみ」に絞るための入口。
+         */
+        boolean usesParameters(int methodId) {
+            if (!dataflowEnabled) {
+                return false;
+            }
+            if (usesParameters == null) {
+                usesParameters = computeUsesParameters();
+            }
+            return methodId >= 0 && methodId < usesParameters.length && usesParameters[methodId];
+        }
+
+        private boolean[] usesParameters;
+
+        private boolean[] computeUsesParameters() {
+            boolean[] flags = new boolean[methods.size()];
+            for (int caller = 0; caller < flags.length; caller++) {
+                for (int e = edgeStart(caller); e < edgeEnd(caller); e++) {
+                    if (Origin.kindOf(recvOrigin(e)) == Origin.PARAM
+                            || mentionsParam(argOrigins(e))) {
+                        flags[caller] = true;
+                        break;
+                    }
+                }
+            }
+            return flags;
+        }
+
+        /** 実引数の出所の中に「囲みメソッドの引数」が含まれるか（引数の受け渡し） */
+        private static boolean mentionsParam(String argOrigins) {
+            if (argOrigins == null) {
+                return false;
+            }
+            // "0=A:1;2=T:jp.co.X" のような形。"=A:" があれば引数を渡している
+            return argOrigins.indexOf("=" + Origin.PARAM + ":") >= 0;
+        }
+
+        private static int parseIndex(String s) {
+            try {
+                return Integer.parseInt(s);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
         }
 
         private static BufferedReader open(Path cacheFile) throws IOException {
@@ -2506,8 +3172,36 @@ public class CallHierarchyExporter {
                 return custom;
             }
 
-            // --- 段4: CHA ---
+            // --- 段4: ファクトリメソッドの戻り値（Issue #17） ---
+            // レシーバがメソッドの戻り値なら、その宣言の return を見て具象型を決める。
+            // 経路に依存しないのでここでメモ化できる（引数由来は経路依存なので
+            // ここでは扱えない。StreamingTreeWalker 側で解決する）
+            if (dataflowEnabled) {
+                int fromFactory = dataflowTarget(recvOrigin(edgeIndex), calleeId, null);
+                if (fromFactory >= 0) {
+                    return new Resolution(new int[]{fromFactory}, "DATAFLOW_FACTORY");
+                }
+            }
+
+            // --- 段5: CHA ---
             return base;
+        }
+
+        /**
+         * レシーバの出所から具象クラスを決め、その実装のメソッドIDを返す。無ければ -1。
+         *
+         * @param callerParamTypes 経路から確定した呼び出し元の引数の具象型（無ければ null）
+         */
+        int dataflowTarget(String recvOrigin, int calleeId, String[] callerParamTypes) {
+            if (!dataflowEnabled || recvOrigin == null) {
+                return -1;
+            }
+            String fqn = concreteTypeOf(recvOrigin, callerParamTypes);
+            if (fqn == null) {
+                return -1;
+            }
+            // 結果が宣言型のままでも、候補が1つに定まったこと自体が成果なので返す
+            return implementationIn(fqn, methods.signature(calleeId));
         }
 
         /**
@@ -3455,6 +4149,19 @@ public class CallHierarchyExporter {
         private final int[] pathMethod;
         private final int[] pathCallLine;
         private final String[] pathNote;
+        /**
+         * 経路上の各メソッドの引数の具象型（Issue #18）。
+         * pathParamTypes[d][i] は、深さ d のメソッドの i 番目の引数に
+         * 「この経路では」何が渡ってきているか。分からない引数は null。
+         *
+         * 経路ごとに前向き（root -> 葉）に伝えるだけで、呼び出し元の候補を
+         * 遡って探索することはしない。同じメソッドでも経路が違えば別の値になる
+         * ——それがこの解析の意味であり、メモ化できない理由でもある。
+         */
+        private final String[][] pathParamTypes;
+        /** データフローで具象クラスを特定した件数（ログ用） */
+        private long paramHits;
+        private long factoryHits;
 
         private int rootId;
         private long totalRows;
@@ -3469,6 +4176,15 @@ public class CallHierarchyExporter {
             this.pathMethod = new int[cap];
             this.pathCallLine = new int[cap];
             this.pathNote = new String[cap];
+            this.pathParamTypes = new String[cap][];
+        }
+
+        long paramHits() {
+            return paramHits;
+        }
+
+        long factoryHits() {
+            return factoryHits;
         }
 
         long walkAll(int[] entries) throws IOException {
@@ -3477,6 +4193,8 @@ public class CallHierarchyExporter {
                 pathMethod[0] = rootId;
                 pathCallLine[0] = -1;
                 pathNote[0] = null;
+                // 起点メソッドの引数は「誰が何を渡すか」が分からない
+                pathParamTypes[0] = null;
                 descend(0);
                 if (isRowLimitReached()) {
                     break;
@@ -3503,6 +4221,20 @@ public class CallHierarchyExporter {
                 CallGraph.Resolution res =
                         graph.resolveEdge(e, (char) graph.bindKinds[e]);
 
+                // Issue #18: 絞れなかった呼び出しだけ、この経路で渡ってきた
+                // 引数の具象型を使って解決を試みる。「必要なときだけ」にするのは、
+                // 全呼び出しで試すと解析コストが呼び出し数に比例して効いてくるため
+                if (res.targets.length > 1 && graph.dataflowEnabled()) {
+                    int viaParam = graph.dataflowTarget(
+                            graph.recvOrigin(e), declaredCallee, pathParamTypes[depth]);
+                    if (viaParam >= 0) {
+                        res = new CallGraph.Resolution(new int[]{viaParam}, "DATAFLOW_PARAM");
+                        paramHits++;
+                    }
+                } else if ("DATAFLOW_FACTORY".equals(res.label)) {
+                    factoryHits++;
+                }
+
                 // CHAで候補が複数になった呼び出しは、候補の数だけ展開すると
                 // 候補数^深さ で爆発する。宣言型のまま1行だけ残して先へは降りない
                 int[] targets = res.targets;
@@ -3515,10 +4247,12 @@ public class CallHierarchyExporter {
                     }
                     int target = targets[ti];
 
+                    String[] targetParams = bindArguments(e, depth, target);
+
                     if (isExcluded(target)) {
                         // 除外対象のノード自身は出力しないが、その先は親に繋ぎ直して辿る
                         if (!onCurrentPath(target, depth)) {
-                            skipThrough(depth, target);
+                            skipThrough(depth, target, targetParams);
                         }
                         continue;
                     }
@@ -3527,6 +4261,7 @@ public class CallHierarchyExporter {
                     push(depth + 1, target, callLine,
                             noteFor(target, declaredCallee, res, depth, cycle,
                                     (char) graph.recvKinds[e]));
+                    pathParamTypes[depth + 1] = targetParams;
 
                     // コンストラクタ呼び出しそのものは行にしない。
                     // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
@@ -3544,6 +4279,50 @@ public class CallHierarchyExporter {
             }
         }
 
+        /**
+         * この呼び出しで渡す実引数の具象型を求め、呼び出し先の引数の環境を作る（Issue #18）。
+         *
+         * 経路の1つ上（呼び出し元）の環境しか見ないので、rootからの1本の経路に対して
+         * 決定的に決まる。呼び出し元の候補を遡って集めることはしない。
+         *
+         * 何も分からない場合や、呼び出し先が引数を使い回さない場合は null を返す。
+         * null を返せば以降の深さでは何もしないので、解析コストが必要な箇所だけに絞れる。
+         */
+        private String[] bindArguments(int edgeIndex, int depth, int target) {
+            if (!graph.dataflowEnabled() || !graph.usesParameters(target)) {
+                return null;
+            }
+            String spec = graph.argOrigins(edgeIndex);
+            if (spec == null || spec.isEmpty()) {
+                return null;
+            }
+            String[] callerTypes = pathParamTypes[depth];
+            String[] bound = null;
+            for (String entry : spec.split(";")) {
+                int eq = entry.indexOf('=');
+                if (eq <= 0) {
+                    continue;
+                }
+                int index;
+                try {
+                    index = Integer.parseInt(entry.substring(0, eq));
+                } catch (NumberFormatException ignore) {
+                    continue;
+                }
+                String fqn = graph.concreteTypeOf(entry.substring(eq + 1), callerTypes);
+                if (fqn == null) {
+                    continue;
+                }
+                if (bound == null) {
+                    bound = new String[index + 1];
+                } else if (index >= bound.length) {
+                    bound = Arrays.copyOf(bound, index + 1);
+                }
+                bound[index] = fqn;
+            }
+            return bound;
+        }
+
         /** コンストラクタか（this(...)/super(...)/new いずれも呼び出し先は <init>） */
         private boolean isConstructor(int id) {
             return "<init>".equals(graph.methods.methodName(id));
@@ -3559,13 +4338,19 @@ public class CallHierarchyExporter {
          * 除外されたノード自身は出力せず、
          * その呼び出し先を「1つ上の親の子」として辿り直す。
          */
-        private void skipThrough(int parentDepth, int skippedId) throws IOException {
+        private void skipThrough(int parentDepth, int skippedId, String[] skippedParams)
+                throws IOException {
             int saved = pathMethod[parentDepth];
+            String[] savedParams = pathParamTypes[parentDepth];
             pathMethod[parentDepth] = skippedId;   // 一時的に呼び出し元を差し替える
+            // 引数の環境も一緒に差し替える。元のまま残すと、除外されたメソッドの中の
+            // 呼び出しに、その呼び出し元の引数を当ててしまう
+            pathParamTypes[parentDepth] = skippedParams;
             try {
                 descend(parentDepth);
             } finally {
                 pathMethod[parentDepth] = saved;
+                pathParamTypes[parentDepth] = savedParams;
             }
         }
 
@@ -3613,10 +4398,12 @@ public class CallHierarchyExporter {
                 // 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけで、
                 // 実行時に何が動くかはこのツールでは分からない
                 sb.append("実装なし（宣言のまま）: ").append(RecvKind.describe(recvKind));
-            } else if (target != declaredCallee) {
+            } else if (target != declaredCallee || res.label.startsWith("DATAFLOW_")) {
                 if (sb.length() > 0) {
                     sb.append(" / ");
                 }
+                // データフローで決めた場合は、宣言型と同じ結論でも「CHAで諦めずに
+                // 絞れた」ことに意味があるので必ず出す
                 sb.append("解決:").append(res.label);
             }
             return (sb.length() == 0) ? null : sb.toString();
