@@ -226,6 +226,9 @@ public class CallHierarchyExporter {
         try {
             rows = new StreamingTreeWalker(graph, config, writer).walkAll(entries);
 
+            // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
+            rows += UnresolvedReport.write(graph, config, writer);
+
             if (!config.externalLibraryFolders.isEmpty()) {
                 System.out.println();
                 log("=== 外部jarからの被参照スキャン ===");
@@ -2824,6 +2827,68 @@ public class CallHierarchyExporter {
 
     }
 
+    /**
+     * 型解決に失敗した呼び出しを call-hierarchy.csv に書き出す。
+     *
+     * これらは呼び出し先の型が特定できていないため、呼び出し階層としては辿れない。
+     * しかし「解決できなかったせいで階層から抜け落ちている」こと自体が
+     * 重要な情報（依存jarの不足を示す）なので、静かに消さずに行として残す。
+     *
+     * キャッシュのU行を読み直して出力する。件数ぶんをヒープに載せないための
+     * ストリーミング処理。
+     */
+    static final class UnresolvedReport {
+
+        static long write(CallGraph g, Config config, CallHierarchyCsvWriter out)
+                throws IOException {
+            if (!Files.isRegularFile(config.cacheFile)) {
+                return 0L;
+            }
+            long rows = 0L;
+            BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
+            try {
+                in.readLine();   // バージョン行
+                String currentFile = null;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        currentFile = (f.length >= 2) ? f[1] : null;
+                        continue;
+                    }
+                    if (t != 'U') {
+                        continue;
+                    }
+                    String[] f = line.split(CacheFormat.SEP, -1);
+                    if (f.length < 5) {
+                        continue;
+                    }
+                    int callLine;
+                    try {
+                        callLine = Integer.parseInt(f[1]);
+                    } catch (NumberFormatException ignore) {
+                        callLine = -1;
+                    }
+                    // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
+                    // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
+                    int callerId = g.methods.idOf(f[2]);
+                    String location = (currentFile == null)
+                            ? f[2] : currentFile + ":" + callLine;
+                    out.writeUnresolvedRow(g.methods, callerId, location,
+                            callLine, f[3], f[4]);
+                    rows++;
+                }
+            } finally {
+                in.close();
+            }
+            return rows;
+        }
+    }
+
     // ================================================================
     // 外部jarからの被参照スキャン（レベル1: 定数プール）
     // ================================================================
@@ -3279,7 +3344,14 @@ public class CallHierarchyExporter {
                     boolean cycle = onCurrentPath(target, depth);
                     push(depth + 1, target, callLine,
                             noteFor(target, declaredCallee, res, depth, cycle));
-                    emit(depth + 1);
+
+                    // コンストラクタ呼び出しそのものは行にしない。
+                    // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
+                    // 経路には積むので、コンストラクタ内からの呼び出しは
+                    // call-hierarchy 列に <init> を含んだ形で出力される
+                    if (!isConstructor(target)) {
+                        emit(depth + 1);
+                    }
 
                     // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
                     if (expand && !cycle) {
@@ -3287,6 +3359,11 @@ public class CallHierarchyExporter {
                     }
                 }
             }
+        }
+
+        /** コンストラクタか（this(...)/super(...)/new いずれも呼び出し先は <init>） */
+        private boolean isConstructor(int id) {
+            return "<init>".equals(graph.methods.methodName(id));
         }
 
         private boolean isExcluded(int id) {
@@ -3404,6 +3481,9 @@ public class CallHierarchyExporter {
      */
     static final class CallHierarchyCsvWriter {
 
+        /** 型解決に失敗した行の root 列。起点が無いことを示す固定マーカー */
+        static final String UNRESOLVED_ROOT = "(型解決失敗)";
+
         private final BufferedWriter writer;
         private final StringBuilder buf = new StringBuilder(512);
 
@@ -3440,6 +3520,34 @@ public class CallHierarchyExporter {
             if (pathNote[depth] != null) {
                 buf.append(Csv.DELIM).append(Csv.esc(pathNote[depth]));
             }
+            writer.write(buf.toString());
+            writer.newLine();
+        }
+
+        /**
+         * 型解決に失敗した呼び出しの1行。
+         *
+         * 呼び出し「元」はソース上のメソッドなので分かるが、呼び出し「先」の型が
+         * 特定できていない。よって callee にはソースに書かれていた式（メソッド名）を
+         * そのまま置き、root には起点が無いことを示す固定マーカーを入れる。
+         * root でフィルタすれば、型解決に失敗した箇所だけをまとめて見られる。
+         *
+         * @param mt         呼び出し元の解決に使うメソッド表
+         * @param callerId   呼び出し元メソッドのID。-1 なら特定できていない
+         * @param location   callerId が -1 のときに caller 列へ出す位置情報
+         * @param line       呼び出し箇所の行番号
+         * @param expression ソースに書かれていた呼び出しの式（メソッド名）
+         * @param reason     失敗の理由
+         */
+        void writeUnresolvedRow(MethodTable mt, int callerId, String location,
+                                 int line, String expression, String reason) throws IOException {
+            buf.setLength(0);
+            String caller = (callerId >= 0) ? stackTrace(mt, callerId, line) : location;
+            buf.append(Csv.esc(caller)).append(Csv.DELIM);
+            buf.append(Csv.esc(expression)).append(Csv.DELIM);
+            buf.append(Csv.esc(UNRESOLVED_ROOT));
+            buf.append(Csv.DELIM).append(Csv.esc(expression));
+            buf.append(Csv.DELIM).append(Csv.esc(reason));
             writer.write(buf.toString());
             writer.newLine();
         }

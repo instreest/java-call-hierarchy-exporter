@@ -137,6 +137,16 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
+**コンストラクタの呼び出し自体は行になりません。** `new` したこと自体より
+「そのコンストラクタの中で何を呼んでいるか」が知りたいためです。
+経路には残るので、コンストラクタ内からの呼び出しは
+`call-hierarchy` 列に `<init>` を含んだ形で出力されます。
+
+```csv
+caller,callee,root,call-hierarchy
+at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,Sample.<init>,Sample.init
+```
+
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。列を間に挟むと
 可変長の階層が途中で切れてしまうためです。
 
@@ -148,6 +158,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
 | `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
+| `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
 ### **Eclipseへのジャンプ**
@@ -170,6 +181,26 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `NORMAL` | 上記以外 |
 
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
+
+### 型解決に失敗した呼び出し
+
+依存jarが足りないなどで呼び出し先の型を特定できなかった呼び出しも、
+`call-hierarchy.csv` に行として出力されます。**解決できないまま黙って消すと
+「呼び出しが無い」ように見えてしまう**ためです。
+
+```csv
+caller,callee,root,call-hierarchy
+at jp.co.example.Foo.bar(Foo.java:42),getOptions,(型解決失敗),getOptions,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+```
+
+| 列 | 内容 |
+|---|---|
+| `caller` | 呼び出し元。呼び出し箇所の行が分かるのでEclipseからジャンプできる |
+| `callee` | ソースに書かれていた式（メソッド名）。型が特定できていないのでクラス名は付かない |
+| `root` | `(型解決失敗)` 固定。ここでフィルタすると失敗箇所だけを一覧できる |
+| `call-hierarchy` | 式と、失敗の理由 |
+
+件数は実行ログにも出ます。多い場合は `library.folders` の設定漏れを疑ってください。
 
 ### 他リポジトリからの被参照
 
