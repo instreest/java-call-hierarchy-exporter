@@ -11,3 +11,10 @@ dist/
 .settings/
 .idea/
 *.iml
+
+# 実行時に生成される解析キャッシュと出力CSV。
+# 同梱の config/config.properties の既定値（cache.folders / output.csv / methods.csv）が
+# 書き出す先。これらのキーの相対パスは「設定ファイルが置かれているディレクトリ」が起点なので、
+# 設定ファイルをリポジトリ内の別の場所へコピーして使う場合は、その出力先も各自で足すこと。
+/config/.cache/
+/config/output/
