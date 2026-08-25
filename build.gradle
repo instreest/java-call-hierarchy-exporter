@@ -7,12 +7,17 @@ version = '0.1.0'
 // ---------------------------------------------------------------------------
 // Eclipse JDT Core のバージョン
 //
-// 新しい版ほど、動かすのに新しいJDKを要求します。手元のJDKで動く版を選んでください。
-// コマンドラインから上書きできます:
-//     gradle -PjdtVersion=3.29.0 run --args="config/config.properties"
+// 新しい版ほど、動かすのに新しいJDKを要求し、解析できるJavaバージョンも上がります。
+//     3.46.0 … JRE 17以上で動作。ソースは Java 26 まで解析可
+//     3.33.0 … JRE 11以上で動作。ソースは Java 19 まで解析可
+// 手元のJDKで動く版を選んでください。コマンドラインから上書きできます:
+//     gradle -PjdtVersion=3.33.0 run --args="config/config.properties"
+//
+// 解析対象ソースのJavaバージョンは、この版とは別に config.properties の
+// source.level で指定します（未指定なら、この版が対応する最大値）。
 // ---------------------------------------------------------------------------
 ext {
-    jdtVersion = project.findProperty('jdtVersion') ?: '3.33.0'
+    jdtVersion = project.findProperty('jdtVersion') ?: '3.46.0'
     mainClassName = 'CallHierarchyExporter'
 }
 
@@ -38,9 +43,11 @@ sourceSets {
 }
 
 java {
-    // 解析対象のJavaバージョンとは無関係です（このツール自身が動くJVMの話）
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    // 解析対象のJavaバージョンとは無関係です（このツール自身が動くJVMの話）。
+    // 既定の JDT 3.46.0 が JRE 17 を要求するため、それに合わせています。
+    // 古いJDKしか無い環境では -PjdtVersion=3.33.0 と合わせて 11 に下げてください。
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 tasks.withType(JavaCompile).configureEach {
