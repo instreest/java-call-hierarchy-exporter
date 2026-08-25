@@ -161,6 +161,20 @@ public class CallHierarchyExporter {
 
         ProjectLayout layout = new ProjectLayout(config);
         log("ソースフォルダ: " + layout.sourceFolders);
+        log("ソース文字コード: " + config.sourceEncoding);
+        // どの言語バージョンとして解析したかで結果が変わるため、必ず残す
+        log("ソースレベル: " + config.sourceLevel
+                + (config.sourceLevelAuto
+                        ? "（source.level 未指定のため、JDTが対応する最大値）"
+                        : "（source.level=" + config.sourceLevelRequested + " の指定による）")
+                + " / このJDTの対応上限: " + JavaCore.latestSupportedJavaVersion());
+        if (!config.sourceLevelAuto
+                && !config.sourceLevelRequested.equals(config.sourceLevel)) {
+            // JDTが指定値を黙って丸めた。指定が効いていないことを見えるようにする
+            log("※ source.level=" + config.sourceLevelRequested
+                    + " はこのJDTでは扱えないため " + config.sourceLevel + " として解析します。");
+            log("   より古いレベルが要る場合は、古い版のJDTを使ってください。");
+        }
         // 依存jarは library.folders でフォルダごと指定できる。ここで出すのは
         // 実際にJDTへ渡す「*.jar に展開した後」の一覧なので、
         // フォルダ指定がjar単位に展開されているかを確認できる
@@ -464,6 +478,14 @@ public class CallHierarchyExporter {
         /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
         final List<Path> libraryFolders;
         final String sourceEncoding;
+        /** 実際に効いた解析対象ソースのJavaバージョン（JDTから読み戻した値） */
+        final String sourceLevel;
+        /** 設定ファイルで要求された値。未指定なら空 */
+        final String sourceLevelRequested;
+        /** source.level が未指定で、JDTが対応する最大値を採用したか */
+        final boolean sourceLevelAuto;
+        /** 解析に使うJDTのコンパイラ設定（source.level を反映済み） */
+        final Map<String, String> compilerOptions;
 
         final List<PackagePattern> entryPatterns;
         final List<PackagePattern> excludePatterns;
@@ -527,6 +549,10 @@ public class CallHierarchyExporter {
             this.libraryFolders = libs;
 
             this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
+            this.sourceLevelRequested = p.getProperty("source.level", "").trim();
+            this.sourceLevelAuto = this.sourceLevelRequested.isEmpty();
+            this.compilerOptions = buildCompilerOptions(this.sourceLevelRequested);
+            this.sourceLevel = this.compilerOptions.get(JavaCore.COMPILER_SOURCE);
 
             // entry.packages が空の場合は「全体モード」に入る。
             // 起点を指定せず、呼び出し元が無いメソッドを自動的に起点にする。
@@ -570,6 +596,37 @@ public class CallHierarchyExporter {
                 this.outputEncoding = Charset.forName(encRaw);
                 this.outputBom = false;
             }
+        }
+
+        /**
+         * 解析対象ソースのJavaバージョンをJDTのコンパイラ設定に反映する。
+         *
+         * 未指定なら、クラスパスに入っているJDTが対応する最大値を使う。
+         * JDTの既定（古い版では source=1.3 相当）のままだと、generics・
+         * diamond演算子・ラムダ式・enum等が軒並み構文/型解決に失敗し、
+         * 呼び出しが大量に抜け落ちる。最大値にしておけば
+         * 「新しい言語機能を許可する」だけで、対象コードが実際にそれを
+         * 使うかどうかには影響しない。
+         *
+         * 明示指定が要るのは、新しい版では意味が変わる書き方
+         * （{@code var}・{@code record}・{@code sealed} 等が識別子として
+         * 使われている古いコード）を解析するとき。
+         *
+         * 設定した値は必ず読み戻す。JDTは対応範囲外の値を例外にせず黙って
+         * 丸める（新しい版は 1.7 以下の指定を 1.8 に引き上げる）ため、
+         * 指定した値がそのまま効いたとは限らない。
+         */
+        private static Map<String, String> buildCompilerOptions(String requested) {
+            String latest = JavaCore.latestSupportedJavaVersion();
+            if (!requested.isEmpty() && !JavaCore.isSupportedJavaVersion(requested)) {
+                throw new IllegalArgumentException(
+                        "source.level=" + requested + " は、このJDTでは対応していません。"
+                        + "指定できる値: " + JavaCore.getAllVersions()
+                        + "（未指定なら最大の " + latest + " で動作します）");
+            }
+            Map<String, String> options = JavaCore.getOptions();
+            JavaCore.setComplianceOptions(requested.isEmpty() ? latest : requested, options);
+            return options;
         }
 
         /** 相対パスは設定ファイルのあるディレクトリを起点に解決する */
@@ -1079,6 +1136,18 @@ public class CallHierarchyExporter {
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
         static final String VERSION = "jche-cache-v4";
 
+        /**
+         * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
+         *
+         * 同じソースでも、どの言語バージョンとして解析したかで結果が変わる
+         * （古いレベルだと新しい構文が解析できず、呼び出しが抜ける）。
+         * 更新時刻とサイズだけを見ていると、設定を変えたのに古い結果を
+         * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
+         */
+        static String headerFor(String sourceLevel) {
+            return VERSION + SEP + "source=" + sourceLevel;
+        }
+
         /** タブ・改行が値に混ざると形式が壊れるため除去する */
         static String clean(String s) {
             if (s == null) {
@@ -1143,7 +1212,7 @@ public class CallHierarchyExporter {
 
             BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
             try {
-                cacheOut.write(CacheFormat.VERSION);
+                cacheOut.write(CacheFormat.headerFor(config.sourceLevel));
                 cacheOut.newLine();
 
                 // --- パス1: 旧キャッシュのストリーミングコピー ---
@@ -1199,8 +1268,12 @@ public class CallHierarchyExporter {
             BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
             try {
                 String first = in.readLine();
-                if (first == null || !CacheFormat.VERSION.equals(first.trim())) {
-                    log("[cache] 形式が異なるため既存キャッシュを破棄します");
+                if (first == null
+                        || !CacheFormat.headerFor(config.sourceLevel).equals(first.trim())) {
+                    // 形式が変わった場合のほか、source.level が変わった場合もここで破棄する。
+                    // 言語バージョンが違えば同じソースでも解析結果が変わるため、
+                    // 更新時刻とサイズが一致していても再利用してはいけない
+                    log("[cache] 形式またはソースレベルが異なるため既存キャッシュを破棄します");
                     return unresolved;
                 }
                 boolean keeping = false;
@@ -1527,14 +1600,10 @@ public class CallHierarchyExporter {
             this.collectors = Plugins.load(config.hintCollectorClasses, CallSiteHintCollector.class);
             this.layout = layout;
             this.encoding = Charset.forName(config.sourceEncoding);
-            this.compilerOptions = JavaCore.getOptions();
-            // JavaCore.getOptions() の既定はJDTの古いデフォルト（source=1.3等）のままで、
-            // これだとgenerics・diamond演算子・ラムダ式・enum等が軒並み構文/型解決に
-            // 失敗し、unresolved-calls.csvに大量の「型解決に失敗」が出てしまう。
-            // 解析対象のJavaバージョンを事前には知り得ないため、読み込んでいる
-            // JDT Core自身が対応する最新バージョンに合わせる（新しい言語機能を
-            // 許可するだけで、対象コードが実際にそれを使うかは関係ない）。
-            JavaCore.setComplianceOptions(JavaCore.latestSupportedJavaVersion(), this.compilerOptions);
+            // 準拠レベル（source.level）は Config が解決済み。
+            // 既定のまま使うと generics・diamond演算子・ラムダ式・enum等が
+            // 軒並み構文/型解決に失敗するので、必ずこちらを使うこと
+            this.compilerOptions = config.compilerOptions;
             this.classpath = layout.classpathArray();
             this.sourcepath = layout.sourcePathArray();
             this.encodings = new String[sourcepath.length];
