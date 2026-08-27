@@ -4731,11 +4731,29 @@ public class CallHierarchyExporter {
 
         /**
          * 参照を自分のメソッドIDに解決する。
-         * 完全一致で見つからない場合、継承したメソッドの呼び出し
-         * （呼び出し側は子クラスを owner として記録する）を考慮して親を探す。
+         *
+         * シグネチャは classファイルのディスクリプタから作るため、引数の内部クラスが
+         * Outer$Inner の形で入る。JDT側は Outer.Inner なので、そのままでは
+         * 「内部クラスを引数に取るオーバーロード」だけが照合できず、未照合に落ちる。
+         * まず生の形で引き、外れたら $ を . に直した形でもう一度引く
+         * （クラス名に $ を含む型を誤って読み替えないよう、生の形を先に試す）。
          */
         private static int resolveRef(CallGraph g, Map<String, List<Integer>> bySignature,
                                        String owner, String sig) {
+            int id = lookupRef(g, bySignature, owner, sig);
+            if (id >= 0) {
+                return id;
+            }
+            String normSig = normalize(sig);
+            return normSig.equals(sig) ? -1 : lookupRef(g, bySignature, owner, normSig);
+        }
+
+        /**
+         * 完全一致で見つからない場合、継承したメソッドの呼び出し
+         * （呼び出し側は子クラスを owner として記録する）を考慮して親を探す。
+         */
+        private static int lookupRef(CallGraph g, Map<String, List<Integer>> bySignature,
+                                      String owner, String sig) {
             int id = g.methods.idOf(owner + "#" + sig);
             if (id >= 0 && g.methods.declFile(id) != null) {
                 return id;
