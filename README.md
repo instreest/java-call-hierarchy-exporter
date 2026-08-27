@@ -209,6 +209,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),Sample.init,jp.co.example.Sample.i
 | `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
 | `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
+| `解決:DATAFLOW_NEW` | `new` された具象型から特定した（捕捉された変数を含む） |
 | `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
@@ -341,7 +342,7 @@ NightJob,OrderService.OrderService,jp.co.example.service.OrderService.OrderServi
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が1つに定まる |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
 | 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等 |
-| 4 | `DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から特定（後述） |
+| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（後述） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `CHA` | 候補が複数のまま（低確度） |
@@ -385,6 +386,24 @@ create("jp.co.example.dao.UserDaoImpl").select();                  // -> UserDao
 create(Names.USER_DAO).select();                                   // 定数フィールドでも同じ
 ```
 
+**匿名クラスやローカルクラスが捕捉した変数**も追えます。
+捕捉できる変数は `final` か実質的final（effectively final）だと言語仕様が
+保証しているので、捕捉した後で中身が別のインスタンスに差し替わることはなく、
+囲みメソッドで分かった型がそのまま通用するためです。
+
+```java
+void run() {
+    Dao dao = new UserDaoImpl();
+    exec(new Task() {
+        public void run() { dao.select(); }   // -> UserDaoImpl.select と判定
+    });
+}
+```
+
+ただし持ち込めるのは、**どのメソッドから見ても同じものを指す出所**だけです。
+「囲みメソッドの引数」や「囲むオブジェクトのコンストラクタで注入されたフィールド」は
+匿名クラスの中では別のものを指してしまうため、そこは絞りません。
+
 引数とフィールドの追跡は**起点からの経路ごと**に行います。同じメソッドでも、
 別の起点から別の具象クラスを渡されていれば、そちらはそちらで判定されます。
 逆に、呼び出し元の候補を遡って集めるようなことはしません
@@ -397,6 +416,8 @@ create(Names.USER_DAO).select();                                   // 定数フ�
 - ファクトリが複数の型を返しうる／追跡できない `return` を1つでも含む
 - クラス名が実行時にしか決まらない（`Class.forName(System.getProperty(...))` など）
 - ループや分岐でローカル変数が別の型に再代入される
+- 匿名クラス・ローカルクラスから、囲みメソッドの引数や、囲むオブジェクトの
+  コンストラクタで注入されたフィールドを参照している
 - フィールドが setter やDI設定で入る、代入しないコンストラクタがある、
   `private` でも `final` でもない、親クラスで宣言されている
 - 起点メソッドの引数、起点オブジェクトの生成箇所（経路の中に渡し元がない）

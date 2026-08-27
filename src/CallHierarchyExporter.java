@@ -250,9 +250,10 @@ public class CallHierarchyExporter {
         try {
             StreamingTreeWalker walker = new StreamingTreeWalker(graph, config, writer);
             rows = walker.walkAll(entries);
-            if (config.dataflowEnabled && (walker.factoryHits() > 0
-                    || walker.paramHits() > 0 || walker.fieldHits() > 0)) {
+            if (config.dataflowEnabled && (walker.factoryHits() > 0 || walker.paramHits() > 0
+                    || walker.fieldHits() > 0 || walker.newHits() > 0)) {
                 log("データフローで具象クラスを特定: "
+                        + "new された型から " + walker.newHits() + " 件 / "
                         + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
                         + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
                         + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
@@ -1847,9 +1848,7 @@ public class CallHierarchyExporter {
             /** ローカル変数・引数はスコープ表から、フィールドは宣言型から出所を決める */
             private String variableOriginOf(IVariableBinding vb) {
                 if (!vb.isField()) {
-                    Map<String, String> scope = originScopes.peek();
-                    String o = (scope == null) ? null : scope.get(vb.getKey());
-                    return Origin.isUnknown(o) ? null : o;
+                    return localOriginOf(vb);
                 }
                 // static final String などのコンパイル時定数は、その文字列そのもの。
                 // Factory.create(Names.USER_DAO) のような書き方を追えるようにする
@@ -1865,6 +1864,66 @@ public class CallHierarchyExporter {
                         ? owner.getErasure() : owner);
                 return (ownerFqn == null) ? null
                         : Origin.of(Origin.FIELD, ownerFqn + "#" + vb.getName());
+            }
+
+            /**
+             * ローカル変数・引数の出所。
+             *
+             * まず今のメソッドのスコープを見る。無ければ外側のメソッドのスコープへ辿る。
+             * 匿名クラス・ローカルクラスのメソッドは MethodDeclaration なので独自の
+             * スコープを持つが、その中から囲みメソッドの変数を参照できる（捕捉）。
+             *
+             *     void run() {
+             *         Dao dao = new UserDaoImpl();
+             *         exec(new Task() {
+             *             public void run() { dao.select(); }   // ← ここ
+             *         });
+             *     }
+             *
+             * 外側の値を持ち込めるのは、**捕捉できる変数が final か実質的final
+             * （effectively final）だと言語仕様が保証しているから**。捕捉した後で
+             * 中身が別のインスタンスに差し替わることはないので、囲みメソッドで
+             * 分かった出所がそのまま通用する。実質的finalでない変数はそもそも
+             * 捕捉できずコンパイルが通らないが、判断の根拠を実装にも残すため明示的に確認する。
+             */
+            private String localOriginOf(IVariableBinding vb) {
+                String key = vb.getKey();
+                boolean enclosing = false;
+                for (Map<String, String> scope : originScopes) {
+                    String origin = scope.get(key);
+                    if (origin == null) {
+                        enclosing = true;   // 今のメソッドには無い。1つ外へ
+                        continue;
+                    }
+                    if (Origin.isUnknown(origin)) {
+                        return null;
+                    }
+                    if (!enclosing) {
+                        return origin;
+                    }
+                    return isEffectivelyFinal(vb) ? frameIndependent(origin) : null;
+                }
+                return null;
+            }
+
+            /** final または実質的final（＝もう中身が変わらないと言い切れる） */
+            private boolean isEffectivelyFinal(IVariableBinding vb) {
+                return vb.isEffectivelyFinal() || Modifier.isFinal(vb.getModifiers());
+            }
+
+            /**
+             * 別のメソッドの中へ持ち込んでも意味が変わらない出所だけを残す。
+             *
+             * T（newされた具象型）とM（メソッドの戻り値）は、どこから見ても同じものを指す。
+             * 一方 A（引数）とF（フィールド）は「今実行しているメソッドの引数」
+             * 「今のオブジェクトのフィールド」という相対的な意味なので、匿名クラスの中へ
+             * 持ち込むと別物を指してしまう（匿名クラスの run() には引数が無い、など）。
+             * 捕捉された引数を追うには匿名クラスの生成箇所まで遡る必要があり、
+             * それは現在の経路の持ち方では表現できないため、ここで落とす。
+             */
+            private String frameIndependent(String origin) {
+                char kind = Origin.kindOf(origin);
+                return (kind == Origin.NEW || kind == Origin.RETURN) ? origin : null;
             }
 
             /**
@@ -3788,25 +3847,30 @@ public class CallHierarchyExporter {
                 }
             }
 
-
             // --- 段5: CHA ---
             return base;
         }
 
         /**
-         * レシーバの出所から具象クラスを決め、その実装のメソッドIDを返す。無ければ -1。
+         * どの材料で具象クラスを決めたかを表すラベル。
          *
-         * @param callerParamTypes 経路から確定した呼び出し元の引数の具象型（無ければ null）
+         * 何を根拠に絞ったかで、利用者が結果をどれだけ信用してよいかが変わるため、
+         * 出所の種別ごとに分ける（注記に「解決:ラベル」として出る）。
          */
-        /** どの材料で具象クラスを決めたかを表すラベル */
         static String dataflowLabel(String recvOrigin) {
             switch (Origin.kindOf(recvOrigin)) {
                 case Origin.FIELD:  return "DATAFLOW_FIELD";
                 case Origin.PARAM:  return "DATAFLOW_PARAM";
+                case Origin.NEW:    return "DATAFLOW_NEW";
                 default:            return "DATAFLOW_FACTORY";
             }
         }
 
+        /**
+         * レシーバの出所から具象クラスを決め、その実装のメソッドIDを返す。無ければ -1。
+         *
+         * @param ctx 経路から確定した引数・コンストラクタ実引数の具象型（無ければ null）
+         */
         int dataflowTarget(String recvOrigin, int calleeId, DataflowContext ctx) {
             if (!dataflowEnabled || recvOrigin == null) {
                 return -1;
@@ -4786,6 +4850,7 @@ public class CallHierarchyExporter {
         private long paramHits;
         private long factoryHits;
         private long fieldHits;
+        private long newHits;
 
         private int rootId;
         private long totalRows;
@@ -4815,6 +4880,10 @@ public class CallHierarchyExporter {
 
         long fieldHits() {
             return fieldHits;
+        }
+
+        long newHits() {
+            return newHits;
         }
 
         long walkAll(int[] entries) throws IOException {
@@ -5000,6 +5069,8 @@ public class CallHierarchyExporter {
                 fieldHits++;
             } else if ("DATAFLOW_PARAM".equals(label)) {
                 paramHits++;
+            } else if ("DATAFLOW_NEW".equals(label)) {
+                newHits++;
             } else {
                 factoryHits++;
             }
