@@ -12,18 +12,21 @@ Documentation is in Japanese and is part of the deliverable, not an afterthought
 - `config/config.properties` — **the single source of truth for settings.** Every key is documented inline; do not duplicate the list elsewhere
 - `docs/DESIGN.md` — internal design, written so another AI session can reimplement the tool. Chapter 11 is a pitfalls table, chapter 12 is the acceptance criteria
 - `docs/QA.md` — decisions made while implementing the dataflow analysis, with the reasoning
+- `docs/QA-build.md` — same, for the build/run environment (wrapper, toolchain, where downloads land)
 
 **Read `docs/DESIGN.md` before changing analysis behavior.** Most of what looks like an easy improvement is something chapter 11 already records as a trap.
 
 ## Commands
 
-Gradle is the convenient path; `javac` + `java` is the supported path for users on a locked-down Windows/Pleiades box (see README).
+`./gradlew` is the one-command path: it provisions Gradle, the dependency jars and a JDK 17
+toolchain into `.gradle-home/` inside the project, leaving the user's `~/.gradle` untouched.
+`javac` + `java` remains the supported path for users on a locked-down Windows/Pleiades box (see README).
 
 ```bash
-gradle copyLibs                                   # resolve JDT and its deps into ./lib
-gradle run --args="config/config.properties"      # analyze; --args is required
-gradle build                                      # compile + jar
-gradle -PjdtVersion=3.33.0 copyLibs               # older JDT (JRE 11); default 3.46.0 needs JRE 17
+./gradlew run --args="config/config.properties"    # analyze; --args is required. The one Quick start command
+./gradlew copyLibs                                 # resolve JDT and its deps into ./lib
+./gradlew build                                    # compile + jar
+./gradlew -PjdtVersion=3.33.0 copyLibs             # older JDT; lower the toolchain in build.gradle to match
 
 javac -encoding UTF-8 -Xlint:all -cp "lib/*" -d bin src/CallHierarchyExporter.java
 java -cp "bin:lib/*" CallHierarchyExporter config/config.properties
