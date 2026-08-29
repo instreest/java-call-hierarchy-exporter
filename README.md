@@ -66,22 +66,26 @@ Gradle（`gradlew`）を**起動する**ためにJavaが1つ必要です。
 Pleiades/Eclipseが入っていれば同梱のJavaで足ります。
 
 **ツール本体が使うJDKは利用者が用意する必要はありません。**
-`build.gradle` の `toolchain` が JDK 17 を要求し、手元に無ければGradleが取得します
-（取得先は `.gradle-home/jdks/`）。手元に既にJDK 17があればそれが使われ、取得は起きません。
+`build.gradle` の `toolchain` が **JDK 25** を要求し、手元に無ければGradleが取得します
+（取得先は `.gradle-home/jdks/`）。手元に既にJDK 25があればそれが使われ、取得は起きません。
 
 バージョンを固定しているのは、**手元のJDKが何であっても同じ結果になるようにするため**です。
 解析結果はJDTを動かすJDKに左右されるので、環境差が出ると原因の切り分けが難しくなります。
 
-社内プロキシ等で取得できない場合は、JDK 17 を自分で入れてから実行してください
-（`gradle.properties` の `org.gradle.java.installations.auto-download` を `false` にすると
-取得を試みなくなります）。JDT Coreの版と必要なJDKの対応は次のとおりです。
+JDTが要求する最低版（既定の 3.46.0 なら 17）より高い 25 を指定しているのは、
+**JDTが「自分が動いているJVMのブートクラスパス」を解析対象のクラスパスに含める**ためです。
+ここが新しいほど、新しいJDKのAPIを参照している解析対象コードを型解決できます。
 
-| JDT Core | 必要なJDK | 解析できるソースの上限 |
+社内プロキシ等で取得できない場合は、JDK 25 を自分で入れてから実行してください
+（`gradle.properties` の `org.gradle.java.installations.auto-download` を `false` にすると
+取得を試みなくなります）。JDT Coreの版と、それ自体が動作に要求するJDKは次のとおりです。
+
+| JDT Core | 動作に必要なJDK | 解析できるソースの上限 |
 |---|---|---|
 | 3.46.0（既定） | 17以上 | Java 26 |
 | 3.33.0 | 11以上 | Java 19 |
 
-古い版を使う場合は `build.gradle` の `toolchain` も合わせて下げてください。
+いずれも `toolchain` の 25 で動くので、JDTの版を下げるときも `toolchain` はそのままで構いません。
 
 ```bat
 gradlew -PjdtVersion=3.33.0 run --args="config/config.properties"

@@ -18,15 +18,17 @@ Documentation is in Japanese and is part of the deliverable, not an afterthought
 
 ## Commands
 
-`./gradlew` is the one-command path: it provisions Gradle, the dependency jars and a JDK 17
+`./gradlew` is the one-command path: it provisions Gradle, the dependency jars and a JDK 25
 toolchain into `.gradle-home/` inside the project, leaving the user's `~/.gradle` untouched.
+The toolchain governs both compile *and* run (`javaLauncher`), because JDT puts the running
+JVM's bootclasspath on the analysis classpath — the JDK it runs on changes what resolves.
 `javac` + `java` remains the supported path for users on a locked-down Windows/Pleiades box (see README).
 
 ```bash
 ./gradlew run --args="config/config.properties"    # analyze; --args is required. The one Quick start command
 ./gradlew copyLibs                                 # resolve JDT and its deps into ./lib
 ./gradlew build                                    # compile + jar
-./gradlew -PjdtVersion=3.33.0 copyLibs             # older JDT; lower the toolchain in build.gradle to match
+./gradlew -PjdtVersion=3.33.0 copyLibs             # older JDT (still runs on the 25 toolchain)
 
 javac -encoding UTF-8 -Xlint:all -cp "lib/*" -d bin src/CallHierarchyExporter.java
 java -cp "bin:lib/*" CallHierarchyExporter config/config.properties
