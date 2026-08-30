@@ -27,7 +27,9 @@ import org.eclipse.jdt.core.dom.CastExpression;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
+import org.eclipse.jdt.core.dom.CreationReference;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
@@ -47,7 +49,9 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -1135,7 +1139,7 @@ public class CallHierarchyExporter {
     static final class CacheFormat {
         static final String SEP = "\t";
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v4";
+        static final String VERSION = "jche-cache-v5";
 
         /**
          * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
@@ -2126,8 +2130,7 @@ public class CallHierarchyExporter {
              * 後者にしておくと、変数を介さない呼び出し
              * （DaoFactory.get("X").execute(...) など）にも拡張が証拠を結び付けられる。
              */
-            private String recvKeyOf(MethodInvocation n) {
-                Expression ex = n.getExpression();
+            private String recvKeyOf(Expression ex) {
                 if (ex == null) {
                     return "";
                 }
@@ -2717,7 +2720,8 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n),
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b),
+                        recvKeyOf(n.getExpression()),
                         recvKindOf(n.getExpression()), externalGuessRef(n),
                         originOf(n.getExpression()), argOriginsOf(n.arguments()));
 
@@ -2774,6 +2778,59 @@ public class CallHierarchyExporter {
             public boolean visit(ConstructorInvocation n) {
                 record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null,
                         null, argOriginsOf(n.arguments()));
+                return true;
+            }
+
+            /**
+             * メソッド参照 obj::m。
+             *
+             * 参照した時点ではまだ呼ばれず、実際に動くのは関数型インターフェース
+             * 経由だが、そこまで辿るにはラムダ／メソッド参照を合成メソッドとして
+             * 持つ必要がある（docs/QA-issue29.md 参照）。
+             * ここで記録しないと「:: でしか参照されていないメソッド」が
+             * 呼ばれていないように見えてしまう。取りこぼす方が害が大きいので、
+             * 参照を「囲みメソッドからの呼び出し」として記録する。
+             *
+             * レシーバの扱いは通常の呼び出しと同じ。obj::m の obj が
+             * コンストラクタ注入されたフィールドなら、そのままデータフローで絞れる。
+             */
+            @Override
+            public boolean visit(ExpressionMethodReference n) {
+                Expression recv = n.getExpression();
+                IMethodBinding b = n.resolveMethodBinding();
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(recv),
+                        recvKindOf(recv), null, originOf(recv), null);
+                return true;
+            }
+
+            /** メソッド参照 List&lt;String&gt;::size のように、レシーバが型そのものの形 */
+            @Override
+            public boolean visit(TypeMethodReference n) {
+                IMethodBinding b = n.resolveMethodBinding();
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b), "",
+                        RecvKind.TYPE, null, null, null);
+                return true;
+            }
+
+            /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
+            @Override
+            public boolean visit(SuperMethodReference n) {
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
+                        RecvKind.THIS, null, null, null);
+                return true;
+            }
+
+            /** コンストラクタ参照 Type::new */
+            @Override
+            public boolean visit(CreationReference n) {
+                IMethodBinding b = n.resolveMethodBinding();
+                if (b == null && n.getType().resolveBinding() != null
+                        && n.getType().resolveBinding().isArray()) {
+                    // int[]::new は配列生成であって呼び出すメソッドが無い。
+                    // 未解決として記録すると、実体の無い失敗が件数に混ざる
+                    return true;
+                }
+                record(b, n, "<init>", 'C', "", RecvKind.TYPE, null, null, null);
                 return true;
             }
 
