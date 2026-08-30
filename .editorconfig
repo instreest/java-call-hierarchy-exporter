@@ -1,0 +1,23 @@
+# エディタ・IDE共通の書式設定（https://editorconfig.org）
+# .gitattributes が「変換しない」を保証し、こちらは「新しく書くときの形」を揃える。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+# CLAUDE.md「Conventions」: このファイルはCRLFを保つ
+[src/CallHierarchyExporter.java]
+end_of_line = crlf
+
+# cmd.exe 用バッチはCRLF。加えて純ASCII縛りがある（docs/QA-build.md Q11）
+[*.cmd]
+end_of_line = crlf
+
+[*.md]
+# Markdownの行末スペース2つは改行の意味を持つため消さない
+trim_trailing_whitespace = false
