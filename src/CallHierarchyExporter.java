@@ -977,6 +977,8 @@ public class CallHierarchyExporter {
      *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
      *   R  pkg  typeFqn  method  paramSig  origin   （そのメソッドが返しうる値の出所）
      *   J  typeFqn  fieldName  origin                （コンストラクタ注入されたフィールド）
+     *   M  ifaceTypeFqn#method(paramSig)          （ラムダ／メソッド参照が実装している
+     *                                              関数型インターフェースのメソッド）
      *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
      *   U  行  呼び出し元メソッドキー  式  理由
      *
@@ -1351,6 +1353,10 @@ public class CallHierarchyExporter {
                         j.typeFqn, j.fieldName, j.origin));
                 w.newLine();
             }
+            for (String m : fa.functionalImpls) {
+                w.write(String.join(CacheFormat.SEP, "M", m));
+                w.newLine();
+            }
             for (HintRec h : fa.hints) {
                 w.write(String.join(CacheFormat.SEP, "X", h.callerKey, h.scopeKey, h.kind, h.value));
                 w.newLine();
@@ -1574,6 +1580,7 @@ public class CallHierarchyExporter {
         final List<CallEdgeRec> edges = new ArrayList<>();
         final List<ReturnRec> returns = new ArrayList<>();
         final List<FieldInjectionRec> fieldInjections = new ArrayList<>();
+        final List<String> functionalImpls = new ArrayList<>();
         final List<UnresolvedCall> unresolved = new ArrayList<>();
 
         FileAnalysis(String relativePath, long lastModified, long size) {
@@ -2662,7 +2669,42 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(LambdaExpression node) {
                 lambdaDepth++;
+                recordFunctionalImpl(node.resolveTypeBinding());
                 return true;
+            }
+
+            /**
+             * ラムダ／メソッド参照が「その関数型インターフェースの実装でもある」
+             * ことを記録する（M行）。
+             *
+             * これが無いと、インターフェース型の変数に対する呼び出しが
+             * 「実装はソース上に1つ（匿名クラス等）だけ」と見えてしまい、
+             * 実際にはラムダが入っている経路まで SINGLE_IMPL で1つに決め打ちされる。
+             * 絞れないことより誤って絞ることの方が害が大きいので、
+             * 「展開できない実装が他にもある」ことだけは必ず残す。
+             *
+             * ラムダ本体の呼び出しは、引き続き囲みメソッドに計上する
+             * （合成メソッドに付け替えない理由は docs/QA-issue29.md 参照）。
+             */
+            private void recordFunctionalImpl(ITypeBinding fnType) {
+                if (fnType == null) {
+                    return;
+                }
+                IMethodBinding sam = fnType.getFunctionalInterfaceMethod();
+                if (sam == null) {
+                    return;
+                }
+                String[] r = toRef(sam);
+                if (r == null) {
+                    return;
+                }
+                String key = r[1] + "#" + r[2] + "(" + r[3] + ")";
+                if (!out.functionalImpls.contains(key)) {
+                    // 同じファイル内で同じインターフェースを何度実装しても
+                    // 「展開できない実装がある」という事実は1件で足りる。
+                    // 件数を数えるとファイル単位のキャッシュ再利用で値がぶれる
+                    out.functionalImpls.add(key);
+                }
             }
 
             @Override
@@ -2798,6 +2840,7 @@ public class CallHierarchyExporter {
             public boolean visit(ExpressionMethodReference n) {
                 Expression recv = n.getExpression();
                 IMethodBinding b = n.resolveMethodBinding();
+                recordFunctionalImpl(n.resolveTypeBinding());
                 record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(recv),
                         recvKindOf(recv), null, originOf(recv), null);
                 return true;
@@ -2807,6 +2850,7 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(TypeMethodReference n) {
                 IMethodBinding b = n.resolveMethodBinding();
+                recordFunctionalImpl(n.resolveTypeBinding());
                 record(b, n, n.getName().getIdentifier(), bindKindOf(b), "",
                         RecvKind.TYPE, null, null, null);
                 return true;
@@ -2815,6 +2859,7 @@ public class CallHierarchyExporter {
             /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
             @Override
             public boolean visit(SuperMethodReference n) {
+                recordFunctionalImpl(n.resolveTypeBinding());
                 record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
                         RecvKind.THIS, null, null, null);
                 return true;
@@ -2824,6 +2869,7 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(CreationReference n) {
                 IMethodBinding b = n.resolveMethodBinding();
+                recordFunctionalImpl(n.resolveTypeBinding());
                 if (b == null && n.getType().resolveBinding() != null
                         && n.getType().resolveBinding().isArray()) {
                     // int[]::new は配列生成であって呼び出すメソッドが無い。
@@ -3331,6 +3377,13 @@ public class CallHierarchyExporter {
         /** "typeFqn#fieldName" -> 出所。コンストラクタ注入されたフィールドだけが入る */
         private final HashMap<String, String> fieldOrigins = new HashMap<>();
 
+        /**
+         * ラムダ／メソッド参照が実装している関数型インターフェースのメソッドキー。
+         * ここに載っているメソッドは「ソース上に見えている実装のほかに、
+         * 展開できない実装がある」ことを意味する。
+         */
+        private final Set<String> functionalImpls = new HashSet<>();
+
         /** 型階層: 親型 -> 直接の子型 */
         private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
         /** 型階層: 子型 -> 直接の親型。具象型からメソッド実装を探すのに使う */
@@ -3471,6 +3524,11 @@ public class CallHierarchyExporter {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         if (f.length >= 4) {
                             g.fieldOrigins.put(f[1] + "#" + f[2], f[3]);
+                        }
+                    } else if (t == 'M') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 2) {
+                            g.functionalImpls.add(f[1]);
                         }
                     } else if (t == 'R') {
                         String[] f = line.split(CacheFormat.SEP, -1);
@@ -4090,6 +4148,18 @@ public class CallHierarchyExporter {
             return null;
         }
 
+        /**
+         * その呼び出し先が「ラムダ／メソッド参照でも実装されているメソッド」か。
+         *
+         * true のとき、ソース上に見えている実装のほかに展開できない実装がある。
+         * 候補が1件に見えても、それが実際に動く唯一の実装とは限らない。
+         */
+        boolean hasFunctionalImpl(int calleeId) {
+            return !functionalImpls.isEmpty()
+                    && functionalImpls.contains(methods.typeFqn(calleeId) + "#"
+                            + methods.signature(calleeId));
+        }
+
         /** 静的束縛と判定した理由。resolutions.csv で監査できるように残す */
         static String staticBoundReason(char bindKind) {
             switch (bindKind) {
@@ -4520,11 +4590,13 @@ public class CallHierarchyExporter {
                 CallGraph.Resolution res = g.resolveEdge(e, (char) g.bindKinds[e]);
                 boolean multi = res.targets.length > 1;
                 boolean noImpl = "NO_IMPL".equals(res.label);
-                if (!multi && !noImpl) {
+                boolean fnImpl = g.hasFunctionalImpl(g.calleeIds[e]);
+                if (!multi && !noImpl && !fnImpl) {
                     continue;
                 }
                 u.count++;
                 String d = noImpl ? "実装なし（宣言のまま）"
+                        : fnImpl && !multi ? "ラムダ/メソッド参照の実装あり"
                         : RecvKind.describe((char) g.recvKinds[e]);
                 // 同じ理由は1回だけ並べる。件数はcount側で分かる
                 if (sb.indexOf(d) < 0) {
@@ -5341,6 +5413,15 @@ public class CallHierarchyExporter {
                 // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる
                 sb.append("CHA候補").append(res.targets.length).append("件（未展開）: ")
                         .append(RecvKind.describe(recvKind));
+            } else if (graph.hasFunctionalImpl(declaredCallee)) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                // ソース上の実装が1件しか無くても、ラムダ／メソッド参照が
+                // 同じインターフェースを実装している。それを数に入れずに
+                // 「解決:SINGLE_IMPL」と書くと、実際とは違う1件に決め打ちしたまま
+                // 確定したように見えてしまう
+                sb.append("ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）");
             } else if ("NO_IMPL".equals(res.label)) {
                 if (sb.length() > 0) {
                     sb.append(" / ");
