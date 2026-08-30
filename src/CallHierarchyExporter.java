@@ -3017,6 +3017,9 @@ public class CallHierarchyExporter {
          */
         private final ArrayList<Boolean> hasBody = new ArrayList<>();
 
+        /** 引数型略名が衝突しているラベル。初回の displayLabel() で一度だけ作る */
+        private Set<String> ambiguous;
+
         int intern(String pkg, String typeFqn, String method, String params) {
             String key = typeFqn + "#" + method + "(" + params + ")";
             Integer id = idByKey.get(key);
@@ -3053,6 +3056,18 @@ public class CallHierarchyExporter {
         String signature(int id) {
             String k = keys.get(id);
             return k.substring(k.indexOf('#') + 1);
+        }
+
+        /**
+         * キーのうち括弧内（完全修飾の引数型をカンマ区切りにしたもの）。
+         *
+         * 開き括弧は "#" より後ろから探す。型名に括弧が混ざる可能性があるのは
+         * typeNameOf() が最終手段でJDT内部キーを使った場合だけだが、そこで
+         * 引数リストの切り出しがずれると別メソッドと同一視されてしまう。
+         */
+        private String rawParams(int id) {
+            String k = keys.get(id);
+            return k.substring(k.indexOf('(', k.indexOf('#')) + 1, k.lastIndexOf(')'));
         }
 
         int size() {
@@ -3111,11 +3126,101 @@ public class CallHierarchyExporter {
             return simpleTypeName(id) + "." + displayMethodName(id);
         }
 
-        /** 完全修飾クラス名 + 表示用メソッド名 + 引数リスト（オーバーロードを識別できる形） */
+        /**
+         * 単純クラス名 + 表示用メソッド名 + 引数型略名。オーバーロードを識別できる短い表記。
+         * 略名が衝突している場合は callee 列と同じ理由で完全修飾の引数に戻す。
+         */
+        String shortLabelWithParams(int id) {
+            String params = ambiguousLabels().contains(plainDisplayLabel(id))
+                    ? rawParams(id) : shortParams(id);
+            return simpleTypeName(id) + "." + displayMethodName(id) + "(" + params + ")";
+        }
+
+        /** 完全修飾クラス名 + 表示用メソッド名 + 完全修飾の引数リスト */
         String fullSignature(int id) {
-            String k = keys.get(id);
-            String params = k.substring(k.indexOf('(') + 1, k.lastIndexOf(')'));
-            return typeFqn(id) + "." + displayMethodName(id) + "(" + params + ")";
+            return typeFqn(id) + "." + displayMethodName(id) + "(" + rawParams(id) + ")";
+        }
+
+        /**
+         * call-hierarchy.csv の callee 列の表記。
+         * 完全修飾クラス名 + 表示用メソッド名 + 引数型略名。
+         *
+         * 引数型を略名にするのは読みやすさのためだが、略した結果
+         * java.util.List と other.List のように別物が同じ表記になることがある。
+         * 「識別できる表記にする」のが目的の列でそれが起きては本末転倒なので、
+         * 衝突した組だけ完全修飾の引数リストに戻す（下の ambiguousLabels()）。
+         */
+        String displayLabel(int id) {
+            String label = plainDisplayLabel(id);
+            return ambiguousLabels().contains(label) ? fullSignature(id) : label;
+        }
+
+        private String plainDisplayLabel(int id) {
+            return typeFqn(id) + "." + displayMethodName(id) + "(" + shortParams(id) + ")";
+        }
+
+        /**
+         * 引数型略名が衝突しているラベルの集合。
+         *
+         * 一度だけ全メソッドを走査して作る。走査用のSetは作業後に捨て、
+         * 残すのは衝突したラベルだけ（通常は0件）なので、常時のメモリは増えない。
+         * キーは重複しないので、同じラベルが2回出た時点で必ず引数が違う。
+         */
+        private Set<String> ambiguousLabels() {
+            if (ambiguous != null) {
+                return ambiguous;
+            }
+            Set<String> seen = new HashSet<>(keys.size() * 2);
+            Set<String> dup = new LinkedHashSet<>();
+            for (int id = 0; id < keys.size(); id++) {
+                String label = plainDisplayLabel(id);
+                if (!seen.add(label)) {
+                    dup.add(label);
+                }
+            }
+            ambiguous = dup;
+            return ambiguous;
+        }
+
+        /** 完全修飾の引数リストを、型ごとに略名へ置き換えたもの */
+        private String shortParams(int id) {
+            String raw = rawParams(id);
+            if (raw.isEmpty()) {
+                return "";
+            }
+            // 引数型は toRef() で消去済み（getErasure）なので、ジェネリクスの
+            // 山括弧が入ることはない。よってカンマで素直に分割できる
+            StringBuilder sb = new StringBuilder(raw.length());
+            int start = 0;
+            while (start <= raw.length()) {
+                int comma = raw.indexOf(',', start);
+                int end = (comma < 0) ? raw.length() : comma;
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(simpleParamName(raw.substring(start, end)));
+                if (comma < 0) {
+                    break;
+                }
+                start = comma + 1;
+            }
+            return sb.toString();
+        }
+
+        /**
+         * 引数型1つぶんの略名。java.lang.String → String、java.lang.String[] → String[]。
+         *
+         * 内部クラス（fn.Outer.Inner）は末尾だけを取って Inner になる。名前だけでは
+         * どこまでがパッケージでどこからが外側クラスか決められないため（大文字小文字の
+         * 慣習に頼ると、その慣習に従っていないコードで誤る）。
+         * これで別物が同じ表記になった場合は displayLabel() が完全修飾に戻す。
+         */
+        private static String simpleParamName(String fq) {
+            int arr = fq.indexOf('[');
+            String base = (arr < 0) ? fq : fq.substring(0, arr);
+            String suffix = (arr < 0) ? "" : fq.substring(arr);
+            int dot = base.lastIndexOf('.');
+            return ((dot >= 0) ? base.substring(dot + 1) : base) + suffix;
         }
 
         String declFile(int id) {
@@ -4261,6 +4366,10 @@ public class CallHierarchyExporter {
          * コンストラクタ（<init>）は出力しない。call-hierarchy.csv 側でも
          * 行にしていないため、両方の一覧で扱いを揃える。
          *
+         * method 列は「単純クラス名.メソッド名(引数型略名)」。完全修飾クラス名は
+         * declaringType 列にあるため重複させず、引数だけを足してオーバーロードを
+         * 見分けられるようにしている（付けないと、行番号以外まったく同じ行が並ぶ）。
+         *
          * unresolvedCalls / unresolvedCause は「このメソッドの中に、
          * 具象クラスを1つに絞れなかった呼び出しがいくつあり、その理由は何か」。
          * call-hierarchy.csv の note と同じ判定を使っているので、
@@ -4312,7 +4421,7 @@ public class CallHierarchyExporter {
                         st.withUnresolved++;
                     }
                     w.write(String.join(Csv.DELIM,
-                            Csv.esc(g.methods.shortLabel(id)),
+                            Csv.esc(g.methods.shortLabelWithParams(id)),
                             Csv.esc(g.methods.typeFqn(id)),
                             String.valueOf(g.kindOf(g.methods.typeFqn(id))),
                             Csv.esc(g.methods.declFile(id)),
@@ -4680,8 +4789,8 @@ public class CallHierarchyExporter {
                                     String kind = g.methods.typeFqn(id).equals(normalize(owner))
                                             ? "EXACT" : "INHERITED";
                                     out.writeExternalUsageRow(refs.thisClass,
-                                            g.methods.shortLabel(id),
-                                            g.methods.fullSignature(id), jarName, kind);
+                                            g.methods.displayLabel(id),
+                                            g.methods.shortLabel(id), jarName, kind);
                                     if (refCount[id]++ == 0) {
                                         st.usedMethods++;
                                     }
@@ -4693,8 +4802,8 @@ public class CallHierarchyExporter {
                                     // 被参照として記録する。
                                     String simple = simpleOf(owner);
                                     out.writeExternalUsageRow(refs.thisClass,
-                                            simple + "." + simple,
                                             normalize(owner) + "." + simple + "()",
+                                            simple + "." + simple,
                                             jarName, "IMPLICIT_CTOR");
                                     st.implicitCtors++;
                                 } else {
@@ -5233,6 +5342,9 @@ public class CallHierarchyExporter {
      * ヘッダー:
      *   caller,callee,root,call-hierarchy...
      *
+     * callee は「完全修飾クラス名.メソッド名(引数型略名)」。パッケージ違いの同名
+     * クラスとオーバーロードを、この1列だけで見分けられるようにするため。
+     *
      * - 呼び出し1件につき1行（起点自身は呼び出し元が無いため出力しない）
      * - caller は Eclipse の Java Stack Trace Console が認識する
      *   "at Class.method(File.java:行)" 形式。貼り付けるだけでソースへ飛べる
@@ -5255,7 +5367,7 @@ public class CallHierarchyExporter {
                 throws IOException {
             this.writer = Csv.writer(outputCsv, encoding, bom);
             writer.write(String.join(Csv.DELIM,
-                    "caller", "callee", "calleeSignature", "root", "call-hierarchy"));
+                    "caller", "callee", "root", "call-hierarchy"));
             writer.newLine();
         }
 
@@ -5269,13 +5381,10 @@ public class CallHierarchyExporter {
             int parent = pathMethod[depth - 1];
             buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(Csv.DELIM);
 
-            // callee: Excelのフィルタで選べるよう、行番号を含まない安定した表記にする。
-            // 行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばって使えなくなる。
-            buf.append(Csv.esc(mt.shortLabel(pathMethod[depth]))).append(Csv.DELIM);
-
-            // calleeSignature: 完全修飾クラス名＋引数リスト。
-            // callee 列だけではオーバーロードも同名別パッケージも区別できないため
-            buf.append(Csv.esc(mt.fullSignature(pathMethod[depth]))).append(Csv.DELIM);
+            // callee: 完全修飾クラス名 + メソッド名 + 引数型略名。
+            // Excelのフィルタで選べるよう、行番号は含めない安定した表記にする
+            // （行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばる）。
+            buf.append(Csv.esc(mt.displayLabel(pathMethod[depth]))).append(Csv.DELIM);
 
             // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
             buf.append(Csv.esc(mt.shortLabel(rootId)));
@@ -5314,7 +5423,6 @@ public class CallHierarchyExporter {
             String caller = (callerId >= 0) ? stackTrace(mt, callerId, line) : location;
             buf.append(Csv.esc(caller)).append(Csv.DELIM);
             buf.append(Csv.esc(expression)).append(Csv.DELIM);
-            buf.append(Csv.DELIM);   // calleeSignature: 型が特定できていないので空
             buf.append(Csv.esc(UNRESOLVED_ROOT));
             buf.append(Csv.DELIM).append(Csv.esc(expression));
             buf.append(Csv.DELIM).append(Csv.esc(reason));
@@ -5331,19 +5439,19 @@ public class CallHierarchyExporter {
          * 「どのjarから参照されているか」を入れる。
          *
          * @param referencingClass 参照している側のクラス（外部jar内）
-         * @param callee           参照されている自分のメソッド
+         * @param callee           参照されている自分のメソッド（callee列と同じ表記）
+         * @param shortCallee      階層列に置く短縮表記
          * @param jarName          参照元のjar名
          * @param note             照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
          */
         void writeExternalUsageRow(String referencingClass, String callee,
-                                    String calleeSignature, String jarName, String note)
+                                    String shortCallee, String jarName, String note)
                 throws IOException {
             buf.setLength(0);
             buf.append(Csv.esc(referencingClass)).append(Csv.DELIM);
             buf.append(Csv.esc(callee)).append(Csv.DELIM);
-            buf.append(Csv.esc(calleeSignature)).append(Csv.DELIM);
             buf.append(Csv.esc(jarName));
-            buf.append(Csv.DELIM).append(Csv.esc(callee));
+            buf.append(Csv.DELIM).append(Csv.esc(shortCallee));
             buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));
             writer.write(buf.toString());
             writer.newLine();
