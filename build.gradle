@@ -7,11 +7,13 @@ version = '0.1.0'
 // ---------------------------------------------------------------------------
 // Eclipse JDT Core のバージョン
 //
-// 新しい版ほど、動かすのに新しいJDKを要求し、解析できるJavaバージョンも上がります。
-//     3.46.0 … JRE 17以上で動作。ソースは Java 26 まで解析可
-//     3.33.0 … JRE 11以上で動作。ソースは Java 19 まで解析可
-// 手元のJDKで動く版を選んでください。コマンドラインから上書きできます:
-//     gradle -PjdtVersion=3.33.0 run --args="config/config.properties"
+// 既定の 3.46.0 は JDK 17 以上を要求しますが、そのJDKは下の toolchain が
+// 面倒を見るので、利用者が手元のJDKを気にする必要はありません。
+// 社内ミラーに古い版しか無い等の事情があれば上書きできます:
+//     gradlew -PjdtVersion=3.33.0 run --args="config/config.properties"
+//     3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
+//     3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
+// いずれも下の toolchain（25）で動くので、版を下げても toolchain の変更は不要です。
 //
 // 解析対象ソースのJavaバージョンは、この版とは別に config.properties の
 // source.level で指定します（未指定なら、この版が対応する最大値）。
@@ -43,11 +45,20 @@ sourceSets {
 }
 
 java {
-    // 解析対象のJavaバージョンとは無関係です（このツール自身が動くJVMの話）。
-    // 既定の JDT 3.46.0 が JRE 17 を要求するため、それに合わせています。
-    // 古いJDKしか無い環境では -PjdtVersion=3.33.0 と合わせて 11 に下げてください。
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    // このツール自身をコンパイル・実行するJDK。解析対象のJavaバージョンとは
+    // 無関係です（対象側は config.properties の source.level）。
+    //
+    // バージョンを固定するのは、手元のJDKが何であっても同じ結果になるようにするため。
+    // 解析結果はJDTを動かすJDKに左右されるので、環境差が出ると原因の切り分けが
+    // 難しくなります。条件を満たすJDKが手元に無ければ Gradle が取得します
+    // （settings.gradle 参照）。既にあればそれが使われ、取得は起きません。
+    //
+    // JDTが要求する最低版（3.46.0 なら 17）ではなく 25 を指定しているのは、
+    // JDTは「自分が動いているJVMのブートクラスパス」を解析対象のクラスパスに
+    // 含めるため、ここが新しいほど新しいJDKのAPIを参照するコードを解析できるからです。
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -73,7 +84,7 @@ jar {
 // README の「Pleiades/Eclipse環境」の手順は、Eclipseのpluginsから必要なjarを
 // lib へコピーして javac / java を直接叩く。Gradleが使える環境では、
 // 代わりにこのタスクで同じ lib フォルダを用意できる。
-//     gradle copyLibs
+//     gradlew copyLibs
 // ---------------------------------------------------------------------------
 tasks.register('copyLibs', Copy) {
     description = '依存jarを lib フォルダに集める'
@@ -83,14 +94,22 @@ tasks.register('copyLibs', Copy) {
 }
 
 // ---------------------------------------------------------------------------
-// Gradleからそのまま実行する
-//     gradle run --args="config/config.properties"
+// Gradleからそのまま実行する。Quick start はこの1コマンドで完結する
+//     gradlew run --args="config/config.properties"
 // ---------------------------------------------------------------------------
 tasks.register('run', JavaExec) {
     description = 'ツールを実行する（例: gradle run --args="config/config.properties"）'
     group = 'application'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = mainClassName
+
+    // 実行にも toolchain のJDKを使う。既定では JavaExec は Gradle 自身が
+    // 動いているJVMを使うため、これが無いと「toolchainでコンパイルし、
+    // 別のJVMで実行する」というちぐはぐな状態になる。
+    // toolchain の方が新しいとクラスファイルのバージョンで即失敗するが、
+    // 古い場合は動いてしまい、JDTを動かすJVMが端末ごとに変わる
+    // ＝解析結果が変わる、という気付きにくい形で効いてくる。
+    javaLauncher = javaToolchains.launcherFor(java.toolchain)
     // 標準出力の文字コードは明示的に固定しない。設定ファイルやCSVの読み書きは
     // コード側で常に明示的な文字コードを使っており、ここでの指定はコンソールの
     // ログ表示にしか効かない。固定すると、Windowsのコンソール（既定はShift_JIS系）

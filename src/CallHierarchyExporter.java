@@ -956,7 +956,7 @@ public class CallHierarchyExporter {
     // フェーズ1: 解析とキャッシュのストリーミング更新
     // ================================================================
 
-    /**
+    /*
      * キャッシュファイルの形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）
      *
      *   F  相対パス  更新時刻  サイズ
@@ -3090,7 +3090,6 @@ public class CallHierarchyExporter {
             return (i >= 0) ? t.substring(i + 1) : t;
         }
 
-        /** CSVのcallHierarchy列で使う簡潔表記 */
         /**
          * 表示用のメソッド名。
          *
