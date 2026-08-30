@@ -1,55 +1,64 @@
 @echo off
 rem ---------------------------------------------------------------------------
-rem jbangw.cmd — JBang wrapper（Windows用。役割は jbangw と同じ）
+rem jbangw.cmd - JBang wrapper for Windows (same role as the POSIX "jbangw").
 rem
-rem   1. jbang 本体（jbang.jar）が無ければ Maven Central から取得する
-rem      （SHA-256 を照合してから使う。取得先は JBANGW_JAR_URL で差し替え可能）
-rem   2. JDKが1つも無ければ取得する（jbang本体を動かすにもJDKが要るため）
-rem   3. jbang が使うフォルダをプロジェクト内（.jbang\）に固定する
-rem   4. jbang の実行規約（終了コード255＝標準出力のコマンドラインを実行）を仲介する
+rem   1. Fetch jbang itself (jbang-cli-<ver>-all.jar) from Maven Central if
+rem      missing, and verify its SHA-256 before using it.
+rem      Override the URL with JBANGW_JAR_URL for a corporate mirror.
+rem   2. Fetch a JDK if none is installed - running jbang itself needs a JDK.
+rem   3. Pin the folders jbang uses to .jbang\ inside the project.
+rem   4. Bridge the jbang run protocol (exit code 255 means "stdout holds the
+rem      command line to execute").
 rem
-rem さらにWindowsではターミナルをUTF-8（コードページ65001）に切り替えます。
-rem ツールのログはUTF-8で出るため（ソースの //JAVA_OPTIONS 参照）、既定の
-rem コードページ（日本語環境ではMS932）のままだと文字化けします。
-rem 元のコードページは終了時に戻します（利用者の端末設定を持ち帰らせないため。
-rem chcp はコンソールの属性なので setlocal では戻らず、明示的に戻す必要がある）。
+rem   IMPORTANT: this file must stay pure ASCII - no Japanese, no non-ASCII at
+rem   all. cmd.exe resumes reading a batch file from a stored offset, and under
+rem   code page 65001 (which "chcp 65001" below switches to, and which a
+rem   PowerShell host may already be using) that offset drifts by one position
+rem   per multi-byte character. Once the drift exceeds a line, cmd.exe resumes
+rem   in the middle of a line and executes the tail of a "rem" comment as a
+rem   command. The Japanese commentary for this file lives in
+rem   docs/QA-build.md (Q6, Q11).
 rem ---------------------------------------------------------------------------
 setlocal enabledelayedexpansion
 
 set "APP_HOME=%~dp0"
-rem %~dp0 は末尾に \ が付く
+rem %~dp0 already ends with a backslash.
 set "JBANG_VERSION=0.132.1"
 set "JBANG_JAR_SHA256=f977075849cff866f45b27997f5671ab8a336a5dd3cf9e702b3479128338f3a7"
 
-rem JDKが1つも無いときに取得する版。ソースの //JAVA と揃えること。
-rem 本家の既定は17だが、//JAVA 25 と揃えないと起動用と実行用で2つ入るため25にする
+rem JDK version fetched when none is found. Keep it in sync with //JAVA in the
+rem source. Upstream jbang defaults to 17, but that would install two JDKs
+rem (17 to boot, 25 for //JAVA 25), so this wrapper uses 25 for both.
 if not defined JBANG_DEFAULT_JAVA_VERSION (set "JAVA_VERSION=25") else (set "JAVA_VERSION=%JBANG_DEFAULT_JAVA_VERSION%")
 
 if not defined JBANGW_JAR_URL set "JBANGW_JAR_URL=https://repo1.maven.org/maven2/dev/jbang/jbang-cli/%JBANG_VERSION%/jbang-cli-%JBANG_VERSION%-all.jar"
 if not defined JBANG_DIR set "JBANG_DIR=%APP_HOME%.jbang"
 if not defined JBANG_REPO set "JBANG_REPO=%JBANG_DIR%\repository"
 if not defined JBANG_JDK_VENDOR set "JBANG_JDK_VENDOR=temurin"
-rem jbang本体もJBANG_DIRの下に置く（外から共有キャッシュを指されたときに二重に置かない）
+rem Keep jbang's own jar under JBANG_DIR too, so pointing JBANG_DIR at a shared
+rem cache does not leave a second copy inside the project.
 set "JBANG_JAR=%JBANG_DIR%\jbang-cli-%JBANG_VERSION%-all.jar"
 set "JDK_DIR=%JBANG_DIR%\cache\jdks\%JAVA_VERSION%"
 set "ERR=0"
 
-rem --- ターミナルをUTF-8にする（元の値を控えて :done で戻す） ---
-rem chcp の出力は「Active code page: 932」「現在のコード ページ: 932」等。
-rem どの表記でもコロンの後ろが番号なので、そこを取る
+rem Switch the console to UTF-8 so the tool's Japanese log renders (the source
+rem sets -Dstdout.encoding=UTF-8 via //JAVA_OPTIONS). The original code page is
+rem restored at :done - chcp is a console attribute, so setlocal does not undo
+rem it and the user's terminal would otherwise stay changed.
 set "OLD_CP="
 for /f "tokens=2 delims=:" %%A in ('chcp') do for /f "tokens=1" %%B in ("%%A") do set "OLD_CP=%%B"
 chcp 65001 >nul
 
-rem --- jbang を起動するJDKを決める（jbangはコンパイルするので javac が要る） ---
-rem 入れ子の括弧と call を混ぜるとバッチでは壊れやすいので、ラベルで分岐する
+rem --- Pick the JDK that will run jbang (jbang compiles, so javac is required)
+rem Label-based flow on purpose: nesting "call" inside parenthesised blocks is
+rem a well-known way to break batch parsing.
 set "JAVA_EXE="
 if not defined JAVA_HOME goto :try_path
 if exist "%JAVA_HOME%\bin\javac.exe" (
     set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
     goto :have_java
 )
-echo [jbangw] JAVA_HOME は設定されていますが、JDKではないようです（javac が見つかりません）。 1>&2
+echo [jbangw] JAVA_HOME is set but has no bin\javac.exe - it is not a JDK. 1>&2
 
 :try_path
 where javac >nul 2>&1
@@ -70,9 +79,11 @@ if errorlevel 1 goto :fail
 
 :have_java
 
-rem --- jbang.jar が無ければ取得し、SHA-256 を照合する ---
+rem --- Fetch jbang.jar if missing, verifying SHA-256 before use
 if exist "%JBANG_JAR%" goto :have_jbang
-echo [jbangw] jbang %JBANG_VERSION% を取得します: %JBANGW_JAR_URL% 1>&2
+rem Quote the interpolated values: an "&" in a mirror URL or a folder name
+rem would otherwise be parsed as a command separator by echo.
+echo [jbangw] Downloading jbang %JBANG_VERSION% from "%JBANGW_JAR_URL%" 1>&2
 if not exist "%JBANG_DIR%" mkdir "%JBANG_DIR%"
 powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command ^
     "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue';" ^
@@ -84,22 +95,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command ^
     "  Move-Item -Force $part $env:JBANG_JAR" ^
     "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
 if errorlevel 1 (
-    echo [jbangw] jbang の取得に失敗しました。%JBANGW_JAR_URL% を手動で 1>&2
-    echo [jbangw] ダウンロードし、%JBANG_JAR% に置いてください。 1>&2
+    echo [jbangw] Failed to download jbang. Download "%JBANGW_JAR_URL%" manually 1>&2
+    echo [jbangw] and place it at "%JBANG_JAR%" 1>&2
     goto :fail
 )
 
 :have_jbang
 
-rem --- 実行規約: 終了コード255のとき、標準出力が「実行すべきコマンドライン」 ---
-rem コマンドラインはクラスパスを含み変数の上限（8191文字）を超えうるため、
-rem 環境変数で受けずに一時cmdファイル経由で実行する
+rem --- Run protocol: on exit code 255, stdout holds the command line to run.
+rem The command line embeds the whole classpath and can exceed the 8191-char
+rem environment variable limit, so it is captured to a temporary cmd file
+rem instead of a variable.
 set "JBANG_OUT=%TEMP%\jbangw-%RANDOM%%RANDOM%.cmd"
 "%JAVA_EXE%" -jar "%JBANG_JAR%" %* > "%JBANG_OUT%"
 set "ERR=%ERRORLEVEL%"
 if "%ERR%"=="255" (
-    rem setlocal で整えた JBANG_DIR 等は子プロセスにも引き継がれるので、
-    rem endlocal せずにそのまま実行する
     call "%JBANG_OUT%"
     set "ERR=!ERRORLEVEL!"
 ) else (
@@ -110,9 +120,9 @@ goto :done
 
 rem ---------------------------------------------------------------------------
 :install_jdk
-rem foojay の Disco API は「条件に合うJDKの実体へリダイレクトするURL」を返す。
-rem 本家の jbang スクリプトと同じ組み立て方
-echo [jbangw] JDK %JAVA_VERSION% が見つからないため取得します。数分かかります。 1>&2
+rem foojay's Disco API returns a redirect to the matching JDK archive. The URL
+rem is built the same way the upstream jbang script builds it.
+echo [jbangw] JDK %JAVA_VERSION% not found - downloading it. This takes a few minutes. 1>&2
 set "JDK_URL=https://api.foojay.io/disco/v3.0/directuris?distro=%JBANG_JDK_VENDOR%&javafx_bundled=false&libc_type=c_std_lib&archive_type=zip&operating_system=windows&package_type=jdk&version=%JAVA_VERSION%&architecture=x64&latest=available"
 powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command ^
     "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue';" ^
@@ -125,15 +135,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command ^
     "  Expand-Archive -Path $tmp -DestinationPath $t;" ^
     "  foreach ($d in Get-ChildItem -Directory -Path $t) { Move-Item -Path ($d.FullName + '\*') -Destination $t -Force };" ^
     "  Remove-Item $tmp -Force;" ^
-    "  if (-not (Test-Path (Join-Path $t 'bin\javac.exe'))) { throw 'JDKの展開に失敗しました' };" ^
+    "  if (-not (Test-Path (Join-Path $t 'bin\javac.exe'))) { throw 'failed to unpack the JDK' };" ^
     "  Remove-Item -LiteralPath $env:JDK_DIR -Recurse -Force -ErrorAction Ignore;" ^
     "  Move-Item $t $env:JDK_DIR" ^
     "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
 if errorlevel 1 (
-    echo [jbangw] JDKの取得に失敗しました（取得元: api.foojay.io）。 1>&2
-    echo [jbangw] 社内プロキシ等で到達できない場合は、JDK %JAVA_VERSION% を手動で 1>&2
-    echo [jbangw] インストールして JAVA_HOME を設定するか、展開したものを 1>&2
-    echo [jbangw] %JDK_DIR% に置いてください。 1>&2
+    echo [jbangw] Failed to download the JDK from api.foojay.io. 1>&2
+    echo [jbangw] If a proxy blocks it, install JDK %JAVA_VERSION% yourself and set 1>&2
+    echo [jbangw] JAVA_HOME, or unpack it into "%JDK_DIR%" 1>&2
     exit /b 1
 )
 exit /b 0

@@ -99,6 +99,7 @@ The interesting part of the code. An interface-typed call is narrowed by stages,
 
 ## Conventions
 
+- **`jbangw.cmd` must stay pure ASCII.** cmd.exe re-opens the batch file after every line and, under code page 65001, advances a byte offset by a character count — one multi-byte character drifts the resume point, and it eventually restarts mid-line and executes the tail of a `rem` as a command. This actually broke when run from PowerShell; `docs/QA-build.md` Q11 has the analysis. Keep comments and messages English there, and quote interpolated values in `echo` (an `&` in a path splits the command). The POSIX `jbangw` has no such limit — Japanese is fine.
 - **`src/CallHierarchyExporter.java` is CRLF**; the Markdown and properties files are LF. Flipping line endings turns a 200-line diff into a 5000-line one — check `file` before and after editing.
 - Comments explain **why**, in Japanese, matching the surrounding density. The pitfalls in `docs/DESIGN.md` §11 are mostly annotated at their site in the code; keep that link when you touch them.
 - Bump `CacheFormat.VERSION` on any format change. The cache header also carries the source level, so changing `source.level` invalidates it — anything that alters parse results must be part of that key.
