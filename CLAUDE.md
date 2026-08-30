@@ -13,6 +13,7 @@ Documentation is in Japanese and is part of the deliverable, not an afterthought
 - `docs/DESIGN.md` — internal design, written so another AI session can reimplement the tool. Chapter 11 is a pitfalls table, chapter 12 is the acceptance criteria
 - `docs/QA.md` — decisions made while implementing the dataflow analysis, with the reasoning
 - `docs/QA-build.md` — same, for the build/run environment (wrapper, toolchain, where downloads land)
+- `docs/QA-issue29.md` — same, for the `callee` column format and how lambdas / method references are treated
 
 **Read `docs/DESIGN.md` before changing analysis behavior.** Most of what looks like an easy improvement is something chapter 11 already records as a trap.
 
@@ -92,7 +93,9 @@ The interesting part of the code. An interface-typed call is narrowed by stages,
 - Comments explain **why**, in Japanese, matching the surrounding density. The pitfalls in `docs/DESIGN.md` §11 are mostly annotated at their site in the code; keep that link when you touch them.
 - Bump `CacheFormat.VERSION` on any format change. The cache header also carries the source level, so changing `source.level` invalidates it — anything that alters parse results must be part of that key.
 - CSV: `call-hierarchy` must stay the **last** column (it is variable-length), and notes are appended as its last element rather than given a column of their own.
+- `callee` is `fqcn.method(abbreviated param types)`; `root` and `call-hierarchy` stay short (`Class.method`). Abbreviating params can collide (`java.util.List` vs `other.List`), so colliding labels fall back to fully-qualified params — do not remove that fallback.
 - Constructors are kept out of both CSVs as rows but stay in the hierarchy path, displayed as the class name; `<init>` survives only in `caller`, because Eclipse's Java Stack Trace Console needs that form.
+- Lambda bodies are attributed to the **enclosing method**, not to a synthetic lambda method. Redirecting them would hide every lambda passed to a `java.**` API behind `exclude.packages` — `docs/QA-issue29.md` Q6 has the reasoning. Method references (`::`) are recorded as calls from the enclosing method.
 - Keep `README.md`, `config/config.properties`, and `docs/DESIGN.md` consistent with the code in the same change. Several past bugs were the docs describing behavior the code never had.
 
 ## Working in this repo

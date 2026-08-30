@@ -27,7 +27,9 @@ import org.eclipse.jdt.core.dom.CastExpression;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
+import org.eclipse.jdt.core.dom.CreationReference;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
@@ -47,7 +49,9 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -973,6 +977,8 @@ public class CallHierarchyExporter {
      *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
      *   R  pkg  typeFqn  method  paramSig  origin   （そのメソッドが返しうる値の出所）
      *   J  typeFqn  fieldName  origin                （コンストラクタ注入されたフィールド）
+     *   M  ifaceTypeFqn#method(paramSig)          （ラムダ／メソッド参照が実装している
+     *                                              関数型インターフェースのメソッド）
      *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
      *   U  行  呼び出し元メソッドキー  式  理由
      *
@@ -1135,7 +1141,7 @@ public class CallHierarchyExporter {
     static final class CacheFormat {
         static final String SEP = "\t";
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v4";
+        static final String VERSION = "jche-cache-v5";
 
         /**
          * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
@@ -1345,6 +1351,10 @@ public class CallHierarchyExporter {
             for (FieldInjectionRec j : fa.fieldInjections) {
                 w.write(String.join(CacheFormat.SEP, "J",
                         j.typeFqn, j.fieldName, j.origin));
+                w.newLine();
+            }
+            for (String m : fa.functionalImpls) {
+                w.write(String.join(CacheFormat.SEP, "M", m));
                 w.newLine();
             }
             for (HintRec h : fa.hints) {
@@ -1570,6 +1580,7 @@ public class CallHierarchyExporter {
         final List<CallEdgeRec> edges = new ArrayList<>();
         final List<ReturnRec> returns = new ArrayList<>();
         final List<FieldInjectionRec> fieldInjections = new ArrayList<>();
+        final List<String> functionalImpls = new ArrayList<>();
         final List<UnresolvedCall> unresolved = new ArrayList<>();
 
         FileAnalysis(String relativePath, long lastModified, long size) {
@@ -2126,8 +2137,7 @@ public class CallHierarchyExporter {
              * 後者にしておくと、変数を介さない呼び出し
              * （DaoFactory.get("X").execute(...) など）にも拡張が証拠を結び付けられる。
              */
-            private String recvKeyOf(MethodInvocation n) {
-                Expression ex = n.getExpression();
+            private String recvKeyOf(Expression ex) {
                 if (ex == null) {
                     return "";
                 }
@@ -2659,7 +2669,42 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(LambdaExpression node) {
                 lambdaDepth++;
+                recordFunctionalImpl(node.resolveTypeBinding());
                 return true;
+            }
+
+            /**
+             * ラムダ／メソッド参照が「その関数型インターフェースの実装でもある」
+             * ことを記録する（M行）。
+             *
+             * これが無いと、インターフェース型の変数に対する呼び出しが
+             * 「実装はソース上に1つ（匿名クラス等）だけ」と見えてしまい、
+             * 実際にはラムダが入っている経路まで SINGLE_IMPL で1つに決め打ちされる。
+             * 絞れないことより誤って絞ることの方が害が大きいので、
+             * 「展開できない実装が他にもある」ことだけは必ず残す。
+             *
+             * ラムダ本体の呼び出しは、引き続き囲みメソッドに計上する
+             * （合成メソッドに付け替えない理由は docs/QA-issue29.md 参照）。
+             */
+            private void recordFunctionalImpl(ITypeBinding fnType) {
+                if (fnType == null) {
+                    return;
+                }
+                IMethodBinding sam = fnType.getFunctionalInterfaceMethod();
+                if (sam == null) {
+                    return;
+                }
+                String[] r = toRef(sam);
+                if (r == null) {
+                    return;
+                }
+                String key = r[1] + "#" + r[2] + "(" + r[3] + ")";
+                if (!out.functionalImpls.contains(key)) {
+                    // 同じファイル内で同じインターフェースを何度実装しても
+                    // 「展開できない実装がある」という事実は1件で足りる。
+                    // 件数を数えるとファイル単位のキャッシュ再利用で値がぶれる
+                    out.functionalImpls.add(key);
+                }
             }
 
             @Override
@@ -2717,7 +2762,8 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(n),
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b),
+                        recvKeyOf(n.getExpression()),
                         recvKindOf(n.getExpression()), externalGuessRef(n),
                         originOf(n.getExpression()), argOriginsOf(n.arguments()));
 
@@ -2774,6 +2820,63 @@ public class CallHierarchyExporter {
             public boolean visit(ConstructorInvocation n) {
                 record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null,
                         null, argOriginsOf(n.arguments()));
+                return true;
+            }
+
+            /**
+             * メソッド参照 obj::m。
+             *
+             * 参照した時点ではまだ呼ばれず、実際に動くのは関数型インターフェース
+             * 経由だが、そこまで辿るにはラムダ／メソッド参照を合成メソッドとして
+             * 持つ必要がある（docs/QA-issue29.md 参照）。
+             * ここで記録しないと「:: でしか参照されていないメソッド」が
+             * 呼ばれていないように見えてしまう。取りこぼす方が害が大きいので、
+             * 参照を「囲みメソッドからの呼び出し」として記録する。
+             *
+             * レシーバの扱いは通常の呼び出しと同じ。obj::m の obj が
+             * コンストラクタ注入されたフィールドなら、そのままデータフローで絞れる。
+             */
+            @Override
+            public boolean visit(ExpressionMethodReference n) {
+                Expression recv = n.getExpression();
+                IMethodBinding b = n.resolveMethodBinding();
+                recordFunctionalImpl(n.resolveTypeBinding());
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(recv),
+                        recvKindOf(recv), null, originOf(recv), null);
+                return true;
+            }
+
+            /** メソッド参照 List&lt;String&gt;::size のように、レシーバが型そのものの形 */
+            @Override
+            public boolean visit(TypeMethodReference n) {
+                IMethodBinding b = n.resolveMethodBinding();
+                recordFunctionalImpl(n.resolveTypeBinding());
+                record(b, n, n.getName().getIdentifier(), bindKindOf(b), "",
+                        RecvKind.TYPE, null, null, null);
+                return true;
+            }
+
+            /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
+            @Override
+            public boolean visit(SuperMethodReference n) {
+                recordFunctionalImpl(n.resolveTypeBinding());
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
+                        RecvKind.THIS, null, null, null);
+                return true;
+            }
+
+            /** コンストラクタ参照 Type::new */
+            @Override
+            public boolean visit(CreationReference n) {
+                IMethodBinding b = n.resolveMethodBinding();
+                recordFunctionalImpl(n.resolveTypeBinding());
+                if (b == null && n.getType().resolveBinding() != null
+                        && n.getType().resolveBinding().isArray()) {
+                    // int[]::new は配列生成であって呼び出すメソッドが無い。
+                    // 未解決として記録すると、実体の無い失敗が件数に混ざる
+                    return true;
+                }
+                record(b, n, "<init>", 'C', "", RecvKind.TYPE, null, null, null);
                 return true;
             }
 
@@ -3017,6 +3120,9 @@ public class CallHierarchyExporter {
          */
         private final ArrayList<Boolean> hasBody = new ArrayList<>();
 
+        /** 引数型略名が衝突しているラベル。初回の displayLabel() で一度だけ作る */
+        private Set<String> ambiguous;
+
         int intern(String pkg, String typeFqn, String method, String params) {
             String key = typeFqn + "#" + method + "(" + params + ")";
             Integer id = idByKey.get(key);
@@ -3053,6 +3159,18 @@ public class CallHierarchyExporter {
         String signature(int id) {
             String k = keys.get(id);
             return k.substring(k.indexOf('#') + 1);
+        }
+
+        /**
+         * キーのうち括弧内（完全修飾の引数型をカンマ区切りにしたもの）。
+         *
+         * 開き括弧は "#" より後ろから探す。型名に括弧が混ざる可能性があるのは
+         * typeNameOf() が最終手段でJDT内部キーを使った場合だけだが、そこで
+         * 引数リストの切り出しがずれると別メソッドと同一視されてしまう。
+         */
+        private String rawParams(int id) {
+            String k = keys.get(id);
+            return k.substring(k.indexOf('(', k.indexOf('#')) + 1, k.lastIndexOf(')'));
         }
 
         int size() {
@@ -3111,11 +3229,101 @@ public class CallHierarchyExporter {
             return simpleTypeName(id) + "." + displayMethodName(id);
         }
 
-        /** 完全修飾クラス名 + 表示用メソッド名 + 引数リスト（オーバーロードを識別できる形） */
+        /**
+         * 単純クラス名 + 表示用メソッド名 + 引数型略名。オーバーロードを識別できる短い表記。
+         * 略名が衝突している場合は callee 列と同じ理由で完全修飾の引数に戻す。
+         */
+        String shortLabelWithParams(int id) {
+            String params = ambiguousLabels().contains(plainDisplayLabel(id))
+                    ? rawParams(id) : shortParams(id);
+            return simpleTypeName(id) + "." + displayMethodName(id) + "(" + params + ")";
+        }
+
+        /** 完全修飾クラス名 + 表示用メソッド名 + 完全修飾の引数リスト */
         String fullSignature(int id) {
-            String k = keys.get(id);
-            String params = k.substring(k.indexOf('(') + 1, k.lastIndexOf(')'));
-            return typeFqn(id) + "." + displayMethodName(id) + "(" + params + ")";
+            return typeFqn(id) + "." + displayMethodName(id) + "(" + rawParams(id) + ")";
+        }
+
+        /**
+         * call-hierarchy.csv の callee 列の表記。
+         * 完全修飾クラス名 + 表示用メソッド名 + 引数型略名。
+         *
+         * 引数型を略名にするのは読みやすさのためだが、略した結果
+         * java.util.List と other.List のように別物が同じ表記になることがある。
+         * 「識別できる表記にする」のが目的の列でそれが起きては本末転倒なので、
+         * 衝突した組だけ完全修飾の引数リストに戻す（下の ambiguousLabels()）。
+         */
+        String displayLabel(int id) {
+            String label = plainDisplayLabel(id);
+            return ambiguousLabels().contains(label) ? fullSignature(id) : label;
+        }
+
+        private String plainDisplayLabel(int id) {
+            return typeFqn(id) + "." + displayMethodName(id) + "(" + shortParams(id) + ")";
+        }
+
+        /**
+         * 引数型略名が衝突しているラベルの集合。
+         *
+         * 一度だけ全メソッドを走査して作る。走査用のSetは作業後に捨て、
+         * 残すのは衝突したラベルだけ（通常は0件）なので、常時のメモリは増えない。
+         * キーは重複しないので、同じラベルが2回出た時点で必ず引数が違う。
+         */
+        private Set<String> ambiguousLabels() {
+            if (ambiguous != null) {
+                return ambiguous;
+            }
+            Set<String> seen = new HashSet<>(keys.size() * 2);
+            Set<String> dup = new LinkedHashSet<>();
+            for (int id = 0; id < keys.size(); id++) {
+                String label = plainDisplayLabel(id);
+                if (!seen.add(label)) {
+                    dup.add(label);
+                }
+            }
+            ambiguous = dup;
+            return ambiguous;
+        }
+
+        /** 完全修飾の引数リストを、型ごとに略名へ置き換えたもの */
+        private String shortParams(int id) {
+            String raw = rawParams(id);
+            if (raw.isEmpty()) {
+                return "";
+            }
+            // 引数型は toRef() で消去済み（getErasure）なので、ジェネリクスの
+            // 山括弧が入ることはない。よってカンマで素直に分割できる
+            StringBuilder sb = new StringBuilder(raw.length());
+            int start = 0;
+            while (start <= raw.length()) {
+                int comma = raw.indexOf(',', start);
+                int end = (comma < 0) ? raw.length() : comma;
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(simpleParamName(raw.substring(start, end)));
+                if (comma < 0) {
+                    break;
+                }
+                start = comma + 1;
+            }
+            return sb.toString();
+        }
+
+        /**
+         * 引数型1つぶんの略名。java.lang.String → String、java.lang.String[] → String[]。
+         *
+         * 内部クラス（fn.Outer.Inner）は末尾だけを取って Inner になる。名前だけでは
+         * どこまでがパッケージでどこからが外側クラスか決められないため（大文字小文字の
+         * 慣習に頼ると、その慣習に従っていないコードで誤る）。
+         * これで別物が同じ表記になった場合は displayLabel() が完全修飾に戻す。
+         */
+        private static String simpleParamName(String fq) {
+            int arr = fq.indexOf('[');
+            String base = (arr < 0) ? fq : fq.substring(0, arr);
+            String suffix = (arr < 0) ? "" : fq.substring(arr);
+            int dot = base.lastIndexOf('.');
+            return ((dot >= 0) ? base.substring(dot + 1) : base) + suffix;
         }
 
         String declFile(int id) {
@@ -3168,6 +3376,13 @@ public class CallHierarchyExporter {
         private String[][] returnOrigins;
         /** "typeFqn#fieldName" -> 出所。コンストラクタ注入されたフィールドだけが入る */
         private final HashMap<String, String> fieldOrigins = new HashMap<>();
+
+        /**
+         * ラムダ／メソッド参照が実装している関数型インターフェースのメソッドキー。
+         * ここに載っているメソッドは「ソース上に見えている実装のほかに、
+         * 展開できない実装がある」ことを意味する。
+         */
+        private final Set<String> functionalImpls = new HashSet<>();
 
         /** 型階層: 親型 -> 直接の子型 */
         private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
@@ -3309,6 +3524,11 @@ public class CallHierarchyExporter {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         if (f.length >= 4) {
                             g.fieldOrigins.put(f[1] + "#" + f[2], f[3]);
+                        }
+                    } else if (t == 'M') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 2) {
+                            g.functionalImpls.add(f[1]);
                         }
                     } else if (t == 'R') {
                         String[] f = line.split(CacheFormat.SEP, -1);
@@ -3928,6 +4148,18 @@ public class CallHierarchyExporter {
             return null;
         }
 
+        /**
+         * その呼び出し先が「ラムダ／メソッド参照でも実装されているメソッド」か。
+         *
+         * true のとき、ソース上に見えている実装のほかに展開できない実装がある。
+         * 候補が1件に見えても、それが実際に動く唯一の実装とは限らない。
+         */
+        boolean hasFunctionalImpl(int calleeId) {
+            return !functionalImpls.isEmpty()
+                    && functionalImpls.contains(methods.typeFqn(calleeId) + "#"
+                            + methods.signature(calleeId));
+        }
+
         /** 静的束縛と判定した理由。resolutions.csv で監査できるように残す */
         static String staticBoundReason(char bindKind) {
             switch (bindKind) {
@@ -4261,6 +4493,10 @@ public class CallHierarchyExporter {
          * コンストラクタ（<init>）は出力しない。call-hierarchy.csv 側でも
          * 行にしていないため、両方の一覧で扱いを揃える。
          *
+         * method 列は「単純クラス名.メソッド名(引数型略名)」。完全修飾クラス名は
+         * declaringType 列にあるため重複させず、引数だけを足してオーバーロードを
+         * 見分けられるようにしている（付けないと、行番号以外まったく同じ行が並ぶ）。
+         *
          * unresolvedCalls / unresolvedCause は「このメソッドの中に、
          * 具象クラスを1つに絞れなかった呼び出しがいくつあり、その理由は何か」。
          * call-hierarchy.csv の note と同じ判定を使っているので、
@@ -4312,7 +4548,7 @@ public class CallHierarchyExporter {
                         st.withUnresolved++;
                     }
                     w.write(String.join(Csv.DELIM,
-                            Csv.esc(g.methods.shortLabel(id)),
+                            Csv.esc(g.methods.shortLabelWithParams(id)),
                             Csv.esc(g.methods.typeFqn(id)),
                             String.valueOf(g.kindOf(g.methods.typeFqn(id))),
                             Csv.esc(g.methods.declFile(id)),
@@ -4354,11 +4590,13 @@ public class CallHierarchyExporter {
                 CallGraph.Resolution res = g.resolveEdge(e, (char) g.bindKinds[e]);
                 boolean multi = res.targets.length > 1;
                 boolean noImpl = "NO_IMPL".equals(res.label);
-                if (!multi && !noImpl) {
+                boolean fnImpl = g.hasFunctionalImpl(g.calleeIds[e]);
+                if (!multi && !noImpl && !fnImpl) {
                     continue;
                 }
                 u.count++;
                 String d = noImpl ? "実装なし（宣言のまま）"
+                        : fnImpl && !multi ? "ラムダ/メソッド参照の実装あり"
                         : RecvKind.describe((char) g.recvKinds[e]);
                 // 同じ理由は1回だけ並べる。件数はcount側で分かる
                 if (sb.indexOf(d) < 0) {
@@ -4680,8 +4918,8 @@ public class CallHierarchyExporter {
                                     String kind = g.methods.typeFqn(id).equals(normalize(owner))
                                             ? "EXACT" : "INHERITED";
                                     out.writeExternalUsageRow(refs.thisClass,
-                                            g.methods.shortLabel(id),
-                                            g.methods.fullSignature(id), jarName, kind);
+                                            g.methods.displayLabel(id),
+                                            g.methods.shortLabel(id), jarName, kind);
                                     if (refCount[id]++ == 0) {
                                         st.usedMethods++;
                                     }
@@ -4693,8 +4931,8 @@ public class CallHierarchyExporter {
                                     // 被参照として記録する。
                                     String simple = simpleOf(owner);
                                     out.writeExternalUsageRow(refs.thisClass,
-                                            simple + "." + simple,
                                             normalize(owner) + "." + simple + "()",
+                                            simple + "." + simple,
                                             jarName, "IMPLICIT_CTOR");
                                     st.implicitCtors++;
                                 } else {
@@ -5175,6 +5413,15 @@ public class CallHierarchyExporter {
                 // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる
                 sb.append("CHA候補").append(res.targets.length).append("件（未展開）: ")
                         .append(RecvKind.describe(recvKind));
+            } else if (graph.hasFunctionalImpl(declaredCallee)) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                // ソース上の実装が1件しか無くても、ラムダ／メソッド参照が
+                // 同じインターフェースを実装している。それを数に入れずに
+                // 「解決:SINGLE_IMPL」と書くと、実際とは違う1件に決め打ちしたまま
+                // 確定したように見えてしまう
+                sb.append("ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）");
             } else if ("NO_IMPL".equals(res.label)) {
                 if (sb.length() > 0) {
                     sb.append(" / ");
@@ -5233,6 +5480,9 @@ public class CallHierarchyExporter {
      * ヘッダー:
      *   caller,callee,root,call-hierarchy...
      *
+     * callee は「完全修飾クラス名.メソッド名(引数型略名)」。パッケージ違いの同名
+     * クラスとオーバーロードを、この1列だけで見分けられるようにするため。
+     *
      * - 呼び出し1件につき1行（起点自身は呼び出し元が無いため出力しない）
      * - caller は Eclipse の Java Stack Trace Console が認識する
      *   "at Class.method(File.java:行)" 形式。貼り付けるだけでソースへ飛べる
@@ -5255,7 +5505,7 @@ public class CallHierarchyExporter {
                 throws IOException {
             this.writer = Csv.writer(outputCsv, encoding, bom);
             writer.write(String.join(Csv.DELIM,
-                    "caller", "callee", "calleeSignature", "root", "call-hierarchy"));
+                    "caller", "callee", "root", "call-hierarchy"));
             writer.newLine();
         }
 
@@ -5269,13 +5519,10 @@ public class CallHierarchyExporter {
             int parent = pathMethod[depth - 1];
             buf.append(Csv.esc(stackTrace(mt, parent, pathCallLine[depth]))).append(Csv.DELIM);
 
-            // callee: Excelのフィルタで選べるよう、行番号を含まない安定した表記にする。
-            // 行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばって使えなくなる。
-            buf.append(Csv.esc(mt.shortLabel(pathMethod[depth]))).append(Csv.DELIM);
-
-            // calleeSignature: 完全修飾クラス名＋引数リスト。
-            // callee 列だけではオーバーロードも同名別パッケージも区別できないため
-            buf.append(Csv.esc(mt.fullSignature(pathMethod[depth]))).append(Csv.DELIM);
+            // callee: 完全修飾クラス名 + メソッド名 + 引数型略名。
+            // Excelのフィルタで選べるよう、行番号は含めない安定した表記にする
+            // （行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばる）。
+            buf.append(Csv.esc(mt.displayLabel(pathMethod[depth]))).append(Csv.DELIM);
 
             // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
             buf.append(Csv.esc(mt.shortLabel(rootId)));
@@ -5314,7 +5561,6 @@ public class CallHierarchyExporter {
             String caller = (callerId >= 0) ? stackTrace(mt, callerId, line) : location;
             buf.append(Csv.esc(caller)).append(Csv.DELIM);
             buf.append(Csv.esc(expression)).append(Csv.DELIM);
-            buf.append(Csv.DELIM);   // calleeSignature: 型が特定できていないので空
             buf.append(Csv.esc(UNRESOLVED_ROOT));
             buf.append(Csv.DELIM).append(Csv.esc(expression));
             buf.append(Csv.DELIM).append(Csv.esc(reason));
@@ -5331,19 +5577,19 @@ public class CallHierarchyExporter {
          * 「どのjarから参照されているか」を入れる。
          *
          * @param referencingClass 参照している側のクラス（外部jar内）
-         * @param callee           参照されている自分のメソッド
+         * @param callee           参照されている自分のメソッド（callee列と同じ表記）
+         * @param shortCallee      階層列に置く短縮表記
          * @param jarName          参照元のjar名
          * @param note             照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
          */
         void writeExternalUsageRow(String referencingClass, String callee,
-                                    String calleeSignature, String jarName, String note)
+                                    String shortCallee, String jarName, String note)
                 throws IOException {
             buf.setLength(0);
             buf.append(Csv.esc(referencingClass)).append(Csv.DELIM);
             buf.append(Csv.esc(callee)).append(Csv.DELIM);
-            buf.append(Csv.esc(calleeSignature)).append(Csv.DELIM);
             buf.append(Csv.esc(jarName));
-            buf.append(Csv.DELIM).append(Csv.esc(callee));
+            buf.append(Csv.DELIM).append(Csv.esc(shortCallee));
             buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));
             writer.write(buf.toString());
             writer.newLine();
