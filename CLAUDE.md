@@ -21,7 +21,11 @@ Documentation is in Japanese and is part of the deliverable, not an afterthought
 
 `./jbangw` is the one-command path: it fetches JBang itself (from Maven Central, SHA-256
 pinned), the dependency jars and a JDK 25 into `.jbang/` inside the project, leaving the
-user's home untouched. There is **no build file** — the dependency (`//DEPS`), the JDK
+user's home untouched. It works on a machine with **no Java at all** — like the upstream
+`jbang` script it looks for `javac` (not `java`; JBang compiles) in `JAVA_HOME`, `PATH`,
+`.jbang/currentjdk`, `.jbang/cache/jdks/25`, and downloads a JDK from foojay if none is
+found. The bootstrap version is **25, not upstream's 17**, so the one JDK it fetches also
+satisfies `//JAVA 25` — pinning them apart would install two JDKs. There is **no build file** — the dependency (`//DEPS`), the JDK
 (`//JAVA 25`) and console encoding (`//JAVA_OPTIONS`) are directives at the top of
 `src/CallHierarchyExporter.java`; to javac they are plain comments. The JDK is pinned to 25
 because JDT puts the running JVM's bootclasspath on the analysis classpath — the JDK it
