@@ -39,6 +39,7 @@
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -50,6 +51,8 @@ import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.CreationReference;
+import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
+import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
@@ -66,6 +69,7 @@ import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
+import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
@@ -174,12 +178,12 @@ public class CallHierarchyExporter {
     // ================================================================
 
     public static void main(String[] args) throws Exception {
-    	String confitPath = (args.length > 0) ? args[0] : "config/config.properties";
+        String configPath = (args.length > 0) ? args[0] : "config/config.properties";
         // jbang はスクリプト名より後ろの引数をそのまま渡してくるため、
         // Quick start の --args="…" は「--args= が頭に付いた設定ファイルパス」として届く。
         // gradlew 時代のコマンド形との互換のために剥がす。素のパス指定も従来どおり使える
-        if (confitPath.startsWith("--args=")) {
-            confitPath = confitPath.substring("--args=".length());
+        if (configPath.startsWith("--args=")) {
+            configPath = configPath.substring("--args=".length());
         }
         if (!(args.length > 0)) {
             System.err.println("config.propertiesのパスが指定されていません。");
@@ -187,8 +191,8 @@ public class CallHierarchyExporter {
         }
 
         long start = System.currentTimeMillis();
-        Config config = new Config(Paths.get(confitPath));
-        log("設定: " + Paths.get(confitPath).toAbsolutePath().normalize());
+        Config config = new Config(Paths.get(configPath));
+        log("設定: " + Paths.get(configPath).toAbsolutePath().normalize());
         log("プロジェクトルート: " + config.projectRoot);
 
         ProjectLayout layout = new ProjectLayout(config);
@@ -1169,7 +1173,7 @@ public class CallHierarchyExporter {
     static final class CacheFormat {
         static final String SEP = "\t";
         /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v5";
+        static final String VERSION = "jche-cache-v6";
 
         /**
          * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
@@ -1959,10 +1963,19 @@ public class CallHierarchyExporter {
              * 持ち込むと別物を指してしまう（匿名クラスの run() には引数が無い、など）。
              * 捕捉された引数を追うには匿名クラスの生成箇所まで遡る必要があり、
              * それは現在の経路の持ち方では表現できないため、ここで落とす。
+             *
+             * 持ち込む際は実引数リスト（|0=A:0 等）も剥がす。リストの中の A（引数）も
+             * 「捕捉した時点のメソッドの引数」という相対的な意味であり、付けたまま
+             * 持ち込むと、解決時に**今歩いているメソッド**（匿名クラスのメソッド）の
+             * 引数を誤って当てる。実測では、ファクトリ経由で捕捉した変数の呼び出しが
+             * 匿名メソッドの引数の型に DATAFLOW_FACTORY で誤確定し、正しい実装の行が
+             * 出力から消えた。頭（T:型 / M:メソッドキー）だけなら、どのフレームから
+             * 見ても同じものを指すので安全に持ち込める。
              */
             private String frameIndependent(String origin) {
                 char kind = Origin.kindOf(origin);
-                return (kind == Origin.NEW || kind == Origin.RETURN) ? origin : null;
+                return (kind == Origin.NEW || kind == Origin.RETURN)
+                        ? Origin.head(origin) : null;
             }
 
             /**
@@ -2041,7 +2054,7 @@ public class CallHierarchyExporter {
                 Expression arg = unwrap((Expression) forName.arguments().get(0));
                 String argOrigin = originOf(arg);
                 if (Origin.kindOf(argOrigin) == Origin.LITERAL) {
-                    // クラス名が determined。生成される型そのものが分かる
+                    // クラス名が文字列で確定している。生成される型そのものが分かる
                     return Origin.of(Origin.NEW, Origin.valueOf(argOrigin));
                 }
                 if (Origin.kindOf(argOrigin) == Origin.PARAM) {
@@ -2233,6 +2246,89 @@ public class CallHierarchyExporter {
 
             @Override
             public void endVisit(TypeDeclaration node) {
+                popTypeContext();
+            }
+
+            /**
+             * enum も型階層（H行）と型コンテキストに載せる。
+             *
+             * TypeDeclaration と EnumDeclaration はASTノードとして別物で、
+             * こちらの visit が無いと enum が丸ごと素通りしていた。その結果、
+             * (1) インターフェースを実装する enum がCHAの候補に入らず、他に実装が
+             *     1つだけあると SINGLE_IMPL でそちらに誤確定する（実測で再現）、
+             * (2) enum のフィールド初期化子が「メソッド本体の外」として
+             *     型解決失敗に落ちる、という2つの漏れが起きていた。
+             */
+            @Override
+            public boolean visit(EnumDeclaration node) {
+                ITypeBinding tb = node.resolveBinding();
+                recordType(tb);
+                pushTypeContext(tb, node.bodyDeclarations(),
+                        cu.getLineNumber(node.getName().getStartPosition()));
+                return true;
+            }
+
+            @Override
+            public void endVisit(EnumDeclaration node) {
+                popTypeContext();
+            }
+
+            /**
+             * enum 定数（{@code JA("こんにちは")}）はコンストラクタ呼び出しそのもの。
+             *
+             * 定数は static final フィールドであり、初期化はクラス初期化時に走るので、
+             * 呼び出し元は {@code <clinit>} に帰属させる（静的フィールド初期化子と同じ扱い）。
+             * ここで記録しないと、enum のコンストラクタが誰からも呼ばれていない
+             * ように見える。定数固有のボディ（匿名サブクラス）は、この子ノードの
+             * AnonymousClassDeclaration として既存の visit が処理する。
+             */
+            @Override
+            public boolean visit(EnumConstantDeclaration node) {
+                methodStack.push(clinitContext());
+                enterScope(new HashMap<String, String>());
+                record(node.resolveConstructorBinding(), node, "<init>", 'C', "",
+                        RecvKind.TYPE, null, null, argOriginsOf(node.arguments()));
+                return true;
+            }
+
+            @Override
+            public void endVisit(EnumConstantDeclaration node) {
+                if (!methodStack.isEmpty()) {
+                    methodStack.pop();
+                }
+                leaveScope();
+            }
+
+            /** record も enum と同じ理由で型階層と型コンテキストに載せる */
+            @Override
+            public boolean visit(RecordDeclaration node) {
+                ITypeBinding tb = node.resolveBinding();
+                recordType(tb);
+                pushTypeContext(tb, node.bodyDeclarations(),
+                        cu.getLineNumber(node.getName().getStartPosition()));
+                return true;
+            }
+
+            @Override
+            public void endVisit(RecordDeclaration node) {
+                popTypeContext();
+            }
+
+            /**
+             * アノテーション型。呼び出しはほぼ現れないが、定数フィールドの
+             * 初期化子が「メソッド本体の外」に落ちないよう型コンテキストだけは積む。
+             */
+            @Override
+            public boolean visit(AnnotationTypeDeclaration node) {
+                ITypeBinding tb = node.resolveBinding();
+                recordType(tb);
+                pushTypeContext(tb, node.bodyDeclarations(),
+                        cu.getLineNumber(node.getName().getStartPosition()));
+                return true;
+            }
+
+            @Override
+            public void endVisit(AnnotationTypeDeclaration node) {
                 popTypeContext();
             }
 
@@ -2504,15 +2600,37 @@ public class CallHierarchyExporter {
                     }
                 }
                 if (!anyConstructor) {
-                    // 明示コンストラクタが無い型には、暗黙のデフォルトコンストラクタが
-                    // 1つ存在する。ソース上に宣言が無いのでここで合成しておく。
-                    // new B() のような生成はこの <init> を呼ぶため、宣言を作っておかないと
-                    // 「ソースなし（展開不可）」の未知メソッド扱いになってしまう
-                    String[] implicitRef = implicitConstructorRef(tb);
-                    if (implicitRef != null) {
-                        roots.add(implicitRef);
-                        out.declarations.add(new MethodDecl(implicitRef[0], implicitRef[1],
-                                implicitRef[2], implicitRef[3], declLine, true));
+                    // 明示コンストラクタが無い型にも、暗黙のコンストラクタが存在する。
+                    // ソース上に宣言が無いのでここで合成しておく。作っておかないと
+                    // new B() が「ソースなし（展開不可）」の未知メソッド扱いになってしまう。
+                    //
+                    // 通常のクラスと enum は引数なしの <init>() だが、record の暗黙の
+                    // 正準コンストラクタはレコードコンポーネントを引数に取る
+                    // （Point(int,int) 等）。バインディングにはコンパイラが合成した
+                    // コンストラクタが載っているので、そちらを正として合成し、
+                    // 取れない場合だけ引数なしにフォールバックする。
+                    boolean synthesized = false;
+                    if (tb != null && tb.getDeclaredMethods() != null) {
+                        for (IMethodBinding m : tb.getDeclaredMethods()) {
+                            if (!m.isConstructor()) {
+                                continue;
+                            }
+                            String[] ref = toRef(m);
+                            if (ref != null) {
+                                roots.add(ref);
+                                out.declarations.add(new MethodDecl(ref[0], ref[1],
+                                        ref[2], ref[3], declLine, true));
+                                synthesized = true;
+                            }
+                        }
+                    }
+                    if (!synthesized) {
+                        String[] implicitRef = implicitConstructorRef(tb);
+                        if (implicitRef != null) {
+                            roots.add(implicitRef);
+                            out.declarations.add(new MethodDecl(implicitRef[0], implicitRef[1],
+                                    implicitRef[2], implicitRef[3], declLine, true));
+                        }
                     }
                 }
                 return new TypeContext(tb, roots, declLine);
@@ -5221,8 +5339,9 @@ public class CallHierarchyExporter {
                     countDataflow(res.label);
                 }
 
-                // CHAで候補が複数になった呼び出しは、候補の数だけ展開すると
-                // 候補数^深さ で爆発する。宣言型のまま1行だけ残して先へは降りない
+                // CHAで候補が複数になった呼び出しは、候補を1件ずつ行にして見せるが、
+                // そこから先へは降りない（候補数^深さ で爆発するため）。
+                // 並べる候補数にも上限を設ける
                 int[] targets = res.targets;
                 boolean expand = (targets.length == 1);
                 int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
@@ -5692,7 +5811,8 @@ public class CallHierarchyExporter {
                 return "";
             }
             if (s.indexOf(',') >= 0 || s.indexOf('\t') >= 0
-                    || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+                    || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0
+                    || s.indexOf('\r') >= 0) {
                 return "\"" + s.replace("\"", "\"\"") + "\"";
             }
             return s;
