@@ -1,0 +1,8 @@
+{
+  "aliases": {
+    "CallHierarchyExporter.java": {
+      "script-ref": "src/CallHierarchyExporter.java",
+      "description": "Javaプロジェクトの呼び出し階層をCSVに出力する静的解析ツール"
+    }
+  }
+}

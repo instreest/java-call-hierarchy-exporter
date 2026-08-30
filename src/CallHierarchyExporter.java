@@ -14,6 +14,28 @@
  * limitations under the License.
  */
 
+// ---------------------------------------------------------------------------
+// JBang 用の指示行（jbangw で実行するときだけ意味を持つ。javac / java には単なるコメント）
+//
+// DEPS: 依存はこの1行だけ。推移的な依存（org.eclipse.platform.* 等）は
+//       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
+//         3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
+//         3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
+//       解析対象ソースのJavaバージョンは、この版とは別に config.properties の
+//       source.level で指定する（未指定なら、この版が対応する最大値）。
+// JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
+//       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
+//       変わると解析結果が変わるから。手元に25が無ければ jbang が取得する
+//       （保存先はプロジェクト内の .jbang/cache/jdks。jbangw が JBANG_DIR で固定する）。
+// JAVA_OPTIONS: コンソールログの文字コードをUTF-8に固定する（JDK 19+）。
+//       Windowsの既定コンソール（MS932）と食い違うため、jbangw.cmd 側で
+//       chcp 65001 を先に実行してターミナル側もUTF-8に揃えている。
+//       CSV等のファイル入出力は常に明示的な文字コードを使うので、この指定の影響を受けない。
+// ---------------------------------------------------------------------------
+//DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
+//JAVA 25
+//JAVA_OPTIONS -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.dom.AST;
@@ -153,6 +175,12 @@ public class CallHierarchyExporter {
 
     public static void main(String[] args) throws Exception {
     	String confitPath = (args.length > 0) ? args[0] : "config/config.properties";
+        // jbang はスクリプト名より後ろの引数をそのまま渡してくるため、
+        // Quick start の --args="…" は「--args= が頭に付いた設定ファイルパス」として届く。
+        // gradlew 時代のコマンド形との互換のために剥がす。素のパス指定も従来どおり使える
+        if (confitPath.startsWith("--args=")) {
+            confitPath = confitPath.substring("--args=".length());
+        }
         if (!(args.length > 0)) {
             System.err.println("config.propertiesのパスが指定されていません。");
             System.err.println("既定値の「config/config.properties」で実行します。");

@@ -20,25 +20,31 @@ Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSV�
 ### 2. 実行する
 
 ```bat
-gradlew run --args="config/config.properties"
+jbangw CallHierarchyExporter.java --args="config/config.properties"
 ```
 
-これだけです。Gradle本体・依存jar・このツールが必要とするJDKは、
-初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に置かれます
-（`.gradle-home/`）。利用者のホームフォルダには何も残らず、
-やめるときは `.gradle-home/` を消せば元どおりです。
+これだけです。[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とする
+JDK 25 は、初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に
+置かれます（`.jbang/`）。利用者のホームフォルダには何も残らず、
+やめるときは `.jbang/` を消せば元どおりです。
 
-初回は取得のぶん数分かかります。2回目以降は取得済みのものを使います。
+初回は取得のぶん時間がかかります。2回目以降は取得済みのものを使います。
+依存の指定はビルドファイルではなく、`src/CallHierarchyExporter.java` 冒頭の
+`//DEPS` / `//JAVA` 行にあります（javac にはただのコメントです）。
 
-> Gradleを起動するにはJavaが必要です。まだ何も入っていない環境については
-> [Javaが入っていない環境](#javaが入っていない環境) を参照してください。
+> JBangを起動するにはJavaが1つ必要です（8以上なら何でも可）。まだ何も
+> 入っていない環境については [Javaが入っていない環境](#javaが入っていない環境) を
+> 参照してください。また、Windowsの `jbangw.cmd` はターミナルをUTF-8
+>（`chcp 65001`）に切り替えます。ログをMS932前提の他ツールへパイプする場合は注意してください。
 
-Gradleを使わない場合は、次の手順でも動きます。
+JBangを使わない場合は、次の手順でも動きます。
 
 #### Pleiades/Eclipse環境
 
 Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
 実行に必要なjarを`lib` フォルダに集めて使います。
+（`jbangw` で一度実行済みの環境なら、Eclipseからコピーする代わりに
+`.jbang/repository` 以下の全jarを `lib` へ集めても同じです）
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bat
@@ -61,13 +67,14 @@ rem 実行
 
 ### Javaが入っていない環境
 
-Gradle（`gradlew`）を**起動する**ためにJavaが1つ必要です。
-これはツール本体が使うJDKとは別で、Gradle 8.14 は Java 8〜24 のいずれでも起動できます。
+JBang（`jbangw`）を**起動する**ためにJavaが1つ必要です。
+これはツール本体が使うJDKとは別で、Java 8 以上なら何でも起動できます。
 Pleiades/Eclipseが入っていれば同梱のJavaで足ります。
 
 **ツール本体が使うJDKは利用者が用意する必要はありません。**
-`build.gradle` の `toolchain` が **JDK 25** を要求し、手元に無ければGradleが取得します
-（取得先は `.gradle-home/jdks/`）。手元に既にJDK 25があればそれが使われ、取得は起きません。
+ソース冒頭の `//JAVA 25` 指示が **JDK 25** を要求し、手元に無ければJBangが取得します
+（取得先は `.jbang/cache/jdks/`）。手元に既にJDK 25があれば（JAVA_HOME や PATH から
+検出されて）それが使われ、取得は起きません。
 
 バージョンを固定しているのは、**手元のJDKが何であっても同じ結果になるようにするため**です。
 解析結果はJDTを動かすJDKに左右されるので、環境差が出ると原因の切り分けが難しくなります。
@@ -76,20 +83,18 @@ JDTが要求する最低版（既定の 3.46.0 なら 17）より高い 25 を�
 **JDTが「自分が動いているJVMのブートクラスパス」を解析対象のクラスパスに含める**ためです。
 ここが新しいほど、新しいJDKのAPIを参照している解析対象コードを型解決できます。
 
-社内プロキシ等で取得できない場合は、JDK 25 を自分で入れてから実行してください
-（`gradle.properties` の `org.gradle.java.installations.auto-download` を `false` にすると
-取得を試みなくなります）。JDT Coreの版と、それ自体が動作に要求するJDKは次のとおりです。
+JDKの取得元は foojay.io（Disco API）です。社内プロキシ等で取得できない場合は、
+JDK 25 を自分で入れてから実行してください。jbang本体の取得元（Maven Central）だけ
+社内ミラーに差し替えたい場合は、環境変数 `JBANGW_JAR_URL` にjarのURLを指定します。
+JDT Coreの版と、それ自体が動作に要求するJDKは次のとおりです。
 
 | JDT Core | 動作に必要なJDK | 解析できるソースの上限 |
 |---|---|---|
 | 3.46.0（既定） | 17以上 | Java 26 |
 | 3.33.0 | 11以上 | Java 19 |
 
-いずれも `toolchain` の 25 で動くので、JDTの版を下げるときも `toolchain` はそのままで構いません。
-
-```bat
-gradlew -PjdtVersion=3.33.0 run --args="config/config.properties"
-```
+いずれも `//JAVA 25` で動くので、JDTの版を下げるときも `//JAVA` はそのままで構いません。
+版を変えるときは `src/CallHierarchyExporter.java` 冒頭の `//DEPS` 行を書き換えます。
 
 なお、ここでいうJDKのバージョンは**解析対象**のJavaバージョンとは別物です。
 対象側は `config/config.properties` の `source.level` で指定します（既定は自動）。

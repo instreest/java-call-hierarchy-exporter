@@ -12,28 +12,34 @@ Documentation is in Japanese and is part of the deliverable, not an afterthought
 - `config/config.properties` — **the single source of truth for settings.** Every key is documented inline; do not duplicate the list elsewhere
 - `docs/DESIGN.md` — internal design, written so another AI session can reimplement the tool. Chapter 11 is a pitfalls table, chapter 12 is the acceptance criteria
 - `docs/QA.md` — decisions made while implementing the dataflow analysis, with the reasoning
-- `docs/QA-build.md` — same, for the build/run environment (wrapper, toolchain, where downloads land)
+- `docs/QA-build.md` — same, for the build/run environment (jbangw, `//DEPS`/`//JAVA`, where downloads land)
 - `docs/QA-issue29.md` — same, for the `callee` column format and how lambdas / method references are treated
 
 **Read `docs/DESIGN.md` before changing analysis behavior.** Most of what looks like an easy improvement is something chapter 11 already records as a trap.
 
 ## Commands
 
-`./gradlew` is the one-command path: it provisions Gradle, the dependency jars and a JDK 25
-toolchain into `.gradle-home/` inside the project, leaving the user's `~/.gradle` untouched.
-The toolchain governs both compile *and* run (`javaLauncher`), because JDT puts the running
-JVM's bootclasspath on the analysis classpath — the JDK it runs on changes what resolves.
+`./jbangw` is the one-command path: it fetches JBang itself (from Maven Central, SHA-256
+pinned), the dependency jars and a JDK 25 into `.jbang/` inside the project, leaving the
+user's home untouched. There is **no build file** — the dependency (`//DEPS`), the JDK
+(`//JAVA 25`) and console encoding (`//JAVA_OPTIONS`) are directives at the top of
+`src/CallHierarchyExporter.java`; to javac they are plain comments. The JDK is pinned to 25
+because JDT puts the running JVM's bootclasspath on the analysis classpath — the JDK it
+runs on changes what resolves. `jbang-catalog.json` maps the alias `CallHierarchyExporter.java`
+to `src/CallHierarchyExporter.java` so the Quick start command needs no `src/` prefix.
 `javac` + `java` remains the supported path for users on a locked-down Windows/Pleiades box (see README).
 
 ```bash
-./gradlew run --args="config/config.properties"    # analyze; --args is required. The one Quick start command
-./gradlew copyLibs                                 # resolve JDT and its deps into ./lib
-./gradlew build                                    # compile + jar
-./gradlew -PjdtVersion=3.33.0 copyLibs             # older JDT (still runs on the 25 toolchain)
+./jbangw CallHierarchyExporter.java --args="config/config.properties"   # the one Quick start command
+./jbangw src/CallHierarchyExporter.java config/config.properties        # same, without alias or --args= sugar
+find .jbang/repository -name "*.jar" -exec cp {} lib/ \;                 # populate ./lib (copyLibs replacement)
 
 javac -encoding UTF-8 -Xlint:all -cp "lib/*" -d bin src/CallHierarchyExporter.java
 java -cp "bin:lib/*" CallHierarchyExporter config/config.properties
 ```
+
+`main()` strips a leading `--args=` from its first argument — that sugar keeps the
+documented command shape; the plain path form works identically.
 
 There is **no test suite** — no `src/test`, no test task. Verification is done by running the tool:
 

@@ -1,0 +1,94 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# jbangw — JBang wrapper
+#
+# jbang（https://www.jbang.dev）を、利用者の環境に何もインストールせずに使うための
+# 起動スクリプト。次の3つを引き受ける:
+#
+#   1. jbang 本体（jbang.jar）が無ければ Maven Central から取得する
+#      （SHA-256 を照合してから使う。取得先は JBANGW_JAR_URL で差し替え可能）
+#   2. jbang が使うフォルダをプロジェクト内（.jbang/）に固定する
+#      利用者のホームフォルダ（~/.jbang, ~/.m2）を汚さないため。
+#      やめるときは .jbang/ を消せば元どおり
+#   3. jbang の実行規約を仲介する。jbang.jar は「実行すべき java コマンドライン」を
+#      標準出力に書いて終了コード255で終わるので、それを exec する
+#
+# jbang 自体の起動には Java 8 以上が1つ必要（JAVA_HOME または PATH の java）。
+# ツール本体が使う JDK 25 はそれとは別で、無ければ jbang が取得する
+# （ソースの //JAVA 25 指示。保存先は .jbang/cache/jdks/）。
+# ---------------------------------------------------------------------------
+set -e
+
+# このスクリプトの置き場所＝プロジェクトルート
+APP_HOME=$(cd "$(dirname "$0")" && pwd)
+
+JBANG_VERSION=0.132.1
+JBANG_JAR_SHA256=f977075849cff866f45b27997f5671ab8a336a5dd3cf9e702b3479128338f3a7
+
+# 社内ミラーを使う場合はこの環境変数で差し替える（jarのURLそのもの）
+JAR_URL=${JBANGW_JAR_URL:-"https://repo1.maven.org/maven2/dev/jbang/jbang-cli/$JBANG_VERSION/jbang-cli-$JBANG_VERSION-all.jar"}
+
+# jbang のキャッシュ（取得したJDK・ビルド済みjar・エイリアス）をプロジェクト内に置く。
+# 既に外から与えられていれば尊重する（共有キャッシュを使う場合など）
+if [ -z "${JBANG_DIR:-}" ]; then
+    JBANG_DIR="$APP_HOME/.jbang"
+    export JBANG_DIR
+fi
+# 依存jarのローカルリポジトリもプロジェクト内に置く（既定は ~/.m2 相当のため明示する）
+if [ -z "${JBANG_REPO:-}" ]; then
+    JBANG_REPO="$JBANG_DIR/repository"
+    export JBANG_REPO
+fi
+# jbang本体もJBANG_DIRの下に置く。外から共有キャッシュを指されたときに
+# プロジェクト内へ二重に置かないため。ファイル名に版を含めるのは、
+# JBANG_VERSION を上げたときに古いjarを使い続けないため
+JBANG_JAR="$JBANG_DIR/jbang-cli-$JBANG_VERSION-all.jar"
+
+# --- jbang を起動する Java を探す（8以上なら何でもよい） ---
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA="$JAVA_HOME/bin/java"
+elif command -v java >/dev/null 2>&1; then
+    JAVA=java
+else
+    echo "[jbangw] Java が見つかりません（JAVA_HOME も PATH も未設定）。" >&2
+    echo "[jbangw] jbang の起動には Java 8 以上が1つ必要です。README の" >&2
+    echo "[jbangw] 「Javaが入っていない環境」を参照してください。" >&2
+    exit 1
+fi
+
+# --- jbang.jar が無ければ取得し、SHA-256 を照合する ---
+if [ ! -f "$JBANG_JAR" ]; then
+    echo "[jbangw] jbang $JBANG_VERSION を取得します: $JAR_URL" >&2
+    mkdir -p "$(dirname "$JBANG_JAR")"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$JBANG_JAR.part" "$JAR_URL"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$JBANG_JAR.part" "$JAR_URL"
+    else
+        echo "[jbangw] curl も wget も見つからないため取得できません。" >&2
+        echo "[jbangw] $JAR_URL を手動でダウンロードし、$JBANG_JAR に置いてください。" >&2
+        exit 1
+    fi
+    ACTUAL=$(sha256sum "$JBANG_JAR.part" 2>/dev/null | cut -d' ' -f1)
+    [ -n "$ACTUAL" ] || ACTUAL=$(shasum -a 256 "$JBANG_JAR.part" | cut -d' ' -f1)
+    if [ "$ACTUAL" != "$JBANG_JAR_SHA256" ]; then
+        # 改ざん・ミラーの別物・途中切断のいずれか。壊れたjarを実行しない
+        rm -f "$JBANG_JAR.part"
+        echo "[jbangw] SHA-256 が一致しません。期待: $JBANG_JAR_SHA256 実際: $ACTUAL" >&2
+        exit 1
+    fi
+    mv "$JBANG_JAR.part" "$JBANG_JAR"
+fi
+
+# --- 実行規約: 終了コード255のとき、標準出力が「実行すべきコマンドライン」 ---
+# （set -e のままだと255で即終了してしまうため、ここだけ手動でエラーを扱う）
+set +e
+output=$("$JAVA" -jar "$JBANG_JAR" "$@")
+err=$?
+set -e
+if [ $err -eq 255 ]; then
+    eval "exec $output"
+else
+    [ -n "$output" ] && printf '%s\n' "$output"
+    exit $err
+fi
