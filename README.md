@@ -1,58 +1,32 @@
 # java-call-hierarchy-exporter
 
-Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSVに出力するツールです。
+Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
-- 内部設計・再実装のための情報 … [docs/DESIGN.md](docs/DESIGN.md)
-- ビルド・実行環境の設計判断 … [docs/QA-build.md](docs/QA-build.md)
 
 ---
 
 ## Quick start
 
-このリポジトリを最小構成で試す手順です。
-
 ### 1. 設定ファイルを編集する
 
-`config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。
+`config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
 
 ### 2. 実行する
 
+#### JBangによる実行
+
 ```bat
-rem Windows（コマンドプロンプト / PowerShell）
-.\jbangw src/CallHierarchyExporter.java config/config.properties
+.\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-```sh
-# Linux / macOS
-./jbangw src/CallHierarchyExporter.java config/config.properties
-```
+このツールが必要とするJDK 17・依存jarは、環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
 
-> PowerShellで `.\jbangw` が拡張子なしのシェルスクリプト（Linux/macOS用）を
-> 拾ってしまう場合は、`.\jbangw.cmd` と明示してください。
-
-これだけです。[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とする
-JDK 25 は、初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に
-置かれます（`.jbang/`）。利用者のホームフォルダには何も残らず、
-やめるときは `.jbang/` を消せば元どおりです。
-
-初回は取得のぶん時間がかかります。2回目以降は取得済みのものを使います。
-依存の指定はビルドファイルではなく、`src/CallHierarchyExporter.java` 冒頭の
-`//DEPS` / `//JAVA` 行にあります（javac にはただのコメントです）。
-
-> **Javaが1つも入っていない環境でも、このコマンドだけで動きます。**
-> `jbangw` がJDKを取得するところから始めます（詳細は
-> [Javaが入っていない環境](#javaが入っていない環境)）。
-
-JBangを使わない場合は、次の手順でも動きます。
-
-#### Pleiades/Eclipse環境
+#### Pleiades/Eclipse環境（閉域ネットワーク等）
 
 Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
-実行に必要なjarを`lib` フォルダに集めて使います。
-（`jbangw` で一度実行済みの環境なら、Eclipseからコピーする代わりに
-`.jbang/repository` 以下の全jarを `lib` へ集めても同じです）
+実行に必要なjarを `lib` フォルダに集めて使います。
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bat
@@ -73,96 +47,21 @@ rem 実行
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
-### Javaが入っていない環境
-
-**利用者がJavaを用意する必要はありません。** `jbangw` は次の順にJDKを探し、
-1つも無ければ **JDK 25 を取得してから** 起動します。
-
-1. `JAVA_HOME`（`bin/javac` があること）
-2. `PATH` の `javac`
-3. `.jbang/currentjdk`
-4. `.jbang/cache/jdks/25`（前回 `jbangw` が取得したもの）
-5. どれも無ければ取得して `.jbang/cache/jdks/25` に置く
-
-探しているのが `java` ではなく **`javac`** なのは、JBangが実行前にソースを
-コンパイルするためです。JRE（javacを含まない）しか無い環境は「Javaが無い」
-扱いになり、JDKの取得に進みます。
-
-取得したJDKは **JBang自身の起動と、ツール本体の実行の両方に使われます**。
-ソース冒頭の `//JAVA 25` と取得する版を25で揃えてあるためで、JDKが端末に
-入るのは1つだけです（JBang標準の起動用JDKは17なので、揃えないと17と25の
-2つが入ります）。取得する版を変えたい場合は環境変数
- `JBANG_DEFAULT_JAVA_VERSION` を指定します。
-
-バージョンを固定しているのは、**手元のJDKが何であっても同じ結果になるようにするため**です。
-解析結果はJDTを動かすJDKに左右されるので、環境差が出ると原因の切り分けが難しくなります。
-
-JDTが要求する最低版（既定の 3.46.0 なら 17）より高い 25 を指定しているのは、
-**JDTが「自分が動いているJVMのブートクラスパス」を解析対象のクラスパスに含める**ためです。
-ここが新しいほど、新しいJDKのAPIを参照している解析対象コードを型解決できます。
-
-JDKの取得元は foojay.io（Disco API）、JBang本体の取得元は Maven Central です。
-社内プロキシ等で到達できない場合は次のどちらかで回避できます。
-
-| 到達できないもの | 回避方法 |
-|---|---|
-| `api.foojay.io`（JDK） | JDK 25 を自分でインストールして `JAVA_HOME` を設定する。または展開したものを `.jbang/cache/jdks/25` に置く |
-| `repo1.maven.org`（JBang本体・依存jar） | 環境変数 `JBANGW_JAR_URL` でJBang本体のURLを社内ミラーに差し替える |
-
-どちらもエラーメッセージに回避方法を出します。
-
-取得物はすべてプロジェクト内の `.jbang/` に入ります。複数のクローンで
-JDKを共有したい場合は、環境変数 `JBANG_DIR` を共通の場所に向けてください
-（その場合プロジェクト内には何も作られません）。
-
-JDT Coreの版と、それ自体が動作に要求するJDKは次のとおりです。
-
-| JDT Core | 動作に必要なJDK | 解析できるソースの上限 |
-|---|---|---|
-| 3.46.0（既定） | 17以上 | Java 26 |
-| 3.33.0 | 11以上 | Java 19 |
-
-いずれも `//JAVA 25` で動くので、JDTの版を下げるときも `//JAVA` はそのままで構いません。
-版を変えるときは `src/CallHierarchyExporter.java` 冒頭の `//DEPS` 行を書き換えます。
-
-なお、ここでいうJDKのバージョンは**解析対象**のJavaバージョンとは別物です。
-対象側は `config/config.properties` の `source.level` で指定します（既定は自動）。
-
----
-
-### IDEで開く場合
-
-ソースは `src/CallHierarchyExporter.java` の1ファイルで、ビルドファイルはありません。
-IDEのプロジェクト設定ファイル（`.project` / `.classpath` / `.idea` 等）は
-コミットしない方針です（`.gitignore` 済み。環境ごとに中身が変わるため）。
-
-- **Eclipse / Pleiades** … 通常のJavaプロジェクトとして取り込み、
-  ソースフォルダに `src`、ビルドパスに `lib` の全jarを追加してください
-  （`lib` の作り方は上記の各手順を参照）。
-- **jbangが使える環境** … `jbangw edit -b` で、依存解決済みの
-  一時プロジェクト（Gradle形式・ソースは本体へのリンク）が生成されます。
-  IDEはそれを開くだけで補完が効きます。生成先はプロジェクト内の `.jbang/cache/` です。
-
-行末・文字コード・インデントは `.editorconfig` に定義してあります
-（対応IDEなら自動で適用されます）。**`src/CallHierarchyExporter.java` はCRLF、
-`jbangw` はLFのまま**にしてください。行末の一括変換は `.gitattributes` で
-抑止していますが、IDE側の保存時変換には効きません。
-
 ### 出力されるファイル
 
 | ファイル | 既定出力先 |
 |---|---|
-| 呼び出し階層リスト | `./config/output/call-hierarchy.csv` |
-| メソッド全体リスト | `./config/output/methods.csv` |
+| 呼び出し階層リスト | `./output/call-hierarchy.csv` |
+| メソッド全体リスト | `./output/methods.csv` |
 
 出力はすべてUTF-8（BOM付き）のCSVで、Excelでそのまま開けます。
-出力先は設定ファイルからの相対パスなので、`config/config.properties` を使う場合は
+出力先は設定ファイルからの相対パスなので、`config/config.properties` を指定した場合は
 `config/output/` の下に出ます。
 
 #### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
-呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を1行としたCSVです。
-呼び出し先ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
+呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
+呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
 呼び出し元はEclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
 `(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。（後述）
 
@@ -171,6 +70,16 @@ caller,callee,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
+
+##### **Eclipseでのソースコードジャンプ**
+`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
+
+1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
+2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
+   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
+   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
 #### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
@@ -184,76 +93,13 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java
 
 ---
 
-特定のパッケージだけを起点にしたい場合の設定や、各出力ファイルの列の意味・既知の限界などは
-以降のセクションで説明します。
+## キャッシュファイル設計
 
----
+大規模なコードベースでも `OutOfMemoryError` にならないよう、3点で対策しています。
 
-## 使い方
-
-### 1. 設定ファイルを用意する
-
-`config/config.properties` をコピーして編集します。設定できる項目と意味は
-そのファイルにコメントで書いてあります。
-
-相対パスの起点は項目によって異なります。
-
-| 項目 | 相対パスの起点 |
-|---|---|
-| `project.root` / `cache.folders` / `output.csv` / `methods.csv` | 設定ファイルが置かれているディレクトリ |
-| `source.folders` / `library.folders` / `external.library.folders` | `project.root` |
-
-`library.folders` が不足していると型解決に失敗し、その呼び出しが
-`call-hierarchy.csv` から丸ごと抜け落ちます。失敗件数は実行ログに出るので、
-**初回は必ずこの件数を確認してください**（[既知の限界](#既知の限界)参照）。
-
-### 2. 実行する
-
-処理の進捗は標準出力に出ます。件数単位の進捗が出るのはフェーズ1（ソース解析）だけです。
-以降のフェーズは1件あたりが十分速いため、フェーズごとの集計だけを出します。
-
-```
-[00:00.033s] === フェーズ1/3: ソース解析 ===
-[00:00.037s] Javaファイル数: 900
-[00:00.047s] ソース解析 500/900 （直近500件: 1s）
-[00:00.057s] ソース解析 900/900 （直近400件: 1s）
-[00:00.457s] ソース解析: 再利用=900 新規解析=0 失敗=0
-[00:00.457s] === フェーズ1完了: [heap] 使用 45MB / 上限 2048MB
-```
-
-起動時のログには、**どのJavaバージョンとして解析するか**も出ます。
-`source.level` を指定していなければ、クラスパスに入っているJDTが対応する最大値です。
-
-```
-[00:00.026s] ソース文字コード: MS932
-[00:00.031s] ソースレベル: 26（source.level 未指定のため、JDTが対応する最大値） / このJDTの対応上限: 26
-```
-
-ソース解析に時間がかかるため解析結果のキャッシュを作成します。
-２回目以降はキャッシュを利用し、差異のあるファイルだけを解析し直します。
-差分判定は最終更新時刻とファイルサイズによります。
-なお `source.level` を変えるとキャッシュは破棄されます
-（同じソースでも、どの言語バージョンとして解析したかで結果が変わるため）。
-
-#### 解析対象のJavaバージョン（`source.level`）
-
-通常は**指定しなくて構いません。** 未指定なら、JDTが対応する最大値で解析します。
-新しい言語機能を許可するだけなので、対象コードが実際にそれを使うかどうかには
-影響しません。
-
-指定が要るのは、新しい版では意味が変わる書き方を含む古いコードを解析するときです
-（`var` / `record` / `sealed` / `yield` などが識別子として使われている場合）。
-
-```properties
-source.level=1.8
-```
-
-指定した値がJDTの対応範囲外なら起動時にエラーになります。
-また、新しいJDTは **1.7以下の指定を黙って 1.8 に引き上げる**ため、
-その場合はログにその旨が出ます。それより古いレベルが必要なら、
-古い版のJDT（`-PjdtVersion=3.33.0` など）を使ってください。
-
----
+1. **解析結果をヒープに溜めない** — 1ファイル解析するたびにキャッシュへ書き出して破棄
+2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
+3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
 
 ## 出力ファイル
 
@@ -275,28 +121,24 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 `callee` はこの1列でパッケージとオーバーロードを見分けられる形にしてあります。
 引数の型はパッケージを落とした略名（`java.lang.String` → `String`）ですが、
 略した結果 `java.util.List` と `other.List` のように**別物が同じ表記になる組だけ**は
-完全修飾に戻します（`fn.Dao.save(java.util.List)`）。識別できることを優先するためです。
+完全修飾に戻します（`fn.Dao.save(java.util.List)`）。
 
 なお引数が2つ以上あると `callee` にカンマが入るため、その値はCSVの引用符で
 囲まれて出ます（`"...findOrder(String,long)"`）。Excelや標準的なCSVパーサでは
 そのまま1列として読めますが、`cut -d,` のような素朴な処理では分割されます。
 
-**コンストラクタの呼び出し自体は行になりません。** `new` したこと自体より
-「そのコンストラクタの中で何を呼んでいるか」が知りたいためです。
-経路には残るので、コンストラクタ内からの呼び出しは
-`call-hierarchy` 列にコンストラクタを含んだ形で出力されます。
-`callee` や `call-hierarchy` でのコンストラクタの表示は `<init>` ではなく
-**クラス名**です（`Sample.Sample`）。ソースに宣言が無い暗黙のデフォルト
-コンストラクタも、補完される名前（＝クラス名）で出ます。
-`caller` 列だけはEclipseのスタックトレース形式に合わせるため `<init>` のままです。
+コンストラクタの呼び出し自体は行になりません。
+コンストラクタ内からのメソッド呼び出しは行として出力されます。
+コンストラクタ名はEclipseのスタックトレース形式に合わせるため `<init>` で出力されます。
 
 ```csv
 caller,callee,root,call-hierarchy
 at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample.Sample,Sample.init
 ```
 
-注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。列を間に挟むと
-可変長の階層が途中で切れてしまうためです。
+#### 注記
+
+注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。
 
 | 注記 | 意味 |
 |---|---|
@@ -315,30 +157,12 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
-絞り込めなかったときの「理由」は、**レシーバ（呼び出し先のインスタンス）がどこから
-来たか**です。次にどこを調べれば具象クラスが分かるかが変わるため、この単位で出します。
-
-| 理由 | 意味 | 次に見る場所 |
-|---|---|---|
-| `戻り値（ファクトリメソッド等）` | `getService().run()` のように、別のメソッドの戻り値に対する呼び出し | そのファクトリメソッドが何を `return` しているか |
-| `引数（メソッド外から渡される）` | 引数で受け取ったインスタンスに対する呼び出し | このメソッドの呼び出し元が何を渡しているか |
-| `フィールド変数` | フィールドに対する呼び出し。コンストラクタで確定しないもの（setter/DI設定で入る等） | フィールドの代入箇所・DI設定 |
-| `ローカル変数` | ローカル変数に対する呼び出し。同一メソッド内の `new` では絞れなかった場合 | その変数への代入箇所 |
-| `自クラス（this）` | レシーバ省略。自分自身かサブクラスのオーバーライド | サブクラスのオーバーライド |
-| `型名（static）` | `static` 呼び出し。通常はここまで来ない | — |
-| `レシーバ不明` | 上記のいずれにも当てはまらない式 | 呼び出し箇所のソース |
-
-### **Eclipseへのジャンプ**
-`caller` 列の値をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
-
-1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
-2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
-   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
-   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
-
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+
+| 列 | 内容 |
+|---|---|
+| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
+| `unresolvedCause` | その理由（上の「理由」表と同じ。複数ある場合は `;` 区切り） |
 
 | role | 意味 |
 |---|---|
@@ -348,47 +172,11 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `NORMAL` | 上記以外 |
 
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
+コンストラクタ（`<init>`）は出力しません。
 
-`call-hierarchy.csv` と揃えて、**コンストラクタ（`<init>`）は出力しません**。
+### jarファイルからの被参照メソッド
 
-| 列 | 内容 |
-|---|---|
-| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
-| `unresolvedCause` | その理由（上の「理由」表と同じ。複数ある場合は `;` 区切り） |
-
-`unresolvedCalls` が0でないメソッドは、そのメソッド単体では具象クラスを絞れていません。
-**呼び出し階層を追う前にこの列で穴のあるメソッドを把握しておくと、
-「出ていないのは呼んでいないからなのか、絞れなかったからなのか」を取り違えずに済みます。**
-
-ただし理由が `引数（メソッド外から渡される）` や `フィールド変数` の場合は、
-`call-hierarchy.csv` 側では**解決できていることがあります**。
-引数とフィールドの追跡は起点からの経路ごとに行うのに対し、
-この列はメソッド単体で見た結果だからです
-（誰が何を渡すか分からないメソッド、という意味になります）。
-
-### 型解決に失敗した呼び出し
-
-依存jarが足りないなどで呼び出し先の型を特定できなかった呼び出しも、
-`call-hierarchy.csv` に行として出力されます。**解決できないまま黙って消すと
-「呼び出しが無い」ように見えてしまう**ためです。
-
-```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.Foo.bar(Foo.java:42),getOptions,(型解決失敗),getOptions,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-```
-
-| 列 | 内容 |
-|---|---|
-| `caller` | 呼び出し元。呼び出し箇所の行が分かるのでEclipseからジャンプできる |
-| `callee` | ソースに書かれていた式（メソッド名）。型が特定できていないのでクラス名も引数も付かない |
-| `root` | `(型解決失敗)` 固定。ここでフィルタすると失敗箇所だけを一覧できる |
-| `call-hierarchy` | 式と、失敗の理由 |
-
-件数は実行ログにも出ます。多い場合は `library.folders` の設定漏れを疑ってください。
-
-### 他リポジトリからの被参照
-
-自分のコードを呼んでいる側のjarを `external.library.folders` に指定すると、
+自分のコードを呼んでいる側のjarを config の `external.library.folders` に指定すると、
 `call-hierarchy.csv` に追記されます。
 
 ```properties
@@ -396,7 +184,7 @@ external.library.folders=./lib
 ```
 
 classファイルの定数プールだけを読むため、「どのjar・どのクラスが参照しているか」までが分かります。
-呼び出し元メソッドと行番号までは分かりません。そのため呼び出し階層の行とは列の詰め方が異なります。
+呼び出し元メソッドと行番号までは分かりません。そのため呼び出し階層の行とは列の出力形式が異なります。
 
 ```csv
 caller,callee,root,call-hierarchy
@@ -404,17 +192,10 @@ NightJob,jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,O
 NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:IMPLICIT_CTOR
 ```
 
-| 列 | 内容 |
-|---|---|
-| `caller` | 参照している側のクラス。行番号もメソッドも分からないためスタックトレース形式にはならない |
-| `callee` | 参照されている自分のメソッド。呼び出し階層の行と同じ表記 |
-| `root` | 参照元のjar名（起点メソッドが無いため、代わりにjar名を入れる） |
-| `call-hierarchy` | 短縮表記のメソッド名と、照合の種類を表す注記 |
-
-**指定したフォルダに自プロジェクトのjar（自分のビルド成果物）が混ざっていても、
-それは「他リポジトリからの被参照」ではないので読み飛ばします。**
-除外した件数は実行ログに出ます。`build/libs` や `dist` を丸ごと指定しても、
-自分から自分への呼び出しが被参照として出ることはありません。
+`external.library.folders` に指定したフォルダに自プロジェクトのjarが混ざっていても、
+それは「他リポジトリからの被参照」ではないので読み飛ばします。
+除外した件数は実行ログに出ます。
+`dist` を丸ごと指定しても、自分から自分への呼び出しが被参照として出ることはありません。
 
 | 注記 | 意味 |
 |---|---|
@@ -442,131 +223,3 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `CHA` | 候補が複数のまま（低確度） |
-
-**候補数は「サブクラス数」ではなく「そのメソッドをオーバーライドしている宣言の数」です。**
-サブクラスが多くても、オーバーライドが1件なら候補は1件のままになります。
-
-段5（`CHA`）になった呼び出しは、候補を列挙するだけでその先へは降りません
-（候補数^深さで爆発するため）。`call-hierarchy` 列の最後に
-`CHA候補N件（未展開）: 理由` と付きます。
-
-### データフローによる特定
-
-CHAで候補が複数になった呼び出しのうち、次の3つは値の流れを追って1つに絞ります。
-
-```java
-// 1. ファクトリメソッドの戻り値（DATAFLOW_FACTORY）
-DaoFactory.createUser().select();     // createUser() の return new UserDao() から UserDao.select と判定
-
-// 2. 呼び出し元から渡された引数（DATAFLOW_PARAM）
-void root()          { useDao(new UserDao()); }
-void useDao(Dao dao) { dao.select(); }   // この経路では UserDao.select と判定
-
-// 3. コンストラクタ注入されたフィールド（DATAFLOW_FIELD）
-class Service {
-    private final Dao dao;
-    Service(Dao dao) { this.dao = dao; }
-    void exec() { dao.select(); }        // この経路では UserDao.select と判定
-}
-new Service(new UserDao()).exec();
-```
-
-ファクトリは、**クラス名の文字列を受け取ってリフレクションで生成する形**にも
-対応しています。`static final String` の定数を渡す書き方も追えます。
-
-```java
-static Dao create(String className) {
-    return (Dao) Class.forName(className).newInstance();          // getDeclaredConstructor() を挟む形も可
-}
-create("jp.co.example.dao.UserDaoImpl").select();                  // -> UserDaoImpl.select
-create(Names.USER_DAO).select();                                   // 定数フィールドでも同じ
-```
-
-**匿名クラスやローカルクラスが捕捉した変数**も追えます。
-捕捉できる変数は `final` か実質的final（effectively final）だと言語仕様が
-保証しているので、捕捉した後で中身が別のインスタンスに差し替わることはなく、
-囲みメソッドで分かった型がそのまま通用するためです。
-
-```java
-void run() {
-    Dao dao = new UserDaoImpl();
-    exec(new Task() {
-        public void run() { dao.select(); }   // -> UserDaoImpl.select と判定
-    });
-}
-```
-
-ただし持ち込めるのは、**どのメソッドから見ても同じものを指す出所**だけです。
-「囲みメソッドの引数」や「囲むオブジェクトのコンストラクタで注入されたフィールド」は
-匿名クラスの中では別のものを指してしまうため、そこは絞りません。
-
-引数とフィールドの追跡は**起点からの経路ごと**に行います。同じメソッドでも、
-別の起点から別の具象クラスを渡されていれば、そちらはそちらで判定されます。
-逆に、呼び出し元の候補を遡って集めるようなことはしません
-（実際には通らない経路の型が混ざるため）。
-
-次の場合は**絞らずに `CHA候補N件（未展開）` のまま**出します。
-「候補が多くて絞れなかった」は追加調査で済みますが、
-「1つに絞ったが実は違った」は調査対象の取りこぼしになるためです。
-
-- ファクトリが複数の型を返しうる／追跡できない `return` を1つでも含む
-- クラス名が実行時にしか決まらない（`Class.forName(System.getProperty(...))` など）
-- ループや分岐でローカル変数が別の型に再代入される
-- 匿名クラス・ローカルクラスから、囲みメソッドの引数や、囲むオブジェクトの
-  コンストラクタで注入されたフィールドを参照している
-- フィールドが setter やDI設定で入る、代入しないコンストラクタがある、
-  `private` でも `final` でもない、親クラスで宣言されている
-- 起点メソッドの引数、起点オブジェクトの生成箇所（経路の中に渡し元がない）
-
-コンストラクタ注入されたフィールドを追う条件は、
-**「このフィールドには必ずこれが入る」と言い切れること**です。
-具体的には (a)`private` または `final`、(b) 代入がコンストラクタ本体か
-フィールド初期化子の中だけ、(c) 初期化子を持つか `this(...)`委譲していない
-全てのコンストラクタで代入される、(d) それらの出所が一致する、の4つを
-全て満たす場合だけです。
-
-`dataflow.enabled=false` で、この特定を丸ごと止められます
-（従来どおりの出力に戻ります）。実装上の判断は
-[docs/QA.md](docs/QA.md)、仕組みは [docs/DESIGN.md](docs/DESIGN.md) を参照してください。
-
-### プロジェクト固有の解決を差し込む
-
-段3の拡張は、ファクトリメソッドやDI設定など**プロジェクト固有の解決手法**を
-差し込むための口です。同梱の `config/config.properties` には設定キーを載せて
-いないので、使う場合は自分で次のキーを追加してください
-（実装の詳細は [docs/DESIGN.md](docs/DESIGN.md) を参照）。
-
-```properties
-resolver.hint.collectors=jp.co.xxx.MyHintCollector
-resolver.candidate.providers=jp.co.xxx.MyCandidateProvider
-```
-
----
-
-## メモリ設計
-
-大規模なコードベースでも `OutOfMemoryError` にならないよう、3点で対策しています。
-
-1. **解析結果をヒープに溜めない** — 1ファイル解析するたびにキャッシュへ書き出して破棄
-2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
-3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
-
-各フェーズの終わりにヒープ使用量が出るので、`-Xmx` の目安に使えます。
-最大になるのはおそらくフェーズ2です。
-
----
-
-## 既知の限界
-
-| 限界 | 内容 |
-|---|---|
-| フレームワークのディスパッチ | 画面入口の呼び出しがJavaコード上に存在しない場合、辿れません。命名規則か定義ファイルのパースで補う必要があります |
-| リフレクション | 検出できません |
-| DIコンテナ | 設定ファイルを読む拡張が別途必要です |
-| キャッシュの差分判定 | 最終更新時刻とサイズが両方一致する改変は検出できません。バージョン管理がタイムスタンプを復元する設定（SVNの `use-commit-times` 等）では特に注意。疑わしいときは `cache.enabled=false` にしてください |
-| クラスパス不足 | 依存jarが足りないと型解決に失敗し、その呼び出しは出力から抜け落ちます。件数は実行ログに出るので `library.folders` を見直してください |
-| 定数のインライン展開 | `public static final` の定数は呼び出し側に埋め込まれるため、被参照スキャンで検出できません |
-| ラムダ式 | ラムダの本体にある呼び出しは、ラムダを書いた**囲みメソッド**からの呼び出しとして計上します。ラムダ自体は呼び出し階層のノードになりません |
-| メソッド参照 | `obj::m` は、参照を書いた**囲みメソッド**からの呼び出しとして記録します。実際に動くのは関数型インターフェース経由なので、呼ばれる順序は階層の見た目と一致しません |
-
----
