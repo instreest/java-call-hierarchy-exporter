@@ -46,6 +46,13 @@ set "JBANG_JAR=%JBANG_DIR%\jbang-cli-%JBANG_VERSION%-all.jar"
 set "JDK_DIR=%JBANG_DIR%\cache\jdks\%JAVA_VERSION%"
 set "ERR=0"
 
+rem Tell jbang which shell will execute the command line it prints. jbang escapes
+rem its output per shell (bash uses single quotes, cmd uses carets); without this
+rem it defaults to bash, and cmd.exe/java.exe cannot parse that - the classpath
+rem arrives wrapped in single quotes and the main class is not found.
+set "JBANG_RUNTIME_SHELL=cmd"
+set "JBANG_LAUNCH_CMD=%~f0"
+
 rem --- Pick the JDK that will run jbang (jbang compiles, so javac is required)
 rem Label-based flow on purpose: nesting "call" inside parenthesised blocks is
 rem a well-known way to break batch parsing.
@@ -100,20 +107,33 @@ if errorlevel 1 (
 :have_jbang
 
 rem --- Run protocol: on exit code 255, stdout holds the command line to run.
-rem The command line embeds the whole classpath and can exceed the 8191-char
-rem environment variable limit, so it is captured to a temporary cmd file
-rem instead of a variable.
-set "JBANG_OUT=%TEMP%\jbangw-%RANDOM%%RANDOM%.cmd"
+rem
+rem Delayed expansion must be OFF from here on: the line jbang prints is escaped
+rem for cmd (carets, quotes) and any "!" in it would be eaten. The line is read
+rem into a variable and executed directly, rather than being called as a .cmd
+rem file, so it goes through exactly one round of cmd parsing - which is what
+rem the escaping is written for. jbang keeps the line within the Windows command
+rem line limit itself (it switches to an @argfile) now that it knows the shell.
+setlocal disabledelayedexpansion
+set "JBANG_OUT=%TEMP%\jbangw-%RANDOM%%RANDOM%.tmp"
 "%JAVA_EXE%" -jar "%JBANG_JAR%" %* > "%JBANG_OUT%"
 set "ERR=%ERRORLEVEL%"
-if "%ERR%"=="255" (
-    call "%JBANG_OUT%"
-    set "ERR=!ERRORLEVEL!"
-) else (
-    type "%JBANG_OUT%"
+if not "%ERR%"=="255" goto :show_output
+
+set "OUTPUT="
+for /f "usebackq delims=" %%A in ("%JBANG_OUT%") do (
+    set "OUTPUT=%%A"
+    goto :run_output
 )
-del "%JBANG_OUT%" >nul 2>&1
-goto :done
+:run_output
+del /f /q "%JBANG_OUT%" >nul 2>&1
+%OUTPUT%
+endlocal & exit /b %ERRORLEVEL%
+
+:show_output
+type "%JBANG_OUT%"
+del /f /q "%JBANG_OUT%" >nul 2>&1
+endlocal & exit /b %ERR%
 
 rem ---------------------------------------------------------------------------
 :install_jdk
@@ -146,7 +166,4 @@ exit /b 0
 
 rem ---------------------------------------------------------------------------
 :fail
-set "ERR=1"
-
-:done
-exit /b %ERR%
+exit /b 1

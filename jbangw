@@ -173,6 +173,13 @@ if [ ! -f "$JBANG_JAR" ]; then
     mv "$JBANG_JAR.part" "$JBANG_JAR"
 fi
 
+# jbang に「どのシェルがこのコマンドラインを実行するか」を伝える。jbang は
+# シェルごとにエスケープを変える（bashはシングルクォート、cmdはキャレット）。
+# 既定は bash なので指定しなくても同じ結果になるが、既定に依存しない
+# （Windows側で未指定だったために、cmdがbash形式を渡されて壊れた経緯がある）
+JBANG_RUNTIME_SHELL=bash
+export JBANG_RUNTIME_SHELL
+
 # --- 実行規約: 終了コード255のとき、標準出力が「実行すべきコマンドライン」 ---
 # （set -e のままだと255で即終了してしまうため、ここだけ手動でエラーを扱う）
 set +e
