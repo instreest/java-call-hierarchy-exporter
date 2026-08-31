@@ -37,7 +37,7 @@
 // CSV等のファイル入出力は常に明示的な文字コードを使うので、いずれの影響も受けない。
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
-//JAVA 25
+//JAVA 17+
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.JavaCore;
