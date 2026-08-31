@@ -1,6 +1,6 @@
 # java-call-hierarchy-exporter
 
-Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSVに出力するツールです。
+Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
@@ -9,15 +9,9 @@ Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSV�
 
 ## Quick start
 
-このリポジトリを最小構成で試す手順です。
-
 ### 1. 設定ファイルを編集する
 
-`config/config.properties` の下記の設定を書き換えます。  
-- **`project.root`**
-- **`source.folders`**
-- **`library.folders`**
-- **`source.encoding`**
+`config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
 
 ### 2. 実行する
 
