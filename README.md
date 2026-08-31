@@ -15,24 +15,18 @@ Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSV�
 
 ### 1. 設定ファイルを編集する
 
-`config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。
+`config/config.properties` の下記の設定を書き換えます。  
+    **`project.root`**  
+    **`source.folders`**  
+    **`library.folders`**  
+    **`source.encoding`**
 
 ### 2. 実行する
 
 ```bat
-rem Windows（コマンドプロンプト / PowerShell）
-.\jbangw src/CallHierarchyExporter.java config/config.properties
+.\jbang src/CallHierarchyExporter.java config/config.properties
 ```
-
-```sh
-# Linux / macOS
-./jbangw src/CallHierarchyExporter.java config/config.properties
-```
-
-> PowerShellで `.\jbangw` が拡張子なしのシェルスクリプト（Linux/macOS用）を
-> 拾ってしまう場合は、`.\jbangw.cmd` と明示してください。
-
-これだけです。[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とする
+[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とする
 JDK 25 は、初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に
 置かれます（`.jbang/`）。利用者のホームフォルダには何も残らず、
 やめるときは `.jbang/` を消せば元どおりです。
