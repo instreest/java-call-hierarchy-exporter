@@ -27,14 +27,17 @@
 //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
 //       変わると解析結果が変わるから。手元に25が無ければ jbang が取得する
 //       （保存先はプロジェクト内の .jbang/cache/jdks。jbangw が JBANG_DIR で固定する）。
-// JAVA_OPTIONS: コンソールログの文字コードをUTF-8に固定する（JDK 19+）。
-//       Windowsの既定コンソール（MS932）と食い違うため、jbangw.cmd 側で
-//       chcp 65001 を先に実行してターミナル側もUTF-8に揃えている。
-//       CSV等のファイル入出力は常に明示的な文字コードを使うので、この指定の影響を受けない。
+//
+// 標準出力の文字コードは指定しない（//JAVA_OPTIONS を置かない）。JDK 19以降、
+// System.out はコンソール自身の文字コードで書き出すため、指定しないのが最も
+// 確実に読める。UTF-8に固定すると、MS932のままのWindowsコンソールで
+// ログだけが文字化けする（docs/DESIGN.md 11章の既知の罠）。
+// 端末側を chcp でUTF-8に切り替える方法も採らない。日本語Windowsでは
+// コードページの切り替え自体が画面を消去してしまう（docs/QA-build.md Q6）。
+// CSV等のファイル入出力は常に明示的な文字コードを使うので、いずれの影響も受けない。
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
-//JAVA_OPTIONS -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.JavaCore;

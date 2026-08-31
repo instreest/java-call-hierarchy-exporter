@@ -12,12 +12,17 @@ rem      command line to execute").
 rem
 rem   IMPORTANT: this file must stay pure ASCII - no Japanese, no non-ASCII at
 rem   all. cmd.exe resumes reading a batch file from a stored offset, and under
-rem   code page 65001 (which "chcp 65001" below switches to, and which a
-rem   PowerShell host may already be using) that offset drifts by one position
-rem   per multi-byte character. Once the drift exceeds a line, cmd.exe resumes
-rem   in the middle of a line and executes the tail of a "rem" comment as a
-rem   command. The Japanese commentary for this file lives in
-rem   docs/QA-build.md (Q6, Q11).
+rem   code page 65001 (which a PowerShell host may already be using) that offset
+rem   drifts by one position per multi-byte character. Once the drift exceeds a
+rem   line, cmd.exe resumes in the middle of a line and executes the tail of a
+rem   "rem" comment as a command.
+rem
+rem   This script deliberately does NOT run "chcp". On Japanese/Chinese/Korean
+rem   Windows, switching the console code page between a DBCS page (932 etc.)
+rem   and 65001 makes conhost reset the screen buffer, which wipes the log the
+rem   tool just printed. The Japanese log stays readable because the tool does
+rem   not force its stdout encoding either: JDK 19+ writes System.out in the
+rem   console own encoding. See docs/QA-build.md (Q6, Q11).
 rem ---------------------------------------------------------------------------
 setlocal enabledelayedexpansion
 
@@ -40,14 +45,6 @@ rem cache does not leave a second copy inside the project.
 set "JBANG_JAR=%JBANG_DIR%\jbang-cli-%JBANG_VERSION%-all.jar"
 set "JDK_DIR=%JBANG_DIR%\cache\jdks\%JAVA_VERSION%"
 set "ERR=0"
-
-rem Switch the console to UTF-8 so the tool's Japanese log renders (the source
-rem sets -Dstdout.encoding=UTF-8 via //JAVA_OPTIONS). The original code page is
-rem restored at :done - chcp is a console attribute, so setlocal does not undo
-rem it and the user's terminal would otherwise stay changed.
-set "OLD_CP="
-for /f "tokens=2 delims=:" %%A in ('chcp') do for /f "tokens=1" %%B in ("%%A") do set "OLD_CP=%%B"
-chcp 65001 >nul
 
 rem --- Pick the JDK that will run jbang (jbang compiles, so javac is required)
 rem Label-based flow on purpose: nesting "call" inside parenthesised blocks is
@@ -152,5 +149,4 @@ rem ---------------------------------------------------------------------------
 set "ERR=1"
 
 :done
-if defined OLD_CP chcp %OLD_CP% >nul
 exit /b %ERR%
