@@ -1,9 +1,12 @@
 build/
-.gradle/
-.gradle-home/
+bin/
 lib/
 out/
 dist/
+
+# jbangw が作るプロジェクト内キャッシュ。jbang本体・依存jar・取得したJDKが入る。
+# やめるときはフォルダごと消せば元どおり
+/.jbang/
 *.class
 .classpath
 .project

@@ -20,25 +20,39 @@ Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSV�
 ### 2. 実行する
 
 ```bat
-gradlew run --args="config/config.properties"
+rem Windows（コマンドプロンプト / PowerShell）
+.\jbangw src/CallHierarchyExporter.java config/config.properties
 ```
 
-これだけです。Gradle本体・依存jar・このツールが必要とするJDKは、
-初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に置かれます
-（`.gradle-home/`）。利用者のホームフォルダには何も残らず、
-やめるときは `.gradle-home/` を消せば元どおりです。
+```sh
+# Linux / macOS
+./jbangw src/CallHierarchyExporter.java config/config.properties
+```
 
-初回は取得のぶん数分かかります。2回目以降は取得済みのものを使います。
+> PowerShellで `.\jbangw` が拡張子なしのシェルスクリプト（Linux/macOS用）を
+> 拾ってしまう場合は、`.\jbangw.cmd` と明示してください。
 
-> Gradleを起動するにはJavaが必要です。まだ何も入っていない環境については
-> [Javaが入っていない環境](#javaが入っていない環境) を参照してください。
+これだけです。[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とする
+JDK 25 は、初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に
+置かれます（`.jbang/`）。利用者のホームフォルダには何も残らず、
+やめるときは `.jbang/` を消せば元どおりです。
 
-Gradleを使わない場合は、次の手順でも動きます。
+初回は取得のぶん時間がかかります。2回目以降は取得済みのものを使います。
+依存の指定はビルドファイルではなく、`src/CallHierarchyExporter.java` 冒頭の
+`//DEPS` / `//JAVA` 行にあります（javac にはただのコメントです）。
+
+> **Javaが1つも入っていない環境でも、このコマンドだけで動きます。**
+> `jbangw` がJDKを取得するところから始めます（詳細は
+> [Javaが入っていない環境](#javaが入っていない環境)）。
+
+JBangを使わない場合は、次の手順でも動きます。
 
 #### Pleiades/Eclipse環境
 
 Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
 実行に必要なjarを`lib` フォルダに集めて使います。
+（`jbangw` で一度実行済みの環境なら、Eclipseからコピーする代わりに
+`.jbang/repository` 以下の全jarを `lib` へ集めても同じです）
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bat
@@ -61,13 +75,24 @@ rem 実行
 
 ### Javaが入っていない環境
 
-Gradle（`gradlew`）を**起動する**ためにJavaが1つ必要です。
-これはツール本体が使うJDKとは別で、Gradle 8.14 は Java 8〜24 のいずれでも起動できます。
-Pleiades/Eclipseが入っていれば同梱のJavaで足ります。
+**利用者がJavaを用意する必要はありません。** `jbangw` は次の順にJDKを探し、
+1つも無ければ **JDK 25 を取得してから** 起動します。
 
-**ツール本体が使うJDKは利用者が用意する必要はありません。**
-`build.gradle` の `toolchain` が **JDK 25** を要求し、手元に無ければGradleが取得します
-（取得先は `.gradle-home/jdks/`）。手元に既にJDK 25があればそれが使われ、取得は起きません。
+1. `JAVA_HOME`（`bin/javac` があること）
+2. `PATH` の `javac`
+3. `.jbang/currentjdk`
+4. `.jbang/cache/jdks/25`（前回 `jbangw` が取得したもの）
+5. どれも無ければ取得して `.jbang/cache/jdks/25` に置く
+
+探しているのが `java` ではなく **`javac`** なのは、JBangが実行前にソースを
+コンパイルするためです。JRE（javacを含まない）しか無い環境は「Javaが無い」
+扱いになり、JDKの取得に進みます。
+
+取得したJDKは **JBang自身の起動と、ツール本体の実行の両方に使われます**。
+ソース冒頭の `//JAVA 25` と取得する版を25で揃えてあるためで、JDKが端末に
+入るのは1つだけです（JBang標準の起動用JDKは17なので、揃えないと17と25の
+2つが入ります）。取得する版を変えたい場合は環境変数
+ `JBANG_DEFAULT_JAVA_VERSION` を指定します。
 
 バージョンを固定しているのは、**手元のJDKが何であっても同じ結果になるようにするため**です。
 解析結果はJDTを動かすJDKに左右されるので、環境差が出ると原因の切り分けが難しくなります。
@@ -76,25 +101,52 @@ JDTが要求する最低版（既定の 3.46.0 なら 17）より高い 25 を�
 **JDTが「自分が動いているJVMのブートクラスパス」を解析対象のクラスパスに含める**ためです。
 ここが新しいほど、新しいJDKのAPIを参照している解析対象コードを型解決できます。
 
-社内プロキシ等で取得できない場合は、JDK 25 を自分で入れてから実行してください
-（`gradle.properties` の `org.gradle.java.installations.auto-download` を `false` にすると
-取得を試みなくなります）。JDT Coreの版と、それ自体が動作に要求するJDKは次のとおりです。
+JDKの取得元は foojay.io（Disco API）、JBang本体の取得元は Maven Central です。
+社内プロキシ等で到達できない場合は次のどちらかで回避できます。
+
+| 到達できないもの | 回避方法 |
+|---|---|
+| `api.foojay.io`（JDK） | JDK 25 を自分でインストールして `JAVA_HOME` を設定する。または展開したものを `.jbang/cache/jdks/25` に置く |
+| `repo1.maven.org`（JBang本体・依存jar） | 環境変数 `JBANGW_JAR_URL` でJBang本体のURLを社内ミラーに差し替える |
+
+どちらもエラーメッセージに回避方法を出します。
+
+取得物はすべてプロジェクト内の `.jbang/` に入ります。複数のクローンで
+JDKを共有したい場合は、環境変数 `JBANG_DIR` を共通の場所に向けてください
+（その場合プロジェクト内には何も作られません）。
+
+JDT Coreの版と、それ自体が動作に要求するJDKは次のとおりです。
 
 | JDT Core | 動作に必要なJDK | 解析できるソースの上限 |
 |---|---|---|
 | 3.46.0（既定） | 17以上 | Java 26 |
 | 3.33.0 | 11以上 | Java 19 |
 
-いずれも `toolchain` の 25 で動くので、JDTの版を下げるときも `toolchain` はそのままで構いません。
-
-```bat
-gradlew -PjdtVersion=3.33.0 run --args="config/config.properties"
-```
+いずれも `//JAVA 25` で動くので、JDTの版を下げるときも `//JAVA` はそのままで構いません。
+版を変えるときは `src/CallHierarchyExporter.java` 冒頭の `//DEPS` 行を書き換えます。
 
 なお、ここでいうJDKのバージョンは**解析対象**のJavaバージョンとは別物です。
 対象側は `config/config.properties` の `source.level` で指定します（既定は自動）。
 
 ---
+
+### IDEで開く場合
+
+ソースは `src/CallHierarchyExporter.java` の1ファイルで、ビルドファイルはありません。
+IDEのプロジェクト設定ファイル（`.project` / `.classpath` / `.idea` 等）は
+コミットしない方針です（`.gitignore` 済み。環境ごとに中身が変わるため）。
+
+- **Eclipse / Pleiades** … 通常のJavaプロジェクトとして取り込み、
+  ソースフォルダに `src`、ビルドパスに `lib` の全jarを追加してください
+  （`lib` の作り方は上記の各手順を参照）。
+- **jbangが使える環境** … `jbangw edit -b` で、依存解決済みの
+  一時プロジェクト（Gradle形式・ソースは本体へのリンク）が生成されます。
+  IDEはそれを開くだけで補完が効きます。生成先はプロジェクト内の `.jbang/cache/` です。
+
+行末・文字コード・インデントは `.editorconfig` に定義してあります
+（対応IDEなら自動で適用されます）。**`src/CallHierarchyExporter.java` はCRLF、
+`jbangw` はLFのまま**にしてください。行末の一括変換は `.gitattributes` で
+抑止していますが、IDE側の保存時変換には効きません。
 
 ### 出力されるファイル
 
@@ -250,7 +302,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 |---|---|
 | `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
 | `深さ制限(N)のため打ち切り` | `max.depth` に達した |
-| `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補数^深さで爆発するため展開しない。理由は下表 |
+| `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
 | `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
 | `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。展開できないので候補には数えていない |
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |

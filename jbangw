@@ -1,0 +1,199 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# jbangw — JBang wrapper
+#
+# jbang（https://www.jbang.dev）を、利用者の環境に何もインストールせずに使うための
+# 起動スクリプト。次の4つを引き受ける:
+#
+#   1. jbang 本体（jbang.jar）が無ければ Maven Central から取得する
+#      （SHA-256 を照合してから使う。取得先は JBANGW_JAR_URL で差し替え可能）
+#   2. JDKが1つも無ければ取得する。jbang本体を動かすにもJDKが要るので、
+#      ここは jbang より前に自力でやる必要がある（本家の jbang スクリプトと同じ考え方）
+#   3. jbang が使うフォルダをプロジェクト内（.jbang/）に固定する
+#      利用者のホームフォルダ（~/.jbang, ~/.m2）を汚さないため。
+#      やめるときは .jbang/ を消せば元どおり
+#   4. jbang の実行規約を仲介する。jbang.jar は「実行すべき java コマンドライン」を
+#      標準出力に書いて終了コード255で終わるので、それを exec する
+#
+# 本家との違いは、取得するJDKを 17 ではなく 25 にしている点です。ソースの
+# //JAVA 25 が要求するのも25なので、17を入れると「起動用17」と「実行用25」で
+# 2つ入ってしまう。25にすれば jbang が同じものを実行にも使い、取得は1回で済みます
+# （$JBANG_DIR/cache/jdks/25 に置けば jbang が認識することは実測で確認）。
+# ---------------------------------------------------------------------------
+set -e
+
+# このスクリプトの置き場所＝プロジェクトルート
+APP_HOME=$(cd "$(dirname "$0")" && pwd)
+
+JBANG_VERSION=0.132.1
+JBANG_JAR_SHA256=f977075849cff866f45b27997f5671ab8a336a5dd3cf9e702b3479128338f3a7
+
+# JDKが1つも無いときに取得する版。ソースの //JAVA と揃えること
+JAVA_VERSION=${JBANG_DEFAULT_JAVA_VERSION:-25}
+
+# 社内ミラーを使う場合はこの環境変数で差し替える（jarのURLそのもの）
+JAR_URL=${JBANGW_JAR_URL:-"https://repo1.maven.org/maven2/dev/jbang/jbang-cli/$JBANG_VERSION/jbang-cli-$JBANG_VERSION-all.jar"}
+
+# jbang のキャッシュ（取得したJDK・ビルド済みjar・エイリアス）をプロジェクト内に置く。
+# 既に外から与えられていれば尊重する（共有キャッシュを使う場合など）
+if [ -z "${JBANG_DIR:-}" ]; then
+    JBANG_DIR="$APP_HOME/.jbang"
+    export JBANG_DIR
+fi
+# 依存jarのローカルリポジトリもプロジェクト内に置く（既定は ~/.m2 相当のため明示する）
+if [ -z "${JBANG_REPO:-}" ]; then
+    JBANG_REPO="$JBANG_DIR/repository"
+    export JBANG_REPO
+fi
+# jbang本体もJBANG_DIRの下に置く。外から共有キャッシュを指されたときに
+# プロジェクト内へ二重に置かないため。ファイル名に版を含めるのは、
+# JBANG_VERSION を上げたときに古いjarを使い続けないため
+JBANG_JAR="$JBANG_DIR/jbang-cli-$JBANG_VERSION-all.jar"
+# キャッシュ（取得したJDK・ビルド済みjar）の置き場所。公式と同じ変数名で上書きできる
+if [ -z "${JBANG_CACHE_DIR:-}" ]; then
+    JBANG_CACHE_DIR="$JBANG_DIR/cache"
+    export JBANG_CACHE_DIR
+fi
+JDK_DIR="$JBANG_CACHE_DIR/jdks/$JAVA_VERSION"
+
+# --- ダウンロード（失敗したら指数バックオフで再試行） ---
+download() {
+    _url=$1
+    _out=$2
+    _attempt=0
+    _max=${JBANG_DOWNLOAD_RETRY:-3}
+    while :; do
+        _attempt=$((_attempt + 1))
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o "$_out" "$_url" && return 0
+        elif command -v wget >/dev/null 2>&1; then
+            wget -q -O "$_out" "$_url" && return 0
+        else
+            echo "[jbangw] curl も wget も見つからないため取得できません。" >&2
+            return 1
+        fi
+        if [ "$_attempt" -gt "$_max" ]; then
+            return 1
+        fi
+        _wait=$((1 << (_attempt - 1)))
+        echo "[jbangw] 取得に失敗しました（$_attempt/$_max）。${_wait}秒後に再試行します。" >&2
+        sleep $_wait
+    done
+}
+
+# --- JDKが1つも無い場合に取得する ---
+install_jdk() {
+    # foojay の Disco API は「条件に合うJDKの実体へリダイレクトするURL」を返す。
+    # 本家の jbang スクリプトと同じ組み立て方
+    case "$(uname -s)" in
+        Linux*)
+            os=linux; libc=glibc; ext=tar.gz
+            [ -f /etc/alpine-release ] && { os=alpine-linux; libc=musl; }
+            ;;
+        Darwin*) os=mac; libc=libc; ext=tar.gz ;;
+        CYGWIN*|MINGW*|MSYS*) os=windows; libc=c_std_lib; ext=zip ;;
+        *)
+            echo "[jbangw] JDKを取得できないOSです: $(uname -s)" >&2
+            return 1 ;;
+    esac
+    case "$(uname -m)" in
+        x86_64|amd64)   arch=x64 ;;
+        aarch64|arm64)  arch=aarch64 ;;
+        *)
+            echo "[jbangw] JDKを取得できないアーキテクチャです: $(uname -m)" >&2
+            return 1 ;;
+    esac
+
+    echo "[jbangw] JDK $JAVA_VERSION が見つからないため取得します。数分かかります。" >&2
+    mkdir -p "$JBANG_CACHE_DIR/jdks"
+    _tmp="$JBANG_CACHE_DIR/bootstrap-jdk.$ext"
+    _url="https://api.foojay.io/disco/v3.0/directuris?distro=${JBANG_JDK_VENDOR:-temurin}&javafx_bundled=false&libc_type=$libc&archive_type=$ext&operating_system=$os&package_type=jdk&version=$JAVA_VERSION&architecture=$arch&latest=available"
+    if ! download "$_url" "$_tmp"; then
+        echo "[jbangw] JDKの取得に失敗しました（取得元: api.foojay.io）。" >&2
+        echo "[jbangw] 社内プロキシ等で到達できない場合は、JDK $JAVA_VERSION を手動で" >&2
+        echo "[jbangw] インストールして JAVA_HOME を設定するか、展開したものを" >&2
+        echo "[jbangw] $JDK_DIR に置いてください。" >&2
+        return 1
+    fi
+
+    rm -rf "$JDK_DIR.tmp"
+    mkdir -p "$JDK_DIR.tmp"
+    if [ "$ext" = "zip" ]; then
+        unzip -qq -o "$_tmp" -d "$JDK_DIR.tmp"
+    else
+        gzip -cd "$_tmp" | tar xf - -C "$JDK_DIR.tmp"
+    fi
+    # 書庫の中は jdk-25+36/ のような1階層に包まれているので、その中身を引き上げる
+    if [ "$os" = "mac" ]; then
+        mv "$JDK_DIR.tmp/"*/Contents/Home/* "$JDK_DIR.tmp/"
+    else
+        mv "$JDK_DIR.tmp/"*/* "$JDK_DIR.tmp/"
+    fi
+    rm -f "$_tmp"
+    if [ ! -x "$JDK_DIR.tmp/bin/javac" ]; then
+        echo "[jbangw] 取得したJDKが正しく展開できませんでした。" >&2
+        rm -rf "$JDK_DIR.tmp"
+        return 1
+    fi
+    # 展開途中の状態を「あるもの」と誤認しないよう、最後に名前を付け替える
+    rm -rf "$JDK_DIR"
+    mv "$JDK_DIR.tmp" "$JDK_DIR"
+}
+
+# --- jbang を起動するJDKを決める ---
+# jbang はソースをコンパイルするので、java だけでなく javac が要る（JREでは不足）。
+# 本家と同じ順で探す
+JAVA=""
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/javac" ]; then
+    JAVA="$JAVA_HOME/bin/java"
+elif command -v javac >/dev/null 2>&1 && command -v java >/dev/null 2>&1; then
+    JAVA=java
+elif [ -x "$JBANG_DIR/currentjdk/bin/javac" ]; then
+    JAVA_HOME="$JBANG_DIR/currentjdk"; export JAVA_HOME
+    JAVA="$JAVA_HOME/bin/java"
+else
+    if [ ! -x "$JDK_DIR/bin/javac" ]; then
+        install_jdk || exit 1
+    fi
+    JAVA_HOME="$JDK_DIR"; export JAVA_HOME
+    JAVA="$JAVA_HOME/bin/java"
+fi
+
+# --- jbang.jar が無ければ取得し、SHA-256 を照合する ---
+if [ ! -f "$JBANG_JAR" ]; then
+    echo "[jbangw] jbang $JBANG_VERSION を取得します: $JAR_URL" >&2
+    mkdir -p "$(dirname "$JBANG_JAR")"
+    if ! download "$JAR_URL" "$JBANG_JAR.part"; then
+        echo "[jbangw] $JAR_URL を手動でダウンロードし、$JBANG_JAR に置いてください。" >&2
+        exit 1
+    fi
+    ACTUAL=$(sha256sum "$JBANG_JAR.part" 2>/dev/null | cut -d' ' -f1)
+    [ -n "$ACTUAL" ] || ACTUAL=$(shasum -a 256 "$JBANG_JAR.part" | cut -d' ' -f1)
+    if [ "$ACTUAL" != "$JBANG_JAR_SHA256" ]; then
+        # 改ざん・ミラーの別物・途中切断のいずれか。壊れたjarを実行しない
+        rm -f "$JBANG_JAR.part"
+        echo "[jbangw] SHA-256 が一致しません。期待: $JBANG_JAR_SHA256 実際: $ACTUAL" >&2
+        exit 1
+    fi
+    mv "$JBANG_JAR.part" "$JBANG_JAR"
+fi
+
+# jbang に「どのシェルがこのコマンドラインを実行するか」を伝える。jbang は
+# シェルごとにエスケープを変える（bashはシングルクォート、cmdはキャレット）。
+# 既定は bash なので指定しなくても同じ結果になるが、既定に依存しない
+# （Windows側で未指定だったために、cmdがbash形式を渡されて壊れた経緯がある）
+JBANG_RUNTIME_SHELL=bash
+export JBANG_RUNTIME_SHELL
+
+# --- 実行規約: 終了コード255のとき、標準出力が「実行すべきコマンドライン」 ---
+# （set -e のままだと255で即終了してしまうため、ここだけ手動でエラーを扱う）
+set +e
+output=$("$JAVA" -jar "$JBANG_JAR" "$@")
+err=$?
+set -e
+if [ $err -eq 255 ]; then
+    eval "exec $output"
+else
+    [ -n "$output" ] && printf '%s\n' "$output"
+    exit $err
+fi

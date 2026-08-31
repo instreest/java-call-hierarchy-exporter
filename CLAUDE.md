@@ -12,28 +12,38 @@ Documentation is in Japanese and is part of the deliverable, not an afterthought
 - `config/config.properties` — **the single source of truth for settings.** Every key is documented inline; do not duplicate the list elsewhere
 - `docs/DESIGN.md` — internal design, written so another AI session can reimplement the tool. Chapter 11 is a pitfalls table, chapter 12 is the acceptance criteria
 - `docs/QA.md` — decisions made while implementing the dataflow analysis, with the reasoning
-- `docs/QA-build.md` — same, for the build/run environment (wrapper, toolchain, where downloads land)
+- `docs/QA-build.md` — same, for the build/run environment (jbangw, `//DEPS`/`//JAVA`, where downloads land)
 - `docs/QA-issue29.md` — same, for the `callee` column format and how lambdas / method references are treated
 
 **Read `docs/DESIGN.md` before changing analysis behavior.** Most of what looks like an easy improvement is something chapter 11 already records as a trap.
 
 ## Commands
 
-`./gradlew` is the one-command path: it provisions Gradle, the dependency jars and a JDK 25
-toolchain into `.gradle-home/` inside the project, leaving the user's `~/.gradle` untouched.
-The toolchain governs both compile *and* run (`javaLauncher`), because JDT puts the running
-JVM's bootclasspath on the analysis classpath — the JDK it runs on changes what resolves.
+`./jbangw` is the one-command path: it fetches JBang itself (from Maven Central, SHA-256
+pinned), the dependency jars and a JDK 25 into `.jbang/` inside the project, leaving the
+user's home untouched. It works on a machine with **no Java at all** — like the upstream
+`jbang` script it looks for `javac` (not `java`; JBang compiles) in `JAVA_HOME`, `PATH`,
+`.jbang/currentjdk`, `.jbang/cache/jdks/25`, and downloads a JDK from foojay if none is
+found. The bootstrap version is **25, not upstream's 17**, so the one JDK it fetches also
+satisfies `//JAVA 25` — pinning them apart would install two JDKs. There is **no build file** — the dependency (`//DEPS`), the JDK
+(`//JAVA 25`) and console encoding (`//JAVA_OPTIONS`) are directives at the top of
+`src/CallHierarchyExporter.java`; to javac they are plain comments. The JDK is pinned to 25
+because JDT puts the running JVM's bootclasspath on the analysis classpath — the JDK it
+runs on changes what resolves. The script is addressed by its real path — there is no
+`jbang-catalog.json` alias, so nothing has to be kept in sync with the file's location.
 `javac` + `java` remains the supported path for users on a locked-down Windows/Pleiades box (see README).
 
 ```bash
-./gradlew run --args="config/config.properties"    # analyze; --args is required. The one Quick start command
-./gradlew copyLibs                                 # resolve JDT and its deps into ./lib
-./gradlew build                                    # compile + jar
-./gradlew -PjdtVersion=3.33.0 copyLibs             # older JDT (still runs on the 25 toolchain)
+./jbangw src/CallHierarchyExporter.java config/config.properties   # the one Quick start command
+find .jbang/repository -name "*.jar" -exec cp {} lib/ \;                 # populate ./lib (copyLibs replacement)
 
 javac -encoding UTF-8 -Xlint:all -cp "lib/*" -d bin src/CallHierarchyExporter.java
 java -cp "bin:lib/*" CallHierarchyExporter config/config.properties
 ```
+
+The config path is an ordinary first positional argument — no `--args=` sugar (it was
+dropped when Issue #31's To be changed). `jbang` passes everything after the script
+name straight through, so the jbangw and `java` forms take the identical argument.
 
 There is **no test suite** — no `src/test`, no test task. Verification is done by running the tool:
 
@@ -89,6 +99,10 @@ The interesting part of the code. An interface-typed call is narrowed by stages,
 
 ## Conventions
 
+- **When changing a wrapper, diff it against the official `jbang` / `jbang.cmd` first** (`raw.githubusercontent.com/jbangdev/jbang/main/src/main/scripts/`). Replacing our wrappers with the official ones outright is not possible — three of Issue #31's requirements are things upstream deliberately does not do (project-local `JBANG_DIR`/`JBANG_REPO`, acquiring `jbang.jar` without touching the home dir, a bootstrap JDK matched to `//JAVA 25`) — so a thin wrapper is needed either way; `docs/QA-build.md` Q3b has the comparison. Every Windows bug so far was a setting upstream had and we did not.
+- **Both wrappers must set `JBANG_RUNTIME_SHELL`** (`cmd` in `jbangw.cmd`, `bash` in `jbangw`). jbang escapes the command line it prints for the shell that will run it; with the variable unset it defaults to bash, so on Windows the classpath arrived wrapped in single quotes and `java.exe` could not find the main class. Linux only worked by coincidence — `eval` wants exactly that bash form. `docs/QA-build.md` Q3 has the analysis.
+- **Never touch the console code page, and never force the log encoding.** No `chcp` in `jbangw.cmd`, no `//JAVA_OPTIONS -Dstdout.encoding=...` in the source. On CJK Windows, switching between a DBCS code page and 65001 makes conhost reset the screen buffer — restoring it on exit wiped the log the tool had just printed. JDK 19+ writes `System.out` in the console's own encoding, so leaving both alone is what renders correctly everywhere. The two must stay removed together: dropping `chcp` while keeping the forced UTF-8 stdout reproduces the older "log only mojibake" pitfall. `docs/QA-build.md` Q6 has the analysis.
+- **`jbangw.cmd` must stay pure ASCII.** cmd.exe re-opens the batch file after every line and, under code page 65001, advances a byte offset by a character count — one multi-byte character drifts the resume point, and it eventually restarts mid-line and executes the tail of a `rem` as a command. This actually broke when run from PowerShell; `docs/QA-build.md` Q11 has the analysis. Keep comments and messages English there, and quote interpolated values in `echo` (an `&` in a path splits the command). The POSIX `jbangw` has no such limit — Japanese is fine.
 - **`src/CallHierarchyExporter.java` is CRLF**; the Markdown and properties files are LF. Flipping line endings turns a 200-line diff into a 5000-line one — check `file` before and after editing.
 - Comments explain **why**, in Japanese, matching the surrounding density. The pitfalls in `docs/DESIGN.md` §11 are mostly annotated at their site in the code; keep that link when you touch them.
 - Bump `CacheFormat.VERSION` on any format change. The cache header also carries the source level, so changing `source.level` invalidates it — anything that alters parse results must be part of that key.
