@@ -29,13 +29,12 @@ satisfies `//JAVA 25` — pinning them apart would install two JDKs. There is **
 (`//JAVA 25`) and console encoding (`//JAVA_OPTIONS`) are directives at the top of
 `src/CallHierarchyExporter.java`; to javac they are plain comments. The JDK is pinned to 25
 because JDT puts the running JVM's bootclasspath on the analysis classpath — the JDK it
-runs on changes what resolves. `jbang-catalog.json` maps the alias `CallHierarchyExporter.java`
-to `src/CallHierarchyExporter.java` so the Quick start command needs no `src/` prefix.
+runs on changes what resolves. The script is addressed by its real path — there is no
+`jbang-catalog.json` alias, so nothing has to be kept in sync with the file's location.
 `javac` + `java` remains the supported path for users on a locked-down Windows/Pleiades box (see README).
 
 ```bash
-./jbangw CallHierarchyExporter.java config/config.properties   # the one Quick start command
-./jbangw src/CallHierarchyExporter.java config/config.properties  # same, without the catalog alias
+./jbangw src/CallHierarchyExporter.java config/config.properties   # the one Quick start command
 find .jbang/repository -name "*.jar" -exec cp {} lib/ \;                 # populate ./lib (copyLibs replacement)
 
 javac -encoding UTF-8 -Xlint:all -cp "lib/*" -d bin src/CallHierarchyExporter.java

@@ -23,7 +23,7 @@ JDTを動かすJDKに左右されるためです。
    Gradle時代に「コンパイルだけtoolchainで実行は別JVM」という罠を実際に踏んだ
    （旧Q3b）ことを考えると、**分けようがない**構造そのものが利点。
 2. **設定ファイルが減る。** build.gradle / settings.gradle / gradle.properties /
-   gradle/wrapper/* が消え、増えたのはソース冒頭の3行と jbangw / jbang-catalog.json。
+   gradle/wrapper/* が消え、増えたのはソース冒頭の2行と jbangw の2ファイルだけ。
    依存の宣言（`//DEPS`）がソースと同じファイルにあるので、乖離しようがない。
 3. **javac / java 直接実行と干渉しない。** `//DEPS` も `//JAVA` も javac には
    ただのコメント。ロックダウンされた端末向けの javac 経路（README）は
@@ -325,7 +325,7 @@ PowerShell で `.\jbangw` と書いた場合に拡張子なしの方を拾う可
 |---|---|
 | jbangw が jbang本体を取得し、SHA-256照合して使う | 確認済み（初回取得〜実行まで） |
 | `//DEPS` で JDT 3.46.0 と推移的依存19jarが解決される | 確認済み（`.jbang/repository` に配置） |
-| Quick start コマンドがそのまま動く | 確認済み（`jbangw CallHierarchyExporter.java config/config.properties`）|
+| Quick start コマンドがそのまま動く | 確認済み（`jbangw src/CallHierarchyExporter.java config/config.properties`）|
 | boot JDK 17 でも実行JVMは25になる | 確認済み（インストール済みJDKの検出・選択まで） |
 | 出力が決定的（ウォーム2回・コールド・javac経路と一致） | 確認済み |
 | javac / java 直接実行が影響を受けない | 確認済み（`-Xlint:all` 警告0件のまま） |
@@ -336,22 +336,31 @@ PowerShell で `.\jbangw` と書いた場合に拡張子なしの方を拾う可
 | `jbangw.cmd`（Windows実機） | **未確認**。Linux環境のため。`%~dp0` の末尾 `\`、遅延展開、コマンドライン長は机上で確認済み。実機で判明した不具合が3件（Q3のシェル種別・Q6のコードページ・Q11の非ASCII）あり、いずれも報告を受けて修正した。公式スクリプトとの設定項目の突き合わせは Q3b で実施済み |
 | ARM64版Windowsでの JDK 取得 | **未確認**。`%PROCESSOR_ARCHITECTURE%` による判定を入れたが、実機が無い（Q3b）|
 
-## Q8. `jbangw CallHierarchyExporter.java` — src/ プレフィックスを消す方法
+## Q8. スクリプトは実パスで指定する（カタログの別名は使わない）
 
-Issueの To be は `jbangw CallHierarchyExporter.java` で、実ファイルは
-`src/CallHierarchyExporter.java` にあります。ソースを直下へ動かすことも
-考えましたが、`source.folders=./src` を前提にした設定・ドキュメント・
-自己解析の構図が全部動くため、**jbangのカタログ（`jbang-catalog.json`）で
-別名を張る**方にしました。
+Quick start は次の形です。
 
-```json
-{ "aliases": { "CallHierarchyExporter.java": { "script-ref": "src/CallHierarchyExporter.java" } } }
+```
+.\jbangw src/CallHierarchyExporter.java config/config.properties
 ```
 
-`.java` で終わる別名が有効かは仕様上不明だったので実測で確認しました
-（jbangは実在ファイルを先に探し、無ければカタログを引く。どちらの経路でも
-同じ結果になることを確認済み）。`jbangw src/CallHierarchyExporter.java` の
-直接指定も従来どおり使えます。
+当初は `src/` を省いた `jbangw CallHierarchyExporter.java` を成立させるため、
+jbangのカタログ（`jbang-catalog.json`）で別名を張っていましたが、**廃止しました。**
+
+| | 別名あり | 実パス指定（現在）|
+|---|---|---|
+| コマンドの見た目 | 少し短い | `src/` が付く |
+| ファイルを移動したとき | カタログの `script-ref` も直す必要がある | 直す対象が無い |
+| 何が実行されるか | カタログを見ないと分からない | コマンドを読めば分かる |
+| 管理するファイル | 1つ増える | 増えない |
+
+短くなるのは6文字で、そのために「コマンドに書いてあるパスと実際に実行される
+ファイルが違う」という間接参照を1つ増やしていました。ソースが1ファイルしか
+無いプロジェクトで払う代償としては見合わないと判断しています。
+
+なお `jbang` は実在ファイルを先に探し、無ければカタログを引きます。
+実パス指定は別名の有無に関わらず同じ結果になるので、廃止しても
+コマンドの挙動は変わりません（出力バイト一致を確認済み）。
 
 設定ファイルのパスは**普通の第1引数**です。当初は gradlew 時代の見た目に
 寄せて `--args="…"` の形を採り、`main()` 側で先頭の `--args=` を剥がして

@@ -21,12 +21,12 @@ Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSV�
 
 ```bat
 rem Windows（コマンドプロンプト / PowerShell）
-.\jbangw CallHierarchyExporter.java config/config.properties
+.\jbangw src/CallHierarchyExporter.java config/config.properties
 ```
 
 ```sh
 # Linux / macOS
-./jbangw CallHierarchyExporter.java config/config.properties
+./jbangw src/CallHierarchyExporter.java config/config.properties
 ```
 
 > PowerShellで `.\jbangw` が拡張子なしのシェルスクリプト（Linux/macOS用）を
