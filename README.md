@@ -21,8 +21,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 .\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とするJDK 17 は、
-環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+このツールが必要とするJDK 17・依存jarは、環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
 
 #### Pleiades/Eclipse環境
 
