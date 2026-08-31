@@ -39,11 +39,18 @@ if not defined JBANG_DEFAULT_JAVA_VERSION (set "JAVA_VERSION=25") else (set "JAV
 if not defined JBANGW_JAR_URL set "JBANGW_JAR_URL=https://repo1.maven.org/maven2/dev/jbang/jbang-cli/%JBANG_VERSION%/jbang-cli-%JBANG_VERSION%-all.jar"
 if not defined JBANG_DIR set "JBANG_DIR=%APP_HOME%.jbang"
 if not defined JBANG_REPO set "JBANG_REPO=%JBANG_DIR%\repository"
+if not defined JBANG_CACHE_DIR set "JBANG_CACHE_DIR=%JBANG_DIR%\cache"
 if not defined JBANG_JDK_VENDOR set "JBANG_JDK_VENDOR=temurin"
+
+rem Architecture for the JDK download. Windows on ARM is a real target now
+rem (Copilot+ PCs); fetching an x64 JDK there would run under emulation.
+set "JBANGW_ARCH=x64"
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "JBANGW_ARCH=aarch64"
+if /i "%PROCESSOR_ARCHITEW6432%"=="ARM64" set "JBANGW_ARCH=aarch64"
 rem Keep jbang's own jar under JBANG_DIR too, so pointing JBANG_DIR at a shared
 rem cache does not leave a second copy inside the project.
 set "JBANG_JAR=%JBANG_DIR%\jbang-cli-%JBANG_VERSION%-all.jar"
-set "JDK_DIR=%JBANG_DIR%\cache\jdks\%JAVA_VERSION%"
+set "JDK_DIR=%JBANG_CACHE_DIR%\jdks\%JAVA_VERSION%"
 set "ERR=0"
 
 rem Tell jbang which shell will execute the command line it prints. jbang escapes
@@ -116,8 +123,18 @@ rem the escaping is written for. jbang keeps the line within the Windows command
 rem line limit itself (it switches to an @argfile) now that it knows the shell.
 setlocal disabledelayedexpansion
 set "JBANG_OUT=%TEMP%\jbangw-%RANDOM%%RANDOM%.tmp"
-"%JAVA_EXE%" -jar "%JBANG_JAR%" %* > "%JBANG_OUT%"
+"%JAVA_EXE%" %JBANG_JAVA_OPTIONS% -jar "%JBANG_JAR%" %* > "%JBANG_OUT%" || goto :capture_failed
 set "ERR=%ERRORLEVEL%"
+goto :captured
+
+:capture_failed
+rem A non-zero exit is normal here (255 is the run protocol), but an exit code
+rem of 0 on this branch means the redirect itself failed - e.g. TEMP is not
+rem writable. Do not let that be reported as success.
+set "ERR=%ERRORLEVEL%"
+if "%ERR%"=="0" set "ERR=1"
+
+:captured
 if not "%ERR%"=="255" goto :show_output
 
 set "OUTPUT="
@@ -140,11 +157,11 @@ rem ---------------------------------------------------------------------------
 rem foojay's Disco API returns a redirect to the matching JDK archive. The URL
 rem is built the same way the upstream jbang script builds it.
 echo [jbangw] JDK %JAVA_VERSION% not found - downloading it. This takes a few minutes. 1>&2
-set "JDK_URL=https://api.foojay.io/disco/v3.0/directuris?distro=%JBANG_JDK_VENDOR%&javafx_bundled=false&libc_type=c_std_lib&archive_type=zip&operating_system=windows&package_type=jdk&version=%JAVA_VERSION%&architecture=x64&latest=available"
+set "JDK_URL=https://api.foojay.io/disco/v3.0/directuris?distro=%JBANG_JDK_VENDOR%&javafx_bundled=false&libc_type=c_std_lib&archive_type=zip&operating_system=windows&package_type=jdk&version=%JAVA_VERSION%&architecture=%JBANGW_ARCH%&latest=available"
 powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command ^
     "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue';" ^
     "try {" ^
-    "  $tmp = Join-Path $env:JBANG_DIR 'cache\bootstrap-jdk.zip';" ^
+    "  $tmp = Join-Path $env:JBANG_CACHE_DIR 'bootstrap-jdk.zip';" ^
     "  $null = New-Item -ItemType Directory -Force -Path (Split-Path $tmp);" ^
     "  Invoke-WebRequest -Uri $env:JDK_URL -OutFile $tmp;" ^
     "  $t = $env:JDK_DIR + '.tmp';" ^

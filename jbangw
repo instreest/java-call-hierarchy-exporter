@@ -49,7 +49,12 @@ fi
 # プロジェクト内へ二重に置かないため。ファイル名に版を含めるのは、
 # JBANG_VERSION を上げたときに古いjarを使い続けないため
 JBANG_JAR="$JBANG_DIR/jbang-cli-$JBANG_VERSION-all.jar"
-JDK_DIR="$JBANG_DIR/cache/jdks/$JAVA_VERSION"
+# キャッシュ（取得したJDK・ビルド済みjar）の置き場所。公式と同じ変数名で上書きできる
+if [ -z "${JBANG_CACHE_DIR:-}" ]; then
+    JBANG_CACHE_DIR="$JBANG_DIR/cache"
+    export JBANG_CACHE_DIR
+fi
+JDK_DIR="$JBANG_CACHE_DIR/jdks/$JAVA_VERSION"
 
 # --- ダウンロード（失敗したら指数バックオフで再試行） ---
 download() {
@@ -100,8 +105,8 @@ install_jdk() {
     esac
 
     echo "[jbangw] JDK $JAVA_VERSION が見つからないため取得します。数分かかります。" >&2
-    mkdir -p "$JBANG_DIR/cache/jdks"
-    _tmp="$JBANG_DIR/cache/bootstrap-jdk.$ext"
+    mkdir -p "$JBANG_CACHE_DIR/jdks"
+    _tmp="$JBANG_CACHE_DIR/bootstrap-jdk.$ext"
     _url="https://api.foojay.io/disco/v3.0/directuris?distro=${JBANG_JDK_VENDOR:-temurin}&javafx_bundled=false&libc_type=$libc&archive_type=$ext&operating_system=$os&package_type=jdk&version=$JAVA_VERSION&architecture=$arch&latest=available"
     if ! download "$_url" "$_tmp"; then
         echo "[jbangw] JDKの取得に失敗しました（取得元: api.foojay.io）。" >&2
