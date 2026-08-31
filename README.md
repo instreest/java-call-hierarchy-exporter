@@ -20,8 +20,17 @@ Javaプロジェクトのメソッド呼び出し階層を一括抽出してCSV�
 ### 2. 実行する
 
 ```bat
-jbangw CallHierarchyExporter.java --args="config/config.properties"
+rem Windows（コマンドプロンプト / PowerShell）
+.\jbangw CallHierarchyExporter.java config/config.properties
 ```
+
+```sh
+# Linux / macOS
+./jbangw CallHierarchyExporter.java config/config.properties
+```
+
+> PowerShellで `.\jbangw` が拡張子なしのシェルスクリプト（Linux/macOS用）を
+> 拾ってしまう場合は、`.\jbangw.cmd` と明示してください。
 
 これだけです。[JBang](https://www.jbang.dev) 本体・依存jar・このツールが必要とする
 JDK 25 は、初回実行時に自動で取得され、**すべてこのプロジェクトフォルダの中**に

@@ -34,16 +34,17 @@ to `src/CallHierarchyExporter.java` so the Quick start command needs no `src/` p
 `javac` + `java` remains the supported path for users on a locked-down Windows/Pleiades box (see README).
 
 ```bash
-./jbangw CallHierarchyExporter.java --args="config/config.properties"   # the one Quick start command
-./jbangw src/CallHierarchyExporter.java config/config.properties        # same, without alias or --args= sugar
+./jbangw CallHierarchyExporter.java config/config.properties   # the one Quick start command
+./jbangw src/CallHierarchyExporter.java config/config.properties  # same, without the catalog alias
 find .jbang/repository -name "*.jar" -exec cp {} lib/ \;                 # populate ./lib (copyLibs replacement)
 
 javac -encoding UTF-8 -Xlint:all -cp "lib/*" -d bin src/CallHierarchyExporter.java
 java -cp "bin:lib/*" CallHierarchyExporter config/config.properties
 ```
 
-`main()` strips a leading `--args=` from its first argument — that sugar keeps the
-documented command shape; the plain path form works identically.
+The config path is an ordinary first positional argument — no `--args=` sugar (it was
+dropped when Issue #31's To be changed). `jbang` passes everything after the script
+name straight through, so the jbangw and `java` forms take the identical argument.
 
 There is **no test suite** — no `src/test`, no test task. Verification is done by running the tool:
 

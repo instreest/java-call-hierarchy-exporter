@@ -178,14 +178,10 @@ public class CallHierarchyExporter {
     // ================================================================
 
     public static void main(String[] args) throws Exception {
+        // 設定ファイルのパスは第1引数で受け取る。jbang はスクリプト名より後ろの
+        // 引数をそのまま渡してくるので、jbangw 経由でも java 直接実行でも同じ形
         String configPath = (args.length > 0) ? args[0] : "config/config.properties";
-        // jbang はスクリプト名より後ろの引数をそのまま渡してくるため、
-        // Quick start の --args="…" は「--args= が頭に付いた設定ファイルパス」として届く。
-        // gradlew 時代のコマンド形との互換のために剥がす。素のパス指定も従来どおり使える
-        if (configPath.startsWith("--args=")) {
-            configPath = configPath.substring("--args=".length());
-        }
-        if (!(args.length > 0)) {
+        if (args.length == 0) {
             System.err.println("config.propertiesのパスが指定されていません。");
             System.err.println("既定値の「config/config.properties」で実行します。");
         }
