@@ -15,35 +15,73 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ### 2. 実行する
 
-#### JBangによる実行
+Windows
 
 ```bat
-.\jbang.cmd src/CallHierarchyExporter.java config/config.properties
+.\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-`jbang.cmd` は Windows 標準の `curl.exe` / `tar.exe` だけで動く自前のランチャーです（Windows 10 1803 以降）。
-PowerShell は使いません。
+Linux / macOS
+
+```bash
+./jbang src/CallHierarchyExporter.java config/config.properties
+```
+
+初回は必要なJDKと依存jarを自動で取得するため数分かかります。
+完了すると `config/output/` に `call-hierarchy.csv` と `methods.csv` が出力されます。
+
+---
+
+## 実行環境
+
+### jbang ランチャー
+
+同梱の `jbang` / `jbang.cmd` は、jbang 公式ラッパーを置き換えた自前のランチャーです。
+外部依存は OS 標準の `curl` と `tar` だけで、PowerShell は使いません
+（Windows は 10 の 1803 以降が必要）。
 
 初回実行時、環境に無いものは自動で取得されます。保存先はすべて **このスクリプトの隣**で、
-`%userprofile%` 配下は汚しません。やめるときはフォルダごと削除すれば元どおりです。
+`%userprofile%` や `$HOME` の配下は汚しません。やめるときはフォルダごと削除すれば元どおりです。
 
 | フォルダ | 中身 |
 |---|---|
 | `.jbang/bin/jbang.jar` | jbang 本体 |
-| `.jbang-cache/jdks/` | 取得したJDK（jbang 起動用の17と、ツール実行用の25） |
+| `.jbang-cache/jdks/` | 取得したJDK |
 | `.jbang-cache/deps`, `.jbang-cache/urls` ほか | 依存jarなどのキャッシュ |
 | `.jbang-cache/downloads`, `.jbang-cache/tmp` | ダウンロード物と実行時の一時ファイル |
 
-保存先を変えたい場合は、実行前に `JBANG_DIR` / `JBANG_CACHE_DIR` を設定してください。
+JDKは2つ入ります。ランチャーが入れる **JDK 17** は jbang 自身を動かすためのもので、
+`JAVA_HOME` やPATHに既にJDKがあれば取得されません。
+ツールの実行に使う **JDK 25**（`src/CallHierarchyExporter.java` の `//JAVA 25`）は
+jbang 自身が取得します。保存先は同じ `.jbang-cache/jdks/` です。
+
+### ランチャーの環境変数
+
+いずれも任意です。実行前に設定すると既定値を上書きできます。
+
+| 変数 | 既定値 | 用途 |
+|---|---|---|
+| `JBANG_DIR` | `<スクリプトの隣>/.jbang` | jbang 本体の置き場所 |
+| `JBANG_CACHE_DIR` | `<スクリプトの隣>/.jbang-cache` | JDK・依存jar・ダウンロード物の置き場所 |
+| `JBANG_DEFAULT_JAVA_VERSION` | `17` | jbang 自身を動かすJDKの版 |
+| `JBANG_JDK_VENDOR` | `temurin` | そのJDKのベンダー（foojay の distro 名） |
+| `JBANG_DOWNLOAD_VERSION` | `latest` | 取得する jbang の版（`0.141.0` / `early-access` など） |
+| `JBANG_DOWNLOAD_BASEURL` | GitHub Releases | jbang の配布元（社内ミラー用） |
+| `JBANG_DOWNLOAD_URL` | — | 配布物のURLを直接指定（上2つより優先） |
+| `JBANG_DOWNLOAD_RETRY` | `5` | ダウンロードの再試行回数 |
+| `JBANG_DOWNLOAD_RETRY_DELAY` | `2` | 再試行の間隔（秒） |
+| `JBANG_JAVA_OPTIONS` | — | jbang 本体を動かす java への追加オプション |
+
+キャッシュを別の場所に置く例:
 
 ```bat
 set JBANG_CACHE_DIR=D:\jbang-cache
-.\jbang.cmd src/CallHierarchyExporter.java config/config.properties
+.\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-社内ミラーやプロキシ経由で使う場合は `JBANG_DOWNLOAD_BASEURL` と、curl が読む `HTTPS_PROXY` を設定します。
+プロキシ経由の場合は `curl` が読む `HTTPS_PROXY` を設定してください。
 
-#### Pleiades/Eclipse環境（閉域ネットワーク等）
+### Pleiades/Eclipse環境（閉域ネットワーク等）
 
 Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
 実行に必要なjarを `lib` フォルダに集めて使います。
@@ -67,7 +105,9 @@ rem 実行
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
 ```
 
-### 出力されるファイル
+---
+
+## 出力されるファイル
 
 | ファイル | 既定出力先 |
 |---|---|
@@ -78,7 +118,7 @@ rem 実行
 出力先は設定ファイルからの相対パスなので、`config/config.properties` を指定した場合は
 `config/output/` の下に出ます。
 
-#### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
+### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
 呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
 呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
@@ -91,7 +131,7 @@ at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.s
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
-##### **Eclipseでのソースコードジャンプ**
+#### Eclipseでのソースコードジャンプ
 `call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
 `(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
 
@@ -101,7 +141,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
    「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
 3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
-#### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
@@ -121,7 +161,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java
 2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
 3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
 
-## 出力ファイル
+## 出力ファイル 詳細仕様
 
 ### `call-hierarchy.csv` — 呼び出し階層
 

@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# =====================================================================
+#  jbang - JBang ランチャー（Linux / macOS）
+#
+#  jbang.cmd の bash 版。既定値・フォルダ構成・処理の流れをそろえてあるので、
+#  どちらの環境で実行しても同じ場所に同じものが置かれる。
+#  外部依存は curl（無ければ wget）と tar だけ。
+#
+#  このファイルの責務は4つだけ:
+#    1. jbang 本体 (jbang.jar) を用意する。無ければ GitHub Releases から取得
+#    2. jbang.jar 自身を動かすための JDK を用意する。無ければ foojay から取得
+#    3. jbang を起動する
+#    4. 終了コード 255 のときは jbang が出力したコマンドを実行し直す
+#
+#  解析対象スクリプトの実行用 JDK（src の //JAVA 25 など）は jbang 自身が
+#  取得するので、このファイルは関与しない。保存先だけ JBANG_CACHE_DIR で
+#  そろえてあるので、同じ .jbang-cache/jdks の下に並ぶ。
+#
+#  環境変数は jbang.cmd と同じものが同じ意味で使える。
+# =====================================================================
+
+set -u
+
+# このスクリプト自身の場所。シンボリックリンク経由でも実体の場所を返す。
+jb_script_dir() {
+  local src=${BASH_SOURCE[0]} dir
+  while [ -L "$src" ]; do
+    dir=$(cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd)
+    src=$(readlink "$src")
+    [[ $src != /* ]] && src="$dir/$src"
+  done
+  cd -P "$(dirname "$src")" >/dev/null 2>&1 && pwd
+}
+JB_HERE=$(jb_script_dir)
+
+# ---------------------------------------------------------------------
+#  1. 設定
+#     既定値はすべてこのスクリプトの隣。プロジェクトフォルダごと消せば
+#     取得したものも一緒に消える。
+#     JBANG_DIR / JBANG_CACHE_DIR は jbang 本体も読むので export する。
+# ---------------------------------------------------------------------
+export JBANG_DIR="${JBANG_DIR:-$JB_HERE/.jbang}"
+export JBANG_CACHE_DIR="${JBANG_CACHE_DIR:-$JB_HERE/.jbang-cache}"
+JBANG_DEFAULT_JAVA_VERSION="${JBANG_DEFAULT_JAVA_VERSION:-17}"
+JBANG_JDK_VENDOR="${JBANG_JDK_VENDOR:-temurin}"
+JBANG_DOWNLOAD_VERSION="${JBANG_DOWNLOAD_VERSION:-latest}"
+JBANG_DOWNLOAD_BASEURL="${JBANG_DOWNLOAD_BASEURL:-https://github.com/jbangdev/jbang/releases}"
+JBANG_DOWNLOAD_RETRY="${JBANG_DOWNLOAD_RETRY:-5}"
+JBANG_DOWNLOAD_RETRY_DELAY="${JBANG_DOWNLOAD_RETRY_DELAY:-2}"
+
+# 派生パス。JB_JDK_DIR を JBANG_CACHE_DIR/jdks にしているのは、
+# jbang 自身が管理する JDK の置き場所と同じにするため。
+JB_JAR="$JBANG_DIR/bin/jbang.jar"
+JB_DL_DIR="$JBANG_CACHE_DIR/downloads"
+JB_JDK_DIR="$JBANG_CACHE_DIR/jdks"
+
+case "$(uname -s)" in
+  Linux)  JB_OS=linux; JB_LIBC=glibc ;;
+  Darwin) JB_OS=mac;   JB_LIBC=libc ;;
+  *) echo "[jbang] ERROR: unsupported OS: $(uname -s)" >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+  x86_64|amd64)  JB_ARCH=x64 ;;
+  aarch64|arm64) JB_ARCH=aarch64 ;;
+  *) echo "[jbang] ERROR: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+# ---------------------------------------------------------------------
+#  jb_download <url> <outfile>
+#    curl の再試行機能をそのまま使う。プロキシは HTTPS_PROXY などの
+#    環境変数を curl/wget が自動で読むので、ここでは何もしない。
+# ---------------------------------------------------------------------
+jb_download() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --progress-bar \
+      --retry "$JBANG_DOWNLOAD_RETRY" --retry-delay "$JBANG_DOWNLOAD_RETRY_DELAY" \
+      -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --tries="$((JBANG_DOWNLOAD_RETRY + 1))" -O "$2" "$1"
+  else
+    echo "[jbang] ERROR: neither curl nor wget is available." >&2
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------
+#  jb_install_jbang : jbang.tar を取得して jbang.jar だけ取り出す
+#    公式の tar には bin/jbang / jbang.cmd / jbang.ps1 も入っているが、
+#    このランチャーが自前でやるので jar 以外は捨てる。
+# ---------------------------------------------------------------------
+jb_install_jbang() {
+  local url tag
+  if [ -n "${JBANG_DOWNLOAD_URL:-}" ]; then
+    url="$JBANG_DOWNLOAD_URL"
+  elif [ "$JBANG_DOWNLOAD_VERSION" = latest ]; then
+    url="$JBANG_DOWNLOAD_BASEURL/latest/download/jbang.tar"
+  else
+    # 数字とドットだけの版には v を付ける（0.130.0 -> v0.130.0）。
+    # early-access のような名前付きタグはそのまま使う。
+    tag="$JBANG_DOWNLOAD_VERSION"
+    case "$tag" in
+      *[!0-9.]*) ;;
+      *) tag="v$tag" ;;
+    esac
+    url="$JBANG_DOWNLOAD_BASEURL/download/$tag/jbang.tar"
+  fi
+
+  echo "[jbang] Downloading jbang $JBANG_DOWNLOAD_VERSION from $url" >&2
+  mkdir -p "$JB_DL_DIR" || return 1
+  if ! jb_download "$url" "$JB_DL_DIR/jbang.tar"; then
+    echo "[jbang] ERROR: failed to download jbang from $url" >&2
+    return 1
+  fi
+
+  echo "[jbang] Extracting jbang..." >&2
+  rm -rf "$JB_DL_DIR/jbang"
+  mkdir -p "$JB_DL_DIR/jbang"
+  # tar の中身は jbang/bin/... と1階層かぶっているので剥がす
+  if ! tar xf "$JB_DL_DIR/jbang.tar" -C "$JB_DL_DIR/jbang" --strip-components=1; then
+    echo "[jbang] ERROR: failed to extract $JB_DL_DIR/jbang.tar" >&2
+    return 1
+  fi
+  if [ ! -f "$JB_DL_DIR/jbang/bin/jbang.jar" ]; then
+    echo "[jbang] ERROR: bin/jbang.jar was not found in the downloaded archive." >&2
+    return 1
+  fi
+
+  mkdir -p "$JBANG_DIR/bin" || return 1
+  cp -f "$JB_DL_DIR/jbang/bin/jbang.jar" "$JB_JAR" || return 1
+  rm -rf "$JB_DL_DIR/jbang"
+}
+
+# ---------------------------------------------------------------------
+#  jb_install_jdk : jbang.jar 起動用の JDK を foojay から取得する
+#    ここで入れるのは「jbang 自身を動かすための JDK」だけ。
+#    //JAVA で指定された実行用 JDK は jbang が同じ jdks フォルダに取りに行く。
+#    呼び出し前に JB_BOOT_JDK が設定されていること。
+# ---------------------------------------------------------------------
+jb_install_jdk() {
+  local url archive raw src
+  url="https://api.foojay.io/disco/v3.0/directuris?distro=$JBANG_JDK_VENDOR&javafx_bundled=false&libc_type=$JB_LIBC&archive_type=tar.gz&operating_system=$JB_OS&package_type=jdk&version=$JBANG_DEFAULT_JAVA_VERSION&architecture=$JB_ARCH&latest=available"
+  archive="$JB_DL_DIR/bootstrap-jdk.tar.gz"
+
+  echo "[jbang] Downloading JDK $JBANG_DEFAULT_JAVA_VERSION [$JBANG_JDK_VENDOR/$JB_OS-$JB_ARCH]. This can take several minutes..." >&2
+  mkdir -p "$JB_DL_DIR" "$JB_JDK_DIR" || return 1
+  if ! jb_download "$url" "$archive"; then
+    echo "[jbang] ERROR: failed to download JDK $JBANG_DEFAULT_JAVA_VERSION." >&2
+    return 1
+  fi
+
+  echo "[jbang] Extracting JDK..." >&2
+  raw="$JB_JDK_DIR/.extract-$$"
+  rm -rf "$raw"
+  mkdir -p "$raw" || return 1
+  if ! tar xzf "$archive" -C "$raw"; then
+    echo "[jbang] ERROR: failed to extract $archive" >&2
+    rm -rf "$raw"
+    return 1
+  fi
+
+  # tar.gz は jdk-17.0.x+y/ と1階層かぶっている。macOS はさらにその下の
+  # Contents/Home が JDK の中身なので、階層を決め打ちせず javac を探す。
+  if [ "$JB_OS" = mac ]; then
+    src=$(find "$raw" -maxdepth 3 -type d -path '*/Contents/Home' | head -n 1)
+  else
+    src=$(find "$raw" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  fi
+  if [ -z "$src" ] || [ ! -x "$src/bin/javac" ] || ! "$src/bin/javac" -version >/dev/null 2>&1; then
+    echo "[jbang] ERROR: the downloaded archive does not look like a JDK." >&2
+    rm -rf "$raw"
+    return 1
+  fi
+
+  # 検証が通ってから正式な場所へ移す。途中で失敗しても中途半端な JDK は残らない。
+  rm -rf "$JB_BOOT_JDK"
+  if ! mv "$src" "$JB_BOOT_JDK"; then
+    echo "[jbang] ERROR: failed to install JDK to $JB_BOOT_JDK" >&2
+    rm -rf "$raw"
+    return 1
+  fi
+  rm -rf "$raw"
+  rm -f "$archive"
+
+  # 入れた JDK を jbang の既定として登録する（$JBANG_DIR/currentjdk が作られる）。
+  # 失敗しても致命的ではないので結果は見ない。
+  "$JB_BOOT_JDK/bin/java" -jar "$JB_JAR" jdk default "$JBANG_DEFAULT_JAVA_VERSION" >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------------
+#  jb_resolve_java : jbang.jar を動かす java を JB_JAVA に入れる
+#    探索順:
+#      1. JAVA_HOME
+#      2. PATH 上の java/javac
+#      3. $JBANG_DIR/currentjdk       … jbang が設定した既定 JDK
+#      4. $JBANG_CACHE_DIR/jdks/<版>  … このスクリプトが入れた JDK
+#      5. どれも無ければ 4 の場所へ取得する
+#    javac の有無で判定するのは、jbang がソースのコンパイルに JDK を必要と
+#    するため（JRE では動かない）。
+# ---------------------------------------------------------------------
+jb_resolve_java() {
+  if [ -n "${JAVA_HOME:-}" ]; then
+    if [ -x "$JAVA_HOME/bin/javac" ]; then
+      JB_JAVA="$JAVA_HOME/bin/java"
+      return 0
+    fi
+    echo "[jbang] WARNING: JAVA_HOME is set but is not a JDK: $JAVA_HOME" >&2
+  fi
+
+  if command -v javac >/dev/null 2>&1 && command -v java >/dev/null 2>&1; then
+    # PATH の JDK を使う。壊れた JAVA_HOME を jbang に引き継がせない。
+    unset JAVA_HOME
+    JB_JAVA=java
+    return 0
+  fi
+
+  if [ -x "$JBANG_DIR/currentjdk/bin/javac" ]; then
+    export JAVA_HOME="$JBANG_DIR/currentjdk"
+    JB_JAVA="$JAVA_HOME/bin/java"
+    return 0
+  fi
+
+  JB_BOOT_JDK="$JB_JDK_DIR/$JBANG_DEFAULT_JAVA_VERSION"
+  if [ ! -x "$JB_BOOT_JDK/bin/javac" ]; then
+    jb_install_jdk || return 1
+  fi
+  export JAVA_HOME="$JB_BOOT_JDK"
+  JB_JAVA="$JB_BOOT_JDK/bin/java"
+}
+
+# ---------------------------------------------------------------------
+#  jb_execute : jbang を起動し、終了コードを処理する
+#    255 = 「実行すべきコマンドを標準出力に書いた」という jbang の合図。
+#    jbang run の実体はこれで、ここで java を起動し直すのがランチャーの本題。
+#    exec で置き換えるので、この後にプロセスは残らない。
+#    標準出力はコマンド置換で受けるが標準エラーは素通しなので、
+#    ダウンロードの進捗などはその場で見える。
+# ---------------------------------------------------------------------
+jb_execute() {
+  local output err
+  export JBANG_RUNTIME_SHELL=bash
+  export JBANG_LAUNCH_CMD="$0"
+  JBANG_STDIN_NOTTY=$([ -t 0 ] && echo false || echo true)
+  export JBANG_STDIN_NOTTY
+
+  # JBANG_JAVA_OPTIONS は複数オプションを空白区切りで受けるため、あえて非引用
+  # shellcheck disable=SC2086
+  output=$(CLICOLOR_FORCE=1 "$JB_JAVA" ${JBANG_JAVA_OPTIONS:-} -jar "$JB_JAR" "$@")
+  err=$?
+
+  if [ "$err" -eq 255 ]; then
+    eval "exec $output"
+  elif [ -n "$output" ]; then
+    echo "$output"
+    exit "$err"
+  else
+    exit "$err"
+  fi
+}
+
+# ---------------------------------------------------------------------
+#  main
+# ---------------------------------------------------------------------
+if ! command -v tar >/dev/null 2>&1; then
+  echo "[jbang] ERROR: tar not found." >&2
+  exit 1
+fi
+
+# jbang が自分を更新すると jbang.jar.new が置かれる。ここで確定させる。
+if [ -f "$JB_JAR.new" ]; then
+  mv -f "$JB_JAR.new" "$JB_JAR"
+fi
+
+if [ ! -f "$JB_JAR" ]; then
+  jb_install_jbang || exit 1
+fi
+
+jb_resolve_java || exit 1
+jb_execute "$@"

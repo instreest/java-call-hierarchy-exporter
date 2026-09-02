@@ -15,7 +15,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// JBang 用の指示行（jbang.cmd で実行するときだけ意味を持つ。javac / java には単なるコメント）
+// JBang 用の指示行（jbang / jbang.cmd で実行するときだけ意味を持つ。javac / java には単なるコメント）
 //
 // DEPS: 依存はこの1行だけ。推移的な依存（org.eclipse.platform.* 等）は
 //       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
@@ -26,7 +26,7 @@
 // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
 //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
 //       変わると解析結果が変わるから。手元に25が無ければ jbang が取得する
-//       （保存先はプロジェクト内の .jbang-cache/jdks。jbang.cmd が JBANG_CACHE_DIR で固定する）。
+//       （保存先はプロジェクト内の .jbang-cache/jdks。同梱ランチャーが JBANG_CACHE_DIR で固定する）。
 //
 // 標準出力の文字コードは指定しない（//JAVA_OPTIONS を置かない）。JDK 19以降、
 // System.out はコンソール自身の文字コードで書き出すため、指定しないのが最も
@@ -182,7 +182,7 @@ public class CallHierarchyExporter {
 
     public static void main(String[] args) throws Exception {
         // 設定ファイルのパスは第1引数で受け取る。jbang はスクリプト名より後ろの
-        // 引数をそのまま渡してくるので、jbang.cmd 経由でも java 直接実行でも同じ形
+        // 引数をそのまま渡してくるので、ランチャー経由でも java 直接実行でも同じ形
         String configPath = (args.length > 0) ? args[0] : "config/config.properties";
         if (args.length == 0) {
             System.err.println("config.propertiesのパスが指定されていません。");

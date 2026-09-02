@@ -1,2 +1,3 @@
-# Windows のバッチファイルは CRLF で固定する（cmd のパーサ差異を避けるため）
+# Windows のバッチファイルは CRLF、bash スクリプトは LF で固定する
 *.cmd text eol=crlf
+jbang  text eol=lf
