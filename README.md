@@ -101,6 +101,48 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java
 2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
 3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
 
+### キャッシュの置き場所と形式
+
+キャッシュはソースファイル1つにつき1ファイルで、`cache.folders`（既定 `./.cache`）の下に
+ソースツリーと同じ相対パス + `.tsv` で置かれます。
+
+```
+config/.cache/src/jp/co/example/service/OrderService.java.tsv
+```
+
+- 再実行時は各キャッシュの1行目（更新時刻・サイズ・ソースレベル）だけを見て再利用を決めるので、
+  変更の無いファイルは読みも書きもしません。変更したファイルの分だけ解析して書き直します。
+- 1ファイルずつ完結して書くため、途中で落ちてもそこまでの解析結果は次回そのまま使えます。
+- ソースが無くなったキャッシュファイルと空になったフォルダは自動で削除します。
+  旧形式の単一ファイル（`analysis-cache.tsv`）が残っていれば削除して作り直します。
+
+中身はタブ区切りのテキストで、grep やエディタでそのまま読めます。
+型 → メソッド → 呼び出し の入れ子で、呼び出し元やパッケージを行ごとに繰り返しません。
+
+```
+#jche-cache	v7	path=src/jp/co/example/service/OrderService.java	mtime=1725000000000	size=2048	source=17	unresolved=0
+#columns	P=fqn,pkg	T=fqn,kind,supers	D=method,line,body	C=line,bind,callee,recvKind,recvKey,recvOrigin,argOrigins	…
+P	jp.co.example.service.OrderService	jp.co.example.service
+P	jp.co.example.dao.OrderDao	jp.co.example.dao
+T	jp.co.example.service.OrderService	C
+J	orderDao	A:0
+D	findOrder(java.lang.String)	20	1
+C	25	V	jp.co.example.dao.OrderDao#selectById(long)	F	orderDao	F:jp.co.example.service.OrderService#orderDao
+```
+
+| 行 | 内容 |
+|---|---|
+| `#jche-cache` | ヘッダ。形式の版と、再利用判定に使うソースの相対パス・更新時刻・サイズ・ソースレベル |
+| `#columns` | 行種別ごとの列名。読む側は列名で位置を引くので、列の追加・並べ替えに耐える |
+| `P` | パッケージ表。このファイルに出てくる型（参照しているだけの型も含む）のパッケージ |
+| `T` | このファイルで宣言された型。種別（I/A/C）と親型。以降の `J` / `D` はこの型に属する |
+| `J` | コンストラクタ注入されたフィールドと、その値の出所 |
+| `D` | メソッド宣言。宣言行と本体の有無。以降の `C` / `R` / `U` / `X` はこのメソッドに属する |
+| `C` | 呼び出し1件。呼び出し行、束縛種別、呼び出し先、レシーバの由来・識別子・出所、実引数の出所 |
+| `R` / `U` / `X` / `M` | 戻り値の出所 / 型解決に失敗した呼び出し / 具象型の証拠 / ラムダが実装する関数型IF |
+
+列の詳しい意味はソース（`CallHierarchyExporter.java` の「キャッシュの形式」コメント）にあります。
+
 ## 出力ファイル
 
 ### `call-hierarchy.csv` — 呼び出し階層
