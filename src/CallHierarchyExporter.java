@@ -137,10 +137,10 @@ import java.util.stream.Stream;
  * ====================================================================
  *
  * 【1】解析結果をヒープに溜めない ── フェーズ1
- *   1ファイル解析するたびに結果をそのファイル専用のキャッシュファイルへ書き出して
- *   破棄する。キャッシュはソースファイル1つにつき1つなので、再利用の判定は
- *   ヘッダ1行を読むだけ、更新もそのファイル1つを書き直すだけで済み、
- *   ヒープ常駐は「解析中の1ファイル分」のみ。
+ *   1ファイル解析するたびに結果をキャッシュファイルへ直接書き出して破棄する。
+ *   キャッシュ更新は「旧キャッシュを先頭から読み、まだ有効なブロックだけを
+ *   新キャッシュへ書き写す」ストリーミングマージで行うため、ランダムアクセスも
+ *   全件保持も不要。ヒープ常駐は「ソースファイルのパス・更新時刻・サイズ」のみ。
  *
  * 【2】エッジをオブジェクトで持たない ── フェーズ2
  *   メソッドを int の ID に内部化（intern）し、呼び出し関係を
@@ -224,8 +224,7 @@ public class CallHierarchyExporter {
         log("=== フェーズ1/3: ソース解析 ===");
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
         log("ソース解析: 再利用=" + phase1.reused
-                + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed
-                + (phase1.pruned > 0 ? " 削除=" + phase1.pruned : ""));
+                + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
         if (phase1.unresolved > 0) {
             log("※ 型解決できなかった呼び出しが " + phase1.unresolved + " 件あります。");
             log("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
@@ -237,7 +236,7 @@ public class CallHierarchyExporter {
         // --- フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 ---
         System.out.println();
         log("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
-        CallGraph graph = CallGraph.buildFrom(phase1.cacheFiles);
+        CallGraph graph = CallGraph.buildFrom(config.cacheFile);
         List<String> sourceFolderOrder = new ArrayList<>();
         for (Path sf : layout.sourceFolders) {
             sourceFolderOrder.add(layout.relativeOf(sf));
@@ -296,7 +295,7 @@ public class CallHierarchyExporter {
             }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
-            rows += UnresolvedReport.write(graph, phase1.cacheFiles, writer);
+            rows += UnresolvedReport.write(graph, config, writer);
 
             if (!config.externalLibraryFolders.isEmpty()) {
                 System.out.println();
@@ -435,8 +434,6 @@ public class CallHierarchyExporter {
          * @param scopeKey  この証拠が結び付く対象。ローカル変数なら
          *                  IVariableBinding.getKey()、レシーバ式なら "@開始位置"。
          *                  呼び出し箇所側が記録するキーと一致させる必要がある
-         *                  （キャッシュにはファイル内で一意な短い名前に置き換えて書かれるが、
-         *                  同じキーは同じ名前になるので照合には影響しない）
          */
         void add(String scopeKey, String kind, String value);
     }
@@ -507,6 +504,9 @@ public class CallHierarchyExporter {
 
         /** CHA候補を呼び出し階層で展開する際の候補数の上限 */
         static final int CHA_MAX_CANDIDATES = 20;
+        /** キャッシュフォルダ内に置くインデックスファイルの名前 */
+        static final String CACHE_FILE_NAME = "analysis-cache.tsv";
+
         final Path configDir;
         final Path projectRoot;
         /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
@@ -543,8 +543,7 @@ public class CallHierarchyExporter {
         final boolean dataflowEnabled;
         /** ファクトリの委譲（return create();）を何段まで辿るか */
         final int dataflowMaxDepth;
-        /** キャッシュフォルダ。ソースファイルごとのキャッシュをこの下にソースツリーと同じ形で置く */
-        final Path cacheDir;
+        final Path cacheFile;
 
         /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
         final List<Path> externalLibraryFolders;
@@ -611,7 +610,8 @@ public class CallHierarchyExporter {
                     Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
             this.dataflowMaxDepth =
                     Integer.parseInt(p.getProperty("dataflow.max.depth", "5").trim());
-            this.cacheDir = resolvePath(p.getProperty("cache.folders", "./.cache"));
+            this.cacheFile = resolvePath(p.getProperty("cache.folders", "./.cache"))
+                    .resolve(CACHE_FILE_NAME);
 
             // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
             // ソースや依存jarと同じく project.root からの相対で書けるようにする
@@ -988,57 +988,34 @@ public class CallHierarchyExporter {
     }
 
     // ================================================================
-    // フェーズ1: 解析とキャッシュのファイル単位の更新
+    // フェーズ1: 解析とキャッシュのストリーミング更新
     // ================================================================
 
     /*
-     * キャッシュの形式（v7）
+     * キャッシュファイルの形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）
      *
-     * ソースファイル1つにつきキャッシュファイル1つを、cache.folders の下にソースツリーと
-     * 同じ相対パス + ".tsv" で置く（例: src/jp/co/X.java → .cache/src/jp/co/X.java.tsv）。
-     * タブ区切りのテキストで、外部ライブラリ無しで読み書きでき、grep やエディタでそのまま読める。
+     *   F  相対パス  更新時刻  サイズ
+     *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型をカンマ区切り
+     *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)
+     *   C  callerPkg callerType callerMethod callerParams
+     *      calleePkg calleeType calleeMethod calleeParams  callLine  bindKind  recvKey  recvKind
+     *      recvOrigin  argOrigins
+     *      bindKind: V=仮想 / P=private / T=static / F=finalメソッド
+     *                L=finalクラス / C=コンストラクタ / U=super呼び出し（V以外は静的束縛）
+     *      recvKind: レシーバの由来（RecvKind参照）。CHAで絞れない理由の説明に使う
+     *      recvOrigin: レシーバの出所（Origin参照）。データフローで具象型を追うのに使う
+     *      argOrigins: 実引数の出所。"0=T:jp.co.X;2=A:1" のように 位置=出所 を;で並べる。
+     *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
+     *   R  pkg  typeFqn  method  paramSig  origin   （そのメソッドが返しうる値の出所）
+     *   J  typeFqn  fieldName  origin                （コンストラクタ注入されたフィールド）
+     *   M  ifaceTypeFqn#method(paramSig)          （ラムダ／メソッド参照が実装している
+     *                                              関数型インターフェースのメソッド）
+     *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
+     *   U  行  呼び出し元メソッドキー  式  理由
      *
-     *   #jche-cache  v7  path=相対パス  mtime=更新時刻  size=サイズ  source=ソースレベル  unresolved=件数
-     *   #columns     P=fqn,pkg  T=fqn,kind,supers  D=method,line,body  C=…   （行種別ごとの列名）
-     *   P  typeFqn  pkg                       パッケージ表。このファイルに出てくる型（宣言した型も
-     *                                        呼び出し先として参照しただけの型も）を全部、先に並べる。
-     *                                        型名だけではパッケージと外側クラスの境目が決められないため
-     *   M  ifaceTypeFqn#method(paramSig)     ラムダ／メソッド参照が実装している関数型IFのメソッド
-     *   U  行  式  理由                        メソッド外（呼び出し元を特定できない箇所）の未解決呼び出し
-     *   T  typeFqn  kind  supers              このファイルで宣言された型。kind(I=IF/A=抽象/C=具象)、
-     *                                        親型はカンマ区切り
-     *   ├ J  fieldName  origin                コンストラクタ注入されたフィールド（直前のTの型）
-     *   └ D  method(paramSig)  declLine  hasBody(1/0)
-     *                                        メソッド宣言（直前のTの型）。declLine が空なら
-     *                                        呼び出し元としてだけ現れるメソッド（宣言は別ファイル）
-     *      ├ C  callLine  bindKind  calleeTypeFqn#method(paramSig)  recvKind  recvKey  recvOrigin  argOrigins
-     *      ├ R  origin                       このメソッドが返しうる値の出所
-     *      ├ U  行  式  理由                 このメソッド内の未解決呼び出し
-     *      └ X  scopeKey  種別  値           フェーズAが拾った証拠
+     * F行が現れるたびに、以降のH/D/C/R/J/U行はそのファイルに属する。
      *
-     * 行は入れ子で読む。T が現れると以降の J/D はその型に、D が現れると以降の C/R/U/X は
-     * そのメソッドに属する。P は参照される前に読めるよう、必ず先頭にまとめて置く。呼び出し元・宣言型・パッケージを行ごとに繰り返さないので、
-     * 旧形式（1行ごとに呼び出し元と呼び出し先を完全修飾で並べる）の半分以下の大きさになる。
-     * 末尾の空の列は省略する（読む側は無い列を空として扱う）。
-     *
-     *   bindKind: V=仮想 / P=private / T=static / F=finalメソッド
-     *             L=finalクラス / C=コンストラクタ / U=super呼び出し（V以外は静的束縛）
-     *             G=外部ライブラリ（import推定・未検証）
-     *   recvKind: レシーバの由来（RecvKind参照）。CHAで絞れない理由の説明に使う
-     *   recvKey:  レシーバ変数の識別子。X行の scopeKey と突き合わせるためのもので、
-     *             ファイル内で一意な短い名前（変数名。重複すれば name~2 …）か "@開始位置"
-     *   recvOrigin: レシーバの出所（Origin参照）。データフローで具象型を追うのに使う
-     *   argOrigins: 実引数の出所。"0=T:jp.co.X;2=A:1" のように 位置=出所 を;で並べる。
-     *               追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
-     *
-     * 1行目のヘッダだけで再利用の可否を判定する（path/mtime/size/source が一致すれば
-     * 本体は読まない）。unresolved はそのファイルで型解決に失敗した件数で、
-     * 再利用時に本体を読まずに集計するために持つ。
-     * 2行目の #columns は列名の一覧。読む側は列名で位置を引くので、列を足したり
-     * 並べ替えたりしても読める（読み手が必要とする列が無いファイルは作り直す）。
-     * '#' で始まる行は注記として読み飛ばす。
-     *
-     * T行の kind と supers は「単一実装ショートカット」と「CHA」に必須。これが無いと
+     * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
      * インターフェース・抽象クラスの実装クラスを特定できない。
      * D行のhasBodyは、インターフェースの抽象メソッド（本体なし）と
      * デフォルトメソッド（本体あり）を区別するために必要。
@@ -1192,87 +1169,21 @@ public class CallHierarchyExporter {
         }
     }
 
-    /**
-     * キャッシュの形式定義。行の並びと列の意味は上のコメント参照。
-     *
-     * 形式を変更した場合は VERSION を上げる。旧バージョンのキャッシュファイルは
-     * ヘッダの突き合わせで再利用されず、次の実行で作り直される。
-     */
     static final class CacheFormat {
         static final String SEP = "\t";
-        /** ヘッダ行の先頭。これで始まるファイルだけをキャッシュとして扱う（削除対象の判定にも使う） */
-        static final String MAGIC = "#jche-cache";
-        static final String VERSION = "v7";
-        /** キャッシュファイルの拡張子（ソースの相対パスの後ろに付ける） */
-        static final String SUFFIX = ".tsv";
-        /** 列名の行の先頭 */
-        static final String COLUMNS_MARK = "#columns";
-        /** v6以前の単一キャッシュファイル。見つけたら削除する */
-        static final String LEGACY_FILE_NAME = "analysis-cache.tsv";
+        /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
+        static final String VERSION = "jche-cache-v6";
 
         /**
-         * 行種別ごとの列名（先頭は行種別）。書く側はこの順で書き、
-         * 読む側は #columns 行から列名で位置を引く。列を足すときはここに追加する。
-         */
-        static final String[][] COLUMNS = {
-            {"P", "fqn", "pkg"},
-            {"T", "fqn", "kind", "supers"},
-            {"D", "method", "line", "body"},
-            {"C", "line", "bind", "callee", "recvKind", "recvKey", "recvOrigin", "argOrigins"},
-            {"R", "origin"},
-            {"U", "line", "expr", "reason"},
-            {"X", "scope", "kind", "value"},
-            {"J", "field", "origin"},
-            {"M", "method"},
-        };
-
-        private CacheFormat() {
-        }
-
-        /** 1行目。再利用の判定に必要な情報だけを key=value で並べる */
-        static String headerLine(String path, long mtime, long size, String sourceLevel,
-                                 long unresolved) {
-            return MAGIC + SEP + VERSION
-                    + SEP + "path=" + clean(path)
-                    + SEP + "mtime=" + mtime
-                    + SEP + "size=" + size
-                    + SEP + "source=" + clean(sourceLevel)
-                    + SEP + "unresolved=" + unresolved;
-        }
-
-        /** 2行目。"#columns  T=fqn,pkg,kind,supers  D=method,line,body  …" */
-        static String columnsLine() {
-            StringBuilder sb = new StringBuilder(COLUMNS_MARK);
-            for (String[] c : COLUMNS) {
-                sb.append(SEP).append(c[0]).append('=');
-                for (int i = 1; i < c.length; i++) {
-                    if (i > 1) {
-                        sb.append(',');
-                    }
-                    sb.append(c[i]);
-                }
-            }
-            return sb.toString();
-        }
-
-        /**
-         * ソースの相対パスに対応するキャッシュファイル。
+         * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
          *
-         * ソースフォルダがプロジェクトルートの外にあると相対パスに ".." が混ざる。
-         * その場合でもキャッシュフォルダの外に書かないよう、親を指す要素は名前に置き換える。
+         * 同じソースでも、どの言語バージョンとして解析したかで結果が変わる
+         * （古いレベルだと新しい構文が解析できず、呼び出しが抜ける）。
+         * 更新時刻とサイズだけを見ていると、設定を変えたのに古い結果を
+         * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
          */
-        static Path cacheFileFor(Path cacheDir, String relativePath) {
-            StringBuilder sb = new StringBuilder();
-            for (String seg : relativePath.split("/")) {
-                if (seg.isEmpty() || ".".equals(seg)) {
-                    continue;
-                }
-                if (sb.length() > 0) {
-                    sb.append('/');
-                }
-                sb.append("..".equals(seg) ? "__parent__" : seg);
-            }
-            return cacheDir.resolve(sb.toString() + SUFFIX);
+        static String headerFor(String sourceLevel) {
+            return VERSION + SEP + "source=" + sourceLevel;
         }
 
         /** タブ・改行が値に混ざると形式が壊れるため除去する */
@@ -1282,295 +1193,33 @@ public class CallHierarchyExporter {
             }
             return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
         }
-
-        /**
-         * 1行ぶんを組み立てる。全ての値を clean() してタブで繋ぐ。
-         * 末尾の空の列は省く（読む側は無い列を空として扱う）。
-         */
-        static String row(String kind, String... values) {
-            int last = values.length;
-            while (last > 0 && (values[last - 1] == null || values[last - 1].isEmpty())) {
-                last--;
-            }
-            StringBuilder sb = new StringBuilder(kind);
-            for (int i = 0; i < last; i++) {
-                sb.append(SEP).append(clean(values[i]));
-            }
-            return sb.toString();
-        }
-    }
-
-    /**
-     * キャッシュファイル1つを読む。
-     *
-     * ヘッダ（1行目）と列名（2行目）を検証し、以降の行を種別と列名で取り出せるようにする。
-     * 列の位置は #columns 行から引くので、列の追加や並べ替えをしても読める。
-     */
-    static final class CacheReader implements java.io.Closeable {
-
-        /** ヘッダ行と #columns 行だけを読んだ結果。再利用の判定はこれだけで済む */
-        static final class Header {
-            final Map<String, String> attrs = new HashMap<>();
-            /** 行種別 -> 列名の並び（[0] は行種別自身。以降が列1, 列2, …） */
-            final Map<String, String[]> columns = new HashMap<>();
-
-            String attr(String key) {
-                String v = attrs.get(key);
-                return (v == null) ? "" : v;
-            }
-
-            long longAttr(String key) {
-                try {
-                    return Long.parseLong(attr(key));
-                } catch (NumberFormatException e) {
-                    return -1L;
-                }
-            }
-
-            /** ソースの実体と解析条件が一致するか（＝解析し直さずに使えるか） */
-            boolean matches(String path, long mtime, long size, String sourceLevel) {
-                return path.equals(attr("path"))
-                        && mtime == longAttr("mtime")
-                        && size == longAttr("size")
-                        && CacheFormat.clean(sourceLevel).equals(attr("source"));
-            }
-
-            /** この版の読み手が必要とする列が全て揃っているか */
-            boolean hasRequiredColumns() {
-                for (String[] req : CacheFormat.COLUMNS) {
-                    for (int i = 1; i < req.length; i++) {
-                        if (col(req[0], req[i]) < 0) {
-                            return false;
-                        }
-                    }
-                }
-                return true;
-            }
-
-            /** 列名から列の位置（1始まり）。無ければ -1 */
-            int col(String kind, String name) {
-                String[] have = columns.get(kind);
-                if (have == null) {
-                    return -1;
-                }
-                for (int i = 1; i < have.length; i++) {
-                    if (have[i].equals(name)) {
-                        return i;
-                    }
-                }
-                return -1;
-            }
-        }
-
-        /**
-         * ヘッダだけを読む。キャッシュファイルでない・版が違う・壊れている場合は null。
-         * 本体は読まないので、再利用できるファイルが何万件あっても速い。
-         */
-        static Header readHeader(Path file) {
-            if (!Files.isRegularFile(file)) {
-                return null;
-            }
-            try (BufferedReader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                return parseHeader(in.readLine(), in.readLine());
-            } catch (IOException e) {
-                return null;
-            }
-        }
-
-        static Header parseHeader(String line1, String line2) {
-            if (line1 == null || line2 == null) {
-                return null;
-            }
-            String[] h = line1.split(CacheFormat.SEP, -1);
-            if (h.length < 2 || !CacheFormat.MAGIC.equals(h[0])
-                    || !CacheFormat.VERSION.equals(h[1])) {
-                return null;
-            }
-            Header hd = new Header();
-            for (int i = 2; i < h.length; i++) {
-                int eq = h[i].indexOf('=');
-                if (eq > 0) {
-                    hd.attrs.put(h[i].substring(0, eq), h[i].substring(eq + 1));
-                }
-            }
-            String[] c = line2.split(CacheFormat.SEP, -1);
-            if (!CacheFormat.COLUMNS_MARK.equals(c[0])) {
-                return null;
-            }
-            for (int i = 1; i < c.length; i++) {
-                int eq = c[i].indexOf('=');
-                if (eq <= 0) {
-                    continue;
-                }
-                String[] names = c[i].substring(eq + 1).split(",", -1);
-                String[] cols = new String[names.length + 1];
-                cols[0] = c[i].substring(0, eq);
-                System.arraycopy(names, 0, cols, 1, names.length);
-                hd.columns.put(cols[0], cols);
-            }
-            return hd.hasRequiredColumns() ? hd : null;
-        }
-
-        /** ファイルを開いて本体を読める状態にする。ヘッダが不正なら null */
-        static CacheReader open(Path file) throws IOException {
-            BufferedReader in = Files.newBufferedReader(file, StandardCharsets.UTF_8);
-            Header h;
-            try {
-                h = parseHeader(in.readLine(), in.readLine());
-            } catch (IOException e) {
-                in.close();
-                throw e;
-            }
-            if (h == null) {
-                in.close();
-                return null;
-            }
-            return new CacheReader(file, h, in);
-        }
-
-        final Path file;
-        final Header header;
-        private final BufferedReader in;
-        /** 現在行の列（[0] は行種別） */
-        private String[] fields = new String[0];
-
-        // 列の位置。ファイルごとに #columns 行から引いておく（行ごとに名前で引かないため）
-        final int pFqn;
-        final int pPkg;
-        final int tFqn;
-        final int tKind;
-        final int tSupers;
-        final int dMethod;
-        final int dLine;
-        final int dBody;
-        final int cLine;
-        final int cBind;
-        final int cCallee;
-        final int cRecvKind;
-        final int cRecvKey;
-        final int cRecvOrigin;
-        final int cArgOrigins;
-        final int rOrigin;
-        final int uLine;
-        final int uExpr;
-        final int uReason;
-        final int xScope;
-        final int xKind;
-        final int xValue;
-        final int jField;
-        final int jOrigin;
-        final int mMethod;
-
-        private CacheReader(Path file, Header header, BufferedReader in) {
-            this.file = file;
-            this.header = header;
-            this.in = in;
-            pFqn = header.col("P", "fqn");
-            pPkg = header.col("P", "pkg");
-            tFqn = header.col("T", "fqn");
-            tKind = header.col("T", "kind");
-            tSupers = header.col("T", "supers");
-            dMethod = header.col("D", "method");
-            dLine = header.col("D", "line");
-            dBody = header.col("D", "body");
-            cLine = header.col("C", "line");
-            cBind = header.col("C", "bind");
-            cCallee = header.col("C", "callee");
-            cRecvKind = header.col("C", "recvKind");
-            cRecvKey = header.col("C", "recvKey");
-            cRecvOrigin = header.col("C", "recvOrigin");
-            cArgOrigins = header.col("C", "argOrigins");
-            rOrigin = header.col("R", "origin");
-            uLine = header.col("U", "line");
-            uExpr = header.col("U", "expr");
-            uReason = header.col("U", "reason");
-            xScope = header.col("X", "scope");
-            xKind = header.col("X", "kind");
-            xValue = header.col("X", "value");
-            jField = header.col("J", "field");
-            jOrigin = header.col("J", "origin");
-            mMethod = header.col("M", "method");
-        }
-
-        /** 次のデータ行へ進む。空行と '#' で始まる行は読み飛ばす */
-        boolean next() throws IOException {
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (line.isEmpty() || line.charAt(0) == '#') {
-                    continue;
-                }
-                fields = line.split(CacheFormat.SEP, -1);
-                return true;
-            }
-            fields = new String[0];
-            return false;
-        }
-
-        /** 現在行の種別。1文字でなければ 0 */
-        char kind() {
-            return (fields.length > 0 && fields[0].length() == 1) ? fields[0].charAt(0) : 0;
-        }
-
-        /** 列の値。無ければ空文字 */
-        String get(int col) {
-            return (col > 0 && col < fields.length) ? fields[col] : "";
-        }
-
-        int intAt(int col, int dflt) {
-            String s = get(col);
-            if (s.isEmpty()) {
-                return dflt;
-            }
-            try {
-                return Integer.parseInt(s);
-            } catch (NumberFormatException e) {
-                return dflt;
-            }
-        }
-
-        /** "typeFqn#name(params)" の形か。壊れた行を読み飛ばすための最低限の検査 */
-        static boolean isMethodKey(String key) {
-            int hash = key.indexOf('#');
-            return hash > 0 && key.indexOf('(', hash) > hash && key.endsWith(")");
-        }
-
-        @Override
-        public void close() throws IOException {
-            in.close();
-        }
     }
 
     static final class CachePhaseResult {
         int reused;
         int parsed;
         int failed;
-        /** 対応するソースが無くなって削除したキャッシュファイルの数 */
-        int pruned;
         /** 型解決できなかった呼び出しの件数。クラスパス不足の検知に使う */
         long unresolved;
-        /** ソースの列挙順に並んだキャッシュファイル（解析に失敗したソースの分は含まない） */
-        final List<Path> cacheFiles = new ArrayList<>();
     }
 
     /**
-     * ソースファイルごとにキャッシュを更新する。
+     * 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
      *
-     *   1. ソースを列挙し、それぞれ対応するキャッシュファイルのヘッダ（1行目）を読む
-     *   2. パス・更新時刻・サイズ・ソースレベルが一致すればそのまま使う（本体は読まない）
-     *   3. 一致しなければ解析し、そのファイルのキャッシュだけを書き直す
-     *   4. 最後に、対応するソースが無くなったキャッシュファイルを削除する
+     * 手順:
+     *   パス1 … 旧キャッシュを順に読み、まだ有効なファイルのブロックは
+     *           そのまま新キャッシュへ書き写す（解析し直さない）。
+     *           無効・消滅したファイルのブロックは読み飛ばす。
+     *   パス2 … パス1で書き写されなかったソースファイルだけを解析し、追記する。
      *
-     * 1ファイル解析するたびに書き出して破棄するので、ヒープ常駐は1ファイル分だけ。
-     * 更新は1ファイル単位で完結する（一時ファイルに書いてから置き換える）ため、
-     * 途中で落ちても、そこまでに解析したファイルのキャッシュは次回そのまま使える。
-     * 変更の無いファイルは読みも書きもしないので、再実行はヘッダ読みだけで済む。
+     * ランダムアクセスも全件保持も不要で、ヒープ常駐は
+     * 「ソースファイルの一覧＋更新時刻・サイズ」だけ。
+     * 未解決呼び出しCSVも、この過程で同時に書き出す（溜め込まない）。
      */
     static final class CacheUpdater {
 
         private final ProjectLayout layout;
         private final Config config;
-        /** 作成済みのディレクトリ。ファイルごとに createDirectories を呼ばないため */
-        private final Set<Path> knownDirs = new HashSet<>();
 
         CacheUpdater(ProjectLayout layout, Config config) {
             this.layout = layout;
@@ -1583,273 +1232,184 @@ public class CallHierarchyExporter {
             List<Path> javaFiles = layout.listJavaFiles();
             log("Javaファイル数: " + javaFiles.size());
 
-            Files.createDirectories(config.cacheDir);
-            removeLegacyCache();
-
-            // 今回のソースに対応するキャッシュ（絶対パス）。これ以外を最後に削除する
-            Set<Path> produced = new HashSet<>();
-            CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
-            Progress pg = new Progress("ソース解析", javaFiles.size());
-            int done = 0;
+            // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）
+            Map<String, FileStat> live = new LinkedHashMap<>();
             for (Path f : javaFiles) {
-                String rel = layout.relativeOf(f);
-                long mtime = Files.getLastModifiedTime(f).toMillis();
-                long size = Files.size(f);
-                Path cacheFile = CacheFormat.cacheFileFor(config.cacheDir, rel);
+                live.put(layout.relativeOf(f),
+                        new FileStat(f, Files.getLastModifiedTime(f).toMillis(), Files.size(f)));
+            }
 
-                boolean ok;
-                CacheReader.Header h = config.cacheEnabled
-                        ? CacheReader.readHeader(cacheFile) : null;
-                if (h != null && h.matches(rel, mtime, size, config.sourceLevel)) {
-                    // ヘッダだけで再利用を決める。本体は後のフェーズで読む
-                    result.unresolved += Math.max(0L, h.longAttr("unresolved"));
-                    result.reused++;
-                    ok = true;
-                } else {
-                    ok = analyzeAndWrite(extractor, f, rel, mtime, size, cacheFile, result);
+            Path parent = config.cacheFile.toAbsolutePath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
+
+            Set<String> copied = new LinkedHashSet<>();
+            Progress pg = new Progress("ソース解析", javaFiles.size());
+
+            BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
+            try {
+                cacheOut.write(CacheFormat.headerFor(config.sourceLevel));
+                cacheOut.newLine();
+
+                // --- パス1: 旧キャッシュのストリーミングコピー ---
+                if (config.cacheEnabled) {
+                    result.unresolved += copyValidBlocks(live, copied, cacheOut);
                 }
-                if (ok) {
-                    result.cacheFiles.add(cacheFile);
-                    produced.add(cacheFile.toAbsolutePath().normalize());
-                }
-                done++;
+                result.reused = copied.size();
+
+                // --- パス2: 未処理のファイルだけ解析 ---
+                CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
+                int done = result.reused;
                 pg.step(done);
+                for (Map.Entry<String, FileStat> en : live.entrySet()) {
+                    String rel = en.getKey();
+                    if (copied.contains(rel)) {
+                        continue;
+                    }
+                    FileStat st = en.getValue();
+                    try {
+                        // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
+                        FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
+                        writeBlock(fa, cacheOut);
+                        result.unresolved += fa.unresolved.size();
+                        result.parsed++;
+                    } catch (Exception e) {
+                        result.failed++;
+                        log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+                    }
+                    done++;
+                    pg.step(done);
+                }
+            } finally {
+                cacheOut.close();
             }
             pg.finish();
 
-            result.pruned = pruneStale(produced);
+            Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
             return result;
         }
 
-        private boolean analyzeAndWrite(CallEdgeExtractor extractor, Path javaFile, String rel,
-                                        long mtime, long size, Path cacheFile,
-                                        CachePhaseResult result) {
-            try {
-                // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
-                FileAnalysis fa = extractor.analyze(javaFile, rel, mtime, size);
-                write(fa, cacheFile);
-                result.unresolved += fa.unresolved.size();
-                result.parsed++;
-                return true;
-            } catch (Exception e) {
-                result.failed++;
-                log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
-                return false;
-            }
-        }
-
-        /** 一時ファイルに書いてから置き換える。書きかけのキャッシュが残らないようにする */
-        private void write(FileAnalysis fa, Path cacheFile) throws IOException {
-            Path dir = cacheFile.getParent();
-            if (dir != null && knownDirs.add(dir)) {
-                Files.createDirectories(dir);
-            }
-            Path tmp = cacheFile.resolveSibling(cacheFile.getFileName() + ".tmp");
-            try (BufferedWriter w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
-                new CacheFileWriter(fa, config.sourceLevel).writeTo(w);
-            }
-            Files.move(tmp, cacheFile, StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        /** v6以前の単一キャッシュファイルが残っていれば消す（形式が違うので読めない） */
-        private void removeLegacyCache() throws IOException {
-            Path legacy = config.cacheDir.resolve(CacheFormat.LEGACY_FILE_NAME);
-            if (Files.deleteIfExists(legacy)) {
-                log("[cache] 旧形式のキャッシュファイルを削除しました: " + legacy);
-            }
-            Files.deleteIfExists(legacy.resolveSibling(CacheFormat.LEGACY_FILE_NAME + ".tmp"));
-        }
-
         /**
-         * 対応するソースが無くなったキャッシュファイル（と書きかけの一時ファイル）を削除する。
+         * 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す。
          *
-         * cache.folders に別のファイルが置かれていても消さないよう、削除するのは
-         * 1行目がキャッシュのヘッダだと確認できたファイルだけ。空になったフォルダも
-         * cache.folders までさかのぼって消す。
+         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
          */
-        private int pruneStale(Set<Path> produced) {
-            List<Path> stale = new ArrayList<>();
-            try (Stream<Path> walk = Files.walk(config.cacheDir)) {
-                Iterator<Path> it = walk.iterator();
-                while (it.hasNext()) {
-                    Path p = it.next();
-                    String name = p.getFileName().toString();
-                    if (!name.endsWith(CacheFormat.SUFFIX)
-                            && !name.endsWith(CacheFormat.SUFFIX + ".tmp")) {
-                        continue;
-                    }
-                    if (!Files.isRegularFile(p)
-                            || produced.contains(p.toAbsolutePath().normalize())) {
-                        continue;
-                    }
-                    if (isCacheFile(p)) {
-                        stale.add(p);
-                    }
-                }
-            } catch (IOException e) {
-                log("[WARN] キャッシュフォルダを走査できないため、不要なキャッシュの削除を省きます: "
-                        + config.cacheDir + " (" + e + ")");
-                return 0;
+        private long copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
+                                      BufferedWriter cacheOut)
+                throws IOException {
+            long unresolved = 0L;
+            if (!Files.isRegularFile(config.cacheFile)) {
+                return unresolved;
             }
-            int removed = 0;
-            for (Path p : stale) {
-                try {
-                    if (Files.deleteIfExists(p)) {
-                        removed++;
-                    }
-                    deleteEmptyParents(p.getParent());
-                } catch (IOException e) {
-                    log("[WARN] 不要なキャッシュを削除できません: " + p + " (" + e + ")");
-                }
-            }
-            if (removed > 0) {
-                log("[cache] ソースが無くなったキャッシュファイルを削除: " + removed + " 件");
-            }
-            return removed;
-        }
-
-        private static boolean isCacheFile(Path p) {
-            try (BufferedReader in = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
+            BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
+            try {
                 String first = in.readLine();
-                return first != null && first.startsWith(CacheFormat.MAGIC + CacheFormat.SEP);
-            } catch (IOException e) {
-                return false;
-            }
-        }
-
-        private void deleteEmptyParents(Path dir) throws IOException {
-            Path root = config.cacheDir.toAbsolutePath().normalize();
-            while (dir != null) {
-                Path abs = dir.toAbsolutePath().normalize();
-                if (abs.equals(root) || !abs.startsWith(root)) {
-                    return;
+                if (first == null
+                        || !CacheFormat.headerFor(config.sourceLevel).equals(first.trim())) {
+                    // 形式が変わった場合のほか、source.level が変わった場合もここで破棄する。
+                    // 言語バージョンが違えば同じソースでも解析結果が変わるため、
+                    // 更新時刻とサイズが一致していても再利用してはいけない
+                    log("[cache] 形式またはソースレベルが異なるため既存キャッシュを破棄します");
+                    return unresolved;
                 }
-                try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir)) {
-                    if (ds.iterator().hasNext()) {
-                        return;
+                boolean keeping = false;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        keeping = false;
+                        if (f.length >= 4) {
+                            FileStat st = live.get(f[1]);
+                            try {
+                                if (st != null && st.mtime == Long.parseLong(f[2])
+                                        && st.size == Long.parseLong(f[3])) {
+                                    keeping = true;
+                                    copied.add(f[1]);
+                                }
+                            } catch (NumberFormatException ignore) {
+                                // 壊れたF行 -> このブロックは破棄し、後で再解析される
+                                keeping = false;
+                            }
+                        }
+                        if (keeping) {
+                            cacheOut.write(line);
+                            cacheOut.newLine();
+                        }
+                    } else if (keeping) {
+                        cacheOut.write(line);
+                        cacheOut.newLine();
+                        if (t == 'U') {
+                            unresolved++;
+                        }
                     }
                 }
-                Files.deleteIfExists(dir);
-                knownDirs.remove(dir);
-                dir = dir.getParent();
+            } finally {
+                in.close();
             }
-        }
-    }
-
-    /**
-     * 1ファイル分の解析結果を、型 → メソッド → 呼び出し の入れ子にまとめて書き出す。
-     *
-     * 呼び出し元や宣言型を行ごとに繰り返さないための並べ替えだけで、情報は落とさない。
-     * 型の順は宣言順、メソッドの順は宣言順、呼び出しの順はソース上の出現順で、
-     * 読み戻したときに旧形式と同じ順でグラフに載る。パッケージ表（P行）には
-     * 参照しているだけの型も含めて全部載せ、参照される前に読めるよう先頭に置く。
-     */
-    static final class CacheFileWriter {
-
-        private static final class TypeBlock {
-            String pkg = "";
-            /** このファイルで宣言された型なら非null */
-            TypeInfo info;
-            final List<FieldInjectionRec> fields = new ArrayList<>();
-            final LinkedHashMap<String, MethodBlock> methods = new LinkedHashMap<>();
+            return unresolved;
         }
 
-        private static final class MethodBlock {
-            MethodDecl decl;
-            final List<CallEdgeRec> edges = new ArrayList<>();
-            final List<String> returns = new ArrayList<>();
-            final List<UnresolvedCall> unresolved = new ArrayList<>();
-            final List<HintRec> hints = new ArrayList<>();
-        }
-
-        private final FileAnalysis fa;
-        private final String sourceLevel;
-        private final LinkedHashMap<String, TypeBlock> types = new LinkedHashMap<>();
-        /** 呼び出し元メソッドを特定できなかった未解決呼び出し（ファイル直下に書く） */
-        private final List<UnresolvedCall> unresolvedOutside = new ArrayList<>();
-
-        CacheFileWriter(FileAnalysis fa, String sourceLevel) {
-            this.fa = fa;
-            this.sourceLevel = sourceLevel;
-            group();
-        }
-
-        private TypeBlock type(String fqn, String pkg) {
-            TypeBlock t = types.get(fqn);
-            if (t == null) {
-                t = new TypeBlock();
-                types.put(fqn, t);
-            }
-            if (t.pkg.isEmpty() && pkg != null && !pkg.isEmpty()) {
-                t.pkg = pkg;
-            }
-            return t;
-        }
-
-        private MethodBlock method(String typeFqn, String pkg, String sig) {
-            TypeBlock t = type(typeFqn, pkg);
-            MethodBlock m = t.methods.get(sig);
-            if (m == null) {
-                m = new MethodBlock();
-                t.methods.put(sig, m);
-            }
-            return m;
-        }
-
-        /** "typeFqn#name(params)" 形式のキーからブロックを引く。その形でなければ null */
-        private MethodBlock methodByKey(String key) {
-            if (key == null || !CacheReader.isMethodKey(key)) {
-                return null;
-            }
-            int hash = key.indexOf('#');
-            return method(key.substring(0, hash), null, key.substring(hash + 1));
-        }
-
-        private static String sigOf(String name, String params) {
-            return name + "(" + params + ")";
-        }
-
-        private void group() {
+        private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
+            w.write(String.join(CacheFormat.SEP, "F", fa.relativePath,
+                    String.valueOf(fa.lastModified), String.valueOf(fa.size)));
+            w.newLine();
             for (TypeInfo t : fa.types) {
-                type(t.typeFqn, null).info = t;
+                w.write(String.join(CacheFormat.SEP, "H", t.typeFqn,
+                        String.valueOf(t.kind), String.join(",", t.superTypes)));
+                w.newLine();
             }
             for (MethodDecl d : fa.declarations) {
-                // 同じキーの宣言が複数あれば最後のものが有効（旧形式の読み戻しと同じ）
-                method(d.typeFqn, d.pkg, sigOf(d.methodName, d.paramSig)).decl = d;
+                w.write(String.join(CacheFormat.SEP, "D", d.pkg, d.typeFqn,
+                        d.methodName, d.paramSig, String.valueOf(d.declLine),
+                        d.hasBody ? "1" : "0"));
+                w.newLine();
             }
             for (CallEdgeRec c : fa.edges) {
-                method(c.callerType, c.callerPkg, sigOf(c.callerMethod, c.callerParams))
-                        .edges.add(c);
-                // 呼び出し先の型も、pkg を引けるように載せておく
-                type(c.calleeType, c.calleePkg);
+                w.write(String.join(CacheFormat.SEP, "C",
+                        c.callerPkg, c.callerType, c.callerMethod, c.callerParams,
+                        c.calleePkg, c.calleeType, c.calleeMethod, c.calleeParams,
+                        String.valueOf(c.callLine), String.valueOf(c.bindKind), c.recvKey,
+                    String.valueOf(c.recvKind), c.recvOrigin, c.argOrigins));
+                w.newLine();
             }
-            groupReturns();
+            writeReturns(fa, w);
             for (FieldInjectionRec j : fa.fieldInjections) {
-                type(j.typeFqn, null).fields.add(j);
+                w.write(String.join(CacheFormat.SEP, "J",
+                        j.typeFqn, j.fieldName, j.origin));
+                w.newLine();
             }
-            for (UnresolvedCall u : fa.unresolved) {
-                MethodBlock m = methodByKey(u.callerMethodKey);
-                if (m == null) {
-                    unresolvedOutside.add(u);
-                } else {
-                    m.unresolved.add(u);
-                }
+            for (String m : fa.functionalImpls) {
+                w.write(String.join(CacheFormat.SEP, "M", m));
+                w.newLine();
             }
             for (HintRec h : fa.hints) {
-                MethodBlock m = methodByKey(h.callerKey);
-                if (m != null) {
-                    m.hints.add(h);
-                }
+                w.write(String.join(CacheFormat.SEP, "X", h.callerKey, h.scopeKey, h.kind, h.value));
+                w.newLine();
+            }
+            for (UnresolvedCall u : fa.unresolved) {
+                w.write(String.join(CacheFormat.SEP, "U", String.valueOf(u.line),
+                        CacheFormat.clean(u.callerMethodKey),
+                        CacheFormat.clean(u.expression),
+                        CacheFormat.clean(u.reason)));
+                w.newLine();
             }
         }
 
         /**
+         * R行を書き出す。
+         *
          * 全てのreturnが「追跡できない」メソッドは書かない。書いても解決には
          * 使えないうえ、returnを持つメソッドは大量にあるためキャッシュだけが膨らむ。
          * 逆に、1つでも追跡できたメソッドは U のreturnも含めて全部書く
          * （分かった分だけを書くと、複数の型を返しうるメソッドを1つに決め打ちしてしまう）。
          */
-        private void groupReturns() {
+        private static void writeReturns(FileAnalysis fa, BufferedWriter w) throws IOException {
             if (fa.returns.isEmpty()) {
                 return;
             }
@@ -1859,72 +1419,29 @@ public class CallHierarchyExporter {
                     useful.add(r.methodKey());
                 }
             }
+            if (useful.isEmpty()) {
+                return;
+            }
             for (ReturnRec r : fa.returns) {
-                if (useful.contains(r.methodKey())) {
-                    method(r.typeFqn, r.pkg, sigOf(r.methodName, r.paramSig)).returns.add(r.origin);
+                if (!useful.contains(r.methodKey())) {
+                    continue;
                 }
+                w.write(String.join(CacheFormat.SEP, "R",
+                        r.pkg, r.typeFqn, r.methodName, r.paramSig, r.origin));
+                w.newLine();
             }
         }
 
-        void writeTo(BufferedWriter w) throws IOException {
-            line(w, CacheFormat.headerLine(fa.relativePath, fa.lastModified, fa.size,
-                    sourceLevel, fa.unresolved.size()));
-            line(w, CacheFormat.columnsLine());
-            for (Map.Entry<String, TypeBlock> e : types.entrySet()) {
-                line(w, CacheFormat.row("P", e.getKey(), e.getValue().pkg));
-            }
-            for (String m : fa.functionalImpls) {
-                line(w, CacheFormat.row("M", m));
-            }
-            for (UnresolvedCall u : unresolvedOutside) {
-                line(w, unresolvedRow(u));
-            }
-            for (Map.Entry<String, TypeBlock> e : types.entrySet()) {
-                TypeBlock t = e.getValue();
-                TypeInfo info = t.info;
-                if (info == null && t.fields.isEmpty() && t.methods.isEmpty()) {
-                    continue;   // 参照しているだけの型。P行に載せれば足りる
-                }
-                line(w, CacheFormat.row("T", e.getKey(),
-                        (info == null) ? "" : String.valueOf(info.kind),
-                        (info == null) ? "" : String.join(",", info.superTypes)));
-                for (FieldInjectionRec j : t.fields) {
-                    line(w, CacheFormat.row("J", j.fieldName, j.origin));
-                }
-                for (Map.Entry<String, MethodBlock> me : t.methods.entrySet()) {
-                    MethodBlock m = me.getValue();
-                    if (m.decl == null) {
-                        line(w, CacheFormat.row("D", me.getKey()));
-                    } else {
-                        line(w, CacheFormat.row("D", me.getKey(),
-                                String.valueOf(m.decl.declLine), m.decl.hasBody ? "1" : "0"));
-                    }
-                    for (CallEdgeRec c : m.edges) {
-                        line(w, CacheFormat.row("C", String.valueOf(c.callLine),
-                                String.valueOf(c.bindKind),
-                                c.calleeType + "#" + sigOf(c.calleeMethod, c.calleeParams),
-                                String.valueOf(c.recvKind), c.recvKey, c.recvOrigin, c.argOrigins));
-                    }
-                    for (String origin : m.returns) {
-                        line(w, CacheFormat.row("R", origin));
-                    }
-                    for (UnresolvedCall u : m.unresolved) {
-                        line(w, unresolvedRow(u));
-                    }
-                    for (HintRec h : m.hints) {
-                        line(w, CacheFormat.row("X", h.scopeKey, h.kind, h.value));
-                    }
-                }
-            }
-        }
+        static final class FileStat {
+            final Path path;
+            final long mtime;
+            final long size;
 
-        private static String unresolvedRow(UnresolvedCall u) {
-            return CacheFormat.row("U", String.valueOf(u.line), u.expression, u.reason);
-        }
-
-        private static void line(BufferedWriter w, String s) throws IOException {
-            w.write(s);
-            w.newLine();
+            FileStat(Path path, long mtime, long size) {
+                this.path = path;
+                this.mtime = mtime;
+                this.size = size;
+            }
         }
     }
 
@@ -1952,7 +1469,7 @@ public class CallHierarchyExporter {
         }
     }
 
-    /** 型階層の1件（T行の元データ） */
+    /** 型階層の1件（H行の元データ） */
     static final class TypeInfo {
         final String typeFqn;
         /** I=インターフェース / A=抽象クラス / C=具象クラス */
@@ -2097,64 +1614,10 @@ public class CallHierarchyExporter {
         final List<String> functionalImpls = new ArrayList<>();
         final List<UnresolvedCall> unresolved = new ArrayList<>();
 
-        /** レシーバ・証拠の照合キー（元はJDTのバインディングキー） -> このファイル内で一意な短い名前 */
-        private final HashMap<String, String> scopeAliases = new HashMap<>();
-        private final HashSet<String> usedScopeAliases = new HashSet<>();
-
         FileAnalysis(String relativePath, long lastModified, long size) {
             this.relativePath = relativePath;
             this.lastModified = lastModified;
             this.size = size;
-        }
-
-        /**
-         * レシーバ（C行の recvKey）と証拠（X行の scopeKey）を突き合わせるためのキーを、
-         * このファイル内で一意な短い名前に置き換える。
-         *
-         * 元になるJDTのバインディングキーは
-         * "Ljp/co/X;.dao)Ljp/co/Dao<Ljava/lang/String;>;" のように長く、
-         * 同じ変数への呼び出しごとに丸ごと繰り返されてキャッシュの大半を占めていた。
-         * 照合は同じファイル内でしか行わないので、ファイル内で一意でありさえすればよい。
-         * 変数名を基にし、同名の別変数は name~2, name~3 … と番号を振って区別する。
-         * "@開始位置" 形式のキーは既に短いのでそのまま。
-         */
-        String scopeKey(String rawKey) {
-            if (rawKey == null || rawKey.isEmpty()) {
-                return "";
-            }
-            if (rawKey.charAt(0) == '@') {
-                return rawKey;
-            }
-            String alias = scopeAliases.get(rawKey);
-            if (alias != null) {
-                return alias;
-            }
-            String base = scopeBaseName(rawKey);
-            alias = base;
-            for (int n = 2; !usedScopeAliases.add(alias); n++) {
-                alias = base + "~" + n;
-            }
-            scopeAliases.put(rawKey, alias);
-            return alias;
-        }
-
-        /**
-         * バインディングキーから変数名を取り出す。
-         *   ローカル変数・引数 "Ljp/co/X;.m()V#name"（同名が複数あれば "#name#1"） -> name / name~1
-         *   フィールド         "Ljp/co/X;.name)Ljp/co/Dao;"                       -> name
-         * どちらでもなければ（拡張が独自に付けたキー等）空白だけ潰してそのまま使う
-         */
-        private static String scopeBaseName(String key) {
-            int hash = key.indexOf('#');
-            String base;
-            if (hash >= 0 && hash < key.length() - 1) {
-                base = key.substring(hash + 1).replace('#', '~');
-            } else {
-                int dot = key.indexOf(";.");
-                int paren = (dot < 0) ? -1 : key.indexOf(')', dot);
-                base = (dot >= 0 && paren > dot + 2) ? key.substring(dot + 2, paren) : key;
-            }
-            return CacheFormat.clean(base).replace(' ', '_');
         }
     }
 
@@ -2687,9 +2150,8 @@ public class CallHierarchyExporter {
                 }
                 // 呼び出し元が複数（インスタンス初期化子等）でも全件に紐づける。
                 // 一部にしか付けないと、その呼び出し元経由の解決だけ証拠を見つけられなくなる。
-                String scope = out.scopeKey(varKey);
                 for (String[] c : callers) {
-                    out.hints.add(new HintRec(c[1] + "#" + c[2] + "(" + c[3] + ")", scope, "NEW", type));
+                    out.hints.add(new HintRec(c[1] + "#" + c[2] + "(" + c[3] + ")", varKey, "NEW", type));
                 }
             }
 
@@ -2724,7 +2186,7 @@ public class CallHierarchyExporter {
                     if (b instanceof IVariableBinding) {
                         String k = ((IVariableBinding) b).getKey();
                         if (k != null && !k.isEmpty()) {
-                            return out.scopeKey(k);
+                            return k.replaceAll("\\s", "_");
                         }
                     }
                 }
@@ -2787,7 +2249,7 @@ public class CallHierarchyExporter {
             }
 
             /**
-             * enum も型階層（T行）と型コンテキストに載せる。
+             * enum も型階層（H行）と型コンテキストに載せる。
              *
              * TypeDeclaration と EnumDeclaration はASTノードとして別物で、
              * こちらの visit が無いと enum が丸ごと素通りしていた。その結果、
@@ -3280,7 +2742,7 @@ public class CallHierarchyExporter {
                 return Modifier.isStatic(node.getModifiers());
             }
 
-            /** 型階層（T行）を記録する */
+            /** 型階層（H行）を記録する */
             private void recordType(ITypeBinding tb) {
                 if (tb == null) {
                     return;
@@ -3466,7 +2928,7 @@ public class CallHierarchyExporter {
                                     return;
                                 }
                                 out.hints.add(new HintRec(callerKey,
-                                        out.scopeKey(CacheFormat.clean(scopeKey)),
+                                        CacheFormat.clean(scopeKey),
                                         CacheFormat.clean(kind), CacheFormat.clean(value)));
                             }
                         };
@@ -3807,11 +3269,7 @@ public class CallHierarchyExporter {
         private Set<String> ambiguous;
 
         int intern(String pkg, String typeFqn, String method, String params) {
-            return internKey(pkg, typeFqn + "#" + method + "(" + params + ")");
-        }
-
-        /** "typeFqn#method(params)" 形式のキーでID化する。pkg は初回登録時のものが残る */
-        int internKey(String pkg, String key) {
+            String key = typeFqn + "#" + method + "(" + params + ")";
             Integer id = idByKey.get(key);
             if (id != null) {
                 return id.intValue();
@@ -4030,7 +3488,7 @@ public class CallHierarchyExporter {
      *
      * エッジ1本あたり int 2個で済むため、オブジェクトで持つ場合に比べ桁違いに省メモリ。
      *
-     * キャッシュファイル群を2回スキャンして構築する:
+     * キャッシュファイルを2回スキャンして構築する:
      *   1回目 … メソッドをID化し、呼び出し元ごとの本数を数える
      *   2回目 … 数えた本数から offsets を作り、実際のエッジを流し込む
      * どちらもストリーミングなので、キャッシュ全体をヒープに載せない。
@@ -4124,126 +3582,117 @@ public class CallHierarchyExporter {
             return bestIndex;
         }
 
-        /**
-         * キャッシュファイル群からCSR形式のグラフを組み立てる。
-         *
-         * 1回目のスキャンでメソッドをID化して呼び出し本数を数え、配列を確保してから
-         * 2回目で流し込む。エッジをオブジェクトで持たないための2パス構成。
-         * キャッシュは型 → メソッド → 呼び出し の入れ子なので、直前の T 行・D 行を
-         * 「現在の型・現在のメソッド」として覚えながら読む。
-         */
-        static CallGraph buildFrom(List<Path> cacheFiles) throws IOException {
+        static CallGraph buildFrom(Path cacheFile) throws IOException {
             CallGraph g = new CallGraph();
 
             // --- 1回目: ID化と本数カウント ---
             IntArray outDegree = new IntArray(1 << 16);
             HashMap<Integer, List<String>> returnsById = new HashMap<>();
             long edgeCount = 0;
-            Set<Path> unreadable = new HashSet<>();
 
-            for (Path file : cacheFiles) {
-                CacheReader r = CacheReader.open(file);
-                if (r == null) {
-                    log("[WARN] キャッシュを読めません（スキップ）: " + file);
-                    unreadable.add(file);
-                    continue;
-                }
-                try {
-                    String path = r.header.attr("path");
-                    HashMap<String, String> pkgOf = new HashMap<>();
-                    String curType = null;
-                    String curPkg = "";
-                    String curKey = null;
-                    int curId = -1;
-                    while (r.next()) {
-                        switch (r.kind()) {
-                            case 'P': {
-                                pkgOf.put(r.get(r.pFqn), r.get(r.pPkg));
-                                break;
+            BufferedReader in = open(cacheFile);
+            try {
+                String currentFile = null;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        currentFile = (f.length >= 2) ? f[1] : null;
+                    } else if (t == 'H') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 3) {
+                            g.typeKind.put(f[1], Character.valueOf(f[2].isEmpty() ? 'C' : f[2].charAt(0)));
+                            if (f.length >= 4 && !f[3].isEmpty()) {
+                                for (String sup : f[3].split(",")) {
+                                    if (sup.isEmpty()) {
+                                        continue;
+                                    }
+                                    List<String> subs = g.directSubtypes.get(sup);
+                                    if (subs == null) {
+                                        subs = new ArrayList<>();
+                                        g.directSubtypes.put(sup, subs);
+                                    }
+                                    if (!subs.contains(f[1])) {
+                                        subs.add(f[1]);
+                                    }
+                                    List<String> sups = g.directSupertypes.get(f[1]);
+                                    if (sups == null) {
+                                        sups = new ArrayList<>();
+                                        g.directSupertypes.put(f[1], sups);
+                                    }
+                                    if (!sups.contains(sup)) {
+                                        sups.add(sup);
+                                    }
+                                }
                             }
-                            case 'T': {
-                                curType = r.get(r.tFqn);
-                                curPkg = pkgOf.getOrDefault(curType, "");
-                                curKey = null;
-                                curId = -1;
-                                String kind = r.get(r.tKind);
-                                if (!kind.isEmpty()) {
-                                    g.typeKind.put(curType, Character.valueOf(kind.charAt(0)));
-                                    g.addSupertypes(curType, r.get(r.tSupers));
-                                }
-                                break;
+                        }
+                    } else if (t == 'X') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 5) {
+                            String k = f[1] + "|" + f[2];
+                            List<Hint> hs = g.hintsByScope.get(k);
+                            if (hs == null) {
+                                hs = new ArrayList<>();
+                                g.hintsByScope.put(k, hs);
                             }
-                            case 'D': {
-                                curKey = methodKeyOf(curType, r.get(r.dMethod));
-                                curId = -1;
-                                if (curKey == null) {
-                                    break;
-                                }
-                                curId = g.methods.internKey(curPkg, curKey);
-                                ensure(outDegree, curId);
-                                String declLine = r.get(r.dLine);
-                                if (!declLine.isEmpty()) {
-                                    g.methods.setDeclaration(curId, path, r.intAt(r.dLine, -1),
-                                            !"0".equals(r.get(r.dBody)));
-                                }
-                                break;
+                            hs.add(new Hint(f[3], f[4]));
+                        }
+                    } else if (t == 'D') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 6) {
+                            int id = g.methods.intern(f[1], f[2], f[3], f[4]);
+                            ensure(outDegree, id);
+                            int declLine;
+                            try {
+                                declLine = Integer.parseInt(f[5]);
+                            } catch (NumberFormatException ignore) {
+                                declLine = -1;
                             }
-                            case 'C': {
-                                int callee = internCallee(g, pkgOf, r.get(r.cCallee));
-                                if (curId < 0 || callee < 0) {
-                                    break;
-                                }
-                                ensure(outDegree, callee);
-                                outDegree.set(curId, outDegree.get(curId) + 1);
-                                edgeCount++;
-                                break;
+                            boolean body = (f.length < 7) || !"0".equals(f[6]);
+                            g.methods.setDeclaration(id, currentFile, declLine, body);
+                        }
+                    } else if (t == 'C') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 10) {
+                            int caller = g.methods.intern(f[1], f[2], f[3], f[4]);
+                            int callee = g.methods.intern(f[5], f[6], f[7], f[8]);
+                            ensure(outDegree, caller);
+                            ensure(outDegree, callee);
+                            outDegree.set(caller, outDegree.get(caller) + 1);
+                            edgeCount++;
+                        }
+                    } else if (t == 'J') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 4) {
+                            g.fieldOrigins.put(f[1] + "#" + f[2], f[3]);
+                        }
+                    } else if (t == 'M') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 2) {
+                            g.functionalImpls.add(f[1]);
+                        }
+                    } else if (t == 'R') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 6) {
+                            int id = g.methods.intern(f[1], f[2], f[3], f[4]);
+                            ensure(outDegree, id);
+                            List<String> os = returnsById.get(Integer.valueOf(id));
+                            if (os == null) {
+                                os = new ArrayList<>(2);
+                                returnsById.put(Integer.valueOf(id), os);
                             }
-                            case 'R': {
-                                if (curId < 0) {
-                                    break;
-                                }
-                                List<String> os = returnsById.get(Integer.valueOf(curId));
-                                if (os == null) {
-                                    os = new ArrayList<>(2);
-                                    returnsById.put(Integer.valueOf(curId), os);
-                                }
-                                String origin = r.get(r.rOrigin);
-                                if (!os.contains(origin)) {
-                                    os.add(origin);
-                                }
-                                break;
+                            if (!os.contains(f[5])) {
+                                os.add(f[5]);
                             }
-                            case 'X': {
-                                if (curKey == null) {
-                                    break;
-                                }
-                                String k = curKey + "|" + r.get(r.xScope);
-                                List<Hint> hs = g.hintsByScope.get(k);
-                                if (hs == null) {
-                                    hs = new ArrayList<>();
-                                    g.hintsByScope.put(k, hs);
-                                }
-                                hs.add(new Hint(r.get(r.xKind), r.get(r.xValue)));
-                                break;
-                            }
-                            case 'J': {
-                                if (curType != null) {
-                                    g.fieldOrigins.put(curType + "#" + r.get(r.jField),
-                                            r.get(r.jOrigin));
-                                }
-                                break;
-                            }
-                            case 'M': {
-                                g.functionalImpls.add(r.get(r.mMethod));
-                                break;
-                            }
-                            default:
-                                break;
                         }
                     }
-                } finally {
-                    r.close();
                 }
+            } finally {
+                in.close();
             }
             log("収集: 型 " + g.typeKind.size()
                     + " / メソッド " + g.methods.size() + " / エッジ " + edgeCount);
@@ -4283,110 +3732,54 @@ public class CallHierarchyExporter {
             // --- 2回目: エッジを流し込む ---
             int[] cursor = Arrays.copyOf(g.offsets, n == 0 ? 0 : n);
 
-            for (Path file : cacheFiles) {
-                if (unreadable.contains(file)) {
-                    continue;
-                }
-                CacheReader r = CacheReader.open(file);
-                if (r == null) {
-                    continue;
-                }
-                try {
-                    HashMap<String, String> pkgOf = new HashMap<>();
-                    String curType = null;
-                    String curPkg = "";
-                    String curKey = null;
-                    int curId = -1;
-                    while (r.next()) {
-                        char t = r.kind();
-                        if (t == 'P') {
-                            pkgOf.put(r.get(r.pFqn), r.get(r.pPkg));
-                        } else if (t == 'T') {
-                            curType = r.get(r.tFqn);
-                            curPkg = pkgOf.getOrDefault(curType, "");
-                            curKey = null;
-                            curId = -1;
-                        } else if (t == 'D') {
-                            curKey = methodKeyOf(curType, r.get(r.dMethod));
-                            curId = (curKey == null) ? -1 : g.methods.internKey(curPkg, curKey);
-                        } else if (t == 'C' && curId >= 0) {
-                            int callee = internCallee(g, pkgOf, r.get(r.cCallee));
-                            if (callee < 0) {
-                                continue;
-                            }
-                            int pos = cursor[curId]++;
-                            g.calleeIds[pos] = callee;
-                            g.callLines[pos] = r.intAt(r.cLine, -1);
-                            String bind = r.get(r.cBind);
-                            g.bindKinds[pos] = (byte) (bind.isEmpty() ? 'V' : bind.charAt(0));
+            in = open(cacheFile);
+            try {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    if (line.charAt(0) == 'F') {
+                        continue;
+                    }
+                    if (line.charAt(0) != 'C') {
+                        continue;
+                    }
+                    String[] f = line.split(CacheFormat.SEP, -1);
+                    if (f.length < 10) {
+                        continue;
+                    }
+                    int caller = g.methods.intern(f[1], f[2], f[3], f[4]);
+                    int callee = g.methods.intern(f[5], f[6], f[7], f[8]);
+                    int pos = cursor[caller]++;
+                    g.calleeIds[pos] = callee;
+                    try {
+                        g.callLines[pos] = Integer.parseInt(f[9]);
+                    } catch (NumberFormatException ignore) {
+                        g.callLines[pos] = -1;
+                    }
+                    g.bindKinds[pos] = (byte) ((f.length >= 11 && !f[10].isEmpty())
+                            ? f[10].charAt(0) : 'V');
 
-                            // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
-                            String recvKind = r.get(r.cRecvKind);
-                            g.recvKinds[pos] = (byte) (recvKind.isEmpty()
-                                    ? RecvKind.OTHER : recvKind.charAt(0));
-                            String recvKey = r.get(r.cRecvKey);
-                            if (!recvKey.isEmpty()) {
-                                List<Hint> hs = g.hintsByScope.get(curKey + "|" + recvKey);
-                                if (hs != null && !hs.isEmpty()) {
-                                    g.hintTable.add(hs);
-                                    g.edgeHint[pos] = g.hintTable.size() - 1;
-                                }
-                            }
-                            g.recvOriginIds[pos] = g.internOrigin(r.get(r.cRecvOrigin));
-                            g.argOriginIds[pos] = g.internOrigin(r.get(r.cArgOrigins));
+                    // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
+                    g.recvKinds[pos] = (byte) ((f.length >= 13 && !f[12].isEmpty())
+                            ? f[12].charAt(0) : RecvKind.OTHER);
+                    String recvKey = (f.length >= 12) ? f[11] : "";
+                    if (!recvKey.isEmpty()) {
+                        String callerKey = f[2] + "#" + f[3] + "(" + f[4] + ")";
+                        List<Hint> hs = g.hintsByScope.get(callerKey + "|" + recvKey);
+                        if (hs != null && !hs.isEmpty()) {
+                            g.hintTable.add(hs);
+                            g.edgeHint[pos] = g.hintTable.size() - 1;
                         }
                     }
-                } finally {
-                    r.close();
+                    g.recvOriginIds[pos] = g.internOrigin((f.length >= 14) ? f[13] : "");
+                    g.argOriginIds[pos] = g.internOrigin((f.length >= 15) ? f[14] : "");
                 }
+            } finally {
+                in.close();
             }
             return g;
-        }
-
-        /** 直前のT行の型と D行の "name(params)" からメソッドキーを作る。壊れた行なら null */
-        private static String methodKeyOf(String curType, String sig) {
-            if (curType == null || curType.isEmpty()) {
-                return null;
-            }
-            String key = curType + "#" + sig;
-            return CacheReader.isMethodKey(key) ? key : null;
-        }
-
-        /** C行の呼び出し先をID化する。pkg は同じファイルのP行から引く。壊れた行なら -1 */
-        private static int internCallee(CallGraph g, Map<String, String> pkgOf, String calleeKey) {
-            if (!CacheReader.isMethodKey(calleeKey)) {
-                return -1;
-            }
-            String pkg = pkgOf.get(calleeKey.substring(0, calleeKey.indexOf('#')));
-            return g.methods.internKey((pkg == null) ? "" : pkg, calleeKey);
-        }
-
-        /** T行の親型（カンマ区切り）を型階層に登録する */
-        private void addSupertypes(String type, String supers) {
-            if (supers.isEmpty()) {
-                return;
-            }
-            for (String sup : supers.split(",")) {
-                if (sup.isEmpty()) {
-                    continue;
-                }
-                List<String> subs = directSubtypes.get(sup);
-                if (subs == null) {
-                    subs = new ArrayList<>();
-                    directSubtypes.put(sup, subs);
-                }
-                if (!subs.contains(type)) {
-                    subs.add(type);
-                }
-                List<String> sups = directSupertypes.get(type);
-                if (sups == null) {
-                    sups = new ArrayList<>();
-                    directSupertypes.put(type, sups);
-                }
-                if (!sups.contains(sup)) {
-                    sups.add(sup);
-                }
-            }
         }
 
         // ================================================================
@@ -4723,6 +4116,12 @@ public class CallHierarchyExporter {
             } catch (NumberFormatException e) {
                 return -1;
             }
+        }
+
+        private static BufferedReader open(Path cacheFile) throws IOException {
+            BufferedReader in = Files.newBufferedReader(cacheFile, StandardCharsets.UTF_8);
+            in.readLine();  // バージョン行を読み飛ばす
+            return in;
         }
 
         private static void ensure(IntArray a, int id) {
@@ -5370,40 +4769,51 @@ public class CallHierarchyExporter {
      */
     static final class UnresolvedReport {
 
-        static long write(CallGraph g, List<Path> cacheFiles, CallHierarchyCsvWriter out)
+        static long write(CallGraph g, Config config, CallHierarchyCsvWriter out)
                 throws IOException {
+            if (!Files.isRegularFile(config.cacheFile)) {
+                return 0L;
+            }
             long rows = 0L;
-            for (Path file : cacheFiles) {
-                CacheReader r = CacheReader.open(file);
-                if (r == null) {
-                    continue;
-                }
-                try {
-                    String path = r.header.attr("path");
-                    String curType = null;
-                    String curKey = null;
-                    while (r.next()) {
-                        char t = r.kind();
-                        if (t == 'T') {
-                            curType = r.get(r.tFqn);
-                            curKey = null;
-                        } else if (t == 'D') {
-                            curKey = (curType == null || curType.isEmpty())
-                                    ? null : curType + "#" + r.get(r.dMethod);
-                        } else if (t == 'U') {
-                            int callLine = r.intAt(r.uLine, -1);
-                            // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
-                            // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
-                            int callerId = (curKey == null) ? -1 : g.methods.idOf(curKey);
-                            String location = path.isEmpty() ? "(unknown)" : path + ":" + callLine;
-                            out.writeUnresolvedRow(g.methods, callerId, location,
-                                    callLine, r.get(r.uExpr), r.get(r.uReason));
-                            rows++;
-                        }
+            BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
+            try {
+                in.readLine();   // バージョン行
+                String currentFile = null;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
                     }
-                } finally {
-                    r.close();
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        currentFile = (f.length >= 2) ? f[1] : null;
+                        continue;
+                    }
+                    if (t != 'U') {
+                        continue;
+                    }
+                    String[] f = line.split(CacheFormat.SEP, -1);
+                    if (f.length < 5) {
+                        continue;
+                    }
+                    int callLine;
+                    try {
+                        callLine = Integer.parseInt(f[1]);
+                    } catch (NumberFormatException ignore) {
+                        callLine = -1;
+                    }
+                    // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
+                    // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
+                    int callerId = g.methods.idOf(f[2]);
+                    String location = (currentFile == null)
+                            ? f[2] : currentFile + ":" + callLine;
+                    out.writeUnresolvedRow(g.methods, callerId, location,
+                            callLine, f[3], f[4]);
+                    rows++;
                 }
+            } finally {
+                in.close();
             }
             return rows;
         }
@@ -5593,7 +5003,7 @@ public class CallHierarchyExporter {
                 return st;
             }
 
-            // 自分の型かどうかの判定に使う（T行から得た、ソース上に宣言のある型）
+            // 自分の型かどうかの判定に使う（H行から得た、ソース上に宣言のある型）
             Set<String> ourTypes = new java.util.HashSet<>(g.typeKind.keySet());
             // 継承したメソッドの照合用: "name(params)" -> 宣言しているメソッドID
             Map<String, List<Integer>> bySignature = new HashMap<>();
