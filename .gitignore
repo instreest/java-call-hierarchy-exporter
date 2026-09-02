@@ -4,9 +4,12 @@ lib/
 out/
 dist/
 
-# jbangw が作るプロジェクト内キャッシュ。jbang本体・依存jar・取得したJDKが入る。
+# jbang.cmd が作るプロジェクト内フォルダ。
+#   .jbang/       … jbang本体 (bin/jbang.jar) と currentjdk
+#   .jbang-cache/ … 取得したJDK・依存jar・ダウンロード物・一時ファイル
 # やめるときはフォルダごと消せば元どおり
 /.jbang/
+/.jbang-cache/
 *.class
 .classpath
 .project

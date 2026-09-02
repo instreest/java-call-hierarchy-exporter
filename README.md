@@ -18,10 +18,30 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 #### JBangによる実行
 
 ```bat
-.\jbang src/CallHierarchyExporter.java config/config.properties
+.\jbang.cmd src/CallHierarchyExporter.java config/config.properties
 ```
 
-このツールが必要とするJDK 17・依存jarは、環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+`jbang.cmd` は Windows 標準の `curl.exe` / `tar.exe` だけで動く自前のランチャーです（Windows 10 1803 以降）。
+PowerShell は使いません。
+
+初回実行時、環境に無いものは自動で取得されます。保存先はすべて **このスクリプトの隣**で、
+`%userprofile%` 配下は汚しません。やめるときはフォルダごと削除すれば元どおりです。
+
+| フォルダ | 中身 |
+|---|---|
+| `.jbang/bin/jbang.jar` | jbang 本体 |
+| `.jbang-cache/jdks/` | 取得したJDK（jbang 起動用の17と、ツール実行用の25） |
+| `.jbang-cache/deps`, `.jbang-cache/urls` ほか | 依存jarなどのキャッシュ |
+| `.jbang-cache/downloads`, `.jbang-cache/tmp` | ダウンロード物と実行時の一時ファイル |
+
+保存先を変えたい場合は、実行前に `JBANG_DIR` / `JBANG_CACHE_DIR` を設定してください。
+
+```bat
+set JBANG_CACHE_DIR=D:\jbang-cache
+.\jbang.cmd src/CallHierarchyExporter.java config/config.properties
+```
+
+社内ミラーやプロキシ経由で使う場合は `JBANG_DOWNLOAD_BASEURL` と、curl が読む `HTTPS_PROXY` を設定します。
 
 #### Pleiades/Eclipse環境（閉域ネットワーク等）
 
