@@ -171,6 +171,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `LEAF` | 呼び出し先が無い |
 | `NORMAL` | 上記以外 |
 
+行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 コンストラクタ（`<init>`）は出力しません。
 

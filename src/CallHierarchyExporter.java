@@ -4552,6 +4552,54 @@ public class CallHierarchyExporter {
             return result;
         }
 
+        /**
+         * ソース上に宣言のある全メソッドを、ソースの並び順で返す（methods.csv の行順）。
+         *   1) ソースフォルダの宣言順（autoEntryPoints と同じ。main/testの混在を防ぐ）
+         *   2) ファイルの相対パス順（＝パッケージ順。同じファイルの内部クラス・匿名クラスも
+         *      そのファイルの位置に並ぶ）
+         *   3) 宣言行順
+         * 同じ行に複数ある場合（暗黙コンストラクタと <clinit> 等）はID順で安定させる。
+         *
+         * メソッドIDの順（キャッシュ上の出現順）で出すと、差分更新で解析し直した
+         * ファイルがキャッシュの末尾へ移ったり、先に呼び出し先として現れたメソッドが
+         * 別ファイルの位置に混ざったりして、実行のたびに並びが変わりうる。
+         */
+        int[] declaredMethodsInSourceOrder() {
+            IntArray hits = new IntArray(1 << 12);
+            for (int id = 0; id < methods.size(); id++) {
+                if (methods.declFile(id) != null) {
+                    hits.add(id);
+                }
+            }
+            Integer[] boxed = new Integer[hits.size()];
+            for (int i = 0; i < boxed.length; i++) {
+                boxed[i] = Integer.valueOf(hits.get(i));
+            }
+            Arrays.sort(boxed, (x, y) -> {
+                String fx = methods.declFile(x.intValue());
+                String fy = methods.declFile(y.intValue());
+                int sx = sourceFolderIndexOf(fx);
+                int sy = sourceFolderIndexOf(fy);
+                if (sx != sy) {
+                    return Integer.compare(sx, sy);
+                }
+                int f = fx.compareTo(fy);
+                if (f != 0) {
+                    return f;
+                }
+                int l = Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
+                if (l != 0) {
+                    return l;
+                }
+                return x.compareTo(y);
+            });
+            int[] result = new int[boxed.length];
+            for (int i = 0; i < result.length; i++) {
+                result[i] = boxed[i].intValue();
+            }
+            return result;
+        }
+
         /** 設定にマッチする、ソース上に宣言のあるメソッドをエントリポイントとして選ぶ */
         int[] selectEntryPoints(Config config) {
             if (config.entryPatterns.isEmpty()) {
@@ -4659,12 +4707,12 @@ public class CallHierarchyExporter {
                         "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable",
                         "unresolvedCalls", "unresolvedCause"));
                 w.newLine();
-                for (int id = 0; id < g.methodCount(); id++) {
-                    // ソースが無いメソッド（jar内など）は一覧の対象外。
-                    // 呼ばれている事実は call-hierarchy.csv 側に残る
-                    if (g.methods.declFile(id) == null) {
-                        continue;
-                    }
+                // ソースが無いメソッド（jar内など）は一覧の対象外。
+                // 呼ばれている事実は call-hierarchy.csv 側に残る。
+                // 行順はソースの並び（ソースフォルダ順 → ファイル順 → 宣言行順）
+                int[] order = g.declaredMethodsInSourceOrder();
+                for (int k = 0; k < order.length; k++) {
+                    int id = order[k];
                     // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
                     if ("<init>".equals(g.methods.methodName(id))) {
                         st.constructors++;
