@@ -71,12 +71,15 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
+import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
@@ -224,7 +227,9 @@ public class CallHierarchyExporter {
         log("=== フェーズ1/3: ソース解析 ===");
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
         log("ソース解析: 再利用=" + phase1.reused
-                + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
+                + " 新規解析=" + phase1.parsed
+                + (phase1.dependents > 0 ? "（うち依存先の変更による再解析=" + phase1.dependents + "）" : "")
+                + " 失敗=" + phase1.failed);
         if (phase1.unresolved > 0) {
             log("※ 型解決できなかった呼び出しが " + phase1.unresolved + " 件あります。");
             log("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
@@ -1008,12 +1013,20 @@ public class CallHierarchyExporter {
      * ■ 行の種別と列
      *
      *   F  相対パス  更新時刻  サイズ
-     *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型をカンマ区切り
+     *   I  依存する型（カンマ区切り）           このファイルのバインディング解決が参照した型のFQNと、
+     *                                        import 文の型（オンデマンド import は "pkg.*"）。
+     *                                        自分が宣言する型は含まない。差分更新時に、これらの型を
+     *                                        宣言するファイルが変わっていたら再解析する（CacheUpdater参照）
+     *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型をカンマ区切り  pkg
      *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods
      *      mods: 宣言の修飾子をカンマ区切り（public/protected/private/static/final/abstract/default）。
      *            加えて implicit（ソースに無い暗黙のコンストラクタを合成した）、
      *            delegating（コンストラクタ本体の先頭が this(...) 委譲）
-     *   V  typeFqn  fieldName  mods                 （フィールド宣言。mods は D と同じ語彙）
+     *   V  typeFqn  fieldName  mods  declType       （フィールド宣言。mods は D と同じ語彙。declType は宣言型のFQN）
+     *   A  line  callerPkg callerType callerMethod callerParams  ownerTypeFqn  fieldName  access  mods  lambda
+     *      フィールドの参照箇所1件。他の型のフィールドも含む。
+     *      access: read / write（代入の左辺）/ readwrite（複合代入・++/--）
+     *      mods: そのフィールドの修飾子（他の型のフィールドでもバインディングから分かる）
      *   J  typeFqn  fieldName  site  origin         （そのフィールドへの代入1件）
      *      site: "<field>"=フィールド初期化子 / "name(paramSig)"=そのメソッド・コンストラクタの本体
      *      origin: 代入された値の出所（Origin参照）。追跡できなければ U
@@ -1052,6 +1065,12 @@ public class CallHierarchyExporter {
      *   - import 推定（U の candidate）をエッジとして採用するか     … CallGraph.buildFrom
      *   - ラムダ内の呼び出しの計上先                                … CallGraph.buildFrom（現状は囲みメソッド）
      *   - 未解決の理由コードの文言                                  … UnresolvedReport
+     *
+     * ■ 差分更新と依存
+     *
+     *   再利用の判定は「更新時刻とサイズが一致する」に加えて「I行の型を宣言するファイルが
+     *   どれも変わっていない」。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
+     *   結果であり、別のファイルを変えると変わりうるため（CacheUpdater 参照）。
      *
      * ■ バージョン（CacheFormat.VERSION）を上げる基準
      *
@@ -1223,7 +1242,7 @@ public class CallHierarchyExporter {
          * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
          * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
          */
-        static final String VERSION = "jche-cache-v7";
+        static final String VERSION = "jche-cache-v8";
 
         /**
          * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
@@ -1256,6 +1275,8 @@ public class CallHierarchyExporter {
         int reused;
         int parsed;
         int failed;
+        /** 自分は変わっていないが、依存する型が変わったので解析し直したファイル数（parsed に含む） */
+        int dependents;
         /** 型解決できなかった呼び出しの件数。クラスパス不足の検知に使う */
         long unresolved;
     }
@@ -1264,14 +1285,22 @@ public class CallHierarchyExporter {
      * 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
      *
      * 手順:
-     *   パス1 … 旧キャッシュを順に読み、まだ有効なファイルのブロックは
-     *           そのまま新キャッシュへ書き写す（解析し直さない）。
-     *           無効・消滅したファイルのブロックは読み飛ばす。
-     *   パス2 … パス1で書き写されなかったソースファイルだけを解析し、追記する。
+     *   パス1 … 旧キャッシュを順に読み、更新時刻とサイズが一致するファイル（有効）を覚える。
+     *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
+     *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
+     *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
+     *   パス3 … 旧キャッシュをもう一度読み、有効なブロックのうち、I行（依存する型）が
+     *           「変わった型」に触れないものだけをそのまま書き写す。
+     *           触れるものは、バインディング解決の結果が変わっている可能性があるので再解析に回す。
+     *   パス4 … パス3で再解析に回したファイルを解析し、追記する。
      *
-     * ランダムアクセスも全件保持も不要で、ヒープ常駐は
-     * 「ソースファイルの一覧＋更新時刻・サイズ」だけ。
-     * 未解決呼び出しCSVも、この過程で同時に書き出す（溜め込まない）。
+     * 更新時刻とサイズだけで再利用を決めると、別のファイルの変更（オーバーロードの追加、
+     * フィールドの改名、親型の変更など）でこのファイルの解決結果が変わっても気づけない。
+     * 依存は1段で足りる。ファイルAの事実はAが参照した型にだけ依存し、Aを解析し直しても
+     * Aが宣言する型（Aのソース）は変わらないので、Aに依存するファイルへは波及しない。
+     *
+     * ランダムアクセスも全件保持も不要で、ヒープ常駐は「ソースファイルの一覧＋更新時刻・サイズ」と
+     * 「変わった型の集合」だけ。未解決呼び出しの件数も、この過程で同時に数える（溜め込まない）。
      */
     static final class CacheUpdater {
 
@@ -1302,40 +1331,49 @@ public class CallHierarchyExporter {
             }
             Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
 
-            Set<String> copied = new LinkedHashSet<>();
             Progress pg = new Progress("ソース解析", javaFiles.size());
+            CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
 
             BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
             try {
                 cacheOut.write(CacheFormat.headerFor(config.sourceLevel));
                 cacheOut.newLine();
 
-                // --- パス1: 旧キャッシュのストリーミングコピー ---
+                // --- パス1: 有効なブロックと「変わった型」を集める ---
+                Set<String> valid = new HashSet<>();
+                StaleTypes stale = new StaleTypes();
                 if (config.cacheEnabled) {
-                    result.unresolved += copyValidBlocks(live, copied, cacheOut);
+                    scanOldCache(live, valid, stale);
                 }
-                result.reused = copied.size();
 
-                // --- パス2: 未処理のファイルだけ解析 ---
-                CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
-                int done = result.reused;
-                pg.step(done);
+                // --- パス2: 変更・追加されたファイルを解析 ---
+                int done = 0;
                 for (Map.Entry<String, FileStat> en : live.entrySet()) {
-                    String rel = en.getKey();
-                    if (copied.contains(rel)) {
+                    if (valid.contains(en.getKey())) {
                         continue;
                     }
-                    FileStat st = en.getValue();
-                    try {
-                        // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
-                        FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
-                        writeBlock(fa, cacheOut);
-                        result.unresolved += fa.unresolvedCount();
-                        result.parsed++;
-                    } catch (Exception e) {
-                        result.failed++;
-                        log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+                    analyzeAndWrite(extractor, en.getKey(), en.getValue(), cacheOut, result, stale);
+                    done++;
+                    pg.step(done);
+                }
+
+                // --- パス3: 変わった型に依存していない有効ブロックを書き写す ---
+                List<String> dependents = new ArrayList<>();
+                if (config.cacheEnabled && !valid.isEmpty()) {
+                    result.unresolved += copyValidBlocks(valid, stale, dependents, cacheOut);
+                    result.reused = valid.size() - dependents.size();
+                    done += result.reused;
+                    pg.step(done);
+                }
+
+                // --- パス4: 依存で無効になったファイルを解析し直す ---
+                for (String rel : dependents) {
+                    FileStat st = live.get(rel);
+                    if (st == null) {
+                        continue;
                     }
+                    analyzeAndWrite(extractor, rel, st, cacheOut, result, null);
+                    result.dependents++;
                     done++;
                     pg.step(done);
                 }
@@ -1349,16 +1387,89 @@ public class CallHierarchyExporter {
         }
 
         /**
-         * 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す。
+         * 1ファイルを解析して書き出す。1ファイル分だけをヒープに載せ、書き出したら即破棄する。
          *
-         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+         * @param stale 非nullなら、このファイルが宣言する型を「変わった型」に加える
          */
-        private long copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
-                                      BufferedWriter cacheOut)
+        private void analyzeAndWrite(CallEdgeExtractor extractor, String rel, FileStat st,
+                                     BufferedWriter cacheOut, CachePhaseResult result,
+                                     StaleTypes stale) {
+            try {
+                FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
+                writeBlock(fa, cacheOut);
+                result.unresolved += fa.unresolvedCount();
+                result.parsed++;
+                if (stale != null) {
+                    for (TypeInfo t : fa.types) {
+                        stale.add(t.typeFqn, t.pkg);
+                    }
+                }
+            } catch (Exception e) {
+                result.failed++;
+                log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+            }
+        }
+
+        /** 変更・削除されたファイルが宣言していた型と、そのパッケージ */
+        static final class StaleTypes {
+            final Set<String> types = new HashSet<>();
+            final Set<String> packages = new HashSet<>();
+
+            void add(String typeFqn, String pkg) {
+                types.add(typeFqn);
+                packages.add(pkg == null ? "" : pkg);
+            }
+
+            boolean isEmpty() {
+                return types.isEmpty();
+            }
+
+            /**
+             * I行（依存する型のカンマ区切り）が、変わった型に触れているか。
+             * "pkg.*"（オンデマンド import）は、そのパッケージの型が1つでも変わっていれば触れているとみなす
+             */
+            boolean touches(String depsCsv) {
+                if (depsCsv.isEmpty() || isEmpty()) {
+                    return false;
+                }
+                for (String d : depsCsv.split(",")) {
+                    if (d.isEmpty()) {
+                        continue;
+                    }
+                    if (d.endsWith(".*")) {
+                        String p = d.substring(0, d.length() - 2);
+                        if (types.contains(p) || packages.contains(p)) {
+                            return true;
+                        }
+                    } else if (types.contains(d)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
+        /** ブロックのF行が、今のソースと一致しているか（更新時刻とサイズの両方） */
+        private static boolean isValidBlock(String[] f, Map<String, FileStat> live) {
+            if (f.length < 4) {
+                return false;
+            }
+            FileStat st = live.get(f[1]);
+            try {
+                return st != null && st.mtime == Long.parseLong(f[2]) && st.size == Long.parseLong(f[3]);
+            } catch (NumberFormatException ignore) {
+                return false;   // 壊れたF行 -> このブロックは破棄し、後で再解析される
+            }
+        }
+
+        /**
+         * パス1。旧キャッシュを読み、有効なファイルの集合と「変わった型」を集める。
+         * 形式またはソースレベルが違えば何も有効にしない（全件再解析）。
+         */
+        private void scanOldCache(Map<String, FileStat> live, Set<String> valid, StaleTypes stale)
                 throws IOException {
-            long unresolved = 0L;
             if (!Files.isRegularFile(config.cacheFile)) {
-                return unresolved;
+                return;
             }
             BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
             try {
@@ -1369,9 +1480,50 @@ public class CallHierarchyExporter {
                     // 言語バージョンが違えば同じソースでも解析結果が変わるため、
                     // 更新時刻とサイズが一致していても再利用してはいけない
                     log("[cache] 形式またはソースレベルが異なるため既存キャッシュを破棄します");
-                    return unresolved;
+                    return;
                 }
+                boolean staleBlock = false;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        staleBlock = !isValidBlock(f, live);
+                        if (!staleBlock) {
+                            valid.add(f[1]);
+                        }
+                    } else if (staleBlock && t == 'H') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 2) {
+                            stale.add(f[1], (f.length >= 5) ? f[4] : "");
+                        }
+                    }
+                }
+            } finally {
+                in.close();
+            }
+        }
+
+        /**
+         * パス3。旧キャッシュを1行ずつ読み、有効で、かつ変わった型に依存していないブロックだけを
+         * 新キャッシュへ書き写す。依存しているブロックは書かず、dependents に相対パスを積む。
+         *
+         * 依存はブロック先頭のI行で判定する（F行の直後に置いてあるので、先読みは1行で済む）。
+         *
+         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+         */
+        private long copyValidBlocks(Set<String> valid, StaleTypes stale, List<String> dependents,
+                                      BufferedWriter cacheOut) throws IOException {
+            long unresolved = 0L;
+            BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
+            try {
+                in.readLine();   // バージョン行（パス1で検証済み）
                 boolean keeping = false;
+                String pendingF = null;   // 依存の判定待ちのF行
+                String pendingRel = null;
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.isEmpty()) {
@@ -1381,24 +1533,39 @@ public class CallHierarchyExporter {
                     if (t == 'F') {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         keeping = false;
-                        if (f.length >= 4) {
-                            FileStat st = live.get(f[1]);
-                            try {
-                                if (st != null && st.mtime == Long.parseLong(f[2])
-                                        && st.size == Long.parseLong(f[3])) {
-                                    keeping = true;
-                                    copied.add(f[1]);
-                                }
-                            } catch (NumberFormatException ignore) {
-                                // 壊れたF行 -> このブロックは破棄し、後で再解析される
-                                keeping = false;
-                            }
+                        pendingF = null;
+                        if (f.length >= 2 && valid.contains(f[1])) {
+                            pendingF = line;
+                            pendingRel = f[1];
                         }
-                        if (keeping) {
-                            cacheOut.write(line);
+                        continue;
+                    }
+                    if (pendingF != null) {
+                        // F行の直後。I行なら依存を判定し、無ければ依存なしとして書き写す
+                        String deps = "";
+                        boolean isDepsLine = (t == 'I');
+                        if (isDepsLine) {
+                            String[] f = line.split(CacheFormat.SEP, -1);
+                            deps = (f.length >= 2) ? f[1] : "";
+                        }
+                        if (stale.touches(deps)) {
+                            dependents.add(pendingRel);
+                            keeping = false;
+                        } else {
+                            keeping = true;
+                            cacheOut.write(pendingF);
                             cacheOut.newLine();
                         }
-                    } else if (keeping) {
+                        pendingF = null;
+                        if (isDepsLine) {
+                            if (keeping) {
+                                cacheOut.write(line);
+                                cacheOut.newLine();
+                            }
+                            continue;
+                        }
+                    }
+                    if (keeping) {
                         cacheOut.write(line);
                         cacheOut.newLine();
                         if (t == 'U' && !UnresolvedCall.hasUsableCandidate(
@@ -1417,9 +1584,12 @@ public class CallHierarchyExporter {
             w.write(String.join(CacheFormat.SEP, "F", fa.relativePath,
                     String.valueOf(fa.lastModified), String.valueOf(fa.size)));
             w.newLine();
+            // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
+            w.write(String.join(CacheFormat.SEP, "I", String.join(",", dependenciesOf(fa))));
+            w.newLine();
             for (TypeInfo t : fa.types) {
                 w.write(String.join(CacheFormat.SEP, "H", t.typeFqn,
-                        String.valueOf(t.kind), String.join(",", t.superTypes)));
+                        String.valueOf(t.kind), String.join(",", t.superTypes), t.pkg));
                 w.newLine();
             }
             for (MethodDecl d : fa.declarations) {
@@ -1429,11 +1599,19 @@ public class CallHierarchyExporter {
                 w.newLine();
             }
             for (FieldDeclRec v : fa.fieldDecls) {
-                w.write(String.join(CacheFormat.SEP, "V", v.typeFqn, v.fieldName, v.mods));
+                w.write(String.join(CacheFormat.SEP, "V", v.typeFqn, v.fieldName, v.mods, v.declType));
                 w.newLine();
             }
             for (FieldAssignRec j : fa.fieldAssigns) {
                 w.write(String.join(CacheFormat.SEP, "J", j.typeFqn, j.fieldName, j.site, j.origin));
+                w.newLine();
+            }
+            for (FieldAccessRec a : fa.fieldAccesses) {
+                String[] caller = (a.caller == null) ? new String[]{"", "", "", ""} : a.caller;
+                w.write(String.join(CacheFormat.SEP, "A", String.valueOf(a.line),
+                        caller[0], caller[1], caller[2], caller[3],
+                        a.ownerTypeFqn, a.fieldName, a.access, a.mods,
+                        String.valueOf(a.lambdaDepth)));
                 w.newLine();
             }
             // 呼び出し箇所（解決できたものも失敗したものも）はソース上の順のまま書く。
@@ -1475,6 +1653,29 @@ public class CallHierarchyExporter {
                 w.write(String.join(CacheFormat.SEP, "X", h.callerKey, h.scopeKey, h.kind, h.value));
                 w.newLine();
             }
+        }
+
+        /**
+         * I行の内容。バインディング解決で参照した型と import の型から、
+         * 自分が宣言する型を除いたもの（自分の変更は更新時刻とサイズで検知できる）
+         */
+        private static List<String> dependenciesOf(FileAnalysis fa) {
+            Set<String> own = new HashSet<>();
+            for (TypeInfo t : fa.types) {
+                own.add(t.typeFqn);
+            }
+            java.util.TreeSet<String> deps = new java.util.TreeSet<>();
+            for (String t : fa.referencedTypes) {
+                if (!own.contains(t)) {
+                    deps.add(t);
+                }
+            }
+            for (String t : fa.imports) {
+                if (!own.contains(t)) {
+                    deps.add(t);
+                }
+            }
+            return new ArrayList<>(deps);
         }
 
         static final class FileStat {
@@ -1527,11 +1728,13 @@ public class CallHierarchyExporter {
         /** I=インターフェース / A=抽象クラス / C=具象クラス */
         final char kind;
         final List<String> superTypes;
+        final String pkg;
 
-        TypeInfo(String typeFqn, char kind, List<String> superTypes) {
+        TypeInfo(String typeFqn, char kind, List<String> superTypes, String pkg) {
             this.typeFqn = typeFqn;
             this.kind = kind;
             this.superTypes = superTypes;
+            this.pkg = (pkg == null) ? "" : pkg;
         }
     }
 
@@ -1599,11 +1802,38 @@ public class CallHierarchyExporter {
         final String fieldName;
         /** 修飾子をカンマ区切りにしたもの（D行と同じ語彙） */
         final String mods;
+        /** 宣言型のFQN（消去型）。配列は要素型に "[]" を付けた形 */
+        final String declType;
 
-        FieldDeclRec(String typeFqn, String fieldName, String mods) {
+        FieldDeclRec(String typeFqn, String fieldName, String mods, String declType) {
             this.typeFqn = typeFqn;
             this.fieldName = fieldName;
             this.mods = mods;
+            this.declType = (declType == null) ? "" : declType;
+        }
+    }
+
+    /** フィールドの参照箇所1件（A行の元データ）。他の型のフィールドも含む */
+    static final class FieldAccessRec {
+        final int line;
+        /** 囲みメソッド {pkg, typeFqn, methodName, paramSig}。特定できなければ null */
+        final String[] caller;
+        final String ownerTypeFqn;
+        final String fieldName;
+        /** read / write / readwrite */
+        final String access;
+        final String mods;
+        final int lambdaDepth;
+
+        FieldAccessRec(int line, String[] caller, String ownerTypeFqn, String fieldName,
+                       String access, String mods, int lambdaDepth) {
+            this.line = line;
+            this.caller = caller;
+            this.ownerTypeFqn = ownerTypeFqn;
+            this.fieldName = fieldName;
+            this.access = access;
+            this.mods = mods;
+            this.lambdaDepth = lambdaDepth;
         }
     }
 
@@ -1743,6 +1973,11 @@ public class CallHierarchyExporter {
         final List<MethodDecl> declarations = new ArrayList<>();
         final List<FieldDeclRec> fieldDecls = new ArrayList<>();
         final List<FieldAssignRec> fieldAssigns = new ArrayList<>();
+        final List<FieldAccessRec> fieldAccesses = new ArrayList<>();
+        /** バインディング解決で参照した型のFQN（I行の元。自分が宣言する型は書き出し時に除く） */
+        final Set<String> referencedTypes = new LinkedHashSet<>();
+        /** import 文の型（I行の元。オンデマンド import は "pkg.*"） */
+        final Set<String> imports = new LinkedHashSet<>();
         /** 呼び出し箇所（{@link CallEdgeRec} と {@link UnresolvedCall}）をソース上の順で */
         final List<CallSite> callSites = new ArrayList<>();
         final List<ReturnRec> returns = new ArrayList<>();
@@ -1814,6 +2049,24 @@ public class CallHierarchyExporter {
 
             IProgressMonitor noMonitor = null;
             CompilationUnit cu = (CompilationUnit) parser.createAST(noMonitor);
+            // import 文の型も依存に数える。解決に失敗した import（jar不足）が後から
+            // 解決できるようになったときに、このファイルを解析し直せるようにするため
+            for (Object o : cu.imports()) {
+                ImportDeclaration imp = (ImportDeclaration) o;
+                String name = imp.getName().getFullyQualifiedName();
+                if (imp.isOnDemand()) {
+                    result.imports.add(name + ".*");
+                } else {
+                    result.imports.add(name);
+                    if (imp.isStatic()) {
+                        // import static a.B.c; の a.B（メンバではなく型）も依存
+                        int dot = name.lastIndexOf('.');
+                        if (dot > 0) {
+                            result.imports.add(name.substring(0, dot));
+                        }
+                    }
+                }
+            }
             cu.accept(new Visitor(cu, result, collectors));
             return result;
         }
@@ -2565,7 +2818,7 @@ public class CallHierarchyExporter {
                         continue;
                     }
                     out.fieldDecls.add(new FieldDeclRec(typeFqn, vb.getName(),
-                            modifierTokens(vb.getModifiers())));
+                            modifierTokens(vb.getModifiers()), declTypeName(vb.getType())));
                     if (frag.getInitializer() != null) {
                         out.fieldAssigns.add(new FieldAssignRec(typeFqn, vb.getName(),
                                 FieldAssignRec.SITE_INITIALIZER,
@@ -2765,6 +3018,98 @@ public class CallHierarchyExporter {
                 return ctx.rootConstructors;
             }
 
+            /** import 文の中の名前は参照箇所ではない（依存としては analyze() で別に数える） */
+            @Override
+            public boolean visit(ImportDeclaration node) {
+                return false;
+            }
+
+            /**
+             * フィールドの参照箇所（A行）。
+             *
+             * 参照はどんな形でも最終的に SimpleName に行き着く（a.b.c の c、this.x の x、
+             * super.x の x）ので、SimpleName だけを見れば重複なく拾える。
+             * 宣言そのもの（フィールド宣言の名前）は除く。配列の length のように
+             * 型に属さないものも除く。
+             */
+            @Override
+            public boolean visit(SimpleName node) {
+                if (node.isDeclaration()) {
+                    return true;
+                }
+                IBinding b = node.resolveBinding();
+                if (!(b instanceof IVariableBinding) || !((IVariableBinding) b).isField()) {
+                    return true;
+                }
+                IVariableBinding vb = (IVariableBinding) b;
+                ITypeBinding owner = vb.getDeclaringClass();
+                if (owner == null) {
+                    return true;
+                }
+                String ownerFqn = typeNameOf(owner.getErasure() != null ? owner.getErasure() : owner);
+                if (ownerFqn == null) {
+                    return true;
+                }
+                int line = cu.getLineNumber(node.getStartPosition());
+                String access = accessKindOf(node);
+                String mods = modifierTokens(vb.getModifiers());
+                List<String[]> callers = current();
+                if (callers == null) {
+                    out.fieldAccesses.add(new FieldAccessRec(line, null, ownerFqn, vb.getName(),
+                            access, mods, lambdaDepth));
+                    return true;
+                }
+                // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
+                for (String[] c : callers) {
+                    out.fieldAccesses.add(new FieldAccessRec(line, c, ownerFqn, vb.getName(),
+                            access, mods, lambdaDepth));
+                }
+                return true;
+            }
+
+            /** read / write / readwrite。代入の左辺なら write、複合代入と ++/-- なら readwrite */
+            private static String accessKindOf(SimpleName name) {
+                ASTNode expr = name;
+                ASTNode parent = name.getParent();
+                // a.b / this.b / super.b の b なら、参照式はその親
+                if ((parent instanceof QualifiedName && ((QualifiedName) parent).getName() == name)
+                        || (parent instanceof FieldAccess && ((FieldAccess) parent).getName() == name)
+                        || (parent instanceof SuperFieldAccess
+                            && ((SuperFieldAccess) parent).getName() == name)) {
+                    expr = parent;
+                    parent = expr.getParent();
+                }
+                if (parent instanceof Assignment && ((Assignment) parent).getLeftHandSide() == expr) {
+                    return (((Assignment) parent).getOperator() == Assignment.Operator.ASSIGN)
+                            ? "write" : "readwrite";
+                }
+                if (parent instanceof PostfixExpression) {
+                    return "readwrite";
+                }
+                if (parent instanceof PrefixExpression) {
+                    PrefixExpression.Operator op = ((PrefixExpression) parent).getOperator();
+                    return (op == PrefixExpression.Operator.INCREMENT
+                            || op == PrefixExpression.Operator.DECREMENT) ? "readwrite" : "read";
+                }
+                return "read";
+            }
+
+            /** 宣言型のFQN（消去型）。配列は要素型に "[]" を付ける。プリミティブはそのまま */
+            private String declTypeName(ITypeBinding t) {
+                if (t == null) {
+                    return "";
+                }
+                if (t.isArray()) {
+                    return declTypeName(t.getComponentType()) + "[]";
+                }
+                if (t.isPrimitive()) {
+                    return t.getName();
+                }
+                ITypeBinding er = (t.getErasure() != null) ? t.getErasure() : t;
+                String n = typeNameOf(er);
+                return (n == null) ? "" : n;
+            }
+
             @Override
             public boolean visit(FieldDeclaration node) {
                 methodStack.push(isStaticField(node) ? clinitContext() : instanceInitContext());
@@ -2846,7 +3191,8 @@ public class CallHierarchyExporter {
                         }
                     }
                 }
-                out.types.add(new TypeInfo(fqn, kind, supers));
+                String pkg = (er.getPackage() != null) ? er.getPackage().getName() : "";
+                out.types.add(new TypeInfo(fqn, kind, supers, pkg));
             }
 
             @Override
@@ -3235,7 +3581,7 @@ public class CallHierarchyExporter {
              * 呼び出しが丸ごと欠落していた。JDTは匿名クラスにも識別子を持っているので
              * 順に切り替えて拾う。
              */
-            private static String typeNameOf(ITypeBinding t) {
+            private String typeNameOf(ITypeBinding t) {
                 if (t == null) {
                     return null;
                 }
@@ -3248,7 +3594,26 @@ public class CallHierarchyExporter {
                     // キャッシュはタブ区切りのため、空白類が混ざると形式が壊れる
                     n = (key == null) ? null : key.replaceAll("\\s", "_");
                 }
-                return (n == null || n.isEmpty()) ? null : n;
+                if (n == null || n.isEmpty()) {
+                    return null;
+                }
+                // ここを通った型は、このファイルの解決結果がそれに依存している（I行）。
+                // 自分が宣言する型も混ざるが、書き出し時に除く
+                if (!t.isPrimitive() && !t.isArray() && !t.isTypeVariable()) {
+                    out.referencedTypes.add(n);
+                }
+                return n;
+            }
+
+            /** 型を「このファイルの解決結果が依存する型」（I行）に数える。配列は要素型で */
+            private void noteDependency(ITypeBinding t) {
+                while (t != null && t.isArray()) {
+                    t = t.getComponentType();
+                }
+                if (t == null || t.isPrimitive() || t.isTypeVariable()) {
+                    return;
+                }
+                typeNameOf(t.getErasure() != null ? t.getErasure() : t);
             }
 
             /** @return {pkg, typeFqn, methodName, paramSig} または null */
@@ -3284,6 +3649,8 @@ public class CallHierarchyExporter {
                         }
                         ITypeBinding pe = pts[i].getErasure();
                         params.append(pe != null ? pe.getQualifiedName() : pts[i].getQualifiedName());
+                        // 引数型はメソッドキーの一部。改名されるとキーが変わるので依存に数える
+                        noteDependency(pe != null ? pe : pts[i]);
                     }
                 }
                 String name = decl.isConstructor() ? "<init>" : decl.getName();
@@ -3798,6 +4165,15 @@ public class CallHierarchyExporter {
                 fields.flushInto(g.fieldOrigins);
             } finally {
                 in.close();
+            }
+            // 型階層の並びをキャッシュ上の出現順から切り離す。差分更新では解析し直した
+            // ファイルのブロックが移動するので、出現順のままだと CHA 候補の並び
+            // （＝出力の行順）が実行のたびに変わりうる
+            for (List<String> l : g.directSubtypes.values()) {
+                Collections.sort(l);
+            }
+            for (List<String> l : g.directSupertypes.values()) {
+                Collections.sort(l);
             }
             log("収集: 型 " + g.typeKind.size()
                     + " / メソッド " + g.methods.size() + " / エッジ " + edgeCount);
