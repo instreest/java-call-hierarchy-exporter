@@ -5175,31 +5175,11 @@ public class CallHierarchyExporter {
                     hits.add(id);
                 }
             }
-            Integer[] boxed = new Integer[hits.size()];
-            for (int i = 0; i < boxed.length; i++) {
-                boxed[i] = Integer.valueOf(hits.get(i));
-            }
             // 出力順: 1) ソースフォルダの宣言順（.classpath の記載順。main/testの混在を防ぐ）
             //         2) 型FQN順（'.'は英数字よりコード上小さいため、文字列比較だけで
             //            「パッケージ自身 -> そのサブパッケージ -> 次のパッケージ」の順になる）
             //         3) 同じ型内では、ソースファイル上の宣言順
-            Arrays.sort(boxed, (x, y) -> {
-                int fx = sourceFolderIndexOf(methods.declFile(x.intValue()));
-                int fy = sourceFolderIndexOf(methods.declFile(y.intValue()));
-                if (fx != fy) {
-                    return Integer.compare(fx, fy);
-                }
-                int t = methods.typeFqn(x.intValue()).compareTo(methods.typeFqn(y.intValue()));
-                if (t != 0) {
-                    return t;
-                }
-                return Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
-            });
-            int[] result = new int[boxed.length];
-            for (int i = 0; i < result.length; i++) {
-                result[i] = boxed[i].intValue();
-            }
-            return result;
+            return sortedBySource(hits);
         }
 
         /**
@@ -5269,19 +5249,36 @@ public class CallHierarchyExporter {
                 }
                 hits.add(id);
             }
-            // 出力順を安定させる（実行のたびに行順が変わらないように）
-            final MethodTable mt = methods;
+            // 出力順は全体モード（autoEntryPoints）と同じ:
+            // ソースフォルダ順 → 型FQN順 → 同じ型内ではソース上の宣言順
+            return sortedBySource(hits);
+        }
+
+        /**
+         * メソッドIDの並びを「ソースフォルダの宣言順 → 型FQN順 → 宣言行順 → ID順」にする。
+         * 起点の並び（call-hierarchy.csv の行順）を、実行のたびに変わらず、
+         * 同じ型の中ではソースコードの記載順になるようにするため。
+         */
+        private int[] sortedBySource(IntArray hits) {
             Integer[] boxed = new Integer[hits.size()];
             for (int i = 0; i < boxed.length; i++) {
                 boxed[i] = Integer.valueOf(hits.get(i));
             }
-            Arrays.sort(boxed, new java.util.Comparator<Integer>() {
-                @Override
-                public int compare(Integer x, Integer y) {
-                    String a = mt.typeFqn(x.intValue()) + "#" + mt.methodName(x.intValue());
-                    String b = mt.typeFqn(y.intValue()) + "#" + mt.methodName(y.intValue());
-                    return a.compareTo(b);
+            Arrays.sort(boxed, (x, y) -> {
+                int fx = sourceFolderIndexOf(methods.declFile(x.intValue()));
+                int fy = sourceFolderIndexOf(methods.declFile(y.intValue()));
+                if (fx != fy) {
+                    return Integer.compare(fx, fy);
                 }
+                int t = methods.typeFqn(x.intValue()).compareTo(methods.typeFqn(y.intValue()));
+                if (t != 0) {
+                    return t;
+                }
+                int l = Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
+                if (l != 0) {
+                    return l;
+                }
+                return x.compareTo(y);
             });
             int[] result = new int[boxed.length];
             for (int i = 0; i < result.length; i++) {
