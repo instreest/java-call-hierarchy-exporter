@@ -62,11 +62,11 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `external.library.folders` | 空 | 自分のコードを呼んでいる側の他チームjar（被参照スキャン用。ファイル／フォルダ、カンマ区切り） | `project.root` |
 | `entry.packages` | 空 | 呼び出し階層の起点。空なら「呼び出し元が無いメソッド」を自動で起点にする（全体モード） | — |
 | `exclude.packages` | 空 | 出力から除外する呼び出し先（書式は `entry.packages` と同じ）。既定の設定例は `java.**,javax.**` | — |
-| `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く | — |
+| `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く。変更されたファイルが宣言する型を参照しているファイルは、自身が変わっていなくても再解析する | — |
 | `cache.folders` | `./.cache` | キャッシュの置き場所 | 設定ファイル |
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
-| `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析を使う | — |
+| `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
 | `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
 | `output.csv` | `./output/call-hierarchy.csv` | 呼び出し階層の出力先 | 設定ファイル |
@@ -122,10 +122,11 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | 前半2 | import推定（`EXTERNAL_GUESS`） | `外部ライブラリ（import推定・未検証）` |
 | 前半3 | 呼び出し先の宣言ファイルが無い | `ソースなし（展開不可）` |
 | 前半4 | 次の深さが `max.depth` に達する | `深さ制限(N)のため打ち切り` |
-| 後半1 | 候補が複数 | `CHA候補N件（未展開）: {理由}` |
-| 後半2 | 候補は1件だが、ラムダ／メソッド参照も実装している | `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` |
-| 後半3 | 本体を持つ実装が皆無（`NO_IMPL`） | `実装なし（宣言のまま）: {理由}` |
-| 後半4 | 解決先が宣言型と違う、**または** データフローで決めた（宣言型と同じでも出す） | `解決:{ラベル}` |
+| 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` |
+| 後半2 | 候補が複数（上記以外） | `CHA候補N件（未展開）: {理由}` |
+| 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` |
+| 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `実装なし（宣言のまま）: {理由}` |
+| 後半5 | 解決先が宣言型と違う（リフレクションで解決した `REFLECTION` / `REFLECTION_INIT` を含む）、**または** データフローで決めた（宣言型と同じでも出す） | `解決:{ラベル}` |
 
 `{理由}` はレシーバの由来: `戻り値（ファクトリメソッド等）` / `引数（メソッド外から渡される）` /
 `フィールド変数` / `ローカル変数` / `自クラス（this）` / `型名（static）` / `レシーバ不明`。
@@ -162,6 +163,9 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`実装なし（宣言のまま）` / `ラムダ/メソッド参照の実装あり` / レシーバ由来） |
 
 ソースの無いメソッド（jar内）と `<init>` は出力しない。合成した `<clinit>` は出す。
+行順はソースの並び（ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → 同一行はID順）。
+メソッドIDの順（キャッシュ上の出現順）で出すと、差分更新で解析し直したファイルが末尾へ移り、
+実行のたびに並びが変わる。
 
 ## 5. 振る舞いの要点
 
@@ -174,8 +178,21 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 ```
 
 差分判定は「最終更新時刻とファイルサイズの両方が一致」。キャッシュの1行目に形式バージョンと
-準拠レベルを書き、不一致なら全体を破棄する。更新は「旧キャッシュを先頭から読み、まだ有効な
-ブロックだけ新キャッシュへ書き写し、残りを解析して追記」のストリーミングマージ。
+準拠レベルを書き、不一致なら全体を破棄する。更新は旧キャッシュを先頭から読むストリーミング
+マージで、ランダムアクセスも全件保持もしない。
+
+**依存先の変更でも再解析する。** 更新時刻とサイズが一致するファイルでも、そのファイルの
+バインディング解決が参照した型（呼び出し先・フィールドの所有型・親型・引数型・import の型）を
+宣言するファイルが変わっていれば解析し直す。オーバーロードの追加やフィールドの改名で、
+呼んでいる側の解決結果が変わるため。依存は1段で足りる（Aを解析し直してもAが宣言する型は
+変わらないので、Aに依存するファイルへは波及しない）。ログには
+`新規解析=N（うち依存先の変更による再解析=M）` と出す。
+
+**キャッシュには「ASTから分かった事実」だけを入れ、判断は読む側で行う。** 事実とは
+宣言と修飾子、呼び出し箇所、フィールドへの代入、値の出所など、設定・出力形式・解決アルゴリズムに
+依存しない情報。静的束縛かどうか、コンストラクタ注入と言い切れるか、import推定を呼び出し先として
+採用するか、といった判断はキャッシュを読む側で行う。出力や解決の方針を変えてもキャッシュを
+作り直さずに済ませるため。キャッシュの版を上げるのは事実の意味・列・収集範囲が変わったときだけ。
 
 ### 5.2 抽出する呼び出し
 
@@ -191,6 +208,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 
 | 段 | ラベル | 判定 |
 |---|---|---|
+| — | `REFLECTION` / `REFLECTION_INIT` | 呼び出し先が `Method.invoke` / `Class.newInstance` / `Constructor.newInstance` / `Class.forName` のとき、出所から実際に動くメソッドへ解決（下記）。段0より先に判定する（jar内のAPIなので静的束縛に見えるが、実際に動くのは名前で指定されたメソッド） |
 | — | `EXTERNAL_GUESS` | import推定。型階層情報が無いので常に単一 |
 | 0 | `STATIC_BOUND:{PRIVATE,STATIC,FINAL_METHOD,FINAL_CLASS,CTOR,SUPER}` | 仮想ディスパッチされない呼び出し |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 宣言型自身（本体があれば）＋推移的サブタイプの同シグネチャ宣言を候補にし、1件なら確定。皆無なら `NO_IMPL` |
@@ -200,6 +218,25 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | — | `DATAFLOW_PARAM` / `DATAFLOW_FIELD` | 経路上の実引数／コンストラクタ注入フィールドから特定（経路依存。探索中に判定し、CHAで候補が複数のときだけ試す） |
 | 5 | `CHA` | 候補が複数のまま |
 
+**リフレクション**は `Class.forName` / `X.class` / `obj.getClass()` → `getMethod` /
+`getDeclaredMethod` → `Method.invoke`、および `getConstructor` / `getDeclaredConstructor` →
+`newInstance` の連鎖を、キャッシュに残した出所（レシーバの連鎖と実引数のリテラル）から辿る。
+
+| 書き方 | 解決 |
+|---|---|
+| `Class.forName("a.B").getMethod("run", long.class).invoke(obj, 1L)` | `a.B.run(long)` |
+| `B.class.getMethod("run")`、`obj.getClass().getMethod("run")`（obj の具象型が分かるとき） | `B.run()` |
+| クラス名・メソッド名が `static final` 定数、または呼び出し元からリテラルで渡された引数 | 同上（経路ごとに解決） |
+| `getMethod("run", types)` のように引数型が変数 | 同名で本体を持つメソッドを候補として列挙（未展開） |
+| `invoke(obj, ...)` の第1引数の具象型が分かり、`getMethod` の受け手の型のサブタイプ | その型の実装を優先 |
+| `Class.forName("a.B")` | `a.B` の `<clinit>`（あれば）。ラベル `REFLECTION_INIT` |
+| `Class.forName("a.B").getDeclaredConstructor().newInstance()` | `a.B` のコンストラクタ。生成された型（`T:a.B`）は以降の呼び出しでも使われる |
+
+解決できないもの: 設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
+フィールドや別メソッドの引数で受け渡す形。これらは `Method.invoke` のまま「ソースなし」に
+なる（既定の `exclude.packages=java.**` では行にならない）。経路上の引数に依存する分
+（名前やクラスが引数で渡ってくる形）は探索中にもう一度試す。
+
 拡張ポイント: `CallSiteHintCollector`（AST走査中に呼び出し箇所の証拠をキャッシュに残す）と
 `TypeCandidateProvider`（宣言型・シグネチャ・証拠から具象型FQNの配列とラベルを返す。
 `appliesToStaticBound()` が true なら段0の呼び出しにも尋ねる）。設定ファイルの内容と
@@ -207,9 +244,12 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 
 ### 5.4 探索
 
-- 起点: `entry.packages` 一致でソース宣言のあるメソッド（`型FQN#メソッド名` 順）。未指定なら
-  **解決後の入次数0**かつソースに本体があるメソッド全部。並びは (1) ソースフォルダの
-  指定順 (2) 型FQN順 (3) 宣言行順
+- 起点: `entry.packages` 一致でソース宣言のあるメソッド。未指定なら
+  **解決後の入次数0**かつソースに本体があるメソッド全部。並びはどちらも (1) ソースフォルダの
+  指定順 (2) 型FQN順 (3) 宣言行順 (4) ID順（`entry.packages` に書いた順ではない）
+- 型階層の子型・親型リストはFQN順に整列する。CHA候補の並び（＝出力の行順、上限20件で
+  打ち切るときにどの候補を載せるか）がキャッシュ上のブロック順に依存すると、
+  差分更新後の出力が cold 実行と一致しなくなる
 - 循環検出は経路単位（`[CYCLE]` を1行出して降りない）。グローバル訪問済み集合は持たない
 - `exclude.packages` 一致ノードは行にしないが、その先は親に繋ぎ直して辿る。
   繋ぎ直すときはデータフローの環境（引数・コンストラクタ実引数）も除外ノードのものに差し替える
@@ -347,6 +387,9 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 | `LambdaExpression` | 関数型インターフェースのメソッドを「ラムダも実装している」と記録（2.9）。入れ子深さを数える | — |
 | `ReturnStatement` | 戻り値の出所（2.10） | — |
 | `VariableDeclarationFragment` / `Assignment` | 段2の `new` 追跡。変数の同定は名前でなく `IVariableBinding.getKey()` | 同名変数がスコープ違いで誤解決 |
+| `TypeLiteral` | `X.class` の出所（`K:`）。リフレクションの受け手・引数型 | `getMethod("run", long.class)` のシグネチャが決まらない |
+| `SimpleName`（フィールドに解決されるもの） | フィールドの参照箇所（read / write / readwrite）。`a.b.c` の `c`、`this.x` の `x`、`super.x` の `x` はすべて SimpleName に行き着くので、ここだけ見れば重複なく拾える。宣言そのものと配列の `length` は除く | — |
+| `ImportDeclaration` | 走査しない（`visit` で false）。import の型は依存（I行）として別に数える | import の中の名前を参照箇所と誤認する |
 
 ## 2.6 名前の正規化（静かに壊れる箇所）
 
@@ -374,7 +417,10 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 
 段0は「宣言型が具象クラスか」ではなく「仮想ディスパッチされるか」で判定する。
 `private` / `static` / `final` メソッド、`final` クラスのメソッド、コンストラクタ、`super.m()` が
-静的束縛。判定はバインディングの `getMethodDeclaration()` の修飾子で行う。
+静的束縛。書き手（AST走査）はバインディングの `getMethodDeclaration()` の修飾子を語
+（`public,static,finalclass,super` 等）として**事実のまま**キャッシュに残し、
+静的束縛かどうかの判定は読み手（グラフ構築）が行う。判定順は
+`<init>` → `super` → `private` → `static` → `final` → `finalclass` → 仮想。
 理由（`PRIVATE` 等）をラベルに残し、後から監査できるようにする。
 
 ## 2.8 CHA（段1）と実装探索
@@ -389,13 +435,19 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
   これは既知の制約で、継承した実装を段2で取りこぼす（その場合は段4以降で拾われる）。
   親を辿る実装にしてもよいが、第3部のテストは完全一致でも通るように作ってある
 - 入次数は**解決後の候補**に対して数える。宣言型で数えるとIF経由でしか呼ばれない実装が
-  すべて入次数0になり、真の入口と区別がつかない
+  すべて入次数0になり、真の入口と区別がつかない。リフレクションで解決した先（`<clinit>` や
+  `invoke` の実体）にも入次数が付くので、`Class.forName("a.B")` があれば `a.B.<clinit>` は
+  起点候補でなくなる
+- 型階層の子型・親型リストはFQN順に整列してからCHA候補を作る（キャッシュ上の出現順に
+  依存させない。差分更新後も cold 実行と同じ行順にするため）
 
 ## 2.9 ラムダ／メソッド参照
 
 - ラムダとメソッド参照が実装している関数型インターフェースのメソッドを「展開できない実装が
-  ある」として記録する（ファイル単位で重複排除、件数は持たない）。これが無いと、匿名クラスが
-  1件あるだけで `SINGLE_IMPL` と判定し、**実際に動くラムダとは違う実装に決め打ち**する
+  ある」として記録する。書き手は箇所ごと（行・囲みメソッド・lambda / methodref / ctorref）の
+  事実を残し、読み手は「ある／なし」だけを使う（件数を判定に使うとファイル単位の部分再利用で
+  値がぶれる）。これが無いと、匿名クラスが1件あるだけで `SINGLE_IMPL` と判定し、
+  **実際に動くラムダとは違う実装に決め打ち**する
 - 候補の絞り込み自体は変えない。`解決:SINGLE_IMPL` と書く代わりに
   `ラムダ/メソッド参照の実装あり（未展開・…）` を出し、`unresolvedCalls` にも数える
 - **ラムダ本体の呼び出しを合成メソッドへ付け替えない**。付け替えると `forEach` のように
@@ -416,12 +468,25 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 | `A:n` | 囲みメソッドの n 番目の引数 | 経路を降りて呼び出し元が決まったとき |
 | `M:typeFqn#m(params)` | メソッドの戻り値 | そのメソッドの return を見たとき |
 | `F:typeFqn#field` | フィールド | コンストラクタ注入の記録と経路上の生成箇所を見たとき |
-| `L:fqn` | クラス名の形をした文字列リテラル／コンパイル時定数 | その場 |
+| `L:値` | 文字列リテラル／コンパイル時定数。完全修飾クラス名の形か、識別子1つの形（メソッド名等。64文字以内） | その場 |
+| `K:fqn` | クラスリテラル `X.class`（配列は `[]` 付き、プリミティブはそのまま） | その場 |
 | `C:n` | `Class.forName(n番目の引数)` で名前指定された型 | その呼び出しの実引数を見たとき |
 | `U` | 追跡できない | 決まらない |
 
 `new` とメソッド呼び出しの出所には実引数の出所も付ける（`T:fx.Service|0=T:fx.OrderDao`）。
-実引数の出所は**入れ子にしない**。追跡できない引数は載せない。
+メソッド呼び出しの出所にはさらに、実引数の数 `n=`（出所が分からず省いた引数と、引数が
+無いことを区別する）と、レシーバの出所 `r=` を付ける。レシーバは**3段まで入れ子**にする
+（`invoke` ← `getMethod` ← `forName`/`getClass` の連鎖を読み手が辿るため）。入れ子の出所が
+実引数リストを持つ場合は `{}` で囲む。
+
+```
+M:java.lang.Class#getMethod(java.lang.String,java.lang.Class[])|n=2;0=L:run;1=K:long;r=K:jp.co.X
+M:java.lang.Class#getDeclaredConstructor(java.lang.Class[])|n=0;r={M:java.lang.Class#forName(java.lang.String)|0=A:0;n=1}
+```
+
+実引数の出所は**入れ子にしない**（`{}` の中にさらにリストは持たせない）。
+追跡できない引数は載せない。区切りは `|` と `;`（値の側が括弧を含むため、括弧だと対応の
+判定が要る）。解析関数は `{}` の深さを数えて区切りを探す。
 
 **(a) 変数の出所は本体を先読みして作る。走査しながら作らない。**
 
@@ -434,8 +499,9 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
 
 **(b) 追跡できない `return` も `U` として明示的に記録する。** 「追跡できた return だけ」で
 判定すると、`if (cache) return cache.get(); return new UserDao();` を `UserDao` に決め打ちする。
-ただし全 return が `U` のメソッドは行そのものを書かない（キャッシュを膨らませない）。
-戻り値が primitive・配列・`String` の return も記録しない。
+書き手は return を全部書き、「1つでも `U` があれば戻り値は不定」の集約は読み手が行う
+（キャッシュは事実だけ）。戻り値が primitive・配列・`String` の return は記録しない
+（具象クラスの絞り込みに使えない。書き手の収集範囲）。
 
 **(c) ラムダ式の中の `return` は囲みメソッドの戻り値ではない。** ラムダの入れ子深さを数え、
 0 のときだけ記録する。匿名クラスのメソッドはラムダの中に現れうるので、`MethodDeclaration` に
@@ -447,7 +513,8 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
 `C:n` で得た型名は**解析対象に存在するときだけ使う**（設定キー等をクラス名と誤認しない）。
 対応する形は `Class.forName(x).newInstance()` と `getDeclaredConstructor()` /
 `getConstructor()` を1段挟んだ形。文字列リテラルは「ドットを含み、各要素が識別子で、最後の
-要素が英大文字始まり」の形だけ記録する（ログ文言やSQLでキャッシュを埋めない）。
+要素が英大文字始まり」（クラス名）か「識別子1つ、64文字以内」（メソッド名・フィールド名）の
+形だけ記録する（ログ文言やSQLでキャッシュを埋めない）。
 
 **(e) 引数由来は経路依存なのでメモ化できない。** `rootA(){shared(new UserDao());}` と
 `rootB(){shared(new OrderDao());}` で、`shared` の中の `dao.select()` は経路ごとに答えが違う。
@@ -456,8 +523,10 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
 環境を作るのは「引数をレシーバに使うか次へ渡すメソッド」か「注入フィールドを持つ型の
 メソッド」のときだけ（O(エッジ数) を1回で判定）。
 
-**(f) コンストラクタ注入されたフィールド**: 次の4条件を**全部**満たすフィールドだけ
-「コンストラクタの n 番目の引数が必ず入る」と記録する。
+**(f) コンストラクタ注入されたフィールド**: 書き手はフィールド宣言（修飾子・宣言型）と
+「その型自身のフィールドへの代入1件ごと（代入箇所＝初期化子かメソッド／コンストラクタ、
+値の出所）」を事実として残す。読み手が次の4条件を**全部**満たすフィールドだけ
+「必ずこの出所の値が入る」と判定する（static フィールドは対象外）。
 
 | # | 条件 | 崩れる例 |
 |---|---|---|
@@ -481,6 +550,29 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
 
 **(h) 除外ノードを飛ばすとき**、経路の環境（引数・コンストラクタ実引数）も除外ノードの
 ものに差し替える。元のまま残すと除外メソッドの中の呼び出しに、その呼び出し元の引数を当てる。
+
+**(i) リフレクションの解決（読み手の判断）**:
+- 呼び出し先のキーが `java.lang.reflect.Method#invoke(java.lang.Object,java.lang.Object[])` /
+  `java.lang.Class#forName(...)` / `java.lang.Class#newInstance()` /
+  `java.lang.reflect.Constructor#newInstance(java.lang.Object[])` のエッジだけを対象にする
+- `invoke`: レシーバの出所が `Class#getMethod` / `getDeclaredMethod` の戻り値で、その受け手
+  （`r=`）のクラスと第1引数（メソッド名）が決まれば解決する。クラスは `K:`、
+  `Class.forName(L:)`、`obj.getClass()`（`r=` の具象型）、経路上の引数、または `Class` を返す
+  ソース上のメソッド（全 return が同じクラスのとき）から決める。名前は `L:`、経路上の引数、
+  または `String` を返すメソッドから決める。`getMethod` の第2引数以降がすべて `K:` なら
+  シグネチャで1件に、1つでも欠ければ（`n=` と突き合わせて判定）同名で本体を持つメソッドを
+  その型から親へ辿って候補にする。`invoke` の第1引数の具象型が受け手のサブタイプなら
+  その型の実装を優先する
+- `Class.forName(名前)` は、その型に `<clinit>` があればそこへ繋ぐ（`REFLECTION_INIT`）
+- `Class.newInstance()` は受け手の型の `<init>()` へ、`Constructor.newInstance` は
+  `getConstructor` / `getDeclaredConstructor` の受け手の型と引数のクラスリテラルから
+  `<init>(params)` へ繋ぐ
+- 文字列から得た型名は**解析対象に存在するときだけ使う**
+- 経路の引数環境には、具象型が決まらない引数でもリテラル（`L:`）・クラスリテラル（`K:`）なら
+  「値」として渡す。`byName(obj, "run")` のように名前が引数で渡ってくる形を、経路ごとに
+  解決するため。値が入っている引数は、具象型としては不明として扱う（`:` を含むかで区別）
+- エッジ単位でまず試し（経路に依存しない分はメモ化される）、経路上の引数に依存する分は
+  探索中にもう一度試す。`dataflow.enabled=false` ならリフレクションも解決しない
 
 ## 2.11 出力とエンコーディング
 
@@ -516,21 +608,69 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
 
 ## 2.14 キャッシュ形式（参考。同等の情報を持てば形式は自由）
 
-タブ区切り。1行目 `jche-cache-v6<TAB>source=<準拠レベル>`。`F` 行が現れるたび以降の行は
-そのファイルに属する。
+**原則: キャッシュは「ASTから分かった事実」だけを持ち、判断は読む側でする。**
+事実とは、ASTとバインディングから機械的に読み取れ、設定・出力形式・解決アルゴリズムに
+依存しない情報（宣言・修飾子・呼び出し箇所・代入・出所）。判断とは、フィルタ・要約・推定・
+しきい値・文言・「使うか使わないか」の決定。判断を焼き込むと、出力や解決の方針を変えるたびに
+全件再解析になる。見分ける問いは「この値を変えたくなるのは、出力や解決の方針を変えるときか、
+Javaの意味論が変わるときか」。前者なら判断であり、読み手に置く。
+
+読み手の責務（キャッシュに入れない判断）: 静的束縛の判定（修飾子 → 種別）、戻り値の集約
+（追跡できない return が1つでもあれば不定）、コンストラクタ注入フィールドの判定、import推定を
+エッジとして採用するか、ラムダ内の呼び出しの計上先、未解決の理由コードの文言。
+
+タブ区切り。1行目 `jche-cache-v9<TAB>source=<準拠レベル>`。`F` 行が現れるたび以降の行は
+そのファイルに属する。値にタブ・改行が混ざると形式が壊れるので書き出す前に除去する。
 
 ```
 F  相対パス  更新時刻  サイズ
-H  typeFqn  kind(I/A/C)  親型をカンマ区切り
-D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)
+I  依存する型（カンマ区切り）     このファイルのバインディング解決が参照した型のFQNと import 文の型
+                                （オンデマンド import は "pkg.*"）。自分が宣言する型は含まない。
+                                F行の直後に置く（差分更新でブロックを読み進める前に依存を判定する）
+H  typeFqn  kind(I/A/C)  親型をカンマ区切り  pkg
+D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods
+   mods: public/protected/private/static/final/abstract/default に加えて
+         implicit（暗黙のコンストラクタを合成した）、delegating（本体の先頭が this(...) 委譲）
+V  typeFqn  fieldName  mods  declType                 （フィールド宣言。declType は宣言型のFQN）
+A  line  callerPkg callerType callerMethod callerParams  ownerTypeFqn  fieldName  access  mods  lambda
+   フィールドの参照箇所1件（他の型のフィールドも含む）。access: read / write / readwrite
+J  typeFqn  fieldName  site  origin                   （その型自身のフィールドへの代入1件。
+                                                        site は "<field>"=初期化子 か "name(paramSig)"）
 C  callerPkg callerType callerMethod callerParams  calleePkg calleeType calleeMethod calleeParams
-   callLine  bindKind(V/P/T/F/L/C/U/G)  recvKey  recvKind(M/P/F/L/T/S/O)  recvOrigin  argOrigins
-R  pkg  typeFqn  method  paramSig  origin          （そのメソッドが返しうる値の出所）
-J  typeFqn  fieldName  origin                       （コンストラクタ注入されたフィールド）
-M  ifaceTypeFqn#method(paramSig)                    （ラムダ／メソッド参照が実装するメソッド）
-X  callerMethodキー  scopeKey  種別  値             （拡張が拾った証拠）
-U  行  呼び出し元メソッドキー  式  理由              （型解決に失敗した呼び出し）
+   callLine  calleeMods  recvKey  recvKind(M/P/F/L/T/S/O)  recvOrigin  argOrigins  lambda
+   calleeMods: 呼び出し先の修飾子。D の語彙に加えて finalclass（宣言クラスが final）、super
+   lambda: 呼び出し箇所を囲むラムダの深さ（現在の読み手は使わないが事実として残す）
+U  line  callerPkg callerType callerMethod callerParams  expr  reason  candidate
+   recvKey  recvKind  recvOrigin  argOrigins  lambda
+   reason: BINDING_FAILED / OUTSIDE_METHOD（呼び出し元を特定できない。caller は空）
+   candidate: レシーバの単純名と一致する単一型 import のFQN（無ければ空）
+R  pkg  typeFqn  method  paramSig  origin            （return 1件ごと。追跡できなければ U。全部書く）
+M  line  callerPkg callerType callerMethod callerParams  ifaceTypeFqn#method(paramSig)  kind
+   ラムダ／メソッド参照の1箇所。kind: lambda / methodref / ctorref
+X  callerMethodキー  scopeKey  種別  値              （拡張が拾った証拠）
 ```
+
+C行とU行はソース上の順のまま1つの列として書く（読み手が import推定の候補をエッジにしたとき、
+元の呼び出しの並びが保たれる）。型解決に失敗した呼び出しがインスタンス初期化子の中にあれば、
+C行と同じく根のコンストラクタごとに1行になる。
+
+事実の収集範囲（書き手の打ち切り。変えたら版を上げる）: 実引数の出所は1段のみ／レシーバの
+出所は3段まで／外側スコープの変数は final か実質 final のときだけ／ローカル変数の先読みは1回／
+文字列リテラルは完全修飾クラス名か識別子（64文字以内）の形だけ／プリミティブ・配列・String を
+返す return は記録しない／フィールドへの代入はその型自身のメソッド・コンストラクタ本体と
+フィールド初期化子から拾う（インスタンス初期化ブロックと内部クラスからの代入は拾わない）。
+
+**差分更新の4パス**:
+1. 旧キャッシュを読み、更新時刻とサイズが一致するファイル（有効）を覚える。無効・消滅した
+   ファイルのブロックが宣言していた型（H行）を「変わった型」として集める
+2. 変更・追加されたファイルを解析して新キャッシュへ書く。そのファイルが宣言する型も
+   「変わった型」に加える（改名・追加に備える）
+3. 旧キャッシュをもう一度読み、有効なブロックのうち I行が「変わった型」に触れないものだけ
+   書き写す（`pkg.*` はそのパッケージの型が1つでも変われば触れているとみなす）。
+   触れるものは再解析に回す
+4. 再解析に回したファイルを解析して追記する
+
+ヒープ常駐は「ソースファイルの一覧＋更新時刻・サイズ」と「変わった型の集合」だけ。
 
 ---
 
@@ -778,6 +918,17 @@ public class Helper {
     }
 
     static void validate(int x) {
+    }
+}
+```
+
+`fixture/src/fx/Registry.java`
+```java
+package fx;
+
+public class Registry {
+    static {
+        Helper.ratio();
     }
 }
 ```
@@ -1150,6 +1301,45 @@ public class App {
         StringBuilder sb = new StringBuilder();
         sb.append("a").toString();
     }
+
+    // --- reflection ---
+    void viaReflectForName() throws Exception {
+        Class.forName("fx.Repo").getMethod("save", long.class).invoke(new Repo(), 1L);
+    }
+
+    void viaReflectClassLiteral() throws Exception {
+        Repo.class.getMethod("save", String.class).invoke(new Repo(), "a");
+    }
+
+    void viaReflectGetClass() throws Exception {
+        Repo repo = new Repo();
+        repo.getClass().getMethod("save", String.class).invoke(repo, "a");
+    }
+
+    void viaReflectNameArg() throws Exception {
+        invokeByName(new Repo(), "save");
+    }
+
+    void invokeByName(Object target, String name) throws Exception {
+        target.getClass().getMethod(name, long.class).invoke(target, 1L);
+    }
+
+    void viaReflectUnknownTypes() throws Exception {
+        Class<?>[] types = new Class<?>[] { String.class };
+        Repo.class.getMethod("save", types).invoke(new Repo(), "a");
+    }
+
+    void viaReflectInit() throws Exception {
+        Class.forName("fx.Registry");
+    }
+
+    void viaReflectCtor() throws Exception {
+        ((Dao) Class.forName("fx.OrderDao").getDeclaredConstructor().newInstance()).select();
+    }
+
+    void viaReflectRuntime() throws Exception {
+        Class.forName(System.getProperty("cls")).getMethod("save", long.class).invoke(null, 1L);
+    }
 }
 ```
 
@@ -1180,18 +1370,21 @@ methods.csv=./output/methods.csv
 
 | 項目 | 期待値 |
 |---|---|
-| ログ「Javaファイル数」 | 27 |
-| ログ「ソース解析」（初回） | `再利用=0 新規解析=27 失敗=0` |
+| ログ「Javaファイル数」 | 28 |
+| ログ「ソース解析」（初回） | `再利用=0 新規解析=28 失敗=0` |
 | ログ「型解決できなかった呼び出し」 | 1 件（`UsesLib.fail` の `Unknown.call()`）。警告文が出る |
-| ログ「エントリポイント数」 | 54 |
-| ログ「データフローで具象クラスを特定」 | new から 1 件 / ファクトリの戻り値から 6 件 / 引数から 7 件 / フィールドから 2 件 |
-| `call-hierarchy.csv` の行数 | ヘッダー含め 108 行 |
+| ログ「エントリポイント数」 | 63 |
+| ログ「データフローで具象クラスを特定」 | new から 2 件 / ファクトリの戻り値から 6 件 / 引数から 7 件 / フィールドから 2 件 |
+| ログ「リフレクション（…）の呼び出し先を特定」 | 10 件 |
+| `call-hierarchy.csv` の行数 | ヘッダー含め 123 行 |
 | ファイル先頭 | UTF-8 BOM（`EF BB BF`） |
 | `call-hierarchy.csv` に `<init>` が現れる列 | `caller` 列だけ |
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
 
-以下、各ケースの期待行は `call-hierarchy.csv` に**この文字列のまま**含まれること
-（行順はケース間で問わないが、同一入力の実行間では一致すること）。
+以下、各ケースの期待行は `call-hierarchy.csv` に**この文字列のまま**含まれること。
+起点の並びは 5.4 の順（このフィクスチャでは `Top.go` → `fx.App` のメソッドが宣言順 →
+`fx.Sample` → `fx.Unit` → `fx.UsesLib`）、同じ呼び出しの複数候補の行はFQN順
+（`fx.AbstractDao` → `fx.MemoDao` → `fx.OrderDao`）。同一入力の実行間で行順まで一致すること。
 
 ## 3.3 ケース別の期待値
 
@@ -1218,13 +1411,13 @@ at fx.Factory.delegate(Factory.java:9),fx.Factory.create(),App.viaDelegate,Facto
 
 ### T04 2つの型を返しうるファクトリは絞らない
 ```
+at fx.App.viaEither(App.java:23),fx.AbstractDao.select(),App.viaEither,AbstractDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
 at fx.App.viaEither(App.java:23),fx.MemoDao.select(),App.viaEither,MemoDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
 at fx.App.viaEither(App.java:23),fx.OrderDao.select(),App.viaEither,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
-at fx.App.viaEither(App.java:23),fx.AbstractDao.select(),App.viaEither,AbstractDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
 ```
-検証観点: 候補は `Dao.select()` をオーバーライドしている宣言3件（`AbstractDao` / `OrderDao` /
-`MemoDao`）。`UserDao` は宣言を持たないので候補に**入らない**。候補行の先へは降りない
-（`AbstractDao.log` の行が `App.viaEither` を root に持たない）。
+検証観点: 候補は `Dao.select()` をオーバーライドしている宣言3件（`AbstractDao` / `MemoDao` /
+`OrderDao`、この順＝FQN順）。`UserDao` は宣言を持たないので候補に**入らない**。候補行の先へは
+降りない（`AbstractDao.log` の行が `App.viaEither` を root に持たない）。
 
 ### T05 `Class.forName(文字列).newInstance()` 形式のファクトリ
 ```
@@ -1398,34 +1591,93 @@ at fx.UsesLib.fail(UsesLib.java:12),call,(型解決失敗),call,型解決に失�
 検証観点: 単一型インポートは推定して残す。ワイルドカードインポートは `(型解決失敗)` 行になり、
 ログの件数（1件）と同数出る。
 
-### T24 `methods.csv` の抜粋
+### T24 `methods.csv` の抜粋と行順
 ```
 Shape.area(),fx.Shape,I,src/fx/Shape.java,4,0,0,0,ISOLATED,0,0,
 Dao.select(),fx.Dao,I,src/fx/Dao.java,4,0,0,0,ISOLATED,0,0,
-OrderDao.select(),fx.OrderDao,C,src/fx/OrderDao.java,4,1,17,0,LEAF,1,0,
+OrderDao.select(),fx.OrderDao,C,src/fx/OrderDao.java,4,1,18,0,LEAF,1,0,
 AbstractDao.select(),fx.AbstractDao,A,src/fx/AbstractDao.java,4,1,14,1,NORMAL,1,0,
 Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィールド変数
 App.viaEither(),fx.App,C,src/fx/App.java,22,1,0,2,ENTRY_CANDIDATE,1,1,戻り値（ファクトリメソッド等）
 App.viaLambda(),fx.App,C,src/fx/App.java,140,1,0,3,ENTRY_CANDIDATE,1,1,ラムダ/メソッド参照の実装あり
 App$3.handle(String),fx.App$3,C,src/fx/App.java,147,1,3,1,NORMAL,1,0,
 Unit.<clinit>(),fx.Unit,C,src/fx/Unit.java,3,1,0,3,ENTRY_CANDIDATE,1,0,
+Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 ```
 検証観点: インターフェースの抽象メソッドは `hasBody=0`、入次数は解決後の実装側に付く
-（`OrderDao.select()` の `inDegree=17`）。ログの集計は
-`メソッド=84 起点候補=35 孤立=5 末端=21 未到達=3 未解決の呼び出しを含む=17（コンストラクタ 36 個は出力対象外）`。
+（`OrderDao.select()` の `inDegree=18`）。`Registry.<clinit>()` はリフレクション経由で
+呼ばれているので `NORMAL`（起点候補ではない）。ログの集計は
+`メソッド=94 起点候補=43 孤立=5 末端=21 未到達=3 未解決の呼び出しを含む=18（コンストラクタ 37 個は出力対象外）`。
+
+行順はソースの並び。ヘッダーの次の行から順に
+`Top.In.m()` → `Top.go()` → `AbstractDao.select()` → `AbstractDao.log()` → `App.viaFactory()` → …
+と続き、`fx.App` の内部の匿名クラス（`App$1.run()` 等）はそのファイルの宣言行の位置に並ぶ。
+最後の行は `Bridge.through()`（`src/fx/internal/Bridge.java`）。
 
 ## 3.4 設定を変えた実行
 
 | ケース | 変更 | 期待値 |
 |---|---|---|
-| T25 キャッシュ再利用 | 同じ設定で2回目 | ログ `再利用=27 新規解析=0 失敗=0`。`call-hierarchy.csv` が1回目と**バイト単位で一致** |
-| T26 差分再解析 | `App.java` を touch して3回目 | ログ `再利用=26 新規解析=1`。出力は1回目と一致 |
+| T25 キャッシュ再利用 | 同じ設定で2回目 | ログ `再利用=28 新規解析=0 失敗=0`。`call-hierarchy.csv` が1回目と**バイト単位で一致** |
+| T26 差分再解析 | `App.java` を touch して3回目 | ログ `再利用=27 新規解析=1`。出力は1回目と一致 |
 | T27 深さ制限 | `max.depth=2` | `at fx.App.shared(App.java:70),fx.AbstractDao.select(),App.rootA,App.shared,AbstractDao.select,深さ制限(2)のため打ち切り / 解決:DATAFLOW_PARAM`（前半と後半の注記が ` / ` で連結） |
-| T28 起点指定 | `entry.packages=fx.App#rootA,fx.App#rootB` | ログ `エントリポイント数: 2`。出力は T09 の10行＋T23 の `(型解決失敗)` 行＝ヘッダー含め 11 行 |
+| T28 起点指定 | `entry.packages=fx.App#rootB,fx.App#rootA` | ログ `エントリポイント数: 2`。出力は T09 の10行＋T23 の `(型解決失敗)` 行＝ヘッダー含め 11 行。**`rootA` の行が `rootB` より先**（設定に書いた順ではなくソースの宣言順） |
 | T29 行数上限 | `max.rows=3` | ログ `[WARN] 出力行数の上限(3)に達したため打ち切りました`。階層の行は3行で止まる |
-| T30 データフロー無効 | `dataflow.enabled=false` | T01 が `CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）` の3行に、T09 が `CHA候補3件（未展開）: 引数（メソッド外から渡される）` になる。行数は増える（129行） |
+| T30 データフロー無効 | `dataflow.enabled=false` | T01 が `CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）` の3行に、T09 が `CHA候補3件（未展開）: 引数（メソッド外から渡される）` になる。T33〜T39 のリフレクション行は消え、T40 が `CHA候補3件（未展開）: レシーバ不明` の3行になる。行数は増える（134行） |
 | T31 準拠レベル範囲外 | `source.level=99` | 起動時に `IllegalArgumentException`。指定できる値の一覧を含む |
 | T32 準拠レベルの丸め | `source.level=1.4` | ログ `ソースレベル: 1.8（source.level=1.4 の指定による）` と `※ source.level=1.4 はこのJDTでは扱えないため 1.8 として解析します。`。既存キャッシュを破棄した旨が出る |
+| T41 依存先の変更による再解析 | キャッシュがある状態で `Dao.java` の末尾に空行とコメント行を追加して実行 | ログ `再利用=18 新規解析=10（うち依存先の変更による再解析=9） 失敗=0`（`Dao` を参照する9ファイルが再解析される）。両CSVは変更前と**バイト単位で一致**（CHA候補の行順も変わらない） |
+
+## 3.4a リフレクション
+
+### T33 `Class.forName(リテラル).getMethod(名前, クラスリテラル).invoke(...)`
+```
+at fx.App.viaReflectForName(App.java:214),fx.Repo.save(long),App.viaReflectForName,Repo.save,解決:REFLECTION
+```
+
+### T34 クラスリテラル・`getClass()` から
+```
+at fx.App.viaReflectClassLiteral(App.java:218),fx.Repo.save(String),App.viaReflectClassLiteral,Repo.save,解決:REFLECTION
+at fx.App.viaReflectGetClass(App.java:223),fx.Repo.save(String),App.viaReflectGetClass,Repo.save,解決:REFLECTION
+```
+検証観点: `repo.getClass()` はローカル変数 `repo` の出所（`T:fx.Repo`）から決まる。
+
+### T35 メソッド名と受け手が引数で渡ってくる形（経路依存）
+```
+at fx.App.viaReflectNameArg(App.java:227),"fx.App.invokeByName(Object,String)",App.viaReflectNameArg,App.invokeByName
+at fx.App.invokeByName(App.java:231),fx.Repo.save(long),App.viaReflectNameArg,App.invokeByName,Repo.save,解決:REFLECTION
+```
+検証観点: `invokeByName` 単体では決まらない（`target` も `name` も引数）。`viaReflectNameArg`
+から渡された `new Repo()` と `"save"` を経路で持ち回って解決する。
+
+### T36 引数型が変数のときは名前で照合し、候補を列挙する
+```
+at fx.App.viaReflectUnknownTypes(App.java:236),fx.Repo.save(String),App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
+at fx.App.viaReflectUnknownTypes(App.java:236),fx.Repo.save(long),App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
+at fx.App.viaReflectUnknownTypes(App.java:236),"fx.Repo.save(String,long)",App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
+```
+（`Repo.save` の7オーバーロード全部が候補行になる。`methods.csv` の `App.viaReflectUnknownTypes()`
+は `unresolvedCalls=1, unresolvedCause=戻り値（ファクトリメソッド等）`）
+
+### T37 `Class.forName` によるクラス初期化
+```
+at fx.App.viaReflectInit(App.java:240),fx.Registry.<clinit>(),App.viaReflectInit,Registry.<clinit>,解決:REFLECTION_INIT
+at fx.Registry.<clinit>(Registry.java:5),fx.Helper.ratio(),App.viaReflectInit,Registry.<clinit>,Helper.ratio
+```
+検証観点: `<clinit>` の先へ降りる。`Registry.<clinit>` は入次数1になり起点候補から外れる（T24）。
+
+### T38 `getDeclaredConstructor().newInstance()` で生成した型が以降の呼び出しに使われる
+```
+at fx.App.viaReflectCtor(App.java:244),fx.OrderDao.select(),App.viaReflectCtor,OrderDao.select,解決:DATAFLOW_NEW
+```
+
+### T39 実行時に決まるクラス名は解決しない
+`App.viaReflectRuntime` を root とする行は **0 行**（`invoke` は `java.**` で除外され、解決も
+されないので何も出ない）。
+
+### T40 データフロー無効時のリフレクション
+`dataflow.enabled=false` にすると T33〜T38 の `解決:REFLECTION*` 行と T36 の候補行は消え、
+T38 は `CHA候補3件（未展開）: レシーバ不明` の3行になる（T30）。
 
 ## 3.5 自己解析
 

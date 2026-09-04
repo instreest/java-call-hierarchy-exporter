@@ -52,11 +52,11 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `external.library.folders` | 空 | 自分のコードを呼んでいる側の他チームjar（被参照スキャン用。ファイル／フォルダ、カンマ区切り） | `project.root` |
 | `entry.packages` | 空 | 呼び出し階層の起点。空なら「呼び出し元が無いメソッド」を自動で起点にする（全体モード） | — |
 | `exclude.packages` | 空 | 出力から除外する呼び出し先（書式は `entry.packages` と同じ）。既定の設定例は `java.**,javax.**` | — |
-| `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く | — |
+| `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く。変更されたファイルが宣言する型を参照しているファイルは、自身が変わっていなくても再解析する | — |
 | `cache.folders` | `./.cache` | キャッシュの置き場所 | 設定ファイル |
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
-| `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析を使う | — |
+| `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
 | `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
 | `output.csv` | `./output/call-hierarchy.csv` | 呼び出し階層の出力先 | 設定ファイル |
@@ -109,6 +109,9 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無い |
 | `外部ライブラリ（import推定・未検証）` | 型解決に失敗し、`import` 文の単一型インポートから型名を推定した |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した根拠（5.3参照） |
+| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
+| `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
+| `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 
 さらに、同じファイルに性質の違う2種類の行を追記する。`root` 列で区別できる。
 
@@ -139,6 +142,7 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/.../Orde
 | `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`call-hierarchy.csv` の注記と同じ判定、`;` 区切りで重複排除） |
 
 コンストラクタは出力しない（`call-hierarchy.csv` と扱いを揃える）。
+行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出す。
 用途は「階層を追う前に、穴のあるメソッドとハブになっているメソッドを一覧する」こと。
 
 ## 5. 振る舞いの要点
@@ -155,6 +159,13 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/.../Orde
 解析すればよくなり、(b) 解析結果をヒープに溜めずに済むため。
 差分判定は「最終更新時刻とファイルサイズの両方が一致」。**準拠レベル（`source.level`）が
 変わったらキャッシュ全体を破棄する**（同じソースでも解析結果が変わるため）。
+さらに、更新時刻とサイズが一致するファイルでも、**そのファイルが参照している型を宣言する
+ファイルが変わっていれば解析し直す**（呼び出し先やフィールドの所有型は他ファイルの
+バインディング解決に依存するため。依存は1段で足りる）。
+
+キャッシュには「ASTから分かった事実」（宣言と修飾子、呼び出し箇所、フィールドへの代入、
+値の出所など）だけを入れ、判断（静的束縛か、コンストラクタ注入と言い切れるか、import推定を
+採用するか）は読む側で行う。出力や解決の方針を変えてもキャッシュを作り直さずに済ませるため。
 
 ### 5.2 抽出する呼び出し
 
@@ -170,6 +181,7 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/.../Orde
 
 | 段 | ラベル | 判定 |
 |---|---|---|
+| — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` / `Class.forName` を、出所（クラスリテラル・文字列リテラル・定数・レシーバの連鎖）から実際に動くメソッドへ解決（下記） |
 | 0 | `STATIC_BOUND:{PRIVATE,STATIC,FINAL_METHOD,FINAL_CLASS,CTOR,SUPER}` | private / static / final メソッド、finalクラス、コンストラクタ、super呼び出し。仮想ディスパッチされない |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる（候補数は**サブクラス数ではなく、そのメソッドをオーバーライドしている宣言の数**）。本体を持つ候補が皆無なら `NO_IMPL` |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内でその変数に代入された `new` の型（フロー非依存。複数あれば候補集合） |
@@ -181,6 +193,22 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/.../Orde
 **段0の判定軸は「静的束縛か仮想呼び出しか」**。「宣言型が具象クラスだから確定」は誤り
 （`Base b = new Derived(); b.m();` で走るのは `Derived.m`）。
 
+リフレクションは `Class.forName` / `X.class` / `obj.getClass()` → `getMethod` /
+`getDeclaredMethod` → `Method.invoke`、および `getConstructor` → `newInstance` の連鎖を辿る。
+
+| 書き方 | 解決 |
+|---|---|
+| `Class.forName("a.B").getMethod("run", long.class).invoke(obj, 1L)` | `a.B.run(long)` |
+| `B.class.getMethod("run")`、`obj.getClass().getMethod("run")`（obj の具象型が分かるとき） | `B.run()` |
+| クラス名・メソッド名が `static final` 定数、または呼び出し元からリテラルで渡された引数 | 同上（経路ごとに解決） |
+| `getMethod("run", types)` のように引数型が変数 | 同名のメソッドを候補として列挙（未展開） |
+| `Class.forName("a.B")` | `a.B` の static 初期化子（あれば） |
+| `Class.forName("a.B").getDeclaredConstructor().newInstance()` | `a.B` のコンストラクタ。生成された型は以降の呼び出しでも使われる |
+
+解決できないもの（設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
+フィールドや別メソッドの引数で受け渡す形）は `Method.invoke` のまま「ソースなし」扱いに
+なる（既定の `exclude.packages=java.**` では行にならない）。
+
 拡張ポイント（設定キー `resolver.hint.collectors` / `resolver.candidate.providers` に
 FQNを書くとリフレクションで読み込む）:
 - `CallSiteHintCollector`: AST走査中に呼び出し箇所の証拠（例: `DaoFactory.get("USER_DAO")` の文字列）を拾う
@@ -190,7 +218,8 @@ FQNを書くとリフレクションで読み込む）:
 
 - 起点: `entry.packages` に一致し、ソース上に宣言のあるメソッド。未指定なら
   **解決後の入次数が0**でソースに本体があるメソッド全部（全体モード）。
-  起点順・行順は実行のたびに変わらないよう決定的にする
+  起点の並びはどちらも「ソースフォルダの指定順 → 型FQN順 → 宣言行順」（ソースの記載順）。
+  同じ呼び出しの複数候補はFQN順。行順は実行のたびに変わらないよう決定的にする
 - **循環検出は経路単位**（rootから現ノードまでの祖先に同じメソッドがあれば `[CYCLE]` を
   1行出して降りない）。グローバルな訪問済み集合は持たない。別経路で同じ呼び出しが
   現れたらそちらでも出す（ダイヤモンド依存を潰さない）
