@@ -169,6 +169,9 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
+| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した（[リフレクション](#リフレクション)参照） |
+| `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
+| `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
@@ -239,3 +242,21 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `CHA` | 候補が複数のまま（低確度） |
+
+### リフレクション
+
+`Class.forName` / `X.class` / `obj.getClass()` → `getMethod` / `getDeclaredMethod` → `Method.invoke`、
+および `getConstructor` → `newInstance` の連鎖を、キャッシュに記録した出所（レシーバの連鎖と
+実引数のリテラル）から辿り、実際に動くメソッドへ解決します。
+
+| 書き方 | 解決 |
+|---|---|
+| `Class.forName("a.B").getMethod("run", long.class).invoke(obj, 1L)` | `a.B.run(long)` |
+| `B.class.getMethod("run")`、`obj.getClass().getMethod("run")`（obj の具象型が分かるとき） | `B.run()` |
+| クラス名・メソッド名が `static final` 定数、または呼び出し元からリテラルで渡された引数 | 同上（経路ごとに解決） |
+| `getMethod("run", types)` のように引数型が変数 | 同名のメソッドを候補として列挙（未展開） |
+| `Class.forName("a.B")` | `a.B` の static 初期化子（あれば） |
+| `Class.forName("a.B").getDeclaredConstructor().newInstance()` | `a.B` のコンストラクタ。生成された型は以降の呼び出しでも使われる |
+
+解決できないもの: 設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
+フィールドや別メソッドの引数で受け渡す形。これらは `Method.invoke` のまま「ソースなし」の行になります。

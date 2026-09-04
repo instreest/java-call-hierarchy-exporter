@@ -83,6 +83,7 @@ import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.w3c.dom.Document;
@@ -297,6 +298,10 @@ public class CallHierarchyExporter {
                         + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
                         + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
                         + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
+            }
+            if (walker.reflectionHits() > 0) {
+                log("リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の"
+                        + "呼び出し先を特定: " + walker.reflectionHits() + " 件");
             }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
@@ -1039,7 +1044,9 @@ public class CallHierarchyExporter {
      *      recvKind: レシーバの構文上の由来（RecvKind参照）
      *      recvOrigin: レシーバの出所（Origin参照）。データフローで具象型を追うのに使う
      *      argOrigins: 実引数の出所。"0=T:jp.co.X;2=A:1" のように 位置=出所 を;で並べる。
-     *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
+     *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）。
+     *                  メソッド呼び出しの出所（M:）は、実引数の数 n= とレシーバの出所 r= も持つ
+     *                  （Origin のコメント参照。リフレクションの連鎖を読み手が辿るため）
      *      lambda: 呼び出し箇所を囲むラムダ式の深さ（0=ラムダの外）。
      *              現在の読み手はラムダ内の呼び出しも囲みメソッドに計上する（値は使わない）が、
      *              計上先の方針を変えるときに再解析せずに済むよう事実として残す
@@ -1079,10 +1086,12 @@ public class CallHierarchyExporter {
      *
      * ■ 事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）
      *
-     *   - 実引数の出所は入れ子にしない（1段のみ）
+     *   - 実引数の出所は入れ子にしない（1段のみ）。レシーバの出所は3段まで入れ子にする
+     *     （Origin.MAX_RECEIVER_DEPTH。invoke ← getMethod ← forName / getClass の連鎖のため）
      *   - 外側スコープの変数の出所は、final または実質 final のときだけ持ち込む
      *   - ローカル変数の出所の先読みは1回（後方で宣言された変数への別名付けは U）
-     *   - 文字列リテラルの出所は完全修飾クラス名の形をしたものだけ
+     *   - 文字列リテラルの出所は、完全修飾クラス名の形か識別子の形（64文字以内）のものだけ
+     *     （クラス名とメソッド名を追うため。ログ文言やSQLは残さない）
      *   - プリミティブ・配列・String を返す return は記録しない
      *   - フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
      *     （インスタンス初期化ブロックと内部クラスからの代入は拾わない）
@@ -1154,6 +1163,8 @@ public class CallHierarchyExporter {
         static final char LITERAL = 'L';
         /** Class.forName(引数) で名前指定された型。値は0始まりの引数位置 */
         static final char REFLECT = 'C';
+        /** クラスオブジェクト（X.class）。値は型のFQN（配列は "[]" 付き、プリミティブはそのまま） */
+        static final char CLASS = 'K';
         /** 追跡できない。「分からない」を明示的に持つのが重要（後述） */
         static final char UNKNOWN = 'U';
 
@@ -1164,6 +1175,7 @@ public class CallHierarchyExporter {
          *
          *   T:jp.co.Service|0=T:jp.co.UserDaoImpl
          *   M:jp.co.Factory#create(java.lang.String)|0=L:jp.co.UserDaoImpl
+         *   M:java.lang.Class#getMethod(java.lang.String,java.lang.Class[])|n=2;0=L:run;1=K:long;r=K:jp.co.X
          *
          * new やメソッド呼び出しの出所には、その呼び出しの実引数の出所も付ける。
          * コンストラクタ注入されたフィールドや、クラス名の文字列を受け取る
@@ -1173,10 +1185,20 @@ public class CallHierarchyExporter {
          * 含んでいて、括弧だと対応の判定が必要になるから。'|' はFQNにも
          * メソッドキーにも現れない。
          *
-         * 引数の出所は入れ子にしない（付いていたら剥がす）。段数を増やすほど
+         * リストの要素は "位置=出所" のほか、次の2つ:
+         *   n=実引数の数   … 出所が分からず省いた引数と、引数が無いことを区別するため
+         *   r=レシーバの出所 … メソッド呼び出しの受け手。invoke ← getMethod ← forName のような
+         *                     連鎖を読み手が辿るため、MAX_RECEIVER_DEPTH 段まで入れ子にする。
+         *                     入れ子の出所が自身の実引数リストを持つ場合は {} で囲む
+         *
+         * 実引数の出所は入れ子にしない（付いていたら剥がす）。段数を増やすほど
          * 「どの推測が結論に効いたか」が追えなくなるうえ、文字列も長くなる。
          */
         static final char ARGS = '|';
+        static final String RECEIVER = "r";
+        static final String ARG_COUNT = "n";
+        /** レシーバの出所を何段まで入れ子にするか（invoke ← getMethod ← forName/getClass で3段） */
+        static final int MAX_RECEIVER_DEPTH = 3;
 
         private Origin() {
         }
@@ -1189,25 +1211,43 @@ public class CallHierarchyExporter {
             return isUnknown(origin) ? UNKNOWN : origin.charAt(0);
         }
 
+        /** 入れ子の境界（{...}）の外側で最初に現れる文字の位置。無ければ -1 */
+        private static int indexAtTop(String s, char ch, int from) {
+            int depth = 0;
+            for (int i = from; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    if (depth > 0) {
+                        depth--;
+                    }
+                } else if (c == ch && depth == 0) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         /** "T:jp.co.X|0=..." の "jp.co.X" の部分（実引数リストは含まない） */
         static String valueOf(String origin) {
             int i = (origin == null) ? -1 : origin.indexOf(':');
             if (i < 0) {
                 return "";
             }
-            int bar = origin.indexOf(ARGS, i);
+            int bar = indexAtTop(origin, ARGS, i);
             return (bar < 0) ? origin.substring(i + 1) : origin.substring(i + 1, bar);
         }
 
         /** "T:jp.co.X|0=..." の "0=..." の部分。無ければ null */
         static String argsOf(String origin) {
-            int bar = (origin == null) ? -1 : origin.indexOf(ARGS);
+            int bar = (origin == null) ? -1 : indexAtTop(origin, ARGS, 0);
             return (bar < 0) ? null : origin.substring(bar + 1);
         }
 
         /** 実引数リストを落とした形。引数の出所を入れ子にしないために使う */
         static String head(String origin) {
-            int bar = (origin == null) ? -1 : origin.indexOf(ARGS);
+            int bar = (origin == null) ? -1 : indexAtTop(origin, ARGS, 0);
             return (bar < 0) ? origin : origin.substring(0, bar);
         }
 
@@ -1220,16 +1260,58 @@ public class CallHierarchyExporter {
                     ? of(kind, value) : (kind + ":" + value + ARGS + args);
         }
 
+        /** リストの要素として入れ子にする形。自身が実引数リストを持つなら {} で囲む */
+        static String nest(String origin) {
+            return (origin.indexOf(ARGS) < 0) ? origin : "{" + origin + "}";
+        }
+
         /** "0=T:jp.co.X;2=A:1" から指定位置の出所を取り出す。無ければ null */
         static String argAt(String args, int index) {
+            return entryAt(args, String.valueOf(index));
+        }
+
+        /** メソッド呼び出しの出所から、そのレシーバの出所（r=...）。無ければ null */
+        static String receiverOf(String origin) {
+            return entryAt(argsOf(origin), RECEIVER);
+        }
+
+        /** メソッド呼び出しの出所から、実引数の数（n=...）。無ければ -1 */
+        static int argCountOf(String origin) {
+            String n = entryAt(argsOf(origin), ARG_COUNT);
+            if (n == null) {
+                return -1;
+            }
+            try {
+                return Integer.parseInt(n);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
+        /** 実引数リストからキー（位置・r・n）の値を取り出す。{} で囲まれていれば外す。無ければ null */
+        static String entryAt(String args, String key) {
             if (args == null || args.isEmpty()) {
                 return null;
             }
-            String prefix = index + "=";
-            for (String entry : args.split(";")) {
-                if (entry.startsWith(prefix)) {
-                    return entry.substring(prefix.length());
+            String prefix = key + "=";
+            int start = 0;
+            while (start <= args.length()) {
+                int end = indexAtTop(args, ';', start);
+                if (end < 0) {
+                    end = args.length();
                 }
+                String entry = args.substring(start, end);
+                if (entry.startsWith(prefix)) {
+                    String v = entry.substring(prefix.length());
+                    if (v.length() >= 2 && v.charAt(0) == '{' && v.charAt(v.length() - 1) == '}') {
+                        v = v.substring(1, v.length() - 1);
+                    }
+                    return v;
+                }
+                if (end >= args.length()) {
+                    break;
+                }
+                start = end + 1;
             }
             return null;
         }
@@ -1242,7 +1324,7 @@ public class CallHierarchyExporter {
          * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
          * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
          */
-        static final String VERSION = "jche-cache-v8";
+        static final String VERSION = "jche-cache-v9";
 
         /**
          * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
@@ -2242,6 +2324,11 @@ public class CallHierarchyExporter {
              * A（引数）は呼び出し元、M（戻り値）はその宣言のreturnを見て初めて決まる。
              */
             private String originOf(Expression ex) {
+                return originOf(ex, 0);
+            }
+
+            /** @param depth レシーバの入れ子の深さ（{@link Origin#MAX_RECEIVER_DEPTH} で打ち切る） */
+            private String originOf(Expression ex, int depth) {
                 Expression e = unwrap(ex);
                 if (e == null) {
                     return null;
@@ -2260,13 +2347,32 @@ public class CallHierarchyExporter {
                         return reflected;
                     }
                     String[] r = toRef(mi.resolveMethodBinding());
-                    // 実引数も付ける。クラス名の文字列を受け取るファクトリを追うのに要る
-                    return (r == null) ? null
-                            : Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")",
-                                    argOriginsOf(mi.arguments()));
+                    if (r == null) {
+                        return null;
+                    }
+                    // 実引数も付ける。クラス名の文字列を受け取るファクトリを追うのに要る。
+                    // 実引数の数も付ける（出所が分からず省いた引数と、引数が無いことを区別するため）
+                    String args = argOriginsOf(mi.arguments());
+                    String count = Origin.ARG_COUNT + "=" + mi.arguments().size();
+                    args = args.isEmpty() ? count : args + ";" + count;
+                    // レシーバの出所も、上限の段数まで入れ子で付ける。
+                    // clazz.getMethod("run").invoke(obj) のような連鎖を読み手が辿るのに要る
+                    if (depth < Origin.MAX_RECEIVER_DEPTH && mi.getExpression() != null) {
+                        String recv = originOf(mi.getExpression(), depth + 1);
+                        if (recv != null) {
+                            args = args + ";" + Origin.RECEIVER + "=" + Origin.nest(recv);
+                        }
+                    }
+                    return Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")", args);
                 }
                 if (e instanceof StringLiteral) {
                     return classNameLiteral(((StringLiteral) e).getLiteralValue());
+                }
+                if (e instanceof TypeLiteral) {
+                    // X.class。リフレクションでクラスを指定する形
+                    ITypeBinding tb = ((TypeLiteral) e).getType().resolveBinding();
+                    String n = (tb == null) ? "" : declTypeName(tb);
+                    return n.isEmpty() ? null : Origin.of(Origin.CLASS, n);
                 }
                 if (e instanceof SimpleName || e instanceof QualifiedName) {
                     IBinding b = (e instanceof SimpleName)
@@ -2376,16 +2482,29 @@ public class CallHierarchyExporter {
             }
 
             /**
-             * 文字列リテラルのうち、完全修飾クラス名の形をしたものだけ出所にする。
+             * 文字列リテラルのうち、完全修飾クラス名の形か識別子の形をしたものだけ出所にする。
              *
              * ログの文言やSQLまで記録すると、キャッシュが文字列で埋まる割に
-             * 何の役にも立たない。「ドットを含み、各要素が識別子で、最後の要素が
-             * 英大文字で始まる」を条件にする。誤って拾っても、解決時に
-             * その型がプロジェクトに無ければ使われないだけで害はない。
+             * 何の役にも立たない。クラス名は「ドットを含み、各要素が識別子で、最後の要素が
+             * 英大文字で始まる」、メソッド名・フィールド名は「識別子1つ（64文字以内）」を
+             * 条件にする。誤って拾っても、解決時にその名前がプロジェクトに無ければ
+             * 使われないだけで害はない。
              */
             private String classNameLiteral(String value) {
-                if (value == null || value.isEmpty() || value.indexOf('.') < 0) {
+                if (value == null || value.isEmpty() || value.length() > 64) {
                     return null;
+                }
+                if (value.indexOf('.') < 0) {
+                    // 識別子の形。getMethod("run") のようにメソッド名として渡されるもの
+                    if (!Character.isJavaIdentifierStart(value.charAt(0))) {
+                        return null;
+                    }
+                    for (int i = 1; i < value.length(); i++) {
+                        if (!Character.isJavaIdentifierPart(value.charAt(i))) {
+                            return null;
+                        }
+                    }
+                    return Origin.of(Origin.LITERAL, value);
                 }
                 int last = 0;
                 for (int i = 0; i <= value.length(); i++) {
@@ -3750,6 +3869,11 @@ public class CallHierarchyExporter {
             return hasBody.get(id).booleanValue();
         }
 
+        /** キー全体（typeFqn#methodName(paramSig)） */
+        String key(int id) {
+            return keys.get(id);
+        }
+
         /** キーのうち "#" 以降（methodName(paramSig)）。同名同引数の照合に使う */
         String signature(int id) {
             String k = keys.get(id);
@@ -4659,7 +4783,9 @@ public class CallHierarchyExporter {
             if (kind == Origin.PARAM && ctx != null && ctx.paramTypes != null) {
                 int idx = parseIndex(Origin.valueOf(origin));
                 if (idx >= 0 && idx < ctx.paramTypes.length) {
-                    return ctx.paramTypes[idx];
+                    // 型ではなく値（L:/K:）が入っている引数は、具象型としては不明
+                    String t = ctx.paramTypes[idx];
+                    return (t != null && t.indexOf(':') < 0) ? t : null;
                 }
                 return null;
             }
@@ -4742,6 +4868,7 @@ public class CallHierarchyExporter {
             for (int caller = 0; caller < flags.length; caller++) {
                 for (int e = edgeStart(caller); e < edgeEnd(caller); e++) {
                     if (Origin.kindOf(recvOrigin(e)) == Origin.PARAM
+                            || mentionsParam(recvOrigin(e))   // 入れ子のレシーバ・実引数（リフレクション）
                             || mentionsParam(argOrigins(e))) {
                         flags[caller] = true;
                         break;
@@ -4781,6 +4908,362 @@ public class CallHierarchyExporter {
         }
 
         // ================================================================
+        // リフレクション（読み手の判断）
+        //
+        // Class.forName / X.class / obj.getClass() → getMethod / getDeclaredMethod →
+        // Method.invoke、および getConstructor → Constructor.newInstance / Class.newInstance
+        // の連鎖を、C行の出所（レシーバの入れ子と実引数のリテラル）から辿り、
+        // 実際に動くメソッドへ解決する。
+        //
+        // 追える範囲（キャッシュの収集範囲に依存する）:
+        //   ・クラス名・メソッド名が文字列リテラルかコンパイル時定数、または
+        //     囲みメソッドの引数（経路上の呼び出し元でリテラルが渡っている）のとき
+        //   ・クラスが X.class、Class.forName(リテラル)、obj.getClass()（obj の具象型が分かる）のとき
+        //   ・Method / Class オブジェクトが同じメソッド内のローカル変数を経由するとき
+        // 追えないもの: 設定ファイル・DB・アノテーションから来る名前、
+        //   Method / Class オブジェクトをフィールドや別メソッドの引数で受け渡す形
+        //   （実引数・フィールド代入の出所は入れ子を持たないため）
+        // ================================================================
+
+        static final int REFLECT_NONE = 0;
+        static final int REFLECT_INVOKE = 1;
+        static final int REFLECT_FOR_NAME = 2;
+        static final int REFLECT_CLASS_NEW_INSTANCE = 3;
+        static final int REFLECT_CTOR_NEW_INSTANCE = 4;
+
+        private static final String CLASS_FOR_NAME_PREFIX = "java.lang.Class#forName(";
+        private static final String CLASS_GET_METHOD =
+                "java.lang.Class#getMethod(java.lang.String,java.lang.Class[])";
+        private static final String CLASS_GET_DECLARED_METHOD =
+                "java.lang.Class#getDeclaredMethod(java.lang.String,java.lang.Class[])";
+        private static final String CLASS_GET_CTOR = "java.lang.Class#getConstructor(java.lang.Class[])";
+        private static final String CLASS_GET_DECLARED_CTOR =
+                "java.lang.Class#getDeclaredConstructor(java.lang.Class[])";
+        private static final String OBJECT_GET_CLASS = "java.lang.Object#getClass()";
+
+        /** メソッドIDごとのリフレクションAPIの種別。初回に一度だけ全メソッドを見て作る */
+        private byte[] reflectKinds;
+        /** "typeFqn#name" -> 本体を持つメソッドID。引数型が分からないときの名前照合用。必要になったら作る */
+        private HashMap<String, IntArray> methodsByName;
+
+        int reflectiveKindOf(int methodId) {
+            if (reflectKinds == null) {
+                reflectKinds = new byte[methods.size()];
+                for (int id = 0; id < reflectKinds.length; id++) {
+                    String key = methods.key(id);
+                    if ("java.lang.reflect.Method#invoke(java.lang.Object,java.lang.Object[])".equals(key)) {
+                        reflectKinds[id] = REFLECT_INVOKE;
+                    } else if (key.startsWith(CLASS_FOR_NAME_PREFIX)) {
+                        reflectKinds[id] = REFLECT_FOR_NAME;
+                    } else if ("java.lang.Class#newInstance()".equals(key)) {
+                        reflectKinds[id] = REFLECT_CLASS_NEW_INSTANCE;
+                    } else if ("java.lang.reflect.Constructor#newInstance(java.lang.Object[])".equals(key)) {
+                        reflectKinds[id] = REFLECT_CTOR_NEW_INSTANCE;
+                    }
+                }
+            }
+            return (methodId >= 0 && methodId < reflectKinds.length) ? reflectKinds[methodId] : REFLECT_NONE;
+        }
+
+        /**
+         * リフレクション呼び出しを、実際に動くメソッドへ解決する。
+         *
+         * @param ctx 経路から確定した引数の値（無ければ null。その場合はリテラルだけで決める）
+         * @return 解決できなければ null
+         */
+        Resolution reflectiveResolution(int edgeIndex, DataflowContext ctx) {
+            if (!dataflowEnabled) {
+                return null;
+            }
+            int calleeId = calleeIds[edgeIndex];
+            switch (reflectiveKindOf(calleeId)) {
+                case REFLECT_INVOKE: {
+                    int[] targets = invokeTargets(recvOrigin(edgeIndex), argOrigins(edgeIndex), ctx);
+                    return (targets == null) ? null : new Resolution(targets, "REFLECTION");
+                }
+                case REFLECT_FOR_NAME: {
+                    // Class.forName("a.B") はクラスを初期化する。static初期化子があればそこへ
+                    String fqn = classNameOf(Origin.argAt(argOrigins(edgeIndex), 0), ctx);
+                    int init = (fqn == null) ? -1 : methods.idOf(fqn + "#<clinit>()");
+                    return (init < 0) ? null : new Resolution(new int[]{init}, "REFLECTION_INIT");
+                }
+                case REFLECT_CLASS_NEW_INSTANCE: {
+                    String fqn = classOf(recvOrigin(edgeIndex), ctx, 0);
+                    int ctor = (fqn == null) ? -1 : methods.idOf(fqn + "#<init>()");
+                    return (ctor < 0) ? null : new Resolution(new int[]{ctor}, "REFLECTION");
+                }
+                case REFLECT_CTOR_NEW_INSTANCE: {
+                    String recv = recvOrigin(edgeIndex);
+                    if (Origin.kindOf(recv) != Origin.RETURN) {
+                        return null;
+                    }
+                    String v = Origin.valueOf(recv);
+                    if (!CLASS_GET_CTOR.equals(v) && !CLASS_GET_DECLARED_CTOR.equals(v)) {
+                        return null;
+                    }
+                    String fqn = classOf(Origin.receiverOf(recv), ctx, 0);
+                    String params = paramTypesOf(recv, 0, ctx);
+                    if (fqn == null || params == null) {
+                        return null;
+                    }
+                    int ctor = methods.idOf(fqn + "#<init>(" + params + ")");
+                    return (ctor < 0) ? null : new Resolution(new int[]{ctor}, "REFLECTION");
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /**
+         * Method.invoke(obj, args) の呼び出し先。
+         *
+         * レシーバ（Method）が getMethod / getDeclaredMethod の戻り値で、その受け手のクラスと
+         * 第1引数（メソッド名）が分かれば決まる。引数型（第2引数以降のクラスリテラル）が
+         * 揃っていればシグネチャで1件に、揃わなければ名前が一致する本体付きメソッドを候補にする。
+         * invoke の第1引数（実際のレシーバ）の具象型が分かれば、その型の実装を優先する。
+         */
+        private int[] invokeTargets(String recv, String invokeArgs, DataflowContext ctx) {
+            if (Origin.kindOf(recv) != Origin.RETURN) {
+                return null;
+            }
+            String v = Origin.valueOf(recv);
+            if (!CLASS_GET_METHOD.equals(v) && !CLASS_GET_DECLARED_METHOD.equals(v)) {
+                return null;
+            }
+            String name = literalOf(Origin.argAt(Origin.argsOf(recv), 0), ctx, 0);
+            String owner = classOf(Origin.receiverOf(recv), ctx, 0);
+            if (name == null || owner == null) {
+                return null;
+            }
+            String recvType = concreteTypeOf(Origin.argAt(invokeArgs, 0), ctx);
+            String lookup = (recvType != null && isSubtypeOf(recvType, owner)) ? recvType : owner;
+
+            String params = paramTypesOf(recv, 1, ctx);
+            if (params != null) {
+                int id = implementationIn(lookup, name + "(" + params + ")");
+                if (id < 0 && !lookup.equals(owner)) {
+                    id = implementationIn(owner, name + "(" + params + ")");
+                }
+                return (id < 0) ? null : new int[]{id};
+            }
+            IntArray ids = methodsNamed(lookup, name);
+            if (ids.size() == 0 && !lookup.equals(owner)) {
+                ids = methodsNamed(owner, name);
+            }
+            return (ids.size() == 0) ? null : Arrays.copyOf(ids.a, ids.size());
+        }
+
+        /**
+         * getMethod / getConstructor の引数のクラスリテラルから、引数型のカンマ区切りを作る。
+         * 引数の数は n= で分かるので、出所の無い引数（変数など）があれば「不明」として null を返す
+         */
+        private String paramTypesOf(String origin, int from, DataflowContext ctx) {
+            int count = Origin.argCountOf(origin);
+            if (count < 0) {
+                return null;
+            }
+            String args = Origin.argsOf(origin);
+            StringBuilder sb = new StringBuilder();
+            for (int i = from; i < count; i++) {
+                String t = classOf(Origin.argAt(args, i), ctx, 0);
+                if (t == null) {
+                    return null;
+                }
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(t);
+            }
+            return sb.toString();
+        }
+
+        /** 出所が表すクラス（Class オブジェクト）のFQN。分からなければ null */
+        String classOf(String origin, DataflowContext ctx, int depth) {
+            if (origin == null || depth > dataflowMaxDepth) {
+                return null;
+            }
+            switch (Origin.kindOf(origin)) {
+                case Origin.CLASS:
+                    return Origin.valueOf(origin);
+                case Origin.LITERAL:
+                    return classNameOf(origin, ctx);
+                case Origin.PARAM: {
+                    String v = paramValueOf(origin, ctx);
+                    return (v == null) ? null : classOf(v, null, depth + 1);
+                }
+                case Origin.RETURN: {
+                    String v = Origin.valueOf(origin);
+                    if (v.startsWith(CLASS_FOR_NAME_PREFIX)) {
+                        return classNameOf(Origin.argAt(Origin.argsOf(origin), 0), ctx);
+                    }
+                    if (OBJECT_GET_CLASS.equals(v)) {
+                        return concreteTypeOf(Origin.receiverOf(origin), ctx);
+                    }
+                    // ソース上のメソッドが Class を返す形。全ての return が同じクラスなら決まる
+                    int m = methods.idOf(v);
+                    if (m < 0 || returnOrigins == null || m >= returnOrigins.length
+                            || returnOrigins[m] == null) {
+                        return null;
+                    }
+                    String found = null;
+                    for (String o : returnOrigins[m]) {
+                        String c = classOf(o, null, depth + 1);
+                        if (c == null || (found != null && !found.equals(c))) {
+                            return null;
+                        }
+                        found = c;
+                    }
+                    return found;
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /** クラス名の文字列（リテラル・定数・経路上の引数）が解析対象の型を指していればそのFQN */
+        private String classNameOf(String origin, DataflowContext ctx) {
+            String name = literalOf(origin, ctx, 0);
+            // 解析対象に存在しない型名は使わない（文字列の見た目だけで決めない）
+            return (name != null && typeKind.containsKey(name)) ? name : null;
+        }
+
+        /** 出所が表す文字列の値（リテラル・定数・経路上の引数）。分からなければ null */
+        private String literalOf(String origin, DataflowContext ctx, int depth) {
+            if (origin == null || depth > dataflowMaxDepth) {
+                return null;
+            }
+            switch (Origin.kindOf(origin)) {
+                case Origin.LITERAL:
+                    return Origin.valueOf(origin);
+                case Origin.PARAM: {
+                    String v = paramValueOf(origin, ctx);
+                    return (v == null) ? null : literalOf(v, null, depth + 1);
+                }
+                case Origin.RETURN: {
+                    int m = methods.idOf(Origin.valueOf(origin));
+                    if (m < 0 || returnOrigins == null || m >= returnOrigins.length
+                            || returnOrigins[m] == null) {
+                        return null;
+                    }
+                    String found = null;
+                    for (String o : returnOrigins[m]) {
+                        String s = literalOf(o, null, depth + 1);
+                        if (s == null || (found != null && !found.equals(s))) {
+                            return null;
+                        }
+                        found = s;
+                    }
+                    return found;
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /**
+         * 経路上で分かっている引数の「値」（L:文字列 / K:クラス）。
+         * DataflowContext.paramTypes には具象型（FQN）のほか、型ではなく値が渡っている引数には
+         * その出所（':' を含む）が入っている（StreamingTreeWalker.resolveArgs 参照）
+         */
+        private static String paramValueOf(String paramOrigin, DataflowContext ctx) {
+            if (ctx == null || ctx.paramTypes == null) {
+                return null;
+            }
+            int idx = parseIndex(Origin.valueOf(paramOrigin));
+            if (idx < 0 || idx >= ctx.paramTypes.length) {
+                return null;
+            }
+            String v = ctx.paramTypes[idx];
+            return (v != null && v.indexOf(':') >= 0) ? v : null;
+        }
+
+        /** 経路の引数環境に入れる「値」。具象型が決まらない引数でも、リテラルやクラスなら値として渡す */
+        String valueOriginOf(String origin, DataflowContext ctx) {
+            switch (Origin.kindOf(origin)) {
+                case Origin.LITERAL:
+                case Origin.CLASS:
+                    return Origin.head(origin);
+                case Origin.PARAM:
+                    return paramValueOf(origin, ctx);
+                case Origin.RETURN: {
+                    String c = classOf(origin, ctx, 0);
+                    if (c != null) {
+                        return Origin.of(Origin.CLASS, c);
+                    }
+                    String s = literalOf(origin, ctx, 0);
+                    return (s == null) ? null : Origin.of(Origin.LITERAL, s);
+                }
+                default:
+                    return null;
+            }
+        }
+
+        private boolean isSubtypeOf(String type, String ancestor) {
+            if (type.equals(ancestor)) {
+                return true;
+            }
+            ArrayDeque<String> queue = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            queue.add(type);
+            seen.add(type);
+            while (!queue.isEmpty()) {
+                List<String> sups = directSupertypes.get(queue.poll());
+                if (sups == null) {
+                    continue;
+                }
+                for (String s : sups) {
+                    if (s.equals(ancestor)) {
+                        return true;
+                    }
+                    if (seen.add(s)) {
+                        queue.add(s);
+                    }
+                }
+            }
+            return false;
+        }
+
+        /** 型（と親型）の中で、その名前を持つ本体付きメソッド。最初に見つかった型のものだけ */
+        private IntArray methodsNamed(String typeFqn, String name) {
+            if (methodsByName == null) {
+                methodsByName = new HashMap<>();
+                for (int id = 0; id < methods.size(); id++) {
+                    if (!methods.hasBody(id) || methods.declFile(id) == null) {
+                        continue;
+                    }
+                    String k = methods.typeFqn(id) + "#" + methods.methodName(id);
+                    IntArray ids = methodsByName.get(k);
+                    if (ids == null) {
+                        ids = new IntArray(2);
+                        methodsByName.put(k, ids);
+                    }
+                    ids.add(id);
+                }
+            }
+            ArrayDeque<String> queue = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            queue.add(typeFqn);
+            seen.add(typeFqn);
+            while (!queue.isEmpty()) {
+                String t = queue.poll();
+                IntArray ids = methodsByName.get(t + "#" + name);
+                if (ids != null && ids.size() > 0) {
+                    return ids;
+                }
+                List<String> sups = directSupertypes.get(t);
+                if (sups == null) {
+                    continue;
+                }
+                for (String s : sups) {
+                    if (seen.add(s)) {
+                        queue.add(s);
+                    }
+                }
+            }
+            return new IntArray(1);
+        }
+
+        // ================================================================
         // 解決パイプライン
         // ================================================================
 
@@ -4797,6 +5280,17 @@ public class CallHierarchyExporter {
          */
         Resolution resolveEdge(int edgeIndex, char bindKind) {
             int calleeId = calleeIds[edgeIndex];
+
+            // --- リフレクション（Method.invoke / Class.forName / newInstance） ---
+            // 呼び出し先はjar内のAPIなので静的束縛に見えるが、実際に動くのは名前で指定された
+            // メソッド。出所（リテラル・クラスリテラル・レシーバの連鎖）から決める。
+            // 経路上の引数に依存する分は StreamingTreeWalker 側でもう一度試す
+            if (reflectiveKindOf(calleeId) != REFLECT_NONE) {
+                Resolution reflective = reflectiveResolution(edgeIndex, null);
+                if (reflective != null) {
+                    return reflective;
+                }
+            }
 
             // --- importからの推定（未検証の外部ライブラリ呼び出し） ---
             // 型階層情報を一切持たない合成メソッドのため、CHA拡張の対象にはしない
@@ -5962,6 +6456,7 @@ public class CallHierarchyExporter {
         /** データフローで具象クラスを特定した件数（ログ用） */
         private long paramHits;
         private long factoryHits;
+        private long reflectionHits;
         private long fieldHits;
         private long newHits;
 
@@ -5989,6 +6484,10 @@ public class CallHierarchyExporter {
 
         long factoryHits() {
             return factoryHits;
+        }
+
+        long reflectionHits() {
+            return reflectionHits;
         }
 
         long fieldHits() {
@@ -6049,6 +6548,19 @@ public class CallHierarchyExporter {
                     }
                 } else if (res.label.startsWith("DATAFLOW_")) {
                     countDataflow(res.label);
+                }
+                // リフレクション: クラス名・メソッド名が引数で渡ってくる形は、
+                // この経路で分かっている引数の値を使ってもう一度試す
+                if (graph.reflectiveKindOf(declaredCallee) != CallGraph.REFLECT_NONE) {
+                    if (!res.label.startsWith("REFLECTION")) {
+                        CallGraph.Resolution viaPath = graph.reflectiveResolution(e, contextAt(depth));
+                        if (viaPath != null) {
+                            res = viaPath;
+                        }
+                    }
+                    if (res.label.startsWith("REFLECTION")) {
+                        reflectionHits++;
+                    }
                 }
 
                 // CHAで候補が複数になった呼び出しは、候補を1件ずつ行にして見せるが、
@@ -6166,6 +6678,11 @@ public class CallHierarchyExporter {
                 }
                 String fqn = graph.concreteTypeOf(entry.substring(eq + 1), ctx);
                 if (fqn == null) {
+                    // 具象型は決まらないが、リテラルやクラスリテラルなら「値」として渡す
+                    // （リフレクションのメソッド名・クラスが引数で渡ってくる形のため）
+                    fqn = graph.valueOriginOf(entry.substring(eq + 1), ctx);
+                }
+                if (fqn == null) {
                     continue;
                 }
                 if (bound == null) {
@@ -6265,7 +6782,14 @@ public class CallHierarchyExporter {
             } else if (depth + 1 >= maxDepth) {
                 sb.append("深さ制限(").append(maxDepth).append(")のため打ち切り");
             }
-            if (res.targets.length > 1) {
+            if (res.targets.length > 1 && "REFLECTION".equals(res.label)) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
+                sb.append("リフレクション候補").append(res.targets.length)
+                        .append("件（未展開）: 引数型が不明なため名前で照合");
+            } else if (res.targets.length > 1) {
                 if (sb.length() > 0) {
                     sb.append(" / ");
                 }
