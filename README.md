@@ -4,6 +4,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
+- ソースの構成 … [ソースの構成](#ソースの構成)（`src/CallHierarchyExporter.java` がエントリ、本体は `src/jche/` 配下）
 
 ---
 
@@ -40,8 +41,8 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
-rem コンパイル
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\CallHierarchyExporter.java
+rem コンパイル（-sourcepath src を付けると、src\jche 配下のクラスも一緒にコンパイルされる）
+"%JAVA_HOME%\bin\javac" -cp "lib\*" -sourcepath src -d bin -encoding UTF-8 src\CallHierarchyExporter.java
 
 rem 実行
 "%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
@@ -114,7 +115,7 @@ import からの推定を呼び出し先として採用するか、といった�
 （キャッシュの `I` 行）を宣言するファイルが変わっていれば解析し直します。
 呼び出し先やフィールドの所有型は他のファイルのバインディング解決に依存するためです。
 フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
-行の種別と列の意味は `src/CallHierarchyExporter.java` の「キャッシュファイルの形式」コメントにあります。
+行の種別と列の意味は [src/jche/cache/CacheFormat.java](src/jche/cache/CacheFormat.java) のクラスコメントにあります。
 
 ## 出力ファイル
 
@@ -260,3 +261,25 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 
 解決できないもの: 設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
 フィールドや別メソッドの引数で受け渡す形。これらは `Method.invoke` のまま「ソースなし」の行になります。
+
+---
+
+## ソースの構成
+
+`src/CallHierarchyExporter.java` がエントリポイント（JBang の指示行と `main`）で、
+本体は `src/jche/` 配下のパッケージに分かれています。パッケージは処理のフェーズに対応します。
+
+| パッケージ | 役割 | 主なクラス |
+|---|---|---|
+| `jche.config` | 設定ファイルとプロジェクト構成の読み取り | `Config`, `ProjectLayout`, `PackagePattern` |
+| `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
+| `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
+| `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
+| `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
+| `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
+| `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
+| `jche.util` | ログと進捗表示 | `Log`, `Progress` |
+
+読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
+→ `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
+キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
