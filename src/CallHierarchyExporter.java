@@ -71,15 +71,19 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
+import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.w3c.dom.Document;
@@ -224,7 +228,9 @@ public class CallHierarchyExporter {
         log("=== フェーズ1/3: ソース解析 ===");
         CachePhaseResult phase1 = new CacheUpdater(layout, config).run();
         log("ソース解析: 再利用=" + phase1.reused
-                + " 新規解析=" + phase1.parsed + " 失敗=" + phase1.failed);
+                + " 新規解析=" + phase1.parsed
+                + (phase1.dependents > 0 ? "（うち依存先の変更による再解析=" + phase1.dependents + "）" : "")
+                + " 失敗=" + phase1.failed);
         if (phase1.unresolved > 0) {
             log("※ 型解決できなかった呼び出しが " + phase1.unresolved + " 件あります。");
             log("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
@@ -292,6 +298,10 @@ public class CallHierarchyExporter {
                         + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
                         + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
                         + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
+            }
+            if (walker.reflectionHits() > 0) {
+                log("リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の"
+                        + "呼び出し先を特定: " + walker.reflectionHits() + " 件");
             }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
@@ -994,37 +1004,102 @@ public class CallHierarchyExporter {
     /*
      * キャッシュファイルの形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）
      *
+     * ■ 原則: キャッシュは「ASTから分かった事実」だけを持ち、判断は読む側でする
+     *
+     *   事実 … ASTとバインディングから機械的に読み取れ、設定・出力形式・解決アルゴリズムに
+     *          依存しない情報（宣言・修飾子・呼び出し箇所・代入・出所 など）
+     *   判断 … フィルタ・要約・推定・しきい値・文言・「使うか使わないか」の決定
+     *
+     *   判断をキャッシュに焼き込むと、出力や解決の方針を変えるたびに全件再解析になる。
+     *   事実だけを持てば、読み手（CallGraph / UnresolvedReport 等）を変えるだけで済む。
+     *   見分ける問いは「この値を変えたくなるのは、出力や解決の方針を変えるときか、
+     *   Javaの意味論が変わるときか」。前者なら判断であり、読み手に置く。
+     *
+     * ■ 行の種別と列
+     *
      *   F  相対パス  更新時刻  サイズ
-     *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型をカンマ区切り
-     *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)
+     *   I  依存する型（カンマ区切り）           このファイルのバインディング解決が参照した型のFQNと、
+     *                                        import 文の型（オンデマンド import は "pkg.*"）。
+     *                                        自分が宣言する型は含まない。差分更新時に、これらの型を
+     *                                        宣言するファイルが変わっていたら再解析する（CacheUpdater参照）
+     *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型をカンマ区切り  pkg
+     *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods
+     *      mods: 宣言の修飾子をカンマ区切り（public/protected/private/static/final/abstract/default）。
+     *            加えて implicit（ソースに無い暗黙のコンストラクタを合成した）、
+     *            delegating（コンストラクタ本体の先頭が this(...) 委譲）
+     *   V  typeFqn  fieldName  mods  declType       （フィールド宣言。mods は D と同じ語彙。declType は宣言型のFQN）
+     *   A  line  callerPkg callerType callerMethod callerParams  ownerTypeFqn  fieldName  access  mods  lambda
+     *      フィールドの参照箇所1件。他の型のフィールドも含む。
+     *      access: read / write（代入の左辺）/ readwrite（複合代入・++/--）
+     *      mods: そのフィールドの修飾子（他の型のフィールドでもバインディングから分かる）
+     *   J  typeFqn  fieldName  site  origin         （そのフィールドへの代入1件）
+     *      site: "<field>"=フィールド初期化子 / "name(paramSig)"=そのメソッド・コンストラクタの本体
+     *      origin: 代入された値の出所（Origin参照）。追跡できなければ U
      *   C  callerPkg callerType callerMethod callerParams
-     *      calleePkg calleeType calleeMethod calleeParams  callLine  bindKind  recvKey  recvKind
-     *      recvOrigin  argOrigins
-     *      bindKind: V=仮想 / P=private / T=static / F=finalメソッド
-     *                L=finalクラス / C=コンストラクタ / U=super呼び出し（V以外は静的束縛）
-     *      recvKind: レシーバの由来（RecvKind参照）。CHAで絞れない理由の説明に使う
+     *      calleePkg calleeType calleeMethod calleeParams  callLine  calleeMods  recvKey  recvKind
+     *      recvOrigin  argOrigins  lambda
+     *      calleeMods: 呼び出し先（バインディングの宣言側）の修飾子をカンマ区切り。
+     *                  D の語彙に加えて finalclass（宣言クラスが final）、super（super.m() 形式の呼び出し）。
+     *                  静的束縛かどうかはここから読み手が判定する（CallGraph.bindKindOf）
+     *      recvKind: レシーバの構文上の由来（RecvKind参照）
      *      recvOrigin: レシーバの出所（Origin参照）。データフローで具象型を追うのに使う
      *      argOrigins: 実引数の出所。"0=T:jp.co.X;2=A:1" のように 位置=出所 を;で並べる。
-     *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）
-     *   R  pkg  typeFqn  method  paramSig  origin   （そのメソッドが返しうる値の出所）
-     *   J  typeFqn  fieldName  origin                （コンストラクタ注入されたフィールド）
-     *   M  ifaceTypeFqn#method(paramSig)          （ラムダ／メソッド参照が実装している
-     *                                              関数型インターフェースのメソッド）
+     *                  追跡できない引数は載せない（載せないこと自体が「不明」を意味する）。
+     *                  メソッド呼び出しの出所（M:）は、実引数の数 n= とレシーバの出所 r= も持つ
+     *                  （Origin のコメント参照。リフレクションの連鎖を読み手が辿るため）
+     *      lambda: 呼び出し箇所を囲むラムダ式の深さ（0=ラムダの外）。
+     *              現在の読み手はラムダ内の呼び出しも囲みメソッドに計上する（値は使わない）が、
+     *              計上先の方針を変えるときに再解析せずに済むよう事実として残す
+     *   R  pkg  typeFqn  method  paramSig  origin   （return 1件ごとの値の出所。追跡できなければ U）
+     *   M  line  callerPkg callerType callerMethod callerParams  ifaceTypeFqn#method(paramSig)  kind
+     *      ラムダ／メソッド参照の1箇所。kind: lambda / methodref / ctorref
      *   X  callerMethodキー  scopeKey  種別  値      （フェーズAが拾った証拠）
-     *   U  行  呼び出し元メソッドキー  式  理由
+     *   U  line  callerPkg callerType callerMethod callerParams  expr  reason  candidate
+     *      recvKey  recvKind  recvOrigin  argOrigins  lambda
+     *      型解決（バインディング）に失敗した呼び出し1件。呼び出し元を特定できなければ caller は空。
+     *      reason: BINDING_FAILED（呼び出し先の型解決に失敗）/ OUTSIDE_METHOD（呼び出し元を特定できない）
+     *      candidate: レシーバの単純名と一致する単一型 import のFQN（ソースのテキストからの推定。
+     *                 無ければ空）。これを呼び出し先として採用するかは読み手が決める
      *
-     * F行が現れるたびに、以降のH/D/C/R/J/U行はそのファイルに属する。
+     * F行が現れるたびに、以降の行はそのファイルに属する。
+     *
+     * ■ 読み手の責務（キャッシュに入れない判断）
+     *
+     *   - 静的束縛の判定（calleeMods → P/T/F/L/C/U/V）            … CallGraph.bindKindOf
+     *   - 戻り値の集約（追跡できない return が1つでもあれば不定）  … CallGraph.factoryOriginOf
+     *   - コンストラクタ注入フィールドの判定（private/final、全コンストラクタで代入、出所が一致）
+     *                                                               … CallGraph.FieldFacts
+     *   - import 推定（U の candidate）をエッジとして採用するか     … CallGraph.buildFrom
+     *   - ラムダ内の呼び出しの計上先                                … CallGraph.buildFrom（現状は囲みメソッド）
+     *   - 未解決の理由コードの文言                                  … UnresolvedReport
+     *
+     * ■ 差分更新と依存
+     *
+     *   再利用の判定は「更新時刻とサイズが一致する」に加えて「I行の型を宣言するファイルが
+     *   どれも変わっていない」。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
+     *   結果であり、別のファイルを変えると変わりうるため（CacheUpdater 参照）。
+     *
+     * ■ バージョン（CacheFormat.VERSION）を上げる基準
+     *
+     *   事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
+     *   読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
+     *
+     * ■ 事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）
+     *
+     *   - 実引数の出所は入れ子にしない（1段のみ）。レシーバの出所は3段まで入れ子にする
+     *     （Origin.MAX_RECEIVER_DEPTH。invoke ← getMethod ← forName / getClass の連鎖のため）
+     *   - 外側スコープの変数の出所は、final または実質 final のときだけ持ち込む
+     *   - ローカル変数の出所の先読みは1回（後方で宣言された変数への別名付けは U）
+     *   - 文字列リテラルの出所は、完全修飾クラス名の形か識別子の形（64文字以内）のものだけ
+     *     （クラス名とメソッド名を追うため。ログ文言やSQLは残さない）
+     *   - プリミティブ・配列・String を返す return は記録しない
+     *   - フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
+     *     （インスタンス初期化ブロックと内部クラスからの代入は拾わない）
      *
      * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
      * インターフェース・抽象クラスの実装クラスを特定できない。
      * D行のhasBodyは、インターフェースの抽象メソッド（本体なし）と
      * デフォルトメソッド（本体あり）を区別するために必要。
-     *
-     * R行は「1つでも追跡できないreturnがあれば、そのメソッドの戻り値は特定しない」と
-     * 判定するために、追跡できないreturnも U として書き出す。分かった分だけを
-     * 書いて残りを黙って捨てると、実際には複数の型を返しうるメソッドを
-     * 1つに決め打ちしてしまう。ただし全てのreturnが U のメソッドは
-     * 判定に寄与しないので、行そのものを書かない（キャッシュを膨らませないため）。
      */
     /**
      * レシーバ（呼び出しの受け手）の由来。
@@ -1088,6 +1163,8 @@ public class CallHierarchyExporter {
         static final char LITERAL = 'L';
         /** Class.forName(引数) で名前指定された型。値は0始まりの引数位置 */
         static final char REFLECT = 'C';
+        /** クラスオブジェクト（X.class）。値は型のFQN（配列は "[]" 付き、プリミティブはそのまま） */
+        static final char CLASS = 'K';
         /** 追跡できない。「分からない」を明示的に持つのが重要（後述） */
         static final char UNKNOWN = 'U';
 
@@ -1098,6 +1175,7 @@ public class CallHierarchyExporter {
          *
          *   T:jp.co.Service|0=T:jp.co.UserDaoImpl
          *   M:jp.co.Factory#create(java.lang.String)|0=L:jp.co.UserDaoImpl
+         *   M:java.lang.Class#getMethod(java.lang.String,java.lang.Class[])|n=2;0=L:run;1=K:long;r=K:jp.co.X
          *
          * new やメソッド呼び出しの出所には、その呼び出しの実引数の出所も付ける。
          * コンストラクタ注入されたフィールドや、クラス名の文字列を受け取る
@@ -1107,10 +1185,20 @@ public class CallHierarchyExporter {
          * 含んでいて、括弧だと対応の判定が必要になるから。'|' はFQNにも
          * メソッドキーにも現れない。
          *
-         * 引数の出所は入れ子にしない（付いていたら剥がす）。段数を増やすほど
+         * リストの要素は "位置=出所" のほか、次の2つ:
+         *   n=実引数の数   … 出所が分からず省いた引数と、引数が無いことを区別するため
+         *   r=レシーバの出所 … メソッド呼び出しの受け手。invoke ← getMethod ← forName のような
+         *                     連鎖を読み手が辿るため、MAX_RECEIVER_DEPTH 段まで入れ子にする。
+         *                     入れ子の出所が自身の実引数リストを持つ場合は {} で囲む
+         *
+         * 実引数の出所は入れ子にしない（付いていたら剥がす）。段数を増やすほど
          * 「どの推測が結論に効いたか」が追えなくなるうえ、文字列も長くなる。
          */
         static final char ARGS = '|';
+        static final String RECEIVER = "r";
+        static final String ARG_COUNT = "n";
+        /** レシーバの出所を何段まで入れ子にするか（invoke ← getMethod ← forName/getClass で3段） */
+        static final int MAX_RECEIVER_DEPTH = 3;
 
         private Origin() {
         }
@@ -1123,25 +1211,43 @@ public class CallHierarchyExporter {
             return isUnknown(origin) ? UNKNOWN : origin.charAt(0);
         }
 
+        /** 入れ子の境界（{...}）の外側で最初に現れる文字の位置。無ければ -1 */
+        private static int indexAtTop(String s, char ch, int from) {
+            int depth = 0;
+            for (int i = from; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    if (depth > 0) {
+                        depth--;
+                    }
+                } else if (c == ch && depth == 0) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         /** "T:jp.co.X|0=..." の "jp.co.X" の部分（実引数リストは含まない） */
         static String valueOf(String origin) {
             int i = (origin == null) ? -1 : origin.indexOf(':');
             if (i < 0) {
                 return "";
             }
-            int bar = origin.indexOf(ARGS, i);
+            int bar = indexAtTop(origin, ARGS, i);
             return (bar < 0) ? origin.substring(i + 1) : origin.substring(i + 1, bar);
         }
 
         /** "T:jp.co.X|0=..." の "0=..." の部分。無ければ null */
         static String argsOf(String origin) {
-            int bar = (origin == null) ? -1 : origin.indexOf(ARGS);
+            int bar = (origin == null) ? -1 : indexAtTop(origin, ARGS, 0);
             return (bar < 0) ? null : origin.substring(bar + 1);
         }
 
         /** 実引数リストを落とした形。引数の出所を入れ子にしないために使う */
         static String head(String origin) {
-            int bar = (origin == null) ? -1 : origin.indexOf(ARGS);
+            int bar = (origin == null) ? -1 : indexAtTop(origin, ARGS, 0);
             return (bar < 0) ? origin : origin.substring(0, bar);
         }
 
@@ -1154,16 +1260,58 @@ public class CallHierarchyExporter {
                     ? of(kind, value) : (kind + ":" + value + ARGS + args);
         }
 
+        /** リストの要素として入れ子にする形。自身が実引数リストを持つなら {} で囲む */
+        static String nest(String origin) {
+            return (origin.indexOf(ARGS) < 0) ? origin : "{" + origin + "}";
+        }
+
         /** "0=T:jp.co.X;2=A:1" から指定位置の出所を取り出す。無ければ null */
         static String argAt(String args, int index) {
+            return entryAt(args, String.valueOf(index));
+        }
+
+        /** メソッド呼び出しの出所から、そのレシーバの出所（r=...）。無ければ null */
+        static String receiverOf(String origin) {
+            return entryAt(argsOf(origin), RECEIVER);
+        }
+
+        /** メソッド呼び出しの出所から、実引数の数（n=...）。無ければ -1 */
+        static int argCountOf(String origin) {
+            String n = entryAt(argsOf(origin), ARG_COUNT);
+            if (n == null) {
+                return -1;
+            }
+            try {
+                return Integer.parseInt(n);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
+        /** 実引数リストからキー（位置・r・n）の値を取り出す。{} で囲まれていれば外す。無ければ null */
+        static String entryAt(String args, String key) {
             if (args == null || args.isEmpty()) {
                 return null;
             }
-            String prefix = index + "=";
-            for (String entry : args.split(";")) {
-                if (entry.startsWith(prefix)) {
-                    return entry.substring(prefix.length());
+            String prefix = key + "=";
+            int start = 0;
+            while (start <= args.length()) {
+                int end = indexAtTop(args, ';', start);
+                if (end < 0) {
+                    end = args.length();
                 }
+                String entry = args.substring(start, end);
+                if (entry.startsWith(prefix)) {
+                    String v = entry.substring(prefix.length());
+                    if (v.length() >= 2 && v.charAt(0) == '{' && v.charAt(v.length() - 1) == '}') {
+                        v = v.substring(1, v.length() - 1);
+                    }
+                    return v;
+                }
+                if (end >= args.length()) {
+                    break;
+                }
+                start = end + 1;
             }
             return null;
         }
@@ -1171,8 +1319,12 @@ public class CallHierarchyExporter {
 
     static final class CacheFormat {
         static final String SEP = "\t";
-        /** 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される */
-        static final String VERSION = "jche-cache-v6";
+        /**
+         * 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される。
+         * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
+         * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
+         */
+        static final String VERSION = "jche-cache-v9";
 
         /**
          * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
@@ -1193,12 +1345,20 @@ public class CallHierarchyExporter {
             }
             return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
         }
+
+        /** カンマ区切りの修飾子列（D行・V行・C行の mods）に、その語が含まれるか */
+        static boolean hasToken(String mods, String token) {
+            return mods != null && !mods.isEmpty()
+                    && ("," + mods + ",").contains("," + token + ",");
+        }
     }
 
     static final class CachePhaseResult {
         int reused;
         int parsed;
         int failed;
+        /** 自分は変わっていないが、依存する型が変わったので解析し直したファイル数（parsed に含む） */
+        int dependents;
         /** 型解決できなかった呼び出しの件数。クラスパス不足の検知に使う */
         long unresolved;
     }
@@ -1207,14 +1367,22 @@ public class CallHierarchyExporter {
      * 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
      *
      * 手順:
-     *   パス1 … 旧キャッシュを順に読み、まだ有効なファイルのブロックは
-     *           そのまま新キャッシュへ書き写す（解析し直さない）。
-     *           無効・消滅したファイルのブロックは読み飛ばす。
-     *   パス2 … パス1で書き写されなかったソースファイルだけを解析し、追記する。
+     *   パス1 … 旧キャッシュを順に読み、更新時刻とサイズが一致するファイル（有効）を覚える。
+     *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
+     *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
+     *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
+     *   パス3 … 旧キャッシュをもう一度読み、有効なブロックのうち、I行（依存する型）が
+     *           「変わった型」に触れないものだけをそのまま書き写す。
+     *           触れるものは、バインディング解決の結果が変わっている可能性があるので再解析に回す。
+     *   パス4 … パス3で再解析に回したファイルを解析し、追記する。
      *
-     * ランダムアクセスも全件保持も不要で、ヒープ常駐は
-     * 「ソースファイルの一覧＋更新時刻・サイズ」だけ。
-     * 未解決呼び出しCSVも、この過程で同時に書き出す（溜め込まない）。
+     * 更新時刻とサイズだけで再利用を決めると、別のファイルの変更（オーバーロードの追加、
+     * フィールドの改名、親型の変更など）でこのファイルの解決結果が変わっても気づけない。
+     * 依存は1段で足りる。ファイルAの事実はAが参照した型にだけ依存し、Aを解析し直しても
+     * Aが宣言する型（Aのソース）は変わらないので、Aに依存するファイルへは波及しない。
+     *
+     * ランダムアクセスも全件保持も不要で、ヒープ常駐は「ソースファイルの一覧＋更新時刻・サイズ」と
+     * 「変わった型の集合」だけ。未解決呼び出しの件数も、この過程で同時に数える（溜め込まない）。
      */
     static final class CacheUpdater {
 
@@ -1245,40 +1413,49 @@ public class CallHierarchyExporter {
             }
             Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
 
-            Set<String> copied = new LinkedHashSet<>();
             Progress pg = new Progress("ソース解析", javaFiles.size());
+            CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
 
             BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
             try {
                 cacheOut.write(CacheFormat.headerFor(config.sourceLevel));
                 cacheOut.newLine();
 
-                // --- パス1: 旧キャッシュのストリーミングコピー ---
+                // --- パス1: 有効なブロックと「変わった型」を集める ---
+                Set<String> valid = new HashSet<>();
+                StaleTypes stale = new StaleTypes();
                 if (config.cacheEnabled) {
-                    result.unresolved += copyValidBlocks(live, copied, cacheOut);
+                    scanOldCache(live, valid, stale);
                 }
-                result.reused = copied.size();
 
-                // --- パス2: 未処理のファイルだけ解析 ---
-                CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
-                int done = result.reused;
-                pg.step(done);
+                // --- パス2: 変更・追加されたファイルを解析 ---
+                int done = 0;
                 for (Map.Entry<String, FileStat> en : live.entrySet()) {
-                    String rel = en.getKey();
-                    if (copied.contains(rel)) {
+                    if (valid.contains(en.getKey())) {
                         continue;
                     }
-                    FileStat st = en.getValue();
-                    try {
-                        // 1ファイル分だけをヒープに載せ、書き出したら即破棄する
-                        FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
-                        writeBlock(fa, cacheOut);
-                        result.unresolved += fa.unresolved.size();
-                        result.parsed++;
-                    } catch (Exception e) {
-                        result.failed++;
-                        log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+                    analyzeAndWrite(extractor, en.getKey(), en.getValue(), cacheOut, result, stale);
+                    done++;
+                    pg.step(done);
+                }
+
+                // --- パス3: 変わった型に依存していない有効ブロックを書き写す ---
+                List<String> dependents = new ArrayList<>();
+                if (config.cacheEnabled && !valid.isEmpty()) {
+                    result.unresolved += copyValidBlocks(valid, stale, dependents, cacheOut);
+                    result.reused = valid.size() - dependents.size();
+                    done += result.reused;
+                    pg.step(done);
+                }
+
+                // --- パス4: 依存で無効になったファイルを解析し直す ---
+                for (String rel : dependents) {
+                    FileStat st = live.get(rel);
+                    if (st == null) {
+                        continue;
                     }
+                    analyzeAndWrite(extractor, rel, st, cacheOut, result, null);
+                    result.dependents++;
                     done++;
                     pg.step(done);
                 }
@@ -1292,16 +1469,89 @@ public class CallHierarchyExporter {
         }
 
         /**
-         * 旧キャッシュを1行ずつ読み、まだ有効なブロックだけを新キャッシュへ書き写す。
+         * 1ファイルを解析して書き出す。1ファイル分だけをヒープに載せ、書き出したら即破棄する。
          *
-         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+         * @param stale 非nullなら、このファイルが宣言する型を「変わった型」に加える
          */
-        private long copyValidBlocks(Map<String, FileStat> live, Set<String> copied,
-                                      BufferedWriter cacheOut)
+        private void analyzeAndWrite(CallEdgeExtractor extractor, String rel, FileStat st,
+                                     BufferedWriter cacheOut, CachePhaseResult result,
+                                     StaleTypes stale) {
+            try {
+                FileAnalysis fa = extractor.analyze(st.path, rel, st.mtime, st.size);
+                writeBlock(fa, cacheOut);
+                result.unresolved += fa.unresolvedCount();
+                result.parsed++;
+                if (stale != null) {
+                    for (TypeInfo t : fa.types) {
+                        stale.add(t.typeFqn, t.pkg);
+                    }
+                }
+            } catch (Exception e) {
+                result.failed++;
+                log("[WARN] 解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+            }
+        }
+
+        /** 変更・削除されたファイルが宣言していた型と、そのパッケージ */
+        static final class StaleTypes {
+            final Set<String> types = new HashSet<>();
+            final Set<String> packages = new HashSet<>();
+
+            void add(String typeFqn, String pkg) {
+                types.add(typeFqn);
+                packages.add(pkg == null ? "" : pkg);
+            }
+
+            boolean isEmpty() {
+                return types.isEmpty();
+            }
+
+            /**
+             * I行（依存する型のカンマ区切り）が、変わった型に触れているか。
+             * "pkg.*"（オンデマンド import）は、そのパッケージの型が1つでも変わっていれば触れているとみなす
+             */
+            boolean touches(String depsCsv) {
+                if (depsCsv.isEmpty() || isEmpty()) {
+                    return false;
+                }
+                for (String d : depsCsv.split(",")) {
+                    if (d.isEmpty()) {
+                        continue;
+                    }
+                    if (d.endsWith(".*")) {
+                        String p = d.substring(0, d.length() - 2);
+                        if (types.contains(p) || packages.contains(p)) {
+                            return true;
+                        }
+                    } else if (types.contains(d)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
+        /** ブロックのF行が、今のソースと一致しているか（更新時刻とサイズの両方） */
+        private static boolean isValidBlock(String[] f, Map<String, FileStat> live) {
+            if (f.length < 4) {
+                return false;
+            }
+            FileStat st = live.get(f[1]);
+            try {
+                return st != null && st.mtime == Long.parseLong(f[2]) && st.size == Long.parseLong(f[3]);
+            } catch (NumberFormatException ignore) {
+                return false;   // 壊れたF行 -> このブロックは破棄し、後で再解析される
+            }
+        }
+
+        /**
+         * パス1。旧キャッシュを読み、有効なファイルの集合と「変わった型」を集める。
+         * 形式またはソースレベルが違えば何も有効にしない（全件再解析）。
+         */
+        private void scanOldCache(Map<String, FileStat> live, Set<String> valid, StaleTypes stale)
                 throws IOException {
-            long unresolved = 0L;
             if (!Files.isRegularFile(config.cacheFile)) {
-                return unresolved;
+                return;
             }
             BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
             try {
@@ -1312,9 +1562,50 @@ public class CallHierarchyExporter {
                     // 言語バージョンが違えば同じソースでも解析結果が変わるため、
                     // 更新時刻とサイズが一致していても再利用してはいけない
                     log("[cache] 形式またはソースレベルが異なるため既存キャッシュを破棄します");
-                    return unresolved;
+                    return;
                 }
+                boolean staleBlock = false;
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    char t = line.charAt(0);
+                    if (t == 'F') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        staleBlock = !isValidBlock(f, live);
+                        if (!staleBlock) {
+                            valid.add(f[1]);
+                        }
+                    } else if (staleBlock && t == 'H') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 2) {
+                            stale.add(f[1], (f.length >= 5) ? f[4] : "");
+                        }
+                    }
+                }
+            } finally {
+                in.close();
+            }
+        }
+
+        /**
+         * パス3。旧キャッシュを1行ずつ読み、有効で、かつ変わった型に依存していないブロックだけを
+         * 新キャッシュへ書き写す。依存しているブロックは書かず、dependents に相対パスを積む。
+         *
+         * 依存はブロック先頭のI行で判定する（F行の直後に置いてあるので、先読みは1行で済む）。
+         *
+         * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+         */
+        private long copyValidBlocks(Set<String> valid, StaleTypes stale, List<String> dependents,
+                                      BufferedWriter cacheOut) throws IOException {
+            long unresolved = 0L;
+            BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8);
+            try {
+                in.readLine();   // バージョン行（パス1で検証済み）
                 boolean keeping = false;
+                String pendingF = null;   // 依存の判定待ちのF行
+                String pendingRel = null;
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.isEmpty()) {
@@ -1324,27 +1615,43 @@ public class CallHierarchyExporter {
                     if (t == 'F') {
                         String[] f = line.split(CacheFormat.SEP, -1);
                         keeping = false;
-                        if (f.length >= 4) {
-                            FileStat st = live.get(f[1]);
-                            try {
-                                if (st != null && st.mtime == Long.parseLong(f[2])
-                                        && st.size == Long.parseLong(f[3])) {
-                                    keeping = true;
-                                    copied.add(f[1]);
-                                }
-                            } catch (NumberFormatException ignore) {
-                                // 壊れたF行 -> このブロックは破棄し、後で再解析される
-                                keeping = false;
-                            }
+                        pendingF = null;
+                        if (f.length >= 2 && valid.contains(f[1])) {
+                            pendingF = line;
+                            pendingRel = f[1];
                         }
-                        if (keeping) {
-                            cacheOut.write(line);
+                        continue;
+                    }
+                    if (pendingF != null) {
+                        // F行の直後。I行なら依存を判定し、無ければ依存なしとして書き写す
+                        String deps = "";
+                        boolean isDepsLine = (t == 'I');
+                        if (isDepsLine) {
+                            String[] f = line.split(CacheFormat.SEP, -1);
+                            deps = (f.length >= 2) ? f[1] : "";
+                        }
+                        if (stale.touches(deps)) {
+                            dependents.add(pendingRel);
+                            keeping = false;
+                        } else {
+                            keeping = true;
+                            cacheOut.write(pendingF);
                             cacheOut.newLine();
                         }
-                    } else if (keeping) {
+                        pendingF = null;
+                        if (isDepsLine) {
+                            if (keeping) {
+                                cacheOut.write(line);
+                                cacheOut.newLine();
+                            }
+                            continue;
+                        }
+                    }
+                    if (keeping) {
                         cacheOut.write(line);
                         cacheOut.newLine();
-                        if (t == 'U') {
+                        if (t == 'U' && !UnresolvedCall.hasUsableCandidate(
+                                line.split(CacheFormat.SEP, -1))) {
                             unresolved++;
                         }
                     }
@@ -1359,77 +1666,98 @@ public class CallHierarchyExporter {
             w.write(String.join(CacheFormat.SEP, "F", fa.relativePath,
                     String.valueOf(fa.lastModified), String.valueOf(fa.size)));
             w.newLine();
+            // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
+            w.write(String.join(CacheFormat.SEP, "I", String.join(",", dependenciesOf(fa))));
+            w.newLine();
             for (TypeInfo t : fa.types) {
                 w.write(String.join(CacheFormat.SEP, "H", t.typeFqn,
-                        String.valueOf(t.kind), String.join(",", t.superTypes)));
+                        String.valueOf(t.kind), String.join(",", t.superTypes), t.pkg));
                 w.newLine();
             }
             for (MethodDecl d : fa.declarations) {
                 w.write(String.join(CacheFormat.SEP, "D", d.pkg, d.typeFqn,
                         d.methodName, d.paramSig, String.valueOf(d.declLine),
-                        d.hasBody ? "1" : "0"));
+                        d.hasBody ? "1" : "0", d.mods));
                 w.newLine();
             }
-            for (CallEdgeRec c : fa.edges) {
-                w.write(String.join(CacheFormat.SEP, "C",
-                        c.callerPkg, c.callerType, c.callerMethod, c.callerParams,
-                        c.calleePkg, c.calleeType, c.calleeMethod, c.calleeParams,
-                        String.valueOf(c.callLine), String.valueOf(c.bindKind), c.recvKey,
-                    String.valueOf(c.recvKind), c.recvOrigin, c.argOrigins));
+            for (FieldDeclRec v : fa.fieldDecls) {
+                w.write(String.join(CacheFormat.SEP, "V", v.typeFqn, v.fieldName, v.mods, v.declType));
                 w.newLine();
             }
-            writeReturns(fa, w);
-            for (FieldInjectionRec j : fa.fieldInjections) {
-                w.write(String.join(CacheFormat.SEP, "J",
-                        j.typeFqn, j.fieldName, j.origin));
+            for (FieldAssignRec j : fa.fieldAssigns) {
+                w.write(String.join(CacheFormat.SEP, "J", j.typeFqn, j.fieldName, j.site, j.origin));
                 w.newLine();
             }
-            for (String m : fa.functionalImpls) {
-                w.write(String.join(CacheFormat.SEP, "M", m));
+            for (FieldAccessRec a : fa.fieldAccesses) {
+                String[] caller = (a.caller == null) ? new String[]{"", "", "", ""} : a.caller;
+                w.write(String.join(CacheFormat.SEP, "A", String.valueOf(a.line),
+                        caller[0], caller[1], caller[2], caller[3],
+                        a.ownerTypeFqn, a.fieldName, a.access, a.mods,
+                        String.valueOf(a.lambdaDepth)));
+                w.newLine();
+            }
+            // 呼び出し箇所（解決できたものも失敗したものも）はソース上の順のまま書く。
+            // 読み手が import 推定の候補をエッジにしたとき、元の呼び出しの並びが保たれる
+            for (CallSite site : fa.callSites) {
+                if (site instanceof CallEdgeRec) {
+                    CallEdgeRec c = (CallEdgeRec) site;
+                    w.write(String.join(CacheFormat.SEP, "C",
+                            c.callerPkg, c.callerType, c.callerMethod, c.callerParams,
+                            c.calleePkg, c.calleeType, c.calleeMethod, c.calleeParams,
+                            String.valueOf(c.callLine), c.calleeMods, c.recvKey,
+                            String.valueOf(c.recvKind), c.recvOrigin, c.argOrigins,
+                            String.valueOf(c.lambdaDepth)));
+                } else {
+                    UnresolvedCall u = (UnresolvedCall) site;
+                    String[] caller = (u.caller == null) ? new String[]{"", "", "", ""} : u.caller;
+                    w.write(String.join(CacheFormat.SEP, "U", String.valueOf(u.line),
+                            caller[0], caller[1], caller[2], caller[3],
+                            CacheFormat.clean(u.expression), u.reason, u.candidate,
+                            u.recvKey, String.valueOf(u.recvKind), u.recvOrigin, u.argOrigins,
+                            String.valueOf(u.lambdaDepth)));
+                }
+                w.newLine();
+            }
+            // return は全部書く（追跡できないものも U として）。
+            // 「追跡できない return が1つでもあれば戻り値は不定」という判定は読み手が行う
+            for (ReturnRec r : fa.returns) {
+                w.write(String.join(CacheFormat.SEP, "R",
+                        r.pkg, r.typeFqn, r.methodName, r.paramSig, r.origin));
+                w.newLine();
+            }
+            for (FunctionalImplRec m : fa.functionalImpls) {
+                String[] caller = (m.caller == null) ? new String[]{"", "", "", ""} : m.caller;
+                w.write(String.join(CacheFormat.SEP, "M", String.valueOf(m.line),
+                        caller[0], caller[1], caller[2], caller[3], m.ifaceMethodKey, m.kind));
                 w.newLine();
             }
             for (HintRec h : fa.hints) {
                 w.write(String.join(CacheFormat.SEP, "X", h.callerKey, h.scopeKey, h.kind, h.value));
                 w.newLine();
             }
-            for (UnresolvedCall u : fa.unresolved) {
-                w.write(String.join(CacheFormat.SEP, "U", String.valueOf(u.line),
-                        CacheFormat.clean(u.callerMethodKey),
-                        CacheFormat.clean(u.expression),
-                        CacheFormat.clean(u.reason)));
-                w.newLine();
-            }
         }
 
         /**
-         * R行を書き出す。
-         *
-         * 全てのreturnが「追跡できない」メソッドは書かない。書いても解決には
-         * 使えないうえ、returnを持つメソッドは大量にあるためキャッシュだけが膨らむ。
-         * 逆に、1つでも追跡できたメソッドは U のreturnも含めて全部書く
-         * （分かった分だけを書くと、複数の型を返しうるメソッドを1つに決め打ちしてしまう）。
+         * I行の内容。バインディング解決で参照した型と import の型から、
+         * 自分が宣言する型を除いたもの（自分の変更は更新時刻とサイズで検知できる）
          */
-        private static void writeReturns(FileAnalysis fa, BufferedWriter w) throws IOException {
-            if (fa.returns.isEmpty()) {
-                return;
+        private static List<String> dependenciesOf(FileAnalysis fa) {
+            Set<String> own = new HashSet<>();
+            for (TypeInfo t : fa.types) {
+                own.add(t.typeFqn);
             }
-            Set<String> useful = new HashSet<>();
-            for (ReturnRec r : fa.returns) {
-                if (!Origin.isUnknown(r.origin)) {
-                    useful.add(r.methodKey());
+            java.util.TreeSet<String> deps = new java.util.TreeSet<>();
+            for (String t : fa.referencedTypes) {
+                if (!own.contains(t)) {
+                    deps.add(t);
                 }
             }
-            if (useful.isEmpty()) {
-                return;
-            }
-            for (ReturnRec r : fa.returns) {
-                if (!useful.contains(r.methodKey())) {
-                    continue;
+            for (String t : fa.imports) {
+                if (!own.contains(t)) {
+                    deps.add(t);
                 }
-                w.write(String.join(CacheFormat.SEP, "R",
-                        r.pkg, r.typeFqn, r.methodName, r.paramSig, r.origin));
-                w.newLine();
             }
+            return new ArrayList<>(deps);
         }
 
         static final class FileStat {
@@ -1457,15 +1785,22 @@ public class CallHierarchyExporter {
         final int declLine;
         /** 本体を持つか。IFの抽象メソッドとデフォルトメソッドの区別に使う */
         final boolean hasBody;
+        /**
+         * 修飾子をカンマ区切りにしたもの（public/protected/private/static/final/abstract/default）。
+         * 加えて implicit（ソースに無い暗黙のコンストラクタを合成した）、
+         * delegating（コンストラクタ本体の先頭が this(...) 委譲）
+         */
+        final String mods;
 
         MethodDecl(String pkg, String typeFqn, String methodName, String paramSig,
-                   int declLine, boolean hasBody) {
+                   int declLine, boolean hasBody, String mods) {
             this.pkg = pkg;
             this.typeFqn = typeFqn;
             this.methodName = methodName;
             this.paramSig = paramSig;
             this.declLine = declLine;
             this.hasBody = hasBody;
+            this.mods = (mods == null) ? "" : mods;
         }
     }
 
@@ -1475,19 +1810,28 @@ public class CallHierarchyExporter {
         /** I=インターフェース / A=抽象クラス / C=具象クラス */
         final char kind;
         final List<String> superTypes;
+        final String pkg;
 
-        TypeInfo(String typeFqn, char kind, List<String> superTypes) {
+        TypeInfo(String typeFqn, char kind, List<String> superTypes, String pkg) {
             this.typeFqn = typeFqn;
             this.kind = kind;
             this.superTypes = superTypes;
+            this.pkg = (pkg == null) ? "" : pkg;
         }
+    }
+
+    /**
+     * 呼び出し箇所1件（C行またはU行の元データ）。
+     * 解決できた呼び出しと失敗した呼び出しをソース上の順のまま1つの列に持つための共通型
+     */
+    interface CallSite {
     }
 
     /**
      * 呼び出し関係の1本の辺（キャッシュ書き出し用の一時表現）。
      * callLine は「呼び出し元ソースのどの行で呼んでいるか」＝呼び出し箇所の行番号。
      */
-    static final class CallEdgeRec {
+    static final class CallEdgeRec implements CallSite {
         final String callerPkg;
         final String callerType;
         final String callerMethod;
@@ -1497,8 +1841,11 @@ public class CallHierarchyExporter {
         final String calleeMethod;
         final String calleeParams;
         final int callLine;
-        /** S=静的束縛が保証される呼び出し / V=仮想呼び出し */
-        final char bindKind;
+        /**
+         * 呼び出し先（宣言側）の修飾子をカンマ区切りにしたもの（事実）。
+         * 静的束縛かどうかの判定は読み手が行う（{@link CallGraph#bindKindOf}）
+         */
+        final String calleeMods;
         /** レシーバの識別キー（ローカル変数のバインディングキー、または "@位置"）。無ければ空 */
         final String recvKey;
         /** レシーバの由来（{@link RecvKind}）。CHAで絞れなかった理由の説明に使う */
@@ -1507,41 +1854,109 @@ public class CallHierarchyExporter {
         final String recvOrigin;
         /** 実引数の出所。"位置=出所" を ; で並べたもの。無ければ空 */
         final String argOrigins;
+        /** 呼び出し箇所を囲むラムダ式の深さ。0 ならラムダの外 */
+        final int lambdaDepth;
 
-        CallEdgeRec(String callerPkg, String callerType, String callerMethod, String callerParams,
-                    String calleePkg, String calleeType, String calleeMethod, String calleeParams,
-                    int callLine, char bindKind, String recvKey, char recvKind,
-                    String recvOrigin, String argOrigins) {
-            this.callerPkg = callerPkg;
-            this.callerType = callerType;
-            this.callerMethod = callerMethod;
-            this.callerParams = callerParams;
-            this.calleePkg = calleePkg;
-            this.calleeType = calleeType;
-            this.calleeMethod = calleeMethod;
-            this.calleeParams = calleeParams;
+        CallEdgeRec(String[] caller, String[] callee, int callLine, String calleeMods,
+                    String recvKey, char recvKind, String recvOrigin, String argOrigins,
+                    int lambdaDepth) {
+            this.callerPkg = caller[0];
+            this.callerType = caller[1];
+            this.callerMethod = caller[2];
+            this.callerParams = caller[3];
+            this.calleePkg = callee[0];
+            this.calleeType = callee[1];
+            this.calleeMethod = callee[2];
+            this.calleeParams = callee[3];
             this.callLine = callLine;
-            this.bindKind = bindKind;
+            this.calleeMods = (calleeMods == null) ? "" : calleeMods;
             this.recvKey = (recvKey == null) ? "" : recvKey;
             this.recvKind = recvKind;
             this.recvOrigin = (recvOrigin == null) ? "" : recvOrigin;
             this.argOrigins = (argOrigins == null) ? "" : argOrigins;
+            this.lambdaDepth = lambdaDepth;
+        }
+    }
+
+    /** フィールド宣言1件（V行の元データ） */
+    static final class FieldDeclRec {
+        final String typeFqn;
+        final String fieldName;
+        /** 修飾子をカンマ区切りにしたもの（D行と同じ語彙） */
+        final String mods;
+        /** 宣言型のFQN（消去型）。配列は要素型に "[]" を付けた形 */
+        final String declType;
+
+        FieldDeclRec(String typeFqn, String fieldName, String mods, String declType) {
+            this.typeFqn = typeFqn;
+            this.fieldName = fieldName;
+            this.mods = mods;
+            this.declType = (declType == null) ? "" : declType;
+        }
+    }
+
+    /** フィールドの参照箇所1件（A行の元データ）。他の型のフィールドも含む */
+    static final class FieldAccessRec {
+        final int line;
+        /** 囲みメソッド {pkg, typeFqn, methodName, paramSig}。特定できなければ null */
+        final String[] caller;
+        final String ownerTypeFqn;
+        final String fieldName;
+        /** read / write / readwrite */
+        final String access;
+        final String mods;
+        final int lambdaDepth;
+
+        FieldAccessRec(int line, String[] caller, String ownerTypeFqn, String fieldName,
+                       String access, String mods, int lambdaDepth) {
+            this.line = line;
+            this.caller = caller;
+            this.ownerTypeFqn = ownerTypeFqn;
+            this.fieldName = fieldName;
+            this.access = access;
+            this.mods = mods;
+            this.lambdaDepth = lambdaDepth;
         }
     }
 
     /**
-     * コンストラクタ注入されたフィールド1件（J行の元データ）。
-     * 「このフィールドには必ずこれが入る」と言い切れるものだけが作られる。
+     * フィールドへの代入1件（J行の元データ）。
+     * 「必ずこれが入る」かどうかの判定は読み手が行う（{@link CallGraph.FieldFacts}）
      */
-    static final class FieldInjectionRec {
+    static final class FieldAssignRec {
+        /** フィールド初期化子での代入を表す site */
+        static final String SITE_INITIALIZER = "<field>";
+
         final String typeFqn;
         final String fieldName;
+        /** 代入箇所。{@link #SITE_INITIALIZER} か、メソッド／コンストラクタの "name(paramSig)" */
+        final String site;
+        /** 代入された値の出所（{@link Origin}）。追跡できなければ U */
         final String origin;
 
-        FieldInjectionRec(String typeFqn, String fieldName, String origin) {
+        FieldAssignRec(String typeFqn, String fieldName, String site, String origin) {
             this.typeFqn = typeFqn;
             this.fieldName = fieldName;
-            this.origin = origin;
+            this.site = site;
+            this.origin = Origin.isUnknown(origin) ? Origin.UNKNOWN_S : origin;
+        }
+    }
+
+    /** ラムダ／メソッド参照の1箇所（M行の元データ） */
+    static final class FunctionalImplRec {
+        final int line;
+        /** 囲みメソッド {pkg, typeFqn, methodName, paramSig}。特定できなければ null */
+        final String[] caller;
+        /** 実装している関数型インターフェースのメソッドキー typeFqn#method(paramSig) */
+        final String ifaceMethodKey;
+        /** lambda / methodref / ctorref */
+        final String kind;
+
+        FunctionalImplRec(int line, String[] caller, String ifaceMethodKey, String kind) {
+            this.line = line;
+            this.caller = caller;
+            this.ifaceMethodKey = ifaceMethodKey;
+            this.kind = kind;
         }
     }
 
@@ -1567,20 +1982,50 @@ public class CallHierarchyExporter {
     }
 
     /**
-     * 型解決（バインディング）に失敗した呼び出しの記録。
+     * 型解決（バインディング）に失敗した呼び出しの記録（U行の元データ）。
      * 黙って読み飛ばすと「静かに漏れる」ため、必ず記録して別CSVに出力する。
+     *
+     * 記録するのは事実だけ。理由はコードで持ち、文言は読み手が付ける。
+     * import から推定した候補も「候補」として持つだけで、エッジにするかは読み手が決める。
      */
-    static final class UnresolvedCall {
-        final int line;
-        final String callerMethodKey;
-        final String expression;
-        final String reason;
+    static final class UnresolvedCall implements CallSite {
+        /** 呼び出し先の型解決に失敗した */
+        static final String BINDING_FAILED = "BINDING_FAILED";
+        /** 呼び出し元（囲みメソッド・型）を特定できない */
+        static final String OUTSIDE_METHOD = "OUTSIDE_METHOD";
 
-        UnresolvedCall(int line, String callerMethodKey, String expression, String reason) {
+        final int line;
+        /** 呼び出し元 {pkg, typeFqn, methodName, paramSig}。特定できなければ null */
+        final String[] caller;
+        final String expression;
+        /** 理由コード（{@link #BINDING_FAILED} / {@link #OUTSIDE_METHOD}） */
+        final String reason;
+        /** レシーバの単純名と一致する単一型 import のFQN（テキストからの推定）。無ければ空 */
+        final String candidate;
+        final String recvKey;
+        final char recvKind;
+        final String recvOrigin;
+        final String argOrigins;
+        final int lambdaDepth;
+
+        UnresolvedCall(int line, String[] caller, String expression, String reason,
+                       String candidate, String recvKey, char recvKind,
+                       String recvOrigin, String argOrigins, int lambdaDepth) {
             this.line = line;
-            this.callerMethodKey = callerMethodKey;
+            this.caller = caller;
             this.expression = expression;
             this.reason = reason;
+            this.candidate = (candidate == null) ? "" : candidate;
+            this.recvKey = (recvKey == null) ? "" : recvKey;
+            this.recvKind = recvKind;
+            this.recvOrigin = (recvOrigin == null) ? "" : recvOrigin;
+            this.argOrigins = (argOrigins == null) ? "" : argOrigins;
+            this.lambdaDepth = lambdaDepth;
+        }
+
+        /** 候補付きで呼び出し元も分かるか（＝読み手がエッジにできるU行か）。U行の列配列を受け取る */
+        static boolean hasUsableCandidate(String[] f) {
+            return f.length >= 9 && !f[8].isEmpty() && !f[3].isEmpty();
         }
     }
 
@@ -1608,16 +2053,33 @@ public class CallHierarchyExporter {
         final List<TypeInfo> types = new ArrayList<>();
         final List<HintRec> hints = new ArrayList<>();
         final List<MethodDecl> declarations = new ArrayList<>();
-        final List<CallEdgeRec> edges = new ArrayList<>();
+        final List<FieldDeclRec> fieldDecls = new ArrayList<>();
+        final List<FieldAssignRec> fieldAssigns = new ArrayList<>();
+        final List<FieldAccessRec> fieldAccesses = new ArrayList<>();
+        /** バインディング解決で参照した型のFQN（I行の元。自分が宣言する型は書き出し時に除く） */
+        final Set<String> referencedTypes = new LinkedHashSet<>();
+        /** import 文の型（I行の元。オンデマンド import は "pkg.*"） */
+        final Set<String> imports = new LinkedHashSet<>();
+        /** 呼び出し箇所（{@link CallEdgeRec} と {@link UnresolvedCall}）をソース上の順で */
+        final List<CallSite> callSites = new ArrayList<>();
         final List<ReturnRec> returns = new ArrayList<>();
-        final List<FieldInjectionRec> fieldInjections = new ArrayList<>();
-        final List<String> functionalImpls = new ArrayList<>();
-        final List<UnresolvedCall> unresolved = new ArrayList<>();
+        final List<FunctionalImplRec> functionalImpls = new ArrayList<>();
 
         FileAnalysis(String relativePath, long lastModified, long size) {
             this.relativePath = relativePath;
             this.lastModified = lastModified;
             this.size = size;
+        }
+
+        /** 型解決できなかった呼び出しの数（import から推定した候補があるものは除く） */
+        int unresolvedCount() {
+            int n = 0;
+            for (CallSite c : callSites) {
+                if (c instanceof UnresolvedCall && ((UnresolvedCall) c).candidate.isEmpty()) {
+                    n++;
+                }
+            }
+            return n;
         }
     }
 
@@ -1669,6 +2131,24 @@ public class CallHierarchyExporter {
 
             IProgressMonitor noMonitor = null;
             CompilationUnit cu = (CompilationUnit) parser.createAST(noMonitor);
+            // import 文の型も依存に数える。解決に失敗した import（jar不足）が後から
+            // 解決できるようになったときに、このファイルを解析し直せるようにするため
+            for (Object o : cu.imports()) {
+                ImportDeclaration imp = (ImportDeclaration) o;
+                String name = imp.getName().getFullyQualifiedName();
+                if (imp.isOnDemand()) {
+                    result.imports.add(name + ".*");
+                } else {
+                    result.imports.add(name);
+                    if (imp.isStatic()) {
+                        // import static a.B.c; の a.B（メンバではなく型）も依存
+                        int dot = name.lastIndexOf('.');
+                        if (dot > 0) {
+                            result.imports.add(name.substring(0, dot));
+                        }
+                    }
+                }
+            }
             cu.accept(new Visitor(cu, result, collectors));
             return result;
         }
@@ -1844,6 +2324,11 @@ public class CallHierarchyExporter {
              * A（引数）は呼び出し元、M（戻り値）はその宣言のreturnを見て初めて決まる。
              */
             private String originOf(Expression ex) {
+                return originOf(ex, 0);
+            }
+
+            /** @param depth レシーバの入れ子の深さ（{@link Origin#MAX_RECEIVER_DEPTH} で打ち切る） */
+            private String originOf(Expression ex, int depth) {
                 Expression e = unwrap(ex);
                 if (e == null) {
                     return null;
@@ -1862,13 +2347,32 @@ public class CallHierarchyExporter {
                         return reflected;
                     }
                     String[] r = toRef(mi.resolveMethodBinding());
-                    // 実引数も付ける。クラス名の文字列を受け取るファクトリを追うのに要る
-                    return (r == null) ? null
-                            : Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")",
-                                    argOriginsOf(mi.arguments()));
+                    if (r == null) {
+                        return null;
+                    }
+                    // 実引数も付ける。クラス名の文字列を受け取るファクトリを追うのに要る。
+                    // 実引数の数も付ける（出所が分からず省いた引数と、引数が無いことを区別するため）
+                    String args = argOriginsOf(mi.arguments());
+                    String count = Origin.ARG_COUNT + "=" + mi.arguments().size();
+                    args = args.isEmpty() ? count : args + ";" + count;
+                    // レシーバの出所も、上限の段数まで入れ子で付ける。
+                    // clazz.getMethod("run").invoke(obj) のような連鎖を読み手が辿るのに要る
+                    if (depth < Origin.MAX_RECEIVER_DEPTH && mi.getExpression() != null) {
+                        String recv = originOf(mi.getExpression(), depth + 1);
+                        if (recv != null) {
+                            args = args + ";" + Origin.RECEIVER + "=" + Origin.nest(recv);
+                        }
+                    }
+                    return Origin.of(Origin.RETURN, r[1] + "#" + r[2] + "(" + r[3] + ")", args);
                 }
                 if (e instanceof StringLiteral) {
                     return classNameLiteral(((StringLiteral) e).getLiteralValue());
+                }
+                if (e instanceof TypeLiteral) {
+                    // X.class。リフレクションでクラスを指定する形
+                    ITypeBinding tb = ((TypeLiteral) e).getType().resolveBinding();
+                    String n = (tb == null) ? "" : declTypeName(tb);
+                    return n.isEmpty() ? null : Origin.of(Origin.CLASS, n);
                 }
                 if (e instanceof SimpleName || e instanceof QualifiedName) {
                     IBinding b = (e instanceof SimpleName)
@@ -1978,16 +2482,29 @@ public class CallHierarchyExporter {
             }
 
             /**
-             * 文字列リテラルのうち、完全修飾クラス名の形をしたものだけ出所にする。
+             * 文字列リテラルのうち、完全修飾クラス名の形か識別子の形をしたものだけ出所にする。
              *
              * ログの文言やSQLまで記録すると、キャッシュが文字列で埋まる割に
-             * 何の役にも立たない。「ドットを含み、各要素が識別子で、最後の要素が
-             * 英大文字で始まる」を条件にする。誤って拾っても、解決時に
-             * その型がプロジェクトに無ければ使われないだけで害はない。
+             * 何の役にも立たない。クラス名は「ドットを含み、各要素が識別子で、最後の要素が
+             * 英大文字で始まる」、メソッド名・フィールド名は「識別子1つ（64文字以内）」を
+             * 条件にする。誤って拾っても、解決時にその名前がプロジェクトに無ければ
+             * 使われないだけで害はない。
              */
             private String classNameLiteral(String value) {
-                if (value == null || value.isEmpty() || value.indexOf('.') < 0) {
+                if (value == null || value.isEmpty() || value.length() > 64) {
                     return null;
+                }
+                if (value.indexOf('.') < 0) {
+                    // 識別子の形。getMethod("run") のようにメソッド名として渡されるもの
+                    if (!Character.isJavaIdentifierStart(value.charAt(0))) {
+                        return null;
+                    }
+                    for (int i = 1; i < value.length(); i++) {
+                        if (!Character.isJavaIdentifierPart(value.charAt(i))) {
+                            return null;
+                        }
+                    }
+                    return Origin.of(Origin.LITERAL, value);
                 }
                 int last = 0;
                 for (int i = 0; i <= value.length(); i++) {
@@ -2285,7 +2802,8 @@ public class CallHierarchyExporter {
             public boolean visit(EnumConstantDeclaration node) {
                 methodStack.push(clinitContext());
                 enterScope(new HashMap<String, String>());
-                record(node.resolveConstructorBinding(), node, "<init>", 'C', "",
+                record(node.resolveConstructorBinding(), node, "<init>",
+                        targetModsOf(node.resolveConstructorBinding()), "",
                         RecvKind.TYPE, null, null, argOriginsOf(node.arguments()));
                 return true;
             }
@@ -2369,43 +2887,21 @@ public class CallHierarchyExporter {
             private void pushTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
                 TypeContext ctx = buildTypeContext(tb, bodyDeclarations, declLine);
                 typeContextStack.push(ctx);
-                collectFieldInjections(tb, bodyDeclarations, ctx.rootConstructors);
+                collectFieldFacts(tb, bodyDeclarations);
             }
 
             // ------------------------------------------------------------
-            // コンストラクタ注入されたフィールド（J行）
+            // フィールドの宣言と代入（V行・J行）
             //
-            // 「このフィールドには、必ずコンストラクタの何番目の引数が入る」と
-            // 言い切れるフィールドだけを記録する。呼び出し階層を降りるときに
-            // new の実引数と突き合わせて具象クラスを決めるのに使う。
-            //
-            // 言い切るには次を全部満たす必要がある。1つでも崩れたら記録しない。
-            //   (a) private または final（クラスの外から代入されない）
-            //   (b) 代入がコンストラクタの本体か、フィールド初期化子の中だけにある
-            //       （setterや他のメソッドで後から差し替わらない）
-            //   (c) 初期化子を持つか、this(...)委譲していない全てのコンストラクタで
-            //       代入されている（代入されない生成経路が無い）
-            //   (d) それらの代入の出所が全て一致する
+            // ここでは事実だけを拾う。「このフィールドには必ずコンストラクタの何番目の
+            // 引数が入る」と言い切れるかどうか（private/final か、全コンストラクタで
+            // 代入されているか、出所が一致するか）は読み手 CallGraph.FieldFacts が判定する。
+            // 拾う範囲は、その型自身のフィールド初期化子と、その型自身のメソッド・
+            // コンストラクタ本体の中の代入（インスタンス初期化ブロックと内部クラスからの
+            // 代入は拾わない。範囲を変えるときはキャッシュのバージョンを上げる）。
             // ------------------------------------------------------------
 
-            /** 集計中の1フィールド分の状態 */
-            private static final class FieldInjection {
-                String origin;                 // 一致している出所。食い違ったら null
-                boolean broken;                // 上の条件を満たさなくなった
-                boolean hasInitializer;
-                final Set<String> assignedIn = new HashSet<>();   // 代入したコンストラクタ
-
-                void merge(String o) {
-                    if (o == null || (origin != null && !origin.equals(o))) {
-                        broken = true;
-                        return;
-                    }
-                    origin = o;
-                }
-            }
-
-            private void collectFieldInjections(ITypeBinding tb, List<?> bodyDeclarations,
-                                                 List<String[]> rootConstructors) {
+            private void collectFieldFacts(ITypeBinding tb, List<?> bodyDeclarations) {
                 if (tb == null || bodyDeclarations.isEmpty()) {
                     return;
                 }
@@ -2414,23 +2910,14 @@ public class CallHierarchyExporter {
                 if (typeFqn == null) {
                     return;
                 }
-                Map<String, FieldInjection> fields = new LinkedHashMap<>();
-                Set<String> rootKeys = new HashSet<>();
-                for (String[] r : rootConstructors) {
-                    rootKeys.add(r[2] + "(" + r[3] + ")");
-                }
-
                 for (Object o : bodyDeclarations) {
                     if (o instanceof FieldDeclaration) {
-                        scanFieldInitializers((FieldDeclaration) o, typeFqn, fields);
+                        scanFieldDeclaration((FieldDeclaration) o, typeFqn);
                     } else if (o instanceof MethodDeclaration) {
                         MethodDeclaration md = (MethodDeclaration) o;
-                        String key = keyOf(md);
-                        boolean isRootCtor = md.isConstructor() && rootKeys.contains(key);
-                        scanAssignments(md, typeFqn, fields, isRootCtor ? key : null);
+                        scanAssignments(md, typeFqn, keyOf(md));
                     }
                 }
-                emitFieldInjections(typeFqn, fields, rootKeys.size());
             }
 
             private String keyOf(MethodDeclaration md) {
@@ -2438,37 +2925,30 @@ public class CallHierarchyExporter {
                 return (ref == null) ? "?" : ref[2] + "(" + ref[3] + ")";
             }
 
-            /** フィールド初期化子（private Dao dao = new UserDao();）を拾う */
-            private void scanFieldInitializers(FieldDeclaration fd, String typeFqn,
-                                                Map<String, FieldInjection> fields) {
+            /** フィールド宣言（V行）と、初期化子があればその代入（J行）を拾う */
+            private void scanFieldDeclaration(FieldDeclaration fd, String typeFqn) {
                 for (Object f : fd.fragments()) {
                     if (!(f instanceof VariableDeclarationFragment)) {
                         continue;
                     }
                     VariableDeclarationFragment frag = (VariableDeclarationFragment) f;
                     IVariableBinding vb = frag.resolveBinding();
-                    if (vb == null || !isTrackableField(vb, typeFqn)) {
+                    if (vb == null || !isOwnField(vb, typeFqn)) {
                         continue;
                     }
-                    FieldInjection fi = injectionOf(fields, vb.getName());
-                    if (frag.getInitializer() == null) {
-                        continue;
+                    out.fieldDecls.add(new FieldDeclRec(typeFqn, vb.getName(),
+                            modifierTokens(vb.getModifiers()), declTypeName(vb.getType())));
+                    if (frag.getInitializer() != null) {
+                        out.fieldAssigns.add(new FieldAssignRec(typeFqn, vb.getName(),
+                                FieldAssignRec.SITE_INITIALIZER,
+                                Origin.head(originOf(frag.getInitializer()))));
                     }
-                    fi.hasInitializer = true;
-                    fi.merge(Origin.head(originOf(frag.getInitializer())));
                 }
             }
 
-            /**
-             * メソッド本体の中のフィールドへの代入を拾う。
-             *
-             * @param ctorKey 根のコンストラクタならそのキー。それ以外（setter・
-             *                通常のメソッド・this()委譲するコンストラクタ）なら null。
-             *                null の場合、代入されたフィールドは追跡対象から外す
-             */
+            /** メソッド本体の中の、この型自身のフィールドへの代入を拾う（J行） */
             private void scanAssignments(MethodDeclaration md, final String typeFqn,
-                                          final Map<String, FieldInjection> fields,
-                                          final String ctorKey) {
+                                          final String site) {
                 Block body = md.getBody();
                 if (body == null) {
                     return;
@@ -2479,16 +2959,11 @@ public class CallHierarchyExporter {
                         @Override
                         public boolean visit(Assignment n) {
                             IVariableBinding vb = assignedFieldOf(n.getLeftHandSide());
-                            if (vb == null || !isTrackableField(vb, typeFqn)) {
+                            if (vb == null || !isOwnField(vb, typeFqn)) {
                                 return true;
                             }
-                            FieldInjection fi = injectionOf(fields, vb.getName());
-                            if (ctorKey == null) {
-                                fi.broken = true;   // 生成後に差し替わりうる
-                                return true;
-                            }
-                            fi.assignedIn.add(ctorKey);
-                            fi.merge(Origin.head(originOf(n.getRightHandSide())));
+                            out.fieldAssigns.add(new FieldAssignRec(typeFqn, vb.getName(), site,
+                                    Origin.head(originOf(n.getRightHandSide()))));
                             return true;
                         }
                     });
@@ -2513,18 +2988,9 @@ public class CallHierarchyExporter {
                         ? (IVariableBinding) b : null;
             }
 
-            /**
-             * 追跡対象のフィールドか。
-             *
-             * この型自身のインスタンスフィールドで、private または final のものだけ。
-             * それ以外は、このファイルを読んだだけでは代入箇所を数え上げられない。
-             */
-            private boolean isTrackableField(IVariableBinding vb, String typeFqn) {
-                if (!vb.isField() || Modifier.isStatic(vb.getModifiers())) {
-                    return false;
-                }
-                int mods = vb.getModifiers();
-                if (!Modifier.isPrivate(mods) && !Modifier.isFinal(mods)) {
+            /** この型自身が宣言しているフィールドか（他の型のフィールドへの代入は、この型の事実ではない） */
+            private boolean isOwnField(IVariableBinding vb, String typeFqn) {
+                if (!vb.isField()) {
                     return false;
                 }
                 ITypeBinding owner = vb.getDeclaringClass();
@@ -2533,32 +2999,6 @@ public class CallHierarchyExporter {
                 }
                 ITypeBinding er = (owner.getErasure() != null) ? owner.getErasure() : owner;
                 return typeFqn.equals(typeNameOf(er));
-            }
-
-            private FieldInjection injectionOf(Map<String, FieldInjection> fields, String name) {
-                FieldInjection fi = fields.get(name);
-                if (fi == null) {
-                    fi = new FieldInjection();
-                    fields.put(name, fi);
-                }
-                return fi;
-            }
-
-            private void emitFieldInjections(String typeFqn, Map<String, FieldInjection> fields,
-                                              int rootConstructorCount) {
-                for (Map.Entry<String, FieldInjection> e : fields.entrySet()) {
-                    FieldInjection fi = e.getValue();
-                    if (fi.broken || fi.origin == null) {
-                        continue;
-                    }
-                    // 代入されない生成経路があると、そのフィールドの中身は別物になる
-                    boolean coveredByCtors = fi.assignedIn.size() >= rootConstructorCount;
-                    if (!fi.hasInitializer && !coveredByCtors) {
-                        continue;
-                    }
-                    out.fieldInjections.add(
-                            new FieldInjectionRec(typeFqn, e.getKey(), fi.origin));
-                }
             }
 
             private void popTypeContext() {
@@ -2618,7 +3058,8 @@ public class CallHierarchyExporter {
                             if (ref != null) {
                                 roots.add(ref);
                                 out.declarations.add(new MethodDecl(ref[0], ref[1],
-                                        ref[2], ref[3], declLine, true));
+                                        ref[2], ref[3], declLine, true,
+                                        withToken(modifierTokens(m.getModifiers()), "implicit")));
                                 synthesized = true;
                             }
                         }
@@ -2628,7 +3069,7 @@ public class CallHierarchyExporter {
                         if (implicitRef != null) {
                             roots.add(implicitRef);
                             out.declarations.add(new MethodDecl(implicitRef[0], implicitRef[1],
-                                    implicitRef[2], implicitRef[3], declLine, true));
+                                    implicitRef[2], implicitRef[3], declLine, true, "implicit"));
                         }
                     }
                 }
@@ -2681,7 +3122,8 @@ public class CallHierarchyExporter {
                 String pkg = (erased.getPackage() != null) ? erased.getPackage().getName() : "";
                 if (!ctx.clinitDeclared) {
                     ctx.clinitDeclared = true;
-                    out.declarations.add(new MethodDecl(pkg, typeFqn, "<clinit>", "", ctx.declLine, true));
+                    out.declarations.add(new MethodDecl(pkg, typeFqn, "<clinit>", "",
+                            ctx.declLine, true, "static"));
                 }
                 return java.util.Collections.singletonList(new String[]{pkg, typeFqn, "<clinit>", ""});
             }
@@ -2693,6 +3135,98 @@ public class CallHierarchyExporter {
                     return UNKNOWN;
                 }
                 return ctx.rootConstructors;
+            }
+
+            /** import 文の中の名前は参照箇所ではない（依存としては analyze() で別に数える） */
+            @Override
+            public boolean visit(ImportDeclaration node) {
+                return false;
+            }
+
+            /**
+             * フィールドの参照箇所（A行）。
+             *
+             * 参照はどんな形でも最終的に SimpleName に行き着く（a.b.c の c、this.x の x、
+             * super.x の x）ので、SimpleName だけを見れば重複なく拾える。
+             * 宣言そのもの（フィールド宣言の名前）は除く。配列の length のように
+             * 型に属さないものも除く。
+             */
+            @Override
+            public boolean visit(SimpleName node) {
+                if (node.isDeclaration()) {
+                    return true;
+                }
+                IBinding b = node.resolveBinding();
+                if (!(b instanceof IVariableBinding) || !((IVariableBinding) b).isField()) {
+                    return true;
+                }
+                IVariableBinding vb = (IVariableBinding) b;
+                ITypeBinding owner = vb.getDeclaringClass();
+                if (owner == null) {
+                    return true;
+                }
+                String ownerFqn = typeNameOf(owner.getErasure() != null ? owner.getErasure() : owner);
+                if (ownerFqn == null) {
+                    return true;
+                }
+                int line = cu.getLineNumber(node.getStartPosition());
+                String access = accessKindOf(node);
+                String mods = modifierTokens(vb.getModifiers());
+                List<String[]> callers = current();
+                if (callers == null) {
+                    out.fieldAccesses.add(new FieldAccessRec(line, null, ownerFqn, vb.getName(),
+                            access, mods, lambdaDepth));
+                    return true;
+                }
+                // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
+                for (String[] c : callers) {
+                    out.fieldAccesses.add(new FieldAccessRec(line, c, ownerFqn, vb.getName(),
+                            access, mods, lambdaDepth));
+                }
+                return true;
+            }
+
+            /** read / write / readwrite。代入の左辺なら write、複合代入と ++/-- なら readwrite */
+            private static String accessKindOf(SimpleName name) {
+                ASTNode expr = name;
+                ASTNode parent = name.getParent();
+                // a.b / this.b / super.b の b なら、参照式はその親
+                if ((parent instanceof QualifiedName && ((QualifiedName) parent).getName() == name)
+                        || (parent instanceof FieldAccess && ((FieldAccess) parent).getName() == name)
+                        || (parent instanceof SuperFieldAccess
+                            && ((SuperFieldAccess) parent).getName() == name)) {
+                    expr = parent;
+                    parent = expr.getParent();
+                }
+                if (parent instanceof Assignment && ((Assignment) parent).getLeftHandSide() == expr) {
+                    return (((Assignment) parent).getOperator() == Assignment.Operator.ASSIGN)
+                            ? "write" : "readwrite";
+                }
+                if (parent instanceof PostfixExpression) {
+                    return "readwrite";
+                }
+                if (parent instanceof PrefixExpression) {
+                    PrefixExpression.Operator op = ((PrefixExpression) parent).getOperator();
+                    return (op == PrefixExpression.Operator.INCREMENT
+                            || op == PrefixExpression.Operator.DECREMENT) ? "readwrite" : "read";
+                }
+                return "read";
+            }
+
+            /** 宣言型のFQN（消去型）。配列は要素型に "[]" を付ける。プリミティブはそのまま */
+            private String declTypeName(ITypeBinding t) {
+                if (t == null) {
+                    return "";
+                }
+                if (t.isArray()) {
+                    return declTypeName(t.getComponentType()) + "[]";
+                }
+                if (t.isPrimitive()) {
+                    return t.getName();
+                }
+                ITypeBinding er = (t.getErasure() != null) ? t.getErasure() : t;
+                String n = typeNameOf(er);
+                return (n == null) ? "" : n;
             }
 
             @Override
@@ -2776,7 +3310,8 @@ public class CallHierarchyExporter {
                         }
                     }
                 }
-                out.types.add(new TypeInfo(fqn, kind, supers));
+                String pkg = (er.getPackage() != null) ? er.getPackage().getName() : "";
+                out.types.add(new TypeInfo(fqn, kind, supers, pkg));
             }
 
             @Override
@@ -2784,8 +3319,12 @@ public class CallHierarchyExporter {
                 String[] r = toRef(node.resolveBinding());
                 if (r != null) {
                     int line = cu.getLineNumber(node.getName().getStartPosition());
+                    String mods = modifierTokens(node.resolveBinding().getModifiers());
+                    if (node.isConstructor() && delegatesToThis(node)) {
+                        mods = withToken(mods, "delegating");
+                    }
                     out.declarations.add(new MethodDecl(r[0], r[1], r[2], r[3], line,
-                            node.getBody() != null));
+                            node.getBody() != null, mods));
                     methodStack.push(java.util.Collections.singletonList(r));
                 } else {
                     methodStack.push(UNKNOWN);
@@ -2814,7 +3353,7 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(LambdaExpression node) {
                 lambdaDepth++;
-                recordFunctionalImpl(node.resolveTypeBinding());
+                recordFunctionalImpl(node.resolveTypeBinding(), node, "lambda");
                 return true;
             }
 
@@ -2831,7 +3370,7 @@ public class CallHierarchyExporter {
              * ラムダ本体の呼び出しは、引き続き囲みメソッドに計上する
              * （合成メソッドに付け替えない理由は docs/QA-issue29.md 参照）。
              */
-            private void recordFunctionalImpl(ITypeBinding fnType) {
+            private void recordFunctionalImpl(ITypeBinding fnType, ASTNode node, String kind) {
                 if (fnType == null) {
                     return;
                 }
@@ -2844,11 +3383,15 @@ public class CallHierarchyExporter {
                     return;
                 }
                 String key = r[1] + "#" + r[2] + "(" + r[3] + ")";
-                if (!out.functionalImpls.contains(key)) {
-                    // 同じファイル内で同じインターフェースを何度実装しても
-                    // 「展開できない実装がある」という事実は1件で足りる。
-                    // 件数を数えるとファイル単位のキャッシュ再利用で値がぶれる
-                    out.functionalImpls.add(key);
+                int line = cu.getLineNumber(node.getStartPosition());
+                List<String[]> callers = current();
+                if (callers == null) {
+                    out.functionalImpls.add(new FunctionalImplRec(line, null, key, kind));
+                    return;
+                }
+                // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
+                for (String[] c : callers) {
+                    out.functionalImpls.add(new FunctionalImplRec(line, c, key, kind));
                 }
             }
 
@@ -2907,7 +3450,7 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(MethodInvocation n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b),
+                record(b, n, n.getName().getIdentifier(), targetModsOf(b),
                         recvKeyOf(n.getExpression()),
                         recvKindOf(n.getExpression()), externalGuessRef(n),
                         originOf(n.getExpression()), argOriginsOf(n.arguments()));
@@ -2949,21 +3492,24 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(SuperMethodInvocation n) {
                 // super.m() は静的束縛（オーバーライドの影響を受けない）
-                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(),
+                        superMods(n.resolveMethodBinding()), "",
                         RecvKind.THIS, null, null, argOriginsOf(n.arguments()));
                 return true;
             }
 
             @Override
             public boolean visit(ClassInstanceCreation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null,
+                record(n.resolveConstructorBinding(), n, "<init>",
+                        targetModsOf(n.resolveConstructorBinding()), "", RecvKind.TYPE, null,
                         null, argOriginsOf(n.arguments()));
                 return true;
             }
 
             @Override
             public boolean visit(ConstructorInvocation n) {
-                record(n.resolveConstructorBinding(), n, "<init>", 'C', "", RecvKind.TYPE, null,
+                record(n.resolveConstructorBinding(), n, "<init>",
+                        targetModsOf(n.resolveConstructorBinding()), "", RecvKind.TYPE, null,
                         null, argOriginsOf(n.arguments()));
                 return true;
             }
@@ -2985,8 +3531,8 @@ public class CallHierarchyExporter {
             public boolean visit(ExpressionMethodReference n) {
                 Expression recv = n.getExpression();
                 IMethodBinding b = n.resolveMethodBinding();
-                recordFunctionalImpl(n.resolveTypeBinding());
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b), recvKeyOf(recv),
+                recordFunctionalImpl(n.resolveTypeBinding(), n, "methodref");
+                record(b, n, n.getName().getIdentifier(), targetModsOf(b), recvKeyOf(recv),
                         recvKindOf(recv), null, originOf(recv), null);
                 return true;
             }
@@ -2995,8 +3541,8 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(TypeMethodReference n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                recordFunctionalImpl(n.resolveTypeBinding());
-                record(b, n, n.getName().getIdentifier(), bindKindOf(b), "",
+                recordFunctionalImpl(n.resolveTypeBinding(), n, "methodref");
+                record(b, n, n.getName().getIdentifier(), targetModsOf(b), "",
                         RecvKind.TYPE, null, null, null);
                 return true;
             }
@@ -3004,8 +3550,9 @@ public class CallHierarchyExporter {
             /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
             @Override
             public boolean visit(SuperMethodReference n) {
-                recordFunctionalImpl(n.resolveTypeBinding());
-                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(), 'U', "",
+                recordFunctionalImpl(n.resolveTypeBinding(), n, "methodref");
+                record(n.resolveMethodBinding(), n, n.getName().getIdentifier(),
+                        superMods(n.resolveMethodBinding()), "",
                         RecvKind.THIS, null, null, null);
                 return true;
             }
@@ -3014,26 +3561,26 @@ public class CallHierarchyExporter {
             @Override
             public boolean visit(CreationReference n) {
                 IMethodBinding b = n.resolveMethodBinding();
-                recordFunctionalImpl(n.resolveTypeBinding());
+                recordFunctionalImpl(n.resolveTypeBinding(), n, "ctorref");
                 if (b == null && n.getType().resolveBinding() != null
                         && n.getType().resolveBinding().isArray()) {
                     // int[]::new は配列生成であって呼び出すメソッドが無い。
                     // 未解決として記録すると、実体の無い失敗が件数に混ざる
                     return true;
                 }
-                record(b, n, "<init>", 'C', "", RecvKind.TYPE, null, null, null);
+                record(b, n, "<init>", targetModsOf(b), "", RecvKind.TYPE, null, null, null);
                 return true;
             }
 
             /**
              * バインディング解決が完全に失敗した場合の最後の手段。
              * レシーバの単純名が、このファイルの単一型インポート（{@code import a.b.C;}）と
-             * 一致すれば、そのFQNを型として採用する。あくまでソース上のテキストからの
+             * 一致すれば、そのFQNを候補として返す。あくまでソース上のテキストからの
              * 推定であり、JDTによる検証済みの型解決ではない
              * （メンバの実在・オーバーロードの妥当性までは確認できない）。
              * ワイルドカードimport・static import・型不明のレシーバでは使わない。
              */
-            private String[] externalGuessRef(MethodInvocation n) {
+            private String externalGuessRef(MethodInvocation n) {
                 Expression recv = n.getExpression();
                 if (!(recv instanceof SimpleName)) {
                     return null;
@@ -3051,96 +3598,97 @@ public class CallHierarchyExporter {
                         break;
                     }
                 }
-                if (fqn == null) {
-                    return null;
-                }
-                int dot = fqn.lastIndexOf('.');
-                String pkg = (dot >= 0) ? fqn.substring(0, dot) : "";
-                return new String[]{pkg, fqn, n.getName().getIdentifier(), ""};
+                return fqn;
             }
 
             /**
-             * 段0の判定。実際に走る実装が一意に定まる（＝仮想ディスパッチされない）
-             * 呼び出しかどうかを、修飾子から判定する。
-             *
-             * 宣言型が具象クラスであることは根拠にならない。
-             *   Base b = new Derived(); b.m();  // 実際に走るのは Derived.m
-             * 正しい軸は「静的束縛か仮想呼び出しか」。
+             * 呼び出し先（宣言側）の修飾子（事実）。静的束縛かどうかの判定は
+             * 読み手が行う（{@link CallGraph#bindKindOf}）。
+             * 宣言クラスが final なら finalclass を足す（サブクラスを作れない＝オーバーライド不能）
              */
-            private char bindKindOf(IMethodBinding b) {
+            private static String targetModsOf(IMethodBinding b) {
                 if (b == null) {
-                    return 'V';
+                    return "";
                 }
                 IMethodBinding d = b.getMethodDeclaration();
                 if (d == null) {
                     d = b;
                 }
-                int mm = d.getModifiers();
-                // 理由まで記録しておく。後から
-                // 「この確定は本当に妥当か」を resolutions.csv で監査できるようにするため
-                if (Modifier.isPrivate(mm)) {
-                    return 'P';   // オーバーライド不可
-                }
-                if (Modifier.isStatic(mm)) {
-                    return 'T';   // 動的束縛されない
-                }
-                if (Modifier.isFinal(mm)) {
-                    return 'F';   // オーバーライド不可（CGLIBもインターセプトできない）
-                }
+                String mods = modifierTokens(d.getModifiers());
                 ITypeBinding owner = d.getDeclaringClass();
                 if (owner != null && Modifier.isFinal(owner.getModifiers())) {
-                    return 'L';   // finalクラス。サブクラスを作れない
+                    mods = withToken(mods, "finalclass");
                 }
-                return 'V';
+                return mods;
+            }
+
+            /** super.m() / super::m の呼び出し先。super 経由である事実を足す */
+            private static String superMods(IMethodBinding b) {
+                return withToken(targetModsOf(b), "super");
+            }
+
+            /** 修飾子ビットをカンマ区切りの語に落とす（D行・V行・C行で共通の語彙） */
+            static String modifierTokens(int m) {
+                StringBuilder sb = new StringBuilder();
+                appendIf(sb, Modifier.isPublic(m), "public");
+                appendIf(sb, Modifier.isProtected(m), "protected");
+                appendIf(sb, Modifier.isPrivate(m), "private");
+                appendIf(sb, Modifier.isStatic(m), "static");
+                appendIf(sb, Modifier.isFinal(m), "final");
+                appendIf(sb, Modifier.isAbstract(m), "abstract");
+                appendIf(sb, Modifier.isDefault(m), "default");
+                return sb.toString();
+            }
+
+            private static void appendIf(StringBuilder sb, boolean cond, String token) {
+                if (cond) {
+                    if (sb.length() > 0) {
+                        sb.append(',');
+                    }
+                    sb.append(token);
+                }
+            }
+
+            static String withToken(String mods, String token) {
+                return (mods == null || mods.isEmpty()) ? token : mods + "," + token;
             }
 
             /**
-             * @param externalGuess バインディング解決が失敗した場合の代替の呼び出し先。
-             *                      null なら従来通りunresolved-calls.csvに記録する。
-             *                      非null なら「外部ライブラリ（import推定・未検証）」の
-             *                      注記付きでcall-hierarchy.csv側へ記録する
-             *                      （{@link #externalGuessRef} 参照）
+             * 呼び出し箇所を1件記録する。
+             *
+             * 解決できれば C 行（呼び出し元ごとに1本）。解決できなければ U 行に、
+             * 理由コードと import から推定した候補（{@link #externalGuessRef}）を事実として残す。
+             * 候補をエッジとして採用するかは読み手（CallGraph.buildFrom）が決める。
              */
             private void record(IMethodBinding binding, ASTNode node, String displayName,
-                                 char bindKind, String recvKey, char recvKind,
-                                 String[] externalGuess, String recvOrigin, String argOrigins) {
+                                 String calleeMods, String recvKey, char recvKind,
+                                 String externalGuess, String recvOrigin, String argOrigins) {
                 int line = cu.getLineNumber(node.getStartPosition());
                 List<String[]> callers = current();
                 if (callers == null) {
                     // 呼び出し元の型・コンストラクタ自体を特定できないケース
-                    // （型のバインディング解決に失敗した等）。未解決として記録する
-                    out.unresolved.add(new UnresolvedCall(line,
-                            "(メソッド外)", displayName, "メソッド本体の外からの呼び出し"));
+                    // （型のバインディング解決に失敗した等）
+                    out.callSites.add(new UnresolvedCall(line, null, displayName,
+                            UnresolvedCall.OUTSIDE_METHOD, "", recvKey, recvKind,
+                            recvOrigin, argOrigins, lambdaDepth));
                     return;
                 }
                 String[] callee = toRef(binding);
                 if (callee == null) {
-                    if (externalGuess != null) {
-                        // クラスパス不足で消えるより、未検証と分かる形で残す方針。
-                        // bindKind='G' は resolveEdge() 側で「候補は常にこの1件」として
-                        // 扱われ、CHA展開の対象にはしない（型階層情報を持たないため）
-                        for (String[] caller : callers) {
-                            out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
-                                    externalGuess[0], externalGuess[1], externalGuess[2],
-                                    externalGuess[3], line, 'G', recvKey, recvKind,
-                                    recvOrigin, argOrigins));
-                        }
-                        return;
+                    // 呼び出し先の型解決に失敗したケース。呼び出し元ごとに1件残す
+                    // （C行と同じく、初期化子の中なら根のコンストラクタそれぞれに属する）
+                    for (String[] caller : callers) {
+                        out.callSites.add(new UnresolvedCall(line, caller, displayName,
+                                UnresolvedCall.BINDING_FAILED, externalGuess, recvKey, recvKind,
+                                recvOrigin, argOrigins, lambdaDepth));
                     }
-                    // 呼び出し先の型解決に失敗したケース。呼び出し元が複数あっても
-                    // 原因は呼び出し先側なので、1件だけ記録すれば足りる
-                    String[] caller = callers.get(0);
-                    out.unresolved.add(new UnresolvedCall(line,
-                            caller[1] + "#" + caller[2] + "(" + caller[3] + ")", displayName,
-                            "型解決に失敗（クラスパス不足・動的呼び出し等の可能性）"));
                     return;
                 }
                 // 呼び出し元が複数（インスタンス初期化子等）でも全件をエッジにする。
                 // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
                 for (String[] caller : callers) {
-                    out.edges.add(new CallEdgeRec(caller[0], caller[1], caller[2], caller[3],
-                            callee[0], callee[1], callee[2], callee[3], line, bindKind,
-                            recvKey, recvKind, recvOrigin, argOrigins));
+                    out.callSites.add(new CallEdgeRec(caller, callee, line, calleeMods,
+                            recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth));
                 }
             }
 
@@ -3152,7 +3700,7 @@ public class CallHierarchyExporter {
              * 呼び出しが丸ごと欠落していた。JDTは匿名クラスにも識別子を持っているので
              * 順に切り替えて拾う。
              */
-            private static String typeNameOf(ITypeBinding t) {
+            private String typeNameOf(ITypeBinding t) {
                 if (t == null) {
                     return null;
                 }
@@ -3165,7 +3713,26 @@ public class CallHierarchyExporter {
                     // キャッシュはタブ区切りのため、空白類が混ざると形式が壊れる
                     n = (key == null) ? null : key.replaceAll("\\s", "_");
                 }
-                return (n == null || n.isEmpty()) ? null : n;
+                if (n == null || n.isEmpty()) {
+                    return null;
+                }
+                // ここを通った型は、このファイルの解決結果がそれに依存している（I行）。
+                // 自分が宣言する型も混ざるが、書き出し時に除く
+                if (!t.isPrimitive() && !t.isArray() && !t.isTypeVariable()) {
+                    out.referencedTypes.add(n);
+                }
+                return n;
+            }
+
+            /** 型を「このファイルの解決結果が依存する型」（I行）に数える。配列は要素型で */
+            private void noteDependency(ITypeBinding t) {
+                while (t != null && t.isArray()) {
+                    t = t.getComponentType();
+                }
+                if (t == null || t.isPrimitive() || t.isTypeVariable()) {
+                    return;
+                }
+                typeNameOf(t.getErasure() != null ? t.getErasure() : t);
             }
 
             /** @return {pkg, typeFqn, methodName, paramSig} または null */
@@ -3201,6 +3768,8 @@ public class CallHierarchyExporter {
                         }
                         ITypeBinding pe = pts[i].getErasure();
                         params.append(pe != null ? pe.getQualifiedName() : pts[i].getQualifiedName());
+                        // 引数型はメソッドキーの一部。改名されるとキーが変わるので依存に数える
+                        noteDependency(pe != null ? pe : pts[i]);
                     }
                 }
                 String name = decl.isConstructor() ? "<init>" : decl.getName();
@@ -3298,6 +3867,11 @@ public class CallHierarchyExporter {
 
         boolean hasBody(int id) {
             return hasBody.get(id).booleanValue();
+        }
+
+        /** キー全体（typeFqn#methodName(paramSig)） */
+        String key(int id) {
+            return keys.get(id);
         }
 
         /** キーのうち "#" 以降（methodName(paramSig)）。同名同引数の照合に使う */
@@ -3589,6 +4163,7 @@ public class CallHierarchyExporter {
             IntArray outDegree = new IntArray(1 << 16);
             HashMap<Integer, List<String>> returnsById = new HashMap<>();
             long edgeCount = 0;
+            FieldFacts fields = new FieldFacts();
 
             BufferedReader in = open(cacheFile);
             try {
@@ -3600,6 +4175,8 @@ public class CallHierarchyExporter {
                     }
                     char t = line.charAt(0);
                     if (t == 'F') {
+                        // ファイル単位で完結する判定（フィールド注入）をここで確定する
+                        fields.flushInto(g.fieldOrigins);
                         String[] f = line.split(CacheFormat.SEP, -1);
                         currentFile = (f.length >= 2) ? f[1] : null;
                     } else if (t == 'H') {
@@ -3654,6 +4231,7 @@ public class CallHierarchyExporter {
                             }
                             boolean body = (f.length < 7) || !"0".equals(f[6]);
                             g.methods.setDeclaration(id, currentFile, declLine, body);
+                            fields.declaration(f[2], f[3], f[4], (f.length >= 8) ? f[7] : "");
                         }
                     } else if (t == 'C') {
                         String[] f = line.split(CacheFormat.SEP, -1);
@@ -3665,15 +4243,32 @@ public class CallHierarchyExporter {
                             outDegree.set(caller, outDegree.get(caller) + 1);
                             edgeCount++;
                         }
+                    } else if (t == 'U') {
+                        // 読み手の判断: import から推定した候補があればエッジにする
+                        // （クラスパス不足で階層から消えるより、未検証と分かる形で残す方針）
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (UnresolvedCall.hasUsableCandidate(f)) {
+                            int caller = g.methods.intern(f[2], f[3], f[4], f[5]);
+                            int callee = internGuessedCallee(g, f);
+                            ensure(outDegree, caller);
+                            ensure(outDegree, callee);
+                            outDegree.set(caller, outDegree.get(caller) + 1);
+                            edgeCount++;
+                        }
+                    } else if (t == 'V') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length >= 3) {
+                            fields.field(f[1], f[2], (f.length >= 4) ? f[3] : "");
+                        }
                     } else if (t == 'J') {
                         String[] f = line.split(CacheFormat.SEP, -1);
-                        if (f.length >= 4) {
-                            g.fieldOrigins.put(f[1] + "#" + f[2], f[3]);
+                        if (f.length >= 5) {
+                            fields.assignment(f[1], f[2], f[3], f[4]);
                         }
                     } else if (t == 'M') {
                         String[] f = line.split(CacheFormat.SEP, -1);
-                        if (f.length >= 2) {
-                            g.functionalImpls.add(f[1]);
+                        if (f.length >= 7 && !f[6].isEmpty()) {
+                            g.functionalImpls.add(f[6]);
                         }
                     } else if (t == 'R') {
                         String[] f = line.split(CacheFormat.SEP, -1);
@@ -3691,8 +4286,18 @@ public class CallHierarchyExporter {
                         }
                     }
                 }
+                fields.flushInto(g.fieldOrigins);
             } finally {
                 in.close();
+            }
+            // 型階層の並びをキャッシュ上の出現順から切り離す。差分更新では解析し直した
+            // ファイルのブロックが移動するので、出現順のままだと CHA 候補の並び
+            // （＝出力の行順）が実行のたびに変わりうる
+            for (List<String> l : g.directSubtypes.values()) {
+                Collections.sort(l);
+            }
+            for (List<String> l : g.directSupertypes.values()) {
+                Collections.sort(l);
             }
             log("収集: 型 " + g.typeKind.size()
                     + " / メソッド " + g.methods.size() + " / エッジ " + edgeCount);
@@ -3720,7 +4325,9 @@ public class CallHierarchyExporter {
             Arrays.fill(g.argOriginIds, -1);
 
             // R行（戻り値の出所）をメソッドIDの配列に移す。
-            // 1回目のスキャンで全メソッドがID化されているのでここで確定できる
+            // 1回目のスキャンで全メソッドがID化されているのでここで確定できる。
+            // 追跡できない return（U）も含めて持ち、「1つでも不明なら不定」の判定は
+            // factoryOriginOf() が行う
             g.returnOrigins = new String[n][];
             for (Map.Entry<Integer, List<String>> e : returnsById.entrySet()) {
                 int id = e.getKey().intValue();
@@ -3739,47 +4346,214 @@ public class CallHierarchyExporter {
                     if (line.isEmpty()) {
                         continue;
                     }
-                    if (line.charAt(0) == 'F') {
-                        continue;
-                    }
-                    if (line.charAt(0) != 'C') {
-                        continue;
-                    }
-                    String[] f = line.split(CacheFormat.SEP, -1);
-                    if (f.length < 10) {
-                        continue;
-                    }
-                    int caller = g.methods.intern(f[1], f[2], f[3], f[4]);
-                    int callee = g.methods.intern(f[5], f[6], f[7], f[8]);
-                    int pos = cursor[caller]++;
-                    g.calleeIds[pos] = callee;
-                    try {
-                        g.callLines[pos] = Integer.parseInt(f[9]);
-                    } catch (NumberFormatException ignore) {
-                        g.callLines[pos] = -1;
-                    }
-                    g.bindKinds[pos] = (byte) ((f.length >= 11 && !f[10].isEmpty())
-                            ? f[10].charAt(0) : 'V');
-
-                    // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
-                    g.recvKinds[pos] = (byte) ((f.length >= 13 && !f[12].isEmpty())
-                            ? f[12].charAt(0) : RecvKind.OTHER);
-                    String recvKey = (f.length >= 12) ? f[11] : "";
-                    if (!recvKey.isEmpty()) {
-                        String callerKey = f[2] + "#" + f[3] + "(" + f[4] + ")";
-                        List<Hint> hs = g.hintsByScope.get(callerKey + "|" + recvKey);
-                        if (hs != null && !hs.isEmpty()) {
-                            g.hintTable.add(hs);
-                            g.edgeHint[pos] = g.hintTable.size() - 1;
+                    char t = line.charAt(0);
+                    if (t == 'C') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (f.length < 10) {
+                            continue;
                         }
+                        int caller = g.methods.intern(f[1], f[2], f[3], f[4]);
+                        int callee = g.methods.intern(f[5], f[6], f[7], f[8]);
+                        int pos = cursor[caller]++;
+                        g.calleeIds[pos] = callee;
+                        g.callLines[pos] = parseIntOr(f[9], -1);
+                        g.bindKinds[pos] = (byte) bindKindOf(f[7], col(f, 10));
+                        g.fillCallSite(pos, f[2] + "#" + f[3] + "(" + f[4] + ")",
+                                col(f, 11), col(f, 12), col(f, 13), col(f, 14));
+                    } else if (t == 'U') {
+                        String[] f = line.split(CacheFormat.SEP, -1);
+                        if (!UnresolvedCall.hasUsableCandidate(f)) {
+                            continue;
+                        }
+                        int caller = g.methods.intern(f[2], f[3], f[4], f[5]);
+                        int callee = internGuessedCallee(g, f);
+                        int pos = cursor[caller]++;
+                        g.calleeIds[pos] = callee;
+                        g.callLines[pos] = parseIntOr(f[1], -1);
+                        // 型階層情報を一切持たない合成メソッドのため、resolveEdge() で
+                        // 「候補は常にこの1件」として扱い、CHA展開の対象にはしない
+                        g.bindKinds[pos] = (byte) 'G';
+                        g.fillCallSite(pos, f[3] + "#" + f[4] + "(" + f[5] + ")",
+                                col(f, 9), col(f, 10), col(f, 11), col(f, 12));
                     }
-                    g.recvOriginIds[pos] = g.internOrigin((f.length >= 14) ? f[13] : "");
-                    g.argOriginIds[pos] = g.internOrigin((f.length >= 15) ? f[14] : "");
                 }
             } finally {
                 in.close();
             }
             return g;
+        }
+
+        private static String col(String[] f, int i) {
+            return (i < f.length) ? f[i] : "";
+        }
+
+        private static int parseIntOr(String s, int dflt) {
+            try {
+                return Integer.parseInt(s);
+            } catch (NumberFormatException e) {
+                return dflt;
+            }
+        }
+
+        /**
+         * U行の候補（レシーバの単純名と一致する単一型 import）を呼び出し先としてID化する。
+         * パッケージ名は FQN の最後のドットまで、とみなす（推定なので厳密ではない）
+         */
+        private static int internGuessedCallee(CallGraph g, String[] f) {
+            String fqn = f[8];
+            int dot = fqn.lastIndexOf('.');
+            String pkg = (dot >= 0) ? fqn.substring(0, dot) : "";
+            return g.methods.intern(pkg, fqn, f[6], "");
+        }
+
+        /** エッジのレシーバ由来・証拠・出所を書き込む（C行とU行で共通） */
+        private void fillCallSite(int pos, String callerKey, String recvKey, String recvKind,
+                                  String recvOrigin, String argOrigins) {
+            recvKinds[pos] = (byte) (recvKind.isEmpty() ? RecvKind.OTHER : recvKind.charAt(0));
+            // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
+            if (!recvKey.isEmpty()) {
+                List<Hint> hs = hintsByScope.get(callerKey + "|" + recvKey);
+                if (hs != null && !hs.isEmpty()) {
+                    hintTable.add(hs);
+                    edgeHint[pos] = hintTable.size() - 1;
+                }
+            }
+            recvOriginIds[pos] = internOrigin(recvOrigin);
+            argOriginIds[pos] = internOrigin(argOrigins);
+        }
+
+        /**
+         * 静的束縛の判定（読み手の判断）。C行の calleeMods（呼び出し先の修飾子）から、
+         * resolveEdge() が使う種別を決める。
+         *
+         *   C=コンストラクタ / U=super呼び出し / P=private / T=static /
+         *   F=finalメソッド / L=finalクラス（以上は静的束縛） / V=仮想呼び出し
+         *
+         * 宣言型が具象クラスであることは根拠にならない。
+         *   Base b = new Derived(); b.m();  // 実際に走るのは Derived.m
+         * 正しい軸は「静的束縛か仮想呼び出しか」。
+         * final は CGLIB でもインターセプトできず、final クラスはサブクラスを作れない。
+         */
+        static char bindKindOf(String calleeMethod, String calleeMods) {
+            if ("<init>".equals(calleeMethod)) {
+                return 'C';
+            }
+            if (CacheFormat.hasToken(calleeMods, "super")) {
+                return 'U';
+            }
+            if (CacheFormat.hasToken(calleeMods, "private")) {
+                return 'P';
+            }
+            if (CacheFormat.hasToken(calleeMods, "static")) {
+                return 'T';
+            }
+            if (CacheFormat.hasToken(calleeMods, "final")) {
+                return 'F';
+            }
+            if (CacheFormat.hasToken(calleeMods, "finalclass")) {
+                return 'L';
+            }
+            return 'V';
+        }
+
+        /**
+         * D行・V行・J行から「コンストラクタ注入されたフィールド」を判定する（読み手の判断）。
+         *
+         * 「このフィールドには、必ずこの出所の値が入る」と言い切るには次を全部満たす必要がある。
+         *   (a) private または final（クラスの外から代入されない）
+         *   (b) 代入がコンストラクタの本体か、フィールド初期化子の中だけにある
+         *       （setterや他のメソッドで後から差し替わらない）
+         *   (c) 初期化子を持つか、this(...)委譲していない全てのコンストラクタで
+         *       代入されている（代入されない生成経路が無い）
+         *   (d) それらの代入の出所が全て一致する
+         *
+         * 事実はファイル（F行）ごとに溜め、次のF行またはEOFで確定する。
+         * static フィールドは対象外（インスタンスの生成経路と無関係なため）。
+         */
+        static final class FieldFacts {
+
+            private static final class Field {
+                final String mods;
+                /** {site, origin} */
+                final List<String[]> assigns = new ArrayList<>(2);
+
+                Field(String mods) {
+                    this.mods = mods;
+                }
+            }
+
+            /** "typeFqn#fieldName" -> 宣言と代入 */
+            private final LinkedHashMap<String, Field> fields = new LinkedHashMap<>();
+            /** typeFqn -> this(...)委譲していないコンストラクタの "name(paramSig)" */
+            private final HashMap<String, Set<String>> rootCtors = new HashMap<>();
+
+            void declaration(String typeFqn, String method, String params, String mods) {
+                if (!"<init>".equals(method) || CacheFormat.hasToken(mods, "delegating")) {
+                    return;
+                }
+                Set<String> roots = rootCtors.get(typeFqn);
+                if (roots == null) {
+                    roots = new HashSet<>();
+                    rootCtors.put(typeFqn, roots);
+                }
+                roots.add(method + "(" + params + ")");
+            }
+
+            void field(String typeFqn, String name, String mods) {
+                String key = typeFqn + "#" + name;
+                if (!fields.containsKey(key)) {
+                    fields.put(key, new Field(mods));
+                }
+            }
+
+            void assignment(String typeFqn, String name, String site, String origin) {
+                Field fd = fields.get(typeFqn + "#" + name);
+                if (fd != null) {
+                    fd.assigns.add(new String[]{site, origin});
+                }
+            }
+
+            void flushInto(Map<String, String> fieldOrigins) {
+                for (Map.Entry<String, Field> e : fields.entrySet()) {
+                    String key = e.getKey();
+                    Field fd = e.getValue();
+                    if (CacheFormat.hasToken(fd.mods, "static")
+                            || !(CacheFormat.hasToken(fd.mods, "private")
+                                 || CacheFormat.hasToken(fd.mods, "final"))) {
+                        continue;   // (a)
+                    }
+                    Set<String> roots = rootCtors.get(key.substring(0, key.indexOf('#')));
+                    int rootCount = (roots == null) ? 0 : roots.size();
+                    String origin = null;
+                    boolean hasInitializer = false;
+                    boolean broken = false;
+                    Set<String> assignedIn = new HashSet<>();
+                    for (String[] a : fd.assigns) {
+                        if (FieldAssignRec.SITE_INITIALIZER.equals(a[0])) {
+                            hasInitializer = true;
+                        } else if (roots != null && roots.contains(a[0])) {
+                            assignedIn.add(a[0]);
+                        } else {
+                            broken = true;   // (b) 生成後に差し替わりうる
+                            break;
+                        }
+                        if (Origin.isUnknown(a[1]) || (origin != null && !origin.equals(a[1]))) {
+                            broken = true;   // (d)
+                            break;
+                        }
+                        origin = a[1];
+                    }
+                    if (broken || origin == null) {
+                        continue;
+                    }
+                    if (!hasInitializer && assignedIn.size() < rootCount) {
+                        continue;   // (c) 代入されない生成経路がある
+                    }
+                    fieldOrigins.put(key, origin);
+                }
+                fields.clear();
+                rootCtors.clear();
+            }
         }
 
         // ================================================================
@@ -4009,7 +4783,9 @@ public class CallHierarchyExporter {
             if (kind == Origin.PARAM && ctx != null && ctx.paramTypes != null) {
                 int idx = parseIndex(Origin.valueOf(origin));
                 if (idx >= 0 && idx < ctx.paramTypes.length) {
-                    return ctx.paramTypes[idx];
+                    // 型ではなく値（L:/K:）が入っている引数は、具象型としては不明
+                    String t = ctx.paramTypes[idx];
+                    return (t != null && t.indexOf(':') < 0) ? t : null;
                 }
                 return null;
             }
@@ -4022,8 +4798,8 @@ public class CallHierarchyExporter {
         /**
          * コンストラクタ注入されたフィールドの具象型。
          *
-         * J行が「このフィールドには必ずコンストラクタのn番目の引数が入る」と
-         * 言っているので、経路上で分かっているコンストラクタの実引数と突き合わせる。
+         * fieldOrigins（V行・J行から FieldFacts が判定した「このフィールドには必ずこの出所の
+         * 値が入る」）を引き、コンストラクタの引数なら経路上で分かっている実引数と突き合わせる。
          * 引数ではなく初期化子の new で決まっているフィールドは、経路を見ずに決まる。
          */
         private String fieldTypeOf(String fieldKey, DataflowContext ctx) {
@@ -4092,6 +4868,7 @@ public class CallHierarchyExporter {
             for (int caller = 0; caller < flags.length; caller++) {
                 for (int e = edgeStart(caller); e < edgeEnd(caller); e++) {
                     if (Origin.kindOf(recvOrigin(e)) == Origin.PARAM
+                            || mentionsParam(recvOrigin(e))   // 入れ子のレシーバ・実引数（リフレクション）
                             || mentionsParam(argOrigins(e))) {
                         flags[caller] = true;
                         break;
@@ -4131,6 +4908,362 @@ public class CallHierarchyExporter {
         }
 
         // ================================================================
+        // リフレクション（読み手の判断）
+        //
+        // Class.forName / X.class / obj.getClass() → getMethod / getDeclaredMethod →
+        // Method.invoke、および getConstructor → Constructor.newInstance / Class.newInstance
+        // の連鎖を、C行の出所（レシーバの入れ子と実引数のリテラル）から辿り、
+        // 実際に動くメソッドへ解決する。
+        //
+        // 追える範囲（キャッシュの収集範囲に依存する）:
+        //   ・クラス名・メソッド名が文字列リテラルかコンパイル時定数、または
+        //     囲みメソッドの引数（経路上の呼び出し元でリテラルが渡っている）のとき
+        //   ・クラスが X.class、Class.forName(リテラル)、obj.getClass()（obj の具象型が分かる）のとき
+        //   ・Method / Class オブジェクトが同じメソッド内のローカル変数を経由するとき
+        // 追えないもの: 設定ファイル・DB・アノテーションから来る名前、
+        //   Method / Class オブジェクトをフィールドや別メソッドの引数で受け渡す形
+        //   （実引数・フィールド代入の出所は入れ子を持たないため）
+        // ================================================================
+
+        static final int REFLECT_NONE = 0;
+        static final int REFLECT_INVOKE = 1;
+        static final int REFLECT_FOR_NAME = 2;
+        static final int REFLECT_CLASS_NEW_INSTANCE = 3;
+        static final int REFLECT_CTOR_NEW_INSTANCE = 4;
+
+        private static final String CLASS_FOR_NAME_PREFIX = "java.lang.Class#forName(";
+        private static final String CLASS_GET_METHOD =
+                "java.lang.Class#getMethod(java.lang.String,java.lang.Class[])";
+        private static final String CLASS_GET_DECLARED_METHOD =
+                "java.lang.Class#getDeclaredMethod(java.lang.String,java.lang.Class[])";
+        private static final String CLASS_GET_CTOR = "java.lang.Class#getConstructor(java.lang.Class[])";
+        private static final String CLASS_GET_DECLARED_CTOR =
+                "java.lang.Class#getDeclaredConstructor(java.lang.Class[])";
+        private static final String OBJECT_GET_CLASS = "java.lang.Object#getClass()";
+
+        /** メソッドIDごとのリフレクションAPIの種別。初回に一度だけ全メソッドを見て作る */
+        private byte[] reflectKinds;
+        /** "typeFqn#name" -> 本体を持つメソッドID。引数型が分からないときの名前照合用。必要になったら作る */
+        private HashMap<String, IntArray> methodsByName;
+
+        int reflectiveKindOf(int methodId) {
+            if (reflectKinds == null) {
+                reflectKinds = new byte[methods.size()];
+                for (int id = 0; id < reflectKinds.length; id++) {
+                    String key = methods.key(id);
+                    if ("java.lang.reflect.Method#invoke(java.lang.Object,java.lang.Object[])".equals(key)) {
+                        reflectKinds[id] = REFLECT_INVOKE;
+                    } else if (key.startsWith(CLASS_FOR_NAME_PREFIX)) {
+                        reflectKinds[id] = REFLECT_FOR_NAME;
+                    } else if ("java.lang.Class#newInstance()".equals(key)) {
+                        reflectKinds[id] = REFLECT_CLASS_NEW_INSTANCE;
+                    } else if ("java.lang.reflect.Constructor#newInstance(java.lang.Object[])".equals(key)) {
+                        reflectKinds[id] = REFLECT_CTOR_NEW_INSTANCE;
+                    }
+                }
+            }
+            return (methodId >= 0 && methodId < reflectKinds.length) ? reflectKinds[methodId] : REFLECT_NONE;
+        }
+
+        /**
+         * リフレクション呼び出しを、実際に動くメソッドへ解決する。
+         *
+         * @param ctx 経路から確定した引数の値（無ければ null。その場合はリテラルだけで決める）
+         * @return 解決できなければ null
+         */
+        Resolution reflectiveResolution(int edgeIndex, DataflowContext ctx) {
+            if (!dataflowEnabled) {
+                return null;
+            }
+            int calleeId = calleeIds[edgeIndex];
+            switch (reflectiveKindOf(calleeId)) {
+                case REFLECT_INVOKE: {
+                    int[] targets = invokeTargets(recvOrigin(edgeIndex), argOrigins(edgeIndex), ctx);
+                    return (targets == null) ? null : new Resolution(targets, "REFLECTION");
+                }
+                case REFLECT_FOR_NAME: {
+                    // Class.forName("a.B") はクラスを初期化する。static初期化子があればそこへ
+                    String fqn = classNameOf(Origin.argAt(argOrigins(edgeIndex), 0), ctx);
+                    int init = (fqn == null) ? -1 : methods.idOf(fqn + "#<clinit>()");
+                    return (init < 0) ? null : new Resolution(new int[]{init}, "REFLECTION_INIT");
+                }
+                case REFLECT_CLASS_NEW_INSTANCE: {
+                    String fqn = classOf(recvOrigin(edgeIndex), ctx, 0);
+                    int ctor = (fqn == null) ? -1 : methods.idOf(fqn + "#<init>()");
+                    return (ctor < 0) ? null : new Resolution(new int[]{ctor}, "REFLECTION");
+                }
+                case REFLECT_CTOR_NEW_INSTANCE: {
+                    String recv = recvOrigin(edgeIndex);
+                    if (Origin.kindOf(recv) != Origin.RETURN) {
+                        return null;
+                    }
+                    String v = Origin.valueOf(recv);
+                    if (!CLASS_GET_CTOR.equals(v) && !CLASS_GET_DECLARED_CTOR.equals(v)) {
+                        return null;
+                    }
+                    String fqn = classOf(Origin.receiverOf(recv), ctx, 0);
+                    String params = paramTypesOf(recv, 0, ctx);
+                    if (fqn == null || params == null) {
+                        return null;
+                    }
+                    int ctor = methods.idOf(fqn + "#<init>(" + params + ")");
+                    return (ctor < 0) ? null : new Resolution(new int[]{ctor}, "REFLECTION");
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /**
+         * Method.invoke(obj, args) の呼び出し先。
+         *
+         * レシーバ（Method）が getMethod / getDeclaredMethod の戻り値で、その受け手のクラスと
+         * 第1引数（メソッド名）が分かれば決まる。引数型（第2引数以降のクラスリテラル）が
+         * 揃っていればシグネチャで1件に、揃わなければ名前が一致する本体付きメソッドを候補にする。
+         * invoke の第1引数（実際のレシーバ）の具象型が分かれば、その型の実装を優先する。
+         */
+        private int[] invokeTargets(String recv, String invokeArgs, DataflowContext ctx) {
+            if (Origin.kindOf(recv) != Origin.RETURN) {
+                return null;
+            }
+            String v = Origin.valueOf(recv);
+            if (!CLASS_GET_METHOD.equals(v) && !CLASS_GET_DECLARED_METHOD.equals(v)) {
+                return null;
+            }
+            String name = literalOf(Origin.argAt(Origin.argsOf(recv), 0), ctx, 0);
+            String owner = classOf(Origin.receiverOf(recv), ctx, 0);
+            if (name == null || owner == null) {
+                return null;
+            }
+            String recvType = concreteTypeOf(Origin.argAt(invokeArgs, 0), ctx);
+            String lookup = (recvType != null && isSubtypeOf(recvType, owner)) ? recvType : owner;
+
+            String params = paramTypesOf(recv, 1, ctx);
+            if (params != null) {
+                int id = implementationIn(lookup, name + "(" + params + ")");
+                if (id < 0 && !lookup.equals(owner)) {
+                    id = implementationIn(owner, name + "(" + params + ")");
+                }
+                return (id < 0) ? null : new int[]{id};
+            }
+            IntArray ids = methodsNamed(lookup, name);
+            if (ids.size() == 0 && !lookup.equals(owner)) {
+                ids = methodsNamed(owner, name);
+            }
+            return (ids.size() == 0) ? null : Arrays.copyOf(ids.a, ids.size());
+        }
+
+        /**
+         * getMethod / getConstructor の引数のクラスリテラルから、引数型のカンマ区切りを作る。
+         * 引数の数は n= で分かるので、出所の無い引数（変数など）があれば「不明」として null を返す
+         */
+        private String paramTypesOf(String origin, int from, DataflowContext ctx) {
+            int count = Origin.argCountOf(origin);
+            if (count < 0) {
+                return null;
+            }
+            String args = Origin.argsOf(origin);
+            StringBuilder sb = new StringBuilder();
+            for (int i = from; i < count; i++) {
+                String t = classOf(Origin.argAt(args, i), ctx, 0);
+                if (t == null) {
+                    return null;
+                }
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(t);
+            }
+            return sb.toString();
+        }
+
+        /** 出所が表すクラス（Class オブジェクト）のFQN。分からなければ null */
+        String classOf(String origin, DataflowContext ctx, int depth) {
+            if (origin == null || depth > dataflowMaxDepth) {
+                return null;
+            }
+            switch (Origin.kindOf(origin)) {
+                case Origin.CLASS:
+                    return Origin.valueOf(origin);
+                case Origin.LITERAL:
+                    return classNameOf(origin, ctx);
+                case Origin.PARAM: {
+                    String v = paramValueOf(origin, ctx);
+                    return (v == null) ? null : classOf(v, null, depth + 1);
+                }
+                case Origin.RETURN: {
+                    String v = Origin.valueOf(origin);
+                    if (v.startsWith(CLASS_FOR_NAME_PREFIX)) {
+                        return classNameOf(Origin.argAt(Origin.argsOf(origin), 0), ctx);
+                    }
+                    if (OBJECT_GET_CLASS.equals(v)) {
+                        return concreteTypeOf(Origin.receiverOf(origin), ctx);
+                    }
+                    // ソース上のメソッドが Class を返す形。全ての return が同じクラスなら決まる
+                    int m = methods.idOf(v);
+                    if (m < 0 || returnOrigins == null || m >= returnOrigins.length
+                            || returnOrigins[m] == null) {
+                        return null;
+                    }
+                    String found = null;
+                    for (String o : returnOrigins[m]) {
+                        String c = classOf(o, null, depth + 1);
+                        if (c == null || (found != null && !found.equals(c))) {
+                            return null;
+                        }
+                        found = c;
+                    }
+                    return found;
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /** クラス名の文字列（リテラル・定数・経路上の引数）が解析対象の型を指していればそのFQN */
+        private String classNameOf(String origin, DataflowContext ctx) {
+            String name = literalOf(origin, ctx, 0);
+            // 解析対象に存在しない型名は使わない（文字列の見た目だけで決めない）
+            return (name != null && typeKind.containsKey(name)) ? name : null;
+        }
+
+        /** 出所が表す文字列の値（リテラル・定数・経路上の引数）。分からなければ null */
+        private String literalOf(String origin, DataflowContext ctx, int depth) {
+            if (origin == null || depth > dataflowMaxDepth) {
+                return null;
+            }
+            switch (Origin.kindOf(origin)) {
+                case Origin.LITERAL:
+                    return Origin.valueOf(origin);
+                case Origin.PARAM: {
+                    String v = paramValueOf(origin, ctx);
+                    return (v == null) ? null : literalOf(v, null, depth + 1);
+                }
+                case Origin.RETURN: {
+                    int m = methods.idOf(Origin.valueOf(origin));
+                    if (m < 0 || returnOrigins == null || m >= returnOrigins.length
+                            || returnOrigins[m] == null) {
+                        return null;
+                    }
+                    String found = null;
+                    for (String o : returnOrigins[m]) {
+                        String s = literalOf(o, null, depth + 1);
+                        if (s == null || (found != null && !found.equals(s))) {
+                            return null;
+                        }
+                        found = s;
+                    }
+                    return found;
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /**
+         * 経路上で分かっている引数の「値」（L:文字列 / K:クラス）。
+         * DataflowContext.paramTypes には具象型（FQN）のほか、型ではなく値が渡っている引数には
+         * その出所（':' を含む）が入っている（StreamingTreeWalker.resolveArgs 参照）
+         */
+        private static String paramValueOf(String paramOrigin, DataflowContext ctx) {
+            if (ctx == null || ctx.paramTypes == null) {
+                return null;
+            }
+            int idx = parseIndex(Origin.valueOf(paramOrigin));
+            if (idx < 0 || idx >= ctx.paramTypes.length) {
+                return null;
+            }
+            String v = ctx.paramTypes[idx];
+            return (v != null && v.indexOf(':') >= 0) ? v : null;
+        }
+
+        /** 経路の引数環境に入れる「値」。具象型が決まらない引数でも、リテラルやクラスなら値として渡す */
+        String valueOriginOf(String origin, DataflowContext ctx) {
+            switch (Origin.kindOf(origin)) {
+                case Origin.LITERAL:
+                case Origin.CLASS:
+                    return Origin.head(origin);
+                case Origin.PARAM:
+                    return paramValueOf(origin, ctx);
+                case Origin.RETURN: {
+                    String c = classOf(origin, ctx, 0);
+                    if (c != null) {
+                        return Origin.of(Origin.CLASS, c);
+                    }
+                    String s = literalOf(origin, ctx, 0);
+                    return (s == null) ? null : Origin.of(Origin.LITERAL, s);
+                }
+                default:
+                    return null;
+            }
+        }
+
+        private boolean isSubtypeOf(String type, String ancestor) {
+            if (type.equals(ancestor)) {
+                return true;
+            }
+            ArrayDeque<String> queue = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            queue.add(type);
+            seen.add(type);
+            while (!queue.isEmpty()) {
+                List<String> sups = directSupertypes.get(queue.poll());
+                if (sups == null) {
+                    continue;
+                }
+                for (String s : sups) {
+                    if (s.equals(ancestor)) {
+                        return true;
+                    }
+                    if (seen.add(s)) {
+                        queue.add(s);
+                    }
+                }
+            }
+            return false;
+        }
+
+        /** 型（と親型）の中で、その名前を持つ本体付きメソッド。最初に見つかった型のものだけ */
+        private IntArray methodsNamed(String typeFqn, String name) {
+            if (methodsByName == null) {
+                methodsByName = new HashMap<>();
+                for (int id = 0; id < methods.size(); id++) {
+                    if (!methods.hasBody(id) || methods.declFile(id) == null) {
+                        continue;
+                    }
+                    String k = methods.typeFqn(id) + "#" + methods.methodName(id);
+                    IntArray ids = methodsByName.get(k);
+                    if (ids == null) {
+                        ids = new IntArray(2);
+                        methodsByName.put(k, ids);
+                    }
+                    ids.add(id);
+                }
+            }
+            ArrayDeque<String> queue = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            queue.add(typeFqn);
+            seen.add(typeFqn);
+            while (!queue.isEmpty()) {
+                String t = queue.poll();
+                IntArray ids = methodsByName.get(t + "#" + name);
+                if (ids != null && ids.size() > 0) {
+                    return ids;
+                }
+                List<String> sups = directSupertypes.get(t);
+                if (sups == null) {
+                    continue;
+                }
+                for (String s : sups) {
+                    if (seen.add(s)) {
+                        queue.add(s);
+                    }
+                }
+            }
+            return new IntArray(1);
+        }
+
+        // ================================================================
         // 解決パイプライン
         // ================================================================
 
@@ -4147,6 +5280,17 @@ public class CallHierarchyExporter {
          */
         Resolution resolveEdge(int edgeIndex, char bindKind) {
             int calleeId = calleeIds[edgeIndex];
+
+            // --- リフレクション（Method.invoke / Class.forName / newInstance） ---
+            // 呼び出し先はjar内のAPIなので静的束縛に見えるが、実際に動くのは名前で指定された
+            // メソッド。出所（リテラル・クラスリテラル・レシーバの連鎖）から決める。
+            // 経路上の引数に依存する分は StreamingTreeWalker 側でもう一度試す
+            if (reflectiveKindOf(calleeId) != REFLECT_NONE) {
+                Resolution reflective = reflectiveResolution(edgeIndex, null);
+                if (reflective != null) {
+                    return reflective;
+                }
+            }
 
             // --- importからの推定（未検証の外部ライブラリ呼び出し） ---
             // 型階層情報を一切持たない合成メソッドのため、CHA拡張の対象にはしない
@@ -4525,25 +5669,53 @@ public class CallHierarchyExporter {
                     hits.add(id);
                 }
             }
-            Integer[] boxed = new Integer[hits.size()];
-            for (int i = 0; i < boxed.length; i++) {
-                boxed[i] = Integer.valueOf(hits.get(i));
-            }
             // 出力順: 1) ソースフォルダの宣言順（.classpath の記載順。main/testの混在を防ぐ）
             //         2) 型FQN順（'.'は英数字よりコード上小さいため、文字列比較だけで
             //            「パッケージ自身 -> そのサブパッケージ -> 次のパッケージ」の順になる）
             //         3) 同じ型内では、ソースファイル上の宣言順
+            return sortedBySource(hits);
+        }
+
+        /**
+         * ソース上に宣言のある全メソッドを、ソースの並び順で返す（methods.csv の行順）。
+         *   1) ソースフォルダの宣言順（autoEntryPoints と同じ。main/testの混在を防ぐ）
+         *   2) ファイルの相対パス順（＝パッケージ順。同じファイルの内部クラス・匿名クラスも
+         *      そのファイルの位置に並ぶ）
+         *   3) 宣言行順
+         * 同じ行に複数ある場合（暗黙コンストラクタと <clinit> 等）はID順で安定させる。
+         *
+         * メソッドIDの順（キャッシュ上の出現順）で出すと、差分更新で解析し直した
+         * ファイルがキャッシュの末尾へ移ったり、先に呼び出し先として現れたメソッドが
+         * 別ファイルの位置に混ざったりして、実行のたびに並びが変わりうる。
+         */
+        int[] declaredMethodsInSourceOrder() {
+            IntArray hits = new IntArray(1 << 12);
+            for (int id = 0; id < methods.size(); id++) {
+                if (methods.declFile(id) != null) {
+                    hits.add(id);
+                }
+            }
+            Integer[] boxed = new Integer[hits.size()];
+            for (int i = 0; i < boxed.length; i++) {
+                boxed[i] = Integer.valueOf(hits.get(i));
+            }
             Arrays.sort(boxed, (x, y) -> {
-                int fx = sourceFolderIndexOf(methods.declFile(x.intValue()));
-                int fy = sourceFolderIndexOf(methods.declFile(y.intValue()));
-                if (fx != fy) {
-                    return Integer.compare(fx, fy);
+                String fx = methods.declFile(x.intValue());
+                String fy = methods.declFile(y.intValue());
+                int sx = sourceFolderIndexOf(fx);
+                int sy = sourceFolderIndexOf(fy);
+                if (sx != sy) {
+                    return Integer.compare(sx, sy);
                 }
-                int t = methods.typeFqn(x.intValue()).compareTo(methods.typeFqn(y.intValue()));
-                if (t != 0) {
-                    return t;
+                int f = fx.compareTo(fy);
+                if (f != 0) {
+                    return f;
                 }
-                return Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
+                int l = Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
+                if (l != 0) {
+                    return l;
+                }
+                return x.compareTo(y);
             });
             int[] result = new int[boxed.length];
             for (int i = 0; i < result.length; i++) {
@@ -4571,19 +5743,36 @@ public class CallHierarchyExporter {
                 }
                 hits.add(id);
             }
-            // 出力順を安定させる（実行のたびに行順が変わらないように）
-            final MethodTable mt = methods;
+            // 出力順は全体モード（autoEntryPoints）と同じ:
+            // ソースフォルダ順 → 型FQN順 → 同じ型内ではソース上の宣言順
+            return sortedBySource(hits);
+        }
+
+        /**
+         * メソッドIDの並びを「ソースフォルダの宣言順 → 型FQN順 → 宣言行順 → ID順」にする。
+         * 起点の並び（call-hierarchy.csv の行順）を、実行のたびに変わらず、
+         * 同じ型の中ではソースコードの記載順になるようにするため。
+         */
+        private int[] sortedBySource(IntArray hits) {
             Integer[] boxed = new Integer[hits.size()];
             for (int i = 0; i < boxed.length; i++) {
                 boxed[i] = Integer.valueOf(hits.get(i));
             }
-            Arrays.sort(boxed, new java.util.Comparator<Integer>() {
-                @Override
-                public int compare(Integer x, Integer y) {
-                    String a = mt.typeFqn(x.intValue()) + "#" + mt.methodName(x.intValue());
-                    String b = mt.typeFqn(y.intValue()) + "#" + mt.methodName(y.intValue());
-                    return a.compareTo(b);
+            Arrays.sort(boxed, (x, y) -> {
+                int fx = sourceFolderIndexOf(methods.declFile(x.intValue()));
+                int fy = sourceFolderIndexOf(methods.declFile(y.intValue()));
+                if (fx != fy) {
+                    return Integer.compare(fx, fy);
                 }
+                int t = methods.typeFqn(x.intValue()).compareTo(methods.typeFqn(y.intValue()));
+                if (t != 0) {
+                    return t;
+                }
+                int l = Integer.compare(methods.declLine(x.intValue()), methods.declLine(y.intValue()));
+                if (l != 0) {
+                    return l;
+                }
+                return x.compareTo(y);
             });
             int[] result = new int[boxed.length];
             for (int i = 0; i < result.length; i++) {
@@ -4659,12 +5848,12 @@ public class CallHierarchyExporter {
                         "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable",
                         "unresolvedCalls", "unresolvedCause"));
                 w.newLine();
-                for (int id = 0; id < g.methodCount(); id++) {
-                    // ソースが無いメソッド（jar内など）は一覧の対象外。
-                    // 呼ばれている事実は call-hierarchy.csv 側に残る
-                    if (g.methods.declFile(id) == null) {
-                        continue;
-                    }
+                // ソースが無いメソッド（jar内など）は一覧の対象外。
+                // 呼ばれている事実は call-hierarchy.csv 側に残る。
+                // 行順はソースの並び（ソースフォルダ順 → ファイル順 → 宣言行順）
+                int[] order = g.declaredMethodsInSourceOrder();
+                for (int k = 0; k < order.length; k++) {
+                    int id = order[k];
                     // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
                     if ("<init>".equals(g.methods.methodName(id))) {
                         st.constructors++;
@@ -4794,7 +5983,12 @@ public class CallHierarchyExporter {
                         continue;
                     }
                     String[] f = line.split(CacheFormat.SEP, -1);
-                    if (f.length < 5) {
+                    if (f.length < 8) {
+                        continue;
+                    }
+                    if (UnresolvedCall.hasUsableCandidate(f)) {
+                        // import 推定でエッジになっている。call-hierarchy.csv 側に
+                        // 「外部ライブラリ（import推定・未検証）」の注記付きで出ているので、ここでは出さない
                         continue;
                     }
                     int callLine;
@@ -4805,17 +5999,30 @@ public class CallHierarchyExporter {
                     }
                     // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
                     // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
-                    int callerId = g.methods.idOf(f[2]);
+                    String callerKey = f[3].isEmpty() ? "" : f[3] + "#" + f[4] + "(" + f[5] + ")";
+                    int callerId = callerKey.isEmpty() ? -1 : g.methods.idOf(callerKey);
                     String location = (currentFile == null)
-                            ? f[2] : currentFile + ":" + callLine;
+                            ? (callerKey.isEmpty() ? "(unknown)" : callerKey)
+                            : currentFile + ":" + callLine;
                     out.writeUnresolvedRow(g.methods, callerId, location,
-                            callLine, f[3], f[4]);
+                            callLine, f[6], reasonText(f[7]));
                     rows++;
                 }
             } finally {
                 in.close();
             }
             return rows;
+        }
+
+        /** 理由コードの文言（読み手の判断。キャッシュには文言を入れない） */
+        static String reasonText(String code) {
+            if (UnresolvedCall.BINDING_FAILED.equals(code)) {
+                return "型解決に失敗（クラスパス不足・動的呼び出し等の可能性）";
+            }
+            if (UnresolvedCall.OUTSIDE_METHOD.equals(code)) {
+                return "メソッド本体の外からの呼び出し";
+            }
+            return code;
         }
     }
 
@@ -5249,6 +6456,7 @@ public class CallHierarchyExporter {
         /** データフローで具象クラスを特定した件数（ログ用） */
         private long paramHits;
         private long factoryHits;
+        private long reflectionHits;
         private long fieldHits;
         private long newHits;
 
@@ -5276,6 +6484,10 @@ public class CallHierarchyExporter {
 
         long factoryHits() {
             return factoryHits;
+        }
+
+        long reflectionHits() {
+            return reflectionHits;
         }
 
         long fieldHits() {
@@ -5336,6 +6548,19 @@ public class CallHierarchyExporter {
                     }
                 } else if (res.label.startsWith("DATAFLOW_")) {
                     countDataflow(res.label);
+                }
+                // リフレクション: クラス名・メソッド名が引数で渡ってくる形は、
+                // この経路で分かっている引数の値を使ってもう一度試す
+                if (graph.reflectiveKindOf(declaredCallee) != CallGraph.REFLECT_NONE) {
+                    if (!res.label.startsWith("REFLECTION")) {
+                        CallGraph.Resolution viaPath = graph.reflectiveResolution(e, contextAt(depth));
+                        if (viaPath != null) {
+                            res = viaPath;
+                        }
+                    }
+                    if (res.label.startsWith("REFLECTION")) {
+                        reflectionHits++;
+                    }
                 }
 
                 // CHAで候補が複数になった呼び出しは、候補を1件ずつ行にして見せるが、
@@ -5453,6 +6678,11 @@ public class CallHierarchyExporter {
                 }
                 String fqn = graph.concreteTypeOf(entry.substring(eq + 1), ctx);
                 if (fqn == null) {
+                    // 具象型は決まらないが、リテラルやクラスリテラルなら「値」として渡す
+                    // （リフレクションのメソッド名・クラスが引数で渡ってくる形のため）
+                    fqn = graph.valueOriginOf(entry.substring(eq + 1), ctx);
+                }
+                if (fqn == null) {
                     continue;
                 }
                 if (bound == null) {
@@ -5552,7 +6782,14 @@ public class CallHierarchyExporter {
             } else if (depth + 1 >= maxDepth) {
                 sb.append("深さ制限(").append(maxDepth).append(")のため打ち切り");
             }
-            if (res.targets.length > 1) {
+            if (res.targets.length > 1 && "REFLECTION".equals(res.label)) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
+                sb.append("リフレクション候補").append(res.targets.length)
+                        .append("件（未展開）: 引数型が不明なため名前で照合");
+            } else if (res.targets.length > 1) {
                 if (sb.length() > 0) {
                     sb.append(" / ");
                 }

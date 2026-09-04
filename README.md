@@ -101,6 +101,21 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java
 2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
 3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
 
+### キャッシュに入れるもの
+
+キャッシュには「ASTから分かった事実」だけを入れ、判断は読む側で行います。
+事実とは、宣言と修飾子、呼び出し箇所、フィールドへの代入、値の出所など、
+設定や出力形式に依存しない情報です。静的束縛かどうか、コンストラクタ注入と言い切れるか、
+import からの推定を呼び出し先として採用するか、といった判断はキャッシュを読む側で行うため、
+出力や解決の方針を変えてもキャッシュを作り直さずに済みます。
+キャッシュの版を上げるのは、事実の意味・列・収集範囲が変わったときだけです。
+
+差分更新では、更新時刻とサイズが一致するファイルでも、そのファイルが参照している型
+（キャッシュの `I` 行）を宣言するファイルが変わっていれば解析し直します。
+呼び出し先やフィールドの所有型は他のファイルのバインディング解決に依存するためです。
+フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
+行の種別と列の意味は `src/CallHierarchyExporter.java` の「キャッシュファイルの形式」コメントにあります。
+
 ## 出力ファイル
 
 ### `call-hierarchy.csv` — 呼び出し階層
@@ -154,6 +169,9 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
+| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した（[リフレクション](#リフレクション)参照） |
+| `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
+| `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
@@ -171,6 +189,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `LEAF` | 呼び出し先が無い |
 | `NORMAL` | 上記以外 |
 
+行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 コンストラクタ（`<init>`）は出力しません。
 
@@ -223,3 +242,21 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `CHA` | 候補が複数のまま（低確度） |
+
+### リフレクション
+
+`Class.forName` / `X.class` / `obj.getClass()` → `getMethod` / `getDeclaredMethod` → `Method.invoke`、
+および `getConstructor` → `newInstance` の連鎖を、キャッシュに記録した出所（レシーバの連鎖と
+実引数のリテラル）から辿り、実際に動くメソッドへ解決します。
+
+| 書き方 | 解決 |
+|---|---|
+| `Class.forName("a.B").getMethod("run", long.class).invoke(obj, 1L)` | `a.B.run(long)` |
+| `B.class.getMethod("run")`、`obj.getClass().getMethod("run")`（obj の具象型が分かるとき） | `B.run()` |
+| クラス名・メソッド名が `static final` 定数、または呼び出し元からリテラルで渡された引数 | 同上（経路ごとに解決） |
+| `getMethod("run", types)` のように引数型が変数 | 同名のメソッドを候補として列挙（未展開） |
+| `Class.forName("a.B")` | `a.B` の static 初期化子（あれば） |
+| `Class.forName("a.B").getDeclaredConstructor().newInstance()` | `a.B` のコンストラクタ。生成された型は以降の呼び出しでも使われる |
+
+解決できないもの: 設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
+フィールドや別メソッドの引数で受け渡す形。これらは `Method.invoke` のまま「ソースなし」の行になります。
