@@ -1,0 +1,82 @@
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/root/.ccr/java-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=46583 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|api.anthropic.com|api-staging.anthropic.com|api-pr-preview.anthropic.com|mcp-proxy.anthropic.com|mcp-proxy-staging.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes= -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+[00:00.000s] 設定: /home/user/java-call-hierarchy-exporter/test/regression/entry/config.properties
+[00:00.021s] プロジェクトルート: /home/user/java-call-hierarchy-exporter/samples/demo
+[00:00.022s] ソースフォルダ: [/home/user/java-call-hierarchy-exporter/samples/demo/src]
+[00:00.022s] ソース文字コード: UTF-8
+[00:00.028s] ソースレベル: 26（source.level 未指定のため、JDTが対応する最大値） / このJDTの対応上限: 26
+[00:00.032s] 依存jar: 0 件
+
+[00:00.032s] === フェーズ1/3: ソース解析 ===
+[00:00.040s] Javaファイル数: 27
+[00:01.313s] ソース解析 27/27 （直近27件: 1.3s）
+[00:01.321s] ソース解析: 再利用=0 新規解析=27 失敗=0
+[00:01.324s] ※ 型解決できなかった呼び出しが 3 件あります。
+[00:01.324s]    多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。
+[00:01.325s]    jar を足せば、次回の実行で影響するファイルだけが解析し直されます。
+[00:01.325s]    解決できた呼び出しだけが call-hierarchy.csv に出るため、
+[00:01.325s]    件数が多いまま使うと呼び出し階層に抜けが出ます。
+[00:01.331s] === フェーズ1完了: [heap] 使用 26MB / 上限 3416MB
+
+[00:01.331s] === フェーズ2/3: グラフ構築と具象クラス解決 ===
+[00:01.351s] 収集: 型 32 / メソッド 147 / エッジ 201
+[00:01.362s] 型数=32 メソッド数=147 エッジ数=201
+[00:01.362s] === フェーズ2完了: [heap] 使用 29MB / 上限 3416MB
+
+[00:01.363s] === フェーズ3/3: 出力 ===
+[00:01.390s] メソッド=87 起点候補=14 孤立=6 末端=16 未到達=10 未解決の呼び出しを含む=16（コンストラクタ 38 個は出力対象外）
+[00:01.390s] メソッド一覧: /home/user/java-call-hierarchy-exporter/test/regression/entry/output/methods.csv
+[00:01.390s] エントリポイント数: 37
+[00:01.422s] データフローで具象クラスを特定: new された型から 2 件 / ファクトリの戻り値から 10 件 / 呼び出し元から渡された引数から 12 件 / コンストラクタ注入されたフィールドから 7 件
+[00:01.422s] リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の呼び出し先を特定: 18 件
+
+[00:01.425s] === 外部jarからの被参照スキャン ===
+[00:01.428s] 外部jar: 2 件
+[00:01.435s] jar=2 クラス=1 被参照=14件（自分のメソッド 14 個） 暗黙コンストラクタ=0 未照合=1 自プロジェクトクラスを除外=28
+[00:01.436s] ※ 自分の型への参照なのにメソッドが一致しなかったものが 1 件あります。
+[00:01.436s]    相手が古い版のjarに対してビルドされている可能性があるため、
+[00:01.436s]    「使われていない」と即断せず確認してください。
+[00:01.436s] === フェーズ3完了: [heap] 使用 32MB / 上限 3416MB
+
+[00:01.438s] 呼び出し階層: /home/user/java-call-hierarchy-exporter/test/regression/entry/output/call-hierarchy.csv（393 行）
+[00:01.439s] 完了 (1821 ms)
+Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/root/.ccr/java-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=46583 -Dhttp.nonProxyHosts=localhost|127.0.0.1|::1|127.*|0.*|::|169.254.*|api.anthropic.com|api-staging.anthropic.com|api-pr-preview.anthropic.com|mcp-proxy.anthropic.com|mcp-proxy-staging.anthropic.com|registry.npmjs.org|jsr.io|npm.jsr.io|pypi.org|files.pythonhosted.org|index.crates.io|proxy.golang.org|host.docker.internal|10.*|172.16.*|172.17.*|172.18.*|172.19.*|172.20.*|172.21.*|172.22.*|172.23.*|172.24.*|172.25.*|172.26.*|172.27.*|172.28.*|172.29.*|172.30.*|172.31.*|192.168.*|100.64.0.0/10|*.svc.cluster.local|*.svc.cluster.local -Djdk.http.auth.tunneling.disabledSchemes= -Djdk.http.auth.proxying.disabledSchemes= -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+[00:00.000s] 設定: /home/user/java-call-hierarchy-exporter/test/regression/entry/config.properties
+[00:00.020s] プロジェクトルート: /home/user/java-call-hierarchy-exporter/samples/demo
+[00:00.022s] ソースフォルダ: [/home/user/java-call-hierarchy-exporter/samples/demo/src]
+[00:00.022s] ソース文字コード: UTF-8
+[00:00.028s] ソースレベル: 26（source.level 未指定のため、JDTが対応する最大値） / このJDTの対応上限: 26
+[00:00.033s] 依存jar: 0 件
+
+[00:00.033s] === フェーズ1/3: ソース解析 ===
+[00:00.040s] Javaファイル数: 27
+[00:00.067s] ソース解析 27/27 （直近27件: 0.0s）
+[00:00.076s] ソース解析: 再利用=27 新規解析=0 失敗=0
+[00:00.079s] ※ 型解決できなかった呼び出しが 3 件あります。
+[00:00.079s]    多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。
+[00:00.079s]    jar を足せば、次回の実行で影響するファイルだけが解析し直されます。
+[00:00.079s]    解決できた呼び出しだけが call-hierarchy.csv に出るため、
+[00:00.079s]    件数が多いまま使うと呼び出し階層に抜けが出ます。
+[00:00.086s] === フェーズ1完了: [heap] 使用 6MB / 上限 3416MB
+
+[00:00.087s] === フェーズ2/3: グラフ構築と具象クラス解決 ===
+[00:00.110s] 収集: 型 32 / メソッド 147 / エッジ 201
+[00:00.123s] 型数=32 メソッド数=147 エッジ数=201
+[00:00.123s] === フェーズ2完了: [heap] 使用 9MB / 上限 3416MB
+
+[00:00.123s] === フェーズ3/3: 出力 ===
+[00:00.151s] メソッド=87 起点候補=14 孤立=6 末端=16 未到達=10 未解決の呼び出しを含む=16（コンストラクタ 38 個は出力対象外）
+[00:00.151s] メソッド一覧: /home/user/java-call-hierarchy-exporter/test/regression/entry/output/methods.csv
+[00:00.151s] エントリポイント数: 37
+[00:00.186s] データフローで具象クラスを特定: new された型から 2 件 / ファクトリの戻り値から 10 件 / 呼び出し元から渡された引数から 12 件 / コンストラクタ注入されたフィールドから 7 件
+[00:00.186s] リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の呼び出し先を特定: 18 件
+
+[00:00.190s] === 外部jarからの被参照スキャン ===
+[00:00.192s] 外部jar: 2 件
+[00:00.201s] jar=2 クラス=1 被参照=14件（自分のメソッド 14 個） 暗黙コンストラクタ=0 未照合=1 自プロジェクトクラスを除外=28
+[00:00.201s] ※ 自分の型への参照なのにメソッドが一致しなかったものが 1 件あります。
+[00:00.201s]    相手が古い版のjarに対してビルドされている可能性があるため、
+[00:00.202s]    「使われていない」と即断せず確認してください。
+[00:00.202s] === フェーズ3完了: [heap] 使用 13MB / 上限 3416MB
+
+[00:00.204s] 呼び出し階層: /home/user/java-call-hierarchy-exporter/test/regression/entry/output/call-hierarchy.csv（393 行）
+[00:00.205s] 完了 (607 ms)

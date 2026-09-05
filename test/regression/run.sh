@@ -8,13 +8,11 @@
 #   通常（whole / entry）… 同じ設定で2回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
+# 実行ログは <case>/run-<回数>.log に残す。
 # 期待出力を更新するときは、差分を確認したうえで output/ を expected*/ にコピーする。
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
-# 実行ログの日本語を確認するので、JVM の標準出力を UTF-8 に固定する（ロケールが C/POSIX の環境でも読めるように）。
-# ツール本体は端末の文字コードに従う設計だが、ここではファイルに書いてから読むので固定してよい
-export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/CallHierarchyExporter.java"}
 CASES=${CASES:-"whole entry jarchange"}
 fail=0
@@ -33,39 +31,53 @@ compare() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
     [ $ok = 1 ] || fail=1
 }
 
-run() {   # $1=case  $2=設定ファイル  $3=ラベル   -> 実行ログは $1/run.log に追記
-    if ! $JCHE_CMD "$1/$2" >> "$1/run.log" 2>&1; then
-        echo "  実行に失敗しました（$3）。$1/run.log を確認してください"; tail -5 "$1/run.log"; fail=1; return 1
+run() {   # $1=case  $2=設定ファイル  $3=何回目  $4=ラベル   -> ログは $1/run-$3.log
+    if ! $JCHE_CMD "$1/$2" > "$1/run-$3.log" 2>&1; then
+        echo "  実行に失敗しました（$4）。$1/run-$3.log を確認してください"; tail -5 "$1/run-$3.log"; fail=1; return 1
     fi
 }
 
-# 直近の実行ログの「ソース解析:」行に $2 が含まれることを確認する
-expect_log() {   # $1=case  $2=期待する文字列  $3=ラベル
-    if grep -E 'ソース解析:' "$1/run.log" | tail -1 | grep -q -- "$2"; then
+# --- ログ検査 ---
+# ツールは標準出力を端末の文字コードで書く（UTF-8 に固定すると Windows の画面で化けるため固定しない）。
+# そのためログの日本語は環境によって化けうるので、検査は ASCII の部分だけで行う。
+# フェーズ1の集計行「ソース解析: 再利用=N 新規解析=M（うち…=K） 失敗=F」は、
+# 「=数字」が3つ以上あって数字で終わる最初の行として探す（同じ形の「型数=…」の行はフェーズ2なので後ろ）
+summary_line() {   # $1=ログ
+    LC_ALL=C grep -a -E -m1 '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' "$1"
+}
+expect_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の最初の「=N」（再利用）が 0 でない
+    if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E '^[^=]*=[1-9]'; then
         echo "  OK   $1 ログ ($3)"
     else
-        echo "  DIFF $1 ログに「$2」がありません ($3): $(grep -E 'ソース解析:' "$1/run.log" | tail -1)"; fail=1
+        echo "  DIFF $1 ログ: キャッシュが再利用されていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
+    fi
+}
+expect_library_reanalysis() {   # $1=case  $2=何回目  $3=ラベル   … 「依存jarの変更による再解析=N」の N が 0 でない
+    if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E 'jar[^=]*=[1-9]'; then
+        echo "  OK   $1 ログ ($3)"
+    else
+        echo "  DIFF $1 ログ: 依存jarの変更による再解析がありません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
 }
 
 for c in $CASES; do
     echo "== $c =="
-    rm -rf "$c/.cache" "$c/output" "$c/run.log"
+    rm -rf "$c/.cache" "$c/output" "$c"/run-*.log
     if [ -f "$c/config-before.properties" ]; then
-        run "$c" config-before.properties "1回目: jar 無し" || continue
+        run "$c" config-before.properties 1 "1回目: jar 無し" || continue
         compare "$c" expected-before "1回目: jar 無し"
-        run "$c" config-after.properties "2回目: jar 追加" || continue
-        expect_log "$c" '依存jarの変更による再解析=' "2回目: jar 追加で影響ファイルを再解析"
-        expect_log "$c" '再利用=[1-9]' "2回目: 他のファイルはキャッシュを再利用"
+        run "$c" config-after.properties 2 "2回目: jar 追加" || continue
+        expect_library_reanalysis "$c" 2 "2回目: jar 追加で影響ファイルを再解析"
+        expect_reused "$c" 2 "2回目: 他のファイルはキャッシュを再利用"
         compare "$c" expected-after "2回目: jar 追加"
-        run "$c" config-before.properties "3回目: jar 削除" || continue
-        expect_log "$c" '依存jarの変更による再解析=' "3回目: jar 削除で影響ファイルを再解析"
+        run "$c" config-before.properties 3 "3回目: jar 削除" || continue
+        expect_library_reanalysis "$c" 3 "3回目: jar 削除で影響ファイルを再解析"
         compare "$c" expected-before "3回目: jar 削除"
     else
-        run "$c" config.properties "1回目" || continue
+        run "$c" config.properties 1 "1回目" || continue
         compare "$c" expected "1回目: キャッシュ無し"
-        run "$c" config.properties "2回目" || continue
-        expect_log "$c" '再利用=[1-9]' "2回目: キャッシュを再利用"
+        run "$c" config.properties 2 "2回目" || continue
+        expect_reused "$c" 2 "2回目: キャッシュを再利用"
         compare "$c" expected "2回目: キャッシュ再利用"
     fi
 done

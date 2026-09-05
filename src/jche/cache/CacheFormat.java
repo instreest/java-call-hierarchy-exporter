@@ -41,7 +41,8 @@ package jche.cache;
  *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
  *                                                          これらの型を宣言するファイルが変わっていたら
  *                                                          再解析する（{@link jche.analysis.CacheUpdater} 参照）
- *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg    {@link TypeFact}
+ *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg    {@link TypeFact}。親型は直接の親と、
+ *                                                          jar の型を経由して到達するソース上の親
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods   {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType                    {@link FieldDeclFact}
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
@@ -95,6 +96,8 @@ package jche.cache;
  *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
  *       書かれていない暗黙の super() は拾わない</li>
  *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
+ *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める（v12）。
+ *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -111,7 +114,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v11";
+    public static final String VERSION = "jche-cache-v12";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';
