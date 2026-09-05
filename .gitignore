@@ -4,9 +4,9 @@ lib/
 out/
 dist/
 
-# jbangw が作るプロジェクト内キャッシュ。jbang本体・依存jar・取得したJDKが入る。
-# やめるときはフォルダごと消せば元どおり
-/.jbang/
+# jbangw/.jbang/jbang.jar を置くと、ラッパー（jbangw/jbang）はダウンロードせずにそれを使う。
+# 置いた場合もコミットしない（14MB 超）
+/jbangw/.jbang/
 *.class
 .classpath
 .project

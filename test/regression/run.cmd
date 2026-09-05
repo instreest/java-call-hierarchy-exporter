@@ -10,10 +10,10 @@ for %%C in (whole entry) do (
     echo == %%C ==
     if exist "%%C\.cache" rmdir /s /q "%%C\.cache"
     if exist "%%C\output" rmdir /s /q "%%C\output"
-    call "%ROOT%\jbang.cmd" run "%ROOT%\src\CallHierarchyExporter.java" "%%C\config.properties" > "%%C\run.log" 2>&1
+    call "%ROOT%\jbangw\jbang.cmd" run "%ROOT%\src\CallHierarchyExporter.java" "%%C\config.properties" > "%%C\run.log" 2>&1
     if errorlevel 1 (echo   実行に失敗しました。%%C\run.log を確認してください & set "FAIL=1")
     call :compare "%%C" "1回目"
-    call "%ROOT%\jbang.cmd" run "%ROOT%\src\CallHierarchyExporter.java" "%%C\config.properties" >> "%%C\run.log" 2>&1
+    call "%ROOT%\jbangw\jbang.cmd" run "%ROOT%\src\CallHierarchyExporter.java" "%%C\config.properties" >> "%%C\run.log" 2>&1
     if errorlevel 1 (echo   実行に失敗しました。%%C\run.log を確認してください & set "FAIL=1")
     call :compare "%%C" "2回目"
 )

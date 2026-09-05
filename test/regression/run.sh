@@ -9,7 +9,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
-JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbang run $ROOT/src/CallHierarchyExporter.java"}
+JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/CallHierarchyExporter.java"}
 CASES=${CASES:-"whole entry"}
 fail=0
 
