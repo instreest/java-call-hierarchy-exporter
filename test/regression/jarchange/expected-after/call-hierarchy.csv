@@ -1,0 +1,8 @@
+﻿caller,callee,root,call-hierarchy
+at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(String),Legacy.callRemote,RemoteClient.send,ソースなし（展開不可）
+at fx.app.Legacy.callRemote(Legacy.java:9),missing.lib.Other.go(),Legacy.callRemote,Other.go,ソースなし（展開不可）
+at fx.app.Legacy.callRemote(Legacy.java:10),missing.lib.RemoteClient.close(),Legacy.callRemote,RemoteClient.close,ソースなし（展開不可）
+at fx.app.Legacy.unusedDead(Legacy.java:14),fx.app.Legacy.callRemote(),Legacy.unusedDead,Legacy.callRemote
+at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(String),Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,ソースなし（展開不可）
+at fx.app.Legacy.callRemote(Legacy.java:9),missing.lib.Other.go(),Legacy.unusedDead,Legacy.callRemote,Other.go,ソースなし（展開不可）
+at fx.app.Legacy.callRemote(Legacy.java:10),missing.lib.RemoteClient.close(),Legacy.unusedDead,Legacy.callRemote,RemoteClient.close,ソースなし（展開不可）

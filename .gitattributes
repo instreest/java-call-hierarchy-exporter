@@ -1,2 +1,2 @@
 # 期待出力は LF で保存する。ツールは実行環境の改行で書くため、比較側で CR の有無を無視する
-test/regression/*/expected/*.csv text eol=lf
+test/regression/*/expected*/*.csv text eol=lf

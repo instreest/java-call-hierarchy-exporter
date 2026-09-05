@@ -32,7 +32,10 @@ package jche.cache;
  * <h2>行の種別と列</h2>
  * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
  * <pre>
- *   F  相対パス  更新時刻  サイズ                              （ファイルのブロックの先頭）
+ *   L  jarのパス  サイズ  更新時刻  パッケージ(カンマ区切り)    {@link LibraryFact}。ヘッダ行の直後に
+ *                                                          クラスパス順で並ぶ。解析時の依存 jar
+ *   F  相対パス  更新時刻  サイズ  エラー数                     （ファイルのブロックの先頭）。エラー数は
+ *                                                          JDT が報告したエラーの件数（解決が不完全な印）
  *   I  依存する型（カンマ区切り）                             このファイルのバインディング解決が参照した型の
  *                                                          FQNと、import 文の型（オンデマンド import は
  *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
@@ -69,6 +72,10 @@ package jche.cache;
  * 再利用の判定は「更新時刻とサイズが一致する」に加えて「I行の型を宣言するファイルが
  * どれも変わっていない」。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
  * 結果であり、別のファイルを変えると変わりうるため（{@link jche.analysis.CacheUpdater} 参照）。
+ * 依存 jar も同じ理由で解決結果を左右するので、L行と突き合わせて追加・変更・削除を検知し、
+ * その jar のパッケージの型を参照するファイル（I行）と、型解決に失敗していたファイル
+ * （F行のエラー数、U行の BINDING_FAILED）を解析し直す。
+ * 実行中の JDK もブートクラスパスとして解決に加わるため、ヘッダ行に含めて丸ごと突き合わせる。
  *
  * <h2>バージョン（{@link #VERSION}）を上げる基準</h2>
  * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
@@ -87,6 +94,7 @@ package jche.cache;
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
  *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
  *       書かれていない暗黙の super() は拾わない</li>
+ *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -103,9 +111,10 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v10";
+    public static final String VERSION = "jche-cache-v11";
 
     // 行の種別（各行の先頭1文字）
+    public static final char ROW_LIBRARY = 'L';
     public static final char ROW_FILE = 'F';
     public static final char ROW_DEPENDENCIES = 'I';
     public static final char ROW_TYPE = 'H';
@@ -123,15 +132,18 @@ public final class CacheFormat {
     }
 
     /**
-     * キャッシュの1行目。形式のバージョンに加えてソースレベルも入れる。
+     * キャッシュの1行目。形式のバージョンに加えてソースレベルと実行中の JDK も入れる。
      *
      * 同じソースでも、どの言語バージョンとして解析したかで結果が変わる
      * （古いレベルだと新しい構文が解析できず、呼び出しが抜ける）。
-     * 更新時刻とサイズだけを見ていると、設定を変えたのに古い結果を
+     * JDT は実行中の JVM のブートクラスパスを解析対象のクラスパスに含めるため、
+     * JDK の版が変わると標準 API の解決結果も変わりうる。
+     * 更新時刻とサイズだけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
     public static String headerFor(String sourceLevel) {
-        return VERSION + SEP + "source=" + sourceLevel;
+        return VERSION + SEP + "source=" + sourceLevel
+                + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
     }
 
     /** 行の先頭1文字（種別）。空行なら '\0' */

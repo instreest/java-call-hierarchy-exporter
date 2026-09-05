@@ -124,6 +124,17 @@ import からの推定を呼び出し先として採用するか、といった�
 フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
 行の種別と列の意味は [src/jche/cache/CacheFormat.java](src/jche/cache/CacheFormat.java) のクラスコメントにあります。
 
+### 依存 jar を変えたとき
+
+キャッシュには解析時の依存 jar（パス・サイズ・更新時刻・含まれるパッケージ。`L` 行）も残します。
+次回の実行で jar が追加・差し替え・削除されていれば、その jar のパッケージの型を参照している
+ファイルと、前回型解決に失敗していたファイル（`F` 行のエラー数、`U` 行）だけを解析し直します。
+「型解決できなかった呼び出しが N 件あります」と出たときに `library.folders` へ jar を足せば、
+キャッシュを消さなくても次の実行で反映されます。
+実行する JDK を変えたときはキャッシュ全体を作り直します（JDT は実行中の JVM の標準クラスも
+解析対象のクラスパスに含めるため）。
+設計上の判断と限界は [docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) にまとめています。
+
 ## 出力ファイル
 
 ### `call-hierarchy.csv` — 呼び出し階層
@@ -307,9 +318,11 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 
 ## テスト
 
-`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected/` と
+`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
 一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
+`jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
+jar の追加・削除が影響するファイルの再解析だけで出力に反映されることを確認します。
 
 ```bash
 bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
@@ -320,5 +333,5 @@ GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint
 コンパイルとこの回帰テストを実行します。
 
 出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
-`expected/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
+`expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
 （JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。

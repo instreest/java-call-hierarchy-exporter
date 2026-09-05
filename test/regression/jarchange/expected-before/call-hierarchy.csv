@@ -1,0 +1,7 @@
+﻿caller,callee,root,call-hierarchy
+at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
+at fx.app.Legacy.unusedDead(Legacy.java:14),fx.app.Legacy.callRemote(),Legacy.unusedDead,Legacy.callRemote
+at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
+at fx.app.Legacy.callRemote(Legacy.java:9),go,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:10),close,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）

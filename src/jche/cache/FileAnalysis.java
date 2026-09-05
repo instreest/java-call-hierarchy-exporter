@@ -29,6 +29,12 @@ public final class FileAnalysis {
     public final String relativePath;
     public final long lastModified;
     public final long size;
+    /**
+     * JDT が報告したエラーの数（型が見つからない、import が解決できない等）。
+     * 0 でなければこのファイルの解決結果は不完全で、依存 jar が増えたときに解析し直す対象になる
+     * （{@link jche.analysis.CacheUpdater}）。数えるだけで、何のエラーかは判断しない
+     */
+    public int errors;
 
     public final List<TypeFact> types = new ArrayList<>();
     public final List<HintFact> hints = new ArrayList<>();

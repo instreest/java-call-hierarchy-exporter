@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
@@ -182,6 +183,12 @@ public final class CallEdgeExtractor {
 
     private FileAnalysis collectFacts(SourceFile file, CompilationUnit cu) {
         FileAnalysis result = new FileAnalysis(file.relativePath(), file.mtime(), file.size());
+        // 型が見つからない等のエラーは「解決が不完全」の印。依存 jar が増えたら解析し直せるよう数を残す
+        for (IProblem problem : cu.getProblems()) {
+            if (problem.isError()) {
+                result.errors++;
+            }
+        }
         collectImports(cu, result);
         cu.accept(new FactVisitor(cu, result, collectors));
         return result;
