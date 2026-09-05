@@ -19,21 +19,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
 
 import jche.cache.MethodRef;
+import jche.cache.TypeFact;
 import jche.config.Config;
 import jche.graph.CallGraph;
 import jche.graph.MethodTable;
+import jche.graph.TypeHierarchy;
 import jche.report.CallHierarchyCsvWriter;
 import jche.util.Log;
 
@@ -72,8 +74,6 @@ public final class ExternalUsageScanner {
     private final Stats stats = new Stats();
     /** 自分の型かどうかの判定に使う（H行から得た、ソース上に宣言のある型） */
     private final Set<String> ourTypes;
-    /** 継承したメソッドの照合用: "name(params)" -> 宣言しているメソッドID */
-    private final Map<String, List<Integer>> bySignature = new HashMap<>();
     /** メソッドごとの被参照回数（「自分のメソッド N 個」の集計用） */
     private final int[] refCount;
 
@@ -82,11 +82,6 @@ public final class ExternalUsageScanner {
         this.methods = graph.methods();
         this.out = out;
         this.ourTypes = graph.hierarchy().typeNames();
-        for (int id = 0; id < methods.size(); id++) {
-            if (methods.hasSource(id)) {
-                bySignature.computeIfAbsent(methods.signature(id), k -> new ArrayList<>()).add(id);
-            }
-        }
         this.refCount = new int[methods.size()];
     }
 
@@ -209,23 +204,68 @@ public final class ExternalUsageScanner {
      * （呼び出し側は子クラスを owner として記録する）を考慮して親を探す。
      */
     private int lookupRef(String owner, String sig) {
-        int id = methods.idOf(owner + "#" + sig);
-        if (id >= 0 && methods.hasSource(id)) {
-            return id;
+        int id = declaredWithSource(owner, sig);
+        if (id < 0) {
+            id = declaredWithSource(normalize(owner), sig);
         }
-        String norm = normalize(owner);
-        id = methods.idOf(norm + "#" + sig);
-        if (id >= 0 && methods.hasSource(id)) {
-            return id;
+        return (id >= 0) ? id : inheritedFrom(normalize(owner), sig);
+    }
+
+    /** その型自身がソース上で宣言しているメソッドの ID。無ければ -1 */
+    private int declaredWithSource(String typeFqn, String sig) {
+        int id = methods.idOf(typeFqn + "#" + sig);
+        return (id >= 0 && methods.hasSource(id)) ? id : -1;
+    }
+
+    /**
+     * owner から親をたどり、最も近い宣言を返す。JVM のメソッド解決と同じく、
+     * 親クラスの連鎖を根まで先に見て、次にそれらが実装するインターフェースを幅優先で見る。
+     * 「シグネチャが一致する宣言のうち owner を子孫に持つもの」を先着で選ぶと、
+     * 親クラスとインターフェースの両方に宣言がある場合にメソッドIDの並び（＝解析順）で
+     * 結果が変わるので、型階層だけで決まるこの順にしている。
+     */
+    private int inheritedFrom(String owner, String sig) {
+        TypeHierarchy hierarchy = graph.hierarchy();
+        Set<String> seen = new HashSet<>();
+        List<String> classChain = new ArrayList<>();
+        String cur = owner;
+        while (cur != null && seen.add(cur)) {
+            classChain.add(cur);
+            String superclass = null;
+            for (String sup : hierarchy.directSupertypes(cur)) {
+                char kind = hierarchy.kindOf(sup);
+                if (kind == TypeFact.CONCRETE || kind == TypeFact.ABSTRACT) {
+                    superclass = sup;
+                    break;
+                }
+            }
+            if (superclass != null) {
+                int id = declaredWithSource(superclass, sig);
+                if (id >= 0) {
+                    return id;
+                }
+            }
+            cur = superclass;
         }
-        List<Integer> candidates = bySignature.get(sig);
-        if (candidates == null) {
-            return -1;
+        // インターフェース（およびソース外で種別の分からない親）を、近いクラスのものから順に
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        for (String c : classChain) {
+            for (String sup : hierarchy.directSupertypes(c)) {
+                if (seen.add(sup)) {
+                    queue.add(sup);
+                }
+            }
         }
-        for (int c : candidates) {
-            List<String> subtypes = graph.hierarchy().transitiveSubtypes(methods.typeFqn(c));
-            if (subtypes.contains(norm) || subtypes.contains(owner)) {
-                return c;
+        while (!queue.isEmpty()) {
+            String type = queue.poll();
+            int id = declaredWithSource(type, sig);
+            if (id >= 0) {
+                return id;
+            }
+            for (String sup : hierarchy.directSupertypes(type)) {
+                if (seen.add(sup)) {
+                    queue.add(sup);
+                }
             }
         }
         return -1;

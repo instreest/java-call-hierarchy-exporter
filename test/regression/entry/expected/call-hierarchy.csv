@@ -379,7 +379,7 @@ at fx.app.Legacy.callRemote(Legacy.java:9),go,(型解決失敗),go,型解決に�
 at fx.app.Legacy.callRemote(Legacy.java:10),close,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 teamb.NightJob,fx.dao.UserDaoImpl.UserDaoImpl(),team-b-batch.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
-teamb.NightJob,fx.dao.Dao.findById(long),team-b-batch.jar,Dao.findById,被参照:INHERITED
+teamb.NightJob,fx.dao.AbstractDao.findById(long),team-b-batch.jar,AbstractDao.findById,被参照:INHERITED
 teamb.NightJob,fx.dao.UserDaoImpl.describe(),team-b-batch.jar,UserDaoImpl.describe,被参照:EXACT
 teamb.NightJob,fx.dao.AbstractDao.flush(),team-b-batch.jar,AbstractDao.flush,被参照:INHERITED
 teamb.NightJob,fx.dao.OrderDaoImpl.OrderDaoImpl(String),team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,被参照:EXACT
