@@ -24,7 +24,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 #### JBangによる実行
 
 ```bat
-.\jbang src/CallHierarchyExporter.java config/config.properties
+.\jbangw\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
 このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
