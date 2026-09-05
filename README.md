@@ -4,7 +4,6 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
-- ソースの構成 … [ソースの構成](#ソースの構成)（`src/CallHierarchyExporter.java` がエントリ、本体は `src/jche/` 配下）
 
 ---
 
@@ -22,7 +21,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 .\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-このツールが必要とするJDK 17・依存jarは、環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
 
 #### Pleiades/Eclipse環境（閉域ネットワーク等）
 
@@ -41,12 +40,14 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
-rem コンパイル（-sourcepath src を付けると、src\jche 配下のクラスも一緒にコンパイルされる）
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -sourcepath src -d bin -encoding UTF-8 src\CallHierarchyExporter.java
+rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
+"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
+
+---
 
 ### 出力されるファイル
 
@@ -55,16 +56,15 @@ rem 実行
 | 呼び出し階層リスト | `./output/call-hierarchy.csv` |
 | メソッド全体リスト | `./output/methods.csv` |
 
-出力はすべてUTF-8（BOM付き）のCSVで、Excelでそのまま開けます。
-出力先は設定ファイルからの相対パスなので、`config/config.properties` を指定した場合は
+出力はUTF-8（BOM付き）のCSVファイルなのでExcelで開けます。
+出力先は設定ファイルからの相対パスで、例えば `config/config.properties` を指定した場合は
 `config/output/` の下に出ます。
 
 #### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
 呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
 呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
-呼び出し元はEclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。（後述）
+出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → コード呼び出しの順序です。
 
 ```csv
 caller,callee,root,call-hierarchy
@@ -72,17 +72,10 @@ at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.s
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
-##### **Eclipseでのソースコードジャンプ**
-`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
-
-1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
-2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
-   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
-   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
-
 #### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+
+各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
+出力ソート順は、ソースフォルダ → 完全修飾クラス名 → 宣言行順の順序です。
 
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
@@ -175,6 +168,16 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
+
+#### **Eclipseでのソースコードジャンプ**
+`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
+
+1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
+2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
+   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
+   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
