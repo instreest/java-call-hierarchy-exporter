@@ -82,6 +82,13 @@ public final class DataflowResolver {
     /** factoryReturnOrigin のメモ。未計算と「計算したが不明」を区別する */
     private String[] factoryOrigin;
     private byte[] factoryOriginState;   // 0=未計算 / 1=計算中 / 2=計算済み
+    /**
+     * 直前の reduceReturnOrigin / factoryReturnOrigin が委譲の深さ上限で打ち切られたか。
+     * 打ち切りで「不明」になった結果をメモに保存すると、深いチェーンの途中のファクトリを
+     * 別の箇所から直接呼んだときも不明のままになり、解決結果がエッジの処理順に依存してしまう。
+     * 打ち切りが原因の不明は保存せず、次に浅い深さで評価されたときにやり直す
+     */
+    private boolean depthLimitHit;
 
     /** メソッドごとに「経路の情報を渡す意味があるか」。初回に一度だけ全エッジを見て作る */
     private boolean[] usesParameters;
@@ -200,20 +207,30 @@ public final class DataflowResolver {
         }
         factoryOriginState[methodId] = 1;
         String found = null;
+        boolean undecidable = false;
+        boolean limited = false;
         for (String o : origins) {
+            depthLimitHit = false;
             String reduced = reduceReturnOrigin(o, depth);
+            limited |= depthLimitHit;
             // 1つでも畳めない return があれば、このメソッドの戻り値は決められない。
             // 分かった分だけで決め打ちすると、別の型を返す経路を取りこぼす
             if (reduced == null || (found != null && !found.equals(reduced))) {
-                factoryOriginState[methodId] = 2;
-                factoryOrigin[methodId] = null;
-                return null;
+                undecidable = true;
+                break;
             }
             found = reduced;
         }
+        if (undecidable && limited) {
+            // 深さ上限が原因かもしれない不明は保存しない（呼び出し元にも打ち切りを伝える）
+            factoryOriginState[methodId] = 0;
+            depthLimitHit = true;
+            return null;
+        }
         factoryOriginState[methodId] = 2;
-        factoryOrigin[methodId] = found;
-        return found;
+        factoryOrigin[methodId] = undecidable ? null : found;
+        depthLimitHit = false;
+        return factoryOrigin[methodId];
     }
 
     /** return 1件の出所を、具象型か「呼び出し箇所依存の形」まで畳む */
@@ -222,7 +239,11 @@ public final class DataflowResolver {
         if (kind == Origin.NEW || kind == Origin.REFLECT || kind == Origin.PARAM) {
             return Origin.head(origin);
         }
-        if (kind != Origin.RETURN || depth >= maxDepth) {
+        if (kind != Origin.RETURN) {
+            return null;
+        }
+        if (depth >= maxDepth) {
+            depthLimitHit = true;   // 上限による打ち切り。呼び出し元はこの不明を保存しない
             return null;
         }
         // 別のファクトリへの委譲。委譲先の出所を、この return が書いている

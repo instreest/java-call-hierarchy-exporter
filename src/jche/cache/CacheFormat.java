@@ -85,6 +85,8 @@ package jche.cache;
  *   <li>プリミティブ・配列・String を返す return は記録しない</li>
  *   <li>フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
+ *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
+ *       書かれていない暗黙の super() は拾わない</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -101,7 +103,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v9";
+    public static final String VERSION = "jche-cache-v10";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_FILE = 'F';

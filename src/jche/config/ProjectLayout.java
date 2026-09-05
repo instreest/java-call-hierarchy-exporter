@@ -116,6 +116,11 @@ public final class ProjectLayout {
                         continue;
                     }
                     Path sf = projectRoot.resolve(path).normalize();
+                    if (!sf.startsWith(projectRoot)) {
+                        // project.root からの相対パスが作れないため（キャッシュのキー・出力の file 列）
+                        Log.warn(".classpath のソースフォルダが project.root の外にあるためスキップします: " + sf);
+                        continue;
+                    }
                     if (Files.isDirectory(sf) && !sourceFolders.contains(sf)) {
                         sourceFolders.add(sf);
                     }

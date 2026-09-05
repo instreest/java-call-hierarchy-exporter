@@ -52,6 +52,7 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
@@ -662,6 +663,19 @@ final class FactVisitor extends ASTVisitor {
 
     @Override
     public boolean visit(ConstructorInvocation n) {
+        IMethodBinding ctor = n.resolveConstructorBinding();
+        recordCall(ctor, n, MethodRef.CONSTRUCTOR, targetModsOf(ctor), "", RecvKind.TYPE,
+                null, null, origins.argOriginsOf(n.arguments()));
+        return true;
+    }
+
+    /**
+     * super(...)。子コンストラクタから親コンストラクタへの呼び出しで、this(...) と同じく静的束縛。
+     * 記録しないと、親コンストラクタの中の呼び出し（初期化処理・テンプレートメソッド等）が
+     * 起点から到達不能に見える。暗黙の super()（書かれていないもの）はASTに現れないため対象外。
+     */
+    @Override
+    public boolean visit(SuperConstructorInvocation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
         recordCall(ctor, n, MethodRef.CONSTRUCTOR, targetModsOf(ctor), "", RecvKind.TYPE,
                 null, null, origins.argOriginsOf(n.arguments()));

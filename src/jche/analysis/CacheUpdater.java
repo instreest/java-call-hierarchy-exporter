@@ -43,6 +43,7 @@ import jche.cache.MethodDeclFact;
 import jche.cache.ReturnFact;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
+import jche.analysis.CallEdgeExtractor.SourceFile;
 import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
@@ -51,9 +52,11 @@ import jche.util.Progress;
 /**
  * フェーズ1: 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
  *
- * 1ファイル解析するたびに結果をキャッシュファイルへ直接書き出して破棄するため、
+ * 1ファイル分の結果が出来るたびにキャッシュファイルへ直接書き出して破棄するため、
  * ランダムアクセスも全件保持も不要。ヒープ常駐は「ソースファイルの一覧＋更新時刻・サイズ」と
  * 「変わった型の集合」だけ。未解決呼び出しの件数も、この過程で同時に数える（溜め込まない）。
+ * パース自体は {@link CallEdgeExtractor#BATCH_SIZE} 件ずつまとめて行う（1ファイルずつでは
+ * 規模に比例して遅くなるため）。
  *
  * 手順:
  * <pre>
@@ -74,10 +77,6 @@ import jche.util.Progress;
  */
 public final class CacheUpdater {
 
-    /** ソースファイルの実体情報。差分判定に使う（これだけはヒープに載せる） */
-    private record FileStat(Path path, long mtime, long size) {
-    }
-
     private final ProjectLayout layout;
     private final Config config;
 
@@ -92,10 +91,11 @@ public final class CacheUpdater {
         List<Path> javaFiles = layout.listJavaFiles();
         Log.info("Javaファイル数: " + javaFiles.size());
 
-        Map<String, FileStat> live = new LinkedHashMap<>();
+        // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）
+        Map<String, SourceFile> live = new LinkedHashMap<>();
         for (Path f : javaFiles) {
-            live.put(layout.relativeOf(f),
-                    new FileStat(f, Files.getLastModifiedTime(f).toMillis(), Files.size(f)));
+            String rel = layout.relativeOf(f);
+            live.put(rel, new SourceFile(f, rel, Files.getLastModifiedTime(f).toMillis(), Files.size(f)));
         }
 
         Path parent = config.cacheFile.toAbsolutePath().getParent();
@@ -104,12 +104,13 @@ public final class CacheUpdater {
         }
         Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
 
-        Progress progress = new Progress("ソース解析", javaFiles.size());
+        Progress progress = new Progress("ソース解析", javaFiles.size(), CallEdgeExtractor.BATCH_SIZE);
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
 
         try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8)) {
             cacheOut.write(CacheFormat.headerFor(config.sourceLevel));
             cacheOut.newLine();
+            BlockWriter writer = new BlockWriter(cacheOut, result, progress);
 
             // --- パス1: 有効なブロックと「変わった型」を集める ---
             Set<String> valid = new HashSet<>();
@@ -119,36 +120,34 @@ public final class CacheUpdater {
             }
 
             // --- パス2: 変更・追加されたファイルを解析 ---
-            int done = 0;
-            for (Map.Entry<String, FileStat> en : live.entrySet()) {
-                if (valid.contains(en.getKey())) {
-                    continue;
+            List<SourceFile> changed = new ArrayList<>();
+            for (Map.Entry<String, SourceFile> en : live.entrySet()) {
+                if (!valid.contains(en.getKey())) {
+                    changed.add(en.getValue());
                 }
-                analyzeAndWrite(extractor, en.getKey(), en.getValue(), cacheOut, result, stale);
-                done++;
-                progress.step(done);
             }
+            writer.stale = stale;   // 解析したファイルが宣言する型も「変わった型」に加える（改名・追加に備える）
+            analyzeInBatches(extractor, changed, writer);
 
             // --- パス3: 変わった型に依存していない有効ブロックを書き写す ---
             List<String> dependents = new ArrayList<>();
             if (config.cacheEnabled && !valid.isEmpty()) {
                 result.unresolved += copyValidBlocks(valid, stale, dependents, cacheOut);
                 result.reused = valid.size() - dependents.size();
-                done += result.reused;
-                progress.step(done);
+                writer.skipped(result.reused);
             }
 
             // --- パス4: 依存で無効になったファイルを解析し直す ---
+            List<SourceFile> dependentFiles = new ArrayList<>();
             for (String rel : dependents) {
-                FileStat st = live.get(rel);
-                if (st == null) {
-                    continue;
+                SourceFile file = live.get(rel);
+                if (file != null) {
+                    dependentFiles.add(file);
                 }
-                analyzeAndWrite(extractor, rel, st, cacheOut, result, null);
-                result.dependents++;
-                done++;
-                progress.step(done);
             }
+            writer.stale = null;
+            writer.countingDependents = true;
+            analyzeInBatches(extractor, dependentFiles, writer);
         }
         progress.finish();
 
@@ -156,27 +155,65 @@ public final class CacheUpdater {
         return result;
     }
 
+    /** BATCH_SIZE 件ずつまとめてパースし、1ファイル分ずつ writer に渡す */
+    private static void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> files,
+                                         BlockWriter writer) throws IOException {
+        for (int from = 0; from < files.size(); from += CallEdgeExtractor.BATCH_SIZE) {
+            int to = Math.min(files.size(), from + CallEdgeExtractor.BATCH_SIZE);
+            extractor.analyzeBatch(files.subList(from, to), writer);
+        }
+    }
+
     /**
-     * 1ファイルを解析して書き出す。1ファイル分だけをヒープに載せ、書き出したら即破棄する。
-     *
-     * @param stale 非nullなら、このファイルが宣言する型を「変わった型」に加える
+     * 解析結果を受け取って即座にキャッシュへ書き出し、件数と進捗を数える。
+     * 1ファイル分だけをヒープに載せ、書き出したら即破棄する。
      */
-    private void analyzeAndWrite(CallEdgeExtractor extractor, String rel, FileStat st,
-                                 BufferedWriter cacheOut, CachePhaseResult result,
-                                 StaleTypes stale) {
-        try {
-            FileAnalysis fa = extractor.analyze(st.path(), rel, st.mtime(), st.size());
+    private static final class BlockWriter implements CallEdgeExtractor.Sink {
+        private final BufferedWriter cacheOut;
+        private final CachePhaseResult result;
+        private final Progress progress;
+        /** 非nullなら、解析したファイルが宣言する型を「変わった型」に加える（パス2） */
+        StaleTypes stale;
+        /** true なら「依存先の変更による再解析」として数える（パス4） */
+        boolean countingDependents;
+        private long done;
+
+        BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress) {
+            this.cacheOut = cacheOut;
+            this.result = result;
+            this.progress = progress;
+        }
+
+        @Override
+        public void accept(SourceFile file, FileAnalysis fa) throws IOException {
             writeBlock(fa, cacheOut);
             result.unresolved += fa.unresolvedCount();
             result.parsed++;
+            if (countingDependents) {
+                result.dependents++;
+            }
             if (stale != null) {
                 for (TypeFact t : fa.types) {
                     stale.add(t.typeFqn(), t.pkg());
                 }
             }
-        } catch (Exception e) {
+            progress.step(++done);
+        }
+
+        @Override
+        public void failed(SourceFile file, Exception error) {
             result.failed++;
-            Log.warn("解析失敗（スキップ）: " + rel + " (" + e.getMessage() + ")");
+            if (countingDependents) {
+                result.dependents++;
+            }
+            Log.warn("解析失敗（スキップ）: " + file.relativePath() + " (" + error.getMessage() + ")");
+            progress.step(++done);
+        }
+
+        /** 再利用したぶんを進捗に足す */
+        void skipped(long count) {
+            done += count;
+            progress.step(done);
         }
     }
 
@@ -216,11 +253,11 @@ public final class CacheUpdater {
     }
 
     /** ブロックのF行が、今のソースと一致しているか（更新時刻とサイズの両方） */
-    private static boolean isValidBlock(String[] f, Map<String, FileStat> live) {
+    private static boolean isValidBlock(String[] f, Map<String, SourceFile> live) {
         if (f.length < 4) {
             return false;
         }
-        FileStat st = live.get(f[1]);
+        SourceFile st = live.get(f[1]);
         try {
             return st != null && st.mtime() == Long.parseLong(f[2]) && st.size() == Long.parseLong(f[3]);
         } catch (NumberFormatException ignore) {
@@ -232,7 +269,7 @@ public final class CacheUpdater {
      * パス1。旧キャッシュを読み、有効なファイルの集合と「変わった型」を集める。
      * 形式またはソースレベルが違えば何も有効にしない（全件再解析）。
      */
-    private void scanOldCache(Map<String, FileStat> live, Set<String> valid, StaleTypes stale)
+    private void scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale)
             throws IOException {
         if (!Files.isRegularFile(config.cacheFile)) {
             return;

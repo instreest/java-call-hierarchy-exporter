@@ -149,14 +149,18 @@ public final class ExternalUsageScanner {
                     stats.usedMethods++;
                 }
                 stats.hits++;
-            } else if (MethodRef.CONSTRUCTOR.equals(r.name())) {
-                // 暗黙のデフォルトコンストラクタ。ソース上に宣言が無いため
-                // 照合先が存在しないが、これは版の食い違いではない。
-                // 「誰がこのクラスを生成しているか」は影響調査で有用なので
-                // 被参照として記録する。
-                String simple = simpleOf(owner);
+            } else if (MethodRef.CONSTRUCTOR.equals(r.name()) && r.paramSig().isEmpty()) {
+                // 引数なしコンストラクタへの参照だが、ソース上に一致する宣言が無い。
+                // 暗黙のデフォルトコンストラクタは解析時に D 行として合成されるので EXACT で
+                // 照合される。ここに来るのは「相手jarのビルド時には引数なしで生成できたが、
+                // 今のソースにはそのコンストラクタが無い」形で、版違いの可能性が高い。
+                // 「誰がこのクラスを生成しているか」は影響調査で有用なので、行として残し注記で区別する。
+                // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
+                // 版違いであり、生成箇所として表記できないので未照合に数える
+                String typeFqn = normalize(owner);
+                String simple = simpleOf(typeFqn);
                 out.writeExternalUsageRow(refs.thisClass,
-                        normalize(owner) + "." + simple + "()", simple + "." + simple,
+                        typeFqn + "." + simple + "()", simple + "." + simple,
                         jarName, "IMPLICIT_CTOR");
                 stats.implicitCtors++;
             } else {

@@ -40,6 +40,10 @@ import jche.cache.Origin;
  *   (c) 初期化子を持つか、this(...)委譲していない全てのコンストラクタで
  *       代入されている（代入されない生成経路が無い）
  *   (d) それらの代入の出所が全て一致する
+ *   (e) 出所がコンストラクタの引数（A:n）なら、その型に this(...) 委譲するコンストラクタが無い。
+ *       A:n は根コンストラクタの引数位置だが、経路側で分かる実引数は new X(...) が実際に呼んだ
+ *       コンストラクタのもので、委譲があると位置が食い違い、誤った具象型に確定しうる。
+ *       「絞れないことより誤って絞ることの方が害が大きい」ので採用しない
  * </pre>
  * 事実はファイル（F行）ごとに溜め、次のF行またはEOFで確定する。
  * static フィールドは対象外（インスタンスの生成経路と無関係なため）。
@@ -60,9 +64,15 @@ final class FieldFacts {
     private final LinkedHashMap<String, Field> fields = new LinkedHashMap<>();
     /** typeFqn -> this(...)委譲していないコンストラクタの "name(paramSig)" */
     private final HashMap<String, Set<String>> rootCtors = new HashMap<>();
+    /** this(...)委譲するコンストラクタを1つでも持つ型（条件 (e)） */
+    private final Set<String> typesWithDelegatingCtor = new HashSet<>();
 
     void declaration(MethodDeclFact d) {
-        if (!d.ref().isConstructor() || ModifierTokens.has(d.mods(), ModifierTokens.DELEGATING)) {
+        if (!d.ref().isConstructor()) {
+            return;
+        }
+        if (ModifierTokens.has(d.mods(), ModifierTokens.DELEGATING)) {
+            typesWithDelegatingCtor.add(d.ref().typeFqn());
             return;
         }
         rootCtors.computeIfAbsent(d.ref().typeFqn(), k -> new HashSet<>()).add(d.ref().signature());
@@ -90,6 +100,7 @@ final class FieldFacts {
         }
         fields.clear();
         rootCtors.clear();
+        typesWithDelegatingCtor.clear();
     }
 
     /** 条件 (a)〜(d) を全て満たすなら、そのフィールドに必ず入る値の出所。満たさなければ null */
@@ -98,7 +109,8 @@ final class FieldFacts {
                 || !(ModifierTokens.has(fd.mods, "private") || ModifierTokens.has(fd.mods, "final"))) {
             return null;   // (a)
         }
-        Set<String> roots = rootCtors.get(key.substring(0, key.indexOf('#')));
+        String typeFqn = key.substring(0, key.indexOf('#'));
+        Set<String> roots = rootCtors.get(typeFqn);
         int rootCount = (roots == null) ? 0 : roots.size();
         String origin = null;
         boolean hasInitializer = false;
@@ -123,6 +135,9 @@ final class FieldFacts {
         }
         if (!hasInitializer && assignedIn.size() < rootCount) {
             return null;   // (c) 代入されない生成経路がある
+        }
+        if (Origin.kindOf(origin) == Origin.PARAM && typesWithDelegatingCtor.contains(typeFqn)) {
+            return null;   // (e) 委譲があると実引数の位置が根コンストラクタと一致しない
         }
         return origin;
     }

@@ -16,6 +16,7 @@
 package jche.report;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 
 import jche.cache.Origin;
@@ -46,7 +47,9 @@ import jche.util.Log;
  *       判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
  *       そちらでも改めて出力する（グローバルな訪問済み集合は持たない）</li>
  *   <li>除外パッケージ … 除外対象のノード自身は出力しないが、その先は
- *       除外されたノードを呼び出し元として辿り続ける</li>
+ *       除外されたノードを呼び出し元として辿り続ける。読み飛ばした除外ノードと
+ *       差し替えた親も「経路上」として扱い、除外メソッド同士の相互再帰で
+ *       無限に再帰しないようにする</li>
  * </ul>
  */
 public final class StreamingTreeWalker {
@@ -72,6 +75,17 @@ public final class StreamingTreeWalker {
 
     /** 現在の経路（深さぶんだけ確保） */
     private final PathFrame[] path;
+    /**
+     * 除外パッケージの読み飛ばし（{@link #skipThrough}）で path[] から外れているが、
+     * 呼び出しの連鎖としては祖先にあたるメソッド。差し替えられた親と、読み飛ばし中の
+     * 除外メソッドが入る。{@link #onCurrentPath} はこれも経路上とみなす。
+     * これが無いと、除外メソッド A → B → A の相互再帰を検出できず、深さも行数も
+     * 増えないまま無限に再帰して StackOverflowError になる。
+     */
+    private final ArrayDeque<Integer> hiddenAncestors = new ArrayDeque<>();
+    /** 入れ子になっている読み飛ばしの数。読み飛ばしは深さを増やさないため、別に数えて上限を掛ける */
+    private int skipNesting;
+    private boolean skipLimitWarned;
 
     /** データフロー・リフレクションで具象クラスを特定した件数（ログ用） */
     private long paramHits;
@@ -168,7 +182,8 @@ public final class StreamingTreeWalker {
                 String[] targetCtorArgs = bindConstructorArguments(e, depth, target);
 
                 if (isExcluded(target)) {
-                    // 除外対象のノード自身は出力しないが、その先は辿る
+                    // 除外対象のノード自身は出力しないが、その先は辿る。
+                    // 経路上（読み飛ばし中の除外メソッドを含む）へ戻る辺は循環なので降りない
                     if (!onCurrentPath(target, depth)) {
                         skipThrough(depth, target, targetParams, targetCtorArgs);
                     }
@@ -307,14 +322,30 @@ public final class StreamingTreeWalker {
      */
     private void skipThrough(int parentDepth, int skippedId,
                              String[] skippedParams, String[] skippedCtorArgs) throws IOException {
+        // 読み飛ばしは path[] の深さを増やさずに再帰する。相異なる除外メソッドの連鎖が
+        // 長くても Java のスタックを使い切らないよう、経路の深さと合わせて上限を掛ける
+        if (parentDepth + skipNesting >= DEPTH_HARD_CAP) {
+            if (!skipLimitWarned) {
+                skipLimitWarned = true;
+                Log.warn("除外パッケージの読み飛ばしが深さ上限(" + DEPTH_HARD_CAP + ")に達したため、その先は辿りません");
+            }
+            return;
+        }
         PathFrame saved = path[parentDepth];
         PathFrame replacement = new PathFrame();
         replacement.set(skippedId, saved.callLine, saved.note, skippedParams, skippedCtorArgs,
                 (skippedCtorArgs == null) ? null : methods.typeFqn(skippedId));
         path[parentDepth] = replacement;
+        // 差し替えた親と読み飛ばす除外メソッドは、path[] からは見えなくなるが祖先のまま
+        hiddenAncestors.push(saved.methodId);
+        hiddenAncestors.push(skippedId);
+        skipNesting++;
         try {
             descend(parentDepth);
         } finally {
+            skipNesting--;
+            hiddenAncestors.pop();
+            hiddenAncestors.pop();
             path[parentDepth] = saved;
         }
     }
@@ -379,9 +410,9 @@ public final class StreamingTreeWalker {
     /**
      * そのメソッドが「現在の経路」に既に現れているか。
      *
-     * 見るのは root から depth までの祖先だけで、探索済みの他の経路は見ない。
-     * これにより、別経路で同じ呼び出しがあっても独立して出力される
-     * （ダイヤモンド状の依存を潰さない）。
+     * 見るのは root から depth までの祖先（除外の読み飛ばしで path[] から外れた祖先を含む）
+     * だけで、探索済みの他の経路は見ない。これにより、別経路で同じ呼び出しがあっても
+     * 独立して出力される（ダイヤモンド状の依存を潰さない）。
      */
     private boolean onCurrentPath(int methodId, int depth) {
         for (int i = 0; i <= depth; i++) {
@@ -389,7 +420,7 @@ public final class StreamingTreeWalker {
                 return true;
             }
         }
-        return false;
+        return hiddenAncestors.contains(methodId);
     }
 
     private boolean isRowLimitReached() {

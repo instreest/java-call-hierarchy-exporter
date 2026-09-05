@@ -1,0 +1,39 @@
+name: smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ツール自身は //JAVA 25 で動く。期待出力も同じ JDK で作る
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # jbangw は jbang 本体をリポジトリ直下の .jbang/ に、依存 jar を ~/.m2 に置く
+      - name: Cache jbang and dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .jbang
+            ~/.jbang
+            ~/.m2/repository
+          key: jbang-${{ hashFiles('jbang', 'src/CallHierarchyExporter.java') }}
+
+      # jbang が解決した JDT の jar を classpath にして、全ソースを警告ゼロでコンパイルできることを確認する。
+      # jbang 自身がビルドしたスクリプトの jar（~/.jbang/cache/jars）は除く。残すと javac がそちらの class を使い、
+      # ソースの一部が lint 対象から外れる。
+      - name: Compile with all lint warnings as errors
+        run: |
+          CP=$(bash jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+          javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
+                -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
+
+      - name: Regression test (samples/demo)
+        run: bash test/regression/run.sh

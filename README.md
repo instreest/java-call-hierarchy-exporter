@@ -2,6 +2,12 @@
 
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
+> **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
+> using the Eclipse JDT compiler without launching Eclipse. Run
+> `jbang src/CallHierarchyExporter.java config/config.properties` (the first run downloads a JDK
+> and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
+> use. Apache-2.0. Documentation is in Japanese.
+
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
 
@@ -212,7 +218,7 @@ classファイルの定数プールだけを読むため、「どのjar・どの
 ```csv
 caller,callee,root,call-hierarchy
 NightJob,jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:IMPLICIT_CTOR
+NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:EXACT
 ```
 
 `external.library.folders` に指定したフォルダに自プロジェクトのjarが混ざっていても、
@@ -222,12 +228,14 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 
 | 注記 | 意味 |
 |---|---|
-| `被参照:EXACT` | そのクラスで宣言されているメソッドへの参照 |
+| `被参照:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
 | `被参照:INHERITED` | 親クラスから継承したメソッドへの参照 |
-| `被参照:IMPLICIT_CTOR` | 暗黙のデフォルトコンストラクタ（＝そのクラスを生成している） |
+| `被参照:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
 
-自分の型を参照しているのにメソッドが一致しなかったものは、相手のjarが古い版に対して
-ビルドされている可能性があります。件数のみ実行ログに出力されます。
+自分の型を参照しているのに一致するメソッドが無いもの（引数付きのコンストラクタを含む）は、
+相手のjarが古い版に対してビルドされている可能性があります。件数のみ実行ログに出力されます。
+非 static な内部クラスのコンストラクタは、バイトコード上は外側インスタンスが引数に付くため
+ソースの宣言と一致せず、この件数に入ります。
 
 ---
 
@@ -286,3 +294,23 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
 → `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
 キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
+
+---
+
+## テスト
+
+`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected/` と
+一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
+2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
+
+```bash
+bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
+test\regression\run.cmd            # Windows のコマンドプロンプト
+```
+
+GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint:all -Werror` での
+コンパイルとこの回帰テストを実行します。
+
+出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
+`expected/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
+（JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。

@@ -42,6 +42,10 @@ import org.eclipse.jdt.core.JavaCore;
  *   <li>source.folders / library.folders / external.library.folders … project.root</li>
  * </ul>
  * 設定ファイルと関連ファイルをひとまとめに配置でき、どこから実行しても同じ結果になる。
+ *
+ * 相対パスは起点ディレクトリの配下だけを指せる（{@code ..} で外へ出る指定は拒否する）。
+ * project.root だけは起点そのものなので制限しない。source.folders は絶対パスでも project.root の
+ * 配下でなければならない。キャッシュのキーと出力の file 列を project.root からの相対パスにするため。
  */
 public final class Config {
 
@@ -109,11 +113,14 @@ public final class Config {
             p.load(r);
         }
 
+        // project.root は他の項目の起点そのものなので、設定ファイルのディレクトリの外を指してよい
         this.projectRoot = resolveFromConfigDir(require(p, "project.root"));
 
         // source.folders / library.folders / external.library.folders は project.root からの相対
-        this.sourceFolders = resolveAllUnderProject(splitList(p.getProperty("source.folders", "")));
-        this.libraryFolders = resolveAllUnderProject(splitList(p.getProperty("library.folders", "")));
+        this.sourceFolders = resolveAllUnderProject("source.folders",
+                splitList(p.getProperty("source.folders", "")), true);
+        this.libraryFolders = resolveAllUnderProject("library.folders",
+                splitList(p.getProperty("library.folders", "")), false);
 
         this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
@@ -127,8 +134,8 @@ public final class Config {
         this.excludePatterns = PackagePattern.parseAll(splitList(p.getProperty("exclude.packages", "")));
         this.wholeProjectMode = this.entryPatterns.isEmpty();
 
-        this.maxDepth = Integer.parseInt(p.getProperty("max.depth", "50").trim());
-        this.maxRows = Long.parseLong(p.getProperty("max.rows", "5000000").trim());
+        this.maxDepth = intOf(p, "max.depth", 50);
+        this.maxRows = longOf(p, "max.rows", 5_000_000L);
 
         // 拡張（フェーズA/B）は設定ファイルには載せていない。
         // 使う場合はこのキーを足せば読み込まれる
@@ -138,17 +145,19 @@ public final class Config {
 
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
         this.dataflowEnabled = Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
-        this.dataflowMaxDepth = Integer.parseInt(p.getProperty("dataflow.max.depth", "5").trim());
-        this.cacheFile = resolveFromConfigDir(p.getProperty("cache.folders", "./.cache"))
+        this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
+        this.cacheFile = resolveUnderConfigDir("cache.folders", p.getProperty("cache.folders", "./.cache"))
                 .resolve(CACHE_FILE_NAME);
 
         // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
         // ソースや依存jarと同じく project.root からの相対で書けるようにする
-        this.externalLibraryFolders =
-                resolveAllUnderProject(splitList(p.getProperty("external.library.folders", "")));
+        this.externalLibraryFolders = resolveAllUnderProject("external.library.folders",
+                splitList(p.getProperty("external.library.folders", "")), false);
 
-        this.outputCsv = resolveFromConfigDir(p.getProperty("output.csv", "./output/call-hierarchy.csv"));
-        this.methodsCsv = resolveFromConfigDir(p.getProperty("methods.csv", "./output/methods.csv"));
+        this.outputCsv = resolveUnderConfigDir("output.csv",
+                p.getProperty("output.csv", "./output/call-hierarchy.csv"));
+        this.methodsCsv = resolveUnderConfigDir("methods.csv",
+                p.getProperty("methods.csv", "./output/methods.csv"));
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
         if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
@@ -191,20 +200,81 @@ public final class Config {
         return options;
     }
 
-    /** 相対パスは設定ファイルのあるディレクトリを起点に解決する */
+    /** 相対パスは設定ファイルのあるディレクトリを起点に解決する（配下の制限なし。project.root 用） */
     private Path resolveFromConfigDir(String raw) {
         Path p = Paths.get(raw.trim());
         return (p.isAbsolute() ? p : configDir.resolve(p)).normalize();
     }
 
-    /** 相対パスを project.root から解決する */
-    private List<Path> resolveAllUnderProject(List<String> raws) {
+    /** 設定ファイルのあるディレクトリを起点に解決する。相対パスはその配下に限る */
+    private Path resolveUnderConfigDir(String key, String raw) {
+        return resolveUnder(key, configDir, "設定ファイルのフォルダ", raw, false);
+    }
+
+    /**
+     * project.root を起点に解決する。相対パスは project.root の配下に限る。
+     *
+     * @param absoluteMustBeInside 絶対パスで指定された場合も配下を要求するか（source.folders）
+     */
+    private List<Path> resolveAllUnderProject(String key, List<String> raws, boolean absoluteMustBeInside) {
         List<Path> out = new ArrayList<>();
         for (String raw : raws) {
-            Path p = Paths.get(raw.trim());
-            out.add((p.isAbsolute() ? p : projectRoot.resolve(p)).normalize());
+            out.add(resolveUnder(key, projectRoot, "project.root", raw, absoluteMustBeInside));
         }
         return out;
+    }
+
+    /**
+     * 起点ディレクトリからパスを解決し、配下に収まっていることを確認する。
+     *
+     * 相対パスで {@code ..} を使って起点の外へ出る指定は、出力やキャッシュが意図しない場所に
+     * 書かれたり、project.root からの相対パスが作れなくなったりするので拒否する。
+     */
+    private static Path resolveUnder(String key, Path base, String baseName, String raw,
+                                     boolean absoluteMustBeInside) {
+        Path p = Paths.get(raw.trim());
+        Path resolved = (p.isAbsolute() ? p : base.resolve(p)).normalize();
+        if (resolved.startsWith(base)) {
+            return resolved;
+        }
+        if (!p.isAbsolute()) {
+            throw new IllegalArgumentException("設定 " + key + " の相対パス '" + raw.trim()
+                    + "' が " + baseName + "（" + base + "）の外を指しています。"
+                    + "相対パスは " + baseName + " の配下だけ指定できます。外を指す場合は絶対パスで書いてください");
+        }
+        if (absoluteMustBeInside) {
+            throw new IllegalArgumentException("設定 " + key + " のパス '" + raw.trim()
+                    + "' は " + baseName + "（" + base + "）の配下でなければなりません。"
+                    + "キャッシュのキーと出力の file 列を " + baseName + " からの相対パスにするためです");
+        }
+        return resolved;
+    }
+
+    /** 整数の設定値。空欄なら既定値。書式が誤っていれば、どの項目かが分かる例外にする */
+    private static int intOf(Properties p, String key, int fallback) {
+        String raw = p.getProperty(key);
+        if (raw == null || raw.trim().isEmpty()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "設定 " + key + " の値が整数ではありません: '" + raw.trim() + "'");
+        }
+    }
+
+    private static long longOf(Properties p, String key, long fallback) {
+        String raw = p.getProperty(key);
+        if (raw == null || raw.trim().isEmpty()) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "設定 " + key + " の値が整数ではありません: '" + raw.trim() + "'");
+        }
     }
 
     private static List<String> splitList(String raw) {

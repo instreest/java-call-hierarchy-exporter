@@ -29,7 +29,7 @@ package jche.util;
 public final class Progress {
 
     /** 何件ごとに進捗を出すか */
-    private static final int INTERVAL = 500;
+    private final int interval;
 
     private final String label;
     /** 0以下なら総数不明 */
@@ -39,14 +39,19 @@ public final class Progress {
     private long lastDone;
     private long done;
 
-    public Progress(String label, long total) {
+    /**
+     * @param total    総数。0以下なら総数不明
+     * @param interval 何件ごとに進捗を出すか
+     */
+    public Progress(String label, long total, int interval) {
         this.label = label;
         this.total = total;
+        this.interval = Math.max(1, interval);
     }
 
     public void step(long current) {
         done = current;
-        if (done - lastDone >= INTERVAL) {
+        if (done - lastDone >= interval) {
             report();
         }
     }
