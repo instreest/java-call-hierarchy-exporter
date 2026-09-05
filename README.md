@@ -4,7 +4,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 > **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
 > using the Eclipse JDT compiler without launching Eclipse. Run
-> `jbang src/CallHierarchyExporter.java config/config.properties` (the first run downloads a JDK
+> `jbangw/jbang src/CallHierarchyExporter.java config/config.properties` (the first run downloads a JDK
 > and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
 > use. Apache-2.0. Documentation is in Japanese.
 
@@ -23,8 +23,16 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 #### JBangによる実行
 
+JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です。
+
 ```bat
-.\jbangw\jbang src/CallHierarchyExporter.java config/config.properties
+rem Windows（コマンドプロンプト）
+.\jbangw\jbang.cmd src\CallHierarchyExporter.java config\config.properties
+```
+
+```bash
+# Linux / macOS / Git Bash
+./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
 このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
