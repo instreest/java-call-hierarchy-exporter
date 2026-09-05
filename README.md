@@ -2,6 +2,12 @@
 
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
+> **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
+> using the Eclipse JDT compiler without launching Eclipse. Run
+> `jbang src/CallHierarchyExporter.java config/config.properties` (the first run downloads a JDK
+> and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
+> use. Apache-2.0. Documentation is in Japanese.
+
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
 
@@ -21,7 +27,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 .\jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-このツールが必要とするJDK 17・依存jarは、環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
 
 #### Pleiades/Eclipse環境（閉域ネットワーク等）
 
@@ -40,12 +46,14 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
-rem コンパイル
-"%JAVA_HOME%\bin\javac" -cp "lib\*" -d bin -encoding UTF-8 src\CallHierarchyExporter.java
+rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
+"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -cp "bin;lib\*" CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
+
+---
 
 ### 出力されるファイル
 
@@ -54,16 +62,15 @@ rem 実行
 | 呼び出し階層リスト | `./output/call-hierarchy.csv` |
 | メソッド全体リスト | `./output/methods.csv` |
 
-出力はすべてUTF-8（BOM付き）のCSVで、Excelでそのまま開けます。
-出力先は設定ファイルからの相対パスなので、`config/config.properties` を指定した場合は
+出力はUTF-8（BOM付き）のCSVファイルなのでExcelで開けます。
+出力先は設定ファイルからの相対パスで、例えば `config/config.properties` を指定した場合は
 `config/output/` の下に出ます。
 
 #### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
 呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
 呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
-呼び出し元はEclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。（後述）
+出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → コード呼び出しの順序です。
 
 ```csv
 caller,callee,root,call-hierarchy
@@ -71,17 +78,10 @@ at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.s
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
-##### **Eclipseでのソースコードジャンプ**
-`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
-
-1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
-2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
-   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
-   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
-
 #### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+
+各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
+出力ソート順は、ソースフォルダ → 完全修飾クラス名 → 宣言行順の順序です。
 
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
@@ -114,7 +114,7 @@ import からの推定を呼び出し先として採用するか、といった�
 （キャッシュの `I` 行）を宣言するファイルが変わっていれば解析し直します。
 呼び出し先やフィールドの所有型は他のファイルのバインディング解決に依存するためです。
 フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
-行の種別と列の意味は `src/CallHierarchyExporter.java` の「キャッシュファイルの形式」コメントにあります。
+行の種別と列の意味は [src/jche/cache/CacheFormat.java](src/jche/cache/CacheFormat.java) のクラスコメントにあります。
 
 ## 出力ファイル
 
@@ -175,6 +175,16 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
+#### **Eclipseでのソースコードジャンプ**
+`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
+
+1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
+2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
+   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
+   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
+
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
 | 列 | 内容 |
@@ -208,7 +218,7 @@ classファイルの定数プールだけを読むため、「どのjar・どの
 ```csv
 caller,callee,root,call-hierarchy
 NightJob,jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:IMPLICIT_CTOR
+NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:EXACT
 ```
 
 `external.library.folders` に指定したフォルダに自プロジェクトのjarが混ざっていても、
@@ -218,12 +228,14 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 
 | 注記 | 意味 |
 |---|---|
-| `被参照:EXACT` | そのクラスで宣言されているメソッドへの参照 |
-| `被参照:INHERITED` | 親クラスから継承したメソッドへの参照 |
-| `被参照:IMPLICIT_CTOR` | 暗黙のデフォルトコンストラクタ（＝そのクラスを生成している） |
+| `被参照:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
+| `被参照:INHERITED` | 親から継承したメソッドへの参照。宣言している最も近い親（親クラスの連鎖を先に、次にインターフェース）のメソッドとして出る |
+| `被参照:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
 
-自分の型を参照しているのにメソッドが一致しなかったものは、相手のjarが古い版に対して
-ビルドされている可能性があります。件数のみ実行ログに出力されます。
+自分の型を参照しているのに一致するメソッドが無いもの（引数付きのコンストラクタを含む）は、
+相手のjarが古い版に対してビルドされている可能性があります。件数のみ実行ログに出力されます。
+非 static な内部クラスのコンストラクタは、バイトコード上は外側インスタンスが引数に付くため
+ソースの宣言と一致せず、この件数に入ります。
 
 ---
 
@@ -260,3 +272,45 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 
 解決できないもの: 設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
 フィールドや別メソッドの引数で受け渡す形。これらは `Method.invoke` のまま「ソースなし」の行になります。
+
+---
+
+## ソースの構成
+
+`src/CallHierarchyExporter.java` がエントリポイント（JBang の指示行と `main`）で、
+本体は `src/jche/` 配下のパッケージに分かれています。パッケージは処理のフェーズに対応します。
+
+| パッケージ | 役割 | 主なクラス |
+|---|---|---|
+| `jche.config` | 設定ファイルとプロジェクト構成の読み取り | `Config`, `ProjectLayout`, `PackagePattern` |
+| `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
+| `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
+| `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
+| `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
+| `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
+| `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
+| `jche.util` | ログと進捗表示 | `Log`, `Progress` |
+
+読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
+→ `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
+キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
+
+---
+
+## テスト
+
+`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected/` と
+一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
+2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
+
+```bash
+bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
+test\regression\run.cmd            # Windows のコマンドプロンプト
+```
+
+GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint:all -Werror` での
+コンパイルとこの回帰テストを実行します。
+
+出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
+`expected/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
+（JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。

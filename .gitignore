@@ -20,3 +20,8 @@ dist/
 # 設定ファイルをリポジトリ内の別の場所へコピーして使う場合は、その出力先も各自で足すこと。
 /config/.cache/
 /config/output/
+
+# 回帰テストの実行結果（期待出力 expected/ は追跡する）
+/test/regression/*/output/
+/test/regression/*/.cache/
+/test/regression/*/run.log
