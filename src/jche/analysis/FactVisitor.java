@@ -18,7 +18,9 @@ package jche.analysis;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -282,24 +284,48 @@ final class FactVisitor extends ASTVisitor {
                 : (Modifier.isAbstract(erased.getModifiers()) ? TypeFact.ABSTRACT : TypeFact.CONCRETE);
 
         List<String> supers = new ArrayList<>();
-        ITypeBinding superclass = erased.getSuperclass();
-        if (superclass != null) {
-            String n = names.typeNameOf(BindingNames.erasureOf(superclass));
-            // java.lang.Object は候補計算に寄与しないので除外（無駄に巨大化させない）
-            if (n != null && !"java.lang.Object".equals(n)) {
-                supers.add(n);
-            }
-        }
-        ITypeBinding[] interfaces = erased.getInterfaces();
-        if (interfaces != null) {
-            for (ITypeBinding i : interfaces) {
-                String n = names.typeNameOf(BindingNames.erasureOf(i));
-                if (n != null) {
-                    supers.add(n);
-                }
-            }
-        }
+        collectSupertypes(erased, supers, new HashSet<>(), true, 0);
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased)));
+    }
+
+    /** jar の型を経由して親型を辿る深さの上限（JDK の GUI クラス等でも十数段） */
+    private static final int MAX_BINARY_SUPERTYPE_DEPTH = 32;
+
+    /**
+     * 親型の名前を集める。直接の親型（親クラスとインターフェース）に加えて、
+     * ソースの無い親型（jar の型）を経由して到達するソース上の親型も入れる。
+     *
+     * 例: {@code class Foo extends LibBase} で、jar の LibBase が {@code implements Handler}
+     * （Handler はソース上のインターフェース）なら、Foo の親型は LibBase と Handler の両方。
+     * H 行はソース上の型にしか無いので、これが無いと読み手（CHA）は「Foo は Handler の実装」と知れず、
+     * Handler のメソッド呼び出しの候補から Foo が抜ける。
+     * ソース上の親型の先は、その型自身の H 行が持つので辿らない。
+     * java.lang.Object は候補計算に寄与しないので除外する（無駄に巨大化させない）。
+     */
+    private void collectSupertypes(ITypeBinding type, List<String> out, Set<String> seen,
+                                   boolean direct, int depth) {
+        List<ITypeBinding> parents = new ArrayList<>();
+        if (type.getSuperclass() != null) {
+            parents.add(type.getSuperclass());
+        }
+        ITypeBinding[] interfaces = type.getInterfaces();
+        if (interfaces != null) {
+            parents.addAll(java.util.Arrays.asList(interfaces));
+        }
+        for (ITypeBinding parent : parents) {
+            ITypeBinding erasedParent = BindingNames.erasureOf(parent);
+            String n = names.typeNameOf(erasedParent);
+            if (n == null || "java.lang.Object".equals(n) || !seen.add(n)) {
+                continue;
+            }
+            boolean fromSource = erasedParent.isFromSource();
+            if (direct || fromSource) {
+                out.add(n);
+            }
+            if (!fromSource && depth < MAX_BINARY_SUPERTYPE_DEPTH) {
+                collectSupertypes(erasedParent, out, seen, false, depth + 1);
+            }
+        }
     }
 
     /**

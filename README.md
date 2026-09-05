@@ -54,6 +54,8 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
+rem 実行する JDK は、解析対象のソースが使う JDK API の版以上にする（古いと新しい API の呼び出しが
+rem 型解決失敗になり、その戻り値を使う自プロジェクトの呼び出しも欠ける。docs/cache-dependency-jars-qa.md の Q20）
 rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
 "%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
 
@@ -123,6 +125,21 @@ import からの推定を呼び出し先として採用するか、といった�
 呼び出し先やフィールドの所有型は他のファイルのバインディング解決に依存するためです。
 フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
 行の種別と列の意味は [src/jche/cache/CacheFormat.java](src/jche/cache/CacheFormat.java) のクラスコメントにあります。
+
+### 依存 jar を変えたとき
+
+キャッシュには解析時の依存 jar（パス・サイズ・更新時刻・含まれるパッケージ。`L` 行）も残します。
+次回の実行で jar が追加・差し替え・削除されていれば、その jar のパッケージの型を参照している
+ファイルと、前回型解決に失敗していたファイル（`F` 行のエラー数、`U` 行）だけを解析し直します。
+「型解決できなかった呼び出しが N 件あります」と出たときに `library.folders` へ jar を足せば、
+キャッシュを消さなくても次の実行で反映されます。
+CHA の候補（インターフェースの実装クラス）はキャッシュせず、毎回 `H` 行から計算するので、
+jar の追加で実装クラスが増えた場合も、呼び出し側のファイルを解析し直さずに反映されます
+（jar の基底クラスがソースのインターフェースを実装している構成では、その子クラスの `H` 行に
+インターフェースも親として記録します）。
+実行する JDK を変えたときはキャッシュ全体を作り直します（JDT は実行中の JVM の標準クラスも
+解析対象のクラスパスに含めるため。何が変わるかは下記 docs の Q20）。
+設計上の判断と限界は [docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) にまとめています。
 
 ## 出力ファイル
 
@@ -307,9 +324,11 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 
 ## テスト
 
-`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected/` と
+`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
 一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
+`jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
+jar の追加・削除が影響するファイルの再解析だけで出力に反映されることを確認します。
 
 ```bash
 bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
@@ -320,5 +339,5 @@ GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint
 コンパイルとこの回帰テストを実行します。
 
 出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
-`expected/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
+`expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
 （JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。

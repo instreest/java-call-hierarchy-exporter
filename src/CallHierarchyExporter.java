@@ -167,16 +167,28 @@ public class CallHierarchyExporter {
         Log.info("=== フェーズ1/3: ソース解析 ===");
         CachePhaseResult result = new CacheUpdater(layout, config).run();
         Log.info("ソース解析: 再利用=" + result.reused
-                + " 新規解析=" + result.parsed
-                + (result.dependents > 0 ? "（うち依存先の変更による再解析=" + result.dependents + "）" : "")
+                + " 新規解析=" + result.parsed + reanalysisBreakdown(result)
                 + " 失敗=" + result.failed);
         if (result.unresolved > 0) {
             Log.info("※ 型解決できなかった呼び出しが " + result.unresolved + " 件あります。");
             Log.info("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
+            Log.info("   jar を足せば、次回の実行で影響するファイルだけが解析し直されます。");
             Log.info("   解決できた呼び出しだけが call-hierarchy.csv に出るため、");
             Log.info("   件数が多いまま使うと呼び出し階層に抜けが出ます。");
         }
         Log.heap("フェーズ1完了");
+    }
+
+    /** 「新規解析」のうち、自分は変わっていないのに解析し直した件数の内訳 */
+    private static String reanalysisBreakdown(CachePhaseResult result) {
+        List<String> parts = new ArrayList<>();
+        if (result.dependents > 0) {
+            parts.add("依存先の変更による再解析=" + result.dependents);
+        }
+        if (result.libraryDependents > 0) {
+            parts.add("依存jarの変更による再解析=" + result.libraryDependents);
+        }
+        return parts.isEmpty() ? "" : "（うち" + String.join("、", parts) + "）";
     }
 
     /** フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 */

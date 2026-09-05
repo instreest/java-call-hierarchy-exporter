@@ -1,0 +1,33 @@
+﻿caller,callee,root,call-hierarchy
+at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
+at fx.app.Legacy.unusedDead(Legacy.java:14),fx.app.Legacy.callRemote(),Legacy.unusedDead,Legacy.callRemote
+at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
+at fx.service.OrderService.execute(OrderService.java:24),fx.dao.AbstractDao.findById(long),OrderService.execute,AbstractDao.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:24),fx.dao.OrderDaoImpl.findById(long),OrderService.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:25),fx.dao.AbstractDao.findById(long),OrderService.execute,AbstractDao.findById,解決:DATAFLOW_FIELD
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),OrderService.execute,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
+at fx.service.OrderService.execute(OrderService.java:26),fx.dao.AbstractDao.findById(long),OrderService.execute,AbstractDao.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:26),fx.dao.OrderDaoImpl.findById(long),OrderService.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:27),fx.service.OrderService.helper(),OrderService.execute,OrderService.helper
+at fx.service.OrderService.helper(OrderService.java:39),fx.dao.OrderDaoImpl.describe(),OrderService.execute,OrderService.helper,OrderDaoImpl.describe,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),fx.dao.UserDaoImpl.describe(),OrderService.execute,OrderService.helper,UserDaoImpl.describe,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:40),fx.service.OrderService.recurse(int),OrderService.execute,OrderService.helper,OrderService.recurse
+at fx.service.OrderService.recurse(OrderService.java:52),fx.service.OrderService.recurse(int),OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[CYCLE]
+at fx.service.OrderService.execute(OrderService.java:28),fx.dao.AbstractDao.findById(long),OrderService.execute,AbstractDao.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:28),fx.dao.OrderDaoImpl.findById(long),OrderService.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:30),fx.service.OrderService.helper(),OrderService.execute,OrderService.helper
+at fx.service.OrderService.helper(OrderService.java:39),fx.dao.OrderDaoImpl.describe(),OrderService.execute,OrderService.helper,OrderDaoImpl.describe,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),fx.dao.UserDaoImpl.describe(),OrderService.execute,OrderService.helper,UserDaoImpl.describe,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:40),fx.service.OrderService.recurse(int),OrderService.execute,OrderService.helper,OrderService.recurse
+at fx.service.OrderService.recurse(OrderService.java:52),fx.service.OrderService.recurse(int),OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[CYCLE]
+at fx.service.OrderService.execute(OrderService.java:32),fx.service.OrderService.staticHelper(),OrderService.execute,OrderService.staticHelper
+at fx.service.OrderService.staticHelper(OrderService.java:44),fx.dao.OrderDaoImpl.describe(),OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),fx.dao.UserDaoImpl.describe(),OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:34),fx.service.OrderService.setMutable(Dao),OrderService.execute,OrderService.setMutable
+at fx.service.OrderService.execute(OrderService.java:35),fx.dao.AbstractDao.findById(long),OrderService.execute,AbstractDao.findById,CHA候補2件（未展開）: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:35),fx.dao.OrderDaoImpl.findById(long),OrderService.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: フィールド変数
+at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:9),go,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:10),close,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）

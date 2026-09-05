@@ -29,9 +29,12 @@ import jche.cache.TypeFact;
 /** 型階層（H行から構築）。親子関係の問い合わせと、種別（I/A/C）の参照 */
 public final class TypeHierarchy {
 
-    /** 親型 -> 直接の子型 */
+    /**
+     * 親型 -> 子型。H 行の親型の並びなので、「直接の親」のほかに
+     * 「jar の型を経由して到達するソース上の親」も 1 段の親子として入る（{@link TypeFact#superTypes()}）
+     */
     private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
-    /** 子型 -> 直接の親型。具象型からメソッド実装を探すのに使う */
+    /** 子型 -> 親型（同上）。具象型からメソッド実装を探すのに使う */
     private final HashMap<String, List<String>> directSupertypes = new HashMap<>();
     /** 型 -> 種別（I/A/C） */
     private final HashMap<String, Character> typeKind = new HashMap<>();
@@ -85,7 +88,7 @@ public final class TypeHierarchy {
         return new HashSet<>(typeKind.keySet());
     }
 
-    /** 直接の親型（名前順）。無ければ空 */
+    /** 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空 */
     public List<String> directSupertypes(String type) {
         List<String> sups = directSupertypes.get(type);
         return (sups == null) ? List.of() : sups;

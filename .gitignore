@@ -24,4 +24,4 @@ dist/
 # 回帰テストの実行結果（期待出力 expected/ は追跡する）
 /test/regression/*/output/
 /test/regression/*/.cache/
-/test/regression/*/run.log
+/test/regression/*/run*.log
