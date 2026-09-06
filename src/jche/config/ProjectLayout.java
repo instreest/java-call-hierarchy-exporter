@@ -43,12 +43,12 @@ import jche.util.Log;
  * <ul>
  *   <li>source.folders が空なら、.classpath があれば kind="src" から読む</li>
  *   <li>library.folders は、.classpath の kind="lib"（あれば）と合算する</li>
- *   <li>library.folders が空なら、Maven / Gradle を実行して解決済みのクラスパスを取得する
- *       （{@link BuildToolClasspath}。pom.xml / build.gradle が無ければ何もしない）</li>
+ *   <li>library.folders が空なら、pom.xml / build.gradle を読んでローカルリポジトリから依存 jar を集める
+ *       （{@link BuildFileClasspath}。ビルドファイルが無ければ何もしない）</li>
  * </ul>
  *
  * .classpath の kind="con"（Gradle/Mavenのクラスパス・コンテナ等）は
- * それ自体としては解決しない（上記のとおり、ビルドツールに解決させた結果を使う）。
+ * それ自体としては解決しない（上記のとおり、ビルドファイルから集めた結果を使う）。
  * JDK標準クラスは setEnvironment の
  * includeRunningVMBootclasspath=true で実行中のJVMから解決させる。
  * kind="var" やリンクリソース、ユーザーライブラリコンテナも未対応のため、
@@ -60,7 +60,7 @@ public final class ProjectLayout {
     public final List<Path> sourceFolders = new ArrayList<>();
     /** 設定と .classpath から来た依存 jar。jar のパス、または jar を集めたフォルダ */
     public final List<Path> classpathEntries = new ArrayList<>();
-    /** ビルドツール（Maven / Gradle）が解決したクラスパス。jar のパス、またはクラスフォルダ */
+    /** ビルドファイルとローカルリポジトリから集めたクラスパス。jar のパス、またはクラスフォルダ */
     public final List<Path> resolvedClasspath = new ArrayList<>();
 
     public ProjectLayout(Config config) throws IOException {
@@ -100,10 +100,10 @@ public final class ProjectLayout {
             throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot);
         }
 
-        // library.folders が空欄のときだけ、ビルドツールに解決済みのクラスパスを聞く。
-        // 指定があるときは（.classpath の lib と合わせて）それだけを使い、ビルドツールは動かさない
+        // library.folders が空欄のときだけ、ビルドファイルとローカルリポジトリから依存 jar を集める。
+        // 指定があるときは（.classpath の lib と合わせて）それだけを使い、ビルドファイルは見ない
         if (config.libraryFolders.isEmpty()) {
-            resolvedClasspath.addAll(BuildToolClasspath.resolve(config, projectRoot, sourceFolders));
+            resolvedClasspath.addAll(BuildFileClasspath.resolve(config, projectRoot, sourceFolders));
         }
     }
 
@@ -202,7 +202,7 @@ public final class ProjectLayout {
      * 手動で集めた lib フォルダ等）を library.folders に指定すれば、ここで展開される
      * （.classpath の kind="lib" と両方指定された場合は単純に合算する）。
      *
-     * 後半は resolvedClasspath（ビルドツール由来）。こちらのフォルダは「クラスフォルダ」
+     * 後半は resolvedClasspath（ビルドファイル由来）。こちらのフォルダは「クラスフォルダ」
      * （target/classes 等）なので、展開せずそのまま渡す。
      */
     public String[] classpathArray() {

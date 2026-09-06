@@ -1,15 +1,13 @@
-// 回帰テスト（test/regression/gradle）用の Gradle プロジェクト。
-// 依存 sample.deps:greeter は samples/localrepo（Maven 形式のローカルリポジトリ）から取る。
-// ツールは library.folders が空欄のとき、この build.gradle を見つけて初期化スクリプト付きで
-// gradle を実行し、Gradle が解決した compileClasspath をそのまま使う。
-plugins {
-    id 'java'
-}
+// 回帰テスト（test/regression/gradle）用のマルチプロジェクト Gradle ビルド。
+// app は project(':core') に依存し、core は sample.deps:greeter（版は gradle.properties の greeterVersion）に依存する。
+// app はさらに版カタログ（gradle/libs.versions.toml）の libs.sample.util に依存する。
+// ツールは Gradle を実行せず、これらのファイルを読んで依存を集める。
+// 依存の jar と POM は samples/localrepo にある（テストでは library.repositories で指定する）。
+subprojects {
+    apply plugin: 'java-library'
 
-repositories {
-    maven { url = uri('../localrepo') }
-}
-
-dependencies {
-    implementation 'sample.deps:greeter:1.0'
+    repositories {
+        // Gradle でこのビルドを実際に動かす人のためのもの。ツールは見ない
+        maven { url = uri("${rootDir}/../localrepo") }
+    }
 }

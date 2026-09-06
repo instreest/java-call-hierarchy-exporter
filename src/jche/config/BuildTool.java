@@ -23,7 +23,8 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 /**
- * 依存 jar を解決済みの状態で持っているビルドツールと、その検出。
+ * 依存を宣言しているビルドファイルの種類（Maven の pom.xml / Gradle の build.gradle）と、その検出。
+ * ビルドツール自体は実行しない。ファイルを読むだけ。
  *
  * どちらを使うかはビルドファイルの有無で決める。pom.xml と build.gradle の両方があるときは
  * Eclipse のメタデータ（.project の nature、.classpath のコンテナ）でどちらのプロジェクトとして

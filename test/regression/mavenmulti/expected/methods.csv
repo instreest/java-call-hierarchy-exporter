@@ -1,0 +1,3 @@
+﻿method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
+Core.hello(String),sample.multi.core.Core,C,core/src/main/java/sample/multi/core/Core.java,7,1,1,2,NORMAL,1,0,
+Main.main(String[]),sample.multi.app.Main,C,app/src/main/java/sample/multi/app/Main.java,12,1,0,5,ENTRY_CANDIDATE,1,0,

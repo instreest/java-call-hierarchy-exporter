@@ -1,0 +1,4 @@
+dependencies {
+    // 版は gradle.properties の greeterVersion（$var の形をツールが埋める）
+    api "sample.deps:greeter:$greeterVersion"
+}

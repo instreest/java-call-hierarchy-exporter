@@ -62,14 +62,15 @@ public final class Config {
     /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
     public final List<Path> libraryFolders;
     /**
-     * library.folders が空欄のときに依存 jar を取得するビルドツール。
-     * "auto"（ビルドファイルから検出）/ "maven" / "gradle" / "none"（自動取得しない）
+     * library.folders が空欄のときに読むビルドファイルの種類。
+     * "auto"（pom.xml / build.gradle から検出）/ "maven" / "gradle" / "none"（自動取得しない）
      */
     public final String libraryBuildTool;
-    /** 自動取得で Maven に渡す追加の引数（-o、-s settings.xml 等） */
-    public final List<String> mavenArgs;
-    /** 自動取得で Gradle に渡す追加の引数（--offline 等） */
-    public final List<String> gradleArgs;
+    /**
+     * ローカルリポジトリ（ダウンロード済みの jar と POM の置き場所）。空なら ~/.m2/repository と
+     * ~/.gradle/caches/modules-2/files-2.1 の既定。相対パスは設定ファイルのフォルダ起点で、外を指してもよい
+     */
+    public final List<Path> libraryRepositories;
     public final String sourceEncoding;
     /** 実際に効いた解析対象ソースのJavaバージョン（JDTから読み戻した値） */
     public final String sourceLevel;
@@ -132,8 +133,11 @@ public final class Config {
         this.libraryFolders = resolveAllUnderProject("library.folders",
                 splitList(p.getProperty("library.folders", "")), false);
         this.libraryBuildTool = buildToolOf(p.getProperty("library.build.tool", "auto"));
-        this.mavenArgs = splitList(p.getProperty("library.maven.args", ""));
-        this.gradleArgs = splitList(p.getProperty("library.gradle.args", ""));
+        this.libraryRepositories = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("library.repositories", ""))) {
+            // ローカルリポジトリは設定ファイルやプロジェクトの外にあるのが普通なので、配下の制限は掛けない
+            this.libraryRepositories.add(resolveFromConfigDir(expandHome(raw)));
+        }
 
         this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
@@ -261,6 +265,15 @@ public final class Config {
                     + "キャッシュのキーと出力の file 列を " + baseName + " からの相対パスにするためです");
         }
         return resolved;
+    }
+
+    /** 先頭の "~/" をホームディレクトリにする（ローカルリポジトリの指定を OS を問わず書けるように） */
+    private static String expandHome(String raw) {
+        String s = raw.trim();
+        if (s.equals("~") || s.startsWith("~/") || s.startsWith("~\\")) {
+            return System.getProperty("user.home") + s.substring(1);
+        }
+        return s;
     }
 
     /** library.build.tool の値。空欄は auto。それ以外の綴りは、どの項目かが分かる例外にする */

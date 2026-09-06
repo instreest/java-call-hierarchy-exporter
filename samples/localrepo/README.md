@@ -1,31 +1,36 @@
 # samples/localrepo
 
-回帰テスト（`test/regression/maven`、`test/regression/gradle`）のサンプルプロジェクト
-（`samples/maven-demo`、`samples/gradle-demo`）が依存するライブラリ `sample.deps:greeter:1.0` を置いた、
-Maven 形式のローカルリポジトリです。ネットワークに出ずに依存を解決させるためにあります。
-ソースは `samples/localrepo-src/` にあります。
+回帰テスト（`test/regression/maven`、`mavenmulti`、`gradle`）のサンプルプロジェクトが依存するライブラリを置いた、
+Maven 形式のローカルリポジトリです。テストの設定では `library.repositories` でここを指定し、ネットワークにも
+`~/.m2/repository` にも依存せずに「ビルドファイルを読んでローカルリポジトリから依存 jar を集める」経路を通します。
+ソースは `samples/localrepo-src/` にアーティファクトごとに置いてあります。
 
-- `sample.deps.Greeter` … static ファクトリ `of(String)` と、戻り値を次の呼び出しに使わせる `greet()` / `formatter()`
-- `sample.deps.Formatter` … `Greeter#formatter()` の戻り値の型
-- `sample.deps.Handler` … サンプルのソース側（`sample.app.LogHandler`）が実装するインターフェース
-- `sample.deps.AbstractHandler` … `Handler` を実装する基底クラス。`LogHandler` はこれを継承する
+| アーティファクト | 中身 | 何を確かめるためのものか |
+|---|---|---|
+| `sample.deps:parent:1.0`（POM のみ） | プロパティ `core.version` / `util.version` と `dependencyManagement` | 親 POM の継承、プロパティの展開、管理側の版 |
+| `sample.deps:core:1.0` | `Formatter` | greeter の推移的な依存。greeter の POM に版は書かれておらず、親の管理で決まる |
+| `sample.deps:greeter:1.0` | `Greeter`（`formatter()` の戻り値が core の `Formatter`）、`Handler`、`AbstractHandler` | サンプルが直接依存するライブラリ。`test` スコープの `testlib` と `optional` の `opt`（どちらも jar は無い）を宣言しており、使う側に伝わらないことの確認 |
+| `sample.deps:util:1.0` | `Strings` | Gradle の版カタログ（`libs.sample.util`）と Maven の `dependencyManagement`（`samples/maven-multi`）からの参照 |
 
-Maven はこのリポジトリから `~/.m2/repository/sample/deps/greeter/1.0/` へコピーして使い、Gradle は
-ここのファイルをそのまま使います（ローカルのファイルリポジトリはキャッシュにコピーしない）。
-ツールが受け取るクラスパスはそれぞれその場所を指します。
+Maven の配置（`グループ/アーティファクト/版/アーティファクト-版.jar` と `.pom`）なので、Maven や Gradle が
+このフォルダを `<repository>` / `maven { url }` として使うこともできます（サンプルの `pom.xml` / `build.gradle` に
+書いてあります。ツール自身はその設定を見ません）。`.sha1` / `.md5` はそのときの検証用です。
 
 パッケージ名を `sample.lib` にしていないのは、リポジトリの `.gitignore` が `lib/` を無視する
 （利用者が Eclipse から集めた JDT の jar を置く場所）ため、`sample/lib/` 配下が追跡されなくなるからです。
 
-jar を作り直すとき（`samples/` で実行）:
+jar を作り直すとき（リポジトリのルートで実行。greeter は core を参照するので core を先に）:
 
 ```bash
-javac --release 17 -d /tmp/greeter-classes -encoding UTF-8 localrepo-src/sample/deps/*.java
-jar --create --file localrepo/sample/deps/greeter/1.0/greeter-1.0.jar -C /tmp/greeter-classes .
-cd localrepo/sample/deps/greeter/1.0
-for f in greeter-1.0.jar greeter-1.0.pom; do sha1sum "$f" | cut -d' ' -f1 > "$f.sha1"; md5sum "$f" | cut -d' ' -f1 > "$f.md5"; done
+R=samples/localrepo/sample/deps; T=/tmp/localrepo-build; rm -rf $T; mkdir -p $T/core $T/greeter $T/util
+javac --release 17 -d $T/core -encoding UTF-8 samples/localrepo-src/core/sample/deps/*.java
+javac --release 17 -cp $T/core -d $T/greeter -encoding UTF-8 samples/localrepo-src/greeter/sample/deps/*.java
+javac --release 17 -d $T/util -encoding UTF-8 samples/localrepo-src/util/sample/deps/util/*.java
+for a in core greeter util; do jar --create --file $R/$a/1.0/$a-1.0.jar -C $T/$a .; done
+for a in parent core greeter util; do (cd $R/$a/1.0 && for f in *.jar *.pom; do [ -f "$f" ] || continue;
+  sha1sum "$f" | cut -d' ' -f1 > "$f.sha1"; md5sum "$f" | cut -d' ' -f1 > "$f.md5"; done); done
 ```
 
-中身を変えたときは版（`1.0`）を上げて、`greeter-1.0.pom` と両サンプルの依存の指定も合わせて変えてください。
-Maven はリリース版の jar を一度ローカルリポジトリに入れると取り直さないので、同じ版のまま中身を
-変えると `~/.m2/repository` に残った古い jar が使われ続けます（GitHub Actions のキャッシュも同様）。
+中身を変えたときは版（`1.0`）を上げて、POM とサンプルの依存の指定も合わせて変えてください。
+Maven や Gradle でサンプルをビルドした人の `~/.m2/repository` には同じ版の古い jar が残り、
+取り直されないためです（このツール自身は `library.repositories` で指定した場所だけを見ます）。

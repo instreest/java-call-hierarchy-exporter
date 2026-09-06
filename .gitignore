@@ -26,12 +26,13 @@ dist/
 /test/regression/*/.cache/
 /test/regression/*/run*.log
 
-# サンプルの Maven / Gradle プロジェクト（samples/maven-demo, samples/gradle-demo）を
-# ビルドしたときの出力。回帰テストはビルドしない（依存 jar の解決だけ）が、手で試したとき用
+# サンプルの Maven / Gradle プロジェクト（samples/maven-demo, samples/maven-multi, samples/gradle-demo）を
+# ビルドしたときの出力。回帰テストはビルドしない（ビルドファイルを読むだけ）が、手で試したとき用
 /samples/*/target/
+/samples/*/*/target/
 /samples/*/.gradle/
 
-# samples/gradle-demo は Eclipse（Buildship）で開いた形のサンプルなので、そのメタデータは追跡する
+# samples/gradle-demo/app は Eclipse（Buildship）で開いた形のサンプルなので、そのメタデータは追跡する
 # （上の .project / .classpath の除外はこのツール自身のもの）
-!/samples/gradle-demo/.project
-!/samples/gradle-demo/.classpath
+!/samples/gradle-demo/app/.project
+!/samples/gradle-demo/app/.classpath

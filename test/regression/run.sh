@@ -8,16 +8,18 @@
 #   通常（whole / entry）… 同じ設定で2回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
-#   maven / gradle       … library.folders を空欄にして、samples/maven-demo（pom.xml）と samples/gradle-demo
-#                          （build.gradle）から Maven / Gradle に依存 jar を解決させる。実行の形は通常ケースと同じ。
-#                          mvn / gradle が PATH に無ければ SKIP する（JCHE_REQUIRE_BUILD_TOOLS=1 なら FAIL。CI 用）
+#   maven / mavenmulti / gradle
+#                        … library.folders を空欄にして、samples/maven-demo（pom.xml）、samples/maven-multi
+#                          （マルチモジュール）、samples/gradle-demo（build.gradle）のビルドファイルから依存 jar を
+#                          集める。jar は samples/localrepo（library.repositories）から。ビルドツールは要らない。
+#                          実行の形は通常ケースと同じ
 # 実行ログは <case>/run-<回数>.log に残す。
 # 期待出力を更新するときは、差分を確認したうえで output/ を expected*/ にコピーする。
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry jarchange maven gradle"}
+CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle"}
 fail=0
 
 compare() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
@@ -62,13 +64,6 @@ expect_log_contains() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラ
         echo "  DIFF $1 ログ: 「$3」がありません ($4)"; fail=1
     fi
 }
-# ビルドツールが要るケースで、そのコマンドが PATH にあるか。無ければ SKIP（CI では FAIL）
-build_tool_for() {   # $1=case → 必要なコマンド名。要らなければ空
-    case "$1" in
-        maven)  echo mvn ;;
-        gradle) echo gradle ;;
-    esac
-}
 expect_library_reanalysis() {   # $1=case  $2=何回目  $3=ラベル   … 「依存jarの変更による再解析=N」の N が 0 でない
     if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E 'jar[^=]*=[1-9]'; then
         echo "  OK   $1 ログ ($3)"
@@ -78,15 +73,6 @@ expect_library_reanalysis() {   # $1=case  $2=何回目  $3=ラベル   … 「�
 }
 
 for c in $CASES; do
-    tool=$(build_tool_for "$c")
-    if [ -n "$tool" ] && ! command -v "$tool" > /dev/null 2>&1; then
-        if [ "${JCHE_REQUIRE_BUILD_TOOLS:-0}" = 1 ]; then
-            echo "== $c =="; echo "  FAIL $tool が PATH にありません（JCHE_REQUIRE_BUILD_TOOLS=1）"; fail=1
-        else
-            echo "== $c == SKIP（$tool が PATH にありません）"
-        fi
-        continue
-    fi
     echo "== $c =="
     rm -rf "$c/.cache" "$c/output" "$c"/run-*.log
     if [ -f "$c/config-before.properties" ]; then
@@ -101,11 +87,13 @@ for c in $CASES; do
         compare "$c" expected-before "3回目: jar 削除"
     else
         run "$c" config.properties 1 "1回目" || continue
-        # ビルドツールのケースは、実際にそのツールが呼ばれたことをコマンド行（ASCII）で確かめる。
-        # 依存 jar が渡ったこと自体は、期待出力（jar の型への呼び出し）との比較が保証する
+        # ビルドファイルのケースは、直接の依存 greeter と、その POM から辿った推移的な依存 core の jar が
+        # 依存 jar の一覧（ログの ASCII 部分）に出ることを確かめる。jar が JDT に渡ったこと自体は
+        # 期待出力（jar の型への呼び出し）との比較が保証する
         case "$c" in
-            maven)  expect_log_contains "$c" 1 "maven-dependency-plugin:build-classpath" "1回目: Maven を実行" ;;
-            gradle) expect_log_contains "$c" 1 "jcheCompileClasspath" "1回目: Gradle を実行" ;;
+            maven|mavenmulti|gradle)
+                expect_log_contains "$c" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
+                expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた" ;;
         esac
         compare "$c" expected "1回目: キャッシュ無し"
         run "$c" config.properties 2 "2回目" || continue

@@ -1,22 +1,24 @@
 # samples/gradle-demo
 
-回帰テスト `test/regression/gradle` 用の、依存 jar を `library.folders` で指定しない Gradle プロジェクトです。
-`build.gradle` は `samples/localrepo`（ファイルリポジトリ）の `sample.deps:greeter:1.0` に依存します。
+回帰テスト `test/regression/gradle` 用のマルチプロジェクト Gradle ビルドです。ツールは Gradle を実行せず、
+これらのファイルを読んで依存を集めます。
 
-Eclipse（Buildship）で開いたときの形にしてあり、`.project`（Gradle の nature）と `.classpath`
-（`kind="src"` のソースフォルダと Gradle のクラスパス・コンテナ）を含みます。テストの設定では
-`source.folders` も空欄にして、ソースフォルダを `.classpath` から取る経路を通します。
+- `settings.gradle` … `include 'core', 'app'`
+- `build.gradle` … `subprojects { apply plugin: 'java-library' ... }`（依存の宣言は無い）
+- `gradle.properties` … `greeterVersion=1.0`
+- `gradle/libs.versions.toml` … 版カタログ。`sample-util`（`libs.sample.util`）
+- `core/build.gradle` … `api "sample.deps:greeter:$greeterVersion"`（変数を `gradle.properties` で埋める形）
+- `app/build.gradle` … `implementation project(':core')` と `implementation libs.sample.util`（版カタログ）
+- `app/.project`、`app/.classpath` … Eclipse（Buildship）で開いたときの形。`.project` の nature で Gradle の
+  プロジェクトと分かり、`.classpath` の `kind="src"` からソースフォルダが分かる
 
-ツールは `library.folders` が空欄なので、`project.root`（このフォルダ）の `build.gradle` を見つけ、
-初期化スクリプト（`.cache/build-classpath/jche-classpath.init.gradle`）を付けて
+テストの `project.root` は `app` で、`source.folders` は空欄（`.classpath` から取る）です。
+ツールは `app/build.gradle` を読み、`project(':core')` から `core/build.gradle` の依存 greeter を、
+greeter の POM から推移的な依存 `core`（`sample.deps:core`）を、版カタログから `util` を集めます。
+jar と POM はローカルリポジトリ（テストでは `library.repositories` で `samples/localrepo` を指定）から探します。
 
-```
-gradle -q --init-script ... jcheCompileClasspath
-```
+`core` プロジェクトのクラス自体は、Eclipse（Buildship）や Gradle でビルドした出力（`bin/main`、`build/classes/java/main`）が
+あるときだけ解決できます。このサンプルではビルドしていないのでログに注記が出ます。`app` のソースは `core` のクラスを使いません。
 
-を実行し、Gradle が解決した `compileClasspath`（ローカルのファイルリポジトリなので
-`samples/localrepo/sample/deps/greeter/1.0/greeter-1.0.jar` そのもの）をそのまま使います。
-`gradlew` は置いていないので PATH 上の `gradle` が要ります（無ければテストは SKIP）。
-GitHub Actions では実行 JDK（25）に対応する版を固定して入れます（`.github/workflows/smoke.yml`）。
-
-`src/main/java/sample/app/` のソースは `samples/maven-demo` と同じです（説明はそちらの README）。
+`src/main/java/sample/app/` のソースは `samples/maven-demo` のものに `Strings.upper`（util）の呼び出しを足したものです
+（説明は `samples/maven-demo/README.md`）。

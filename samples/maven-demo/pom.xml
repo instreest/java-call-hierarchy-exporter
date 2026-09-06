@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   回帰テスト（test/regression/maven）用の Maven プロジェクト。
-  依存 sample.deps:greeter は samples/localrepo（Maven 形式のローカルリポジトリ）から取る。
-  ツールは library.folders が空欄のとき、この pom.xml を見つけて
-  mvn org.apache.maven.plugins:maven-dependency-plugin:build-classpath を実行し、
-  Maven が解決したクラスパス（~/.m2/repository の中の jar）をそのまま使う。
+  依存 sample.deps:greeter は samples/localrepo（Maven 形式のローカルリポジトリ）にある。
+  ツールは library.folders が空欄のとき、この pom.xml を読み（Maven は実行しない）、greeter と
+  その推移的な依存（greeter の POM が親 POM の dependencyManagement で版を決めている core）の jar を
+  ローカルリポジトリ（テストでは library.repositories で samples/localrepo を指定）から集める。
+  <repositories> は Maven でこのプロジェクトを実際にビルドする人のためのもので、ツールは見ない。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -18,6 +19,8 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
+    <!-- 依存の版をプロパティで書く形（ツールが ${...} を展開できることの確認） -->
+    <greeter.version>1.0</greeter.version>
   </properties>
 
   <repositories>
@@ -31,7 +34,7 @@
     <dependency>
       <groupId>sample.deps</groupId>
       <artifactId>greeter</artifactId>
-      <version>1.0</version>
+      <version>${greeter.version}</version>
     </dependency>
   </dependencies>
 </project>

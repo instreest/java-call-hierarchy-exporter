@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <!-- サンプルの依存ライブラリ共通の親 POM。版を dependencyManagement とプロパティで決める（core / greeter / util はこれを継承する） -->
+  <groupId>sample.deps</groupId>
+  <artifactId>parent</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <core.version>1.0</core.version>
+    <util.version>1.0</util.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>sample.deps</groupId>
+        <artifactId>core</artifactId>
+        <version>${core.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>sample.deps</groupId>
+        <artifactId>util</artifactId>
+        <version>${util.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>sample.deps</groupId>
+        <artifactId>testlib</artifactId>
+        <version>1.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>

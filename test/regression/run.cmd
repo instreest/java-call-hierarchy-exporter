@@ -11,16 +11,12 @@ set "FAIL=0"
 
 for %%C in (whole entry) do call :normalcase "%%C"
 
-rem Maven / Gradle に依存 jar を解決させるケース。コマンドが PATH に無ければ飛ばす（CI は run.sh で通す）
-where mvn >nul 2>&1
-if errorlevel 1 (echo == maven == SKIP（mvn が PATH にありません）) else (
-    call :normalcase maven
-    call :expectlog maven 1 "maven-dependency-plugin:build-classpath" "1回目: Maven を実行"
-)
-where gradle >nul 2>&1
-if errorlevel 1 (echo == gradle == SKIP（gradle が PATH にありません）) else (
-    call :normalcase gradle
-    call :expectlog gradle 1 "jcheCompileClasspath" "1回目: Gradle を実行"
+rem ビルドファイル（pom.xml / build.gradle）とローカルリポジトリ（samples\localrepo）から依存 jar を集めるケース。
+rem 直接の依存 greeter と、その POM から辿った推移的な依存 core の jar がログの一覧に出ることを確かめる
+for %%C in (maven mavenmulti gradle) do (
+    call :normalcase "%%C"
+    call :expectlog "%%C" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
+    call :expectlog "%%C" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた"
 )
 
 echo == jarchange ==

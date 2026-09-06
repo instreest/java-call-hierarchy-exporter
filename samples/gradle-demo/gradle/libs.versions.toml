@@ -1,0 +1,6 @@
+# 版カタログ。build.gradle の libs.sample.util はここの sample-util を指す
+[versions]
+util = "1.0"
+
+[libraries]
+sample-util = { module = "sample.deps:util", version.ref = "util" }
