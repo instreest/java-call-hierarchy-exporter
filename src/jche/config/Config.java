@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -60,6 +61,15 @@ public final class Config {
     public final List<Path> sourceFolders;
     /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
     public final List<Path> libraryFolders;
+    /**
+     * library.folders が空欄のときに依存 jar を取得するビルドツール。
+     * "auto"（ビルドファイルから検出）/ "maven" / "gradle" / "none"（自動取得しない）
+     */
+    public final String libraryBuildTool;
+    /** 自動取得で Maven に渡す追加の引数（-o、-s settings.xml 等） */
+    public final List<String> mavenArgs;
+    /** 自動取得で Gradle に渡す追加の引数（--offline 等） */
+    public final List<String> gradleArgs;
     public final String sourceEncoding;
     /** 実際に効いた解析対象ソースのJavaバージョン（JDTから読み戻した値） */
     public final String sourceLevel;
@@ -121,6 +131,9 @@ public final class Config {
                 splitList(p.getProperty("source.folders", "")), true);
         this.libraryFolders = resolveAllUnderProject("library.folders",
                 splitList(p.getProperty("library.folders", "")), false);
+        this.libraryBuildTool = buildToolOf(p.getProperty("library.build.tool", "auto"));
+        this.mavenArgs = splitList(p.getProperty("library.maven.args", ""));
+        this.gradleArgs = splitList(p.getProperty("library.gradle.args", ""));
 
         this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
@@ -248,6 +261,23 @@ public final class Config {
                     + "キャッシュのキーと出力の file 列を " + baseName + " からの相対パスにするためです");
         }
         return resolved;
+    }
+
+    /** library.build.tool の値。空欄は auto。それ以外の綴りは、どの項目かが分かる例外にする */
+    private static String buildToolOf(String raw) {
+        String value = raw.trim().toLowerCase(Locale.ROOT);
+        switch (value) {
+            case "":
+                return "auto";
+            case "auto":
+            case "maven":
+            case "gradle":
+            case "none":
+                return value;
+            default:
+                throw new IllegalArgumentException("設定 library.build.tool の値が不正です: '" + raw.trim()
+                        + "'（指定できる値: auto / maven / gradle / none）");
+        }
     }
 
     /** 整数の設定値。空欄なら既定値。書式が誤っていれば、どの項目かが分かる例外にする */

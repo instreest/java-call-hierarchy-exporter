@@ -18,6 +18,8 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 ### 1. 設定ファイルを編集する
 
 `config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
+Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、ビルドツールが解決した依存 jar を自動で使います
+（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。
 
 ### 2. 実行する
 
@@ -100,6 +102,48 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,OrderService
 OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0,0,
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
+
+---
+
+## 依存 jar の自動取得（Maven / Gradle）
+
+依存 jar は `library.folders` に「集めたフォルダ」を指定するのが基本ですが、**`library.folders` を空欄にすると**、
+Maven / Gradle のプロジェクトではビルドツールが解決した依存 jar をそのまま使います。
+`library.folders` に指定がある場合は自動取得しません。
+
+1. `project.root` に `pom.xml` / `build.gradle(.kts)` / `settings.gradle(.kts)` があればそこを、無ければ各ソースフォルダの
+   上位で最初に見つかった場所をプロジェクトとみなします（複数プロジェクトを束ねたフォルダを `project.root` にした場合）。
+   両方のビルドファイルがあるときは Eclipse の `.project`（m2e / Buildship の nature）と `.classpath` で
+   どちらとして開かれているかを見て、それも無ければ Maven を使います（`library.build.tool` で切り替え可）
+2. ラッパー（`mvnw` / `gradlew`。上位フォルダも探す）があればそれを、無ければ PATH 上の `mvn` / `gradle` を実行します
+   - Maven: `mvn -B -q -fae org.apache.maven.plugins:maven-dependency-plugin:build-classpath -Dmdep.outputFile=…`
+   - Gradle: `gradle -q --init-script … jcheCompileClasspath`（初期化スクリプトで各ソースセットの `compileClasspath` を書き出す）
+3. 返ってきたクラスパスのうち、存在する jar とクラスフォルダ（`target/classes` 等。マルチモジュールの兄弟モジュール）を
+   そのまま JDT に渡します。jar は `~/.m2/repository` や `~/.gradle/caches` に置かれたままで、コピーしません。
+   推移的な依存もビルドツールが解決した分はすべて入ります。このツール自身は依存の解決（版の決定・ダウンロード）をしません
+
+ビルドツールの出力はそのまま画面に流れ、受け取ったクラスパスは `cache.folders/build-classpath/` に残ります。
+キャッシュの `L` 行にも同じパスが入るので、[依存 jar を変えたとき](#依存-jar-を変えたとき)の差分更新はそのまま効きます。
+
+| 設定 | 意味 |
+|---|---|
+| `library.build.tool` | `auto`（既定）/ `maven` / `gradle` / `none`（自動取得しない） |
+| `library.maven.args` | Maven に渡す追加の引数（カンマ区切り）。閉域ネットワークなら `-o`。`settings.xml` やプロファイルの指定も |
+| `library.gradle.args` | Gradle に渡す追加の引数（カンマ区切り）。閉域ネットワークなら `--offline` |
+
+うまくいかないとき:
+
+- `mvnw` / `gradlew` も PATH 上の `mvn` / `gradle` も無い、あるいはビルドツールが失敗した場合は、警告を出して
+  依存 jar 無しで解析を続けます（型解決の失敗が多く出ます）。従来どおり jar を集めたフォルダを
+  `library.folders` に指定してください（Maven なら `mvn dependency:copy-dependencies -DoutputDirectory=lib` で集められます）
+- Maven は `maven-dependency-plugin` を使うので、初回はその取得が要ります。ミラーの無い閉域ネットワークでは
+  ここで失敗します
+- マルチモジュールの Maven で兄弟モジュールが `mvn install` されていないと、それに依存するモジュールの解決が
+  失敗します（Maven 3 の仕様）。取れた分は使いますが、`library.maven.args=compile,-Dmaven.main.skip=true` を
+  指定すると兄弟モジュールが `target/classes` として解決されます
+- Android など `java-base` プラグインの `sourceSets` を使わない Gradle ビルドは対象外です
+
+設計上の判断と限界は [docs/build-tool-classpath-qa.md](docs/build-tool-classpath-qa.md) にまとめています。
 
 ---
 
@@ -335,7 +379,7 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 
 | パッケージ | 役割 | 主なクラス |
 |---|---|---|
-| `jche.config` | 設定ファイルとプロジェクト構成の読み取り | `Config`, `ProjectLayout`, `PackagePattern` |
+| `jche.config` | 設定ファイルとプロジェクト構成の読み取り。依存 jar のビルドツールからの取得 | `Config`, `ProjectLayout`, `BuildTool`, `BuildToolClasspath`, `PackagePattern` |
 | `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
 | `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
 | `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
@@ -357,6 +401,10 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
 `jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
 jar の追加・削除が影響するファイルの再解析だけで出力に反映されることを確認します。
+`maven` / `gradle` ケースは `library.folders` を空欄にして、`samples/maven-demo`（`pom.xml`）と
+`samples/gradle-demo`（`build.gradle`。Buildship の `.project` / `.classpath` 付き）から Maven / Gradle に
+依存 jar（`samples/localrepo` のファイルリポジトリにある `sample.deps:greeter`）を解決させ、jar の型への
+呼び出しが出力に出ることを確認します。PATH に `mvn` / `gradle` が無ければこの 2 ケースは SKIP します。
 
 ```bash
 bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
@@ -364,7 +412,8 @@ test\regression\run.cmd            # Windows のコマンドプロンプト
 ```
 
 GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint:all -Werror` での
-コンパイルとこの回帰テストを実行します。
+コンパイルとこの回帰テストを実行します。CI では `maven` / `gradle` ケースを SKIP させず
+（`JCHE_REQUIRE_BUILD_TOOLS=1`）、Gradle は実行 JDK に対応する版を固定して入れます。
 
 出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
 `expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です

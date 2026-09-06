@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  回帰テスト（test/regression/maven）用の Maven プロジェクト。
+  依存 sample.deps:greeter は samples/localrepo（Maven 形式のローカルリポジトリ）から取る。
+  ツールは library.folders が空欄のとき、この pom.xml を見つけて
+  mvn org.apache.maven.plugins:maven-dependency-plugin:build-classpath を実行し、
+  Maven が解決したクラスパス（~/.m2/repository の中の jar）をそのまま使う。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>sample</groupId>
+  <artifactId>maven-demo</artifactId>
+  <version>1.0</version>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>sample-localrepo</id>
+      <url>file://${project.basedir}/../localrepo</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>sample.deps</groupId>
+      <artifactId>greeter</artifactId>
+      <version>1.0</version>
+    </dependency>
+  </dependencies>
+</project>

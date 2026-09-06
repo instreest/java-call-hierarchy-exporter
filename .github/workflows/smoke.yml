@@ -16,14 +16,26 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      # ラッパー（jbangw/jbang）は jbang 本体を ~/.jbang に、依存 jar を ~/.m2 に置く
+      # ラッパー（jbangw/jbang）は jbang 本体を ~/.jbang に、依存 jar を ~/.m2 に置く。
+      # 回帰テストの maven ケースが使う maven-dependency-plugin（とサンプルの依存）も ~/.m2 に入るので、
+      # サンプルの pom.xml もキーに含める
       - name: Cache jbang and dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.jbang
             ~/.m2/repository
-          key: jbang-${{ hashFiles('jbangw/jbang', 'src/CallHierarchyExporter.java') }}
+          key: jbang-${{ hashFiles('jbangw/jbang', 'src/CallHierarchyExporter.java', 'samples/maven-demo/pom.xml') }}
+
+      # 回帰テストの gradle ケース用。runner に入っている Gradle は版が動くので、実行 JDK（25）に
+      # 対応する版を固定して入れる（Maven は runner 同梱の mvn を使う）
+      - name: Install Gradle
+        run: |
+          curl -sSL -o /tmp/gradle.zip "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          unzip -q /tmp/gradle.zip -d "$HOME"
+          echo "$HOME/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+        env:
+          GRADLE_VERSION: 9.7.1
 
       # jbang が解決した JDT の jar を classpath にして、全ソースを警告ゼロでコンパイルできることを確認する。
       # jbang 自身がビルドしたスクリプトの jar（~/.jbang/cache/jars）は除く。残すと javac がそちらの class を使い、
@@ -34,8 +46,11 @@ jobs:
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
-      - name: Regression test (samples/demo)
+      # maven / gradle のケースはコマンドが無いと SKIP するので、CI では無いことを失敗にする
+      - name: Regression test (samples/demo, samples/maven-demo, samples/gradle-demo)
         run: bash test/regression/run.sh
+        env:
+          JCHE_REQUIRE_BUILD_TOOLS: "1"
 
   # 同梱した JBang ラッパー（jbangw/）の検査。ファイルの中身を読むだけなので
   # JDK も jbang も要らず、数秒で終わる。

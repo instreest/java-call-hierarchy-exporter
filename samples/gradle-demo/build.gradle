@@ -1,0 +1,15 @@
+// 回帰テスト（test/regression/gradle）用の Gradle プロジェクト。
+// 依存 sample.deps:greeter は samples/localrepo（Maven 形式のローカルリポジトリ）から取る。
+// ツールは library.folders が空欄のとき、この build.gradle を見つけて初期化スクリプト付きで
+// gradle を実行し、Gradle が解決した compileClasspath をそのまま使う。
+plugins {
+    id 'java'
+}
+
+repositories {
+    maven { url = uri('../localrepo') }
+}
+
+dependencies {
+    implementation 'sample.deps:greeter:1.0'
+}

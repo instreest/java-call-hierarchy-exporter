@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.stream.Stream;
 
 import jche.cache.LibraryFact;
 import jche.util.Log;
@@ -39,6 +40,10 @@ import jche.util.Log;
  * 同じパスでサイズと更新時刻が一致する jar は変わっていないとみなし、パッケージ一覧も
  * 旧 L 行から引き継ぐ（jar を開き直さない）。追加・変更された jar は開いてパッケージを集める。
  * 削除された jar はもう開けないので、パッケージは旧 L 行から取る。
+ *
+ * クラスパスにはクラスフォルダ（ビルドツールから取得した target/classes 等）も来る。
+ * フォルダは「.class ファイルの数」をサイズ、「最も新しい .class の更新時刻」を更新時刻として
+ * 同じ判定にかける（フォルダ自身の更新時刻は中のファイルの変更を反映しないため、毎回中を歩く）。
  *
  * 影響範囲は型ではなくパッケージで持つ。jar の版を差し替えると型の増減があり、
  * 「旧版にあって新版に無い型」は新しい jar からは分からないため。
@@ -72,7 +77,7 @@ final class LibraryDiff {
     }
 
     /**
-     * @param classpath   JDT に渡すクラスパス（jar のパス）
+     * @param classpath   JDT に渡すクラスパス（jar のパス、またはクラスフォルダ）
      * @param old         旧キャッシュの L 行。キャッシュが無ければ空
      * @param projectRoot L 行のパスを相対にする基準
      */
@@ -91,9 +96,16 @@ final class LibraryDiff {
             }
             long size;
             long mtime;
+            ClassFolder folder = null;
             try {
-                size = Files.size(jar);
-                mtime = Files.getLastModifiedTime(jar).toMillis();
+                if (Files.isDirectory(jar)) {
+                    folder = ClassFolder.scan(jar);
+                    size = folder.classFiles;
+                    mtime = folder.newestMtime;
+                } else {
+                    size = Files.size(jar);
+                    mtime = Files.getLastModifiedTime(jar).toMillis();
+                }
             } catch (IOException e) {
                 Log.warn("依存jarの情報を読み取れません（変更検知の対象外）: " + jar + " (" + e + ")");
                 continue;
@@ -103,7 +115,7 @@ final class LibraryDiff {
                 diff.current.add(prev);
                 continue;
             }
-            List<String> packages = packagesOf(jar);
+            List<String> packages = (folder != null) ? new ArrayList<>(folder.packages) : packagesOf(jar);
             diff.current.add(new LibraryFact(key, size, mtime, packages));
             diff.changedPackages.addAll(packages);
             if (prev == null) {
@@ -142,18 +154,49 @@ final class LibraryDiff {
             Enumeration<JarEntry> entries = jf.entries();
             while (entries.hasMoreElements()) {
                 String name = entries.nextElement().getName();
-                if (!name.endsWith(".class") || name.startsWith("META-INF/")) {
-                    continue;
-                }
-                int slash = name.lastIndexOf('/');
-                if (slash > 0) {
-                    packages.add(name.substring(0, slash).replace('/', '.'));
-                }
+                addPackageOf(packages, name);
             }
         } catch (IOException e) {
             Log.warn("依存jarを読み取れません（このjarの変更は型解決失敗のあったファイルにだけ反映）: "
                     + jar + " (" + e + ")");
         }
         return new ArrayList<>(packages);
+    }
+
+    /** "a/b/C.class" のようなエントリ名からパッケージ "a.b" を集める（jar とクラスフォルダで共通） */
+    private static void addPackageOf(Set<String> packages, String entryName) {
+        if (!entryName.endsWith(".class") || entryName.startsWith("META-INF/")) {
+            return;
+        }
+        int slash = entryName.lastIndexOf('/');
+        if (slash > 0) {
+            packages.add(entryName.substring(0, slash).replace('/', '.'));
+        }
+    }
+
+    /** クラスフォルダを 1 回歩いて集めた、.class の数・最新の更新時刻・パッケージ */
+    private static final class ClassFolder {
+        long classFiles;
+        long newestMtime;
+        final TreeSet<String> packages = new TreeSet<>();
+
+        static ClassFolder scan(Path dir) throws IOException {
+            ClassFolder result = new ClassFolder();
+            try (Stream<Path> walk = Files.walk(dir)) {
+                for (Path p : (Iterable<Path>) walk::iterator) {
+                    if (!Files.isRegularFile(p)) {
+                        continue;
+                    }
+                    String rel = dir.relativize(p).toString().replace('\\', '/');
+                    if (!rel.endsWith(".class")) {
+                        continue;
+                    }
+                    result.classFiles++;
+                    result.newestMtime = Math.max(result.newestMtime, Files.getLastModifiedTime(p).toMillis());
+                    addPackageOf(result.packages, rel);
+                }
+            }
+            return result;
+        }
     }
 }

@@ -43,10 +43,13 @@ import jche.util.Log;
  * <ul>
  *   <li>source.folders が空なら、.classpath があれば kind="src" から読む</li>
  *   <li>library.folders は、.classpath の kind="lib"（あれば）と合算する</li>
+ *   <li>library.folders が空なら、Maven / Gradle を実行して解決済みのクラスパスを取得する
+ *       （{@link BuildToolClasspath}。pom.xml / build.gradle が無ければ何もしない）</li>
  * </ul>
  *
  * .classpath の kind="con"（Gradle/Mavenのクラスパス・コンテナ等）は
- * 解決しない。JDK標準クラスは setEnvironment の
+ * それ自体としては解決しない（上記のとおり、ビルドツールに解決させた結果を使う）。
+ * JDK標準クラスは setEnvironment の
  * includeRunningVMBootclasspath=true で実行中のJVMから解決させる。
  * kind="var" やリンクリソース、ユーザーライブラリコンテナも未対応のため、
  * 必要な場合は library.folders で明示的に追加すること。
@@ -55,7 +58,10 @@ public final class ProjectLayout {
 
     public final Path projectRoot;
     public final List<Path> sourceFolders = new ArrayList<>();
+    /** 設定と .classpath から来た依存 jar。jar のパス、または jar を集めたフォルダ */
     public final List<Path> classpathEntries = new ArrayList<>();
+    /** ビルドツール（Maven / Gradle）が解決したクラスパス。jar のパス、またはクラスフォルダ */
+    public final List<Path> resolvedClasspath = new ArrayList<>();
 
     public ProjectLayout(Config config) throws IOException {
         this.projectRoot = config.projectRoot;
@@ -93,14 +99,17 @@ public final class ProjectLayout {
         if (sourceFolders.isEmpty()) {
             throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot);
         }
+
+        // library.folders が空欄のときだけ、ビルドツールに解決済みのクラスパスを聞く。
+        // 指定があるときは（.classpath の lib と合わせて）それだけを使い、ビルドツールは動かさない
+        if (config.libraryFolders.isEmpty()) {
+            resolvedClasspath.addAll(BuildToolClasspath.resolve(config, projectRoot, sourceFolders));
+        }
     }
 
     private void readDotClasspath(Path dotClasspath) throws IOException {
         try {
-            DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
-            // 外部エンティティ参照を無効化（XXE対策）
-            f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            Document doc = f.newDocumentBuilder().parse(dotClasspath.toFile());
+            Document doc = parseXml(dotClasspath);
 
             NodeList entries = doc.getElementsByTagName("classpathentry");
             for (int i = 0; i < entries.getLength(); i++) {
@@ -134,13 +143,20 @@ public final class ProjectLayout {
                         Log.warn(".classpath のlibが見つかりません: " + jar);
                     }
                 }
-                // con / output / var は無視
+                // con / output / var は無視（con は BuildTool の検出の手掛かりにだけ使う）
             }
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
             throw new IOException(".classpath の解析に失敗しました: " + dotClasspath, e);
         }
+    }
+
+    /** Eclipse のメタデータ（.classpath / .project）を読むための XML パース。外部エンティティは無効化する（XXE対策） */
+    static Document parseXml(Path xml) throws Exception {
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        return f.newDocumentBuilder().parse(xml.toFile());
     }
 
     /**
@@ -177,15 +193,17 @@ public final class ProjectLayout {
     }
 
     /**
-     * classpathEntries をクラスパス文字列配列にする。
+     * JDT に渡すクラスパス文字列配列。
      *
-     * .classpath は kind="con"（Gradle/Mavenのクラスパス・コンテナ等）を
-     * 解決できないため、そういったプロジェクトでは .classpath だけでは
-     * 依存jarが1つも分からない。その場合は、依存jarを集めたフォルダ
-     * （Gradleの application/distribution プラグインが作る lib フォルダ、
-     * 手動で集めた lib フォルダ等）を library.folders に指定すれば、
-     * ここで直下の *.jar を自動的に展開してクラスパスに加える。
-     * （.classpath の kind="lib" と両方指定された場合は単純に合算する）
+     * 前半は classpathEntries（設定と .classpath 由来）。フォルダは「jar を集めたフォルダ」として
+     * 直下の *.jar に展開する。.classpath は kind="con"（Gradle/Mavenのクラスパス・コンテナ等）を
+     * 解決できないため、そういったプロジェクトでは .classpath だけでは依存jarが1つも分からない。
+     * 依存jarを集めたフォルダ（Gradleの application/distribution プラグインが作る lib フォルダ、
+     * 手動で集めた lib フォルダ等）を library.folders に指定すれば、ここで展開される
+     * （.classpath の kind="lib" と両方指定された場合は単純に合算する）。
+     *
+     * 後半は resolvedClasspath（ビルドツール由来）。こちらのフォルダは「クラスフォルダ」
+     * （target/classes 等）なので、展開せずそのまま渡す。
      */
     public String[] classpathArray() {
         List<String> expanded = new ArrayList<>();
@@ -201,6 +219,9 @@ public final class ProjectLayout {
             } else {
                 expanded.add(p.toString());
             }
+        }
+        for (Path p : resolvedClasspath) {
+            expanded.add(p.toString());
         }
         return expanded.toArray(new String[0]);
     }
