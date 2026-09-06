@@ -35,11 +35,11 @@ if "!binaryPath!"=="" (
 )
 if "!binaryPath!"=="" if "!jarPath!"=="" (
   if not exist "%JBDIR%\bin\jbang.jar" (
-    powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command "%~dp0jbang.ps1 version" > nul
-    if !ERRORLEVEL! NEQ 0 ( exit /b %ERRORLEVEL% )
+    powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command "& '%~dp0jbang.ps1' version" > nul
+    if !ERRORLEVEL! NEQ 0 ( exit /b !ERRORLEVEL! )
   )
   call "%JBDIR%\bin\jbang.cmd" %*
-  exit /b %ERRORLEVEL%
+  exit /b !ERRORLEVEL!
 )
 
 if not "!binaryPath!"=="" goto :run_with_cli
@@ -67,17 +67,17 @@ if "!JAVA_EXEC!"=="" (
   if !errorlevel! equ 0 (
     set JAVA_HOME=
     set JAVA_EXEC=java.exe
-  ) else if exist "%JBDIR%\currentjdk\bin\javac" (
+  ) else if exist "%JBDIR%\currentjdk\bin\javac.exe" (
     set JAVA_HOME=%JBDIR%\currentjdk
-    set JAVA_EXEC=%JBDIR%\currentjdk\bin\java
+    set JAVA_EXEC=%JBDIR%\currentjdk\bin\java.exe
   ) else (
     set JAVA_HOME=%TDIR%\jdks\%javaVersion%
     set JAVA_EXEC=!JAVA_HOME!\bin\java.exe
     rem Check if we installed a JDK before
     if not exist "%TDIR%\jdks\%javaVersion%" (
       rem If not, download and install it
-      powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command "%~dp0jbang.ps1 jdk install %JBANG_DEFAULT_JAVA_VERSION%"
-      if !ERRORLEVEL! NEQ 0 ( exit /b %ERRORLEVEL% )
+      powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command "& '%~dp0jbang.ps1' jdk install %javaVersion%"
+      if !ERRORLEVEL! NEQ 0 ( exit /b !ERRORLEVEL! )
       rem Set the current JDK
       "!JAVA_EXEC!" -jar "%jarPath%" jdk default "%javaVersion%"
     )

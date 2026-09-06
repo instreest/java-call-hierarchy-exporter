@@ -124,9 +124,9 @@ setup_java_exec() {
         rm -rf "$TDIR/jdks/$javaVersion.tmp/"
         mkdir -p "$TDIR/jdks/$javaVersion.tmp"
         unpack "$TDIR/bootstrap-jdk.$file_type" "$TDIR/jdks/$javaVersion.tmp"
-        if [ $retval -ne 0 ]; then
+        if [ $retval -eq 0 ]; then
           # Check if the JDK was installed properly
-          javac -version > /dev/null 2>&1
+          "$TDIR/jdks/$javaVersion.tmp/bin/javac" -version > /dev/null 2>&1
           retval=$?
         fi
         if [ $retval -ne 0 ]; then echo "Error installing JDK" 1>&2; exit $retval; fi
