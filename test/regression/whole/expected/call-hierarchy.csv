@@ -168,10 +168,10 @@ at fx.reflect.Invoker.create(Invoker.java:43),fx.reflect.Target.<clinit>(),Invok
 at fx.reflect.Invoker.viaParam(Invoker.java:35),fx.reflect.Invoker.classOf(),Invoker.viaParam,Invoker.classOf
 at fx.service.OrderService.<clinit>(OrderService.java:12),fx.dao.DaoFactory.create(),OrderService.<clinit>,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),fx.dao.DaoFactory.newUserDao(),OrderService.<clinit>,DaoFactory.create,DaoFactory.newUserDao
-at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:9),go,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:10),close,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 teamb.NightJob,fx.dao.UserDaoImpl.UserDaoImpl(),team-b-batch.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
 teamb.NightJob,fx.dao.AbstractDao.findById(long),team-b-batch.jar,AbstractDao.findById,被参照:INHERITED
 teamb.NightJob,fx.dao.UserDaoImpl.describe(),team-b-batch.jar,UserDaoImpl.describe,被参照:EXACT

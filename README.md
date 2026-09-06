@@ -176,6 +176,13 @@ caller,callee,root,call-hierarchy
 at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample.Sample,Sample.init
 ```
 
+行順は、起点がソースの並び順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、
+起点からの展開がソース上の呼び出し順（深さ優先）です。末尾の `型解決に失敗（…）` の行も
+ソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
+どの並びも OS やファイルシステム、キャッシュの状態に依存しないので、環境が違っても
+同じソースからは同じ行順の CSV ができます
+（[docs/deterministic-row-order-qa.md](docs/deterministic-row-order-qa.md)）。
+
 #### 注記
 
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。
