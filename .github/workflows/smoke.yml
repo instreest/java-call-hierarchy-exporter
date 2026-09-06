@@ -36,3 +36,16 @@ jobs:
 
       - name: Regression test (samples/demo)
         run: bash test/regression/run.sh
+
+  # 同梱した JBang ラッパー（jbangw/）の検査。ファイルの中身を読むだけなので
+  # JDK も jbang も要らず、数秒で終わる。
+  # regression とは別ジョブにしてあるのは ~/.jbang を巻き込まないため。regression 側は
+  # ~/.jbang を actions/cache で保存するので、そこへ書き込むものを同じジョブに置くと
+  # 壊れた状態がキャッシュに残る。このジョブはキャッシュを使わない。
+  jbangw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JBang wrapper check
+        run: bash test/jbangw/run.sh

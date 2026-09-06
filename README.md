@@ -341,3 +341,16 @@ GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint
 出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
 `expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
 （JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。
+
+`jbangw/` に同梱した JBang ラッパースクリプトには、別のテストがあります。この 3 ファイルは
+JBang 本家からそのまま持ち込んだうえで、JDK 自動取得まわりの不具合（Windows で JDK が
+取得できない、壊れた JDK をキャッシュしてしまう、など）を修正して取り込んでいます。
+本家から取り直して差し替えると修正が黙って巻き戻るため、それを検出します。
+
+```bash
+bash test/jbangw/run.sh        # Linux / macOS / Git Bash
+```
+
+ファイルの中身を読むだけなので JDK も jbang もネットワークも要りません。回帰テストとは別の
+ジョブとして GitHub Actions でも実行します。個々の検査が何を守っているかは `run.sh` の
+コメントに書いてあります。
