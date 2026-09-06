@@ -56,6 +56,18 @@ jobs:
         shell: cmd
         run: test\regression\run.cmd
 
+      # 失敗したときに実際の出力を持ち帰れるようにする。Windows と Linux で
+      # 出力が食い違ったとき、ログの差分だけでは追いきれないため
+      - name: Upload output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-output-windows
+          path: |
+            test/regression/*/output/
+            test/regression/*/run-*.log
+          if-no-files-found: warn
+
       # jbangw\jbang.cmd は jbang 本体へ委譲したあと exit /b !ERRORLEVEL! で
       # その終了コードを返す。ここが %ERRORLEVEL% だと解析時展開で常に 0 になり、
       # run.cmd の "if errorlevel 1" が失敗を検知できなくなる

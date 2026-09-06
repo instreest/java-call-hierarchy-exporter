@@ -58,8 +58,10 @@ exit /b 0
 
 :compare
 rem %1=case  %2=期待出力のフォルダ  %3=ラベル。CSV は UTF-8（BOM 付き）。改行コード（CRLF/LF）の違いは無視して比較する
+rem 一致しないときは差分を先頭 20 行まで出す（<= が期待側だけ、=> が実際の出力だけにある行）。
+rem Compare-Object は集合として比べるので、差分が出ないのに一致しない場合は並び順だけが違う
 for %%F in (call-hierarchy.csv methods.csv) do (
-    powershell -NoProfile -Command "$e=(Get-Content -Raw -Encoding UTF8 '%~1\%~2\%%F') -replace \"`r\",''; $o=(Get-Content -Raw -Encoding UTF8 '%~1\output\%%F') -replace \"`r\",''; if ($e -eq $o) { Write-Host '  OK   %~1/%%F (%~3)' } else { Write-Host '  DIFF %~1/%%F (%~3)'; exit 1 }"
+    powershell -NoProfile -Command "$e=(Get-Content -Raw -Encoding UTF8 '%~1\%~2\%%F') -replace \"`r\",''; $o=(Get-Content -Raw -Encoding UTF8 '%~1\output\%%F') -replace \"`r\",''; if ($e -eq $o) { Write-Host '  OK   %~1/%%F (%~3)' } else { Write-Host '  DIFF %~1/%%F (%~3)'; $d=Compare-Object ($e -split \"`n\") ($o -split \"`n\"); if ($d) { $d | Select-Object -First 20 | ForEach-Object { Write-Host ('       ' + $_.SideIndicator + ' ' + $_.InputObject) } } else { Write-Host '       (行の集合は同じ。並び順だけが違う)' }; exit 1 }"
     if errorlevel 1 set "FAIL=1"
 )
 exit /b 0
