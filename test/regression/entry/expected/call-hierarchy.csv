@@ -375,10 +375,10 @@ at fx.service.OrderService.staticHelper(OrderService.java:44),fx.dao.UserDaoImpl
 at fx.service.OrderService.execute(OrderService.java:34),fx.service.OrderService.setMutable(Dao),OrderService.execute,OrderService.setMutable
 at fx.service.OrderService.execute(OrderService.java:35),fx.dao.AbstractDao.findById(long),OrderService.execute,AbstractDao.findById,CHA候補2件（未展開）: フィールド変数
 at fx.service.OrderService.execute(OrderService.java:35),fx.dao.OrderDaoImpl.findById(long),OrderService.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: フィールド変数
-at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:9),go,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:10),close,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 teamb.NightJob,fx.dao.UserDaoImpl.UserDaoImpl(),team-b-batch.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
 teamb.NightJob,fx.dao.AbstractDao.findById(long),team-b-batch.jar,AbstractDao.findById,被参照:INHERITED
 teamb.NightJob,fx.dao.UserDaoImpl.describe(),team-b-batch.jar,UserDaoImpl.describe,被参照:EXACT

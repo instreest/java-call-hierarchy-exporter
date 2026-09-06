@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -142,14 +143,27 @@ public final class ProjectLayout {
         }
     }
 
-    /** ソースフォルダ配下の .java を全列挙する */
+    /**
+     * ソースフォルダ配下の .java を全列挙する。
+     *
+     * 並びは「ソースフォルダの宣言順 → フォルダ内は相対パス（'/'区切り）の文字列順」で固定する。
+     * {@link Files#walk} の返す順はファイルシステム依存（ext4 は作成順に近い順、NTFS は名前順）で、
+     * この順のままだと MethodTable のID採番（初出順）が環境ごとに変わり、
+     * call-hierarchy.csv の行順まで変わってしまう。相対パスを鍵にするのは、
+     * methods.csv の並び（SourceOrder.declaredMethodsInSourceOrder が declFile で整列）と
+     * 同じ基準に揃えるためと、Path#compareTo が Windows では大文字小文字を無視するのに対し
+     * String#compareTo なら OS によらず同じ順になるため。
+     */
     public List<Path> listJavaFiles() throws IOException {
         Set<Path> files = new LinkedHashSet<>();
         for (Path sf : sourceFolders) {
+            List<Path> inFolder = new ArrayList<>();
             try (Stream<Path> walk = Files.walk(sf)) {
                 walk.filter(p -> Files.isRegularFile(p) && p.toString().endsWith(".java"))
-                        .forEach(files::add);
+                        .forEach(inFolder::add);
             }
+            inFolder.sort(Comparator.comparing(this::relativeOf));
+            files.addAll(inFolder);
         }
         return new ArrayList<>(files);
     }
