@@ -251,6 +251,25 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 除外した件数は実行ログに出ます。
 `dist` を丸ごと指定しても、自分から自分への呼び出しが被参照として出ることはありません。
 
+#### FatJar（jar の中の jar）
+
+Spring Boot の実行可能 jar（`BOOT-INF/classes/` と `BOOT-INF/lib/*.jar`）、war（`WEB-INF/classes/` と
+`WEB-INF/lib/*.jar`）、ear（中に war や jar）のように、jar の中に jar が入っている配布物も
+そのまま指定できます。中の jar を取り出す必要はありません。中の jar は何段入れ子でも順に開きます。
+`root` 列の jar 名は、どの jar のどこに入っていたかが分かるように jar URL と同じ `!/` 区切りで出ます。
+FatJar の中に自プロジェクトの jar が入っていても、上と同じく読み飛ばします。
+
+```csv
+caller,callee,root,call-hierarchy
+teamc.ReportJob,fx.util.Counter.bump(),team-c-boot.jar,Counter.bump,被参照:EXACT
+teamb.NightJob,fx.util.Counter.bump(),team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
+teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
+```
+
+同じ jar が複数の FatJar に入っていれば、それぞれの FatJar の行として別々に出ます
+（「どの配布物に影響するか」が影響調査の答えなので、まとめません）。
+実装時に迷った点は [docs/fatjar-external-usage-qa.md](docs/fatjar-external-usage-qa.md) にまとめています。
+
 | 注記 | 意味 |
 |---|---|
 | `被参照:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |

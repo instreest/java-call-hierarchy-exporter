@@ -23,12 +23,14 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import jche.cache.MethodRef;
 import jche.cache.TypeFact;
@@ -45,12 +47,23 @@ import jche.util.Log;
  * 用途は改修時の影響調査。「このメソッドを直すと誰に影響するか」に答える。
  * classファイルの定数プールだけを読む（{@link ClassFileRefs}）ため、
  * 「どのjar・どのクラスが参照しているか」までが分かり、呼び出し元メソッドと行番号は分からない。
+ *
+ * <h2>FatJar（jar の中の jar）</h2>
+ * Spring Boot の実行可能 jar（{@code BOOT-INF/lib/*.jar}）や war（{@code WEB-INF/lib/*.jar}）、
+ * ear（war や jar を内包）のように、jar の中に jar が入っている形も、中の jar を順に開いて走査する。
+ * 中の jar はファイルとして取り出さず、エントリのストリームを {@link ZipInputStream} で読む。
+ * {@code BOOT-INF/classes/} や {@code WEB-INF/classes/} 直下の class は、パスに関係なく
+ * 「.class で終わるエントリ」として最初から読めている。
+ * 出力の jar 名は、中の jar なら {@code 外側.jar!/BOOT-INF/lib/中.jar} のように
+ * jar URL と同じ {@code !/} 区切りでどこに入っていたかまで書く。
  */
 public final class ExternalUsageScanner {
 
     /** 被参照スキャンの集計 */
     public static final class Stats {
         long jars;
+        /** jar の中に入っていた jar（FatJar の内側）の数。{@link #jars} とは別に数える */
+        long nestedJars;
         long classes;
         long selfClasses;
         public long hits;
@@ -60,7 +73,8 @@ public final class ExternalUsageScanner {
 
         @Override
         public String toString() {
-            return "jar=" + jars + " クラス=" + classes
+            return "jar=" + jars + (nestedJars > 0 ? " jar内のjar=" + nestedJars : "")
+                    + " クラス=" + classes
                     + " 被参照=" + hits + "件（自分のメソッド " + usedMethods + " 個）"
                     + " 暗黙コンストラクタ=" + implicitCtors
                     + " 未照合=" + unmatched
@@ -76,6 +90,13 @@ public final class ExternalUsageScanner {
     private final Set<String> ourTypes;
     /** メソッドごとの被参照回数（「自分のメソッド N 個」の集計用） */
     private final int[] refCount;
+
+    /**
+     * jar の入れ子を辿る深さの上限。ear → war → jar で 2 段なので、それより十分深い値。
+     * 上限は「jar が自分自身を含む」ような壊れた入力で無限に潜らないための安全策で、
+     * 実在の配布形式で当たることは無い。
+     */
+    private static final int MAX_NESTING = 8;
 
     private ExternalUsageScanner(CallGraph graph, CallHierarchyCsvWriter out) {
         this.graph = graph;
@@ -102,29 +123,92 @@ public final class ExternalUsageScanner {
             Enumeration<JarEntry> entries = jar.entries();
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
-                if (entry.isDirectory() || !entry.getName().endsWith(".class")) {
+                if (entry.isDirectory() || !isScanTarget(entry.getName())) {
                     continue;
                 }
-                ClassFileRefs refs;
                 try (InputStream is = jar.getInputStream(entry)) {
-                    refs = ClassFileRefs.parse(is);
-                } catch (Exception ex) {
-                    Log.warn("class解析に失敗（スキップ）: "
-                            + jarName + "!" + entry.getName() + " (" + ex.getMessage() + ")");
-                    continue;
+                    scanEntry(jarName, entry.getName(), is, 0);
                 }
-                // 自プロジェクトのクラスが混ざったjar（自分のビルド成果物が
-                // 同じフォルダにある等）は「他リポジトリからの被参照」ではない。
-                // 自分自身からの呼び出しを被参照として出さないよう読み飛ばす
-                if (isOurType(refs.thisClass)) {
-                    stats.selfClasses++;
-                    continue;
-                }
-                stats.classes++;
-                scanClass(refs, jarName);
             }
         }
         stats.jars++;
+    }
+
+    /**
+     * jar の中の 1 エントリを処理する。class ならその参照を拾い、jar（FatJar の内側）なら
+     * 中身を {@link ZipInputStream} で読んで同じ処理を再帰的に行う。
+     * それ以外（リソース、マニフェスト等）は読み飛ばす。
+     *
+     * @param jarLabel  出力の jar 名。中の jar は {@code 外側.jar!/中.jar} と連ねる
+     * @param entryName jar 内のエントリ名（{@code BOOT-INF/lib/x.jar} 等）
+     * @param is        エントリの内容。閉じるのは呼び出し側
+     * @param depth     入れ子の深さ（最上位の jar の直下が 0）
+     */
+    private void scanEntry(String jarLabel, String entryName, InputStream is, int depth)
+            throws IOException {
+        if (entryName.endsWith(".class")) {
+            ClassFileRefs refs;
+            try {
+                refs = ClassFileRefs.parse(is);
+            } catch (Exception ex) {
+                Log.warn("class解析に失敗（スキップ）: "
+                        + jarLabel + "!/" + entryName + " (" + ex.getMessage() + ")");
+                return;
+            }
+            // 自プロジェクトのクラスが混ざったjar（自分のビルド成果物が
+            // 同じフォルダにある等）は「他リポジトリからの被参照」ではない。
+            // 自分自身からの呼び出しを被参照として出さないよう読み飛ばす
+            if (isOurType(refs.thisClass)) {
+                stats.selfClasses++;
+                return;
+            }
+            stats.classes++;
+            scanClass(refs, jarLabel);
+        } else if (isArchiveName(entryName)) {
+            String nestedLabel = jarLabel + "!/" + entryName;
+            if (depth >= MAX_NESTING) {
+                Log.warn("jar の入れ子が深すぎるため読み飛ばします（" + MAX_NESTING + " 段まで）: "
+                        + nestedLabel);
+                return;
+            }
+            scanNestedJar(nestedLabel, is, depth + 1);
+        }
+    }
+
+    /**
+     * jar の中の jar を、取り出さずにストリームのまま走査する。
+     * {@link JarFile} はファイルにしか開けないため、中の jar は {@link ZipInputStream} で
+     * 先頭から順に読む。Spring Boot の入れ子 jar は無圧縮（STORED）で格納されているが、
+     * 圧縮されていても {@link ZipInputStream} はそのまま読める。
+     * 中の jar が zip として壊れている場合は、その jar だけ警告して読み飛ばす
+     * （外側の jar の他のエントリには影響しない）。
+     */
+    private void scanNestedJar(String nestedLabel, InputStream is, int depth) throws IOException {
+        // ZipInputStream を閉じると外側のストリームまで閉じるため、閉じない
+        ZipInputStream zip = new ZipInputStream(is);
+        try {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (!entry.isDirectory()) {
+                    scanEntry(nestedLabel, entry.getName(), zip, depth);
+                }
+                zip.closeEntry();
+            }
+        } catch (java.util.zip.ZipException ex) {
+            Log.warn("jar 内の jar を読めません（スキップ）: " + nestedLabel + " (" + ex.getMessage() + ")");
+            return;
+        }
+        stats.nestedJars++;
+    }
+
+    /** 読む価値のあるエントリか（class か、中の jar）。リソースやマニフェストは開かない */
+    private static boolean isScanTarget(String name) {
+        return name.endsWith(".class") || isArchiveName(name);
+    }
+
+    /** 走査対象のアーカイブか。war / ear は「jar を内包する jar」なので同じ扱い */
+    private static boolean isArchiveName(String name) {
+        return name.endsWith(".jar") || name.endsWith(".war") || name.endsWith(".ear");
     }
 
     /** 1クラスが参照しているメソッドのうち、自分の型のものを行にする */
@@ -271,15 +355,20 @@ public final class ExternalUsageScanner {
         return -1;
     }
 
-    /** 指定がファイルならそのjar、ディレクトリなら配下の *.jar を全部（サブフォルダも見る） */
+    /**
+     * 指定がファイルならそのjar、ディレクトリなら配下の *.jar を全部（サブフォルダも見る）。
+     * war / ear もファイルとして受け付ける（中の jar と class を走査する）。
+     * 並びはパス順に揃える。{@link Files#walk} の順はファイルシステム依存で、
+     * jar が複数あると出力の行順が環境ごとに変わってしまうため。
+     */
     private static List<Path> collectJars(List<Path> roots) throws IOException {
-        Set<Path> out = new LinkedHashSet<>();
+        Set<Path> out = new TreeSet<>();
         for (Path r : roots) {
-            if (Files.isRegularFile(r) && r.toString().endsWith(".jar")) {
+            if (Files.isRegularFile(r) && isArchiveName(r.toString())) {
                 out.add(r);
             } else if (Files.isDirectory(r)) {
                 try (Stream<Path> walk = Files.walk(r)) {
-                    walk.filter(p -> Files.isRegularFile(p) && p.toString().endsWith(".jar"))
+                    walk.filter(p -> Files.isRegularFile(p) && isArchiveName(p.toString()))
                             .forEach(out::add);
                 }
             } else {
