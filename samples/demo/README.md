@@ -6,9 +6,16 @@
 ひととおり踏むように書いてあります。動くプログラムとしての意味はありません。
 
 - `src/` … 解析対象のソース。`fx.app.Legacy` は存在しないライブラリを import しており、意図的にコンパイルできません
-- `ext-src/` … 「他チームの jar」の中身（`teamb.NightJob`）。`external.library.folders` の被参照スキャンの入力
-- `extjars/` … `ext-src/` をコンパイルして作った `team-b-batch.jar` と、`src/` 自身をコンパイルした `demo-app.jar`
+- `ext-src/` … 「他チームの jar」の中身（`teamb.NightJob`、`teamc.ReportJob`、`teamd.WebJob`）。
+  `external.library.folders` の被参照スキャンの入力
+- `extjars/` … `ext-src/` をコンパイルして作った jar と、`src/` 自身をコンパイルした `demo-app.jar`
   （自プロジェクトの jar が混ざっていても被参照として数えないことの確認用）
+  - `team-b-batch.jar` … 普通の jar（`teamb.NightJob`）
+  - `team-c-boot.jar` … Spring Boot 形式の FatJar。`BOOT-INF/classes/` に `teamc.ReportJob`、
+    `BOOT-INF/lib/` に `team-b-batch.jar` と `demo-app.jar` を無圧縮で入れ子にしている
+    （中の jar を開けること、中の自プロジェクト jar を除外できることの確認用）
+  - `team-d-app.ear` … ear → war → jar の 2 段の入れ子。`team-d-web.war` の `WEB-INF/classes/` に
+    `teamd.WebJob`、`WEB-INF/lib/` に `team-b-batch.jar`（圧縮あり）
 - `deps-src/` … `library.folders` に渡す依存 jar の元。`fx.app.Legacy` が import している `missing.lib` パッケージの型と、
   ソース側の `fx.dao.Dao` を実装する基底クラス `LibDao`（`fx.dao.LibBackedDao` がこれを継承する。jar があるときだけ
   `LibBackedDao` が `Dao` の実装として見え、`Dao#findById` の CHA 候補が 1 件増える）。
@@ -30,4 +37,15 @@ javac -cp deps/missing-lib.jar -d /tmp/demo-classes -encoding UTF-8 @/tmp/demo-s
 jar --create --file extjars/demo-app.jar -C /tmp/demo-classes .
 javac -d /tmp/teamb-classes -cp /tmp/demo-classes -encoding UTF-8 ext-src/teamb/NightJob.java
 jar --create --file extjars/team-b-batch.jar -C /tmp/teamb-classes .
+
+# FatJar（Spring Boot 形式）。Spring Boot は中の jar を無圧縮で格納するので --no-compress で揃える
+javac --release 17 -cp extjars/demo-app.jar -d /tmp/boot/BOOT-INF/classes -encoding UTF-8 ext-src/teamc/ReportJob.java
+mkdir -p /tmp/boot/BOOT-INF/lib && cp extjars/team-b-batch.jar extjars/demo-app.jar /tmp/boot/BOOT-INF/lib/
+jar --create --file extjars/team-c-boot.jar --no-compress -C /tmp/boot .
+
+# ear → war → jar の 2 段の入れ子（こちらは圧縮あり）
+javac --release 17 -cp extjars/demo-app.jar -d /tmp/war/WEB-INF/classes -encoding UTF-8 ext-src/teamd/WebJob.java
+mkdir -p /tmp/war/WEB-INF/lib /tmp/ear && cp extjars/team-b-batch.jar /tmp/war/WEB-INF/lib/
+jar --create --file /tmp/ear/team-d-web.war -C /tmp/war .
+jar --create --file extjars/team-d-app.ear -C /tmp/ear .
 ```
