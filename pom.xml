@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Eclipse（Pleiades）でこのリポジトリを開くための Maven 設定。
+
+  ビルドの本流は JBang（src/CallHierarchyExporter.java の //DEPS 行）で、この pom.xml は
+  Eclipse 同梱の m2e に「依存 jar を Maven Central から取ってきてビルドパスに載せる」ためだけに置く。
+  Eclipse で「インポート > 既存の Maven プロジェクト」からこのフォルダを選ぶと、依存が自動で解決される。
+  jbang での実行にはこのファイルは使われない。
+
+  依存の版は //DEPS 行と同じでなければならない（test/pom/run.sh が食い違いを検出する）。
+  JDT の版を変えるときは両方を書き換えること。
+
+  実装時に迷った点（言語レベルの指定、Gradle でなく Maven にした理由など）は
+  docs/eclipse-maven-qa.md にまとめてある。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.instreest</groupId>
+  <artifactId>java-call-hierarchy-exporter</artifactId>
+  <version>0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <!-- ソースは UTF-8（日本語コメントを含む）。m2e はこの値をプロジェクトの文字コードにも反映する -->
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!--
+      言語レベル。実行 JDK の版（//JAVA 25）ではなく「ソースが使う文法の最低版」で、
+      .github/workflows/smoke.yml の javac -release 17 と同じ値。
+      record や instanceof のパターンを使っているので、これを書かないと m2e が既定の 1.8 で
+      プロジェクトを構成し、Eclipse 上でエラーだらけになる（docs/eclipse-maven-qa.md の Q1）。
+      Eclipse はこの値に合う JDK をワークスペースに登録済みのものから選ぶ。JDK の自動取得はしない。
+    -->
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+
+  <dependencies>
+    <!-- //DEPS 行と同じ。推移的な依存（org.eclipse.platform.* 等）は POM から自動で解決される -->
+    <dependency>
+      <groupId>org.eclipse.jdt</groupId>
+      <artifactId>org.eclipse.jdt.core</artifactId>
+      <version>3.46.0</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <!-- Maven 既定の src/main/java ではなく、JBang と同じ src 直下をソースフォルダにする -->
+    <sourceDirectory>src</sourceDirectory>
+  </build>
+</project>

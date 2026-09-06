@@ -63,6 +63,23 @@ rem 実行
 "%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
 
+#### Eclipse（Pleiades）でソースを開く
+
+リポジトリ直下に `pom.xml` があるので、Eclipse 同梱の m2e（Maven 連携）で依存 jar を自動取得できます。
+
+1. 「ファイル > インポート > Maven > 既存の Maven プロジェクト」で、このリポジトリのフォルダを選ぶ
+2. 取り込み後、JDT Core 一式が Maven Central から `%userprofile%\.m2\repository` に取得され、ビルドパスに載る
+3. `CallHierarchyExporter` を「Java アプリケーション」として実行するときは、実行構成の引数に
+   `config/config.properties` を指定する
+
+`pom.xml` は Eclipse で開くためだけのもので、jbang での実行には使われません。依存の版は
+`src/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。
+JDT の版を変えるときは両方を書き換えてください。`pom.xml` には実行 JDK の版（`//JAVA 25`）は書いておらず、
+Eclipse はワークスペースに登録済みの JDK（17 以上）を使います。そのため Eclipse から実行した解析結果は
+jbang 経由（JDK 25）と一部異なりうることに注意してください
+（[docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) の Q20）。
+実装時に迷った点は [docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
+
 ---
 
 ### 出力されるファイル
@@ -354,3 +371,12 @@ bash test/jbangw/run.sh        # Linux / macOS / Git Bash
 ファイルの中身を読むだけなので JDK も jbang もネットワークも要りません。回帰テストとは別の
 ジョブとして GitHub Actions でも実行します。個々の検査が何を守っているかは `run.sh` の
 コメントに書いてあります。
+
+Eclipse 用の `pom.xml` にも検査があります。`//DEPS` 行と `pom.xml` の依存が同じ版であることを見ます。
+
+```bash
+bash test/pom/run.sh           # Linux / macOS / Git Bash
+```
+
+GitHub Actions では、これに加えて `mvn compile` で `pom.xml` から実際に依存を解決してコンパイルできることも
+確認します（Eclipse の m2e が行う解決と同じです）。
