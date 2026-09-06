@@ -33,7 +33,7 @@ Issue の見立ては「MethodTable の ID が初出順で振られ、StreamingT
 |---|---|---|
 | 起点 | `SourceOrder.sortedBySource` | ソースフォルダ順 → 型 FQN 順 → 宣言行順 → ID 順 |
 | 起点の呼び出し先（エッジ） | `CallGraphBuilder.secondPass` | キャッシュの `C` / `U` 行の順。1 つのメソッドのエッジは全部そのメソッドのファイルのブロックにあるので、ファイル内の出現順 |
-| CHA の候補 | `TypeHierarchy.sortForDeterminism` + `transitiveSubtypes` | 型 FQN 順（差分更新でブロックが動くことへの対策として、すでにソート済みだった） |
+| CHA の候補 | `TypeHierarchy.sortForDeterminism` + `transitiveSubtypes` | 宣言型自身 → 下位型。直接の下位型は型 FQN 順で、そこから深さ優先に辿る（差分更新でブロックが動くことへの対策として、すでにソート済みだった） |
 | リフレクションの候補 | `DataflowResolver.methodsNamed` | ID 順。ただし同じ型の同名メソッドなので同じブロック内で決まる |
 
 ID 順が効くのは、起点の並びで「同じ型・同じ宣言行」に複数のメソッドがある場合（暗黙コンストラクタと
