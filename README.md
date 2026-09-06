@@ -354,3 +354,7 @@ bash test/jbangw/run.sh        # Linux / macOS / Git Bash
 ファイルの中身を読むだけなので JDK も jbang もネットワークも要りません。回帰テストとは別の
 ジョブとして GitHub Actions でも実行します。個々の検査が何を守っているかは `run.sh` の
 コメントに書いてあります。
+
+ラッパーの分岐はほとんどが Windows 固有（`javac.exe`、パス区切りの `\`、cmd の遅延展開、
+PowerShell への委譲）で、Linux 側では一行も通りません。そのため GitHub Actions では
+`windows-latest` でも回帰テスト（`test\regression\run.cmd`）を実行します。

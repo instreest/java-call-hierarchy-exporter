@@ -37,6 +37,40 @@ jobs:
       - name: Regression test (samples/demo)
         run: bash test/regression/run.sh
 
+  # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有
+  # （javac.exe、パスの \、cmd の遅延展開、powershell への委譲）で、ubuntu 側では
+  # 一行も通らない。test\regression\run.cmd は今まで CI で動かしていなかった。
+  # ~/.jbang のキャッシュは使わない。毎回まっさらな状態から取得させて、
+  # ブートストラップ経路そのものを検査対象に含めるため。
+  regression-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Regression test (Windows, jbangw\jbang.cmd)
+        shell: cmd
+        run: test\regression\run.cmd
+
+      # jbangw\jbang.cmd は jbang 本体へ委譲したあと exit /b !ERRORLEVEL! で
+      # その終了コードを返す。ここが %ERRORLEVEL% だと解析時展開で常に 0 になり、
+      # run.cmd の "if errorlevel 1" が失敗を検知できなくなる
+      - name: jbang.cmd propagates a failing exit code
+        shell: cmd
+        run: |
+          call jbangw\jbang.cmd run no-such-file-should-not-exist.java
+          if errorlevel 1 (
+            echo OK: non-zero exit code was propagated
+            exit /b 0
+          ) else (
+            echo FAIL: a failing run reported success
+            exit /b 1
+          )
+
   # 同梱した JBang ラッパー（jbangw/）の検査。ファイルの中身を読むだけなので
   # JDK も jbang も要らず、数秒で終わる。
   # regression とは別ジョブにしてあるのは ~/.jbang を巻き込まないため。regression 側は
