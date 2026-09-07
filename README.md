@@ -23,7 +23,8 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 #### JBangによる実行
 
-JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です。
+JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です
+（同梱スクリプトの出所・ライセンス（MIT）・当リポジトリでの修正点は [jbangw/README.md](jbangw/README.md) を参照）。
 
 ```bat
 rem Windows（コマンドプロンプト）
@@ -374,6 +375,7 @@ GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint
 JBang 本家からそのまま持ち込んだうえで、JDK 自動取得まわりの不具合（Windows で JDK が
 取得できない、壊れた JDK をキャッシュしてしまう、など）を修正して取り込んでいます。
 本家から取り直して差し替えると修正が黙って巻き戻るため、それを検出します。
+修正の一覧と取り直しの手順は [jbangw/README.md](jbangw/README.md) にあります。
 
 ```bash
 bash test/jbangw/run.sh        # Linux / macOS / Git Bash
