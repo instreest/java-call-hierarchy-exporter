@@ -4,6 +4,9 @@ lib/
 out/
 dist/
 
+# pom.xml（Eclipse の m2e 用）でビルドしたときの出力先
+target/
+
 # jbangw/.jbang/jbang.jar を置くと、ラッパー（jbangw/jbang）はダウンロードせずにそれを使う。
 # 置いた場合もコミットしない（14MB 超）
 /jbangw/.jbang/

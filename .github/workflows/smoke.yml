@@ -102,3 +102,25 @@ jobs:
 
       - name: JBang wrapper check
         run: bash test/jbangw/run.sh
+
+  # Eclipse（Pleiades）用の pom.xml の検査。
+  # 1) //DEPS 行と pom.xml の依存が同じ版であること（ファイルを読むだけ、数秒）
+  # 2) その pom.xml で実際に依存が解決でき、ソースがコンパイルできること
+  #    （Eclipse の m2e がやることと同じ解決を Maven で再現する。JDK は pom の release と同じ 17）
+  # regression ジョブとは別ジョブにしてあるのは、~/.m2 のキャッシュキーを jbang のものと混ぜないため。
+  pom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: DEPS / pom.xml consistency check
+        run: bash test/pom/run.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Compile with Maven
+        run: mvn -B --no-transfer-progress compile
