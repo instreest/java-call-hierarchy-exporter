@@ -67,6 +67,8 @@ import jche.util.Log;
  *   jbang src/CallHierarchyExporter.java config/projA.properties config/projB.properties
  *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
  * </pre>
+ * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code jche.sh} / {@code jche.cmd} から
+ * 起動する（{@code src/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
  * 設定ファイルごとに、その設定ファイルのフォルダを起点にした output.folder（既定 . ＝設定ファイルと同じフォルダ）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
  * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
@@ -113,14 +115,29 @@ public class CallHierarchyExporter {
             configPaths.add(Paths.get(DEFAULT_CONFIG));
         }
 
-        ToolRoot toolRoot = ToolRoot.locate(CallHierarchyExporter.class);
+        int failed = runAll(configPaths, ToolRoot.locate(CallHierarchyExporter.class));
+        if (failed > 0) {
+            System.exit(1);
+        }
+    }
+
+    /**
+     * 設定ファイルを順に処理する。対話モード（{@code src/Jche.java}）からも同じ処理を呼ぶため、
+     * {@link #main} から切り出してある。ここでは {@code System.exit} しない。
+     *
+     * 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する。
+     *
+     * @param configPaths 設定ファイル（渡した順に処理する）
+     * @param toolRoot    このツールのプロジェクトフォルダ（キャッシュの置き場所）
+     * @return 失敗した設定の数
+     */
+    public static int runAll(List<Path> configPaths, ToolRoot toolRoot) {
         if (!toolRoot.found) {
             Log.warn("このツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を"
                     + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
                     + toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME));
         }
 
-        // 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する
         List<String> summary = new ArrayList<>();
         int failed = 0;
         for (int i = 0; i < configPaths.size(); i++) {
@@ -148,9 +165,7 @@ public class CallHierarchyExporter {
                 Log.info("  " + line);
             }
         }
-        if (failed > 0) {
-            System.exit(1);
-        }
+        return failed;
     }
 
     /**
