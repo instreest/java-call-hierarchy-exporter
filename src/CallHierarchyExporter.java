@@ -7,7 +7,7 @@
 //       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
 //         3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
 //         3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
-//       解析対象ソースのJavaバージョンは、この版とは別に config.properties の
+//       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/config.properties）の
 //       source.level で指定する（未指定なら、この版が対応する最大値）。
 // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
 //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
@@ -61,13 +61,13 @@ import jche.util.Log;
  * Javaプロジェクトを対象に、メソッド呼び出し階層を一括抽出してCSV出力する。
  * Eclipse IDE の起動は不要で、通常のJavaアプリとして動作する。
  *
- * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config.properties）:
+ * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/config.properties）:
  * <pre>
- *   jbang src/CallHierarchyExporter.java config.properties
- *   jbang src/CallHierarchyExporter.java projA.properties projB.properties
- *   java -cp "bin;lib/*" CallHierarchyExporter config.properties
+ *   jbang src/CallHierarchyExporter.java config/config.properties
+ *   jbang src/CallHierarchyExporter.java config/projA.properties config/projB.properties
+ *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
  * </pre>
- * 設定ファイルごとに、その設定ファイルのフォルダの output.folder（既定 ./output）の下へ
+ * 設定ファイルごとに、その設定ファイルのフォルダを起点にした output.folder（既定 . ＝設定ファイルと同じフォルダ）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
  * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
  * 解析対象プロジェクトごとに置く（{@link jche.config.ToolRoot}、{@link Config}）。
@@ -98,7 +98,7 @@ import jche.util.Log;
 public class CallHierarchyExporter {
 
     /** 引数を省略したときの設定ファイル（作業ディレクトリからの相対） */
-    private static final String DEFAULT_CONFIG = "config.properties";
+    private static final String DEFAULT_CONFIG = "config/config.properties";
 
     public static void main(String[] args) throws Exception {
         // 設定ファイルのパスは引数で受け取る（複数可）。jbang はスクリプト名より後ろの
@@ -108,7 +108,7 @@ public class CallHierarchyExporter {
             configPaths.add(Paths.get(a));
         }
         if (configPaths.isEmpty()) {
-            System.err.println("config.propertiesのパスが指定されていません。");
+            System.err.println("設定ファイル（config.properties）のパスが指定されていません。");
             System.err.println("既定値の「" + DEFAULT_CONFIG + "」で実行します。");
             configPaths.add(Paths.get(DEFAULT_CONFIG));
         }
