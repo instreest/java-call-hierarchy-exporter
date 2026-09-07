@@ -3,7 +3,7 @@
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
 > **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
-> using the Eclipse JDT compiler without launching Eclipse. Run `./jche` (`jche.cmd` on Windows)
+> using the Eclipse JDT compiler without launching Eclipse. Run `./jche.sh` (`jche.cmd` on Windows)
 > for an interactive menu that picks the config file, creates new ones and controls where the JDK
 > and JBang are installed, or run
 > `jbangw/jbang src/CallHierarchyExporter.java config.properties` directly (the first run downloads
@@ -30,7 +30,7 @@ Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく�
 
 #### 起動コマンド（対話モード）
 
-リポジトリ直下の `jche.cmd`（Windows）/ `jche`（Linux / macOS / Git Bash）を実行すると、
+リポジトリ直下の `jche.cmd`（Windows）/ `jche.sh`（Linux / macOS / Git Bash）を実行すると、
 メニューで操作する対話モードが立ち上がります。どのフォルダから実行してもかまいません。
 
 ```bat
@@ -40,13 +40,15 @@ jche.cmd
 
 ```bash
 # Linux / macOS / Git Bash
-./jche
+./jche.sh
 ```
 
 初回は、このツールが使う JDK と JBang（合わせて数百 MB）を **このプロジェクトの中（`.jbang/`）** に置くか
 **ユーザーのホーム（`~/.jbang`、JBang の既定）** に置くかを尋ねます。選んだ内容は `launcher.properties`
 （リポジトリ直下。Git では追跡しない）に保存され、次回からは尋ねません。
 プロジェクトの中を選ぶと他の環境を汚さず、フォルダごと消せば元に戻ります。
+`jche.cmd` だけは文字コードが MS932（Shift_JIS）です（コマンドプロンプトがバッチファイルを画面のコードページで読むため。
+編集するときは MS932 のまま保存してください）。
 
 ```
 ================================================================

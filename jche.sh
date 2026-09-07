@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # java-call-hierarchy-exporter の起動コマンド（Linux / macOS / Git Bash。Windows のコマンドプロンプトは jche.cmd）。
 #
-#   ./jche                             対話モード（メニューで設定ファイルを選んで解析する）
-#   ./jche a.properties [b.properties…] 対話なしで解析する（jbang で src/CallHierarchyExporter.java を直接動かすのと同じ）
-#   ./jche --help
+#   ./jche.sh                          対話モード（メニューで設定ファイルを選んで解析する）
+#   ./jche.sh a.properties [b.properties…] 対話なしで解析する（jbang で src/CallHierarchyExporter.java を直接動かすのと同じ）
+#   ./jche.sh --help
 #
 # どこから実行してもよい（このファイルのあるフォルダを起点にする）。
 #
@@ -46,7 +46,7 @@ first_run_prompt() {
 # $1=JBANG_DIR  $2=JBANG_REPO（相対はこのフォルダ起点。空欄は JBang の既定）
 write_settings() {
   cat > "$SETTINGS" <<EOF
-# jche / jche.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。
+# jche.sh / jche.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。
 # キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。
 #   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）
 #   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）

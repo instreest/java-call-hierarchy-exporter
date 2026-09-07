@@ -67,7 +67,7 @@ import jche.util.Log;
  *   jbang src/CallHierarchyExporter.java projA.properties projB.properties
  *   java -cp "bin;lib/*" CallHierarchyExporter config.properties
  * </pre>
- * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code jche} / {@code jche.cmd} から
+ * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code jche.sh} / {@code jche.cmd} から
  * 起動する（{@code src/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
  * 設定ファイルごとに、その設定ファイルのフォルダの output.folder（既定 ./output）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。

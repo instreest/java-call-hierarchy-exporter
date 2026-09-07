@@ -38,7 +38,7 @@ public final class ToolRoot {
     }
 
     /**
-     * 場所が分かっているときに使う（起動コマンド jche / jche.cmd は自分のあるフォルダを環境変数で渡してくる）。
+     * 場所が分かっているときに使う（起動コマンド jche.sh / jche.cmd は自分のあるフォルダを環境変数で渡してくる）。
      * 目印が無いフォルダを渡されたら {@link #found} は false になる。
      */
     public static ToolRoot at(Path dir) {

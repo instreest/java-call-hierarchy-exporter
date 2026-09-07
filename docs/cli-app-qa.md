@@ -5,7 +5,7 @@
 
 対応の要点:
 
-- リポジトリ直下に起動コマンド `jche`（bash）/ `jche.cmd`（Windows）を置いた。どこから実行してもよく、
+- リポジトリ直下に起動コマンド `jche.sh`（bash）/ `jche.cmd`（Windows）を置いた。どこから実行してもよく、
   引数なしなら対話モード、設定ファイルを引数に渡せば従来どおり対話なしで解析する
 - 対話モードは `src/Jche.java`（`jche.cli` パッケージ）。メニューは 4 つ:
   解析の実行（設定ファイルの一覧から選ぶ）/ 設定ファイルの作成ウィザード / 環境設定 / 実行環境の状態
@@ -49,7 +49,7 @@ JDK と JBang の置き場所は、**Java が起動する前に**決まらなけ
 
 | 役割 | 担当 |
 |---|---|
-| `launcher.properties` を読んで環境変数にし、jbang を呼ぶ。初回に置き場所を尋ねる。再起動 | 起動コマンド（`jche` / `jche.cmd`） |
+| `launcher.properties` を読んで環境変数にし、jbang を呼ぶ。初回に置き場所を尋ねる。再起動 | 起動コマンド（`jche.sh` / `jche.cmd`） |
 | メニュー、設定ファイルの選択と作成、環境設定の**書き換え**、状態表示、解析の実行 | Java（`src/Jche.java`、`jche.cli`） |
 
 Java 側は `launcher.properties` を書き換えるだけで、効くのは次の起動から。その隙間を「その場で再起動」で埋めた（Q5）。
@@ -105,9 +105,9 @@ jbang はスクリプトごとに `//DEPS` `//JAVA` を読むので、`Jche.java
 - 再起動のたびに前回の環境変数が残らないよう、bash はサブシェル `( load_settings; exec jbang … )`、
   cmd は `setlocal` / `endlocal` で囲んでいる。`JBANG_DIR` を空欄に戻したのに前回の値が残る、という事故を防ぐ
 - 再起動できるのは起動コマンド経由のときだけ。jbang で `Jche.java` を直接動かしたときは環境変数 `JCHE_ROOT`
-  が無いので、「次回 jche から起動したときに効く」と表示して終わる
+  が無いので、「次回 jche.sh から起動したときに効く」と表示して終わる
 
-Java 側から起動コマンドを子プロセスとして起動し直す方法（`ProcessBuilder` で `jche` を呼ぶ）は、親の JVM が
+Java 側から起動コマンドを子プロセスとして起動し直す方法（`ProcessBuilder` で `jche.sh` を呼ぶ）は、親の JVM が
 残ったまま子が動く形になり、Windows では親が使っている JDK フォルダを子が消せない・置き換えられないといった
 問題を生むのでやめた。「終了して、外側がやり直す」が一番単純で壊れにくい。
 
@@ -122,7 +122,7 @@ Q2 のとおり、問いに答える前に JDK を取得してしまっては意
 プロジェクトの中なら、`.jbang/` を消せば取得したものは全部消え、他の JBang スクリプトや Maven の設定に影響しない。
 既に JBang を使っている人は 2 を選べば今までどおり共有できる。
 
-問いの文言は、`jche` では日本語、`jche.cmd` では英語（ASCII）にした。理由は Q14。
+`jche.cmd` の文字コードは MS932 にしてある（Q15）。
 
 ### Q7. `launcher.properties` の書式をなぜ「キー＝環境変数名」の素朴な `KEY=VALUE` にしたか
 
@@ -222,31 +222,37 @@ Windows のコマンドプロンプトでは MS932 になるので、日本語�
 出力は `System.out` に任せる（コンソールの文字コードで書く）。ツール全体の方針
 （`src/CallHierarchyExporter.java` の冒頭: UTF-8 に固定しない、`chcp` もしない）と同じ。
 
-### Q15. `jche.cmd` の画面の文言を英語（ASCII）にした理由と、`launcher.properties` の文字コード
+### Q15. `jche.cmd` の文字コードを MS932 にした理由と、`launcher.properties` の文字コード
 
-このリポジトリのファイルは UTF-8 で保存されている。cmd はバッチファイルをコンソールのコードページ
-（日本語 Windows では MS932）として読むので、バッチの中の日本語の `echo` は化ける。
-`test/regression/run.cmd` は日本語で書いてあるが、あれは CI のログに出るだけで人が画面で読むものではない。
-初回の問いは利用者が画面で読んで答えるものなので、化けない ASCII にした。`rem` のコメントは日本語のまま
-（表示されないので実害が無い）。日本語の案内はその直後に起動する Java 側（コンソールの文字コードで書く）に任せる。
+このリポジトリのファイルは UTF-8 で保存されているが、`jche.cmd` だけは MS932（Shift_JIS、CRLF）にした。
+cmd はバッチファイルをコンソールのコードページ（日本語 Windows では MS932）として読むので、UTF-8 のままだと
+初回の問い（利用者が画面で読んで答える）の日本語が化ける。`chcp 65001` で切り替える方法は、日本語 Windows で
+画面が消えるので採らない（`src/CallHierarchyExporter.java` の冒頭と同じ判断）。
+`test/regression/run.cmd` は UTF-8 のままだが、あれは CI のログに出るだけで人が画面で読むものではない。
+
+最初は「画面の文言だけ ASCII の英語にする」で逃げていたが、利用者の指摘で MS932 に改めた。
+編集するときは MS932 のまま保存すること（エディタが UTF-8 で保存し直すと化ける。`.gitattributes` で
+`-text` にしてあるので Git が改行や文字コードを触ることはない）。
+MS932 では 2 バイト目が `\` `^` `|` になる文字（「ソ」「ポ」「表」等）があり、cmd の行では意図しない
+区切りに読まれうるので、`jche.cmd` の日本語からは避けている。
 
 `launcher.properties` は Java 側が `native.encoding`（cmd では MS932、Linux では UTF-8）で読み書きする。
 cmd の `for /f` はファイルをコンソールのコードページで読むので、Java が UTF-8 で書くと日本語を含むパス
-（`C:\Users\太郎\…`）が壊れる。同じ理由で、Java が書く日本語のコメント行も `native.encoding` になる。
-bash が書く初回のファイルは UTF-8（スクリプトの文字コード）だが、Git Bash では Java が MS932 として読むので
-コメント行が化けて見える。キーと値は ASCII なので実害は無く、Java 側が書き換えるときにコメントは付け直す。
+（`C:\Users\太郎\…`）が壊れる。`jche.cmd` が初回に書くファイルも MS932 になるので、Java 側と揃う。
+bash（`jche.sh`）が書く初回のファイルは UTF-8（スクリプトの文字コード）だが、Git Bash では Java が MS932 として
+読むのでコメント行が化けて見える。キーと値は ASCII なので実害は無く、Java 側が書き換えるときにコメントは付け直す。
 
 ### Q16. Git Bash でのパスの扱い
 
 Git Bash（MSYS）では `$ROOT` が `/c/work/...` の形になる。この値を環境変数 `JBANG_DIR` として Java に渡すと、
 Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコマンドライン引数には効くが、環境変数の値には効かない）。
-`jche` は `cygpath -m` があればそれで `C:/work/...` に変換してから渡す。
+`jche.sh` は `cygpath -m` があればそれで `C:/work/...` に変換してから渡す。
 
 ### Q17. ツールのプロジェクトフォルダをどう伝えるか。起動コマンドが `cd` しない理由
 
 起動コマンドは自分のあるフォルダを環境変数 `JCHE_ROOT` で渡し、`Jche.java` は `ToolRoot.at()` でそれを使う。
 `cd` してから jbang を呼ぶ方法もあるが、対話なしの解析で引数に渡した設定ファイルの相対パスが、利用者の作業
-ディレクトリではなくツールのフォルダ起点になってしまう（`..\tool\jche myproj.properties` が動かない）。
+ディレクトリではなくツールのフォルダ起点になってしまう（`..\tool\jche.cmd myproj.properties` が動かない）。
 作業ディレクトリは触らず、必要な情報だけ渡す。
 
 `JCHE_ROOT` が無いとき（jbang で `Jche.java` を直接動かしたとき）は従来の `ToolRoot.locate()`（作業ディレクトリと
@@ -258,7 +264,7 @@ Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコ�
 
 ### Q18. 対話モードをどう自動テストするか
 
-`test/cli/run.sh`。メニューへの答えを `printf '1\np\n…\n' | ./jche` のようにパイプで流し込む。
+`test/cli/run.sh`。メニューへの答えを `printf '1\np\n…\n' | ./jche.sh` のようにパイプで流し込む。
 標準入力が端末でないので、起動コマンドの初回の問いは出ず、アプリは入力が尽きたら静かに終わる
 （`Terminal.EndOfInput` を最上位で 1 回だけ捕まえる）。見るのは `--help`、対話なしの解析と終了コード、
 状態表示、ウィザードが作ったファイルの中身（`project.root=../test/demo`、コメントが残っていること）、
@@ -288,7 +294,7 @@ jbang が JDK 25 を取得できない環境（JDK の配布サイトへの接�
 だったので、`launcher.properties` に `JCHE_JBANG_OPTS=--java 21` を書き、手元の JDK 21 で動かした。
 このオプション自体が今回足した仕組みなので、ちょうどその確認にもなった。
 
-- `test/regression/run.sh` を `JCHE_CMD="$PWD/jche"`（起動コマンドの対話なし経路）と、従来どおりの
+- `test/regression/run.sh` を `JCHE_CMD="$PWD/jche.sh"`（起動コマンドの対話なし経路）と、従来どおりの
   `jbang run --java 21 src/CallHierarchyExporter.java` の両方で実行し、全ケース（`multi` を含む）PASS
 - `JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh` が PASS
 - `JBANG_DIR=.jbang` / `JBANG_REPO=.jbang/repository` で起動し、JBang 本体が `.jbang/bin/` に、JDT の jar が

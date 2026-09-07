@@ -1,47 +1,78 @@
 @echo off
-rem java-call-hierarchy-exporter ã®èµ·å‹•ã‚³ãƒãƒ³ãƒ‰ï¼ˆWindows ã®ã‚³ãƒãƒ³ãƒ‰ãƒ—ãƒ­ãƒ³ãƒ—ãƒˆã€‚Linux / macOS / Git Bash ã¯ jcheï¼‰ã€‚
+rem java-call-hierarchy-exporter ‚Ì‹N“®ƒRƒ}ƒ“ƒhiWindows ‚ÌƒRƒ}ƒ“ƒhƒvƒƒ“ƒvƒgBLinux / macOS / Git Bash ‚Í jche.shjB
 rem
-rem   jche                              å¯¾è©±ãƒ¢ãƒ¼ãƒ‰ï¼ˆãƒ¡ãƒ‹ãƒ¥ãƒ¼ã§è¨­å®šãƒ•ã‚¡ã‚¤ãƒ«ã‚’é¸ã‚“ã§è§£æã™ã‚‹ï¼‰
-rem   jche a.properties [b.propertiesâ€¦] å¯¾è©±ãªã—ã§è§£æã™ã‚‹ï¼ˆjbang ã§ src\CallHierarchyExporter.java ã‚’ç›´æ¥å‹•ã‹ã™ã®ã¨åŒã˜ï¼‰
+rem   jche                              ‘Î˜bƒ‚[ƒhiƒƒjƒ…[‚Åİ’èƒtƒ@ƒCƒ‹‚ğ‘I‚ñ‚Å‰ğÍ‚·‚éj
+rem   jche a.properties [b.propertiesc] ‘Î˜b‚È‚µ‚Å‰ğÍ‚·‚éijbang ‚Å src\CallHierarchyExporter.java ‚ğ’¼Ú“®‚©‚·‚Ì‚Æ“¯‚¶j
 rem   jche --help
 rem
-rem ã©ã“ã‹ã‚‰å®Ÿè¡Œã—ã¦ã‚‚ã‚ˆã„ï¼ˆã“ã®ãƒ•ã‚¡ã‚¤ãƒ«ã®ã‚ã‚‹ãƒ•ã‚©ãƒ«ãƒ€ã‚’èµ·ç‚¹ã«ã™ã‚‹ï¼‰ã€‚
+rem ‚Ç‚±‚©‚çÀs‚µ‚Ä‚à‚æ‚¢i‚±‚Ìƒtƒ@ƒCƒ‹‚Ì‚ ‚éƒtƒHƒ‹ƒ_‚ğ‹N“_‚É‚·‚éjB
 rem
-rem ã‚„ã‚‹ã“ã¨:
-rem   1. launcher.propertiesï¼ˆã“ã®ãƒ•ã‚©ãƒ«ãƒ€ç›´ä¸‹ï¼‰ã‚’èª­ã¿ã€JDK / JBang ã®ç½®ãå ´æ‰€ï¼ˆJBANG_DIR ç­‰ï¼‰ã‚„ JVM ã®ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã‚’
-rem      ç’°å¢ƒå¤‰æ•°ã«ã™ã‚‹ã€‚ç„¡ã‘ã‚Œã°ã€å¯¾è©±ã§ãã‚‹ã¨ãã ã‘ç½®ãå ´æ‰€ã‚’å°‹ã­ã¦ä½œã‚‹ï¼ˆåˆå›ã ã‘ï¼‰ã€‚
-rem   2. jbangw\jbang.cmdï¼ˆåŒæ¢±ã® JBang ãƒ©ãƒƒãƒ‘ãƒ¼ï¼‰ã§ src\Jche.java ã‚’å‹•ã‹ã™ã€‚JDK ã¨ä¾å­˜ jar ã¯åˆå›ã«è‡ªå‹•ã§å–å¾—ã•ã‚Œã‚‹ã€‚
-rem   3. ã‚¢ãƒ—ãƒªãŒã€Œå†èµ·å‹•ã—ã¦è¨­å®šã‚’åæ˜ ã€ã‚’è¦æ±‚ã—ãŸã¨ãï¼ˆ.cache\launcher.restart ãŒã§ãã‚‹ï¼‰ã¯ 1 ã‹ã‚‰ã‚„ã‚Šç›´ã™ã€‚
-rem      ç½®ãå ´æ‰€ã‚„ JVM ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã¯ Java ãŒèµ·å‹•ã™ã‚‹å‰ã«æ±ºã¾ã‚‹ã®ã§ã€Java å´ã‹ã‚‰ã¯å¤‰ãˆã‚‰ã‚Œãªã„ã€‚
+rem ‚â‚é‚±‚Æ:
+rem   1. launcher.propertiesi‚±‚ÌƒtƒHƒ‹ƒ_’¼‰ºj‚ğ“Ç‚İAJDK / JBang ‚Ì’u‚«êŠiJBANG_DIR “™j‚â JVM ‚ÌƒIƒvƒVƒ‡ƒ“‚ğ
+rem      ŠÂ‹«•Ï”‚É‚·‚éB–³‚¯‚ê‚ÎA‘Î˜b‚Å‚«‚é‚Æ‚«‚¾‚¯’u‚«êŠ‚ğq‚Ë‚Äì‚éi‰‰ñ‚¾‚¯jB
+rem   2. jbangw\jbang.cmdi“¯«‚Ì JBang ƒ‰ƒbƒp[j‚Å src\Jche.java ‚ğ“®‚©‚·BJDK ‚ÆˆË‘¶ jar ‚Í‰‰ñ‚É©“®‚Åæ“¾‚³‚ê‚éB
+rem   3. ƒAƒvƒŠ‚ªuÄ‹N“®‚µ‚Äİ’è‚ğ”½‰fv‚ğ—v‹‚µ‚½‚Æ‚«i.cache\launcher.restart ‚ª‚Å‚«‚éj‚Í 1 ‚©‚ç‚â‚è’¼‚·B
+rem      ’u‚«êŠ‚â JVM ƒIƒvƒVƒ‡ƒ“‚Í Java ‚ª‹N“®‚·‚é‘O‚ÉŒˆ‚Ü‚é‚Ì‚ÅAJava ‘¤‚©‚ç‚Í•Ï‚¦‚ç‚ê‚È‚¢B
 rem
-rem è¨­å®šã®èª­ã¿è¾¼ã¿ã¨ jbang ã®å®Ÿè¡Œã¯ setlocal / endlocal ã§å›²ã‚€ã€‚å†èµ·å‹•ã®ãŸã³ã«å‰å›ã®ç’°å¢ƒå¤‰æ•°ãŒæ®‹ã‚‰ãªã„ã‚ˆã†ã«ã™ã‚‹ãŸã‚ã€‚
-rem æ‹¬å¼§ãƒ–ãƒ­ãƒƒã‚¯ã®ä¸­ã§ã¯ %VAR% ãŒãƒ–ãƒ­ãƒƒã‚¯ã®è§£ææ™‚ã«å±•é–‹ã•ã‚Œã‚‹ã®ã§ã€å€¤ã‚’ä½¿ã†ç®‡æ‰€ã¯ call ã‚„ã‚µãƒ–ãƒ«ãƒ¼ãƒãƒ³ã«ã—ã¦ã‚ã‚‹ã€‚
+rem İ’è‚Ì“Ç‚İ‚İ‚Æ jbang ‚ÌÀs‚Í setlocal / endlocal ‚ÅˆÍ‚ŞBÄ‹N“®‚Ì‚½‚Ñ‚É‘O‰ñ‚ÌŠÂ‹«•Ï”‚ªc‚ç‚È‚¢‚æ‚¤‚É‚·‚é‚½‚ßB
+rem Š‡ŒÊƒuƒƒbƒN‚Ì’†‚Å‚Í %VAR% ‚ªƒuƒƒbƒN‚Ì‰ğÍ‚É“WŠJ‚³‚ê‚é‚Ì‚ÅA’l‚ğg‚¤‰ÓŠ‚Í call ‚âƒTƒuƒ‹[ƒ`ƒ“‚É‚µ‚Ä‚ ‚éB
 rem
-rem ç”»é¢ã«å‡ºã™æ–‡ï¼ˆechoï¼‰ã¯ã™ã¹ã¦ ASCII ã«ã—ã¦ã‚ã‚‹ã€‚ã“ã®ãƒ•ã‚¡ã‚¤ãƒ«ã¯ UTF-8 ã§ä¿å­˜ã•ã‚Œã¦ã„ã‚‹ãŒã€cmd ã¯æ—¥æœ¬èª Windows ã§ã¯
-rem MS932 ã¨ã—ã¦èª­ã‚€ã®ã§ã€æ—¥æœ¬èªã® echo ã¯åŒ–ã‘ã‚‹ï¼ˆchcp ã§åˆ‡ã‚Šæ›¿ãˆã‚‹ã¨ç”»é¢ãŒæ¶ˆãˆã‚‹ã€‚src\CallHierarchyExporter.java ã®å†’é ­ï¼‰ã€‚
-rem æ—¥æœ¬èªã®æ¡ˆå†…ã¯ã€ã“ã®ç›´å¾Œã«èµ·å‹•ã™ã‚‹ Java å´ï¼ˆã‚³ãƒ³ã‚½ãƒ¼ãƒ«ã®æ–‡å­—ã‚³ãƒ¼ãƒ‰ã§æ›¸ãï¼‰ã«ä»»ã›ã‚‹ã€‚
+rem ‚±‚Ìƒtƒ@ƒCƒ‹‚Ì•¶šƒR[ƒh‚Í MS932iShift_JISjA‰üs‚Í CRLFB‘¼‚Ìƒtƒ@ƒCƒ‹‚Í UTF-8 ‚¾‚ªAcmd ‚Íƒoƒbƒ`ƒtƒ@ƒCƒ‹‚ğ
+rem ‰æ–Ê‚ÌƒR[ƒhƒy[ƒWi“ú–{Œê Windows ‚Å‚Í MS932j‚Æ‚µ‚Ä“Ç‚Ş‚Ì‚ÅA“ú–{Œê‚Ì echo ‚ğ‰»‚¯‚³‚¹‚È‚¢‚½‚ß‚É‚±‚Ìƒtƒ@ƒCƒ‹‚¾‚¯
+rem MS932 ‚É‚µ‚Ä‚ ‚éichcp ‚ÅØ‚è‘Ö‚¦‚é‚Æ‰æ–Ê‚ªÁ‚¦‚é‚Ì‚Åg‚í‚È‚¢Bsrc\CallHierarchyExporter.java ‚Ì–`“ªjB
+rem •ÒW‚·‚é‚Æ‚«‚Í MS932 ‚Ì‚Ü‚Ü•Û‘¶‚·‚é‚±‚ÆB‘‚«o‚· launcher.properties ‚à MS932 ‚É‚È‚èAJava ‘¤inative.encodingj‚Æ‘µ‚¤B
 setlocal
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 set "SETTINGS=%ROOT%\launcher.properties"
 set "RESTART=%ROOT%\.cache\launcher.restart"
 
-rem --- åˆå›: JDK / JBang ã®ç½®ãå ´æ‰€ã‚’å°‹ã­ã‚‹ï¼ˆå¯¾è©±ã§ãã‚‹ã¨ãã ã‘ã€‚ãƒ‘ã‚¤ãƒ—ã‚„ CI ã§ã¯ JBang ã®æ—¢å®šã®ã¾ã¾ï¼‰ ---
+rem --- ‰‰ñ: JDK / JBang ‚Ì’u‚«êŠ‚ğq‚Ë‚éi‘Î˜b‚Å‚«‚é‚Æ‚«‚¾‚¯BƒpƒCƒv‚â CI ‚Å‚Í JBang ‚ÌŠù’è‚Ì‚Ü‚Üj ---
 if "%~1"=="--help" goto :main
 if "%~1"=="-h" goto :main
 if exist "%SETTINGS%" goto :main
 2>nul >nul timeout /t 0 || goto :main
 call :first_run_prompt
+echo java-call-hierarchy-exporter: ‰‰ñ‚Ìİ’è
+echo.
+echo ‚±‚Ìƒc[ƒ‹‚ªg‚¤ JDK ‚Æ JBangi‡‚í‚¹‚Ä”•S MBj‚Ì’u‚«êŠ‚ğ‘I‚ñ‚Å‚­‚¾‚³‚¢B
+echo   1^) ‚±‚ÌƒvƒƒWƒFƒNƒg‚Ì’†   %ROOT%\.jbang
+echo      ‘¼‚ÌŠÂ‹«‚ğ‰˜‚³‚¸AƒtƒHƒ‹ƒ_‚²‚ÆÁ‚¹‚ÎŒ³‚É–ß‚éBˆË‘¶ jar ‚à“¯‚¶êŠ‚É’u‚­
+echo   2^) ƒ†[ƒU[‚Ìƒz[ƒ€       %USERPROFILE%\.jbangiJBang ‚ÌŠù’èj
+echo      ‘¼‚Ì JBang ƒXƒNƒŠƒvƒg‚Æ‹¤—L‚·‚éBŠù‚É JBang ‚ğg‚Á‚Ä‚¢‚é‚È‚ç‚±‚¿‚ç
+echo Œã‚©‚ç•Ï‚¦‚é‚Æ‚«‚ÍAƒAƒvƒŠ‚ÌuŠÂ‹«İ’èv‚©AŸ‚Ìƒtƒ@ƒCƒ‹‚ğ•ÒW‚·‚éB
+echo   %SETTINGS%
+echo.
+set "CHOICE=1"
+set /p "CHOICE=”Ô† [1]: "
+if "%CHOICE%"=="2" (call :write_settings "" "") else (call :write_settings ".jbang" ".jbang/repository")
+echo %SETTINGS% ‚É•Û‘¶‚µ‚Ü‚µ‚½B
+echo.
+exit /b 0
 
-:main
-if exist "%RESTART%" del /q "%RESTART%"
-setlocal
-call :load_settings
+:write_settings
+rem %1=JBANG_DIR  %2=JBANG_REPOi‘Š‘Î‚Í‚±‚ÌƒtƒHƒ‹ƒ_‹N“_B‹ó—“‚Í JBang ‚ÌŠù’èjB
+rem ‘‚«o‚·“à—e‚Í Java ‘¤iLauncherSettings.savej‚ª‘‚­‚à‚Ì‚Æ“¯‚¶
+> "%SETTINGS%" (
+    echo # jche.sh / jche.cmd ‚ª‹N“®‚É“Ç‚Şİ’èiƒAƒvƒŠ‚ÌuŠÂ‹«İ’èv‚©‚ç‚à‘‚«Š·‚¦‚ç‚ê‚éjB
+    echo # ƒL[‚Í‚»‚Ì‚Ü‚ÜŠÂ‹«•Ï”‚É‚È‚éB‘Š‘ÎƒpƒX‚Í‚±‚Ìƒtƒ@ƒCƒ‹‚Ì‚ ‚éƒtƒHƒ‹ƒ_‚ª‹N“_B‹ó—“‚ÍŠù’è’lB
+    echo #   JBANG_DIR       JBang –{‘ÌEJDK ‚Ì’u‚«êŠiŠù’è ~/.jbangj
+    echo #   JBANG_REPO      ˆË‘¶ jar ‚Ì’u‚«êŠiŠù’è ~/.m2/repositoryj
+    echo #   JCHE_JAVA_OPTS  ‰ğÍ‚ğ“®‚©‚· JVM ‚ÌƒIƒvƒVƒ‡ƒ“i—á: -Xmx4gj
+    echo #   JCHE_JBANG_OPTS jbang run ‚É‘«‚·ƒIƒvƒVƒ‡ƒ“i—á: --offlinej
+    echo JBANG_DIR=%~1
+    echo JBANG_REPO=%~2
+    echo JCHE_JAVA_OPTS=
+    echo JCHE_JBANG_OPTS=
+)
+exit /b 0
+
+:load_settings
 set "JCHE_ROOT=%ROOT%"
 call "%ROOT%\jbangw\jbang.cmd" run %JCHE_JBANG_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
 endlocal
 if exist "%RESTART%" (
-    echo Restarting to apply the new settings...
+    echo İ’è‚ğ”½‰f‚·‚é‚½‚ßÄ‹N“®‚µ‚Ü‚·...
     goto :main
 )
 exit /b %ERRORLEVEL%
@@ -65,8 +96,8 @@ echo.
 exit /b 0
 
 :write_settings
-rem %1=JBANG_DIR  %2=JBANG_REPOï¼ˆç›¸å¯¾ã¯ã“ã®ãƒ•ã‚©ãƒ«ãƒ€èµ·ç‚¹ã€‚ç©ºæ¬„ã¯ JBang ã®æ—¢å®šï¼‰ã€‚
-rem æ›¸ãå‡ºã™å†…å®¹ã‚‚ ASCII ã ã‘ã€‚Java å´ãŒæ›¸ãæ›ãˆã‚‹ã¨ãã«æ—¥æœ¬èªã®ã‚³ãƒ¡ãƒ³ãƒˆã‚’ä»˜ã‘ç›´ã™
+rem %1=JBANG_DIR  %2=JBANG_REPOi‘Š‘Î‚Í‚±‚ÌƒtƒHƒ‹ƒ_‹N“_B‹ó—“‚Í JBang ‚ÌŠù’èjB
+rem ‘‚«o‚·“à—e‚à ASCII ‚¾‚¯BJava ‘¤‚ª‘‚«Š·‚¦‚é‚Æ‚«‚É“ú–{Œê‚ÌƒRƒƒ“ƒg‚ğ•t‚¯’¼‚·
 > "%SETTINGS%" (
     echo # Read by jche / jche.cmd at startup. The app's environment menu rewrites this file.
     echo # Keys become environment variables. Relative paths are relative to this folder. Empty = default.
@@ -82,20 +113,20 @@ rem æ›¸ãå‡ºã™å†…å®¹ã‚‚ ASCII ã ã‘ã€‚Java å´ãŒæ›¸ãæ›ãˆã‚‹ã¨ãã«æ—¥æ
 exit /b 0
 
 :load_settings
-rem launcher.properties ã® KEY=VALUE è¡Œã‚’ãã®ã¾ã¾ç’°å¢ƒå¤‰æ•°ã«ã™ã‚‹ï¼ˆ# ã§å§‹ã¾ã‚‹è¡Œã¯èª­ã¿é£›ã°ã™ã€‚å€¤ãŒç©ºãªã‚‰æœªè¨­å®šã«ã™ã‚‹ï¼‰
+rem launcher.properties ‚Ì KEY=VALUE s‚ğ‚»‚Ì‚Ü‚ÜŠÂ‹«•Ï”‚É‚·‚éi# ‚Ån‚Ü‚és‚Í“Ç‚İ”ò‚Î‚·B’l‚ª‹ó‚È‚ç–¢İ’è‚É‚·‚éj
 set "R_OPTS="
 if not exist "%SETTINGS%" exit /b 0
 for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%SETTINGS%") do call :set_one "%%A" "%%B"
-rem ç›¸å¯¾ãƒ‘ã‚¹ã¯ã“ã®ãƒ•ã‚©ãƒ«ãƒ€èµ·ç‚¹ã®çµ¶å¯¾ãƒ‘ã‚¹ã«ã™ã‚‹ï¼ˆjbang ã¯ä½œæ¥­ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã«ä¾ã‚‰ãšã“ã“ã‚’è¦‹ã‚‹ï¼‰
+rem ‘Š‘ÎƒpƒX‚Í‚±‚ÌƒtƒHƒ‹ƒ_‹N“_‚Ìâ‘ÎƒpƒX‚É‚·‚éijbang ‚Íì‹ÆƒfƒBƒŒƒNƒgƒŠ‚ÉˆË‚ç‚¸‚±‚±‚ğŒ©‚éj
 if defined JBANG_DIR call :absolutize JBANG_DIR
 if defined JBANG_CACHE_DIR call :absolutize JBANG_CACHE_DIR
 if defined JBANG_REPO call :absolutize JBANG_REPO
-rem JVM ã®ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã¯ jbang run ã® -R ã§ 1 ã¤ãšã¤æ¸¡ã™ï¼ˆ-Xmx4g -Xss2m â†’ -R-Xmx4g -R-Xss2mï¼‰
+rem JVM ‚ÌƒIƒvƒVƒ‡ƒ“‚Í jbang run ‚Ì -R ‚Å 1 ‚Â‚¸‚Â“n‚·i-Xmx4g -Xss2m ¨ -R-Xmx4g -R-Xss2mj
 if defined JCHE_JAVA_OPTS for %%O in (%JCHE_JAVA_OPTS%) do call set "R_OPTS=%%R_OPTS%% -R%%O"
 exit /b 0
 
 :set_one
-rem %1=ã‚­ãƒ¼  %2=å€¤ï¼ˆå‰å¾Œã®ç©ºç™½ã¯å–ã‚Šé™¤ãã€‚ã‚­ãƒ¼ã¯è‹±å¤§æ–‡å­—ã¨ _ ã§å§‹ã¾ã‚‹ã‚‚ã®ã ã‘ï¼‰
+rem %1=ƒL[  %2=’li‘OŒã‚Ì‹ó”’‚Íæ‚èœ‚­BƒL[‚Í‰p‘å•¶š‚Æ _ ‚Ån‚Ü‚é‚à‚Ì‚¾‚¯j
 set "K=%~1"
 set "V=%~2"
 for /f "tokens=* delims= " %%K in ("%K%") do set "K=%%K"
@@ -106,7 +137,7 @@ if "%V%"=="" (set "%K%=") else (set "%K%=%V%")
 exit /b 0
 
 :absolutize
-rem %1=ç’°å¢ƒå¤‰æ•°åã€‚ãƒ‰ãƒ©ã‚¤ãƒ–æ–‡å­—ï¼ˆC:ï¼‰ã‚„ \\ ã§å§‹ã¾ã‚‰ãªã‘ã‚Œã°ã€ã“ã®ãƒ•ã‚©ãƒ«ãƒ€èµ·ç‚¹ã®çµ¶å¯¾ãƒ‘ã‚¹ã«ã—ã€/ ã‚’ \ ã«ã™ã‚‹
+rem %1=ŠÂ‹«•Ï”–¼Bƒhƒ‰ƒCƒu•¶šiC:j‚â \\ ‚Ån‚Ü‚ç‚È‚¯‚ê‚ÎA‚±‚ÌƒtƒHƒ‹ƒ_‹N“_‚Ìâ‘ÎƒpƒX‚É‚µA/ ‚ğ \ ‚É‚·‚é
 call set "V=%%%~1%%"
 set "V=%V:/=\%"
 if "%V:~1,1%"==":" goto :absolutize_done

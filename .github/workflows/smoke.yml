@@ -38,9 +38,9 @@ jobs:
       - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh
 
-      # 起動コマンド（jche）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
+      # 起動コマンド（jche.sh）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う
-      - name: CLI test (jche launcher and interactive mode)
+      - name: CLI test (jche.sh launcher and interactive mode)
         run: bash test/cli/run.sh
 
   # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有

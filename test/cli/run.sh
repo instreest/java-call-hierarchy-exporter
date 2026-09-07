@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 起動コマンド（jche）と対話モード（src/Jche.java）の検査。
+# 起動コマンド（jche.sh）と対話モード（src/Jche.java）の検査。
 #
 #   bash test/cli/run.sh
 #   JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh   # JDK 25 を取得できない環境で手元の JDK を使う
@@ -17,7 +17,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
-JCHE="$ROOT/jche"
+JCHE="$ROOT/jche.sh"
 SETTINGS="$ROOT/launcher.properties"
 BACKUP="$ROOT/launcher.properties.cli-test-backup"
 CONFIG="$ROOT/configs/cli-test.properties"
@@ -53,7 +53,7 @@ expect_not_log() {   # $1=ログ  $2=文字列  $3=ラベル
 echo "== --help =="
 write_settings ""
 "$JCHE" --help > "$LOGDIR/run-help.log" 2>&1
-expect_log "$LOGDIR/run-help.log" "jche --help" "--help で使い方が出る"
+expect_log "$LOGDIR/run-help.log" "jche.sh --help" "--help で使い方が出る"
 
 echo "== 対話なしの解析（引数に設定ファイル）=="
 rm -rf "$ROOT/test/regression/entry/output" "$ROOT/test/regression/entry/.cache"
