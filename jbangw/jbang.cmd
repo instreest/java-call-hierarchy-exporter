@@ -35,11 +35,11 @@ if "!binaryPath!"=="" (
 )
 if "!binaryPath!"=="" if "!jarPath!"=="" (
   if not exist "%JBDIR%\bin\jbang.jar" (
-    powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command "%~dp0jbang.ps1 version" > nul
-    if !ERRORLEVEL! NEQ 0 ( exit /b %ERRORLEVEL% )
+    powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -File "%~dp0jbang.ps1" version > nul
+    if !ERRORLEVEL! NEQ 0 ( exit /b !ERRORLEVEL! )
   )
   call "%JBDIR%\bin\jbang.cmd" %*
-  exit /b %ERRORLEVEL%
+  exit /b !ERRORLEVEL!
 )
 
 if not "!binaryPath!"=="" goto :run_with_cli
@@ -67,19 +67,27 @@ if "!JAVA_EXEC!"=="" (
   if !errorlevel! equ 0 (
     set JAVA_HOME=
     set JAVA_EXEC=java.exe
-  ) else if exist "%JBDIR%\currentjdk\bin\javac" (
+  ) else if exist "%JBDIR%\currentjdk\bin\javac.exe" (
     set JAVA_HOME=%JBDIR%\currentjdk
-    set JAVA_EXEC=%JBDIR%\currentjdk\bin\java
+    set JAVA_EXEC=%JBDIR%\currentjdk\bin\java.exe
   ) else (
-    set JAVA_HOME=%TDIR%\jdks\%javaVersion%
-    set JAVA_EXEC=!JAVA_HOME!\bin\java.exe
     rem Check if we installed a JDK before
     if not exist "%TDIR%\jdks\%javaVersion%" (
-      rem If not, download and install it
-      powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -Command "%~dp0jbang.ps1 jdk install %JBANG_DEFAULT_JAVA_VERSION%"
-      if !ERRORLEVEL! NEQ 0 ( exit /b %ERRORLEVEL% )
-      rem Set the current JDK
-      "!JAVA_EXEC!" -jar "%jarPath%" jdk default "%javaVersion%"
+      rem If not, let jbang.ps1 do it. Whatever command we hand it, it installs a JDK
+      rem into %TDIR%\jdks\%javaVersion% and makes it the default before running that
+      rem command, which is all we need here, so "version" is simply the cheapest one.
+      rem Do not set JAVA_HOME before this call: the directory does not exist yet and
+      rem jbang.ps1 would warn that JAVA_HOME is not a valid JDK.
+      powershell -NoProfile -ExecutionPolicy Bypass -NonInteractive -File "%~dp0jbang.ps1" version > nul
+      if !ERRORLEVEL! NEQ 0 ( exit /b !ERRORLEVEL! )
+    )
+    set JAVA_HOME=%TDIR%\jdks\%javaVersion%
+    set JAVA_EXEC=!JAVA_HOME!\bin\java.exe
+    rem Say so here rather than failing further down with a confusing
+    rem "'...\java.exe' is not recognized as an internal or external command"
+    if not exist "!JAVA_EXEC!" (
+      echo Failed to install a JDK into "%TDIR%\jdks\%javaVersion%" 1>&2
+      exit /b 1
     )
   )
 )

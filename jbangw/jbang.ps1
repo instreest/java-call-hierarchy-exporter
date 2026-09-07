@@ -43,11 +43,14 @@ if ([System.Enum]::GetNames([System.Net.SecurityProtocolType]) -notcontains 'Tls
 if (-not (Test-Path env:JBANG_DEFAULT_JAVA_VERSION)) { $javaVersion='17' } else { $javaVersion=$env:JBANG_DEFAULT_JAVA_VERSION }
 
 $os='windows'
-$arch='x64'
+# detect architecture, used both for the JDK download and for the native binary lookup
+$arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'aarch64' } else { 'x64' }
 $libc_type='c_std_lib'
 
+if ($javaVersion -match '^[0-9]+$') { $javaVersionNum=[int]$javaVersion } else { $javaVersionNum=0 }
+
 if (-not (Test-Path env:JBANG_JDK_VENDOR)) {
-    if (($javaVersion -eq 8) -or ($javaVersion -eq 11) -or ($javaVersion -ge 17)) {
+    if (($javaVersionNum -eq 8) -or ($javaVersionNum -eq 11) -or ($javaVersionNum -ge 17)) {
         $distro='temurin'
     } else {
         $distro='aoj'
@@ -117,16 +120,25 @@ function Invoke-JBang {
     $global:progresspreference=$old_progresspreference
     
     if ($err -eq 255) {
+      # jbang printed the command to run instead of running it; run it and take its code
       Invoke-Expression "& $output"
+      $err=$LASTEXITCODE
     } elseif ($output -ne "") {
       Write-Output $output
     }
     
     $env:JAVA_HOME, $env:JBANG_RUNTIME_SHELL, $env:JBANG_STDIN_NOTTY, $env:JBANG_LAUNCH_CMD=$oldJavaHome, $oldShell, $oldNotty, $oldCmd
+    
+    # Return what jbang returned, the way the bash launcher does. Without this the
+    # script ends normally and the caller always sees 0, so the exit code of whatever
+    # was run through jbang is lost.
+    # Note that callers have to use "powershell -File <script>" to see this code:
+    # "powershell -Command" reports any non-zero exit as 1.
+    exit $err
 }
 
-# detect architecture for platform-specific binary lookup
-$jbang_arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { "aarch64" } else { "x64" }
+# architecture for platform-specific binary lookup
+$jbang_arch = $arch
 
 # resolve native binary or jar path from script location
 $binaryPath=""
@@ -220,9 +232,9 @@ if (-not $binaryPath) {
     if ($ok) {
       $env:JAVA_HOME=""
       $JAVA_EXEC="java.exe"
-    } elseif (Test-Path "$JBDIR\currentjdk\bin\javac") {
+    } elseif (Test-Path "$JBDIR\currentjdk\bin\javac.exe") {
       $env:JAVA_HOME="$JBDIR\currentjdk"
-      $JAVA_EXEC="$JBDIR\currentjdk\bin\java"
+      $JAVA_EXEC="$JBDIR\currentjdk\bin\java.exe"
     } else {
       $env:JAVA_HOME="$TDIR\jdks\$javaVersion"
       $JAVA_EXEC="$env:JAVA_HOME\bin\java.exe"
@@ -237,15 +249,15 @@ if (-not $binaryPath) {
         [Console]::Error.WriteLine("Installing JDK $javaVersion...")
         Remove-Item -LiteralPath "$TDIR\jdks\$javaVersion.tmp" -Force -Recurse -ErrorAction Ignore >$null 2>&1
         try { Expand-Archive -Path "$TDIR\bootstrap-jdk.zip" -DestinationPath "$TDIR\jdks\$javaVersion.tmp"; $ok=$? } catch { $ok=$false }
-        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); break }
+        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); exit 1 }
         $dirs=Get-ChildItem -Directory -Path "$TDIR\jdks\$javaVersion.tmp"
         foreach ($d in $dirs) {
           $p=$d.FullName
           Move-Item -Path "$p\*" -Destination "$TDIR\jdks\$javaVersion.tmp" -Force
         }
         # Check if the JDK was installed properly
-        $ok=$false; try { & $TDIR\jdks\$javaVersion.tmp\bin\javac -version >$null 2>&1; $ok=$true } catch {}
-        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); break }
+        $ok=$false; try { & "$TDIR\jdks\$javaVersion.tmp\bin\javac.exe" -version >$null 2>&1; $ok=($LASTEXITCODE -eq 0) } catch {}
+        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); exit 1 }
         # Activate the downloaded JDK giving it its proper name
         Rename-Item -Path "$TDIR\jdks\$javaVersion.tmp" -NewName "$javaVersion" >$null 2>&1
         # Set the current JDK
