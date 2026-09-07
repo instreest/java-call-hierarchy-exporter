@@ -52,7 +52,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 - 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>...`。
   設定ファイルは複数渡せ、渡した順に独立して処理する（1つが失敗しても残りは処理し、最後に設定ごとの
   OK / FAIL と出力フォルダの一覧を出す。1つでも失敗すれば終了コード 1）。
-  引数省略時は作業ディレクトリの `config.properties` を使い、その旨を標準エラーに出す
+  引数省略時は作業ディレクトリの `config/config.properties` を使い、その旨を標準エラーに出す
 - 出力は設定ファイルごとに `output.folder` の下の `<解析開始日時 yyyyMMdd-HHmmss>_<project.root のフォルダ名>/`
   に書く（同じ秒に同名ができれば `_2`, `_3` …）。中身は `call-hierarchy.csv`、`methods.csv`、渡した設定ファイルの
   複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
@@ -66,7 +66,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   `org.eclipse.jdt:org.eclipse.jdt.core:3.46.0` の推移的依存をコピーすると 19 個の jar になる
 - ツールを動かすJDKは、解析対象のソースが使うJDK APIの版以上にする（2.3）
 
-## 3. 入力: 設定ファイル（`config.properties`、UTF-8）
+## 3. 入力: 設定ファイル（`config.properties`、UTF-8。同梱の既定は `config/config.properties`）
 
 相対パスの起点は項目ごとに違う。**設定ファイルの置き場所**を起点にするものと、
 **解析対象プロジェクト（`project.root`）**を起点にするものを区別すること。
@@ -95,7 +95,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
 | `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
-| `output.folder` | `./output` | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
+| `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
 旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
 | `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照）。設定例には載せない | — |

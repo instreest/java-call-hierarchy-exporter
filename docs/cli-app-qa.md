@@ -58,8 +58,8 @@ bash と cmd で同じ内容を 2 回書くことになるため、シェル側�
 
 ### Q3. 対話モードの入口を `CallHierarchyExporter.java` に足さず、別の `src/Jche.java` にした理由
 
-`CallHierarchyExporter.java` の「引数なしで動かすと作業ディレクトリの `config.properties` を読む」挙動を変えないため
-（README と [docs/multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) の Q15 で決めた既定）。
+`CallHierarchyExporter.java` の「引数なしで動かすと作業ディレクトリの `config/config.properties` を読む」挙動を変えないため
+（[docs/config-folder-qa.md](config-folder-qa.md) で決めた既定）。
 引数なしを対話モードに変えると、それに頼っているバッチが黙って止まって入力待ちになる。
 
 代わりに `main` の中身を `runAll(configPaths, toolRoot)` に切り出し、`System.exit` を `main` にだけ残した。
@@ -184,26 +184,30 @@ JDK と JBang 本体は `JBANG_DIR` の下に入るが、依存 jar（JDT 一式
 ### Q12. 「設定ファイルを新しく作る」を入れた理由と、尋ねる項目の範囲
 
 Issue の To be には無いが、「どのコンフィグで実行するかを選択可能」にするには選べる設定ファイルが複数ある
-状態が要り、その作り方が「`config.properties` をコピーしてエディタで書き換える」のままでは、アプリの中で操作が
+状態が要り、その作り方が「`config/config.properties` をコピーしてエディタで書き換える」のままでは、アプリの中で操作が
 完結しない。README の Quick start が「書き換える」と言っている 4 項目（`project.root` / `source.folders` /
 `library.folders` / `source.encoding`）と、全体モードか起点指定かを決める `entry.packages` だけを尋ね、
-残りはひな形（リポジトリ直下の `config.properties`）の既定値のまま写す。
+残りはひな形（`config/config.properties`）の既定値のまま写す。
 
 - ひな形の行を置き換える方式にしたのは、全項目の説明コメントが新しいファイルにも残るから。
   `Properties.store()` で書くとコメントが全部消え、あとで `exclude.packages` を直したいときに
-  `config.properties` を見に行くことになる
+  `config/config.properties` を見に行くことになる
 - `project.root` を入力すると、`src/main/java` / `src` / `<モジュール>/src/main/java` の有無、`pom.xml` /
   `build.gradle` の有無、`pom.xml` の `project.build.sourceEncoding` を見て既定値を埋める。
   当てにならなければ入力で上書きできる
-- 書き先は `configs/<名前>.properties`。相対パスの起点はその設定ファイルのフォルダなので、`project.root` は
-  configs/ からの相対（上位へ 2 段以内で書けるとき）か絶対パスで書く。区切りは常に `/`。`.properties` では
+- 書き先は `config/<名前>.properties`（既定の設定ファイルと同じフォルダ。[Issue #62](https://github.com/instreest/java-call-hierarchy-exporter/issues/62)
+  で「設定ファイルとその出力は `config/` にまとめる」と決まっている）。相対パスの起点はその設定ファイルのフォルダなので、
+  `project.root` は config/ からの相対（上位へ 2 段以内で書けるとき）か絶対パスで書く。区切りは常に `/`。`.properties` では
   `\` がエスケープなので、Windows のパスをそのまま書くと壊れる（`Config` は `Properties.load` で読む）
-- `configs/` は Git で追跡しない。解析対象ごとのローカルな設定で、絶対パスを含みうる。共有したいものは
-  別の場所に置いて `p` でパスを指定するか、`.gitignore` の行を消す
+- 作ったファイルは Git の追跡対象になりうる（`config/config.properties` と同じ扱い。`.gitignore` は `config/` 直下の
+  フォルダ＝実行ごとの出力だけを除外している）。絶対パスを含む個人用の設定を共有したくなければ、コミットしなければよい
 
 ### Q13. 設定ファイルの一覧はどこを探すか
 
-リポジトリ直下の `*.properties`（`launcher.properties` を除く）と `configs/` の下（サブフォルダ含む）。
+`config/` の下（サブフォルダ含む）。既定の設定ファイル `config/config.properties` がここにあり、Issue #62 で
+実行ごとの出力もここにできる（`config/<解析開始日時>_<プロジェクト名>/`）と決まっている。出力フォルダの中には
+設定ファイルの複製が入るので、フォルダ名がその形のものの下は一覧から除く（複製を選んで実行すると、
+その出力フォルダの中にさらに出力フォルダができて紛らわしい）。
 `test/` の下にも設定ファイルはあるが、回帰テスト用なので一覧に出さない。一覧に無い場所は `p` でパスを入力する。
 
 一覧には `project.root` の値を添えて出す。ファイル名だけでは「どのプロジェクト向けか」が分からないため。
@@ -275,7 +279,7 @@ Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコ�
 再起動後の JVM は入力が尽きた状態で始まり、すぐ終わる。「再起動後の反映」は別の起動で確かめるようにした。
 端末では起きない（端末は 1 行ずつしか渡さない）。
 
-`launcher.properties` は利用者のものなので、テストは退避して最後に戻す（`trap`）。`configs/cli-test.properties` と
+`launcher.properties` は利用者のものなので、テストは退避して最後に戻す（`trap`）。`config/cli-test.properties` と
 その出力、`.cache/recent-configs.txt` も消す。ログの照合は ASCII だけ（標準出力の文字コードは端末に依るため。
 回帰テストと同じ方針）。ただし起動コマンド自身（bash）が出す「設定を反映するため再起動します」は
 スクリプトの文字コード（UTF-8）で出るので日本語で照合できる。

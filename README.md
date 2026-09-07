@@ -6,13 +6,13 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 > using the Eclipse JDT compiler without launching Eclipse. Run `./jche.sh` (`jche.cmd` on Windows)
 > for an interactive menu that picks the config file, creates new ones and controls where the JDK
 > and JBang are installed, or run
-> `jbangw/jbang src/CallHierarchyExporter.java config.properties` directly (the first run downloads
-> a JDK and the JDT jars), or compile against JDT jars copied from an Eclipse installation for
-> offline use. Several config files can be passed at once; each run writes to its own timestamped
+> `jbangw/jbang src/CallHierarchyExporter.java config/config.properties` directly (the first run
+> downloads a JDK and the JDT jars), or compile against JDT jars copied from an Eclipse installation
+> for offline use. Several config files can be passed at once; each run writes to its own timestamped
 > output folder. Apache-2.0. Documentation is in Japanese.
 
 - 使い方・出力形式 … このファイル
-- 設定項目 … [config.properties](config.properties)（コメントに全項目の説明）
+- 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
 
 ---
 
@@ -20,7 +20,8 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ### 1. 設定ファイルを編集する
 
-リポジトリ直下の `config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます
+既定の設定ファイル [`config/config.properties`](config/config.properties) の
+**`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます
 （次の起動コマンドの「設定ファイルを新しく作る」で、解析対象のフォルダを入力してこれらを埋めた設定ファイルを作ることもできます）。  
 Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
 ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
@@ -57,7 +58,7 @@ jche.cmd
  ツールのフォルダ : C:\work\java-call-hierarchy-exporter
  JDK / JBang      : C:\work\java-call-hierarchy-exporter\.jbang（このプロジェクトの中）
  実行中の JDK     : 25.0.1 (Eclipse Adoptium)  C:\work\java-call-hierarchy-exporter\.jbang\cache\jdks\25
- 設定ファイル     : 2 件（プロジェクト直下と configs/）
+ 設定ファイル     : 2 件（config/）
 
  1) 解析を実行する
  2) 設定ファイルを新しく作る
@@ -69,15 +70,15 @@ jche>
 
 | メニュー | 内容 |
 |---|---|
-| 1) 解析を実行する | リポジトリ直下と `configs/` にある設定ファイルの一覧から選んで解析する（番号をカンマ区切りで複数可。`v 番号` で内容を確認、`p` で一覧に無いパスを指定）。前回使った設定が既定で選ばれるので、2 回目からは Enter を 2 回で実行できる |
-| 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`configs/<名前>.properties` を作る。ひな形は `config.properties` なので全項目の説明コメントも写る。続けて解析もできる |
+| 1) 解析を実行する | `config/` にある設定ファイルの一覧から選んで解析する（番号をカンマ区切りで複数可。`v 番号` で内容を確認、`p` で一覧に無いパスを指定）。前回使った設定が既定で選ばれるので、2 回目からは Enter を 2 回で実行できる |
+| 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`config/<名前>.properties` を作る。ひな形は `config/config.properties` なので全項目の説明コメントも写る。続けて解析もできる |
 | 3) 環境設定 | JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限（`-Xmx`）、`jbang run` の追加オプション（`--offline` 等）。`launcher.properties` に保存し、その場で再起動して反映できる |
 | 4) 実行環境の状態 | 実際に使っている JDK・JDT の jar・置き場所とその大きさ・解析キャッシュの一覧 |
 
 設定ファイルを引数に渡すと対話なしで解析します（下記の jbang 直接実行と同じ。バッチやタスクスケジューラ向け）。
 
 ```bat
-jche.cmd configs\app-a.properties configs\app-b.properties
+jche.cmd config\app-a.properties config\app-b.properties
 ```
 
 `launcher.properties` の項目は次のとおりです（対話モードの「環境設定」で書き換えるほか、手で編集してもかまいません。
@@ -99,12 +100,12 @@ JBang のラッパースクリプトを `jbangw/` に同梱しているので、
 
 ```bat
 rem Windows（コマンドプロンプト）
-.\jbangw\jbang.cmd src\CallHierarchyExporter.java config.properties
+.\jbangw\jbang.cmd src\CallHierarchyExporter.java config\config.properties
 ```
 
 ```bash
 # Linux / macOS / Git Bash
-./jbangw/jbang src/CallHierarchyExporter.java config.properties
+./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
 このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存。
@@ -114,7 +115,7 @@ rem Windows（コマンドプロンプト）
 （[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
 
 ```bash
-./jbangw/jbang src/CallHierarchyExporter.java projects/app-a.properties projects/app-b.properties
+./jbangw/jbang src/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
 ```
 
 #### Pleiades/Eclipse環境（閉域ネットワーク等）
@@ -140,7 +141,7 @@ rem コンパイル（src\jche 配下のクラスも一緒にコンパイルさ�
 "%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
 
 #### Eclipse（Pleiades）でソースを開く
@@ -150,7 +151,7 @@ rem 実行
 1. 「ファイル > インポート > Maven > 既存の Maven プロジェクト」で、このリポジトリのフォルダを選ぶ
 2. 取り込み後、JDT Core 一式が Maven Central から `%userprofile%\.m2\repository` に取得され、ビルドパスに載る
 3. `CallHierarchyExporter` を「Java アプリケーション」として実行するときは、実行構成の引数に
-   `config.properties` を指定する（複数指定可）
+   `config/config.properties` を指定する（複数指定可）
 
 `pom.xml` は Eclipse で開くためだけのもので、jbang での実行には使われません。依存の版は
 `src/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。
@@ -167,13 +168,15 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 
 ### 出力されるファイル
 
-出力は実行のたびに、設定ファイルの `output.folder`（既定 `./output`、設定ファイルからの相対パス）の下に
+出力は実行のたびに、設定ファイルの `output.folder`（既定 `.` ＝設定ファイルと同じフォルダ。
+相対パスの起点は設定ファイルのフォルダ）の下に
 **`<解析開始日時>_<プロジェクト名>`** のフォルダを作ってまとめます。プロジェクト名は `project.root` の
 フォルダ名です。いつ・どのプロジェクトを解析した結果かがフォルダ名だけで分かり、前回の結果は上書きされません。
 
 ```
-output/
-└── 20260907-163000_myapp/
+config/
+├── config.properties             設定ファイル（既定。解析対象ごとに増やせる）
+└── 20260907-163000_myapp/        実行ごとの出力フォルダ
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
@@ -187,7 +190,7 @@ output/
 | `methods.csv` | メソッド全体リスト（ソース上の全メソッドとその呼び出し状況） |
 
 CSV はUTF-8（BOM付き）なのでExcelで開けます。ファイル名は固定です。
-例えばリポジトリ直下の `config.properties` を指定した場合は `output/20260907-163000_myapp/` のように出ます。
+例えば既定の `config/config.properties` を指定した場合は `config/20260907-163000_myapp/` のように出ます。
 同じ秒に同じプロジェクトを解析すると `_2`, `_3` … が付きます。
 
 解析結果のキャッシュは出力フォルダには入りません（[キャッシュの置き場所](#キャッシュの置き場所)）。
@@ -281,7 +284,7 @@ Gradle のビルドファイルはプログラムなので、読めるのは宣�
 （[出力されるファイル](#出力されるファイル)）。
 
 ```bash
-./jbangw/jbang src/CallHierarchyExporter.java projects/app-a.properties projects/app-b.properties projects/batch.properties
+./jbangw/jbang src/CallHierarchyExporter.java config/app-a.properties config/app-b.properties config/batch.properties
 ```
 
 - 1 つの設定が失敗（設定ファイルが無い、`project.root` が無い等）しても、残りの設定は処理します。

@@ -10,8 +10,8 @@
 #   パス指定での解析 / 環境設定の変更（ヒープ上限）→ launcher.properties の書き換え → 再起動 → 反映
 # の一連。解析結果の中身は見ない（それは test/regression/ の役目）。
 #
-# launcher.properties はこのテストが書き換えるので、あれば退避して最後に戻す。configs/cli-test.properties と
-# その出力、.cache/recent-configs.txt もテストが作るものなので消す。
+# launcher.properties はこのテストが書き換えるので、あれば退避して最後に戻す。config/cli-test.properties と
+# その出力（config/<日時>_demo/）、.cache/recent-configs.txt もテストが作るものなので消す。
 # ログの検査は ASCII の部分だけで行う（標準出力の文字コードは端末に依るため。test/regression/run.sh と同じ方針）。
 # ただし起動コマンド自身（bash）が出す行はスクリプトの文字コード（UTF-8）で出るので、そこは日本語で照合できる。
 set -uo pipefail
@@ -20,14 +20,13 @@ ROOT=$(cd ../.. && pwd)
 JCHE="$ROOT/jche.sh"
 SETTINGS="$ROOT/launcher.properties"
 BACKUP="$ROOT/launcher.properties.cli-test-backup"
-CONFIG="$ROOT/configs/cli-test.properties"
+CONFIG="$ROOT/config/cli-test.properties"
 LOGDIR="$ROOT/test/cli"
 fail=0
 
 cleanup() {
     rm -f "$CONFIG" "$ROOT/.cache/recent-configs.txt" "$ROOT/.cache/launcher.restart"
-    rm -rf "$ROOT/configs/output"
-    rmdir "$ROOT/configs" 2>/dev/null
+    rm -rf "$ROOT"/config/*_demo/
     if [ -f "$BACKUP" ]; then
         mv -f "$BACKUP" "$SETTINGS"
     else
@@ -90,11 +89,11 @@ write_settings ""
 rm -f "$CONFIG"
 # project.root → 名前 → source.folders → library.folders → source.encoding → entry.packages → 作成の確認 → 続けて実行しない
 printf '2\ntest/demo\ncli-test\n\n\n\n\ny\nn\nq\n' | "$JCHE" > "$LOGDIR/run-wizard.log" 2>&1
-if [ -f "$CONFIG" ]; then ok "configs/cli-test.properties ができた"; else ng "configs/cli-test.properties が無い"; tail -10 "$LOGDIR/run-wizard.log"; fi
-if grep -q '^project.root=../test/demo$' "$CONFIG" 2>/dev/null; then ok "project.root が configs/ からの相対で書かれた"; else ng "project.root の値: $(grep '^project.root=' "$CONFIG" 2>/dev/null)"; fi
+if [ -f "$CONFIG" ]; then ok "config/cli-test.properties ができた"; else ng "config/cli-test.properties が無い"; tail -10 "$LOGDIR/run-wizard.log"; fi
+if grep -q '^project.root=../test/demo$' "$CONFIG" 2>/dev/null; then ok "project.root が config/ からの相対で書かれた"; else ng "project.root の値: $(grep '^project.root=' "$CONFIG" 2>/dev/null)"; fi
 if grep -q '^source.folders=src$' "$CONFIG" 2>/dev/null; then ok "source.folders が候補（src）で埋まった"; else ng "source.folders の値: $(grep '^source.folders=' "$CONFIG" 2>/dev/null)"; fi
 if grep -q '^library.folders=$' "$CONFIG" 2>/dev/null; then ok "library.folders が空欄"; else ng "library.folders の値: $(grep '^library.folders=' "$CONFIG" 2>/dev/null)"; fi
-# ひな形（config.properties）のコメントが残っていること。max.depth のような尋ねない項目も既定値のまま写る
+# ひな形（config/config.properties）のコメントが残っていること。max.depth のような尋ねない項目も既定値のまま写る
 if [ "$(grep -c '^#' "$CONFIG" 2>/dev/null)" -gt 40 ] && grep -q '^max.depth=50$' "$CONFIG" 2>/dev/null; then
     ok "ひな形のコメントと他の項目が写っている"
 else
@@ -104,12 +103,15 @@ fi
 echo "== 一覧から選んで解析（p でパスを指定）=="
 printf '1\np\n%s\ny\n\nq\n' "$CONFIG" | "$JCHE" > "$LOGDIR/run-analyze.log" 2>&1
 expect_log "$LOGDIR/run-analyze.log" "call-hierarchy.csv" "解析が完了した"
-if ls "$ROOT"/configs/output/*/call-hierarchy.csv > /dev/null 2>&1; then ok "出力が configs/output/ にできた"; else ng "出力が無い"; fi
-if grep -q 'configs/cli-test.properties' "$ROOT/.cache/recent-configs.txt" 2>/dev/null; then ok "前回の設定として記録された"; else ng "recent-configs.txt に記録が無い"; fi
-# 記録された設定は一覧で既定になる（空 Enter で選ばれる）。v 1 で内容を出してから、空 Enter → 実行しない
-printf '1\nv 1\n\nn\nq\n' | "$JCHE" > "$LOGDIR/run-recent.log" 2>&1
+if ls "$ROOT"/config/*_demo/call-hierarchy.csv > /dev/null 2>&1; then ok "出力が config/<日時>_demo/ にできた（output.folder の既定）"; else ng "出力が無い"; fi
+if grep -q 'config/cli-test.properties' "$ROOT/.cache/recent-configs.txt" 2>/dev/null; then ok "前回の設定として記録された"; else ng "recent-configs.txt に記録が無い"; fi
+# 記録された設定は一覧で既定になる（空 Enter で選ばれる）。一覧は config/config.properties、config/cli-test.properties の順
+# なので v 2 で内容を出してから、空 Enter → 実行しない。出力フォルダの中の設定ファイルの複製は一覧に出ない
+printf '1\nv 2\n\nn\nq\n' | "$JCHE" > "$LOGDIR/run-recent.log" 2>&1
 expect_log "$LOGDIR/run-recent.log" "project.root=../test/demo" "v 番号 で設定の内容が出る"
-expect_log "$LOGDIR/run-recent.log" "1. configs/cli-test.properties" "前回の設定が既定で選ばれる"
+expect_log "$LOGDIR/run-recent.log" "2) config/cli-test.properties" "作った設定が一覧の 2 番目にある"
+expect_not_log "$LOGDIR/run-recent.log" "3) config/" "出力フォルダの中の複製は一覧に出ない"
+expect_log "$LOGDIR/run-recent.log" "1. config/cli-test.properties" "前回の設定が既定で選ばれる"
 
 echo "== 環境設定（ヒープ上限）→ 再起動 → 反映 =="
 # 3) 環境設定 → 3) ヒープ上限 → 512m → q（戻る）→ y（再起動）。再起動後は標準入力が尽きているので、そのまま終わる

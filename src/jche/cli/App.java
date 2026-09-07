@@ -101,7 +101,7 @@ public final class App {
         t.println(" JDK / JBang      : " + describeJbangDir());
         t.println(" 実行中の JDK     : " + EnvironmentInfo.javaVersion() + "  " + EnvironmentInfo.javaHome());
         List<ConfigCatalog.Entry> configs = ConfigCatalog.scan(root);
-        t.println(" 設定ファイル     : " + configs.size() + " 件（プロジェクト直下と " + ConfigCatalog.CONFIGS_DIR_NAME + "/）");
+        t.println(" 設定ファイル     : " + configs.size() + " 件（" + ConfigCatalog.CONFIGS_DIR_NAME + "/）");
         t.println();
     }
 
@@ -145,7 +145,7 @@ public final class App {
             t.println("=== 解析が終わりました（" + failed + "/" + selected.size() + " 件失敗、" + sec + " 秒）===");
             t.println("失敗の内容は上のログ（[ERROR] の行）にあります。");
         }
-        t.println("出力フォルダは各設定の output.folder の下（既定は設定ファイルと同じ場所の output/）です。");
+        t.println("出力フォルダは各設定の output.folder の下（既定は設定ファイルと同じフォルダ）です。");
         t.pause();
     }
 
@@ -160,7 +160,7 @@ public final class App {
         while (true) {
             t.println();
             if (entries.isEmpty()) {
-                t.println("設定ファイルがありません（プロジェクト直下と " + ConfigCatalog.CONFIGS_DIR_NAME + "/ を探しました）。");
+                t.println("設定ファイルがありません（" + ConfigCatalog.CONFIGS_DIR_NAME + "/ を探しました）。");
                 t.println("メニューの 2) で作るか、p でパスを直接入力してください。");
             } else {
                 t.println("設定ファイルを選んでください（番号。カンマ区切りで複数可。v 番号 で内容を表示、p でパスを入力、q で戻る）");

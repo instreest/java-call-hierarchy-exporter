@@ -5,23 +5,22 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
  * 対話モードで選べる設定ファイル（config.properties 形式）の一覧。
  *
- * 探す場所は 2 つ。
- * <ul>
- *   <li>ツールのプロジェクトフォルダの直下（{@code *.properties}。{@code launcher.properties} は除く）</li>
- *   <li>{@code configs/} の下（サブフォルダも含む）。対話モードの「設定ファイルを新しく作る」はここに書く</li>
- * </ul>
+ * 探す場所は {@code config/} の下（サブフォルダも含む）。既定の設定ファイル {@code config/config.properties} が
+ * ここにあり、対話モードの「設定ファイルを新しく作る」もここに書く。実行ごとの出力フォルダ
+ * （{@code config/<解析開始日時>_<プロジェクト名>/}。output.folder の既定）もこの下にできるが、
+ * その中の設定ファイルの複製は一覧に出さない（出力フォルダ名の形で見分ける）。
  * それ以外の場所にある設定ファイルは、パスを直接入力すれば使える。
  *
  * 「前回使った設定」は {@code .cache/recent-configs.txt} に残し、次回の既定にする
@@ -29,7 +28,9 @@ import java.util.stream.Stream;
  */
 public final class ConfigCatalog {
 
-    public static final String CONFIGS_DIR_NAME = "configs";
+    public static final String CONFIGS_DIR_NAME = "config";
+    /** 既定の設定ファイル（config/ の下）。一覧の先頭に出し、作成ウィザードのひな形にする */
+    public static final String DEFAULT_CONFIG_NAME = "config.properties";
     private static final String RECENT_FILE = ".cache/recent-configs.txt";
 
     /** 一覧の 1 件。{@code display} はプロジェクトフォルダからの相対パス（表示用） */
@@ -41,22 +42,17 @@ public final class ConfigCatalog {
 
     public static List<Entry> scan(Path root) throws IOException {
         List<Path> found = new ArrayList<>();
-        try (DirectoryStream<Path> ds = Files.newDirectoryStream(root, "*.properties")) {
-            for (Path p : ds) {
-                if (Files.isRegularFile(p) && !p.getFileName().toString().equals(LauncherSettings.FILE_NAME)) {
-                    found.add(p);
-                }
-            }
-        }
         Path configs = root.resolve(CONFIGS_DIR_NAME);
         if (Files.isDirectory(configs)) {
             try (Stream<Path> s = Files.walk(configs)) {
                 s.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().endsWith(".properties"))
+                        .filter(p -> !isInsideOutputDir(configs, p))
                         .forEach(found::add);
             }
         }
-        // 直下 → configs/ の順、それぞれの中は名前順。OS のファイル列挙順に依存させない
-        found.sort(Comparator.comparing((Path p) -> p.getParent().equals(root) ? 0 : 1)
+        // 既定の設定ファイルを先頭に、あとは名前順（OS のファイル列挙順に依存させない）
+        Path defaultConfig = configs.resolve(DEFAULT_CONFIG_NAME);
+        found.sort(Comparator.comparing((Path p) -> p.equals(defaultConfig) ? 0 : 1)
                 .thenComparing(p -> root.relativize(p).toString()));
         List<Entry> out = new ArrayList<>();
         for (Path p : found) {
@@ -64,6 +60,18 @@ public final class ConfigCatalog {
         }
         return out;
     }
+
+    /** 出力フォルダ名の形（yyyyMMdd-HHmmss_…）のフォルダの下にあるか */
+    private static boolean isInsideOutputDir(Path configs, Path file) {
+        for (Path d = file.getParent(); d != null && !d.equals(configs); d = d.getParent()) {
+            if (OUTPUT_DIR_NAME.matcher(d.getFileName().toString()).matches()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final Pattern OUTPUT_DIR_NAME = Pattern.compile("\\d{8}-\\d{6}_.*");
 
     /** project.root の値（表示用。読めなければ空文字） */
     public static String projectRootOf(Path config) {

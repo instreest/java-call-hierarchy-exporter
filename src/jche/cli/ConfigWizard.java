@@ -18,18 +18,18 @@ import java.util.regex.Pattern;
  * 設定ファイルを対話で新しく作る。
  *
  * README の Quick start で「書き換える」とされている項目（project.root / source.folders / library.folders /
- * source.encoding）と entry.packages だけを尋ね、残りはリポジトリ直下の {@code config.properties}（既定の設定
+ * source.encoding）と entry.packages だけを尋ね、残りは {@code config/config.properties}（既定の設定
  * ファイル）をひな形にしてそのまま写す。ひな形の行を置き換える方式なので、全項目の説明コメントが
- * 新しいファイルにも残り、あとから他の項目を編集するときに config.properties を見に行かなくて済む。
+ * 新しいファイルにも残り、あとから他の項目を編集するときに config/config.properties を見に行かなくて済む。
  *
- * 書き先は {@code configs/<名前>.properties}。相対パスの起点はその設定ファイルのフォルダなので、
- * project.root は configs/ からの相対（近ければ）か絶対パスで書く（{@link #projectRootValue}）。
+ * 書き先は {@code config/<名前>.properties}（既定の設定ファイルと同じフォルダ）。相対パスの起点はその設定ファイルのフォルダなので、
+ * project.root は config/ からの相対（近ければ）か絶対パスで書く（{@link #projectRootValue}）。
  * パスの区切りは常に {@code /}。.properties では {@code \} がエスケープ文字なので、Windows のパスを
  * そのまま書くと壊れる。
  */
 public final class ConfigWizard {
 
-    private static final String TEMPLATE_NAME = "config.properties";
+    private static final String TEMPLATE_NAME = ConfigCatalog.CONFIGS_DIR_NAME + "/" + ConfigCatalog.DEFAULT_CONFIG_NAME;
 
     private final Terminal t;
     private final Path root;
@@ -83,7 +83,7 @@ public final class ConfigWizard {
         Path configsDir = root.resolve(ConfigCatalog.CONFIGS_DIR_NAME);
         Path target;
         while (true) {
-            String name = t.ask("設定ファイルの名前（configs/ の下に作る）", projectName + ".properties");
+            String name = t.ask("設定ファイルの名前（" + ConfigCatalog.CONFIGS_DIR_NAME + "/ の下に作る）", projectName + ".properties");
             if (name.equalsIgnoreCase("q")) {
                 return null;
             }
@@ -92,7 +92,11 @@ public final class ConfigWizard {
             }
             target = configsDir.resolve(name).normalize();
             if (!target.startsWith(configsDir)) {
-                t.println("  configs/ の中の名前にしてください。");
+                t.println("  " + ConfigCatalog.CONFIGS_DIR_NAME + "/ の中の名前にしてください。");
+                continue;
+            }
+            if (target.equals(template)) {
+                t.println("  ひな形の " + TEMPLATE_NAME + " 自体は上書きできません。別の名前にしてください。");
                 continue;
             }
             if (Files.exists(target)) {
@@ -213,7 +217,7 @@ public final class ConfigWizard {
     private static final Pattern KEY_LINE = Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9.]*)\\s*[=:].*$");
 
     /**
-     * project.root の書き方。設定ファイルのフォルダ（configs/）から上位へ 2 段以内で書ける相対パスならそれ
+     * project.root の書き方。設定ファイルのフォルダ（config/）から上位へ 2 段以内で書ける相対パスならそれ
      * （ツールのリポジトリと解析対象を並べて置く構成なら、両方を一緒に移動しても壊れない）。
      * それより遠い場所や別ドライブは絶対パス。区切りは常に /
      */
