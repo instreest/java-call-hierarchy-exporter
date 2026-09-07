@@ -1,4 +1,4 @@
-// Copyright 2026 Inoue Kazuhiro. SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 
 // ---------------------------------------------------------------------------
 // JBang 用の指示行（jbang で実行するときだけ意味を持つ。javac / java には単なるコメント）

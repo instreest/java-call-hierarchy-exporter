@@ -8,7 +8,7 @@
 
 - 各 .java ファイルの 15 行のライセンスヘッダを、SPDX 短識別子を使った **1 行** に置き換える
   ```java
-  // Copyright 2026 Inoue Kazuhiro. SPDX-License-Identifier: Apache-2.0
+  // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
   ```
 - 著作権者を `the java-call-hierarchy-exporter authors` から `Inoue Kazuhiro` に変える
 - ライセンス全文は `LICENSE` に一本化し、著作権者は README の「ライセンス」節に書く
@@ -38,7 +38,7 @@ Apache 全文ヘッダより情報量が減るわけではなく、「どのラ�
 Issue の「1 行の案もあると助かります」に沿って **C（1 行）** を採った。
 
 ```java
-// Copyright 2026 Inoue Kazuhiro. SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 ```
 
 B（2 行）も同じくらい一般的で、機械可読性も同じ。1 行案を採ったのは、
@@ -82,6 +82,14 @@ README で及ぶ。この判断は README のライセンス節にも書いた�
 Issue の本文は「inoue Kazuhiro」「inoue kazuhiro」と揺れていた。著作権表示は人名なので、
 一般的な英語表記の慣習に合わせて `Inoue Kazuhiro`（姓・名とも先頭大文字）に統一した。
 LICENSE / NOTICE / README / 各ファイルのヘッダで同じ綴りを使っている。
+
+### Q7-2. GitHub のアカウント名も併記するか
+
+併記する。ヘッダは `Inoue Kazuhiro (instreest)` の形にした。著作権表示の書式に決まりはなく、
+権利者が特定できればよいので、本名にアカウント名を括弧で添える書き方は一般的。
+`@instreest` と `@` を付ける案もあったが、ファイルヘッダでは `@` がメールアドレスや他 SNS の
+ハンドルに見えることがあるため、括弧のみにした。README のライセンス節では
+`[@instreest](https://github.com/instreest)` とリンク付きで書き、照合先をはっきりさせている。
 
 ### Q8. LICENSE の末尾（Appendix）の `[yyyy] [name of copyright owner]` は埋めるか
 

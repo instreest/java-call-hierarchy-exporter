@@ -1,4 +1,4 @@
-// Copyright 2026 Inoue Kazuhiro. SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.config;
 
 import java.util.ArrayList;
