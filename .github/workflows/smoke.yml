@@ -67,6 +67,7 @@ jobs:
           path: |
             test/regression/*/output/
             test/regression/*/run-*.log
+            test/regression/run-*.log
           if-no-files-found: warn
 
       # jbangw\jbang.cmd が jbang 本体の終了コードを呼び出し元へ返すかを見る。返せるのは

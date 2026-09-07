@@ -49,8 +49,18 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   の1コマンドで、`-Xlint:all -Werror` で警告ゼロ
 - 依存は JDT Core とその推移的依存のjarのみ。テストフレームワーク・ロギング
   フレームワーク・バイトコード解析ライブラリ（ASM等）は使わない
-- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>`。
-  引数省略時は `config/config.properties` を使い、その旨を標準エラーに出す
+- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>...`。
+  設定ファイルは複数渡せ、渡した順に独立して処理する（1つが失敗しても残りは処理し、最後に設定ごとの
+  OK / FAIL と出力フォルダの一覧を出す。1つでも失敗すれば終了コード 1）。
+  引数省略時は作業ディレクトリの `config.properties` を使い、その旨を標準エラーに出す
+- 出力は設定ファイルごとに `output.folder` の下の `<解析開始日時 yyyyMMdd-HHmmss>_<project.root のフォルダ名>/`
+  に書く（同じ秒に同名ができれば `_2`, `_3` …）。中身は `call-hierarchy.csv`、`methods.csv`、渡した設定ファイルの
+  複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
+  出力フォルダは解析の前に作り、失敗してもログと設定の複製が残るようにする
+- キャッシュは出力フォルダに置かず、ツール自身のプロジェクトフォルダ（作業ディレクトリとその上位、次に実行中の
+  クラスの置き場所とその上位から `src/CallHierarchyExporter.java` を探す。無ければ警告して作業ディレクトリ）の
+  `.cache/<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭8桁>/analysis-cache.tsv` に、
+  解析対象プロジェクトごとのサイドカーとして置く。同じ `project.root` を指す設定は同じキャッシュを共有する
 - 依存jarの取得方法（JBang・Maven・手動）は問わない。参考: JDT Core 3.46.0 は
   JDK 17 以上で動き Java 26 まで解析できる。Maven で
   `org.eclipse.jdt:org.eclipse.jdt.core:3.46.0` の推移的依存をコピーすると 19 個の jar になる
@@ -79,14 +89,15 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `entry.packages` | 空 | 呼び出し階層の起点。空なら「呼び出し元が無いメソッド」を自動で起点にする（全体モード） | — |
 | `exclude.packages` | 空 | 出力から除外する呼び出し先（書式は `entry.packages` と同じ）。既定の設定例は `java.**,javax.**` | — |
 | `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く。変更されたファイルが宣言する型を参照しているファイルは、自身が変わっていなくても再解析する | — |
-| `cache.folders` | `./.cache` | キャッシュの置き場所 | 設定ファイル |
+| `cache.folder` | 空 | キャッシュの置き場所の親。空ならツール自身のプロジェクトフォルダの `.cache/`。指定してもその下にプロジェクト別のフォルダ `<名前>_<ハッシュ>` を切る | 設定ファイル |
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
 | `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
-| `output.csv` | `./output/call-hierarchy.csv` | 呼び出し階層の出力先 | 設定ファイル |
-| `methods.csv` | `./output/methods.csv` | メソッド一覧の出力先 | 設定ファイル |
+| `output.folder` | `./output` | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
+
+旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
 | `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照）。設定例には載せない | — |
 
 `entry.packages` / `exclude.packages` のパターン書式:
@@ -339,7 +350,7 @@ FatJar（Spring Boot の `BOOT-INF/lib/*.jar`、war の `WEB-INF/lib/*.jar`、ea
 Gradle は宣言的な書き方（文字列の座標、map 形式、変数、版カタログ `libs.x.y`、`platform()`、`project()`、`files()`）だけ
 読み、`gradle.lockfile` があればそれを使う。読めない宣言はログに出す。
 集めた jar とクラスフォルダをそのまま JDT に渡す（jar はローカルリポジトリに置かれたまま）。無い jar は警告に座標と
-要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を `cache.folders/resolved-classpath.txt` に残す。
+要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を出力フォルダの `resolved-classpath.txt` に残す。
 
 ## 6. 設計上の優先順位
 
@@ -1541,7 +1552,7 @@ public class App {
 }
 ```
 
-`fixture/config/config.properties`
+`fixture/config/config.properties`（出力は `fixture/config/output/<日時>_fixture/` にできる。以下「出力」はその最新フォルダの CSV を指す）
 ```properties
 project.root=..
 source.folders=src
@@ -1552,14 +1563,13 @@ source.level=
 entry.packages=
 exclude.packages=java.**,javax.**,fx.internal.**
 cache.enabled=true
-cache.folders=./.cache
+cache.folder=./.cache
 max.depth=50
 max.rows=5000000
 dataflow.enabled=true
 dataflow.max.depth=5
 output.encoding=UTF-8-BOM
-output.csv=./output/call-hierarchy.csv
-methods.csv=./output/methods.csv
+output.folder=./output
 ```
 
 実行: `cd fixture && java -cp "<bin>:<lib>/*" CallHierarchyExporter config/config.properties`
@@ -1872,9 +1882,11 @@ Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 | T32 準拠レベルの丸め | `source.level=1.4` | ログ `ソースレベル: 1.8（source.level=1.4 の指定による）` と `※ source.level=1.4 はこのJDTでは扱えないため 1.8 として解析します。`。既存キャッシュを破棄した旨が出る |
 | T41 依存先の変更による再解析 | キャッシュがある状態で `Dao.java` の末尾に空行とコメント行を追加して実行 | ログ `再利用=20 新規解析=10（うち依存先の変更による再解析=9） 失敗=0`（`Dao` を参照する9ファイルが再解析される）。両CSVは変更前と**バイト単位で一致**（CHA候補の行順も変わらない） |
 | T42 依存 jar の追加・削除 | `ext.properties` で1回実行してキャッシュを作り、`ext-deps.properties`（`library.folders=deps`）で2回目、`ext.properties` で3回目 | 2回目のログ `[cache] 依存jarの変更を検知: 追加=1 変更=0 削除=0（影響するパッケージ 1 件）…` と `再利用=24 新規解析=6（うち依存先の変更による再解析=2、依存jarの変更による再解析=4）`。T23 の import推定の行が `at fx.UsesLib.guess(UsesLib.java:8),org.apache.commons.lang3.StringUtils.isEmpty(CharSequence),UsesLib.guess,StringUtils.isEmpty,ソースなし（展開不可）` に変わる（jar で解決できたので `callee` に引数型が付き、注記が変わる）。`(型解決失敗)` の行（`Unknown.call()`）は残る。3回目のログ `削除=1` と `再利用=29 新規解析=1（うち依存jarの変更による再解析=1）`、出力は1回目と**バイト単位で一致** |
-| T44 設定の検証 | `cache.folders=../x` | 起動時に `IllegalArgumentException`。メッセージに項目名 `cache.folders`、値 `../x`、「相対パスは設定ファイルのフォルダの配下だけ指定できます。外を指す場合は絶対パスで書いてください」の趣旨を含む |
+| T44 設定の検証 | `cache.folder=../x` | 起動時に `IllegalArgumentException`。メッセージに項目名 `cache.folder`、値 `../x`、「相対パスは設定ファイルのフォルダの配下だけ指定できます。外を指す場合は絶対パスで書いてください」の趣旨を含む |
 | | `max.depth=abc` | 起動時に `IllegalArgumentException`。メッセージに項目名 `max.depth` と値 `abc` を含む |
 | | `max.depth=`（空欄） | 既定値 50 で動き、出力は既定設定と一致 |
+| | `output.csv=./x.csv`（旧項目） | 起動時に `IllegalArgumentException`。メッセージに `output.csv` と、`output.folder` で指定しファイル名は固定になった旨を含む |
+| T45 複数の設定ファイル | `config/config.properties no-such.properties config/ext.properties` を 1 回で渡す | 1つ目と3つ目はそれぞれの出力フォルダに CSV・設定の複製・`run.log` ができ、内容は個別に実行したときと一致。2つ目は `FAIL` として一覧に出て、終了コードは 1。ログの末尾に `OK` / `FAIL` / `OK` の 3 行の一覧 |
 
 ## 3.4b 被参照スキャン（`ext.properties`）
 

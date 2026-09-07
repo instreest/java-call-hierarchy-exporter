@@ -17,17 +17,20 @@ target/
 .idea/
 *.iml
 
-# 実行時に生成される解析キャッシュと出力CSV。
-# 同梱の config/config.properties の既定値（cache.folders / output.csv / methods.csv）が
-# 書き出す先。これらのキーの相対パスは「設定ファイルが置かれているディレクトリ」が起点なので、
-# 設定ファイルをリポジトリ内の別の場所へコピーして使う場合は、その出力先も各自で足すこと。
-/config/.cache/
-/config/output/
+# 実行時に生成される解析キャッシュと出力。
+# キャッシュはツールのプロジェクトフォルダ直下の .cache/ に解析対象プロジェクトごとに作られる
+# （cache.folder が空欄のとき。設定ファイルの場所によらない）。
+# 出力は同梱の config.properties の既定値（output.folder=./output）が書き出す先。output.folder の
+# 相対パスは「設定ファイルが置かれているディレクトリ」が起点なので、設定ファイルをリポジトリ内の
+# 別の場所へコピーして使う場合は、その出力先も各自で足すこと。
+/.cache/
+/output/
 
 # 回帰テストの実行結果（期待出力 expected/ は追跡する）
 /test/regression/*/output/
 /test/regression/*/.cache/
 /test/regression/*/run*.log
+/test/regression/run-*.log
 
 # サンプルの Maven / Gradle プロジェクト（test/maven-demo, test/maven-multi, test/gradle-demo）を
 # ビルドしたときの出力。回帰テストはビルドしない（ビルドファイルを読むだけ）が、手で試したとき用
