@@ -23,7 +23,8 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 #### JBangによる実行
 
-JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です。
+JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です
+（同梱スクリプトの出所・ライセンス（MIT）・当リポジトリでの修正点は [jbangw/README.md](jbangw/README.md) を参照）。
 
 ```bat
 rem Windows（コマンドプロンプト）
@@ -372,7 +373,7 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 
 ## テスト
 
-`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
+`test/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
 一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
 `jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
@@ -391,9 +392,9 @@ GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint
 （JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。
 
 `jbangw/` に同梱した JBang ラッパースクリプトには、別のテストがあります。この 3 ファイルは
-JBang 本家からそのまま持ち込んだうえで、JDK 自動取得まわりの不具合（Windows で JDK が
-取得できない、壊れた JDK をキャッシュしてしまう、など）を修正して取り込んでいます。
-本家から取り直して差し替えると修正が黙って巻き戻るため、それを検出します。
+JBang 本家からそのまま持ち込んだもので、JDK の自動取得・アーキテクチャ判定・終了コードの
+伝播といった、壊れても気づきにくい箇所が取り込み時の内容から黙って変わっていないかを検出します。
+出所・ライセンス・取り直しの手順は [jbangw/README.md](jbangw/README.md) にあります。
 
 ```bash
 bash test/jbangw/run.sh        # Linux / macOS / Git Bash
@@ -415,3 +416,19 @@ bash test/pom/run.sh           # Linux / macOS / Git Bash
 
 GitHub Actions では、これに加えて `mvn compile` で `pom.xml` から実際に依存を解決してコンパイルできることも
 確認します（Eclipse の m2e が行う解決と同じです）。
+
+---
+
+## ライセンス
+
+Apache License, Version 2.0 で配布します。全文は [LICENSE](LICENSE) を参照してください。
+
+Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest))
+
+ソースコードの各ファイルの先頭には、次の 1 行だけを置きます（SPDX 短識別子）。
+
+```java
+// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
+```
+
+`samples/` 以下は解析対象のサンプルデータなので、この行は付けません。
