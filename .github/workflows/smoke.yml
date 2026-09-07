@@ -38,6 +38,11 @@ jobs:
       - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh
 
+      # 起動コマンド（jche）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
+      # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う
+      - name: CLI test (jche launcher and interactive mode)
+        run: bash test/cli/run.sh
+
   # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有
   # （javac.exe、パスの \、cmd の遅延展開、powershell への委譲）で、ubuntu 側では
   # 一行も通らない。test\regression\run.cmd は今まで CI で動かしていなかった。
@@ -56,6 +61,31 @@ jobs:
       - name: Regression test (Windows, jbangw\jbang.cmd)
         shell: cmd
         run: test\regression\run.cmd
+
+      # 起動コマンド jche.cmd。ラッパーと同じく分岐のほとんどが Windows 固有（%~dp0、for /f、遅延展開の回避、
+      # timeout による端末判定）なので、ここで実際に動かす。標準入力が端末でないので初回の問いは出ない。
+      # 1) 対話なし: 引数の設定ファイルを解析して出力フォルダができること
+      # 2) 対話モード: メニューの答え（4 = 状態表示, Enter, q）をパイプで流し込み、状態表示の行が出ること
+      #    launcher.properties にヒープ上限を書いておき、-R で JVM に渡ったこと（ヒープ上限の表示）も見る
+      - name: Launcher test (Windows, jche.cmd)
+        shell: cmd
+        run: |
+          if exist test\regression\entry\output rmdir /s /q test\regression\entry\output
+          call jche.cmd test\regression\entry\config.properties > launcher-batch.log 2>&1
+          type launcher-batch.log
+          if not exist test\regression\entry\output\*_demo\call-hierarchy.csv (echo FAIL: no output folder & exit /b 1)
+          > launcher.properties (
+            echo JBANG_DIR=
+            echo JBANG_REPO=
+            echo JCHE_JAVA_OPTS=-Xmx640m
+            echo JCHE_JBANG_OPTS=
+          )
+          (echo 4& echo.& echo q) | call jche.cmd > launcher-status.log 2>&1
+          type launcher-status.log
+          findstr /c:"java.home" launcher-status.log > nul || (echo FAIL: status screen missing & exit /b 1)
+          findstr /c:"640 MB" launcher-status.log > nul || (echo FAIL: JCHE_JAVA_OPTS not applied & exit /b 1)
+          del launcher.properties
+          echo OK
 
       # 失敗したときに実際の出力を持ち帰れるようにする。Windows と Linux で
       # 出力が食い違ったとき、ログの差分だけでは追いきれないため

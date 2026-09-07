@@ -38,6 +38,15 @@ public final class ToolRoot {
     }
 
     /**
+     * 場所が分かっているときに使う（起動コマンド jche / jche.cmd は自分のあるフォルダを環境変数で渡してくる）。
+     * 目印が無いフォルダを渡されたら {@link #found} は false になる。
+     */
+    public static ToolRoot at(Path dir) {
+        Path abs = dir.toAbsolutePath().normalize();
+        return new ToolRoot(abs, Files.isRegularFile(abs.resolve(MARKER)));
+    }
+
+    /**
      * @param mainClass エントリポイントのクラス（その置き場所を第2候補の起点にする）
      */
     public static ToolRoot locate(Class<?> mainClass) {

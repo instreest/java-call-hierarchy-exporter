@@ -3,11 +3,13 @@
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
 > **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
-> using the Eclipse JDT compiler without launching Eclipse. Run
-> `jbangw/jbang src/CallHierarchyExporter.java config.properties` (the first run downloads a JDK
-> and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
-> use. Several config files can be passed at once; each run writes to its own timestamped output
-> folder. Apache-2.0. Documentation is in Japanese.
+> using the Eclipse JDT compiler without launching Eclipse. Run `./jche` (`jche.cmd` on Windows)
+> for an interactive menu that picks the config file, creates new ones and controls where the JDK
+> and JBang are installed, or run
+> `jbangw/jbang src/CallHierarchyExporter.java config.properties` directly (the first run downloads
+> a JDK and the JDT jars), or compile against JDT jars copied from an Eclipse installation for
+> offline use. Several config files can be passed at once; each run writes to its own timestamped
+> output folder. Apache-2.0. Documentation is in Japanese.
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config.properties](config.properties)（コメントに全項目の説明）
@@ -18,14 +20,77 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ### 1. 設定ファイルを編集する
 
-リポジトリ直下の `config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
+リポジトリ直下の `config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます
+（次の起動コマンドの「設定ファイルを新しく作る」で、解析対象のフォルダを入力してこれらを埋めた設定ファイルを作ることもできます）。  
 Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
 ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
 （[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。
 
 ### 2. 実行する
 
-#### JBangによる実行
+#### 起動コマンド（対話モード）
+
+リポジトリ直下の `jche.cmd`（Windows）/ `jche`（Linux / macOS / Git Bash）を実行すると、
+メニューで操作する対話モードが立ち上がります。どのフォルダから実行してもかまいません。
+
+```bat
+rem Windows（コマンドプロンプト。エクスプローラーからダブルクリックでも可）
+jche.cmd
+```
+
+```bash
+# Linux / macOS / Git Bash
+./jche
+```
+
+初回は、このツールが使う JDK と JBang（合わせて数百 MB）を **このプロジェクトの中（`.jbang/`）** に置くか
+**ユーザーのホーム（`~/.jbang`、JBang の既定）** に置くかを尋ねます。選んだ内容は `launcher.properties`
+（リポジトリ直下。Git では追跡しない）に保存され、次回からは尋ねません。
+プロジェクトの中を選ぶと他の環境を汚さず、フォルダごと消せば元に戻ります。
+
+```
+================================================================
+ java-call-hierarchy-exporter — 対話モード
+================================================================
+ ツールのフォルダ : C:\work\java-call-hierarchy-exporter
+ JDK / JBang      : C:\work\java-call-hierarchy-exporter\.jbang（このプロジェクトの中）
+ 実行中の JDK     : 25.0.1 (Eclipse Adoptium)  C:\work\java-call-hierarchy-exporter\.jbang\cache\jdks\25
+ 設定ファイル     : 2 件（プロジェクト直下と configs/）
+
+ 1) 解析を実行する
+ 2) 設定ファイルを新しく作る
+ 3) 環境設定（JDK / JBang の置き場所、ヒープ上限、jbang のオプション）
+ 4) 実行環境の状態を表示する
+ q) 終了
+jche>
+```
+
+| メニュー | 内容 |
+|---|---|
+| 1) 解析を実行する | リポジトリ直下と `configs/` にある設定ファイルの一覧から選んで解析する（番号をカンマ区切りで複数可。`v 番号` で内容を確認、`p` で一覧に無いパスを指定）。前回使った設定が既定で選ばれるので、2 回目からは Enter を 2 回で実行できる |
+| 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`configs/<名前>.properties` を作る。ひな形は `config.properties` なので全項目の説明コメントも写る。続けて解析もできる |
+| 3) 環境設定 | JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限（`-Xmx`）、`jbang run` の追加オプション（`--offline` 等）。`launcher.properties` に保存し、その場で再起動して反映できる |
+| 4) 実行環境の状態 | 実際に使っている JDK・JDT の jar・置き場所とその大きさ・解析キャッシュの一覧 |
+
+設定ファイルを引数に渡すと対話なしで解析します（下記の jbang 直接実行と同じ。バッチやタスクスケジューラ向け）。
+
+```bat
+jche.cmd configs\app-a.properties configs\app-b.properties
+```
+
+`launcher.properties` の項目は次のとおりです（対話モードの「環境設定」で書き換えるほか、手で編集してもかまいません。
+キーはそのまま環境変数になります）。
+
+| キー | 意味 |
+|---|---|
+| `JBANG_DIR` | JBang 本体と JDK の置き場所。空欄なら `~/.jbang`。相対パスはリポジトリ直下が起点 |
+| `JBANG_REPO` | 依存 jar（JDT）の置き場所。空欄なら `~/.m2/repository` |
+| `JCHE_JAVA_OPTS` | 解析を動かす JVM のオプション（例: `-Xmx4g`） |
+| `JCHE_JBANG_OPTS` | `jbang run` に足すオプション（例: `--offline`、`--java 21`） |
+
+起動コマンドの設計で迷った点は [docs/cli-app-qa.md](docs/cli-app-qa.md) にあります。
+
+#### JBangによる実行（対話なし）
 
 JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です
 （同梱スクリプトの出所・ライセンス（MIT）・当リポジトリでの修正点は [jbangw/README.md](jbangw/README.md) を参照）。
@@ -40,7 +105,8 @@ rem Windows（コマンドプロンプト）
 ./jbangw/jbang src/CallHierarchyExporter.java config.properties
 ```
 
-このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存。
+上記の起動コマンドでプロジェクトの中を選んでいれば、`launcher.properties` の `JBANG_DIR` の場所）。
 
 設定ファイルは複数渡せます。渡した順に処理し、設定ファイルごとに別の出力フォルダができます
 （[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。

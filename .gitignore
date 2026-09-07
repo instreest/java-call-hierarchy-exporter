@@ -10,6 +10,14 @@ target/
 # jbangw/.jbang/jbang.jar を置くと、ラッパー（jbangw/jbang）はダウンロードせずにそれを使う。
 # 置いた場合もコミットしない（14MB 超）
 /jbangw/.jbang/
+
+# 起動コマンド（jche / jche.cmd）の設定と、「JDK / JBang をこのプロジェクトの中に置く」を選んだときの置き場所。
+# どちらも環境ごとのもの（パス・ヒープ上限・数百 MB の JDK）なので追跡しない
+/launcher.properties
+/.jbang/
+# 対話モードの「設定ファイルを新しく作る」が書く先。解析対象ごとのローカルな設定なので追跡しない
+# （共有したいものは別の場所に置いて p でパスを指定するか、この行を消す）。その出力（output.folder の既定）も同様
+/configs/
 *.class
 .classpath
 .project
@@ -42,3 +50,6 @@ target/
 # （上の .project / .classpath の除外はこのツール自身のもの）
 !/test/gradle-demo/app/.project
 !/test/gradle-demo/app/.classpath
+
+# test/cli/run.sh の実行ログ
+/test/cli/run-*.log
