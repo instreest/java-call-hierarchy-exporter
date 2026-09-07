@@ -394,11 +394,9 @@ Apache License, Version 2.0 で配布します。全文は [LICENSE](LICENSE) �
 Copyright 2026 Inoue Kazuhiro
 
 ソースコードの各ファイルの先頭には、次の 1 行だけを置きます（SPDX 短識別子）。
-ライセンス全文の再掲はしません。
 
 ```java
 // Copyright 2026 Inoue Kazuhiro. SPDX-License-Identifier: Apache-2.0
 ```
 
-`samples/` 以下の解析対象サンプルは、ツールの入力データであってツール本体ではないため、
-この行を付けません（リポジトリ全体のライセンスが及びます）。
+`samples/` 以下は解析対象のサンプルデータなので、この行は付けません。
