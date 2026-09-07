@@ -386,3 +386,19 @@ bash test/jbangw/run.sh        # Linux / macOS / Git Bash
 ラッパーの分岐はほとんどが Windows 固有（`javac.exe`、パス区切りの `\`、cmd の遅延展開、
 PowerShell への委譲）で、Linux 側では一行も通りません。そのため GitHub Actions では
 `windows-latest` でも回帰テスト（`test\regression\run.cmd`）を実行します。
+
+## ライセンス
+
+Apache License, Version 2.0 で配布します。全文は [LICENSE](LICENSE) を参照してください。
+
+Copyright 2026 Inoue Kazuhiro
+
+ソースコードの各ファイルの先頭には、次の 1 行だけを置きます（SPDX 短識別子）。
+ライセンス全文の再掲はしません。
+
+```java
+// Copyright 2026 Inoue Kazuhiro. SPDX-License-Identifier: Apache-2.0
+```
+
+`samples/` 以下の解析対象サンプルは、ツールの入力データであってツール本体ではないため、
+この行を付けません（リポジトリ全体のライセンスが及びます）。
