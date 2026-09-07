@@ -28,7 +28,7 @@ import jche.util.Log;
  * マルチモジュールで project.root がアグリゲータなら、ソースフォルダを持つモジュールごとに読む
  * （兄弟モジュールへの依存はリアクタとして解決される）。
  *
- * 集めた一覧は cache.folders/resolved-classpath.txt に残す（何がどこから来たかを後から確認できる）。
+ * 集めた一覧は出力フォルダの resolved-classpath.txt に残す（何がどこから来たかを後から確認できる）。
  */
 public final class BuildFileClasspath {
 
@@ -38,7 +38,7 @@ public final class BuildFileClasspath {
     }
 
     /**
-     * @param config        設定（library.build.tool / library.repositories / cache.folders）
+     * @param config        設定（library.build.tool / library.repositories / 出力フォルダ）
      * @param projectRoot   project.root
      * @param sourceFolders 解析対象のソースフォルダ
      * @return 存在する jar とクラスフォルダ。集められなければ空
@@ -160,12 +160,13 @@ public final class BuildFileClasspath {
         }
     }
 
-    /** 集めた一覧（パス、座標、要求元の経路）を cache.folders に書く。書けなければ null */
+    /**
+     * 集めた一覧（パス、座標、要求元の経路）を出力フォルダに書く。書けなければ null。
+     * キャッシュフォルダではなく出力フォルダに置くのは、「この実行で何を渡したか」の記録だから
+     * （キャッシュは複数の設定・実行で共有される）
+     */
     private static Path writeListing(Config config, Iterable<DependencyCollector.Entry> entries) {
-        Path dir = config.cacheFile.toAbsolutePath().getParent();
-        if (dir == null) {
-            return null;
-        }
+        Path dir = config.outputDir;
         Path file = dir.resolve(LISTING_FILE);
         try {
             Files.createDirectories(dir);

@@ -26,8 +26,11 @@
 //JAVA 25
 //SOURCES jche/**/*.java
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,6 +41,7 @@ import jche.analysis.CacheUpdater;
 import jche.config.Config;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
+import jche.config.ToolRoot;
 import jche.extension.TypeCandidateProvider;
 import jche.external.ExternalUsageScanner;
 import jche.graph.CallGraph;
@@ -57,11 +61,17 @@ import jche.util.Log;
  * Javaプロジェクトを対象に、メソッド呼び出し階層を一括抽出してCSV出力する。
  * Eclipse IDE の起動は不要で、通常のJavaアプリとして動作する。
  *
- * 使い方（設定ファイルのパスを第1引数で渡す。省略時は config/config.properties）:
+ * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config.properties）:
  * <pre>
- *   jbang src/CallHierarchyExporter.java config/config.properties
- *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
+ *   jbang src/CallHierarchyExporter.java config.properties
+ *   jbang src/CallHierarchyExporter.java projA.properties projB.properties
+ *   java -cp "bin;lib/*" CallHierarchyExporter config.properties
  * </pre>
+ * 設定ファイルごとに、その設定ファイルのフォルダの output.folder（既定 ./output）の下へ
+ * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
+ * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
+ * 解析対象プロジェクトごとに置く（{@link jche.config.ToolRoot}、{@link Config}）。
+ * 1つの設定が失敗しても残りは処理し、最後にまとめて結果を出す。1つでも失敗すれば終了コードは 1。
  *
  * <h2>処理の流れ（パッケージ構成と対応する）</h2>
  * <pre>
@@ -87,19 +97,81 @@ import jche.util.Log;
  */
 public class CallHierarchyExporter {
 
+    /** 引数を省略したときの設定ファイル（作業ディレクトリからの相対） */
+    private static final String DEFAULT_CONFIG = "config.properties";
+
     public static void main(String[] args) throws Exception {
-        // 設定ファイルのパスは第1引数で受け取る。jbang はスクリプト名より後ろの
+        // 設定ファイルのパスは引数で受け取る（複数可）。jbang はスクリプト名より後ろの
         // 引数をそのまま渡してくるので、jbang 経由でも java 直接実行でも同じ形
-        String configPath = (args.length > 0) ? args[0] : "config/config.properties";
-        if (args.length == 0) {
+        List<Path> configPaths = new ArrayList<>();
+        for (String a : args) {
+            configPaths.add(Paths.get(a));
+        }
+        if (configPaths.isEmpty()) {
             System.err.println("config.propertiesのパスが指定されていません。");
-            System.err.println("既定値の「config/config.properties」で実行します。");
+            System.err.println("既定値の「" + DEFAULT_CONFIG + "」で実行します。");
+            configPaths.add(Paths.get(DEFAULT_CONFIG));
         }
 
+        ToolRoot toolRoot = ToolRoot.locate(CallHierarchyExporter.class);
+        if (!toolRoot.found) {
+            Log.warn("このツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を"
+                    + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
+                    + toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME));
+        }
+
+        // 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する
+        List<String> summary = new ArrayList<>();
+        int failed = 0;
+        for (int i = 0; i < configPaths.size(); i++) {
+            Path configPath = configPaths.get(i);
+            if (configPaths.size() > 1) {
+                Log.blank();
+                Log.info("######## 設定 " + (i + 1) + "/" + configPaths.size() + ": " + configPath + " ########");
+            }
+            try {
+                Path outputDir = runOne(configPath, toolRoot.dir);
+                summary.add("OK    " + configPath + " -> " + outputDir);
+            } catch (Throwable t) {
+                failed++;
+                Log.error("設定 " + configPath + " の処理に失敗しました", t);
+                summary.add("FAIL  " + configPath + " : " + t);
+            } finally {
+                Log.detachFile();
+            }
+        }
+
+        if (configPaths.size() > 1) {
+            Log.blank();
+            Log.info("=== 実行結果（" + (configPaths.size() - failed) + "/" + configPaths.size() + " 件成功）===");
+            for (String line : summary) {
+                Log.info("  " + line);
+            }
+        }
+        if (failed > 0) {
+            System.exit(1);
+        }
+    }
+
+    /**
+     * 設定ファイル1つ分の処理。出力フォルダを作り、設定ファイルの複製と実行ログをそこに置いてから解析する。
+     *
+     * @return この実行の出力フォルダ
+     */
+    private static Path runOne(Path configPath, Path toolRoot) throws Exception {
+        Log.resetClock();
         long start = System.currentTimeMillis();
-        Config config = new Config(Paths.get(configPath));
-        Log.info("設定: " + Paths.get(configPath).toAbsolutePath().normalize());
+        Config config = new Config(configPath, toolRoot, LocalDateTime.now());
+
+        // 出力フォルダは解析より前に作る。設定ファイルの複製と実行ログを、解析が途中で落ちても残すため
+        Files.createDirectories(config.outputDir);
+        Log.attachFile(config.logFile);
+        Log.info("設定: " + config.configPath);
         Log.info("プロジェクトルート: " + config.projectRoot);
+        Log.info("出力フォルダ: " + config.outputDir);
+        Log.info("キャッシュ: " + config.cacheDir);
+        Files.copy(config.configPath, config.outputDir.resolve(config.configPath.getFileName()),
+                StandardCopyOption.REPLACE_EXISTING);
 
         ProjectLayout layout = new ProjectLayout(config);
         logAnalysisSettings(config, layout);
@@ -119,7 +191,9 @@ public class CallHierarchyExporter {
 
         Log.blank();
         Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");
+        Log.info("実行ログ: " + config.logFile);
         Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
+        return config.outputDir;
     }
 
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {

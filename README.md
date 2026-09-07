@@ -4,12 +4,13 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 > **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
 > using the Eclipse JDT compiler without launching Eclipse. Run
-> `jbangw/jbang src/CallHierarchyExporter.java config/config.properties` (the first run downloads a JDK
+> `jbangw/jbang src/CallHierarchyExporter.java config.properties` (the first run downloads a JDK
 > and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
-> use. Apache-2.0. Documentation is in Japanese.
+> use. Several config files can be passed at once; each run writes to its own timestamped output
+> folder. Apache-2.0. Documentation is in Japanese.
 
 - 使い方・出力形式 … このファイル
-- 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
+- 設定項目 … [config.properties](config.properties)（コメントに全項目の説明）
 
 ---
 
@@ -17,7 +18,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ### 1. 設定ファイルを編集する
 
-`config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
+リポジトリ直下の `config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
 Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
 ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
 （[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。
@@ -31,15 +32,22 @@ JBang のラッパースクリプトを `jbangw/` に同梱しているので、
 
 ```bat
 rem Windows（コマンドプロンプト）
-.\jbangw\jbang.cmd src\CallHierarchyExporter.java config\config.properties
+.\jbangw\jbang.cmd src\CallHierarchyExporter.java config.properties
 ```
 
 ```bash
 # Linux / macOS / Git Bash
-./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
+./jbangw/jbang src/CallHierarchyExporter.java config.properties
 ```
 
 このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+
+設定ファイルは複数渡せます。渡した順に処理し、設定ファイルごとに別の出力フォルダができます
+（[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
+
+```bash
+./jbangw/jbang src/CallHierarchyExporter.java projects/app-a.properties projects/app-b.properties
+```
 
 #### Pleiades/Eclipse環境（閉域ネットワーク等）
 
@@ -64,7 +72,7 @@ rem コンパイル（src\jche 配下のクラスも一緒にコンパイルさ�
 "%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config.properties
 ```
 
 #### Eclipse（Pleiades）でソースを開く
@@ -74,7 +82,7 @@ rem 実行
 1. 「ファイル > インポート > Maven > 既存の Maven プロジェクト」で、このリポジトリのフォルダを選ぶ
 2. 取り込み後、JDT Core 一式が Maven Central から `%userprofile%\.m2\repository` に取得され、ビルドパスに載る
 3. `CallHierarchyExporter` を「Java アプリケーション」として実行するときは、実行構成の引数に
-   `config/config.properties` を指定する
+   `config.properties` を指定する（複数指定可）
 
 `pom.xml` は Eclipse で開くためだけのもので、jbang での実行には使われません。依存の版は
 `src/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。
@@ -91,14 +99,30 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 
 ### 出力されるファイル
 
-| ファイル | 既定出力先 |
-|---|---|
-| 呼び出し階層リスト | `./output/call-hierarchy.csv` |
-| メソッド全体リスト | `./output/methods.csv` |
+出力は実行のたびに、設定ファイルの `output.folder`（既定 `./output`、設定ファイルからの相対パス）の下に
+**`<解析開始日時>_<プロジェクト名>`** のフォルダを作ってまとめます。プロジェクト名は `project.root` の
+フォルダ名です。いつ・どのプロジェクトを解析した結果かがフォルダ名だけで分かり、前回の結果は上書きされません。
 
-出力はUTF-8（BOM付き）のCSVファイルなのでExcelで開けます。
-出力先は設定ファイルからの相対パスで、例えば `config/config.properties` を指定した場合は
-`config/output/` の下に出ます。
+```
+output/
+└── 20260907-163000_myapp/
+    ├── call-hierarchy.csv        呼び出し階層リスト
+    ├── methods.csv               メソッド全体リスト
+    ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
+    ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8）
+    └── resolved-classpath.txt    ビルドファイルから依存 jar を集めたときだけ。集めた jar の一覧と要求元
+```
+
+| ファイル | 内容 |
+|---|---|
+| `call-hierarchy.csv` | 呼び出し階層リスト |
+| `methods.csv` | メソッド全体リスト（ソース上の全メソッドとその呼び出し状況） |
+
+CSV はUTF-8（BOM付き）なのでExcelで開けます。ファイル名は固定です。
+例えばリポジトリ直下の `config.properties` を指定した場合は `output/20260907-163000_myapp/` のように出ます。
+同じ秒に同じプロジェクトを解析すると `_2`, `_3` … が付きます。
+
+解析結果のキャッシュは出力フォルダには入りません（[キャッシュの置き場所](#キャッシュの置き場所)）。
 
 #### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
@@ -148,7 +172,7 @@ Maven / Gradle のプロジェクトではビルドファイルを読んで依�
    `build/classes` / Buildship の `bin/main` と、そのビルドファイルの依存で解決します。`mvn install` は要りません
 5. 集めた jar とクラスフォルダをそのまま JDT に渡します。jar はローカルリポジトリに置かれたままで、コピーしません
 
-集めた一覧（パス・座標・要求元の連鎖）は `cache.folders/resolved-classpath.txt` に残ります。
+集めた一覧（パス・座標・要求元の連鎖）は出力フォルダの `resolved-classpath.txt` に残ります。
 キャッシュの `L` 行にも同じパスが入るので、[依存 jar を変えたとき](#依存-jar-を変えたとき)の差分更新はそのまま効きます。
 
 Gradle のビルドファイルはプログラムなので、読めるのは宣言的な書き方だけです。
@@ -181,6 +205,50 @@ Gradle のビルドファイルはプログラムなので、読めるのは宣�
 - 対応の範囲と判断は [docs/build-tool-classpath-qa.md](docs/build-tool-classpath-qa.md) にまとめています
 
 ---
+
+## 複数のプロジェクトをまとめて解析する
+
+設定ファイルを引数に複数渡すと、渡した順に 1 つずつ処理します。設定ファイルは互いに独立で、
+それぞれの `output.folder` の下に `<解析開始日時>_<プロジェクト名>` のフォルダができます
+（[出力されるファイル](#出力されるファイル)）。
+
+```bash
+./jbangw/jbang src/CallHierarchyExporter.java projects/app-a.properties projects/app-b.properties projects/batch.properties
+```
+
+- 1 つの設定が失敗（設定ファイルが無い、`project.root` が無い等）しても、残りの設定は処理します。
+  失敗した設定のエラーとスタックトレースは標準出力（と、出力フォルダを作れていればその `run.log`）に出ます
+- 最後に設定ごとの結果（`OK` と出力フォルダ、または `FAIL` と原因）を一覧で出します。
+  1 つでも失敗があれば終了コードは 1 です
+- ログの経過時間 `[分:秒]` は設定ごとに 0 から数え直します
+
+同じプロジェクトを指す設定ファイルが複数あっても（起点 `entry.packages` だけ違う等）、
+キャッシュは `project.root` ごとに 1 つを共有するので、2 つ目以降の解析はキャッシュの再利用だけで済みます。
+
+## キャッシュの置き場所
+
+解析結果のキャッシュは出力フォルダには置かず、解析対象プロジェクトごとの「サイドカー」として
+**このツールのプロジェクトフォルダ**（`src/CallHierarchyExporter.java` のあるフォルダ）の `.cache/` の下に作ります。
+
+```
+java-call-hierarchy-exporter/
+└── .cache/
+    ├── myapp_3f2a9c1e/analysis-cache.tsv      project.root=.../myapp
+    └── batch_b71e0d44/analysis-cache.tsv      project.root=.../batch
+```
+
+フォルダ名は `<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭 8 桁>` です。
+同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクト
+（ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、どこから実行しても、
+キャッシュの場所は変わりません。
+
+ツールのプロジェクトフォルダは、作業ディレクトリとその上位（次に、実行中のクラスの置き場所とその上位）から
+`src/CallHierarchyExporter.java` を探して決めます。README の手順どおりリポジトリ直下で実行すれば見つかります。
+見つからないときは警告を出して作業ディレクトリの `.cache/` に作ります。
+
+`cache.folder` を指定すると、そのフォルダ（設定ファイルからの相対パス、または絶対パス）の下に
+同じ形のプロジェクト別フォルダを作ります。回帰テストのようにケースごとにキャッシュを分けたいときに使います。
+`cache.enabled=false` でもフェーズ 2 が読むためにキャッシュファイル自体は同じ場所に書かれます（再利用はしない）。
 
 ## キャッシュファイル設計
 
@@ -414,14 +482,14 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 
 | パッケージ | 役割 | 主なクラス |
 |---|---|---|
-| `jche.config` | 設定ファイルとプロジェクト構成の読み取り。ビルドファイルとローカルリポジトリからの依存 jar の収集 | `Config`, `ProjectLayout`, `BuildFileClasspath`, `MavenModels`, `DependencyCollector`, `GradleBuild`, `PackagePattern` |
+| `jche.config` | 設定ファイルとプロジェクト構成の読み取り。出力フォルダとキャッシュの場所の決定。ビルドファイルとローカルリポジトリからの依存 jar の収集 | `Config`, `ToolRoot`, `ProjectLayout`, `BuildFileClasspath`, `MavenModels`, `DependencyCollector`, `GradleBuild`, `PackagePattern` |
 | `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
 | `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
 | `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
 | `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
 | `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
 | `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
-| `jche.util` | ログと進捗表示 | `Log`, `Progress` |
+| `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
 
 読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
 → `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
@@ -441,6 +509,12 @@ jar の追加・削除が影響するファイルの再解析だけで出力に�
 `.project` / `.classpath` 付き）のビルドファイルを読み、`test/localrepo`（Maven 形式のローカルリポジトリ）から
 依存 jar `sample.deps:greeter` と、その POM から辿る推移的な依存 `core` を集めて、jar の型への呼び出しが
 出力に出ることを確認します。ビルドツールもネットワークも要りません。
+各ケースでは、出力フォルダに設定ファイルの複製と `run.log` があること、実行ごとに出力フォルダが分かれることも
+確認します。`whole` ケースは `cache.folder` を空欄にしてあり、キャッシュがリポジトリ直下の `.cache/demo_<ハッシュ>/`
+にできることを確認します（他のケースは `cache.folder=./.cache` でケースごとに分けています）。
+最後の `multi` ケースは `whole` と `entry` の設定ファイルに存在しない設定ファイルを 1 つ混ぜて 1 回の起動で渡し、
+失敗した設定を飛ばして残りが処理されること、終了コードが 1 になることを確認します。
+比較は `<case>/output/` の最新（名前順の末尾）のフォルダに対して行います。
 
 ```bash
 bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
@@ -450,8 +524,8 @@ test\regression\run.cmd            # Windows のコマンドプロンプト
 GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint:all -Werror` での
 コンパイルとこの回帰テストを実行します。
 
-出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/` の差分を確認したうえで
-`expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
+出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/<最新のフォルダ>/` の差分を確認したうえで
+CSV を `expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
 （JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。
 
 `jbangw/` に同梱した JBang ラッパースクリプトには、別のテストがあります。この 3 ファイルは

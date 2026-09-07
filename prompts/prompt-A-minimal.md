@@ -39,8 +39,18 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   の1コマンドで、`-Xlint:all -Werror` で警告ゼロ
 - 依存は JDT Core とその推移的依存のjarのみ。テストフレームワーク・ロギング
   フレームワーク・バイトコード解析ライブラリ（ASM等）は使わない
-- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>`。
-  引数省略時は `config/config.properties` を使い、その旨を標準エラーに出す
+- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>...`。
+  設定ファイルは複数渡せ、渡した順に独立して処理する（1つが失敗しても残りは処理し、最後に設定ごとの
+  OK / FAIL と出力フォルダの一覧を出す。1つでも失敗すれば終了コード 1）。
+  引数省略時は作業ディレクトリの `config.properties` を使い、その旨を標準エラーに出す
+- 出力は設定ファイルごとに `output.folder` の下の `<解析開始日時 yyyyMMdd-HHmmss>_<project.root のフォルダ名>/`
+  に書く（同じ秒に同名ができれば `_2`, `_3` …）。中身は `call-hierarchy.csv`、`methods.csv`、渡した設定ファイルの
+  複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
+  出力フォルダは解析の前に作り、失敗してもログと設定の複製が残るようにする
+- キャッシュは出力フォルダに置かず、ツール自身のプロジェクトフォルダ（作業ディレクトリとその上位、次に実行中の
+  クラスの置き場所とその上位から `src/CallHierarchyExporter.java` を探す。無ければ警告して作業ディレクトリ）の
+  `.cache/<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭8桁>/analysis-cache.tsv` に、
+  解析対象プロジェクトごとのサイドカーとして置く。同じ `project.root` を指す設定は同じキャッシュを共有する
 - 依存jarの取得方法（JBang・Maven・手動）は問わない。ツールを動かすJDKは、解析対象のソースが
   使うJDK APIの版以上にする（JDTは実行中のJVMの標準クラスを解析対象のクラスパスに含めるため、
   古いJDKだと新しいAPIの呼び出しが型解決失敗になり、その戻り値を使う自分のコードの呼び出しも欠ける）
@@ -68,14 +78,15 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `entry.packages` | 空 | 呼び出し階層の起点。空なら「呼び出し元が無いメソッド」を自動で起点にする（全体モード） | — |
 | `exclude.packages` | 空 | 出力から除外する呼び出し先（書式は `entry.packages` と同じ）。既定の設定例は `java.**,javax.**` | — |
 | `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く。変更されたファイルが宣言する型を参照しているファイルは、自身が変わっていなくても再解析する | — |
-| `cache.folders` | `./.cache` | キャッシュの置き場所 | 設定ファイル |
+| `cache.folder` | 空 | キャッシュの置き場所の親。空ならツール自身のプロジェクトフォルダの `.cache/`。指定してもその下にプロジェクト別のフォルダ `<名前>_<ハッシュ>` を切る | 設定ファイル |
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
 | `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
-| `output.csv` | `./output/call-hierarchy.csv` | 呼び出し階層の出力先 | 設定ファイル |
-| `methods.csv` | `./output/methods.csv` | メソッド一覧の出力先 | 設定ファイル |
+| `output.folder` | `./output` | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
+
+旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
 
 `entry.packages` / `exclude.packages` のパターン書式:
 
@@ -313,7 +324,7 @@ ear（中に war や jar）を、中の jar を取り出さずにストリーム
 Gradle は宣言的な書き方（文字列の座標、map 形式、変数、版カタログ `libs.x.y`、`platform()`、`project()`、`files()`）だけ
 読み、`gradle.lockfile` があればそれを使う。読めない宣言はログに出す。
 集めた jar とクラスフォルダをそのまま JDT に渡す（jar はローカルリポジトリに置かれたまま）。無い jar は警告に座標と
-要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を `cache.folders/resolved-classpath.txt` に残す。
+要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を出力フォルダの `resolved-classpath.txt` に残す。
 
 ## 6. 設計上の優先順位（判断に迷ったらこの順）
 

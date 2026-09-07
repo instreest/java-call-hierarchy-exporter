@@ -6,12 +6,12 @@
 
 ```bat
 rem Windows（コマンドプロンプト）
-.\jbangw\jbang.cmd src\CallHierarchyExporter.java config\config.properties
+.\jbangw\jbang.cmd src\CallHierarchyExporter.java config.properties
 ```
 
 ```bash
 # Linux / macOS / Git Bash
-./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
+./jbangw/jbang src/CallHierarchyExporter.java config.properties
 ```
 
 でツールを実行できます。初回実行時に JBang 本体・JDK・依存 jar が自動で取得されます

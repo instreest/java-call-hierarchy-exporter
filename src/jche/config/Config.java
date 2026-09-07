@@ -9,6 +9,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -20,15 +24,21 @@ import org.eclipse.jdt.core.JavaCore;
 /**
  * 設定ファイル（config.properties）の読み込み。
  *
- * 設定できる項目とその意味は config/config.properties にコメント付きでまとめてある。
+ * 設定できる項目とその意味は config.properties（リポジトリ直下の既定の設定ファイル）にコメント付きでまとめてある。
  * あちらを唯一の一覧として扱い、ここには複製しない（二重管理で片方が古くなるのを避けるため）。
  *
  * 相対パスの起点は項目ごとに異なる。
  * <ul>
- *   <li>project.root / cache.folders / output.csv / methods.csv … この設定ファイルが置かれているディレクトリ</li>
+ *   <li>project.root / output.folder / cache.folder … この設定ファイルが置かれているディレクトリ</li>
  *   <li>source.folders / library.folders / external.library.folders … project.root</li>
  * </ul>
  * 設定ファイルと関連ファイルをひとまとめに配置でき、どこから実行しても同じ結果になる。
+ *
+ * 出力は output.folder の下に実行ごとのフォルダ（{@code <解析開始日時>_<project.root のフォルダ名>}）を
+ * 作って書く（{@link #outputDir}）。CSV のファイル名は固定で、設定ファイルの複製と実行ログも同じフォルダに入る。
+ * キャッシュは出力フォルダには置かず、解析対象プロジェクトごとのサイドカーとして
+ * このツールのプロジェクトフォルダ内（{@code <ツールのフォルダ>/.cache/<プロジェクト名>_<パスのハッシュ>/}）に置く。
+ * cache.folder を指定すると、その下に同じ形のプロジェクト別フォルダを作る。
  *
  * 相対パスは起点ディレクトリの配下だけを指せる（{@code ..} で外へ出る指定は拒否する）。
  * project.root だけは起点そのものなので制限しない。source.folders は絶対パスでも project.root の
@@ -40,9 +50,24 @@ public final class Config {
     public static final int CHA_MAX_CANDIDATES = 20;
     /** キャッシュフォルダ内に置くインデックスファイルの名前 */
     public static final String CACHE_FILE_NAME = "analysis-cache.tsv";
+    /** cache.folder が空欄のときの置き場所（このツールのプロジェクトフォルダからの相対） */
+    public static final String DEFAULT_CACHE_DIR_NAME = ".cache";
+    /** 出力フォルダ内のファイル名（固定） */
+    public static final String CALL_HIERARCHY_CSV_NAME = "call-hierarchy.csv";
+    public static final String METHODS_CSV_NAME = "methods.csv";
+    /** 出力フォルダに残す実行ログ（標準出力と同じ内容、UTF-8） */
+    public static final String LOG_FILE_NAME = "run.log";
+    /** 出力フォルダ名の日時の書式 */
+    private static final DateTimeFormatter FOLDER_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
+    /** 設定ファイル（絶対パス） */
+    public final Path configPath;
     public final Path configDir;
     public final Path projectRoot;
+    /** 解析対象プロジェクトの名前（project.root のフォルダ名）。出力フォルダ名とキャッシュフォルダ名に使う */
+    public final String projectName;
+    /** この設定の解析開始日時（出力フォルダ名に使う） */
+    public final LocalDateTime startedAt;
     /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
     public final List<Path> sourceFolders;
     /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
@@ -87,31 +112,47 @@ public final class Config {
     public final boolean dataflowEnabled;
     /** ファクトリの委譲（return create();）を何段まで辿るか */
     public final int dataflowMaxDepth;
+    /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
+    public final Path cacheDir;
     public final Path cacheFile;
 
     /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
     public final List<Path> externalLibraryFolders;
 
+    /** output.folder（実行ごとのフォルダの親） */
+    public final Path outputFolder;
+    /** この実行の出力フォルダ。CSV・設定ファイルの複製・実行ログをここに置く */
+    public final Path outputDir;
     public final Path outputCsv;
     public final Path methodsCsv;
+    public final Path logFile;
 
     /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
     public final Charset outputEncoding;
     /** output.encoding=UTF-8-BOM のとき、ファイル先頭にBOMを書くか */
     public final boolean outputBom;
 
-    public Config(Path configPath) throws IOException {
+    /**
+     * @param configPath 設定ファイル
+     * @param toolRoot   このツールのプロジェクトフォルダ（cache.folder が空欄のときのキャッシュの置き場所）
+     * @param startedAt  解析開始日時（出力フォルダ名に使う）
+     */
+    public Config(Path configPath, Path toolRoot, LocalDateTime startedAt) throws IOException {
         Path abs = configPath.toAbsolutePath().normalize();
+        this.configPath = abs;
         Path dir = abs.getParent();
         this.configDir = (dir == null) ? Paths.get(".").toAbsolutePath().normalize() : dir;
+        this.startedAt = startedAt;
 
         Properties p = new Properties();
         try (Reader r = new InputStreamReader(Files.newInputStream(abs), StandardCharsets.UTF_8)) {
             p.load(r);
         }
+        rejectRemovedKeys(p);
 
         // project.root は他の項目の起点そのものなので、設定ファイルのディレクトリの外を指してよい
         this.projectRoot = resolveFromConfigDir(require(p, "project.root"));
+        this.projectName = projectNameOf(this.projectRoot);
 
         // source.folders / library.folders / external.library.folders は project.root からの相対
         this.sourceFolders = resolveAllUnderProject("source.folders",
@@ -149,18 +190,29 @@ public final class Config {
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
         this.dataflowEnabled = Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
         this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
-        this.cacheFile = resolveUnderConfigDir("cache.folders", p.getProperty("cache.folders", "./.cache"))
-                .resolve(CACHE_FILE_NAME);
+        // キャッシュは解析対象プロジェクトごとのサイドカー。既定はこのツールのプロジェクトフォルダの .cache/ の下。
+        // cache.folder を指定したときも、その下にプロジェクト別のフォルダを切る（複数の設定が同じプロジェクトを
+        // 指すなら同じキャッシュを共有し、別のプロジェクトなら混ざらない）
+        String cacheFolderRaw = p.getProperty("cache.folder", "").trim();
+        Path cacheBase = cacheFolderRaw.isEmpty()
+                ? toolRoot.toAbsolutePath().normalize().resolve(DEFAULT_CACHE_DIR_NAME)
+                : resolveUnderConfigDir("cache.folder", cacheFolderRaw);
+        this.cacheDir = cacheBase.resolve(projectName + "_" + shortHash(this.projectRoot.toString()));
+        this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
 
         // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
         // ソースや依存jarと同じく project.root からの相対で書けるようにする
         this.externalLibraryFolders = resolveAllUnderProject("external.library.folders",
                 splitList(p.getProperty("external.library.folders", "")), false);
 
-        this.outputCsv = resolveUnderConfigDir("output.csv",
-                p.getProperty("output.csv", "./output/call-hierarchy.csv"));
-        this.methodsCsv = resolveUnderConfigDir("methods.csv",
-                p.getProperty("methods.csv", "./output/methods.csv"));
+        // 出力は実行ごとのフォルダに分ける。フォルダ名に解析開始日時とプロジェクト名を入れ、
+        // 「いつ・どのプロジェクトを解析した結果か」がフォルダ名だけで分かるようにする
+        this.outputFolder = resolveUnderConfigDir("output.folder", p.getProperty("output.folder", "./output"));
+        this.outputDir = uniqueOutputDir(this.outputFolder,
+                startedAt.format(FOLDER_TIMESTAMP) + "_" + projectName);
+        this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);
+        this.methodsCsv = this.outputDir.resolve(METHODS_CSV_NAME);
+        this.logFile = this.outputDir.resolve(LOG_FILE_NAME);
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
         if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
@@ -201,6 +253,60 @@ public final class Config {
         Map<String, String> options = JavaCore.getOptions();
         JavaCore.setComplianceOptions(requested.isEmpty() ? latest : requested, options);
         return options;
+    }
+
+    /**
+     * 以前の版の項目が残っていれば、新しい書き方を示して止める。
+     * 黙って無視すると、出力やキャッシュが以前とは別の場所にできて気づきにくい。
+     */
+    private static void rejectRemovedKeys(Properties p) {
+        Map<String, String> removed = Map.of(
+                "output.csv", "出力先は output.folder（フォルダ）で指定し、ファイル名は " + CALL_HIERARCHY_CSV_NAME + " に固定になりました",
+                "methods.csv", "出力先は output.folder（フォルダ）で指定し、ファイル名は " + METHODS_CSV_NAME + " に固定になりました",
+                "cache.folders", "キャッシュは cache.folder（単数形）で指定します。空欄ならこのツールのプロジェクトフォルダの "
+                        + DEFAULT_CACHE_DIR_NAME + "/ の下に、解析対象プロジェクトごとに作ります");
+        for (Map.Entry<String, String> e : removed.entrySet()) {
+            if (p.containsKey(e.getKey())) {
+                throw new IllegalArgumentException("設定 " + e.getKey() + " は廃止されました。" + e.getValue()
+                        + "。この行を消して、必要なら新しい項目で書き直してください");
+            }
+        }
+    }
+
+    /** project.root のフォルダ名。ドライブやルート直下のようにフォルダ名が無ければ "project" */
+    private static String projectNameOf(Path projectRoot) {
+        Path name = projectRoot.getFileName();
+        String s = (name == null) ? "" : name.toString().trim();
+        return s.isEmpty() ? "project" : s;
+    }
+
+    /**
+     * 同じ名前のフォルダが既にあれば _2, _3 … を足す。
+     * 同じ秒に同じプロジェクトを 2 回解析する（同じ設定フォルダの別設定を続けて動かす等）と名前がぶつかるため
+     */
+    private static Path uniqueOutputDir(Path base, String name) {
+        Path dir = base.resolve(name);
+        for (int n = 2; Files.exists(dir); n++) {
+            dir = base.resolve(name + "_" + n);
+        }
+        return dir;
+    }
+
+    /**
+     * キャッシュフォルダ名に添える短いハッシュ（SHA-256 の先頭 8 桁）。
+     * 別の場所にある同名のプロジェクト（例: ブランチごとのチェックアウト）のキャッシュが混ざらないようにする
+     */
+    static String shortHash(String s) {
+        try {
+            byte[] d = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format("%02x", d[i]));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** 相対パスは設定ファイルのあるディレクトリを起点に解決する（配下の制限なし。project.root 用） */
