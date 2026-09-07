@@ -35,8 +35,61 @@ jobs:
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
       # maven / mavenmulti / gradle のケースも、ビルドツール無しで動く（ビルドファイルを読むだけ）
-      - name: Regression test (samples/demo, samples/maven-demo, samples/maven-multi, samples/gradle-demo)
+      - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh
+
+  # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有
+  # （javac.exe、パスの \、cmd の遅延展開、powershell への委譲）で、ubuntu 側では
+  # 一行も通らない。test\regression\run.cmd は今まで CI で動かしていなかった。
+  # ~/.jbang のキャッシュは使わない。毎回まっさらな状態から取得させて、
+  # ブートストラップ経路そのものを検査対象に含めるため。
+  regression-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Regression test (Windows, jbangw\jbang.cmd)
+        shell: cmd
+        run: test\regression\run.cmd
+
+      # 失敗したときに実際の出力を持ち帰れるようにする。Windows と Linux で
+      # 出力が食い違ったとき、ログの差分だけでは追いきれないため
+      - name: Upload output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-output-windows
+          path: |
+            test/regression/*/output/
+            test/regression/*/run-*.log
+          if-no-files-found: warn
+
+      # jbangw\jbang.cmd が jbang 本体の終了コードを呼び出し元へ返すかを見る。返せるのは
+      # 委譲を exit /b !ERRORLEVEL! で書いたときで、%ERRORLEVEL% だと括弧ブロックの
+      # 解析時に展開されて常に 0 になり、run.cmd の "if errorlevel 1" が失敗を検知できない。
+      #
+      # 現在の jbangw/ は本家 main そのままで、この修正はコミット 314c140（本家から取り直し）
+      # で巻き戻っている。つまりこの検査は今は通らない。ジョブ全体を赤にし続けると本当の
+      # 失敗に気づけなくなるので、continue-on-error で警告にとどめて結果はログに残す。
+      # 修正を当て直したら continue-on-error を外し、ふたたび失敗として扱うこと
+      # （背景は jbangw/README.md）
+      - name: jbang.cmd propagates a failing exit code (known to fail; see jbangw/README.md)
+        shell: cmd
+        continue-on-error: true
+        run: |
+          call jbangw\jbang.cmd run no-such-file-should-not-exist.java
+          if errorlevel 1 (
+            echo OK: non-zero exit code was propagated
+            exit /b 0
+          ) else (
+            echo FAIL: a failing run reported success
+            exit /b 1
+          )
 
   # 同梱した JBang ラッパー（jbangw/）の検査。ファイルの中身を読むだけなので
   # JDK も jbang も要らず、数秒で終わる。

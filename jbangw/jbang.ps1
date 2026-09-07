@@ -120,12 +120,21 @@ function Invoke-JBang {
     $global:progresspreference=$old_progresspreference
     
     if ($err -eq 255) {
+      # jbang printed the command to run instead of running it; run it and take its code
       Invoke-Expression "& $output"
+      $err=$LASTEXITCODE
     } elseif ($output -ne "") {
       Write-Output $output
     }
     
     $env:JAVA_HOME, $env:JBANG_RUNTIME_SHELL, $env:JBANG_STDIN_NOTTY, $env:JBANG_LAUNCH_CMD=$oldJavaHome, $oldShell, $oldNotty, $oldCmd
+    
+    # Return what jbang returned, the way the bash launcher does. Without this the
+    # script ends normally and the caller always sees 0, so the exit code of whatever
+    # was run through jbang is lost.
+    # Note that callers have to use "powershell -File <script>" to see this code:
+    # "powershell -Command" reports any non-zero exit as 1.
+    exit $err
 }
 
 # architecture for platform-specific binary lookup

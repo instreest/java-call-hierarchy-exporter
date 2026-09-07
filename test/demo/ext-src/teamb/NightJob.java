@@ -6,7 +6,7 @@ import fx.service.Notifier;
 import fx.util.Counter;
 
 /**
- * 「他チームの jar」の中身。samples/demo のクラスを参照している。
+ * 「他チームの jar」の中身。test/demo のクラスを参照している。
  * extjars/team-b-batch.jar はこのファイルをコンパイルして作ったもの。
  */
 public class NightJob {

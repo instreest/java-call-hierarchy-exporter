@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 回帰テスト。samples/demo を解析し、出力 CSV を expected*/ と比較する。
+# 回帰テスト。test/demo を解析し、出力 CSV を expected*/ と比較する。
 #
 #   bash test/regression/run.sh            # jbang 経由で実行（初回は JDK と JDT を取得）
 #   JCHE_CMD="java -cp bin:lib/* CallHierarchyExporter" bash test/regression/run.sh   # 既にコンパイル済みなら
