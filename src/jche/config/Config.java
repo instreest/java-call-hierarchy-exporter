@@ -34,7 +34,8 @@ import org.eclipse.jdt.core.JavaCore;
  * </ul>
  * 設定ファイルと関連ファイルをひとまとめに配置でき、どこから実行しても同じ結果になる。
  *
- * 出力は output.folder の下に実行ごとのフォルダ（{@code <解析開始日時>_<project.root のフォルダ名>}）を
+ * 出力は output.folder（既定は {@code .} ＝設定ファイルと同じディレクトリ）の下に
+ * 実行ごとのフォルダ（{@code <解析開始日時>_<project.root のフォルダ名>}）を
  * 作って書く（{@link #outputDir}）。CSV のファイル名は固定で、設定ファイルの複製と実行ログも同じフォルダに入る。
  * キャッシュは出力フォルダには置かず、解析対象プロジェクトごとのサイドカーとして
  * このツールのプロジェクトフォルダ内（{@code <ツールのフォルダ>/.cache/<プロジェクト名>_<パスのハッシュ>/}）に置く。
@@ -206,8 +207,9 @@ public final class Config {
                 splitList(p.getProperty("external.library.folders", "")), false);
 
         // 出力は実行ごとのフォルダに分ける。フォルダ名に解析開始日時とプロジェクト名を入れ、
-        // 「いつ・どのプロジェクトを解析した結果か」がフォルダ名だけで分かるようにする
-        this.outputFolder = resolveUnderConfigDir("output.folder", p.getProperty("output.folder", "./output"));
+        // 「いつ・どのプロジェクトを解析した結果か」がフォルダ名だけで分かるようにする。
+        // 既定は「.」＝設定ファイルと同じフォルダ。設定ファイルとその実行結果が 1 か所にまとまる
+        this.outputFolder = resolveUnderConfigDir("output.folder", p.getProperty("output.folder", "."));
         this.outputDir = uniqueOutputDir(this.outputFolder,
                 startedAt.format(FOLDER_TIMESTAMP) + "_" + projectName);
         this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);

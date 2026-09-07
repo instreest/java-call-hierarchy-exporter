@@ -67,7 +67,7 @@ import jche.util.Log;
  *   jbang src/CallHierarchyExporter.java config/projA.properties config/projB.properties
  *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
  * </pre>
- * 設定ファイルごとに、その設定ファイルのフォルダの output.folder（既定 ./output）の下へ
+ * 設定ファイルごとに、その設定ファイルのフォルダを起点にした output.folder（既定 . ＝設定ファイルと同じフォルダ）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
  * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
  * 解析対象プロジェクトごとに置く（{@link jche.config.ToolRoot}、{@link Config}）。
