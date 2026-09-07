@@ -41,7 +41,12 @@ echo == multi ==
 if exist "whole\output" rmdir /s /q "whole\output"
 if exist "entry\output" rmdir /s /q "entry\output"
 del /q "run-multi.log" 2>nul
+del /q "output-dirs.txt" 2>nul
+rem 出力フォルダの場所を機械的に受け取る経路（環境変数 JCHE_OUTPUT_DIR_FILE。GitHub Actions の
+rem action.yml がこれで結果の場所を知る）も、ここで一緒に検査する
+set "JCHE_OUTPUT_DIR_FILE=%CD%\output-dirs.txt"
 %JCHE% "whole\config.properties" "no-such-config.properties" "entry\config.properties" > "run-multi.log" 2>&1
+set "JCHE_OUTPUT_DIR_FILE="
 rem 終了コードは、現在の jbangw\jbang.cmd（本家そのまま）が jbang 本体の終了コードを呼び出し元へ返さないため
 rem 検査できない（.github\workflows\smoke.yml の「known to fail」の項と jbangw\README.md）。ここでは結果を表示するだけで
 rem 失敗扱いにはしない。ツール自身が 1 を返すことは run.sh 側（Linux）で検査している
@@ -49,6 +54,8 @@ if errorlevel 1 (echo   OK   multi 終了コード=1（存在しない設定フ�
 call :expectlog_any multi "run-multi.log" "\] *OK .*whole.config.properties" "multi: whole が処理された"
 call :expectlog_any multi "run-multi.log" "\] *FAIL .*no-such-config.properties" "multi: 存在しない設定が失敗と報告された"
 call :expectlog_any multi "run-multi.log" "\] *OK .*entry.config.properties" "multi: entry が処理された"
+powershell -NoProfile -Command "$d=@(Get-Content 'output-dirs.txt' -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -ne '' }); if ($d.Count -eq 2 -and (Test-Path (Join-Path $d[0] 'call-hierarchy.csv'))) { Write-Host '  OK   multi JCHE_OUTPUT_DIR_FILE' } else { Write-Host ('  DIFF multi JCHE_OUTPUT_DIR_FILE の内容が期待どおりではありません: ' + $d.Count + ' 行'); exit 1 }"
+if errorlevel 1 set "FAIL=1"
 call :compare whole expected "multi: whole"
 call :expectrunfiles whole config.properties "multi: whole"
 call :compare entry expected "multi: entry"

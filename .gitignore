@@ -31,6 +31,12 @@ target/
 /test/regression/*/.cache/
 /test/regression/*/run*.log
 /test/regression/run-*.log
+# multi ケースが JCHE_OUTPUT_DIR_FILE の検査に使う（出力フォルダの一覧）
+/test/regression/output-dirs.txt
+
+# GitHub Actions（action.yml）の output-folder の既定値。このリポジトリ自身のワークフローで
+# アクションを動かしたときの出力先でもある
+/call-hierarchy-output/
 
 # サンプルの Maven / Gradle プロジェクト（test/maven-demo, test/maven-multi, test/gradle-demo）を
 # ビルドしたときの出力。回帰テストはビルドしない（ビルドファイルを読むだけ）が、手で試したとき用

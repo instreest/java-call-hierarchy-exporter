@@ -15,7 +15,8 @@
 #                          実行の形は通常ケースと同じ
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
-#                          終了コードが 1 になることを確認する
+#                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
+#                          （成功した設定の出力フォルダを 1 行ずつ書き出す。GitHub Actions 用）も確認する
 # 出力はツールが <case>/output/<解析開始日時>_<プロジェクト名>/ に書く（実行のたびに新しいフォルダ）。
 # 比較は最新のフォルダに対して行う。キャッシュは各ケースの cache.folder=./.cache の下（whole だけは
 # 既定どおり、ツールのプロジェクトフォルダの .cache/demo_<ハッシュ>/ にできることを検査する）。
@@ -116,8 +117,12 @@ expect_sidecar_cache() {   # $1=case  $2=ラベル
 # 3 つ目に存在しない設定ファイルを渡し、それが失敗しても前後の設定が処理されること、終了コードが 1 になることを見る
 multi_case() {
     echo "== multi =="
-    rm -rf whole/output entry/output run-multi.log
-    $JCHE_CMD whole/config.properties no-such-config.properties entry/config.properties > run-multi.log 2>&1
+    rm -rf whole/output entry/output run-multi.log output-dirs.txt
+    # 出力フォルダの場所を機械的に受け取る経路（環境変数 JCHE_OUTPUT_DIR_FILE。GitHub Actions の
+    # action.yml がこれで結果の場所を知る）も、ここで一緒に検査する。成功した設定の数だけ、
+    # その出力フォルダの絶対パスが 1 行ずつ入る（失敗した設定の行は入らない）
+    JCHE_OUTPUT_DIR_FILE="$PWD/output-dirs.txt" \
+        $JCHE_CMD whole/config.properties no-such-config.properties entry/config.properties > run-multi.log 2>&1
     local code=$?
     if [ $code = 1 ]; then
         echo "  OK   multi 終了コード=1（存在しない設定ファイルが失敗）"
@@ -130,6 +135,15 @@ multi_case() {
         echo "  OK   multi 実行結果の一覧（OK / FAIL / OK）"
     else
         echo "  DIFF multi 実行結果の一覧が期待どおりではありません"; LC_ALL=C grep -a -E '\] *(OK|FAIL) ' run-multi.log; fail=1
+    fi
+    local dirs
+    dirs=$(grep -c . output-dirs.txt 2> /dev/null || echo 0)
+    if [ "$dirs" = 2 ] && [ -f "$(head -1 output-dirs.txt)/call-hierarchy.csv" ]; then
+        echo "  OK   multi JCHE_OUTPUT_DIR_FILE（成功した 2 件の出力フォルダ）"
+    else
+        echo "  DIFF multi JCHE_OUTPUT_DIR_FILE の内容が期待どおりではありません（$dirs 行）"
+        cat output-dirs.txt 2> /dev/null
+        fail=1
     fi
     compare whole expected "multi: whole"
     expect_run_files whole config.properties "multi: whole"

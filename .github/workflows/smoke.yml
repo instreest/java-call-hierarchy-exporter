@@ -92,6 +92,64 @@ jobs:
             exit /b 1
           )
 
+  # action.yml（GitHub Actions から使うための複合アクション）を、このリポジトリ自身で動かす。
+  # 利用者のワークフローが通る経路そのものなので、設定ファイルを生成する経路（入力から作る）と
+  # 用意した設定ファイルを渡す経路の両方を通し、アクションの出力（csv / methods-csv / output-dirs）が
+  # 実在するファイルを指すことまで見る。
+  # ~/.jbang のキャッシュはアクション自身が持つ（cache 入力）ので、ここでは actions/cache を書かない
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 入力から設定ファイルを生成する経路。JDK の用意も JBang の取得もアクションの中で行う
+      - name: Export call hierarchy (generated config)
+        id: generated
+        uses: ./
+        with:
+          project-root: test/demo
+          source-folders: src
+          source-encoding: UTF-8
+          external-library-folders: extjars
+          upload-artifact: 'false'
+
+      # アクションの出力は env 経由で渡す（run: の中に ${{ }} を直接書かない書き方）
+      - name: Check outputs (generated config)
+        env:
+          OUTPUT_DIR: ${{ steps.generated.outputs.output-dir }}
+          CSV: ${{ steps.generated.outputs.csv }}
+          METHODS_CSV: ${{ steps.generated.outputs.methods-csv }}
+          RUN_LOG: ${{ steps.generated.outputs.run-log }}
+        run: |
+          test -s "$CSV"
+          test -s "$METHODS_CSV"
+          test -s "$RUN_LOG"
+          # 生成した設定ファイルの複製が出力フォルダに入っていること
+          test -f "$OUTPUT_DIR/config.properties"
+          head -1 "$CSV"
+
+      # 用意した設定ファイルを渡す経路。複数渡せること（出力フォルダが 2 つ）と、
+      # java-version を空にすると JDK のセットアップを飛ばすこと（前のステップの JDK を使う）も通す
+      - name: Export call hierarchy (existing config files)
+        id: existing
+        uses: ./
+        with:
+          config: |
+            test/regression/whole/config.properties
+            test/regression/entry/config.properties
+          java-version: ''
+          cache: 'false'
+          artifact-name: call-hierarchy-regression-configs
+
+      - name: Check outputs (existing config files)
+        env:
+          OUTPUT_DIRS: ${{ steps.existing.outputs.output-dirs }}
+          CSV: ${{ steps.existing.outputs.csv }}
+        run: |
+          # 設定ファイル 2 つぶんの出力フォルダが並ぶ
+          test "$(printf '%s\n' "$OUTPUT_DIRS" | grep -c .)" = 2
+          test -s "$CSV"
+
   # 同梱した JBang ラッパー（jbangw/）の検査。ファイルの中身を読むだけなので
   # JDK も jbang も要らず、数秒で終わる。
   # regression とは別ジョブにしてあるのは ~/.jbang を巻き込まないため。regression 側は
