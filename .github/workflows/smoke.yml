@@ -34,7 +34,7 @@ jobs:
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
-      - name: Regression test (samples/demo)
+      - name: Regression test (test/demo)
         run: bash test/regression/run.sh
 
   # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有
