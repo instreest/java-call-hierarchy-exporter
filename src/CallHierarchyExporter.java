@@ -158,6 +158,9 @@ public class CallHierarchyExporter {
         if (result.unresolved > 0) {
             Log.info("※ 型解決できなかった呼び出しが " + result.unresolved + " 件あります。");
             Log.info("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
+            if (!config.libraryFolders.isEmpty()) {
+                Log.info("   Maven / Gradle のプロジェクトなら、library.folders を空欄にすると pom.xml / build.gradle から自動取得します。");
+            }
             Log.info("   jar を足せば、次回の実行で影響するファイルだけが解析し直されます。");
             Log.info("   解決できた呼び出しだけが call-hierarchy.csv に出るため、");
             Log.info("   件数が多いまま使うと呼び出し階層に抜けが出ます。");

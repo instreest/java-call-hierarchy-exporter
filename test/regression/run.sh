@@ -8,13 +8,18 @@
 #   通常（whole / entry）… 同じ設定で2回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
+#   maven / mavenmulti / gradle
+#                        … library.folders を空欄にして、test/maven-demo（pom.xml）、test/maven-multi
+#                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
+#                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
+#                          実行の形は通常ケースと同じ
 # 実行ログは <case>/run-<回数>.log に残す。
 # 期待出力を更新するときは、差分を確認したうえで output/ を expected*/ にコピーする。
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry jarchange"}
+CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle"}
 fail=0
 
 compare() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
@@ -52,6 +57,13 @@ expect_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の最�
         echo "  DIFF $1 ログ: キャッシュが再利用されていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
 }
+expect_log_contains() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラベル
+    if LC_ALL=C grep -a -q -F -- "$3" "$1/run-$2.log"; then
+        echo "  OK   $1 ログ ($4)"
+    else
+        echo "  DIFF $1 ログ: 「$3」がありません ($4)"; fail=1
+    fi
+}
 expect_library_reanalysis() {   # $1=case  $2=何回目  $3=ラベル   … 「依存jarの変更による再解析=N」の N が 0 でない
     if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E 'jar[^=]*=[1-9]'; then
         echo "  OK   $1 ログ ($3)"
@@ -75,6 +87,14 @@ for c in $CASES; do
         compare "$c" expected-before "3回目: jar 削除"
     else
         run "$c" config.properties 1 "1回目" || continue
+        # ビルドファイルのケースは、直接の依存 greeter と、その POM から辿った推移的な依存 core の jar が
+        # 依存 jar の一覧（ログの ASCII 部分）に出ることを確かめる。jar が JDT に渡ったこと自体は
+        # 期待出力（jar の型への呼び出し）との比較が保証する
+        case "$c" in
+            maven|mavenmulti|gradle)
+                expect_log_contains "$c" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
+                expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた" ;;
+        esac
         compare "$c" expected "1回目: キャッシュ無し"
         run "$c" config.properties 2 "2回目" || continue
         expect_reused "$c" 2 "2回目: キャッシュを再利用"

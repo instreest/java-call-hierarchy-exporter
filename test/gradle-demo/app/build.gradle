@@ -1,0 +1,7 @@
+dependencies {
+    // 同じビルドの他プロジェクト。そのビルドファイルの依存（greeter とその推移的な依存 core）も集まる。
+    // core のクラス自体は、Eclipse（Buildship）や Gradle でビルドした出力（bin/main、build/classes）があるときだけ解決できる
+    implementation project(':core')
+    // 版カタログ（gradle/libs.versions.toml の sample-util）
+    implementation libs.sample.util
+}

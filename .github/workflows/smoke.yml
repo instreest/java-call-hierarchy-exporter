@@ -34,7 +34,8 @@ jobs:
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
-      - name: Regression test (test/demo)
+      # maven / mavenmulti / gradle のケースも、ビルドツール無しで動く（ビルドファイルを読むだけ）
+      - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh
 
   # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有

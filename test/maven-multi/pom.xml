@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <!--
+    回帰テスト（test/regression/mavenmulti）用のマルチモジュール Maven プロジェクト。
+    app は兄弟モジュール core に依存し、core は sample.deps:greeter に依存する。
+    ツールはこの pom.xml から modules を辿ってリアクタ（同じビルドのモジュール一覧）を作り、
+    app の core への依存を「core/target/classes とその pom.xml の依存」で解決する（mvn install は要らない）。
+    util の版はこの POM の dependencyManagement で決める。
+  -->
+  <groupId>sample</groupId>
+  <artifactId>multi-parent</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+
+  <modules>
+    <module>core</module>
+    <module>app</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <util.version>1.0</util.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>sample-localrepo</id>
+      <url>file://${project.basedir}/../localrepo</url>
+    </repository>
+  </repositories>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>sample.deps</groupId>
+        <artifactId>util</artifactId>
+        <version>${util.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>

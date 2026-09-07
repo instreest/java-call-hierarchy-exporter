@@ -332,6 +332,8 @@ JDT は `setEnvironment(..., includeRunningVMBootclasspath=true)` で、**実行
 ## 限界（対応しないと決めたこと）
 
 - `.classpath` の `kind="con"`（Maven / Gradle のコンテナ）は元から解決しておらず、今回の対象外
+  （その後 [Issue #44](https://github.com/instreest/java-call-hierarchy-exporter/issues/44) で、`library.folders` が空欄なら
+  pom.xml / build.gradle を読んでローカルリポジトリから依存 jar を集める形で対応した。[build-tool-classpath-qa.md](build-tool-classpath-qa.md)）
 - jar の順序だけの変化は検知しない（Q9）
 - 同じ jar が 2 つのフォルダにあるとき、どちらから解決されたかは区別しない
 - FatJar の中の jar は展開しない（[Issue #35](https://github.com/instreest/java-call-hierarchy-exporter/issues/35) の範囲）

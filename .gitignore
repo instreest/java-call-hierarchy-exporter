@@ -28,3 +28,14 @@ target/
 /test/regression/*/output/
 /test/regression/*/.cache/
 /test/regression/*/run*.log
+
+# サンプルの Maven / Gradle プロジェクト（test/maven-demo, test/maven-multi, test/gradle-demo）を
+# ビルドしたときの出力。回帰テストはビルドしない（ビルドファイルを読むだけ）が、手で試したとき用
+/test/*/target/
+/test/*/*/target/
+/test/*/.gradle/
+
+# test/gradle-demo/app は Eclipse（Buildship）で開いた形のサンプルなので、そのメタデータは追跡する
+# （上の .project / .classpath の除外はこのツール自身のもの）
+!/test/gradle-demo/app/.project
+!/test/gradle-demo/app/.classpath

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>sample.deps</groupId>
+    <artifactId>parent</artifactId>
+    <version>1.0</version>
+  </parent>
+  <artifactId>greeter</artifactId>
+  <description>サンプルプロジェクトが直接依存するライブラリ。ソースは test/localrepo-src/greeter</description>
+
+  <dependencies>
+    <!-- 版は親の dependencyManagement（プロパティ core.version）で決まる -->
+    <dependency>
+      <groupId>sample.deps</groupId>
+      <artifactId>core</artifactId>
+    </dependency>
+    <!-- test スコープと optional の依存は、greeter を使う側には伝わらない（jar はこのリポジトリに無い） -->
+    <dependency>
+      <groupId>sample.deps</groupId>
+      <artifactId>testlib</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>sample.deps</groupId>
+      <artifactId>opt</artifactId>
+      <version>1.0</version>
+      <optional>true</optional>
+    </dependency>
+  </dependencies>
+</project>

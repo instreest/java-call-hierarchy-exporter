@@ -70,7 +70,9 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 |---|---|---|---|
 | `project.root` | 必須 | 解析対象プロジェクトのルート | 設定ファイル |
 | `source.folders` | 空 | ソースフォルダ（カンマ区切り）。空なら Eclipse の `.classpath` の `kind="src"` を使う | `project.root` |
-| `library.folders` | 空 | 依存jarを集めたフォルダ（カンマ区切り）。フォルダ直下の `*.jar` を全部使う。`.classpath` の `kind="lib"` があれば合算。jarを足す・差し替える・外すと、次回の実行でその jar のパッケージを参照しているファイルと型解決に失敗していたファイルだけが解析し直される | `project.root` |
+| `library.folders` | 空 | 依存jarを集めたフォルダ（カンマ区切り）。フォルダ直下の `*.jar` を全部使う。`.classpath` の `kind="lib"` があれば合算。jarを足す・差し替える・外すと、次回の実行でその jar のパッケージを参照しているファイルと型解決に失敗していたファイルだけが解析し直される。**空なら `pom.xml` / `build.gradle` を読んでローカルリポジトリから集める（5.8）** | `project.root` |
+| `library.build.tool` | `auto` | `library.folders` が空のときに読むビルドファイルの種類。`auto`（`pom.xml` があれば Maven、`build.gradle` / `settings.gradle` があれば Gradle。両方あれば Eclipse の `.project` / `.classpath` の nature・コンテナで決め、無ければ Maven）/ `maven` / `gradle` / `none`（自動取得しない） | — |
+| `library.repositories` | 空 | ローカルリポジトリ（カンマ区切り）。空なら Maven の `~/.m2/repository`（`~/.m2/settings.xml` の `localRepository` があればそこ）と Gradle の `GRADLE_USER_HOME`（既定 `~/.gradle`）の `caches/modules-2/files-2.1` のうち存在するもの。相対パスは配下の制限なし。先頭の `~/` はホーム | 設定ファイルのフォルダ |
 | `source.encoding` | `UTF-8` | 解析対象ソースの文字コード（`MS932` 等） | — |
 | `source.level` | 空 | 解析対象のJavaバージョン（JDTの準拠レベル）。空なら使用中のJDTが対応する最大値 | — |
 | `external.library.folders` | 空 | 自分のコードを呼んでいる側の他チームjar（被参照スキャン用。ファイル／フォルダ、カンマ区切り）。フォルダはサブフォルダも含めて `*.jar` / `*.war` / `*.ear` を全部使う。FatJar（jar の中の jar）は中まで開く | `project.root` |
@@ -325,6 +327,20 @@ FatJar（Spring Boot の `BOOT-INF/lib/*.jar`、war の `WEB-INF/lib/*.jar`、ea
 一覧、フェーズごとの件数、各フェーズ終了時のヒープ使用量。進捗表示はフェーズ1だけ。
 標準出力の文字コードは固定しない。
 
+### 5.8 依存 jar の自動取得（`library.folders` が空のとき）
+
+ビルドツール（`mvn` / `gradle`）は実行せず、ネットワークにも出ない。各ソースフォルダから `project.root` まで
+上位へ辿って最初に見つかった `pom.xml` / `build.gradle(.kts)` / `settings.gradle(.kts)` のあるフォルダのビルドファイルを
+読み（マルチモジュールならソースフォルダを持つモジュールごと）、依存の jar と POM をローカルリポジトリから探す。
+推移的な依存はローカルにある POM を辿って集める（親 POM、`dependencyManagement`、BOM の import、`${...}`、exclusions、
+推移的な test / provided / optional の除外。版の衝突は Maven なら近い方、Gradle なら高い方が勝つ）。
+兄弟モジュール（Maven のリアクタ、Gradle の `project(':x')`）は `target/classes` / `build/classes` / Buildship の
+`bin/main` と、そのビルドファイルの依存で解決する（`mvn install` 不要。未ビルドなら注記を出す）。
+Gradle は宣言的な書き方（文字列の座標、map 形式、変数、版カタログ `libs.x.y`、`platform()`、`project()`、`files()`）だけ
+読み、`gradle.lockfile` があればそれを使う。読めない宣言はログに出す。
+集めた jar とクラスフォルダをそのまま JDT に渡す（jar はローカルリポジトリに置かれたまま）。無い jar は警告に座標と
+要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を `cache.folders/resolved-classpath.txt` に残す。
+
 ## 6. 設計上の優先順位
 
 1. **漏れないこと > 正確であること**。**絞れないことより、誤って1つに絞ることの方が有害**
@@ -394,10 +410,35 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 - `classpath` には**jarを1つずつ**渡す。フォルダを渡しても展開されない。`library.folders` の
   フォルダは直下の `*.jar` をファイル名順に列挙して展開し、**展開後の一覧をログに出す**
 - Eclipse の `.classpath` は `kind="src"` / `kind="lib"` だけ読む。**`kind="con"`
-  （Gradle/Mavenのコンテナ）は解決できない**ので、そういうプロジェクトは `library.folders` 必須。
+  （Gradle/Mavenのコンテナ）は解決できない**。そういうプロジェクトは `library.folders` を空にして
+  5.8 の自動取得に任せるか、`library.folders` に集めたフォルダを指定する。
+- クラスパスには jar だけでなく**クラスフォルダ**（`target/classes` など）も渡せる。ソースパスの型が
+  クラスパスより先に見つかるので、解析対象のソースの古い class がクラスフォルダにあってもソースが勝つ。
   他プロジェクト参照（`/` 始まりの `src`）は警告してスキップ。XML読み込みは DOCTYPE を禁止
 - Eclipse の `plugins/*` をワイルドカードでクラスパスに入れると、無関係なjarのSPI登録で
   `ServiceConfigurationError` になる。必要なjarだけを集める
+
+## 2.3a ビルドファイルの読み取りのはまりどころ（5.8）
+
+- **親 POM は座標で照合する。** `relativePath`（既定 `../pom.xml`）にファイルがあっても、groupId / artifactId / version が
+  一致しなければ親ではない（ローカルリポジトリの POM を探す）。`relativePath` を空にした親はディスク上を探さない。
+  親の版が `${revision}` のときは子の `<properties>` で展開してから探す
+- **管理の優先順位。** 自分の `dependencyManagement` → 親のもの → `scope=import` の BOM の順。BOM 自身も親と
+  プロパティを持つので、BOM の実効 POM を作ってから取り込む（循環は「構築中」の印で止める）
+- **直接の依存と推移的な依存で管理の効き方が違う。** 直接の依存は自分の版が優先で、無いときだけ管理の版。
+  推移的な依存はルートの管理が版を上書きする（Maven 3）
+- **推移的な依存では test / provided / optional を落とす。** 落とさないとテストライブラリが数十件混ざり、
+  ローカルに無い jar の警告で埋まる
+- **リアクタは `modules` から作る。** 実行ディレクトリから親の `relativePath` を辿ってディスク上の最上位の POM を
+  見つけ、`modules` を再帰的に集める。依存先がリアクタにあれば jar ではなく `target/classes` と、その pom.xml の依存
+- **Gradle のスクリプトは行単位で読む。** 先にブロックコメントと行コメントを除く（`//` は URL の `://` と区別する）。
+  `buildscript { }` と `constraints { }` の中は依存ではない。サブプロジェクトにはルートの `allprojects { }` /
+  `subprojects { }` の中の宣言も足す（ブロックは中括弧の対応で切り出し、文字列の中の括弧は数えない）
+- **`${property("x")}` は文字列の中に引用符が入る。** 文字列リテラルを切り出す前にプロパティの値へ置き換えないと、
+  内側の引用符で切り出しが止まる
+- **版カタログの別名は区切りを同一視する。** `foo-bar` / `foo_bar` / `foo.bar` はどれも `libs.foo.bar`
+- **ローカルリポジトリは 2 つの配置を両方試す。** Maven は `g/r/o/u/p/a/v/a-v.jar`、Gradle は
+  `group/a/v/<ハッシュ>/a-v.jar`（グループはドット区切りのまま）。SNAPSHOT はタイムスタンプ付きの名前で保存されている
 
 ## 2.4 「今どのメソッドの中にいるか」の管理
 

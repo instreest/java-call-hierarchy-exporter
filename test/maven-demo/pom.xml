@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  回帰テスト（test/regression/maven）用の Maven プロジェクト。
+  依存 sample.deps:greeter は test/localrepo（Maven 形式のローカルリポジトリ）にある。
+  ツールは library.folders が空欄のとき、この pom.xml を読み（Maven は実行しない）、greeter と
+  その推移的な依存（greeter の POM が親 POM の dependencyManagement で版を決めている core）の jar を
+  ローカルリポジトリ（テストでは library.repositories で test/localrepo を指定）から集める。
+  <repositories> は Maven でこのプロジェクトを実際にビルドする人のためのもので、ツールは見ない。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>sample</groupId>
+  <artifactId>maven-demo</artifactId>
+  <version>1.0</version>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <!-- 依存の版をプロパティで書く形（ツールが ${...} を展開できることの確認） -->
+    <greeter.version>1.0</greeter.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>sample-localrepo</id>
+      <url>file://${project.basedir}/../localrepo</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>sample.deps</groupId>
+      <artifactId>greeter</artifactId>
+      <version>${greeter.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -18,6 +18,9 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 ### 1. 設定ファイルを編集する
 
 `config/config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
+Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
+ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
+（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。
 
 ### 2. 実行する
 
@@ -121,6 +124,61 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,OrderService
 OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0,0,
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
+
+---
+
+## 依存 jar の自動取得（Maven / Gradle）
+
+依存 jar は `library.folders` に「集めたフォルダ」を指定するのが基本ですが、**`library.folders` を空欄にすると**、
+Maven / Gradle のプロジェクトではビルドファイルを読んで依存 jar を自動で集めます。
+ビルドツール（`mvn` / `gradle`）は実行せず、ネットワークにも出ません。`library.folders` に指定がある場合は自動取得しません。
+
+1. 各ソースフォルダから `project.root` まで上位へ辿り、最初に見つかった `pom.xml` / `build.gradle(.kts)` /
+   `settings.gradle(.kts)` のあるフォルダをプロジェクトとみなします（マルチモジュールなら、ソースフォルダを持つ
+   モジュールごと）。両方のビルドファイルがあるときは Eclipse の `.project`（m2e / Buildship の nature）と
+   `.classpath` でどちらとして開かれているかを見て、それも無ければ Maven を使います（`library.build.tool` で切り替え可）
+2. ビルドファイルから直接の依存を読み、jar と POM を**ローカルリポジトリ**から探します。既定は Maven の
+   `~/.m2/repository`（`~/.m2/settings.xml` の `localRepository` があればそこ）と Gradle の
+   `~/.gradle/caches/modules-2/files-2.1` で、Eclipse の m2e / Buildship が依存を取得した場所と同じです。
+   別の場所は `library.repositories` で指定します
+3. 推移的な依存は、ローカルリポジトリにある POM を辿って集めます（親 POM、`dependencyManagement`、BOM の
+   import、`${...}`、exclusions、optional / test / provided の除外を Maven と同じ規則で扱います。版の衝突は
+   Maven なら近い方、Gradle なら高い方が勝ちます）
+4. マルチモジュールの兄弟モジュール（Maven のリアクタ、Gradle の `project(':x')`）は、その `target/classes` /
+   `build/classes` / Buildship の `bin/main` と、そのビルドファイルの依存で解決します。`mvn install` は要りません
+5. 集めた jar とクラスフォルダをそのまま JDT に渡します。jar はローカルリポジトリに置かれたままで、コピーしません
+
+集めた一覧（パス・座標・要求元の連鎖）は `cache.folders/resolved-classpath.txt` に残ります。
+キャッシュの `L` 行にも同じパスが入るので、[依存 jar を変えたとき](#依存-jar-を変えたとき)の差分更新はそのまま効きます。
+
+Gradle のビルドファイルはプログラムなので、読めるのは宣言的な書き方だけです。
+
+| 読める | 例 |
+|---|---|
+| 文字列の座標 | `implementation 'g:a:v'`、`implementation("g:a:v")`、`api "g:a:$ver"` |
+| map 形式 | `implementation group: 'g', name: 'a', version: 'v'`、`(group = "g", name = "a", version = "v")` |
+| 変数 | `gradle.properties`、`ext { }`、`def` / `val` の文字列代入、`${property('x')}` |
+| 版カタログ | `libs.foo.bar`、`libs.bundles.x`（`gradle/libs.versions.toml`、settings の `from(files(...))`） |
+| BOM | `platform('g:a:v')` / `enforcedPlatform(...)`（版の無い依存の版を決める） |
+| 他プロジェクト | `project(':x')`、`projects.x` |
+| ファイル | `files('lib/a.jar')`、`fileTree('lib')` |
+| ロックファイル | `gradle.lockfile`（あれば解決済みの依存をそのまま使う） |
+
+読めない宣言（プラグインが足す依存、ループや条件で組み立てた座標など）はログに「読めない依存の宣言」として出ます。
+その場合は従来どおり jar を集めたフォルダを `library.folders` に指定してください。
+
+| 設定 | 意味 |
+|---|---|
+| `library.build.tool` | `auto`（既定）/ `maven` / `gradle` / `none`（自動取得しない） |
+| `library.repositories` | ローカルリポジトリ（カンマ区切り）。空欄なら上記の既定。Maven 形式でも Gradle のキャッシュ形式でも可 |
+
+うまくいかないとき:
+
+- ローカルリポジトリに無い jar は警告に出て、無いまま解析が続きます（その型を使う呼び出しは型解決に失敗します）。
+  Eclipse や Maven / Gradle で一度依存を取得（ビルド）すればローカルリポジトリに入ります。このツールはダウンロードしません
+- 兄弟モジュールがビルドされていない（`target/classes` 等が無い）ときは、そのモジュールのソースも `source.folders` に
+  含めてください。ソースから解決されます
+- 対応の範囲と判断は [docs/build-tool-classpath-qa.md](docs/build-tool-classpath-qa.md) にまとめています
 
 ---
 
@@ -356,7 +414,7 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 
 | パッケージ | 役割 | 主なクラス |
 |---|---|---|
-| `jche.config` | 設定ファイルとプロジェクト構成の読み取り | `Config`, `ProjectLayout`, `PackagePattern` |
+| `jche.config` | 設定ファイルとプロジェクト構成の読み取り。ビルドファイルとローカルリポジトリからの依存 jar の収集 | `Config`, `ProjectLayout`, `BuildFileClasspath`, `MavenModels`, `DependencyCollector`, `GradleBuild`, `PackagePattern` |
 | `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
 | `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
 | `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
@@ -378,6 +436,11 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
 `jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
 jar の追加・削除が影響するファイルの再解析だけで出力に反映されることを確認します。
+`maven` / `mavenmulti` / `gradle` ケースは `library.folders` を空欄にして、`test/maven-demo`（`pom.xml`）、
+`test/maven-multi`（マルチモジュール）、`test/gradle-demo`（`build.gradle`。`app` は Buildship の
+`.project` / `.classpath` 付き）のビルドファイルを読み、`test/localrepo`（Maven 形式のローカルリポジトリ）から
+依存 jar `sample.deps:greeter` と、その POM から辿る推移的な依存 `core` を集めて、jar の型への呼び出しが
+出力に出ることを確認します。ビルドツールもネットワークも要りません。
 
 ```bash
 bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
@@ -431,4 +494,4 @@ Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest))
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 ```
 
-`samples/` 以下は解析対象のサンプルデータなので、この行は付けません。
+`test/` 以下のサンプルプロジェクト（`test/demo`、`test/maven-demo` など）は解析対象のサンプルデータなので、この行は付けません。
