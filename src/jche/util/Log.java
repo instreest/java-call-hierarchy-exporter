@@ -7,6 +7,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 
 /**
  * 標準出力へのログ。行頭に実行開始からの経過時間 [分:秒.ミリ秒s] を付ける。
@@ -28,6 +29,9 @@ public final class Log {
 
     /** 標準出力と同じ内容を書く先。無ければ null */
     private static PrintWriter file;
+
+    /** 標準出力と同じ内容を渡す先（Eclipse プラグインのコンソール等）。無ければ null */
+    private static Consumer<String> sink;
 
     private Log() {
     }
@@ -92,8 +96,31 @@ public final class Log {
         }
     }
 
+    /**
+     * 以降のログを標準出力に加えてこの受け口にも渡す。
+     * Eclipse プラグインのように標準出力が利用者から見えない場所で使う。
+     * 付け替えは上書きで、{@link #detachSink()} で外す。
+     */
+    public static void attachSink(Consumer<String> lineSink) {
+        sink = lineSink;
+    }
+
+    /** 受け口への複写をやめる。付いていなければ何もしない */
+    public static void detachSink() {
+        sink = null;
+    }
+
     private static void println(String line) {
         System.out.println(line);
+        if (sink != null) {
+            // 受け口側の失敗（コンソールが閉じられた等）で解析そのものを止めない
+            try {
+                sink.accept(line);
+            } catch (RuntimeException e) {
+                sink = null;
+                System.out.println("[WARN] ログの受け口への出力に失敗したため、以降は標準出力だけに書きます: " + e);
+            }
+        }
         if (file != null) {
             file.println(line);
             file.flush();

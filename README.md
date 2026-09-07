@@ -7,7 +7,9 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 > `jbangw/jbang src/CallHierarchyExporter.java config.properties` (the first run downloads a JDK
 > and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
 > use. Several config files can be passed at once; each run writes to its own timestamped output
-> folder. Apache-2.0. Documentation is in Japanese.
+> folder. It can also be built as an Eclipse plug-in (`mvn -f eclipse-plugin/pom.xml package`, or via PDE)
+> that adds an "export call hierarchy to CSV" command to the package explorer. Apache-2.0.
+> Documentation is in Japanese.
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config.properties](config.properties)（コメントに全項目の説明）
@@ -94,6 +96,37 @@ JBang 本家の Eclipse 連携プラグイン（jbang-eclipse）を入れると�
 どちらか一方が壊れ続けます。併用しないでください。
 Gradle を選ばなかった理由を含め、実装時に迷った点は
 [docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
+
+#### Eclipseプラグインとして使う
+
+`eclipse-plugin/` に Eclipse プラグイン（OSGi バンドル）の定義があります。入れると、
+パッケージ・エクスプローラーで設定ファイル（`*.properties`）を右クリック →
+**「呼び出し階層をCSVに出力」** で解析でき、実行構成を作る必要がなくなります。
+複数選択すれば、コマンドラインに設定ファイルを並べたときと同じく順に処理します。
+ログは「Call Hierarchy Exporter」コンソールに出ます（`run.log` も今までどおり出力フォルダに残ります）。
+
+ビルドの仕方は 2 通りあります。どちらも解析本体はリポジトリ直下の `src/` をそのまま使うので、
+CLI と同じコード・同じ出力です。
+
+```bash
+# 1) Eclipse 無しでバンドル jar を作る（JDK 17 以上と Maven が要る）
+mvn -f eclipse-plugin/pom.xml package
+# -> eclipse-plugin/target/io.github.instreest.jche.eclipse-1.0.0.jar
+#    この jar を <Eclipseのインストール先>/dropins/ に置いて Eclipse を再起動する
+```
+
+```
+2) Eclipse（PDE）でビルドする
+   「ファイル > インポート > 一般 > 既存プロジェクトをワークスペースへ」で eclipse-plugin/ を選ぶ
+   （リポジトリ直下の Maven プロジェクトとは別プロジェクトとして開きます）
+   実行は「実行 > 実行構成 > Eclipse アプリケーション」、配布は
+   「ファイル > エクスポート > デプロイ可能なプラグイン及びフラグメント」
+```
+
+キャッシュはワークスペースの `.metadata/.plugins/io.github.instreest.jche.eclipse/.cache/` にできます
+（CLI とは実行 JDK が違いうるため、意図して分けています）。
+Tycho を使わない理由や、CLI との二重実装を避けるためにした設計は
+[docs/eclipse-plugin-qa.md](docs/eclipse-plugin-qa.md) にあります。
 
 ---
 
@@ -478,7 +511,9 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 ## ソースの構成
 
 `src/CallHierarchyExporter.java` がエントリポイント（JBang の指示行と `main`）で、
-本体は `src/jche/` 配下のパッケージに分かれています。パッケージは処理のフェーズに対応します。
+引数を解釈して `jche.Exporter` に渡すだけです。解析の本体は `src/jche/` 配下のパッケージに
+分かれていて、パッケージは処理のフェーズに対応します。
+Eclipse プラグイン（`eclipse-plugin/`）も同じ `jche.Exporter` を呼びます。
 
 | パッケージ | 役割 | 主なクラス |
 |---|---|---|
@@ -489,9 +524,10 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
 | `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
 | `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
+| `jche`（直下） | 設定ファイルを受け取ってフェーズ1〜3を回す本体。CLI とプラグインの共通の入口 | `Exporter` |
 | `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
 
-読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
+読む順番は `CallHierarchyExporter.main` → `jche.Exporter.run` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
 → `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
 キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
 
@@ -553,6 +589,19 @@ bash test/pom/run.sh           # Linux / macOS / Git Bash
 
 GitHub Actions では、これに加えて `mvn compile` で `pom.xml` から実際に依存を解決してコンパイルできることも
 確認します（Eclipse の m2e が行う解決と同じです）。
+
+Eclipse プラグイン（`eclipse-plugin/`）にも検査があります。JDT の版が `//DEPS` 行・直下の `pom.xml`・
+`eclipse-plugin/pom.xml` で一致すること、`Bundle-Version` と pom の版、`Bundle-SymbolicName` と
+plugin.xml・ハンドラの綴り、plugin.xml が指すクラスの実在、`build.properties` の `source..` の
+フォルダの実在を見ます。
+
+```bash
+bash test/plugin/run.sh        # Linux / macOS / Git Bash
+```
+
+GitHub Actions では、これに加えて `mvn -f eclipse-plugin/pom.xml package` で実際にバンドル jar を
+組み立てられることも確認します。画面操作の自動テストは持っていません（理由は
+[docs/eclipse-plugin-qa.md](docs/eclipse-plugin-qa.md) の Q11）。
 
 ---
 

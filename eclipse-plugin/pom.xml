@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Eclipse プラグイン（OSGi バンドル）を Eclipse 無しでビルドするための Maven 設定。
+
+    cd eclipse-plugin && mvn package
+      -> target/io.github.instreest.jche.eclipse-1.0.0.jar
+
+  できた jar を Eclipse の dropins/ に置いて再起動すれば、プラグインとして使える。
+  Eclipse 上で開発するときは PDE（.project / .classpath / build.properties / META-INF/MANIFEST.MF）を
+  使うので、この pom.xml は「PDE 無しでもビルドできること」を CI で確かめるためのもの。
+  バンドルの素性（Bundle-SymbolicName や依存）は MANIFEST.MF が唯一の正で、
+  maven-jar-plugin にその MANIFEST.MF をそのまま入れさせている（二重管理にしない）。
+
+  Tycho を使わない理由、依存の版を MANIFEST.MF と揃える方法は docs/eclipse-plugin-qa.md
+  （Q7・Q8）にまとめてある。プラグイン本体のソースは複製せず、リポジトリ直下の src/ を
+  そのままコンパイル対象にする（build-helper で ../src を足している）。
+
+  JDT の版は //DEPS 行・リポジトリ直下の pom.xml と同じでなければならない
+  （test/plugin/run.sh が食い違いを検出する）。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.instreest</groupId>
+  <artifactId>io.github.instreest.jche.eclipse</artifactId>
+  <!-- MANIFEST.MF の Bundle-Version と同じ -->
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17 と同じ -->
+    <maven.compiler.release>17</maven.compiler.release>
+    <jdt.version>3.46.0</jdt.version>
+  </properties>
+
+  <dependencies>
+    <!-- 解析本体が使う JDT。版は //DEPS 行と同じであること -->
+    <dependency>
+      <groupId>org.eclipse.jdt</groupId>
+      <artifactId>org.eclipse.jdt.core</artifactId>
+      <version>${jdt.version}</version>
+    </dependency>
+
+    <!-- プラグイン側（src-ui）が使う Eclipse の API。実行時は Eclipse 本体のものを使うので provided。
+         版は Pleiades 2026-06 相当。MANIFEST.MF の Require-Bundle に書いた下限以上であればよい -->
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.ui.workbench</artifactId>
+      <version>3.140.0</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.ui.console</artifactId>
+      <version>3.17.100</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.jface</artifactId>
+      <version>3.40.0</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.commands</artifactId>
+      <version>3.13.0</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.resources</artifactId>
+      <version>3.24.100</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.runtime</artifactId>
+      <version>3.35.0</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.jobs</artifactId>
+      <version>3.15.900</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.equinox.common</artifactId>
+      <version>3.21.0</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.osgi</artifactId>
+      <version>3.24.300</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.swt</artifactId>
+      <version>3.135.0</version>
+      <scope>provided</scope>
+      <exclusions>
+        <!-- org.eclipse.platform の POM は Maven Central に無い成果物（com.sun.jna 等）を
+             バージョン範囲で参照していて、そのままでは解決に失敗する。
+             ここで要るのはコンパイル用の API だけなので推移的な依存はすべて切る
+             （docs/eclipse-plugin-qa.md の Q8） -->
+        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>${project.artifactId}-${project.version}</finalName>
+    <!-- プラグイン固有のコード。解析本体（../src）は build-helper で足す -->
+    <sourceDirectory>src-ui</sourceDirectory>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>add-core-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources><source>${project.basedir}/../src</source></sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <!-- OSGi の情報は MANIFEST.MF が唯一の正。PDE と同じものを使う -->
+            <manifestFile>META-INF/MANIFEST.MF</manifestFile>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+    <resources>
+      <resource>
+        <directory>${project.basedir}</directory>
+        <includes><include>plugin.xml</include></includes>
+      </resource>
+    </resources>
+  </build>
+</project>

@@ -126,3 +126,25 @@ jobs:
 
       - name: Compile with Maven
         run: mvn -B --no-transfer-progress compile
+
+  # Eclipse プラグイン（eclipse-plugin/）の検査。
+  # 1) 版・ID・クラス名がファイル間で食い違っていないこと（ファイルを読むだけ、数秒）
+  # 2) Eclipse 無しでバンドル jar が組み立てられること（mvn package）。
+  #    PDE のかわりに maven-jar-plugin へ同じ MANIFEST.MF を渡している。JDK は
+  #    Bundle-RequiredExecutionEnvironment と同じ 17
+  eclipse-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Plugin definition consistency check
+        run: bash test/plugin/run.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build the bundle jar
+        run: mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package

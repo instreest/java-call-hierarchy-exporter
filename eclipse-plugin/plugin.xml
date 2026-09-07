@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<!--
+  画面への追加はコマンド1つだけ。パッケージ・エクスプローラーで設定ファイル（*.properties）を
+  選んで右クリック → 「呼び出し階層をCSVに出力」で解析が走る。
+  複数選択すればコマンドラインに複数の設定ファイルを渡したときと同じ扱いになる。
+-->
+<plugin>
+   <extension point="org.eclipse.ui.commands">
+      <category
+            id="io.github.instreest.jche.eclipse.category"
+            name="Java Call Hierarchy Exporter"/>
+      <command
+            categoryId="io.github.instreest.jche.eclipse.category"
+            defaultHandler="jche.eclipse.ExportCallHierarchyHandler"
+            id="io.github.instreest.jche.eclipse.export"
+            name="呼び出し階層をCSVに出力"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.menus">
+      <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
+         <command
+               commandId="io.github.instreest.jche.eclipse.export"
+               label="呼び出し階層をCSVに出力"
+               style="push">
+            <!-- 選択が「すべて .properties ファイル」のときだけ出す -->
+            <visibleWhen checkEnabled="false">
+               <with variable="selection">
+                  <and>
+                     <count value="+"/>
+                     <iterate ifEmpty="false" operator="and">
+                        <adapt type="org.eclipse.core.resources.IFile">
+                           <test property="org.eclipse.core.resources.name" value="*.properties"/>
+                        </adapt>
+                     </iterate>
+                  </and>
+               </with>
+            </visibleWhen>
+         </command>
+      </menuContribution>
+   </extension>
+</plugin>
