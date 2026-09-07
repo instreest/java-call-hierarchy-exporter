@@ -372,10 +372,9 @@ GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint
 （JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。
 
 `jbangw/` に同梱した JBang ラッパースクリプトには、別のテストがあります。この 3 ファイルは
-JBang 本家からそのまま持ち込んだうえで、JDK 自動取得まわりの不具合（Windows で JDK が
-取得できない、壊れた JDK をキャッシュしてしまう、など）を修正して取り込んでいます。
-本家から取り直して差し替えると修正が黙って巻き戻るため、それを検出します。
-修正の一覧と取り直しの手順は [jbangw/README.md](jbangw/README.md) にあります。
+JBang 本家からそのまま持ち込んだもので、JDK の自動取得・アーキテクチャ判定・終了コードの
+伝播といった、壊れても気づきにくい箇所が取り込み時の内容から黙って変わっていないかを検出します。
+出所・ライセンス・取り直しの手順は [jbangw/README.md](jbangw/README.md) にあります。
 
 ```bash
 bash test/jbangw/run.sh        # Linux / macOS / Git Bash
