@@ -75,12 +75,14 @@ for /f "delims=" %%D in ('dir /b /ad /o-n "%~1\output" 2^>nul') do if not define
 exit /b 0
 
 :expectrunfiles
-rem %1=case  %2=設定ファイル名  %3=ラベル。出力フォルダに設定ファイルの複製と run.log があること
+rem %1=case  %2=設定ファイル名  %3=ラベル。出力フォルダに設定ファイルの複製と run.log があること。
+rem 括弧ブロックの中の echo でラベルを半角の ( ) で囲むと、) がブロックの終端と解釈されて
+rem 「) was unexpected at this time.」で止まるので、全角の（ ）を使う
 call :latest "%~1"
-if "%OUT%"=="" (echo   DIFF %~1 出力フォルダがありません (%~3) & set "FAIL=1" & exit /b 0)
+if "%OUT%"=="" (echo   DIFF %~1 出力フォルダがありません（%~3） & set "FAIL=1" & exit /b 0)
 fc /b "%~1\%~2" "%OUT%\%~2" >nul 2>&1
-if errorlevel 1 (echo   DIFF %~1 設定ファイルの複製がありません: %OUT%\%~2 (%~3) & set "FAIL=1") else (echo   OK   %~1 設定ファイルの複製 (%~3))
-if exist "%OUT%\run.log" (echo   OK   %~1 run.log (%~3)) else (echo   DIFF %~1 run.log がありません: %OUT%\run.log (%~3) & set "FAIL=1")
+if errorlevel 1 (echo   DIFF %~1 設定ファイルの複製がありません: %OUT%\%~2（%~3） & set "FAIL=1") else (echo   OK   %~1 設定ファイルの複製（%~3）)
+if exist "%OUT%\run.log" (echo   OK   %~1 run.log（%~3）) else (echo   DIFF %~1 run.log がありません: %OUT%\run.log（%~3） & set "FAIL=1")
 exit /b 0
 
 :expectsidecar
@@ -126,7 +128,7 @@ rem %1=case  %2=期待出力のフォルダ  %3=ラベル。CSV は UTF-8（BOM 
 rem 一致しないときは差分を先頭 20 行まで出す（<= が期待側だけ、=> が実際の出力だけにある行）。
 rem Compare-Object は集合として比べるので、差分が出ないのに一致しない場合は並び順だけが違う
 call :latest "%~1"
-if "%OUT%"=="" (echo   DIFF %~1 出力フォルダがありません (%~3) & set "FAIL=1" & exit /b 0)
+if "%OUT%"=="" (echo   DIFF %~1 出力フォルダがありません（%~3） & set "FAIL=1" & exit /b 0)
 for %%F in (call-hierarchy.csv methods.csv) do (
     powershell -NoProfile -Command "$e=(Get-Content -Raw -Encoding UTF8 '%~1\%~2\%%F') -replace \"`r\",''; $o=(Get-Content -Raw -Encoding UTF8 '%OUT%\%%F') -replace \"`r\",''; if ($e -eq $o) { Write-Host '  OK   %~1/%%F (%~3)' } else { Write-Host '  DIFF %~1/%%F (%~3)'; $d=Compare-Object ($e -split \"`n\") ($o -split \"`n\"); if ($d) { $d | Select-Object -First 20 | ForEach-Object { Write-Host ('       ' + $_.SideIndicator + ' ' + $_.InputObject) } } else { Write-Host '       (行の集合は同じ。並び順だけが違う)' }; exit 1 }"
     if errorlevel 1 set "FAIL=1"
