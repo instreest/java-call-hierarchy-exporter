@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   回帰テスト（test/regression/maven）用の Maven プロジェクト。
-  依存 sample.deps:greeter は samples/localrepo（Maven 形式のローカルリポジトリ）にある。
+  依存 sample.deps:greeter は test/localrepo（Maven 形式のローカルリポジトリ）にある。
   ツールは library.folders が空欄のとき、この pom.xml を読み（Maven は実行しない）、greeter と
   その推移的な依存（greeter の POM が親 POM の dependencyManagement で版を決めている core）の jar を
-  ローカルリポジトリ（テストでは library.repositories で samples/localrepo を指定）から集める。
+  ローカルリポジトリ（テストでは library.repositories で test/localrepo を指定）から集める。
   <repositories> は Maven でこのプロジェクトを実際にビルドする人のためのもので、ツールは見ない。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

@@ -11,7 +11,7 @@ set "FAIL=0"
 
 for %%C in (whole entry) do call :normalcase "%%C"
 
-rem ビルドファイル（pom.xml / build.gradle）とローカルリポジトリ（samples\localrepo）から依存 jar を集めるケース。
+rem ビルドファイル（pom.xml / build.gradle）とローカルリポジトリ（test\localrepo）から依存 jar を集めるケース。
 rem 直接の依存 greeter と、その POM から辿った推移的な依存 core の jar がログの一覧に出ることを確かめる
 for %%C in (maven mavenmulti gradle) do (
     call :normalcase "%%C"

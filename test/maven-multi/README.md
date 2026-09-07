@@ -1,4 +1,4 @@
-# samples/maven-multi
+# test/maven-multi
 
 回帰テスト `test/regression/mavenmulti` 用のマルチモジュール Maven プロジェクトです。
 

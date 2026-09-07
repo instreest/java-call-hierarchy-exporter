@@ -9,7 +9,7 @@
     <version>1.0</version>
   </parent>
   <artifactId>greeter</artifactId>
-  <description>サンプルプロジェクトが直接依存するライブラリ。ソースは samples/localrepo-src/greeter</description>
+  <description>サンプルプロジェクトが直接依存するライブラリ。ソースは test/localrepo-src/greeter</description>
 
   <dependencies>
     <!-- 版は親の dependencyManagement（プロパティ core.version）で決まる -->

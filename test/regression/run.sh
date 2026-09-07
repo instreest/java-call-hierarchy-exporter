@@ -9,9 +9,9 @@
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
 #   maven / mavenmulti / gradle
-#                        … library.folders を空欄にして、samples/maven-demo（pom.xml）、samples/maven-multi
-#                          （マルチモジュール）、samples/gradle-demo（build.gradle）のビルドファイルから依存 jar を
-#                          集める。jar は samples/localrepo（library.repositories）から。ビルドツールは要らない。
+#                        … library.folders を空欄にして、test/maven-demo（pom.xml）、test/maven-multi
+#                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
+#                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
 # 実行ログは <case>/run-<回数>.log に残す。
 # 期待出力を更新するときは、差分を確認したうえで output/ を expected*/ にコピーする。

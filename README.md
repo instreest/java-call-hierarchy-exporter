@@ -416,9 +416,9 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
 `jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
 jar の追加・削除が影響するファイルの再解析だけで出力に反映されることを確認します。
-`maven` / `mavenmulti` / `gradle` ケースは `library.folders` を空欄にして、`samples/maven-demo`（`pom.xml`）、
-`samples/maven-multi`（マルチモジュール）、`samples/gradle-demo`（`build.gradle`。`app` は Buildship の
-`.project` / `.classpath` 付き）のビルドファイルを読み、`samples/localrepo`（Maven 形式のローカルリポジトリ）から
+`maven` / `mavenmulti` / `gradle` ケースは `library.folders` を空欄にして、`test/maven-demo`（`pom.xml`）、
+`test/maven-multi`（マルチモジュール）、`test/gradle-demo`（`build.gradle`。`app` は Buildship の
+`.project` / `.classpath` 付き）のビルドファイルを読み、`test/localrepo`（Maven 形式のローカルリポジトリ）から
 依存 jar `sample.deps:greeter` と、その POM から辿る推移的な依存 `core` を集めて、jar の型への呼び出しが
 出力に出ることを確認します。ビルドツールもネットワークも要りません。
 
@@ -463,4 +463,4 @@ Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest))
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 ```
 
-`samples/` 以下は解析対象のサンプルデータなので、この行は付けません。
+`test/` 以下のサンプルプロジェクト（`test/demo`、`test/maven-demo` など）は解析対象のサンプルデータなので、この行は付けません。

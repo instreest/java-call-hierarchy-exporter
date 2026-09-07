@@ -1,4 +1,4 @@
-# samples/gradle-demo
+# test/gradle-demo
 
 回帰テスト `test/regression/gradle` 用のマルチプロジェクト Gradle ビルドです。ツールは Gradle を実行せず、
 これらのファイルを読んで依存を集めます。
@@ -15,10 +15,10 @@
 テストの `project.root` は `app` で、`source.folders` は空欄（`.classpath` から取る）です。
 ツールは `app/build.gradle` を読み、`project(':core')` から `core/build.gradle` の依存 greeter を、
 greeter の POM から推移的な依存 `core`（`sample.deps:core`）を、版カタログから `util` を集めます。
-jar と POM はローカルリポジトリ（テストでは `library.repositories` で `samples/localrepo` を指定）から探します。
+jar と POM はローカルリポジトリ（テストでは `library.repositories` で `test/localrepo` を指定）から探します。
 
 `core` プロジェクトのクラス自体は、Eclipse（Buildship）や Gradle でビルドした出力（`bin/main`、`build/classes/java/main`）が
 あるときだけ解決できます。このサンプルではビルドしていないのでログに注記が出ます。`app` のソースは `core` のクラスを使いません。
 
-`src/main/java/sample/app/` のソースは `samples/maven-demo` のものに `Strings.upper`（util）の呼び出しを足したものです
-（説明は `samples/maven-demo/README.md`）。
+`src/main/java/sample/app/` のソースは `test/maven-demo` のものに `Strings.upper`（util）の呼び出しを足したものです
+（説明は `test/maven-demo/README.md`）。

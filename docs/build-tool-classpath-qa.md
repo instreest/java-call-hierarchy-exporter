@@ -18,7 +18,7 @@
 - 集めた jar とクラスフォルダはそのまま JDT に渡し、キャッシュの `L` 行で変更を検知する（クラスフォルダは
   `.class` の数と最新の更新時刻で）
 - 設定に `library.build.tool`（auto / maven / gradle / none）と `library.repositories` を足した
-- 回帰テストに `maven` / `mavenmulti` / `gradle` の 3 ケースを加えた（依存は `samples/localrepo` から取るので、
+- 回帰テストに `maven` / `mavenmulti` / `gradle` の 3 ケースを加えた（依存は `test/localrepo` から取るので、
   ビルドツールもネットワークも要らない）
 
 ---
@@ -150,7 +150,7 @@ Gradle の配置の両方を試す。
 `library.repositories` で置き換えられる。カンマ区切りで複数書け、Maven 形式のフォルダ（jar を集めたもの、
 社内の複製など）でもよい。相対パスは設定ファイルのフォルダ起点で、他の項目と違って配下の制限は掛けない
 （リポジトリは設定ファイルやプロジェクトの外にあるのが普通）。先頭の `~/` はホームに展開する。
-回帰テストはこれで `samples/localrepo` を指す。
+回帰テストはこれで `test/localrepo` を指す。
 
 SNAPSHOT はダウンロード時に `artifact-1.0-20240101.123456-3.jar` のようにタイムスタンプ付きで保存されるので、
 その形も探して最も新しいものを取る。範囲（`[1.0,2.0)`）や動的な版（`1.+`、`latest.release`）は、
@@ -177,6 +177,7 @@ Maven（m2e の nature）と Gradle（Buildship の nature）のどちらとし�
 （重複は除く）。project.root がマルチモジュールのアグリゲータなら、ソースフォルダを持つモジュールごとに読むことになり、
 アグリゲータ自身の POM は読まない（依存を持たない）。project.root を複数プロジェクトを束ねたフォルダにして
 `source.folders=app/src/main/java,lib/src/main/java` と書く使い方でも、それぞれのビルドファイルが見つかる。
+（回帰テストの `mavenmulti` がこの形。`maven` / `gradle` は project.root 自身にビルドファイルがある形）
 `.classpath` から取ったソースフォルダも同じ扱い。
 
 ### Q13. クラスフォルダ（`target/classes`、`build/classes/java/main`）を JDT に渡してよいか
@@ -231,7 +232,7 @@ Issue が求めたのは「`library.folders` が空欄なら自動取得、指�
 
 ### Q18. サンプルのローカルリポジトリ
 
-`samples/localrepo` に Maven 形式で 4 つのアーティファクトを置いた（ソースは `samples/localrepo-src`）。
+`test/localrepo` に Maven 形式で 4 つのアーティファクトを置いた（ソースは `test/localrepo-src`）。
 
 | アーティファクト | 何を確かめるか |
 |---|---|
@@ -245,18 +246,18 @@ Issue が求めたのは「`library.folders` が空欄なら自動取得、指�
 `core-1.0.jar` が依存 jar の一覧（ASCII 部分）に出ることを見る。
 
 パッケージ名は最初 `sample.lib` にしたが、リポジトリの `.gitignore` が `lib/` を無視するため
-`samples/localrepo/sample/lib/` が追跡されず、`sample.deps` に改めた
+`test/localrepo/sample/lib/` が追跡されず、`sample.deps` に改めた
 （[cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) の Q16 と同じ罠）。
 
 ### Q19. 3 つのケースで通す経路
 
 | ケース | 経路 |
 |---|---|
-| `maven` | project.root（`samples`）にビルドファイルが無く、ソースフォルダの上位で `pom.xml` を見つける（Q12）。版はプロパティ `${greeter.version}` |
+| `maven` | 単一モジュール。ソースフォルダ `src/main/java` の上位で `pom.xml` を見つける（Q12）。版はプロパティ `${greeter.version}` |
 | `mavenmulti` | project.root がアグリゲータ。`core` / `app` の pom.xml をそれぞれ読み、`app` の兄弟 `core` への依存（`${project.version}`）をリアクタで解決する（Q6）。`util` の版はアグリゲータの `dependencyManagement`。`core` は未ビルドなので注記が出るが、ソースを解析対象に含めているので型はソースから解決される |
 | `gradle` | project.root が Buildship の `.project` / `.classpath` を持つ `app`。`source.folders` も空欄にして `.classpath` からソースフォルダを取る。`settings.gradle` は上位。`project(':core')` から `core/build.gradle` の `$greeterVersion`（`gradle.properties`）を、版カタログから `util` を集める |
 
-いずれも `library.repositories=../../../samples/localrepo`（設定ファイルからの相対）で、ビルドツールもネットワークも
+いずれも `library.repositories=../../../test/localrepo`（設定ファイルからの相対）で、ビルドツールもネットワークも
 `~/.m2` も要らない。Windows の `run.cmd` にも同じケースを足した（ビルドツールの実行が無くなったので、
 Windows 固有の懸念は無くなった）。
 

@@ -2,7 +2,7 @@
 // app は project(':core') に依存し、core は sample.deps:greeter（版は gradle.properties の greeterVersion）に依存する。
 // app はさらに版カタログ（gradle/libs.versions.toml）の libs.sample.util に依存する。
 // ツールは Gradle を実行せず、これらのファイルを読んで依存を集める。
-// 依存の jar と POM は samples/localrepo にある（テストでは library.repositories で指定する）。
+// 依存の jar と POM は test/localrepo にある（テストでは library.repositories で指定する）。
 subprojects {
     apply plugin: 'java-library'
 
