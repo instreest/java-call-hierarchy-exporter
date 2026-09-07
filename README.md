@@ -78,7 +78,10 @@ JDT の版を変えるときは両方を書き換えてください。`pom.xml` 
 Eclipse はワークスペースに登録済みの JDK（17 以上）を使います。そのため Eclipse から実行した解析結果は
 jbang 経由（JDK 25）と一部異なりうることに注意してください
 （[docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) の Q20）。
-実装時に迷った点は [docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
+JBang 本家の Eclipse 連携プラグイン（jbang-eclipse）を入れると、この `pom.xml` とビルドパスを取り合って
+どちらか一方が壊れ続けます。併用しないでください。
+Gradle を選ばなかった理由を含め、実装時に迷った点は
+[docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
 
 ---
 
