@@ -1,5 +1,5 @@
 @echo off
-rem 回帰テスト（Windows）。samples\demo を解析し、出力 CSV を expected*\ と比較する。
+rem 回帰テスト（Windows）。test\demo を解析し、出力 CSV を expected*\ と比較する。
 rem Git Bash がある場合は  bash test/regression/run.sh  でも実行できる。
 rem ケースの説明は run.sh の先頭コメントを参照。実行ログは <case>\run-<回数>.log に残す。
 rem 期待出力を更新するときは、差分を確認したうえで output\ を expected*\ にコピーする。

@@ -353,7 +353,7 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 
 ## テスト
 
-`samples/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
+`test/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
 一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
 2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
 `jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、

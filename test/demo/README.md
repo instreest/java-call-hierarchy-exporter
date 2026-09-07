@@ -1,4 +1,4 @@
-# samples/demo
+# test/demo
 
 回帰テスト（`test/regression/`）と動作確認のための小さな Java プロジェクトです。
 インターフェースの多実装・ファクトリ・コンストラクタ注入・リフレクション・ラムダ・enum・record・
@@ -28,7 +28,7 @@ jar を作り直すとき。`deps/missing-lib.jar` は `fx.dao.Dao` に依存す
 `src/` 側は `Legacy.java` と `Main.java`（存在しない型を使う）を除いてコンパイルする:
 
 ```bash
-cd samples/demo
+cd test/demo
 javac --release 17 -d /tmp/dao-classes -encoding UTF-8 src/fx/dao/Dao.java
 javac --release 17 -cp /tmp/dao-classes -d /tmp/missing-classes -encoding UTF-8 deps-src/*.java
 jar --create --file deps/missing-lib.jar -C /tmp/missing-classes .
