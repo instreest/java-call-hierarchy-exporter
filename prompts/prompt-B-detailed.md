@@ -8,6 +8,10 @@
 > テストケースの期待値は、このリポジトリの実装をテスト用プロジェクトに対して
 > 実行して採取した実測値です。
 >
+> 機能ごとの実装難易度と、自分のプロジェクトで不要な機能を省くときの目安は
+> [feature-difficulty.md](feature-difficulty.md) にまとめてあります。省く機能が決まったら、
+> 該当する節と第3部の該当テストをこのプロンプトから削って渡してください。
+>
 > 以下の水平線から下を、そのまま生成AIに渡してください。
 
 ---
@@ -36,30 +40,40 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 
 ## 2. 成果物と技術制約
 
-- Java 17 以上で動く。単一ソースファイル `src/CallHierarchyExporter.java`
-  （デフォルトパッケージ、`static` な入れ子クラスで構成）。ビルドは
-  `javac -cp "lib/*" -d bin -encoding UTF-8 src/CallHierarchyExporter.java` の1コマンド
+- Java 17 以上で動く。エントリポイントは `src/CallHierarchyExporter.java`（デフォルトパッケージ）。
+  本体は処理フェーズに対応するパッケージに分けてよい（参照実装は `jche.config` /
+  `jche.cache`（事実のレコード。JDT に依存しない）/ `jche.analysis`（フェーズ1）/
+  `jche.graph`（フェーズ2）/ `jche.report`（フェーズ3）/ `jche.external` / `jche.extension` /
+  `jche.util` の 53 ファイル）。ビルドは
+  `javac -classpath "lib/*" -sourcepath src -d bin -encoding UTF-8 src/CallHierarchyExporter.java`
+  の1コマンドで、`-Xlint:all -Werror` で警告ゼロ
 - 依存は JDT Core とその推移的依存のjarのみ。テストフレームワーク・ロギング
   フレームワーク・バイトコード解析ライブラリ（ASM等）は使わない
-- 起動: `java -cp "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>`。
+- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>`。
   引数省略時は `config/config.properties` を使い、その旨を標準エラーに出す
 - 依存jarの取得方法（JBang・Maven・手動）は問わない。参考: JDT Core 3.46.0 は
   JDK 17 以上で動き Java 26 まで解析できる。Maven で
   `org.eclipse.jdt:org.eclipse.jdt.core:3.46.0` の推移的依存をコピーすると 19 個の jar になる
+- ツールを動かすJDKは、解析対象のソースが使うJDK APIの版以上にする（2.3）
 
 ## 3. 入力: 設定ファイル（`config.properties`、UTF-8）
 
 相対パスの起点は項目ごとに違う。**設定ファイルの置き場所**を起点にするものと、
 **解析対象プロジェクト（`project.root`）**を起点にするものを区別すること。
+相対パスは起点フォルダの配下だけ指定できる（`..` で外へ出る指定は項目名付きのエラー。外を
+指すときは絶対パス。`project.root` だけは起点そのものなので制限なし）。`source.folders` は
+絶対パスで書いても `project.root` の配下でなければならない（キャッシュのキーと出力の `file` 列を
+`project.root` からの相対パスにするため）。数値項目は空欄なら既定値、書式が誤っていれば
+どの項目かが分かるエラーにする。
 
 | キー | 既定 | 意味 | 相対起点 |
 |---|---|---|---|
 | `project.root` | 必須 | 解析対象プロジェクトのルート | 設定ファイル |
 | `source.folders` | 空 | ソースフォルダ（カンマ区切り）。空なら Eclipse の `.classpath` の `kind="src"` を使う | `project.root` |
-| `library.folders` | 空 | 依存jarを集めたフォルダ（カンマ区切り）。フォルダ直下の `*.jar` を全部使う。`.classpath` の `kind="lib"` があれば合算 | `project.root` |
+| `library.folders` | 空 | 依存jarを集めたフォルダ（カンマ区切り）。フォルダ直下の `*.jar` を全部使う。`.classpath` の `kind="lib"` があれば合算。jarを足す・差し替える・外すと、次回の実行でその jar のパッケージを参照しているファイルと型解決に失敗していたファイルだけが解析し直される | `project.root` |
 | `source.encoding` | `UTF-8` | 解析対象ソースの文字コード（`MS932` 等） | — |
 | `source.level` | 空 | 解析対象のJavaバージョン（JDTの準拠レベル）。空なら使用中のJDTが対応する最大値 | — |
-| `external.library.folders` | 空 | 自分のコードを呼んでいる側の他チームjar（被参照スキャン用。ファイル／フォルダ、カンマ区切り） | `project.root` |
+| `external.library.folders` | 空 | 自分のコードを呼んでいる側の他チームjar（被参照スキャン用。ファイル／フォルダ、カンマ区切り）。フォルダはサブフォルダも含めて `*.jar` / `*.war` / `*.ear` を全部使う。FatJar（jar の中の jar）は中まで開く | `project.root` |
 | `entry.packages` | 空 | 呼び出し階層の起点。空なら「呼び出し元が無いメソッド」を自動で起点にする（全体モード） | — |
 | `exclude.packages` | 空 | 出力から除外する呼び出し先（書式は `entry.packages` と同じ）。既定の設定例は `java.**,javax.**` | — |
 | `cache.enabled` | `true` | 解析結果のキャッシュを使い、変更の無いファイルの再解析を省く。変更されたファイルが宣言する型を参照しているファイルは、自身が変わっていなくても再解析する | — |
@@ -140,8 +154,26 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
   書かれたメソッド名、`root` = `(型解決失敗)`、階層列にメソッド名、末尾に理由
   `型解決に失敗（クラスパス不足・動的呼び出し等の可能性）`。**静かに消さないための行**
 - **外部jarからの被参照**（`external.library.folders` 指定時）: `caller` = 参照している側の
-  クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`root` = jar名、階層列に短縮表記、
-  末尾に `被参照:EXACT` / `被参照:INHERITED` / `被参照:IMPLICIT_CTOR`
+  クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`root` = jar名（FatJar の中の jar なら
+  `外側.jar!/BOOT-INF/lib/中.jar` のように jar URL と同じ `!/` 区切りで場所まで）、階層列に短縮表記、
+  末尾に `被参照:EXACT`（そのクラスで宣言されているメソッド。合成した暗黙のデフォルトコンストラクタを
+  含む）/ `被参照:INHERITED`（親から継承したメソッド。宣言している**最も近い親**のメソッドとして出す）/
+  `被参照:IMPLICIT_CTOR`（引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。
+  版違いの可能性が高いが生成箇所として有用なので残す）
+
+**行順は環境（OS・ファイルシステム・キャッシュの状態）に依存させない。**
+
+| 並び | 何順か |
+|---|---|
+| 起点 | ソースフォルダの指定順 → 型FQN順 → 宣言行順 → ID順 |
+| 起点の呼び出し先 | ソース上の呼び出し順（深さ優先） |
+| 複数候補の行 | 宣言型自身 → 下位型（直接の下位型はFQN順、そこから深さ優先） |
+| `(型解決失敗)` の行 | ソースフォルダの指定順 → ファイルの相対パス順 → ファイル内の出現順 |
+| 被参照の行 | jar のパス順 → jar の中のクラスの順 |
+| `methods.csv` | ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → ID順 |
+
+ファイルの並びの鍵は `/` 区切りの相対パス文字列の `String#compareTo`（`Path#compareTo` は
+Windows が大文字小文字を無視するなど OS で挙動が違う）。
 
 ### 4.2 `methods.csv` — ソース上の全メソッドと呼び出し状況
 
@@ -188,6 +220,15 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 変わらないので、Aに依存するファイルへは波及しない）。ログには
 `新規解析=N（うち依存先の変更による再解析=M）` と出す。
 
+**依存 jar の変更も検知する。** キャッシュに解析時の依存 jar（パス・サイズ・更新時刻・含まれる
+パッケージ）と、ファイルごとに JDT が報告したエラー数を残す。次回の実行で jar が追加・
+差し替え・削除されていれば、その jar のパッケージの型を参照しているファイルと、前回型解決に
+失敗していたファイルだけを解析し直す。実行する JDK が変わったときはキャッシュ全体を作り直す。
+ログには `[cache] 依存jarの変更を検知: 追加=A 変更=B 削除=C（影響するパッケージ N 件）` と
+`新規解析=N（うち依存先の変更による再解析=M、依存jarの変更による再解析=K）` を出す。
+
+パースは 100 ファイルずつまとめて行う（1ファイルずつでは規模に対して超線形に遅くなる）。
+
 **キャッシュには「ASTから分かった事実」だけを入れ、判断は読む側で行う。** 事実とは
 宣言と修飾子、呼び出し箇所、フィールドへの代入、値の出所など、設定・出力形式・解決アルゴリズムに
 依存しない情報。静的束縛かどうか、コンストラクタ注入と言い切れるか、import推定を呼び出し先として
@@ -196,8 +237,8 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 
 ### 5.2 抽出する呼び出し
 
-メソッド呼び出し、`super.m()`、`new`、`this(...)`/`super(...)`、enum定数の生成、
-メソッド参照4種（`obj::m` / `Type::m` / `super::m` / `Type::new`）。
+メソッド呼び出し、`super.m()`、`new`、`this(...)`/`super(...)`（書かれていない暗黙の `super()` は
+拾わない）、enum定数の生成、メソッド参照4種（`obj::m` / `Type::m` / `super::m` / `Type::new`）。
 ラムダ本体の呼び出しは囲みメソッドに帰属させる。
 フィールド初期化子・初期化ブロックは `static` なら `<clinit>`、インスタンスなら
 「`this(...)` 委譲していない全コンストラクタ」に帰属させる（第2部 2.4）。
@@ -252,7 +293,9 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
   差分更新後の出力が cold 実行と一致しなくなる
 - 循環検出は経路単位（`[CYCLE]` を1行出して降りない）。グローバル訪問済み集合は持たない
 - `exclude.packages` 一致ノードは行にしないが、その先は親に繋ぎ直して辿る。
-  繋ぎ直すときはデータフローの環境（引数・コンストラクタ実引数）も除外ノードのものに差し替える
+  繋ぎ直すときはデータフローの環境（引数・コンストラクタ実引数）も除外ノードのものに差し替える。
+  読み飛ばし中の除外メソッドも循環判定の祖先に含め、読み飛ばしの入れ子数にも深さ上限（512）を
+  掛ける（除外パッケージ内の相互再帰でスタックオーバーフローにならないため）
 - CHA候補が複数なら候補を上限20件まで列挙し、先へは降りない
 - `max.depth` 到達で打ち切り、`max.rows` 到達で警告して全体を打ち切る
 - ツリーを組み立てない。ヒープに載るのは現在の経路（深さぶんの配列）だけ
@@ -267,7 +310,14 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 外部jarのclassファイルの定数プールだけを自前で読み、Methodref / InterfaceMethodref の
 うち自分の型を owner とするものを列挙する。参照している側のclass自体が自プロジェクトの
 型なら読み飛ばして件数をログに出す。一致するメソッドが無い参照は「相手が古い版に対して
-ビルドされている可能性」として件数をログに出す。
+ビルドされている可能性」として件数をログに出す（非 static な内部クラスのコンストラクタは
+バイトコード上は外側インスタンスが引数に付くため一致せず、この件数に入る）。
+
+FatJar（Spring Boot の `BOOT-INF/lib/*.jar`、war の `WEB-INF/lib/*.jar`、ear の中の war や jar）は
+中の jar を取り出さずにストリームで開いて何段でも辿る（安全策として 8 段まで）。同じ jar が
+複数の FatJar に入っていれば、それぞれの FatJar の行として別々に出す。FatJar の中の
+自プロジェクト jar も読み飛ばす。ログに `jar=N jar内のjar=M` と出す。
+`library.folders`（JDT に渡す依存 jar）の FatJar は対象外（JDT は中の jar を見ない）。
 
 ### 5.7 実行ログ
 
@@ -333,7 +383,14 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 ## 2.3 クラスパスとソースパス
 
 - `setEnvironment(..., includeRunningVMBootclasspath=true)` でJDK標準クラスは実行中の
-  JVMから解決される。ツール自身を動かすJDKが変わると解析結果が変わりうる
+  JVMから解決される。**実行JDKは暗黙の依存jar**。実測（JDT 3.46.0、JDK 17 / 21 / 25）では、
+  `var first = list.reversed().get(0); first.findById(1L);` のように JDK 21 以降の API の
+  戻り値を `var` やメソッドチェーンで受けている箇所が、JDK 17 では `first` の型が分からず
+  自プロジェクトのメソッド呼び出しごと「型解決失敗」になった（宣言型を書いた
+  `Dao declared = ...` は影響を受けない）。実行JDKは解析対象が使うAPIの版以上にし、
+  版はキャッシュのヘッダに入れて変われば全件作り直す
+- パースは `ASTParser#createASTs` で 100 ファイルずつまとめて行う（`FileASTRequestor` で
+  1ファイルずつ受け取る）。1ファイルずつ `createAST` すると、ファイル数に対して超線形に遅くなる
 - `classpath` には**jarを1つずつ**渡す。フォルダを渡しても展開されない。`library.folders` の
   フォルダは直下の `*.jar` をファイル名順に列挙して展開し、**展開後の一覧をログに出す**
 - Eclipse の `.classpath` は `kind="src"` / `kind="lib"` だけ読む。**`kind="con"`
@@ -373,6 +430,12 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 
 **(d) ラムダ式**: `MethodDeclaration` ではないので、中の呼び出しは自動的に囲みメソッドに
 帰属する。これはソース上の見え方と一致するので特別扱いしない（2.9 も参照）。
+
+**(e) `super(...)`**: `this(...)` と同じくコンストラクタ呼び出しの辺として記録する
+（`SuperConstructorInvocation`）。これが無いと、サブクラスからしか生成されない親クラスの
+コンストラクタが入次数0になる。書かれていない暗黙の `super()` は拾わない。
+`this(...)` で委譲するコンストラクタを持つ型では、コンストラクタ引数由来のフィールド出所を
+採用しない（安全側）。
 
 ## 2.5 visit すべきASTノード
 
@@ -440,6 +503,11 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
   起点候補でなくなる
 - 型階層の子型・親型リストはFQN順に整列してからCHA候補を作る（キャッシュ上の出現順に
   依存させない。差分更新後も cold 実行と同じ行順にするため）
+- 型階層（H行）の親型には、直接の親に加えて**jar の型を経由して到達するソース上の親型**も
+  書く。ソースの `interface Dao`、jar の `abstract class LibDao implements Dao`、ソースの
+  `class LibBackedDao extends LibDao` という構成で、直接の親（`LibDao`）だけだと jar の型には
+  H行が無いので `LibBackedDao → Dao` を辿れず、`LibBackedDao` が `Dao` の候補に入らない。
+  ソース上の親型の先は、その型自身のH行が持つので辿らない
 
 ## 2.9 ラムダ／メソッド参照
 
@@ -592,9 +660,26 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
   だけ読み替えて引数を放置すると**内部クラスを引数に取るオーバーロードだけ**未照合に落ちる。
   まず生の形で引き、外れたら `$`→`.` に直した形で引く（生の形が先。`$` を含むクラス名を
   誤って読み替えないため）
-- 完全一致で無ければ継承を考慮して親を探す（呼び出し側は子クラスを owner に記録する）
-- `<init>` が一致しないものは暗黙のデフォルトコンストラクタとして `IMPLICIT_CTOR` で出す
+- 完全一致で無ければ継承を考慮して親を探す（呼び出し側は子クラスを owner に記録する）。
+  「シグネチャが一致する宣言のうち owner を子孫に持つもの」を先着で選ぶと、親クラスと
+  インターフェースの両方に宣言がある場合の結果がメソッドIDの並びに依存し、JDK の版で
+  回帰テストが食い違った。owner から**親クラスの連鎖を先に、次にインターフェース**を幅優先で
+  辿り、最初に見つかった宣言を返す（JVM のメソッド解決と同じ順）
+- 暗黙のデフォルトコンストラクタは解析時に宣言として合成されているので `EXACT` で照合される。
+  `IMPLICIT_CTOR` は「引数なし `<init>` への参照で、ソース上に一致する宣言が無いもの」に限る
+  （相手の jar をビルドした時点では引数なしで生成できたが今は無い＝版違いの可能性）。
+  それ以外の不一致（引数付きコンストラクタを含む）は未照合として数える
 - 自プロジェクトの型のclassは読み飛ばす（参照先でなく**参照している側**で判定）
+- **FatJar**: jar エントリ名が `.jar` / `.war` / `.ear` で終われば、`JarFile.getInputStream(entry)` を
+  `ZipInputStream` で包んで中を順に読む（テンポラリに取り出さない。ローカルヘッダを順に読むので
+  ファイルでなくても開け、STORED でも DEFLATED でも読める）。最上位の jar は中央ディレクトリから
+  読める `JarFile` のままにし、両者の合流点として「1エントリを処理する」関数を置く。
+  **中の `ZipInputStream` を閉じてはいけない**（包んでいる外側のストリームまで閉じて走査が止まる）。
+  中の jar が壊れていればその jar だけ警告して読み飛ばす。入れ子は 8 段まで。
+  class の型名はエントリのパスでなく class ファイル自身の `this_class` から取るので、
+  `BOOT-INF/classes/` の接頭辞が混ざらない。`.zip` は受け付けない
+- フォルダ指定で集めた jar は `TreeSet` でパス順に揃える（`Files.walk` の順はファイルシステム依存）。
+  複数の jar が行を出すようになると、並びの違いが表面化する
 
 ## 2.13 メモリ設計（後付けできない）
 
@@ -605,6 +690,28 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
    出所の文字列は共有プールに置き、エッジ側は int で参照
 3. ツリーを組み立てない。深さ優先で辿りながら1行ずつ書く
 4. `max.depth` が 0 以下でも再帰の実効上限（512）を設ける
+
+## 2.13a 除外パッケージの読み飛ばしと再帰
+
+除外ノードを親に繋ぎ直す処理は再帰で書くと、除外パッケージの中だけで相互再帰している
+（`Ping.ping()` → `Pong.pong()` → `Ping.ping()`、両方とも除外）とき、経路配列には除外ノードが
+載らないので循環判定に掛からず、`StackOverflowError` になる。読み飛ばし中の除外メソッドを
+「経路からは見えないが祖先ではある」スタックに積んで循環判定に含め、読み飛ばしの入れ子数にも
+深さ上限を掛ける（上限に当たったら警告してその先は辿らない）。
+
+## 2.13b 行順の決定性（環境と履歴に依存させない）
+
+- `.java` ファイルの列挙は `Files.walk` の順（ファイルシステム依存。ext4 と NTFS で違う）を
+  そのまま使わず、ソースフォルダの宣言順 → 相対パス（`/` 区切り）の文字列順に固定する。
+  鍵は `Path#compareTo` ではなく文字列（`Path#compareTo` は Windows で大文字小文字を無視する）
+- 木の部分は「起点の並び」「1メソッドのエッジがそのファイルのブロック内の出現順」「CHA候補の
+  FQN順」で決まっているので、ファイル順に影響されない。影響されるのは `(型解決失敗)` の節で、
+  キャッシュのブロック順（差分更新で解析し直したファイルが先頭へ移る）のまま出すと、
+  ファイルを1つ直すたびに行順が入れ替わる
+- `(型解決失敗)` の節は、全件ためて sort せず（ストリーミングを保つ）、先にキャッシュを1回読んで
+  F行の相対パスを出力順に並べて順位を振り、もう1回読みながら「次に出すべき順位」のブロックの
+  U行はそのまま書き、順番がまだ来ていないブロックのU行だけを保留する。キャッシュが出力順に
+  並んでいれば何も保留しない
 
 ## 2.14 キャッシュ形式（参考。同等の情報を持てば形式は自由）
 
@@ -619,15 +726,22 @@ Javaの意味論が変わるときか」。前者なら判断であり、読み�
 （追跡できない return が1つでもあれば不定）、コンストラクタ注入フィールドの判定、import推定を
 エッジとして採用するか、ラムダ内の呼び出しの計上先、未解決の理由コードの文言。
 
-タブ区切り。1行目 `jche-cache-v9<TAB>source=<準拠レベル>`。`F` 行が現れるたび以降の行は
-そのファイルに属する。値にタブ・改行が混ざると形式が壊れるので書き出す前に除去する。
+タブ区切り。1行目 `jche-cache-v12<TAB>source=<準拠レベル><TAB>jdk=<java.specification.version>`。
+`F` 行が現れるたび以降の行はそのファイルに属する。値にタブ・改行が混ざると形式が壊れるので
+書き出す前に除去する。各行の列の並びは、その行を表す record の `toRow()` / `fromRow()` に
+1箇所で定義する。
 
 ```
-F  相対パス  更新時刻  サイズ
+L  jarのパス  サイズ  更新時刻  パッケージ(カンマ区切り)   解析時の依存 jar。ヘッダ行の直後にクラスパス順。
+                                                       パスは project.root 配下なら相対、外なら絶対。
+                                                       META-INF/ 配下とデフォルトパッケージは除く
+F  相対パス  更新時刻  サイズ  エラー数                  エラー数は JDT が報告したエラーの件数（解決が
+                                                       不完全だった印。jar 追加時の再解析の条件に使う）
 I  依存する型（カンマ区切り）     このファイルのバインディング解決が参照した型のFQNと import 文の型
                                 （オンデマンド import は "pkg.*"）。自分が宣言する型は含まない。
                                 F行の直後に置く（差分更新でブロックを読み進める前に依存を判定する）
-H  typeFqn  kind(I/A/C)  親型をカンマ区切り  pkg
+H  typeFqn  kind(I/A/C)  親型をカンマ区切り  pkg          親型は直接の親と、jar の型を経由して到達する
+                                                       ソース上の親（2.8）
 D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods
    mods: public/protected/private/static/final/abstract/default に加えて
          implicit（暗黙のコンストラクタを合成した）、delegating（本体の先頭が this(...) 委譲）
@@ -660,17 +774,30 @@ C行と同じく根のコンストラクタごとに1行になる。
 返す return は記録しない／フィールドへの代入はその型自身のメソッド・コンストラクタ本体と
 フィールド初期化子から拾う（インスタンス初期化ブロックと内部クラスからの代入は拾わない）。
 
-**差分更新の4パス**:
+**差分更新の5パス**:
+0. 旧キャッシュのヘッダとL行（解析時の依存 jar）を読み、今回のクラスパスと突き合わせる。
+   追加・変更・削除された jar のパッケージを「変わったパッケージ」として集める。同じパスで
+   サイズと更新時刻が一致する jar は変わっていないとみなし、パッケージ一覧も旧L行から引き継ぐ
+   （jar を開き直さない）。追加・変更された jar は開いてエントリ名からパッケージを集める。
+   削除された jar はもう開けないので旧L行から取る（これがL行にパッケージ一覧を残す理由）
 1. 旧キャッシュを読み、更新時刻とサイズが一致するファイル（有効）を覚える。無効・消滅した
-   ファイルのブロックが宣言していた型（H行）を「変わった型」として集める
-2. 変更・追加されたファイルを解析して新キャッシュへ書く。そのファイルが宣言する型も
-   「変わった型」に加える（改名・追加に備える）
-3. 旧キャッシュをもう一度読み、有効なブロックのうち I行が「変わった型」に触れないものだけ
-   書き写す（`pkg.*` はそのパッケージの型が1つでも変われば触れているとみなす）。
-   触れるものは再解析に回す
+   ファイルのブロックが宣言していた型（H行）を「変わった型」として集める。jar が追加・変更されて
+   いれば、**型解決に失敗していたファイル（F行のエラー数 ≠ 0、U行の BINDING_FAILED）も有効から
+   外す**（前回その型が無かったのだから I行に正しいFQNが入っているとは限らない。バインディング
+   回復は同じパッケージにあると推定した名前を残す）
+2. 変更・追加されたファイル（1で外したファイルを含む）を解析して新キャッシュへ書く。そのファイルが
+   宣言する型も「変わった型」に加える（改名・追加に備える。jar 追加で引数型の解決が変わった
+   宣言を呼ぶ側にも波及させる）
+3. 旧キャッシュをもう一度読み、有効なブロックのうち I行が「変わった型」にも「変わったパッケージ」
+   にも触れないものだけ書き写す（`pkg.*` はそのパッケージの型が1つでも変われば触れているとみなす。
+   パッケージの照合は I行の FQN の "." 区切りの前方部分を全部試す）。触れるものは再解析に回す
 4. 再解析に回したファイルを解析して追記する
 
-ヒープ常駐は「ソースファイルの一覧＋更新時刻・サイズ」と「変わった型の集合」だけ。
+影響範囲を型ではなくパッケージで持つのは、jar の版を差し替えると型の増減があり「旧版にだけ
+あった型」は新しい jar からは分からないため。jar の同一性はハッシュでなくサイズと更新時刻で見る
+（数十MBの jar が百本あると毎回ハッシュを取るだけで数秒かかる。コピーし直しは安全側の再解析）。
+jar の順序だけの変化は検知しない。ヒープ常駐は「ソースファイルの一覧＋更新時刻・サイズ」と
+「変わった型・パッケージの集合」だけ。
 
 ---
 
@@ -1056,6 +1183,31 @@ public class Bridge {
 }
 ```
 
+`fixture/src/fx/internal/Ping.java`
+```java
+package fx.internal;
+
+import fx.Helper;
+
+public class Ping {
+    public static void ping() {
+        Pong.pong();
+        Helper.validate(1);
+    }
+}
+```
+
+`fixture/src/fx/internal/Pong.java`
+```java
+package fx.internal;
+
+public class Pong {
+    public static void pong() {
+        Ping.ping();
+    }
+}
+```
+
 `fixture/src/fx/UsesLib.java`（クラスパスに無いライブラリを参照する。意図的にコンパイル不能）
 ```java
 package fx;
@@ -1340,6 +1492,11 @@ public class App {
     void viaReflectRuntime() throws Exception {
         Class.forName(System.getProperty("cls")).getMethod("save", long.class).invoke(null, 1L);
     }
+
+    // --- excluded mutual recursion ---
+    void viaPingPong() {
+        fx.internal.Ping.ping();
+    }
 }
 ```
 
@@ -1366,17 +1523,56 @@ methods.csv=./output/methods.csv
 
 実行: `cd fixture && java -cp "<bin>:<lib>/*" CallHierarchyExporter config/config.properties`
 
+### 被参照スキャンと依存 jar 用の jar（T42・T43 で使う）
+
+`fixture/ext-src/ext/Caller.java`（他チームの jar の中身。自プロジェクトの public API だけを呼ぶ）
+```java
+package ext;
+public class Caller {
+    void run() {
+        new fx.Repo().save("x");
+        new fx.Repo().save(1L);
+        new fx.UserDao().select();
+        new fx.OrderDao();
+    }
+}
+```
+
+`fixture/deps-src/org/apache/commons/lang3/StringUtils.java`（`UsesLib` が import している型のスタブ）
+```java
+package org.apache.commons.lang3;
+public class StringUtils { public static boolean isEmpty(CharSequence s) { return s == null; } }
+```
+
+作り方（`fixture/` で実行。`Helper` の package-private メソッドを外から呼ぶ `Top` /
+`fx.internal` は除いてコンパイルする）:
+```bash
+javac --release 17 -d /tmp/stub deps-src/org/apache/commons/lang3/StringUtils.java
+jar --create --file deps/commons-lang3-stub.jar -C /tmp/stub .
+javac --release 17 -d /tmp/fxcls -encoding UTF-8 src/fx/Dao.java src/fx/AbstractDao.java src/fx/UserDao.java \
+      src/fx/OrderDao.java src/fx/Repo.java src/fx/NoCtor.java src/fx/Service.java src/fx/Outer.java \
+      src/fx/Helper.java src/other/List.java
+jar --create --file /tmp/fixture-app.jar -C /tmp/fxcls .
+javac --release 17 -cp /tmp/fxcls -d /tmp/callercls ext-src/ext/Caller.java
+jar --create --file extjars/ext-caller.jar -C /tmp/callercls .
+mkdir -p /tmp/boot/BOOT-INF/lib && cp extjars/ext-caller.jar /tmp/fixture-app.jar /tmp/boot/BOOT-INF/lib/
+jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring Boot 形式の FatJar
+```
+
+`fixture/config/ext.properties` は `config.properties` の `external.library.folders=extjars` 版、
+`fixture/config/ext-deps.properties` はさらに `library.folders=deps` にした版。
+
 ## 3.2 全体の期待値（既定設定）
 
 | 項目 | 期待値 |
 |---|---|
-| ログ「Javaファイル数」 | 28 |
-| ログ「ソース解析」（初回） | `再利用=0 新規解析=28 失敗=0` |
+| ログ「Javaファイル数」 | 30 |
+| ログ「ソース解析」（初回） | `再利用=0 新規解析=30 失敗=0` |
 | ログ「型解決できなかった呼び出し」 | 1 件（`UsesLib.fail` の `Unknown.call()`）。警告文が出る |
-| ログ「エントリポイント数」 | 63 |
+| ログ「エントリポイント数」 | 65（`Base.<init>(Dao)` は `Sub` の `super(dao)` から呼ばれるので起点ではない） |
 | ログ「データフローで具象クラスを特定」 | new から 2 件 / ファクトリの戻り値から 6 件 / 引数から 7 件 / フィールドから 2 件 |
 | ログ「リフレクション（…）の呼び出し先を特定」 | 10 件 |
-| `call-hierarchy.csv` の行数 | ヘッダー含め 123 行 |
+| `call-hierarchy.csv` の行数 | ヘッダー含め 124 行 |
 | ファイル先頭 | UTF-8 BOM（`EF BB BF`） |
 | `call-hierarchy.csv` に `<init>` が現れる列 | `caller` 列だけ |
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
@@ -1583,6 +1779,13 @@ at fx.internal.Bridge.through(Bridge.java:7),fx.Helper.validate(int),App.viaBrid
 直下として出る。`caller` は実際の呼び出し元 `Bridge.through`。`viaExclude` を root とする行は
 **0 行**（`java.**` のみを呼ぶ）。
 
+### T22a 除外パッケージ内の相互再帰
+```
+at fx.internal.Ping.ping(Ping.java:8),fx.Helper.validate(int),App.viaPingPong,Helper.validate
+```
+検証観点: `Ping.ping` → `Pong.pong` → `Ping.ping` はどちらも除外パッケージ。スタックオーバーフロー
+せず終了し、`Helper.validate` の行が**1行だけ**出る（2周目は循環として打ち切られる）。
+
 ### T23 import推定と型解決失敗
 ```
 at fx.UsesLib.guess(UsesLib.java:8),org.apache.commons.lang3.StringUtils.isEmpty(),UsesLib.guess,StringUtils.isEmpty,外部ライブラリ（import推定・未検証）
@@ -1607,26 +1810,69 @@ Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 検証観点: インターフェースの抽象メソッドは `hasBody=0`、入次数は解決後の実装側に付く
 （`OrderDao.select()` の `inDegree=18`）。`Registry.<clinit>()` はリフレクション経由で
 呼ばれているので `NORMAL`（起点候補ではない）。ログの集計は
-`メソッド=94 起点候補=43 孤立=5 末端=21 未到達=3 未解決の呼び出しを含む=18（コンストラクタ 37 個は出力対象外）`。
+`メソッド=97 起点候補=44 孤立=5 末端=21 未到達=3 未解決の呼び出しを含む=18（コンストラクタ 39 個は出力対象外）`。
 
 行順はソースの並び。ヘッダーの次の行から順に
 `Top.In.m()` → `Top.go()` → `AbstractDao.select()` → `AbstractDao.log()` → `App.viaFactory()` → …
 と続き、`fx.App` の内部の匿名クラス（`App$1.run()` 等）はそのファイルの宣言行の位置に並ぶ。
-最後の行は `Bridge.through()`（`src/fx/internal/Bridge.java`）。
+最後の3行は `Bridge.through()` → `Ping.ping()` → `Pong.pong()`（`src/fx/internal/` の相対パス順）。
 
 ## 3.4 設定を変えた実行
 
 | ケース | 変更 | 期待値 |
 |---|---|---|
-| T25 キャッシュ再利用 | 同じ設定で2回目 | ログ `再利用=28 新規解析=0 失敗=0`。`call-hierarchy.csv` が1回目と**バイト単位で一致** |
-| T26 差分再解析 | `App.java` を touch して3回目 | ログ `再利用=27 新規解析=1`。出力は1回目と一致 |
+| T25 キャッシュ再利用 | 同じ設定で2回目 | ログ `再利用=30 新規解析=0 失敗=0`。`call-hierarchy.csv` が1回目と**バイト単位で一致** |
+| T26 差分再解析 | `App.java` を touch して3回目 | ログ `再利用=29 新規解析=1`。出力は1回目と一致 |
 | T27 深さ制限 | `max.depth=2` | `at fx.App.shared(App.java:70),fx.AbstractDao.select(),App.rootA,App.shared,AbstractDao.select,深さ制限(2)のため打ち切り / 解決:DATAFLOW_PARAM`（前半と後半の注記が ` / ` で連結） |
 | T28 起点指定 | `entry.packages=fx.App#rootB,fx.App#rootA` | ログ `エントリポイント数: 2`。出力は T09 の10行＋T23 の `(型解決失敗)` 行＝ヘッダー含め 11 行。**`rootA` の行が `rootB` より先**（設定に書いた順ではなくソースの宣言順） |
 | T29 行数上限 | `max.rows=3` | ログ `[WARN] 出力行数の上限(3)に達したため打ち切りました`。階層の行は3行で止まる |
-| T30 データフロー無効 | `dataflow.enabled=false` | T01 が `CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）` の3行に、T09 が `CHA候補3件（未展開）: 引数（メソッド外から渡される）` になる。T33〜T39 のリフレクション行は消え、T40 が `CHA候補3件（未展開）: レシーバ不明` の3行になる。行数は増える（134行） |
+| T30 データフロー無効 | `dataflow.enabled=false` | T01 が `CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）` の3行に、T09 が `CHA候補3件（未展開）: 引数（メソッド外から渡される）` になる。T33〜T38 のリフレクション行は消え、T38 が `CHA候補3件（未展開）: レシーバ不明` の3行になる。行数は増える（135行） |
 | T31 準拠レベル範囲外 | `source.level=99` | 起動時に `IllegalArgumentException`。指定できる値の一覧を含む |
 | T32 準拠レベルの丸め | `source.level=1.4` | ログ `ソースレベル: 1.8（source.level=1.4 の指定による）` と `※ source.level=1.4 はこのJDTでは扱えないため 1.8 として解析します。`。既存キャッシュを破棄した旨が出る |
-| T41 依存先の変更による再解析 | キャッシュがある状態で `Dao.java` の末尾に空行とコメント行を追加して実行 | ログ `再利用=18 新規解析=10（うち依存先の変更による再解析=9） 失敗=0`（`Dao` を参照する9ファイルが再解析される）。両CSVは変更前と**バイト単位で一致**（CHA候補の行順も変わらない） |
+| T41 依存先の変更による再解析 | キャッシュがある状態で `Dao.java` の末尾に空行とコメント行を追加して実行 | ログ `再利用=20 新規解析=10（うち依存先の変更による再解析=9） 失敗=0`（`Dao` を参照する9ファイルが再解析される）。両CSVは変更前と**バイト単位で一致**（CHA候補の行順も変わらない） |
+| T42 依存 jar の追加・削除 | `ext.properties` で1回実行してキャッシュを作り、`ext-deps.properties`（`library.folders=deps`）で2回目、`ext.properties` で3回目 | 2回目のログ `[cache] 依存jarの変更を検知: 追加=1 変更=0 削除=0（影響するパッケージ 1 件）…` と `再利用=24 新規解析=6（うち依存先の変更による再解析=2、依存jarの変更による再解析=4）`。T23 の import推定の行が `at fx.UsesLib.guess(UsesLib.java:8),org.apache.commons.lang3.StringUtils.isEmpty(CharSequence),UsesLib.guess,StringUtils.isEmpty,ソースなし（展開不可）` に変わる（jar で解決できたので `callee` に引数型が付き、注記が変わる）。`(型解決失敗)` の行（`Unknown.call()`）は残る。3回目のログ `削除=1` と `再利用=29 新規解析=1（うち依存jarの変更による再解析=1）`、出力は1回目と**バイト単位で一致** |
+| T44 設定の検証 | `cache.folders=../x` | 起動時に `IllegalArgumentException`。メッセージに項目名 `cache.folders`、値 `../x`、「相対パスは設定ファイルのフォルダの配下だけ指定できます。外を指す場合は絶対パスで書いてください」の趣旨を含む |
+| | `max.depth=abc` | 起動時に `IllegalArgumentException`。メッセージに項目名 `max.depth` と値 `abc` を含む |
+| | `max.depth=`（空欄） | 既定値 50 で動き、出力は既定設定と一致 |
+
+## 3.4b 被参照スキャン（`ext.properties`）
+
+### T43 通常の jar と FatJar、EXACT / INHERITED、自プロジェクト jar の除外
+
+ログ: `外部jar: 2 件`、`jar=2 jar内のjar=2 クラス=2 被参照=12件（自分のメソッド 6 個） 暗黙コンストラクタ=0 未照合=0 自プロジェクトクラスを除外=11`。
+`call-hierarchy.csv` は 136 行で、末尾に次の 12 行がこの順で出る（`app-boot.jar` が `ext-caller.jar` より
+パス順で先。同じ `ext.Caller` が FatJar の中と単体の両方から別々の行として出る）。
+
+```
+ext.Caller,fx.Repo.Repo(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.Repo,被参照:EXACT
+ext.Caller,fx.Repo.save(String),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.save,被参照:EXACT
+ext.Caller,fx.Repo.save(long),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.save,被参照:EXACT
+ext.Caller,fx.UserDao.UserDao(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,UserDao.UserDao,被参照:EXACT
+ext.Caller,fx.AbstractDao.select(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,AbstractDao.select,被参照:INHERITED
+ext.Caller,fx.OrderDao.OrderDao(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,OrderDao.OrderDao,被参照:EXACT
+ext.Caller,fx.Repo.Repo(),ext-caller.jar,Repo.Repo,被参照:EXACT
+ext.Caller,fx.Repo.save(String),ext-caller.jar,Repo.save,被参照:EXACT
+ext.Caller,fx.Repo.save(long),ext-caller.jar,Repo.save,被参照:EXACT
+ext.Caller,fx.UserDao.UserDao(),ext-caller.jar,UserDao.UserDao,被参照:EXACT
+ext.Caller,fx.AbstractDao.select(),ext-caller.jar,AbstractDao.select,被参照:INHERITED
+ext.Caller,fx.OrderDao.OrderDao(),ext-caller.jar,OrderDao.OrderDao,被参照:EXACT
+```
+検証観点:
+- 暗黙のデフォルトコンストラクタ（`Repo()` / `UserDao()` / `OrderDao()`）は `EXACT`
+- `new fx.UserDao().select()` の owner は `fx.UserDao` だが宣言は親にしかないので、
+  `fx.AbstractDao.select()` の `INHERITED`
+- `BOOT-INF/lib/fixture-app.jar`（自プロジェクトのクラス 11 個）は読み飛ばされ、行にならない
+- `dataflow.enabled` や差分更新に関係なく、2回目の実行でも同じ 12 行
+
+## 3.4c リポジトリの回帰テスト
+
+参照実装のリポジトリには `samples/demo/`（27 ファイルの解析対象、他チームの jar・Spring Boot 形式の
+FatJar・ear→war→jar の入れ子・依存 jar のスタブ）と `test/regression/`（`whole` / `entry` /
+`jarchange` の 3 ケースの設定と期待出力）がある。これらが手に入る場合は、第3部のフィクスチャに
+加えてそちらも通すこと。`jarchange` は依存 jar 無し → 有り → 無し を同じキャッシュで実行し、
+jar の追加で `OrderService.execute` の `dao.findById` が `CHA候補2件` → `3件`（jar の基底クラスを
+継承する `LibBackedDao` が候補に加わる。2.8）になり、`OrderService.java` 自体はキャッシュから
+読まれたままであることを確認する。期待出力はツールと同じ JDK 25 で生成されている。
 
 ## 3.4a リフレクション
 
