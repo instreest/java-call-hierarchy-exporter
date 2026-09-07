@@ -81,14 +81,20 @@ occurs() {
 }
 
 echo "== jbang.cmd =="
-# JBANG_DEFAULT_JAVA_VERSION は未設定が既定（既定値 17 は javaVersion 側）。これを渡すと
-# バージョン引数なしの "jbang jdk install" になり、JDK の自動取得が必ず失敗する
-contains jbang.cmd 'jdk install %javaVersion%'                    'jdk install に解決済みの javaVersion を渡す'
+# 元は "jbang.ps1 jdk install %JBANG_DEFAULT_JAVA_VERSION%" を投げていた。この変数は未設定が
+# 既定（既定値 17 は javaVersion 側）なので、バージョン引数なしの "jbang jdk install" になり
+# その呼び出しは必ず失敗していた。ただし全体は壊れていない。jbang.ps1 は渡されたコマンドを
+# 実行する前に自前で JDK を入れるので、必要な副作用は失敗前に済んでいたため。
+# 今は意図どおり "version" を投げて副作用だけを得るので、この行自体が無い
 absent   jbang.cmd 'jdk install %JBANG_DEFAULT_JAVA_VERSION%'     '未設定になりうる変数を jdk install に渡さない'
-# powershell -Command に渡す文字列は PowerShell のコードとして解釈される。パスを引用しないと
-# C:\Users\名字 名前\... のようにスペースを含むパスで壊れる
-absent   jbang.cmd '-Command "%~dp0jbang.ps1'                     'jbang.ps1 のパスを引用符なしで渡さない'
-occurs   jbang.cmd "-Command \"& '%~dp0jbang.ps1'" 2              'PowerShell への委譲 2 箇所すべてで引用する'
+absent   jbang.cmd 'jbang.ps1" jdk install'                       'JDK 取得を no-op の jdk install に頼らない'
+# powershell -Command は文字列を PowerShell のコードとして解釈するためパスの引用が要るうえ、
+# スクリプトの終了コードを 0/1 に潰してしまう。-File なら両方とも起きない
+absent   jbang.cmd '-Command "%~dp0jbang.ps1'                     'jbang.ps1 の委譲に -Command を使わない'
+absent   jbang.cmd "-Command \"& '%~dp0jbang.ps1'"                'jbang.ps1 の委譲に -Command を使わない（引用形も）'
+occurs   jbang.cmd '-File "%~dp0jbang.ps1"' 2                     'jbang.ps1 への委譲 2 箇所とも -File を使う'
+# 委譲したのに JDK が無ければ、後段で分かりにくく落ちる前にここで止める
+contains jbang.cmd 'if not exist "!JAVA_EXEC!"'                   'JDK が入ったことを委譲後に確認する'
 # 括弧ブロックの中の %ERRORLEVEL% はブロック解析時に展開される。遅延展開の !ERRORLEVEL! でないと
 # ダウンロードや JDK インストールの失敗が終了コード 0 として扱われる
 occurs   jbang.cmd 'if !ERRORLEVEL! NEQ 0 ( exit /b !ERRORLEVEL! )' 2 'ブロック内のエラー伝播に遅延展開を使う'
@@ -117,6 +123,9 @@ contains jbang.ps1 '$ok=($LASTEXITCODE -eq 0)'                    '展開後の 
 # break はプロセスの終了コードを 0 のままにするので、jbang.cmd 側から失敗を検知できない
 occurs   jbang.ps1 'Error installing JDK"); break' 0              'JDK インストール失敗を break で抜けない'
 occurs   jbang.ps1 'Error installing JDK"); exit 1' 2             'JDK インストール失敗は 2 経路とも exit 1'
+# Invoke-JBang が exit していないと、スクリプトは正常終了して呼び出し元は常に 0 を見る。
+# jbang 経由で動かしたものの終了コードが失われる（bash 版は exit \$err している）
+contains jbang.ps1 'exit $err'                                    'jbang の終了コードを呼び出し元へ返す'
 
 echo "== jbang =="
 # 検査が反転していた（unpack が失敗したときだけ実行）うえ、展開した JDK ではなく PATH 上の

@@ -100,7 +100,7 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 
 呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
 呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
-出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → コード呼び出しの順序です。
+出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → rootの宣言行 → コード呼び出しの順序です。
 
 ```csv
 caller,callee,root,call-hierarchy
@@ -111,7 +111,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 #### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
 各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
-出力ソート順は、ソースフォルダ → 完全修飾クラス名 → 宣言行順の順序です。
+出力ソート順は、ソースフォルダ → ファイルの相対パス → 宣言行順の順序です。
 
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
@@ -196,6 +196,14 @@ caller,callee,root,call-hierarchy
 at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample.Sample,Sample.init
 ```
 
+行順は、起点がソースの並び順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、
+起点からの展開がソース上の呼び出し順（深さ優先）です。具象クラスの候補が複数ある呼び出しは
+候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
+末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 →
+呼び出し順）で出ます。これらの並びは OS やファイルシステム、キャッシュの状態に依存しないので、
+環境が違っても同じソースからは同じ行順の CSV ができます
+（[docs/deterministic-row-order-qa.md](docs/deterministic-row-order-qa.md)）。
+
 #### 注記
 
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。
@@ -270,6 +278,26 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 それは「他リポジトリからの被参照」ではないので読み飛ばします。
 除外した件数は実行ログに出ます。
 `dist` を丸ごと指定しても、自分から自分への呼び出しが被参照として出ることはありません。
+
+#### FatJar（jar の中の jar）
+
+Spring Boot の実行可能 jar（`BOOT-INF/classes/` と `BOOT-INF/lib/*.jar`）、war（`WEB-INF/classes/` と
+`WEB-INF/lib/*.jar`）、ear（中に war や jar）のように、jar の中に jar が入っている配布物も
+そのまま指定できます。中の jar を取り出す必要はありません。中の jar は何段入れ子でも順に開きます。
+`root` 列の jar 名は、どの jar のどこに入っていたかが分かるように jar URL と同じ `!/` 区切りで出ます。
+FatJar の中に自プロジェクトの jar が入っていても、上と同じく読み飛ばします。
+行は jar のパス順 → jar の中のクラスの順で出ます。
+
+```csv
+caller,callee,root,call-hierarchy
+teamc.ReportJob,fx.util.Counter.bump(),team-c-boot.jar,Counter.bump,被参照:EXACT
+teamb.NightJob,fx.util.Counter.bump(),team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
+teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
+```
+
+同じ jar が複数の FatJar に入っていれば、それぞれの FatJar の行として別々に出ます
+（「どの配布物に影響するか」が影響調査の答えなので、まとめません）。
+実装時に迷った点は [docs/fatjar-external-usage-qa.md](docs/fatjar-external-usage-qa.md) にまとめています。
 
 | 注記 | 意味 |
 |---|---|
@@ -374,6 +402,10 @@ bash test/jbangw/run.sh        # Linux / macOS / Git Bash
 ファイルの中身を読むだけなので JDK も jbang もネットワークも要りません。回帰テストとは別の
 ジョブとして GitHub Actions でも実行します。個々の検査が何を守っているかは `run.sh` の
 コメントに書いてあります。
+
+ラッパーの分岐はほとんどが Windows 固有（`javac.exe`、パス区切りの `\`、cmd の遅延展開、
+PowerShell への委譲）で、Linux 側では一行も通りません。そのため GitHub Actions では
+`windows-latest` でも回帰テスト（`test\regression\run.cmd`）を実行します。
 
 Eclipse 用の `pom.xml` にも検査があります。`//DEPS` 行と `pom.xml` の依存が同じ版であることを見ます。
 

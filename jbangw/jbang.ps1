@@ -43,14 +43,11 @@ if ([System.Enum]::GetNames([System.Net.SecurityProtocolType]) -notcontains 'Tls
 if (-not (Test-Path env:JBANG_DEFAULT_JAVA_VERSION)) { $javaVersion='17' } else { $javaVersion=$env:JBANG_DEFAULT_JAVA_VERSION }
 
 $os='windows'
-# detect architecture, used both for the JDK download and for the native binary lookup
-$arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'aarch64' } else { 'x64' }
+$arch='x64'
 $libc_type='c_std_lib'
 
-if ($javaVersion -match '^[0-9]+$') { $javaVersionNum=[int]$javaVersion } else { $javaVersionNum=0 }
-
 if (-not (Test-Path env:JBANG_JDK_VENDOR)) {
-    if (($javaVersionNum -eq 8) -or ($javaVersionNum -eq 11) -or ($javaVersionNum -ge 17)) {
+    if (($javaVersion -eq 8) -or ($javaVersion -eq 11) -or ($javaVersion -ge 17)) {
         $distro='temurin'
     } else {
         $distro='aoj'
@@ -128,8 +125,8 @@ function Invoke-JBang {
     $env:JAVA_HOME, $env:JBANG_RUNTIME_SHELL, $env:JBANG_STDIN_NOTTY, $env:JBANG_LAUNCH_CMD=$oldJavaHome, $oldShell, $oldNotty, $oldCmd
 }
 
-# architecture for platform-specific binary lookup
-$jbang_arch = $arch
+# detect architecture for platform-specific binary lookup
+$jbang_arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { "aarch64" } else { "x64" }
 
 # resolve native binary or jar path from script location
 $binaryPath=""
@@ -223,9 +220,9 @@ if (-not $binaryPath) {
     if ($ok) {
       $env:JAVA_HOME=""
       $JAVA_EXEC="java.exe"
-    } elseif (Test-Path "$JBDIR\currentjdk\bin\javac.exe") {
+    } elseif (Test-Path "$JBDIR\currentjdk\bin\javac") {
       $env:JAVA_HOME="$JBDIR\currentjdk"
-      $JAVA_EXEC="$JBDIR\currentjdk\bin\java.exe"
+      $JAVA_EXEC="$JBDIR\currentjdk\bin\java"
     } else {
       $env:JAVA_HOME="$TDIR\jdks\$javaVersion"
       $JAVA_EXEC="$env:JAVA_HOME\bin\java.exe"
@@ -240,15 +237,15 @@ if (-not $binaryPath) {
         [Console]::Error.WriteLine("Installing JDK $javaVersion...")
         Remove-Item -LiteralPath "$TDIR\jdks\$javaVersion.tmp" -Force -Recurse -ErrorAction Ignore >$null 2>&1
         try { Expand-Archive -Path "$TDIR\bootstrap-jdk.zip" -DestinationPath "$TDIR\jdks\$javaVersion.tmp"; $ok=$? } catch { $ok=$false }
-        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); exit 1 }
+        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); break }
         $dirs=Get-ChildItem -Directory -Path "$TDIR\jdks\$javaVersion.tmp"
         foreach ($d in $dirs) {
           $p=$d.FullName
           Move-Item -Path "$p\*" -Destination "$TDIR\jdks\$javaVersion.tmp" -Force
         }
         # Check if the JDK was installed properly
-        $ok=$false; try { & "$TDIR\jdks\$javaVersion.tmp\bin\javac.exe" -version >$null 2>&1; $ok=($LASTEXITCODE -eq 0) } catch {}
-        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); exit 1 }
+        $ok=$false; try { & $TDIR\jdks\$javaVersion.tmp\bin\javac -version >$null 2>&1; $ok=$true } catch {}
+        if (-not ($ok)) { [Console]::Error.WriteLine("Error installing JDK"); break }
         # Activate the downloaded JDK giving it its proper name
         Rename-Item -Path "$TDIR\jdks\$javaVersion.tmp" -NewName "$javaVersion" >$null 2>&1
         # Set the current JDK
