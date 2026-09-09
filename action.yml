@@ -3,7 +3,7 @@
 # GitHub Actions から呼び出すためのアクション定義（複合アクション）。
 # 使い方と設計判断は README.md の「GitHub Actions から使う」節と docs/github-actions-qa.md にある。
 #
-#   - uses: instreest/java-call-hierarchy-exporter@v1
+#   - uses: instreest/java-call-hierarchy-exporter@main   # ブランチ・タグ・コミット SHA のいずれか
 #     with:
 #       source-folders: src/main/java
 #

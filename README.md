@@ -256,7 +256,7 @@ jobs:
           cache: maven
       - run: mvn -B --no-transfer-progress dependency:go-offline
 
-      - uses: instreest/java-call-hierarchy-exporter@v1
+      - uses: instreest/java-call-hierarchy-exporter@main
         with:
           source-folders: src/main/java
           source-encoding: UTF-8
@@ -265,6 +265,41 @@ jobs:
 出力は `call-hierarchy` という名前のアーティファクト（`upload-artifact` 入力で切れます）に入ります。
 中身は通常の実行と同じ `<解析開始日時>_<プロジェクト名>/` フォルダです
 （[出力されるファイル](#出力されるファイル)）。ジョブのサマリには出力フォルダと CSV の行数が出ます。
+
+### 参照する版の指定
+
+`uses:` の `@` の後ろには Git の参照（ブランチ・タグ・コミット SHA）を書きます。
+**タグは必須ではありません**。リリースタグを付けていない間はブランチ名で参照できます。
+
+| 書き方 | 意味 |
+| --- | --- |
+| `@main` | 既定ブランチの最新。タグを運用しない場合はこれ。ツール側の変更がそのまま次回の実行に入る |
+| `@0123456789abcdef...`（40 桁のコミット SHA） | その時点のコードに固定する。ブランチが進んでも動きが変わらない。再現性が要る場合はこちら |
+| `@v1` などのタグ | タグを打った場合。タグを動かすことで利用者側を書き換えずに版を切り替えられる |
+
+同じリポジトリの中のワークフローからは、参照そのものが要りません（`uses: ./`。
+このリポジトリの `.github/workflows/smoke.yml` の `action` ジョブがその形です）。
+
+社内の複製やフォークを使う場合、あるいは取得元を明示したい場合は、`actions/checkout` で
+ツールを別フォルダへ取り出してからローカル参照する書き方もできます。
+
+```yaml
+      - uses: actions/checkout@v4            # 解析対象（自分のリポジトリ）
+
+      - uses: actions/checkout@v4            # ツール本体
+        with:
+          repository: instreest/java-call-hierarchy-exporter
+          ref: main                          # ブランチ・タグ・コミット SHA
+          path: .jche-tool
+
+      - uses: ./.jche-tool
+        with:
+          source-folders: src/main/java
+```
+
+この形では `path:` に取り出したフォルダがアクションの場所になり、解析対象は
+ワークスペース（1 つ目のチェックアウト）のままです。プライベートリポジトリから取り出す場合は
+2 つ目の `actions/checkout` に `token:` が要ります。
 
 ### 入力
 
@@ -306,7 +341,7 @@ jobs:
 設定ファイル内の相対パスの起点は「その設定ファイルが置かれているフォルダ」です。
 
 ```yaml
-      - uses: instreest/java-call-hierarchy-exporter@v1
+      - uses: instreest/java-call-hierarchy-exporter@main
         with:
           config: |
             ci/app-a.properties
@@ -326,7 +361,7 @@ jobs:
 後続のステップで CSV を読むときは、`${{ }}` を `run:` に直接書かず環境変数を経由するのが安全です。
 
 ```yaml
-      - uses: instreest/java-call-hierarchy-exporter@v1
+      - uses: instreest/java-call-hierarchy-exporter@main
         id: export
         with:
           source-folders: src/main/java
