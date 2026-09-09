@@ -24,10 +24,15 @@ public final class TypeHierarchy {
     private final HashMap<String, List<String>> directSupertypes = new HashMap<>();
     /** 型 -> 種別（I/A/C） */
     private final HashMap<String, Character> typeKind = new HashMap<>();
+    /** 型 -> その型に付いているアノテーションのFQN。付いていない型は入れない */
+    private final HashMap<String, List<String>> typeAnnotations = new HashMap<>();
     private final HashMap<String, List<String>> transitiveCache = new HashMap<>();
 
     void add(TypeFact t) {
         typeKind.put(t.typeFqn(), t.kind());
+        if (!t.annotations().isEmpty()) {
+            typeAnnotations.put(t.typeFqn(), t.annotations());
+        }
         for (String sup : t.superTypes()) {
             link(directSubtypes, sup, t.typeFqn());
             link(directSupertypes, t.typeFqn(), sup);
@@ -58,6 +63,12 @@ public final class TypeHierarchy {
     /** ソース上に宣言のある型か */
     public boolean contains(String typeFqn) {
         return typeKind.containsKey(typeFqn);
+    }
+
+    /** その型に付いているアノテーションのFQN（宣言順）。無ければ空 */
+    public List<String> annotationsOf(String typeFqn) {
+        List<String> a = typeAnnotations.get(typeFqn);
+        return (a == null) ? List.of() : a;
     }
 
     public char kindOf(String typeFqn) {

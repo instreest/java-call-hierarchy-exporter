@@ -9,6 +9,7 @@ import jche.cache.Origin;
 import jche.cache.RecvKind;
 import jche.config.Config;
 import jche.config.PackagePattern;
+import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.DataflowContext;
@@ -373,6 +374,16 @@ public final class StreamingTreeWalker {
             // 「解決:SINGLE_IMPL」と書くと、実際とは違う1件に決め打ちしたまま
             // 確定したように見えてしまう
             detail = "ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）";
+        } else if (res.isGeneratedImpl()) {
+            // 実装はコンパイル時のアノテーション処理で生成される（Doma の @Dao 等）。
+            // 生成物はソースコードリポジトリに存在しないため、ここから先は辿れない。
+            // 「実装なし（宣言のまま）」と同じ状態だが、原因が違うので言い分ける
+            String framework = res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length());
+            String declType = methods.typeFqn(declaredCallee);
+            GeneratedImpl def = GeneratedImpl.of(graph.hierarchy().annotationsOf(declType));
+            detail = "実装はコンパイル時生成（" + framework + "）: "
+                    + ((def == null) ? declType : def.implFqnOf(declType))
+                    + " はアノテーション処理で生成されるためソース上に無い";
         } else if (Resolution.NO_IMPL.equals(res.label())) {
             // 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけで、
             // 実行時に何が動くかはこのツールでは分からない

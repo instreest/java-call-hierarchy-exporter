@@ -24,6 +24,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.IAnnotationBinding;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
@@ -271,7 +272,29 @@ final class FactVisitor extends ASTVisitor {
 
         List<String> supers = new ArrayList<>();
         collectSupertypes(erased, supers, new HashSet<>(), true, 0);
-        out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased)));
+        out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
+                annotationFqns(erased.getAnnotations())));
+    }
+
+    /**
+     * アノテーションのFQNを宣言順に集める。
+     *
+     * どのアノテーションが意味を持つかは読み手（jche.framework）の判断なので、
+     * ここでは選別せずに全部残す。名前が解決できないもの（クラスパス不足）は落とす。
+     */
+    private static List<String> annotationFqns(IAnnotationBinding[] annotations) {
+        if (annotations == null || annotations.length == 0) {
+            return List.of();
+        }
+        List<String> fqns = new ArrayList<>(annotations.length);
+        for (IAnnotationBinding a : annotations) {
+            ITypeBinding type = (a == null) ? null : a.getAnnotationType();
+            String fqn = (type == null) ? null : BindingNames.erasureOf(type).getQualifiedName();
+            if (fqn != null && !fqn.isEmpty() && !fqns.contains(fqn)) {
+                fqns.add(fqn);
+            }
+        }
+        return fqns;
     }
 
     /** jar の型を経由して親型を辿る深さの上限（JDK の GUI クラス等でも十数段） */
@@ -529,7 +552,8 @@ final class FactVisitor extends ASTVisitor {
                 mods = ModifierTokens.with(mods, ModifierTokens.DELEGATING);
             }
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
-                    node.getBody() != null, mods));
+                    node.getBody() != null, mods,
+                    String.join(",", annotationFqns(node.resolveBinding().getAnnotations()))));
             methodStack.push(List.of(ref));
         } else {
             methodStack.push(UNKNOWN_CALLER);

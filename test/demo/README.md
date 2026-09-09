@@ -5,7 +5,9 @@
 匿名クラス・循環・除外パッケージ・型解決失敗（存在しない import）など、このツールの解決経路を
 ひととおり踏むように書いてあります。動くプログラムとしての意味はありません。
 
-- `src/` … 解析対象のソース。`fx.app.Legacy` は存在しないライブラリを import しており、意図的にコンパイルできません
+- `src/` … 解析対象のソース。`fx.app.Legacy` は存在しないライブラリを import しており、意図的にコンパイルできません。
+  `org/seasar/doma/` は Doma のアノテーション（`@Dao` / `@Select`）の代役のスタブで、
+  jar を持たずに「実装がコンパイル時に生成される型」（`fx.dao.ItemDao`）を再現するために置いています
 - `ext-src/` … 「他チームの jar」の中身（`teamb.NightJob`、`teamc.ReportJob`、`teamd.WebJob`）。
   `external.library.folders` の被参照スキャンの入力
 - `extjars/` … `ext-src/` をコンパイルして作った jar と、`src/` 自身をコンパイルした `demo-app.jar`
