@@ -64,7 +64,7 @@ else
     cfg="$work/config.properties"
     cat > "$cfg" <<EOF
 # java-call-hierarchy-exporter の GitHub Action が入力から生成した設定ファイル。
-# 各項目の意味は、ツールに同梱の config.properties のコメントを参照。
+# 各項目の意味は、ツールに同梱の config/config.properties のコメントを参照。
 # 相対パスの起点になるのはこのファイルのフォルダなので、パスは絶対パスで書いてある。
 project.root=$(prop "$project_root")
 source.folders=$(prop "${JCHE_SOURCE_FOLDERS:-}")

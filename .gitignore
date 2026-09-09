@@ -10,6 +10,11 @@ target/
 # jbangw/.jbang/jbang.jar を置くと、ラッパー（jbangw/jbang）はダウンロードせずにそれを使う。
 # 置いた場合もコミットしない（14MB 超）
 /jbangw/.jbang/
+
+# 起動コマンド（jche.sh / jche.cmd）の設定と、「JDK / JBang をこのプロジェクトの中に置く」を選んだときの置き場所。
+# どちらも環境ごとのもの（パス・ヒープ上限・数百 MB の JDK）なので追跡しない
+/launcher.properties
+/.jbang/
 *.class
 .classpath
 .project
@@ -20,11 +25,12 @@ target/
 # 実行時に生成される解析キャッシュと出力。
 # キャッシュはツールのプロジェクトフォルダ直下の .cache/ に解析対象プロジェクトごとに作られる
 # （cache.folder が空欄のとき。設定ファイルの場所によらない）。
-# 出力は同梱の config.properties の既定値（output.folder=./output）が書き出す先。output.folder の
-# 相対パスは「設定ファイルが置かれているディレクトリ」が起点なので、設定ファイルをリポジトリ内の
-# 別の場所へコピーして使う場合は、その出力先も各自で足すこと。
+# 出力は同梱の config/config.properties の既定値（output.folder=. ＝設定ファイルと同じフォルダ）が
+# 書き出す先。実行ごとに config/<解析開始日時>_<プロジェクト名>/ ができるので、config/ 直下の
+# フォルダを除外する（設定ファイル自体は追跡する）。設定ファイルをリポジトリ内の別の場所へ
+# コピーして使う場合は、その出力先も各自で足すこと。
 /.cache/
-/output/
+/config/*/
 
 # 回帰テストの実行結果（期待出力 expected/ は追跡する）
 /test/regression/*/output/
@@ -48,3 +54,6 @@ target/
 # （上の .project / .classpath の除外はこのツール自身のもの）
 !/test/gradle-demo/app/.project
 !/test/gradle-demo/app/.classpath
+
+# test/cli/run.sh の実行ログ
+/test/cli/run-*.log

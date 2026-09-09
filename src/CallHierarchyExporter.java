@@ -7,7 +7,7 @@
 //       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
 //         3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
 //         3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
-//       解析対象ソースのJavaバージョンは、この版とは別に config.properties の
+//       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/config.properties）の
 //       source.level で指定する（未指定なら、この版が対応する最大値）。
 // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
 //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
@@ -64,13 +64,15 @@ import jche.util.Log;
  * Javaプロジェクトを対象に、メソッド呼び出し階層を一括抽出してCSV出力する。
  * Eclipse IDE の起動は不要で、通常のJavaアプリとして動作する。
  *
- * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config.properties）:
+ * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/config.properties）:
  * <pre>
- *   jbang src/CallHierarchyExporter.java config.properties
- *   jbang src/CallHierarchyExporter.java projA.properties projB.properties
- *   java -cp "bin;lib/*" CallHierarchyExporter config.properties
+ *   jbang src/CallHierarchyExporter.java config/config.properties
+ *   jbang src/CallHierarchyExporter.java config/projA.properties config/projB.properties
+ *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
  * </pre>
- * 設定ファイルごとに、その設定ファイルのフォルダの output.folder（既定 ./output）の下へ
+ * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code jche.sh} / {@code jche.cmd} から
+ * 起動する（{@code src/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
+ * 設定ファイルごとに、その設定ファイルのフォルダを起点にした output.folder（既定 . ＝設定ファイルと同じフォルダ）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
  * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
  * 解析対象プロジェクトごとに置く（{@link jche.config.ToolRoot}、{@link Config}）。
@@ -103,7 +105,7 @@ import jche.util.Log;
 public class CallHierarchyExporter {
 
     /** 引数を省略したときの設定ファイル（作業ディレクトリからの相対） */
-    private static final String DEFAULT_CONFIG = "config.properties";
+    private static final String DEFAULT_CONFIG = "config/config.properties";
 
     /**
      * 出力フォルダの場所を書き出すファイルを指す環境変数。
@@ -124,25 +126,42 @@ public class CallHierarchyExporter {
             configPaths.add(Paths.get(a));
         }
         if (configPaths.isEmpty()) {
-            System.err.println("config.propertiesのパスが指定されていません。");
+            System.err.println("設定ファイル（config.properties）のパスが指定されていません。");
             System.err.println("既定値の「" + DEFAULT_CONFIG + "」で実行します。");
             configPaths.add(Paths.get(DEFAULT_CONFIG));
         }
 
+        int failed = runAll(configPaths, ToolRoot.locate(CallHierarchyExporter.class));
+        if (failed > 0) {
+            System.exit(1);
+        }
+    }
+
+    /**
+     * 設定ファイルを順に処理する。対話モード（{@code src/Jche.java}）からも同じ処理を呼ぶため、
+     * {@link #main} から切り出してある。ここでは {@code System.exit} しない。
+     *
+     * 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する。
+     * {@link #OUTPUT_DIR_FILE_ENV} が指定されていれば、成功した設定の出力フォルダをそこへ書き出す
+     * （対話モードから呼んだときも同じ）。
+     *
+     * @param configPaths 設定ファイル（渡した順に処理する）
+     * @param toolRoot    このツールのプロジェクトフォルダ（キャッシュの置き場所）
+     * @return 失敗した設定の数
+     */
+    public static int runAll(List<Path> configPaths, ToolRoot toolRoot) {
         Path outputDirFile = outputDirFile();
         if (outputDirFile != null) {
             // 前回の実行の内容が残っていると、失敗した実行の後に古い出力フォルダを掴んでしまう
             writeOutputDirFile(outputDirFile, "", false);
         }
 
-        ToolRoot toolRoot = ToolRoot.locate(CallHierarchyExporter.class);
         if (!toolRoot.found) {
             Log.warn("このツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を"
                     + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
                     + toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME));
         }
 
-        // 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する
         List<String> summary = new ArrayList<>();
         int failed = 0;
         for (int i = 0; i < configPaths.size(); i++) {
@@ -173,9 +192,7 @@ public class CallHierarchyExporter {
                 Log.info("  " + line);
             }
         }
-        if (failed > 0) {
-            System.exit(1);
-        }
+        return failed;
     }
 
     /** {@link #OUTPUT_DIR_FILE_ENV} で指定されたファイル。指定が無ければ null */
