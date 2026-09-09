@@ -56,10 +56,13 @@ public final class CallGraphBuilder {
 
     /**
      * @param sourceFolderOrder 起点の並び替えに使うソースフォルダの順（プロジェクトルートからの相対パス）
+     * @param beans             DIコンテナのBean定義の取り込み先（使わないなら {@link SpringBeans#DISABLED}）
      */
-    public static CallGraph build(Path cacheFile, List<String> sourceFolderOrder) throws IOException {
+    public static CallGraph build(Path cacheFile, List<String> sourceFolderOrder, SpringBeans beans)
+            throws IOException {
         CallGraphBuilder b = new CallGraphBuilder();
         b.graph.sourceFolderOrder = sourceFolderOrder;
+        b.graph.beans = beans;
         b.firstPass(cacheFile);
         b.allocateEdges();
         b.secondPass(cacheFile);
@@ -93,6 +96,7 @@ public final class CallGraphBuilder {
                         TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
                         if (t != null) {
                             graph.hierarchy.add(t);
+                            graph.beans.type(t);
                         }
                     }
                     case CacheFormat.ROW_HINT -> {
@@ -109,6 +113,7 @@ public final class CallGraphBuilder {
                             ensure(outDegree, id);
                             methods.setDeclaration(id, currentFile, d.declLine(), d.hasBody());
                             fields.declaration(d);
+                            graph.beans.method(id, d);
                         }
                     }
                     case CacheFormat.ROW_CALL -> {
@@ -127,6 +132,7 @@ public final class CallGraphBuilder {
                         FieldDeclFact v = FieldDeclFact.fromRow(CacheFormat.columnsOf(line));
                         if (v != null) {
                             fields.field(v);
+                            graph.beans.field(v);
                         }
                     }
                     case CacheFormat.ROW_FIELD_ASSIGN -> {
@@ -225,6 +231,9 @@ public final class CallGraphBuilder {
                 graph.returnOrigins[id] = e.getValue().toArray(new String[0]);
             }
         }
+        // @Bean メソッドが登録する型は、R行（戻り値の出所）が揃って初めて決まる
+        graph.beans.resolveBeanMethods(graph);
+
         cursor = Arrays.copyOf(graph.offsets, n == 0 ? 0 : n);
     }
 

@@ -52,6 +52,7 @@ import jche.graph.CallGraphBuilder;
 import jche.graph.CallResolver;
 import jche.graph.DataflowResolver;
 import jche.graph.EntryPoints;
+import jche.graph.SpringBeans;
 import jche.report.CallHierarchyCsvWriter;
 import jche.report.InventoryReport;
 import jche.report.StreamingTreeWalker;
@@ -333,7 +334,13 @@ public class CallHierarchyExporter {
         for (Path sourceFolder : layout.sourceFolders) {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
         }
-        return CallGraphBuilder.build(config.cacheFile, sourceFolderOrder);
+        SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
+        CallGraph graph = CallGraphBuilder.build(config.cacheFile, sourceFolderOrder, beans);
+        if (beans.enabled()) {
+            Log.info("DIコンテナのBean: " + beans.beanCount() + " 型"
+                    + (beans.beanCount() == 0 ? "（spring.di.enabled=true だが Bean は見つからなかった）" : ""));
+        }
+        return graph;
     }
 
     /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込む。init は Plugins が済ませる */
