@@ -9,8 +9,10 @@
   - `src/fx/di/` … Spring による DI の解決（`SPRING_DI` / `SPRING_DI_QUALIFIER`）の確認用。
     フィールド注入・`@Qualifier` での指名・`@Bean` メソッドによる登録・Bean でない実装が候補から外れること・
     Bean が抽象基底クラスから実装を継承する形を含みます
+  - `src/fx/dao/ItemDao.java` … 実装がコンパイル時に生成される型（`GENERATED_IMPL`）の確認用
   - `src/org/springframework/` … 上記が使う Spring の注釈のスタブ（本物の Spring には依存させないため、
     このプロジェクト自身に置いています）
+  - `src/org/seasar/doma/` … 同じく Doma の注釈（`@Dao` / `@Select`）のスタブ
 - `ext-src/` … 「他チームの jar」の中身（`teamb.NightJob`、`teamc.ReportJob`、`teamd.WebJob`）。
   `external.library.folders` の被参照スキャンの入力
 - `extjars/` … `ext-src/` をコンパイルして作った jar と、`src/` 自身をコンパイルした `demo-app.jar`

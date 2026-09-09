@@ -27,10 +27,13 @@ package jche.cache;
  *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
  *                                                          これらの型を宣言するファイルが変わっていたら
  *                                                          再解析する（{@link jche.analysis.CacheUpdater} 参照）
- *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg    {@link TypeFact}。親型は直接の親と、
- *                                                          jar の型を経由して到達するソース上の親
- *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods   {@link MethodDeclFact}
- *   V  typeFqn  fieldName  mods  declType                    {@link FieldDeclFact}
+ *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
+ *                                                          {@link TypeFact}。親型は直接の親と、
+ *                                                          jar の型を経由して到達するソース上の親。
+ *                                                          アノテーションは {@link AnnotationTokens}
+ *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
+ *                                                             {@link MethodDeclFact}
+ *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda
@@ -53,6 +56,8 @@ package jche.cache;
  *   <li>import 推定（U の candidate）をエッジとして採用するか … jche.graph.CallGraphBuilder</li>
  *   <li>ラムダ内の呼び出しの計上先                     … jche.graph.CallGraphBuilder（現状は囲みメソッド）</li>
  *   <li>未解決の理由コードの文言                       … jche.report.UnresolvedReport</li>
+ *   <li>どのアノテーションがDIの印か・値をどう解釈するか … jche.graph.SpringBeans</li>
+ *   <li>どのアノテーションが「実装はコンパイル時生成」を意味するか … jche.framework.GeneratedImpl</li>
  * </ul>
  *
  * <h2>差分更新と依存</h2>
@@ -86,6 +91,10 @@ package jche.cache;
  *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
  *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める（v12）。
  *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
+ *   <li>H 行・D 行・V 行にアノテーションを持つ（v13。{@link AnnotationTokens}）。選別はせず、
+ *       付いているものを宣言順に全部残す。値は単一メンバと value / name の文字列だけ。
+ *       どのアノテーションに意味があるかは読み手の判断
+ *       （{@link jche.graph.SpringBeans} / {@link jche.framework.GeneratedImpl}）</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと

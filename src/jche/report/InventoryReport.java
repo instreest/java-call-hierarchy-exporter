@@ -150,12 +150,17 @@ public final class InventoryReport {
             Resolution res = resolver.resolve(e);
             boolean multi = res.isMultiple();
             boolean noImpl = Resolution.NO_IMPL.equals(res.label());
+            // 実装がコンパイル時生成の型（Doma の @Dao 等）も、その先を辿れない点は
+            // 実装なしと同じなので数に入れる。ただし原因が違うので言い分ける
+            boolean generated = res.isGeneratedImpl();
             boolean fnImpl = g.hasFunctionalImpl(g.calleeOf(e));
-            if (!multi && !noImpl && !fnImpl) {
+            if (!multi && !noImpl && !generated && !fnImpl) {
                 continue;
             }
             count++;
             String cause = noImpl ? "実装なし（宣言のまま）"
+                    : generated ? "実装はコンパイル時生成（"
+                            + res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length()) + "）"
                     : fnImpl && !multi ? "ラムダ/メソッド参照の実装あり"
                     : RecvKind.describe(g.recvKindOf(e));
             // 同じ理由は1回だけ並べる。件数はcount側で分かる

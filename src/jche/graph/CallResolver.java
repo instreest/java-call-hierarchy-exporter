@@ -9,6 +9,7 @@ import jche.cache.HintFact;
 import jche.cache.Origin;
 import jche.cache.RecvKind;
 import jche.extension.Hint;
+import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
 
@@ -169,6 +170,7 @@ public final class CallResolver {
      *  SINGLE_IMPL … 候補が1つだけ（IFに実装が1つ等） → その実装で確定
      *  CHA         … 候補が複数。ここは低確度
      *  NO_IMPL     … 本体を持つ候補が皆無（ソース外の実装等）。宣言のまま扱う
+     *  GENERATED_IMPL:名 … 同上だが、実装がコンパイル時のアノテーション処理で生成される型
      * </pre>
      * 重要: 候補数は「サブタイプ数」ではなく「そのメソッドをオーバーライドしている
      * 宣言の数」。サブクラスが多くてもオーバーライドが1件なら候補は1件のまま。
@@ -200,7 +202,11 @@ public final class CallResolver {
         String label;
         if (cands.isEmpty()) {
             targets = new int[] {calleeId};
-            label = Resolution.NO_IMPL;
+            // 実装がコンパイル時のアノテーション処理で生成される型（Doma の @Dao 等）は、
+            // 生成物がソースに無いだけで「実装が無い」わけではない。両者を混ぜない
+            GeneratedImpl generated = GeneratedImpl.of(graph.hierarchy.annotationsOf(declType));
+            label = (generated == null) ? Resolution.NO_IMPL
+                    : Resolution.GENERATED_IMPL_PREFIX + generated.label();
         } else if (cands.size() == 1) {
             targets = new int[] {cands.get(0)};
             label = (cands.get(0) == calleeId) ? Resolution.NO_OVERRIDE : Resolution.SINGLE_IMPL;
