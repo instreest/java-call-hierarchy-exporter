@@ -73,7 +73,12 @@ jobs:
           if exist test\regression\entry\output rmdir /s /q test\regression\entry\output
           call jche.cmd test\regression\entry\config.properties > launcher-batch.log 2>&1
           type launcher-batch.log
-          if not exist test\regression\entry\output\*_demo\call-hierarchy.csv (echo FAIL: no output folder & exit /b 1)
+          rem 出力フォルダ名は <日時>_demo で実行のたびに変わる。cmd の if exist はワイルドカードを
+          rem 「最後のファイル名」の位置でしか解釈しないので、途中のフォルダ名に * を書いた条件は常に偽になる。
+          rem フォルダは for /d で走査して、その中の CSV を if exist で見る
+          set "FOUND="
+          for /d %%D in (test\regression\entry\output\*_demo) do if exist "%%D\call-hierarchy.csv" set "FOUND=1"
+          if not defined FOUND (echo FAIL: no output folder & exit /b 1)
           > launcher.properties (
             echo JBANG_DIR=
             echo JBANG_REPO=

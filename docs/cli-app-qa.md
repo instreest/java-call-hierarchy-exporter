@@ -356,3 +356,27 @@ The system cannot find the batch label specified - main
 実際に動かす検査（`regression-windows` の `jche.cmd` の 2 ステップ）は Windows でしか通らないので、
 「壊れていないこと」の検査だけを Linux 側に置いて、気づくまでの時間を縮める狙い。
 
+### Q23. 検査そのものにも誤りがあった（`if exist` とワイルドカード）
+
+`jche.cmd` を直したあとも `regression-windows` は `FAIL: no output folder` で落ちた。
+解析は成功してログにも出力フォルダが出ているのに、検査側が見つけられていない。
+
+```bat
+rem これは「出力があっても」常に偽になる
+if not exist test\regression\entry\output\*_demo\call-hierarchy.csv (echo FAIL: no output folder & exit /b 1)
+```
+
+cmd の `if exist` は、ワイルドカードを**最後のファイル名の位置でしか**解釈しない。
+途中のフォルダ名に `*` を書いた条件は常に偽になる（エラーにもならないので気づきにくい）。
+出力フォルダ名は `<日時>_demo` で実行のたびに変わるため、フォルダは `for /d` で走査し、
+その中のファイルを `if exist` で見るように直した。
+
+```bat
+set "FOUND="
+for /d %%D in (test\regression\entry\output\*_demo) do if exist "%%D\call-hierarchy.csv" set "FOUND=1"
+if not defined FOUND (echo FAIL: no output folder & exit /b 1)
+```
+
+`test/regression/run.cmd` の `:expectsidecar`（`.cache\demo_*` を探す）は最初から `for /d` で書かれており、
+同じ形になった。
+
