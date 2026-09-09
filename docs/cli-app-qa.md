@@ -317,3 +317,42 @@ jbang が JDK 25 を取得できない環境（JDK の配布サイトへの接�
 - **色付け・画面消去**（Q1）
 - **配布用の zip 作成**やインストーラ。リポジトリを clone（または zip でダウンロード）して `jche.cmd` を
   実行するのが配布形態で、それ以上は要らないと判断した
+
+---
+
+## 追記: MS932 で保存し直したときに `jche.cmd` が壊れていた
+
+（#48 の作業中に、`main` の `regression-windows` が赤いことから見つかったもの。修正は #48 の PR に含めた）
+
+### Q21. 何が起きたか
+
+`jche.cmd` を MS932 で保存し直したコミット（`3b3e0b2`）で、英語版と日本語版が混ざったファイルが入っていた。
+結果として Windows の CI が次で止まっていた。
+
+```
+The system cannot find the batch label specified - main
+```
+
+壊れ方は 3 つ。
+
+- **`:main` のラベルが無い**。`goto :main` は 4 か所あるのに飛び先が無い（`:main` の行が `:load_settings` に化けていた）
+- `:main` の本体にあるはずの `if exist "%RESTART%" del /q "%RESTART%"` / `setlocal` / `call :load_settings` の 3 行が欠落
+- 英語版の `:first_run_prompt` / `:write_settings` / `:load_settings` が残り、後ろ 2 つは二重定義。
+  日本語版の `first_run_prompt` の本体はラベルを失って、ファイル前半に素の命令として置かれていた
+
+改名前（`1403f79`）の構造（`:main` → `:first_run_prompt` → `:write_settings` → `:load_settings` → `:set_one` →
+`:absolutize`）に戻し、画面に出る文言だけ日本語にして、MS932・CRLF で保存し直した。
+
+### Q22. 同じ壊れ方を次に検出する方法
+
+`test/cli/run.sh` の最後に、`jche.cmd` を**読むだけ**の検査を足した（cmd.exe が要らないので Linux の CI で毎回通る）。
+
+- `goto` / `call` の飛び先が全てラベルとして存在するか（今回の `:main` はここで落ちる）
+- ラベルの二重定義が無いか（今回の `:write_settings` / `:load_settings`）
+- CRLF で保存されているか
+- MS932 で保存されているか（CP932 として読んだときに、実際に入っているはずの日本語の文が読めるか。
+  UTF-8 で保存し直すと、CP932 として読めても中身が化けるので、文字列の一致で見る）
+
+実際に動かす検査（`regression-windows` の `jche.cmd` の 2 ステップ）は Windows でしか通らないので、
+「壊れていないこと」の検査だけを Linux 側に置いて、気づくまでの時間を縮める狙い。
+

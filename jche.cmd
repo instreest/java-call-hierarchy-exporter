@@ -33,6 +33,21 @@ if "%~1"=="-h" goto :main
 if exist "%SETTINGS%" goto :main
 2>nul >nul timeout /t 0 || goto :main
 call :first_run_prompt
+
+:main
+if exist "%RESTART%" del /q "%RESTART%"
+setlocal
+call :load_settings
+set "JCHE_ROOT=%ROOT%"
+call "%ROOT%\jbangw\jbang.cmd" run %JCHE_JBANG_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
+endlocal
+if exist "%RESTART%" (
+    echo 設定を反映するため再起動します...
+    goto :main
+)
+exit /b %ERRORLEVEL%
+
+:first_run_prompt
 echo java-call-hierarchy-exporter: 初回の設定
 echo.
 echo このツールが使う JDK と JBang（合わせて数百 MB）の置き場所を選んでください。
@@ -60,51 +75,6 @@ rem 書き出す内容は Java 側（LauncherSettings.save）が書くものと同じ
     echo #   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）
     echo #   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）
     echo #   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）
-    echo JBANG_DIR=%~1
-    echo JBANG_REPO=%~2
-    echo JCHE_JAVA_OPTS=
-    echo JCHE_JBANG_OPTS=
-)
-exit /b 0
-
-:load_settings
-set "JCHE_ROOT=%ROOT%"
-call "%ROOT%\jbangw\jbang.cmd" run %JCHE_JBANG_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
-endlocal
-if exist "%RESTART%" (
-    echo 設定を反映するため再起動します...
-    goto :main
-)
-exit /b %ERRORLEVEL%
-
-:first_run_prompt
-echo java-call-hierarchy-exporter: first-time setup
-echo.
-echo Choose where to keep the JDK and JBang this tool uses (several hundred MB):
-echo   1^) inside this project    %ROOT%\.jbang
-echo      keeps your environment untouched; delete the folder to undo. Dependency jars go there too.
-echo   2^) your user profile      %USERPROFILE%\.jbang  (JBang default)
-echo      shared with other JBang scripts; pick this if you already use JBang.
-echo You can change this later from the app's environment menu or by editing
-echo   %SETTINGS%
-echo.
-set "CHOICE=1"
-set /p "CHOICE=Number [1]: "
-if "%CHOICE%"=="2" (call :write_settings "" "") else (call :write_settings ".jbang" ".jbang/repository")
-echo Saved: %SETTINGS%
-echo.
-exit /b 0
-
-:write_settings
-rem %1=JBANG_DIR  %2=JBANG_REPO（相対はこのフォルダ起点。空欄は JBang の既定）。
-rem 書き出す内容も ASCII だけ。Java 側が書き換えるときに日本語のコメントを付け直す
-> "%SETTINGS%" (
-    echo # Read by jche / jche.cmd at startup. The app's environment menu rewrites this file.
-    echo # Keys become environment variables. Relative paths are relative to this folder. Empty = default.
-    echo #   JBANG_DIR       where JBang and the JDK are kept ^(default ~/.jbang^)
-    echo #   JBANG_REPO      where dependency jars are kept ^(default ~/.m2/repository^)
-    echo #   JCHE_JAVA_OPTS  JVM options for the analysis ^(e.g. -Xmx4g^)
-    echo #   JCHE_JBANG_OPTS extra options for jbang run ^(e.g. --offline^)
     echo JBANG_DIR=%~1
     echo JBANG_REPO=%~2
     echo JCHE_JAVA_OPTS=

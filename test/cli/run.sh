@@ -14,6 +14,9 @@
 # その出力（config/<日時>_demo/）、.cache/recent-configs.txt もテストが作るものなので消す。
 # ログの検査は ASCII の部分だけで行う（標準出力の文字コードは端末に依るため。test/regression/run.sh と同じ方針）。
 # ただし起動コマンド自身（bash）が出す行はスクリプトの文字コード（UTF-8）で出るので、そこは日本語で照合できる。
+#
+# 最後に、Windows 用の jche.cmd についても「中身を読むだけ」の検査をする（ラベルの整合・改行・文字コード）。
+# cmd.exe が要る検査は Windows のワークフロー（.github/workflows/smoke.yml の regression-windows）の役目。
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
@@ -123,5 +126,26 @@ if [ -e "$ROOT/.cache/launcher.restart" ]; then ng "再起動の目印が残っ�
 printf '4\n\nq\n' | "$JCHE" > "$LOGDIR/run-status2.log" 2>&1
 expect_log "$LOGDIR/run-status2.log" "512 MB" "次の起動でヒープ上限が反映された"
 expect_log "$LOGDIR/run-status2.log" "JCHE_JAVA_OPTS=-Xmx512m" "環境変数として渡された"
+
+echo "== jche.cmd の構造（Windows 用。ここでは中身を読むだけ）=="
+# jche.cmd は cmd.exe でしか動かせないので、Linux 側では「壊れていないこと」だけを見る。
+# cmd は goto / call の飛び先が無いと "The system cannot find the batch label specified" で止まり、
+# 実際に MS932 で保存し直したときに :main のラベルが失われて Windows の CI が赤くなったことがある。
+CMD="$ROOT/jche.cmd"
+labels=$(LC_ALL=C grep -a -o '^:[A-Za-z_][A-Za-z0-9_]*' "$CMD" | sed 's/^://' | sort)
+dups=$(printf '%s\n' "$labels" | uniq -d | tr '\n' ' ')
+if [ -z "$(printf '%s' "$dups" | tr -d ' ')" ]; then ok "ラベルの二重定義が無い"; else ng "ラベルが二重定義: $dups"; fi
+missing=""
+for t in $(LC_ALL=C grep -a -o -E '(goto|call) :[A-Za-z_][A-Za-z0-9_]*' "$CMD" | sed 's/.*://' | sort -u); do
+    printf '%s\n' "$labels" | grep -qx "$t" || missing="$missing $t"
+done
+if [ -z "$missing" ]; then ok "goto / call の飛び先がすべてある"; else ng "飛び先の無いラベル:$missing"; fi
+# 改行と文字コード（ヘッダのコメントの約束。UTF-8 で保存し直すと日本語の echo が化ける）
+if LC_ALL=C grep -qa "$(printf '\r')" "$CMD"; then ok "CRLF で保存されている"; else ng "CRLF ではない"; fi
+if iconv -f CP932 -t UTF-8 "$CMD" 2> /dev/null | grep -q "設定を反映するため再起動します"; then
+    ok "MS932 で保存されている"
+else
+    ng "MS932 として読めない（UTF-8 で保存し直された？）"
+fi
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi
