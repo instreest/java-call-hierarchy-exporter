@@ -362,10 +362,6 @@ public class CallHierarchyExporter {
         Log.info("=== フェーズ3/3: 出力 ===");
         int[] entries = EntryPoints.select(graph, resolver, config);
 
-        InventoryReport.Stats inventory = InventoryReport.writeMethods(graph, resolver, config, entries);
-        Log.info(inventory.toString());
-        Log.info("メソッド一覧: " + config.methodsCsv);
-
         Log.info("エントリポイント数: " + entries.length);
         if (entries.length == 0 && !config.wholeProjectMode) {
             Log.info("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
@@ -377,9 +373,13 @@ public class CallHierarchyExporter {
         }
 
         long rows;
+        // methods.csv は呼び出し階層を書いた後に出す。「階層CSVに1行も出なかったメソッド」
+        // （打ち切りで消えた部分木など）を inHierarchy / absentCause 列に載せるため、
+        // 探索の結果が要る
+        StreamingTreeWalker walker;
         try (CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
                 config.outputCsv, config.outputEncoding, config.outputBom)) {
-            StreamingTreeWalker walker = new StreamingTreeWalker(graph, resolver, config, writer);
+            walker = new StreamingTreeWalker(graph, resolver, config, writer);
             rows = walker.walkAll(entries);
             if (config.dataflowEnabled && walker.anyDataflowHits()) {
                 Log.info("データフローで具象クラスを特定: "
@@ -414,6 +414,17 @@ public class CallHierarchyExporter {
                 }
             }
         }
+
+        InventoryReport.Stats inventory =
+                InventoryReport.writeMethods(graph, resolver, config, entries, walker);
+        Log.info(inventory.toString());
+        Log.info("メソッド一覧: " + config.methodsCsv);
+        if (inventory.prunedOut() > 0) {
+            Log.info("  ※ 条件分岐の打ち切りで階層CSVに出ないメソッドは "
+                    + inventory.prunedOut() + " 件です。");
+            Log.info("     methods.csv の inHierarchy / absentCause 列で一覧できます。");
+        }
+
         Log.heap("フェーズ3完了");
         return rows;
     }

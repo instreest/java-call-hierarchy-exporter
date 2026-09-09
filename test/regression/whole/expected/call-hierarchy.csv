@@ -153,17 +153,17 @@ at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Ma
 at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.main,Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.main,Main.run,Main.branches,Feature.mode
 at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.full(Feature.java:73),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
 at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.main,Main.run,Main.branches,Feature.pick
 at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.main,Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.main,Main.run,Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.two(Feature.java:85),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
 at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.main,Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.main,Main.run,Main.branches,Feature.select
 at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.select,Feature.light
-at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.light(Feature.java:77),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
 at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.main,Main.run,Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.dao.Dao.name(Dao.java:5),fx.dao.OrderDaoImpl.describe(),Dao.name,OrderDaoImpl.describe,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.Dao.name(Dao.java:5),fx.dao.UserDaoImpl.describe(),Dao.name,UserDaoImpl.describe,CHA候補2件（未展開）: 自クラス（this）

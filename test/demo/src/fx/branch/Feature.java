@@ -59,7 +59,13 @@ public class Feature {
         trace("summary");
     }
 
+    /** dump() からしか呼ばれない。打ち切りで階層CSVから丸ごと消える */
     void dump() {
+        dumpDetail();
+    }
+
+    /** dump() の先にしか無いメソッド（methods.csv の absentCause で拾える） */
+    void dumpDetail() {
         trace("dump");
     }
 

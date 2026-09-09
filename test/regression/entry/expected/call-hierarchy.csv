@@ -88,7 +88,8 @@ at fx.app.Main.noImpl(Main.java:92),fx.model.Point.origin(),Main.main,Main.run,M
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),fx.dao.UserDaoImpl.describe(),Main.main,Helper.assist,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.excluded.Helper.assist(Helper.java:9),fx.dao.AbstractDao.flush(),Main.main,Helper.assist,AbstractDao.flush
-at fx.app.Main.run(Main.java:61),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,解決:DATAFLOW_FACTORY
+at fx.app.Main.run(Main.java:61),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,OrderDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.app.Main.run(Main.java:61),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
 at fx.app.Main.run(Main.java:61),fx.dao.Chain.c1(),Main.main,Main.run,Chain.c1
 at fx.dao.Chain.c1(Chain.java:7),fx.dao.Chain.c2(),Main.main,Main.run,Chain.c1,Chain.c2
 at fx.dao.Chain.c2(Chain.java:8),fx.dao.Chain.c3(),Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3
@@ -154,17 +155,17 @@ at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Ma
 at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.main,Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.main,Main.run,Main.branches,Feature.mode
 at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.full(Feature.java:73),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
 at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.main,Main.run,Main.branches,Feature.pick
 at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.main,Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.main,Main.run,Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.two(Feature.java:85),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
 at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.main,Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.main,Main.run,Main.branches,Feature.select
 at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.select,Feature.light
-at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.light(Feature.java:77),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
 at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.main,Main.run,Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.app.Main.run(Main.java:37),fx.dao.DaoFactory.create(),Main.run,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),fx.dao.DaoFactory.newUserDao(),Main.run,DaoFactory.create,DaoFactory.newUserDao
@@ -316,17 +317,17 @@ at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Ma
 at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.run,Main.branches,Feature.mode
 at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.run,Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.full(Feature.java:73),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
 at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.run,Main.branches,Feature.pick
 at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.run,Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.two(Feature.java:85),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
 at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.run,Main.branches,Feature.select
 at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.run,Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.run,Main.branches,Feature.select,Feature.light
-at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.light(Feature.java:77),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
 at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.run,Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.app.Main.branches(Main.java:81),fx.branch.Feature.run(boolean),Main.branches,Feature.run
 at fx.branch.Feature.run(Feature.java:19),fx.branch.Feature.report(),Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
@@ -335,17 +336,17 @@ at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Ma
 at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.branches,Feature.mode
 at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.full(Feature.java:73),fx.branch.Feature.trace(String),Main.branches,Feature.mode,Feature.full,Feature.trace
 at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.branches,Feature.pick
 at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.two(Feature.java:85),fx.branch.Feature.trace(String),Main.branches,Feature.pick,Feature.two,Feature.trace
 at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
 at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.branches,Feature.select
 at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.branches,Feature.select,Feature.light
-at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.light(Feature.java:77),fx.branch.Feature.trace(String),Main.branches,Feature.select,Feature.light,Feature.trace
 at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.app.Main.noSource(Main.java:88),org.w3c.dom.Node.getNodeName(),Main.noSource,Node.getNodeName,ソースなし（展開不可）
 at fx.app.Main.noImpl(Main.java:92),fx.model.Exporter.export(Shape),Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）

@@ -13,6 +13,7 @@ import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
+import jche.graph.IntArray;
 import jche.graph.GuardEvaluator;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
@@ -55,6 +56,18 @@ public final class StreamingTreeWalker {
     /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
     static final String CYCLE_MARK = "[CYCLE]";
 
+    // --- 階層CSVに出なかったメソッドの理由（methods.csv の absentCause 列。弱い順） ---
+    /** 観測できていない（呼び出し先として一度も見ていない＝そこへ至る呼び出し自体が出ていない） */
+    static final byte ABSENT_NONE = 0;
+    /** 条件分岐で打ち切った呼び出しから先にしかない（打ち切りで階層から消えた部分木） */
+    static final byte ABSENT_PRUNED_SUBTREE = 1;
+    /** 経路上で既に呼んでいるメソッドへ戻る辺だった */
+    static final byte ABSENT_CYCLE = 2;
+    /** CHAで候補が複数のまま（候補は行になるが、その先へは降りない） */
+    static final byte ABSENT_CHA = 3;
+    /** exclude.packages で除外された */
+    static final byte ABSENT_EXCLUDED = 4;
+
     private final CallGraph graph;
     private final MethodTable methods;
     private final CallResolver resolver;
@@ -91,6 +104,18 @@ public final class StreamingTreeWalker {
     private long totalRows;
     private boolean limitWarned;
 
+    /**
+     * 階層CSVに1行でも出たメソッド。
+     *
+     * 打ち切った呼び出しの先は階層CSVから丸ごと消えるため、「消えたメソッド」を
+     * methods.csv 側で拾えるようにする（inHierarchy 列）。
+     */
+    private final boolean[] inHierarchy;
+    /** 呼び出し先として見たが降りなかった理由。強い理由で上書きする（absentCause 列） */
+    private final byte[] absentCause;
+    /** 条件分岐で打ち切った呼び出しの、呼び出し先（打ち切りで消えた部分木の根） */
+    private final IntArray prunedTargets = new IntArray(64);
+
     public StreamingTreeWalker(CallGraph graph, CallResolver resolver, Config config,
                                CallHierarchyCsvWriter writer) {
         this.graph = graph;
@@ -101,6 +126,8 @@ public final class StreamingTreeWalker {
         this.config = config;
         this.writer = writer;
         this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
+        this.inHierarchy = new boolean[methods.size()];
+        this.absentCause = new byte[methods.size()];
         this.path = new PathFrame[Math.max(2, this.maxDepth + 2)];
         for (int i = 0; i < path.length; i++) {
             path[i] = new PathFrame();
@@ -132,9 +159,75 @@ public final class StreamingTreeWalker {
         return prunedCalls;
     }
 
+    /** そのメソッドが階層CSVに1行でも出たか */
+    boolean inHierarchy(int methodId) {
+        return methodId >= 0 && methodId < inHierarchy.length && inHierarchy[methodId];
+    }
+
+    /** 階層CSVに出なかった理由の文言。分からなければ「上流が未出力」 */
+    String absentCauseOf(int methodId) {
+        byte cause = (methodId >= 0 && methodId < absentCause.length) ? absentCause[methodId] : ABSENT_NONE;
+        return switch (cause) {
+            case ABSENT_EXCLUDED -> "除外パッケージ";
+            case ABSENT_CHA -> "CHA候補のため未展開";
+            case ABSENT_CYCLE -> "循環のため未展開";
+            case ABSENT_PRUNED_SUBTREE -> PRUNED_SUBTREE_CAUSE;
+            // 呼び出し先として一度も見ていない = そこへ至る呼び出し自体が出力されていない
+            // （深さ制限・行数上限の先、起点から辿り着かない）
+            default -> "上流が未出力";
+        };
+    }
+
+    /** 降りなかった理由を記録する。より強い理由が来たときだけ上書きする */
+    private void markAbsent(int methodId, byte cause) {
+        if (methodId >= 0 && methodId < absentCause.length && absentCause[methodId] < cause) {
+            absentCause[methodId] = cause;
+        }
+    }
+
     /** データフローで具象クラスを1件でも特定したか（ログを出すかの判定用） */
     public boolean anyDataflowHits() {
         return factoryHits > 0 || paramHits > 0 || fieldHits > 0 || newHits > 0;
+    }
+
+    /** 条件分岐の打ち切りが理由で階層CSVに出なかったことを表す文言 */
+    static final String PRUNED_SUBTREE_CAUSE = "条件分岐で打ち切った先";
+
+    /**
+     * 打ち切った呼び出しの先にしか無いメソッドに印を付ける。
+     *
+     * 打ち切った呼び出し自体は行になるので、階層CSVから丸ごと消えるのは
+     * <b>その先</b>。どこまでが消えたかは、打ち切った呼び出し先から
+     * 宣言上のエッジを辿って求める（経路ごとの解決までは追わない近似）。
+     * 別の経路で1行でも出たメソッドは対象外なので、印が付くのは
+     * 「打ち切りが無ければ出ていたはずのメソッド」だけになる。
+     */
+    private void markPrunedSubtrees() {
+        if (prunedTargets.isEmpty()) {
+            return;
+        }
+        boolean[] seen = new boolean[methods.size()];
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        for (int i = 0; i < prunedTargets.size(); i++) {
+            int id = prunedTargets.get(i);
+            if (id >= 0 && id < seen.length && !seen[id]) {
+                seen[id] = true;
+                queue.add(id);
+            }
+        }
+        while (!queue.isEmpty()) {
+            int id = queue.poll();
+            if (!inHierarchy[id]) {
+                markAbsent(id, ABSENT_PRUNED_SUBTREE);
+            }
+            for (int e = graph.edgeStart(id); e < graph.edgeEnd(id); e++) {
+                int next = graph.calleeOf(e);
+                if (next >= 0 && next < seen.length && !seen[next]) {
+                    seen[next] = true;
+                    queue.add(next);
+                }
+            }
+        }
     }
 
     /** 全ての起点から辿り、出力した行数を返す */
@@ -148,6 +241,7 @@ public final class StreamingTreeWalker {
                 break;
             }
         }
+        markPrunedSubtrees();
         return totalRows;
     }
 
@@ -187,7 +281,13 @@ public final class StreamingTreeWalker {
                 String[] targetParams = bindArguments(e, depth, target);
                 String[] targetCtorArgs = bindConstructorArguments(e, depth, target);
 
+                if (unreachable != null) {
+                    // 打ち切った呼び出し自体は行になるが、その先の階層は消える。
+                    // 消えた範囲は探索の後にまとめて求める（markPrunedSubtrees）
+                    prunedTargets.add(target);
+                }
                 if (isExcluded(target)) {
+                    markAbsent(target, ABSENT_EXCLUDED);
                     // 除外対象のノード自身は出力しないが、その先は辿る。
                     // 経路上（読み飛ばし中の除外メソッドを含む）へ戻る辺は循環なので降りない。
                     // この経路で呼ばれない呼び出しは、除外ノードの先も辿らない
@@ -198,6 +298,11 @@ public final class StreamingTreeWalker {
                 }
 
                 boolean cycle = onCurrentPath(target, depth);
+                if (cycle) {
+                    markAbsent(target, ABSENT_CYCLE);
+                } else if (targets.length > 1) {
+                    markAbsent(target, ABSENT_CHA);
+                }
                 path[depth + 1].set(target, graph.callLineOf(e),
                         noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e),
                                 unreachable),
@@ -449,6 +554,10 @@ public final class StreamingTreeWalker {
     /** 1行を即座に書き出す（溜め込まない） */
     private void emit(int depth) throws IOException {
         writer.writeRow(methods, rootId, path, depth);
+        int id = path[depth].methodId;
+        if (id >= 0 && id < inHierarchy.length) {
+            inHierarchy[id] = true;
+        }
         totalRows++;
     }
 }

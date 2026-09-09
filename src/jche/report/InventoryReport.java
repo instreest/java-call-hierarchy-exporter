@@ -29,8 +29,15 @@ public final class InventoryReport {
         long isolated;
         long leaves;
         long unreachable;
+        long notInHierarchy;
+        long prunedOut;
         long constructors;
         long withUnresolved;
+
+        /** 条件分岐の打ち切りが理由で階層CSVに出なかったメソッドの数 */
+        public long prunedOut() {
+            return prunedOut;
+        }
 
         @Override
         public String toString() {
@@ -39,6 +46,8 @@ public final class InventoryReport {
                     + " 孤立=" + isolated
                     + " 末端=" + leaves
                     + " 未到達=" + unreachable
+                    + " 階層CSVに出ない=" + notInHierarchy
+                    + "（うち条件分岐で打ち切った先=" + prunedOut + "）"
                     + " 未解決の呼び出しを含む=" + withUnresolved
                     + "（コンストラクタ " + constructors + " 個は出力対象外）";
         }
@@ -74,8 +83,8 @@ public final class InventoryReport {
      * call-hierarchy.csv の注記と同じ判定を使っているので、
      * まずここで穴のあるメソッドを絞ってから階層を追う、という使い方ができる。
      */
-    public static Stats writeMethods(CallGraph g, CallResolver resolver, Config config, int[] roots)
-            throws IOException {
+    public static Stats writeMethods(CallGraph g, CallResolver resolver, Config config, int[] roots,
+                                     StreamingTreeWalker walker) throws IOException {
         MethodTable methods = g.methods();
         Stats st = new Stats();
         int[] in = resolver.inDegrees();
@@ -84,7 +93,7 @@ public final class InventoryReport {
         try (BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding, config.outputBom)) {
             w.write(String.join(Csv.DELIM, "method", "declaringType", "typeKind",
                     "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable",
-                    "unresolvedCalls", "unresolvedCause"));
+                    "unresolvedCalls", "unresolvedCause", "inHierarchy", "absentCause"));
             w.newLine();
             // ソースが無いメソッド（jar内など）は一覧の対象外。
             // 呼ばれている事実は call-hierarchy.csv 側に残る。
@@ -117,6 +126,17 @@ public final class InventoryReport {
                 if (un.count() > 0) {
                     st.withUnresolved++;
                 }
+                // 呼び出し階層CSVに1行も出なかったメソッド。打ち切りで階層から
+                // 消えた部分木は、ここでしか見えない
+                boolean inTree = walker.inHierarchy(id);
+                String absent = "";
+                if (!inTree) {
+                    st.notInHierarchy++;
+                    absent = walker.absentCauseOf(id);
+                    if (StreamingTreeWalker.PRUNED_SUBTREE_CAUSE.equals(absent)) {
+                        st.prunedOut++;
+                    }
+                }
                 w.write(String.join(Csv.DELIM,
                         Csv.esc(methods.shortLabelWithParams(id)),
                         Csv.esc(methods.typeFqn(id)),
@@ -129,7 +149,9 @@ public final class InventoryReport {
                         role,
                         reachable[id] ? "1" : "0",
                         String.valueOf(un.count()),
-                        Csv.esc(un.cause())));
+                        Csv.esc(un.cause()),
+                        inTree ? "1" : "0",
+                        Csv.esc(absent)));
                 w.newLine();
             }
         }
