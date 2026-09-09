@@ -316,11 +316,11 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # library-folders を空欄にして依存 jar を自動で集める場合は、先にローカルリポジトリへ
       # 依存を取得しておく（このツールはネットワークに出ないため）
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -355,9 +355,9 @@ jobs:
 ツールを別フォルダへ取り出してからローカル参照する書き方もできます。
 
 ```yaml
-      - uses: actions/checkout@v4            # 解析対象（自分のリポジトリ）
+      - uses: actions/checkout@v5            # 解析対象（自分のリポジトリ）
 
-      - uses: actions/checkout@v4            # ツール本体
+      - uses: actions/checkout@v5            # ツール本体
         with:
           repository: instreest/java-call-hierarchy-exporter
           ref: main                          # ブランチ・タグ・コミット SHA
@@ -407,17 +407,88 @@ jobs:
 | `artifact-name` | `call-hierarchy` | アーティファクトの名前 |
 | `artifact-retention-days` | （空欄） | アーティファクトの保持日数 |
 
-用意済みの設定ファイルを使う場合は、リポジトリに設定ファイルを置いて `config` で渡します。
-複数渡せば[まとめて解析](#複数のプロジェクトをまとめて解析する)します。
-設定ファイル内の相対パスの起点は「その設定ファイルが置かれているフォルダ」です。
+### 設定ファイルを渡す（`config` 入力）
+
+入力で表せない項目まで細かく指定したいときや、手元と CI で同じ設定を使いたいときは、
+設定ファイルをリポジトリに置いて `config` で渡します。**`config` を指定すると、上の生成用の入力
+（`project-root` / `source-folders` … と `output-folder`）は使われません。** 設定ファイルの内容がそのまま効きます。
+
+```yaml
+      - uses: actions/checkout@v5
+
+      - uses: instreest/java-call-hierarchy-exporter@main
+        with:
+          config: ci/call-hierarchy.properties
+```
+
+パスは**ワークスペース（チェックアウト先）からの相対パス**か絶対パスです。
+無いファイルを指定するとその場で失敗します（`::error::config に指定された設定ファイルがありません`）。
+
+#### 設定ファイルの書き方（CI 向けの例）
+
+**相対パスの起点は「その設定ファイルが置かれているフォルダ」**です（`project.root` / `output.folder` /
+`cache.folder`）。`source.folders` などは `project.root` からの相対です。
+リポジトリ直下に `ci/call-hierarchy.properties` を置くなら、`project.root` は 1 つ上（`..`）になります。
+
+```properties
+# ci/call-hierarchy.properties（このファイルのフォルダが相対パスの起点）
+project.root=..
+source.folders=src/main/java,src/generated/java
+source.encoding=UTF-8
+
+# 空欄にすると pom.xml / build.gradle を読んで ~/.m2 等から依存 jar を集める
+# （ワークフロー側で先に mvn -B dependency:go-offline を実行しておくこと）
+library.folders=
+library.build.tool=auto
+
+# jar をリポジトリに同梱している場合は、集めたフォルダを project.root からの相対で指定する
+#library.folders=libs
+
+entry.packages=
+exclude.packages=java.**,javax.**,org.springframework.**
+
+# 出力先。既定は「この設定ファイルと同じフォルダ」。相対パスはこのファイルのフォルダの配下だけ
+# 指定できる（.. で外へ出るとエラー。外へ出すときは絶対パス）
+output.folder=output
+output.encoding=UTF-8-BOM
+max.rows=5000000
+
+# キャッシュの置き場所は空欄のままでよい。アクションのフォルダの下に作られ、
+# 解析対象リポジトリのチェックアウトは汚れない
+cache.folder=
+```
+
+設定できる項目の一覧と意味は [config/config.properties](config/config.properties) のコメントにあります。
+手元で `./jche.sh ci/call-hierarchy.properties` と実行したときと同じ設定なので、CI で出た結果を手元で再現できます。
+
+**出力先だけは注意**してください。`output.folder` の既定は「設定ファイルと同じフォルダ」なので、
+指定しないと解析対象リポジトリのチェックアウトの中（設定ファイルの隣）に出力フォルダができます。
+相対パスは設定ファイルのフォルダの配下しか指せない（`..` で外へ出るとエラーになります）ので、
+上の例のように配下へ出すか、リポジトリの外に出したい場合は絶対パス（Linux のランナーなら
+`/tmp/call-hierarchy-output` など）を書きます。リポジトリ内に出すなら、その場所を `.gitignore` に
+足しておくと `git diff --exit-code` のような検査と併用できます。
+
+#### 複数渡す
+
+改行区切り（`|`）またはカンマ区切りで複数渡せます。渡した順に 1 つずつ処理し、
+設定ファイルごとに別の出力フォルダができます（[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
 
 ```yaml
       - uses: instreest/java-call-hierarchy-exporter@main
+        id: export
         with:
           config: |
             ci/app-a.properties
             ci/app-b.properties
+            ci/batch.properties
 ```
+
+- 1 つが失敗しても残りは処理し、最後にまとめて報告します。1 つでも失敗すればステップは失敗します
+  （出来ているところまではアーティファクトに入ります）
+- `output-dirs` 出力に、成功した設定の出力フォルダが 1 行に 1 つ並びます。
+  `output-dir` / `csv` / `methods-csv` / `run-log` は**最初の設定**のものです
+- アーティファクトは 1 つにまとまります（それぞれの出力フォルダが共通の親からの構造で入ります）
+- どの設定で走ったかは、各出力フォルダに入る設定ファイルの複製で分かります
 
 ### 出力
 

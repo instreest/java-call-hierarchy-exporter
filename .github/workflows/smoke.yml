@@ -8,17 +8,17 @@ jobs:
   regression:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # ツール自身は //JAVA 25 で動く。期待出力も同じ JDK で作る
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
 
       # ラッパー（jbangw/jbang）は jbang 本体を ~/.jbang に、依存 jar を ~/.m2 に置く
       - name: Cache jbang and dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.jbang
@@ -51,9 +51,9 @@ jobs:
   regression-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
@@ -96,7 +96,7 @@ jobs:
       # 出力が食い違ったとき、ログの差分だけでは追いきれないため
       - name: Upload output on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: regression-output-windows
           path: |
@@ -135,7 +135,7 @@ jobs:
   action:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 入力から設定ファイルを生成する経路。JDK の用意も JBang の取得もアクションの中で行う
       - name: Export call hierarchy (generated config)
@@ -193,7 +193,7 @@ jobs:
   jbangw:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: JBang wrapper check
         run: bash test/jbangw/run.sh
@@ -206,12 +206,12 @@ jobs:
   pom:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: DEPS / pom.xml consistency check
         run: bash test/pom/run.sh
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
