@@ -30,12 +30,12 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 依存 jar（JDT 一式）をローカルリポジトリに取得しておく。ツールは pom.xml を読んで
       # ~/.m2/repository にある jar を使うだけで、ネットワークには出ないため
       # （取得しないと jar の型が解決できず、その戻り値を使う呼び出しが出力から欠ける）
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'

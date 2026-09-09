@@ -316,11 +316,11 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # library-folders を空欄にして依存 jar を自動で集める場合は、先にローカルリポジトリへ
       # 依存を取得しておく（このツールはネットワークに出ないため）
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -355,9 +355,9 @@ jobs:
 ツールを別フォルダへ取り出してからローカル参照する書き方もできます。
 
 ```yaml
-      - uses: actions/checkout@v4            # 解析対象（自分のリポジトリ）
+      - uses: actions/checkout@v5            # 解析対象（自分のリポジトリ）
 
-      - uses: actions/checkout@v4            # ツール本体
+      - uses: actions/checkout@v5            # ツール本体
         with:
           repository: instreest/java-call-hierarchy-exporter
           ref: main                          # ブランチ・タグ・コミット SHA
