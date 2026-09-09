@@ -62,11 +62,11 @@ at fx.service.Notifier.execute(Notifier.java:24),fx.service.Notifier.ping(),Main
 at fx.service.Notifier.ping(Notifier.java:28),fx.service.Notifier.pong(),Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong
 at fx.service.Notifier.pong(Notifier.java:32),fx.service.Notifier.ping(),Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong,Notifier.ping,[CYCLE]
 at fx.app.Main.run(Main.java:48),fx.app.Main.useParam(Dao),Main.main,Main.run,Main.useParam
-at fx.app.Main.useParam(Main.java:95),fx.dao.OrderDaoImpl.findById(long),Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,解決:DATAFLOW_PARAM
+at fx.app.Main.useParam(Main.java:96),fx.dao.OrderDaoImpl.findById(long),Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,解決:DATAFLOW_PARAM
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),fx.dao.AbstractDao.findById(long),Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.useParam(Main.java:96),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,Main.useParam,OrderDaoImpl.describe,解決:DATAFLOW_PARAM
+at fx.app.Main.useParam(Main.java:97),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,Main.useParam,OrderDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.app.Main.run(Main.java:50),fx.dao.AbstractDao.findById(long),Main.main,Main.run,AbstractDao.findById,解決:DATAFLOW_NEW
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
@@ -81,10 +81,10 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long)
 at fx.app.Main.run(Main.java:55),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,CHA候補2件（未展開）: ローカル変数
 at fx.app.Main.run(Main.java:55),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,OrderDaoImpl.describe,CHA候補2件（未展開）: ローカル変数
 at fx.app.Main.run(Main.java:56),fx.app.Main.noSource(Node),Main.main,Main.run,Main.noSource
-at fx.app.Main.noSource(Main.java:87),org.w3c.dom.Node.getNodeName(),Main.main,Main.run,Main.noSource,Node.getNodeName,ソースなし（展開不可）
+at fx.app.Main.noSource(Main.java:88),org.w3c.dom.Node.getNodeName(),Main.main,Main.run,Main.noSource,Node.getNodeName,ソースなし（展開不可）
 at fx.app.Main.run(Main.java:57),fx.app.Main.noImpl(Exporter),Main.main,Main.run,Main.noImpl
-at fx.app.Main.noImpl(Main.java:91),fx.model.Exporter.export(Shape),Main.main,Main.run,Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）
-at fx.app.Main.noImpl(Main.java:91),fx.model.Point.origin(),Main.main,Main.run,Main.noImpl,Point.origin
+at fx.app.Main.noImpl(Main.java:92),fx.model.Exporter.export(Shape),Main.main,Main.run,Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）
+at fx.app.Main.noImpl(Main.java:92),fx.model.Point.origin(),Main.main,Main.run,Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),fx.dao.UserDaoImpl.describe(),Main.main,Helper.assist,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.excluded.Helper.assist(Helper.java:9),fx.dao.AbstractDao.flush(),Main.main,Helper.assist,AbstractDao.flush
@@ -110,18 +110,18 @@ at fx.reflect.Invoker.byLiteral(Invoker.java:10),fx.reflect.Target.run(long),Mai
 at fx.reflect.Target.run(Target.java:9),fx.reflect.Target.step(),Main.main,Main.run,Invoker.byLiteral,Target.run,Target.step
 at fx.reflect.Invoker.byLiteral(Invoker.java:10),fx.reflect.Target.<clinit>(),Main.main,Main.run,Invoker.byLiteral,Target.<clinit>,解決:REFLECTION_INIT
 at fx.app.Main.run(Main.java:66),fx.app.Main.shapes(),Main.main,Main.run,Main.shapes
-at fx.app.Main.shapes(Main.java:101),fx.model.Color.area(),Main.main,Main.run,Main.shapes,Color.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:101),fx.model.Point.area(),Main.main,Main.run,Main.shapes,Point.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:101),fx.model.Color$1.area(),Main.main,Main.run,Main.shapes,Color$1.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:102),fx.model.Point.origin(),Main.main,Main.run,Main.shapes,Point.origin
+at fx.app.Main.shapes(Main.java:102),fx.model.Color.area(),Main.main,Main.run,Main.shapes,Color.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:102),fx.model.Point.area(),Main.main,Main.run,Main.shapes,Point.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:102),fx.model.Color$1.area(),Main.main,Main.run,Main.shapes,Color$1.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:103),fx.model.Point.origin(),Main.main,Main.run,Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.main,Main.run,Main.shapes,Point.origin,Point.Point,Registry.register
-at fx.app.Main.shapes(Main.java:103),fx.model.Point.area(),Main.main,Main.run,Main.shapes,Point.area
-at fx.app.Main.shapes(Main.java:104),fx.model.Color.code(),Main.main,Main.run,Main.shapes,Color.code
+at fx.app.Main.shapes(Main.java:104),fx.model.Point.area(),Main.main,Main.run,Main.shapes,Point.area
+at fx.app.Main.shapes(Main.java:105),fx.model.Color.code(),Main.main,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),fx.app.Main.lambdas(Dao),Main.main,Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:108),fx.dao.AbstractDao.findById(long),Main.main,Main.run,Main.lambdas,AbstractDao.findById,解決:DATAFLOW_PARAM
+at fx.app.Main.lambdas(Main.java:109),fx.dao.AbstractDao.findById(long),Main.main,Main.run,Main.lambdas,AbstractDao.findById,解決:DATAFLOW_PARAM
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.main,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.lambdas(Main.java:111),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,Main.lambdas,UserDaoImpl.describe,解決:DATAFLOW_PARAM
+at fx.app.Main.lambdas(Main.java:112),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,Main.lambdas,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.app.Main.run(Main.java:68),fx.util.Counter.bump(),Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),fx.util.Counter.initial(),Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),fx.util.Counter.Inner.touch(),Main.main,Main.run,Counter.Inner.touch
@@ -134,33 +134,38 @@ at fx.app.Main.run(Main.java:71),fx.dao.UserDaoImpl.save(java.util.List),Main.ma
 at fx.app.Main.run(Main.java:72),fx.dao.UserDaoImpl.save(fx.other.List),Main.main,Main.run,UserDaoImpl.save
 at fx.dao.UserDaoImpl.save(UserDaoImpl.java:16),fx.other.List.count(),Main.main,Main.run,UserDaoImpl.save,List.count
 at fx.app.Main.run(Main.java:73),fx.app.Main.anonymous(Dao),Main.main,Main.run,Main.anonymous
-at fx.app.Main.anonymous(Main.java:130),fx.app.Main$1.execute(),Main.main,Main.run,Main.anonymous,Main$1.execute,解決:LOCAL_NEW
-at fx.app.Main$1.execute(Main.java:125),fx.dao.AbstractDao.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:125),fx.dao.OrderDaoImpl.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
+at fx.app.Main.anonymous(Main.java:131),fx.app.Main$1.execute(),Main.main,Main.run,Main.anonymous,Main$1.execute,解決:LOCAL_NEW
+at fx.app.Main$1.execute(Main.java:126),fx.dao.AbstractDao.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:127),fx.dao.OrderDaoImpl.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),fx.dao.AbstractDao.findById(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.anonymous(Main.java:137),fx.app.Main$1LocalService.execute(),Main.main,Main.run,Main.anonymous,Main$1LocalService.execute
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.anonymous(Main.java:138),fx.app.Main$1LocalService.execute(),Main.main,Main.run,Main.anonymous,Main$1LocalService.execute
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
 at fx.app.Main.run(Main.java:74),fx.app.Legacy.callRemote(),Main.main,Main.run,Legacy.callRemote
 at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Main.main,Main.run,Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
 at fx.app.Main.run(Main.java:75),fx.app.Main.branches(),Main.main,Main.run,Main.branches
 at fx.app.Main.branches(Main.java:81),fx.branch.Feature.run(boolean),Main.main,Main.run,Main.branches,Feature.run
-at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.main,Main.run,Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
-at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,Main.run,Main.branches,Feature.run,Feature.summary
-at fx.branch.Feature.summary(Feature.java:46),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
-at fx.branch.Feature.run(Feature.java:21),fx.branch.Feature.dump(),Main.main,Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
+at fx.branch.Feature.run(Feature.java:19),fx.branch.Feature.report(),Main.main,Main.run,Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:21),fx.branch.Feature.summary(),Main.main,Main.run,Main.branches,Feature.run,Feature.summary
+at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
+at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.main,Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.main,Main.run,Main.branches,Feature.mode
-at fx.branch.Feature.mode(Feature.java:27),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:54),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
-at fx.branch.Feature.mode(Feature.java:29),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
+at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.mode,Feature.full
+at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.main,Main.run,Main.branches,Feature.pick
-at fx.branch.Feature.pick(Feature.java:35),fx.branch.Feature.one(),Main.main,Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
-at fx.branch.Feature.pick(Feature.java:36),fx.branch.Feature.two(),Main.main,Main.run,Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:66),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
-at fx.branch.Feature.pick(Feature.java:37),fx.branch.Feature.other(),Main.main,Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.main,Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.main,Main.run,Main.branches,Feature.pick,Feature.two
+at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.main,Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.main,Main.run,Main.branches,Feature.select
+at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.main,Main.run,Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
+at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.main,Main.run,Main.branches,Feature.select,Feature.light
+at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.main,Main.run,Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.app.Main.run(Main.java:37),fx.dao.DaoFactory.create(),Main.run,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),fx.dao.DaoFactory.newUserDao(),Main.run,DaoFactory.create,DaoFactory.newUserDao
 at fx.app.Main.run(Main.java:38),fx.dao.AbstractDao.findById(long),Main.run,AbstractDao.findById,解決:DATAFLOW_FACTORY
@@ -219,11 +224,11 @@ at fx.service.Notifier.execute(Notifier.java:24),fx.service.Notifier.ping(),Main
 at fx.service.Notifier.ping(Notifier.java:28),fx.service.Notifier.pong(),Main.run,Notifier.execute,Notifier.ping,Notifier.pong
 at fx.service.Notifier.pong(Notifier.java:32),fx.service.Notifier.ping(),Main.run,Notifier.execute,Notifier.ping,Notifier.pong,Notifier.ping,[CYCLE]
 at fx.app.Main.run(Main.java:48),fx.app.Main.useParam(Dao),Main.run,Main.useParam
-at fx.app.Main.useParam(Main.java:95),fx.dao.OrderDaoImpl.findById(long),Main.run,Main.useParam,OrderDaoImpl.findById,解決:DATAFLOW_PARAM
+at fx.app.Main.useParam(Main.java:96),fx.dao.OrderDaoImpl.findById(long),Main.run,Main.useParam,OrderDaoImpl.findById,解決:DATAFLOW_PARAM
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),fx.dao.AbstractDao.findById(long),Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.useParam(Main.java:96),fx.dao.OrderDaoImpl.describe(),Main.run,Main.useParam,OrderDaoImpl.describe,解決:DATAFLOW_PARAM
+at fx.app.Main.useParam(Main.java:97),fx.dao.OrderDaoImpl.describe(),Main.run,Main.useParam,OrderDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.app.Main.run(Main.java:50),fx.dao.AbstractDao.findById(long),Main.run,AbstractDao.findById,解決:DATAFLOW_NEW
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.run,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.run,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
@@ -238,10 +243,10 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long)
 at fx.app.Main.run(Main.java:55),fx.dao.UserDaoImpl.describe(),Main.run,UserDaoImpl.describe,CHA候補2件（未展開）: ローカル変数
 at fx.app.Main.run(Main.java:55),fx.dao.OrderDaoImpl.describe(),Main.run,OrderDaoImpl.describe,CHA候補2件（未展開）: ローカル変数
 at fx.app.Main.run(Main.java:56),fx.app.Main.noSource(Node),Main.run,Main.noSource
-at fx.app.Main.noSource(Main.java:87),org.w3c.dom.Node.getNodeName(),Main.run,Main.noSource,Node.getNodeName,ソースなし（展開不可）
+at fx.app.Main.noSource(Main.java:88),org.w3c.dom.Node.getNodeName(),Main.run,Main.noSource,Node.getNodeName,ソースなし（展開不可）
 at fx.app.Main.run(Main.java:57),fx.app.Main.noImpl(Exporter),Main.run,Main.noImpl
-at fx.app.Main.noImpl(Main.java:91),fx.model.Exporter.export(Shape),Main.run,Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）
-at fx.app.Main.noImpl(Main.java:91),fx.model.Point.origin(),Main.run,Main.noImpl,Point.origin
+at fx.app.Main.noImpl(Main.java:92),fx.model.Exporter.export(Shape),Main.run,Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）
+at fx.app.Main.noImpl(Main.java:92),fx.model.Point.origin(),Main.run,Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),fx.dao.UserDaoImpl.describe(),Main.run,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.excluded.Helper.assist(Helper.java:9),fx.dao.AbstractDao.flush(),Main.run,AbstractDao.flush
@@ -267,18 +272,18 @@ at fx.reflect.Invoker.byLiteral(Invoker.java:10),fx.reflect.Target.run(long),Mai
 at fx.reflect.Target.run(Target.java:9),fx.reflect.Target.step(),Main.run,Invoker.byLiteral,Target.run,Target.step
 at fx.reflect.Invoker.byLiteral(Invoker.java:10),fx.reflect.Target.<clinit>(),Main.run,Invoker.byLiteral,Target.<clinit>,解決:REFLECTION_INIT
 at fx.app.Main.run(Main.java:66),fx.app.Main.shapes(),Main.run,Main.shapes
-at fx.app.Main.shapes(Main.java:101),fx.model.Color.area(),Main.run,Main.shapes,Color.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:101),fx.model.Point.area(),Main.run,Main.shapes,Point.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:101),fx.model.Color$1.area(),Main.run,Main.shapes,Color$1.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:102),fx.model.Point.origin(),Main.run,Main.shapes,Point.origin
+at fx.app.Main.shapes(Main.java:102),fx.model.Color.area(),Main.run,Main.shapes,Color.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:102),fx.model.Point.area(),Main.run,Main.shapes,Point.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:102),fx.model.Color$1.area(),Main.run,Main.shapes,Color$1.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:103),fx.model.Point.origin(),Main.run,Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.run,Main.shapes,Point.origin,Point.Point,Registry.register
-at fx.app.Main.shapes(Main.java:103),fx.model.Point.area(),Main.run,Main.shapes,Point.area
-at fx.app.Main.shapes(Main.java:104),fx.model.Color.code(),Main.run,Main.shapes,Color.code
+at fx.app.Main.shapes(Main.java:104),fx.model.Point.area(),Main.run,Main.shapes,Point.area
+at fx.app.Main.shapes(Main.java:105),fx.model.Color.code(),Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),fx.app.Main.lambdas(Dao),Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:108),fx.dao.AbstractDao.findById(long),Main.run,Main.lambdas,AbstractDao.findById,解決:DATAFLOW_PARAM
+at fx.app.Main.lambdas(Main.java:109),fx.dao.AbstractDao.findById(long),Main.run,Main.lambdas,AbstractDao.findById,解決:DATAFLOW_PARAM
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.lambdas(Main.java:111),fx.dao.UserDaoImpl.describe(),Main.run,Main.lambdas,UserDaoImpl.describe,解決:DATAFLOW_PARAM
+at fx.app.Main.lambdas(Main.java:112),fx.dao.UserDaoImpl.describe(),Main.run,Main.lambdas,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.app.Main.run(Main.java:68),fx.util.Counter.bump(),Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),fx.util.Counter.initial(),Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),fx.util.Counter.Inner.touch(),Main.run,Counter.Inner.touch
@@ -291,84 +296,94 @@ at fx.app.Main.run(Main.java:71),fx.dao.UserDaoImpl.save(java.util.List),Main.ru
 at fx.app.Main.run(Main.java:72),fx.dao.UserDaoImpl.save(fx.other.List),Main.run,UserDaoImpl.save
 at fx.dao.UserDaoImpl.save(UserDaoImpl.java:16),fx.other.List.count(),Main.run,UserDaoImpl.save,List.count
 at fx.app.Main.run(Main.java:73),fx.app.Main.anonymous(Dao),Main.run,Main.anonymous
-at fx.app.Main.anonymous(Main.java:130),fx.app.Main$1.execute(),Main.run,Main.anonymous,Main$1.execute,解決:LOCAL_NEW
-at fx.app.Main$1.execute(Main.java:125),fx.dao.AbstractDao.findById(long),Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:125),fx.dao.OrderDaoImpl.findById(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
+at fx.app.Main.anonymous(Main.java:131),fx.app.Main$1.execute(),Main.run,Main.anonymous,Main$1.execute,解決:LOCAL_NEW
+at fx.app.Main$1.execute(Main.java:126),fx.dao.AbstractDao.findById(long),Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:127),fx.dao.OrderDaoImpl.findById(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),fx.dao.AbstractDao.findById(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.anonymous(Main.java:137),fx.app.Main$1LocalService.execute(),Main.run,Main.anonymous,Main$1LocalService.execute
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.OrderDaoImpl.describe(),Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.UserDaoImpl.describe(),Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.anonymous(Main.java:138),fx.app.Main$1LocalService.execute(),Main.run,Main.anonymous,Main$1LocalService.execute
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.OrderDaoImpl.describe(),Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.UserDaoImpl.describe(),Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
 at fx.app.Main.run(Main.java:74),fx.app.Legacy.callRemote(),Main.run,Legacy.callRemote
 at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Main.run,Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
 at fx.app.Main.run(Main.java:75),fx.app.Main.branches(),Main.run,Main.branches
 at fx.app.Main.branches(Main.java:81),fx.branch.Feature.run(boolean),Main.run,Main.branches,Feature.run
-at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.run,Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
-at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.run,Main.branches,Feature.run,Feature.summary
-at fx.branch.Feature.summary(Feature.java:46),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
-at fx.branch.Feature.run(Feature.java:21),fx.branch.Feature.dump(),Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
+at fx.branch.Feature.run(Feature.java:19),fx.branch.Feature.report(),Main.run,Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:21),fx.branch.Feature.summary(),Main.run,Main.branches,Feature.run,Feature.summary
+at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
+at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.run,Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.run,Main.branches,Feature.mode
-at fx.branch.Feature.mode(Feature.java:27),fx.branch.Feature.full(),Main.run,Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:54),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
-at fx.branch.Feature.mode(Feature.java:29),fx.branch.Feature.light(),Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
+at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.run,Main.branches,Feature.mode,Feature.full
+at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.run,Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.run,Main.branches,Feature.pick
-at fx.branch.Feature.pick(Feature.java:35),fx.branch.Feature.one(),Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
-at fx.branch.Feature.pick(Feature.java:36),fx.branch.Feature.two(),Main.run,Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:66),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
-at fx.branch.Feature.pick(Feature.java:37),fx.branch.Feature.other(),Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.run,Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.run,Main.branches,Feature.pick,Feature.two
+at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.run,Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.run,Main.branches,Feature.select
+at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.run,Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
+at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.run,Main.branches,Feature.select,Feature.light
+at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.run,Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
 at fx.app.Main.branches(Main.java:81),fx.branch.Feature.run(boolean),Main.branches,Feature.run
-at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
-at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.branches,Feature.run,Feature.summary
-at fx.branch.Feature.summary(Feature.java:46),fx.branch.Feature.trace(String),Main.branches,Feature.run,Feature.summary,Feature.trace
-at fx.branch.Feature.run(Feature.java:21),fx.branch.Feature.dump(),Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
+at fx.branch.Feature.run(Feature.java:19),fx.branch.Feature.report(),Main.branches,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:21),fx.branch.Feature.summary(),Main.branches,Feature.run,Feature.summary
+at fx.branch.Feature.summary(Feature.java:59),fx.branch.Feature.trace(String),Main.branches,Feature.run,Feature.summary,Feature.trace
+at fx.branch.Feature.run(Feature.java:24),fx.branch.Feature.dump(),Main.branches,Feature.run,Feature.dump,この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
 at fx.app.Main.branches(Main.java:82),fx.branch.Feature.mode(String),Main.branches,Feature.mode
-at fx.branch.Feature.mode(Feature.java:27),fx.branch.Feature.full(),Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:54),fx.branch.Feature.trace(String),Main.branches,Feature.mode,Feature.full,Feature.trace
-at fx.branch.Feature.mode(Feature.java:29),fx.branch.Feature.light(),Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
+at fx.branch.Feature.mode(Feature.java:30),fx.branch.Feature.full(),Main.branches,Feature.mode,Feature.full
+at fx.branch.Feature.full(Feature.java:67),fx.branch.Feature.trace(String),Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.mode(Feature.java:32),fx.branch.Feature.light(),Main.branches,Feature.mode,Feature.light,"この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
 at fx.app.Main.branches(Main.java:83),fx.branch.Feature.pick(int),Main.branches,Feature.pick
-at fx.branch.Feature.pick(Feature.java:35),fx.branch.Feature.one(),Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
-at fx.branch.Feature.pick(Feature.java:36),fx.branch.Feature.two(),Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:66),fx.branch.Feature.trace(String),Main.branches,Feature.pick,Feature.two,Feature.trace
-at fx.branch.Feature.pick(Feature.java:37),fx.branch.Feature.other(),Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
-at fx.app.Main.noSource(Main.java:87),org.w3c.dom.Node.getNodeName(),Main.noSource,Node.getNodeName,ソースなし（展開不可）
-at fx.app.Main.noImpl(Main.java:91),fx.model.Exporter.export(Shape),Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）
-at fx.app.Main.noImpl(Main.java:91),fx.model.Point.origin(),Main.noImpl,Point.origin
+at fx.branch.Feature.pick(Feature.java:38),fx.branch.Feature.one(),Main.branches,Feature.pick,Feature.one,この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:39),fx.branch.Feature.two(),Main.branches,Feature.pick,Feature.two
+at fx.branch.Feature.two(Feature.java:79),fx.branch.Feature.trace(String),Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.pick(Feature.java:40),fx.branch.Feature.other(),Main.branches,Feature.pick,Feature.other,この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.app.Main.branches(Main.java:84),fx.branch.Feature.select(Mode),Main.branches,Feature.select
+at fx.branch.Feature.select(Feature.java:46),fx.branch.Feature.full(),Main.branches,Feature.select,Feature.full,この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
+at fx.branch.Feature.select(Feature.java:47),fx.branch.Feature.light(),Main.branches,Feature.select,Feature.light
+at fx.branch.Feature.light(Feature.java:71),fx.branch.Feature.trace(String),Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.select(Feature.java:50),fx.branch.Feature.report(),Main.branches,Feature.select,Feature.report,この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
+at fx.app.Main.noSource(Main.java:88),org.w3c.dom.Node.getNodeName(),Main.noSource,Node.getNodeName,ソースなし（展開不可）
+at fx.app.Main.noImpl(Main.java:92),fx.model.Exporter.export(Shape),Main.noImpl,Exporter.export,実装なし（宣言のまま）: 引数（メソッド外から渡される）
+at fx.app.Main.noImpl(Main.java:92),fx.model.Point.origin(),Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.noImpl,Point.origin,Point.Point,Registry.register
-at fx.app.Main.useParam(Main.java:95),fx.dao.AbstractDao.findById(long),Main.useParam,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.useParam(Main.java:95),fx.dao.OrderDaoImpl.findById(long),Main.useParam,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.useParam(Main.java:96),fx.dao.OrderDaoImpl.describe(),Main.useParam,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.useParam(Main.java:96),fx.dao.UserDaoImpl.describe(),Main.useParam,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.shapes(Main.java:101),fx.model.Color.area(),Main.shapes,Color.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:101),fx.model.Point.area(),Main.shapes,Point.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:101),fx.model.Color$1.area(),Main.shapes,Color$1.area,CHA候補3件（未展開）: ローカル変数
-at fx.app.Main.shapes(Main.java:102),fx.model.Point.origin(),Main.shapes,Point.origin
+at fx.app.Main.useParam(Main.java:96),fx.dao.AbstractDao.findById(long),Main.useParam,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.useParam(Main.java:96),fx.dao.OrderDaoImpl.findById(long),Main.useParam,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.useParam(Main.java:97),fx.dao.OrderDaoImpl.describe(),Main.useParam,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.useParam(Main.java:97),fx.dao.UserDaoImpl.describe(),Main.useParam,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.shapes(Main.java:102),fx.model.Color.area(),Main.shapes,Color.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:102),fx.model.Point.area(),Main.shapes,Point.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:102),fx.model.Color$1.area(),Main.shapes,Color$1.area,CHA候補3件（未展開）: ローカル変数
+at fx.app.Main.shapes(Main.java:103),fx.model.Point.origin(),Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.shapes,Point.origin,Point.Point,Registry.register
-at fx.app.Main.shapes(Main.java:103),fx.model.Point.area(),Main.shapes,Point.area
-at fx.app.Main.shapes(Main.java:104),fx.model.Color.code(),Main.shapes,Color.code
-at fx.app.Main.lambdas(Main.java:108),fx.dao.AbstractDao.findById(long),Main.lambdas,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.lambdas(Main.java:108),fx.dao.OrderDaoImpl.findById(long),Main.lambdas,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.lambdas(Main.java:111),fx.dao.OrderDaoImpl.describe(),Main.lambdas,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.lambdas(Main.java:111),fx.dao.UserDaoImpl.describe(),Main.lambdas,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main.anonymous(Main.java:130),fx.app.Main$1.execute(),Main.anonymous,Main$1.execute,解決:LOCAL_NEW
-at fx.app.Main$1.execute(Main.java:125),fx.dao.AbstractDao.findById(long),Main.anonymous,Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:125),fx.dao.OrderDaoImpl.findById(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
+at fx.app.Main.shapes(Main.java:104),fx.model.Point.area(),Main.shapes,Point.area
+at fx.app.Main.shapes(Main.java:105),fx.model.Color.code(),Main.shapes,Color.code
+at fx.app.Main.lambdas(Main.java:109),fx.dao.AbstractDao.findById(long),Main.lambdas,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.lambdas(Main.java:109),fx.dao.OrderDaoImpl.findById(long),Main.lambdas,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.lambdas(Main.java:112),fx.dao.OrderDaoImpl.describe(),Main.lambdas,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.lambdas(Main.java:112),fx.dao.UserDaoImpl.describe(),Main.lambdas,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main.anonymous(Main.java:131),fx.app.Main$1.execute(),Main.anonymous,Main$1.execute,解決:LOCAL_NEW
+at fx.app.Main$1.execute(Main.java:126),fx.dao.AbstractDao.findById(long),Main.anonymous,Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:127),fx.dao.OrderDaoImpl.findById(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),fx.dao.AbstractDao.findById(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main.anonymous(Main.java:137),fx.app.Main$1LocalService.execute(),Main.anonymous,Main$1LocalService.execute
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.OrderDaoImpl.describe(),Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.UserDaoImpl.describe(),Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:125),fx.dao.AbstractDao.findById(long),Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:125),fx.dao.OrderDaoImpl.findById(long),Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
+at fx.app.Main.anonymous(Main.java:138),fx.app.Main$1LocalService.execute(),Main.anonymous,Main$1LocalService.execute
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.OrderDaoImpl.describe(),Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.UserDaoImpl.describe(),Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:126),fx.dao.AbstractDao.findById(long),Main$1.execute,AbstractDao.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:126),fx.dao.OrderDaoImpl.findById(long),Main$1.execute,OrderDaoImpl.findById,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:127),fx.dao.OrderDaoImpl.findById(long),Main$1.execute,OrderDaoImpl.findById,解決:DATAFLOW_FIELD
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),fx.dao.AbstractDao.findById(long),Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.OrderDaoImpl.load(long),Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),fx.dao.UserDaoImpl.load(long),Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,CHA候補2件（未展開）: 自クラス（this）
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.OrderDaoImpl.describe(),Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.app.Main$1LocalService.execute(Main.java:134),fx.dao.UserDaoImpl.describe(),Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.OrderDaoImpl.describe(),Main$1LocalService.execute,OrderDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.app.Main$1LocalService.execute(Main.java:135),fx.dao.UserDaoImpl.describe(),Main$1LocalService.execute,UserDaoImpl.describe,CHA候補2件（未展開）: 引数（メソッド外から渡される）
 at fx.reflect.Invoker.byLiteral(Invoker.java:10),fx.reflect.Target.run(long),Invoker.byLiteral,Target.run,解決:REFLECTION
 at fx.reflect.Target.run(Target.java:9),fx.reflect.Target.step(),Invoker.byLiteral,Target.run,Target.step
 at fx.reflect.Invoker.byLiteral(Invoker.java:10),fx.reflect.Target.<clinit>(),Invoker.byLiteral,Target.<clinit>,解決:REFLECTION_INIT

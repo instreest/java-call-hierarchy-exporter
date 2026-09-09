@@ -236,7 +236,7 @@ final class OriginTracker {
                 return null;
             }
             if (vb.isEnumConstant()) {
-                return Origin.of(Origin.CONST, vb.getName());
+                return enumConstant(vb);
             }
             Object constant = vb.getConstantValue();
             return (constant == null) ? null : valueConst(String.valueOf(constant));
@@ -254,6 +254,17 @@ final class OriginTracker {
             b = fa.resolveFieldBinding();
         }
         return (b instanceof IVariableBinding vb) ? vb : null;
+    }
+
+    /**
+     * 列挙定数の値。宣言型で修飾する（{@code cx.Mode.FULL}）。
+     * 単純名だけだと、別の列挙型の同名定数や同じ綴りの文字列と一致してしまう。
+     */
+    private String enumConstant(IVariableBinding vb) {
+        ITypeBinding owner = vb.getDeclaringClass();
+        String ownerFqn = (owner == null) ? null : names.typeNameOf(BindingNames.erasureOf(owner));
+        return (ownerFqn == null || ownerFqn.isEmpty())
+                ? null : Origin.of(Origin.CONST, ownerFqn + "." + vb.getName());
     }
 
     /** 数値リテラルは表記の揺れ（1L / 0x10 / 1_000）を値に正規化する。できなければ拾わない */
@@ -308,6 +319,13 @@ final class OriginTracker {
     private String variableOriginOf(IVariableBinding vb) {
         if (!vb.isField()) {
             return localOriginOf(vb);
+        }
+        if (vb.isEnumConstant()) {
+            // 列挙定数は「値」。switch の case ラベルや == の比較対象になるので、
+            // フィールドの出所（F:）ではなく定数の値（V:）として持つ。
+            // F: にしても、列挙定数はコンストラクタ注入されたフィールドの表に
+            // 載らないため具象型は決まらず、失うものが無い
+            return enumConstant(vb);
         }
         // static final String などのコンパイル時定数は、その文字列そのもの。
         // Factory.create(Names.USER_DAO) のような書き方を追えるようにする

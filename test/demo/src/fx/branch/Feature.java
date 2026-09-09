@@ -8,6 +8,9 @@ package fx.branch;
  */
 public class Feature {
 
+    /** 列挙定数は「値」として扱うので、switch と == の判定に使える */
+    public enum Mode { FULL, LIGHT, NONE }
+
     /** コンパイル時定数。false なので dump() の中身はどの経路でも辿らない */
     private static final boolean DEBUG = false;
 
@@ -35,6 +38,16 @@ public class Feature {
             case 1 -> one();
             case 2 -> two();
             default -> other();
+        }
+    }
+
+    public void select(Mode mode) {
+        switch (mode) {
+            case FULL -> full();
+            case LIGHT, NONE -> light();
+        }
+        if (mode == Mode.FULL) {
+            report();
         }
     }
 

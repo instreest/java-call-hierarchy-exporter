@@ -81,6 +81,7 @@ public class Main {
         feature.run(false);
         feature.mode("full");
         feature.pick(2);
+        feature.select(Feature.Mode.NONE);
     }
 
     void noSource(org.w3c.dom.Node node) {
