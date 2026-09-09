@@ -16,6 +16,9 @@
 
 「なぜ Tycho を使わないのか」は Q7、「CLI との二重実装をどう避けたか」は Q3・Q4 にある。
 
+次の段階（解析結果をプラグインが常駐で持ち、呼び出し元の階層をフィルタしながら見る UI）の設計案は
+[eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) にある。
+
 ---
 
 ## 設計

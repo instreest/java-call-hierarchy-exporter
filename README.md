@@ -127,6 +127,8 @@ mvn -f eclipse-plugin/pom.xml package
 （CLI とは実行 JDK が違いうるため、意図して分けています）。
 Tycho を使わない理由や、CLI との二重実装を避けるためにした設計は
 [docs/eclipse-plugin-qa.md](docs/eclipse-plugin-qa.md) にあります。
+解析結果をプラグインが常駐で持ち、**メソッドの呼び出し元をフィルタしながら階層表示する**ビューの設計案は
+[docs/eclipse-plugin-ui-design.md](docs/eclipse-plugin-ui-design.md) にあります（未実装）。
 
 ---
 
