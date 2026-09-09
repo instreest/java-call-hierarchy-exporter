@@ -63,6 +63,8 @@ package jche.cache;
  * その jar のパッケージの型を参照するファイル（I行）と、型解決に失敗していたファイル
  * （F行のエラー数、U行の BINDING_FAILED）を解析し直す。
  * 実行中の JDK もブートクラスパスとして解決に加わるため、ヘッダ行に含めて丸ごと突き合わせる。
+ * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
+ * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。
  *
  * <h2>バージョン（{@link #VERSION}）を上げる基準</h2>
  * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
@@ -130,9 +132,12 @@ public final class CacheFormat {
      * 更新時刻とサイズだけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
-    public static String headerFor(String sourceLevel) {
-        return VERSION + SEP + "source=" + sourceLevel
+    public static String headerFor(String sourceLevel, String hintPluginFingerprint) {
+        String header = VERSION + SEP + "source=" + sourceLevel
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+        // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
+        // この項目の追加だけで捨てさせないため
+        return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
     }
 
     /** 行の先頭1文字（種別）。空行なら '\0' */

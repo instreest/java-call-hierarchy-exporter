@@ -35,6 +35,24 @@ call :run jarchange config-before.properties 3 "3回目: jar 削除"
 call :expectlog jarchange 3 "jar[^=]*=[1-9]" "3回目: jar 削除で影響ファイルを再解析"
 call :compare jarchange expected-before "3回目: jar 削除"
 
+rem 拡張（インスタンス解析条件のプラグイン）のケース。拡張なし -> 同梱の拡張 -> 自前の拡張の順に
+rem 実行し、拡張ありでのみ具象クラスに絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを見る
+echo == plugin ==
+call :reset plugin
+call :run plugin config-before.properties 1 "1回目: 拡張なし"
+call :compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
+call :run plugin config.properties 2 "2回目: 同梱の拡張"
+call :expectlog plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
+call :expectlog plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
+call :expectlog plugin 2 "^[^=]*=0" "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
+call :compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
+call :run plugin config.properties 3 "3回目: 同じ拡張"
+call :expectlog plugin 3 "^[^=]*=[1-9]" "3回目: 拡張が同じならキャッシュを再利用"
+call :compare plugin expected "3回目: 同じ拡張"
+call :run plugin config-custom.properties 4 "4回目: 自前の拡張"
+call :expectlog plugin 4 "DiXmlProvider" "4回目: plugins\*.java をコンパイルして読み込んだ"
+call :compare plugin expected-custom "4回目: 自前の拡張（DI 設定ファイルから絞れる）"
+
 rem 複数の設定ファイルを 1 回の起動で処理するケース。存在しない設定を 1 つ混ぜ、それが失敗しても
 rem 前後の設定が処理されて出力フォルダができること、終了コードが 1 になることを見る
 echo == multi ==

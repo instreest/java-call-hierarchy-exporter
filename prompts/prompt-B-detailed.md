@@ -98,7 +98,8 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
 旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
-| `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照）。設定例には載せない | — |
+| `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照） | — |
+| `plugin.folders` | 空 | 拡張クラスの置き場所（設定ファイルのフォルダ起点、カンマ区切り）。`.java` / `.class` / `.jar` | — |
 
 `entry.packages` / `exclude.packages` のパターン書式:
 
@@ -295,6 +296,16 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 `TypeCandidateProvider`（宣言型・シグネチャ・証拠から具象型FQNの配列とラベルを返す。
 `appliesToStaticBound()` が true なら段0の呼び出しにも尋ねる）。設定ファイルの内容と
 置き場所を `init()` で渡す。読み込み失敗は警告して続行。
+証拠を結び付けるキーは `HintKeys` に一本化し、呼び出し箇所を記録する側と同じ計算にする。
+実装クラスは `plugin.folders` に置く。`.java` があれば実行時にコンパイルし（`ToolProvider` の
+javac にツール自身のクラスパスを渡す）、`.class` / `.jar` と合わせて URLClassLoader（親は本体の
+クラスローダ）で読む。コンパイル失敗も警告して続行。
+対応表だけで済む用途のために `jche.builtin` に実装を同梱する
+（`FactoryKeyCollector`＝ファクトリの実引数キーを拾う / `TypeMappingProvider`＝properties の対応表を引く。
+左辺は「宣言型」「宣言型#メソッド」「証拠の種別@値」の 3 通り。`:` は properties の区切り文字なので使わない）。
+フェーズAの拡張はキャッシュに X 行を書くので、その指紋（クラス名・`plugin.` で始まる設定・
+`plugin.folders` 配下のファイルの更新時刻とサイズ）をキャッシュのヘッダ行に入れ、変われば全件解析し直す。
+フェーズAの拡張が無いときは項目自体を足さない（従来のキャッシュを無効にしないため）。
 
 ### 5.4 探索
 

@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -107,6 +108,17 @@ public final class Config {
     public final Properties raw;
     public final List<String> hintCollectorClasses;
     public final List<String> candidateProviderClasses;
+    /** 拡張クラスの置き場所（設定ファイルのフォルダからの相対）。.java / .class / .jar を置く */
+    public final List<Path> pluginFolders;
+    /**
+     * フェーズAの拡張（キャッシュに証拠を書く側）の指紋。
+     *
+     * 拡張を足したり、その設定や実装を変えたりすると、同じソースから拾える証拠が変わる。
+     * ファイルの更新時刻とサイズだけを見ていると古い証拠を再利用してしまうため、
+     * キャッシュのヘッダ行に入れて丸ごと突き合わせる（{@link jche.cache.CacheFormat#headerFor}）。
+     * フェーズAの拡張を使っていないときは空文字で、従来のキャッシュはそのまま有効。
+     */
+    public final String hintPluginFingerprint;
 
     public final boolean cacheEnabled;
     /** データフロー解析（ファクトリの戻り値・引数から具象クラスを特定）を使うか */
@@ -186,6 +198,12 @@ public final class Config {
         // 使う場合はこのキーを足せば読み込まれる
         this.hintCollectorClasses = splitList(p.getProperty("resolver.hint.collectors", ""));
         this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
+        List<Path> folders = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("plugin.folders", ""))) {
+            folders.add(resolveUnderConfigDir("plugin.folders", raw));
+        }
+        this.pluginFolders = List.copyOf(folders);
+        this.hintPluginFingerprint = fingerprintOfHintPlugins(p, this.hintCollectorClasses, folders);
         this.raw = p;
 
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
@@ -309,6 +327,53 @@ public final class Config {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /**
+     * フェーズAの拡張の指紋。拡張のクラス名・{@code plugin.} で始まる設定・拡張フォルダの
+     * ファイル一覧（名前・更新時刻・サイズ）から作る。拡張を使っていなければ空文字。
+     *
+     * 拡張の中身を書き換えれば更新時刻が変わるので、キャッシュは自動的に捨てられる。
+     * jar の中身の入れ替えも、jar 自体の更新時刻とサイズで検知できる。
+     */
+    private static String fingerprintOfHintPlugins(Properties p, List<String> collectors, List<Path> folders) {
+        if (collectors.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(String.join(",", collectors));
+        List<String> keys = new ArrayList<>(p.stringPropertyNames());
+        Collections.sort(keys);
+        for (String key : keys) {
+            if (key.startsWith("plugin.")) {
+                sb.append('\n').append(key).append('=').append(p.getProperty(key));
+            }
+        }
+        for (Path folder : folders) {
+            for (String entry : fileStamps(folder)) {
+                sb.append('\n').append(entry);
+            }
+        }
+        return shortHash(sb.toString());
+    }
+
+    /** フォルダ配下のファイルの「相対パス:更新時刻:サイズ」。読めないフォルダは印だけ残す */
+    private static List<String> fileStamps(Path folder) {
+        List<String> out = new ArrayList<>();
+        if (!Files.isDirectory(folder)) {
+            out.add(folder + ":missing");
+            return out;
+        }
+        try (var walk = Files.walk(folder)) {
+            for (Path path : (Iterable<Path>) walk.filter(Files::isRegularFile)::iterator) {
+                out.add(folder.relativize(path) + ":" + Files.getLastModifiedTime(path).toMillis()
+                        + ":" + Files.size(path));
+            }
+        } catch (IOException e) {
+            out.add(folder + ":unreadable");
+            return out;
+        }
+        Collections.sort(out);
+        return out;
     }
 
     /** 相対パスは設定ファイルのあるディレクトリを起点に解決する（配下の制限なし。project.root 用） */

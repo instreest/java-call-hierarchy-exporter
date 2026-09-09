@@ -336,18 +336,9 @@ public class CallHierarchyExporter {
         return CallGraphBuilder.build(config.cacheFile, sourceFolderOrder);
     }
 
-    /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込んで初期化する */
+    /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込む。init は Plugins が済ませる */
     private static List<TypeCandidateProvider> loadProviders(Config config) {
-        List<TypeCandidateProvider> providers =
-                Plugins.load(config.candidateProviderClasses, TypeCandidateProvider.class);
-        for (TypeCandidateProvider provider : providers) {
-            try {
-                provider.init(config.raw, config.configDir);
-            } catch (RuntimeException e) {
-                Log.warn("provider の初期化に失敗: " + provider.getClass().getName() + " (" + e + ")");
-            }
-        }
-        return providers;
+        return Plugins.load(config, config.candidateProviderClasses, TypeCandidateProvider.class);
     }
 
     /**
