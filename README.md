@@ -473,6 +473,13 @@ cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
 起動コマンド（`./jche.sh a.properties`、Windows は `jche.cmd`）から実行したときも同じです
 （対話モードで解析した場合も書き出します）。
 
+### このリポジトリ自身での使用例
+
+このリポジトリも、自分のソース（`src/`）をこのアクションで解析しています
+（[.github/workflows/call-hierarchy.yml](.github/workflows/call-hierarchy.yml)。`main` への push と手動実行）。
+依存 jar は `pom.xml` から自動で集めるので、その前に `mvn -B dependency:go-offline` を置いてあります。
+そのまま写して使える最小の形なので、書き方に迷ったらこのファイルを見てください。
+
 実装時に迷った点は [docs/github-actions-qa.md](docs/github-actions-qa.md) にまとめています。
 
 ## キャッシュの置き場所
