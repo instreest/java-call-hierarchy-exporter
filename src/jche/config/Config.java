@@ -113,6 +113,10 @@ public final class Config {
     public final boolean dataflowEnabled;
     /** ファクトリの委譲（return create();）を何段まで辿るか */
     public final int dataflowMaxDepth;
+    /** DIコンテナ（Spring）のBean定義で候補を絞るか */
+    public final boolean springDiEnabled;
+    /** 追加でBean登録の印とみなす注釈（独自のステレオタイプ注釈。FQNでも単純名でもよい） */
+    public final List<String> springDiAnnotations;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
     public final Path cacheFile;
@@ -191,6 +195,8 @@ public final class Config {
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
         this.dataflowEnabled = Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
         this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
+        this.springDiEnabled = Boolean.parseBoolean(p.getProperty("spring.di.enabled", "true").trim());
+        this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
         // キャッシュは解析対象プロジェクトごとのサイドカー。既定はこのツールのプロジェクトフォルダの .cache/ の下。
         // cache.folder を指定したときも、その下にプロジェクト別のフォルダを切る（複数の設定が同じプロジェクトを
         // 指すなら同じキャッシュを共有し、別のプロジェクトなら混ざらない）

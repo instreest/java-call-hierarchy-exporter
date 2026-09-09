@@ -147,6 +147,11 @@ at fx.app.Main.run(Main.java:73),fx.app.Legacy.callRemote(),Main.main,Main.run,L
 at fx.app.Legacy.callRemote(Legacy.java:8),missing.lib.RemoteClient.send(),Main.main,Main.run,Legacy.callRemote,RemoteClient.send,外部ライブラリ（import推定・未検証）
 at fx.dao.Dao.name(Dao.java:5),fx.dao.OrderDaoImpl.describe(),Dao.name,OrderDaoImpl.describe,CHA候補2件（未展開）: 自クラス（this）
 at fx.dao.Dao.name(Dao.java:5),fx.dao.UserDaoImpl.describe(),Dao.name,UserDaoImpl.describe,CHA候補2件（未展開）: 自クラス（this）
+at fx.di.Checkout.checkout(Checkout.java:15),fx.di.AbstractPayment.pay(int),Checkout.checkout,AbstractPayment.pay,解決:SPRING_DI
+at fx.di.AbstractPayment.pay(AbstractPayment.java:9),fx.di.AbstractPayment.record(int),Checkout.checkout,AbstractPayment.pay,AbstractPayment.record,CHA候補2件（未展開）: 自クラス（this）
+at fx.di.AbstractPayment.pay(AbstractPayment.java:9),fx.di.CardPayment.record(int),Checkout.checkout,AbstractPayment.pay,CardPayment.record,CHA候補2件（未展開）: 自クラス（this）
+at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),fx.di.SlowNotice.send(),NoticeSender.notifyUser,SlowNotice.send,解決:SPRING_DI_QUALIFIER
+at fx.di.Scheduler.tick(Scheduler.java:15),fx.di.SystemClock.now(),Scheduler.tick,SystemClock.now,解決:SPRING_DI
 at fx.model.Color.<init>(Color.java:14),fx.model.Registry.register(String),Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),fx.reflect.Target.<clinit>(),Invoker.byConstant,Target.<clinit>,解決:REFLECTION_INIT
 at fx.reflect.Invoker.byConstant(Invoker.java:16),fx.reflect.Target.run(),Invoker.byConstant,Target.run,解決:REFLECTION

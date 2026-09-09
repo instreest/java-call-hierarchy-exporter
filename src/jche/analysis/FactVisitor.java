@@ -271,7 +271,8 @@ final class FactVisitor extends ASTVisitor {
 
         List<String> supers = new ArrayList<>();
         collectSupertypes(erased, supers, new HashSet<>(), true, 0);
-        out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased)));
+        out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
+                BindingNames.annotationsOf(erased)));
     }
 
     /** jar の型を経由して親型を辿る深さの上限（JDK の GUI クラス等でも十数段） */
@@ -529,7 +530,8 @@ final class FactVisitor extends ASTVisitor {
                 mods = ModifierTokens.with(mods, ModifierTokens.DELEGATING);
             }
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
-                    node.getBody() != null, mods));
+                    node.getBody() != null, mods,
+                    BindingNames.annotationsOf(node.resolveBinding())));
             methodStack.push(List.of(ref));
         } else {
             methodStack.push(UNKNOWN_CALLER);

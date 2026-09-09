@@ -100,7 +100,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v12";
+    public static final String VERSION = "jche-cache-v13";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';
