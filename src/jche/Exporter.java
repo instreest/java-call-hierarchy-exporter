@@ -137,6 +137,36 @@ public final class Exporter {
     }
 
     /**
+     * フェーズ1（ソース解析とキャッシュ更新）とフェーズ2（グラフ構築と具象クラスの解決）だけを行い、
+     * 結果をメモリに返す。CSV は書かない。
+     *
+     * <p>CLI はこの上にフェーズ3（CSV 出力）を載せる。Eclipse プラグインは戻り値をそのまま持ち続け、
+     * 画面から何度も読む。どちらも同じコードで解析するので、結果が食い違うことはない。
+     *
+     * <p>進捗の通知と中止は {@link jche.util.RunControl} 経由。呼び出し側が受け口を付けていなければ
+     * 何も起きない（CLI はこれ）。中止された場合は {@link jche.util.CancelledException} が飛ぶ。
+     *
+     * @param config 設定（出力フォルダは使わない。キャッシュの場所は使う）
+     * @return この時点の解析結果
+     */
+    public static AnalysisSnapshot analyze(Config config) throws Exception {
+        ProjectLayout layout = new ProjectLayout(config);
+        logAnalysisSettings(config, layout);
+
+        analyzeSources(config, layout);
+
+        CallGraph graph = buildGraph(config, layout);
+        CallResolver resolver = new CallResolver(graph,
+                new DataflowResolver(graph, config.dataflowEnabled, config.dataflowMaxDepth),
+                loadProviders(config));
+        Log.info("型数=" + graph.typeCount()
+                + " メソッド数=" + graph.methodCount()
+                + " エッジ数=" + graph.edgeCount());
+        Log.heap("フェーズ2完了");
+        return new AnalysisSnapshot(config, layout, graph, resolver);
+    }
+
+    /**
      * 設定ファイル1つ分の処理。出力フォルダを作り、設定ファイルの複製と実行ログをそこに置いてから解析する。
      *
      * @return この実行の出力フォルダ
@@ -156,21 +186,9 @@ public final class Exporter {
         Files.copy(config.configPath, config.outputDir.resolve(config.configPath.getFileName()),
                 StandardCopyOption.REPLACE_EXISTING);
 
-        ProjectLayout layout = new ProjectLayout(config);
-        logAnalysisSettings(config, layout);
+        AnalysisSnapshot snapshot = analyze(config);
 
-        analyzeSources(config, layout);
-
-        CallGraph graph = buildGraph(config, layout);
-        CallResolver resolver = new CallResolver(graph,
-                new DataflowResolver(graph, config.dataflowEnabled, config.dataflowMaxDepth),
-                loadProviders(config));
-        Log.info("型数=" + graph.typeCount()
-                + " メソッド数=" + graph.methodCount()
-                + " エッジ数=" + graph.edgeCount());
-        Log.heap("フェーズ2完了");
-
-        long rows = writeReports(config, graph, resolver);
+        long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
 
         Log.blank();
         Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");

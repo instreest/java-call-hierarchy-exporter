@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?eclipse version="3.4"?>
 <!--
-  画面への追加はコマンド1つだけ。パッケージ・エクスプローラーで設定ファイル（*.properties）を
-  選んで右クリック → 「呼び出し階層をCSVに出力」で解析が走る。
-  複数選択すればコマンドラインに複数の設定ファイルを渡したときと同じ扱いになる。
+  画面への追加は2つ。
+  1) 呼び出し元階層ビュー（主ユースケース）。メソッドを選んで「呼び出し元階層を表示」で開く。
+     解析結果はプラグインが常駐で持ち、ビューはそれをフィルタして見せるだけ
+     （docs/eclipse-plugin-ui-design.md）
+  2) 設定ファイル（*.properties）の右クリックからの CSV 一括出力。従来どおりの経路
 -->
 <plugin>
    <extension point="org.eclipse.ui.commands">
@@ -15,6 +17,23 @@
             defaultHandler="jche.eclipse.ExportCallHierarchyHandler"
             id="io.github.instreest.jche.eclipse.export"
             name="呼び出し階層をCSVに出力"/>
+      <command
+            categoryId="io.github.instreest.jche.eclipse.category"
+            defaultHandler="jche.eclipse.ShowCallersHandler"
+            id="io.github.instreest.jche.eclipse.showCallers"
+            name="呼び出し元階層を表示"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.views">
+      <category
+            id="io.github.instreest.jche.eclipse.viewCategory"
+            name="Java Call Hierarchy Exporter"/>
+      <view
+            category="io.github.instreest.jche.eclipse.viewCategory"
+            class="jche.eclipse.CallHierarchyView"
+            id="io.github.instreest.jche.eclipse.callHierarchyView"
+            name="呼び出し階層 (Exporter)"
+            restorable="true"/>
    </extension>
 
    <extension point="org.eclipse.ui.menus">
@@ -38,5 +57,23 @@
             </visibleWhen>
          </command>
       </menuContribution>
+
+      <!-- メソッドの上での右クリック（エディタ・エクスプローラー・アウトライン）。
+           選択の種類は問わない。メソッドが特定できなければハンドラ側が断る -->
+      <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
+         <command
+               commandId="io.github.instreest.jche.eclipse.showCallers"
+               label="呼び出し元階層を表示 (Exporter)"
+               style="push"/>
+      </menuContribution>
+   </extension>
+
+   <!-- Ctrl+Alt+Shift+H。Eclipse 標準の呼び出し階層（Ctrl+Alt+H）とは別物なので割り当てを分ける -->
+   <extension point="org.eclipse.ui.bindings">
+      <key
+            commandId="io.github.instreest.jche.eclipse.showCallers"
+            contextId="org.eclipse.ui.contexts.window"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            sequence="M1+M2+M3+H"/>
    </extension>
 </plugin>

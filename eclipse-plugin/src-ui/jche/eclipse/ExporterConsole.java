@@ -26,6 +26,20 @@ final class ExporterConsole {
         this.stream = console.newMessageStream();
     }
 
+    /**
+     * すでにあるコンソールを返す。無ければ null（作らない）。
+     * 裏で走る解析は、コンソールを勝手に開いてまで記録しない
+     */
+    static ExporterConsole find() {
+        IConsoleManager manager = ConsolePlugin.getDefault().getConsoleManager();
+        for (IConsole existing : manager.getConsoles()) {
+            if (existing instanceof MessageConsole message && NAME.equals(message.getName())) {
+                return new ExporterConsole(message);
+            }
+        }
+        return null;
+    }
+
     /** コンソールを（無ければ作って）前面に出す */
     static ExporterConsole show() {
         IConsoleManager manager = ConsolePlugin.getDefault().getConsoleManager();

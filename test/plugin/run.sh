@@ -12,8 +12,9 @@
 #   1) JDT の版が //DEPS 行・リポジトリ直下の pom.xml・eclipse-plugin/pom.xml で一致する
 #   2) Bundle-Version（.qualifier を除く）と eclipse-plugin/pom.xml の version が一致する
 #   3) Bundle-SymbolicName が plugin.xml とハンドラのコードで使う ID の前置きになっている
-#   4) plugin.xml が指すハンドラのクラスが実在する
-#   5) build.properties の source.. に挙げたフォルダが実在する（src はリンクフォルダ）
+#   4) plugin.xml が指すクラス（ハンドラ・ビュー・Bundle-Activator）が実在する
+#   5) plugin.xml のコマンド ID / ビュー ID が、キーバインドとソースの定数と食い違わない
+#   6) build.properties の source.. に挙げたフォルダが実在する（src はリンクフォルダ）
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
@@ -55,9 +56,11 @@ else
     fail "Bundle-SymbolicName ($bsn) が plugin.xml かハンドラの綴りと食い違う"
 fi
 
-# 4) ハンドラのクラスが実在するか
+# 4) plugin.xml と MANIFEST.MF が指すクラスが実在するか
 echo "== plugin.xml が指すクラス =="
-for cls in $(grep -oE 'defaultHandler="[^"]+"' "$PLUGIN/plugin.xml" | sed -E 's|defaultHandler="(.*)"|\1|'); do
+classes=$(grep -oE '(defaultHandler|class)="[^"]+"' "$PLUGIN/plugin.xml" | sed -E 's|.*="(.*)"|\1|')
+activator=$(grep '^Bundle-Activator:' "$PLUGIN/META-INF/MANIFEST.MF" | awk '{print $2}')
+for cls in $classes $activator; do
     path=$PLUGIN/src-ui/$(echo "$cls" | tr '.' '/').java
     if [ -f "$path" ]; then
         ok "$cls"
@@ -66,7 +69,23 @@ for cls in $(grep -oE 'defaultHandler="[^"]+"' "$PLUGIN/plugin.xml" | sed -E 's|
     fi
 done
 
-# 5) build.properties の source フォルダ
+# 5) コマンド ID・ビュー ID の突き合わせ
+echo "== ID の突き合わせ =="
+for cmd in $(grep -oE 'commandId="[^"]+"' "$PLUGIN/plugin.xml" | sed -E 's|commandId="(.*)"|\1|' | sort -u); do
+    if grep -q "id=\"$cmd\"" "$PLUGIN/plugin.xml"; then
+        ok "commandId $cmd に対応する <command> がある"
+    else
+        fail "commandId $cmd に対応する <command> の定義が無い（メニューもキーバインドも効かない）"
+    fi
+done
+view_id=$(grep -A5 '<view$' "$PLUGIN/plugin.xml" | grep -oE 'id="[^"]+"' | head -1 | sed -E 's|id="(.*)"|\1|')
+if [ -n "$view_id" ] && grep -q "VIEW_ID = \"$view_id\"" "$PLUGIN/src-ui/jche/eclipse/CallHierarchyView.java"; then
+    ok "ビュー ID ($view_id) が plugin.xml とソースで一致する"
+else
+    fail "ビュー ID が plugin.xml ($view_id) とソースの VIEW_ID で食い違う。ビューを開けなくなる"
+fi
+
+# 6) build.properties の source フォルダ
 echo "== build.properties =="
 for dir in $(sed -n '/^source\.\. *=/,/[^\\]$/p' "$PLUGIN/build.properties" \
         | sed -E 's|^source\.\. *=||' | tr -d ' \\' | tr ',' '\n' | grep -v '^$'); do

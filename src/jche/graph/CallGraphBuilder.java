@@ -24,6 +24,7 @@ import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
 import jche.extension.Hint;
 import jche.util.Log;
+import jche.util.RunControl;
 
 /**
  * キャッシュファイルを2回スキャンして {@link CallGraph} を構築する。
@@ -60,9 +61,13 @@ public final class CallGraphBuilder {
     public static CallGraph build(Path cacheFile, List<String> sourceFolderOrder) throws IOException {
         CallGraphBuilder b = new CallGraphBuilder();
         b.graph.sourceFolderOrder = sourceFolderOrder;
+        RunControl.progress("グラフ構築", 0, 2);
         b.firstPass(cacheFile);
+        RunControl.checkCancelled();
         b.allocateEdges();
+        RunControl.progress("グラフ構築", 1, 2);
         b.secondPass(cacheFile);
+        RunControl.progress("グラフ構築", 2, 2);
         return b.graph;
     }
 

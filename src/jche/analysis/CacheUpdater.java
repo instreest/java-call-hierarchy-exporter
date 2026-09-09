@@ -35,6 +35,7 @@ import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
 import jche.util.Progress;
+import jche.util.RunControl;
 
 /**
  * フェーズ1: 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
@@ -182,6 +183,9 @@ public final class CacheUpdater {
     private static void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> files,
                                          BlockWriter writer) throws IOException {
         for (int from = 0; from < files.size(); from += CallEdgeExtractor.BATCH_SIZE) {
+            // 中止の確認はバッチの切れ目で行う。ここで抜けてもキャッシュはテンポラリのままなので壊れない
+            RunControl.checkCancelled();
+            RunControl.progress("ソース解析", from, files.size());
             int to = Math.min(files.size(), from + CallEdgeExtractor.BATCH_SIZE);
             extractor.analyzeBatch(files.subList(from, to), writer);
         }
