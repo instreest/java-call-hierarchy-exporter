@@ -595,6 +595,7 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | 注記 | 意味 |
 |---|---|
 | `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
+| `この経路では呼ばれない: 条件「…」が成立しない（…）` | 変数値と条件分岐の静的解析で、その経路では実行されないと分かった呼び出し。呼び出し自体は1行出すが、その先は辿らない（[条件分岐による打ち切り](#条件分岐による打ち切り呼ばれない経路の判定)参照） |
 | `深さ制限(N)のため打ち切り` | `max.depth` に達した |
 | `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
 | `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
@@ -712,6 +713,55 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `CHA` | 候補が複数のまま（低確度） |
 
+### 条件分岐による打ち切り（呼ばれない経路の判定）
+
+呼び出しがソースに書かれていても、その経路では条件が成立せず実行されないことがあります。
+`branch.pruning.enabled=true`（既定）のとき、呼び出し箇所を囲む条件を経路ごとに突き合わせ、
+**成立しないと言い切れる場合はその先の階層を出力しません**。
+
+```java
+class Feature {
+    void run(boolean verbose) {
+        if (verbose) {
+            report();       // ← run(false) の経路では実行されない
+        } else {
+            summary();
+        }
+    }
+}
+...
+new Feature().run(false);
+```
+
+```csv
+at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.main,…,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,…,Feature.run,Feature.summary
+```
+
+呼び出しが書かれている事実は消さず、**呼び出し自体は1行出して、その先の階層だけを出しません**。
+理由は注記として階層の末尾に付きます。打ち切った件数は実行ログにも出ます。
+
+判定するのは次の形だけです。
+
+| 条件の形 | 例 |
+|---|---|
+| `if` / `else` / 三項演算子 `?:` の枝 | `if (debug) { … }` |
+| `&&` `\|\|` の右側（左側が成立していないと評価されない） | `if (a && b) { … }` |
+| アロー形式の `switch` の `case` / `default` | `switch (kind) { case 1 -> … }` |
+| `equals` による値の比較 | `if ("full".equals(name)) { … }` |
+| プリミティブ・列挙型・文字列の `==` / `!=` | `if (mode == Mode.FULL) { … }` |
+
+値が分かるのは「呼び出し元からコンパイル時定数が渡された引数」と「コンパイル時定数
+（`static final` の定数・列挙定数・リテラル）」だけです。**値が分からない条件は、これまでどおり
+すべて辿ります**（分からないことを理由に階層を消さない、という安全側の方針）。
+経路ごとの引数の値は `dataflow.enabled` の仕組みで運ぶため、`dataflow.enabled=false` のときは
+コンパイル時定数の条件だけが判定されます。
+
+意図的に見ないもの: コロン形式の `switch`（フォールスルーがあり、どの `case` を通ったか
+1つに決められない）、ラムダ式・匿名クラスの外側の条件（本体が生成箇所と同じタイミングで
+動くとは限らない）、ループ条件・早期 `return`・例外（「呼ばれない」ことの証明にはならない）。
+実装で迷った点は [docs/branch-pruning-qa.md](docs/branch-pruning-qa.md) にまとめています。
+
 ### リフレクション
 
 `Class.forName` / `X.class` / `obj.getClass()` → `getMethod` / `getDeclaredMethod` → `Method.invoke`、
@@ -740,9 +790,9 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | パッケージ | 役割 | 主なクラス |
 |---|---|---|
 | `jche.config` | 設定ファイルとプロジェクト構成の読み取り。出力フォルダとキャッシュの場所の決定。ビルドファイルとローカルリポジトリからの依存 jar の収集 | `Config`, `ToolRoot`, `ProjectLayout`, `BuildFileClasspath`, `MavenModels`, `DependencyCollector`, `GradleBuild`, `PackagePattern` |
-| `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
-| `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
-| `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
+| `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `Guard`, `MethodRef`, `*Fact` |
+| `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker`, `GuardCollector` |
+| `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver`, `GuardEvaluator` |
 | `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
 | `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
 | `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |

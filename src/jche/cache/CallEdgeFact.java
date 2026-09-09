@@ -14,16 +14,18 @@ package jche.cache;
  * @param recvOrigin  レシーバの出所（{@link Origin}）。データフローで具象型を追うのに使う。無ければ空
  * @param argOrigins  実引数の出所。"位置=出所" を ; で並べたもの。無ければ空
  * @param lambdaDepth 呼び出し箇所を囲むラムダ式の深さ。0 ならラムダの外
+ * @param guard       呼び出し箇所を囲む条件分岐（{@link Guard}）。無ければ空
  */
 public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, String calleeMods,
                            String recvKey, char recvKind, String recvOrigin, String argOrigins,
-                           int lambdaDepth) implements CallSite {
+                           int lambdaDepth, String guard) implements CallSite {
 
     public CallEdgeFact {
         calleeMods = (calleeMods == null) ? "" : calleeMods;
         recvKey = (recvKey == null) ? "" : recvKey;
         recvOrigin = (recvOrigin == null) ? "" : recvOrigin;
         argOrigins = (argOrigins == null) ? "" : argOrigins;
+        guard = (guard == null) ? "" : guard;
     }
 
     @Override
@@ -32,7 +34,7 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
         String[] t = callee.toColumns();
         return CacheFormat.joinRow("C", c[0], c[1], c[2], c[3], t[0], t[1], t[2], t[3],
                 String.valueOf(callLine), calleeMods, recvKey, String.valueOf(recvKind),
-                recvOrigin, argOrigins, String.valueOf(lambdaDepth));
+                recvOrigin, argOrigins, String.valueOf(lambdaDepth), guard);
     }
 
     /** 列が足りなければ null */
@@ -54,7 +56,8 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
         return new CallEdgeFact(caller, callee, callLine, CacheFormat.columnAt(cols, 10),
                 CacheFormat.columnAt(cols, 11), RecvKind.parse(CacheFormat.columnAt(cols, 12)),
                 CacheFormat.columnAt(cols, 13), CacheFormat.columnAt(cols, 14),
-                parseIntOr(CacheFormat.columnAt(cols, 15), 0));
+                parseIntOr(CacheFormat.columnAt(cols, 15), 0),
+                CacheFormat.columnAt(cols, 16));
     }
 
     static int parseIntOr(String s, int fallback) {

@@ -99,6 +99,7 @@ final class FactVisitor extends ASTVisitor {
     private final BindingNames names;
     private final OriginTracker origins;
     private final FieldFactCollector fieldFacts;
+    private final GuardCollector guards;
 
     /**
      * 現在の呼び出し元のスタック。通常は要素1件（そのメソッド自身）だが、
@@ -131,6 +132,7 @@ final class FactVisitor extends ASTVisitor {
         this.names = new BindingNames(out);
         this.origins = new OriginTracker(names);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
+        this.guards = new GuardCollector(origins);
     }
 
     /**
@@ -763,13 +765,15 @@ final class FactVisitor extends ASTVisitor {
                             String calleeMods, String recvKey, char recvKind,
                             String externalGuess, String recvOrigin, String argOrigins) {
         int line = lineOf(node);
+        // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
+        String guard = guards.guardOf(node);
         List<MethodRef> callers = currentCallers();
         if (callers == null) {
             // 呼び出し元の型・コンストラクタ自体を特定できないケース
             // （型のバインディング解決に失敗した等）
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
                     UnresolvedCallFact.OUTSIDE_METHOD, "", recvKey, recvKind,
-                    recvOrigin, argOrigins, lambdaDepth));
+                    recvOrigin, argOrigins, lambdaDepth, guard));
             return;
         }
         MethodRef callee = names.toRef(binding);
@@ -779,7 +783,7 @@ final class FactVisitor extends ASTVisitor {
             for (MethodRef caller : callers) {
                 out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
                         UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKey, recvKind,
-                        recvOrigin, argOrigins, lambdaDepth));
+                        recvOrigin, argOrigins, lambdaDepth, guard));
             }
             return;
         }
@@ -787,7 +791,7 @@ final class FactVisitor extends ASTVisitor {
         // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
-                    recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth));
+                    recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth, guard));
         }
     }
 

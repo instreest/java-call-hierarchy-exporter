@@ -1,5 +1,6 @@
 package fx.app;
 
+import fx.branch.Feature;
 import fx.dao.Dao;
 import fx.dao.Chain;
 import fx.dao.DaoFactory;
@@ -71,6 +72,15 @@ public class Main {
         new UserDaoImpl().save(new fx.other.List());
         anonymous(dao);
         Legacy.callRemote();
+        branches();
+    }
+
+    /** 条件分岐の静的解析（呼ばれない経路の打ち切り）の確認 */
+    void branches() {
+        Feature feature = new Feature();
+        feature.run(false);
+        feature.mode("full");
+        feature.pick(2);
     }
 
     void noSource(org.w3c.dom.Node node) {

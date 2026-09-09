@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
+import jche.cache.Guard;
 import jche.cache.Origin;
 
 /**
@@ -312,6 +313,8 @@ public final class DataflowResolver {
      * 「必要な場合のみ」に絞る。次のいずれかなら意味がある。
      * <ul>
      *   <li>引数をレシーバとして使う、または引数をそのまま次へ渡す</li>
+     *   <li>引数を条件分岐（jche.cache.Guard）の判定に使う
+     *       （その経路で呼ばれない呼び出しを見分けるのに、渡された値が要る）</li>
      *   <li>コンストラクタ注入されたフィールドを持つ型のメソッド
      *       （自分のメソッドを呼び合った先でフィールドを使うことがある）</li>
      * </ul>
@@ -335,7 +338,8 @@ public final class DataflowResolver {
             for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
                 if (Origin.kindOf(graph.recvOrigin(e)) == Origin.PARAM
                         || mentionsParam(graph.recvOrigin(e))   // 入れ子のレシーバ・実引数（リフレクション）
-                        || mentionsParam(graph.argOrigins(e))) {
+                        || mentionsParam(graph.argOrigins(e))
+                        || guardsOnParam(graph.guard(e))) {
                     flags[caller] = true;
                     break;
                 }
@@ -345,6 +349,11 @@ public final class DataflowResolver {
     }
 
     /** 実引数の出所の中に「囲みメソッドの引数」が含まれるか（引数の受け渡し） */
+    /** 条件分岐が囲みメソッドの引数を見ているか（"アトム区切り引数の出所" の形） */
+    private static boolean guardsOnParam(String guard) {
+        return guard != null && guard.indexOf(Guard.FIELD_SEP + "" + Origin.PARAM + ":") >= 0;
+    }
+
     private static boolean mentionsParam(String argOrigins) {
         if (argOrigins == null) {
             return false;
@@ -599,6 +608,7 @@ public final class DataflowResolver {
         switch (Origin.kindOf(origin)) {
             case Origin.LITERAL:
             case Origin.CLASS:
+            case Origin.CONST:   // 条件分岐の判定に使う定数（jche.graph.GuardEvaluator）
                 return Origin.head(origin);
             case Origin.PARAM:
                 return paramValueOf(origin, ctx);

@@ -12,6 +12,7 @@ package jche.cache;
  *   M:jp.co.xxx.Factory#create()  メソッドの戻り値（その宣言のreturnを見れば分かる）
  *   F:jp.co.xxx.Service#dao       フィールド変数
  *   L:jp.co.xxx.UserDaoImpl       文字列リテラル（またはコンパイル時定数）
+ *   V:false                       コンパイル時定数の値（条件分岐の判定に使う）
  *   C:0                           Class.forName(引数) で名前指定された型
  *   K:jp.co.xxx.UserDaoImpl       クラスオブジェクト（X.class）
  *   U                             追跡できない
@@ -55,6 +56,14 @@ public final class Origin {
     public static final char REFLECT = 'C';
     /** クラスオブジェクト（X.class）。値は型のFQN（配列は "[]" 付き、プリミティブはそのまま） */
     public static final char CLASS = 'K';
+    /**
+     * コンパイル時定数の値（真偽値・数値・文字・文字列・列挙定数の名前）。値はその表記そのもの。
+     *
+     * {@link #LITERAL} がクラス名・メソッド名を追うための「識別子の形の文字列」なのに対し、
+     * こちらは「条件分岐の判定に使える値」。{@code if (flag)} の flag に何が渡ったかを
+     * 経路ごとに突き合わせるために持つ（jche.graph.GuardEvaluator）。
+     */
+    public static final char CONST = 'V';
     /** 追跡できない。「分からない」を明示的に持つのが重要 */
     public static final char UNKNOWN = 'U';
 
@@ -181,5 +190,17 @@ public final class Origin {
             start = end + 1;
         }
         return null;
+    }
+
+    /**
+     * 経路上で「値」として突き合わせられる出所か、その値を返す。値でなければ null。
+     *
+     * {@link #CONST}（条件分岐用の定数）のほか、{@link #LITERAL}（識別子の形の文字列）と
+     * {@link #CLASS}（X.class）も値として扱う。同じ文字列リテラルが、どちらの種別で
+     * 記録されたかによって比較できなくなるのを避けるため。
+     */
+    public static String constantValueOf(String origin) {
+        char kind = kindOf(origin);
+        return (kind == CONST || kind == LITERAL || kind == CLASS) ? valueOf(origin) : null;
     }
 }

@@ -9,7 +9,9 @@ import java.util.Map;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.BooleanLiteral;
 import org.eclipse.jdt.core.dom.CastExpression;
+import org.eclipse.jdt.core.dom.CharacterLiteral;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldAccess;
@@ -20,6 +22,7 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.NumberLiteral;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
@@ -192,10 +195,87 @@ final class OriginTracker {
         if (e instanceof FieldAccess fa) {
             IVariableBinding vb = fa.resolveFieldBinding();
             if (vb != null) {
-                return variableOriginOf(vb);
+                String origin = variableOriginOf(vb);
+                if (origin != null) {
+                    return origin;
+                }
             }
         }
+        // ここまでで決まらなければ、コンパイル時定数の「値」として拾う。
+        // 具象型は分からないが、条件分岐の判定には使える（jche.cache.Guard）
+        return constantOf(e);
+    }
+
+    /**
+     * 式がコンパイル時定数（または列挙定数）なら、その値の出所（{@link Origin#CONST}）。
+     *
+     * 条件分岐の判定に使う値だけを拾う。{@code true} / {@code 3} / {@code 'a'} のような
+     * リテラル、{@code static final} の定数、列挙定数（{@code Color.RED} は "RED"）。
+     * 列挙定数を単純名にするのは、switch の case ラベルが単純名で書かれるため。
+     */
+    String constantOf(Expression ex) {
+        Expression e = unwrap(ex);
+        if (e == null) {
+            return null;
+        }
+        if (e instanceof BooleanLiteral b) {
+            return Origin.of(Origin.CONST, String.valueOf(b.booleanValue()));
+        }
+        if (e instanceof NumberLiteral n) {
+            return numericConst(n.getToken());
+        }
+        if (e instanceof CharacterLiteral c) {
+            return Origin.of(Origin.CONST, String.valueOf(c.charValue()));
+        }
+        if (e instanceof StringLiteral s) {
+            return valueConst(s.getLiteralValue());
+        }
+        if (e instanceof SimpleName || e instanceof QualifiedName || e instanceof FieldAccess) {
+            IVariableBinding vb = variableBindingOf(e);
+            if (vb == null) {
+                return null;
+            }
+            if (vb.isEnumConstant()) {
+                return Origin.of(Origin.CONST, vb.getName());
+            }
+            Object constant = vb.getConstantValue();
+            return (constant == null) ? null : valueConst(String.valueOf(constant));
+        }
         return null;
+    }
+
+    private static IVariableBinding variableBindingOf(Expression e) {
+        IBinding b = null;
+        if (e instanceof SimpleName sn) {
+            b = sn.resolveBinding();
+        } else if (e instanceof QualifiedName qn) {
+            b = qn.resolveBinding();
+        } else if (e instanceof FieldAccess fa) {
+            b = fa.resolveFieldBinding();
+        }
+        return (b instanceof IVariableBinding vb) ? vb : null;
+    }
+
+    /** 数値リテラルは表記の揺れ（1L / 0x10 / 1_000）を値に正規化する。できなければ拾わない */
+    private static String numericConst(String token) {
+        String t = token.replace("_", "");
+        try {
+            if (t.indexOf('.') >= 0 || t.indexOf('e') > 0 || t.indexOf('E') > 0
+                    || t.endsWith("f") || t.endsWith("F") || t.endsWith("d") || t.endsWith("D")) {
+                return null;   // 浮動小数の一致判定はしない
+            }
+            if (t.endsWith("l") || t.endsWith("L")) {
+                t = t.substring(0, t.length() - 1);
+            }
+            return Origin.of(Origin.CONST, String.valueOf(Long.decode(t)));
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
+    }
+
+    /** 値として持てる長さ・内容のものだけ（長い文字列でキャッシュを膨らませない） */
+    private static String valueConst(String value) {
+        return (value == null || value.length() > 64) ? null : Origin.of(Origin.CONST, value);
     }
 
     /** メソッド呼び出しの出所（M:）。実引数の出所・実引数の数・レシーバの出所を付ける */

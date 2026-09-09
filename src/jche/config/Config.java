@@ -113,6 +113,14 @@ public final class Config {
     public final boolean dataflowEnabled;
     /** ファクトリの委譲（return create();）を何段まで辿るか */
     public final int dataflowMaxDepth;
+    /**
+     * 条件分岐の静的解析で「その経路では呼ばれない」呼び出しの先を辿らないか。
+     *
+     * 打ち切った呼び出し自体は理由付きで1行出力する（呼び出しが書かれている事実は消さない）。
+     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶため、
+     * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
+     */
+    public final boolean branchPruningEnabled;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
     public final Path cacheFile;
@@ -191,6 +199,8 @@ public final class Config {
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
         this.dataflowEnabled = Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
         this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
+        this.branchPruningEnabled =
+                Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
         // キャッシュは解析対象プロジェクトごとのサイドカー。既定はこのツールのプロジェクトフォルダの .cache/ の下。
         // cache.folder を指定したときも、その下にプロジェクト別のフォルダを切る（複数の設定が同じプロジェクトを
         // 指すなら同じキャッシュを共有し、別のプロジェクトなら混ざらない）

@@ -33,12 +33,13 @@ package jche.cache;
  *   V  typeFqn  fieldName  mods  declType                    {@link FieldDeclFact}
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda
- *                                                             {@link CallEdgeFact}
+ *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
+ *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
+ *                                                             囲む条件分岐（{@link Guard}）
  *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}
  *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
  *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
- *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda
+ *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link UnresolvedCallFact}
  * </pre>
  * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
@@ -47,6 +48,7 @@ package jche.cache;
  * <h2>読み手の責務（キャッシュに入れない判断）</h2>
  * <ul>
  *   <li>静的束縛の判定（calleeMods → 種別）            … jche.graph.BindKind</li>
+ *   <li>ガードが「この経路では成立しない」と言い切れるかの判定 … jche.graph.GuardEvaluator</li>
  *   <li>戻り値の集約（追跡できない return が1つでもあれば不定） … jche.graph.DataflowResolver</li>
  *   <li>コンストラクタ注入フィールドの判定（private/final、全コンストラクタで代入、出所が一致）
  *                                                      … jche.graph.FieldFacts</li>
@@ -82,6 +84,9 @@ package jche.cache;
  *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
  *       書かれていない暗黙の super() は拾わない</li>
  *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
+ *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を追加し、
+ *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録するようにした（v13）。
+ *       「その経路では呼ばれない」と言い切れる呼び出しを読み手が見分けるため</li>
  *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める（v12）。
  *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
  * </ul>
@@ -100,7 +105,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v12";
+    public static final String VERSION = "jche-cache-v13";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';

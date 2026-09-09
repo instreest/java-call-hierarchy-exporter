@@ -13,6 +13,7 @@ import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
+import jche.graph.GuardEvaluator;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
 import jche.util.Log;
@@ -32,6 +33,9 @@ import jche.util.Log;
  *       既にあれば、その辺を1行だけ出力してそこから先へは降りない。
  *       判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
  *       そちらでも改めて出力する（グローバルな訪問済み集合は持たない）</li>
+ *   <li>条件分岐の静的解析 … 呼び出し箇所を囲む条件が、この経路で成立しないと
+ *       言い切れる場合は、その辺を1行だけ「呼ばれない理由」付きで出力し、
+ *       そこから先へは降りない（{@link GuardEvaluator}）</li>
  *   <li>除外パッケージ … 除外対象のノード自身は出力しないが、その先は
  *       除外されたノードを呼び出し元として辿り続ける。読み飛ばした除外ノードと
  *       差し替えた親も「経路上」として扱い、除外メソッド同士の相互再帰で
@@ -55,6 +59,7 @@ public final class StreamingTreeWalker {
     private final MethodTable methods;
     private final CallResolver resolver;
     private final DataflowResolver dataflow;
+    private final GuardEvaluator guards;
     private final Config config;
     private final CallHierarchyCsvWriter writer;
     private final int maxDepth;
@@ -79,6 +84,8 @@ public final class StreamingTreeWalker {
     private long reflectionHits;
     private long fieldHits;
     private long newHits;
+    /** 条件分岐の静的解析で「この経路では呼ばれない」と判定して打ち切った件数 */
+    private long prunedCalls;
 
     private int rootId;
     private long totalRows;
@@ -90,6 +97,7 @@ public final class StreamingTreeWalker {
         this.methods = graph.methods();
         this.resolver = resolver;
         this.dataflow = resolver.dataflow();
+        this.guards = new GuardEvaluator(config.branchPruningEnabled);
         this.config = config;
         this.writer = writer;
         this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
@@ -117,6 +125,11 @@ public final class StreamingTreeWalker {
 
     public long newHits() {
         return newHits;
+    }
+
+    /** 条件分岐の静的解析で打ち切った呼び出しの件数 */
+    public long prunedCalls() {
+        return prunedCalls;
     }
 
     /** データフローで具象クラスを1件でも特定したか（ログを出すかの判定用） */
@@ -152,11 +165,18 @@ public final class StreamingTreeWalker {
             Resolution res = resolver.resolveOnPath(e, path[depth].context());
             countHits(res);
 
+            // この呼び出しを囲む条件が、この経路では成立しないと言い切れるか。
+            // 言い切れるなら、呼び出し自体は理由付きで1行出すが、その先へは降りない
+            String unreachable = guards.unreachableReason(graph.guard(e), path[depth].context());
+            if (unreachable != null) {
+                prunedCalls++;
+            }
+
             // CHAで候補が複数になった呼び出しは、候補を1件ずつ行にして見せるが、
             // そこから先へは降りない（候補数^深さ で爆発するため）。
             // 並べる候補数にも上限を設ける
             int[] targets = res.targets();
-            boolean expand = (targets.length == 1);
+            boolean expand = (targets.length == 1) && (unreachable == null);
             int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
 
             for (int ti = 0; ti < limit; ti++) {
@@ -169,8 +189,9 @@ public final class StreamingTreeWalker {
 
                 if (isExcluded(target)) {
                     // 除外対象のノード自身は出力しないが、その先は辿る。
-                    // 経路上（読み飛ばし中の除外メソッドを含む）へ戻る辺は循環なので降りない
-                    if (!onCurrentPath(target, depth)) {
+                    // 経路上（読み飛ばし中の除外メソッドを含む）へ戻る辺は循環なので降りない。
+                    // この経路で呼ばれない呼び出しは、除外ノードの先も辿らない
+                    if (unreachable == null && !onCurrentPath(target, depth)) {
                         skipThrough(depth, target, targetParams, targetCtorArgs);
                     }
                     continue;
@@ -178,7 +199,8 @@ public final class StreamingTreeWalker {
 
                 boolean cycle = onCurrentPath(target, depth);
                 path[depth + 1].set(target, graph.callLineOf(e),
-                        noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e)),
+                        noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e),
+                                unreachable),
                         targetParams, targetCtorArgs,
                         (targetCtorArgs == null) ? null : methods.typeFqn(target));
 
@@ -344,9 +366,13 @@ public final class StreamingTreeWalker {
      * 階層の末尾に追記する形にしている（そのぶん行末grepは効かなくなる）。
      */
     private String noteFor(int target, int declaredCallee, Resolution res, int depth,
-                           boolean cycle, char recvKind) {
+                           boolean cycle, char recvKind, String unreachable) {
         StringBuilder sb = new StringBuilder();
-        if (cycle) {
+        if (unreachable != null) {
+            // 条件分岐の静的解析で、この経路では実行されないと分かった呼び出し。
+            // 呼び出しが書かれている事実は残しつつ、ここで階層を打ち切る
+            sb.append(unreachable);
+        } else if (cycle) {
             // この経路上で既に呼んでいるメソッドへ戻る辺。ここから先へは降りない
             sb.append(CYCLE_MARK);
         } else if (Resolution.EXTERNAL_GUESS.equals(res.label())) {

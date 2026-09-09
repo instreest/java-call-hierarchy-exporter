@@ -213,6 +213,8 @@ public final class CallGraphBuilder {
         Arrays.fill(graph.recvOriginIds, -1);
         graph.argOriginIds = new int[edges];
         Arrays.fill(graph.argOriginIds, -1);
+        graph.guardIds = new int[edges];
+        Arrays.fill(graph.guardIds, -1);
 
         // R行（戻り値の出所）をメソッドIDの配列に移す。
         // 1回目のスキャンで全メソッドがID化されているのでここで確定できる。
@@ -247,7 +249,7 @@ public final class CallGraphBuilder {
                     graph.callLines[pos] = c.callLine();
                     graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
                     graph.fillCallSite(pos, c.caller().key(), c.recvKey(), c.recvKind(),
-                            c.recvOrigin(), c.argOrigins());
+                            c.recvOrigin(), c.argOrigins(), c.guard());
                 } else if (rowType == CacheFormat.ROW_UNRESOLVED) {
                     UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
                     if (u == null || !u.hasUsableCandidate()) {
@@ -258,7 +260,7 @@ public final class CallGraphBuilder {
                     graph.callLines[pos] = u.line();
                     graph.bindKinds[pos] = (byte) BindKind.GUESSED;
                     graph.fillCallSite(pos, u.caller().key(), u.recvKey(), u.recvKind(),
-                            u.recvOrigin(), u.argOrigins());
+                            u.recvOrigin(), u.argOrigins(), u.guard());
                 }
             }
         }
