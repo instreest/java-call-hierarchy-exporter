@@ -605,6 +605,8 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
+| `解決:SPRING_DI` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[Spring による DI の解決](#spring-による-di-の解決)参照） |
+| `解決:SPRING_DI_QUALIFIER` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
 | `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した（[リフレクション](#リフレクション)参照） |
 | `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
@@ -710,7 +712,56 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（後述） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
-| 5 | `CHA` | 候補が複数のまま（低確度） |
+| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補を絞った（後述） |
+| 6 | `CHA` | 候補が複数のまま（低確度） |
+
+### Spring による DI の解決
+
+`@Autowired` などで注入されたインスタンスは、宣言型がインターフェースのため CHA では
+実装を1つに絞れません。DI コンテナに載るのは Bean として登録された型だけなので、
+候補を「コンテナが実際に注入しうる型」に絞ります。
+
+```java
+@Service
+public class Checkout {
+
+    @Autowired
+    private PaymentGateway gateway;   // 実装は CardPayment（@Service）と MockPayment（Bean でない）
+
+    public void checkout(int amount) {
+        gateway.pay(amount);          // 解決:SPRING_DI → CardPayment
+    }
+}
+```
+
+Bean とみなす根拠は次の2つだけです。
+
+| 根拠 | Bean になる型 | Bean 名 |
+|---|---|---|
+| ステレオタイプ注釈（`@Component` / `@Service` / `@Repository` / `@Controller` / `@RestController` / `@Configuration` / `@ControllerAdvice` / `@RestControllerAdvice`、JSR-330 の `@Named` / `@ManagedBean` / `@Singleton`）が付いた具象型 | その型 | 注釈の値。無ければ単純名の先頭を小文字にしたもの（Spring の既定） |
+| `@Bean` を付けたメソッドが `return new Impl();` の形で返す具象型 | 返す具象型 | 注釈の値。無ければメソッド名 |
+
+注釈は**単純名で照合**するので、`@Service` を合成した独自の注釈（`@MyDomainService` 等）は
+`spring.di.bean.annotations` に足せば同じ扱いになります。パッケージ名は問いません。
+
+絞り込みの規則:
+
+- レシーバがフィールドか引数のときだけ適用します（DI で受け取ったインスタンスは必ずこの形で現れます）。
+  その場で `new` したレシーバや static 呼び出しには適用しません
+- 候補のうち Bean が**ちょうど1つ**のときだけ確定します（`SPRING_DI`）
+- フィールドに `@Qualifier` / `@Resource(name=...)` があれば、その Bean 名で先に絞ります（`SPRING_DI_QUALIFIER`）
+- Bean クラスがそのメソッドをオーバーライドせず抽象基底クラスから継承している場合も、
+  継承した実装に解決します
+
+採らないもの（誤って絞る害の方が大きいため、候補を複数のまま残します）:
+`@Primary` / `@Profile` / `@Conditional`（実行時の環境で変わる）、
+コンストラクタ・setter の**引数**に付いた `@Qualifier`（フィールド単位の注入点だけを見ます）、
+XML（`applicationContext.xml`）の Bean 定義（ソースの事実ではないため、必要なら拡張
+（`jche.extension.TypeCandidateProvider`）で差し込めます）。
+
+`spring.di.enabled=false` にすると、この段を丸ごと飛ばして従来どおり CHA の候補のまま出力します。
+実装時に迷った点（何を Bean の根拠とするか、`@Primary` を見ない理由など）は
+[docs/spring-di-qa.md](docs/spring-di-qa.md) にまとめています。
 
 ### リフレクション
 
