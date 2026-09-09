@@ -9,10 +9,12 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 > `jbangw/jbang src/CallHierarchyExporter.java config/config.properties` directly (the first run
 > downloads a JDK and the JDT jars), or compile against JDT jars copied from an Eclipse installation
 > for offline use. Several config files can be passed at once; each run writes to its own timestamped
-> output folder. Apache-2.0. Documentation is in Japanese.
+> output folder. A composite GitHub Action (`action.yml`) is included, so the same export can run in CI.
+> Apache-2.0. Documentation is in Japanese.
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
+- CI から使う … [GitHub Actions から使う](#github-actions-から使う)
 
 ---
 
@@ -296,6 +298,183 @@ Gradle のビルドファイルはプログラムなので、読めるのは宣�
 同じプロジェクトを指す設定ファイルが複数あっても（起点 `entry.packages` だけ違う等）、
 キャッシュは `project.root` ごとに 1 つを共有するので、2 つ目以降の解析はキャッシュの再利用だけで済みます。
 
+## GitHub Actions から使う
+
+リポジトリ直下の [`action.yml`](action.yml) が GitHub Actions のアクションです。
+利用者のワークフローから `uses:` で呼ぶと、解析対象のリポジトリを解析して CSV を出力し、
+アーティファクトとしてアップロードします。JBang も JDK も設定ファイルもアクションの中で用意するので、
+ワークフローに書くのは解析対象の指定だけです。
+
+```yaml
+name: call hierarchy
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # library-folders を空欄にして依存 jar を自動で集める場合は、先にローカルリポジトリへ
+      # 依存を取得しておく（このツールはネットワークに出ないため）
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -B --no-transfer-progress dependency:go-offline
+
+      - uses: instreest/java-call-hierarchy-exporter@main
+        with:
+          source-folders: src/main/java
+          source-encoding: UTF-8
+```
+
+出力は `call-hierarchy` という名前のアーティファクト（`upload-artifact` 入力で切れます）に入ります。
+中身は通常の実行と同じ `<解析開始日時>_<プロジェクト名>/` フォルダです
+（[出力されるファイル](#出力されるファイル)）。ジョブのサマリには出力フォルダと CSV の行数が出ます。
+
+### 参照する版の指定
+
+`uses:` の `@` の後ろには Git の参照（ブランチ・タグ・コミット SHA）を書きます。
+**タグは必須ではありません**。リリースタグを付けていない間はブランチ名で参照できます。
+
+| 書き方 | 意味 |
+| --- | --- |
+| `@main` | 既定ブランチの最新。タグを運用しない場合はこれ。ツール側の変更がそのまま次回の実行に入る |
+| `@0123456789abcdef...`（40 桁のコミット SHA） | その時点のコードに固定する。ブランチが進んでも動きが変わらない。再現性が要る場合はこちら |
+| `@v1` などのタグ | タグを打った場合。タグを動かすことで利用者側を書き換えずに版を切り替えられる |
+
+同じリポジトリの中のワークフローからは、参照そのものが要りません（`uses: ./`。
+このリポジトリの `.github/workflows/smoke.yml` の `action` ジョブがその形です）。
+
+社内の複製やフォークを使う場合、あるいは取得元を明示したい場合は、`actions/checkout` で
+ツールを別フォルダへ取り出してからローカル参照する書き方もできます。
+
+```yaml
+      - uses: actions/checkout@v4            # 解析対象（自分のリポジトリ）
+
+      - uses: actions/checkout@v4            # ツール本体
+        with:
+          repository: instreest/java-call-hierarchy-exporter
+          ref: main                          # ブランチ・タグ・コミット SHA
+          path: .jche-tool
+
+      - uses: ./.jche-tool
+        with:
+          source-folders: src/main/java
+```
+
+この形では `path:` に取り出したフォルダがアクションの場所になり、解析対象は
+ワークスペース（1 つ目のチェックアウト）のままです。プライベートリポジトリから取り出す場合は
+2 つ目の `actions/checkout` に `token:` が要ります。
+
+### 入力
+
+設定ファイルを自分で用意しない場合は、次の入力から設定ファイルを 1 つ生成します。
+意味は同名の設定項目（[config/config.properties](config/config.properties) のコメント）と同じです。
+
+| 入力 | 既定値 | 対応する設定項目 |
+| --- | --- | --- |
+| `project-root` | `.`（ワークスペース） | `project.root` |
+| `source-folders` | `src/main/java` | `source.folders` |
+| `source-encoding` | `UTF-8` | `source.encoding` |
+| `source-level` | （空欄） | `source.level` |
+| `library-folders` | （空欄。ビルドファイルから自動取得） | `library.folders` |
+| `library-build-tool` | `auto` | `library.build.tool` |
+| `library-repositories` | （空欄。`~/.m2/repository` 等） | `library.repositories` |
+| `external-library-folders` | （空欄） | `external.library.folders` |
+| `entry-packages` | （空欄。呼び出し元が無いメソッドが起点） | `entry.packages` |
+| `exclude-packages` | `java.**,javax.**` | `exclude.packages` |
+| `extra-config` | （空欄） | 上に無い項目を「1 行 1 項目」で追記する |
+| `output-folder` | `call-hierarchy-output` | `output.folder` |
+
+`project-root` と `output-folder` はワークスペースからの相対パス（または絶対パス）、
+`source-folders` などは `project-root` からの相対パスです。
+
+実行環境と出力の入力は次のとおりです。
+
+| 入力 | 既定値 | 内容 |
+| --- | --- | --- |
+| `config` | （空欄） | 用意済みの設定ファイルを使う。改行またはカンマ区切りで複数渡せる。指定すると上の生成用の入力は使わない |
+| `java-version` | `25` | ツール自身を動かす JDK。空欄にすると `actions/setup-java` を飛ばす（自分で用意する場合） |
+| `java-distribution` | `temurin` | `actions/setup-java` の `distribution` |
+| `cache` | `true` | JBang 本体と JDT の jar をワークフロー実行間でキャッシュする |
+| `upload-artifact` | `true` | 出力フォルダをアーティファクトにする |
+| `artifact-name` | `call-hierarchy` | アーティファクトの名前 |
+| `artifact-retention-days` | （空欄） | アーティファクトの保持日数 |
+
+用意済みの設定ファイルを使う場合は、リポジトリに設定ファイルを置いて `config` で渡します。
+複数渡せば[まとめて解析](#複数のプロジェクトをまとめて解析する)します。
+設定ファイル内の相対パスの起点は「その設定ファイルが置かれているフォルダ」です。
+
+```yaml
+      - uses: instreest/java-call-hierarchy-exporter@main
+        with:
+          config: |
+            ci/app-a.properties
+            ci/app-b.properties
+```
+
+### 出力
+
+| 出力 | 内容 |
+| --- | --- |
+| `output-dir` | 最初の設定ファイルの出力フォルダ（絶対パス） |
+| `output-dirs` | すべての出力フォルダ（1 行に 1 つ） |
+| `csv` | `call-hierarchy.csv` のパス（最初の出力フォルダのもの） |
+| `methods-csv` | `methods.csv` のパス（最初の出力フォルダのもの） |
+| `run-log` | `run.log` のパス（最初の出力フォルダのもの） |
+
+後続のステップで CSV を読むときは、`${{ }}` を `run:` に直接書かず環境変数を経由するのが安全です。
+
+```yaml
+      - uses: instreest/java-call-hierarchy-exporter@main
+        id: export
+        with:
+          source-folders: src/main/java
+
+      - name: 行数を数える
+        env:
+          CSV: ${{ steps.export.outputs.csv }}
+        run: wc -l "$CSV"
+```
+
+### 使うときの注意
+
+- **依存 jar** … `library-folders` を空欄にすると `pom.xml` / `build.gradle` を読んでローカルリポジトリから
+  依存 jar を集めますが、このツールはネットワークに出ません。ランナーの `~/.m2/repository` は空なので、
+  先に `mvn -B dependency:go-offline`（Gradle なら依存を取得するタスク）を実行しておいてください。
+  取得しないまま実行しても解析自体は動きますが、jar の型が解決できず呼び出しが欠けます
+- **JDK** … ツール自身は JDK 25 で動きます（`//JAVA 25`）。`java-version` を空欄にして自分で用意する場合も
+  25 を入れてください。解析対象のビルドに別の JDK が要る場合は、そのステップで別途セットアップします
+- **キャッシュ** … `cache: true` のとき、JBang 本体（`~/.jbang`）と JDT の jar（`~/.m2/repository/org/eclipse`）を
+  ワークフロー実行間でキャッシュします。解析結果のキャッシュ（`.cache/`）は毎回作り直しになります。
+  `actions/checkout` はファイルの更新時刻をチェックアウト時刻にするため、差分判定（更新時刻とサイズ）が
+  必ず「変更あり」になり、持ち越しても再利用されないためです
+- **作業ツリー** … 生成した設定ファイルは `RUNNER_TEMP` に、解析キャッシュはアクション自身のフォルダに
+  作るので、解析対象リポジトリのチェックアウトには出力フォルダ以外を作りません
+  （既定は `call-hierarchy-output/`。`.gitignore` に足しておくと `git diff --exit-code` 等と併用できます）
+
+### Actions 以外の CI から使うとき
+
+環境変数 `JCHE_OUTPUT_DIR_FILE` にファイルのパスを渡して実行すると、設定ファイルごとの出力フォルダの
+絶対パスを、成功した順に 1 行ずつ UTF-8 でそのファイルに書きます。実行ごとに変わる出力フォルダ名
+（`<解析開始日時>_<プロジェクト名>`）を、ログを読まずに受け取れます（`action.yml` もこれを使っています）。
+
+```bash
+JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
+cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
+```
+
+起動コマンド（`./jche.sh a.properties`、Windows は `jche.cmd`）から実行したときも同じです
+（対話モードで解析した場合も書き出します）。
+
+実装時に迷った点は [docs/github-actions-qa.md](docs/github-actions-qa.md) にまとめています。
+
 ## キャッシュの置き場所
 
 解析結果のキャッシュは出力フォルダには置かず、解析対象プロジェクトごとの「サイドカー」として
@@ -562,6 +741,10 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
 | `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
 
+GitHub Actions 用の定義はリポジトリ直下の `action.yml` で、ステップの中身は
+`.github/action/prepare.sh`（設定ファイルの用意）・`run.sh`（実行）・`collect.sh`（出力の収集）の 3 本です。
+どれも環境変数を渡せば手元でも動かせます。
+
 読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
 → `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
 キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
@@ -585,6 +768,8 @@ jar の追加・削除が影響するファイルの再解析だけで出力に�
 にできることを確認します（他のケースは `cache.folder=./.cache` でケースごとに分けています）。
 最後の `multi` ケースは `whole` と `entry` の設定ファイルに存在しない設定ファイルを 1 つ混ぜて 1 回の起動で渡し、
 失敗した設定を飛ばして残りが処理されること、終了コードが 1 になることを確認します。
+あわせて `JCHE_OUTPUT_DIR_FILE`（[Actions 以外の CI から使うとき](#actions-以外の-ci-から使うとき)）に
+成功した 2 件の出力フォルダだけが並ぶことも確認します。
 比較は `<case>/output/` の最新（名前順の末尾）のフォルダに対して行います。
 
 ```bash
@@ -594,6 +779,11 @@ test\regression\run.cmd            # Windows のコマンドプロンプト
 
 GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint:all -Werror` での
 コンパイルとこの回帰テストを実行します。
+
+`action` ジョブは、[このリポジトリのアクション](#github-actions-から使う)（`action.yml`）を `uses: ./` で
+利用者と同じ経路で動かします。入力から設定ファイルを生成する経路と、用意済みの設定ファイルを `config` で
+渡す経路の 2 つを通し、アクションの出力（`csv` / `methods-csv` / `run-log` / `output-dirs`）が
+実在するファイルを指すことを確認します。
 
 出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/<最新のフォルダ>/` の差分を確認したうえで
 CSV を `expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です

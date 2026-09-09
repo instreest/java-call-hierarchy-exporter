@@ -1,0 +1,207 @@
+# Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
+#
+# GitHub Actions から呼び出すためのアクション定義（複合アクション）。
+# 使い方と設計判断は README.md の「GitHub Actions から使う」節と docs/github-actions-qa.md にある。
+#
+#   - uses: instreest/java-call-hierarchy-exporter@main   # ブランチ・タグ・コミット SHA のいずれか
+#     with:
+#       source-folders: src/main/java
+#
+# 解析対象は「このアクションを呼んだリポジトリのワークスペース」で、ツール本体は
+# ${{ github.action_path }} に置かれる。両者は別のフォルダなので、設定ファイルの
+# project.root / output.folder は絶対パスで書き出し、ツールの実行だけを action_path で行う。
+name: Java call hierarchy exporter
+description: Java プロジェクトのメソッド呼び出し階層を一括で抽出し、CSV（call-hierarchy.csv / methods.csv）に出力する
+author: Inoue Kazuhiro (instreest)
+
+branding:
+  icon: share-2
+  color: blue
+
+inputs:
+  # --- 設定ファイルを自分で用意する場合 ---------------------------------
+  config:
+    description: >-
+      使う設定ファイル。ワークスペースからの相対パスまたは絶対パス。改行またはカンマ区切りで複数渡せる
+      （渡した順に処理し、1 つ失敗しても残りを処理する）。指定した場合、下の解析対象の入力
+      （project-root / source-folders など）は使わず、設定ファイルの内容がそのまま効く。
+      設定ファイル内の相対パスの起点は「その設定ファイルが置かれているフォルダ」。
+    required: false
+    default: ''
+
+  # --- 設定ファイルを入力から生成する場合（config が空のとき） -------------
+  project-root:
+    description: 解析対象プロジェクトのルート（ワークスペースからの相対パス、または絶対パス）
+    required: false
+    default: '.'
+  source-folders:
+    description: ソースフォルダ（project-root からの相対パス、カンマ区切り）
+    required: false
+    default: 'src/main/java'
+  source-encoding:
+    description: 解析対象ソースの文字コード
+    required: false
+    default: 'UTF-8'
+  source-level:
+    description: 解析対象ソースの Java バージョン（空欄なら JDT が対応する最大値）
+    required: false
+    default: ''
+  library-folders:
+    description: >-
+      依存 jar を集めたフォルダ（project-root からの相対パス、カンマ区切り）。
+      空欄なら pom.xml / build.gradle を読んでローカルリポジトリ（~/.m2/repository 等）から依存 jar を集める。
+      その場合は、このアクションより前に依存を取得しておくこと（例: mvn -B dependency:go-offline）
+    required: false
+    default: ''
+  library-build-tool:
+    description: library-folders が空欄のときに読むビルドファイルの種類（auto / maven / gradle / none）
+    required: false
+    default: 'auto'
+  library-repositories:
+    description: ローカルリポジトリ（カンマ区切り）。空欄なら ~/.m2/repository と Gradle のキャッシュ
+    required: false
+    default: ''
+  external-library-folders:
+    description: 被参照スキャンの対象 jar / war / ear（project-root からの相対パス、カンマ区切り）
+    required: false
+    default: ''
+  entry-packages:
+    description: 呼び出し階層の起点（カンマ区切り）。空欄なら「呼び出し元が無いメソッド」を起点にする
+    required: false
+    default: ''
+  exclude-packages:
+    description: 出力から除外する呼び出し先（カンマ区切り）
+    required: false
+    default: 'java.**,javax.**'
+  extra-config:
+    description: >-
+      生成する設定ファイルの末尾に追記する行（複数行可）。上の入力に無い項目
+      （max.depth、dataflow.enabled、output.encoding など）はここに書く
+    required: false
+    default: ''
+
+  # --- 実行環境と出力 ---------------------------------------------------
+  output-folder:
+    description: >-
+      出力先（ワークスペースからの相対パス、または絶対パス）。この下に実行ごとの
+      <解析開始日時>_<プロジェクト名>/ フォルダができる。config を指定した場合は使わない
+      （設定ファイルの output.folder が効く）
+    required: false
+    default: 'call-hierarchy-output'
+  java-version:
+    description: ツール自身を動かす JDK の版。空欄にすると JDK のセットアップ手順を飛ばす（別途用意する場合）
+    required: false
+    default: '25'
+  java-distribution:
+    description: actions/setup-java の distribution
+    required: false
+    default: 'temurin'
+  cache:
+    description: JBang 本体と JDT の jar をワークフロー実行間でキャッシュするか（true / false）
+    required: false
+    default: 'true'
+  upload-artifact:
+    description: 出力フォルダをアーティファクトとしてアップロードするか（true / false）
+    required: false
+    default: 'true'
+  artifact-name:
+    description: アップロードするアーティファクトの名前
+    required: false
+    default: 'call-hierarchy'
+  artifact-retention-days:
+    description: アーティファクトの保持日数（空欄ならリポジトリの既定）
+    required: false
+    default: ''
+
+outputs:
+  output-dir:
+    description: 最初の設定ファイルの出力フォルダ（絶対パス）
+    value: ${{ steps.collect.outputs.output-dir }}
+  output-dirs:
+    description: すべての出力フォルダ（絶対パス、1 行に 1 つ）
+    value: ${{ steps.collect.outputs.output-dirs }}
+  csv:
+    description: 呼び出し階層 call-hierarchy.csv のパス（最初の出力フォルダのもの）
+    value: ${{ steps.collect.outputs.csv }}
+  methods-csv:
+    description: メソッド一覧 methods.csv のパス（最初の出力フォルダのもの）
+    value: ${{ steps.collect.outputs.methods-csv }}
+  run-log:
+    description: 実行ログ run.log のパス（最初の出力フォルダのもの）
+    value: ${{ steps.collect.outputs.run-log }}
+
+runs:
+  using: composite
+  steps:
+    # ツール自身は //JAVA 25 で動く。ここで用意しておけば JBang は JDK を取得しない
+    - name: Set up JDK
+      if: inputs.java-version != ''
+      uses: actions/setup-java@v4
+      with:
+        distribution: ${{ inputs.java-distribution }}
+        java-version: ${{ inputs.java-version }}
+
+    - name: Prepare config
+      id: prep
+      shell: bash
+      env:
+        JCHE_CONFIG: ${{ inputs.config }}
+        JCHE_PROJECT_ROOT: ${{ inputs.project-root }}
+        JCHE_SOURCE_FOLDERS: ${{ inputs.source-folders }}
+        JCHE_SOURCE_ENCODING: ${{ inputs.source-encoding }}
+        JCHE_SOURCE_LEVEL: ${{ inputs.source-level }}
+        JCHE_LIBRARY_FOLDERS: ${{ inputs.library-folders }}
+        JCHE_LIBRARY_BUILD_TOOL: ${{ inputs.library-build-tool }}
+        JCHE_LIBRARY_REPOSITORIES: ${{ inputs.library-repositories }}
+        JCHE_EXTERNAL_LIBRARY_FOLDERS: ${{ inputs.external-library-folders }}
+        JCHE_ENTRY_PACKAGES: ${{ inputs.entry-packages }}
+        JCHE_EXCLUDE_PACKAGES: ${{ inputs.exclude-packages }}
+        JCHE_EXTRA_CONFIG: ${{ inputs.extra-config }}
+        JCHE_OUTPUT_FOLDER: ${{ inputs.output-folder }}
+      run: bash "$GITHUB_ACTION_PATH/.github/action/prepare.sh"
+
+    # JBang 本体（~/.jbang）と、JBang が解決した JDT の jar（~/.m2/repository/org/eclipse）。
+    # ~/.m2 全体は対象にしない。解析対象プロジェクトの依存 jar（利用者のビルドが取得したもの）まで
+    # このアクションのキーで保存すると、利用者側のキャッシュと二重になり、取り違えの元になる
+    - name: Cache JBang and JDT
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.jbang
+          ~/.m2/repository/org/eclipse
+        key: jche-${{ runner.os }}-${{ steps.prep.outputs.cache-key }}
+        restore-keys: jche-${{ runner.os }}-
+
+    # 作業ディレクトリをツール側にするのは、キャッシュ（.cache/）の置き場所である
+    # 「ツールのプロジェクトフォルダ」をツール自身が見つけられるようにするため。
+    # こうしないと解析対象リポジトリのチェックアウト直下に .cache/ ができ、作業ツリーが汚れる。
+    # 設定ファイルは絶対パスで渡すので、作業ディレクトリが変わっても解決結果は変わらない。
+    - name: Export call hierarchy
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        JCHE_OUTPUT_DIR_FILE: ${{ steps.prep.outputs.output-dir-file }}
+        JCHE_CONFIG_LIST: ${{ steps.prep.outputs.config-list }}
+        # ログの日本語をランナーのログでも読めるようにする（run.log は常に UTF-8）
+        JAVA_TOOL_OPTIONS: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
+      run: bash "$GITHUB_ACTION_PATH/.github/action/run.sh"
+
+    # 解析が途中で失敗しても、出来ているところまで（run.log を含む）を持ち帰れるようにする
+    - name: Collect outputs
+      id: collect
+      if: always()
+      shell: bash
+      env:
+        JCHE_OUTPUT_DIR_FILE: ${{ steps.prep.outputs.output-dir-file }}
+      run: bash "$GITHUB_ACTION_PATH/.github/action/collect.sh"
+
+    # 出力フォルダが 1 つも無いとき（解析が始まる前に失敗）は、アップロードする対象が無いので飛ばす
+    - name: Upload artifact
+      if: always() && inputs.upload-artifact == 'true' && steps.collect.outputs.artifact-path != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.collect.outputs.artifact-path }}
+        retention-days: ${{ inputs.artifact-retention-days }}
+        if-no-files-found: warn

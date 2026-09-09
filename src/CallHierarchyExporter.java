@@ -26,10 +26,13 @@
 //JAVA 25
 //SOURCES jche/**/*.java
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -74,6 +77,8 @@ import jche.util.Log;
  * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
  * 解析対象プロジェクトごとに置く（{@link jche.config.ToolRoot}、{@link Config}）。
  * 1つの設定が失敗しても残りは処理し、最後にまとめて結果を出す。1つでも失敗すれば終了コードは 1。
+ * 環境変数 {@code JCHE_OUTPUT_DIR_FILE} にファイルを指定すると、成功した設定の出力フォルダを
+ * そのファイルへ1行ずつ書く（CI から実行結果の場所を受け取るための出口。{@link #OUTPUT_DIR_FILE_ENV}）。
  *
  * <h2>処理の流れ（パッケージ構成と対応する）</h2>
  * <pre>
@@ -102,6 +107,17 @@ public class CallHierarchyExporter {
     /** 引数を省略したときの設定ファイル（作業ディレクトリからの相対） */
     private static final String DEFAULT_CONFIG = "config/config.properties";
 
+    /**
+     * 出力フォルダの場所を書き出すファイルを指す環境変数。
+     *
+     * CI（GitHub Actions の {@code action.yml} 等）のように、実行後に「結果がどこにできたか」を
+     * 機械的に受け取りたい呼び出し元のための出口。設定ファイルごとの出力フォルダの絶対パスを
+     * 成功した順に1行ずつ、UTF-8 で追記する。指定が無ければ何もしない。
+     * ログを読ませないのは、標準出力の文字コードが環境依存（コンソール依存）で、
+     * メッセージも日本語のため、外部から機械的に読む先としては不安定なため。
+     */
+    private static final String OUTPUT_DIR_FILE_ENV = "JCHE_OUTPUT_DIR_FILE";
+
     public static void main(String[] args) throws Exception {
         // 設定ファイルのパスは引数で受け取る（複数可）。jbang はスクリプト名より後ろの
         // 引数をそのまま渡してくるので、jbang 経由でも java 直接実行でも同じ形
@@ -126,12 +142,20 @@ public class CallHierarchyExporter {
      * {@link #main} から切り出してある。ここでは {@code System.exit} しない。
      *
      * 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する。
+     * {@link #OUTPUT_DIR_FILE_ENV} が指定されていれば、成功した設定の出力フォルダをそこへ書き出す
+     * （対話モードから呼んだときも同じ）。
      *
      * @param configPaths 設定ファイル（渡した順に処理する）
      * @param toolRoot    このツールのプロジェクトフォルダ（キャッシュの置き場所）
      * @return 失敗した設定の数
      */
     public static int runAll(List<Path> configPaths, ToolRoot toolRoot) {
+        Path outputDirFile = outputDirFile();
+        if (outputDirFile != null) {
+            // 前回の実行の内容が残っていると、失敗した実行の後に古い出力フォルダを掴んでしまう
+            writeOutputDirFile(outputDirFile, "", false);
+        }
+
         if (!toolRoot.found) {
             Log.warn("このツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を"
                     + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
@@ -149,6 +173,9 @@ public class CallHierarchyExporter {
             try {
                 Path outputDir = runOne(configPath, toolRoot.dir);
                 summary.add("OK    " + configPath + " -> " + outputDir);
+                if (outputDirFile != null) {
+                    writeOutputDirFile(outputDirFile, outputDir + System.lineSeparator(), true);
+                }
             } catch (Throwable t) {
                 failed++;
                 Log.error("設定 " + configPath + " の処理に失敗しました", t);
@@ -166,6 +193,35 @@ public class CallHierarchyExporter {
             }
         }
         return failed;
+    }
+
+    /** {@link #OUTPUT_DIR_FILE_ENV} で指定されたファイル。指定が無ければ null */
+    private static Path outputDirFile() {
+        String raw = System.getenv(OUTPUT_DIR_FILE_ENV);
+        return (raw == null || raw.trim().isEmpty()) ? null : Paths.get(raw.trim()).toAbsolutePath();
+    }
+
+    /**
+     * 出力フォルダの一覧を書き出す。書けなくても解析そのものは成功しているので、警告にとどめて続ける
+     * （CSV は出来ているのに、受け渡し用のファイルが書けないことだけで実行を失敗にはしない）。
+     *
+     * @param append false なら作り直す（実行の最初に空にする）、true なら1行追記する
+     */
+    private static void writeOutputDirFile(Path file, String text, boolean append) {
+        try {
+            Path parent = file.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            if (append) {
+                Files.writeString(file, text, StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } else {
+                Files.writeString(file, text, StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            Log.warn(OUTPUT_DIR_FILE_ENV + " のファイルに書けません: " + file + " (" + e + ")");
+        }
     }
 
     /**
