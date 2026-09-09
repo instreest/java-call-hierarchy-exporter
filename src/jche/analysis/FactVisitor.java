@@ -63,6 +63,7 @@ import jche.cache.ReturnFact;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
 import jche.extension.CallSiteHintCollector;
+import jche.extension.HintKeys;
 import jche.extension.HintSink;
 import jche.util.Log;
 
@@ -885,16 +886,7 @@ final class FactVisitor extends ASTVisitor {
      * （DaoFactory.get("X").execute(...) など）にも拡張が証拠を結び付けられる。
      */
     private static String recvKeyOf(Expression ex) {
-        if (ex == null) {
-            return "";
-        }
-        if (ex instanceof SimpleName name && name.resolveBinding() instanceof IVariableBinding vb) {
-            String k = vb.getKey();
-            if (k != null && !k.isEmpty()) {
-                return k.replaceAll("\\s", "_");
-            }
-        }
-        return "@" + ex.getStartPosition();
+        return HintKeys.ofReceiver(ex);
     }
 
     /**
@@ -954,7 +946,7 @@ final class FactVisitor extends ASTVisitor {
         if (node.getInitializer() instanceof ClassInstanceCreation cic) {
             IVariableBinding vb = node.resolveBinding();
             if (vb != null) {
-                addNewHint(vb.getKey(), cic);
+                addNewHint(HintKeys.ofVariable(vb), cic);
             }
         }
         return true;
@@ -965,14 +957,14 @@ final class FactVisitor extends ASTVisitor {
         if (node.getRightHandSide() instanceof ClassInstanceCreation cic
                 && node.getLeftHandSide() instanceof SimpleName lhs
                 && lhs.resolveBinding() instanceof IVariableBinding vb) {
-            addNewHint(vb.getKey(), cic);
+            addNewHint(HintKeys.ofVariable(vb), cic);
         }
         return true;
     }
 
     private void addNewHint(String varKey, ClassInstanceCreation cic) {
         List<MethodRef> callers = currentCallers();
-        if (callers == null || varKey == null) {
+        if (callers == null || varKey == null || varKey.isEmpty()) {
             return;
         }
         String type = names.createdTypeOf(cic);

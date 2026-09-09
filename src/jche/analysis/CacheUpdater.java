@@ -115,7 +115,7 @@ public final class CacheUpdater {
         }
 
         try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8)) {
-            cacheOut.write(CacheFormat.headerFor(config.sourceLevel));
+            cacheOut.write(CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint));
             cacheOut.newLine();
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
@@ -346,7 +346,7 @@ public final class CacheUpdater {
 
     /**
      * パス0。旧キャッシュのヘッダを検証し、続く L 行（解析時の依存 jar）を読む。
-     * 形式・ソースレベル・JDK のどれかが違えば null（旧キャッシュは使わず全件再解析）。
+     * 形式・ソースレベル・JDK・フェーズAの拡張のどれかが違えば null（旧キャッシュは使わず全件再解析）。
      */
     private List<LibraryFact> readOldLibraries() throws IOException {
         if (!Files.isRegularFile(config.cacheFile)) {
@@ -354,7 +354,7 @@ public final class CacheUpdater {
         }
         try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
             String first = in.readLine();
-            if (first == null || !CacheFormat.headerFor(config.sourceLevel).equals(first.trim())) {
+            if (first == null || !CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint).equals(first.trim())) {
                 // 形式が変わった場合のほか、source.level や実行 JDK が変わった場合もここで破棄する。
                 // 言語バージョンやブートクラスパスが違えば同じソースでも解析結果が変わるため、
                 // 更新時刻とサイズが一致していても再利用してはいけない

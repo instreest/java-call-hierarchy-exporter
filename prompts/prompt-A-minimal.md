@@ -260,6 +260,9 @@ FQNを書くとリフレクションで読み込む）:
 - `CallSiteHintCollector`: AST走査中に呼び出し箇所の証拠（例: `DaoFactory.get("USER_DAO")` の文字列）を拾う
 - `TypeCandidateProvider`: 証拠と宣言型から具象型の候補を返す（例: `"USER_DAO"` → `UserDaoImpl` の対応表）
 
+実装クラスは `plugin.folders` のフォルダに置く。`.java` を置けば実行時にコンパイルされる
+（`.class` / `.jar` でもよい）。よくある用途（ファクトリのキー・DI の対応表）の実装は同梱する。
+
 ### 5.4 探索（フェーズ3）
 
 - 起点: `entry.packages` に一致し、ソース上に宣言のあるメソッド。未指定なら

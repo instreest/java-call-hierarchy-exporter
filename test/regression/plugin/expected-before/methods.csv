@@ -1,0 +1,15 @@
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
+App.factoryCall(),fxp.App,C,src/fxp/App.java,14,1,0,2,ENTRY_CANDIDATE,1,1,ローカル変数
+App.chainedCall(),fxp.App,C,src/fxp/App.java,19,1,0,2,ENTRY_CANDIDATE,1,1,戻り値（ファクトリメソッド等）
+App.injected(),fxp.App,C,src/fxp/App.java,23,1,0,1,ENTRY_CANDIDATE,1,1,フィールド変数
+BillingService.run(),fxp.BillingService,C,src/fxp/BillingService.java,5,1,1,1,NORMAL,1,0,
+BillingService.charge(),fxp.BillingService,C,src/fxp/BillingService.java,9,1,1,0,LEAF,1,0,
+Dao.find(),fxp.Dao,I,src/fxp/Dao.java,5,0,0,0,ISOLATED,0,0,
+DaoFactory.get(String),fxp.DaoFactory,C,src/fxp/DaoFactory.java,5,1,2,0,LEAF,1,0,
+OrderDaoImpl.find(),fxp.OrderDaoImpl,C,src/fxp/OrderDaoImpl.java,5,1,2,1,NORMAL,1,0,
+OrderDaoImpl.loadOrder(),fxp.OrderDaoImpl,C,src/fxp/OrderDaoImpl.java,9,1,1,0,LEAF,1,0,
+ReportService.run(),fxp.ReportService,C,src/fxp/ReportService.java,5,1,1,1,NORMAL,1,0,
+ReportService.render(),fxp.ReportService,C,src/fxp/ReportService.java,9,1,1,0,LEAF,1,0,
+Service.run(),fxp.Service,I,src/fxp/Service.java,5,0,0,0,ISOLATED,0,0,
+UserDaoImpl.find(),fxp.UserDaoImpl,C,src/fxp/UserDaoImpl.java,5,1,2,1,NORMAL,1,0,
+UserDaoImpl.loadUser(),fxp.UserDaoImpl,C,src/fxp/UserDaoImpl.java,9,1,1,0,LEAF,1,0,

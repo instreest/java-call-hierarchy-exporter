@@ -75,7 +75,7 @@ public final class CallEdgeExtractor {
     private final List<CallSiteHintCollector> collectors;
 
     public CallEdgeExtractor(ProjectLayout layout, Config config) {
-        this.collectors = Plugins.load(config.hintCollectorClasses, CallSiteHintCollector.class);
+        this.collectors = Plugins.load(config, config.hintCollectorClasses, CallSiteHintCollector.class);
         this.layout = layout;
         this.encodingName = config.sourceEncoding;
         this.encoding = Charset.forName(config.sourceEncoding);

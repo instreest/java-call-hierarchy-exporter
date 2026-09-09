@@ -1,6 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.extension;
 
+import java.nio.file.Path;
+import java.util.Properties;
+
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 
@@ -18,11 +21,21 @@ import org.eclipse.jdt.core.dom.MethodInvocation;
  *                         例) "USER_DAO" -> jp.co.xxx.dao.UserDaoImpl の対応表
  * </pre>
  *
- * 実装クラスは設定ファイルでFQNを列挙するとリフレクションで読み込まれる。
+ * 実装クラスは設定ファイルでFQNを列挙すると読み込まれる。クラスの置き場所は
+ * {@code plugin.folders}（{@code .java} を置けば実行時にコンパイルされる。{@code .class} /
+ * {@code .jar} でもよい）。
  * <pre>
+ *   plugin.folders=plugins
  *   resolver.hint.collectors=jp.co.xxx.FactoryKeyCollector
  *   resolver.candidate.providers=jp.co.xxx.FactoryMapProvider
  * </pre>
+ *
+ * よくある「ファクトリのキー」「DI 設定の対応表」だけなら、同梱の
+ * {@link jche.builtin.FactoryKeyCollector} と {@link jche.builtin.TypeMappingProvider} を
+ * 指定すれば、Java を書かずに設定と対応表ファイルだけで済む。
+ *
+ * 証拠を結び付けるキー（{@link HintSink#add} の scopeKey）は {@link HintKeys} で作ること。
+ * 呼び出し箇所を記録する側と同じ計算でなければ結び付かない。
  *
  * 実装例（ファクトリメソッド）:
  *   DaoFactory.get("USER_DAO") を見つけたら、その戻り値を受けている
@@ -31,6 +44,10 @@ import org.eclipse.jdt.core.dom.MethodInvocation;
  * @see TypeCandidateProvider フェーズB
  */
 public interface CallSiteHintCollector {
+
+    /** 設定ファイルの内容と、その置き場所（相対パス解決の起点）を受け取る */
+    default void init(Properties config, Path configDir) {
+    }
 
     void collect(MethodInvocation node, CompilationUnit cu, String callerMethodKey, HintSink sink);
 }
