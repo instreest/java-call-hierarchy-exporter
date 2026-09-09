@@ -1,0 +1,67 @@
+# このリポジトリ自身の呼び出し階層を、このリポジトリのアクション（action.yml）で出力する。
+#
+# 2 つの意味がある。
+#   1. 実際の使い方の例。利用者が自分のワークフローに写して使える最小の形をそのまま置いてある
+#      （README の「GitHub Actions から使う」と同じ内容）
+#   2. 自分自身を解析対象にした通し確認。smoke.yml の action ジョブは小さな test/demo を解析するが、
+#      こちらは JDT を使う実際のコード（src/ 全体）を、依存 jar の自動取得込みで解析する
+#
+# 結果は call-hierarchy-self アーティファクトに入る（CSV・実行ログ・使った設定ファイルの複製）。
+# 行数の目安はジョブのサマリに出る。全体モード（entry.packages 空欄）なので call-hierarchy.csv は
+# 11 万行・47MB ほどになるが、アーティファクトは圧縮されるので 1MB 前後になる。
+name: call-hierarchy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # 解析結果が変わりうるもの（解析対象のソース・依存の版）と、アクション自身が変わったときだけ動かす
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'action.yml'
+      - '.github/action/**'
+      - '.github/workflows/call-hierarchy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 依存 jar（JDT 一式）をローカルリポジトリに取得しておく。ツールは pom.xml を読んで
+      # ~/.m2/repository にある jar を使うだけで、ネットワークには出ないため
+      # （取得しないと jar の型が解決できず、その戻り値を使う呼び出しが出力から欠ける）
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Fetch dependencies into the local repository
+        run: mvn -B --no-transfer-progress dependency:go-offline
+
+      # 解析。JDK 25 の用意も JBang の取得もアクションの中で行う。
+      # 自分のリポジトリなので uses: ./（利用者は uses: instreest/java-call-hierarchy-exporter@main）
+      - name: Export call hierarchy
+        id: export
+        uses: ./
+        with:
+          source-folders: src
+          source-encoding: UTF-8        # このリポジトリのソースは UTF-8（既定の設定ファイルは MS932）
+          artifact-name: call-hierarchy-self
+
+      # 解析が空振り（0 行）していないことだけ見る。中身の妥当性は smoke.yml の回帰テストの役目
+      - name: Check the result is not empty
+        env:
+          CSV: ${{ steps.export.outputs.csv }}
+          METHODS_CSV: ${{ steps.export.outputs.methods-csv }}
+        run: |
+          rows() { echo $(( $(wc -l < "$1") - 1 )); }   # ヘッダの 1 行を除く
+          echo "call-hierarchy.csv: $(rows "$CSV") 行"
+          echo "methods.csv:        $(rows "$METHODS_CSV") 行"
+          test "$(rows "$CSV")" -gt 0
+          test "$(rows "$METHODS_CSV")" -gt 0
