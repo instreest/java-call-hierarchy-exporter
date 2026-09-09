@@ -2,9 +2,12 @@
 package jche.graph;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 
 import jche.cache.HintFact;
+import jche.cache.Origin;
+import jche.cache.RecvKind;
 import jche.extension.Hint;
 import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
@@ -18,7 +21,8 @@ import jche.util.Log;
  *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
  *   段3 CUSTOM_*                   拡張（ファクトリ・DI設定・外部リスト等）
  *   段4 DATAFLOW_*                 ファクトリの戻り値等から特定（経路非依存の分）
- *   段5 CHA                        候補が複数のまま（低確度）
+ *   段5 SPRING_DI(_QUALIFIER)      DIコンテナのBean定義で候補を絞る
+ *   段6 CHA                        候補が複数のまま（低確度）
  * </pre>
  * 段1で確定するならそれが最も確実なので、証拠より先に採用する。
  * リフレクション（Method.invoke / Class.forName / newInstance）は段0の前に試す。
@@ -120,7 +124,13 @@ public final class CallResolver {
             }
         }
 
-        // --- 段5: CHA ---
+        // --- 段5: DIコンテナのBean定義 ---
+        Resolution di = springResolution(edgeIndex, calleeId, base);
+        if (di != null) {
+            return di;
+        }
+
+        // --- 段6: CHA ---
         return base;
     }
 
@@ -207,6 +217,58 @@ public final class CallResolver {
         resolvedTargets[calleeId] = targets;
         resolvedLabels[calleeId] = label;
         return new Resolution(targets, label);
+    }
+
+    /**
+     * 段5: DIコンテナ（Spring）が実際に注入しうる型だけに候補を絞る。
+     *
+     * CHAの候補は「宣言型のサブタイプすべて」だが、コンテナが注入するのは
+     * Beanとして登録された型だけ。候補のうちBeanが1つだけなら、そのBeanが動く。
+     * &#64;Qualifier / &#64;Resource(name) の指定があればBean名でさらに絞る。
+     *
+     * レシーバがフィールドか引数のときだけ適用する。DIで受け取ったインスタンスは
+     * 必ずこのどちらかの形で現れ、その場で new したレシーバ（段2で解決済み）や
+     * static 呼び出しにコンテナの都合を持ち込むと、かえって誤って絞ることになるため。
+     *
+     * 候補は宣言型のサブタイプから引き直す。Beanクラス自身がそのメソッドを
+     * オーバーライドせず、抽象基底クラスから継承している場合、CHAの候補には
+     * 基底クラスの宣言しか現れず、Beanかどうかで照合できないため。
+     *
+     * @param base 段1の結果（CHA＝候補が複数）
+     * @return 1つに定まったときだけ Resolution。定まらなければ null
+     */
+    private Resolution springResolution(int edgeIndex, int calleeId, Resolution base) {
+        SpringBeans beans = graph.beans();
+        if (!beans.enabled() || !base.isMultiple()) {
+            return null;
+        }
+        char recvKind = graph.recvKindOf(edgeIndex);
+        if (recvKind != RecvKind.FIELD && recvKind != RecvKind.PARAM) {
+            return null;
+        }
+        String recvOrigin = graph.recvOrigin(edgeIndex);
+        String qualifier = (Origin.kindOf(recvOrigin) == Origin.FIELD)
+                ? beans.qualifierOf(Origin.valueOf(Origin.head(recvOrigin))) : null;
+
+        String declType = methods.typeFqn(calleeId);
+        String sig = methods.signature(calleeId);
+        IntArray hits = new IntArray(2);
+        List<String> types = new ArrayList<>(graph.hierarchy.transitiveSubtypes(declType));
+        types.add(declType);
+        for (String type : types) {
+            if (!beans.isBean(type) || (qualifier != null && !beans.hasBeanName(type, qualifier))) {
+                continue;
+            }
+            int id = graph.implementationIn(type, sig);
+            if (id >= 0) {
+                hits.addIfAbsent(id);
+            }
+        }
+        if (hits.size() != 1) {
+            return null;   // Beanが無い、または複数。絞れないことより誤って絞ることの方が害が大きい
+        }
+        return Resolution.single(hits.get(0),
+                (qualifier == null) ? Resolution.SPRING_DI : Resolution.SPRING_DI_QUALIFIER);
     }
 
     /**

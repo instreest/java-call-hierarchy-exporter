@@ -25,6 +25,8 @@ public final class CallGraph {
 
     final MethodTable methods = new MethodTable();
     final TypeHierarchy hierarchy = new TypeHierarchy();
+    /** DIコンテナのBean定義（H行・V行・D行のアノテーションから） */
+    SpringBeans beans = SpringBeans.DISABLED;
 
     // --- CSR（エッジ数ぶんの配列。CallGraphBuilder が埋める） ---
     int[] offsets;      // 長さ methods.size() + 1
@@ -80,6 +82,10 @@ public final class CallGraph {
 
     public TypeHierarchy hierarchy() {
         return hierarchy;
+    }
+
+    public SpringBeans beans() {
+        return beans;
     }
 
     public int typeCount() {

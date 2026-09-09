@@ -8,21 +8,18 @@ package jche.cache;
  * @param declLine 宣言行
  * @param hasBody  本体を持つか。IFの抽象メソッドとデフォルトメソッドの区別に使う
  * @param mods     修飾子（{@link ModifierTokens}）。implicit / delegating も含みうる
- * @param annotations メソッドに付いているアノテーションのFQN（カンマ区切り。v13 で追加）。
- *                    Doma の {@code @Select} のように、本体の代わりにアノテーション処理が
- *                    実装を生成するメソッドを読み手が見分けるために使う
+ * @param annotations メソッドに付いていたアノテーション（{@link AnnotationTokens}。v13 で追加）
  */
 public record MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, String mods,
                              String annotations) {
 
+    public MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, String mods) {
+        this(ref, declLine, hasBody, mods, "");
+    }
+
     public MethodDeclFact {
         mods = (mods == null) ? "" : mods;
         annotations = (annotations == null) ? "" : annotations;
-    }
-
-    /** アノテーションを持たないメソッド（合成メソッドの記録用） */
-    public MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, String mods) {
-        this(ref, declLine, hasBody, mods, "");
     }
 
     public String toRow() {

@@ -3,6 +3,8 @@ package jche.framework;
 
 import java.util.List;
 
+import jche.cache.AnnotationTokens;
+
 /**
  * 「アノテーション処理でコンパイル時に実装クラスが生成される型」の定義。
  *
@@ -40,13 +42,15 @@ public record GeneratedImpl(String label, String annotationFqn, String implSuffi
     public static final List<GeneratedImpl> DEFINITIONS = List.of(
             new GeneratedImpl("Doma", "org.seasar.doma.Dao", "Impl"));
 
-    /** 型に付いたアノテーションの一覧から、当てはまる定義を返す。無ければ null */
-    public static GeneratedImpl of(List<String> annotations) {
+    /**
+     * 型に付いていたアノテーション（{@link AnnotationTokens}）から、当てはまる定義を返す。無ければ null
+     */
+    public static GeneratedImpl of(String annotations) {
         if (annotations == null || annotations.isEmpty()) {
             return null;
         }
         for (GeneratedImpl def : DEFINITIONS) {
-            if (annotations.contains(def.annotationFqn)) {
+            if (AnnotationTokens.has(annotations, def.annotationFqn)) {
                 return def;
             }
         }

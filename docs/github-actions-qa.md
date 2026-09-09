@@ -336,3 +336,48 @@ Windows 側（`run.cmd`）にも同じ検査を入れてある（環境変数の
 19 個の jar を渡した状態での JDT の型解決という、`test/demo` では通らない経路が含まれる。
 `mvn -B dependency:go-offline` を先に置くのは README の注意と同じで、この形が実際に要ることの確認でもある。
 
+### Q26. 呼び出す GitHub 公式アクションの版
+
+`actions/checkout@v5` / `actions/setup-java@v5` / `actions/cache@v5` / `actions/upload-artifact@v7` を使う
+（`action.yml` の中と、このリポジトリの 2 つのワークフローで揃えてある）。
+
+v4 系のままだと、実行のたびに次の警告が付く。
+
+```
+Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on
+Node.js 24: actions/cache@v4, actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4
+setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+```
+
+**JavaScript アクション**（`action.yml` に `runs: using: node20` と書いてあるもの）は、ランナー同梱の Node で
+動く。ランナーが Node 20 の同梱をやめる過程で、`node20` 指定のアクションは Node 24 に載せ替えられて動いており、
+その旨が警告として出ている。上に挙げた版はいずれも `using: node24` を宣言しているので警告が消える。
+入力は今まで使っているもの（`distribution` / `java-version` / `cache` / `path` / `key` / `name` /
+`retention-days` / `if-no-files-found`）がそのまま残っているので、版を上げるだけで済む。
+
+このツール自身と `action.yml` は Node を使わない。`action.yml` は複合アクション（`runs: using: composite`）で、
+中身は `.github/action/*.sh` のシェルと、JBang 経由の Java だけ。Node が要るのは上記の公式アクションだけである。
+
+`upload-artifact` だけ v7 なのは、v5 / v6 の時点ではまだ `node20` 宣言のままで警告が消えないため
+（`node24` になったのは v7）。v7 では単一ファイルを zip せずにアップロードする `archive` 入力も増えている（Q27）。
+
+### Q27. アーティファクトを zip せず、CSV のまま置けるか
+
+**GitHub のアーティファクトは zip で保存される**（ブラウザからのダウンロードも zip）。
+`compression-level: 0` は zip の中を無圧縮にするだけで、zip という入れ物は変わらない。
+
+`actions/upload-artifact@v7` には `archive: false` があり、これを使うと**単一ファイル**を zip せずに
+そのままアップロードできる（glob が複数ファイルに当たると失敗する。アーティファクト名は
+`name` ではなくファイル名になる）。ただし今回は使わず、フォルダごとの zip のままにした。
+
+- このツールの出力は 1 ファイルではない。`call-hierarchy.csv` のほかに `methods.csv`、`run.log`、
+  使った設定ファイルの複製、`resolved-classpath.txt` があり、失敗時に効くのはむしろ `run.log` のほう。
+  `archive: false` は 1 ファイルずつしか置けないので、ステップを増やして分割することになる
+- 生のままだと保存量が増える。このリポジトリ自身の解析で `call-hierarchy.csv` は 47MB、
+  zip にすると 1MB 未満（830KB 前後）で、90 日ぶんが積み上がる
+- 取り出す側の手間はほとんど変わらない。`gh run download -n call-hierarchy-self` は展開まで済ませる
+
+「ブラウザから 1 クリックで CSV を開きたい」のように zip を挟みたくない用途がはっきりしたら、
+`archive: false` のステップを足すか、リリースのアセットとして置く（生のファイルに直リンクが張れる）
+のが選択肢になる。
+

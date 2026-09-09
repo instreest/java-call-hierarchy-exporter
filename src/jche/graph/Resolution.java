@@ -33,7 +33,12 @@ public record Resolution(int[] targets, String label) {
     public static final String DATAFLOW_FACTORY = DATAFLOW_PREFIX + "FACTORY";
     public static final String DATAFLOW_PARAM = DATAFLOW_PREFIX + "PARAM";
     public static final String DATAFLOW_FIELD = DATAFLOW_PREFIX + "FIELD";
-    // --- 段5: 候補が複数のまま（低確度） ---
+    // --- 段5: DIコンテナ（Spring）のBean定義で絞る ---
+    /** 候補のうちBean登録されている型が1つだけだった */
+    public static final String SPRING_DI = "SPRING_DI";
+    /** &#64;Qualifier / &#64;Resource(name) で指定されたBean名で1つに定まった */
+    public static final String SPRING_DI_QUALIFIER = "SPRING_DI_QUALIFIER";
+    // --- 段6: 候補が複数のまま（低確度） ---
     public static final String CHA = "CHA";
     /** import からの推定（未検証の外部ライブラリ呼び出し） */
     public static final String EXTERNAL_GUESS = "EXTERNAL_GUESS";

@@ -316,11 +316,11 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # library-folders を空欄にして依存 jar を自動で集める場合は、先にローカルリポジトリへ
       # 依存を取得しておく（このツールはネットワークに出ないため）
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -355,9 +355,9 @@ jobs:
 ツールを別フォルダへ取り出してからローカル参照する書き方もできます。
 
 ```yaml
-      - uses: actions/checkout@v4            # 解析対象（自分のリポジトリ）
+      - uses: actions/checkout@v5            # 解析対象（自分のリポジトリ）
 
-      - uses: actions/checkout@v4            # ツール本体
+      - uses: actions/checkout@v5            # ツール本体
         with:
           repository: instreest/java-call-hierarchy-exporter
           ref: main                          # ブランチ・タグ・コミット SHA
@@ -407,17 +407,88 @@ jobs:
 | `artifact-name` | `call-hierarchy` | アーティファクトの名前 |
 | `artifact-retention-days` | （空欄） | アーティファクトの保持日数 |
 
-用意済みの設定ファイルを使う場合は、リポジトリに設定ファイルを置いて `config` で渡します。
-複数渡せば[まとめて解析](#複数のプロジェクトをまとめて解析する)します。
-設定ファイル内の相対パスの起点は「その設定ファイルが置かれているフォルダ」です。
+### 設定ファイルを渡す（`config` 入力）
+
+入力で表せない項目まで細かく指定したいときや、手元と CI で同じ設定を使いたいときは、
+設定ファイルをリポジトリに置いて `config` で渡します。**`config` を指定すると、上の生成用の入力
+（`project-root` / `source-folders` … と `output-folder`）は使われません。** 設定ファイルの内容がそのまま効きます。
+
+```yaml
+      - uses: actions/checkout@v5
+
+      - uses: instreest/java-call-hierarchy-exporter@main
+        with:
+          config: ci/call-hierarchy.properties
+```
+
+パスは**ワークスペース（チェックアウト先）からの相対パス**か絶対パスです。
+無いファイルを指定するとその場で失敗します（`::error::config に指定された設定ファイルがありません`）。
+
+#### 設定ファイルの書き方（CI 向けの例）
+
+**相対パスの起点は「その設定ファイルが置かれているフォルダ」**です（`project.root` / `output.folder` /
+`cache.folder`）。`source.folders` などは `project.root` からの相対です。
+リポジトリ直下に `ci/call-hierarchy.properties` を置くなら、`project.root` は 1 つ上（`..`）になります。
+
+```properties
+# ci/call-hierarchy.properties（このファイルのフォルダが相対パスの起点）
+project.root=..
+source.folders=src/main/java,src/generated/java
+source.encoding=UTF-8
+
+# 空欄にすると pom.xml / build.gradle を読んで ~/.m2 等から依存 jar を集める
+# （ワークフロー側で先に mvn -B dependency:go-offline を実行しておくこと）
+library.folders=
+library.build.tool=auto
+
+# jar をリポジトリに同梱している場合は、集めたフォルダを project.root からの相対で指定する
+#library.folders=libs
+
+entry.packages=
+exclude.packages=java.**,javax.**,org.springframework.**
+
+# 出力先。既定は「この設定ファイルと同じフォルダ」。相対パスはこのファイルのフォルダの配下だけ
+# 指定できる（.. で外へ出るとエラー。外へ出すときは絶対パス）
+output.folder=output
+output.encoding=UTF-8-BOM
+max.rows=5000000
+
+# キャッシュの置き場所は空欄のままでよい。アクションのフォルダの下に作られ、
+# 解析対象リポジトリのチェックアウトは汚れない
+cache.folder=
+```
+
+設定できる項目の一覧と意味は [config/config.properties](config/config.properties) のコメントにあります。
+手元で `./jche.sh ci/call-hierarchy.properties` と実行したときと同じ設定なので、CI で出た結果を手元で再現できます。
+
+**出力先だけは注意**してください。`output.folder` の既定は「設定ファイルと同じフォルダ」なので、
+指定しないと解析対象リポジトリのチェックアウトの中（設定ファイルの隣）に出力フォルダができます。
+相対パスは設定ファイルのフォルダの配下しか指せない（`..` で外へ出るとエラーになります）ので、
+上の例のように配下へ出すか、リポジトリの外に出したい場合は絶対パス（Linux のランナーなら
+`/tmp/call-hierarchy-output` など）を書きます。リポジトリ内に出すなら、その場所を `.gitignore` に
+足しておくと `git diff --exit-code` のような検査と併用できます。
+
+#### 複数渡す
+
+改行区切り（`|`）またはカンマ区切りで複数渡せます。渡した順に 1 つずつ処理し、
+設定ファイルごとに別の出力フォルダができます（[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
 
 ```yaml
       - uses: instreest/java-call-hierarchy-exporter@main
+        id: export
         with:
           config: |
             ci/app-a.properties
             ci/app-b.properties
+            ci/batch.properties
 ```
+
+- 1 つが失敗しても残りは処理し、最後にまとめて報告します。1 つでも失敗すればステップは失敗します
+  （出来ているところまではアーティファクトに入ります）
+- `output-dirs` 出力に、成功した設定の出力フォルダが 1 行に 1 つ並びます。
+  `output-dir` / `csv` / `methods-csv` / `run-log` は**最初の設定**のものです
+- アーティファクトは 1 つにまとまります（それぞれの出力フォルダが共通の親からの構造で入ります）
+- どの設定で走ったかは、各出力フォルダに入る設定ファイルの複製で分かります
 
 ### 出力
 
@@ -606,6 +677,8 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
 | `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
+| `解決:SPRING_DI` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[Spring による DI の解決](#spring-による-di-の解決)参照） |
+| `解決:SPRING_DI_QUALIFIER` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
 | `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した（[リフレクション](#リフレクション)参照） |
 | `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
@@ -711,8 +784,57 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（後述） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
-| 5 | `CHA` | 候補が複数のまま（低確度） |
-| — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形。次節） |
+| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補を絞った（後述） |
+| 6 | `CHA` | 候補が複数のまま（低確度） |
+| — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形。後述） |
+
+### Spring による DI の解決
+
+`@Autowired` などで注入されたインスタンスは、宣言型がインターフェースのため CHA では
+実装を1つに絞れません。DI コンテナに載るのは Bean として登録された型だけなので、
+候補を「コンテナが実際に注入しうる型」に絞ります。
+
+```java
+@Service
+public class Checkout {
+
+    @Autowired
+    private PaymentGateway gateway;   // 実装は CardPayment（@Service）と MockPayment（Bean でない）
+
+    public void checkout(int amount) {
+        gateway.pay(amount);          // 解決:SPRING_DI → CardPayment
+    }
+}
+```
+
+Bean とみなす根拠は次の2つだけです。
+
+| 根拠 | Bean になる型 | Bean 名 |
+|---|---|---|
+| ステレオタイプ注釈（`@Component` / `@Service` / `@Repository` / `@Controller` / `@RestController` / `@Configuration` / `@ControllerAdvice` / `@RestControllerAdvice`、JSR-330 の `@Named` / `@ManagedBean` / `@Singleton`）が付いた具象型 | その型 | 注釈の値。無ければ単純名の先頭を小文字にしたもの（Spring の既定） |
+| `@Bean` を付けたメソッドが `return new Impl();` の形で返す具象型 | 返す具象型 | 注釈の値。無ければメソッド名 |
+
+注釈は**単純名で照合**するので、`@Service` を合成した独自の注釈（`@MyDomainService` 等）は
+`spring.di.bean.annotations` に足せば同じ扱いになります。パッケージ名は問いません。
+
+絞り込みの規則:
+
+- レシーバがフィールドか引数のときだけ適用します（DI で受け取ったインスタンスは必ずこの形で現れます）。
+  その場で `new` したレシーバや static 呼び出しには適用しません
+- 候補のうち Bean が**ちょうど1つ**のときだけ確定します（`SPRING_DI`）
+- フィールドに `@Qualifier` / `@Resource(name=...)` があれば、その Bean 名で先に絞ります（`SPRING_DI_QUALIFIER`）
+- Bean クラスがそのメソッドをオーバーライドせず抽象基底クラスから継承している場合も、
+  継承した実装に解決します
+
+採らないもの（誤って絞る害の方が大きいため、候補を複数のまま残します）:
+`@Primary` / `@Profile` / `@Conditional`（実行時の環境で変わる）、
+コンストラクタ・setter の**引数**に付いた `@Qualifier`（フィールド単位の注入点だけを見ます）、
+XML（`applicationContext.xml`）の Bean 定義（ソースの事実ではないため、必要なら拡張
+（`jche.extension.TypeCandidateProvider`）で差し込めます）。
+
+`spring.di.enabled=false` にすると、この段を丸ごと飛ばして従来どおり CHA の候補のまま出力します。
+実装時に迷った点（何を Bean の根拠とするか、`@Primary` を見ない理由など）は
+[docs/spring-di-qa.md](docs/spring-di-qa.md) にまとめています。
 
 ### コンパイル時生成の実装
 
@@ -738,8 +860,8 @@ at fx.dao.ItemFinder.find(ItemFinder.java:13),fx.dao.ItemDao.selectById(long),�
 （生成物の本体はソースに無く、その先の呼び出しは辿れないため、階層にノードは足しません）。
 
 対応するフレームワークを増やすときは `src/jche/framework/GeneratedImpl.java` の `DEFINITIONS` に
-1 件足します。アノテーションのFQNはキャッシュの `H` 行（型）と `D` 行（メソッド）に
-選別せず全部残してあるので、読み手を変えるだけで済みます。
+1 件足します。アノテーションはキャッシュの `H` 行（型）と `D` 行（メソッド）に選別せず残してあるので、
+読み手を変えるだけで済みます。
 
 ### リフレクション
 
