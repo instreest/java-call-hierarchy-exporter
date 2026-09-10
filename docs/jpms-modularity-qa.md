@@ -14,6 +14,8 @@
   JPMS 無しでも `src/jche` のパッケージ依存が既に無循環であることと、拡張が触るのが `jche.extension` だけである
   ことで大半が満たせている。残りは CI の軽い検査で代替できる（Q7・Q8）
 - JDT 側が `module-info` 付きで配布されるようになったら再検討する。そのときの手順も書いておく（Q9）
+- 「jche だけモジュール化し、JDT は classpath の無名モジュールのまま」という案も試した。`--add-reads` を使えば
+  `java` 直叩きでは動くが、JBang の `--module` は `//DEPS` を必ず module-path に置くので本流では成立しない（Q10〜Q13）
 
 ---
 
@@ -166,6 +168,77 @@ for j in $CP; do unzip -Z1 "$j" | grep '\.class$' | grep -v META-INF | sed 's#/[
   拡張側のパッケージが開いている必要は無い（無名モジュールは全パッケージが open）
 - README の Pleiades 手順は `-classpath` のまま動かせる（名前付きモジュールを classpath に置けば
   無名モジュールとして扱われる）ので、そちらは変えなくてよい
+
+---
+
+## 追加検討: jche だけをモジュール化し、JDT は classpath の無名モジュールのままにする案
+
+### Q10. 名前付きモジュールから classpath の JDT を読めるか
+
+原則は「名前付きモジュールは無名モジュールを `requires` できない」（Q4 の末尾）だが、
+`--add-reads jche=ALL-UNNAMED` を **javac と java の両方**に付ければ読める。
+これを前提に、`src/jche` 全体を 1 モジュールにして試した（JDK 21、`--release 21`）。
+
+結果: **`java` / `javac` を直接使う経路では動く。JBang の本流では動かない。**
+
+### Q11. javac / java 直叩きで何が必要だったか
+
+`module-info.java`（`requires java.compiler; requires java.xml; exports jche.extension; exports jche.builtin;`）を
+置いたうえで、次の変更が必要になった。
+
+| 必要な変更 | 理由 |
+| --- | --- |
+| `src/CallHierarchyExporter.java` と `src/Jche.java` をパッケージに入れる（例: `jche.app`） | 名前付きモジュールに無名パッケージは置けない（`unnamed package is not allowed in named modules`）。README の `jbang src/CallHierarchyExporter.java`、起動スクリプト、`test/pom/run.sh`、Pleiades 手順、`smoke.yml` の全部が影響を受ける |
+| `requires java.xml;` を足す | `jche.config` の pom 解析が `org.w3c.dom` / `javax.xml.parsers` を使っている。classpath 時代は暗黙に見えていた |
+| `--add-reads jche=ALL-UNNAMED` をコンパイルと実行の両方に付ける | 付け忘れると実行時に `IllegalAccessError: module jche does not read unnamed module` |
+| [PluginClassLoaders](../src/jche/config/PluginClassLoaders.java) が拡張のコンパイルに渡すクラスパスに `jdk.module.path` も足す | jche のクラスが `java.class.path` から消えるため、`plugin.folders` の `.java` が `package jche.extension does not exist` でコンパイルできなくなる。回帰テストの `plugin` ケース（`config-custom.properties`）で実際に落ちた |
+
+これらを施すと、`test/regression` の `whole` と `plugin`（同梱拡張）の出力は expected と一致した。
+`-Xlint:all` では `[exports]` 警告（`jche.extension` の公開 API のシグネチャに JDT の型が出ている。
+JDT が無名モジュールなので「export されていないモジュールの型」扱い）と、`jche.builtin` の
+`[missing-explicit-ctor]` が新たに出る。`smoke.yml` は `-Werror` なので、そちらの対処も要る。
+
+### Q12. JBang ではなぜ動かないか
+
+JBang（0.141.0）の `--module` は、`//DEPS` で解決した jar を **すべて module-path（`javac -p` / `java -p`）に置く**。
+classpath に置く選択肢は無い。そのため JBang 経由では「JDT は classpath の無名モジュール」という前提そのものが
+成り立たず、Q4 の分割パッケージの壁にそのまま戻る（`requires` しなければ `package org.eclipse.jdt.core.dom is not visible`、
+`requires` すれば分割パッケージのエラー）。
+
+`--cp` で手で組んだクラスパスを渡す手はあるが、そのためには `//DEPS` を捨てて依存 jar を自分で解決することになり、
+「`//DEPS` 1 行で Maven Central から取ってくる」利点を失う。
+
+また、`//SOURCES ../../jche/**/*.java` のようにスクリプト自身を含む glob を書くと JBang が `StackOverflowError`
+（ヒープ不足の形で出ることもある）で落ちる。パッケージ内の入口からモジュール全体を集めるには、
+自分を除いた列挙が要る。
+
+### Q13. この案の結論
+
+技術的には「`java` 直叩き限定」で成立するが、採らない。
+
+- 本流の JBang で動かない以上、「JBang ではモジュール無し、Pleiades / CI ではモジュール有り」の二重構成になり、
+  同じソースが経路によって違う形で読まれる。起動経路が増えるほど検証の手間が増える
+- 得られるものは Q7 の表のとおり小さく、そのために入口ファイルの移動（利用者向け手順の変更）、
+  拡張コンパイルの経路変更、`--add-reads` の常用（本来は移行期の応急処置向けのフラグ）を抱える
+- JBang が「`//DEPS` を classpath に置く」選択肢を持つか、JDT の分割パッケージが解消されれば（Q9）、
+  Q11 の表がそのまま移行手順になる
+
+### 追加検討の再現手順
+
+```bash
+S=$(mktemp -d)
+CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+mkdir -p "$S/src/jche/jche/app"; cp -r src/jche "$S/src/jche/"
+# 入口をパッケージに入れる（1 行目の import の前に package 行を足す）
+sed '0,/^import/s//package jche.app;\nimport /' src/CallHierarchyExporter.java > "$S/src/jche/jche/app/CallHierarchyExporter.java"
+cat > "$S/src/jche/module-info.java" <<'M'
+module jche { requires java.compiler; requires java.xml; exports jche.extension; exports jche.builtin; }
+M
+javac --release 21 --add-reads jche=ALL-UNNAMED --class-path "$CP" --module-source-path "$S/src" -d "$S/out" -m jche -encoding UTF-8
+cd test/regression/whole && rm -rf output
+java --add-reads jche=ALL-UNNAMED --module-path "$S/out" --class-path "$CP" -m jche/jche.app.CallHierarchyExporter config.properties
+diff --strip-trailing-cr expected/call-hierarchy.csv output/*/call-hierarchy.csv && echo same
+```
 
 ---
 
