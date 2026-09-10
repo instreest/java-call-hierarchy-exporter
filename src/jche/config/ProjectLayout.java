@@ -69,9 +69,17 @@ public final class ProjectLayout {
         Path dotClasspath = projectRoot.resolve(".classpath");
         if (Files.isRegularFile(dotClasspath)) {
             readDotClasspath(dotClasspath);
-        } else if (sourceFolders.isEmpty()) {
-            throw new IOException(
-                    ".classpath が見つからず、source.folders の指定もありません: " + dotClasspath);
+        }
+        // source.folders が空欄で .classpath も無い（または .classpath にソースが無い）ときは、
+        // project.root の標準的な配置（src/main/java、src、各モジュールの src/main/java）から決める
+        if (sourceFolders.isEmpty() && config.sourceFolders.isEmpty()) {
+            List<String> candidates = ProjectDetector.sourceFolderCandidates(projectRoot);
+            for (String c : candidates) {
+                sourceFolders.add(projectRoot.resolve(c).normalize());
+            }
+            if (!candidates.isEmpty()) {
+                Log.info("source.folders が空欄のため、project.root から決めました: " + String.join(", ", candidates));
+            }
         }
 
         for (Path lib : config.libraryFolders) {
@@ -83,13 +91,24 @@ public final class ProjectLayout {
         }
 
         if (sourceFolders.isEmpty()) {
-            throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot);
+            throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot
+                    + "（src/main/java、src、<モジュール>/src/main/java、.classpath のいずれも無いので、"
+                    + "設定ファイルの source.folders に指定してください）");
         }
 
         // library.folders が空欄のときだけ、ビルドファイルとローカルリポジトリから依存 jar を集める。
-        // 指定があるときは（.classpath の lib と合わせて）それだけを使い、ビルドファイルは見ない
+        // 指定があるときは（.classpath の lib と合わせて）それだけを使い、ビルドファイルは見ない。
+        // ビルドファイルからも .classpath からも jar が集まらなければ、project.root 直下の lib（*.jar）を使う
         if (config.libraryFolders.isEmpty()) {
             resolvedClasspath.addAll(BuildFileClasspath.resolve(config, projectRoot, sourceFolders));
+            if (resolvedClasspath.isEmpty() && classpathEntries.isEmpty()) {
+                String lib = ProjectDetector.libraryFolderCandidate(projectRoot);
+                if (lib != null) {
+                    Path dir = projectRoot.resolve(lib);
+                    Log.info("library.folders が空欄のため、project.root 直下の " + lib + " の jar を使います: " + dir);
+                    classpathEntries.add(dir);
+                }
+            }
         }
     }
 

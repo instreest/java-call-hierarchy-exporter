@@ -56,7 +56,7 @@ public final class App {
     public int run() {
         if (!toolRoot.found) {
             t.println("[WARN] ツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を特定できません: " + root);
-            t.println("       プロジェクト直下の jche.sh / jche.cmd から起動してください。");
+            t.println("       プロジェクト直下の java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd から起動してください。");
         }
         try {
             while (true) {
@@ -452,7 +452,7 @@ public final class App {
     /** 設定を変えたあと、再起動して反映するかを尋ねる。true なら終了して起動コマンドにやり直させる */
     private boolean offerRestart() throws IOException {
         if (!LauncherSettings.launchedByLauncher()) {
-            t.println("変更は次回 jche.sh / jche.cmd から起動したときに効きます（今回は起動コマンドを通していないため、再起動できません）。");
+            t.println("変更は次回 java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd から起動したときに効きます（今回は起動コマンドを通していないため、再起動できません）。");
             return false;
         }
         if (t.confirm("変更を反映するために今すぐ再起動しますか？", true)) {
@@ -493,7 +493,7 @@ public final class App {
         t.println();
         t.println("--- 実行環境の状態 ---");
         t.println(" ツールのフォルダ        : " + root);
-        t.println(" 起動の経路              : " + (LauncherSettings.launchedByLauncher() ? "jche.sh / jche.cmd" : "jbang を直接（環境設定の再起動は使えない）"));
+        t.println(" 起動の経路              : " + (LauncherSettings.launchedByLauncher() ? "java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd" : "jbang を直接（環境設定の再起動は使えない）"));
         t.println(" launcher.properties     : " + (settings.exists() ? settings.file : "無し（すべて既定）"));
         t.println(" JDK / JBang の置き場所  : " + jbangDir + "  " + EnvironmentInfo.humanSize(EnvironmentInfo.sizeOf(jbangDir))
                 + (jbangDir.equals(settings.configuredJbangDir()) ? "" : "  ※ 設定ファイルは " + settings.configuredJbangDir() + "（次回から）"));

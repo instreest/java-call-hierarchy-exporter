@@ -19,19 +19,19 @@ import jche.cli.Terminal;
 import jche.config.ToolRoot;
 
 /**
- * 対話モードのエントリポイント。プロジェクト直下の {@code jche.sh} / {@code jche.cmd} から起動する。
+ * 対話モードのエントリポイント。プロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から起動する。
  *
  * <pre>
- *   jche.sh                           対話モード（メニューで設定ファイルを選んで解析する）
- *   jche.sh a.properties [b.properties…] 対話なしで解析する（{@link CallHierarchyExporter} を直接動かすのと同じ）
- *   jche.sh --help
+ *   java-call-hierarchy-exporter.sh                           対話モード（メニューで設定ファイルを選んで解析する）
+ *   java-call-hierarchy-exporter.sh a.properties [b.properties…] 対話なしで解析する（{@link CallHierarchyExporter} を直接動かすのと同じ）
+ *   java-call-hierarchy-exporter.sh --help
  * </pre>
  *
  * 起動コマンドは自分のあるフォルダを環境変数 {@code JCHE_ROOT} で渡してくる。どこから実行しても
  * ツールのプロジェクトフォルダ（キャッシュ・設定ファイルの置き場所）が同じになるようにするため。
  * 無ければ（jbang で直接動かしたとき）{@link ToolRoot#locate} で探す。
  *
- * 起動コマンドの役目（JDK / JBang の置き場所、JVM のオプション、再起動）は {@code jche.sh} の冒頭のコメントと
+ * 起動コマンドの役目（JDK / JBang の置き場所、JVM のオプション、再起動）は {@code java-call-hierarchy-exporter.sh} の冒頭のコメントと
  * {@link jche.cli.LauncherSettings} を参照。
  */
 public class Jche {
@@ -63,9 +63,9 @@ public class Jche {
 
     private static void usage() {
         System.out.println("使い方:");
-        System.out.println("  jche.sh / jche.cmd                 対話モード（メニューで設定ファイルを選んで解析する）");
-        System.out.println("  jche.sh a.properties [b.properties…] 対話なしで解析する。設定ファイルごとに出力フォルダができる");
-        System.out.println("  jche.sh --help                     この説明");
+        System.out.println("  java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd                 対話モード（メニューで設定ファイルを選んで解析する）");
+        System.out.println("  java-call-hierarchy-exporter.sh a.properties [b.properties…] 対話なしで解析する。設定ファイルごとに出力フォルダができる");
+        System.out.println("  java-call-hierarchy-exporter.sh --help                     この説明");
         System.out.println();
         System.out.println("JDK / JBang の置き場所や JVM のオプションは launcher.properties（プロジェクト直下）で決まる。");
         System.out.println("対話モードの「環境設定」から書き換えられる。");

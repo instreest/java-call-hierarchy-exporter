@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 起動コマンド（jche.sh / jche.cmd）が読む設定ファイル {@code launcher.properties} の読み書き。
+ * 起動コマンド（java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd）が読む設定ファイル {@code launcher.properties} の読み書き。
  *
  * JDK / JBang の置き場所や JVM のオプションは、Java が起動する前に起動コマンドが環境変数として決める。
  * そのため Java 側（対話モードの「環境設定」）ではこのファイルを書き換えるだけで、効くのは次回の起動から。
@@ -93,7 +93,7 @@ public final class LauncherSettings {
     /** 既知のキーを決まった順に、知らないキーをその後ろに書く。コメントは書くたびに付け直す */
     public void save() throws IOException {
         List<String> lines = new ArrayList<>();
-        lines.add("# jche.sh / jche.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。");
+        lines.add("# java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。");
         lines.add("# キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。");
         lines.add("#   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）");
         lines.add("#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）");
@@ -189,7 +189,7 @@ public final class LauncherSettings {
         return dir != null && dir.startsWith(root);
     }
 
-    /** 起動コマンド（jche.sh / jche.cmd）から起動されたか。直接 jbang で動かしたときは再起動できない */
+    /** 起動コマンド（java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd）から起動されたか。直接 jbang で動かしたときは再起動できない */
     public static boolean launchedByLauncher() {
         String v = System.getenv("JCHE_ROOT");
         return v != null && !v.isEmpty();

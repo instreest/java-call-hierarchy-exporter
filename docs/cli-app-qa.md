@@ -5,7 +5,7 @@
 
 対応の要点:
 
-- リポジトリ直下に起動コマンド `jche.sh`（bash）/ `jche.cmd`（Windows）を置いた。どこから実行してもよく、
+- リポジトリ直下に起動コマンド `java-call-hierarchy-exporter.sh`（bash）/ `java-call-hierarchy-exporter.cmd`（Windows）を置いた。どこから実行してもよく、
   引数なしなら対話モード、設定ファイルを引数に渡せば従来どおり対話なしで解析する
 - 対話モードは `src/Jche.java`（`jche.cli` パッケージ）。メニューは 4 つ:
   解析の実行（設定ファイルの一覧から選ぶ）/ 設定ファイルの作成ウィザード / 環境設定 / 実行環境の状態
@@ -49,7 +49,7 @@ JDK と JBang の置き場所は、**Java が起動する前に**決まらなけ
 
 | 役割 | 担当 |
 |---|---|
-| `launcher.properties` を読んで環境変数にし、jbang を呼ぶ。初回に置き場所を尋ねる。再起動 | 起動コマンド（`jche.sh` / `jche.cmd`） |
+| `launcher.properties` を読んで環境変数にし、jbang を呼ぶ。初回に置き場所を尋ねる。再起動 | 起動コマンド（`java-call-hierarchy-exporter.sh` / `java-call-hierarchy-exporter.cmd`） |
 | メニュー、設定ファイルの選択と作成、環境設定の**書き換え**、状態表示、解析の実行 | Java（`src/Jche.java`、`jche.cli`） |
 
 Java 側は `launcher.properties` を書き換えるだけで、効くのは次の起動から。その隙間を「その場で再起動」で埋めた（Q5）。
@@ -105,9 +105,9 @@ jbang はスクリプトごとに `//DEPS` `//JAVA` を読むので、`Jche.java
 - 再起動のたびに前回の環境変数が残らないよう、bash はサブシェル `( load_settings; exec jbang … )`、
   cmd は `setlocal` / `endlocal` で囲んでいる。`JBANG_DIR` を空欄に戻したのに前回の値が残る、という事故を防ぐ
 - 再起動できるのは起動コマンド経由のときだけ。jbang で `Jche.java` を直接動かしたときは環境変数 `JCHE_ROOT`
-  が無いので、「次回 jche.sh から起動したときに効く」と表示して終わる
+  が無いので、「次回 java-call-hierarchy-exporter.sh から起動したときに効く」と表示して終わる
 
-Java 側から起動コマンドを子プロセスとして起動し直す方法（`ProcessBuilder` で `jche.sh` を呼ぶ）は、親の JVM が
+Java 側から起動コマンドを子プロセスとして起動し直す方法（`ProcessBuilder` で `java-call-hierarchy-exporter.sh` を呼ぶ）は、親の JVM が
 残ったまま子が動く形になり、Windows では親が使っている JDK フォルダを子が消せない・置き換えられないといった
 問題を生むのでやめた。「終了して、外側がやり直す」が一番単純で壊れにくい。
 
@@ -122,7 +122,7 @@ Q2 のとおり、問いに答える前に JDK を取得してしまっては意
 プロジェクトの中なら、`.jbang/` を消せば取得したものは全部消え、他の JBang スクリプトや Maven の設定に影響しない。
 既に JBang を使っている人は 2 を選べば今までどおり共有できる。
 
-`jche.cmd` の文字コードは MS932 にしてある（Q15）。
+`java-call-hierarchy-exporter.cmd` の文字コードは MS932 にしてある（Q15）。
 
 ### Q7. `launcher.properties` の書式をなぜ「キー＝環境変数名」の素朴な `KEY=VALUE` にしたか
 
@@ -226,9 +226,9 @@ Windows のコマンドプロンプトでは MS932 になるので、日本語�
 出力は `System.out` に任せる（コンソールの文字コードで書く）。ツール全体の方針
 （`src/CallHierarchyExporter.java` の冒頭: UTF-8 に固定しない、`chcp` もしない）と同じ。
 
-### Q15. `jche.cmd` の文字コードを MS932 にした理由と、`launcher.properties` の文字コード
+### Q15. `java-call-hierarchy-exporter.cmd` の文字コードを MS932 にした理由と、`launcher.properties` の文字コード
 
-このリポジトリのファイルは UTF-8 で保存されているが、`jche.cmd` だけは MS932（Shift_JIS、CRLF）にした。
+このリポジトリのファイルは UTF-8 で保存されているが、`java-call-hierarchy-exporter.cmd` だけは MS932（Shift_JIS、CRLF）にした。
 cmd はバッチファイルをコンソールのコードページ（日本語 Windows では MS932）として読むので、UTF-8 のままだと
 初回の問い（利用者が画面で読んで答える）の日本語が化ける。`chcp 65001` で切り替える方法は、日本語 Windows で
 画面が消えるので採らない（`src/CallHierarchyExporter.java` の冒頭と同じ判断）。
@@ -238,25 +238,25 @@ cmd はバッチファイルをコンソールのコードページ（日本語 
 編集するときは MS932 のまま保存すること（エディタが UTF-8 で保存し直すと化ける。`.gitattributes` で
 `-text` にしてあるので Git が改行や文字コードを触ることはない）。
 MS932 では 2 バイト目が `\` `^` `|` になる文字（「ソ」「ポ」「表」等）があり、cmd の行では意図しない
-区切りに読まれうるので、`jche.cmd` の日本語からは避けている。
+区切りに読まれうるので、`java-call-hierarchy-exporter.cmd` の日本語からは避けている。
 
 `launcher.properties` は Java 側が `native.encoding`（cmd では MS932、Linux では UTF-8）で読み書きする。
 cmd の `for /f` はファイルをコンソールのコードページで読むので、Java が UTF-8 で書くと日本語を含むパス
-（`C:\Users\太郎\…`）が壊れる。`jche.cmd` が初回に書くファイルも MS932 になるので、Java 側と揃う。
-bash（`jche.sh`）が書く初回のファイルは UTF-8（スクリプトの文字コード）だが、Git Bash では Java が MS932 として
+（`C:\Users\太郎\…`）が壊れる。`java-call-hierarchy-exporter.cmd` が初回に書くファイルも MS932 になるので、Java 側と揃う。
+bash（`java-call-hierarchy-exporter.sh`）が書く初回のファイルは UTF-8（スクリプトの文字コード）だが、Git Bash では Java が MS932 として
 読むのでコメント行が化けて見える。キーと値は ASCII なので実害は無く、Java 側が書き換えるときにコメントは付け直す。
 
 ### Q16. Git Bash でのパスの扱い
 
 Git Bash（MSYS）では `$ROOT` が `/c/work/...` の形になる。この値を環境変数 `JBANG_DIR` として Java に渡すと、
 Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコマンドライン引数には効くが、環境変数の値には効かない）。
-`jche.sh` は `cygpath -m` があればそれで `C:/work/...` に変換してから渡す。
+`java-call-hierarchy-exporter.sh` は `cygpath -m` があればそれで `C:/work/...` に変換してから渡す。
 
 ### Q17. ツールのプロジェクトフォルダをどう伝えるか。起動コマンドが `cd` しない理由
 
 起動コマンドは自分のあるフォルダを環境変数 `JCHE_ROOT` で渡し、`Jche.java` は `ToolRoot.at()` でそれを使う。
 `cd` してから jbang を呼ぶ方法もあるが、対話なしの解析で引数に渡した設定ファイルの相対パスが、利用者の作業
-ディレクトリではなくツールのフォルダ起点になってしまう（`..\tool\jche.cmd myproj.properties` が動かない）。
+ディレクトリではなくツールのフォルダ起点になってしまう（`..\tool\java-call-hierarchy-exporter.cmd myproj.properties` が動かない）。
 作業ディレクトリは触らず、必要な情報だけ渡す。
 
 `JCHE_ROOT` が無いとき（jbang で `Jche.java` を直接動かしたとき）は従来の `ToolRoot.locate()`（作業ディレクトリと
@@ -268,7 +268,7 @@ Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコ�
 
 ### Q18. 対話モードをどう自動テストするか
 
-`test/cli/run.sh`。メニューへの答えを `printf '1\np\n…\n' | ./jche.sh` のようにパイプで流し込む。
+`test/cli/run.sh`。メニューへの答えを `printf '1\np\n…\n' | ./java-call-hierarchy-exporter.sh` のようにパイプで流し込む。
 標準入力が端末でないので、起動コマンドの初回の問いは出ず、アプリは入力が尽きたら静かに終わる
 （`Terminal.EndOfInput` を最上位で 1 回だけ捕まえる）。見るのは `--help`、対話なしの解析と終了コード、
 状態表示、ウィザードが作ったファイルの中身（`project.root=../test/demo`、コメントが残っていること）、
@@ -287,9 +287,9 @@ Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコ�
 ヒープ上限の照合値を最初 `777m` にしていたら、`Runtime.maxMemory()` は `778 MB` と出た（JVM の丸め）。
 `512m` なら `512 MB` になるのでそちらにした。
 
-Windows の `jche.cmd` はこの環境では動かせないので、CI（`smoke.yml` の `regression-windows`）に
+Windows の `java-call-hierarchy-exporter.cmd` はこの環境では動かせないので、CI（`smoke.yml` の `regression-windows`）に
 「対話なしの解析で出力フォルダができる」「パイプで `4` を流し込むと状態表示が出て、`launcher.properties` の
-`-Xmx640m` が反映されている」の 2 点を足した。`jche.cmd` の分岐（`%~dp0`、`for /f`、遅延展開の回避、
+`-Xmx640m` が反映されている」の 2 点を足した。`java-call-hierarchy-exporter.cmd` の分岐（`%~dp0`、`for /f`、遅延展開の回避、
 `timeout` による端末判定、`setlocal` での環境の隔離）はここでしか通らない。
 
 ### Q19. この作業環境での確認
@@ -298,14 +298,14 @@ jbang が JDK 25 を取得できない環境（JDK の配布サイトへの接�
 だったので、`launcher.properties` に `JCHE_JBANG_OPTS=--java 21` を書き、手元の JDK 21 で動かした。
 このオプション自体が今回足した仕組みなので、ちょうどその確認にもなった。
 
-- `test/regression/run.sh` を `JCHE_CMD="$PWD/jche.sh"`（起動コマンドの対話なし経路）と、従来どおりの
+- `test/regression/run.sh` を `JCHE_CMD="$PWD/java-call-hierarchy-exporter.sh"`（起動コマンドの対話なし経路）と、従来どおりの
   `jbang run --java 21 src/CallHierarchyExporter.java` の両方で実行し、全ケース（`multi` を含む）PASS
 - `JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh` が PASS
 - `JBANG_DIR=.jbang` / `JBANG_REPO=.jbang/repository` で起動し、JBang 本体が `.jbang/bin/` に、JDT の jar が
   `.jbang/repository/org/eclipse/jdt/` に入ることを確認（JDK は取得できないので `--java 21` のまま）
 - `javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing` が通る（`Console.isTerminal()` のような
   JDK 22 以降の API は使っていない。`pom.xml` の release も 17 のまま）
-- Windows の `jche.cmd` は CI に委ねる（Q18）
+- Windows の `java-call-hierarchy-exporter.cmd` は CI に委ねる（Q18）
 
 ### Q20. やらなかったこと
 
@@ -315,18 +315,18 @@ jbang が JDK 25 を取得できない環境（JDK の配布サイトへの接�
 - **出力フォルダをエクスプローラーで開く**こと（`Desktop.open`）。GUI の無い環境や SSH 越しでは動かず、
   失敗の見え方が環境で変わる。出力フォルダのパスはログに出るので、そこからコピーする
 - **色付け・画面消去**（Q1）
-- **配布用の zip 作成**やインストーラ。リポジトリを clone（または zip でダウンロード）して `jche.cmd` を
+- **配布用の zip 作成**やインストーラ。リポジトリを clone（または zip でダウンロード）して `java-call-hierarchy-exporter.cmd` を
   実行するのが配布形態で、それ以上は要らないと判断した
 
 ---
 
-## 追記: MS932 で保存し直したときに `jche.cmd` が壊れていた
+## 追記: MS932 で保存し直したときに `java-call-hierarchy-exporter.cmd` が壊れていた
 
 （#48 の作業中に、`main` の `regression-windows` が赤いことから見つかったもの。修正は #48 の PR に含めた）
 
 ### Q21. 何が起きたか
 
-`jche.cmd` を MS932 で保存し直したコミット（`3b3e0b2`）で、英語版と日本語版が混ざったファイルが入っていた。
+`java-call-hierarchy-exporter.cmd` を MS932 で保存し直したコミット（`3b3e0b2`）で、英語版と日本語版が混ざったファイルが入っていた。
 結果として Windows の CI が次で止まっていた。
 
 ```
@@ -345,7 +345,7 @@ The system cannot find the batch label specified - main
 
 ### Q22. 同じ壊れ方を次に検出する方法
 
-`test/cli/run.sh` の最後に、`jche.cmd` を**読むだけ**の検査を足した（cmd.exe が要らないので Linux の CI で毎回通る）。
+`test/cli/run.sh` の最後に、`java-call-hierarchy-exporter.cmd` を**読むだけ**の検査を足した（cmd.exe が要らないので Linux の CI で毎回通る）。
 
 - `goto` / `call` の飛び先が全てラベルとして存在するか（今回の `:main` はここで落ちる）
 - ラベルの二重定義が無いか（今回の `:write_settings` / `:load_settings`）
@@ -353,12 +353,12 @@ The system cannot find the batch label specified - main
 - MS932 で保存されているか（CP932 として読んだときに、実際に入っているはずの日本語の文が読めるか。
   UTF-8 で保存し直すと、CP932 として読めても中身が化けるので、文字列の一致で見る）
 
-実際に動かす検査（`regression-windows` の `jche.cmd` の 2 ステップ）は Windows でしか通らないので、
+実際に動かす検査（`regression-windows` の `java-call-hierarchy-exporter.cmd` の 2 ステップ）は Windows でしか通らないので、
 「壊れていないこと」の検査だけを Linux 側に置いて、気づくまでの時間を縮める狙い。
 
 ### Q23. 検査そのものにも誤りがあった（`if exist` とワイルドカード）
 
-`jche.cmd` を直したあとも `regression-windows` は `FAIL: no output folder` で落ちた。
+`java-call-hierarchy-exporter.cmd` を直したあとも `regression-windows` は `FAIL: no output folder` で落ちた。
 解析は成功してログにも出力フォルダが出ているのに、検査側が見つけられていない。
 
 ```bat

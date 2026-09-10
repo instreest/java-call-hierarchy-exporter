@@ -131,33 +131,38 @@ Eclipse（Pleiades）の jar でコンパイルして動かす方法、Eclipse �
 
 ### 設定ファイル
 
-既定の設定ファイル [`config/config.properties`](config/config.properties) の
-**`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます
-（次の起動コマンドの「設定ファイルを新しく作る」で、解析対象のフォルダを入力してこれらを埋めた設定ファイルを作ることもできます）。  
-Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
-ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
-（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。全項目の説明は設定ファイル内のコメントにあります。
+既定の設定ファイル [`config/config.properties`](config/config.properties) で必須なのは **`project.root`** だけです。
+次の項目は空欄のままなら `project.root` の中身から決めます（明示したいときだけ書き換えます）。
+
+| 項目 | 空欄のときの決め方 |
+|---|---|
+| `source.folders` | `.classpath` の `kind="src"`、無ければ `src/main/java` → `src` → `<モジュール>/src/main/java` |
+| `library.folders` | `pom.xml` / `build.gradle` を読んでローカルリポジトリ（`~/.m2/repository` 等）から自動取得（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。ビルドファイルが無ければ `project.root` 直下の `lib` の `*.jar` |
+| `source.encoding` | `pom.xml` の `project.build.sourceEncoding`、無ければ `UTF-8` |
+
+起動コマンドの「設定ファイルを新しく作る」で、解析対象のフォルダを入力してこれらを埋めた設定ファイルを作ることもできます。
+全項目の説明は設定ファイル内のコメントにあります。
 
 ### 起動コマンド（対話モード）
 
-リポジトリ直下の `jche.cmd`（Windows）/ `jche.sh`（Linux / macOS / Git Bash）を実行すると、
+リポジトリ直下の `java-call-hierarchy-exporter.cmd`（Windows）/ `java-call-hierarchy-exporter.sh`（Linux / macOS / Git Bash）を実行すると、
 メニューで操作する対話モードが立ち上がります。どのフォルダから実行してもかまいません。
 
 ```bat
 rem Windows（コマンドプロンプト。エクスプローラーからダブルクリックでも可）
-jche.cmd
+java-call-hierarchy-exporter.cmd
 ```
 
 ```bash
 # Linux / macOS / Git Bash
-./jche.sh
+./java-call-hierarchy-exporter.sh
 ```
 
 初回は、このツールが使う JDK と JBang（合わせて数百 MB）を **このプロジェクトの中（`.jbang/`）** に置くか
 **ユーザーのホーム（`~/.jbang`、JBang の既定）** に置くかを尋ねます。選んだ内容は `launcher.properties`
 （リポジトリ直下。Git では追跡しない）に保存され、次回からは尋ねません。
 プロジェクトの中を選ぶと他の環境を汚さず、フォルダごと消せば元に戻ります。
-`jche.cmd` だけは文字コードが MS932（Shift_JIS）です（コマンドプロンプトがバッチファイルを画面のコードページで読むため。
+`java-call-hierarchy-exporter.cmd` だけは文字コードが MS932（Shift_JIS）です（コマンドプロンプトがバッチファイルを画面のコードページで読むため。
 編集するときは MS932 のまま保存してください）。
 
 ```
@@ -187,7 +192,7 @@ jche>
 設定ファイルを引数に渡すと対話なしで解析します（下記の jbang 直接実行と同じ。バッチやタスクスケジューラ向け）。
 
 ```bat
-jche.cmd config\app-a.properties config\app-b.properties
+java-call-hierarchy-exporter.cmd config\app-a.properties config\app-b.properties
 ```
 
 `launcher.properties` の項目は次のとおりです（対話モードの「環境設定」で書き換えるほか、手で編集してもかまいません。
@@ -557,7 +562,7 @@ cache.folder=
 ```
 
 設定できる項目の一覧と意味は [config/config.properties](config/config.properties) のコメントにあります。
-手元で `./jche.sh ci/call-hierarchy.properties` と実行したときと同じ設定なので、CI で出た結果を手元で再現できます。
+手元で `./java-call-hierarchy-exporter.sh ci/call-hierarchy.properties` と実行したときと同じ設定なので、CI で出た結果を手元で再現できます。
 
 **出力先だけは注意**してください。`output.folder` の既定は「設定ファイルと同じフォルダ」なので、
 指定しないと解析対象リポジトリのチェックアウトの中（設定ファイルの隣）に出力フォルダができます。
@@ -639,7 +644,7 @@ JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/CallHierarchyExporter.java 
 cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
 ```
 
-起動コマンド（`./jche.sh a.properties`、Windows は `jche.cmd`）から実行したときも同じです
+起動コマンド（`./java-call-hierarchy-exporter.sh a.properties`、Windows は `java-call-hierarchy-exporter.cmd`）から実行したときも同じです
 （対話モードで解析した場合も書き出します）。
 
 ### このリポジトリ自身での使用例

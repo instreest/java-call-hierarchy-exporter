@@ -123,7 +123,7 @@ Issue の To be が「GitHubActions から使用できるようにしたい」�
 
 設定ファイルは絶対パスで渡すので、作業ディレクトリを変えても解決結果は変わらない。
 
-### Q9. 起動コマンド（`jche.sh` / `jche.cmd`）ではなく `jbangw/jbang` を直接呼ぶのはなぜか
+### Q9. 起動コマンド（`java-call-hierarchy-exporter.sh` / `java-call-hierarchy-exporter.cmd`）ではなく `jbangw/jbang` を直接呼ぶのはなぜか
 
 起動コマンドは人が使うための入口で、`launcher.properties` の作成（初回は JDK / JBang の置き場所を尋ねる）、
 対話メニュー、設定を反映するための再起動ループを持つ。CI では JDK は `actions/setup-java`、
