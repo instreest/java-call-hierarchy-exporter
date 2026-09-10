@@ -22,8 +22,8 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
    初回は JDK と JBang のキャッシュファイル格納場所を尋ねられるので、「このプロジェクトフォルダ内」を選んでください。
 
    ```bat
-   rem Windows（コマンドプロンプト。エクスプローラーからダブルクリックでも可）
-   .¥java-call-hierarchy-exporter.cmd
+   rem Windows（コマンドプロンプト・PowerShell。エクスプローラーからダブルクリックでも可）
+   .\java-call-hierarchy-exporter.cmd
    ```
 
    ```bash
@@ -149,7 +149,7 @@ Eclipse（Pleiades）の jar でコンパイルして動かす方法、Eclipse �
 メニューで操作する対話モードが立ち上がります。どのフォルダから実行してもかまいません。
 
 ```bat
-rem Windows（コマンドプロンプト。エクスプローラーからダブルクリックでも可）
+rem Windows（コマンドプロンプト・PowerShell。エクスプローラーからダブルクリックでも可）
 java-call-hierarchy-exporter.cmd
 ```
 
