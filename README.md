@@ -20,18 +20,51 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ## Quick start
 
-### 1. 設定ファイルを編集する
+まず動かして CSV を見るまでの最小手順です。各手順の詳しい説明や別の実行方法は、
+このあとの [実行方法の詳細](#実行方法の詳細) と [出力されるファイル](#出力されるファイル) にあります。
+
+1. **設定ファイルを編集する** … [`config/config.properties`](config/config.properties) の
+   `project.root`（解析対象プロジェクトのフォルダ）と `source.folders`（ソースフォルダ）を書き換えます。
+   Maven / Gradle のプロジェクトなら `library.folders` は空欄のままでかまいません。
+2. **実行する** … リポジトリ直下の起動コマンドを実行し、メニューで `1) 解析を実行する` を選びます。
+   初回は JDK と JBang の置き場所を尋ねられるので、迷ったら「このプロジェクトの中」を選んでください。
+
+   ```bat
+   rem Windows（コマンドプロンプト。エクスプローラーからダブルクリックでも可）
+   jche.cmd
+   ```
+
+   ```bash
+   # Linux / macOS / Git Bash
+   ./jche.sh
+   ```
+
+3. **結果を見る** … `config/<解析開始日時>_<プロジェクト名>/` に `call-hierarchy.csv`（呼び出し階層）と
+   `methods.csv`（メソッド一覧）ができます。UTF-8（BOM 付き）なのでそのまま Excel で開けます。
+
+対話なしで実行するときは、設定ファイルを引数に渡します（JBang は `jbangw/` に同梱、初回に JDK と依存 jar を自動取得）。
+
+```bash
+./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
+```
+
+---
+
+## 実行方法の詳細
+
+Quick start で使った起動コマンドの詳しい説明と、JBang を直接使う方法、閉域ネットワーク向けに
+Eclipse（Pleiades）の jar でコンパイルして動かす方法、Eclipse でソースを開く方法です。
+
+### 設定ファイル
 
 既定の設定ファイル [`config/config.properties`](config/config.properties) の
 **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます
 （次の起動コマンドの「設定ファイルを新しく作る」で、解析対象のフォルダを入力してこれらを埋めた設定ファイルを作ることもできます）。  
 Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
 ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
-（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。
+（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。全項目の説明は設定ファイル内のコメントにあります。
 
-### 2. 実行する
-
-#### 起動コマンド（対話モード）
+### 起動コマンド（対話モード）
 
 リポジトリ直下の `jche.cmd`（Windows）/ `jche.sh`（Linux / macOS / Git Bash）を実行すると、
 メニューで操作する対話モードが立ち上がります。どのフォルダから実行してもかまいません。
@@ -95,7 +128,7 @@ jche.cmd config\app-a.properties config\app-b.properties
 
 起動コマンドの設計で迷った点は [docs/cli-app-qa.md](docs/cli-app-qa.md) にあります。
 
-#### JBangによる実行（対話なし）
+### JBangによる実行（対話なし）
 
 JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です
 （同梱スクリプトの出所・ライセンス（MIT）・当リポジトリでの修正点は [jbangw/README.md](jbangw/README.md) を参照）。
@@ -120,7 +153,7 @@ rem Windows（コマンドプロンプト）
 ./jbangw/jbang src/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
 ```
 
-#### Pleiades/Eclipse環境（閉域ネットワーク等）
+### Pleiades/Eclipse環境（閉域ネットワーク等）
 
 Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
 実行に必要なjarを `lib` フォルダに集めて使います。
@@ -146,7 +179,7 @@ rem 実行
 "%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
 
-#### Eclipse（Pleiades）でソースを開く
+### Eclipse（Pleiades）でソースを開く
 
 リポジトリ直下に `pom.xml` があるので、Eclipse 同梱の m2e（Maven 連携）で依存 jar を自動取得できます。
 
@@ -168,7 +201,7 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 
 ---
 
-### 出力されるファイル
+## 出力されるファイル
 
 出力は実行のたびに、設定ファイルの `output.folder`（既定 `.` ＝設定ファイルと同じフォルダ。
 相対パスの起点は設定ファイルのフォルダ）の下に
@@ -196,8 +229,9 @@ CSV はUTF-8（BOM付き）なのでExcelで開けます。ファイル名は固
 同じ秒に同じプロジェクトを解析すると `_2`, `_3` … が付きます。
 
 解析結果のキャッシュは出力フォルダには入りません（[キャッシュの置き場所](#キャッシュの置き場所)）。
+各列の意味と注記の詳細は [出力ファイル](#出力ファイル) にあります。
 
-#### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
+### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
 呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
 呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
@@ -209,7 +243,7 @@ at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.s
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
-#### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
 各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
 出力ソート順は、ソースフォルダ → ファイルの相対パス → 宣言行順の順序です。
@@ -221,6 +255,7 @@ OrderService.findOrder(String),jp.co.example.service.OrderService,C,OrderService
 OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0,0,
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
+
 
 ---
 
