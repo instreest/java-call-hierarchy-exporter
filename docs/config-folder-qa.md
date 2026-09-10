@@ -145,7 +145,7 @@ Windows の `test\regression\run.cmd` はこの環境では動かせないので
 - `config/config.properties` … 先頭の説明、`project.root` の既定値、`output.folder` の既定値（`.`）とその説明
 - `src/CallHierarchyExporter.java` の使い方コメントと `DEFAULT_CONFIG`、`src/jche/config/Config.java` の
   クラスコメント（設定項目の一覧は `config/config.properties` にある、という参照）
-- `prompts/prompt-A-minimal.md` / `prompts/prompt-B-detailed.md` … 「引数省略時の既定」の 1 行、
+- `docs/prompt-A-minimal.md` / `docs/prompt-B-detailed.md` … 「引数省略時の既定」の 1 行、
   設定ファイルの節の見出し、設定項目の表の `output.folder` の既定値。プロンプト B の fixture は
   元から `config/config.properties` を使う形で、`output.folder=./output` を明示しているので変更なし
   （既定値ではなく「指定したとおりに使われる」ことを見る fixture）

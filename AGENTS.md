@@ -22,7 +22,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
 | `test/` | 回帰テストと検査スクリプト（後述） |
 | `docs/*-qa.md` | 機能ごとの「実装時に迷ったこと・困ったことと結論」を Q&A 形式で残した記録 |
-| `prompts/` | このツールを別環境で再実装するための仕様プロンプトと難易度表 |
+| `docs/prompt-*.md` / `docs/feature-difficulty.md` | このツールを別環境で再実装するための仕様プロンプトと難易度表 |
 
 ## 動かす
 
