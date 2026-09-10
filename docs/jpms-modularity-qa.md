@@ -223,6 +223,34 @@ classpath に置く選択肢は無い。そのため JBang 経由では「JDT �
 - JBang が「`//DEPS` を classpath に置く」選択肢を持つか、JDT の分割パッケージが解消されれば（Q9）、
   Q11 の表がそのまま移行手順になる
 
+### Q14. モジュール化すると拡張（plugin.folders）はどうなるか。`exports` で拡張の契約を明示できるのではないか
+
+期待は正しい。`exports jche.extension;` と書けば、`URLClassLoader` で読む拡張は「そのローダの無名モジュール」になり、
+export されたパッケージしか読めないので、拡張が `jche.graph` 等を import した時点でコンパイルが通らなくなる。
+JDT は classpath の無名モジュールなので、拡張から `org.eclipse.jdt.core.dom` は従来どおり見える。
+`uses` / `provides`（ServiceLoader）は拡張自身が `module-info` 付きの jar でないと意味が無く、
+「`.java` を置くだけで動く」方式（[instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) の Q2）とは噛み合わない。
+
+ただし、この効果の大半は JPMS 無しでも得られる。[PluginClassLoaders](../src/jche/config/PluginClassLoaders.java) は
+拡張の `.java` をコンパイルするとき `java.class.path` をそのまま渡しているが、これを
+「JDT の jar 群 ＋ `jche.extension` のクラスだけ」に絞れば、`exports` と同じ制限が拡張のコンパイル時にかかる。
+同梱の `DiXmlProvider.java`（回帰テスト）と `builtin` の 2 実装が import しているのは `jche.extension`、JDT、`java.*` だけなので、
+既存の拡張は壊れない。
+
+| 観点 | JPMS `exports` | コンパイル用クラスパスを絞る |
+| --- | --- | --- |
+| 拡張の `.java` が内部パッケージを使えない | コンパイル時・実行時とも | コンパイル時のみ（jar で持ち込んだ拡張は縛れない） |
+| JBang の本流で動く | 動かない（Q12） | 動く |
+| 入口ファイルの移動、`--add-reads` の常用 | 必要 | 不要 |
+
+jar で持ち込む拡張を実行時に縛れるのは JPMS だけだが、リフレクションで内部に触る拡張まで防ぐ必要は今のところ無い。
+
+### Q15. 最終判断
+
+**モジュール化は行わない**（2026-09）。JBang が `//DEPS` を module-path に置く限り本流で成立せず（Q12）、
+得たかった「拡張の契約の明示」は Q14 の方法で足りる。JDT の分割パッケージが解消され、
+かつ JBang 側の制約が変わったときに Q9・Q11 を起点に再検討する。
+
 ### 追加検討の再現手順
 
 ```bash
