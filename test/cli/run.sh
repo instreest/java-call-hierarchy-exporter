@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 起動コマンド（jche.sh）と対話モード（src/Jche.java）の検査。
+# 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）の検査。
 #
 #   bash test/cli/run.sh
 #   JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh   # JDK 25 を取得できない環境で手元の JDK を使う
@@ -15,12 +15,12 @@
 # ログの検査は ASCII の部分だけで行う（標準出力の文字コードは端末に依るため。test/regression/run.sh と同じ方針）。
 # ただし起動コマンド自身（bash）が出す行はスクリプトの文字コード（UTF-8）で出るので、そこは日本語で照合できる。
 #
-# 最後に、Windows 用の jche.cmd についても「中身を読むだけ」の検査をする（ラベルの整合・改行・文字コード）。
+# 最後に、Windows 用の java-call-hierarchy-exporter.cmd についても「中身を読むだけ」の検査をする（ラベルの整合・改行・文字コード）。
 # cmd.exe が要る検査は Windows のワークフロー（.github/workflows/smoke.yml の regression-windows）の役目。
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
-JCHE="$ROOT/jche.sh"
+JCHE="$ROOT/java-call-hierarchy-exporter.sh"
 SETTINGS="$ROOT/launcher.properties"
 BACKUP="$ROOT/launcher.properties.cli-test-backup"
 CONFIG="$ROOT/config/cli-test.properties"
@@ -55,7 +55,7 @@ expect_not_log() {   # $1=ログ  $2=文字列  $3=ラベル
 echo "== --help =="
 write_settings ""
 "$JCHE" --help > "$LOGDIR/run-help.log" 2>&1
-expect_log "$LOGDIR/run-help.log" "jche.sh --help" "--help で使い方が出る"
+expect_log "$LOGDIR/run-help.log" "java-call-hierarchy-exporter.sh --help" "--help で使い方が出る"
 
 echo "== 対話なしの解析（引数に設定ファイル）=="
 rm -rf "$ROOT/test/regression/entry/output" "$ROOT/test/regression/entry/.cache"
@@ -127,11 +127,11 @@ printf '4\n\nq\n' | "$JCHE" > "$LOGDIR/run-status2.log" 2>&1
 expect_log "$LOGDIR/run-status2.log" "512 MB" "次の起動でヒープ上限が反映された"
 expect_log "$LOGDIR/run-status2.log" "JCHE_JAVA_OPTS=-Xmx512m" "環境変数として渡された"
 
-echo "== jche.cmd の構造（Windows 用。ここでは中身を読むだけ）=="
-# jche.cmd は cmd.exe でしか動かせないので、Linux 側では「壊れていないこと」だけを見る。
+echo "== java-call-hierarchy-exporter.cmd の構造（Windows 用。ここでは中身を読むだけ）=="
+# java-call-hierarchy-exporter.cmd は cmd.exe でしか動かせないので、Linux 側では「壊れていないこと」だけを見る。
 # cmd は goto / call の飛び先が無いと "The system cannot find the batch label specified" で止まり、
 # 実際に MS932 で保存し直したときに :main のラベルが失われて Windows の CI が赤くなったことがある。
-CMD="$ROOT/jche.cmd"
+CMD="$ROOT/java-call-hierarchy-exporter.cmd"
 labels=$(LC_ALL=C grep -a -o '^:[A-Za-z_][A-Za-z0-9_]*' "$CMD" | sed 's/^://' | sort)
 dups=$(printf '%s\n' "$labels" | uniq -d | tr '\n' ' ')
 if [ -z "$(printf '%s' "$dups" | tr -d ' ')" ]; then ok "ラベルの二重定義が無い"; else ng "ラベルが二重定義: $dups"; fi

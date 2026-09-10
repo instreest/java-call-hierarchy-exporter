@@ -85,6 +85,8 @@ public final class Config {
      */
     public final List<Path> libraryRepositories;
     public final String sourceEncoding;
+    /** source.encoding が空欄で、project.root から決めたか */
+    public final boolean sourceEncodingAuto;
     /** 実際に効いた解析対象ソースのJavaバージョン（JDTから読み戻した値） */
     public final String sourceLevel;
     /** 設定ファイルで要求された値。未指定なら空 */
@@ -183,7 +185,10 @@ public final class Config {
             this.libraryRepositories.add(resolveFromConfigDir(expandHome(raw)));
         }
 
-        this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
+        // source.encoding が空欄なら project.root から決める（pom.xml の project.build.sourceEncoding、無ければ UTF-8）
+        String enc = p.getProperty("source.encoding", "").trim();
+        this.sourceEncodingAuto = enc.isEmpty();
+        this.sourceEncoding = this.sourceEncodingAuto ? ProjectDetector.sourceEncoding(this.projectRoot) : enc;
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
         this.sourceLevelAuto = this.sourceLevelRequested.isEmpty();
         this.compilerOptions = buildCompilerOptions(this.sourceLevelRequested);

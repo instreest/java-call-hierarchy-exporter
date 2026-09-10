@@ -1,5 +1,5 @@
 @echo off
-rem java-call-hierarchy-exporter の起動コマンド（Windows のコマンドプロンプト。Linux / macOS / Git Bash は jche.sh）。
+rem java-call-hierarchy-exporter の起動コマンド（Windows のコマンドプロンプト。Linux / macOS / Git Bash は java-call-hierarchy-exporter.sh）。
 rem
 rem   jche                              対話モード（メニューで設定ファイルを選んで解析する）
 rem   jche a.properties [b.properties…] 対話なしで解析する（jbang で src\CallHierarchyExporter.java を直接動かすのと同じ）
@@ -69,7 +69,7 @@ exit /b 0
 rem %1=JBANG_DIR  %2=JBANG_REPO（相対はこのフォルダ起点。空欄は JBang の既定）。
 rem 書き出す内容は Java 側（LauncherSettings.save）が書くものと同じ
 > "%SETTINGS%" (
-    echo # jche.sh / jche.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。
+    echo # java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。
     echo # キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。
     echo #   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）
     echo #   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）

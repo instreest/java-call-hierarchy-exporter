@@ -1,9 +1,10 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cli;
 
+import jche.config.ProjectDetector;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -261,60 +262,22 @@ public final class ConfigWizard {
     static Detected detect(Path projectRoot) {
         Detected d = new Detected();
         // ビルドファイル。文字コードは pom.xml の project.build.sourceEncoding があればそれ
-        if (Files.isRegularFile(projectRoot.resolve("pom.xml"))) {
-            d.buildFile = "pom.xml";
-            String enc = pomEncoding(projectRoot.resolve("pom.xml"));
+        d.buildFile = ProjectDetector.buildFile(projectRoot);
+        if (d.buildFile != null) {
+            String enc = ProjectDetector.pomEncoding(projectRoot.resolve("pom.xml"));
             if (enc != null) {
                 d.encoding = enc;
                 d.notes.add("pom.xml の project.build.sourceEncoding=" + enc);
             }
-        } else if (Files.isRegularFile(projectRoot.resolve("build.gradle"))
-                || Files.isRegularFile(projectRoot.resolve("build.gradle.kts"))
-                || Files.isRegularFile(projectRoot.resolve("settings.gradle"))
-                || Files.isRegularFile(projectRoot.resolve("settings.gradle.kts"))) {
-            d.buildFile = "build.gradle";
-        }
-        if (d.buildFile != null) {
             d.notes.add(d.buildFile + " があります（library.folders を空欄にすると依存 jar を自動取得）");
         }
         // ソースフォルダの候補。Maven / Gradle の標準配置 → src → マルチモジュールの各モジュール
-        for (String c : new String[] {"src/main/java", "src"}) {
-            if (Files.isDirectory(projectRoot.resolve(c))) {
-                d.sourceFolders.add(c);
-                break;
-            }
-        }
-        if (d.sourceFolders.isEmpty()) {
-            try (DirectoryStream<Path> ds = Files.newDirectoryStream(projectRoot)) {
-                List<String> modules = new ArrayList<>();
-                for (Path child : ds) {
-                    if (Files.isDirectory(child) && Files.isDirectory(child.resolve("src/main/java"))) {
-                        modules.add(child.getFileName() + "/src/main/java");
-                    }
-                }
-                modules.sort(null);
-                d.sourceFolders.addAll(modules);
-            } catch (IOException e) {
-                // 候補が出ないだけ
-            }
-        }
+        d.sourceFolders.addAll(ProjectDetector.sourceFolderCandidates(projectRoot));
         if (!d.sourceFolders.isEmpty()) {
             d.notes.add("ソースフォルダの候補: " + String.join(", ", d.sourceFolders));
         } else if (Files.isRegularFile(projectRoot.resolve(".classpath"))) {
             d.notes.add(".classpath があります（source.folders を空欄にすると kind=\"src\" を使う）");
         }
         return d;
-    }
-
-    private static final Pattern POM_ENCODING =
-            Pattern.compile("<project\\.build\\.sourceEncoding>\\s*([^<\\s]+)\\s*</project\\.build\\.sourceEncoding>");
-
-    private static String pomEncoding(Path pom) {
-        try {
-            Matcher m = POM_ENCODING.matcher(Files.readString(pom, StandardCharsets.UTF_8));
-            return m.find() ? m.group(1) : null;
-        } catch (IOException | RuntimeException e) {
-            return null;
-        }
     }
 }

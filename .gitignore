@@ -11,7 +11,7 @@ target/
 # 置いた場合もコミットしない（14MB 超）
 /jbangw/.jbang/
 
-# 起動コマンド（jche.sh / jche.cmd）の設定と、「JDK / JBang をこのプロジェクトの中に置く」を選んだときの置き場所。
+# 起動コマンド（java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd）の設定と、「JDK / JBang をこのプロジェクトの中に置く」を選んだときの置き場所。
 # どちらも環境ごとのもの（パス・ヒープ上限・数百 MB の JDK）なので追跡しない
 /launcher.properties
 /.jbang/

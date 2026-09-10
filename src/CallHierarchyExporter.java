@@ -71,7 +71,7 @@ import jche.util.Log;
  *   jbang src/CallHierarchyExporter.java config/projA.properties config/projB.properties
  *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
  * </pre>
- * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code jche.sh} / {@code jche.cmd} から
+ * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から
  * 起動する（{@code src/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
  * 設定ファイルごとに、その設定ファイルのフォルダを起点にした output.folder（既定 . ＝設定ファイルと同じフォルダ）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
@@ -270,7 +270,7 @@ public class CallHierarchyExporter {
 
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {
         Log.info("ソースフォルダ: " + layout.sourceFolders);
-        Log.info("ソース文字コード: " + config.sourceEncoding);
+        Log.info("ソース文字コード: " + config.sourceEncoding + (config.sourceEncodingAuto ? "（source.encoding が空欄のため project.root から決めた）" : ""));
         // どの言語バージョンとして解析したかで結果が変わるため、必ず残す
         Log.info("ソースレベル: " + config.sourceLevel
                 + (config.sourceLevelAuto
