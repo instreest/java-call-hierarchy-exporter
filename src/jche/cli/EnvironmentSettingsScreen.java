@@ -39,9 +39,8 @@ final class EnvironmentSettingsScreen {
     }
 
     /**
-     * @return 再起動のため終了するなら true
-     */
-    /**
+     * 環境設定のメニューを回す。
+     *
      * @return 再起動のため終了するなら true
      */
     boolean run() throws IOException {

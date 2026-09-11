@@ -198,10 +198,6 @@ public final class CacheUpdater {
     }
 
     /**
-     * 解析結果を受け取って即座にキャッシュへ書き出し、件数と進捗を数える。
-     * 1ファイル分だけをヒープに載せ、書き出したら即破棄する。
-     */
-    /**
      * ファイルを解析し直す理由（集計の内訳）。{@link StaleTypes#touches} の判定結果と
      * {@link BlockWriter#countAs} の両方で使う（以前は別々の定数で同じ意味を表していた）
      */
@@ -214,6 +210,10 @@ public final class CacheUpdater {
         BY_LIBRARY
     }
 
+    /**
+     * 解析結果を受け取って即座にキャッシュへ書き出し、件数と進捗を数える。
+     * 1ファイル分だけをヒープに載せ、書き出したら即破棄する。
+     */
     private static final class BlockWriter implements CallEdgeExtractor.Sink {
         private final BufferedWriter cacheOut;
         private final CachePhaseResult result;
