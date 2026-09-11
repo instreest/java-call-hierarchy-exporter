@@ -88,8 +88,7 @@ at fx.app.Main.noImpl(Main.java:81),fx.model.Point.origin(),Main.main,Main.run,M
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),fx.dao.UserDaoImpl.describe(),Main.main,Helper.assist,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.excluded.Helper.assist(Helper.java:9),fx.dao.AbstractDao.flush(),Main.main,Helper.assist,AbstractDao.flush
-at fx.app.Main.run(Main.java:60),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,OrderDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
-at fx.app.Main.run(Main.java:60),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.app.Main.run(Main.java:60),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,解決:DATAFLOW_FACTORY
 at fx.app.Main.run(Main.java:60),fx.dao.Chain.c1(),Main.main,Main.run,Chain.c1
 at fx.dao.Chain.c1(Chain.java:7),fx.dao.Chain.c2(),Main.main,Main.run,Chain.c1,Chain.c2
 at fx.dao.Chain.c2(Chain.java:8),fx.dao.Chain.c3(),Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3
@@ -231,8 +230,7 @@ at fx.app.Main.noImpl(Main.java:81),fx.model.Point.origin(),Main.run,Main.noImpl
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),fx.dao.UserDaoImpl.describe(),Main.run,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.excluded.Helper.assist(Helper.java:9),fx.dao.AbstractDao.flush(),Main.run,AbstractDao.flush
-at fx.app.Main.run(Main.java:60),fx.dao.OrderDaoImpl.describe(),Main.run,OrderDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
-at fx.app.Main.run(Main.java:60),fx.dao.UserDaoImpl.describe(),Main.run,UserDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.app.Main.run(Main.java:60),fx.dao.UserDaoImpl.describe(),Main.run,UserDaoImpl.describe,解決:DATAFLOW_FACTORY
 at fx.app.Main.run(Main.java:60),fx.dao.Chain.c1(),Main.run,Chain.c1
 at fx.dao.Chain.c1(Chain.java:7),fx.dao.Chain.c2(),Main.run,Chain.c1,Chain.c2
 at fx.dao.Chain.c2(Chain.java:8),fx.dao.Chain.c3(),Main.run,Chain.c1,Chain.c2,Chain.c3

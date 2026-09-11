@@ -57,3 +57,8 @@ target/
 
 # test/cli/run.sh の実行ログ
 /test/cli/run-*.log
+
+# test/dataflow/run.sh（解決の決定性の検査）のコンパイル結果・キャッシュ・出力
+/test/dataflow/build/
+/test/dataflow/.cache/
+/test/dataflow/output/

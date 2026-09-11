@@ -2,20 +2,25 @@
 package jche.graph;
 
 import java.util.ArrayDeque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
 import jche.cache.Origin;
+import jche.dataflow.DataflowFacts;
 import jche.util.Names;
 
 /**
  * データフロー解析（読み手の判断）。出所（{@link Origin}）から具象クラスを特定する。
  *
+ * ここは「出所 → 具象型」の問い合わせ器で、自分では事実を育てない。経路に依存しない事実
+ * （ファクトリの戻り値の畳み込み結果など）はフェーズ2b（{@code jche.dataflow.DataflowBuilder}）が
+ * グラフ全体から一括で確定した {@link DataflowFacts} を読むだけ。だから同じエッジへの問い合わせは
+ * 何回・どの順で呼んでも同じ答えになる（Issue #80）。
+ *
  * <h2>ファクトリの戻り値・引数・フィールド</h2>
- * レシーバがメソッドの戻り値なら、その宣言の return を見て具象型を決める。
+ * レシーバがメソッドの戻り値なら、その宣言の return を見て具象型を決める（事実として確定済み）。
  * 呼び出し箇所の実引数までは出所に含まれているので、クラス名の文字列を
- * 受け取るファクトリもここで決まる。経路に依存しないのでメモ化できる。
+ * 受け取るファクトリもここで決まる。
  * 引数・フィールド由来は経路に依存するため、{@link DataflowContext}（経路から分かった
  * 引数の具象型・コンストラクタ実引数）を受け取って経路ごとに判定する。
  *
@@ -38,18 +43,13 @@ import jche.util.Names;
  */
 public final class DataflowResolver {
 
-    // --- リフレクションAPIの種別 ---
+    // --- リフレクションAPIの種別（jche.dataflow.DataflowBuilder が判定する。値はそちらと揃える） ---
     public static final int REFLECT_NONE = 0;
     public static final int REFLECT_INVOKE = 1;
     public static final int REFLECT_FOR_NAME = 2;
     public static final int REFLECT_CLASS_NEW_INSTANCE = 3;
     public static final int REFLECT_CTOR_NEW_INSTANCE = 4;
 
-    private static final String METHOD_INVOKE =
-            "java.lang.reflect.Method#invoke(java.lang.Object,java.lang.Object[])";
-    private static final String CLASS_NEW_INSTANCE = "java.lang.Class#newInstance()";
-    private static final String CTOR_NEW_INSTANCE =
-            "java.lang.reflect.Constructor#newInstance(java.lang.Object[])";
     private static final String CLASS_FOR_NAME_PREFIX = "java.lang.Class#forName(";
     private static final String CLASS_GET_METHOD =
             "java.lang.Class#getMethod(java.lang.String,java.lang.Class[])";
@@ -62,35 +62,27 @@ public final class DataflowResolver {
 
     private final CallGraph graph;
     private final MethodTable methods;
+    private final DataflowFacts facts;
     private final boolean enabled;
-    /** ファクトリの委譲（return create();）を何段まで辿るか */
+    /** 経路依存の探索（classOf / literalOf）で、引数や戻り値を何段まで辿るか */
     private final int maxDepth;
 
-    /** factoryReturnOrigin のメモ。未計算と「計算したが不明」を区別する */
-    private String[] factoryOrigin;
-    private byte[] factoryOriginState;   // 0=未計算 / 1=計算中 / 2=計算済み
     /**
-     * そのメソッドの戻り値が確定するまでに辿った委譲の段数（メモ）。
-     *
-     * 深さの上限は「呼び出し元から数えた再帰の深さ」ではなく「そのメソッドから数えた委譲の段数」に
-     * 掛ける。前者だと、同じファクトリでも先に浅い位置から評価されたかどうかで結果が変わり
-     * （途中のファクトリが別の箇所から直接呼ばれてメモに入ると、上限を超える連鎖でも解決できてしまう）、
-     * エッジの処理順に依存した出力になる。後者なら各メソッドの結果はそのメソッドだけで決まる
+     * @param facts    フェーズ2bで確定した事実
+     * @param enabled  dataflow.enabled
+     * @param maxDepth dataflow.max.depth
      */
-    private int[] factoryHops;
-
-    /** メソッドごとに「経路の情報を渡す意味があるか」。初回に一度だけ全エッジを見て作る */
-    private boolean[] usesParameters;
-    /** メソッドIDごとのリフレクションAPIの種別。初回に一度だけ全メソッドを見て作る */
-    private byte[] reflectKinds;
-    /** "typeFqn#name" -> 本体を持つメソッドID。引数型が分からないときの名前照合用。必要になったら作る */
-    private HashMap<String, IntArray> methodsByName;
-
-    public DataflowResolver(CallGraph graph, boolean enabled, int maxDepth) {
+    public DataflowResolver(CallGraph graph, DataflowFacts facts, boolean enabled, int maxDepth) {
         this.graph = graph;
         this.methods = graph.methods;
+        this.facts = facts;
         this.enabled = enabled;
         this.maxDepth = (maxDepth > 0) ? maxDepth : 1;
+    }
+
+    /** フェーズ2bで確定した事実 */
+    public DataflowFacts facts() {
+        return facts;
     }
 
     public boolean enabled() {
@@ -162,87 +154,11 @@ public final class DataflowResolver {
     }
 
     /**
-     * そのメソッドが必ず返す値の出所。特定できなければ null。
-     *
-     * 「1つでも追跡できない return があれば null」「複数の出所を返すなら null」。
-     * 委譲（{@code return create();}）は maxDepth まで辿って畳む。
-     *
-     * 返すのは具象型（{@code T:}）とは限らない。クラス名の文字列を受け取る
-     * ファクトリは {@code C:引数位置}、引数をそのまま返すメソッドは {@code A:引数位置}
-     * になる。これらは<b>そのファクトリを呼んでいる箇所の実引数</b>を見て初めて
-     * 確定するので、ここではそのまま返して呼び出し側で解決する。
+     * そのメソッドが必ず返す値の出所（委譲を畳んだ後）。特定できなければ null。
+     * フェーズ2bで確定した事実を返すだけ（{@link DataflowFacts#factoryOrigin}）
      */
     String factoryReturnOrigin(int methodId) {
-        if (methodId < 0 || methodId >= methods.size()) {
-            return null;
-        }
-        if (factoryOrigin == null) {
-            factoryOrigin = new String[methods.size()];
-            factoryOriginState = new byte[methods.size()];
-            factoryHops = new int[methods.size()];
-        }
-        if (factoryOriginState[methodId] == 2) {
-            return factoryOrigin[methodId];
-        }
-        if (factoryOriginState[methodId] == 1) {
-            return null;   // 委譲が循環している
-        }
-        String[] origins = graph.returnOriginsOf(methodId);
-        if (origins == null || origins.length == 0) {
-            return null;
-        }
-        factoryOriginState[methodId] = 1;
-        String found = null;
-        int hops = 0;
-        for (String o : origins) {
-            String reduced = reduceReturnOrigin(o);
-            // 1つでも畳めない return があれば、このメソッドの戻り値は決められない。
-            // 分かった分だけで決め打ちすると、別の型を返す経路を取りこぼす
-            if (reduced == null || (found != null && !found.equals(reduced))) {
-                found = null;
-                break;
-            }
-            found = reduced;
-            hops = Math.max(hops, lastHops);
-        }
-        if (found != null && hops > maxDepth) {
-            found = null;   // 委譲の段数が上限を超えた
-        }
-        factoryOriginState[methodId] = 2;
-        factoryOrigin[methodId] = found;
-        factoryHops[methodId] = hops;
-        return found;
-    }
-
-    /** 直前の {@link #reduceReturnOrigin} が辿った委譲の段数（畳めた場合だけ意味を持つ） */
-    private int lastHops;
-
-    /** return 1件の出所を、具象型か「呼び出し箇所依存の形」まで畳む。畳めなければ null */
-    private String reduceReturnOrigin(String origin) {
-        lastHops = 0;
-        char kind = Origin.kindOf(origin);
-        if (kind == Origin.NEW || kind == Origin.REFLECT || kind == Origin.PARAM) {
-            return Origin.head(origin);
-        }
-        if (kind != Origin.RETURN) {
-            return null;
-        }
-        // 別のファクトリへの委譲。委譲先の出所を、この return が書いている
-        // 実引数で解決する（return create("jp.co.X"); のような形を畳むため）
-        int delegate = methods.idOf(Origin.valueOf(origin));
-        if (delegate < 0) {
-            return null;
-        }
-        String inner = factoryReturnOrigin(delegate);
-        if (inner == null) {
-            return null;
-        }
-        lastHops = factoryHops[delegate] + 1;
-        if (Origin.kindOf(inner) == Origin.NEW) {
-            return inner;
-        }
-        String fqn = applyInvocationArgs(inner, Origin.argsOf(origin), null);
-        return (fqn == null) ? null : Origin.of(Origin.NEW, fqn);
+        return facts.factoryOrigin(methodId);
     }
 
     /**
@@ -319,37 +235,10 @@ public final class DataflowResolver {
         if (!enabled || methodId < 0) {
             return false;
         }
-        if (usesParameters == null) {
-            usesParameters = computeUsesParameters();
-        }
-        if (methodId < usesParameters.length && usesParameters[methodId]) {
+        if (facts.usesParameters(methodId)) {
             return true;
         }
         return graph.hasInjectedFields(methods.typeFqn(methodId));
-    }
-
-    private boolean[] computeUsesParameters() {
-        boolean[] flags = new boolean[methods.size()];
-        for (int caller = 0; caller < flags.length; caller++) {
-            for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
-                if (Origin.kindOf(graph.recvOrigin(e)) == Origin.PARAM
-                        || mentionsParam(graph.recvOrigin(e))   // 入れ子のレシーバ・実引数（リフレクション）
-                        || mentionsParam(graph.argOrigins(e))) {
-                    flags[caller] = true;
-                    break;
-                }
-            }
-        }
-        return flags;
-    }
-
-    /** 実引数の出所の中に「囲みメソッドの引数」が含まれるか（引数の受け渡し） */
-    private static boolean mentionsParam(String argOrigins) {
-        if (argOrigins == null) {
-            return false;
-        }
-        // "0=A:1;2=T:jp.co.X" のような形。"=A:" があれば引数を渡している
-        return argOrigins.indexOf("=" + Origin.PARAM + ":") >= 0;
     }
 
     // ------------------------------------------------------------
@@ -357,22 +246,7 @@ public final class DataflowResolver {
     // ------------------------------------------------------------
 
     public int reflectiveKindOf(int methodId) {
-        if (reflectKinds == null) {
-            reflectKinds = new byte[methods.size()];
-            for (int id = 0; id < reflectKinds.length; id++) {
-                String key = methods.key(id);
-                if (METHOD_INVOKE.equals(key)) {
-                    reflectKinds[id] = REFLECT_INVOKE;
-                } else if (key.startsWith(CLASS_FOR_NAME_PREFIX)) {
-                    reflectKinds[id] = REFLECT_FOR_NAME;
-                } else if (CLASS_NEW_INSTANCE.equals(key)) {
-                    reflectKinds[id] = REFLECT_CLASS_NEW_INSTANCE;
-                } else if (CTOR_NEW_INSTANCE.equals(key)) {
-                    reflectKinds[id] = REFLECT_CTOR_NEW_INSTANCE;
-                }
-            }
-        }
-        return (methodId >= 0 && methodId < reflectKinds.length) ? reflectKinds[methodId] : REFLECT_NONE;
+        return facts.reflectKind(methodId);
     }
 
     /**
@@ -608,23 +482,13 @@ public final class DataflowResolver {
 
     /** 型（と親型）の中で、その名前を持つ本体付きメソッド。最初に見つかった型のものだけ */
     private IntArray methodsNamed(String typeFqn, String name) {
-        if (methodsByName == null) {
-            methodsByName = new HashMap<>();
-            for (int id = 0; id < methods.size(); id++) {
-                if (!methods.hasBody(id) || !methods.hasSource(id)) {
-                    continue;
-                }
-                String k = methods.typeFqn(id) + "#" + methods.methodName(id);
-                methodsByName.computeIfAbsent(k, key -> new IntArray(2)).add(id);
-            }
-        }
         ArrayDeque<String> queue = new ArrayDeque<>();
         Set<String> seen = new HashSet<>();
         queue.add(typeFqn);
         seen.add(typeFqn);
         while (!queue.isEmpty()) {
             String t = queue.poll();
-            IntArray ids = methodsByName.get(t + "#" + name);
+            IntArray ids = facts.methodsNamed(t, name);
             if (ids != null && !ids.isEmpty()) {
                 return ids;
             }
