@@ -1,7 +1,6 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.analysis;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +18,7 @@ import java.util.TreeSet;
 import java.util.function.Function;
 
 import jche.cache.CacheFormat;
-import jche.cache.CallEdgeFact;
+import jche.cache.CacheReader;
 import jche.cache.CallSite;
 import jche.cache.FieldAccessFact;
 import jche.cache.FieldAssignFact;
@@ -153,7 +152,7 @@ public final class CacheUpdater {
             }
             writer.stale = stale;   // 解析したファイルが宣言する型も「変わった型」に加える（改名・追加に備える）
             analyzeInBatches(extractor, changed, writer);
-            writer.countAs = BlockWriter.BY_LIBRARY;
+            writer.countAs = Reason.BY_LIBRARY;
             analyzeInBatches(extractor, unresolvedBefore, writer);
 
             // --- パス3: 変わった型・パッケージに依存していない有効ブロックを書き写す ---
@@ -167,9 +166,9 @@ public final class CacheUpdater {
 
             // --- パス4: 依存で無効になったファイルを解析し直す ---
             writer.stale = null;
-            writer.countAs = BlockWriter.BY_SOURCE;
+            writer.countAs = Reason.BY_SOURCE;
             analyzeInBatches(extractor, filesOf(dependents, live), writer);
-            writer.countAs = BlockWriter.BY_LIBRARY;
+            writer.countAs = Reason.BY_LIBRARY;
             analyzeInBatches(extractor, filesOf(libraryDependents, live), writer);
         }
         progress.finish();
@@ -202,14 +201,20 @@ public final class CacheUpdater {
      * 解析結果を受け取って即座にキャッシュへ書き出し、件数と進捗を数える。
      * 1ファイル分だけをヒープに載せ、書き出したら即破棄する。
      */
-    private static final class BlockWriter implements CallEdgeExtractor.Sink {
-        /** 自分が変わった（または新規）ファイルとして数える */
-        static final int BY_SELF = 0;
-        /** 依存する型（ソース）が変わったための再解析として数える */
-        static final int BY_SOURCE = 1;
-        /** 依存 jar が変わったための再解析として数える */
-        static final int BY_LIBRARY = 2;
+    /**
+     * ファイルを解析し直す理由（集計の内訳）。{@link StaleTypes#touches} の判定結果と
+     * {@link BlockWriter#countAs} の両方で使う（以前は別々の定数で同じ意味を表していた）
+     */
+    private enum Reason {
+        /** 変わった型にも jar にも触れていない（再解析しない）。自分が変わった（または新規）ファイルの集計にも使う */
+        UNTOUCHED,
+        /** 依存する型（ソース）が変わった */
+        BY_SOURCE,
+        /** 依存 jar が変わった */
+        BY_LIBRARY
+    }
 
+    private static final class BlockWriter implements CallEdgeExtractor.Sink {
         private final BufferedWriter cacheOut;
         private final CachePhaseResult result;
         private final Progress progress;
@@ -217,8 +222,8 @@ public final class CacheUpdater {
         private final Function<SourceFile, String> hasher;
         /** 非nullなら、解析したファイルが宣言する型を「変わった型」に加える（パス2） */
         StaleTypes stale;
-        /** 解析した理由（BY_SELF / BY_SOURCE / BY_LIBRARY）。集計の内訳に使う */
-        int countAs = BY_SELF;
+        /** 解析した理由。集計の内訳に使う（UNTOUCHED は「自分が変わった・新規」） */
+        Reason countAs = Reason.UNTOUCHED;
         private long done;
 
         BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
@@ -253,9 +258,9 @@ public final class CacheUpdater {
         }
 
         private void countReason() {
-            if (countAs == BY_SOURCE) {
+            if (countAs == Reason.BY_SOURCE) {
                 result.dependents++;
-            } else if (countAs == BY_LIBRARY) {
+            } else if (countAs == Reason.BY_LIBRARY) {
                 result.libraryDependents++;
             }
         }
@@ -272,9 +277,6 @@ public final class CacheUpdater {
      * および追加・変更・削除された jar のパッケージ
      */
     private static final class StaleTypes {
-        static final int UNTOUCHED = 0;
-        static final int BY_SOURCE = 1;
-        static final int BY_LIBRARY = 2;
 
         private final Set<String> types = new HashSet<>();
         private final Set<String> packages = new HashSet<>();
@@ -294,11 +296,10 @@ public final class CacheUpdater {
          * "pkg.*"（オンデマンド import）は、そのパッケージの型が1つでも変わっていれば触れているとみなす。
          * ソースの変更に触れていればそちらを理由として返す（集計の内訳のため）。
          *
-         * @return UNTOUCHED / BY_SOURCE / BY_LIBRARY
          */
-        int touches(String depsCsv) {
+        Reason touches(String depsCsv) {
             if (depsCsv.isEmpty() || (types.isEmpty() && libraryPackages.isEmpty())) {
-                return UNTOUCHED;
+                return Reason.UNTOUCHED;
             }
             boolean library = false;
             for (String d : depsCsv.split(",")) {
@@ -308,16 +309,16 @@ public final class CacheUpdater {
                 if (d.endsWith(".*")) {
                     String p = d.substring(0, d.length() - 2);
                     if (types.contains(p) || packages.contains(p)) {
-                        return BY_SOURCE;
+                        return Reason.BY_SOURCE;
                     }
                     library |= libraryPackages.contains(p);
                 } else if (types.contains(d)) {
-                    return BY_SOURCE;
+                    return Reason.BY_SOURCE;
                 } else {
                     library |= inLibraryPackage(d);
                 }
             }
-            return library ? BY_LIBRARY : UNTOUCHED;
+            return library ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
         }
 
         /**
@@ -412,9 +413,8 @@ public final class CacheUpdater {
         if (!Files.isRegularFile(config.cacheFile)) {
             return null;
         }
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            String first = in.readLine();
-            if (first == null || !CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint).equals(first.trim())) {
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {
+            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint))) {
                 // 形式が変わった場合のほか、source.level や実行 JDK が変わった場合もここで破棄する。
                 // 言語バージョンやブートクラスパスが違えば同じソースでも解析結果が変わるため、
                 // 更新時刻とサイズが一致していても再利用してはいけない
@@ -422,9 +422,8 @@ public final class CacheUpdater {
                 return null;
             }
             List<LibraryFact> libraries = new ArrayList<>();
-            String line;
-            while ((line = in.readLine()) != null && CacheFormat.rowTypeOf(line) == CacheFormat.ROW_LIBRARY) {
-                LibraryFact l = LibraryFact.fromRow(CacheFormat.columnsOf(line));
+            while (in.next() && in.is(CacheFormat.ROW_LIBRARY)) {
+                LibraryFact l = LibraryFact.fromRow(in.columns());
                 if (l != null) {
                     libraries.add(l);
                 }
@@ -443,15 +442,13 @@ public final class CacheUpdater {
     private void scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
                               boolean librariesAddedOrChanged, Set<String> libraryAffected)
             throws IOException {
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            in.readLine();   // ヘッダ行（パス0で検証済み）
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean staleBlock = false;
             String currentRel = null;
-            String line;
-            while ((line = in.readLine()) != null) {
-                char rowType = CacheFormat.rowTypeOf(line);
+            while (in.next()) {
+                char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
-                    String[] f = CacheFormat.columnsOf(line);
+                    String[] f = in.columns();
                     staleBlock = !isValidBlock(f, live);
                     currentRel = staleBlock ? null : f[1];
                     if (currentRel != null) {
@@ -463,14 +460,13 @@ public final class CacheUpdater {
                         }
                     }
                 } else if (staleBlock && rowType == CacheFormat.ROW_TYPE) {
-                    TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
+                    TypeFact t = TypeFact.fromRow(in.columns());
                     if (t != null) {
                         stale.add(t.typeFqn(), t.pkg());
                     }
                 } else if (currentRel != null && librariesAddedOrChanged
                         && rowType == CacheFormat.ROW_UNRESOLVED
-                        && UnresolvedCallFact.BINDING_FAILED.equals(
-                                CacheFormat.columnAt(CacheFormat.columnsOf(line), 7))) {
+                        && UnresolvedCallFact.BINDING_FAILED.equals(in.column(7))) {
                     // エラーとしては報告されなかったが呼び出し先が解決できなかった。jar の追加で変わりうる
                     valid.remove(currentRel);
                     libraryAffected.add(currentRel);
@@ -493,19 +489,15 @@ public final class CacheUpdater {
                                  List<String> dependents, List<String> libraryDependents,
                                  BufferedWriter cacheOut) throws IOException {
         long unresolved = 0L;
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            in.readLine();   // バージョン行（パス1で検証済み）
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean keeping = false;
             String pendingFileRow = null;   // 依存の判定待ちのF行
             String pendingRel = null;
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (line.isEmpty()) {
-                    continue;
-                }
-                char rowType = CacheFormat.rowTypeOf(line);
+            while (in.next()) {
+                String line = in.line();
+                char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
-                    String[] f = CacheFormat.columnsOf(line);
+                    String[] f = in.columns();
                     keeping = false;
                     pendingFileRow = null;
                     if (f.length >= 2 && valid.contains(f[1])) {
@@ -519,13 +511,13 @@ public final class CacheUpdater {
                     String deps = "";
                     boolean isDepsRow = (rowType == CacheFormat.ROW_DEPENDENCIES);
                     if (isDepsRow) {
-                        deps = CacheFormat.columnAt(CacheFormat.columnsOf(line), 1);
+                        deps = in.column(1);
                     }
-                    int touched = stale.touches(deps);
-                    if (touched == StaleTypes.BY_SOURCE) {
+                    Reason touched = stale.touches(deps);
+                    if (touched == Reason.BY_SOURCE) {
                         dependents.add(pendingRel);
                         keeping = false;
-                    } else if (touched == StaleTypes.BY_LIBRARY) {
+                    } else if (touched == Reason.BY_LIBRARY) {
                         libraryDependents.add(pendingRel);
                         keeping = false;
                     } else {
@@ -543,7 +535,7 @@ public final class CacheUpdater {
                 if (keeping) {
                     writeLine(cacheOut, line);
                     if (rowType == CacheFormat.ROW_UNRESOLVED) {
-                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
+                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
                         if (u != null && !u.hasUsableCandidate()) {
                             unresolved++;
                         }

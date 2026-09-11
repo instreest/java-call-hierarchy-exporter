@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import jche.cache.Origin;
+import jche.util.Names;
 
 /**
  * データフロー解析（読み手の判断）。出所（{@link Origin}）から具象クラスを特定する。
@@ -69,12 +70,14 @@ public final class DataflowResolver {
     private String[] factoryOrigin;
     private byte[] factoryOriginState;   // 0=未計算 / 1=計算中 / 2=計算済み
     /**
-     * 直前の reduceReturnOrigin / factoryReturnOrigin が委譲の深さ上限で打ち切られたか。
-     * 打ち切りで「不明」になった結果をメモに保存すると、深いチェーンの途中のファクトリを
-     * 別の箇所から直接呼んだときも不明のままになり、解決結果がエッジの処理順に依存してしまう。
-     * 打ち切りが原因の不明は保存せず、次に浅い深さで評価されたときにやり直す
+     * そのメソッドの戻り値が確定するまでに辿った委譲の段数（メモ）。
+     *
+     * 深さの上限は「呼び出し元から数えた再帰の深さ」ではなく「そのメソッドから数えた委譲の段数」に
+     * 掛ける。前者だと、同じファクトリでも先に浅い位置から評価されたかどうかで結果が変わり
+     * （途中のファクトリが別の箇所から直接呼ばれてメモに入ると、上限を超える連鎖でも解決できてしまう）、
+     * エッジの処理順に依存した出力になる。後者なら各メソッドの結果はそのメソッドだけで決まる
      */
-    private boolean depthLimitHit;
+    private int[] factoryHops;
 
     /** メソッドごとに「経路の情報を渡す意味があるか」。初回に一度だけ全エッジを見て作る */
     private boolean[] usesParameters;
@@ -144,7 +147,7 @@ public final class DataflowResolver {
             return applyInvocationArgs(factoryReturnOrigin(factory), Origin.argsOf(origin), ctx);
         }
         if (kind == Origin.PARAM && ctx != null && ctx.paramTypes() != null) {
-            int idx = parseIndex(Origin.valueOf(origin));
+            int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
             if (idx >= 0 && idx < ctx.paramTypes().length) {
                 // 型ではなく値（L:/K:）が入っている引数は、具象型としては不明
                 String t = ctx.paramTypes()[idx];
@@ -176,11 +179,8 @@ public final class DataflowResolver {
         if (factoryOrigin == null) {
             factoryOrigin = new String[methods.size()];
             factoryOriginState = new byte[methods.size()];
+            factoryHops = new int[methods.size()];
         }
-        return factoryReturnOrigin(methodId, 0);
-    }
-
-    private String factoryReturnOrigin(int methodId, int depth) {
         if (factoryOriginState[methodId] == 2) {
             return factoryOrigin[methodId];
         }
@@ -193,43 +193,38 @@ public final class DataflowResolver {
         }
         factoryOriginState[methodId] = 1;
         String found = null;
-        boolean undecidable = false;
-        boolean limited = false;
+        int hops = 0;
         for (String o : origins) {
-            depthLimitHit = false;
-            String reduced = reduceReturnOrigin(o, depth);
-            limited |= depthLimitHit;
+            String reduced = reduceReturnOrigin(o);
             // 1つでも畳めない return があれば、このメソッドの戻り値は決められない。
             // 分かった分だけで決め打ちすると、別の型を返す経路を取りこぼす
             if (reduced == null || (found != null && !found.equals(reduced))) {
-                undecidable = true;
+                found = null;
                 break;
             }
             found = reduced;
+            hops = Math.max(hops, lastHops);
         }
-        if (undecidable && limited) {
-            // 深さ上限が原因かもしれない不明は保存しない（呼び出し元にも打ち切りを伝える）
-            factoryOriginState[methodId] = 0;
-            depthLimitHit = true;
-            return null;
+        if (found != null && hops > maxDepth) {
+            found = null;   // 委譲の段数が上限を超えた
         }
         factoryOriginState[methodId] = 2;
-        factoryOrigin[methodId] = undecidable ? null : found;
-        depthLimitHit = false;
-        return factoryOrigin[methodId];
+        factoryOrigin[methodId] = found;
+        factoryHops[methodId] = hops;
+        return found;
     }
 
-    /** return 1件の出所を、具象型か「呼び出し箇所依存の形」まで畳む */
-    private String reduceReturnOrigin(String origin, int depth) {
+    /** 直前の {@link #reduceReturnOrigin} が辿った委譲の段数（畳めた場合だけ意味を持つ） */
+    private int lastHops;
+
+    /** return 1件の出所を、具象型か「呼び出し箇所依存の形」まで畳む。畳めなければ null */
+    private String reduceReturnOrigin(String origin) {
+        lastHops = 0;
         char kind = Origin.kindOf(origin);
         if (kind == Origin.NEW || kind == Origin.REFLECT || kind == Origin.PARAM) {
             return Origin.head(origin);
         }
         if (kind != Origin.RETURN) {
-            return null;
-        }
-        if (depth >= maxDepth) {
-            depthLimitHit = true;   // 上限による打ち切り。呼び出し元はこの不明を保存しない
             return null;
         }
         // 別のファクトリへの委譲。委譲先の出所を、この return が書いている
@@ -238,7 +233,11 @@ public final class DataflowResolver {
         if (delegate < 0) {
             return null;
         }
-        String inner = factoryReturnOrigin(delegate, depth + 1);
+        String inner = factoryReturnOrigin(delegate);
+        if (inner == null) {
+            return null;
+        }
+        lastHops = factoryHops[delegate] + 1;
         if (Origin.kindOf(inner) == Origin.NEW) {
             return inner;
         }
@@ -257,7 +256,7 @@ public final class DataflowResolver {
         if (kind == Origin.NEW) {
             return Origin.valueOf(returnOrigin);
         }
-        int index = parseIndex(Origin.valueOf(returnOrigin));
+        int index = Names.parseIntOr(Origin.valueOf(returnOrigin), -1);
         if (index < 0) {
             return null;
         }
@@ -301,7 +300,7 @@ public final class DataflowResolver {
         if (!owner.equals(ctx.ctorOwner())) {
             return null;
         }
-        int idx = parseIndex(Origin.valueOf(origin));
+        int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
         return (idx >= 0 && idx < ctx.ctorArgs().length) ? ctx.ctorArgs()[idx] : null;
     }
 
@@ -351,14 +350,6 @@ public final class DataflowResolver {
         }
         // "0=A:1;2=T:jp.co.X" のような形。"=A:" があれば引数を渡している
         return argOrigins.indexOf("=" + Origin.PARAM + ":") >= 0;
-    }
-
-    private static int parseIndex(String s) {
-        try {
-            return Integer.parseInt(s);
-        } catch (NumberFormatException e) {
-            return -1;
-        }
     }
 
     // ------------------------------------------------------------
@@ -586,7 +577,7 @@ public final class DataflowResolver {
         if (ctx == null || ctx.paramTypes() == null) {
             return null;
         }
-        int idx = parseIndex(Origin.valueOf(paramOrigin));
+        int idx = Names.parseIntOr(Origin.valueOf(paramOrigin), -1);
         if (idx < 0 || idx >= ctx.paramTypes().length) {
             return null;
         }

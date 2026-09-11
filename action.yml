@@ -1,7 +1,7 @@
 # Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 #
 # GitHub Actions から呼び出すためのアクション定義（複合アクション）。
-# 使い方と設計判断は README.md の「GitHub Actions から使う」節と docs/github-actions-qa.md にある。
+# 使い方は docs/github-actions.md（README.md の「GitHub Actions から使う」節から辿れる）、設計判断は docs/github-actions-qa.md にある。
 #
 #   - uses: instreest/java-call-hierarchy-exporter@main   # ブランチ・タグ・コミット SHA のいずれか
 #     with:

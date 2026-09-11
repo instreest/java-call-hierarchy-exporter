@@ -1,6 +1,8 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import jche.util.Names;
+
 /**
  * 呼び出し関係の1本の辺（C行）。
  *
@@ -54,14 +56,6 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
         return new CallEdgeFact(caller, callee, callLine, CacheFormat.columnAt(cols, 10),
                 CacheFormat.columnAt(cols, 11), RecvKind.parse(CacheFormat.columnAt(cols, 12)),
                 CacheFormat.columnAt(cols, 13), CacheFormat.columnAt(cols, 14),
-                parseIntOr(CacheFormat.columnAt(cols, 15), 0));
-    }
-
-    static int parseIntOr(String s, int fallback) {
-        try {
-            return Integer.parseInt(s);
-        } catch (NumberFormatException ignore) {
-            return fallback;
-        }
+                Names.parseIntOr(CacheFormat.columnAt(cols, 15), 0));
     }
 }

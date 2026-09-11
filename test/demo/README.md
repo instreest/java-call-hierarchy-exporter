@@ -10,6 +10,9 @@
     フィールド注入・`@Qualifier` での指名・`@Bean` メソッドによる登録・Bean でない実装が候補から外れること・
     Bean が抽象基底クラスから実装を継承する形を含みます
   - `src/fx/dao/ItemDao.java` … 実装がコンパイル時に生成される型（`GENERATED_IMPL`）の確認用
+  - `src/fx/inherit/` … CHA の候補の数え方の確認用。インターフェースを実装するクラスが、そのインターフェースを
+    実装していない親クラスから実装を継承する形（`PoliteGreeter extends BaseGreeter implements Greeter`）と、
+    サブインターフェースが本体なしで再宣言する形（`Sub2 extends Base2`）を含みます
   - `src/org/springframework/` … 上記が使う Spring の注釈のスタブ（本物の Spring には依存させないため、
     このプロジェクト自身に置いています）
   - `src/org/seasar/doma/` … 同じく Doma の注釈（`@Dao` / `@Select`）のスタブ

@@ -84,6 +84,7 @@ public final class StreamingTreeWalker {
     private int rootId;
     private long totalRows;
     private boolean limitWarned;
+    private boolean candidateLimitWarned;
 
     public StreamingTreeWalker(CallGraph graph, CallResolver resolver, Config config,
                                CallHierarchyCsvWriter writer) {
@@ -366,8 +367,19 @@ public final class StreamingTreeWalker {
             // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
             detail = "リフレクション候補" + res.targets().length + "件（未展開）: 引数型が不明なため名前で照合";
         } else if (res.isMultiple()) {
-            // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる
-            detail = "CHA候補" + res.targets().length + "件（未展開）: " + RecvKind.describe(recvKind);
+            // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる。
+            // 候補数が上限を超えたときは、行にならなかった候補があることも書く。
+            // 黙って切ると、methods.csv の inDegree（全候補で数える）と行数が合わず、
+            // 読み手が「候補が消えた」のか「元から無い」のか区別できない
+            int n = res.targets().length;
+            detail = "CHA候補" + n + "件（未展開）: " + RecvKind.describe(recvKind)
+                    + ((n > Config.CHA_MAX_CANDIDATES)
+                            ? " / うち先頭" + Config.CHA_MAX_CANDIDATES + "件のみ行に出力" : "");
+            if (n > Config.CHA_MAX_CANDIDATES && !candidateLimitWarned) {
+                candidateLimitWarned = true;
+                Log.warn("CHA候補が" + Config.CHA_MAX_CANDIDATES + "件を超える呼び出しがあります。"
+                        + "超えた分は行に出しません（注記に件数が出ます）: " + methods.fullSignature(declaredCallee));
+            }
         } else if (graph.hasFunctionalImpl(declaredCallee)) {
             // ソース上の実装が1件しか無くても、ラムダ／メソッド参照が
             // 同じインターフェースを実装している。それを数に入れずに
