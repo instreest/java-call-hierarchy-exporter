@@ -233,13 +233,13 @@ jbang 本体の終了コードを呼び出し元へ返さない既知の問題�
 
 ## 文書
 
-### Q20. `prompts/`（再実装用の仕様プロンプト）はどこまで直すか
+### Q20. `docs/prompt-*.md`（再実装用の仕様プロンプト。旧 `prompts/`）はどこまで直すか
 
 仕様として変わった点だけ直した。起動（複数の設定、出力フォルダ、キャッシュの場所）、設定項目の表
 （`cache.folder` / `output.folder`、旧項目のエラー）、`resolved-classpath.txt` の場所、
 プロンプト B の fixture の設定と検証項目（T44 に旧項目のエラー、T45 に複数設定）。
 出力の列や解決の挙動は変わっていないので、他は触っていない。
-`prompts/feature-difficulty.md` の 1-1（設定ファイルの読み込み）は難易度・規模とも変わらないので据え置いた。
+`docs/feature-difficulty.md` の 1-1（設定ファイルの読み込み）は難易度・規模とも変わらないので据え置いた。
 
 ### Q21. 過去の QA ドキュメントにある `config/config.properties` や `cache.folders` の記述は書き換えるか
 
