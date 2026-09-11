@@ -38,6 +38,11 @@ jobs:
       - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh
 
+      # CallResolver.resolve が呼ぶ順・回数によらず同じ結果を返すこと（Issue #80）。
+      # test/demo の全エッジを「昇順 → もう一度昇順 → 新しい resolver で降順」の 3 通りで解決して突き合わせる
+      - name: Resolve order-independence test (test/dataflow)
+        run: bash test/dataflow/run.sh
+
       # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う
       - name: CLI test (java-call-hierarchy-exporter.sh launcher and interactive mode)

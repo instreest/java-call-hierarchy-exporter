@@ -45,6 +45,8 @@ import jche.config.Config;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
 import jche.config.ToolRoot;
+import jche.dataflow.DataflowBuilder;
+import jche.dataflow.DataflowFacts;
 import jche.extension.TypeCandidateProvider;
 import jche.external.ExternalUsageScanner;
 import jche.graph.CallGraph;
@@ -251,12 +253,13 @@ public class CallHierarchyExporter {
         analyzeSources(config, layout);
 
         CallGraph graph = buildGraph(config, layout);
-        CallResolver resolver = new CallResolver(graph,
-                new DataflowResolver(graph, config.dataflowEnabled, config.dataflowMaxDepth),
-                loadProviders(config));
         Log.info("型数=" + graph.typeCount()
                 + " メソッド数=" + graph.methodCount()
                 + " エッジ数=" + graph.edgeCount());
+        DataflowFacts facts = buildDataflowFacts(config, graph);
+        CallResolver resolver = new CallResolver(graph,
+                new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth),
+                loadProviders(config));
         Log.heap("フェーズ2完了");
 
         long rows = writeReports(config, graph, resolver);
@@ -341,6 +344,22 @@ public class CallHierarchyExporter {
                     + (beans.beanCount() == 0 ? "（spring.di.enabled=true だが Bean は見つからなかった）" : ""));
         }
         return graph;
+    }
+
+    /**
+     * フェーズ2b: データフローの事実（ファクトリの戻り値の畳み込み等）をグラフ全体から一括で確定する。
+     * 解決（CallResolver）より前に確定させておくことで、解決の結果がエッジの処理順に依存しなくなる
+     */
+    private static DataflowFacts buildDataflowFacts(Config config, CallGraph graph) {
+        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled, config.dataflowMaxDepth);
+        if (config.dataflowEnabled) {
+            Log.info("ファクトリの戻り値を確定: " + facts.factoriesDecided() + " 件"
+                    + (facts.factoriesCutOff() > 0
+                            ? "（委譲の深さ上限 dataflow.max.depth=" + config.dataflowMaxDepth
+                                    + " か循環のため決められなかったもの " + facts.factoriesCutOff() + " 件）"
+                            : ""));
+        }
+        return facts;
     }
 
     /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込む。init は Plugins が済ませる */
