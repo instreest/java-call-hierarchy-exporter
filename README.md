@@ -13,16 +13,15 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ## Quick start
 
-つツールを最小構成で試す手順です。初回は JDK と 依存モジュール のキャッシュファイル格納場所をダウンロードします。
+ツールを最小構成で試す手順です。初回は JDK と依存モジュールを自動でダウンロードします。
 
-1. 設定ファイルをコピーして編集する … [`config/config.properties`](config/config.properties) をコピーして、
-   `project.root`（解析対象プロジェクトのフォルダ）をセットします。
+1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
 
 2. 実行する … リポジトリ直下の起動コマンドを実行し、メニューで `1) 解析を実行する` を選びます。
-   初回は JDK と JBang のキャッシュファイル格納場所を尋ねられるので、「このプロジェクトフォルダ内」を選んでください。
+   初回はJDKとJBangのキャッシュファイル格納場所を尋ねられるので、「このプロジェクトフォルダ内」を選んでください。
 
    ```bat
-   rem Windows（コマンドプロンプト・PowerShell。エクスプローラーからダブルクリックでも可）
+   rem Windows（エクスプローラーからダブルクリックでも可）
    .\java-call-hierarchy-exporter.cmd
    ```
 
@@ -35,10 +34,11 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
    `methods.csv`（メソッド一覧）ができます。UTF-8（BOM 付き）なのでそのまま Excel で開けます。
 
 ### コマンドからの実行
-設定ファイルを引数に渡します（JBang は `jbangw/` に同梱）。
+
+対話的でなく実行する場合は jbang コマンドを使用し、実行Javaソースファイルと設定ファイルを引数として渡します。
 
 ```bash
-./jbangw/jbang src/CallHierarchyExporter.java config/config_yours.properties
+./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
 ### Pleiades/Eclipse環境（閉域ネットワーク等）
@@ -67,41 +67,36 @@ rem 実行
 
 ## 出力されるファイル
 
-出力は実行のたびに、設定ファイルの `output.folder`（既定 `.` ＝設定ファイルと同じフォルダ。
-相対パスの起点は設定ファイルのフォルダ）の下に
-**`<解析開始日時>_<プロジェクト名>`** のフォルダを作ってまとめます。プロジェクト名は `project.root` の
-フォルダ名です。いつ・どのプロジェクトを解析した結果かがフォルダ名だけで分かり、前回の結果は上書きされません。
+実行のたびに設定ファイルと同じフォルダ（コンフィグで変更可能）に
+**`<解析開始日時>_<project.rootフォルダ名>`** のフォルダを作ってまとめます。
 
 ```
 config/
-├── config.properties             設定ファイル（既定。解析対象ごとに増やせる）
+├── config.properties             設定ファイル（既定。コピーして解析対象プロジェクトごとに増やすことを推奨）
 └── 20260907-163000_myapp/        実行ごとの出力フォルダ
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8）
-    └── resolved-classpath.txt    ビルドファイルから依存 jar を集めたときだけ。集めた jar の一覧と要求元
+    └── resolved-classpath.txt    解析時の依存jar一覧と要求元
 ```
 
 | ファイル | 内容 |
 |---|---|
-| `call-hierarchy.csv` | 呼び出し階層リスト |
-| `methods.csv` | メソッド全体リスト（ソース上の全メソッドとその呼び出し状況） |
+| `call-hierarchy.csv` | メソッド呼び出し階層リスト |
+| `methods.csv` | メソッドリスト（ソース上の全メソッドとその呼び出し状況） |
 
-CSV はUTF-8（BOM付き）なのでExcelで開けます。ファイル名は固定です。
-例えば既定の `config/config.properties` を指定した場合は `config/20260907-163000_myapp/` のように出ます。
-同じ秒に同じプロジェクトを解析すると `_2`, `_3` … が付きます。
-
+出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
 解析結果のキャッシュは出力フォルダには入りません（[キャッシュの置き場所](#キャッシュの置き場所)）。
 各列の意味と注記の詳細は [出力ファイル](#出力ファイル) にあります。
 
 ### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
 
-呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
-呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
+呼び出し元、呼び出し先、起点メソッド、呼び出し階層（可変長列で起点からの経路）を出力したCSVファイルです。
+呼び出し元ごとに1行出力します。呼び出し先列でフィルタすることで起点メソッドと呼び出し階層が一覧化できます。
 出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → rootの宣言行 → コード呼び出しの順序です。
 
-```csv
+```csvサンプル
 caller,callee,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
@@ -112,15 +107,13 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
 出力ソート順は、ソースフォルダ → ファイルの相対パス → 宣言行順の順序です。
 
-```csv
+```csvサンプル
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
 OrderAction.execute(),jp.co.example.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
 OrderService.findOrder(String),jp.co.example.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
 OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0,0,
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
-
-
 
 ---
 
@@ -205,8 +198,6 @@ java-call-hierarchy-exporter.cmd config\app-a.properties config\app-b.properties
 | `JCHE_JAVA_OPTS` | 解析を動かす JVM のオプション（例: `-Xmx4g`） |
 | `JCHE_JBANG_OPTS` | `jbang run` に足すオプション（例: `--offline`、`--java 21`） |
 
-起動コマンドの設計で迷った点は [docs/cli-app-qa.md](docs/cli-app-qa.md) にあります。
-
 ### JBangによる実行（対話なし）
 
 JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です
@@ -251,8 +242,6 @@ JBang 本家の Eclipse 連携プラグイン（jbang-eclipse）を入れると�
 どちらか一方が壊れ続けます。併用しないでください。
 Gradle を選ばなかった理由を含め、実装時に迷った点は
 [docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
-
----
 
 ---
 
