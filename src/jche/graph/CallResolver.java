@@ -3,6 +3,7 @@ package jche.graph;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import jche.cache.HintFact;
@@ -41,6 +42,24 @@ public final class CallResolver {
     /** 段1の結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
     private int[][] resolvedTargets;
     private String[] resolvedLabels;
+    /**
+     * {@link #resolve} の結果のメモ（エッジごと）。
+     *
+     * 結果は決定的なので、同じエッジを何度解いても同じになる。呼び出す側は入次数の集計・到達判定・
+     * methods.csv・呼び出し階層の展開と 4 つあり、特に階層の展開では同じエッジが経路の数だけ
+     * 現れる。毎回ヒントの走査・拡張への問い合わせ・親を辿る BFS をやり直すと、
+     * 大規模プロジェクトでは解決だけで時間の大半を使う。
+     *
+     * メモリはエッジあたり参照 2 本。候補が 1 件の結果は {@link #singletonOf} で配列を
+     * メソッドごとに共有し、ラベルは定数か {@link #internLabel} で共有するので、
+     * エッジ数ぶんの配列や文字列を新たに抱えることはない。
+     */
+    private int[][] edgeTargets;
+    private String[] edgeLabels;
+    /** 候補 1 件の int[] をメソッドIDごとに共有する（エッジごとに new int[1] しない） */
+    private int[][] singletons;
+    /** 動的に組み立てるラベル（"STATIC_BOUND:理由" 等）の共有 */
+    private final HashMap<String, String> labelPool = new HashMap<>();
     /** 解決後の入次数。宣言型ではなく解決先に対して数える */
     private int[] inDegree;
 
@@ -58,6 +77,42 @@ public final class CallResolver {
 
     /** 経路に依存しない解決。結果は決定的で、同じエッジには常に同じ結果を返す */
     public Resolution resolve(int edgeIndex) {
+        if (edgeTargets == null) {
+            edgeTargets = new int[graph.edgeCount()][];
+            edgeLabels = new String[graph.edgeCount()];
+        }
+        int[] memo = edgeTargets[edgeIndex];
+        if (memo != null) {
+            return new Resolution(memo, edgeLabels[edgeIndex]);
+        }
+        Resolution res = resolveUncached(edgeIndex);
+        int[] targets = res.targets();
+        if (targets.length == 1) {
+            targets = singletonOf(targets[0]);
+        }
+        edgeTargets[edgeIndex] = targets;
+        edgeLabels[edgeIndex] = internLabel(res.label());
+        return new Resolution(targets, edgeLabels[edgeIndex]);
+    }
+
+    private int[] singletonOf(int methodId) {
+        if (singletons == null) {
+            singletons = new int[methods.size()][];
+        }
+        int[] a = singletons[methodId];
+        if (a == null) {
+            a = new int[] {methodId};
+            singletons[methodId] = a;
+        }
+        return a;
+    }
+
+    private String internLabel(String label) {
+        String shared = labelPool.putIfAbsent(label, label);
+        return (shared == null) ? label : shared;
+    }
+
+    private Resolution resolveUncached(int edgeIndex) {
         int calleeId = graph.calleeOf(edgeIndex);
         char bindKind = graph.bindKindOf(edgeIndex);
 
@@ -192,9 +247,17 @@ public final class CallResolver {
             cands.add(calleeId);   // 宣言型自身の実装（IFの抽象メソッドは除外される）
         }
         for (String sub : graph.hierarchy.transitiveSubtypes(declType)) {
-            int id = methods.idOf(sub + "#" + sig);
-            if (id >= 0 && id != calleeId) {
-                cands.add(id);
+            // サブタイプ自身の宣言ではなく「そのサブタイプで実際に動く実装」を候補にする。
+            // 直接の宣言だけを見ると、次の 2 つを取りこぼす。
+            //   (1) 親クラスから継承した実装: abstract class Base { m(){} }、
+            //       class C extends Base implements I {} のとき、I.m() の実装は Base.m だが
+            //       C#m は宣言されていないので候補が 0 件（実装なし）になっていた
+            //   (2) サブインターフェースでの抽象な再宣言: interface B extends A { m(); } は
+            //       本体を持たないのに候補に数えられ、実装が 1 件でも CHA（未展開）のままになっていた
+            // implementationIn は本体を持つ宣言まで親を辿るので、どちらも正しく扱える
+            int id = graph.implementationIn(sub, sig);
+            if (id >= 0) {
+                cands.addIfAbsent(id);
             }
         }
 

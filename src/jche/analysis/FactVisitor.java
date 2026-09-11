@@ -2,18 +2,14 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.Assignment;
-import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
@@ -22,9 +18,7 @@ import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
 import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
-import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
-import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
@@ -34,23 +28,16 @@ import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
-import org.eclipse.jdt.core.dom.PostfixExpression;
-import org.eclipse.jdt.core.dom.PrefixExpression;
-import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
-import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
-import jche.cache.CacheFormat;
-import jche.cache.CallEdgeFact;
-import jche.cache.FieldAccessFact;
 import jche.cache.FileAnalysis;
 import jche.cache.FunctionalImplFact;
 import jche.cache.HintFact;
@@ -60,12 +47,8 @@ import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.cache.RecvKind;
 import jche.cache.ReturnFact;
-import jche.cache.TypeFact;
-import jche.cache.UnresolvedCallFact;
 import jche.extension.CallSiteHintCollector;
 import jche.extension.HintKeys;
-import jche.extension.HintSink;
-import jche.util.Log;
 
 /**
  * ASTを走査して、キャッシュに書く事実（型階層・宣言・呼び出し・フィールド・return・
@@ -87,19 +70,24 @@ import jche.util.Log;
  *   <li>{@link BindingNames} … バインディングから名前を作る（依存する型の記録も）</li>
  *   <li>{@link OriginTracker} … 式の出所（データフロー解析の材料）</li>
  *   <li>{@link FieldFactCollector} … フィールドの宣言と代入</li>
+ *   <li>{@link TypeContextTracker} … 型のスタックと合成メソッド（{@code <clinit>}・暗黙コンストラクタ）</li>
+ *   <li>{@link CallSiteRecorder} … 呼び出し箇所（C行・U行）と拡張への引き渡し</li>
+ *   <li>{@link FieldAccessRecorder} … フィールドの参照箇所（A行）</li>
  * </ul>
  */
 final class FactVisitor extends ASTVisitor {
 
     /** 呼び出し元を特定できないことを表す番兵（ArrayDequeはnullを保持できないため） */
-    private static final List<MethodRef> UNKNOWN_CALLER = List.of();
+    private static final List<MethodRef> UNKNOWN_CALLER = TypeContextTracker.UNKNOWN_CALLER;
 
     private final CompilationUnit cu;
     private final FileAnalysis out;
-    private final List<CallSiteHintCollector> collectors;
     private final BindingNames names;
     private final OriginTracker origins;
     private final FieldFactCollector fieldFacts;
+    private final TypeContextTracker types;
+    private final CallSiteRecorder calls;
+    private final FieldAccessRecorder fieldAccesses;
 
     /**
      * 現在の呼び出し元のスタック。通常は要素1件（そのメソッド自身）だが、
@@ -108,9 +96,6 @@ final class FactVisitor extends ASTVisitor {
      * 複数件入る（コンパイル後、実際にそれら全部に複製されるため）。
      */
     private final ArrayDeque<List<MethodRef>> methodStack = new ArrayDeque<>();
-
-    /** 現在囲まれている型ごとの状態（{@link TypeContext} 参照） */
-    private final ArrayDeque<TypeContext> typeContextStack = new ArrayDeque<>();
 
     /**
      * 現在のラムダ式の入れ子の深さ。
@@ -128,16 +113,18 @@ final class FactVisitor extends ASTVisitor {
     FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors) {
         this.cu = cu;
         this.out = out;
-        this.collectors = collectors;
         this.names = new BindingNames(out);
         this.origins = new OriginTracker(names);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
+        this.types = new TypeContextTracker(out, names);
+        this.calls = new CallSiteRecorder(cu, out, names, collectors);
+        this.fieldAccesses = new FieldAccessRecorder(out, names);
     }
 
     /**
      * 現在の呼び出し元一覧。特定できない場合は null。
      * 通常は要素1件だが、インスタンス初期化子の中では複数件になりうる
-     * （{@link #buildTypeContext} 参照）。
+     * （{@link TypeContextTracker} 参照）。
      */
     private List<MethodRef> currentCallers() {
         List<MethodRef> top = methodStack.peek();
@@ -151,27 +138,6 @@ final class FactVisitor extends ASTVisitor {
     // ================================================================
     // 型の宣言（H行）と型コンテキスト
     // ================================================================
-
-    /**
-     * 型ごとの合成メソッド（{@code <clinit>}・暗黙のデフォルトコンストラクタ）の状態。
-     * これらはソース上に対応するAST宣言が無いため、初めて呼び出し元として
-     * 使われた時点で1回だけ methods.csv 用の宣言（D行相当）を合成する。
-     * 常に合成すると、静的初期化子もフィールド初期化子も持たない大多数の
-     * クラスにまで {@code <clinit>} 等が現れてノイズになるため。
-     */
-    private static final class TypeContext {
-        final ITypeBinding binding;
-        /** this(...)委譲していないコンストラクタ（インスタンス初期化子の複製先） */
-        final List<MethodRef> rootConstructors;
-        final int declLine;
-        boolean clinitDeclared;
-
-        TypeContext(ITypeBinding binding, List<MethodRef> rootConstructors, int declLine) {
-            this.binding = binding;
-            this.rootConstructors = rootConstructors;
-            this.declLine = declLine;
-        }
-    }
 
     @Override
     public boolean visit(TypeDeclaration node) {
@@ -246,198 +212,12 @@ final class FactVisitor extends ASTVisitor {
     }
 
     private void enterType(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
-        recordType(tb);
-        typeContextStack.push(buildTypeContext(tb, bodyDeclarations, declLine));
+        types.enter(tb, bodyDeclarations, declLine);
         fieldFacts.collect(tb, bodyDeclarations);
     }
 
     private void leaveType() {
-        if (!typeContextStack.isEmpty()) {
-            typeContextStack.pop();
-        }
-    }
-
-    /** 型階層（H行）を記録する */
-    private void recordType(ITypeBinding tb) {
-        if (tb == null) {
-            return;
-        }
-        ITypeBinding erased = BindingNames.erasureOf(tb);
-        String fqn = names.typeNameOf(erased);
-        if (fqn == null) {
-            return;
-        }
-        char kind = erased.isInterface() ? TypeFact.INTERFACE
-                : (Modifier.isAbstract(erased.getModifiers()) ? TypeFact.ABSTRACT : TypeFact.CONCRETE);
-
-        List<String> supers = new ArrayList<>();
-        collectSupertypes(erased, supers, new HashSet<>(), true, 0);
-        out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
-                BindingNames.annotationsOf(erased)));
-    }
-
-    /** jar の型を経由して親型を辿る深さの上限（JDK の GUI クラス等でも十数段） */
-    private static final int MAX_BINARY_SUPERTYPE_DEPTH = 32;
-
-    /**
-     * 親型の名前を集める。直接の親型（親クラスとインターフェース）に加えて、
-     * ソースの無い親型（jar の型）を経由して到達するソース上の親型も入れる。
-     *
-     * 例: {@code class Foo extends LibBase} で、jar の LibBase が {@code implements Handler}
-     * （Handler はソース上のインターフェース）なら、Foo の親型は LibBase と Handler の両方。
-     * H 行はソース上の型にしか無いので、これが無いと読み手（CHA）は「Foo は Handler の実装」と知れず、
-     * Handler のメソッド呼び出しの候補から Foo が抜ける。
-     * ソース上の親型の先は、その型自身の H 行が持つので辿らない。
-     * java.lang.Object は候補計算に寄与しないので除外する（無駄に巨大化させない）。
-     */
-    private void collectSupertypes(ITypeBinding type, List<String> out, Set<String> seen,
-                                   boolean direct, int depth) {
-        List<ITypeBinding> parents = new ArrayList<>();
-        if (type.getSuperclass() != null) {
-            parents.add(type.getSuperclass());
-        }
-        ITypeBinding[] interfaces = type.getInterfaces();
-        if (interfaces != null) {
-            parents.addAll(java.util.Arrays.asList(interfaces));
-        }
-        for (ITypeBinding parent : parents) {
-            ITypeBinding erasedParent = BindingNames.erasureOf(parent);
-            String n = names.typeNameOf(erasedParent);
-            if (n == null || "java.lang.Object".equals(n) || !seen.add(n)) {
-                continue;
-            }
-            boolean fromSource = erasedParent.isFromSource();
-            if (direct || fromSource) {
-                out.add(n);
-            }
-            if (!fromSource && depth < MAX_BINARY_SUPERTYPE_DEPTH) {
-                collectSupertypes(erasedParent, out, seen, false, depth + 1);
-            }
-        }
-    }
-
-    /**
-     * その型の、this(...)委譲していないコンストラクタ一覧を集計する。
-     * インスタンスフィールド初期化子・インスタンス初期化ブロックは、
-     * コンパイル後これら全部の先頭（super(...)の直後）に複製される。
-     * this(...)委譲するコンストラクタには複製されない
-     * （委譲先で二重に初期化されるのを防ぐルールのため）。
-     *
-     * 明示コンストラクタが1つも無ければ、暗黙のデフォルトコンストラクタが
-     * 1つ存在する。匿名クラスは明示コンストラクタを書けない言語仕様のため、
-     * 常にこちらに倒れる（曖昧さは生じない）。
-     */
-    private TypeContext buildTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
-        List<MethodRef> roots = new ArrayList<>();
-        boolean anyConstructor = false;
-        for (Object o : bodyDeclarations) {
-            if (!(o instanceof MethodDeclaration md) || !md.isConstructor()) {
-                continue;
-            }
-            anyConstructor = true;
-            if (delegatesToThis(md)) {
-                continue;
-            }
-            MethodRef ref = names.toRef(md.resolveBinding());
-            if (ref != null) {
-                roots.add(ref);
-            }
-        }
-        if (!anyConstructor) {
-            synthesizeImplicitConstructor(tb, declLine, roots);
-        }
-        return new TypeContext(tb, roots, declLine);
-    }
-
-    /**
-     * 明示コンストラクタが無い型にも、暗黙のコンストラクタが存在する。
-     * ソース上に宣言が無いのでここで合成しておく。作っておかないと
-     * new B() が「ソースなし（展開不可）」の未知メソッド扱いになってしまう。
-     *
-     * 通常のクラスと enum は引数なしの {@code <init>()} だが、record の暗黙の
-     * 正準コンストラクタはレコードコンポーネントを引数に取る
-     * （Point(int,int) 等）。バインディングにはコンパイラが合成した
-     * コンストラクタが載っているので、そちらを正として合成し、
-     * 取れない場合だけ引数なしにフォールバックする。
-     */
-    private void synthesizeImplicitConstructor(ITypeBinding tb, int declLine, List<MethodRef> roots) {
-        boolean synthesized = false;
-        if (tb != null && tb.getDeclaredMethods() != null) {
-            for (IMethodBinding m : tb.getDeclaredMethods()) {
-                if (!m.isConstructor()) {
-                    continue;
-                }
-                MethodRef ref = names.toRef(m);
-                if (ref != null) {
-                    roots.add(ref);
-                    out.declarations.add(new MethodDeclFact(ref, declLine, true,
-                            ModifierTokens.with(BindingNames.modifiersOf(m.getModifiers()),
-                                    ModifierTokens.IMPLICIT)));
-                    synthesized = true;
-                }
-            }
-        }
-        if (!synthesized) {
-            MethodRef implicit = implicitConstructorRef(tb);
-            if (implicit != null) {
-                roots.add(implicit);
-                out.declarations.add(new MethodDeclFact(implicit, declLine, true, ModifierTokens.IMPLICIT));
-            }
-        }
-    }
-
-    /** コンストラクタ本体の先頭文が this(...) か（=他のコンストラクタへの委譲か） */
-    private static boolean delegatesToThis(MethodDeclaration md) {
-        Block body = md.getBody();
-        if (body == null || body.statements().isEmpty()) {
-            return false;
-        }
-        return body.statements().get(0) instanceof ConstructorInvocation;
-    }
-
-    /** 明示コンストラクタが無い型の、暗黙のデフォルトコンストラクタの参照を合成する */
-    private MethodRef implicitConstructorRef(ITypeBinding typeBinding) {
-        if (typeBinding == null) {
-            return null;
-        }
-        ITypeBinding erased = BindingNames.erasureOf(typeBinding);
-        String typeFqn = names.typeNameOf(erased);
-        if (typeFqn == null) {
-            return null;
-        }
-        return new MethodRef(BindingNames.packageOf(erased), typeFqn, MethodRef.CONSTRUCTOR, "");
-    }
-
-    /**
-     * 現在の型の {@code <clinit>}（静的初期化子）への参照を1件だけ含むリスト。
-     * この型で初めて使う場合は、methods.csv 等に載るようD行も合成する。
-     */
-    private List<MethodRef> clinitContext() {
-        TypeContext ctx = typeContextStack.peek();
-        if (ctx == null || ctx.binding == null) {
-            return UNKNOWN_CALLER;
-        }
-        ITypeBinding erased = BindingNames.erasureOf(ctx.binding);
-        String typeFqn = names.typeNameOf(erased);
-        if (typeFqn == null) {
-            return UNKNOWN_CALLER;
-        }
-        MethodRef clinit = new MethodRef(BindingNames.packageOf(erased), typeFqn,
-                MethodRef.STATIC_INITIALIZER, "");
-        if (!ctx.clinitDeclared) {
-            ctx.clinitDeclared = true;
-            out.declarations.add(new MethodDeclFact(clinit, ctx.declLine, true, "static"));
-        }
-        return List.of(clinit);
-    }
-
-    /** 現在の型の、this(...)委譲していないコンストラクタ一覧（インスタンス初期化子用） */
-    private List<MethodRef> instanceInitContext() {
-        TypeContext ctx = typeContextStack.peek();
-        if (ctx == null || ctx.rootConstructors.isEmpty()) {
-            return UNKNOWN_CALLER;
-        }
-        return ctx.rootConstructors;
+        types.leave();
     }
 
     // ================================================================
@@ -455,10 +235,10 @@ final class FactVisitor extends ASTVisitor {
      */
     @Override
     public boolean visit(EnumConstantDeclaration node) {
-        methodStack.push(clinitContext());
+        methodStack.push(types.clinitCallers());
         origins.enterScope(new HashMap<>());
         IMethodBinding ctor = node.resolveConstructorBinding();
-        recordCall(ctor, node, MethodRef.CONSTRUCTOR, targetModsOf(ctor), "",
+        calls.record(currentCallers(), lambdaDepth, ctor, node, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "",
                 RecvKind.TYPE, null, null, origins.argOriginsOf(node.arguments()));
         return true;
     }
@@ -471,7 +251,7 @@ final class FactVisitor extends ASTVisitor {
 
     @Override
     public boolean visit(FieldDeclaration node) {
-        methodStack.push(isStaticField(node) ? clinitContext() : instanceInitContext());
+        methodStack.push(isStaticField(node) ? types.clinitCallers() : types.instanceInitCallers());
         origins.enterScope(origins.scanOrigins(node, new HashMap<>()));
         return true;
     }
@@ -485,7 +265,7 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(Initializer node) {
         boolean isStatic = Modifier.isStatic(node.getModifiers());
-        methodStack.push(isStatic ? clinitContext() : instanceInitContext());
+        methodStack.push(isStatic ? types.clinitCallers() : types.instanceInitCallers());
         origins.enterScope(origins.scanOrigins(node.getBody(), new HashMap<>()));
         return true;
     }
@@ -527,7 +307,7 @@ final class FactVisitor extends ASTVisitor {
         MethodRef ref = names.toRef(node.resolveBinding());
         if (ref != null) {
             String mods = BindingNames.modifiersOf(node.resolveBinding().getModifiers());
-            if (node.isConstructor() && delegatesToThis(node)) {
+            if (node.isConstructor() && TypeContextTracker.delegatesToThis(node)) {
                 mods = ModifierTokens.with(mods, ModifierTokens.DELEGATING);
             }
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
@@ -652,10 +432,10 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(MethodInvocation n) {
         IMethodBinding b = n.resolveMethodBinding();
         Expression recv = n.getExpression();
-        recordCall(b, n, n.getName().getIdentifier(), targetModsOf(b),
-                recvKeyOf(recv), recvKindOf(recv), externalGuessRef(n),
+        calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b),
+                CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), calls.externalGuessRef(n),
                 origins.originOf(recv), origins.argOriginsOf(n.arguments()));
-        offerToHintCollectors(n);
+        calls.offerToHintCollectors(n, currentCallers());
         return true;
     }
 
@@ -663,7 +443,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(SuperMethodInvocation n) {
         // super.m() は静的束縛（オーバーライドの影響を受けない）
         IMethodBinding b = n.resolveMethodBinding();
-        recordCall(b, n, n.getName().getIdentifier(), superMods(b), "",
+        calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
                 RecvKind.THIS, null, null, origins.argOriginsOf(n.arguments()));
         return true;
     }
@@ -671,7 +451,7 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(ClassInstanceCreation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
-        recordCall(ctor, n, MethodRef.CONSTRUCTOR, targetModsOf(ctor), "", RecvKind.TYPE,
+        calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
                 null, null, origins.argOriginsOf(n.arguments()));
         return true;
     }
@@ -679,7 +459,7 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(ConstructorInvocation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
-        recordCall(ctor, n, MethodRef.CONSTRUCTOR, targetModsOf(ctor), "", RecvKind.TYPE,
+        calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
                 null, null, origins.argOriginsOf(n.arguments()));
         return true;
     }
@@ -692,7 +472,7 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(SuperConstructorInvocation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
-        recordCall(ctor, n, MethodRef.CONSTRUCTOR, targetModsOf(ctor), "", RecvKind.TYPE,
+        calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
                 null, null, origins.argOriginsOf(n.arguments()));
         return true;
     }
@@ -715,8 +495,8 @@ final class FactVisitor extends ASTVisitor {
         Expression recv = n.getExpression();
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
-        recordCall(b, n, n.getName().getIdentifier(), targetModsOf(b), recvKeyOf(recv),
-                recvKindOf(recv), null, origins.originOf(recv), null);
+        calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b), CallSiteRecorder.recvKeyOf(recv),
+                CallSiteRecorder.recvKindOf(recv), null, origins.originOf(recv), null);
         return true;
     }
 
@@ -725,7 +505,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(TypeMethodReference n) {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
-        recordCall(b, n, n.getName().getIdentifier(), targetModsOf(b), "",
+        calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b), "",
                 RecvKind.TYPE, null, null, null);
         return true;
     }
@@ -735,7 +515,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(SuperMethodReference n) {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
-        recordCall(b, n, n.getName().getIdentifier(), superMods(b), "",
+        calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
                 RecvKind.THIS, null, null, null);
         return true;
     }
@@ -751,181 +531,8 @@ final class FactVisitor extends ASTVisitor {
             // 未解決として記録すると、実体の無い失敗が件数に混ざる
             return true;
         }
-        recordCall(b, n, MethodRef.CONSTRUCTOR, targetModsOf(b), "", RecvKind.TYPE, null, null, null);
+        calls.record(currentCallers(), lambdaDepth, b, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(b), "", RecvKind.TYPE, null, null, null);
         return true;
-    }
-
-    /**
-     * 呼び出し箇所を1件記録する。
-     *
-     * 解決できれば C 行（呼び出し元ごとに1本）。解決できなければ U 行に、
-     * 理由コードと import から推定した候補（{@link #externalGuessRef}）を事実として残す。
-     * 候補をエッジとして採用するかは読み手（jche.graph.CallGraphBuilder）が決める。
-     */
-    private void recordCall(IMethodBinding binding, ASTNode node, String displayName,
-                            String calleeMods, String recvKey, char recvKind,
-                            String externalGuess, String recvOrigin, String argOrigins) {
-        int line = lineOf(node);
-        List<MethodRef> callers = currentCallers();
-        if (callers == null) {
-            // 呼び出し元の型・コンストラクタ自体を特定できないケース
-            // （型のバインディング解決に失敗した等）
-            out.callSites.add(new UnresolvedCallFact(line, null, displayName,
-                    UnresolvedCallFact.OUTSIDE_METHOD, "", recvKey, recvKind,
-                    recvOrigin, argOrigins, lambdaDepth));
-            return;
-        }
-        MethodRef callee = names.toRef(binding);
-        if (callee == null) {
-            // 呼び出し先の型解決に失敗したケース。呼び出し元ごとに1件残す
-            // （C行と同じく、初期化子の中なら根のコンストラクタそれぞれに属する）
-            for (MethodRef caller : callers) {
-                out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
-                        UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKey, recvKind,
-                        recvOrigin, argOrigins, lambdaDepth));
-            }
-            return;
-        }
-        // 呼び出し元が複数（インスタンス初期化子等）でも全件をエッジにする。
-        // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
-        for (MethodRef caller : callers) {
-            out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
-                    recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth));
-        }
-    }
-
-    /**
-     * フェーズAの拡張に、この呼び出し箇所を見せる。
-     *
-     * 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
-     * 見せる。一部にしか見せないと、その呼び出し元経由の解決だけ証拠を
-     * 見つけられなくなるため。CallSiteHintCollector のインターフェースは
-     * 呼び出し元1件を前提にしているため、呼び出し元ごとに1回ずつ呼ぶ。
-     */
-    private void offerToHintCollectors(MethodInvocation n) {
-        List<MethodRef> callers = currentCallers();
-        if (callers == null || collectors.isEmpty()) {
-            return;
-        }
-        for (MethodRef caller : callers) {
-            String callerKey = caller.key();
-            HintSink sink = (scopeKey, kind, value) -> {
-                if (scopeKey == null || kind == null || value == null) {
-                    return;
-                }
-                out.hints.add(new HintFact(callerKey, CacheFormat.clean(scopeKey),
-                        CacheFormat.clean(kind), CacheFormat.clean(value)));
-            };
-            for (CallSiteHintCollector collector : collectors) {
-                try {
-                    collector.collect(n, cu, callerKey, sink);
-                } catch (RuntimeException e) {
-                    // 拡張の失敗で解析全体を止めない
-                    Log.warn("hint collector 失敗: " + collector.getClass().getName() + " (" + e + ")");
-                }
-            }
-        }
-    }
-
-    /**
-     * バインディング解決が完全に失敗した場合の最後の手段。
-     * レシーバの単純名が、このファイルの単一型インポート（{@code import a.b.C;}）と
-     * 一致すれば、そのFQNを候補として返す。あくまでソース上のテキストからの
-     * 推定であり、JDTによる検証済みの型解決ではない
-     * （メンバの実在・オーバーロードの妥当性までは確認できない）。
-     * ワイルドカードimport・static import・型不明のレシーバでは使わない。
-     */
-    private String externalGuessRef(MethodInvocation n) {
-        if (!(n.getExpression() instanceof SimpleName recv)) {
-            return null;
-        }
-        String simple = recv.getIdentifier();
-        for (Object o : cu.imports()) {
-            ImportDeclaration imp = (ImportDeclaration) o;
-            if (imp.isOnDemand() || imp.isStatic()) {
-                continue;
-            }
-            String name = imp.getName().getFullyQualifiedName();
-            if (name.equals(simple) || name.endsWith("." + simple)) {
-                return name;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 呼び出し先（宣言側）の修飾子（事実）。静的束縛かどうかの判定は
-     * 読み手が行う（jche.graph.BindKind）。
-     * 宣言クラスが final なら finalclass を足す（サブクラスを作れない＝オーバーライド不能）
-     */
-    private static String targetModsOf(IMethodBinding b) {
-        if (b == null) {
-            return "";
-        }
-        IMethodBinding decl = b.getMethodDeclaration();
-        if (decl == null) {
-            decl = b;
-        }
-        String mods = BindingNames.modifiersOf(decl.getModifiers());
-        ITypeBinding owner = decl.getDeclaringClass();
-        if (owner != null && Modifier.isFinal(owner.getModifiers())) {
-            mods = ModifierTokens.with(mods, ModifierTokens.FINAL_CLASS);
-        }
-        return mods;
-    }
-
-    /** super.m() / super::m の呼び出し先。super 経由である事実を足す */
-    private static String superMods(IMethodBinding b) {
-        return ModifierTokens.with(targetModsOf(b), ModifierTokens.SUPER);
-    }
-
-    /**
-     * レシーバの識別キー。
-     * ローカル変数なら変数のバインディングキー、そうでなければ "@開始位置"。
-     * 後者にしておくと、変数を介さない呼び出し
-     * （DaoFactory.get("X").execute(...) など）にも拡張が証拠を結び付けられる。
-     */
-    private static String recvKeyOf(Expression ex) {
-        return HintKeys.ofReceiver(ex);
-    }
-
-    /**
-     * レシーバがどこから来たかを判定する（{@link RecvKind}）。
-     *
-     * CHAで実装を絞れなかったときに「なぜ絞れないのか」を出力へ載せるため。
-     * 例: 戻り値ならファクトリメソッド、引数ならメソッド外から渡されている、
-     * という具合に、利用者が次に何を調べるべきかが変わる。
-     */
-    private static char recvKindOf(Expression ex) {
-        if (ex == null) {
-            return RecvKind.THIS;
-        }
-        if (ex instanceof MethodInvocation) {
-            return RecvKind.RETURN;
-        }
-        if (ex instanceof ClassInstanceCreation) {
-            return RecvKind.LOCAL;   // new した直後に呼ぶ形。型は確定している
-        }
-        if (ex instanceof FieldAccess) {
-            return RecvKind.FIELD;
-        }
-        if (ex instanceof SimpleName || ex instanceof QualifiedName) {
-            IBinding b = (ex instanceof SimpleName sn) ? sn.resolveBinding()
-                    : ((QualifiedName) ex).resolveBinding();
-            if (b instanceof ITypeBinding) {
-                return RecvKind.TYPE;
-            }
-            if (b instanceof IVariableBinding vb) {
-                if (vb.isField()) {
-                    return RecvKind.FIELD;
-                }
-                if (vb.isParameter()) {
-                    return RecvKind.PARAM;
-                }
-                return RecvKind.LOCAL;
-            }
-        }
-        return RecvKind.OTHER;
     }
 
     // ================================================================
@@ -988,71 +595,10 @@ final class FactVisitor extends ASTVisitor {
         return false;
     }
 
-    /**
-     * フィールドの参照箇所（A行）。
-     *
-     * 参照はどんな形でも最終的に SimpleName に行き着く（a.b.c の c、this.x の x、
-     * super.x の x）ので、SimpleName だけを見れば重複なく拾える。
-     * 宣言そのもの（フィールド宣言の名前）は除く。配列の length のように
-     * 型に属さないものも除く。
-     */
+    /** フィールドの参照箇所（A行）。{@link FieldAccessRecorder} 参照 */
     @Override
     public boolean visit(SimpleName node) {
-        if (node.isDeclaration()) {
-            return true;
-        }
-        if (!(node.resolveBinding() instanceof IVariableBinding vb) || !vb.isField()) {
-            return true;
-        }
-        ITypeBinding owner = vb.getDeclaringClass();
-        if (owner == null) {
-            return true;
-        }
-        String ownerFqn = names.typeNameOf(BindingNames.erasureOf(owner));
-        if (ownerFqn == null) {
-            return true;
-        }
-        int line = lineOf(node);
-        String access = accessKindOf(node);
-        String mods = BindingNames.modifiersOf(vb.getModifiers());
-        List<MethodRef> callers = currentCallers();
-        if (callers == null) {
-            out.fieldAccesses.add(new FieldAccessFact(line, null, ownerFqn, vb.getName(),
-                    access, mods, lambdaDepth));
-            return true;
-        }
-        // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
-        for (MethodRef caller : callers) {
-            out.fieldAccesses.add(new FieldAccessFact(line, caller, ownerFqn, vb.getName(),
-                    access, mods, lambdaDepth));
-        }
+        fieldAccesses.record(node, lineOf(node), currentCallers(), lambdaDepth);
         return true;
-    }
-
-    /** read / write / readwrite。代入の左辺なら write、複合代入と ++/-- なら readwrite */
-    private static String accessKindOf(SimpleName name) {
-        ASTNode expr = name;
-        ASTNode parent = name.getParent();
-        // a.b / this.b / super.b の b なら、参照式はその親
-        if ((parent instanceof QualifiedName qn && qn.getName() == name)
-                || (parent instanceof FieldAccess fa && fa.getName() == name)
-                || (parent instanceof SuperFieldAccess sfa && sfa.getName() == name)) {
-            expr = parent;
-            parent = expr.getParent();
-        }
-        if (parent instanceof Assignment assignment && assignment.getLeftHandSide() == expr) {
-            return (assignment.getOperator() == Assignment.Operator.ASSIGN)
-                    ? FieldAccessFact.WRITE : FieldAccessFact.READ_WRITE;
-        }
-        if (parent instanceof PostfixExpression) {
-            return FieldAccessFact.READ_WRITE;
-        }
-        if (parent instanceof PrefixExpression prefix) {
-            PrefixExpression.Operator op = prefix.getOperator();
-            return (op == PrefixExpression.Operator.INCREMENT
-                    || op == PrefixExpression.Operator.DECREMENT)
-                    ? FieldAccessFact.READ_WRITE : FieldAccessFact.READ;
-        }
-        return FieldAccessFact.READ;
     }
 }

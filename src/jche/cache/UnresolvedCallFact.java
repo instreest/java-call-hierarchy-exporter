@@ -1,6 +1,8 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import jche.util.Names;
+
 /**
  * 型解決（バインディング）に失敗した呼び出しの記録（U行）。
  * 黙って読み飛ばすと「静かに漏れる」ため、必ず記録して call-hierarchy.csv に出力する。
@@ -58,10 +60,10 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
         if (cols.length < 8) {
             return null;
         }
-        return new UnresolvedCallFact(CallEdgeFact.parseIntOr(cols[1], -1),
+        return new UnresolvedCallFact(Names.parseIntOr(cols[1], -1),
                 MethodRef.fromColumns(cols, 2), cols[6], cols[7], CacheFormat.columnAt(cols, 8),
                 CacheFormat.columnAt(cols, 9), RecvKind.parse(CacheFormat.columnAt(cols, 10)),
                 CacheFormat.columnAt(cols, 11), CacheFormat.columnAt(cols, 12),
-                CallEdgeFact.parseIntOr(CacheFormat.columnAt(cols, 13), 0));
+                Names.parseIntOr(CacheFormat.columnAt(cols, 13), 0));
     }
 }

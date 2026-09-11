@@ -171,6 +171,10 @@ JBang は JDK が無ければ自分で取得できるが、それに任せると
 （内容ハッシュでの差分判定にすればキャッシュが効くようになるが、それはこの Issue の範囲を超える。
 `docs/cache-dependency-jars-qa.md` にある「タイムスタンプで判定する」設計そのものの変更になる。）
 
+**追記（Issue #79）**: その後、更新時刻だけが違うファイルはサイズと内容ハッシュで突き合わせるようにし、
+`analysis-cache` 入力で `.cache/` を実行間で引き継ぐようにした。経緯は
+[actions-analysis-cache-qa.md](actions-analysis-cache-qa.md)。
+
 ### Q13. 解析対象の依存 jar をアクションが取りに行かないのはなぜか
 
 `library.folders` を空欄にしたときの依存 jar の自動取得は、**ローカルリポジトリにある jar を探すだけ**で、

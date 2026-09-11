@@ -17,6 +17,7 @@ import jche.extension.CallSiteHintCollector;
 import jche.extension.HintKeys;
 import jche.extension.HintSink;
 import jche.util.Log;
+import jche.util.Names;
 
 /**
  * 同梱のフェーズA拡張: ファクトリメソッドに渡された文字列キーを証拠として残す。
@@ -112,7 +113,7 @@ public final class FactoryKeyCollector implements CallSiteHintCollector {
             // バインディングが解決できない場合の保険。レシーバの見た目（DaoFactory.get(...) の
             // 「DaoFactory」）が対象の単純名と一致すれば拾う。解決できているときは上で判定済み
             if (declaringType == null && node.getExpression() instanceof SimpleName recv
-                    && recv.getIdentifier().equals(simpleNameOf(target.typeFqn()))) {
+                    && recv.getIdentifier().equals(Names.simpleOf(target.typeFqn()))) {
                 return true;
             }
         }
@@ -143,11 +144,6 @@ public final class FactoryKeyCollector implements CallSiteHintCollector {
             }
         }
         return null;
-    }
-
-    private static String simpleNameOf(String fqn) {
-        int dot = fqn.lastIndexOf('.');
-        return (dot < 0) ? fqn : fqn.substring(dot + 1);
     }
 
     @Override

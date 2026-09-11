@@ -69,7 +69,7 @@ public final class BuildFileClasspath {
             long start = System.nanoTime();
             DependencyCollector.Result result = (detection.tool() == BuildTool.MAVEN)
                     ? MavenBuild.resolve(dir, repos, models)
-                    : GradleBuild.resolve(dir, repos, models);
+                    : GradleBuild.resolve(dir, projectRoot, repos, models);
             if (result == null) {
                 Log.warn("依存jar: " + dir + " のビルドファイルを読めませんでした");
                 continue;

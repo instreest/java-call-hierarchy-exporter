@@ -1,6 +1,8 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import jche.util.Names;
+
 /**
  * ラムダ／メソッド参照の1箇所（M行）。
  * その関数型インターフェースのメソッドに「ソース上に見えない実装がある」ことを表す。
@@ -27,7 +29,7 @@ public record FunctionalImplFact(int line, MethodRef caller, String ifaceMethodK
         if (cols.length < 7) {
             return null;
         }
-        return new FunctionalImplFact(CallEdgeFact.parseIntOr(cols[1], -1),
+        return new FunctionalImplFact(Names.parseIntOr(cols[1], -1),
                 MethodRef.fromColumns(cols, 2), cols[6], CacheFormat.columnAt(cols, 7));
     }
 }

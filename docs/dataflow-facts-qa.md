@@ -140,7 +140,23 @@ S1 の時点でも振る舞いを変えないためにそろえた。S3 では�
 （`dataflow-facts.csv` の形を決めてから）別に入れる。デバッグに使うなら `DataflowFacts.factoryOrigin(id)` を
 `MethodTable.key(id)` と並べて出せばよく、その足場は `test/dataflow/ResolveOrderCheck.java` にある。
 
-### Q15. 出力の変化をどう確認したか
+### Q15. main 側で先に入った同じ症状への対応（`code-review-fixes-qa.md` の Q2）とはどう違うか
+
+この作業と並行して、main には「上限をそのメソッドから数えた委譲の段数に掛ける」形の対応
+（`DataflowResolver.factoryHops`。Issue の案B と同じ考え方）が入っていた。決定性という意味では
+どちらでも症状は消える。違いは 2 つ。
+
+- main の対応は事実を育てる場所（遅延メモ）が解決の中に残る。ここでは Issue の要求どおり、
+  確定を解決の前の層（2b）に出した（Q5）
+- main の対応は上限 5 で打ち切るので `Chain.c1()` は CHA 候補 2 件のまま。ここでは S3 で
+  上限なく畳むので 1 件に確定する。main を取り込んだあと、期待出力（whole / entry / jarchange）の
+  この差分だけを最新の出力で更新した
+
+取り込みで `DataflowResolver` が両方から変わって衝突したが、main 側の変更は畳み込みのアルゴリズム
+（Builder へ移した部分）と `Names.parseIntOr` への置き換えだけだったので、後者を Builder と Resolver の
+両方に取り込み、前者は Builder の実装で置き換えた。
+
+### Q16. 出力の変化をどう確認したか
 
 `bash test/regression/run.sh` の全ケース（whole / entry / jarchange / maven / mavenmulti / gradle / plugin / multi）。
 main との差は `whole` と `entry` の `methods.csv` の 1 セル（`OrderDaoImpl.describe` の inDegree 12 → 11。Q2）だけ。

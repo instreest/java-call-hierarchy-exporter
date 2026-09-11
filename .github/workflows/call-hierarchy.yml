@@ -45,6 +45,7 @@ jobs:
         run: mvn -B --no-transfer-progress dependency:go-offline
 
       # 解析。JDK 25 の用意も JBang の取得もアクションの中で行う。
+      # AST 解析キャッシュ（analysis-cache 入力、既定 true）は前回の実行から引き継がれ、変わっていないファイルの解析を飛ばす
       # 自分のリポジトリなので uses: ./（利用者は uses: instreest/java-call-hierarchy-exporter@main）
       - name: Export call hierarchy
         id: export

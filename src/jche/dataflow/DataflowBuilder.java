@@ -8,6 +8,7 @@ import jche.cache.Origin;
 import jche.graph.CallGraph;
 import jche.graph.IntArray;
 import jche.graph.MethodTable;
+import jche.util.Names;
 
 /**
  * フェーズ2b: データフローの事実をグラフ全体から一括で確定する。
@@ -204,7 +205,7 @@ public final class DataflowBuilder {
         if (kind == Origin.NEW) {
             return Origin.valueOf(returnOrigin);
         }
-        int index = parseIndex(Origin.valueOf(returnOrigin));
+        int index = Names.parseIntOr(Origin.valueOf(returnOrigin), -1);
         if (index < 0) {
             return null;
         }
@@ -244,14 +245,6 @@ public final class DataflowBuilder {
                     ? Origin.valueOf(fieldOrigin) : null;
         }
         return null;
-    }
-
-    private static int parseIndex(String s) {
-        try {
-            return Integer.parseInt(s);
-        } catch (NumberFormatException e) {
-            return -1;
-        }
     }
 
     // ------------------------------------------------------------

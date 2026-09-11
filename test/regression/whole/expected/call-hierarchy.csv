@@ -155,6 +155,9 @@ at fx.di.AbstractPayment.pay(AbstractPayment.java:9),fx.di.AbstractPayment.recor
 at fx.di.AbstractPayment.pay(AbstractPayment.java:9),fx.di.CardPayment.record(int),Checkout.checkout,AbstractPayment.pay,CardPayment.record,CHA候補2件（未展開）: 自クラス（this）
 at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),fx.di.SlowNotice.send(),NoticeSender.notifyUser,SlowNotice.send,解決:SPRING_DI_QUALIFIER
 at fx.di.Scheduler.tick(Scheduler.java:15),fx.di.SystemClock.now(),Scheduler.tick,SystemClock.now,解決:SPRING_DI
+at fx.inherit.InheritMain.run(InheritMain.java:6),fx.inherit.LoudGreeter.greet(),InheritMain.run,LoudGreeter.greet,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.inherit.InheritMain.run(InheritMain.java:6),fx.inherit.BaseGreeter.greet(),InheritMain.run,BaseGreeter.greet,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.inherit.InheritMain.run(InheritMain.java:7),fx.inherit.OnlyImpl.m(),InheritMain.run,OnlyImpl.m,解決:SINGLE_IMPL
 at fx.model.Color.<init>(Color.java:14),fx.model.Registry.register(String),Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),fx.reflect.Target.<clinit>(),Invoker.byConstant,Target.<clinit>,解決:REFLECTION_INIT
 at fx.reflect.Invoker.byConstant(Invoker.java:16),fx.reflect.Target.run(),Invoker.byConstant,Target.run,解決:REFLECTION

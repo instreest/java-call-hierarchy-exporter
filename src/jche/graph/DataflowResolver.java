@@ -7,6 +7,7 @@ import java.util.Set;
 
 import jche.cache.Origin;
 import jche.dataflow.DataflowFacts;
+import jche.util.Names;
 
 /**
  * データフロー解析（読み手の判断）。出所（{@link Origin}）から具象クラスを特定する。
@@ -138,7 +139,7 @@ public final class DataflowResolver {
             return applyInvocationArgs(factoryReturnOrigin(factory), Origin.argsOf(origin), ctx);
         }
         if (kind == Origin.PARAM && ctx != null && ctx.paramTypes() != null) {
-            int idx = parseIndex(Origin.valueOf(origin));
+            int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
             if (idx >= 0 && idx < ctx.paramTypes().length) {
                 // 型ではなく値（L:/K:）が入っている引数は、具象型としては不明
                 String t = ctx.paramTypes()[idx];
@@ -171,7 +172,7 @@ public final class DataflowResolver {
         if (kind == Origin.NEW) {
             return Origin.valueOf(returnOrigin);
         }
-        int index = parseIndex(Origin.valueOf(returnOrigin));
+        int index = Names.parseIntOr(Origin.valueOf(returnOrigin), -1);
         if (index < 0) {
             return null;
         }
@@ -215,7 +216,7 @@ public final class DataflowResolver {
         if (!owner.equals(ctx.ctorOwner())) {
             return null;
         }
-        int idx = parseIndex(Origin.valueOf(origin));
+        int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
         return (idx >= 0 && idx < ctx.ctorArgs().length) ? ctx.ctorArgs()[idx] : null;
     }
 
@@ -238,14 +239,6 @@ public final class DataflowResolver {
             return true;
         }
         return graph.hasInjectedFields(methods.typeFqn(methodId));
-    }
-
-    private static int parseIndex(String s) {
-        try {
-            return Integer.parseInt(s);
-        } catch (NumberFormatException e) {
-            return -1;
-        }
     }
 
     // ------------------------------------------------------------
@@ -458,7 +451,7 @@ public final class DataflowResolver {
         if (ctx == null || ctx.paramTypes() == null) {
             return null;
         }
-        int idx = parseIndex(Origin.valueOf(paramOrigin));
+        int idx = Names.parseIntOr(Origin.valueOf(paramOrigin), -1);
         if (idx < 0 || idx >= ctx.paramTypes().length) {
             return null;
         }

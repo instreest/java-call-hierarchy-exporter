@@ -1,7 +1,6 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.analysis;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -9,15 +8,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 
 import jche.cache.CacheFormat;
-import jche.cache.CallEdgeFact;
+import jche.cache.CacheReader;
 import jche.cache.CallSite;
 import jche.cache.FieldAccessFact;
 import jche.cache.FieldAssignFact;
@@ -33,6 +34,7 @@ import jche.cache.UnresolvedCallFact;
 import jche.analysis.CallEdgeExtractor.SourceFile;
 import jche.config.Config;
 import jche.config.ProjectLayout;
+import jche.util.FileHash;
 import jche.util.Log;
 import jche.util.Progress;
 
@@ -50,13 +52,16 @@ import jche.util.Progress;
  *   パス0 … 旧キャッシュのヘッダと L 行（解析時の依存 jar）を読み、今回のクラスパスと突き合わせる。
  *           追加・変更・削除された jar のパッケージを「変わったパッケージ」として集める。
  *   パス1 … 旧キャッシュを順に読み、更新時刻とサイズが一致するファイル（有効）を覚える。
+ *           更新時刻だけが違うファイルは、サイズが同じなら内容ハッシュを取って F 行と突き合わせる
+ *           （中身が同じなら有効。git のチェックアウトや CI で更新時刻が変わっても再利用できるようにするため）。
  *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
  *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
  *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
  *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
  *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
  *   パス3 … 旧キャッシュをもう一度読み、有効なブロックのうち、I行（依存する型）が
- *           「変わった型」にも「変わったパッケージ」にも触れないものだけをそのまま書き写す。
+ *           「変わった型」にも「変わったパッケージ」にも触れないものだけをそのまま書き写す
+ *           （F 行だけは今の更新時刻と内容ハッシュに書き直す。次回は更新時刻の一致で通るように）。
  *           触れるものは、バインディング解決の結果が変わっている可能性があるので再解析に回す。
  *   パス4 … パス3で再解析に回したファイルを解析し、追記する。
  * </pre>
@@ -76,6 +81,11 @@ public final class CacheUpdater {
 
     private final ProjectLayout layout;
     private final Config config;
+    /**
+     * 相対パス -> 今のソースの内容ハッシュ。更新時刻が違ったときにだけ計算し、同じファイルを
+     * 2 度読まないように覚える（パス1 の判定とパス3 の F 行の書き直しで使う）
+     */
+    private final Map<String, String> hashes = new HashMap<>();
 
     public CacheUpdater(ProjectLayout layout, Config config) {
         this.layout = layout;
@@ -120,7 +130,7 @@ public final class CacheUpdater {
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
-            BlockWriter writer = new BlockWriter(cacheOut, result, progress);
+            BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf);
 
             // --- パス1: 有効なブロックと「変わった型」を集める ---
             Set<String> valid = new HashSet<>();
@@ -142,23 +152,23 @@ public final class CacheUpdater {
             }
             writer.stale = stale;   // 解析したファイルが宣言する型も「変わった型」に加える（改名・追加に備える）
             analyzeInBatches(extractor, changed, writer);
-            writer.countAs = BlockWriter.BY_LIBRARY;
+            writer.countAs = Reason.BY_LIBRARY;
             analyzeInBatches(extractor, unresolvedBefore, writer);
 
             // --- パス3: 変わった型・パッケージに依存していない有効ブロックを書き写す ---
             List<String> dependents = new ArrayList<>();
             List<String> libraryDependents = new ArrayList<>();
             if (oldCacheUsable && !valid.isEmpty()) {
-                result.unresolved += copyValidBlocks(valid, stale, dependents, libraryDependents, cacheOut);
+                result.unresolved += copyValidBlocks(live, valid, stale, dependents, libraryDependents, cacheOut);
                 result.reused = valid.size() - dependents.size() - libraryDependents.size();
                 writer.skipped(result.reused);
             }
 
             // --- パス4: 依存で無効になったファイルを解析し直す ---
             writer.stale = null;
-            writer.countAs = BlockWriter.BY_SOURCE;
+            writer.countAs = Reason.BY_SOURCE;
             analyzeInBatches(extractor, filesOf(dependents, live), writer);
-            writer.countAs = BlockWriter.BY_LIBRARY;
+            writer.countAs = Reason.BY_LIBRARY;
             analyzeInBatches(extractor, filesOf(libraryDependents, live), writer);
         }
         progress.finish();
@@ -188,34 +198,45 @@ public final class CacheUpdater {
     }
 
     /**
+     * ファイルを解析し直す理由（集計の内訳）。{@link StaleTypes#touches} の判定結果と
+     * {@link BlockWriter#countAs} の両方で使う（以前は別々の定数で同じ意味を表していた）
+     */
+    private enum Reason {
+        /** 変わった型にも jar にも触れていない（再解析しない）。自分が変わった（または新規）ファイルの集計にも使う */
+        UNTOUCHED,
+        /** 依存する型（ソース）が変わった */
+        BY_SOURCE,
+        /** 依存 jar が変わった */
+        BY_LIBRARY
+    }
+
+    /**
      * 解析結果を受け取って即座にキャッシュへ書き出し、件数と進捗を数える。
      * 1ファイル分だけをヒープに載せ、書き出したら即破棄する。
      */
     private static final class BlockWriter implements CallEdgeExtractor.Sink {
-        /** 自分が変わった（または新規）ファイルとして数える */
-        static final int BY_SELF = 0;
-        /** 依存する型（ソース）が変わったための再解析として数える */
-        static final int BY_SOURCE = 1;
-        /** 依存 jar が変わったための再解析として数える */
-        static final int BY_LIBRARY = 2;
-
         private final BufferedWriter cacheOut;
         private final CachePhaseResult result;
         private final Progress progress;
+        /** 解析したファイルの内容ハッシュを求める（F行に書くため） */
+        private final Function<SourceFile, String> hasher;
         /** 非nullなら、解析したファイルが宣言する型を「変わった型」に加える（パス2） */
         StaleTypes stale;
-        /** 解析した理由（BY_SELF / BY_SOURCE / BY_LIBRARY）。集計の内訳に使う */
-        int countAs = BY_SELF;
+        /** 解析した理由。集計の内訳に使う（UNTOUCHED は「自分が変わった・新規」） */
+        Reason countAs = Reason.UNTOUCHED;
         private long done;
 
-        BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress) {
+        BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
+                    Function<SourceFile, String> hasher) {
             this.cacheOut = cacheOut;
             this.result = result;
             this.progress = progress;
+            this.hasher = hasher;
         }
 
         @Override
         public void accept(SourceFile file, FileAnalysis fa) throws IOException {
+            fa.hash = hasher.apply(file);
             writeBlock(fa, cacheOut);
             result.unresolved += fa.unresolvedCount();
             result.parsed++;
@@ -237,9 +258,9 @@ public final class CacheUpdater {
         }
 
         private void countReason() {
-            if (countAs == BY_SOURCE) {
+            if (countAs == Reason.BY_SOURCE) {
                 result.dependents++;
-            } else if (countAs == BY_LIBRARY) {
+            } else if (countAs == Reason.BY_LIBRARY) {
                 result.libraryDependents++;
             }
         }
@@ -256,9 +277,6 @@ public final class CacheUpdater {
      * および追加・変更・削除された jar のパッケージ
      */
     private static final class StaleTypes {
-        static final int UNTOUCHED = 0;
-        static final int BY_SOURCE = 1;
-        static final int BY_LIBRARY = 2;
 
         private final Set<String> types = new HashSet<>();
         private final Set<String> packages = new HashSet<>();
@@ -278,11 +296,10 @@ public final class CacheUpdater {
          * "pkg.*"（オンデマンド import）は、そのパッケージの型が1つでも変わっていれば触れているとみなす。
          * ソースの変更に触れていればそちらを理由として返す（集計の内訳のため）。
          *
-         * @return UNTOUCHED / BY_SOURCE / BY_LIBRARY
          */
-        int touches(String depsCsv) {
+        Reason touches(String depsCsv) {
             if (depsCsv.isEmpty() || (types.isEmpty() && libraryPackages.isEmpty())) {
-                return UNTOUCHED;
+                return Reason.UNTOUCHED;
             }
             boolean library = false;
             for (String d : depsCsv.split(",")) {
@@ -292,16 +309,16 @@ public final class CacheUpdater {
                 if (d.endsWith(".*")) {
                     String p = d.substring(0, d.length() - 2);
                     if (types.contains(p) || packages.contains(p)) {
-                        return BY_SOURCE;
+                        return Reason.BY_SOURCE;
                     }
                     library |= libraryPackages.contains(p);
                 } else if (types.contains(d)) {
-                    return BY_SOURCE;
+                    return Reason.BY_SOURCE;
                 } else {
                     library |= inLibraryPackage(d);
                 }
             }
-            return library ? BY_LIBRARY : UNTOUCHED;
+            return library ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
         }
 
         /**
@@ -331,17 +348,61 @@ public final class CacheUpdater {
         }
     }
 
-    /** ブロックのF行が、今のソースと一致しているか（更新時刻とサイズの両方） */
-    private static boolean isValidBlock(String[] f, Map<String, SourceFile> live) {
+    /**
+     * ブロックのF行が、今のソースと一致しているか。
+     * 更新時刻とサイズの両方が一致すれば一致。更新時刻だけが違うときは、サイズが同じで、
+     * F行に内容ハッシュがあり、今のファイルの内容ハッシュと一致すれば一致とみなす
+     * （旧形式の F 行にはハッシュが無いので、その場合は従来どおり不一致）。
+     */
+    private boolean isValidBlock(String[] f, Map<String, SourceFile> live) {
         if (f.length < 4) {
             return false;
         }
         SourceFile st = live.get(f[1]);
+        if (st == null) {
+            return false;
+        }
         try {
-            return st != null && st.mtime() == Long.parseLong(f[2]) && st.size() == Long.parseLong(f[3]);
+            if (st.size() != Long.parseLong(f[3])) {
+                return false;
+            }
+            if (st.mtime() == Long.parseLong(f[2])) {
+                return true;
+            }
         } catch (NumberFormatException ignore) {
             return false;   // 壊れたF行 -> このブロックは破棄し、後で再解析される
         }
+        String recorded = CacheFormat.columnAt(f, 5);
+        return !recorded.isEmpty() && recorded.equals(hashOf(st));
+    }
+
+    /** 今のソースの内容ハッシュ（計算は 1 ファイル 1 回）。読めなければ空文字 */
+    private String hashOf(SourceFile file) {
+        String h = hashes.get(file.relativePath());
+        if (h == null) {
+            try {
+                h = FileHash.of(file.path());
+            } catch (IOException e) {
+                Log.warn("ソースのハッシュを取れません（更新時刻とサイズだけで判定）: " + file.relativePath() + " (" + e + ")");
+                h = "";
+            }
+            hashes.put(file.relativePath(), h);
+        }
+        return h;
+    }
+
+    /**
+     * パス3で書き写すF行。今の更新時刻と内容ハッシュに置き換える。
+     * 更新時刻が一致していれば旧行のハッシュをそのまま使う（無ければ計算して補う）。
+     * 更新時刻が違っていた（ハッシュで通した）ブロックは、次回は更新時刻の一致で通るようになる
+     */
+    private String refreshedFileRow(String[] f, SourceFile st) {
+        String hash = CacheFormat.columnAt(f, 5);
+        if (hash.isEmpty() || st.mtime() != Long.parseLong(f[2])) {
+            hash = hashOf(st);
+        }
+        return CacheFormat.joinRow("F", f[1], String.valueOf(st.mtime()), String.valueOf(st.size()),
+                String.valueOf(errorsOf(f)), hash);
     }
 
     /**
@@ -352,9 +413,8 @@ public final class CacheUpdater {
         if (!Files.isRegularFile(config.cacheFile)) {
             return null;
         }
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            String first = in.readLine();
-            if (first == null || !CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint).equals(first.trim())) {
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {
+            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint))) {
                 // 形式が変わった場合のほか、source.level や実行 JDK が変わった場合もここで破棄する。
                 // 言語バージョンやブートクラスパスが違えば同じソースでも解析結果が変わるため、
                 // 更新時刻とサイズが一致していても再利用してはいけない
@@ -362,9 +422,8 @@ public final class CacheUpdater {
                 return null;
             }
             List<LibraryFact> libraries = new ArrayList<>();
-            String line;
-            while ((line = in.readLine()) != null && CacheFormat.rowTypeOf(line) == CacheFormat.ROW_LIBRARY) {
-                LibraryFact l = LibraryFact.fromRow(CacheFormat.columnsOf(line));
+            while (in.next() && in.is(CacheFormat.ROW_LIBRARY)) {
+                LibraryFact l = LibraryFact.fromRow(in.columns());
                 if (l != null) {
                     libraries.add(l);
                 }
@@ -383,15 +442,13 @@ public final class CacheUpdater {
     private void scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
                               boolean librariesAddedOrChanged, Set<String> libraryAffected)
             throws IOException {
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            in.readLine();   // ヘッダ行（パス0で検証済み）
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean staleBlock = false;
             String currentRel = null;
-            String line;
-            while ((line = in.readLine()) != null) {
-                char rowType = CacheFormat.rowTypeOf(line);
+            while (in.next()) {
+                char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
-                    String[] f = CacheFormat.columnsOf(line);
+                    String[] f = in.columns();
                     staleBlock = !isValidBlock(f, live);
                     currentRel = staleBlock ? null : f[1];
                     if (currentRel != null) {
@@ -403,14 +460,13 @@ public final class CacheUpdater {
                         }
                     }
                 } else if (staleBlock && rowType == CacheFormat.ROW_TYPE) {
-                    TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
+                    TypeFact t = TypeFact.fromRow(in.columns());
                     if (t != null) {
                         stale.add(t.typeFqn(), t.pkg());
                     }
                 } else if (currentRel != null && librariesAddedOrChanged
                         && rowType == CacheFormat.ROW_UNRESOLVED
-                        && UnresolvedCallFact.BINDING_FAILED.equals(
-                                CacheFormat.columnAt(CacheFormat.columnsOf(line), 7))) {
+                        && UnresolvedCallFact.BINDING_FAILED.equals(in.column(7))) {
                     // エラーとしては報告されなかったが呼び出し先が解決できなかった。jar の追加で変わりうる
                     valid.remove(currentRel);
                     libraryAffected.add(currentRel);
@@ -429,26 +485,23 @@ public final class CacheUpdater {
      *
      * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
      */
-    private long copyValidBlocks(Set<String> valid, StaleTypes stale, List<String> dependents,
-                                 List<String> libraryDependents, BufferedWriter cacheOut) throws IOException {
+    private long copyValidBlocks(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
+                                 List<String> dependents, List<String> libraryDependents,
+                                 BufferedWriter cacheOut) throws IOException {
         long unresolved = 0L;
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            in.readLine();   // バージョン行（パス1で検証済み）
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean keeping = false;
             String pendingFileRow = null;   // 依存の判定待ちのF行
             String pendingRel = null;
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (line.isEmpty()) {
-                    continue;
-                }
-                char rowType = CacheFormat.rowTypeOf(line);
+            while (in.next()) {
+                String line = in.line();
+                char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
-                    String[] f = CacheFormat.columnsOf(line);
+                    String[] f = in.columns();
                     keeping = false;
                     pendingFileRow = null;
                     if (f.length >= 2 && valid.contains(f[1])) {
-                        pendingFileRow = line;
+                        pendingFileRow = refreshedFileRow(f, live.get(f[1]));
                         pendingRel = f[1];
                     }
                     continue;
@@ -458,13 +511,13 @@ public final class CacheUpdater {
                     String deps = "";
                     boolean isDepsRow = (rowType == CacheFormat.ROW_DEPENDENCIES);
                     if (isDepsRow) {
-                        deps = CacheFormat.columnAt(CacheFormat.columnsOf(line), 1);
+                        deps = in.column(1);
                     }
-                    int touched = stale.touches(deps);
-                    if (touched == StaleTypes.BY_SOURCE) {
+                    Reason touched = stale.touches(deps);
+                    if (touched == Reason.BY_SOURCE) {
                         dependents.add(pendingRel);
                         keeping = false;
-                    } else if (touched == StaleTypes.BY_LIBRARY) {
+                    } else if (touched == Reason.BY_LIBRARY) {
                         libraryDependents.add(pendingRel);
                         keeping = false;
                     } else {
@@ -482,7 +535,7 @@ public final class CacheUpdater {
                 if (keeping) {
                     writeLine(cacheOut, line);
                     if (rowType == CacheFormat.ROW_UNRESOLVED) {
-                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
+                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
                         if (u != null && !u.hasUsableCandidate()) {
                             unresolved++;
                         }
@@ -501,7 +554,7 @@ public final class CacheUpdater {
     /** 1ファイル分のブロックを書く。行の並びは {@link CacheFormat} のとおり */
     private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
         writeLine(w, CacheFormat.joinRow("F", fa.relativePath,
-                String.valueOf(fa.lastModified), String.valueOf(fa.size), String.valueOf(fa.errors)));
+                String.valueOf(fa.lastModified), String.valueOf(fa.size), String.valueOf(fa.errors), fa.hash));
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
         writeLine(w, CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));
         for (TypeFact t : fa.types) {

@@ -5,6 +5,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -64,8 +65,17 @@ public final class CallGraph {
     /** エッジごとの証拠。-1 なら証拠なし。値は hintTable のインデックス */
     int[] edgeHint;
     private final ArrayList<List<Hint>> hintTable = new ArrayList<>();
-    /** callerKey + "|" + scopeKey -> 証拠のリスト */
-    final HashMap<String, List<Hint>> hintsByScope = new HashMap<>();
+    /**
+     * 同じ証拠のリストを hintTable に 2 回載せないための逆引き（構築時だけ使う）。
+     * 同じレシーバへの呼び出しが 1 メソッド内に複数あれば同じリストを共有する
+     */
+    private IdentityHashMap<List<Hint>, Integer> hintIndex = new IdentityHashMap<>();
+    /**
+     * callerKey + "|" + scopeKey -> 証拠のリスト。構築時だけ使い、{@link #finishBuild} で捨てる。
+     * キーはメソッドキー＋バインディングキーの長い文字列で、ラムダや new のたびに増えるため、
+     * 解析が終わるまで抱えているとエッジ配列より大きくなりうる
+     */
+    HashMap<String, List<Hint>> hintsByScope = new HashMap<>();
 
     /**
      * 起点の並び替え用。ソースフォルダの順（プロジェクトルートからの相対パス。
@@ -263,11 +273,23 @@ public final class CallGraph {
         if (!recvKey.isEmpty()) {
             List<Hint> hints = hintsByScope.get(callerKey + "|" + recvKey);
             if (hints != null && !hints.isEmpty()) {
-                hintTable.add(hints);
-                edgeHint[pos] = hintTable.size() - 1;
+                Integer index = hintIndex.get(hints);
+                if (index == null) {
+                    hintTable.add(hints);
+                    index = hintTable.size() - 1;
+                    hintIndex.put(hints, index);
+                }
+                edgeHint[pos] = index;
             }
         }
         recvOriginIds[pos] = internOrigin(recvOrigin);
         argOriginIds[pos] = internOrigin(argOrigins);
+    }
+
+    /** 構築が終わったら、構築時にしか使わない索引を捨てる（エッジからは hintTable 経由で引ける） */
+    void finishBuild() {
+        hintsByScope = new HashMap<>();
+        hintIndex = new IdentityHashMap<>();
+        originPoolIndex.clear();
     }
 }

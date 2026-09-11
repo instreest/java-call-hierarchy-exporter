@@ -42,7 +42,12 @@ import jche.util.Log;
  */
 public final class PluginClassLoaders {
 
-    /** 出力先（キャッシュフォルダ配下）。実行のたびに作り直す */
+    /**
+     * 出力先（キャッシュフォルダ配下）の名前の前半。実行のたびに作り直す。
+     * 後半は plugin.folders のハッシュ。同じ project.root（＝同じキャッシュフォルダ）を指す設定が
+     * 別の plugin.folders を持つとき、同じ JVM で続けて動かすと先に作ったクラスローダの
+     * クラスフォルダを後の設定が消してしまい、遅延ロードで ClassNotFoundException になるため
+     */
     private static final String CLASSES_DIR_NAME = "plugin-classes";
 
     /** 同じ設定で2回作らないための覚え書き。フェーズAとフェーズBで別々に読み込まれるため */
@@ -135,7 +140,7 @@ public final class PluginClassLoaders {
                     + "コンパイル済みの .class か .jar を plugin.folders に置いてください");
             return null;
         }
-        Path out = config.cacheDir.resolve(CLASSES_DIR_NAME);
+        Path out = config.cacheDir.resolve(CLASSES_DIR_NAME + "_" + Config.shortHash(config.pluginFolders.toString()));
         try {
             deleteRecursively(out);   // 消した .java のクラスが残らないよう、毎回作り直す
             Files.createDirectories(out);

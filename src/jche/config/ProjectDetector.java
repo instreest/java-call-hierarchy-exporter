@@ -1,6 +1,7 @@
 package jche.config;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -91,7 +92,13 @@ public final class ProjectDetector {
         }
         try {
             Matcher m = POM_ENCODING.matcher(Files.readString(pom, StandardCharsets.UTF_8));
-            return m.find() ? m.group(1) : null;
+            if (!m.find()) {
+                return null;
+            }
+            String enc = m.group(1);
+            // ${file.encoding} のようなプロパティ参照はここでは展開できない。そのまま返すと
+            // Charset.forName で落ちるので「決められない」として既定（UTF-8）に倒す
+            return (enc.contains("${") || !Charset.isSupported(enc)) ? null : enc;
         } catch (IOException | RuntimeException e) {
             return null;
         }

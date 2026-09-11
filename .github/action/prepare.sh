@@ -5,7 +5,8 @@
 #
 #   - config 入力があれば、それを絶対パスに直して一覧にする（内容には触らない）
 #   - 無ければ、解析対象の入力から設定ファイルを 1 つ生成する
-#   - 出力フォルダの一覧を受け取るファイル（JCHE_OUTPUT_DIR_FILE）とキャッシュキーを決める
+#   - 出力フォルダの一覧を受け取るファイル（JCHE_OUTPUT_DIR_FILE）と、2 つのキャッシュキーを決める
+#     （JBang / JDT 用と、AST 解析結果用）
 #
 # 生成先を RUNNER_TEMP にするのは、解析対象リポジトリのチェックアウトに書き込まないため
 # （利用者のワークフローが git diff --exit-code で作業ツリーの汚れを検査していることがある）。
@@ -102,8 +103,14 @@ hash_files() {
 cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/src/CallHierarchyExporter.java" \
     | hash_files | cut -c1-16)
 
+# AST 解析キャッシュのキー。使う設定ファイルの内容（生成した場合は絶対パス込みで毎回同じになる）から作る。
+# 同じリポジトリの別ジョブが別の設定でこのアクションを呼んでも、互いのキャッシュを上書きしないようにするため。
+# ツール本体の版は含めない。キャッシュの形式が変わったときはツール自身が捨てるので、キーで分ける必要が無い
+analysis_cache_key=$(tr '\n' '\0' < "$config_list" | xargs -0 cat | hash_files | cut -c1-16)
+
 {
     echo "config-list=$config_list"
     echo "output-dir-file=$output_dir_file"
     echo "cache-key=$cache_key"
+    echo "analysis-cache-key=$analysis_cache_key"
 } >> "${GITHUB_OUTPUT:-/dev/stdout}"
