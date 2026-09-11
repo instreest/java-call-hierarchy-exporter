@@ -7,7 +7,8 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config/config.properties](config/config.properties)（コメントに全項目の説明）
-- CI から使う … [GitHub Actions から使う](#github-actions-から使う)
+- CI から使う … [GitHub Actions から使う](#github-actions-から使う)、詳細は [docs/github-actions.md](docs/github-actions.md)
+- 設計の記録（機能ごとに迷った点と結論）… [docs/README.md](docs/README.md)
 
 ---
 
@@ -88,26 +89,15 @@ config/
 
 出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
 解析結果のキャッシュは出力フォルダには入りません（[キャッシュの置き場所](#キャッシュの置き場所)）。
-各列の意味と注記の詳細は [出力ファイル](#出力ファイル) にあります。
+各列の意味・行順・注記の詳細は [出力ファイル](#出力ファイル) にあります。
 
-### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
-
-呼び出し元、呼び出し先、起点メソッド、呼び出し階層（可変長列で起点からの経路）を出力したCSVファイルです。
-呼び出し元ごとに1行出力します。呼び出し先列でフィルタすることで起点メソッドと呼び出し階層が一覧化できます。
-出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → rootの宣言行 → コード呼び出しの順序です。
-
-```csvサンプル
+```csv
 caller,callee,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
-### `methods.csv` — ソース上の全メソッドとその呼び出し状況
-
-各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
-出力ソート順は、ソースフォルダ → ファイルの相対パス → 宣言行順の順序です。
-
-```csvサンプル
+```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
 OrderAction.execute(),jp.co.example.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
 OrderService.findOrder(String),jp.co.example.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
@@ -115,7 +105,6 @@ OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISO
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
 
----
 
 ## 実行方法の詳細
 
@@ -267,7 +256,7 @@ Maven / Gradle のプロジェクトではビルドファイルを読んで依�
 5. 集めた jar とクラスフォルダをそのまま JDT に渡します。jar はローカルリポジトリに置かれたままで、コピーしません
 
 集めた一覧（パス・座標・要求元の連鎖）は出力フォルダの `resolved-classpath.txt` に残ります。
-キャッシュの `L` 行にも同じパスが入るので、[依存 jar を変えたとき](#依存-jar-を変えたとき)の差分更新はそのまま効きます。
+キャッシュの `L` 行にも同じパスが入るので、依存 jar を変えたときの差分更新（[docs/cache-design.md](docs/cache-design.md)）はそのまま効きます。
 
 Gradle のビルドファイルはプログラムなので、読めるのは宣言的な書き方だけです。
 
@@ -307,7 +296,7 @@ DI コンテナで注入されるフィールドや、キーで実装を切り�
 呼び出し階層が実装の数だけ枝分かれします。解決の条件を外から与えると、1 件に絞れます。
 
 Spring の `@Autowired` などは注釈から自動で解決するので、設定は要りません
-（[Spring による DI の解決](#spring-による-di-の解決)）。ここで扱うのは、**注釈からは分からない**もの
+（[docs/spring-di-qa.md](docs/spring-di-qa.md)）。ここで扱うのは、**注釈からは分からない**もの
 ── XML や独自形式の DI 設定ファイル、キーで実装を切り替えるファクトリ、社内フレームワークの仕掛けです。
 拡張は Spring の判定より先に効くので、自動の解決を上書きすることもできます。
 
@@ -398,18 +387,7 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 ワークフローに書くのは解析対象の指定だけです。
 
 ```yaml
-name: call hierarchy
-
-on:
-  workflow_dispatch:
-  push:
-
-jobs:
-  export:
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/checkout@v5
-
       # library-folders を空欄にして依存 jar を自動で集める場合は、先にローカルリポジトリへ
       # 依存を取得しておく（このツールはネットワークに出ないため）
       - uses: actions/setup-java@v5
@@ -425,234 +403,10 @@ jobs:
           source-encoding: UTF-8
 ```
 
-出力は `call-hierarchy` という名前のアーティファクト（`upload-artifact` 入力で切れます）に入ります。
-中身は通常の実行と同じ `<解析開始日時>_<プロジェクト名>/` フォルダです
-（[出力されるファイル](#出力されるファイル)）。ジョブのサマリには出力フォルダと CSV の行数が出ます。
-
-### 参照する版の指定
-
-`uses:` の `@` の後ろには Git の参照（ブランチ・タグ・コミット SHA）を書きます。
-**タグは必須ではありません**。リリースタグを付けていない間はブランチ名で参照できます。
-
-| 書き方 | 意味 |
-| --- | --- |
-| `@main` | 既定ブランチの最新。タグを運用しない場合はこれ。ツール側の変更がそのまま次回の実行に入る |
-| `@0123456789abcdef...`（40 桁のコミット SHA） | その時点のコードに固定する。ブランチが進んでも動きが変わらない。再現性が要る場合はこちら |
-| `@v1` などのタグ | タグを打った場合。タグを動かすことで利用者側を書き換えずに版を切り替えられる |
-
-同じリポジトリの中のワークフローからは、参照そのものが要りません（`uses: ./`。
-このリポジトリの `.github/workflows/smoke.yml` の `action` ジョブがその形です）。
-
-社内の複製やフォークを使う場合、あるいは取得元を明示したい場合は、`actions/checkout` で
-ツールを別フォルダへ取り出してからローカル参照する書き方もできます。
-
-```yaml
-      - uses: actions/checkout@v5            # 解析対象（自分のリポジトリ）
-
-      - uses: actions/checkout@v5            # ツール本体
-        with:
-          repository: instreest/java-call-hierarchy-exporter
-          ref: main                          # ブランチ・タグ・コミット SHA
-          path: .jche-tool
-
-      - uses: ./.jche-tool
-        with:
-          source-folders: src/main/java
-```
-
-この形では `path:` に取り出したフォルダがアクションの場所になり、解析対象は
-ワークスペース（1 つ目のチェックアウト）のままです。プライベートリポジトリから取り出す場合は
-2 つ目の `actions/checkout` に `token:` が要ります。
-
-### 入力
-
-設定ファイルを自分で用意しない場合は、次の入力から設定ファイルを 1 つ生成します。
-意味は同名の設定項目（[config/config.properties](config/config.properties) のコメント）と同じです。
-
-| 入力 | 既定値 | 対応する設定項目 |
-| --- | --- | --- |
-| `project-root` | `.`（ワークスペース） | `project.root` |
-| `source-folders` | `src/main/java` | `source.folders` |
-| `source-encoding` | `UTF-8` | `source.encoding` |
-| `source-level` | （空欄） | `source.level` |
-| `library-folders` | （空欄。ビルドファイルから自動取得） | `library.folders` |
-| `library-build-tool` | `auto` | `library.build.tool` |
-| `library-repositories` | （空欄。`~/.m2/repository` 等） | `library.repositories` |
-| `external-library-folders` | （空欄） | `external.library.folders` |
-| `entry-packages` | （空欄。呼び出し元が無いメソッドが起点） | `entry.packages` |
-| `exclude-packages` | `java.**,javax.**` | `exclude.packages` |
-| `extra-config` | （空欄） | 上に無い項目を「1 行 1 項目」で追記する |
-| `output-folder` | `call-hierarchy-output` | `output.folder` |
-
-`project-root` と `output-folder` はワークスペースからの相対パス（または絶対パス）、
-`source-folders` などは `project-root` からの相対パスです。
-
-実行環境と出力の入力は次のとおりです。
-
-| 入力 | 既定値 | 内容 |
-| --- | --- | --- |
-| `config` | （空欄） | 用意済みの設定ファイルを使う。改行またはカンマ区切りで複数渡せる。指定すると上の生成用の入力は使わない |
-| `java-version` | `25` | ツール自身を動かす JDK。空欄にすると `actions/setup-java` を飛ばす（自分で用意する場合） |
-| `java-distribution` | `temurin` | `actions/setup-java` の `distribution` |
-| `cache` | `true` | JBang 本体と JDT の jar をワークフロー実行間でキャッシュする |
-| `analysis-cache` | `true` | AST 解析結果のキャッシュ（`.cache/`）をワークフロー実行間で引き継ぐ。前回から変わっていないソースは解析を飛ばす |
-| `upload-artifact` | `true` | 出力フォルダをアーティファクトにする |
-| `artifact-name` | `call-hierarchy` | アーティファクトの名前 |
-| `artifact-retention-days` | （空欄） | アーティファクトの保持日数 |
-
-### 設定ファイルを渡す（`config` 入力）
-
-入力で表せない項目まで細かく指定したいときや、手元と CI で同じ設定を使いたいときは、
-設定ファイルをリポジトリに置いて `config` で渡します。**`config` を指定すると、上の生成用の入力
-（`project-root` / `source-folders` … と `output-folder`）は使われません。** 設定ファイルの内容がそのまま効きます。
-
-```yaml
-      - uses: actions/checkout@v5
-
-      - uses: instreest/java-call-hierarchy-exporter@main
-        with:
-          config: ci/call-hierarchy.properties
-```
-
-パスは**ワークスペース（チェックアウト先）からの相対パス**か絶対パスです。
-無いファイルを指定するとその場で失敗します（`::error::config に指定された設定ファイルがありません`）。
-
-#### 設定ファイルの書き方（CI 向けの例）
-
-**相対パスの起点は「その設定ファイルが置かれているフォルダ」**です（`project.root` / `output.folder` /
-`cache.folder`）。`source.folders` などは `project.root` からの相対です。
-リポジトリ直下に `ci/call-hierarchy.properties` を置くなら、`project.root` は 1 つ上（`..`）になります。
-
-```properties
-# ci/call-hierarchy.properties（このファイルのフォルダが相対パスの起点）
-project.root=..
-source.folders=src/main/java,src/generated/java
-source.encoding=UTF-8
-
-# 空欄にすると pom.xml / build.gradle を読んで ~/.m2 等から依存 jar を集める
-# （ワークフロー側で先に mvn -B dependency:go-offline を実行しておくこと）
-library.folders=
-library.build.tool=auto
-
-# jar をリポジトリに同梱している場合は、集めたフォルダを project.root からの相対で指定する
-#library.folders=libs
-
-entry.packages=
-exclude.packages=java.**,javax.**,org.springframework.**
-
-# 出力先。既定は「この設定ファイルと同じフォルダ」。相対パスはこのファイルのフォルダの配下だけ
-# 指定できる（.. で外へ出るとエラー。外へ出すときは絶対パス）
-output.folder=output
-output.encoding=UTF-8-BOM
-max.rows=5000000
-
-# キャッシュの置き場所は空欄のままでよい。アクションのフォルダの下に作られ、
-# 解析対象リポジトリのチェックアウトは汚れない。空欄にしておくと analysis-cache 入力で
-# ワークフロー実行間に引き継がれる（別の場所を指定すると引き継ぎの対象から外れる）
-cache.folder=
-```
-
-設定できる項目の一覧と意味は [config/config.properties](config/config.properties) のコメントにあります。
-手元で `./java-call-hierarchy-exporter.sh ci/call-hierarchy.properties` と実行したときと同じ設定なので、CI で出た結果を手元で再現できます。
-
-**出力先だけは注意**してください。`output.folder` の既定は「設定ファイルと同じフォルダ」なので、
-指定しないと解析対象リポジトリのチェックアウトの中（設定ファイルの隣）に出力フォルダができます。
-相対パスは設定ファイルのフォルダの配下しか指せない（`..` で外へ出るとエラーになります）ので、
-上の例のように配下へ出すか、リポジトリの外に出したい場合は絶対パス（Linux のランナーなら
-`/tmp/call-hierarchy-output` など）を書きます。リポジトリ内に出すなら、その場所を `.gitignore` に
-足しておくと `git diff --exit-code` のような検査と併用できます。
-
-#### 複数渡す
-
-改行区切り（`|`）またはカンマ区切りで複数渡せます。渡した順に 1 つずつ処理し、
-設定ファイルごとに別の出力フォルダができます（[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
-
-```yaml
-      - uses: instreest/java-call-hierarchy-exporter@main
-        id: export
-        with:
-          config: |
-            ci/app-a.properties
-            ci/app-b.properties
-            ci/batch.properties
-```
-
-- 1 つが失敗しても残りは処理し、最後にまとめて報告します。1 つでも失敗すればステップは失敗します
-  （出来ているところまではアーティファクトに入ります）
-- `output-dirs` 出力に、成功した設定の出力フォルダが 1 行に 1 つ並びます。
-  `output-dir` / `csv` / `methods-csv` / `run-log` は**最初の設定**のものです
-- アーティファクトは 1 つにまとまります（それぞれの出力フォルダが共通の親からの構造で入ります）
-- どの設定で走ったかは、各出力フォルダに入る設定ファイルの複製で分かります
-
-### 出力
-
-| 出力 | 内容 |
-| --- | --- |
-| `output-dir` | 最初の設定ファイルの出力フォルダ（絶対パス） |
-| `output-dirs` | すべての出力フォルダ（1 行に 1 つ） |
-| `csv` | `call-hierarchy.csv` のパス（最初の出力フォルダのもの） |
-| `methods-csv` | `methods.csv` のパス（最初の出力フォルダのもの） |
-| `run-log` | `run.log` のパス（最初の出力フォルダのもの） |
-
-後続のステップで CSV を読むときは、`${{ }}` を `run:` に直接書かず環境変数を経由するのが安全です。
-
-```yaml
-      - uses: instreest/java-call-hierarchy-exporter@main
-        id: export
-        with:
-          source-folders: src/main/java
-
-      - name: 行数を数える
-        env:
-          CSV: ${{ steps.export.outputs.csv }}
-        run: wc -l "$CSV"
-```
-
-### 使うときの注意
-
-- **依存 jar** … `library-folders` を空欄にすると `pom.xml` / `build.gradle` を読んでローカルリポジトリから
-  依存 jar を集めますが、このツールはネットワークに出ません。ランナーの `~/.m2/repository` は空なので、
-  先に `mvn -B dependency:go-offline`（Gradle なら依存を取得するタスク）を実行しておいてください。
-  取得しないまま実行しても解析自体は動きますが、jar の型が解決できず呼び出しが欠けます
-- **JDK** … ツール自身は JDK 25 で動きます（`//JAVA 25`）。`java-version` を空欄にして自分で用意する場合も
-  25 を入れてください。解析対象のビルドに別の JDK が要る場合は、そのステップで別途セットアップします
-- **キャッシュ** … `cache: true` のとき、JBang 本体（`~/.jbang`）と JDT の jar（`~/.m2/repository/org/eclipse`）を
-  ワークフロー実行間でキャッシュします。`analysis-cache: true`（既定）のときは、AST 解析結果のキャッシュ（`.cache/`）も
-  前回の実行から引き継ぎ、変わっていないソースの解析を飛ばします。`actions/checkout` はファイルの更新時刻を
-  チェックアウト時刻にしますが、更新時刻だけが違うファイルはサイズと内容ハッシュで突き合わせるので、
-  中身が同じなら再利用されます。キャッシュは実行ごとに新しいエントリとして保存され（`jche-analysis-<OS>-…`）、
-  復元は「同じ設定ファイルの最新」→「同じ OS の最新」の順に前方一致で探します。古いエントリは GitHub が
-  容量（リポジトリごとに 10 GB）と期限（7 日間使われないもの）で消します。
-  `config` 入力で設定ファイルを渡す場合は `cache.folder` を空欄のままにしてください（別の場所を指定すると、
-  引き継ぎの対象から外れます）。同じジョブの中でこのアクションを 2 回以上呼ぶときは、2 回目以降はその場の `.cache/` を
-  そのまま使います
-- **作業ツリー** … 生成した設定ファイルは `RUNNER_TEMP` に、解析キャッシュはアクション自身のフォルダに
-  作るので、解析対象リポジトリのチェックアウトには出力フォルダ以外を作りません
-  （既定は `call-hierarchy-output/`。`.gitignore` に足しておくと `git diff --exit-code` 等と併用できます）
-
-### Actions 以外の CI から使うとき
-
-環境変数 `JCHE_OUTPUT_DIR_FILE` にファイルのパスを渡して実行すると、設定ファイルごとの出力フォルダの
-絶対パスを、成功した順に 1 行ずつ UTF-8 でそのファイルに書きます。実行ごとに変わる出力フォルダ名
-（`<解析開始日時>_<プロジェクト名>`）を、ログを読まずに受け取れます（`action.yml` もこれを使っています）。
-
-```bash
-JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
-cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
-```
-
-起動コマンド（`./java-call-hierarchy-exporter.sh a.properties`、Windows は `java-call-hierarchy-exporter.cmd`）から実行したときも同じです
-（対話モードで解析した場合も書き出します）。
-
-### このリポジトリ自身での使用例
-
-このリポジトリも、自分のソース（`src/`）をこのアクションで解析しています
-（[.github/workflows/call-hierarchy.yml](.github/workflows/call-hierarchy.yml)。`main` への push と手動実行）。
-依存 jar は `pom.xml` から自動で集めるので、その前に `mvn -B dependency:go-offline` を置いてあります。
-そのまま写して使える最小の形なので、書き方に迷ったらこのファイルを見てください。
-
-実装時に迷った点は [docs/github-actions-qa.md](docs/github-actions-qa.md) と、解析キャッシュの引き継ぎについては
-[docs/actions-analysis-cache-qa.md](docs/actions-analysis-cache-qa.md) にまとめています。
+参照する版の書き方、入力と出力の一覧、用意済みの設定ファイルを渡す方法、キャッシュや作業ツリーの注意、
+Actions 以外の CI から使うとき（`JCHE_OUTPUT_DIR_FILE`）は [docs/github-actions.md](docs/github-actions.md) にあります。
+このリポジトリ自身も [.github/workflows/call-hierarchy.yml](.github/workflows/call-hierarchy.yml) で
+自分のソースをこのアクションで解析しています（そのまま写して使える最小の形です）。
 
 ## キャッシュの置き場所
 
@@ -681,41 +435,11 @@ java-call-hierarchy-exporter/
 
 ## キャッシュファイル設計
 
-大規模なコードベースでも `OutOfMemoryError` にならないよう、3点で対策しています。
-
-1. **解析結果をヒープに溜めない** — 1ファイル解析するたびにキャッシュへ書き出して破棄
-2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
-3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
-
-### キャッシュに入れるもの
-
-キャッシュには「ASTから分かった事実」だけを入れ、判断は読む側で行います。
-事実とは、宣言と修飾子、呼び出し箇所、フィールドへの代入、値の出所など、
-設定や出力形式に依存しない情報です。静的束縛かどうか、コンストラクタ注入と言い切れるか、
-import からの推定を呼び出し先として採用するか、といった判断はキャッシュを読む側で行うため、
-出力や解決の方針を変えてもキャッシュを作り直さずに済みます。
-キャッシュの版を上げるのは、事実の意味・列・収集範囲が変わったときだけです。
-
-差分更新では、更新時刻とサイズが一致するファイルでも、そのファイルが参照している型
-（キャッシュの `I` 行）を宣言するファイルが変わっていれば解析し直します。
-呼び出し先やフィールドの所有型は他のファイルのバインディング解決に依存するためです。
-フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
-行の種別と列の意味は [src/jche/cache/CacheFormat.java](src/jche/cache/CacheFormat.java) のクラスコメントにあります。
-
-### 依存 jar を変えたとき
-
-キャッシュには解析時の依存 jar（パス・サイズ・更新時刻・含まれるパッケージ。`L` 行）も残します。
-次回の実行で jar が追加・差し替え・削除されていれば、その jar のパッケージの型を参照している
-ファイルと、前回型解決に失敗していたファイル（`F` 行のエラー数、`U` 行）だけを解析し直します。
-「型解決できなかった呼び出しが N 件あります」と出たときに `library.folders` へ jar を足せば、
-キャッシュを消さなくても次の実行で反映されます。
-CHA の候補（インターフェースの実装クラス）はキャッシュせず、毎回 `H` 行から計算するので、
-jar の追加で実装クラスが増えた場合も、呼び出し側のファイルを解析し直さずに反映されます
-（jar の基底クラスがソースのインターフェースを実装している構成では、その子クラスの `H` 行に
-インターフェースも親として記録します）。
-実行する JDK を変えたときはキャッシュ全体を作り直します（JDT は実行中の JVM の標準クラスも
-解析対象のクラスパスに含めるため。何が変わるかは下記 docs の Q20）。
-設計上の判断と限界は [docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) にまとめています。
+大規模なコードベースでも `OutOfMemoryError` にならないよう、解析結果はヒープに溜めずにキャッシュへ書き出し、
+エッジは int の配列（CSR 形式）で持ち、ツリーは組み立てずに 1 行ずつ書き出します。
+キャッシュには「AST から分かった事実」だけを入れ、判断は読む側で行うので、出力や解決の方針を変えても
+キャッシュを作り直さずに済みます。差分更新の仕組み（他のファイルの変更・依存 jar の変更・実行 JDK の変更への追従）を含む
+詳細は [docs/cache-design.md](docs/cache-design.md) にあります。
 
 ## 出力ファイル
 
@@ -752,7 +476,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | `深さ制限(N)のため打ち切り` | `max.depth` に達した |
 | `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
 | `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
-| `実装はコンパイル時生成（名前）: FQN はアノテーション処理で生成されるためソース上に無い` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[コンパイル時生成の実装](#コンパイル時生成の実装)参照） |
+| `実装はコンパイル時生成（名前）: FQN はアノテーション処理で生成されるためソース上に無い` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。展開できないので候補には数えていない |
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
 | `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
@@ -760,10 +484,10 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
-| `解決:SPRING_DI` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[Spring による DI の解決](#spring-による-di-の解決)参照） |
+| `解決:SPRING_DI` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
 | `解決:SPRING_DI_QUALIFIER` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
 | `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
-| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した（[リフレクション](#リフレクション)参照） |
+| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
 | `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
 | `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |

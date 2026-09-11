@@ -4,9 +4,11 @@ package jche.graph;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import jche.cache.AnnotationTokens;
 import jche.cache.FieldDeclFact;
@@ -74,8 +76,15 @@ public final class SpringBeans {
     private final boolean enabled;
     private final List<String> stereotypes;
 
-    /** Bean登録された具象型 -> Bean名 */
-    private final Map<String, String> beanNames = new LinkedHashMap<>();
+    /**
+     * Bean登録された具象型 -> Bean名の集合。
+     *
+     * 同じ具象型が複数の名前で登録されうる（&#64;Bean メソッドが 2 つ同じ型を返す、
+     * ステレオタイプ注釈と &#64;Bean の両方）。先勝ちで 1 つだけ持つと、どの名前が残るかが
+     * キャッシュ上のブロックの並び（差分更新で末尾へ移る）に依存して、&#64;Qualifier の
+     * 照合結果が実行ごとに変わる。集合で持てば順序に依らない
+     */
+    private final Map<String, Set<String>> beanNames = new LinkedHashMap<>();
     /** "typeFqn#fieldName" -> 注入時に指定されたBean名。指定が無ければ空文字 */
     private final Map<String, String> injectionPoints = new HashMap<>();
     /** &#64;Bean メソッドのID -> Bean名。R行が読み終わってから型を確定する */
@@ -120,8 +129,7 @@ public final class SpringBeans {
         for (String stereotype : stereotypes) {
             if (AnnotationTokens.has(t.annotations(), stereotype)) {
                 String name = AnnotationTokens.valueOf(t.annotations(), stereotype);
-                beanNames.putIfAbsent(t.typeFqn(),
-                        (name == null || name.isEmpty()) ? defaultBeanName(t.typeFqn()) : name);
+                register(t.typeFqn(), (name == null || name.isEmpty()) ? defaultBeanName(t.typeFqn()) : name);
                 return;
             }
         }
@@ -178,10 +186,14 @@ public final class SpringBeans {
                 type = fqn;
             }
             if (type != null && !type.isEmpty()) {
-                beanNames.putIfAbsent(type, e.getValue());
+                register(type, e.getValue());
             }
         }
         beanMethods.clear();
+    }
+
+    private void register(String typeFqn, String beanName) {
+        beanNames.computeIfAbsent(typeFqn, k -> new LinkedHashSet<>(2)).add(beanName);
     }
 
     // ------------------------------------------------------------
@@ -201,9 +213,10 @@ public final class SpringBeans {
         return (name == null || name.isEmpty()) ? null : name;
     }
 
-    /** Bean名が一致するか。Bean登録されていない型なら false */
+    /** その型がそのBean名で登録されているか。Bean登録されていない型なら false */
     public boolean hasBeanName(String typeFqn, String beanName) {
-        return beanName.equals(beanNames.get(typeFqn));
+        Set<String> names = beanNames.get(typeFqn);
+        return names != null && names.contains(beanName);
     }
 
     /** Bean名の既定（単純名の先頭を小文字にする。Springの既定の命名） */

@@ -69,8 +69,14 @@ final class ClassFileRefs {
 
         in.readUnsignedShort();                 // access_flags
         int thisClassIdx = in.readUnsignedShort();
-        String thisName = (thisClassIdx > 0 && thisClassIdx < count)
-                ? internalToFqn(utf8[refA[thisClassIdx]]) : "(不明)";
+        // this_class が Class 定数を指していない・名前の Utf8 が無い壊れた class でも、
+        // null を持ち出さない（後段の照合で NPE になり、被参照スキャン全体が止まる）
+        String thisName = (thisClassIdx > 0 && thisClassIdx < count && tags[thisClassIdx] == 7
+                && refA[thisClassIdx] < count)
+                ? internalToFqn(utf8[refA[thisClassIdx]]) : null;
+        if (thisName == null) {
+            thisName = "(不明)";
+        }
 
         ClassFileRefs out = new ClassFileRefs(thisName);
         for (int i = 1; i < count; i++) {

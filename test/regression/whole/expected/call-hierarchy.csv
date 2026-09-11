@@ -87,7 +87,8 @@ at fx.app.Main.noImpl(Main.java:81),fx.model.Point.origin(),Main.main,Main.run,M
 at fx.model.Point.<init>(Point.java:5),fx.model.Registry.register(String),Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),fx.dao.UserDaoImpl.describe(),Main.main,Helper.assist,UserDaoImpl.describe,解決:DATAFLOW_PARAM
 at fx.excluded.Helper.assist(Helper.java:9),fx.dao.AbstractDao.flush(),Main.main,Helper.assist,AbstractDao.flush
-at fx.app.Main.run(Main.java:60),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,解決:DATAFLOW_FACTORY
+at fx.app.Main.run(Main.java:60),fx.dao.OrderDaoImpl.describe(),Main.main,Main.run,OrderDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.app.Main.run(Main.java:60),fx.dao.UserDaoImpl.describe(),Main.main,Main.run,UserDaoImpl.describe,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
 at fx.app.Main.run(Main.java:60),fx.dao.Chain.c1(),Main.main,Main.run,Chain.c1
 at fx.dao.Chain.c1(Chain.java:7),fx.dao.Chain.c2(),Main.main,Main.run,Chain.c1,Chain.c2
 at fx.dao.Chain.c2(Chain.java:8),fx.dao.Chain.c3(),Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3
@@ -155,6 +156,9 @@ at fx.di.AbstractPayment.pay(AbstractPayment.java:9),fx.di.AbstractPayment.recor
 at fx.di.AbstractPayment.pay(AbstractPayment.java:9),fx.di.CardPayment.record(int),Checkout.checkout,AbstractPayment.pay,CardPayment.record,CHA候補2件（未展開）: 自クラス（this）
 at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),fx.di.SlowNotice.send(),NoticeSender.notifyUser,SlowNotice.send,解決:SPRING_DI_QUALIFIER
 at fx.di.Scheduler.tick(Scheduler.java:15),fx.di.SystemClock.now(),Scheduler.tick,SystemClock.now,解決:SPRING_DI
+at fx.inherit.InheritMain.run(InheritMain.java:6),fx.inherit.LoudGreeter.greet(),InheritMain.run,LoudGreeter.greet,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.inherit.InheritMain.run(InheritMain.java:6),fx.inherit.BaseGreeter.greet(),InheritMain.run,BaseGreeter.greet,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.inherit.InheritMain.run(InheritMain.java:7),fx.inherit.OnlyImpl.m(),InheritMain.run,OnlyImpl.m,解決:SINGLE_IMPL
 at fx.model.Color.<init>(Color.java:14),fx.model.Registry.register(String),Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),fx.reflect.Target.<clinit>(),Invoker.byConstant,Target.<clinit>,解決:REFLECTION_INIT
 at fx.reflect.Invoker.byConstant(Invoker.java:16),fx.reflect.Target.run(),Invoker.byConstant,Target.run,解決:REFLECTION

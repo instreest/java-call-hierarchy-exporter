@@ -20,17 +20,17 @@ final class MavenProject {
     /** 親も含めて併合し、展開したプロパティ */
     final Map<String, String> properties;
     /** 親も含めて併合した依存。版が空のものは managed で決まる */
-    final List<MavenPom.Dependency> dependencies;
-    /** dependencyManagement（親と import した BOM も含む）。鍵は {@link MavenPom.Dependency#managementKey()} */
-    final Map<String, MavenPom.Dependency> managed;
+    final List<Dependency> dependencies;
+    /** dependencyManagement（親と import した BOM も含む）。鍵は {@link Dependency#managementKey()} */
+    final Map<String, Dependency> managed;
     /** この POM 自身の modules（親のものは含まない） */
     final List<String> modules;
     /** 移転先。無ければ null */
     final MavenPom.Coordinates relocation;
 
     MavenProject(Path pomFile, String groupId, String artifactId, String version, String packaging,
-                 Map<String, String> properties, List<MavenPom.Dependency> dependencies,
-                 Map<String, MavenPom.Dependency> managed, List<String> modules, MavenPom.Coordinates relocation) {
+                 Map<String, String> properties, List<Dependency> dependencies,
+                 Map<String, Dependency> managed, List<String> modules, MavenPom.Coordinates relocation) {
         this.pomFile = pomFile;
         this.groupId = groupId;
         this.artifactId = artifactId;

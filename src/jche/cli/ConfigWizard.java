@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jche.util.UserHome;
 
 /**
  * 設定ファイルを対話で新しく作る。
@@ -64,7 +65,7 @@ public final class ConfigWizard {
                 t.println("  必須です。");
                 continue;
             }
-            Path p = Paths.get(expandHome(raw));
+            Path p = Paths.get(UserHome.expand(raw));
             projectRoot = (p.isAbsolute() ? p : root.resolve(p)).toAbsolutePath().normalize();
             if (Files.isDirectory(projectRoot)) {
                 break;
@@ -241,14 +242,6 @@ public final class ConfigWizard {
 
     private String relative(Path p) {
         return root.relativize(p).toString().replace('\\', '/');
-    }
-
-    private static String expandHome(String raw) {
-        String s = raw.trim();
-        if (s.equals("~") || s.startsWith("~/") || s.startsWith("~\\")) {
-            return System.getProperty("user.home") + s.substring(1);
-        }
-        return s;
     }
 
     /** project.root を見て分かること（ソースフォルダの候補、ビルドファイル、文字コード） */

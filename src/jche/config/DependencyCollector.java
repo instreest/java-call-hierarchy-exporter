@@ -58,9 +58,9 @@ final class DependencyCollector {
     private final MavenReactor reactor;
     private final Strategy strategy;
     /** ルート（解析対象のプロジェクト）の dependencyManagement */
-    private final Map<String, MavenPom.Dependency> rootManaged;
+    private final Map<String, Dependency> rootManaged;
 
-    private record Node(MavenPom.Dependency dep, String version, int depth, List<MavenPom.Exclusion> exclusions,
+    private record Node(Dependency dep, String version, int depth, List<Exclusion> exclusions,
                         String via) {
 
         String coordinates() {
@@ -78,7 +78,7 @@ final class DependencyCollector {
      * @param rootManaged ルートの dependencyManagement（Gradle では platform の BOM）
      */
     DependencyCollector(LocalRepositories repos, MavenModels models, MavenReactor reactor, Strategy strategy,
-                        Map<String, MavenPom.Dependency> rootManaged) {
+                        Map<String, Dependency> rootManaged) {
         this.repos = repos;
         this.models = models;
         this.reactor = reactor;
@@ -91,13 +91,37 @@ final class DependencyCollector {
      * @param origin     ログ用。"pom.xml" など
      * @param transitive false なら直接の依存だけ（Gradle のロックファイルのように既に全部揃っているとき）
      */
-    Result collect(List<MavenPom.Dependency> direct, String origin, boolean transitive) {
+    Result collect(List<Dependency> direct, String origin, boolean transitive) {
+        // HIGHEST（Gradle）は「高い版が勝つ」だが、幅優先の途中で高い版に出会って差し替えると、
+        // 低い版の POM から既に辿った（キューに積んだ・処理済みの）推移的な依存が残ったままになる。
+        // 高い版の POM の依存とは違いうるので、勝つ版が決まるたびにその版を固定して最初から辿り直す。
+        // 版は上がる一方で有限なので必ず止まる（念のため回数の上限も置く）
+        Map<String, String> forced = new LinkedHashMap<>();
+        for (int round = 0; ; round++) {
+            Map<String, String> before = new LinkedHashMap<>(forced);
+            Result result = collectOnce(direct, origin, transitive, forced);
+            if (forced.equals(before) || round >= MAX_ROUNDS) {
+                return result;
+            }
+        }
+    }
+
+    /** 辿り直しの上限。ここまで来たら、その時点の結果で打ち切る */
+    private static final int MAX_ROUNDS = 20;
+
+    /**
+     * 幅優先で 1 回辿る。
+     *
+     * @param forced HIGHEST で勝つと分かった版（ga → version）。この回で見つかった、より高い版を追記する
+     */
+    private Result collectOnce(List<Dependency> direct, String origin, boolean transitive,
+                               Map<String, String> forced) {
         Result result = new Result();
         Map<String, Node> chosen = new LinkedHashMap<>();
         Map<String, Entry> entries = new LinkedHashMap<>();
         Deque<Node> queue = new ArrayDeque<>();
-        for (MavenPom.Dependency d : direct) {
-            Node n = prepare(d, 0, List.of(), origin, rootManaged, result);
+        for (Dependency d : direct) {
+            Node n = prepare(d, 0, List.of(), origin, rootManaged, forced, result);
             if (n != null) {
                 queue.add(n);
                 result.direct++;
@@ -108,12 +132,11 @@ final class DependencyCollector {
             String ga = n.dep().ga();
             Node prev = chosen.get(ga);
             if (prev != null) {
-                boolean replace = strategy == Strategy.HIGHEST
-                        && Versions.compare(n.version(), prev.version()) > 0;
-                if (!replace) {
-                    continue;
+                if (strategy == Strategy.HIGHEST && Versions.compare(n.version(), prev.version()) > 0) {
+                    // 高い版に出会った。この回は先に選んだ版のまま進め、次の回で高い版に固定して辿り直す
+                    forced.put(ga, n.version());
                 }
-                entries.remove(ga);
+                continue;
             }
             chosen.put(ga, n);
             result.visited++;
@@ -134,11 +157,11 @@ final class DependencyCollector {
                 continue;
             }
             String childVia = n.coordinates() + " ← " + n.via();
-            for (MavenPom.Dependency child : loc.project().dependencies) {
+            for (Dependency child : loc.project().dependencies) {
                 if (child.optional()) {
                     continue;
                 }
-                MavenPom.Dependency childManaged = loc.project().managed.get(child.managementKey());
+                Dependency childManaged = loc.project().managed.get(child.managementKey());
                 String scope = child.scope().isEmpty()
                         ? (childManaged != null && !childManaged.scope().isEmpty() ? childManaged.scope() : "compile")
                         : child.scope();
@@ -148,12 +171,12 @@ final class DependencyCollector {
                 if (excluded(child, n.exclusions())) {
                     continue;
                 }
-                List<MavenPom.Exclusion> exclusions = new ArrayList<>(n.exclusions());
+                List<Exclusion> exclusions = new ArrayList<>(n.exclusions());
                 exclusions.addAll(child.exclusions());
                 if (childManaged != null) {
                     exclusions.addAll(childManaged.exclusions());
                 }
-                Node c = prepare(child, n.depth() + 1, exclusions, childVia, loc.project().managed, result);
+                Node c = prepare(child, n.depth() + 1, exclusions, childVia, loc.project().managed, forced, result);
                 if (c != null) {
                     queue.add(c);
                 }
@@ -168,16 +191,20 @@ final class DependencyCollector {
      *
      * @param ownManaged その依存を宣言した POM の dependencyManagement（版が無いときに使う）
      */
-    private Node prepare(MavenPom.Dependency dep, int depth, List<MavenPom.Exclusion> exclusions, String via,
-                         Map<String, MavenPom.Dependency> ownManaged, Result result) {
-        MavenPom.Dependency own = ownManaged.get(dep.managementKey());
-        MavenPom.Dependency root = rootManaged.get(dep.managementKey());
+    private Node prepare(Dependency dep, int depth, List<Exclusion> exclusions, String via,
+                         Map<String, Dependency> ownManaged, Map<String, String> forced, Result result) {
+        Dependency own = ownManaged.get(dep.managementKey());
+        Dependency root = rootManaged.get(dep.managementKey());
         String version = dep.version();
         if (version.isEmpty() && own != null) {
             version = own.version();
         }
         if (depth > 0 && root != null && !root.version().isEmpty()) {
             version = root.version();   // ルートの管理は推移的な依存の版を上書きする
+        }
+        String won = forced.get(dep.ga());
+        if (won != null) {
+            version = won;   // 前の回で「高い版が勝つ」と分かった版
         }
         if (dep.groupId().contains("${") || dep.artifactId().contains("${") || version.contains("${")) {
             result.unresolved.add(dep.ga() + ":" + version + "（変数が展開できない。" + via + "）");
@@ -195,15 +222,15 @@ final class DependencyCollector {
             }
             version = selected;
         }
-        List<MavenPom.Exclusion> all = new ArrayList<>(exclusions);
+        List<Exclusion> all = new ArrayList<>(exclusions);
         if (own != null) {
             all.addAll(own.exclusions());
         }
         return new Node(dep, version, depth, all, via);
     }
 
-    private static boolean excluded(MavenPom.Dependency dep, List<MavenPom.Exclusion> exclusions) {
-        for (MavenPom.Exclusion x : exclusions) {
+    private static boolean excluded(Dependency dep, List<Exclusion> exclusions) {
+        for (Exclusion x : exclusions) {
             if (x.matches(dep.groupId(), dep.artifactId())) {
                 return true;
             }
@@ -213,7 +240,7 @@ final class DependencyCollector {
 
     /** jar（またはクラスフォルダ）と、推移的な依存を辿るための実効 POM を探す */
     private Located locate(Node n, Result result) {
-        MavenPom.Dependency dep = n.dep();
+        Dependency dep = n.dep();
         String type = dep.type().isEmpty() ? "jar" : dep.type();
         String classifier = dep.classifier();
         String extension;
