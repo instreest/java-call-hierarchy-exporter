@@ -5,7 +5,9 @@
 #   JCHE_CMD="java -cp bin:lib/* CallHierarchyExporter" bash test/regression/run.sh   # 既にコンパイル済みなら
 #
 # ケースは2種類ある。
-#   通常（whole / entry）… 同じ設定で2回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路
+#   通常（whole / entry）… 同じ設定で3回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路、
+#                          3回目は解析対象のソースと jar の更新時刻を全部変えてから（touch）実行し、中身が同じなら
+#                          内容ハッシュでキャッシュが再利用されること（GitHub Actions のチェックアウト後と同じ状況）を確認する
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
 #   maven / mavenmulti / gradle
@@ -113,6 +115,20 @@ expect_library_reanalysis() {   # $1=case  $2=何回目  $3=ラベル   … 「�
     else
         echo "  DIFF $1 ログ: 依存jarの変更による再解析がありません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
+}
+expect_nothing_parsed() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の 2 つ目の「=N」（新規解析）が 0
+    # 新規解析が 0 なら、依存 jar の変更による再解析も 0（内訳は新規解析が 0 のときは出ない）
+    if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E '^[^=]*=[0-9]+[^=]*=0([^0-9]|$)'; then
+        echo "  OK   $1 ログ ($3)"
+    else
+        echo "  DIFF $1 ログ: 解析し直したファイルがあります ($3): $(summary_line "$1/run-$2.log")"; fail=1
+    fi
+}
+# 解析対象のソースと jar の更新時刻を全部「今」にする（中身は変えない）。GitHub Actions の actions/checkout や
+# コピーで更新時刻だけが変わった状況の再現。対象は test/ 配下の解析対象と test/localrepo の jar
+touch_sources_and_jars() {
+    find "$ROOT/test/demo" "$ROOT/test/maven-demo" "$ROOT/test/maven-multi" "$ROOT/test/gradle-demo" \
+         "$ROOT/test/localrepo" -type f -exec touch {} +
 }
 
 # whole は cache.folder を空欄にしてあるので、キャッシュはツールのプロジェクトフォルダの .cache/demo_<ハッシュ>/ にできる
@@ -225,6 +241,13 @@ for c in $CASES; do
         run "$c" config.properties 2 "2回目" || continue
         expect_reused "$c" 2 "2回目: キャッシュを再利用"
         compare "$c" expected "2回目: キャッシュ再利用"
+        # 更新時刻だけが変わったソース・jar は、サイズと内容ハッシュが同じなら再利用される
+        # （依存 jar の「変更」としても検知されない）
+        touch_sources_and_jars
+        run "$c" config.properties 3 "3回目: 更新時刻だけ変更" || continue
+        expect_reused "$c" 3 "3回目: 更新時刻だけ変わったソースはキャッシュを再利用"
+        expect_nothing_parsed "$c" 3 "3回目: 更新時刻だけ変わった jar も変更とみなさず、新規解析は 0"
+        compare "$c" expected "3回目: 更新時刻だけ変更"
         # 2 回目は別の出力フォルダにできる（1 回目のフォルダはそのまま残る）
         if [ "$(ls -d "$c"/output/*/ 2>/dev/null | wc -l)" -ge 2 ]; then
             echo "  OK   $c 実行ごとに出力フォルダが分かれる"

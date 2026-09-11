@@ -9,12 +9,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 
 import jche.cache.CacheFormat;
 import jche.cache.CallEdgeFact;
@@ -33,6 +35,7 @@ import jche.cache.UnresolvedCallFact;
 import jche.analysis.CallEdgeExtractor.SourceFile;
 import jche.config.Config;
 import jche.config.ProjectLayout;
+import jche.util.FileHash;
 import jche.util.Log;
 import jche.util.Progress;
 
@@ -50,13 +53,16 @@ import jche.util.Progress;
  *   パス0 … 旧キャッシュのヘッダと L 行（解析時の依存 jar）を読み、今回のクラスパスと突き合わせる。
  *           追加・変更・削除された jar のパッケージを「変わったパッケージ」として集める。
  *   パス1 … 旧キャッシュを順に読み、更新時刻とサイズが一致するファイル（有効）を覚える。
+ *           更新時刻だけが違うファイルは、サイズが同じなら内容ハッシュを取って F 行と突き合わせる
+ *           （中身が同じなら有効。git のチェックアウトや CI で更新時刻が変わっても再利用できるようにするため）。
  *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
  *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
  *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
  *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
  *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
  *   パス3 … 旧キャッシュをもう一度読み、有効なブロックのうち、I行（依存する型）が
- *           「変わった型」にも「変わったパッケージ」にも触れないものだけをそのまま書き写す。
+ *           「変わった型」にも「変わったパッケージ」にも触れないものだけをそのまま書き写す
+ *           （F 行だけは今の更新時刻と内容ハッシュに書き直す。次回は更新時刻の一致で通るように）。
  *           触れるものは、バインディング解決の結果が変わっている可能性があるので再解析に回す。
  *   パス4 … パス3で再解析に回したファイルを解析し、追記する。
  * </pre>
@@ -76,6 +82,11 @@ public final class CacheUpdater {
 
     private final ProjectLayout layout;
     private final Config config;
+    /**
+     * 相対パス -> 今のソースの内容ハッシュ。更新時刻が違ったときにだけ計算し、同じファイルを
+     * 2 度読まないように覚える（パス1 の判定とパス3 の F 行の書き直しで使う）
+     */
+    private final Map<String, String> hashes = new HashMap<>();
 
     public CacheUpdater(ProjectLayout layout, Config config) {
         this.layout = layout;
@@ -120,7 +131,7 @@ public final class CacheUpdater {
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
-            BlockWriter writer = new BlockWriter(cacheOut, result, progress);
+            BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf);
 
             // --- パス1: 有効なブロックと「変わった型」を集める ---
             Set<String> valid = new HashSet<>();
@@ -149,7 +160,7 @@ public final class CacheUpdater {
             List<String> dependents = new ArrayList<>();
             List<String> libraryDependents = new ArrayList<>();
             if (oldCacheUsable && !valid.isEmpty()) {
-                result.unresolved += copyValidBlocks(valid, stale, dependents, libraryDependents, cacheOut);
+                result.unresolved += copyValidBlocks(live, valid, stale, dependents, libraryDependents, cacheOut);
                 result.reused = valid.size() - dependents.size() - libraryDependents.size();
                 writer.skipped(result.reused);
             }
@@ -202,20 +213,25 @@ public final class CacheUpdater {
         private final BufferedWriter cacheOut;
         private final CachePhaseResult result;
         private final Progress progress;
+        /** 解析したファイルの内容ハッシュを求める（F行に書くため） */
+        private final Function<SourceFile, String> hasher;
         /** 非nullなら、解析したファイルが宣言する型を「変わった型」に加える（パス2） */
         StaleTypes stale;
         /** 解析した理由（BY_SELF / BY_SOURCE / BY_LIBRARY）。集計の内訳に使う */
         int countAs = BY_SELF;
         private long done;
 
-        BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress) {
+        BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
+                    Function<SourceFile, String> hasher) {
             this.cacheOut = cacheOut;
             this.result = result;
             this.progress = progress;
+            this.hasher = hasher;
         }
 
         @Override
         public void accept(SourceFile file, FileAnalysis fa) throws IOException {
+            fa.hash = hasher.apply(file);
             writeBlock(fa, cacheOut);
             result.unresolved += fa.unresolvedCount();
             result.parsed++;
@@ -331,17 +347,61 @@ public final class CacheUpdater {
         }
     }
 
-    /** ブロックのF行が、今のソースと一致しているか（更新時刻とサイズの両方） */
-    private static boolean isValidBlock(String[] f, Map<String, SourceFile> live) {
+    /**
+     * ブロックのF行が、今のソースと一致しているか。
+     * 更新時刻とサイズの両方が一致すれば一致。更新時刻だけが違うときは、サイズが同じで、
+     * F行に内容ハッシュがあり、今のファイルの内容ハッシュと一致すれば一致とみなす
+     * （旧形式の F 行にはハッシュが無いので、その場合は従来どおり不一致）。
+     */
+    private boolean isValidBlock(String[] f, Map<String, SourceFile> live) {
         if (f.length < 4) {
             return false;
         }
         SourceFile st = live.get(f[1]);
+        if (st == null) {
+            return false;
+        }
         try {
-            return st != null && st.mtime() == Long.parseLong(f[2]) && st.size() == Long.parseLong(f[3]);
+            if (st.size() != Long.parseLong(f[3])) {
+                return false;
+            }
+            if (st.mtime() == Long.parseLong(f[2])) {
+                return true;
+            }
         } catch (NumberFormatException ignore) {
             return false;   // 壊れたF行 -> このブロックは破棄し、後で再解析される
         }
+        String recorded = CacheFormat.columnAt(f, 5);
+        return !recorded.isEmpty() && recorded.equals(hashOf(st));
+    }
+
+    /** 今のソースの内容ハッシュ（計算は 1 ファイル 1 回）。読めなければ空文字 */
+    private String hashOf(SourceFile file) {
+        String h = hashes.get(file.relativePath());
+        if (h == null) {
+            try {
+                h = FileHash.of(file.path());
+            } catch (IOException e) {
+                Log.warn("ソースのハッシュを取れません（更新時刻とサイズだけで判定）: " + file.relativePath() + " (" + e + ")");
+                h = "";
+            }
+            hashes.put(file.relativePath(), h);
+        }
+        return h;
+    }
+
+    /**
+     * パス3で書き写すF行。今の更新時刻と内容ハッシュに置き換える。
+     * 更新時刻が一致していれば旧行のハッシュをそのまま使う（無ければ計算して補う）。
+     * 更新時刻が違っていた（ハッシュで通した）ブロックは、次回は更新時刻の一致で通るようになる
+     */
+    private String refreshedFileRow(String[] f, SourceFile st) {
+        String hash = CacheFormat.columnAt(f, 5);
+        if (hash.isEmpty() || st.mtime() != Long.parseLong(f[2])) {
+            hash = hashOf(st);
+        }
+        return CacheFormat.joinRow("F", f[1], String.valueOf(st.mtime()), String.valueOf(st.size()),
+                String.valueOf(errorsOf(f)), hash);
     }
 
     /**
@@ -429,8 +489,9 @@ public final class CacheUpdater {
      *
      * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
      */
-    private long copyValidBlocks(Set<String> valid, StaleTypes stale, List<String> dependents,
-                                 List<String> libraryDependents, BufferedWriter cacheOut) throws IOException {
+    private long copyValidBlocks(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
+                                 List<String> dependents, List<String> libraryDependents,
+                                 BufferedWriter cacheOut) throws IOException {
         long unresolved = 0L;
         try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
             in.readLine();   // バージョン行（パス1で検証済み）
@@ -448,7 +509,7 @@ public final class CacheUpdater {
                     keeping = false;
                     pendingFileRow = null;
                     if (f.length >= 2 && valid.contains(f[1])) {
-                        pendingFileRow = line;
+                        pendingFileRow = refreshedFileRow(f, live.get(f[1]));
                         pendingRel = f[1];
                     }
                     continue;
@@ -501,7 +562,7 @@ public final class CacheUpdater {
     /** 1ファイル分のブロックを書く。行の並びは {@link CacheFormat} のとおり */
     private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
         writeLine(w, CacheFormat.joinRow("F", fa.relativePath,
-                String.valueOf(fa.lastModified), String.valueOf(fa.size), String.valueOf(fa.errors)));
+                String.valueOf(fa.lastModified), String.valueOf(fa.size), String.valueOf(fa.errors), fa.hash));
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
         writeLine(w, CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));
         for (TypeFact t : fa.types) {

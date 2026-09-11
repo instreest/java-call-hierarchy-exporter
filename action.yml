@@ -100,6 +100,13 @@ inputs:
     description: JBang 本体と JDT の jar をワークフロー実行間でキャッシュするか（true / false）
     required: false
     default: 'true'
+  analysis-cache:
+    description: >-
+      AST 解析結果のキャッシュ（ツールのフォルダの .cache/）をワークフロー実行間で引き継ぐか（true / false）。
+      前回の実行から変わっていないソースは解析を飛ばす。config 入力で渡す設定ファイルの cache.folder は
+      空欄のままにすること（別の場所を指定すると、このキャッシュの対象から外れる）
+    required: false
+    default: 'true'
   upload-artifact:
     description: 出力フォルダをアーティファクトとしてアップロードするか（true / false）
     required: false
@@ -173,6 +180,23 @@ runs:
         key: jche-${{ runner.os }}-${{ steps.prep.outputs.cache-key }}
         restore-keys: jche-${{ runner.os }}-
 
+    # AST 解析結果のキャッシュ（ツールのフォルダの .cache/）。前回の実行のものを復元し、解析後に保存する。
+    # actions/cache は同じキーへ保存し直せないので、キーは実行ごとに変え（run_id / run_attempt）、
+    # 復元は restore-keys の前方一致で「同じ設定の最新」→「この OS の最新」の順に取る。
+    # 復元したキャッシュが今のソースに合うかはツール自身が判定する（更新時刻が違っても内容が同じなら再利用）ので、
+    # 古いものが当たっても結果は変わらず、解析し直す量が増えるだけ。
+    # 保存は actions/cache の post ステップではなく明示のステップで行う（解析が失敗しても、出来た分を残すため）。
+    - name: Restore analysis cache
+      id: restore-analysis
+      if: inputs.analysis-cache == 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ github.action_path }}/.cache
+        key: jche-analysis-${{ runner.os }}-${{ steps.prep.outputs.analysis-cache-key }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          jche-analysis-${{ runner.os }}-${{ steps.prep.outputs.analysis-cache-key }}-
+          jche-analysis-${{ runner.os }}-
+
     # 作業ディレクトリをツール側にするのは、キャッシュ（.cache/）の置き場所である
     # 「ツールのプロジェクトフォルダ」をツール自身が見つけられるようにするため。
     # こうしないと解析対象リポジトリのチェックアウト直下に .cache/ ができ、作業ツリーが汚れる。
@@ -186,6 +210,15 @@ runs:
         # ログの日本語をランナーのログでも読めるようにする（run.log は常に UTF-8）
         JAVA_TOOL_OPTIONS: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
       run: bash "$GITHUB_ACTION_PATH/.github/action/run.sh"
+
+    # 復元と同じキーで保存する。キーは実行ごとに違うので、前回の分を上書きすることはない
+    # （同じ実行の再試行で既にあるときは actions/cache/save が警告を出して飛ばす）
+    - name: Save analysis cache
+      if: always() && inputs.analysis-cache == 'true' && steps.restore-analysis.outcome == 'success'
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ github.action_path }}/.cache
+        key: ${{ steps.restore-analysis.outputs.cache-primary-key }}
 
     # 解析が途中で失敗しても、出来ているところまで（run.log を含む）を持ち帰れるようにする
     - name: Collect outputs
