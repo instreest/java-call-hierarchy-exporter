@@ -163,6 +163,34 @@ jobs:
           test -f "$OUTPUT_DIR/config.properties"
           head -1 "$CSV"
 
+      # AST 解析キャッシュの引き継ぎ。1 回目の解析でできた .cache/（uses: ./ なのでワークスペース直下）を
+      # 使って、ソースの更新時刻を全部変えてから（actions/checkout 後と同じ状況の再現）同じ入力でもう一度解析し、
+      # 全ファイルが再利用されること（集計行の「新規解析=0」）を run.log で見る。
+      # 実行間の保存・復元（actions/cache/restore・save）は同じジョブの中では検査できないので、
+      # ここでは「更新時刻が変わっても再利用される」というツール側の条件だけを確かめる
+      - name: Touch all sources (simulate a fresh checkout)
+        run: find test/demo -type f -exec touch {} +
+
+      - name: Export call hierarchy (generated config, second run)
+        id: generated2
+        uses: ./
+        with:
+          project-root: test/demo
+          source-folders: src
+          source-encoding: UTF-8
+          external-library-folders: extjars
+          upload-artifact: 'false'
+
+      - name: Check the analysis cache was reused
+        env:
+          RUN_LOG: ${{ steps.generated2.outputs.run-log }}
+        run: |
+          # フェーズ1の集計行「ソース解析: 再利用=N 新規解析=M 失敗=F」。N が 0 でなく M が 0 であること
+          line=$(grep -E -m1 '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' "$RUN_LOG")
+          echo "$line"
+          printf '%s\n' "$line" | grep -q -E '^[^=]*=[1-9]'
+          printf '%s\n' "$line" | grep -q -E '^[^=]*=[0-9]+[^=]*=0([^0-9]|$)'
+
       # 用意した設定ファイルを渡す経路。複数渡せること（出力フォルダが 2 つ）と、
       # java-version を空にすると JDK のセットアップを飛ばすこと（前のステップの JDK を使う）も通す
       - name: Export call hierarchy (existing config files)

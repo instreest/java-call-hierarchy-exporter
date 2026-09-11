@@ -22,6 +22,8 @@ import java.util.Properties;
 
 import org.eclipse.jdt.core.JavaCore;
 
+import jche.util.FileHash;
+
 /**
  * 設定ファイル（config.properties）の読み込み。
  *
@@ -342,10 +344,12 @@ public final class Config {
 
     /**
      * フェーズAの拡張の指紋。拡張のクラス名・{@code plugin.} で始まる設定・拡張フォルダの
-     * ファイル一覧（名前・更新時刻・サイズ）から作る。拡張を使っていなければ空文字。
+     * ファイル一覧（名前・サイズ・内容ハッシュ）から作る。拡張を使っていなければ空文字。
      *
-     * 拡張の中身を書き換えれば更新時刻が変わるので、キャッシュは自動的に捨てられる。
-     * jar の中身の入れ替えも、jar 自体の更新時刻とサイズで検知できる。
+     * 拡張の中身を書き換えれば内容ハッシュが変わるので、キャッシュは自動的に捨てられる。
+     * jar の中身の入れ替えも同様。更新時刻を使わないのは、git のチェックアウトや CI のように
+     * 中身が同じでも更新時刻が変わる環境で、実行のたびにキャッシュを捨ててしまわないため
+     * （拡張のファイルは少数なので、毎回読んでも時間はかからない）。
      */
     private static String fingerprintOfHintPlugins(Properties p, List<String> collectors, List<Path> folders) {
         if (collectors.isEmpty()) {
@@ -367,7 +371,7 @@ public final class Config {
         return shortHash(sb.toString());
     }
 
-    /** フォルダ配下のファイルの「相対パス:更新時刻:サイズ」。読めないフォルダは印だけ残す */
+    /** フォルダ配下のファイルの「相対パス:サイズ:内容ハッシュ」。読めないフォルダ・ファイルは印だけ残す */
     private static List<String> fileStamps(Path folder) {
         List<String> out = new ArrayList<>();
         if (!Files.isDirectory(folder)) {
@@ -376,8 +380,13 @@ public final class Config {
         }
         try (var walk = Files.walk(folder)) {
             for (Path path : (Iterable<Path>) walk.filter(Files::isRegularFile)::iterator) {
-                out.add(folder.relativize(path) + ":" + Files.getLastModifiedTime(path).toMillis()
-                        + ":" + Files.size(path));
+                String hash;
+                try {
+                    hash = FileHash.of(path);
+                } catch (IOException e) {
+                    hash = "unreadable";
+                }
+                out.add(folder.relativize(path) + ":" + Files.size(path) + ":" + hash);
             }
         } catch (IOException e) {
             out.add(folder + ":unreadable");

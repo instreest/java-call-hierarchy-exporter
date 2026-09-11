@@ -495,6 +495,7 @@ jobs:
 | `java-version` | `25` | ツール自身を動かす JDK。空欄にすると `actions/setup-java` を飛ばす（自分で用意する場合） |
 | `java-distribution` | `temurin` | `actions/setup-java` の `distribution` |
 | `cache` | `true` | JBang 本体と JDT の jar をワークフロー実行間でキャッシュする |
+| `analysis-cache` | `true` | AST 解析結果のキャッシュ（`.cache/`）をワークフロー実行間で引き継ぐ。前回から変わっていないソースは解析を飛ばす |
 | `upload-artifact` | `true` | 出力フォルダをアーティファクトにする |
 | `artifact-name` | `call-hierarchy` | アーティファクトの名前 |
 | `artifact-retention-days` | （空欄） | アーティファクトの保持日数 |
@@ -546,7 +547,8 @@ output.encoding=UTF-8-BOM
 max.rows=5000000
 
 # キャッシュの置き場所は空欄のままでよい。アクションのフォルダの下に作られ、
-# 解析対象リポジトリのチェックアウトは汚れない
+# 解析対象リポジトリのチェックアウトは汚れない。空欄にしておくと analysis-cache 入力で
+# ワークフロー実行間に引き継がれる（別の場所を指定すると引き継ぎの対象から外れる）
 cache.folder=
 ```
 
@@ -615,9 +617,15 @@ cache.folder=
 - **JDK** … ツール自身は JDK 25 で動きます（`//JAVA 25`）。`java-version` を空欄にして自分で用意する場合も
   25 を入れてください。解析対象のビルドに別の JDK が要る場合は、そのステップで別途セットアップします
 - **キャッシュ** … `cache: true` のとき、JBang 本体（`~/.jbang`）と JDT の jar（`~/.m2/repository/org/eclipse`）を
-  ワークフロー実行間でキャッシュします。解析結果のキャッシュ（`.cache/`）は毎回作り直しになります。
-  `actions/checkout` はファイルの更新時刻をチェックアウト時刻にするため、差分判定（更新時刻とサイズ）が
-  必ず「変更あり」になり、持ち越しても再利用されないためです
+  ワークフロー実行間でキャッシュします。`analysis-cache: true`（既定）のときは、AST 解析結果のキャッシュ（`.cache/`）も
+  前回の実行から引き継ぎ、変わっていないソースの解析を飛ばします。`actions/checkout` はファイルの更新時刻を
+  チェックアウト時刻にしますが、更新時刻だけが違うファイルはサイズと内容ハッシュで突き合わせるので、
+  中身が同じなら再利用されます。キャッシュは実行ごとに新しいエントリとして保存され（`jche-analysis-<OS>-…`）、
+  復元は「同じ設定ファイルの最新」→「同じ OS の最新」の順に前方一致で探します。古いエントリは GitHub が
+  容量（リポジトリごとに 10 GB）と期限（7 日間使われないもの）で消します。
+  `config` 入力で設定ファイルを渡す場合は `cache.folder` を空欄のままにしてください（別の場所を指定すると、
+  引き継ぎの対象から外れます）。同じジョブの中でこのアクションを 2 回以上呼ぶときは、2 回目以降はその場の `.cache/` を
+  そのまま使います
 - **作業ツリー** … 生成した設定ファイルは `RUNNER_TEMP` に、解析キャッシュはアクション自身のフォルダに
   作るので、解析対象リポジトリのチェックアウトには出力フォルダ以外を作りません
   （既定は `call-hierarchy-output/`。`.gitignore` に足しておくと `git diff --exit-code` 等と併用できます）
@@ -643,7 +651,8 @@ cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
 依存 jar は `pom.xml` から自動で集めるので、その前に `mvn -B dependency:go-offline` を置いてあります。
 そのまま写して使える最小の形なので、書き方に迷ったらこのファイルを見てください。
 
-実装時に迷った点は [docs/github-actions-qa.md](docs/github-actions-qa.md) にまとめています。
+実装時に迷った点は [docs/github-actions-qa.md](docs/github-actions-qa.md) と、解析キャッシュの引き継ぎについては
+[docs/actions-analysis-cache-qa.md](docs/actions-analysis-cache-qa.md) にまとめています。
 
 ## キャッシュの置き場所
 

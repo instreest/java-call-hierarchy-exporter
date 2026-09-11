@@ -91,6 +91,18 @@ call :expectrunfiles "%~1" config.properties "1回目"
 call :run "%~1" config.properties 2 "2回目"
 call :expectlog "%~1" 2 "^[^=]*=[1-9]" "2回目: キャッシュを再利用"
 call :compare "%~1" expected "2回目: キャッシュ再利用"
+rem 3回目: 解析対象のソースと jar の更新時刻だけを変えて（中身は同じ）実行する。GitHub Actions の
+rem actions/checkout 後と同じ状況。サイズと内容ハッシュが同じならキャッシュは再利用され、jar も変更とみなさない
+call :touchall
+call :run "%~1" config.properties 3 "3回目: 更新時刻だけ変更"
+call :expectlog "%~1" 3 "^[^=]*=[1-9]" "3回目: 更新時刻だけ変わったソースはキャッシュを再利用"
+call :expectlog "%~1" 3 "^[^=]*=[0-9]+[^=]*=0([^0-9]|$)" "3回目: 更新時刻だけ変わった jar も変更とみなさず、新規解析は 0"
+call :compare "%~1" expected "3回目: 更新時刻だけ変更"
+exit /b 0
+
+:touchall
+rem test\demo 等の解析対象と test\localrepo の jar の更新時刻を全部「今」にする（中身は変えない）
+powershell -NoProfile -Command "Get-ChildItem -Recurse -File '%ROOT%\test\demo','%ROOT%\test\maven-demo','%ROOT%\test\maven-multi','%ROOT%\test\gradle-demo','%ROOT%\test\localrepo' | ForEach-Object { $_.LastWriteTime = Get-Date }"
 exit /b 0
 
 :latest
