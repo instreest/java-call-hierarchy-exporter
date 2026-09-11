@@ -76,7 +76,7 @@ public final class DataflowFacts {
         return factoriesDecided;
     }
 
-    /** 委譲の深さ上限（dataflow.max.depth）か循環に当たって決められなかったメソッドの数（ログ用） */
+    /** 委譲が循環している（または安全策の段数上限に当たった）ため決められなかったメソッドの数（ログ用） */
     public int factoriesCutOff() {
         return factoriesCutOff;
     }

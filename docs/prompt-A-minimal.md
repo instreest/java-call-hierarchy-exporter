@@ -82,7 +82,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
-| `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
+| `dataflow.max.depth` | `5` | 経路に依存する探索（引数で渡ってきたクラス名・リテラルを辿る）の段数。ファクトリの委譲は上限なく畳む | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
 | `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
@@ -232,7 +232,7 @@ jar を足せばキャッシュを消さずに次の実行で反映される）�
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる（候補数は**サブクラス数ではなく、そのメソッドをオーバーライドしている宣言の数**）。本体を持つ候補が皆無なら `NO_IMPL` |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内でその変数に代入された `new` の型（フロー非依存。複数あれば候補集合） |
 | 3 | 拡張が返すラベル | プロジェクト固有の解決（下記の拡張ポイント） |
-| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | レシーバが `new` された型、またはファクトリメソッドの戻り値（その宣言の `return` を追う。委譲は `dataflow.max.depth` 段まで。`Class.forName(文字列).newInstance()` 形式も追う） |
+| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | レシーバが `new` された型、またはファクトリメソッドの戻り値（その宣言の `return` を追う。委譲は上限なく畳み、循環は「決められない」。`Class.forName(文字列).newInstance()` 形式も追う） |
 | — | `DATAFLOW_PARAM` / `DATAFLOW_FIELD` | 起点からの**経路上**で渡された実引数、またはコンストラクタ注入されたフィールドから特定。経路ごとに答えが違うので探索中に判定する |
 | 5 | `CHA` | 候補が複数のまま（低確度）。候補を1件ずつ行にし、先へは降りない |
 

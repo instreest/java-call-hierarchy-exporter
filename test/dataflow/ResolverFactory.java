@@ -15,7 +15,7 @@ final class ResolverFactory {
     }
 
     static CallResolver create(CallGraph graph, Config config) {
-        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled, config.dataflowMaxDepth);
+        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled);
         return new CallResolver(graph,
                 new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth),
                 List.of());

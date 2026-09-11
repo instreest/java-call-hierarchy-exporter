@@ -13,17 +13,17 @@ import jche.graph.MethodTable;
  * フェーズ2b: データフローの事実をグラフ全体から一括で確定する。
  *
  * <h2>ファクトリの戻り値の畳み込み</h2>
- * メソッドごとに「必ず返す値の出所」を求める。委譲（{@code return create();}）は
- * {@code dataflow.max.depth} 段まで辿る。
+ * メソッドごとに「必ず返す値の出所」を求める。委譲（{@code return create();}）は段数の上限なく
+ * 畳む（不動点。委譲の依存関係が循環しているメソッドは「決められない」で確定する）。
+ * かつては {@code dataflow.max.depth} 段で打ち切っていたうえ、確定済みの委譲先に当たると残りの
+ * 段数を数え直さなかったため、「どのメソッドを先に計算したか」で辿れる実効の深さが変わり、
+ * 解決結果がエッジの処理順に依存していた（Issue #80）。
+ * ここでは全メソッドをID順に確定させ、結果の配列だけを {@link DataflowFacts} として渡す。
  *
- * 深さは<b>そのメソッドから数えた絶対深さ</b>で見る。途中の委譲先が別のメソッドの計算で
- * 先に確定していても、そこまでに使った段数を含めて上限に収まらなければ「不明」にする。
- * かつては確定済みの委譲先に当たると残りの段数を数え直さなかったため、
- * 「どのメソッドを先に計算したか」で辿れる実効の深さが変わり、解決結果がエッジの処理順に
- * 依存していた（Issue #80）。ここでは全メソッドをID順に確定させ、結果の配列だけを
- * {@link DataflowFacts} として渡す。順序依存を残さないために、メモに載せるのは
- * 「上限にも循環にも当たらずに決まった結果」だけにし、それを再利用するときも
- * 使った段数を現在の深さに足して上限を検査する。
+ * 循環と、再帰の安全策としての段数の上限（{@link #HARD_CAP}。設定では変えられない）に当たった結果は
+ * 起点によって変わりうるのでメモに載せず、再利用するときも使った段数を現在の深さに足して
+ * 上限を検査する。{@code dataflow.max.depth} はここでは使わず、経路に依存する探索
+ * （{@code DataflowResolver} の classOf / literalOf）にだけ効く。
  *
  * <h2>そのほかの事実</h2>
  * 引数を使うメソッド・リフレクションAPIの種別・名前ごとのメソッド一覧は、
@@ -56,9 +56,14 @@ public final class DataflowBuilder {
         static final Folded LIMITED = new Folded(null, 0, true);
     }
 
+    /**
+     * 委譲を辿る段数の安全策（再帰なので、これを超えるとスタックが危ない）。
+     * 実在するファクトリの委譲は数段なので、通常はここに当たらない
+     */
+    static final int HARD_CAP = 512;
+
     private final CallGraph graph;
     private final MethodTable methods;
-    private final int maxDepth;
 
     /** 上限にも循環にも当たらずに決まった結果のメモ（null は未計算）。origin が null なら「決められない」 */
     private final Folded[] memo;
@@ -66,10 +71,9 @@ public final class DataflowBuilder {
     private final boolean[] inProgress;
     private int cutOff;
 
-    private DataflowBuilder(CallGraph graph, int maxDepth) {
+    private DataflowBuilder(CallGraph graph) {
         this.graph = graph;
         this.methods = graph.methods();
-        this.maxDepth = (maxDepth > 0) ? maxDepth : 1;
         this.memo = new Folded[methods.size()];
         this.inProgress = new boolean[methods.size()];
     }
@@ -77,16 +81,15 @@ public final class DataflowBuilder {
     /**
      * グラフ全体から事実を作る。
      *
-     * @param enabled  dataflow.enabled。false ならファクトリの畳み込みはせず、リフレクションの種別だけ持つ
-     * @param maxDepth dataflow.max.depth（委譲を辿る段数の上限）
+     * @param enabled dataflow.enabled。false ならファクトリの畳み込みはせず、リフレクションの種別だけ持つ
      */
-    public static DataflowFacts build(CallGraph graph, boolean enabled, int maxDepth) {
+    public static DataflowFacts build(CallGraph graph, boolean enabled) {
         MethodTable methods = graph.methods();
         byte[] reflectKinds = reflectKinds(methods);
         if (!enabled) {
             return DataflowFacts.empty(methods.size(), reflectKinds);
         }
-        DataflowBuilder b = new DataflowBuilder(graph, maxDepth);
+        DataflowBuilder b = new DataflowBuilder(graph);
         String[] factoryOrigin = new String[methods.size()];
         int decided = 0;
         for (int id = 0; id < factoryOrigin.length; id++) {
@@ -123,7 +126,7 @@ public final class DataflowBuilder {
     private Folded fold(int methodId, int depth) {
         Folded known = memo[methodId];
         if (known != null) {
-            if (known.origin == null || depth + known.consumed <= maxDepth) {
+            if (known.origin == null || depth + known.consumed <= HARD_CAP) {
                 return known;
             }
             // 決まってはいるが、ここから辿ると上限を超える段数を使う。起点によらず同じ結果にするため、
@@ -170,8 +173,8 @@ public final class DataflowBuilder {
         if (kind != Origin.RETURN) {
             return Folded.UNDECIDED;
         }
-        if (depth >= maxDepth) {
-            return Folded.LIMITED;   // 委譲の深さ上限
+        if (depth >= HARD_CAP) {
+            return Folded.LIMITED;   // 再帰の安全策の上限
         }
         // 別のファクトリへの委譲。委譲先の出所を、この return が書いている
         // 実引数で解決する（return create("jp.co.X"); のような形を畳むため）

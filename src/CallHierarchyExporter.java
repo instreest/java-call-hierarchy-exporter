@@ -351,12 +351,11 @@ public class CallHierarchyExporter {
      * 解決（CallResolver）より前に確定させておくことで、解決の結果がエッジの処理順に依存しなくなる
      */
     private static DataflowFacts buildDataflowFacts(Config config, CallGraph graph) {
-        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled, config.dataflowMaxDepth);
+        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled);
         if (config.dataflowEnabled) {
             Log.info("ファクトリの戻り値を確定: " + facts.factoriesDecided() + " 件"
                     + (facts.factoriesCutOff() > 0
-                            ? "（委譲の深さ上限 dataflow.max.depth=" + config.dataflowMaxDepth
-                                    + " か循環のため決められなかったもの " + facts.factoriesCutOff() + " 件）"
+                            ? "（委譲が循環しているため決められなかったもの " + facts.factoriesCutOff() + " 件）"
                             : ""));
         }
         return facts;
