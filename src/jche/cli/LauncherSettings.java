@@ -38,7 +38,15 @@ public final class LauncherSettings {
     public static final String KEY_JBANG_REPO = "JBANG_REPO";
     public static final String KEY_JAVA_OPTS = "JCHE_JAVA_OPTS";
     public static final String KEY_JBANG_OPTS = "JCHE_JBANG_OPTS";
-    private static final String[] KNOWN_KEYS = {KEY_JBANG_DIR, KEY_JBANG_REPO, KEY_JAVA_OPTS, KEY_JBANG_OPTS};
+    /** 手元に無いもの（JDK・JBang 本体・依存 jar）を取りに行ってよいか。ask / allow / deny（Issue #86） */
+    public static final String KEY_NETWORK = "JCHE_NETWORK";
+    private static final String[] KNOWN_KEYS =
+            {KEY_JBANG_DIR, KEY_JBANG_REPO, KEY_JAVA_OPTS, KEY_JBANG_OPTS, KEY_NETWORK};
+
+    /** {@link #KEY_NETWORK} に書ける値。空欄は ASK と同じ */
+    public static final String NETWORK_ASK = "ask";
+    public static final String NETWORK_ALLOW = "allow";
+    public static final String NETWORK_DENY = "deny";
 
     /** 「このプロジェクトの中」を選んだときの置き場所（ツールのプロジェクトフォルダからの相対） */
     public static final String PROJECT_LOCAL_JBANG_DIR = ".jbang";
@@ -99,6 +107,8 @@ public final class LauncherSettings {
         lines.add("#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）");
         lines.add("#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）");
         lines.add("#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）");
+        lines.add("#   JCHE_NETWORK    足りないもの（JDK・JBang 本体・依存 jar）を取りに行ってよいか。");
+        lines.add("#                   ask=足りないときだけ尋ねる（既定） allow=尋ねずに許可 deny=禁止");
         for (String key : KNOWN_KEYS) {
             lines.add(key + "=" + get(key));
         }

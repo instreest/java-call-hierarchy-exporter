@@ -57,6 +57,7 @@ final class EnvironmentSettingsScreen {
                     + "（今の実行では " + EnvironmentInfo.maxHeapMb() + " MB）");
             String jbangOpts = settings.get(LauncherSettings.KEY_JBANG_OPTS);
             t.println(" 4) jbang の追加オプション    : " + (jbangOpts.isEmpty() ? "（なし）" : jbangOpts));
+            t.println(" 5) ダウンロードの確認        : " + describeNetwork(settings));
             for (String k : settings.extraKeys()) {
                 t.println("    " + k + "=" + settings.get(k) + "（手で足された項目。そのまま残します）");
             }
@@ -67,13 +68,14 @@ final class EnvironmentSettingsScreen {
                 case "2" -> changed |= changeRepo();
                 case "3" -> changed |= changeHeap();
                 case "4" -> changed |= changeJbangOpts();
+                case "5" -> changed |= changeNetwork();
                 case "q", "" -> {
                     if (changed) {
                         return offerRestart();
                     }
                     return false;
                 }
-                default -> t.println("  1〜4 か q を入力してください。");
+                default -> t.println("  1〜5 か q を入力してください。");
             }
         }
     }
@@ -218,6 +220,43 @@ final class EnvironmentSettingsScreen {
         settings.set(LauncherSettings.KEY_JBANG_OPTS, value);
         settings.save();
         t.println("  保存しました: " + LauncherSettings.KEY_JBANG_OPTS + "=" + value);
+        return true;
+    }
+
+    /** {@link LauncherSettings#KEY_NETWORK} を一覧に出すときの文言。空欄は ask と同じ */
+    static String describeNetwork(LauncherSettings settings) {
+        String v = settings.get(LauncherSettings.KEY_NETWORK).trim().toLowerCase(java.util.Locale.ROOT);
+        return switch (v) {
+            case LauncherSettings.NETWORK_ALLOW -> "尋ねずに許可する（allow）";
+            case LauncherSettings.NETWORK_DENY -> "許可しない（deny）";
+            default -> "足りないときだけ尋ねる（ask。既定）";
+        };
+    }
+
+    /**
+     * 手元に無いもの（JDK・JBang 本体・依存 jar）を取りに行ってよいかの決め方を変える。
+     * 判断と確認そのものは起動コマンド（java-call-hierarchy-exporter.sh / .cmd）が Java の前に行うので、
+     * ここで書いた値は次回の起動から効く。
+     */
+    private boolean changeNetwork() throws IOException {
+        t.println();
+        t.println("このツールが外に出るのは、手元に無いもの（JDK・JBang 本体・依存 jar）を取りに行くときだけです。");
+        t.println("  1) 足りないときだけ尋ねる（既定）");
+        t.println("  2) 尋ねずに許可する  端末の無い CI などで使う");
+        t.println("  3) 許可しない        足りないものがあれば実行せずに終わる");
+        t.println("  q) 変えない");
+        String value;
+        switch (t.readLine("jche/env/network> ")) {
+            case "1" -> value = LauncherSettings.NETWORK_ASK;
+            case "2" -> value = LauncherSettings.NETWORK_ALLOW;
+            case "3" -> value = LauncherSettings.NETWORK_DENY;
+            default -> {
+                return false;
+            }
+        }
+        settings.set(LauncherSettings.KEY_NETWORK, value);
+        settings.save();
+        t.println("  保存しました: " + LauncherSettings.KEY_NETWORK + "=" + value);
         return true;
     }
 

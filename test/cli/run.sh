@@ -143,6 +143,60 @@ printf '4\n\nq\n' | "$JCHE" > "$LOGDIR/run-status2.log" 2>&1
 expect_log "$LOGDIR/run-status2.log" "512 MB" "次の起動でヒープ上限が反映された"
 expect_log "$LOGDIR/run-status2.log" "JCHE_JAVA_OPTS=-Xmx512m" "環境変数として渡された"
 
+echo "== ネットワークアクセスの確認（Issue #86）=="
+# 起動コマンドが「取りに行く必要があるか」を見て尋ねるところだけを検査する。本物の jbangw を呼ぶと
+# 実際にダウンロードが始まってしまうので、起動コマンドと最小限の src/Jche.java、それに渡された引数を
+# 出すだけの偽の jbangw を並べた作業用のフォルダを作って、そこで動かす。
+NETDIR=$(mktemp -d)
+mkdir -p "$NETDIR/jbangw" "$NETDIR/src"
+cp "$JCHE" "$NETDIR/java-call-hierarchy-exporter.sh"
+printf '//DEPS org.example:demo:1.0\n//JAVA 25\n' > "$NETDIR/src/Jche.java"
+printf '#!/usr/bin/env bash\necho "JBANG-ARGS: $*"\n' > "$NETDIR/jbangw/jbang"
+chmod +x "$NETDIR/jbangw/jbang"
+NETJCHE="$NETDIR/java-call-hierarchy-exporter.sh"
+# 何も無いホームと、すべて揃っているホーム
+EMPTYHOME="$NETDIR/home-empty"
+FULLHOME="$NETDIR/home-full"
+mkdir -p "$EMPTYHOME"
+mkdir -p "$FULLHOME/.jbang/bin" "$FULLHOME/.jbang/cache/jdks/17" "$FULLHOME/.jbang/cache/jdks/25" \
+         "$FULLHOME/.m2/repository/org/example/demo/1.0"
+touch "$FULLHOME/.jbang/bin/jbang.jar" "$FULLHOME/.jbang/bin/jbang" \
+      "$FULLHOME/.m2/repository/org/example/demo/1.0/demo-1.0.jar"
+# JBANG_DIR などが外から来ていると置き場所が変わるので外す
+netrun() {   # $1=HOME  残り=環境変数と引数
+    env -u JBANG_DIR -u JBANG_CACHE_DIR -u JBANG_REPO -u JCHE_NETWORK HOME="$1" "${@:2}"
+}
+
+netrun "$EMPTYHOME" "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run-net-notty.log" 2>&1
+expect_log "$LOGDIR/run-net-notty.log" "JCHE_NETWORK=allow" "端末が無いときは案内を出す"
+expect_not_log "$LOGDIR/run-net-notty.log" "JBANG-ARGS:" "端末が無いときは jbang を動かさない"
+
+netrun "$EMPTYHOME" JCHE_NETWORK=deny "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run-net-deny.log" 2>&1
+expect_log "$LOGDIR/run-net-deny.log" "JCHE_NETWORK=deny" "deny なら取りに行かない"
+expect_not_log "$LOGDIR/run-net-deny.log" "JBANG-ARGS:" "deny なら jbang を動かさない"
+
+netrun "$EMPTYHOME" JCHE_NETWORK=nonsense "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run-net-bad.log" 2>&1
+expect_log "$LOGDIR/run-net-bad.log" "ask / allow / deny" "知らない値は値の一覧を出して止まる"
+
+netrun "$EMPTYHOME" JCHE_NETWORK=allow "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run-net-allow.log" 2>&1
+expect_log "$LOGDIR/run-net-allow.log" "JBANG-ARGS: run " "allow なら尋ねずに動かす"
+expect_not_log "$LOGDIR/run-net-allow.log" "--offline" "allow のときは --offline を足さない"
+
+netrun "$FULLHOME" "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run-net-cached.log" 2>&1
+expect_log "$LOGDIR/run-net-cached.log" "JBANG-ARGS: run --offline " "すべて揃っていれば尋ねず --offline で動かす"
+expect_not_log "$LOGDIR/run-net-cached.log" "ダウンロード" "すべて揃っていれば何も尋ねない"
+
+# 端末があるときの取り消し。script(1) が無い環境（一部の macOS / 最小の CI 像）では飛ばす
+if command -v script > /dev/null 2>&1 && script -qec true /dev/null > /dev/null 2>&1; then
+    printf 'n\n' | script -qec "env -u JBANG_DIR -u JBANG_CACHE_DIR -u JBANG_REPO -u JCHE_NETWORK HOME=$EMPTYHOME $NETJCHE $NETDIR/no-such-config.properties" /dev/null \
+        > "$LOGDIR/run-net-cancel.log" 2>&1
+    expect_log "$LOGDIR/run-net-cancel.log" "[y/N]" "端末があれば尋ねる"
+    expect_not_log "$LOGDIR/run-net-cancel.log" "JBANG-ARGS:" "取り消したら jbang を動かさない"
+else
+    ok "端末ありの検査は script(1) が無いので飛ばす"
+fi
+rm -rf "$NETDIR"
+
 echo "== java-call-hierarchy-exporter.cmd の構造（Windows 用。ここでは中身を読むだけ）=="
 # java-call-hierarchy-exporter.cmd は cmd.exe でしか動かせないので、Linux 側では「壊れていないこと」だけを見る。
 # cmd は goto / call の飛び先が無いと "The system cannot find the batch label specified" で止まり、
@@ -158,6 +212,13 @@ done
 if [ -z "$missing" ]; then ok "goto / call の飛び先がすべてある"; else ng "飛び先の無いラベル:$missing"; fi
 # 改行と文字コード（ヘッダのコメントの約束。UTF-8 で保存し直すと日本語の echo が化ける）
 if LC_ALL=C grep -qa "$(printf '\r')" "$CMD"; then ok "CRLF で保存されている"; else ng "CRLF ではない"; fi
+# ネットワークアクセスの確認（Issue #86）が .cmd 側にもあること。片方だけ直すと Windows で素通りする
+if iconv -f CP932 -t UTF-8 "$CMD" 2> /dev/null | grep -q "ダウンロードしてよいですか"; then
+    ok ".cmd にもダウンロードの確認がある"
+else
+    ng ".cmd にダウンロードの確認が無い"
+fi
+if LC_ALL=C grep -a -q -F -- "JCHE_NETWORK" "$CMD"; then ok ".cmd も JCHE_NETWORK を見る"; else ng ".cmd が JCHE_NETWORK を見ていない"; fi
 if iconv -f CP932 -t UTF-8 "$CMD" 2> /dev/null | grep -q "設定を反映するため再起動します"; then
     ok "MS932 で保存されている"
 else

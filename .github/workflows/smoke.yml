@@ -45,8 +45,12 @@ jobs:
 
       # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う
+      # ネットワークの確認（Issue #86）は、ここでは先に許可しておく。端末が無いので尋ねようがなく、
+      # 確認そのものを見る検査は test/cli/run.sh の中で JCHE_NETWORK を明示して行う
       - name: CLI test (java-call-hierarchy-exporter.sh launcher and interactive mode)
         run: bash test/cli/run.sh
+        env:
+          JCHE_NETWORK: allow
 
   # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有
   # （javac.exe、パスの \、cmd の遅延展開、powershell への委譲）で、ubuntu 側では
@@ -74,6 +78,10 @@ jobs:
       #    launcher.properties にヒープ上限を書いておき、-R で JVM に渡ったこと（ヒープ上限の表示）も見る
       - name: Launcher test (Windows, java-call-hierarchy-exporter.cmd)
         shell: cmd
+        # この仕事はキャッシュを使わず毎回まっさらから取得させるので、ネットワークの確認
+        # （Issue #86）に必ずかかる。端末が無く尋ねられないため、先に許可しておく
+        env:
+          JCHE_NETWORK: allow
         run: |
           if exist test\regression\entry\output rmdir /s /q test\regression\entry\output
           call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties > launcher-batch.log 2>&1
@@ -89,6 +97,7 @@ jobs:
             echo JBANG_REPO=
             echo JCHE_JAVA_OPTS=-Xmx640m
             echo JCHE_JBANG_OPTS=
+            echo JCHE_NETWORK=allow
           )
           (echo 4& echo.& echo q) | call java-call-hierarchy-exporter.cmd > launcher-status.log 2>&1
           type launcher-status.log
