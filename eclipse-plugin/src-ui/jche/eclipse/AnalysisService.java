@@ -139,17 +139,6 @@ public final class AnalysisService {
         }
     }
 
-    /** 解析済みのプロジェクトだけを返す（ビューの初期表示用） */
-    public synchronized List<ProjectAnalysis> analyzed() {
-        List<ProjectAnalysis> result = new ArrayList<>();
-        for (ProjectAnalysis analysis : byProject.values()) {
-            if (analysis.isAnalyzed()) {
-                result.add(analysis);
-            }
-        }
-        return result;
-    }
-
     // ------------------------------------------------------------
     // ワークスペースの変更（UIスレッドで届く。ここでは数えるだけ）
     // ------------------------------------------------------------

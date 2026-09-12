@@ -1,2 +1,4 @@
 /bin/
 /target/
+# PDE で動かすときに target/classes/lib/ からコピーしてくる場所（Maven が作るもの）
+/lib/

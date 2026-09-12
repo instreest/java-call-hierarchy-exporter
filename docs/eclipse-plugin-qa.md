@@ -3,7 +3,13 @@
 [Issue #49](https://github.com/instreest/java-call-hierarchy-exporter/issues/49)
 「Eclipseプラグインを作成したい」への対応で、迷ったこと・困ったことと、その結論を Q&A の形で残す。
 
-対応の要点:
+> **その後の作り替え（2026-09-12）**: 解析は Eclipse の中では走らせず、**別プロセス**で行うようにした
+> （[out-of-process-analysis-design.md](out-of-process-analysis-design.md)）。
+> そのため下の「解析本体を `src/` のリンクで取り込む」という構成は今は使っておらず、
+> 解析本体は `lib/jche-core.jar` として同梱し、子プロセスの `-cp` にだけ渡している。
+> Tycho を使わない判断（Q7）や MANIFEST.MF を唯一の正とする方針（Q7・Q9）はそのまま生きている。
+
+対応の要点（当時）:
 
 - `eclipse-plugin/` に PDE のプラグインプロジェクトを置いた。解析本体のソースは複製せず、
   リポジトリ直下の `src/` をリンクフォルダとして取り込む

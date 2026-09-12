@@ -614,6 +614,11 @@ Eclipse プラグイン（`eclipse-plugin/`）も同じ `jche.Exporter` を呼�
 | `jche.server` | サーバーモード（標準入出力のプロトコル、木の切り出しと絞り込み） | `Server`, `Protocol`, `CallTree`, `TreeFilters` |
 | `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
 
+Eclipse プラグインのソースは `eclipse-plugin/src-ui/jche/eclipse/` にあり、**解析のコードは含みません**
+（`jche.eclipse.server` が子プロセスとやりとりし、`CallHierarchyView` がその結果を描きます）。
+プラグインは Java 8、解析本体は Java 17 でコンパイルしており、混ざっていないことは
+`test/plugin/run.sh` と `test/plugin-api/run.sh` が検査します。
+
 読む順番は `CallHierarchyExporter.main` → `jche.Exporter.run` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
 → `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
 キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。

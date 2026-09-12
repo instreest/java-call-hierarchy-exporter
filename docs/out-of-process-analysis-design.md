@@ -9,7 +9,7 @@
    Eclipse の版に縛られなくなる
 3. プラグイン側（Eclipse の中で動く部分）から解析コードを追い出し、**Java 8 以上で動く**ようにする
 
-> **実装状況**（2026-09-12）: **S1〜S4 完了**（残るは S5 の後片付けのみ）。
+> **実装状況**（2026-09-12）: **S1〜S5 完了**。この文書のとおりに作り替え終わっている。
 > `CallHierarchyExporter --server` で標準入出力のプロトコルを話し、`ANALYZE` / `FIND` / `TREE` /
 > `EXPORT` / `CANCEL` / `SHUTDOWN` に応答する。木の切り出しと絞り込みもサーバー側に置いた
 > （`jche.server`）。検査は `test/server/run.sh`（GitHub Actions の regression ジョブで実行）。
@@ -234,7 +234,7 @@ Adoptium (Eclipse Temurin) から取得しますか？（約 200MB、初回の�
 | ~~S2~~ **済** | プラグインを**クライアント化**（まだ Java 17 のまま）。プロセス管理・進捗・中止・再解析・CSV 出力を子プロセスへ移す | `test/plugin-client/run.sh` … クライアント層（Eclipse API を使わない部分）を Java 8 でコンパイルし、実際に子プロセスを起動して HELLO / ANALYZE / FIND / TREE / EXPORT と木の組み直しまでを確認。`test/plugin/run.sh` … バンドルに解析本体が混ざっていないことを検査 |
 | ~~S3~~ **済** | **Java 8 化**。`jche.*` 参照を消し、BREE を 1.8 に、JDT の下限（モデル API 用）を下げる。ビルドを「Java 8 のバンドル」＋「`lib/jche-core.jar`（release 17・実行は JDK 25）」＋「`lib/jdt/` に同梱する JDT 一式」の3点に | `test/plugin-api/run.sh` … Eclipse 4.6 相当の古い jar（jdt.core 3.10.0 / ui.workbench 3.108.2 ほか）と `--release 8` でプラグインをコンパイルし、クラスファイルが Java 8（メジャー版 52）であることまで確認。実際にこの検査で `PlatformUI.getDialogSettingsProvider`（4.24〜）の混入が見つかった |
 | ~~S4~~ **済** | JDK・JDT の**設定画面**（別 JDK、別 JDT jar フォルダ、`-Xmx`、アイドル終了）。JDK が無ければ Adoptium から取得 | `test/plugin-client/run.sh` … JDK の選び方（17 未満は選ばない、1.8 形式も読む）と取得先 URL の組み立て（Windows/Linux/macOS）をネットワーク無しで検査。`test/plugin-api/run.sh` … 設定画面も古い Eclipse の API だけで書けていることを検査 |
-| S5 | 後片付け（不要になった in-process 経路の削除、ドキュメント更新） | 全テスト |
+| ~~S5~~ **済** | 後片付け（不要になった in-process 経路の削除、使われなくなったコードの削除、ドキュメント更新） | 全テスト（regression / server / plugin / plugin-api / plugin-client / pom） |
 
 S1 は本体側だけで完結し、CLI にも「サーバーとして使える」という価値が残る。
 S2 まで入れば Eclipse 側の JDK 依存は消え、S3 で Java 8 になる。
@@ -250,5 +250,13 @@ S2 まで入れば Eclipse 側の JDK 依存は消え、S3 で Java 8 になる�
 5. **Java 8 化を S3 でまとめてやるか**、S2 の時点で同時にやるか
 6. 既存の in-process 経路を**残すか消すか**（残すと二重メンテ、消すと後戻りできない）
 
-現行の in-process 版はすでに動いているので、S1・S2 を入れてから比較し、
-問題が無ければ S5 で消す、という順番を勧める。
+in-process 版は S2 で置き換え、S5 で完全に消した（`CallersModel` など）。
+残っている「決めておきたいこと」の答えは次のとおりで、いずれも実装済みである。
+
+1. プロトコル … TAB 区切りの行指向（`jche.server.Protocol`）
+2. 通信路 … 標準入出力
+3. 木の返し方 … 深さぶんまとめて返し、打ち切った節点は開いたときに取り寄せ直す
+4. 子プロセスの JDK … 設定 → JAVA_HOME → 取得済み → Eclipse の JVM → PATH の順（`JavaLocator`）
+5. Java 8 化 … S3 でまとめて実施
+6. in-process 経路 … 消した
+7. 同梱 JDT の版 … `//DEPS` 行と同じものを Maven が集める（`test/plugin/run.sh` が検査）

@@ -65,11 +65,6 @@ public final class ServerLauncher {
         return new ServerConnection(builder.start(), CHARSET);
     }
 
-    /** 起動コマンドの文字列。ログに残して、何で解析したかを後から追えるようにする */
-    public static String describe(File javaExecutable, List<File> classpath) {
-        return javaExecutable + " -cp " + joinClasspath(classpath) + " CallHierarchyExporter --server";
-    }
-
     private static String joinClasspath(List<File> classpath) {
         StringBuilder sb = new StringBuilder();
         for (File entry : classpath) {

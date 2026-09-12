@@ -81,11 +81,4 @@ public final class JchePreferences {
         return (store == null) ? DEFAULT_IDLE_MINUTES : store.getInt(IDLE_MINUTES);
     }
 
-    /** 取得した JDK の場所を覚える（次からは探索で見つかる） */
-    public static void rememberJdk(File java) {
-        IPreferenceStore store = store();
-        if (store != null && java != null) {
-            store.setValue(JDK, java.getAbsolutePath());
-        }
-    }
 }
