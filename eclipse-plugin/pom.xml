@@ -39,17 +39,20 @@
       実行時に使われるのは Eclipse 側の JDT なので、新しい Eclipse では新しい版がそのまま使われる
       （バイナリ互換）。
 
-      3.27.0 は Eclipse 2021-09 相当で、この版が API 上の下限である（3.26.0 では
-      AST.getJLSLatest() が無くコンパイルできない。docs/eclipse-plugin-ui-qa.md の Q12）。
-      なお Eclipse 本体を動かす JDK は、版に関わらず 17 以上が要る
-      （MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17）。
-      Eclipse 2021-09 は Java 11 でも 17 でも動くので、17 で起動すればこのプラグインは入る。
+      3.32.0 は Eclipse 2022-12 相当。API 上は 3.27.0 まで下げられるが、3.31.0 以前だと
+      jdt.core の推移的依存に org.eclipse.equinox.registry が入らず、ViewPart の親型
+      （IExecutableExtension）が解決できなくなる。そこだけのために依存をもう1つ増やすより、
+      下限を1年ぶん上げるほうが構成が単純なのでこちらを採った
+      （docs/eclipse-plugin-ui-qa.md の Q12）。
 
-      版の対応表（Eclipse / JDT / 必要な Java）は docs/eclipse-pleiades-versions.md にある。
+      Eclipse 本体を動かす JDK は、版に関わらず 17 以上が要る
+      （MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17）。
+      版の対応表（Eclipse / JDT / Pleiades / 必要な Java）は
+      docs/eclipse-pleiades-versions.md にある。
       変えるときは MANIFEST.MF の Require-Bundle の bundle-version も同じ値にすること
       （test/plugin/run.sh が検査する）。
     -->
-    <jdt.version>3.27.0</jdt.version>
+    <jdt.version>3.32.0</jdt.version>
   </properties>
 
   <dependencies>
@@ -239,19 +242,6 @@
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.swt.gtk.linux.x86_64</artifactId>
       <version>3.135.0</version>
-      <scope>provided</scope>
-      <exclusions>
-        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
-      </exclusions>
-    </dependency>
-    <!--
-      IExecutableExtension など、拡張ポイントの型が入っている。JDT の版によっては推移的に
-      入ってこないので明示する（依存の推移を全部切っているため。Q8）
-    -->
-    <dependency>
-      <groupId>org.eclipse.platform</groupId>
-      <artifactId>org.eclipse.equinox.registry</artifactId>
-      <version>3.12.600</version>
       <scope>provided</scope>
       <exclusions>
         <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>

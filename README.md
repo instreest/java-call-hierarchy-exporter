@@ -108,13 +108,13 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 **動作条件**は次の2つです（版の対応表は
 [docs/eclipse-pleiades-versions.md](docs/eclipse-pleiades-versions.md)）。
 
-- **Eclipse 2021-09 以降**（JDT Core 3.27 以上）
+- **Eclipse 2022-12 以降**（JDT Core 3.32 以上）
 - **Eclipse を Java 17 以上で起動している**こと（`eclipse.ini` の `-vm`。Pleiades なら
   同梱の JDK から選べます）
 
-Eclipse 2021-09〜2023-03 は Java 11 でも起動できますが、そのままでは入りません。
+Eclipse 2022-12〜2023-03 は Java 11 でも起動できますが、そのままでは入りません。
 Java 17 以上で起動してください（Pleiades All in One は 2021 以降、既定で JDK 17 以上、
-2024 以降は 21 で Eclipse を起動しているため、そのまま入ります）。プラグインは下限の版でコンパイルしてあるので、
+2024 以降は 21 で Eclipse を起動しているため、**2022-12 ベース以降ならそのまま入ります**）。プラグインは下限の版でコンパイルしてあるので、
 新しい Eclipse では、その Eclipse に入っている JDT がそのまま使われます。
 
 **呼び出し元の階層を Eclipse 上で見る**（このプラグインの主な使い方）:

@@ -151,37 +151,48 @@ GitHub Actions の `eclipse-plugin` ジョブは、JDT の**下限の版と最�
 ### Q12. 「Eclipse の JDT が古いと入らない」をどう直したか
 
 `Require-Bundle` の下限を、**コンパイルに使った版ではなく、実際に必要な最小の版**にした。
+最初は 3.46.0（`//DEPS` 行と同じ最新版）にしていたが、これは「コンパイルした版をそのまま下限にした」
+だけで根拠が無く、少し古い Eclipse では何もせずに弾かれてしまう。
 
-最初は下限を 3.46.0（`//DEPS` 行と同じ最新版）にしていたが、これは「コンパイルした版をそのまま
-下限にした」だけで根拠が無く、少し古い Eclipse では何もせずに弾かれてしまう。
-どこまで下げられるかは、版を変えてビルドして確かめた。
+どこまで下げられるかは、版を変えてビルドして確かめた。境界が2つ出た。
 
 | JDT Core | Eclipse | 結果 |
 |---|---|---|
-| 3.28.0 以上 | 2021-12 以降 | ○ |
-| **3.27.0** | **2021-09** | **○ ← ここが下限** |
-| 3.26.0 | 2021-06 | ✗ `AST.getJLSLatest()` が無い |
-| 3.24.0 | 2020-12 | ✗ 同上 |
+| 3.32.0 以上 | 2022-12 以降 | ○ **下限はここ** |
+| 3.31.0 〜 3.27.0 | 2021-09 〜 2022-09 | △ コンパイルは通せるが、依存をもう1つ足す必要がある（下記） |
+| 3.26.0 以下 | 2021-06 以前 | ✗ `AST.getJLSLatest()` が無い（API 上の限界） |
 
-採ったのは **3.27.0**（Eclipse 2021-09 相当）。API 上の限界そのものである。
-Eclipse 本体を動かす JDK は版に関わらず 17 以上が要る（`Bundle-RequiredExecutionEnvironment:
-JavaSE-17`。本体のソースが record・sealed・switch 式を使うため）。Eclipse 2021-09 は
-Java 11 でも 17 でも動くので、**17 で起動すれば入る**。版の対応表は
+**3.31.0 以前で何が起きるか**。ビューの親クラス `ViewPart` は `IExecutableExtension`
+（`org.eclipse.equinox.registry`）を実装している。この jar は宣言していないが、
+jdt.core 3.32.0 以降では jdt.core の推移的な依存として入ってくるので、何もしなくてもコンパイルできる。
+3.31.0 以前の jdt.core はその依存を持たないため、
+
+```
+cannot access org.eclipse.core.runtime.IExecutableExtension
+  class file for org.eclipse.core.runtime.IExecutableExtension not found
+```
+
+となる。`org.eclipse.equinox.registry` を明示的な依存に足せば 3.27.0 まで下げられるが、
+**「ビルドの都合の依存」を1つ増やして 2021-09〜2022-09 の 4 リリースぶんを拾う**ことになる。
+プラグインの構成は単純なほうがよいと判断して、下限を 3.32.0 にした。
+
+これは<b>ビルド時のクラスパスの話だけ</b>で、実行時には関係しない（実行時は Eclipse 側の
+バンドルが使われる）。将来 jdt.core の依存が変わってこの伝播が無くなったら、ビルドが
+上のエラーで落ちるので気づける。そのときは明示依存を足すか、下限を上げるかを選べばよい。
+
+Eclipse 本体を動かす JDK は、版に関わらず **17 以上**が要る（`Bundle-RequiredExecutionEnvironment:
+JavaSE-17`。本体のソースが record・sealed・switch 式を使うため）。Eclipse 2022-12・2023-03 は
+Java 11 でも動くので、その2版は Java 17 以上で起動すること。版の対応表（Pleiades 込み）は
 [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) にまとめた。
 
-大事なのは宣言だけで終わらせないことで、次の2つを併せて入れた。
+宣言だけで終わらせないために、次の2つを併せて入れてある。
 
-- **下限の版でコンパイルする**（`eclipse-plugin/pom.xml` の `jdt.version` = 3.27.0）。
+- **下限の版でコンパイルする**（`eclipse-plugin/pom.xml` の `jdt.version`）。
   それより新しい API を使った時点でビルドが落ちる
 - **CI で下限と最新の両方をビルドする**（`eclipse-plugin` ジョブの matrix）。
   最新版は `//DEPS` 行から読むので、版の出どころは1か所のまま
 
-この作業中に、依存の推移をすべて切っている副作用で `org.eclipse.equinox.registry`
-（`IExecutableExtension` などが入っている）が JDT の版によって入ったり入らなかったりすることが
-分かったので、明示的な依存に足した。下限でのビルドを試さなければ気づかない類の穴だった。
-
-実行時に使われるのは Eclipse 側の JDT なので、新しい Eclipse では新しい版がそのまま使われる
-（バイナリ互換）。古い JDT で起きるのは「動かない」ではなく「解析できる Java の版が下がる」だけで、
+古い JDT で起きるのは「動かない」ではなく「解析できる Java の版が下がる」だけで、
 本体はすでに `source.level` を丸めてログに出す作りになっている。
 
 ### Q13. 「Eclipse の JDK が古い」問題にどう対処したか
