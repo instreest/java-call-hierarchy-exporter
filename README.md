@@ -105,9 +105,16 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 複数選択すれば、コマンドラインに設定ファイルを並べたときと同じく順に処理します。
 ログは「Call Hierarchy Exporter」コンソールに出ます（`run.log` も今までどおり出力フォルダに残ります）。
 
-**動作条件**: Eclipse 2023-03 以降（JDT Core 3.33 以上、Java 17 以上で動く Eclipse）。
-Pleiades なら 2023-03 以降が該当します。プラグインは下限の版でコンパイルしてあるので、
-これより新しい Eclipse では、その Eclipse に入っている JDT がそのまま使われます。
+**動作条件**は次の2つです（版の対応表は
+[docs/eclipse-pleiades-versions.md](docs/eclipse-pleiades-versions.md)）。
+
+- **Eclipse 2021-09 以降**（JDT Core 3.27 以上）
+- **Eclipse を Java 17 以上で起動している**こと（`eclipse.ini` の `-vm`。Pleiades なら
+  同梱の JDK から選べます）
+
+Eclipse 2021-09〜2023-03 は Java 11 でも起動できますが、そのままでは入りません。
+Java 17 以上で起動してください。プラグインは下限の版でコンパイルしてあるので、
+新しい Eclipse では、その Eclipse に入っている JDT がそのまま使われます。
 
 **呼び出し元の階層を Eclipse 上で見る**（このプラグインの主な使い方）:
 
