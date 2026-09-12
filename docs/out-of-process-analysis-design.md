@@ -5,7 +5,7 @@
 狙いは3つある。
 
 1. 解析を **JDK 25**（と最新の JDT jar）で走らせる。Eclipse がどの JDK・どの JDT で動いていても影響されない
-2. JDT jar は **Eclipse 同梱のものではなく、別途置いたもの**を使う。解析できる Java の版が
+2. JDT jar は **Eclipse 同梱のものではなく、プラグインに同梱した最新版**を使う。解析できる Java の版が
    Eclipse の版に縛られなくなる
 3. プラグイン側（Eclipse の中で動く部分）から解析コードを追い出し、**Java 8 以上で動く**ようにする
 
@@ -109,25 +109,55 @@ JSON は表現力が高いがパーサを自前で書くか依存を足すこと
 
 ## 5. 配布とクラスパス
 
-バンドルの中に**2種類のコード**が入る。混ぜないことが肝心である。
+**解析に必要なものはすべてバンドルに同梱する**。Eclipse 側の JDT には一切頼らない
+（頼ると「古い Eclipse では新しい Java を解析できない」という制約が戻ってくる）。
 
 ```
 io.github.instreest.jche.eclipse_x.y.z.jar
 ├── jche/eclipse/*.class      ← Java 8 でコンパイル。Eclipse の中で動く
-└── lib/jche-core.jar         ← Java 17 でコンパイル。バンドルのクラスパスには載せない。
-                                 子プロセスの -cp にだけ渡す
+└── lib/
+    ├── jche-core.jar         ← 解析本体。JDK 25 で動かす。Bundle-ClassPath には載せない
+    └── jdt/*.jar             ← 最新の JDT 一式（13 jar・約 11 MB）。同上
 ```
 
-`lib/jche-core.jar` を `Bundle-ClassPath` に**入れない**のがポイント。入れると Eclipse（Java 8）が
-読もうとして落ちる。子プロセスの起動時に `FileLocator` で実体パスを取り出して `-cp` に並べる。
+`lib/` を **`Bundle-ClassPath` に入れない**のが肝心である。入れると Eclipse（Java 8 かもしれない）が
+読もうとして落ちる。子プロセスを起動するときに `FileLocator` で実体パスを取り出し、`-cp` にだけ並べる。
+
+### 同梱する JDT 一式
+
+ビルド時に `maven-dependency-plugin` で Maven Central から集めて `lib/jdt/` に入れる。
+版は `//DEPS` 行と同じ（＝CLI と同じ JDT）。`test/plugin/run.sh` で食い違いを検出する。
+
+この 13 個で足りることは、実際にこのクラスパスだけで `test/demo` を解析し、
+**CSV が期待値と完全一致する**ことを確認した（`jna`・`jna-platform`・`osgi.annotation`・
+`core.commands`・`core.expressions`・`equinox.app` は不要。約 3.9 MB ぶん削れる）。
+
+```
+ecj, org.eclipse.jdt.core, org.eclipse.osgi, org.eclipse.text,
+org.eclipse.core.contenttype, core.filesystem, core.jobs, core.resources, core.runtime,
+org.eclipse.equinox.common, equinox.preferences, equinox.registry, org.osgi.service.prefs
+```
+
+- バンドルは 11〜12 MB 増える。閉域環境に zip 1つで持ち込める利点のほうが大きいと判断する
+- 同梱する jar は **EPL-2.0**（このツール自身は Apache-2.0）。`about.html` / `NOTICE` に
+  同梱物とそのライセンスを明記する（[license-header-qa.md](license-header-qa.md) の方針に合わせる）
+
+### 解析に使う JDK
+
+**JDK 25 で動かす**。`lib/jche-core.jar` 自体は `--release 17` でコンパイルする（実行は 25）。
+解析結果に効くのは<b>動かす JVM の版</b>であってバイトコードの版ではないため、
+ここを 17 にしておけば Eclipse から開いた Maven プロジェクト（m2e、`maven.compiler.release=17`）や
+`test/pom` の構成と食い違わない。ソースの文法を 25 に上げたくなったら別途判断する。
 
 | 設定項目 | 既定 | 備考 |
 |---|---|---|
-| 解析に使う JDK | 環境変数や登録済み JRE から 17 以上を探す。見つからなければエラー表示 | JDK 25 推奨。ここが「別 JDK」の実体 |
-| JDT jar のフォルダ | 未設定なら Eclipse 同梱の jdt.core 一式（`FileLocator` で解決） | 設定すればそのフォルダの `*.jar` を使う＝**最新 JDT を別置き**できる |
+| 解析に使う JDK | **25**（見つからなければエラー表示。設定で明示指定できる） | 17 以上なら動くが、CLI（`//JAVA 25`）と結果を揃えるため 25 を既定にする |
+| JDT jar | **同梱の `lib/jdt/`** | 設定で別フォルダを指せば差し替え可（閉域で新しい JDT を入れたいとき） |
+| 子プロセスの `-Xmx` | 未指定（JVM 既定） | 大きなプロジェクトはここで増やす。Eclipse のヒープとは独立 |
 | アイドル終了 | 10 分 | 0 で常駐 |
 
-閉域環境向けに、README の Pleiades 手順（必要な jar を `lib/` に集める）をそのまま流用できる。
+JDK の探索順は「設定 → `JAVA_HOME` → Eclipse の登録済み JRE → `java` コマンド」を想定する
+（登録済み JRE を見るなら `org.eclipse.jdt.launching` への依存が増えるので、そこは §9 の決め事）。
 
 ## 6. Java 8 化の作業量（Eclipse 側）
 
@@ -151,6 +181,7 @@ io.github.instreest.jche.eclipse_x.y.z.jar
 **得るもの**
 
 - 解析する JDK と JDT を Eclipse から独立させられる。**古い Eclipse でも最新 Java のソースを解析できる**
+  （JDT を同梱するので、Eclipse 側の JDT の版は解析能力に関係しなくなる）
 - Eclipse 側が Java 8 で動く。導入できる環境が一気に広がる
 - 解析が Eclipse のヒープを食わない。OutOfMemory の切り分けも簡単（子プロセスの `-Xmx` を別に指定できる）
 - 解析が固まっても Eclipse は無傷。最悪プロセスを殺せばよい
@@ -162,6 +193,7 @@ io.github.instreest.jche.eclipse_x.y.z.jar
 - メモリが二重（子プロセスにグラフ、Eclipse に表示ぶん）
 - 大きな木は行の転送量が増える。深さと件数の上限で抑える
 - デバッグが一段面倒（子プロセスのログを見る手当が要る）
+- バンドルが 11〜12 MB 大きくなる（同梱する JDT 一式）。EPL-2.0 の同梱物の表示も要る
 
 ## 8. 段階
 
@@ -169,7 +201,7 @@ io.github.instreest.jche.eclipse_x.y.z.jar
 |---|---|---|
 | S1 | 本体に **サーバーモード**を足す（`CallHierarchyExporter --server`）。標準入出力でプロトコルを話す。フェーズ1〜3とフィルタ・木の切り出しは既存コードを流用 | コマンドラインから手で叩いて応答を確認。`test/server/run.sh` で `ANALYZE`→`FIND`→`TREE` の一連を自動検査（`test/demo` を使う） |
 | S2 | プラグインを**クライアント化**（まだ Java 17 のまま）。プロセス管理・進捗・中止・再解析を移す | 既存の画面が同じように動くこと。解析が Eclipse の外で走っていることをログで確認 |
-| S3 | **Java 8 化**。`jche.*` 参照を消し、BREE を 1.8 に、JDT の下限を下げる。ビルドを2本立て（Java 8 のバンドル／Java 17 の `lib/jche-core.jar`）に | 下限 JDT・Java 8 でのビルドを CI に追加。Eclipse 4.x 系での導入確認（手動） |
+| S3 | **Java 8 化**。`jche.*` 参照を消し、BREE を 1.8 に、JDT の下限（モデル API 用）を下げる。ビルドを「Java 8 のバンドル」＋「`lib/jche-core.jar`（release 17・実行は JDK 25）」＋「`lib/jdt/` に同梱する JDT 一式」の3点に | 下限 JDT・Java 8 でのビルドを CI に追加。Eclipse 4.x 系での導入確認（手動） |
 | S4 | JDK・JDT の**設定画面**（別 JDK、別 JDT jar フォルダ、`-Xmx`、アイドル終了） | 設定を変えて子プロセスの起動コマンドが変わることを確認 |
 | S5 | 後片付け（不要になった in-process 経路の削除、ドキュメント更新） | 全テスト |
 
@@ -181,8 +213,9 @@ S2 まで入れば Eclipse 側の JDK 依存は消え、S3 で Java 8 になる�
 1. **プロトコルの形式** … TAB 区切りの行指向（提案）／JSON Lines（依存を足すか自前パーサ）
 2. **通信路** … 標準入出力（提案。シンプル）／ローカルソケット（複数クライアント・切断耐性は上がる）
 3. **木の返し方** … 深さぶんまとめて返す（提案）／1ノードずつ
-4. **子プロセスの JDK の決め方** … 設定で明示（提案）／Eclipse の登録済み JRE から自動選択
-   （後者は `org.eclipse.jdt.launching` への依存が増える）
+4. **子プロセスの JDK の決め方** … 「設定 → JAVA_HOME → Eclipse の登録済み JRE → java コマンド」の
+   順で探す（提案）。登録済み JRE を見るかどうかで `org.eclipse.jdt.launching` への依存が変わる
+7. **同梱 JDT の版を上げる手順** … `//DEPS` 行を変えれば `lib/jdt/` も変わる形にする（提案）
 5. **Java 8 化を S3 でまとめてやるか**、S2 の時点で同時にやるか
 6. 既存の in-process 経路を**残すか消すか**（残すと二重メンテ、消すと後戻りできない）
 
