@@ -32,6 +32,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.Exporter;
+import jche.config.ToolRoot;
+import jche.server.Server;
 
 /**
  * java-call-hierarchy-exporter のエントリポイント。
@@ -49,6 +51,12 @@ import jche.Exporter;
  *   jbang src/CallHierarchyExporter.java projA.properties projB.properties
  *   java -cp "bin;lib/*" CallHierarchyExporter config.properties
  * </pre>
+ *
+ * もう1つの使い方が「サーバーモード」で、標準入出力で要求を受けて応答する
+ * （{@link jche.server.Server}）。Eclipse プラグインが別プロセス・別 JDK で解析させるために使う。
+ * <pre>
+ *   java -cp "lib/*" CallHierarchyExporter --server [キャッシュの置き場所]
+ * </pre>
  * 1つの設定が失敗しても残りは処理し、最後にまとめて結果を出す。1つでも失敗すれば終了コードは 1。
  */
 public class CallHierarchyExporter {
@@ -56,7 +64,18 @@ public class CallHierarchyExporter {
     /** 引数を省略したときの設定ファイル（作業ディレクトリからの相対） */
     private static final String DEFAULT_CONFIG = "config.properties";
 
+    /** サーバーモードで起動するときの第1引数 */
+    private static final String SERVER_OPTION = "--server";
+
     public static void main(String[] args) {
+        if (args.length > 0 && SERVER_OPTION.equals(args[0])) {
+            // サーバーモード。キャッシュの置き場所は引数で指定でき、省略時はツールのフォルダの下
+            Path cacheRoot = (args.length > 1)
+                    ? Paths.get(args[1])
+                    : ToolRoot.locate(CallHierarchyExporter.class).dir;
+            System.exit(Server.run(cacheRoot));
+        }
+
         // 設定ファイルのパスは引数で受け取る（複数可）。jbang はスクリプト名より後ろの
         // 引数をそのまま渡してくるので、jbang 経由でも java 直接実行でも同じ形
         List<Path> configPaths = new ArrayList<>();

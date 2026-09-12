@@ -185,6 +185,23 @@ Tycho を使わない理由や、CLI との二重実装を避けるためにし�
 呼び出し元階層ビューの設計は [docs/eclipse-plugin-ui-design.md](docs/eclipse-plugin-ui-design.md)、
 実装時に迷った点は [docs/eclipse-plugin-ui-qa.md](docs/eclipse-plugin-ui-qa.md) にあります。
 
+#### サーバーモード（プラグインが別プロセスで解析させる経路）
+
+`--server` を付けて起動すると、CSV を書くかわりに**標準入出力で要求を受けて応答する**常駐プロセスになります。
+Eclipse プラグインはこれを別 JDK・別 JDT で起動し、結果だけを受け取ります
+（設計は [docs/out-of-process-analysis-design.md](docs/out-of-process-analysis-design.md)）。
+手で叩くこともできます。
+
+```bash
+printf 'HELLO\t1\nANALYZE\t/path/config.properties\nTREE\tcom.example.Foo#bar()\tcallers\tdepth=3\nSHUTDOWN\n' \
+  | java -cp "lib/*:bin" CallHierarchyExporter --server /tmp/jche-cache
+```
+
+要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・`TREE`（木の切り出し）・
+`EXPORT`（CSV 出力）・`CANCEL`（解析の中止）・`SHUTDOWN` があります。解析中は `#P` 行で進捗が、
+`#L` 行でログが流れます。**フィルタ（深さ・文字列・テスト除外など）はサーバー側で効く**ので、
+絞り込みのたびに解析し直すことはありません。詳しい仕様は `src/jche/server/Protocol.java` のコメントにあります。
+
 ---
 
 ### 出力されるファイル
@@ -582,6 +599,7 @@ Eclipse プラグイン（`eclipse-plugin/`）も同じ `jche.Exporter` を呼�
 | `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
 | `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
 | `jche`（直下） | 設定ファイルを受け取ってフェーズ1〜3を回す本体。CLI とプラグインの共通の入口 | `Exporter` |
+| `jche.server` | サーバーモード（標準入出力のプロトコル、木の切り出しと絞り込み） | `Server`, `Protocol`, `CallTree`, `TreeFilters` |
 | `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
 
 読む順番は `CallHierarchyExporter.main` → `jche.Exporter.run` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
@@ -646,6 +664,14 @@ bash test/pom/run.sh           # Linux / macOS / Git Bash
 
 GitHub Actions では、これに加えて `mvn compile` で `pom.xml` から実際に依存を解決してコンパイルできることも
 確認します（Eclipse の m2e が行う解決と同じです）。
+
+サーバーモードにも検査があります。`HELLO`→`ANALYZE`→`FIND`→`TREE`→`EXPORT` の一連と、
+断り方（未解析・不明なメソッド・知らない要求）を確認します。
+
+```bash
+bash test/server/run.sh          # jbang で依存を解決してコンパイルしてから実行
+JCHE_CP="<classpath>" bash test/server/run.sh   # コンパイル済みを使う（CI はこちら）
+```
 
 Eclipse プラグイン（`eclipse-plugin/`）にも検査があります。JDT の版が `//DEPS` 行・直下の `pom.xml`・
 `eclipse-plugin/pom.xml` で一致すること、`Bundle-Version` と pom の版、`Bundle-SymbolicName` と

@@ -34,6 +34,13 @@ jobs:
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
+      # サーバーモード（Eclipse プラグインが別プロセスで解析させる経路）の検査。
+      # 上のコンパイルで作った build/classes をそのまま使うので、依存の解決は1回で済む
+      - name: Server protocol test
+        run: |
+          CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+          JCHE_CP="$CP:build/classes" bash test/server/run.sh
+
       # maven / mavenmulti / gradle のケースも、ビルドツール無しで動く（ビルドファイルを読むだけ）
       - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh

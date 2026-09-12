@@ -9,7 +9,11 @@
    Eclipse の版に縛られなくなる
 3. プラグイン側（Eclipse の中で動く部分）から解析コードを追い出し、**Java 8 以上で動く**ようにする
 
-**まだ実装していない。** この文書は設計と段階の提案である。
+> **実装状況**（2026-09-12）: **S1 完了**（本体のサーバーモード）。
+> `CallHierarchyExporter --server` で標準入出力のプロトコルを話し、`ANALYZE` / `FIND` / `TREE` /
+> `EXPORT` / `CANCEL` / `SHUTDOWN` に応答する。木の切り出しと絞り込みもサーバー側に置いた
+> （`jche.server`）。検査は `test/server/run.sh`（GitHub Actions の regression ジョブで実行）。
+> S2 以降（プラグインのクライアント化・Java 8 化・設定画面）はこれから。
 
 ---
 
@@ -151,13 +155,33 @@ org.eclipse.equinox.common, equinox.preferences, equinox.registry, org.osgi.serv
 
 | 設定項目 | 既定 | 備考 |
 |---|---|---|
-| 解析に使う JDK | **25**（見つからなければエラー表示。設定で明示指定できる） | 17 以上なら動くが、CLI（`//JAVA 25`）と結果を揃えるため 25 を既定にする |
+| 解析に使う JDK | **25**（無ければ取得を提案。設定で明示指定できる） | 17 以上なら動くが、CLI（`//JAVA 25`）と結果を揃えるため 25 を既定にする |
 | JDT jar | **同梱の `lib/jdt/`** | 設定で別フォルダを指せば差し替え可（閉域で新しい JDT を入れたいとき） |
 | 子プロセスの `-Xmx` | 未指定（JVM 既定） | 大きなプロジェクトはここで増やす。Eclipse のヒープとは独立 |
 | アイドル終了 | 10 分 | 0 で常駐 |
 
 JDK の探索順は「設定 → `JAVA_HOME` → Eclipse の登録済み JRE → `java` コマンド」を想定する
 （登録済み JRE を見るなら `org.eclipse.jdt.launching` への依存が増えるので、そこは §9 の決め事）。
+
+### 見つからないときは取得する
+
+どこにも 25 が無ければ、**プラグインが取得する**。ただし黙って 200MB 近くを落とすのは乱暴なので、
+最初の解析を始めるときに一度だけ確認する。
+
+```
+解析用の JDK 25 が見つかりません。
+Adoptium (Eclipse Temurin) から取得しますか？（約 200MB、初回のみ）
+   [取得する]  [JDK の場所を指定する…]  [やめる]
+```
+
+- 取得先は Adoptium の API（`https://api.adoptium.net/v3/binary/latest/25/ga/<os>/<arch>/jdk/hotspot/normal/eclipse`）。
+  OS とアーキテクチャは実行中の Eclipse から決める
+- 置き場所はプラグインの状態フォルダ（`<ワークスペース>/.metadata/.plugins/io.github.instreest.jche.eclipse/jdk/25/`）。
+  ワークスペースを消せば一緒に消えるので、環境を汚さない
+- 取得は Job（進捗つき・中止可）。展開まで終わったら設定に記録し、次回からは探索で見つかる
+- **閉域環境では取得できない**ので、そのときは「JDK の場所を指定する…」で既にある JDK を指してもらう。
+  ダイアログにその案内を出す。取得できないこと自体は失敗として扱わない
+- 取得した JDK の版と出所はログに残す（何で解析したかを後から説明できるようにする）
 
 ## 6. Java 8 化の作業量（Eclipse 側）
 
@@ -199,7 +223,7 @@ JDK の探索順は「設定 → `JAVA_HOME` → Eclipse の登録済み JRE →
 
 | 段 | 内容 | 検証 |
 |---|---|---|
-| S1 | 本体に **サーバーモード**を足す（`CallHierarchyExporter --server`）。標準入出力でプロトコルを話す。フェーズ1〜3とフィルタ・木の切り出しは既存コードを流用 | コマンドラインから手で叩いて応答を確認。`test/server/run.sh` で `ANALYZE`→`FIND`→`TREE` の一連を自動検査（`test/demo` を使う） |
+| ~~S1~~ **済** | 本体に **サーバーモード**を足す（`CallHierarchyExporter --server`）。標準入出力でプロトコルを話す。フェーズ1〜3とフィルタ・木の切り出しは既存コードを流用 | `test/server/run.sh` で `HELLO`→`ANALYZE`→`FIND`→`TREE`→`EXPORT` の一連と、断り方（未解析・不明メソッド・知らない要求）を自動検査 |
 | S2 | プラグインを**クライアント化**（まだ Java 17 のまま）。プロセス管理・進捗・中止・再解析を移す | 既存の画面が同じように動くこと。解析が Eclipse の外で走っていることをログで確認 |
 | S3 | **Java 8 化**。`jche.*` 参照を消し、BREE を 1.8 に、JDT の下限（モデル API 用）を下げる。ビルドを「Java 8 のバンドル」＋「`lib/jche-core.jar`（release 17・実行は JDK 25）」＋「`lib/jdt/` に同梱する JDT 一式」の3点に | 下限 JDT・Java 8 でのビルドを CI に追加。Eclipse 4.x 系での導入確認（手動） |
 | S4 | JDK・JDT の**設定画面**（別 JDK、別 JDT jar フォルダ、`-Xmx`、アイドル終了） | 設定を変えて子プロセスの起動コマンドが変わることを確認 |
