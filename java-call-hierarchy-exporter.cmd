@@ -1,15 +1,18 @@
 @echo off
 rem java-call-hierarchy-exporter の起動コマンド（Windows のコマンドプロンプト。Linux / macOS / Git Bash は java-call-hierarchy-exporter.sh）。
 rem
-rem   jche                              対話モード（メニューで設定ファイルを選んで解析する）
-rem   jche a.properties [b.properties…] 対話なしで解析する（jbang で src\CallHierarchyExporter.java を直接動かすのと同じ）
+rem   jche                              引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
+rem   jche a.properties [b.properties…] 引数あり … 対話なしで解析する（jbang で src\CallHierarchyExporter.java を直接動かすのと同じ）
 rem   jche --help
+rem
+rem 設定ファイルを渡したときは何も尋ねない（Issue #83）。初回で launcher.properties がまだ無ければ、
+rem 置き場所の質問は出さずに既定（このプロジェクトの中の .jbang）で作り、その旨を 1 行出すだけにする。
 rem
 rem どこから実行してもよい（このファイルのあるフォルダを起点にする）。
 rem
 rem やること:
 rem   1. launcher.properties（このフォルダ直下）を読み、JDK / JBang の置き場所（JBANG_DIR 等）や JVM のオプションを
-rem      環境変数にする。無ければ、対話できるときだけ置き場所を尋ねて作る（初回だけ）。
+rem      環境変数にする。無ければ、対話できるときだけ置き場所を尋ねて作る（初回だけ。引数があるときは尋ねずに既定で作る）。
 rem   2. jbangw\jbang.cmd（同梱の JBang ラッパー）で src\Jche.java を動かす。JDK と依存 jar は初回に自動で取得される。
 rem   3. アプリが「再起動して設定を反映」を要求したとき（.cache\launcher.restart ができる）は 1 からやり直す。
 rem      置き場所や JVM オプションは Java が起動する前に決まるので、Java 側からは変えられない。
@@ -27,12 +30,12 @@ set "ROOT=%ROOT:~0,-1%"
 set "SETTINGS=%ROOT%\launcher.properties"
 set "RESTART=%ROOT%\.cache\launcher.restart"
 
-rem --- 初回: JDK / JBang の置き場所を尋ねる（対話できるときだけ。パイプや CI では JBang の既定のまま） ---
+rem --- 初回: JDK / JBang の置き場所を尋ねる（引数なしで対話できるときだけ。パイプや CI では JBang の既定のまま） ---
 if "%~1"=="--help" goto :main
 if "%~1"=="-h" goto :main
 if exist "%SETTINGS%" goto :main
 2>nul >nul timeout /t 0 || goto :main
-call :first_run_prompt
+if not "%~1"=="" (call :first_run_default) else (call :first_run_prompt)
 
 :main
 if exist "%RESTART%" del /q "%RESTART%"
@@ -62,6 +65,13 @@ set "CHOICE=1"
 set /p "CHOICE=番号 [1]: "
 if "%CHOICE%"=="2" (call :write_settings "" "") else (call :write_settings ".jbang" ".jbang/repository")
 echo %SETTINGS% に保存しました。
+echo.
+exit /b 0
+
+:first_run_default
+rem 引数ありのときは対話なしで実行する。置き場所は尋ねず、既定（このプロジェクトの中）にして知らせるだけ
+call :write_settings ".jbang" ".jbang/repository"
+echo java-call-hierarchy-exporter: JDK と JBang は %ROOT%\.jbang に置きます（変えるときは %SETTINGS%）。
 echo.
 exit /b 0
 

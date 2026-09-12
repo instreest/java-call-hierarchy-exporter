@@ -14,9 +14,9 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | 場所 | 役割 |
 |---|---|
 | `src/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
-| `src/Jche.java` | 対話モードのエントリポイント。起動コマンドから呼ばれる |
+| `src/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
 | `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker` / `FieldFactCollector` に分担）、`graph`（呼び出しグラフ・具象クラス解決）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
-| `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと対話なし |
+| `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
@@ -28,8 +28,9 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 ## 動かす
 
 ```bash
-./java-call-hierarchy-exporter.sh                       # 対話モード
-./jbangw/jbang src/CallHierarchyExporter.java config/config.properties   # 対話なし
+./java-call-hierarchy-exporter.sh                            # 対話モード
+./java-call-hierarchy-exporter.sh config/config.properties   # 対話なし（引数あり）
+./jbangw/jbang src/CallHierarchyExporter.java config/config.properties   # 起動コマンドを通さない場合
 ```
 
 初回は JDK 25 と JDT の jar を自動取得する（数百 MB）。設定ファイルは `project.root` だけ書けば動き、

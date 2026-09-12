@@ -19,13 +19,18 @@ import jche.cli.Terminal;
 import jche.config.ToolRoot;
 
 /**
- * 対話モードのエントリポイント。プロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から起動する。
+ * 起動コマンドのエントリポイント。プロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から起動する。
  *
  * <pre>
- *   java-call-hierarchy-exporter.sh                           対話モード（メニューで設定ファイルを選んで解析する）
- *   java-call-hierarchy-exporter.sh a.properties [b.properties…] 対話なしで解析する（{@link CallHierarchyExporter} を直接動かすのと同じ）
+ *   java-call-hierarchy-exporter.sh                           引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
+ *   java-call-hierarchy-exporter.sh a.properties [b.properties…] 引数あり … 対話なしで解析する（{@link CallHierarchyExporter} を直接動かすのと同じ）
  *   java-call-hierarchy-exporter.sh --help
  * </pre>
+ *
+ * 設定ファイルを 1 つでも渡したときは、画面も標準入力も使わずに解析だけを行って終わる（Issue #83）。
+ * バッチやタスクスケジューラ、CI から呼べるようにするため。終了コードは、すべて成功なら 0、
+ * 1 つでも失敗すれば 1、引数が誤っていれば 2。
+ * 起動コマンド側も、引数があるときは JDK / JBang の置き場所を尋ねない（既定のまま進む）。
  *
  * 起動コマンドは自分のあるフォルダを環境変数 {@code JCHE_ROOT} で渡してくる。どこから実行しても
  * ツールのプロジェクトフォルダ（キャッシュ・設定ファイルの置き場所）が同じになるようにするため。
@@ -43,6 +48,14 @@ public class Jche {
                 usage();
                 return;
             }
+            if (a.startsWith("-") && !a.equals("-")) {
+                // 設定ファイルのパスとして扱うと「ファイルがありません」になって分かりにくいので、ここで弾く
+                System.err.println("知らないオプションです: " + a);
+                System.err.println();
+                usage();
+                System.exit(2);
+                return;
+            }
             configPaths.add(Paths.get(a));
         }
 
@@ -52,7 +65,8 @@ public class Jche {
                 : ToolRoot.locate(Jche.class);
 
         if (!configPaths.isEmpty()) {
-            // 対話なし。引数の設定ファイルを順に処理して終わる（jbang で CallHierarchyExporter.java を動かすのと同じ）
+            // 引数あり … 対話なし。設定ファイルを順に処理して終わる（jbang で CallHierarchyExporter.java を動かすのと同じ）。
+            // メニューは出さないので、標準入力が無い環境（バッチ・CI・cron）でもそのまま動く
             int failed = CallHierarchyExporter.runAll(configPaths, toolRoot);
             System.exit(failed > 0 ? 1 : 0);
         }
@@ -62,10 +76,13 @@ public class Jche {
     }
 
     private static void usage() {
-        System.out.println("使い方:");
-        System.out.println("  java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd                 対話モード（メニューで設定ファイルを選んで解析する）");
+        System.out.println("使い方（Windows は java-call-hierarchy-exporter.cmd。以下は .sh で書く）:");
+        System.out.println("  java-call-hierarchy-exporter.sh                              対話モード（メニューで設定ファイルを選んで解析する）");
         System.out.println("  java-call-hierarchy-exporter.sh a.properties [b.properties…] 対話なしで解析する。設定ファイルごとに出力フォルダができる");
-        System.out.println("  java-call-hierarchy-exporter.sh --help                     この説明");
+        System.out.println("  java-call-hierarchy-exporter.sh --help                       この説明");
+        System.out.println();
+        System.out.println("設定ファイルを渡したときは、何も尋ねずに解析だけを行って終わる（バッチやタスクスケジューラ、CI 向け）。");
+        System.out.println("終了コードは、すべて成功なら 0、1 つでも失敗すれば 1、引数が誤っていれば 2。");
         System.out.println();
         System.out.println("JDK / JBang の置き場所や JVM のオプションは launcher.properties（プロジェクト直下）で決まる。");
         System.out.println("対話モードの「環境設定」から書き換えられる。");

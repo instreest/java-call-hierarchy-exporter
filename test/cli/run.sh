@@ -6,7 +6,7 @@
 #
 # 対話モードはメニューを標準入力から読むので、答えをパイプで流し込んで動かす（端末は要らない）。
 # 見るのは、
-#   --help / 対話なしの解析（引数に設定ファイル）/ 状態表示 / 設定ファイルの作成ウィザード /
+#   --help / 知らないオプション / 対話なしの解析（引数に設定ファイル。初回の質問をしないこと）/ 状態表示 / 設定ファイルの作成ウィザード /
 #   パス指定での解析 / 環境設定の変更（ヒープ上限）→ launcher.properties の書き換え → 再起動 → 反映
 # の一連。解析結果の中身は見ない（それは test/regression/ の役目）。
 #
@@ -57,6 +57,13 @@ write_settings ""
 "$JCHE" --help > "$LOGDIR/run-help.log" 2>&1
 expect_log "$LOGDIR/run-help.log" "java-call-hierarchy-exporter.sh --help" "--help で使い方が出る"
 
+echo "== 知らないオプション =="
+write_settings ""
+"$JCHE" --no-such-option > "$LOGDIR/run-badopt.log" 2>&1
+code=$?
+if [ "$code" = 2 ]; then ok "終了コード 2"; else ng "終了コードが 2 ではない（$code）"; tail -5 "$LOGDIR/run-badopt.log"; fi
+expect_log "$LOGDIR/run-badopt.log" "--no-such-option" "知らないオプションとして弾かれた"
+
 echo "== 対話なしの解析（引数に設定ファイル）=="
 rm -rf "$ROOT/test/regression/entry/output" "$ROOT/test/regression/entry/.cache"
 if "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-batch.log" 2>&1; then
@@ -72,6 +79,15 @@ else
     ok "存在しない設定ファイルで終了コードが 0 以外"
 fi
 rm -rf "$ROOT/test/regression/entry/output" "$ROOT/test/regression/entry/.cache"
+
+echo "== 引数ありのときは初回の質問をしない（launcher.properties が無いとき）=="
+# 引数があれば対話なしで実行する（Issue #83）。端末でない今の環境では launcher.properties も作らず、
+# JBang の既定のまま進む。質問（「初回の設定」）が出ていないことだけを見る
+rm -f "$SETTINGS"
+[ -n "${JCHE_TEST_JBANG_OPTS:-}" ] && write_settings ""
+"$JCHE" "$ROOT/no-such-config.properties" > "$LOGDIR/run-batch-firstrun.log" 2>&1
+expect_not_log "$LOGDIR/run-batch-firstrun.log" "初回の設定" "置き場所を尋ねていない"
+expect_not_log "$LOGDIR/run-batch-firstrun.log" "1) 解析を実行する" "メニューを出していない"
 
 echo "== 状態表示（launcher.properties が無いとき）=="
 rm -f "$SETTINGS"
