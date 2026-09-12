@@ -214,6 +214,13 @@ network_items() {
   fi
 }
 
+# 尋ねる相手が居ないときに、何を取りに行こうとしたのかと許可の仕方を出す
+no_terminal() {
+  echo "java-call-hierarchy-exporter: 次のものが手元に無いので、ダウンロードが要ります。" 1>&2
+  printf '%s\n' "$1" 1>&2
+  echo "端末ではないため確認を取れません。許可するときは JCHE_NETWORK=allow を設定して実行してください。" 1>&2
+}
+
 # $1 に挙げたものを取りに行ってよいか尋ねる。許可なら 0、拒否なら 1
 confirm_network() {
   local items=$1 mode answer
@@ -233,9 +240,7 @@ confirm_network() {
   # 端末から直接読む。標準入力はメニューの操作に使われることがあり、そこから
   # 1 行取ってしまうとアプリ側の入力がずれるため
   if ! { exec 3<>/dev/tty; } 2>/dev/null; then
-    echo "java-call-hierarchy-exporter: 次のものが手元に無いので、ダウンロードが要ります。" 1>&2
-    printf '%s\n' "$items" 1>&2
-    echo "端末ではないため確認を取れません。許可するときは JCHE_NETWORK=allow を設定して実行してください。" 1>&2
+    no_terminal "$items"
     return 1
   fi
   {
@@ -250,7 +255,14 @@ confirm_network() {
     echo
     printf 'ダウンロードしてよいですか [y/N]: '
   } >&3
-  IFS= read -r answer <&3 || answer=
+  # 端末の口が開いても、その先に誰も居ないことがある（Git Bash はパイプで動かして
+  # いても /dev/tty を渡すので、read がすぐ終わる）。端末が無いのと同じ扱いにする
+  if ! IFS= read -r answer <&3; then
+    exec 3>&-
+    echo 1>&2
+    no_terminal "$items"
+    return 1
+  fi
   echo >&3
   exec 3>&-
   case "$answer" in
