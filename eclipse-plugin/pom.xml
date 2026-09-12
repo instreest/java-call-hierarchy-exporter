@@ -33,7 +33,17 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17 と同じ -->
     <maven.compiler.release>17</maven.compiler.release>
-    <jdt.version>3.46.0</jdt.version>
+    <!--
+      JDT の版。ここは「動かせる一番古い版」で、//DEPS 行（jbang が使う最新版）とは役割が違う。
+      下限の版でコンパイルしておくと、それより新しい API をうっかり使った時点でビルドが落ちる。
+      実行時に使われるのは Eclipse 側の JDT なので、新しい Eclipse では新しい版がそのまま使われる
+      （バイナリ互換）。3.33.0 は Eclipse 2023-03 相当で、Eclipse 本体が Java 17 必須になった版でもあり、
+      MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17 と歩調が合う。
+      API 上は 3.28.0 までコンパイルできるが、その頃の Eclipse は Java 11 で動くため下限にはしない。
+      下げるときは MANIFEST.MF の Require-Bundle の bundle-version も同じ値にすること
+      （test/plugin/run.sh が検査する）。
+    -->
+    <jdt.version>3.33.0</jdt.version>
   </properties>
 
   <dependencies>

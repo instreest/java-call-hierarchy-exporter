@@ -139,9 +139,14 @@ public final class AnalysisService {
         }
     }
 
-    /** 解析結果に影響しうるファイルか。ソースと設定ファイルだけを見る */
+    /**
+     * 解析結果に影響しうるファイルか。
+     * ソース・依存jar・設定ファイルに加えて .classpath も見る。設定を自動生成している場合、
+     * クラスパスの変更はそのまま解析の前提（依存jar・ソースフォルダ）の変更になるため。
+     */
     private static boolean isInteresting(IFile file) {
         String name = file.getName();
-        return name.endsWith(".java") || name.endsWith(".properties") || name.endsWith(".jar");
+        return name.endsWith(".java") || name.endsWith(".properties") || name.endsWith(".jar")
+                || ".classpath".equals(name);
     }
 }

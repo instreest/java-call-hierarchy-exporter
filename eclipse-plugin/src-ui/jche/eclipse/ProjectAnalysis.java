@@ -1,7 +1,6 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,8 +11,11 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
+
+import org.eclipse.jdt.core.IJavaProject;
 
 import jche.AnalysisSnapshot;
 
@@ -31,7 +33,7 @@ public final class ProjectAnalysis {
 
     /** 画面に出す状態。組み合わせではなく1つに畳んである（バナーは1行だから） */
     public enum State {
-        /** 設定ファイルが見つからない */
+        /** 解析できない（Java プロジェクトでなく、設定ファイルも無い） */
         NO_CONFIG,
         /** まだ一度も解析していない */
         NOT_ANALYZED,
@@ -64,6 +66,9 @@ public final class ProjectAnalysis {
             return rule == this;
         }
     }
+
+    /** プロジェクト直下にあれば自動的に使う設定ファイルの名前 */
+    private static final String DEFAULT_CONFIG_NAME = "config.properties";
 
     private final AnalysisService service;
     private final IProject project;
@@ -108,17 +113,28 @@ public final class ProjectAnalysis {
         service.fireChanged(this);
     }
 
-    /** 解析に使う設定ファイル。未設定ならプロジェクト内から探す */
-    public IFile configFile() {
-        IFile current = configFile;
-        if (current != null && current.exists()) {
-            return current;
+    /**
+     * 解析に使う設定の出どころ。設定ファイルが無ければプロジェクトの構成から自動生成する
+     * （{@link ConfigSource}）。解析できないときだけ null。
+     */
+    public ConfigSource configSource() {
+        IFile selected = configFile;
+        if (selected != null && selected.exists()) {
+            return ConfigSource.ofFile(selected);
         }
-        List<IFile> found = findConfigFiles();
-        configFile = found.isEmpty() ? null : found.get(0);
-        return configFile;
+        IFile atRoot = project.getFile(DEFAULT_CONFIG_NAME);
+        if (atRoot.exists() && atRoot.getLocation() != null) {
+            return ConfigSource.ofFile(atRoot);
+        }
+        IJavaProject javaProject = EclipseProjectConfig.javaProjectOf(project);
+        IPath location = project.getLocation();
+        if (javaProject != null && location != null) {
+            return ConfigSource.generated(javaProject, location.toFile().toPath());
+        }
+        return null;
     }
 
+    /** 利用者が明示的に選んだ設定ファイル。null に戻すと自動判定に戻る */
     public void setConfigFile(IFile file) {
         this.configFile = file;
         service.fireChanged(this);
@@ -143,7 +159,7 @@ public final class ProjectAnalysis {
     }
 
     public State state() {
-        if (configFile() == null) {
+        if (configSource() == null) {
             return State.NO_CONFIG;
         }
         boolean analyzing = isAnalyzing();
@@ -224,12 +240,11 @@ public final class ProjectAnalysis {
         if (job != null) {
             return;
         }
-        IFile config = configFile();
-        if (config == null || config.getLocation() == null) {
+        ConfigSource source = configSource();
+        if (source == null) {
             return;
         }
-        Path configPath = config.getLocation().toFile().toPath();
-        AnalysisJob newJob = new AnalysisJob(this, configPath, changedFiles());
+        AnalysisJob newJob = new AnalysisJob(this, source, changedFiles());
         newJob.setRule(rule);
         newJob.setUser(user);
         // 自動再解析は右下で静かに進める。モーダルにはしない

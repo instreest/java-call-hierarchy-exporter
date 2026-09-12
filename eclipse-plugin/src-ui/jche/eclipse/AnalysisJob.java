@@ -2,7 +2,6 @@
 package jche.eclipse;
 
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.Set;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -35,14 +34,26 @@ final class AnalysisJob extends Job {
     static final long AUTO_DELAY_MS = 3000L;
 
     private final ProjectAnalysis analysis;
-    private final Path configPath;
+    private final ConfigSource configSource;
     private final Set<String> handledChanges;
 
-    AnalysisJob(ProjectAnalysis analysis, Path configPath, Set<String> handledChanges) {
+    AnalysisJob(ProjectAnalysis analysis, ConfigSource configSource, Set<String> handledChanges) {
         super("呼び出し階層の解析: " + analysis.project().getName());
         this.analysis = analysis;
-        this.configPath = configPath;
+        this.configSource = configSource;
         this.handledChanges = handledChanges;
+    }
+
+    /**
+     * 何の上で解析したかをログに残す。JDT は動いている JVM の標準クラスを解析対象の
+     * クラスパスに含めるので、Eclipse の JVM が変われば結果も変わりうる。
+     * 後から結果を見比べたときに、その差を説明できるようにしておく。
+     */
+    private static void logEnvironment() {
+        Log.info("実行 JVM: " + System.getProperty("java.version")
+                + "（" + System.getProperty("java.vendor", "?") + "）"
+                + " / JDT Core: " + EnvironmentInfo.jdtVersion()
+                + " / このJDTの解析上限: Java " + EnvironmentInfo.latestSupportedJavaVersion());
     }
 
     @Override
@@ -69,7 +80,9 @@ final class AnalysisJob extends Job {
             Path cacheRoot = Platform.getStateLocation(
                     Platform.getBundle(JchePlugin.PLUGIN_ID)).toFile().toPath();
             Log.resetClock();
-            Config config = new Config(configPath, cacheRoot, LocalDateTime.now());
+            Log.info("設定: " + configSource.label());
+            logEnvironment();
+            Config config = configSource.toConfig(cacheRoot);
             AnalysisSnapshot snapshot = Exporter.analyze(config);
             monitor.subTask("呼び出し元の索引を作成中");
             // 索引もここで作る。UI スレッドで作らせない

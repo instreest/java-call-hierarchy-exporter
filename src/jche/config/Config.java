@@ -60,7 +60,10 @@ public final class Config {
     /** 出力フォルダ名の日時の書式 */
     private static final DateTimeFormatter FOLDER_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
-    /** 設定ファイル（絶対パス） */
+    /**
+     * 設定ファイル（絶対パス）。設定をメモリ上で組み立てた場合は null
+     * （Eclipse プラグインがプロジェクトの構成から作る場合。{@link #Config(Properties, Path, Path, LocalDateTime)}）
+     */
     public final Path configPath;
     public final Path configDir;
     public final Path projectRoot;
@@ -72,6 +75,12 @@ public final class Config {
     public final List<Path> sourceFolders;
     /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
     public final List<Path> libraryFolders;
+    /**
+     * 依存 jar を1件ずつ指定するもの（library.jars）。フォルダ単位で書けない構成のための逃げ道で、
+     * Eclipse プラグインが IJavaProject の解決済みクラスパスを渡すのに使う。
+     * 置き場所はどこでもよい（~/.m2 の下など、プロジェクトの外が普通）
+     */
+    public final List<Path> libraryJars;
     /**
      * library.folders が空欄のときに読むビルドファイルの種類。
      * "auto"（pom.xml / build.gradle から検出）/ "maven" / "gradle" / "none"（自動取得しない）
@@ -138,16 +147,44 @@ public final class Config {
      * @param startedAt  解析開始日時（出力フォルダ名に使う）
      */
     public Config(Path configPath, Path toolRoot, LocalDateTime startedAt) throws IOException {
-        Path abs = configPath.toAbsolutePath().normalize();
-        this.configPath = abs;
-        Path dir = abs.getParent();
-        this.configDir = (dir == null) ? Paths.get(".").toAbsolutePath().normalize() : dir;
-        this.startedAt = startedAt;
+        this(load(configPath), configPath.toAbsolutePath().normalize(), null, toolRoot, startedAt);
+    }
 
+    /**
+     * 設定ファイルを介さず、メモリ上の設定から作る。
+     *
+     * <p>Eclipse プラグインが、開いているプロジェクトの構成（ソースフォルダ・クラスパス・文字コード・
+     * コンパイラー準拠レベル）から設定を組み立てて渡すために使う。利用者に
+     * config.properties を書かせずに解析できるようにするのが目的で、項目の意味は
+     * 設定ファイルで書いたときとまったく同じ。
+     *
+     * @param properties 設定。キーと値は config.properties と同じ
+     * @param configDir  相対パスの起点（設定ファイルを置いたフォルダに相当。ふつうはプロジェクトの場所）
+     * @param toolRoot   cache.folder が空欄のときのキャッシュの置き場所の親
+     * @param startedAt  解析開始日時（出力フォルダ名に使う）
+     */
+    public Config(Properties properties, Path configDir, Path toolRoot, LocalDateTime startedAt)
+            throws IOException {
+        this(properties, null, configDir, toolRoot, startedAt);
+    }
+
+    private static Properties load(Path configPath) throws IOException {
+        Path abs = configPath.toAbsolutePath().normalize();
         Properties p = new Properties();
         try (Reader r = new InputStreamReader(Files.newInputStream(abs), StandardCharsets.UTF_8)) {
             p.load(r);
         }
+        return p;
+    }
+
+    private Config(Properties p, Path configPathOrNull, Path configDirHint, Path toolRoot,
+                   LocalDateTime startedAt) throws IOException {
+        this.configPath = configPathOrNull;
+        Path dir = (configPathOrNull != null) ? configPathOrNull.getParent() : configDirHint;
+        this.configDir = (dir == null) ? Paths.get(".").toAbsolutePath().normalize()
+                : dir.toAbsolutePath().normalize();
+        this.startedAt = startedAt;
+
         rejectRemovedKeys(p);
 
         // project.root は他の項目の起点そのものなので、設定ファイルのディレクトリの外を指してよい
@@ -159,6 +196,11 @@ public final class Config {
                 splitList(p.getProperty("source.folders", "")), true);
         this.libraryFolders = resolveAllUnderProject("library.folders",
                 splitList(p.getProperty("library.folders", "")), false);
+        // jar を1件ずつ指定する形。プロジェクトの外（~/.m2 等）を指すのが普通なので配下の制限は掛けない
+        this.libraryJars = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("library.jars", ""))) {
+            this.libraryJars.add(resolveFromConfigDir(expandHome(raw)));
+        }
         this.libraryBuildTool = buildToolOf(p.getProperty("library.build.tool", "auto"));
         this.libraryRepositories = new ArrayList<>();
         for (String raw : splitList(p.getProperty("library.repositories", ""))) {

@@ -9,7 +9,7 @@
 # eclipse-plugin ジョブが mvn package で確かめる。
 #
 # 検査項目
-#   1) JDT の版が //DEPS 行・リポジトリ直下の pom.xml・eclipse-plugin/pom.xml で一致する
+#   1) JDT の版の関係（下限でコンパイルしているか、下限が //DEPS 以下か）
 #   2) Bundle-Version（.qualifier を除く）と eclipse-plugin/pom.xml の version が一致する
 #   3) Bundle-SymbolicName が plugin.xml とハンドラのコードで使う ID の前置きになっている
 #   4) plugin.xml が指すクラス（ハンドラ・ビュー・Bundle-Activator）が実在する
@@ -23,18 +23,27 @@ ng=0
 ok()  { echo "  OK   $1"; }
 fail() { echo "  NG   $1"; ng=$((ng + 1)); }
 
-# 1) JDT の版
+# 1) JDT の版。3か所あるが、役割が違うので「一致」ではなく「関係」を見る
+#    //DEPS 行            … jbang が使う版（最新）
+#    pom.xml              … Eclipse の m2e が解決する版。//DEPS と一致していること（test/pom/run.sh が検査）
+#    eclipse-plugin/pom.xml … プラグインが動かせる下限の版。//DEPS 以下であること
+#    MANIFEST.MF の bundle-version … 上と同じ下限であること（宣言と実際のコンパイルを揃える）
 deps_jdt=$(grep -E '^//DEPS ' "$ROOT/src/CallHierarchyExporter.java" \
     | tr ' ' '\n' | grep '^org.eclipse.jdt:org.eclipse.jdt.core:' | cut -d: -f3)
-root_jdt=$(grep -A2 '<artifactId>org.eclipse.jdt.core</artifactId>' "$ROOT/pom.xml" \
-    | grep '<version>' | head -1 | sed -E 's|.*<version>(.*)</version>.*|\1|')
 plugin_jdt=$(grep '<jdt.version>' "$PLUGIN/pom.xml" | sed -E 's|.*<jdt.version>(.*)</jdt.version>.*|\1|')
+manifest_jdt=$(grep 'org.eclipse.jdt.core;bundle-version=' "$PLUGIN/META-INF/MANIFEST.MF" \
+    | sed -E 's|.*bundle-version="([^"]+)".*|\1|')
 echo "== JDT の版 =="
-echo "  //DEPS=$deps_jdt  pom.xml=$root_jdt  eclipse-plugin/pom.xml=$plugin_jdt"
-if [ -n "$deps_jdt" ] && [ "$deps_jdt" = "$root_jdt" ] && [ "$deps_jdt" = "$plugin_jdt" ]; then
-    ok "3か所の JDT の版が一致する"
+echo "  //DEPS(最新)=$deps_jdt  eclipse-plugin/pom.xml(下限)=$plugin_jdt  MANIFEST.MF(下限)=$manifest_jdt"
+if [ -z "$deps_jdt" ] || [ -z "$plugin_jdt" ] || [ -z "$manifest_jdt" ]; then
+    fail "どれかの版が取り出せない"
+elif [ "$plugin_jdt" != "$manifest_jdt" ]; then
+    fail "コンパイルする版 ($plugin_jdt) と Require-Bundle の下限 ($manifest_jdt) が食い違う。"\
+"下限を宣言しても、新しい API でコンパイルしていれば古い Eclipse で壊れる"
+elif [ "$(printf '%s\n%s\n' "$plugin_jdt" "$deps_jdt" | sort -V | head -1)" != "$plugin_jdt" ]; then
+    fail "下限 ($plugin_jdt) が //DEPS の版 ($deps_jdt) より新しい。下限は //DEPS 以下であること"
 else
-    fail "JDT の版が食い違っている。//DEPS 行に合わせること"
+    ok "下限 ($plugin_jdt) が MANIFEST.MF と一致し、//DEPS の版 ($deps_jdt) 以下である"
 fi
 
 # 2) バンドルの版

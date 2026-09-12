@@ -1,16 +1,26 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.runtime.CoreException;
 
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jface.action.Action;
+import org.eclipse.jface.action.IMenuManager;
 import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.jface.action.Separator;
 import org.eclipse.jface.dialogs.IDialogSettings;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.ColumnViewerToolTipSupport;
 import org.eclipse.jface.viewers.DoubleClickEvent;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
@@ -25,6 +35,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.dialogs.ElementListSelectionDialog;
 import org.eclipse.ui.part.ViewPart;
 
 import jche.AnalysisSnapshot;
@@ -243,6 +254,26 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             }
         };
 
+        Action saveConfigAction = new Action("設定を config.properties に保存") {
+            @Override
+            public void run() {
+                saveGeneratedConfig();
+            }
+        };
+        saveConfigAction.setToolTipText(
+                "いま使っている設定をプロジェクト直下に保存して、手で調整できるようにする");
+
+        Action chooseConfigAction = new Action("使う設定ファイルを選ぶ…") {
+            @Override
+            public void run() {
+                chooseConfigFile();
+            }
+        };
+
+        IMenuManager menu = getViewSite().getActionBars().getMenuManager();
+        menu.add(chooseConfigAction);
+        menu.add(saveConfigAction);
+
         IToolBarManager toolbar = getViewSite().getActionBars().getToolBarManager();
         toolbar.add(directionAction);
         toolbar.add(new Separator());
@@ -251,6 +282,69 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         toolbar.add(new Separator());
         toolbar.add(expandAction);
         toolbar.add(collapseAction);
+    }
+
+    /**
+     * いま使っている設定（自動生成ぶんを含む）をプロジェクト直下の config.properties に書き出す。
+     * 自動生成を出発点にして、entry.packages などを手で足せるようにするためのもの。
+     */
+    private void saveGeneratedConfig() {
+        if (analysis == null) {
+            return;
+        }
+        ConfigSource source = analysis.configSource();
+        if (source == null || source.kind() != ConfigSource.Kind.GENERATED) {
+            MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
+                    "すでに設定ファイルを使っています: "
+                            + (source == null ? "（なし）" : source.label()));
+            return;
+        }
+        IFile target = analysis.project().getFile("config.properties");
+        if (target.exists()) {
+            MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
+                    "config.properties はすでにあります。そちらが使われます。");
+            return;
+        }
+        try {
+            byte[] bytes = EclipseProjectConfig.toFileText(source.generatedProperties())
+                    .getBytes(StandardCharsets.UTF_8);
+            target.create(new ByteArrayInputStream(bytes), false, null);
+            analysis.setConfigFile(target);
+        } catch (CoreException | IOException e) {
+            MessageDialog.openError(getSite().getShell(), "呼び出し階層",
+                    "設定ファイルを保存できませんでした: " + e.getMessage());
+        }
+    }
+
+    /** 使う設定ファイルを選ぶ（プロジェクト直下の *.properties から。選ばなければ自動判定に戻す） */
+    private void chooseConfigFile() {
+        if (analysis == null) {
+            return;
+        }
+        List<IFile> candidates = analysis.findConfigFiles();
+        if (candidates.isEmpty()) {
+            MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
+                    "プロジェクト直下に設定ファイル（*.properties）がありません。"
+                            + "設定はプロジェクトの構成から自動生成します。");
+            return;
+        }
+        ElementListSelectionDialog dialog = new ElementListSelectionDialog(
+                getSite().getShell(), new LabelProvider() {
+                    @Override
+                    public String getText(Object element) {
+                        return ((IFile) element).getProjectRelativePath().toString();
+                    }
+                });
+        dialog.setTitle("使う設定ファイル");
+        dialog.setMessage("解析に使う設定ファイルを選んでください（キャンセルで自動判定に戻ります）");
+        dialog.setElements(candidates.toArray());
+        if (dialog.open() == org.eclipse.jface.window.Window.OK
+                && dialog.getFirstResult() instanceof IFile chosen) {
+            analysis.setConfigFile(chosen);
+        } else {
+            analysis.setConfigFile(null);
+        }
+        refresh();
     }
 
     // ------------------------------------------------------------
@@ -351,7 +445,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         String at = (snapshot == null) ? "" : snapshot.analyzedAt().format(TIME);
         switch (state) {
             case NO_CONFIG -> setBanner(
-                    "このプロジェクトに設定ファイル（*.properties）がありません。", null, false);
+                    "このプロジェクトは解析できません（Java プロジェクトではなく、設定ファイルもありません）。",
+                    null, false);
             case NOT_ANALYZED -> setBanner(
                     "このプロジェクトはまだ解析していません。", "解析する", false);
             case ANALYZING -> setBanner("解析中です…（終わるまで表示できません）", null, true);
@@ -375,6 +470,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
     private void setBanner(String message, String actionLabel, boolean cancellable) {
         bannerLabel.setText(message);
+        bannerLabel.setToolTipText(environmentTooltip());
         bannerAction.setText(actionLabel == null ? "" : actionLabel);
         bannerAction.setVisible(actionLabel != null);
         ((GridData) getOrCreateData(bannerAction)).exclude = (actionLabel == null);
@@ -382,6 +478,26 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         ((GridData) getOrCreateData(bannerCancel)).exclude = !cancellable;
         banner.layout(true, true);
         banner.getParent().layout(true, true);
+    }
+
+    /**
+     * バナーのツールチップ。「どの設定で」「何の上で」解析したかを出す。
+     * 解析結果の差は、ほぼこの2つで説明できる（設定の出どころと、実行 JVM / JDT の版）。
+     */
+    private String environmentTooltip() {
+        StringBuilder sb = new StringBuilder();
+        if (analysis != null) {
+            ConfigSource source = analysis.configSource();
+            sb.append("設定: ").append(source == null ? "なし" : source.label()).append('\n');
+        }
+        AnalysisSnapshot snapshot = (analysis == null) ? null : analysis.snapshot();
+        if (snapshot != null) {
+            sb.append("解析した Java の版: ").append(snapshot.config().sourceLevel)
+                    .append(snapshot.config().sourceLevelAuto ? "（自動）" : "（source.level の指定）")
+                    .append('\n');
+        }
+        sb.append(EnvironmentInfo.summary());
+        return sb.toString();
     }
 
     private static Object getOrCreateData(Button button) {

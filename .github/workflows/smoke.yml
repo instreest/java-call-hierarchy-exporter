@@ -132,8 +132,18 @@ jobs:
   # 2) Eclipse 無しでバンドル jar が組み立てられること（mvn package）。
   #    PDE のかわりに maven-jar-plugin へ同じ MANIFEST.MF を渡している。JDK は
   #    Bundle-RequiredExecutionEnvironment と同じ 17
+  #
+  #    JDT は 2 つの版でビルドする。
+  #      下限（3.33.0 = Require-Bundle の bundle-version）… 古い Eclipse でも動くことを保証する。
+  #        新しい API をうっかり使えばここで落ちる
+  #      最新（//DEPS 行と同じ版）            … 新しい Eclipse でもコンパイルが通ることを見る
+  #    実行時に使われるのは Eclipse 側の JDT なので、この2点で挟んでおけば間の版も問題ない
   eclipse-plugin:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        jdt: [floor, latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -146,5 +156,15 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Build the bundle jar
-        run: mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package
+      # latest のときだけ //DEPS 行の版で上書きする。版の出どころを1か所に保つため、
+      # ここには版を書かず src/CallHierarchyExporter.java から読む
+      - name: Build the bundle jar (JDT ${{ matrix.jdt }})
+        run: |
+          if [ "${{ matrix.jdt }}" = "latest" ]; then
+            V=$(grep -E '^//DEPS ' src/CallHierarchyExporter.java | tr ' ' '\n' \
+                | grep '^org.eclipse.jdt:org.eclipse.jdt.core:' | cut -d: -f3)
+            echo "JDT $V でビルドします"
+            mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml -Djdt.version="$V" package
+          else
+            mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package
+          fi

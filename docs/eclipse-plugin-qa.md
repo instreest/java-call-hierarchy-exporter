@@ -160,8 +160,9 @@ PDE の作法では `1.0.0.qualifier` と書き、エクスポート時に日付
 
 ### Q11. 何を自動で検査しているか
 
-- `test/plugin/run.sh` … JDT の版が `//DEPS` 行・直下の `pom.xml`・`eclipse-plugin/pom.xml` で
-  一致すること、`Bundle-Version` と pom の版が一致すること、`Bundle-SymbolicName` を
+- `test/plugin/run.sh` … JDT の版の関係（プラグインは**下限の版**でコンパイルし、それが
+  `MANIFEST.MF` の `Require-Bundle` と一致し、`//DEPS` 行の版以下であること。
+  詳しくは [eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) の Q12）、`Bundle-Version` と pom の版が一致すること、`Bundle-SymbolicName` を
   plugin.xml とハンドラが同じ綴りで使っていること、plugin.xml が指すハンドラのクラスが
   実在すること、`build.properties` の `source..` のフォルダが実在すること。
   ファイルを読むだけなので JDK もネットワークも要らない

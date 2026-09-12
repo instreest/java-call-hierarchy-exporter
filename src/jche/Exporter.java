@@ -198,6 +198,10 @@ public final class Exporter {
     }
 
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {
+        // JDTは「動いているJVMの標準クラス」を解析対象のクラスパスに含める。実行JDKが変わると
+        // 結果も変わりうるので、どのJVMで解析したかを必ず残す（キャッシュのキーにも入っている）
+        Log.info("実行JDK: " + System.getProperty("java.version", "?")
+                + "（" + System.getProperty("java.vendor", "?") + "）");
         Log.info("ソースフォルダ: " + layout.sourceFolders);
         Log.info("ソース文字コード: " + config.sourceEncoding);
         // どの言語バージョンとして解析したかで結果が変わるため、必ず残す
