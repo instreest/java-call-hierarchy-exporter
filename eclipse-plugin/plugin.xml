@@ -68,6 +68,15 @@
       </menuContribution>
    </extension>
 
+   <!-- 設定画面（ウィンドウ > 設定 > 呼び出し階層 (Exporter)）。
+        解析は別プロセスなので、使う JDK・JDT・メモリ・常駐の切り方をここで決められる -->
+   <extension point="org.eclipse.ui.preferencePages">
+      <page
+            class="jche.eclipse.JchePreferencePage"
+            id="io.github.instreest.jche.eclipse.preferences"
+            name="呼び出し階層 (Exporter)"/>
+   </extension>
+
    <!-- Ctrl+Alt+Shift+H。Eclipse 標準の呼び出し階層（Ctrl+Alt+H）とは別物なので割り当てを分ける -->
    <extension point="org.eclipse.ui.bindings">
       <key

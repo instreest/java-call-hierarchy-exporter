@@ -25,6 +25,9 @@ public class JchePlugin extends AbstractUIPlugin {
     public void start(BundleContext context) throws Exception {
         super.start(context);
         instance = this;
+        // 既定値はここで入れる。AbstractUIPlugin#initializeDefaultPreferences は
+        // 新しい Eclipse で「削除予定」になっており、古い Eclipse でも動く形にしたいため
+        JchePreferences.initializeDefaults(getPreferenceStore());
         service = new AnalysisService();
         service.start();
     }

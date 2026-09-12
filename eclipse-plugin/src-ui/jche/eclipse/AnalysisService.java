@@ -41,15 +41,55 @@ public final class AnalysisService {
     private final Map<IProject, ProjectAnalysis> byProject = new HashMap<>();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
+    /** アイドルの見回りの間隔（ミリ秒）。設定の分数より細かく見ても意味がないので粗くてよい */
+    private static final long SWEEP_INTERVAL_MS = 60_000L;
+
     private final IResourceChangeListener changeListener = this::resourceChanged;
+    private org.eclipse.core.runtime.jobs.Job sweeper;
 
     void start() {
         ResourcesPlugin.getWorkspace().addResourceChangeListener(
                 changeListener, IResourceChangeEvent.POST_CHANGE | IResourceChangeEvent.POST_BUILD);
+        startIdleSweeper();
+    }
+
+    /**
+     * 使われていない解析プロセスを見回って終わらせる。
+     *
+     * <p>常駐させているのは「木の問い合わせに即答するため」なので、使わなくなったら
+     * 解放してよい。メモリを抱えたまま居座らせない（大きなプロジェクトでは数百MBになる）。
+     */
+    private void startIdleSweeper() {
+        sweeper = new org.eclipse.core.runtime.jobs.Job("解析プロセスの見回り") {
+            @Override
+            protected org.eclipse.core.runtime.IStatus run(
+                    org.eclipse.core.runtime.IProgressMonitor monitor) {
+                long idleMillis = JchePreferences.idleMinutes() * 60L * 1000L;
+                List<ProjectAnalysis> all;
+                synchronized (AnalysisService.this) {
+                    all = new ArrayList<>(byProject.values());
+                }
+                for (ProjectAnalysis analysis : all) {
+                    if (analysis.closeIfIdle(idleMillis)) {
+                        JchePlugin.log(IStatus.INFO,
+                                "使われていない解析プロセスを終了しました: "
+                                        + analysis.project().getName(), null);
+                    }
+                }
+                schedule(SWEEP_INTERVAL_MS);
+                return org.eclipse.core.runtime.Status.OK_STATUS;
+            }
+        };
+        sweeper.setSystem(true);
+        sweeper.schedule(SWEEP_INTERVAL_MS);
     }
 
     void stop() {
         ResourcesPlugin.getWorkspace().removeResourceChangeListener(changeListener);
+        if (sweeper != null) {
+            sweeper.cancel();
+            sweeper = null;
+        }
         List<ProjectAnalysis> all;
         synchronized (this) {
             all = new ArrayList<>(byProject.values());
@@ -82,6 +122,21 @@ public final class AnalysisService {
     /** そのプロジェクトの解析結果。無ければ作る（作っただけでは解析は始まらない） */
     public synchronized ProjectAnalysis analysisFor(IProject project) {
         return byProject.computeIfAbsent(project, p -> new ProjectAnalysis(this, p));
+    }
+
+    /**
+     * 動いている解析プロセスを全部終わらせる。設定（JDK・JDT・JVM 引数）を変えたときに使う。
+     * 次の解析要求で、新しい設定のプロセスが起動する。
+     */
+    public void restartAll() {
+        List<ProjectAnalysis> all;
+        synchronized (this) {
+            all = new ArrayList<>(byProject.values());
+        }
+        for (ProjectAnalysis analysis : all) {
+            analysis.dispose();
+            fireChanged(analysis);
+        }
     }
 
     /** 解析済みのプロジェクトだけを返す（ビューの初期表示用） */

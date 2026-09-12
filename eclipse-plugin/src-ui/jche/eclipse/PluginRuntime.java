@@ -20,6 +20,8 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
 import org.osgi.framework.Bundle;
 
+import jche.eclipse.server.JavaLocator;
+
 /**
  * 子プロセスを起動するのに要るもの（解析本体の jar と、走らせる JDK）をそろえる。
  *
@@ -30,15 +32,15 @@ import org.osgi.framework.Bundle;
  */
 final class PluginRuntime {
 
-    /** 解析に使いたい JDK の版。CLI（//JAVA 25）と結果を揃えるため */
-    static final int PREFERRED_JAVA = 25;
-    /** 動かせる下限。これ未満は解析本体（release 17 でコンパイル）が動かない */
-    static final int MINIMUM_JAVA = 17;
-
     private PluginRuntime() {
     }
 
-    /** 子プロセスに渡すクラスパス（解析本体＋同梱の JDT 一式） */
+    /**
+     * 子プロセスに渡すクラスパス（解析本体＋JDT 一式）。
+     *
+     * <p>JDT は既定では同梱のものを使う。設定でフォルダが指定されていればそちらを使う
+     * （閉域で新しい JDT を置いたときなど）。
+     */
     static List<File> analysisClasspath() throws IOException {
         Bundle bundle = Platform.getBundle(JchePlugin.PLUGIN_ID);
         if (bundle == null) {
@@ -49,10 +51,21 @@ final class PluginRuntime {
         if (core == null) {
             throw new IOException("解析本体（lib/jche-core.jar）がバンドルに入っていません");
         }
-        File jdtDir = fileOf(bundle, "lib/jdt");
-        File[] jars = (jdtDir == null) ? null : jdtDir.listFiles((dir, name) -> name.endsWith(".jar"));
+        File configured = JchePreferences.jdtFolder();
+        File jdtDir = (configured != null) ? configured : fileOf(bundle, "lib/jdt");
+        if (configured != null && !configured.isDirectory()) {
+            throw new IOException("設定で指定された JDT のフォルダがありません: " + configured);
+        }
+        File[] jars = (jdtDir == null) ? null : jdtDir.listFiles(new java.io.FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                return name.endsWith(".jar");
+            }
+        });
         if (jars == null || jars.length == 0) {
-            throw new IOException("同梱の JDT（lib/jdt/*.jar）がバンドルに入っていません");
+            throw new IOException((configured != null)
+                    ? "指定されたフォルダに jar がありません: " + configured
+                    : "同梱の JDT（lib/jdt/*.jar）がバンドルに入っていません");
         }
         Arrays.sort(jars);
         Collections.addAll(classpath, jars);
@@ -73,91 +86,41 @@ final class PluginRuntime {
     /**
      * 解析に使う java を決める。
      *
-     * <p>探索順は「JAVA_HOME → Eclipse を動かしている JVM → PATH の java」。
-     * 25 が見つからなくても 17 以上なら使う（結果が CLI と少しずれる可能性はログに残す）。
-     * どれも 17 未満なら null を返し、呼び出し側が取得を促す。
+     * <p>探す順は「設定 → JAVA_HOME → 取得した JDK → Eclipse を動かしている JVM → PATH の java」。
+     * 25 を優先し、無ければ 17 以上で一番新しいものを使う（{@link JavaLocator}）。
+     * どれも駄目なら null を返し、呼び出し側が取得を促す。
+     *
+     * @param explicit 設定より優先して試すもの。無ければ null
      */
-    static File findJava() {
+    static JavaLocator.Found findJava(File explicit) {
         List<File> candidates = new ArrayList<>();
+        if (explicit != null) {
+            candidates.add(explicit);
+        }
+        File configured = JchePreferences.jdk();
+        if (configured != null) {
+            candidates.add(configured);
+        }
         String javaHome = System.getenv("JAVA_HOME");
-        if (isSet(javaHome)) {
+        if (javaHome != null && !javaHome.trim().isEmpty()) {
             candidates.add(new File(javaHome));
         }
+        // 取得した JDK（設定に残っていなくても拾えるように）
+        File downloaded = JdkDownloads.latestIn(new File(stateLocation(), "jdk"));
+        if (downloaded != null) {
+            candidates.add(downloaded);
+        }
         String running = System.getProperty("java.home");
-        if (isSet(running)) {
+        if (running != null && !running.trim().isEmpty()) {
             candidates.add(new File(running));
         }
-        File best = null;
-        int bestVersion = 0;
-        for (File home : candidates) {
-            File java = executableIn(home);
-            int version = versionOf(java);
-            if (version >= MINIMUM_JAVA && version > bestVersion) {
-                best = java;
-                bestVersion = version;
-                if (version >= PREFERRED_JAVA) {
-                    break;
-                }
-            }
-        }
-        if (best != null) {
-            return best;
-        }
-        File onPath = new File(isWindows() ? "java.exe" : "java");
-        return (versionOf(onPath) >= MINIMUM_JAVA) ? onPath : null;
+        candidates.add(new File(JavaLocator.isWindows() ? "java.exe" : "java"));
+        return JavaLocator.choose(candidates);
     }
 
-    /** null でも空白だけでもない（Java 8 には String#isBlank が無い） */
-    private static boolean isSet(String value) {
-        return value != null && !value.trim().isEmpty();
-    }
-
-    private static File executableIn(File javaHome) {
-        File bin = new File(javaHome, "bin");
-        return new File(bin, isWindows() ? "java.exe" : "java");
-    }
-
-    /** その java の主要バージョン。分からなければ 0 */
-    static int versionOf(File executable) {
-        if (executable == null) {
-            return 0;
-        }
-        try {
-            Process process = new ProcessBuilder(executable.getPath(), "-version")
-                    .redirectErrorStream(true).start();
-            StringBuilder text = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    text.append(line).append('\n');
-                }
-            }
-            process.waitFor();
-            return parseVersion(text.toString());
-        } catch (IOException e) {
-            return 0;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return 0;
-        }
-    }
-
-    /** {@code openjdk version "25.0.3"} のような出力から 25 を取り出す */
-    static int parseVersion(String text) {
-        Matcher matcher = Pattern.compile("version \"(\\d+)(?:\\.(\\d+))?").matcher(text);
-        if (!matcher.find()) {
-            return 0;
-        }
-        int major = Integer.parseInt(matcher.group(1));
-        if (major == 1 && matcher.group(2) != null) {
-            return Integer.parseInt(matcher.group(2));   // 1.8 形式
-        }
-        return major;
-    }
-
-    private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    /** 解析プロセスへ渡す JVM 引数（設定そのまま） */
+    static List<String> vmArguments() {
+        return JchePreferences.vmArguments();
     }
 
     /** プラグインの状態フォルダ（キャッシュと一時ファイルの置き場所） */

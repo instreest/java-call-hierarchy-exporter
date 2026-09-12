@@ -22,6 +22,7 @@ import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.handlers.HandlerUtil;
 
+import jche.eclipse.server.JavaLocator;
 import jche.eclipse.server.ServerLauncher;
 
 /**
@@ -108,14 +109,16 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
 
     /** コマンドライン版と同じ起動（設定ファイルを並べて渡す） */
     private static List<String> commandFor(List<IFile> configFiles) throws IOException {
-        File java = PluginRuntime.findJava();
+        JavaLocator.Found java = PluginRuntime.findJava(null);
         if (java == null) {
-            throw new IOException("解析に使う JDK（" + PluginRuntime.MINIMUM_JAVA + " 以上）が見つかりません");
+            throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM + " 以上）が見つかりません。"
+                    + "［ウィンドウ > 設定 > 呼び出し階層 (Exporter)］で指定してください");
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         List<String> command = new ArrayList<>();
-        command.add(java.getAbsolutePath());
+        command.add(java.executable().getAbsolutePath());
         command.add("-Dfile.encoding=UTF-8");
+        command.addAll(PluginRuntime.vmArguments());
         command.add("-cp");
         StringBuilder cp = new StringBuilder();
         for (File entry : classpath) {

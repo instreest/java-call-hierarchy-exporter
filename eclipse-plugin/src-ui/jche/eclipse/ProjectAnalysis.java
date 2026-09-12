@@ -19,6 +19,7 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.jdt.core.IJavaProject;
 
+import jche.eclipse.server.JavaLocator;
 import jche.eclipse.server.ServerConnection;
 import jche.eclipse.server.ServerLauncher;
 import jche.eclipse.server.ServerResponse;
@@ -88,6 +89,9 @@ public final class ProjectAnalysis {
     private volatile String errorMessage;
     private volatile IFile configFile;
     private volatile boolean autoAnalyze = true;
+
+    /** 最後に子プロセスを使った時刻。アイドル判定に使う */
+    private volatile long lastUsed = System.currentTimeMillis();
 
     /** 直近の解析の結果（サーバーが返した値）。未解析なら null */
     private volatile ServerResponse lastAnalysis;
@@ -247,20 +251,25 @@ public final class ProjectAnalysis {
      * 解析用の JDK が見つからないときは、その旨を例外で返して画面に出す。
      */
     synchronized ServerConnection connection() throws IOException {
+        lastUsed = System.currentTimeMillis();
         ServerConnection current = connection;
         if (current != null && current.isAlive()) {
             return current;
         }
-        File java = PluginRuntime.findJava();
+        JavaLocator.Found java = PluginRuntime.findJava(null);
         if (java == null) {
-            throw new IOException("解析に使う JDK（" + PluginRuntime.MINIMUM_JAVA
-                    + " 以上、推奨 " + PluginRuntime.PREFERRED_JAVA + "）が見つかりません。"
-                    + "JAVA_HOME を設定するか、JDK を用意してください");
+            throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM
+                    + " 以上、推奨 " + JavaLocator.PREFERRED + "）が見つかりません。"
+                    + "［ウィンドウ > 設定 > 呼び出し階層 (Exporter)］で場所を指定するか、取得してください");
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         File cacheRoot = new File(PluginRuntime.stateLocation(), "cache");
-        ServerConnection started = ServerLauncher.start(java, classpath, cacheRoot,
-                Arrays.asList(), null);
+        ExporterConsole console = ExporterConsole.find();
+        if (console != null) {
+            console.println("解析プロセスを起動します: " + java);
+        }
+        ServerConnection started = ServerLauncher.start(java.executable(), classpath, cacheRoot,
+                PluginRuntime.vmArguments(), null);
         started.setListener(new ServerConnection.Listener() {
             @Override
             public void progress(String label, long done, long total) {
@@ -381,6 +390,28 @@ public final class ProjectAnalysis {
             errorMessage = error;
         }
         service.fireChanged(this);
+    }
+
+    /**
+     * しばらく使われていない解析プロセスを終わらせる。
+     *
+     * <p>解析結果をメモリに持ち続けるのが常駐の値打ちなので、短く切りすぎると毎回作り直しになる。
+     * 既定は 10 分で、設定で変えられる（0 なら終わらせない）。解析中は対象にしない。
+     *
+     * @return 終わらせたら true
+     */
+    boolean closeIfIdle(long idleMillis) {
+        if (idleMillis <= 0 || isAnalyzing() || connection == null) {
+            return false;
+        }
+        if (System.currentTimeMillis() - lastUsed < idleMillis) {
+            return false;
+        }
+        dispose();
+        // 次に開いたときは「まだ解析していない」状態から始まる（グラフは子プロセスにあったため）
+        lastAnalysis = null;
+        service.fireChanged(this);
+        return true;
     }
 
     /** 子プロセスを終わらせる（プラグインの停止時・プロジェクトを見なくなったとき） */

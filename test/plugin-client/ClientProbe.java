@@ -5,6 +5,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import jche.eclipse.server.JavaLocator;
+import jche.eclipse.server.JdkDownload;
 import jche.eclipse.server.ServerConnection;
 import jche.eclipse.server.ServerLauncher;
 import jche.eclipse.server.ServerResponse;
@@ -31,6 +33,9 @@ public final class ClientProbe {
         File work = new File(args[2]);
         String config = args[3];
         String target = args[4];
+
+        checkJavaLocator(java);
+        checkJdkDownloadUrls();
 
         final AtomicInteger progressCount = new AtomicInteger();
         final AtomicInteger logCount = new AtomicInteger();
@@ -108,6 +113,38 @@ public final class ClientProbe {
         }
         check("終了後は閉じている", !connection.isAlive(), "");
         System.out.println("DONE");
+    }
+
+    /** 解析に使う JDK の選び方（設定や環境変数の読み方は Eclipse 側の仕事なので、ここは選ぶ所だけ） */
+    private static void checkJavaLocator(File java) {
+        int version = JavaLocator.versionOf(java);
+        check("JDK の版を読める", version >= JavaLocator.MINIMUM, java + " -> Java " + version);
+
+        JavaLocator.Found found = JavaLocator.choose(Arrays.asList(
+                new File("/no/such/java"), java, new File("/another/missing")));
+        check("使える JDK を選ぶ（無いものは飛ばす）",
+                found != null && found.version() == version, String.valueOf(found));
+
+        check("17 未満しか無ければ選ばない",
+                JavaLocator.choose(Arrays.asList(new File("/no/such/java"))) == null, "");
+        check("1.8 形式の版を読める", JavaLocator.parseVersion("java version \"1.8.0_402\"") == 8, "");
+        check("新しい形式の版を読める", JavaLocator.parseVersion("openjdk version \"25.0.3\" 2026-01-20") == 25, "");
+    }
+
+    /** 取得先の URL の組み立て（実際には取りに行かない。閉域でも検査できるように） */
+    private static void checkJdkDownloadUrls() {
+        String windows = JdkDownload.urlFor(25, "Windows 11", "amd64");
+        String linux = JdkDownload.urlFor(25, "Linux", "aarch64");
+        String mac = JdkDownload.urlFor(25, "Mac OS X", "x86_64");
+        check("取得先の URL（Windows/x64）",
+                windows.endsWith("/25/ga/windows/x64/jdk/hotspot/normal/eclipse"), windows);
+        check("取得先の URL（Linux/aarch64）",
+                linux.endsWith("/25/ga/linux/aarch64/jdk/hotspot/normal/eclipse"), "");
+        check("取得先の URL（macOS/x64）",
+                mac.endsWith("/25/ga/mac/x64/jdk/hotspot/normal/eclipse"), "");
+        check("取得するファイルの種類が OS で変わる",
+                "jdk.zip".equals(JdkDownload.archiveNameFor("Windows 11"))
+                        && "jdk.tar.gz".equals(JdkDownload.archiveNameFor("Linux")), "");
     }
 
     private static ServerTree.Node firstTruncated(ServerTree.Node node) {
