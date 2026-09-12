@@ -14,7 +14,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 ## Quick start
 
-ツールを最小構成で試す手順です。初回は JDK と依存モジュールを自動でダウンロードします。
+ツールを最小構成で試す手順です。初回は JDK と依存モジュールが要るので、ダウンロードしてよいかを尋ねます（[ネットワークアクセスの確認](#ネットワークアクセスの確認)）。
 
 1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
 
@@ -36,6 +36,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 引数なしで起動すると、設定ファイルをメニューから選ぶ対話モードになります（[起動コマンド](#起動コマンド)）。
 初回に JDK と JBang（合わせて数百 MB）を置く場所は、引数ありのときは尋ねずに **このプロジェクトの中（`.jbang/`）** にします。
 変えるときは `launcher.properties`（リポジトリ直下）を編集するか、対話モードの「環境設定」から書き換えます。
+手元に無いものを取りに行くときは、その前に必ず確認します（[ネットワークアクセスの確認](#ネットワークアクセスの確認)）。
 
 ### コマンドからの実行
 
@@ -184,7 +185,7 @@ jche>
 |---|---|
 | 1) 解析を実行する | `config/` にある設定ファイルの一覧から選んで解析する（番号をカンマ区切りで複数可。`v 番号` で内容を確認、`p` で一覧に無いパスを指定）。前回使った設定が既定で選ばれるので、2 回目からは Enter を 2 回で実行できる |
 | 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`config/<名前>.properties` を作る。ひな形は `config/config.properties` なので全項目の説明コメントも写る。続けて解析もできる |
-| 3) 環境設定 | JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限（`-Xmx`）、`jbang run` の追加オプション（`--offline` 等）。`launcher.properties` に保存し、その場で再起動して反映できる |
+| 3) 環境設定 | JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限（`-Xmx`）、`jbang run` の追加オプション（`--offline` 等）、ダウンロードの確認（`JCHE_NETWORK`）。`launcher.properties` に保存し、その場で再起動して反映できる |
 | 4) 実行環境の状態 | 実際に使っている JDK・JDT の jar・置き場所とその大きさ・解析キャッシュの一覧 |
 
 `launcher.properties` の項目は次のとおりです（対話モードの「環境設定」で書き換えるほか、手で編集してもかまいません。
@@ -196,6 +197,33 @@ jche>
 | `JBANG_REPO` | 依存 jar（JDT）の置き場所。空欄なら `~/.m2/repository` |
 | `JCHE_JAVA_OPTS` | 解析を動かす JVM のオプション（例: `-Xmx4g`） |
 | `JCHE_JBANG_OPTS` | `jbang run` に足すオプション（例: `--offline`、`--java 21`） |
+| `JCHE_NETWORK` | 手元に無いものを取りに行ってよいか。`ask`（空欄も同じ。足りないときだけ尋ねる）／ `allow`（尋ねずに許可）／ `deny`（禁止） |
+
+#### ネットワークアクセスの確認
+
+このツールが外に出るのは、手元に無いものを取りに行くときだけです。解析そのものはネットワークに出ません。
+
+| 取りに行くもの | 取得先 | 置き場所 |
+|---|---|---|
+| JBang 本体 | GitHub | `JBANG_DIR`（既定 `~/.jbang`） |
+| JDK | Adoptium | `JBANG_DIR` の中 |
+| 依存 jar（JDT） | Maven Central | `JBANG_REPO`（既定 `~/.m2/repository`） |
+
+起動コマンドは jbang を呼ぶ前に、この 3 つが手元にあるかを調べます。すべて揃っていれば何も尋ねず、
+`jbang` に `--offline` を渡して外に出ないようにします。足りないものがあるときは、何を取りに行くのかを挙げて尋ね、
+許可されなければ実行しません。
+
+端末が無いとき（パイプ・CI）は尋ねようがないので取りに行きません。許可するときは `JCHE_NETWORK=allow` を設定してください。
+
+```bash
+JCHE_NETWORK=allow ./java-call-hierarchy-exporter.sh config/config.properties
+```
+
+閉域ネットワークなど、そもそも外に出したくないときは `JCHE_NETWORK=deny` にします。
+JDK と依存 jar を先に用意しておく方法は [Pleiades/Eclipse環境（閉域ネットワーク等）](#pleiadeseclipse環境閉域ネットワーク等) にあります。
+
+GitHub Actions から使うとき（`uses: instreest/java-call-hierarchy-exporter@...`）は尋ねません。
+ワークフローに書くこと自体が許可にあたり、端末も無いためです。詳しくは [docs/network-confirm-qa.md](docs/network-confirm-qa.md) の Q6。
 
 ### JBangによる実行（対話なし）
 
@@ -212,8 +240,9 @@ rem Windows（コマンドプロンプト）
 ./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
 ```
 
-このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存。
+このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に取得します（`%userprofile%/.jbang/`配下に保存。
 上記の起動コマンドでプロジェクトの中を選んでいれば、`launcher.properties` の `JBANG_DIR` の場所）。
+取りに行く前に必ず確認します（[ネットワークアクセスの確認](#ネットワークアクセスの確認)）。
 
 設定ファイルは複数渡せます。渡した順に処理し、設定ファイルごとに別の出力フォルダができます
 （[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
