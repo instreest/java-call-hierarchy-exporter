@@ -57,6 +57,7 @@ write_settings() {
 #   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）
 #   JCHE_NETWORK    足りないもの（JDK・JBang 本体・依存 jar）を取りに行ってよいか。
 #                   ask=足りないときだけ尋ねる（既定） allow=尋ねずに許可 deny=禁止
+#                   この項目だけは空欄でも環境変数を消さない（1 回だけ許可するときに使えるように）
 JBANG_DIR=$1
 JBANG_REPO=$2
 JCHE_JAVA_OPTS=
@@ -81,7 +82,14 @@ load_settings() {
       *) continue ;;
     esac
     if [ -z "$val" ]; then
-      unset "$key"
+      # 空欄は「既定値」なので環境変数を消す。ただし JCHE_NETWORK だけは残す。
+      # この項目は「この実行だけ許可したい」と環境変数で渡すことがあり、他と同じに
+      # 消すと JCHE_NETWORK=allow ./java-call-hierarchy-exporter.sh が
+      # launcher.properties があるだけで効かなくなる
+      case "$key" in
+        JCHE_NETWORK) ;;
+        *) unset "$key" ;;
+      esac
       continue
     fi
     case "$key" in

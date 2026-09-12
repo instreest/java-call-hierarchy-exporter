@@ -186,6 +186,14 @@ netrun "$FULLHOME" "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run
 expect_log "$LOGDIR/run-net-cached.log" "JBANG-ARGS: run --offline " "すべて揃っていれば尋ねず --offline で動かす"
 expect_not_log "$LOGDIR/run-net-cached.log" "ダウンロード" "すべて揃っていれば何も尋ねない"
 
+# launcher.properties の JCHE_NETWORK が空欄でも、環境変数で渡した値は効く。他のキーと同じに
+# 消してしまうと、README に書いた JCHE_NETWORK=allow ./java-call-hierarchy-exporter.sh が
+# launcher.properties があるだけで効かなくなる
+printf 'JBANG_DIR=\nJBANG_REPO=\nJCHE_JAVA_OPTS=\nJCHE_JBANG_OPTS=\nJCHE_NETWORK=\n' > "$NETDIR/launcher.properties"
+netrun "$EMPTYHOME" JCHE_NETWORK=allow "$NETJCHE" "$NETDIR/no-such-config.properties" > "$LOGDIR/run-net-envwins.log" 2>&1
+expect_log "$LOGDIR/run-net-envwins.log" "JBANG-ARGS: run " "設定ファイルが空欄でも環境変数の allow が効く"
+rm -f "$NETDIR/launcher.properties"
+
 # 端末があるときの取り消し。script(1) が無い環境（一部の macOS / 最小の CI 像）では飛ばす
 if command -v script > /dev/null 2>&1 && script -qec true /dev/null > /dev/null 2>&1; then
     printf 'n\n' | script -qec "env -u JBANG_DIR -u JBANG_CACHE_DIR -u JBANG_REPO -u JCHE_NETWORK HOME=$EMPTYHOME $NETJCHE $NETDIR/no-such-config.properties" /dev/null \

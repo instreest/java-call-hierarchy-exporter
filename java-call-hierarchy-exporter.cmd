@@ -101,6 +101,7 @@ rem 書き出す内容は Java 側（LauncherSettings.save）が書くものと同じ
     echo #   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）
     echo #   JCHE_NETWORK    足りないもの（JDK・JBang 本体・依存 jar）を取りに行ってよいか。
     echo #                   ask=足りないときだけ尋ねる（既定） allow=尋ねずに許可 deny=禁止
+    echo #                   この項目だけは空欄でも環境変数を消さない（1 回だけ許可するときに使えるように）
     echo JBANG_DIR=%~1
     echo JBANG_REPO=%~2
     echo JCHE_JAVA_OPTS=
@@ -130,7 +131,15 @@ for /f "tokens=* delims= " %%K in ("%K%") do set "K=%%K"
 if "%K%"=="" exit /b 0
 echo %K%| findstr /r /c:"^[A-Z_][A-Z0-9_]*$" > nul || exit /b 0
 if not "%V%"=="" for /f "tokens=* delims= " %%V in ("%V%") do set "V=%%V"
-if "%V%"=="" (set "%K%=") else (set "%K%=%V%")
+if not "%V%"=="" goto :set_one_value
+rem 空欄は「既定値」なので環境変数を消す。ただし JCHE_NETWORK だけは残す。この項目は
+rem 「この実行だけ許可したい」と環境変数で渡すことがあり、他と同じに消すと
+rem set JCHE_NETWORK=allow が launcher.properties があるだけで効かなくなる
+if /i "%K%"=="JCHE_NETWORK" exit /b 0
+set "%K%="
+exit /b 0
+:set_one_value
+set "%K%=%V%"
 exit /b 0
 
 :absolutize

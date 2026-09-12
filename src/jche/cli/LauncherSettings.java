@@ -109,6 +109,7 @@ public final class LauncherSettings {
         lines.add("#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）");
         lines.add("#   JCHE_NETWORK    足りないもの（JDK・JBang 本体・依存 jar）を取りに行ってよいか。");
         lines.add("#                   ask=足りないときだけ尋ねる（既定） allow=尋ねずに許可 deny=禁止");
+        lines.add("#                   この項目だけは空欄でも環境変数を消さない（1 回だけ許可するときに使えるように）");
         for (String key : KNOWN_KEYS) {
             lines.add(key + "=" + get(key));
         }
