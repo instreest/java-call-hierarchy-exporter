@@ -8,29 +8,38 @@ import java.util.Map;
 import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.Viewer;
 
+import jche.eclipse.server.ServerTree;
+
 /**
- * ツリーの中身を {@link CallersModel} から取り出す。
+ * ツリーの中身。サーバーが返した木（{@link ServerTree}）をそのまま見せる。
  *
- * <p>子は開いたときに計算し、そのノードぶんだけ覚えておく（同じノードの再計算を避けるため）。
- * モデルが差し替わったら（解析し直し、フィルタ変更）覚えていたものは全部捨てる。
+ * <p>深さの上限で打ち切られた節点は、開かれたときにその節点を根として取り寄せ直す。
+ * 取り寄せた木はここに覚えておき、同じ節点を開き直しても問い合わせない。
  */
 final class CallersContentProvider implements ITreeContentProvider {
 
-    private final Map<CallNode, List<CallNode>> childrenCache = new HashMap<>();
-    private CallersModel model;
+    /** 打ち切られた節点の続き（メソッドのキー → その節点を根にした木） */
+    private final Map<String, ServerTree> continuations = new HashMap<>();
+    private ServerTree tree;
 
     @Override
     public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
-        childrenCache.clear();
-        model = (newInput instanceof CallersInput input) ? input.model() : null;
+        tree = (newInput instanceof ServerTree input) ? input : null;
+        continuations.clear();
+    }
+
+    /** 打ち切られた節点の続きを覚える。覚えたら呼び出し側がツリーを更新する */
+    void addContinuation(String methodKey, ServerTree subtree) {
+        continuations.put(methodKey, subtree);
+    }
+
+    boolean hasContinuation(String methodKey) {
+        return continuations.containsKey(methodKey);
     }
 
     @Override
     public Object[] getElements(Object inputElement) {
-        if (inputElement instanceof CallersInput input && input.root() != null) {
-            return new Object[] {input.root()};
-        }
-        return new Object[0];
+        return (tree == null || tree.root() == null) ? new Object[0] : new Object[] {tree.root()};
     }
 
     @Override
@@ -40,23 +49,34 @@ final class CallersContentProvider implements ITreeContentProvider {
 
     @Override
     public Object getParent(Object element) {
-        return (element instanceof CallNode node) ? node.parent() : null;
+        return (element instanceof ServerTree.Node node) ? node.parent() : null;
     }
 
     @Override
     public boolean hasChildren(Object element) {
-        return !children(element).isEmpty();
+        if (!(element instanceof ServerTree.Node node)) {
+            return false;
+        }
+        // 打ち切られた節点は「まだ先がある」ので、開ける形にしておく
+        return node.isTruncated() || !node.children().isEmpty();
     }
 
-    private List<CallNode> children(Object element) {
-        if (model == null || !(element instanceof CallNode node)) {
+    private List<ServerTree.Node> children(Object element) {
+        if (!(element instanceof ServerTree.Node node)) {
             return List.of();
         }
-        return childrenCache.computeIfAbsent(node, model::childrenOf);
+        if (node.isTruncated()) {
+            ServerTree continuation = continuations.get(node.row().key());
+            if (continuation != null && continuation.root() != null) {
+                return continuation.root().children();
+            }
+            return List.of();
+        }
+        return node.children();
     }
 
     @Override
     public void dispose() {
-        childrenCache.clear();
+        continuations.clear();
     }
 }

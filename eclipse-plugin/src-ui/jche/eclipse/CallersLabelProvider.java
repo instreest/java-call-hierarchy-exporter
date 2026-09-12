@@ -11,14 +11,15 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.ISharedImages;
 import org.eclipse.ui.PlatformUI;
 
-import jche.graph.MethodTable;
+import jche.eclipse.server.ServerRow;
+import jche.eclipse.server.ServerTree;
 
 /**
- * ツリー1行の見た目。
+ * ツリー1行の見た目。材料はサーバーが返した行（{@link ServerRow}）だけで、
+ * 解析結果そのものは Eclipse 側に無い。
  *
- * <p>1行に出すのは「メソッド」「呼び出している場所」「解決の理由」の3つ。
- * 解析後に変わったファイルのメソッドには警告アイコンを付け、内容が古いかもしれないことを行単位で示す
- * （全体の状態はバナーが出す。docs/eclipse-plugin-ui-design.md の §2）。
+ * <p>解析後に変わったファイルのメソッドには警告アイコンを付け、内容が古いかもしれないことを
+ * 行単位で示す（全体の状態はバナーが出す。docs/eclipse-plugin-ui-design.md §2）。
  */
 final class CallersLabelProvider extends ColumnLabelProvider {
 
@@ -28,66 +29,64 @@ final class CallersLabelProvider extends ColumnLabelProvider {
         this.view = view;
     }
 
+    private static ServerRow rowOf(Object element) {
+        return (element instanceof ServerTree.Node node) ? node.row() : null;
+    }
+
     @Override
     public String getText(Object element) {
-        CallersModel model = view.model();
-        if (model == null || !(element instanceof CallNode node)) {
+        ServerRow row = rowOf(element);
+        if (row == null) {
             return String.valueOf(element);
         }
-        MethodTable methods = model.methods();
-        StringBuilder sb = new StringBuilder(methods.displayLabel(node.methodId()));
-        String site = model.callSiteFile(node);
-        int line = model.callSiteLine(node);
-        if (site != null && line > 0) {
-            sb.append("   ").append(fileNameOf(site)).append(':').append(line);
-        } else if (site != null) {
-            sb.append("   ").append(fileNameOf(site));
+        StringBuilder sb = new StringBuilder(row.label());
+        if (!row.file().isEmpty()) {
+            sb.append("   ").append(fileNameOf(row.file()));
+            if (row.line() > 0) {
+                sb.append(':').append(row.line());
+            }
         }
-        String reason = model.resolutionLabel(node.edgeIndex());
-        if (reason != null) {
-            sb.append("  «").append(reason).append('»');
+        if (!row.reason().isEmpty()) {
+            sb.append("  «").append(row.reason()).append('»');
         }
-        if (node.recursive()) {
+        if (row.hasFlag(ServerRow.FLAG_RECURSIVE)) {
             sb.append("  （再帰）");
         }
-        if (node.truncated()) {
-            sb.append("  … （深さ上限。フィルタの深さを増やすと続きが出ます）");
+        if (row.hasFlag(ServerRow.FLAG_TRUNCATED)) {
+            sb.append("  … （深さ上限。開くと続きを取り寄せます）");
         }
         return sb.toString();
     }
 
     @Override
     public String getToolTipText(Object element) {
-        CallersModel model = view.model();
-        if (model == null || !(element instanceof CallNode node)) {
+        ServerRow row = rowOf(element);
+        if (row == null) {
             return null;
         }
-        MethodTable methods = model.methods();
-        StringBuilder sb = new StringBuilder(methods.key(node.methodId()));
-        String file = methods.declFile(node.methodId());
-        if (file != null) {
-            sb.append('\n').append(file).append(':').append(methods.declLine(node.methodId()));
-            if (view.isChangedSinceAnalysis(file)) {
+        StringBuilder sb = new StringBuilder(row.key());
+        if (row.file().isEmpty()) {
+            sb.append("\nソースがありません（依存 jar のメソッド）");
+        } else {
+            sb.append('\n').append(row.file()).append(':').append(row.line());
+            if (view.isChangedSinceAnalysis(row.file())) {
                 sb.append("\n⚠ このファイルは解析後に変更されています。再解析すると内容が変わる可能性があります");
             }
-        } else {
-            sb.append("\nソースがありません（依存 jar のメソッド）");
         }
         return sb.toString();
     }
 
     @Override
     public Image getImage(Object element) {
-        CallersModel model = view.model();
-        if (model == null || !(element instanceof CallNode node)) {
+        ServerRow row = rowOf(element);
+        if (row == null) {
             return null;
         }
         ISharedImages images = PlatformUI.getWorkbench().getSharedImages();
-        String file = model.methods().declFile(node.methodId());
-        if (file != null && view.isChangedSinceAnalysis(file)) {
+        if (!row.file().isEmpty() && view.isChangedSinceAnalysis(row.file())) {
             return images.getImage(ISharedImages.IMG_OBJS_WARN_TSK);
         }
-        if (file == null) {
+        if (row.hasFlag(ServerRow.FLAG_NO_SOURCE)) {
             return images.getImage(ISharedImages.IMG_OBJ_FILE);
         }
         return images.getImage(ISharedImages.IMG_OBJ_ELEMENT);
@@ -95,8 +94,8 @@ final class CallersLabelProvider extends ColumnLabelProvider {
 
     @Override
     public Font getFont(Object element) {
-        CallersModel model = view.model();
-        if (model != null && element instanceof CallNode node && model.isDirectMatch(node.methodId())) {
+        ServerRow row = rowOf(element);
+        if (row != null && row.hasFlag(ServerRow.FLAG_MATCH)) {
             // 絞り込み文字列に直接一致した行を太字にする（一致した子孫のために残した枝と区別する）
             return JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT);
         }
@@ -105,9 +104,9 @@ final class CallersLabelProvider extends ColumnLabelProvider {
 
     @Override
     public Color getForeground(Object element) {
-        CallersModel model = view.model();
-        if (model != null && element instanceof CallNode node
-                && (node.recursive() || node.truncated() || model.isGuessed(node.edgeIndex()))) {
+        ServerRow row = rowOf(element);
+        if (row != null && (row.hasFlag(ServerRow.FLAG_RECURSIVE)
+                || row.hasFlag(ServerRow.FLAG_TRUNCATED) || row.hasFlag(ServerRow.FLAG_GUESSED))) {
             return Display.getDefault().getSystemColor(SWT.COLOR_DARK_GRAY);
         }
         return null;

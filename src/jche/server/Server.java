@@ -261,15 +261,76 @@ public final class Server {
         }
         MethodTable methods = snapshot.graph().methods();
         int id = methods.idOf(key);
+        String how = "exact";
+        if (id < 0) {
+            id = findLoosely(methods, key);
+            how = "loose";
+        }
         if (id < 0) {
             respondNg("not-found");
             return;
         }
-        respondOk("key=" + Protocol.escape(methods.key(id))
+        respondOk("how=" + how
+                + Protocol.SEP + "key=" + Protocol.escape(methods.key(id))
                 + Protocol.SEP + "label=" + Protocol.escape(methods.displayLabel(id))
                 + Protocol.SEP + "file=" + Protocol.escape(nullToEmpty(methods.declFile(id)))
                 + Protocol.SEP + "line=" + methods.declLine(id)
                 + Protocol.SEP + "callers=" + snapshot.inbound().inDegree(id));
+    }
+
+    /**
+     * キーがそのまま見つからないときの逃げ道。「型・メソッド名・引数の数」が一致するものを探し、
+     * <b>1つに定まるときだけ</b>採る。
+     *
+     * <p>キーの引数は消去型の完全修飾名だが、呼び出し側（Eclipse プラグイン）は
+     * ソースに書かれた型名から組み立てるため、型変数や内部クラスで綴りがずれることがある。
+     * 候補が複数あるときに適当に選ぶと「別のメソッドの呼び出し元」を見せることになるので、
+     * そのときは見つからなかったものとして扱う。
+     *
+     * @return メソッドID。決められなければ -1
+     */
+    private static int findLoosely(MethodTable methods, String key) {
+        int hash = key.indexOf('#');
+        int open = key.indexOf('(', hash + 1);
+        int close = key.lastIndexOf(')');
+        if (hash <= 0 || open <= hash || close <= open) {
+            return -1;
+        }
+        String typeFqn = key.substring(0, hash);
+        String name = key.substring(hash + 1, open);
+        int paramCount = countParams(key.substring(open + 1, close));
+        int found = -1;
+        for (int id = 0; id < methods.size(); id++) {
+            if (!typeFqn.equals(methods.typeFqn(id)) || !name.equals(methods.methodName(id))) {
+                continue;
+            }
+            String otherKey = methods.key(id);
+            int otherOpen = otherKey.indexOf('(');
+            int otherClose = otherKey.lastIndexOf(')');
+            if (otherOpen < 0 || otherClose <= otherOpen
+                    || countParams(otherKey.substring(otherOpen + 1, otherClose)) != paramCount) {
+                continue;
+            }
+            if (found >= 0) {
+                return -1;   // 複数あるなら決められない
+            }
+            found = id;
+        }
+        return found;
+    }
+
+    private static int countParams(String params) {
+        String trimmed = params.trim();
+        if (trimmed.isEmpty()) {
+            return 0;
+        }
+        int count = 1;
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (trimmed.charAt(i) == ',') {
+                count++;
+            }
+        }
+        return count;
     }
 
     private void tree(String[] parts) {
@@ -279,7 +340,7 @@ public final class Server {
             return;
         }
         MethodTable methods = snapshot.graph().methods();
-        int rootId = methods.idOf(request.key);
+        int rootId = rootIdOf(methods, request.key);
         if (rootId < 0) {
             respondNg("not-found");
             return;
@@ -349,7 +410,7 @@ public final class Server {
             return;
         }
         MethodTable methods = snapshot.graph().methods();
-        int rootId = methods.idOf(request.key);
+        int rootId = rootIdOf(methods, request.key);
         if (rootId < 0) {
             respondNg("not-found");
             return;
@@ -378,6 +439,12 @@ public final class Server {
             }
         }
         respondOk("rows=" + rows.size() + Protocol.SEP + "file=" + Protocol.escape(output.toString()));
+    }
+
+    /** キーで引き、だめならゆるい照合も試す */
+    private static int rootIdOf(MethodTable methods, String key) {
+        int id = methods.idOf(key);
+        return (id >= 0) ? id : findLoosely(methods, key);
     }
 
     /** TREE / EXPORT の引数（キー・向き・出力先・絞り込み） */

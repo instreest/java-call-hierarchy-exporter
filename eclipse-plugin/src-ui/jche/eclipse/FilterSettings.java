@@ -31,6 +31,21 @@ final class FilterSettings {
     /** 同じ呼び出し元メソッドを1回だけ出すか（false なら呼び出している行ごとに出す） */
     boolean dedupeCallers = true;
 
+    /**
+     * サーバーへ渡す {@code key=value} の並びにする。
+     * 名前と意味は {@code jche.server.TreeFilters} と対になっている。
+     */
+    String[] toWords() {
+        return new String[] {
+            "depth=" + maxDepth,
+            "text=" + text,
+            "tests=" + (includeTests ? 1 : 0),
+            "guessed=" + (includeGuessed ? 1 : 0),
+            "exclude=" + (applyExcludePackages ? 1 : 0),
+            "dedupe=" + (dedupeCallers ? 1 : 0),
+        };
+    }
+
     FilterSettings copy() {
         FilterSettings c = new FilterSettings();
         c.text = text;

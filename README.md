@@ -105,6 +105,13 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 複数選択すれば、コマンドラインに設定ファイルを並べたときと同じく順に処理します。
 ログは「Call Hierarchy Exporter」コンソールに出ます（`run.log` も今までどおり出力フォルダに残ります）。
 
+**解析は Eclipse の中では走りません。** プラグインは同梱した解析本体（`lib/jche-core.jar`）と
+JDT 一式（`lib/jdt/*.jar`）を、別の JDK で子プロセスとして起動し、結果だけを受け取ります
+（設計は [docs/out-of-process-analysis-design.md](docs/out-of-process-analysis-design.md)）。
+そのため **Eclipse 側の JDT や JDK の版は、解析できる Java の版に影響しません**。
+解析に使う JDK は「JAVA_HOME → Eclipse を動かしている JVM → PATH の java」の順に探し、
+17 以上（推奨 25）を使います。
+
 **動作条件**は次の2つです（版の対応表は
 [docs/eclipse-pleiades-versions.md](docs/eclipse-pleiades-versions.md)）。
 

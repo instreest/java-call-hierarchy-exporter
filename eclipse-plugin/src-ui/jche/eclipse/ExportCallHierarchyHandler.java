@@ -1,7 +1,10 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
-import java.nio.file.Path;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -10,9 +13,7 @@ import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IResource;
-import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
@@ -21,31 +22,22 @@ import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.handlers.HandlerUtil;
 
-import jche.Exporter;
-import jche.util.Log;
+import jche.eclipse.server.ServerLauncher;
 
 /**
- * 「呼び出し階層をCSVに出力」コマンドのハンドラ。
+ * 「呼び出し階層をCSVに出力」コマンドのハンドラ（設定ファイルからの一括出力）。
  *
- * 選択された設定ファイル（1つ以上の {@code *.properties}）を、コマンドラインと同じ
- * {@link Exporter#run(List, Path)} に渡すだけ。解析そのものはプラグイン側に一切持たない
- * （持つと CLI と Eclipse で挙動が割れるため。docs/eclipse-plugin-qa.md の Q4）。
- *
- * 解析は数分かかりうるので {@link Job} に載せて画面を止めない。ログは
- * 「Call Hierarchy Exporter」コンソールに出す。Eclipse では標準出力が利用者から見えないため
- * （同 Q5）。
+ * <p>解析は Eclipse の中ではなく<b>子プロセス</b>で行う。ここがやるのは、選ばれた設定ファイルを
+ * コマンドライン版の引数として渡して起動し、その出力をコンソールへ流すことだけである。
+ * ビューの「呼び出し元階層」とは別の経路だが、走るコードも JDT も同じ（同梱の lib/）。
  */
 public class ExportCallHierarchyHandler extends AbstractHandler {
-
-    /** MANIFEST.MF の Bundle-SymbolicName（singleton 指定は含まない） */
-    private static final String BUNDLE_ID = "io.github.instreest.jche.eclipse";
 
     @Override
     public Object execute(ExecutionEvent event) {
         ISelection selection = HandlerUtil.getCurrentSelection(event);
         List<IFile> configFiles = configFilesOf(selection);
         if (configFiles.isEmpty()) {
-            // visibleWhen で絞ってあるので通常は起きない。キーバインドから呼ばれたときの保険
             ExporterConsole.show().println("設定ファイル（*.properties）を選んでから実行してください。");
             return null;
         }
@@ -53,7 +45,6 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
         return null;
     }
 
-    /** 選択のうち、ワークスペース上の実ファイルとして場所が分かる *.properties だけを取り出す */
     private static List<IFile> configFilesOf(ISelection selection) {
         List<IFile> files = new ArrayList<>();
         if (selection instanceof IStructuredSelection structured) {
@@ -71,57 +62,83 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
         Job job = new Job("呼び出し階層をCSVに出力") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
-                monitor.beginTask("解析中", IProgressMonitor.UNKNOWN);
-                List<Path> paths = new ArrayList<>();
-                for (IFile file : configFiles) {
-                    paths.add(file.getLocation().toFile().toPath());
-                }
-                console.clear();
-                Log.attachSink(console::println);
-                int failed;
+                monitor.beginTask("解析中（別プロセス）", IProgressMonitor.UNKNOWN);
+                Process process = null;
                 try {
-                    // キャッシュはプラグインの状態フォルダ（ワークスペースの .metadata 配下）へ。
-                    // jar の中で動くので、CLI のようにツールのフォルダを目印から探せない
-                    Path cacheRoot = Platform.getStateLocation(
-                            Platform.getBundle(BUNDLE_ID)).toFile().toPath();
-                    failed = Exporter.run(paths, cacheRoot);
-                } catch (RuntimeException | Error e) {
-                    // run() は設定ごとに握りつぶすので、ここに来るのは想定外の失敗だけ。
-                    // それでも Job の外へ投げず、コンソールとステータスの両方に残す
-                    Log.error("呼び出し階層の出力に失敗しました", e);
-                    return error("呼び出し階層の出力に失敗しました: " + e);
-                } finally {
-                    Log.detachSink();
-                    Log.detachFile();
+                    List<String> command = commandFor(configFiles);
+                    console.clear();
+                    console.println("実行: " + String.join(" ", command));
+                    process = new ProcessBuilder(command).redirectErrorStream(true).start();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                            process.getInputStream(), ServerLauncher.CHARSET))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            console.println(line);
+                            if (monitor.isCanceled()) {
+                                process.destroy();
+                                return Status.CANCEL_STATUS;
+                            }
+                        }
+                    }
+                    int exit = process.waitFor();
                     refreshOutput(configFiles);
+                    if (exit != 0) {
+                        return new Status(IStatus.ERROR, JchePlugin.PLUGIN_ID,
+                                "CSV の出力に失敗しました（終了コード " + exit + "）。コンソールを確認してください。");
+                    }
+                    return Status.OK_STATUS;
+                } catch (IOException e) {
+                    return new Status(IStatus.ERROR, JchePlugin.PLUGIN_ID,
+                            "解析プロセスを起動できませんでした: " + e.getMessage(), e);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    if (process != null) {
+                        process.destroy();
+                    }
+                    return Status.CANCEL_STATUS;
+                } finally {
                     monitor.done();
                 }
-                if (failed > 0) {
-                    return error(failed + " 件の設定ファイルで失敗しました。コンソールを確認してください。");
-                }
-                return Status.OK_STATUS;
             }
         };
         job.setUser(true);
         job.schedule();
     }
 
-    private static IStatus error(String message) {
-        return new Status(IStatus.ERROR, BUNDLE_ID, message);
+    /** コマンドライン版と同じ起動（設定ファイルを並べて渡す） */
+    private static List<String> commandFor(List<IFile> configFiles) throws IOException {
+        File java = PluginRuntime.findJava();
+        if (java == null) {
+            throw new IOException("解析に使う JDK（" + PluginRuntime.MINIMUM_JAVA + " 以上）が見つかりません");
+        }
+        List<File> classpath = PluginRuntime.analysisClasspath();
+        List<String> command = new ArrayList<>();
+        command.add(java.getAbsolutePath());
+        command.add("-Dfile.encoding=UTF-8");
+        command.add("-cp");
+        StringBuilder cp = new StringBuilder();
+        for (File entry : classpath) {
+            if (cp.length() > 0) {
+                cp.append(File.pathSeparatorChar);
+            }
+            cp.append(entry.getAbsolutePath());
+        }
+        command.add(cp.toString());
+        command.add("CallHierarchyExporter");
+        for (IFile file : configFiles) {
+            command.add(file.getLocation().toFile().getAbsolutePath());
+        }
+        return command;
     }
 
-    /**
-     * 出力フォルダはワークスペースの外から書かれるので、Eclipse はできたファイルを知らない。
-     * 設定ファイルのあるフォルダを更新して、CSV がパッケージ・エクスプローラーに出るようにする。
-     */
+    /** 出力フォルダはワークスペースの外から書かれるので、Eclipse に知らせる */
     private static void refreshOutput(List<IFile> configFiles) {
         for (IFile file : configFiles) {
             try {
                 file.getParent().refreshLocal(IResource.DEPTH_INFINITE, null);
             } catch (CoreException e) {
-                ResourcesPlugin.getPlugin().getLog().log(
-                        new Status(IStatus.WARNING, BUNDLE_ID,
-                                "出力フォルダの更新に失敗しました: " + file.getFullPath(), e));
+                JchePlugin.log(IStatus.WARNING,
+                        "出力フォルダの更新に失敗しました: " + file.getFullPath(), e);
             }
         }
     }

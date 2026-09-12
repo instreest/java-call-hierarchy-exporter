@@ -23,27 +23,24 @@ ng=0
 ok()  { echo "  OK   $1"; }
 fail() { echo "  NG   $1"; ng=$((ng + 1)); }
 
-# 1) JDT の版。3か所あるが、役割が違うので「一致」ではなく「関係」を見る
-#    //DEPS 行            … jbang が使う版（最新）
-#    pom.xml              … Eclipse の m2e が解決する版。//DEPS と一致していること（test/pom/run.sh が検査）
-#    eclipse-plugin/pom.xml … プラグインが動かせる下限の版。//DEPS 以下であること
-#    MANIFEST.MF の bundle-version … 上と同じ下限であること（宣言と実際のコンパイルを揃える）
+# 1) JDT の版。2か所あって役割が違う
+#    eclipse-plugin/pom.xml … バンドルに同梱して子プロセスで使う版。//DEPS 行と同じであること
+#    MANIFEST.MF の bundle-version … Eclipse 側に要求する下限（モデル API 用）。同梱版以下であること
 deps_jdt=$(grep -E '^//DEPS ' "$ROOT/src/CallHierarchyExporter.java" \
     | tr ' ' '\n' | grep '^org.eclipse.jdt:org.eclipse.jdt.core:' | cut -d: -f3)
-plugin_jdt=$(grep '<jdt.version>' "$PLUGIN/pom.xml" | sed -E 's|.*<jdt.version>(.*)</jdt.version>.*|\1|')
-manifest_jdt=$(grep 'org.eclipse.jdt.core;bundle-version=' "$PLUGIN/META-INF/MANIFEST.MF" \
+bundled_jdt=$(grep '<jdt.version>' "$PLUGIN/pom.xml" | sed -E 's|.*<jdt.version>(.*)</jdt.version>.*|\1|')
+floor_jdt=$(grep 'org.eclipse.jdt.core;bundle-version=' "$PLUGIN/META-INF/MANIFEST.MF" \
     | sed -E 's|.*bundle-version="([^"]+)".*|\1|')
 echo "== JDT の版 =="
-echo "  //DEPS(最新)=$deps_jdt  eclipse-plugin/pom.xml(下限)=$plugin_jdt  MANIFEST.MF(下限)=$manifest_jdt"
-if [ -z "$deps_jdt" ] || [ -z "$plugin_jdt" ] || [ -z "$manifest_jdt" ]; then
+echo "  //DEPS=$deps_jdt  同梱=$bundled_jdt  Eclipse側の下限=$floor_jdt"
+if [ -z "$deps_jdt" ] || [ -z "$bundled_jdt" ] || [ -z "$floor_jdt" ]; then
     fail "どれかの版が取り出せない"
-elif [ "$plugin_jdt" != "$manifest_jdt" ]; then
-    fail "コンパイルする版 ($plugin_jdt) と Require-Bundle の下限 ($manifest_jdt) が食い違う。"\
-"下限を宣言しても、新しい API でコンパイルしていれば古い Eclipse で壊れる"
-elif [ "$(printf '%s\n%s\n' "$plugin_jdt" "$deps_jdt" | sort -V | head -1)" != "$plugin_jdt" ]; then
-    fail "下限 ($plugin_jdt) が //DEPS の版 ($deps_jdt) より新しい。下限は //DEPS 以下であること"
+elif [ "$bundled_jdt" != "$deps_jdt" ]; then
+    fail "同梱する版 ($bundled_jdt) が //DEPS の版 ($deps_jdt) と違う。CLI と別の JDT で解析することになる"
+elif [ "$(printf '%s\n%s\n' "$floor_jdt" "$bundled_jdt" | sort -V | head -1)" != "$floor_jdt" ]; then
+    fail "Eclipse 側の下限 ($floor_jdt) が同梱版 ($bundled_jdt) より新しい"
 else
-    ok "下限 ($plugin_jdt) が MANIFEST.MF と一致し、//DEPS の版 ($deps_jdt) 以下である"
+    ok "同梱する版が //DEPS と一致し、Eclipse 側の下限 ($floor_jdt) はそれ以下である"
 fi
 
 # 2) バンドルの版
@@ -58,11 +55,11 @@ fi
 
 # 3) Bundle-SymbolicName
 bsn=$(grep '^Bundle-SymbolicName:' "$PLUGIN/META-INF/MANIFEST.MF" | awk '{print $2}' | cut -d';' -f1)
-if [ -n "$bsn" ] && grep -q "\"$bsn\"" "$PLUGIN/src-ui/jche/eclipse/ExportCallHierarchyHandler.java" \
+if [ -n "$bsn" ] && grep -q "PLUGIN_ID = \"$bsn\"" "$PLUGIN/src-ui/jche/eclipse/JchePlugin.java" \
    && grep -q "id=\"$bsn\." "$PLUGIN/plugin.xml"; then
-    ok "Bundle-SymbolicName ($bsn) を plugin.xml とハンドラが同じ綴りで使っている"
+    ok "Bundle-SymbolicName ($bsn) を plugin.xml とソースの PLUGIN_ID が同じ綴りで使っている"
 else
-    fail "Bundle-SymbolicName ($bsn) が plugin.xml かハンドラの綴りと食い違う"
+    fail "Bundle-SymbolicName ($bsn) が plugin.xml かソースの PLUGIN_ID と食い違う"
 fi
 
 # 4) plugin.xml と MANIFEST.MF が指すクラスが実在するか
@@ -77,6 +74,26 @@ for cls in $classes $activator; do
         fail "$cls のソースが無い ($path)"
     fi
 done
+
+# 4.5) 解析本体をバンドルのクラスパスに載せていないこと
+echo "== 解析本体の隔離 =="
+if grep -q '^Bundle-ClassPath' "$PLUGIN/META-INF/MANIFEST.MF"; then
+    fail "Bundle-ClassPath がある。lib/ を載せると Eclipse（古い JDK かもしれない）が解析本体を読んでしまう"
+else
+    ok "Bundle-ClassPath は無い（lib/ は子プロセスの -cp にだけ渡す）"
+fi
+leaks=$(grep -rhE '^import jche\.' "$PLUGIN/src-ui" | grep -v '^import jche\.eclipse\.' | sort -u)
+if [ -n "$leaks" ]; then
+    fail "プラグインが解析本体を直接参照している（別プロセスにした意味が無くなる）:"
+    echo "$leaks" | sed 's/^/       /'
+else
+    ok "プラグインは解析本体（jche.* のうち jche.eclipse 以外）を参照していない"
+fi
+if grep -q 'copy-dependencies' "$PLUGIN/pom.xml" && grep -q 'core-jar' "$PLUGIN/pom.xml"; then
+    ok "ビルドが lib/jche-core.jar と lib/jdt/ を作る設定になっている"
+else
+    fail "lib/ を作るビルド設定が無い"
+fi
 
 # 5) コマンド ID・ビュー ID の突き合わせ
 echo "== ID の突き合わせ =="

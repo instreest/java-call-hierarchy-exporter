@@ -165,6 +165,12 @@ jobs:
 
       # latest のときだけ //DEPS 行の版で上書きする。版の出どころを1か所に保つため、
       # ここには版を書かず src/CallHierarchyExporter.java から読む
+      # プラグインのクライアント層（子プロセスとのやりとり）を Eclipse 無しで動かす。
+      # Java 8 でコンパイルできることもここで確認する
+      - name: Plugin client test
+        if: matrix.jdt == 'latest'
+        run: bash test/plugin-client/run.sh
+
       - name: Build the bundle jar (JDT ${{ matrix.jdt }})
         run: |
           if [ "${{ matrix.jdt }}" = "latest" ]; then

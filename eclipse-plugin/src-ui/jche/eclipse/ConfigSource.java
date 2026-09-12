@@ -2,14 +2,14 @@
 package jche.eclipse;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.Properties;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.jdt.core.IJavaProject;
-
-import jche.config.Config;
 
 /**
  * 解析に使う設定がどこから来たか。
@@ -21,6 +21,9 @@ import jche.config.Config;
  *   <li>{@link Kind#GENERATED} … Eclipse のプロジェクト構成から自動生成（{@link EclipseProjectConfig}）</li>
  * </ol>
  * つまり<b>設定ファイルが無くても解析できる</b>。あるときは書いてあるとおりに従う。
+ *
+ * <p>解析は子プロセスで走るので、設定は<b>ファイルとして</b>渡す（{@link #materialize}）。
+ * 自動生成のときは一時ファイルに書き出す。
  */
 final class ConfigSource {
 
@@ -34,21 +37,19 @@ final class ConfigSource {
     private final Kind kind;
     private final IFile file;
     private final IJavaProject javaProject;
-    private final Path baseDir;
 
-    private ConfigSource(Kind kind, IFile file, IJavaProject javaProject, Path baseDir) {
+    private ConfigSource(Kind kind, IFile file, IJavaProject javaProject) {
         this.kind = kind;
         this.file = file;
         this.javaProject = javaProject;
-        this.baseDir = baseDir;
     }
 
     static ConfigSource ofFile(IFile file) {
-        return new ConfigSource(Kind.FILE, file, null, null);
+        return new ConfigSource(Kind.FILE, file, null);
     }
 
-    static ConfigSource generated(IJavaProject javaProject, Path projectLocation) {
-        return new ConfigSource(Kind.GENERATED, null, javaProject, projectLocation);
+    static ConfigSource generated(IJavaProject javaProject) {
+        return new ConfigSource(Kind.GENERATED, null, javaProject);
     }
 
     Kind kind() {
@@ -72,15 +73,26 @@ final class ConfigSource {
     }
 
     /**
-     * 解析用の設定を組み立てる。ファイルの読み込みも自動生成も、できあがる {@link Config} は同じ形。
+     * 子プロセスへ渡すための設定ファイルのパスを返す。
+     * 自動生成のときは、渡されたフォルダに書き出す（次の解析でも同じ場所を使い回す）。
      *
-     * @param cacheRoot キャッシュの置き場所の親（プラグインの状態フォルダ）
+     * @param scratchDir 一時ファイルの置き場所（プラグインの状態フォルダの下）
      */
-    Config toConfig(Path cacheRoot) throws IOException {
+    Path materialize(Path scratchDir) throws IOException {
         if (kind == Kind.FILE) {
-            return new Config(file.getLocation().toFile().toPath(), cacheRoot, LocalDateTime.now());
+            if (file.getLocation() == null) {
+                throw new IOException("設定ファイルの場所が特定できません: " + file.getFullPath());
+            }
+            return file.getLocation().toFile().toPath();
         }
-        return new Config(EclipseProjectConfig.propertiesFor(javaProject), baseDir, cacheRoot,
-                LocalDateTime.now());
+        Files.createDirectories(scratchDir);
+        Path generated = scratchDir.resolve("generated-config.properties");
+        Properties properties = EclipseProjectConfig.propertiesFor(javaProject);
+        try (OutputStream out = Files.newOutputStream(generated)) {
+            // Properties#store は ISO-8859-1 でエスケープするが、Config は UTF-8 で読むので
+            // 自前で書く（パスに日本語が入っても壊れないようにするため）
+            out.write(EclipseProjectConfig.toFileText(properties).getBytes(StandardCharsets.UTF_8));
+        }
+        return generated;
     }
 }

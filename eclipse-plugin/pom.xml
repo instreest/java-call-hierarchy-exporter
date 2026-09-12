@@ -34,25 +34,19 @@
     <!-- MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17 と同じ -->
     <maven.compiler.release>17</maven.compiler.release>
     <!--
-      JDT の版。ここは「動かせる一番古い版」で、//DEPS 行（jbang が使う最新版）とは役割が違う。
-      下限の版でコンパイルしておくと、それより新しい API をうっかり使った時点でビルドが落ちる。
-      実行時に使われるのは Eclipse 側の JDT なので、新しい Eclipse では新しい版がそのまま使われる
-      （バイナリ互換）。
+      JDT の版。ここは「バンドルに同梱して子プロセスで使う版」で、//DEPS 行と同じにする
+      （CLI と同じ JDT で解析するため）。解析は Eclipse ではなく子プロセスで走るので、
+      Eclipse 側の JDT の版は解析能力に関係しない。
 
-      3.32.0 は Eclipse 2022-12 相当。API 上は 3.27.0 まで下げられるが、3.31.0 以前だと
-      jdt.core の推移的依存に org.eclipse.equinox.registry が入らず、ViewPart の親型
-      （IExecutableExtension）が解決できなくなる。そこだけのために依存をもう1つ増やすより、
-      下限を1年ぶん上げるほうが構成が単純なのでこちらを採った
-      （docs/eclipse-plugin-ui-qa.md の Q12）。
+      プラグインが Eclipse 側に要求する JDT の下限は MANIFEST.MF の
+      Require-Bundle（org.eclipse.jdt.core;bundle-version）で、こちらは
+      IMethod / Signature などモデル API を使うためだけのもの。下限の版でも
+      コンパイルが通ることは CI が -Djdt.version=<下限> で検査する。
 
-      Eclipse 本体を動かす JDK は、版に関わらず 17 以上が要る
-      （MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17）。
       版の対応表（Eclipse / JDT / Pleiades / 必要な Java）は
       docs/eclipse-pleiades-versions.md にある。
-      変えるときは MANIFEST.MF の Require-Bundle の bundle-version も同じ値にすること
-      （test/plugin/run.sh が検査する）。
     -->
-    <jdt.version>3.32.0</jdt.version>
+    <jdt.version>3.46.0</jdt.version>
   </properties>
 
   <dependencies>
@@ -247,6 +241,31 @@
         <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
       </exclusions>
     </dependency>
+    <!--
+      解析の子プロセスで要る jar（lib/jdt/ に同梱する）。コンパイルには使わないが、
+      推移的な依存を全部切っているので、ここで名前を挙げないと集められない
+    -->
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.contenttype</artifactId>
+      <version>3.9.900</version>
+      <scope>provided</scope>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.equinox.preferences</artifactId>
+      <version>3.12.100</version>
+      <scope>provided</scope>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.osgi</groupId>
+      <artifactId>org.osgi.service.prefs</artifactId>
+      <version>1.1.2</version>
+      <scope>provided</scope>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
   </dependencies>
 
   <build>
@@ -283,11 +302,79 @@
           </compilerArgs>
         </configuration>
       </plugin>
+      <!--
+        子プロセスに渡すものを target/classes/lib/ に集める。バンドルの中には入るが
+        Bundle-ClassPath には載せないので、Eclipse（古い JDK かもしれない）は読まない。
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>bundle-jdt</id>
+            <phase>prepare-package</phase>
+            <goals><goal>copy-dependencies</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}/lib/jdt</outputDirectory>
+              <!--
+                provided で宣言した Eclipse API（コンパイル用）と、jdt.core の推移的依存の
+                両方から拾う必要があるので test スコープまで含める。実際に入れるのは
+                下の includeArtifactIds に挙げたものだけ
+              -->
+              <includeScope>test</includeScope>
+              <!--
+                解析に実際に要る jar だけ。この組み合わせで test/demo を解析し、CSV が
+                期待値と一致することを確認してある（jna・osgi.annotation・core.commands・
+                core.expressions・equinox.app は不要。約 3.9MB ぶん削れる）
+              -->
+              <includeArtifactIds>ecj,org.eclipse.jdt.core,org.eclipse.osgi,org.eclipse.text,org.eclipse.core.contenttype,org.eclipse.core.filesystem,org.eclipse.core.jobs,org.eclipse.core.resources,org.eclipse.core.runtime,org.eclipse.equinox.common,org.eclipse.equinox.preferences,org.eclipse.equinox.registry,org.osgi.service.prefs</includeArtifactIds>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.4.2</version>
+        <executions>
+          <!--
+            解析本体（リポジトリ直下の src/）を1つの jar にまとめ、lib/ へ置く。
+            これを子プロセスの -cp に渡す。Eclipse の中では読まれない
+          -->
+          <execution>
+            <id>core-jar</id>
+            <phase>prepare-package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+              <outputDirectory>${project.build.outputDirectory}/lib</outputDirectory>
+              <!-- finalName + classifier で lib/jche-core.jar になる。classifier を付けるのは
+                   Maven に「本体の jar を置き換えるのではなく別物だ」と分からせるため -->
+              <finalName>jche</finalName>
+              <classifier>core</classifier>
+              <includes>
+                <include>CallHierarchyExporter*.class</include>
+                <include>jche/**</include>
+              </includes>
+              <excludes>
+                <exclude>jche/eclipse/**</exclude>
+                <exclude>lib/**</exclude>
+              </excludes>
+              <archive>
+                <manifest><mainClass>CallHierarchyExporter</mainClass></manifest>
+              </archive>
+            </configuration>
+          </execution>
+        </executions>
         <configuration>
+          <!-- バンドル本体には、プラグインのクラスと lib/ だけを入れる -->
+          <includes>
+            <include>jche/eclipse/**</include>
+            <include>lib/**</include>
+            <include>plugin.xml</include>
+          </includes>
           <archive>
             <!-- OSGi の情報は MANIFEST.MF が唯一の正。PDE と同じものを使う -->
             <manifestFile>META-INF/MANIFEST.MF</manifestFile>

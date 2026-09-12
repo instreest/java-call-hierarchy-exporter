@@ -56,7 +56,8 @@ public final class AnalysisService {
             byProject.clear();
         }
         for (ProjectAnalysis analysis : all) {
-            analysis.cancel();
+            // 解析の子プロセスも終わらせる。残すとワークスペースを閉じても居座る
+            analysis.dispose();
         }
     }
 
@@ -87,7 +88,7 @@ public final class AnalysisService {
     public synchronized List<ProjectAnalysis> analyzed() {
         List<ProjectAnalysis> result = new ArrayList<>();
         for (ProjectAnalysis analysis : byProject.values()) {
-            if (analysis.snapshot() != null) {
+            if (analysis.isAnalyzed()) {
                 result.add(analysis);
             }
         }

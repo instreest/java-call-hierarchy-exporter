@@ -1,17 +1,12 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.Signature;
-
-import jche.graph.MethodTable;
 
 /**
  * Eclipse のメソッド（{@link IMethod}）と、解析結果のメソッドID を突き合わせる。
@@ -20,10 +15,10 @@ import jche.graph.MethodTable;
  * 引数型は<b>消去型の完全修飾名</b>である。{@link IMethod} が持つのはソースに書かれたままの
  * 型名（{@code List<Order>} や型変数 {@code T}）なので、ここで同じ形へ寄せる。
  *
- * <p>寄せ切れないことがある（型変数の境界、内部クラスの解決失敗など）ため、
- * キーが引けなかったときは「型と名前と引数の数」で候補を探す（{@link #find}）。
- * それでも一意に決まらないときは見つからなかったものとして扱い、画面にその旨を出す。
- * 黙って別のメソッドを表示するより、見つからないと言うほうが安全なため。
+ * <p>寄せ切れないことがある（型変数の境界、内部クラスの解決失敗など）。その場合は
+ * サーバー側が「型・名前・引数の数」で候補を探し、<b>一意に決まるときだけ</b>採る
+ * （{@code jche.server.Server#findLoosely}）。決まらなければ見つからなかったものとして扱い、
+ * 画面にその旨を出す。黙って別のメソッドを表示するより、見つからないと言うほうが安全なため。
  */
 final class MethodKeys {
 
@@ -85,61 +80,6 @@ final class MethodKeys {
         String pkg = resolved[0][0];
         String type = resolved[0][1];
         return pkg.isEmpty() ? type : pkg + "." + type;
-    }
-
-    /**
-     * 解析結果からメソッドIDを引く。まずキーで引き、外れたら
-     * 「型・名前・引数の数」が一致するものを探して、一意なときだけ採る。
-     *
-     * @return メソッドID。見つからなければ -1
-     */
-    static int find(MethodTable methods, IMethod method) {
-        String key = keyOf(method);
-        if (key != null) {
-            int id = methods.idOf(key);
-            if (id >= 0) {
-                return id;
-            }
-        }
-        try {
-            IType type = method.getDeclaringType();
-            if (type == null) {
-                return -1;
-            }
-            String typeFqn = type.getFullyQualifiedName('.');
-            String name = method.isConstructor() ? jche.cache.MethodRef.CONSTRUCTOR : method.getElementName();
-            int paramCount = method.getNumberOfParameters();
-            List<Integer> candidates = new ArrayList<>();
-            for (int id = 0; id < methods.size(); id++) {
-                if (typeFqn.equals(methods.typeFqn(id)) && name.equals(methods.methodName(id))
-                        && paramCountOf(methods.key(id)) == paramCount) {
-                    candidates.add(id);
-                }
-            }
-            return (candidates.size() == 1) ? candidates.get(0) : -1;
-        } catch (JavaModelException e) {
-            return -1;
-        }
-    }
-
-    /** キー文字列 {@code 型#名前(a,b)} の引数の数 */
-    private static int paramCountOf(String key) {
-        int open = key.indexOf('(');
-        int close = key.lastIndexOf(')');
-        if (open < 0 || close <= open) {
-            return -1;
-        }
-        String params = key.substring(open + 1, close).trim();
-        if (params.isEmpty()) {
-            return 0;
-        }
-        int count = 1;
-        for (int i = 0; i < params.length(); i++) {
-            if (params.charAt(i) == ',') {
-                count++;
-            }
-        }
-        return count;
     }
 
     /** 選択されている Java 要素からメソッドを取り出す。メソッドの中の要素なら、その囲みメソッド */
