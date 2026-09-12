@@ -11,7 +11,7 @@ import org.eclipse.jdt.core.Signature;
 /**
  * Eclipse のメソッド（{@link IMethod}）と、解析結果のメソッドID を突き合わせる。
  *
- * <p>解析側のキーは {@code 型FQN#メソッド名(引数型,…)}（{@link jche.cache.MethodRef}）で、
+ * <p>解析側のキーは {@code 型FQN#メソッド名(引数型,…)}（解析側の {@code MethodRef}）で、
  * 引数型は<b>消去型の完全修飾名</b>である。{@link IMethod} が持つのはソースに書かれたままの
  * 型名（{@code List<Order>} や型変数 {@code T}）なので、ここで同じ形へ寄せる。
  *
@@ -21,6 +21,14 @@ import org.eclipse.jdt.core.Signature;
  * 画面にその旨を出す。黙って別のメソッドを表示するより、見つからないと言うほうが安全なため。
  */
 final class MethodKeys {
+
+    /**
+     * コンストラクタのメソッド名（解析側の {@code CONSTRUCTOR} と同じ）。
+     *
+     * <p>解析本体のクラスを参照するとバンドルにそれを載せることになり、
+     * 「プラグインは Java 8、解析は別プロセス」という切り分けが崩れる。定数1つなので写す。
+     */
+    private static final String CONSTRUCTOR = "<init>";
 
     private MethodKeys() {
     }
@@ -33,7 +41,7 @@ final class MethodKeys {
                 return null;
             }
             String typeFqn = type.getFullyQualifiedName('.');
-            String name = method.isConstructor() ? jche.cache.MethodRef.CONSTRUCTOR : method.getElementName();
+            String name = method.isConstructor() ? CONSTRUCTOR : method.getElementName();
             StringBuilder params = new StringBuilder();
             String[] parameterTypes = method.getParameterTypes();
             for (int i = 0; i < parameterTypes.length; i++) {
@@ -65,7 +73,11 @@ final class MethodKeys {
             String simple = Signature.toString(element);
             name = resolve(context, simple);
         }
-        return name + "[]".repeat(dimensions);
+        StringBuilder sb = new StringBuilder(name);
+        for (int i = 0; i < dimensions; i++) {
+            sb.append("[]");   // Java 8 には String#repeat が無い
+        }
+        return sb.toString();
     }
 
     /**
@@ -84,13 +96,13 @@ final class MethodKeys {
 
     /** 選択されている Java 要素からメソッドを取り出す。メソッドの中の要素なら、その囲みメソッド */
     static IMethod methodOf(Object selected) {
-        if (selected instanceof IMethod m) {
-            return m;
+        if (selected instanceof IMethod) {
+            return (IMethod) selected;
         }
-        if (selected instanceof IJavaElement element) {
-            IJavaElement ancestor = element.getAncestor(IJavaElement.METHOD);
-            if (ancestor instanceof IMethod m) {
-                return m;
+        if (selected instanceof IJavaElement) {
+            IJavaElement ancestor = ((IJavaElement) selected).getAncestor(IJavaElement.METHOD);
+            if (ancestor instanceof IMethod) {
+                return (IMethod) ancestor;
             }
         }
         return null;

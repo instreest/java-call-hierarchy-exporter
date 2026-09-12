@@ -109,20 +109,16 @@ Gradle を選ばなかった理由を含め、実装時に迷った点は
 JDT 一式（`lib/jdt/*.jar`）を、別の JDK で子プロセスとして起動し、結果だけを受け取ります
 （設計は [docs/out-of-process-analysis-design.md](docs/out-of-process-analysis-design.md)）。
 そのため **Eclipse 側の JDT や JDK の版は、解析できる Java の版に影響しません**。
-解析に使う JDK は「JAVA_HOME → Eclipse を動かしている JVM → PATH の java」の順に探し、
-17 以上（推奨 25）を使います。
 
-**動作条件**は次の2つです（版の対応表は
-[docs/eclipse-pleiades-versions.md](docs/eclipse-pleiades-versions.md)）。
+**動作条件**（版の対応表は [docs/eclipse-pleiades-versions.md](docs/eclipse-pleiades-versions.md)）:
 
-- **Eclipse 2022-12 以降**（JDT Core 3.32 以上）
-- **Eclipse を Java 17 以上で起動している**こと（`eclipse.ini` の `-vm`。Pleiades なら
-  同梱の JDK から選べます）
+| | 条件 |
+|---|---|
+| Eclipse | **4.6（2016年、Neon）以降** |
+| Eclipse を動かす JDK | **8 以上**（プラグインは Java 8 でコンパイルしています） |
+| 解析に使う JDK | **17 以上、推奨 25**。「JAVA_HOME → Eclipse を動かしている JVM → PATH の java」の順に探します |
 
-Eclipse 2022-12〜2023-03 は Java 11 でも起動できますが、そのままでは入りません。
-Java 17 以上で起動してください（Pleiades All in One は 2021 以降、既定で JDK 17 以上、
-2024 以降は 21 で Eclipse を起動しているため、**2022-12 ベース以降ならそのまま入ります**）。プラグインは下限の版でコンパイルしてあるので、
-新しい Eclipse では、その Eclipse に入っている JDT がそのまま使われます。
+Pleiades なら、同梱の JDK がそのまま解析にも使えます（2023 以降は 17・21、2025 以降は 25）。
 
 **呼び出し元の階層を Eclipse 上で見る**（このプラグインの主な使い方）:
 

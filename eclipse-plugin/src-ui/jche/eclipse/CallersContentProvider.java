@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +25,7 @@ final class CallersContentProvider implements ITreeContentProvider {
 
     @Override
     public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
-        tree = (newInput instanceof ServerTree input) ? input : null;
+        tree = (newInput instanceof ServerTree) ? (ServerTree) newInput : null;
         continuations.clear();
     }
 
@@ -49,28 +50,30 @@ final class CallersContentProvider implements ITreeContentProvider {
 
     @Override
     public Object getParent(Object element) {
-        return (element instanceof ServerTree.Node node) ? node.parent() : null;
+        return (element instanceof ServerTree.Node) ? ((ServerTree.Node) element).parent() : null;
     }
 
     @Override
     public boolean hasChildren(Object element) {
-        if (!(element instanceof ServerTree.Node node)) {
+        if (!(element instanceof ServerTree.Node)) {
             return false;
         }
+        ServerTree.Node node = (ServerTree.Node) element;
         // 打ち切られた節点は「まだ先がある」ので、開ける形にしておく
         return node.isTruncated() || !node.children().isEmpty();
     }
 
     private List<ServerTree.Node> children(Object element) {
-        if (!(element instanceof ServerTree.Node node)) {
-            return List.of();
+        if (!(element instanceof ServerTree.Node)) {
+            return Collections.emptyList();
         }
+        ServerTree.Node node = (ServerTree.Node) element;
         if (node.isTruncated()) {
             ServerTree continuation = continuations.get(node.row().key());
             if (continuation != null && continuation.root() != null) {
                 return continuation.root().children();
             }
-            return List.of();
+            return Collections.emptyList();
         }
         return node.children();
     }

@@ -35,7 +35,6 @@ import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.swt.widgets.Text;
-import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.dialogs.ElementListSelectionDialog;
 import org.eclipse.ui.part.ViewPart;
 
@@ -389,7 +388,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
     /** 深さ上限で打ち切られた節点が開かれたら、その先を取り寄せる */
     private void loadContinuation(Object element) {
-        if (analysis == null || !(element instanceof ServerTree.Node node) || !node.isTruncated()) {
+        if (analysis == null || !(element instanceof ServerTree.Node)) {
+            return;
+        }
+        final ServerTree.Node node = (ServerTree.Node) element;
+        if (!node.isTruncated()) {
             return;
         }
         String key = node.row().key();
@@ -422,18 +425,33 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         ServerResponse last = analysis.lastAnalysis();
         String at = (last == null) ? "" : shortTime(last.field("at"));
         switch (state) {
-            case NO_CONFIG -> setBanner(
-                    "このプロジェクトは解析できません（Java プロジェクトではなく、設定ファイルもありません）。",
-                    null, false);
-            case NOT_ANALYZED -> setBanner("このプロジェクトはまだ解析していません。", "解析する", false);
-            case ANALYZING -> setBanner("解析中です（別プロセス）…", null, true);
-            case UPDATING -> setBanner("更新中です。表示は " + at + " 時点のものです。", null, true);
-            case STALE -> setBanner("⚠ " + analysis.changedCount()
-                    + " ファイルが変更されています。表示は " + at + " 時点のものです。", "再解析", false);
-            case FAILED -> setBanner("✖ 解析に失敗しました: " + analysis.errorMessage(), "再試行", false);
-            case READY -> setBanner(at + " 時点の解析結果"
-                    + (last == null ? "" : "（メソッド " + last.field("methods") + " 件）"), null, false);
-            default -> setBanner("", null, false);
+            case NO_CONFIG:
+                setBanner("このプロジェクトは解析できません（Java プロジェクトではなく、設定ファイルもありません）。",
+                        null, false);
+                break;
+            case NOT_ANALYZED:
+                setBanner("このプロジェクトはまだ解析していません。", "解析する", false);
+                break;
+            case ANALYZING:
+                setBanner("解析中です（別プロセス）…", null, true);
+                break;
+            case UPDATING:
+                setBanner("更新中です。表示は " + at + " 時点のものです。", null, true);
+                break;
+            case STALE:
+                setBanner("⚠ " + analysis.changedCount() + " ファイルが変更されています。表示は "
+                        + at + " 時点のものです。", "再解析", false);
+                break;
+            case FAILED:
+                setBanner("✖ 解析に失敗しました: " + analysis.errorMessage(), "再試行", false);
+                break;
+            case READY:
+                setBanner(at + " 時点の解析結果"
+                        + (last == null ? "" : "（メソッド " + last.field("methods") + " 件）"), null, false);
+                break;
+            default:
+                setBanner("", null, false);
+                break;
         }
     }
 
@@ -496,13 +514,14 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     // ------------------------------------------------------------
 
     private void openSelected(DoubleClickEvent event) {
-        if (analysis == null || !(event.getSelection() instanceof IStructuredSelection selection)) {
+        if (analysis == null || !(event.getSelection() instanceof IStructuredSelection)) {
             return;
         }
-        if (!(selection.getFirstElement() instanceof ServerTree.Node node)) {
+        IStructuredSelection selection = (IStructuredSelection) event.getSelection();
+        if (!(selection.getFirstElement() instanceof ServerTree.Node)) {
             return;
         }
-        ServerRow row = node.row();
+        ServerRow row = ((ServerTree.Node) selection.getFirstElement()).row();
         if (row.file().isEmpty()) {
             setBanner("この行にはソースがありません（依存 jar のメソッドです）。", null, false);
             return;
@@ -598,8 +617,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         dialog.setMessage("解析に使う設定ファイルを選んでください（キャンセルで自動判定に戻ります）");
         dialog.setElements(candidates.toArray());
         if (dialog.open() == org.eclipse.jface.window.Window.OK
-                && dialog.getFirstResult() instanceof IFile chosen) {
-            analysis.setConfigFile(chosen);
+                && dialog.getFirstResult() instanceof IFile) {
+            analysis.setConfigFile((IFile) dialog.getFirstResult());
         } else {
             analysis.setConfigFile(null);
         }
@@ -613,12 +632,24 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         return analysis != null && analysis.isChangedSinceAnalysis(relativePath);
     }
 
+    /**
+     * フィルタの保存先。
+     *
+     * <p>{@code AbstractUIPlugin#getDialogSettings()} を使う。新しい Eclipse には
+     * {@code PlatformUI.getDialogSettingsProvider} があるが、そちらは 2022 年（4.24）からで、
+     * 古い Eclipse では存在しない。このプラグインは古い Eclipse でも動かすので、
+     * 両方にある古い方を使う（test/plugin-api/run.sh が古い jar でのコンパイルを検査する）。
+     */
+    @SuppressWarnings("deprecation")
     private IDialogSettings dialogSettings() {
         JchePlugin plugin = JchePlugin.getDefault();
         if (plugin == null) {
             return null;
         }
-        IDialogSettings root = PlatformUI.getDialogSettingsProvider(plugin.getBundle()).getDialogSettings();
+        IDialogSettings root = plugin.getDialogSettings();
+        if (root == null) {
+            return null;
+        }
         IDialogSettings section = root.getSection(VIEW_ID);
         return (section != null) ? section : root.addNewSection(VIEW_ID);
     }

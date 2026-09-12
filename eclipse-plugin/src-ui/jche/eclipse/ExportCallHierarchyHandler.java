@@ -47,10 +47,11 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
 
     private static List<IFile> configFilesOf(ISelection selection) {
         List<IFile> files = new ArrayList<>();
-        if (selection instanceof IStructuredSelection structured) {
-            for (Iterator<?> it = structured.iterator(); it.hasNext();) {
-                if (it.next() instanceof IFile file && file.getLocation() != null) {
-                    files.add(file);
+        if (selection instanceof IStructuredSelection) {
+            for (Iterator<?> it = ((IStructuredSelection) selection).iterator(); it.hasNext();) {
+                Object element = it.next();
+                if (element instanceof IFile && ((IFile) element).getLocation() != null) {
+                    files.add((IFile) element);
                 }
             }
         }

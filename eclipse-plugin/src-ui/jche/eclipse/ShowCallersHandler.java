@@ -60,8 +60,8 @@ public class ShowCallersHandler extends AbstractHandler {
     /** 選択（エクスプローラー・アウトライン）を優先し、無ければエディタのカーソル位置から探す */
     private static IMethod methodOf(ExecutionEvent event, IWorkbenchPage page) {
         ISelection selection = HandlerUtil.getCurrentSelection(event);
-        if (selection instanceof IStructuredSelection structured && !structured.isEmpty()) {
-            IMethod method = MethodKeys.methodOf(structured.getFirstElement());
+        if (selection instanceof IStructuredSelection && !((IStructuredSelection) selection).isEmpty()) {
+            IMethod method = MethodKeys.methodOf(((IStructuredSelection) selection).getFirstElement());
             if (method != null) {
                 return method;
             }
@@ -72,25 +72,27 @@ public class ShowCallersHandler extends AbstractHandler {
         }
         ISelection editorSelection = editor.getSite().getSelectionProvider() == null
                 ? null : editor.getSite().getSelectionProvider().getSelection();
-        if (editorSelection instanceof IStructuredSelection structured && !structured.isEmpty()) {
-            IMethod method = MethodKeys.methodOf(structured.getFirstElement());
+        if (editorSelection instanceof IStructuredSelection
+                && !((IStructuredSelection) editorSelection).isEmpty()) {
+            IMethod method = MethodKeys.methodOf(
+                    ((IStructuredSelection) editorSelection).getFirstElement());
             if (method != null) {
                 return method;
             }
         }
-        if (!(editorSelection instanceof ITextSelection text)) {
+        if (!(editorSelection instanceof ITextSelection)) {
             return null;
         }
         ICompilationUnit unit = compilationUnitOf(editor.getEditorInput());
-        return MethodKeys.methodAt(unit, text.getOffset());
+        return MethodKeys.methodAt(unit, ((ITextSelection) editorSelection).getOffset());
     }
 
     private static ICompilationUnit compilationUnitOf(IEditorInput input) {
-        if (!(input instanceof IFileEditorInput fileInput)) {
+        if (!(input instanceof IFileEditorInput)) {
             return null;
         }
-        IFile file = fileInput.getFile();
+        IFile file = ((IFileEditorInput) input).getFile();
         IJavaElement element = JavaCore.create(file);
-        return (element instanceof ICompilationUnit unit) ? unit : null;
+        return (element instanceof ICompilationUnit) ? (ICompilationUnit) element : null;
     }
 }

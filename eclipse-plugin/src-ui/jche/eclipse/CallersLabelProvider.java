@@ -30,7 +30,7 @@ final class CallersLabelProvider extends ColumnLabelProvider {
     }
 
     private static ServerRow rowOf(Object element) {
-        return (element instanceof ServerTree.Node node) ? node.row() : null;
+        return (element instanceof ServerTree.Node) ? ((ServerTree.Node) element).row() : null;
     }
 
     @Override

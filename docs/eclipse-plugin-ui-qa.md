@@ -253,6 +253,11 @@ Eclipse は必要な情報をすでに持っているので、**プロジェク�
 
 ### Q15. Eclipse が Java 11 で動いている環境に対応しないのはなぜか
 
+> **その後（2026-09-12）**: 解析を別プロセスへ出した（
+> [out-of-process-analysis-design.md](out-of-process-analysis-design.md)）ことで、この判断は不要になった。
+> Eclipse の中で動くのは画面だけになったので、**プラグインは Java 8 でコンパイルできる**ようになり、
+> Eclipse 4.6（2016年）・Java 8 以上であれば入る。以下は当時の記録として残す。
+
 対応できないわけではないが、**割に合わない**と判断した。
 
 このプラグインは Eclipse と同じ JVM で動く。したがって Java 11 の Eclipse に入れるには、
@@ -285,3 +290,35 @@ Eclipse は必要な情報をすでに持っているので、**プロジェク�
 
 判断を変える材料があるとすれば「Java 11 でしか動かせない Eclipse を使い続ける必要がある」
 という具体的な事情なので、そのときはこの Q を根拠ごと見直すこと。
+
+### Q16. Java 8 化で実際に直したのはどこか
+
+構文が 10 箇所と、Java 9 以降の API が 4 箇所、そして**古い Eclipse に無い API** が 1 箇所だった。
+
+| 種類 | 箇所 | 直し方 |
+|---|---|---|
+| `instanceof` のパターン | 8 | 従来のキャストに戻す |
+| `switch` のアロー構文 | 2 | 従来の `case:` + `break` に戻す |
+| `String#isBlank` | 2 | `trim().isEmpty()` |
+| `String#repeat` | 1 | `StringBuilder` で繰り返す |
+| `InputStream#readAllBytes` | 1 | `BufferedReader` で読む |
+| `PlatformUI.getDialogSettingsProvider`（Eclipse 4.24〜） | 1 | `AbstractUIPlugin#getDialogSettings()`（非推奨だが古い版にもある） |
+
+最後の1つは**本番のビルドでは分からない**。新しい Eclipse の jar でコンパイルしているからである。
+そこで `test/plugin-api/run.sh` を用意し、**Eclipse 4.6（2016年）相当の古い jar**
+（`jdt.core` 3.10.0、`ui.workbench` 3.108.2 ほか 16 個）と `--release 8` でコンパイルしてみる検査にした。
+この検査を入れた初回に、まさにその混入が見つかっている。
+
+ビルドも2本立てにした。解析本体は `release 17`、プラグインは `release 8` で、
+同じ Maven モジュールの中で `maven-compiler-plugin` の実行を2つに分けている。
+できあがった jar の中身は、プラグインのクラスがメジャー版 52（Java 8）、
+`lib/jche-core.jar` の中身が 61（Java 17）になっていることまで検査している。
+
+### Q17. PDE（Eclipse 上での開発）はどうなるか
+
+`build.properties` の `source..` は `src-ui/` だけになった。解析本体（リポジトリ直下の `src/`）は
+Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので、PDE のビルドには含めない
+（含めると Java 8 でコンパイルすることになり、通らない）。
+
+そのため PDE で動かす前に一度 `mvn -f eclipse-plugin/pom.xml package` を実行して
+`lib/` を作る必要がある。`.project` のリンクフォルダ（`src`）も外した。

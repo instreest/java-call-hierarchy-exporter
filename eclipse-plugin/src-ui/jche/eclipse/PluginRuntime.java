@@ -2,8 +2,9 @@
 package jche.eclipse;
 
 import java.io.File;
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -79,11 +80,11 @@ final class PluginRuntime {
     static File findJava() {
         List<File> candidates = new ArrayList<>();
         String javaHome = System.getenv("JAVA_HOME");
-        if (javaHome != null && !javaHome.isBlank()) {
+        if (isSet(javaHome)) {
             candidates.add(new File(javaHome));
         }
         String running = System.getProperty("java.home");
-        if (running != null && !running.isBlank()) {
+        if (isSet(running)) {
             candidates.add(new File(running));
         }
         File best = null;
@@ -106,6 +107,11 @@ final class PluginRuntime {
         return (versionOf(onPath) >= MINIMUM_JAVA) ? onPath : null;
     }
 
+    /** null でも空白だけでもない（Java 8 には String#isBlank が無い） */
+    private static boolean isSet(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
     private static File executableIn(File javaHome) {
         File bin = new File(javaHome, "bin");
         return new File(bin, isWindows() ? "java.exe" : "java");
@@ -119,12 +125,16 @@ final class PluginRuntime {
         try {
             Process process = new ProcessBuilder(executable.getPath(), "-version")
                     .redirectErrorStream(true).start();
-            String text;
-            try (InputStream in = process.getInputStream()) {
-                text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            StringBuilder text = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    text.append(line).append('\n');
+                }
             }
             process.waitFor();
-            return parseVersion(text);
+            return parseVersion(text.toString());
         } catch (IOException e) {
             return 0;
         } catch (InterruptedException e) {

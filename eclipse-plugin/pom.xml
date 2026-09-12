@@ -288,20 +288,70 @@
           </execution>
         </executions>
       </plugin>
+      <!--
+        コンパイルは2本立てにする。混ぜると「プラグインが Java 8 で動く」が守れない。
+
+          解析本体（CallHierarchyExporter + jche/**、jche/eclipse を除く）
+            … release 17。子プロセス（JDK 25）で動くので新しくてよい
+          プラグイン（jche/eclipse/**）
+            … release 8。Eclipse の中で動くので、古い Eclipse（Java 8）でも読める形にする
+
+        古い JDT のモデル API だけで書けていることは test/plugin-api/run.sh が検査する
+        （このビルドのクラスパスには新しい JDT が載っているため、ここでは分からない）。
+      -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
-        <configuration>
-          <!-- 本体（リポジトリ直下の src/）は GitHub Actions で -Xlint:all -Werror を通している。
-               プラグイン側も同じ目で見る。Eclipse の API は非推奨のものを避けて書いてあるので、
-               ここも警告ゼロで通る -->
-          <compilerArgs>
-            <arg>-Xlint:all</arg>
-            <arg>-Werror</arg>
-          </compilerArgs>
-        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
+            <id>compile-core</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <release>17</release>
+              <includes>
+                <include>CallHierarchyExporter.java</include>
+                <include>jche/**</include>
+              </includes>
+              <excludes>
+                <exclude>jche/eclipse/**</exclude>
+              </excludes>
+              <compilerArgs>
+                <arg>-Xlint:all</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+          <execution>
+            <id>compile-plugin</id>
+            <phase>compile</phase>
+            <goals><goal>compile</goal></goals>
+            <configuration>
+              <release>8</release>
+              <includes>
+                <include>jche/eclipse/**</include>
+              </includes>
+              <compilerArgs>
+                <!--
+                  -options … 「source 8 は古い」という助言を消す。承知のうえで 8 にしている
+                  -classfile … 新しい Eclipse の jar にある @Deprecated(since=..., forRemoval=...)
+                               を source 8 の javac が読めない、という類の助言を消す。
+                               こちらのコードの問題ではなく、依存の jar が新しいだけ
+                  これ以外の警告は本体と同じくエラー扱いにする
+                -->
+                <arg>-Xlint:all,-options,-classfile</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
+
       <!--
         子プロセスに渡すものを target/classes/lib/ に集める。バンドルの中には入るが
         Bundle-ClassPath には載せないので、Eclipse（古い JDK かもしれない）は読まない。

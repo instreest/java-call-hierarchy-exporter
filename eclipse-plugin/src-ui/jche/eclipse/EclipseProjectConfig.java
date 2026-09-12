@@ -24,7 +24,7 @@ import org.eclipse.jdt.core.JavaModelException;
  *
  * <p>これがあるおかげで、利用者は config.properties を書かなくてもビューを使える。
  * Eclipse は必要な情報（ソースフォルダ・依存 jar・文字コード・コンパイラー準拠レベル）を
- * すでに持っているので、それを {@link jche.config.Config} の語彙へ翻訳しているだけである。
+ * すでに持っているので、それを解析側の設定（{@code config.properties}）の語彙へ翻訳しているだけである。
  *
  * <p>設定ファイルがあるときはそちらが優先される（{@link ProjectAnalysis#configSource()}）。
  * 自動生成はあくまで既定値で、細かく効かせたい（entry.packages を絞る、外部 jar の被参照を見る等）
@@ -118,9 +118,14 @@ final class EclipseProjectConfig {
         try {
             for (IClasspathEntry entry : javaProject.getResolvedClasspath(true)) {
                 switch (entry.getEntryKind()) {
-                    case IClasspathEntry.CPE_LIBRARY -> add(jars, entry.getPath());
-                    case IClasspathEntry.CPE_PROJECT -> add(jars, outputLocationOf(entry.getPath()));
-                    default -> { /* ソースは source.folders 側で扱う */ }
+                    case IClasspathEntry.CPE_LIBRARY:
+                        add(jars, entry.getPath());
+                        break;
+                    case IClasspathEntry.CPE_PROJECT:
+                        add(jars, outputLocationOf(entry.getPath()));
+                        break;
+                    default:
+                        break;   // ソースは source.folders 側で扱う
                 }
             }
         } catch (JavaModelException e) {
@@ -171,7 +176,7 @@ final class EclipseProjectConfig {
      */
     private static String complianceOf(IJavaProject javaProject) {
         String compliance = javaProject.getOption(JavaCore.COMPILER_COMPLIANCE, true);
-        return (compliance == null || compliance.isBlank()) ? "" : compliance.trim();
+        return (compliance == null || compliance.trim().isEmpty()) ? "" : compliance.trim();
     }
 
     /** 自動生成した設定を config.properties の体裁で書き出す（保存用） */

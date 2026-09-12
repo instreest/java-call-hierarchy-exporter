@@ -44,7 +44,8 @@ final class EditorOpener {
         }
         try {
             IEditorPart editor = IDE.openEditor(page, file, true);
-            if (line > 0 && editor instanceof ITextEditor textEditor) {
+            if (line > 0 && editor instanceof ITextEditor) {
+                ITextEditor textEditor = (ITextEditor) editor;
                 IDocument document = textEditor.getDocumentProvider()
                         .getDocument(textEditor.getEditorInput());
                 if (document != null) {

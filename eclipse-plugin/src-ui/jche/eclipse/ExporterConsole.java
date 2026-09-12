@@ -33,8 +33,8 @@ final class ExporterConsole {
     static ExporterConsole find() {
         IConsoleManager manager = ConsolePlugin.getDefault().getConsoleManager();
         for (IConsole existing : manager.getConsoles()) {
-            if (existing instanceof MessageConsole message && NAME.equals(message.getName())) {
-                return new ExporterConsole(message);
+            if (existing instanceof MessageConsole && NAME.equals(((MessageConsole) existing).getName())) {
+                return new ExporterConsole((MessageConsole) existing);
             }
         }
         return null;
@@ -44,7 +44,8 @@ final class ExporterConsole {
     static ExporterConsole show() {
         IConsoleManager manager = ConsolePlugin.getDefault().getConsoleManager();
         for (IConsole existing : manager.getConsoles()) {
-            if (existing instanceof MessageConsole message && NAME.equals(message.getName())) {
+            if (existing instanceof MessageConsole && NAME.equals(((MessageConsole) existing).getName())) {
+                MessageConsole message = (MessageConsole) existing;
                 message.activate();
                 return new ExporterConsole(message);
             }

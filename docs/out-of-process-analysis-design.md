@@ -9,14 +9,17 @@
    Eclipse の版に縛られなくなる
 3. プラグイン側（Eclipse の中で動く部分）から解析コードを追い出し、**Java 8 以上で動く**ようにする
 
-> **実装状況**（2026-09-12）: **S1・S2 完了**。
+> **実装状況**（2026-09-12）: **S1・S2・S3 完了**。
 > `CallHierarchyExporter --server` で標準入出力のプロトコルを話し、`ANALYZE` / `FIND` / `TREE` /
 > `EXPORT` / `CANCEL` / `SHUTDOWN` に応答する。木の切り出しと絞り込みもサーバー側に置いた
 > （`jche.server`）。検査は `test/server/run.sh`（GitHub Actions の regression ジョブで実行）。
 > プラグインは解析をいっさい行わず、子プロセス（同梱の `lib/jche-core.jar` ＋ `lib/jdt/*.jar`）を
 > 起動して問い合わせるだけになった。バンドルに解析本体のクラスは入っていない
 > （`test/plugin/run.sh` が「プラグインが jche.eclipse 以外を参照していないこと」を検査する）。
-> S3 以降（Java 8 化・下限の引き下げ・設定画面・JDK の取得）はこれから。
+> プラグインは **Java 8**（BREE `JavaSE-1.8`）でコンパイルされ、JDT は 3.10.0（2015年）、
+> プラットフォームは Eclipse 4.6（2016年）相当の API しか使っていない
+> （`test/plugin-api/run.sh` が古い jar でのコンパイルを毎回検査する）。
+> S4・S5（設定画面・JDK 25 の取得・後片付け）はこれから。
 
 ---
 
@@ -228,7 +231,7 @@ Adoptium (Eclipse Temurin) から取得しますか？（約 200MB、初回の�
 |---|---|---|
 | ~~S1~~ **済** | 本体に **サーバーモード**を足す（`CallHierarchyExporter --server`）。標準入出力でプロトコルを話す。フェーズ1〜3とフィルタ・木の切り出しは既存コードを流用 | `test/server/run.sh` で `HELLO`→`ANALYZE`→`FIND`→`TREE`→`EXPORT` の一連と、断り方（未解析・不明メソッド・知らない要求）を自動検査 |
 | ~~S2~~ **済** | プラグインを**クライアント化**（まだ Java 17 のまま）。プロセス管理・進捗・中止・再解析・CSV 出力を子プロセスへ移す | `test/plugin-client/run.sh` … クライアント層（Eclipse API を使わない部分）を Java 8 でコンパイルし、実際に子プロセスを起動して HELLO / ANALYZE / FIND / TREE / EXPORT と木の組み直しまでを確認。`test/plugin/run.sh` … バンドルに解析本体が混ざっていないことを検査 |
-| S3 | **Java 8 化**。`jche.*` 参照を消し、BREE を 1.8 に、JDT の下限（モデル API 用）を下げる。ビルドを「Java 8 のバンドル」＋「`lib/jche-core.jar`（release 17・実行は JDK 25）」＋「`lib/jdt/` に同梱する JDT 一式」の3点に | 下限 JDT・Java 8 でのビルドを CI に追加。Eclipse 4.x 系での導入確認（手動） |
+| ~~S3~~ **済** | **Java 8 化**。`jche.*` 参照を消し、BREE を 1.8 に、JDT の下限（モデル API 用）を下げる。ビルドを「Java 8 のバンドル」＋「`lib/jche-core.jar`（release 17・実行は JDK 25）」＋「`lib/jdt/` に同梱する JDT 一式」の3点に | `test/plugin-api/run.sh` … Eclipse 4.6 相当の古い jar（jdt.core 3.10.0 / ui.workbench 3.108.2 ほか）と `--release 8` でプラグインをコンパイルし、クラスファイルが Java 8（メジャー版 52）であることまで確認。実際にこの検査で `PlatformUI.getDialogSettingsProvider`（4.24〜）の混入が見つかった |
 | S4 | JDK・JDT の**設定画面**（別 JDK、別 JDT jar フォルダ、`-Xmx`、アイドル終了） | 設定を変えて子プロセスの起動コマンドが変わることを確認 |
 | S5 | 後片付け（不要になった in-process 経路の削除、ドキュメント更新） | 全テスト |
 

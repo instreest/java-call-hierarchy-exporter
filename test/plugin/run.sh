@@ -82,7 +82,12 @@ if grep -q '^Bundle-ClassPath' "$PLUGIN/META-INF/MANIFEST.MF"; then
 else
     ok "Bundle-ClassPath は無い（lib/ は子プロセスの -cp にだけ渡す）"
 fi
-leaks=$(grep -rhE '^import jche\.' "$PLUGIN/src-ui" | grep -v '^import jche\.eclipse\.' | sort -u)
+# import だけでなく、完全修飾名での参照も見る（import が無くても依存は依存）。
+# コメント行（* や // で始まる行）は説明なので除く
+leaks=$(grep -rhE 'jche\.(analysis|cache|config|graph|report|external|extension|server|util)\.[A-Za-z]+' "$PLUGIN/src-ui" \
+    | grep -vE '^\s*(\*|//|/\*)' \
+    | grep -oE 'jche\.(analysis|cache|config|graph|report|external|extension|server|util)\.[A-Za-z]+' \
+    | sort -u)
 if [ -n "$leaks" ]; then
     fail "プラグインが解析本体を直接参照している（別プロセスにした意味が無くなる）:"
     echo "$leaks" | sed 's/^/       /'
@@ -111,21 +116,31 @@ else
     fail "ビュー ID が plugin.xml ($view_id) とソースの VIEW_ID で食い違う。ビューを開けなくなる"
 fi
 
-# 6) build.properties の source フォルダ
+# 6) build.properties と PDE の構成
 echo "== build.properties =="
-for dir in $(sed -n '/^source\.\. *=/,/[^\\]$/p' "$PLUGIN/build.properties" \
+for dir in $(grep -E '^source\.\. *=' "$PLUGIN/build.properties" \
         | sed -E 's|^source\.\. *=||' | tr -d ' \\' | tr ',' '\n' | grep -v '^$'); do
-    if [ -e "$PLUGIN/${dir%/}" ] || { [ "${dir%/}" = "src" ] && [ -d "$ROOT/src" ]; }; then
+    if [ -e "$PLUGIN/${dir%/}" ]; then
         ok "source.. の $dir がある"
     else
         fail "source.. の $dir が無い"
     fi
 done
-# リンクフォルダ src の実体がリポジトリ直下の src/ を指しているか
-if grep -q 'PARENT-1-PROJECT_LOC/src' "$PLUGIN/.project"; then
-    ok ".project のリンクフォルダ src がリポジトリ直下の src/ を指している"
+if grep -qE '^source\.\. *=.*\bsrc/' "$PLUGIN/build.properties"; then
+    fail "build.properties が解析本体（src/）もコンパイル対象にしている。"\
+"プラグインは Java 8、解析本体は Java 17 なので混ぜられない"
 else
-    fail ".project にリンクフォルダ src の定義が無い。PDE が解析本体をコンパイルできない"
+    ok "PDE がコンパイルするのは src-ui/ だけ（解析本体は lib/jche-core.jar として同梱）"
+fi
+if grep -q 'lib/' "$PLUGIN/build.properties"; then
+    ok "bin.includes に lib/ が入っている（同梱物がバンドルに含まれる）"
+else
+    fail "bin.includes に lib/ が無い。PDE でエクスポートすると解析本体が入らない"
+fi
+if grep -q 'JavaSE-1.8' "$PLUGIN/META-INF/MANIFEST.MF"; then
+    ok "Bundle-RequiredExecutionEnvironment が JavaSE-1.8（Java 8 の Eclipse でも入る）"
+else
+    fail "BREE が JavaSE-1.8 ではない"
 fi
 
 if [ "$ng" -eq 0 ]; then echo "PASS"; else echo "FAIL ($ng 件)"; exit 1; fi
