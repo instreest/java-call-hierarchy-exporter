@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.cli.App;
+import jche.cli.LauncherSettings;
 import jche.cli.Terminal;
 import jche.config.ToolRoot;
 
@@ -31,6 +32,9 @@ import jche.config.ToolRoot;
  * バッチやタスクスケジューラ、CI から呼べるようにするため。終了コードは、すべて成功なら 0、
  * 1 つでも失敗すれば 1、引数が誤っていれば 2。
  * 起動コマンド側も、引数があるときは JDK / JBang の置き場所を尋ねない（既定のまま進む）。
+ * 例外はネットワークからの取得（JBang 本体・JDK・依存 jar）で、必要なときは引数の有無によらず起動コマンドが
+ * 操作者に確認する（Issue #86）。取りやめたときの終了コードは 3。この確認は Java が動く前の話なので
+ * 起動コマンド側にあり、ここでは「アプリが始まった」目印（{@link LauncherSettings#markStarted()}）を置くだけ。
  *
  * 起動コマンドは自分のあるフォルダを環境変数 {@code JCHE_ROOT} で渡してくる。どこから実行しても
  * ツールのプロジェクトフォルダ（キャッシュ・設定ファイルの置き場所）が同じになるようにするため。
@@ -42,6 +46,9 @@ import jche.config.ToolRoot;
 public class Jche {
 
     public static void main(String[] args) throws Exception {
+        // 起動コマンドが「jbang がアプリを始められなかった（JDK / 依存 jar の取得が要る）」と見分けるための目印。
+        // 引数の検査より前に置く（知らないオプションで 2 を返すのもアプリの判断なので、取得の確認にしない）
+        LauncherSettings.markStarted();
         List<Path> configPaths = new ArrayList<>();
         for (String a : args) {
             if (a.equals("--help") || a.equals("-h")) {
@@ -82,9 +89,10 @@ public class Jche {
         System.out.println("  java-call-hierarchy-exporter.sh --help                       この説明");
         System.out.println();
         System.out.println("設定ファイルを渡したときは、何も尋ねずに解析だけを行って終わる（バッチやタスクスケジューラ、CI 向け）。");
-        System.out.println("終了コードは、すべて成功なら 0、1 つでも失敗すれば 1、引数が誤っていれば 2。");
+        System.out.println("ただし JBang 本体・JDK・依存 jar をネットワークから取得する必要があるときだけは、取得してよいかを確認する。");
+        System.out.println("終了コードは、すべて成功なら 0、1 つでも失敗すれば 1、引数が誤っていれば 2、取得を取りやめたら 3。");
         System.out.println();
-        System.out.println("JDK / JBang の置き場所や JVM のオプションは launcher.properties（プロジェクト直下）で決まる。");
-        System.out.println("対話モードの「環境設定」から書き換えられる。");
+        System.out.println("JDK / JBang の置き場所や JVM のオプション、取得の確認の要否（JCHE_ALLOW_DOWNLOAD=yes / no）は");
+        System.out.println("launcher.properties（プロジェクト直下）で決まる。対話モードの「環境設定」から書き換えられる。");
     }
 }

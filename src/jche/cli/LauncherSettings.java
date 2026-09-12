@@ -33,12 +33,20 @@ public final class LauncherSettings {
     public static final String FILE_NAME = "launcher.properties";
     /** 起動コマンドが「アプリの終了後にもう一度起動する」合図として見るファイル（ツールのプロジェクトフォルダからの相対） */
     public static final String RESTART_MARKER = ".cache/launcher.restart";
+    /**
+     * 「アプリが始まった」目印（ツールのプロジェクトフォルダからの相対）。起動コマンドは {@code jbang run --offline} で
+     * 動かし、失敗したときにこのファイルの有無で「アプリの失敗」と「取得済みの JDK / 依存 jar が足りず jbang が
+     * アプリを始められなかった」を見分け、後者ならネットワークからの取得を確認する（Issue #86）
+     */
+    public static final String STARTED_MARKER = ".cache/launcher.started";
 
     public static final String KEY_JBANG_DIR = "JBANG_DIR";
     public static final String KEY_JBANG_REPO = "JBANG_REPO";
     public static final String KEY_JAVA_OPTS = "JCHE_JAVA_OPTS";
     public static final String KEY_JBANG_OPTS = "JCHE_JBANG_OPTS";
-    private static final String[] KNOWN_KEYS = {KEY_JBANG_DIR, KEY_JBANG_REPO, KEY_JAVA_OPTS, KEY_JBANG_OPTS};
+    /** ネットワークからの取得（JBang 本体・JDK・依存 jar）を尋ねずに行うなら yes、行わないなら no、空欄は毎回尋ねる */
+    public static final String KEY_ALLOW_DOWNLOAD = "JCHE_ALLOW_DOWNLOAD";
+    private static final String[] KNOWN_KEYS = {KEY_JBANG_DIR, KEY_JBANG_REPO, KEY_JAVA_OPTS, KEY_JBANG_OPTS, KEY_ALLOW_DOWNLOAD};
 
     /** 「このプロジェクトの中」を選んだときの置き場所（ツールのプロジェクトフォルダからの相対） */
     public static final String PROJECT_LOCAL_JBANG_DIR = ".jbang";
@@ -99,6 +107,7 @@ public final class LauncherSettings {
         lines.add("#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）");
         lines.add("#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）");
         lines.add("#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）");
+        lines.add("#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる");
         for (String key : KNOWN_KEYS) {
             lines.add(key + "=" + get(key));
         }
@@ -200,6 +209,25 @@ public final class LauncherSettings {
         Path marker = root.resolve(RESTART_MARKER);
         Files.createDirectories(marker.getParent());
         Files.write(marker, new byte[0]);
+    }
+
+    /**
+     * 起動コマンドに「アプリが始まった」と伝える（{@link #STARTED_MARKER}）。main の最初に呼ぶ。
+     * 起動コマンドを通していないとき（{@code JCHE_ROOT} が無い）は何もしない。
+     * 書けなくても（フォルダを作れない等）アプリは続ける。その場合、失敗時に起動コマンドが取得の確認を出すことがあるだけ
+     */
+    public static void markStarted() {
+        String rootEnv = System.getenv("JCHE_ROOT");
+        if (rootEnv == null || rootEnv.isEmpty()) {
+            return;
+        }
+        try {
+            Path marker = Paths.get(rootEnv).resolve(STARTED_MARKER);
+            Files.createDirectories(marker.getParent());
+            Files.write(marker, new byte[0]);
+        } catch (IOException | RuntimeException e) {
+            // 目印は無くても動く
+        }
     }
 
     /** 起動コマンド（bash / cmd）が読むときの文字コードに合わせる */

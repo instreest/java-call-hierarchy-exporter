@@ -7,10 +7,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 対話モードの「環境設定」画面。JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限、
- * jbang の追加オプションを {@code launcher.properties} に書き、希望すれば再起動して反映する
+ * jbang の追加オプション、ネットワークからの取得の確認の要否を {@code launcher.properties} に書き、希望すれば再起動して反映する
  * （{@link LauncherSettings}）。{@link App} のメニュー 3) から呼ばれる。
  */
 final class EnvironmentSettingsScreen {
@@ -57,6 +58,7 @@ final class EnvironmentSettingsScreen {
                     + "（今の実行では " + EnvironmentInfo.maxHeapMb() + " MB）");
             String jbangOpts = settings.get(LauncherSettings.KEY_JBANG_OPTS);
             t.println(" 4) jbang の追加オプション    : " + (jbangOpts.isEmpty() ? "（なし）" : jbangOpts));
+            t.println(" 5) ネットワークからの取得    : " + describeAllowDownload(settings.get(LauncherSettings.KEY_ALLOW_DOWNLOAD)));
             for (String k : settings.extraKeys()) {
                 t.println("    " + k + "=" + settings.get(k) + "（手で足された項目。そのまま残します）");
             }
@@ -67,13 +69,14 @@ final class EnvironmentSettingsScreen {
                 case "2" -> changed |= changeRepo();
                 case "3" -> changed |= changeHeap();
                 case "4" -> changed |= changeJbangOpts();
+                case "5" -> changed |= changeAllowDownload();
                 case "q", "" -> {
                     if (changed) {
                         return offerRestart();
                     }
                     return false;
                 }
-                default -> t.println("  1〜4 か q を入力してください。");
+                default -> t.println("  1〜5 か q を入力してください。");
             }
         }
     }
@@ -218,6 +221,46 @@ final class EnvironmentSettingsScreen {
         settings.set(LauncherSettings.KEY_JBANG_OPTS, value);
         settings.save();
         t.println("  保存しました: " + LauncherSettings.KEY_JBANG_OPTS + "=" + value);
+        return true;
+    }
+
+    /** {@code JCHE_ALLOW_DOWNLOAD} の値の説明（起動コマンドの読み方と同じ: yes / no、それ以外は毎回尋ねる） */
+    static String describeAllowDownload(String value) {
+        switch (value.trim().toLowerCase(Locale.ROOT)) {
+            case "yes", "y", "true", "1":
+                return "尋ねずに取得する（" + value + "）";
+            case "no", "n", "false", "0":
+                return "取得しない（" + value + "）";
+            default:
+                return "取得の前に毎回尋ねる" + (value.isEmpty() ? "（既定）" : "（" + value + " は yes / no のどちらでもないので既定と同じ）");
+        }
+    }
+
+    private boolean changeAllowDownload() throws IOException {
+        t.println();
+        t.println("JBang 本体・JDK・依存 jar（JDT ほか）が無いとき、起動コマンドはネットワークから取得する前に確認します。");
+        t.println("その確認をどうするか:");
+        t.println("  1) 毎回尋ねる（既定）  端末が無いとき（パイプ・CI・タスクスケジューラ）は取得せず終了コード 3 で終わる");
+        t.println("  2) 尋ねずに取得する    JCHE_ALLOW_DOWNLOAD=yes。無人で動かす環境で、取得してよいと決めてある場合");
+        t.println("  3) 取得しない          JCHE_ALLOW_DOWNLOAD=no。閉域ネットワークなど、取得済みのものだけで動かす場合");
+        t.println("  q) 変えない");
+        String choice = t.readLine("jche/env/download> ");
+        String value;
+        switch (choice) {
+            case "1" -> value = "";
+            case "2" -> value = "yes";
+            case "3" -> value = "no";
+            default -> {
+                return false;
+            }
+        }
+        if (value.equals(settings.get(LauncherSettings.KEY_ALLOW_DOWNLOAD))) {
+            t.println("  今と同じです。");
+            return false;
+        }
+        settings.set(LauncherSettings.KEY_ALLOW_DOWNLOAD, value);
+        settings.save();
+        t.println("  保存しました: " + LauncherSettings.KEY_ALLOW_DOWNLOAD + "=" + value + "（" + describeAllowDownload(value) + "）");
         return true;
     }
 

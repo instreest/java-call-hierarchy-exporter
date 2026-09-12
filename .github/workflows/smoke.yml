@@ -44,7 +44,9 @@ jobs:
         run: bash test/dataflow/run.sh
 
       # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
-      # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う
+      # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う。
+      # 起動コマンドはネットワークからの取得の前に確認を出し、端末が無ければ取得せずに終わる（Issue #86）。
+      # ここでは上のステップで JBang・依存 jar が取得済み、JDK 25 は setup-java のものなので、確認に掛からず動く
       - name: CLI test (java-call-hierarchy-exporter.sh launcher and interactive mode)
         run: bash test/cli/run.sh
 
@@ -69,6 +71,8 @@ jobs:
 
       # 起動コマンド java-call-hierarchy-exporter.cmd。ラッパーと同じく分岐のほとんどが Windows 固有（%~dp0、for /f、遅延展開の回避、
       # timeout による端末判定）なので、ここで実際に動かす。標準入力が端末でないので初回の問いは出ない。
+      # ネットワークからの取得の確認（Issue #86）も、上の run.cmd で JBang と依存 jar が %userprofile% に取得済み、
+      # JDK 25 は setup-java のものなので掛からない（掛かると取得せずに終了コード 3 で終わり、出力フォルダができない）。
       # 1) 対話なし: 引数の設定ファイルを解析して出力フォルダができること
       # 2) 対話モード: メニューの答え（4 = 状態表示, Enter, q）をパイプで流し込み、状態表示の行が出ること
       #    launcher.properties にヒープ上限を書いておき、-R で JVM に渡ったこと（ヒープ上限の表示）も見る

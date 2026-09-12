@@ -6,12 +6,13 @@
 #
 # 対話モードはメニューを標準入力から読むので、答えをパイプで流し込んで動かす（端末は要らない）。
 # 見るのは、
-#   --help / 知らないオプション / 対話なしの解析（引数に設定ファイル。初回の質問をしないこと）/ 状態表示 / 設定ファイルの作成ウィザード /
-#   パス指定での解析 / 環境設定の変更（ヒープ上限）→ launcher.properties の書き換え → 再起動 → 反映
+#   --help / 知らないオプション / 対話なしの解析（引数に設定ファイル。初回の質問をしないこと）/
+#   ネットワークからの取得の確認（確認できないときは取得しないこと。Issue #86）/ 状態表示 / 設定ファイルの作成ウィザード /
+#   パス指定での解析 / 環境設定の変更（ヒープ上限・取得の確認）→ launcher.properties の書き換え → 再起動 → 反映
 # の一連。解析結果の中身は見ない（それは test/regression/ の役目）。
 #
 # launcher.properties はこのテストが書き換えるので、あれば退避して最後に戻す。config/cli-test.properties と
-# その出力（config/<日時>_demo/）、.cache/recent-configs.txt もテストが作るものなので消す。
+# その出力（config/<日時>_demo/）、.cache/recent-configs.txt、.cache/launcher.started もテストが作るものなので消す。
 # ログの検査は ASCII の部分だけで行う（標準出力の文字コードは端末に依るため。test/regression/run.sh と同じ方針）。
 # ただし起動コマンド自身（bash）が出す行はスクリプトの文字コード（UTF-8）で出るので、そこは日本語で照合できる。
 #
@@ -26,9 +27,12 @@ BACKUP="$ROOT/launcher.properties.cli-test-backup"
 CONFIG="$ROOT/config/cli-test.properties"
 LOGDIR="$ROOT/test/cli"
 fail=0
+# ネットワークからの取得の検査で使う、JBang / 依存 jar が「無い」置き場所（使い捨て）
+NET_WORK=$(mktemp -d)
 
 cleanup() {
-    rm -f "$CONFIG" "$ROOT/.cache/recent-configs.txt" "$ROOT/.cache/launcher.restart"
+    rm -f "$CONFIG" "$ROOT/.cache/recent-configs.txt" "$ROOT/.cache/launcher.restart" "$ROOT/.cache/launcher.started"
+    rm -rf "$NET_WORK"
     rm -rf "$ROOT"/config/*_demo/
     if [ -f "$BACKUP" ]; then
         mv -f "$BACKUP" "$SETTINGS"
@@ -73,6 +77,8 @@ else
 fi
 expect_log "$LOGDIR/run-batch.log" "call-hierarchy.csv" "解析が完了した"
 if ls "$ROOT"/test/regression/entry/output/*/call-hierarchy.csv > /dev/null 2>&1; then ok "出力フォルダができた"; else ng "出力フォルダが無い"; fi
+expect_not_log "$LOGDIR/run-batch.log" "ネットワークからの取得が必要です" "取得済みのもので動いたので取得の確認は出ない"
+if [ -f "$ROOT/.cache/launcher.started" ]; then ok "アプリが「始まった」目印を置いた"; else ng "目印 .cache/launcher.started が無い"; fi
 if "$JCHE" "$ROOT/no-such-config.properties" > "$LOGDIR/run-batch-fail.log" 2>&1; then
     ng "存在しない設定ファイルで終了コードが 0"
 else
@@ -88,6 +94,54 @@ rm -f "$SETTINGS"
 "$JCHE" "$ROOT/no-such-config.properties" > "$LOGDIR/run-batch-firstrun.log" 2>&1
 expect_not_log "$LOGDIR/run-batch-firstrun.log" "初回の設定" "置き場所を尋ねていない"
 expect_not_log "$LOGDIR/run-batch-firstrun.log" "1) 解析を実行する" "メニューを出していない"
+
+echo "== ネットワークからの取得は確認なしに行わない（Issue #86）=="
+# 端末が無い今の環境では確認できないので、取得せずに終了コード 3 で終わり、置き場所には何もできないことを見る。
+# a) JBang 本体が無い（JBANG_DIR を空のフォルダにする）→ ラッパーを走らせる前に止まる
+write_net_settings() {   # $1=JBANG_DIR  $2=JCHE_JBANG_OPTS  $3=JCHE_ALLOW_DOWNLOAD
+    printf 'JBANG_DIR=%s\nJBANG_REPO=%s/repo\nJCHE_JAVA_OPTS=\nJCHE_JBANG_OPTS=%s\nJCHE_ALLOW_DOWNLOAD=%s\n' "$1" "$NET_WORK" "$2" "$3" > "$SETTINGS"
+}
+expect_refused() {   # $1=ログ  $2=終了コード  $3=ラベル
+    if [ "$2" = 3 ]; then ok "$3: 終了コード 3"; else ng "$3: 終了コードが 3 ではない（$2）"; tail -5 "$1"; fi
+    expect_log "$1" "ネットワークからの取得が必要です" "$3: 取得が必要なことを知らせた"
+    expect_log "$1" "取得を取りやめました" "$3: 取得を取りやめた"
+    expect_not_log "$1" "Downloading" "$3: 何も取得していない（ラッパーの Downloading が出ていない）"
+    if [ -z "$(ls -A "$NET_WORK/repo" 2> /dev/null)" ]; then ok "$3: 依存 jar の置き場所は空のまま"; else ng "$3: 依存 jar の置き場所に何かできた"; fi
+}
+mkdir -p "$NET_WORK/repo"
+write_net_settings "$NET_WORK/jbang-missing" "" ""
+"$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-bootstrap.log" 2>&1
+expect_refused "$LOGDIR/run-net-bootstrap.log" $? "JBang 本体が無い"
+expect_log "$LOGDIR/run-net-bootstrap.log" "JBang 本体" "JBang 本体が無い: 取得するものに JBang 本体が挙がった"
+expect_log "$LOGDIR/run-net-bootstrap.log" "端末が無いため確認できません" "JBang 本体が無い: 端末が無いので尋ねられないと知らせた"
+expect_log "$LOGDIR/run-net-bootstrap.log" "JCHE_ALLOW_DOWNLOAD=yes" "JBang 本体が無い: 尋ねずに取得する方法を知らせた"
+if [ ! -e "$NET_WORK/jbang-missing" ]; then ok "JBang 本体が無い: 置き場所は作られていない"; else ng "JBang 本体が無い: 置き場所に何かできた"; fi
+# b) JCHE_ALLOW_DOWNLOAD=no → 端末の有無によらず取得しない
+write_net_settings "$NET_WORK/jbang-missing" "" "no"
+"$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-no.log" 2>&1
+expect_refused "$LOGDIR/run-net-no.log" $? "JCHE_ALLOW_DOWNLOAD=no"
+expect_log "$LOGDIR/run-net-no.log" "JCHE_ALLOW_DOWNLOAD=no なので取得しません" "JCHE_ALLOW_DOWNLOAD=no: 理由を知らせた"
+# c) JCHE_JBANG_OPTS の --offline → 利用者が「ネットワークに出ない」と決めているので取得しない
+write_net_settings "$NET_WORK/jbang-missing" "--offline" ""
+"$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-offline.log" 2>&1
+expect_refused "$LOGDIR/run-net-offline.log" $? "--offline 指定"
+expect_log "$LOGDIR/run-net-offline.log" "JCHE_JBANG_OPTS に --offline があるので取得しません" "--offline 指定: 理由を知らせた"
+# d) JBang 本体はあるが依存 jar が無い（JBang をコピーした新しい置き場所と、空のリポジトリ）
+#    → jbang run --offline がアプリを始める前に失敗し、目印（.cache/launcher.started）ができないので取得の確認になる
+jbang_home="${JBANG_DIR:-$HOME/.jbang}"
+if [ -f "$jbang_home/bin/jbang.jar" ]; then
+    mkdir -p "$NET_WORK/jbang-nodeps/bin"
+    cp "$jbang_home"/bin/* "$NET_WORK/jbang-nodeps/bin/"
+    write_net_settings "$NET_WORK/jbang-nodeps" "" ""
+    rm -f "$ROOT/.cache/launcher.started"
+    "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-deps.log" 2>&1
+    expect_refused "$LOGDIR/run-net-deps.log" $? "依存 jar が無い"
+    expect_log "$LOGDIR/run-net-deps.log" "取得済みの JDK と依存 jar だけでは起動できませんでした" "依存 jar が無い: --offline での起動に失敗したと知らせた"
+    if [ ! -f "$ROOT/.cache/launcher.started" ]; then ok "依存 jar が無い: アプリは始まっていない"; else ng "依存 jar が無い: アプリが始まった目印がある"; fi
+else
+    echo "  SKIP JBang 本体（$jbang_home/bin/jbang.jar）が無いので「依存 jar が無い」の検査は飛ばす"
+fi
+rm -rf "$NET_WORK/jbang-nodeps" "$NET_WORK/jbang-missing" "$NET_WORK/repo"
 
 echo "== 状態表示（launcher.properties が無いとき）=="
 rm -f "$SETTINGS"
@@ -142,6 +196,16 @@ if [ -e "$ROOT/.cache/launcher.restart" ]; then ng "再起動の目印が残っ�
 printf '4\n\nq\n' | "$JCHE" > "$LOGDIR/run-status2.log" 2>&1
 expect_log "$LOGDIR/run-status2.log" "512 MB" "次の起動でヒープ上限が反映された"
 expect_log "$LOGDIR/run-status2.log" "JCHE_JAVA_OPTS=-Xmx512m" "環境変数として渡された"
+
+echo "== 環境設定（ネットワークからの取得）→ launcher.properties =="
+# 3) 環境設定 → 5) ネットワークからの取得 → 2（尋ねずに取得する）→ q（戻る）→ n（再起動しない）→ q
+printf '3\n5\n2\nq\nn\nq\n' | "$JCHE" > "$LOGDIR/run-env-download.log" 2>&1
+if grep -q '^JCHE_ALLOW_DOWNLOAD=yes$' "$SETTINGS"; then ok "launcher.properties に JCHE_ALLOW_DOWNLOAD=yes が書かれた"; else ng "launcher.properties: $(grep JCHE_ALLOW_DOWNLOAD "$SETTINGS")"; fi
+if grep -q '^JCHE_JAVA_OPTS=-Xmx512m$' "$SETTINGS"; then ok "他の項目は保たれた"; else ng "JCHE_JAVA_OPTS が失われた"; fi
+expect_log "$LOGDIR/run-env-download.log" "JCHE_ALLOW_DOWNLOAD=yes" "保存した内容が表示された"
+# 1（毎回尋ねる）に戻す
+printf '3\n5\n1\nq\nn\nq\n' | "$JCHE" > "$LOGDIR/run-env-download2.log" 2>&1
+if grep -q '^JCHE_ALLOW_DOWNLOAD=$' "$SETTINGS"; then ok "空欄（毎回尋ねる）に戻せた"; else ng "launcher.properties: $(grep JCHE_ALLOW_DOWNLOAD "$SETTINGS")"; fi
 
 echo "== java-call-hierarchy-exporter.cmd の構造（Windows 用。ここでは中身を読むだけ）=="
 # java-call-hierarchy-exporter.cmd は cmd.exe でしか動かせないので、Linux 側では「壊れていないこと」だけを見る。
