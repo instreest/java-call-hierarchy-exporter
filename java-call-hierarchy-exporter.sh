@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # java-call-hierarchy-exporter の起動コマンド（Linux / macOS / Git Bash。Windows のコマンドプロンプトは java-call-hierarchy-exporter.cmd）。
 #
-#   ./java-call-hierarchy-exporter.sh                          対話モード（メニューで設定ファイルを選んで解析する）
-#   ./java-call-hierarchy-exporter.sh a.properties [b.properties…] 対話なしで解析する（jbang で src/CallHierarchyExporter.java を直接動かすのと同じ）
+#   ./java-call-hierarchy-exporter.sh                          引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
+#   ./java-call-hierarchy-exporter.sh a.properties [b.properties…] 引数あり … 対話なしで解析する（jbang で src/CallHierarchyExporter.java を直接動かすのと同じ）
 #   ./java-call-hierarchy-exporter.sh --help
+#
+# 設定ファイルを渡したときは何も尋ねない（Issue #83）。初回で launcher.properties がまだ無ければ、
+# 置き場所の質問は出さずに既定（このプロジェクトの中の .jbang）で作り、その旨を 1 行出すだけにする。
 #
 # どこから実行してもよい（このファイルのあるフォルダを起点にする）。
 #
 # やること:
 #   1. launcher.properties（このフォルダ直下）を読み、JDK / JBang の置き場所（JBANG_DIR 等）や JVM のオプションを
-#      環境変数にする。無ければ、対話できるときだけ置き場所を尋ねて作る（初回だけ）。
+#      環境変数にする。無ければ、対話できるときだけ置き場所を尋ねて作る（初回だけ。引数があるときは尋ねずに既定で作る）。
 #   2. jbangw/jbang（同梱の JBang ラッパー）で src/Jche.java を動かす。JDK と依存 jar は初回に自動で取得される。
 #   3. アプリが「再起動して設定を反映」を要求したとき（.cache/launcher.restart ができる）は 1 からやり直す。
 #      置き場所や JVM オプションは Java が起動する前に決まるので、Java 側からは変えられない。
@@ -21,7 +24,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SETTINGS="$ROOT/launcher.properties"
 RESTART="$ROOT/.cache/launcher.restart"
 
-# --- 初回: JDK / JBang の置き場所を尋ねる（対話できるときだけ。パイプや CI では JBang の既定のまま） ---
+# --- 初回: JDK / JBang の置き場所を尋ねる（引数なしで対話できるときだけ。パイプや CI では JBang の既定のまま） ---
 first_run_prompt() {
   echo "java-call-hierarchy-exporter: 初回の設定"
   echo
@@ -104,10 +107,26 @@ run_once() {
   exec "$ROOT/jbangw/jbang" run ${opts[@]+"${opts[@]}"} "$ROOT/src/Jche.java" "$@"
 }
 
-case " $* " in
-  *" --help "*|*" -h "*) ;;
-  *) if [ ! -f "$SETTINGS" ] && [ -t 0 ] && [ -t 1 ]; then first_run_prompt; fi ;;
-esac
+# 引数の種類を見る（--help なら何もしない。設定ファイルが1つでもあれば対話なしの実行）
+show_help=0
+has_config=0
+for arg in "$@"; do
+  case "$arg" in
+    --help|-h) show_help=1 ;;
+    *) has_config=1 ;;
+  esac
+done
+
+if [ "$show_help" = 0 ] && [ ! -f "$SETTINGS" ] && [ -t 0 ] && [ -t 1 ]; then
+  if [ "$has_config" = 1 ]; then
+    # 引数ありは対話なしで実行する。置き場所は尋ねず、既定（このプロジェクトの中）にして知らせるだけ
+    write_settings ".jbang" ".jbang/repository"
+    echo "java-call-hierarchy-exporter: JDK と JBang は $ROOT/.jbang に置きます（変えるときは $SETTINGS）。"
+    echo
+  else
+    first_run_prompt
+  fi
+fi
 
 while :; do
   rm -f "$RESTART"

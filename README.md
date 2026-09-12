@@ -18,25 +18,28 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 
 1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
 
-2. 実行する … リポジトリ直下の起動コマンドを実行し、メニューで `1) 解析を実行する` を選びます。
-   初回はJDKとJBangのキャッシュファイル格納場所を尋ねられるので、「このプロジェクトフォルダ内」を選んでください。
+2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。何も尋ねずに解析だけを行います。
 
    ```bat
-   rem Windows（エクスプローラーからダブルクリックでも可）
-   .\java-call-hierarchy-exporter.cmd
+   rem Windows
+   .\java-call-hierarchy-exporter.cmd config\config.properties
    ```
 
    ```bash
    # Linux / macOS / Git Bash
-   ./java-call-hierarchy-exporter.sh
+   ./java-call-hierarchy-exporter.sh config/config.properties
    ```
 
 3. 結果を見る … `config/<解析開始日時>_<プロジェクト名>/` に `call-hierarchy.csv`（呼び出し階層）と
    `methods.csv`（メソッド一覧）ができます。UTF-8（BOM 付き）なのでそのまま Excel で開けます。
 
+引数なしで起動すると、設定ファイルをメニューから選ぶ対話モードになります（[起動コマンド](#起動コマンド)）。
+初回に JDK と JBang（合わせて数百 MB）を置く場所は、引数ありのときは尋ねずに **このプロジェクトの中（`.jbang/`）** にします。
+変えるときは `launcher.properties`（リポジトリ直下）を編集するか、対話モードの「環境設定」から書き換えます。
+
 ### コマンドからの実行
 
-対話的でなく実行する場合は jbang コマンドを使用し、実行Javaソースファイルと設定ファイルを引数として渡します。
+起動コマンドを使わず jbang から直接動かすこともできます。実行Javaソースファイルと設定ファイルを引数として渡します。
 
 ```bash
 ./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
@@ -125,27 +128,40 @@ Eclipse（Pleiades）の jar でコンパイルして動かす方法、Eclipse �
 起動コマンドの「設定ファイルを新しく作る」で、解析対象のフォルダを入力してこれらを埋めた設定ファイルを作ることもできます。
 全項目の説明は設定ファイル内のコメントにあります。
 
-### 起動コマンド（対話モード）
+### 起動コマンド
 
-リポジトリ直下の `java-call-hierarchy-exporter.cmd`（Windows）/ `java-call-hierarchy-exporter.sh`（Linux / macOS / Git Bash）を実行すると、
-メニューで操作する対話モードが立ち上がります。どのフォルダから実行してもかまいません。
+リポジトリ直下の `java-call-hierarchy-exporter.cmd`（Windows）/ `java-call-hierarchy-exporter.sh`（Linux / macOS / Git Bash）が
+起動コマンドです。どのフォルダから実行してもかまいません。引数で振る舞いが変わります。
+
+| 引数 | 動き |
+|---|---|
+| 設定ファイル（複数可） | 対話なしで解析する。メニューも質問も出ないので、バッチ・タスクスケジューラ・CI から呼べる。終了コードは、すべて成功なら 0、1 つでも失敗すれば 1、引数が誤っていれば 2 |
+| なし | メニューで操作する対話モード |
+| `--help` / `-h` | 使い方を表示する |
 
 ```bat
-rem Windows（コマンドプロンプト・PowerShell。エクスプローラーからダブルクリックでも可）
+rem Windows（コマンドプロンプト・PowerShell）
+java-call-hierarchy-exporter.cmd config\app-a.properties config\app-b.properties
 java-call-hierarchy-exporter.cmd
 ```
 
 ```bash
 # Linux / macOS / Git Bash
+./java-call-hierarchy-exporter.sh config/app-a.properties config/app-b.properties
 ./java-call-hierarchy-exporter.sh
 ```
 
-初回は、このツールが使う JDK と JBang（合わせて数百 MB）を **このプロジェクトの中（`.jbang/`）** に置くか
-**ユーザーのホーム（`~/.jbang`、JBang の既定）** に置くかを尋ねます。選んだ内容は `launcher.properties`
-（リポジトリ直下。Git では追跡しない）に保存され、次回からは尋ねません。
-プロジェクトの中を選ぶと他の環境を汚さず、フォルダごと消せば元に戻ります。
+初回は、このツールが使う JDK と JBang（合わせて数百 MB）の置き場所が決まります。
+**引数ありのとき**は何も尋ねず、**このプロジェクトの中（`.jbang/`）** にします。
+**引数なし（対話モード）のとき**だけ、プロジェクトの中か **ユーザーのホーム（`~/.jbang`、JBang の既定）** かを尋ねます。
+決まった内容は `launcher.properties`（リポジトリ直下。Git では追跡しない）に保存され、次回からは尋ねません
+（標準入力が端末でないとき（パイプ・CI）は保存もせず、JBang の既定のまま動きます）。
+プロジェクトの中に置くと他の環境を汚さず、フォルダごと消せば元に戻ります。
 `java-call-hierarchy-exporter.cmd` だけは文字コードが MS932（Shift_JIS）です（コマンドプロンプトがバッチファイルを画面のコードページで読むため。
 編集するときは MS932 のまま保存してください）。
+
+対話モードのメニューは次のとおりです。設定ファイルを引数に渡したときは、この画面を通らずに解析だけを行います
+（下記の jbang 直接実行と同じ結果になります）。
 
 ```
 ================================================================
@@ -170,12 +186,6 @@ jche>
 | 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`config/<名前>.properties` を作る。ひな形は `config/config.properties` なので全項目の説明コメントも写る。続けて解析もできる |
 | 3) 環境設定 | JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限（`-Xmx`）、`jbang run` の追加オプション（`--offline` 等）。`launcher.properties` に保存し、その場で再起動して反映できる |
 | 4) 実行環境の状態 | 実際に使っている JDK・JDT の jar・置き場所とその大きさ・解析キャッシュの一覧 |
-
-設定ファイルを引数に渡すと対話なしで解析します（下記の jbang 直接実行と同じ。バッチやタスクスケジューラ向け）。
-
-```bat
-java-call-hierarchy-exporter.cmd config\app-a.properties config\app-b.properties
-```
 
 `launcher.properties` の項目は次のとおりです（対話モードの「環境設定」で書き換えるほか、手で編集してもかまいません。
 キーはそのまま環境変数になります）。
