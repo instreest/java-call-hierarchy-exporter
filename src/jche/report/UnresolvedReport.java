@@ -1,9 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.report;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -14,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import jche.cache.CacheFormat;
+import jche.cache.CacheReader;
 import jche.cache.UnresolvedCallFact;
 import jche.config.Config;
 import jche.graph.CallGraph;
@@ -59,11 +58,10 @@ public final class UnresolvedReport {
         Map<Integer, List<String>> pending = new HashMap<>();   // 順番待ちのファイルのU行（生の行）
         int next = 0;            // 次に書き出すべきファイルの順位
         int currentRank = -1;    // 読んでいる最中のブロックの順位
-        try (BufferedReader in = Files.newBufferedReader(config.cacheFile, StandardCharsets.UTF_8)) {
-            in.readLine();   // バージョン行
-            String line;
-            while ((line = in.readLine()) != null) {
-                char rowType = CacheFormat.rowTypeOf(line);
+        try (CacheReader in = CacheReader.open(config.cacheFile)) {
+            while (in.next()) {
+                String line = in.line();
+                char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
                     if (currentRank >= 0) {
                         finished[currentRank] = true;
@@ -72,8 +70,7 @@ public final class UnresolvedReport {
                             next++;
                         }
                     }
-                    String rel = CacheFormat.columnAt(CacheFormat.columnsOf(line), 1);
-                    Integer rank = rankOf.get(rel);
+                    Integer rank = rankOf.get(in.filePath());
                     currentRank = (rank == null) ? -1 : rank;
                     continue;
                 }
@@ -105,12 +102,10 @@ public final class UnresolvedReport {
      */
     private static String[] blockPathsInOutputOrder(CallGraph g, Path cacheFile) throws IOException {
         List<String> paths = new ArrayList<>();
-        try (BufferedReader in = Files.newBufferedReader(cacheFile, StandardCharsets.UTF_8)) {
-            in.readLine();   // バージョン行
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (CacheFormat.rowTypeOf(line) == CacheFormat.ROW_FILE) {
-                    paths.add(CacheFormat.columnAt(CacheFormat.columnsOf(line), 1));
+        try (CacheReader in = CacheReader.open(cacheFile)) {
+            while (in.next()) {
+                if (in.is(CacheFormat.ROW_FILE)) {
+                    paths.add(in.filePath());
                 }
             }
         }

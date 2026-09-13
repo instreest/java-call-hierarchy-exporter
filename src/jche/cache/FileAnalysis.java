@@ -21,6 +21,12 @@ public final class FileAnalysis {
      * （{@link jche.analysis.CacheUpdater}）。数えるだけで、何のエラーかは判断しない
      */
     public int errors;
+    /**
+     * 内容のハッシュ（{@link jche.util.FileHash}）。F行の 6 列目。更新時刻が変わってもサイズと
+     * 内容が同じなら再利用できるようにするためのもの。書き手（{@link jche.analysis.CacheUpdater}）が
+     * キャッシュへ書く直前に入れる。空文字なら「不明」で、更新時刻とサイズだけで判定される
+     */
+    public String hash = "";
 
     public final List<TypeFact> types = new ArrayList<>();
     public final List<HintFact> hints = new ArrayList<>();

@@ -17,16 +17,24 @@ import java.util.List;
  * @param mtime    更新時刻（同上）
  * @param packages jar が含むクラスのパッケージ（重複なし・名前順）。jar が削除された後でも
  *                 「どのパッケージを参照していたファイルに影響するか」が分かるように持つ
+ * @param hash     jar の内容ハッシュ（{@link jche.util.FileHash}）。更新時刻が変わってもサイズと内容が
+ *                 同じなら「変わっていない」と判定するため。クラスフォルダ、または旧形式の行では空文字
  */
-public record LibraryFact(String path, long size, long mtime, List<String> packages) {
+public record LibraryFact(String path, long size, long mtime, List<String> packages, String hash) {
 
     public LibraryFact {
         packages = List.copyOf(packages);
+        hash = (hash == null) ? "" : hash;
+    }
+
+    /** 更新時刻だけを今の値に差し替えたもの（内容が同じと確かめた jar の L 行を、次回は更新時刻で通すため） */
+    public LibraryFact withMtime(long newMtime) {
+        return new LibraryFact(path, size, newMtime, packages, hash);
     }
 
     public String toRow() {
         return CacheFormat.joinRow("L", path, String.valueOf(size), String.valueOf(mtime),
-                String.join(",", packages));
+                String.join(",", packages), hash);
     }
 
     /** 列が足りない、または数値が壊れていれば null */
@@ -51,6 +59,6 @@ public record LibraryFact(String path, long size, long mtime, List<String> packa
                 }
             }
         }
-        return new LibraryFact(cols[1], size, mtime, packages);
+        return new LibraryFact(cols[1], size, mtime, packages, CacheFormat.columnAt(cols, 5));
     }
 }

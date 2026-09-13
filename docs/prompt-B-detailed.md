@@ -52,7 +52,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 - 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>...`。
   設定ファイルは複数渡せ、渡した順に独立して処理する（1つが失敗しても残りは処理し、最後に設定ごとの
   OK / FAIL と出力フォルダの一覧を出す。1つでも失敗すれば終了コード 1）。
-  引数省略時は作業ディレクトリの `config.properties` を使い、その旨を標準エラーに出す
+  引数省略時は作業ディレクトリの `config/config.properties` を使い、その旨を標準エラーに出す
 - 出力は設定ファイルごとに `output.folder` の下の `<解析開始日時 yyyyMMdd-HHmmss>_<project.root のフォルダ名>/`
   に書く（同じ秒に同名ができれば `_2`, `_3` …）。中身は `call-hierarchy.csv`、`methods.csv`、渡した設定ファイルの
   複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
@@ -66,7 +66,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   `org.eclipse.jdt:org.eclipse.jdt.core:3.46.0` の推移的依存をコピーすると 19 個の jar になる
 - ツールを動かすJDKは、解析対象のソースが使うJDK APIの版以上にする（2.3）
 
-## 3. 入力: 設定ファイル（`config.properties`、UTF-8）
+## 3. 入力: 設定ファイル（`config.properties`、UTF-8。同梱の既定は `config/config.properties`）
 
 相対パスの起点は項目ごとに違う。**設定ファイルの置き場所**を起点にするものと、
 **解析対象プロジェクト（`project.root`）**を起点にするものを区別すること。
@@ -93,12 +93,13 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
-| `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
+| `dataflow.max.depth` | `5` | 経路に依存する探索（引数で渡ってきたクラス名・リテラルを辿る）の段数。ファクトリの委譲は上限なく畳む | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
-| `output.folder` | `./output` | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
+| `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
 旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
-| `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照）。設定例には載せない | — |
+| `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照） | — |
+| `plugin.folders` | 空 | 拡張クラスの置き場所（設定ファイルのフォルダ起点、カンマ区切り）。`.java` / `.class` / `.jar` | — |
 
 `entry.packages` / `exclude.packages` のパターン書式:
 
@@ -295,6 +296,16 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 `TypeCandidateProvider`（宣言型・シグネチャ・証拠から具象型FQNの配列とラベルを返す。
 `appliesToStaticBound()` が true なら段0の呼び出しにも尋ねる）。設定ファイルの内容と
 置き場所を `init()` で渡す。読み込み失敗は警告して続行。
+証拠を結び付けるキーは `HintKeys` に一本化し、呼び出し箇所を記録する側と同じ計算にする。
+実装クラスは `plugin.folders` に置く。`.java` があれば実行時にコンパイルし（`ToolProvider` の
+javac にツール自身のクラスパスを渡す）、`.class` / `.jar` と合わせて URLClassLoader（親は本体の
+クラスローダ）で読む。コンパイル失敗も警告して続行。
+対応表だけで済む用途のために `jche.builtin` に実装を同梱する
+（`FactoryKeyCollector`＝ファクトリの実引数キーを拾う / `TypeMappingProvider`＝properties の対応表を引く。
+左辺は「宣言型」「宣言型#メソッド」「証拠の種別@値」の 3 通り。`:` は properties の区切り文字なので使わない）。
+フェーズAの拡張はキャッシュに X 行を書くので、その指紋（クラス名・`plugin.` で始まる設定・
+`plugin.folders` 配下のファイルの更新時刻とサイズ）をキャッシュのヘッダ行に入れ、変われば全件解析し直す。
+フェーズAの拡張が無いときは項目自体を足さない（従来のキャッシュを無効にしないため）。
 
 ### 5.4 探索
 
@@ -628,8 +639,8 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
 入るとき深さを退避して 0 にし、抜けるとき復元する。
 
 **(d) ファクトリの戻り値**: 「1つでも追跡できない return があれば特定しない」「複数の出所を
-返すなら特定しない」。委譲（`return create();`）は `dataflow.max.depth` 段まで辿り、循環は
-打ち切る。畳んだ結果が `C:n` / `A:n` なら、そのファクトリを呼んでいる箇所の実引数で埋める。
+返すなら特定しない」。委譲（`return create();`）は上限なく畳み、循環は「決められない」で
+確定する（解決より前にグラフ全体から一括で確定し、解決は事実を読むだけにする）。畳んだ結果が `C:n` / `A:n` なら、そのファクトリを呼んでいる箇所の実引数で埋める。
 `C:n` で得た型名は**解析対象に存在するときだけ使う**（設定キー等をクラス名と誤認しない）。
 対応する形は `Class.forName(x).newInstance()` と `getDeclaredConstructor()` /
 `getConstructor()` を1段挟んだ形。文字列リテラルは「ドットを含み、各要素が識別子で、最後の

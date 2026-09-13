@@ -268,7 +268,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 chooseConfigFile();
             }
         };
-        Action saveConfigAction = new Action("設定を config.properties に保存") {
+        Action saveConfigAction = new Action("設定を config/config.properties に保存") {
             @Override
             public void run() {
                 saveGeneratedConfig();
@@ -577,15 +577,21 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                     "すでに設定ファイルを使っています: " + (source == null ? "（なし）" : source.label()));
             return;
         }
-        IFile target = analysis.project().getFile("config.properties");
-        if (target.exists()) {
+        // 本体の置き場所に合わせて config/ の下に作る
+        IFile target = analysis.project().getFile("config/config.properties");
+        if (target.exists() || analysis.project().getFile("config.properties").exists()) {
             MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
-                    "config.properties はすでにあります。そちらが使われます。");
+                    "設定ファイルはすでにあります。そちらが使われます。");
             return;
         }
         try {
             byte[] bytes = EclipseProjectConfig.toFileText(source.generatedProperties())
                     .getBytes(StandardCharsets.UTF_8);
+            org.eclipse.core.resources.IFolder folder =
+                    analysis.project().getFolder("config");
+            if (!folder.exists()) {
+                folder.create(false, true, null);
+            }
             target.create(new ByteArrayInputStream(bytes), false, null);
             analysis.setConfigFile(target);
         } catch (CoreException | IOException e) {

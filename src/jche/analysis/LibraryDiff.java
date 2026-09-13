@@ -18,14 +18,17 @@ import java.util.jar.JarFile;
 import java.util.stream.Stream;
 
 import jche.cache.LibraryFact;
+import jche.util.FileHash;
 import jche.util.Log;
 
 /**
  * 旧キャッシュの依存 jar（L行）と今回のクラスパスを突き合わせ、追加・変更・削除を求める。
  *
  * 同じパスでサイズと更新時刻が一致する jar は変わっていないとみなし、パッケージ一覧も
- * 旧 L 行から引き継ぐ（jar を開き直さない）。追加・変更された jar は開いてパッケージを集める。
- * 削除された jar はもう開けないので、パッケージは旧 L 行から取る。
+ * 旧 L 行から引き継ぐ（jar を開き直さない）。更新時刻だけが違う jar は内容ハッシュを取り、旧 L 行の
+ * ハッシュと一致すれば「変わっていない」とみなす（git のチェックアウトや CI で作り直された jar の
+ * 更新時刻に振り回されないため。ソースファイルの判定と同じ考え方）。
+ * 追加・変更された jar は開いてパッケージを集める。削除された jar はもう開けないので、パッケージは旧 L 行から取る。
  *
  * クラスパスにはクラスフォルダ（マルチモジュールの兄弟モジュールの target/classes 等）も来る。
  * フォルダは「.class ファイルの数」をサイズ、「最も新しい .class の更新時刻」を更新時刻として
@@ -101,8 +104,15 @@ final class LibraryDiff {
                 diff.current.add(prev);
                 continue;
             }
+            // クラスフォルダはハッシュを取らない（中のファイルの数と最新の更新時刻で見る）
+            String hash = (folder != null) ? "" : hashOf(jar);
+            if (prev != null && prev.size() == size && !hash.isEmpty() && hash.equals(prev.hash())) {
+                // 更新時刻だけが変わった jar。内容は同じなので変更とみなさず、次回は更新時刻で通るよう L 行を更新する
+                diff.current.add(prev.withMtime(mtime));
+                continue;
+            }
             List<String> packages = (folder != null) ? new ArrayList<>(folder.packages) : packagesOf(jar);
-            diff.current.add(new LibraryFact(key, size, mtime, packages));
+            diff.current.add(new LibraryFact(key, size, mtime, packages, hash));
             diff.changedPackages.addAll(packages);
             if (prev == null) {
                 diff.added++;
@@ -118,6 +128,16 @@ final class LibraryDiff {
             }
         }
         return diff;
+    }
+
+    /** jar の内容ハッシュ。読めなければ空文字（更新時刻とサイズだけで判定される） */
+    private static String hashOf(Path jar) {
+        try {
+            return FileHash.of(jar);
+        } catch (IOException e) {
+            Log.warn("依存jarのハッシュを取れません（更新時刻とサイズだけで判定）: " + jar + " (" + e + ")");
+            return "";
+        }
     }
 
     /** project.root 配下なら相対パス（プロジェクトを移動しても同じ jar と分かる）、外なら絶対パス */

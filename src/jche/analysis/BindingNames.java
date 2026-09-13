@@ -1,11 +1,18 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.analysis;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
+import org.eclipse.jdt.core.dom.IAnnotationBinding;
+import org.eclipse.jdt.core.dom.IBinding;
+import org.eclipse.jdt.core.dom.IMemberValuePairBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.Modifier;
 
+import jche.cache.AnnotationTokens;
 import jche.cache.FileAnalysis;
 import jche.cache.MethodRef;
 
@@ -44,6 +51,59 @@ final class BindingNames {
         appendIf(sb, Modifier.isAbstract(modifiers), "abstract");
         appendIf(sb, Modifier.isDefault(modifiers), "default");
         return sb.toString();
+    }
+
+    /**
+     * 宣言に付いていたアノテーション（{@link jche.cache.AnnotationTokens} の形）。
+     *
+     * 収集の打ち切り（書き手の判断）: {@code java.lang} のアノテーション（Override、
+     * SuppressWarnings 等）は、どの型が動くかに一切関わらないうえ全メソッドに付きうるので落とす。
+     * 値は単一メンバか value / name が文字列のものだけ残す。DIコンテナが Bean を
+     * 見分けるのに使うのは名前の文字列だけのため。
+     */
+    static String annotationsOf(IBinding binding) {
+        if (binding == null) {
+            return "";
+        }
+        IAnnotationBinding[] annotations = binding.getAnnotations();
+        if (annotations == null || annotations.length == 0) {
+            return "";
+        }
+        List<String> tokens = new ArrayList<>(annotations.length);
+        for (IAnnotationBinding a : annotations) {
+            ITypeBinding type = a.getAnnotationType();
+            if (type == null) {
+                continue;
+            }
+            String fqn = type.getQualifiedName();
+            if (fqn == null || fqn.isEmpty() || fqn.startsWith("java.lang.")) {
+                continue;
+            }
+            tokens.add(AnnotationTokens.token(fqn, stringMemberOf(a)));
+        }
+        return AnnotationTokens.join(tokens);
+    }
+
+    /** アノテーションの値。単一メンバ、または value / name が文字列のもの。無ければ null */
+    private static String stringMemberOf(IAnnotationBinding a) {
+        IMemberValuePairBinding[] pairs = a.getAllMemberValuePairs();
+        if (pairs == null || pairs.length == 0) {
+            return null;
+        }
+        String single = null;
+        for (IMemberValuePairBinding pair : pairs) {
+            if (!(pair.getValue() instanceof String value) || value.isEmpty()) {
+                continue;
+            }
+            String name = pair.getName();
+            if ("value".equals(name) || "name".equals(name)) {
+                return value;
+            }
+            if (pairs.length == 1) {
+                single = value;
+            }
+        }
+        return single;
     }
 
     private static void appendIf(StringBuilder sb, boolean condition, String token) {

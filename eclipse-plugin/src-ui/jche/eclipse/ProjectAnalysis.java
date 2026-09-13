@@ -77,8 +77,14 @@ public final class ProjectAnalysis {
         }
     }
 
-    /** プロジェクト直下にあれば自動的に使う設定ファイルの名前 */
-    private static final String DEFAULT_CONFIG_NAME = "config.properties";
+    /**
+     * 自動的に使う設定ファイル。前にあるものほど優先する。
+     * 本体が設定を config/ に置くようになったので、そちらを先に見る
+     */
+    private static final String[] DEFAULT_CONFIG_PATHS = {
+        "config/config.properties",
+        "config.properties",
+    };
 
     private final AnalysisService service;
     private final IProject project;
@@ -147,9 +153,11 @@ public final class ProjectAnalysis {
         if (selected != null && selected.exists()) {
             return ConfigSource.ofFile(selected);
         }
-        IFile atRoot = project.getFile(DEFAULT_CONFIG_NAME);
-        if (atRoot.exists() && atRoot.getLocation() != null) {
-            return ConfigSource.ofFile(atRoot);
+        for (String path : DEFAULT_CONFIG_PATHS) {
+            IFile known = project.getFile(path);
+            if (known.exists() && known.getLocation() != null) {
+                return ConfigSource.ofFile(known);
+            }
         }
         IJavaProject javaProject = EclipseProjectConfig.javaProjectOf(project);
         return (javaProject != null) ? ConfigSource.generated(javaProject) : null;
@@ -161,21 +169,30 @@ public final class ProjectAnalysis {
         service.fireChanged(this);
     }
 
-    /** プロジェクト内の設定ファイル候補（直下の *.properties だけ） */
+    /** プロジェクト内の設定ファイル候補（直下と config/ の *.properties。深くは探さない） */
     public List<IFile> findConfigFiles() {
         List<IFile> result = new ArrayList<>();
         try {
-            for (IResource member : project.members()) {
-                if (member.getType() == IResource.FILE && member.getName().endsWith(".properties")) {
-                    result.add((IFile) member);
-                }
+            collectProperties(project, result);
+            IResource configDir = project.findMember("config");
+            if (configDir instanceof org.eclipse.core.resources.IFolder) {
+                collectProperties((org.eclipse.core.resources.IContainer) configDir, result);
             }
         } catch (CoreException e) {
             JchePlugin.log(IStatus.WARNING, "設定ファイルを探せませんでした: " + project.getName(), e);
         }
-        result.sort((a, b) -> Boolean.compare(!DEFAULT_CONFIG_NAME.equals(a.getName()),
-                !DEFAULT_CONFIG_NAME.equals(b.getName())));
+        result.sort((a, b) -> Boolean.compare(!"config.properties".equals(a.getName()),
+                !"config.properties".equals(b.getName())));
         return result;
+    }
+
+    private static void collectProperties(org.eclipse.core.resources.IContainer container,
+                                          List<IFile> into) throws CoreException {
+        for (IResource member : container.members()) {
+            if (member.getType() == IResource.FILE && member.getName().endsWith(".properties")) {
+                into.add((IFile) member);
+            }
+        }
     }
 
     public State state() {

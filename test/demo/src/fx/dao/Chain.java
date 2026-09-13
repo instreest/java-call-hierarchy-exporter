@@ -1,6 +1,6 @@
 package fx.dao;
 
-/** 7段の委譲チェーン。dataflow.max.depth（既定5）を超えるファクトリの委譲 */
+/** 7段の委譲チェーン。ファクトリの委譲は段数によらず畳めること（Issue #80。かつては dataflow.max.depth=5 で打ち切っていた） */
 public final class Chain {
     private Chain() {}
 

@@ -8,15 +8,18 @@ package jche.cache;
  * @param fieldName フィールド名
  * @param mods      修飾子（{@link ModifierTokens}）
  * @param declType  宣言型のFQN（消去型）。配列は要素型に "[]" を付けた形
+ * @param annotations フィールドに付いていたアノテーション（{@link AnnotationTokens}。v13 で追加）
  */
-public record FieldDeclFact(String typeFqn, String fieldName, String mods, String declType) {
+public record FieldDeclFact(String typeFqn, String fieldName, String mods, String declType,
+                            String annotations) {
 
     public FieldDeclFact {
         declType = (declType == null) ? "" : declType;
+        annotations = (annotations == null) ? "" : annotations;
     }
 
     public String toRow() {
-        return CacheFormat.joinRow("V", typeFqn, fieldName, mods, declType);
+        return CacheFormat.joinRow("V", typeFqn, fieldName, mods, declType, annotations);
     }
 
     /** 列が足りなければ null */
@@ -25,6 +28,6 @@ public record FieldDeclFact(String typeFqn, String fieldName, String mods, Strin
             return null;
         }
         return new FieldDeclFact(cols[1], cols[2], CacheFormat.columnAt(cols, 3),
-                CacheFormat.columnAt(cols, 4));
+                CacheFormat.columnAt(cols, 4), CacheFormat.columnAt(cols, 5));
     }
 }

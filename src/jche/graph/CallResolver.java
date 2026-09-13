@@ -2,10 +2,15 @@
 package jche.graph;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import jche.cache.HintFact;
+import jche.cache.Origin;
+import jche.cache.RecvKind;
 import jche.extension.Hint;
+import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
 
@@ -17,7 +22,8 @@ import jche.util.Log;
  *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
  *   段3 CUSTOM_*                   拡張（ファクトリ・DI設定・外部リスト等）
  *   段4 DATAFLOW_*                 ファクトリの戻り値等から特定（経路非依存の分）
- *   段5 CHA                        候補が複数のまま（低確度）
+ *   段5 SPRING_DI(_QUALIFIER)      DIコンテナのBean定義で候補を絞る
+ *   段6 CHA                        候補が複数のまま（低確度）
  * </pre>
  * 段1で確定するならそれが最も確実なので、証拠より先に採用する。
  * リフレクション（Method.invoke / Class.forName / newInstance）は段0の前に試す。
@@ -36,6 +42,24 @@ public final class CallResolver {
     /** 段1の結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
     private int[][] resolvedTargets;
     private String[] resolvedLabels;
+    /**
+     * {@link #resolve} の結果のメモ（エッジごと）。
+     *
+     * 結果は決定的なので、同じエッジを何度解いても同じになる。呼び出す側は入次数の集計・到達判定・
+     * methods.csv・呼び出し階層の展開と 4 つあり、特に階層の展開では同じエッジが経路の数だけ
+     * 現れる。毎回ヒントの走査・拡張への問い合わせ・親を辿る BFS をやり直すと、
+     * 大規模プロジェクトでは解決だけで時間の大半を使う。
+     *
+     * メモリはエッジあたり参照 2 本。候補が 1 件の結果は {@link #singletonOf} で配列を
+     * メソッドごとに共有し、ラベルは定数か {@link #internLabel} で共有するので、
+     * エッジ数ぶんの配列や文字列を新たに抱えることはない。
+     */
+    private int[][] edgeTargets;
+    private String[] edgeLabels;
+    /** 候補 1 件の int[] をメソッドIDごとに共有する（エッジごとに new int[1] しない） */
+    private int[][] singletons;
+    /** 動的に組み立てるラベル（"STATIC_BOUND:理由" 等）の共有 */
+    private final HashMap<String, String> labelPool = new HashMap<>();
     /** 解決後の入次数。宣言型ではなく解決先に対して数える */
     private int[] inDegree;
 
@@ -53,6 +77,42 @@ public final class CallResolver {
 
     /** 経路に依存しない解決。結果は決定的で、同じエッジには常に同じ結果を返す */
     public Resolution resolve(int edgeIndex) {
+        if (edgeTargets == null) {
+            edgeTargets = new int[graph.edgeCount()][];
+            edgeLabels = new String[graph.edgeCount()];
+        }
+        int[] memo = edgeTargets[edgeIndex];
+        if (memo != null) {
+            return new Resolution(memo, edgeLabels[edgeIndex]);
+        }
+        Resolution res = resolveUncached(edgeIndex);
+        int[] targets = res.targets();
+        if (targets.length == 1) {
+            targets = singletonOf(targets[0]);
+        }
+        edgeTargets[edgeIndex] = targets;
+        edgeLabels[edgeIndex] = internLabel(res.label());
+        return new Resolution(targets, edgeLabels[edgeIndex]);
+    }
+
+    private int[] singletonOf(int methodId) {
+        if (singletons == null) {
+            singletons = new int[methods.size()][];
+        }
+        int[] a = singletons[methodId];
+        if (a == null) {
+            a = new int[] {methodId};
+            singletons[methodId] = a;
+        }
+        return a;
+    }
+
+    private String internLabel(String label) {
+        String shared = labelPool.putIfAbsent(label, label);
+        return (shared == null) ? label : shared;
+    }
+
+    private Resolution resolveUncached(int edgeIndex) {
         int calleeId = graph.calleeOf(edgeIndex);
         char bindKind = graph.bindKindOf(edgeIndex);
 
@@ -119,7 +179,13 @@ public final class CallResolver {
             }
         }
 
-        // --- 段5: CHA ---
+        // --- 段5: DIコンテナのBean定義 ---
+        Resolution di = springResolution(edgeIndex, calleeId, base);
+        if (di != null) {
+            return di;
+        }
+
+        // --- 段6: CHA ---
         return base;
     }
 
@@ -159,6 +225,7 @@ public final class CallResolver {
      *  SINGLE_IMPL … 候補が1つだけ（IFに実装が1つ等） → その実装で確定
      *  CHA         … 候補が複数。ここは低確度
      *  NO_IMPL     … 本体を持つ候補が皆無（ソース外の実装等）。宣言のまま扱う
+     *  GENERATED_IMPL:名 … 同上だが、実装がコンパイル時のアノテーション処理で生成される型
      * </pre>
      * 重要: 候補数は「サブタイプ数」ではなく「そのメソッドをオーバーライドしている
      * 宣言の数」。サブクラスが多くてもオーバーライドが1件なら候補は1件のまま。
@@ -180,9 +247,17 @@ public final class CallResolver {
             cands.add(calleeId);   // 宣言型自身の実装（IFの抽象メソッドは除外される）
         }
         for (String sub : graph.hierarchy.transitiveSubtypes(declType)) {
-            int id = methods.idOf(sub + "#" + sig);
-            if (id >= 0 && id != calleeId) {
-                cands.add(id);
+            // サブタイプ自身の宣言ではなく「そのサブタイプで実際に動く実装」を候補にする。
+            // 直接の宣言だけを見ると、次の 2 つを取りこぼす。
+            //   (1) 親クラスから継承した実装: abstract class Base { m(){} }、
+            //       class C extends Base implements I {} のとき、I.m() の実装は Base.m だが
+            //       C#m は宣言されていないので候補が 0 件（実装なし）になっていた
+            //   (2) サブインターフェースでの抽象な再宣言: interface B extends A { m(); } は
+            //       本体を持たないのに候補に数えられ、実装が 1 件でも CHA（未展開）のままになっていた
+            // implementationIn は本体を持つ宣言まで親を辿るので、どちらも正しく扱える
+            int id = graph.implementationIn(sub, sig);
+            if (id >= 0) {
+                cands.addIfAbsent(id);
             }
         }
 
@@ -190,7 +265,11 @@ public final class CallResolver {
         String label;
         if (cands.isEmpty()) {
             targets = new int[] {calleeId};
-            label = Resolution.NO_IMPL;
+            // 実装がコンパイル時のアノテーション処理で生成される型（Doma の @Dao 等）は、
+            // 生成物がソースに無いだけで「実装が無い」わけではない。両者を混ぜない
+            GeneratedImpl generated = GeneratedImpl.of(graph.hierarchy.annotationsOf(declType));
+            label = (generated == null) ? Resolution.NO_IMPL
+                    : Resolution.GENERATED_IMPL_PREFIX + generated.label();
         } else if (cands.size() == 1) {
             targets = new int[] {cands.get(0)};
             label = (cands.get(0) == calleeId) ? Resolution.NO_OVERRIDE : Resolution.SINGLE_IMPL;
@@ -201,6 +280,58 @@ public final class CallResolver {
         resolvedTargets[calleeId] = targets;
         resolvedLabels[calleeId] = label;
         return new Resolution(targets, label);
+    }
+
+    /**
+     * 段5: DIコンテナ（Spring）が実際に注入しうる型だけに候補を絞る。
+     *
+     * CHAの候補は「宣言型のサブタイプすべて」だが、コンテナが注入するのは
+     * Beanとして登録された型だけ。候補のうちBeanが1つだけなら、そのBeanが動く。
+     * &#64;Qualifier / &#64;Resource(name) の指定があればBean名でさらに絞る。
+     *
+     * レシーバがフィールドか引数のときだけ適用する。DIで受け取ったインスタンスは
+     * 必ずこのどちらかの形で現れ、その場で new したレシーバ（段2で解決済み）や
+     * static 呼び出しにコンテナの都合を持ち込むと、かえって誤って絞ることになるため。
+     *
+     * 候補は宣言型のサブタイプから引き直す。Beanクラス自身がそのメソッドを
+     * オーバーライドせず、抽象基底クラスから継承している場合、CHAの候補には
+     * 基底クラスの宣言しか現れず、Beanかどうかで照合できないため。
+     *
+     * @param base 段1の結果（CHA＝候補が複数）
+     * @return 1つに定まったときだけ Resolution。定まらなければ null
+     */
+    private Resolution springResolution(int edgeIndex, int calleeId, Resolution base) {
+        SpringBeans beans = graph.beans();
+        if (!beans.enabled() || !base.isMultiple()) {
+            return null;
+        }
+        char recvKind = graph.recvKindOf(edgeIndex);
+        if (recvKind != RecvKind.FIELD && recvKind != RecvKind.PARAM) {
+            return null;
+        }
+        String recvOrigin = graph.recvOrigin(edgeIndex);
+        String qualifier = (Origin.kindOf(recvOrigin) == Origin.FIELD)
+                ? beans.qualifierOf(Origin.valueOf(Origin.head(recvOrigin))) : null;
+
+        String declType = methods.typeFqn(calleeId);
+        String sig = methods.signature(calleeId);
+        IntArray hits = new IntArray(2);
+        List<String> types = new ArrayList<>(graph.hierarchy.transitiveSubtypes(declType));
+        types.add(declType);
+        for (String type : types) {
+            if (!beans.isBean(type) || (qualifier != null && !beans.hasBeanName(type, qualifier))) {
+                continue;
+            }
+            int id = graph.implementationIn(type, sig);
+            if (id >= 0) {
+                hits.addIfAbsent(id);
+            }
+        }
+        if (hits.size() != 1) {
+            return null;   // Beanが無い、または複数。絞れないことより誤って絞ることの方が害が大きい
+        }
+        return Resolution.single(hits.get(0),
+                (qualifier == null) ? Resolution.SPRING_DI : Resolution.SPRING_DI_QUALIFIER);
     }
 
     /**

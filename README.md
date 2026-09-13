@@ -1,58 +1,49 @@
 # java-call-hierarchy-exporter
+A tool that batch-extracts project-wide Java method call hierarchies and exports them to CSV files.
 
+## Overview
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
-> **English:** Exports the whole-project method call hierarchy of a Java code base to CSV,
-> using the Eclipse JDT compiler without launching Eclipse. Run
-> `jbangw/jbang src/CallHierarchyExporter.java config.properties` (the first run downloads a JDK
-> and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
-> use. Several config files can be passed at once; each run writes to its own timestamped output
-> folder. Apache-2.0. Documentation is in Japanese.
+Eclipseの「呼び出し階層」ビューが一括で再帰的に取得できないため、このツールで一括でCSVファイルを出力します。
+Eclipseは起動せず、解析エンジンとして Eclipse JDT のコンパイラを使用してソースコードを解析するコマンドラインツールです。
+解析結果のCSVファイルをExcelで開いて呼び出し先メソッドでフィルタすることで対象機能の影響範囲を抽出できます。
 
-- 使い方・出力形式 … このファイル
-- 設定項目 … [config.properties](config.properties)（コメントに全項目の説明）
+## ドキュメント
+
+| 知りたいこと | 場所 |
+|---|---|
+| 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
+| 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
+| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
+| 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
 
 ## Quick start
 
-### 1. 設定ファイルを編集する
+起動スクリプトと設定ファイルを使用します。
 
-リポジトリ直下の `config.properties` の **`project.root`** **`source.folders`** **`library.folders`** **`source.encoding`** を書き換えます。  
-Maven / Gradle のプロジェクトなら `library.folders` は空欄でよく、`pom.xml` / `build.gradle` を読んで
-ローカルリポジトリ（`~/.m2/repository` 等）にある依存 jar を自動で使います
-（[依存 jar の自動取得](#依存-jar-の自動取得maven--gradle)）。
+起動スクリプトが JDK 25 と依存モジュールが環境上にあるかチェックし、無ければ確認メッセージのうえ自動でダウンロードします。（通信量 約 165MB → 展開後 約 500MB）。
 
-### 2. 実行する
+1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
 
-#### JBangによる実行
+2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。
 
-JBang のラッパースクリプトを `jbangw/` に同梱しているので、JBang のインストールは不要です
-（同梱スクリプトの出所・ライセンス（MIT）・当リポジトリでの修正点は [jbangw/README.md](jbangw/README.md) を参照）。
+     ```bat
+     rem Windows
+     .\java-call-hierarchy-exporter.cmd config\config.properties
+     ```
 
-```bat
-rem Windows（コマンドプロンプト）
-.\jbangw\jbang.cmd src\CallHierarchyExporter.java config.properties
-```
+     ```bash
+     # Linux / macOS / Git Bash
+     ./java-call-hierarchy-exporter.sh config/config.properties
+     ```
 
-```bash
-# Linux / macOS / Git Bash
-./jbangw/jbang src/CallHierarchyExporter.java config.properties
-```
+　3. 結果を見る … 出力されたCSVファイルを参照します。（[出力ファイル](#出力ファイル)）
 
-このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に自動で取得されます（`%userprofile%/.jbang/`配下に保存）。
+### Pleiades/Eclipse環境（閉域ネットワーク等の場合）
 
-設定ファイルは複数渡せます。渡した順に処理し、設定ファイルごとに別の出力フォルダができます
-（[複数のプロジェクトをまとめて解析する](#複数のプロジェクトをまとめて解析する)）。
-
-```bash
-./jbangw/jbang src/CallHierarchyExporter.java projects/app-a.properties projects/app-b.properties
-```
-
-#### Pleiades/Eclipse環境（閉域ネットワーク等）
-
-Eclipse(Pleiades)がインストールされていれば、そこに含まれるJDT Core一式から、
-実行に必要なjarを `lib` フォルダに集めて使います。
+Pleiades/Eclipseがインストールされていれば、そこに含まれるJDT Core一式から、実行に必要なjarを `lib` フォルダに集めて使います。
 バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
 
 ```bat
@@ -66,229 +57,46 @@ mkdir lib
 for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
-rem 実行する JDK は、解析対象のソースが使う JDK API の版以上にする（古いと新しい API の呼び出しが
-rem 型解決失敗になり、その戻り値を使う自プロジェクトの呼び出しも欠ける。docs/cache-dependency-jars-qa.md の Q20）
 rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
 "%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
 
-#### Eclipse（Pleiades）でソースを開く
+### GitHub Actions Workflow
 
-リポジトリ直下に `pom.xml` があるので、Eclipse 同梱の m2e（Maven 連携）で依存 jar を自動取得できます。
+リポジトリ直下の [`action.yml`](action.yml) を利用者のワークフローから `uses:` で呼ぶと、
+解析対象の指定をするとリポジトリのソースコードを解析してCSVファイルをアーティファクトにアップロードします。
+詳細な機能仕様は[docs/github-actions.md](docs/github-actions.md) にあります。
 
-1. 「ファイル > インポート > Maven > 既存の Maven プロジェクト」で、このリポジトリのフォルダを選ぶ
-2. 取り込み後、JDT Core 一式が Maven Central から `%userprofile%\.m2\repository` に取得され、ビルドパスに載る
-3. `CallHierarchyExporter` を「Java アプリケーション」として実行するときは、実行構成の引数に
-   `config.properties` を指定する（複数指定可）
-
-`pom.xml` は Eclipse で開くためだけのもので、jbang での実行には使われません。依存の版は
-`src/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。
-JDT の版を変えるときは両方を書き換えてください。`pom.xml` には実行 JDK の版（`//JAVA 25`）は書いておらず、
-Eclipse はワークスペースに登録済みの JDK（17 以上）を使います。そのため Eclipse から実行した解析結果は
-jbang 経由（JDK 25）と一部異なりうることに注意してください
-（[docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) の Q20）。
-JBang 本家の Eclipse 連携プラグイン（jbang-eclipse）を入れると、この `pom.xml` とビルドパスを取り合って
-どちらか一方が壊れ続けます。併用しないでください。
-Gradle を選ばなかった理由を含め、実装時に迷った点は
-[docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
+```yaml
+      - uses: actions/checkout@v5
+      - uses: instreest/java-call-hierarchy-exporter@main
+        with:
+          source-folders: src/main/java
+          source-encoding: UTF-8
+```
 
 ---
 
-### 出力されるファイル
+## 出力ファイル
 
-出力は実行のたびに、設定ファイルの `output.folder`（既定 `./output`、設定ファイルからの相対パス）の下に
-**`<解析開始日時>_<プロジェクト名>`** のフォルダを作ってまとめます。プロジェクト名は `project.root` の
-フォルダ名です。いつ・どのプロジェクトを解析した結果かがフォルダ名だけで分かり、前回の結果は上書きされません。
+実行のたびに設定ファイルと同じフォルダに**`<解析開始日時>_<project.rootフォルダ名>`** のフォルダを作ってまとめます。
 
 ```
-output/
-└── 20260907-163000_myapp/
+config/
+├── config.properties             設定ファイル（既定。コピーして解析対象プロジェクトごとに増やすことを推奨）
+└── 20260907-163000_myapp/        実行ごとの出力フォルダ
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8）
-    └── resolved-classpath.txt    ビルドファイルから依存 jar を集めたときだけ。集めた jar の一覧と要求元
+    └── resolved-classpath.txt    解析時の依存jar一覧と要求元
 ```
 
-| ファイル | 内容 |
-|---|---|
-| `call-hierarchy.csv` | 呼び出し階層リスト |
-| `methods.csv` | メソッド全体リスト（ソース上の全メソッドとその呼び出し状況） |
+出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
 
-CSV はUTF-8（BOM付き）なのでExcelで開けます。ファイル名は固定です。
-例えばリポジトリ直下の `config.properties` を指定した場合は `output/20260907-163000_myapp/` のように出ます。
-同じ秒に同じプロジェクトを解析すると `_2`, `_3` … が付きます。
-
-解析結果のキャッシュは出力フォルダには入りません（[キャッシュの置き場所](#キャッシュの置き場所)）。
-
-#### `call-hierarchy.csv` — 呼び出し元が無いメソッドを起点にした呼び出し階層
-
-呼び出し元、呼び出し先、起点メソッド、呼び出し階層（複数）を出力したCSVファイルです。
-呼び出し元ごとに1行出力します。フィルタすることで起点メソッドと呼び出し階層が一覧化できます。
-出力ソート順は、rootのソースフォルダ → rootの完全修飾クラス名 → rootの宣言行 → コード呼び出しの順序です。
-
-```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
-```
-
-#### `methods.csv` — ソース上の全メソッドとその呼び出し状況
-
-各クラスの宣言メソッドとその情報を一覧出力したCSVファイルです。
-出力ソート順は、ソースフォルダ → ファイルの相対パス → 宣言行順の順序です。
-
-```csv
-method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
-OrderAction.execute(),jp.co.example.action.OrderAction,C,OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
-OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,OrderDao.java,8,0,0,0,ISOLATED,0,0,
-OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
-```
-
----
-
-## 依存 jar の自動取得（Maven / Gradle）
-
-依存 jar は `library.folders` に「集めたフォルダ」を指定するのが基本ですが、**`library.folders` を空欄にすると**、
-Maven / Gradle のプロジェクトではビルドファイルを読んで依存 jar を自動で集めます。
-ビルドツール（`mvn` / `gradle`）は実行せず、ネットワークにも出ません。`library.folders` に指定がある場合は自動取得しません。
-
-1. 各ソースフォルダから `project.root` まで上位へ辿り、最初に見つかった `pom.xml` / `build.gradle(.kts)` /
-   `settings.gradle(.kts)` のあるフォルダをプロジェクトとみなします（マルチモジュールなら、ソースフォルダを持つ
-   モジュールごと）。両方のビルドファイルがあるときは Eclipse の `.project`（m2e / Buildship の nature）と
-   `.classpath` でどちらとして開かれているかを見て、それも無ければ Maven を使います（`library.build.tool` で切り替え可）
-2. ビルドファイルから直接の依存を読み、jar と POM を**ローカルリポジトリ**から探します。既定は Maven の
-   `~/.m2/repository`（`~/.m2/settings.xml` の `localRepository` があればそこ）と Gradle の
-   `~/.gradle/caches/modules-2/files-2.1` で、Eclipse の m2e / Buildship が依存を取得した場所と同じです。
-   別の場所は `library.repositories` で指定します
-3. 推移的な依存は、ローカルリポジトリにある POM を辿って集めます（親 POM、`dependencyManagement`、BOM の
-   import、`${...}`、exclusions、optional / test / provided の除外を Maven と同じ規則で扱います。版の衝突は
-   Maven なら近い方、Gradle なら高い方が勝ちます）
-4. マルチモジュールの兄弟モジュール（Maven のリアクタ、Gradle の `project(':x')`）は、その `target/classes` /
-   `build/classes` / Buildship の `bin/main` と、そのビルドファイルの依存で解決します。`mvn install` は要りません
-5. 集めた jar とクラスフォルダをそのまま JDT に渡します。jar はローカルリポジトリに置かれたままで、コピーしません
-
-集めた一覧（パス・座標・要求元の連鎖）は出力フォルダの `resolved-classpath.txt` に残ります。
-キャッシュの `L` 行にも同じパスが入るので、[依存 jar を変えたとき](#依存-jar-を変えたとき)の差分更新はそのまま効きます。
-
-Gradle のビルドファイルはプログラムなので、読めるのは宣言的な書き方だけです。
-
-| 読める | 例 |
-|---|---|
-| 文字列の座標 | `implementation 'g:a:v'`、`implementation("g:a:v")`、`api "g:a:$ver"` |
-| map 形式 | `implementation group: 'g', name: 'a', version: 'v'`、`(group = "g", name = "a", version = "v")` |
-| 変数 | `gradle.properties`、`ext { }`、`def` / `val` の文字列代入、`${property('x')}` |
-| 版カタログ | `libs.foo.bar`、`libs.bundles.x`（`gradle/libs.versions.toml`、settings の `from(files(...))`） |
-| BOM | `platform('g:a:v')` / `enforcedPlatform(...)`（版の無い依存の版を決める） |
-| 他プロジェクト | `project(':x')`、`projects.x` |
-| ファイル | `files('lib/a.jar')`、`fileTree('lib')` |
-| ロックファイル | `gradle.lockfile`（あれば解決済みの依存をそのまま使う） |
-
-読めない宣言（プラグインが足す依存、ループや条件で組み立てた座標など）はログに「読めない依存の宣言」として出ます。
-その場合は従来どおり jar を集めたフォルダを `library.folders` に指定してください。
-
-| 設定 | 意味 |
-|---|---|
-| `library.build.tool` | `auto`（既定）/ `maven` / `gradle` / `none`（自動取得しない） |
-| `library.repositories` | ローカルリポジトリ（カンマ区切り）。空欄なら上記の既定。Maven 形式でも Gradle のキャッシュ形式でも可 |
-
-うまくいかないとき:
-
-- ローカルリポジトリに無い jar は警告に出て、無いまま解析が続きます（その型を使う呼び出しは型解決に失敗します）。
-  Eclipse や Maven / Gradle で一度依存を取得（ビルド）すればローカルリポジトリに入ります。このツールはダウンロードしません
-- 兄弟モジュールがビルドされていない（`target/classes` 等が無い）ときは、そのモジュールのソースも `source.folders` に
-  含めてください。ソースから解決されます
-- 対応の範囲と判断は [docs/build-tool-classpath-qa.md](docs/build-tool-classpath-qa.md) にまとめています
-
----
-
-## 複数のプロジェクトをまとめて解析する
-
-設定ファイルを引数に複数渡すと、渡した順に 1 つずつ処理します。設定ファイルは互いに独立で、
-それぞれの `output.folder` の下に `<解析開始日時>_<プロジェクト名>` のフォルダができます
-（[出力されるファイル](#出力されるファイル)）。
-
-```bash
-./jbangw/jbang src/CallHierarchyExporter.java projects/app-a.properties projects/app-b.properties projects/batch.properties
-```
-
-- 1 つの設定が失敗（設定ファイルが無い、`project.root` が無い等）しても、残りの設定は処理します。
-  失敗した設定のエラーとスタックトレースは標準出力（と、出力フォルダを作れていればその `run.log`）に出ます
-- 最後に設定ごとの結果（`OK` と出力フォルダ、または `FAIL` と原因）を一覧で出します。
-  1 つでも失敗があれば終了コードは 1 です
-- ログの経過時間 `[分:秒]` は設定ごとに 0 から数え直します
-
-同じプロジェクトを指す設定ファイルが複数あっても（起点 `entry.packages` だけ違う等）、
-キャッシュは `project.root` ごとに 1 つを共有するので、2 つ目以降の解析はキャッシュの再利用だけで済みます。
-
-## キャッシュの置き場所
-
-解析結果のキャッシュは出力フォルダには置かず、解析対象プロジェクトごとの「サイドカー」として
-**このツールのプロジェクトフォルダ**（`src/CallHierarchyExporter.java` のあるフォルダ）の `.cache/` の下に作ります。
-
-```
-java-call-hierarchy-exporter/
-└── .cache/
-    ├── myapp_3f2a9c1e/analysis-cache.tsv      project.root=.../myapp
-    └── batch_b71e0d44/analysis-cache.tsv      project.root=.../batch
-```
-
-フォルダ名は `<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭 8 桁>` です。
-同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクト
-（ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、どこから実行しても、
-キャッシュの場所は変わりません。
-
-ツールのプロジェクトフォルダは、作業ディレクトリとその上位（次に、実行中のクラスの置き場所とその上位）から
-`src/CallHierarchyExporter.java` を探して決めます。README の手順どおりリポジトリ直下で実行すれば見つかります。
-見つからないときは警告を出して作業ディレクトリの `.cache/` に作ります。
-
-`cache.folder` を指定すると、そのフォルダ（設定ファイルからの相対パス、または絶対パス）の下に
-同じ形のプロジェクト別フォルダを作ります。回帰テストのようにケースごとにキャッシュを分けたいときに使います。
-`cache.enabled=false` でもフェーズ 2 が読むためにキャッシュファイル自体は同じ場所に書かれます（再利用はしない）。
-
-## キャッシュファイル設計
-
-大規模なコードベースでも `OutOfMemoryError` にならないよう、3点で対策しています。
-
-1. **解析結果をヒープに溜めない** — 1ファイル解析するたびにキャッシュへ書き出して破棄
-2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
-3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
-
-### キャッシュに入れるもの
-
-キャッシュには「ASTから分かった事実」だけを入れ、判断は読む側で行います。
-事実とは、宣言と修飾子、呼び出し箇所、フィールドへの代入、値の出所など、
-設定や出力形式に依存しない情報です。静的束縛かどうか、コンストラクタ注入と言い切れるか、
-import からの推定を呼び出し先として採用するか、といった判断はキャッシュを読む側で行うため、
-出力や解決の方針を変えてもキャッシュを作り直さずに済みます。
-キャッシュの版を上げるのは、事実の意味・列・収集範囲が変わったときだけです。
-
-差分更新では、更新時刻とサイズが一致するファイルでも、そのファイルが参照している型
-（キャッシュの `I` 行）を宣言するファイルが変わっていれば解析し直します。
-呼び出し先やフィールドの所有型は他のファイルのバインディング解決に依存するためです。
-フィールドの参照箇所（読み取り・書き込み、他の型のフィールドも含む）は `A` 行に残ります。
-行の種別と列の意味は [src/jche/cache/CacheFormat.java](src/jche/cache/CacheFormat.java) のクラスコメントにあります。
-
-### 依存 jar を変えたとき
-
-キャッシュには解析時の依存 jar（パス・サイズ・更新時刻・含まれるパッケージ。`L` 行）も残します。
-次回の実行で jar が追加・差し替え・削除されていれば、その jar のパッケージの型を参照している
-ファイルと、前回型解決に失敗していたファイル（`F` 行のエラー数、`U` 行）だけを解析し直します。
-「型解決できなかった呼び出しが N 件あります」と出たときに `library.folders` へ jar を足せば、
-キャッシュを消さなくても次の実行で反映されます。
-CHA の候補（インターフェースの実装クラス）はキャッシュせず、毎回 `H` 行から計算するので、
-jar の追加で実装クラスが増えた場合も、呼び出し側のファイルを解析し直さずに反映されます
-（jar の基底クラスがソースのインターフェースを実装している構成では、その子クラスの `H` 行に
-インターフェースも親として記録します）。
-実行する JDK を変えたときはキャッシュ全体を作り直します（JDT は実行中の JVM の標準クラスも
-解析対象のクラスパスに含めるため。何が変わるかは下記 docs の Q20）。
-設計上の判断と限界は [docs/cache-dependency-jars-qa.md](docs/cache-dependency-jars-qa.md) にまとめています。
-
-## 出力ファイル
 
 ### `call-hierarchy.csv` — 呼び出し階層
 
@@ -305,57 +113,74 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
-`callee` はこの1列でパッケージとオーバーロードを見分けられる形にしてあります。
-引数の型はパッケージを落とした略名（`java.lang.String` → `String`）ですが、
-略した結果 `java.util.List` と `other.List` のように**別物が同じ表記になる組だけ**は
-完全修飾に戻します（`fn.Dao.save(java.util.List)`）。
-
-なお引数が2つ以上あると `callee` にカンマが入るため、その値はCSVの引用符で
-囲まれて出ます（`"...findOrder(String,long)"`）。Excelや標準的なCSVパーサでは
-そのまま1列として読めますが、`cut -d,` のような素朴な処理では分割されます。
-
 コンストラクタの呼び出し自体は行になりません。
 コンストラクタ内からのメソッド呼び出しは行として出力されます。
-コンストラクタ名はEclipseのスタックトレース形式に合わせるため `<init>` で出力されます。
+
+行順は、rootメソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、rootメソッドからの呼び出し順（深さ優先）です。
+具象クラスの候補が複数ある呼び出しは候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
+末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
+注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。 （[注記](#注記)）
+
+
+### `methods.csv` — ソース上の全メソッドとその呼び出し状況
+
+`call-hierarchy.csv` が起点からの経路を展開するのに対し、こちらはソース上のメソッドを 1 行ずつ並べた一覧です。
+経路の数ではなくメソッドの数で決まるので大きくなりません。
+「誰からも呼ばれていないのはどれか」「よく呼ばれている共通処理はどれか」を俯瞰するのに使います。
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample.Sample,Sample.init
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
+OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
+OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,
+OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
 ```
 
-行順は、起点がソースの並び順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、
-起点からの展開がソース上の呼び出し順（深さ優先）です。具象クラスの候補が複数ある呼び出しは
-候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
-末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 →
-呼び出し順）で出ます。これらの並びは OS やファイルシステム、キャッシュの状態に依存しないので、
-環境が違っても同じソースからは同じ行順の CSV ができます
-（[docs/deterministic-row-order-qa.md](docs/deterministic-row-order-qa.md)）。
-
-#### 注記
-
-注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。
-
-| 注記 | 意味 |
+| 列 | 内容 |
 |---|---|
-| `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
-| `深さ制限(N)のため打ち切り` | `max.depth` に達した |
-| `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
-| `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
-| `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。展開できないので候補には数えていない |
-| `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
-| `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
-| `解決:DATAFLOW_NEW` | `new` された具象型から特定した（捕捉された変数を含む） |
-| `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
-| `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
-| `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
-| `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
-| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した（[リフレクション](#リフレクション)参照） |
-| `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
-| `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
-| `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
-| `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
+| `method` | **単純クラス名.メソッド名(引数型略名)**。引数を付けてオーバーロードを見分けられるようにしています。略名が衝突する場合だけ完全修飾の引数に戻ります |
+| `declaringType` | 宣言しているクラスの完全修飾名。Excelのフィルタに使える |
+| `typeKind` | `C`=具象クラス / `A`=抽象クラス / `I`=インターフェース |
+| `file` | 宣言されているファイル。`project.root` からの相対パス |
+| `line` | 宣言行 |
+| `hasBody` | 本体を持つなら `1`、持たない（インターフェースや抽象メソッドの宣言）なら `0` |
+| `inDegree` | このメソッドを呼んでいる箇所の数 |
+| `outDegree` | このメソッドが出している呼び出しの数 |
+| `role` | 呼び出し元・呼び出し先の有無による分類（下表） |
+| `reachable` | 起点からの呼び出しを辿って到達できるなら `1`、できないなら `0` |
+| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
+| `unresolvedCause` | その理由（下表）。複数ある場合は `;` 区切り |
 
-#### **Eclipseでのソースコードジャンプ**
+| role | 意味 |
+|---|---|
+| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
+| `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
+| `LEAF` | 呼び出し先が無い。末端処理 |
+| `NORMAL` | 上記以外 |
+
+`unresolvedCause` は、絞れなかった呼び出しのレシーバ（呼び出しの受け手）がどこから来たかで決まります。
+次に何を調べればよいかの手がかりになります。
+
+| unresolvedCause | 意味 |
+|---|---|
+| `戻り値（ファクトリメソッド等）` | レシーバが他のメソッドの戻り値。ファクトリの実装を[プラグイン](docs/instance-analysis-plugin.md)で教えると絞れることがある |
+| `引数（メソッド外から渡される）` | レシーバが呼び出し元から渡された引数 |
+| `フィールド変数` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
+| `ローカル変数` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
+| `自クラス（this）` / `型名（static）` / `レシーバ不明` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
+| `実装なし（宣言のまま）` | 本体を持つ実装がソース上に1つも無い |
+| `実装はコンパイル時生成（名前）` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `ラムダ/メソッド参照の実装あり` | その関数型インターフェースをラムダかメソッド参照が実装している |
+
+行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
+「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
+
+- コンストラクタ（`<init>`）は出力しません（`call-hierarchy.csv` でも行にしていないため揃えています）
+- jar の中のメソッドなど、ソースに宣言が無いものは出力しません。呼ばれている事実は `call-hierarchy.csv` に残ります
+- `reachable` の起点は `call-hierarchy.csv` と同じで、`entry.packages` で指定したメソッドです。
+  空欄のとき（全体モード）は「呼び出し元が無く、ソース上に本体を持つメソッド」が起点になります
+
+### Eclipse でソースコードへジャンプする
 `call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
 `(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
 
@@ -365,25 +190,33 @@ at jp.co.example.Sample.<init>(Sample.java:3),jp.co.example.Sample.init(),Sample
    「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
 3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
-### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
-| 列 | 内容 |
+### 注記
+| 注記 | 意味 |
 |---|---|
-| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
-| `unresolvedCause` | その理由（上の「理由」表と同じ。複数ある場合は `;` 区切り） |
+| `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
+| `深さ制限(N)のため打ち切り` | `max.depth` に達した |
+| `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
+| `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
+| `実装はコンパイル時生成（名前）: FQN はアノテーション処理で生成されるためソース上に無い` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。展開できないので候補には数えていない |
+| `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
+| `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
+| `解決:DATAFLOW_NEW` | `new` された具象型から特定した（捕捉された変数を含む） |
+| `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
+| `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
+| `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
+| `解決:SPRING_DI` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
+| `解決:SPRING_DI_QUALIFIER` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
+| `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
+| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
+| `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
+| `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
+| `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
+| `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
-| role | 意味 |
-|---|---|
-| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・デッドコード・テスト・リフレクション経由が混ざる |
-| `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
-| `LEAF` | 呼び出し先が無い |
-| `NORMAL` | 上記以外 |
 
-行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
-「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
-コンストラクタ（`<init>`）は出力しません。
-
-### jarファイルからの被参照メソッド
+### jar からの被参照メソッド
 
 自分のコードを呼んでいる側のjarを config の `external.library.folders` に指定すると、
 `call-hierarchy.csv` に追記されます。
@@ -406,25 +239,6 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 除外した件数は実行ログに出ます。
 `dist` を丸ごと指定しても、自分から自分への呼び出しが被参照として出ることはありません。
 
-#### FatJar（jar の中の jar）
-
-Spring Boot の実行可能 jar（`BOOT-INF/classes/` と `BOOT-INF/lib/*.jar`）、war（`WEB-INF/classes/` と
-`WEB-INF/lib/*.jar`）、ear（中に war や jar）のように、jar の中に jar が入っている配布物も
-そのまま指定できます。中の jar を取り出す必要はありません。中の jar は何段入れ子でも順に開きます。
-`root` 列の jar 名は、どの jar のどこに入っていたかが分かるように jar URL と同じ `!/` 区切りで出ます。
-FatJar の中に自プロジェクトの jar が入っていても、上と同じく読み飛ばします。
-行は jar のパス順 → jar の中のクラスの順で出ます。
-
-```csv
-caller,callee,root,call-hierarchy
-teamc.ReportJob,fx.util.Counter.bump(),team-c-boot.jar,Counter.bump,被参照:EXACT
-teamb.NightJob,fx.util.Counter.bump(),team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
-teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
-```
-
-同じ jar が複数の FatJar に入っていれば、それぞれの FatJar の行として別々に出ます
-（「どの配布物に影響するか」が影響調査の答えなので、まとめません）。
-実装時に迷った点は [docs/fatjar-external-usage-qa.md](docs/fatjar-external-usage-qa.md) にまとめています。
 
 | 注記 | 意味 |
 |---|---|
@@ -450,122 +264,31 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が1つに定まる |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
 | 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等 |
-| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（後述） |
-| — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（後述。経路ごとに判定するため段の外） |
+| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（[注記の表](#注記)） |
+| — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
-| 5 | `CHA` | 候補が複数のまま（低確度） |
-
-### リフレクション
-
-`Class.forName` / `X.class` / `obj.getClass()` → `getMethod` / `getDeclaredMethod` → `Method.invoke`、
-および `getConstructor` → `newInstance` の連鎖を、キャッシュに記録した出所（レシーバの連鎖と
-実引数のリテラル）から辿り、実際に動くメソッドへ解決します。
-
-| 書き方 | 解決 |
-|---|---|
-| `Class.forName("a.B").getMethod("run", long.class).invoke(obj, 1L)` | `a.B.run(long)` |
-| `B.class.getMethod("run")`、`obj.getClass().getMethod("run")`（obj の具象型が分かるとき） | `B.run()` |
-| クラス名・メソッド名が `static final` 定数、または呼び出し元からリテラルで渡された引数 | 同上（経路ごとに解決） |
-| `getMethod("run", types)` のように引数型が変数 | 同名のメソッドを候補として列挙（未展開） |
-| `Class.forName("a.B")` | `a.B` の static 初期化子（あれば） |
-| `Class.forName("a.B").getDeclaredConstructor().newInstance()` | `a.B` のコンストラクタ。生成された型は以降の呼び出しでも使われる |
-
-解決できないもの: 設定ファイル・DB・アノテーションから来る名前、`Method` や `Class` を
-フィールドや別メソッドの引数で受け渡す形。これらは `Method.invoke` のまま「ソースなし」の行になります。
+| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補を絞った（[注記の表](#注記)） |
+| 6 | `CHA` | 候補が複数のまま（低確度） |
+| — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
 
 ---
 
-## ソースの構成
+## キャッシュ
 
-`src/CallHierarchyExporter.java` がエントリポイント（JBang の指示行と `main`）で、
-本体は `src/jche/` 配下のパッケージに分かれています。パッケージは処理のフェーズに対応します。
+解析結果のキャッシュは出力フォルダには置かず、**このツールのプロジェクトフォルダ**の
+`.cache/<project.root のフォルダ名>_<絶対パスのハッシュ 8 桁>/analysis-cache.tsv` に作ります。
+同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクト
+（ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、
+どこから実行しても、キャッシュの場所は変わりません。
 
-| パッケージ | 役割 | 主なクラス |
-|---|---|---|
-| `jche.config` | 設定ファイルとプロジェクト構成の読み取り。出力フォルダとキャッシュの場所の決定。ビルドファイルとローカルリポジトリからの依存 jar の収集 | `Config`, `ToolRoot`, `ProjectLayout`, `BuildFileClasspath`, `MavenModels`, `DependencyCollector`, `GradleBuild`, `PackagePattern` |
-| `jche.cache` | キャッシュの形式と「事実」のレコード。JDT に依存しない | `CacheFormat`, `Origin`, `MethodRef`, `*Fact` |
-| `jche.analysis` | フェーズ1: AST を走査して事実を集め、キャッシュを差分更新する | `CacheUpdater`, `CallEdgeExtractor`, `FactVisitor`, `OriginTracker` |
-| `jche.graph` | フェーズ2: CSR 形式の呼び出しグラフと、具象クラスの解決 | `CallGraphBuilder`, `CallGraph`, `CallResolver`, `DataflowResolver` |
-| `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
-| `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
-| `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
-| `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
-
-読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
-→ `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
-キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
-
----
-
-## テスト
-
-`test/demo/` の小さなプロジェクトを解析し、出力 CSV が `test/regression/*/expected*/` と
-一致することを確認する回帰テストがあります。全体モード（`whole`）と `entry.packages` 指定（`entry`）の
-2 ケースを、それぞれキャッシュ無し・キャッシュ再利用の 2 回ずつ実行します。
-`jarchange` ケースは、依存 jar 無し → 有り → 無し の順に同じキャッシュで実行し、
-jar の追加・削除が影響するファイルの再解析だけで出力に反映されることを確認します。
-`maven` / `mavenmulti` / `gradle` ケースは `library.folders` を空欄にして、`test/maven-demo`（`pom.xml`）、
-`test/maven-multi`（マルチモジュール）、`test/gradle-demo`（`build.gradle`。`app` は Buildship の
-`.project` / `.classpath` 付き）のビルドファイルを読み、`test/localrepo`（Maven 形式のローカルリポジトリ）から
-依存 jar `sample.deps:greeter` と、その POM から辿る推移的な依存 `core` を集めて、jar の型への呼び出しが
-出力に出ることを確認します。ビルドツールもネットワークも要りません。
-各ケースでは、出力フォルダに設定ファイルの複製と `run.log` があること、実行ごとに出力フォルダが分かれることも
-確認します。`whole` ケースは `cache.folder` を空欄にしてあり、キャッシュがリポジトリ直下の `.cache/demo_<ハッシュ>/`
-にできることを確認します（他のケースは `cache.folder=./.cache` でケースごとに分けています）。
-最後の `multi` ケースは `whole` と `entry` の設定ファイルに存在しない設定ファイルを 1 つ混ぜて 1 回の起動で渡し、
-失敗した設定を飛ばして残りが処理されること、終了コードが 1 になることを確認します。
-比較は `<case>/output/` の最新（名前順の末尾）のフォルダに対して行います。
-
-```bash
-bash test/regression/run.sh        # Linux / macOS / Git Bash（jbang 経由で実行）
-test\regression\run.cmd            # Windows のコマンドプロンプト
-```
-
-GitHub Actions（`.github/workflows/smoke.yml`）でも push ごとに、`-Xlint:all -Werror` での
-コンパイルとこの回帰テストを実行します。
-
-出力の形式や解決の挙動を意図して変えたときは、`test/regression/*/output/<最新のフォルダ>/` の差分を確認したうえで
-CSV を `expected*/` にコピーして更新してください。期待出力はツールと同じ JDK 25 で生成するのが原則です
-（JDT は実行中の JVM のブートクラスパスを解析対象に含めるため、JDK の版で結果が変わりうる）。
-
-`jbangw/` に同梱した JBang ラッパースクリプトには、別のテストがあります。この 3 ファイルは
-JBang 本家からそのまま持ち込んだもので、JDK の自動取得・アーキテクチャ判定・終了コードの
-伝播といった、壊れても気づきにくい箇所が取り込み時の内容から黙って変わっていないかを検出します。
-出所・ライセンス・取り直しの手順は [jbangw/README.md](jbangw/README.md) にあります。
-
-```bash
-bash test/jbangw/run.sh        # Linux / macOS / Git Bash
-```
-
-ファイルの中身を読むだけなので JDK も jbang もネットワークも要りません。回帰テストとは別の
-ジョブとして GitHub Actions でも実行します。個々の検査が何を守っているかは `run.sh` の
-コメントに書いてあります。
-
-ラッパーの分岐はほとんどが Windows 固有（`javac.exe`、パス区切りの `\`、cmd の遅延展開、
-PowerShell への委譲）で、Linux 側では一行も通りません。そのため GitHub Actions では
-`windows-latest` でも回帰テスト（`test\regression\run.cmd`）を実行します。
-
-Eclipse 用の `pom.xml` にも検査があります。`//DEPS` 行と `pom.xml` の依存が同じ版であることを見ます。
-
-```bash
-bash test/pom/run.sh           # Linux / macOS / Git Bash
-```
-
-GitHub Actions では、これに加えて `mvn compile` で `pom.xml` から実際に依存を解決してコンパイルできることも
-確認します（Eclipse の m2e が行う解決と同じです）。
+- 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
+- 2 回目以降は変更されたファイルだけを解析し直します。依存 jar を足したときも、
+  その jar の型を使っているファイルだけが対象です
+- 大規模なコードベースで `OutOfMemoryError` にならないための作りと、差分更新が
+  何を見て判断しているかは [docs/cache-design.md](docs/cache-design.md) にあります
 
 ---
 
 ## ライセンス
 
-Apache License, Version 2.0 で配布します。全文は [LICENSE](LICENSE) を参照してください。
-
-Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest))
-
-ソースコードの各ファイルの先頭には、次の 1 行だけを置きます（SPDX 短識別子）。
-
-```java
-// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
-```
-
-`test/` 以下のサンプルプロジェクト（`test/demo`、`test/maven-demo` など）は解析対象のサンプルデータなので、この行は付けません。
+Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest)). SPDX-License-Identifier: Apache-2.0

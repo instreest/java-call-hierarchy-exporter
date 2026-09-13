@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,10 +22,13 @@ import java.util.Properties;
 
 import org.eclipse.jdt.core.JavaCore;
 
+import jche.util.FileHash;
+import jche.util.UserHome;
+
 /**
  * 設定ファイル（config.properties）の読み込み。
  *
- * 設定できる項目とその意味は config.properties（リポジトリ直下の既定の設定ファイル）にコメント付きでまとめてある。
+ * 設定できる項目とその意味は config/config.properties（同梱の既定の設定ファイル）にコメント付きでまとめてある。
  * あちらを唯一の一覧として扱い、ここには複製しない（二重管理で片方が古くなるのを避けるため）。
  *
  * 相対パスの起点は項目ごとに異なる。
@@ -34,7 +38,8 @@ import org.eclipse.jdt.core.JavaCore;
  * </ul>
  * 設定ファイルと関連ファイルをひとまとめに配置でき、どこから実行しても同じ結果になる。
  *
- * 出力は output.folder の下に実行ごとのフォルダ（{@code <解析開始日時>_<project.root のフォルダ名>}）を
+ * 出力は output.folder（既定は {@code .} ＝設定ファイルと同じディレクトリ）の下に
+ * 実行ごとのフォルダ（{@code <解析開始日時>_<project.root のフォルダ名>}）を
  * 作って書く（{@link #outputDir}）。CSV のファイル名は固定で、設定ファイルの複製と実行ログも同じフォルダに入る。
  * キャッシュは出力フォルダには置かず、解析対象プロジェクトごとのサイドカーとして
  * このツールのプロジェクトフォルダ内（{@code <ツールのフォルダ>/.cache/<プロジェクト名>_<パスのハッシュ>/}）に置く。
@@ -92,6 +97,8 @@ public final class Config {
      */
     public final List<Path> libraryRepositories;
     public final String sourceEncoding;
+    /** source.encoding が空欄で、project.root から決めたか */
+    public final boolean sourceEncodingAuto;
     /** 実際に効いた解析対象ソースのJavaバージョン（JDTから読み戻した値） */
     public final String sourceLevel;
     /** 設定ファイルで要求された値。未指定なら空 */
@@ -115,12 +122,35 @@ public final class Config {
     public final Properties raw;
     public final List<String> hintCollectorClasses;
     public final List<String> candidateProviderClasses;
+    /** 拡張クラスの置き場所（設定ファイルのフォルダからの相対）。.java / .class / .jar を置く */
+    public final List<Path> pluginFolders;
+    /**
+     * フェーズAの拡張（キャッシュに証拠を書く側）の指紋。
+     *
+     * 拡張を足したり、その設定や実装を変えたりすると、同じソースから拾える証拠が変わる。
+     * ファイルの更新時刻とサイズだけを見ていると古い証拠を再利用してしまうため、
+     * キャッシュのヘッダ行に入れて丸ごと突き合わせる（{@link jche.cache.CacheFormat#headerFor}）。
+     * フェーズAの拡張を使っていないときは空文字で、従来のキャッシュはそのまま有効。
+     */
+    public final String hintPluginFingerprint;
 
     public final boolean cacheEnabled;
     /** データフロー解析（ファクトリの戻り値・引数から具象クラスを特定）を使うか */
     public final boolean dataflowEnabled;
     /** ファクトリの委譲（return create();）を何段まで辿るか */
     public final int dataflowMaxDepth;
+    /** DIコンテナ（Spring）のBean定義で候補を絞るか */
+    public final boolean springDiEnabled;
+    /** 追加でBean登録の印とみなす注釈（独自のステレオタイプ注釈。FQNでも単純名でもよい） */
+    public final List<String> springDiAnnotations;
+    /**
+     * 条件分岐の静的解析で「その経路では呼ばれない」呼び出しの先を辿らないか。
+     *
+     * 打ち切った呼び出し自体は理由付きで1行出力する（呼び出しが書かれている事実は消さない）。
+     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶため、
+     * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
+     */
+    public final boolean branchPruningEnabled;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
     public final Path cacheFile;
@@ -199,16 +229,16 @@ public final class Config {
         // jar を1件ずつ指定する形。プロジェクトの外（~/.m2 等）を指すのが普通なので配下の制限は掛けない
         this.libraryJars = new ArrayList<>();
         for (String raw : splitList(p.getProperty("library.jars", ""))) {
-            this.libraryJars.add(resolveFromConfigDir(expandHome(raw)));
+            this.libraryJars.add(resolveFromConfigDir(UserHome.expand(raw)));
         }
         this.libraryBuildTool = buildToolOf(p.getProperty("library.build.tool", "auto"));
-        this.libraryRepositories = new ArrayList<>();
-        for (String raw : splitList(p.getProperty("library.repositories", ""))) {
-            // ローカルリポジトリは設定ファイルやプロジェクトの外にあるのが普通なので、配下の制限は掛けない
-            this.libraryRepositories.add(resolveFromConfigDir(expandHome(raw)));
-        }
+        this.libraryRepositories = repositoriesOf(p);
 
-        this.sourceEncoding = p.getProperty("source.encoding", "UTF-8").trim();
+        // source.encoding が空欄なら project.root から決める（pom.xml の project.build.sourceEncoding、無ければ UTF-8）
+        String enc = p.getProperty("source.encoding", "").trim();
+        this.sourceEncodingAuto = enc.isEmpty();
+        this.sourceEncoding = this.sourceEncodingAuto
+                ? ProjectDetector.sourceEncoding(this.projectRoot) : charsetOf("source.encoding", enc).name();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
         this.sourceLevelAuto = this.sourceLevelRequested.isEmpty();
         this.compilerOptions = buildCompilerOptions(this.sourceLevelRequested);
@@ -227,19 +257,18 @@ public final class Config {
         // 使う場合はこのキーを足せば読み込まれる
         this.hintCollectorClasses = splitList(p.getProperty("resolver.hint.collectors", ""));
         this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
+        this.pluginFolders = pluginFoldersOf(p);
+        this.hintPluginFingerprint = fingerprintOfHintPlugins(p, this.hintCollectorClasses, this.pluginFolders);
         this.raw = p;
 
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
         this.dataflowEnabled = Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
         this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
-        // キャッシュは解析対象プロジェクトごとのサイドカー。既定はこのツールのプロジェクトフォルダの .cache/ の下。
-        // cache.folder を指定したときも、その下にプロジェクト別のフォルダを切る（複数の設定が同じプロジェクトを
-        // 指すなら同じキャッシュを共有し、別のプロジェクトなら混ざらない）
-        String cacheFolderRaw = p.getProperty("cache.folder", "").trim();
-        Path cacheBase = cacheFolderRaw.isEmpty()
-                ? toolRoot.toAbsolutePath().normalize().resolve(DEFAULT_CACHE_DIR_NAME)
-                : resolveUnderConfigDir("cache.folder", cacheFolderRaw);
-        this.cacheDir = cacheBase.resolve(projectName + "_" + shortHash(this.projectRoot.toString()));
+        this.springDiEnabled = Boolean.parseBoolean(p.getProperty("spring.di.enabled", "true").trim());
+        this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
+        this.branchPruningEnabled =
+                Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
+        this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
 
         // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
@@ -248,8 +277,9 @@ public final class Config {
                 splitList(p.getProperty("external.library.folders", "")), false);
 
         // 出力は実行ごとのフォルダに分ける。フォルダ名に解析開始日時とプロジェクト名を入れ、
-        // 「いつ・どのプロジェクトを解析した結果か」がフォルダ名だけで分かるようにする
-        this.outputFolder = resolveUnderConfigDir("output.folder", p.getProperty("output.folder", "./output"));
+        // 「いつ・どのプロジェクトを解析した結果か」がフォルダ名だけで分かるようにする。
+        // 既定は「.」＝設定ファイルと同じフォルダ。設定ファイルとその実行結果が 1 か所にまとまる
+        this.outputFolder = resolveUnderConfigDir("output.folder", p.getProperty("output.folder", "."));
         this.outputDir = uniqueOutputDir(this.outputFolder,
                 startedAt.format(FOLDER_TIMESTAMP) + "_" + projectName);
         this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);
@@ -257,12 +287,48 @@ public final class Config {
         this.logFile = this.outputDir.resolve(LOG_FILE_NAME);
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
-        if ("UTF-8-BOM".equalsIgnoreCase(encRaw)) {
-            this.outputEncoding = StandardCharsets.UTF_8;
-            this.outputBom = true;
-        } else {
-            this.outputEncoding = Charset.forName(encRaw);
-            this.outputBom = false;
+        this.outputBom = "UTF-8-BOM".equalsIgnoreCase(encRaw);
+        this.outputEncoding = this.outputBom ? StandardCharsets.UTF_8 : charsetOf("output.encoding", encRaw);
+    }
+
+    /** library.repositories。ローカルリポジトリは設定ファイルやプロジェクトの外にあるのが普通なので、配下の制限は掛けない */
+    private List<Path> repositoriesOf(Properties p) {
+        List<Path> out = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("library.repositories", ""))) {
+            out.add(resolveFromConfigDir(UserHome.expand(raw)));
+        }
+        return out;
+    }
+
+    /** plugin.folders（設定ファイルのフォルダからの相対） */
+    private List<Path> pluginFoldersOf(Properties p) {
+        List<Path> folders = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("plugin.folders", ""))) {
+            folders.add(resolveUnderConfigDir("plugin.folders", raw));
+        }
+        return List.copyOf(folders);
+    }
+
+    /**
+     * キャッシュフォルダ。解析対象プロジェクトごとのサイドカーで、既定はこのツールのプロジェクトフォルダの .cache/ の下。
+     * cache.folder を指定したときも、その下にプロジェクト別のフォルダを切る（複数の設定が同じプロジェクトを
+     * 指すなら同じキャッシュを共有し、別のプロジェクトなら混ざらない）
+     */
+    private Path cacheDirOf(Properties p, Path toolRoot) {
+        String cacheFolderRaw = p.getProperty("cache.folder", "").trim();
+        Path cacheBase = cacheFolderRaw.isEmpty()
+                ? toolRoot.toAbsolutePath().normalize().resolve(DEFAULT_CACHE_DIR_NAME)
+                : resolveUnderConfigDir("cache.folder", cacheFolderRaw);
+        return cacheBase.resolve(projectName + "_" + shortHash(projectRoot.toString()));
+    }
+
+    /** 文字コードの設定値。名前が不正なら、どの項目かが分かる例外にする（intOf と同じ流儀） */
+    private static Charset charsetOf(String key, String raw) {
+        try {
+            return Charset.forName(raw.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("設定 " + key + " の文字コード名が不正です: '" + raw.trim()
+                    + "'（例: UTF-8、MS932、Shift_JIS）");
         }
     }
 
@@ -351,6 +417,60 @@ public final class Config {
         }
     }
 
+    /**
+     * フェーズAの拡張の指紋。拡張のクラス名・{@code plugin.} で始まる設定・拡張フォルダの
+     * ファイル一覧（名前・サイズ・内容ハッシュ）から作る。拡張を使っていなければ空文字。
+     *
+     * 拡張の中身を書き換えれば内容ハッシュが変わるので、キャッシュは自動的に捨てられる。
+     * jar の中身の入れ替えも同様。更新時刻を使わないのは、git のチェックアウトや CI のように
+     * 中身が同じでも更新時刻が変わる環境で、実行のたびにキャッシュを捨ててしまわないため
+     * （拡張のファイルは少数なので、毎回読んでも時間はかからない）。
+     */
+    private static String fingerprintOfHintPlugins(Properties p, List<String> collectors, List<Path> folders) {
+        if (collectors.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(String.join(",", collectors));
+        List<String> keys = new ArrayList<>(p.stringPropertyNames());
+        Collections.sort(keys);
+        for (String key : keys) {
+            if (key.startsWith("plugin.")) {
+                sb.append('\n').append(key).append('=').append(p.getProperty(key));
+            }
+        }
+        for (Path folder : folders) {
+            for (String entry : fileStamps(folder)) {
+                sb.append('\n').append(entry);
+            }
+        }
+        return shortHash(sb.toString());
+    }
+
+    /** フォルダ配下のファイルの「相対パス:サイズ:内容ハッシュ」。読めないフォルダ・ファイルは印だけ残す */
+    private static List<String> fileStamps(Path folder) {
+        List<String> out = new ArrayList<>();
+        if (!Files.isDirectory(folder)) {
+            out.add(folder + ":missing");
+            return out;
+        }
+        try (var walk = Files.walk(folder)) {
+            for (Path path : (Iterable<Path>) walk.filter(Files::isRegularFile)::iterator) {
+                String hash;
+                try {
+                    hash = FileHash.of(path);
+                } catch (IOException e) {
+                    hash = "unreadable";
+                }
+                out.add(folder.relativize(path) + ":" + Files.size(path) + ":" + hash);
+            }
+        } catch (IOException e) {
+            out.add(folder + ":unreadable");
+            return out;
+        }
+        Collections.sort(out);
+        return out;
+    }
+
     /** 相対パスは設定ファイルのあるディレクトリを起点に解決する（配下の制限なし。project.root 用） */
     private Path resolveFromConfigDir(String raw) {
         Path p = Paths.get(raw.trim());
@@ -399,15 +519,6 @@ public final class Config {
                     + "キャッシュのキーと出力の file 列を " + baseName + " からの相対パスにするためです");
         }
         return resolved;
-    }
-
-    /** 先頭の "~/" をホームディレクトリにする（ローカルリポジトリの指定を OS を問わず書けるように） */
-    private static String expandHome(String raw) {
-        String s = raw.trim();
-        if (s.equals("~") || s.startsWith("~/") || s.startsWith("~\\")) {
-            return System.getProperty("user.home") + s.substring(1);
-        }
-        return s;
     }
 
     /** library.build.tool の値。空欄は auto。それ以外の綴りは、どの項目かが分かる例外にする */

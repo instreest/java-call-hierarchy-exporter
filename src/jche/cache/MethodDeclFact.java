@@ -8,16 +8,23 @@ package jche.cache;
  * @param declLine 宣言行
  * @param hasBody  本体を持つか。IFの抽象メソッドとデフォルトメソッドの区別に使う
  * @param mods     修飾子（{@link ModifierTokens}）。implicit / delegating も含みうる
+ * @param annotations メソッドに付いていたアノテーション（{@link AnnotationTokens}。v13 で追加）
  */
-public record MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, String mods) {
+public record MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, String mods,
+                             String annotations) {
+
+    public MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, String mods) {
+        this(ref, declLine, hasBody, mods, "");
+    }
 
     public MethodDeclFact {
         mods = (mods == null) ? "" : mods;
+        annotations = (annotations == null) ? "" : annotations;
     }
 
     public String toRow() {
         return CacheFormat.joinRow("D", ref.pkg(), ref.typeFqn(), ref.name(), ref.paramSig(),
-                String.valueOf(declLine), hasBody ? "1" : "0", mods);
+                String.valueOf(declLine), hasBody ? "1" : "0", mods, annotations);
     }
 
     /** 列が足りなければ null */
@@ -36,6 +43,7 @@ public record MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, Strin
             declLine = -1;
         }
         boolean hasBody = (cols.length < 7) || !"0".equals(cols[6]);
-        return new MethodDeclFact(ref, declLine, hasBody, CacheFormat.columnAt(cols, 7));
+        return new MethodDeclFact(ref, declLine, hasBody, CacheFormat.columnAt(cols, 7),
+                CacheFormat.columnAt(cols, 8));
     }
 }

@@ -35,13 +35,36 @@ call :run jarchange config-before.properties 3 "3回目: jar 削除"
 call :expectlog jarchange 3 "jar[^=]*=[1-9]" "3回目: jar 削除で影響ファイルを再解析"
 call :compare jarchange expected-before "3回目: jar 削除"
 
+rem 拡張（インスタンス解析条件のプラグイン）のケース。拡張なし -> 同梱の拡張 -> 自前の拡張の順に
+rem 実行し、拡張ありでのみ具象クラスに絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを見る
+echo == plugin ==
+call :reset plugin
+call :run plugin config-before.properties 1 "1回目: 拡張なし"
+call :compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
+call :run plugin config.properties 2 "2回目: 同梱の拡張"
+call :expectlog plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
+call :expectlog plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
+call :expectlog plugin 2 "^[^=]*=0" "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
+call :compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
+call :run plugin config.properties 3 "3回目: 同じ拡張"
+call :expectlog plugin 3 "^[^=]*=[1-9]" "3回目: 拡張が同じならキャッシュを再利用"
+call :compare plugin expected "3回目: 同じ拡張"
+call :run plugin config-custom.properties 4 "4回目: 自前の拡張"
+call :expectlog plugin 4 "DiXmlProvider" "4回目: plugins\*.java をコンパイルして読み込んだ"
+call :compare plugin expected-custom "4回目: 自前の拡張（DI 設定ファイルから絞れる）"
+
 rem 複数の設定ファイルを 1 回の起動で処理するケース。存在しない設定を 1 つ混ぜ、それが失敗しても
 rem 前後の設定が処理されて出力フォルダができること、終了コードが 1 になることを見る
 echo == multi ==
 if exist "whole\output" rmdir /s /q "whole\output"
 if exist "entry\output" rmdir /s /q "entry\output"
 del /q "run-multi.log" 2>nul
+del /q "output-dirs.txt" 2>nul
+rem 出力フォルダの場所を機械的に受け取る経路（環境変数 JCHE_OUTPUT_DIR_FILE。GitHub Actions の
+rem action.yml がこれで結果の場所を知る）も、ここで一緒に検査する
+set "JCHE_OUTPUT_DIR_FILE=%CD%\output-dirs.txt"
 %JCHE% "whole\config.properties" "no-such-config.properties" "entry\config.properties" > "run-multi.log" 2>&1
+set "JCHE_OUTPUT_DIR_FILE="
 rem 終了コードは、現在の jbangw\jbang.cmd（本家そのまま）が jbang 本体の終了コードを呼び出し元へ返さないため
 rem 検査できない（.github\workflows\smoke.yml の「known to fail」の項と jbangw\README.md）。ここでは結果を表示するだけで
 rem 失敗扱いにはしない。ツール自身が 1 を返すことは run.sh 側（Linux）で検査している
@@ -49,6 +72,8 @@ if errorlevel 1 (echo   OK   multi 終了コード=1（存在しない設定フ�
 call :expectlog_any multi "run-multi.log" "\] *OK .*whole.config.properties" "multi: whole が処理された"
 call :expectlog_any multi "run-multi.log" "\] *FAIL .*no-such-config.properties" "multi: 存在しない設定が失敗と報告された"
 call :expectlog_any multi "run-multi.log" "\] *OK .*entry.config.properties" "multi: entry が処理された"
+powershell -NoProfile -Command "$d=@(Get-Content 'output-dirs.txt' -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -ne '' }); if ($d.Count -eq 2 -and (Test-Path (Join-Path $d[0] 'call-hierarchy.csv'))) { Write-Host '  OK   multi JCHE_OUTPUT_DIR_FILE' } else { Write-Host ('  DIFF multi JCHE_OUTPUT_DIR_FILE の内容が期待どおりではありません: ' + $d.Count + ' 行'); exit 1 }"
+if errorlevel 1 set "FAIL=1"
 call :compare whole expected "multi: whole"
 call :expectrunfiles whole config.properties "multi: whole"
 call :compare entry expected "multi: entry"
@@ -66,6 +91,18 @@ call :expectrunfiles "%~1" config.properties "1回目"
 call :run "%~1" config.properties 2 "2回目"
 call :expectlog "%~1" 2 "^[^=]*=[1-9]" "2回目: キャッシュを再利用"
 call :compare "%~1" expected "2回目: キャッシュ再利用"
+rem 3回目: 解析対象のソースと jar の更新時刻だけを変えて（中身は同じ）実行する。GitHub Actions の
+rem actions/checkout 後と同じ状況。サイズと内容ハッシュが同じならキャッシュは再利用され、jar も変更とみなさない
+call :touchall
+call :run "%~1" config.properties 3 "3回目: 更新時刻だけ変更"
+call :expectlog "%~1" 3 "^[^=]*=[1-9]" "3回目: 更新時刻だけ変わったソースはキャッシュを再利用"
+call :expectlog "%~1" 3 "^[^=]*=[0-9]+[^=]*=0([^0-9]|$)" "3回目: 更新時刻だけ変わった jar も変更とみなさず、新規解析は 0"
+call :compare "%~1" expected "3回目: 更新時刻だけ変更"
+exit /b 0
+
+:touchall
+rem test\demo 等の解析対象と test\localrepo の jar の更新時刻を全部「今」にする（中身は変えない）
+powershell -NoProfile -Command "Get-ChildItem -Recurse -File '%ROOT%\test\demo','%ROOT%\test\maven-demo','%ROOT%\test\maven-multi','%ROOT%\test\gradle-demo','%ROOT%\test\localrepo' | ForEach-Object { $_.LastWriteTime = Get-Date }"
 exit /b 0
 
 :latest

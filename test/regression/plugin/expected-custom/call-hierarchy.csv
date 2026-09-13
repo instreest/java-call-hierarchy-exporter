@@ -1,0 +1,9 @@
+caller,callee,root,call-hierarchy
+at fxp.App.factoryCall(App.java:15),fxp.DaoFactory.get(String),App.factoryCall,DaoFactory.get
+at fxp.App.factoryCall(App.java:16),fxp.OrderDaoImpl.find(),App.factoryCall,OrderDaoImpl.find,CHA候補2件（未展開）: ローカル変数
+at fxp.App.factoryCall(App.java:16),fxp.UserDaoImpl.find(),App.factoryCall,UserDaoImpl.find,CHA候補2件（未展開）: ローカル変数
+at fxp.App.chainedCall(App.java:20),fxp.OrderDaoImpl.find(),App.chainedCall,OrderDaoImpl.find,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fxp.App.chainedCall(App.java:20),fxp.UserDaoImpl.find(),App.chainedCall,UserDaoImpl.find,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fxp.App.chainedCall(App.java:20),fxp.DaoFactory.get(String),App.chainedCall,DaoFactory.get
+at fxp.App.injected(App.java:24),fxp.ReportService.run(),App.injected,ReportService.run,解決:DI_XML
+at fxp.ReportService.run(ReportService.java:6),fxp.ReportService.render(),App.injected,ReportService.run,ReportService.render

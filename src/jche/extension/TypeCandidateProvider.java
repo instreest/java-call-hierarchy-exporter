@@ -10,6 +10,8 @@ import java.util.Properties;
  *
  * 実装例（ファクトリの対応表）:
  *   hints に FACTORY_KEY があれば、対応表を引いて具象クラスFQNを返す。
+ *   これは同梱の {@link jche.builtin.TypeMappingProvider} がそのまま行うので、
+ *   対応表を書けば済む場合は自分で実装しなくてよい。
  *
  * @see CallSiteHintCollector フェーズAと、拡張の読み込み方法
  */

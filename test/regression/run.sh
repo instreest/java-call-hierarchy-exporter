@@ -5,7 +5,9 @@
 #   JCHE_CMD="java -cp bin:lib/* CallHierarchyExporter" bash test/regression/run.sh   # 既にコンパイル済みなら
 #
 # ケースは2種類ある。
-#   通常（whole / entry）… 同じ設定で2回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路
+#   通常（whole / entry）… 同じ設定で3回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路、
+#                          3回目は解析対象のソースと jar の更新時刻を全部変えてから（touch）実行し、中身が同じなら
+#                          内容ハッシュでキャッシュが再利用されること（GitHub Actions のチェックアウト後と同じ状況）を確認する
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
 #   maven / mavenmulti / gradle
@@ -13,9 +15,14 @@
 #                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
 #                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
+#   plugin               … 拡張（インスタンス解析条件のプラグイン）。拡張なし（config-before）→ 同梱の拡張
+#                          （config.properties。ファクトリのキーと対応表）→ 自前の拡張（config-custom。
+#                          plugins/*.java を実行時にコンパイル）の順に実行し、拡張ありでのみ具象クラスに
+#                          絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを確認する
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
-#                          終了コードが 1 になることを確認する
+#                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
+#                          （成功した設定の出力フォルダを 1 行ずつ書き出す。GitHub Actions 用）も確認する
 # 出力はツールが <case>/output/<解析開始日時>_<プロジェクト名>/ に書く（実行のたびに新しいフォルダ）。
 # 比較は最新のフォルダに対して行う。キャッシュは各ケースの cache.folder=./.cache の下（whole だけは
 # 既定どおり、ツールのプロジェクトフォルダの .cache/demo_<ハッシュ>/ にできることを検査する）。
@@ -25,7 +32,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle multi"}
+CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -88,6 +95,13 @@ expect_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の最�
         echo "  DIFF $1 ログ: キャッシュが再利用されていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
 }
+expect_not_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の最初の「=N」（再利用）が 0
+    if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E '^[^=]*=0([^0-9]|$)'; then
+        echo "  OK   $1 ログ ($3)"
+    else
+        echo "  DIFF $1 ログ: キャッシュが捨てられていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
+    fi
+}
 expect_log_contains() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラベル
     if LC_ALL=C grep -a -q -F -- "$3" "$1/run-$2.log"; then
         echo "  OK   $1 ログ ($4)"
@@ -101,6 +115,20 @@ expect_library_reanalysis() {   # $1=case  $2=何回目  $3=ラベル   … 「�
     else
         echo "  DIFF $1 ログ: 依存jarの変更による再解析がありません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
+}
+expect_nothing_parsed() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の 2 つ目の「=N」（新規解析）が 0
+    # 新規解析が 0 なら、依存 jar の変更による再解析も 0（内訳は新規解析が 0 のときは出ない）
+    if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E '^[^=]*=[0-9]+[^=]*=0([^0-9]|$)'; then
+        echo "  OK   $1 ログ ($3)"
+    else
+        echo "  DIFF $1 ログ: 解析し直したファイルがあります ($3): $(summary_line "$1/run-$2.log")"; fail=1
+    fi
+}
+# 解析対象のソースと jar の更新時刻を全部「今」にする（中身は変えない）。GitHub Actions の actions/checkout や
+# コピーで更新時刻だけが変わった状況の再現。対象は test/ 配下の解析対象と test/localrepo の jar
+touch_sources_and_jars() {
+    find "$ROOT/test/demo" "$ROOT/test/maven-demo" "$ROOT/test/maven-multi" "$ROOT/test/gradle-demo" \
+         "$ROOT/test/localrepo" -type f -exec touch {} +
 }
 
 # whole は cache.folder を空欄にしてあるので、キャッシュはツールのプロジェクトフォルダの .cache/demo_<ハッシュ>/ にできる
@@ -116,8 +144,12 @@ expect_sidecar_cache() {   # $1=case  $2=ラベル
 # 3 つ目に存在しない設定ファイルを渡し、それが失敗しても前後の設定が処理されること、終了コードが 1 になることを見る
 multi_case() {
     echo "== multi =="
-    rm -rf whole/output entry/output run-multi.log
-    $JCHE_CMD whole/config.properties no-such-config.properties entry/config.properties > run-multi.log 2>&1
+    rm -rf whole/output entry/output run-multi.log output-dirs.txt
+    # 出力フォルダの場所を機械的に受け取る経路（環境変数 JCHE_OUTPUT_DIR_FILE。GitHub Actions の
+    # action.yml がこれで結果の場所を知る）も、ここで一緒に検査する。成功した設定の数だけ、
+    # その出力フォルダの絶対パスが 1 行ずつ入る（失敗した設定の行は入らない）
+    JCHE_OUTPUT_DIR_FILE="$PWD/output-dirs.txt" \
+        $JCHE_CMD whole/config.properties no-such-config.properties entry/config.properties > run-multi.log 2>&1
     local code=$?
     if [ $code = 1 ]; then
         echo "  OK   multi 終了コード=1（存在しない設定ファイルが失敗）"
@@ -131,15 +163,50 @@ multi_case() {
     else
         echo "  DIFF multi 実行結果の一覧が期待どおりではありません"; LC_ALL=C grep -a -E '\] *(OK|FAIL) ' run-multi.log; fail=1
     fi
+    local dirs
+    dirs=$(grep -c . output-dirs.txt 2> /dev/null || echo 0)
+    if [ "$dirs" = 2 ] && [ -f "$(head -1 output-dirs.txt)/call-hierarchy.csv" ]; then
+        echo "  OK   multi JCHE_OUTPUT_DIR_FILE（成功した 2 件の出力フォルダ）"
+    else
+        echo "  DIFF multi JCHE_OUTPUT_DIR_FILE の内容が期待どおりではありません（$dirs 行）"
+        cat output-dirs.txt 2> /dev/null
+        fail=1
+    fi
     compare whole expected "multi: whole"
     expect_run_files whole config.properties "multi: whole"
     compare entry expected "multi: entry"
     expect_run_files entry config.properties "multi: entry"
 }
 
+# 拡張のケース。同じソースを 3 通りの設定で解析し、拡張の効き目とキャッシュの扱いを見る
+plugin_case() {
+    echo "== plugin =="
+    rm -rf plugin/.cache plugin/output plugin/run-*.log
+    run plugin config-before.properties 1 "1回目: 拡張なし" || return
+    compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
+
+    run plugin config.properties 2 "2回目: 同梱の拡張" || return
+    expect_log_contains plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
+    expect_log_contains plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
+    # フェーズAの拡張が増えたので、拡張なしで作ったキャッシュは捨てられて全件解析し直しになる
+    expect_not_reused plugin 2 "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
+    compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
+
+    run plugin config.properties 3 "3回目: 同じ拡張" || return
+    expect_reused plugin 3 "3回目: 拡張が同じならキャッシュを再利用"
+    compare plugin expected "3回目: 同じ拡張"
+
+    run plugin config-custom.properties 4 "4回目: 自前の拡張" || return
+    expect_log_contains plugin 4 "DiXmlProvider" "4回目: plugins/*.java をコンパイルして読み込んだ"
+    compare plugin expected-custom "4回目: 自前の拡張（DI 設定ファイルから絞れる）"
+}
+
 for c in $CASES; do
     if [ "$c" = multi ]; then
         multi_case; continue
+    fi
+    if [ "$c" = plugin ]; then
+        plugin_case; continue
     fi
     echo "== $c =="
     rm -rf "$c/.cache" "$c/output" "$c"/run-*.log
@@ -174,6 +241,13 @@ for c in $CASES; do
         run "$c" config.properties 2 "2回目" || continue
         expect_reused "$c" 2 "2回目: キャッシュを再利用"
         compare "$c" expected "2回目: キャッシュ再利用"
+        # 更新時刻だけが変わったソース・jar は、サイズと内容ハッシュが同じなら再利用される
+        # （依存 jar の「変更」としても検知されない）
+        touch_sources_and_jars
+        run "$c" config.properties 3 "3回目: 更新時刻だけ変更" || continue
+        expect_reused "$c" 3 "3回目: 更新時刻だけ変わったソースはキャッシュを再利用"
+        expect_nothing_parsed "$c" 3 "3回目: 更新時刻だけ変わった jar も変更とみなさず、新規解析は 0"
+        compare "$c" expected "3回目: 更新時刻だけ変更"
         # 2 回目は別の出力フォルダにできる（1 回目のフォルダはそのまま残る）
         if [ "$(ls -d "$c"/output/*/ 2>/dev/null | wc -l)" -ge 2 ]; then
             echo "  OK   $c 実行ごとに出力フォルダが分かれる"

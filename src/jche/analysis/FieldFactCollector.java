@@ -80,7 +80,8 @@ final class FieldFactCollector {
                 continue;
             }
             out.fieldDecls.add(new FieldDeclFact(typeFqn, vb.getName(),
-                    BindingNames.modifiersOf(vb.getModifiers()), names.declTypeName(vb.getType())));
+                    BindingNames.modifiersOf(vb.getModifiers()), names.declTypeName(vb.getType()),
+                    BindingNames.annotationsOf(vb)));
             if (frag.getInitializer() != null) {
                 out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(),
                         FieldAssignFact.SITE_INITIALIZER,

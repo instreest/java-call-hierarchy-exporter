@@ -1,0 +1,9 @@
+caller,callee,root,call-hierarchy
+at fxp.App.factoryCall(App.java:15),fxp.DaoFactory.get(String),App.factoryCall,DaoFactory.get
+at fxp.App.factoryCall(App.java:16),fxp.UserDaoImpl.find(),App.factoryCall,UserDaoImpl.find,解決:MAPPING
+at fxp.UserDaoImpl.find(UserDaoImpl.java:6),fxp.UserDaoImpl.loadUser(),App.factoryCall,UserDaoImpl.find,UserDaoImpl.loadUser
+at fxp.App.chainedCall(App.java:20),fxp.OrderDaoImpl.find(),App.chainedCall,OrderDaoImpl.find,解決:MAPPING
+at fxp.OrderDaoImpl.find(OrderDaoImpl.java:6),fxp.OrderDaoImpl.loadOrder(),App.chainedCall,OrderDaoImpl.find,OrderDaoImpl.loadOrder
+at fxp.App.chainedCall(App.java:20),fxp.DaoFactory.get(String),App.chainedCall,DaoFactory.get
+at fxp.App.injected(App.java:24),fxp.BillingService.run(),App.injected,BillingService.run,解決:MAPPING
+at fxp.BillingService.run(BillingService.java:6),fxp.BillingService.charge(),App.injected,BillingService.run,BillingService.charge

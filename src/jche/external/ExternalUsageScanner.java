@@ -26,6 +26,7 @@ import jche.graph.MethodTable;
 import jche.graph.TypeHierarchy;
 import jche.report.CallHierarchyCsvWriter;
 import jche.util.Log;
+import jche.util.Names;
 
 /**
  * 他チームのjarを走査し、自分のメソッドがどこから参照されているかを出力する。
@@ -223,7 +224,7 @@ public final class ExternalUsageScanner {
                 // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
                 // 版違いであり、生成箇所として表記できないので未照合に数える
                 String typeFqn = normalize(owner);
-                String simple = simpleOf(typeFqn);
+                String simple = Names.simpleOf(typeFqn);
                 out.writeExternalUsageRow(refs.thisClass,
                         typeFqn + "." + simple + "()", simple + "." + simple,
                         jarName, "IMPLICIT_CTOR");
@@ -237,10 +238,6 @@ public final class ExternalUsageScanner {
         }
     }
 
-    private static String simpleOf(String fqn) {
-        int i = fqn.lastIndexOf('.');
-        return (i >= 0) ? fqn.substring(i + 1) : fqn;
-    }
 
     /** 内部クラスは bytecode が Outer$Inner、JDT側が Outer.Inner なので両方で照合する */
     private static String normalize(String owner) {

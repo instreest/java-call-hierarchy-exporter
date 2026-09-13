@@ -1,10 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import jche.cache.CacheFormat;
+import jche.cache.CacheReader;
 import jche.cache.CallEdgeFact;
 import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
@@ -24,6 +22,7 @@ import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
 import jche.extension.Hint;
 import jche.util.Log;
+import jche.util.Names;
 import jche.util.RunControl;
 
 /**
@@ -57,24 +56,22 @@ public final class CallGraphBuilder {
 
     /**
      * @param sourceFolderOrder 起点の並び替えに使うソースフォルダの順（プロジェクトルートからの相対パス）
+     * @param beans             DIコンテナのBean定義の取り込み先（使わないなら {@link SpringBeans#DISABLED}）
      */
-    public static CallGraph build(Path cacheFile, List<String> sourceFolderOrder) throws IOException {
+    public static CallGraph build(Path cacheFile, List<String> sourceFolderOrder, SpringBeans beans)
+            throws IOException {
         CallGraphBuilder b = new CallGraphBuilder();
         b.graph.sourceFolderOrder = sourceFolderOrder;
+        b.graph.beans = beans;
         RunControl.progress("グラフ構築", 0, 2);
         b.firstPass(cacheFile);
         RunControl.checkCancelled();
         b.allocateEdges();
         RunControl.progress("グラフ構築", 1, 2);
         b.secondPass(cacheFile);
+        b.graph.finishBuild();
         RunControl.progress("グラフ構築", 2, 2);
         return b.graph;
-    }
-
-    private static BufferedReader open(Path cacheFile) throws IOException {
-        BufferedReader in = Files.newBufferedReader(cacheFile, StandardCharsets.UTF_8);
-        in.readLine();  // バージョン行を読み飛ばす
-        return in;
     }
 
     // ------------------------------------------------------------
@@ -82,72 +79,72 @@ public final class CallGraphBuilder {
     // ------------------------------------------------------------
 
     private void firstPass(Path cacheFile) throws IOException {
-        try (BufferedReader in = open(cacheFile)) {
+        try (CacheReader in = CacheReader.open(cacheFile)) {
             String currentFile = null;
-            String line;
-            while ((line = in.readLine()) != null) {
-                char rowType = CacheFormat.rowTypeOf(line);
-                switch (rowType) {
+            while (in.next()) {
+                switch (in.rowType()) {
                     case CacheFormat.ROW_FILE -> {
                         // ファイル単位で完結する判定（フィールド注入）をここで確定する
                         fields.flushInto(graph.fieldOrigins);
-                        String[] cols = CacheFormat.columnsOf(line);
-                        currentFile = (cols.length >= 2) ? cols[1] : null;
+                        currentFile = in.filePath();
                     }
                     case CacheFormat.ROW_TYPE -> {
-                        TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
+                        TypeFact t = TypeFact.fromRow(in.columns());
                         if (t != null) {
                             graph.hierarchy.add(t);
+                            graph.beans.type(t);
                         }
                     }
                     case CacheFormat.ROW_HINT -> {
-                        HintFact h = HintFact.fromRow(CacheFormat.columnsOf(line));
+                        HintFact h = HintFact.fromRow(in.columns());
                         if (h != null) {
                             graph.hintsByScope.computeIfAbsent(h.callerKey() + "|" + h.scopeKey(),
                                     k -> new ArrayList<>()).add(new Hint(h.kind(), h.value()));
                         }
                     }
                     case CacheFormat.ROW_METHOD_DECL -> {
-                        MethodDeclFact d = MethodDeclFact.fromRow(CacheFormat.columnsOf(line));
+                        MethodDeclFact d = MethodDeclFact.fromRow(in.columns());
                         if (d != null) {
                             int id = methods.intern(d.ref());
                             ensure(outDegree, id);
                             methods.setDeclaration(id, currentFile, d.declLine(), d.hasBody());
                             fields.declaration(d);
+                            graph.beans.method(id, d);
                         }
                     }
                     case CacheFormat.ROW_CALL -> {
-                        CallEdgeFact c = CallEdgeFact.fromRow(CacheFormat.columnsOf(line));
+                        CallEdgeFact c = CallEdgeFact.fromRow(in.columns());
                         if (c != null) {
                             countEdge(methods.intern(c.caller()), methods.intern(c.callee()));
                         }
                     }
                     case CacheFormat.ROW_UNRESOLVED -> {
-                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
+                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
                         if (u != null && u.hasUsableCandidate()) {
                             countEdge(methods.intern(u.caller()), internGuessedCallee(u));
                         }
                     }
                     case CacheFormat.ROW_FIELD_DECL -> {
-                        FieldDeclFact v = FieldDeclFact.fromRow(CacheFormat.columnsOf(line));
+                        FieldDeclFact v = FieldDeclFact.fromRow(in.columns());
                         if (v != null) {
                             fields.field(v);
+                            graph.beans.field(v);
                         }
                     }
                     case CacheFormat.ROW_FIELD_ASSIGN -> {
-                        FieldAssignFact j = FieldAssignFact.fromRow(CacheFormat.columnsOf(line));
+                        FieldAssignFact j = FieldAssignFact.fromRow(in.columns());
                         if (j != null) {
                             fields.assignment(j);
                         }
                     }
                     case CacheFormat.ROW_FUNCTIONAL_IMPL -> {
-                        FunctionalImplFact m = FunctionalImplFact.fromRow(CacheFormat.columnsOf(line));
+                        FunctionalImplFact m = FunctionalImplFact.fromRow(in.columns());
                         if (m != null && !m.ifaceMethodKey().isEmpty()) {
                             graph.functionalImpls.add(m.ifaceMethodKey());
                         }
                     }
                     case CacheFormat.ROW_RETURN -> {
-                        ReturnFact r = ReturnFact.fromRow(CacheFormat.columnsOf(line));
+                        ReturnFact r = ReturnFact.fromRow(in.columns());
                         if (r != null) {
                             int id = methods.intern(r.method());
                             ensure(outDegree, id);
@@ -185,9 +182,7 @@ public final class CallGraphBuilder {
      */
     private int internGuessedCallee(UnresolvedCallFact u) {
         String fqn = u.candidate();
-        int dot = fqn.lastIndexOf('.');
-        String pkg = (dot >= 0) ? fqn.substring(0, dot) : "";
-        return methods.intern(pkg, fqn, u.expression(), "");
+        return methods.intern(Names.packageOf(fqn), fqn, u.expression(), "");
     }
 
     private static void ensure(IntArray a, int id) {
@@ -218,6 +213,8 @@ public final class CallGraphBuilder {
         Arrays.fill(graph.recvOriginIds, -1);
         graph.argOriginIds = new int[edges];
         Arrays.fill(graph.argOriginIds, -1);
+        graph.guardIds = new int[edges];
+        Arrays.fill(graph.guardIds, -1);
 
         // R行（戻り値の出所）をメソッドIDの配列に移す。
         // 1回目のスキャンで全メソッドがID化されているのでここで確定できる。
@@ -230,6 +227,9 @@ public final class CallGraphBuilder {
                 graph.returnOrigins[id] = e.getValue().toArray(new String[0]);
             }
         }
+        // @Bean メソッドが登録する型は、R行（戻り値の出所）が揃って初めて決まる
+        graph.beans.resolveBeanMethods(graph);
+
         cursor = Arrays.copyOf(graph.offsets, n == 0 ? 0 : n);
     }
 
@@ -238,12 +238,11 @@ public final class CallGraphBuilder {
     // ------------------------------------------------------------
 
     private void secondPass(Path cacheFile) throws IOException {
-        try (BufferedReader in = open(cacheFile)) {
-            String line;
-            while ((line = in.readLine()) != null) {
-                char rowType = CacheFormat.rowTypeOf(line);
+        try (CacheReader in = CacheReader.open(cacheFile)) {
+            while (in.next()) {
+                char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_CALL) {
-                    CallEdgeFact c = CallEdgeFact.fromRow(CacheFormat.columnsOf(line));
+                    CallEdgeFact c = CallEdgeFact.fromRow(in.columns());
                     if (c == null) {
                         continue;
                     }
@@ -252,9 +251,9 @@ public final class CallGraphBuilder {
                     graph.callLines[pos] = c.callLine();
                     graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
                     graph.fillCallSite(pos, c.caller().key(), c.recvKey(), c.recvKind(),
-                            c.recvOrigin(), c.argOrigins());
+                            c.recvOrigin(), c.argOrigins(), c.guard());
                 } else if (rowType == CacheFormat.ROW_UNRESOLVED) {
-                    UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
+                    UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
                     if (u == null || !u.hasUsableCandidate()) {
                         continue;
                     }
@@ -263,7 +262,7 @@ public final class CallGraphBuilder {
                     graph.callLines[pos] = u.line();
                     graph.bindKinds[pos] = (byte) BindKind.GUESSED;
                     graph.fillCallSite(pos, u.caller().key(), u.recvKey(), u.recvKind(),
-                            u.recvOrigin(), u.argOrigins());
+                            u.recvOrigin(), u.argOrigins(), u.guard());
                 }
             }
         }

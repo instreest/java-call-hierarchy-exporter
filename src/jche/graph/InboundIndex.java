@@ -34,18 +34,19 @@ public final class InboundIndex {
      * 解決後のエッジから転置索引を作る。グラフ全体の走査は<b>1回だけ</b>で、
      * 拾った (呼び出し先, 呼び出し元, エッジ) の3つ組を計数ソートで CSR に並べ替える。
      *
-     * <p>「1回目に本数を数えて、2回目に書き込む」という素直な作りにはできない。
-     * {@link CallResolver#resolve(int)} は同じエッジでも<b>初回と2回目で結果が変わることがある</b>
-     * （データフローの解決に使う情報が、他のエッジを解決する過程で埋まるため。
-     * 例: 1回目は CHA で候補2件、2回目はファクトリの戻り値から1件に確定）。
-     * 2回走査すると数えた本数と書き込む本数が食い違い、CSR の並びが静かに壊れる。
+     * <p>「1回目に本数を数えて、2回目に書き込む」という作りにしていないのは、
+     * 数える回と書く回が同じ結果を見ることを構造として保証するためである。
+     * かつて {@link CallResolver#resolve(int)} は初回と2回目で答えが変わることがあり
+     * （データフローの解決に使う情報が、他のエッジを解決する過程で埋まっていた）、
+     * 2回走査すると本数が食い違って CSR の並びが静かに壊れた。
+     * いまはデータフローの事実を解決より前に確定させる（{@link jche.dataflow.DataflowBuilder}）ので
+     * resolve は決定的だが、ここが壊れると原因が分かりにくいため、1回走査のままにしてある。
      *
      * @param graph    構築済みの呼び出しグラフ
      * @param resolver 具象クラスの解決。ここで解決した先に対して辺を張る
      */
     public static InboundIndex build(CallGraph graph, CallResolver resolver) {
         int methodCount = graph.methodCount();
-        warmUp(graph, resolver, methodCount);
         IntArray targets = new IntArray(1 << 12);
         IntArray callers = new IntArray(1 << 12);
         IntArray edges = new IntArray(1 << 12);
@@ -82,24 +83,6 @@ public final class InboundIndex {
             edgeIndexes[at] = edges.get(i);
         }
         return new InboundIndex(offsets, callerIds, edgeIndexes);
-    }
-
-    /**
-     * 索引を作る前に、全エッジを1度解決しておく。
-     *
-     * 初回の解決は、他のエッジを解決する過程で埋まる情報（ファクトリの戻り値など）を
-     * まだ持っていないことがあり、2回目以降とは違う答えになりうる。先に一巡させておけば、
-     * 索引に入る呼び出し関係と、後から画面が表示する解決の理由が食い違わない。
-     */
-    private static void warmUp(CallGraph graph, CallResolver resolver, int methodCount) {
-        for (int caller = 0; caller < methodCount; caller++) {
-            if ((caller & 0xFFF) == 0) {
-                RunControl.checkCancelled();
-            }
-            for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
-                resolver.resolve(e);
-            }
-        }
     }
 
     /** このメソッドを呼んでいる辺の数 */

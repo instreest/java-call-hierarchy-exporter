@@ -150,15 +150,15 @@ final class MavenModels {
         version = interpolate(version, properties);
 
         // --- 依存と dependencyManagement: 子から順に、同じ鍵は先に見たものが勝つ ---
-        Map<String, MavenPom.Dependency> dependencies = new LinkedHashMap<>();
-        Map<String, MavenPom.Dependency> managed = new LinkedHashMap<>();
+        Map<String, Dependency> dependencies = new LinkedHashMap<>();
+        Map<String, Dependency> managed = new LinkedHashMap<>();
         for (MavenPom p : chain) {
-            for (MavenPom.Dependency d : p.dependencies) {
-                MavenPom.Dependency expanded = interpolate(d, properties);
+            for (Dependency d : p.dependencies) {
+                Dependency expanded = interpolate(d, properties);
                 dependencies.putIfAbsent(expanded.managementKey(), expanded);
             }
-            for (MavenPom.Dependency d : p.dependencyManagement) {
-                MavenPom.Dependency expanded = interpolate(d, properties);
+            for (Dependency d : p.dependencyManagement) {
+                Dependency expanded = interpolate(d, properties);
                 managed.putIfAbsent(expanded.managementKey(), expanded);
             }
         }
@@ -214,17 +214,17 @@ final class MavenModels {
     }
 
     /** scope=import の BOM をローカルリポジトリから読み、その dependencyManagement を（自分のより低い優先度で）足す */
-    private void expandImports(Map<String, MavenPom.Dependency> managed, Path owner) {
-        List<MavenPom.Dependency> imports = new ArrayList<>();
-        for (MavenPom.Dependency d : managed.values()) {
+    private void expandImports(Map<String, Dependency> managed, Path owner) {
+        List<Dependency> imports = new ArrayList<>();
+        for (Dependency d : managed.values()) {
             if ("import".equals(d.scope()) && "pom".equals(d.type())) {
                 imports.add(d);
             }
         }
-        for (MavenPom.Dependency bom : imports) {
+        for (Dependency bom : imports) {
             managed.remove(bom.managementKey());
         }
-        for (MavenPom.Dependency bom : imports) {
+        for (Dependency bom : imports) {
             if (bom.version().isEmpty() || bom.version().contains("${")) {
                 warnOnce("BOM の版が決まりません: " + bom.ga() + ":" + bom.version() + "（" + owner + "）");
                 continue;
@@ -234,18 +234,18 @@ final class MavenModels {
                 warnOnce("BOM がローカルリポジトリにありません: " + bom.ga() + ":" + bom.version() + "（" + owner + "）");
                 continue;
             }
-            for (Map.Entry<String, MavenPom.Dependency> e : bomProject.managed.entrySet()) {
+            for (Map.Entry<String, Dependency> e : bomProject.managed.entrySet()) {
                 managed.putIfAbsent(e.getKey(), e.getValue());
             }
         }
     }
 
-    private static MavenPom.Dependency interpolate(MavenPom.Dependency d, Map<String, String> props) {
-        List<MavenPom.Exclusion> exclusions = new ArrayList<>();
-        for (MavenPom.Exclusion x : d.exclusions()) {
-            exclusions.add(new MavenPom.Exclusion(interpolate(x.groupId(), props), interpolate(x.artifactId(), props)));
+    private static Dependency interpolate(Dependency d, Map<String, String> props) {
+        List<Exclusion> exclusions = new ArrayList<>();
+        for (Exclusion x : d.exclusions()) {
+            exclusions.add(new Exclusion(interpolate(x.groupId(), props), interpolate(x.artifactId(), props)));
         }
-        return new MavenPom.Dependency(interpolate(d.groupId(), props), interpolate(d.artifactId(), props),
+        return new Dependency(interpolate(d.groupId(), props), interpolate(d.artifactId(), props),
                 interpolate(d.version(), props), interpolate(d.type(), props), interpolate(d.classifier(), props),
                 interpolate(d.scope(), props), d.optional(), exclusions, interpolate(d.systemPath(), props));
     }

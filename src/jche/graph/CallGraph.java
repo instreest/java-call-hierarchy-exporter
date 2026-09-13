@@ -5,6 +5,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -25,6 +26,8 @@ public final class CallGraph {
 
     final MethodTable methods = new MethodTable();
     final TypeHierarchy hierarchy = new TypeHierarchy();
+    /** DIコンテナのBean定義（H行・V行・D行のアノテーションから） */
+    SpringBeans beans = SpringBeans.DISABLED;
 
     // --- CSR（エッジ数ぶんの配列。CallGraphBuilder が埋める） ---
     int[] offsets;      // 長さ methods.size() + 1
@@ -43,6 +46,8 @@ public final class CallGraph {
      */
     int[] recvOriginIds;
     int[] argOriginIds;
+    /** エッジごとの、呼び出し箇所を囲む条件分岐（jche.cache.Guard）。-1 なら条件なし */
+    int[] guardIds;
     private final ArrayList<String> originPool = new ArrayList<>();
     private final HashMap<String, Integer> originPoolIndex = new HashMap<>();
 
@@ -62,8 +67,17 @@ public final class CallGraph {
     /** エッジごとの証拠。-1 なら証拠なし。値は hintTable のインデックス */
     int[] edgeHint;
     private final ArrayList<List<Hint>> hintTable = new ArrayList<>();
-    /** callerKey + "|" + scopeKey -> 証拠のリスト */
-    final HashMap<String, List<Hint>> hintsByScope = new HashMap<>();
+    /**
+     * 同じ証拠のリストを hintTable に 2 回載せないための逆引き（構築時だけ使う）。
+     * 同じレシーバへの呼び出しが 1 メソッド内に複数あれば同じリストを共有する
+     */
+    private IdentityHashMap<List<Hint>, Integer> hintIndex = new IdentityHashMap<>();
+    /**
+     * callerKey + "|" + scopeKey -> 証拠のリスト。構築時だけ使い、{@link #finishBuild} で捨てる。
+     * キーはメソッドキー＋バインディングキーの長い文字列で、ラムダや new のたびに増えるため、
+     * 解析が終わるまで抱えているとエッジ配列より大きくなりうる
+     */
+    HashMap<String, List<Hint>> hintsByScope = new HashMap<>();
 
     /**
      * 起点の並び替え用。ソースフォルダの順（プロジェクトルートからの相対パス。
@@ -80,6 +94,10 @@ public final class CallGraph {
 
     public TypeHierarchy hierarchy() {
         return hierarchy;
+    }
+
+    public SpringBeans beans() {
+        return beans;
     }
 
     public int typeCount() {
@@ -136,6 +154,16 @@ public final class CallGraph {
     /** エッジの実引数の出所（"位置=出所;..."）。無ければ null */
     public String argOrigins(int edgeIndex) {
         int i = argOriginIds[edgeIndex];
+        return (i < 0) ? null : originPool.get(i);
+    }
+
+    /**
+     * その呼び出しを囲む条件分岐（jche.cache.Guard）。無ければ null。
+     *
+     * 「その条件がこの経路で成立しないか」の判定は {@link GuardEvaluator} が行う。
+     */
+    public String guard(int edgeIndex) {
+        int i = guardIds[edgeIndex];
         return (i < 0) ? null : originPool.get(i);
     }
 
@@ -234,7 +262,7 @@ public final class CallGraph {
 
     // --- 構築時にだけ使う ---
 
-    /** 出所の文字列を共有プールに入れてインデックスを返す。空なら -1 */
+    /** 出所・条件の文字列を共有プールに入れてインデックスを返す。空なら -1 */
     private int internOrigin(String origin) {
         if (origin == null || origin.isEmpty()) {
             return -1;
@@ -251,17 +279,30 @@ public final class CallGraph {
 
     /** エッジのレシーバ由来・証拠・出所を書き込む（C行とU行で共通） */
     void fillCallSite(int pos, String callerKey, String recvKey, char recvKind,
-                      String recvOrigin, String argOrigins) {
+                      String recvOrigin, String argOrigins, String guard) {
         recvKinds[pos] = (byte) recvKind;
         // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
         if (!recvKey.isEmpty()) {
             List<Hint> hints = hintsByScope.get(callerKey + "|" + recvKey);
             if (hints != null && !hints.isEmpty()) {
-                hintTable.add(hints);
-                edgeHint[pos] = hintTable.size() - 1;
+                Integer index = hintIndex.get(hints);
+                if (index == null) {
+                    hintTable.add(hints);
+                    index = hintTable.size() - 1;
+                    hintIndex.put(hints, index);
+                }
+                edgeHint[pos] = index;
             }
         }
         recvOriginIds[pos] = internOrigin(recvOrigin);
         argOriginIds[pos] = internOrigin(argOrigins);
+        guardIds[pos] = internOrigin(guard);
+    }
+
+    /** 構築が終わったら、構築時にしか使わない索引を捨てる（エッジからは hintTable 経由で引ける） */
+    void finishBuild() {
+        hintsByScope = new HashMap<>();
+        hintIndex = new IdentityHashMap<>();
+        originPoolIndex.clear();
     }
 }

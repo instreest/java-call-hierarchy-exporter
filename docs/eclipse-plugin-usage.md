@@ -75,7 +75,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 4. 解析は別プロセスで走る（Eclipse の操作は止まらない。［中止］もできる）。終わると呼び出し元が
    ツリーで出る。ダブルクリックでその**呼び出している行**へ飛べる
 
-`config.properties` は**無くてよい**。Java プロジェクトなら、ソースフォルダ・依存 jar・文字コード・
+設定ファイルは**無くてよい**。Java プロジェクトなら、ソースフォルダ・依存 jar・文字コード・
 コンパイラー準拠レベルをプロジェクトの構成から自動で組み立てる。
 
 | したいこと | 操作 |
@@ -86,11 +86,11 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 | 解析し直す | ツールバーの「再解析」。ソースを変えると「⚠ n ファイルが変更されています」とバナーに出る |
 | 自動で解析し直す | ツールバーの「自動再解析」（既定 ON）。ビルド後に静止してから裏で走る |
 | 見えている木を CSV に | ［CSV出力］。フィルタ後の内容がそのまま出る |
-| 設定を細かく決める | ビューのメニュー（▽）→「設定を config.properties に保存」。自動生成した内容が保存され、`entry.packages` などを手で足せる |
+| 設定を細かく決める | ビューのメニュー（▽）→「設定を config/config.properties に保存」。自動生成した内容が保存され、`entry.packages` などを手で足せる |
 | 設定ファイルを選ぶ | ビューのメニュー（▽）→「使う設定ファイルを選ぶ…」 |
 
-設定の優先順位は **①ビューで選んだ設定ファイル → ②プロジェクト直下の `config.properties` →
-③プロジェクト構成からの自動生成**。どの設定で解析したかはバナーのツールチップに出る。
+設定の優先順位は **①ビューで選んだ設定ファイル → ②プロジェクトの `config/config.properties`
+（無ければ直下の `config.properties`）→ ③プロジェクト構成からの自動生成**。どの設定で解析したかはバナーのツールチップに出る。
 
 解析中も前回の結果は消えない（バナーだけが「更新中」に変わる）。解析後に変わったファイルの行には
 ⚠ が付き、内容が古い可能性があることが行単位で分かる。
@@ -114,7 +114,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 | メニューに出てこない | Eclipse を `-clean` 付きで起動し直す。それでも出なければ「ウィンドウ → ビューの表示 → その他」で「呼び出し階層 (Exporter)」を探す |
 | 「解析に使う JDK が見つかりません」 | 設定画面で場所を指定するか、［JDK 25 を取得…］で取得する |
 | 解析が失敗する | 「Call Hierarchy Exporter」コンソールに子プロセスの出力がそのまま出る。設定ファイルの誤り（`project.root` など）が多い |
-| バナーに「解析できません」 | Java プロジェクトでなく、設定ファイルも無い状態。`config.properties` を置くか、Java プロジェクトとして開く |
+| バナーに「解析できません」 | Java プロジェクトでなく、設定ファイルも無い状態。`config/config.properties` を置くか、Java プロジェクトとして開く |
 | 新しい文法のソースが解析されない | 同梱の JDT の対応上限を超えている。バナーのツールチップに「解析できる Java」が出る |
 
 ## 6. サーバーモード（プラグインが使っている経路）
@@ -123,7 +123,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 同じことは手でもできる（CLI 利用者が自前の道具から使いたいときのため）。
 
 ```bash
-printf 'HELLO\t1\nANALYZE\t/path/config.properties\nTREE\tcom.example.Foo#bar()\tcallers\tdepth=3\nSHUTDOWN\n' \
+printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo#bar()\tcallers\tdepth=3\nSHUTDOWN\n' \
   | java -cp "lib/*:bin" CallHierarchyExporter --server /tmp/jche-cache
 ```
 

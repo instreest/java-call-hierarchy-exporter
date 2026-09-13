@@ -1,12 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.nio.file.Path;
 
 import org.eclipse.jdt.core.JavaCore;
 
@@ -15,56 +12,27 @@ import jche.analysis.CacheUpdater;
 import jche.config.Config;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
-import jche.config.ToolRoot;
+import jche.dataflow.DataflowBuilder;
+import jche.dataflow.DataflowFacts;
 import jche.extension.TypeCandidateProvider;
-import jche.external.ExternalUsageScanner;
 import jche.graph.CallGraph;
 import jche.graph.CallGraphBuilder;
 import jche.graph.CallResolver;
 import jche.graph.DataflowResolver;
-import jche.graph.EntryPoints;
-import jche.report.CallHierarchyCsvWriter;
-import jche.report.InventoryReport;
-import jche.report.StreamingTreeWalker;
-import jche.report.UnresolvedReport;
+import jche.graph.SpringBeans;
 import jche.util.Log;
 
 /**
- * 解析の本体。設定ファイルを受け取り、フェーズ1〜3を回してCSVを出力する。
+ * フェーズ1（ソース解析とキャッシュ更新）・フェーズ2（グラフ構築とデータフローの確定・具象クラスの解決）。
  *
- * <p>コマンドラインの入口は既定パッケージの {@code CallHierarchyExporter} で、引数を解釈して
- * {@link #run(List)} を呼ぶだけになっている。本体をここ（名前付きパッケージ）に置いてあるのは、
- * Eclipse プラグイン（{@code eclipse-plugin/}）のように別パッケージのコードから呼べるようにするため。
- * Java では名前付きパッケージのクラスから既定パッケージのクラスは参照できない
- * （docs/eclipse-plugin-qa.md の Q3）。
+ * <p>ここから先（CSV の出力）は {@code CallHierarchyExporter} が受け持つ。分けてあるのは、
+ * <b>結果をメモリに持ったまま何度も問い合わせたい</b>使い方があるためで、
+ * Eclipse プラグインの解析サーバー（{@link jche.server.Server}）がそれにあたる。
+ * どちらの経路も同じこのコードを通るので、CLI と画面で結果が食い違うことはない。
  *
- * <p>設定ファイルごとに、その設定ファイルのフォルダの output.folder（既定 ./output）の下へ
- * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
- * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
- * 解析対象プロジェクトごとに置く（{@link jche.config.ToolRoot}、{@link Config}）。
- * 1つの設定が失敗しても残りは処理する。
- *
- * <h2>処理の流れ（パッケージ構成と対応する）</h2>
- * <pre>
- *   フェーズ1  jche.analysis  ソースをASTパースし、事実をキャッシュ（jche.cache）へ書き出す
- *   フェーズ2  jche.graph     キャッシュからCSR形式の呼び出しグラフを組み、具象クラスを解決する
- *   フェーズ3  jche.report    起点ごとに深さ優先で辿りながらCSVを1行ずつ書く
- *              jche.external  外部jarからの被参照を同じCSVに追記する
- * </pre>
- *
- * <h2>メモリ設計（OutOfMemoryError を避けるための三本柱）</h2>
- * <ol>
- *   <li><b>解析結果をヒープに溜めない</b>（フェーズ1）
- *       1ファイル解析するたびに結果をキャッシュファイルへ直接書き出して破棄する。
- *       キャッシュ更新はストリーミングマージで行うため、ランダムアクセスも
- *       全件保持も不要。ヒープ常駐は「ソースファイルのパス・更新時刻・サイズ」のみ。</li>
- *   <li><b>エッジをオブジェクトで持たない</b>（フェーズ2）
- *       メソッドを int の ID に内部化し、呼び出し関係を CSR 形式のプリミティブ配列で持つ。
- *       オブジェクト2個＋文字列8本（数百バイト）だったものが int 2個（8バイト）になる。</li>
- *   <li><b>ツリーを組み立てない</b>（フェーズ3）
- *       深さ優先探索しながら1行ずつCSVへ書き出す。探索中にヒープへ載るのは
- *       「現在の経路（深さぶんの配列）」だけ。</li>
- * </ol>
+ * <p>既定パッケージではなく名前付きパッケージに置いてあるのは、
+ * {@code jche.server} など他のパッケージから呼べるようにするため
+ * （Java では名前付きパッケージのクラスから既定パッケージのクラスを参照できない）。
  */
 public final class Exporter {
 
@@ -72,76 +40,7 @@ public final class Exporter {
     }
 
     /**
-     * 設定ファイルをまとめて処理する。コマンドラインからも Eclipse プラグイン
-     * （{@code eclipse-plugin/}）からも、入口はここになる。
-     *
-     * <p>{@code CallHierarchyExporter.main} と違って {@link System#exit} を呼ばない。プラグインのように
-     * 呼び出し側の JVM を落とせない場所から使うため、失敗は戻り値で返す。
-     * 1つの設定が失敗しても残りは処理する。
-     *
-     * @param configPaths 設定ファイルのパス（1件以上）
-     * @return 失敗した設定ファイルの件数。0 なら全件成功
-     */
-    public static int run(List<Path> configPaths) {
-        ToolRoot toolRoot = ToolRoot.locate(Exporter.class);
-        if (!toolRoot.found) {
-            Log.warn("このツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を"
-                    + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
-                    + toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME));
-        }
-        return run(configPaths, toolRoot.dir);
-    }
-
-    /**
-     * キャッシュの置き場所を呼び出し側が決める版。
-     *
-     * <p>Eclipse プラグインから使う。プラグインは jar の中で動くので
-     * {@link ToolRoot} の目印（{@code src/CallHierarchyExporter.java}）が見つからず、
-     * 何もしないと作業ディレクトリ（Eclipse のインストール先）にキャッシュを作ってしまう
-     * （docs/eclipse-plugin-qa.md の Q6）。
-     *
-     * @param configPaths 設定ファイルのパス（1件以上）
-     * @param cacheRoot   キャッシュ（{@code .cache/}）を作るフォルダ
-     * @return 失敗した設定ファイルの件数。0 なら全件成功
-     */
-    public static int run(List<Path> configPaths, Path cacheRoot) {
-        // 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する
-        List<String> summary = new ArrayList<>();
-        int failed = 0;
-        for (int i = 0; i < configPaths.size(); i++) {
-            Path configPath = configPaths.get(i);
-            if (configPaths.size() > 1) {
-                Log.blank();
-                Log.info("######## 設定 " + (i + 1) + "/" + configPaths.size() + ": " + configPath + " ########");
-            }
-            try {
-                Path outputDir = runOne(configPath, cacheRoot);
-                summary.add("OK    " + configPath + " -> " + outputDir);
-            } catch (Throwable t) {
-                failed++;
-                Log.error("設定 " + configPath + " の処理に失敗しました", t);
-                summary.add("FAIL  " + configPath + " : " + t);
-            } finally {
-                Log.detachFile();
-            }
-        }
-
-        if (configPaths.size() > 1) {
-            Log.blank();
-            Log.info("=== 実行結果（" + (configPaths.size() - failed) + "/" + configPaths.size() + " 件成功）===");
-            for (String line : summary) {
-                Log.info("  " + line);
-            }
-        }
-        return failed;
-    }
-
-    /**
-     * フェーズ1（ソース解析とキャッシュ更新）とフェーズ2（グラフ構築と具象クラスの解決）だけを行い、
-     * 結果をメモリに返す。CSV は書かない。
-     *
-     * <p>CLI はこの上にフェーズ3（CSV 出力）を載せる。Eclipse プラグインは戻り値をそのまま持ち続け、
-     * 画面から何度も読む。どちらも同じコードで解析するので、結果が食い違うことはない。
+     * フェーズ1・2 を実行し、結果をメモリに返す。CSV は書かない。
      *
      * <p>進捗の通知と中止は {@link jche.util.RunControl} 経由。呼び出し側が受け口を付けていなければ
      * 何も起きない（CLI はこれ）。中止された場合は {@link jche.util.CancelledException} が飛ぶ。
@@ -156,54 +55,20 @@ public final class Exporter {
         analyzeSources(config, layout);
 
         CallGraph graph = buildGraph(config, layout);
-        CallResolver resolver = new CallResolver(graph,
-                new DataflowResolver(graph, config.dataflowEnabled, config.dataflowMaxDepth),
-                loadProviders(config));
         Log.info("型数=" + graph.typeCount()
                 + " メソッド数=" + graph.methodCount()
                 + " エッジ数=" + graph.edgeCount());
+        DataflowFacts facts = buildDataflowFacts(config, graph);
+        CallResolver resolver = new CallResolver(graph,
+                new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth),
+                loadProviders(config));
         Log.heap("フェーズ2完了");
         return new AnalysisSnapshot(config, layout, graph, resolver);
     }
 
-    /**
-     * 設定ファイル1つ分の処理。出力フォルダを作り、設定ファイルの複製と実行ログをそこに置いてから解析する。
-     *
-     * @return この実行の出力フォルダ
-     */
-    private static Path runOne(Path configPath, Path toolRoot) throws Exception {
-        Log.resetClock();
-        long start = System.currentTimeMillis();
-        Config config = new Config(configPath, toolRoot, LocalDateTime.now());
-
-        // 出力フォルダは解析より前に作る。設定ファイルの複製と実行ログを、解析が途中で落ちても残すため
-        Files.createDirectories(config.outputDir);
-        Log.attachFile(config.logFile);
-        Log.info("設定: " + config.configPath);
-        Log.info("プロジェクトルート: " + config.projectRoot);
-        Log.info("出力フォルダ: " + config.outputDir);
-        Log.info("キャッシュ: " + config.cacheDir);
-        Files.copy(config.configPath, config.outputDir.resolve(config.configPath.getFileName()),
-                StandardCopyOption.REPLACE_EXISTING);
-
-        AnalysisSnapshot snapshot = analyze(config);
-
-        long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
-
-        Log.blank();
-        Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");
-        Log.info("実行ログ: " + config.logFile);
-        Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
-        return config.outputDir;
-    }
-
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {
-        // JDTは「動いているJVMの標準クラス」を解析対象のクラスパスに含める。実行JDKが変わると
-        // 結果も変わりうるので、どのJVMで解析したかを必ず残す（キャッシュのキーにも入っている）
-        Log.info("実行JDK: " + System.getProperty("java.version", "?")
-                + "（" + System.getProperty("java.vendor", "?") + "）");
         Log.info("ソースフォルダ: " + layout.sourceFolders);
-        Log.info("ソース文字コード: " + config.sourceEncoding);
+        Log.info("ソース文字コード: " + config.sourceEncoding + (config.sourceEncodingAuto ? "（source.encoding が空欄のため project.root から決めた）" : ""));
         // どの言語バージョンとして解析したかで結果が変わるため、必ず残す
         Log.info("ソースレベル: " + config.sourceLevel
                 + (config.sourceLevelAuto
@@ -267,84 +132,32 @@ public final class Exporter {
         for (Path sourceFolder : layout.sourceFolders) {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
         }
-        return CallGraphBuilder.build(config.cacheFile, sourceFolderOrder);
-    }
-
-    /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込んで初期化する */
-    private static List<TypeCandidateProvider> loadProviders(Config config) {
-        List<TypeCandidateProvider> providers =
-                Plugins.load(config.candidateProviderClasses, TypeCandidateProvider.class);
-        for (TypeCandidateProvider provider : providers) {
-            try {
-                provider.init(config.raw, config.configDir);
-            } catch (RuntimeException e) {
-                Log.warn("provider の初期化に失敗: " + provider.getClass().getName() + " (" + e + ")");
-            }
+        SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
+        CallGraph graph = CallGraphBuilder.build(config.cacheFile, sourceFolderOrder, beans);
+        if (beans.enabled()) {
+            Log.info("DIコンテナのBean: " + beans.beanCount() + " 型"
+                    + (beans.beanCount() == 0 ? "（spring.di.enabled=true だが Bean は見つからなかった）" : ""));
         }
-        return providers;
+        return graph;
     }
 
     /**
-     * フェーズ3: methods.csv と call-hierarchy.csv を書く。
-     * 呼び出し階層・型解決に失敗した呼び出し・外部jarからの被参照は、同じ call-hierarchy.csv に出す。
-     *
-     * @return call-hierarchy.csv に書いた行数
+     * フェーズ2b: データフローの事実（ファクトリの戻り値の畳み込み等）をグラフ全体から一括で確定する。
+     * 解決（CallResolver）より前に確定させておくことで、解決の結果がエッジの処理順に依存しなくなる
      */
-    private static long writeReports(Config config, CallGraph graph, CallResolver resolver)
-            throws Exception {
-        Log.blank();
-        Log.info("=== フェーズ3/3: 出力 ===");
-        int[] entries = EntryPoints.select(graph, resolver, config);
-
-        InventoryReport.Stats inventory = InventoryReport.writeMethods(graph, resolver, config, entries);
-        Log.info(inventory.toString());
-        Log.info("メソッド一覧: " + config.methodsCsv);
-
-        Log.info("エントリポイント数: " + entries.length);
-        if (entries.length == 0 && !config.wholeProjectMode) {
-            Log.info("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
+    private static DataflowFacts buildDataflowFacts(Config config, CallGraph graph) {
+        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled);
+        if (config.dataflowEnabled) {
+            Log.info("ファクトリの戻り値を確定: " + facts.factoriesDecided() + " 件"
+                    + (facts.factoriesCutOff() > 0
+                            ? "（委譲が循環しているため決められなかったもの " + facts.factoriesCutOff() + " 件）"
+                            : ""));
         }
-        if (config.wholeProjectMode) {
-            Log.info("  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに");
-            Log.info("     デッドコード・テスト・リフレクション経由が混ざるため、");
-            Log.info("     methods.csv の inDegree / outDegree / role 列で仕分けてください。");
-        }
+        return facts;
+    }
 
-        long rows;
-        try (CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
-                config.outputCsv, config.outputEncoding, config.outputBom)) {
-            StreamingTreeWalker walker = new StreamingTreeWalker(graph, resolver, config, writer);
-            rows = walker.walkAll(entries);
-            if (config.dataflowEnabled && walker.anyDataflowHits()) {
-                Log.info("データフローで具象クラスを特定: "
-                        + "new された型から " + walker.newHits() + " 件 / "
-                        + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
-                        + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
-                        + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
-            }
-            if (walker.reflectionHits() > 0) {
-                Log.info("リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の"
-                        + "呼び出し先を特定: " + walker.reflectionHits() + " 件");
-            }
-
-            // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
-            rows += UnresolvedReport.write(graph, config, writer);
-
-            if (!config.externalLibraryFolders.isEmpty()) {
-                Log.blank();
-                Log.info("=== 外部jarからの被参照スキャン ===");
-                ExternalUsageScanner.Stats ex = ExternalUsageScanner.scan(graph, config, writer);
-                Log.info(ex.toString());
-                rows += ex.hits + ex.implicitCtors;
-                if (ex.unmatched > 0) {
-                    Log.info("※ 自分の型への参照なのにメソッドが一致しなかったものが "
-                            + ex.unmatched + " 件あります。");
-                    Log.info("   相手が古い版のjarに対してビルドされている可能性があるため、");
-                    Log.info("   「使われていない」と即断せず確認してください。");
-                }
-            }
-        }
-        Log.heap("フェーズ3完了");
-        return rows;
+    /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込む。init は Plugins が済ませる */
+    private static List<TypeCandidateProvider> loadProviders(Config config) {
+        return Plugins.load(config, config.candidateProviderClasses, TypeCandidateProvider.class);
     }
 }

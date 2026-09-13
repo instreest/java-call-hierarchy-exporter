@@ -154,7 +154,7 @@ org.eclipse.equinox.common, equinox.preferences, equinox.registry, org.osgi.serv
 
 - バンドルは 11〜12 MB 増える。閉域環境に zip 1つで持ち込める利点のほうが大きいと判断する
 - 同梱する jar は **EPL-2.0**（このツール自身は Apache-2.0）。`about.html` / `NOTICE` に
-  同梱物とそのライセンスを明記する（[license-header-qa.md](license-header-qa.md) の方針に合わせる）
+  同梱物とそのライセンスを明記する（[source-header-qa.md](source-header-qa.md) の方針に合わせる）
 
 ### 解析に使う JDK
 

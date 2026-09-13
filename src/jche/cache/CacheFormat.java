@@ -18,27 +18,34 @@ package jche.cache;
  * <h2>行の種別と列</h2>
  * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
  * <pre>
- *   L  jarのパス  サイズ  更新時刻  パッケージ(カンマ区切り)    {@link LibraryFact}。ヘッダ行の直後に
- *                                                          クラスパス順で並ぶ。解析時の依存 jar
- *   F  相対パス  更新時刻  サイズ  エラー数                     （ファイルのブロックの先頭）。エラー数は
- *                                                          JDT が報告したエラーの件数（解決が不完全な印）
+ *   L  jarのパス  サイズ  更新時刻  パッケージ(カンマ区切り)  内容ハッシュ
+ *                                                          {@link LibraryFact}。ヘッダ行の直後に
+ *                                                          クラスパス順で並ぶ。解析時の依存 jar。
+ *                                                          内容ハッシュはクラスフォルダなら空
+ *   F  相対パス  更新時刻  サイズ  エラー数  内容ハッシュ       （ファイルのブロックの先頭）。エラー数は
+ *                                                          JDT が報告したエラーの件数（解決が不完全な印）。
+ *                                                          内容ハッシュは {@link jche.util.FileHash}（無ければ空）
  *   I  依存する型（カンマ区切り）                             このファイルのバインディング解決が参照した型の
  *                                                          FQNと、import 文の型（オンデマンド import は
  *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
  *                                                          これらの型を宣言するファイルが変わっていたら
  *                                                          再解析する（{@link jche.analysis.CacheUpdater} 参照）
- *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg    {@link TypeFact}。親型は直接の親と、
- *                                                          jar の型を経由して到達するソース上の親
- *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods   {@link MethodDeclFact}
- *   V  typeFqn  fieldName  mods  declType                    {@link FieldDeclFact}
+ *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
+ *                                                          {@link TypeFact}。親型は直接の親と、
+ *                                                          jar の型を経由して到達するソース上の親。
+ *                                                          アノテーションは {@link AnnotationTokens}
+ *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
+ *                                                             {@link MethodDeclFact}
+ *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda
- *                                                             {@link CallEdgeFact}
+ *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
+ *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
+ *                                                             囲む条件分岐（{@link Guard}）
  *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}
  *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
  *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
- *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda
+ *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link UnresolvedCallFact}
  * </pre>
  * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
@@ -47,22 +54,29 @@ package jche.cache;
  * <h2>読み手の責務（キャッシュに入れない判断）</h2>
  * <ul>
  *   <li>静的束縛の判定（calleeMods → 種別）            … jche.graph.BindKind</li>
+ *   <li>ガードが「この経路では成立しない」と言い切れるかの判定 … jche.graph.GuardEvaluator</li>
  *   <li>戻り値の集約（追跡できない return が1つでもあれば不定） … jche.graph.DataflowResolver</li>
  *   <li>コンストラクタ注入フィールドの判定（private/final、全コンストラクタで代入、出所が一致）
  *                                                      … jche.graph.FieldFacts</li>
  *   <li>import 推定（U の candidate）をエッジとして採用するか … jche.graph.CallGraphBuilder</li>
  *   <li>ラムダ内の呼び出しの計上先                     … jche.graph.CallGraphBuilder（現状は囲みメソッド）</li>
  *   <li>未解決の理由コードの文言                       … jche.report.UnresolvedReport</li>
+ *   <li>どのアノテーションがDIの印か・値をどう解釈するか … jche.graph.SpringBeans</li>
+ *   <li>どのアノテーションが「実装はコンパイル時生成」を意味するか … jche.framework.GeneratedImpl</li>
  * </ul>
  *
  * <h2>差分更新と依存</h2>
- * 再利用の判定は「更新時刻とサイズが一致する」に加えて「I行の型を宣言するファイルが
- * どれも変わっていない」。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
+ * 再利用の判定は「更新時刻とサイズが一致する（更新時刻が違ってもサイズと内容ハッシュが一致すれば同じ）」
+ * に加えて「I行の型を宣言するファイルがどれも変わっていない」。
+ * 内容ハッシュで見るのは、git のチェックアウトや CI のワークスペース作り直しのように、中身が同じでも
+ * 更新時刻が変わる場合に全件解析し直しにならないようにするため（docs/actions-analysis-cache-qa.md）。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
  * 結果であり、別のファイルを変えると変わりうるため（{@link jche.analysis.CacheUpdater} 参照）。
  * 依存 jar も同じ理由で解決結果を左右するので、L行と突き合わせて追加・変更・削除を検知し、
  * その jar のパッケージの型を参照するファイル（I行）と、型解決に失敗していたファイル
  * （F行のエラー数、U行の BINDING_FAILED）を解析し直す。
  * 実行中の JDK もブートクラスパスとして解決に加わるため、ヘッダ行に含めて丸ごと突き合わせる。
+ * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
+ * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。
  *
  * <h2>バージョン（{@link #VERSION}）を上げる基準</h2>
  * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
@@ -82,8 +96,17 @@ package jche.cache;
  *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
  *       書かれていない暗黙の super() は拾わない</li>
  *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
+ *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を追加し、
+ *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録するようにした（v14）。
+ *       「その経路では呼ばれない」と言い切れる呼び出しを読み手が見分けるため</li>
  *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める（v12）。
  *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
+ *   <li>H 行・D 行・V 行にアノテーションを持つ（v13。{@link AnnotationTokens}）。選別はせず、
+ *       付いているものを宣言順に全部残す。値は単一メンバと value / name の文字列だけ。
+ *       どのアノテーションに意味があるかは読み手の判断
+ *       （{@link jche.graph.SpringBeans} / {@link jche.framework.GeneratedImpl}）</li>
+ *   <li>F 行と L 行の末尾に内容ハッシュの列を足した（v13 のまま。列が無い旧行は更新時刻とサイズだけで
+ *       判定され、書き写すときに補われる。事実の意味は変わらないのでバージョンは上げていない）</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -100,7 +123,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v12";
+    public static final String VERSION = "jche-cache-v14";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';
@@ -130,9 +153,12 @@ public final class CacheFormat {
      * 更新時刻とサイズだけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
-    public static String headerFor(String sourceLevel) {
-        return VERSION + SEP + "source=" + sourceLevel
+    public static String headerFor(String sourceLevel, String hintPluginFingerprint) {
+        String header = VERSION + SEP + "source=" + sourceLevel
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+        // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
+        // この項目の追加だけで捨てさせないため
+        return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
     }
 
     /** 行の先頭1文字（種別）。空行なら '\0' */

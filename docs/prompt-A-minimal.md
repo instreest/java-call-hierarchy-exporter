@@ -42,7 +42,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 - 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>...`。
   設定ファイルは複数渡せ、渡した順に独立して処理する（1つが失敗しても残りは処理し、最後に設定ごとの
   OK / FAIL と出力フォルダの一覧を出す。1つでも失敗すれば終了コード 1）。
-  引数省略時は作業ディレクトリの `config.properties` を使い、その旨を標準エラーに出す
+  引数省略時は作業ディレクトリの `config/config.properties` を使い、その旨を標準エラーに出す
 - 出力は設定ファイルごとに `output.folder` の下の `<解析開始日時 yyyyMMdd-HHmmss>_<project.root のフォルダ名>/`
   に書く（同じ秒に同名ができれば `_2`, `_3` …）。中身は `call-hierarchy.csv`、`methods.csv`、渡した設定ファイルの
   複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
@@ -55,7 +55,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   使うJDK APIの版以上にする（JDTは実行中のJVMの標準クラスを解析対象のクラスパスに含めるため、
   古いJDKだと新しいAPIの呼び出しが型解決失敗になり、その戻り値を使う自分のコードの呼び出しも欠ける）
 
-## 3. 入力: 設定ファイル（`config.properties`、UTF-8）
+## 3. 入力: 設定ファイル（`config.properties`、UTF-8。同梱の既定は `config/config.properties`）
 
 相対パスの起点は項目ごとに違う。**設定ファイルの置き場所**を起点にするものと、
 **解析対象プロジェクト（`project.root`）**を起点にするものを区別すること。
@@ -82,9 +82,9 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告 | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
-| `dataflow.max.depth` | `5` | ファクトリの委譲（`return create();`）を辿る段数 | — |
+| `dataflow.max.depth` | `5` | 経路に依存する探索（引数で渡ってきたクラス名・リテラルを辿る）の段数。ファクトリの委譲は上限なく畳む | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
-| `output.folder` | `./output` | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
+| `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
 旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
 
@@ -232,7 +232,7 @@ jar を足せばキャッシュを消さずに次の実行で反映される）�
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる（候補数は**サブクラス数ではなく、そのメソッドをオーバーライドしている宣言の数**）。本体を持つ候補が皆無なら `NO_IMPL` |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内でその変数に代入された `new` の型（フロー非依存。複数あれば候補集合） |
 | 3 | 拡張が返すラベル | プロジェクト固有の解決（下記の拡張ポイント） |
-| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | レシーバが `new` された型、またはファクトリメソッドの戻り値（その宣言の `return` を追う。委譲は `dataflow.max.depth` 段まで。`Class.forName(文字列).newInstance()` 形式も追う） |
+| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | レシーバが `new` された型、またはファクトリメソッドの戻り値（その宣言の `return` を追う。委譲は上限なく畳み、循環は「決められない」。`Class.forName(文字列).newInstance()` 形式も追う） |
 | — | `DATAFLOW_PARAM` / `DATAFLOW_FIELD` | 起点からの**経路上**で渡された実引数、またはコンストラクタ注入されたフィールドから特定。経路ごとに答えが違うので探索中に判定する |
 | 5 | `CHA` | 候補が複数のまま（低確度）。候補を1件ずつ行にし、先へは降りない |
 
@@ -259,6 +259,9 @@ jar を足せばキャッシュを消さずに次の実行で反映される）�
 FQNを書くとリフレクションで読み込む）:
 - `CallSiteHintCollector`: AST走査中に呼び出し箇所の証拠（例: `DaoFactory.get("USER_DAO")` の文字列）を拾う
 - `TypeCandidateProvider`: 証拠と宣言型から具象型の候補を返す（例: `"USER_DAO"` → `UserDaoImpl` の対応表）
+
+実装クラスは `plugin.folders` のフォルダに置く。`.java` を置けば実行時にコンパイルされる
+（`.class` / `.jar` でもよい）。よくある用途（ファクトリのキー・DI の対応表）の実装は同梱する。
 
 ### 5.4 探索（フェーズ3）
 
