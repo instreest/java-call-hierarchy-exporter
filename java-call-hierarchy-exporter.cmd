@@ -1,4 +1,4 @@
-@echo off
+@echo on
 rem java-call-hierarchy-exporter の起動コマンド（Windows のコマンドプロンプト。Linux / macOS / Git Bash は java-call-hierarchy-exporter.sh）。
 rem
 rem   jche                              引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
