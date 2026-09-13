@@ -1,6 +1,6 @@
 # 起動コマンドと実行方法
 
-リポジトリ直下の起動コマンドの全仕様と、JBang を直接使う方法、閉域ネットワークでの動かし方。
+リポジトリ直下の起動コマンドの全仕様と、JBang を直接使う方法。
 最小の手順は [README の Quick start](../README.md#quick-start) にある。
 実装時に迷った点は [cli-app-qa.md](cli-app-qa.md) と [cli-noninteractive-qa.md](cli-noninteractive-qa.md) にある。
 
@@ -119,7 +119,7 @@ java-call-hierarchy-exporter: ネットワークからの取得が必要です
   無人で動かす環境で取得してよいと決めてあるなら、`launcher.properties`（または環境変数）で
   `JCHE_ALLOW_DOWNLOAD=yes` にすると尋ねずに取得します。`no` にすると端末があっても取得しません（閉域ネットワーク向け。
   `JCHE_JBANG_OPTS` に `--offline` を書いた場合も同じ）。対話モードの「環境設定」の 5) でも切り替えられます
-- 取得せずに動かすには、先に JDK と jar を用意します（[閉域ネットワークで動かす](#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)）
+- 取得せずに動かすには、先に JDK と jar を用意します（[README の「Pleiades/Eclipse環境（閉域ネットワーク等の場合）」](../README.md#pleiadeseclipse環境閉域ネットワーク等の場合)）
 - 起動コマンドを通さず `jbangw/jbang` を直接使う場合（[JBangによる実行](#jbangによる実行対話なし)）と
   [GitHub Actions](../README.md#github-actions-から使う) では、この確認は出ず、自動で取得します。
   実装時に迷った点は [network-download-confirm-qa.md](network-download-confirm-qa.md) にあります
@@ -148,29 +148,6 @@ rem Windows（コマンドプロンプト）
 
 ```bash
 ./jbangw/jbang src/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
-```
-
-## 閉域ネットワークで動かす（Pleiades/Eclipse の jar を使う）
-
-Pleiades/Eclipseがインストールされていれば、そこに含まれるJDT Core一式から、実行に必要なjarを `lib` フォルダに集めて使います。
-バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
-
-```bat
-rem java-call-hierarchy-exporterをカレントディレクトリとしてください
-rem 環境に合わせて次の2行を書き換えてください
-set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
-set JAVA_HOME=C:\pleiades\2026-06\java\17
-
-rem　実行に必要なjarの収集
-mkdir lib
-for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
-do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
-
-rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
-"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
-
-rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
 
 ## Eclipse（Pleiades）でソースを開く

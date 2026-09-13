@@ -16,7 +16,7 @@ Eclipseは起動せず、解析エンジンに Eclipse JDT のコンパイラを
 | 最小の手順 | [Quick start](#quick-start)（このファイル） |
 | 出力 CSV の読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定項目 | [config/config.properties](config/config.properties) のコメント |
-| 起動コマンドの全仕様・JBang 直接実行・閉域ネットワーク | [docs/cli.md](docs/cli.md) |
+| 起動コマンドの全仕様・対話モード・JBang 直接実行 | [docs/cli.md](docs/cli.md) |
 | 依存 jar の自動取得（Maven / Gradle） | [docs/build-tool-classpath.md](docs/build-tool-classpath.md) |
 | 具象クラスの解決条件を外から与える（プラグイン） | [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) |
 | GitHub Actions から使う | [docs/github-actions.md](docs/github-actions.md) |
