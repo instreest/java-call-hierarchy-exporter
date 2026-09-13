@@ -14,8 +14,9 @@ rem Windows（コマンドプロンプト）
 ./jbangw/jbang src/CallHierarchyExporter.java config.properties
 ```
 
-でツールを実行できます。初回実行時に JBang 本体・JDK・依存 jar が自動で取得されます
-（`~/.jbang/` 配下に保存）。
+でツールを実行できます。初回実行時に JBang 本体・JDK・依存 jar が確認なしで自動的に取得されます
+（`~/.jbang/` 配下に保存）。取得の前に確認してほしいときはリポジトリ直下の起動コマンド
+（`java-call-hierarchy-exporter.sh` / `.cmd`）を使ってください（README の「ネットワークからの取得の確認」）。
 
 ## ファイル
 

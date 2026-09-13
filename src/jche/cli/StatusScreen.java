@@ -43,7 +43,9 @@ final class StatusScreen {
             }
         }
         t.println(" 環境変数                : JBANG_DIR=" + env("JBANG_DIR") + "  JBANG_REPO=" + env("JBANG_REPO")
-                + "  JCHE_JAVA_OPTS=" + env("JCHE_JAVA_OPTS") + "  JCHE_JBANG_OPTS=" + env("JCHE_JBANG_OPTS"));
+                + "  JCHE_JAVA_OPTS=" + env("JCHE_JAVA_OPTS") + "  JCHE_JBANG_OPTS=" + env("JCHE_JBANG_OPTS")
+                + "  JCHE_ALLOW_DOWNLOAD=" + env("JCHE_ALLOW_DOWNLOAD"));
+        t.println(" ネットワークからの取得  : " + EnvironmentSettingsScreen.describeAllowDownload(settings.get(LauncherSettings.KEY_ALLOW_DOWNLOAD)));
         t.pause();
     }
 
