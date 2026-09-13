@@ -2,7 +2,7 @@
 rem java-call-hierarchy-exporter ‚Ì‹N“®ƒRƒ}ƒ“ƒhiWindows ‚ÌƒRƒ}ƒ“ƒhƒvƒƒ“ƒvƒgBLinux / macOS / Git Bash ‚Í java-call-hierarchy-exporter.shjB
 rem
 rem   jche                              ˆø”‚È‚µ c ‘Î˜bƒ‚[ƒhiƒƒjƒ…[‚Åİ’èƒtƒ@ƒCƒ‹‚ğ‘I‚ñ‚Å‰ğÍ‚·‚éj
-rem   jche a.properties [b.propertiesc] ˆø”‚ ‚è c ‘Î˜b‚È‚µ‚Å‰ğÍ‚·‚éijbang ‚Å src\CallHierarchyExporter.java ‚ğ’¼Ú“®‚©‚·‚Ì‚Æ“¯‚¶j
+rem   jche a.properties [b.propertiesc] ˆø”‚ ‚è c ‘Î˜b‚È‚µ‚Å‰ğÍ‚·‚éijbang ‚Å src\jche\CallHierarchyExporter.java ‚ğ’¼Ú“®‚©‚·‚Ì‚Æ“¯‚¶j
 rem   jche --help
 rem
 rem İ’èƒtƒ@ƒCƒ‹‚ğ“n‚µ‚½‚Æ‚«‚Í‰½‚àq‚Ë‚È‚¢iIssue #83jB‰‰ñ‚Å launcher.properties ‚ª‚Ü‚¾–³‚¯‚ê‚ÎA
@@ -17,7 +17,7 @@ rem
 rem ‚â‚é‚±‚Æ:
 rem   1. launcher.propertiesi‚±‚ÌƒtƒHƒ‹ƒ_’¼‰ºj‚ğ“Ç‚İAJDK / JBang ‚Ì’u‚«êŠiJBANG_DIR “™j‚â JVM ‚ÌƒIƒvƒVƒ‡ƒ“‚ğ
 rem      ŠÂ‹«•Ï”‚É‚·‚éB–³‚¯‚ê‚ÎA‘Î˜b‚Å‚«‚é‚Æ‚«‚¾‚¯’u‚«êŠ‚ğq‚Ë‚Äì‚éi‰‰ñ‚¾‚¯Bˆø”‚ª‚ ‚é‚Æ‚«‚Íq‚Ë‚¸‚ÉŠù’è‚Åì‚éjB
-rem   2. jbangw\jbang.cmdi“¯«‚Ì JBang ƒ‰ƒbƒp[j‚Å src\Jche.java ‚ğ“®‚©‚·B
+rem   2. jbangw\jbang.cmdi“¯«‚Ì JBang ƒ‰ƒbƒp[j‚Å src\jche\Jche.java ‚ğ“®‚©‚·B
 rem      ƒlƒbƒgƒ[ƒN‚Éo‚é‚Ì‚ÍŸ‚Ì 3 ’iŠK‚ÅA‚¢‚¸‚ê‚à‘€ìÒ‚ÌŠm”Fi‚Ü‚½‚Í JCHE_ALLOW_DOWNLOADj‚È‚µ‚É‚Ís‚í‚È‚¢:
 rem        a. ƒ‰ƒbƒp[‚ª JBang –{‘Ìigithub.comj‚ÆAJBang ‚ğ“®‚©‚· JDKiapi.foojay.ioj‚ğæ“¾‚·‚é
 rem           c Java ‚ª“®‚­‘O‚È‚Ì‚ÅA’u‚«êŠ‚Ìƒtƒ@ƒCƒ‹‚Ì—L–³‚ğŒ©‚ÄA–³‚¯‚ê‚Î‘–‚ç‚¹‚é‘O‚ÉŠm”F‚·‚é
@@ -37,7 +37,7 @@ rem Š‡ŒÊƒuƒƒbƒN‚Ì’†‚Å‚Í %VAR% ‚ªƒuƒƒbƒN‚Ì‰ğÍ‚É“WŠJ‚³‚ê‚é‚Ì‚ÅA’l‚ğg‚¤‰ÓŠ‚
 rem
 rem ‚±‚Ìƒtƒ@ƒCƒ‹‚Ì•¶šƒR[ƒh‚Í MS932iShift_JISjA‰üs‚Í CRLFB‘¼‚Ìƒtƒ@ƒCƒ‹‚Í UTF-8 ‚¾‚ªAcmd ‚Íƒoƒbƒ`ƒtƒ@ƒCƒ‹‚ğ
 rem ‰æ–Ê‚ÌƒR[ƒhƒy[ƒWi“ú–{Œê Windows ‚Å‚Í MS932j‚Æ‚µ‚Ä“Ç‚Ş‚Ì‚ÅA“ú–{Œê‚Ì echo ‚ğ‰»‚¯‚³‚¹‚È‚¢‚½‚ß‚É‚±‚Ìƒtƒ@ƒCƒ‹‚¾‚¯
-rem MS932 ‚É‚µ‚Ä‚ ‚éichcp ‚ÅØ‚è‘Ö‚¦‚é‚Æ‰æ–Ê‚ªÁ‚¦‚é‚Ì‚Åg‚í‚È‚¢Bsrc\CallHierarchyExporter.java ‚Ì–`“ªjB
+rem MS932 ‚É‚µ‚Ä‚ ‚éichcp ‚ÅØ‚è‘Ö‚¦‚é‚Æ‰æ–Ê‚ªÁ‚¦‚é‚Ì‚Åg‚í‚È‚¢Bsrc\jche\CallHierarchyExporter.java ‚Ì–`“ªjB
 rem •ÒW‚·‚é‚Æ‚«‚Í MS932 ‚Ì‚Ü‚Ü•Û‘¶‚·‚é‚±‚ÆB‘‚«o‚· launcher.properties ‚à MS932 ‚É‚È‚èAJava ‘¤inative.encodingj‚Æ‘µ‚¤B
 setlocal
 set "ROOT=%~dp0"
@@ -80,7 +80,7 @@ goto :run_online
 :run_offline
 rem æ“¾Ï‚İ‚Ì‚à‚Ì‚¾‚¯‚Å“®‚©‚·B‘«‚è‚È‚¯‚ê‚Î jbang ‚ªƒAƒvƒŠ‚ğn‚ß‚é‘O‚É¸”s‚·‚éi–Úˆó‚ª‚Å‚«‚È‚¢j
 if exist "%STARTED%" del /q "%STARTED%"
-call "%ROOT%\jbangw\jbang.cmd" run --offline %JB_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
+call "%ROOT%\jbangw\jbang.cmd" run --offline %JB_OPTS% %R_OPTS% "%ROOT%\src\jche\Jche.java" %*
 set "CODE=%ERRORLEVEL%"
 if exist "%STARTED%" goto :done
 echo.
@@ -90,7 +90,7 @@ call :approve_download
 if errorlevel 1 goto :abort
 
 :run_online
-call "%ROOT%\jbangw\jbang.cmd" run %JB_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
+call "%ROOT%\jbangw\jbang.cmd" run %JB_OPTS% %R_OPTS% "%ROOT%\src\jche\Jche.java" %*
 set "CODE=%ERRORLEVEL%"
 goto :done
 

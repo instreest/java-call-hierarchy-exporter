@@ -13,8 +13,8 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 
 | 場所 | 役割 |
 |---|---|
-| `src/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
-| `src/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
+| `src/jche/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
+| `src/jche/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
 | `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker` / `FieldFactCollector` に分担）、`graph`（呼び出しグラフ・具象クラス解決）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
@@ -30,7 +30,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 ```bash
 ./java-call-hierarchy-exporter.sh                            # 対話モード
 ./java-call-hierarchy-exporter.sh config/config.properties   # 対話なし（引数あり）
-./jbangw/jbang src/CallHierarchyExporter.java config/config.properties   # 起動コマンドを通さない場合
+./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties   # 起動コマンドを通さない場合
 ```
 
 初回は JDK 25 と JDT の jar を取得する（数百 MB）。起動コマンドは取得の前に確認を出す（`n` か端末なしなら取得せず終了コード 3。
@@ -63,8 +63,11 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - 文字コードは UTF-8。例外は `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF（`.gitattributes` で `-text`）。
   編集するときは MS932 のまま保存する。この制約の理由は `docs/cli-app-qa.md` の Q15
 - コメント・ログ・ドキュメントは日本語。ログのメッセージは利用者が次に何をすればよいか分かる書き方にする
-- JDT の版を上げるときは `src/CallHierarchyExporter.java` と `src/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
+- JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
   （`test/pom/run.sh` が検出する）
+- 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
+  `**` は区切り文字をまたぐが 0 階層は含まないため、`**/*.java` だけでは同じフォルダ直下のファイルに当たらない
+  （`cannot find symbol` になる）。直下ぶんの `*.java` を必ず併記する（`docs/entrypoint-package-qa.md`）
 - 出力の行順は環境に依存しない決定的な並びを保つ（`docs/deterministic-row-order-qa.md`）。ソート順を変えると期待値が全部変わる
 - キャッシュの形式や鍵を変えるときは、古いキャッシュを安全に捨てる経路を用意する（`docs/cache-dependency-jars-qa.md`）
 - 解決の結果はエッジの処理順に依存させない。`CallResolver.resolve` はメモ化されるので、最初の評価と後の評価で答えが変わる

@@ -2,7 +2,7 @@
 # java-call-hierarchy-exporter の起動コマンド（Linux / macOS / Git Bash。Windows のコマンドプロンプトは java-call-hierarchy-exporter.cmd）。
 #
 #   ./java-call-hierarchy-exporter.sh                          引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
-#   ./java-call-hierarchy-exporter.sh a.properties [b.properties…] 引数あり … 対話なしで解析する（jbang で src/CallHierarchyExporter.java を直接動かすのと同じ）
+#   ./java-call-hierarchy-exporter.sh a.properties [b.properties…] 引数あり … 対話なしで解析する（jbang で src/jche/CallHierarchyExporter.java を直接動かすのと同じ）
 #   ./java-call-hierarchy-exporter.sh --help
 #
 # 設定ファイルを渡したときは何も尋ねない（Issue #83）。初回で launcher.properties がまだ無ければ、
@@ -18,7 +18,7 @@
 # やること:
 #   1. launcher.properties（このフォルダ直下）を読み、JDK / JBang の置き場所（JBANG_DIR 等）や JVM のオプションを
 #      環境変数にする。無ければ、対話できるときだけ置き場所を尋ねて作る（初回だけ。引数があるときは尋ねずに既定で作る）。
-#   2. jbangw/jbang（同梱の JBang ラッパー）で src/Jche.java を動かす。
+#   2. jbangw/jbang（同梱の JBang ラッパー）で src/jche/Jche.java を動かす。
 #      ネットワークに出るのは次の 3 段階で、いずれも操作者の確認（または JCHE_ALLOW_DOWNLOAD）なしには行わない:
 #        a. ラッパーが JBang 本体（github.com）と、JBang を動かす JDK（api.foojay.io）を取得する
 #           … Java が動く前なので、置き場所のファイルの有無を見て、無ければ走らせる前に確認する
@@ -280,7 +280,7 @@ run_once() {
   # 2 つの JDK を取得することになるので、25 にそろえて 1 つで済ませる
   export JBANG_DEFAULT_JAVA_VERSION="${JBANG_DEFAULT_JAVA_VERSION:-25}"
   local jbang="$ROOT/jbangw/jbang"
-  local script="$ROOT/src/Jche.java"
+  local script="$ROOT/src/jche/Jche.java"
   if wrapper_would_download || [ "$fresh" = 1 ]; then
     # ラッパーが jbang を動かす前に取得するものが無い（または --fresh で取り直す）。走らせる前に確認して、
     # よければ取得込みで動かす（このあと jbang が取得する JDK と依存 jar も、この 1 回の確認に含める）

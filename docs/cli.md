@@ -150,12 +150,12 @@ JBang のラッパースクリプトを `jbangw/` に同梱しているので、
 
 ```bat
 rem Windows（コマンドプロンプト）
-.\jbangw\jbang.cmd src\CallHierarchyExporter.java config\config.properties
+.\jbangw\jbang.cmd src\jche\CallHierarchyExporter.java config\config.properties
 ```
 
 ```bash
 # Linux / macOS / Git Bash
-./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
+./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties
 ```
 
 このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に**確認なしで**自動で取得されます（`%userprofile%/.jbang/`配下に保存。
@@ -166,7 +166,7 @@ rem Windows（コマンドプロンプト）
 （[複数の設定ファイルをまとめて処理する](#複数の設定ファイルをまとめて処理する)）。
 
 ```bash
-./jbangw/jbang src/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
+./jbangw/jbang src/jche/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
 ```
 
 ## Eclipse（Pleiades）でソースを開く
@@ -179,7 +179,7 @@ rem Windows（コマンドプロンプト）
    `config/config.properties` を指定する（複数指定可）
 
 `pom.xml` は Eclipse で開くためだけのもので、jbang での実行には使われません。依存の版は
-`src/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。
+`src/jche/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。
 JDT の版を変えるときは両方を書き換えてください。`pom.xml` には実行 JDK の版（`//JAVA 25`）は書いておらず、
 Eclipse はワークスペースに登録済みの JDK（17 以上）を使います。そのため Eclipse から実行した解析結果は
 jbang 経由（JDK 25）と一部異なりうることに注意してください

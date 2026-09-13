@@ -52,7 +52,7 @@ Issue の To be は「ネットワークアクセスが必要な場合は操作�
 
 ### Q2. 確認をどこに置いたか。Java の中で尋ねられないのか
 
-起動コマンド（シェル / バッチ）側に置いた。Java のコード（`src/Jche.java`）が動くのは c と d が済んだ後なので、
+起動コマンド（シェル / バッチ）側に置いた。Java のコード（`src/jche/Jche.java`）が動くのは c と d が済んだ後なので、
 Java の中で「取得してよいか」を尋ねるのは鶏と卵になる（[cli-app-qa.md](cli-app-qa.md) の Q2 と同じ理由）。
 Java 側がしているのは「アプリが始まった」目印を置くことだけ（`LauncherSettings.markStarted()`）。
 
@@ -175,7 +175,7 @@ bash 版は「終了コード 0 なら成功、それ以外で目印が無けれ
 
 ### Q13. `jbangw/jbang` の直接実行と GitHub Actions を対象外にした理由
 
-- `./jbangw/jbang src/CallHierarchyExporter.java …`（README の「JBangによる実行」）は、JBang の作法そのもので
+- `./jbangw/jbang src/jche/CallHierarchyExporter.java …`（README の「JBangによる実行」）は、JBang の作法そのもので
   動かす経路で、起動コマンドを通らない。ラッパーは本家のままにしているので（Q2）確認は入れられない。
   README とラッパーの README に「確認なしで取得する。確認してほしければ起動コマンドを使う」と明記した
 - `action.yml`（GitHub Actions）は `.github/action/run.sh` がラッパーを直接呼ぶ。CI に操作者はおらず、
@@ -226,7 +226,7 @@ curl -sSi "https://api.foojay.io/disco/v3.0/directuris?distro=temurin&archive_ty
 
 # 置き場所が増える量 … まっさらな置き場所で 1 回通してから測る
 du -sh ~/.jbang/bin ~/.jbang/cache/urls ~/.jbang/cache/jdks/*
-bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | xargs du -cb | tail -1
+bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | xargs du -cb | tail -1
 ```
 
 数字は 2 つの起動コマンド（`.sh` と `.cmd`）にそれぞれ持たせている。`launcher.properties` のひな形や

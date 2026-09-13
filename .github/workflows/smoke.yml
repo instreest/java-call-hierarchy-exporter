@@ -23,14 +23,14 @@ jobs:
           path: |
             ~/.jbang
             ~/.m2/repository
-          key: jbang-${{ hashFiles('jbangw/jbang', 'src/CallHierarchyExporter.java') }}
+          key: jbang-${{ hashFiles('jbangw/jbang', 'src/jche/CallHierarchyExporter.java') }}
 
       # jbang が解決した JDT の jar を classpath にして、全ソースを警告ゼロでコンパイルできることを確認する。
       # jbang 自身がビルドしたスクリプトの jar（~/.jbang/cache/jars）は除く。残すと javac がそちらの class を使い、
       # ソースの一部が lint 対象から外れる。
       - name: Compile with all lint warnings as errors
         run: |
-          CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+          CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
@@ -43,7 +43,7 @@ jobs:
       - name: Resolve order-independence test (test/dataflow)
         run: bash test/dataflow/run.sh
 
-      # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
+      # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う。
       # 起動コマンドはネットワークからの取得の前に確認を出し、端末が無ければ取得せずに終わる（Issue #86）。
       # ここでは上のステップで JBang・依存 jar が取得済み、JDK 25 は setup-java のものなので、確認に掛からず動く

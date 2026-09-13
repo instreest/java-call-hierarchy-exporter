@@ -7,7 +7,7 @@ rem 期待出力を更新するときは、差分を確認したうえで最新�
 setlocal
 cd /d "%~dp0"
 set "ROOT=%~dp0..\.."
-set "JCHE=call "%ROOT%\jbangw\jbang.cmd" run "%ROOT%\src\CallHierarchyExporter.java""
+set "JCHE=call "%ROOT%\jbangw\jbang.cmd" run "%ROOT%\src\jche\CallHierarchyExporter.java""
 set "FAIL=0"
 
 rem whole は cache.folder が空欄なので、キャッシュはツールのプロジェクトフォルダの .cache\demo_<ハッシュ>\ にできる

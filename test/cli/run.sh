@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）の検査。
+# 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）の検査。
 #
 #   bash test/cli/run.sh
 #   JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh   # JDK 25 を取得できない環境で手元の JDK を使う

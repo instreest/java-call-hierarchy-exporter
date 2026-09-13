@@ -17,4 +17,4 @@ while IFS= read -r line; do
     configs+=("$line")
 done < "$JCHE_CONFIG_LIST"
 
-bash "$GITHUB_ACTION_PATH/jbangw/jbang" run "$GITHUB_ACTION_PATH/src/CallHierarchyExporter.java" "${configs[@]}"
+bash "$GITHUB_ACTION_PATH/jbangw/jbang" run "$GITHUB_ACTION_PATH/src/jche/CallHierarchyExporter.java" "${configs[@]}"

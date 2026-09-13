@@ -125,7 +125,7 @@ compileJava.options.encoding = 'UTF-8'
 
 ### Q4. `jbang edit` を使えば済むのでは
 
-`jbang edit src/CallHierarchyExporter.java` は、`//DEPS` から依存を解決した Gradle プロジェクトを
+`jbang edit src/jche/CallHierarchyExporter.java` は、`//DEPS` から依存を解決した Gradle プロジェクトを
 `~/.jbang/cache/projects/` 配下に生成し、ソースはそこへのリンク（リンクが張れない環境ではコピー）にする。
 Eclipse で開くのはその生成先で、リポジトリのフォルダではない。コピーになった場合は
 編集がリポジトリに戻らず、git 管理との相性も悪い。Issue の「Eclipse でプロジェクトを開いたとき」は
@@ -159,7 +159,7 @@ Eclipse 連携プラグインで、`//DEPS`・`//JAVA`・`//SOURCES` をその�
 生成物をそのまま使うことはできない。実際に実行して確かめた。
 
 ```
-$ jbang export maven -O out src/CallHierarchyExporter.java
+$ jbang export maven -O out src/jche/CallHierarchyExporter.java
 [jbang] Exported as maven project to .../out
 out/pom.xml
 out/src/main/java/CallHierarchyExporter.java
@@ -195,7 +195,7 @@ JDT の版を上げるときは両方を書き換える。片方だけ変える�
 
 ### Q8. ソースフォルダを Maven 標準の `src/main/java` に移さないのはなぜか
 
-JBang の `//SOURCES jche/**/*.java`、README の `javac -sourcepath src`、CI の `find src`、
+JBang の入口（`src/jche/CallHierarchyExporter.java`）と `//SOURCES`、README の `javac -sourcepath src`、CI の `find src`、
 `.gitignore` の記述がすべて `src` 直下を前提にしている。Eclipse のためだけにそれらを全部変えるのは
 本末転倒なので、`pom.xml` 側で `<sourceDirectory>src</sourceDirectory>` と指定して合わせた。
 
@@ -250,7 +250,7 @@ m2e が行う依存解決は Maven のそれと同じなので、`mvn compile` �
 CI が保証しているほうが、Pleiades 同梱の JDK が 17 の利用者にとって意味がある。
 
 `regression` ジョブとは別ジョブにしたのは、`~/.m2` のキャッシュキーを jbang 用のもの
-（`jbangw/jbang` と `src/CallHierarchyExporter.java` のハッシュ）と混ぜないため。
+（`jbangw/jbang` と `src/jche/CallHierarchyExporter.java` のハッシュ）と混ぜないため。
 `setup-java` の `cache: maven` は `pom.xml` のハッシュをキーにするので、独立させたほうが素直。
 
 ### Q15. Eclipse からの実行手順で注意することは
@@ -260,7 +260,7 @@ CI が保証しているほうが、Pleiades 同梱の JDK が 17 の利用者�
 README の jbang の例と同じ相対パスがそのまま使える。
 
 ログの文字コードは、ツール側が `System.out` の文字コードを指定しない方針
-（`src/CallHierarchyExporter.java` の冒頭コメント、[cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) の Q21）
+（`src/jche/CallHierarchyExporter.java` の冒頭コメント、[cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) の Q21）
 なので、Eclipse のコンソールに合わせて Eclipse 側が JVM に渡す設定に従う。
 CSV の入出力は常に明示的な文字コードなので影響しない。
 

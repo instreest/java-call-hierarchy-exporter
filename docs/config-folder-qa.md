@@ -72,7 +72,7 @@ Issue の To be は「出力フォルダは既定でコンフィグファイル�
 ### Q6. キャッシュの場所は変わるか
 
 変わらない。キャッシュは設定ファイルの場所ではなく、ツール自身のプロジェクトフォルダ（`ToolRoot` が
-`src/CallHierarchyExporter.java` を目印に特定する）の `.cache/<プロジェクト名>_<ハッシュ>/` に置く
+`src/jche/CallHierarchyExporter.java` を目印に特定する）の `.cache/<プロジェクト名>_<ハッシュ>/` に置く
 （[multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) の Q9）。
 設定ファイルを `config/` へ移しても `.cache/` はリポジトリ直下のままなので、`.gitignore` の `/.cache/` は
 そのままでよい。出力側の `/output/` だけを差し替えた（Q7）。
@@ -143,7 +143,7 @@ Windows の `test\regression\run.cmd` はこの環境では動かせないので
 - `README.md` … Quick start の編集対象、実行例（jbang / `java -cp` / Eclipse の実行構成）、
   出力フォルダの図（`config/<日時>_<プロジェクト名>/`）、複数設定の例（`config/app-a.properties` …）
 - `config/config.properties` … 先頭の説明、`project.root` の既定値、`output.folder` の既定値（`.`）とその説明
-- `src/CallHierarchyExporter.java` の使い方コメントと `DEFAULT_CONFIG`、`src/jche/config/Config.java` の
+- `src/jche/CallHierarchyExporter.java` の使い方コメントと `DEFAULT_CONFIG`、`src/jche/config/Config.java` の
   クラスコメント（設定項目の一覧は `config/config.properties` にある、という参照）
 - `docs/prompt-A-minimal.md` / `docs/prompt-B-detailed.md` … 「引数省略時の既定」の 1 行、
   設定ファイルの節の見出し、設定項目の表の `output.folder` の既定値。プロンプト B の fixture は

@@ -247,7 +247,7 @@ cache.folder=
 （`<解析開始日時>_<プロジェクト名>`）を、ログを読まずに受け取れます（`action.yml` もこれを使っています）。
 
 ```bash
-JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/CallHierarchyExporter.java config/config.properties
+JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties
 cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
 ```
 
