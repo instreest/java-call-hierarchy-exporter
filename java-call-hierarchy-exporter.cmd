@@ -228,6 +228,8 @@ set "SIZE_JDK_NET=135"
 set "SIZE_JDK_DISK=440"
 set "SIZE_DEPS_NET=15"
 set "SIZE_DEPS_DISK=15"
+rem 確認の待ち時間（秒）。端末はあるが誰も居ないとき、ここで打ち切って取りやめる
+set "ASK_TIMEOUT=60"
 exit /b 0
 
 :jbdirs
@@ -342,11 +344,21 @@ if /i "%JCHE_ALLOW_DOWNLOAD%"=="no" goto :approve_no
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="n" goto :approve_no
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="false" goto :approve_no
 if "%JCHE_ALLOW_DOWNLOAD%"=="0" goto :approve_no
+rem 標準入力が端末でなければ尋ねない（同梱の jbangw\jbang.cmd と同じ判定）
 2>nul >nul timeout /t 0 || goto :approve_notty
-set "ANSWER="
-set /p "ANSWER=ネットワークにアクセスして取得しますか？ [y/N]: "
-if /i "%ANSWER%"=="y" exit /b 0
-if /i "%ANSWER%"=="yes" exit /b 0
+rem 端末はあっても、その先に誰も居ないことがある（コンソールを割り当てるタスクスケジューラ等）。
+rem cmd には bash の /dev/tty のような「読んだら即座に終わる」合図が無く、set /p はそういう場でも待ち続ける
+rem （CON から読む手も、コンソールが無い環境で永久に待つので使えない。実測は
+rem  docs/network-download-confirm-qa.md の Q18）。choice の /t と /d で待ち時間に上限を設け、
+rem 時間切れなら取りやめ（n）に倒す。errorlevel は選んだ番号（1=y 2=n）、読めなければ 255、Ctrl+C なら 0。
+rem if errorlevel は「N 以上」なので、大きい順に見る（choice のドキュメントにある決まり）
+choice /c yn /n /t %ASK_TIMEOUT% /d n /m "ネットワークにアクセスして取得しますか？ [y/N]（%ASK_TIMEOUT% 秒で取りやめ）: "
+if errorlevel 255 goto :approve_notty
+if errorlevel 2 goto :approve_declined
+if errorlevel 1 exit /b 0
+rem 0 は Ctrl+C / Ctrl+Break
+:approve_declined
+echo.
 echo 取得を取りやめました。
 exit /b 1
 :approve_offline

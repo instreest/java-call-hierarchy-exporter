@@ -237,6 +237,20 @@ if [ -z "$subst" ]; then
 else
     ng "設定由来の変数に %VAR:検索=置換% がある（未定義だと cmd がバッチごと落ちる）: $(printf '%s' "$subst" | tr '\n' ' ')"
 fi
+# 取得の確認は choice で尋ね、必ず /t（待ち時間）と /d（既定）を伴うこと。端末はあっても
+# その先に誰も居ないことがあり、set /p や /t の無い choice はそこで待ち続ける
+# （docs/network-download-confirm-qa.md の Q18）
+if LC_ALL=C grep -a -q -E 'choice .*/t .*/d ' "$CMD"; then
+    ok "取得の確認は choice に /t と /d を伴う"
+else
+    ng "取得の確認の choice に /t か /d が無い（無人で待ち続ける）"
+fi
+# CON から読まないこと。コンソールが無い環境では失敗も EOF も返さず永久に待つ（実測。同 Q18）
+if LC_ALL=C grep -a -q -F '< CON' "$CMD"; then
+    ng "CON から読んでいる（コンソールが無い環境で永久に待つ）"
+else
+    ok "CON からは読んでいない"
+fi
 # 改行と文字コード（ヘッダのコメントの約束。UTF-8 で保存し直すと日本語の echo が化ける）
 if LC_ALL=C grep -qa "$(printf '\r')" "$CMD"; then ok "CRLF で保存されている"; else ng "CRLF ではない"; fi
 if iconv -f CP932 -t UTF-8 "$CMD" 2> /dev/null | grep -q "設定を反映するため再起動します"; then
