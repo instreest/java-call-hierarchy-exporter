@@ -251,6 +251,18 @@ if LC_ALL=C grep -a -q -F '< CON' "$CMD"; then
 else
     ok "CON からは読んでいない"
 fi
+# 起動コマンドが使う JDK の版は、動かすスクリプトの //JAVA と同じでなければならない。
+# ずれると、ラッパーが取る JDK と jbang が取る JDK が別々になり、まっさらな環境で 2 つ取得してしまう
+# （docs/network-download-confirm-qa.md の Q9）。.sh はソースから読むので必ず一致する。
+# .cmd は定数で持っている（cmd でのファイル読み取りは Windows でしか検証できず、壊すと気づきにくい）ので、
+# ここで一致を検査して、ソース側を上げたときに気づけるようにする
+want=$(sed -n 's|^//JAVA[[:space:]][[:space:]]*\([0-9][0-9]*\).*|\1|p' "$ROOT/src/jche/Jche.java" 2> /dev/null | head -1)
+got=$(LC_ALL=C grep -a -o 'JBANG_DEFAULT_JAVA_VERSION=[0-9][0-9]*' "$CMD" | head -1 | sed 's/.*=//')
+if [ -n "$want" ] && [ "$want" = "$got" ]; then
+    ok ".cmd の JDK の版が src/jche/Jche.java の //JAVA と一致する（$want）"
+else
+    ng ".cmd の JDK の版（${got:-見つからない}）が //JAVA（${want:-見つからない}）と違う"
+fi
 # 改行と文字コード（ヘッダのコメントの約束。UTF-8 で保存し直すと日本語の echo が化ける）
 if LC_ALL=C grep -qa "$(printf '\r')" "$CMD"; then ok "CRLF で保存されている"; else ng "CRLF ではない"; fi
 if iconv -f CP932 -t UTF-8 "$CMD" 2> /dev/null | grep -q "設定を反映するため再起動します"; then
