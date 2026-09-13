@@ -41,13 +41,15 @@ final class CallSiteRecorder {
     private final FileAnalysis out;
     private final BindingNames names;
     private final List<CallSiteHintCollector> collectors;
+    private final GuardCollector guards;
 
     CallSiteRecorder(CompilationUnit cu, FileAnalysis out, BindingNames names,
-                     List<CallSiteHintCollector> collectors) {
+                     List<CallSiteHintCollector> collectors, GuardCollector guards) {
         this.cu = cu;
         this.out = out;
         this.names = names;
         this.collectors = collectors;
+        this.guards = guards;
     }
 
     private int lineOf(ASTNode node) {
@@ -65,12 +67,14 @@ final class CallSiteRecorder {
                 String displayName, String calleeMods, String recvKey, char recvKind,
                 String externalGuess, String recvOrigin, String argOrigins) {
         int line = lineOf(node);
+        // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
+        String guard = guards.guardOf(node);
         if (callers == null) {
             // 呼び出し元の型・コンストラクタ自体を特定できないケース
             // （型のバインディング解決に失敗した等）
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
                     UnresolvedCallFact.OUTSIDE_METHOD, "", recvKey, recvKind,
-                    recvOrigin, argOrigins, lambdaDepth));
+                    recvOrigin, argOrigins, lambdaDepth, guard));
             return;
         }
         MethodRef callee = names.toRef(binding);
@@ -80,7 +84,7 @@ final class CallSiteRecorder {
             for (MethodRef caller : callers) {
                 out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
                         UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKey, recvKind,
-                        recvOrigin, argOrigins, lambdaDepth));
+                        recvOrigin, argOrigins, lambdaDepth, guard));
             }
             return;
         }
@@ -88,7 +92,7 @@ final class CallSiteRecorder {
         // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
-                    recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth));
+                    recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth, guard));
         }
     }
 

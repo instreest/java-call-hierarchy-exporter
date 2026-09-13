@@ -4,6 +4,7 @@ package jche.dataflow;
 import java.util.HashMap;
 import java.util.Map;
 
+import jche.cache.Guard;
 import jche.cache.Origin;
 import jche.graph.CallGraph;
 import jche.graph.IntArray;
@@ -261,13 +262,19 @@ public final class DataflowBuilder {
             for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
                 if (Origin.kindOf(graph.recvOrigin(e)) == Origin.PARAM
                         || mentionsParam(graph.recvOrigin(e))
-                        || mentionsParam(graph.argOrigins(e))) {
+                        || mentionsParam(graph.argOrigins(e))
+                        || guardsOnParam(graph.guard(e))) {
                     flags[caller] = true;
                     break;
                 }
             }
         }
         return flags;
+    }
+
+    /** 条件分岐が囲みメソッドの引数を見ているか（"アトム区切り引数の出所" の形） */
+    private static boolean guardsOnParam(String guard) {
+        return guard != null && guard.indexOf(Guard.FIELD_SEP + "" + Origin.PARAM + ":") >= 0;
     }
 
     /** 実引数の出所の中に「囲みメソッドの引数」が含まれるか（引数の受け渡し） */

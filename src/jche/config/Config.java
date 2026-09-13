@@ -134,6 +134,14 @@ public final class Config {
     public final boolean springDiEnabled;
     /** 追加でBean登録の印とみなす注釈（独自のステレオタイプ注釈。FQNでも単純名でもよい） */
     public final List<String> springDiAnnotations;
+    /**
+     * 条件分岐の静的解析で「その経路では呼ばれない」呼び出しの先を辿らないか。
+     *
+     * 打ち切った呼び出し自体は理由付きで1行出力する（呼び出しが書かれている事実は消さない）。
+     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶため、
+     * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
+     */
+    public final boolean branchPruningEnabled;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
     public final Path cacheFile;
@@ -216,6 +224,8 @@ public final class Config {
         this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
         this.springDiEnabled = Boolean.parseBoolean(p.getProperty("spring.di.enabled", "true").trim());
         this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
+        this.branchPruningEnabled =
+                Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
         this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
 

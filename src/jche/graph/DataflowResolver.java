@@ -5,6 +5,7 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Set;
 
+import jche.cache.Guard;
 import jche.cache.Origin;
 import jche.dataflow.DataflowFacts;
 import jche.util.Names;
@@ -227,6 +228,8 @@ public final class DataflowResolver {
      * 「必要な場合のみ」に絞る。次のいずれかなら意味がある。
      * <ul>
      *   <li>引数をレシーバとして使う、または引数をそのまま次へ渡す</li>
+     *   <li>引数を条件分岐（jche.cache.Guard）の判定に使う
+     *       （その経路で呼ばれない呼び出しを見分けるのに、渡された値が要る）</li>
      *   <li>コンストラクタ注入されたフィールドを持つ型のメソッド
      *       （自分のメソッドを呼び合った先でフィールドを使うことがある）</li>
      * </ul>
@@ -464,6 +467,7 @@ public final class DataflowResolver {
         switch (Origin.kindOf(origin)) {
             case Origin.LITERAL:
             case Origin.CLASS:
+            case Origin.CONST:   // 条件分岐の判定に使う定数（jche.graph.GuardEvaluator）
                 return Origin.head(origin);
             case Origin.PARAM:
                 return paramValueOf(origin, ctx);

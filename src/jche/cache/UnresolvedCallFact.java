@@ -20,11 +20,12 @@ import jche.util.Names;
  * @param recvOrigin  {@link CallEdgeFact#recvOrigin()} と同じ
  * @param argOrigins  {@link CallEdgeFact#argOrigins()} と同じ
  * @param lambdaDepth {@link CallEdgeFact#lambdaDepth()} と同じ
+ * @param guard       {@link CallEdgeFact#guard()} と同じ
  */
 public record UnresolvedCallFact(int line, MethodRef caller, String expression, String reason,
                                  String candidate, String recvKey, char recvKind,
-                                 String recvOrigin, String argOrigins, int lambdaDepth)
-        implements CallSite {
+                                 String recvOrigin, String argOrigins, int lambdaDepth,
+                                 String guard) implements CallSite {
 
     /** 呼び出し先の型解決に失敗した */
     public static final String BINDING_FAILED = "BINDING_FAILED";
@@ -36,6 +37,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
         recvKey = (recvKey == null) ? "" : recvKey;
         recvOrigin = (recvOrigin == null) ? "" : recvOrigin;
         argOrigins = (argOrigins == null) ? "" : argOrigins;
+        guard = (guard == null) ? "" : guard;
     }
 
     @Override
@@ -44,7 +46,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
         return CacheFormat.joinRow("U", String.valueOf(line), c[0], c[1], c[2], c[3],
                 CacheFormat.clean(expression), reason, candidate,
                 recvKey, String.valueOf(recvKind), recvOrigin, argOrigins,
-                String.valueOf(lambdaDepth));
+                String.valueOf(lambdaDepth), guard);
     }
 
     /**
@@ -64,6 +66,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
                 MethodRef.fromColumns(cols, 2), cols[6], cols[7], CacheFormat.columnAt(cols, 8),
                 CacheFormat.columnAt(cols, 9), RecvKind.parse(CacheFormat.columnAt(cols, 10)),
                 CacheFormat.columnAt(cols, 11), CacheFormat.columnAt(cols, 12),
-                Names.parseIntOr(CacheFormat.columnAt(cols, 13), 0));
+                Names.parseIntOr(CacheFormat.columnAt(cols, 13), 0),
+                CacheFormat.columnAt(cols, 14));
     }
 }

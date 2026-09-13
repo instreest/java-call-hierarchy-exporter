@@ -46,6 +46,8 @@ public final class CallGraph {
      */
     int[] recvOriginIds;
     int[] argOriginIds;
+    /** エッジごとの、呼び出し箇所を囲む条件分岐（jche.cache.Guard）。-1 なら条件なし */
+    int[] guardIds;
     private final ArrayList<String> originPool = new ArrayList<>();
     private final HashMap<String, Integer> originPoolIndex = new HashMap<>();
 
@@ -155,6 +157,16 @@ public final class CallGraph {
         return (i < 0) ? null : originPool.get(i);
     }
 
+    /**
+     * その呼び出しを囲む条件分岐（jche.cache.Guard）。無ければ null。
+     *
+     * 「その条件がこの経路で成立しないか」の判定は {@link GuardEvaluator} が行う。
+     */
+    public String guard(int edgeIndex) {
+        int i = guardIds[edgeIndex];
+        return (i < 0) ? null : originPool.get(i);
+    }
+
     /** エッジに結び付いた証拠。無ければ空 */
     public List<Hint> hintsOf(int edgeIndex) {
         int i = edgeHint[edgeIndex];
@@ -250,7 +262,7 @@ public final class CallGraph {
 
     // --- 構築時にだけ使う ---
 
-    /** 出所の文字列を共有プールに入れてインデックスを返す。空なら -1 */
+    /** 出所・条件の文字列を共有プールに入れてインデックスを返す。空なら -1 */
     private int internOrigin(String origin) {
         if (origin == null || origin.isEmpty()) {
             return -1;
@@ -267,7 +279,7 @@ public final class CallGraph {
 
     /** エッジのレシーバ由来・証拠・出所を書き込む（C行とU行で共通） */
     void fillCallSite(int pos, String callerKey, String recvKey, char recvKind,
-                      String recvOrigin, String argOrigins) {
+                      String recvOrigin, String argOrigins, String guard) {
         recvKinds[pos] = (byte) recvKind;
         // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
         if (!recvKey.isEmpty()) {
@@ -284,6 +296,7 @@ public final class CallGraph {
         }
         recvOriginIds[pos] = internOrigin(recvOrigin);
         argOriginIds[pos] = internOrigin(argOrigins);
+        guardIds[pos] = internOrigin(guard);
     }
 
     /** 構築が終わったら、構築時にしか使わない索引を捨てる（エッジからは hintTable 経由で引ける） */
