@@ -113,6 +113,10 @@ write_net_settings "$NET_WORK/jbang-missing" "" ""
 "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-bootstrap.log" 2>&1
 expect_refused "$LOGDIR/run-net-bootstrap.log" $? "JBang 本体が無い"
 expect_log "$LOGDIR/run-net-bootstrap.log" "JBang 本体" "JBang 本体が無い: 取得するものに JBang 本体が挙がった"
+# 取得予定のサイズ（Issue #86 の追加）。まっさらな置き場所なので JBang 本体 15 + JDK 135 + 依存 jar 15 = 165MB
+expect_log "$LOGDIR/run-net-bootstrap.log" "通信量の目安" "JBang 本体が無い: 通信量の目安を出した"
+expect_log "$LOGDIR/run-net-bootstrap.log" "165MB" "JBang 本体が無い: 3 つ分の合計サイズを出した"
+expect_log "$LOGDIR/run-net-bootstrap.log" "135MB" "JBang 本体が無い: 取得するものごとのサイズを出した"
 expect_log "$LOGDIR/run-net-bootstrap.log" "端末が無いため確認できません" "JBang 本体が無い: 端末が無いので尋ねられないと知らせた"
 expect_log "$LOGDIR/run-net-bootstrap.log" "JCHE_ALLOW_DOWNLOAD=yes" "JBang 本体が無い: 尋ねずに取得する方法を知らせた"
 if [ ! -e "$NET_WORK/jbang-missing" ]; then ok "JBang 本体が無い: 置き場所は作られていない"; else ng "JBang 本体が無い: 置き場所に何かできた"; fi
@@ -137,6 +141,9 @@ if [ -f "$jbang_home/bin/jbang.jar" ]; then
     "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-deps.log" 2>&1
     expect_refused "$LOGDIR/run-net-deps.log" $? "依存 jar が無い"
     expect_log "$LOGDIR/run-net-deps.log" "取得済みの JDK と依存 jar だけでは起動できませんでした" "依存 jar が無い: --offline での起動に失敗したと知らせた"
+    # JBang 本体はあるので、その分（15MB）は合計に入らない（JDK 135 + 依存 jar 15 = 150MB）
+    expect_log "$LOGDIR/run-net-deps.log" "150MB" "依存 jar が無い: 手元にあるものを合計から除いた"
+    expect_not_log "$LOGDIR/run-net-deps.log" "JBang 本体（約" "依存 jar が無い: 取得済みの JBang 本体は一覧に出ない"
     if [ ! -f "$ROOT/.cache/launcher.started" ]; then ok "依存 jar が無い: アプリは始まっていない"; else ng "依存 jar が無い: アプリが始まった目印がある"; fi
 else
     echo "  SKIP JBang 本体（$jbang_home/bin/jbang.jar）が無いので「依存 jar が無い」の検査は飛ばす"

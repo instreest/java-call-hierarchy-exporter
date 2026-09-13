@@ -115,19 +115,29 @@ load_settings() {
 
 # --- ネットワークからの取得の確認 ---
 
-# ラッパー（jbangw/jbang）が jbang を動かす前に取得するもの（JBang 本体、JBang を動かす JDK）のうち、
-# まだ無いものを表示用の名前で出す。見る場所はラッパーと同じ（JBANG_DIR / JBANG_CACHE_DIR / JBANG_DEFAULT_JAVA_VERSION）
-missing_bootstrap() {
+# 取得しうるものの目安サイズ（MB）。net はダウンロード量、disk は置き場所が増える量。
+# 実測値で、測り直し方は docs/network-download-confirm-qa.md の Q15 にある。版が上がれば少し変わるので「約」として出す。
+SIZE_JBANG_NET=15;  SIZE_JBANG_DISK=30    # jbang.tar / jbang.zip。bin に展開し、アーカイブも cache/urls に残る
+SIZE_JDK_NET=135;   SIZE_JDK_DISK=440     # Temurin 25 x64。展開後 300MB ほどと、アーカイブ 135MB の両方が残る
+SIZE_DEPS_NET=15;   SIZE_DEPS_DISK=15     # JDT 一式（19 個の jar）
+
+# ラッパー（jbangw/jbang）が jbang を動かす前にネットワークに出るか。
+# ラッパーには --offline のような抑止が無く、呼んだ時点で取得が始まるので、呼ぶ前に確認する必要がある。
+# 見る場所はラッパーと同じ（JBANG_DIR / JBANG_CACHE_DIR / JBANG_DEFAULT_JAVA_VERSION）
+wrapper_would_download() {
   local jbdir="${JBANG_DIR:-$HOME/.jbang}"
   local tdir="${JBANG_CACHE_DIR:-$jbdir/cache}"
-  local missing=""
-  if [ ! -f "$ROOT/jbangw/jbang.jar" ] && [ ! -f "$ROOT/jbangw/.jbang/jbang.jar" ] && [ ! -f "$jbdir/bin/jbang.jar" ]; then
-    missing="JBang 本体"
-  fi
-  if ! bootstrap_jdk_available "$jbdir" "$tdir"; then
-    missing="${missing:+$missing、}JBang を動かす JDK"
-  fi
-  printf '%s' "$missing"
+  jbang_jar_available "$jbdir" || return 0
+  bootstrap_jdk_available "$jbdir" "$tdir" || return 0
+  return 1
+}
+
+# $1=JBANG_DIR。ラッパーが jbang 本体を探す順（同梱 → JBANG_DIR/bin）
+jbang_jar_available() {
+  [ -f "$ROOT/jbangw/jbang.jar" ] && return 0
+  [ -f "$ROOT/jbangw/.jbang/jbang.jar" ] && return 0
+  [ -f "$1/bin/jbang.jar" ] && return 0
+  return 1
 }
 
 # $1=JBANG_DIR  $2=キャッシュのフォルダ。ラッパーの setup_java_exec と同じ順で探す
@@ -138,23 +148,64 @@ bootstrap_jdk_available() {
     if [ "$(uname -s)" != Darwin ] || /usr/libexec/java_home > /dev/null 2>&1; then return 0; fi
   fi
   [ -x "$1/currentjdk/bin/javac" ] && return 0
-  [ -d "$2/jdks/$JBANG_DEFAULT_JAVA_VERSION" ] && return 0
+  jdk25_available "$2" && return 0
   return 1
 }
 
-# ネットワークから取得してよいか。$1=取得するもの（表示用）。よければ 0、だめなら 1
+# $1=キャッシュのフォルダ。ツールを動かす JDK（//JAVA 25。ラッパーが取る JDK と同じ版にそろえてある）が取得済みか
+jdk25_available() {
+  [ -d "$1/jdks/$JBANG_DEFAULT_JAVA_VERSION" ]
+}
+
+# 取得しうるもののうち、まだ手元に無いものの鍵（jbang / jdk / deps）を空白区切りで出す。
+# 依存 jar は手元にあるかを確かめようがないので（推移的な依存まで数えることになる。Q3）常に挙げる
+pending_items() {
+  local jbdir="${JBANG_DIR:-$HOME/.jbang}"
+  local tdir="${JBANG_CACHE_DIR:-$jbdir/cache}"
+  local items=""
+  jbang_jar_available "$jbdir" || items="jbang"
+  jdk25_available "$tdir" || items="${items:+$items }jdk"
+  printf '%s' "${items:+$items }deps"
+}
+
+# $1=鍵の一覧。表示用の文（DL_ITEMS / DL_FROM）と合計サイズ（DL_NET / DL_DISK）を作る
+describe_items() {
+  DL_ITEMS=""; DL_FROM=""; DL_NET=0; DL_DISK=0; DL_NOTE=""
+  local key
+  for key in $1; do
+    case "$key" in
+      jbang)
+        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS、}JBang 本体（約 ${SIZE_JBANG_NET}MB）"
+        DL_FROM="${DL_FROM:+$DL_FROM、}github.com（JBang 本体）"
+        DL_NET=$((DL_NET + SIZE_JBANG_NET)); DL_DISK=$((DL_DISK + SIZE_JBANG_DISK)) ;;
+      jdk)
+        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS、}ツールを動かす JDK $JBANG_DEFAULT_JAVA_VERSION（約 ${SIZE_JDK_NET}MB）"
+        DL_FROM="${DL_FROM:+$DL_FROM、}api.foojay.io（JDK。実体は Adoptium の github.com）"
+        DL_NOTE="。JDK は展開したものとアーカイブの両方が残るため"
+        DL_NET=$((DL_NET + SIZE_JDK_NET)); DL_DISK=$((DL_DISK + SIZE_JDK_DISK)) ;;
+      deps)
+        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS、}依存 jar（JDT ほか。約 ${SIZE_DEPS_NET}MB）"
+        DL_FROM="${DL_FROM:+$DL_FROM、}Maven Central（依存 jar）"
+        DL_NET=$((DL_NET + SIZE_DEPS_NET)); DL_DISK=$((DL_DISK + SIZE_DEPS_DISK)) ;;
+    esac
+  done
+}
+
+# ネットワークから取得してよいか。$1=取得しうるものの鍵の一覧（pending_items の出力）。よければ 0、だめなら 1
 # 順に、JCHE_JBANG_OPTS の --offline → JCHE_ALLOW_DOWNLOAD（yes / no）→ 端末があれば尋ねる → 端末が無ければ取得しない
 approve_download() {
   local jbdir="${JBANG_DIR:-$HOME/.jbang}"
   local repo="${JBANG_REPO:-$HOME/.m2/repository}"
   local allow
   allow=$(printf '%s' "${JCHE_ALLOW_DOWNLOAD:-}" | tr '[:upper:]' '[:lower:]')
+  describe_items "$1"
   echo
   echo "java-call-hierarchy-exporter: ネットワークからの取得が必要です"
-  echo "  取得するもの : $1"
-  echo "  取得元       : github.com（JBang 本体）、api.foojay.io（JDK）、Maven Central（依存 jar）"
+  echo "  取得するもの : $DL_ITEMS"
+  echo "  通信量の目安 : 約 ${DL_NET}MB（置き場所は約 ${DL_DISK}MB 増える${DL_NOTE}）"
+  echo "                 実測に基づく目安。すでに手元にあるものは取得しないので、実際はこれ以下になる"
+  echo "  取得元       : $DL_FROM"
   echo "  置き場所     : $jbdir（JBang 本体・JDK）、$repo（依存 jar）"
-  echo "  大きさ       : 初回は合わせて数百 MB"
   if [ "$OFFLINE_FORCED" = 1 ]; then
     echo "  JCHE_JBANG_OPTS に --offline があるので取得しません。取得するには $SETTINGS の --offline を外してください。"
     echo "取得を取りやめました。"
@@ -213,14 +264,10 @@ run_once() {
   export JBANG_DEFAULT_JAVA_VERSION="${JBANG_DEFAULT_JAVA_VERSION:-25}"
   local jbang="$ROOT/jbangw/jbang"
   local script="$ROOT/src/Jche.java"
-  local missing
-  missing=$(missing_bootstrap)
-  if [ -n "$missing" ] || [ "$fresh" = 1 ]; then
+  if wrapper_would_download || [ "$fresh" = 1 ]; then
     # ラッパーが jbang を動かす前に取得するものが無い（または --fresh で取り直す）。走らせる前に確認して、
-    # よければ取得込みで動かす（このあと jbang が取得する JDK 25 と依存 jar も、この 1 回の確認に含める）
-    local what="$missing、ツールを動かす JDK 25、依存 jar（JDT ほか）"
-    [ -n "$missing" ] || what="依存 jar（JDT ほか）を取り直す（JCHE_JBANG_OPTS の --fresh）。JDK 25 も無ければ取得する"
-    approve_download "$what" || return 3
+    # よければ取得込みで動かす（このあと jbang が取得する JDK と依存 jar も、この 1 回の確認に含める）
+    approve_download "$(pending_items)" || return 3
     # ${opts[@]+"${opts[@]}"} は、要素が無いときに bash 3.2（macOS）の set -u で落ちないための書き方
     "$jbang" run ${opts[@]+"${opts[@]}"} "$script" "$@"
     return $?
@@ -233,7 +280,7 @@ run_once() {
   [ -f "$STARTED" ] && return $code
   echo
   echo "取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。"
-  approve_download "ツールを動かす JDK 25 か依存 jar（JDT ほか）のうち足りないもの" || return 3
+  approve_download "$(pending_items)" || return 3
   "$jbang" run ${opts[@]+"${opts[@]}"} "$script" "$@"
 }
 

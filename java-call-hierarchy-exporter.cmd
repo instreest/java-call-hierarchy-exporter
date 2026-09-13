@@ -63,16 +63,16 @@ set "JBANG_NO_VERSION_CHECK=true"
 rem ラッパーが JBang を動かすために取得する JDK の版。既定（17）のままだと、ツールを動かす JDK 25 と合わせて
 rem 2 つの JDK を取得することになるので、25 にそろえて 1 つで済ませる
 if not defined JBANG_DEFAULT_JAVA_VERSION set "JBANG_DEFAULT_JAVA_VERSION=25"
-call :missing_bootstrap
-if defined MISSING goto :confirm_first
+call :set_sizes
+call :wrapper_would_download
+if defined WOULD_DL goto :confirm_first
 if defined FRESH goto :confirm_first
 goto :run_offline
 
 :confirm_first
 rem ラッパーが jbang を動かす前に取得するものが無い（または --fresh で取り直す）。走らせる前に確認して、
-rem よければ取得込みで動かす（このあと jbang が取得する JDK 25 と依存 jar も、この 1 回の確認に含める）
-if defined MISSING set "MISSING=%MISSING%、ツールを動かす JDK 25、依存 jar（JDT ほか）"
-if not defined MISSING set "MISSING=依存 jar（JDT ほか）を取り直す（JCHE_JBANG_OPTS の --fresh）。JDK 25 も無ければ取得する"
+rem よければ取得込みで動かす（このあと jbang が取得する JDK と依存 jar も、この 1 回の確認に含める）
+call :pending_items
 call :approve_download || goto :abort
 goto :run_online
 
@@ -84,7 +84,7 @@ set "CODE=%ERRORLEVEL%"
 if exist "%STARTED%" goto :done
 echo.
 echo 取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。
-set "MISSING=ツールを動かす JDK 25 か依存 jar（JDT ほか）のうち足りないもの"
+call :pending_items
 call :approve_download || goto :abort
 
 :run_online
@@ -199,41 +199,115 @@ set "V=%ROOT%\%V%"
 set "%~1=%V%"
 exit /b 0
 
-:missing_bootstrap
-rem ラッパー（jbangw\jbang.cmd）が jbang を動かす前に取得するもの（JBang 本体、JBang を動かす JDK）のうち、
-rem まだ無いものを MISSING に表示用の名前で入れる。見る場所はラッパーと同じ（JBANG_DIR / JBANG_CACHE_DIR / JBANG_DEFAULT_JAVA_VERSION）
-set "MISSING="
+:set_sizes
+rem 取得しうるものの目安サイズ（MB）。NET はダウンロード量、DISK は置き場所が増える量。
+rem 実測値で、測り直し方は docs\network-download-confirm-qa.md の Q15 にある。版が上がれば少し変わるので「約」として出す。
+set "SIZE_JBANG_NET=15"
+set "SIZE_JBANG_DISK=30"
+set "SIZE_JDK_NET=135"
+set "SIZE_JDK_DISK=440"
+set "SIZE_DEPS_NET=15"
+set "SIZE_DEPS_DISK=15"
+exit /b 0
+
+:jbdirs
+rem JBang 本体・JDK の置き場所（JBDIR / TDIR）と依存 jar の置き場所（REPO）。ラッパーと同じ決め方
 set "JBDIR=%USERPROFILE%\.jbang"
 if defined JBANG_DIR set "JBDIR=%JBANG_DIR%"
 set "TDIR=%JBDIR%\cache"
 if defined JBANG_CACHE_DIR set "TDIR=%JBANG_CACHE_DIR%"
-if exist "%ROOT%\jbangw\jbang.jar" goto :missing_bootstrap_jdk
-if exist "%ROOT%\jbangw\.jbang\jbang.jar" goto :missing_bootstrap_jdk
-if exist "%JBDIR%\bin\jbang.jar" goto :missing_bootstrap_jdk
-set "MISSING=JBang 本体"
-:missing_bootstrap_jdk
-rem JBang を動かす JDK。ラッパーと同じ順で探す（JAVA_HOME → PATH の javac → currentjdk → 取得済みの既定の版）
+set "REPO=%USERPROFILE%\.m2\repository"
+if defined JBANG_REPO set "REPO=%JBANG_REPO%"
+exit /b 0
+
+:jbang_jar_available
+rem ラッパーが jbang 本体を探す順（同梱 → JBANG_DIR\bin）
+if exist "%ROOT%\jbangw\jbang.jar" exit /b 0
+if exist "%ROOT%\jbangw\.jbang\jbang.jar" exit /b 0
+if exist "%JBDIR%\bin\jbang.jar" exit /b 0
+exit /b 1
+
+:jdk25_available
+rem ツールを動かす JDK（//JAVA 25。ラッパーが取る JDK と同じ版にそろえてある）が取得済みか
+if exist "%TDIR%\jdks\%JBANG_DEFAULT_JAVA_VERSION%\" exit /b 0
+exit /b 1
+
+:bootstrap_jdk_available
+rem JBang を動かす JDK。ラッパーと同じ順で探す（JAVA_HOME → PATH の javac → currentjdk → 取得済みの JDK）
 if defined JAVA_HOME if exist "%JAVA_HOME%\bin\javac.exe" exit /b 0
 where javac > nul 2>&1
 if not errorlevel 1 exit /b 0
 if exist "%JBDIR%\currentjdk\bin\javac" exit /b 0
-if exist "%TDIR%\jdks\%JBANG_DEFAULT_JAVA_VERSION%\" exit /b 0
-if defined MISSING (set "MISSING=%MISSING%、JBang を動かす JDK") else (set "MISSING=JBang を動かす JDK")
+call :jdk25_available && exit /b 0
+exit /b 1
+
+:wrapper_would_download
+rem ラッパー（jbangw\jbang.cmd）が jbang を動かす前にネットワークに出るか（WOULD_DL に入れる）。
+rem ラッパーには --offline のような抑止が無く、呼んだ時点で取得が始まるので、呼ぶ前に確認する必要がある
+call :jbdirs
+set "WOULD_DL="
+call :jbang_jar_available || set "WOULD_DL=1"
+call :bootstrap_jdk_available || set "WOULD_DL=1"
+exit /b 0
+
+:pending_items
+rem 取得しうるもののうち、まだ手元に無いものの鍵（jbang / jdk / deps）を DL_LIST に入れる。
+rem 依存 jar は手元にあるかを確かめようがないので（推移的な依存まで数えることになる）常に挙げる
+call :jbdirs
+set "DL_LIST="
+call :jbang_jar_available || set "DL_LIST=jbang"
+call :jdk25_available || set "DL_LIST=%DL_LIST% jdk"
+set "DL_LIST=%DL_LIST% deps"
+exit /b 0
+
+:describe_items
+rem DL_LIST から、表示用の文（DL_ITEMS / DL_FROM）と合計サイズ（DL_NET / DL_DISK）を作る。
+rem 値を使う箇所は call のサブルーチンにする（括弧ブロックの中では %VAR% がブロックの解析時に展開されるため）
+set "DL_ITEMS="
+set "DL_FROM="
+set "DL_NOTE="
+set /a DL_NET=0
+set /a DL_DISK=0
+for %%I in (%DL_LIST%) do call :add_item %%I
+exit /b 0
+
+:add_item
+rem %1=鍵（jbang / jdk / deps）。2 つめ以降は「、」で区切る
+set "SEP="
+if defined DL_ITEMS set "SEP=、"
+if "%~1"=="jbang" (
+    set "DL_ITEMS=%DL_ITEMS%%SEP%JBang 本体（約 %SIZE_JBANG_NET%MB）"
+    set "DL_FROM=%DL_FROM%%SEP%github.com（JBang 本体）"
+    set /a DL_NET+=SIZE_JBANG_NET
+    set /a DL_DISK+=SIZE_JBANG_DISK
+)
+if "%~1"=="jdk" (
+    set "DL_ITEMS=%DL_ITEMS%%SEP%ツールを動かす JDK %JBANG_DEFAULT_JAVA_VERSION%（約 %SIZE_JDK_NET%MB）"
+    set "DL_FROM=%DL_FROM%%SEP%api.foojay.io（JDK。実体は Adoptium の github.com）"
+    set "DL_NOTE=。JDK は展開したものとアーカイブの両方が残るため"
+    set /a DL_NET+=SIZE_JDK_NET
+    set /a DL_DISK+=SIZE_JDK_DISK
+)
+if "%~1"=="deps" (
+    set "DL_ITEMS=%DL_ITEMS%%SEP%依存 jar（JDT ほか。約 %SIZE_DEPS_NET%MB）"
+    set "DL_FROM=%DL_FROM%%SEP%Maven Central（依存 jar）"
+    set /a DL_NET+=SIZE_DEPS_NET
+    set /a DL_DISK+=SIZE_DEPS_DISK
+)
 exit /b 0
 
 :approve_download
-rem ネットワークから取得してよいか。MISSING=取得するもの（表示用）。よければ 0、だめなら 1 を返す。
+rem ネットワークから取得してよいか。DL_LIST=取得しうるものの鍵（:pending_items が入れる）。よければ 0、だめなら 1 を返す。
 rem 順に、JCHE_JBANG_OPTS の --offline → JCHE_ALLOW_DOWNLOAD（yes / no）→ 端末があれば尋ねる → 端末が無ければ取得しない
-set "JBDIR=%USERPROFILE%\.jbang"
-if defined JBANG_DIR set "JBDIR=%JBANG_DIR%"
-set "REPO=%USERPROFILE%\.m2\repository"
-if defined JBANG_REPO set "REPO=%JBANG_REPO%"
+call :jbdirs
+call :describe_items
 echo.
 echo java-call-hierarchy-exporter: ネットワークからの取得が必要です
-echo   取得するもの : %MISSING%
-echo   取得元       : github.com（JBang 本体）、api.foojay.io（JDK）、Maven Central（依存 jar）
+echo   取得するもの : %DL_ITEMS%
+echo   通信量の目安 : 約 %DL_NET%MB（置き場所は約 %DL_DISK%MB 増える%DL_NOTE%）
+echo                  実測に基づく目安。すでに手元にあるものは取得しないので、実際はこれ以下になる
+echo   取得元       : %DL_FROM%
 echo   置き場所     : %JBDIR%（JBang 本体・JDK）、%REPO%（依存 jar）
-echo   大きさ       : 初回は合わせて数百 MB
 if defined OFFLINE_FORCED goto :approve_offline
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="yes" goto :approve_yes
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="y" goto :approve_yes
