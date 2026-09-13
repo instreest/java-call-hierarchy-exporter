@@ -97,7 +97,7 @@ package jche.cache;
  *       書かれていない暗黙の super() は拾わない</li>
  *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
  *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を追加し、
- *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録するようにした（v13）。
+ *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録するようにした（v14）。
  *       「その経路では呼ばれない」と言い切れる呼び出しを読み手が見分けるため</li>
  *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める（v12）。
  *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
@@ -123,7 +123,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v13";
+    public static final String VERSION = "jche-cache-v14";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';
