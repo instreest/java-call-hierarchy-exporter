@@ -47,7 +47,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 |---|---|
 | `bash test/regression/run.sh` | 回帰テスト。`test/demo` 等を解析して `expected*/` の CSV と比較。キャッシュ再利用・jar 増減・Maven / Gradle・プラグイン・複数設定の各ケース |
 | `bash test/dataflow/run.sh` | 解決の決定性の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること |
-| `bash test/conditions/run.sh` | 条件の調査（設定ファイルの `conditions.target`）の検査。判定可・判定不可の出し分けと、CSV・キャッシュ・出力フォルダを作らないこと |
+| `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
 | `bash test/cli/run.sh` | 起動コマンドと対話モードの検査。メニューへの答えをパイプで流し込む |
 | `bash test/pom/run.sh` | `//DEPS` 行と `pom.xml` の依存が一致すること |
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |

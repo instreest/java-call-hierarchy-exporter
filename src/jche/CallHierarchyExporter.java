@@ -185,10 +185,8 @@ public class CallHierarchyExporter {
             }
             try {
                 Path outputDir = runOne(configPath, toolRoot.dir);
-                // 条件の調査（conditions.target）は画面に出すだけで、出力フォルダを作らない
-                summary.add("OK    " + configPath
-                        + ((outputDir == null) ? "" : " -> " + outputDir));
-                if (outputDirFile != null && outputDir != null) {
+                summary.add("OK    " + configPath + " -> " + outputDir);
+                if (outputDirFile != null) {
                     writeOutputDirFile(outputDirFile, outputDir + System.lineSeparator(), true);
                 }
             } catch (Throwable t) {
@@ -240,49 +238,40 @@ public class CallHierarchyExporter {
     }
 
     /**
-     * 設定に {@code conditions.target} があるときの処理。
-     * 呼び出しに効いている条件を調べて画面に出す（{@code docs/call-conditions.md}）。
+     * 設定に {@code conditions.target} があるときに、<b>通常の出力に追加で</b>
+     * 呼び出しに効いている条件の一覧（{@code call-conditions.csv}）を書く
+     * （{@code docs/call-conditions.md}）。
      *
-     * 設定ファイルは「どこを解析対象とみなすか」（project.root / source.folders / 依存 jar）を
-     * 決めるためにだけ使う。<b>キャッシュも出力フォルダも作らず、対象のファイルだけをその場でパースする</b>。
-     * 打ち切りの判定に使う条件だけでなく、判定できない条件も並べる。
+     * 通常の解析（キャッシュの更新・CSV の出力）はそのまま行った後に呼ぶ。モードを増やさず、
+     * 出力が1つ増えるだけにするための並び。打ち切りの判定に使う条件だけでなく、
+     * 判定できない条件も並べるので、対象のファイルだけを記録用モードでもう一度パースする
+     * （キャッシュには書かない。理由は {@code docs/call-conditions-qa.md} の Q1・Q2）。
      *
-     * 対象が見つからない・該当する呼び出しが無いときは例外にする。設定の書き間違いに
-     * 気付けるよう、この設定ファイルの処理は失敗として数える（複数設定を渡したときの一覧にも FAIL と出る）。
+     * 対象が見つからない・該当する呼び出しが無いときは警告にとどめる。解析そのものは
+     * 成功しており、追加の出力が空振りしただけなので、実行を失敗にはしない。
      */
     private static void runConditions(Config config) throws Exception {
-        Log.info("条件の調査: " + config.conditionsTarget + "（conditions.target）");
-        Log.info("  この設定では CSV を書きません。キャッシュも出力フォルダも作りません。");
+        Log.blank();
+        Log.info("=== 追加: 呼び出しに効いている条件（conditions.target="
+                + config.conditionsTarget + "） ===");
         ProjectLayout layout = new ProjectLayout(config);
         CallConditionScanner.Result result =
                 CallConditionScanner.scan(config, layout, config.conditionsTarget);
-        if (!CallConditionsReport.print(config.conditionsTarget, result)) {
-            throw new IllegalArgumentException(
-                    "conditions.target に合う呼び出しがありません: " + config.conditionsTarget);
-        }
+        CallConditionsReport.write(config, config.conditionsTarget, result);
     }
 
     /**
      * 設定ファイル1つ分の処理。出力フォルダを作り、設定ファイルの複製と実行ログをそこに置いてから解析する。
      *
-     * 設定に {@code conditions.target} があるときは、通常の解析ではなく
-     * 呼び出しに効いている条件の調査を行う（{@link #runConditions}）。CSV も出力フォルダも作らない。
+     * 設定に {@code conditions.target} があるときは、通常の出力に<b>追加で</b>
+     * 呼び出しに効いている条件の一覧を書く（{@link #runConditions}）。解析そのものは変わらない。
      *
-     * @return この実行の出力フォルダ。条件の調査のときは null
+     * @return この実行の出力フォルダ
      */
     private static Path runOne(Path configPath, Path toolRoot) throws Exception {
         Log.resetClock();
         long start = System.currentTimeMillis();
         Config config = new Config(configPath, toolRoot, LocalDateTime.now());
-
-        if (!config.conditionsTarget.isEmpty()) {
-            // 条件の調査は目的が違う調べ物なので、通常の解析とは排他。出力フォルダも作らない
-            Log.info("設定: " + config.configPath);
-            Log.info("プロジェクトルート: " + config.projectRoot);
-            runConditions(config);
-            Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
-            return null;
-        }
 
         // 出力フォルダは解析より前に作る。設定ファイルの複製と実行ログを、解析が途中で落ちても残すため
         Files.createDirectories(config.outputDir);
@@ -297,6 +286,10 @@ public class CallHierarchyExporter {
         AnalysisSnapshot snapshot = Exporter.analyze(config);
 
         long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
+
+        if (!config.conditionsTarget.isEmpty()) {
+            runConditions(config);
+        }
 
         Log.blank();
         Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");

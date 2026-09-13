@@ -50,8 +50,8 @@ jobs:
       - name: Resolve order-independence test (test/dataflow)
         run: bash test/dataflow/run.sh
 
-      # 呼び出しに効いている条件の調査（設定ファイルの conditions.target）。判定できる条件・できない条件の
-      # 出し分けと、CSV・キャッシュ・出力フォルダを作らないことを見る（docs/call-conditions.md）
+      # conditions.target を書いたときに追加で出る call-conditions.csv。判定できる条件・できない条件の
+      # 出し分けと、通常の出力（call-hierarchy.csv / methods.csv / キャッシュ）が変わらないことを見る
       - name: Call conditions test (conditions.target)
         run: bash test/conditions/run.sh
 

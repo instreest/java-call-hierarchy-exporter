@@ -60,6 +60,8 @@ public final class Config {
     /** 出力フォルダ内のファイル名（固定） */
     public static final String CALL_HIERARCHY_CSV_NAME = "call-hierarchy.csv";
     public static final String METHODS_CSV_NAME = "methods.csv";
+    /** conditions.target を指定したときだけ追加で出す、条件の一覧 */
+    public static final String CALL_CONDITIONS_CSV_NAME = "call-conditions.csv";
     /** 出力フォルダに残す実行ログ（標準出力と同じ内容、UTF-8） */
     public static final String LOG_FILE_NAME = "run.log";
     /** 出力フォルダ名の日時の書式 */
@@ -152,10 +154,11 @@ public final class Config {
      */
     public final boolean branchPruningEnabled;
     /**
-     * 呼び出しに効いている条件を調べる対象（{@code conditions.target}）。空欄なら通常の解析。
+     * 呼び出しに効いている条件を調べる対象（{@code conditions.target}）。空欄なら調べない。
      *
-     * 空欄でなければ、この設定ファイルの実行は「条件の調査」になり、CSV は書かない
-     * （キャッシュも出力フォルダも作らない）。目的が違う調べ物なので、通常の解析と同時には行わない。
+     * 指定しても通常の解析（キャッシュの更新と CSV の出力）はそのまま行い、
+     * <b>そのうえで追加で</b>条件の一覧（{@link #conditionsCsv}）を書く。
+     * モードを増やさず、出力が1つ増えるだけにするための決まり。
      * 指定できる形は {@code src/foo/Bar.java} / {@code src/foo/Bar.java:120} /
      * {@code foo.Bar} / {@code foo.Bar#method}（{@code docs/call-conditions.md}）。
      */
@@ -173,6 +176,8 @@ public final class Config {
     public final Path outputDir;
     public final Path outputCsv;
     public final Path methodsCsv;
+    /** conditions.target を指定したときだけ書く、条件の一覧（通常の出力に追加する） */
+    public final Path conditionsCsv;
     public final Path logFile;
 
     /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
@@ -294,6 +299,7 @@ public final class Config {
                 startedAt.format(FOLDER_TIMESTAMP) + "_" + projectName);
         this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);
         this.methodsCsv = this.outputDir.resolve(METHODS_CSV_NAME);
+        this.conditionsCsv = this.outputDir.resolve(CALL_CONDITIONS_CSV_NAME);
         this.logFile = this.outputDir.resolve(LOG_FILE_NAME);
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
