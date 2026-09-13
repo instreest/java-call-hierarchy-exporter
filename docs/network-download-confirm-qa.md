@@ -21,6 +21,8 @@ Q&A の形で残す。
 - jbang 自身の更新確認（起動のたびに新しい版があるかを問い合わせる）は `JBANG_NO_VERSION_CHECK=true` で止めた
 - ラッパーが JBang を動かすために取得する JDK の版（`JBANG_DEFAULT_JAVA_VERSION`）を 25 にそろえ、
   ツールを動かす JDK 25 と別に JDK 17 まで取得することがないようにした（Q9）
+- Windows の `.cmd` で `%VAR:検索=置換%` の文字列置換を使わない。変数が未定義のとき cmd が展開しきれず、
+  バッチごと落ちる（Q16。`test/cli/run.sh` が混入を検出する）
 - `test/cli/run.sh` に「端末が無いときは取得しない」「`JCHE_ALLOW_DOWNLOAD=no` / `--offline` なら取得しない」
   「JBang はあるが依存 jar が無いときも取得しない」「環境設定で `JCHE_ALLOW_DOWNLOAD` を書き換えられる」の検査を足した
 
@@ -228,9 +230,44 @@ bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | 
 （[cli-app-qa.md](cli-app-qa.md) の Q2）。Windows と Linux で通信量がほぼ同じ（JDK は 135MB 対 135MB、
 JBang は 12.8MB 対 14.9MB）だったので、OS ごとに数字を分けることはしていない。
 
+### Q16. Windows の CI だけが落ちた（`set was unexpected at this time.`）
+
+起動コマンドの `.cmd` で、`launcher.properties` 由来の変数に **`%VAR:検索=置換%` の文字列置換**を使ったのが原因。
+`JCHE_JBANG_OPTS` を書いていない（＝変数が未定義の）環境で、cmd がこの書き方を展開しきれず、壊れた `if` 行になって
+バッチ処理ごと打ち切られていた。CI のトレース（`@echo on`）が示した実際の展開結果:
+
+```
+>if defined JCHE_JBANG_OPTS set "JB_OPTS=--offline="
+>if defined JCHE_JBANG_OPTS if not "" == "" set "OFFLINE_FORCED=1"
+set was unexpected at this time.
+>if defined JB_OPTS if not "--fresh=JB_OPTS" set "FRESH=1"
+```
+
+`%JCHE_JBANG_OPTS:--offline=%` が置換として働かず、`--offline=` という文字列に化けている。
+`if defined` で囲ってあっても、**行は実行前にまるごと展開される**ので、条件が偽でも壊れた行になる。
+
+直し方は、文字列置換をやめて `for %%O in (%JCHE_JBANG_OPTS%) do call :one_jbang_opt "%%~O"` と
+オプションを 1 つずつ見る形にした。ついでに短い `-o` も `--offline` と同じ扱いにできた（それまでは見分けていなかった）。
+
+この失敗の性質が厄介だったのは次の 3 点。
+
+- **終了コードが 255 で、出力が何も残らない**。cmd は構文エラーでバッチ処理の連鎖ごと打ち切るので、
+  呼び出し元の `type launcher-batch.log` にも到達しない。CI の手順が起動コマンドの出力を
+  ログファイルへリダイレクトしていたため、原因のメッセージはそのファイルの中に消えていた。
+  `smoke.yml` の該当ステップはリダイレクトをやめ、出力をそのまま CI のログへ流すようにした
+- **手元で再現できない**。`.cmd` は cmd.exe でしか動かせず、`test/cli/run.sh` の `.cmd` 検査は
+  「中身を読むだけ」（ラベル・改行・文字コード）なので、実行時の構文エラーは拾えない。
+  Linux 側のテストが全部通っても Windows が落ちうる、という前提を忘れないこと
+- **`@echo off` のままでは落ちた行が分からない**。一時的に `@echo on` にしたコミットを CI に通して
+  トレースを取り、原因を特定してから元に戻した
+
+再発を防ぐため、`test/cli/run.sh` に「`JBANG_*` / `JCHE_*` / `JB_OPTS` / `R_OPTS` に
+`%VAR:検索=置換%` を使っていないこと」の検査を足した（`%VAR:~0,1%` の部分文字列は対象外）。
+これらは設定が空欄なら未定義になる変数で、同じ壊れ方をする。
+
 ## テスト
 
-### Q16. 端末ありの経路（`y` / `n`）をどう確かめたか
+### Q17. 端末ありの経路（`y` / `n`）をどう確かめたか
 
 `test/cli/run.sh` はパイプで答えを流し込むので端末が無く、常設できるのは「確認できないので取得しない」経路だけ
 （Issue #83 の Q9 と同じ理由で `script` に頼る検査は常設しない）。端末ありの経路は手元で `script -qec` で確かめた。
@@ -239,7 +276,7 @@ JBang は 12.8MB 対 14.9MB）だったので、OS ごとに数字を分ける�
 - `y` … まっさらな置き場所に JBang 本体・JDK 25・依存 jar を取得して解析まで完走（Q9）。
   同じ置き場所でもう一度起動すると、確認は出ずに `--offline` で起動する
 
-### Q17. 「取得しない」ことをどう検査するか
+### Q18. 「取得しない」ことをどう検査するか
 
 `test/cli/run.sh` で、使い捨てのフォルダを置き場所にして引数ありで起動し、終了コード 3・確認の文言・
 ラッパーの `Downloading` が出ていないこと・置き場所が空のままであることを見る。4 つの状況を通す。

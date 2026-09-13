@@ -1,4 +1,4 @@
-@echo on
+@echo off
 rem java-call-hierarchy-exporter の起動コマンド（Windows のコマンドプロンプト。Linux / macOS / Git Bash は java-call-hierarchy-exporter.sh）。
 rem
 rem   jche                              引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
@@ -164,14 +164,32 @@ if defined JBANG_REPO call :absolutize JBANG_REPO
 rem JVM のオプションは jbang run の -R で 1 つずつ渡す（-Xmx4g -Xss2m → -R-Xmx4g -R-Xss2m）
 if defined JCHE_JAVA_OPTS for %%O in (%JCHE_JAVA_OPTS%) do call set "R_OPTS=%%R_OPTS%% -R%%O"
 :load_settings_done
-rem jbang のオプション。--offline は起動コマンド自身が付けるので、利用者の指定は「ネットワークに出ない」という
-rem 意思として覚えておく（短い -o は見分けないので、--offline と書くこと）。
+rem jbang のオプションを 1 つずつ見る。--offline は起動コマンド自身が付けるので、利用者の指定は
+rem 「ネットワークに出ない」という意思として OFFLINE_FORCED で覚え、jbang には渡さない（同じオプションを 2 回渡さないため）。
 rem --fresh（依存 jar を取り直す）は --offline と同時に指定できないので、「取り直す」という意思として覚えておき、
-rem --offline での起動を飛ばして先に確認する
+rem --offline での起動を飛ばして先に確認する（こちらは jbang にもそのまま渡す）。
+rem ここで %VAR:検索=置換% の文字列置換は使わない。変数が未定義のとき cmd がこの書き方を展開しきれず、
+rem 壊れた if 行になって「set was unexpected at this time.」でバッチごと落ちる
+rem （docs/network-download-confirm-qa.md の Q16。test/cli/run.sh がこの書き方の混入を検出する）
 set "FRESH="
-if defined JCHE_JBANG_OPTS set "JB_OPTS=%JCHE_JBANG_OPTS:--offline=%"
-if defined JCHE_JBANG_OPTS if not "%JB_OPTS%"=="%JCHE_JBANG_OPTS%" set "OFFLINE_FORCED=1"
-if defined JB_OPTS if not "%JB_OPTS:--fresh=%"=="%JB_OPTS%" set "FRESH=1"
+set "JB_OPTS="
+if "%JCHE_JBANG_OPTS%"=="" exit /b 0
+for %%O in (%JCHE_JBANG_OPTS%) do call :one_jbang_opt "%%~O"
+exit /b 0
+
+:one_jbang_opt
+rem %1=jbang のオプション 1 つ。--offline / -o は JB_OPTS に入れず、覚えるだけにする
+if "%~1"=="--offline" goto :one_jbang_opt_offline
+if "%~1"=="-o" goto :one_jbang_opt_offline
+if "%~1"=="--fresh" set "FRESH=1"
+if "%JB_OPTS%"=="" goto :one_jbang_opt_first
+set "JB_OPTS=%JB_OPTS% %~1"
+exit /b 0
+:one_jbang_opt_first
+set "JB_OPTS=%~1"
+exit /b 0
+:one_jbang_opt_offline
+set "OFFLINE_FORCED=1"
 exit /b 0
 
 :set_one

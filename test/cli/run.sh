@@ -227,6 +227,16 @@ for t in $(LC_ALL=C grep -a -o -E '(goto|call) :[A-Za-z_][A-Za-z0-9_]*' "$CMD" |
     printf '%s\n' "$labels" | grep -qx "$t" || missing="$missing $t"
 done
 if [ -z "$missing" ]; then ok "goto / call の飛び先がすべてある"; else ng "飛び先の無いラベル:$missing"; fi
+# launcher.properties 由来の変数（設定が空欄なら未定義になる）に %VAR:検索=置換% の文字列置換を使わない。
+# 未定義のとき cmd はこの書き方を展開しきれず、壊れた if 行になって
+# 「set was unexpected at this time.」でバッチ処理ごと打ち切られる（Windows の CI だけで落ちる。
+# docs/network-download-confirm-qa.md の Q16）。%VAR:~0,1% の部分文字列（: の次が ~）は対象外
+subst=$(LC_ALL=C grep -a -o -E '%(JBANG_[A-Z0-9_]+|JCHE_[A-Z0-9_]+|JB_OPTS|R_OPTS):[^~%][^%]*%' "$CMD" || true)
+if [ -z "$subst" ]; then
+    ok "設定由来の変数に文字列置換を使っていない"
+else
+    ng "設定由来の変数に %VAR:検索=置換% がある（未定義だと cmd がバッチごと落ちる）: $(printf '%s' "$subst" | tr '\n' ' ')"
+fi
 # 改行と文字コード（ヘッダのコメントの約束。UTF-8 で保存し直すと日本語の echo が化ける）
 if LC_ALL=C grep -qa "$(printf '\r')" "$CMD"; then ok "CRLF で保存されている"; else ng "CRLF ではない"; fi
 if iconv -f CP932 -t UTF-8 "$CMD" 2> /dev/null | grep -q "設定を反映するため再起動します"; then
