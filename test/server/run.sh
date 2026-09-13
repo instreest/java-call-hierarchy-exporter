@@ -40,6 +40,15 @@ fi
 session() {
     printf '%b' "$1" | java -cp "$JCHE_CP" CallHierarchyExporter --server "$WORK/cache" 2>"$WORK/stderr" \
         | grep -v '^#L'
+    # 何も返らないときは起動に失敗している（classpath が届いていない等）。
+    # 以降の検査が全部 NG になって原因が見えなくなるので、標準エラーをそのまま見せる
+    if [ ! -s "$WORK/stderr" ]; then
+        return 0
+    fi
+    if grep -qE 'Error: |Exception in thread' "$WORK/stderr"; then
+        echo "  NG   サーバーが起動できませんでした:" >&2
+        sed 's/^/       /' "$WORK/stderr" >&2
+    fi
 }
 
 echo "== 応答の形 =="

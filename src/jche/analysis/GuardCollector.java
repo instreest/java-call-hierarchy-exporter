@@ -107,7 +107,10 @@ final class GuardCollector {
         List<Object> operands = new ArrayList<>();
         operands.add(n.getLeftOperand());
         operands.add(n.getRightOperand());
-        operands.addAll(n.extendedOperands());
+        // extendedOperands() は型引数のない List を返すので、要素ごとに移す（未検査変換を避ける）
+        for (Object extended : n.extendedOperands()) {
+            operands.add(extended);
+        }
         int index = operands.indexOf(child);
         for (int i = 0; i < index; i++) {
             addCondition((Expression) operands.get(i), and, atoms);

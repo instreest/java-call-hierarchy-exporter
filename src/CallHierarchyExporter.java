@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
+//SOURCES jche/*.java
 //SOURCES jche/**/*.java
 
 import java.io.IOException;

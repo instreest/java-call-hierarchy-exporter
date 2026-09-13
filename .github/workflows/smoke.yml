@@ -39,7 +39,7 @@ jobs:
       - name: Server protocol test
         run: |
           CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
-          JCHE_CP="$CP:build/classes" bash test/server/run.sh
+          JCHE_CP="$CP:$PWD/build/classes" bash test/server/run.sh
 
       # maven / mavenmulti / gradle のケースも、ビルドツール無しで動く（ビルドファイルを読むだけ）
       - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
