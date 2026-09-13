@@ -21,7 +21,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
 | `test/` | 回帰テストと検査スクリプト（後述） |
-| `docs/README.md` | `docs/` の索引。使い方の詳細（`github-actions.md`、`cache-design.md`）、設計の記録、再実装用の仕様に分かれる |
+| `docs/README.md` | `docs/` の索引。使い方の詳細（`cli.md`、`build-tool-classpath.md`、`instance-analysis-plugin.md`、`github-actions.md`）、設計の説明（`cache-design.md`）、設計の記録、再実装用の仕様に分かれる |
 | `docs/*-qa.md` | 機能ごとの「実装時に迷ったこと・困ったことと結論」を Q&A 形式で残した記録 |
 | `docs/prompt-*.md` / `docs/feature-difficulty.md` | このツールを別環境で再実装するための仕様プロンプトと難易度表 |
 
@@ -78,7 +78,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - 利用者向けの長い説明（GitHub Actions の入力一覧など）は README ではなく `docs/<機能>.md` に置き、README からは要約とリンクだけにする
 - `docs/` のファイル名に `license`、`licence`、`copyright`、`copying`、`patents` を使わない。
   GitHub がルート・`.github/`・`docs/` のこれらの名前をライセンスファイルとみなし、README 横の License 欄に並べてしまう
-- README の Quick start は「動かして CSV を見るまでの最小手順」だけにし、詳細は後続のセクションに書く
+- README は「何のためのツールか」「Quick start」「出力 CSV の読み方」に絞る。それ以外の利用者向けの説明は `docs/<機能>.md` に置き、README からは 1 行の要約とリンクだけにする
 - 起動コマンドの名前を参照する箇所は多い（src、docs、test、workflows、`.gitattributes`、`.gitignore`）。
   改名したら `grep -rn` で旧名が残っていないことを確認する
 

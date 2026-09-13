@@ -3,7 +3,6 @@
 リポジトリ直下の [`action.yml`](../action.yml) を `uses:` で呼ぶときの使い方。実装時の判断は
 [github-actions-qa.md](github-actions-qa.md) と [actions-analysis-cache-qa.md](actions-analysis-cache-qa.md) にある。
 
-リポジトリ直下の [`action.yml`](../action.yml) が GitHub Actions のアクションです。
 利用者のワークフローから `uses:` で呼ぶと、解析対象のリポジトリを解析して CSV を出力し、
 アーティファクトとしてアップロードします。JBang も JDK も設定ファイルもアクションの中で用意するので、
 ワークフローに書くのは解析対象の指定だけです。
@@ -38,7 +37,7 @@ jobs:
 
 出力は `call-hierarchy` という名前のアーティファクト（`upload-artifact` 入力で切れます）に入ります。
 中身は通常の実行と同じ `<解析開始日時>_<プロジェクト名>/` フォルダです
-（[出力されるファイル](../README.md#出力されるファイル)）。ジョブのサマリには出力フォルダと CSV の行数が出ます。
+（[出力ファイル](../README.md#出力ファイル)）。ジョブのサマリには出力フォルダと CSV の行数が出ます。
 
 ## 参照する版の指定
 
@@ -176,7 +175,7 @@ cache.folder=
 ### 複数渡す
 
 改行区切り（`|`）またはカンマ区切りで複数渡せます。渡した順に 1 つずつ処理し、
-設定ファイルごとに別の出力フォルダができます（[複数のプロジェクトをまとめて解析する](../README.md#複数のプロジェクトをまとめて解析する)）。
+設定ファイルごとに別の出力フォルダができます（[cli.md の「複数の設定ファイルをまとめて処理する」](cli.md#複数の設定ファイルをまとめて処理する)）。
 
 ```yaml
       - uses: instreest/java-call-hierarchy-exporter@main

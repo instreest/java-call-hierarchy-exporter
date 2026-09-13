@@ -1,6 +1,6 @@
 # キャッシュファイルの設計
 
-解析結果のキャッシュ（`analysis-cache.tsv`）の設計方針。置き場所は [README の「キャッシュの置き場所」](../README.md#キャッシュの置き場所)、
+解析結果のキャッシュ（`analysis-cache.tsv`）の置き場所と設計方針。
 行の形式は [CacheFormat.java](../src/jche/cache/CacheFormat.java) のクラスコメント、依存 jar の変更との関係で迷った点は
 [cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) にある。
 
@@ -9,6 +9,26 @@
 1. **解析結果をヒープに溜めない** — 1ファイル解析するたびにキャッシュへ書き出して破棄
 2. **エッジをオブジェクトで持たない** — メソッドをintのIDに内部化し、CSR形式のプリミティブ配列で保持
 3. **ツリーを組み立てない** — 深さ優先で辿りながら1行ずつ書き出す
+
+## 置き場所の決め方
+
+キャッシュは解析対象プロジェクトごとの「サイドカー」として、このツールのプロジェクトフォルダの
+`.cache/<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭 8 桁>/analysis-cache.tsv` に作ります。
+
+```
+java-call-hierarchy-exporter/
+└── .cache/
+    ├── myapp_3f2a9c1e/analysis-cache.tsv      project.root=.../myapp
+    └── batch_b71e0d44/analysis-cache.tsv      project.root=.../batch
+```
+
+ツールのプロジェクトフォルダは、作業ディレクトリとその上位（次に、実行中のクラスの置き場所とその上位）から
+`src/CallHierarchyExporter.java` を探して決めます。リポジトリ直下で実行すれば見つかります。
+見つからないときは警告を出して作業ディレクトリの `.cache/` に作ります。
+
+`cache.folder` を指定すると、そのフォルダ（設定ファイルからの相対パス、または絶対パス）の下に
+同じ形のプロジェクト別フォルダを作ります。回帰テストのようにケースごとにキャッシュを分けたいときに使います。
+`cache.enabled=false` でもフェーズ 2 が読むためにキャッシュファイル自体は同じ場所に書かれます（再利用はしない）。
 
 ## キャッシュに入れるもの
 

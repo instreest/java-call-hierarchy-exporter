@@ -1,8 +1,9 @@
 # docs/ の索引
 
-このフォルダには 3 種類の文書がある。
+このフォルダには 4 種類の文書がある。
 
 - **使い方の詳細** … README に書くと長くなる、機能別の利用者向け説明
+- **設計の説明** … 出力や性能の理由が分かるように、内部の作りを説明したもの
 - **設計の記録（`*-qa.md`）** … 機能を足したり設計判断をしたときに「迷ったこと・結論・却下した案」を Q&A の形で残したもの。
   書き出しは Issue へのリンク → 対応の要点 → Q&A（[AGENTS.md](../AGENTS.md) の「ドキュメントの決まり」）
 - **再実装用の仕様** … このツールを別環境で作り直すためのプロンプトと難易度表
@@ -11,7 +12,15 @@
 
 | ファイル | 内容 |
 |---|---|
+| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、複数の設定ファイルの扱い、ネットワークからの取得の確認、JBang の直接実行、Eclipse でソースを開く |
+| [build-tool-classpath.md](build-tool-classpath.md) | `library.folders` を空欄にしたときに `pom.xml` / `build.gradle` を読んで依存 jar を集める仕組みと、読める宣言の範囲 |
+| [instance-analysis-plugin.md](instance-analysis-plugin.md) | 具象クラスの解決条件を外から与える（対応表を書く / 拡張を自分で書く） |
 | [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、Actions 以外の CI |
+
+## 設計の説明
+
+| ファイル | 内容 |
+|---|---|
 | [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
 
 ## 設計の記録（Q&A）
