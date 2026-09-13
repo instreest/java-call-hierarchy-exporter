@@ -80,8 +80,11 @@ jobs:
         shell: cmd
         run: |
           if exist test\regression\entry\output rmdir /s /q test\regression\entry\output
-          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties > launcher-batch.log 2>&1
-          type launcher-batch.log
+          rem 出力はリダイレクトせず、そのまま CI のログへ流す。ログファイルに入れてしまうと、
+          rem 起動コマンドがバッチとして致命的に失敗したとき（cmd がその場でバッチ処理ごと打ち切る）に
+          rem 原因のメッセージがファイルの中に残ったまま type までたどり着けず、何も分からなくなる
+          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          echo [launcher] exit=%ERRORLEVEL%
           rem 出力フォルダ名は <日時>_demo で実行のたびに変わる。cmd の if exist はワイルドカードを
           rem 「最後のファイル名」の位置でしか解釈しないので、途中のフォルダ名に * を書いた条件は常に偽になる。
           rem フォルダは for /d で走査して、その中の CSV を if exist で見る

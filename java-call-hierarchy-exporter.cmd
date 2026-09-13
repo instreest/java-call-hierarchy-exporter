@@ -73,7 +73,8 @@ goto :run_offline
 rem ラッパーが jbang を動かす前に取得するものが無い（または --fresh で取り直す）。走らせる前に確認して、
 rem よければ取得込みで動かす（このあと jbang が取得する JDK と依存 jar も、この 1 回の確認に含める）
 call :pending_items
-call :approve_download || goto :abort
+call :approve_download
+if errorlevel 1 goto :abort
 goto :run_online
 
 :run_offline
@@ -85,7 +86,8 @@ if exist "%STARTED%" goto :done
 echo.
 echo 取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。
 call :pending_items
-call :approve_download || goto :abort
+call :approve_download
+if errorlevel 1 goto :abort
 
 :run_online
 call "%ROOT%\jbangw\jbang.cmd" run %JB_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
@@ -229,7 +231,7 @@ exit /b 1
 
 :jdk25_available
 rem ツールを動かす JDK（//JAVA 25。ラッパーが取る JDK と同じ版にそろえてある）が取得済みか
-if exist "%TDIR%\jdks\%JBANG_DEFAULT_JAVA_VERSION%\" exit /b 0
+if exist "%TDIR%\jdks\%JBANG_DEFAULT_JAVA_VERSION%\." exit /b 0
 exit /b 1
 
 :bootstrap_jdk_available
@@ -238,7 +240,8 @@ if defined JAVA_HOME if exist "%JAVA_HOME%\bin\javac.exe" exit /b 0
 where javac > nul 2>&1
 if not errorlevel 1 exit /b 0
 if exist "%JBDIR%\currentjdk\bin\javac" exit /b 0
-call :jdk25_available && exit /b 0
+call :jdk25_available
+if not errorlevel 1 exit /b 0
 exit /b 1
 
 :wrapper_would_download
@@ -246,8 +249,10 @@ rem ラッパー（jbangw\jbang.cmd）が jbang を動かす前にネットワークに出るか（WOULD
 rem ラッパーには --offline のような抑止が無く、呼んだ時点で取得が始まるので、呼ぶ前に確認する必要がある
 call :jbdirs
 set "WOULD_DL="
-call :jbang_jar_available || set "WOULD_DL=1"
-call :bootstrap_jdk_available || set "WOULD_DL=1"
+call :jbang_jar_available
+if errorlevel 1 set "WOULD_DL=1"
+call :bootstrap_jdk_available
+if errorlevel 1 set "WOULD_DL=1"
 exit /b 0
 
 :pending_items
@@ -255,8 +260,10 @@ rem 取得しうるもののうち、まだ手元に無いものの鍵（jbang / jdk / deps）を DL_LIST
 rem 依存 jar は手元にあるかを確かめようがないので（推移的な依存まで数えることになる）常に挙げる
 call :jbdirs
 set "DL_LIST="
-call :jbang_jar_available || set "DL_LIST=jbang"
-call :jdk25_available || set "DL_LIST=%DL_LIST% jdk"
+call :jbang_jar_available
+if errorlevel 1 set "DL_LIST=jbang"
+call :jdk25_available
+if errorlevel 1 set "DL_LIST=%DL_LIST% jdk"
 set "DL_LIST=%DL_LIST% deps"
 exit /b 0
 
