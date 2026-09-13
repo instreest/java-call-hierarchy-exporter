@@ -281,10 +281,14 @@ jobs:
       - name: Plugin definition consistency check
         run: bash test/plugin/run.sh
 
+      # ビルドに使う JDK。出力する class ファイルの版は pom の release（17 と 8）で
+      # 決まるので、ここは新しくてよい。むしろ新しくないと駄目で、最近の Eclipse
+      # platform の jar は Java 21 の class ファイル（版 65）なので、JDK 17 の
+      # javac では「class file has wrong version 65.0」で読めない
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
           cache: maven
 
       - name: Old-Eclipse / Java 8 compatibility check
