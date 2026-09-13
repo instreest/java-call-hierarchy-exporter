@@ -115,7 +115,7 @@ final class FactVisitor extends ASTVisitor {
     }
 
     /**
-     * @param recordAllConditions 判定できない条件も guard に残す（オンデマンドの調査用。
+     * @param recordAllConditions 判定できない条件も guard に残す（条件の調査用。
      *                            {@link GuardCollector} の記録用モード）。キャッシュへは書かない
      */
     FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors,

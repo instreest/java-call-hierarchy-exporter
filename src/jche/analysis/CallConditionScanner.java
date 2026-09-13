@@ -19,7 +19,7 @@ import jche.config.ProjectLayout;
 import jche.util.Log;
 
 /**
- * 指定した呼び出し箇所に効いている条件分岐を、その場で調べる（オンデマンド）。
+ * 指定した呼び出し箇所に効いている条件分岐を、その場で調べる（設定ファイルの {@code conditions.target}）。
  *
  * <h2>何のためにあるか</h2>
  * 呼び出し階層の打ち切り（{@link jche.graph.GuardEvaluator}）は「成立しないと言い切れる条件」だけを

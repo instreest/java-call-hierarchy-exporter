@@ -44,7 +44,7 @@ import jche.cache.Origin;
  *   <li><b>判定用</b>（既定）… 打ち切りに使える条件だけをアトムにする。キャッシュの guard 列はこちら</li>
  *   <li><b>記録用</b>（{@code recordAll}）… 判定できない条件も {@link Guard#UNKNOWN} として残し、
  *       ループ・{@code catch}・コロン形式の {@code switch} も足す。
- *       「この呼び出しに効いている条件を漏れなく見たい」オンデマンドの調査
+ *       「この呼び出しに効いている条件を漏れなく見たい」条件の調査（conditions.target）
  *       （{@link CallConditionScanner}）だけが使う。キャッシュには書かない</li>
  * </ul>
  *

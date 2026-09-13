@@ -122,15 +122,6 @@ public class CallHierarchyExporter {
     /** サーバーモードで起動するときの第1引数（{@link jche.server.Server}） */
     private static final String SERVER_OPTION = "--server";
 
-    /**
-     * 呼び出しに効いている条件を調べるときの第1引数（{@link jche.analysis.CallConditionScanner}）。
-     *
-     * 対象のファイルだけをその場でパースするだけで、キャッシュも出力フォルダも作らない。
-     * 影響調査で「この呼び出しはどういうときに起きるのか」を確かめるための入口
-     * （{@code docs/call-conditions.md}）。
-     */
-    private static final String CONDITIONS_OPTION = "--conditions";
-
     public static void main(String[] args) throws Exception {
         if (args.length > 0 && SERVER_OPTION.equals(args[0])) {
             // サーバーモード。Eclipse プラグインが別プロセス・別 JDK で解析させるために使う。
@@ -139,17 +130,6 @@ public class CallHierarchyExporter {
                     ? Paths.get(args[1])
                     : ToolRoot.locate(CallHierarchyExporter.class).dir;
             System.exit(Server.run(cacheRoot));
-        }
-
-        if (args.length > 0 && CONDITIONS_OPTION.equals(args[0])) {
-            if (args.length < 2) {
-                System.err.println(CONDITIONS_OPTION + " には調べる対象を渡してください"
-                        + "（例: src/foo/Bar.java:120 / foo.Bar#method）。");
-                System.exit(2);
-            }
-            Path conditionsConfig = (args.length > 2) ? Paths.get(args[2]) : Paths.get(DEFAULT_CONFIG);
-            System.exit(runConditions(args[1], conditionsConfig,
-                    ToolRoot.locate(CallHierarchyExporter.class).dir));
         }
 
         // 設定ファイルのパスは引数で受け取る（複数可）。jbang はスクリプト名より後ろの
@@ -205,8 +185,10 @@ public class CallHierarchyExporter {
             }
             try {
                 Path outputDir = runOne(configPath, toolRoot.dir);
-                summary.add("OK    " + configPath + " -> " + outputDir);
-                if (outputDirFile != null) {
+                // 条件の調査（conditions.target）は画面に出すだけで、出力フォルダを作らない
+                summary.add("OK    " + configPath
+                        + ((outputDir == null) ? "" : " -> " + outputDir));
+                if (outputDirFile != null && outputDir != null) {
                     writeOutputDirFile(outputDirFile, outputDir + System.lineSeparator(), true);
                 }
             } catch (Throwable t) {
@@ -258,38 +240,49 @@ public class CallHierarchyExporter {
     }
 
     /**
-     * 呼び出しに効いている条件を調べて画面に出す（{@link #CONDITIONS_OPTION}）。
+     * 設定に {@code conditions.target} があるときの処理。
+     * 呼び出しに効いている条件を調べて画面に出す（{@code docs/call-conditions.md}）。
      *
      * 設定ファイルは「どこを解析対象とみなすか」（project.root / source.folders / 依存 jar）を
-     * 決めるためだけに読む。<b>キャッシュも出力フォルダも作らず、対象のファイルだけをその場でパースする</b>。
+     * 決めるためにだけ使う。<b>キャッシュも出力フォルダも作らず、対象のファイルだけをその場でパースする</b>。
      * 打ち切りの判定に使う条件だけでなく、判定できない条件も並べる。
      *
-     * @return 終了コード（0=見つかった、1=失敗、4=対象または該当する呼び出しが無い）
+     * 対象が見つからない・該当する呼び出しが無いときは例外にする。設定の書き間違いに
+     * 気付けるよう、この設定ファイルの処理は失敗として数える（複数設定を渡したときの一覧にも FAIL と出る）。
      */
-    private static int runConditions(String target, Path configPath, Path toolRoot) {
-        try {
-            Log.resetClock();
-            Config config = new Config(configPath, toolRoot, LocalDateTime.now());
-            Log.info("設定: " + config.configPath);
-            Log.info("プロジェクトルート: " + config.projectRoot);
-            ProjectLayout layout = new ProjectLayout(config);
-            CallConditionScanner.Result result = CallConditionScanner.scan(config, layout, target);
-            return CallConditionsReport.print(target, result) ? 0 : 4;
-        } catch (Exception e) {
-            Log.error("条件の調査に失敗しました: " + target, e);
-            return 1;
+    private static void runConditions(Config config) throws Exception {
+        Log.info("条件の調査: " + config.conditionsTarget + "（conditions.target）");
+        Log.info("  この設定では CSV を書きません。キャッシュも出力フォルダも作りません。");
+        ProjectLayout layout = new ProjectLayout(config);
+        CallConditionScanner.Result result =
+                CallConditionScanner.scan(config, layout, config.conditionsTarget);
+        if (!CallConditionsReport.print(config.conditionsTarget, result)) {
+            throw new IllegalArgumentException(
+                    "conditions.target に合う呼び出しがありません: " + config.conditionsTarget);
         }
     }
 
     /**
      * 設定ファイル1つ分の処理。出力フォルダを作り、設定ファイルの複製と実行ログをそこに置いてから解析する。
      *
-     * @return この実行の出力フォルダ
+     * 設定に {@code conditions.target} があるときは、通常の解析ではなく
+     * 呼び出しに効いている条件の調査を行う（{@link #runConditions}）。CSV も出力フォルダも作らない。
+     *
+     * @return この実行の出力フォルダ。条件の調査のときは null
      */
     private static Path runOne(Path configPath, Path toolRoot) throws Exception {
         Log.resetClock();
         long start = System.currentTimeMillis();
         Config config = new Config(configPath, toolRoot, LocalDateTime.now());
+
+        if (!config.conditionsTarget.isEmpty()) {
+            // 条件の調査は目的が違う調べ物なので、通常の解析とは排他。出力フォルダも作らない
+            Log.info("設定: " + config.configPath);
+            Log.info("プロジェクトルート: " + config.projectRoot);
+            runConditions(config);
+            Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
+            return null;
+        }
 
         // 出力フォルダは解析より前に作る。設定ファイルの複製と実行ログを、解析が途中で落ちても残すため
         Files.createDirectories(config.outputDir);

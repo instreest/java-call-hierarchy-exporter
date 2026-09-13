@@ -151,6 +151,15 @@ public final class Config {
      * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
      */
     public final boolean branchPruningEnabled;
+    /**
+     * 呼び出しに効いている条件を調べる対象（{@code conditions.target}）。空欄なら通常の解析。
+     *
+     * 空欄でなければ、この設定ファイルの実行は「条件の調査」になり、CSV は書かない
+     * （キャッシュも出力フォルダも作らない）。目的が違う調べ物なので、通常の解析と同時には行わない。
+     * 指定できる形は {@code src/foo/Bar.java} / {@code src/foo/Bar.java:120} /
+     * {@code foo.Bar} / {@code foo.Bar#method}（{@code docs/call-conditions.md}）。
+     */
+    public final String conditionsTarget;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
     public final Path cacheFile;
@@ -268,6 +277,7 @@ public final class Config {
         this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
         this.branchPruningEnabled =
                 Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
+        this.conditionsTarget = p.getProperty("conditions.target", "").trim();
         this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
 

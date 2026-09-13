@@ -16,7 +16,7 @@
 | [build-tool-classpath.md](build-tool-classpath.md) | `library.folders` を空欄にしたときに `pom.xml` / `build.gradle` を読んで依存 jar を集める仕組みと、読める宣言の範囲 |
 | [instance-analysis-plugin.md](instance-analysis-plugin.md) | 具象クラスの解決条件を外から与える（対応表を書く / 拡張を自分で書く） |
 | [eclipse-plugin-usage.md](eclipse-plugin-usage.md) | Eclipse プラグインとしての使い方（入れ方・呼び出し元階層ビューの操作・設定・サーバーモード）。解析は Eclipse とは別プロセス・別 JDK で走る |
-| [call-conditions.md](call-conditions.md) | 呼び出しに効いている条件をその場で調べる（`--conditions`）。判定できない条件も含めて並べる |
+| [call-conditions.md](call-conditions.md) | 呼び出しに効いている条件をその場で調べる（設定ファイルの `conditions.target`）。判定できない条件も含めて並べる |
 | [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、Actions 以外の CI |
 
 ## 設計の説明
@@ -41,7 +41,7 @@
 | [instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) | #68 | インスタンス解析条件を外から与えるプラグイン（フェーズA / B、実行時コンパイル） |
 | [fatjar-external-usage-qa.md](fatjar-external-usage-qa.md) | #35 | 被参照スキャンの FatJar / war / ear 対応 |
 | [branch-pruning-qa.md](branch-pruning-qa.md) | #67 | 変数値と条件分岐の静的解析で、その経路では呼ばれない呼び出しを区別する |
-| [call-conditions-qa.md](call-conditions-qa.md) | #67 | 呼び出しに効いている条件をオンデマンドで調べる（判定できない条件も含める。キャッシュに載せない判断） |
+| [call-conditions-qa.md](call-conditions-qa.md) | #67 | 呼び出しに効いている条件を設定ファイル（`conditions.target`）で調べる（判定できない条件も含める。キャッシュに載せない判断） |
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |

@@ -74,7 +74,7 @@ public final class CallEdgeExtractor {
     private final String[] sourcepathEncodings;
     private final List<CallSiteHintCollector> collectors;
 
-    /** 判定できない条件も guard に残すか（オンデマンドの調査用。{@link CallConditionScanner}） */
+    /** 判定できない条件も guard に残すか（条件の調査用。{@link CallConditionScanner}） */
     private final boolean recordAllConditions;
 
     public CallEdgeExtractor(ProjectLayout layout, Config config) {
@@ -83,7 +83,7 @@ public final class CallEdgeExtractor {
 
     /**
      * @param recordAllConditions 判定できない条件も呼び出しの guard に残す。
-     *                            キャッシュには書かない使い方（オンデマンドの条件調査）でだけ true にする
+     *                            キャッシュには書かない使い方（設定ファイルの conditions.target）でだけ true にする
      */
     public CallEdgeExtractor(ProjectLayout layout, Config config, boolean recordAllConditions) {
         this.recordAllConditions = recordAllConditions;

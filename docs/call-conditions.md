@@ -1,4 +1,4 @@
-# 呼び出しに効いている条件を調べる（`--conditions`）
+# 呼び出しに効いている条件を調べる（`conditions.target`）
 
 「この呼び出しは、どういうときに起きるのか」をその場で調べる機能です。
 呼び出しを 1 つ（またはメソッド・ファイル単位で）選ぶと、**そこへ到達するために成立していなければ
@@ -12,17 +12,31 @@
 
 ## 使い方
 
-```bash
-./jbangw/jbang src/jche/CallHierarchyExporter.java --conditions <対象> [設定ファイル]
+設定ファイル（`config/config.properties` など）に、調べたい対象を書きます。
+
+```properties
+project.root=/path/to/project
+source.folders=src/main/java
+
+# ここに書くと、この設定ファイルの実行は「条件の調査」になる
+conditions.target=foo.Bar#method
 ```
 
-設定ファイルを省略すると `config/config.properties` を使います。設定ファイルは
-「どこを解析対象とみなすか」（`project.root` / `source.folders` / 依存 jar）を決めるためだけに読みます。
+あとは普段どおり実行するだけです。起動コマンドの対話モードから選んでもかまいません。
 
-**キャッシュも出力フォルダも作りません。** 対象のファイルだけをその場でパースして、画面に出すだけです。
+```bash
+./java-call-hierarchy-exporter.sh config/investigate.properties
+```
+
+`conditions.target` が**空欄なら通常どおり呼び出し階層を出力**します。書いてあるときは調査だけを行い、
+**CSV は書きません。キャッシュも出力フォルダも作りません。** 対象のファイルだけをその場でパースして、
+画面（と、複数設定をまとめて流したときの一覧）に出すだけです。
 普段の解析（`call-hierarchy.csv` / `methods.csv`）には何の影響もありません。
 
-### 対象の指定
+調べる対象を変えながら使うので、**普段の設定ファイルとは別に調査用の設定ファイルを1つ作っておく**のが
+おすすめです（`project.root` と `source.folders` だけ揃っていれば動きます）。
+
+### 対象の指定（`conditions.target`）
 
 | 書き方 | 意味 |
 |---|---|
@@ -40,8 +54,10 @@
 判定できる条件（打ち切りにも使われるもの）:
 
 ```
-$ ./jbangw/jbang src/jche/CallHierarchyExporter.java --conditions 'fx.branch.Feature#mode' config/demo.properties
+$ ./java-call-hierarchy-exporter.sh config/investigate.properties     # conditions.target=fx.branch.Feature#mode
 
+条件の調査: fx.branch.Feature#mode（conditions.target）
+  この設定では CSV を書きません。キャッシュも出力フォルダも作りません。
 対象: fx.branch.Feature#mode
 解析したファイル: src/fx/branch/Feature.java（呼び出し 26 件）
 
@@ -61,7 +77,7 @@ src/fx/branch/Feature.java:32  Feature.mode(java.lang.String) → Feature.light(
 判定できない条件（静的には値が決まらないもの）:
 
 ```
-$ ./jbangw/jbang src/jche/CallHierarchyExporter.java --conditions 'fx.excluded.Ping#a' config/demo.properties
+# conditions.target=fx.excluded.Ping#a
 
 src/fx/excluded/Ping.java:7  Ping.a(int) → Pong.b(int)
     1. [判定不可] n > 0
@@ -81,14 +97,12 @@ src/fx/excluded/Ping.java:7  Ping.a(int) → Pong.b(int)
 - `… これ以上の条件は記録していません（上限 32 件）` が出たときは、さらに外側に条件があります
   （深い入れ子。この印が無ければ、表示されているもので全部です）
 
-### 終了コード
+### 対象が見つからないとき
 
-| コード | 意味 |
-|---|---|
-| 0 | 条件を表示した |
-| 1 | 失敗（設定ファイルが読めない等） |
-| 2 | `--conditions` に対象を渡していない |
-| 4 | 対象のファイルが見つからない、または指定に合う呼び出しが無い |
+`conditions.target` に書いた対象のファイルが無い場合や、指定に合う呼び出しが1件も無い場合は、
+**その設定ファイルの処理は失敗**として扱います（終了コード 1。複数の設定ファイルをまとめて渡したときは
+一覧に `FAIL` と出ます）。設定の書き間違いに気付けるようにするためです。
+行やメソッド名の指定を外すと、そのファイルの呼び出しを全件出します。
 
 ## この先の拡張（まだやっていないこと）
 

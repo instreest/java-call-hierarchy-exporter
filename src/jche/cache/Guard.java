@@ -22,7 +22,7 @@ package jche.cache;
  * （論理積）。1つのアトムは {@link #FIELD_SEP} 区切りの4項目。
  * <pre>
  *   op    判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}。
- *         オンデマンドの調査ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
+ *         条件の調査（conditions.target）ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
  *   origin 判定される式の出所（{@link Origin}。A:引数位置 か V:定数 だけ）
  *   value  比較する値。IN / NOT_IN は {@link #VALUE_SEP} 区切りで複数
  *   text   ソースに書かれていた条件式（注記に出すためだけの文字列。判定には使わない）
@@ -56,8 +56,8 @@ public final class Guard {
      * 判定できない条件（条件があることだけが分かっている）。
      *
      * 打ち切りの判定には使えないので、キャッシュの guard 列には入れない。
-     * 「この呼び出しに効いている条件を漏れなく見たい」オンデマンドの調査
-     * （jche.analysis.CallConditionScanner）だけがこの種別を作る。
+     * 「この呼び出しに効いている条件を漏れなく見たい」条件の調査
+     * （設定ファイルの conditions.target。jche.analysis.CallConditionScanner）だけがこの種別を作る。
      * 読み手は知らない種別として読み飛ばすので、混ざっても打ち切りの結論は変わらない。
      */
     public static final String UNKNOWN = "UK";
