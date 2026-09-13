@@ -117,7 +117,7 @@ final class FactVisitor extends ASTVisitor {
         this.origins = new OriginTracker(names);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
         this.types = new TypeContextTracker(out, names);
-        this.calls = new CallSiteRecorder(cu, out, names, collectors);
+        this.calls = new CallSiteRecorder(cu, out, names, collectors, new GuardCollector(origins));
         this.fieldAccesses = new FieldAccessRecorder(out, names);
     }
 
