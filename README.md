@@ -1,23 +1,13 @@
 # java-call-hierarchy-exporter
+A tool that batch-extracts project-wide Java method call hierarchies and exports them to CSV files.
 
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
-> **English:** A tool that batch-extracts project-wide Java method call hierarchies and exports them to CSV files.
-> Apache-2.0. Documentation is in Japanese.
+## Overview
 
-## 何のためのツールか
-
-レガシーなJavaプロジェクトを改修するとき、「このメソッドを直すと、どこまで影響するか」を知りたくなります。
-Eclipse の「呼び出し階層」ビューは、コピーすると階層が失われる・再帰的に一括出力できない・
-ワークスペース全体を一度に処理できない、という制約があります。このツールはそれを CSV 出力で置き換えます。
-出力は Excel のフィルタと grep で読みます。
-
-Eclipse は起動しません。解析エンジンにだけ Eclipse JDT のコンパイラをスタンドアロンで使う、普通の Java アプリです。
-
-設計の優先順位は **呼び出しを静かに落とさないこと（安全側に倒すこと）** です。
-インターフェース型の呼び出しで実装を 1 つに絞れないときは候補を全部出し、
-型を解決できなかった呼び出しも「失敗した」と分かる行として残します。
-そのため出力には**注記**が付きます。注記の読み方が、このツールを使ううえでいちばん大事な部分です。
+Eclipseの「呼び出し階層」ビューを再帰的に一括出力するようなイメージでCSVファイルを出力します。
+Eclipseは起動せず、解析エンジンに Eclipse JDT のコンパイラを使用するコマンドラインツールです。
+出力CSVファイルをExcelで開いて呼び出し先メソッドをフィルタすることで影響範囲を抽出できます。
 
 ## ドキュメント
 
@@ -37,13 +27,11 @@ Eclipse は起動しません。解析エンジンにだけ Eclipse JDT のコ�
 
 ## Quick start
 
-ツールを最小構成で試す手順です。初回は JDK と依存モジュールのダウンロードが要りますが（通信量 約 165MB）、
-起動コマンドはネットワークに出る前に、取得するものとサイズを示して取得してよいかを尋ねるので、`y` で続行してください
-（尋ねずに黙って取得することはありません）。
+ツールを最小構成で試す手順です。初回実行時は JDK と依存モジュールのダウンロードが必要です。（通信量 約 165MB → 展開後 約 500MB）。
 
 1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
 
-2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。ダウンロードの確認以外は何も尋ねずに解析だけを行います。
+2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。
 
    ```bat
    rem Windows
@@ -55,22 +43,36 @@ Eclipse は起動しません。解析エンジンにだけ Eclipse JDT のコ�
    ./java-call-hierarchy-exporter.sh config/config.properties
    ```
 
-3. 結果を見る … `config/<解析開始日時>_<プロジェクト名>/` に `call-hierarchy.csv`（呼び出し階層）と
-   `methods.csv`（メソッド一覧）ができます。UTF-8（BOM 付き）なのでそのまま Excel で開けます。
+3. 結果を見る … （[出力ファイル](#出力ファイル)）
 
-引数なしで起動すると、設定ファイルをメニューから選ぶ対話モードになります（[docs/cli.md](docs/cli.md)）。
-初回に JDK と JBang（合わせて数百 MB）を置く場所は、引数ありのときは尋ねずに **このプロジェクトの中（`.jbang/`）** にします。
-変えるときは `launcher.properties`（リポジトリ直下）を編集するか、対話モードの「環境設定」から書き換えます。
+### Pleiades/Eclipse環境（閉域ネットワーク等の場合）
 
-起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）と、
-JBang を直接使う方法、閉域ネットワークでの動かし方は [docs/cli.md](docs/cli.md) にあります。
+Pleiades/Eclipseがインストールされていれば、そこに含まれるJDT Core一式から、実行に必要なjarを `lib` フォルダに集めて使います。
+バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
+
+```bat
+rem java-call-hierarchy-exporterをカレントディレクトリとしてください
+rem 環境に合わせて次の2行を書き換えてください
+set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
+set JAVA_HOME=C:\pleiades\2026-06\java\17
+
+rem　実行に必要なjarの収集
+mkdir lib
+for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
+do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
+
+rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
+"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
+
+rem 実行
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
+```
 
 ---
 
 ## 出力ファイル
 
-実行のたびに設定ファイルと同じフォルダ（`output.folder` で変更できます）に
-**`<解析開始日時>_<project.rootフォルダ名>`** のフォルダを作ってまとめます。
+実行のたびに設定ファイルと同じフォルダに**`<解析開始日時>_<project.rootフォルダ名>`** のフォルダを作ってまとめます。
 
 ```
 config/
@@ -84,7 +86,6 @@ config/
 ```
 
 出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
-解析結果のキャッシュは出力フォルダには入りません（[キャッシュ](#キャッシュ)）。
 
 ### `call-hierarchy.csv` — 呼び出し階層
 
@@ -105,13 +106,41 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 コンストラクタ内からのメソッド呼び出しは行として出力されます。
 
 行順は、rootメソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、rootメソッドからの呼び出し順（深さ優先）です。
-具象クラスの候補が複数ある呼び出しは
-候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
+具象クラスの候補が複数ある呼び出しは候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
 末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
+注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。 （[注記](#注記)）
 
-#### 注記
+### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
-注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。
+| 列 | 内容 |
+|---|---|
+| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
+| `unresolvedCause` | その理由（上の「理由」表と同じ。`実装なし（宣言のまま）` と `実装はコンパイル時生成（名前）` も入る。複数ある場合は `;` 区切り） |
+
+| role | 意味 |
+|---|---|
+| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・デッドコード・テスト・リフレクション経由が混ざる |
+| `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
+| `LEAF` | 呼び出し先が無い |
+| `NORMAL` | 上記以外 |
+
+行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
+「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
+コンストラクタ（`<init>`）は出力しません。
+
+
+### Eclipse でソースコードへジャンプする
+`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
+
+1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
+2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
+   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
+   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
+
+
+### 注記
 
 | 注記 | 意味 |
 |---|---|
@@ -136,34 +165,6 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
 
-### `methods.csv` — ソース上の全メソッドとその呼び出し状況
-
-| 列 | 内容 |
-|---|---|
-| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
-| `unresolvedCause` | その理由（上の「理由」表と同じ。`実装なし（宣言のまま）` と `実装はコンパイル時生成（名前）` も入る。複数ある場合は `;` 区切り） |
-
-| role | 意味 |
-|---|---|
-| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・デッドコード・テスト・リフレクション経由が混ざる |
-| `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
-| `LEAF` | 呼び出し先が無い |
-| `NORMAL` | 上記以外 |
-
-行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
-「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
-コンストラクタ（`<init>`）は出力しません。
-
-
-#### Eclipse でソースコードへジャンプする
-`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
-
-1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
-2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
-   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
-   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
 ### jar からの被参照メソッド
 
