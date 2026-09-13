@@ -41,6 +41,7 @@ import java.util.List;
 import org.eclipse.jdt.core.JavaCore;
 
 import jche.analysis.CachePhaseResult;
+import jche.analysis.CallConditionScanner;
 import jche.analysis.CacheUpdater;
 import jche.config.Config;
 import jche.config.Plugins;
@@ -51,6 +52,7 @@ import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.EntryPoints;
 import jche.server.Server;
+import jche.report.CallConditionsReport;
 import jche.report.CallHierarchyCsvWriter;
 import jche.report.InventoryReport;
 import jche.report.StreamingTreeWalker;
@@ -120,6 +122,15 @@ public class CallHierarchyExporter {
     /** サーバーモードで起動するときの第1引数（{@link jche.server.Server}） */
     private static final String SERVER_OPTION = "--server";
 
+    /**
+     * 呼び出しに効いている条件を調べるときの第1引数（{@link jche.analysis.CallConditionScanner}）。
+     *
+     * 対象のファイルだけをその場でパースするだけで、キャッシュも出力フォルダも作らない。
+     * 影響調査で「この呼び出しはどういうときに起きるのか」を確かめるための入口
+     * （{@code docs/call-conditions.md}）。
+     */
+    private static final String CONDITIONS_OPTION = "--conditions";
+
     public static void main(String[] args) throws Exception {
         if (args.length > 0 && SERVER_OPTION.equals(args[0])) {
             // サーバーモード。Eclipse プラグインが別プロセス・別 JDK で解析させるために使う。
@@ -128,6 +139,17 @@ public class CallHierarchyExporter {
                     ? Paths.get(args[1])
                     : ToolRoot.locate(CallHierarchyExporter.class).dir;
             System.exit(Server.run(cacheRoot));
+        }
+
+        if (args.length > 0 && CONDITIONS_OPTION.equals(args[0])) {
+            if (args.length < 2) {
+                System.err.println(CONDITIONS_OPTION + " には調べる対象を渡してください"
+                        + "（例: src/foo/Bar.java:120 / foo.Bar#method）。");
+                System.exit(2);
+            }
+            Path conditionsConfig = (args.length > 2) ? Paths.get(args[2]) : Paths.get(DEFAULT_CONFIG);
+            System.exit(runConditions(args[1], conditionsConfig,
+                    ToolRoot.locate(CallHierarchyExporter.class).dir));
         }
 
         // 設定ファイルのパスは引数で受け取る（複数可）。jbang はスクリプト名より後ろの
@@ -232,6 +254,30 @@ public class CallHierarchyExporter {
             }
         } catch (IOException e) {
             Log.warn(OUTPUT_DIR_FILE_ENV + " のファイルに書けません: " + file + " (" + e + ")");
+        }
+    }
+
+    /**
+     * 呼び出しに効いている条件を調べて画面に出す（{@link #CONDITIONS_OPTION}）。
+     *
+     * 設定ファイルは「どこを解析対象とみなすか」（project.root / source.folders / 依存 jar）を
+     * 決めるためだけに読む。<b>キャッシュも出力フォルダも作らず、対象のファイルだけをその場でパースする</b>。
+     * 打ち切りの判定に使う条件だけでなく、判定できない条件も並べる。
+     *
+     * @return 終了コード（0=見つかった、1=失敗、4=対象または該当する呼び出しが無い）
+     */
+    private static int runConditions(String target, Path configPath, Path toolRoot) {
+        try {
+            Log.resetClock();
+            Config config = new Config(configPath, toolRoot, LocalDateTime.now());
+            Log.info("設定: " + config.configPath);
+            Log.info("プロジェクトルート: " + config.projectRoot);
+            ProjectLayout layout = new ProjectLayout(config);
+            CallConditionScanner.Result result = CallConditionScanner.scan(config, layout, target);
+            return CallConditionsReport.print(target, result) ? 0 : 4;
+        } catch (Exception e) {
+            Log.error("条件の調査に失敗しました: " + target, e);
+            return 1;
         }
     }
 

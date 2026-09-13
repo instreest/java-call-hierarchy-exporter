@@ -111,13 +111,23 @@ final class FactVisitor extends ASTVisitor {
     private final ArrayDeque<Integer> lambdaDepthStack = new ArrayDeque<>();
 
     FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors) {
+        this(cu, out, collectors, false);
+    }
+
+    /**
+     * @param recordAllConditions 判定できない条件も guard に残す（オンデマンドの調査用。
+     *                            {@link GuardCollector} の記録用モード）。キャッシュへは書かない
+     */
+    FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors,
+                boolean recordAllConditions) {
         this.cu = cu;
         this.out = out;
         this.names = new BindingNames(out);
         this.origins = new OriginTracker(names);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
         this.types = new TypeContextTracker(out, names);
-        this.calls = new CallSiteRecorder(cu, out, names, collectors, new GuardCollector(origins));
+        this.calls = new CallSiteRecorder(cu, out, names, collectors,
+                new GuardCollector(origins, recordAllConditions));
         this.fieldAccesses = new FieldAccessRecorder(out, names);
     }
 

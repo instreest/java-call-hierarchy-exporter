@@ -50,6 +50,11 @@ jobs:
       - name: Resolve order-independence test (test/dataflow)
         run: bash test/dataflow/run.sh
 
+      # 呼び出しに効いている条件のオンデマンド調査（--conditions）。判定できる条件・できない条件の
+      # 出し分けと、キャッシュ・出力フォルダを作らないことを見る（docs/call-conditions.md）
+      - name: Call conditions test (--conditions)
+        run: bash test/conditions/run.sh
+
       # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う。
       # 起動コマンドはネットワークからの取得の前に確認を出し、端末が無ければ取得せずに終わる（Issue #86）。

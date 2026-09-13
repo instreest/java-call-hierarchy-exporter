@@ -74,7 +74,19 @@ public final class CallEdgeExtractor {
     private final String[] sourcepathEncodings;
     private final List<CallSiteHintCollector> collectors;
 
+    /** 判定できない条件も guard に残すか（オンデマンドの調査用。{@link CallConditionScanner}） */
+    private final boolean recordAllConditions;
+
     public CallEdgeExtractor(ProjectLayout layout, Config config) {
+        this(layout, config, false);
+    }
+
+    /**
+     * @param recordAllConditions 判定できない条件も呼び出しの guard に残す。
+     *                            キャッシュには書かない使い方（オンデマンドの条件調査）でだけ true にする
+     */
+    public CallEdgeExtractor(ProjectLayout layout, Config config, boolean recordAllConditions) {
+        this.recordAllConditions = recordAllConditions;
         this.collectors = Plugins.load(config, config.hintCollectorClasses, CallSiteHintCollector.class);
         this.layout = layout;
         this.encodingName = config.sourceEncoding;
@@ -176,7 +188,7 @@ public final class CallEdgeExtractor {
             }
         }
         collectImports(cu, result);
-        cu.accept(new FactVisitor(cu, result, collectors));
+        cu.accept(new FactVisitor(cu, result, collectors, recordAllConditions));
         return result;
     }
 

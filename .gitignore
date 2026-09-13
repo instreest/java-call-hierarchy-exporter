@@ -62,3 +62,9 @@ target/
 /test/dataflow/build/
 /test/dataflow/.cache/
 /test/dataflow/output/
+
+# test/conditions/run.sh（--conditions の検査）のコンパイル結果と実行ログ。
+# キャッシュ（.cache）と出力（out）は「作られないこと」を検査する対象なので、
+# 無視ではなく「できていたら NG」として run.sh が見る
+/test/conditions/build/
+/test/conditions/out.log

@@ -6,8 +6,12 @@ import java.util.List;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
+import org.eclipse.jdt.core.dom.CatchClause;
 import org.eclipse.jdt.core.dom.ConditionalExpression;
+import org.eclipse.jdt.core.dom.DoStatement;
+import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ForStatement;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.ITypeBinding;
@@ -17,6 +21,7 @@ import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.SwitchCase;
 import org.eclipse.jdt.core.dom.SwitchExpression;
 import org.eclipse.jdt.core.dom.SwitchStatement;
+import org.eclipse.jdt.core.dom.WhileStatement;
 
 import jche.cache.Guard;
 import jche.cache.Origin;
@@ -34,6 +39,15 @@ import jche.cache.Origin;
  * 記録しなければ読み手は打ち切りの判断をしないので、<b>誤って階層を消すことはない</b>。
  * 逆に、判定できる条件が1つでもあれば、それが成立しない経路では打ち切れる。
  *
+ * <h2>2つのモード</h2>
+ * <ul>
+ *   <li><b>判定用</b>（既定）… 打ち切りに使える条件だけをアトムにする。キャッシュの guard 列はこちら</li>
+ *   <li><b>記録用</b>（{@code recordAll}）… 判定できない条件も {@link Guard#UNKNOWN} として残し、
+ *       ループ・{@code catch}・コロン形式の {@code switch} も足す。
+ *       「この呼び出しに効いている条件を漏れなく見たい」オンデマンドの調査
+ *       （{@link CallConditionScanner}）だけが使う。キャッシュには書かない</li>
+ * </ul>
+ *
  * <h2>意図的に見ないもの</h2>
  * <ul>
  *   <li>ラムダ式・匿名クラス・ローカルクラスの<b>外側</b>の条件 …
@@ -48,11 +62,29 @@ final class GuardCollector {
 
     /** 1つの呼び出しに付けるアトムの上限（深く入れ子になった条件で行が伸びるのを防ぐ） */
     private static final int MAX_ATOMS = 8;
+    /** 記録用モードの上限。キャッシュに入らないので、判定用より多く残してよい */
+    private static final int MAX_ATOMS_RECORD_ALL = 32;
 
     private final OriginTracker origins;
+    /** 判定できない条件も残すか（記録用モード） */
+    private final boolean recordAll;
+    private final int maxAtoms;
 
     GuardCollector(OriginTracker origins) {
+        this(origins, false);
+    }
+
+    GuardCollector(OriginTracker origins, boolean recordAll) {
         this.origins = origins;
+        this.recordAll = recordAll;
+        this.maxAtoms = recordAll ? MAX_ATOMS_RECORD_ALL : MAX_ATOMS;
+    }
+
+    /** 記録用モードのときだけ、判定できない条件をアトムにする */
+    private void addUnknown(List<String> atoms, String text) {
+        if (recordAll && atoms.size() < maxAtoms) {
+            atoms.add(Guard.atom(Guard.UNKNOWN, Origin.UNKNOWN_S, "", trim(text)));
+        }
     }
 
     /** 呼び出しノードを囲む条件。判定できる条件が無ければ空文字 */
@@ -60,13 +92,18 @@ final class GuardCollector {
         List<String> atoms = new ArrayList<>(2);
         ASTNode child = call;
         ASTNode parent = call.getParent();
-        while (parent != null && atoms.size() < MAX_ATOMS) {
+        while (parent != null && atoms.size() < maxAtoms) {
             if (parent instanceof BodyDeclaration || parent instanceof LambdaExpression) {
                 break;   // メソッド・初期化子・ラムダの境界で止める
             }
             collectFrom(parent, child, atoms);
             child = parent;
             parent = parent.getParent();
+        }
+        if (recordAll && atoms.size() >= maxAtoms) {
+            // 「条件が無い」と「記録を諦めた」を読み手が区別できるようにする
+            atoms.add(Guard.atom(Guard.MORE, Origin.UNKNOWN_S, "",
+                    "これ以上の条件は記録していません（上限 " + maxAtoms + " 件）"));
         }
         return atoms.isEmpty() ? "" : Guard.join(atoms);
     }
@@ -91,6 +128,18 @@ final class GuardCollector {
             addSwitchCase(n.getExpression(), n.statements(), child, atoms);
         } else if (parent instanceof SwitchExpression n) {
             addSwitchCase(n.getExpression(), n.statements(), child, atoms);
+        } else if (parent instanceof WhileStatement n) {
+            // 以下は「呼ばれないことの証明」には使えないが、到達に効く条件ではあるので記録用では残す
+            addUnknown(atoms, "while (" + n.getExpression() + ")");
+        } else if (parent instanceof DoStatement n) {
+            addUnknown(atoms, "do { … } while (" + n.getExpression() + ")");
+        } else if (parent instanceof ForStatement n) {
+            Expression cond = n.getExpression();
+            addUnknown(atoms, "for (…; " + ((cond == null) ? "" : cond.toString()) + "; …)");
+        } else if (parent instanceof EnhancedForStatement n) {
+            addUnknown(atoms, "for (" + n.getParameter().getName() + " : " + n.getExpression() + ")");
+        } else if (parent instanceof CatchClause n) {
+            addUnknown(atoms, "catch (" + n.getException().getType() + ")");
         }
     }
 
@@ -127,6 +176,7 @@ final class GuardCollector {
                                List<String> atoms) {
         String origin = evaluableOriginOf(selector);
         if (origin == null) {
+            addUnknown(atoms, "switch (" + selector + ") の枝");
             return;
         }
         List<String> allValues = new ArrayList<>();
@@ -135,11 +185,14 @@ final class GuardCollector {
                 continue;
             }
             if (!sc.isSwitchLabeledRule()) {
-                return;   // コロン形式（フォールスルーがあるため扱わない）
+                // コロン形式（フォールスルーがあるため判定はしないが、条件としては残す）
+                addUnknown(atoms, "switch (" + selector + ") の case（コロン形式）");
+                return;
             }
             for (Object e : sc.expressions()) {
                 String v = constantValueOf((Expression) e);
                 if (v == null) {
+                    addUnknown(atoms, "switch (" + selector + ") の case");
                     return;   // 定数として読めない case ラベルがある
                 }
                 allValues.add(v);
@@ -183,7 +236,7 @@ final class GuardCollector {
      */
     private void addCondition(Expression cond, boolean expected, List<String> atoms) {
         Expression e = OriginTracker.unwrap(cond);
-        if (e == null || atoms.size() >= MAX_ATOMS) {
+        if (e == null || atoms.size() >= maxAtoms) {
             return;
         }
         if (e instanceof PrefixExpression p && p.getOperator() == PrefixExpression.Operator.NOT) {
@@ -203,20 +256,35 @@ final class GuardCollector {
                 }
                 return;
             }
+            int before = atoms.size();
             if (op == InfixExpression.Operator.EQUALS || op == InfixExpression.Operator.NOT_EQUALS) {
                 addComparison(in, expected, atoms);
+            }
+            if (atoms.size() == before) {
+                addUnknown(atoms, expectedText(in, expected));
             }
             return;
         }
         if (e instanceof MethodInvocation mi) {
+            int before = atoms.size();
             addEqualsCall(mi, expected, atoms);
+            if (atoms.size() == before) {
+                addUnknown(atoms, expectedText(mi, expected));
+            }
             return;
         }
         // boolean の変数・引数・定数そのもの
         String origin = evaluableOriginOf(e);
         if (origin != null && isBoolean(e)) {
             atoms.add(Guard.atom(Guard.EQ, origin, String.valueOf(expected), trim(e.toString())));
+        } else {
+            addUnknown(atoms, expectedText(e, expected));
         }
+    }
+
+    /** 記録用モードの条件式のテキスト。否定の枝（else 側）だと分かるように書く */
+    private static String expectedText(Expression e, boolean expected) {
+        return expected ? e.toString() : "!(" + e + ")";
     }
 
     /**
