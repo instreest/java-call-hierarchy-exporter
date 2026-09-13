@@ -1,49 +1,45 @@
 # java-call-hierarchy-exporter
 A tool that batch-extracts project-wide Java method call hierarchies and exports them to CSV files.
 
+## Overview
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
-## Overview
-
-Eclipseの「呼び出し階層」ビューを再帰的に一括出力するようなイメージでCSVファイルを出力します。
-Eclipseは起動せず、解析エンジンに Eclipse JDT のコンパイラを使用するコマンドラインツールです。
-出力CSVファイルをExcelで開いて呼び出し先メソッドをフィルタすることで影響範囲を抽出できます。
+Eclipseの「呼び出し階層」ビューが一括で再帰的に取得できないため、このツールで一括でCSVファイルを出力します。
+Eclipseは起動せず、解析エンジンとして Eclipse JDT のコンパイラを使用してソースコードを解析するコマンドラインツールです。
+解析結果のCSVファイルをExcelで開いて呼び出し先メソッドでフィルタすることで対象機能の影響範囲を抽出できます。
 
 ## ドキュメント
 
 | 知りたいこと | 場所 |
 |---|---|
-| 最小の手順 | [Quick start](#quick-start)（このファイル） |
-| 出力 CSV の読み方 | [出力ファイル](#出力ファイル)（このファイル） |
-| 設定項目 | [config/config.properties](config/config.properties) のコメント |
-| 起動コマンドの全仕様・対話モード・JBang 直接実行 | [docs/cli.md](docs/cli.md) |
-| 依存 jar の自動取得（Maven / Gradle） | [docs/build-tool-classpath.md](docs/build-tool-classpath.md) |
-| 具象クラスの解決条件を外から与える（プラグイン） | [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) |
-| GitHub Actions から使う | [docs/github-actions.md](docs/github-actions.md) |
-| キャッシュの設計 | [docs/cache-design.md](docs/cache-design.md) |
+| 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
+| 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
+| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
 
 ## Quick start
 
-ツールを最小構成で試す手順です。初回実行時は JDK と依存モジュールのダウンロードが必要です。（通信量 約 165MB → 展開後 約 500MB）。
+起動スクリプトと設定ファイルを使用します。
+
+起動スクリプトが JDK 25 と依存モジュールが環境上にあるかチェックし、無ければ確認メッセージのうえ自動でダウンロードします。（通信量 約 165MB → 展開後 約 500MB）。
 
 1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
 
 2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。
 
-   ```bat
-   rem Windows
-   .\java-call-hierarchy-exporter.cmd config\config.properties
-   ```
+     ```bat
+     rem Windows
+     .\java-call-hierarchy-exporter.cmd config\config.properties
+     ```
 
-   ```bash
-   # Linux / macOS / Git Bash
-   ./java-call-hierarchy-exporter.sh config/config.properties
-   ```
+     ```bash
+     # Linux / macOS / Git Bash
+     ./java-call-hierarchy-exporter.sh config/config.properties
+     ```
 
-3. 結果を見る … （[出力ファイル](#出力ファイル)）
+　3. 結果を見る … 出力されたCSVファイルを参照します。（[出力ファイル](#出力ファイル)）
 
 ### Pleiades/Eclipse環境（閉域ネットワーク等の場合）
 
@@ -68,6 +64,20 @@ rem 実行
 "%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
 ```
 
+### GitHub Actions Workflow
+
+リポジトリ直下の [`action.yml`](action.yml) を利用者のワークフローから `uses:` で呼ぶと、
+解析対象の指定をするとリポジトリのソースコードを解析してCSVファイルをアーティファクトにアップロードします。
+詳細な機能仕様は[docs/github-actions.md](docs/github-actions.md) にあります。
+
+```yaml
+      - uses: actions/checkout@v5
+      - uses: instreest/java-call-hierarchy-exporter@main
+        with:
+          source-folders: src/main/java
+          source-encoding: UTF-8
+```
+
 ---
 
 ## 出力ファイル
@@ -86,6 +96,7 @@ config/
 ```
 
 出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
+
 
 ### `call-hierarchy.csv` — 呼び出し階層
 
@@ -109,6 +120,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 具象クラスの候補が複数ある呼び出しは候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
 末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。 （[注記](#注記)）
+
 
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
@@ -141,7 +153,6 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 
 
 ### 注記
-
 | 注記 | 意味 |
 |---|---|
 | `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
@@ -222,42 +233,6 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
 
 ---
-
-## 複数のプロジェクトをまとめて解析する
-
-設定ファイルを引数に複数渡すと、渡した順に 1 つずつ処理します。設定ファイルは互いに独立で、
-それぞれの `output.folder` の下に `<解析開始日時>_<プロジェクト名>` のフォルダができます
-（[出力ファイル](#出力ファイル)）。
-
-```bash
-./java-call-hierarchy-exporter.sh config/app-a.properties config/app-b.properties config/batch.properties
-```
-
-- 1 つの設定が失敗（設定ファイルが無い、`project.root` が無い等）しても、残りの設定は処理します。
-  失敗した設定のエラーとスタックトレースは標準出力（と、出力フォルダを作れていればその `run.log`）に出ます
-- 最後に設定ごとの結果（`OK` と出力フォルダ、または `FAIL` と原因）を一覧で出します。
-  1 つでも失敗があれば終了コードは 1 です
-- ログの経過時間 `[分:秒]` は設定ごとに 0 から数え直します
-
-同じプロジェクトを指す設定ファイルが複数あっても（起点 `entry.packages` だけ違う等）、
-キャッシュは `project.root` ごとに 1 つを共有するので、2 つ目以降の解析はキャッシュの再利用だけで済みます。
-
-## GitHub Actions から使う
-
-リポジトリ直下の [`action.yml`](action.yml) を利用者のワークフローから `uses:` で呼ぶと、
-解析対象のリポジトリを解析して CSV をアーティファクトにアップロードします。
-JBang も JDK も設定ファイルもアクションの中で用意するので、ワークフローに書くのは解析対象の指定だけです。
-
-```yaml
-      - uses: actions/checkout@v5
-      - uses: instreest/java-call-hierarchy-exporter@main
-        with:
-          source-folders: src/main/java
-          source-encoding: UTF-8
-```
-
-参照する版の書き方、入力と出力の一覧、依存 jar を自動で集めるときの下準備、キャッシュの引き継ぎ、
-Actions 以外の CI から使うときは [docs/github-actions.md](docs/github-actions.md) にあります。
 
 ## キャッシュ
 
