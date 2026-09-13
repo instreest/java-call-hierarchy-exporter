@@ -1,5 +1,8 @@
 # Eclipseプラグイン化 — 実装時の QA 一覧
 
+> 使い方（入れ方・操作・設定・つまずきやすいところ）は
+> [eclipse-plugin-usage.md](eclipse-plugin-usage.md) にまとめてある。
+
 [Issue #49](https://github.com/instreest/java-call-hierarchy-exporter/issues/49)
 「Eclipseプラグインを作成したい」への対応で、迷ったこと・困ったことと、その結論を Q&A の形で残す。
 

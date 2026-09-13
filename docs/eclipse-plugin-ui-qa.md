@@ -1,5 +1,8 @@
 # 呼び出し元階層ビューの実装 — QA 一覧
 
+> 使い方（入れ方・操作・設定・つまずきやすいところ）は
+> [eclipse-plugin-usage.md](eclipse-plugin-usage.md) にまとめてある。
+
 [Issue #49](https://github.com/instreest/java-call-hierarchy-exporter/issues/49) の続きとして、
 [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) の設計案を実装したときに、
 迷ったこと・設計案から変えたことを Q&A で残す。
@@ -197,6 +200,10 @@ Java 11 でも動くので、その2版は Java 17 以上で起動すること�
 
 ### Q13. 「Eclipse の JDK が古い」問題にどう対処したか
 
+> **その後（2026-09-12）**: 解析を別プロセスへ出したので、この問題自体が無くなった。
+> 解析に使う JDK は設定画面で選べ、無ければ取得できる
+> （[eclipse-plugin-usage.md](eclipse-plugin-usage.md) の §4）。以下は当時の記録。
+
 JDT は**動いている JVM の標準クラス**を解析対象のクラスパスに含める
 （`ASTParser.setEnvironment(..., includeRunningVMBootclasspath=true)`）。
 プラグインでは Eclipse の JVM がそれになるため、jbang（`//JAVA 25`）とは結果が変わりうる。
@@ -206,7 +213,7 @@ JDT は**動いている JVM の標準クラス**を解析対象のクラスパ�
 - 解析ログに**実行 JVM の版**を出す（CLI も同じ。`Exporter.logAnalysisSettings`）
 - ビューのバナーのツールチップに、**設定の出どころ・解析した Java の版・実行 JVM・JDT の版・
   その JDT が解析できる Java の上限**を出す（`EnvironmentInfo`）。結果の差はほぼこれで説明できる
-- 利用者の対処は eclipse.ini の `-vm` で新しい JDK を指すこと。README に書いた
+- 利用者の対処は eclipse.ini の `-vm` で新しい JDK を指すこと（[eclipse-plugin-usage.md](eclipse-plugin-usage.md)）
 
 キャッシュは以前から `jdk=<版>` をヘッダに持っているので、JVM を変えれば自動で作り直される
 （壊れた結果が残ることはない）。プラグインのキャッシュは CLI と別フォルダなので、

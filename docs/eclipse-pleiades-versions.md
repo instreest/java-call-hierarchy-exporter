@@ -1,5 +1,8 @@
 # Eclipse / JDT Core / Java の版の対応表
 
+> 使い方（入れ方・操作・設定・つまずきやすいところ）は
+> [eclipse-plugin-usage.md](eclipse-plugin-usage.md) にまとめてある。
+
 このプラグインが「どの Eclipse に入るか」を判断するための一覧。
 `eclipse-plugin/META-INF/MANIFEST.MF` の下限（`org.eclipse.jdt.core;bundle-version` と
 `Bundle-RequiredExecutionEnvironment`）を決めるときの根拠でもある。

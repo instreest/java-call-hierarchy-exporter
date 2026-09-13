@@ -1,5 +1,8 @@
 # Eclipseプラグイン UI 設計案 — 呼び出し元階層ビュー
 
+> 使い方（入れ方・操作・設定・つまずきやすいところ）は
+> [eclipse-plugin-usage.md](eclipse-plugin-usage.md) にまとめてある。
+
 [Issue #49](https://github.com/instreest/java-call-hierarchy-exporter/issues/49) の続き。
 現状のプラグイン（[eclipse-plugin-qa.md](eclipse-plugin-qa.md)）は「設定ファイルを右クリック → CSV を書く」だけで、
 Eclipse 上では結果を見られない。ここでは次の段階として、

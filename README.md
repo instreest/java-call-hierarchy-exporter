@@ -7,9 +7,7 @@ Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出�
 > `jbangw/jbang src/CallHierarchyExporter.java config.properties` (the first run downloads a JDK
 > and the JDT jars), or compile against JDT jars copied from an Eclipse installation for offline
 > use. Several config files can be passed at once; each run writes to its own timestamped output
-> folder. It can also be built as an Eclipse plug-in (`mvn -f eclipse-plugin/pom.xml package`, or via PDE)
-> that adds an "export call hierarchy to CSV" command to the package explorer. Apache-2.0.
-> Documentation is in Japanese.
+> folder. Apache-2.0. Documentation is in Japanese.
 
 - 使い方・出力形式 … このファイル
 - 設定項目 … [config.properties](config.properties)（コメントに全項目の説明）
@@ -96,123 +94,6 @@ JBang 本家の Eclipse 連携プラグイン（jbang-eclipse）を入れると�
 どちらか一方が壊れ続けます。併用しないでください。
 Gradle を選ばなかった理由を含め、実装時に迷った点は
 [docs/eclipse-maven-qa.md](docs/eclipse-maven-qa.md) にあります。
-
-#### Eclipseプラグインとして使う
-
-`eclipse-plugin/` に Eclipse プラグイン（OSGi バンドル）の定義があります。入れると、
-パッケージ・エクスプローラーで設定ファイル（`*.properties`）を右クリック →
-**「呼び出し階層をCSVに出力」** で解析でき、実行構成を作る必要がなくなります。
-複数選択すれば、コマンドラインに設定ファイルを並べたときと同じく順に処理します。
-ログは「Call Hierarchy Exporter」コンソールに出ます（`run.log` も今までどおり出力フォルダに残ります）。
-
-**解析は Eclipse の中では走りません。** プラグインは同梱した解析本体（`lib/jche-core.jar`）と
-JDT 一式（`lib/jdt/*.jar`）を、別の JDK で子プロセスとして起動し、結果だけを受け取ります
-（設計は [docs/out-of-process-analysis-design.md](docs/out-of-process-analysis-design.md)）。
-そのため **Eclipse 側の JDT や JDK の版は、解析できる Java の版に影響しません**。
-
-**動作条件**（版の対応表は [docs/eclipse-pleiades-versions.md](docs/eclipse-pleiades-versions.md)）:
-
-| | 条件 |
-|---|---|
-| Eclipse | **4.6（2016年、Neon）以降** |
-| Eclipse を動かす JDK | **8 以上**（プラグインは Java 8 でコンパイルしています） |
-| 解析に使う JDK | **17 以上、推奨 25**。「JAVA_HOME → Eclipse を動かしている JVM → PATH の java」の順に探します |
-
-Pleiades なら、同梱の JDK がそのまま解析にも使えます（2023 以降は 17・21、2025 以降は 25）。
-
-**呼び出し元の階層を Eclipse 上で見る**（このプラグインの主な使い方）:
-
-0. （任意）`config.properties` は**なくて構いません**。Java プロジェクトなら、ソースフォルダ・
-   依存 jar・文字コード・コンパイラー準拠レベルをプロジェクトの構成から自動で組み立てます
-1. 解析したいメソッドにカーソルを置く（またはパッケージ・エクスプローラー／アウトラインで選ぶ）
-2. 右クリック →「呼び出し元階層を表示 (Exporter)」（`Ctrl+Alt+Shift+H`）
-3. 「呼び出し階層 (Exporter)」ビューが開く。まだ解析していなければバナーの［解析する］から始める
-4. 解析は裏で走る（他の操作は止まりません。［中止］できます）。終わると、そのメソッドの
-   呼び出し元がツリーで出ます。ダブルクリックでその**呼び出している行**へ飛べます
-
-ビューでできること:
-
-| したいこと | 操作 |
-|---|---|
-| 絞り込む | 上の検索欄に型名・メソッド名（**解析は走りません。即座に効きます**）。深さも隣で変えられます |
-| 細かい条件 | ［フィルタ…］でテストの除外、推測による解決の除外、`exclude.packages` の適用、呼び出し元の重複の扱い |
-| 向きを変える | ツールバーの「呼び出し先を見る」 |
-| 解析し直す | ツールバーの「再解析」。ソースを変えると「⚠ n ファイルが変更されています」とバナーに出ます |
-| 自動で解析し直す | ツールバーの「自動再解析」（既定 ON）。ビルド後に静止してから裏で走ります |
-| 見えている木を CSV に | ［CSV出力］。フィルタ後の内容がそのまま出ます |
-| 設定を細かく決める | ビューのメニュー（▽）→「設定を config.properties に保存」。自動生成した内容が保存され、`entry.packages` などを手で足せます |
-| 設定ファイルを選ぶ | ビューのメニュー（▽）→「使う設定ファイルを選ぶ…」。プロジェクト直下の `*.properties` から選べます |
-
-**解析の走らせ方**は［ウィンドウ > 設定 > 呼び出し階層 (Exporter)］で変えられます。
-
-| 設定 | 既定 | 用途 |
-|---|---|---|
-| 解析に使う JDK | 自動（JAVA_HOME → 取得済み → Eclipse の JVM → PATH の順に、25 を優先して 17 以上） | CLI と結果を揃えたいとき。**見つからなければ［JDK 25 を取得…］で Adoptium から取得できます**（約 200MB、確認してから実行。閉域では場所を指定してください） |
-| JDT の jar のフォルダ | 同梱のもの | 閉域で新しい JDT を別に置いて使いたいとき |
-| 解析プロセスの JVM 引数 | 無し | `-Xmx4g` など。Eclipse 自身のメモリとは別枠です |
-| 使われないときに終了する | 10 分 | 解析プロセスは結果をメモリに持って常駐します。0 にすると終了しません |
-
-設定の優先順位は **①ビューで選んだ設定ファイル → ②プロジェクト直下の `config.properties` →
-③プロジェクト構成からの自動生成** です。どの設定で解析したかはバナーのツールチップに出ます。
-
-解析中も前回の結果は消えません（バナーだけが「更新中」に変わります）。解析後に変わったファイルの
-行には ⚠ が付き、内容が古い可能性があることが行単位で分かります。
-キャッシュはワークスペースの `.metadata/.plugins/io.github.instreest.jche.eclipse/` の下です。
-
-**解析結果は Eclipse を動かしている JDK に影響されます**。JDT は動作中の JVM の標準クラスを
-解析対象のクラスパスに含めるため、古い JDK で動かしていると新しい API の呼び出しが型解決できず、
-その戻り値を使う呼び出しごと欠けます。解析対象が使う JDK API の版以上の JDK で Eclipse を
-動かしてください（`eclipse.ini` の `-vmargs` より**前**に 2 行入れます）。
-
-```ini
--vm
-C:\pleiades\2026-06\java\21\bin\javaw.exe
-```
-
-実行 JVM・JDT の版・その JDT が解析できる Java の上限は、バナーのツールチップと実行ログに出ます。
-JDK を変えるとキャッシュは自動で作り直されます（キャッシュのキーに JDK の版が入っています）。
-
-ビルドの仕方は 2 通りあります。どちらも解析本体はリポジトリ直下の `src/` をそのまま使うので、
-CLI と同じコード・同じ出力です。
-
-```bash
-# 1) Eclipse 無しでバンドル jar を作る（JDK 17 以上と Maven が要る）
-mvn -f eclipse-plugin/pom.xml package
-# -> eclipse-plugin/target/io.github.instreest.jche.eclipse-1.0.0.jar
-#    この jar を <Eclipseのインストール先>/dropins/ に置いて Eclipse を再起動する
-```
-
-```
-2) Eclipse（PDE）でビルドする
-   「ファイル > インポート > 一般 > 既存プロジェクトをワークスペースへ」で eclipse-plugin/ を選ぶ
-   （リポジトリ直下の Maven プロジェクトとは別プロジェクトとして開きます）
-   実行は「実行 > 実行構成 > Eclipse アプリケーション」、配布は
-   「ファイル > エクスポート > デプロイ可能なプラグイン及びフラグメント」
-```
-
-キャッシュはワークスペースの `.metadata/.plugins/io.github.instreest.jche.eclipse/.cache/` にできます
-（CLI とは実行 JDK が違いうるため、意図して分けています）。
-Tycho を使わない理由や、CLI との二重実装を避けるためにした設計は
-[docs/eclipse-plugin-qa.md](docs/eclipse-plugin-qa.md) にあります。
-呼び出し元階層ビューの設計は [docs/eclipse-plugin-ui-design.md](docs/eclipse-plugin-ui-design.md)、
-実装時に迷った点は [docs/eclipse-plugin-ui-qa.md](docs/eclipse-plugin-ui-qa.md) にあります。
-
-#### サーバーモード（プラグインが別プロセスで解析させる経路）
-
-`--server` を付けて起動すると、CSV を書くかわりに**標準入出力で要求を受けて応答する**常駐プロセスになります。
-Eclipse プラグインはこれを別 JDK・別 JDT で起動し、結果だけを受け取ります
-（設計は [docs/out-of-process-analysis-design.md](docs/out-of-process-analysis-design.md)）。
-手で叩くこともできます。
-
-```bash
-printf 'HELLO\t1\nANALYZE\t/path/config.properties\nTREE\tcom.example.Foo#bar()\tcallers\tdepth=3\nSHUTDOWN\n' \
-  | java -cp "lib/*:bin" CallHierarchyExporter --server /tmp/jche-cache
-```
-
-要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・`TREE`（木の切り出し）・
-`EXPORT`（CSV 出力）・`CANCEL`（解析の中止）・`SHUTDOWN` があります。解析中は `#P` 行で進捗が、
-`#L` 行でログが流れます。**フィルタ（深さ・文字列・テスト除外など）はサーバー側で効く**ので、
-絞り込みのたびに解析し直すことはありません。詳しい仕様は `src/jche/server/Protocol.java` のコメントにあります。
 
 ---
 
@@ -597,9 +478,7 @@ teamb.NightJob,fx.util.Counter.bump(),team-d-app.ear!/team-d-web.war!/WEB-INF/li
 ## ソースの構成
 
 `src/CallHierarchyExporter.java` がエントリポイント（JBang の指示行と `main`）で、
-引数を解釈して `jche.Exporter` に渡すだけです。解析の本体は `src/jche/` 配下のパッケージに
-分かれていて、パッケージは処理のフェーズに対応します。
-Eclipse プラグイン（`eclipse-plugin/`）も同じ `jche.Exporter` を呼びます。
+本体は `src/jche/` 配下のパッケージに分かれています。パッケージは処理のフェーズに対応します。
 
 | パッケージ | 役割 | 主なクラス |
 |---|---|---|
@@ -610,16 +489,9 @@ Eclipse プラグイン（`eclipse-plugin/`）も同じ `jche.Exporter` を呼�
 | `jche.report` | フェーズ3: 深さ優先で辿りながら CSV を 1 行ずつ書く | `StreamingTreeWalker`, `CallHierarchyCsvWriter`, `InventoryReport` |
 | `jche.external` | 外部 jar の定数プールから被参照を拾う | `ExternalUsageScanner`, `ClassFileRefs` |
 | `jche.extension` | 利用者がプロジェクト固有の解決手法を差し込む拡張ポイント | `CallSiteHintCollector`, `TypeCandidateProvider` |
-| `jche`（直下） | 設定ファイルを受け取ってフェーズ1〜3を回す本体。CLI とプラグインの共通の入口 | `Exporter` |
-| `jche.server` | サーバーモード（標準入出力のプロトコル、木の切り出しと絞り込み） | `Server`, `Protocol`, `CallTree`, `TreeFilters` |
 | `jche.util` | ログ（標準出力と出力フォルダの `run.log` への複写）と進捗表示 | `Log`, `Progress` |
 
-Eclipse プラグインのソースは `eclipse-plugin/src-ui/jche/eclipse/` にあり、**解析のコードは含みません**
-（`jche.eclipse.server` が子プロセスとやりとりし、`CallHierarchyView` がその結果を描きます）。
-プラグインは Java 8、解析本体は Java 17 でコンパイルしており、混ざっていないことは
-`test/plugin/run.sh` と `test/plugin-api/run.sh` が検査します。
-
-読む順番は `CallHierarchyExporter.main` → `jche.Exporter.run` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
+読む順番は `CallHierarchyExporter.main` → `jche.analysis.CacheUpdater` → `jche.graph.CallGraphBuilder`
 → `jche.graph.CallResolver` → `jche.report.StreamingTreeWalker` が処理の流れどおりです。
 キャッシュに何を入れ、何を入れないかの原則は `jche.cache.CacheFormat` のクラスコメントにあります。
 
@@ -681,27 +553,6 @@ bash test/pom/run.sh           # Linux / macOS / Git Bash
 
 GitHub Actions では、これに加えて `mvn compile` で `pom.xml` から実際に依存を解決してコンパイルできることも
 確認します（Eclipse の m2e が行う解決と同じです）。
-
-サーバーモードにも検査があります。`HELLO`→`ANALYZE`→`FIND`→`TREE`→`EXPORT` の一連と、
-断り方（未解析・不明なメソッド・知らない要求）を確認します。
-
-```bash
-bash test/server/run.sh          # jbang で依存を解決してコンパイルしてから実行
-JCHE_CP="<classpath>" bash test/server/run.sh   # コンパイル済みを使う（CI はこちら）
-```
-
-Eclipse プラグイン（`eclipse-plugin/`）にも検査があります。JDT の版が `//DEPS` 行・直下の `pom.xml`・
-`eclipse-plugin/pom.xml` で一致すること、`Bundle-Version` と pom の版、`Bundle-SymbolicName` と
-plugin.xml・ハンドラの綴り、plugin.xml が指すクラスの実在、`build.properties` の `source..` の
-フォルダの実在を見ます。
-
-```bash
-bash test/plugin/run.sh        # Linux / macOS / Git Bash
-```
-
-GitHub Actions では、これに加えて `mvn -f eclipse-plugin/pom.xml package` で実際にバンドル jar を
-組み立てられることも確認します。画面操作の自動テストは持っていません（理由は
-[docs/eclipse-plugin-qa.md](docs/eclipse-plugin-qa.md) の Q11）。
 
 ---
 

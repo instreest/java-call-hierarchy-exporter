@@ -1,5 +1,8 @@
 # 解析を別プロセス（別 JDK・別 JDT）へ出す設計
 
+> 使い方（入れ方・操作・設定・つまずきやすいところ）は
+> [eclipse-plugin-usage.md](eclipse-plugin-usage.md) にまとめてある。
+
 方針変更の記録。[Issue #49](https://github.com/instreest/java-call-hierarchy-exporter/issues/49) の
 続きとして、**プラグインからは解析を一切行わず、子プロセスに任せる**形に作り替える。
 狙いは3つある。
