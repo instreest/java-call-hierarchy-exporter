@@ -104,6 +104,32 @@ jobs:
           del launcher.properties
           echo OK
 
+      # ネットワークからの取得の確認（Issue #86）を Windows でも通す。ランナーには端末が無いので、
+      # 尋ねられず、何も取得せずに終了コード 3 で終わること。JBANG_DIR を空のフォルダに向けて確認を起こす。
+      # 端末がある経路（choice の /t と /d）はランナーでは再現できないので、書き方の検査は
+      # test/cli/run.sh（Linux 側）が受け持つ（docs/network-download-confirm-qa.md の Q18）
+      - name: Launcher refuses to download without a terminal (Windows)
+        shell: cmd
+        run: |
+          if exist probe-jbang rmdir /s /q probe-jbang
+          mkdir probe-jbang
+          > launcher.properties (
+            echo JBANG_DIR=probe-jbang
+            echo JBANG_REPO=probe-repo
+            echo JCHE_JAVA_OPTS=
+            echo JCHE_JBANG_OPTS=
+            echo JCHE_ALLOW_DOWNLOAD=
+          )
+          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          set "CODE=%ERRORLEVEL%"
+          echo [launcher] exit=%CODE%
+          del launcher.properties
+          if not "%CODE%"=="3" (echo FAIL: exit code should be 3 & exit /b 1)
+          if exist probe-jbang\bin\jbang.jar (echo FAIL: JBang was downloaded & exit /b 1)
+          if exist probe-repo (echo FAIL: dependencies were downloaded & exit /b 1)
+          rmdir /s /q probe-jbang
+          echo OK
+
       # 失敗したときに実際の出力を持ち帰れるようにする。Windows と Linux で
       # 出力が食い違ったとき、ログの差分だけでは追いきれないため
       - name: Upload output on failure

@@ -8,8 +8,9 @@
 # 設定ファイルを渡したときは何も尋ねない（Issue #83）。初回で launcher.properties がまだ無ければ、
 # 置き場所の質問は出さずに既定（このプロジェクトの中の .jbang）で作り、その旨を 1 行出すだけにする。
 # ただし、ネットワークからの取得（JBang 本体・JDK・依存 jar）が必要なときだけは、引数の有無によらず
-# 取得してよいかを確認する（Issue #86）。n なら何も取得せずに終了コード 3 で終わる。端末が無くて確認できない
-# とき（パイプ・CI・タスクスケジューラ）も取得せず 3 で終わるので、そこでは launcher.properties か環境変数で
+# 取得してよいかを確認する（Issue #86）。n なら何も取得せずに終了コード 3 で終わる。質問は標準入力ではなく
+# 端末（/dev/tty）から読む。端末が無くて確認できないとき（パイプ・CI・タスクスケジューラ。端末の口が開いていても
+# その先に誰も居ないときを含む）も取得せず 3 で終わるので、そこでは launcher.properties か環境変数で
 # JCHE_ALLOW_DOWNLOAD=yes（尋ねずに取得する）/ no（取得しない）をあらかじめ決めておく。
 #
 # どこから実行してもよい（このファイルのあるフォルダを起点にする）。
@@ -220,21 +221,37 @@ approve_download() {
       echo "取得を取りやめました。"
       return 1 ;;
   esac
-  if [ ! -t 0 ] || [ ! -t 1 ]; then
-    echo "  端末が無いため確認できません。取得しません。"
-    echo "  尋ねずに取得するには $SETTINGS（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
-    echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
-    echo "取得を取りやめました。"
+  # 質問は標準入力ではなく端末（/dev/tty）から読む。標準入力は対話モードのメニュー操作に使われるので、
+  # ここで 1 行取るとアプリ側の入力が 1 行ずれる。開けないときは尋ねる相手が居ない（パイプ・CI・タスクスケジューラ）
+  if ! { exec 3<>/dev/tty; } 2> /dev/null; then
+    cannot_ask
     return 1
   fi
   local answer
-  printf 'ネットワークにアクセスして取得しますか？ [y/N]: '
-  IFS= read -r answer || answer=""
+  printf 'ネットワークにアクセスして取得しますか？ [y/N]: ' >&3
+  # 端末の口が開いても、その先に誰も居ないことがある（Git Bash はパイプで動かしていても /dev/tty を
+  # 渡すので、read がすぐ終わる）。そのときは端末が無いのと同じ扱いにする
+  if ! IFS= read -r answer <&3; then
+    exec 3>&-
+    echo
+    cannot_ask
+    return 1
+  fi
+  echo >&3
+  exec 3>&-
   case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
     y|yes) return 0 ;;
   esac
   echo "取得を取りやめました。"
   return 1
+}
+
+# 尋ねる相手が居ないときの案内。取得しなかったことと、先に決めておく方法を出す
+cannot_ask() {
+  echo "  端末が無いため確認できません。取得しません。"
+  echo "  尋ねずに取得するには $SETTINGS（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
+  echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
+  echo "取得を取りやめました。"
 }
 
 run_once() {
