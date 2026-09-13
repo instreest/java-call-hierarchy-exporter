@@ -1,11 +1,11 @@
 # java-call-hierarchy-exporter
-A tool that batch-extracts project-wide Java method call hierarchies and exports them to CSV files.
+A tool that recursively extracts Java method call hierarchies across an entire project and exports them to CSV files. Powered by Eclipse JDT and runnable via JBang.
 
 ## Overview
 Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
 
 Eclipseの「呼び出し階層」ビューが一括で再帰的に取得できないため、このツールで一括でCSVファイルを出力します。
-Eclipseは起動せず、解析エンジンとして Eclipse JDT のコンパイラを使用してソースコードを解析するコマンドラインツールです。
+Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用してソースコードを解析するコマンドラインツールです。
 解析結果のCSVファイルをExcelで開いて呼び出し先メソッドでフィルタすることで対象機能の影響範囲を抽出できます。
 
 ## ドキュメント
