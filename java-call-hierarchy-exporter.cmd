@@ -2,7 +2,7 @@
 rem java-call-hierarchy-exporter ‚Ì‹N“®ƒRƒ}ƒ“ƒhiWindows ‚ÌƒRƒ}ƒ“ƒhƒvƒƒ“ƒvƒgBLinux / macOS / Git Bash ‚Í java-call-hierarchy-exporter.shjB
 rem
 rem   jche                              ˆø”‚È‚µ c ‘Î˜bƒ‚[ƒhiƒƒjƒ…[‚Åİ’èƒtƒ@ƒCƒ‹‚ğ‘I‚ñ‚Å‰ğÍ‚·‚éj
-rem   jche a.properties [b.propertiesc] ˆø”‚ ‚è c ‘Î˜b‚È‚µ‚Å‰ğÍ‚·‚éijbang ‚Å src\CallHierarchyExporter.java ‚ğ’¼Ú“®‚©‚·‚Ì‚Æ“¯‚¶j
+rem   jche a.properties [b.propertiesc] ˆø”‚ ‚è c ‘Î˜b‚È‚µ‚Å‰ğÍ‚·‚éijbang ‚Å src\jche\CallHierarchyExporter.java ‚ğ’¼Ú“®‚©‚·‚Ì‚Æ“¯‚¶j
 rem   jche --help
 rem
 rem İ’èƒtƒ@ƒCƒ‹‚ğ“n‚µ‚½‚Æ‚«‚Í‰½‚àq‚Ë‚È‚¢iIssue #83jB‰‰ñ‚Å launcher.properties ‚ª‚Ü‚¾–³‚¯‚ê‚ÎA
@@ -17,7 +17,7 @@ rem
 rem ‚â‚é‚±‚Æ:
 rem   1. launcher.propertiesi‚±‚ÌƒtƒHƒ‹ƒ_’¼‰ºj‚ğ“Ç‚İAJDK / JBang ‚Ì’u‚«êŠiJBANG_DIR “™j‚â JVM ‚ÌƒIƒvƒVƒ‡ƒ“‚ğ
 rem      ŠÂ‹«•Ï”‚É‚·‚éB–³‚¯‚ê‚ÎA‘Î˜b‚Å‚«‚é‚Æ‚«‚¾‚¯’u‚«êŠ‚ğq‚Ë‚Äì‚éi‰‰ñ‚¾‚¯Bˆø”‚ª‚ ‚é‚Æ‚«‚Íq‚Ë‚¸‚ÉŠù’è‚Åì‚éjB
-rem   2. jbangw\jbang.cmdi“¯«‚Ì JBang ƒ‰ƒbƒp[j‚Å src\Jche.java ‚ğ“®‚©‚·B
+rem   2. jbangw\jbang.cmdi“¯«‚Ì JBang ƒ‰ƒbƒp[j‚Å src\jche\Jche.java ‚ğ“®‚©‚·B
 rem      ƒlƒbƒgƒ[ƒN‚Éo‚é‚Ì‚ÍŸ‚Ì 3 ’iŠK‚ÅA‚¢‚¸‚ê‚à‘€ìÒ‚ÌŠm”Fi‚Ü‚½‚Í JCHE_ALLOW_DOWNLOADj‚È‚µ‚É‚Ís‚í‚È‚¢:
 rem        a. ƒ‰ƒbƒp[‚ª JBang –{‘Ìigithub.comj‚ÆAJBang ‚ğ“®‚©‚· JDKiapi.foojay.ioj‚ğæ“¾‚·‚é
 rem           c Java ‚ª“®‚­‘O‚È‚Ì‚ÅA’u‚«êŠ‚Ìƒtƒ@ƒCƒ‹‚Ì—L–³‚ğŒ©‚ÄA–³‚¯‚ê‚Î‘–‚ç‚¹‚é‘O‚ÉŠm”F‚·‚é
@@ -37,7 +37,7 @@ rem Š‡ŒÊƒuƒƒbƒN‚Ì’†‚Å‚Í %VAR% ‚ªƒuƒƒbƒN‚Ì‰ğÍ‚É“WŠJ‚³‚ê‚é‚Ì‚ÅA’l‚ğg‚¤‰ÓŠ‚
 rem
 rem ‚±‚Ìƒtƒ@ƒCƒ‹‚Ì•¶šƒR[ƒh‚Í MS932iShift_JISjA‰üs‚Í CRLFB‘¼‚Ìƒtƒ@ƒCƒ‹‚Í UTF-8 ‚¾‚ªAcmd ‚Íƒoƒbƒ`ƒtƒ@ƒCƒ‹‚ğ
 rem ‰æ–Ê‚ÌƒR[ƒhƒy[ƒWi“ú–{Œê Windows ‚Å‚Í MS932j‚Æ‚µ‚Ä“Ç‚Ş‚Ì‚ÅA“ú–{Œê‚Ì echo ‚ğ‰»‚¯‚³‚¹‚È‚¢‚½‚ß‚É‚±‚Ìƒtƒ@ƒCƒ‹‚¾‚¯
-rem MS932 ‚É‚µ‚Ä‚ ‚éichcp ‚ÅØ‚è‘Ö‚¦‚é‚Æ‰æ–Ê‚ªÁ‚¦‚é‚Ì‚Åg‚í‚È‚¢Bsrc\CallHierarchyExporter.java ‚Ì–`“ªjB
+rem MS932 ‚É‚µ‚Ä‚ ‚éichcp ‚ÅØ‚è‘Ö‚¦‚é‚Æ‰æ–Ê‚ªÁ‚¦‚é‚Ì‚Åg‚í‚È‚¢Bsrc\jche\CallHierarchyExporter.java ‚Ì–`“ªjB
 rem •ÒW‚·‚é‚Æ‚«‚Í MS932 ‚Ì‚Ü‚Ü•Û‘¶‚·‚é‚±‚ÆB‘‚«o‚· launcher.properties ‚à MS932 ‚É‚È‚èAJava ‘¤inative.encodingj‚Æ‘µ‚¤B
 setlocal
 set "ROOT=%~dp0"
@@ -80,7 +80,7 @@ goto :run_online
 :run_offline
 rem æ“¾Ï‚İ‚Ì‚à‚Ì‚¾‚¯‚Å“®‚©‚·B‘«‚è‚È‚¯‚ê‚Î jbang ‚ªƒAƒvƒŠ‚ğn‚ß‚é‘O‚É¸”s‚·‚éi–Úˆó‚ª‚Å‚«‚È‚¢j
 if exist "%STARTED%" del /q "%STARTED%"
-call "%ROOT%\jbangw\jbang.cmd" run --offline %JB_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
+call "%ROOT%\jbangw\jbang.cmd" run --offline %JB_OPTS% %R_OPTS% "%ROOT%\src\jche\Jche.java" %*
 set "CODE=%ERRORLEVEL%"
 if exist "%STARTED%" goto :done
 echo.
@@ -90,7 +90,7 @@ call :approve_download
 if errorlevel 1 goto :abort
 
 :run_online
-call "%ROOT%\jbangw\jbang.cmd" run %JB_OPTS% %R_OPTS% "%ROOT%\src\Jche.java" %*
+call "%ROOT%\jbangw\jbang.cmd" run %JB_OPTS% %R_OPTS% "%ROOT%\src\jche\Jche.java" %*
 set "CODE=%ERRORLEVEL%"
 goto :done
 
@@ -228,6 +228,8 @@ set "SIZE_JDK_NET=135"
 set "SIZE_JDK_DISK=440"
 set "SIZE_DEPS_NET=15"
 set "SIZE_DEPS_DISK=15"
+rem Šm”F‚Ì‘Ò‚¿ŠÔi•bjB’[––‚Í‚ ‚é‚ª’N‚à‹‚È‚¢‚Æ‚«A‚±‚±‚Å‘Å‚¿Ø‚Á‚Äæ‚è‚â‚ß‚é
+set "ASK_TIMEOUT=60"
 exit /b 0
 
 :jbdirs
@@ -342,11 +344,21 @@ if /i "%JCHE_ALLOW_DOWNLOAD%"=="no" goto :approve_no
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="n" goto :approve_no
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="false" goto :approve_no
 if "%JCHE_ALLOW_DOWNLOAD%"=="0" goto :approve_no
+rem •W€“ü—Í‚ª’[––‚Å‚È‚¯‚ê‚Îq‚Ë‚È‚¢i“¯«‚Ì jbangw\jbang.cmd ‚Æ“¯‚¶”»’èj
 2>nul >nul timeout /t 0 || goto :approve_notty
-set "ANSWER="
-set /p "ANSWER=ƒlƒbƒgƒ[ƒN‚ÉƒAƒNƒZƒX‚µ‚Äæ“¾‚µ‚Ü‚·‚©H [y/N]: "
-if /i "%ANSWER%"=="y" exit /b 0
-if /i "%ANSWER%"=="yes" exit /b 0
+rem ’[––‚Í‚ ‚Á‚Ä‚àA‚»‚Ìæ‚É’N‚à‹‚È‚¢‚±‚Æ‚ª‚ ‚éiƒRƒ“ƒ\[ƒ‹‚ğŠ„‚è“–‚Ä‚éƒ^ƒXƒNƒXƒPƒWƒ…[ƒ‰“™jB
+rem cmd ‚É‚Í bash ‚Ì /dev/tty ‚Ì‚æ‚¤‚Èu“Ç‚ñ‚¾‚ç‘¦À‚ÉI‚í‚év‡}‚ª–³‚­Aset /p ‚Í‚»‚¤‚¢‚¤ê‚Å‚à‘Ò‚¿‘±‚¯‚é
+rem iCON ‚©‚ç“Ç‚Şè‚àAƒRƒ“ƒ\[ƒ‹‚ª–³‚¢ŠÂ‹«‚Å‰i‹v‚É‘Ò‚Â‚Ì‚Åg‚¦‚È‚¢BÀ‘ª‚Í
+rem  docs/network-download-confirm-qa.md ‚Ì Q18jBchoice ‚Ì /t ‚Æ /d ‚Å‘Ò‚¿ŠÔ‚ÉãŒÀ‚ğİ‚¯A
+rem ŠÔØ‚ê‚È‚çæ‚è‚â‚ßinj‚É“|‚·Berrorlevel ‚Í‘I‚ñ‚¾”Ô†i1=y 2=njA“Ç‚ß‚È‚¯‚ê‚Î 255ACtrl+C ‚È‚ç 0B
+rem if errorlevel ‚ÍuN ˆÈãv‚È‚Ì‚ÅA‘å‚«‚¢‡‚ÉŒ©‚éichoice ‚ÌƒhƒLƒ…ƒƒ“ƒg‚É‚ ‚éŒˆ‚Ü‚èj
+choice /c yn /n /t %ASK_TIMEOUT% /d n /m "ƒlƒbƒgƒ[ƒN‚ÉƒAƒNƒZƒX‚µ‚Äæ“¾‚µ‚Ü‚·‚©H [y/N]i%ASK_TIMEOUT% •b‚Åæ‚è‚â‚ßj: "
+if errorlevel 255 goto :approve_notty
+if errorlevel 2 goto :approve_declined
+if errorlevel 1 exit /b 0
+rem 0 ‚Í Ctrl+C / Ctrl+Break
+:approve_declined
+echo.
 echo æ“¾‚ğæ‚è‚â‚ß‚Ü‚µ‚½B
 exit /b 1
 :approve_offline

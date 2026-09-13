@@ -26,7 +26,7 @@ fail() { echo "  NG   $1"; ng=$((ng + 1)); }
 # 1) JDT の版。2か所あって役割が違う
 #    eclipse-plugin/pom.xml … バンドルに同梱して子プロセスで使う版。//DEPS 行と同じであること
 #    MANIFEST.MF の bundle-version … Eclipse 側に要求する下限（モデル API 用）。同梱版以下であること
-deps_jdt=$(grep -E '^//DEPS ' "$ROOT/src/CallHierarchyExporter.java" \
+deps_jdt=$(grep -E '^//DEPS ' "$ROOT/src/jche/CallHierarchyExporter.java" \
     | tr ' ' '\n' | grep '^org.eclipse.jdt:org.eclipse.jdt.core:' | cut -d: -f3)
 bundled_jdt=$(grep '<jdt.version>' "$PLUGIN/pom.xml" | sed -E 's|.*<jdt.version>(.*)</jdt.version>.*|\1|')
 floor_jdt=$(grep 'org.eclipse.jdt.core;bundle-version=' "$PLUGIN/META-INF/MANIFEST.MF" \

@@ -31,7 +31,7 @@ Issue の To be が「GitHubActions から使用できるようにしたい」�
 ```yaml
       - run: |
           git clone --depth 1 https://github.com/instreest/java-call-hierarchy-exporter tool
-          ./tool/jbangw/jbang tool/src/CallHierarchyExporter.java ci/app.properties
+          ./tool/jbangw/jbang tool/src/jche/CallHierarchyExporter.java ci/app.properties
 ```
 
 しかしこれだと、利用者は「JDK 25 を用意する」「設定ファイルの相対パスの起点を理解する」
@@ -116,7 +116,7 @@ Issue の To be が「GitHubActions から使用できるようにしたい」�
 ### Q8. 作業ディレクトリをツール側（`github.action_path`）にしたのはなぜか
 
 解析キャッシュの置き場所（`.cache/`）は `ToolRoot` が「作業ディレクトリとその上位から
-`src/CallHierarchyExporter.java` を探す」ことで決まる。作業ディレクトリを利用者の
+`src/jche/CallHierarchyExporter.java` を探す」ことで決まる。作業ディレクトリを利用者の
 ワークスペースのままにすると目印が見つからず、警告を出したうえで **ワークスペース直下に `.cache/` を作る**。
 利用者のチェックアウトを汚さないため、作業ディレクトリをアクションのフォルダ
 （`$GITHUB_ACTION_PATH`。ツールのチェックアウトそのもの）にした。
@@ -128,7 +128,7 @@ Issue の To be が「GitHubActions から使用できるようにしたい」�
 起動コマンドは人が使うための入口で、`launcher.properties` の作成（初回は JDK / JBang の置き場所を尋ねる）、
 対話メニュー、設定を反映するための再起動ループを持つ。CI では JDK は `actions/setup-java`、
 JBang の置き場所とキャッシュはアクション自身が決めるので、その層を挟む利点が無い。
-`bash jbangw/jbang run src/CallHierarchyExporter.java <設定ファイル…>` を直接呼ぶ。
+`bash jbangw/jbang run src/jche/CallHierarchyExporter.java <設定ファイル…>` を直接呼ぶ。
 
 なお `JCHE_OUTPUT_DIR_FILE`（Q14）は `runAll` に置いてあるので、起動コマンド経由でも対話モードでも同じように効く。
 CI 以外で起動コマンドを使っている人が、その出力の場所を機械的に受け取りたいときにも使える。
@@ -155,7 +155,7 @@ JBang は JDK が無ければ自分で取得できるが、それに任せると
 二重に保存されるうえ、どちらのキャッシュが当たったかで挙動が変わる状態を作ってしまう。
 「アクションが動くのに要るもの」だけを持つ。
 
-キーはツール本体（`//DEPS` の版を含む `src/CallHierarchyExporter.java`）と `jbangw/jbang` の
+キーはツール本体（`//DEPS` の版を含む `src/jche/CallHierarchyExporter.java`）と `jbangw/jbang` の
 ハッシュから作る。`hashFiles()` は `GITHUB_WORKSPACE` 配下しか見られず、アクションのフォルダを
 見られないので、シェルで `sha256sum`（macOS には無いので `shasum -a 256` にフォールバック）で計算している。
 

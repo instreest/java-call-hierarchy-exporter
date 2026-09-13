@@ -21,6 +21,10 @@ Q&A の形で残す。
 - jbang 自身の更新確認（起動のたびに新しい版があるかを問い合わせる）は `JBANG_NO_VERSION_CHECK=true` で止めた
 - ラッパーが JBang を動かすために取得する JDK の版（`JBANG_DEFAULT_JAVA_VERSION`）を 25 にそろえ、
   ツールを動かす JDK 25 と別に JDK 17 まで取得することがないようにした（Q9）
+- 確認の答えは標準入力ではなく端末（`/dev/tty`）から読む。端末の口が開いていても、その先に誰も居ないときは
+  端末が無いのと同じ扱いにする（Q17。別実装のブランチから移した）
+- Windows には `/dev/tty` に当たるものが無い（`CON` はコンソールが無い環境で永久に待つ）。`.cmd` は
+  `choice` の `/t` と `/d` で待ちを打ち切り、時間切れなら取りやめに倒す（Q18）
 - Windows の `.cmd` で `%VAR:検索=置換%` の文字列置換を使わない。変数が未定義のとき cmd が展開しきれず、
   バッチごと落ちる（Q16。`test/cli/run.sh` が混入を検出する）
 - `test/cli/run.sh` に「端末が無いときは取得しない」「`JCHE_ALLOW_DOWNLOAD=no` / `--offline` なら取得しない」
@@ -48,7 +52,7 @@ Issue の To be は「ネットワークアクセスが必要な場合は操作�
 
 ### Q2. 確認をどこに置いたか。Java の中で尋ねられないのか
 
-起動コマンド（シェル / バッチ）側に置いた。Java のコード（`src/Jche.java`）が動くのは c と d が済んだ後なので、
+起動コマンド（シェル / バッチ）側に置いた。Java のコード（`src/jche/Jche.java`）が動くのは c と d が済んだ後なので、
 Java の中で「取得してよいか」を尋ねるのは鶏と卵になる（[cli-app-qa.md](cli-app-qa.md) の Q2 と同じ理由）。
 Java 側がしているのは「アプリが始まった」目印を置くことだけ（`LauncherSettings.markStarted()`）。
 
@@ -171,7 +175,7 @@ bash 版は「終了コード 0 なら成功、それ以外で目印が無けれ
 
 ### Q13. `jbangw/jbang` の直接実行と GitHub Actions を対象外にした理由
 
-- `./jbangw/jbang src/CallHierarchyExporter.java …`（README の「JBangによる実行」）は、JBang の作法そのもので
+- `./jbangw/jbang src/jche/CallHierarchyExporter.java …`（README の「JBangによる実行」）は、JBang の作法そのもので
   動かす経路で、起動コマンドを通らない。ラッパーは本家のままにしているので（Q2）確認は入れられない。
   README とラッパーの README に「確認なしで取得する。確認してほしければ起動コマンドを使う」と明記した
 - `action.yml`（GitHub Actions）は `.github/action/run.sh` がラッパーを直接呼ぶ。CI に操作者はおらず、
@@ -222,7 +226,7 @@ curl -sSi "https://api.foojay.io/disco/v3.0/directuris?distro=temurin&archive_ty
 
 # 置き場所が増える量 … まっさらな置き場所で 1 回通してから測る
 du -sh ~/.jbang/bin ~/.jbang/cache/urls ~/.jbang/cache/jdks/*
-bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | xargs du -cb | tail -1
+bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | xargs du -cb | tail -1
 ```
 
 数字は 2 つの起動コマンド（`.sh` と `.cmd`）にそれぞれ持たせている。`launcher.properties` のひな形や
@@ -265,9 +269,93 @@ set was unexpected at this time.
 `%VAR:検索=置換%` を使っていないこと」の検査を足した（`%VAR:~0,1%` の部分文字列は対象外）。
 これらは設定が空欄なら未定義になる変数で、同じ壊れ方をする。
 
+### Q17. 確認の答えを標準入力ではなく端末（`/dev/tty`）から読む理由
+
+標準入力は対話モードのメニュー操作に使われる。確認をそこから読むと、アプリに渡るはずの入力を
+1 行食べてしまう。いまは確認が Java の起動前なので実害は出にくいが、答えをパイプで流し込んで
+自動化する使い方では取り合いになる。`/dev/tty` は「今この端末を操作している人」への口なので、
+パイプやリダイレクトの影響を受けずに尋ねられる。案内の本文（取得するもの・サイズ・取得元）は
+これまでどおり標準出力に出す。端末が無い環境でも、なぜ止まったのかがログに残るようにするため。
+
+あわせて、**端末の口が開いても、その先に誰も居ない**場合を端末が無いのと同じ扱いにした。
+Git Bash はパイプで動かしていても `/dev/tty` を渡すので、`read` がすぐ終わる。
+`[ -t 0 ]` の判定だけではこの形を取りこぼし、質問を出したまま「答えなし」で進んでしまう。
+
+この 2 点は、同じ Issue を別に実装したブランチ `claude/issue-86-network-confirmation`（未マージ）から
+移した。Windows には `/dev/tty` に当たるものが無いので、`.cmd` は別の手段で同じ穴を塞いでいる（Q18）。
+
+手元で確かめたこと（`script -qec` の擬似端末）:
+
+| 状況 | 結果 |
+|---|---|
+| 端末が無い（パイプ） | 質問を出さずに取得しない。終了コード 3 |
+| 擬似端末で `n` | 取りやめ。終了コード 3 |
+| 擬似端末だが入力元が空（誰も居ない） | 質問を出したあと端末が無い扱いに落ちる。終了コード 3 |
+| 擬似端末で `y` | 取得して解析まで完走。終了コード 0 |
+
+常設の検査にしていないのは [cli-noninteractive-qa.md](cli-noninteractive-qa.md) の Q9 と同じ理由
+（`script` はオプションの綴りが環境で違い、CI の OS 差で落ちやすい）。`test/cli/run.sh` の
+「端末が無いときは取得しない」の検査が、この変更の回帰も兼ねる（`/dev/tty` を開けない環境で
+案内を出して 3 で終わること）。
+
+### Q18. Windows（`.cmd`）で「端末はあるが誰も居ない」をどう判定するか
+
+**`choice` の `/t`（待ち時間）と `/d`（既定）で待ちを打ち切る。** `CON` からは読まない。
+
+bash 側は `/dev/tty` を開いて `read` が即座に終わることを「誰も居ない」の合図に使える（Q17）。
+cmd には同じ合図が無い。手元に cmd.exe が無く、ドキュメントにも書かれていないので、
+GitHub の Windows ランナー（`windows-latest`）で実際に測った。
+
+| 試したこと | 結果 |
+|---|---|
+| `timeout /t 0`（リダイレクト無し） | 失敗（端末ではないと判定）。従来の判定は正しく働く |
+| `set /p` に `< nul` | 変数は書き換わらず `errorlevel=1` |
+| `set /p` に空ファイル | 同上 |
+| `set /p` に値を与える（対照） | 変数に値が入り `errorlevel=0` |
+| `choice /c yn /n /t 1 /d n` | `errorlevel=255`（読めないときのエラー） |
+| 同上に `< nul` | 既定の `n` が選ばれ `errorlevel=2`。固まらない |
+| `choice /c yn /n`（`/t` `/d` 無し）に `< nul` | `errorlevel=255`。固まらない |
+| `set /p` を `< CON` から | **5 分間ブロックし、ジョブが打ち切られた** |
+
+最後の行が決め手で、**`CON` は `/dev/tty` の代わりにならない**。コンソールが無い環境でも
+失敗も EOF も返さず、ただ待ち続ける。したがって Windows では「標準入力を消費しない」ための
+`CON` 読みは採れず、確認は標準入力から読むしかない（Q17 の 1 点目は bash 側だけの対応になる）。
+
+`set /p` は入力が無いまま終われば変数を書き換えず `errorlevel=1` を返すので、EOF は番兵で拾える。
+ただし**コンソールがあって誰も居ない場合は EOF が来ず、待ち続ける**。そこを塞げるのは
+待ち時間に上限を設ける `choice` だけなので、こちらを使う。
+
+```bat
+2>nul >nul timeout /t 0 || goto :approve_notty
+choice /c yn /n /t 60 /d n /m "ネットワークにアクセスして取得しますか？ [y/N]（60 秒で取りやめ）: "
+if errorlevel 255 goto :approve_notty
+if errorlevel 2 goto :approve_declined
+if errorlevel 1 exit /b 0
+rem 0 は Ctrl+C / Ctrl+Break。ここへ落ちる
+```
+
+`choice` の仕様（[Microsoft Learn の choice](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/choice)）:
+
+- `ERRORLEVEL` は選んだキーの番号。一覧の 1 つ目が 1、2 つ目が 2
+- エラーを検出したときは 255、Ctrl+C / Ctrl+Break なら 0
+- `/t <秒>` は `/d <既定>` と対で使い、時間切れなら既定を返す（例に「5 秒押されなければ N を選び 2 を返す」とある）
+- 「`ERRORLEVEL` をバッチで使うときは大きい順に並べること」。`if errorlevel N` は「N 以上」なので、
+  255 → 2 → 1 の順に見る
+
+既定を `n`（取りやめ）にしてあるので、無人なら 60 秒後に安全側へ倒れる。`choice` が見つからない
+環境でも `errorlevel` は 9009 になり、255 以上として「尋ねられない」経路に落ちる。
+
+リダイレクト時の挙動はドキュメントに書かれていないが、上の実測のとおり `/t` `/d` があれば既定に倒れ、
+無ければ 255 で終わる。どちらも固まらない。なお `set /p` の「入力が無いと変数を書き換えない」挙動も
+[Microsoft Learn の set](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/set_1)
+には書かれていない（`/p` は「入力した 1 行を変数に入れる」としか書いていない）。上の実測が根拠。
+
+`test/cli/run.sh` は「確認の `choice` が `/t` と `/d` を伴うこと」と「`CON` から読んでいないこと」を
+静的に検査する。Windows でしか実行できない分岐なので、書き方が戻っていないことだけでも Linux 側で押さえる。
+
 ## テスト
 
-### Q17. 端末ありの経路（`y` / `n`）をどう確かめたか
+### Q19. 端末ありの経路（`y` / `n`）をどう確かめたか
 
 `test/cli/run.sh` はパイプで答えを流し込むので端末が無く、常設できるのは「確認できないので取得しない」経路だけ
 （Issue #83 の Q9 と同じ理由で `script` に頼る検査は常設しない）。端末ありの経路は手元で `script -qec` で確かめた。
@@ -275,8 +363,9 @@ set was unexpected at this time.
 - `n` … 「取得を取りやめました。」を出して終了コード 3。置き場所には何もできない
 - `y` … まっさらな置き場所に JBang 本体・JDK 25・依存 jar を取得して解析まで完走（Q9）。
   同じ置き場所でもう一度起動すると、確認は出ずに `--offline` で起動する
+- 端末の口は開いているが、その先に誰も居ない … 端末が無いのと同じ扱いに落ちる（Q17）
 
-### Q18. 「取得しない」ことをどう検査するか
+### Q20. 「取得しない」ことをどう検査するか
 
 `test/cli/run.sh` で、使い捨てのフォルダを置き場所にして引数ありで起動し、終了コード 3・確認の文言・
 ラッパーの `Downloading` が出ていないこと・置き場所が空のままであることを見る。4 つの状況を通す。

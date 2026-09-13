@@ -66,19 +66,21 @@ PDE はリンクフォルダをソースフォルダとして扱えるので、�
 
 ### Q3. なぜエントリポイントを `jche.Exporter` に切り出したのか
 
-**名前付きパッケージのクラスから、既定パッケージのクラスは参照できない**（Java 言語仕様）。
-
-`CallHierarchyExporter` は jbang で `jbang src/CallHierarchyExporter.java` と書けるように
-既定パッケージ（パッケージ宣言なし）に置いてある。プラグインのハンドラは
-`jche.eclipse` パッケージなので、そこから `CallHierarchyExporter.run(...)` を
-呼ぶ手段が無い（import が書けない。既定パッケージは import できない）。
+当時、`CallHierarchyExporter` は jbang で直接動かせるように**既定パッケージ**
+（パッケージ宣言なし）に置いてあった。**名前付きパッケージのクラスから、既定パッケージの
+クラスは参照できない**（Java 言語仕様。import が書けない）ため、`jche.eclipse` や
+`jche.server` からは呼ぶ手段が無かった。
 
 逃げ道はリフレクション（`Class.forName("CallHierarchyExporter")`）だが、
 コンパイル時に検査されない呼び出しをプラグインの中心に置くのは割に合わない。
-そこで本体を `jche.Exporter` に移し、`CallHierarchyExporter` は
-「引数を解釈して `Exporter.run(...)` を呼び、終了コードを返す」だけにした。
-jbang の使い方（`//SOURCES jche/**/*.java` で一緒にコンパイルされる）も、
-`java -cp bin CallHierarchyExporter` の使い方も変わらない。
+そこで解析のフェーズ1〜2を `jche.Exporter` に切り出し、入口は
+「引数を解釈して呼び、終了コードを返す」だけにした。
+
+その後 main 側で入口ごと `jche` パッケージへ移った（`jche.CallHierarchyExporter`。
+経緯は [entrypoint-package-qa.md](entrypoint-package-qa.md)）ため、既定パッケージの
+制約そのものは解消している。それでも `jche.Exporter` はそのまま残している。
+「解析（フェーズ1〜2）を返す」と「CSV を書く」の分かれ目がそこにあり、
+サーバーモードは前者だけを使うからである。
 
 ### Q4. プラグイン側に解析のコードをどれだけ持たせるか
 
@@ -107,7 +109,7 @@ JDT の AST を Eclipse の `IJavaProject` から取る（`ICompilationUnit` を
 
 プラグインの状態フォルダ（`<ワークスペース>/.metadata/.plugins/io.github.instreest.jche.eclipse/.cache/`）。
 
-CLI の `ToolRoot` は `src/CallHierarchyExporter.java` を目印にツールのフォルダを探すが、
+CLI の `ToolRoot` は `src/jche/CallHierarchyExporter.java` を目印にツールのフォルダを探すが、
 プラグインは jar の中で動くので目印が見つからない。何もしないと作業ディレクトリ、
 つまり **Eclipse のインストール先**にキャッシュを作ってしまう（書き込めないことも多い）。
 そのため `Exporter.run(configPaths, cacheRoot)` という置き場所を渡せる版を足し、

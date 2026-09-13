@@ -26,7 +26,7 @@ ROOT=$(cd ../.. && pwd)
 #   - 同じ環境で動かす test/regression/run.sh が壊れる（テスト用のダミーを掴む）
 #   - .github/workflows/smoke.yml は ~/.jbang を actions/cache で保存するので、壊れた状態が
 #     キャッシュに残り後続の run にも波及する。restore-keys を持たないぶん、キャッシュキー
-#     （jbangw/jbang と src/CallHierarchyExporter.java のハッシュ）が変わるまで直らない
+#     （jbangw/jbang と src/jche/CallHierarchyExporter.java のハッシュ）が変わるまで直らない
 # という壊れ方をする。使い捨てのディレクトリへ向けておけば、何を足しても外に漏れない。
 JBANG_WORK=$(mktemp -d)
 trap 'rm -rf "$JBANG_WORK"' EXIT

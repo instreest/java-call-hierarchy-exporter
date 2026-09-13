@@ -40,12 +40,12 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 
 ## 2. 成果物と技術制約
 
-- Java 17 以上で動く。エントリポイントは `src/CallHierarchyExporter.java`（デフォルトパッケージ）。
+- Java 17 以上で動く。エントリポイントは `src/jche/CallHierarchyExporter.java`（`jche` パッケージ）。
   本体は処理フェーズに対応するパッケージに分けてよい（参照実装は `jche.config` /
   `jche.cache`（事実のレコード。JDT に依存しない）/ `jche.analysis`（フェーズ1）/
   `jche.graph`（フェーズ2）/ `jche.report`（フェーズ3）/ `jche.external` / `jche.extension` /
   `jche.util` の 53 ファイル）。ビルドは
-  `javac -classpath "lib/*" -sourcepath src -d bin -encoding UTF-8 src/CallHierarchyExporter.java`
+  `javac -classpath "lib/*" -sourcepath src -d bin -encoding UTF-8 src/jche/CallHierarchyExporter.java`
   の1コマンドで、`-Xlint:all -Werror` で警告ゼロ
 - 依存は JDT Core とその推移的依存のjarのみ。テストフレームワーク・ロギング
   フレームワーク・バイトコード解析ライブラリ（ASM等）は使わない
@@ -58,7 +58,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
   出力フォルダは解析の前に作り、失敗してもログと設定の複製が残るようにする
 - キャッシュは出力フォルダに置かず、ツール自身のプロジェクトフォルダ（作業ディレクトリとその上位、次に実行中の
-  クラスの置き場所とその上位から `src/CallHierarchyExporter.java` を探す。無ければ警告して作業ディレクトリ）の
+  クラスの置き場所とその上位から `src/jche/CallHierarchyExporter.java` を探す。無ければ警告して作業ディレクトリ）の
   `.cache/<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭8桁>/analysis-cache.tsv` に、
   解析対象プロジェクトごとのサイドカーとして置く。同じ `project.root` を指す設定は同じキャッシュを共有する
 - 依存jarの取得方法（JBang・Maven・手動）は問わない。参考: JDT Core 3.46.0 は

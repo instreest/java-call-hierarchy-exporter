@@ -54,7 +54,7 @@ public final class ServerLauncher {
         }
         command.add("-cp");
         command.add(joinClasspath(classpath));
-        command.add("CallHierarchyExporter");
+        command.add("jche.CallHierarchyExporter");
         command.add("--server");
         command.add(cacheRoot.getAbsolutePath());
 

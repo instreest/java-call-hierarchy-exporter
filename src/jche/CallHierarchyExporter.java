@@ -1,4 +1,5 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
+package jche;
 
 // ---------------------------------------------------------------------------
 // JBang 用の指示行（jbang で実行するときだけ意味を持つ。javac / java には単なるコメント）
@@ -12,8 +13,8 @@
 // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
 //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
 //       変わると解析結果が変わるから。手元に25が無ければ jbang が取得する。
-// SOURCES: 本体は src/jche 配下のパッケージに分かれている。jbang はこの指定で
-//       それらも一緒にコンパイルする。
+// SOURCES: 本体は src/jche 配下のサブパッケージに分かれている。jbang はこの指定で
+//       それらも一緒にコンパイルする（このファイルからの相対。* が直下、**/ が下の階層）。
 //
 // 標準出力の文字コードは指定しない（//JAVA_OPTIONS を置かない）。JDK 19以降、
 // System.out はコンソール自身の文字コードで書き出すため、指定しないのが最も
@@ -24,8 +25,7 @@
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
-//SOURCES jche/*.java
-//SOURCES jche/**/*.java
+//SOURCES *.java **/*.java
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -46,8 +46,6 @@ import jche.config.Config;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
 import jche.config.ToolRoot;
-import jche.AnalysisSnapshot;
-import jche.Exporter;
 import jche.external.ExternalUsageScanner;
 import jche.graph.CallGraph;
 import jche.graph.CallResolver;
@@ -67,12 +65,12 @@ import jche.util.Log;
  *
  * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/config.properties）:
  * <pre>
- *   jbang src/CallHierarchyExporter.java config/config.properties
- *   jbang src/CallHierarchyExporter.java config/projA.properties config/projB.properties
- *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
+ *   jbang src/jche/CallHierarchyExporter.java config/config.properties
+ *   jbang src/jche/CallHierarchyExporter.java config/projA.properties config/projB.properties
+ *   java -cp "bin;lib/*" jche.CallHierarchyExporter config/config.properties
  * </pre>
  * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から
- * 起動する（{@code src/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
+ * 起動する（{@code src/jche/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
  * 設定ファイルごとに、その設定ファイルのフォルダを起点にした output.folder（既定 . ＝設定ファイルと同じフォルダ）の下へ
  * {@code <解析開始日時>_<プロジェクト名>/} を作り、CSV・設定ファイルの複製・実行ログ（run.log）を書く。
  * キャッシュは出力フォルダではなく、このツールのプロジェクトフォルダの .cache/ の下に
@@ -151,7 +149,7 @@ public class CallHierarchyExporter {
     }
 
     /**
-     * 設定ファイルを順に処理する。対話モード（{@code src/Jche.java}）からも同じ処理を呼ぶため、
+     * 設定ファイルを順に処理する。対話モード（{@code src/jche/Jche.java}）からも同じ処理を呼ぶため、
      * {@link #main} から切り出してある。ここでは {@code System.exit} しない。
      *
      * 設定ファイルごとに独立して処理する。1つが失敗しても残りは続け、最後にまとめて報告する。
@@ -170,7 +168,7 @@ public class CallHierarchyExporter {
         }
 
         if (!toolRoot.found) {
-            Log.warn("このツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を"
+            Log.warn("このツールのプロジェクトフォルダ（src/jche/CallHierarchyExporter.java のある場所）を"
                     + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
                     + toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME));
         }

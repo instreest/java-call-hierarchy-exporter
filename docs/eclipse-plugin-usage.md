@@ -124,7 +124,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 
 ```bash
 printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo#bar()\tcallers\tdepth=3\nSHUTDOWN\n' \
-  | java -cp "lib/*:bin" CallHierarchyExporter --server /tmp/jche-cache
+  | java -cp "lib/*:bin" jche.CallHierarchyExporter --server /tmp/jche-cache
 ```
 
 要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・`TREE`（木の切り出し）・

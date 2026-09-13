@@ -2,7 +2,7 @@
 # 回帰テスト。test/demo を解析し、出力 CSV を expected*/ と比較する。
 #
 #   bash test/regression/run.sh            # jbang 経由で実行（初回は JDK と JDT を取得）
-#   JCHE_CMD="java -cp bin:lib/* CallHierarchyExporter" bash test/regression/run.sh   # 既にコンパイル済みなら
+#   JCHE_CMD="java -cp bin:lib/* jche.CallHierarchyExporter" bash test/regression/run.sh   # 既にコンパイル済みなら
 #
 # ケースは2種類ある。
 #   通常（whole / entry）… 同じ設定で3回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路、
@@ -31,7 +31,7 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
-JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/CallHierarchyExporter.java"}
+JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
 CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin multi"}
 fail=0
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）の検査。
+# 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）の検査。
 #
 #   bash test/cli/run.sh
 #   JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh   # JDK 25 を取得できない環境で手元の JDK を使う
@@ -236,6 +236,20 @@ if [ -z "$subst" ]; then
     ok "設定由来の変数に文字列置換を使っていない"
 else
     ng "設定由来の変数に %VAR:検索=置換% がある（未定義だと cmd がバッチごと落ちる）: $(printf '%s' "$subst" | tr '\n' ' ')"
+fi
+# 取得の確認は choice で尋ね、必ず /t（待ち時間）と /d（既定）を伴うこと。端末はあっても
+# その先に誰も居ないことがあり、set /p や /t の無い choice はそこで待ち続ける
+# （docs/network-download-confirm-qa.md の Q18）
+if LC_ALL=C grep -a -q -E 'choice .*/t .*/d ' "$CMD"; then
+    ok "取得の確認は choice に /t と /d を伴う"
+else
+    ng "取得の確認の choice に /t か /d が無い（無人で待ち続ける）"
+fi
+# CON から読まないこと。コンソールが無い環境では失敗も EOF も返さず永久に待つ（実測。同 Q18）
+if LC_ALL=C grep -a -q -F '< CON' "$CMD"; then
+    ng "CON から読んでいる（コンソールが無い環境で永久に待つ）"
+else
+    ok "CON からは読んでいない"
 fi
 # 改行と文字コード（ヘッダのコメントの約束。UTF-8 で保存し直すと日本語の echo が化ける）
 if LC_ALL=C grep -qa "$(printf '\r')" "$CMD"; then ok "CRLF で保存されている"; else ng "CRLF ではない"; fi

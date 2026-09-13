@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiFunction;
 
+import jche.CallHierarchyExporter;
 import jche.config.ToolRoot;
 
 /**
@@ -19,7 +19,7 @@ import jche.config.ToolRoot;
  * 画面は 4 つ。
  * <ol>
  *   <li>解析を実行する … 設定ファイルの一覧から選び（複数可）、確認してから解析する。
- *       解析そのものは {@code CallHierarchyExporter.runAll}（jbang で直接動かすときと同じ処理）を
+ *       解析そのものは {@link CallHierarchyExporter#runAll}（jbang で直接動かすときと同じ処理）を
  *       同じ JVM の中で呼ぶ。終わったら結果の一覧と出力フォルダを出す</li>
  *   <li>設定ファイルを新しく作る … {@link ConfigWizard}</li>
  *   <li>環境設定 … {@link EnvironmentSettingsScreen}。{@code launcher.properties} を書き換え、
@@ -35,15 +35,12 @@ public final class App {
     private final Terminal t;
     private final ToolRoot toolRoot;
     private final Path root;
-    /** 解析の実処理。{@code CallHierarchyExporter.runAll} を渡す（このパッケージから既定パッケージのクラスは参照できない） */
-    private final BiFunction<List<Path>, ToolRoot, Integer> runner;
     private LauncherSettings settings;
 
-    public App(Terminal t, ToolRoot toolRoot, BiFunction<List<Path>, ToolRoot, Integer> runner) throws IOException {
+    public App(Terminal t, ToolRoot toolRoot) throws IOException {
         this.t = t;
         this.toolRoot = toolRoot;
         this.root = toolRoot.dir;
-        this.runner = runner;
         this.settings = LauncherSettings.load(root);
     }
 
@@ -54,7 +51,7 @@ public final class App {
      */
     public int run() {
         if (!toolRoot.found) {
-            t.println("[WARN] ツールのプロジェクトフォルダ（src/CallHierarchyExporter.java のある場所）を特定できません: " + root);
+            t.println("[WARN] ツールのプロジェクトフォルダ（src/jche/CallHierarchyExporter.java のある場所）を特定できません: " + root);
             t.println("       プロジェクト直下の java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd から起動してください。");
         }
         try {
@@ -122,7 +119,7 @@ public final class App {
         ConfigCatalog.saveRecent(root, selected);
         t.println();
         long start = System.currentTimeMillis();
-        int failed = runner.apply(selected, toolRoot);
+        int failed = CallHierarchyExporter.runAll(selected, toolRoot);
         long sec = (System.currentTimeMillis() - start) / 1000;
         t.println();
         if (failed == 0) {
@@ -245,7 +242,7 @@ public final class App {
         if (t.confirm("続けてこの設定で解析を実行しますか？", false)) {
             ConfigCatalog.saveRecent(root, List.of(created));
             t.println();
-            int failed = runner.apply(List.of(created), toolRoot);
+            int failed = CallHierarchyExporter.runAll(List.of(created), toolRoot);
             t.println();
             t.println(failed == 0 ? "=== 解析が終わりました ===" : "=== 解析に失敗しました（上の [ERROR] を確認してください）===");
             t.pause();

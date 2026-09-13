@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# サーバーモード（CallHierarchyExporter --server）の検査。
+# サーバーモード（jche.CallHierarchyExporter --server）の検査。
 #
 #   bash test/server/run.sh
 #   JCHE_CP="<classpath>" bash test/server/run.sh     # 既にコンパイル済みのクラスを使う
@@ -26,7 +26,7 @@ fail() { echo "  NG   $1"; ng=$((ng + 1)); }
 
 if [ -z "${JCHE_CP:-}" ]; then
     echo "== classpath を用意する（jbang）"
-    CP=$(bash "$ROOT/jbangw/jbang" info classpath "$ROOT/src/CallHierarchyExporter.java" \
+    CP=$(bash "$ROOT/jbangw/jbang" info classpath "$ROOT/src/jche/CallHierarchyExporter.java" \
         | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
     if [ -z "$CP" ]; then
         echo "NG   依存を解決できませんでした"; echo "FAIL"; exit 1
@@ -38,7 +38,7 @@ fi
 
 # 1セッションぶんの要求を流し、応答（#L のログ行を除く）を返す
 session() {
-    printf '%b' "$1" | java -cp "$JCHE_CP" CallHierarchyExporter --server "$WORK/cache" 2>"$WORK/stderr" \
+    printf '%b' "$1" | java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache" 2>"$WORK/stderr" \
         | grep -v '^#L'
     # 何も返らないときは起動に失敗している（classpath が届いていない等）。
     # 以降の検査が全部 NG になって原因が見えなくなるので、標準エラーをそのまま見せる

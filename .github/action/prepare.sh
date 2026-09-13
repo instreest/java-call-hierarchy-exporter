@@ -100,7 +100,7 @@ hash_files() {
         shasum -a 256 "$@"   # macOS には sha256sum が無い
     fi
 }
-cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/src/CallHierarchyExporter.java" \
+cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/src/jche/CallHierarchyExporter.java" \
     | hash_files | cut -c1-16)
 
 # AST 解析キャッシュのキー。使う設定ファイルの内容（生成した場合は絶対パス込みで毎回同じになる）から作る。

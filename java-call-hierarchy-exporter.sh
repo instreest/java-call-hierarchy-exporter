@@ -2,14 +2,15 @@
 # java-call-hierarchy-exporter の起動コマンド（Linux / macOS / Git Bash。Windows のコマンドプロンプトは java-call-hierarchy-exporter.cmd）。
 #
 #   ./java-call-hierarchy-exporter.sh                          引数なし … 対話モード（メニューで設定ファイルを選んで解析する）
-#   ./java-call-hierarchy-exporter.sh a.properties [b.properties…] 引数あり … 対話なしで解析する（jbang で src/CallHierarchyExporter.java を直接動かすのと同じ）
+#   ./java-call-hierarchy-exporter.sh a.properties [b.properties…] 引数あり … 対話なしで解析する（jbang で src/jche/CallHierarchyExporter.java を直接動かすのと同じ）
 #   ./java-call-hierarchy-exporter.sh --help
 #
 # 設定ファイルを渡したときは何も尋ねない（Issue #83）。初回で launcher.properties がまだ無ければ、
 # 置き場所の質問は出さずに既定（このプロジェクトの中の .jbang）で作り、その旨を 1 行出すだけにする。
 # ただし、ネットワークからの取得（JBang 本体・JDK・依存 jar）が必要なときだけは、引数の有無によらず
-# 取得してよいかを確認する（Issue #86）。n なら何も取得せずに終了コード 3 で終わる。端末が無くて確認できない
-# とき（パイプ・CI・タスクスケジューラ）も取得せず 3 で終わるので、そこでは launcher.properties か環境変数で
+# 取得してよいかを確認する（Issue #86）。n なら何も取得せずに終了コード 3 で終わる。質問は標準入力ではなく
+# 端末（/dev/tty）から読む。端末が無くて確認できないとき（パイプ・CI・タスクスケジューラ。端末の口が開いていても
+# その先に誰も居ないときを含む）も取得せず 3 で終わるので、そこでは launcher.properties か環境変数で
 # JCHE_ALLOW_DOWNLOAD=yes（尋ねずに取得する）/ no（取得しない）をあらかじめ決めておく。
 #
 # どこから実行してもよい（このファイルのあるフォルダを起点にする）。
@@ -17,7 +18,7 @@
 # やること:
 #   1. launcher.properties（このフォルダ直下）を読み、JDK / JBang の置き場所（JBANG_DIR 等）や JVM のオプションを
 #      環境変数にする。無ければ、対話できるときだけ置き場所を尋ねて作る（初回だけ。引数があるときは尋ねずに既定で作る）。
-#   2. jbangw/jbang（同梱の JBang ラッパー）で src/Jche.java を動かす。
+#   2. jbangw/jbang（同梱の JBang ラッパー）で src/jche/Jche.java を動かす。
 #      ネットワークに出るのは次の 3 段階で、いずれも操作者の確認（または JCHE_ALLOW_DOWNLOAD）なしには行わない:
 #        a. ラッパーが JBang 本体（github.com）と、JBang を動かす JDK（api.foojay.io）を取得する
 #           … Java が動く前なので、置き場所のファイルの有無を見て、無ければ走らせる前に確認する
@@ -220,21 +221,37 @@ approve_download() {
       echo "取得を取りやめました。"
       return 1 ;;
   esac
-  if [ ! -t 0 ] || [ ! -t 1 ]; then
-    echo "  端末が無いため確認できません。取得しません。"
-    echo "  尋ねずに取得するには $SETTINGS（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
-    echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
-    echo "取得を取りやめました。"
+  # 質問は標準入力ではなく端末（/dev/tty）から読む。標準入力は対話モードのメニュー操作に使われるので、
+  # ここで 1 行取るとアプリ側の入力が 1 行ずれる。開けないときは尋ねる相手が居ない（パイプ・CI・タスクスケジューラ）
+  if ! { exec 3<>/dev/tty; } 2> /dev/null; then
+    cannot_ask
     return 1
   fi
   local answer
-  printf 'ネットワークにアクセスして取得しますか？ [y/N]: '
-  IFS= read -r answer || answer=""
+  printf 'ネットワークにアクセスして取得しますか？ [y/N]: ' >&3
+  # 端末の口が開いても、その先に誰も居ないことがある（Git Bash はパイプで動かしていても /dev/tty を
+  # 渡すので、read がすぐ終わる）。そのときは端末が無いのと同じ扱いにする
+  if ! IFS= read -r answer <&3; then
+    exec 3>&-
+    echo
+    cannot_ask
+    return 1
+  fi
+  echo >&3
+  exec 3>&-
   case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
     y|yes) return 0 ;;
   esac
   echo "取得を取りやめました。"
   return 1
+}
+
+# 尋ねる相手が居ないときの案内。取得しなかったことと、先に決めておく方法を出す
+cannot_ask() {
+  echo "  端末が無いため確認できません。取得しません。"
+  echo "  尋ねずに取得するには $SETTINGS（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
+  echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
+  echo "取得を取りやめました。"
 }
 
 run_once() {
@@ -263,7 +280,7 @@ run_once() {
   # 2 つの JDK を取得することになるので、25 にそろえて 1 つで済ませる
   export JBANG_DEFAULT_JAVA_VERSION="${JBANG_DEFAULT_JAVA_VERSION:-25}"
   local jbang="$ROOT/jbangw/jbang"
-  local script="$ROOT/src/Jche.java"
+  local script="$ROOT/src/jche/Jche.java"
   if wrapper_would_download || [ "$fresh" = 1 ]; then
     # ラッパーが jbang を動かす前に取得するものが無い（または --fresh で取り直す）。走らせる前に確認して、
     # よければ取得込みで動かす（このあと jbang が取得する JDK と依存 jar も、この 1 回の確認に含める）

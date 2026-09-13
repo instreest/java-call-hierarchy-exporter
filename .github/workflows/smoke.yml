@@ -23,14 +23,14 @@ jobs:
           path: |
             ~/.jbang
             ~/.m2/repository
-          key: jbang-${{ hashFiles('jbangw/jbang', 'src/CallHierarchyExporter.java') }}
+          key: jbang-${{ hashFiles('jbangw/jbang', 'src/jche/CallHierarchyExporter.java') }}
 
       # jbang が解決した JDT の jar を classpath にして、全ソースを警告ゼロでコンパイルできることを確認する。
       # jbang 自身がビルドしたスクリプトの jar（~/.jbang/cache/jars）は除く。残すと javac がそちらの class を使い、
       # ソースの一部が lint 対象から外れる。
       - name: Compile with all lint warnings as errors
         run: |
-          CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+          CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
@@ -38,7 +38,7 @@ jobs:
       # 上のコンパイルで作った build/classes をそのまま使うので、依存の解決は1回で済む
       - name: Server protocol test
         run: |
-          CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+          CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
           JCHE_CP="$CP:$PWD/build/classes" bash test/server/run.sh
 
       # maven / mavenmulti / gradle のケースも、ビルドツール無しで動く（ビルドファイルを読むだけ）
@@ -50,7 +50,7 @@ jobs:
       - name: Resolve order-independence test (test/dataflow)
         run: bash test/dataflow/run.sh
 
-      # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
+      # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う。
       # 起動コマンドはネットワークからの取得の前に確認を出し、端末が無ければ取得せずに終わる（Issue #86）。
       # ここでは上のステップで JBang・依存 jar が取得済み、JDK 25 は setup-java のものなので、確認に掛からず動く
@@ -109,6 +109,32 @@ jobs:
           findstr /c:"java.home" launcher-status.log > nul || (echo FAIL: status screen missing & exit /b 1)
           findstr /c:"640 MB" launcher-status.log > nul || (echo FAIL: JCHE_JAVA_OPTS not applied & exit /b 1)
           del launcher.properties
+          echo OK
+
+      # ネットワークからの取得の確認（Issue #86）を Windows でも通す。ランナーには端末が無いので、
+      # 尋ねられず、何も取得せずに終了コード 3 で終わること。JBANG_DIR を空のフォルダに向けて確認を起こす。
+      # 端末がある経路（choice の /t と /d）はランナーでは再現できないので、書き方の検査は
+      # test/cli/run.sh（Linux 側）が受け持つ（docs/network-download-confirm-qa.md の Q18）
+      - name: Launcher refuses to download without a terminal (Windows)
+        shell: cmd
+        run: |
+          if exist probe-jbang rmdir /s /q probe-jbang
+          mkdir probe-jbang
+          > launcher.properties (
+            echo JBANG_DIR=probe-jbang
+            echo JBANG_REPO=probe-repo
+            echo JCHE_JAVA_OPTS=
+            echo JCHE_JBANG_OPTS=
+            echo JCHE_ALLOW_DOWNLOAD=
+          )
+          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          set "CODE=%ERRORLEVEL%"
+          echo [launcher] exit=%CODE%
+          del launcher.properties
+          if not "%CODE%"=="3" (echo FAIL: exit code should be 3 & exit /b 1)
+          if exist probe-jbang\bin\jbang.jar (echo FAIL: JBang was downloaded & exit /b 1)
+          if exist probe-repo (echo FAIL: dependencies were downloaded & exit /b 1)
+          rmdir /s /q probe-jbang
           echo OK
 
       # 失敗したときに実際の出力を持ち帰れるようにする。Windows と Linux で

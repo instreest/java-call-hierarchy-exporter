@@ -23,7 +23,7 @@ java-call-hierarchy-exporter/
 ```
 
 ツールのプロジェクトフォルダは、作業ディレクトリとその上位（次に、実行中のクラスの置き場所とその上位）から
-`src/CallHierarchyExporter.java` を探して決めます。リポジトリ直下で実行すれば見つかります。
+`src/jche/CallHierarchyExporter.java` を探して決めます。リポジトリ直下で実行すれば見つかります。
 見つからないときは警告を出して作業ディレクトリの `.cache/` に作ります。
 
 `cache.folder` を指定すると、そのフォルダ（設定ファイルからの相対パス、または絶対パス）の下に

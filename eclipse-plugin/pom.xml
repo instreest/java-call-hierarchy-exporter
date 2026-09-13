@@ -291,7 +291,7 @@
       <!--
         コンパイルは2本立てにする。混ぜると「プラグインが Java 8 で動く」が守れない。
 
-          解析本体（CallHierarchyExporter + jche/**、jche/eclipse を除く）
+          解析本体（jche/**。jche/eclipse を除く）
             … release 17。子プロセス（JDK 25）で動くので新しくてよい
           プラグイン（jche/eclipse/**）
             … release 8。Eclipse の中で動くので、古い Eclipse（Java 8）でも読める形にする
@@ -315,7 +315,6 @@
             <configuration>
               <release>17</release>
               <includes>
-                <include>CallHierarchyExporter.java</include>
                 <include>jche/**</include>
               </includes>
               <excludes>
@@ -405,7 +404,6 @@
               <finalName>jche</finalName>
               <classifier>core</classifier>
               <includes>
-                <include>CallHierarchyExporter*.class</include>
                 <include>jche/**</include>
               </includes>
               <excludes>
@@ -413,7 +411,7 @@
                 <exclude>lib/**</exclude>
               </excludes>
               <archive>
-                <manifest><mainClass>CallHierarchyExporter</mainClass></manifest>
+                <manifest><mainClass>jche.CallHierarchyExporter</mainClass></manifest>
               </archive>
             </configuration>
           </execution>

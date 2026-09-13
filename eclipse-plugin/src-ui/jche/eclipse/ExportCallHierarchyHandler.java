@@ -128,7 +128,7 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
             cp.append(entry.getAbsolutePath());
         }
         command.add(cp.toString());
-        command.add("CallHierarchyExporter");
+        command.add("jche.CallHierarchyExporter");
         for (IFile file : configFiles) {
             command.add(file.getLocation().toFile().getAbsolutePath());
         }
