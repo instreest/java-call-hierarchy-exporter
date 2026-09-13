@@ -124,22 +124,61 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
 
+`call-hierarchy.csv` が起点からの経路を展開するのに対し、こちらはソース上のメソッドを 1 行ずつ並べた一覧です。
+経路の数ではなくメソッドの数で決まるので大きくなりません。
+「誰からも呼ばれていないのはどれか」「よく呼ばれている共通処理はどれか」を俯瞰するのに使います。
+
+```csv
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
+OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
+OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,
+OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
+```
+
 | 列 | 内容 |
 |---|---|
+| `method` | **単純クラス名.メソッド名(引数型略名)**。引数を付けてオーバーロードを見分けられるようにしています。略名が衝突する場合だけ完全修飾の引数に戻ります |
+| `declaringType` | 宣言しているクラスの完全修飾名。Excelのフィルタに使える |
+| `typeKind` | `C`=具象クラス / `A`=抽象クラス / `I`=インターフェース |
+| `file` | 宣言されているファイル。`project.root` からの相対パス |
+| `line` | 宣言行 |
+| `hasBody` | 本体を持つなら `1`、持たない（インターフェースや抽象メソッドの宣言）なら `0` |
+| `inDegree` | このメソッドを呼んでいる箇所の数 |
+| `outDegree` | このメソッドが出している呼び出しの数 |
+| `role` | 呼び出し元・呼び出し先の有無による分類（下表） |
+| `reachable` | 起点からの呼び出しを辿って到達できるなら `1`、できないなら `0` |
 | `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
-| `unresolvedCause` | その理由（上の「理由」表と同じ。`実装なし（宣言のまま）` と `実装はコンパイル時生成（名前）` も入る。複数ある場合は `;` 区切り） |
+| `unresolvedCause` | その理由（下表）。複数ある場合は `;` 区切り |
 
 | role | 意味 |
 |---|---|
-| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・デッドコード・テスト・リフレクション経由が混ざる |
+| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
 | `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
-| `LEAF` | 呼び出し先が無い |
+| `LEAF` | 呼び出し先が無い。末端処理 |
 | `NORMAL` | 上記以外 |
+
+`unresolvedCause` は、絞れなかった呼び出しのレシーバ（呼び出しの受け手）がどこから来たかで決まります。
+次に何を調べればよいかの手がかりになります。
+
+| unresolvedCause | 意味 |
+|---|---|
+| `戻り値（ファクトリメソッド等）` | レシーバが他のメソッドの戻り値。ファクトリの実装を[プラグイン](docs/instance-analysis-plugin.md)で教えると絞れることがある |
+| `引数（メソッド外から渡される）` | レシーバが呼び出し元から渡された引数 |
+| `フィールド変数` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
+| `ローカル変数` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
+| `自クラス（this）` / `型名（static）` / `レシーバ不明` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
+| `実装なし（宣言のまま）` | 本体を持つ実装がソース上に1つも無い |
+| `実装はコンパイル時生成（名前）` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `ラムダ/メソッド参照の実装あり` | その関数型インターフェースをラムダかメソッド参照が実装している |
 
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
-コンストラクタ（`<init>`）は出力しません。
 
+- コンストラクタ（`<init>`）は出力しません（`call-hierarchy.csv` でも行にしていないため揃えています）
+- jar の中のメソッドなど、ソースに宣言が無いものは出力しません。呼ばれている事実は `call-hierarchy.csv` に残ります
+- `reachable` の起点は `call-hierarchy.csv` と同じで、`entry.packages` で指定したメソッドです。
+  空欄のとき（全体モード）は「呼び出し元が無く、ソース上に本体を持つメソッド」が起点になります
 
 ### Eclipse でソースコードへジャンプする
 `call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、

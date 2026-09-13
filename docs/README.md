@@ -12,7 +12,7 @@
 
 | ファイル | 内容 |
 |---|---|
-| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、ネットワークからの取得の確認、JBang の直接実行、Eclipse でソースを開く |
+| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、複数の設定ファイルの扱い、ネットワークからの取得の確認、JBang の直接実行、Eclipse でソースを開く |
 | [build-tool-classpath.md](build-tool-classpath.md) | `library.folders` を空欄にしたときに `pom.xml` / `build.gradle` を読んで依存 jar を集める仕組みと、読める宣言の範囲 |
 | [instance-analysis-plugin.md](instance-analysis-plugin.md) | 具象クラスの解決条件を外から与える（対応表を書く / 拡張を自分で書く） |
 | [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、Actions 以外の CI |

@@ -1,6 +1,6 @@
 # 起動コマンドと実行方法
 
-リポジトリ直下の起動コマンドの全仕様と、JBang を直接使う方法。
+リポジトリ直下の起動コマンドの全仕様、複数の設定ファイルの扱い、JBang を直接使う方法。
 最小の手順は [README の Quick start](../README.md#quick-start) にある。
 実装時に迷った点は [cli-app-qa.md](cli-app-qa.md) と [cli-noninteractive-qa.md](cli-noninteractive-qa.md) にある。
 
@@ -89,6 +89,25 @@ jche>
 | `JCHE_JBANG_OPTS` | `jbang run` に足すオプション（例: `--offline`、`--java 21`） |
 | `JCHE_ALLOW_DOWNLOAD` | ネットワークからの取得（JBang 本体・JDK・依存 jar）を尋ねずに行うなら `yes`、行わないなら `no`。空欄なら毎回尋ねる（下記） |
 
+## 複数の設定ファイルをまとめて処理する
+
+設定ファイルを引数に複数渡すと、渡した順に 1 つずつ処理します。設定ファイルは互いに独立で、
+それぞれの `output.folder` の下に `<解析開始日時>_<プロジェクト名>` のフォルダができます
+（[README の「出力ファイル」](../README.md#出力ファイル)）。
+
+```bash
+./java-call-hierarchy-exporter.sh config/app-a.properties config/app-b.properties config/batch.properties
+```
+
+- 1 つの設定が失敗（設定ファイルが無い、`project.root` が無い等）しても、残りの設定は処理します。
+  失敗した設定のエラーとスタックトレースは標準出力（と、出力フォルダを作れていればその `run.log`）に出ます
+- 最後に設定ごとの結果（`OK` と出力フォルダ、または `FAIL` と原因）を一覧で出します。
+  1 つでも失敗があれば終了コードは 1 です
+- ログの経過時間 `[分:秒]` は設定ごとに 0 から数え直します
+
+同じプロジェクトを指す設定ファイルが複数あっても（起点 `entry.packages` だけ違う等）、
+キャッシュは `project.root` ごとに 1 つを共有するので、2 つ目以降の解析はキャッシュの再利用だけで済みます。
+
 ## ネットワークからの取得の確認
 
 このツールが動くには JBang 本体・JDK 25・依存 jar（JDT ほか）が要り、無ければネットワークから取得します
@@ -121,7 +140,7 @@ java-call-hierarchy-exporter: ネットワークからの取得が必要です
   `JCHE_JBANG_OPTS` に `--offline` を書いた場合も同じ）。対話モードの「環境設定」の 5) でも切り替えられます
 - 取得せずに動かすには、先に JDK と jar を用意します（[README の「Pleiades/Eclipse環境（閉域ネットワーク等の場合）」](../README.md#pleiadeseclipse環境閉域ネットワーク等の場合)）
 - 起動コマンドを通さず `jbangw/jbang` を直接使う場合（[JBangによる実行](#jbangによる実行対話なし)）と
-  [GitHub Actions](../README.md#github-actions-から使う) では、この確認は出ず、自動で取得します。
+  [GitHub Actions](github-actions.md) では、この確認は出ず、自動で取得します。
   実装時に迷った点は [network-download-confirm-qa.md](network-download-confirm-qa.md) にあります
 
 ## JBangによる実行（対話なし）
@@ -144,7 +163,7 @@ rem Windows（コマンドプロンプト）
 取得の前に確認してほしい場合は起動コマンドを使ってください（[ネットワークからの取得の確認](#ネットワークからの取得の確認)）。
 
 設定ファイルは複数渡せます。渡した順に処理し、設定ファイルごとに別の出力フォルダができます
-（[複数のプロジェクトをまとめて解析する](../README.md#複数のプロジェクトをまとめて解析する)）。
+（[複数の設定ファイルをまとめて処理する](#複数の設定ファイルをまとめて処理する)）。
 
 ```bash
 ./jbangw/jbang src/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
