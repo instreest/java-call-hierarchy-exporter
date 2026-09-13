@@ -41,6 +41,7 @@ import java.util.List;
 import org.eclipse.jdt.core.JavaCore;
 
 import jche.analysis.CachePhaseResult;
+import jche.analysis.CallConditionScanner;
 import jche.analysis.CacheUpdater;
 import jche.config.Config;
 import jche.config.Plugins;
@@ -51,6 +52,7 @@ import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.EntryPoints;
 import jche.server.Server;
+import jche.report.CallConditionsReport;
 import jche.report.CallHierarchyCsvWriter;
 import jche.report.InventoryReport;
 import jche.report.StreamingTreeWalker;
@@ -236,7 +238,33 @@ public class CallHierarchyExporter {
     }
 
     /**
+     * 設定に {@code conditions.target} があるときに、<b>通常の出力に追加で</b>
+     * 呼び出しに効いている条件の一覧（{@code call-conditions.csv}）を書く
+     * （{@code docs/call-conditions.md}）。
+     *
+     * 通常の解析（キャッシュの更新・CSV の出力）はそのまま行った後に呼ぶ。モードを増やさず、
+     * 出力が1つ増えるだけにするための並び。打ち切りの判定に使う条件だけでなく、
+     * 判定できない条件も並べるので、対象のファイルだけを記録用モードでもう一度パースする
+     * （キャッシュには書かない。理由は {@code docs/call-conditions-qa.md} の Q1・Q2）。
+     *
+     * 対象が見つからない・該当する呼び出しが無いときは警告にとどめる。解析そのものは
+     * 成功しており、追加の出力が空振りしただけなので、実行を失敗にはしない。
+     */
+    private static void runConditions(Config config) throws Exception {
+        Log.blank();
+        Log.info("=== 追加: 呼び出しに効いている条件（conditions.target="
+                + config.conditionsTarget + "） ===");
+        ProjectLayout layout = new ProjectLayout(config);
+        CallConditionScanner.Result result =
+                CallConditionScanner.scan(config, layout, config.conditionsTarget);
+        CallConditionsReport.write(config, config.conditionsTarget, result);
+    }
+
+    /**
      * 設定ファイル1つ分の処理。出力フォルダを作り、設定ファイルの複製と実行ログをそこに置いてから解析する。
+     *
+     * 設定に {@code conditions.target} があるときは、通常の出力に<b>追加で</b>
+     * 呼び出しに効いている条件の一覧を書く（{@link #runConditions}）。解析そのものは変わらない。
      *
      * @return この実行の出力フォルダ
      */
@@ -258,6 +286,10 @@ public class CallHierarchyExporter {
         AnalysisSnapshot snapshot = Exporter.analyze(config);
 
         long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
+
+        if (!config.conditionsTarget.isEmpty()) {
+            runConditions(config);
+        }
 
         Log.blank();
         Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");

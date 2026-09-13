@@ -57,6 +57,16 @@ public final class Log {
         }
     }
 
+    /**
+     * 経過時間を付けずにそのまま1行書く。
+     *
+     * 一覧や表など「読み物」として出す本文のためのもの。行頭に時刻が並ぶと表が読みにくくなる。
+     * ログファイル・Eclipse のコンソールへの複写は {@link #info} と同じに扱う。
+     */
+    public static void plain(Object message) {
+        println(String.valueOf(message));
+    }
+
     /** フェーズの区切りに空行を入れる */
     public static void blank() {
         println("");
