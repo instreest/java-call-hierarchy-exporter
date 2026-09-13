@@ -34,6 +34,13 @@ jobs:
           javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing \
                 -cp "$CP" -d build/classes -encoding UTF-8 $(find src -name '*.java')
 
+      # サーバーモード（Eclipse プラグインが別プロセスで解析させる経路）の検査。
+      # 上のコンパイルで作った build/classes をそのまま使うので、依存の解決は1回で済む
+      - name: Server protocol test
+        run: |
+          CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+          JCHE_CP="$CP:$PWD/build/classes" bash test/server/run.sh
+
       # maven / mavenmulti / gradle のケースも、ビルドツール無しで動く（ビルドファイルを読むだけ）
       - name: Regression test (test/demo, test/maven-demo, test/maven-multi, test/gradle-demo)
         run: bash test/regression/run.sh
@@ -285,3 +292,36 @@ jobs:
 
       - name: Compile with Maven
         run: mvn -B --no-transfer-progress compile
+
+  # Eclipse プラグイン（eclipse-plugin/）の検査。
+  # 1) 版・ID・クラスの実在、解析本体がバンドルのクラスパスに混ざっていないこと（ファイルを読むだけ）
+  # 2) 古い Eclipse（4.6 相当）の jar と --release 8 でプラグインがコンパイルできること。
+  #    本番のビルドは新しい jar を使うので、この検査だけが「古い Eclipse でも動く」を守る
+  # 3) 子プロセスとのやりとり（クライアント層）が実際に動くこと
+  # 4) バンドル jar が組み立てられること（解析本体は release 17、プラグインは release 8）
+  eclipse-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Plugin definition consistency check
+        run: bash test/plugin/run.sh
+
+      # ビルドに使う JDK。出力する class ファイルの版は pom の release（17 と 8）で
+      # 決まるので、ここは新しくてよい。むしろ新しくないと駄目で、最近の Eclipse
+      # platform の jar は Java 21 の class ファイル（版 65）なので、JDK 17 の
+      # javac では「class file has wrong version 65.0」で読めない
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Old-Eclipse / Java 8 compatibility check
+        run: bash test/plugin-api/run.sh
+
+      - name: Build the bundle jar
+        run: mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package
+
+      - name: Plugin client test
+        run: bash test/plugin-client/run.sh

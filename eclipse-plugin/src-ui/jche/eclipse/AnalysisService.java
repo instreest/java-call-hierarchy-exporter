@@ -1,0 +1,197 @@
+// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
+package jche.eclipse;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceChangeEvent;
+import org.eclipse.core.resources.IResourceChangeListener;
+import org.eclipse.core.resources.IResourceDelta;
+import org.eclipse.core.resources.IResourceDeltaVisitor;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IStatus;
+
+/**
+ * プロジェクトごとの解析結果（{@link ProjectAnalysis}）を持ち続ける入れ物。
+ *
+ * <p>ここが受け持つのは 2 つだけ。
+ * <ol>
+ *   <li>プロジェクト → 解析結果の対応を持つ</li>
+ *   <li>ワークスペースの変更を購読し、変わった {@code *.java} を「未反映」として数える</li>
+ * </ol>
+ *
+ * <p>変更通知は UI スレッドで届く。ここでやるのは集合にパスを足すことだけで、解析はしない
+ * （解析は {@link AnalysisJob}）。重い処理をここに書くと、保存やビルドのたびに Eclipse が固まる。
+ */
+public final class AnalysisService {
+
+    /** 解析の状態が変わったことを知りたい側（ビュー）が実装する */
+    public interface Listener {
+        /** 呼び出しは UI スレッドとは限らない。画面を触るなら asyncExec すること */
+        void analysisChanged(ProjectAnalysis analysis);
+    }
+
+    private final Map<IProject, ProjectAnalysis> byProject = new HashMap<>();
+    private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
+
+    /** アイドルの見回りの間隔（ミリ秒）。設定の分数より細かく見ても意味がないので粗くてよい */
+    private static final long SWEEP_INTERVAL_MS = 60_000L;
+
+    private final IResourceChangeListener changeListener = this::resourceChanged;
+    private org.eclipse.core.runtime.jobs.Job sweeper;
+
+    void start() {
+        ResourcesPlugin.getWorkspace().addResourceChangeListener(
+                changeListener, IResourceChangeEvent.POST_CHANGE | IResourceChangeEvent.POST_BUILD);
+        startIdleSweeper();
+    }
+
+    /**
+     * 使われていない解析プロセスを見回って終わらせる。
+     *
+     * <p>常駐させているのは「木の問い合わせに即答するため」なので、使わなくなったら
+     * 解放してよい。メモリを抱えたまま居座らせない（大きなプロジェクトでは数百MBになる）。
+     */
+    private void startIdleSweeper() {
+        sweeper = new org.eclipse.core.runtime.jobs.Job("解析プロセスの見回り") {
+            @Override
+            protected org.eclipse.core.runtime.IStatus run(
+                    org.eclipse.core.runtime.IProgressMonitor monitor) {
+                long idleMillis = JchePreferences.idleMinutes() * 60L * 1000L;
+                List<ProjectAnalysis> all;
+                synchronized (AnalysisService.this) {
+                    all = new ArrayList<>(byProject.values());
+                }
+                for (ProjectAnalysis analysis : all) {
+                    if (analysis.closeIfIdle(idleMillis)) {
+                        JchePlugin.log(IStatus.INFO,
+                                "使われていない解析プロセスを終了しました: "
+                                        + analysis.project().getName(), null);
+                    }
+                }
+                schedule(SWEEP_INTERVAL_MS);
+                return org.eclipse.core.runtime.Status.OK_STATUS;
+            }
+        };
+        sweeper.setSystem(true);
+        sweeper.schedule(SWEEP_INTERVAL_MS);
+    }
+
+    void stop() {
+        ResourcesPlugin.getWorkspace().removeResourceChangeListener(changeListener);
+        if (sweeper != null) {
+            sweeper.cancel();
+            sweeper = null;
+        }
+        List<ProjectAnalysis> all;
+        synchronized (this) {
+            all = new ArrayList<>(byProject.values());
+            byProject.clear();
+        }
+        for (ProjectAnalysis analysis : all) {
+            // 解析の子プロセスも終わらせる。残すとワークスペースを閉じても居座る
+            analysis.dispose();
+        }
+    }
+
+    public void addListener(Listener listener) {
+        listeners.addIfAbsent(listener);
+    }
+
+    public void removeListener(Listener listener) {
+        listeners.remove(listener);
+    }
+
+    void fireChanged(ProjectAnalysis analysis) {
+        for (Listener listener : listeners) {
+            try {
+                listener.analysisChanged(analysis);
+            } catch (RuntimeException e) {
+                JchePlugin.log(IStatus.WARNING, "解析状態の通知でエラーが起きました", e);
+            }
+        }
+    }
+
+    /** そのプロジェクトの解析結果。無ければ作る（作っただけでは解析は始まらない） */
+    public synchronized ProjectAnalysis analysisFor(IProject project) {
+        return byProject.computeIfAbsent(project, p -> new ProjectAnalysis(this, p));
+    }
+
+    /**
+     * 動いている解析プロセスを全部終わらせる。設定（JDK・JDT・JVM 引数）を変えたときに使う。
+     * 次の解析要求で、新しい設定のプロセスが起動する。
+     */
+    public void restartAll() {
+        List<ProjectAnalysis> all;
+        synchronized (this) {
+            all = new ArrayList<>(byProject.values());
+        }
+        for (ProjectAnalysis analysis : all) {
+            analysis.dispose();
+            fireChanged(analysis);
+        }
+    }
+
+    // ------------------------------------------------------------
+    // ワークスペースの変更（UIスレッドで届く。ここでは数えるだけ）
+    // ------------------------------------------------------------
+
+    private void resourceChanged(IResourceChangeEvent event) {
+        IResourceDelta delta = event.getDelta();
+        if (delta == null) {
+            return;
+        }
+        List<ProjectAnalysis> known;
+        synchronized (this) {
+            if (byProject.isEmpty()) {
+                return;
+            }
+            known = new ArrayList<>(byProject.values());
+        }
+        Map<IProject, List<IResource>> changed = new HashMap<>();
+        try {
+            delta.accept(new IResourceDeltaVisitor() {
+                @Override
+                public boolean visit(IResourceDelta d) {
+                    IResource resource = d.getResource();
+                    if (resource.getType() == IResource.FILE && isInteresting((IFile) resource)) {
+                        changed.computeIfAbsent(resource.getProject(), p -> new ArrayList<>()).add(resource);
+                    }
+                    return true;
+                }
+            });
+        } catch (CoreException e) {
+            JchePlugin.log(IStatus.WARNING, "ワークスペースの変更を読み取れませんでした", e);
+            return;
+        }
+        boolean afterBuild = event.getType() == IResourceChangeEvent.POST_BUILD;
+        for (ProjectAnalysis analysis : known) {
+            List<IResource> files = changed.get(analysis.project());
+            if (files != null && !files.isEmpty()) {
+                analysis.markChanged(files);
+            }
+            if (afterBuild) {
+                // 自動再解析は「ビルドが終わって静かになってから」。タイピング中には走らせない
+                analysis.scheduleAutoAnalysisIfNeeded();
+            }
+        }
+    }
+
+    /**
+     * 解析結果に影響しうるファイルか。
+     * ソース・依存jar・設定ファイルに加えて .classpath も見る。設定を自動生成している場合、
+     * クラスパスの変更はそのまま解析の前提（依存jar・ソースフォルダ）の変更になるため。
+     */
+    private static boolean isInteresting(IFile file) {
+        String name = file.getName();
+        return name.endsWith(".java") || name.endsWith(".properties") || name.endsWith(".jar")
+                || ".classpath".equals(name);
+    }
+}

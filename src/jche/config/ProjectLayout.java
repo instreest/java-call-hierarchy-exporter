@@ -29,7 +29,9 @@ import jche.util.Log;
  * <ul>
  *   <li>source.folders が空なら、.classpath があれば kind="src" から読む</li>
  *   <li>library.folders は、.classpath の kind="lib"（あれば）と合算する</li>
- *   <li>library.folders が空なら、pom.xml / build.gradle を読んでローカルリポジトリから依存 jar を集める
+ *   <li>library.jars は jar を1件ずつ指定するもの（Eclipse プラグインが解決済みクラスパスを渡すのに使う）</li>
+ *   <li>library.folders と library.jars がどちらも空なら、pom.xml / build.gradle を読んで
+ *       ローカルリポジトリから依存 jar を集める
  *       （{@link BuildFileClasspath}。ビルドファイルが無ければ何もしない）</li>
  * </ul>
  *
@@ -90,6 +92,16 @@ public final class ProjectLayout {
             classpathEntries.add(lib);
         }
 
+        // library.jars は jar（またはクラスフォルダ）を1件ずつ指定するもの。
+        // Eclipse プラグインが IJavaProject の解決済みクラスパスをそのまま渡すために使う
+        for (Path jar : config.libraryJars) {
+            if (!Files.exists(jar)) {
+                Log.warn("library.jars のファイルが見つかりません: " + jar);
+                continue;
+            }
+            classpathEntries.add(jar);
+        }
+
         if (sourceFolders.isEmpty()) {
             throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot
                     + "（src/main/java、src、<モジュール>/src/main/java、.classpath のいずれも無いので、"
@@ -98,8 +110,9 @@ public final class ProjectLayout {
 
         // library.folders が空欄のときだけ、ビルドファイルとローカルリポジトリから依存 jar を集める。
         // 指定があるときは（.classpath の lib と合わせて）それだけを使い、ビルドファイルは見ない。
-        // ビルドファイルからも .classpath からも jar が集まらなければ、project.root 直下の lib（*.jar）を使う
-        if (config.libraryFolders.isEmpty()) {
+        // ビルドファイルからも .classpath からも jar が集まらなければ、project.root 直下の lib（*.jar）を使う。
+        // library.jars（Eclipse プラグインが解決済みクラスパスを渡す形）も「指定あり」として扱う
+        if (config.libraryFolders.isEmpty() && config.libraryJars.isEmpty()) {
             resolvedClasspath.addAll(BuildFileClasspath.resolve(config, projectRoot, sourceFolders));
             if (resolvedClasspath.isEmpty() && classpathEntries.isEmpty()) {
                 String lib = ProjectDetector.libraryFolderCandidate(projectRoot);

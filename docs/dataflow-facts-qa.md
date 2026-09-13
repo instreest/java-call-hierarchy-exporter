@@ -130,9 +130,13 @@ S1 の時点でも振る舞いを変えないためにそろえた。S3 では�
 
 ### Q13. `InboundIndex.warmUp`（Issue の S2）はどうしたか
 
-このリポジトリには `InboundIndex` も `docs/dataflow-phase-proposal.md` も無い（Eclipse プラグインは別の場所）。
-ここでは本体を決定的にするところまでを入れた。プラグイン側は `DataflowBuilder.build` →
-`DataflowResolver(graph, facts, …)` の順に組み立てれば、索引作成前に全エッジを 1 周させる回避は不要になる。
+当初この対応を入れた時点では、`InboundIndex`（Eclipse プラグインの呼び出し元索引）は
+まだこのリポジトリに無く、本体を決定的にするところまでを入れた。
+
+**その後（#49 の取り込み時）**: プラグインが同じリポジトリへ入り、`InboundIndex` は
+`DataflowBuilder.build` → `DataflowResolver(graph, facts, …)` の順に組み立てられた
+`CallResolver` を使うようになったので、**索引作成前に全エッジを1周させる回避（`warmUp`）は削除した**。
+`resolve` が決定的であることは `test/dataflow/ResolveOrderCheck.java` が検査している。
 
 ### Q14. 事実のダンプ（Issue の S4）は入れなかったのか
 

@@ -1,0 +1,163 @@
+// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
+package jche;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.nio.file.Path;
+
+import org.eclipse.jdt.core.JavaCore;
+
+import jche.analysis.CachePhaseResult;
+import jche.analysis.CacheUpdater;
+import jche.config.Config;
+import jche.config.Plugins;
+import jche.config.ProjectLayout;
+import jche.dataflow.DataflowBuilder;
+import jche.dataflow.DataflowFacts;
+import jche.extension.TypeCandidateProvider;
+import jche.graph.CallGraph;
+import jche.graph.CallGraphBuilder;
+import jche.graph.CallResolver;
+import jche.graph.DataflowResolver;
+import jche.graph.SpringBeans;
+import jche.util.Log;
+
+/**
+ * フェーズ1（ソース解析とキャッシュ更新）・フェーズ2（グラフ構築とデータフローの確定・具象クラスの解決）。
+ *
+ * <p>ここから先（CSV の出力）は {@code CallHierarchyExporter} が受け持つ。分けてあるのは、
+ * <b>結果をメモリに持ったまま何度も問い合わせたい</b>使い方があるためで、
+ * Eclipse プラグインの解析サーバー（{@link jche.server.Server}）がそれにあたる。
+ * どちらの経路も同じこのコードを通るので、CLI と画面で結果が食い違うことはない。
+ *
+ * <p>既定パッケージではなく名前付きパッケージに置いてあるのは、
+ * {@code jche.server} など他のパッケージから呼べるようにするため
+ * （Java では名前付きパッケージのクラスから既定パッケージのクラスを参照できない）。
+ */
+public final class Exporter {
+
+    private Exporter() {
+    }
+
+    /**
+     * フェーズ1・2 を実行し、結果をメモリに返す。CSV は書かない。
+     *
+     * <p>進捗の通知と中止は {@link jche.util.RunControl} 経由。呼び出し側が受け口を付けていなければ
+     * 何も起きない（CLI はこれ）。中止された場合は {@link jche.util.CancelledException} が飛ぶ。
+     *
+     * @param config 設定（出力フォルダは使わない。キャッシュの場所は使う）
+     * @return この時点の解析結果
+     */
+    public static AnalysisSnapshot analyze(Config config) throws Exception {
+        ProjectLayout layout = new ProjectLayout(config);
+        logAnalysisSettings(config, layout);
+
+        analyzeSources(config, layout);
+
+        CallGraph graph = buildGraph(config, layout);
+        Log.info("型数=" + graph.typeCount()
+                + " メソッド数=" + graph.methodCount()
+                + " エッジ数=" + graph.edgeCount());
+        DataflowFacts facts = buildDataflowFacts(config, graph);
+        CallResolver resolver = new CallResolver(graph,
+                new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth),
+                loadProviders(config));
+        Log.heap("フェーズ2完了");
+        return new AnalysisSnapshot(config, layout, graph, resolver);
+    }
+
+    private static void logAnalysisSettings(Config config, ProjectLayout layout) {
+        Log.info("ソースフォルダ: " + layout.sourceFolders);
+        Log.info("ソース文字コード: " + config.sourceEncoding + (config.sourceEncodingAuto ? "（source.encoding が空欄のため project.root から決めた）" : ""));
+        // どの言語バージョンとして解析したかで結果が変わるため、必ず残す
+        Log.info("ソースレベル: " + config.sourceLevel
+                + (config.sourceLevelAuto
+                        ? "（source.level 未指定のため、JDTが対応する最大値）"
+                        : "（source.level=" + config.sourceLevelRequested + " の指定による）")
+                + " / このJDTの対応上限: " + JavaCore.latestSupportedJavaVersion());
+        if (!config.sourceLevelAuto && !config.sourceLevelRequested.equals(config.sourceLevel)) {
+            // JDTが指定値を黙って丸めた。指定が効いていないことを見えるようにする
+            Log.info("※ source.level=" + config.sourceLevelRequested
+                    + " はこのJDTでは扱えないため " + config.sourceLevel + " として解析します。");
+            Log.info("   より古いレベルが要る場合は、古い版のJDTを使ってください。");
+        }
+        // 依存jarは library.folders でフォルダごと指定できる。ここで出すのは
+        // 実際にJDTへ渡す「*.jar に展開した後」の一覧なので、
+        // フォルダ指定がjar単位に展開されているかを確認できる
+        String[] classpath = layout.classpathArray();
+        Log.info("依存jar: " + classpath.length + " 件");
+        for (String cp : classpath) {
+            Log.info("  " + cp);
+        }
+    }
+
+    /** フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄） */
+    private static void analyzeSources(Config config, ProjectLayout layout) throws Exception {
+        Log.blank();
+        Log.info("=== フェーズ1/3: ソース解析 ===");
+        CachePhaseResult result = new CacheUpdater(layout, config).run();
+        Log.info("ソース解析: 再利用=" + result.reused
+                + " 新規解析=" + result.parsed + reanalysisBreakdown(result)
+                + " 失敗=" + result.failed);
+        if (result.unresolved > 0) {
+            Log.info("※ 型解決できなかった呼び出しが " + result.unresolved + " 件あります。");
+            Log.info("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
+            if (!config.libraryFolders.isEmpty()) {
+                Log.info("   Maven / Gradle のプロジェクトなら、library.folders を空欄にすると pom.xml / build.gradle から自動取得します。");
+            }
+            Log.info("   jar を足せば、次回の実行で影響するファイルだけが解析し直されます。");
+            Log.info("   解決できた呼び出しだけが call-hierarchy.csv に出るため、");
+            Log.info("   件数が多いまま使うと呼び出し階層に抜けが出ます。");
+        }
+        Log.heap("フェーズ1完了");
+    }
+
+    /** 「新規解析」のうち、自分は変わっていないのに解析し直した件数の内訳 */
+    private static String reanalysisBreakdown(CachePhaseResult result) {
+        List<String> parts = new ArrayList<>();
+        if (result.dependents > 0) {
+            parts.add("依存先の変更による再解析=" + result.dependents);
+        }
+        if (result.libraryDependents > 0) {
+            parts.add("依存jarの変更による再解析=" + result.libraryDependents);
+        }
+        return parts.isEmpty() ? "" : "（うち" + String.join("、", parts) + "）";
+    }
+
+    /** フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 */
+    private static CallGraph buildGraph(Config config, ProjectLayout layout) throws Exception {
+        Log.blank();
+        Log.info("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
+        List<String> sourceFolderOrder = new ArrayList<>();
+        for (Path sourceFolder : layout.sourceFolders) {
+            sourceFolderOrder.add(layout.relativeOf(sourceFolder));
+        }
+        SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
+        CallGraph graph = CallGraphBuilder.build(config.cacheFile, sourceFolderOrder, beans);
+        if (beans.enabled()) {
+            Log.info("DIコンテナのBean: " + beans.beanCount() + " 型"
+                    + (beans.beanCount() == 0 ? "（spring.di.enabled=true だが Bean は見つからなかった）" : ""));
+        }
+        return graph;
+    }
+
+    /**
+     * フェーズ2b: データフローの事実（ファクトリの戻り値の畳み込み等）をグラフ全体から一括で確定する。
+     * 解決（CallResolver）より前に確定させておくことで、解決の結果がエッジの処理順に依存しなくなる
+     */
+    private static DataflowFacts buildDataflowFacts(Config config, CallGraph graph) {
+        DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled);
+        if (config.dataflowEnabled) {
+            Log.info("ファクトリの戻り値を確定: " + facts.factoriesDecided() + " 件"
+                    + (facts.factoriesCutOff() > 0
+                            ? "（委譲が循環しているため決められなかったもの " + facts.factoriesCutOff() + " 件）"
+                            : ""));
+        }
+        return facts;
+    }
+
+    /** フェーズBの拡張（具象クラスの候補を返すもの）を読み込む。init は Plugins が済ませる */
+    private static List<TypeCandidateProvider> loadProviders(Config config) {
+        return Plugins.load(config, config.candidateProviderClasses, TypeCandidateProvider.class);
+    }
+}
