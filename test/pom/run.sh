@@ -4,7 +4,7 @@
 #   bash test/pom/run.sh
 #
 # 依存の定義は 2 か所にある。
-#   src/CallHierarchyExporter.java の //DEPS 行 … jbang で実行するときの本流
+#   src/jche/CallHierarchyExporter.java の //DEPS 行 … jbang で実行するときの本流
 #   pom.xml                                   … Eclipse（Pleiades）の m2e が依存を解決するためだけのもの
 # JDT の版を上げるときに片方だけ書き換えると、jbang と Eclipse で違う版のライブラリを見ることになり、
 # Eclipse 上では通るのに jbang では通らない（またはその逆）といった食い違いが黙って起きる。
@@ -18,17 +18,17 @@ cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
 
 # //DEPS 行は 1 行に空白区切りで複数書ける。行末コメントは無い前提
-deps=$(grep -E '^//DEPS ' "$ROOT/src/CallHierarchyExporter.java" | sed -E 's|^//DEPS ||' | tr ' ' '\n' | grep -v '^$' | sort)
+deps=$(grep -E '^//DEPS ' "$ROOT/src/jche/CallHierarchyExporter.java" | sed -E 's|^//DEPS ||' | tr ' ' '\n' | grep -v '^$' | sort)
 
-# 対話モードの入口 src/Jche.java にも同じ //DEPS 行がある（jbang はスクリプトごとに依存を解決する）。
+# 対話モードの入口 src/jche/Jche.java にも同じ //DEPS 行がある（jbang はスクリプトごとに依存を解決する）。
 # //JAVA 行も同じでなければならない（実行 JDK が違うと解析結果が変わる。CallHierarchyExporter.java の冒頭）
-jche_deps=$(grep -E '^//DEPS ' "$ROOT/src/Jche.java" | sed -E 's|^//DEPS ||' | tr ' ' '\n' | grep -v '^$' | sort)
-java_main=$(grep -E '^//JAVA ' "$ROOT/src/CallHierarchyExporter.java")
-java_jche=$(grep -E '^//JAVA ' "$ROOT/src/Jche.java")
+jche_deps=$(grep -E '^//DEPS ' "$ROOT/src/jche/Jche.java" | sed -E 's|^//DEPS ||' | tr ' ' '\n' | grep -v '^$' | sort)
+java_main=$(grep -E '^//JAVA ' "$ROOT/src/jche/CallHierarchyExporter.java")
+java_jche=$(grep -E '^//JAVA ' "$ROOT/src/jche/Jche.java")
 if [ "$deps" = "$jche_deps" ] && [ -n "$java_main" ] && [ "$java_main" = "$java_jche" ]; then
-    echo "  OK   src/Jche.java の //DEPS と //JAVA が src/CallHierarchyExporter.java と一致する"
+    echo "  OK   src/jche/Jche.java の //DEPS と //JAVA が src/jche/CallHierarchyExporter.java と一致する"
 else
-    echo "  NG   src/Jche.java の //DEPS または //JAVA が src/CallHierarchyExporter.java と食い違っている"
+    echo "  NG   src/jche/Jche.java の //DEPS または //JAVA が src/jche/CallHierarchyExporter.java と食い違っている"
     echo "       CallHierarchyExporter.java: $(echo "$deps" | paste -sd' ') / $java_main"
     echo "       Jche.java:                  $(echo "$jche_deps" | paste -sd' ') / $java_jche"
     echo "FAIL"; exit 1

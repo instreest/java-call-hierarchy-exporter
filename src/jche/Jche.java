@@ -1,13 +1,14 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
+package jche;
 
 // ---------------------------------------------------------------------------
-// JBang 用の指示行。DEPS / JAVA は src/CallHierarchyExporter.java と同じにしておく
+// JBang 用の指示行。DEPS / JAVA は src/jche/CallHierarchyExporter.java と同じにしておく
 // （JDT の版を変えるときは両方を書き換える。test/pom/run.sh が食い違いを検出する）。
-// SOURCES に CallHierarchyExporter.java を含めるのは、解析の処理をそのまま使うため。
+// SOURCES は CallHierarchyExporter を含む jche パッケージ一式（このファイルからの相対）。
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
-//SOURCES CallHierarchyExporter.java jche/**/*.java
+//SOURCES *.java **/*.java
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -72,13 +73,13 @@ public class Jche {
                 : ToolRoot.locate(Jche.class);
 
         if (!configPaths.isEmpty()) {
-            // 引数あり … 対話なし。設定ファイルを順に処理して終わる（jbang で CallHierarchyExporter.java を動かすのと同じ）。
+            // 引数あり … 対話なし。設定ファイルを順に処理して終わる（jbang で CallHierarchyExporter.java を直接動かすのと同じ）。
             // メニューは出さないので、標準入力が無い環境（バッチ・CI・cron）でもそのまま動く
             int failed = CallHierarchyExporter.runAll(configPaths, toolRoot);
             System.exit(failed > 0 ? 1 : 0);
         }
 
-        int code = new App(new Terminal(), toolRoot, CallHierarchyExporter::runAll).run();
+        int code = new App(new Terminal(), toolRoot).run();
         System.exit(code);
     }
 

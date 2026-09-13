@@ -13,7 +13,7 @@ import java.security.CodeSource;
  * 解析キャッシュは解析対象のプロジェクトごとのサイドカーとして、出力フォルダではなくこのツールの
  * プロジェクトフォルダ内（{@code .cache/}）に置く。そのために「自分がどこに置かれているか」が要る。
  *
- * 目印は {@code src/CallHierarchyExporter.java}。次の順に探し、最初に見つかった場所を採る。
+ * 目印は {@code src/jche/CallHierarchyExporter.java}。次の順に探し、最初に見つかった場所を採る。
  * <ol>
  *   <li>作業ディレクトリと、その上位。README の手順（jbang でも java 直接でも）はプロジェクト直下を
  *       作業ディレクトリにして実行するので、ほとんどはここで決まる</li>
@@ -26,7 +26,7 @@ import java.security.CodeSource;
 public final class ToolRoot {
 
     /** 目印のファイル（プロジェクト直下からの相対パス） */
-    private static final String MARKER = "src/CallHierarchyExporter.java";
+    private static final String MARKER = "src/jche/CallHierarchyExporter.java";
 
     public final Path dir;
     /** 目印で特定できたか。false なら {@link #dir} は作業ディレクトリ */

@@ -58,10 +58,10 @@ for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs 
 do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
 
 rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
-"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\CallHierarchyExporter.java -encoding UTF-8
+"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\jche\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\config.properties
 ```
 
 ### GitHub Actions Workflow

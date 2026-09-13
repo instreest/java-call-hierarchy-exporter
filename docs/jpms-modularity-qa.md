@@ -23,8 +23,8 @@
 
 ### Q1. 今の構成はどうなっているか
 
-- ソースは `src/CallHierarchyExporter.java`（解析の入口）、`src/Jche.java`（対話メニュー）と、
-  `src/jche/*` の 11 パッケージ（約 15,000 行）。JBang の `//SOURCES jche/**/*.java` で一緒にコンパイルされる
+- ソースは `src/jche/CallHierarchyExporter.java`（解析の入口）、`src/jche/Jche.java`（対話メニュー）と、
+  `src/jche/*` の 11 パッケージ（約 15,000 行）。JBang の `//SOURCES *.java **/*.java` で一緒にコンパイルされる
 - 依存は `//DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0` の 1 つだけ。推移的に
   `org.eclipse.platform.*`（core.runtime / equinox.* / core.resources 等）、`ecj`、`jna`、`org.osgi.*` の
   計 19 jar が classpath に載る
@@ -150,7 +150,7 @@ Maven Central に出ること。Eclipse 側では JDT の `module-info` 化の�
 
 ```bash
 # 依存 jar を集めて分割パッケージを探す（重複が出なければ Q4 の壁は消えている）
-CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/')
+CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/')
 for j in $CP; do unzip -Z1 "$j" | grep '\.class$' | grep -v META-INF | sed 's#/[^/]*$##' | sort -u | sed "s#\$# $(basename $j)#"; done \
   | sort | awk '{p[$1]=p[$1]" "$2; c[$1]++} END {for (k in c) if (c[k]>1) print k, p[k]}'
 ```
@@ -188,7 +188,7 @@ for j in $CP; do unzip -Z1 "$j" | grep '\.class$' | grep -v META-INF | sed 's#/[
 
 | 必要な変更 | 理由 |
 | --- | --- |
-| `src/CallHierarchyExporter.java` と `src/Jche.java` をパッケージに入れる（例: `jche.app`） | 名前付きモジュールに無名パッケージは置けない（`unnamed package is not allowed in named modules`）。README の `jbang src/CallHierarchyExporter.java`、起動スクリプト、`test/pom/run.sh`、Pleiades 手順、`smoke.yml` の全部が影響を受ける |
+| ~~`CallHierarchyExporter` と `Jche` をパッケージに入れる~~（対応済み。両者は `jche` パッケージの `src/jche/` 直下にある。`docs/entrypoint-package-qa.md`） | 名前付きモジュールに無名パッケージは置けない（`unnamed package is not allowed in named modules`）。この調査の時点では既定パッケージだったため変更が要ったが、現在は不要 |
 | `requires java.xml;` を足す | `jche.config` の pom 解析が `org.w3c.dom` / `javax.xml.parsers` を使っている。classpath 時代は暗黙に見えていた |
 | `--add-reads jche=ALL-UNNAMED` をコンパイルと実行の両方に付ける | 付け忘れると実行時に `IllegalAccessError: module jche does not read unnamed module` |
 | [PluginClassLoaders](../src/jche/config/PluginClassLoaders.java) が拡張のコンパイルに渡すクラスパスに `jdk.module.path` も足す | jche のクラスが `java.class.path` から消えるため、`plugin.folders` の `.java` が `package jche.extension does not exist` でコンパイルできなくなる。回帰テストの `plugin` ケース（`config-custom.properties`）で実際に落ちた |
@@ -208,9 +208,9 @@ classpath に置く選択肢は無い。そのため JBang 経由では「JDT �
 `--cp` で手で組んだクラスパスを渡す手はあるが、そのためには `//DEPS` を捨てて依存 jar を自分で解決することになり、
 「`//DEPS` 1 行で Maven Central から取ってくる」利点を失う。
 
-また、`//SOURCES ../../jche/**/*.java` のようにスクリプト自身を含む glob を書くと JBang が `StackOverflowError`
-（ヒープ不足の形で出ることもある）で落ちる。パッケージ内の入口からモジュール全体を集めるには、
-自分を除いた列挙が要る。
+また、`//SOURCES ../../jche/**/*.java` のように**上の階層へ出てから戻る** glob を書くと JBang が `StackOverflowError`
+（ヒープ不足の形で出ることもある）で落ちる。スクリプトと同じフォルダを指す `*.java`（スクリプト自身を含む）は
+問題なく、現在の入口 2 つはこの形（`docs/entrypoint-package-qa.md`）。
 
 ### Q13. この案の結論
 
@@ -255,10 +255,10 @@ jar で持ち込む拡張を実行時に縛れるのは JPMS だけだが、リ�
 
 ```bash
 S=$(mktemp -d)
-CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
 mkdir -p "$S/src/jche/jche/app"; cp -r src/jche "$S/src/jche/"
 # 入口をパッケージに入れる（1 行目の import の前に package 行を足す）
-sed '0,/^import/s//package jche.app;\nimport /' src/CallHierarchyExporter.java > "$S/src/jche/jche/app/CallHierarchyExporter.java"
+sed '0,/^import/s//package jche.app;\nimport /' src/jche/CallHierarchyExporter.java > "$S/src/jche/jche/app/CallHierarchyExporter.java"
 cat > "$S/src/jche/module-info.java" <<'M'
 module jche { requires java.compiler; requires java.xml; exports jche.extension; exports jche.builtin; }
 M
@@ -276,7 +276,7 @@ JDK 21、JBang 0.141.0、JDT 3.46.0。作業フォルダは任意。
 
 ```bash
 S=$(mktemp -d)
-CP=$(bash jbangw/jbang info classpath src/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/')
+CP=$(bash jbangw/jbang info classpath src/jche/CallHierarchyExporter.java | tail -1 | tr ':' '\n' | grep -v '/cache/jars/')
 mkdir -p "$S/mp"; for j in $CP; do cp "$j" "$S/mp/"; done
 for j in "$S"/mp/*.jar; do echo -n "$(basename "$j"): "; jar --describe-module --file "$j" | head -1; done
 

@@ -7,7 +7,7 @@
 
 - リポジトリ直下に起動コマンド `java-call-hierarchy-exporter.sh`（bash）/ `java-call-hierarchy-exporter.cmd`（Windows）を置いた。どこから実行してもよく、
   引数なしなら対話モード、設定ファイルを引数に渡せば従来どおり対話なしで解析する
-- 対話モードは `src/Jche.java`（`jche.cli` パッケージ）。メニューは 4 つ:
+- 対話モードは `src/jche/Jche.java`（`jche.cli` パッケージ）。メニューは 4 つ:
   解析の実行（設定ファイルの一覧から選ぶ）/ 設定ファイルの作成ウィザード / 環境設定 / 実行環境の状態
 - JDK / JBang の置き場所（`JBANG_DIR`）・依存 jar の置き場所（`JBANG_REPO`）・ヒープ上限・`jbang run` の追加オプションは
   `launcher.properties`（リポジトリ直下、Git では追跡しない）に持ち、起動コマンドが環境変数にして jbang を呼ぶ。
@@ -50,13 +50,13 @@ JDK と JBang の置き場所は、**Java が起動する前に**決まらなけ
 | 役割 | 担当 |
 |---|---|
 | `launcher.properties` を読んで環境変数にし、jbang を呼ぶ。初回に置き場所を尋ねる。再起動 | 起動コマンド（`java-call-hierarchy-exporter.sh` / `java-call-hierarchy-exporter.cmd`） |
-| メニュー、設定ファイルの選択と作成、環境設定の**書き換え**、状態表示、解析の実行 | Java（`src/Jche.java`、`jche.cli`） |
+| メニュー、設定ファイルの選択と作成、環境設定の**書き換え**、状態表示、解析の実行 | Java（`src/jche/Jche.java`、`jche.cli`） |
 
 Java 側は `launcher.properties` を書き換えるだけで、効くのは次の起動から。その隙間を「その場で再起動」で埋めた（Q5）。
 シェル側は必要最小限（初回の 2 択と、ファイルの読み込み）にとどめ、判断や表示はできるだけ Java に寄せた。
 bash と cmd で同じ内容を 2 回書くことになるため、シェル側が増えるほど食い違いの元になる。
 
-### Q3. 対話モードの入口を `CallHierarchyExporter.java` に足さず、別の `src/Jche.java` にした理由
+### Q3. 対話モードの入口を `CallHierarchyExporter.java` に足さず、別の `src/jche/Jche.java` にした理由
 
 `CallHierarchyExporter.java` の「引数なしで動かすと作業ディレクトリの `config/config.properties` を読む」挙動を変えないため
 （[docs/config-folder-qa.md](config-folder-qa.md) で決めた既定）。
@@ -224,14 +224,14 @@ Windows のコマンドプロンプトでは MS932 になるので、日本語�
 端末で同じコードを通したい。行編集の恩恵（履歴、カーソル移動）は捨てた。
 
 出力は `System.out` に任せる（コンソールの文字コードで書く）。ツール全体の方針
-（`src/CallHierarchyExporter.java` の冒頭: UTF-8 に固定しない、`chcp` もしない）と同じ。
+（`src/jche/CallHierarchyExporter.java` の冒頭: UTF-8 に固定しない、`chcp` もしない）と同じ。
 
 ### Q15. `java-call-hierarchy-exporter.cmd` の文字コードを MS932 にした理由と、`launcher.properties` の文字コード
 
 このリポジトリのファイルは UTF-8 で保存されているが、`java-call-hierarchy-exporter.cmd` だけは MS932（Shift_JIS、CRLF）にした。
 cmd はバッチファイルをコンソールのコードページ（日本語 Windows では MS932）として読むので、UTF-8 のままだと
 初回の問い（利用者が画面で読んで答える）の日本語が化ける。`chcp 65001` で切り替える方法は、日本語 Windows で
-画面が消えるので採らない（`src/CallHierarchyExporter.java` の冒頭と同じ判断）。
+画面が消えるので採らない（`src/jche/CallHierarchyExporter.java` の冒頭と同じ判断）。
 `test/regression/run.cmd` は UTF-8 のままだが、あれは CI のログに出るだけで人が画面で読むものではない。
 
 最初は「画面の文言だけ ASCII の英語にする」で逃げていたが、利用者の指摘で MS932 に改めた。
@@ -260,7 +260,7 @@ Java は `C:\c\work\...` と解釈してしまう（MSYS の自動変換はコ�
 作業ディレクトリは触らず、必要な情報だけ渡す。
 
 `JCHE_ROOT` が無いとき（jbang で `Jche.java` を直接動かしたとき）は従来の `ToolRoot.locate()`（作業ディレクトリと
-その上位から `src/CallHierarchyExporter.java` を探す）に戻る。
+その上位から `src/jche/CallHierarchyExporter.java` を探す）に戻る。
 
 ---
 
@@ -299,7 +299,7 @@ jbang が JDK 25 を取得できない環境（JDK の配布サイトへの接�
 このオプション自体が今回足した仕組みなので、ちょうどその確認にもなった。
 
 - `test/regression/run.sh` を `JCHE_CMD="$PWD/java-call-hierarchy-exporter.sh"`（起動コマンドの対話なし経路）と、従来どおりの
-  `jbang run --java 21 src/CallHierarchyExporter.java` の両方で実行し、全ケース（`multi` を含む）PASS
+  `jbang run --java 21 src/jche/CallHierarchyExporter.java` の両方で実行し、全ケース（`multi` を含む）PASS
 - `JCHE_TEST_JBANG_OPTS="--java 21" bash test/cli/run.sh` が PASS
 - `JBANG_DIR=.jbang` / `JBANG_REPO=.jbang/repository` で起動し、JBang 本体が `.jbang/bin/` に、JDT の jar が
   `.jbang/repository/org/eclipse/jdt/` に入ることを確認（JDK は取得できないので `--java 21` のまま）

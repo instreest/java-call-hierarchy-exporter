@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
 JBANG="bash $ROOT/jbangw/jbang"
 
-CP=$($JBANG info classpath "$ROOT/src/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
+CP=$($JBANG info classpath "$ROOT/src/jche/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
 JAVA_HOME_25=$($JBANG jdk home 25)
 if [ -z "$CP" ] || [ -z "$JAVA_HOME_25" ]; then
     echo "  NG   jbang から JDT の classpath または JDK 25 を取得できませんでした"; echo "FAIL"; exit 1

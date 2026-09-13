@@ -190,10 +190,10 @@ Spring Boot のローダーは入れていない。走査には影響しない�
 
 ### Q18. 回帰テストの実行環境で困ったこと
 
-`src/CallHierarchyExporter.java` は `//JAVA 25` を指定しており、JBang は無ければ JDK 25 を
+`src/jche/CallHierarchyExporter.java` は `//JAVA 25` を指定しており、JBang は無ければ JDK 25 を
 foojay（Disco API）から取得する。今回の作業環境ではそこへの接続が遮断されていて取得できず、
 `jbang run --java 21 …` で手元の JDK 21 を使って回帰テストを通した
-（`JCHE_CMD="bash jbangw/jbang run --java 21 src/CallHierarchyExporter.java" bash test/regression/run.sh`）。
+（`JCHE_CMD="bash jbangw/jbang run --java 21 src/jche/CallHierarchyExporter.java" bash test/regression/run.sh`）。
 `samples/demo` は JDK の版で結果が変わる API を使っていないので、期待出力は JDK 25 と同じである
 （版による違いは [cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) の Q20）。
 閉域環境で同じ状況になったときの回避策として記しておく。

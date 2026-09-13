@@ -2,7 +2,7 @@
 <!--
   Eclipse（Pleiades）でこのリポジトリを開くための Maven 設定。
 
-  ビルドの本流は JBang（src/CallHierarchyExporter.java の //DEPS 行）で、この pom.xml は
+  ビルドの本流は JBang（src/jche/CallHierarchyExporter.java の //DEPS 行）で、この pom.xml は
   Eclipse 同梱の m2e に「依存 jar を Maven Central から取ってきてビルドパスに載せる」ためだけに置く。
   Eclipse で「インポート > 既存の Maven プロジェクト」からこのフォルダを選ぶと、依存が自動で解決される。
   jbang での実行にはこのファイルは使われない。

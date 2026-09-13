@@ -14,7 +14,7 @@ import java.util.Locale;
  * 入力の文字コードは {@code stdin.encoding}（JDK 25 以降）→ {@code native.encoding} の順で決める。
  * Windows のコマンドプロンプトでは MS932 になるので、日本語を含むパスもそのまま読める。
  * 出力は {@code System.out} に任せる（コンソールの文字コードで書く。ツール全体の方針は
- * {@code src/CallHierarchyExporter.java} の冒頭）。
+ * {@code src/jche/CallHierarchyExporter.java} の冒頭）。
  *
  * {@link System#console()} は使わない。JDK 22 以降は端末でなくても Console が返ることがあり、
  * パイプから流し込んだ入力（自動テスト）と端末からの入力で挙動が変わるのを避けるため。

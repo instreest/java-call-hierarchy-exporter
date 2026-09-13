@@ -106,13 +106,13 @@ JVM が標準エラーに出していたが、それだとファイルに残ら�
 
 ### Q9. キャッシュを「ツールのプロジェクトフォルダ内」に置くために、その場所をどう特定するか
 
-`jche.config.ToolRoot`。目印 `src/CallHierarchyExporter.java` を、作業ディレクトリとその上位、次に実行中の
+`jche.config.ToolRoot`。目印 `src/jche/CallHierarchyExporter.java` を、作業ディレクトリとその上位、次に実行中の
 クラスの置き場所（`CodeSource`）とその上位から探す。
 
 - jbang 経由では、クラスは `~/.jbang/cache/jars/` の下の jar から読み込まれるので `CodeSource` は使えない。
   jbang がスクリプトの場所をシステムプロパティで渡してくれることも無い
 - README の手順は jbang でも `java -cp bin` でも「リポジトリ直下を作業ディレクトリにして」実行する形
-  （`src/CallHierarchyExporter.java` や `bin` を相対パスで指している）なので、作業ディレクトリから上へ探せば
+  （`src/jche/CallHierarchyExporter.java` や `bin` を相対パスで指している）なので、作業ディレクトリから上へ探せば
   ほぼ決まる。サブフォルダから実行しても上位で見つかる
 - `java -cp bin` を別の場所から動かしたときは `bin/` の親に目印があるので `CodeSource` で見つかる
 - どちらでも見つからなければ、警告を出して作業ディレクトリの `.cache/` にする。黙って別の場所にできるのが
