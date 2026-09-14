@@ -32,6 +32,8 @@ public final class FileAnalysis {
     public final List<HintFact> hints = new ArrayList<>();
     public final List<MethodDeclFact> declarations = new ArrayList<>();
     public final List<FieldDeclFact> fieldDecls = new ArrayList<>();
+    /** このファイルが宣言するコンパイル時定数（K行。{@link ConstantFact} 参照） */
+    public final List<ConstantFact> constants = new ArrayList<>();
     public final List<FieldAssignFact> fieldAssigns = new ArrayList<>();
     public final List<FieldAccessFact> fieldAccesses = new ArrayList<>();
     /** バインディング解決で参照した型のFQN（I行の元。自分が宣言する型は書き出し時に除く） */

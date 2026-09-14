@@ -37,6 +37,10 @@ package jche.cache;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
  *                                                             {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
+ *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
+ *                                                          コンパイル時定数（static final の値と注釈の
+ *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
+ *                                                          ので、差分更新で「値が変わった」を知るために持つ
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
@@ -71,6 +75,10 @@ package jche.cache;
  * 内容ハッシュで見るのは、git のチェックアウトや CI のワークスペース作り直しのように、中身が同じでも
  * 更新時刻が変わる場合に全件解析し直しにならないようにするため（docs/actions-analysis-cache-qa.md）。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
  * 結果であり、別のファイルを変えると変わりうるため（{@link jche.analysis.CacheUpdater} 参照）。
+ * ただしコンパイル時定数（{@code static final} の値と注釈のメンバの既定値）だけは、
+ * 使う側のファイルに値そのものが焼き込まれるため、参照した型を1段辿るだけでは足りない。
+ * 宣言している側に値を K 行として残しておき、解析し直して値が変わっていたら、その型を参照する
+ * ファイルも解析し直す（{@link jche.analysis.CacheUpdater} の「定数の連鎖」）。
  * 依存 jar も同じ理由で解決結果を左右するので、L行と突き合わせて追加・変更・削除を検知し、
  * その jar のパッケージの型を参照するファイル（I行）と、型解決に失敗していたファイル
  * （F行のエラー数、U行の BINDING_FAILED）を解析し直す。
@@ -107,6 +115,10 @@ package jche.cache;
  *       （{@link jche.graph.SpringBeans} / {@link jche.framework.GeneratedImpl}）</li>
  *   <li>F 行と L 行の末尾に内容ハッシュの列を足した（v13 のまま。列が無い旧行は更新時刻とサイズだけで
  *       判定され、書き写すときに補われる。事実の意味は変わらないのでバージョンは上げていない）</li>
+ *   <li>K 行（このファイルが宣言するコンパイル時定数の値）を足した（v15。{@link ConstantFact}）。
+ *       定数の値は使う側のファイルに焼き込まれるので、差分更新で取りこぼさないよう宣言側にも残す。
+ *       あわせて、行形式を壊す値（タブ・改行を含む文字列定数、複数行の注釈の値）は事実として
+ *       拾わないことにした。以前はそのまま書いていたため行が割れ、以降の呼び出しが読めなくなっていた</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -123,7 +135,7 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
      */
-    public static final String VERSION = "jche-cache-v14";
+    public static final String VERSION = "jche-cache-v15";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';
@@ -132,6 +144,7 @@ public final class CacheFormat {
     public static final char ROW_TYPE = 'H';
     public static final char ROW_METHOD_DECL = 'D';
     public static final char ROW_FIELD_DECL = 'V';
+    public static final char ROW_CONSTANT = 'K';
     public static final char ROW_FIELD_ACCESS = 'A';
     public static final char ROW_FIELD_ASSIGN = 'J';
     public static final char ROW_CALL = 'C';

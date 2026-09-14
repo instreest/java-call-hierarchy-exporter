@@ -60,8 +60,13 @@ final class BindingNames {
      * SuppressWarnings 等）は、どの型が動くかに一切関わらないうえ全メソッドに付きうるので落とす。
      * 値は単一メンバか value / name が文字列のものだけ残す。DIコンテナが Bean を
      * 見分けるのに使うのは名前の文字列だけのため。
+     *
+     * <p>拾った注釈の型は「このファイルの解決結果が依存する型」（I行）に数える。
+     * 値には注釈のメンバの<b>既定値</b>も含まれる（{@code @Ann} だけ書いても
+     * {@code String value() default "svc"} の "svc" が入る）ので、注釈の宣言を変えると
+     * ここの結果も変わるため。
      */
-    static String annotationsOf(IBinding binding) {
+    String annotationsOf(IBinding binding) {
         if (binding == null) {
             return "";
         }
@@ -79,6 +84,7 @@ final class BindingNames {
             if (fqn == null || fqn.isEmpty() || fqn.startsWith("java.lang.")) {
                 continue;
             }
+            noteDependency(type);
             tokens.add(AnnotationTokens.token(fqn, stringMemberOf(a)));
         }
         return AnnotationTokens.join(tokens);

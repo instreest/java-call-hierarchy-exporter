@@ -322,7 +322,7 @@ final class FactVisitor extends ASTVisitor {
             }
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
                     node.getBody() != null, mods,
-                    BindingNames.annotationsOf(node.resolveBinding())));
+                    names.annotationsOf(node.resolveBinding())));
             methodStack.push(List.of(ref));
         } else {
             methodStack.push(UNKNOWN_CALLER);

@@ -3,6 +3,7 @@ package jche.util;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -24,14 +25,35 @@ public final class FileHash {
     private FileHash() {
     }
 
-    /** ファイルを読んでハッシュを求める。読めなければ IOException */
-    public static String of(Path file) throws IOException {
-        MessageDigest digest;
+    /**
+     * 文字列のハッシュ。ファイルと同じ形（SHA-256 の先頭 16 桁）。
+     *
+     * 長い定数の値をそのままキャッシュに持たずに、変化だけを見るために使う
+     * （{@link jche.cache.ConstantFact}）
+     */
+    public static String ofText(String text) {
+        return hex(digest().digest(text.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static MessageDigest digest() {
         try {
-            digest = MessageDigest.getInstance("SHA-256");
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    private static String hex(byte[] d) {
+        StringBuilder sb = new StringBuilder(HEX_LENGTH);
+        for (int i = 0; i < HEX_LENGTH / 2; i++) {
+            sb.append(String.format("%02x", d[i]));
+        }
+        return sb.toString();
+    }
+
+    /** ファイルを読んでハッシュを求める。読めなければ IOException */
+    public static String of(Path file) throws IOException {
+        MessageDigest digest = digest();
         byte[] buffer = new byte[64 * 1024];
         try (InputStream in = Files.newInputStream(file)) {
             int n;
@@ -39,11 +61,6 @@ public final class FileHash {
                 digest.update(buffer, 0, n);
             }
         }
-        byte[] d = digest.digest();
-        StringBuilder sb = new StringBuilder(HEX_LENGTH);
-        for (int i = 0; i < HEX_LENGTH / 2; i++) {
-            sb.append(String.format("%02x", d[i]));
-        }
-        return sb.toString();
+        return hex(digest.digest());
     }
 }
