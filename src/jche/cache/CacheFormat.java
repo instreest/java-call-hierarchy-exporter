@@ -363,6 +363,144 @@ public final class CacheFormat {
     }
 
     /**
+     * dataflow-cache.tsv の値を、行形式を壊さない形に符号化する（逆は {@link #unescape}）。
+     *
+     * <h4>analysis 側の {@link #clean} との違い</h4>
+     * analysis 側はタブ・改行を空白へ<b>置き換えて捨てる</b>。呼び出し階層の出力に使う値は
+     * 識別子やクラス名で、制御文字が混ざるのは異常なケースだけなので、落として構わない。
+     * dataflow 側は SQL やログ文言のような<b>長さも中身も選べない文字列を、そのまま持つ</b>のが目的なので、
+     * 捨てるのではなく符号化する。だから 2 つのキャッシュで規則が違ってよく、
+     * 分けたこと自体がこの違いを許している（{@code docs/cache-split-qa.md}）。
+     *
+     * <h4>規則</h4>
+     * <pre>
+     *   \      ->  \\
+     *   タブ    ->  \t
+     *   LF      ->  \n
+     *   CR      ->  \r
+     *   その他の制御文字（U+0000〜U+001F と U+007F）  ->  &#92;uXXXX（小文字の16進4桁）
+     * </pre>
+     * それ以外の文字はそのまま。非 ASCII は UTF-8 のまま書くので符号化しない。
+     * {@link Guard} が区切りに使う {@code U+0001}〜{@code U+0003} も「その他の制御文字」として
+     * 符号化されるので、ガードを dataflow 側へ移しても値と区切りが衝突しない。
+     *
+     * <p>符号化した結果にタブ・改行・制御文字は残らない（{@link #hasControlChar} が false になる）。
+     * したがって {@link #joinRow} を通しても {@link #clean} に何も削られない。
+     */
+    public static String escape(String s) {
+        if (s == null) {
+            return "";
+        }
+        int at = indexOfEscapable(s);
+        if (at < 0) {
+            return s;   // 変換の要らない値（ほとんどはこちら）は作り直さない
+        }
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        sb.append(s, 0, at);
+        for (int i = at; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '\t' -> sb.append("\\t");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                default -> {
+                    if (c < ' ' || c == '\u007f') {
+                        sb.append("\\u").append(String.format("%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 符号化が要る最初の文字の位置。無ければ -1 */
+    private static int indexOfEscapable(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' || c < ' ' || c == '\u007f') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * {@link #escape} の逆。
+     *
+     * 規則にない並び（{@code \x} のような、符号化では作られない形）は、文字どおり
+     * バックスラッシュと次の文字として返す。手で編集された・壊れたキャッシュでも例外にせず、
+     * 読めるところまで読む（キャッシュが壊れていれば、どうせブロックの突き合わせで捨てられる）。
+     */
+    public static String unescape(String s) {
+        if (s == null) {
+            return "";
+        }
+        int at = s.indexOf('\\');
+        if (at < 0) {
+            return s;
+        }
+        StringBuilder sb = new StringBuilder(s.length());
+        sb.append(s, 0, at);
+        for (int i = at; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != '\\' || i + 1 >= s.length()) {
+                sb.append(c);
+                continue;
+            }
+            char next = s.charAt(i + 1);
+            switch (next) {
+                case '\\' -> {
+                    sb.append('\\');
+                    i++;
+                }
+                case 't' -> {
+                    sb.append('\t');
+                    i++;
+                }
+                case 'n' -> {
+                    sb.append('\n');
+                    i++;
+                }
+                case 'r' -> {
+                    sb.append('\r');
+                    i++;
+                }
+                case 'u' -> {
+                    int cp = hex4(s, i + 2);
+                    if (cp < 0) {
+                        // バックスラッシュ u に続く16進4桁が無い。文字どおりに扱う
+                        sb.append(c);
+                    } else {
+                        sb.append((char) cp);
+                        i += 5;
+                    }
+                }
+                default -> sb.append(c);   // 規則にない並び。バックスラッシュをそのまま置く
+            }
+        }
+        return sb.toString();
+    }
+
+    /** s の位置 at から16進4桁を読む。読めなければ -1 */
+    private static int hex4(String s, int at) {
+        if (at + 4 > s.length()) {
+            return -1;
+        }
+        int v = 0;
+        for (int i = at; i < at + 4; i++) {
+            int d = Character.digit(s.charAt(i), 16);
+            if (d < 0) {
+                return -1;
+            }
+            v = (v << 4) | d;
+        }
+        return v;
+    }
+
+    /**
      * 行形式を壊す文字（タブ・改行のほか、{@link Guard} が区切りに使う制御文字）を含むか。
      *
      * 事実を<b>作る側</b>が「この値は持たない」と判断するために使う。書き出すときに
