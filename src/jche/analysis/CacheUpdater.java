@@ -161,7 +161,6 @@ public final class CacheUpdater {
             cacheOut.write(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
                     config.hintPluginFingerprint));
             cacheOut.newLine();
-            writeLine(cacheOut, CacheFormat.sourcesRow(fingerprintOf(live)));
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
@@ -178,6 +177,9 @@ public final class CacheUpdater {
                 valid.clear();
                 libraryAffected.clear();
             }
+            // ソース一覧の指紋（T行）。パス1 の後に書くのは、有効なブロックの F 行に記録された
+            // ハッシュを使い回して、ソースを読み直さずに済ませるため
+            writeLine(cacheOut, CacheFormat.sourcesRow(fingerprintOf(live)));
 
             // --- パス2: 変更・追加されたファイルを解析 ---
             List<SourceFile> changed = new ArrayList<>();
@@ -570,7 +572,9 @@ public final class CacheUpdater {
      * <p>引き継ぐ条件（{@link #isPartialUsable}）:
      * <ul>
      *   <li>ヘッダ（形式・ソースレベル・文字コード・JDK・拡張の指紋）が今回と一致する</li>
-     *   <li>ソース一覧（T行）が当時と丸ごと同じ。ブロックは他のファイルの内容にも依存するため</li>
+     *   <li>ソース一覧（T行。パス・サイズ・内容ハッシュ）が当時と丸ごと同じ。
+     *       ブロックは他のファイルの内容にも依存するため。更新時刻は見ないので、
+     *       git のチェックアウトなどで更新時刻だけが変わっていても引き継げる</li>
      *   <li>依存 jar が当時から変わっていない。ブロックは当時のクラスパスでのバインディング解決の
      *       結果なので、jar が変われば同じソースでも呼び出し先や親型が変わりうる</li>
      *   <li>ファイルの更新時刻とサイズ（または内容ハッシュ）が一致する（{@link #isValidBlock}）</li>
@@ -641,7 +645,7 @@ public final class CacheUpdater {
             return false;
         }
         if (!head.sources().equals(fingerprintOf(live))) {
-            Log.info("[cache] 中断した前回の実行からソースが変わっているため引き継ぎません"
+            Log.info("[cache] 中断した前回の実行からソースの内容が変わっているため引き継ぎません"
                     + "（変わっていないファイルの解析結果も、他のファイルの変更で変わりうるため）");
             return false;
         }
@@ -761,15 +765,25 @@ public final class CacheUpdater {
     }
 
     /**
-     * 解析対象のソース一覧の指紋（相対パス・更新時刻・サイズ）。
+     * 解析対象のソース一覧の指紋（相対パス・サイズ・内容ハッシュ）。
      *
      * 引き継ぎの判定に使う。1ファイルぶんの更新時刻とサイズが一致していても、他のファイルが
-     * 変わっていればそのブロックの解決結果は古いので、一覧が丸ごと同じときだけ引き継ぐ
+     * 変わっていればそのブロックの解決結果は古いので、一覧が丸ごと同じときだけ引き継ぐ。
+     *
+     * <p><b>更新時刻は入れない</b>。中身と関係なく変わる（git のチェックアウト、コピー、
+     * CI のたびに作り直されるワークスペース）ので、入れると「中身は同じなのに引き継げない」が
+     * 頻発する。差分更新の判定が内容ハッシュで救っているのと同じ考え方
+     * （{@link #isValidBlock}、docs/actions-analysis-cache-qa.md）。
+     *
+     * <p>全ファイルのハッシュが要るが、ほとんどは読み直さずに済む。更新時刻とサイズが
+     * 旧キャッシュの F 行と一致するファイルは、記録されているハッシュがそのまま
+     * 「今の内容のハッシュ」なので、パス1 でそれを覚えておく（{@link #rememberHash}）。
+     * 残るのは「これから解析するファイル」だけで、そのハッシュはどのみち F 行に書くために計算する。
      */
-    private static String fingerprintOf(Map<String, SourceFile> live) {
+    private String fingerprintOf(Map<String, SourceFile> live) {
         List<String> lines = new ArrayList<>(live.size());
         for (SourceFile f : live.values()) {
-            lines.add(f.relativePath() + "\t" + f.mtime() + "\t" + f.size());
+            lines.add(f.relativePath() + "\t" + f.size() + "\t" + hashOf(f));
         }
         Collections.sort(lines);
         StringBuilder sb = new StringBuilder();
@@ -777,6 +791,18 @@ public final class CacheUpdater {
             sb.append(line).append('\n');
         }
         return FileHash.ofText(sb.toString());
+    }
+
+    /**
+     * 旧キャッシュの F 行に記録されていたハッシュを「今の内容のハッシュ」として覚える。
+     *
+     * 更新時刻とサイズが一致するブロックでだけ呼ぶ。中身が同じと判定した以上、記録された
+     * ハッシュは今の内容のものでもあるので、ソースを読み直さずに済む
+     */
+    private void rememberHash(SourceFile file, String hash) {
+        if (file != null && !hash.isEmpty()) {
+            hashes.putIfAbsent(file.relativePath(), hash);
+        }
     }
 
     /**
@@ -810,6 +836,10 @@ public final class CacheUpdater {
                     String[] f = in.columns();
                     blockRel = (f.length >= 2) ? f[1] : null;
                     staleBlock = !isValidBlock(f, live);
+                    if (!staleBlock) {
+                        // 中身が同じと判定できたので、記録されたハッシュは今の内容のものでもある
+                        rememberHash(live.get(f[1]), CacheFormat.columnAt(f, 5));
+                    }
                     currentRel = staleBlock ? null : f[1];
                     if (currentRel != null) {
                         if (librariesAddedOrChanged && errorsOf(f) > 0) {
