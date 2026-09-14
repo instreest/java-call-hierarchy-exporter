@@ -48,12 +48,14 @@ public final class CallEdgeExtractor {
     /**
      * 解析対象のソースファイル1件。
      *
+     * 差分更新の同一性は「相対パス・サイズ・内容ハッシュ」で見る。更新時刻は持たない
+     * （中身と関係なく変わるため。{@link jche.analysis.CacheUpdater} 参照）。
+     *
      * @param path         実体のパス
      * @param relativePath project.root からの相対パス（キャッシュのキー・出力の file 列）
-     * @param mtime        更新時刻（差分更新の判定用）
-     * @param size         サイズ（同上）
+     * @param size         サイズ（同一性の判定の一次ふるい。違えば中身も違う）
      */
-    public record SourceFile(Path path, String relativePath, long mtime, long size) {
+    public record SourceFile(Path path, String relativePath, long size) {
     }
 
     /** 解析結果の受け手。1ファイル分ずつ渡すので、受け手は書き出したら捨てられる */
@@ -180,7 +182,7 @@ public final class CallEdgeExtractor {
     }
 
     private FileAnalysis collectFacts(SourceFile file, CompilationUnit cu) {
-        FileAnalysis result = new FileAnalysis(file.relativePath(), file.mtime(), file.size());
+        FileAnalysis result = new FileAnalysis(file.relativePath(), file.size());
         // 型が見つからない等のエラーは「解決が不完全」の印。依存 jar が増えたら解析し直せるよう数を残す
         for (IProblem problem : cu.getProblems()) {
             if (problem.isError()) {

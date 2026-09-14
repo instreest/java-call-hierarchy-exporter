@@ -13,7 +13,6 @@ import java.util.Set;
 public final class FileAnalysis {
 
     public final String relativePath;
-    public final long lastModified;
     public final long size;
     /**
      * JDT が報告したエラーの数（型が見つからない、import が解決できない等）。
@@ -22,9 +21,9 @@ public final class FileAnalysis {
      */
     public int errors;
     /**
-     * 内容のハッシュ（{@link jche.util.FileHash}）。F行の 6 列目。更新時刻が変わってもサイズと
-     * 内容が同じなら再利用できるようにするためのもの。書き手（{@link jche.analysis.CacheUpdater}）が
-     * キャッシュへ書く直前に入れる。空文字なら「不明」で、更新時刻とサイズだけで判定される
+     * 内容のハッシュ（{@link jche.util.FileHash}）。F行の最後の列で、差分更新の同一性判定の本体。
+     * 書き手（{@link jche.analysis.CacheUpdater}）がキャッシュへ書く直前に入れる。
+     * 空文字なら「不明」で、そのブロックは次回かならず解析し直される（安全側）
      */
     public String hash = "";
 
@@ -45,9 +44,8 @@ public final class FileAnalysis {
     public final List<ReturnFact> returns = new ArrayList<>();
     public final List<FunctionalImplFact> functionalImpls = new ArrayList<>();
 
-    public FileAnalysis(String relativePath, long lastModified, long size) {
+    public FileAnalysis(String relativePath, long size) {
         this.relativePath = relativePath;
-        this.lastModified = lastModified;
         this.size = size;
     }
 

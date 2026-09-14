@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,9 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import jche.cache.LibraryFact;
 import jche.util.FileHash;
@@ -24,18 +25,26 @@ import jche.util.Log;
 /**
  * 旧キャッシュの依存 jar（L行）と今回のクラスパスを突き合わせ、追加・変更・削除を求める。
  *
- * 同じパスでサイズと更新時刻が一致する jar は変わっていないとみなし、パッケージ一覧も
- * 旧 L 行から引き継ぐ（jar を開き直さない）。更新時刻だけが違う jar は内容ハッシュを取り、旧 L 行の
- * ハッシュと一致すれば「変わっていない」とみなす（git のチェックアウトや CI で作り直された jar の
- * 更新時刻に振り回されないため。ソースファイルの判定と同じ考え方）。
- * 追加・変更された jar は開いてパッケージを集める。削除された jar はもう開けないので、パッケージは旧 L 行から取る。
+ * <h2>同一性の見方</h2>
+ * ソースファイルと同じく「<b>パスと中身</b>」で見る。更新時刻は使わない。中身と関係なく変わる
+ * （git のチェックアウト、コピー、CI のたびに作り直されるワークスペース、ローカルリポジトリの
+ * 取り直し）ためで、使うと「中身は同じなのに全部変わった」と判定されてしまう。
  *
- * クラスパスにはクラスフォルダ（マルチモジュールの兄弟モジュールの target/classes 等）も来る。
- * フォルダは「.class ファイルの数」をサイズ、「最も新しい .class の更新時刻」を更新時刻として
- * 同じ判定にかける（フォルダ自身の更新時刻は中のファイルの変更を反映しないため、毎回中を歩く）。
+ * <p>中身の指紋の取り方は、jar とクラスフォルダで変える。
+ * <ul>
+ *   <li><b>jar</b> … 中の一覧（エントリ名・サイズ・CRC）のハッシュ。
+ *       jar の末尾にある目次（セントラルディレクトリ）を読むだけで、中身を展開も読み込みもしない。
+ *       CRC は zip 形式が元から持っている値なので、内容が1バイト違えば指紋も変わる。
+ *       ビルドし直して並び順が変わっただけの jar を「同じ」と見られるよう、並べ替えてから取る</li>
+ *   <li><b>クラスフォルダ</b>（マルチモジュールの兄弟モジュールの target/classes 等）…
+ *       {@code .class} の一覧（相対パス・サイズ・内容ハッシュ）のハッシュ。
+ *       フォルダ自身の更新時刻は中のファイルの変更を反映しないので、毎回中を歩く</li>
+ * </ul>
+ * どちらも1回の走査で、指紋とパッケージ一覧の両方を作る。
  *
- * 影響範囲は型ではなくパッケージで持つ。jar の版を差し替えると型の増減があり、
+ * <p>影響範囲は型ではなくパッケージで持つ。jar の版を差し替えると型の増減があり、
  * 「旧版にあって新版に無い型」は新しい jar からは分からないため。
+ * 削除された jar はもう開けないので、パッケージは旧 L 行から取る。
  */
 final class LibraryDiff {
 
@@ -78,42 +87,20 @@ final class LibraryDiff {
         LibraryDiff diff = new LibraryDiff();
         Set<String> seen = new HashSet<>();
         for (String cp : classpath) {
-            Path jar = Paths.get(cp);
-            String key = keyOf(jar, projectRoot);
+            Path entry = Paths.get(cp);
+            String key = keyOf(entry, projectRoot);
             if (!seen.add(key)) {
                 continue;   // 同じ jar が2度渡されても1件として扱う
             }
-            long size;
-            long mtime;
-            ClassFolder folder = null;
-            try {
-                if (Files.isDirectory(jar)) {
-                    folder = ClassFolder.scan(jar);
-                    size = folder.classFiles;
-                    mtime = folder.newestMtime;
-                } else {
-                    size = Files.size(jar);
-                    mtime = Files.getLastModifiedTime(jar).toMillis();
-                }
-            } catch (IOException e) {
-                Log.warn("依存jarの情報を読み取れません（変更検知の対象外）: " + jar + " (" + e + ")");
-                continue;
-            }
+            LibraryFact now = scan(entry, key);
             LibraryFact prev = oldByPath.get(key);
-            if (prev != null && prev.size() == size && prev.mtime() == mtime) {
+            // 指紋が取れなかったものは同一性を判定できない。毎回「変わった」に倒す（安全側）
+            if (prev != null && now.known() && prev.fingerprint().equals(now.fingerprint())) {
                 diff.current.add(prev);
                 continue;
             }
-            // クラスフォルダはハッシュを取らない（中のファイルの数と最新の更新時刻で見る）
-            String hash = (folder != null) ? "" : hashOf(jar);
-            if (prev != null && prev.size() == size && !hash.isEmpty() && hash.equals(prev.hash())) {
-                // 更新時刻だけが変わった jar。内容は同じなので変更とみなさず、次回は更新時刻で通るよう L 行を更新する
-                diff.current.add(prev.withMtime(mtime));
-                continue;
-            }
-            List<String> packages = (folder != null) ? new ArrayList<>(folder.packages) : packagesOf(jar);
-            diff.current.add(new LibraryFact(key, size, mtime, packages, hash));
-            diff.changedPackages.addAll(packages);
+            diff.current.add(now);
+            diff.changedPackages.addAll(now.packages());
             if (prev == null) {
                 diff.added++;
             } else {
@@ -130,14 +117,61 @@ final class LibraryDiff {
         return diff;
     }
 
-    /** jar の内容ハッシュ。読めなければ空文字（更新時刻とサイズだけで判定される） */
-    private static String hashOf(Path jar) {
+    /** クラスパスの1件を1回走査して、指紋とパッケージ一覧を作る。読めなければ指紋は空文字 */
+    private static LibraryFact scan(Path entry, String key) {
         try {
-            return FileHash.of(jar);
-        } catch (IOException e) {
-            Log.warn("依存jarのハッシュを取れません（更新時刻とサイズだけで判定）: " + jar + " (" + e + ")");
-            return "";
+            return Files.isDirectory(entry) ? scanClassFolder(entry, key) : scanJar(entry, key);
+        } catch (IOException | RuntimeException e) {
+            Log.warn("依存jarを読み取れません（毎回「変わった」とみなします）: " + entry + " (" + e + ")");
+            return new LibraryFact(key, "", List.of());
         }
+    }
+
+    /**
+     * jar の目次（セントラルディレクトリ）だけを読んで、指紋とパッケージを作る。
+     * 中身の展開も読み込みもしないので、大きな jar でも件数に比例するだけで済む。
+     */
+    private static LibraryFact scanJar(Path jar, String key) throws IOException {
+        TreeSet<String> packages = new TreeSet<>();
+        List<String> lines = new ArrayList<>();
+        try (ZipFile zip = new ZipFile(jar.toFile())) {
+            for (Enumeration<? extends ZipEntry> it = zip.entries(); it.hasMoreElements();) {
+                ZipEntry e = it.nextElement();
+                lines.add(e.getName() + "\t" + e.getSize() + "\t" + e.getCrc());
+                addPackageOf(packages, e.getName());
+            }
+        }
+        return new LibraryFact(key, fingerprintOf(lines), new ArrayList<>(packages));
+    }
+
+    /** クラスフォルダを1回歩いて、指紋とパッケージを作る */
+    private static LibraryFact scanClassFolder(Path dir, String key) throws IOException {
+        TreeSet<String> packages = new TreeSet<>();
+        List<String> lines = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path p : (Iterable<Path>) walk::iterator) {
+                if (!Files.isRegularFile(p)) {
+                    continue;
+                }
+                String rel = dir.relativize(p).toString().replace('\\', '/');
+                if (!rel.endsWith(".class")) {
+                    continue;
+                }
+                lines.add(rel + "\t" + Files.size(p) + "\t" + FileHash.of(p));
+                addPackageOf(packages, rel);
+            }
+        }
+        return new LibraryFact(key, fingerprintOf(lines), new ArrayList<>(packages));
+    }
+
+    /** 一覧を並べ替えてハッシュにする。並び順に振り回されないため */
+    private static String fingerprintOf(List<String> lines) {
+        Collections.sort(lines);
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            sb.append(line).append('\n');
+        }
+        return FileHash.ofText(sb.toString());
     }
 
     /** project.root 配下なら相対パス（プロジェクトを移動しても同じ jar と分かる）、外なら絶対パス */
@@ -150,26 +184,10 @@ final class LibraryDiff {
     }
 
     /**
-     * jar が含むクラスのパッケージ。エントリ名の親ディレクトリを "." 区切りにしたもの。
+     * "a/b/C.class" のようなエントリ名からパッケージ "a.b" を集める（jar とクラスフォルダで共通）。
      * META-INF 配下（マルチリリース jar の版別クラス等）と、デフォルトパッケージのクラス
      * （他パッケージのソースから参照できない）は含めない。
      */
-    static List<String> packagesOf(Path jar) {
-        TreeSet<String> packages = new TreeSet<>();
-        try (JarFile jf = new JarFile(jar.toFile(), false)) {
-            Enumeration<JarEntry> entries = jf.entries();
-            while (entries.hasMoreElements()) {
-                String name = entries.nextElement().getName();
-                addPackageOf(packages, name);
-            }
-        } catch (IOException e) {
-            Log.warn("依存jarを読み取れません（このjarの変更は型解決失敗のあったファイルにだけ反映）: "
-                    + jar + " (" + e + ")");
-        }
-        return new ArrayList<>(packages);
-    }
-
-    /** "a/b/C.class" のようなエントリ名からパッケージ "a.b" を集める（jar とクラスフォルダで共通） */
     private static void addPackageOf(Set<String> packages, String entryName) {
         if (!entryName.endsWith(".class") || entryName.startsWith("META-INF/")) {
             return;
@@ -177,32 +195,6 @@ final class LibraryDiff {
         int slash = entryName.lastIndexOf('/');
         if (slash > 0) {
             packages.add(entryName.substring(0, slash).replace('/', '.'));
-        }
-    }
-
-    /** クラスフォルダを 1 回歩いて集めた、.class の数・最新の更新時刻・パッケージ */
-    private static final class ClassFolder {
-        long classFiles;
-        long newestMtime;
-        final TreeSet<String> packages = new TreeSet<>();
-
-        static ClassFolder scan(Path dir) throws IOException {
-            ClassFolder result = new ClassFolder();
-            try (Stream<Path> walk = Files.walk(dir)) {
-                for (Path p : (Iterable<Path>) walk::iterator) {
-                    if (!Files.isRegularFile(p)) {
-                        continue;
-                    }
-                    String rel = dir.relativize(p).toString().replace('\\', '/');
-                    if (!rel.endsWith(".class")) {
-                        continue;
-                    }
-                    result.classFiles++;
-                    result.newestMtime = Math.max(result.newestMtime, Files.getLastModifiedTime(p).toMillis());
-                    addPackageOf(result.packages, rel);
-                }
-            }
-            return result;
         }
     }
 }

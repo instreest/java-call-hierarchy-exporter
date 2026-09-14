@@ -68,7 +68,7 @@ run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し�
 # 差分更新でブロックの並びが変わるので、行を並べ替えてから比べる
 normalized() { LC_ALL=C sort "$1"; }
 
-# F 行（更新時刻・サイズ・内容ハッシュ）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
+# F 行（サイズ・エラー数・内容ハッシュ）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
 # どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
 # 「事実が変わったか」を見るときはこちらで比べる
 normalized_facts() { LC_ALL=C grep -v -E "^[FT]	" "$1" | LC_ALL=C sort; }
@@ -158,6 +158,14 @@ case_of "注釈の既定値" \
 case_of "列挙定数の改名" \
     "sed -i 's/    FULL,/    HEAVY,/' work/src/inc/Mode.java && sed -i -e 's/Mode.FULL/Mode.HEAVY/' -e 's/case FULL ->/case HEAVY ->/' work/src/inc/Dispatch.java" yes
 
+# 更新時刻もサイズも変えずに中身だけ変える（ALPHA -> OMEGA は同じ長さ）。
+# 同一性を「更新時刻とサイズ」で見ていると、変更に気づかず古い結果を再利用してしまう。
+# バージョン管理が更新時刻を復元する設定や、同じ長さの書き換えの再現
+case_of "更新時刻もサイズも同じで中身だけ変更" \
+    "cp -p work/src/inc/Base.java keep.tmp \
+     && sed -i 's/MODE = \"ALPHA\"/MODE = \"OMEGA\"/' work/src/inc/Base.java \
+     && touch -r keep.tmp work/src/inc/Base.java && rm -f keep.tmp" yes
+
 # 定数の値は変えずコメントだけ足す。Names / Switches は解析し直されるが、値が変わっていないので
 # その先（Client / Branch）へは連鎖しない。連鎖が空振りしても結果が変わらないことを固定する
 case_of "定数を宣言するファイルのコメントだけ変更" \
@@ -215,7 +223,7 @@ discard_case "文字コードの変更" \
     "printf 'source.encoding=MS932\n' >> case.properties" \
     "[cache]" no
 
-# 途中で切れたキャッシュ。切れた場所より前のブロックは「更新時刻もサイズも一致する」ように
+# 途中で切れたキャッシュ。切れた場所より前のブロックは「サイズも内容ハッシュも一致する」ように
 # 見えるので、印が無いことで気づけなければ、そのファイルの呼び出しが静かに欠ける
 discard_case "途中で切れたキャッシュ" \
     "head -n -3 \$(ls .cache/work_*/analysis-cache.tsv) > cut.tmp && mv cut.tmp \$(ls .cache/work_*/analysis-cache.tsv)" \
@@ -293,7 +301,7 @@ salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空
 salvage_case "中断した実行からの引き継ぎ" "" yes
 
 # 更新時刻だけが変わっても引き継ぐ（git のチェックアウトや CI のワークスペース作り直しの再現）。
-# ソース一覧の指紋に更新時刻を入れていると、ここで引き継げなくなる
+# 同一性に更新時刻を入れていると、ここで引き継げなくなる
 salvage_case "更新時刻だけ変わっても引き継ぐ" \
     "find work/src -type f -exec touch {} +" yes
 

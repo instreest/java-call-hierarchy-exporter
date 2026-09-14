@@ -210,7 +210,7 @@ public final class CallConditionScanner {
             String rel = layout.relativeOf(java);
             names.add(rel);
             files.add(new CallEdgeExtractor.SourceFile(java, rel,
-                    Files.getLastModifiedTime(java).toMillis(), Files.size(java)));
+                    Files.size(java)));
         }
 
         // 判定できない条件も残すモードで解析する。結果はキャッシュへ書かず、ここで捨てる
