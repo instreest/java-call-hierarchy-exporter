@@ -326,7 +326,7 @@ for c in $CASES; do
         run "$c" config.properties 2 "2回目" || continue
         expect_reused "$c" 2 "2回目: キャッシュを再利用"
         compare "$c" expected "2回目: キャッシュ再利用"
-        # 更新時刻だけが変わったソース・jar は、サイズと内容ハッシュが同じなら再利用される
+        # 更新時刻だけが変わったソース・jar は再利用される（同一性に更新時刻を入れていない）
         # （依存 jar の「変更」としても検知されない）
         touch_sources_and_jars
         run "$c" config.properties 3 "3回目: 更新時刻だけ変更" || continue

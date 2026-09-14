@@ -24,12 +24,30 @@ public final class AnnotationTokens {
     public static final String SEP = ",";
     private static final char VALUE_SEP = '=';
 
+    /**
+     * 値として残す長さの上限。
+     *
+     * この値を読むのは DI コンテナの Bean 名・Qualifier 名の照合（{@code jche.graph.SpringBeans}）
+     * だけで、どれも短い識別子。一方 {@code @Query("SELECT …")} のように長い SQL を持つ
+     * アノテーションは珍しくないので、上限を超えるものは「付いていた事実」だけ残す
+     */
+    private static final int MAX_VALUE_LENGTH = 64;
+
     private AnnotationTokens() {
     }
 
-    /** 1件分の項目を作る。値が無ければFQNだけ */
+    /**
+     * 1件分の項目を作る。値が無ければFQNだけ。
+     *
+     * 長すぎる値と、タブ・改行などの制御文字を含む値は落とし、FQNだけにする。
+     * 制御文字を落とすのは、複数行の {@code @Query} のような値がそのまま行に入ると
+     * キャッシュの行が割れて、以降の事実（メソッド宣言や呼び出し）が読めなくなるため。
+     * 空白へ置き換えず値ごと捨てるのは、別々の値が同じ Bean 名に見えて
+     * 候補を誤って絞り込むのを避けるため（絞れない方に倒す）
+     */
     public static String token(String annotationFqn, String value) {
-        if (value == null || value.isEmpty()) {
+        if (value == null || value.isEmpty() || value.length() > MAX_VALUE_LENGTH
+                || CacheFormat.hasControlChar(value)) {
             return annotationFqn;
         }
         return annotationFqn + VALUE_SEP + value.replace(SEP, " ").replace(VALUE_SEP, ' ');

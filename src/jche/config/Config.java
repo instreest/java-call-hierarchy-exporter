@@ -66,6 +66,8 @@ public final class Config {
     /** 出力フォルダ内のファイル名（固定） */
     public static final String CALL_HIERARCHY_CSV_NAME = "call-hierarchy.csv";
     public static final String METHODS_CSV_NAME = "methods.csv";
+    /** conditions.target を指定したときだけ追加で出す、条件の一覧 */
+    public static final String CALL_CONDITIONS_CSV_NAME = "call-conditions.csv";
     /** 出力フォルダに残す実行ログ（標準出力と同じ内容、UTF-8） */
     public static final String LOG_FILE_NAME = "run.log";
     /** 出力フォルダ名の日時の書式 */
@@ -134,7 +136,7 @@ public final class Config {
      * フェーズAの拡張（キャッシュに証拠を書く側）の指紋。
      *
      * 拡張を足したり、その設定や実装を変えたりすると、同じソースから拾える証拠が変わる。
-     * ファイルの更新時刻とサイズだけを見ていると古い証拠を再利用してしまうため、
+     * ソースの中身だけを見ていると古い証拠を再利用してしまうため、
      * キャッシュのヘッダ行に入れて丸ごと突き合わせる（{@link jche.cache.CacheFormat#headerFor}）。
      * フェーズAの拡張を使っていないときは空文字で、従来のキャッシュはそのまま有効。
      */
@@ -157,6 +159,16 @@ public final class Config {
      * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
      */
     public final boolean branchPruningEnabled;
+    /**
+     * 呼び出しに効いている条件を調べる対象（{@code conditions.target}）。空欄なら調べない。
+     *
+     * 指定しても通常の解析（キャッシュの更新と CSV の出力）はそのまま行い、
+     * <b>そのうえで追加で</b>条件の一覧（{@link #conditionsCsv}）を書く。
+     * モードを増やさず、出力が1つ増えるだけにするための決まり。
+     * 指定できる形は {@code src/foo/Bar.java} / {@code src/foo/Bar.java:120} /
+     * {@code foo.Bar} / {@code foo.Bar#method}（{@code docs/call-conditions.md}）。
+     */
+    public final String conditionsTarget;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
     /** 呼び出し階層のためのキャッシュ（{@link #CACHE_FILE_NAME}） */
@@ -173,6 +185,8 @@ public final class Config {
     public final Path outputDir;
     public final Path outputCsv;
     public final Path methodsCsv;
+    /** conditions.target を指定したときだけ書く、条件の一覧（通常の出力に追加する） */
+    public final Path conditionsCsv;
     public final Path logFile;
 
     /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
@@ -246,8 +260,12 @@ public final class Config {
         // source.encoding が空欄なら project.root から決める（pom.xml の project.build.sourceEncoding、無ければ UTF-8）
         String enc = p.getProperty("source.encoding", "").trim();
         this.sourceEncodingAuto = enc.isEmpty();
+        // 正規名にそろえる。"utf-8" と "UTF-8" のような表記の揺れでキャッシュの鍵が
+        // 変わってしまうと、設定を変えていないのに全件解析し直しになる
         this.sourceEncoding = this.sourceEncodingAuto
-                ? ProjectDetector.sourceEncoding(this.projectRoot) : charsetOf("source.encoding", enc).name();
+                ? charsetOf("pom.xml の project.build.sourceEncoding",
+                        ProjectDetector.sourceEncoding(this.projectRoot)).name()
+                : charsetOf("source.encoding", enc).name();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
         this.sourceLevelAuto = this.sourceLevelRequested.isEmpty();
         this.compilerOptions = buildCompilerOptions(this.sourceLevelRequested);
@@ -277,6 +295,7 @@ public final class Config {
         this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
         this.branchPruningEnabled =
                 Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
+        this.conditionsTarget = p.getProperty("conditions.target", "").trim();
         this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
         this.dataflowCacheFile = this.cacheDir.resolve(DATAFLOW_CACHE_FILE_NAME);
@@ -294,6 +313,7 @@ public final class Config {
                 startedAt.format(FOLDER_TIMESTAMP) + "_" + projectName);
         this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);
         this.methodsCsv = this.outputDir.resolve(METHODS_CSV_NAME);
+        this.conditionsCsv = this.outputDir.resolve(CALL_CONDITIONS_CSV_NAME);
         this.logFile = this.outputDir.resolve(LOG_FILE_NAME);
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
@@ -432,9 +452,9 @@ public final class Config {
      * ファイル一覧（名前・サイズ・内容ハッシュ）から作る。拡張を使っていなければ空文字。
      *
      * 拡張の中身を書き換えれば内容ハッシュが変わるので、キャッシュは自動的に捨てられる。
-     * jar の中身の入れ替えも同様。更新時刻を使わないのは、git のチェックアウトや CI のように
-     * 中身が同じでも更新時刻が変わる環境で、実行のたびにキャッシュを捨ててしまわないため
-     * （拡張のファイルは少数なので、毎回読んでも時間はかからない）。
+     * jar の中身の入れ替えも同様。更新時刻を使わないのは、キャッシュの他の同一性と同じ理由
+     * （git のチェックアウトや CI のように、中身が同じでも更新時刻が変わるため。
+     * docs/cache-identity-qa.md）。拡張のファイルは少数なので、毎回読んでも時間はかからない。
      */
     private static String fingerprintOfHintPlugins(Properties p, List<String> collectors, List<Path> folders) {
         if (collectors.isEmpty()) {

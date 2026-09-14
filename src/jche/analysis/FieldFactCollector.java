@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IBinding;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
@@ -17,6 +18,7 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
+import jche.cache.ConstantFact;
 import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
 import jche.cache.FileAnalysis;
@@ -24,7 +26,8 @@ import jche.cache.MethodRef;
 import jche.cache.Origin;
 
 /**
- * 1つの型について、フィールドの宣言（V行）と、そのフィールドへの代入（J行）を拾う。
+ * 1つの型について、フィールドの宣言（V行）・そのフィールドへの代入（J行）・
+ * コンパイル時定数の値（K行）を拾う。
  *
  * ここでは事実だけを拾う。「このフィールドには必ずコンストラクタの何番目の
  * 引数が入る」と言い切れるかどうか（private/final か、全コンストラクタで
@@ -61,6 +64,30 @@ final class FieldFactCollector {
                 scanAssignments(md, typeFqn, siteOf(md));
             }
         }
+        scanAnnotationDefaults(typeBinding, typeFqn);
+    }
+
+    /**
+     * 注釈型のメンバの既定値を定数（K行）として拾う。
+     *
+     * {@code @Ann} とだけ書かれていても、{@code String value() default "svc"} の "svc" は
+     * 使っている側の H行・D行・V行に焼き込まれる（{@link BindingNames#annotationsOf}）。
+     * 既定値を書き換えたときに使っている側を解析し直せるよう、値をここに残す。
+     * 残すのは文字列の既定値だけ（焼き込まれるのが文字列だけのため）。
+     */
+    private void scanAnnotationDefaults(ITypeBinding typeBinding, String typeFqn) {
+        if (!typeBinding.isAnnotation()) {
+            return;
+        }
+        IMethodBinding[] members = typeBinding.getDeclaredMethods();
+        if (members == null) {
+            return;
+        }
+        for (IMethodBinding m : members) {
+            if (m.getDefaultValue() instanceof String value) {
+                out.constants.add(ConstantFact.of(typeFqn, m.getName(), value));
+            }
+        }
     }
 
     /** J行の site。メソッド／コンストラクタの "name(paramSig)" */
@@ -81,11 +108,17 @@ final class FieldFactCollector {
             }
             out.fieldDecls.add(new FieldDeclFact(typeFqn, vb.getName(),
                     BindingNames.modifiersOf(vb.getModifiers()), names.declTypeName(vb.getType()),
-                    BindingNames.annotationsOf(vb)));
+                    names.annotationsOf(vb)));
             if (frag.getInitializer() != null) {
                 out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(),
                         FieldAssignFact.SITE_INITIALIZER,
                         Origin.head(origins.originOf(frag.getInitializer()))));
+            }
+            // コンパイル時定数は、使っている側のファイルに値が焼き込まれる。
+            // 値が変わったことを差分更新が知れるよう、宣言している側に値を残す（K行）
+            Object constant = vb.getConstantValue();
+            if (constant != null) {
+                out.constants.add(ConstantFact.of(typeFqn, vb.getName(), String.valueOf(constant)));
             }
         }
     }

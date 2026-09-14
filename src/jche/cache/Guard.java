@@ -21,7 +21,8 @@ package jche.cache;
  * 条件（アトム）を {@link #ATOM_SEP} で並べたもの。全て成立して初めて呼び出しに到達する
  * （論理積）。1つのアトムは {@link #FIELD_SEP} 区切りの4項目。
  * <pre>
- *   op    判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}）
+ *   op    判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}。
+ *         条件の調査（conditions.target）ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
  *   origin 判定される式の出所（{@link Origin}。A:引数位置 か V:定数 だけ）
  *   value  比較する値。IN / NOT_IN は {@link #VALUE_SEP} 区切りで複数
  *   text   ソースに書かれていた条件式（注記に出すためだけの文字列。判定には使わない）
@@ -51,6 +52,17 @@ public final class Guard {
     public static final String IN = "IN";
     /** どの値とも一致しないこと（switch の default） */
     public static final String NOT_IN = "NI";
+    /**
+     * 判定できない条件（条件があることだけが分かっている）。
+     *
+     * 打ち切りの判定には使えないので、キャッシュの guard 列には入れない。
+     * 「この呼び出しに効いている条件を漏れなく見たい」条件の調査
+     * （設定ファイルの conditions.target。jche.analysis.CallConditionScanner）だけがこの種別を作る。
+     * 読み手は知らない種別として読み飛ばすので、混ざっても打ち切りの結論は変わらない。
+     */
+    public static final String UNKNOWN = "UK";
+    /** 上限に達して記録しきれなかった条件がまだあることの印（{@link #UNKNOWN} と同じく判定には使わない） */
+    public static final String MORE = "MORE";
 
     /** 条件式のテキストの上限（注記に出すだけなので長さを抑える） */
     public static final int MAX_TEXT = 60;
@@ -58,9 +70,14 @@ public final class Guard {
     private Guard() {
     }
 
-    /** アトム1件を文字列にする（value は {@link #clean} 済み。IN / NOT_IN は {@link #values} で並べる） */
+    /**
+     * アトム1件を文字列にする（value は {@link #clean} 済み。IN / NOT_IN は {@link #values} で並べる）。
+     *
+     * origin は出所（{@link Origin}）で、定数の値（{@code V:}）を含みうる。値にこの形式の
+     * 区切り文字が混ざると読み戻せなくなるので、value / text と同じく必ず落とす。
+     */
     public static String atom(String op, String origin, String value, String text) {
-        return op + FIELD_SEP + origin + FIELD_SEP + value + FIELD_SEP + clean(text);
+        return op + FIELD_SEP + clean(origin) + FIELD_SEP + value + FIELD_SEP + clean(text);
     }
 
     /** IN / NOT_IN の値を並べる */

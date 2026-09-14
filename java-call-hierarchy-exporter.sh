@@ -137,7 +137,11 @@ wrapper_would_download() {
 jbang_jar_available() {
   [ -f "$ROOT/jbangw/jbang.jar" ] && return 0
   [ -f "$ROOT/jbangw/.jbang/jbang.jar" ] && return 0
-  [ -f "$1/bin/jbang.jar" ] && return 0
+  # JBANG_DIR に入っているものを使えるのは jbang.jar と起動スクリプトの両方が揃っているときだけ。
+  # ラッパー（jbangw/jbang）は片方でも欠けていると取りに行く（jbangw/jbang の
+  # 「! -f "$JBDIR/bin/jbang.jar" || ! -f "$JBDIR/bin/jbang"」）。jar だけを見ていると、
+  # 取りに行くのに「ある」と判断して確認を飛ばしてしまう
+  [ -f "$1/bin/jbang.jar" ] && [ -f "$1/bin/jbang" ] && return 0
   return 1
 }
 
@@ -149,13 +153,22 @@ bootstrap_jdk_available() {
     if [ "$(uname -s)" != Darwin ] || /usr/libexec/java_home > /dev/null 2>&1; then return 0; fi
   fi
   [ -x "$1/currentjdk/bin/javac" ] && return 0
-  jdk25_available "$2" && return 0
+  jdk_available "$2" && return 0
   return 1
 }
 
 # $1=キャッシュのフォルダ。ツールを動かす JDK（//JAVA 25。ラッパーが取る JDK と同じ版にそろえてある）が取得済みか
-jdk25_available() {
+jdk_available() {
   [ -d "$1/jdks/$JBANG_DEFAULT_JAVA_VERSION" ]
+}
+
+# 動かすスクリプトの //JAVA が求めるメジャー版。読めなければ 25（現状の値）にしておく。
+# ここを定数で持つと、ソース側の //JAVA を上げたときに黙ってずれ、ラッパーが取る JDK と
+# jbang が取る JDK が別々になって 2 つ取得してしまう
+script_java_version() {
+  local v
+  v=$(sed -n 's|^//JAVA[[:space:]][[:space:]]*\([0-9][0-9]*\).*|\1|p' "$ROOT/src/jche/Jche.java" 2> /dev/null | head -1)
+  printf '%s' "${v:-25}"
 }
 
 # 取得しうるもののうち、まだ手元に無いものの鍵（jbang / jdk / deps）を空白区切りで出す。
@@ -165,7 +178,7 @@ pending_items() {
   local tdir="${JBANG_CACHE_DIR:-$jbdir/cache}"
   local items=""
   jbang_jar_available "$jbdir" || items="jbang"
-  jdk25_available "$tdir" || items="${items:+$items }jdk"
+  jdk_available "$tdir" || items="${items:+$items }jdk"
   printf '%s' "${items:+$items }deps"
 }
 
@@ -276,9 +289,9 @@ run_once() {
   export JCHE_ROOT="$ROOT"
   # jbang 自身の更新確認（起動のたびに新しい版があるかを問い合わせる）はネットワークに出るので止める
   export JBANG_NO_VERSION_CHECK=true
-  # ラッパーが JBang を動かすために取得する JDK の版。既定（17）のままだと、ツールを動かす JDK 25 と合わせて
-  # 2 つの JDK を取得することになるので、25 にそろえて 1 つで済ませる
-  export JBANG_DEFAULT_JAVA_VERSION="${JBANG_DEFAULT_JAVA_VERSION:-25}"
+  # ラッパーが JBang を動かすために取得する JDK の版。既定（17）のままだと、ツールを動かす JDK と合わせて
+  # 2 つの JDK を取得することになるので、スクリプトの //JAVA にそろえて 1 つで済ませる
+  export JBANG_DEFAULT_JAVA_VERSION="${JBANG_DEFAULT_JAVA_VERSION:-$(script_java_version)}"
   local jbang="$ROOT/jbangw/jbang"
   local script="$ROOT/src/jche/Jche.java"
   if wrapper_would_download || [ "$fresh" = 1 ]; then

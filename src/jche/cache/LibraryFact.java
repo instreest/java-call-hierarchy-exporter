@@ -5,53 +5,46 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * キャッシュを作ったときの依存 jar の1件（L行）。
+ * キャッシュを作ったときの依存 jar（またはクラスフォルダ）の1件（L行）。
  *
  * 呼び出し先・所有型・親型はバインディング解決の結果であり、依存 jar が変われば
  * ソースが同じでも変わりうる。そのため、どの jar に対して解析したかをキャッシュに残し、
  * 次回に jar の追加・変更・削除を検知して、影響するファイルだけを解析し直す
  * （{@link jche.analysis.CacheUpdater} 参照）。
  *
- * @param path     jar のパス。project.root 配下なら相対パス、外なら絶対パス（F行と同じ考え方）
- * @param size     サイズ（同一性の判定に使う。ソースファイルと同じ基準）
- * @param mtime    更新時刻（同上）
- * @param packages jar が含むクラスのパッケージ（重複なし・名前順）。jar が削除された後でも
- *                 「どのパッケージを参照していたファイルに影響するか」が分かるように持つ
- * @param hash     jar の内容ハッシュ（{@link jche.util.FileHash}）。更新時刻が変わってもサイズと内容が
- *                 同じなら「変わっていない」と判定するため。クラスフォルダ、または旧形式の行では空文字
+ * <p>同一性は指紋だけで見る。更新時刻もサイズも持たないのは、ソースファイル（F行）と同じ理由で、
+ * 更新時刻が中身と関係なく変わるため（{@link jche.analysis.LibraryDiff} が指紋の作り方を持つ）。
+ *
+ * @param path        jar のパス。project.root 配下なら相対パス、外なら絶対パス（F行と同じ考え方）
+ * @param fingerprint 中身の指紋。jar なら中の一覧（名前・サイズ・CRC）の、クラスフォルダなら
+ *                    {@code .class} の一覧（相対パス・サイズ・内容ハッシュ）のハッシュ。
+ *                    読み取れなかった場合は空文字で、そのときは毎回「変わった」とみなされる（安全側）
+ * @param packages    jar が含むクラスのパッケージ（重複なし・名前順）。jar が削除された後でも
+ *                    「どのパッケージを参照していたファイルに影響するか」が分かるように持つ
  */
-public record LibraryFact(String path, long size, long mtime, List<String> packages, String hash) {
+public record LibraryFact(String path, String fingerprint, List<String> packages) {
 
     public LibraryFact {
+        fingerprint = (fingerprint == null) ? "" : fingerprint;
         packages = List.copyOf(packages);
-        hash = (hash == null) ? "" : hash;
     }
 
-    /** 更新時刻だけを今の値に差し替えたもの（内容が同じと確かめた jar の L 行を、次回は更新時刻で通すため） */
-    public LibraryFact withMtime(long newMtime) {
-        return new LibraryFact(path, size, newMtime, packages, hash);
+    /** 中身を読み取れたか。読み取れていなければ同一性を判定できない */
+    public boolean known() {
+        return !fingerprint.isEmpty();
     }
 
     public String toRow() {
-        return CacheFormat.joinRow("L", path, String.valueOf(size), String.valueOf(mtime),
-                String.join(",", packages), hash);
+        return CacheFormat.joinRow("L", path, fingerprint, String.join(",", packages));
     }
 
-    /** 列が足りない、または数値が壊れていれば null */
+    /** 列が足りなければ null */
     public static LibraryFact fromRow(String[] cols) {
-        if (cols.length < 4) {
-            return null;
-        }
-        long size;
-        long mtime;
-        try {
-            size = Long.parseLong(cols[2]);
-            mtime = Long.parseLong(cols[3]);
-        } catch (NumberFormatException ignore) {
+        if (cols.length < 3) {
             return null;
         }
         List<String> packages = new ArrayList<>();
-        String csv = CacheFormat.columnAt(cols, 4);
+        String csv = CacheFormat.columnAt(cols, 3);
         if (!csv.isEmpty()) {
             for (String p : csv.split(",")) {
                 if (!p.isEmpty()) {
@@ -59,6 +52,6 @@ public record LibraryFact(String path, long size, long mtime, List<String> packa
                 }
             }
         }
-        return new LibraryFact(cols[1], size, mtime, packages, CacheFormat.columnAt(cols, 5));
+        return new LibraryFact(cols[1], cols[2], packages);
     }
 }

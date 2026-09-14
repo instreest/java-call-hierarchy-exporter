@@ -34,13 +34,18 @@ import java.security.SecureRandom;
  * <h2>行の種別と列</h2>
  * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
  * <pre>
- *   L  jarのパス  サイズ  更新時刻  パッケージ(カンマ区切り)  内容ハッシュ
- *                                                          {@link LibraryFact}。ヘッダ行の直後に
- *                                                          クラスパス順で並ぶ。解析時の依存 jar。
- *                                                          内容ハッシュはクラスフォルダなら空
- *   F  相対パス  更新時刻  サイズ  エラー数  内容ハッシュ       （ファイルのブロックの先頭）。エラー数は
+ *   T  ソース一覧の指紋                                       解析対象のソースファイル一覧（パス・サイズ・
+ *                                                          内容ハッシュ）のハッシュ。L 行の直後に1行。
+ *                                                          中断した実行からの引き継ぎ（{@link #sourcesRow}）でだけ使う
+ *   L  jarのパス  指紋  パッケージ(カンマ区切り)            {@link LibraryFact}。ヘッダ行の直後に
+ *                                                          クラスパス順で並ぶ（並び自体も意味を持つ。
+ *                                                          JDT は同名クラスを先勝ちで解決するため）。
+ *                                                          解析時の依存 jar。
+ *                                                          指紋は中に入っているクラスの一覧
+ *                                                          （{@link jche.analysis.LibraryDiff}）。読めなければ空
+ *   F  相対パス  サイズ  エラー数  内容ハッシュ                （ファイルのブロックの先頭）。エラー数は
  *                                                          JDT が報告したエラーの件数（解決が不完全な印）。
- *                                                          内容ハッシュは {@link jche.util.FileHash}（無ければ空）
+ *                                                          内容ハッシュは {@link jche.util.FileHash}（読めなければ空）
  *   I  依存する型（カンマ区切り）                             このファイルのバインディング解決が参照した型の
  *                                                          FQNと、import 文の型（オンデマンド import は
  *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
@@ -53,6 +58,10 @@ import java.security.SecureRandom;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
  *                                                             {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
+ *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
+ *                                                          コンパイル時定数（static final の値と注釈の
+ *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
+ *                                                          ので、差分更新で「値が変わった」を知るために持つ
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
@@ -62,15 +71,20 @@ import java.security.SecureRandom;
  *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
  *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link UnresolvedCallFact}
+ *   Z  ブロック数                                              最終行。ここまで書き終えた印
+ *                                                          （{@link #trailerFor}）。これが無い・数が合わない
+ *                                                          キャッシュは途中で切れているとみなして捨てる
  * </pre>
  *
  * <h2>行の種別と列（dataflow-cache.tsv）</h2>
- * F 行の意味と並びは analysis-cache.tsv と同じ（同じブロックが同じ順で並ぶ）。
+ * F 行と Z 行の意味と並びは analysis-cache.tsv と同じ（同じブロックが同じ順で並び、同じ数になる）。
  * <pre>
- *   F  相対パス  更新時刻  サイズ  エラー数  内容ハッシュ       （ファイルのブロックの先頭）
+ *   F  相対パス  サイズ  エラー数  内容ハッシュ                （ファイルのブロックの先頭）
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
  *                                                          フィールドの参照箇所（読み取り・書き込み。
  *                                                          他の型のフィールドも含む）
+ *   Z  ブロック数                                              最終行。analysis 側と同じ数でなければ
+ *                                                          対になっていないとみなして両方を捨てる
  * </pre>
  * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
  * F行が現れるたびに、以降の行はそのファイルに属する。I行はF行の直後に置く。
@@ -89,15 +103,27 @@ import java.security.SecureRandom;
  *   <li>どのアノテーションが「実装はコンパイル時生成」を意味するか … jche.framework.GeneratedImpl</li>
  * </ul>
  *
+ * <h2>同一性（何をもって「同じ」とみなすか）</h2>
+ * ソースファイル（F行）も依存 jar（L行）もソース一覧（T行）も、<b>パスと中身</b>だけで見る。
+ * 更新時刻は記録も参照もしない。更新時刻は中身と関係なく変わる（git のチェックアウト、コピー、
+ * CI のたびに作り直されるワークスペース）ので、当てにすると「中身は同じなのにキャッシュを捨てる」
+ * が起きる。逆に、バージョン管理が更新時刻を復元する設定だと「中身が違うのに再利用する」も
+ * 起きうる。どちらも中身を見れば起きない（docs/cache-identity-qa.md）。
+ *
  * <h2>差分更新と依存</h2>
- * 再利用の判定は「更新時刻とサイズが一致する（更新時刻が違ってもサイズと内容ハッシュが一致すれば同じ）」
- * に加えて「I行の型を宣言するファイルがどれも変わっていない」。
- * 内容ハッシュで見るのは、git のチェックアウトや CI のワークスペース作り直しのように、中身が同じでも
- * 更新時刻が変わる場合に全件解析し直しにならないようにするため（docs/actions-analysis-cache-qa.md）。呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
+ * 再利用の判定は「F行のサイズと内容ハッシュが一致する」に加えて
+ * 「I行の型を宣言するファイルがどれも変わっていない」。
+ * 呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
  * 結果であり、別のファイルを変えると変わりうるため（{@link jche.analysis.CacheUpdater} 参照）。
+ * ただしコンパイル時定数（{@code static final} の値と注釈のメンバの既定値）だけは、
+ * 使う側のファイルに値そのものが焼き込まれるため、参照した型を1段辿るだけでは足りない。
+ * 宣言している側に値を K 行として残しておき、解析し直して値が変わっていたら、その型を参照する
+ * ファイルも解析し直す（{@link jche.analysis.CacheUpdater} の「定数の連鎖」）。
  * 依存 jar も同じ理由で解決結果を左右するので、L行と突き合わせて追加・変更・削除を検知し、
  * その jar のパッケージの型を参照するファイル（I行）と、型解決に失敗していたファイル
  * （F行のエラー数、U行の BINDING_FAILED）を解析し直す。
+ * L行の<b>並び順</b>も見る。jar の集合が同じでも、並びが変われば同名クラスの解決先が
+ * 変わりうるため（{@link jche.analysis.LibraryDiff} の「並び順」）。
  * 実行中の JDK もブートクラスパスとして解決に加わるため、ヘッダ行に含めて丸ごと突き合わせる。
  * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
  * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。
@@ -131,8 +157,16 @@ import java.security.SecureRandom;
  *       付いているものを宣言順に全部残す。値は単一メンバと value / name の文字列だけ。
  *       どのアノテーションに意味があるかは読み手の判断
  *       （{@link jche.graph.SpringBeans} / {@link jche.framework.GeneratedImpl}）</li>
- *   <li>F 行と L 行の末尾に内容ハッシュの列を足した（v13 のまま。列が無い旧行は更新時刻とサイズだけで
- *       判定され、書き写すときに補われる。事実の意味は変わらないのでバージョンは上げていない）</li>
+ *   <li>F 行と L 行の末尾に内容ハッシュの列を足した（v13 のまま。事実の意味は変わらないので
+ *       バージョンは上げていない）</li>
+ *   <li>T 行（解析開始時のソース一覧の指紋）と Z 行（最後まで書き終えた印）を足した（v15）。
+ *       T 行は中断した実行からの引き継ぎの判定に、Z 行は途中で切れたキャッシュを見分けるのに使う</li>
+ *   <li>K 行（このファイルが宣言するコンパイル時定数の値）を足した（v15。{@link ConstantFact}）。
+ *       定数の値は使う側のファイルに焼き込まれるので、差分更新で取りこぼさないよう宣言側にも残す。
+ *       あわせて、行形式を壊す値（タブ・改行を含む文字列定数、複数行の注釈の値）は事実として
+ *       拾わないことにした。以前はそのまま書いていたため行が割れ、以降の呼び出しが読めなくなっていた</li>
+ *   <li>F 行から更新時刻の列を落とし、L 行を「パスと指紋」に置き換えた（v16）。
+ *       同一性をパス・サイズ・内容で統一したため（上の「同一性」。docs/cache-identity-qa.md）</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -149,9 +183,9 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
      *
-     * v15 で A 行（フィールドの参照箇所）を dataflow-cache.tsv に移した
+     * v17 で A 行（フィールドの参照箇所）を dataflow-cache.tsv に移した
      */
-    public static final String VERSION = "jche-cache-v15";
+    public static final String VERSION = "jche-cache-v17";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
@@ -162,19 +196,21 @@ public final class CacheFormat {
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
-     * 形式の互換性（版・ソースレベル・JDK）とは別の軸なので、ヘッダの突き合わせでは
-     * この項目を外して比べる（{@link #compatibilityPartOf}）
+     * 形式の互換性（版・ソースレベル・文字コード・JDK）とは別の軸なので、
+     * ヘッダの突き合わせではこの項目を外して比べる（{@link #compatibilityPartOf}）
      */
     public static final String GENERATION_PREFIX = "gen=";
 
     // 行の種別（各行の先頭1文字）
+    public static final char ROW_SOURCES = 'T';
     public static final char ROW_LIBRARY = 'L';
     public static final char ROW_FILE = 'F';
     public static final char ROW_DEPENDENCIES = 'I';
     public static final char ROW_TYPE = 'H';
     public static final char ROW_METHOD_DECL = 'D';
     public static final char ROW_FIELD_DECL = 'V';
-    /** dataflow-cache.tsv 側の行 */
+    public static final char ROW_CONSTANT = 'K';
+    /** dataflow-cache.tsv 側の行（analysis-cache.tsv には書かない） */
     public static final char ROW_FIELD_ACCESS = 'A';
     public static final char ROW_FIELD_ASSIGN = 'J';
     public static final char ROW_CALL = 'C';
@@ -182,22 +218,30 @@ public final class CacheFormat {
     public static final char ROW_FUNCTIONAL_IMPL = 'M';
     public static final char ROW_HINT = 'X';
     public static final char ROW_UNRESOLVED = 'U';
+    public static final char ROW_END = 'Z';
 
     private CacheFormat() {
     }
 
     /**
-     * キャッシュの1行目。形式のバージョンに加えてソースレベルと実行中の JDK も入れる。
+     * キャッシュの1行目。形式のバージョンに加えて、ソースレベル・ソースの文字コード・
+     * 実行中の JDK も入れる。
      *
      * 同じソースでも、どの言語バージョンとして解析したかで結果が変わる
      * （古いレベルだと新しい構文が解析できず、呼び出しが抜ける）。
+     * 文字コードも同じで、違う文字コードで読めば文字列リテラルの値が変わり、
+     * 構文解析そのものが通らないこともある。しかも {@code source.encoding} が空欄なら
+     * {@code pom.xml} の {@code project.build.sourceEncoding} から決まるので、
+     * <b>.java を1行も触らずに</b>解釈が変わることがある。
      * JDT は実行中の JVM のブートクラスパスを解析対象のクラスパスに含めるため、
      * JDK の版が変わると標準 API の解決結果も変わりうる。
-     * 更新時刻とサイズだけを見ていると、設定や実行環境を変えたのに古い結果を
+     * ソースの中身だけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
-    public static String headerFor(String sourceLevel, String hintPluginFingerprint) {
+    public static String headerFor(String sourceLevel, String sourceEncoding,
+                                   String hintPluginFingerprint) {
         String header = VERSION + SEP + "source=" + sourceLevel
+                + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
         // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
         // この項目の追加だけで捨てさせないため
@@ -207,11 +251,13 @@ public final class CacheFormat {
     /**
      * dataflow-cache.tsv の1行目（互換性の部分）。
      *
-     * ソースレベルと実行 JDK は analysis-cache.tsv と同じ理由で入れる（同じソースでも解析結果が変わる）。
-     * フェーズAの拡張の指紋は入れない。X 行は analysis-cache.tsv 側にあるため
+     * ソースレベル・文字コード・実行 JDK は analysis-cache.tsv と同じ理由で入れる
+     * （同じソースでも解析結果が変わる）。フェーズAの拡張の指紋は入れない。
+     * X 行は analysis-cache.tsv 側にあるため
      */
-    public static String dataflowHeaderFor(String sourceLevel) {
+    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding) {
         return DATAFLOW_VERSION + SEP + "source=" + sourceLevel
+                + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
     }
 
@@ -254,6 +300,41 @@ public final class CacheFormat {
         return String.format("%016x", new SecureRandom().nextLong());
     }
 
+    /**
+     * 解析対象のソースファイル一覧の指紋（相対パス・サイズ・内容ハッシュ）。
+     *
+     * 中断した前回の実行から解析結果を引き継いでよいかの判定だけに使う
+     * （{@link jche.analysis.CacheUpdater} の「中断した実行からの引き継ぎ」）。
+     * 引き継ぐブロックは「そのファイルの内容」だけでなく「他のファイルの内容」にも依存する
+     * （呼び出し先・親型・コンパイル時定数の値はバインディング解決の結果なので）。
+     * 1ファイルぶんが一致していても、他のファイルが変わっていればそのブロックは古い。
+     * ソース一覧が丸ごと同じときだけ引き継ぐ、という判定にこれを使う。
+     *
+     * <p>中身は差分更新の同一性（F行）と同じ「パス・サイズ・内容ハッシュ」。更新時刻は入れない
+     * （上の「同一性」）。
+     *
+     * <p>差分更新（F行の同一性、I行の依存）には使わない。あちらは
+     * 「変わったファイルとその依存元だけを解析し直す」ので、丸ごと一致している必要はない。
+     */
+    public static String sourcesRow(String fingerprint) {
+        return joinRow(String.valueOf(ROW_SOURCES), fingerprint);
+    }
+
+    /**
+     * キャッシュの最終行。ここまで書き終えたことの印と、書いたブロック（F行）の数。
+     *
+     * キャッシュは一時ファイルへ書いてから移すので、このツール自身が半端なファイルを
+     * 残すことはない。それでも印を置くのは、外から壊れたファイルが来る経路があるため
+     * （GitHub Actions のキャッシュの復元、コピーの失敗、ディスクの異常）。
+     * 途中で切れたキャッシュは、切れた場所より前のブロックが「サイズも内容ハッシュも一致する」
+     * ように見えてしまうので、印が無ければ丸ごと捨てて全件解析し直す。
+     * 数まで見るのは、途中のブロックが抜けた場合も気づけるようにするため。
+     * 2 つのキャッシュそれぞれの最終行に書き、数が食い違えば対になっていないとみなす。
+     */
+    public static String trailerFor(long blocks) {
+        return ROW_END + SEP + blocks;
+    }
+
     /** 行の先頭1文字（種別）。空行なら '\0' */
     public static char rowTypeOf(String line) {
         return line.isEmpty() ? '\0' : line.charAt(0);
@@ -269,7 +350,11 @@ public final class CacheFormat {
         return (index < cols.length) ? cols[index] : "";
     }
 
-    /** タブ・改行が値に混ざると形式が壊れるため除去する */
+    /**
+     * タブ・改行が値に混ざると形式が壊れるため除去する。
+     *
+     * {@link Guard} のアトム区切り（{@code \u0001}〜{@code \u0003}）は行を壊さないので残す。
+     */
     public static String clean(String s) {
         if (s == null) {
             return "";
@@ -277,7 +362,42 @@ public final class CacheFormat {
         return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
     }
 
+    /**
+     * 行形式を壊す文字（タブ・改行のほか、{@link Guard} が区切りに使う制御文字）を含むか。
+     *
+     * 事実を<b>作る側</b>が「この値は持たない」と判断するために使う。書き出すときに
+     * {@link #clean} で空白へ置き換えるだけだと、{@code '\t'} と {@code ' '} が
+     * 同じ値になって条件の判定を誤りうるため、値そのものを拾わない方に倒す
+     * （{@code jche.analysis.OriginTracker} / {@link AnnotationTokens}）。
+     */
+    public static boolean hasControlChar(String s) {
+        if (s == null) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < ' ' || c == '\u007f') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 列を並べて1行にする。
+     *
+     * 列の値は必ず {@link #clean} を通す。ここが行を書き出す唯一の入口なので、
+     * 値を作る側の取りこぼし（ソース由来の文字列にタブや改行が混ざる）が
+     * そのまま行の破壊にならないよう、最後の関所としてここで落とす。
+     */
     public static String joinRow(String... cols) {
-        return String.join(SEP, cols);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < cols.length; i++) {
+            if (i > 0) {
+                sb.append(SEP);
+            }
+            sb.append(clean(cols[i]));
+        }
+        return sb.toString();
     }
 }

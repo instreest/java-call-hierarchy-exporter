@@ -106,7 +106,13 @@ public final class Server {
         return 0;
     }
 
-    /** 読み取りは専用スレッド。解析中でも CANCEL / SHUTDOWN を受け取れるようにするため */
+    /**
+     * 読み取りは専用スレッド。解析中でも CANCEL を受け取れるようにするため。
+     *
+     * 中止するのは CANCEL だけで、SHUTDOWN は待ち行列に積むだけ。
+     * 「積んだ要求を処理し終えてから終わる」が SHUTDOWN の意味であり、
+     * 実行中の解析を打ち切りたい場合は CANCEL を先に送る。
+     */
     private void readCommands() {
         try {
             String line;
@@ -120,11 +126,12 @@ public final class Server {
                     cancelled.set(true);     // 解析中のスレッドがすぐ見る
                     continue;
                 }
-                if ("SHUTDOWN".equals(name)) {
-                    // 中止だけは割り込みで処理し、終了は待ち行列に積む。
-                    // ここで即座に止めると、先に積んだ要求が処理されないまま終わってしまう
-                    cancelled.set(true);
-                }
+                // SHUTDOWN も待ち行列に積むだけで、実行中の解析は止めない。
+                // 要求をまとめて流し込むクライアント（テストやスクリプト）では、読み取りが
+                // 先に走って SHUTDOWN に届くため、ここで中止フラグを立てると
+                // 先に積んだ ANALYZE がタイミング次第で中止されてしまう。
+                // 実行中の解析を止めたい呼び出し側は、SHUTDOWN の前に CANCEL を送る
+                // （Eclipse プラグインの ServerConnection#close がそうしている）
                 commands.put(trimmed);
             }
         } catch (IOException | InterruptedException e) {
