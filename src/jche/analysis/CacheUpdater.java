@@ -141,6 +141,8 @@ public final class CacheUpdater {
             Files.createDirectories(parent);
         }
         Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
+        // 前回が途中で終わっていれば、その一時ファイルを退避して「パースの使い回し」に使う
+        Path partialCache = takeOverPartial(tmpCache);
 
         Progress progress = new Progress("ソース解析", javaFiles.size(), CallEdgeExtractor.BATCH_SIZE);
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
@@ -159,6 +161,7 @@ public final class CacheUpdater {
             cacheOut.write(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
                     config.hintPluginFingerprint));
             cacheOut.newLine();
+            writeLine(cacheOut, CacheFormat.sourcesRow(fingerprintOf(live)));
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
@@ -189,6 +192,10 @@ public final class CacheUpdater {
             writer.stale = stale;
             // ファイル自身が変わっているので、宣言する型は無条件に「変わった型」へ（改名・追加に備える）
             writer.cascade = Cascade.ALWAYS;
+            if (partialCache != null) {
+                changed = salvageFrom(partialCache, changed, live, cacheOut, stale, result);
+                writer.skipped(result.salvaged);
+            }
             analyzeInBatches(extractor, changed, writer);
             writer.countAs = Reason.BY_LIBRARY;
             analyzeInBatches(extractor, unresolvedBefore, writer);
@@ -204,7 +211,7 @@ public final class CacheUpdater {
             }
 
             // 最終行。次回、ここまで書き終えたキャッシュかどうかを見分けるための印
-            writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused));
+            writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged));
         }
         progress.finish();
 
@@ -500,21 +507,14 @@ public final class CacheUpdater {
         if (!Files.isRegularFile(config.cacheFile)) {
             return null;
         }
-        try (CacheReader in = CacheReader.open(config.cacheFile)) {
-            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
-                    config.hintPluginFingerprint))) {
+        try {
+            CacheHead head = headOf(config.cacheFile);
+            List<LibraryFact> libraries = (head == null) ? null : head.libraries();
+            if (libraries == null) {
                 // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK が
                 // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
                 // 同じソースでも解析結果が変わるため、更新時刻とサイズが一致していても再利用してはいけない
                 Log.info("[cache] 形式・ソースレベル・文字コード・JDK のいずれかが異なるため既存キャッシュを破棄します");
-                return null;
-            }
-            List<LibraryFact> libraries = new ArrayList<>();
-            while (in.next() && in.is(CacheFormat.ROW_LIBRARY)) {
-                LibraryFact l = LibraryFact.fromRow(in.columns());
-                if (l != null) {
-                    libraries.add(l);
-                }
             }
             return libraries;
         } catch (IOException | RuntimeException e) {
@@ -522,6 +522,261 @@ public final class CacheUpdater {
             Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
             return null;
         }
+    }
+
+    // ------------------------------------------------------------
+    // 中断した前回の実行からの引き継ぎ
+    // ------------------------------------------------------------
+
+    /**
+     * 前回の実行が途中で終わったときに残る一時ファイルを、引き継ぎ用に退避する。
+     *
+     * キャッシュは一時ファイルへ書いてから本物に差し替えるので、フェーズ1の途中で実行が終わると
+     * 一時ファイルだけが残る。これを退避しておき、これから解析するファイルのぶんは
+     * パースし直さずに書き写す（{@link #salvageFrom}）。
+     * 退避しておくのは、これから書く一時ファイルと名前がぶつかるため。
+     * ついでに、残りっぱなしになっていた一時ファイルの掃除にもなる。
+     *
+     * @return 引き継ぎに使うファイル。残っていない・引き継がない設定なら null
+     */
+    private Path takeOverPartial(Path tmpCache) {
+        Path partial = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".partial");
+        try {
+            // cache.enabled=false は「前の結果を使わない」指定なので、引き継ぎもしない
+            if (!config.cacheEnabled) {
+                Files.deleteIfExists(partial);
+                return null;
+            }
+            if (Files.isRegularFile(tmpCache)) {
+                Files.move(tmpCache, partial, StandardCopyOption.REPLACE_EXISTING);
+            }
+            // 一時ファイルが無くても、前回が退避した直後に落ちていれば退避先が残っている
+            return Files.isRegularFile(partial) ? partial : null;
+        } catch (IOException e) {
+            Log.warn("[cache] 中断した前回の実行の一時ファイルを退避できません（引き継ぎません）: " + e);
+            return null;
+        }
+    }
+
+    /**
+     * 中断した前回の実行から、これから解析するファイルのブロックを書き写す。
+     *
+     * <p>退避した一時ファイルは<b>正しいキャッシュではない</b>（再利用ぶんのブロックが入っておらず、
+     * 依存の判定も通っていない）。そのため「どのブロックが有効か」の判断には使わず、
+     * <b>パースの使い回し</b>にだけ使う。引き継いだファイルは、解析したファイルとまったく同じ扱いで
+     * 「変わったファイル」のまま（宣言する型は「変わった型」に入り、依存の判定も連鎖も回る）。
+     * 変わるのは「JDT でパースするか、書き写すか」だけなので、差分更新の正しさの理屈には触れない。
+     *
+     * <p>引き継ぐ条件（{@link #isPartialUsable}）:
+     * <ul>
+     *   <li>ヘッダ（形式・ソースレベル・文字コード・JDK・拡張の指紋）が今回と一致する</li>
+     *   <li>ソース一覧（T行）が当時と丸ごと同じ。ブロックは他のファイルの内容にも依存するため</li>
+     *   <li>依存 jar が当時から変わっていない。ブロックは当時のクラスパスでのバインディング解決の
+     *       結果なので、jar が変われば同じソースでも呼び出し先や親型が変わりうる</li>
+     *   <li>ファイルの更新時刻とサイズ（または内容ハッシュ）が一致する（{@link #isValidBlock}）</li>
+     *   <li>ブロックが最後まで書けている。次の F 行か、最後まで書き終えた印（Z 行）に
+     *       出会ったブロックだけを使う。最後の F 行から始まるブロックは、書き込みバッファの
+     *       途中で切れている可能性があるので使わない</li>
+     * </ul>
+     *
+     * @return まだ解析が必要なファイル（引き継げたぶんを除いたもの）
+     */
+    private List<SourceFile> salvageFrom(Path partial, List<SourceFile> toAnalyze,
+                                         Map<String, SourceFile> live, BufferedWriter cacheOut,
+                                         StaleTypes stale, CachePhaseResult result) throws IOException {
+        Set<String> taken = new HashSet<>();
+        if (isPartialUsable(partial, live)) {
+            Set<String> wanted = new HashSet<>();
+            for (SourceFile f : toAnalyze) {
+                wanted.add(f.relativePath());
+            }
+            copySalvageable(partial, wanted, live, cacheOut, stale, result, taken);
+        }
+        try {
+            Files.deleteIfExists(partial);
+        } catch (IOException e) {
+            Log.warn("[cache] 引き継ぎに使った一時ファイルを消せません: " + e);
+        }
+        if (taken.isEmpty()) {
+            return toAnalyze;
+        }
+        Log.info("[cache] 中断した前回の実行から " + taken.size()
+                + " ファイルぶんの解析結果を引き継ぎました（解析し直しません）");
+        List<SourceFile> rest = new ArrayList<>();
+        for (SourceFile f : toAnalyze) {
+            if (!taken.contains(f.relativePath())) {
+                rest.add(f);
+            }
+        }
+        return rest;
+    }
+
+    /**
+     * 退避した一時ファイルを引き継いでよいか。
+     *
+     * ヘッダ（形式・ソースレベル・文字コード・JDK・拡張の指紋）・依存 jar・<b>ソース一覧</b>が
+     * どれも当時と同じときだけ引き継ぐ。
+     *
+     * <p>ソース一覧まで見るのは、引き継ぐブロックが「そのファイルの内容」だけでなく
+     * 「他のファイルの内容」にも依存するため。呼び出し先・親型・コンパイル時定数の値は
+     * バインディング解決の結果なので、<b>別のファイルが変わっていれば、そのファイル自身が
+     * 変わっていなくてもブロックは古い</b>。差分更新はこれを I 行の依存で見分けるが、
+     * 引き継ぎのブロックは「今このファイルを解析した結果」として書き込むので依存の判定を通らない。
+     * 判定を通す作りにもできるが（退避した一時ファイルを既存キャッシュと同じ扱いで読む）、
+     * 引き継ぎが効いてほしい場面は「中断してすぐ同じソースで実行し直す」なので、
+     * 一覧が丸ごと同じときだけに絞る簡単な形にした。違えば引き継がないだけで、
+     * 差分更新はこれまでどおり動く。
+     */
+    private boolean isPartialUsable(Path partial, Map<String, SourceFile> live) {
+        CacheHead head;
+        try {
+            head = headOf(partial);
+        } catch (IOException | RuntimeException e) {
+            Log.warn("[cache] 中断した前回の実行の一時ファイルを読めません（引き継ぎません）: " + e);
+            return false;
+        }
+        if (head == null) {
+            Log.info("[cache] 中断した前回の実行とは形式・ソースレベル・文字コード・JDK のいずれかが"
+                    + "異なるため引き継ぎません");
+            return false;
+        }
+        if (!head.sources().equals(fingerprintOf(live))) {
+            Log.info("[cache] 中断した前回の実行からソースが変わっているため引き継ぎません"
+                    + "（変わっていないファイルの解析結果も、他のファイルの変更で変わりうるため）");
+            return false;
+        }
+        LibraryDiff diff = LibraryDiff.compute(layout.classpathArray(), head.libraries(), layout.projectRoot);
+        if (diff.any()) {
+            Log.info("[cache] 中断した前回の実行から依存jarが変わっているため引き継ぎません: " + diff);
+            return false;
+        }
+        return true;
+    }
+
+    /** 引き継げるブロックを新キャッシュへ書き写す。書き写せたファイルを taken に積む */
+    private void copySalvageable(Path partial, Set<String> wanted, Map<String, SourceFile> live,
+                                 BufferedWriter cacheOut, StaleTypes stale, CachePhaseResult result,
+                                 Set<String> taken) throws IOException {
+        try (CacheReader in = CacheReader.open(partial)) {
+            List<String> block = new ArrayList<>();   // 直前の F 行から始まる、判定待ちのブロック
+            String rel = null;
+            while (in.next()) {
+                char rowType = in.rowType();
+                if (rowType != CacheFormat.ROW_FILE && rowType != CacheFormat.ROW_END) {
+                    if (rel != null) {
+                        block.add(in.line());
+                    }
+                    continue;
+                }
+                // 次のブロックが始まった、または最後まで書き終えた印に出会った。
+                // どちらでも、ここまでのブロックは書き終えている
+                flushSalvaged(rel, block, cacheOut, stale, result, taken);
+                rel = null;
+                block.clear();
+                if (rowType == CacheFormat.ROW_END) {
+                    continue;
+                }
+                String[] f = in.columns();
+                if (f.length >= 2 && wanted.contains(f[1]) && !taken.contains(f[1])
+                        && isValidBlock(f, live)) {
+                    rel = f[1];
+                    block.add(refreshedFileRow(f, live.get(rel)));
+                }
+            }
+            // 最後の F 行から始まるブロックは、途中で切れている可能性があるので使わない
+        } catch (IOException | RuntimeException e) {
+            Log.warn("[cache] 中断した前回の実行の一時ファイルを読めません（そこまでで引き継ぎを打ち切ります）: " + e);
+        }
+    }
+
+    /**
+     * 引き継ぐブロック1件を書き写し、宣言する型と未解決の件数を数える。
+     * 数え方は解析したときと同じにする（{@link Cascade#ALWAYS} 相当）。
+     */
+    private static void flushSalvaged(String rel, List<String> block, BufferedWriter cacheOut,
+                                      StaleTypes stale, CachePhaseResult result, Set<String> taken)
+            throws IOException {
+        if (rel == null || block.isEmpty()) {
+            return;
+        }
+        for (String line : block) {
+            writeLine(cacheOut, line);
+            switch (CacheFormat.rowTypeOf(line)) {
+                case CacheFormat.ROW_TYPE -> {
+                    TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
+                    if (t != null) {
+                        stale.add(t.typeFqn(), t.pkg());
+                    }
+                }
+                case CacheFormat.ROW_UNRESOLVED -> {
+                    UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
+                    if (u != null && !u.hasUsableCandidate()) {
+                        result.unresolved++;
+                    }
+                }
+                default -> {
+                    // ほかの行はそのまま書き写すだけ
+                }
+            }
+        }
+        result.salvaged++;
+        taken.add(rel);
+    }
+
+    /**
+     * キャッシュのヘッダの直後にある情報。
+     *
+     * @param libraries 解析時の依存 jar（L行）
+     * @param sources   解析開始時のソース一覧の指紋（T行）。無ければ空文字
+     */
+    private record CacheHead(List<LibraryFact> libraries, String sources) {
+    }
+
+    /**
+     * ヘッダが今回と一致すれば、続く T 行・L 行を返す。一致しなければ null。
+     * 既存キャッシュ（パス0）と、中断した前回の実行の一時ファイル（引き継ぎ）で共通。
+     */
+    private CacheHead headOf(Path cacheFile) throws IOException {
+        try (CacheReader in = CacheReader.open(cacheFile)) {
+            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
+                    config.hintPluginFingerprint))) {
+                return null;
+            }
+            List<LibraryFact> libraries = new ArrayList<>();
+            String sources = "";
+            while (in.next()) {
+                if (in.is(CacheFormat.ROW_LIBRARY)) {
+                    LibraryFact l = LibraryFact.fromRow(in.columns());
+                    if (l != null) {
+                        libraries.add(l);
+                    }
+                } else if (in.is(CacheFormat.ROW_SOURCES)) {
+                    sources = in.column(1);
+                } else {
+                    break;   // ブロックが始まった
+                }
+            }
+            return new CacheHead(libraries, sources);
+        }
+    }
+
+    /**
+     * 解析対象のソース一覧の指紋（相対パス・更新時刻・サイズ）。
+     *
+     * 引き継ぎの判定に使う。1ファイルぶんの更新時刻とサイズが一致していても、他のファイルが
+     * 変わっていればそのブロックの解決結果は古いので、一覧が丸ごと同じときだけ引き継ぐ
+     */
+    private static String fingerprintOf(Map<String, SourceFile> live) {
+        List<String> lines = new ArrayList<>(live.size());
+        for (SourceFile f : live.values()) {
+            lines.add(f.relativePath() + "\t" + f.mtime() + "\t" + f.size());
+        }
+        Collections.sort(lines);
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            sb.append(line).append('\n');
+        }
+        return FileHash.ofText(sb.toString());
     }
 
     /**

@@ -18,6 +18,9 @@ package jche.cache;
  * <h2>行の種別と列</h2>
  * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
  * <pre>
+ *   T  ソース一覧の指紋                                       解析開始時のソースファイル一覧（パス・更新時刻・
+ *                                                          サイズ）のハッシュ。ヘッダの直後に1行。
+ *                                                          中断した実行からの引き継ぎ（{@link #sourcesRow}）でだけ使う
  *   L  jarのパス  サイズ  更新時刻  パッケージ(カンマ区切り)  内容ハッシュ
  *                                                          {@link LibraryFact}。ヘッダ行の直後に
  *                                                          クラスパス順で並ぶ。解析時の依存 jar。
@@ -118,6 +121,8 @@ package jche.cache;
  *       （{@link jche.graph.SpringBeans} / {@link jche.framework.GeneratedImpl}）</li>
  *   <li>F 行と L 行の末尾に内容ハッシュの列を足した（v13 のまま。列が無い旧行は更新時刻とサイズだけで
  *       判定され、書き写すときに補われる。事実の意味は変わらないのでバージョンは上げていない）</li>
+ *   <li>T 行（解析開始時のソース一覧の指紋）と Z 行（最後まで書き終えた印）を足した（v15）。
+ *       T 行は中断した実行からの引き継ぎの判定に、Z 行は途中で切れたキャッシュを見分けるのに使う</li>
  *   <li>K 行（このファイルが宣言するコンパイル時定数の値）を足した（v15。{@link ConstantFact}）。
  *       定数の値は使う側のファイルに焼き込まれるので、差分更新で取りこぼさないよう宣言側にも残す。
  *       あわせて、行形式を壊す値（タブ・改行を含む文字列定数、複数行の注釈の値）は事実として
@@ -141,6 +146,7 @@ public final class CacheFormat {
     public static final String VERSION = "jche-cache-v15";
 
     // 行の種別（各行の先頭1文字）
+    public static final char ROW_SOURCES = 'T';
     public static final char ROW_LIBRARY = 'L';
     public static final char ROW_FILE = 'F';
     public static final char ROW_DEPENDENCIES = 'I';
@@ -183,6 +189,23 @@ public final class CacheFormat {
         // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
         // この項目の追加だけで捨てさせないため
         return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
+    }
+
+    /**
+     * 解析開始時のソースファイル一覧の指紋（ヘッダの直後の1行）。
+     *
+     * 中断した前回の実行から解析結果を引き継いでよいかの判定だけに使う
+     * （{@link jche.analysis.CacheUpdater} の「中断した実行からの引き継ぎ」）。
+     * 引き継ぐブロックは「そのファイルの内容」だけでなく「他のファイルの内容」にも依存する
+     * （呼び出し先・親型・コンパイル時定数の値はバインディング解決の結果なので）。
+     * 1ファイルぶんの更新時刻とサイズが一致していても、他のファイルが変わっていれば
+     * そのブロックは古い。ソース一覧が丸ごと同じときだけ引き継ぐ、という判定にこれを使う。
+     *
+     * <p>差分更新（F行の更新時刻とサイズ、I行の依存）には使わない。あちらは
+     * 「変わったファイルとその依存元だけを解析し直す」ので、丸ごと一致している必要はない。
+     */
+    public static String sourcesRow(String fingerprint) {
+        return joinRow(String.valueOf(ROW_SOURCES), fingerprint);
     }
 
     /**

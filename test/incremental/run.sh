@@ -16,6 +16,7 @@
 #   5) 定数の値が変わっていない書き換えでは、連鎖して余計に解析し直さないこと
 #   6) 事実の作り方が変わったとき（文字コード）と、キャッシュが壊れているときは、
 #      中途半端に再利用せず全件解析し直すこと
+#   7) 中断した前回の実行が残した一時ファイルから、解析済みのぶんを引き継ぐこと
 #   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行）
 #
 # 解析対象は src/ を work/ に複製したもので、書き換えるのは複製だけ（作業ツリーは汚さない）。
@@ -67,16 +68,17 @@ run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し�
 # 差分更新でブロックの並びが変わるので、行を並べ替えてから比べる
 normalized() { LC_ALL=C sort "$1"; }
 
-# F 行（更新時刻・サイズ・内容ハッシュ）を除いた「事実」だけ。書き換えたファイルの F 行は
-# 中身に関わらず必ず変わるので、「事実が変わったか」を見るときはこちらで比べる
-normalized_facts() { LC_ALL=C grep -v "^F	" "$1" | LC_ALL=C sort; }
+# F 行（更新時刻・サイズ・内容ハッシュ）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
+# どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
+# 「事実が変わったか」を見るときはこちらで比べる
+normalized_facts() { LC_ALL=C grep -v -E "^[FT]	" "$1" | LC_ALL=C sort; }
 
 # 行頭が既知の種別で、F 行の直後が必ず I 行であること。
 # 値に紛れ込んだタブ・改行で行が割れると、ここで引っかかる
 check_rows() {   # $1=キャッシュ  $2=ラベル
     local bad
     bad=$(awk 'NR == 1 { next }
-               { if (index("LFIHDVKJACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
+               { if (index("TLFIHDVKJACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
                prev == "F" && substr($0, 1, 1) != "I" { print NR": F 行の次が I 行ではありません: "$0 }
                { prev = substr($0, 1, 1) }' "$1")
     if [ -z "$bad" ]; then
@@ -223,5 +225,78 @@ discard_case "途中で切れたキャッシュ" \
 discard_case "文字が壊れたキャッシュ" \
     "printf '\\xff\\xfe bad\\n' >> \$(ls .cache/work_*/analysis-cache.tsv)" \
     "[cache]" yes
+
+# --- 中断した実行からの引き継ぎ -----------------------------------------
+# フェーズ1の途中で実行が終わると一時ファイル（.tmp）だけが残る。次の実行は、これから解析する
+# ファイルのぶんをパースし直さずに書き写す。正しさの理屈は変えないので、結果は引き継ぎ無しと一致する
+TOTAL_FILES=$(ls src/inc/*.java | wc -l)
+
+# 中断した実行が残す一時ファイルを作る。完成したキャッシュを .tmp へ移し、末尾を削って
+# 「最後のブロックが書き終わっていない」状態にする（実際の中断と同じ形）
+make_partial() {
+    local cache
+    cache=$(ls .cache/work_*/analysis-cache.tsv)
+    head -n -3 "$cache" > "$cache.tmp"
+    rm -f "$cache"
+}
+
+salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空なら何もしない）  $3=引き継げるはずか(yes/no)
+    echo "== $1 =="
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
+    mkdir -p work && cp -r src work/src
+    run base.tsv || return          # まず完成したキャッシュを作る
+    make_partial
+    [ -n "$2" ] && eval "$2"
+
+    run inc.tsv || return           # 引き継ぎありの実行
+    local inc_csv=$OUT
+    SALVAGE_PARSED=$PARSED
+    check_rows inc.tsv "$1 引き継ぎ"
+
+    if [ "$3" = yes ]; then
+        if [ "$PARSED" -lt "$TOTAL_FILES" ]; then
+            echo "  OK   $1 解析し直したのは $PARSED / $TOTAL_FILES 件（引き継ぎが効いている）"
+        else
+            echo "  NG   $1 引き継げていません（$PARSED / $TOTAL_FILES 件を解析し直した）"; fail=1
+        fi
+    else
+        if [ "$PARSED" = "$TOTAL_FILES" ]; then
+            echo "  OK   $1 引き継がず $PARSED / $TOTAL_FILES 件を解析し直した"
+        else
+            echo "  NG   $1 引き継いではいけない状態で引き継いでいます（$PARSED / $TOTAL_FILES 件）"; fail=1
+        fi
+    fi
+    if ls .cache/work_*/*.partial > /dev/null 2>&1 || ls .cache/work_*/*.tmp > /dev/null 2>&1; then
+        echo "  NG   $1 一時ファイルが残っています: $(ls .cache/work_*/)"; fail=1
+    else
+        echo "  OK   $1 一時ファイルが残らない"
+    fi
+
+    rm -rf .cache
+    run full.tsv || return          # 同じソースを引き継ぎ無しで
+    for f in call-hierarchy.csv methods.csv; do
+        if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
+            echo "  OK   $1 $f（引き継ぎ == 引き継ぎ無し）"
+        else
+            echo "  NG   $1 $f が引き継ぎの有無で違います"
+            diff --strip-trailing-cr "$inc_csv/$f" "$OUT/$f" | head -10; fail=1
+        fi
+    done
+    if diff -q <(normalized inc.tsv) <(normalized full.tsv) > /dev/null; then
+        echo "  OK   $1 キャッシュ（引き継ぎ == 引き継ぎ無し）"
+    else
+        echo "  NG   $1 キャッシュが引き継ぎの有無で違います"
+        diff <(normalized inc.tsv) <(normalized full.tsv) | head -10; fail=1
+    fi
+}
+
+salvage_case "中断した実行からの引き継ぎ" "" yes
+
+# 中断してからソースが1つでも変われば引き継がない。
+# 引き継ぐブロックは他のファイルの内容にも依存する（呼び出し先・親型・定数の値はバインディング解決の
+# 結果）ので、そのファイル自身が変わっていなくてもブロックは古くなる。
+# ここでは Base.java の定数を変える（2段先の Client.java に値が焼き込まれている）
+salvage_case "中断後にソースが変わったら引き継がない" \
+    "sed -i 's/inc.AlphaDao/inc.BetaDao/' work/src/inc/Base.java" no
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi
