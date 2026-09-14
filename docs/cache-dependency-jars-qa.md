@@ -46,6 +46,12 @@ Issue の意図（ソース変更なら全部、依存変更なら影響分だ�
 「変わっていない」とみなすようにした（毎回ハッシュを取るわけではないので、上の所要時間の懸念はそのまま避けている）。
 経緯は [actions-analysis-cache-qa.md](actions-analysis-cache-qa.md)。
 
+**追記（Issue #103）**: 更新時刻をやめ、`L` 行を「パスと中身の指紋」に置き換えた。
+指紋は jar の末尾にある目次（セントラルディレクトリ）の `エントリ名 / サイズ / CRC` から作るので、
+**jar 本体を読まない**。ここで避けたかった「数十 MB の jar が百本あると数秒かかる」は、
+jar を丸ごと読まないことで避けている（実測では変更前より速い）。
+経緯と計測は [cache-identity-qa.md](cache-identity-qa.md)。
+
 ### Q3. 変更された jar の影響範囲を、型ではなくパッケージで持つのはなぜか
 
 `I` 行には「このファイルの解決が参照した型」が FQN で入っているので、
@@ -122,6 +128,13 @@ JDK の版が変われば標準 API の解決結果が変わりうる（新し�
 解析し直されるので、結果は正しくなる。ただし jar の順序だけが変わった（追加も変更も削除も無い）
 場合は検知しない。`library.folders` はフォルダ直下の jar をファイル名順に並べるので、
 順序だけが変わる状況は設定を書き換えたときに限られる。
+
+**追記（Issue #104）**: 順序だけの変化も検知するようにした。
+「そのパッケージを含む jar のクラスパス順の並び」をパッケージごとに作り、旧 `L` 行から作ったものと
+突き合わせる。並びが違うパッケージだけを「変わったパッケージ」に入れる。
+`library.folders` の書き換えだけでなく、`pom.xml` / `build.gradle` の依存の並べ替えでも順序は変わるので、
+「設定を書き換えたときに限られる」という上の見立ては甘かった。
+経緯と再現は [cache-identity-qa.md](cache-identity-qa.md)。
 
 ---
 
@@ -338,6 +351,6 @@ JDT は `setEnvironment(..., includeRunningVMBootclasspath=true)` で、**実行
 - `.classpath` の `kind="con"`（Maven / Gradle のコンテナ）は元から解決しておらず、今回の対象外
   （その後 [Issue #44](https://github.com/instreest/java-call-hierarchy-exporter/issues/44) で、`library.folders` が空欄なら
   pom.xml / build.gradle を読んでローカルリポジトリから依存 jar を集める形で対応した。[build-tool-classpath-qa.md](build-tool-classpath-qa.md)）
-- jar の順序だけの変化は検知しない（Q9）
+- ~~jar の順序だけの変化は検知しない（Q9）~~ → Issue #104 で対応した
 - 同じ jar が 2 つのフォルダにあるとき、どちらから解決されたかは区別しない
 - FatJar の中の jar は展開しない（[Issue #35](https://github.com/instreest/java-call-hierarchy-exporter/issues/35) の範囲）

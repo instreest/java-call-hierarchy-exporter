@@ -70,9 +70,14 @@ public final class Guard {
     private Guard() {
     }
 
-    /** アトム1件を文字列にする（value は {@link #clean} 済み。IN / NOT_IN は {@link #values} で並べる） */
+    /**
+     * アトム1件を文字列にする（value は {@link #clean} 済み。IN / NOT_IN は {@link #values} で並べる）。
+     *
+     * origin は出所（{@link Origin}）で、定数の値（{@code V:}）を含みうる。値にこの形式の
+     * 区切り文字が混ざると読み戻せなくなるので、value / text と同じく必ず落とす。
+     */
     public static String atom(String op, String origin, String value, String text) {
-        return op + FIELD_SEP + origin + FIELD_SEP + value + FIELD_SEP + clean(text);
+        return op + FIELD_SEP + clean(origin) + FIELD_SEP + value + FIELD_SEP + clean(text);
     }
 
     /** IN / NOT_IN の値を並べる */

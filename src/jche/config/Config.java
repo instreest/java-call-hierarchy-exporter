@@ -130,7 +130,7 @@ public final class Config {
      * フェーズAの拡張（キャッシュに証拠を書く側）の指紋。
      *
      * 拡張を足したり、その設定や実装を変えたりすると、同じソースから拾える証拠が変わる。
-     * ファイルの更新時刻とサイズだけを見ていると古い証拠を再利用してしまうため、
+     * ソースの中身だけを見ていると古い証拠を再利用してしまうため、
      * キャッシュのヘッダ行に入れて丸ごと突き合わせる（{@link jche.cache.CacheFormat#headerFor}）。
      * フェーズAの拡張を使っていないときは空文字で、従来のキャッシュはそのまま有効。
      */
@@ -251,8 +251,12 @@ public final class Config {
         // source.encoding が空欄なら project.root から決める（pom.xml の project.build.sourceEncoding、無ければ UTF-8）
         String enc = p.getProperty("source.encoding", "").trim();
         this.sourceEncodingAuto = enc.isEmpty();
+        // 正規名にそろえる。"utf-8" と "UTF-8" のような表記の揺れでキャッシュの鍵が
+        // 変わってしまうと、設定を変えていないのに全件解析し直しになる
         this.sourceEncoding = this.sourceEncodingAuto
-                ? ProjectDetector.sourceEncoding(this.projectRoot) : charsetOf("source.encoding", enc).name();
+                ? charsetOf("pom.xml の project.build.sourceEncoding",
+                        ProjectDetector.sourceEncoding(this.projectRoot)).name()
+                : charsetOf("source.encoding", enc).name();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
         this.sourceLevelAuto = this.sourceLevelRequested.isEmpty();
         this.compilerOptions = buildCompilerOptions(this.sourceLevelRequested);
@@ -438,9 +442,9 @@ public final class Config {
      * ファイル一覧（名前・サイズ・内容ハッシュ）から作る。拡張を使っていなければ空文字。
      *
      * 拡張の中身を書き換えれば内容ハッシュが変わるので、キャッシュは自動的に捨てられる。
-     * jar の中身の入れ替えも同様。更新時刻を使わないのは、git のチェックアウトや CI のように
-     * 中身が同じでも更新時刻が変わる環境で、実行のたびにキャッシュを捨ててしまわないため
-     * （拡張のファイルは少数なので、毎回読んでも時間はかからない）。
+     * jar の中身の入れ替えも同様。更新時刻を使わないのは、キャッシュの他の同一性と同じ理由
+     * （git のチェックアウトや CI のように、中身が同じでも更新時刻が変わるため。
+     * docs/cache-identity-qa.md）。拡張のファイルは少数なので、毎回読んでも時間はかからない。
      */
     private static String fingerprintOfHintPlugins(Properties p, List<String> collectors, List<Path> folders) {
         if (collectors.isEmpty()) {

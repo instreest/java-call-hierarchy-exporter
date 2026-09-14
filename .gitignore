@@ -63,6 +63,20 @@ target/
 /test/dataflow/.cache/
 /test/dataflow/output/
 
+# test/incremental/run.sh（差分更新の検査）が作るもの。
+# 解析対象は src/ を複製した work/ で、書き換えるのはそちらだけ（src/ は汚さない）。
+# *.tsv は差分更新・全件解析それぞれのキャッシュの複製（比較用）
+/test/incremental/build/
+/test/incremental/work/
+/test/incremental/.cache/
+/test/incremental/out/
+/test/incremental/out.log
+/test/incremental/*.tsv
+/test/incremental/case.properties
+/test/incremental/cut.tmp
+/test/incremental/jarorder.properties
+/test/incremental/jarwork/
+
 # test/conditions/run.sh（条件の調査の検査）が作るもの。
 # ケースごとの設定ファイル（case.properties）とコンパイル結果・実行ログのほか、
 # 「通常の解析ならできる」ことを見るためのキャッシュと出力フォルダ

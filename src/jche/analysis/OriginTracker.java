@@ -31,6 +31,7 @@ import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
+import jche.cache.CacheFormat;
 import jche.cache.MethodRef;
 import jche.cache.Origin;
 
@@ -53,6 +54,9 @@ import jche.cache.Origin;
  * {@link FactVisitor} がメソッドの出入りで push/pop する。
  */
 final class OriginTracker {
+
+    /** 値として残す文字列の長さの上限（クラス名・識別子・条件の比較対象はどれも短い） */
+    private static final int MAX_VALUE_LENGTH = 64;
 
     private final BindingNames names;
 
@@ -284,9 +288,22 @@ final class OriginTracker {
         }
     }
 
-    /** 値として持てる長さ・内容のものだけ（長い文字列でキャッシュを膨らませない） */
+    /**
+     * 値として持てる長さ・内容のものだけ（長い文字列でキャッシュを膨らませない）。
+     *
+     * タブ・改行などの制御文字を含む値は拾わない（{@code char sep = '\t';} や
+     * 改行を含む文字列定数）。キャッシュはタブ区切りの行形式で、{@link jche.cache.Guard} の
+     * アトムも制御文字を区切りに使っているため、値がそれらを含むと行が読み戻せなくなる。
+     * 書き出すときに空白へ置き換えるだけだと {@code '\t'} と {@code ' '} が同じ値に見え、
+     * 「条件が成立しない」と誤って打ち切りうるので、値そのものを拾わない
+     * （＝その条件は判定しない）方に倒す。
+     */
     private static String valueConst(String value) {
-        return (value == null || value.length() > 64) ? null : Origin.of(Origin.CONST, value);
+        if (value == null || value.length() > MAX_VALUE_LENGTH
+                || CacheFormat.hasControlChar(value)) {
+            return null;
+        }
+        return Origin.of(Origin.CONST, value);
     }
 
     /** メソッド呼び出しの出所（M:）。実引数の出所・実引数の数・レシーバの出所を付ける */
@@ -419,7 +436,7 @@ final class OriginTracker {
      * 使われないだけで害はない。
      */
     private static String classNameLiteral(String value) {
-        if (value == null || value.isEmpty() || value.length() > 64) {
+        if (value == null || value.isEmpty() || value.length() > MAX_VALUE_LENGTH) {
             return null;
         }
         if (value.indexOf('.') < 0) {

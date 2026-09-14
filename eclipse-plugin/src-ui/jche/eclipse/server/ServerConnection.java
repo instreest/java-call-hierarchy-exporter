@@ -174,11 +174,18 @@ public final class ServerConnection {
         return !closed && process.isAlive();
     }
 
-    /** 行儀よく終わらせる。応じなければ止める */
+    /**
+     * 行儀よく終わらせる。応じなければ止める。
+     *
+     * SHUTDOWN は「積んだ要求を処理し終えてから終わる」という意味なので、解析中に送っても
+     * すぐには効かない。ビューを閉じたときは待たせたくないので、先に CANCEL を送って
+     * 実行中の解析をバッチの切れ目で止めてから SHUTDOWN を送る
+     */
     public void close() {
         if (closed && !process.isAlive()) {
             return;
         }
+        cancel();
         try {
             writeLine("SHUTDOWN");
         } catch (IOException e) {

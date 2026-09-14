@@ -98,7 +98,8 @@ public final class Exporter {
         CachePhaseResult result = new CacheUpdater(layout, config).run();
         Log.info("ソース解析: 再利用=" + result.reused
                 + " 新規解析=" + result.parsed + reanalysisBreakdown(result)
-                + " 失敗=" + result.failed);
+                + " 失敗=" + result.failed
+                + (result.salvaged > 0 ? " 前回の中断からの引き継ぎ=" + result.salvaged : ""));
         if (result.unresolved > 0) {
             Log.info("※ 型解決できなかった呼び出しが " + result.unresolved + " 件あります。");
             Log.info("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
