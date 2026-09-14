@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 差分更新の検査。「ソースを書き換えたあとの差分更新の結果」と「キャッシュを消してからの全件解析の結果」が
-# 一致することを見る。
+# キャッシュの健全性の検査。「ソースを書き換えたあとの差分更新の結果」と「キャッシュを消してからの
+# 全件解析の結果」が一致すること、および壊れた・古いキャッシュを再利用しないことを見る。
 #
 #   bash test/incremental/run.sh
 #   JCHE_CP="build/classes:依存jar..." bash test/incremental/run.sh   # コンパイル済みの classpath を使う
@@ -14,6 +14,8 @@
 #      CSV に出ない事実（注釈の値など）の取りこぼしはここで捕まる
 #   3) 書き換えで事実が実際に変わっていること（何も変わらない編集だと 1) 2) が素通りしてしまう）
 #   5) 定数の値が変わっていない書き換えでは、連鎖して余計に解析し直さないこと
+#   6) 事実の作り方が変わったとき（文字コード）と、キャッシュが壊れているときは、
+#      中途半端に再利用せず全件解析し直すこと
 #   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行）
 #
 # 解析対象は src/ を work/ に複製したもので、書き換えるのは複製だけ（作業ツリーは汚さない）。
@@ -44,17 +46,21 @@ fi
 
 CACHE=.cache/work_*/analysis-cache.tsv
 
+CONFIG=config.properties
+
 run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し直した件数を PARSED に、キャッシュの複製を $1 に置く
-    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter config.properties \
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter "$CONFIG" \
         > out.log 2>&1
     if [ $? != 0 ]; then
         echo "  NG   解析に失敗しました"; tail -5 out.log; fail=1; return 1
     fi
     OUT=$(ls -d out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
-    # 「ソース解析: 再利用=N 新規解析=M（…） 失敗=F」の M。日本語に依存しないよう、
-    # 「=数字」が3つ以上あって数字で終わる最初の行の2つ目の数を取る（test/regression/run.sh と同じ探し方）
-    PARSED=$(LC_ALL=C grep -a -E -m1 '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' out.log \
-        | LC_ALL=C sed -E 's/^[^=]*=[0-9]+[^=]*=([0-9]+).*$/\1/')
+    # 「ソース解析: 再利用=N 新規解析=M（…） 失敗=F」の N と M。日本語に依存しないよう、
+    # 「=数字」が3つ以上あって数字で終わる最初の行から取る（test/regression/run.sh と同じ探し方）
+    local summary
+    summary=$(LC_ALL=C grep -a -E -m1 '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' out.log)
+    REUSED=$(LC_ALL=C sed -E 's/^[^=]*=([0-9]+).*$/\1/' <<< "$summary")
+    PARSED=$(LC_ALL=C sed -E 's/^[^=]*=[0-9]+[^=]*=([0-9]+).*$/\1/' <<< "$summary")
     cp $CACHE "$1"
 }
 
@@ -70,7 +76,7 @@ normalized_facts() { LC_ALL=C grep -v "^F	" "$1" | LC_ALL=C sort; }
 check_rows() {   # $1=キャッシュ  $2=ラベル
     local bad
     bad=$(awk 'NR == 1 { next }
-               { if (index("LFIHDVKJACRMXU", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
+               { if (index("LFIHDVKJACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
                prev == "F" && substr($0, 1, 1) != "I" { print NR": F 行の次が I 行ではありません: "$0 }
                { prev = substr($0, 1, 1) }' "$1")
     if [ -z "$bad" ]; then
@@ -164,5 +170,58 @@ else
     echo "  NG   定数の値が変わらないのに、変わったときと同じだけ解析し直しています（$unchanged_parsed / $changed_parsed）"
     fail=1
 fi
+
+# --- キャッシュを捨てる条件 ---------------------------------------------
+# 事実の作り方が変わった（文字コード）／キャッシュが壊れている場合は、中途半端に再利用すると
+# 呼び出しが静かに欠ける。丸ごと捨てて全件解析し直すこと
+discard_case() {   # $1=ラベル  $2=壊す・変えるコマンド  $3=ログに出るはずの文字列  $4=出力が基準と一致すべきか(yes/no)
+    echo "== $1 =="
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
+    mkdir -p work && cp -r src work/src
+    cp config.properties case.properties
+    CONFIG=case.properties
+    run base.tsv || { CONFIG=config.properties; return; }
+    local base_csv=$OUT
+
+    eval "$2"
+    run inc.tsv || { CONFIG=config.properties; return; }
+    CONFIG=config.properties
+
+    if grep -q -F -- "$3" out.log; then
+        echo "  OK   $1 破棄したことをログに出す"
+    else
+        echo "  NG   $1 破棄したことがログに出ていません（「$3」）"; sed -n 1,10p out.log; fail=1
+    fi
+    if [ "$REUSED" = 0 ]; then
+        echo "  OK   $1 再利用せず全件解析した"
+    else
+        echo "  NG   $1 壊れた・古いキャッシュを再利用しています（再利用=$REUSED）"; fail=1
+    fi
+    if [ "$4" = yes ]; then
+        if diff --strip-trailing-cr -q "$base_csv/call-hierarchy.csv" "$OUT/call-hierarchy.csv" > /dev/null; then
+            echo "  OK   $1 出力は壊れる前と同じ"
+        else
+            echo "  NG   $1 出力が壊れる前と違います"
+            diff --strip-trailing-cr "$base_csv/call-hierarchy.csv" "$OUT/call-hierarchy.csv" | head -10; fail=1
+        fi
+    fi
+}
+
+# ソースの文字コードはキャッシュの鍵に入っている。source.encoding が空欄なら pom.xml から
+# 決まるので、.java を1行も触らずに解釈が変わることがある
+discard_case "文字コードの変更" \
+    "printf 'source.encoding=MS932\n' >> case.properties" \
+    "[cache]" no
+
+# 途中で切れたキャッシュ。切れた場所より前のブロックは「更新時刻もサイズも一致する」ように
+# 見えるので、印が無いことで気づけなければ、そのファイルの呼び出しが静かに欠ける
+discard_case "途中で切れたキャッシュ" \
+    "head -n -3 \$(ls .cache/work_*/analysis-cache.tsv) > cut.tmp && mv cut.tmp \$(ls .cache/work_*/analysis-cache.tsv)" \
+    "[cache]" yes
+
+# 文字が壊れたキャッシュ。解析ごと失敗させず、破棄して全件解析に倒すこと
+discard_case "文字が壊れたキャッシュ" \
+    "printf '\\xff\\xfe bad\\n' >> \$(ls .cache/work_*/analysis-cache.tsv)" \
+    "[cache]" yes
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

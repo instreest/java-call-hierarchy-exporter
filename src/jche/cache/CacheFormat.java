@@ -51,6 +51,9 @@ package jche.cache;
  *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
  *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link UnresolvedCallFact}
+ *   Z  ブロック数                                              最終行。ここまで書き終えた印
+ *                                                          （{@link #trailerFor}）。これが無い・数が合わない
+ *                                                          キャッシュは途中で切れているとみなして捨てる
  * </pre>
  * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
  * F行が現れるたびに、以降の行はそのファイルに属する。I行はF行の直後に置く。
@@ -152,26 +155,48 @@ public final class CacheFormat {
     public static final char ROW_FUNCTIONAL_IMPL = 'M';
     public static final char ROW_HINT = 'X';
     public static final char ROW_UNRESOLVED = 'U';
+    public static final char ROW_END = 'Z';
 
     private CacheFormat() {
     }
 
     /**
-     * キャッシュの1行目。形式のバージョンに加えてソースレベルと実行中の JDK も入れる。
+     * キャッシュの1行目。形式のバージョンに加えて、ソースレベル・ソースの文字コード・
+     * 実行中の JDK も入れる。
      *
      * 同じソースでも、どの言語バージョンとして解析したかで結果が変わる
      * （古いレベルだと新しい構文が解析できず、呼び出しが抜ける）。
+     * 文字コードも同じで、違う文字コードで読めば文字列リテラルの値が変わり、
+     * 構文解析そのものが通らないこともある。しかも {@code source.encoding} が空欄なら
+     * {@code pom.xml} の {@code project.build.sourceEncoding} から決まるので、
+     * <b>.java を1行も触らずに</b>解釈が変わることがある。
      * JDT は実行中の JVM のブートクラスパスを解析対象のクラスパスに含めるため、
      * JDK の版が変わると標準 API の解決結果も変わりうる。
      * 更新時刻とサイズだけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
-    public static String headerFor(String sourceLevel, String hintPluginFingerprint) {
+    public static String headerFor(String sourceLevel, String sourceEncoding,
+                                   String hintPluginFingerprint) {
         String header = VERSION + SEP + "source=" + sourceLevel
+                + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
         // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
         // この項目の追加だけで捨てさせないため
         return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
+    }
+
+    /**
+     * キャッシュの最終行。ここまで書き終えたことの印と、書いたブロック（F行）の数。
+     *
+     * キャッシュは一時ファイルへ書いてから移すので、このツール自身が半端なファイルを
+     * 残すことはない。それでも印を置くのは、外から壊れたファイルが来る経路があるため
+     * （GitHub Actions のキャッシュの復元、コピーの失敗、ディスクの異常）。
+     * 途中で切れたキャッシュは、切れた場所より前のブロックが「更新時刻もサイズも一致する」
+     * ように見えてしまうので、印が無ければ丸ごと捨てて全件解析し直す。
+     * 数まで見るのは、途中のブロックが抜けた場合も気づけるようにするため。
+     */
+    public static String trailerFor(long blocks) {
+        return ROW_END + SEP + blocks;
     }
 
     /** 行の先頭1文字（種別）。空行なら '\0' */

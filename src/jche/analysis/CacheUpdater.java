@@ -156,7 +156,8 @@ public final class CacheUpdater {
         }
 
         try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8)) {
-            cacheOut.write(CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint));
+            cacheOut.write(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
+                    config.hintPluginFingerprint));
             cacheOut.newLine();
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
@@ -167,8 +168,12 @@ public final class CacheUpdater {
             Set<String> valid = new HashSet<>();
             StaleTypes stale = new StaleTypes(libraries.changedPackages);
             Set<String> libraryAffected = new HashSet<>();   // 型解決に失敗していて、jar の追加で変わりうるファイル
-            if (oldCacheUsable) {
-                scanOldCache(live, valid, stale, libraries.anyAddedOrChanged(), libraryAffected);
+            if (oldCacheUsable && !scanOldCache(live, valid, stale, libraries.anyAddedOrChanged(),
+                    libraryAffected)) {
+                // 途中で切れている・読めないキャッシュ。中途半端に再利用すると呼び出しが静かに欠けるので、
+                // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
+                valid.clear();
+                libraryAffected.clear();
             }
 
             // --- パス2: 変更・追加されたファイルを解析 ---
@@ -192,12 +197,14 @@ public final class CacheUpdater {
             writer.cascade = Cascade.WHEN_CONSTANTS_CHANGED;
             if (oldCacheUsable && !valid.isEmpty()) {
                 reanalyzeDependents(extractor, writer, live, valid, stale);
-                result.reused = valid.size();
-                writer.skipped(result.reused);
 
                 // --- パス5: 最後まで有効だったブロックを書き写す ---
-                result.unresolved += copyValidBlocks(live, valid, cacheOut);
+                copyValidBlocks(live, valid, cacheOut, result);
+                writer.skipped(result.reused);
             }
+
+            // 最終行。次回、ここまで書き終えたキャッシュかどうかを見分けるための印
+            writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused));
         }
         progress.finish();
 
@@ -489,16 +496,17 @@ public final class CacheUpdater {
      * パス0。旧キャッシュのヘッダを検証し、続く L 行（解析時の依存 jar）を読む。
      * 形式・ソースレベル・JDK・フェーズAの拡張のどれかが違えば null（旧キャッシュは使わず全件再解析）。
      */
-    private List<LibraryFact> readOldLibraries() throws IOException {
+    private List<LibraryFact> readOldLibraries() {
         if (!Files.isRegularFile(config.cacheFile)) {
             return null;
         }
         try (CacheReader in = CacheReader.open(config.cacheFile)) {
-            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.hintPluginFingerprint))) {
-                // 形式が変わった場合のほか、source.level や実行 JDK が変わった場合もここで破棄する。
-                // 言語バージョンやブートクラスパスが違えば同じソースでも解析結果が変わるため、
-                // 更新時刻とサイズが一致していても再利用してはいけない
-                Log.info("[cache] 形式・ソースレベル・JDK のいずれかが異なるため既存キャッシュを破棄します");
+            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
+                    config.hintPluginFingerprint))) {
+                // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK が
+                // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
+                // 同じソースでも解析結果が変わるため、更新時刻とサイズが一致していても再利用してはいけない
+                Log.info("[cache] 形式・ソースレベル・文字コード・JDK のいずれかが異なるため既存キャッシュを破棄します");
                 return null;
             }
             List<LibraryFact> libraries = new ArrayList<>();
@@ -509,19 +517,30 @@ public final class CacheUpdater {
                 }
             }
             return libraries;
+        } catch (IOException | RuntimeException e) {
+            // 読めない・文字が壊れているキャッシュ。全件解析し直せば済むので、解析ごと失敗させない
+            Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
+            return null;
         }
     }
 
     /**
      * パス1。旧キャッシュを読み、有効なファイルの集合と「変わった型」を集める。
      *
+     * 最後まで書き終えたキャッシュか（最終行の印。{@link CacheFormat#trailerFor}）もここで見る。
+     * 途中で切れたキャッシュは、切れた場所より前のブロックが「更新時刻もサイズも一致する」ように
+     * 見えるため、そのまま再利用すると呼び出しが静かに欠ける。印が無ければ false を返して
+     * 丸ごと捨てさせる。
+     *
      * @param librariesAddedOrChanged jar が追加・変更されたか。そのときは型解決に失敗していたブロック
      *                                （F行のエラー数が 0 でない、または U 行に BINDING_FAILED がある）を
      *                                有効から外し、libraryAffected に積む
+     * @return 旧キャッシュをそのまま使ってよければ true。途中で切れている・読めないなら false
      */
-    private void scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
-                              boolean librariesAddedOrChanged, Set<String> libraryAffected)
-            throws IOException {
+    private boolean scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
+                                 boolean librariesAddedOrChanged, Set<String> libraryAffected) {
+        long blocks = 0;
+        String lastLine = "";
         try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean staleBlock = false;
             String currentRel = null;
@@ -529,7 +548,9 @@ public final class CacheUpdater {
             List<String> blockConstants = new ArrayList<>();
             while (in.next()) {
                 char rowType = in.rowType();
+                lastLine = in.line();
                 if (rowType == CacheFormat.ROW_FILE) {
+                    blocks++;
                     rememberConstants(blockRel, blockConstants);
                     String[] f = in.columns();
                     blockRel = (f.length >= 2) ? f[1] : null;
@@ -563,7 +584,16 @@ public final class CacheUpdater {
                 }
             }
             rememberConstants(blockRel, blockConstants);   // 最後のブロック
+        } catch (IOException | RuntimeException e) {
+            Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
+            return false;
         }
+        if (!lastLine.equals(CacheFormat.trailerFor(blocks))) {
+            Log.info("[cache] 既存キャッシュが途中で切れているため破棄して全件解析します"
+                    + "（ファイル " + blocks + " 件ぶんを読みましたが、最後まで書き終えた印がありません）");
+            return false;
+        }
+        return true;
     }
 
     /** 1ブロック分の K 行の指紋をまとめて覚え、次のブロックのために溜めた分を捨てる */
@@ -643,11 +673,12 @@ public final class CacheUpdater {
      * F 行だけは今の更新時刻と内容ハッシュに書き直す（次回は更新時刻の一致で通るように）。
      * L 行はブロックの外（先頭）にあり、ここでは書き写さない（パス0で新しいものを書いている）。
      *
-     * @return 書き写したブロックに含まれる、型解決できなかった呼び出しの件数
+     * 書き写したブロックの数を {@code result.reused} に、そこに含まれる型解決できなかった
+     * 呼び出しの件数を {@code result.unresolved} に足す。数は最終行（{@link CacheFormat#trailerFor}）
+     * にも出すので、valid の件数ではなく実際に書いた数を数える。
      */
-    private long copyValidBlocks(Map<String, SourceFile> live, Set<String> valid,
-                                 BufferedWriter cacheOut) throws IOException {
-        long unresolved = 0L;
+    private void copyValidBlocks(Map<String, SourceFile> live, Set<String> valid,
+                                 BufferedWriter cacheOut, CachePhaseResult result) throws IOException {
         try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean keeping = false;
             while (in.next()) {
@@ -657,7 +688,12 @@ public final class CacheUpdater {
                     keeping = (f.length >= 2 && valid.contains(f[1]));
                     if (keeping) {
                         writeLine(cacheOut, refreshedFileRow(f, live.get(f[1])));
+                        result.reused++;
                     }
+                    continue;
+                }
+                if (rowType == CacheFormat.ROW_END) {
+                    keeping = false;   // 旧キャッシュの最終行。新しいものを書き終わりに1行だけ書く
                     continue;
                 }
                 if (keeping) {
@@ -665,13 +701,12 @@ public final class CacheUpdater {
                     if (rowType == CacheFormat.ROW_UNRESOLVED) {
                         UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
                         if (u != null && !u.hasUsableCandidate()) {
-                            unresolved++;
+                            result.unresolved++;
                         }
                     }
                 }
             }
         }
-        return unresolved;
     }
 
     private static void writeLine(BufferedWriter w, String line) throws IOException {

@@ -251,8 +251,12 @@ public final class Config {
         // source.encoding が空欄なら project.root から決める（pom.xml の project.build.sourceEncoding、無ければ UTF-8）
         String enc = p.getProperty("source.encoding", "").trim();
         this.sourceEncodingAuto = enc.isEmpty();
+        // 正規名にそろえる。"utf-8" と "UTF-8" のような表記の揺れでキャッシュの鍵が
+        // 変わってしまうと、設定を変えていないのに全件解析し直しになる
         this.sourceEncoding = this.sourceEncodingAuto
-                ? ProjectDetector.sourceEncoding(this.projectRoot) : charsetOf("source.encoding", enc).name();
+                ? charsetOf("pom.xml の project.build.sourceEncoding",
+                        ProjectDetector.sourceEncoding(this.projectRoot)).name()
+                : charsetOf("source.encoding", enc).name();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
         this.sourceLevelAuto = this.sourceLevelRequested.isEmpty();
         this.compilerOptions = buildCompilerOptions(this.sourceLevelRequested);
