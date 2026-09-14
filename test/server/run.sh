@@ -106,6 +106,25 @@ else
     fail "CSV が書けていない"
 fi
 
+# 解析の最中に SHUTDOWN が届いても、その解析は完走してから終わること。
+# SHUTDOWN は「積んだ要求を処理し終えてから終わる」という意味で、中止は CANCEL の役目
+# （かつては読み取りスレッドが SHUTDOWN を見た時点で中止フラグを立てていたため、
+#   要求をまとめて流し込むと ANALYZE が読み取りの速さ次第で中止されていた）。
+# 解析を始めてから SHUTDOWN を送るために、あいだに少し間を置く
+echo "== 解析中の SHUTDOWN は解析を中止しない =="
+OUT=$( (printf 'ANALYZE\t%s\n' "$CONFIG"; sleep 0.3; printf 'SHUTDOWN\n') \
+    | java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache" 2>/dev/null | grep -v '^#L')
+grep -qE "^OK${T}analyzed=1" <<<"$OUT" && ok "解析は完走する" \
+    || fail "解析が中止された（$(grep -m1 -E '^(OK|NG)' <<<"$OUT" | head -c 40)）"
+grep -qE "^OK${T}bye" <<<"$OUT" && ok "そのあと終わる" || fail "SHUTDOWN で終わっていない"
+
+# 中止したいときは CANCEL。こちらは実行中の解析を打ち切る
+echo "== CANCEL は解析を中止する =="
+OUT=$( (printf 'ANALYZE\t%s\n' "$CONFIG"; sleep 0.3; printf 'CANCEL\nSHUTDOWN\n') \
+    | java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache2" 2>/dev/null | grep -v '^#L')
+grep -qE "^NG${T}cancelled" <<<"$OUT" && ok "CANCEL で中止される" \
+    || fail "CANCEL が効いていない（$(grep -m1 -E '^(OK|NG)' <<<"$OUT" | head -c 40)）"
+
 echo "== 知らない要求 =="
 OUT=$(session 'NOSUCHCOMMAND\tx\nSHUTDOWN\n')
 grep -qE "^NG${T}unknown-command" <<<"$OUT" && ok "知らない要求は NG を返して落ちない" || fail "知らない要求の扱いが違う"
