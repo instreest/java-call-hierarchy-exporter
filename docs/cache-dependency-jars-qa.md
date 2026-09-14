@@ -129,6 +129,13 @@ JDK の版が変われば標準 API の解決結果が変わりうる（新し�
 場合は検知しない。`library.folders` はフォルダ直下の jar をファイル名順に並べるので、
 順序だけが変わる状況は設定を書き換えたときに限られる。
 
+**追記（Issue #104）**: 順序だけの変化も検知するようにした。
+「そのパッケージを含む jar のクラスパス順の並び」をパッケージごとに作り、旧 `L` 行から作ったものと
+突き合わせる。並びが違うパッケージだけを「変わったパッケージ」に入れる。
+`library.folders` の書き換えだけでなく、`pom.xml` / `build.gradle` の依存の並べ替えでも順序は変わるので、
+「設定を書き換えたときに限られる」という上の見立ては甘かった。
+経緯と再現は [cache-identity-qa.md](cache-identity-qa.md)。
+
 ---
 
 ## 実装
@@ -344,6 +351,6 @@ JDT は `setEnvironment(..., includeRunningVMBootclasspath=true)` で、**実行
 - `.classpath` の `kind="con"`（Maven / Gradle のコンテナ）は元から解決しておらず、今回の対象外
   （その後 [Issue #44](https://github.com/instreest/java-call-hierarchy-exporter/issues/44) で、`library.folders` が空欄なら
   pom.xml / build.gradle を読んでローカルリポジトリから依存 jar を集める形で対応した。[build-tool-classpath-qa.md](build-tool-classpath-qa.md)）
-- jar の順序だけの変化は検知しない（Q9）
+- ~~jar の順序だけの変化は検知しない（Q9）~~ → Issue #104 で対応した
 - 同じ jar が 2 つのフォルダにあるとき、どちらから解決されたかは区別しない
 - FatJar の中の jar は展開しない（[Issue #35](https://github.com/instreest/java-call-hierarchy-exporter/issues/35) の範囲）

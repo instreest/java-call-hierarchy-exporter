@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +46,16 @@ import jche.util.Log;
  * <p>影響範囲は型ではなくパッケージで持つ。jar の版を差し替えると型の増減があり、
  * 「旧版にあって新版に無い型」は新しい jar からは分からないため。
  * 削除された jar はもう開けないので、パッケージは旧 L 行から取る。
+ *
+ * <h2>並び順</h2>
+ * jar の集合が同じでも、<b>クラスパス上の並びが変われば解決先が変わりうる</b>。
+ * JDT は同名クラスを先勝ちで解決するので、同じ FQN が 2 つの jar に入っていると、
+ * 順を入れ替えただけで別の型に解決される（{@code pom.xml} の依存の並べ替え、
+ * {@code library.folders} の書き換えで普通に起きる）。
+ *
+ * <p>効くのは「同じパッケージが 2 つ以上の jar に入っている」ときだけなので、
+ * パッケージごとに「そのパッケージを含む jar の並び」を作って突き合わせ、違うものだけを
+ * 「変わったパッケージ」に入れる（{@link #addReorderedPackages}）。
  */
 final class LibraryDiff {
 
@@ -55,22 +66,30 @@ final class LibraryDiff {
     int added;
     int changed;
     int removed;
+    /** 並びが変わって解決先が変わりうるパッケージの数（下記「並び順」） */
+    int reordered;
 
     private LibraryDiff() {
     }
 
     boolean any() {
-        return added + changed + removed > 0;
+        return added + changed + removed + reordered > 0;
     }
 
-    /** jar が増えた、または中身が変わった（型解決に失敗していた箇所が解決できるようになりうる） */
+    /**
+     * jar が増えた、または中身が変わった（型解決に失敗していた箇所が解決できるようになりうる）。
+     *
+     * <p>並び替えは入れない。jar の集合が同じなら「解決できる型の集合」も同じで、
+     * 前回失敗した型解決が成功するようになる理由にはならないため（変わるのは、
+     * 複数の jar にある同名クラスのうちどれが勝つかだけ）。
+     */
     boolean anyAddedOrChanged() {
         return added + changed > 0;
     }
 
     @Override
     public String toString() {
-        return "追加=" + added + " 変更=" + changed + " 削除=" + removed
+        return "追加=" + added + " 変更=" + changed + " 削除=" + removed + " 並び替え=" + reordered
                 + "（影響するパッケージ " + changedPackages.size() + " 件）";
     }
 
@@ -86,6 +105,7 @@ final class LibraryDiff {
         }
         LibraryDiff diff = new LibraryDiff();
         Set<String> seen = new HashSet<>();
+        Set<String> unchanged = new HashSet<>();   // 並び順の突き合わせに使う（addReorderedPackages）
         for (String cp : classpath) {
             Path entry = Paths.get(cp);
             String key = keyOf(entry, projectRoot);
@@ -97,6 +117,7 @@ final class LibraryDiff {
             // 指紋が取れなかったものは同一性を判定できない。毎回「変わった」に倒す（安全側）
             if (prev != null && now.known() && prev.fingerprint().equals(now.fingerprint())) {
                 diff.current.add(prev);
+                unchanged.add(key);
                 continue;
             }
             diff.current.add(now);
@@ -114,7 +135,59 @@ final class LibraryDiff {
                 diff.changedPackages.addAll(l.packages());
             }
         }
+        diff.addReorderedPackages(old, unchanged);
         return diff;
+    }
+
+    /**
+     * クラスパスの並びが変わったことで解決先が変わりうるパッケージを、changedPackages へ足す。
+     *
+     * <p>パッケージごとに「そのパッケージを含む jar の、クラスパス順の並び」を作り、
+     * 旧 L 行から作ったものと突き合わせる。並びが違えば、そのパッケージの同名クラスは
+     * 別の jar のものに解決されうるので、そのパッケージの型を参照するファイルを解析し直す。
+     *
+     * <p>突き合わせるのは<b>新旧に共通していて、中身も変わっていない jar だけ</b>。
+     * そうしないと、jar を 1 本足した・消した・差し替えただけで「並びが変わった」と数えてしまう
+     * （追加・変更・削除はすでにそれぞれ数えていて、パッケージも changedPackages に入っている）。
+     * 絞ることで、ここが数えるのは「純粋な並び替え」だけになる。
+     *
+     * <p>1 つの jar にしかないパッケージは、どこに並んでいても解決先が変わらないので見ない。
+     * 同じパッケージを 2 本以上の jar が持つ構成でなければ、突き合わせるものが無く、
+     * 実質そのまま戻る。
+     *
+     * @param unchanged 新旧で指紋まで一致した jar のパス
+     */
+    private void addReorderedPackages(List<LibraryFact> old, Set<String> unchanged) {
+        Map<String, List<String>> before = duplicatedPackages(old, unchanged);
+        if (before.isEmpty()) {
+            return;
+        }
+        Map<String, List<String>> after = duplicatedPackages(current, unchanged);
+        for (Map.Entry<String, List<String>> en : before.entrySet()) {
+            if (!en.getValue().equals(after.get(en.getKey()))) {
+                reordered++;
+                changedPackages.add(en.getKey());
+            }
+        }
+    }
+
+    /**
+     * 2 つ以上の jar に入っているパッケージだけを「パッケージ -> jar のクラスパス順の並び」にする。
+     *
+     * @param keep 数える jar のパス（新旧で指紋まで一致したものだけを渡す）
+     */
+    private static Map<String, List<String>> duplicatedPackages(List<LibraryFact> facts, Set<String> keep) {
+        Map<String, List<String>> byPackage = new LinkedHashMap<>();
+        for (LibraryFact l : facts) {
+            if (!keep.contains(l.path())) {
+                continue;
+            }
+            for (String pkg : l.packages()) {
+                byPackage.computeIfAbsent(pkg, k -> new ArrayList<>()).add(l.path());
+            }
+        }
+        byPackage.values().removeIf(jars -> jars.size() < 2);
+        return byPackage;
     }
 
     /** クラスパスの1件を1回走査して、指紋とパッケージ一覧を作る。読めなければ指紋は空文字 */

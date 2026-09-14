@@ -22,7 +22,9 @@ package jche.cache;
  *                                                          内容ハッシュ）のハッシュ。L 行の直後に1行。
  *                                                          中断した実行からの引き継ぎ（{@link #sourcesRow}）でだけ使う
  *   L  jarのパス  指紋  パッケージ(カンマ区切り)            {@link LibraryFact}。ヘッダ行の直後に
- *                                                          クラスパス順で並ぶ。解析時の依存 jar。
+ *                                                          クラスパス順で並ぶ（並び自体も意味を持つ。
+ *                                                          JDT は同名クラスを先勝ちで解決するため）。
+ *                                                          解析時の依存 jar。
  *                                                          指紋は中に入っているクラスの一覧
  *                                                          （{@link jche.analysis.LibraryDiff}）。読めなければ空
  *   F  相対パス  サイズ  エラー数  内容ハッシュ                （ファイルのブロックの先頭）。エラー数は
@@ -94,6 +96,8 @@ package jche.cache;
  * 依存 jar も同じ理由で解決結果を左右するので、L行と突き合わせて追加・変更・削除を検知し、
  * その jar のパッケージの型を参照するファイル（I行）と、型解決に失敗していたファイル
  * （F行のエラー数、U行の BINDING_FAILED）を解析し直す。
+ * L行の<b>並び順</b>も見る。jar の集合が同じでも、並びが変われば同名クラスの解決先が
+ * 変わりうるため（{@link jche.analysis.LibraryDiff} の「並び順」）。
  * 実行中の JDK もブートクラスパスとして解決に加わるため、ヘッダ行に含めて丸ごと突き合わせる。
  * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
  * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。

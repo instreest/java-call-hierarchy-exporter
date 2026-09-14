@@ -30,6 +30,8 @@ fail=0
 if [ -n "${JCHE_CP:-}" ]; then
     CP="$JCHE_CP"
     JAVA_BIN=java
+    JAVAC_BIN=javac
+    JAR_BIN=jar
 else
     JBANG="bash $ROOT/jbangw/jbang"
     CP=$($JBANG info classpath "$ROOT/src/jche/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
@@ -43,9 +45,11 @@ else
         || { echo "  NG   コンパイルに失敗しました"; echo "FAIL"; exit 1; }
     CP="build:$CP"
     JAVA_BIN="$JAVA_HOME_25/bin/java"
+    JAVAC_BIN="$JAVA_HOME_25/bin/javac"
+    JAR_BIN="$JAVA_HOME_25/bin/jar"
 fi
 
-CACHE=.cache/work_*/analysis-cache.tsv
+CACHE=.cache/*/analysis-cache.tsv
 
 CONFIG=config.properties
 
@@ -226,12 +230,12 @@ discard_case "文字コードの変更" \
 # 途中で切れたキャッシュ。切れた場所より前のブロックは「サイズも内容ハッシュも一致する」ように
 # 見えるので、印が無いことで気づけなければ、そのファイルの呼び出しが静かに欠ける
 discard_case "途中で切れたキャッシュ" \
-    "head -n -3 \$(ls .cache/work_*/analysis-cache.tsv) > cut.tmp && mv cut.tmp \$(ls .cache/work_*/analysis-cache.tsv)" \
+    "head -n -3 \$(ls .cache/*/analysis-cache.tsv) > cut.tmp && mv cut.tmp \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
 
 # 文字が壊れたキャッシュ。解析ごと失敗させず、破棄して全件解析に倒すこと
 discard_case "文字が壊れたキャッシュ" \
-    "printf '\\xff\\xfe bad\\n' >> \$(ls .cache/work_*/analysis-cache.tsv)" \
+    "printf '\\xff\\xfe bad\\n' >> \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
 
 # --- 中断した実行からの引き継ぎ -----------------------------------------
@@ -243,7 +247,7 @@ TOTAL_FILES=$(ls src/inc/*.java | wc -l)
 # 「最後のブロックが書き終わっていない」状態にする（実際の中断と同じ形）
 make_partial() {
     local cache
-    cache=$(ls .cache/work_*/analysis-cache.tsv)
+    cache=$(ls .cache/*/analysis-cache.tsv)
     head -n -3 "$cache" > "$cache.tmp"
     rm -f "$cache"
 }
@@ -274,8 +278,8 @@ salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空
             echo "  NG   $1 引き継いではいけない状態で引き継いでいます（$PARSED / $TOTAL_FILES 件）"; fail=1
         fi
     fi
-    if ls .cache/work_*/*.partial > /dev/null 2>&1 || ls .cache/work_*/*.tmp > /dev/null 2>&1; then
-        echo "  NG   $1 一時ファイルが残っています: $(ls .cache/work_*/)"; fail=1
+    if ls .cache/*/*.partial > /dev/null 2>&1 || ls .cache/*/*.tmp > /dev/null 2>&1; then
+        echo "  NG   $1 一時ファイルが残っています: $(ls .cache/*/)"; fail=1
     else
         echo "  OK   $1 一時ファイルが残らない"
     fi
@@ -311,5 +315,93 @@ salvage_case "更新時刻だけ変わっても引き継ぐ" \
 # ここでは Base.java の定数を変える（2段先の Client.java に値が焼き込まれている）
 salvage_case "中断後にソースが変わったら引き継がない" \
     "sed -i 's/inc.AlphaDao/inc.BetaDao/' work/src/inc/Base.java" no
+
+# --- 依存 jar の並び順 -------------------------------------------------
+# jar の集合が同じでも、クラスパス上の並びが変われば同名クラスの解決先が変わる（先勝ち）。
+# 並び順を見ていないと、追加も変更も削除も 0 件になって全ファイルが再利用され、
+# 古い解決結果がそのまま残る（#104）。
+#
+# jarorder/libsrc/a と b は同じ dup.Shared を別のシグネチャで持つ。解析対象は run(1) を呼ぶので、
+# run(int) を持つ b が勝てば run(int)、a が勝てば run(long) に解決される。
+jar_order_case() {
+    echo "== 依存 jar の並び順 =="
+    rm -rf jarwork .cache out out.log inc.tsv full.tsv jarorder.properties
+    mkdir -p jarwork
+    cp -r jarorder/src jarwork/src
+    # 標準エラーはいったんファイルへ（JAVA_TOOL_OPTIONS の通知が混ざるため）。
+    # 失敗したときだけ、その通知を除いて中身を出す
+    for v in a b; do
+        if ! "$JAVAC_BIN" -d "jarwork/classes-$v" $(find "jarorder/libsrc/$v" -name '*.java') 2> jarwork/tool.log; then
+            echo "  NG   検査用 jar のコンパイルに失敗しました"
+            grep -v JAVA_TOOL_OPTIONS jarwork/tool.log | head -5; fail=1; return
+        fi
+        mkdir -p "jarwork/lib$v"
+        if ! ( cd "jarwork/classes-$v" && "$JAR_BIN" cf "../lib$v/dup-$v.jar" dup ) 2> jarwork/tool.log; then
+            echo "  NG   検査用 jar を作れませんでした"
+            grep -v JAVA_TOOL_OPTIONS jarwork/tool.log | head -5; fail=1; return
+        fi
+    done
+
+    CONFIG=jarorder.properties
+    order_config() {   # $1=library.folders の並び
+        cat > jarorder.properties <<EOF
+project.root=./jarwork
+source.folders=src
+library.folders=$1
+library.build.tool=none
+source.encoding=UTF-8
+entry.packages=app.Main
+exclude.packages=java.**,javax.**
+cache.enabled=true
+cache.folder=./.cache
+dataflow.enabled=true
+branch.pruning.enabled=true
+output.encoding=UTF-8
+output.folder=./out
+EOF
+    }
+
+    order_config "liba,libb"
+    run base.tsv || { CONFIG=config.properties; return; }
+
+    order_config "libb,liba"            # 並びだけを入れ替える（jar の中身は同じ）
+    run inc.tsv || { CONFIG=config.properties; return; }
+    local inc_csv=$OUT
+    check_rows inc.tsv "依存 jar の並び順 差分更新"
+    if [ "$PARSED" -ge 1 ]; then
+        echo "  OK   依存 jar の並び順 入れ替えを検知して解析し直した"
+    else
+        echo "  NG   依存 jar の並び順 入れ替えを検知していません（新規解析=$PARSED）"; fail=1
+    fi
+
+    rm -rf .cache
+    run full.tsv || { CONFIG=config.properties; return; }
+    for f in call-hierarchy.csv methods.csv; do
+        if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
+            echo "  OK   依存 jar の並び順 $f（差分更新 == 全件解析）"
+        else
+            echo "  NG   依存 jar の並び順 $f が差分更新と全件解析で違います"
+            diff --strip-trailing-cr "$inc_csv/$f" "$OUT/$f" | head -10; fail=1
+        fi
+    done
+    # 入れ替えで解決先が実際に変わっていること（変わらなければ検査が素通りする）
+    if diff -q <(normalized_facts base.tsv) <(normalized_facts full.tsv) > /dev/null; then
+        echo "  NG   依存 jar の並び順 入れ替えで解決先が変わっていません（検査が素通りします）"; fail=1
+    else
+        echo "  OK   依存 jar の並び順 入れ替えで解決先が変わっている"
+    fi
+
+    # 並びを変えずにもう一度。並び順の判定が効きすぎて毎回解析し直していないこと
+    run again.tsv || { CONFIG=config.properties; return; }
+    CONFIG=config.properties
+    if [ "$PARSED" = 0 ]; then
+        echo "  OK   依存 jar の並び順 変えなければ解析し直さない"
+    else
+        echo "  NG   依存 jar の並び順 変えていないのに解析し直しています（新規解析=$PARSED）"; fail=1
+    fi
+    rm -f again.tsv
+}
+
+jar_order_case
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

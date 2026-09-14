@@ -74,6 +74,8 @@ target/
 /test/incremental/*.tsv
 /test/incremental/case.properties
 /test/incremental/cut.tmp
+/test/incremental/jarorder.properties
+/test/incremental/jarwork/
 
 # test/conditions/run.sh（条件の調査の検査）が作るもの。
 # ケースごとの設定ファイル（case.properties）とコンパイル結果・実行ログのほか、
