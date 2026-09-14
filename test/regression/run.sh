@@ -19,6 +19,10 @@
 #                          （config.properties。ファクトリのキーと対応表）→ 自前の拡張（config-custom。
 #                          plugins/*.java を実行時にコンパイル）の順に実行し、拡張ありでのみ具象クラスに
 #                          絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを確認する
+#   cachesplit           … 2 つに分かれたキャッシュ（analysis-cache.tsv / dataflow-cache.tsv）の整合。
+#                          両方そろっていれば再利用し、dataflow を消す・世代の印を書き換えると両方を
+#                          作り直し、dataflow から 1 ブロックだけ消すとそのファイルだけ解析し直して
+#                          対に戻ることを確認する。どの実行のあとも 2 つの F 行が完全に一致すること
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
@@ -32,7 +36,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin multi"}
+CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin cachesplit multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -178,6 +182,84 @@ multi_case() {
     expect_run_files entry config.properties "multi: entry"
 }
 
+# 2 つに分かれたキャッシュの整合のケース。
+# 片方だけが新しい状態を作らないこと（世代の印とブロックの突き合わせ）を、壊し方を変えて確認する
+cachesplit_case() {
+    echo "== cachesplit =="
+    rm -rf cachesplit/.cache cachesplit/output cachesplit/run-*.log
+    local dir=cachesplit/.cache/demo_*
+    # 2 つのキャッシュの F 行（ブロックの区切り）が完全に一致すること。
+    # ここがずれると「呼び出し階層は再利用、データフローは欠けている」ブロックが生まれる
+    expect_blocks_paired() {   # $1=ラベル
+        local a f
+        a=$(ls $dir/analysis-cache.tsv 2>/dev/null)
+        f=$(ls $dir/dataflow-cache.tsv 2>/dev/null)
+        if [ -z "$a" ] || [ -z "$f" ]; then
+            echo "  DIFF cachesplit キャッシュが 2 つそろっていません ($1)"; fail=1; return
+        fi
+        if diff -q <(grep '^F' "$a") <(grep '^F' "$f") > /dev/null; then
+            echo "  OK   cachesplit ブロックが対（$1）"
+        else
+            echo "  DIFF cachesplit 2 つのキャッシュの F 行が一致しません ($1)"
+            diff <(grep '^F' "$a") <(grep '^F' "$f") | head -5; fail=1
+        fi
+    }
+
+    run cachesplit config.properties 1 "1回目: キャッシュ無し" || return
+    compare cachesplit expected "1回目: キャッシュ無し"
+    expect_blocks_paired "1回目"
+
+    run cachesplit config.properties 2 "2回目: 両方そろっている" || return
+    expect_reused cachesplit 2 "2回目: 両方そろっていれば再利用"
+    compare cachesplit expected "2回目: 両方そろっている"
+    expect_blocks_paired "2回目"
+
+    # dataflow を消すと、analysis だけを使い回さずに両方を作り直す
+    rm -f $dir/dataflow-cache.tsv
+    run cachesplit config.properties 3 "3回目: dataflow を消した" || return
+    expect_not_reused cachesplit 3 "3回目: dataflow が無ければ両方を作り直す"
+    compare cachesplit expected "3回目: dataflow を消した"
+    expect_blocks_paired "3回目"
+
+    # 世代の印を書き換える（前回の実行が dataflow を書く前に落ちた状況と同じ）
+    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+lines[0] = lines[0].rsplit('gen=', 1)[0] + 'gen=0000000000000000'
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+PY
+    run cachesplit config.properties 4 "4回目: 世代の印が食い違う" || return
+    expect_not_reused cachesplit 4 "4回目: 世代が食い違えば両方を作り直す"
+    compare cachesplit expected "4回目: 世代の印が食い違う"
+    expect_blocks_paired "4回目"
+
+    # dataflow から 1 ブロックだけ消す。そのファイルだけ解析し直し、他は再利用して対に戻る
+    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+out, skipping, removed = [], False, None
+for line in open(p, encoding='utf-8'):
+    if line.startswith('F\t'):
+        path = line.split('\t')[1]
+        if removed is None and path.endswith('Counter.java'):
+            removed, skipping = path, True
+        else:
+            skipping = False
+    if not skipping:
+        out.append(line)
+open(p, 'w', encoding='utf-8').write(''.join(out))
+PY
+    run cachesplit config.properties 5 "5回目: dataflow のブロックが 1 つ欠けた" || return
+    expect_reused cachesplit 5 "5回目: 欠けたファイル以外はキャッシュを再利用"
+    compare cachesplit expected "5回目: dataflow のブロックが 1 つ欠けた"
+    expect_blocks_paired "5回目: 欠けたブロックを解析し直して対に戻る"
+
+    run cachesplit config.properties 6 "6回目: 対に戻ったあと" || return
+    expect_reused cachesplit 6 "6回目: 全件再利用に戻る"
+    compare cachesplit expected "6回目: 対に戻ったあと"
+}
+
 # 拡張のケース。同じソースを 3 通りの設定で解析し、拡張の効き目とキャッシュの扱いを見る
 plugin_case() {
     echo "== plugin =="
@@ -207,6 +289,9 @@ for c in $CASES; do
     fi
     if [ "$c" = plugin ]; then
         plugin_case; continue
+    fi
+    if [ "$c" = cachesplit ]; then
+        cachesplit_case; continue
     fi
     echo "== $c =="
     rm -rf "$c/.cache" "$c/output" "$c"/run-*.log

@@ -49,14 +49,25 @@ public final class CacheReader implements Closeable {
         }
     }
 
-    /** ヘッダ行（{@link CacheFormat#headerFor} の形）。無ければ空文字 */
+    /** ヘッダ行（{@link CacheFormat#headerFor} の形。末尾に世代の印が付く）。無ければ空文字 */
     public String header() {
         return header;
     }
 
-    /** ヘッダが期待どおりか（形式・ソースレベル・JDK・拡張の指紋が一致するか） */
+    /**
+     * ヘッダの形式が期待どおりか（版・ソースレベル・JDK・拡張の指紋が一致するか）。
+     * 世代の印（{@link CacheFormat#GENERATION_PREFIX}）は互換性とは別の軸なので比べない
+     */
     public boolean headerMatches(String expected) {
-        return header.equals(expected);
+        return CacheFormat.compatibilityPartOf(header).equals(expected);
+    }
+
+    /**
+     * ヘッダの世代の印。無ければ空文字。
+     * 2 つのキャッシュが同じ実行で書かれたかを突き合わせるのに使う
+     */
+    public String generation() {
+        return CacheFormat.generationOf(header);
     }
 
     /**

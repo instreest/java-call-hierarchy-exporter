@@ -22,7 +22,7 @@
 
 | ファイル | 内容 |
 |---|---|
-| [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
+| [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。2 つに分けた置き場所、事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
 | [out-of-process-analysis-design.md](out-of-process-analysis-design.md) | Eclipse プラグインが解析を別プロセス（別 JDK・同梱の JDT）で行う仕組み。プロトコルと配布物の構成 |
 | [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作） |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
@@ -40,6 +40,7 @@
 | [instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) | #68 | インスタンス解析条件を外から与えるプラグイン（フェーズA / B、実行時コンパイル） |
 | [fatjar-external-usage-qa.md](fatjar-external-usage-qa.md) | #35 | 被参照スキャンの FatJar / war / ear 対応 |
 | [external-usage-callsite-qa.md](external-usage-callsite-qa.md) | — | 被参照スキャンで呼び出し元メソッドと行番号まで出す（class の命令列を自前で読む） |
+| [cache-split-qa.md](cache-split-qa.md) | — | キャッシュを呼び出し階層用とデータフロー用の 2 つに分け、対でしか再利用しないようにする |
 | [branch-pruning-qa.md](branch-pruning-qa.md) | #67 | 変数値と条件分岐の静的解析で、その経路では呼ばれない呼び出しを区別する |
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |

@@ -1,8 +1,19 @@
 # キャッシュファイルの設計
 
-解析結果のキャッシュ（`analysis-cache.tsv`）の置き場所と設計方針。
+解析結果のキャッシュの置き場所と設計方針。
 行の形式は [CacheFormat.java](../src/jche/cache/CacheFormat.java) のクラスコメント、依存 jar の変更との関係で迷った点は
 [cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) にある。
+
+## キャッシュは 2 つに分かれている
+
+| ファイル | 中身 |
+|---|---|
+| `analysis-cache.tsv` | 呼び出し階層（`call-hierarchy.csv` / `methods.csv`）を出すための事実。構造とバインディング |
+| `dataflow-cache.tsv` | 呼び出し階層の出力には使わない、サイドカーの解析のための事実。文字列の長さの上限を設けない |
+
+振り分けの基準は「呼び出し階層の出力に使うか」の一点。分けた理由と、
+片方だけが新しい状態を作らないための仕組み（世代の印とブロックの突き合わせ）は
+[cache-split-qa.md](cache-split-qa.md) にある。**2 つは常に対で書かれ、対でしか再利用されない。**
 
 大規模なコードベースでも `OutOfMemoryError` にならないよう、3点で対策しています。
 
@@ -13,13 +24,17 @@
 ## 置き場所の決め方
 
 キャッシュは解析対象プロジェクトごとの「サイドカー」として、このツールのプロジェクトフォルダの
-`.cache/<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭 8 桁>/analysis-cache.tsv` に作ります。
+`.cache/<project.root のフォルダ名>_<project.root の絶対パスの SHA-256 先頭 8 桁>/` に作ります。
 
 ```
 java-call-hierarchy-exporter/
 └── .cache/
-    ├── myapp_3f2a9c1e/analysis-cache.tsv      project.root=.../myapp
-    └── batch_b71e0d44/analysis-cache.tsv      project.root=.../batch
+    ├── myapp_3f2a9c1e/     project.root=.../myapp
+    │   ├── analysis-cache.tsv
+    │   └── dataflow-cache.tsv
+    └── batch_b71e0d44/     project.root=.../batch
+        ├── analysis-cache.tsv
+        └── dataflow-cache.tsv
 ```
 
 ツールのプロジェクトフォルダは、作業ディレクトリとその上位（次に、実行中のクラスの置き場所とその上位）から
@@ -29,6 +44,7 @@ java-call-hierarchy-exporter/
 `cache.folder` を指定すると、そのフォルダ（設定ファイルからの相対パス、または絶対パス）の下に
 同じ形のプロジェクト別フォルダを作ります。回帰テストのようにケースごとにキャッシュを分けたいときに使います。
 `cache.enabled=false` でもフェーズ 2 が読むためにキャッシュファイル自体は同じ場所に書かれます（再利用はしない）。
+2 つとも書かれ、再利用しないので世代の突き合わせもしません。
 
 ## キャッシュに入れるもの
 

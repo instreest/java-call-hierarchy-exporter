@@ -1,8 +1,24 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import java.security.SecureRandom;
+
 /**
  * キャッシュファイルの形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）。
+ *
+ * <h2>キャッシュは 2 つに分かれている</h2>
+ * <pre>
+ *   analysis-cache.tsv   呼び出し階層を出すための事実（構造とバインディング）
+ *   dataflow-cache.tsv   呼び出し階層には要らない、データフローのための事実
+ * </pre>
+ * 呼び出し階層（{@code call-hierarchy.csv} / {@code methods.csv}）は前者だけで出せる。
+ * 後者はサイドカーの解析（値の追跡など）のためにあり、文字列の長さの上限を設けない。
+ * 分けた理由と、どちらに何を置くかの基準は {@code docs/cache-split-qa.md} にある。
+ *
+ * <b>2 つは常に同じ実行で一緒に書かれ、片方だけが新しい状態は許さない。</b>
+ * 両方のヘッダに同じ世代の印（{@link #GENERATION_PREFIX}）を書き、読むときに突き合わせる。
+ * 食い違えば両方とも捨てて全件解析し直す（ブロック単位のズレを許すと、同じソースでも
+ * 「どちらのキャッシュがどこまで新しいか」で出力が変わってしまう）。
  *
  * <h2>原則: キャッシュは「ASTから分かった事実」だけを持ち、判断は読む側でする</h2>
  * <pre>
@@ -37,7 +53,6 @@ package jche.cache;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
  *                                                             {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
- *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
@@ -47,6 +62,15 @@ package jche.cache;
  *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
  *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link UnresolvedCallFact}
+ * </pre>
+ *
+ * <h2>行の種別と列（dataflow-cache.tsv）</h2>
+ * F 行の意味と並びは analysis-cache.tsv と同じ（同じブロックが同じ順で並ぶ）。
+ * <pre>
+ *   F  相対パス  更新時刻  サイズ  エラー数  内容ハッシュ       （ファイルのブロックの先頭）
+ *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
+ *                                                          フィールドの参照箇所（読み取り・書き込み。
+ *                                                          他の型のフィールドも含む）
  * </pre>
  * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
  * F行が現れるたびに、以降の行はそのファイルに属する。I行はF行の直後に置く。
@@ -78,9 +102,11 @@ package jche.cache;
  * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
  * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。
  *
- * <h2>バージョン（{@link #VERSION}）を上げる基準</h2>
+ * <h2>バージョン（{@link #VERSION} / {@link #DATAFLOW_VERSION}）を上げる基準</h2>
  * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
  * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
+ * 2 つは独立に上げられる。データフロー側の事実を足すときは {@link #DATAFLOW_VERSION} だけを上げればよく、
+ * 呼び出し階層の出力は変わらない（再解析は起きるが、出力とその期待値は動かない）。
  *
  * <h2>事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）</h2>
  * <ul>
@@ -119,11 +145,27 @@ public final class CacheFormat {
     public static final String SEP = "\t";
 
     /**
-     * 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される。
+     * analysis-cache.tsv の形式。変更した場合はここを上げる。旧キャッシュは自動的に破棄される。
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
-     * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
+     * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
+     *
+     * v15 で A 行（フィールドの参照箇所）を dataflow-cache.tsv に移した
      */
-    public static final String VERSION = "jche-cache-v14";
+    public static final String VERSION = "jche-cache-v15";
+
+    /**
+     * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
+     * サイドカーのための事実を足すときはこちらだけを上げればよく、
+     * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない
+     */
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v1";
+
+    /**
+     * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
+     * 形式の互換性（版・ソースレベル・JDK）とは別の軸なので、ヘッダの突き合わせでは
+     * この項目を外して比べる（{@link #compatibilityPartOf}）
+     */
+    public static final String GENERATION_PREFIX = "gen=";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_LIBRARY = 'L';
@@ -132,6 +174,7 @@ public final class CacheFormat {
     public static final char ROW_TYPE = 'H';
     public static final char ROW_METHOD_DECL = 'D';
     public static final char ROW_FIELD_DECL = 'V';
+    /** dataflow-cache.tsv 側の行 */
     public static final char ROW_FIELD_ACCESS = 'A';
     public static final char ROW_FIELD_ASSIGN = 'J';
     public static final char ROW_CALL = 'C';
@@ -159,6 +202,56 @@ public final class CacheFormat {
         // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
         // この項目の追加だけで捨てさせないため
         return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
+    }
+
+    /**
+     * dataflow-cache.tsv の1行目（互換性の部分）。
+     *
+     * ソースレベルと実行 JDK は analysis-cache.tsv と同じ理由で入れる（同じソースでも解析結果が変わる）。
+     * フェーズAの拡張の指紋は入れない。X 行は analysis-cache.tsv 側にあるため
+     */
+    public static String dataflowHeaderFor(String sourceLevel) {
+        return DATAFLOW_VERSION + SEP + "source=" + sourceLevel
+                + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+    }
+
+    /**
+     * ヘッダ行に世代の印を足す。2 つのキャッシュには同じ値を書く。
+     *
+     * @param header     {@link #headerFor} か {@link #dataflowHeaderFor} が返した互換性の部分
+     * @param generation この実行の世代（{@link #newGeneration}）
+     */
+    public static String withGeneration(String header, String generation) {
+        return header + SEP + GENERATION_PREFIX + generation;
+    }
+
+    /**
+     * ヘッダ行から世代の印を外した部分。形式の互換性を突き合わせるのに使う。
+     * 旧いキャッシュ（世代の印が無い）はそのまま返るので、版が違うとして捨てられる
+     */
+    public static String compatibilityPartOf(String header) {
+        int at = header.lastIndexOf(SEP + GENERATION_PREFIX);
+        return (at < 0) ? header : header.substring(0, at);
+    }
+
+    /**
+     * ヘッダ行の世代の印。無ければ空文字。
+     *
+     * 空文字は「世代が分からない」であり、2 つのキャッシュの世代が両方とも空文字でも
+     * 一致とはみなさない（{@code CacheUpdater} が明示的に弾く）
+     */
+    public static String generationOf(String header) {
+        int at = header.lastIndexOf(SEP + GENERATION_PREFIX);
+        return (at < 0) ? "" : header.substring(at + 1 + GENERATION_PREFIX.length());
+    }
+
+    /**
+     * この実行の世代。2 つのキャッシュが同じ実行で書かれたことを表すだけなので、
+     * 内容から導く必要はなく、重複しなければよい（乱数）。
+     * 内容から導くと書き出す前に全体を読む必要があり、ストリーミングで書けなくなる
+     */
+    public static String newGeneration() {
+        return String.format("%016x", new SecureRandom().nextLong());
     }
 
     /** 行の先頭1文字（種別）。空行なら '\0' */
