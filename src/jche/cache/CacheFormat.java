@@ -176,7 +176,11 @@ public final class CacheFormat {
         return (index < cols.length) ? cols[index] : "";
     }
 
-    /** タブ・改行が値に混ざると形式が壊れるため除去する */
+    /**
+     * タブ・改行が値に混ざると形式が壊れるため除去する。
+     *
+     * {@link Guard} のアトム区切り（{@code \u0001}〜{@code \u0003}）は行を壊さないので残す。
+     */
     public static String clean(String s) {
         if (s == null) {
             return "";
@@ -184,7 +188,42 @@ public final class CacheFormat {
         return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
     }
 
+    /**
+     * 行形式を壊す文字（タブ・改行のほか、{@link Guard} が区切りに使う制御文字）を含むか。
+     *
+     * 事実を<b>作る側</b>が「この値は持たない」と判断するために使う。書き出すときに
+     * {@link #clean} で空白へ置き換えるだけだと、{@code '\t'} と {@code ' '} が
+     * 同じ値になって条件の判定を誤りうるため、値そのものを拾わない方に倒す
+     * （{@code jche.analysis.OriginTracker} / {@link AnnotationTokens}）。
+     */
+    public static boolean hasControlChar(String s) {
+        if (s == null) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < ' ' || c == '\u007f') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 列を並べて1行にする。
+     *
+     * 列の値は必ず {@link #clean} を通す。ここが行を書き出す唯一の入口なので、
+     * 値を作る側の取りこぼし（ソース由来の文字列にタブや改行が混ざる）が
+     * そのまま行の破壊にならないよう、最後の関所としてここで落とす。
+     */
     public static String joinRow(String... cols) {
-        return String.join(SEP, cols);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < cols.length; i++) {
+            if (i > 0) {
+                sb.append(SEP);
+            }
+            sb.append(clean(cols[i]));
+        }
+        return sb.toString();
     }
 }

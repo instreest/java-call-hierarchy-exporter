@@ -44,7 +44,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
     public String toRow() {
         String[] c = (caller == null) ? MethodRef.emptyColumns() : caller.toColumns();
         return CacheFormat.joinRow("U", String.valueOf(line), c[0], c[1], c[2], c[3],
-                CacheFormat.clean(expression), reason, candidate,
+                expression, reason, candidate,
                 recvKey, String.valueOf(recvKind), recvOrigin, argOrigins,
                 String.valueOf(lambdaDepth), guard);
     }
