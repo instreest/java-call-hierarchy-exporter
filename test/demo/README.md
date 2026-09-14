@@ -16,7 +16,7 @@
   - `src/org/springframework/` … 上記が使う Spring の注釈のスタブ（本物の Spring には依存させないため、
     このプロジェクト自身に置いています）
   - `src/org/seasar/doma/` … 同じく Doma の注釈（`@Dao` / `@Select`）のスタブ
-- `ext-src/` … 「他チームの jar」の中身（`teamb.NightJob`、`teamc.ReportJob`、`teamd.WebJob`）。
+- `ext-src/` … 「他チームの jar」の中身（`teamb.NightJob`、`teamc.ReportJob`、`teamd.WebJob`、`teame.LambdaJob` / `NoDebugJob`）。
   `external.library.folders` の被参照スキャンの入力
 - `extjars/` … `ext-src/` をコンパイルして作った jar と、`src/` 自身をコンパイルした `demo-app.jar`
   （自プロジェクトの jar が混ざっていても被参照として数えないことの確認用）
@@ -26,6 +26,10 @@
     （中の jar を開けること、中の自プロジェクト jar を除外できることの確認用）
   - `team-d-app.ear` … ear → war → jar の 2 段の入れ子。`team-d-web.war` の `WEB-INF/classes/` に
     `teamd.WebJob`、`WEB-INF/lib/` に `team-b-batch.jar`（圧縮あり）
+  - `team-e-lambda.jar` … 呼び出し箇所の特定の確認用。`teame.LambdaJob` はラムダ式とメソッド参照
+    （`invokedynamic`。参照先は BootstrapMethods 属性にしか無い）から自プロジェクトのメソッドを参照する。
+    `teame.NoDebugJob` は `javac -g:none` でコンパイルしてあり（LineNumberTable も SourceFile も無い）、
+    呼び出し元メソッドだけ出て行番号が `(Unknown Source)` になることの確認用
 - `deps-src/` … `library.folders` に渡す依存 jar の元。`fx.app.Legacy` が import している `missing.lib` パッケージの型と、
   ソース側の `fx.dao.Dao` を実装する基底クラス `LibDao`（`fx.dao.LibBackedDao` がこれを継承する。jar があるときだけ
   `LibBackedDao` が `Dao` の実装として見え、`Dao#findById` の CHA 候補が 1 件増える）。
@@ -58,4 +62,9 @@ javac --release 17 -cp extjars/demo-app.jar -d /tmp/war/WEB-INF/classes -encodin
 mkdir -p /tmp/war/WEB-INF/lib /tmp/ear && cp extjars/team-b-batch.jar /tmp/war/WEB-INF/lib/
 jar --create --file /tmp/ear/team-d-web.war -C /tmp/war .
 jar --create --file extjars/team-d-app.ear -C /tmp/ear .
+
+# ラムダ・メソッド参照（既定の -g）と、行番号情報なし（-g:none）を 1 つの jar に
+javac --release 17 -cp extjars/demo-app.jar -d /tmp/teame-classes -encoding UTF-8 ext-src/teame/LambdaJob.java
+javac --release 17 -g:none -cp extjars/demo-app.jar -d /tmp/teame-classes -encoding UTF-8 ext-src/teame/NoDebugJob.java
+jar --create --file extjars/team-e-lambda.jar -C /tmp/teame-classes .
 ```
