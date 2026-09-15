@@ -68,6 +68,6 @@
 
 | ファイル | 内容 |
 |---|---|
-| [prompt-A-minimal.md](prompt-A-minimal.md) | 目的と出力の意味を厚く、実装手順は最小限にした再実装プロンプト |
+| [prompt-A-minimal.md](prompt-A-minimal.md) | 目的・出力の契約・後から直しやすい作りだけを渡し、設計は生成AIに任せるプロンプト（機能の再現は狙わない） |
 | [prompt-B-detailed.md](prompt-B-detailed.md) | AST 解析のはまりどころとテストケースまで含めた再実装プロンプト |
 | [feature-difficulty.md](feature-difficulty.md) | 機能ごとの実装難易度と、自分のプロジェクトでは省いてよい機能の目安 |
