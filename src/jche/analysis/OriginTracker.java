@@ -59,12 +59,51 @@ final class OriginTracker {
     private static final int MAX_VALUE_LENGTH = 64;
 
     private final BindingNames names;
+    /**
+     * 同じ式から作る上限の無い値グラフ（dataflow 側の N 行）。
+     * ここが出所の文字列を作るのと同じ場所で作ることで、2 つの表現が同じ式から出ることを保証する
+     */
+    private final ValueGraph graph;
 
     /** 現在のメソッドの「変数の出所」（IVariableBinding.getKey() -> {@link Origin}）のスタック */
     private final ArrayDeque<Map<String, String>> scopes = new ArrayDeque<>();
 
-    OriginTracker(BindingNames names) {
+    OriginTracker(BindingNames names, jche.cache.FileAnalysis out) {
         this.names = names;
+        this.graph = new ValueGraph(out, names, this);
+    }
+
+    /**
+     * 呼び出し箇所1件の値。上限付きの出所（analysis 側の C 行・U 行）と、
+     * 上限の無いノード参照（dataflow 側の P 行）を<b>同じ式から一度に</b>作る。
+     *
+     * @param recv レシーバの式。無ければ null
+     * @param args 実引数。メソッド参照のように実引数が無い形では null（出所も作らない）
+     */
+    CallValues valuesOf(Expression recv, List<?> args) {
+        String recvOrigin = (recv == null) ? null : originOf(recv);
+        String argOrigins = (args == null) ? null : argOriginsOf(args);
+        int recvNode = (recv == null) ? jche.cache.ValueNode.NONE : graph.nodeOf(recv);
+        String argNodes = (args == null) ? "" : graph.argsOf(args, 0);
+        return new CallValues(recvOrigin, argOrigins, recvNode, argNodes);
+    }
+
+    /**
+     * 式が列挙定数なら、その値（宣言型で修飾した形。{@code cx.Mode.FULL}）。違えば null。
+     *
+     * 列挙定数はコンパイル時定数ではないので {@code resolveConstantExpressionValue} では取れない。
+     * 値グラフ（{@link ValueGraph}）が {@link Origin#CONST} のノードにするために使う。
+     * 表記は {@link #constantOf} と同じに揃えている
+     */
+    String enumConstantValueOf(Expression ex) {
+        Expression e = unwrap(ex);
+        if (e instanceof SimpleName || e instanceof QualifiedName || e instanceof FieldAccess) {
+            IVariableBinding vb = variableBindingOf(e);
+            if (vb != null && vb.isEnumConstant()) {
+                return Origin.valueOf(enumConstant(vb));
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------

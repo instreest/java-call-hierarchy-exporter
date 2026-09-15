@@ -123,7 +123,7 @@ final class FactVisitor extends ASTVisitor {
         this.cu = cu;
         this.out = out;
         this.names = new BindingNames(out);
-        this.origins = new OriginTracker(names);
+        this.origins = new OriginTracker(names, out);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
         this.types = new TypeContextTracker(out, names);
         this.calls = new CallSiteRecorder(cu, out, names, collectors,
@@ -249,7 +249,7 @@ final class FactVisitor extends ASTVisitor {
         origins.enterScope(new HashMap<>());
         IMethodBinding ctor = node.resolveConstructorBinding();
         calls.record(currentCallers(), lambdaDepth, ctor, node, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "",
-                RecvKind.TYPE, null, null, origins.argOriginsOf(node.arguments()));
+                RecvKind.TYPE, null, origins.valuesOf(null, node.arguments()));
         return true;
     }
 
@@ -444,7 +444,7 @@ final class FactVisitor extends ASTVisitor {
         Expression recv = n.getExpression();
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b),
                 CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), calls.externalGuessRef(n),
-                origins.originOf(recv), origins.argOriginsOf(n.arguments()));
+                origins.valuesOf(recv, n.arguments()));
         calls.offerToHintCollectors(n, currentCallers());
         return true;
     }
@@ -454,7 +454,7 @@ final class FactVisitor extends ASTVisitor {
         // super.m() は静的束縛（オーバーライドの影響を受けない）
         IMethodBinding b = n.resolveMethodBinding();
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                RecvKind.THIS, null, null, origins.argOriginsOf(n.arguments()));
+                RecvKind.THIS, null, origins.valuesOf(null, n.arguments()));
         return true;
     }
 
@@ -462,7 +462,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(ClassInstanceCreation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
         calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
-                null, null, origins.argOriginsOf(n.arguments()));
+                null, origins.valuesOf(null, n.arguments()));
         return true;
     }
 
@@ -470,7 +470,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(ConstructorInvocation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
         calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
-                null, null, origins.argOriginsOf(n.arguments()));
+                null, origins.valuesOf(null, n.arguments()));
         return true;
     }
 
@@ -483,7 +483,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(SuperConstructorInvocation n) {
         IMethodBinding ctor = n.resolveConstructorBinding();
         calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
-                null, null, origins.argOriginsOf(n.arguments()));
+                null, origins.valuesOf(null, n.arguments()));
         return true;
     }
 
@@ -506,7 +506,7 @@ final class FactVisitor extends ASTVisitor {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b), CallSiteRecorder.recvKeyOf(recv),
-                CallSiteRecorder.recvKindOf(recv), null, origins.originOf(recv), null);
+                CallSiteRecorder.recvKindOf(recv), null, origins.valuesOf(recv, null));
         return true;
     }
 
@@ -516,7 +516,7 @@ final class FactVisitor extends ASTVisitor {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b), "",
-                RecvKind.TYPE, null, null, null);
+                RecvKind.TYPE, null, CallValues.NONE);
         return true;
     }
 
@@ -526,7 +526,7 @@ final class FactVisitor extends ASTVisitor {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                RecvKind.THIS, null, null, null);
+                RecvKind.THIS, null, CallValues.NONE);
         return true;
     }
 
@@ -541,7 +541,7 @@ final class FactVisitor extends ASTVisitor {
             // 未解決として記録すると、実体の無い失敗が件数に混ざる
             return true;
         }
-        calls.record(currentCallers(), lambdaDepth, b, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(b), "", RecvKind.TYPE, null, null, null);
+        calls.record(currentCallers(), lambdaDepth, b, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(b), "", RecvKind.TYPE, null, CallValues.NONE);
         return true;
     }
 

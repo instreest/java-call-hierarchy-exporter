@@ -35,6 +35,8 @@ import jche.cache.MethodDeclFact;
 import jche.cache.ReturnFact;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
+import jche.cache.CallSiteValues;
+import jche.cache.ValueNode;
 import jche.analysis.CallEdgeExtractor.SourceFile;
 import jche.config.Config;
 import jche.config.ProjectLayout;
@@ -1218,6 +1220,14 @@ public final class CacheUpdater {
         // dataflow 側にはサイドカーの解析のための事実だけを置く。片方だけに書くことはしない
         for (FieldAccessFact a : fa.fieldAccesses) {
             writeLine(flowOut, a.toRow());
+        }
+        // 値グラフ（N行）は、参照される前に並んでいる必要は無いが、番号順に書く（読みやすさと決定性のため）
+        for (ValueNode n : fa.valueNodes) {
+            writeLine(flowOut, n.toRow());
+        }
+        // 呼び出し箇所ごとの値（P行）。analysis 側の C 行・U 行と同じ数・同じ順に並ぶ
+        for (CallSiteValues v : fa.callSiteValues) {
+            writeLine(flowOut, v.toRow());
         }
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
         writeLine(w, CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));

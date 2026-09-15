@@ -83,6 +83,15 @@ import java.security.SecureRandom;
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
  *                                                          フィールドの参照箇所（読み取り・書き込み。
  *                                                          他の型のフィールドも含む）
+ *   N  id  kind  value  recv  args  argCount              {@link ValueNode}。値グラフのノード。
+ *                                                          id はブロック内ローカルの連番で、recv と args は
+ *                                                          同じブロックのノードを指す。入れ子を展開しないので
+ *                                                          深さの上限が要らず、value の長さにも上限が無い。
+ *                                                          value は {@link #escape} で符号化して書く
+ *   P  line  caller(4列)  calleeName  ordinal  recv  args  {@link CallSiteValues}。呼び出し箇所ごとの値。
+ *                                                          analysis 側の C 行・U 行と 1 対 1 で並び、
+ *                                                          鍵（行番号・呼び出し元・呼び出し先の表示名・
+ *                                                          同じ鍵の中での通し番号）で結びつける
  *   Z  ブロック数                                              最終行。analysis 側と同じ数でなければ
  *                                                          対になっていないとみなして両方を捨てる
  * </pre>
@@ -192,7 +201,7 @@ public final class CacheFormat {
      * サイドカーのための事実を足すときはこちらだけを上げればよく、
      * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v1";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v2";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
@@ -212,6 +221,10 @@ public final class CacheFormat {
     public static final char ROW_CONSTANT = 'K';
     /** dataflow-cache.tsv 側の行（analysis-cache.tsv には書かない） */
     public static final char ROW_FIELD_ACCESS = 'A';
+    /** dataflow-cache.tsv 側の行。値グラフのノード（{@link ValueNode}） */
+    public static final char ROW_VALUE_NODE = 'N';
+    /** dataflow-cache.tsv 側の行。呼び出し箇所ごとの値（{@link CallSiteValues}） */
+    public static final char ROW_CALL_VALUES = 'P';
     public static final char ROW_FIELD_ASSIGN = 'J';
     public static final char ROW_CALL = 'C';
     public static final char ROW_RETURN = 'R';

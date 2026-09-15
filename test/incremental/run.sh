@@ -85,15 +85,64 @@ check_paired() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
     fi
 }
 
-# dataflow 側の行が壊れていないこと（種別は F / A / Z だけ）
+# dataflow 側の行が壊れていないこと（種別は F / A / N / P / Z だけ）と、
+# 値グラフ（N 行）の不変条件。番号がブロックごとに 0 から詰まっていて、
+# レシーバ・実引数の参照が同じブロックの範囲に収まっていること。
+# 番号がブロック内ローカルなので、ここが崩れると差分更新でブロックを書き写した瞬間に参照がずれる
 check_flow_rows() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
     local bad
-    bad=$(awk 'NR == 1 { next }
-               { if (index("FAZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0 } }' "${1%.tsv}-flow.tsv")
+    bad=$(awk -F'\t' '
+        NR == 1 { next }
+        { kind = substr($0, 1, 1) }
+        index("FANPZ", kind) == 0 { print NR": 未知の行種別: "$0; next }
+        kind == "F" { nodes = 0; next }
+        kind == "N" {
+            if ($2 != nodes) { print NR": N 行の番号が連番ではありません（期待 "nodes"）: "$0 }
+            if ($5 != -1 && ($5 < 0 || $5 >= nodes)) { print NR": recv がブロックの範囲外です: "$0 }
+            if ($6 != "") {
+                n = split($6, as, ",")
+                for (i = 1; i <= n; i++) {
+                    split(as[i], kv, "=")
+                    if (kv[2] < 0 || kv[2] >= nodes) { print NR": 実引数がブロックの範囲外です: "$0 }
+                }
+            }
+            nodes++
+            next
+        }
+        kind == "P" {
+            if ($9 != -1 && ($9 < 0 || $9 >= nodes)) { print NR": P 行の recv がブロックの範囲外です: "$0 }
+            if ($10 != "") {
+                n = split($10, as, ",")
+                for (i = 1; i <= n; i++) {
+                    split(as[i], kv, "=")
+                    if (kv[2] < 0 || kv[2] >= nodes) { print NR": P 行の実引数がブロックの範囲外です: "$0 }
+                }
+            }
+        }' "${1%.tsv}-flow.tsv")
     if [ -z "$bad" ]; then
-        echo "  OK   $2 データフローのキャッシュの行が壊れていない"
+        echo "  OK   $2 データフローのキャッシュの行と値グラフの参照が壊れていない"
     else
-        echo "  NG   $2 データフローのキャッシュの行が壊れています"; echo "$bad" | head -5; fail=1
+        echo "  NG   $2 データフローのキャッシュが壊れています"; echo "$bad" | head -5; fail=1
+    fi
+}
+
+# analysis 側が上限で捨てている値を、dataflow 側が上限なしで持っていること。
+# ここが空になると「分けたのに上限が外れていない」＝2b の意味が無い状態を見逃す
+check_unbounded_values() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
+    local flow="${1%.tsv}-flow.tsv" long
+    # 64 文字を超える値を持つ N 行（Awkward.longLiteral の SQL）。符号化されているのでタブ・改行は \t \n
+    long=$(awk -F'\t' 'substr($0,1,1)=="N" && $3=="L" && length($4) > 64' "$flow" | wc -l)
+    if [ "$long" -ge 1 ] && grep -q 'ORDER BY id DESC' "$flow"; then
+        echo "  OK   $2 64 文字超の文字列を値グラフが保持（$long 件）"
+    else
+        echo "  NG   $2 64 文字超の文字列が値グラフにありません（$long 件）"; fail=1
+    fi
+    # 符号化されたタブ・改行が入っていること（生のタブ・改行なら行が割れている）
+    if grep -q 'SELECT id, name, kind, created_at\\n\\tFROM orders' "$flow"; then
+        echo "  OK   $2 タブ・改行が符号化されて 1 行に収まっている"
+    else
+        echo "  NG   $2 タブ・改行の符号化が期待と違います"
+        grep -o 'SELECT id[^\t]*' "$flow" | head -2; fail=1
     fi
 }
 
@@ -165,6 +214,7 @@ case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行�
     fi
     check_paired inc.tsv "$1 差分更新"
     check_flow_rows inc.tsv "$1 差分更新"
+    check_unbounded_values inc.tsv "$1 差分更新"
 
     # 書き換えが効いていることの確認。何も変わらない編集だと上の比較が素通りしてしまう
     if diff -q <(normalized_facts base.tsv) <(normalized_facts full.tsv) > /dev/null; then

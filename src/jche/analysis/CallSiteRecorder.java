@@ -20,6 +20,7 @@ import org.eclipse.jdt.core.dom.SimpleName;
 
 import jche.cache.CacheFormat;
 import jche.cache.CallEdgeFact;
+import jche.cache.CallSiteValues;
 import jche.cache.FileAnalysis;
 import jche.cache.HintFact;
 import jche.cache.MethodRef;
@@ -42,6 +43,8 @@ final class CallSiteRecorder {
     private final BindingNames names;
     private final List<CallSiteHintCollector> collectors;
     private final GuardCollector guards;
+    /** 鍵ごとの件数。同じ鍵が複数あるときの通し番号を振るため（{@link #addValues}） */
+    private final java.util.Map<String, Integer> joinKeyCounts = new java.util.HashMap<>();
 
     CallSiteRecorder(CompilationUnit cu, FileAnalysis out, BindingNames names,
                      List<CallSiteHintCollector> collectors, GuardCollector guards) {
@@ -65,7 +68,9 @@ final class CallSiteRecorder {
      */
     void record(List<MethodRef> callers, int lambdaDepth, IMethodBinding binding, ASTNode node,
                 String displayName, String calleeMods, String recvKey, char recvKind,
-                String externalGuess, String recvOrigin, String argOrigins) {
+                String externalGuess, CallValues values) {
+        String recvOrigin = values.recvOrigin();
+        String argOrigins = values.argOrigins();
         int line = lineOf(node);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
         String guard = guards.guardOf(node);
@@ -75,6 +80,7 @@ final class CallSiteRecorder {
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
                     UnresolvedCallFact.OUTSIDE_METHOD, "", recvKey, recvKind,
                     recvOrigin, argOrigins, lambdaDepth, guard));
+            addValues(line, null, displayName, values);
             return;
         }
         MethodRef callee = names.toRef(binding);
@@ -85,6 +91,7 @@ final class CallSiteRecorder {
                 out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
                         UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKey, recvKind,
                         recvOrigin, argOrigins, lambdaDepth, guard));
+                addValues(line, caller, displayName, values);
             }
             return;
         }
@@ -93,7 +100,23 @@ final class CallSiteRecorder {
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
                     recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth, guard));
+            addValues(line, caller, displayName, values);
         }
+    }
+
+    /**
+     * dataflow 側の P 行を1件積む。{@code out.callSites} に1行積むたびに必ず1件積むので、
+     * 2 つのキャッシュの呼び出し箇所は同じ数・同じ順で並ぶ。
+     *
+     * 通し番号は「同じ鍵（行番号・呼び出し元・表示名）が既に何件あるか」。
+     * {@code f(g(), g())} のようにまったく同じ鍵が並ぶ場合を読み手が区別できるようにする
+     */
+    private void addValues(int line, MethodRef caller, String displayName, CallValues values) {
+        CallSiteValues candidate = new CallSiteValues(line, caller, displayName, 0,
+                values.recvNode(), values.argNodes());
+        int ordinal = joinKeyCounts.merge(candidate.joinKey(), 1, Integer::sum) - 1;
+        out.callSiteValues.add(new CallSiteValues(line, caller, displayName, ordinal,
+                values.recvNode(), values.argNodes()));
     }
 
     /**
