@@ -246,7 +246,7 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(EnumConstantDeclaration node) {
         methodStack.push(types.clinitCallers());
-        origins.enterScope(new HashMap<>());
+        origins.enterScope(origins.newScope());
         IMethodBinding ctor = node.resolveConstructorBinding();
         calls.record(currentCallers(), lambdaDepth, ctor, node, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "",
                 RecvKind.TYPE, null, origins.valuesOf(null, node.arguments()));
@@ -262,7 +262,7 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(FieldDeclaration node) {
         methodStack.push(isStaticField(node) ? types.clinitCallers() : types.instanceInitCallers());
-        origins.enterScope(origins.scanOrigins(node, new HashMap<>()));
+        origins.enterScope(origins.scanOrigins(node, origins.newScope()));
         return true;
     }
 
@@ -276,7 +276,7 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(Initializer node) {
         boolean isStatic = Modifier.isStatic(node.getModifiers());
         methodStack.push(isStatic ? types.clinitCallers() : types.instanceInitCallers());
-        origins.enterScope(origins.scanOrigins(node.getBody(), new HashMap<>()));
+        origins.enterScope(origins.scanOrigins(node.getBody(), origins.newScope()));
         return true;
     }
 

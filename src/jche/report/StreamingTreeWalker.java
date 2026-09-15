@@ -393,7 +393,8 @@ public final class StreamingTreeWalker {
         }
         DataflowContext ctx = path[depth].context();
         String[] bound = null;
-        for (String entry : spec.split(";")) {
+        // 入れ子（{} の中）の ';' で切らないよう、必ず Origin 側の分け方を通す
+        for (String entry : Origin.entriesOf(spec)) {
             int eq = entry.indexOf('=');
             if (eq <= 0) {
                 continue;
@@ -404,7 +405,7 @@ public final class StreamingTreeWalker {
             } catch (NumberFormatException ignore) {
                 continue;
             }
-            String origin = entry.substring(eq + 1);
+            String origin = Origin.unnest(entry.substring(eq + 1));
             String fqn = dataflow.concreteTypeOf(origin, ctx);
             if (fqn == null) {
                 // 具象型は決まらないが、リテラルやクラスリテラルなら「値」として渡す

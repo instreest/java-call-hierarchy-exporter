@@ -290,12 +290,16 @@ public final class CallGraphBuilder {
              DataflowBlockReader flow = openFlow(dataflowCacheFile)) {
             // 今のブロックの P 行と、そこを何件目まで使ったか。C 行・U 行と同じ順に並ぶ
             List<CallSiteValues> blockValues = List.of();
+            // 同じブロックの値グラフ（N 行）。出所の文字列はここから組み直す
+            OriginRenderer renderer = new OriginRenderer(List.of());
             int valueIndex = 0;
             while (in.next()) {
                 char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
-                    blockValues = (flow == null) ? List.of()
-                            : flow.advanceTo(in.filePath()).callSiteValues();
+                    DataflowBlockReader.Block block = (flow == null)
+                            ? DataflowBlockReader.Block.empty() : flow.advanceTo(in.filePath());
+                    blockValues = block.callSiteValues();
+                    renderer = new OriginRenderer(block.valueNodes());
                     valueIndex = 0;
                     continue;
                 }
@@ -317,7 +321,8 @@ public final class CallGraphBuilder {
                     graph.callLines[pos] = c.callLine();
                     graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
                     graph.fillCallSite(pos, c.caller().key(), values.recvKey(), c.recvKind(),
-                            values.recvOrigin(), values.argOrigins(), values.guard());
+                            renderer.originOf(values.recv()),
+                            renderer.argOriginsOf(values.args()), values.guard());
                 } else {
                     UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
                     if (u == null || !u.hasUsableCandidate()) {
@@ -329,7 +334,8 @@ public final class CallGraphBuilder {
                     graph.callLines[pos] = u.line();
                     graph.bindKinds[pos] = (byte) BindKind.GUESSED;
                     graph.fillCallSite(pos, u.caller().key(), values.recvKey(), u.recvKind(),
-                            values.recvOrigin(), values.argOrigins(), values.guard());
+                            renderer.originOf(values.recv()),
+                            renderer.argOriginsOf(values.args()), values.guard());
                 }
             }
         }

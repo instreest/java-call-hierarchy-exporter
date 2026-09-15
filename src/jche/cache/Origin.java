@@ -1,6 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 式の「出所」。データフロー解析で具象クラスを特定するための最小の表現。
  *
@@ -34,11 +37,20 @@ package jche.cache;
  * <pre>
  *   n=実引数の数     … 出所が分からず省いた引数と、引数が無いことを区別するため
  *   r=レシーバの出所 … メソッド呼び出しの受け手。invoke ← getMethod ← forName のような
- *                      連鎖を読み手が辿るため、MAX_RECEIVER_DEPTH 段まで入れ子にする。
- *                      入れ子の出所が自身の実引数リストを持つ場合は {} で囲む
+ *                      連鎖を読み手が辿るため。入れ子の出所が自身の実引数リストを
+ *                      持つ場合は {} で囲む
  * </pre>
- * 実引数の出所は入れ子にしない（付いていたら剥がす）。段数を増やすほど
- * 「どの推測が結論に効いたか」が追えなくなるうえ、文字列も長くなる。
+ *
+ * <h2>入れ子に段数の上限は無い</h2>
+ * この文法自体は、レシーバも実引数も何段でも入れ子にできる（{@code {}} で囲むため、
+ * 境界は {@link #indexAtTop} で判定できる）。読み手が受け取る出所は
+ * {@code jche.graph.OriginRenderer} が値グラフ（dataflow 側の N 行）から組み直すので、
+ * 段数の上限は無い。要素を走るときは素の {@code split(";")} ではなく
+ * {@link #entriesOf} と {@link #unnest} を通すこと。
+ *
+ * <p>一方、キャッシュに<b>書き出す側</b>（{@code jche.analysis.OriginTracker}）が作る形には
+ * まだ上限がある（実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段）。
+ * そちらは読み手が使わなくなった列で、次の段で落とす（{@code docs/cache-split-qa.md} の Q21）。
  */
 public final class Origin {
 
@@ -73,7 +85,10 @@ public final class Origin {
     public static final char ARGS = '|';
     public static final String RECEIVER = "r";
     public static final String ARG_COUNT = "n";
-    /** レシーバの出所を何段まで入れ子にするか（invoke ← getMethod ← forName/getClass で3段） */
+    /**
+     * 書き出す側（{@code jche.analysis.OriginTracker}）がレシーバの出所を何段まで入れ子にするか
+     * （invoke ← getMethod ← forName/getClass で3段）。読み手が受け取る形には上限が無い
+     */
     public static final int MAX_RECEIVER_DEPTH = 3;
 
     private Origin() {
@@ -162,6 +177,41 @@ public final class Origin {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /**
+     * 実引数リストを、入れ子の外側の {@code ';'} で分けて返す。要素は {@code 位置=出所} の形。
+     *
+     * 素の {@code split(";")} を使うと、入れ子（{@code {}} の中）の区切りでも切れてしまう。
+     * 入れ子は無制限に深くなりうるので、要素を走るときは必ずこちらを通す
+     */
+    public static List<String> entriesOf(String args) {
+        if (args == null || args.isEmpty()) {
+            return List.of();
+        }
+        List<String> entries = new ArrayList<>(4);
+        int start = 0;
+        while (start <= args.length()) {
+            int end = indexAtTop(args, ';', start);
+            if (end < 0) {
+                end = args.length();
+            }
+            if (end > start) {
+                entries.add(args.substring(start, end));
+            }
+            if (end >= args.length()) {
+                break;
+            }
+            start = end + 1;
+        }
+        return entries;
+    }
+
+    /** 入れ子として {@code {}} で囲まれていれば外す（{@link #nest} の逆） */
+    public static String unnest(String value) {
+        return (value != null && value.length() >= 2
+                && value.charAt(0) == '{' && value.charAt(value.length() - 1) == '}')
+                ? value.substring(1, value.length() - 1) : value;
     }
 
     /** 実引数リストからキー（位置・r・n）の値を取り出す。{} で囲まれていれば外す。無ければ null */

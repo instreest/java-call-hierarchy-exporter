@@ -41,16 +41,24 @@ public final class DataflowBlockReader implements Closeable {
      * 1ファイル分の値。
      *
      * @param path            ブロックの相対パス
+     * @param valueNodes      値グラフのノード（N 行）。番号の順に並ぶ（{@link ValueNode#id}）
      * @param callSiteValues  呼び出し箇所の値（P 行）。analysis 側の C 行・U 行と同じ順
      * @param fieldAssigns    フィールドへの代入（J 行）
      * @param returns         戻り値の出所（R 行）
      * @param hints           フェーズAの拡張が拾った証拠（X 行）
      */
-    public record Block(String path, List<CallSiteValues> callSiteValues,
+    public record Block(String path, List<ValueNode> valueNodes,
+                        List<CallSiteValues> callSiteValues,
                         List<FieldAssignFact> fieldAssigns, List<ReturnFact> returns,
                         List<HintFact> hints) {
 
-        static final Block EMPTY = new Block("", List.of(), List.of(), List.of(), List.of());
+        static final Block EMPTY =
+                new Block("", List.of(), List.of(), List.of(), List.of(), List.of());
+
+        /** 値が1つも無いブロック。dataflow 側を読まない指定のときに使う */
+        public static Block empty() {
+            return EMPTY;
+        }
     }
 
     private final CacheReader in;
@@ -115,6 +123,7 @@ public final class DataflowBlockReader implements Closeable {
 
     /** 今の F 行から次の F 行（または最終行）までを読み込む */
     private Block readCurrentBlock(String path) throws IOException {
+        List<ValueNode> valueNodes = new ArrayList<>();
         List<CallSiteValues> callSiteValues = new ArrayList<>();
         List<FieldAssignFact> fieldAssigns = new ArrayList<>();
         List<ReturnFact> returns = new ArrayList<>();
@@ -127,12 +136,13 @@ public final class DataflowBlockReader implements Closeable {
                 break;
             }
             switch (in.rowType()) {
+                case CacheFormat.ROW_VALUE_NODE -> add(valueNodes, ValueNode.fromRow(in.columns()));
                 case CacheFormat.ROW_CALL_VALUES -> add(callSiteValues, CallSiteValues.fromRow(in.columns()));
                 case CacheFormat.ROW_FIELD_ASSIGN -> add(fieldAssigns, FieldAssignFact.fromRow(in.columns()));
                 case CacheFormat.ROW_RETURN -> add(returns, ReturnFact.fromRow(in.columns()));
                 case CacheFormat.ROW_HINT -> add(hints, HintFact.fromRow(in.columns()));
                 default -> {
-                    // A 行・N 行・K 行・Z 行は、呼び出し階層を組むのには使わない
+                    // A 行・K 行・Z 行は、呼び出し階層を組むのには使わない
                 }
             }
         }
@@ -140,7 +150,7 @@ public final class DataflowBlockReader implements Closeable {
             pendingPath = null;
             exhausted = true;
         }
-        return new Block(path, callSiteValues, fieldAssigns, returns, hints);
+        return new Block(path, valueNodes, callSiteValues, fieldAssigns, returns, hints);
     }
 
     private static <T> void add(List<T> list, T value) {

@@ -21,11 +21,11 @@ import jche.cache.ValueNode;
  *
  * <h2>{@link OriginTracker} との関係</h2>
  * {@link OriginTracker} は同じ式から「上限付きの出所の文字列」を作る。こちらは同じ式から
- * 「上限の無いノードの並び」を作る。<b>どちらも書き出すが、今の読み手は前者だけを使う</b>。
- * 出力を1行も変えずに新しい形式を並走させ、読み手を移したあとで前者を落とす段取りのため
- * （{@code docs/cache-split-qa.md}）。
+ * 「上限の無いノードの並び」を作る。<b>読み手が使うのはこちら</b>
+ * （{@code jche.graph.OriginRenderer} が読む直前に出所の文字列へ組み直す）。
+ * 前者はまだ書き出しているが、もう誰も読まない（{@code docs/cache-split-qa.md} の Q21）。
  *
- * <h2>外せる上限</h2>
+ * <h2>外れた上限</h2>
  * <pre>
  *   実引数の入れ子   1段のみ            -> 無制限（f(g(h())) の h まで辿れる）
  *   レシーバの入れ子 3段まで            -> 無制限
@@ -34,8 +34,11 @@ import jche.cache.ValueNode;
  *   定数の値         64文字以内で、かつ  -> 無制限。制御文字は符号化して持つ
  *                    制御文字を含まない
  * </pre>
- * 葉のうち、変数・フィールド・引数の判定は {@link OriginTracker} の結果をそのまま使う
+ * 葉のうち、フィールド・引数の判定は {@link OriginTracker} の結果をそのまま使う
  * （そこはもともと上限に掛からず、同じ判断を2か所に書かないため）。
+ * ローカル変数だけは別で、{@link OriginTracker#localNodeOf} でその代入元のノードを直に指す。
+ * 出所の文字列に落とすと実引数リストが剥がれてしまい、
+ * {@code Class.forName(NAME)} を受けたローカル変数からクラス名が辿れなくなるため。
  *
  * <h2>大きさ</h2>
  * 同じ構造のノードは1つにまとめる（{@link ValueNode#dedupeKey}）。入れ子を展開しないので、
@@ -88,6 +91,14 @@ final class ValueGraph {
                     argsOf(cic.arguments(), depth), cic.arguments().size());
         }
         if (e instanceof MethodInvocation mi) {
+            // Class.forName(x).newInstance() 系は、連鎖そのものではなく
+            // 「生成される型」を持つ。この認識は OriginTracker と同じものを使う
+            // （2 か所で違う判断をしないため）
+            String reflected = origins.reflectiveOriginOf(mi);
+            if (reflected != null) {
+                return node(Origin.kindOf(reflected), Origin.valueOf(reflected),
+                        ValueNode.NONE, "", -1);
+            }
             MethodRef ref = names.toRef(mi.resolveMethodBinding());
             if (ref == null) {
                 return ValueNode.NONE;
@@ -127,7 +138,13 @@ final class ValueGraph {
         if (enumConstant != null) {
             return node(Origin.CONST, enumConstant, ValueNode.NONE, "", -1);
         }
-        // 変数・フィールド・引数などの葉。判定は OriginTracker の結果をそのまま使う
+        // ローカル変数は、その代入元の式から作ったノードをそのまま指す。
+        // 出所の文字列（上限付き）と違い、入れ子をノードの参照で保てる
+        int local = origins.localNodeOf(e);
+        if (local != ValueNode.NONE) {
+            return local;
+        }
+        // 引数・フィールド・捕捉した変数などの葉。判定は OriginTracker の結果をそのまま使う
         String leaf = Origin.head(origins.originOf(e));
         if (leaf == null || Origin.isUnknown(leaf)) {
             return ValueNode.NONE;

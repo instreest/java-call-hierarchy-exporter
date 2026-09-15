@@ -34,6 +34,7 @@ import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import jche.cache.CacheFormat;
 import jche.cache.MethodRef;
 import jche.cache.Origin;
+import jche.cache.ValueNode;
 
 /**
  * 式の「出所」（{@link Origin}）を求める。データフロー解析で具象クラスを特定するための材料集め。
@@ -65,8 +66,22 @@ final class OriginTracker {
      */
     private final ValueGraph graph;
 
-    /** 現在のメソッドの「変数の出所」（IVariableBinding.getKey() -> {@link Origin}）のスタック */
-    private final ArrayDeque<Map<String, String>> scopes = new ArrayDeque<>();
+    /** 現在のメソッドの変数の表のスタック（内側のメソッドから外側へ） */
+    private final ArrayDeque<Scope> scopes = new ArrayDeque<>();
+
+    /**
+     * 1つのメソッドの変数の表。同じ変数について 2 つの表現を持つ。
+     *
+     * どちらも同じ式から作る（{@link #mergeOrigin}）。値グラフ側を別に持つのは、
+     * 出所の文字列が実引数リストを持たない形（{@link Origin#head}）に落ちる場面でも、
+     * 値グラフはノードの参照で入れ子を保てるため
+     */
+    static final class Scope {
+        /** 変数のキー -> 出所（{@link Origin}） */
+        final Map<String, String> origins = new HashMap<>();
+        /** 変数のキー -> 値グラフのノード番号（{@link ValueNode#NONE} なら無し） */
+        final Map<String, Integer> nodes = new HashMap<>();
+    }
 
     OriginTracker(BindingNames names, jche.cache.FileAnalysis out) {
         this.names = names;
@@ -110,7 +125,12 @@ final class OriginTracker {
     // スコープ（変数 -> 出所 の表）
     // ------------------------------------------------------------
 
-    void enterScope(Map<String, String> scope) {
+    /** 空の変数の表 */
+    Scope newScope() {
+        return new Scope();
+    }
+
+    void enterScope(Scope scope) {
         scopes.push(scope);
     }
 
@@ -120,9 +140,14 @@ final class OriginTracker {
         }
     }
 
-    /** 引数を出所として登録した、メソッド用の初期スコープ */
-    Map<String, String> paramScopeOf(MethodDeclaration node) {
-        Map<String, String> scope = new HashMap<>();
+    /**
+     * 引数を出所として登録した、メソッド用の初期スコープ。
+     *
+     * 引数はノードを登録しない。引数の出所（{@code A:位置}）は実引数リストを持たないので、
+     * 値グラフ側は葉として作り直しても同じものになる
+     */
+    Scope paramScopeOf(MethodDeclaration node) {
+        Scope scope = new Scope();
         List<?> params = node.parameters();
         for (int i = 0; i < params.size(); i++) {
             if (!(params.get(i) instanceof SingleVariableDeclaration param)) {
@@ -130,7 +155,7 @@ final class OriginTracker {
             }
             IVariableBinding vb = param.resolveBinding();
             if (vb != null && vb.getKey() != null) {
-                scope.put(vb.getKey(), Origin.of(Origin.PARAM, String.valueOf(i)));
+                scope.origins.put(vb.getKey(), Origin.of(Origin.PARAM, String.valueOf(i)));
             }
         }
         return scope;
@@ -144,7 +169,7 @@ final class OriginTracker {
      * x が y より後ろで宣言されていると追えない。安全側（U）に倒れるだけなので
      * 実害は「解決できない」に留まる。
      */
-    Map<String, String> scanOrigins(ASTNode body, Map<String, String> scope) {
+    Scope scanOrigins(ASTNode body, Scope scope) {
         if (body == null) {
             return scope;
         }
@@ -178,8 +203,8 @@ final class OriginTracker {
         return scope;
     }
 
-    /** 同じ変数に別の出所が現れたら U（不明）に落とす */
-    private void mergeOrigin(Map<String, String> scope, String varKey, Expression value) {
+    /** 同じ変数に別の出所が現れたら U（不明）に落とす。値グラフ側も同じ判断で揃える */
+    private void mergeOrigin(Scope scope, String varKey, Expression value) {
         if (varKey == null) {
             return;
         }
@@ -187,8 +212,13 @@ final class OriginTracker {
         if (origin == null) {
             origin = Origin.UNKNOWN_S;
         }
-        String prev = scope.get(varKey);
-        scope.put(varKey, (prev == null || prev.equals(origin)) ? origin : Origin.UNKNOWN_S);
+        String prev = scope.origins.get(varKey);
+        scope.origins.put(varKey, (prev == null || prev.equals(origin)) ? origin : Origin.UNKNOWN_S);
+
+        int node = graph.nodeOf(value);
+        Integer prevNode = scope.nodes.get(varKey);
+        scope.nodes.put(varKey,
+                (prevNode == null || prevNode == node) ? node : ValueNode.NONE);
     }
 
     // ------------------------------------------------------------
@@ -420,8 +450,8 @@ final class OriginTracker {
     private String localOriginOf(IVariableBinding vb) {
         String key = vb.getKey();
         boolean enclosing = false;
-        for (Map<String, String> scope : scopes) {
-            String origin = scope.get(key);
+        for (Scope scope : scopes) {
+            String origin = scope.origins.get(key);
             if (origin == null) {
                 enclosing = true;   // 今のメソッドには無い。1つ外へ
                 continue;
@@ -435,6 +465,31 @@ final class OriginTracker {
             return isEffectivelyFinal(vb) ? frameIndependent(origin) : null;
         }
         return null;
+    }
+
+    /**
+     * ローカル変数の値グラフのノード番号。引けなければ {@link ValueNode#NONE}。
+     *
+     * 今のメソッドのスコープにあるものだけを返す。<b>外側のメソッドから捕捉した変数は返さない</b>
+     * （{@link #frameIndependent} と同じ理由で、入れ子の中の {@code A:}（引数）は
+     * 別のフレームへ持ち込むと別物を指してしまう）。呼び出し側は頭だけの葉に落とす
+     */
+    int localNodeOf(Expression ex) {
+        IVariableBinding vb = variableBindingOf(unwrap(ex));
+        if (vb == null || vb.isField()) {
+            return ValueNode.NONE;
+        }
+        String key = vb.getKey();
+        boolean enclosing = false;
+        for (Scope scope : scopes) {
+            if (scope.origins.containsKey(key)) {
+                // 外側のメソッドから捕捉した変数は持ち込まない
+                Integer node = scope.nodes.get(key);
+                return (enclosing || node == null) ? ValueNode.NONE : node;
+            }
+            enclosing = true;   // 今のメソッドには無い。1つ外へ
+        }
+        return ValueNode.NONE;
     }
 
     /** final または実質的final（＝もう中身が変わらないと言い切れる） */
@@ -524,7 +579,7 @@ final class OriginTracker {
      * 囲みメソッドの引数なら「その引数で名前指定された型」として C を返す。
      * C は、そのメソッドを呼んでいる側の実引数を見て初めて確定する。
      */
-    private String reflectiveOriginOf(MethodInvocation mi) {
+    String reflectiveOriginOf(MethodInvocation mi) {
         if (!"newInstance".equals(mi.getName().getIdentifier())) {
             return null;
         }
