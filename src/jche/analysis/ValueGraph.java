@@ -20,10 +20,11 @@ import jche.cache.ValueNode;
  * 1ファイルぶんの値グラフ（{@link ValueNode}）を組み立てる。
  *
  * <h2>{@link OriginTracker} との関係</h2>
- * {@link OriginTracker} は同じ式から「上限付きの出所の文字列」を作る。こちらは同じ式から
- * 「上限の無いノードの並び」を作る。<b>読み手が使うのはこちら</b>
- * （{@code jche.graph.OriginRenderer} が読む直前に出所の文字列へ組み直す）。
- * 前者はまだ書き出しているが、もう誰も読まない（{@code docs/cache-split-qa.md} の Q21）。
+ * {@link OriginTracker} は同じ式から「上限付きの出所の文字列」を作る。
+ * 呼び出し箇所の値（{@code P} 行）を持つのは<b>こちらだけ</b>で、読み手は
+ * {@code jche.graph.OriginRenderer} が読む直前に出所の文字列へ組み直す
+ * （{@code docs/cache-split-qa.md} の Q21・Q22）。
+ * 前者が残るのは {@code R} 行・{@code J} 行・{@code X} 行と、この葉の判定のためだけ。
  *
  * <h2>外れた上限</h2>
  * <pre>

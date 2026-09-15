@@ -332,6 +332,18 @@ discard_case "文字が壊れたキャッシュ" \
     "printf '\\xff\\xfe bad\\n' >> \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
 
+# 形式の版が古いキャッシュ。列の並びが変わっているので、再利用すると「エラー」ではなく
+# 「静かに違う結果」になる（実際に、C 行の列を変えたのに版を上げ忘れたことがある。
+# そのときは recvKey を recvKind として読んでいた）。版だけを書き換えて、捨てることを見る
+discard_case "形式の版が古い analysis キャッシュ" \
+    "sed -i '1s/^jche-cache-v[0-9]*/jche-cache-v1/' \$(ls .cache/*/analysis-cache.tsv)" \
+    "[cache]" yes
+
+# dataflow 側の版も同じ。こちらだけ古い場合、対の判定で両方が捨てられる
+discard_case "形式の版が古い dataflow キャッシュ" \
+    "sed -i '1s/^jche-dataflow-v[0-9]*/jche-dataflow-v1/' \$(ls .cache/*/dataflow-cache.tsv)" \
+    "[cache]" yes
+
 # --- 中断した実行からの引き継ぎ -----------------------------------------
 # フェーズ1の途中で実行が終わると一時ファイル（.tmp）だけが残る。次の実行は、これから解析する
 # ファイルのぶんをパースし直さずに書き写す。正しさの理屈は変えないので、結果は引き継ぎ無しと一致する

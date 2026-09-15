@@ -110,12 +110,10 @@ final class CallSiteRecorder {
     private void addValues(int line, MethodRef caller, String displayName, CallValues values,
                            String recvKey, String guard) {
         CallSiteValues candidate = new CallSiteValues(line, caller, displayName, 0,
-                values.recvNode(), values.argNodes(), recvKey,
-                values.recvOrigin(), values.argOrigins(), guard);
+                values.recvNode(), values.argNodes(), recvKey, guard);
         int ordinal = joinKeyCounts.merge(candidate.joinKey(), 1, Integer::sum) - 1;
         out.callSiteValues.add(new CallSiteValues(line, caller, displayName, ordinal,
-                values.recvNode(), values.argNodes(), recvKey,
-                values.recvOrigin(), values.argOrigins(), guard));
+                values.recvNode(), values.argNodes(), recvKey, guard));
     }
 
     /**

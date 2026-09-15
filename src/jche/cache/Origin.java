@@ -48,9 +48,11 @@ import java.util.List;
  * 段数の上限は無い。要素を走るときは素の {@code split(";")} ではなく
  * {@link #entriesOf} と {@link #unnest} を通すこと。
  *
- * <p>一方、キャッシュに<b>書き出す側</b>（{@code jche.analysis.OriginTracker}）が作る形には
- * まだ上限がある（実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段）。
- * そちらは読み手が使わなくなった列で、次の段で落とす（{@code docs/cache-split-qa.md} の Q21）。
+ * <p>一方、{@code jche.analysis.OriginTracker} が作る形には、まだ上限がある
+ * （実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段）。呼び出し箇所については
+ * この形はもう作っていない（{@code docs/cache-split-qa.md} の Q22）。
+ * 残っているのは {@code R} 行（戻り値の出所）・{@code J} 行（フィールドへの代入）・
+ * {@code X} 行（拡張の証拠）と、値グラフの葉の判定のため。
  */
 public final class Origin {
 

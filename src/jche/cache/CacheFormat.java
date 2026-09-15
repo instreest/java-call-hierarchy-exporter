@@ -94,14 +94,14 @@ import java.security.SecureRandom;
  *                                                          同じブロックのノードを指す。入れ子を展開しないので
  *                                                          深さの上限が要らず、value の長さにも上限が無い。
  *                                                          value は {@link #escape} で符号化して書く
- *   P  line  caller(4列)  calleeName  ordinal  recv  args  recvKey  recvOrigin  argOrigins  guard
+ *   P  line  caller(4列)  calleeName  ordinal  recv  args  recvKey  guard
  *                                                          {@link CallSiteValues}。呼び出し箇所ごとの値。
  *                                                          analysis 側の C 行・U 行と 1 対 1 で並び、
  *                                                          鍵（行番号・呼び出し元・呼び出し先の表示名・
  *                                                          同じ鍵の中での通し番号）で結びつける。
- *                                                          recv・args は値グラフ（N 行）のノード番号、
- *                                                          recvOrigin・argOrigins・guard は上限付きの
- *                                                          文字列表現（今の読み手が使うのはこちら）
+ *                                                          recv・args は値グラフ（N 行）のノード番号で、
+ *                                                          読み手は {@link jche.graph.OriginRenderer} で
+ *                                                          そこから出所の文字列を組み直す（上限が無い）
  *   Z  ブロック数                                              最終行。analysis 側と同じ数でなければ
  *                                                          対になっていないとみなして両方を捨てる
  * </pre>
@@ -155,12 +155,13 @@ import java.security.SecureRandom;
  *
  * <h2>事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）</h2>
  * <ul>
- *   <li>実引数の出所は入れ子にしない（1段のみ）。レシーバの出所は3段まで入れ子にする
- *       （{@link Origin#MAX_RECEIVER_DEPTH}。invoke ← getMethod ← forName / getClass の連鎖のため）</li>
+ *   <li>値グラフ（N 行）の入れ子には段数の上限が無い（v4）。1つの式を1ノードとして持ち、
+ *       参照はノード番号で行うので、大きさが式の数に比例し、深さに依存しないため。
+ *       読み手はここから出所を組み直す（{@link jche.graph.OriginRenderer}）</li>
  *   <li>外側スコープの変数の出所は、final または実質 final のときだけ持ち込む</li>
  *   <li>ローカル変数の出所の先読みは1回（後方で宣言された変数への別名付けは U）</li>
- *   <li>文字列リテラルの出所は、完全修飾クラス名の形か識別子の形（64文字以内）のものだけ
- *       （クラス名とメソッド名を追うため。ログ文言やSQLは残さない）</li>
+ *   <li>値グラフの文字列リテラル・定数の値には長さと内容の上限が無い（v4）。
+ *       SQL やログ文言もそのまま持ち、行形式を壊す文字は {@link #escape} で符号化する</li>
  *   <li>プリミティブ・配列・String を返す return は記録しない</li>
  *   <li>フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
@@ -203,16 +204,23 @@ public final class CacheFormat {
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
      *
      * v17 で A 行（フィールドの参照箇所）を、v18 で K 行（定数）・R 行（戻り値の出所）・
-     * X 行（拡張の証拠）を dataflow-cache.tsv に移した
+     * X 行（拡張の証拠）を dataflow-cache.tsv に移した。
+     * v19 で C 行・U 行から値の列（recvKey・出所・guard）を落とし、J 行（フィールドへの代入）も
+     * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる
      */
-    public static final String VERSION = "jche-cache-v18";
+    public static final String VERSION = "jche-cache-v19";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
      * サイドカーのための事実を足すときはこちらだけを上げればよく、
-     * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない
+     * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない。
+     *
+     * v2 で N 行（値グラフ）と P 行（呼び出し箇所ごとの値）を足し、
+     * v3 で K 行・R 行・X 行を analysis 側から受け取った。
+     * v4 で J 行を受け取り、P 行に recvKey と guard を持たせ、
+     * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v3";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v4";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。

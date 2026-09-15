@@ -96,11 +96,9 @@ final class OriginTracker {
      * @param args 実引数。メソッド参照のように実引数が無い形では null（出所も作らない）
      */
     CallValues valuesOf(Expression recv, List<?> args) {
-        String recvOrigin = (recv == null) ? null : originOf(recv);
-        String argOrigins = (args == null) ? null : argOriginsOf(args);
-        int recvNode = (recv == null) ? jche.cache.ValueNode.NONE : graph.nodeOf(recv);
+        int recvNode = (recv == null) ? ValueNode.NONE : graph.nodeOf(recv);
         String argNodes = (args == null) ? "" : graph.argsOf(args, 0);
-        return new CallValues(recvOrigin, argOrigins, recvNode, argNodes);
+        return new CallValues(recvNode, argNodes);
     }
 
     /**
