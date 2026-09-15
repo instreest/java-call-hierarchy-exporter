@@ -58,17 +58,11 @@ import java.security.SecureRandom;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
  *                                                             {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
- *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
- *                                                          コンパイル時定数（static final の値と注釈の
- *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
- *                                                          ので、差分更新で「値が変わった」を知るために持つ
  *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
  *                                                             囲む条件分岐（{@link Guard}）
- *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}
  *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
- *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
  *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
  *                                                             {@link UnresolvedCallFact}
  *   Z  ブロック数                                              最終行。ここまで書き終えた印
@@ -83,6 +77,13 @@ import java.security.SecureRandom;
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
  *                                                          フィールドの参照箇所（読み取り・書き込み。
  *                                                          他の型のフィールドも含む）
+ *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
+ *                                                          コンパイル時定数（static final の値と注釈の
+ *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
+ *                                                          ので、差分更新で「値が変わった」を知るために持つ
+ *                                                          （定数の連鎖の判断もこちらを読んで行う）
+ *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}。戻り値の出所
+ *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
  *   N  id  kind  value  recv  args  argCount              {@link ValueNode}。値グラフのノード。
  *                                                          id はブロック内ローカルの連番で、recv と args は
  *                                                          同じブロックのノードを指す。入れ子を展開しないので
@@ -192,16 +193,17 @@ public final class CacheFormat {
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
      * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
      *
-     * v17 で A 行（フィールドの参照箇所）を dataflow-cache.tsv に移した
+     * v17 で A 行（フィールドの参照箇所）を、v18 で K 行（定数）・R 行（戻り値の出所）・
+     * X 行（拡張の証拠）を dataflow-cache.tsv に移した
      */
-    public static final String VERSION = "jche-cache-v17";
+    public static final String VERSION = "jche-cache-v18";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
      * サイドカーのための事実を足すときはこちらだけを上げればよく、
      * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v2";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v3";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
@@ -251,27 +253,28 @@ public final class CacheFormat {
      * ソースの中身だけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
-    public static String headerFor(String sourceLevel, String sourceEncoding,
-                                   String hintPluginFingerprint) {
-        String header = VERSION + SEP + "source=" + sourceLevel
+    public static String headerFor(String sourceLevel, String sourceEncoding) {
+        return VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
-        // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
-        // この項目の追加だけで捨てさせないため
-        return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
     }
 
     /**
      * dataflow-cache.tsv の1行目（互換性の部分）。
      *
      * ソースレベル・文字コード・実行 JDK は analysis-cache.tsv と同じ理由で入れる
-     * （同じソースでも解析結果が変わる）。フェーズAの拡張の指紋は入れない。
-     * X 行は analysis-cache.tsv 側にあるため
+     * （同じソースでも解析結果が変わる）。
+     * フェーズAの拡張の指紋（{@code hints=}）もこちら。拡張が拾う証拠（X 行）が
+     * この側にあるため、鍵も同じ側に置く（{@code docs/cache-split-qa.md} の Q6・Q12）
      */
-    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding) {
-        return DATAFLOW_VERSION + SEP + "source=" + sourceLevel
+    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding,
+                                           String hintPluginFingerprint) {
+        String header = DATAFLOW_VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+        // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
+        // この項目の追加だけで捨てさせないため
+        return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
     }
 
     /**

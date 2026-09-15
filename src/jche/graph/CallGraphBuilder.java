@@ -26,13 +26,20 @@ import jche.util.Names;
 import jche.util.RunControl;
 
 /**
- * キャッシュファイルを2回スキャンして {@link CallGraph} を構築する。
+ * キャッシュファイルをスキャンして {@link CallGraph} を構築する。
  * <pre>
- *   1回目 … メソッドをID化し、呼び出し元ごとの本数を数える。型階層・証拠・戻り値・
- *           フィールド注入の判定もこの回で済ませる
- *   2回目 … 数えた本数から offsets を作り、実際のエッジを流し込む
+ *   1回目 … analysis 側。メソッドをID化し、呼び出し元ごとの本数を数える。
+ *           型階層・フィールド注入の判定もこの回で済ませる
+ *   値の回 … dataflow 側。戻り値の出所（R行）とフェーズAの証拠（X行）を読む
+ *   2回目 … analysis 側。数えた本数から offsets を作り、実際のエッジを流し込む
  * </pre>
- * どちらもストリーミングなので、キャッシュ全体をヒープに載せない。
+ * どれもストリーミングなので、キャッシュ全体をヒープに載せない。
+ *
+ * <h2>値は dataflow 側から読む</h2>
+ * 値に関わる事実（戻り値の出所・拡張の証拠）は dataflow 側のキャッシュにある
+ * （{@code docs/cache-split-qa.md} の Q11）。ブロック単位の対応が要らない
+ * （メソッドや証拠の鍵で集約する）ので、別の走査として読む。
+ * dataflow 側を読まない指定（{@code dataflow.enabled=false}）のときは、その走査を省く
  *
  * 読み手の判断として、U行（型解決失敗）に import からの推定候補があれば、
  * それをエッジにする（クラスパス不足で階層から消えるより、未検証と分かる形で残す方針）。
@@ -58,7 +65,8 @@ public final class CallGraphBuilder {
      * @param sourceFolderOrder 起点の並び替えに使うソースフォルダの順（プロジェクトルートからの相対パス）
      * @param beans             DIコンテナのBean定義の取り込み先（使わないなら {@link SpringBeans#DISABLED}）
      */
-    public static CallGraph build(Path cacheFile, List<String> sourceFolderOrder, SpringBeans beans)
+    public static CallGraph build(Path cacheFile, Path dataflowCacheFile,
+                                 List<String> sourceFolderOrder, SpringBeans beans)
             throws IOException {
         CallGraphBuilder b = new CallGraphBuilder();
         b.graph.sourceFolderOrder = sourceFolderOrder;
@@ -66,6 +74,10 @@ public final class CallGraphBuilder {
         RunControl.progress("グラフ構築", 0, 2);
         b.firstPass(cacheFile);
         RunControl.checkCancelled();
+        if (dataflowCacheFile != null) {
+            b.readValues(dataflowCacheFile);
+            RunControl.checkCancelled();
+        }
         b.allocateEdges();
         RunControl.progress("グラフ構築", 1, 2);
         b.secondPass(cacheFile);
@@ -93,13 +105,6 @@ public final class CallGraphBuilder {
                         if (t != null) {
                             graph.hierarchy.add(t);
                             graph.beans.type(t);
-                        }
-                    }
-                    case CacheFormat.ROW_HINT -> {
-                        HintFact h = HintFact.fromRow(in.columns());
-                        if (h != null) {
-                            graph.hintsByScope.computeIfAbsent(h.callerKey() + "|" + h.scopeKey(),
-                                    k -> new ArrayList<>()).add(new Hint(h.kind(), h.value()));
                         }
                     }
                     case CacheFormat.ROW_METHOD_DECL -> {
@@ -143,6 +148,32 @@ public final class CallGraphBuilder {
                             graph.functionalImpls.add(m.ifaceMethodKey());
                         }
                     }
+                    default -> {
+                        // I行は差分更新のためだけの行で、読み手は使わない
+                    }
+                }
+            }
+            fields.flushInto(graph.fieldOrigins);
+        }
+        graph.hierarchy.sortForDeterminism();
+        Log.info("収集: 型 " + graph.hierarchy.size()
+                + " / メソッド " + methods.size() + " / エッジ " + edgeCount);
+        if (edgeCount > Integer.MAX_VALUE) {
+            throw new IOException("エッジ数が多すぎます: " + edgeCount);
+        }
+    }
+
+    /**
+     * 値の回。dataflow 側のキャッシュから、戻り値の出所（R行）とフェーズAの証拠（X行）を読む。
+     *
+     * どちらもメソッド・証拠の鍵で集約するので、ブロックの対応を取る必要が無く、
+     * analysis 側とは独立した走査で読める。ここで {@link MethodTable} に無いメソッドが
+     * 出てきたら（ソースが消えた等）ID化されるだけで、エッジは増えない
+     */
+    private void readValues(Path dataflowCacheFile) throws IOException {
+        try (CacheReader in = CacheReader.open(dataflowCacheFile)) {
+            while (in.next()) {
+                switch (in.rowType()) {
                     case CacheFormat.ROW_RETURN -> {
                         ReturnFact r = ReturnFact.fromRow(in.columns());
                         if (r != null) {
@@ -154,18 +185,18 @@ public final class CallGraphBuilder {
                             }
                         }
                     }
+                    case CacheFormat.ROW_HINT -> {
+                        HintFact h = HintFact.fromRow(in.columns());
+                        if (h != null) {
+                            graph.hintsByScope.computeIfAbsent(h.callerKey() + "|" + h.scopeKey(),
+                                    k -> new ArrayList<>()).add(new Hint(h.kind(), h.value()));
+                        }
+                    }
                     default -> {
-                        // I行・A行は読み手が使わない
+                        // F行・A行・N行・P行・K行・Z行はここでは使わない
                     }
                 }
             }
-            fields.flushInto(graph.fieldOrigins);
-        }
-        graph.hierarchy.sortForDeterminism();
-        Log.info("収集: 型 " + graph.hierarchy.size()
-                + " / メソッド " + methods.size() + " / エッジ " + edgeCount);
-        if (edgeCount > Integer.MAX_VALUE) {
-            throw new IOException("エッジ数が多すぎます: " + edgeCount);
         }
     }
 

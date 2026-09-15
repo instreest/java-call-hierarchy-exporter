@@ -195,10 +195,10 @@ public final class CacheUpdater {
         String generation = CacheFormat.newGeneration();
         try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
              BufferedWriter flowOut = Files.newBufferedWriter(tmpFlowCache, StandardCharsets.UTF_8)) {
-            writeLine(cacheOut, CacheFormat.withGeneration(CacheFormat.headerFor(
+            writeLine(cacheOut, CacheFormat.withGeneration(
+                    CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding), generation));
+            writeLine(flowOut, CacheFormat.withGeneration(CacheFormat.dataflowHeaderFor(
                     config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint), generation));
-            writeLine(flowOut, CacheFormat.withGeneration(
-                    CacheFormat.dataflowHeaderFor(config.sourceLevel, config.sourceEncoding), generation));
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
@@ -845,7 +845,7 @@ public final class CacheUpdater {
         String flowHeader;
         try (CacheReader flow = CacheReader.open(flowCache)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
-                    config.sourceLevel, config.sourceEncoding))) {
+                    config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint))) {
                 Log.info("[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が"
                         + "異なるため、両方を作り直します");
                 return false;
@@ -900,8 +900,7 @@ public final class CacheUpdater {
      */
     private CacheHead headOf(Path cacheFile) throws IOException {
         try (CacheReader in = CacheReader.open(cacheFile)) {
-            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
-                    config.hintPluginFingerprint))) {
+            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding))) {
                 return null;
             }
             List<LibraryFact> libraries = new ArrayList<>();
@@ -968,16 +967,12 @@ public final class CacheUpdater {
         try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean staleBlock = false;
             String currentRel = null;
-            String blockRel = null;                       // 有効・無効によらずブロックのファイル
-            List<String> blockConstants = new ArrayList<>();
             while (in.next()) {
                 char rowType = in.rowType();
                 lastLine = in.line();
                 if (rowType == CacheFormat.ROW_FILE) {
                     blocks++;
-                    rememberConstants(blockRel, blockConstants);
                     String[] f = in.columns();
-                    blockRel = (f.length >= 2) ? f[1] : null;
                     staleBlock = !isValidBlock(f, live);
                     currentRel = staleBlock ? null : f[1];
                     if (currentRel != null) {
@@ -987,11 +982,6 @@ public final class CacheUpdater {
                         } else {
                             valid.add(currentRel);
                         }
-                    }
-                } else if (rowType == CacheFormat.ROW_CONSTANT) {
-                    ConstantFact k = ConstantFact.fromRow(in.columns());
-                    if (k != null) {
-                        blockConstants.add(k.fingerprint());
                     }
                 } else if (staleBlock && rowType == CacheFormat.ROW_TYPE) {
                     TypeFact t = TypeFact.fromRow(in.columns());
@@ -1007,7 +997,6 @@ public final class CacheUpdater {
                     currentRel = null;
                 }
             }
-            rememberConstants(blockRel, blockConstants);   // 最後のブロック
         } catch (IOException | RuntimeException e) {
             Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
             return false;
@@ -1180,16 +1169,30 @@ public final class CacheUpdater {
      * それでも突き合わせるのは、片方だけを外から消された・書き換えられた場合に
      * 「analysis だけ再利用して dataflow が欠けたブロック」を作らないため。
      * 外したファイルは通常の再解析（パス2）に回るので、対でないブロックは残らない。
+     *
+     * <p>ついでに K 行（宣言している定数の値）の指紋もここで集める。定数は値なので dataflow 側にあり、
+     * <b>定数の連鎖の判断も dataflow 側を読んで行う</b>（{@code docs/cache-split-qa.md} の Q11）。
+     * ブロックの走査はどうせ1回するので、同じ走査で済ませている。
      */
     private void dropBlocksMissingFromDataflowCache(Set<String> valid, Set<String> libraryAffected)
             throws IOException {
         Set<String> present = new HashSet<>();
         try (CacheReader in = CacheReader.open(config.dataflowCacheFile)) {   // ヘッダはパス0で検証済み
+            String blockRel = null;                       // 有効・無効によらずブロックのファイル
+            List<String> blockConstants = new ArrayList<>();
             while (in.next()) {
                 if (in.is(CacheFormat.ROW_FILE)) {
-                    present.add(in.column(1));
+                    rememberConstants(blockRel, blockConstants);
+                    blockRel = in.column(1);
+                    present.add(blockRel);
+                } else if (in.is(CacheFormat.ROW_CONSTANT)) {
+                    ConstantFact k = ConstantFact.fromRow(in.columns());
+                    if (k != null) {
+                        blockConstants.add(k.fingerprint());
+                    }
                 }
             }
+            rememberConstants(blockRel, blockConstants);   // 最後のブロック
         }
         int dropped = 0;
         for (Iterator<String> it = valid.iterator(); it.hasNext();) {
@@ -1241,9 +1244,10 @@ public final class CacheUpdater {
             writeLine(w, v.toRow());
         }
         // K行は指紋の順に並べる。同じソースならいつ解析しても同じ並びになり、
-        // 旧キャッシュとの突き合わせ（定数の連鎖）が並び順に振り回されない
+        // 旧キャッシュとの突き合わせ（定数の連鎖）が並び順に振り回されない。
+        // 値なので dataflow 側に置く（定数の連鎖の判断もそちらを読んで行う）
         for (String row : sortedConstantRows(fa)) {
-            writeLine(w, row);
+            writeLine(flowOut, row);
         }
         for (FieldAssignFact j : fa.fieldAssigns) {
             writeLine(w, j.toRow());
@@ -1254,15 +1258,17 @@ public final class CacheUpdater {
             writeLine(w, site.toRow());
         }
         // return は全部書く（追跡できないものも U として）。
-        // 「追跡できない return が1つでもあれば戻り値は不定」という判定は読み手が行う
+        // 「追跡できない return が1つでもあれば戻り値は不定」という判定は読み手が行う。
+        // 戻り値の出所は値なので dataflow 側
         for (ReturnFact r : fa.returns) {
-            writeLine(w, r.toRow());
+            writeLine(flowOut, r.toRow());
         }
         for (FunctionalImplFact m : fa.functionalImpls) {
             writeLine(w, m.toRow());
         }
+        // フェーズAの拡張が拾った証拠も値なので dataflow 側（ヘッダの hints= も同じ側に置く）
         for (HintFact h : fa.hints) {
-            writeLine(w, h.toRow());
+            writeLine(flowOut, h.toRow());
         }
     }
 

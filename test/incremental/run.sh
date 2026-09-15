@@ -85,7 +85,7 @@ check_paired() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
     fi
 }
 
-# dataflow 側の行が壊れていないこと（種別は F / A / N / P / Z だけ）と、
+# dataflow 側の行が壊れていないこと（種別は F / A / K / N / P / R / X / Z だけ）と、
 # 値グラフ（N 行）の不変条件。番号がブロックごとに 0 から詰まっていて、
 # レシーバ・実引数の参照が同じブロックの範囲に収まっていること。
 # 番号がブロック内ローカルなので、ここが崩れると差分更新でブロックを書き写した瞬間に参照がずれる
@@ -94,7 +94,7 @@ check_flow_rows() {   # $1=キャッシュの複製（analysis 側）  $2=ラベ
     bad=$(awk -F'\t' '
         NR == 1 { next }
         { kind = substr($0, 1, 1) }
-        index("FANPZ", kind) == 0 { print NR": 未知の行種別: "$0; next }
+        index("FAKNPRXZ", kind) == 0 { print NR": 未知の行種別: "$0; next }
         kind == "F" { nodes = 0; next }
         kind == "N" {
             if ($2 != nodes) { print NR": N 行の番号が連番ではありません（期待 "nodes"）: "$0 }
