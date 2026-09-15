@@ -85,7 +85,7 @@ check_paired() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
     fi
 }
 
-# dataflow 側の行が壊れていないこと（種別は F / A / K / N / P / R / X / Z だけ）と、
+# dataflow 側の行が壊れていないこと（種別は F / A / J / K / N / P / R / X / Z だけ）と、
 # 値グラフ（N 行）の不変条件。番号がブロックごとに 0 から詰まっていて、
 # レシーバ・実引数の参照が同じブロックの範囲に収まっていること。
 # 番号がブロック内ローカルなので、ここが崩れると差分更新でブロックを書き写した瞬間に参照がずれる
@@ -94,7 +94,7 @@ check_flow_rows() {   # $1=キャッシュの複製（analysis 側）  $2=ラベ
     bad=$(awk -F'\t' '
         NR == 1 { next }
         { kind = substr($0, 1, 1) }
-        index("FAKNPRXZ", kind) == 0 { print NR": 未知の行種別: "$0; next }
+        index("FAJKNPRXZ", kind) == 0 { print NR": 未知の行種別: "$0; next }
         kind == "F" { nodes = 0; next }
         kind == "N" {
             if ($2 != nodes) { print NR": N 行の番号が連番ではありません（期待 "nodes"）: "$0 }
@@ -154,15 +154,20 @@ normalized() { strip_generation "$1" | LC_ALL=C sort; }
 
 # F 行（サイズ・エラー数・内容ハッシュ）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
 # どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
-# 「事実が変わったか」を見るときはこちらで比べる
-normalized_facts() { strip_generation "$1" | LC_ALL=C grep -v -E "^[FT]	" | LC_ALL=C sort; }
+# 「事実が変わったか」を見るときはこちらで比べる。
+# 事実は 2 つのキャッシュに分かれている（値の出所・フィールドへの代入は dataflow 側）ので、
+# 片方だけを見ると「値だけが変わった書き換え」を取りこぼす
+normalized_facts() {
+    { strip_generation "$1"; strip_generation "${1%.tsv}-flow.tsv"; } \
+        | LC_ALL=C grep -v -E "^[FT]	" | LC_ALL=C sort
+}
 
 # 行頭が既知の種別で、F 行の直後が必ず I 行であること。
 # 値に紛れ込んだタブ・改行で行が割れると、ここで引っかかる
 check_rows() {   # $1=キャッシュ  $2=ラベル
     local bad
     bad=$(awk 'NR == 1 { next }
-               { if (index("TLFIHDVKJACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
+               { if (index("TLFIHDVKACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
                prev == "F" && substr($0, 1, 1) != "I" { print NR": F 行の次が I 行ではありません: "$0 }
                { prev = substr($0, 1, 1) }' "$1")
     if [ -z "$bad" ]; then

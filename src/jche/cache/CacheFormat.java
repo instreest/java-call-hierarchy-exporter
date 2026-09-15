@@ -58,13 +58,14 @@ import java.security.SecureRandom;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
  *                                                             {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
- *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
- *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
- *                                                             囲む条件分岐（{@link Guard}）
+ *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth
+ *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
+ *                                                             値（レシーバ・実引数の出所、ガード）は
+ *                                                             dataflow 側の P 行にある
  *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
- *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
- *                                                             {@link UnresolvedCallFact}
+ *   U  line  caller(4列)  expr  reason  candidate  recvKind  lambdaDepth
+ *                                                             {@link UnresolvedCallFact}。C 行と同じく、
+ *                                                             値は dataflow 側の P 行にある
  *   Z  ブロック数                                              最終行。ここまで書き終えた印
  *                                                          （{@link #trailerFor}）。これが無い・数が合わない
  *                                                          キャッシュは途中で切れているとみなして捨てる
@@ -77,6 +78,10 @@ import java.security.SecureRandom;
  *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
  *                                                          フィールドの参照箇所（読み取り・書き込み。
  *                                                          他の型のフィールドも含む）
+ *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}。フィールドへの代入。
+ *                                                          「どこから来た値か」なので dataflow 側に置く。
+ *                                                          同じブロックの V 行（analysis 側のフィールド宣言）と
+ *                                                          組で判定するので、ブロックの対応が要る
  *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
  *                                                          コンパイル時定数（static final の値と注釈の
  *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
@@ -89,10 +94,14 @@ import java.security.SecureRandom;
  *                                                          同じブロックのノードを指す。入れ子を展開しないので
  *                                                          深さの上限が要らず、value の長さにも上限が無い。
  *                                                          value は {@link #escape} で符号化して書く
- *   P  line  caller(4列)  calleeName  ordinal  recv  args  {@link CallSiteValues}。呼び出し箇所ごとの値。
+ *   P  line  caller(4列)  calleeName  ordinal  recv  args  recvKey  recvOrigin  argOrigins  guard
+ *                                                          {@link CallSiteValues}。呼び出し箇所ごとの値。
  *                                                          analysis 側の C 行・U 行と 1 対 1 で並び、
  *                                                          鍵（行番号・呼び出し元・呼び出し先の表示名・
- *                                                          同じ鍵の中での通し番号）で結びつける
+ *                                                          同じ鍵の中での通し番号）で結びつける。
+ *                                                          recv・args は値グラフ（N 行）のノード番号、
+ *                                                          recvOrigin・argOrigins・guard は上限付きの
+ *                                                          文字列表現（今の読み手が使うのはこちら）
  *   Z  ブロック数                                              最終行。analysis 側と同じ数でなければ
  *                                                          対になっていないとみなして両方を捨てる
  * </pre>

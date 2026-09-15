@@ -69,8 +69,6 @@ final class CallSiteRecorder {
     void record(List<MethodRef> callers, int lambdaDepth, IMethodBinding binding, ASTNode node,
                 String displayName, String calleeMods, String recvKey, char recvKind,
                 String externalGuess, CallValues values) {
-        String recvOrigin = values.recvOrigin();
-        String argOrigins = values.argOrigins();
         int line = lineOf(node);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
         String guard = guards.guardOf(node);
@@ -78,9 +76,8 @@ final class CallSiteRecorder {
             // 呼び出し元の型・コンストラクタ自体を特定できないケース
             // （型のバインディング解決に失敗した等）
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
-                    UnresolvedCallFact.OUTSIDE_METHOD, "", recvKey, recvKind,
-                    recvOrigin, argOrigins, lambdaDepth, guard));
-            addValues(line, null, displayName, values);
+                    UnresolvedCallFact.OUTSIDE_METHOD, "", recvKind, lambdaDepth));
+            addValues(line, null, displayName, values, recvKey, guard);
             return;
         }
         MethodRef callee = names.toRef(binding);
@@ -89,9 +86,8 @@ final class CallSiteRecorder {
             // （C行と同じく、初期化子の中なら根のコンストラクタそれぞれに属する）
             for (MethodRef caller : callers) {
                 out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
-                        UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKey, recvKind,
-                        recvOrigin, argOrigins, lambdaDepth, guard));
-                addValues(line, caller, displayName, values);
+                        UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKind, lambdaDepth));
+                addValues(line, caller, displayName, values, recvKey, guard);
             }
             return;
         }
@@ -99,8 +95,8 @@ final class CallSiteRecorder {
         // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
-                    recvKey, recvKind, recvOrigin, argOrigins, lambdaDepth, guard));
-            addValues(line, caller, displayName, values);
+                    recvKind, lambdaDepth));
+            addValues(line, caller, displayName, values, recvKey, guard);
         }
     }
 
@@ -111,12 +107,15 @@ final class CallSiteRecorder {
      * 通し番号は「同じ鍵（行番号・呼び出し元・表示名）が既に何件あるか」。
      * {@code f(g(), g())} のようにまったく同じ鍵が並ぶ場合を読み手が区別できるようにする
      */
-    private void addValues(int line, MethodRef caller, String displayName, CallValues values) {
+    private void addValues(int line, MethodRef caller, String displayName, CallValues values,
+                           String recvKey, String guard) {
         CallSiteValues candidate = new CallSiteValues(line, caller, displayName, 0,
-                values.recvNode(), values.argNodes());
+                values.recvNode(), values.argNodes(), recvKey,
+                values.recvOrigin(), values.argOrigins(), guard);
         int ordinal = joinKeyCounts.merge(candidate.joinKey(), 1, Integer::sum) - 1;
         out.callSiteValues.add(new CallSiteValues(line, caller, displayName, ordinal,
-                values.recvNode(), values.argNodes()));
+                values.recvNode(), values.argNodes(), recvKey,
+                values.recvOrigin(), values.argOrigins(), guard));
     }
 
     /**

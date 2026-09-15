@@ -1249,8 +1249,10 @@ public final class CacheUpdater {
         for (String row : sortedConstantRows(fa)) {
             writeLine(flowOut, row);
         }
+        // フィールドへの代入は「どこから来た値か」なので dataflow 側。
+        // 同じブロックの V 行（フィールド宣言）と組で判定するので、ブロックの対応が要る
         for (FieldAssignFact j : fa.fieldAssigns) {
-            writeLine(w, j.toRow());
+            writeLine(flowOut, j.toRow());
         }
         // 呼び出し箇所（解決できたものも失敗したものも）はソース上の順のまま書く。
         // 読み手が import 推定の候補をエッジにしたとき、元の呼び出しの並びが保たれる
