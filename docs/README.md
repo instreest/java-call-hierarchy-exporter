@@ -26,6 +26,7 @@
 | [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。2 つに分けた置き場所、事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
 | [out-of-process-analysis-design.md](out-of-process-analysis-design.md) | Eclipse プラグインが解析を別プロセス（別 JDK・同梱の JDT）で行う仕組み。プロトコルと配布物の構成 |
 | [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作） |
+| [vscode-plugin-design.md](vscode-plugin-design.md) | VSCode プラグインの設計案（未実装）。既存のサーバープロトコルの再利用、設定の自動生成、カーソル位置からメソッドを引く `AT` の追加 |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
 | [branch-pruning.md](branch-pruning.md) | 条件分岐による打ち切り（`branch.pruning.enabled`）。判定できる条件、打ち切りで階層から消えたメソッドを `methods.csv` で探す方法 |
 

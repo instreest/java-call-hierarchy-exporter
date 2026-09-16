@@ -1,0 +1,291 @@
+# VSCode プラグイン 設計案 — 呼び出し元階層ビュー
+
+Eclipse プラグイン（[eclipse-plugin-usage.md](eclipse-plugin-usage.md)）と同じことを VSCode でもできるようにする、
+という話の設計案。**まだ実装していない**（この文書は着手前の設計であり、決めきれていない点は §11 に残してある）。
+
+前提として、解析はすでに**別プロセス・標準入出力のプロトコル**に切り出されている
+（[out-of-process-analysis-design.md](out-of-process-analysis-design.md)、`jche.server.Protocol`）。
+Eclipse プラグインは「子プロセスを起こして問い合わせ、返ってきた行を描くだけ」になっている。
+つまり **VSCode 版で新しく書くのは画面と子プロセスの世話だけ**で、解析側はほぼ手を入れない。
+この文書は、その「ほぼ」が何かと、Eclipse との違いから来る設計判断をまとめる。
+
+**主ユースケース**は Eclipse 版と同じ。エディタでメソッドにカーソルを置き、そのメソッドの**呼び出し元**を階層で辿る。
+呼び出し先方向と CSV 出力はその副産物として扱う。
+
+---
+
+## 1. 全体像
+
+```
+VSCode 拡張ホスト（Node.js / TypeScript）        子プロセス（JDK 25・同梱の JDT）
+┌──────────────────────────────────┐        ┌────────────────────────────────┐
+│ ツリービュー（呼び出し階層 (Exporter)）│  行指向 │ jche.CallHierarchyExporter --server │
+│  ・カーソル位置 → メソッドの特定     │ ◀────▶ │  フェーズ1 解析 → キャッシュ     │
+│  ・設定ファイルの用意（自動生成）     │ 標準入出力 │  フェーズ2 グラフ＋転置索引     │
+│  ・フィルタ UI・CSV 出力の指示       │        │  フィルタ適用・木の切り出し      │
+│  ・子プロセスの起動/監視/中止        │        │  CSV 出力                       │
+└──────────────────────────────────┘        └────────────────────────────────┘
+```
+
+**拡張側に Java のコードは1行も置かない。** Eclipse 版は「Java 8 で書いたバンドル」だったが、
+VSCode の拡張ホストは Node.js なので、そもそも Java を動かす場所がない。
+これは制約ではなく好都合で、Eclipse 版で苦労した「プラグイン側から解析コードを追い出す」作業が最初から済んでいる。
+
+使うプロトコルは**既存のものそのまま**（`HELLO` / `ANALYZE` / `STATUS` / `FIND` / `TREE` / `EXPORT` / `CANCEL` / `SHUTDOWN`）。
+足すのは §4 の `AT` 1つだけで、既存の行の意味は変えないのでプロトコル版は 1 のまま据え置く。
+
+### 置き場所
+
+```
+vscode-plugin/
+├── package.json          … 拡張の宣言（コマンド・ビュー・設定）
+├── src/
+│   ├── extension.ts      … 有効化・コマンド登録
+│   ├── server/           … プロトコルクライアント（Eclipse の jche.eclipse.server と対になる）
+│   │   ├── connection.ts … 1要求1応答の直列化、#P / #L の振り分け
+│   │   ├── launcher.ts   … 子プロセスの起動・アイドル終了・異常終了からの作り直し
+│   │   ├── javaLocator.ts… 解析に使う JDK を探す
+│   │   └── jdkDownload.ts… 無ければ Adoptium から取得（確認のうえ）
+│   ├── config.ts         … config.properties の探索と自動生成（§3）
+│   ├── tree.ts           … TreeDataProvider（行の組み直し）
+│   └── view.ts           … ビュー本体・フィルタ・状態表示
+└── lib/                  … ビルド時に集める。jche-core.jar と jdt/*.jar（§9）
+```
+
+`src/server/` の4ファイルは Eclipse 版の `jche/eclipse/server/`（`ServerConnection` / `ServerLauncher` /
+`JavaLocator` / `JdkDownload`、合わせて約 700 行）の移植である。**同じ規則を2つの言語で書くことになる**ので、
+食い違うと「Eclipse では動くが VSCode では動かない」が起きる。これは §10 の検査で見張る。
+
+---
+
+## 2. なぜ既存の Call Hierarchy に相乗りしないのか
+
+VSCode には標準の「呼び出し階層」ビュー（`vscode.CallHierarchyProvider`）があり、
+Java では [vscode-java](https://github.com/redhat-developer/vscode-java)（JDT LS）が提供している。
+そこへ相乗りする案は**採らない**。理由は Eclipse 版 §9 と同じで、加えて VSCode 固有のものがある。
+
+| 案 | 採らない理由 |
+|---|---|
+| `CallHierarchyProvider` を java に登録する | 同じ言語に複数のプロバイダが登録されると、VSCode はどれを使うか利用者に選ばせない。vscode-java と奪い合いになり、「どちらの結果を見ているのか」が分からなくなる |
+| 同上（続き） | このツールの結果は**重くて古くなる**。標準ビューには「12 ファイルが変更されています」「この枝は確度が低い（dataflow で推定）」を出す場所が無い。状態を言えないまま古い結果を見せるのが一番危ない |
+| CSV を書いて読み直して表示する | フィルタのたびにファイル入出力が要る。CSV は成果物であって UI のデータ源にしない（Eclipse 版と同じ判断） |
+
+したがって**独立したツリービューを1つ増やす**。vscode-java が入っていても入っていなくても同じように動く
+（入っていれば §4 の精度が上がる、という関係にする）。
+
+---
+
+## 3. 解析の設定をどう用意するか
+
+Eclipse 版は `EclipseProjectConfig` が `IJavaProject#getResolvedClasspath` からソースフォルダと依存 jar を
+その場で組み立てていた。VSCode にはそれに当たるモデルが**標準では無い**。3案を比べる。
+
+| 案 | 中身 | 判定 |
+|---|---|---|
+| **A（採用）** | `config.properties` を探し、無ければ **`project.root` だけ書いた最小の設定を生成**して、残りは本体の `ProjectDetector` に決めさせる | vscode-java に依存しない。閉域でも動く。`pom.xml` / `build.gradle` を読む仕組み（[build-tool-classpath.md](build-tool-classpath.md)）が既にあるので、Maven / Gradle プロジェクトはこれで足りる |
+| B | vscode-java の内部コマンド（`java.project.getClasspaths` 等）でクラスパスを取る | 精度は上がるが、vscode-java 必須になり、公開 API でないコマンドに寄りかかることになる。版が上がると黙って壊れる |
+| C | 利用者に必ず `config.properties` を書かせる | 最初の1回の敷居が高い。Eclipse 版が自動生成を持っているのに VSCode 版だけ手書きを求めるのは筋が通らない |
+
+**A を既定にし、B は「あれば使う」任意の上乗せ**にする（vscode-java が有効で、かつ設定
+`jche.useJavaExtensionClasspath` が true のときだけ問い合わせ、失敗したら黙って A に戻る）。
+
+設定ファイルの探索順は Eclipse 版の `ConfigSource` に合わせる。
+
+1. 設定 `jche.configFile` で明示されたファイル
+2. ワークスペースフォルダ直下の `config.properties`（複数あれば QuickPick で選ばせ、選択をフォルダごとに覚える）
+3. どれも無ければ自動生成（`project.root=.` だけ。書き出し先は拡張のストレージ）
+
+自動生成した内容は「設定を `config.properties` に保存」コマンドでワークスペースへ書き出せる。
+`entry.packages` を絞る、外部 jar の被参照を見る、といった細かい調整はそこから手で直す、という流れも Eclipse 版と同じ。
+
+---
+
+## 4. カーソル位置のメソッドをどう特定するか（`AT` を足す）
+
+ここが Eclipse 版との**最大の違い**である。Eclipse 版は `IMethod` から
+`型FQN#メソッド名(引数型,…)` のキーを組み立てていた（`MethodKeys`）。消去型・型変数・内部クラスの
+綴り合わせが要る繊細な処理で、寄せ切れないぶんはサーバー側の `findLoosely`（型・名前・引数の数で一意なら採る）が救っていた。
+
+VSCode でこれを再現しようとすると、次のどちらかになる。
+
+| 案 | 中身 | 問題 |
+|---|---|---|
+| ドキュメントシンボルから組み立てる | `vscode.executeDocumentSymbolProvider` の結果（`OrderService.save(Order)` のような表示用の文字列）を解析する | 表示用の文字列は**プロバイダの都合で変わる**。完全修飾もされていない。import を自前で解いて FQN にする、つまり簡易パーサを拡張側に持つことになる |
+| vscode-java に解決させる | 上と同じだが JDT LS 前提 | 依存が増える。B 案と同じ弱点 |
+| **`AT` をサーバーに足す（採用）** | 「ファイルと行」を送り、**サーバーが自分の解析結果から囲みメソッドを引く** | 拡張側の仕事が「相対パスと行番号を送る」だけになる。綴り合わせの問題が丸ごと消える |
+
+サーバーはすでに全メソッドの宣言位置（`MethodTable#declFile` / `#declLine`）を持っている。
+**同じファイルの、行番号が指定行以下で最大のもの**を選べば囲みメソッドが出る。
+
+```
+→ AT  src/main/java/com/example/OrderService.java  42
+← OK  key=com.example.OrderService#save(com.example.Order)  label=…  file=…  line=38
+   （無ければ ← NG not-found）
+```
+
+- パスは `project.root` からの相対。区切りは `/` に正規化して送る（Windows でも）
+- 宣言の**終了行を持っていない**ので「メソッドの外（フィールド宣言やクラスの末尾）にカーソルがある」ときも
+  直前のメソッドを返してしまう。ここは割り切る。返した位置（`line=`）を画面に出し、
+  「`OrderService#save` の呼び出し元」と見出しに書くことで、利用者が誤りに気づける形にする
+- 引くための索引（ファイル → メソッドID の一覧）は最初の `AT` のときに作って持ち回る
+- `AT` を知らない古いサーバーは `NG unknown-command` を返す。拡張はそれを見てシンボルからの組み立て（第1案）に落とす…
+  ことは**しない**。同梱の jar と拡張は同じ版で配るので、食い違いは起きない。起きたらエラーとして出す
+
+これは Eclipse 版にも効く（将来 `MethodKeys` を `AT` に寄せれば、あの繊細な綴り合わせを消せる）。
+ただし今回は VSCode 側だけで使い、Eclipse 版はそのままにする。二重に壊す危険を冒さない。
+
+---
+
+## 5. 画面
+
+VSCode にはバナーの置き場所が無い（Eclipse 版 §2 の1行バナーに当たるものが無い）ので、
+状態は **`TreeView#message` と タイトル と 通知** の3つに割り振る。
+
+```
+┌ 呼び出し階層 (EXPORTER) ────────────────── 🔍 ⇅ ⟳ ▽ ⧉ ┐
+│ ⚠ 12 ファイルが変更されています（10:31:04 時点の結果）    │ ← TreeView#message
+│                                                        │
+│ ⬤ OrderService.save(Order)                             │
+│  └ ⬤ OrderFacade.register(OrderForm)   OrderFacade.java:88 │
+│      ├ ⬤ OrderController.post(…)       OrderController.java:41 │
+│      └ ⚠ BatchJob.run()                BatchJob.java:23 │
+│  ◈ ScheduledTask.execute()             dataflow: FACTORY│
+│  ↻ OrderService.saveAll(…)（再帰）                       │
+└────────────────────────────────────────────────────────┘
+```
+
+| 状態 | 見せ方 |
+|---|---|
+| 未解析 | `viewsWelcome`（ビューの中央に説明と［解析する］ボタン） |
+| 解析中 | タイトルに `— 解析中…`、`withProgress`（`location: ViewId`＝ビュー上部の細い進捗バー）。`#P` 行を進捗に流す。2回目以降は**前回の木を出したまま** |
+| 最新 | `message` に「10:31:04 時点 / 5,000 ファイル / 143 呼び出し元」 |
+| 要再解析 | `message` に「⚠ 12 ファイルが変更されています」。該当ノードのアイコンに ⚠ を重ね、ツールチップに変更時刻 |
+| 失敗 | `message` に理由、通知に［ログを開く］。直前の結果は消さない |
+
+- ログ（`#L` 行と子プロセスの標準エラー）は **OutputChannel「Call Hierarchy Exporter」**へ。Eclipse 版のコンソールと同じ役割
+- 行のアイコンは `ThemeIcon` で代用する（⬤=`symbol-method`、◈=`symbol-method` ＋ `problemsWarningIcon` の色、
+  ↻=`refresh`、◇=`circle-outline`、⚠=`warning`）。絵文字は使わない（テーマとの相性とアクセシビリティのため）
+- ダブルクリックで**呼び出している行**を開く（宣言ではない）。Eclipse 版と同じ。宣言へは右クリック →「宣言を開く」
+- **古いことを理由にグレーアウトしない**（Eclipse 版と同じ判断）
+
+---
+
+## 6. フィルタ
+
+フィルタは**再解析を起こさない**。条件を `TREE` の引数に足して投げ直すだけで、解析は走らない。
+この体感（解析は重いがフィルタは軽い）が設計の要なので、VSCode 側でも崩さない。
+
+VSCode のビューにはフィルタバーを置けないので、次のように散らす。
+
+| 項目 | 置き場所 |
+|---|---|
+| 絞り込み文字列 | ビュータイトルの 🔍（QuickPick の入力欄）。適用中は `message` に「絞り込み: Order」と出して、効いていることを見えるようにする |
+| 深さ | ▽ の QuickPick（既定 5） |
+| 方向（呼び出し元 ⇄ 呼び出し先） | ⇅（トグル。`when` 節でアイコンを差し替える） |
+| テストを含む／確度で絞る／重複を畳む | ▽ の QuickPick（複数選択） |
+| 除外パッケージ | 設定 `jche.exclude`（チップ UI は作らない。VSCode に合う部品が無い） |
+
+フィルタの状態はワークスペースごとに `workspaceState` へ保存する（次回も同じ）。
+⧉（CSV 出力）は `EXPORT` を投げるだけ。**いま見えている木をそのまま**書き出す。
+
+---
+
+## 7. 変更の検知と再解析
+
+```
+FileSystemWatcher("**/*.java")   ─► dirty: Set<string> ─── 3秒静止 ──► ANALYZE
+onDidSaveTextDocument                （足すだけ）          debounce
+```
+
+- Eclipse の `POST_BUILD` に当たるものが VSCode には無いので、**保存とファイル変更**を起点にする。
+  タイピング中は走らせない（`onDidChangeTextDocument` は見ない）
+- 監視対象は設定ファイルの `source.folders` 配下だけ。`config.properties` 自身が変わったら差分ではなく**全部作り直す**
+- 自動再解析は既定 **OFF**（`jche.autoAnalyze`）。Eclipse 版は ON だが、VSCode は軽い編集に使われることが多く、
+  裏で数十秒の解析が始まるのは驚きが大きい。まず ⚠ で知らせて、⟳ を押してもらう
+- 中止は `CANCEL` → 応答しなければ `kill()`。Eclipse 版と同じ
+- 差分解析はキャッシュ任せ（[cache-design.md](cache-design.md)）。1ファイル直しただけなら数秒で終わる
+
+---
+
+## 8. 子プロセスの世話
+
+Eclipse 版の `ServerLauncher` / `ServerConnection` の規則をそのまま持ってくる。
+
+- **ワークスペースフォルダごとに1つ常駐**。マルチルートなら複数立つ。グラフをメモリに持ち続けて `TREE` に即答する
+- 起動は初回の解析要求時（VSCode の起動を遅くしない。`activationEvents` は `onCommand` と
+  `onView:jcheCallHierarchy` にとどめ、`onLanguage:java` では起こさない）
+- アイドルで終了（既定 10 分、0 で常駐）
+- 要求は**直列**。1要求1応答という約束（`Protocol`）を守るため、拡張側で待ち行列にする。
+  `#P` / `#L` は応答の区切りに数えない
+- 異常終了したら次の要求で作り直す。作り直せなければ `message` にその旨を出す
+- 拡張の deactivate で `CANCEL` → `SHUTDOWN`（この順。`SHUTDOWN` は実行中の解析を止めない）
+
+### 解析に使う JDK
+
+Eclipse 版と同じ規則。**設定 → `JAVA_HOME` → 取得済み → PATH の `java`** の順に探す
+（Eclipse 版にある「Eclipse の JVM」に当たるものは無い）。17 未満は選ばない。
+無ければ Adoptium から取得する（約 200MB、**必ず一度確認する**。閉域では「JDK の場所を指定する」を案内する）。
+取得先は拡張のグローバルストレージ（`context.globalStorageUri/jdk/25/`）。
+vscode-java の `java.jdt.ls.java.home` を見るかどうかは §11 の宿題。
+
+---
+
+## 9. 配布物
+
+`.vsix` に解析に必要なものを全部入れる（Eclipse 版と同じ判断。閉域環境に1ファイルで持ち込める）。
+
+```
+jche-vscode-x.y.z.vsix
+├── dist/extension.js     … esbuild で1ファイルに束ねた拡張本体
+└── lib/
+    ├── jche-core.jar     … 解析本体（--release 17 でコンパイル、実行は JDK 25）
+    └── jdt/*.jar         … JDT 一式 13 個・約 11 MB
+```
+
+- `lib/` は Eclipse プラグインのビルド（`eclipse-plugin/pom.xml` の `maven-dependency-plugin`）と
+  **同じ版を同じ手順で集める**。`//DEPS` 行が唯一の出どころであり続けるようにする
+- 同梱する jar は EPL-2.0（このツール自身は Apache-2.0）。`NOTICE` に明記する
+- VSIX は 12〜13 MB になる。Marketplace の上限には余裕がある
+
+---
+
+## 10. 検査
+
+`test/vscode/run.sh` を足す。VSCode 本体を落としてくる検査（`@vscode/test-electron`）は
+CI の時間と閉域環境を考えると割に合わないので、**`vscode` モジュールに触らない層だけ**を Node で検査する。
+
+| 何を | どうやって |
+|---|---|
+| プロトコルクライアント | 実際に `--server` を起こして `HELLO` → `ANALYZE` → `AT` → `TREE` → `EXPORT` を通す（Eclipse 版の `test/plugin-client/run.sh` と対になる） |
+| 設定の自動生成 | `test/demo` に対して生成した設定で解析が通ること |
+| JDK の選び方・取得先 URL | ネットワーク無しで、Windows / Linux / macOS の組み立てを検査（Eclipse 版と**同じ期待値**を使い、2言語の実装がずれたら落ちるようにする） |
+| `AT` の境界 | 行がメソッドの外にあるとき、同じ行に複数の宣言があるとき、ファイルが解析結果に無いとき |
+| VSIX の中身 | `lib/jdt/` の版が `//DEPS` と一致すること（`test/pom/run.sh` と同じ考え方） |
+
+サーバー側に足す `AT` は `test/server/run.sh` にも1ケース足す。
+
+---
+
+## 11. 決めきれていない点
+
+- **vscode-java との関係**。入っている環境では「標準の呼び出し階層」と2つ並ぶ。
+  違いを説明する場所（README か、初回起動時の1回きりの通知か）を決めたい
+- **`AT` の精度**。メソッドの終了行を持たない割り切り（§4）で足りるか。
+  足りなければ `MethodTable` に終了行を足すことになるが、それはキャッシュの形式変更であり、
+  古いキャッシュを捨てる経路が要る（[cache-dependency-jars-qa.md](cache-dependency-jars-qa.md)）。安くはない
+- **リポジトリを分けるか**。`vscode-plugin/` を同居させると `npm` のビルドがこのリポジトリに入る。
+  分けると `lib/` の版合わせと `AT` の追従が面倒になる。同居を推すが、決めきれていない
+- **自動再解析の既定**（§7 は OFF を推す）。Eclipse 版と既定が違ってよいか
+- 大きなプロジェクトでの木の転送量。深さと件数の上限だけで足りるか（Eclipse 版では足りている）
+
+## 12. 段階
+
+| 段 | 内容 |
+|---|---|
+| M1 | サーバーに `AT` を足す（本体側だけで完結。`test/server/run.sh` で検査）|
+| M2 | プロトコルクライアント（`src/server/`）＋設定の自動生成。`vscode` に触らない層。`test/vscode/run.sh` |
+| M3 | ツリービュー・カーソルからの起動・状態表示・ログ出力（ここで「使える」状態になる）|
+| M4 | フィルタ一式・方向切り替え・CSV 出力・変更検知・JDK の取得 |
+| M5 | 配布（`.vsix` のビルドを CI に載せる）・使い方の文書（`docs/vscode-plugin-usage.md`）|
+
+M1 は本体側だけで終わり、Eclipse 版にも将来効く。M2 まで入れば「動くかどうか」は VSCode 無しで確かめられる。
