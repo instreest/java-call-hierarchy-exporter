@@ -7,3 +7,5 @@ esbuild.mjs
 tsconfig.json
 package-lock.json
 **/*.map
+scripts/**
+*.vsix

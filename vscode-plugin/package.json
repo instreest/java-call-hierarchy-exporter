@@ -217,11 +217,14 @@
     "typecheck": "tsc --noEmit",
     "build": "node esbuild.mjs",
     "build:test": "node esbuild.mjs --test",
-    "test": "npm run typecheck && npm run build:test && node --test \"out/test/*.test.js\""
+    "test": "npm run typecheck && npm run build:test && node --test \"out/test/*.test.js\"",
+    "lib": "bash scripts/collect-lib.sh",
+    "package": "npm run build && vsce package --no-dependencies --out call-hierarchy-exporter.vsix"
   },
   "devDependencies": {
     "@types/node": "22.20.3",
     "@types/vscode": "1.100.0",
+    "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   }

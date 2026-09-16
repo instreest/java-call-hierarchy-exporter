@@ -1,0 +1,19 @@
+Call Hierarchy Exporter for VSCode
+Copyright 2026 Inoue Kazuhiro (instreest)
+
+この拡張は Apache License 2.0 で配布します（LICENSE）。
+
+同梱物:
+
+  lib/jche-core.jar
+    java-call-hierarchy-exporter の解析本体。Apache License 2.0。
+
+  lib/jdt/*.jar
+    Eclipse JDT Core と、それが要る Eclipse Platform の jar
+    （ecj, org.eclipse.jdt.core, org.eclipse.osgi, org.eclipse.text,
+      org.eclipse.core.contenttype / filesystem / jobs / resources / runtime,
+      org.eclipse.equinox.common / preferences / registry, org.osgi.service.prefs）。
+    Eclipse Public License 2.0（https://www.eclipse.org/legal/epl-2.0/）。
+    版は同梱時点の eclipse-plugin/pom.xml の <jdt.version> と同じ。
+
+  同梱の jar は解析の子プロセスだけが読む。拡張ホスト（Node.js）には読み込まない。

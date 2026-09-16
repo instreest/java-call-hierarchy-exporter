@@ -404,6 +404,6 @@ Eclipse 版は同じ作りで足りているため、**先に複雑にはしな�
 | ~~M2~~ **済** | プロトコルクライアント（`vscode-plugin/src/server/`）＋設定の用意（`src/config.ts`）。`vscode` に触らない層。`test/vscode/run.sh` が Node だけで検査する（CI の `vscode-plugin` ジョブ）|
 | ~~M3~~ **済** | ツリービュー（`view.ts`）・カーソルからの起動（`AT`）・Language Status Item（`status.ts`）・出力チャネル・`viewsWelcome`・設定の選択と保存。木は**一括転送のまま**で、打ち切った節点だけ開いたときに取り寄せる。§11 の目安で測るのはこれから。**実機（VSCode）での動作確認はまだ**で、M5 で `lib/` を同梱してから行う |
 | M4 | フィルタ一式・方向切り替え・CSV 出力・変更検知・JDK の取得 |
-| M5 | 配布（`.vsix` のビルドを CI に載せる）・使い方の文書（`docs/vscode-plugin-usage.md`）|
+| ~~M5~~ **済**（M4 より先に実施） | 配布。`scripts/collect-lib.sh` が eclipse-plugin のビルドから `lib/` を集め（出どころを1つにする）、`npm run package` で `.vsix` を作る。`test/vscode/package.sh` が中身と JDT の版を検査し、CI が成果物として上げる。使い方は [vscode-plugin-usage.md](vscode-plugin-usage.md) |
 
 M1 は本体側だけで終わり、Eclipse 版にも将来効く。M2 まで入れば「動くかどうか」は VSCode 無しで確かめられる。

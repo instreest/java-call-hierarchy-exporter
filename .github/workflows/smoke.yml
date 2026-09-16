@@ -380,3 +380,19 @@ jobs:
 
       - name: VSCode plugin client test
         run: bash test/vscode/run.sh
+
+      # 配布物（.vsix）。lib/ は eclipse-plugin のビルドから集める（出どころを1つにするため）
+      - name: Cache Maven repository
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('eclipse-plugin/pom.xml') }}
+
+      - name: VSCode plugin package test (.vsix)
+        run: bash test/vscode/package.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: call-hierarchy-exporter-vsix
+          path: vscode-plugin/call-hierarchy-exporter.vsix
+          if-no-files-found: error

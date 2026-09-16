@@ -46,10 +46,11 @@ Java のファイルを開いただけでは何も始まりません。
 cd vscode-plugin
 npm ci
 npm test            # 型検査 → 検査（vscode に触らない層を Node だけで）
-npm run build       # dist/extension.js
+npm run lib         # eclipse-plugin を mvn package して lib/ を集める（JDK 21 以上と Maven）
+npm run package     # dist/extension.js に束ねて call-hierarchy-exporter.vsix を作る
 ```
 
-手元で動かすときは、`eclipse-plugin` をビルドしてできる `eclipse-plugin/target/classes/lib` を
-設定 `jche.libFolder` に指定し、VSCode の「拡張機能の開発ホスト」（F5）で起動します。
+手元で動かすときは VSCode でこのフォルダを開いて F5（拡張機能の開発ホスト）。`lib/` を集めていなければ、
+`eclipse-plugin/target/classes/lib` を設定 `jche.libFolder` に指定します。
 設計は [docs/vscode-plugin-design.md](../docs/vscode-plugin-design.md)、判断の記録は
 [docs/vscode-plugin-qa.md](../docs/vscode-plugin-qa.md) にあります。
