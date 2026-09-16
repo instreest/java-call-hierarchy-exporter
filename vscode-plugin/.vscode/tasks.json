@@ -1,0 +1,14 @@
+{
+  // launch.json の preLaunchTask から使う
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build",
+      "label": "npm: build",
+      "problemMatcher": ["$esbuild"],
+      "presentation": { "reveal": "silent" },
+      "group": "build"
+    }
+  ]
+}

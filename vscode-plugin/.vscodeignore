@@ -1,4 +1,5 @@
 # .vsix に入れないもの。入れるのは dist/ と lib/（解析本体と JDT）だけ
+.vscode/**
 src/**
 test/**
 out/**

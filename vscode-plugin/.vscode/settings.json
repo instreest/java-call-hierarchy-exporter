@@ -1,0 +1,14 @@
+{
+  // このフォルダを開いたときの作業用。配布物には入らない（.vscodeignore）
+  "files.exclude": {
+    "out": true,
+    "dist": true,
+    "node_modules": true
+  },
+  "search.exclude": {
+    "out": true,
+    "dist": true,
+    "node_modules": true,
+    "lib": true
+  }
+}

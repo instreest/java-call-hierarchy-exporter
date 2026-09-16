@@ -137,7 +137,7 @@ npm run package    # dist/extension.js に束ねて call-hierarchy-exporter.vsix
 `lib/` の出どころは Eclipse プラグインのビルドと同じで、JDT の版は `//DEPS` 行が唯一の正
 （`test/vscode/package.sh` が食い違いを検出する）。
 
-開発中に実機で動かすには、VSCode で `vscode-plugin/` を開いて F5（拡張機能の開発ホスト）。
+開発中に実機で動かすには、VSCode で `vscode-plugin/` を開いて F5（`.vscode/launch.json`。「test/demo を開く」の構成もある）。
 `lib/` が無ければ設定 `jche.libFolder` に `eclipse-plugin/target/classes/lib` を指す。
 
 ## 検査

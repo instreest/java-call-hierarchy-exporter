@@ -53,12 +53,12 @@ npm run package --silent >"$WORK/package.log" 2>&1 || { sed 's/^/       /' "$WOR
 
 unzip -Z1 call-hierarchy-exporter.vsix > "$WORK/entries"
 # vsce は README.md を readme.md に、LICENSE を LICENSE.txt に改名して入れる
-for must in extension/dist/extension.js extension/lib/jche-core.jar extension/readme.md extension/NOTICE extension/LICENSE.txt extension/package.json; do
+for must in extension/dist/extension.js extension/lib/jche-core.jar extension/readme.md extension/changelog.md extension/NOTICE extension/LICENSE.txt extension/package.json; do
     grep -qx "$must" "$WORK/entries" && ok "入っている: $must" || fail "入っていない: $must"
 done
 VSIX_JDT=$(grep -c '^extension/lib/jdt/.*\.jar$' "$WORK/entries")
 [ "$VSIX_JDT" -eq 13 ] && ok "入っている: lib/jdt/*.jar 13 個" || fail "lib/jdt/ の jar が 13 個でない（$VSIX_JDT）"
-for mustnot in '^extension/src/' '^extension/node_modules/' '^extension/test/' '^extension/out/' '^extension/scripts/'; do
+for mustnot in '^extension/src/' '^extension/node_modules/' '^extension/test/' '^extension/out/' '^extension/scripts/' '^extension/\.vscode/'; do
     if grep -qE "$mustnot" "$WORK/entries"; then fail "入ってはいけない: $mustnot"; else ok "入っていない: $mustnot"; fi
 done
 

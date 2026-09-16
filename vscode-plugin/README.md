@@ -50,7 +50,7 @@ npm run lib         # eclipse-plugin を mvn package して lib/ を集める（
 npm run package     # dist/extension.js に束ねて call-hierarchy-exporter.vsix を作る
 ```
 
-手元で動かすときは VSCode でこのフォルダを開いて F5（拡張機能の開発ホスト）。`lib/` を集めていなければ、
-`eclipse-plugin/target/classes/lib` を設定 `jche.libFolder` に指定します。
+手元で動かすときは VSCode でこのフォルダを開いて F5（`.vscode/launch.json`。「test/demo を開く」の構成もあります）。
+`lib/` を集めていなければ、`eclipse-plugin/target/classes/lib` を設定 `jche.libFolder` に指定します。
 設計は [docs/vscode-plugin-design.md](../docs/vscode-plugin-design.md)、判断の記録は
 [docs/vscode-plugin-qa.md](../docs/vscode-plugin-qa.md) にあります。
