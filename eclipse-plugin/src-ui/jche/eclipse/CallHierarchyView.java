@@ -268,7 +268,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 chooseConfigFile();
             }
         };
-        Action saveConfigAction = new Action("設定を config/config.properties に保存") {
+        Action saveConfigAction = new Action("設定を " + ProjectAnalysis.PREFERRED_CONFIG_PATH + " に保存") {
             @Override
             public void run() {
                 saveGeneratedConfig();
@@ -566,7 +566,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }), 300_000L, words.toArray(new String[0]));
     }
 
-    /** いま使っている設定（自動生成ぶん）をプロジェクト直下の config.properties に書き出す */
+    /** いま使っている設定（自動生成ぶん）をプロジェクトの config/jche.properties に書き出す */
     private void saveGeneratedConfig() {
         if (analysis == null) {
             return;
@@ -577,9 +577,10 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                     "すでに設定ファイルを使っています: " + (source == null ? "（なし）" : source.label()));
             return;
         }
-        // 本体の置き場所に合わせて config/ の下に作る
-        IFile target = analysis.project().getFile("config/config.properties");
-        if (target.exists() || analysis.project().getFile("config.properties").exists()) {
+        // 本体の置き場所に合わせて config/ の下に作る。名前は jche.properties（config.properties は
+        // 解析対象のプロジェクトが自前の設定に使っていることがあるので、そこへは書かない）
+        IFile target = analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
+        if (target.exists()) {
             MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
                     "設定ファイルはすでにあります。そちらが使われます。");
             return;

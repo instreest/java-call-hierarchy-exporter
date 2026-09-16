@@ -7,7 +7,8 @@
 
 ## 設定ファイル
 
-既定の設定ファイル [`config/config.properties`](../config/config.properties) で必須なのは **`project.root`** だけです。
+既定の設定ファイル [`config/config.properties`](../config/config.properties) で必須なのは **`project.root`** だけです
+（引数を省略したときは `config/config.properties`、無ければ `config/jche.properties` を読みます）。
 次の項目は空欄のままなら `project.root` の中身から決めます（明示したいときだけ書き換えます）。
 
 | 項目 | 空欄のときの決め方 |

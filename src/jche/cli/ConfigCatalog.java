@@ -31,6 +31,14 @@ public final class ConfigCatalog {
     public static final String CONFIGS_DIR_NAME = "config";
     /** 既定の設定ファイル（config/ の下）。一覧の先頭に出し、作成ウィザードのひな形にする */
     public static final String DEFAULT_CONFIG_NAME = "config.properties";
+    /**
+     * 既定の設定ファイルとして扱う名前（前にあるものほど優先）。
+     *
+     * 同梱しているのは {@link #DEFAULT_CONFIG_NAME} だが、{@code config.properties} はどのプロジェクトにも
+     * ありがちな名前なので、このツールの設定だと分かる {@code jche.properties} でも置けるようにしてある
+     * （Eclipse プラグインが利用者のプロジェクトに書き出すのはこちら）。読む側は両方を既定として扱う。
+     */
+    public static final List<String> DEFAULT_CONFIG_NAMES = List.of(DEFAULT_CONFIG_NAME, "jche.properties");
     private static final String RECENT_FILE = ".cache/recent-configs.txt";
 
     /** 一覧の 1 件。{@code display} はプロジェクトフォルダからの相対パス（表示用） */
@@ -51,14 +59,38 @@ public final class ConfigCatalog {
             }
         }
         // 既定の設定ファイルを先頭に、あとは名前順（OS のファイル列挙順に依存させない）
-        Path defaultConfig = configs.resolve(DEFAULT_CONFIG_NAME);
-        found.sort(Comparator.comparing((Path p) -> p.equals(defaultConfig) ? 0 : 1)
+        found.sort(Comparator.comparingInt((Path p) -> defaultRank(configs, p))
                 .thenComparing(p -> root.relativize(p).toString()));
         List<Entry> out = new ArrayList<>();
         for (Path p : found) {
             out.add(new Entry(p, root.relativize(p).toString().replace('\\', '/'), projectRootOf(p)));
         }
         return out;
+    }
+
+    /** 一覧の並び順。既定の名前（{@link #DEFAULT_CONFIG_NAMES} の順）を先頭に、それ以外は後ろ */
+    private static int defaultRank(Path configs, Path file) {
+        for (int i = 0; i < DEFAULT_CONFIG_NAMES.size(); i++) {
+            if (file.equals(configs.resolve(DEFAULT_CONFIG_NAMES.get(i)))) {
+                return i;
+            }
+        }
+        return DEFAULT_CONFIG_NAMES.size();
+    }
+
+    /**
+     * 既定の設定ファイル。{@link #DEFAULT_CONFIG_NAMES} のうち {@code config/} にあるものを順に探し、
+     * どれも無ければ同梱の {@link #DEFAULT_CONFIG_NAME} のパスを返す（「無い」と言うときの名前になる）。
+     */
+    public static Path defaultConfig(Path root) {
+        Path configs = root.resolve(CONFIGS_DIR_NAME);
+        for (String name : DEFAULT_CONFIG_NAMES) {
+            Path p = configs.resolve(name);
+            if (Files.isRegularFile(p)) {
+                return p;
+            }
+        }
+        return configs.resolve(DEFAULT_CONFIG_NAME);
     }
 
     /** 出力フォルダ名の形（yyyyMMdd-HHmmss_…）のフォルダの下にあるか */

@@ -31,8 +31,6 @@ import jche.util.UserHome;
  */
 public final class ConfigWizard {
 
-    private static final String TEMPLATE_NAME = ConfigCatalog.CONFIGS_DIR_NAME + "/" + ConfigCatalog.DEFAULT_CONFIG_NAME;
-
     private final Terminal t;
     private final Path root;
 
@@ -45,11 +43,12 @@ public final class ConfigWizard {
      * @return 作った設定ファイル。途中でやめたら null
      */
     public Path run() throws IOException {
-        Path template = root.resolve(TEMPLATE_NAME);
+        Path template = ConfigCatalog.defaultConfig(root);
         if (!Files.isRegularFile(template)) {
             t.println("ひな形の " + template + " がありません。");
             return null;
         }
+        String templateName = relative(template);
         t.println("新しい設定ファイルを作ります。Enter で [ ] の既定値、q で中止。");
         t.println("ここで尋ねない項目（exclude.packages、max.depth 等）はひな形の既定値のままになります。");
         t.println();
@@ -98,7 +97,7 @@ public final class ConfigWizard {
                 continue;
             }
             if (target.equals(template)) {
-                t.println("  ひな形の " + TEMPLATE_NAME + " 自体は上書きできません。別の名前にしてください。");
+                t.println("  ひな形の " + templateName + " 自体は上書きできません。別の名前にしてください。");
                 continue;
             }
             if (Files.exists(target)) {
@@ -175,7 +174,7 @@ public final class ConfigWizard {
         for (Map.Entry<String, String> e : values.entrySet()) {
             t.println("  " + e.getKey() + "=" + e.getValue());
         }
-        t.println("  （他の項目は " + TEMPLATE_NAME + " の既定値）");
+        t.println("  （他の項目は " + templateName + " の既定値）");
         if (!t.confirm("この内容で作りますか？", true)) {
             return null;
         }

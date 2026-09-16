@@ -43,6 +43,7 @@ import org.eclipse.jdt.core.JavaCore;
 import jche.analysis.CachePhaseResult;
 import jche.analysis.CallConditionScanner;
 import jche.analysis.CacheUpdater;
+import jche.cli.ConfigCatalog;
 import jche.config.Config;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
@@ -105,8 +106,14 @@ import jche.util.Log;
  */
 public class CallHierarchyExporter {
 
-    /** 引数を省略したときの設定ファイル（作業ディレクトリからの相対） */
-    private static final String DEFAULT_CONFIG = "config/config.properties";
+    /**
+     * 引数を省略したときの設定ファイル（作業ディレクトリからの相対）。
+     *
+     * 実際に使うのは {@link ConfigCatalog#defaultConfig}（{@code config/config.properties} が無ければ
+     * {@code config/jche.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
+     */
+    private static final String DEFAULT_CONFIG =
+            ConfigCatalog.CONFIGS_DIR_NAME + "/" + ConfigCatalog.DEFAULT_CONFIG_NAME;
 
     /**
      * 出力フォルダの場所を書き出すファイルを指す環境変数。
@@ -139,9 +146,10 @@ public class CallHierarchyExporter {
             configPaths.add(Paths.get(a));
         }
         if (configPaths.isEmpty()) {
-            System.err.println("設定ファイル（config.properties）のパスが指定されていません。");
-            System.err.println("既定値の「" + DEFAULT_CONFIG + "」で実行します。");
-            configPaths.add(Paths.get(DEFAULT_CONFIG));
+            Path defaultConfig = ConfigCatalog.defaultConfig(Paths.get(""));
+            System.err.println("設定ファイル（" + DEFAULT_CONFIG + "）のパスが指定されていません。");
+            System.err.println("既定値の「" + defaultConfig + "」で実行します。");
+            configPaths.add(defaultConfig);
         }
 
         int failed = runAll(configPaths, ToolRoot.locate(CallHierarchyExporter.class));
