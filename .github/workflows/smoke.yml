@@ -393,6 +393,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: call-hierarchy-exporter-vsix
-          path: vscode-plugin/call-hierarchy-exporter.vsix
+          name: java-call-hierarchy-exporter-vsix
+          path: vscode-plugin/java-call-hierarchy-exporter.vsix
           if-no-files-found: error

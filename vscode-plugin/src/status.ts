@@ -13,7 +13,7 @@ export class StatusItem implements vscode.Disposable {
 
     constructor() {
         this.item = vscode.languages.createLanguageStatusItem('jche.status', { language: 'java' });
-        this.item.name = 'Call Hierarchy Exporter';
+        this.item.name = 'Java Call Hierarchy Exporter';
         this.render(undefined);
     }
 

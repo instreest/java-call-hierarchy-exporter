@@ -1,6 +1,6 @@
 {
-  "name": "call-hierarchy-exporter",
-  "displayName": "Call Hierarchy Exporter",
+  "name": "java-call-hierarchy-exporter",
+  "displayName": "Java Call Hierarchy Exporter",
   "description": "Java プロジェクトの呼び出し階層を一括解析し、影響調査のための呼び出し元ツリーと CSV を出す",
   "version": "0.1.0",
   "publisher": "instreest",
@@ -267,7 +267,7 @@
     "build:test": "node esbuild.mjs --test",
     "test": "npm run typecheck && npm run build:test && node --test \"out/test/*.test.js\"",
     "lib": "bash scripts/collect-lib.sh",
-    "package": "npm run build && vsce package --no-dependencies --out call-hierarchy-exporter.vsix"
+    "package": "npm run build && vsce package --no-dependencies --out java-call-hierarchy-exporter.vsix"
   },
   "devDependencies": {
     "@types/node": "22.20.3",

@@ -47,11 +47,11 @@ else
 fi
 
 echo "== .vsix を作る =="
-rm -f call-hierarchy-exporter.vsix
+rm -f java-call-hierarchy-exporter.vsix
 npm run package --silent >"$WORK/package.log" 2>&1 || { sed 's/^/       /' "$WORK/package.log"; echo "FAIL"; exit 1; }
-[ -s call-hierarchy-exporter.vsix ] && ok ".vsix ができた（$(du -h call-hierarchy-exporter.vsix | cut -f1)）" || fail ".vsix ができていない"
+[ -s java-call-hierarchy-exporter.vsix ] && ok ".vsix ができた（$(du -h java-call-hierarchy-exporter.vsix | cut -f1)）" || fail ".vsix ができていない"
 
-unzip -Z1 call-hierarchy-exporter.vsix > "$WORK/entries"
+unzip -Z1 java-call-hierarchy-exporter.vsix > "$WORK/entries"
 # vsce は README.md を readme.md に、LICENSE を LICENSE.txt に改名して入れる
 for must in extension/dist/extension.js extension/lib/jche-core.jar extension/readme.md extension/changelog.md extension/NOTICE extension/LICENSE.txt extension/package.json; do
     grep -qx "$must" "$WORK/entries" && ok "入っている: $must" || fail "入っていない: $must"

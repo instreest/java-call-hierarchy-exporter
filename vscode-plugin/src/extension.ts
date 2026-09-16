@@ -23,7 +23,7 @@ let view: CallersView;
 let status: StatusItem;
 
 export function activate(context: vscode.ExtensionContext): void {
-    log = vscode.window.createOutputChannel('Call Hierarchy Exporter', { log: true });
+    log = vscode.window.createOutputChannel('Java Call Hierarchy Exporter', { log: true });
     sessions = new Map();
     view = new CallersView(log, context.workspaceState);
     status = new StatusItem();

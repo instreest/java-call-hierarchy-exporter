@@ -21,7 +21,7 @@ Test Explorer や CodeQL のように「重い解析を明示的に走らせ、�
 
 ## 入れ方
 
-1. `.vsix` を用意する … GitHub Actions の `smoke` ワークフローの成果物 `call-hierarchy-exporter-vsix`、
+1. `.vsix` を用意する … GitHub Actions の `smoke` ワークフローの成果物 `java-call-hierarchy-exporter-vsix`、
    または手元で作る（[ビルド](#ビルド)）
 2. VSCode の 拡張機能 → `…` → 「VSIX からのインストール」で入れる
 3. 解析に使う **JDK 17 以上**を用意する（CLI と結果を揃えるなら 25）。探す順は
@@ -86,7 +86,7 @@ JDK の取得を利用者が承諾したときだけ（[JDK が無いとき](#jd
 | 未解析 | まだ解析していない | クリックで解析 |
 | 解析中 フェーズ 120/5000 | 解析が走っている | クリックで中止 |
 | 10:31:04 時点 | この時刻の結果を表示している | ソースを変えたらクリックで再解析 |
-| 失敗 | 解析に失敗した | クリックでログ（出力チャネル「Call Hierarchy Exporter」） |
+| 失敗 | 解析に失敗した | クリックでログ（出力チャネル「Java Call Hierarchy Exporter」） |
 
 ### 「呼び出し元を表示」で出るメッセージ
 
@@ -131,7 +131,7 @@ JDK の取得を利用者が承諾したときだけ（[JDK が無いとき](#jd
 cd vscode-plugin
 npm ci
 npm run lib        # eclipse-plugin を mvn package して lib/ を集める（JDK 21 以上と Maven が要る）
-npm run package    # dist/extension.js に束ねて call-hierarchy-exporter.vsix を作る
+npm run package    # dist/extension.js に束ねて java-call-hierarchy-exporter.vsix を作る
 ```
 
 `lib/` の出どころは Eclipse プラグインのビルドと同じで、JDT の版は `//DEPS` 行が唯一の正

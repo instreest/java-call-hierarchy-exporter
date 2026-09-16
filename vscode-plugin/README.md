@@ -1,4 +1,4 @@
-# Call Hierarchy Exporter for VSCode
+# Java Call Hierarchy Exporter for VSCode
 
 Java プロジェクト**全体**のメソッド呼び出し階層を一括で解析し、改修の影響範囲を辿るための拡張です。
 解析エンジンは [java-call-hierarchy-exporter](https://github.com/instreest/java-call-hierarchy-exporter)（Eclipse JDT）で、
@@ -47,7 +47,7 @@ cd vscode-plugin
 npm ci
 npm test            # 型検査 → 検査（vscode に触らない層を Node だけで）
 npm run lib         # eclipse-plugin を mvn package して lib/ を集める（JDK 21 以上と Maven）
-npm run package     # dist/extension.js に束ねて call-hierarchy-exporter.vsix を作る
+npm run package     # dist/extension.js に束ねて java-call-hierarchy-exporter.vsix を作る
 ```
 
 手元で動かすときは VSCode でこのフォルダを開いて F5（`.vscode/launch.json`。「test/demo を開く」の構成もあります）。
