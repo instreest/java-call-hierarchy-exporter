@@ -39,8 +39,16 @@ export class StatusItem implements vscode.Disposable {
             }
             case 'analyzed': {
                 const time = state.at.toLocaleTimeString('ja-JP', { hour12: false });
-                this.item.text = `Call Hierarchy Exporter: ${time} 時点`;
-                this.item.detail = `${session.folder.name} / ${state.methods.toLocaleString()} メソッド / ${state.edges.toLocaleString()} 呼び出し / 設定: ${state.configLabel}`;
+                const dirty = state.dirty.size;
+                if (dirty > 0) {
+                    // 見えているものが古い。バナーの代わりにここで知らせる（docs/vscode-plugin-design.md §2.5）
+                    this.item.severity = vscode.LanguageStatusSeverity.Warning;
+                    this.item.text = `Call Hierarchy Exporter: ${time} 時点（${dirty} ファイル変更）`;
+                    this.item.detail = `${session.folder.name} / 解析後に ${dirty} ファイルが変更されています。表示は ${time} 時点のものです`;
+                } else {
+                    this.item.text = `Call Hierarchy Exporter: ${time} 時点`;
+                    this.item.detail = `${session.folder.name} / ${state.methods.toLocaleString()} メソッド / ${state.edges.toLocaleString()} 呼び出し / 設定: ${state.configLabel}`;
+                }
                 this.item.command = { command: 'jche.analyze', title: '再解析' };
                 return;
             }

@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { describeFilters, fromStored, toWords, type FilterSettings } from './filters';
 import { countMessage, describeRow, viewDescription, type Direction } from './labels';
 import { FLAG_TRUNCATED, hasFlag, type ServerRow } from './server/response';
 import { buildTree, countNodes, type TreeNode } from './server/tree';
@@ -31,12 +32,32 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
     private root: RootSpec | undefined;
     private tree: TreeNode | undefined;
     private _direction: Direction = 'callers';
+    private _filters: FilterSettings;
     /** 続きを取り寄せ済みの節点 */
     private readonly fetched = new WeakSet<TreeNode>();
 
-    constructor(private readonly log: vscode.LogOutputChannel) {
+    constructor(private readonly log: vscode.LogOutputChannel, private readonly state: vscode.Memento) {
         this.view = vscode.window.createTreeView('jche.callers', { treeDataProvider: this, showCollapseAll: true });
+        this._filters = fromStored(state.get('filters'), this.defaultDepth());
         void vscode.commands.executeCommand('setContext', 'jche.direction', this._direction);
+        void vscode.commands.executeCommand('setContext', 'jche.hasTree', false);
+    }
+
+    get filters(): FilterSettings {
+        return this._filters;
+    }
+
+    /** 条件を変えて木を取り直す。ワークスペースに覚える（次に開いたときも同じ） */
+    async setFilters(filters: FilterSettings): Promise<void> {
+        this._filters = filters;
+        await this.state.update('filters', filters);
+        if (this.root) {
+            await this.reload();
+        }
+    }
+
+    private filterWords(): string[] {
+        return toWords(this._filters);
     }
 
     get direction(): Direction {
@@ -47,7 +68,7 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
         return this.root;
     }
 
-    private depth(): number {
+    private defaultDepth(): number {
         return vscode.workspace.getConfiguration('jche').get<number>('depth', 5);
     }
 
@@ -73,12 +94,13 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
             this.tree = undefined;
             this.view.description = undefined;
             this.view.message = undefined;
+            await vscode.commands.executeCommand('setContext', 'jche.hasTree', false);
             this.changed.fire(undefined);
             return;
         }
         this.view.description = viewDescription(root.label, root.line, this._direction);
         this.view.message = '取り寄せ中…';
-        const response = await root.session.tree(root.key, this._direction, this.depth());
+        const response = await root.session.tree(root.key, this._direction, this.filterWords());
         if (!response.ok) {
             this.tree = undefined;
             this.view.message = response.reason === 'not-analyzed'
@@ -91,8 +113,44 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
         }
         this.tree = buildTree(response.rows);
         const truncated = response.rows.filter((r) => hasFlag(r, FLAG_TRUNCATED)).length;
-        this.view.message = countMessage(countNodes(this.tree), truncated, SERVER_MAX_ROWS);
+        const filterNote = describeFilters(this._filters);
+        this.view.message = [filterNote, countMessage(countNodes(this.tree), truncated, SERVER_MAX_ROWS)]
+            .filter((s) => s !== '').join('\n');
+        await vscode.commands.executeCommand('setContext', 'jche.hasTree', this.tree !== undefined);
         this.changed.fire(undefined);
+    }
+
+    /** 解析し直したあと、⚠ を消すために描き直す（木は取り直さない） */
+    refreshDecorations(): void {
+        this.changed.fire(undefined);
+    }
+
+    /** いま見えている木を、同じ条件で CSV に書く */
+    async exportCsv(): Promise<void> {
+        const root = this.root;
+        if (!root || !this.tree) {
+            vscode.window.showInformationMessage('先に木を表示してください。');
+            return;
+        }
+        const safe = root.label.replace(/[^\w.]+/g, '_').replace(/^_+|_+$/g, '');
+        const target = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(root.session.folder.uri.fsPath, `${this._direction}-${safe}.csv`)),
+            filters: { CSV: ['csv'] },
+            title: 'この木を CSV に出す',
+        });
+        if (!target) {
+            return;
+        }
+        const response = await root.session.export(root.key, this._direction, target.fsPath, this.filterWords());
+        if (!response.ok) {
+            vscode.window.showErrorMessage(`CSV に出せませんでした: ${response.reason}`);
+            return;
+        }
+        const answer = await vscode.window.showInformationMessage(
+            `${response.field('rows')} 行を書きました: ${target.fsPath}`, '開く');
+        if (answer) {
+            await vscode.window.showTextDocument(target);
+        }
     }
 
     clear(): void {
@@ -113,6 +171,11 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
         item.iconPath = look.iconColor
             ? new vscode.ThemeIcon(look.icon, new vscode.ThemeColor(look.iconColor))
             : new vscode.ThemeIcon(look.icon);
+        // 解析後に変更されたファイルの節点。古いことを理由にグレーアウトはしない（読めなくなるだけ）
+        if (node.row.file !== '' && this.root?.session.isDirty(node.row.file)) {
+            item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
+            item.tooltip = `${look.tooltip}\n⚠ ${node.row.file} は解析後に変更されています。再解析すると変わる可能性があります`;
+        }
         // 根は開いた状態で出す。子がある（か、打ち切りで続きがある）節点は閉じた状態。再帰は開けない
         const isRoot = node === this.tree;
         const mayHaveChildren = node.children.length > 0 || hasFlag(node.row, FLAG_TRUNCATED);
@@ -144,7 +207,7 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
             return [];
         }
         this.fetched.add(node);
-        const response = await root.session.tree(node.row.key, this._direction, this.depth());
+        const response = await root.session.tree(node.row.key, this._direction, this.filterWords());
         if (!response.ok) {
             this.log.warn(`続きを取り寄せられませんでした: ${node.row.key}（${response.reason}）`);
             return [];

@@ -1,6 +1,6 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 
 /**
@@ -107,4 +107,29 @@ export function parseVersion(text: string): number {
         return Number.parseInt(match[2], 10);
     }
     return major;
+}
+
+/**
+ * 取得して展開した JDK の置き場所（`<globalStorage>/jdk/<版>/…`）から java を探す。
+ * 配布物は中に1段フォルダを作る（macOS は `Contents/Home` の下）ので、再帰で降りる。
+ * 無ければ undefined。
+ */
+export function findJavaIn(dir: string, depth = 4): string | undefined {
+    if (depth < 0 || !existsSync(dir) || !statSync(dir).isDirectory()) {
+        return undefined;
+    }
+    const direct = executableIn(dir);
+    if (existsSync(direct) && statSync(direct).isFile()) {
+        return direct;
+    }
+    for (const child of readdirSync(dir).sort()) {
+        const full = path.join(dir, child);
+        if (statSync(full).isDirectory()) {
+            const found = findJavaIn(full, depth - 1);
+            if (found) {
+                return found;
+            }
+        }
+    }
+    return undefined;
 }

@@ -6,7 +6,8 @@ import * as vscode from 'vscode';
 import { labelOf, materialize, resolveConfigSource, savedConfigText, type ConfigSource } from './config';
 import type { Direction } from './labels';
 import { DEFAULT_TIMEOUT_MS, type ServerConnection } from './server/connection';
-import { chooseJava, type FoundJava } from './server/javaLocator';
+import { chooseJava, findJavaIn, PREFERRED, type FoundJava } from './server/javaLocator';
+import { installJdk } from './server/jdkDownload';
 import { bundledClasspath, launchServer } from './server/launcher';
 import type { ServerResponse } from './server/response';
 
@@ -14,7 +15,9 @@ import type { ServerResponse } from './server/response';
 export type SessionState =
     | { readonly kind: 'unanalyzed' }
     | { readonly kind: 'analyzing'; readonly label: string; readonly done: number; readonly total: number }
-    | { readonly kind: 'analyzed'; readonly at: Date; readonly methods: number; readonly edges: number; readonly configLabel: string }
+    | { readonly kind: 'analyzed'; readonly at: Date; readonly methods: number; readonly edges: number; readonly configLabel: string;
+        /** 解析後に変更されたファイル（project.root からの相対パス）。空なら最新 */
+        readonly dirty: ReadonlySet<string> }
     | { readonly kind: 'failed'; readonly reason: string };
 
 /** ワークスペースフォルダ1つぶんの解析セッション。子プロセスを1つ持つ */
@@ -25,6 +28,10 @@ export class Session implements vscode.Disposable {
     private _state: SessionState = { kind: 'unanalyzed' };
     private readonly stateEmitter = new vscode.EventEmitter<SessionState>();
     readonly onDidChangeState = this.stateEmitter.event;
+    /** 解析後に変わった *.java（相対パス）。最初の解析が終わってから数え始める */
+    private readonly dirty = new Set<string>();
+    private watcher: vscode.FileSystemWatcher | undefined;
+    private autoTimer: NodeJS.Timeout | undefined;
 
     constructor(
         readonly folder: vscode.WorkspaceFolder,
@@ -114,11 +121,68 @@ export class Session implements vscode.Disposable {
         const candidates: (string | undefined)[] = [
             configured !== '' ? configured : undefined,
             process.env.JAVA_HOME,
+            findJavaIn(this.downloadDir()),     // 以前この拡張が取得したもの
             ...(process.env.PATH ?? '').split(path.delimiter)
                 .filter((dir) => dir !== '')
                 .map((dir) => path.join(dir, process.platform === 'win32' ? 'java.exe' : 'java')),
         ];
         return chooseJava(candidates);
+    }
+
+    private downloadDir(): string {
+        return path.join(this.context.globalStorageUri.fsPath, 'jdk', String(PREFERRED));
+    }
+
+    /**
+     * JDK が無いときの手当て。黙って取りに行かず、必ず一度確認する（約 200MB）。
+     * 閉域では取得できないので「場所を指定する」も並べる。
+     */
+    private async offerJdk(): Promise<FoundJava | undefined> {
+        const canDownload = this.settings().get<boolean>('jdkDownload', true);
+        const download = `取得する（Adoptium から JDK ${PREFERRED}、約 200MB）`;
+        const specify = 'JDK の場所を指定する…';
+        const answer = await vscode.window.showWarningMessage(
+            `解析に使う JDK（17 以上）が見つかりません。設定 jche.javaHome、環境変数 JAVA_HOME、PATH の順に探しました。`,
+            { modal: true, detail: canDownload
+                ? '取得する場合は拡張のストレージに置き、環境は汚しません。閉域ネットワークでは「場所を指定する」を選んでください。'
+                : '設定 jche.jdkDownload が OFF なので取得は提案しません。' },
+            ...(canDownload ? [download, specify] : [specify]));
+        if (answer === specify) {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFiles: false, canSelectFolders: true, canSelectMany: false, title: 'JDK のフォルダ（bin/java があるところ）' });
+            if (!picked || picked.length === 0) {
+                return undefined;
+            }
+            const found = chooseJava([picked[0].fsPath]);
+            if (!found) {
+                vscode.window.showErrorMessage(`${picked[0].fsPath} は JDK 17 以上として使えません（bin/java が無いか、版が古い）。`);
+                return undefined;
+            }
+            await vscode.workspace.getConfiguration('jche').update('javaHome', picked[0].fsPath, vscode.ConfigurationTarget.Global);
+            return found;
+        }
+        if (answer !== download) {
+            return undefined;
+        }
+        const targetDir = path.dirname(this.downloadDir());
+        try {
+            const java = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `JDK ${PREFERRED} を取得中`, cancellable: true },
+                (progress, token) => installJdk(PREFERRED, targetDir, {
+                    received: (done, total) => progress.report({
+                        message: total > 0 ? `${Math.round(done / 1048576)} / ${Math.round(total / 1048576)} MB` : `${Math.round(done / 1048576)} MB`,
+                    }),
+                    isCancelled: () => token.isCancellationRequested,
+                }));
+            this.log.info(`JDK を取得しました: ${java}（Adoptium Temurin ${PREFERRED}）`);
+            return chooseJava([java]);
+        } catch (e) {
+            const reason = e instanceof Error ? e.message : String(e);
+            this.log.error(`JDK の取得に失敗しました: ${reason}`);
+            const retry = await vscode.window.showErrorMessage(
+                `JDK の取得に失敗しました: ${reason}`, 'JDK の場所を指定する…');
+            return retry ? this.offerJdk() : undefined;
+        }
     }
 
     private classpath(): string[] {
@@ -131,7 +195,7 @@ export class Session implements vscode.Disposable {
         if (this.connection?.alive) {
             return this.connection;
         }
-        const java = this.findJava();
+        const java = this.findJava() ?? (await this.offerJdk());
         if (!java) {
             throw new Error('解析に使う JDK（17 以上）が見つかりません。設定 jche.javaHome に JDK のフォルダを指定してください。');
         }
@@ -242,13 +306,16 @@ export class Session implements vscode.Disposable {
                 this.log.warn(`解析: ${reason}`);
                 return false;
             }
+            this.dirty.clear();
             this.setState({
                 kind: 'analyzed',
                 at: new Date(),
                 methods: response.numberField('methods', 0),
                 edges: response.numberField('edges', 0),
                 configLabel: labelOf(source, this.folder.uri.fsPath),
+                dirty: new Set(),
             });
+            this.watch();
             this.log.info(`解析が終わりました: methods=${response.field('methods')} edges=${response.field('edges')}`);
             return true;
         } catch (e) {
@@ -267,6 +334,62 @@ export class Session implements vscode.Disposable {
         this.connection?.cancel();
     }
 
+    // ------------------------------------------------------------
+    // 変更の検知（docs/vscode-plugin-design.md §7）
+    // ------------------------------------------------------------
+
+    /** *.java と設定ファイルの変更を数える。タイピング中は見ない（保存・追加・削除だけ） */
+    private watch(): void {
+        if (this.watcher) {
+            return;
+        }
+        this.watcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(this.folder, '**/*.{java,properties}'));
+        const mark = (uri: vscode.Uri) => {
+            const relative = path.relative(this.folder.uri.fsPath, uri.fsPath).split(path.sep).join('/');
+            if (relative.startsWith('..') || (relative.endsWith('.properties') && relative !== 'config.properties' && !relative.endsWith('/config.properties'))) {
+                return;
+            }
+            this.dirty.add(relative);
+            if (this._state.kind === 'analyzed') {
+                this.setState({ ...this._state, dirty: new Set(this.dirty) });
+            }
+            this.scheduleAutoAnalyze();
+        };
+        this.watcher.onDidChange(mark);
+        this.watcher.onDidCreate(mark);
+        this.watcher.onDidDelete(mark);
+    }
+
+    /** 自動再解析（既定 OFF）。3 秒静止したら裏で走らせる */
+    private scheduleAutoAnalyze(): void {
+        if (!this.settings().get<boolean>('autoAnalyze', false)) {
+            return;
+        }
+        if (this.autoTimer) {
+            clearTimeout(this.autoTimer);
+        }
+        this.autoTimer = setTimeout(() => {
+            this.autoTimer = undefined;
+            if (this.analyzing || this.dirty.size === 0) {
+                return;
+            }
+            // 自動のときは静かに（右下の細い進捗）。手動と違って通知は出さない
+            void vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Window, title: `影響調査: ${this.folder.name} を更新中` },
+                () => this.analyze());
+        }, 3_000);
+    }
+
+    /** 解析後に変わったファイル数 */
+    get dirtyCount(): number {
+        return this.dirty.size;
+    }
+
+    isDirty(relativeFile: string): boolean {
+        return this.dirty.has(relativeFile);
+    }
+
     get isAnalyzed(): boolean {
         return this._state.kind === 'analyzed' && this.connection?.alive === true;
     }
@@ -280,15 +403,21 @@ export class Session implements vscode.Disposable {
         return this.request(DEFAULT_TIMEOUT_MS, 'FIND', key);
     }
 
-    tree(key: string, direction: Direction, depth: number): Promise<ServerResponse> {
-        return this.request(120_000, 'TREE', key, direction, `depth=${depth}`);
+    /** 木を切り出す。`filterWords` は `depth=5` のような語（`filters.ts#toWords`） */
+    tree(key: string, direction: Direction, filterWords: readonly string[]): Promise<ServerResponse> {
+        return this.request(120_000, 'TREE', key, direction, ...filterWords);
     }
 
-    export(key: string, direction: Direction, output: string, depth: number): Promise<ServerResponse> {
-        return this.request(600_000, 'EXPORT', key, direction, output, `depth=${depth}`);
+    /** いま見えている木と同じ条件で CSV に書く */
+    export(key: string, direction: Direction, output: string, filterWords: readonly string[]): Promise<ServerResponse> {
+        return this.request(600_000, 'EXPORT', key, direction, output, ...filterWords);
     }
 
     dispose(): void {
+        if (this.autoTimer) {
+            clearTimeout(this.autoTimer);
+        }
+        this.watcher?.dispose();
         void this.shutdown('拡張の終了');
         this.stateEmitter.dispose();
     }

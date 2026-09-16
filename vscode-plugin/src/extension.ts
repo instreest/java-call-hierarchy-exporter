@@ -25,7 +25,7 @@ let status: StatusItem;
 export function activate(context: vscode.ExtensionContext): void {
     log = vscode.window.createOutputChannel('Call Hierarchy Exporter', { log: true });
     sessions = new Map();
-    view = new CallersView(log);
+    view = new CallersView(log, context.workspaceState);
     status = new StatusItem();
     context.subscriptions.push(log, view, status);
 
@@ -34,9 +34,13 @@ export function activate(context: vscode.ExtensionContext): void {
         let session = sessions.get(key);
         if (!session) {
             session = new Session(folder, context, log);
-            session.onDidChangeState(() => {
+            session.onDidChangeState((state) => {
                 if (session === currentSession()) {
                     status.render(session);
+                }
+                // ⚠ の付け外し。木そのものは取り直さない（解析が終わったときは analyze() が reload する）
+                if (state.kind === 'analyzed' && view.currentRoot?.session === session) {
+                    view.refreshDecorations();
                 }
             });
             sessions.set(key, session);
@@ -177,6 +181,51 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         }),
         vscode.commands.registerCommand('jche.toggleDirection', () => view.toggleDirection()),
+        vscode.commands.registerCommand('jche.export', () => view.exportCsv()),
+        vscode.commands.registerCommand('jche.filterText', async () => {
+            const text = await vscode.window.showInputBox({
+                title: '絞り込み文字列',
+                prompt: '型名・メソッド名・パッケージの部分一致。* と ** も使えます。空にすると解除',
+                value: view.filters.text,
+            });
+            if (text !== undefined) {
+                await view.setFilters({ ...view.filters, text: text.trim() });
+            }
+        }),
+        vscode.commands.registerCommand('jche.filterOptions', async () => {
+            const f = view.filters;
+            type Item = vscode.QuickPickItem & { key: 'includeTests' | 'includeGuessed' | 'applyExcludePackages' | 'dedupe' | 'depth' };
+            const items: Item[] = [
+                { key: 'depth', label: `$(list-tree) 深さ: ${f.maxDepth}`, description: '一度に展開する深さを変える', alwaysShow: true },
+                { key: 'includeTests', label: 'テストのソースを含む', description: 'src/test/java 等', picked: f.includeTests },
+                { key: 'includeGuessed', label: '推定（データフロー・リフレクション）で特定した呼び出しを含む', picked: f.includeGuessed },
+                { key: 'applyExcludePackages', label: '設定ファイルの exclude.packages を適用する', picked: f.applyExcludePackages },
+                { key: 'dedupe', label: '同じメソッドを 1 回だけ出す', description: 'OFF なら呼び出している行ごとに出す', picked: f.dedupe },
+            ];
+            const picked = await vscode.window.showQuickPick(items, {
+                canPickMany: true, title: 'フィルタ設定（解析はやり直しません）',
+            });
+            if (!picked) {
+                return;
+            }
+            let next = {
+                ...f,
+                includeTests: picked.some((i) => i.key === 'includeTests'),
+                includeGuessed: picked.some((i) => i.key === 'includeGuessed'),
+                applyExcludePackages: picked.some((i) => i.key === 'applyExcludePackages'),
+                dedupe: picked.some((i) => i.key === 'dedupe'),
+            };
+            if (picked.some((i) => i.key === 'depth')) {
+                const depth = await vscode.window.showInputBox({
+                    title: '深さ', prompt: '一度に展開する深さ（1〜50）', value: String(f.maxDepth),
+                    validateInput: (v) => /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 50 ? undefined : '1〜50 の整数',
+                });
+                if (depth !== undefined) {
+                    next = { ...next, maxDepth: Number(depth) };
+                }
+            }
+            await view.setFilters(next);
+        }),
         vscode.commands.registerCommand('jche.openCallSite', (node: TreeNode) => view.openCallSite(node)),
         vscode.commands.registerCommand('jche.setRoot', async (node: TreeNode) => {
             const root = view.currentRoot;
