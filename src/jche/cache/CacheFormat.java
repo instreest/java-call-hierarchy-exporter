@@ -373,9 +373,32 @@ public final class CacheFormat {
         return line.isEmpty() ? '\0' : line.charAt(0);
     }
 
-    /** 1行をタブで分割する。末尾の空列も落とさない */
+    /**
+     * 1行をタブで分割する。末尾の空列も落とさない。
+     *
+     * {@code String.split} を使わず自前で分けるのは、キャッシュを読む経路で
+     * 行の数だけ通るため。区切りの数を先に数えて配列を1つだけ作れば、
+     * 途中の可変長リストとその作り直しが要らない
+     */
     public static String[] columnsOf(String line) {
-        return line.split(SEP, -1);
+        char sep = SEP.charAt(0);
+        int count = 1;
+        for (int i = 0; i < line.length(); i++) {
+            if (line.charAt(i) == sep) {
+                count++;
+            }
+        }
+        String[] cols = new String[count];
+        int at = 0;
+        int from = 0;
+        for (int i = 0; i < line.length(); i++) {
+            if (line.charAt(i) == sep) {
+                cols[at++] = line.substring(from, i);
+                from = i + 1;
+            }
+        }
+        cols[at] = line.substring(from);
+        return cols;
     }
 
     /** 指定位置の列。無ければ空文字（後ろに列が足された旧形式を許容するため） */
@@ -392,7 +415,27 @@ public final class CacheFormat {
         if (s == null) {
             return "";
         }
-        return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
+        // 大半の値は落とす文字を含まない。まず1回だけ走査して、含まなければそのまま返す
+        // （以前は含まない場合でも replace を3回通していた）
+        int at = -1;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\t' || c == '\n' || c == '\r') {
+                at = i;
+                break;
+            }
+        }
+        if (at < 0) {
+            return s;
+        }
+        char[] chars = s.toCharArray();
+        for (int i = at; i < chars.length; i++) {
+            char c = chars[i];
+            if (c == '\t' || c == '\n' || c == '\r') {
+                chars[i] = ' ';
+            }
+        }
+        return new String(chars);
     }
 
     /**
@@ -562,7 +605,14 @@ public final class CacheFormat {
      * そのまま行の破壊にならないよう、最後の関所としてここで落とす。
      */
     public static String joinRow(String... cols) {
-        StringBuilder sb = new StringBuilder();
+        // 行の長さを先に見積もっておく（継ぎ足しのたびに内部の配列を作り直さないため）
+        int capacity = cols.length;
+        for (String col : cols) {
+            if (col != null) {
+                capacity += col.length();
+            }
+        }
+        StringBuilder sb = new StringBuilder(capacity);
         for (int i = 0; i < cols.length; i++) {
             if (i > 0) {
                 sb.append(SEP);

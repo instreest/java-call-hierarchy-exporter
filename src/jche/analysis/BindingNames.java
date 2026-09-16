@@ -2,7 +2,9 @@
 package jche.analysis;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
@@ -21,10 +23,27 @@ import jche.cache.MethodRef;
  *
  * 名前を求めた型は「このファイルの解決結果が依存する型」として {@link FileAnalysis#referencedTypes}
  * に記録する（I行の元）。差分更新で、依存先のファイルが変わったときに再解析するため。
+ *
+ * <h2>同じ型を何度も名前にしない</h2>
+ * {@link #typeNameOf} は AST の走査中に極めて多く呼ばれる（フィールド参照1つ、実引数1つごとに
+ * 呼ばれる）。{@code ITypeBinding.getQualifiedName()} はそのたびに名前を組み立てるため、
+ * 同じ型について何度も同じ文字列を作り直すことになる。JDT のバインディングは1回のパースの中で
+ * 同じ型なら同じインスタンスなので、<b>インスタンスの同一性</b>で結果を覚えておく
+ * （{@link #typeNames}）。この表はファイル1件ぶんの寿命しかなく（{@link FactVisitor} が
+ * ファイルごとに作る）、解析が終われば {@link FileAnalysis} ごと捨てられる。
  */
 final class BindingNames {
 
+    /** {@link #typeNames} で「名前が取れなかった」を表す印（Map は null を「未登録」と区別できないため） */
+    private static final String NO_NAME = "";
+
     private final FileAnalysis out;
+    /**
+     * 型のバインディング -> 識別名。1ファイルの解析の間だけ持つ。
+     * equals ではなくインスタンスの同一性で引くのは、{@code ITypeBinding.equals} が
+     * 名前の比較まで行うため（覚える目的に対して高くつく）
+     */
+    private final Map<ITypeBinding, String> typeNames = new IdentityHashMap<>();
 
     BindingNames(FileAnalysis out) {
         this.out = out;
@@ -40,8 +59,56 @@ final class BindingNames {
         return (t.getPackage() != null) ? t.getPackage().getName() : "";
     }
 
+    /**
+     * 修飾子の語を組み立て済みで持っておく表。添字は {@link #modifierIndex} が作る 7 ビット。
+     *
+     * 修飾子は「public」「private,static,final」のように取りうる組み合わせが高々 128 通りしかないのに、
+     * メソッド宣言1件・フィールド参照1件ごとに同じ文字列を作り直していた。組み立て済みのものを
+     * 共有すれば、作り直しの手間も、同じ内容の文字列が事実（D行・A行）の数だけヒープに残るのも無くなる。
+     * 中身は不変な文字列で、同じ添字には必ず同じ内容が入るため、埋める順序は結果に影響しない
+     */
+    private static final String[] MODIFIER_CACHE = new String[128];
+
+    /** {@link #MODIFIER_CACHE} の添字。関係する修飾子ビットだけを詰めた 7 ビット */
+    private static int modifierIndex(int modifiers) {
+        int index = 0;
+        if (Modifier.isPublic(modifiers)) {
+            index |= 1;
+        }
+        if (Modifier.isProtected(modifiers)) {
+            index |= 1 << 1;
+        }
+        if (Modifier.isPrivate(modifiers)) {
+            index |= 1 << 2;
+        }
+        if (Modifier.isStatic(modifiers)) {
+            index |= 1 << 3;
+        }
+        if (Modifier.isFinal(modifiers)) {
+            index |= 1 << 4;
+        }
+        if (Modifier.isAbstract(modifiers)) {
+            index |= 1 << 5;
+        }
+        if (Modifier.isDefault(modifiers)) {
+            index |= 1 << 6;
+        }
+        return index;
+    }
+
     /** 修飾子ビットをカンマ区切りの語に落とす（{@link jche.cache.ModifierTokens} の語彙） */
     static String modifiersOf(int modifiers) {
+        int index = modifierIndex(modifiers);
+        String cached = MODIFIER_CACHE[index];
+        if (cached != null) {
+            return cached;
+        }
+        String built = buildModifiers(modifiers);
+        MODIFIER_CACHE[index] = built;
+        return built;
+    }
+
+    private static String buildModifiers(int modifiers) {
         StringBuilder sb = new StringBuilder();
         appendIf(sb, Modifier.isPublic(modifiers), "public");
         appendIf(sb, Modifier.isProtected(modifiers), "protected");
@@ -132,6 +199,18 @@ final class BindingNames {
         if (t == null) {
             return null;
         }
+        String known = typeNames.get(t);
+        if (known != null) {
+            // 依存（I行）への記録は最初に名前を求めたときに済んでいる
+            return known.isEmpty() ? null : known;
+        }
+        String name = resolveTypeName(t);
+        typeNames.put(t, (name == null) ? NO_NAME : name);
+        return name;
+    }
+
+    /** {@link #typeNameOf} の本体（覚えていない型のときだけ通る） */
+    private String resolveTypeName(ITypeBinding t) {
         String n = t.getQualifiedName();
         if (n == null || n.isEmpty()) {
             n = t.getBinaryName();               // 例: jp.co.xxx.Outer$1
