@@ -27,6 +27,9 @@ import java.nio.file.StandardOpenOption;
  *   }
  * </pre>
  * 列の分割（{@link #columns}）は必要になった行でだけ行う。行種別だけ見て読み飛ばす行が多いため。
+ *
+ * <p>例外は {@link #lastLineOf} で、最終行（Z 行）だけを見たい場面のためにファイルの末尾だけを読む。
+ * 形式を知っているのはこのクラスなので、読み方もここに置いている。
  */
 public final class CacheReader implements Closeable {
 

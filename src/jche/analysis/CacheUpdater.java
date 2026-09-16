@@ -215,9 +215,12 @@ public final class CacheUpdater {
                 // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
                 valid.clear();
                 libraryAffected.clear();
-            } else if (oldCacheUsable) {
-                // --- パス1b: dataflow 側にブロックが無いものは有効から外す（対でないブロックを残さない） ---
-                dropBlocksMissingFromDataflowCache(valid, libraryAffected);
+            } else if (oldCacheUsable
+                    && !dropBlocksMissingFromDataflowCache(valid, libraryAffected)) {
+                // --- パス1b: dataflow 側が読めない。中途半端に再利用すると値が欠けるので丸ごと捨てる ---
+                valid.clear();
+                libraryAffected.clear();
+                oldConstants.clear();
             }
             // ソース一覧の指紋（T行）。L 行の直後という位置は形式で決まっている。
             // ハッシュはパス1 と共通で、1ファイル 1 回しか読まない（hashOf）
@@ -1174,9 +1177,15 @@ public final class CacheUpdater {
      * <p>ついでに K 行（宣言している定数の値）の指紋もここで集める。定数は値なので dataflow 側にあり、
      * <b>定数の連鎖の判断も dataflow 側を読んで行う</b>（{@code docs/cache-split-qa.md} の Q11）。
      * ブロックの走査はどうせ1回するので、同じ走査で済ませている。
+     *
+     * <p>ここは<b>dataflow 側を最初に丸ごと読む場所</b>なので、文字が壊れている・読めないことに
+     * 気づくのもここになる（パス0 は末尾の数百バイトしか読まない）。読めなければ例外を投げずに
+     * false を返し、呼び出し側に両方とも捨てさせる。1 つのキャッシュが壊れているだけで
+     * 解析そのものを失敗させてはいけない（{@link #scanOldCache} が false を返すときと同じ扱い）。
+     *
+     * @return そのまま使ってよければ true。読めないなら false（両方捨てて全件解析する）
      */
-    private void dropBlocksMissingFromDataflowCache(Set<String> valid, Set<String> libraryAffected)
-            throws IOException {
+    private boolean dropBlocksMissingFromDataflowCache(Set<String> valid, Set<String> libraryAffected) {
         Set<String> present = new HashSet<>();
         try (CacheReader in = CacheReader.open(config.dataflowCacheFile)) {   // ヘッダはパス0で検証済み
             String blockRel = null;                       // 有効・無効によらずブロックのファイル
@@ -1194,6 +1203,9 @@ public final class CacheUpdater {
                 }
             }
             rememberConstants(blockRel, blockConstants);   // 最後のブロック
+        } catch (IOException | RuntimeException e) {
+            Log.warn("[cache] データフローのキャッシュを読めないため、両方を破棄して全件解析します: " + e);
+            return false;
         }
         int dropped = 0;
         for (Iterator<String> it = valid.iterator(); it.hasNext();) {
@@ -1207,6 +1219,7 @@ public final class CacheUpdater {
         if (dropped > 0) {
             Log.info("[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: " + dropped + " 件");
         }
+        return true;
     }
 
     private static void writeLine(BufferedWriter w, String line) throws IOException {
