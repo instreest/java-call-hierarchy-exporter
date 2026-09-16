@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
@@ -21,10 +22,12 @@ import jche.cache.MethodRef;
 /** フィールドの参照箇所（A行）を記録する。{@link FactVisitor} の SimpleName の訪問から呼ばれる */
 final class FieldAccessRecorder {
 
+    private final CompilationUnit cu;
     private final FileAnalysis out;
     private final BindingNames names;
 
-    FieldAccessRecorder(FileAnalysis out, BindingNames names) {
+    FieldAccessRecorder(CompilationUnit cu, FileAnalysis out, BindingNames names) {
+        this.cu = cu;
         this.out = out;
         this.names = names;
     }
@@ -36,8 +39,12 @@ final class FieldAccessRecorder {
      * super.x の x）ので、SimpleName だけを見れば重複なく拾える。
      * 宣言そのもの（フィールド宣言の名前）は除く。配列の length のように
      * 型に属さないものも除く。
+     *
+     * <p>行番号は「フィールドの参照だと分かってから」求める。SimpleName はソース中で最も多い
+     * ノードで、その大半はフィールドではない（型名・メソッド名・ローカル変数）。先に行番号を
+     * 求めると、記録しないものについても行の割り出し（位置からの二分探索）を毎回行うことになる。
      */
-    void record(SimpleName node, int line, List<MethodRef> callers, int lambdaDepth) {
+    void record(SimpleName node, List<MethodRef> callers, int lambdaDepth) {
         if (node.isDeclaration()) {
             return;
         }
@@ -52,6 +59,7 @@ final class FieldAccessRecorder {
         if (ownerFqn == null) {
             return;
         }
+        int line = cu.getLineNumber(node.getStartPosition());
         String access = accessKindOf(node);
         String mods = BindingNames.modifiersOf(vb.getModifiers());
         if (callers == null) {

@@ -29,9 +29,32 @@ public final class ModifierTokens {
         return (mods == null || mods.isEmpty()) ? token : mods + "," + token;
     }
 
-    /** その語が含まれるか */
+    /**
+     * その語が含まれるか。
+     *
+     * カンマ区切りの語をその場で走査する。以前は {@code "," + mods + ","} と
+     * {@code "," + token + ","} の2つの文字列を毎回作ってから探していたが、
+     * この判定は行を読むたびに何度も通るため、作った文字列がそのままゴミになっていた
+     */
     public static boolean has(String mods, String token) {
-        return mods != null && !mods.isEmpty()
-                && ("," + mods + ",").contains("," + token + ",");
+        if (mods == null || mods.isEmpty() || token == null || token.isEmpty()) {
+            return false;
+        }
+        int length = token.length();
+        int from = 0;
+        while (from <= mods.length() - length) {
+            int at = mods.indexOf(token, from);
+            if (at < 0) {
+                return false;
+            }
+            boolean headOk = (at == 0) || mods.charAt(at - 1) == ',';
+            int end = at + length;
+            boolean tailOk = (end == mods.length()) || mods.charAt(end) == ',';
+            if (headOk && tailOk) {
+                return true;
+            }
+            from = at + 1;
+        }
+        return false;
     }
 }

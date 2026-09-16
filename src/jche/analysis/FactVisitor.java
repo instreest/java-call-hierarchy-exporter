@@ -128,7 +128,7 @@ final class FactVisitor extends ASTVisitor {
         this.types = new TypeContextTracker(out, names);
         this.calls = new CallSiteRecorder(cu, out, names, collectors,
                 new GuardCollector(origins, recordAllConditions));
-        this.fieldAccesses = new FieldAccessRecorder(out, names);
+        this.fieldAccesses = new FieldAccessRecorder(cu, out, names);
     }
 
     /**
@@ -314,15 +314,17 @@ final class FactVisitor extends ASTVisitor {
 
     @Override
     public boolean visit(MethodDeclaration node) {
-        MethodRef ref = names.toRef(node.resolveBinding());
+        // バインディングの解決は1回だけ（名前・修飾子・アノテーションで同じものを使う）
+        IMethodBinding binding = node.resolveBinding();
+        MethodRef ref = names.toRef(binding);
         if (ref != null) {
-            String mods = BindingNames.modifiersOf(node.resolveBinding().getModifiers());
+            String mods = BindingNames.modifiersOf(binding.getModifiers());
             if (node.isConstructor() && TypeContextTracker.delegatesToThis(node)) {
                 mods = ModifierTokens.with(mods, ModifierTokens.DELEGATING);
             }
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
                     node.getBody() != null, mods,
-                    names.annotationsOf(node.resolveBinding())));
+                    names.annotationsOf(binding)));
             methodStack.push(List.of(ref));
         } else {
             methodStack.push(UNKNOWN_CALLER);
@@ -443,7 +445,7 @@ final class FactVisitor extends ASTVisitor {
         IMethodBinding b = n.resolveMethodBinding();
         Expression recv = n.getExpression();
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b),
-                CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), calls.externalGuessRef(n),
+                CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), n,
                 origins.valuesOf(recv, n.arguments()));
         calls.offerToHintCollectors(n, currentCallers());
         return true;
@@ -608,7 +610,7 @@ final class FactVisitor extends ASTVisitor {
     /** フィールドの参照箇所（A行）。{@link FieldAccessRecorder} 参照 */
     @Override
     public boolean visit(SimpleName node) {
-        fieldAccesses.record(node, lineOf(node), currentCallers(), lambdaDepth);
+        fieldAccesses.record(node, currentCallers(), lambdaDepth);
         return true;
     }
 }

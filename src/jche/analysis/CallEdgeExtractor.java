@@ -162,12 +162,24 @@ public final class CallEdgeExtractor {
 
     /** 1ファイルだけをパースする（一括パースの補完用） */
     public FileAnalysis analyze(SourceFile file) throws IOException {
-        char[] source = new String(Files.readAllBytes(file.path()), encoding).toCharArray();
+        // 読み込みは「バイト列 -> 文字列 -> char[]」と写し取らず、復号した文字列から直接 char[] を作る
+        // （大きなファイルほど、要らない写しがそのままヒープの山になる）
+        char[] source = charsOf(Files.readString(file.path(), encoding));
         ASTParser parser = newParser();
         parser.setUnitName(layout.unitNameOf(file.path()));  // バインディング解決に必須
         parser.setSource(source);
         CompilationUnit cu = (CompilationUnit) parser.createAST(null);
         return collectFacts(file, cu);
+    }
+
+    /**
+     * 文字列を char[] にする。JDT が受け取るのは char[] なので写しは1回だけで済ませる
+     * （{@code String.toCharArray()} も写しを作るが、元の文字列をここで捨てられる形にしておく）
+     */
+    private static char[] charsOf(String text) {
+        char[] chars = new char[text.length()];
+        text.getChars(0, text.length(), chars, 0);
+        return chars;
     }
 
     /** ワークスペース非依存で型解決するための設定を済ませたパーサ */

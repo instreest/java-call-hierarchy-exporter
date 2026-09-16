@@ -45,6 +45,11 @@ final class CallSiteRecorder {
     private final GuardCollector guards;
     /** 鍵ごとの件数。同じ鍵が複数あるときの通し番号を振るため（{@link #addValues}） */
     private final java.util.Map<String, Integer> joinKeyCounts = new java.util.HashMap<>();
+    /**
+     * 単一型インポートの「単純名 -> FQN」。{@link #externalGuessRef} 用に、
+     * このファイルで最初に必要になったときだけ作る（インポートが無いファイルでは作らない）
+     */
+    private java.util.Map<String, String> singleTypeImports;
 
     CallSiteRecorder(CompilationUnit cu, FileAnalysis out, BindingNames names,
                      List<CallSiteHintCollector> collectors, GuardCollector guards) {
@@ -65,10 +70,15 @@ final class CallSiteRecorder {
      * 解決できれば C 行（呼び出し元ごとに1本）。解決できなければ U 行に、
      * 理由コードと import から推定した候補（{@link #externalGuessRef}）を事実として残す。
      * 候補をエッジとして採用するかは読み手（jche.graph.CallGraphBuilder）が決める。
+     *
+     * @param guessSource 候補を推定する元の呼び出し式。<b>解決に失敗したときだけ</b>使うので、
+     *                    推定そのものもここまで遅らせる（呼び出しの大半は解決できるため、
+     *                    先に求めておくと、使われない推定をすべての呼び出しぶん行うことになる）。
+     *                    推定の対象でない形（new・super 呼び出し・メソッド参照）では null
      */
     void record(List<MethodRef> callers, int lambdaDepth, IMethodBinding binding, ASTNode node,
                 String displayName, String calleeMods, String recvKey, char recvKind,
-                String externalGuess, CallValues values) {
+                MethodInvocation guessSource, CallValues values) {
         int line = lineOf(node);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
         String guard = guards.guardOf(node);
@@ -84,6 +94,7 @@ final class CallSiteRecorder {
         if (callee == null) {
             // 呼び出し先の型解決に失敗したケース。呼び出し元ごとに1件残す
             // （C行と同じく、初期化子の中なら根のコンストラクタそれぞれに属する）
+            String externalGuess = (guessSource == null) ? null : externalGuessRef(guessSource);
             for (MethodRef caller : callers) {
                 out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
                         UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKind, lambdaDepth));
@@ -156,22 +167,36 @@ final class CallSiteRecorder {
      * （メンバの実在・オーバーロードの妥当性までは確認できない）。
      * ワイルドカードimport・static import・型不明のレシーバでは使わない。
      */
-    String externalGuessRef(MethodInvocation n) {
+    private String externalGuessRef(MethodInvocation n) {
         if (!(n.getExpression() instanceof SimpleName recv)) {
             return null;
         }
-        String simple = recv.getIdentifier();
+        return singleTypeImports().get(recv.getIdentifier());
+    }
+
+    /**
+     * 単一型インポートを単純名で引ける表にして1回だけ作る。
+     *
+     * 以前は呼び出し1件ごとに import 文を先頭から走査し、比較のたびに {@code "." + 単純名} の
+     * 文字列を作っていた。インポートも呼び出しも多いファイルでは、その掛け算ぶんの手間になる。
+     * 同じ単純名のインポートが2つある（コンパイルの通らないソース）場合は、
+     * 走査していたときと同じく<b>先に書かれている方</b>を残す。
+     */
+    private java.util.Map<String, String> singleTypeImports() {
+        if (singleTypeImports != null) {
+            return singleTypeImports;
+        }
+        java.util.Map<String, String> map = new java.util.HashMap<>();
         for (Object o : cu.imports()) {
             ImportDeclaration imp = (ImportDeclaration) o;
             if (imp.isOnDemand() || imp.isStatic()) {
                 continue;
             }
             String name = imp.getName().getFullyQualifiedName();
-            if (name.equals(simple) || name.endsWith("." + simple)) {
-                return name;
-            }
+            map.putIfAbsent(name.substring(name.lastIndexOf('.') + 1), name);
         }
-        return null;
+        singleTypeImports = map;
+        return map;
     }
 
     /**
