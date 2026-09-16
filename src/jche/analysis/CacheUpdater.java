@@ -551,6 +551,11 @@ public final class CacheUpdater {
      * </pre>
      * 片方だけを使って「呼び出し階層は再利用、データフローだけ作り直し」とはしない。
      * ブロックごとにどちらが新しいかで結果が変わると、同じソースでも出力が揺れるため。
+     *
+     * <p>ここで読むのは、analysis 側のヘッダと L 行・T 行（最初の F 行で打ち切る）、
+     * dataflow 側のヘッダ、それに 2 つの最終行（{@link #trailerOf} が末尾だけを読む）。
+     * <b>どちらのキャッシュも全体を走らない。</b>毎回の実行で通る経路なので、
+     * ここでフルスキャンすると差分更新の利点をそのぶん削ってしまう
      */
     private List<LibraryFact> readOldLibraries() {
         if (!Files.isRegularFile(config.cacheFile)) {
@@ -562,18 +567,20 @@ public final class CacheUpdater {
             return null;
         }
         try {
-            if (!dataflowCachePairsWith(config.cacheFile, config.dataflowCacheFile)) {
-                return null;
-            }
+            // analysis 側を先に読む。ヘッダ（世代の印も）と L 行・T 行が 1 回の走査で取れるので、
+            // 対の判定のために開き直さずに済む
             CacheHead head = headOf(config.cacheFile);
-            List<LibraryFact> libraries = (head == null) ? null : head.libraries();
-            if (libraries == null) {
+            if (head == null) {
                 // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK が
                 // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
                 // 同じソースでも解析結果が変わるため、F 行の同一性が一致していても再利用してはいけない
                 Log.info("[cache] 形式・ソースレベル・文字コード・JDK のいずれかが異なるため既存キャッシュを破棄します");
+                return null;
             }
-            return libraries;
+            if (!dataflowCachePairsWith(head.generation())) {
+                return null;
+            }
+            return head.libraries();
         } catch (IOException | RuntimeException e) {
             // 読めない・文字が壊れているキャッシュ。全件解析し直せば済むので、解析ごと失敗させない
             Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
@@ -841,28 +848,22 @@ public final class CacheUpdater {
      *
      * @return 対になっていれば true。なっていなければ理由をログに出して false
      */
-    private boolean dataflowCachePairsWith(Path analysisCache, Path flowCache) throws IOException {
-        String flowHeader;
-        try (CacheReader flow = CacheReader.open(flowCache)) {
+    private boolean dataflowCachePairsWith(String generation) throws IOException {
+        try (CacheReader flow = CacheReader.open(config.dataflowCacheFile)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
                     config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint))) {
                 Log.info("[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が"
                         + "異なるため、両方を作り直します");
                 return false;
             }
-            flowHeader = flow.header();
+            String flowGeneration = flow.generation();
+            if (flowGeneration.isEmpty() || !flowGeneration.equals(generation)) {
+                Log.info("[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します");
+                return false;
+            }
         }
-        String flowGeneration = CacheFormat.generationOf(flowHeader);
-        String generation;
-        try (CacheReader in = CacheReader.open(analysisCache)) {
-            generation = in.generation();
-        }
-        if (flowGeneration.isEmpty() || !flowGeneration.equals(generation)) {
-            Log.info("[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します");
-            return false;
-        }
-        String flowTrailer = lastLineOf(flowCache);
-        String trailer = lastLineOf(analysisCache);
+        String flowTrailer = trailerOf(config.dataflowCacheFile);
+        String trailer = trailerOf(config.cacheFile);
         if (flowTrailer == null || !flowTrailer.equals(trailer)) {
             Log.info("[cache] 2 つのキャッシュのブロック数が食い違う（どちらかが途中で切れている）ため、"
                     + "両方を作り直します");
@@ -872,26 +873,26 @@ public final class CacheUpdater {
     }
 
     /**
-     * ファイルの最終行（{@link CacheFormat#trailerFor} の Z 行のはず）。
-     * 空ファイルなら null。最終行が Z 行でなければ、そのまま突き合わせに失敗する
+     * ファイルの最終行が {@link CacheFormat#trailerFor} の Z 行なら、その行。違えば null。
+     *
+     * ファイルの末尾だけを読む（{@link CacheReader#lastLineOf}）。ここは毎回の実行で
+     * 2 つのキャッシュに対して呼ぶので、先頭から読むとファイル全体の走査が 2 本増えてしまう。
+     * 最終行が Z 行でない（途中で切れている・別の行で終わっている）ときは、
+     * 突き合わせに失敗させて両方作り直す
      */
-    private static String lastLineOf(Path file) throws IOException {
-        String last = null;
-        try (CacheReader in = CacheReader.open(file)) {
-            while (in.next()) {
-                last = in.line();
-            }
-        }
+    private static String trailerOf(Path file) throws IOException {
+        String last = CacheReader.lastLineOf(file);
         return (last != null && CacheFormat.rowTypeOf(last) == CacheFormat.ROW_END) ? last : null;
     }
 
     /**
      * キャッシュのヘッダの直後にある情報。
      *
-     * @param libraries 解析時の依存 jar（L行）
-     * @param sources   解析開始時のソース一覧の指紋（T行）。無ければ空文字
+     * @param libraries  解析時の依存 jar（L行）
+     * @param sources    解析開始時のソース一覧の指紋（T行）。無ければ空文字
+     * @param generation ヘッダの世代の印。dataflow 側と対になっているかの判定に使う
      */
-    private record CacheHead(List<LibraryFact> libraries, String sources) {
+    private record CacheHead(List<LibraryFact> libraries, String sources, String generation) {
     }
 
     /**
@@ -917,7 +918,7 @@ public final class CacheUpdater {
                     break;   // ブロックが始まった
                 }
             }
-            return new CacheHead(libraries, sources);
+            return new CacheHead(libraries, sources, in.generation());
         }
     }
 

@@ -60,6 +60,11 @@ jobs:
       - name: Cache value encoding test (escape round-trip)
         run: bash test/cachevalue/run.sh
 
+      # キャッシュの最終行（Z 行）を末尾から読む部分。改行の有無・CRLF・読む量の境目・
+      # 多バイト文字が窓の先頭で切れる形まで、バイト単位の境界を機械的にかける
+      - name: Cache trailer read test (tail read boundaries)
+        run: bash test/cachetail/run.sh
+
       # キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの
       # 全件解析の結果と一致すること（CSV とキャッシュの両方）。2 段のコンパイル時定数・
       # 注釈の既定値・列挙定数の改名・行形式を壊しかねない値を対象にする。
