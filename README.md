@@ -102,14 +102,14 @@ config/
 
 ```csv
 caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 |
 |---|---|
 | `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
-| `callee` | 呼び出し先。**完全修飾クラス名.メソッド名(引数型略名)**。Excelのフィルタに使える |
+| `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excelのフィルタに使える |
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
@@ -197,7 +197,6 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
 | `深さ制限(N)のため打ち切り` | `max.depth` に達した |
 | `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
-| `実装なし（宣言のまま）: 理由` | 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけ |
 | `実装はコンパイル時生成（名前）: FQN はアノテーション処理で生成されるためソース上に無い` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。展開できないので候補には数えていない |
 | `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
@@ -232,9 +231,9 @@ classファイルの命令列を読むため、「どのjar・どのクラスの
 
 ```csv
 caller,callee,root,call-hierarchy
-at teamb.NightJob.run(NightJob.java:15),jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:14),jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:EXACT
-at teamb.NoDebugJob.run(Unknown Source),jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,team-b-batch.jar,OrderService.OrderService,被参照:EXACT
+at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
 ```
 
 行番号は相手の jar が行番号情報付きでビルドされている（`javac` の既定）ときだけ出ます。

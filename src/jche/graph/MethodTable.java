@@ -162,7 +162,7 @@ public final class MethodTable {
 
     /**
      * 単純クラス名 + 表示用メソッド名 + 引数型略名。オーバーロードを識別できる短い表記。
-     * 略名が衝突している場合は callee 列と同じ理由で完全修飾の引数に戻す。
+     * 略名が衝突している場合は、別物が同じ表記になるのを避けるため完全修飾の引数に戻す。
      */
     public String shortLabelWithParams(int id) {
         String params = ambiguousLabels().contains(plainDisplayLabel(id))
@@ -176,12 +176,12 @@ public final class MethodTable {
     }
 
     /**
-     * call-hierarchy.csv の callee 列の表記。
+     * サーバーモード（Eclipse プラグイン）へ返すメソッドの表記。
      * 完全修飾クラス名 + 表示用メソッド名 + 引数型略名。
      *
      * 引数型を略名にするのは読みやすさのためだが、略した結果
      * java.util.List と other.List のように別物が同じ表記になることがある。
-     * 「識別できる表記にする」のが目的の列でそれが起きては本末転倒なので、
+     * 「メソッドを識別できる表記にする」のが目的なのでそれでは本末転倒であり、
      * 衝突した組だけ完全修飾の引数リストに戻す（下の ambiguousLabels()）。
      */
     public String displayLabel(int id) {

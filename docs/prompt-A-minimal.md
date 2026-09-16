@@ -44,14 +44,14 @@ CSV 2本。**BOM付きUTF-8、カンマ区切り**（Excelでダブルクリッ�
 
 ```csv
 caller,callee,root,call-hierarchy
-at a.action.OrderAction.execute(OrderAction.java:50),a.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
-at a.service.OrderService.findOrder(OrderService.java:25),a.dao.OrderDao.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDao.selectById
+at a.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
+at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,OrderAction.execute,OrderService.findOrder,OrderDao.selectById
 ```
 
 - `caller` … `at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**（行は
   **呼び出し箇所**、内部クラスは `Outer$Inner`、コンストラクタは `<init>`）。
   **この形式が(a)の核**なので崩さない
-- `callee` … **完全修飾クラス名.メソッド名(引数型の略名)**（内部クラスは `Outer.Inner`）。
+- `callee` … **クラス単純名.メソッド名**（内部クラスは `Outer.Inner`。引数は付けない）。
   行番号は混ぜない（フィルタの選択肢が散らばる）
 - `root` … 起点メソッド（`クラス単純名.メソッド名`）
 - `call-hierarchy` … 起点の次から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列。
