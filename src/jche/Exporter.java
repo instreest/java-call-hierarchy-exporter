@@ -20,6 +20,7 @@ import jche.graph.CallGraphBuilder;
 import jche.graph.CallResolver;
 import jche.graph.DataflowResolver;
 import jche.graph.SpringBeans;
+import jche.util.HeapWatch;
 import jche.util.Log;
 
 /**
@@ -49,6 +50,18 @@ public final class Exporter {
      * @return この時点の解析結果
      */
     public static AnalysisSnapshot analyze(Config config) throws Exception {
+        // ヒープの見張りの登録と解除はフェーズの出入りで持つ。解析サーバーは 1 つの JVM で
+        // 解析を何度も走らせるので、解除しないと GC のリスナーが積み上がって二重に数える。
+        // try-with-resources にしないのは、handle を本体で使わないため（-Xlint:try が警告する）
+        HeapWatch heapWatch = HeapWatch.start();
+        try {
+            return analyzePhases(config);
+        } finally {
+            heapWatch.close();
+        }
+    }
+
+    private static AnalysisSnapshot analyzePhases(Config config) throws Exception {
         ProjectLayout layout = new ProjectLayout(config);
         logAnalysisSettings(config, layout);
 

@@ -47,6 +47,7 @@
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
+| [ast-analysis-performance-qa.md](ast-analysis-performance-qa.md) | — | AST 解析の性能とメモリ使用量の改善（何を計測して直したか、バッチのサイズ・並列化・仮想スレッドを採らなかった理由と実測値） |
 | [cache-identity-qa.md](cache-identity-qa.md) | #102 #103 #104 | キャッシュの「同じファイルか」の判定をパス・サイズ・内容の指紋に統一する（更新時刻をやめる）。クラスパスの並び順の変化を検知する。サーバーモードの `SHUTDOWN` が実行中の解析を中止していた件 |
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
