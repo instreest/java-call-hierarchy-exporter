@@ -57,6 +57,7 @@ import jche.report.CallHierarchyCsvWriter;
 import jche.report.InventoryReport;
 import jche.report.StreamingTreeWalker;
 import jche.report.UnresolvedReport;
+import jche.util.HeapWatch;
 import jche.util.Log;
 
 /**
@@ -283,18 +284,26 @@ public class CallHierarchyExporter {
         Files.copy(config.configPath, config.outputDir.resolve(config.configPath.getFileName()),
                 StandardCopyOption.REPLACE_EXISTING);
 
-        AnalysisSnapshot snapshot = Exporter.analyze(config);
+        // ヒープの見張りは設定ファイル1つ分の処理を丸ごと囲む。フェーズ1・2 の中
+        // （{@link Exporter#analyze}）でも始めているが、入れ子は素通りするので、
+        // ここが解除の責任を持ち、フェーズ3（CSV 出力）まで見張りが続く
+        HeapWatch heapWatch = HeapWatch.start();
+        try {
+            AnalysisSnapshot snapshot = Exporter.analyze(config);
 
-        long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
+            long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
 
-        if (!config.conditionsTarget.isEmpty()) {
-            runConditions(config);
+            if (!config.conditionsTarget.isEmpty()) {
+                runConditions(config);
+            }
+
+            Log.blank();
+            Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");
+            Log.info("実行ログ: " + config.logFile);
+            Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
+        } finally {
+            heapWatch.close();
         }
-
-        Log.blank();
-        Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");
-        Log.info("実行ログ: " + config.logFile);
-        Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
         return config.outputDir;
     }
 

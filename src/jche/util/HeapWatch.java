@@ -25,7 +25,7 @@ import com.sun.management.GarbageCollectionNotificationInfo;
  *
  * <pre>
  *   GC に取られた時間の割合 … フェーズの経過時間のうち GC の停止に費やした割合
- *   GC 後の占有率           … GC が済んだ直後でも上限の何割が埋まっているか（本命）
+ *   GC 後の最大占有率       … GC が済んだ直後でも上限の何割が埋まっているか（本命）
  *   フル GC の回数          … 1 回でも起きていれば、上限に張り付いている印
  * </pre>
  *
@@ -40,10 +40,19 @@ import com.sun.management.GarbageCollectionNotificationInfo;
  * 見張っていないときは前者だけを出す。
  *
  * <h2>登録と解除</h2>
- * 解析の始めから終わりまでを {@link jche.Exporter} が {@code try (HeapWatch w = HeapWatch.start())}
- * で囲む。解析サーバー（{@link jche.server.Server}）は 1 つの JVM で解析を何度も走らせるので、
- * <b>解除しないとリスナーが積み上がって二重に数える</b>。入れ子で呼ばれた場合は内側を素通りさせ、
- * 解除も外側の 1 回だけにする。
+ * 解析の始めから終わりまでをフェーズの管理側が囲む。囲む場所は 2 つあり、<b>入れ子になる</b>。
+ * <pre>
+ *   jche.CallHierarchyExporter  設定ファイル1つ分（フェーズ1〜3＋条件の一覧）… 外側
+ *   jche.Exporter               フェーズ1・2                                  … 内側
+ * </pre>
+ * 内側だけでも成り立つのは、解析サーバー（{@link jche.server.Server}）が
+ * {@link jche.Exporter#analyze} しか通らず、CSV を書かないため。CLI は CSV まで書くので
+ * 外側で囲み、フェーズ3 でも「GC 後の占有率」が出るようにする。
+ * <b>内側の {@link #start()} は素通りし、{@link #close()} も何もしない</b>ので、
+ * 外側があるときは外側だけが解除の責任を持つ。
+ *
+ * <p>解析サーバーは 1 つの JVM で解析を何度も走らせるので、
+ * <b>解除しないとリスナーが積み上がって二重に数える</b>。
  *
  * <p>{@code System.gc()} は呼ばない。生存量を正確に出せる代わりに、フェーズごとにフル GC を
  * 挟むことになり、<b>測るために遅くする</b>ことになる（実測で 1 回あたり数十 ms〜、
@@ -178,9 +187,12 @@ public final class HeapWatch implements AutoCloseable {
         if (elapsedMs >= MIN_ELAPSED_MS_FOR_PERCENT) {
             sb.append("＝経過の").append(100 * gcMillis / elapsedMs).append("%");
         }
+        // 見張りを始めてからの最大（フェーズごとの値ではない）。
+        // 「いちばん苦しかったとき、どれだけ余裕が残っていたか」を見るための値なので、
+        // フェーズごとに取り直すと、その山を見落とす
         int afterGcPercent = afterGcPercent();
         if (afterGcPercent >= 0) {
-            sb.append(" / GC後の占有 ").append(afterGcPercent).append("%");
+            sb.append(" / GC後の最大占有 ").append(afterGcPercent).append("%");
         }
         return new Phase(sb.toString(), gcMillis, elapsedMs, fullGcCount);
     }
