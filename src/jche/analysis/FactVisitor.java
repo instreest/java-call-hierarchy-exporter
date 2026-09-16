@@ -145,6 +145,22 @@ final class FactVisitor extends ASTVisitor {
         return cu.getLineNumber(node.getStartPosition());
     }
 
+    /**
+     * 宣言の終了行（最後の文字がある行）。
+     *
+     * 開始位置は修飾子・アノテーションを含む宣言全体の先頭なので、宣言行（名前の行）とは
+     * ずれることがあるが、ここで欲しいのは終わりだけなので気にしない。
+     * 長さが取れない（-1）ときは開始行に倒す。
+     */
+    private int endLineOf(ASTNode node) {
+        int start = node.getStartPosition();
+        int len = node.getLength();
+        if (start < 0 || len <= 0) {
+            return lineOf(node);
+        }
+        return cu.getLineNumber(start + len - 1);
+    }
+
     // ================================================================
     // 型の宣言（H行）と型コンテキスト
     // ================================================================
@@ -324,7 +340,7 @@ final class FactVisitor extends ASTVisitor {
             }
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
                     node.getBody() != null, mods,
-                    names.annotationsOf(binding)));
+                    names.annotationsOf(binding), endLineOf(node)));
             methodStack.push(List.of(ref));
         } else {
             methodStack.push(UNKNOWN_CALLER);

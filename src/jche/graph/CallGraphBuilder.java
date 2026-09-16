@@ -126,7 +126,8 @@ public final class CallGraphBuilder {
                         if (d != null) {
                             int id = methods.intern(d.ref());
                             ensure(outDegree, id);
-                            methods.setDeclaration(id, currentFile, d.declLine(), d.hasBody());
+                            methods.setDeclaration(id, currentFile, d.declLine(), d.endLine(),
+                                    d.hasBody());
                             fields.declaration(d);
                             graph.beans.method(id, d);
                         }
