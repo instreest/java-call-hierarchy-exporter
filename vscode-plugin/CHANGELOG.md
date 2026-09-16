@@ -6,7 +6,7 @@
 
 初版。
 
-- 影響調査ビュー（「影響調査 (Call Hierarchy Exporter)」）。エディタでメソッドの中にカーソルを置き、右クリック →「呼び出し元を表示 (Exporter)」で呼び出し元の階層を辿る
+- 影響調査ビュー（「影響調査 (Call Hierarchy Exporter)」）。エディタでメソッドの中にカーソルを置き、右クリック →「影響調査: 呼び出し元を表示」で呼び出し元の階層を辿る
 - 解析は VSCode とは別のプロセス・別の JDK で走る。解析本体（Eclipse JDT）は拡張に同梱。vscode-java は不要
 - 設定ファイル（`config.properties`）が無くても `project.root` だけの設定を自動生成して解析できる（ソースフォルダ・依存 jar は `pom.xml` / `build.gradle` / フォルダ構成から）
 - 解析の状態（未解析／解析中／何時の結果か／変更されたファイル数）はエディタ右下の `{}`（Language Status）に出る

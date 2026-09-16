@@ -23,7 +23,7 @@ export class StatusItem implements vscode.Disposable {
         this.item.busy = false;
         this.item.severity = vscode.LanguageStatusSeverity.Information;
         if (!session || !state || state.kind === 'unanalyzed') {
-            this.item.text = 'Call Hierarchy Exporter: 未解析';
+            this.item.text = '影響調査: 未解析';
             this.item.detail = session ? `${session.folder.name} はまだ解析していません` : undefined;
             this.item.command = { command: 'jche.analyze', title: '解析する' };
             return;
@@ -32,7 +32,7 @@ export class StatusItem implements vscode.Disposable {
             case 'analyzing': {
                 this.item.busy = true;
                 const progress = state.total > 0 ? ` ${state.done.toLocaleString()}/${state.total.toLocaleString()}` : '';
-                this.item.text = `Call Hierarchy Exporter: 解析中 ${state.label}${progress}`;
+                this.item.text = `影響調査: 解析中 ${state.label}${progress}`;
                 this.item.detail = session.folder.name;
                 this.item.command = { command: 'jche.cancel', title: '中止' };
                 return;
@@ -43,10 +43,10 @@ export class StatusItem implements vscode.Disposable {
                 if (dirty > 0) {
                     // 見えているものが古い。バナーの代わりにここで知らせる（docs/vscode-plugin-design.md §2.5）
                     this.item.severity = vscode.LanguageStatusSeverity.Warning;
-                    this.item.text = `Call Hierarchy Exporter: ${time} 時点（${dirty} ファイル変更）`;
+                    this.item.text = `影響調査: ${time} 時点（${dirty} ファイル変更）`;
                     this.item.detail = `${session.folder.name} / 解析後に ${dirty} ファイルが変更されています。表示は ${time} 時点のものです`;
                 } else {
-                    this.item.text = `Call Hierarchy Exporter: ${time} 時点`;
+                    this.item.text = `影響調査: ${time} 時点`;
                     this.item.detail = `${session.folder.name} / ${state.methods.toLocaleString()} メソッド / ${state.edges.toLocaleString()} 呼び出し / 設定: ${state.configLabel}`;
                 }
                 this.item.command = { command: 'jche.analyze', title: '再解析' };
@@ -54,7 +54,7 @@ export class StatusItem implements vscode.Disposable {
             }
             case 'failed': {
                 this.item.severity = vscode.LanguageStatusSeverity.Error;
-                this.item.text = 'Call Hierarchy Exporter: 失敗';
+                this.item.text = '影響調査: 失敗';
                 this.item.detail = state.reason;
                 this.item.command = { command: 'jche.openLog', title: 'ログを開く' };
                 return;

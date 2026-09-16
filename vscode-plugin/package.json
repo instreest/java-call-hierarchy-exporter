@@ -39,7 +39,7 @@
     "viewsWelcome": [
       {
         "view": "jche.callers",
-        "contents": "Java プロジェクト全体の呼び出し階層を一括で解析し、改修の影響範囲を辿るためのビューです。\n\n標準の「呼び出し階層」（Shift+Alt+H）が開いているファイルから即座に引くのに対し、こちらはプロジェクト全体を Eclipse JDT で解析してから、インタフェース経由・データフロー経由の呼び出し元まで含めて一括で辿ります。解析には時間がかかります。\n\n[解析する](command:jche.analyze)\n\n解析が終わったら、エディタでメソッドにカーソルを置き、右クリック →「呼び出し元を表示 (Exporter)」。",
+        "contents": "Java プロジェクト全体の呼び出し階層を一括で解析し、改修の影響範囲を辿るためのビューです。\n\n標準の「呼び出し階層」（Shift+Alt+H）が開いているファイルから即座に引くのに対し、こちらはプロジェクト全体を Eclipse JDT で解析してから、インタフェース経由・データフロー経由の呼び出し元まで含めて一括で辿ります。解析には時間がかかります。\n\n[解析する](command:jche.analyze)\n\n解析が終わったら、エディタでメソッドにカーソルを置き、右クリック →「影響調査: 呼び出し元を表示」。",
         "when": "workspaceFolderCount > 0"
       },
       {
@@ -51,69 +51,68 @@
     "commands": [
       {
         "command": "jche.showCallers",
-        "category": "Call Hierarchy Exporter",
-        "title": "呼び出し元を表示 (Exporter)",
+        "title": "影響調査: 呼び出し元を表示",
         "icon": "$(references)"
       },
       {
         "command": "jche.analyze",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "解析する",
         "icon": "$(refresh)"
       },
       {
         "command": "jche.cancel",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "解析を中止する",
         "icon": "$(stop-circle)"
       },
       {
         "command": "jche.toggleDirection",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "方向を切り替える（呼び出し元 ⇄ 呼び出し先）",
         "icon": "$(arrow-swap)"
       },
       {
         "command": "jche.setRoot",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "ここを起点にする"
       },
       {
         "command": "jche.openDeclaration",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "宣言を開く"
       },
       {
         "command": "jche.openLog",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "ログを開く",
         "icon": "$(output)"
       },
       {
         "command": "jche.saveConfig",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "設定を config.properties に保存"
       },
       {
         "command": "jche.selectConfig",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "設定ファイルを選ぶ"
       },
       {
         "command": "jche.filterText",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "絞り込み文字列",
         "icon": "$(search)"
       },
       {
         "command": "jche.filterOptions",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "フィルタ設定（深さ・テスト・推定・重複）",
         "icon": "$(filter)"
       },
       {
         "command": "jche.export",
-        "category": "Call Hierarchy Exporter",
+        "category": "影響調査",
         "title": "この木を CSV に出す",
         "icon": "$(export)"
       }
