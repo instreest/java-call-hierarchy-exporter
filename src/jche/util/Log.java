@@ -72,12 +72,30 @@ public final class Log {
         println("");
     }
 
-    /** ヒープの使用量。フェーズごとに出して、メモリ設計が効いているかを確認できるようにする */
+    /**
+     * ヒープの占有量。フェーズごとに出して、規模に対して上限が足りているかの目安にする。
+     *
+     * <b>出しているのは「必要なメモリ量」ではない。</b>{@code totalMemory() - freeMemory()} は
+     * 「いまヒープに載っている量」で、まだ回収されていないものを含む。GC は上限に余裕があるうちは
+     * 急がないので、この値は上限を上げるほど大きく出る（1000 ファイルの実測で、{@code -Xmx3g} では
+     * 757MB と出るが、同じ解析が {@code -Xmx256m} でも完走し、GC 直後の生存量は 20MB だった）。
+     * このツールは1ファイル分の事実を作っては書き出して捨てるので、<b>設計が効いているほど
+     * 「回収前のものは多いが生き残りは少ない」状態になり、この値はかえって大きく出る</b>。
+     * 「必要量が分かる値」と読まれると設計の確認にも容量の見積りにも使えないため、
+     * 語を「使用」から「占有」に変え、必要量ではないことを行の中に書く。
+     *
+     * <p>本当に必要な量や、作ったゴミの量を知りたいときは JFR で測る
+     * （{@code docs/ast-analysis-performance-qa.md} の「計測のしかた」。
+     * 生存量は {@code jdk.GCHeapSummary} の GC 直後、累計の割り当て量は
+     * {@code jdk.ThreadAllocationStatistics}）。ここで同じものを出そうとすると、
+     * ログを出すために GC を起こす（{@code System.gc()}）ことになり、測るために遅くしてしまう。
+     */
     public static void heap(String label) {
         Runtime rt = Runtime.getRuntime();
         long usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
         long maxMb = rt.maxMemory() / (1024 * 1024);
-        info("=== " + label + ": [heap] 使用 " + usedMb + "MB / 上限 " + maxMb + "MB");
+        info("=== " + label + ": [heap] 占有 " + usedMb + "MB / 上限 " + maxMb
+                + "MB（回収前のものを含む値で、必要なメモリ量ではありません）");
     }
 
     /** 経過時間の基準点を今にする。設定ファイルごとの所要時間が読めるよう、1つの設定の処理を始めるたびに呼ぶ */
