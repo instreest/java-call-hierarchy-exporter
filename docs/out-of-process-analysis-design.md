@@ -22,7 +22,7 @@
 > プラグインは **Java 8**（BREE `JavaSE-1.8`）でコンパイルされ、JDT は 3.10.0（2015年）、
 > プラットフォームは Eclipse 4.6（2016年）相当の API しか使っていない
 > （`test/plugin-api/run.sh` が古い jar でのコンパイルを毎回検査する）。
-> 設定画面（ウィンドウ > 設定 > 呼び出し階層 (Exporter)）から、解析に使う JDK・JDT のフォルダ・
+> 設定画面（ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)）から、解析に使う JDK・JDT のフォルダ・
 > JVM 引数・アイドル終了までを決められる。JDK 25 が無ければ Adoptium から取得できる（確認のうえで）。
 
 ---

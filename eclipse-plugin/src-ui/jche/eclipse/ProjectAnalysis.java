@@ -330,7 +330,7 @@ public final class ProjectAnalysis {
         if (java == null) {
             throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM
                     + " 以上、推奨 " + JavaLocator.PREFERRED + "）が見つかりません。"
-                    + "［ウィンドウ > 設定 > 呼び出し階層 (Exporter)］で場所を指定するか、取得してください");
+                    + "［ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)］で場所を指定するか、取得してください");
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         File cacheRoot = new File(PluginRuntime.stateLocation(), "cache");
