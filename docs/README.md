@@ -51,6 +51,7 @@
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
 | [config-folder-qa.md](config-folder-qa.md) | #62 | 既定の設定ファイルを `config/` に置く。相対パスの起点 |
+| [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。本体は `config.properties` のまま、プラグインが利用者のプロジェクトに書くのは `jche.properties`（誤検出を中身で防ぐ） |
 | [cli-app-qa.md](cli-app-qa.md) | #63 | 起動コマンドと対話モード。`.cmd` が MS932 でなければならない理由（Q15） |
 | [cli-noninteractive-qa.md](cli-noninteractive-qa.md) | #83 | 引数ありのときは何も尋ねずに解析だけを行う（起動コマンドの初回の質問・知らないオプション・終了コード） |
 | [network-download-confirm-qa.md](network-download-confirm-qa.md) | #86 | ネットワークからの取得（JBang 本体・JDK・依存 jar）の前に操作者の確認を必須にする（`--offline` での起動と目印ファイル、端末が無いときの扱い） |

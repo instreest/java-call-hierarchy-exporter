@@ -3,11 +3,16 @@ package jche.eclipse;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -77,12 +82,21 @@ public final class ProjectAnalysis {
         }
     }
 
+    /** ビューの「設定を保存」で作る設定ファイル（プロジェクトからの相対） */
+    static final String PREFERRED_CONFIG_PATH = "config/jche.properties";
+
     /**
      * 自動的に使う設定ファイル。前にあるものほど優先する。
-     * 本体が設定を config/ に置くようになったので、そちらを先に見る
+     *
+     * 本体が設定を config/ に置くようになったので、そちらを先に見る。名前は jche.properties を
+     * 優先する。config.properties は解析対象のプロジェクトが自前の設定に使っていることがあり、
+     * それをこのツールの設定と取り違えないようにするため（既にこの名前で置いている人のために、
+     * 読む側では今までどおり候補に残す）。
      */
     private static final String[] DEFAULT_CONFIG_PATHS = {
+        PREFERRED_CONFIG_PATH,
         "config/config.properties",
+        "jche.properties",
         "config.properties",
     };
 
@@ -155,12 +169,39 @@ public final class ProjectAnalysis {
         }
         for (String path : DEFAULT_CONFIG_PATHS) {
             IFile known = project.getFile(path);
-            if (known.exists() && known.getLocation() != null) {
+            if (known.exists() && known.getLocation() != null && looksLikeJcheConfig(known)) {
                 return ConfigSource.ofFile(known);
             }
         }
         IJavaProject javaProject = EclipseProjectConfig.javaProjectOf(project);
         return (javaProject != null) ? ConfigSource.generated(javaProject) : null;
+    }
+
+    /** このツールの設定だと分かる項目（1つでもあれば、このツールの設定として自動で使う） */
+    private static final String[] CONFIG_MARKER_KEYS = {
+        "project.root", "source.folders", "entry.packages",
+    };
+
+    /**
+     * このツールの設定ファイルらしいか。
+     *
+     * {@code config.properties} は解析対象のプロジェクトが自前の設定に使っていることがあるので、
+     * 名前だけで自動採用はしない（利用者が「使う設定ファイルを選ぶ…」で明示したものは、この判定を通さない）。
+     * 読めないときは false（誤って別物を掴むより、自動生成の設定で動くほうが害が小さい）。
+     */
+    private static boolean looksLikeJcheConfig(IFile file) {
+        Properties p = new Properties();
+        try (InputStream in = file.getContents(true)) {
+            p.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+        } catch (CoreException | IOException | RuntimeException e) {
+            return false;
+        }
+        for (String key : CONFIG_MARKER_KEYS) {
+            if (p.getProperty(key) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 利用者が明示的に選んだ設定ファイル。null に戻すと自動判定に戻る */
@@ -181,9 +222,21 @@ public final class ProjectAnalysis {
         } catch (CoreException e) {
             JchePlugin.log(IStatus.WARNING, "設定ファイルを探せませんでした: " + project.getName(), e);
         }
-        result.sort((a, b) -> Boolean.compare(!"config.properties".equals(a.getName()),
-                !"config.properties".equals(b.getName())));
+        result.sort(Comparator.comparingInt((IFile f) -> configNameRank(f))
+                .thenComparing(IFile::getName));
         return result;
+    }
+
+    /** 候補の並び順。既定の名前（{@link #DEFAULT_CONFIG_PATHS} の順）を先頭に、それ以外は後ろ */
+    private static int configNameRank(IFile file) {
+        for (int i = 0; i < DEFAULT_CONFIG_PATHS.length; i++) {
+            String name = DEFAULT_CONFIG_PATHS[i];
+            name = name.substring(name.lastIndexOf('/') + 1);
+            if (name.equals(file.getName())) {
+                return i;
+            }
+        }
+        return DEFAULT_CONFIG_PATHS.length;
     }
 
     private static void collectProperties(org.eclipse.core.resources.IContainer container,
