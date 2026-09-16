@@ -293,6 +293,7 @@ public final class CallGraphBuilder {
             // 同じブロックの値グラフ（N 行）。出所の文字列はここから組み直す
             OriginRenderer renderer = new OriginRenderer(List.of());
             int valueIndex = 0;
+            joinKeyCounts.clear();
             while (in.next()) {
                 char rowType = in.rowType();
                 if (rowType == CacheFormat.ROW_FILE) {
@@ -301,6 +302,7 @@ public final class CallGraphBuilder {
                     blockValues = block.callSiteValues();
                     renderer = new OriginRenderer(block.valueNodes());
                     valueIndex = 0;
+                    joinKeyCounts.clear();
                     continue;
                 }
                 if (rowType != CacheFormat.ROW_CALL && rowType != CacheFormat.ROW_UNRESOLVED) {
@@ -325,10 +327,14 @@ public final class CallGraphBuilder {
                             renderer.argOriginsOf(values.args()), values.guard());
                 } else {
                     UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
-                    if (u == null || !u.hasUsableCandidate()) {
+                    if (u == null) {
                         continue;
                     }
+                    // エッジにならない U 行でも検算は通す。同じ鍵の通し番号を数え進めるため
                     values = verified(values, u.line(), u.caller(), u.expression());
+                    if (!u.hasUsableCandidate()) {
+                        continue;
+                    }
                     int pos = cursor[methods.intern(u.caller())]++;
                     graph.calleeIds[pos] = internGuessedCallee(u);
                     graph.callLines[pos] = u.line();
@@ -341,26 +347,35 @@ public final class CallGraphBuilder {
         }
     }
 
+    /** 今のブロックで、同じ鍵（行番号・呼び出し元・表示名）の C 行・U 行を何本見たか */
+    private final Map<String, Integer> joinKeyCounts = new HashMap<>();
+
     /**
      * 位置で取った P 行が、本当にこの呼び出し箇所のものかを検算する。
      *
      * P 行は C 行・U 行と同じ順に書かれるので位置で対応が取れるが、鍵（行番号・呼び出し元・
-     * 呼び出し先の表示名）も持っているので突き合わせる。食い違っていれば<b>値を使わない</b>方に倒す
+     * 呼び出し先の表示名）と通し番号も持っているので突き合わせる。通し番号は
+     * 書き手（{@code CallSiteRecorder}）と同じく「同じ鍵をこのブロックで何本見たか」で数え、
+     * {@code f(g(), g())} のようにまったく同じ鍵が並ぶ箇所でもずれを検出できるようにする
+     * （位置だけの対応が最も弱いのがそこなので）。
+     * 食い違っていれば<b>値を使わない</b>方に倒す
      * （呼び出しは消えず、具象クラスの解決が CHA 止まりになるだけ）。
      * 2 つのキャッシュが対である限り起きないので、起きたら1度だけ警告を出す
      */
     private CallSiteValues verified(CallSiteValues values, int line, MethodRef caller, String calleeName) {
+        String expected = line + "\u0000" + ((caller == null) ? "" : caller.key()) + "\u0000" + calleeName;
+        // 値が無くても数える。数え漏らすと、それ以降の同じ鍵の通し番号が全部ずれる
+        int ordinal = joinKeyCounts.merge(expected, 1, Integer::sum) - 1;
         if (values == CallSiteValues.NONE) {
             return values;
         }
-        String expected = line + "\u0000" + ((caller == null) ? "" : caller.key()) + "\u0000" + calleeName;
-        if (expected.equals(values.joinKey())) {
+        if (expected.equals(values.joinKey()) && values.ordinal() == ordinal) {
             return values;
         }
         if (!warnedAboutJoin) {
             warnedAboutJoin = true;
             Log.warn("[cache] データフローのキャッシュの並びが呼び出し箇所と合いません（"
-                    + expected.replace('\u0000', ' ') + "）。このぶんの値は使いません");
+                    + expected.replace('\u0000', ' ') + " #" + ordinal + "）。このぶんの値は使いません");
         }
         return CallSiteValues.NONE;
     }
