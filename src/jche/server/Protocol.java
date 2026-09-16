@@ -19,7 +19,11 @@ package jche.server;
  *   ← OK  methods=48213  edges=91022  at=2026-09-12T10:31:04
  *
  *   → FIND  com.example.OrderService#save(com.example.Order)
- *   ← OK  key=...  label=...  file=...  line=42        （無ければ NG not-found）
+ *   ← OK  key=...  label=...  file=...  line=42  endLine=45        （無ければ NG not-found）
+ *
+ *   → AT  src/main/java/com/example/OrderService.java  43
+ *   ← OK  how=enclosing  key=...  line=42  endLine=45   （その行を囲むメソッド。
+ *                                                        メソッドの外なら NG not-found）
  *
  *   → TREE  &lt;メソッドキー&gt;  callers  depth=5  text=Order  tests=0
  *   ← R  0  &lt;キー&gt;  &lt;表示名&gt;  &lt;ファイル&gt;  &lt;行&gt;  &lt;解決の理由&gt;  &lt;印&gt;

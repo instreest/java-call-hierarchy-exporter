@@ -133,7 +133,8 @@ printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo
   | java -cp "lib/*:bin" jche.CallHierarchyExporter --server /tmp/jche-cache
 ```
 
-要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・`TREE`（木の切り出し）・
+要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・
+`AT`（ファイルと行から、その位置を囲むメソッドを引く）・`TREE`（木の切り出し）・
 `EXPORT`（CSV 出力）・`CANCEL`（解析の中止）・`SHUTDOWN`（積んだ要求を処理し終えてから終わる）がある。
 上の例のようにまとめて流し込んでよく、**末尾の `SHUTDOWN` が先に読まれても `ANALYZE` は完走する**。
 実行中の解析を打ち切りたいときは `CANCEL` を送る。解析中は `#P` 行で進捗が、

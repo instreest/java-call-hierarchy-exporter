@@ -152,6 +152,7 @@ public final class Server {
                 case "ANALYZE" -> analyze(arg(parts, 1));
                 case "STATUS" -> status();
                 case "FIND" -> find(arg(parts, 1));
+                case "AT" -> at(arg(parts, 1), arg(parts, 2));
                 case "TREE" -> tree(parts);
                 case "EXPORT" -> export(parts);
                 case "PING" -> respondOk("pong");
@@ -277,11 +278,49 @@ public final class Server {
             respondNg("not-found");
             return;
         }
-        respondOk("how=" + how
+        respondFound(methods, id, "how=" + how);
+    }
+
+    /**
+     * エディタのカーソル位置（ファイルと行）を囲むメソッドを引く（{@code AT ファイル 行}）。
+     *
+     * ファイルはプロジェクトルートからの相対パス。D 行が終了行を持っているので、
+     * メソッドの外（フィールド宣言や空行）を指した場合は not-found を返す。
+     * 見つかったときの応答は FIND と同じ形（how= は付かない）。
+     */
+    private void at(String file, String lineText) {
+        if (snapshot == null) {
+            respondNg("not-analyzed");
+            return;
+        }
+        if (file == null || file.isEmpty() || lineText == null || lineText.isEmpty()) {
+            respondNg("missing-position");
+            return;
+        }
+        int line;
+        try {
+            line = Integer.parseInt(lineText.trim());
+        } catch (NumberFormatException ignore) {
+            respondNg("bad-line " + Protocol.escape(lineText));
+            return;
+        }
+        MethodTable methods = snapshot.graph().methods();
+        int id = methods.enclosingMethod(file, line);
+        if (id < 0) {
+            respondNg("not-found");
+            return;
+        }
+        respondFound(methods, id, "how=enclosing");
+    }
+
+    /** FIND / AT が見つけたメソッドの応答（同じ形にそろえる） */
+    private void respondFound(MethodTable methods, int id, String head) {
+        respondOk(head
                 + Protocol.SEP + "key=" + Protocol.escape(methods.key(id))
                 + Protocol.SEP + "label=" + Protocol.escape(methods.displayLabel(id))
                 + Protocol.SEP + "file=" + Protocol.escape(nullToEmpty(methods.declFile(id)))
                 + Protocol.SEP + "line=" + methods.declLine(id)
+                + Protocol.SEP + "endLine=" + methods.declEndLine(id)
                 + Protocol.SEP + "callers=" + snapshot.inbound().inDegree(id));
     }
 

@@ -79,6 +79,32 @@ grep -qE "^R${T}1${T}" <<<"$OUT" && ok "呼び出し元（深さ1）が出る" |
 MAXDEPTH=$(grep -E "^R${T}" <<<"$OUT" | cut -f2 | sort -n | tail -1)
 [ "$MAXDEPTH" -le 3 ] && ok "深さの上限（3）が効いている" || fail "深さ上限を超えている（$MAXDEPTH）"
 
+echo "== AT（カーソル位置から囲むメソッドを引く） =="
+# 複数行のメソッド。test/demo/src/fx/dao/UserDaoImpl.java の load(long) は 7〜10 行目
+AT_FILE='src/fx/dao/UserDaoImpl.java'
+RANGED='fx.dao.UserDaoImpl#load(long)'
+FOUND=$(session "ANALYZE\t$CONFIG\nFIND\t$RANGED\nSHUTDOWN\n" | grep -E "^OK${T}how=exact")
+echo "$FOUND" | sed 's/^/       /'
+field() { tr '\t' '\n' <<<"$FOUND" | grep "^$1=" | head -1 | cut -d= -f2-; }
+AT_LINE=$(field line)
+AT_END=$(field endLine)
+[ -n "$AT_END" ] && [ "$AT_END" -gt "$AT_LINE" ] \
+    && ok "FIND が複数行メソッドの endLine を返す（$AT_LINE..$AT_END）" \
+    || fail "endLine が宣言行より後になっていない（$AT_LINE..$AT_END）"
+
+# 本体の中・閉じ括弧の行・メソッドの外（フィールドも宣言も無い行）で引く
+INSIDE=$((AT_LINE + 1))
+OUT=$(session "ANALYZE\t$CONFIG\nAT\t$AT_FILE\t$INSIDE\nAT\t$AT_FILE\t$AT_END\nAT\t$AT_FILE\t3\nAT\t$AT_FILE\txx\nAT\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+HITS=$(grep -cF "how=enclosing${T}key=$RANGED${T}" <<<"$OUT")
+[ "$HITS" = 2 ] && ok "本体の中と閉じ括弧の行で、囲むメソッドが引ける" \
+    || fail "AT が囲むメソッドを返さない（一致 $HITS 件）"
+grep -qE "^NG${T}not-found" <<<"$OUT" && ok "メソッドの外の行は not-found（直前のメソッドを返さない）" \
+    || fail "メソッド外の行が not-found にならない"
+grep -qE "^NG${T}bad-line" <<<"$OUT" && ok "行番号でない引数は bad-line" || fail "bad-line を返さない"
+grep -qE "^NG${T}missing-position" <<<"$OUT" && ok "引数が無ければ missing-position" \
+    || fail "missing-position を返さない"
+
 echo "== キーがずれていても、一意に決まるなら拾う =="
 # 引数の型名がずれたキー（プラグインはソースの型名から組み立てるのでこうなることがある）
 OUT=$(session "ANALYZE\t$CONFIG\nFIND\tfx.app.Main#run(java.lang.Object[])\nSHUTDOWN\n")
