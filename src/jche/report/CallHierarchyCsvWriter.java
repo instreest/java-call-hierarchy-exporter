@@ -15,8 +15,8 @@ import jche.graph.MethodTable;
  * <pre>
  *   caller,callee,root,call-hierarchy...
  * </pre>
- * callee は「完全修飾クラス名.メソッド名(引数型略名)」。パッケージ違いの同名
- * クラスとオーバーロードを、この1列だけで見分けられるようにするため。
+ * callee は「クラス名.メソッド名」。Excel のフィルタで呼び出し先を選びやすくする
+ * ため、引数型は付けない（オーバーロードは同じ表記にまとまる）。
  * <ul>
  *   <li>呼び出し1件につき1行（起点自身は呼び出し元が無いため出力しない）</li>
  *   <li>caller は Eclipse の Java Stack Trace Console が認識する
@@ -55,10 +55,10 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.append(Csv.esc(stackTrace(mt, path[depth - 1].methodId, path[depth].callLine)))
                 .append(Csv.DELIM);
 
-        // callee: 完全修飾クラス名 + メソッド名 + 引数型略名。
+        // callee: クラス名 + メソッド名（引数は付けない）。
         // Excelのフィルタで選べるよう、行番号は含めない安定した表記にする
         // （行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばる）。
-        buf.append(Csv.esc(mt.displayLabel(path[depth].methodId))).append(Csv.DELIM);
+        buf.append(Csv.esc(mt.shortLabel(path[depth].methodId))).append(Csv.DELIM);
 
         // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
         buf.append(Csv.esc(mt.shortLabel(rootId)));

@@ -529,9 +529,10 @@ public final class StreamingTreeWalker {
                     + ((def == null) ? declType : def.implFqnOf(declType))
                     + " はアノテーション処理で生成されるためソース上に無い";
         } else if (Resolution.NO_IMPL.equals(res.label())) {
-            // 本体を持つ実装がソース上に1つも無い。宣言のまま出しているだけで、
-            // 実行時に何が動くかはこのツールでは分からない
-            detail = "実装なし（宣言のまま）: " + RecvKind.describe(recvKind);
+            // 本体を持つ実装がソース上に1つも無い。行数が多く読み手の役に立たない
+            // ため、call-hierarchy.csv の注記には出さない（methods.csv の
+            // unresolvedCause には従来どおり残る）
+            detail = null;
         } else if (target != declaredCallee || res.isDataflow()) {
             // データフローで決めた場合は、宣言型と同じ結論でも「CHAで諦めずに
             // 絞れた」ことに意味があるので必ず出す

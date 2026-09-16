@@ -124,21 +124,22 @@ jp.co.xxx.action.UserAction#execute メソッド指定
 
 ```csv
 caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),jp.co.example.service.OrderService.findOrder(String),OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.example.dao.OrderDaoImpl.selectById(long),OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 | この形にする目的 |
 |---|---|---|
 | `caller` | 呼び出し元。`at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**。行番号は**呼び出し箇所**の行 | Eclipseの「Javaスタック・トレース・コンソール」に貼ると `(ファイル:行)` がリンクになりソースへ飛べる。内部クラスは `Outer$Inner`、コンストラクタは `<init>` で書く（コンソールが解釈する形式に合わせる） |
-| `callee` | 呼び出し先。**完全修飾クラス名.メソッド名(引数型の略名)**。内部クラスは `Outer.Inner`、コンストラクタはクラス名 | Excelのフィルタで、パッケージ違いの同名クラスとオーバーロードをこの1列で見分ける。行番号は混ぜない（フィルタの選択肢が散らばる） |
+| `callee` | 呼び出し先。**クラス単純名.メソッド名**（引数は付けない）。内部クラスは `Outer.Inner`、コンストラクタはクラス名 | Excelのフィルタで呼び出し先を選ぶための短い表記。引数を付けないのでオーバーロードは同じ表記にまとまる。行番号は混ぜない（フィルタの選択肢が散らばる） |
 | `root` | 起点メソッド。`クラス単純名.メソッド名` | フィルタ用の短い表記 |
 | `call-hierarchy` | 起点の次のノードから現ノードまでを**1ノード1列**で展開（可変長・必ず最終列） | 階層をそのまま読む。ヘッダーとデータ行の列数は一致しなくてよい |
 
 - 呼び出し1件につき1行。起点自身の行は出さない
-- 引数型の略名は `java.lang.String`→`String`、`java.util.List`→`List`、内部クラス
-  `fx.Outer.Inner`→`Inner`。ただし略した結果**別物が同じ表記になる組だけ**完全修飾に戻す
-  （`save(java.util.List)` と `save(other.List)`）。判定は全メソッドを一度走査して作る
+- 引数型の略名（`methods.csv` の `method` 列で使う）は `java.lang.String`→`String`、
+  `java.util.List`→`List`、内部クラス `fx.Outer.Inner`→`Inner`。ただし略した結果
+  **別物が同じ表記になる組だけ**完全修飾に戻す（`save(java.util.List)` と
+  `save(other.List)`）。判定は全メソッドを一度走査して作る
 - **コンストラクタの呼び出し自体は行にしない**（`new` したことより「その中で何を呼ぶか」が
   知りたい）。経路には積むので、コンストラクタ内からの呼び出しは階層に
   `Sample.Sample` のような形でコンストラクタを含めて出す
@@ -157,7 +158,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),jp.co.exam
 | 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` |
 | 後半2 | 候補が複数（上記以外） | `CHA候補N件（未展開）: {理由}` |
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` |
-| 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `実装なし（宣言のまま）: {理由}` |
+| 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | 注記なし（`methods.csv` の `unresolvedCause` にだけ残す） |
 | 後半5 | 解決先が宣言型と違う（リフレクションで解決した `REFLECTION` / `REFLECTION_INIT` を含む）、**または** データフローで決めた（宣言型と同じでも出す） | `解決:{ラベル}` |
 
 `{理由}` はレシーバの由来: `戻り値（ファクトリメソッド等）` / `引数（メソッド外から渡される）` /
@@ -536,7 +537,7 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 | 用途 | 形式 | 例 |
 |---|---|---|
 | 内部ID・型階層の照合 | ソース上の正規名 | `jp.co.xxx.Outer.Inner` |
-| `callee` 列 | FQN.メソッド名(引数略名) | `jp.co.xxx.Outer.Inner.method(String)` |
+| `callee` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
 | `root` / `call-hierarchy` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
 | `caller` 列 | **バイナリ名** | `at jp.co.xxx.Outer$Inner.method(Foo.java:12)` |
 
@@ -551,7 +552,8 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
   FQN全体をそのまま単純名にする
 - コンストラクタは内部的に `<init>`。表示はクラス単純名（`Sample.Sample`）。ただし `caller`
   列だけは `<init>` のまま（スタックトレース・コンソールの形式）
-- 引数略名の衝突判定は「単純名ラベルが同じで、キーが違う」組を全メソッドから集める
+- 引数略名の衝突判定（`methods.csv` の `method` 列）は「単純名ラベルが同じで、キーが違う」組を
+  全メソッドから集める
 
 ## 2.7 静的束縛の判定軸
 
@@ -1787,28 +1789,28 @@ jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring
 
 `create()` は `UserDao` を返し、`select()` は親 `AbstractDao` にしかない。
 ```
-at fx.App.viaFactory(App.java:10),fx.AbstractDao.select(),App.viaFactory,AbstractDao.select,解決:DATAFLOW_FACTORY
-at fx.AbstractDao.select(AbstractDao.java:5),fx.AbstractDao.log(),App.viaFactory,AbstractDao.select,AbstractDao.log
-at fx.App.viaFactory(App.java:10),fx.Factory.create(),App.viaFactory,Factory.create
+at fx.App.viaFactory(App.java:10),AbstractDao.select,App.viaFactory,AbstractDao.select,解決:DATAFLOW_FACTORY
+at fx.AbstractDao.select(AbstractDao.java:5),AbstractDao.log,App.viaFactory,AbstractDao.select,AbstractDao.log
+at fx.App.viaFactory(App.java:10),Factory.create,App.viaFactory,Factory.create
 ```
 検証観点: 段2.8 の親探索。`解決:DATAFLOW_FACTORY` の行の先へ**降りている**（`log` の行がある）。
 
 ### T02 ローカル変数で受けたファクトリ戻り値
 ```
-at fx.App.viaLocalVar(App.java:15),fx.AbstractDao.select(),App.viaLocalVar,AbstractDao.select,解決:DATAFLOW_FACTORY
+at fx.App.viaLocalVar(App.java:15),AbstractDao.select,App.viaLocalVar,AbstractDao.select,解決:DATAFLOW_FACTORY
 ```
 
 ### T03 委譲するファクトリ（`return create();`）
 ```
-at fx.App.viaDelegate(App.java:19),fx.AbstractDao.select(),App.viaDelegate,AbstractDao.select,解決:DATAFLOW_FACTORY
-at fx.Factory.delegate(Factory.java:9),fx.Factory.create(),App.viaDelegate,Factory.delegate,Factory.create
+at fx.App.viaDelegate(App.java:19),AbstractDao.select,App.viaDelegate,AbstractDao.select,解決:DATAFLOW_FACTORY
+at fx.Factory.delegate(Factory.java:9),Factory.create,App.viaDelegate,Factory.delegate,Factory.create
 ```
 
 ### T04 2つの型を返しうるファクトリは絞らない
 ```
-at fx.App.viaEither(App.java:23),fx.AbstractDao.select(),App.viaEither,AbstractDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
-at fx.App.viaEither(App.java:23),fx.MemoDao.select(),App.viaEither,MemoDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
-at fx.App.viaEither(App.java:23),fx.OrderDao.select(),App.viaEither,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.App.viaEither(App.java:23),AbstractDao.select,App.viaEither,AbstractDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.App.viaEither(App.java:23),MemoDao.select,App.viaEither,MemoDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.App.viaEither(App.java:23),OrderDao.select,App.viaEither,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
 ```
 検証観点: 候補は `Dao.select()` をオーバーライドしている宣言3件（`AbstractDao` / `MemoDao` /
 `OrderDao`、この順＝FQN順）。`UserDao` は宣言を持たないので候補に**入らない**。候補行の先へは
@@ -1816,39 +1818,39 @@ at fx.App.viaEither(App.java:23),fx.OrderDao.select(),App.viaEither,OrderDao.sel
 
 ### T05 `Class.forName(文字列).newInstance()` 形式のファクトリ
 ```
-at fx.App.viaByName(App.java:27),fx.OrderDao.select(),App.viaByName,OrderDao.select,解決:DATAFLOW_FACTORY
-at fx.App.viaByNameModern(App.java:31),fx.OrderDao.select(),App.viaByNameModern,OrderDao.select,解決:DATAFLOW_FACTORY
-at fx.App.viaConstant(App.java:35),fx.OrderDao.select(),App.viaConstant,OrderDao.select,解決:DATAFLOW_FACTORY
+at fx.App.viaByName(App.java:27),OrderDao.select,App.viaByName,OrderDao.select,解決:DATAFLOW_FACTORY
+at fx.App.viaByNameModern(App.java:31),OrderDao.select,App.viaByNameModern,OrderDao.select,解決:DATAFLOW_FACTORY
+at fx.App.viaConstant(App.java:35),OrderDao.select,App.viaConstant,OrderDao.select,解決:DATAFLOW_FACTORY
 ```
 検証観点: `getDeclaredConstructor()` を挟む形と `static final String` 定数でも解決する。
 
 ### T06 実行時に決まる文字列・存在しない型名では絞らない
 ```
-at fx.App.viaRuntimeName(App.java:39),fx.OrderDao.select(),App.viaRuntimeName,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
-at fx.App.viaMissingType(App.java:43),fx.OrderDao.select(),App.viaMissingType,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.App.viaRuntimeName(App.java:39),OrderDao.select,App.viaRuntimeName,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
+at fx.App.viaMissingType(App.java:43),OrderDao.select,App.viaMissingType,OrderDao.select,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
 ```
 （それぞれ `MemoDao.select` / `AbstractDao.select` の候補行も同様に出る）
 
 ### T07 同一メソッド内の `new`（段2）
 ```
-at fx.App.viaLocalNew(App.java:49),fx.OrderDao.select(),App.viaLocalNew,OrderDao.select,解決:LOCAL_NEW
+at fx.App.viaLocalNew(App.java:49),OrderDao.select,App.viaLocalNew,OrderDao.select,解決:LOCAL_NEW
 ```
 
 ### T08 ループ内で再代入される変数は候補集合のまま
 ```
-at fx.App.viaLoop(App.java:55),fx.OrderDao.select(),App.viaLoop,OrderDao.select,CHA候補2件（未展開）: ローカル変数
-at fx.App.viaLoop(App.java:55),fx.MemoDao.select(),App.viaLoop,MemoDao.select,CHA候補2件（未展開）: ローカル変数
+at fx.App.viaLoop(App.java:55),OrderDao.select,App.viaLoop,OrderDao.select,CHA候補2件（未展開）: ローカル変数
+at fx.App.viaLoop(App.java:55),MemoDao.select,App.viaLoop,MemoDao.select,CHA候補2件（未展開）: ローカル変数
 ```
 検証観点: 3件のCHA候補が `new` された2型に**狭まる**が、1件には**絞らない**。
 
 ### T09 引数由来（経路依存）— 同じ呼び出し箇所が経路ごとに違う実装に解決される
 ```
-at fx.App.rootA(App.java:62),fx.App.shared(Dao),App.rootA,App.shared
-at fx.App.shared(App.java:70),fx.AbstractDao.select(),App.rootA,App.shared,AbstractDao.select,解決:DATAFLOW_PARAM
-at fx.App.passThrough(App.java:75),fx.AbstractDao.select(),App.rootA,App.shared,App.passThrough,AbstractDao.select,解決:DATAFLOW_PARAM
-at fx.App.rootB(App.java:66),fx.App.shared(Dao),App.rootB,App.shared
-at fx.App.shared(App.java:70),fx.OrderDao.select(),App.rootB,App.shared,OrderDao.select,解決:DATAFLOW_PARAM
-at fx.App.passThrough(App.java:75),fx.OrderDao.select(),App.rootB,App.shared,App.passThrough,OrderDao.select,解決:DATAFLOW_PARAM
+at fx.App.rootA(App.java:62),App.shared,App.rootA,App.shared
+at fx.App.shared(App.java:70),AbstractDao.select,App.rootA,App.shared,AbstractDao.select,解決:DATAFLOW_PARAM
+at fx.App.passThrough(App.java:75),AbstractDao.select,App.rootA,App.shared,App.passThrough,AbstractDao.select,解決:DATAFLOW_PARAM
+at fx.App.rootB(App.java:66),App.shared,App.rootB,App.shared
+at fx.App.shared(App.java:70),OrderDao.select,App.rootB,App.shared,OrderDao.select,解決:DATAFLOW_PARAM
+at fx.App.passThrough(App.java:75),OrderDao.select,App.rootB,App.shared,App.passThrough,OrderDao.select,解決:DATAFLOW_PARAM
 ```
 検証観点: `shared(App.java:70)` の行が root ごとに**別の callee** を持つ。2段受け渡し
 （`passThrough`）でも伝わる。`methods.csv` の `App.shared(Dao)` は
@@ -1856,24 +1858,24 @@ at fx.App.passThrough(App.java:75),fx.OrderDao.select(),App.rootB,App.shared,App
 
 ### T10 コンストラクタ注入されたフィールド
 ```
-at fx.Service.exec(Service.java:11),fx.OrderDao.select(),App.viaService,Service.exec,OrderDao.select,解決:DATAFLOW_FIELD
-at fx.Service.helper(Service.java:16),fx.OrderDao.select(),App.viaService,Service.exec,Service.helper,OrderDao.select,解決:DATAFLOW_FIELD
+at fx.Service.exec(Service.java:11),OrderDao.select,App.viaService,Service.exec,OrderDao.select,解決:DATAFLOW_FIELD
+at fx.Service.helper(Service.java:16),OrderDao.select,App.viaService,Service.exec,Service.helper,OrderDao.select,解決:DATAFLOW_FIELD
 ```
 検証観点: `this` への呼び出し（`helper`）の先でも解決される。
 
 ### T11 setter注入・一部のコンストラクタしか代入しない・親クラスのフィールドは絞らない
 ```
-at fx.SetterService.exec(SetterService.java:11),fx.OrderDao.select(),App.viaSetter,SetterService.exec,OrderDao.select,CHA候補3件（未展開）: フィールド変数
-at fx.PartialService.exec(PartialService.java:15),fx.OrderDao.select(),App.viaPartial,PartialService.exec,OrderDao.select,CHA候補3件（未展開）: フィールド変数
-at fx.Base.baseExec(Base.java:11),fx.OrderDao.select(),App.viaSub,Base.baseExec,OrderDao.select,CHA候補3件（未展開）: フィールド変数
+at fx.SetterService.exec(SetterService.java:11),OrderDao.select,App.viaSetter,SetterService.exec,OrderDao.select,CHA候補3件（未展開）: フィールド変数
+at fx.PartialService.exec(PartialService.java:15),OrderDao.select,App.viaPartial,PartialService.exec,OrderDao.select,CHA候補3件（未展開）: フィールド変数
+at fx.Base.baseExec(Base.java:11),OrderDao.select,App.viaSub,Base.baseExec,OrderDao.select,CHA候補3件（未展開）: フィールド変数
 ```
 （各3候補のうち1行を示す。`MemoDao` / `AbstractDao` の行も出る）
 
 ### T12 匿名クラスが捕捉した変数
 ```
-at fx.App.run(App.java:116),fx.App$1.run(),App.viaCapture,App.run,App$1.run,解決:DATAFLOW_PARAM
-at fx.App$1.run(App.java:102),fx.OrderDao.select(),App.viaCapture,App.run,App$1.run,OrderDao.select,解決:DATAFLOW_NEW
-at fx.App$2.run(App.java:110),fx.OrderDao.select(),App.viaCaptureParam,App.run,App$2.run,OrderDao.select,CHA候補3件（未展開）: 引数（メソッド外から渡される）
+at fx.App.run(App.java:116),App$1.run,App.viaCapture,App.run,App$1.run,解決:DATAFLOW_PARAM
+at fx.App$1.run(App.java:102),OrderDao.select,App.viaCapture,App.run,App$1.run,OrderDao.select,解決:DATAFLOW_NEW
+at fx.App$2.run(App.java:110),OrderDao.select,App.viaCaptureParam,App.run,App$2.run,OrderDao.select,CHA候補3件（未展開）: 引数（メソッド外から渡される）
 ```
 検証観点: `new` 由来（`T:`）の捕捉は解決し、囲みメソッドの**引数**（`A:`）の捕捉は解決しない。
 匿名クラスの型名は `fx.App$1` / `fx.App$2`（宣言順）。`Runnable` は `java.**` だが、`App$1.run`
@@ -1881,19 +1883,19 @@ at fx.App$2.run(App.java:110),fx.OrderDao.select(),App.viaCaptureParam,App.run,A
 
 ### T13 循環
 ```
-at fx.App.selfRec(App.java:127),fx.App.selfRec(int),App.cycles,App.selfRec,App.selfRec,[CYCLE]
-at fx.App.mutualB(App.java:136),fx.App.mutualA(),App.cycles,App.mutualA,App.mutualB,App.mutualA,[CYCLE]
+at fx.App.selfRec(App.java:127),App.selfRec,App.cycles,App.selfRec,App.selfRec,[CYCLE]
+at fx.App.mutualB(App.java:136),App.mutualA,App.cycles,App.mutualA,App.mutualB,App.mutualA,[CYCLE]
 ```
 検証観点: 無限ループしない。`[CYCLE]` 行の先へ降りない。`methods.csv` で `selfRec` /
 `mutualA` / `mutualB` は `NORMAL`, `reachable=1`。
 
 ### T14 ラムダ／匿名クラス／メソッド参照
 ```
-at fx.App.viaLambda(App.java:141),fx.Helper.validate(int),App.viaLambda,Helper.validate
-at fx.App.viaLambda(App.java:142),fx.App$3.handle(String),App.viaLambda,App$3.handle,ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）
-at fx.App.viaAnonHandler(App.java:151),fx.App$3.handle(String),App.viaAnonHandler,App$3.handle,ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）
-at fx.App$3.handle(App.java:148),fx.Helper.validate(int),App.viaAnonHandler,App$3.handle,Helper.validate
-at fx.App.viaMethodRef(App.java:156),fx.Repo.save(String),App.viaMethodRef,Repo.save
+at fx.App.viaLambda(App.java:141),Helper.validate,App.viaLambda,Helper.validate
+at fx.App.viaLambda(App.java:142),App$3.handle,App.viaLambda,App$3.handle,ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）
+at fx.App.viaAnonHandler(App.java:151),App$3.handle,App.viaAnonHandler,App$3.handle,ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）
+at fx.App$3.handle(App.java:148),Helper.validate,App.viaAnonHandler,App$3.handle,Helper.validate
+at fx.App.viaMethodRef(App.java:156),Repo.save,App.viaMethodRef,Repo.save
 ```
 検証観点:
 - ラムダ本体の `Helper.validate` は `viaLambda`（囲みメソッド）からの呼び出し（141行）
@@ -1906,32 +1908,33 @@ at fx.App.viaMethodRef(App.java:156),fx.Repo.save(String),App.viaMethodRef,Repo.
 
 ### T15 オーバーロードと引数型略名の衝突
 ```
-at fx.App.overloads(App.java:167),fx.Repo.save(String),App.overloads,Repo.save
-at fx.App.overloads(App.java:168),fx.Repo.save(long),App.overloads,Repo.save
-at fx.App.overloads(App.java:169),fx.Repo.save(java.util.List),App.overloads,Repo.save
-at fx.App.overloads(App.java:170),fx.Repo.save(other.List),App.overloads,Repo.save
-at fx.App.overloads(App.java:171),fx.Repo.save(String[]),App.overloads,Repo.save
-at fx.App.overloads(App.java:172),fx.Repo.save(Inner),App.overloads,Repo.save
-at fx.App.overloads(App.java:173),"fx.Repo.save(String,long)",App.overloads,Repo.save
+at fx.App.overloads(App.java:167),Repo.save,App.overloads,Repo.save
+at fx.App.overloads(App.java:168),Repo.save,App.overloads,Repo.save
+at fx.App.overloads(App.java:169),Repo.save,App.overloads,Repo.save
+at fx.App.overloads(App.java:170),Repo.save,App.overloads,Repo.save
+at fx.App.overloads(App.java:171),Repo.save,App.overloads,Repo.save
+at fx.App.overloads(App.java:172),Repo.save,App.overloads,Repo.save
+at fx.App.overloads(App.java:173),Repo.save,App.overloads,Repo.save
 ```
-検証観点: 衝突した `List` の組だけ完全修飾。内部クラス引数は `Inner`。引数2つはクォートされる。
-`methods.csv` の `method` 列も同じ表記（`Repo.save(java.util.List)` / `"Repo.save(String,long)"`）。
+検証観点: `callee` 列は引数を付けないので、7つのオーバーロードが同じ `Repo.save` になり、
+行は呼び出し箇所（`caller` の行番号）だけで見分ける。引数型の略名と衝突時の完全修飾化は
+`methods.csv` の `method` 列に残る（`Repo.save(java.util.List)` / `"Repo.save(String,long)"`）。
 
 ### T16 enum がCHAの候補に入る
 ```
-at fx.App.viaShape(App.java:178),fx.Circle.area(),App.viaShape,Circle.area,CHA候補2件（未展開）: 引数（メソッド外から渡される）
-at fx.App.viaShape(App.java:178),fx.Unit.area(),App.viaShape,Unit.area,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.App.viaShape(App.java:178),Circle.area,App.viaShape,Circle.area,CHA候補2件（未展開）: 引数（メソッド外から渡される）
+at fx.App.viaShape(App.java:178),Unit.area,App.viaShape,Unit.area,CHA候補2件（未展開）: 引数（メソッド外から渡される）
 ```
 検証観点: `Circle` だけを見て `SINGLE_IMPL` に**しない**。
 
 ### T17 初期化子の帰属（`<clinit>` と複数の `<init>`）
 ```
-at fx.Sample.<clinit>(Sample.java:4),fx.Sample.compute(),Sample.<clinit>,Sample.compute
-at fx.Sample.<clinit>(Sample.java:7),fx.Sample.staticBlockCall(),Sample.<clinit>,Sample.staticBlockCall
-at fx.Sample.<init>(Sample.java:5),fx.Sample.init(),Sample.Sample,Sample.init
-at fx.Sample.<init>(Sample.java:10),fx.Sample.instanceBlockCall(),Sample.Sample,Sample.instanceBlockCall
-at fx.Sample.<init>(Sample.java:5),fx.Sample.init(),Sample.Sample,Sample.Sample,Sample.init
-at fx.Sample.<init>(Sample.java:10),fx.Sample.instanceBlockCall(),Sample.Sample,Sample.Sample,Sample.instanceBlockCall
+at fx.Sample.<clinit>(Sample.java:4),Sample.compute,Sample.<clinit>,Sample.compute
+at fx.Sample.<clinit>(Sample.java:7),Sample.staticBlockCall,Sample.<clinit>,Sample.staticBlockCall
+at fx.Sample.<init>(Sample.java:5),Sample.init,Sample.Sample,Sample.init
+at fx.Sample.<init>(Sample.java:10),Sample.instanceBlockCall,Sample.Sample,Sample.instanceBlockCall
+at fx.Sample.<init>(Sample.java:5),Sample.init,Sample.Sample,Sample.Sample,Sample.init
+at fx.Sample.<init>(Sample.java:10),Sample.instanceBlockCall,Sample.Sample,Sample.Sample,Sample.instanceBlockCall
 ```
 検証観点: `init` / `instanceBlockCall` は `Sample()` と `Sample(int)` の2つから呼ばれる
 （`Sample(String)` は `this(0)` 委譲なので複製されず、`Sample(String)` → `Sample(int)` → `init`
@@ -1940,39 +1943,39 @@ at fx.Sample.<init>(Sample.java:10),fx.Sample.instanceBlockCall(),Sample.Sample,
 
 ### T18 enum定数の生成と static 初期化子
 ```
-at fx.Unit.<clinit>(Unit.java:4),fx.Helper.ratio(),Unit.<clinit>,Helper.ratio
-at fx.Unit.<clinit>(Unit.java:6),fx.Helper.ratio(),Unit.<clinit>,Helper.ratio
+at fx.Unit.<clinit>(Unit.java:4),Helper.ratio,Unit.<clinit>,Helper.ratio
+at fx.Unit.<clinit>(Unit.java:6),Helper.ratio,Unit.<clinit>,Helper.ratio
 ```
 検証観点: 定数の引数（4行）と static フィールド（6行）がどちらも `<clinit>` に帰属し、
 「メソッド本体の外」の型解決失敗にならない。
 
 ### T19 暗黙のデフォルトコンストラクタ・record
 ```
-at fx.App.viaNoCtor(App.java:183),fx.NoCtor.hello(),App.viaNoCtor,NoCtor.hello
-at fx.Point.<init>(Point.java:5),fx.Helper.validate(int),App.viaRecord,Point.Point,Helper.validate
+at fx.App.viaNoCtor(App.java:183),NoCtor.hello,App.viaNoCtor,NoCtor.hello
+at fx.Point.<init>(Point.java:5),Helper.validate,App.viaRecord,Point.Point,Helper.validate
 ```
 検証観点: `NoCtor.hello` に `ソースなし` 注記が付かない。record のコンパクトコンストラクタ内の
 呼び出しが `Point.Point` を含む経路で出る。
 
 ### T20 内部クラスの名前（`$` と `.`）、デフォルトパッケージ
 ```
-at fx.App.viaInner(App.java:191),fx.Outer.Inner.innerMethod(),App.viaInner,Outer.Inner.innerMethod
-at fx.Outer$Inner.innerMethod(Outer.java:6),fx.Helper.ratio(),App.viaInner,Outer.Inner.innerMethod,Helper.ratio
-at Top.go(Top.java:9),Top.In.m(),Top.go,Top.In.m
-at Top$In.m(Top.java:4),fx.Helper.ratio(),Top.go,Top.In.m,Helper.ratio
+at fx.App.viaInner(App.java:191),Outer.Inner.innerMethod,App.viaInner,Outer.Inner.innerMethod
+at fx.Outer$Inner.innerMethod(Outer.java:6),Helper.ratio,App.viaInner,Outer.Inner.innerMethod,Helper.ratio
+at Top.go(Top.java:9),Top.In.m,Top.go,Top.In.m
+at Top$In.m(Top.java:4),Helper.ratio,Top.go,Top.In.m,Helper.ratio
 ```
 検証観点: `caller` は `Outer$Inner`、`callee` と階層列は `Outer.Inner`。デフォルトパッケージでも
 `Top.In.m`（`In.m` になっていない）。
 
 ### T21 匿名クラスより後ろの呼び出し
 ```
-at fx.App.afterAnon(App.java:199),fx.Helper.validate(int),App.afterAnon,Helper.validate
+at fx.App.afterAnon(App.java:199),Helper.validate,App.afterAnon,Helper.validate
 ```
 検証観点: 匿名クラスを抜けた後の呼び出し（199行）が囲みメソッドに帰属する。
 
 ### T22 除外パッケージの繋ぎ直し
 ```
-at fx.internal.Bridge.through(Bridge.java:7),fx.Helper.validate(int),App.viaBridge,Helper.validate
+at fx.internal.Bridge.through(Bridge.java:7),Helper.validate,App.viaBridge,Helper.validate
 ```
 検証観点: `Bridge.through` の行は出ないが、その先の `Helper.validate` が `App.viaBridge` の
 直下として出る。`caller` は実際の呼び出し元 `Bridge.through`。`viaExclude` を root とする行は
@@ -1980,14 +1983,14 @@ at fx.internal.Bridge.through(Bridge.java:7),fx.Helper.validate(int),App.viaBrid
 
 ### T22a 除外パッケージ内の相互再帰
 ```
-at fx.internal.Ping.ping(Ping.java:8),fx.Helper.validate(int),App.viaPingPong,Helper.validate
+at fx.internal.Ping.ping(Ping.java:8),Helper.validate,App.viaPingPong,Helper.validate
 ```
 検証観点: `Ping.ping` → `Pong.pong` → `Ping.ping` はどちらも除外パッケージ。スタックオーバーフロー
 せず終了し、`Helper.validate` の行が**1行だけ**出る（2周目は循環として打ち切られる）。
 
 ### T23 import推定と型解決失敗
 ```
-at fx.UsesLib.guess(UsesLib.java:8),org.apache.commons.lang3.StringUtils.isEmpty(),UsesLib.guess,StringUtils.isEmpty,外部ライブラリ（import推定・未検証）
+at fx.UsesLib.guess(UsesLib.java:8),StringUtils.isEmpty,UsesLib.guess,StringUtils.isEmpty,外部ライブラリ（import推定・未検証）
 at fx.UsesLib.fail(UsesLib.java:12),call,(型解決失敗),call,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
 ```
 検証観点: 単一型インポートは推定して残す。ワイルドカードインポートは `(型解決失敗)` 行になり、
@@ -2079,43 +2082,43 @@ jar の追加で `OrderService.execute` の `dao.findById` が `CHA候補2件` �
 
 ### T33 `Class.forName(リテラル).getMethod(名前, クラスリテラル).invoke(...)`
 ```
-at fx.App.viaReflectForName(App.java:214),fx.Repo.save(long),App.viaReflectForName,Repo.save,解決:REFLECTION
+at fx.App.viaReflectForName(App.java:214),Repo.save,App.viaReflectForName,Repo.save,解決:REFLECTION
 ```
 
 ### T34 クラスリテラル・`getClass()` から
 ```
-at fx.App.viaReflectClassLiteral(App.java:218),fx.Repo.save(String),App.viaReflectClassLiteral,Repo.save,解決:REFLECTION
-at fx.App.viaReflectGetClass(App.java:223),fx.Repo.save(String),App.viaReflectGetClass,Repo.save,解決:REFLECTION
+at fx.App.viaReflectClassLiteral(App.java:218),Repo.save,App.viaReflectClassLiteral,Repo.save,解決:REFLECTION
+at fx.App.viaReflectGetClass(App.java:223),Repo.save,App.viaReflectGetClass,Repo.save,解決:REFLECTION
 ```
 検証観点: `repo.getClass()` はローカル変数 `repo` の出所（`T:fx.Repo`）から決まる。
 
 ### T35 メソッド名と受け手が引数で渡ってくる形（経路依存）
 ```
-at fx.App.viaReflectNameArg(App.java:227),"fx.App.invokeByName(Object,String)",App.viaReflectNameArg,App.invokeByName
-at fx.App.invokeByName(App.java:231),fx.Repo.save(long),App.viaReflectNameArg,App.invokeByName,Repo.save,解決:REFLECTION
+at fx.App.viaReflectNameArg(App.java:227),App.invokeByName,App.viaReflectNameArg,App.invokeByName
+at fx.App.invokeByName(App.java:231),Repo.save,App.viaReflectNameArg,App.invokeByName,Repo.save,解決:REFLECTION
 ```
 検証観点: `invokeByName` 単体では決まらない（`target` も `name` も引数）。`viaReflectNameArg`
 から渡された `new Repo()` と `"save"` を経路で持ち回って解決する。
 
 ### T36 引数型が変数のときは名前で照合し、候補を列挙する
 ```
-at fx.App.viaReflectUnknownTypes(App.java:236),fx.Repo.save(String),App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
-at fx.App.viaReflectUnknownTypes(App.java:236),fx.Repo.save(long),App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
-at fx.App.viaReflectUnknownTypes(App.java:236),"fx.Repo.save(String,long)",App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
+at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
+at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
+at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,リフレクション候補7件（未展開）: 引数型が不明なため名前で照合
 ```
 （`Repo.save` の7オーバーロード全部が候補行になる。`methods.csv` の `App.viaReflectUnknownTypes()`
 は `unresolvedCalls=1, unresolvedCause=戻り値（ファクトリメソッド等）`）
 
 ### T37 `Class.forName` によるクラス初期化
 ```
-at fx.App.viaReflectInit(App.java:240),fx.Registry.<clinit>(),App.viaReflectInit,Registry.<clinit>,解決:REFLECTION_INIT
-at fx.Registry.<clinit>(Registry.java:5),fx.Helper.ratio(),App.viaReflectInit,Registry.<clinit>,Helper.ratio
+at fx.App.viaReflectInit(App.java:240),Registry.<clinit>,App.viaReflectInit,Registry.<clinit>,解決:REFLECTION_INIT
+at fx.Registry.<clinit>(Registry.java:5),Helper.ratio,App.viaReflectInit,Registry.<clinit>,Helper.ratio
 ```
 検証観点: `<clinit>` の先へ降りる。`Registry.<clinit>` は入次数1になり起点候補から外れる（T24）。
 
 ### T38 `getDeclaredConstructor().newInstance()` で生成した型が以降の呼び出しに使われる
 ```
-at fx.App.viaReflectCtor(App.java:244),fx.OrderDao.select(),App.viaReflectCtor,OrderDao.select,解決:DATAFLOW_NEW
+at fx.App.viaReflectCtor(App.java:244),OrderDao.select,App.viaReflectCtor,OrderDao.select,解決:DATAFLOW_NEW
 ```
 
 ### T39 実行時に決まるクラス名は解決しない

@@ -225,7 +225,7 @@ public final class ExternalUsageScanner {
         int id = resolveRef(owner, sig);
         if (id >= 0) {
             String kind = methods.typeFqn(id).equals(normalize(owner)) ? "EXACT" : "INHERITED";
-            out.writeExternalUsageRow(caller, methods.displayLabel(id),
+            out.writeExternalUsageRow(caller, methods.shortLabel(id),
                     methods.shortLabel(id), jarName, kind);
             if (refCount[id]++ == 0) {
                 stats.usedMethods++;
