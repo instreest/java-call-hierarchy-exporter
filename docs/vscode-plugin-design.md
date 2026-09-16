@@ -32,7 +32,8 @@ VSCode の拡張ホストは Node.js なので、そもそも Java を動かす�
 これは制約ではなく好都合で、Eclipse 版で苦労した「プラグイン側から解析コードを追い出す」作業が最初から済んでいる。
 
 使うプロトコルは**既存のものそのまま**（`HELLO` / `ANALYZE` / `STATUS` / `FIND` / `TREE` / `EXPORT` / `CANCEL` / `SHUTDOWN`）。
-足すのは §4 の `AT` 1つだけで、既存の行の意味は変えないのでプロトコル版は 1 のまま据え置く。
+足すのは §4 の `AT` 1つだけで、既存の行の意味は変えないのでプロトコル版は 1 のまま据え置く
+（**実装済み**。`jche.server.Server#at`）。
 
 ### 置き場所
 
@@ -190,11 +191,21 @@ VSCode でこれを再現しようとすると、次のどちらかになる。
 
 ```
 → AT  src/main/java/com/example/OrderService.java  42
-← OK  key=com.example.OrderService#save(com.example.Order)  label=…  file=…  line=38
-   （無ければ ← NG not-found）
+← OK  how=at  key=com.example.OrderService#save(com.example.Order)  label=…  file=…  line=38  callers=7
 ```
 
-- パスは `project.root` からの相対。区切りは `/` に正規化して送る（Windows でも）
+断り方は4つに分けてある。呼び出し側が次にすることを選べるようにするためである。
+
+| 応答 | 意味 | 画面での扱い |
+|---|---|---|
+| `NG not-analyzed` | まだ `ANALYZE` していない | ［解析する］を出す |
+| `NG file-not-analyzed` | そのファイルが解析結果に無い（`source.folders` の外・除外・新規ファイル） | 「このファイルは解析対象に入っていません」＋［再解析］ |
+| `NG not-found` | ファイルはあるが、その行を囲むメソッドが無い（import 文や宣言部） | 「メソッドの中にカーソルを置いてください」 |
+| `NG bad-line …` | 行番号が壊れている | 拡張の不具合。ログへ |
+
+- パスは `project.root` からの相対（区切りは `/`）。**ルート配下の絶対パスでも受ける**ので、
+  拡張は `Uri#fsPath` をそのまま渡してよい（サーバー側が相対に直す）
+- 行番号は **1 始まり**。VSCode の `Position#line` は 0 始まりなので、拡張側で +1 する
 - 宣言の**終了行を持っていない**ので「メソッドの外（フィールド宣言やクラスの末尾）にカーソルがある」ときも
   直前のメソッドを返してしまう。ここは割り切る。返した位置（`line=`）を画面に出し、
   「`OrderService#save` の呼び出し元」と見出しに書くことで、利用者が誤りに気づける形にする
@@ -389,7 +400,7 @@ Eclipse 版は同じ作りで足りているため、**先に複雑にはしな�
 
 | 段 | 内容 |
 |---|---|
-| M1 | サーバーに `AT` を足す（本体側だけで完結。`test/server/run.sh` で検査）|
+| ~~M1~~ **済** | サーバーに `AT` を足した（`jche.server.Server#at`。`test/server/run.sh` が検査）|
 | M2 | プロトコルクライアント（`src/server/`）＋設定の自動生成。`vscode` に触らない層。`test/vscode/run.sh` |
 | M3 | ツリービュー・カーソルからの起動・状態表示・ログ出力（ここで「使える」状態になる）。木は**一括転送のまま**作り、§11 の目安で測る |
 | M4 | フィルタ一式・方向切り替え・CSV 出力・変更検知・JDK の取得 |

@@ -21,6 +21,9 @@ package jche.server;
  *   → FIND  com.example.OrderService#save(com.example.Order)
  *   ← OK  key=...  label=...  file=...  line=42        （無ければ NG not-found）
  *
+ *   → AT  src/main/java/com/example/OrderService.java  42     （ファイルと行を囲むメソッド）
+ *   ← OK  how=at  key=...  label=...  file=...  line=38  callers=7
+ *
  *   → TREE  &lt;メソッドキー&gt;  callers  depth=5  text=Order  tests=0
  *   ← R  0  &lt;キー&gt;  &lt;表示名&gt;  &lt;ファイル&gt;  &lt;行&gt;  &lt;解決の理由&gt;  &lt;印&gt;
  *   ← R  1  ...
@@ -42,7 +45,12 @@ package jche.server;
  */
 public final class Protocol {
 
-    /** このプロトコルの版。増やすのは、既存の行の意味を変えるときだけ */
+    /**
+     * このプロトコルの版。増やすのは、既存の行の意味を変えるときだけ。
+     *
+     * <p>要求を足すのは版を上げる理由にしない（知らない要求には {@code NG unknown-command} が返るので、
+     * 新しいクライアントが古いサーバーに当たっても壊れない）。{@code AT} を足したときも 1 のままにした。
+     */
     public static final int VERSION = 1;
 
     public static final String SEP = "\t";

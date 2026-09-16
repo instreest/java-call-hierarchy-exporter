@@ -85,6 +85,30 @@ OUT=$(session "ANALYZE\t$CONFIG\nFIND\tfx.app.Main#run(java.lang.Object[])\nSHUT
 grep -qE "^OK${T}how=loose${T}key=fx\.app\.Main#run\(java\.lang\.String\[\]\)" <<<"$OUT" \
     && ok "型名がずれたキーを、引数の数で一意に決めて拾う" || fail "ゆるい照合が効いていない"
 
+echo "== AT（ファイルと行から囲みメソッドを引く） =="
+# エディタのプラグインはキーを組み立てずに、カーソルの位置だけを送る（docs/vscode-plugin-design.md §4）。
+# test/demo の DaoFactory.java は 6行目 create() / 10行目 newUserDao() / 25行目 passThrough() の順に並ぶ
+AT_FILE=src/fx/dao/DaoFactory.java
+OUT=$(session "ANALYZE\t$CONFIG\nAT\t$AT_FILE\t7\nAT\t$AT_FILE\t1\nAT\t$AT_FILE\t28\nAT\t$ROOT/test/demo/$AT_FILE\t11\nAT\tsrc/fx/dao/NoSuchFile.java\t3\nAT\t$AT_FILE\txx\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+grep -qE "^OK${T}how=at${T}key=fx\.dao\.DaoFactory#create\(\)${T}.*${T}line=6${T}callers=[0-9]+" <<<"$OUT" \
+    && ok "本体の行（7）から、その行を囲む create()（宣言は6行目）を引く" || fail "AT が囲みメソッドを引けていない"
+grep -qE "^OK${T}how=at${T}key=fx\.dao\.DaoFactory#newUserDao\(\)" <<<"$OUT" \
+    && ok "プロジェクトルート配下の絶対パスでも引ける" || fail "絶対パスを受けられていない"
+# 最初のメソッドより前（package 宣言）は「その行を囲むメソッドが無い」ので not-found
+grep -qE "^NG${T}not-found" <<<"$OUT" && ok "宣言部（1行目）は not-found" || fail "宣言部が not-found にならない"
+# 解析対象に無いファイルは not-found と言い分ける（設定漏れか新規ファイルかが分かるように）
+grep -qE "^NG${T}file-not-analyzed" <<<"$OUT" && ok "解析していないファイルは file-not-analyzed" || fail "未解析ファイルの断り方が違う"
+grep -qE "^NG${T}bad-line" <<<"$OUT" && ok "行番号でない引数は bad-line" || fail "壊れた行番号の断り方が違う"
+# 宣言の終了行は持っていないので、メソッドの外（末尾の }）でも直前のメソッドを返す。
+# これは承知のうえの割り切りで、呼び出し側は返った line= を画面に出して気づけるようにする（Issue #115）
+grep -qE "^OK${T}how=at${T}key=fx\.dao\.DaoFactory#passThrough\(fx\.dao\.Dao\)${T}.*${T}line=25${T}" <<<"$OUT" \
+    && ok "メソッドの外（28行目）は直前のメソッドを返す（終了行を持たない割り切り）" \
+    || fail "メソッド外の扱いが期待と違う"
+
+OUT=$(session "AT\t$AT_FILE\t7\nSHUTDOWN\n")
+grep -qE "^NG${T}not-analyzed" <<<"$OUT" && ok "解析前の AT は not-analyzed" || fail "解析前の AT が断られない"
+
 echo "== フィルタは解析をやり直さない =="
 OUT=$(session "ANALYZE\t$CONFIG\nTREE\t$TARGET\tcallers\tdepth=5\nTREE\t$TARGET\tcallers\tdepth=5\ttext=zzz-no-such-name\nSHUTDOWN\n")
 WIDE=$(grep -oE "^OK${T}rows=[0-9]+" <<<"$OUT" | head -1 | grep -oE '[0-9]+')
