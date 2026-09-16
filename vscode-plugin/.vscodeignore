@@ -1,0 +1,9 @@
+# .vsix に入れないもの。入れるのは dist/ と lib/（解析本体と JDT）だけ
+src/**
+test/**
+out/**
+node_modules/**
+esbuild.mjs
+tsconfig.json
+package-lock.json
+**/*.map

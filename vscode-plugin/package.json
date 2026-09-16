@@ -1,0 +1,33 @@
+{
+  "name": "call-hierarchy-exporter",
+  "displayName": "Call Hierarchy Exporter",
+  "description": "Java プロジェクトの呼び出し階層を一括解析し、影響調査のための呼び出し元ツリーと CSV を出す",
+  "version": "0.1.0",
+  "publisher": "instreest",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/instreest/java-call-hierarchy-exporter"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {},
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node esbuild.mjs",
+    "build:test": "node esbuild.mjs --test",
+    "test": "npm run typecheck && npm run build:test && node --test \"out/test/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "22.20.3",
+    "@types/vscode": "1.100.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

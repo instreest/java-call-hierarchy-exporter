@@ -348,3 +348,35 @@ jobs:
 
       - name: Plugin client test
         run: bash test/plugin-client/run.sh
+
+  # VSCode プラグイン（vscode-plugin/）の検査。
+  # 画面は VSCode 本体が無いと動かせないので、その下の層――子プロセスを起動し、プロトコルで話し、
+  # 返ってきた行を木に組み直す・設定ファイルを用意する――だけを Node で検査する
+  # （Eclipse 版の plugin-client と対になる。docs/vscode-plugin-design.md §10）。
+  # 解析本体は regression ジョブと同じ手順（jbang で依存を解決してコンパイル）で用意する
+  vscode-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: vscode-plugin/package-lock.json
+
+      - name: Cache jbang and dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.jbang
+            ~/.m2/repository
+          key: jbang-${{ hashFiles('jbangw/jbang', 'src/jche/CallHierarchyExporter.java') }}
+
+      - name: VSCode plugin client test
+        run: bash test/vscode/run.sh

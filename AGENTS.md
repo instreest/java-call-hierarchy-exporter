@@ -20,6 +20,8 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
+| `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`） |
+| `vscode-plugin/` | VSCode プラグイン（TypeScript、esbuild で1ファイルに束ねる）。同じ `--server` を子プロセスとして使う。`src/server/` と `src/config.ts` は `vscode` に触らない層で、Node だけで検査できる（`docs/vscode-plugin-design.md`） |
 | `test/` | 回帰テストと検査スクリプト（後述） |
 | `docs/README.md` | `docs/` の索引。使い方の詳細（`cli.md`、`build-tool-classpath.md`、`instance-analysis-plugin.md`、`github-actions.md`）、設計の説明（`cache-design.md`）、設計の記録、再実装用の仕様に分かれる |
 | `docs/*-qa.md` | 機能ごとの「実装時に迷ったこと・困ったことと結論」を Q&A 形式で残した記録 |
@@ -54,6 +56,8 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/cachetail/run.sh` | キャッシュの最終行（`Z` 行）を末尾から読む部分の境界（改行の有無・CRLF・読む量の境目・多バイト文字） |
 | `bash test/pom/run.sh` | `//DEPS` 行と `pom.xml` の依存が一致すること |
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |
+| `bash test/server/run.sh` | サーバーモード（`--server`）のプロトコルの検査。`HELLO` → `ANALYZE` → `FIND` / `AT` → `TREE` → `EXPORT` と断り方 |
+| `bash test/vscode/run.sh` | VSCode プラグインの `vscode` に触らない層の検査（Node 22 と npm が要る）。型検査、子プロセスとの一連のやりとり、木の組み直し、設定の用意、拡張本体を束ねられること |
 | 全ソースの lint | `javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing`（smoke.yml の「Compile with all lint warnings as errors」と同じ引数） |
 
 - テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）。ロケール未設定の環境では launcher.properties の日本語書き込みで落ちる
