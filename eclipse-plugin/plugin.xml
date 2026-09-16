@@ -2,7 +2,8 @@
 <?eclipse version="3.4"?>
 <!--
   画面への追加は2つ。
-  1) 呼び出し元階層ビュー（主ユースケース）。メソッドを選んで「呼び出し元階層を表示」で開く。
+  1) 呼び出し元階層ビュー「影響調査 (Call Hierarchy Exporter)」（主ユースケース）。
+     メソッドを選んで「影響調査: 呼び出し元階層を表示」で開く。
      解析結果はプラグインが常駐で持ち、ビューはそれをフィルタして見せるだけ
      （docs/eclipse-plugin-ui-design.md）
   2) 設定ファイル（*.properties）の右クリックからの CSV 一括出力。従来どおりの経路
@@ -32,7 +33,7 @@
             category="io.github.instreest.jche.eclipse.viewCategory"
             class="jche.eclipse.CallHierarchyView"
             id="io.github.instreest.jche.eclipse.callHierarchyView"
-            name="呼び出し階層 (Exporter)"
+            name="影響調査 (Call Hierarchy Exporter)"
             restorable="true"/>
    </extension>
 
@@ -40,7 +41,7 @@
       <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
          <command
                commandId="io.github.instreest.jche.eclipse.export"
-               label="呼び出し階層をCSVに出力"
+               label="影響調査: 呼び出し階層をCSVに出力"
                style="push">
             <!-- 選択が「すべて .properties ファイル」のときだけ出す -->
             <visibleWhen checkEnabled="false">
@@ -63,18 +64,18 @@
       <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
          <command
                commandId="io.github.instreest.jche.eclipse.showCallers"
-               label="呼び出し元階層を表示 (Exporter)"
+               label="影響調査: 呼び出し元階層を表示"
                style="push"/>
       </menuContribution>
    </extension>
 
-   <!-- 設定画面（ウィンドウ > 設定 > 呼び出し階層 (Exporter)）。
+   <!-- 設定画面（ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)）。
         解析は別プロセスなので、使う JDK・JDT・メモリ・常駐の切り方をここで決められる -->
    <extension point="org.eclipse.ui.preferencePages">
       <page
             class="jche.eclipse.JchePreferencePage"
             id="io.github.instreest.jche.eclipse.preferences"
-            name="呼び出し階層 (Exporter)"/>
+            name="影響調査 (Call Hierarchy Exporter)"/>
    </extension>
 
    <!-- Ctrl+Alt+Shift+H。Eclipse 標準の呼び出し階層（Ctrl+Alt+H）とは別物なので割り当てを分ける -->

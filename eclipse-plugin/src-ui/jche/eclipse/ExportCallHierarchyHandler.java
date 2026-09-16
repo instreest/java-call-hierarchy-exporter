@@ -112,7 +112,7 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
         JavaLocator.Found java = PluginRuntime.findJava(null);
         if (java == null) {
             throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM + " 以上）が見つかりません。"
-                    + "［ウィンドウ > 設定 > 呼び出し階層 (Exporter)］で指定してください");
+                    + "［ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)］で指定してください");
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         List<String> command = new ArrayList<>();

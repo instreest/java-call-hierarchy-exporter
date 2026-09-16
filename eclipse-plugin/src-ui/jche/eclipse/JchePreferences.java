@@ -9,7 +9,7 @@ import java.util.List;
 import org.eclipse.jface.preference.IPreferenceStore;
 
 /**
- * 設定（ウィンドウ > 設定 > 呼び出し階層 (Exporter)）の読み書き。
+ * 設定（ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)）の読み書き。
  *
  * <p>決められるのは「解析をどう走らせるか」だけである。解析は Eclipse とは別のプロセスなので、
  * 使う JDK・使う JDT・メモリ・常駐の切り方が、ここで初めて意味を持つ。
