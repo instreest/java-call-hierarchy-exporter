@@ -81,6 +81,10 @@ target/
 /test/cachevalue/build/
 /test/cachevalue/check/
 
+# test/cachetail/run.sh（キャッシュの最終行の読み取りの検査）のコンパイル結果
+/test/cachetail/build/
+/test/cachetail/check/
+
 # test/conditions/run.sh（条件の調査の検査）が作るもの。
 # ケースごとの設定ファイル（case.properties）とコンパイル結果・実行ログのほか、
 # 「通常の解析ならできる」ことを見るためのキャッシュと出力フォルダ

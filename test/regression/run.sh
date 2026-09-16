@@ -22,7 +22,9 @@
 #   cachesplit           … 2 つに分かれたキャッシュ（analysis-cache.tsv / dataflow-cache.tsv）の整合。
 #                          両方そろっていれば再利用し、dataflow を消す・世代の印を書き換えると両方を
 #                          作り直し、dataflow から 1 ブロックだけ消すとそのファイルだけ解析し直して
-#                          対に戻ることを確認する。どの実行のあとも 2 つの F 行が完全に一致すること
+#                          対に戻ることを確認する。最終行（Z 行）のブロック数の書き換え・削除と、
+#                          最終行の直前の文字化け（末尾だけを読むパス0 では気づけない位置）も見る。
+#                          どの実行のあとも 2 つの F 行が完全に一致すること
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
@@ -258,6 +260,51 @@ PY
     run cachesplit config.properties 6 "6回目: 対に戻ったあと" || return
     expect_reused cachesplit 6 "6回目: 全件再利用に戻る"
     compare cachesplit expected "6回目: 対に戻ったあと"
+
+    # 最終行（Z 行）のブロック数だけを書き換える。世代の印は合っているので、
+    # ブロック数の突き合わせだけが「どちらかが途中で切れている」と気づける形
+    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+for i in range(len(lines) - 1, -1, -1):
+    if lines[i].startswith('Z\t'):
+        lines[i] = 'Z\t99999'
+        break
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+PY
+    run cachesplit config.properties 7 "7回目: 最終行のブロック数が食い違う" || return
+    expect_not_reused cachesplit 7 "7回目: ブロック数が食い違えば両方を作り直す"
+    compare cachesplit expected "7回目: 最終行のブロック数が食い違う"
+    expect_blocks_paired "7回目"
+
+    # 最終行そのものを消す（書き終える前に落ちた形）。dataflow 側に Z 行が無ければ対とみなさない
+    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = [l for l in open(p, encoding='utf-8') if not l.startswith('Z\t')]
+open(p, 'w', encoding='utf-8').write(''.join(lines))
+PY
+    run cachesplit config.properties 8 "8回目: dataflow に最終行が無い" || return
+    expect_not_reused cachesplit 8 "8回目: 最終行が無ければ両方を作り直す"
+    compare cachesplit expected "8回目: dataflow に最終行が無い"
+    expect_blocks_paired "8回目"
+
+    # dataflow の最終行の直前に不正なバイトを差し込む。ヘッダの読み取り（先頭のバッファ）と
+    # 最終行の読み取り（末尾だけ）はどちらもここを見ないので、丸ごと読むパス1b で初めて気づく。
+    # そこで例外を投げると、キャッシュ 1 つのせいで解析ごと失敗する（run が失敗を拾う）
+    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+b = bytearray(open(p, 'rb').read())
+z = b.rindex(b'\nZ\t')
+b[z:z] = b'\xff\xfe bad'
+open(p, 'wb').write(bytes(b))
+PY
+    run cachesplit config.properties 9 "9回目: dataflow の途中の文字が壊れた" || return
+    expect_not_reused cachesplit 9 "9回目: 読めなければ解析を失敗させず両方を作り直す"
+    compare cachesplit expected "9回目: dataflow の途中の文字が壊れた"
+    expect_blocks_paired "9回目"
 }
 
 # 拡張のケース。同じソースを 3 通りの設定で解析し、拡張の効き目とキャッシュの扱いを見る

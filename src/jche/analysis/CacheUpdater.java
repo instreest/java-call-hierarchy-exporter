@@ -215,9 +215,12 @@ public final class CacheUpdater {
                 // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
                 valid.clear();
                 libraryAffected.clear();
-            } else if (oldCacheUsable) {
-                // --- パス1b: dataflow 側にブロックが無いものは有効から外す（対でないブロックを残さない） ---
-                dropBlocksMissingFromDataflowCache(valid, libraryAffected);
+            } else if (oldCacheUsable
+                    && !dropBlocksMissingFromDataflowCache(valid, libraryAffected)) {
+                // --- パス1b: dataflow 側が読めない。中途半端に再利用すると値が欠けるので丸ごと捨てる ---
+                valid.clear();
+                libraryAffected.clear();
+                oldConstants.clear();
             }
             // ソース一覧の指紋（T行）。L 行の直後という位置は形式で決まっている。
             // ハッシュはパス1 と共通で、1ファイル 1 回しか読まない（hashOf）
@@ -551,6 +554,11 @@ public final class CacheUpdater {
      * </pre>
      * 片方だけを使って「呼び出し階層は再利用、データフローだけ作り直し」とはしない。
      * ブロックごとにどちらが新しいかで結果が変わると、同じソースでも出力が揺れるため。
+     *
+     * <p>ここで読むのは、analysis 側のヘッダと L 行・T 行（最初の F 行で打ち切る）、
+     * dataflow 側のヘッダ、それに 2 つの最終行（{@link #trailerOf} が末尾だけを読む）。
+     * <b>どちらのキャッシュも全体を走らない。</b>毎回の実行で通る経路なので、
+     * ここでフルスキャンすると差分更新の利点をそのぶん削ってしまう
      */
     private List<LibraryFact> readOldLibraries() {
         if (!Files.isRegularFile(config.cacheFile)) {
@@ -562,18 +570,20 @@ public final class CacheUpdater {
             return null;
         }
         try {
-            if (!dataflowCachePairsWith(config.cacheFile, config.dataflowCacheFile)) {
-                return null;
-            }
+            // analysis 側を先に読む。ヘッダ（世代の印も）と L 行・T 行が 1 回の走査で取れるので、
+            // 対の判定のために開き直さずに済む
             CacheHead head = headOf(config.cacheFile);
-            List<LibraryFact> libraries = (head == null) ? null : head.libraries();
-            if (libraries == null) {
+            if (head == null) {
                 // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK が
                 // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
                 // 同じソースでも解析結果が変わるため、F 行の同一性が一致していても再利用してはいけない
                 Log.info("[cache] 形式・ソースレベル・文字コード・JDK のいずれかが異なるため既存キャッシュを破棄します");
+                return null;
             }
-            return libraries;
+            if (!dataflowCachePairsWith(head.generation())) {
+                return null;
+            }
+            return head.libraries();
         } catch (IOException | RuntimeException e) {
             // 読めない・文字が壊れているキャッシュ。全件解析し直せば済むので、解析ごと失敗させない
             Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
@@ -841,28 +851,22 @@ public final class CacheUpdater {
      *
      * @return 対になっていれば true。なっていなければ理由をログに出して false
      */
-    private boolean dataflowCachePairsWith(Path analysisCache, Path flowCache) throws IOException {
-        String flowHeader;
-        try (CacheReader flow = CacheReader.open(flowCache)) {
+    private boolean dataflowCachePairsWith(String generation) throws IOException {
+        try (CacheReader flow = CacheReader.open(config.dataflowCacheFile)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
                     config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint))) {
                 Log.info("[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が"
                         + "異なるため、両方を作り直します");
                 return false;
             }
-            flowHeader = flow.header();
+            String flowGeneration = flow.generation();
+            if (flowGeneration.isEmpty() || !flowGeneration.equals(generation)) {
+                Log.info("[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します");
+                return false;
+            }
         }
-        String flowGeneration = CacheFormat.generationOf(flowHeader);
-        String generation;
-        try (CacheReader in = CacheReader.open(analysisCache)) {
-            generation = in.generation();
-        }
-        if (flowGeneration.isEmpty() || !flowGeneration.equals(generation)) {
-            Log.info("[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します");
-            return false;
-        }
-        String flowTrailer = lastLineOf(flowCache);
-        String trailer = lastLineOf(analysisCache);
+        String flowTrailer = trailerOf(config.dataflowCacheFile);
+        String trailer = trailerOf(config.cacheFile);
         if (flowTrailer == null || !flowTrailer.equals(trailer)) {
             Log.info("[cache] 2 つのキャッシュのブロック数が食い違う（どちらかが途中で切れている）ため、"
                     + "両方を作り直します");
@@ -872,26 +876,26 @@ public final class CacheUpdater {
     }
 
     /**
-     * ファイルの最終行（{@link CacheFormat#trailerFor} の Z 行のはず）。
-     * 空ファイルなら null。最終行が Z 行でなければ、そのまま突き合わせに失敗する
+     * ファイルの最終行が {@link CacheFormat#trailerFor} の Z 行なら、その行。違えば null。
+     *
+     * ファイルの末尾だけを読む（{@link CacheReader#lastLineOf}）。ここは毎回の実行で
+     * 2 つのキャッシュに対して呼ぶので、先頭から読むとファイル全体の走査が 2 本増えてしまう。
+     * 最終行が Z 行でない（途中で切れている・別の行で終わっている）ときは、
+     * 突き合わせに失敗させて両方作り直す
      */
-    private static String lastLineOf(Path file) throws IOException {
-        String last = null;
-        try (CacheReader in = CacheReader.open(file)) {
-            while (in.next()) {
-                last = in.line();
-            }
-        }
+    private static String trailerOf(Path file) throws IOException {
+        String last = CacheReader.lastLineOf(file);
         return (last != null && CacheFormat.rowTypeOf(last) == CacheFormat.ROW_END) ? last : null;
     }
 
     /**
      * キャッシュのヘッダの直後にある情報。
      *
-     * @param libraries 解析時の依存 jar（L行）
-     * @param sources   解析開始時のソース一覧の指紋（T行）。無ければ空文字
+     * @param libraries  解析時の依存 jar（L行）
+     * @param sources    解析開始時のソース一覧の指紋（T行）。無ければ空文字
+     * @param generation ヘッダの世代の印。dataflow 側と対になっているかの判定に使う
      */
-    private record CacheHead(List<LibraryFact> libraries, String sources) {
+    private record CacheHead(List<LibraryFact> libraries, String sources, String generation) {
     }
 
     /**
@@ -917,7 +921,7 @@ public final class CacheUpdater {
                     break;   // ブロックが始まった
                 }
             }
-            return new CacheHead(libraries, sources);
+            return new CacheHead(libraries, sources, in.generation());
         }
     }
 
@@ -1173,9 +1177,15 @@ public final class CacheUpdater {
      * <p>ついでに K 行（宣言している定数の値）の指紋もここで集める。定数は値なので dataflow 側にあり、
      * <b>定数の連鎖の判断も dataflow 側を読んで行う</b>（{@code docs/cache-split-qa.md} の Q11）。
      * ブロックの走査はどうせ1回するので、同じ走査で済ませている。
+     *
+     * <p>ここは<b>dataflow 側を最初に丸ごと読む場所</b>なので、文字が壊れている・読めないことに
+     * 気づくのもここになる（パス0 は末尾の数百バイトしか読まない）。読めなければ例外を投げずに
+     * false を返し、呼び出し側に両方とも捨てさせる。1 つのキャッシュが壊れているだけで
+     * 解析そのものを失敗させてはいけない（{@link #scanOldCache} が false を返すときと同じ扱い）。
+     *
+     * @return そのまま使ってよければ true。読めないなら false（両方捨てて全件解析する）
      */
-    private void dropBlocksMissingFromDataflowCache(Set<String> valid, Set<String> libraryAffected)
-            throws IOException {
+    private boolean dropBlocksMissingFromDataflowCache(Set<String> valid, Set<String> libraryAffected) {
         Set<String> present = new HashSet<>();
         try (CacheReader in = CacheReader.open(config.dataflowCacheFile)) {   // ヘッダはパス0で検証済み
             String blockRel = null;                       // 有効・無効によらずブロックのファイル
@@ -1193,6 +1203,9 @@ public final class CacheUpdater {
                 }
             }
             rememberConstants(blockRel, blockConstants);   // 最後のブロック
+        } catch (IOException | RuntimeException e) {
+            Log.warn("[cache] データフローのキャッシュを読めないため、両方を破棄して全件解析します: " + e);
+            return false;
         }
         int dropped = 0;
         for (Iterator<String> it = valid.iterator(); it.hasNext();) {
@@ -1206,6 +1219,7 @@ public final class CacheUpdater {
         if (dropped > 0) {
             Log.info("[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: " + dropped + " 件");
         }
+        return true;
     }
 
     private static void writeLine(BufferedWriter w, String line) throws IOException {
