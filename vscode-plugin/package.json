@@ -17,7 +17,202 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],
-  "contributes": {},
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "jche",
+          "title": "影響調査",
+          "icon": "$(references)"
+        }
+      ]
+    },
+    "views": {
+      "jche": [
+        {
+          "id": "jche.callers",
+          "name": "影響調査 (Call Hierarchy Exporter)",
+          "contextualTitle": "影響調査 (Call Hierarchy Exporter)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "jche.callers",
+        "contents": "Java プロジェクト全体の呼び出し階層を一括で解析し、改修の影響範囲を辿るためのビューです。\n\n標準の「呼び出し階層」（Shift+Alt+H）が開いているファイルから即座に引くのに対し、こちらはプロジェクト全体を Eclipse JDT で解析してから、インタフェース経由・データフロー経由の呼び出し元まで含めて一括で辿ります。解析には時間がかかります。\n\n[解析する](command:jche.analyze)\n\n解析が終わったら、エディタでメソッドにカーソルを置き、右クリック →「呼び出し元を表示 (Exporter)」。",
+        "when": "workspaceFolderCount > 0"
+      },
+      {
+        "view": "jche.callers",
+        "contents": "フォルダを開くと使えます。\n[フォルダを開く](command:vscode.openFolder)",
+        "when": "workspaceFolderCount == 0"
+      }
+    ],
+    "commands": [
+      {
+        "command": "jche.showCallers",
+        "category": "Call Hierarchy Exporter",
+        "title": "呼び出し元を表示 (Exporter)",
+        "icon": "$(references)"
+      },
+      {
+        "command": "jche.analyze",
+        "category": "Call Hierarchy Exporter",
+        "title": "解析する",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jche.cancel",
+        "category": "Call Hierarchy Exporter",
+        "title": "解析を中止する",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "jche.toggleDirection",
+        "category": "Call Hierarchy Exporter",
+        "title": "方向を切り替える（呼び出し元 ⇄ 呼び出し先）",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "jche.setRoot",
+        "category": "Call Hierarchy Exporter",
+        "title": "ここを起点にする"
+      },
+      {
+        "command": "jche.openDeclaration",
+        "category": "Call Hierarchy Exporter",
+        "title": "宣言を開く"
+      },
+      {
+        "command": "jche.openLog",
+        "category": "Call Hierarchy Exporter",
+        "title": "ログを開く",
+        "icon": "$(output)"
+      },
+      {
+        "command": "jche.saveConfig",
+        "category": "Call Hierarchy Exporter",
+        "title": "設定を config.properties に保存"
+      },
+      {
+        "command": "jche.selectConfig",
+        "category": "Call Hierarchy Exporter",
+        "title": "設定ファイルを選ぶ"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "jche.showCallers",
+          "when": "resourceLangId == java",
+          "group": "navigation@9"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "jche.toggleDirection",
+          "when": "view == jche.callers",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jche.analyze",
+          "when": "view == jche.callers && !jche.analyzing",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jche.cancel",
+          "when": "view == jche.callers && jche.analyzing",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jche.openLog",
+          "when": "view == jche.callers",
+          "group": "navigation@9"
+        },
+        {
+          "command": "jche.selectConfig",
+          "when": "view == jche.callers",
+          "group": "config@1"
+        },
+        {
+          "command": "jche.saveConfig",
+          "when": "view == jche.callers",
+          "group": "config@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "jche.setRoot",
+          "when": "view == jche.callers && viewItem =~ /method/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jche.openDeclaration",
+          "when": "view == jche.callers && viewItem =~ /source/",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "jche.setRoot",
+          "when": "false"
+        },
+        {
+          "command": "jche.openDeclaration",
+          "when": "false"
+        },
+        {
+          "command": "jche.cancel",
+          "when": "jche.analyzing"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Call Hierarchy Exporter",
+      "properties": {
+        "jche.javaHome": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "解析に使う JDK のフォルダ（17 以上。CLI と結果を揃えるなら 25）。空欄なら `JAVA_HOME` → PATH の `java` の順に探します。解析は VSCode とは別のプロセスで走るので、vscode-java の設定とは独立です。"
+        },
+        "jche.libFolder": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "解析本体（`jche-core.jar` と `jdt/*.jar`）のフォルダ。空欄なら拡張に同梱の `lib/` を使います。閉域で新しい JDT に差し替えたいとき、または開発中に `eclipse-plugin/target/classes/lib` を指すときに使います。"
+        },
+        "jche.vmArguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine-overridable",
+          "markdownDescription": "子プロセスの JVM に渡す引数。大きなプロジェクトでは `-Xmx4g` などを足します。VSCode のヒープとは独立です。"
+        },
+        "jche.idleMinutes": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 0,
+          "markdownDescription": "問い合わせが無いままこの分数が過ぎたら子プロセスを終了します（メモリを返す）。`0` で常駐。次の問い合わせのときにキャッシュから作り直します。"
+        },
+        "jche.configFile": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "解析に使う設定ファイル（ワークスペースフォルダからの相対パス）。空欄ならフォルダ直下の `config.properties` を使い、無ければ `project.root` だけの設定を自動生成します（ソースフォルダ・依存 jar は `pom.xml` / `build.gradle` / フォルダ構成から決めます）。"
+        },
+        "jche.depth": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 50,
+          "markdownDescription": "木を一度に展開する深さ。深さの上限で打ち切られた節点は、開いたときに続きを取り寄せます。設定ファイルの `max.depth` とは独立です。"
+        }
+      }
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node esbuild.mjs",
