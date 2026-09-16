@@ -1,8 +1,24 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import java.security.SecureRandom;
+
 /**
  * キャッシュファイルの形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）。
+ *
+ * <h2>キャッシュは 2 つに分かれている</h2>
+ * <pre>
+ *   analysis-cache.tsv   呼び出し階層を出すための事実（構造とバインディング）
+ *   dataflow-cache.tsv   呼び出し階層には要らない、データフローのための事実
+ * </pre>
+ * 呼び出し階層（{@code call-hierarchy.csv} / {@code methods.csv}）は前者だけで出せる。
+ * 後者はサイドカーの解析（値の追跡など）のためにあり、文字列の長さの上限を設けない。
+ * 分けた理由と、どちらに何を置くかの基準は {@code docs/cache-split-qa.md} にある。
+ *
+ * <b>2 つは常に同じ実行で一緒に書かれ、片方だけが新しい状態は許さない。</b>
+ * 両方のヘッダに同じ世代の印（{@link #GENERATION_PREFIX}）を書き、読むときに突き合わせる。
+ * 食い違えば両方とも捨てて全件解析し直す（ブロック単位のズレを許すと、同じソースでも
+ * 「どちらのキャッシュがどこまで新しいか」で出力が変わってしまう）。
  *
  * <h2>原則: キャッシュは「ASTから分かった事実」だけを持ち、判断は読む側でする</h2>
  * <pre>
@@ -42,23 +58,52 @@ package jche.cache;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
  *                                                             {@link MethodDeclFact}
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
+ *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth
+ *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
+ *                                                             値（レシーバ・実引数の出所、ガード）は
+ *                                                             dataflow 側の P 行にある
+ *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
+ *   U  line  caller(4列)  expr  reason  candidate  recvKind  lambdaDepth
+ *                                                             {@link UnresolvedCallFact}。C 行と同じく、
+ *                                                             値は dataflow 側の P 行にある
+ *   Z  ブロック数                                              最終行。ここまで書き終えた印
+ *                                                          （{@link #trailerFor}）。これが無い・数が合わない
+ *                                                          キャッシュは途中で切れているとみなして捨てる
+ * </pre>
+ *
+ * <h2>行の種別と列（dataflow-cache.tsv）</h2>
+ * F 行と Z 行の意味と並びは analysis-cache.tsv と同じ（同じブロックが同じ順で並び、同じ数になる）。
+ * <pre>
+ *   F  相対パス  サイズ  エラー数  内容ハッシュ                （ファイルのブロックの先頭）
+ *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
+ *                                                          フィールドの参照箇所（読み取り・書き込み。
+ *                                                          他の型のフィールドも含む）
+ *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}。フィールドへの代入。
+ *                                                          「どこから来た値か」なので dataflow 側に置く。
+ *                                                          同じブロックの V 行（analysis 側のフィールド宣言）と
+ *                                                          組で判定するので、ブロックの対応が要る
  *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
  *                                                          コンパイル時定数（static final の値と注釈の
  *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
  *                                                          ので、差分更新で「値が変わった」を知るために持つ
- *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}
- *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
- *                                                             {@link CallEdgeFact}。guard は呼び出し箇所を
- *                                                             囲む条件分岐（{@link Guard}）
- *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}
- *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
+ *                                                          （定数の連鎖の判断もこちらを読んで行う）
+ *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}。戻り値の出所
  *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
- *   U  line  caller(4列)  expr  reason  candidate  recvKey  recvKind  recvOrigin  argOrigins  lambda  guard
- *                                                             {@link UnresolvedCallFact}
- *   Z  ブロック数                                              最終行。ここまで書き終えた印
- *                                                          （{@link #trailerFor}）。これが無い・数が合わない
- *                                                          キャッシュは途中で切れているとみなして捨てる
+ *   N  id  kind  value  recv  args  argCount              {@link ValueNode}。値グラフのノード。
+ *                                                          id はブロック内ローカルの連番で、recv と args は
+ *                                                          同じブロックのノードを指す。入れ子を展開しないので
+ *                                                          深さの上限が要らず、value の長さにも上限が無い。
+ *                                                          value は {@link #escape} で符号化して書く
+ *   P  line  caller(4列)  calleeName  ordinal  recv  args  recvKey  guard
+ *                                                          {@link CallSiteValues}。呼び出し箇所ごとの値。
+ *                                                          analysis 側の C 行・U 行と 1 対 1 で並び、
+ *                                                          鍵（行番号・呼び出し元・呼び出し先の表示名・
+ *                                                          同じ鍵の中での通し番号）で結びつける。
+ *                                                          recv・args は値グラフ（N 行）のノード番号で、
+ *                                                          読み手は {@link jche.graph.OriginRenderer} で
+ *                                                          そこから出所の文字列を組み直す（上限が無い）
+ *   Z  ブロック数                                              最終行。analysis 側と同じ数でなければ
+ *                                                          対になっていないとみなして両方を捨てる
  * </pre>
  * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
  * F行が現れるたびに、以降の行はそのファイルに属する。I行はF行の直後に置く。
@@ -102,18 +147,21 @@ package jche.cache;
  * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
  * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。
  *
- * <h2>バージョン（{@link #VERSION}）を上げる基準</h2>
+ * <h2>バージョン（{@link #VERSION} / {@link #DATAFLOW_VERSION}）を上げる基準</h2>
  * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
  * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
+ * 2 つは独立に上げられる。データフロー側の事実を足すときは {@link #DATAFLOW_VERSION} だけを上げればよく、
+ * 呼び出し階層の出力は変わらない（再解析は起きるが、出力とその期待値は動かない）。
  *
  * <h2>事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）</h2>
  * <ul>
- *   <li>実引数の出所は入れ子にしない（1段のみ）。レシーバの出所は3段まで入れ子にする
- *       （{@link Origin#MAX_RECEIVER_DEPTH}。invoke ← getMethod ← forName / getClass の連鎖のため）</li>
+ *   <li>値グラフ（N 行）の入れ子には段数の上限が無い（v4）。1つの式を1ノードとして持ち、
+ *       参照はノード番号で行うので、大きさが式の数に比例し、深さに依存しないため。
+ *       読み手はここから出所を組み直す（{@link jche.graph.OriginRenderer}）</li>
  *   <li>外側スコープの変数の出所は、final または実質 final のときだけ持ち込む</li>
  *   <li>ローカル変数の出所の先読みは1回（後方で宣言された変数への別名付けは U）</li>
- *   <li>文字列リテラルの出所は、完全修飾クラス名の形か識別子の形（64文字以内）のものだけ
- *       （クラス名とメソッド名を追うため。ログ文言やSQLは残さない）</li>
+ *   <li>値グラフの文字列リテラル・定数の値には長さと内容の上限が無い（v4）。
+ *       SQL やログ文言もそのまま持ち、行形式を壊す文字は {@link #escape} で符号化する</li>
  *   <li>プリミティブ・配列・String を返す return は記録しない</li>
  *   <li>フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
@@ -151,11 +199,35 @@ public final class CacheFormat {
     public static final String SEP = "\t";
 
     /**
-     * 形式を変更した場合はここを上げる。旧キャッシュは自動的に破棄される。
+     * analysis-cache.tsv の形式。変更した場合はここを上げる。旧キャッシュは自動的に破棄される。
      * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
-     * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない
+     * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
+     *
+     * v17 で A 行（フィールドの参照箇所）を、v18 で K 行（定数）・R 行（戻り値の出所）・
+     * X 行（拡張の証拠）を dataflow-cache.tsv に移した。
+     * v19 で C 行・U 行から値の列（recvKey・出所・guard）を落とし、J 行（フィールドへの代入）も
+     * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる
      */
-    public static final String VERSION = "jche-cache-v16";
+    public static final String VERSION = "jche-cache-v19";
+
+    /**
+     * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
+     * サイドカーのための事実を足すときはこちらだけを上げればよく、
+     * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない。
+     *
+     * v2 で N 行（値グラフ）と P 行（呼び出し箇所ごとの値）を足し、
+     * v3 で K 行・R 行・X 行を analysis 側から受け取った。
+     * v4 で J 行を受け取り、P 行に recvKey と guard を持たせ、
+     * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）
+     */
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v4";
+
+    /**
+     * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
+     * 形式の互換性（版・ソースレベル・文字コード・JDK）とは別の軸なので、
+     * ヘッダの突き合わせではこの項目を外して比べる（{@link #compatibilityPartOf}）
+     */
+    public static final String GENERATION_PREFIX = "gen=";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
@@ -166,7 +238,12 @@ public final class CacheFormat {
     public static final char ROW_METHOD_DECL = 'D';
     public static final char ROW_FIELD_DECL = 'V';
     public static final char ROW_CONSTANT = 'K';
+    /** dataflow-cache.tsv 側の行（analysis-cache.tsv には書かない） */
     public static final char ROW_FIELD_ACCESS = 'A';
+    /** dataflow-cache.tsv 側の行。値グラフのノード（{@link ValueNode}） */
+    public static final char ROW_VALUE_NODE = 'N';
+    /** dataflow-cache.tsv 側の行。呼び出し箇所ごとの値（{@link CallSiteValues}） */
+    public static final char ROW_CALL_VALUES = 'P';
     public static final char ROW_FIELD_ASSIGN = 'J';
     public static final char ROW_CALL = 'C';
     public static final char ROW_RETURN = 'R';
@@ -193,14 +270,67 @@ public final class CacheFormat {
      * ソースの中身だけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
      */
-    public static String headerFor(String sourceLevel, String sourceEncoding,
-                                   String hintPluginFingerprint) {
-        String header = VERSION + SEP + "source=" + sourceLevel
+    public static String headerFor(String sourceLevel, String sourceEncoding) {
+        return VERSION + SEP + "source=" + sourceLevel
+                + SEP + "enc=" + sourceEncoding
+                + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+    }
+
+    /**
+     * dataflow-cache.tsv の1行目（互換性の部分）。
+     *
+     * ソースレベル・文字コード・実行 JDK は analysis-cache.tsv と同じ理由で入れる
+     * （同じソースでも解析結果が変わる）。
+     * フェーズAの拡張の指紋（{@code hints=}）もこちら。拡張が拾う証拠（X 行）が
+     * この側にあるため、鍵も同じ側に置く（{@code docs/cache-split-qa.md} の Q6・Q12）
+     */
+    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding,
+                                           String hintPluginFingerprint) {
+        String header = DATAFLOW_VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
         // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
         // この項目の追加だけで捨てさせないため
         return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
+    }
+
+    /**
+     * ヘッダ行に世代の印を足す。2 つのキャッシュには同じ値を書く。
+     *
+     * @param header     {@link #headerFor} か {@link #dataflowHeaderFor} が返した互換性の部分
+     * @param generation この実行の世代（{@link #newGeneration}）
+     */
+    public static String withGeneration(String header, String generation) {
+        return header + SEP + GENERATION_PREFIX + generation;
+    }
+
+    /**
+     * ヘッダ行から世代の印を外した部分。形式の互換性を突き合わせるのに使う。
+     * 旧いキャッシュ（世代の印が無い）はそのまま返るので、版が違うとして捨てられる
+     */
+    public static String compatibilityPartOf(String header) {
+        int at = header.lastIndexOf(SEP + GENERATION_PREFIX);
+        return (at < 0) ? header : header.substring(0, at);
+    }
+
+    /**
+     * ヘッダ行の世代の印。無ければ空文字。
+     *
+     * 空文字は「世代が分からない」であり、2 つのキャッシュの世代が両方とも空文字でも
+     * 一致とはみなさない（{@code CacheUpdater} が明示的に弾く）
+     */
+    public static String generationOf(String header) {
+        int at = header.lastIndexOf(SEP + GENERATION_PREFIX);
+        return (at < 0) ? "" : header.substring(at + 1 + GENERATION_PREFIX.length());
+    }
+
+    /**
+     * この実行の世代。2 つのキャッシュが同じ実行で書かれたことを表すだけなので、
+     * 内容から導く必要はなく、重複しなければよい（乱数）。
+     * 内容から導くと書き出す前に全体を読む必要があり、ストリーミングで書けなくなる
+     */
+    public static String newGeneration() {
+        return String.format("%016x", new SecureRandom().nextLong());
     }
 
     /**
@@ -232,6 +362,7 @@ public final class CacheFormat {
      * 途中で切れたキャッシュは、切れた場所より前のブロックが「サイズも内容ハッシュも一致する」
      * ように見えてしまうので、印が無ければ丸ごと捨てて全件解析し直す。
      * 数まで見るのは、途中のブロックが抜けた場合も気づけるようにするため。
+     * 2 つのキャッシュそれぞれの最終行に書き、数が食い違えば対になっていないとみなす。
      */
     public static String trailerFor(long blocks) {
         return ROW_END + SEP + blocks;
@@ -262,6 +393,144 @@ public final class CacheFormat {
             return "";
         }
         return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
+    }
+
+    /**
+     * dataflow-cache.tsv の値を、行形式を壊さない形に符号化する（逆は {@link #unescape}）。
+     *
+     * <h4>analysis 側の {@link #clean} との違い</h4>
+     * analysis 側はタブ・改行を空白へ<b>置き換えて捨てる</b>。呼び出し階層の出力に使う値は
+     * 識別子やクラス名で、制御文字が混ざるのは異常なケースだけなので、落として構わない。
+     * dataflow 側は SQL やログ文言のような<b>長さも中身も選べない文字列を、そのまま持つ</b>のが目的なので、
+     * 捨てるのではなく符号化する。だから 2 つのキャッシュで規則が違ってよく、
+     * 分けたこと自体がこの違いを許している（{@code docs/cache-split-qa.md}）。
+     *
+     * <h4>規則</h4>
+     * <pre>
+     *   \      ->  \\
+     *   タブ    ->  \t
+     *   LF      ->  \n
+     *   CR      ->  \r
+     *   その他の制御文字（U+0000〜U+001F と U+007F）  ->  &#92;uXXXX（小文字の16進4桁）
+     * </pre>
+     * それ以外の文字はそのまま。非 ASCII は UTF-8 のまま書くので符号化しない。
+     * {@link Guard} が区切りに使う {@code U+0001}〜{@code U+0003} も「その他の制御文字」として
+     * 符号化されるので、ガードを dataflow 側へ移しても値と区切りが衝突しない。
+     *
+     * <p>符号化した結果にタブ・改行・制御文字は残らない（{@link #hasControlChar} が false になる）。
+     * したがって {@link #joinRow} を通しても {@link #clean} に何も削られない。
+     */
+    public static String escape(String s) {
+        if (s == null) {
+            return "";
+        }
+        int at = indexOfEscapable(s);
+        if (at < 0) {
+            return s;   // 変換の要らない値（ほとんどはこちら）は作り直さない
+        }
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        sb.append(s, 0, at);
+        for (int i = at; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '\t' -> sb.append("\\t");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                default -> {
+                    if (c < ' ' || c == '\u007f') {
+                        sb.append("\\u").append(String.format("%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 符号化が要る最初の文字の位置。無ければ -1 */
+    private static int indexOfEscapable(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' || c < ' ' || c == '\u007f') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * {@link #escape} の逆。
+     *
+     * 規則にない並び（{@code \x} のような、符号化では作られない形）は、文字どおり
+     * バックスラッシュと次の文字として返す。手で編集された・壊れたキャッシュでも例外にせず、
+     * 読めるところまで読む（キャッシュが壊れていれば、どうせブロックの突き合わせで捨てられる）。
+     */
+    public static String unescape(String s) {
+        if (s == null) {
+            return "";
+        }
+        int at = s.indexOf('\\');
+        if (at < 0) {
+            return s;
+        }
+        StringBuilder sb = new StringBuilder(s.length());
+        sb.append(s, 0, at);
+        for (int i = at; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != '\\' || i + 1 >= s.length()) {
+                sb.append(c);
+                continue;
+            }
+            char next = s.charAt(i + 1);
+            switch (next) {
+                case '\\' -> {
+                    sb.append('\\');
+                    i++;
+                }
+                case 't' -> {
+                    sb.append('\t');
+                    i++;
+                }
+                case 'n' -> {
+                    sb.append('\n');
+                    i++;
+                }
+                case 'r' -> {
+                    sb.append('\r');
+                    i++;
+                }
+                case 'u' -> {
+                    int cp = hex4(s, i + 2);
+                    if (cp < 0) {
+                        // バックスラッシュ u に続く16進4桁が無い。文字どおりに扱う
+                        sb.append(c);
+                    } else {
+                        sb.append((char) cp);
+                        i += 5;
+                    }
+                }
+                default -> sb.append(c);   // 規則にない並び。バックスラッシュをそのまま置く
+            }
+        }
+        return sb.toString();
+    }
+
+    /** s の位置 at から16進4桁を読む。読めなければ -1 */
+    private static int hex4(String s, int at) {
+        if (at + 4 > s.length()) {
+            return -1;
+        }
+        int v = 0;
+        for (int i = at; i < at + 4; i++) {
+            int d = Character.digit(s.charAt(i), 16);
+            if (d < 0) {
+                return -1;
+            }
+            v = (v << 4) | d;
+        }
+        return v;
     }
 
     /**

@@ -42,6 +42,17 @@ public final class FileAnalysis {
     /** 呼び出し箇所（{@link CallEdgeFact} と {@link UnresolvedCallFact}）をソース上の順で */
     public final List<CallSite> callSites = new ArrayList<>();
     public final List<ReturnFact> returns = new ArrayList<>();
+    /**
+     * 値グラフのノード（dataflow 側の N 行）。上限の無い形で値の流れを持つ。
+     * {@link CallSite} の出所（上限付き）と同じ式から作られ、両方が書き出される
+     * （読み手が移るまでの並走。{@code docs/cache-split-qa.md}）
+     */
+    public final List<ValueNode> valueNodes = new ArrayList<>();
+    /**
+     * 呼び出し箇所ごとの値（dataflow 側の P 行）。{@link #callSites} と同じ数・同じ順で並ぶ
+     * （1 対 1 で結びつけられるようにするため）
+     */
+    public final List<CallSiteValues> callSiteValues = new ArrayList<>();
     public final List<FunctionalImplFact> functionalImpls = new ArrayList<>();
 
     public FileAnalysis(String relativePath, long size) {

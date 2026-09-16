@@ -32,8 +32,9 @@ import jche.util.Names;
  * 他チームのjarを走査し、自分のメソッドがどこから参照されているかを出力する。
  *
  * 用途は改修時の影響調査。「このメソッドを直すと誰に影響するか」に答える。
- * classファイルの定数プールだけを読む（{@link ClassFileRefs}）ため、
- * 「どのjar・どのクラスが参照しているか」までが分かり、呼び出し元メソッドと行番号は分からない。
+ * class ファイルの命令列を歩く（{@link ClassFileRefs}）ので、「どの jar・どのクラスの
+ * どのメソッドの何行目から」まで分かり、呼び出し階層の行と同じスタックトレース形式で出せる。
+ * 行番号は class に LineNumberTable が残っている（javac の既定。{@code -g:none} で消える）ときだけ。
  *
  * <h2>FatJar（jar の中の jar）</h2>
  * Spring Boot の実行可能 jar（{@code BOOT-INF/lib/*.jar}）や war（{@code WEB-INF/lib/*.jar}）、
@@ -198,43 +199,57 @@ public final class ExternalUsageScanner {
         return name.endsWith(".jar") || name.endsWith(".war") || name.endsWith(".ear");
     }
 
-    /** 1クラスが参照しているメソッドのうち、自分の型のものを行にする */
+    /**
+     * 1クラスが参照しているメソッドのうち、自分の型のものを行にする。
+     * 命令列から見つけた呼び出し箇所は「どのメソッドの何行目」まで caller に書く。
+     * 命令列から辿れなかった参照（実在の配布物ではまず無い）は、従来どおりクラス名だけを caller にして残す
+     */
     private void scanClass(ClassFileRefs refs, String jarName) throws IOException {
-        for (ClassFileRefs.MethodEntry r : refs.methodRefs) {
-            String owner = r.ownerFqn();
-            if (!isOurType(owner)) {
-                continue;   // JDKや第三者ライブラリへの参照は対象外
+        for (ClassFileRefs.CallSite site : refs.callSites) {
+            String caller = CallHierarchyCsvWriter.stackTrace(refs.thisClass, site.callerMethod(),
+                    refs.sourceFile, site.line());
+            scanRef(site.callee(), caller, jarName);
+        }
+        for (ClassFileRefs.MethodEntry r : refs.unlocatedRefs) {
+            scanRef(r, refs.thisClass, jarName);
+        }
+    }
+
+    /** 参照先 1 件を自分のメソッドと照合し、一致すれば行にする */
+    private void scanRef(ClassFileRefs.MethodEntry r, String caller, String jarName) throws IOException {
+        String owner = r.ownerFqn();
+        if (!isOurType(owner)) {
+            return;   // JDKや第三者ライブラリへの参照は対象外
+        }
+        String sig = r.name() + "(" + r.paramSig() + ")";
+        int id = resolveRef(owner, sig);
+        if (id >= 0) {
+            String kind = methods.typeFqn(id).equals(normalize(owner)) ? "EXACT" : "INHERITED";
+            out.writeExternalUsageRow(caller, methods.displayLabel(id),
+                    methods.shortLabel(id), jarName, kind);
+            if (refCount[id]++ == 0) {
+                stats.usedMethods++;
             }
-            String sig = r.name() + "(" + r.paramSig() + ")";
-            int id = resolveRef(owner, sig);
-            if (id >= 0) {
-                String kind = methods.typeFqn(id).equals(normalize(owner)) ? "EXACT" : "INHERITED";
-                out.writeExternalUsageRow(refs.thisClass, methods.displayLabel(id),
-                        methods.shortLabel(id), jarName, kind);
-                if (refCount[id]++ == 0) {
-                    stats.usedMethods++;
-                }
-                stats.hits++;
-            } else if (MethodRef.CONSTRUCTOR.equals(r.name()) && r.paramSig().isEmpty()) {
-                // 引数なしコンストラクタへの参照だが、ソース上に一致する宣言が無い。
-                // 暗黙のデフォルトコンストラクタは解析時に D 行として合成されるので EXACT で
-                // 照合される。ここに来るのは「相手jarのビルド時には引数なしで生成できたが、
-                // 今のソースにはそのコンストラクタが無い」形で、版違いの可能性が高い。
-                // 「誰がこのクラスを生成しているか」は影響調査で有用なので、行として残し注記で区別する。
-                // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
-                // 版違いであり、生成箇所として表記できないので未照合に数える
-                String typeFqn = normalize(owner);
-                String simple = Names.simpleOf(typeFqn);
-                out.writeExternalUsageRow(refs.thisClass,
-                        typeFqn + "." + simple + "()", simple + "." + simple,
-                        jarName, "IMPLICIT_CTOR");
-                stats.implicitCtors++;
-            } else {
-                // 自分の型への参照なのに一致するメソッドが無い。
-                // 相手が古い版のjarに対してビルドされている可能性がある。
-                // 「使われていない」と即断しないよう件数だけ残す
-                stats.unmatched++;
-            }
+            stats.hits++;
+        } else if (MethodRef.CONSTRUCTOR.equals(r.name()) && r.paramSig().isEmpty()) {
+            // 引数なしコンストラクタへの参照だが、ソース上に一致する宣言が無い。
+            // 暗黙のデフォルトコンストラクタは解析時に D 行として合成されるので EXACT で
+            // 照合される。ここに来るのは「相手jarのビルド時には引数なしで生成できたが、
+            // 今のソースにはそのコンストラクタが無い」形で、版違いの可能性が高い。
+            // 「誰がこのクラスを生成しているか」は影響調査で有用なので、行として残し注記で区別する。
+            // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
+            // 版違いであり、生成箇所として表記できないので未照合に数える
+            String typeFqn = normalize(owner);
+            String simple = Names.simpleOf(typeFqn);
+            out.writeExternalUsageRow(caller,
+                    typeFqn + "." + simple + "()", simple + "." + simple,
+                    jarName, "IMPLICIT_CTOR");
+            stats.implicitCtors++;
+        } else {
+            // 自分の型への参照なのに一致するメソッドが無い。
+            // 相手が古い版のjarに対してビルドされている可能性がある。
+            // 「使われていない」と即断しないよう件数だけ残す
+            stats.unmatched++;
         }
     }
 

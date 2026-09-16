@@ -107,22 +107,21 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
     /**
      * 被参照スキャンの1行。呼び出し階層とは意味が違うため専用の詰め方をする。
      *
-     * classファイルの定数プールしか読まないため、呼び出し元のメソッドも行番号も
-     * 分からない。よって caller はスタックトレース形式にはせず、参照している
-     * クラス名をそのまま置く。起点も呼び出し階層も無いので、root には
-     * 「どのjarから参照されているか」を入れる。
+     * caller は呼び出し階層の行と同じスタックトレース形式（{@link #stackTrace(String, String, String, int)}）。
+     * 起点も呼び出し階層も無いので、root には「どのjarから参照されているか」を入れる。
      *
-     * @param referencingClass 参照している側のクラス（外部jar内）
-     * @param callee           参照されている自分のメソッド（callee列と同じ表記）
-     * @param shortCallee      階層列に置く短縮表記
-     * @param jarName          参照元のjar名
-     * @param note             照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
+     * @param caller      参照している側（外部jar内）。スタックトレース形式。命令列から辿れなかった
+     *                    参照はクラス名だけ
+     * @param callee      参照されている自分のメソッド（callee列と同じ表記）
+     * @param shortCallee 階層列に置く短縮表記
+     * @param jarName     参照元のjar名
+     * @param note        照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
      */
-    public void writeExternalUsageRow(String referencingClass, String callee,
+    public void writeExternalUsageRow(String caller, String callee,
                                       String shortCallee, String jarName, String note)
             throws IOException {
         buf.setLength(0);
-        buf.append(Csv.esc(referencingClass)).append(Csv.DELIM);
+        buf.append(Csv.esc(caller)).append(Csv.DELIM);
         buf.append(Csv.esc(callee)).append(Csv.DELIM);
         buf.append(Csv.esc(jarName));
         buf.append(Csv.DELIM).append(Csv.esc(shortCallee));
@@ -150,7 +149,22 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         if (!pkg.isEmpty()) {
             binaryType = pkg + "." + binaryType;
         }
-        return "at " + binaryType + "." + mt.methodName(id) + "(" + fileName + ":" + line + ")";
+        return stackTrace(binaryType, mt.methodName(id), fileName, line);
+    }
+
+    /**
+     * 同じ形式を、class ファイルから読んだ値（被参照スキャン）で組み立てる。
+     * ファイル名か行番号が無いときは JVM のスタックトレースと同じ {@code (Unknown Source)}。
+     * Eclipse の Java Stack Trace Console はこの形も受け付け、クラス名とメソッド名で飛ぶ
+     *
+     * @param binaryType バイナリ名（内部クラスは {@code Outer$Inner}）
+     * @param method     メソッド名（コンストラクタは {@code <init>}）
+     * @param fileName   SourceFile 属性のファイル名。無ければ null
+     * @param line       行番号。無ければ -1
+     */
+    public static String stackTrace(String binaryType, String method, String fileName, int line) {
+        String where = (fileName != null && line >= 0) ? fileName + ":" + line : "Unknown Source";
+        return "at " + binaryType + "." + method + "(" + where + ")";
     }
 
     @Override

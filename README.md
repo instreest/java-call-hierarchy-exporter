@@ -225,14 +225,20 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 external.library.folders=./lib
 ```
 
-classファイルの定数プールだけを読むため、「どのjar・どのクラスが参照しているか」までが分かります。
-呼び出し元メソッドと行番号までは分かりません。そのため呼び出し階層の行とは列の出力形式が異なります。
+classファイルの命令列を読むため、「どのjar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
+`caller` 列は呼び出し階層の行と同じスタックトレース形式なので、Eclipse の Java スタック・トレース・コンソールに貼れば
+（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入ります。
+ラムダ式やメソッド参照（`Counter::bump`）からの参照も、それを書いた行として出ます。
 
 ```csv
 caller,callee,root,call-hierarchy
-NightJob,jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:EXACT
+at teamb.NightJob.run(NightJob.java:15),jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+at teamb.NightJob.run(NightJob.java:14),jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,OrderService.OrderService,被参照:EXACT
+at teamb.NoDebugJob.run(Unknown Source),jp.co.example.service.OrderService.findOrder(String),team-b-batch.jar,OrderService.findOrder,被参照:EXACT
 ```
+
+行番号は相手の jar が行番号情報付きでビルドされている（`javac` の既定）ときだけ出ます。
+`-g:none` でビルドされた jar は、JVM のスタックトレースと同じく `(Unknown Source)` になります（メソッド名までは出ます）。
 
 `external.library.folders` に指定したフォルダに自プロジェクトのjarが混ざっていても、
 それは「他リポジトリからの被参照」ではないので読み飛ばします。
@@ -276,10 +282,17 @@ NightJob,jp.co.example.service.OrderService.OrderService(),team-b-batch.jar,Orde
 ## キャッシュ
 
 解析結果のキャッシュは出力フォルダには置かず、**このツールのプロジェクトフォルダ**の
-`.cache/<project.root のフォルダ名>_<絶対パスのハッシュ 8 桁>/analysis-cache.tsv` に作ります。
+`.cache/<project.root のフォルダ名>_<絶対パスのハッシュ 8 桁>/` に作ります。
 同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクト
 （ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、
 どこから実行しても、キャッシュの場所は変わりません。
+
+ファイルは 2 つで、常に対で作られます。片方だけを消しても、次の実行で両方が作り直されます。
+
+| ファイル | 中身 |
+|---|---|
+| `analysis-cache.tsv` | 呼び出し階層を出すための事実（構造とバインディング） |
+| `dataflow-cache.tsv` | 呼び出し階層の出力には使わない、値の追跡のための事実 |
 
 - 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
 - 2 回目以降は変更されたファイルだけを解析し直します。依存 jar を足したときも、

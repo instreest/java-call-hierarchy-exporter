@@ -77,6 +77,10 @@ target/
 /test/incremental/jarorder.properties
 /test/incremental/jarwork/
 
+# test/cachevalue/run.sh（dataflow キャッシュの値の符号化の検査）のコンパイル結果
+/test/cachevalue/build/
+/test/cachevalue/check/
+
 # test/conditions/run.sh（条件の調査の検査）が作るもの。
 # ケースごとの設定ファイル（case.properties）とコンパイル結果・実行ログのほか、
 # 「通常の解析ならできる」ことを見るためのキャッシュと出力フォルダ

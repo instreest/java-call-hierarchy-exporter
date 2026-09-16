@@ -23,7 +23,7 @@
 
 | ファイル | 内容 |
 |---|---|
-| [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
+| [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。2 つに分けた置き場所、事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
 | [out-of-process-analysis-design.md](out-of-process-analysis-design.md) | Eclipse プラグインが解析を別プロセス（別 JDK・同梱の JDT）で行う仕組み。プロトコルと配布物の構成 |
 | [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作） |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
@@ -40,6 +40,8 @@
 | [doma-generated-impl-qa.md](doma-generated-impl-qa.md) | #73 | 実装がコンパイル時に生成される型（Doma の `@Dao`）を「実装なし」と言い分ける |
 | [instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) | #68 | インスタンス解析条件を外から与えるプラグイン（フェーズA / B、実行時コンパイル） |
 | [fatjar-external-usage-qa.md](fatjar-external-usage-qa.md) | #35 | 被参照スキャンの FatJar / war / ear 対応 |
+| [external-usage-callsite-qa.md](external-usage-callsite-qa.md) | — | 被参照スキャンで呼び出し元メソッドと行番号まで出す（class の命令列を自前で読む） |
+| [cache-split-qa.md](cache-split-qa.md) | — | キャッシュを呼び出し階層用とデータフロー用の 2 つに分け、対でしか再利用しないようにする |
 | [branch-pruning-qa.md](branch-pruning-qa.md) | #67 | 変数値と条件分岐の静的解析で、その経路では呼ばれない呼び出しを区別する |
 | [call-conditions-qa.md](call-conditions-qa.md) | #67 | 呼び出しに効いている条件を `call-conditions.csv` に出す（モードにせず出力を1つ足す判断、キャッシュに載せない判断） |
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
@@ -66,6 +68,6 @@
 
 | ファイル | 内容 |
 |---|---|
-| [prompt-A-minimal.md](prompt-A-minimal.md) | 目的と出力の意味を厚く、実装手順は最小限にした再実装プロンプト |
+| [prompt-A-minimal.md](prompt-A-minimal.md) | 目的・出力の契約・後から直しやすい作りだけを渡し、設計は生成AIに任せるプロンプト（機能の再現は狙わない） |
 | [prompt-B-detailed.md](prompt-B-detailed.md) | AST 解析のはまりどころとテストケースまで含めた再実装プロンプト |
 | [feature-difficulty.md](feature-difficulty.md) | 機能ごとの実装難易度と、自分のプロジェクトでは省いてよい機能の目安 |

@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,8 @@ import jche.cache.MethodDeclFact;
 import jche.cache.ReturnFact;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
+import jche.cache.CallSiteValues;
+import jche.cache.ValueNode;
 import jche.analysis.CallEdgeExtractor.SourceFile;
 import jche.config.Config;
 import jche.config.ProjectLayout;
@@ -51,15 +54,34 @@ import jche.util.RunControl;
  * パース自体は {@link CallEdgeExtractor#BATCH_SIZE} 件ずつまとめて行う（1ファイルずつでは
  * 規模に比例して遅くなるため）。
  *
+ * <h2>2 つのキャッシュを対で書く</h2>
+ * 呼び出し階層のためのキャッシュ（{@code analysis-cache.tsv}）と、データフローのための
+ * キャッシュ（{@code dataflow-cache.tsv}）を同じ解析結果から一緒に書く（{@link jche.cache.CacheFormat}）。
+ * <b>片方だけが新しい状態は作らない。</b>両方のヘッダに同じ世代の印を書き、
+ * 次のどれかに当たれば両方とも捨てて全件解析し直す。
+ * <pre>
+ *   - どちらかが無い / ヘッダの形式（版・ソースレベル・文字コード・JDK・拡張の指紋）が違う
+ *   - 世代の印が食い違う（前回の実行が 2 つ目を書く前に落ちた、片方だけ差し替えられた）
+ *   - 最終行の印（Z 行）のブロック数が食い違う（どちらかが途中で切れている）
+ * </pre>
+ * そのうえで、<b>再利用するブロックは「両方のキャッシュにあるもの」だけ</b>にする（パス1b）。
+ * 片方にしか無いブロックは再解析に回すので、ブロック単位のズレも残らない。
+ * 中断した実行からの引き継ぎも同じで、両方の一時ファイルにそろっているブロックだけを引き継ぐ。
+ * 書き出しはどちらも一時ファイルに作ってから analysis → dataflow の順で差し替える
+ * （間で落ちれば世代が食い違い、次回は両方とも捨てられる）。
+ *
  * 手順:
  * <pre>
- *   パス0 … 旧キャッシュのヘッダと L 行（解析時の依存 jar）を読み、今回のクラスパスと突き合わせる。
+ *   パス0 … 旧キャッシュ 2 つのヘッダを検証し（形式・世代・ブロック数）、analysis 側の
+ *           L 行（解析時の依存 jar）を読んで今回のクラスパスと突き合わせる。
  *           追加・変更・削除された jar のパッケージを「変わったパッケージ」として集める。
  *   パス1 … 旧キャッシュを順に読み、サイズと内容ハッシュが一致するファイル（有効）を覚える。
  *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
  *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
  *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
- *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
+ *   パス1b… 旧キャッシュ（dataflow）の F 行だけを読み、ブロックがある相対パスを集める。
+ *           有効なファイルのうちここに無いものは、dataflow 側が欠けているので再解析に回す。
+ *   パス2 … 変更・追加されたファイルを解析して新キャッシュ 2 つへ書く。
  *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
  *   パス3 … 旧キャッシュをもう一度読み、有効なブロックのうち、I行（依存する型）が
  *           「変わった型」または「変わったパッケージ」に触れるものを再解析に回す。
@@ -68,7 +90,9 @@ import jche.util.RunControl;
  *           （K行）の値が変わっていたら、宣言する型を「変わった型」に加えてパス3へ戻る
  *           （下記「定数の連鎖」）。
  *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す。
+ *   パス5b… パス5 が書き写したのと同じ相対パスのブロックを、dataflow 側からも書き写す。
  * </pre>
+ * どのパスも 2 つのキャッシュへ同じ順で書くので、ブロックの並びと数は常に一致する。
  *
  * <h2>同一性（何をもって「同じファイル」とみなすか）</h2>
  * <b>相対パス・サイズ・内容ハッシュ</b>の3つで見る。更新時刻は記録も参照もしない。
@@ -147,8 +171,12 @@ public final class CacheUpdater {
             Files.createDirectories(parent);
         }
         Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
-        // 前回が途中で終わっていれば、その一時ファイルを退避して「パースの使い回し」に使う
-        Path partialCache = takeOverPartial(tmpCache);
+        Path tmpFlowCache = config.dataflowCacheFile
+                .resolveSibling(config.dataflowCacheFile.getFileName() + ".tmp");
+        // 前回が途中で終わっていれば、その一時ファイルを退避して「パースの使い回し」に使う。
+        // 2 つとも退避する（引き継ぐのは両方にそろっているブロックだけ）
+        Path partialCache = takeOverPartial(config.cacheFile, tmpCache);
+        Path partialFlowCache = takeOverPartial(config.dataflowCacheFile, tmpFlowCache);
 
         Progress progress = new Progress("ソース解析", javaFiles.size(), CallEdgeExtractor.BATCH_SIZE);
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
@@ -163,14 +191,19 @@ public final class CacheUpdater {
                     + "。それらのパッケージを参照するファイルと、型解決に失敗していたファイルを解析し直します");
         }
 
-        try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8)) {
-            cacheOut.write(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
-                    config.hintPluginFingerprint));
-            cacheOut.newLine();
+        // 2 つのキャッシュに書く同じ世代の印。次回の実行で「対で書かれたか」を判定する
+        String generation = CacheFormat.newGeneration();
+        try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
+             BufferedWriter flowOut = Files.newBufferedWriter(tmpFlowCache, StandardCharsets.UTF_8)) {
+            writeLine(cacheOut, CacheFormat.withGeneration(
+                    CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding), generation));
+            writeLine(flowOut, CacheFormat.withGeneration(CacheFormat.dataflowHeaderFor(
+                    config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint), generation));
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
-            BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants);
+            BlockWriter writer = new BlockWriter(cacheOut, flowOut, result, progress, this::hashOf,
+                    oldConstants);
 
             // --- パス1: 有効なブロックと「変わった型」を集める ---
             Set<String> valid = new HashSet<>();
@@ -182,6 +215,9 @@ public final class CacheUpdater {
                 // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
                 valid.clear();
                 libraryAffected.clear();
+            } else if (oldCacheUsable) {
+                // --- パス1b: dataflow 側にブロックが無いものは有効から外す（対でないブロックを残さない） ---
+                dropBlocksMissingFromDataflowCache(valid, libraryAffected);
             }
             // ソース一覧の指紋（T行）。L 行の直後という位置は形式で決まっている。
             // ハッシュはパス1 と共通で、1ファイル 1 回しか読まない（hashOf）
@@ -200,10 +236,13 @@ public final class CacheUpdater {
             writer.stale = stale;
             // ファイル自身が変わっているので、宣言する型は無条件に「変わった型」へ（改名・追加に備える）
             writer.cascade = Cascade.ALWAYS;
-            if (partialCache != null) {
-                changed = salvageFrom(partialCache, changed, live, cacheOut, stale, result);
+            if (partialCache != null && partialFlowCache != null) {
+                changed = salvageFrom(partialCache, partialFlowCache, changed, live,
+                        cacheOut, flowOut, stale, result);
                 writer.skipped(result.salvaged);
             }
+            deletePartial(partialCache);
+            deletePartial(partialFlowCache);
             analyzeInBatches(extractor, changed, writer);
             writer.countAs = Reason.BY_LIBRARY;
             analyzeInBatches(extractor, unresolvedBefore, writer);
@@ -214,16 +253,23 @@ public final class CacheUpdater {
                 reanalyzeDependents(extractor, writer, live, valid, stale);
 
                 // --- パス5: 最後まで有効だったブロックを書き写す ---
-                copyValidBlocks(valid, cacheOut, result);
+                Set<String> copied = copyValidBlocks(valid, cacheOut, result);
+                // --- パス5b: 同じブロックを dataflow 側からも書き写す ---
+                copyDataflowBlocks(config.dataflowCacheFile, copied, flowOut);
                 writer.skipped(result.reused);
             }
 
-            // 最終行。次回、ここまで書き終えたキャッシュかどうかを見分けるための印
-            writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged));
+            // 最終行。次回、ここまで書き終えたキャッシュかどうかを見分けるための印。
+            // 2 つのキャッシュのブロック数は同じなので同じ行を書き、次回はこの数も突き合わせる
+            String trailer = CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged);
+            writeLine(cacheOut, trailer);
+            writeLine(flowOut, trailer);
         }
         progress.finish();
 
+        // analysis を先に差し替える。間で落ちれば世代が食い違い、次回は両方とも捨てられる
         Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
+        Files.move(tmpFlowCache, config.dataflowCacheFile, StandardCopyOption.REPLACE_EXISTING);
         return result;
     }
 
@@ -291,6 +337,7 @@ public final class CacheUpdater {
      */
     private static final class BlockWriter implements CallEdgeExtractor.Sink {
         private final BufferedWriter cacheOut;
+        private final BufferedWriter flowOut;
         private final CachePhaseResult result;
         private final Progress progress;
         /** 解析したファイルの内容ハッシュを求める（F行に書くため） */
@@ -305,9 +352,10 @@ public final class CacheUpdater {
         Reason countAs = Reason.UNTOUCHED;
         private long done;
 
-        BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
+        BlockWriter(BufferedWriter cacheOut, BufferedWriter flowOut, CachePhaseResult result, Progress progress,
                     Function<SourceFile, String> hasher, Map<String, String> oldConstants) {
             this.cacheOut = cacheOut;
+            this.flowOut = flowOut;
             this.result = result;
             this.progress = progress;
             this.hasher = hasher;
@@ -326,7 +374,7 @@ public final class CacheUpdater {
         @Override
         public void accept(SourceFile file, FileAnalysis fa) throws IOException {
             fa.hash = hasher.apply(file);
-            writeBlock(fa, cacheOut);
+            writeBlock(fa, cacheOut, flowOut);
             result.unresolved += fa.unresolvedCount();
             result.parsed++;
             countReason();
@@ -492,14 +540,31 @@ public final class CacheUpdater {
     }
 
     /**
-     * パス0。旧キャッシュのヘッダを検証し、続く L 行（解析時の依存 jar）を読む。
-     * 形式・ソースレベル・JDK・フェーズAの拡張のどれかが違えば null（旧キャッシュは使わず全件再解析）。
+     * パス0。旧キャッシュ 2 つのヘッダを検証し、analysis 側の L 行（解析時の依存 jar）を読む。
+     *
+     * 次のどれかに当たれば null（<b>両方とも</b>使わずに全件再解析）。
+     * <pre>
+     *   - analysis / dataflow のどちらかが無い
+     *   - どちらかのヘッダの形式（版・ソースレベル・文字コード・JDK・拡張の指紋）が違う
+     *   - 2 つの世代の印が食い違う（前回が dataflow を書く前に落ちた、片方だけ差し替えられた）
+     *   - 2 つの最終行（Z 行）のブロック数が食い違う、または dataflow 側に最終行が無い
+     * </pre>
+     * 片方だけを使って「呼び出し階層は再利用、データフローだけ作り直し」とはしない。
+     * ブロックごとにどちらが新しいかで結果が変わると、同じソースでも出力が揺れるため。
      */
     private List<LibraryFact> readOldLibraries() {
         if (!Files.isRegularFile(config.cacheFile)) {
             return null;
         }
+        if (!Files.isRegularFile(config.dataflowCacheFile)) {
+            Log.info("[cache] データフローのキャッシュ（" + Config.DATAFLOW_CACHE_FILE_NAME
+                    + "）が無いため、両方を作り直します");
+            return null;
+        }
         try {
+            if (!dataflowCachePairsWith(config.cacheFile, config.dataflowCacheFile)) {
+                return null;
+            }
             CacheHead head = headOf(config.cacheFile);
             List<LibraryFact> libraries = (head == null) ? null : head.libraries();
             if (libraries == null) {
@@ -531,8 +596,8 @@ public final class CacheUpdater {
      *
      * @return 引き継ぎに使うファイル。残っていない・引き継がない設定なら null
      */
-    private Path takeOverPartial(Path tmpCache) {
-        Path partial = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".partial");
+    private Path takeOverPartial(Path cacheFile, Path tmpCache) {
+        Path partial = cacheFile.resolveSibling(cacheFile.getFileName() + ".partial");
         try {
             // cache.enabled=false は「前の結果を使わない」指定なので、引き継ぎもしない
             if (!config.cacheEnabled) {
@@ -572,23 +637,26 @@ public final class CacheUpdater {
      *       途中で切れている可能性があるので使わない</li>
      * </ul>
      *
+     * <p>2 つのキャッシュに分かれているので、<b>両方の退避ファイルにそろっているブロックだけ</b>を
+     * 引き継ぐ。片方にしか無いものを引き継ぐと、対になっていないブロックが生まれる。
+     * dataflow 側にブロックが無いファイルは、単に引き継がずに解析し直すだけ。
+     *
      * @return まだ解析が必要なファイル（引き継げたぶんを除いたもの）
      */
-    private List<SourceFile> salvageFrom(Path partial, List<SourceFile> toAnalyze,
+    private List<SourceFile> salvageFrom(Path partial, Path partialFlow, List<SourceFile> toAnalyze,
                                          Map<String, SourceFile> live, BufferedWriter cacheOut,
-                                         StaleTypes stale, CachePhaseResult result) throws IOException {
+                                         BufferedWriter flowOut, StaleTypes stale,
+                                         CachePhaseResult result) throws IOException {
         Set<String> taken = new HashSet<>();
         if (isPartialUsable(partial, live)) {
-            Set<String> wanted = new HashSet<>();
-            for (SourceFile f : toAnalyze) {
-                wanted.add(f.relativePath());
+            // dataflow 側の退避ファイルにブロックがあるファイルだけを引き継ぎの候補にする
+            Set<String> wanted = blockPathsOf(partialFlow);
+            wanted.retainAll(pathsOf(toAnalyze));
+            if (!wanted.isEmpty()) {
+                copySalvageable(partial, wanted, live, cacheOut, stale, result, taken);
+                // analysis 側に引き継いだのと同じブロックを dataflow 側にも書き写す
+                copyDataflowBlocks(partialFlow, taken, flowOut);
             }
-            copySalvageable(partial, wanted, live, cacheOut, stale, result, taken);
-        }
-        try {
-            Files.deleteIfExists(partial);
-        } catch (IOException e) {
-            Log.warn("[cache] 引き継ぎに使った一時ファイルを消せません: " + e);
         }
         if (taken.isEmpty()) {
             return toAnalyze;
@@ -602,6 +670,54 @@ public final class CacheUpdater {
             }
         }
         return rest;
+    }
+
+    private static Set<String> pathsOf(List<SourceFile> files) {
+        Set<String> paths = new HashSet<>(files.size() * 2);
+        for (SourceFile f : files) {
+            paths.add(f.relativePath());
+        }
+        return paths;
+    }
+
+    /**
+     * キャッシュに含まれるブロック（F行）の相対パス。読めない行があればそこまでで打ち切る。
+     *
+     * 最後の F 行から始まるブロックは書き込みバッファの途中で切れている可能性があるので含めない
+     * （引き継ぎの候補を絞るのに使うので、{@link #copySalvageable} の判定と揃える）。
+     */
+    private static Set<String> blockPathsOf(Path cacheFile) {
+        Set<String> paths = new HashSet<>();
+        String pending = null;
+        try (CacheReader in = CacheReader.open(cacheFile)) {
+            while (in.next()) {
+                char rowType = in.rowType();
+                if (rowType == CacheFormat.ROW_FILE) {
+                    if (pending != null) {
+                        paths.add(pending);   // 次の F 行に出会った ＝ 前のブロックは書き終えている
+                    }
+                    pending = in.column(1);
+                } else if (rowType == CacheFormat.ROW_END && pending != null) {
+                    paths.add(pending);       // 最後まで書き終えた印に出会った
+                    pending = null;
+                }
+            }
+        } catch (IOException | RuntimeException e) {
+            Log.warn("[cache] 中断した前回の実行の一時ファイルを読めません（そこまでで引き継ぎを打ち切ります）: " + e);
+        }
+        return paths;
+    }
+
+    /** 引き継ぎに使った（あるいは使えなかった）退避ファイルを消す */
+    private static void deletePartial(Path partial) {
+        if (partial == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(partial);
+        } catch (IOException e) {
+            Log.warn("[cache] 引き継ぎに使った一時ファイルを消せません: " + e);
+        }
     }
 
     /**
@@ -717,6 +833,59 @@ public final class CacheUpdater {
     }
 
     /**
+     * 2 つのキャッシュが対になっているか（同じ実行で書かれ、どちらも最後まで書けているか）。
+     *
+     * 世代の印（ヘッダ）とブロック数（最終行の Z 行）の両方を突き合わせる。
+     * 世代は「同じ実行で書かれたか」、ブロック数は「どちらも途中で切れていないか」を見る。
+     * dataflow 側のヘッダの形式もここで検証する。
+     *
+     * @return 対になっていれば true。なっていなければ理由をログに出して false
+     */
+    private boolean dataflowCachePairsWith(Path analysisCache, Path flowCache) throws IOException {
+        String flowHeader;
+        try (CacheReader flow = CacheReader.open(flowCache)) {
+            if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
+                    config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint))) {
+                Log.info("[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が"
+                        + "異なるため、両方を作り直します");
+                return false;
+            }
+            flowHeader = flow.header();
+        }
+        String flowGeneration = CacheFormat.generationOf(flowHeader);
+        String generation;
+        try (CacheReader in = CacheReader.open(analysisCache)) {
+            generation = in.generation();
+        }
+        if (flowGeneration.isEmpty() || !flowGeneration.equals(generation)) {
+            Log.info("[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します");
+            return false;
+        }
+        String flowTrailer = lastLineOf(flowCache);
+        String trailer = lastLineOf(analysisCache);
+        if (flowTrailer == null || !flowTrailer.equals(trailer)) {
+            Log.info("[cache] 2 つのキャッシュのブロック数が食い違う（どちらかが途中で切れている）ため、"
+                    + "両方を作り直します");
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * ファイルの最終行（{@link CacheFormat#trailerFor} の Z 行のはず）。
+     * 空ファイルなら null。最終行が Z 行でなければ、そのまま突き合わせに失敗する
+     */
+    private static String lastLineOf(Path file) throws IOException {
+        String last = null;
+        try (CacheReader in = CacheReader.open(file)) {
+            while (in.next()) {
+                last = in.line();
+            }
+        }
+        return (last != null && CacheFormat.rowTypeOf(last) == CacheFormat.ROW_END) ? last : null;
+    }
+
+    /**
      * キャッシュのヘッダの直後にある情報。
      *
      * @param libraries 解析時の依存 jar（L行）
@@ -731,8 +900,7 @@ public final class CacheUpdater {
      */
     private CacheHead headOf(Path cacheFile) throws IOException {
         try (CacheReader in = CacheReader.open(cacheFile)) {
-            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding,
-                    config.hintPluginFingerprint))) {
+            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding))) {
                 return null;
             }
             List<LibraryFact> libraries = new ArrayList<>();
@@ -799,16 +967,12 @@ public final class CacheUpdater {
         try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean staleBlock = false;
             String currentRel = null;
-            String blockRel = null;                       // 有効・無効によらずブロックのファイル
-            List<String> blockConstants = new ArrayList<>();
             while (in.next()) {
                 char rowType = in.rowType();
                 lastLine = in.line();
                 if (rowType == CacheFormat.ROW_FILE) {
                     blocks++;
-                    rememberConstants(blockRel, blockConstants);
                     String[] f = in.columns();
-                    blockRel = (f.length >= 2) ? f[1] : null;
                     staleBlock = !isValidBlock(f, live);
                     currentRel = staleBlock ? null : f[1];
                     if (currentRel != null) {
@@ -818,11 +982,6 @@ public final class CacheUpdater {
                         } else {
                             valid.add(currentRel);
                         }
-                    }
-                } else if (rowType == CacheFormat.ROW_CONSTANT) {
-                    ConstantFact k = ConstantFact.fromRow(in.columns());
-                    if (k != null) {
-                        blockConstants.add(k.fingerprint());
                     }
                 } else if (staleBlock && rowType == CacheFormat.ROW_TYPE) {
                     TypeFact t = TypeFact.fromRow(in.columns());
@@ -838,7 +997,6 @@ public final class CacheUpdater {
                     currentRel = null;
                 }
             }
-            rememberConstants(blockRel, blockConstants);   // 最後のブロック
         } catch (IOException | RuntimeException e) {
             Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
             return false;
@@ -932,9 +1090,12 @@ public final class CacheUpdater {
      * 書き写したブロックの数を {@code result.reused} に、そこに含まれる型解決できなかった
      * 呼び出しの件数を {@code result.unresolved} に足す。数は最終行（{@link CacheFormat#trailerFor}）
      * にも出すので、valid の件数ではなく実際に書いた数を数える。
+     *
+     * @return 書き写した相対パス（パス5b が dataflow 側で同じブロックを書き写すため）
      */
-    private void copyValidBlocks(Set<String> valid, BufferedWriter cacheOut,
-                                 CachePhaseResult result) throws IOException {
+    private Set<String> copyValidBlocks(Set<String> valid, BufferedWriter cacheOut,
+                                        CachePhaseResult result) throws IOException {
+        Set<String> copied = new HashSet<>();
         try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             boolean keeping = false;
             while (in.next()) {
@@ -944,6 +1105,7 @@ public final class CacheUpdater {
                     keeping = (f.length >= 2 && valid.contains(f[1]));
                     if (keeping) {
                         writeLine(cacheOut, in.line());
+                        copied.add(f[1]);
                         result.reused++;
                     }
                     continue;
@@ -963,6 +1125,87 @@ public final class CacheUpdater {
                 }
             }
         }
+        return copied;
+    }
+
+    /**
+     * パス5b。dataflow 側のキャッシュから、パス5 が analysis 側へ書き写したのと同じ相対パスの
+     * ブロックを書き写す。
+     *
+     * パス5 と同じ順（旧キャッシュの並び）で同じ部分集合を書き写すので、
+     * 2 つのキャッシュのブロックの並びと数は一致したままになる。
+     * 対象はパス1b で「両方にあるブロック」に絞ってあるので、ここで欠けることはない。
+     *
+     * @param flowCache 読み込み元（既存のキャッシュ、または引き継ぎ用に退避した一時ファイル）
+     */
+    private void copyDataflowBlocks(Path flowCache, Set<String> copied, BufferedWriter flowOut)
+            throws IOException {
+        if (copied.isEmpty()) {
+            return;
+        }
+        try (CacheReader in = CacheReader.open(flowCache)) {   // ヘッダはパス0で検証済み
+            boolean keeping = false;
+            while (in.next()) {
+                char rowType = in.rowType();
+                if (rowType == CacheFormat.ROW_FILE) {
+                    String[] f = in.columns();
+                    keeping = (f.length >= 2 && copied.contains(f[1]));
+                    if (keeping) {
+                        writeLine(flowOut, in.line());
+                    }
+                } else if (rowType == CacheFormat.ROW_END) {
+                    keeping = false;   // 旧キャッシュの最終行。新しいものを書き終わりに1行だけ書く
+                } else if (keeping) {
+                    writeLine(flowOut, in.line());
+                }
+            }
+        }
+    }
+
+    /**
+     * パス1b。dataflow 側のキャッシュにブロックが無い相対パスを、有効な集合から外す。
+     *
+     * ヘッダの世代とブロック数が一致していれば 2 つは同じ実行で書かれているので、普通は全部そろっている。
+     * それでも突き合わせるのは、片方だけを外から消された・書き換えられた場合に
+     * 「analysis だけ再利用して dataflow が欠けたブロック」を作らないため。
+     * 外したファイルは通常の再解析（パス2）に回るので、対でないブロックは残らない。
+     *
+     * <p>ついでに K 行（宣言している定数の値）の指紋もここで集める。定数は値なので dataflow 側にあり、
+     * <b>定数の連鎖の判断も dataflow 側を読んで行う</b>（{@code docs/cache-split-qa.md} の Q11）。
+     * ブロックの走査はどうせ1回するので、同じ走査で済ませている。
+     */
+    private void dropBlocksMissingFromDataflowCache(Set<String> valid, Set<String> libraryAffected)
+            throws IOException {
+        Set<String> present = new HashSet<>();
+        try (CacheReader in = CacheReader.open(config.dataflowCacheFile)) {   // ヘッダはパス0で検証済み
+            String blockRel = null;                       // 有効・無効によらずブロックのファイル
+            List<String> blockConstants = new ArrayList<>();
+            while (in.next()) {
+                if (in.is(CacheFormat.ROW_FILE)) {
+                    rememberConstants(blockRel, blockConstants);
+                    blockRel = in.column(1);
+                    present.add(blockRel);
+                } else if (in.is(CacheFormat.ROW_CONSTANT)) {
+                    ConstantFact k = ConstantFact.fromRow(in.columns());
+                    if (k != null) {
+                        blockConstants.add(k.fingerprint());
+                    }
+                }
+            }
+            rememberConstants(blockRel, blockConstants);   // 最後のブロック
+        }
+        int dropped = 0;
+        for (Iterator<String> it = valid.iterator(); it.hasNext();) {
+            if (!present.contains(it.next())) {
+                it.remove();
+                dropped++;
+            }
+        }
+        // jar の追加で解決し直す予定のファイルも、dataflow 側が無ければ同じく通常の再解析に回す
+        libraryAffected.retainAll(present);
+        if (dropped > 0) {
+            Log.info("[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: " + dropped + " 件");
+        }
     }
 
     private static void writeLine(BufferedWriter w, String line) throws IOException {
@@ -971,9 +1214,24 @@ public final class CacheUpdater {
     }
 
     /** 1ファイル分のブロックを書く。行の並びは {@link CacheFormat} のとおり */
-    private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
-        writeLine(w, CacheFormat.joinRow("F", fa.relativePath,
-                String.valueOf(fa.size), String.valueOf(fa.errors), fa.hash));
+    private static void writeBlock(FileAnalysis fa, BufferedWriter w, BufferedWriter flowOut)
+            throws IOException {
+        String fileRow = CacheFormat.joinRow("F", fa.relativePath,
+                String.valueOf(fa.size), String.valueOf(fa.errors), fa.hash);
+        writeLine(w, fileRow);
+        writeLine(flowOut, fileRow);
+        // dataflow 側にはサイドカーの解析のための事実だけを置く。片方だけに書くことはしない
+        for (FieldAccessFact a : fa.fieldAccesses) {
+            writeLine(flowOut, a.toRow());
+        }
+        // 値グラフ（N行）は、参照される前に並んでいる必要は無いが、番号順に書く（読みやすさと決定性のため）
+        for (ValueNode n : fa.valueNodes) {
+            writeLine(flowOut, n.toRow());
+        }
+        // 呼び出し箇所ごとの値（P行）。analysis 側の C 行・U 行と同じ数・同じ順に並ぶ
+        for (CallSiteValues v : fa.callSiteValues) {
+            writeLine(flowOut, v.toRow());
+        }
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
         writeLine(w, CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));
         for (TypeFact t : fa.types) {
@@ -986,15 +1244,15 @@ public final class CacheUpdater {
             writeLine(w, v.toRow());
         }
         // K行は指紋の順に並べる。同じソースならいつ解析しても同じ並びになり、
-        // 旧キャッシュとの突き合わせ（定数の連鎖）が並び順に振り回されない
+        // 旧キャッシュとの突き合わせ（定数の連鎖）が並び順に振り回されない。
+        // 値なので dataflow 側に置く（定数の連鎖の判断もそちらを読んで行う）
         for (String row : sortedConstantRows(fa)) {
-            writeLine(w, row);
+            writeLine(flowOut, row);
         }
+        // フィールドへの代入は「どこから来た値か」なので dataflow 側。
+        // 同じブロックの V 行（フィールド宣言）と組で判定するので、ブロックの対応が要る
         for (FieldAssignFact j : fa.fieldAssigns) {
-            writeLine(w, j.toRow());
-        }
-        for (FieldAccessFact a : fa.fieldAccesses) {
-            writeLine(w, a.toRow());
+            writeLine(flowOut, j.toRow());
         }
         // 呼び出し箇所（解決できたものも失敗したものも）はソース上の順のまま書く。
         // 読み手が import 推定の候補をエッジにしたとき、元の呼び出しの並びが保たれる
@@ -1002,15 +1260,17 @@ public final class CacheUpdater {
             writeLine(w, site.toRow());
         }
         // return は全部書く（追跡できないものも U として）。
-        // 「追跡できない return が1つでもあれば戻り値は不定」という判定は読み手が行う
+        // 「追跡できない return が1つでもあれば戻り値は不定」という判定は読み手が行う。
+        // 戻り値の出所は値なので dataflow 側
         for (ReturnFact r : fa.returns) {
-            writeLine(w, r.toRow());
+            writeLine(flowOut, r.toRow());
         }
         for (FunctionalImplFact m : fa.functionalImpls) {
             writeLine(w, m.toRow());
         }
+        // フェーズAの拡張が拾った証拠も値なので dataflow 側（ヘッダの hints= も同じ側に置く）
         for (HintFact h : fa.hints) {
-            writeLine(w, h.toRow());
+            writeLine(flowOut, h.toRow());
         }
     }
 

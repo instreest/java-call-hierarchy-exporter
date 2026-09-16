@@ -235,21 +235,23 @@ public final class CallConditionScanner {
     /** 1ファイル分の呼び出しから、対象に合うものだけ取り出す */
     private static void collect(Target target, String file, FileAnalysis analysis,
                                 List<CallSiteConditions> out) {
-        for (CallSite site : analysis.callSites) {
+        // ガードは値なので dataflow 側（P 行）にある。callSiteValues は callSites と
+        // 同じ数・同じ順で並ぶので、同じ位置から取る（docs/cache-split-qa.md の Q20）
+        for (int i = 0; i < analysis.callSites.size(); i++) {
+            CallSite site = analysis.callSites.get(i);
             int line;
             MethodRef caller;
             String callee;
-            String guard;
+            String guard = (i < analysis.callSiteValues.size())
+                    ? analysis.callSiteValues.get(i).guard() : "";
             if (site instanceof CallEdgeFact c) {
                 line = c.callLine();
                 caller = c.caller();
                 callee = label(c.callee());
-                guard = c.guard();
             } else if (site instanceof UnresolvedCallFact u) {
                 line = u.line();
                 caller = u.caller();
                 callee = u.expression() + "（型解決できず）";
-                guard = u.guard();
             } else {
                 continue;
             }

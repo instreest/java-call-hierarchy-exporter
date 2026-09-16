@@ -11,23 +11,19 @@ import jche.util.Names;
  * @param callLine    呼び出し箇所の行番号（呼び出し元ソースのどの行で呼んでいるか）
  * @param calleeMods  呼び出し先の修飾子（事実）。静的束縛かどうかの判定は読み手が行う
  *                    （jche.graph.BindKind）。finalclass / super も含みうる
- * @param recvKey     レシーバの識別キー（ローカル変数のバインディングキー、または "@位置"）。無ければ空
- * @param recvKind    レシーバの由来（{@link RecvKind}）。CHAで絞れなかった理由の説明に使う
- * @param recvOrigin  レシーバの出所（{@link Origin}）。データフローで具象型を追うのに使う。無ければ空
- * @param argOrigins  実引数の出所。"位置=出所" を ; で並べたもの。無ければ空
+ * @param recvKind    レシーバの由来（{@link RecvKind}）。CHAで絞れなかった理由の説明に使う。
+ *                    構文上の分類であって値ではないので、こちら（analysis 側）に残す
  * @param lambdaDepth 呼び出し箇所を囲むラムダ式の深さ。0 ならラムダの外
- * @param guard       呼び出し箇所を囲む条件分岐（{@link Guard}）。無ければ空
+ *
+ * <p>レシーバと実引数の出所・識別キー・囲む条件分岐は<b>値</b>なので、この行には無い。
+ * dataflow 側の P 行（{@link CallSiteValues}）が持ち、読み手がブロック単位で突き合わせる
+ * （{@code docs/cache-split-qa.md} の Q11・Q20）。
  */
 public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, String calleeMods,
-                           String recvKey, char recvKind, String recvOrigin, String argOrigins,
-                           int lambdaDepth, String guard) implements CallSite {
+                           char recvKind, int lambdaDepth) implements CallSite {
 
     public CallEdgeFact {
         calleeMods = (calleeMods == null) ? "" : calleeMods;
-        recvKey = (recvKey == null) ? "" : recvKey;
-        recvOrigin = (recvOrigin == null) ? "" : recvOrigin;
-        argOrigins = (argOrigins == null) ? "" : argOrigins;
-        guard = (guard == null) ? "" : guard;
     }
 
     @Override
@@ -35,8 +31,8 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
         String[] c = caller.toColumns();
         String[] t = callee.toColumns();
         return CacheFormat.joinRow("C", c[0], c[1], c[2], c[3], t[0], t[1], t[2], t[3],
-                String.valueOf(callLine), calleeMods, recvKey, String.valueOf(recvKind),
-                recvOrigin, argOrigins, String.valueOf(lambdaDepth), guard);
+                String.valueOf(callLine), calleeMods, String.valueOf(recvKind),
+                String.valueOf(lambdaDepth));
     }
 
     /** 列が足りなければ null */
@@ -56,9 +52,7 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
             callLine = -1;
         }
         return new CallEdgeFact(caller, callee, callLine, CacheFormat.columnAt(cols, 10),
-                CacheFormat.columnAt(cols, 11), RecvKind.parse(CacheFormat.columnAt(cols, 12)),
-                CacheFormat.columnAt(cols, 13), CacheFormat.columnAt(cols, 14),
-                Names.parseIntOr(CacheFormat.columnAt(cols, 15), 0),
-                CacheFormat.columnAt(cols, 16));
+                RecvKind.parse(CacheFormat.columnAt(cols, 11)),
+                Names.parseIntOr(CacheFormat.columnAt(cols, 12), 0));
     }
 }

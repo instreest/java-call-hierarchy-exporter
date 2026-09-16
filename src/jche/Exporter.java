@@ -134,7 +134,10 @@ public final class Exporter {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
         }
         SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
-        CallGraph graph = CallGraphBuilder.build(config.cacheFile, sourceFolderOrder, beans);
+        // dataflow 側は「値」を持つ。dataflow.enabled=false のときは開かない
+        // （具象クラスの解決は CHA まで、条件分岐の打ち切りは起きない）
+        CallGraph graph = CallGraphBuilder.build(config.cacheFile,
+                config.dataflowEnabled ? config.dataflowCacheFile : null, sourceFolderOrder, beans);
         if (beans.enabled()) {
             Log.info("DIコンテナのBean: " + beans.beanCount() + " 型"
                     + (beans.beanCount() == 0 ? "（spring.di.enabled=true だが Bean は見つからなかった）" : ""));
