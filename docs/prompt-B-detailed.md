@@ -218,7 +218,11 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | `outDegree` | 呼び出し数 |
 | `role` | `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
 | `reachable` | 起点集合から解決後のエッジで到達できるか |
-| `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`実装なし（宣言のまま）` / `ラムダ/メソッド参照の実装あり` / レシーバ由来） |
+| `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` / `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり` / レシーバ由来） |
+
+`unresolvedCause` のタグは `call-hierarchy.csv` の注記と同じものを使う。同じ「絞れなかった」を
+一覧と階層で別の名前で書くと、片方で見つけた呼び出しをもう片方で追えなくなる。
+レシーバ由来は `[UNEXPANDED:CHA] {理由}` の形にする。
 
 ソースの無いメソッド（jar内）と `<init>` は出力しない。合成した `<clinit>` は出す。
 行順はソースの並び（ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → 同一行はID順）。
@@ -1911,7 +1915,7 @@ at fx.App.viaMethodRef(App.java:156),Repo.save,App.viaMethodRef,Repo.save
 - `NoCtor::new` はコンストラクタなので行にならない。`String[]::new` は辺にならず、
   型解決失敗の件数（1件）にも**含まれない**
 - `methods.csv` の `App.viaMethodRef()` は `outDegree=6`（save, NoCtor.<init>, handle, get, apply, Repo.<init>）、
-  `unresolvedCalls=3`（handle / get / apply の3件が「ラムダ/メソッド参照の実装あり」）
+  `unresolvedCalls=3`（handle / get / apply の3件が「[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり」）
 
 ### T15 オーバーロードと引数型略名の衝突
 ```
@@ -2011,7 +2015,7 @@ OrderDao.select(),fx.OrderDao,C,src/fx/OrderDao.java,4,1,18,0,LEAF,1,0,
 AbstractDao.select(),fx.AbstractDao,A,src/fx/AbstractDao.java,4,1,14,1,NORMAL,1,0,
 Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィールド変数
 App.viaEither(),fx.App,C,src/fx/App.java,22,1,0,2,ENTRY_CANDIDATE,1,1,戻り値（ファクトリメソッド等）
-App.viaLambda(),fx.App,C,src/fx/App.java,140,1,0,3,ENTRY_CANDIDATE,1,1,ラムダ/メソッド参照の実装あり
+App.viaLambda(),fx.App,C,src/fx/App.java,140,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり
 App$3.handle(String),fx.App$3,C,src/fx/App.java,147,1,3,1,NORMAL,1,0,
 Unit.<clinit>(),fx.Unit,C,src/fx/Unit.java,3,1,0,3,ENTRY_CANDIDATE,1,0,
 Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,

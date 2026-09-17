@@ -178,17 +178,23 @@ public final class StreamingTreeWalker {
         return methodId >= 0 && methodId < inHierarchy.length && inHierarchy[methodId];
     }
 
-    /** 階層CSVに出なかった理由の文言。分からなければ「上流が未出力」 */
+    /**
+     * 階層CSVに出なかった理由の文言。分からなければ「上流が未出力」。
+     *
+     * タグは call-hierarchy.csv の注記と揃える。同じ打ち切りを
+     * 「階層側では注記」「一覧側では absentCause」と別の名前で書くと、
+     * 片方で見つけた件数をもう片方で追えなくなる。
+     */
     String absentCauseOf(int methodId) {
         byte cause = (methodId >= 0 && methodId < absentCause.length) ? absentCause[methodId] : ABSENT_NONE;
         return switch (cause) {
-            case ABSENT_EXCLUDED -> "除外パッケージ";
-            case ABSENT_CHA -> "CHA候補のため未展開";
-            case ABSENT_CYCLE -> "循環のため未展開";
+            case ABSENT_EXCLUDED -> "[EXCLUDED] exclude.packages で除外";
+            case ABSENT_CHA -> UNEXPANDED + "CHA] 候補のため展開されなかった";
+            case ABSENT_CYCLE -> UNEXPANDED + "CYCLE] 循環のため展開されなかった";
             case ABSENT_PRUNED_SUBTREE -> PRUNED_SUBTREE_CAUSE;
             // 呼び出し先として一度も見ていない = そこへ至る呼び出し自体が出力されていない
             // （深さ制限・行数上限の先、起点から辿り着かない）
-            default -> "上流が未出力";
+            default -> "[NOT_REACHED] 上流が未出力";
         };
     }
 
@@ -205,7 +211,7 @@ public final class StreamingTreeWalker {
     }
 
     /** 条件分岐の打ち切りが理由で階層CSVに出なかったことを表す文言 */
-    static final String PRUNED_SUBTREE_CAUSE = "条件分岐で打ち切った先";
+    static final String PRUNED_SUBTREE_CAUSE = "[UNREACHABLE] 条件分岐で打ち切った先";
 
     /**
      * 打ち切った呼び出しの先にしか無いメソッドに印を付ける。

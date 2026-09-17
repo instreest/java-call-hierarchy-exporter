@@ -342,8 +342,8 @@ P  39  inc  inc.Awkward  nestedArgs     write  0  -1  0=4
 
 | 形 | 旧 | 新 |
 |---|---|---|
-| 実引数の入れ子。`use(DaoFactory.byName("fx.dao.OrderDaoImpl"))` | 引数の出所が1段で剥がされ、`byName` に渡したクラス名が消えるので CHA 止まり | `解決:DATAFLOW_PARAM` で `OrderDaoImpl.describe()` に確定 |
-| 64文字を超えるクラス名。`Class.forName("fx.deep.longnamed.AnExtremely…")`（72文字） | 文字列が落ちるので解決なし | `解決:REFLECTION` で確定 |
+| 実引数の入れ子。`use(DaoFactory.byName("fx.dao.OrderDaoImpl"))` | 引数の出所が1段で剥がされ、`byName` に渡したクラス名が消えるので CHA 止まり | `[RESOLVED:DATAFLOW_PARAM]` で `OrderDaoImpl.describe()` に確定 |
+| 64文字を超えるクラス名。`Class.forName("fx.deep.longnamed.AnExtremely…")`（72文字） | 文字列が落ちるので解決なし | `[RESOLVED:REFLECTION]` で確定 |
 
 既存の経路は 1 行も変わっていない。差分は `fx.deep` の追加分と、
 それが既存メソッドを呼ぶことによる被参照数の増加だけ。

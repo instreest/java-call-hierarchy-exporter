@@ -129,11 +129,11 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 「誰からも呼ばれていないのはどれか」「よく呼ばれている共通処理はどれか」を俯瞰するのに使います。
 
 ```csv
-method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause
-OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,フィールド変数
-OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,
-OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
+OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
+OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
+OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,
 ```
 
 | 列 | 内容 |
@@ -150,6 +150,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `reachable` | 起点からの呼び出しを辿って到達できるなら `1`、できないなら `0` |
 | `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
 | `unresolvedCause` | その理由（下表）。複数ある場合は `;` 区切り |
+| `inHierarchy` | `call-hierarchy.csv` に1行でも出たなら `1`、出なかったなら `0` |
+| `absentCause` | 出なかった理由（下表）。`inHierarchy` が `1` なら空欄 |
 
 | role | 意味 |
 |---|---|
@@ -160,17 +162,30 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 `unresolvedCause` は、絞れなかった呼び出しのレシーバ（呼び出しの受け手）がどこから来たかで決まります。
 次に何を調べればよいかの手がかりになります。
+タグは `call-hierarchy.csv` の[注記](#注記)と同じものを使っているので、
+一覧で見つけた呼び出しをそのまま階層側で `grep` して追えます。
 
 | unresolvedCause | 意味 |
 |---|---|
-| `戻り値（ファクトリメソッド等）` | レシーバが他のメソッドの戻り値。ファクトリの実装を[プラグイン](docs/instance-analysis-plugin.md)で教えると絞れることがある |
-| `引数（メソッド外から渡される）` | レシーバが呼び出し元から渡された引数 |
-| `フィールド変数` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
-| `ローカル変数` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
-| `自クラス（this）` / `型名（static）` / `レシーバ不明` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
-| `実装なし（宣言のまま）` | 本体を持つ実装がソース上に1つも無い |
-| `実装はコンパイル時生成（名前）` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
-| `ラムダ/メソッド参照の実装あり` | その関数型インターフェースをラムダかメソッド参照が実装している |
+| `[UNEXPANDED:CHA] 戻り値（ファクトリメソッド等）` | レシーバが他のメソッドの戻り値。ファクトリの実装を[プラグイン](docs/instance-analysis-plugin.md)で教えると絞れることがある |
+| `[UNEXPANDED:CHA] 引数（メソッド外から渡される）` | レシーバが呼び出し元から渡された引数 |
+| `[UNEXPANDED:CHA] フィールド変数` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
+| `[UNEXPANDED:CHA] ローカル変数` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
+| `[UNEXPANDED:CHA] 自クラス（this）` / `型名（static）` / `レシーバ不明` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
+| `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` | 中身を書いたクラスがソース上に1つも無い |
+| `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（名前）` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり` | その関数型インターフェースをラムダかメソッド参照が実装している |
+
+`absentCause` は、そのメソッドが `call-hierarchy.csv` に1行も出なかった理由です。
+打ち切りで階層から消えた部分木は、ここでしか見えません。
+
+| absentCause | 意味 |
+|---|---|
+| `[UNEXPANDED:CHA] 候補のため展開されなかった` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
+| `[UNEXPANDED:CYCLE] 循環のため展開されなかった` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
+| `[UNREACHABLE] 条件分岐で打ち切った先` | 条件分岐の静的解析で打ち切った呼び出しから先にしかない（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
+| `[EXCLUDED] exclude.packages で除外` | `exclude.packages` で除外された |
+| `[NOT_REACHED] 上流が未出力` | そこへ至る呼び出し自体が出ていない（深さ制限・行数上限の先、起点から辿り着かない） |
 
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。

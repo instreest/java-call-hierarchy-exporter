@@ -41,7 +41,7 @@ edge 34  fx.app.Main#run(java.lang.String[]) -> fx.dao.Dao#describe()
 
 | ファイル | 内容 | どの周の結果か |
 |---|---|---|
-| `call-hierarchy.csv` | `Main.run` 60 行目が `解決:DATAFLOW_FACTORY`（1 件に確定） | 2 周目（`StreamingTreeWalker`） |
+| `call-hierarchy.csv` | `Main.run` 60 行目が `[RESOLVED:DATAFLOW_FACTORY]`（1 件に確定） | 2 周目（`StreamingTreeWalker`） |
 | `methods.csv` | `OrderDaoImpl.describe` の inDegree が 12（c1 経由の CHA 候補を数えている） | 1 周目（`InventoryReport` → `inDegrees()`） |
 
 つまり同じ実行の中で、集計は「候補 2 件」、階層は「1 件に確定」と食い違っていた。走査順が固定なので
