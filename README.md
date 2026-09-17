@@ -192,28 +192,48 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 
 ### 注記
+
+注記は先頭に大文字のタグが付きます。日本語の説明はその後ろに続くので、
+タグで grep すれば種類ごとに拾えます。
+
+| タグ | 意味 |
+|---|---|
+| `[UNEXPANDED:*]` | ここから先へ降りなかった。`grep '\[UNEXPANDED'` で辿り切れなかった箇所を一括で拾える |
+| `[EXTERNAL]` | 呼び出し先が自プロジェクトの外。打ち切りではあるが性質が違うので `UNEXPANDED` には入れない |
+| `[UNREACHABLE]` | この経路では実行されないと分かった呼び出し |
+| `[RESOLVED:*]` | 具象クラスをどう特定したか。読み飛ばすなら `grep -v '\[RESOLVED'` |
+
 | 注記 | 意味 |
 |---|---|
-| `[CYCLE]` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
-| `深さ制限(N)のため打ち切り` | `max.depth` に達した |
-| `CHA候補N件（未展開）: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
-| `実装はコンパイル時生成（名前）: FQN はアノテーション処理で生成されるためソース上に無い` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
-| `ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。展開できないので候補には数えていない |
-| `ソースなし（展開不可）` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない |
-| `外部ライブラリ（import推定・未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した |
-| `解決:DATAFLOW_NEW` | `new` された具象型から特定した（捕捉された変数を含む） |
-| `解決:DATAFLOW_FACTORY` | ファクトリメソッドの戻り値から具象クラスを特定した |
-| `解決:DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定した |
-| `解決:DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
-| `解決:SPRING_DI` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
-| `解決:SPRING_DI_QUALIFIER` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
-| `解決:ラベル` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
-| `解決:REFLECTION` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
-| `解決:REFLECTION_INIT` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
-| `リフレクション候補N件（未展開）: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
-| `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述） |
-| `被参照:EXACT` 等 | 被参照スキャンの行（後述） |
+| `[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
+| `[UNEXPANDED:DEPTH] 深さ制限(N)に達した` | `max.depth` に達した |
+| `[UNEXPANDED:CHA] 候補N件: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
+| `[UNEXPANDED:REFLECTION] 候補N件: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
+| `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に1つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
+| `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（名前）: FQN は…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。どのラムダが渡ってくるかは追跡していないため特定できず、候補にも数えていない |
+| `[EXTERNAL] ソースが無いため辿れない` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
+| `[EXTERNAL] import から型名を推定（未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
+| `[UNREACHABLE] この経路では呼ばれない: 条件「…」が成立しない（…）` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
+| `[RESOLVED:DATAFLOW_NEW]` | `new` された具象型から特定した（捕捉された変数を含む） |
+| `[RESOLVED:DATAFLOW_FACTORY]` | ファクトリメソッドの戻り値から具象クラスを特定した |
+| `[RESOLVED:DATAFLOW_PARAM]` | 呼び出し元から渡された引数を経路上で追跡して特定した |
+| `[RESOLVED:DATAFLOW_FIELD]` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
+| `[RESOLVED:SPRING_DI]` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
+| `[RESOLVED:SPRING_DI_QUALIFIER]` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
+| `[RESOLVED:ラベル]` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
+| `[RESOLVED:REFLECTION]` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
+| `[RESOLVED:REFLECTION_INIT]` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
+| `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述）。注記ではなく専用の行 |
+| `被参照:EXACT` 等 | 被参照スキャンの行（後述）。同じく専用の行 |
 
+1つの注記は最大2つのパーツからなり、両方付くときは ` / ` で繋がります。
+前半が打ち切りの理由（`[UNEXPANDED:CYCLE]`・`[UNEXPANDED:DEPTH]`・`[EXTERNAL]`・`[UNREACHABLE]`）、
+後半が絞り込みの結果（`[UNEXPANDED:CHA]`・`[RESOLVED:*]` 等）です。
+
+```
+[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る / [UNEXPANDED:CHA] 候補5件: フィールド変数
+```
 
 ### jar からの被参照メソッド
 

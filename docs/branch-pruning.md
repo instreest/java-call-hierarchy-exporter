@@ -27,12 +27,12 @@ new Feature().run(false);
 `call-hierarchy.csv`:
 
 ```csv
-at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.main,…,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.main,…,Feature.run,Feature.report,[UNREACHABLE] この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
 at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,…,Feature.run,Feature.summary
 ```
 
 呼び出しが書かれている事実は消さず、**呼び出し自体は1行出して、その先の階層だけを出しません**。
-理由は注記として階層の末尾に付きます（`[CYCLE]` や `深さ制限(N)のため打ち切り` と同じ位置）。
+理由は注記として階層の末尾に付きます（`[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` や `[UNEXPANDED:DEPTH] 深さ制限(N)に達した` と同じ位置）。
 打ち切った件数は実行ログにも出ます。
 
 ## 判定できる条件

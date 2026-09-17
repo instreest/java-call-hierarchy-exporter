@@ -54,8 +54,20 @@ public final class StreamingTreeWalker {
      * 頭打ちになるが、大規模プロジェクトではそれでも数千に達しうる。
      */
     private static final int DEPTH_HARD_CAP = 512;
+    /**
+     * 注記のタグ。
+     *
+     * 注記は日本語の説明文だが、先頭に大文字のタグを置いて grep で拾えるようにしている。
+     * {@code [UNEXPANDED:*]} は「ここから先へ降りなかった」ことを表し、
+     * タグだけで「辿り切れなかった箇所」を一括で数えられる。
+     * {@code [EXTERNAL]} は自プロジェクトの外を指しているという別の性質なので、
+     * 打ち切りではあるが {@code UNEXPANDED} の配下には入れない。
+     */
+    static final String UNEXPANDED = "[UNEXPANDED:";
+    /** 自プロジェクトの外を指しているため辿れない辺の印 */
+    static final String EXTERNAL_MARK = "[EXTERNAL]";
     /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
-    static final String CYCLE_MARK = "[CYCLE]";
+    static final String CYCLE_MARK = UNEXPANDED + "CYCLE] 経路上で既に呼んでいるメソッドへ戻る";
 
     // --- 階層CSVに出なかったメソッドの理由（methods.csv の absentCause 列。弱い順） ---
     /** 観測できていない（呼び出し先として一度も見ていない＝そこへ至る呼び出し自体が出ていない） */
@@ -486,27 +498,30 @@ public final class StreamingTreeWalker {
         } else if (Resolution.EXTERNAL_GUESS.equals(res.label())) {
             // クラスパス不足でバインディング解決自体ができなかった呼び出し。
             // importの単一型インポートから型名を推定しただけで、JDTによる
-            // 検証は経ていない（メンバの実在・オーバーロードは未確認）
-            sb.append("外部ライブラリ（import推定・未検証）");
+            // 検証は経ていない（メンバの実在・オーバーロードは未確認）。
+            // ソースが無いのと同じ [EXTERNAL] だが、こちらは推定が外れている
+            // 可能性があるため、説明文で言い分ける（タグは分けない）
+            sb.append(EXTERNAL_MARK).append(" import から型名を推定（未検証）");
         } else if (!methods.hasSource(target)) {
-            sb.append("ソースなし（展開不可）");
+            sb.append(EXTERNAL_MARK).append(" ソースが無いため辿れない");
         } else if (depth + 1 >= maxDepth) {
-            sb.append("深さ制限(").append(maxDepth).append(")のため打ち切り");
+            sb.append(UNEXPANDED).append("DEPTH] 深さ制限(").append(maxDepth).append(")に達した");
         }
 
         String detail;
         if (res.isMultiple() && Resolution.REFLECTION.equals(res.label())) {
             // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
-            detail = "リフレクション候補" + res.targets().length + "件（未展開）: 引数型が不明なため名前で照合";
+            detail = UNEXPANDED + "REFLECTION] 候補" + res.targets().length
+                    + "件: 引数型が不明なため名前で照合";
         } else if (res.isMultiple()) {
             // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる。
             // 候補数が上限を超えたときは、行にならなかった候補があることも書く。
             // 黙って切ると、methods.csv の inDegree（全候補で数える）と行数が合わず、
             // 読み手が「候補が消えた」のか「元から無い」のか区別できない
             int n = res.targets().length;
-            detail = "CHA候補" + n + "件（未展開）: " + RecvKind.describe(recvKind)
+            detail = UNEXPANDED + "CHA] 候補" + n + "件: " + RecvKind.describe(recvKind)
                     + ((n > Config.CHA_MAX_CANDIDATES)
-                            ? " / うち先頭" + Config.CHA_MAX_CANDIDATES + "件のみ行に出力" : "");
+                            ? "（うち先頭" + Config.CHA_MAX_CANDIDATES + "件のみ行に出力）" : "");
             if (n > Config.CHA_MAX_CANDIDATES && !candidateLimitWarned) {
                 candidateLimitWarned = true;
                 Log.warn("CHA候補が" + Config.CHA_MAX_CANDIDATES + "件を超える呼び出しがあります。"
@@ -515,9 +530,11 @@ public final class StreamingTreeWalker {
         } else if (graph.hasFunctionalImpl(declaredCallee)) {
             // ソース上の実装が1件しか無くても、ラムダ／メソッド参照が
             // 同じインターフェースを実装している。それを数に入れずに
-            // 「解決:SINGLE_IMPL」と書くと、実際とは違う1件に決め打ちしたまま
-            // 確定したように見えてしまう
-            detail = "ラムダ/メソッド参照の実装あり（未展開・本体は定義元メソッドに計上）";
+            // 「RESOLVED:SINGLE_IMPL」と書くと、実際とは違う1件に決め打ちしたまま
+            // 確定したように見えてしまう。
+            // どのラムダが実行されるかは、ラムダを値として追跡していないため決まらない
+            detail = UNEXPANDED + "LAMBDA] ラムダ/メソッド参照による実装あり"
+                    + "（どれが実行されるかは未特定・本体は定義元メソッドに計上）";
         } else if (res.isGeneratedImpl()) {
             // 実装はコンパイル時のアノテーション処理で生成される（Doma の @Dao 等）。
             // 生成物はソースコードリポジトリに存在しないため、ここから先は辿れない。
@@ -525,18 +542,20 @@ public final class StreamingTreeWalker {
             String framework = res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length());
             String declType = methods.typeFqn(declaredCallee);
             GeneratedImpl def = GeneratedImpl.of(graph.hierarchy().annotationsOf(declType));
-            detail = "実装はコンパイル時生成（" + framework + "）: "
+            detail = UNEXPANDED + "GENERATED] 実装はコンパイル時生成（" + framework + "）: "
                     + ((def == null) ? declType : def.implFqnOf(declType))
                     + " はアノテーション処理で生成されるためソース上に無い";
         } else if (Resolution.NO_IMPL.equals(res.label())) {
-            // 本体を持つ実装がソース上に1つも無い。行数が多く読み手の役に立たない
-            // ため、call-hierarchy.csv の注記には出さない（methods.csv の
-            // unresolvedCause には従来どおり残る）
-            detail = null;
+            // 本体を持つ実装がソース上に1つも無い。ソースが読めないだけの
+            // [EXTERNAL] とは違い、「読めた上で見つからない」状態で、
+            // source.folders の設定漏れかデッドコードの疑いがある。
+            // 調べる価値がある側なので、methods.csv の unresolvedCause だけでなく
+            // 階層側にも出す
+            detail = UNEXPANDED + "NO_IMPL] 本体を持つ実装がソース上に無い";
         } else if (target != declaredCallee || res.isDataflow()) {
             // データフローで決めた場合は、宣言型と同じ結論でも「CHAで諦めずに
             // 絞れた」ことに意味があるので必ず出す
-            detail = "解決:" + res.label();
+            detail = "[RESOLVED:" + res.label() + "]";
         } else {
             detail = null;
         }
