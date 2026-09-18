@@ -92,6 +92,32 @@ public final class MethodTable {
     }
 
     /**
+     * 匿名クラス（{@code Outer$1}。入れ子なら {@code Outer$1$2}、その中のローカルクラスは
+     * {@code Outer$1$1Local}）のメソッドか。
+     *
+     * 匿名クラスのメソッドは「その場で親の定義を上書きした処理内容」であって、
+     * 他から呼び出せる定義ではないので methods.csv には出さない（呼び出し階層には出る）。
+     * 内部クラス・static なネストクラス・ローカルクラス（{@code Outer$1Local}）は
+     * 名前を持つ定義なので出す
+     */
+    public boolean isInAnonymousType(int id) {
+        String fqn = typeFqn(id);
+        int at = fqn.indexOf('$');
+        while (at >= 0 && at + 1 < fqn.length()) {
+            int end = at + 1;
+            while (end < fqn.length() && Character.isDigit(fqn.charAt(end))) {
+                end++;
+            }
+            // "$" の直後が数字だけで、そこで名前が終わるか次の "$" に続くなら匿名クラス
+            if (end > at + 1 && (end == fqn.length() || fqn.charAt(end) == '$')) {
+                return true;
+            }
+            at = fqn.indexOf('$', at + 1);
+        }
+        return false;
+    }
+
+    /**
      * ラムダ式の本体を持つ合成メソッドか。
      * 捕捉した変数を解決するため、読み手はこのメソッドへ降りるときだけ
      * 生成箇所のフレームの引数を渡す
