@@ -92,6 +92,31 @@ public final class MethodTable {
     }
 
     /**
+     * 匿名クラス（{@code Outer$1}。入れ子なら {@code Outer$1$2}、その中のローカルクラスは
+     * {@code Outer$1$1Local}）のメソッドか。
+     *
+     * クラス名は JDT が匿名クラスに与える識別子（数字）で、ソースに書かれた名前ではない。
+     * methods.csv は「ソース上で定義されたメソッド」の一覧なので、こうした
+     * コンパイラが名前を付ける型のメソッドは出さない（呼び出し階層には出る）
+     */
+    public boolean isInAnonymousType(int id) {
+        String fqn = typeFqn(id);
+        int at = fqn.indexOf('$');
+        while (at >= 0 && at + 1 < fqn.length()) {
+            int end = at + 1;
+            while (end < fqn.length() && Character.isDigit(fqn.charAt(end))) {
+                end++;
+            }
+            // "$" の直後が数字だけで、そこで名前が終わるか次の "$" に続くなら匿名クラス
+            if (end > at + 1 && (end == fqn.length() || fqn.charAt(end) == '$')) {
+                return true;
+            }
+            at = fqn.indexOf('$', at + 1);
+        }
+        return false;
+    }
+
+    /**
      * ラムダ式の本体を持つ合成メソッドか。
      * 捕捉した変数を解決するため、読み手はこのメソッドへ降りるときだけ
      * 生成箇所のフレームの引数を渡す

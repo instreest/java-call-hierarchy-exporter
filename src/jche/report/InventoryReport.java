@@ -32,6 +32,8 @@ public final class InventoryReport {
         long notInHierarchy;
         long prunedOut;
         long constructors;
+        /** ラムダの合成メソッドと匿名クラスのメソッド（一覧の対象外） */
+        long generated;
         long withUnresolved;
 
         /** 条件分岐の打ち切りが理由で階層CSVに出なかったメソッドの数 */
@@ -49,7 +51,8 @@ public final class InventoryReport {
                     + " 階層CSVに出ない=" + notInHierarchy
                     + "（うち条件分岐で打ち切った先=" + prunedOut + "）"
                     + " 未解決の呼び出しを含む=" + withUnresolved
-                    + "（コンストラクタ " + constructors + " 個は出力対象外）";
+                    + "（コンストラクタ " + constructors + " 個、ラムダ・匿名クラスのメソッド "
+                    + generated + " 個は出力対象外）";
         }
     }
 
@@ -102,6 +105,13 @@ public final class InventoryReport {
                 // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
                 if (methods.isConstructor(id)) {
                     st.constructors++;
+                    continue;
+                }
+                // ソース上で定義されたメソッドだけを並べる。ラムダの合成メソッドと
+                // 匿名クラス（名前はコンパイラが付ける）のメソッドは、呼び出し階層には
+                // 出るが、この一覧では「ソースに書かれた宣言」ではないので出さない
+                if (methods.isLambdaBody(id) || methods.isInAnonymousType(id)) {
+                    st.generated++;
                     continue;
                 }
                 st.methods++;

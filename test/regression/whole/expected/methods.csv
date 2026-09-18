@@ -10,10 +10,7 @@ Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,91,1,1,2,NORMAL,1,1,[UN
 Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,95,1,1,2,NORMAL,1,2,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,1,
 Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,100,1,1,4,NORMAL,1,1,[UNEXPANDED:CHA] ローカル変数,1,
 Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,108,1,1,10,NORMAL,1,3,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,1,
-Main.lambda$lambdas$0(Object),fx.app.Main,C,src/fx/app/Main.java,109,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,1,
-Main.lambda$lambdas$1(),fx.app.Main,C,src/fx/app/Main.java,112,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,1,
 Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,120,1,1,4,NORMAL,1,0,,1,
-Main$1.execute(),fx.app.Main$1,C,src/fx/app/Main.java,125,1,2,2,NORMAL,1,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,1,
 Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,134,1,2,1,NORMAL,1,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,1,
 Feature.<clinit>(),fx.branch.Feature,C,src/fx/branch/Feature.java,9,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] 上流が未出力
 Feature.Mode.<clinit>(),fx.branch.Feature.Mode,C,src/fx/branch/Feature.java,12,1,0,3,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
@@ -94,18 +91,13 @@ Greeter.greet(),fx.inherit.Greeter,I,src/fx/inherit/Greeter.java,5,0,0,0,ISOLATE
 LoudGreeter.greet(),fx.inherit.LoudGreeter,C,src/fx/inherit/LoudGreeter.java,5,1,1,0,LEAF,1,0,,1,
 OnlyImpl.m(),fx.inherit.OnlyImpl,C,src/fx/inherit/OnlyImpl.java,6,1,1,0,LEAF,1,0,,1,
 Sub2.m(),fx.inherit.Sub2,I,src/fx/inherit/Sub2.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-Holder.lambda$new$0(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,27,1,1,1,NORMAL,1,0,,1,
 Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
 Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
-Holder.lambda$viaParam$1(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,34,1,1,1,NORMAL,1,0,,1,
 Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,1,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,1,
 Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-Holder.lambda$viaCollection$2(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,43,1,1,1,NORMAL,1,0,,1,
 Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-Holder.lambda$viaForEach$3(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,51,1,1,1,NORMAL,1,0,,1,
 Base.init(String),fx.model.Base,C,src/fx/model/Base.java,8,1,1,1,NORMAL,1,0,,1,
 Color.<clinit>(),fx.model.Color,C,src/fx/model/Color.java,3,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
-Color$1.area(),fx.model.Color$1,C,src/fx/model/Color.java,6,1,1,0,LEAF,1,0,,1,
 Color.area(),fx.model.Color,C,src/fx/model/Color.java,18,1,1,0,LEAF,1,0,,1,
 Color.code(),fx.model.Color,C,src/fx/model/Color.java,20,1,1,0,LEAF,1,0,,1,
 Exporter.export(Shape),fx.model.Exporter,I,src/fx/model/Exporter.java,4,0,1,0,LEAF,1,0,,1,
@@ -137,7 +129,6 @@ Notifier.ping(),fx.service.Notifier,C,src/fx/service/Notifier.java,27,1,2,1,NORM
 Notifier.pong(),fx.service.Notifier,C,src/fx/service/Notifier.java,31,1,1,1,NORMAL,1,0,,1,
 OrderService.<clinit>(),fx.service.OrderService,C,src/fx/service/OrderService.java,8,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
 OrderService.execute(),fx.service.OrderService,C,src/fx/service/OrderService.java,23,1,2,13,NORMAL,1,6,[UNEXPANDED:CHA] フィールド変数;[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,1,
-OrderService.lambda$execute$0(),fx.service.OrderService,C,src/fx/service/OrderService.java,28,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
 OrderService.helper(),fx.service.OrderService,C,src/fx/service/OrderService.java,38,1,2,2,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
 OrderService.staticHelper(),fx.service.OrderService,C,src/fx/service/OrderService.java,43,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
 OrderService.setMutable(Dao),fx.service.OrderService,C,src/fx/service/OrderService.java,47,1,1,0,LEAF,1,0,,1,
