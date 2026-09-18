@@ -21,12 +21,10 @@ package jche.server;
  *   → FIND  com.example.OrderService#save(com.example.Order)
  *   ← OK  key=...  label=...  file=...  line=42  endLine=45        （無ければ NG not-found）
  *
- *   → AT  src/main/java/com/example/OrderService.java  43
- *   ← OK  how=enclosing  key=...  line=42  endLine=45   （その行を囲むメソッド。
- *                                                        メソッドの外なら NG not-found）
- *
- *   → AT  src/main/java/com/example/OrderService.java  42     （ファイルと行を囲むメソッド）
- *   ← OK  how=at  key=...  label=...  file=...  line=38  callers=7
+ *   → AT  src/main/java/com/example/OrderService.java  43     （ファイルと行を囲むメソッド）
+ *   ← OK  how=enclosing  key=...  label=...  file=...  line=42  endLine=45  callers=7
+ *        （メソッドの外なら NG not-found、ファイルが解析結果に無ければ NG file-not-analyzed。
+ *          パスは相対でも、project.root 配下の絶対パスでもよい）
  *
  *   → TREE  &lt;メソッドキー&gt;  callers  depth=5  text=Order  tests=0
  *   ← R  0  &lt;キー&gt;  &lt;表示名&gt;  &lt;ファイル&gt;  &lt;行&gt;  &lt;解決の理由&gt;  &lt;印&gt;

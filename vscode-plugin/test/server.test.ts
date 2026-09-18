@@ -81,7 +81,7 @@ test('子プロセスと一連のやりとり（HELLO → ANALYZE → FIND → A
         // AT: 相対パスでも、project.root 配下の絶対パスでも同じ答え
         const at = await connection.request(DEFAULT_TIMEOUT_MS, 'AT', atFile, atLine);
         assert.ok(at.ok, `AT: ${at.raw}`);
-        assert.equal(at.field('how'), 'at');
+        assert.equal(at.field('how'), 'enclosing');
         assert.notEqual(at.field('key'), '');
         assert.ok(at.numberField('line', 0) >= 1 && at.numberField('line', 0) <= Number(atLine));
         const projectRoot = analyze.field('root');

@@ -208,16 +208,12 @@ VSCode でこれを再現しようとすると、次のどちらかになる。
 - パスは `project.root` からの相対（区切りは `/`）。**ルート配下の絶対パスでも受ける**ので、
   拡張は `Uri#fsPath` をそのまま渡してよい（サーバー側が相対に直す）
 - 行番号は **1 始まり**。VSCode の `Position#line` は 0 始まりなので、拡張側で +1 する
-- 宣言の**終了行を持っていない**ので「メソッドの外（フィールド宣言やクラスの末尾）にカーソルがある」ときも
-  直前のメソッドを返してしまう。ここは割り切る。返した位置（`line=`）を画面に出し、
-  「`OrderService#save` の呼び出し元」と見出しに書くことで、利用者が誤りに気づける形にする
+- 宣言の**終了行も持っている**（[#115](https://github.com/instreest/java-call-hierarchy-exporter/issues/115)、
+  [method-decl-range-qa.md](method-decl-range-qa.md)）ので、メソッドの外（フィールド宣言やクラスの末尾）を指されたら
+  直前のメソッドを返さず `not-found` にする。返した位置（`line=`）は画面の見出しにも出す
 - 引くための索引（ファイル → メソッドID の一覧）は最初の `AT` のときに作って持ち回る
 - `AT` を知らない古いサーバーは `NG unknown-command` を返す。拡張はそれを見てシンボルからの組み立て（第1案）に落とす…
   ことは**しない**。同梱の jar と拡張は同じ版で配るので、食い違いは起きない。起きたらエラーとして出す
-
-なお「終了行を持たないこと」自体は、この設計とは切り離して**別途 Issue で扱う**（[#115](https://github.com/instreest/java-call-hierarchy-exporter/issues/115)）。
-`MethodTable` に終了行を足すのはキャッシュの形式変更であり、古いキャッシュを捨てる経路が要る
-（[cache-dependency-jars-qa.md](cache-dependency-jars-qa.md)）。VSCode 版の着手をそれに待たせない。
 
 これは Eclipse 版にも効く（将来 `MethodKeys` を `AT` に寄せれば、あの繊細な綴り合わせを消せる）。
 ただし今回は VSCode 側だけで使い、Eclipse 版はそのままにする。二重に壊す危険を冒さない。
@@ -366,7 +362,7 @@ CI の時間と閉域環境を考えると割に合わないので、**`vscode` 
 | ビューの名前 | **「影響調査 (Call Hierarchy Exporter)」**。VSCode では標準機能と紛れないことを優先する（§2.5）。Eclipse 版の名前を揃えるかは別途 Issue で検討する（[#116](https://github.com/instreest/java-call-hierarchy-exporter/issues/116)） |
 | 自動再解析の既定 | **OFF**（§7）。Eclipse 版（ON）と既定が違ってよい。VSCode は軽い編集に使われるため |
 | リポジトリを分けるか | **同居させる**（`vscode-plugin/`）。`lib/` の版合わせと `AT` の追従を優先する。`npm` のビルドがこのリポジトリに入ることは受け入れる |
-| `AT` の精度（メソッドの終了行） | 設計としては §4 の割り切りで進める。**終了行を持つかどうかは別途 Issue で扱う（[#115](https://github.com/instreest/java-call-hierarchy-exporter/issues/115)）**（キャッシュの形式変更を伴うため、この設計とは切り離す） |
+| `AT` の精度（メソッドの終了行） | 当初は開始行だけの近似で進める予定だったが、[#115](https://github.com/instreest/java-call-hierarchy-exporter/issues/115) で**終了行を持つことにした**（[method-decl-range-qa.md](method-decl-range-qa.md)）。メソッドの外は `not-found` になる |
 
 Issue に切り出したもの … [#115](https://github.com/instreest/java-call-hierarchy-exporter/issues/115)（メソッドの終了行を持つか）、
 [#116](https://github.com/instreest/java-call-hierarchy-exporter/issues/116)（Eclipse 版のビュー名を揃えるか）。
