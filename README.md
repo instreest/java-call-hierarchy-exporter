@@ -15,6 +15,8 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
+| 具象クラスが絞れない呼び出しへの対処 | [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) |
+| 静的解析で絞れる条件・絞れない条件 | [docs/static-analysis-limits.md](docs/static-analysis-limits.md) |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
@@ -268,13 +270,20 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 | 0 | `STATIC_BOUND:*` | private / static / final メソッド、finalクラス、コンストラクタ、super呼び出し |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が1つに定まる |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
-| 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等 |
+| 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（[注記の表](#注記)） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補を絞った（[注記の表](#注記)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
+
+`CHA` のまま絞れない呼び出し（キーで実装を切り替えるファクトリ、独自形式の DI 設定など）は、
+解決の条件を外から与えると1件に絞れます。多くの場合は**対応表を書くだけ**で済み、Java を書く必要はありません
+（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。
+
+どういう条件なら絞れて、どういう条件なら原理的に絞れないのかは
+[docs/static-analysis-limits.md](docs/static-analysis-limits.md) にまとめてあります。
 
 ---
 
