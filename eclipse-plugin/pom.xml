@@ -31,7 +31,15 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-17 と同じ -->
+    <!--
+      maven-compiler-plugin の既定の言語レベル。実際のビルドでは下の
+      maven-compiler-plugin が既定の実行（default-compile）を止め、実行ごとに
+      release を明示するので（解析本体 17 / プラグイン 8）、この値は使われない。
+      release を書き忘れた実行を追加したときの保険として、本体側と同じ 17 にしてある。
+
+      プラグインが Eclipse 側に要求する Java の下限はこの値ではなく、MANIFEST.MF の
+      Bundle-RequiredExecutionEnvironment: JavaSE-1.8（古い Eclipse でも動かすため）。
+    -->
     <maven.compiler.release>17</maven.compiler.release>
     <!--
       JDT の版。ここは「バンドルに同梱して子プロセスで使う版」で、//DEPS 行と同じにする
