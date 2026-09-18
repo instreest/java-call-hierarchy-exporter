@@ -190,9 +190,10 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 
-- **ソース上で定義されたメソッド**だけを並べます。ラムダ式の合成メソッド（`lambda$…`）と
-  無名クラス（`Outer$1`）のメソッドは出力しません。呼び出し階層には出ます
-  （[ラムダ式・メソッド参照](#ラムダ式メソッド参照)）
+- **そのクラスのインスタンス（または型）を通じて呼び出せる定義**だけを並べます。
+  ラムダ式の合成メソッド（`lambda$…`）と static 初期化子（`<clinit>`）は呼び出せるメソッドではないので
+  出力しません（呼び出し階層には出ます。[ラムダ式・メソッド参照](#ラムダ式メソッド参照)）。
+  無名クラスのメソッドはインターフェース経由で呼び出せるので出力します
 - コンストラクタ（`<init>`）は出力しません（`call-hierarchy.csv` でも行にしていないため揃えています）
 - jar の中のメソッドなど、ソースに宣言が無いものは出力しません。呼ばれている事実は `call-hierarchy.csv` に残ります
 - `reachable` の起点は `call-hierarchy.csv` と同じで、`entry.packages` で指定したメソッドです。
@@ -321,8 +322,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 ## ラムダ式・メソッド参照
 
 ラムダ式の本体は、javac と同じ名前（`lambda$囲みメソッド名$通し番号`）を付けた
-**合成メソッド**として1つのノードにします（`methods.csv` には出しません。ソースに書かれた
-宣言ではないため）。
+**合成メソッド**として1つのノードにします（`methods.csv` には出しません。
+インスタンスを通じて呼び出せるメソッドではないため）。
 
 ```csv
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,Holder.viaField,Holder.lambda$new$0,[RESOLVED:DATAFLOW_LAMBDA]

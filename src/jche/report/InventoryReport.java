@@ -32,7 +32,7 @@ public final class InventoryReport {
         long notInHierarchy;
         long prunedOut;
         long constructors;
-        /** ラムダの合成メソッドと匿名クラスのメソッド（一覧の対象外） */
+        /** ラムダの合成メソッドと static 初期化子（呼び出せる定義ではないので一覧の対象外） */
         long generated;
         long withUnresolved;
 
@@ -51,7 +51,7 @@ public final class InventoryReport {
                     + " 階層CSVに出ない=" + notInHierarchy
                     + "（うち条件分岐で打ち切った先=" + prunedOut + "）"
                     + " 未解決の呼び出しを含む=" + withUnresolved
-                    + "（コンストラクタ " + constructors + " 個、ラムダ・匿名クラスのメソッド "
+                    + "（コンストラクタ " + constructors + " 個、ラムダの合成メソッド・static 初期化子 "
                     + generated + " 個は出力対象外）";
         }
     }
@@ -107,10 +107,11 @@ public final class InventoryReport {
                     st.constructors++;
                     continue;
                 }
-                // ソース上で定義されたメソッドだけを並べる。ラムダの合成メソッドと
-                // 匿名クラス（名前はコンパイラが付ける）のメソッドは、呼び出し階層には
-                // 出るが、この一覧では「ソースに書かれた宣言」ではないので出さない
-                if (methods.isLambdaBody(id) || methods.isInAnonymousType(id)) {
+                // 「そのクラスのインスタンス（または型）を通じて呼び出せる定義」だけを並べる。
+                // ラムダの合成メソッドと static 初期化子は、呼び出し階層のノードではあるが
+                // 呼び出せるメソッドではないので出さない。匿名クラスのメソッドは
+                // インターフェース経由で呼び出せるので出す
+                if (methods.isLambdaBody(id) || methods.isStaticInitializer(id)) {
                     st.generated++;
                     continue;
                 }
