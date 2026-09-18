@@ -1,0 +1,29 @@
+{
+  // VSCode でこのフォルダ（vscode-plugin/）を開いて F5。
+  // 拡張機能の開発ホスト（別ウィンドウ）が上がるので、そこで Java プロジェクトを開いて試す。
+  // 起動前に npm run build（preLaunchTask）で dist/extension.js を作り直す。
+  // lib/ を集めていなければ（npm run lib）、開発ホスト側の設定 jche.libFolder に
+  // <リポジトリ>/eclipse-plugin/target/classes/lib を指定する。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "拡張機能を起動",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "npm: build"
+    },
+    {
+      "name": "拡張機能を起動（test/demo を開く）",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/../test/demo"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "npm: build"
+    }
+  ]
+}
