@@ -15,7 +15,6 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
-| 静的解析で絞れる条件・絞れない条件 | [docs/static-analysis-limits.md](docs/static-analysis-limits.md) |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
@@ -332,6 +331,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 
 `CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます
 （[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。
+
+静的解析で絞れる条件・絞れない条件は [docs/static-analysis-limits.md](docs/static-analysis-limits.md) にまとめてあります。
 
 ---
 
