@@ -73,8 +73,7 @@ rem 実行
 ```yaml
       - uses: actions/checkout@v5
 
-      # 依存 jar を先にローカルリポジトリへ取得しておく（このツールは pom.xml / build.gradle を読んで
-      # ~/.m2/repository 等にある jar を使うだけで、ネットワークには出ないため）
+      # 依存 jar を先にローカルリポジトリへ取得しておく
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -88,9 +87,7 @@ rem 実行
           source-encoding: UTF-8
 ```
 
-依存の取得を省いても解析は動きますが、無い jar の型を使う呼び出しは出力から欠けます。
-その場合はジョブに `依存jar` の警告とサマリが出ます（明細は `run.log` と `resolved-classpath.txt`）。
-Gradle の場合は `mvn` の行を `./gradlew dependencies` 等に読み替えてください。
+依存の取得を省くと解析結果が欠けます。詳細は [docs/github-actions.md](docs/github-actions.md) を参照してください。
 
 ---
 
