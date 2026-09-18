@@ -17,7 +17,9 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -58,6 +60,8 @@ public final class Server {
 
     /** 直近の解析結果。まだ解析していなければ null */
     private AnalysisSnapshot snapshot;
+    /** 解析結果に宣言があるファイル（AT で「解析対象に無いファイル」を言い分けるため）。最初の AT で作る */
+    private Set<String> analyzedFiles;
     /** 中止の要求。読み取りスレッドが立て、解析中のスレッドが見る */
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final BlockingQueue<String> commands = new ArrayBlockingQueue<>(64);
@@ -152,6 +156,7 @@ public final class Server {
                 case "ANALYZE" -> analyze(arg(parts, 1));
                 case "STATUS" -> status();
                 case "FIND" -> find(arg(parts, 1));
+                case "AT" -> at(arg(parts, 1), arg(parts, 2));
                 case "TREE" -> tree(parts);
                 case "EXPORT" -> export(parts);
                 case "PING" -> respondOk("pong");
@@ -241,6 +246,7 @@ public final class Server {
             AnalysisSnapshot result = Exporter.analyze(config);
             result.inbound();           // 呼び出し元の索引もここで作る（TREE を待たせない）
             snapshot = result;
+            analyzedFiles = null;       // 解析し直したので AT の索引は作り直す
             status();
         } finally {
             RunControl.detach();
@@ -277,12 +283,117 @@ public final class Server {
             respondNg("not-found");
             return;
         }
-        respondOk("how=" + how
+        respondFound(methods, id, "how=" + how);
+    }
+
+    /**
+     * エディタのカーソル位置（ファイルと行）を囲むメソッドを引く（{@code AT ファイル 行}）。
+     *
+     * <p>誰のためにあるか: エディタのプラグインである。プラグイン側でメソッドのキー
+     * （{@code 型FQN#名(消去型,…)}）を組み立てるには、型変数・内部クラス・可変長引数の
+     * 綴りを解析側と合わせる必要があり、取りこぼしやすい（Eclipse 版の {@code MethodKeys}）。
+     * ファイルと行だけ送ってもらえば、こちら側は自分の解析結果を引くだけで済む
+     * （docs/vscode-plugin-design.md §4）。
+     *
+     * <p>D 行が終了行を持っている（docs/method-decl-range-qa.md）ので、メソッドの外
+     * （フィールド宣言や空行）を指した場合は直前のメソッドを返さず {@code not-found} にする。
+     * 見つかったときの応答は FIND と同じ形（{@code how=enclosing}）。
+     *
+     * <p>断り方は4つに分ける。呼び出し側が次にすることを選べるようにするためである。
+     * <ul>
+     *   <li>{@code not-analyzed} … まだ ANALYZE していない</li>
+     *   <li>{@code file-not-analyzed} … そのファイルが解析結果に無い（source.folders の外・除外・新規ファイル）。
+     *       設定の問題であり、カーソル位置の問題（下）とは対処が違う</li>
+     *   <li>{@code not-found} … ファイルはあるが、その行を囲むメソッドが無い</li>
+     *   <li>{@code bad-line} / {@code missing-position} … 引数が壊れている（呼び出し側の不具合）</li>
+     * </ul>
+     *
+     * @param file プロジェクトルートからの相対パス（区切りは {@code /}）。ルート配下の絶対パスでもよい
+     * @param lineText 行番号（1 始まり）
+     */
+    private void at(String file, String lineText) {
+        if (snapshot == null) {
+            respondNg("not-analyzed");
+            return;
+        }
+        if (file == null || file.isEmpty() || lineText == null || lineText.isEmpty()) {
+            respondNg("missing-position");
+            return;
+        }
+        int line;
+        try {
+            line = Integer.parseInt(lineText.trim());
+        } catch (NumberFormatException ignore) {
+            respondNg("bad-line " + Protocol.escape(lineText));
+            return;
+        }
+        if (line < 1) {
+            respondNg("bad-line " + Protocol.escape(lineText));
+            return;
+        }
+        String normalized = normalizePath(file);
+        if (!analyzedFiles().contains(normalized)) {
+            respondNg("file-not-analyzed");
+            return;
+        }
+        MethodTable methods = snapshot.graph().methods();
+        int id = methods.enclosingMethod(normalized, line);
+        if (id < 0) {
+            respondNg("not-found");
+            return;
+        }
+        respondFound(methods, id, "how=enclosing");
+    }
+
+    /** 宣言があるファイルの集合。最初に引かれたときに作り、解析し直すまで使い回す */
+    private Set<String> analyzedFiles() {
+        Set<String> files = analyzedFiles;
+        if (files != null) {
+            return files;
+        }
+        MethodTable methods = snapshot.graph().methods();
+        files = new HashSet<>();
+        for (int id = 0; id < methods.size(); id++) {
+            String file = methods.declFile(id);
+            if (file != null) {
+                files.add(normalizePath(file));
+            }
+        }
+        analyzedFiles = files;
+        return files;
+    }
+
+    /** FIND / AT が見つけたメソッドの応答（同じ形にそろえる） */
+    private void respondFound(MethodTable methods, int id, String head) {
+        respondOk(head
                 + Protocol.SEP + "key=" + Protocol.escape(methods.key(id))
                 + Protocol.SEP + "label=" + Protocol.escape(methods.displayLabel(id))
                 + Protocol.SEP + "file=" + Protocol.escape(nullToEmpty(methods.declFile(id)))
                 + Protocol.SEP + "line=" + methods.declLine(id)
+                + Protocol.SEP + "endLine=" + methods.declEndLine(id)
                 + Protocol.SEP + "callers=" + snapshot.inbound().inDegree(id));
+    }
+
+    /**
+     * パスを {@link jche.config.ProjectLayout#relativeOf} と同じ綴りに寄せる。
+     * 区切りを {@code /} にし、プロジェクトルート配下の絶対パスなら相対にする。
+     * 呼び出し側（エディタ）が持っているのは絶対パスなので、ここで受けてしまうほうが親切である。
+     */
+    private String normalizePath(String path) {
+        String normalized = path.replace('\\', '/').trim();
+        if (snapshot != null) {
+            String root = snapshot.config().projectRoot.toString().replace('\\', '/');
+            if (!root.endsWith("/")) {
+                root = root + "/";
+            }
+            if (normalized.startsWith(root)) {
+                normalized = normalized.substring(root.length());
+            }
+        }
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        return normalized;
     }
 
     /**

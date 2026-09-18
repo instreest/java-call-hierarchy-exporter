@@ -55,8 +55,9 @@ import java.security.SecureRandom;
  *                                                          {@link TypeFact}。親型は直接の親と、
  *                                                          jar の型を経由して到達するソース上の親。
  *                                                          アノテーションは {@link AnnotationTokens}
- *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション
- *                                                             {@link MethodDeclFact}
+ *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション  endLine
+ *                                                             {@link MethodDeclFact}。endLine は
+ *                                                             宣言の終了行（v20）
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth
  *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
@@ -185,6 +186,10 @@ import java.security.SecureRandom;
  *       定数の値は使う側のファイルに焼き込まれるので、差分更新で取りこぼさないよう宣言側にも残す。
  *       あわせて、行形式を壊す値（タブ・改行を含む文字列定数、複数行の注釈の値）は事実として
  *       拾わないことにした。以前はそのまま書いていたため行が割れ、以降の呼び出しが読めなくなっていた</li>
+ *   <li>D 行に endLine（宣言の終了行）を足した（v20。docs/method-decl-range-qa.md）。
+ *       開始行だけでは「カーソルのある行を囲むメソッド」を引くときに、メソッドの外にいても
+ *       直前のメソッドを返してしまうため。暗黙のコンストラクタのように本体が書かれていない
+ *       ものは開始行と同じ値になる</li>
  *   <li>F 行から更新時刻の列を落とし、L 行を「パスと指紋」に置き換えた（v16）。
  *       同一性をパス・サイズ・内容で統一したため（上の「同一性」。docs/cache-identity-qa.md）</li>
  * </ul>
@@ -206,9 +211,10 @@ public final class CacheFormat {
      * v17 で A 行（フィールドの参照箇所）を、v18 で K 行（定数）・R 行（戻り値の出所）・
      * X 行（拡張の証拠）を dataflow-cache.tsv に移した。
      * v19 で C 行・U 行から値の列（recvKey・出所・guard）を落とし、J 行（フィールドへの代入）も
-     * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる
+     * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる。
+     * v20 で D 行に endLine（宣言の終了行）を足した
      */
-    public static final String VERSION = "jche-cache-v19";
+    public static final String VERSION = "jche-cache-v20";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

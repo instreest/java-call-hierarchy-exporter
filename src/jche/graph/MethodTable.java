@@ -25,6 +25,8 @@ public final class MethodTable {
     /** 宣言情報（ソースがあるメソッドのみ設定される） */
     private final ArrayList<String> declFiles = new ArrayList<>();
     private final IntArray declLines = new IntArray(1 << 16);
+    /** 宣言の終了行。分からなければ declLine と同じ値（＝その行だけの範囲） */
+    private final IntArray declEndLines = new IntArray(1 << 16);
     /**
      * 本体を持つか。既定はtrue（＝候補になりうる）。
      * D行が無いメソッド（jar内のメソッド等）はソースが無く展開もできないため、
@@ -51,6 +53,7 @@ public final class MethodTable {
         pkgs.add(pkg == null ? "" : pkg);
         declFiles.add(null);
         declLines.add(-1);
+        declEndLines.add(-1);
         hasBody.add(Boolean.TRUE);
         return newId;
     }
@@ -62,8 +65,13 @@ public final class MethodTable {
     }
 
     public void setDeclaration(int id, String file, int line, boolean body) {
+        setDeclaration(id, file, line, line, body);
+    }
+
+    public void setDeclaration(int id, String file, int line, int endLine, boolean body) {
         declFiles.set(id, file);
         declLines.set(id, line);
+        declEndLines.set(id, Math.max(line, endLine));
         hasBody.set(id, body);
     }
 
@@ -264,5 +272,45 @@ public final class MethodTable {
 
     public int declLine(int id) {
         return declLines.get(id);
+    }
+
+    /**
+     * 宣言の終了行（本体の閉じ括弧の行）。ソースが無ければ -1。
+     * 暗黙のコンストラクタや {@code <clinit>} のように本体が書かれていないものは宣言行と同じ値。
+     */
+    public int declEndLine(int id) {
+        return declEndLines.get(id);
+    }
+
+    /**
+     * 指定のファイル・行を囲むメソッド。無ければ -1。
+     *
+     * 入れ子（内部クラス・匿名クラスのメソッド）では、範囲が最も狭いものを採る。
+     * 終了行を持っているので、メソッドの外（フィールド宣言や空行）にある行では
+     * 直前のメソッドではなく「見つからない」を返す。
+     *
+     * @param file プロジェクトルートからの相対パス（{@link #declFile}と同じ綴り）
+     * @param line 1 始まりの行番号
+     */
+    public int enclosingMethod(String file, int line) {
+        int best = -1;
+        int bestWidth = Integer.MAX_VALUE;
+        for (int id = 0; id < keys.size(); id++) {
+            String f = declFiles.get(id);
+            if (f == null || !f.equals(file)) {
+                continue;
+            }
+            int start = declLines.get(id);
+            int end = declEndLines.get(id);
+            if (start < 0 || line < start || line > end) {
+                continue;
+            }
+            int width = end - start;
+            if (width < bestWidth) {
+                bestWidth = width;
+                best = id;
+            }
+        }
+        return best;
     }
 }

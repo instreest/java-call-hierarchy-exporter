@@ -12,7 +12,8 @@
 - メソッドを int の ID に内部化した呼び出しグラフ
 - 具象クラスの解決の段（段0 `STATIC_BOUND` / 段1 `SINGLE_IMPL`・`NO_IMPL` / 段2 `CHA`）
 - `call-hierarchy.csv` … 深さ優先で 1 行ずつ出力。注記は `call-hierarchy` 列の最後の要素
-  （`[CYCLE]` / 深さ上限 / `CHA候補N件（未展開）: 理由` / `解決:NO_IMPL`）。
+  （`[UNEXPANDED:CYCLE]` / `[UNEXPANDED:DEPTH]` / `[UNEXPANDED:CHA] 候補N件: 理由` /
+  `[UNEXPANDED:NO_IMPL]`。タグは本体と同じ）。
   型解決に失敗した呼び出しは `root` を `(型解決失敗)` にして末尾に出す
 - `methods.csv` … 全メソッド 1 行ずつ（`role` / `reachable` / 解決後の `inDegree`）
 - BOM 付き UTF-8、実行ごとの出力フォルダ、`run.log`、決定的な行順

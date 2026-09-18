@@ -22,7 +22,7 @@ import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.handlers.HandlerUtil;
 
 /**
- * 「呼び出し元階層を表示」コマンドのハンドラ。主ユースケースの入口。
+ * 「影響調査: 呼び出し元階層を表示」コマンドのハンドラ。主ユースケースの入口。
  *
  * <p>エディタのカーソル位置、またはパッケージ・エクスプローラー／アウトラインの選択から
  * メソッドを取り出し、{@link CallHierarchyView} に渡す。解析がまだでも受け付ける
@@ -35,7 +35,7 @@ public class ShowCallersHandler extends AbstractHandler {
         IWorkbenchPage page = HandlerUtil.getActiveWorkbenchWindow(event).getActivePage();
         IMethod method = methodOf(event, page);
         if (method == null) {
-            MessageDialog.openInformation(HandlerUtil.getActiveShell(event), "呼び出し階層",
+            MessageDialog.openInformation(HandlerUtil.getActiveShell(event), "影響調査",
                     "メソッドが特定できませんでした。メソッドの中にカーソルを置くか、"
                             + "メソッドを選んでから実行してください。");
             return null;
@@ -52,7 +52,7 @@ public class ShowCallersHandler extends AbstractHandler {
             CallHierarchyView view = (CallHierarchyView) page.showView(CallHierarchyView.VIEW_ID);
             view.showMethod(analysis, method);
         } catch (PartInitException e) {
-            JchePlugin.log(IStatus.ERROR, "呼び出し階層ビューを開けませんでした", e);
+            JchePlugin.log(IStatus.ERROR, "影響調査ビューを開けませんでした", e);
         }
         return null;
     }

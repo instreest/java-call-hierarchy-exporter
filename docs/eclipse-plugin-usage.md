@@ -70,8 +70,8 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 ## 3. 使う
 
 1. 解析したいメソッドにカーソルを置く（またはパッケージ・エクスプローラー／アウトラインで選ぶ）
-2. 右クリック →「**呼び出し元階層を表示 (Exporter)**」（`Ctrl+Alt+Shift+H`）
-3. 「呼び出し階層 (Exporter)」ビューが開く。まだ解析していなければバナーの［解析する］から始める
+2. 右クリック →「**影響調査: 呼び出し元階層を表示**」（`Ctrl+Alt+Shift+H`）
+3. 「影響調査 (Call Hierarchy Exporter)」ビューが開く。まだ解析していなければバナーの［解析する］から始める
 4. 解析は別プロセスで走る（Eclipse の操作は止まらない。［中止］もできる）。終わると呼び出し元が
    ツリーで出る。ダブルクリックでその**呼び出している行**へ飛べる
 
@@ -102,7 +102,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 ⚠ が付き、内容が古い可能性があることが行単位で分かる。
 キャッシュはワークスペースの `.metadata/.plugins/io.github.instreest.jche.eclipse/` の下。
 
-## 4. 設定（ウィンドウ > 設定 > 呼び出し階層 (Exporter)）
+## 4. 設定（ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)）
 
 決められるのは「解析をどう走らせるか」だけである（何を解析するかは設定ファイルの役目）。
 
@@ -117,7 +117,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 
 | 症状 | 対処 |
 |---|---|
-| メニューに出てこない | Eclipse を `-clean` 付きで起動し直す。それでも出なければ「ウィンドウ → ビューの表示 → その他」で「呼び出し階層 (Exporter)」を探す |
+| メニューに出てこない | Eclipse を `-clean` 付きで起動し直す。それでも出なければ「ウィンドウ → ビューの表示 → その他」で「影響調査 (Call Hierarchy Exporter)」を探す |
 | 「解析に使う JDK が見つかりません」 | 設定画面で場所を指定するか、［JDK 25 を取得…］で取得する |
 | 解析が失敗する | 「Call Hierarchy Exporter」コンソールに子プロセスの出力がそのまま出る。設定ファイルの誤り（`project.root` など）が多い |
 | バナーに「解析できません」 | Java プロジェクトでなく、設定ファイルも無い状態。`config/jche.properties` を置くか、Java プロジェクトとして開く |
@@ -133,7 +133,8 @@ printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo
   | java -cp "lib/*:bin" jche.CallHierarchyExporter --server /tmp/jche-cache
 ```
 
-要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・`TREE`（木の切り出し）・
+要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・
+`AT`（ファイルと行から、その位置を囲むメソッドを引く）・`TREE`（木の切り出し）・
 `EXPORT`（CSV 出力）・`CANCEL`（解析の中止）・`SHUTDOWN`（積んだ要求を処理し終えてから終わる）がある。
 上の例のようにまとめて流し込んでよく、**末尾の `SHUTDOWN` が先に読まれても `ANALYZE` は完走する**。
 実行中の解析を打ち切りたいときは `CANCEL` を送る。解析中は `#P` 行で進捗が、

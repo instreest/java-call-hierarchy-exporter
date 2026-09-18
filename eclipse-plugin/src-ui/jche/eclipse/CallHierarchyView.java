@@ -418,7 +418,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
     private void updateBanner() {
         if (analysis == null) {
-            setBanner("メソッドを選んで「呼び出し元階層を表示」を実行してください。", null, false);
+            setBanner("メソッドを選んで「影響調査: 呼び出し元階層を表示」を実行してください。", null, false);
             return;
         }
         ProjectAnalysis.State state = analysis.state();
@@ -557,7 +557,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         analysis.request("呼び出し階層をCSVに出力", (response, error) -> runOnUi(() -> {
             if (error != null || response == null || !response.isOk()) {
-                MessageDialog.openError(getSite().getShell(), "呼び出し階層",
+                MessageDialog.openError(getSite().getShell(), "影響調査",
                         "CSV の出力に失敗しました: "
                                 + (error != null ? error : response.reason()));
             } else {
@@ -573,7 +573,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         ConfigSource source = analysis.configSource();
         if (source == null || source.kind() != ConfigSource.Kind.GENERATED) {
-            MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
+            MessageDialog.openInformation(getSite().getShell(), "影響調査",
                     "すでに設定ファイルを使っています: " + (source == null ? "（なし）" : source.label()));
             return;
         }
@@ -581,7 +581,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         // 解析対象のプロジェクトが自前の設定に使っていることがあるので、そこへは書かない）
         IFile target = analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
         if (target.exists()) {
-            MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
+            MessageDialog.openInformation(getSite().getShell(), "影響調査",
                     "設定ファイルはすでにあります。そちらが使われます。");
             return;
         }
@@ -596,7 +596,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             target.create(new ByteArrayInputStream(bytes), false, null);
             analysis.setConfigFile(target);
         } catch (CoreException | IOException e) {
-            MessageDialog.openError(getSite().getShell(), "呼び出し階層",
+            MessageDialog.openError(getSite().getShell(), "影響調査",
                     "設定ファイルを保存できませんでした: " + e.getMessage());
         }
     }
@@ -608,7 +608,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         List<IFile> candidates = analysis.findConfigFiles();
         if (candidates.isEmpty()) {
-            MessageDialog.openInformation(getSite().getShell(), "呼び出し階層",
+            MessageDialog.openInformation(getSite().getShell(), "影響調査",
                     "プロジェクト直下に設定ファイル（*.properties）がありません。"
                             + "設定はプロジェクトの構成から自動生成します。");
             return;
