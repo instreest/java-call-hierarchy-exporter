@@ -15,8 +15,6 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
-| 具象クラスが絞れない呼び出しへの対処 | [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) |
-| 静的解析で絞れる条件・絞れない条件 | [docs/static-analysis-limits.md](docs/static-analysis-limits.md) |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
@@ -313,12 +311,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
 
-`CHA` のまま絞れない呼び出し（キーで実装を切り替えるファクトリ、独自形式の DI 設定など）は、
-解決の条件を外から与えると1件に絞れます。多くの場合は**対応表を書くだけ**で済み、Java を書く必要はありません
+`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます
 （[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。
-
-どういう条件なら絞れて、どういう条件なら原理的に絞れないのかは
-[docs/static-analysis-limits.md](docs/static-analysis-limits.md) にまとめてあります。
 
 ---
 
