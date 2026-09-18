@@ -99,8 +99,9 @@ public final class DataflowResolver {
     public static String labelFor(String recvOrigin) {
         return switch (Origin.kindOf(recvOrigin)) {
             case Origin.FIELD -> Resolution.DATAFLOW_FIELD;
-            case Origin.PARAM -> Resolution.DATAFLOW_PARAM;
+            case Origin.PARAM, Origin.CAPTURED -> Resolution.DATAFLOW_PARAM;
             case Origin.NEW -> Resolution.DATAFLOW_NEW;
+            case Origin.FUNCTIONAL -> Resolution.DATAFLOW_LAMBDA;
             default -> Resolution.DATAFLOW_FACTORY;
         };
     }
@@ -114,12 +115,66 @@ public final class DataflowResolver {
         if (!enabled || recvOrigin == null) {
             return -1;
         }
+        // ラムダ／メソッド参照が渡ってきた呼び出しだけ、型を経由せずメソッドを直接引く。
+        // 関数型インターフェースのメソッド（M行がある＝実装しているラムダが1つでもある）に
+        // 限るのは、ラムダを入れた変数への Object#toString() のような、
+        // 関数型インターフェースと関係ない呼び出しまで本体に繋がないため
+        if (graph.hasFunctionalImpl(calleeId)) {
+            int functional = functionalTargetOf(recvOrigin, ctx);
+            if (functional >= 0) {
+                return functional;
+            }
+        }
         String fqn = concreteTypeOf(recvOrigin, ctx);
         if (fqn == null) {
             return -1;
         }
         // 結果が宣言型のままでも、候補が1つに定まったこと自体が成果なので返す
         return graph.implementationIn(fqn, methods.signature(calleeId));
+    }
+
+    /**
+     * ラムダ／メソッド参照が渡ってきた呼び出しの、実際に動くメソッド。無ければ -1。
+     *
+     * ここだけは具象「型」を経由しない。ラムダの本体は合成メソッドで、
+     * 関数型インターフェースのメソッド（{@code Runnable#run()}）を
+     * オーバーライドしているわけではないので、型とシグネチャからは引けないため。
+     */
+    public int functionalTargetOf(String recvOrigin, DataflowContext ctx) {
+        String key = functionalKeyOf(recvOrigin, ctx);
+        return (key == null) ? -1 : methods.idOf(key);
+    }
+
+    /** 出所が指している「関数型インターフェースの実装」のメソッドキー。無ければ null */
+    private String functionalKeyOf(String origin, DataflowContext ctx) {
+        char kind = Origin.kindOf(origin);
+        if (kind == Origin.FUNCTIONAL) {
+            return Origin.valueOf(origin);
+        }
+        if (kind == Origin.FIELD) {
+            // フィールドに保持されたラムダ（private Runnable task = () -> ...;）。
+            // 出所が1つに定まっているフィールドだけが表に載っているので、
+            // どのラムダが入るかは経路を見なくても決まる
+            String held = graph.fieldOrigin(Origin.valueOf(origin));
+            return (held != null && Origin.kindOf(held) == Origin.FUNCTIONAL)
+                    ? Origin.valueOf(held) : null;
+        }
+        // 引数・捕捉した引数として渡ってきたラムダ。経路の環境には Z: のまま入っている
+        if (ctx == null) {
+            return null;
+        }
+        String[] args = (kind == Origin.PARAM) ? ctx.paramTypes()
+                : (kind == Origin.CAPTURED) ? ctx.capturedTypes() : null;
+        if (args == null) {
+            return null;
+        }
+        int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
+        if (idx < 0 || idx >= args.length) {
+            return null;
+        }
+        String value = args[idx];
+        return (value != null && Origin.kindOf(value) == Origin.FUNCTIONAL)
+                ? Origin.valueOf(value) : null;
     }
 
     // ------------------------------------------------------------
@@ -140,18 +195,27 @@ public final class DataflowResolver {
             return applyInvocationArgs(factoryReturnOrigin(factory), Origin.argsOf(origin), ctx);
         }
         if (kind == Origin.PARAM && ctx != null && ctx.paramTypes() != null) {
-            int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
-            if (idx >= 0 && idx < ctx.paramTypes().length) {
-                // 型ではなく値（L:/K:）が入っている引数は、具象型としては不明
-                String t = ctx.paramTypes()[idx];
-                return (t != null && t.indexOf(':') < 0) ? t : null;
-            }
-            return null;
+            return argTypeAt(ctx.paramTypes(), origin);
+        }
+        if (kind == Origin.CAPTURED && ctx != null && ctx.capturedTypes() != null) {
+            // ラムダが捕捉した、囲みメソッドの引数。生成箇所のフレームの引数を当てる
+            return argTypeAt(ctx.capturedTypes(), origin);
         }
         if (kind == Origin.FIELD) {
             return fieldTypeOf(Origin.valueOf(origin), ctx);
         }
         return null;
+    }
+
+    /** 経路から分かっている引数の並びから、その位置の具象型を取る。分からなければ null */
+    private static String argTypeAt(String[] args, String origin) {
+        int idx = Names.parseIntOr(Origin.valueOf(origin), -1);
+        if (idx < 0 || idx >= args.length) {
+            return null;
+        }
+        // 型ではなく値（L:/K:）が入っている引数は、具象型としては不明
+        String t = args[idx];
+        return (t != null && t.indexOf(':') < 0) ? t : null;
     }
 
     /**
@@ -468,9 +532,17 @@ public final class DataflowResolver {
             case Origin.LITERAL:
             case Origin.CLASS:
             case Origin.CONST:   // 条件分岐の判定に使う定数（jche.graph.GuardEvaluator）
+            case Origin.FUNCTIONAL:   // 実引数で渡されたラムダ／メソッド参照
                 return Origin.head(origin);
             case Origin.PARAM:
-                return paramValueOf(origin, ctx);
+            case Origin.CAPTURED: {
+                // ラムダそのものが引数として渡ってきた形も、値として次のフレームへ渡す
+                String functional = functionalKeyOf(origin, ctx);
+                if (functional != null) {
+                    return Origin.of(Origin.FUNCTIONAL, functional);
+                }
+                return (Origin.kindOf(origin) == Origin.PARAM) ? paramValueOf(origin, ctx) : null;
+            }
             case Origin.RETURN: {
                 String c = classOf(origin, ctx, 0);
                 if (c != null) {

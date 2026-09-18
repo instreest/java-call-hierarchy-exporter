@@ -20,6 +20,7 @@ public final class ModifierTokens {
     public static final String DELEGATING = "delegating";
     public static final String FINAL_CLASS = "finalclass";
     public static final String SUPER = "super";
+    public static final String LAMBDA = "lambda";
 
     private ModifierTokens() {
     }

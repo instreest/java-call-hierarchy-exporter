@@ -327,7 +327,10 @@ public final class StreamingTreeWalker {
                         noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e),
                                 unreachable),
                         targetParams, targetCtorArgs,
-                        (targetCtorArgs == null) ? null : methods.typeFqn(target));
+                        (targetCtorArgs == null) ? null : methods.typeFqn(target),
+                        // ラムダの本体へ降りるときだけ、今のフレームの引数を
+                        // 「捕捉した値」として渡す（jche.cache.Origin#CAPTURED）
+                        methods.isLambdaBody(target) ? path[depth].paramTypes : null);
 
                 // コンストラクタ呼び出しそのものは行にしない。
                 // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
@@ -533,14 +536,19 @@ public final class StreamingTreeWalker {
                 Log.warn("CHA候補が" + Config.CHA_MAX_CANDIDATES + "件を超える呼び出しがあります。"
                         + "超えた分は行に出しません（注記に件数が出ます）: " + methods.fullSignature(declaredCallee));
             }
+        } else if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
+            // どのラムダが渡ってきたかまで分かった呼び出し。下の「未特定」とは逆の結論なので、
+            // 先に判定する
+            detail = "[RESOLVED:" + res.label() + "]";
         } else if (graph.hasFunctionalImpl(declaredCallee)) {
             // ソース上の実装が1件しか無くても、ラムダ／メソッド参照が
             // 同じインターフェースを実装している。それを数に入れずに
             // 「RESOLVED:SINGLE_IMPL」と書くと、実際とは違う1件に決め打ちしたまま
             // 確定したように見えてしまう。
-            // どのラムダが実行されるかは、ラムダを値として追跡していないため決まらない
+            // ここに来るのは、ラムダを値として追えなかった呼び出し（jar の中から
+            // 呼ばれる forEach 形式など）。追えた場合は上の DATAFLOW_LAMBDA で確定する
             detail = UNEXPANDED + "LAMBDA] ラムダ/メソッド参照による実装あり"
-                    + "（どれが実行されるかは未特定・本体は定義元メソッドに計上）";
+                    + "（どれが実行されるかは未特定）";
         } else if (res.isGeneratedImpl()) {
             // 実装はコンパイル時のアノテーション処理で生成される（Doma の @Dao 等）。
             // 生成物はソースコードリポジトリに存在しないため、ここから先は辿れない。

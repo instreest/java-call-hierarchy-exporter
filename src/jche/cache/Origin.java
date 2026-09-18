@@ -16,6 +16,8 @@ import java.util.List;
  *   F:jp.co.xxx.Service#dao       フィールド変数
  *   L:jp.co.xxx.UserDaoImpl       文字列リテラル（またはコンパイル時定数）
  *   V:false                       コンパイル時定数の値（条件分岐の判定に使う）
+ *   Z:jp.co.xxx.App#lambda$run$0()  ラムダ／メソッド参照が実装しているメソッド
+ *   E:0                           ラムダが捕捉した、囲みメソッドの1番目の引数
  *   C:0                           Class.forName(引数) で名前指定された型
  *   K:jp.co.xxx.UserDaoImpl       クラスオブジェクト（X.class）
  *   U                             追跡できない
@@ -78,6 +80,25 @@ public final class Origin {
      * 経路ごとに突き合わせるために持つ（jche.graph.GuardEvaluator）。
      */
     public static final char CONST = 'V';
+    /**
+     * 関数型インターフェースの実装として渡された、ラムダ式かメソッド参照。
+     * 値は実際に動くメソッドのキー（{@code typeFqn#name(paramSig)}）。
+     *
+     * ラムダなら本体を持つ合成メソッド、メソッド参照なら参照先のメソッドそのもの。
+     * 具象「型」ではなく具象「メソッド」が決まる唯一の出所なので、
+     * 読み手はここだけ型を経由せずにメソッドIDを引く（jche.graph.DataflowResolver）。
+     */
+    public static final char FUNCTIONAL = 'Z';
+    /**
+     * ラムダ式が捕捉した、囲みメソッドの引数。値は0始まりの引数位置。
+     *
+     * ラムダの本体は合成メソッド（{@code lambda$...}）に計上するので、その中から見ると
+     * 捕捉した変数は「自分の引数」ではない。{@link #PARAM} のまま持ち込むと合成メソッド自身の
+     * 引数を誤って当てるため、種別を分けて「1つ外のフレームの引数」だと分かるようにする。
+     * 読み手は、ラムダを生成した箇所の辺を降りるときに、そのフレームの引数を
+     * 捕捉した値として渡す（jche.report.StreamingTreeWalker）。
+     */
+    public static final char CAPTURED = 'E';
     /** 追跡できない。「分からない」を明示的に持つのが重要 */
     public static final char UNKNOWN = 'U';
 

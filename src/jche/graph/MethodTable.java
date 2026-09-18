@@ -34,6 +34,13 @@ public final class MethodTable {
      */
     private final ArrayList<Boolean> hasBody = new ArrayList<>();
 
+    /**
+     * ラムダ式の本体を持つ合成メソッド（D行の修飾子に lambda が付いたもの）。
+     * 名前（{@code lambda$...}）で見分けないのは、同じ名前のメソッドを
+     * 人が書くこともできるため。事実（修飾子）で持つ
+     */
+    private final java.util.BitSet lambdaBodies = new java.util.BitSet();
+
     /** 引数型略名が衝突しているラベル。初回の displayLabel() で一度だけ作る */
     private Set<String> ambiguous;
 
@@ -77,6 +84,20 @@ public final class MethodTable {
 
     public boolean hasBody(int id) {
         return hasBody.get(id);
+    }
+
+    /** ラムダ式の本体を持つ合成メソッドだと記録する */
+    public void markLambdaBody(int id) {
+        lambdaBodies.set(id);
+    }
+
+    /**
+     * ラムダ式の本体を持つ合成メソッドか。
+     * 捕捉した変数を解決するため、読み手はこのメソッドへ降りるときだけ
+     * 生成箇所のフレームの引数を渡す
+     */
+    public boolean isLambdaBody(int id) {
+        return lambdaBodies.get(id);
     }
 
     /** ソース上に宣言があるか（jar内のメソッドには無い） */

@@ -112,6 +112,29 @@ final class CallSiteRecorder {
     }
 
     /**
+     * こちらで作ったメソッド（ラムダの合成メソッド）への辺を1本記録する。
+     *
+     * 呼び出し先がバインディングではなく合成した {@link MethodRef} なので
+     * {@link #record} は通せないが、P 行との1対1（同じ数・同じ順）は
+     * 呼び出し箇所の突き合わせの前提なので、値が無くても {@link #addValues} は必ず通す。
+     */
+    void recordSynthetic(List<MethodRef> callers, MethodRef callee, ASTNode node,
+                         String calleeMods, char recvKind, int lambdaDepth) {
+        if (callers == null) {
+            // 呼び出し元を特定できないなら辺にしない。根の無い辺は階層に出ない
+            // （特定できない場合の空リストは、下のループが0回になることで同じ結果になる）
+            return;
+        }
+        int line = lineOf(node);
+        String guard = guards.guardOf(node);
+        for (MethodRef caller : callers) {
+            out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
+                    recvKind, lambdaDepth));
+            addValues(line, caller, callee.name(), CallValues.NONE, "", guard);
+        }
+    }
+
+    /**
      * dataflow 側の P 行を1件積む。{@code out.callSites} に1行積むたびに必ず1件積むので、
      * 2 つのキャッシュの呼び出し箇所は同じ数・同じ順で並ぶ。
      *

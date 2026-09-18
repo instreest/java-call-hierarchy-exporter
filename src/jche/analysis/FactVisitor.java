@@ -62,8 +62,9 @@ import jche.extension.HintKeys;
  * 「匿名クラスより後ろにある呼び出しがすべてメソッド外として未解決に落ちる」
  * という静かな欠落が起きる。スタックにすることでこれを防ぐ。
  *
- * ラムダ式は MethodDeclaration ではないため、その中の呼び出しは
- * 自動的に囲みメソッドへ帰属する（ソース上の見え方と一致する）。
+ * ラムダ式は MethodDeclaration ではないが、本体を持つ合成メソッド
+ * （{@code lambda$囲みメソッド名$通し番号}）を作ってスタックに積むので、
+ * その中の呼び出しはその合成メソッドへ帰属する（docs/lambda-expansion-qa.md）。
  *
  * <h2>役割分担</h2>
  * <ul>
@@ -88,6 +89,8 @@ final class FactVisitor extends ASTVisitor {
     private final TypeContextTracker types;
     private final CallSiteRecorder calls;
     private final FieldAccessRecorder fieldAccesses;
+    /** ラムダ式の合成メソッドの名前（このファイルぶんを先に配ってある） */
+    private final LambdaNames lambdaNames;
 
     /**
      * 現在の呼び出し元のスタック。通常は要素1件（そのメソッド自身）だが、
@@ -110,6 +113,15 @@ final class FactVisitor extends ASTVisitor {
     /** MethodDeclaration をまたぐときに lambdaDepth を退避するスタック */
     private final ArrayDeque<Integer> lambdaDepthStack = new ArrayDeque<>();
 
+    /**
+     * そのラムダ式を合成メソッドにできたか。endVisit で戻す対象を決めるために積む。
+     * 合成できなかったラムダ（関数型インターフェースを特定できない等）は
+     * 従来どおり囲みメソッドに計上している
+     */
+    private final ArrayDeque<Boolean> lambdaSynthesized = new ArrayDeque<>();
+    /** 合成メソッドの修飾子。ラムダ本体はオーバーライドされないので private 相当 */
+    private static final String PRIVATE = "private";
+
     FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors) {
         this(cu, out, collectors, false);
     }
@@ -128,6 +140,9 @@ final class FactVisitor extends ASTVisitor {
         this.types = new TypeContextTracker(out, names);
         this.calls = new CallSiteRecorder(cu, out, names, collectors,
                 new GuardCollector(origins, recordAllConditions));
+        // ラムダの名前は、本体の先読み（OriginTracker）より先に決まっている必要がある
+        this.lambdaNames = new LambdaNames(cu, names);
+        this.origins.lambdaNames(lambdaNames);
         this.fieldAccesses = new FieldAccessRecorder(cu, out, names);
     }
 
@@ -364,19 +379,72 @@ final class FactVisitor extends ASTVisitor {
         }
     }
 
+    /**
+     * ラムダ式を「合成メソッド」として1つのノードにする。
+     *
+     * 本体の呼び出しはこの合成メソッドに計上し、囲みメソッドからは
+     * 「ラムダを生成した」辺を1本張る。生成の辺を残すのは、
+     * ラムダがどこで実行されるか分からない形（コレクションに詰める等）でも
+     * 本体の呼び出しを階層から落とさないため。解決できたときは
+     * {@code s.get()} の側からも同じノードに繋がる。
+     *
+     * 合成できない（囲みメソッドや関数型インターフェースを特定できない）ときは、
+     * 従来どおり囲みメソッドに計上する。取りこぼす方が害が大きいので安全側に倒す。
+     */
     @Override
     public boolean visit(LambdaExpression node) {
-        lambdaDepth++;
         recordFunctionalImpl(node.resolveTypeBinding(), node, FunctionalImplFact.LAMBDA);
+        MethodRef body = synthesizeLambda(node);
+        lambdaSynthesized.push(body != null);
+        if (body == null) {
+            lambdaDepth++;
+            return true;
+        }
+        methodStack.push(List.of(body));
+        origins.enterScope(origins.scanOrigins(node.getBody(),
+                origins.lambdaParamScope(node.parameters())));
+        // 合成メソッドから見た深さに戻す。ラムダの中の return は、
+        // 囲みメソッドではなくこの合成メソッドの戻り値になった
+        lambdaDepthStack.push(lambdaDepth);
+        lambdaDepth = 0;
         return true;
     }
 
     @Override
     public void endVisit(LambdaExpression node) {
-        if (lambdaDepth > 0) {
-            lambdaDepth--;
+        if (!Boolean.TRUE.equals(lambdaSynthesized.poll())) {
+            if (lambdaDepth > 0) {
+                lambdaDepth--;
+            }
+            return;
+        }
+        popCaller();
+        origins.leaveScope();
+        if (!lambdaDepthStack.isEmpty()) {
+            lambdaDepth = lambdaDepthStack.pop();
         }
     }
+
+    /**
+     * ラムダ式の本体を持つ合成メソッドを宣言（D行）として足し、生成の辺を記録する。
+     * 合成できなければ null。
+     *
+     * 名前は {@link LambdaNames} が先に配ったものを使う（決める場所を1つにするため）。
+     */
+    private MethodRef synthesizeLambda(LambdaExpression node) {
+        List<MethodRef> callers = currentCallers();
+        MethodRef body = lambdaNames.of(node);
+        if (callers == null || body == null) {
+            return null;
+        }
+        String mods = ModifierTokens.with(PRIVATE, ModifierTokens.LAMBDA);
+        out.declarations.add(new MethodDeclFact(body, lineOf(node), true, mods, "",
+                endLineOf(node)));
+        // 生成の辺。呼び出し元が複数（初期化子）なら、それぞれから1本ずつ
+        calls.recordSynthetic(callers, body, node, mods, RecvKind.TYPE, lambdaDepth);
+        return body;
+    }
+
 
     /**
      * ラムダ／メソッド参照が「その関数型インターフェースの実装でもある」
@@ -388,10 +456,9 @@ final class FactVisitor extends ASTVisitor {
      * 絞れないことより誤って絞ることの方が害が大きいので、
      * 「展開できない実装が他にもある」ことだけは必ず残す。
      *
-     * ラムダ本体の呼び出しは、引き続き囲みメソッドに計上する。
-     * 合成メソッドに付け替えると、ラムダを受け取った側からの経路を辿るために
-     * 関数型インターフェース経由の呼び出しを全て展開する必要があり、現在の
-     * 設計（キャッシュに事実だけを持つ）では扱えないため。
+     * ラムダ本体は {@link #synthesizeLambda} で合成メソッドにしてあり、値として
+     * 追えた呼び出しはそちらに解決される（{@code DATAFLOW_LAMBDA}）。この M 行は
+     * 追えなかった呼び出し（jar の中から呼ばれる forEach 形式など）のために残す。
      */
     private void recordFunctionalImpl(ITypeBinding fnType, ASTNode node, String kind) {
         if (fnType == null) {
