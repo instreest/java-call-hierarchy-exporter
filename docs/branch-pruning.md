@@ -27,12 +27,12 @@ new Feature().run(false);
 `call-hierarchy.csv`:
 
 ```csv
-at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.main,…,Feature.run,Feature.report,この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:16),fx.branch.Feature.report(),Main.main,…,Feature.run,Feature.report,[UNREACHABLE] この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
 at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,…,Feature.run,Feature.summary
 ```
 
 呼び出しが書かれている事実は消さず、**呼び出し自体は1行出して、その先の階層だけを出しません**。
-理由は注記として階層の末尾に付きます（`[CYCLE]` や `深さ制限(N)のため打ち切り` と同じ位置）。
+理由は注記として階層の末尾に付きます（`[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` や `[UNEXPANDED:DEPTH] 深さ制限(N)に達した` と同じ位置）。
 打ち切った件数は実行ログにも出ます。
 
 ## 判定できる条件
@@ -75,11 +75,11 @@ at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,
 
 | `absentCause` | 意味 |
 |---|---|
-| `条件分岐で打ち切った先` | 条件分岐による打ち切りで階層から消えた。打ち切った呼び出し先から宣言上のエッジを辿って求めた範囲（別の経路で1行でも出たメソッドは含まない） |
-| `除外パッケージ` | `exclude.packages` で除外された |
-| `CHA候補のため未展開` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
-| `循環のため未展開` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
-| `上流が未出力` | そこへ至る呼び出し自体が出ていない（`max.depth` / `max.rows` の先、起点から辿り着かない、デッドコード） |
+| `[UNREACHABLE] 条件分岐で打ち切った先` | 条件分岐による打ち切りで階層から消えた。打ち切った呼び出し先から宣言上のエッジを辿って求めた範囲（別の経路で1行でも出たメソッドは含まない） |
+| `[EXCLUDED] exclude.packages で除外` | `exclude.packages` で除外された |
+| `[UNEXPANDED:CHA] 候補のため展開されなかった` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
+| `[UNEXPANDED:CYCLE] 循環のため展開されなかった` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
+| `[NOT_REACHED] 上流が未出力` | そこへ至る呼び出し自体が出ていない（`max.depth` / `max.rows` の先、起点から辿り着かない、デッドコード） |
 
 ## 仕組み（どこで何をしているか）
 

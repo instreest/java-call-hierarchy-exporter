@@ -68,7 +68,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         for (int i = 1; i <= depth; i++) {
             buf.append(Csv.DELIM).append(Csv.esc(mt.shortLabel(path[i].methodId)));
         }
-        // 注記（[CYCLE]・深さ制限・CHA候補・import推定 等）は階層の最後に付ける
+        // 注記（[UNEXPANDED:*]・[EXTERNAL]・[UNREACHABLE]・[RESOLVED:*]）は階層の最後に付ける
         if (path[depth].note != null) {
             buf.append(Csv.DELIM).append(Csv.esc(path[depth].note));
         }

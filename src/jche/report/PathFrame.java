@@ -15,7 +15,7 @@ final class PathFrame {
     int methodId;
     /** 1つ上の段がこのメソッドを呼んでいる行 */
     int callLine;
-    /** 注記（[CYCLE]・深さ制限・CHA候補・解決ラベル等）。無ければ null */
+    /** 注記（[UNEXPANDED:*]・[EXTERNAL]・[UNREACHABLE]・[RESOLVED:*]）。無ければ null */
     String note;
     /**
      * このメソッドの引数に「この経路では」何が渡ってきているか（i 番目の引数の具象型）。

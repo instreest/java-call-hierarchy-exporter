@@ -1,9 +1,9 @@
 caller,callee,root,call-hierarchy
 at fxp.App.factoryCall(App.java:15),DaoFactory.get,App.factoryCall,DaoFactory.get
-at fxp.App.factoryCall(App.java:16),OrderDaoImpl.find,App.factoryCall,OrderDaoImpl.find,CHA候補2件（未展開）: ローカル変数
-at fxp.App.factoryCall(App.java:16),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,CHA候補2件（未展開）: ローカル変数
-at fxp.App.chainedCall(App.java:20),OrderDaoImpl.find,App.chainedCall,OrderDaoImpl.find,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
-at fxp.App.chainedCall(App.java:20),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at fxp.App.factoryCall(App.java:16),OrderDaoImpl.find,App.factoryCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補2件: ローカル変数
+at fxp.App.factoryCall(App.java:16),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,[UNEXPANDED:CHA] 候補2件: ローカル変数
+at fxp.App.chainedCall(App.java:20),OrderDaoImpl.find,App.chainedCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
+at fxp.App.chainedCall(App.java:20),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
 at fxp.App.chainedCall(App.java:20),DaoFactory.get,App.chainedCall,DaoFactory.get
-at fxp.App.injected(App.java:24),BillingService.run,App.injected,BillingService.run,CHA候補2件（未展開）: フィールド変数
-at fxp.App.injected(App.java:24),ReportService.run,App.injected,ReportService.run,CHA候補2件（未展開）: フィールド変数
+at fxp.App.injected(App.java:24),BillingService.run,App.injected,BillingService.run,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fxp.App.injected(App.java:24),ReportService.run,App.injected,ReportService.run,[UNEXPANDED:CHA] 候補2件: フィールド変数
