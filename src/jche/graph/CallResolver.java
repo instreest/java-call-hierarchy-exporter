@@ -4,6 +4,7 @@ package jche.graph;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 
 import jche.cache.HintFact;
@@ -60,6 +61,8 @@ public final class CallResolver {
     private int[][] singletons;
     /** 動的に組み立てるラベル（"STATIC_BOUND:理由" 等）の共有 */
     private final HashMap<String, String> labelPool = new HashMap<>();
+    /** 既に警告した「使えない候補」（{@link #warnUnusableCandidate}）。同じものを繰り返さないため */
+    private final HashSet<String> warnedCandidates = new HashSet<>();
     /** 解決後の入次数。宣言型ではなく解決先に対して数える */
     private int[] inDegree;
 
@@ -154,7 +157,9 @@ public final class CallResolver {
             if (!HintFact.KIND_NEW.equals(h.kind())) {
                 continue;
             }
-            int id = methods.idOf(h.value() + "#" + sig);
+            // new された型が自分で宣言していない（親から継承した）実装も拾う。
+            // 宣言だけを引くと、継承しているだけの型は候補が 0 件になって次の段へ落ちる
+            int id = graph.implementationIn(h.value(), sig);
             if (id >= 0) {
                 fromNew.addIfAbsent(id);
             }
@@ -377,9 +382,13 @@ public final class CallResolver {
             }
             IntArray ids = new IntArray(candidates.length);
             for (String c : candidates) {
-                int id = methods.idOf(c + "#" + sig);
+                // 拡張が返した型が自分で宣言していない（親から継承した）実装も拾う。
+                // 宣言だけを引くと、継承しているだけの型を返した拡張が黙って効かなくなる
+                int id = graph.implementationIn(c, sig);
                 if (id >= 0) {
                     ids.addIfAbsent(id);
+                } else {
+                    warnUnusableCandidate(provider, c, sig);
                 }
             }
             if (!ids.isEmpty()) {
@@ -387,6 +396,22 @@ public final class CallResolver {
             }
         }
         return null;
+    }
+
+    /**
+     * 拡張が返した候補を採用できなかったことを知らせる（同じものは 1 回だけ）。
+     *
+     * 採用できないのは、その型（と親）にそのシグネチャの本体が無いとき。FQN の打ち間違い、
+     * 解析対象外の型、シグネチャ違いが原因になる。候補を落とすだけなので呼び出しは漏れないが、
+     * 黙って CHA に戻ると「対応表を書いたのに効いていない」ことに気づけない。
+     * エッジごとに呼ばれるので、同じ候補で何度も出さないよう記録しておく。
+     */
+    private void warnUnusableCandidate(TypeCandidateProvider provider, String fqn, String sig) {
+        if (warnedCandidates.add(provider.label() + "\t" + fqn + "#" + sig)) {
+            Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
+                    + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
+                    + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
+        }
     }
 
     // ------------------------------------------------------------
