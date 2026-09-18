@@ -56,7 +56,7 @@ if (X.KIND.equals("BETA")) { Target.beta(); }                    // ここにも
 
 - 条件分岐の打ち切りが逆になる（呼ばれるはずの `Target.beta()` から先が階層に出ない）
 - クラス名の文字列を辿るデータフローが、古い具象クラスを**断定して**出す
-  （`解決:DATAFLOW_FACTORY` と注記が付くので、読み手には正しく見える）
+  （`[RESOLVED:DATAFLOW_FACTORY]` と注記が付くので、読み手には正しく見える）
 
 キャッシュを消すまで直らず、更新時刻もサイズも変わらないので気づけない。
 「呼び出しを静かに落とさない」に真正面から反する。
@@ -410,8 +410,8 @@ Eclipse プラグインだけが `CancelledException` でバッチの切れ目�
 
 ```
 中断 → Base.java の定数を書き換えて実行
-  引き継ぎあり: inc.AlphaDao.select(),解決:DATAFLOW_FACTORY   ← 古い値のまま
-  引き継ぎ無し: inc.BetaDao.select(),解決:DATAFLOW_FACTORY
+  引き継ぎあり: inc.AlphaDao.select(),[RESOLVED:DATAFLOW_FACTORY]   ← 古い値のまま
+  引き継ぎ無し: inc.BetaDao.select(),[RESOLVED:DATAFLOW_FACTORY]
 ```
 
 `Names.java` と `Client.java` は自分自身が変わっていないので「一致」と判定されるが、

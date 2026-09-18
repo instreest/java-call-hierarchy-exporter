@@ -180,11 +180,15 @@ public final class InventoryReport {
                 continue;
             }
             count++;
-            String cause = noImpl ? "実装なし（宣言のまま）"
-                    : generated ? "実装はコンパイル時生成（"
+            // タグは call-hierarchy.csv の注記と揃える。同じ「絞れなかった」を
+            // 一覧と階層で別の名前で書くと、片方で見つけた呼び出しを
+            // もう片方で追えなくなる
+            String cause = noImpl ? StreamingTreeWalker.UNEXPANDED + "NO_IMPL] 本体を持つ実装がソース上に無い"
+                    : generated ? StreamingTreeWalker.UNEXPANDED + "GENERATED] 実装はコンパイル時生成（"
                             + res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length()) + "）"
-                    : fnImpl && !multi ? "ラムダ/メソッド参照の実装あり"
-                    : RecvKind.describe(g.recvKindOf(e));
+                    : fnImpl && !multi
+                            ? StreamingTreeWalker.UNEXPANDED + "LAMBDA] ラムダ/メソッド参照による実装あり"
+                    : StreamingTreeWalker.UNEXPANDED + "CHA] " + RecvKind.describe(g.recvKindOf(e));
             // 同じ理由は1回だけ並べる。件数はcount側で分かる
             if (causes.indexOf(cause) < 0) {
                 if (causes.length() > 0) {

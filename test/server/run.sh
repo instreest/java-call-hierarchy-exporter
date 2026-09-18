@@ -111,6 +111,27 @@ OUT=$(session "ANALYZE\t$CONFIG\nFIND\tfx.app.Main#run(java.lang.Object[])\nSHUT
 grep -qE "^OK${T}how=loose${T}key=fx\.app\.Main#run\(java\.lang\.String\[\]\)" <<<"$OUT" \
     && ok "型名がずれたキーを、引数の数で一意に決めて拾う" || fail "ゆるい照合が効いていない"
 
+echo "== AT（相対パス・絶対パス・未解析ファイルの言い分け） =="
+# エディタのプラグインはキーを組み立てずに、カーソルの位置だけを送る（docs/vscode-plugin-design.md §4）。
+# test/demo の DaoFactory.java は 6〜8 行目 create() / 10〜12 行目 newUserDao() / 25〜27 行目 passThrough()、28 行目はクラスの }
+AT_FILE=src/fx/dao/DaoFactory.java
+OUT=$(session "ANALYZE\t$CONFIG\nAT\t$AT_FILE\t7\nAT\t$AT_FILE\t1\nAT\t$AT_FILE\t28\nAT\t$ROOT/test/demo/$AT_FILE\t11\nAT\tsrc/fx/dao/NoSuchFile.java\t3\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+grep -qE "^OK${T}how=enclosing${T}key=fx\.dao\.DaoFactory#create\(\)${T}.*${T}line=6${T}endLine=8${T}callers=[0-9]+" <<<"$OUT" \
+    && ok "本体の行（7）から、その行を囲む create()（6〜8行目）を引く" || fail "AT が囲みメソッドを引けていない"
+grep -qE "^OK${T}how=enclosing${T}key=fx\.dao\.DaoFactory#newUserDao\(\)" <<<"$OUT" \
+    && ok "プロジェクトルート配下の絶対パスでも引ける" || fail "絶対パスを受けられていない"
+# 最初のメソッドより前（1 行目の package）も、最後のメソッドより後（28 行目のクラスの }）も not-found。
+# 終了行を持っているので、直前のメソッドを返すことはない（docs/method-decl-range-qa.md）
+NOTFOUND=$(grep -cE "^NG${T}not-found" <<<"$OUT")
+[ "$NOTFOUND" -eq 2 ] && ok "宣言部（1行目）とクラスの末尾（28行目）は not-found" \
+    || fail "メソッドの外の行が not-found にならない（$NOTFOUND 件）"
+# 解析対象に無いファイルは not-found と言い分ける（設定漏れか新規ファイルかが分かるように）
+grep -qE "^NG${T}file-not-analyzed" <<<"$OUT" && ok "解析していないファイルは file-not-analyzed" || fail "未解析ファイルの断り方が違う"
+
+OUT=$(session "AT\t$AT_FILE\t7\nSHUTDOWN\n")
+grep -qE "^NG${T}not-analyzed" <<<"$OUT" && ok "解析前の AT は not-analyzed" || fail "解析前の AT が断られない"
+
 echo "== フィルタは解析をやり直さない =="
 OUT=$(session "ANALYZE\t$CONFIG\nTREE\t$TARGET\tcallers\tdepth=5\nTREE\t$TARGET\tcallers\tdepth=5\ttext=zzz-no-such-name\nSHUTDOWN\n")
 WIDE=$(grep -oE "^OK${T}rows=[0-9]+" <<<"$OUT" | head -1 | grep -oE '[0-9]+')

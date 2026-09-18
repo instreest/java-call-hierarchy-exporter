@@ -5,13 +5,19 @@
 関連: [prompt-B-detailed.md](prompt-B-detailed.md) 4.1（列の仕様）、
 [doma-generated-impl-qa.md](doma-generated-impl-qa.md)（同じ「実装が無い」でも言い分ける場合）。
 
+> **その後の変更**: `NO_IMPL` の注記は [note-tags-qa.md](note-tags-qa.md) で階層側に戻した。
+> 注記に `[UNEXPANDED:*]` のタグが付き、`grep -v` で種類ごとに落とせるようになったため、
+> 下の Q3 の前提（注記を全部同じ土俵で目で拾うので埋もれる）が無くなったのが理由。
+> `callee` 列についての判断（Q1・Q2）は今も有効。
+
 ## 結論
 
 - `callee` は `クラス単純名.メソッド名`。完全修飾のパッケージも引数型も付けない
 - 外部 jar からの被参照の行（`被参照:*`）の `callee` も同じ表記に揃えた
-- `NO_IMPL`（本体を持つ実装がソース上に1つも無い）の注記
-  `実装なし（宣言のまま）: 理由` は `call-hierarchy.csv` に出さない
-- 絞れなかった事実そのものは `methods.csv` の `unresolvedCalls` / `unresolvedCause` に残る
+- ~~`NO_IMPL`（本体を持つ実装がソース上に1つも無い）の注記 `実装なし（宣言のまま）: 理由` は
+  `call-hierarchy.csv` に出さない~~ → 現在は `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い`
+  として出す（[note-tags-qa.md](note-tags-qa.md)）
+- 絞れなかった事実そのものは `methods.csv` の `unresolvedCalls` / `unresolvedCause` にも残る
 
 ### Q1. なぜ完全修飾と引数型をやめたのか
 
@@ -31,9 +37,15 @@
 
 ならない。消えるのは注記だけで、**行は出したまま**（宣言のまま 1 行）。
 インターフェースが多いプロジェクトではこの注記が何百行にも付き、
-`[CYCLE]`・深さ制限・`CHA候補N件` のような「読み手が次に動くための注記」が埋もれていた。
+`[UNEXPANDED:CYCLE]`・深さ制限・`CHA候補N件` のような「読み手が次に動くための注記」が埋もれていた。
 「実装がソースに無い」ことは `methods.csv` の `unresolvedCause` に残るので、
 まとめて調べたいときはそちらを見る。
+
+**現在**: この判断は取り消した。注記にタグが付いたことで
+`grep -v '\[UNEXPANDED:NO_IMPL\]'` で落とせるようになり、「埋もれるから出さない」は
+「出した上で読み手が選ぶ」で足りるようになった。`NO_IMPL` は
+「ソースを読めた上で実装が見つからない」＝ `source.folders` の設定漏れかデッドコードの
+疑いという、件数のわりに調べる価値が高い側でもある（[note-tags-qa.md](note-tags-qa.md) Q4）。
 
 ### Q4. 「実装はコンパイル時生成」の注記も消すのか
 

@@ -963,16 +963,17 @@ public final class CallHierarchyExporterSingle {
                     boolean tooDeep = depth + 1 >= config.maxDepth;
                     String note = null;
                     if (cycle) {
-                        note = "[CYCLE]";
+                        // 注記は本体（src/jche）と同じタグを使う。読み手が同じ grep を書ける
+                        note = "[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る";
                         cycles++;
                     } else if (tooDeep) {
-                        note = "[深さ上限" + config.maxDepth + "]";
+                        note = "[UNEXPANDED:DEPTH] 深さ制限(" + config.maxDepth + ")に達した";
                         choppedByDepth++;
                     } else if (cha) {
-                        note = "CHA候補" + targets.length + "件（未展開）: " + e.recvKind;
+                        note = "[UNEXPANDED:CHA] 候補" + targets.length + "件: " + e.recvKind;
                         chaRows++;
                     } else if (!callee.hasBody) {
-                        note = "解決:NO_IMPL";
+                        note = "[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い";
                     }
 
                     path.add(t);

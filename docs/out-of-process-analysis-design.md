@@ -13,7 +13,7 @@
 3. プラグイン側（Eclipse の中で動く部分）から解析コードを追い出し、**Java 8 以上で動く**ようにする
 
 > **実装状況**（2026-09-12）: **S1〜S5 完了**。この文書のとおりに作り替え終わっている。
-> `jche.CallHierarchyExporter --server` で標準入出力のプロトコルを話し、`ANALYZE` / `FIND` / `TREE` /
+> `jche.CallHierarchyExporter --server` で標準入出力のプロトコルを話し、`ANALYZE` / `FIND` / `AT` / `TREE` /
 > `EXPORT` / `CANCEL` / `SHUTDOWN` に応答する。木の切り出しと絞り込みもサーバー側に置いた
 > （`jche.server`）。検査は `test/server/run.sh`（GitHub Actions の regression ジョブで実行）。
 > プラグインは解析をいっさい行わず、子プロセス（同梱の `lib/jche-core.jar` ＋ `lib/jdt/*.jar`）を
@@ -95,6 +95,9 @@ JSON は表現力が高いがパーサを自前で書くか依存を足すこと
 
 → FIND com.example.OrderService#save(com.example.Order)
 ← OK id=1234                  無ければ ← NG not-found
+
+→ AT src/main/java/com/example/OrderService.java 42   ファイルと行を囲むメソッド
+← OK how=at key=... line=38   キーを組み立てられない呼び出し側（VSCode）のために足した
 
 → TREE 1234 callers depth=5 text=Order tests=0 guessed=1 dedupe=1
 ← R 0 <key> <label> <file> <line> <reason> <flags>

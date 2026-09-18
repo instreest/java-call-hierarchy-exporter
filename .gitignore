@@ -93,3 +93,8 @@ target/
 /test/conditions/case.properties
 /test/conditions/.cache/
 /test/conditions/out/
+
+# VSCode プラグイン（vscode-plugin/）。npm の依存と、esbuild の出力（dist/ out/ は上で除外済み）。
+# package-lock.json は追跡する（CI の npm ci が同じ版を入れるため）
+/vscode-plugin/node_modules/
+/vscode-plugin/*.vsix

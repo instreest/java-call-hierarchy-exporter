@@ -136,7 +136,7 @@ public final class UnresolvedReport {
     private static boolean isReportable(String line) {
         UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
         // import 推定でエッジになっている行は、call-hierarchy.csv 側に
-        // 「外部ライブラリ（import推定・未検証）」の注記付きで出ているので、ここでは出さない
+        // 「[EXTERNAL] import から型名を推定（未検証）」の注記付きで出ているので、ここでは出さない
         return u != null && !u.hasUsableCandidate();
     }
 

@@ -1,15 +1,15 @@
 caller,callee,root,call-hierarchy
 at fxp.App.factoryCall(App.java:16),DaoFactory.get,App.factoryCall,DaoFactory.get
-at fxp.App.factoryCall(App.java:17),AbstractDao.find,App.factoryCall,AbstractDao.find,CHA候補3件（未展開）: ローカル変数
-at fxp.App.factoryCall(App.java:17),OrderDaoImpl.find,App.factoryCall,OrderDaoImpl.find,CHA候補3件（未展開）: ローカル変数
-at fxp.App.factoryCall(App.java:17),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,CHA候補3件（未展開）: ローカル変数
-at fxp.App.chainedCall(App.java:21),AbstractDao.find,App.chainedCall,AbstractDao.find,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
-at fxp.App.chainedCall(App.java:21),OrderDaoImpl.find,App.chainedCall,OrderDaoImpl.find,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
-at fxp.App.chainedCall(App.java:21),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,CHA候補3件（未展開）: 戻り値（ファクトリメソッド等）
+at fxp.App.factoryCall(App.java:17),AbstractDao.find,App.factoryCall,AbstractDao.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.factoryCall(App.java:17),OrderDaoImpl.find,App.factoryCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.factoryCall(App.java:17),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.chainedCall(App.java:21),AbstractDao.find,App.chainedCall,AbstractDao.find,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
+at fxp.App.chainedCall(App.java:21),OrderDaoImpl.find,App.chainedCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
+at fxp.App.chainedCall(App.java:21),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
 at fxp.App.chainedCall(App.java:21),DaoFactory.get,App.chainedCall,DaoFactory.get
-at fxp.App.injected(App.java:25),BillingService.run,App.injected,BillingService.run,CHA候補2件（未展開）: フィールド変数
-at fxp.App.injected(App.java:25),ReportService.run,App.injected,ReportService.run,CHA候補2件（未展開）: フィールド変数
+at fxp.App.injected(App.java:25),BillingService.run,App.injected,BillingService.run,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fxp.App.injected(App.java:25),ReportService.run,App.injected,ReportService.run,[UNEXPANDED:CHA] 候補2件: フィールド変数
 at fxp.App.inheritedImpl(App.java:29),DaoFactory.get,App.inheritedImpl,DaoFactory.get
-at fxp.App.inheritedImpl(App.java:30),AbstractDao.find,App.inheritedImpl,AbstractDao.find,CHA候補3件（未展開）: ローカル変数
-at fxp.App.inheritedImpl(App.java:30),OrderDaoImpl.find,App.inheritedImpl,OrderDaoImpl.find,CHA候補3件（未展開）: ローカル変数
-at fxp.App.inheritedImpl(App.java:30),UserDaoImpl.find,App.inheritedImpl,UserDaoImpl.find,CHA候補3件（未展開）: ローカル変数
+at fxp.App.inheritedImpl(App.java:30),AbstractDao.find,App.inheritedImpl,AbstractDao.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.inheritedImpl(App.java:30),OrderDaoImpl.find,App.inheritedImpl,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.inheritedImpl(App.java:30),UserDaoImpl.find,App.inheritedImpl,UserDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数

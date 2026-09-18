@@ -65,7 +65,7 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 `jche.extension.TypeCandidateProvider`（フェーズB）です。動く例は
 [test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
 
-- 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の最終列に `解決:<ラベル>`（同梱の実装なら `MAPPING`）が付きます
+- 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の最終列に `[RESOLVED:<ラベル>]`（同梱の実装なら `MAPPING`）が付きます
 - フェーズAの拡張はキャッシュに手がかりを書くので、拡張やその設定・実装ファイルを変えると、
   キャッシュは自動的に捨てられて全件解析し直しになります（変え忘れによる古い結果の混入を防ぐため）
 - 拡張の読み込み・コンパイルに失敗しても解析は止まりません。警告を出して拡張なしで続けます
@@ -107,10 +107,10 @@ public void run() {
 拡張なしで解析すると、`execute()` の呼び出しは絞れず、その先（`UserService.audit` など）へも降りません。
 
 ```csv
-at jp.co.app.Main.run(Main.java:6),OrderService.execute,Main.run,OrderService.execute,CHA候補2件（未展開）: ローカル変数
-at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,CHA候補2件（未展開）: ローカル変数
-at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
-at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.execute,CHA候補2件（未展開）: 戻り値（ファクトリメソッド等）
+at jp.co.app.Main.run(Main.java:6),OrderService.execute,Main.run,OrderService.execute,[UNEXPANDED:CHA] 候補2件: ローカル変数
+at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 候補2件: ローカル変数
+at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
+at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
 ```
 
 どちらの手段でも、フェーズA（キーの採取）は同梱の `FactoryKeyCollector` に任せられます。
@@ -137,9 +137,9 @@ FACTORY_KEY@order = jp.co.app.impl.OrderService
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,解決:MAPPING
+at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[RESOLVED:MAPPING]
 at jp.co.app.impl.UserService.execute(UserService.java:8),UserService.audit,Main.run,UserService.execute,UserService.audit
-at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,解決:MAPPING
+at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[RESOLVED:MAPPING]
 at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,Main.run,OrderService.execute,OrderService.settle
 ```
 
@@ -219,9 +219,9 @@ public class NamingConventionProvider implements TypeCandidateProvider {
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,解決:NAMING_CONVENTION
+at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[RESOLVED:NAMING_CONVENTION]
 at jp.co.app.impl.UserService.execute(UserService.java:8),UserService.audit,Main.run,UserService.execute,UserService.audit
-at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,解決:NAMING_CONVENTION
+at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[RESOLVED:NAMING_CONVENTION]
 at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,Main.run,OrderService.execute,OrderService.settle
 ```
 
@@ -436,9 +436,9 @@ public class PerFactoryProvider implements TypeCandidateProvider {
 同じキー `"user"`・同じ宣言型 `Service` でも、呼び出したファクトリごとに別の実装へ解決します。
 
 ```csv
-at jp.co.app.Main.run(Main.java:5),UserService.execute,Main.run,UserService.execute,解決:PER_FACTORY
+at jp.co.app.Main.run(Main.java:5),UserService.execute,Main.run,UserService.execute,[RESOLVED:PER_FACTORY]
 at jp.co.app.impl.UserService.execute(UserService.java:4),UserService.modern,Main.run,UserService.execute,UserService.modern
-at jp.co.app.Main.run(Main.java:6),UserServiceImpl.execute,Main.run,UserServiceImpl.execute,解決:PER_FACTORY
+at jp.co.app.Main.run(Main.java:6),UserServiceImpl.execute,Main.run,UserServiceImpl.execute,[RESOLVED:PER_FACTORY]
 at jp.co.app.legacy.UserServiceImpl.execute(UserServiceImpl.java:4),UserServiceImpl.legacy,Main.run,UserServiceImpl.execute,UserServiceImpl.legacy
 ```
 
@@ -458,7 +458,7 @@ s.execute();            // ← 証拠が2件付く
 ここで最初に一致した証拠だけを返すと、**もう一方の経路の実装が黙って消えます**
 （`UserServiceImpl.execute` とその先が出力から無くなる）。一致した証拠は全部返してください。
 
-複数返した呼び出しは「絞れていない」扱いになり、注記が `CHA候補N件（未展開）` になってその先へは
+複数返した呼び出しは「絞れていない」扱いになり、注記が `[UNEXPANDED:CHA] 候補N件` になってその先へは
 降りません。**1件に絞れたときだけ展開される**、という点は本体の判定と同じです。
 降りないのは痛いですが、実装が1つ消えるよりは安全です。
 

@@ -21,9 +21,10 @@ package jche.server;
  *   → FIND  com.example.OrderService#save(com.example.Order)
  *   ← OK  key=...  label=...  file=...  line=42  endLine=45        （無ければ NG not-found）
  *
- *   → AT  src/main/java/com/example/OrderService.java  43
- *   ← OK  how=enclosing  key=...  line=42  endLine=45   （その行を囲むメソッド。
- *                                                        メソッドの外なら NG not-found）
+ *   → AT  src/main/java/com/example/OrderService.java  43     （ファイルと行を囲むメソッド）
+ *   ← OK  how=enclosing  key=...  label=...  file=...  line=42  endLine=45  callers=7
+ *        （メソッドの外なら NG not-found、ファイルが解析結果に無ければ NG file-not-analyzed。
+ *          パスは相対でも、project.root 配下の絶対パスでもよい）
  *
  *   → TREE  &lt;メソッドキー&gt;  callers  depth=5  text=Order  tests=0
  *   ← R  0  &lt;キー&gt;  &lt;表示名&gt;  &lt;ファイル&gt;  &lt;行&gt;  &lt;解決の理由&gt;  &lt;印&gt;
@@ -46,7 +47,12 @@ package jche.server;
  */
 public final class Protocol {
 
-    /** このプロトコルの版。増やすのは、既存の行の意味を変えるときだけ */
+    /**
+     * このプロトコルの版。増やすのは、既存の行の意味を変えるときだけ。
+     *
+     * <p>要求を足すのは版を上げる理由にしない（知らない要求には {@code NG unknown-command} が返るので、
+     * 新しいクライアントが古いサーバーに当たっても壊れない）。{@code AT} を足したときも 1 のままにした。
+     */
     public static final int VERSION = 1;
 
     public static final String SEP = "\t";

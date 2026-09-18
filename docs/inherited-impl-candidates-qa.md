@@ -29,12 +29,12 @@
 ## Q2. 段2は結果が変わらないのに、直す意味はあるか
 
 ある。既定（`dataflow.enabled=true`）では段4 が拾うので出力の行は同じだが、ラベルが
-`解決:DATAFLOW_NEW` になる。利用者は注記を見て「どれだけ確かな根拠で絞れたのか」を判断するので、
-同一メソッド内の `new` で決まったものは段2 の `解決:LOCAL_NEW` と出るべき。
+`[RESOLVED:DATAFLOW_NEW]` になる。利用者は注記を見て「どれだけ確かな根拠で絞れたのか」を判断するので、
+同一メソッド内の `new` で決まったものは段2 の `[RESOLVED:LOCAL_NEW]` と出るべき。
 
 ```
-修正前: at fx.app.Main.run(Main.java:50),AbstractDao.findById,...,解決:DATAFLOW_NEW
-修正後: at fx.app.Main.run(Main.java:50),AbstractDao.findById,...,解決:LOCAL_NEW
+修正前: at fx.app.Main.run(Main.java:50),AbstractDao.findById,...,[RESOLVED:DATAFLOW_NEW]
+修正後: at fx.app.Main.run(Main.java:50),AbstractDao.findById,...,[RESOLVED:LOCAL_NEW]
 ```
 
 また、段2 が候補 0 件で素通りしていたのを段4 が救っているだけの状態は、
@@ -63,7 +63,7 @@ multi.findById(7L);            // 54行目
 確定したように見えて誤っており、`AbstractDao.findById` への呼び出しが行ごと消えていた。
 `methods.csv` の `AbstractDao.findById` の入次数も 12 と、2 件少なく数えられていた（修正後は 14）。
 
-修正後は 52・54 行とも候補 2 件（`CHA候補2件（未展開）: ローカル変数`）になる。
+修正後は 52・54 行とも候補 2 件（`[UNEXPANDED:CHA] 候補2件: ローカル変数`）になる。
 証拠は変数ごとで文の位置を持たないため、どちらの行でも 2 件に広がるのは避けられない。
 54 行目だけを見れば精度は落ちたが、**52 行目の取りこぼしが消えたことの方が重い**。
 このツールの方針（絞れないことより誤って絞ることの方が害が大きい）どおりに倒した。

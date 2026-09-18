@@ -201,9 +201,9 @@ DI の対応表（型 → 具象型）を既定として置きつつ、ファク
 
 | 設定 | 内容 | 期待 |
 | --- | --- | --- |
-| `config-before.properties` | 拡張なし | `CHA候補2件（未展開）` に広がる |
-| `config.properties` | 同梱の拡張＋対応表 | `解決:MAPPING` で 1 件に絞れる |
-| `config-custom.properties` | 自前の拡張（`plugins/DiXmlProvider.java`） | `解決:DI_XML` で 1 件に絞れる |
+| `config-before.properties` | 拡張なし | `[UNEXPANDED:CHA] 候補2件` に広がる |
+| `config.properties` | 同梱の拡張＋対応表 | `[RESOLVED:MAPPING]` で 1 件に絞れる |
+| `config-custom.properties` | 自前の拡張（`plugins/DiXmlProvider.java`） | `[RESOLVED:DI_XML]` で 1 件に絞れる |
 
 3 番目は、独自形式の DI 設定ファイル（`di.xml`）を読む拡張を `.java` のまま置いてある。
 実行時コンパイルの経路がそのまま検査されるうえ、拡張の書き方の実例にもなっている。

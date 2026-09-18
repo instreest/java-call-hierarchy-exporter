@@ -67,7 +67,7 @@ r.run();                     // 解決後の具象は MyTask.run（ソース）
 ```
 
 ```csv
-at ex.Main.main(Main.java:6),MyTask.run,Main.main,MyTask.run,解決:LOCAL_NEW
+at ex.Main.main(Main.java:6),MyTask.run,Main.main,MyTask.run,[RESOLVED:LOCAL_NEW]
 at ex.MyTask.run(MyTask.java:6),MyTask.helper,Main.main,MyTask.run,MyTask.helper
 ```
 

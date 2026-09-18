@@ -116,7 +116,7 @@ public final class GuardEvaluator {
 
     /** 注記の文言。「どの条件が」「何の値で」成立しないのかを書く */
     private static String reason(String text, String origin, String actual) {
-        StringBuilder sb = new StringBuilder("この経路では呼ばれない: 条件「");
+        StringBuilder sb = new StringBuilder("[UNREACHABLE] この経路では呼ばれない: 条件「");
         sb.append(text.isEmpty() ? "?" : text).append("」が成立しない");
         if (Origin.kindOf(origin) == Origin.PARAM) {
             sb.append("（呼び出し元から渡された第").append(paramNumber(origin)).append("引数 = ")
