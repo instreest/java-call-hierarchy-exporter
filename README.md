@@ -72,11 +72,22 @@ rem 実行
 
 ```yaml
       - uses: actions/checkout@v5
+
+      # 依存 jar を先にローカルリポジトリへ取得しておく
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -B --no-transfer-progress dependency:go-offline
+
       - uses: instreest/java-call-hierarchy-exporter@main
         with:
           source-folders: src/main/java
           source-encoding: UTF-8
 ```
+
+依存の取得を省くと解析結果が欠けます。詳細は [docs/github-actions.md](docs/github-actions.md) を参照してください。
 
 ---
 
