@@ -15,6 +15,7 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
+| 静的解析で絞れる条件・絞れない条件 | [docs/static-analysis-limits.md](docs/static-analysis-limits.md) |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
@@ -72,11 +73,22 @@ rem 実行
 
 ```yaml
       - uses: actions/checkout@v5
+
+      # 依存 jar を先にローカルリポジトリへ取得しておく
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -B --no-transfer-progress dependency:go-offline
+
       - uses: instreest/java-call-hierarchy-exporter@main
         with:
           source-folders: src/main/java
           source-encoding: UTF-8
 ```
+
+依存の取得を省くと解析結果が欠けます。詳細は [docs/github-actions.md](docs/github-actions.md) を参照してください。
 
 ---
 
@@ -190,6 +202,11 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 
+- **他から呼び出せる定義**だけを並べます。ラムダ式の合成メソッド（`lambda$…`）、static 初期化子
+  （`<clinit>`）、無名クラス（`Outer$1`）のメソッドは出力しません。ラムダと `<clinit>` は呼び出せる
+  メソッドではなく、無名クラスのメソッドはその場で親の定義を上書きした処理内容なので、
+  呼び出し階層で読みます（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)）。
+  内部クラス・static なネストクラス・ローカルクラスのメソッドは名前を持つ定義なので出力します
 - コンストラクタ（`<init>`）は出力しません（`call-hierarchy.csv` でも行にしていないため揃えています）
 - jar の中のメソッドなど、ソースに宣言が無いものは出力しません。呼ばれている事実は `call-hierarchy.csv` に残ります
 - `reachable` の起点は `call-hierarchy.csv` と同じで、`entry.packages` で指定したメソッドです。
@@ -226,7 +243,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:REFLECTION] 候補N件: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に1つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
 | `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（名前）: FQN は…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
-| `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定・本体は定義元メソッドに計上）` | その関数型インターフェースをラムダかメソッド参照も実装している。どのラムダが渡ってくるかは追跡していないため特定できず、候補にも数えていない |
+| `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）` | その関数型インターフェースをラムダかメソッド参照が実装しているが、この呼び出し箇所にどれが渡ってくるかは特定できなかった（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
 | `[EXTERNAL] ソースが無いため辿れない` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
 | `[EXTERNAL] import から型名を推定（未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
 | `[UNREACHABLE] この経路では呼ばれない: 条件「…」が成立しない（…）` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
@@ -234,6 +251,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[RESOLVED:DATAFLOW_FACTORY]` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `[RESOLVED:DATAFLOW_PARAM]` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `[RESOLVED:DATAFLOW_FIELD]` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
+| `[RESOLVED:DATAFLOW_LAMBDA]` | ラムダ式かメソッド参照が、その関数型インターフェースの実装としてこの呼び出し箇所まで渡ってきたと特定した（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
 | `[RESOLVED:SPRING_DI]` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
 | `[RESOLVED:SPRING_DI_QUALIFIER]` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
 | `[RESOLVED:ラベル]` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
@@ -307,12 +325,48 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（[注記の表](#注記)） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
+| — | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（同上。下記） |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補を絞った（[注記の表](#注記)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
 
 `CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます
 （[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。
+
+---
+
+## ラムダ式・メソッド参照
+
+ラムダ式の本体は、javac と同じ名前（`lambda$囲みメソッド名$通し番号`）を付けた
+**合成メソッド**として1つのノードにします（`methods.csv` には出しません。
+インスタンスを通じて呼び出せるメソッドではないため）。
+
+```csv
+at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,Holder.viaField,Holder.lambda$new$0,[RESOLVED:DATAFLOW_LAMBDA]
+at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+```
+
+ラムダを作った箇所からは、必ず「生成した」1本の辺が出ます。
+どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
+実行箇所を特定できたときは、そちらからも同じノードに繋がります（`[RESOLVED:DATAFLOW_LAMBDA]`）。
+
+実行箇所を特定できる形:
+
+| 形 | 例 |
+|---|---|
+| ローカル変数に入れて呼ぶ | `Runnable r = () -> ...; r.run();` |
+| 引数で渡した先で呼ぶ | `runIt(() -> ...)` の中の `r.run()` |
+| フィールドに保持して呼ぶ | `private final Runnable task = () -> ...;` の `task.run()` |
+| メソッド参照 | `Runnable r = this::helper; r.run();` → `helper` に繋がる |
+| ローカルのコレクションに詰めて拡張for文で回す | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
+
+特定できない形（`[UNEXPANDED:LAMBDA]` が付きます）:
+
+- `list.forEach(Runnable::run)` のように、**jar の中**から呼ばれる形。`forEach` の中はソースが無いので辿れません
+- フィールドのコレクションに詰める形、詰める場所と回す場所が別メソッドの形
+- 同じ変数に複数のラムダが入りうる形（どれが実行されるか決められないので、絞りません）
+
+特定できない場合でも、生成の辺があるので本体の中の呼び出しは階層に出ます。
 
 ---
 

@@ -212,9 +212,11 @@ public final class CacheFormat {
      * X 行（拡張の証拠）を dataflow-cache.tsv に移した。
      * v19 で C 行・U 行から値の列（recvKey・出所・guard）を落とし、J 行（フィールドへの代入）も
      * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる。
-     * v20 で D 行に endLine（宣言の終了行）を足した
+     * v20 で D 行に endLine（宣言の終了行）を足した。
+     * v21 でラムダ式を合成メソッド（D 行 + 生成の C 行）として持つようにし、
+     * 本体の呼び出しの計上先を囲みメソッドからその合成メソッドへ移した
      */
-    public static final String VERSION = "jche-cache-v20";
+    public static final String VERSION = "jche-cache-v21";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
@@ -224,9 +226,11 @@ public final class CacheFormat {
      * v2 で N 行（値グラフ）と P 行（呼び出し箇所ごとの値）を足し、
      * v3 で K 行・R 行・X 行を analysis 側から受け取った。
      * v4 で J 行を受け取り、P 行に recvKey と guard を持たせ、
-     * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）
+     * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）。
+     * v5 で値の種別に Z（ラムダ／メソッド参照が実装しているメソッド）と
+     * E（ラムダが捕捉した囲みメソッドの引数）を足した
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v4";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v5";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。

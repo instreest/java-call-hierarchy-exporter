@@ -212,6 +212,19 @@ public final class CallResolver {
                 res = Resolution.single(viaPath, DataflowResolver.labelFor(recv));
             }
         }
+        // ラムダ／メソッド参照が渡ってきた呼び出し。候補が複数かどうかに関係なく試す。
+        // 関数型インターフェースのメソッドは、ソース上の実装が無い（Runnable#run 等）ことが
+        // 多く、その場合は候補が1件（宣言のまま）になって上の条件に入らないため。
+        //
+        // 実装しているラムダが1つでもあるメソッド（M行がある＝hasFunctionalImpl）に限る。
+        // そうしないと、ラムダを入れた変数への Object#toString() のような
+        // 関数型インターフェースと関係ない呼び出しまでラムダ本体に繋いでしまう
+        if (dataflow.enabled() && graph.hasFunctionalImpl(calleeId)) {
+            int viaLambda = dataflow.functionalTargetOf(graph.recvOrigin(edgeIndex), ctx);
+            if (viaLambda >= 0) {
+                res = Resolution.single(viaLambda, Resolution.DATAFLOW_LAMBDA);
+            }
+        }
         // リフレクション: クラス名・メソッド名が引数で渡ってくる形は、
         // この経路で分かっている引数の値を使ってもう一度試す
         if (dataflow.reflectiveKindOf(calleeId) != DataflowResolver.REFLECT_NONE && !res.isReflection()) {

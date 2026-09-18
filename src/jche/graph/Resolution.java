@@ -33,6 +33,11 @@ public record Resolution(int[] targets, String label) {
     public static final String DATAFLOW_FACTORY = DATAFLOW_PREFIX + "FACTORY";
     public static final String DATAFLOW_PARAM = DATAFLOW_PREFIX + "PARAM";
     public static final String DATAFLOW_FIELD = DATAFLOW_PREFIX + "FIELD";
+    /**
+     * ラムダ式かメソッド参照が、その関数型インターフェースの実装として
+     * この呼び出し箇所まで渡ってきたと特定できた
+     */
+    public static final String DATAFLOW_LAMBDA = DATAFLOW_PREFIX + "LAMBDA";
     // --- 段5: DIコンテナ（Spring）のBean定義で絞る ---
     /** 候補のうちBean登録されている型が1つだけだった */
     public static final String SPRING_DI = "SPRING_DI";

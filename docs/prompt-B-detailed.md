@@ -157,7 +157,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 前半4 | 次の深さが `max.depth` に達する | `[UNEXPANDED:DEPTH] 深さ制限(N)に達した` |
 | 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `[UNEXPANDED:REFLECTION] 候補N件: 引数型が不明なため名前で照合` |
 | 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] 候補N件: {理由}` |
-| 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定・本体は定義元メソッドに計上）` |
+| 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` |
 | 後半5 | 解決先が宣言型と違う（リフレクションで解決した `REFLECTION` / `REFLECTION_INIT` を含む）、**または** データフローで決めた（宣言型と同じでも出す） | `[RESOLVED:{ラベル}]` |
 
@@ -224,7 +224,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 一覧と階層で別の名前で書くと、片方で見つけた呼び出しをもう片方で追えなくなる。
 レシーバ由来は `[UNEXPANDED:CHA] {理由}` の形にする。
 
-ソースの無いメソッド（jar内）と `<init>` は出力しない。合成した `<clinit>` は出す。
+出すのは「他から呼び出せる定義」。ソースの無いメソッド（jar内）、`<init>`、合成した `<clinit>`、ラムダの合成メソッド（`lambda$…`）、匿名クラス（`Outer$1`）のメソッドは出さない（匿名クラスはその場で親の定義を上書きした処理内容で、呼び出し階層で読む）。内部クラス・static なネストクラス・ローカルクラス（`Outer$1Local`）は名前を持つ定義なので出す。
 行順はソースの並び（ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → 同一行はID順）。
 メソッドIDの順（キャッシュ上の出現順）で出すと、差分更新で解析し直したファイルが末尾へ移り、
 実行のたびに並びが変わる。
@@ -277,7 +277,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 
 メソッド呼び出し、`super.m()`、`new`、`this(...)`/`super(...)`（書かれていない暗黙の `super()` は
 拾わない）、enum定数の生成、メソッド参照4種（`obj::m` / `Type::m` / `super::m` / `Type::new`）。
-ラムダ本体の呼び出しは囲みメソッドに帰属させる。
+ラムダ本体の呼び出しは、ラムダごとの合成メソッド（`lambda$…`）に帰属させる（第2部 2.9）。
 フィールド初期化子・初期化ブロックは `static` なら `<clinit>`、インスタンスなら
 「`this(...)` 委譲していない全コンストラクタ」に帰属させる（第2部 2.4）。
 
@@ -517,8 +517,8 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 レコードコンポーネントを引数に取るので、`ITypeBinding.getDeclaredMethods()` の
 コンストラクタを正として合成する。
 
-**(d) ラムダ式**: `MethodDeclaration` ではないので、中の呼び出しは自動的に囲みメソッドに
-帰属する。これはソース上の見え方と一致するので特別扱いしない（2.9 も参照）。
+**(d) ラムダ式**: `MethodDeclaration` ではないが、本体を持つ合成メソッドを作って
+呼び出し元のスタックに積む。中の呼び出しはその合成メソッドに帰属する（2.9）。
 
 **(e) `super(...)`**: `this(...)` と同じくコンストラクタ呼び出しの辺として記録する
 （`SuperConstructorInvocation`）。これが無いと、サブクラスからしか生成されない親クラスの
@@ -536,7 +536,7 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 | `FieldDeclaration` / `Initializer` | 2.4(b) | — |
 | `MethodInvocation` / `SuperMethodInvocation` / `ClassInstanceCreation` / `ConstructorInvocation` | 呼び出し辺 | — |
 | `ExpressionMethodReference` / `TypeMethodReference` / `SuperMethodReference` / `CreationReference` | メソッド参照を「囲みメソッドからの呼び出し」として記録 | `::` でしか参照されないメソッドが「呼ばれていない」ように見える。**`String[]::new` は配列生成で呼ぶメソッドが無いので辺にせず、型解決失敗にも数えない** |
-| `LambdaExpression` | 関数型インターフェースのメソッドを「ラムダも実装している」と記録（2.9）。入れ子深さを数える | — |
+| `LambdaExpression` | 関数型インターフェースのメソッドを「ラムダも実装している」と記録し、本体を持つ合成メソッドを作って積む（2.9） | — |
 | `ReturnStatement` | 戻り値の出所（2.10） | — |
 | `VariableDeclarationFragment` / `Assignment` | 段2の `new` 追跡。変数の同定は名前でなく `IVariableBinding.getKey()` | 同名変数がスコープ違いで誤解決 |
 | `TypeLiteral` | `X.class` の出所（`K:`）。リフレクションの受け手・引数型 | `getMethod("run", long.class)` のシグネチャが決まらない |
@@ -606,11 +606,23 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
   事実を残し、読み手は「ある／なし」だけを使う（件数を判定に使うとファイル単位の部分再利用で
   値がぶれる）。これが無いと、匿名クラスが1件あるだけで `SINGLE_IMPL` と判定し、
   **実際に動くラムダとは違う実装に決め打ち**する
-- 候補の絞り込み自体は変えない。`[RESOLVED:SINGLE_IMPL]` と書く代わりに
-  `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（…）` を出し、`unresolvedCalls` にも数える
-- **ラムダ本体の呼び出しを合成メソッドへ付け替えない**。付け替えると `forEach` のように
+- 候補の絞り込み自体は変えない。値として追えなかった呼び出しでは `[RESOLVED:SINGLE_IMPL]` と
+  書く代わりに `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（…）` を出し、
+  `unresolvedCalls` にも数える
+- **ラムダ本体は合成メソッドにする**。名前は javac と同じ `lambda$囲みメソッド名$通し番号`、
+  修飾子に `lambda` を付けた D 行を作り、本体の中の呼び出しはその合成メソッドに計上する。
+  通し番号は型ごと。名前はファイル単位で**先に**配る（本体の先読みと本走査の2か所で
+  決めると食い違うため）
+- **囲みメソッドから合成メソッドへ「生成の辺」を必ず1本張る**。これが無いと、`forEach` のように
   `exclude.packages`（既定 `java.**`）で除外されるAPIに渡したラムダの本体が到達不能になり、
-  出力から丸ごと消える。囲みメソッドに計上したままにする（順序の正確さより取りこぼさないこと）
+  出力から丸ごと消える（順序の正確さより取りこぼさないこと）
+- ラムダ／メソッド参照は**値**としても追う。出所の種別 `Z`（実装しているメソッドのキー。
+  ラムダなら合成メソッド、メソッド参照なら参照先そのもの）を持ち、ローカル変数・引数・
+  フィールド・ローカルのコレクションの要素として呼び出し箇所まで流れてきたら
+  `DATAFLOW_LAMBDA` で確定する
+- ラムダが捕捉した囲みメソッドの引数は、種別 `E`（captured）として持つ。`A`（引数）のまま
+  持ち込むと合成メソッド自身の引数を誤って当てる。読み手は合成メソッドへ降りるときだけ、
+  そのフレームの引数を捕捉した値として渡す（生成の辺があるので生成箇所は必ず1つ上に来る）
 - 匿名クラスは実型（`fx.App$1`）として扱う。名前を持ち型階層に載るので、インターフェース経由の
   呼び出しから正しく辿れる
 
@@ -760,8 +772,9 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
   行番号は LineNumberTable の「start_pc が命令のオフセット以下で最大」の項目（表は順不同なので並べ直す）
 - `invokedynamic` の参照先は命令にも定数プールの InvokeDynamic にも無く、**BootstrapMethods 属性**
   （class の末尾）の引数の MethodHandle が指す Methodref にある。命令列を歩いた時点では仮の項目を置き、
-  属性を読んでから置き換える（並びを保つため）。ラムダ本体の合成メソッド `lambda$run$0` は
-  囲みメソッド名 `run` に読み替える（ソース側が「ラムダ内の呼び出しは囲みメソッドに計上」なのと揃える）
+  属性を読んでから置き換える（並びを保つため）。jar の中のラムダ本体（`lambda$run$0`）は
+  囲みメソッド名 `run` に読み替える。相手の jar のラムダはソースが無く、こちらの
+  合成メソッドとは別物なので、参照元としては囲みメソッドの行で見せる
 - 命令列から辿れなかった定数プールの参照（`ldc` で MethodHandle 定数を積む形など、まず無い）は
   従来どおりクラス名だけを caller にして出す。呼び出しを静かに落とさないため
 - `-g:none` の class は LineNumberTable も SourceFile も無い。caller は JVM のスタックトレースと同じ
@@ -1903,8 +1916,8 @@ at fx.App.mutualB(App.java:136),App.mutualA,App.cycles,App.mutualA,App.mutualB,A
 ### T14 ラムダ／匿名クラス／メソッド参照
 ```
 at fx.App.viaLambda(App.java:141),Helper.validate,App.viaLambda,Helper.validate
-at fx.App.viaLambda(App.java:142),App$3.handle,App.viaLambda,App$3.handle,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定・本体は定義元メソッドに計上）
-at fx.App.viaAnonHandler(App.java:151),App$3.handle,App.viaAnonHandler,App$3.handle,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定・本体は定義元メソッドに計上）
+at fx.App.viaLambda(App.java:142),App$3.handle,App.viaLambda,App$3.handle,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）
+at fx.App.viaAnonHandler(App.java:151),App$3.handle,App.viaAnonHandler,App$3.handle,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）
 at fx.App$3.handle(App.java:148),Helper.validate,App.viaAnonHandler,App$3.handle,Helper.validate
 at fx.App.viaMethodRef(App.java:156),Repo.save,App.viaMethodRef,Repo.save
 ```

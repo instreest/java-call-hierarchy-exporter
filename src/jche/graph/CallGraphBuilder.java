@@ -19,6 +19,7 @@ import jche.cache.FieldDeclFact;
 import jche.cache.FunctionalImplFact;
 import jche.cache.HintFact;
 import jche.cache.MethodDeclFact;
+import jche.cache.ModifierTokens;
 import jche.cache.MethodRef;
 import jche.cache.ReturnFact;
 import jche.cache.TypeFact;
@@ -128,6 +129,9 @@ public final class CallGraphBuilder {
                             ensure(outDegree, id);
                             methods.setDeclaration(id, currentFile, d.declLine(), d.endLine(),
                                     d.hasBody());
+                            if (ModifierTokens.has(d.mods(), ModifierTokens.LAMBDA)) {
+                                methods.markLambdaBody(id);
+                            }
                             fields.declaration(d);
                             graph.beans.method(id, d);
                         }

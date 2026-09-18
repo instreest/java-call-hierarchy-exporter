@@ -10,6 +10,9 @@
     フィールド注入・`@Qualifier` での指名・`@Bean` メソッドによる登録・Bean でない実装が候補から外れること・
     Bean が抽象基底クラスから実装を継承する形を含みます
   - `src/fx/dao/ItemDao.java` … 実装がコンパイル時に生成される型（`GENERATED_IMPL`）の確認用
+  - `src/fx/lambda/Holder.java` … ラムダ／メソッド参照の解決（`DATAFLOW_LAMBDA`）の確認用。
+    フィールドに保持・引数で受け渡し・ローカルのコレクションに詰めて拡張for文で回す形（いずれも追える）と、
+    `forEach` に渡す形（jar の中から呼ばれるので追えず `[UNEXPANDED:LAMBDA]` が残る）を含みます
   - `src/fx/inherit/` … CHA の候補の数え方の確認用。インターフェースを実装するクラスが、そのインターフェースを
     実装していない親クラスから実装を継承する形（`PoliteGreeter extends BaseGreeter implements Greeter`）と、
     サブインターフェースが本体なしで再宣言する形（`Sub2 extends Base2`）を含みます
