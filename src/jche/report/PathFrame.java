@@ -29,19 +29,30 @@ final class PathFrame {
     String[] ctorArgs;
     /** ctorArgs が属する型。親クラスのフィールドに取り違えて当てないため */
     String ctorOwner;
+    /**
+     * ラムダの合成メソッドの段で、生成箇所のフレームの引数（＝捕捉した値）。
+     * ラムダ以外の段では null
+     */
+    String[] capturedTypes;
 
     void set(int methodId, int callLine, String note,
              String[] paramTypes, String[] ctorArgs, String ctorOwner) {
+        set(methodId, callLine, note, paramTypes, ctorArgs, ctorOwner, null);
+    }
+
+    void set(int methodId, int callLine, String note,
+             String[] paramTypes, String[] ctorArgs, String ctorOwner, String[] capturedTypes) {
         this.methodId = methodId;
         this.callLine = callLine;
         this.note = note;
         this.paramTypes = paramTypes;
         this.ctorArgs = ctorArgs;
         this.ctorOwner = ctorOwner;
+        this.capturedTypes = capturedTypes;
     }
 
     /** この段で経路から分かっていること（無ければ null） */
     DataflowContext context() {
-        return DataflowContext.of(paramTypes, ctorArgs, ctorOwner);
+        return DataflowContext.of(paramTypes, ctorArgs, ctorOwner, capturedTypes);
     }
 }

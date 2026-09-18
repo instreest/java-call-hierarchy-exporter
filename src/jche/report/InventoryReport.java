@@ -32,6 +32,8 @@ public final class InventoryReport {
         long notInHierarchy;
         long prunedOut;
         long constructors;
+        /** ラムダの合成メソッド・static 初期化子・匿名クラスのメソッド（一覧の対象外） */
+        long generated;
         long withUnresolved;
 
         /** 条件分岐の打ち切りが理由で階層CSVに出なかったメソッドの数 */
@@ -49,7 +51,8 @@ public final class InventoryReport {
                     + " 階層CSVに出ない=" + notInHierarchy
                     + "（うち条件分岐で打ち切った先=" + prunedOut + "）"
                     + " 未解決の呼び出しを含む=" + withUnresolved
-                    + "（コンストラクタ " + constructors + " 個は出力対象外）";
+                    + "（コンストラクタ " + constructors + " 個、ラムダ・static 初期化子・匿名クラスのメソッド "
+                    + generated + " 個は出力対象外）";
         }
     }
 
@@ -102,6 +105,15 @@ public final class InventoryReport {
                 // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
                 if (methods.isConstructor(id)) {
                     st.constructors++;
+                    continue;
+                }
+                // 「他から呼び出せる定義」だけを並べる。ラムダの合成メソッドと static 初期化子は
+                // 呼び出せるメソッドではなく、匿名クラスのメソッドはその場で親の定義を
+                // 上書きした処理内容にすぎないので出さない。どれも呼び出し階層には出る。
+                // 内部クラス・static なネストクラス・ローカルクラスは名前を持つ定義なので出す
+                if (methods.isLambdaBody(id) || methods.isStaticInitializer(id)
+                        || methods.isInAnonymousType(id)) {
+                    st.generated++;
                     continue;
                 }
                 st.methods++;

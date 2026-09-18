@@ -34,6 +34,13 @@ public final class MethodTable {
      */
     private final ArrayList<Boolean> hasBody = new ArrayList<>();
 
+    /**
+     * ラムダ式の本体を持つ合成メソッド（D行の修飾子に lambda が付いたもの）。
+     * 名前（{@code lambda$...}）で見分けないのは、同じ名前のメソッドを
+     * 人が書くこともできるため。事実（修飾子）で持つ
+     */
+    private final java.util.BitSet lambdaBodies = new java.util.BitSet();
+
     /** 引数型略名が衝突しているラベル。初回の displayLabel() で一度だけ作る */
     private Set<String> ambiguous;
 
@@ -77,6 +84,46 @@ public final class MethodTable {
 
     public boolean hasBody(int id) {
         return hasBody.get(id);
+    }
+
+    /** ラムダ式の本体を持つ合成メソッドだと記録する */
+    public void markLambdaBody(int id) {
+        lambdaBodies.set(id);
+    }
+
+    /**
+     * 匿名クラス（{@code Outer$1}。入れ子なら {@code Outer$1$2}、その中のローカルクラスは
+     * {@code Outer$1$1Local}）のメソッドか。
+     *
+     * 匿名クラスのメソッドは「その場で親の定義を上書きした処理内容」であって、
+     * 他から呼び出せる定義ではないので methods.csv には出さない（呼び出し階層には出る）。
+     * 内部クラス・static なネストクラス・ローカルクラス（{@code Outer$1Local}）は
+     * 名前を持つ定義なので出す
+     */
+    public boolean isInAnonymousType(int id) {
+        String fqn = typeFqn(id);
+        int at = fqn.indexOf('$');
+        while (at >= 0 && at + 1 < fqn.length()) {
+            int end = at + 1;
+            while (end < fqn.length() && Character.isDigit(fqn.charAt(end))) {
+                end++;
+            }
+            // "$" の直後が数字だけで、そこで名前が終わるか次の "$" に続くなら匿名クラス
+            if (end > at + 1 && (end == fqn.length() || fqn.charAt(end) == '$')) {
+                return true;
+            }
+            at = fqn.indexOf('$', at + 1);
+        }
+        return false;
+    }
+
+    /**
+     * ラムダ式の本体を持つ合成メソッドか。
+     * 捕捉した変数を解決するため、読み手はこのメソッドへ降りるときだけ
+     * 生成箇所のフレームの引数を渡す
+     */
+    public boolean isLambdaBody(int id) {
+        return lambdaBodies.get(id);
     }
 
     /** ソース上に宣言があるか（jar内のメソッドには無い） */
@@ -127,6 +174,11 @@ public final class MethodTable {
 
     public boolean isConstructor(int id) {
         return MethodRef.CONSTRUCTOR.equals(methodName(id));
+    }
+
+    /** static 初期化子（合成した {@code <clinit>}）か */
+    public boolean isStaticInitializer(int id) {
+        return MethodRef.STATIC_INITIALIZER.equals(methodName(id));
     }
 
     /** クラスの単純名（内部クラスは Outer.Inner の形を保つ） */

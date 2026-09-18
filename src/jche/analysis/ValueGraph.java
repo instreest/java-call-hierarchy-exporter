@@ -139,6 +139,11 @@ final class ValueGraph {
         if (enumConstant != null) {
             return node(Origin.CONST, enumConstant, ValueNode.NONE, "", -1);
         }
+        // ラムダ／メソッド参照は、実際に動くメソッドを指すノードにする
+        String functional = origins.functionalOriginOf(e);
+        if (functional != null) {
+            return node(Origin.FUNCTIONAL, Origin.valueOf(functional), ValueNode.NONE, "", -1);
+        }
         // ローカル変数は、その代入元の式から作ったノードをそのまま指す。
         // 出所の文字列（上限付き）と違い、入れ子をノードの参照で保てる
         int local = origins.localNodeOf(e);

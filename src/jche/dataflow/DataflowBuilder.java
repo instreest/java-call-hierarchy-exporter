@@ -258,6 +258,7 @@ public final class DataflowBuilder {
      */
     private static boolean[] usesParameters(CallGraph graph) {
         boolean[] flags = new boolean[graph.methodCount()];
+        boolean[] usesCaptured = new boolean[graph.methodCount()];
         for (int caller = 0; caller < flags.length; caller++) {
             for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
                 if (Origin.kindOf(graph.recvOrigin(e)) == Origin.PARAM
@@ -265,11 +266,36 @@ public final class DataflowBuilder {
                         || mentionsParam(graph.argOrigins(e))
                         || guardsOnParam(graph.guard(e))) {
                     flags[caller] = true;
+                }
+                if (Origin.kindOf(graph.recvOrigin(e)) == Origin.CAPTURED
+                        || mentionsCaptured(graph.recvOrigin(e))
+                        || mentionsCaptured(graph.argOrigins(e))) {
+                    usesCaptured[caller] = true;
+                }
+            }
+        }
+        // ラムダが捕捉した引数を使うなら、その値を持っているのは生成箇所の
+        // フレーム（＝囲みメソッド）なので、囲みメソッドにも経路の引数が要る。
+        // ここで立てないと、ラムダを作るだけのメソッドは「引数を使わない」と
+        // 見なされて引数が束縛されず、捕捉した値が本体に届かない
+        for (int caller = 0; caller < flags.length; caller++) {
+            if (flags[caller]) {
+                continue;
+            }
+            for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
+                int callee = graph.calleeOf(e);
+                if (callee >= 0 && graph.methods().isLambdaBody(callee) && usesCaptured[callee]) {
+                    flags[caller] = true;
                     break;
                 }
             }
         }
         return flags;
+    }
+
+    /** 出所の中に「ラムダが捕捉した引数」が含まれるか */
+    private static boolean mentionsCaptured(String origins) {
+        return origins != null && origins.indexOf("=" + Origin.CAPTURED + ":") >= 0;
     }
 
     /** 条件分岐が囲みメソッドの引数を見ているか（"アトム区切り引数の出所" の形） */

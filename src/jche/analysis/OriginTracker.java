@@ -13,14 +13,19 @@ import org.eclipse.jdt.core.dom.BooleanLiteral;
 import org.eclipse.jdt.core.dom.CastExpression;
 import org.eclipse.jdt.core.dom.CharacterLiteral;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
+import org.eclipse.jdt.core.dom.CreationReference;
+import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
+import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.MethodReference;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.NumberLiteral;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
@@ -28,7 +33,9 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
+import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TypeLiteral;
+import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
 import jche.cache.CacheFormat;
@@ -81,11 +88,35 @@ final class OriginTracker {
         final Map<String, String> origins = new HashMap<>();
         /** 変数のキー -> 値グラフのノード番号（{@link ValueNode#NONE} なら無し） */
         final Map<String, Integer> nodes = new HashMap<>();
+        /**
+         * ローカル変数のコレクションに詰められた要素の出所（変数のキー -> 出所）。
+         * 拡張for文の変数の出所を決めるのに使う
+         */
+        final Map<String, String> elements = new HashMap<>();
+        /**
+         * ラムダ式の本体のスコープか。捕捉した変数を {@link Origin#CAPTURED} として
+         * 持ち込めるのは、生成箇所が経路の1つ上に必ず来るラムダだけ（匿名クラスは
+         * 生成箇所と実行箇所が繋がらないので従来どおり落とす）
+         */
+        boolean lambda;
     }
+
+    /** ラムダ式の合成メソッドの名前。{@link Origin#FUNCTIONAL} の値に使う */
+    private LambdaNames lambdaNames;
 
     OriginTracker(BindingNames names, jche.cache.FileAnalysis out) {
         this.names = names;
         this.graph = new ValueGraph(out, names, this);
+    }
+
+    /**
+     * ラムダ式の名前の表を受け取る。
+     *
+     * 表そのものを作るのは {@link FactVisitor} で、作るときに {@link BindingNames} が要る。
+     * ここは使うだけなので、生成の順番を縛らないよう後から渡す
+     */
+    void lambdaNames(LambdaNames lambdaNames) {
+        this.lambdaNames = lambdaNames;
     }
 
     /**
@@ -160,6 +191,33 @@ final class OriginTracker {
     }
 
     /**
+     * ラムダ式の引数を出所として登録した、合成メソッド用の初期スコープ。
+     *
+     * {@link #paramScopeOf} と同じ形にする。ラムダの引数は、型を書く形
+     * （{@code (Dao d) -> ...}）と推論に任せる形（{@code d -> ...}）で
+     * AST のノードが違うので、両方から束縛を取る。
+     *
+     * 捕捉した変数（外側のメソッドのローカル）は、このスコープには入れない。
+     * スコープはスタックなので、外側は1つ外のスコープから引ける
+     * （{@link #localOriginOf} が実質的finalのときだけ持ち込む）。
+     */
+    Scope lambdaParamScope(List<?> params) {
+        Scope scope = new Scope();
+        scope.lambda = true;
+        for (int i = 0; i < params.size(); i++) {
+            Object param = params.get(i);
+            IVariableBinding vb = (param instanceof SingleVariableDeclaration typed)
+                    ? typed.resolveBinding()
+                    : (param instanceof VariableDeclarationFragment inferred)
+                            ? inferred.resolveBinding() : null;
+            if (vb != null && vb.getKey() != null) {
+                scope.origins.put(vb.getKey(), Origin.of(Origin.PARAM, String.valueOf(i)));
+            }
+        }
+        return scope;
+    }
+
+    /**
      * 本体を先読みして、ローカル変数の出所を集める。
      *
      * 同じ変数に出所の違う代入が複数あれば U（不明）にする。
@@ -194,11 +252,97 @@ final class OriginTracker {
                     }
                     return true;
                 }
+
+                @Override
+                public boolean visit(EnhancedForStatement n) {
+                    bindLoopVariable(scope, body, n);
+                    return true;
+                }
             });
         } finally {
             leaveScope();
         }
         return scope;
+    }
+
+    /**
+     * {@code list.add(() -> ...)} のように、そのコレクションへ詰められた要素の出所。
+     *
+     * 本体を走査して集める。拡張for文があるときだけ呼ぶので、
+     * ループの無いメソッドに走査を増やさない。結果は変数ごとに覚えておく。
+     *
+     * 出所が1つに定まらなければ U（不明）。拾えるのは「レシーバがそのローカル変数」の形だけで、
+     * フィールドのコレクションや、他のメソッドへ渡してから詰める形は追わない（安全側）。
+     */
+    private String elementOriginOf(Scope scope, ASTNode body, String varKey) {
+        String known = scope.elements.get(varKey);
+        if (known != null) {
+            return known;
+        }
+        String[] merged = {null};
+        body.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(MethodInvocation n) {
+                if (!(unwrap(n.getExpression()) instanceof SimpleName recv)
+                        || !(recv.resolveBinding() instanceof IVariableBinding vb)
+                        || !varKey.equals(vb.getKey())) {
+                    return true;
+                }
+                int at = elementArgumentOf(n.getName().getIdentifier(), n.arguments().size());
+                if (at < 0 || !(n.arguments().get(at) instanceof Expression element)) {
+                    return true;
+                }
+                String origin = originOf(element);
+                if (origin == null) {
+                    origin = Origin.UNKNOWN_S;
+                }
+                merged[0] = (merged[0] == null || merged[0].equals(origin))
+                        ? origin : Origin.UNKNOWN_S;
+                return true;
+            }
+        });
+        String result = (merged[0] == null) ? Origin.UNKNOWN_S : merged[0];
+        scope.elements.put(varKey, result);
+        return result;
+    }
+
+    /**
+     * 「要素を足す」メソッドで、要素そのものが何番目の実引数か。違うメソッドなら -1。
+     *
+     * 足し方が分かっているものだけを見る。{@code add(int, E)} のように
+     * 位置を指定する形も要素は末尾なので同じ扱いにできる
+     */
+    private static int elementArgumentOf(String name, int argCount) {
+        boolean adds = switch (name) {
+            case "add", "addLast", "addFirst", "offer", "offerLast", "offerFirst",
+                 "push", "set", "put" -> true;
+            default -> false;
+        };
+        if (!adds || argCount < 1 || argCount > 2) {
+            return -1;
+        }
+        // 1引数なら要素そのもの。2引数（位置や鍵を伴う形）なら末尾が要素
+        return argCount - 1;
+    }
+
+    /**
+     * 拡張for文の変数に、回しているコレクションの要素の出所を当てる。
+     * {@code for (Runnable t : tasks) t.run();} の {@code t} を追えるようにする
+     */
+    private void bindLoopVariable(Scope scope, ASTNode body, EnhancedForStatement n) {
+        if (!(unwrap(n.getExpression()) instanceof SimpleName source)
+                || !(source.resolveBinding() instanceof IVariableBinding sourceVar)
+                || sourceVar.isField()) {
+            return;
+        }
+        String element = elementOriginOf(scope, body, sourceVar.getKey());
+        if (Origin.isUnknown(element)) {
+            return;
+        }
+        IVariableBinding loopVar = n.getParameter().resolveBinding();
+        if (loopVar != null && loopVar.getKey() != null) {
+            scope.origins.put(loopVar.getKey(), element);
+        }
     }
 
     /** 同じ変数に別の出所が現れたら U（不明）に落とす。値グラフ側も同じ判断で揃える */
@@ -247,6 +391,10 @@ final class OriginTracker {
         if (e instanceof MethodInvocation mi) {
             return invocationOriginOf(mi, depth);
         }
+        String functional = functionalOriginOf(e);
+        if (functional != null) {
+            return functional;
+        }
         if (e instanceof StringLiteral literal) {
             return classNameLiteral(literal.getLiteralValue());
         }
@@ -275,6 +423,43 @@ final class OriginTracker {
         // ここまでで決まらなければ、コンパイル時定数の「値」として拾う。
         // 具象型は分からないが、条件分岐の判定には使える（jche.cache.Guard）
         return constantOf(e);
+    }
+
+    /**
+     * 式がラムダ式かメソッド参照なら、実際に動くメソッドを指す出所（{@link Origin#FUNCTIONAL}）。
+     *
+     * ラムダは本体を持つ合成メソッド、メソッド参照は参照先のメソッドそのもの。
+     * これがあると「関数型インターフェースの変数に何が入っているか」を
+     * 他の値と同じように追える（{@code Runnable r = this::helper; r.run();} が繋がる）。
+     */
+    String functionalOriginOf(Expression ex) {
+        Expression e = unwrap(ex);
+        if (e instanceof LambdaExpression lambda) {
+            MethodRef body = (lambdaNames == null) ? null : lambdaNames.of(lambda);
+            return (body == null) ? null : Origin.of(Origin.FUNCTIONAL, body.key());
+        }
+        if (e instanceof MethodReference ref) {
+            MethodRef target = names.toRef(methodBindingOf(ref));
+            return (target == null) ? null : Origin.of(Origin.FUNCTIONAL, target.key());
+        }
+        return null;
+    }
+
+    /** メソッド参照の4つの形から、参照先のバインディングを取る */
+    private static IMethodBinding methodBindingOf(MethodReference ref) {
+        if (ref instanceof ExpressionMethodReference expr) {
+            return expr.resolveMethodBinding();
+        }
+        if (ref instanceof TypeMethodReference type) {
+            return type.resolveMethodBinding();
+        }
+        if (ref instanceof SuperMethodReference sup) {
+            return sup.resolveMethodBinding();
+        }
+        if (ref instanceof CreationReference creation) {
+            return creation.resolveMethodBinding();
+        }
+        return null;
     }
 
     /**
@@ -447,20 +632,31 @@ final class OriginTracker {
      */
     private String localOriginOf(IVariableBinding vb) {
         String key = vb.getKey();
-        boolean enclosing = false;
+        // 変数が見つかるまでに越えたスコープの境界。0 なら今のメソッドの中
+        int crossed = 0;
+        // 越えた境界が「ラムダの本体」だけか。1つだけなら生成箇所が経路の1つ上に来る
+        boolean onlyLambda = true;
         for (Scope scope : scopes) {
             String origin = scope.origins.get(key);
             if (origin == null) {
-                enclosing = true;   // 今のメソッドには無い。1つ外へ
+                onlyLambda &= scope.lambda;
+                crossed++;          // 今のメソッドには無い。1つ外へ
                 continue;
             }
             if (Origin.isUnknown(origin)) {
                 return null;
             }
-            if (!enclosing) {
+            if (crossed == 0) {
                 return origin;
             }
-            return isEffectivelyFinal(vb) ? frameIndependent(origin) : null;
+            if (!isEffectivelyFinal(vb)) {
+                return null;
+            }
+            // ラムダの境界を1つだけ越えて捕捉した引数は、生成箇所のフレームの引数として持ち込める
+            if (crossed == 1 && onlyLambda && Origin.kindOf(origin) == Origin.PARAM) {
+                return Origin.of(Origin.CAPTURED, Origin.valueOf(origin));
+            }
+            return frameIndependent(origin);
         }
         return null;
     }
@@ -504,6 +700,8 @@ final class OriginTracker {
      * 持ち込むと別物を指してしまう（匿名クラスの run() には引数が無い、など）。
      * 捕捉された引数を追うには匿名クラスの生成箇所まで遡る必要があり、
      * それは現在の経路の持ち方では表現できないため、ここで落とす。
+     * ラムダだけは生成箇所からの辺が必ず経路の1つ上に来るので、
+     * 引数を {@link Origin#CAPTURED} として持ち込める（{@link #localOriginOf}）。
      *
      * 持ち込む際は実引数リスト（|0=A:0 等）も剥がす。リストの中の A（引数）も
      * 「捕捉した時点のメソッドの引数」という相対的な意味であり、付けたまま
