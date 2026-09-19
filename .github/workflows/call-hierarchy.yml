@@ -8,7 +8,7 @@
 #
 # 結果は call-hierarchy-self アーティファクトに入る（CSV・実行ログ・使った設定ファイルの複製）。
 # 行数の目安はジョブのサマリに出る。全体モード（entry.packages 空欄）なので call-hierarchy.csv は
-# 11 万行・47MB ほどになるが、アーティファクトは圧縮されるので 1MB 前後になる。
+# 41 万行ほどになるが、アーティファクトは圧縮されるので zip で 3MB 台に収まる。
 name: call-hierarchy
 
 on:

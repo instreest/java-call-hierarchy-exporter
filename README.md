@@ -106,6 +106,8 @@ jobs:
 - 依存の取得を省くと解析結果が欠けます（ジョブに警告が出ます）
 - 依存の取得はランナーの設定（`settings.xml`、プロキシ等）で外部に問い合わせるので、
   `pull_request_target` では使わず、self-hosted ランナーでは設定の扱いを確認してください
+- プライベートリポジトリではアーティファクトの容量が利用者のストレージの無料枠から引かれます。
+  繰り返し動かす場合は `artifact-retention-days: 7` 程度に（[保存量と保持期間](docs/github-actions.md#保存量と保持期間)）
 - 詳細と、依存の取得を省く方法は [docs/github-actions.md](docs/github-actions.md) にあります
 
 ---

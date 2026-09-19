@@ -116,7 +116,10 @@ inputs:
     required: false
     default: 'call-hierarchy'
   artifact-retention-days:
-    description: アーティファクトの保持日数（空欄ならリポジトリの既定）
+    description: >-
+      アーティファクトの保持日数（空欄ならリポジトリの既定。通常 90 日）。
+      プライベートリポジトリではアーティファクトの容量が利用者のストレージの無料枠から引かれるので、
+      繰り返し動かす場合は 7 程度を勧める（docs/github-actions.md の「保存量と保持期間」）
     required: false
     default: ''
 
