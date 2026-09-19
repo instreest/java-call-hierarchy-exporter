@@ -245,6 +245,49 @@ cache.folder=
   作るので、解析対象リポジトリのチェックアウトには出力フォルダ以外を作りません
   （既定は `call-hierarchy-output/`。`.gitignore` に足しておくと `git diff --exit-code` 等と併用できます）
 
+## セキュリティ上の注意
+
+このアクション自身は、解析対象のソースとローカルリポジトリの jar を読んで CSV を書くだけで、
+解析対象のビルドを実行せず、ネットワークにも出ません（JBang が JDT の jar を Maven Central から取る 1 回を除く）。
+注意が要るのは、その前段に利用者のワークフローが書く**依存 jar の取得**（`mvn dependency:go-offline` 等）です。
+依存の取得は「リポジトリ内の `pom.xml` / `build.gradle` が指す座標を、ランナーの設定で外部に問い合わせる」行為で、
+ビルドプラグインの実行も伴います。
+
+### `pull_request_target` では使わない
+
+`pull_request_target` はフォークからの PR に対して**ベースブランチの権限（シークレット・書き込みトークン）で**動きます。
+そのワークフローで PR のコードをチェックアウトして依存を取得すると、第三者が書いた `pom.xml` の
+`<repositories>` / `<pluginRepositories>` / プラグイン設定がベースの権限で動くことになり、任意コード実行と
+社内リポジトリへの問い合わせを許してしまいます。PR に対して解析したいときは `pull_request` を使い、
+`permissions: contents: read` のままにしてください。このリポジトリのワークフローも同じ形です。
+
+### self-hosted ランナーでは社内設定が暗黙に使われる
+
+GitHub がホストするランナーは実行ごとに空の環境ですが、self-hosted ランナーではランナーの `~/.m2/settings.xml`
+（社内ミラー、認証情報）、`~/.gradle/gradle.properties`、`HTTPS_PROXY` 等の環境変数が、`mvn` / `gradle` の実行に
+そのまま使われます。これはこのツールではなく前段のビルドツールの挙動ですが、社内の設定や認証情報を
+このワークフローに使わせたくない場合は次のいずれかにします。
+
+- `mvn -s ci/settings.xml` のように、**リポジトリに置いた settings.xml を明示する**（Gradle は `--gradle-user-home` や `-P` で同様に）
+- **依存の取得を省く**（下記）。取得が無ければ社内設定を参照する場面が無くなります
+
+このツール自身が `~/.m2/settings.xml` から読むのは `<localRepository>` の場所だけで、ミラー・プロキシ・認証情報は読みません
+（`library-repositories` を指定すればそれも読みません）。
+
+### 依存の取得を省く
+
+ワークフローの中で依存を取得しない選択肢は 3 つあります。上の 2 つは取得した場合と同じ結果になり、3 つ目は依存の型を使う呼び出しが欠けます。
+
+| 方法 | 入力 | 向いている場面 |
+| --- | --- | --- |
+| jar をリポジトリに同梱する（vendoring） | `library-folders: lib`（`project-root` からの相対、カンマ区切り） | 依存が少ない、あるいは既に `lib/` 運用をしている |
+| ローカルリポジトリの複製を用意する | `library-repositories: /opt/m2-mirror`（Maven 形式のフォルダ。`~/` はホーム） | self-hosted ランナーに社内複製や共有ボリュームがある。閉域ネットワーク |
+| 依存 jar 無しで解析する | `library-build-tool: none` | 依存の型を使う呼び出しが欠けてもよい。まず動かしてみる段階 |
+
+`library-folders` を指定すると `pom.xml` / `build.gradle` は読まれません。`library-repositories` を指定すると
+ビルドファイルは読みますが、jar と POM はそのフォルダからだけ探し、`~/.m2` には触れません。
+`library-build-tool: none` は依存の自動取得を切るので、jar 無しで解析した旨の警告も出ません。
+
 ## Actions 以外の CI から使うとき
 
 環境変数 `JCHE_OUTPUT_DIR_FILE` にファイルのパスを渡して実行すると、設定ファイルごとの出力フォルダの
