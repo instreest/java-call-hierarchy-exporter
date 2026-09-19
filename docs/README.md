@@ -32,6 +32,7 @@
 | [vscode-plugin-design.md](vscode-plugin-design.md) | VSCode プラグインの設計案（未実装）。既存のサーバープロトコルの再利用、設定の自動生成、カーソル位置からメソッドを引く `AT` の追加 |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
 | [branch-pruning.md](branch-pruning.md) | 条件分岐による打ち切り（`branch.pruning.enabled`）。判定できる条件、打ち切りで階層から消えたメソッドを `methods.csv` で探す方法 |
+| [contracts-unification-design.md](contracts-unification-design.md) | 解決条件の指定を契約表に一本化する設計案（未実装）。具象クラスの対応を契約表の 1 行で書く「種類 C」、証拠を dataflow キャッシュから引けること、旧来の `resolver.*` / `plugin.*` との互換 |
 
 ## 設計の記録（Q&A）
 

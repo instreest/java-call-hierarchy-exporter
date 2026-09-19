@@ -1,5 +1,8 @@
 # ソースの外（JDK・フレームワーク）との契約
 
+> 具象クラスの対応（[instance-analysis-plugin.md](instance-analysis-plugin.md)）も、この契約表の
+> 1 行で書けるようにする案が [contracts-unification-design.md](contracts-unification-design.md) にある（未実装）。
+
 ツールは jar の中を読みません。けれど「jar の中のこのメソッドは、渡した値のこれを呼び戻す」
 「フレームワークはこのメソッドを入口として呼ぶ」という**契約**は文章で書けます。
 契約表を持つことで、jar の中を読まずに階層を繋ぎ、入口を仕分けます。

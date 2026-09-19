@@ -4,6 +4,9 @@
 設計上の判断と実装時に迷った点は
 [instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) にある。
 
+> ここで書く対応表を、契約表（[callback-contracts.md](callback-contracts.md)）の 1 行にまとめる案が
+> [contracts-unification-design.md](contracts-unification-design.md) にある（未実装）。
+
 DI コンテナで注入されるフィールドや、キーで実装を切り替えるファクトリメソッドは、ソースを読むだけでは
 具象クラスが決まりません。既定ではインターフェースの実装を全部候補に挙げる（CHA）ため、
 呼び出し階層が実装の数だけ枝分かれします。解決の条件を外から与えると、1 件に絞れます。
