@@ -109,15 +109,28 @@ cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/s
 analysis_cache_key=$(tr '\n' '\0' < "$config_list" | xargs -0 cat | hash_files | cut -c1-16)
 
 # AST 解析キャッシュの置き場所（actions/cache に渡すパス）。
-# uses: ./ で呼ばれたとき GITHUB_ACTION_PATH は「<ワークスペース>/.」になり、そのまま /.cache を足すと
-# ".//.cache" になる。actions/cache は '.' や '..' を含むパターンを受け付けず、警告を出して保存を飛ばすだけなので
-# （ステップは成功のまま、実行間の引き継ぎが黙って効かなくなる）、末尾の /. を落としてから渡す。
-# Windows のランナーでは区切りが \ になるので、そちらも見る
+# uses: ./ で呼ばれたとき GITHUB_ACTION_PATH は「<ワークスペース>/./」（末尾の区切りまで付いた "." ）になり、
+# そのまま /.cache を足すと ".//.cache" になる。actions/cache は '.' や '..' を含むパターンを受け付けず、
+# 警告を出して保存を飛ばすだけなので（ステップは成功のまま、実行間の引き継ぎが黙って効かなくなる）、
+# 末尾の区切りと "." を落としてから渡す。Windows のランナーでは区切りが \ になるので、そちらも見る。
+# 末尾の形は "/." と "/./" の両方がありうるため、1 回の判定ではなく無くなるまで繰り返す
 analysis_cache_dir="$GITHUB_ACTION_PATH"
+while :; do
+    case "$analysis_cache_dir" in
+        ?*/|?*\\)   analysis_cache_dir=${analysis_cache_dir%?} ;;    # 末尾の区切り
+        ?*/.|?*\\.) analysis_cache_dir=${analysis_cache_dir%??} ;;   # 末尾の /. または \.
+        *) break ;;
+    esac
+done
+
+# 落としきれない形（区切りの途中に "." がある等）が来たら、黙って引き継ぎが効かなくなるより気づけるようにする
 case "$analysis_cache_dir" in
-    */.)  analysis_cache_dir=${analysis_cache_dir%/.} ;;
-    *\\.) analysis_cache_dir=${analysis_cache_dir%??} ;;
+    */./*|*/.|*\\.\\*|*\\.)
+        echo "::warning::解析キャッシュのパスに '.' が残っています。actions/cache は保存を飛ばすため、"\
+"実行間の引き継ぎが効きません: $analysis_cache_dir" ;;
 esac
+
+echo "解析キャッシュの置き場所: $analysis_cache_dir/.cache"
 
 {
     echo "config-list=$config_list"
