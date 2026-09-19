@@ -378,6 +378,12 @@ plugin_case() {
     expect_suggested plugin 'fxp.DaoFactory#get("USER_DAO") => ??' "1回目: ファクトリとキーのひな形"
     expect_suggested plugin "fxp.DaoFactory#get(fxp.DaoKind.ORDER) => ??" "1回目: 列挙定数のキーのひな形"
     expect_suggested plugin "fxp.Service#run => ??" "1回目: 宣言型とメソッド名のひな形"
+    # キーが呼び出し元から引数で渡ってくる形も、経路が分かればひな形に出る
+    expect_suggested plugin 'fxp.DaoFactory#get("ORDER_DAO") => ??' \
+        "1回目: 経路で決まるキーのひな形"
+    # キーが決まらず型単位の広い行になったものは、そうと分かる注記を添える
+    expect_suggested plugin "型のこのメソッド全部を同じ実装に決める行です" \
+        "1回目: 広い行だと分かる注記が付く"
 
     run plugin config.properties 2 "2回目: 同梱の拡張" || return
     expect_log_contains plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
@@ -414,6 +420,10 @@ plugin_case() {
         "5回目: 親で実装されたファクトリを子クラス名で指定できる"
     expect_csv_contains plugin "App.otherFactory,UserDaoImpl.find" \
         "5回目: その指定は別の子クラス経由には効かない"
+    # 型単位の広い行（fxp.Dao#find）が先に絞るので、経路ごとのやり直しは起きない。
+    # 既に 1 件に決まったものを経路ごとに覆さない、という規則の検査
+    expect_csv_contains plugin "App.viaParam,App.byKey,UserDaoImpl.find" \
+        "5回目: 先に絞れていれば経路でやり直さない"
     compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
 
     # ファクトリ＋キー（C-3）。フェーズAの証拠採取を使わず、データフローの値グラフに載っている
@@ -422,6 +432,10 @@ plugin_case() {
     expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
     # この表は型名を単純名で書いてある。FQN で書いた場合と同じ結果になることを下の比較が見る
     expect_log_missing plugin 6 "つの型に当たるので使えません" "6回目: 単純名が曖昧になっていない"
+    # キーが呼び出し元から引数で渡ってくる形。経路が分かってから絞れる
+    # （byKey を単独の起点として辿る経路では、キーが分からないので絞れないまま）
+    expect_csv_contains plugin "App.viaParam,App.byKey,OrderDaoImpl.find" \
+        "6回目: 経路で決まるキーでも絞れる"
     expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
 
     # 算出規則を書いた自前の拡張。フェーズAの設定（resolver.hint.collectors /

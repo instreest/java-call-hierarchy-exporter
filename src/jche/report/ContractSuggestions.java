@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import jche.graph.CallGraph;
+import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.MethodTable;
 import jche.graph.TypeContracts;
@@ -59,6 +60,8 @@ public final class ContractSuggestions {
         private String where = "";
         /** その行で直る呼び出し箇所の数 */
         private int sites;
+        /** ファクトリのキーが決まらず、型単位の広い行になったか */
+        private boolean typeWide;
     }
 
     private final Map<String, Entry> byLeftSide = new LinkedHashMap<>();
@@ -75,26 +78,27 @@ public final class ContractSuggestions {
      * @param declaredCallee 呼び出し先の宣言（型とシグネチャ）
      * @param targets        CHA が並べた候補
      */
-    void add(CallGraph graph, DataflowResolver dataflow, int edgeIndex, int callerId,
-             int declaredCallee, int[] targets) {
+    void add(CallGraph graph, DataflowResolver dataflow, DataflowContext ctx, int edgeIndex,
+             int callerId, int declaredCallee, int[] targets) {
         if (!countedEdges.add(edgeIndex)) {
             return;
         }
         MethodTable methods = graph.methods();
-        String left = leftSideFor(graph, dataflow, edgeIndex, methods, declaredCallee);
-        if (left.isEmpty()) {
+        Left left = leftSideFor(graph, dataflow, ctx, edgeIndex, methods, declaredCallee);
+        if (left == null) {
             return;
         }
-        Entry entry = byLeftSide.get(left);
+        Entry entry = byLeftSide.get(left.text());
         if (entry == null) {
             if (byLeftSide.size() >= MAX_LINES) {
                 capped = true;
                 return;
             }
             entry = new Entry();
+            entry.typeWide = !left.fromFactory();
             entry.where = CallHierarchyCsvWriter.stackTrace(methods, callerId,
                     graph.callLineOf(edgeIndex));
-            byLeftSide.put(left, entry);
+            byLeftSide.put(left.text(), entry);
         }
         entry.sites++;
         for (int target : targets) {
@@ -102,25 +106,31 @@ public final class ContractSuggestions {
         }
     }
 
+    /** 契約の左辺と、それがファクトリとキーの形（C-3）かどうか */
+    private record Left(String text, boolean fromFactory) {
+    }
+
     /**
      * その呼び出しを直す契約の左辺。
      *
      * <p>レシーバがファクトリの戻り値なら、ファクトリとキーの形（C-3）を優先する。そちらのほうが
-     * 狭く、同じ型を返す他の呼び出しを巻き込まないため。分からなければ宣言型とメソッド名（C-2）。
+     * 狭く、同じ型を返す他の呼び出しを巻き込まないため。キーが決まらなければ宣言型とメソッド名
+     * （C-2）に落ちるが、それは<b>その型のそのメソッドを全部同じ実装に決める</b>広い行なので、
+     * ひな形でもそうと分かるようにする。
      */
-    private static String leftSideFor(CallGraph graph, DataflowResolver dataflow, int edgeIndex,
-                                      MethodTable methods, int declaredCallee) {
+    private static Left leftSideFor(CallGraph graph, DataflowResolver dataflow, DataflowContext ctx,
+                                    int edgeIndex, MethodTable methods, int declaredCallee) {
         if (dataflow.enabled()) {
             List<String> factories =
-                    TypeContracts.factoryLeftSidesOf(graph.recvOrigin(edgeIndex), dataflow, null);
+                    TypeContracts.factoryLeftSidesOf(graph.recvOrigin(edgeIndex), dataflow, ctx);
             if (!factories.isEmpty()) {
-                return factories.get(0);
+                return new Left(factories.get(0), true);
             }
         }
         String type = methods.typeFqn(declaredCallee);
         String name = methods.methodName(declaredCallee);
         return (type == null || type.isEmpty() || name == null || name.isEmpty())
-                ? "" : type + "#" + name;
+                ? null : new Left(type + "#" + name, false);
     }
 
     public boolean isEmpty() {
@@ -157,6 +167,16 @@ public final class ContractSuggestions {
                 out.newLine();
                 out.write("#   候補: " + String.join(" / ", e.candidates));
                 out.newLine();
+                if (e.typeWide) {
+                    // 広い行だと分かるようにする。呼び出し箇所ごとに実装が違うなら、そのまま
+                    // 貼ると誤った 1 件に確定してしまう
+                    out.write("#   ※ ファクトリに渡すキーが決まらなかったので、型のこのメソッド"
+                            + "全部を同じ実装に決める行です。");
+                    out.newLine();
+                    out.write("#      呼び出し箇所ごとに実装が違うなら、この行は貼らないでください"
+                            + "（拡張で条件を書きます: docs/instance-analysis-plugin.md）。");
+                    out.newLine();
+                }
                 out.write("# " + row.getKey() + " => " + PLACEHOLDER);
                 out.newLine();
                 out.newLine();

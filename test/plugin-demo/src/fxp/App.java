@@ -10,6 +10,7 @@ package fxp;
  * enumKey     … キーが列挙定数でも絞れるか（契約表の C-3。引用符なしの FQN で書く）
  * inheritedFactory … ファクトリの実装が親クラスにあるとき、ソースに書いた子クラスの名前で指定できるか
  * otherFactory … その指定が、同じ親を持つ別の子クラス経由の呼び出しまで巻き込まないか
+ * viaParam    … キーが呼び出し元から引数で渡ってくる形でも、経路が分かれば絞れるか
  */
 public class App {
 
@@ -45,6 +46,16 @@ public class App {
 
     public void otherFactory() {
         Dao dao = OtherDaoFactory.pick("ORDER_DAO");
+        dao.find();
+    }
+
+    public void viaParam() {
+        byKey("ORDER_DAO");
+    }
+
+    /** キーは呼び出し元でしか分からない。ここだけを見ても絞れない */
+    private void byKey(String key) {
+        Dao dao = DaoFactory.get(key);
         dao.find();
     }
 }

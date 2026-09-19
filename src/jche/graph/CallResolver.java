@@ -196,7 +196,7 @@ public final class CallResolver {
         if (bindKind != BindKind.VIRTUAL) {
             // 既定では確定として扱うが、ここで打ち切ると拡張に到達せず
             // 呼び出し階層が切れてしまう。opt-inした拡張には必ず声をかける。
-            Resolution custom = askProviders(edgeIndex, calleeId, true);
+            Resolution custom = askProviders(edgeIndex, calleeId, true, null);
             if (custom != null) {
                 return custom;
             }
@@ -243,11 +243,11 @@ public final class CallResolver {
         // --- 段3: 契約表（種類 C）→ 拡張 ---
         // 表のほうを先に引く。食い違ったときに「どちらが効いたか」を追いやすいのは、
         // 読み手が中身を見られる表のほう（docs/contracts-unification-design.md の §4）
-        Resolution fromContract = askTypeContracts(edgeIndex, calleeId);
+        Resolution fromContract = askTypeContracts(edgeIndex, calleeId, null);
         if (fromContract != null) {
             return fromContract;
         }
-        Resolution custom = askProviders(edgeIndex, calleeId, false);
+        Resolution custom = askProviders(edgeIndex, calleeId, false, null);
         if (custom != null) {
             return custom;
         }
@@ -282,6 +282,23 @@ public final class CallResolver {
         Resolution res = resolve(edgeIndex);
         int calleeId = graph.calleeOf(edgeIndex);
 
+        // 経路が分かってから、利用者が与えた条件（段3）をもう一度試す。
+        // ファクトリに渡すキーが呼び出し元から引数で渡ってくる形は、経路が決まって初めて値が分かる
+        //
+        //   void run()            { helper("USER_DAO"); }     ← 呼び出し元では決まっている
+        //   void helper(String k) { Factory.get(k).find(); }  ← ここは経路ごとに決まる
+        //
+        // 既に 1 件に絞れているものはやり直さない。広い指定（型単位の契約など）で決まったものを
+        // 経路ごとに覆すと、同じ設定でも経路によって答えが変わり、読み手が追えなくなる
+        if (res.isMultiple()) {
+            Resolution viaContract = askTypeContracts(edgeIndex, calleeId, ctx);
+            if (viaContract == null) {
+                viaContract = askProviders(edgeIndex, calleeId, false, ctx);
+            }
+            if (viaContract != null) {
+                res = viaContract;
+            }
+        }
         if (res.isMultiple() && dataflow.enabled()) {
             String recv = graph.recvOrigin(edgeIndex);
             int viaPath = dataflow.targetOf(recv, calleeId, ctx);
@@ -434,19 +451,23 @@ public final class CallResolver {
      *
      * <p>ファクトリ＋キーの行（C-3）は、レシーバの出所がファクトリの戻り値なら、そこに載っている
      * 実引数の値で引く。フェーズAの証拠採取は要らない（{@link TypeContracts} の「C-3 のキーは
-     * どこから来るか」）。経路に依存しない分だけをここで決めるので、{@code ctx} は渡さない。
+     * どこから来るか」）。
+     *
+     * <p>{@code ctx} が null なら経路に依存しない分だけを決める（{@link #resolve} から）。
+     * 経路が分かってからの呼び出し（{@link #resolveOnPath}）では、呼び出し元から引数で渡ってきた
+     * キーも値まで辿れる。
      *
      * <p>右辺の型を 1 つも採用できないとき（その型にも親にもその本体が無い）は候補を落として
      * CHA に戻す。ここで警告は出さず、解析の最後に {@link ContractUsage} がまとめて挙げる
      * （エッジごとに呼ばれるので、その場で出すと同じ行の警告が何度も並ぶ）。
      */
-    private Resolution askTypeContracts(int edgeIndex, int calleeId) {
+    private Resolution askTypeContracts(int edgeIndex, int calleeId, DataflowContext ctx) {
         if (typeContracts.isEmpty()) {
             return null;
         }
         // 引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。狭いほうが先
         TypeContracts.Contract contract = dataflow.enabled()
-                ? typeContracts.matchFactory(graph.recvOrigin(edgeIndex), dataflow, null) : null;
+                ? typeContracts.matchFactory(graph.recvOrigin(edgeIndex), dataflow, ctx) : null;
         if (contract == null) {
             contract = typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
         }
@@ -475,11 +496,12 @@ public final class CallResolver {
      * @param staticBoundOnly true なら appliesToStaticBound() が true の拡張だけに尋ねる
      * @return 解決できた場合のみ Resolution。できなければ null
      */
-    private Resolution askProviders(int edgeIndex, int calleeId, boolean staticBoundOnly) {
+    private Resolution askProviders(int edgeIndex, int calleeId, boolean staticBoundOnly,
+                                    DataflowContext ctx) {
         if (providers.isEmpty()) {
             return null;
         }
-        List<Hint> hints = hintsFor(edgeIndex);
+        List<Hint> hints = hintsFor(edgeIndex, ctx);
         String declType = methods.typeFqn(calleeId);
         String sig = methods.signature(calleeId);
 
@@ -529,12 +551,12 @@ public final class CallResolver {
      *
      * <p>フェーズAが同じ証拠を既に残していれば足さない（同じものが 2 つ並ばないように）。
      */
-    private List<Hint> hintsFor(int edgeIndex) {
+    private List<Hint> hintsFor(int edgeIndex, DataflowContext ctx) {
         List<Hint> stored = graph.hintsOf(edgeIndex);
         if (!dataflow.enabled()) {
             return stored;
         }
-        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(graph.recvOrigin(edgeIndex), dataflow, null);
+        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(graph.recvOrigin(edgeIndex), dataflow, ctx);
         if (keys.isEmpty()) {
             return stored;
         }

@@ -309,7 +309,8 @@ public final class StreamingTreeWalker {
             // リフレクション（名前で照合）は契約表では直せないので除く
             if (res.isMultiple() && unreachable == null
                     && !Resolution.REFLECTION.equals(res.label())) {
-                suggestions.add(graph, dataflow, e, callerId, declaredCallee, targets);
+                suggestions.add(graph, dataflow, path[depth].context(), e, callerId,
+                        declaredCallee, targets);
             }
             boolean expand = (targets.length == 1) && (unreachable == null);
             int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
