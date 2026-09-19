@@ -1,0 +1,70 @@
+# VSCode プラグインの配布物（.vsix）を手動で作る。
+#
+# マーケットプレイスには出していないので、利用者は .vsix を「VSIX からのインストール」で入れる
+# （docs/vscode-plugin-usage.md の「入れ方」）。手元に Node・Maven・JDK を揃えなくても
+# 配布物を作れるよう、Actions の画面から起こせる経路をここに置く。
+#
+# smoke.yml の vscode-plugin ジョブでも .vsix はできるが、あれは push/PR ごとの検査の
+# 副産物で、欲しいときに任意のブランチ・タグから起こすことはできない。こちらは
+# workflow_dispatch だけなので、画面の「Run workflow」でブランチやタグを選んで動かす。
+#
+# 組み立てと中身の確認は test/vscode/package.sh（smoke.yml と同じもの）に任せる。
+# 版は vscode-plugin/package.json の version がそのまま .vsix の名前の外にある
+# （ファイル名は java-call-hierarchy-exporter.vsix 固定）ので、アーティファクト名に版を入れて
+# ダウンロードしたものが何の版か分かるようにする。
+name: vsix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # lib/ に入れる解析本体は eclipse-plugin のビルド（mvn package）から集める。
+      # eclipse-plugin/pom.xml は release 17 と 8 を出すが、最近の Eclipse platform の jar は
+      # Java 21 の class ファイルなので、ビルドに使う JDK は 21 以上が要る
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: vscode-plugin/package-lock.json
+
+      - name: Cache Maven repository
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('eclipse-plugin/pom.xml') }}
+
+      # Node だけで動く層の検査。.vsix を配る前に、子プロセス・プロトコル・木の組み立てが
+      # 壊れていないことを見る（JDK 25 が要る解析本体側の検査は smoke.yml の役目）
+      - name: Typecheck and unit test
+        run: |
+          cd vscode-plugin
+          npm ci --no-audit --no-fund
+          npm test
+
+      # lib/ を集める → .vsix を作る → 中身（同梱する JDT の版、入るもの・入らないもの）を確認する
+      - name: Build the .vsix
+        run: bash test/vscode/package.sh
+
+      - name: Read the version
+        id: meta
+        run: echo "version=$(node -p "require('./vscode-plugin/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java-call-hierarchy-exporter-${{ steps.meta.outputs.version }}-vsix
+          path: vscode-plugin/java-call-hierarchy-exporter.vsix
+          if-no-files-found: error
