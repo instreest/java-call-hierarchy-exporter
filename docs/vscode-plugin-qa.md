@@ -204,5 +204,12 @@ Eclipse 版は同じ作りで足りているため、先に複雑にはしない
 配布物の作り方を 2 か所に書くと、片方だけが古くなって気づけない（`scripts/collect-lib.sh` の
 「出どころを1つにする」と同じ理由）。
 
+拡張の中身の検査（`npm test`）はこのワークフローでは動かさない。`npm test` は素で動かせるものではなく、
+解析本体のクラスパスと `java` の場所（`JCHE_CP` / `JCHE_JAVA` ほか）を渡してもらう前提で、
+渡さないと「解析に使う java が見つかりません」で落ちる（最初の版はここで失敗した）。
+渡す役は `test/vscode/run.sh` で、そのために jbang で依存を解決して `src/` 全体をコンパイルする（JDK 25）。
+配布物を作るだけのここでそれを繰り返す値打ちは無いので、検査は `smoke.yml` の `vscode-plugin` ジョブに任せる
+（`eclipse-plugin-jar.yml` の「中身の検査は smoke.yml が受け持つ」と同じ切り分け）。
+
 成果物の名前には `vscode-plugin/package.json` の版を入れる（`java-call-hierarchy-exporter-<版>-vsix`）。
 `.vsix` のファイル名は版を持たない固定名なので、落としたものが何の版か分からなくなるため。
