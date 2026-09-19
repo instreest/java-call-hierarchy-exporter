@@ -33,6 +33,10 @@ public final class MethodTable {
      * 安全側に倒して候補から落とさない。
      */
     private final ArrayList<Boolean> hasBody = new ArrayList<>();
+    /** 宣言に付いていたアノテーション（{@link jche.cache.AnnotationTokens}）。無ければ空 */
+    private final ArrayList<String> annotations = new ArrayList<>();
+    /** 宣言の修飾子（{@link jche.cache.ModifierTokens}）。無ければ空 */
+    private final ArrayList<String> mods = new ArrayList<>();
 
     /**
      * ラムダ式の本体を持つ合成メソッド（D行の修飾子に lambda が付いたもの）。
@@ -62,6 +66,8 @@ public final class MethodTable {
         declLines.add(-1);
         declEndLines.add(-1);
         hasBody.add(Boolean.TRUE);
+        annotations.add("");
+        mods.add("");
         return newId;
     }
 
@@ -84,6 +90,22 @@ public final class MethodTable {
 
     public boolean hasBody(int id) {
         return hasBody.get(id);
+    }
+
+    /** 宣言のアノテーションと修飾子を記録する（D 行から） */
+    public void setDeclarationDetails(int id, String annotationTokens, String modifierTokens) {
+        annotations.set(id, (annotationTokens == null) ? "" : annotationTokens);
+        mods.set(id, (modifierTokens == null) ? "" : modifierTokens);
+    }
+
+    /** 宣言に付いていたアノテーション。無ければ空文字列 */
+    public String annotations(int id) {
+        return annotations.get(id);
+    }
+
+    /** 宣言の修飾子。無ければ空文字列 */
+    public String mods(int id) {
+        return mods.get(id);
     }
 
     /** ラムダ式の本体を持つ合成メソッドだと記録する */

@@ -16,6 +16,9 @@
   - `src/fx/lambda/Starter.java` … jar の中から呼び戻される呼び出しを契約で繋ぐ（`CALLBACK`）の確認用。
     `Runnable` 実装クラスを `Thread` で起動・`Thread` の継承・ラムダを `ExecutorService` に渡す・
     ローカル変数経由の 4 形
+  - `src/fx/entry/` … フレームワークが呼ぶ入口（`FRAMEWORK_ENTRY`）の確認用。`HttpServlet` の上書き・
+    `@Scheduled` / `@EventListener` / `@GetMapping`（内部からも呼ばれる形）・`@Test`
+  - `src/javax/servlet/http/`、`src/org/springframework/{scheduling,web,context/event}/`、`src/org/junit/` … 上記が使うスタブ
   - `src/fx/inherit/` … CHA の候補の数え方の確認用。インターフェースを実装するクラスが、そのインターフェースを
     実装していない親クラスから実装を継承する形（`PoliteGreeter extends BaseGreeter implements Greeter`）と、
     サブインターフェースが本体なしで再宣言する形（`Sub2 extends Base2`）を含みます

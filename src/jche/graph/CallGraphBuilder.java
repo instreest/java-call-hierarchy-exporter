@@ -132,6 +132,7 @@ public final class CallGraphBuilder {
                             if (ModifierTokens.has(d.mods(), ModifierTokens.LAMBDA)) {
                                 methods.markLambdaBody(id);
                             }
+                            methods.setDeclarationDetails(id, d.annotations(), d.mods());
                             fields.declaration(d);
                             graph.beans.method(id, d);
                         }

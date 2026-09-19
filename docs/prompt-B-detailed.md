@@ -217,7 +217,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | `hasBody` | 本体を持つか（IFの抽象メソッドとdefaultメソッドの区別） |
 | `inDegree` | **具象クラスに解決した後の**被呼び出し数 |
 | `outDegree` | 呼び出し数 |
-| `role` | `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
+| `role` | `FRAMEWORK_ENTRY`（契約でフレームワークが呼ぶと分かる入口。in に関係なく優先）/ `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
 | `reachable` | 起点集合から解決後のエッジで到達できるか |
 | `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` / `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり` / レシーバ由来） |
 

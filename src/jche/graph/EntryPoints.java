@@ -34,7 +34,8 @@ public final class EntryPoints {
     }
 
     /**
-     * 全体モードの起点。呼び出し元が1件も無く、ソース上に本体を持つメソッド。
+     * 全体モードの起点。呼び出し元が1件も無く、ソース上に本体を持つメソッドと、
+     * 契約でフレームワークが呼ぶと分かるメソッド（{@link FrameworkEntries}）。
      *
      * これは「真の入口」ではない点に注意。実際には次のものが混ざる。
      * <ul>
@@ -49,8 +50,14 @@ public final class EntryPoints {
         MethodTable methods = g.methods;
         int[] in = resolver.inDegrees();
         IntArray hits = new IntArray(256);
+        FrameworkEntries framework = resolver.frameworkEntries();
         for (int id = 0; id < methods.size(); id++) {
-            if (in[id] == 0 && methods.hasSource(id) && methods.hasBody(id)) {
+            if (!methods.hasSource(id) || !methods.hasBody(id)) {
+                continue;
+            }
+            // 呼び出し元が無いもの。加えて、契約でフレームワークが呼ぶと分かるメソッドは
+            // ソースから呼ばれていても起点にする（画面入口が内部からも呼ばれる形）
+            if (in[id] == 0 || framework.isEntry(id)) {
                 hits.add(id);
             }
         }

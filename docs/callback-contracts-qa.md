@@ -1,6 +1,6 @@
 # jar の中から呼び戻される呼び出しの契約 — Q&A
 
-Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136) の段階 1。
+Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136) の段階 1・2。
 `Thread#start()` → `run()` のように、ソースの外（JDK）を経由して自分のコードへ戻ってくる呼び出しを、
 契約表で繋いだ判断を残す。使い方は [callback-contracts.md](callback-contracts.md)。
 関連: [lambda-expansion-qa.md](lambda-expansion-qa.md)（渡した値の具象型を決める仕組み）。
@@ -14,7 +14,9 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
   `run` が `ENTRY_CANDIDATE` に混ざらないようにするため
 - 渡した値の具象型が分からなければ辺を張らない。jar の型（`Runnable` そのもの）の全実装を
   候補に並べることはしない
-- 段階 1 は JDK の同梱分だけ。設定ファイルで足す表とプラグインは段階 3
+- 段階 2（種類 B）: フレームワークが起点として呼ぶメソッドの契約表（`FrameworkEntries`）。
+  当たったメソッドは `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える
+- 段階 1・2 は同梱の表だけ。設定ファイルで足す表とプラグインは段階 3
 
 ### Q1. 呼び出し先の行を消して、呼び戻される側に置き換えないのはなぜか
 
@@ -71,3 +73,35 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 `resolve` の段 1 より前に移した。候補数が 0 件でも複数でも、渡された値がラムダなら
 実行されるのはその本体で、段 1 の候補数で結果が変わるのは筋が通らないため。
 これで `Runnable r = this::helper; r.run();` の `helper` が `inDegree` に数えられるようになった。
+
+### Q8. 種類 B（起点）を `role` に出すだけで、辺は足さないのはなぜか
+
+呼び出し箇所が無いから。フレームワークが呼ぶ事実はあるが、ソース上のどの行から呼ばれるかは
+存在しない。無理に「フレームワーク」というノードを作って辺を張ると、`caller` 列に
+指せる行が無く、Eclipse のスタックトレースコンソールから飛べない行ができる。
+代わりに `methods.csv` で仕分け、全体モードの起点に加えることで、その入口からの経路は
+`call-hierarchy.csv` に出る。
+
+### Q9. `FRAMEWORK_ENTRY` を、内部から呼ばれていても付けるのはなぜか
+
+`role` の目的は仕分けで、「フレームワークが呼ぶ」は「内部からも呼ばれる」より強い情報だから。
+`@GetMapping` のメソッドが内部からも呼ばれているとき、`NORMAL` にすると画面入口であることが
+一覧から消える。入口の一覧を作るのに `role` だけで済むよう、優先する。
+`inDegree` 列は残るので、内部から呼ばれているかどうかはそちらで分かる。
+
+同じ理由で、全体モードの起点にも `inDegree` に関係なく加える。内部からの経路の下に
+埋もれるだけでなく、入口としての経路（`root` 列がそのメソッド）が別に出る。
+
+### Q10. クラスのアノテーション（`@Controller` 等）では判定しないのはなぜか
+
+そのクラスの全メソッドが入口とは限らないから。`@Controller` のクラスにはプライベートの
+補助メソッドもあり、そこまで入口にすると仕分けが崩れる。Spring Web は `@GetMapping` 等の
+メソッド側のアノテーションで決まるのでそちらを見る。
+`HttpServlet` のように「型で決まる」ものは、`super 型#シグネチャ` で**上書きしたメソッドだけ**を
+入口にする（上書きしていない補助メソッドは入口にならない）。
+
+### Q11. `super` の判定に jar の型を使えるのはなぜか
+
+H 行（型階層）の親型には、jar の型の名前もそのまま入っている（`Worker extends Thread` なら
+`java.lang.Thread`）。契約の型名と文字列で突き合わせるだけなので、jar を読む必要が無い。
+`test/demo` では `HttpServlet` をスタブとしてソースに置いているが、jar にあっても同じ結果になる。
