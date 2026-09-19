@@ -12,6 +12,8 @@ import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jche.util.Log;
+
 /**
  * Gradle ビルドの「構成」を読む: settings.gradle の include（プロジェクトパス → ディレクトリ）、
  * gradle.properties とビルドファイルの文字列代入（{@code $var} を埋める材料）、版カタログ。
@@ -92,6 +94,13 @@ final class GradleSettings {
                 try (InputStream in = Files.newInputStream(f)) {
                     p.load(in);
                 } catch (IOException ignore) {
+                    continue;
+                } catch (RuntimeException e) {
+                    // 壊れた gradle.properties（Windows のパスをそのまま書いた行など）で
+                    // 解析ごと落とさない。この値は $var の置き換えに使うだけで、
+                    // 読めなくても依存の並びは build.gradle から取れる
+                    Log.warn("依存jar: " + f + " を読めないため無視します（" + e + "）。"
+                            + "値に \\ を含む行があれば \\\\ に直してください");
                     continue;
                 }
                 for (String name : p.stringPropertyNames()) {

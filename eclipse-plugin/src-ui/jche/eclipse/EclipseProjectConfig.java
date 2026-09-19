@@ -187,11 +187,33 @@ final class EclipseProjectConfig {
         sb.append("# このファイルがあると、ビューは自動生成ではなくこちらを使います。\n");
         for (String key : new String[] {"project.root", "source.folders", "library.jars",
                 "source.encoding", "source.level"}) {
-            sb.append(key).append('=').append(p.getProperty(key, "")).append('\n');
+            sb.append(key).append('=').append(escapeValue(p.getProperty(key, ""))).append('\n');
         }
         sb.append("# 起点を絞るときは entry.packages を、除外するときは exclude.packages を書きます。\n");
         sb.append("entry.packages=\n");
         sb.append("exclude.packages=\n");
         return sb.toString();
+    }
+
+    /**
+     * properties の値として書くときに、区切りと誤読される文字を逃がす（バックスラッシュと先頭の空白）。
+     *
+     * <p>Windows のパスは {@code C:\\Users\\taro\\.m2\\repository\\org\\unbescape\\...} のように
+     * バックスラッシュを含む。{@link java.util.Properties#load} はこれをエスケープとして読むため、
+     * 逃がさずに書くと「バックスラッシュ + u」が Unicode エスケープと解釈され、
+     * 「Malformed \\uxxxx encoding」で解析ごと失敗する（jar の名前が u で始まるだけで起きる。
+     * 実際 spring-petclinic は Thymeleaf 経由で unbescape に依存していて、これを踏む）。
+     * 例外にならない場合も {@code C:\\temp} が {@code C:temp} になるなど、パスが静かに壊れる。
+     *
+     * <p>VSCode 側の同じ処理（{@code vscode-plugin/src/config.ts} の {@code escapeProperty}）と
+     * 同じ規則にしてある。
+     *
+     * <p>このコメントでバックスラッシュを二重に書いているのは、javac が
+     * <b>コメントの中まで</b> Unicode エスケープを先に処理するためで、1つだと
+     * 「illegal unicode escape」でコンパイルできない。
+     */
+    private static String escapeValue(String value) {
+        String escaped = value.replace("\\", "\\\\");
+        return escaped.startsWith(" ") ? "\\" + escaped : escaped;
     }
 }

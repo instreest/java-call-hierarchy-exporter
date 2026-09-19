@@ -132,6 +132,7 @@ Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので
 | 解析が失敗する | 「Call Hierarchy Exporter」コンソールに子プロセスの出力がそのまま出る。設定ファイルの誤り（`project.root` など）が多い |
 | バナーに「解析できません」 | Java プロジェクトでなく、設定ファイルも無い状態。`config/jche.properties` を置くか、Java プロジェクトとして開く |
 | 新しい文法のソースが解析されない | 同梱の JDT の対応上限を超えている。バナーのツールチップに「解析できる Java」が出る |
+| 「設定ファイルを読めません … Malformed \uxxxx encoding」 | 設定ファイルに Windows のパスをそのまま書いている。properties ではバックスラッシュがエスケープなので、区切りを `/` にするか、バックスラッシュを2つ重ねる |
 
 ## 6. サーバーモード（プラグインが使っている経路）
 
@@ -153,11 +154,12 @@ printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo
 
 ## 7. テスト
 
-プラグインまわりには4つの検査がある（いずれも GitHub Actions で実行）。
+プラグインまわりには5つの検査がある（いずれも GitHub Actions で実行）。
 
 ```bash
 bash test/plugin/run.sh          # 版・ID・クラスの実在、解析本体がバンドルに混ざっていないこと
 bash test/plugin-api/run.sh      # 古い Eclipse（4.6 相当）の jar と --release 8 でコンパイルできること
+bash test/plugin-config/run.sh   # 自動生成した設定が、解析側と同じ読み方で読み戻せること
 bash test/plugin-client/run.sh   # 子プロセスを実際に起動して、プロトコルと木の組み直しを確認
 bash test/server/run.sh          # サーバーモードの応答（ANALYZE / FIND / TREE / EXPORT ほか）
 ```
