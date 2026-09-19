@@ -1,0 +1,62 @@
+# Eclipse プラグインのバンドル jar を作って、アーティファクトとして持ち帰れるようにする。
+#
+# 手元に Maven やネットワークが無くても、このワークフローを手動で動かせば
+# dropins に置くだけの jar が手に入る（docs/eclipse-plugin-usage.md の §2）。
+#
+# 中身の検査は smoke.yml の eclipse-plugin ジョブが受け持つ（こちらは配布物を作るだけ）。
+# 押すたびに走らせるものなので、手動実行（workflow_dispatch）だけにしてある。
+name: eclipse-plugin-jar
+
+on:
+  workflow_dispatch:
+    inputs:
+      retention-days:
+        description: 'アーティファクトの保持日数（プライベートリポジトリでは短くする）'
+        required: false
+        default: '7'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # ビルドに使う JDK。出力する class ファイルの版は pom の release（解析本体 17 /
+      # プラグイン 8）で決まるので、ここは新しくてよい。むしろ新しくないと駄目で、
+      # 最近の Eclipse platform の jar は Java 21 の class ファイル（版 65）なので、
+      # JDK 17 の javac では「class file has wrong version 65.0」で読めない
+      # （smoke.yml の eclipse-plugin ジョブと同じ理由・同じ版）
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build the bundle jar
+        run: mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package
+
+      # 版は MANIFEST.MF の Bundle-Version で決まる。ここで固定にすると二重管理に
+      # なるのでワイルドカードで拾う（target 直下の jar はバンドル本体だけ。
+      # 解析本体の jche-core.jar は target/classes/lib/ の中にあり、ここには出てこない）
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eclipse-plugin-jar
+          path: eclipse-plugin/target/io.github.instreest.jche.eclipse-*.jar
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
+
+      # ダウンロードしたあと何をすればよいかを、実行のサマリに出しておく
+      - name: Summary
+        run: |
+          JAR=$(ls eclipse-plugin/target/io.github.instreest.jche.eclipse-*.jar)
+          {
+            echo "### Eclipse プラグイン"
+            echo ""
+            echo "- \`$(basename "$JAR")\`（$(du -h "$JAR" | cut -f1)）"
+            echo "- 下の **eclipse-plugin-jar** をダウンロードし、zip を展開する"
+            echo "- Eclipse を終了してから jar を Eclipse インストール先の \`dropins\` へコピーし、初回だけ \`-clean\` を付けて起動する"
+            echo "- 詳しい手順は [docs/eclipse-plugin-usage.md](../blob/${GITHUB_SHA}/docs/eclipse-plugin-usage.md) の §2"
+          } >> "$GITHUB_STEP_SUMMARY"

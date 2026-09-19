@@ -54,6 +54,16 @@ C:\pleiades\2026-06\eclipse\eclipse.exe -clean
 入ったかどうかは「ヘルプ → Eclipse IDE について → インストール詳細 → プラグイン」で
 `io.github.instreest.jche.eclipse` を探せば分かる。
 
+### 方法A': GitHub Actions で作らせて jar を持ち帰る
+
+手元に Maven やネットワークが無いときは、このリポジトリの
+[`eclipse-plugin-jar`](../.github/workflows/eclipse-plugin-jar.yml) ワークフローを使う。
+GitHub の「Actions → eclipse-plugin-jar → Run workflow」で手動実行すると、
+方法Aと同じ jar が `eclipse-plugin-jar` アーティファクト（zip）として付く。
+展開して出てきた jar を、方法Aと同じように `dropins` へ置く。
+
+保持日数は実行時に指定できる（既定 7 日）。
+
 ### 方法B: Eclipse（PDE）で開いて開発する
 
 PDE（プラグイン開発環境）入りの Eclipse が要る。
