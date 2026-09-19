@@ -6,8 +6,9 @@ fxp.Service => fxp.BillingService
 # C-2 宣言型#メソッド名 -> 具象型。同じ型でもメソッドによって実装が違う場合の形
 fxp.Dao#find => fxp.UserDaoImpl
 
-# まだ使えない形（C-3: ファクトリとキー）。専用の警告が出て読み飛ばされることを検査する
-fxp.DaoFactory#get("ORDER_DAO") => fxp.OrderDaoImpl
+# キーを引用符で囲んでいない形。読めない行として、助言つきの警告が出ることを検査する
+# （正しく書いた C-3 は config-contracts-factory.properties の側で検査する）
+fxp.DaoFactory#get(ORDER_DAO) => fxp.OrderDaoImpl
 
 # 左辺が一度も当たらない行。「当たらなかった行」に挙がることを検査する（出力は変わらない）
 fxp.NoSuchType => fxp.UserDaoImpl

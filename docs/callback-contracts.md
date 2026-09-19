@@ -140,9 +140,18 @@ static main(java.lang.String[])                              … public static �
 
 ```
 宣言型のFQN => 具象型のFQN
-jp.co.xxx.dao.UserDao      => jp.co.xxx.dao.UserDaoImpl      … その型で宣言された呼び出し全部
-jp.co.xxx.dao.UserDao#find => jp.co.xxx.dao.CachedUserDao    … その型のそのメソッドだけ
-jp.co.xxx.dao.UserDao      => jp.co.xxx.dao.A, jp.co.xxx.dao.B   … 絞り切れないときは複数書ける
+jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.UserDaoImpl    … その型で宣言された呼び出し全部
+jp.co.xxx.dao.UserDao#find       => jp.co.xxx.dao.CachedUserDao  … その型のそのメソッドだけ
+jp.co.xxx.DaoFactory#get("USER") => jp.co.xxx.dao.UserDaoImpl    … そのファクトリにそのキーを渡した値
+jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.A, jp.co.xxx.dao.B   … 絞り切れないときは複数書ける
+```
+
+3 つめは、ファクトリメソッドの戻り値を受けた呼び出しを絞ります。
+
+```java
+Dao dao = DaoFactory.get("USER");
+dao.find();                        // ← ここが UserDaoImpl.find に決まる
+DaoFactory.get("USER").find();     // ← 変数に受けない形でも同じ
 ```
 
 ```csv
@@ -152,17 +161,27 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,Main.run,
 
 | 決まりごと | 内容 |
 |---|---|
-| 引く順番 | `宣言型#メソッド名` → `宣言型`。狭いほうが先に当たる |
+| 引く順番 | `ファクトリ#メソッド("キー")` → `宣言型#メソッド名` → `宣言型`。狭いほうが先に当たる |
 | 複数書いたとき | 1 件に絞れたときだけ展開されるのは本体の判定と同じ。複数のままなら `[UNEXPANDED:CHA] 候補N件` |
 | 右辺の型 | 具象クラスでかまいません。そのメソッドを親から継承しているだけの型を書いても、本体を持つ親まで辿ります |
 | 採用できないとき | その型にも親にもその本体が無ければ、候補を落として CHA に戻します（呼び出しは漏れません）。実行ログに挙がります |
 | 効く位置 | [具象クラスの解決](../README.md#具象クラスの解決)の段3。拡張より先、データフローや Spring の判定より先に効きます |
 | 効かない呼び出し | `private` / `static` / `final` のように仮想ディスパッチされない呼び出し（段0）には効きません。そこまで差し込みたい場合は[拡張](instance-analysis-plugin.md)を使ってください |
 
-**まだ書けない形**: ファクトリとキーを書く形（`jp.co.app.ServiceFactory#get("user") => …`）は未実装です。
-その形の行は専用の警告を出して読み飛ばします。いまは
-[インスタンス解析条件の拡張](instance-analysis-plugin.md)（`FactoryKeyCollector` と `TypeMappingProvider`）を
-使ってください。
+### ファクトリのキーの書き方
+
+| 決まりごと | 内容 |
+|---|---|
+| キーは引用符で囲む | `#get("USER")`。囲んでいない行は読めない行として警告に出ます |
+| 定数で渡していてもよい | `get(Keys.USER)` のように `static final String` で渡していても、**定数の値**で引きます。リテラルの連結（`"USER" + "_DAO"`）も評価されます。書くのは**値**であって定数の単純名ではありません |
+| 多引数のファクトリ | 実引数を先頭から見て、**最初に表に載っているキー**を使います。位置は書けません |
+| 前提 | `dataflow.enabled=true`（既定）。`false` にすると引けないので、その旨を警告します |
+| 列挙定数のキー | まだ扱えません（`get(Kind.USER)`）。文字列のキーに読み替えるか、[拡張](instance-analysis-plugin.md)を使ってください |
+
+キーは**呼び出し箇所に書かれている値**から引くので、ファクトリの中でクラス名を組み立てていても
+（`"jp.co.app.impl." + capitalize(key) + "Service"`）、解析器がその文字列演算を再現する必要はありません。
+キーが多すぎて表に並べたくない場合は、算出規則そのものを
+[拡張](instance-analysis-plugin.md#3b-算出規則を書く自前の拡張)に書きます。
 
 ## 自前のフレームワーク分を足す
 

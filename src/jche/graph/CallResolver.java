@@ -243,7 +243,7 @@ public final class CallResolver {
         // --- 段3: 契約表（種類 C）→ 拡張 ---
         // 表のほうを先に引く。食い違ったときに「どちらが効いたか」を追いやすいのは、
         // 読み手が中身を見られる表のほう（docs/contracts-unification-design.md の §4）
-        Resolution fromContract = askTypeContracts(calleeId);
+        Resolution fromContract = askTypeContracts(edgeIndex, calleeId);
         if (fromContract != null) {
             return fromContract;
         }
@@ -432,16 +432,24 @@ public final class CallResolver {
     /**
      * 契約表（種類 C）で具象型が決まるか見る。決まらなければ null。
      *
+     * <p>ファクトリ＋キーの行（C-3）は、レシーバの出所がファクトリの戻り値なら、そこに載っている
+     * 実引数の値で引く。フェーズAの証拠採取は要らない（{@link TypeContracts} の「C-3 のキーは
+     * どこから来るか」）。経路に依存しない分だけをここで決めるので、{@code ctx} は渡さない。
+     *
      * <p>右辺の型を 1 つも採用できないとき（その型にも親にもその本体が無い）は候補を落として
      * CHA に戻す。ここで警告は出さず、解析の最後に {@link ContractUsage} がまとめて挙げる
      * （エッジごとに呼ばれるので、その場で出すと同じ行の警告が何度も並ぶ）。
      */
-    private Resolution askTypeContracts(int calleeId) {
+    private Resolution askTypeContracts(int edgeIndex, int calleeId) {
         if (typeContracts.isEmpty()) {
             return null;
         }
-        TypeContracts.Contract contract =
-                typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
+        // 引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。狭いほうが先
+        TypeContracts.Contract contract = dataflow.enabled()
+                ? typeContracts.matchFactory(graph.recvOrigin(edgeIndex), dataflow, null) : null;
+        if (contract == null) {
+            contract = typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
+        }
         if (contract == null) {
             return null;
         }

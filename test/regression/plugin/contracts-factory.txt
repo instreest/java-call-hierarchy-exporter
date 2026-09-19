@@ -1,0 +1,14 @@
+# C-3（ファクトリ＋キー）の契約表。フェーズAの証拠採取を使わず、データフローの値グラフに
+# 載っている実引数からキーを引く。同梱の拡張を使った場合（expected）と同じ結果になる
+
+fxp.DaoFactory#get("USER_DAO")   => fxp.UserDaoImpl
+fxp.DaoFactory#get("ORDER_DAO")  => fxp.OrderDaoImpl
+# find() を宣言せず親から継承している型。右辺には具象型を書けばよい（Issue #131）
+fxp.DaoFactory#get("REPORT_DAO") => fxp.ReportDaoImpl
+
+# C-1。ファクトリを通らないフィールドの注入はこちらで絞る
+fxp.Service => fxp.BillingService
+
+# C-2。Dao#find の呼び出しは 3 か所とも C-3 が先に当たるので、この行は一度も引かれない
+# （引く順番が C-3 → C-2 → C-1 であることの検査。「当たらなかった行」に挙がる）
+fxp.Dao#find => fxp.AbstractDao

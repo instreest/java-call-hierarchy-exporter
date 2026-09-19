@@ -6,23 +6,39 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import jche.cache.Origin;
+import jche.util.Names;
+
 /**
- * 具象型の契約表（種類 C）。「この宣言型（またはこの型のこのメソッド）は、この具象型」を
- * 契約表の 1 行で書く（docs/contracts-unification-design.md）。
+ * 具象型の契約表（種類 C）。「この宣言型（またはこの型のこのメソッド、このファクトリのこのキー）は、
+ * この具象型」を契約表の 1 行で書く（docs/contracts-unification-design.md）。
  *
  * <h2>契約の1行</h2>
  * <pre>
- *   jp.co.xxx.dao.UserDao      =&gt; jp.co.xxx.dao.UserDaoImpl        … C-1 宣言型
- *   jp.co.xxx.dao.UserDao#find =&gt; jp.co.xxx.dao.CachedUserDao       … C-2 宣言型#メソッド名
+ *   jp.co.xxx.dao.UserDao            =&gt; jp.co.xxx.dao.UserDaoImpl     … C-1 宣言型
+ *   jp.co.xxx.dao.UserDao#find       =&gt; jp.co.xxx.dao.CachedUserDao    … C-2 宣言型#メソッド名
+ *   jp.co.xxx.DaoFactory#get("USER") =&gt; jp.co.xxx.dao.UserDaoImpl      … C-3 ファクトリ＋キー
  * </pre>
  * 右辺はカンマ区切りで複数書ける。ただし 1 件に絞れたときだけ展開される規則は変わらないので、
  * 複数書いた箇所は {@code [UNEXPANDED:CHA]} になる。
  *
- * <p>引く順番は C-2（型＋メソッド）→ C-1（型）。呼び出しごとに狭いほうを先に見る
- * （同梱の {@link jche.builtin.TypeMappingProvider} と同じ考え方）。
+ * <p>引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。
+ * 呼び出しごとに狭いほうを先に見る（同梱の {@link jche.builtin.TypeMappingProvider} と同じ考え方）。
  *
- * <p>ファクトリとキーを書く形（C-3。{@code Factory#get("user") =&gt; 型}）はまだ実装していない。
- * その形の行は {@link Contracts} が専用の警告を出して読み飛ばす。
+ * <h2>C-3 のキーはどこから来るか</h2>
+ * フェーズAの証拠採取（{@link jche.extension.CallSiteHintCollector}）は要らない。
+ * {@code Dao dao = DaoFactory.get("USER"); dao.find();} の {@code dao} の出所は、値グラフから
+ * 組み直した {@code M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER} の形で既に手元にあり、
+ * ここからファクトリのメソッドキーと実引数の値の両方が読める（{@link OriginRenderer}）。
+ * 変数に受けずに続けて呼ぶ形（{@code DaoFactory.get("USER").find()}）でも同じ。
+ *
+ * <p>キーの値は {@link DataflowResolver#literalValueOf} で引くので、文字列リテラルのほか
+ * コンパイル時定数（{@code static final String} の参照、リテラルの連結）も値まで評価される。
+ * <b>定数の単純名ではなく値</b>で書く点が、同梱の {@code FactoryKeyCollector} と違う。
+ *
+ * <p>実引数は先頭から順に見て、<b>最初に表に載っているキー</b>を使う。多引数のファクトリ
+ * （{@code get(scope, "USER")}）でも位置を書かずに済ませるための規則で、どの引数が当たったかで
+ * 結果が揺れないよう「先頭から最初の 1 つ」に固定している。
  *
  * <p>効かせる位置は段3（拡張と同じ）で、拡張より先に引く。利用者が表に書いた条件を、
  * ツールの推測（段4 データフロー・段5 Spring DI）より先に効かせるという既存の判断
@@ -33,17 +49,21 @@ public final class TypeContracts {
     /**
      * 契約の1行。
      *
-     * @param declaredType 左辺の型（呼び出し先を宣言している型の FQN）
+     * @param declaredType 左辺の型。C-1 / C-2 は呼び出し先を宣言している型、C-3 はファクトリの型
      * @param methodName   左辺のメソッド名。C-1（型だけ）なら空文字
+     * @param key          C-3 のキー（ファクトリに渡す文字列）。C-1 / C-2 なら空文字
      * @param candidates   右辺の具象型の FQN
      * @param text         元の行（報告用）
      * @param row          契約表の何行目か（{@link ContractUsage} の添字）
      */
-    record Contract(String declaredType, String methodName, String[] candidates, String text, int row) {
+    record Contract(String declaredType, String methodName, String key, String[] candidates,
+                    String text, int row) {
     }
 
-    /** 左辺の型ごとの契約。同じ型に C-1 と C-2 が並ぶことがある */
+    /** C-1 / C-2: 左辺の型ごとの契約。同じ型に C-1 と C-2 が並ぶことがある */
     private final Map<String, List<Contract>> byType = new LinkedHashMap<>();
+    /** C-3: "型FQN#メソッド名(キー)" ごとの契約 */
+    private final Map<String, Contract> byFactoryKey = new LinkedHashMap<>();
     private final ContractUsage usage;
 
     public TypeContracts(ContractUsage usage) {
@@ -51,8 +71,14 @@ public final class TypeContracts {
         List<ContractUsage.Line> lines = usage.lines();
         for (int row = 0; row < lines.size(); row++) {
             Contract c = parse(lines.get(row).text(), row);
-            if (c != null) {
+            if (c == null) {
+                continue;
+            }
+            if (c.key().isEmpty()) {
                 byType.computeIfAbsent(c.declaredType(), k -> new ArrayList<>()).add(c);
+            } else {
+                // 同じファクトリ・同じキーの行が 2 つあれば、先に書いたほうを使う
+                byFactoryKey.putIfAbsent(factoryKeyOf(c.declaredType(), c.methodName(), c.key()), c);
             }
         }
     }
@@ -68,7 +94,12 @@ public final class TypeContracts {
     }
 
     public boolean isEmpty() {
-        return byType.isEmpty();
+        return byType.isEmpty() && byFactoryKey.isEmpty();
+    }
+
+    /** ファクトリ＋キーの行（C-3）を持つか。データフローを切った実行で知らせるために使う */
+    public boolean hasFactoryRows() {
+        return !byFactoryKey.isEmpty();
     }
 
     /** 1行を読む。形が違えば null（黙って捨てず、呼び出し側がログに出せるよう null を返す） */
@@ -77,10 +108,10 @@ public final class TypeContracts {
     }
 
     /**
-     * 左辺にファクトリの実引数を書いた形（C-3）か。まだ実装していないので、
-     * 「読めない行」ではなく専用の警告にするために見分ける
+     * 左辺に実引数を書いた形（C-3）か。形が違って読めなかったときに、
+     * 「キーは引用符で囲む」という助言を添えられるようにするために見分ける
      */
-    static boolean isFactoryKeyForm(String line) {
+    static boolean hasArguments(String line) {
         String s = (line == null) ? "" : line.trim();
         int arrow = s.indexOf("=>");
         return arrow > 0 && s.substring(0, arrow).indexOf('(') >= 0;
@@ -97,9 +128,27 @@ public final class TypeContracts {
             return null;
         }
         String left = s.substring(0, arrow).trim();
-        String right = s.substring(arrow + 2).trim();
-        if (left.isEmpty() || right.isEmpty() || left.indexOf('(') >= 0) {
-            return null;   // 実引数を書いた形（C-3）はここでは読まない
+        String[] candidates = candidatesOf(s.substring(arrow + 2));
+        if (left.isEmpty() || candidates.length == 0) {
+            return null;
+        }
+        String key = "";
+        int open = left.indexOf('(');
+        if (open >= 0) {
+            if (!left.endsWith(")")) {
+                return null;
+            }
+            String inner = left.substring(open + 1, left.length() - 1).trim();
+            // いまは文字列のキーだけ。列挙定数（V:型.名前）は扱わない
+            if (inner.length() < 2 || inner.charAt(0) != '"'
+                    || inner.charAt(inner.length() - 1) != '"') {
+                return null;
+            }
+            key = inner.substring(1, inner.length() - 1);
+            if (key.isEmpty()) {
+                return null;
+            }
+            left = left.substring(0, open).trim();
         }
         String type = left;
         String methodName = "";
@@ -111,21 +160,56 @@ public final class TypeContracts {
                 return null;
             }
         }
-        List<String> candidates = new ArrayList<>(1);
+        if (!key.isEmpty() && methodName.isEmpty()) {
+            return null;   // C-3 はメソッド名が要る
+        }
+        return new Contract(type, methodName, key, candidates, s, row);
+    }
+
+    /** 右辺（カンマ区切りの具象型） */
+    private static String[] candidatesOf(String right) {
+        List<String> out = new ArrayList<>(1);
         for (String one : right.split(",")) {
             String fqn = one.trim();
             if (!fqn.isEmpty()) {
-                candidates.add(fqn);
+                out.add(fqn);
             }
         }
-        if (candidates.isEmpty()) {
-            return null;
-        }
-        return new Contract(type, methodName, candidates.toArray(new String[0]), s, row);
+        return out.toArray(new String[0]);
     }
 
     /**
-     * その呼び出しに当たる契約。無ければ null。
+     * C-3: レシーバがファクトリの戻り値なら、渡されたキーで契約を引く。無ければ null。
+     *
+     * @param recvOrigin レシーバの出所（{@link CallGraph#recvOrigin}）
+     * @param dataflow   キーの値を引くのに使う
+     * @param ctx        この経路で分かっていること。無ければ null
+     */
+    Contract matchFactory(String recvOrigin, DataflowResolver dataflow, DataflowContext ctx) {
+        if (byFactoryKey.isEmpty() || recvOrigin == null
+                || Origin.kindOf(recvOrigin) != Origin.RETURN) {
+            return null;
+        }
+        String typeAndName = typeAndNameOf(Origin.valueOf(recvOrigin));
+        if (typeAndName.isEmpty()) {
+            return null;
+        }
+        for (String arg : argOriginsOf(Origin.argsOf(recvOrigin))) {
+            String key = dataflow.literalValueOf(arg, ctx);
+            if (key == null) {
+                continue;
+            }
+            Contract hit = byFactoryKey.get(typeAndNameToKey(typeAndName, key));
+            if (hit != null) {
+                usage.markReached(hit.row());
+                return hit;   // 実引数の先頭から見て、最初に表に載っているキーを使う
+            }
+        }
+        return null;
+    }
+
+    /**
+     * C-2 / C-1: その呼び出しの宣言型（とメソッド名）で契約を引く。無ければ null。
      *
      * <p>当たった行には「左辺が一致した」印を付ける。実際に具象型を決められたかは
      * 呼び出し側（{@link CallResolver}）が {@link ContractUsage#markApplied} で付ける。
@@ -157,6 +241,57 @@ public final class TypeContracts {
             usage.markReached(hit.row());
         }
         return hit;
+    }
+
+    /** C-3 の索引の鍵 */
+    private static String factoryKeyOf(String type, String methodName, String key) {
+        return typeAndNameToKey(type + "#" + methodName, key);
+    }
+
+    private static String typeAndNameToKey(String typeAndName, String key) {
+        return typeAndName + "(" + key + ")";
+    }
+
+    /** メソッドキー "jp.co.X#get(java.lang.String)" から "jp.co.X#get" を取り出す */
+    private static String typeAndNameOf(String methodKey) {
+        if (methodKey == null) {
+            return "";
+        }
+        int paren = methodKey.indexOf('(');
+        String head = (paren < 0) ? methodKey.trim() : methodKey.substring(0, paren).trim();
+        return (head.indexOf('#') > 0) ? head : "";
+    }
+
+    /**
+     * 実引数リストから、実引数の出所を<b>位置の順</b>に取り出す（{@code n=} と {@code r=} は除く）。
+     *
+     * 位置で並べ直すのは、「先頭から最初に表に載っているキーを使う」規則を、
+     * 書き出しの並びに依存させないため
+     */
+    private static List<String> argOriginsOf(String args) {
+        if (args == null || args.isEmpty()) {
+            return List.of();
+        }
+        List<int[]> order = new ArrayList<>(2);        // {位置, entries の添字}
+        List<String> origins = new ArrayList<>(2);
+        for (String entry : Origin.entriesOf(args)) {
+            int eq = entry.indexOf('=');
+            if (eq <= 0 || !Character.isDigit(entry.charAt(0))) {
+                continue;
+            }
+            int index = Names.parseIntOr(entry.substring(0, eq), -1);
+            if (index < 0) {
+                continue;
+            }
+            order.add(new int[] {index, origins.size()});
+            origins.add(Origin.unnest(entry.substring(eq + 1)));
+        }
+        order.sort((a, b) -> Integer.compare(a[0], b[0]));
+        List<String> out = new ArrayList<>(origins.size());
+        for (int[] pair : order) {
+            out.add(origins.get(pair[1]));
+        }
+        return out;
     }
 
     /** シグネチャ "find(java.lang.String)" からメソッド名だけを取り出す */

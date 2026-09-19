@@ -19,6 +19,7 @@
 #                          （config-before）→ 同梱の拡張（config.properties。ファクトリのキーと対応表）→
 #                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
 #                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
+#                          ファクトリ＋キーの契約表（config-contracts-factory。拡張と同じ結果になる）→
 #                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
 #                          拡張・契約表ありでのみ具象クラスに絞れること、フェーズAの拡張を変えると
 #                          キャッシュが捨てられること、契約表では捨てられないことを確認する
@@ -60,6 +61,31 @@ compare() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
         else
             echo "  DIFF $1/$f ($3)"
             diff --strip-trailing-cr "$1/$2/$f" "$out/$f" | head -20
+            ok=0
+        fi
+    done
+    [ $ok = 1 ] || fail=1
+}
+
+# 拡張（FactoryKeyCollector + TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
+# まったく同じ出力になること。指定の仕方を変えても結果は変わらない、がこの比較の眼目。
+# 期待出力をもう 1 組持つ代わりに、ラベルを同じ綴りに読み替えて expected と突き合わせる
+expect_same_as_mapping() {   # $1=ラベル
+    local out ok=1 f
+    out=$(latest_output plugin)
+    if [ -z "$out" ]; then
+        echo "  DIFF plugin: 出力フォルダがありません ($1)"; fail=1; return
+    fi
+    for f in call-hierarchy.csv methods.csv; do
+        if diff --strip-trailing-cr -q \
+                <(sed 's/\[RESOLVED:MAPPING\]/[RESOLVED:=]/' "plugin/expected/$f") \
+                <(sed 's/\[RESOLVED:CONTRACT\]/[RESOLVED:=]/' "$out/$f") > /dev/null; then
+            echo "  OK   plugin/$f ($1)"
+        else
+            echo "  DIFF plugin/$f ($1)"
+            diff --strip-trailing-cr \
+                <(sed 's/\[RESOLVED:MAPPING\]/[RESOLVED:=]/' "plugin/expected/$f") \
+                <(sed 's/\[RESOLVED:CONTRACT\]/[RESOLVED:=]/' "$out/$f") | head -10
             ok=0
         fi
     done
@@ -347,17 +373,25 @@ plugin_case() {
     run plugin config-contracts.properties 5 "5回目: 種類Cの契約表" || return
     # 契約表はキャッシュの指紋に入らないので、表を足しても作り直さない
     expect_reused plugin 5 "5回目: 契約表を足してもキャッシュを作り直さない"
-    expect_log_contains plugin 5 'fxp.DaoFactory#get("ORDER_DAO")' \
-        "5回目: まだ使えない形（C-3）を専用の警告で知らせる"
+    expect_log_contains plugin 5 "fxp.DaoFactory#get(ORDER_DAO)" \
+        "5回目: キーを引用符で囲んでいない行は助言つきの警告で知らせる"
     expect_log_contains plugin 5 "fxp.NoSuchType => fxp.UserDaoImpl" \
         "5回目: 一度も当たらなかった契約を挙げる"
     compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
 
+    # ファクトリ＋キー（C-3）。フェーズAの証拠採取を使わず、データフローの値グラフに載っている
+    # 実引数からキーを引く。2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
+    run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
+    expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
+    expect_log_contains plugin 6 "fxp.Dao#find => fxp.AbstractDao" \
+        "6回目: C-3 が先に当たるので C-2 の行は引かれない"
+    expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
+
     # 右辺を採用できない契約は、候補を落として CHA に戻す（呼び出しを落とさない）
-    run plugin config-contracts-miss.properties 6 "6回目: 右辺を採用できない契約" || return
-    expect_log_contains plugin 6 "fxp.Dao#find => fxp.Service" \
-        "6回目: 当たったが採用できなかった契約を挙げる"
-    compare plugin expected-before "6回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
+    run plugin config-contracts-miss.properties 7 "7回目: 右辺を採用できない契約" || return
+    expect_log_contains plugin 7 "fxp.Dao#find => fxp.Service" \
+        "7回目: 当たったが採用できなかった契約を挙げる"
+    compare plugin expected-before "7回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
 }
 
 for c in $CASES; do

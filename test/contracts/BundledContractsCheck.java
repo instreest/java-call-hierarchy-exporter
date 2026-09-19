@@ -20,8 +20,8 @@ import java.util.Set;
  *   宣言元  JDK の型は、その型が本当にそのメソッドを「宣言」していること（継承しているだけでは
  *           JDT の getMethodDeclaration がその型を返さず、行は永久に当たらない）
  *   呼び戻し 契約の位置にある値の型が、呼び戻すメソッドを持っていること
- *   具象型  種類 C（{@code 型 => 具象型}）の読み書き。同梱の行は無いので形だけを見る。
- *           ファクトリとキーを書く形（C-3）は、まだ実装していないと見分けられること
+ *   具象型  種類 C（{@code 型 => 具象型}、{@code 型#メソッド("キー") => 具象型}）の読み書き。
+ *           同梱の行は無いので形だけを見る
  * </pre>
  * 型の照合は実行中の JDK のリフレクションで行う。リフレクションが返す宣言クラスと型消去後の
  * 引数型は .class の記述子そのもので、JDT の {@code getMethodDeclaration().getErasure()} と同じ形になる
@@ -172,22 +172,39 @@ public final class BundledContractsCheck {
                 continue;
             }
             if (!c.type().equals(parsed.declaredType()) || !c.method().equals(parsed.methodName())
+                    || !parsed.key().isEmpty()
                     || !Arrays.equals(c.candidates(), parsed.candidates())) {
                 ng(c.line(), "読み取った内容が違う: 型=" + parsed.declaredType()
                         + " メソッド=" + parsed.methodName()
                         + " 候補=" + Arrays.toString(parsed.candidates()));
             }
         }
-        // ファクトリとキーを書く形（C-3）は、まだ実装していないことを見分けられること。
-        // 「読めない行」で片付けると、書き手は綴りを疑って時間を使う
+        // C-3（ファクトリ＋キー）。左辺の型・メソッド名とキーが取り出せること
         checked++;
-        String factoryKey = "jp.co.xxx.Factory#get(\"USER\") => jp.co.xxx.UserImpl";
-        if (!TypeContracts.isFactoryKeyForm(factoryKey) || TypeContracts.parse(factoryKey) != null) {
-            ng(factoryKey, "ファクトリとキーの形（C-3）を見分けられていない");
+        String factoryLine = "jp.co.xxx.Factory#get(\"USER\") => jp.co.xxx.UserImpl";
+        TypeContracts.Contract factory = TypeContracts.parse(factoryLine);
+        if (factory == null) {
+            ng(factoryLine, "C-3 の行が parse できない");
+        } else if (!"jp.co.xxx.Factory".equals(factory.declaredType())
+                || !"get".equals(factory.methodName()) || !"USER".equals(factory.key())) {
+            ng(factoryLine, "C-3 の読み取りが違う: 型=" + factory.declaredType()
+                    + " メソッド=" + factory.methodName() + " キー=" + factory.key());
+        }
+        // キーに引用符が無い形は読まない（助言を添えられるよう、実引数の有無は見分ける）
+        checked++;
+        String unquoted = "jp.co.xxx.Factory#get(USER) => jp.co.xxx.UserImpl";
+        if (TypeContracts.parse(unquoted) != null || !TypeContracts.hasArguments(unquoted)) {
+            ng(unquoted, "引用符の無いキーを読んでしまう、または実引数の形と見分けられていない");
         }
         checked++;
-        if (TypeContracts.isFactoryKeyForm("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl")) {
-            ng("C-1 の行", "ファクトリとキーの形ではないのにそう判定された");
+        if (TypeContracts.hasArguments("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl")) {
+            ng("C-1 の行", "実引数を書いた形ではないのにそう判定された");
+        }
+        // C-1 / C-2 の行にキーは入らない
+        checked++;
+        TypeContracts.Contract plain = TypeContracts.parse("jp.co.xxx.UserDao#find => jp.co.xxx.Impl");
+        if (plain == null || !plain.key().isEmpty()) {
+            ng("C-2 の行", "キーの無い行にキーが入っている");
         }
         // 種類の振り分けが取り違えられないこと。"=>" は "->" を含まない
         checked++;
@@ -233,6 +250,9 @@ public final class BundledContractsCheck {
             "jp.co.xxx.UserDao# => jp.co.xxx.Impl",       // メソッド名が無い
             "#find => jp.co.xxx.Impl",                    // 型が無い
             "jp.co.xxx.UserDao",                          // 矢印が無い
+            "jp.co.xxx.Factory#get(\"USER\" => jp.co.xxx.Impl",   // 閉じ括弧が無い
+            "jp.co.xxx.Factory#get(\"\") => jp.co.xxx.Impl",      // キーが空
+            "jp.co.xxx.Factory(\"USER\") => jp.co.xxx.Impl",      // メソッド名が無い
         };
         for (String s : badTypes) {
             checked++;

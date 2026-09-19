@@ -4,11 +4,17 @@
 設計上の判断と実装時に迷った点は
 [instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) にある。
 
-> **「宣言型 -> 具象型」の対応表だけで済むなら、拡張を読み込ませる必要はありません。**
-> 契約表に `jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl` と 1 行書けば同じことができます
+> **対応表を並べるだけで済むなら、拡張を読み込ませる必要はありません。**
+> 契約表に 1 行書けば同じことができます
 > （[callback-contracts.md の「C. 具象クラスを1件に絞る」](callback-contracts.md#c-具象クラスを1件に絞る)）。
-> ここで説明する拡張が要るのは、ファクトリのキーで切り替える場合と、算出規則や独自形式の
-> 設定ファイルを読む場合です。経緯は
+>
+> ```
+> jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.UserDaoImpl   # DI で注入されるフィールド
+> jp.co.xxx.DaoFactory#get("USER") => jp.co.xxx.dao.UserDaoImpl   # ファクトリのキー
+> ```
+>
+> ここで説明する拡張が要るのは、**キーが多すぎて表に並べたくない**（算出規則を書く）、
+> **独自形式の設定ファイルを読む**、**列挙定数をキーにしている**場合です。経緯は
 > [contracts-unification-design.md](contracts-unification-design.md) にあります。
 
 DI コンテナで注入されるフィールドや、キーで実装を切り替えるファクトリメソッドは、ソースを読むだけでは

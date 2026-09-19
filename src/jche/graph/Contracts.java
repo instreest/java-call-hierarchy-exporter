@@ -68,9 +68,14 @@ public final class Contracts {
                     provider.getClass().getName());
             Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
         }
+        TypeContracts types = new TypeContracts(new ContractUsage(typeLines));
+        if (types.hasFactoryRows() && !dataflow.enabled()) {
+            // キーはデータフローの値グラフから引くので、切られていると永久に当たらない
+            Log.warn("ファクトリとキーを書いた契約（型#メソッド(\"キー\") => 具象型）は、"
+                    + "dataflow.enabled=false では引けません。この形の行は当たりません");
+        }
         return new Loaded(new CallbackContracts(graph, dataflow, new ContractUsage(callbackLines)),
-                new FrameworkEntries(graph, new ContractUsage(entryLines)),
-                new TypeContracts(new ContractUsage(typeLines)));
+                new FrameworkEntries(graph, new ContractUsage(entryLines)), types);
     }
 
     /**
@@ -89,14 +94,11 @@ public final class Contracts {
                 continue;
             }
             if (line.contains("=>")) {
-                if (TypeContracts.isFactoryKeyForm(line)) {
-                    // 「読めない行」で片付けると、書き手は綴りを疑って時間を使う。まだ無い機能だと言う
-                    Log.warn("ファクトリとキーを書く形（型#メソッド(\"キー\") => 具象型）は"
-                            + "まだ使えません（" + from + "）: " + line);
-                    continue;
-                }
                 if (TypeContracts.parse(line) == null) {
-                    Log.warn("契約の行を読めません（" + from + "）: " + line);
+                    // よくある書き間違いには助言を添える。綴りを疑って時間を使わせないため
+                    Log.warn("契約の行を読めません（" + from + "）: " + line
+                            + (TypeContracts.hasArguments(line)
+                                    ? "（ファクトリのキーは \"…\" で囲んでください）" : ""));
                     continue;
                 }
                 types.add(new ContractUsage.Line(line, from, false));
