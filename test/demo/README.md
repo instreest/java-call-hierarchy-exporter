@@ -17,7 +17,9 @@
     `Runnable` 実装クラスを `Thread` で起動・`Thread` の継承・ラムダを `ExecutorService` に渡す・
     ローカル変数経由の 4 形
   - `src/fx/entry/` … フレームワークが呼ぶ入口（`FRAMEWORK_ENTRY`）の確認用。`HttpServlet` の上書き・
-    `@Scheduled` / `@EventListener` / `@GetMapping`（内部からも呼ばれる形）・`@Test`
+    `@Scheduled` / `@EventListener` / `@GetMapping`（内部からも呼ばれる形）・`@Test`。
+    `@Endpoint` と `Dispatcher#submit` は自前のフレームワークの題材で、`test/regression/whole/contracts.txt` の
+    契約表を足したときだけ入口・呼び戻しになる（`entry` ケースは表を足していないので、ならない）
   - `src/javax/servlet/http/`、`src/org/springframework/{scheduling,web,context/event}/`、`src/org/junit/` … 上記が使うスタブ
   - `src/fx/inherit/` … CHA の候補の数え方の確認用。インターフェースを実装するクラスが、そのインターフェースを
     実装していない親クラスから実装を継承する形（`PoliteGreeter extends BaseGreeter implements Greeter`）と、

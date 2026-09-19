@@ -29,6 +29,12 @@ public class Jobs {
         dao.describe();
     }
 
+    /** 自前のフレームワークの入口。同梱の表には無いので、契約表を足したときだけ FRAMEWORK_ENTRY になる */
+    @Endpoint
+    public void custom() {
+        new Dispatcher().submit(() -> dao.findById(9L));
+    }
+
     private void internal() {
         list();
     }

@@ -50,7 +50,7 @@ ItemFinder.find(long),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,12,1,0,1,EN
 ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
 LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,9,1,NORMAL,1,0,,1,
 OrderDaoImpl.load(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,11,1,1,0,LEAF,1,0,,1,
-OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,18,1,NORMAL,1,0,,1,
+OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,19,1,NORMAL,1,0,,1,
 OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,19,0,LEAF,1,0,,1,
 UserDaoImpl.load(long),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,7,1,1,1,NORMAL,1,0,,1,
 UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,15,0,LEAF,1,0,,1,
@@ -78,10 +78,12 @@ PaymentGateway.pay(int),fx.di.PaymentGateway,I,src/fx/di/PaymentGateway.java,7,0
 Scheduler.tick(),fx.di.Scheduler,C,src/fx/di/Scheduler.java,14,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
 SlowNotice.send(),fx.di.SlowNotice,C,src/fx/di/SlowNotice.java,10,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
 SystemClock.now(),fx.di.SystemClock,C,src/fx/di/SystemClock.java,8,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
+Dispatcher.submit(Runnable),fx.entry.Dispatcher,C,src/fx/entry/Dispatcher.java,12,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
 Jobs.nightly(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,16,1,1,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
 Jobs.onEvent(Object),fx.entry.Jobs,C,src/fx/entry/Jobs.java,22,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
 Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,28,1,1,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-Jobs.internal(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,32,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
+Jobs.custom(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,34,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
+Jobs.internal(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,38,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 SampleTest.runsJob(),fx.entry.SampleTest,C,src/fx/entry/SampleTest.java,9,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
 "WebEntry.doGet(HttpServletRequest,HttpServletResponse)",fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,16,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
 WebEntry.helper(),fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,21,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力

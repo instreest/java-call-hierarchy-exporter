@@ -1,6 +1,6 @@
 # jar の中から呼び戻される呼び出しの契約 — Q&A
 
-Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136) の段階 1・2。
+Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136)。
 `Thread#start()` → `run()` のように、ソースの外（JDK）を経由して自分のコードへ戻ってくる呼び出しを、
 契約表で繋いだ判断を残す。使い方は [callback-contracts.md](callback-contracts.md)。
 関連: [lambda-expansion-qa.md](lambda-expansion-qa.md)（渡した値の具象型を決める仕組み）。
@@ -16,7 +16,8 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
   候補に並べることはしない
 - 段階 2（種類 B）: フレームワークが起点として呼ぶメソッドの契約表（`FrameworkEntries`）。
   当たったメソッドは `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える
-- 段階 1・2 は同梱の表だけ。設定ファイルで足す表とプラグインは段階 3
+- 段階 3: 設定ファイル（`contracts.files`）と拡張（`ContractProvider` / `contracts.providers`）で
+  自前のフレームワーク分を足せる。A と B は 1 つのファイルに混ぜて書き、行の形で振り分ける
 
 ### Q1. 呼び出し先の行を消して、呼び戻される側に置き換えないのはなぜか
 
@@ -105,3 +106,23 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 H 行（型階層）の親型には、jar の型の名前もそのまま入っている（`Worker extends Thread` なら
 `java.lang.Thread`）。契約の型名と文字列で突き合わせるだけなので、jar を読む必要が無い。
 `test/demo` では `HttpServlet` をスタブとしてソースに置いているが、jar にあっても同じ結果になる。
+
+### Q12. 設定ファイルの表を A と B で分けず、1 つのファイルにしたのはなぜか
+
+利用者にとっては「うちのフレームワークの契約」が 1 単位で、A か B かはツール側の都合だから。
+行の形（`->` を含むか、`@` / `super` / `static` で始まるか）で機械的に振り分けられるので、
+分けさせる理由が無い。どちらでも読めない行は警告に出し、黙って捨てない
+（「設定したのに効いていない」に気づけるように）。
+
+### Q13. 契約の変更でキャッシュの版を上げないのはなぜか
+
+契約は読み手（フェーズ2以降）だけが使い、キャッシュに書く事実には影響しないため。
+同梱の表を足しても、設定ファイルの表を変えても、再解析は起きず読み直しだけで反映される。
+`resolver.candidate.providers` の拡張がキャッシュに影響しないのと同じ扱い。
+
+### Q14. `ContractProvider` を既存の拡張ポイントに相乗りさせなかったのはなぜか
+
+既存の 2 つ（`CallSiteHintCollector` / `TypeCandidateProvider`）は「呼び出し箇所ごとに問い合わせる」
+形で、契約は「起動時に表を返す」形。役割が違うものを同じインターフェースに載せると、
+どちらの意味で呼ばれるかを実装側が気にすることになる。読み込みの仕組み（`plugin.folders` と
+クラス名の指定、`init(Properties, Path)`）だけを揃えた。

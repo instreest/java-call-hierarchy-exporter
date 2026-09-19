@@ -18,6 +18,7 @@ import jche.extension.TypeCandidateProvider;
 import jche.graph.CallGraph;
 import jche.graph.CallGraphBuilder;
 import jche.graph.CallResolver;
+import jche.graph.Contracts;
 import jche.graph.DataflowResolver;
 import jche.graph.SpringBeans;
 import jche.util.HeapWatch;
@@ -72,9 +73,11 @@ public final class Exporter {
                 + " メソッド数=" + graph.methodCount()
                 + " エッジ数=" + graph.edgeCount());
         DataflowFacts facts = buildDataflowFacts(config, graph);
-        CallResolver resolver = new CallResolver(graph,
-                new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth),
-                loadProviders(config));
+        DataflowResolver dataflow =
+                new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
+        Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
+        CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
+                contracts.callbacks(), contracts.entries());
         Log.heap("フェーズ2完了");
         return new AnalysisSnapshot(config, layout, graph, resolver);
     }

@@ -374,6 +374,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.vi
 `new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
 （`[RESOLVED:CALLBACK]`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
+自前のフレームワーク分は `contracts.files` に表を書いて足せます。
 
 ---
 

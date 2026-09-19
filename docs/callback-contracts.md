@@ -65,7 +65,7 @@ JDK のうち、「呼び戻す」と言い切れて、実務で経路が切れ�
 
 ### 契約の書き方（A）
 
-1 行が 1 契約です（今は同梱の表だけ。設定ファイルで足す形とプラグインは #136 の段階 3）。
+1 行が 1 契約です。
 
 ```
 呼び出し先のメソッドキー -> 位置 : 呼ばれるメソッドのシグネチャ
@@ -124,3 +124,42 @@ static main(java.lang.String[])                              … public static �
 `super` の型は jar の中で構いません（型階層には jar の親型の名前も入っています）。
 判定はメソッド単位です。`@Controller` のようなクラスのアノテーションだけでは入口にしません
 （そのクラスの全メソッドが入口とは限らないため）。メソッド側の `@GetMapping` 等で判定します。
+
+## 自前のフレームワーク分を足す
+
+同梱の表に無いものは、設定ファイルから足せます。A と B の行を同じファイルに混ぜて書けます
+（`->` を含む行が A、`@` / `super` / `static` で始まる行が B）。
+
+```properties
+# config.properties
+contracts.files=contracts.txt
+```
+
+```
+# contracts.txt（UTF-8、1 行 1 契約。# はコメント）
+fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()
+@fx.entry.Endpoint
+super jp.co.xxx.BaseAction#execute()
+```
+
+- パスは設定ファイルのフォルダからの相対（`plugin.folders` と同じ起点）。複数ならカンマ区切り
+- 読み込んだ行数は実行ログに出ます。形が違う行は警告に出して読み飛ばします
+- `contracts.builtin=false` にすると同梱の表を使わず、自前の表と拡張だけになります
+
+表では書けない条件（設定ファイルから機械的に作る、型の一覧を見て決める等）は、
+`jche.extension.ContractProvider` を実装した拡張で返します。読み込み方は
+[インスタンス解析条件のプラグイン](instance-analysis-plugin.md)と同じで、`plugin.folders` に
+`.java` を置き、クラス名を `contracts.providers` に書きます。
+
+```java
+public class MyContracts implements jche.extension.ContractProvider {
+    @Override
+    public List<String> lines() {
+        return List.of("jp.co.xxx.EventBus#on(jp.co.xxx.Handler) -> a0 : handle(jp.co.xxx.Event)",
+                       "@jp.co.xxx.Endpoint");
+    }
+}
+```
+
+`test/regression/whole/contracts.txt` に、`test/demo` の自前フレームワーク分（`Dispatcher#submit` と
+`@Endpoint`）を足した例があります。
