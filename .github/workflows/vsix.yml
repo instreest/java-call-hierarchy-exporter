@@ -47,15 +47,15 @@ jobs:
           path: ~/.m2/repository
           key: maven-${{ hashFiles('eclipse-plugin/pom.xml') }}
 
-      # Node だけで動く層の検査。.vsix を配る前に、子プロセス・プロトコル・木の組み立てが
-      # 壊れていないことを見る（JDK 25 が要る解析本体側の検査は smoke.yml の役目）
-      - name: Typecheck and unit test
-        run: |
-          cd vscode-plugin
-          npm ci --no-audit --no-fund
-          npm test
-
-      # lib/ を集める → .vsix を作る → 中身（同梱する JDT の版、入るもの・入らないもの）を確認する
+      # lib/ を集める → .vsix を作る → 中身（同梱する JDT の版、入るもの・入らないもの）を確認する。
+      # npm ci はこのスクリプトが（node_modules が無ければ）行う。
+      #
+      # 拡張の中身の検査（npm test＝型検査と Node だけで動く層）はここでは動かさない。
+      # あれは解析本体のクラスパスと java の場所を JCHE_CP / JCHE_JAVA などで渡してもらう前提で、
+      # 素の npm test では「解析に使う java が見つかりません」で落ちる。渡す役は test/vscode/run.sh で、
+      # そのために jbang で依存を解決して src/ 全体をコンパイルする（JDK 25）。
+      # 配布物を作るだけのここでそれを繰り返す値打ちは無いので、検査は smoke.yml の
+      # vscode-plugin ジョブに任せる（eclipse-plugin-jar.yml と同じ切り分け）
       - name: Build the .vsix
         run: bash test/vscode/package.sh
 
