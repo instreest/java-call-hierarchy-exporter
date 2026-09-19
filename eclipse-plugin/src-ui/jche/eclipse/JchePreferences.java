@@ -25,6 +25,8 @@ public final class JchePreferences {
     public static final String VM_ARGUMENTS = "analysis.vmArguments";
     /** 何分使われなければ解析プロセスを終わらせるか。0 なら終わらせない */
     public static final String IDLE_MINUTES = "analysis.idleMinutes";
+    /** 解析の進捗と作業ログをファイルにも残すか */
+    public static final String LOG_TO_FILE = "analysis.logToFile";
 
     /** 既定のアイドル時間（分） */
     public static final int DEFAULT_IDLE_MINUTES = 10;
@@ -37,6 +39,9 @@ public final class JchePreferences {
         store.setDefault(JDT_FOLDER, "");
         store.setDefault(VM_ARGUMENTS, "");
         store.setDefault(IDLE_MINUTES, DEFAULT_IDLE_MINUTES);
+        // 既定で残す。解析が返ってこないときに後から見られることの方が、
+        // 数百KBのログより価値がある（世代は AnalysisLog が絞る）
+        store.setDefault(LOG_TO_FILE, true);
     }
 
     private static IPreferenceStore store() {
@@ -73,6 +78,12 @@ public final class JchePreferences {
             return new ArrayList<String>();
         }
         return new ArrayList<String>(Arrays.asList(value.split("\\s+")));
+    }
+
+    /** 解析ログをファイルにも残すか */
+    public static boolean logToFile() {
+        IPreferenceStore store = store();
+        return (store == null) || store.getBoolean(LOG_TO_FILE);
     }
 
     /** アイドルで終わらせるまでの分数。0 なら終わらせない */

@@ -15,6 +15,7 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.program.Program;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
@@ -44,6 +45,7 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
     private Text jdtText;
     private Text vmArgumentsText;
     private Spinner idleSpinner;
+    private Button logToFileCheck;
 
     @Override
     public void init(IWorkbench workbench) {
@@ -134,8 +136,39 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
         new Label(idleRow, SWT.NONE).setText("分後（0 なら終了しない。次の解析は最初からになります）");
         new Label(root, SWT.NONE);
 
+        // --- ログ ---
+        new Label(root, SWT.NONE).setText("解析のログ:");
+        logToFileCheck = new Button(root, SWT.CHECK);
+        logToFileCheck.setText("進捗と作業ログをファイルにも残す");
+        logToFileCheck.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        logToFileCheck.setToolTipText("ワークスペースの中に残します（新しいものから10世代）。"
+                + "解析が返ってこないときは、このログを見ると、どこまで進んでいたかが分かります");
+        logToFileCheck.setSelection(getPreferenceStore().getBoolean(JchePreferences.LOG_TO_FILE));
+        Button openLog = new Button(root, SWT.PUSH);
+        openLog.setText("ログフォルダを開く");
+        openLog.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                openLogFolder();
+            }
+        });
+
         updateJdkStatus();
         return root;
+    }
+
+    /** ログフォルダを OS のファイラで開く。まだ1行も出ていなければフォルダだけ作る */
+    private void openLogFolder() {
+        File folder = AnalysisLog.folder();
+        if (!folder.isDirectory() && !folder.mkdirs()) {
+            MessageDialog.openInformation(getShell(), "解析のログ",
+                    "ログフォルダを作れませんでした: " + folder.getAbsolutePath());
+            return;
+        }
+        if (!Program.launch(folder.getAbsolutePath())) {
+            // 開けない環境（閉域の Linux 等）でも、場所が分かれば自分で開ける
+            MessageDialog.openInformation(getShell(), "解析のログ", folder.getAbsolutePath());
+        }
     }
 
     /** いま指定されている（または自動で見つかる）JDK の版を出す */
@@ -232,6 +265,7 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
         jdtText.setText("");
         vmArgumentsText.setText("");
         idleSpinner.setSelection(JchePreferences.DEFAULT_IDLE_MINUTES);
+        logToFileCheck.setSelection(true);
         updateJdkStatus();
         super.performDefaults();
     }
@@ -242,6 +276,7 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
         getPreferenceStore().setValue(JchePreferences.JDT_FOLDER, jdtText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.VM_ARGUMENTS, vmArgumentsText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.IDLE_MINUTES, idleSpinner.getSelection());
+        getPreferenceStore().setValue(JchePreferences.LOG_TO_FILE, logToFileCheck.getSelection());
         // 設定を変えたら、いま動いている解析プロセスは古い設定のままなので終わらせる。
         // 次の解析で新しい設定のものが起動する
         AnalysisService service = JchePlugin.service();

@@ -20,6 +20,9 @@ import jche.util.RunControl;
  */
 public final class InboundIndex {
 
+    /** 進捗に出す名前 */
+    private static final String PROGRESS_LABEL = "呼び出し元の索引";
+
     private final int[] offsets;    // 長さ methodCount + 1
     private final int[] callerIds;  // 長さ = 辺の数
     private final int[] edgeIndexes;
@@ -50,9 +53,13 @@ public final class InboundIndex {
         IntArray targets = new IntArray(1 << 12);
         IntArray callers = new IntArray(1 << 12);
         IntArray edges = new IntArray(1 << 12);
+        // 解析サーバーはこの索引を解析の最後に必ず作る。メソッド数が多いと数分かかるので、
+        // 中止の受け付けと同じ間隔で進捗も出す（docs/eclipse-plugin-progress-log-qa.md）
+        RunControl.progress(PROGRESS_LABEL, 0, methodCount);
         for (int caller = 0; caller < methodCount; caller++) {
             if ((caller & 0xFFF) == 0) {
                 RunControl.checkCancelled();
+                RunControl.progress(PROGRESS_LABEL, caller, methodCount);
             }
             for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
                 for (int t : resolver.resolve(e).targets()) {
@@ -66,6 +73,7 @@ public final class InboundIndex {
             }
         }
 
+        RunControl.progress(PROGRESS_LABEL, methodCount, methodCount);
         int total = targets.size();
         int[] offsets = new int[methodCount + 1];
         for (int i = 0; i < total; i++) {
