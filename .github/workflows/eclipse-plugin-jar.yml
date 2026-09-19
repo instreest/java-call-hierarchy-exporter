@@ -51,7 +51,11 @@ jobs:
       # 版は MANIFEST.MF の Bundle-Version で決まる。ここで固定にすると二重管理に
       # なるのでワイルドカードで拾う（target 直下の jar はバンドル本体だけ。
       # 解析本体の jche-core.jar は target/classes/lib/ の中にあり、ここには出てこない）
-      - uses: actions/upload-artifact@v4
+      #
+      # v7 なのは Node.js 24 で動く版だから。v4 は Node.js 20 を指しており、
+      # ランナーが強制的に 24 で動かすため「Node.js 20 is deprecated」の注記が出る
+      # （action.yml・smoke.yml の回帰ジョブと同じ版。入力の名前は v4 と変わらない）
+      - uses: actions/upload-artifact@v7
         with:
           name: eclipse-plugin-jar
           path: eclipse-plugin/target/io.github.instreest.jche.eclipse-*.jar
