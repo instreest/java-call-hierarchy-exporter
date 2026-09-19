@@ -185,7 +185,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 | role | 意味 |
 |---|---|
-| `ENTRY_CANDIDATE` | 呼び出し元が無い。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
+| `FRAMEWORK_ENTRY` | 契約でフレームワークが呼ぶと分かる入口（`main`、Servlet の `doGet`、`@Scheduled`、`@GetMapping`、`@Test` 等。[docs/callback-contracts.md](docs/callback-contracts.md)）。全体モードでは、ソースから呼ばれていても起点になる |
+| `ENTRY_CANDIDATE` | 呼び出し元が無く、上の契約にも当たらない。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
 | `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
 | `LEAF` | 呼び出し先が無い。末端処理 |
 | `NORMAL` | 上記以外 |
@@ -228,7 +229,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 - コンストラクタ（`<init>`）は出力しません（`call-hierarchy.csv` でも行にしていないため揃えています）
 - jar の中のメソッドなど、ソースに宣言が無いものは出力しません。呼ばれている事実は `call-hierarchy.csv` に残ります
 - `reachable` の起点は `call-hierarchy.csv` と同じで、`entry.packages` で指定したメソッドです。
-  空欄のとき（全体モード）は「呼び出し元が無く、ソース上に本体を持つメソッド」が起点になります
+  空欄のとき（全体モード）は「呼び出し元が無く、ソース上に本体を持つメソッド」と `FRAMEWORK_ENTRY` が起点になります
 
 ### Eclipse でソースコードへジャンプする
 `call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
@@ -392,6 +393,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.vi
 `new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
 （`[RESOLVED:CALLBACK]`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
+自前のフレームワーク分は `contracts.files` に表を書いて足せます。
 
 ---
 

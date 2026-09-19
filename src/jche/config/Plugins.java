@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.extension.CallSiteHintCollector;
+import jche.extension.ContractProvider;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
 
@@ -52,6 +53,8 @@ public final class Plugins {
                 provider.init(config.raw, config.configDir);
             } else if (plugin instanceof CallSiteHintCollector collector) {
                 collector.init(config.raw, config.configDir);
+            } else if (plugin instanceof ContractProvider contracts) {
+                contracts.init(config.raw, config.configDir);
             }
         } catch (RuntimeException e) {
             // 初期化に失敗した拡張は「設定が効いていない状態」で動くので、必ず知らせる

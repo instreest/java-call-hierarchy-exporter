@@ -9,7 +9,8 @@ import java.util.List;
  * 呼び出し先のキーは JDT のバインディングが返す<b>宣言型</b>で書く。{@code list.forEach(...)} は
  * {@code List} が {@code forEach} を上書きしていないので {@code java.lang.Iterable#forEach} に、
  * {@code executor.submit(...)} は {@code ExecutorService#submit} に解決される。
- * 静的な型によって宣言型が変わるものは、それぞれの型で行を持つ。
+ * 上書きしていない型（{@code List#forEach}、{@code ExecutorService#execute}）で行を書いても
+ * 永久に当たらない。宣言元は test/contracts/run.sh が実行中の JDK と照合する。
  *
  * 全部を網羅するのではなく、「呼び戻される」と言い切れて、実務で経路が切れて困るものに絞る。
  * 足りなければ行を足す（docs/callback-contracts-qa.md）。
@@ -42,7 +43,6 @@ final class JdkCallbacks {
             "java.lang.Thread#start() -> r : run()",
             "java.lang.Thread#run() -> c* : run()",
             "java.util.concurrent.Executor#execute(" + RUNNABLE + ") -> a0 : run()",
-            "java.util.concurrent.ExecutorService#execute(" + RUNNABLE + ") -> a0 : run()",
             "java.util.concurrent.ExecutorService#submit(" + RUNNABLE + ") -> a0 : run()",
             "java.util.concurrent.ExecutorService#submit(" + RUNNABLE + ",java.lang.Object) -> a0 : run()",
             "java.util.concurrent.ExecutorService#submit(" + CALLABLE + ") -> a0 : call()",
@@ -69,9 +69,6 @@ final class JdkCallbacks {
             "java.util.Timer#scheduleAtFixedRate(java.util.TimerTask,long,long) -> a0 : run()",
             // --- コレクション ---
             "java.lang.Iterable#forEach(" + CONSUMER + ") -> a0 : " + ACCEPT1,
-            "java.util.Collection#forEach(" + CONSUMER + ") -> a0 : " + ACCEPT1,
-            "java.util.List#forEach(" + CONSUMER + ") -> a0 : " + ACCEPT1,
-            "java.util.Set#forEach(" + CONSUMER + ") -> a0 : " + ACCEPT1,
             "java.util.Map#forEach(" + BI_CONSUMER + ") -> a0 : " + ACCEPT2,
             "java.util.Collection#removeIf(" + PREDICATE + ") -> a0 : " + TEST1,
             "java.util.List#sort(" + COMPARATOR + ") -> a0 : " + COMPARE,

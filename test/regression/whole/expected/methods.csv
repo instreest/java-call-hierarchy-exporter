@@ -1,7 +1,7 @@
 ﻿method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
 Legacy.callRemote(),fx.app.Legacy,C,src/fx/app/Legacy.java,7,1,2,1,NORMAL,1,0,,1,
 Legacy.unusedDead(),fx.app.Legacy,C,src/fx/app/Legacy.java,13,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
-Main.main(String[]),fx.app.Main,C,src/fx/app/Main.java,32,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
+Main.main(String[]),fx.app.Main,C,src/fx/app/Main.java,32,1,0,2,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] 上流が未出力
 Main.run(String[]),fx.app.Main,C,src/fx/app/Main.java,36,1,1,58,NORMAL,1,4,[UNEXPANDED:CHA] 戻り値（ファクトリメソッド等）;[UNEXPANDED:CHA] ローカル変数,1,
 Main.branches(),fx.app.Main,C,src/fx/app/Main.java,79,1,1,5,NORMAL,1,0,,1,
 Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,87,1,1,1,NORMAL,1,0,,1,
@@ -50,8 +50,8 @@ ItemFinder.find(long),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,12,1,0,1,EN
 ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
 LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] 上流が未出力
 OrderDaoImpl.load(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,11,1,1,0,LEAF,1,0,,1,
-OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,16,1,NORMAL,1,0,,1,
-OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,16,0,LEAF,1,0,,1,
+OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,19,1,NORMAL,1,0,,1,
+OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,19,0,LEAF,1,0,,1,
 UserDaoImpl.load(long),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,7,1,1,1,NORMAL,1,0,,1,
 UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,15,0,LEAF,1,0,,1,
 UserDaoImpl.save(java.util.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,15,1,1,1,NORMAL,1,0,,1,
@@ -78,6 +78,15 @@ PaymentGateway.pay(int),fx.di.PaymentGateway,I,src/fx/di/PaymentGateway.java,7,0
 Scheduler.tick(),fx.di.Scheduler,C,src/fx/di/Scheduler.java,14,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
 SlowNotice.send(),fx.di.SlowNotice,C,src/fx/di/SlowNotice.java,10,1,1,0,LEAF,1,0,,1,
 SystemClock.now(),fx.di.SystemClock,C,src/fx/di/SystemClock.java,8,1,1,0,LEAF,1,0,,1,
+Dispatcher.submit(Runnable),fx.entry.Dispatcher,C,src/fx/entry/Dispatcher.java,12,1,1,0,LEAF,1,0,,1,
+Jobs.nightly(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,16,1,1,2,FRAMEWORK_ENTRY,1,0,,1,
+Jobs.onEvent(Object),fx.entry.Jobs,C,src/fx/entry/Jobs.java,22,1,0,1,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] 上流が未出力
+Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,28,1,1,1,FRAMEWORK_ENTRY,1,0,,1,
+Jobs.custom(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,34,1,0,3,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] 上流が未出力
+Jobs.internal(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,38,1,1,1,NORMAL,1,0,,1,
+SampleTest.runsJob(),fx.entry.SampleTest,C,src/fx/entry/SampleTest.java,9,1,0,2,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] 上流が未出力
+"WebEntry.doGet(HttpServletRequest,HttpServletResponse)",fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,16,1,0,1,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] 上流が未出力
+WebEntry.helper(),fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,21,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
 Helper.assist(Dao),fx.excluded.Helper,C,src/fx/excluded/Helper.java,7,1,1,3,NORMAL,1,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[EXCLUDED] exclude.packages で除外
 Ping.a(int),fx.excluded.Ping,C,src/fx/excluded/Ping.java,5,1,2,1,NORMAL,1,0,,0,[EXCLUDED] exclude.packages で除外
 Pong.b(int),fx.excluded.Pong,C,src/fx/excluded/Pong.java,4,1,1,1,NORMAL,1,0,,0,[EXCLUDED] exclude.packages で除外
@@ -137,3 +146,5 @@ Counter.initial(),fx.util.Counter,C,src/fx/util/Counter.java,26,1,1,0,LEAF,1,0,,
 Counter.initialCount(),fx.util.Counter,C,src/fx/util/Counter.java,28,1,1,0,LEAF,1,0,,1,
 Counter.Inner.touch(),fx.util.Counter.Inner,C,src/fx/util/Counter.java,31,1,1,1,NORMAL,1,0,,1,
 Counter.Nested.touch(Counter),fx.util.Counter.Nested,C,src/fx/util/Counter.java,35,1,1,1,NORMAL,1,0,,1,
+"HttpServlet.doGet(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,11,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] 上流が未出力
+"HttpServlet.doPost(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,14,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] 上流が未出力

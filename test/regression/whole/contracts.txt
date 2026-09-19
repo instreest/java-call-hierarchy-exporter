@@ -1,0 +1,5 @@
+# 自前のフレームワーク分の契約表（test/demo の fx.entry 用）
+# 呼び戻し: Dispatcher#submit に渡した Runnable の run が後で呼ばれる
+fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()
+# 入口: @Endpoint の付いたメソッドをフレームワークが呼ぶ
+@fx.entry.Endpoint

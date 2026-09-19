@@ -199,6 +199,31 @@ at fx.di.AbstractPayment.pay(AbstractPayment.java:9),AbstractPayment.record,Chec
 at fx.di.AbstractPayment.pay(AbstractPayment.java:9),CardPayment.record,Checkout.checkout,AbstractPayment.pay,CardPayment.record,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
 at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),SlowNotice.send,NoticeSender.notifyUser,SlowNotice.send,[RESOLVED:SPRING_DI_QUALIFIER]
 at fx.di.Scheduler.tick(Scheduler.java:15),SystemClock.now,Scheduler.tick,SystemClock.now,[RESOLVED:SPRING_DI]
+at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,Jobs.nightly,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.entry.Jobs.nightly(Jobs.java:18),Jobs.internal,Jobs.nightly,Jobs.internal
+at fx.entry.Jobs.internal(Jobs.java:39),Jobs.list,Jobs.nightly,Jobs.internal,Jobs.list
+at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.entry.Jobs.onEvent(Jobs.java:23),OrderDaoImpl.findById,Jobs.onEvent,OrderDaoImpl.findById,[RESOLVED:DATAFLOW_FIELD]
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,Jobs.list,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.entry.Jobs.custom(Jobs.java:35),Dispatcher.submit,Jobs.custom,Dispatcher.submit
+at fx.entry.Jobs.custom(Jobs.java:35),Jobs.lambda$custom$0,Jobs.custom,Jobs.lambda$custom$0
+at fx.entry.Jobs.lambda$custom$0(Jobs.java:35),OrderDaoImpl.findById,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,[RESOLVED:DATAFLOW_FIELD]
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.entry.SampleTest.runsJob(SampleTest.java:10),Jobs.nightly,SampleTest.runsJob,Jobs.nightly
+at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,SampleTest.runsJob,Jobs.nightly,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.entry.Jobs.nightly(Jobs.java:18),Jobs.internal,SampleTest.runsJob,Jobs.nightly,Jobs.internal
+at fx.entry.Jobs.internal(Jobs.java:39),Jobs.list,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list
+at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.entry.WebEntry.doGet(WebEntry.java:17),OrderDaoImpl.findById,WebEntry.doGet,OrderDaoImpl.findById,[RESOLVED:DATAFLOW_FIELD]
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.entry.WebEntry.helper(WebEntry.java:22),OrderDaoImpl.describe,WebEntry.helper,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,InheritMain.run,OnlyImpl.m,[RESOLVED:SINGLE_IMPL]

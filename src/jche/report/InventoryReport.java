@@ -26,6 +26,8 @@ public final class InventoryReport {
     public static final class Stats {
         long methods;
         long entryCandidates;
+        /** 契約でフレームワークが呼ぶと分かった入口 */
+        long frameworkEntries;
         long isolated;
         long leaves;
         long unreachable;
@@ -45,6 +47,7 @@ public final class InventoryReport {
         public String toString() {
             return "メソッド=" + methods
                     + " 起点候補=" + entryCandidates
+                    + " フレームワークの入口=" + frameworkEntries
                     + " 孤立=" + isolated
                     + " 末端=" + leaves
                     + " 未到達=" + unreachable
@@ -68,6 +71,8 @@ public final class InventoryReport {
      *
      * role の意味:
      * <pre>
+     *   FRAMEWORK_ENTRY 契約でフレームワークが呼ぶと分かる入口（main、Servlet、
+     *                   &#64;Scheduled 等。jche.graph.FrameworkEntries）
      *   ENTRY_CANDIDATE 呼び出し元が無い。画面入口・バッチ・デッドコード・
      *                   テスト・リフレクション経由が混ざる（要仕分け）
      *   ISOLATED        呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い
@@ -119,7 +124,12 @@ public final class InventoryReport {
                 st.methods++;
                 int out = g.outDegree(id);
                 String role;
-                if (in[id] == 0 && out == 0) {
+                if (resolver.frameworkEntries().isEntry(id)) {
+                    // 契約でフレームワークが呼ぶと分かる入口。呼び出し元の有無より
+                    // 「フレームワークが呼ぶ」事実の方が仕分けに効くので優先する
+                    role = "FRAMEWORK_ENTRY";
+                    st.frameworkEntries++;
+                } else if (in[id] == 0 && out == 0) {
                     role = "ISOLATED";
                     st.isolated++;
                 } else if (in[id] == 0) {

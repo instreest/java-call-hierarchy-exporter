@@ -1,6 +1,6 @@
 # jar の中から呼び戻される呼び出しの契約 — Q&A
 
-Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136) の段階 1。
+Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136)。
 `Thread#start()` → `run()` のように、ソースの外（JDK）を経由して自分のコードへ戻ってくる呼び出しを、
 契約表で繋いだ判断を残す。使い方は [callback-contracts.md](callback-contracts.md)。
 関連: [lambda-expansion-qa.md](lambda-expansion-qa.md)（渡した値の具象型を決める仕組み）。
@@ -14,7 +14,10 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
   `run` が `ENTRY_CANDIDATE` に混ざらないようにするため
 - 渡した値の具象型が分からなければ辺を張らない。jar の型（`Runnable` そのもの）の全実装を
   候補に並べることはしない
-- 段階 1 は JDK の同梱分だけ。設定ファイルで足す表とプラグインは段階 3
+- 段階 2（種類 B）: フレームワークが起点として呼ぶメソッドの契約表（`FrameworkEntries`）。
+  当たったメソッドは `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える
+- 段階 3: 設定ファイル（`contracts.files`）と拡張（`ContractProvider` / `contracts.providers`）で
+  自前のフレームワーク分を足せる。A と B は 1 つのファイルに混ぜて書き、行の形で振り分ける
 
 ### Q1. 呼び出し先の行を消して、呼び戻される側に置き換えないのはなぜか
 
@@ -71,3 +74,80 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 `resolve` の段 1 より前に移した。候補数が 0 件でも複数でも、渡された値がラムダなら
 実行されるのはその本体で、段 1 の候補数で結果が変わるのは筋が通らないため。
 これで `Runnable r = this::helper; r.run();` の `helper` が `inDegree` に数えられるようになった。
+
+### Q8. 種類 B（起点）を `role` に出すだけで、辺は足さないのはなぜか
+
+呼び出し箇所が無いから。フレームワークが呼ぶ事実はあるが、ソース上のどの行から呼ばれるかは
+存在しない。無理に「フレームワーク」というノードを作って辺を張ると、`caller` 列に
+指せる行が無く、Eclipse のスタックトレースコンソールから飛べない行ができる。
+代わりに `methods.csv` で仕分け、全体モードの起点に加えることで、その入口からの経路は
+`call-hierarchy.csv` に出る。
+
+### Q9. `FRAMEWORK_ENTRY` を、内部から呼ばれていても付けるのはなぜか
+
+`role` の目的は仕分けで、「フレームワークが呼ぶ」は「内部からも呼ばれる」より強い情報だから。
+`@GetMapping` のメソッドが内部からも呼ばれているとき、`NORMAL` にすると画面入口であることが
+一覧から消える。入口の一覧を作るのに `role` だけで済むよう、優先する。
+`inDegree` 列は残るので、内部から呼ばれているかどうかはそちらで分かる。
+
+同じ理由で、全体モードの起点にも `inDegree` に関係なく加える。内部からの経路の下に
+埋もれるだけでなく、入口としての経路（`root` 列がそのメソッド）が別に出る。
+
+### Q10. クラスのアノテーション（`@Controller` 等）では判定しないのはなぜか
+
+そのクラスの全メソッドが入口とは限らないから。`@Controller` のクラスにはプライベートの
+補助メソッドもあり、そこまで入口にすると仕分けが崩れる。Spring Web は `@GetMapping` 等の
+メソッド側のアノテーションで決まるのでそちらを見る。
+`HttpServlet` のように「型で決まる」ものは、`super 型#シグネチャ` で**上書きしたメソッドだけ**を
+入口にする（上書きしていない補助メソッドは入口にならない）。
+
+### Q11. `super` の判定に jar の型を使えるのはなぜか
+
+H 行（型階層）の親型には、jar の型の名前もそのまま入っている（`Worker extends Thread` なら
+`java.lang.Thread`）。契約の型名と文字列で突き合わせるだけなので、jar を読む必要が無い。
+`test/demo` では `HttpServlet` をスタブとしてソースに置いているが、jar にあっても同じ結果になる。
+
+### Q12. 設定ファイルの表を A と B で分けず、1 つのファイルにしたのはなぜか
+
+利用者にとっては「うちのフレームワークの契約」が 1 単位で、A か B かはツール側の都合だから。
+行の形（`->` を含むか、`@` / `super` / `static` で始まるか）で機械的に振り分けられるので、
+分けさせる理由が無い。どちらでも読めない行は警告に出し、黙って捨てない
+（「設定したのに効いていない」に気づけるように）。
+
+### Q13. 契約の変更でキャッシュの版を上げないのはなぜか
+
+契約は読み手（フェーズ2以降）だけが使い、キャッシュに書く事実には影響しないため。
+同梱の表を足しても、設定ファイルの表を変えても、再解析は起きず読み直しだけで反映される。
+`resolver.candidate.providers` の拡張がキャッシュに影響しないのと同じ扱い。
+
+### Q14. `ContractProvider` を既存の拡張ポイントに相乗りさせなかったのはなぜか
+
+既存の 2 つ（`CallSiteHintCollector` / `TypeCandidateProvider`）は「呼び出し箇所ごとに問い合わせる」
+形で、契約は「起動時に表を返す」形。役割が違うものを同じインターフェースに載せると、
+どちらの意味で呼ばれるかを実装側が気にすることになる。読み込みの仕組み（`plugin.folders` と
+クラス名の指定、`init(Properties, Path)`）だけを揃えた。
+
+### Q15. 同梱表の検査（`test/contracts/run.sh`）で何を見るのか。なぜ要るのか
+
+契約表は文字列なので、形を崩しても、JDK 側でメソッドの宣言元が動いても、コンパイルは通り、
+実行時は「当たらない」だけで何も言わない。検査は 4 点を見る。
+
+| 見るもの | 落ちる例 |
+|---|---|
+| 全行が parse できる | `-> a : run()`（位置の番号が無い） |
+| 重複が無い | 同じ行を 2 回書いた |
+| JDK の型は、その型が本当にそのメソッドを**宣言**している | `java.util.List#forEach(...)`（`List` は `Iterable` から継承しているだけ） |
+| 契約の位置にある値の型が、呼び戻すメソッドを持っている | `Executor#execute(Runnable) -> a0 : call()`（`Runnable` に `call` は無い） |
+
+照合は実行中の JDK のリフレクションで行う。リフレクションの `getDeclaredMethod` が返す宣言クラスと
+型消去後の引数型は `.class` の記述子そのもので、JDT の `getMethodDeclaration()` と `getErasure()`
+が返す形と一致する（どちらも JLS §4.6 の型消去）。JDT を起動しないので軽い。
+
+初回の実行で `ExecutorService#execute` と `Collection` / `List` / `Set` の `forEach` の 4 行が
+「宣言元が違う」で落ち、削った。「静的な型ごとに行を持つ」つもりで書いたが、
+JDT は静的な型ではなく宣言元に解決するので、上書きしていない型の行は永久に当たらない。
+書いた本人が気づけない種類の誤りなので、検査に置く価値がある。
+
+JDK に無い型（Servlet・Spring 等）は jar が無いので形だけを見る。これらは版上げで
+アノテーションが改名されても検出できない。実プロジェクトで `FRAMEWORK_ENTRY` が出なくなったら
+同梱表を疑う。

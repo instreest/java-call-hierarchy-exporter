@@ -130,6 +130,12 @@ public final class Config {
     public final Properties raw;
     public final List<String> hintCollectorClasses;
     public final List<String> candidateProviderClasses;
+    /** 契約表のファイル（contracts.files。設定ファイルのフォルダからの相対） */
+    public final List<Path> contractFiles;
+    /** 契約を返す拡張のクラス（contracts.providers） */
+    public final List<String> contractProviderClasses;
+    /** 同梱の契約表を使うか（contracts.builtin。既定 true） */
+    public final boolean builtinContracts;
     /** 拡張クラスの置き場所（設定ファイルのフォルダからの相対）。.java / .class / .jar を置く */
     public final List<Path> pluginFolders;
     /**
@@ -285,6 +291,9 @@ public final class Config {
         this.hintCollectorClasses = splitList(p.getProperty("resolver.hint.collectors", ""));
         this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
         this.pluginFolders = pluginFoldersOf(p);
+        this.contractFiles = contractFilesOf(p);
+        this.contractProviderClasses = splitList(p.getProperty("contracts.providers", ""));
+        this.builtinContracts = Boolean.parseBoolean(p.getProperty("contracts.builtin", "true").trim());
         this.hintPluginFingerprint = fingerprintOfHintPlugins(p, this.hintCollectorClasses, this.pluginFolders);
         this.raw = p;
 
@@ -328,6 +337,15 @@ public final class Config {
             out.add(resolveFromConfigDir(UserHome.expand(raw)));
         }
         return out;
+    }
+
+    /** 契約表のファイル。設定ファイルのフォルダからの相対パス（plugin.folders と同じ起点） */
+    private List<Path> contractFilesOf(Properties p) {
+        List<Path> files = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("contracts.files", ""))) {
+            files.add(resolveUnderConfigDir("contracts.files", raw));
+        }
+        return List.copyOf(files);
     }
 
     /** plugin.folders（設定ファイルのフォルダからの相対） */
