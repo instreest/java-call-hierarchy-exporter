@@ -1,0 +1,12 @@
+caller,callee,root,call-hierarchy
+at fxp.App.factoryCall(App.java:16),DaoFactory.get,App.factoryCall,DaoFactory.get
+at fxp.App.factoryCall(App.java:17),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,[RESOLVED:CONTRACT]
+at fxp.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.loadUser,App.factoryCall,UserDaoImpl.find,UserDaoImpl.loadUser
+at fxp.App.chainedCall(App.java:21),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,[RESOLVED:CONTRACT]
+at fxp.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.loadUser,App.chainedCall,UserDaoImpl.find,UserDaoImpl.loadUser
+at fxp.App.chainedCall(App.java:21),DaoFactory.get,App.chainedCall,DaoFactory.get
+at fxp.App.injected(App.java:25),BillingService.run,App.injected,BillingService.run,[RESOLVED:CONTRACT]
+at fxp.BillingService.run(BillingService.java:6),BillingService.charge,App.injected,BillingService.run,BillingService.charge
+at fxp.App.inheritedImpl(App.java:29),DaoFactory.get,App.inheritedImpl,DaoFactory.get
+at fxp.App.inheritedImpl(App.java:30),UserDaoImpl.find,App.inheritedImpl,UserDaoImpl.find,[RESOLVED:CONTRACT]
+at fxp.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.loadUser,App.inheritedImpl,UserDaoImpl.find,UserDaoImpl.loadUser

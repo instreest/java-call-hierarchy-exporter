@@ -15,10 +15,13 @@
 #                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
 #                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
-#   plugin               … 拡張（インスタンス解析条件のプラグイン）。拡張なし（config-before）→ 同梱の拡張
-#                          （config.properties。ファクトリのキーと対応表）→ 自前の拡張（config-custom。
-#                          plugins/*.java を実行時にコンパイル）の順に実行し、拡張ありでのみ具象クラスに
-#                          絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを確認する
+#   plugin               … 拡張（インスタンス解析条件のプラグイン）と契約表（種類 C）。拡張なし
+#                          （config-before）→ 同梱の拡張（config.properties。ファクトリのキーと対応表）→
+#                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
+#                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
+#                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
+#                          拡張・契約表ありでのみ具象クラスに絞れること、フェーズAの拡張を変えると
+#                          キャッシュが捨てられること、契約表では捨てられないことを確認する
 #   cachesplit           … 2 つに分かれたキャッシュ（analysis-cache.tsv / dataflow-cache.tsv）の整合。
 #                          両方そろっていれば再利用し、dataflow を消す・世代の印を書き換えると両方を
 #                          作り直し、dataflow から 1 ブロックだけ消すとそのファイルだけ解析し直して
@@ -339,6 +342,22 @@ plugin_case() {
     run plugin config-custom.properties 4 "4回目: 自前の拡張" || return
     expect_log_contains plugin 4 "DiXmlProvider" "4回目: plugins/*.java をコンパイルして読み込んだ"
     compare plugin expected-custom "4回目: 自前の拡張（DI 設定ファイルから絞れる）"
+
+    # 種類 C の契約表。拡張をいっさい使わず、契約表の行だけで同じように絞れる
+    run plugin config-contracts.properties 5 "5回目: 種類Cの契約表" || return
+    # 契約表はキャッシュの指紋に入らないので、表を足しても作り直さない
+    expect_reused plugin 5 "5回目: 契約表を足してもキャッシュを作り直さない"
+    expect_log_contains plugin 5 'fxp.DaoFactory#get("ORDER_DAO")' \
+        "5回目: まだ使えない形（C-3）を専用の警告で知らせる"
+    expect_log_contains plugin 5 "fxp.NoSuchType => fxp.UserDaoImpl" \
+        "5回目: 一度も当たらなかった契約を挙げる"
+    compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
+
+    # 右辺を採用できない契約は、候補を落として CHA に戻す（呼び出しを落とさない）
+    run plugin config-contracts-miss.properties 6 "6回目: 右辺を採用できない契約" || return
+    expect_log_contains plugin 6 "fxp.Dao#find => fxp.Service" \
+        "6回目: 当たったが採用できなかった契約を挙げる"
+    compare plugin expected-before "6回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
 }
 
 for c in $CASES; do

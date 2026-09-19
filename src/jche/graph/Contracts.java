@@ -15,15 +15,21 @@ import jche.util.Log;
 
 /**
  * 契約表の読み込み。同梱の表・設定ファイルで足した表・拡張が返す表を1つにまとめ、
- * 呼び戻し（{@link CallbackContracts}）と入口（{@link FrameworkEntries}）に振り分ける。
+ * 呼び戻し（{@link CallbackContracts}）・入口（{@link FrameworkEntries}）・
+ * 具象型（{@link TypeContracts}）に振り分ける。
  *
- * 行の形で振り分ける。{@code ->} を含む行は呼び戻し、{@code @} / {@code super} / {@code static} で
- * 始まる行は入口。どちらでも読めない行は、設定したのに効いていないことに気づけるよう警告に出す。
+ * 行の形で振り分ける。{@code =>} を含む行は具象型、{@code ->} を含む行は呼び戻し、
+ * {@code @} / {@code super} / {@code static} で始まる行は入口。どれでも読めない行は、
+ * 設定したのに効いていないことに気づけるよう警告に出す。
+ *
+ * {@code =>} と {@code ->} は別の綴りなので取り違えない（{@code "=>"} は {@code "->"} を含まない）。
+ * 順に見るとき {@code =>} を先に判定するのは、将来どちらも含む行を許したくなったときに
+ * 迷わないようにするため。
  */
 public final class Contracts {
 
-    /** 読み込んだ2つの表 */
-    public record Loaded(CallbackContracts callbacks, FrameworkEntries entries) {
+    /** 読み込んだ3つの表 */
+    public record Loaded(CallbackContracts callbacks, FrameworkEntries entries, TypeContracts types) {
     }
 
     private Contracts() {
@@ -32,6 +38,9 @@ public final class Contracts {
     public static Loaded load(Config config, CallGraph graph, DataflowResolver dataflow) {
         List<ContractUsage.Line> callbackLines = new ArrayList<>();
         List<ContractUsage.Line> entryLines = new ArrayList<>();
+        // 具象型（種類 C）に同梱の行は無い。フレームワークごとの DI の既定を同梱するかは
+        // まだ決めていない（docs/contracts-unification-design.md の §10）
+        List<ContractUsage.Line> typeLines = new ArrayList<>();
         if (config.builtinContracts) {
             for (String line : JdkCallbacks.LINES) {
                 callbackLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
@@ -49,18 +58,19 @@ public final class Contracts {
                 Log.warn("契約表を読めません: " + file + " (" + e + ")。この表は使わずに続けます");
                 continue;
             }
-            int n = sort(lines, callbackLines, entryLines, file.toString());
+            int n = sort(lines, callbackLines, entryLines, typeLines, file.toString());
             Log.info("契約表を読み込み: " + file + "（" + n + " 行）");
         }
         for (ContractProvider provider : Plugins.load(config, config.contractProviderClasses,
                 ContractProvider.class)) {
             List<String> lines = provider.lines();
-            int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines,
+            int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines, typeLines,
                     provider.getClass().getName());
             Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
         }
         return new Loaded(new CallbackContracts(graph, dataflow, new ContractUsage(callbackLines)),
-                new FrameworkEntries(graph, new ContractUsage(entryLines)));
+                new FrameworkEntries(graph, new ContractUsage(entryLines)),
+                new TypeContracts(new ContractUsage(typeLines)));
     }
 
     /**
@@ -70,14 +80,27 @@ public final class Contracts {
      *             一度も当たらなかった行の報告（{@link ContractUsage}）に使う
      */
     private static int sort(List<String> lines, List<ContractUsage.Line> callbacks,
-                            List<ContractUsage.Line> entries, String from) {
+                            List<ContractUsage.Line> entries, List<ContractUsage.Line> types,
+                            String from) {
         int count = 0;
         for (String raw : lines) {
             String line = (raw == null) ? "" : raw.trim();
             if (line.isEmpty() || line.startsWith("#")) {
                 continue;
             }
-            if (line.contains("->")) {
+            if (line.contains("=>")) {
+                if (TypeContracts.isFactoryKeyForm(line)) {
+                    // 「読めない行」で片付けると、書き手は綴りを疑って時間を使う。まだ無い機能だと言う
+                    Log.warn("ファクトリとキーを書く形（型#メソッド(\"キー\") => 具象型）は"
+                            + "まだ使えません（" + from + "）: " + line);
+                    continue;
+                }
+                if (TypeContracts.parse(line) == null) {
+                    Log.warn("契約の行を読めません（" + from + "）: " + line);
+                    continue;
+                }
+                types.add(new ContractUsage.Line(line, from, false));
+            } else if (line.contains("->")) {
                 if (CallbackContracts.parse(line) == null) {
                     Log.warn("契約の行を読めません（" + from + "）: " + line);
                     continue;

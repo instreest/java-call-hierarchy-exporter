@@ -82,20 +82,26 @@ public final class ContractUsage {
      *
      * @param callbacks 呼び戻しの表（種類 A）
      * @param entries   入口の表（種類 B）
+     * @param types     具象型の表（種類 C）
      */
-    public static void report(ContractUsage callbacks, ContractUsage entries) {
-        int userRows = callbacks.userRows() + entries.userRows();
+    public static void report(ContractUsage callbacks, ContractUsage entries, ContractUsage types) {
+        int userRows = callbacks.userRows() + entries.userRows() + types.userRows();
         if (userRows == 0) {
             return;
         }
-        Log.info("契約表の適用: 自前 " + (callbacks.appliedUser() + entries.appliedUser()) + "/" + userRows + " 行"
+        int appliedUser = callbacks.appliedUser() + entries.appliedUser() + types.appliedUser();
+        int appliedBundled = callbacks.appliedBundled() + entries.appliedBundled()
+                + types.appliedBundled();
+        Log.info("契約表の適用: 自前 " + appliedUser + "/" + userRows + " 行"
                 + "（呼び戻し " + callbacks.appliedUser() + "/" + callbacks.userRows()
-                + "、入口 " + entries.appliedUser() + "/" + entries.userRows() + "）"
-                + " ／ 同梱 " + (callbacks.appliedBundled() + entries.appliedBundled()) + " 行");
+                + "、入口 " + entries.appliedUser() + "/" + entries.userRows()
+                + "、具象型 " + types.appliedUser() + "/" + types.userRows() + "）"
+                + " ／ 同梱 " + appliedBundled + " 行");
 
         List<Line> unusedCallbacks = callbacks.unusedUser();
         List<Line> unused = new ArrayList<>(unusedCallbacks);
         unused.addAll(entries.unusedUser());
+        unused.addAll(types.unusedUser());
         if (!unused.isEmpty()) {
             Log.warn("自前の契約表で一度も当たらなかった行が " + unused.size() + " 件あります。"
                     + "型名・シグネチャの綴り違いか、そのプロジェクトでは使っていない機能の行です:");
@@ -103,21 +109,32 @@ public final class ContractUsage {
                 Log.info("    " + line.origin() + ": " + line.text());
             }
             if (!unusedCallbacks.isEmpty()) {
-                // 呼び戻しの行でいちばん多い間違い。入口の行しか無いときは関係が無いので出さない
+                // 呼び戻しの行でいちばん多い間違い。入口・具象型の行しか無いときは関係が無いので出さない
                 Log.info("    ※ 呼び戻しの行の呼び出し先は、JDT が返す「宣言型」で書きます"
                         + "（List#forEach ではなく Iterable#forEach。docs/callback-contracts.md）。");
             }
         }
 
-        List<Line> near = callbacks.reachedButUnappliedUser();
-        if (!near.isEmpty()) {
-            Log.info("※ 呼び出し先には一致したが、渡した値の具象型が決まらず繋げなかった行が "
-                    + near.size() + " 件あります（表の誤りではありません）:");
-            for (Line line : near) {
-                Log.info("    " + line.origin() + ": " + line.text());
-            }
-            Log.info("    ※ 追える形は docs/callback-contracts.md の「追える条件」にあります。");
+        // 「当たらなかった」と原因も対処も違うので分けて出す。種類ごとに意味が違うため文面も分ける
+        reportNearMiss(callbacks.reachedButUnappliedUser(),
+                "呼び出し先には一致したが、渡した値の具象型が決まらず繋げなかった行",
+                "追える形は docs/callback-contracts.md の「追える条件」にあります。");
+        reportNearMiss(types.reachedButUnappliedUser(),
+                "左辺の型には一致したが、右辺の型にその呼び出しの本体が無く採用できなかった行",
+                "右辺の FQN の綴りと、その型（か親）がそのメソッドを持つかを確かめてください。"
+                        + "採用できないときは候補を落として CHA に戻すので、呼び出しは漏れません。");
+    }
+
+    /** 「当たったが効かせられなかった」行を挙げる。無ければ何も出さない */
+    private static void reportNearMiss(List<Line> lines, String what, String hint) {
+        if (lines.isEmpty()) {
+            return;
         }
+        Log.info("※ " + what + "が " + lines.size() + " 件あります（表の誤りではありません）:");
+        for (Line line : lines) {
+            Log.info("    " + line.origin() + ": " + line.text());
+        }
+        Log.info("    ※ " + hint);
     }
 
     /** 利用者が足した行数 */

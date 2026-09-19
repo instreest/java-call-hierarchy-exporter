@@ -1,16 +1,18 @@
 # ソースの外（JDK・フレームワーク）との契約
 
-> 具象クラスの対応（[instance-analysis-plugin.md](instance-analysis-plugin.md)）も、この契約表の
-> 1 行で書けるようにする案が [contracts-unification-design.md](contracts-unification-design.md) にある（未実装）。
-
 ツールは jar の中を読みません。けれど「jar の中のこのメソッドは、渡した値のこれを呼び戻す」
-「フレームワークはこのメソッドを入口として呼ぶ」という**契約**は文章で書けます。
-契約表を持つことで、jar の中を読まずに階層を繋ぎ、入口を仕分けます。
+「フレームワークはこのメソッドを入口として呼ぶ」「この型はこの実装で動く」という**契約**は文章で書けます。
+契約表を持つことで、jar の中を読まずに階層を繋ぎ、入口を仕分け、実装を 1 件に絞ります。
 
 | 種類 | 何を決めるか | 出力 |
 |---|---|---|
 | **A. 呼び戻し** | 呼び出し箇所で渡した値のどれが、どのメソッドで呼び戻されるか | `call-hierarchy.csv` に `[RESOLVED:CALLBACK]` の行を足す |
 | **B. 起点** | どのメソッドをフレームワークが入口として呼ぶか | `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える |
+| **C. 具象型** | 宣言型（またはその型のメソッド）を、どの実装に解決するか | `call-hierarchy.csv` に `[RESOLVED:CONTRACT]` が付き、その先へ降りる |
+
+> 種類 C は、[インスタンス解析条件の拡張](instance-analysis-plugin.md)と同じことを、Java を書かず
+> 契約表の 1 行で指定するものです。設計の経緯は
+> [contracts-unification-design.md](contracts-unification-design.md) にあります。
 
 ## A. jar の中から呼び戻される呼び出しを繋ぐ
 
@@ -130,10 +132,42 @@ static main(java.lang.String[])                              … public static �
 判定はメソッド単位です。`@Controller` のようなクラスのアノテーションだけでは入口にしません
 （そのクラスの全メソッドが入口とは限らないため）。メソッド側の `@GetMapping` 等で判定します。
 
+## C. 具象クラスを1件に絞る
+
+インターフェース型で宣言された呼び出しは、実装が複数あると `[UNEXPANDED:CHA] 候補N件` で止まり、
+その先へ降りません。DI コンテナで注入されるフィールドのように、**どの実装で動くかが設定ファイル側に
+書いてある**ものは、その対応を契約表に書けば 1 件に絞れます。
+
+```
+宣言型のFQN => 具象型のFQN
+jp.co.xxx.dao.UserDao      => jp.co.xxx.dao.UserDaoImpl      … その型で宣言された呼び出し全部
+jp.co.xxx.dao.UserDao#find => jp.co.xxx.dao.CachedUserDao    … その型のそのメソッドだけ
+jp.co.xxx.dao.UserDao      => jp.co.xxx.dao.A, jp.co.xxx.dao.B   … 絞り切れないときは複数書ける
+```
+
+```csv
+at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,Main.run,UserDaoImpl.find,[RESOLVED:CONTRACT]
+at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,Main.run,UserDaoImpl.find,UserDaoImpl.load
+```
+
+| 決まりごと | 内容 |
+|---|---|
+| 引く順番 | `宣言型#メソッド名` → `宣言型`。狭いほうが先に当たる |
+| 複数書いたとき | 1 件に絞れたときだけ展開されるのは本体の判定と同じ。複数のままなら `[UNEXPANDED:CHA] 候補N件` |
+| 右辺の型 | 具象クラスでかまいません。そのメソッドを親から継承しているだけの型を書いても、本体を持つ親まで辿ります |
+| 採用できないとき | その型にも親にもその本体が無ければ、候補を落として CHA に戻します（呼び出しは漏れません）。実行ログに挙がります |
+| 効く位置 | [具象クラスの解決](../README.md#具象クラスの解決)の段3。拡張より先、データフローや Spring の判定より先に効きます |
+| 効かない呼び出し | `private` / `static` / `final` のように仮想ディスパッチされない呼び出し（段0）には効きません。そこまで差し込みたい場合は[拡張](instance-analysis-plugin.md)を使ってください |
+
+**まだ書けない形**: ファクトリとキーを書く形（`jp.co.app.ServiceFactory#get("user") => …`）は未実装です。
+その形の行は専用の警告を出して読み飛ばします。いまは
+[インスタンス解析条件の拡張](instance-analysis-plugin.md)（`FactoryKeyCollector` と `TypeMappingProvider`）を
+使ってください。
+
 ## 自前のフレームワーク分を足す
 
-同梱の表に無いものは、設定ファイルから足せます。A と B の行を同じファイルに混ぜて書けます
-（`->` を含む行が A、`@` / `super` / `static` で始まる行が B）。
+同梱の表に無いものは、設定ファイルから足せます。A・B・C の行を同じファイルに混ぜて書けます
+（`=>` を含む行が C、`->` を含む行が A、`@` / `super` / `static` で始まる行が B）。
 
 ```properties
 # config.properties
@@ -145,6 +179,7 @@ contracts.files=contracts.txt
 fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()
 @fx.entry.Endpoint
 super jp.co.xxx.BaseAction#execute()
+jp.co.xxx.dao.UserDao => jp.co.xxx.dao.UserDaoImpl
 ```
 
 - パスは設定ファイルのフォルダからの相対（`plugin.folders` と同じ起点）。複数ならカンマ区切り
@@ -186,7 +221,8 @@ public class MyContracts implements jche.extension.ContractProvider {
 | 知らせ | 意味 | 見るところ |
 |---|---|---|
 | `[WARN] 一度も当たらなかった行` | 契約の**呼び出し先そのものが 1 件も見つからなかった** | 型名・シグネチャの綴り。とくに呼び出し先のキーは[宣言型](#同梱の契約表a)で書く。そのプロジェクトで本当に使っていない API なら、そのままで構いません |
-| `※ 呼び出し先には一致したが…繋げなかった行` | 呼び出し先は見つかったが、**渡した値の具象型が決まらなかった** | 表は合っています。[追える条件](#追える条件)のどれにも当てはまらない渡し方をしている箇所です |
+| `※ 呼び出し先には一致したが…繋げなかった行` | 呼び出し先は見つかったが、**渡した値の具象型が決まらなかった**（種類 A） | 表は合っています。[追える条件](#追える条件)のどれにも当てはまらない渡し方をしている箇所です |
+| `※ 左辺の型には一致したが…採用できなかった行` | 左辺は見つかったが、**右辺の型にその呼び出しの本体が無かった**（種類 C） | 右辺の FQN の綴りと、その型（か親）がそのメソッドを持つか |
 
 - 出すのは**自前の表（`contracts.files` と `contracts.providers`）の行だけ**です。同梱の表は
   「そのプロジェクトで使っていない機能の行」が当たらないのが普通なので、効いた行数だけを数えます

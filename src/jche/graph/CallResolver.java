@@ -22,7 +22,7 @@ import jche.util.Log;
  *   段0 STATIC_BOUND               仮想ディスパッチされない呼び出し
  *   段1 NO_OVERRIDE / SINGLE_IMPL  オーバーライド候補が1つに定まる
  *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
- *   段3 CUSTOM_*                   拡張（ファクトリ・DI設定・外部リスト等）
+ *   段3 CONTRACT / CUSTOM_*        利用者が与えた条件（契約表の種類 C → 拡張の順に尋ねる）
  *   段4 DATAFLOW_*                 ファクトリの戻り値等から特定（経路非依存の分）
  *   段5 SPRING_DI(_QUALIFIER)      DIコンテナのBean定義で候補を絞る
  *   段6 CHA                        候補が複数のまま（低確度）
@@ -44,6 +44,8 @@ public final class CallResolver {
     private final CallbackContracts callbacks;
     /** フレームワークが起点として呼ぶメソッドの契約表（無ければ空の表） */
     private final FrameworkEntries frameworkEntries;
+    /** 「この宣言型はこの具象型」の契約表（無ければ空の表） */
+    private final TypeContracts typeContracts;
 
     /** 段1の結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
     private int[][] resolvedTargets;
@@ -74,18 +76,19 @@ public final class CallResolver {
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers) {
         this(graph, dataflow, providers, CallbackContracts.jdk(graph, dataflow),
-                FrameworkEntries.bundled(graph));
+                FrameworkEntries.bundled(graph), TypeContracts.empty());
     }
 
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers, CallbackContracts callbacks,
-                        FrameworkEntries frameworkEntries) {
+                        FrameworkEntries frameworkEntries, TypeContracts typeContracts) {
         this.graph = graph;
         this.methods = graph.methods;
         this.dataflow = dataflow;
         this.providers = providers;
         this.callbacks = callbacks;
         this.frameworkEntries = frameworkEntries;
+        this.typeContracts = typeContracts;
     }
 
     /** フレームワークが起点として呼ぶメソッドの契約表 */
@@ -101,7 +104,7 @@ public final class CallResolver {
      * 「一度も当たらなかった」と言える。部分的にしか辿らない経路（解析サーバー）からは呼ばない。
      */
     public void reportUsage() {
-        ContractUsage.report(callbacks.usage(), frameworkEntries.usage());
+        ContractUsage.report(callbacks.usage(), frameworkEntries.usage(), typeContracts.usage());
         for (TypeCandidateProvider provider : providers) {
             if (provider instanceof UsageReporter reporter) {
                 try {
@@ -237,7 +240,13 @@ public final class CallResolver {
                     fromNew.size() == 1 ? Resolution.LOCAL_NEW : Resolution.LOCAL_NEW_MULTI);
         }
 
-        // --- 段3: 拡張 ---
+        // --- 段3: 契約表（種類 C）→ 拡張 ---
+        // 表のほうを先に引く。食い違ったときに「どちらが効いたか」を追いやすいのは、
+        // 読み手が中身を見られる表のほう（docs/contracts-unification-design.md の §4）
+        Resolution fromContract = askTypeContracts(calleeId);
+        if (fromContract != null) {
+            return fromContract;
+        }
         Resolution custom = askProviders(edgeIndex, calleeId, false);
         if (custom != null) {
             return custom;
@@ -418,6 +427,38 @@ public final class CallResolver {
         }
         return Resolution.single(hits.get(0),
                 (qualifier == null) ? Resolution.SPRING_DI : Resolution.SPRING_DI_QUALIFIER);
+    }
+
+    /**
+     * 契約表（種類 C）で具象型が決まるか見る。決まらなければ null。
+     *
+     * <p>右辺の型を 1 つも採用できないとき（その型にも親にもその本体が無い）は候補を落として
+     * CHA に戻す。ここで警告は出さず、解析の最後に {@link ContractUsage} がまとめて挙げる
+     * （エッジごとに呼ばれるので、その場で出すと同じ行の警告が何度も並ぶ）。
+     */
+    private Resolution askTypeContracts(int calleeId) {
+        if (typeContracts.isEmpty()) {
+            return null;
+        }
+        TypeContracts.Contract contract =
+                typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
+        if (contract == null) {
+            return null;
+        }
+        String sig = methods.signature(calleeId);
+        IntArray ids = new IntArray(contract.candidates().length);
+        for (String fqn : contract.candidates()) {
+            // 契約が指す型が自分で宣言していない（親から継承した）実装も拾う。拡張と同じ扱い
+            int id = graph.implementationIn(fqn, sig);
+            if (id >= 0) {
+                ids.addIfAbsent(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return null;
+        }
+        typeContracts.usage().markApplied(contract.row());
+        return new Resolution(ids.toArray(), Resolution.CONTRACT);
     }
 
     /**

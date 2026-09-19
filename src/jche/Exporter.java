@@ -77,7 +77,7 @@ public final class Exporter {
                 new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
         Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
         CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
-                contracts.callbacks(), contracts.entries());
+                contracts.callbacks(), contracts.entries(), contracts.types());
         Log.heap("フェーズ2完了");
         return new AnalysisSnapshot(config, layout, graph, resolver);
     }

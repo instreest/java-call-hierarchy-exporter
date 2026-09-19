@@ -4,6 +4,7 @@ package jche.graph;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,6 +20,8 @@ import java.util.Set;
  *   宣言元  JDK の型は、その型が本当にそのメソッドを「宣言」していること（継承しているだけでは
  *           JDT の getMethodDeclaration がその型を返さず、行は永久に当たらない）
  *   呼び戻し 契約の位置にある値の型が、呼び戻すメソッドを持っていること
+ *   具象型  種類 C（{@code 型 => 具象型}）の読み書き。同梱の行は無いので形だけを見る。
+ *           ファクトリとキーを書く形（C-3）は、まだ実装していないと見分けられること
  * </pre>
  * 型の照合は実行中の JDK のリフレクションで行う。リフレクションが返す宣言クラスと型消去後の
  * 引数型は .class の記述子そのもので、JDT の {@code getMethodDeclaration().getErasure()} と同じ形になる
@@ -35,6 +38,7 @@ public final class BundledContractsCheck {
     public static void main(String[] args) {
         checkCallbacks();
         checkEntries();
+        checkTypes();
         checkRejects();
         System.out.println("  検査した行: " + checked + "、問題: " + failures);
         if (failures > 0) {
@@ -146,6 +150,52 @@ public final class BundledContractsCheck {
         }
     }
 
+    // ---- C 型: 具象型（同梱の行は無いので、読み書きの形だけを見る） ----
+
+    private static void checkTypes() {
+        // 読めるべき形。左辺の型・メソッド名と、右辺の候補が取り出せること
+        record Case(String line, String type, String method, String[] candidates) {
+        }
+        Case[] good = {
+            new Case("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl",
+                    "jp.co.xxx.UserDao", "", new String[] {"jp.co.xxx.UserDaoImpl"}),
+            new Case("jp.co.xxx.UserDao#find => jp.co.xxx.CachedUserDao",
+                    "jp.co.xxx.UserDao", "find", new String[] {"jp.co.xxx.CachedUserDao"}),
+            new Case("  jp.co.xxx.Dao  =>  jp.co.xxx.A ,  jp.co.xxx.B  ",
+                    "jp.co.xxx.Dao", "", new String[] {"jp.co.xxx.A", "jp.co.xxx.B"}),
+        };
+        for (Case c : good) {
+            checked++;
+            TypeContracts.Contract parsed = TypeContracts.parse(c.line());
+            if (parsed == null) {
+                ng(c.line(), "読めるべき形が parse できない");
+                continue;
+            }
+            if (!c.type().equals(parsed.declaredType()) || !c.method().equals(parsed.methodName())
+                    || !Arrays.equals(c.candidates(), parsed.candidates())) {
+                ng(c.line(), "読み取った内容が違う: 型=" + parsed.declaredType()
+                        + " メソッド=" + parsed.methodName()
+                        + " 候補=" + Arrays.toString(parsed.candidates()));
+            }
+        }
+        // ファクトリとキーを書く形（C-3）は、まだ実装していないことを見分けられること。
+        // 「読めない行」で片付けると、書き手は綴りを疑って時間を使う
+        checked++;
+        String factoryKey = "jp.co.xxx.Factory#get(\"USER\") => jp.co.xxx.UserImpl";
+        if (!TypeContracts.isFactoryKeyForm(factoryKey) || TypeContracts.parse(factoryKey) != null) {
+            ng(factoryKey, "ファクトリとキーの形（C-3）を見分けられていない");
+        }
+        checked++;
+        if (TypeContracts.isFactoryKeyForm("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl")) {
+            ng("C-1 の行", "ファクトリとキーの形ではないのにそう判定された");
+        }
+        // 種類の振り分けが取り違えられないこと。"=>" は "->" を含まない
+        checked++;
+        if ("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl".contains("->")) {
+            ng("=> の行", "呼び戻し（->）の行として振り分けられてしまう");
+        }
+    }
+
     // ---- 形の違う行が黙って通らないこと ----
 
     private static void checkRejects() {
@@ -176,9 +226,24 @@ public final class BundledContractsCheck {
                 ng(s, "形が違うのに parse が通った");
             }
         }
+        String[] badTypes = {
+            "=> jp.co.xxx.UserDaoImpl",                   // 左辺が無い
+            "jp.co.xxx.UserDao =>",                       // 右辺が無い
+            "jp.co.xxx.UserDao => ,",                     // 右辺が区切りだけ
+            "jp.co.xxx.UserDao# => jp.co.xxx.Impl",       // メソッド名が無い
+            "#find => jp.co.xxx.Impl",                    // 型が無い
+            "jp.co.xxx.UserDao",                          // 矢印が無い
+        };
+        for (String s : badTypes) {
+            checked++;
+            if (TypeContracts.parse(s) != null) {
+                ng(s, "形が違うのに parse が通った");
+            }
+        }
         checked++;
         if (CallbackContracts.parse("# comment") != null || CallbackContracts.parse("  ") != null
-                || FrameworkEntries.parse("# comment") != null || FrameworkEntries.parse("") != null) {
+                || FrameworkEntries.parse("# comment") != null || FrameworkEntries.parse("") != null
+                || TypeContracts.parse("# comment") != null || TypeContracts.parse("") != null) {
             ng("# / 空行", "コメント・空行は無視されるべき");
         }
     }

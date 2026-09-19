@@ -1,0 +1,13 @@
+# 種類 C（具象型）の契約表。拡張を使わず、この表だけで具象クラスに絞れることを検査する
+
+# C-1 宣言型 -> 具象型（DI 設定から機械的に書き出せる形）
+fxp.Service => fxp.BillingService
+
+# C-2 宣言型#メソッド名 -> 具象型。同じ型でもメソッドによって実装が違う場合の形
+fxp.Dao#find => fxp.UserDaoImpl
+
+# まだ使えない形（C-3: ファクトリとキー）。専用の警告が出て読み飛ばされることを検査する
+fxp.DaoFactory#get("ORDER_DAO") => fxp.OrderDaoImpl
+
+# 左辺が一度も当たらない行。「当たらなかった行」に挙がることを検査する（出力は変わらない）
+fxp.NoSuchType => fxp.UserDaoImpl
