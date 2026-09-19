@@ -20,7 +20,7 @@
 | [callback-contracts.md](callback-contracts.md) | jar の中（JDK 等）から呼び戻される呼び出しを契約表で繋ぐ（`Thread#start()` → `run()` 等）。同梱の表と、追える条件 |
 | [call-conditions.md](call-conditions.md) | 呼び出しに効いている条件を通常の出力に追加で出す（設定ファイルの `conditions.target` → `call-conditions.csv`）。判定できない条件も含める |
 | [static-analysis-limits.md](static-analysis-limits.md) | 静的解析で具象クラスが決まる条件と決まらない条件（しきい値）。文字列からクラス名を算出するファクトリを例に、追える出所・追えない出所と、健全側に倒す方針 |
-| [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、Actions 以外の CI |
+| [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、セキュリティ上の注意（`pull_request_target`、self-hosted ランナー、依存取得の省略）、Actions 以外の CI |
 
 ## 設計の説明
 
