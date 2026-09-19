@@ -19,6 +19,7 @@ import java.util.TreeSet;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
@@ -167,6 +168,17 @@ public final class ProjectAnalysis {
         if (selected != null && selected.exists()) {
             return ConfigSource.ofFile(selected);
         }
+        return autoConfigSourceOf(project);
+    }
+
+    /**
+     * 利用者が選んだ設定ファイルを抜きにして、そのプロジェクトを解析するなら何を使うか。
+     * 解析できないプロジェクト（Java プロジェクトでなく、設定ファイルも無い）なら null。
+     */
+    static ConfigSource autoConfigSourceOf(IProject project) {
+        if (project == null || !project.isAccessible()) {
+            return null;
+        }
         for (String path : DEFAULT_CONFIG_PATHS) {
             IFile known = project.getFile(path);
             if (known.exists() && known.getLocation() != null && looksLikeJcheConfig(known)) {
@@ -175,6 +187,25 @@ public final class ProjectAnalysis {
         }
         IJavaProject javaProject = EclipseProjectConfig.javaProjectOf(project);
         return (javaProject != null) ? ConfigSource.generated(javaProject) : null;
+    }
+
+    /**
+     * ワークスペースの中で解析できるプロジェクト（名前順）。ビューのプロジェクト選択に使う。
+     *
+     * <p>ビューを開いただけでは何も選ばれておらず、解析を始めることすらできなかった。
+     * 「メソッドを選んでコマンドを実行する」以外の入口が無かったためで、
+     * ここが一覧を出せるようにして、ビュー単体でも始められるようにする
+     * （docs/eclipse-plugin-folders-qa.md の Q4）。
+     */
+    public static List<IProject> analyzableProjects() {
+        List<IProject> result = new ArrayList<>();
+        for (IProject candidate : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+            if (autoConfigSourceOf(candidate) != null) {
+                result.add(candidate);
+            }
+        }
+        result.sort(Comparator.comparing(IProject::getName));
+        return result;
     }
 
     /** このツールの設定だと分かる項目（1つでもあれば、このツールの設定として自動で使う） */
@@ -220,7 +251,8 @@ public final class ProjectAnalysis {
                 collectProperties((org.eclipse.core.resources.IContainer) configDir, result);
             }
         } catch (CoreException e) {
-            JchePlugin.log(IStatus.WARNING, "設定ファイルを探せませんでした: " + project.getName(), e);
+            JchePlugin.log(IStatus.WARNING,
+                    Messages.format("config.searchFailed", project.getName()), e);
         }
         result.sort(Comparator.comparingInt((IFile f) -> configNameRank(f))
                 .thenComparing(IFile::getName));
@@ -328,16 +360,16 @@ public final class ProjectAnalysis {
         }
         JavaLocator.Found java = PluginRuntime.findJava(null);
         if (java == null) {
-            throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM
-                    + " 以上、推奨 " + JavaLocator.PREFERRED + "）が見つかりません。"
-                    + "［ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)］で場所を指定するか、取得してください");
+            throw new IOException(Messages.format("jdk.notFound",
+                    Integer.valueOf(JavaLocator.MINIMUM), Integer.valueOf(JavaLocator.PREFERRED)));
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
-        File cacheRoot = new File(PluginRuntime.stateLocation(), "cache");
-        ExporterConsole console = ExporterConsole.find();
-        if (console != null) {
-            console.println("解析プロセスを起動します: " + java);
-        }
+        File cacheRoot = PluginFolders.cacheRoot();
+        // コンソールは「開いていなくても」内容を溜める。ここで作っておけば、
+        // あとからビューを開いた利用者にも起動時のログが見える
+        ExporterConsole.getOrCreate().println(Messages.format("server.starting", java));
+        AnalysisLog.get().println(project.getName(),
+                Messages.format("server.startingWithVmArgs", java, PluginRuntime.vmArguments()));
         ServerConnection started = ServerLauncher.start(java.executable(), classpath, cacheRoot,
                 PluginRuntime.vmArguments(), null);
         started.setListener(new ServerConnection.Listener() {
@@ -351,10 +383,13 @@ public final class ProjectAnalysis {
 
             @Override
             public void log(String line) {
+                // 解析本体のログと、子プロセスの標準エラーの両方がここへ来る。
+                // 画面（コンソール）とファイルの両方へ残す
                 ExporterConsole console = ExporterConsole.find();
                 if (console != null) {
                     console.println(line);
                 }
+                AnalysisLog.get().println(project.getName(), line);
             }
         });
         connection = started;
@@ -363,7 +398,7 @@ public final class ProjectAnalysis {
                     String.valueOf(1));
         } catch (IOException e) {
             // 素性が取れなくても解析はできる。画面の表示が少し寂しくなるだけ
-            PluginRuntime.logWarning("解析サーバーの素性を取得できませんでした", e);
+            PluginRuntime.logWarning(Messages.get("server.helloFailed"), e);
         }
         return started;
     }
@@ -394,7 +429,7 @@ public final class ProjectAnalysis {
         words.add(methodKey);
         words.add(callers ? "callers" : "callees");
         words.addAll(Arrays.asList(filters));
-        request("呼び出し階層の取得", callback, 120_000L, words.toArray(new String[0]));
+        request(Messages.get("job.fetchTree"), callback, 120_000L, words.toArray(new String[0]));
     }
 
     // ------------------------------------------------------------
@@ -422,7 +457,7 @@ public final class ProjectAnalysis {
         if (source == null) {
             return;
         }
-        Path scratch = new File(PluginRuntime.stateLocation(), "config/" + project.getName()).toPath();
+        Path scratch = PluginFolders.generatedConfigFolder(project.getName()).toPath();
         AnalysisJob newJob = new AnalysisJob(this, source, scratch, changedFiles());
         newJob.setRule(rule);
         newJob.setUser(user);
@@ -487,6 +522,14 @@ public final class ProjectAnalysis {
     /** 子プロセスを終わらせる（プラグインの停止時・プロジェクトを見なくなったとき） */
     void dispose() {
         cancel();
+        discardServer();
+    }
+
+    /**
+     * 子プロセスを捨てる。次の要求で新しいものが起動する。
+     * 応答が返らなくなったときに使う（実行中のジョブは中止扱いにしない）
+     */
+    void discardServer() {
         ServerConnection current = connection;
         connection = null;
         if (current != null) {

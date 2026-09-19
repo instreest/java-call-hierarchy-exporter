@@ -47,13 +47,13 @@ final class CallersLabelProvider extends ColumnLabelProvider {
             }
         }
         if (!row.reason().isEmpty()) {
-            sb.append("  «").append(row.reason()).append('»');
+            sb.append("  \u00ab").append(row.reason()).append('\u00bb');
         }
         if (row.hasFlag(ServerRow.FLAG_RECURSIVE)) {
-            sb.append("  （再帰）");
+            sb.append("  ").append(Messages.get("row.recursive"));
         }
         if (row.hasFlag(ServerRow.FLAG_TRUNCATED)) {
-            sb.append("  … （深さ上限。開くと続きを取り寄せます）");
+            sb.append("  ").append(Messages.get("row.truncated"));
         }
         return sb.toString();
     }
@@ -66,11 +66,11 @@ final class CallersLabelProvider extends ColumnLabelProvider {
         }
         StringBuilder sb = new StringBuilder(row.key());
         if (row.file().isEmpty()) {
-            sb.append("\nソースがありません（依存 jar のメソッド）");
+            sb.append('\n').append(Messages.get("row.noSourceTip"));
         } else {
             sb.append('\n').append(row.file()).append(':').append(row.line());
             if (view.isChangedSinceAnalysis(row.file())) {
-                sb.append("\n⚠ このファイルは解析後に変更されています。再解析すると内容が変わる可能性があります");
+                sb.append('\n').append(Messages.get("row.changedTip"));
             }
         }
         return sb.toString();

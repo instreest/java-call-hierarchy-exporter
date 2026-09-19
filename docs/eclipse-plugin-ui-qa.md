@@ -388,3 +388,36 @@ VSCode 版も同じ理由で同じ名前にすると決めているので、2つ
 コマンドの ID、設定のキー、キーバインド（`Ctrl+Alt+Shift+H`）、クラス名。
 ID を変えると保存済みのパースペクティブや設定が外れるので、見える名前だけを変えた。
 既に使っている人にはビューのタブ名が変わって見えるが、置き場所や操作は変わらない。
+
+### Q22. 自動生成した設定で spring-petclinic の解析が失敗したのはなぜか
+
+`解析に失敗しました: error java.lang.IllegalArgumentException: Malformed \uxxxx encoding.` が出ていた。
+Windows で、設定ファイルを持たないプロジェクト（自動生成の設定で動く）を解析したときに起きる。
+
+原因は書く側と読む側の食い違いである。`EclipseProjectConfig#toFileText` は Eclipse の構成から
+組み立てた値をそのまま書いていたが、値には `library.jars` として Windows のパスが入る。
+properties ではバックスラッシュがエスケープなので、`Properties#load` は「バックスラッシュ + u」を
+Unicode エスケープとして読もうとし、そこが 16 進 4 桁でなければ例外になる。
+
+つまり**依存 jar のフォルダ名が `u` で始まるだけで解析できない**。spring-petclinic は Thymeleaf 経由で
+unbescape に依存しており、`...\repository\org\unbescape\unbescape\...` がこれに当たった。
+このリポジトリ自身（JDT しか依存が無い）では踏まないので、最初の確認では見つからなかった。
+
+例外にならない場合も静かに壊れる。`C:\temp` は `C:` + タブ + `emp` になり、`C:\Program Files` は
+`C:Program Files` になる。jar が見つからないだけなので解析は完走し、**型が解決できないぶん
+呼び出しが出力から欠ける**という、いちばん気づきにくい形の壊れ方をする。
+
+直し方は、書くときに逃がすこと（バックスラッシュを2つに、先頭の空白も逃がす）。VSCode 側は
+`vscode-plugin/src/config.ts` の `escapeProperty` で既にそうしていたので、Eclipse 側を合わせた。
+往復（書く → `Properties#load` で読む）を `test/plugin-config/run.sh` で検査するようにして、
+逃がし忘れが二度と入らないようにしてある。
+
+併せて2つ直した。
+
+- `Config` が設定ファイルを読めなかったときの文言。例外の文言（Malformed …）のままでは
+  利用者に何をすればよいか伝わらないので、「区切りを / にするか、バックスラッシュを2つ重ねる」
+  という対処を添えた。**手で書いた設定ファイル**でも同じ罠を踏むため
+- `GradleSettings` が `gradle.properties`（`~/.gradle` のものを含む）を読むところ。
+  利用者が書いたファイルが同じ理由で壊れていると解析ごと落ちていた。この値は `$var` の
+  置き換えに使うだけなので、警告を出して無視するようにした
+

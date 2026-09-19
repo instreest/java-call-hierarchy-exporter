@@ -7,6 +7,8 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 
+import jche.eclipse.Messages;
+
 /**
  * 解析サーバーを子プロセスとして起動する。
  *
@@ -16,7 +18,9 @@ import java.util.List;
  * 解析できない」という縛りが無くなる。
  *
  * <p>標準エラーは飲み込まない。子プロセスが起動に失敗したときの理由（クラスパスの誤り、
- * JDK の版違いなど）はそこにしか出ないので、呼び出し側がコンソールへ流す。
+ * JDK の版違いなど）はそこにしか出ないので、{@link ServerConnection} が専用スレッドで
+ * 読み続けてログへ流す。{@code redirectErrorStream(true)} で標準出力へ混ぜないのは、
+ * そちらがプロトコルの行（{@code OK} / {@code NG} / {@code #P} / {@code #L} / {@code R}）だからである。
  */
 public final class ServerLauncher {
 
@@ -38,10 +42,10 @@ public final class ServerLauncher {
     public static ServerConnection start(File javaExecutable, List<File> classpath, File cacheRoot,
                                          List<String> vmArguments, File workingDir) throws IOException {
         if (javaExecutable == null || !javaExecutable.isFile()) {
-            throw new IOException("解析に使う java が見つかりません: " + javaExecutable);
+            throw new IOException(Messages.format("launcher.javaNotFound", javaExecutable));
         }
         if (classpath == null || classpath.isEmpty()) {
-            throw new IOException("解析本体（lib/）が見つかりません");
+            throw new IOException(Messages.get("launcher.libMissing"));
         }
         List<String> command = new ArrayList<String>();
         command.add(javaExecutable.getAbsolutePath());

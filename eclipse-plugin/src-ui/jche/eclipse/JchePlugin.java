@@ -40,6 +40,7 @@ public class JchePlugin extends AbstractUIPlugin {
                 service = null;
             }
             instance = null;
+            AnalysisLog.get().close();
         } finally {
             super.stop(context);
         }

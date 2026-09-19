@@ -67,6 +67,11 @@
 | [network-download-confirm-qa.md](network-download-confirm-qa.md) | #86 | ネットワークからの取得（JBang 本体・JDK・依存 jar）の前に操作者の確認を必須にする（`--offline` での起動と目印ファイル、端末が無いときの扱い） |
 | [eclipse-plugin-qa.md](eclipse-plugin-qa.md) | #49 | Eclipse プラグインとしてビルドできるようにする（Tycho を使わない判断、同梱物の構成） |
 | [eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) | #49 | 呼び出し元階層ビューの実装。別プロセス化、Java 8 対応、設定画面 |
+| [eclipse-plugin-progress-log-qa.md](eclipse-plugin-progress-log-qa.md) | — | 解析が返ってこないときに何が起きていたかを残す（子プロセスの標準エラーを読まずに止まる不具合、ログのファイル出力、無通知区間への進捗の追加、応答が無いときの止め方） |
+| [eclipse-plugin-folders-qa.md](eclipse-plugin-folders-qa.md) | — | ビューを開いただけでは解析を始められない問題、自動生成した設定の project.root が作業フォルダを指していた不具合、キャッシュ・ログ・出力の置き場所、向きのボタン分け、字下げ付きのコピー |
+| [eclipse-plugin-nls-qa.md](eclipse-plugin-nls-qa.md) | — | プラグインの文言を英語（既定）と日本語で出し分ける。Pleiades が訳してくれない理由、NLS を使わない理由、OS の言語へ落ちないようにする理由、訳し忘れの検査 |
+| [eclipse-plugin-java-floor-qa.md](eclipse-plugin-java-floor-qa.md) | — | プラグインの下限を Java 8 / Eclipse 4.6 から Java 11 / Eclipse 4.17 へ上げる。「解析対象の Java の版」と「Eclipse を動かす Java の版」を取り違えていた話、Java 8 対応が何を買って何を払っていたか |
+| [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |
 | [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断 |

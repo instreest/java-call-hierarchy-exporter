@@ -51,6 +51,11 @@ session() {
     fi
 }
 
+# session() はプロトコルの行だけを返す（#L のログは捨てる）。ログの中身を見たい検査だけが使う変種
+session_log() {
+    printf '%b' "$1" | java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache" 2>/dev/null
+}
+
 echo "== 応答の形 =="
 OUT=$(session 'HELLO\t1\nPING\nSHUTDOWN\n')
 echo "$OUT" | sed 's/^/       /'
@@ -78,6 +83,94 @@ grep -qE "^R${T}0${T}${TARGET//./\\.}" <<<"$OUT" && ok "先頭行が根（深さ
 grep -qE "^R${T}1${T}" <<<"$OUT" && ok "呼び出し元（深さ1）が出る" || fail "呼び出し元が出ていない"
 MAXDEPTH=$(grep -E "^R${T}" <<<"$OUT" | cut -f2 | sort -n | tail -1)
 [ "$MAXDEPTH" -le 3 ] && ok "深さの上限（3）が効いている" || fail "深さ上限を超えている（$MAXDEPTH）"
+
+# Eclipse / VSCode プラグインは、設定ファイルをプロジェクトの中ではなく自分の作業フォルダに
+# 書き出して渡す（利用者にファイルを書かせないため）。設定の相対パスの起点は「設定ファイルのフォルダ」
+# なので、そこに project.root=. と書くと<作業フォルダ自身>を解析対象だと解釈してしまう。
+# 実際それで「ソースフォルダを特定できませんでした」と出て解析が1行も動かなかったため、
+# 「プロジェクトの外に置いた設定＋絶対パスの project.root」で動くことを、ここで固定する
+# （docs/eclipse-plugin-folders-qa.md の Q1）
+echo "== プロジェクトの外に置いた設定（プラグインが渡す形） =="
+mkdir -p "$WORK/scratch" "$WORK/outside-output"
+cat > "$WORK/scratch/generated-config.properties" <<EOF
+project.root=$ROOT/test/demo
+source.folders=src
+library.jars=
+source.encoding=UTF-8
+source.level=
+output.folder=$WORK/outside-output
+EOF
+OUT=$(session "ANALYZE\t$WORK/scratch/generated-config.properties\nFIND\t$TARGET\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+grep -qE "^OK${T}analyzed=1${T}methods=[0-9]+" <<<"$OUT" \
+    && ok "設定がプロジェクトの外にあっても、絶対パスの project.root なら解析できる" \
+    || fail "プロジェクトの外に置いた設定で解析できない"
+grep -qE "^OK${T}how=exact" <<<"$OUT" && ok "その結果を FIND で引ける" || fail "外に置いた設定の結果を引けない"
+# 出力先も設定ファイルのフォルダに引きずられないこと（作業フォルダに結果が積もらないように）
+[ -z "$(ls "$WORK/scratch" | grep -v generated-config.properties)" ] \
+    && ok "設定ファイルのフォルダに出力が作られない" \
+    || fail "設定ファイルのフォルダに出力が作られている: $(ls "$WORK/scratch")"
+
+# 同じ設定で project.root だけ相対（.）にすると失敗する。上の指定が効いていることの裏取り
+echo "== 同じ場所に project.root=. と書くと失敗する（上の指定が効いている証拠） =="
+sed "s|^project.root=.*|project.root=.|" "$WORK/scratch/generated-config.properties" \
+    > "$WORK/scratch/relative-config.properties"
+OUT=$(session "ANALYZE\t$WORK/scratch/relative-config.properties\nSHUTDOWN\n")
+grep -q "ソースフォルダを特定できませんでした" <<<"$OUT" \
+    && ok "相対の project.root は設定ファイルのフォルダを指してしまう（想定どおり失敗）" \
+    || fail "project.root=. でも通ってしまう（この検査の前提が崩れている）"
+
+# 構文エラーでファイルを読めなくても、JDT は例外を投げない（壊れた部分を飛ばした AST が返る）。
+# そのため以前は「失敗=0」「OK」と報告したまま、そのファイルの呼び出しが丸ごと落ちていた。
+# 「呼び出しを静かに落とさない」に反するので、数えて報告するようにした
+# （docs/syntax-error-report-qa.md）。キャッシュを再利用したときも言い続けることが肝
+echo "== 構文エラーのファイルを黙って落とさない =="
+mkdir -p "$WORK/syntax/src/app"
+# Java 5 より前の書き方。いまの JDT は source.level<1.8 を受け付けず 1.8 として読むので
+# enum が予約語になり、このメソッドの本体がまるごと読めなくなる
+cat > "$WORK/syntax/src/app/Legacy.java" <<'EOF'
+package app;
+public class Legacy {
+    public void run() {
+        java.util.Enumeration enum = null;
+        handle(enum);
+    }
+    void handle(Object o) { report(o); }
+    void report(Object o) { }
+}
+EOF
+cat > "$WORK/syntax/c.properties" <<EOF
+project.root=$WORK/syntax
+source.folders=src
+source.encoding=UTF-8
+source.level=1.4
+output.folder=$WORK/syntax/out
+cache.folder=$WORK/syntax/cache
+EOF
+OUT=$(session_log "ANALYZE\t$WORK/syntax/c.properties\nSHUTDOWN\n")
+grep -q "構文エラー=1" <<<"$OUT" && ok "フェーズ1の集計に構文エラーの件数が出る" \
+    || fail "構文エラーが集計に出ない（黙って落ちている）"
+grep -q "src/app/Legacy.java" <<<"$OUT" && ok "読めなかったファイル名がログに出る" \
+    || fail "読めなかったファイル名が分からない"
+grep -qE "^OK${T}analyzed=1.*${T}syntaxErrors=1" <<<"$OUT" \
+    && ok "ANALYZE の応答が syntaxErrors を返す（画面がバナーに出せる）" \
+    || fail "応答に syntaxErrors が無い"
+
+# 2回目。キャッシュから書き写すだけでも、結果が欠けている事実は変わらない
+OUT=$(session_log "ANALYZE\t$WORK/syntax/c.properties\nSHUTDOWN\n")
+grep -q "再利用=1" <<<"$OUT" && ok "2回目はキャッシュを再利用する" || fail "2回目に再利用されていない"
+grep -q "構文エラー=1" <<<"$OUT" \
+    && ok "再利用したときも構文エラーを言い続ける（F行に持っているため）" \
+    || fail "2回目に警告が消える（キャッシュに残していない）"
+
+# 対照。同じコードから enum だけ直せば、警告は出ず呼び出しも揃う
+sed 's/\benum\b/it/g' "$WORK/syntax/src/app/Legacy.java" > "$WORK/syntax/src/app/Legacy.java.tmp"
+mv "$WORK/syntax/src/app/Legacy.java.tmp" "$WORK/syntax/src/app/Legacy.java"
+OUT=$(session_log "ANALYZE\t$WORK/syntax/c.properties\nSHUTDOWN\n")
+grep -q "構文エラー" <<<"$OUT" && fail "直したのに構文エラーが残っている" \
+    || ok "直せば警告は出ない（型解決のエラーでは警告しない）"
+grep -qE "^OK${T}analyzed=1.*${T}syntaxErrors=0" <<<"$OUT" \
+    && ok "応答も syntaxErrors=0 に戻る" || fail "応答が 0 に戻らない"
 
 echo "== AT（カーソル位置から囲むメソッドを引く） =="
 # 複数行のメソッド。test/demo/src/fx/dao/UserDaoImpl.java の load(long) は 7〜10 行目

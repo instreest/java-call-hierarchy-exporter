@@ -20,7 +20,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
-| `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`） |
+| `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`）。画面の文言は英語が既定で、日本語は `messages_ja.properties` に置く（`docs/eclipse-plugin-nls-qa.md`） |
 | `vscode-plugin/` | VSCode プラグイン（TypeScript、esbuild で1ファイルに束ねる）。同じ `--server` を子プロセスとして使う。`src/server/` と `src/config.ts` は `vscode` に触らない層で、Node だけで検査できる（`docs/vscode-plugin-design.md`） |
 | `test/` | 回帰テストと検査スクリプト（後述） |
 | `docs/README.md` | `docs/` の索引。使い方の詳細（`cli.md`、`build-tool-classpath.md`、`instance-analysis-plugin.md`、`github-actions.md`）、設計の説明（`cache-design.md`）、設計の記録、再実装用の仕様に分かれる |
@@ -57,6 +57,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/cachetail/run.sh` | キャッシュの最終行（`Z` 行）を末尾から読む部分の境界（改行の有無・CRLF・読む量の境目・多バイト文字） |
 | `bash test/pom/run.sh` | `//DEPS` 行と `pom.xml` の依存が一致すること |
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |
+| `bash test/plugin-config/run.sh` | Eclipse プラグインが自動生成した設定（`EclipseProjectConfig#toFileText`）が、解析側と同じ読み方（`Properties#load`）でそのまま読み戻せること。Windows のパスのバックスラッシュを逃がし忘れると解析ごと失敗する |
+| `bash test/plugin-api/run.sh` | Eclipse プラグインが下限の Eclipse（4.17 / 2020-09）の jar と `--release 11` でコンパイルできること。本番のビルドは新しい jar を使うので、この検査だけが下限を守る |
+| `bash test/plugin-nls/run.sh` | Eclipse プラグインの文言（英語が既定、日本語は重ねる）の検査。ソースに日本語のリテラルが残っていないこと、キーがそろうこと、`plugin.xml` の `%キー` があること、配布物に入ること、`osgi.nl` で切り替わり UTF-8 として読めること（`docs/eclipse-plugin-nls-qa.md`） |
 | `bash test/server/run.sh` | サーバーモード（`--server`）のプロトコルの検査。`HELLO` → `ANALYZE` → `FIND` / `AT` → `TREE` → `EXPORT` と断り方 |
 | `bash test/vscode/run.sh` | VSCode プラグインの `vscode` に触らない層の検査（Node 22 と npm が要る）。型検査、子プロセスとの一連のやりとり、木の組み直し、設定の用意、拡張本体を束ねられること |
 | `bash test/vscode/package.sh` | VSCode プラグインの配布物（`.vsix`）の検査（上に加えて Maven と JDK 21 以上が要る）。`lib/` が eclipse-plugin のビルドから集まり JDT の版が `//DEPS` と同じこと、入るもの・入らないもの |
@@ -75,6 +78,14 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - 文字コードは UTF-8。例外は `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF（`.gitattributes` で `-text`）。
   編集するときは MS932 のまま保存する。この制約の理由は `docs/cli-app-qa.md` の Q15
 - コメント・ログ・ドキュメントは日本語。ログのメッセージは利用者が次に何をすればよいか分かる書き方にする
+- Eclipse プラグイン（`eclipse-plugin/src-ui`）は **Java 11** の言語機能で書く（`--release 11`）。
+  下限は Eclipse 4.17（2020-09）／Java 11 で、`test/plugin-api/run.sh` がその版の jar だけで
+  コンパイルして検査する（`docs/eclipse-plugin-java-floor-qa.md`）
+- **Eclipse プラグインの画面の文言だけは例外**で、英語が既定。ソースに文字列を直接書かず
+  `Messages.get("キー")` で引き、英語を `eclipse-plugin/src-ui/jche/eclipse/messages.properties` に、
+  日本語を `messages_ja.properties` に足す（plugin.xml とバンドルの名前は `plugin*.properties`）。
+  日本語のリテラルが残っていないことは `test/plugin-nls/run.sh` が検出する。
+  コメントは今までどおり日本語（`docs/eclipse-plugin-nls-qa.md`）
 - JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
   （`test/pom/run.sh` が検出する）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。

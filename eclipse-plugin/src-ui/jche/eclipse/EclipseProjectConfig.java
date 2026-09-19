@@ -25,10 +25,20 @@ import org.eclipse.jdt.core.JavaModelException;
  * <p>これがあるおかげで、利用者は config.properties を書かなくてもビューを使える。
  * Eclipse は必要な情報（ソースフォルダ・依存 jar・文字コード・コンパイラー準拠レベル）を
  * すでに持っているので、それを解析側の設定（{@code config.properties}）の語彙へ翻訳しているだけである。
+ * <b>ソースフォルダが標準的な配置（src/main/java 等）でなくても、Eclipse のクラスパスに
+ * 載ってさえいれば解析できる</b>のは、これがあるからである。
+ *
+ * <p>ここで作る値は<b>すべて絶対パス</b>にする。設定ファイルの相対パスは
+ * 「設定ファイルを置いたフォルダ」が起点であり、自動生成した設定はプロジェクトの中ではなく
+ * プラグインの作業フォルダに書き出すので（{@link ConfigSource#materialize}）、
+ * {@code project.root=.} と書くと<b>作業フォルダ自身を解析対象だと解釈されて必ず失敗する</b>
+ * （「ソースフォルダを特定できませんでした: …/.plugins/io.github.instreest.jche.eclipse/config/…」。
+ * docs/eclipse-plugin-folders-qa.md の Q1）。依存 jar のパスがもともと絶対パスで、
+ * この設定が「この環境でしか通用しないもの」である以上、起点だけ相対にする意味も無い。
  *
  * <p>設定ファイルがあるときはそちらが優先される（{@link ProjectAnalysis#configSource()}）。
  * 自動生成はあくまで既定値で、細かく効かせたい（entry.packages を絞る、外部 jar の被参照を見る等）
- * 場合は、生成した内容を保存してから手で直せばよい（ビューの「設定を config.properties に保存」）。
+ * 場合は、生成した内容を保存してから手で直せばよい（ビューの「設定を保存して編集」）。
  */
 final class EclipseProjectConfig {
 
@@ -42,17 +52,17 @@ final class EclipseProjectConfig {
                 return JavaCore.create(project);
             }
         } catch (CoreException e) {
-            JchePlugin.log(IStatus.WARNING, "プロジェクトの種別を判定できませんでした: " + project, e);
+            JchePlugin.log(IStatus.WARNING, Messages.format("project.natureFailed", project), e);
         }
         return null;
     }
 
     /**
-     * プロジェクトの構成から設定を作る。相対パスの起点はプロジェクトの場所。
+     * プロジェクトの構成から設定を作る。
      *
      * <p>入れる値は次のとおり。書かない項目は既定のまま（起点の指定が無い＝全体モード）。
      * <ul>
-     *   <li>project.root … プロジェクトの場所（起点そのものなので ".")</li>
+     *   <li>project.root … プロジェクトの場所（<b>絶対パス</b>。クラスコメントの理由による）</li>
      *   <li>source.folders … クラスパスのソースフォルダ（プロジェクトの外にあるリンクは除く）</li>
      *   <li>library.jars … 解決済みクラスパスの jar と、依存プロジェクトの出力フォルダ</li>
      *   <li>source.encoding … プロジェクトの文字コード</li>
@@ -63,11 +73,10 @@ final class EclipseProjectConfig {
         IProject project = javaProject.getProject();
         IPath projectLocation = project.getLocation();
         if (projectLocation == null) {
-            throw new IOException("プロジェクトの場所が特定できません（ワークスペース外のリンク）: "
-                    + project.getName());
+            throw new IOException(Messages.format("project.noLocation", project.getName()));
         }
         Properties p = new Properties();
-        p.setProperty("project.root", ".");
+        p.setProperty("project.root", projectLocation.toOSString());
         p.setProperty("source.folders", String.join(",", sourceFoldersOf(javaProject, projectLocation)));
         p.setProperty("library.jars", String.join(",", classpathJarsOf(javaProject)));
         p.setProperty("source.encoding", encodingOf(project));
@@ -94,17 +103,18 @@ final class EclipseProjectConfig {
                     // リンクされたソースフォルダ。キャッシュのキーも出力の file 列も
                     // project.root からの相対パスなので、外にあるものは扱えない
                     JchePlugin.log(IStatus.WARNING,
-                            "プロジェクトの外にあるソースフォルダは解析対象から外します: " + location, null);
+                            Messages.format("project.sourceOutside", location), null);
                     continue;
                 }
                 String relative = location.makeRelativeTo(projectLocation).toString();
                 folders.add(relative.isEmpty() ? "." : relative);
             }
         } catch (JavaModelException e) {
-            throw new IOException("クラスパスを読み取れませんでした: " + e.getMessage(), e);
+            throw new IOException(Messages.format("project.rawClasspathFailed", e.getMessage()), e);
         }
         if (folders.isEmpty()) {
-            throw new IOException("ソースフォルダがありません: " + javaProject.getElementName());
+            throw new IOException(Messages.format("project.noSourceFolders",
+                    javaProject.getElementName()));
         }
         return folders;
     }
@@ -129,7 +139,7 @@ final class EclipseProjectConfig {
                 }
             }
         } catch (JavaModelException e) {
-            throw new IOException("クラスパスを解決できませんでした: " + e.getMessage(), e);
+            throw new IOException(Messages.format("project.resolvedClasspathFailed", e.getMessage()), e);
         }
         return new ArrayList<>(jars);
     }
@@ -156,7 +166,7 @@ final class EclipseProjectConfig {
         String text = location.toOSString();
         if (text.indexOf(',') >= 0) {
             JchePlugin.log(IStatus.WARNING,
-                    "カンマを含むパスは設定に載せられないため除外します: " + text, null);
+                    Messages.format("project.commaPathSkipped", text), null);
             return;
         }
         jars.add(text);
@@ -179,19 +189,58 @@ final class EclipseProjectConfig {
         return (compliance == null || compliance.trim().isEmpty()) ? "" : compliance.trim();
     }
 
-    /** 自動生成した設定を config.properties の体裁で書き出す（保存用） */
+    /** かならず書き出す項目（値が空でも書く。何が決まっているかを見せるため） */
+    private static final String[] REQUIRED_KEYS = {
+        "project.root", "source.folders", "library.jars", "source.encoding", "source.level",
+    };
+
+    /** 指定があるときだけ書き出す項目（空欄なら解析側の既定に任せる） */
+    private static final String[] OPTIONAL_KEYS = {
+        "output.folder", "cache.folder",
+    };
+
+    /** 自動生成した設定を config.properties の体裁で書き出す（保存用・子プロセスへ渡す用） */
     static String toFileText(Properties p) {
         StringBuilder sb = new StringBuilder();
-        sb.append("# Eclipse のプロジェクト構成から自動生成した設定です。\n");
-        sb.append("# 各項目の意味は、ツール同梱の config.properties のコメントを参照してください。\n");
-        sb.append("# このファイルがあると、ビューは自動生成ではなくこちらを使います。\n");
-        for (String key : new String[] {"project.root", "source.folders", "library.jars",
-                "source.encoding", "source.level"}) {
-            sb.append(key).append('=').append(p.getProperty(key, "")).append('\n');
+        // 生成したファイルの見出しも、利用者が読むものなので訳す。行ごとに # を付けるのは
+        // ここで（訳文の側に # を書かせると、付け忘れで設定ファイルが壊れる）
+        for (String line : Messages.get("generated.header").split("\n")) {
+            sb.append("# ").append(line).append('\n');
         }
-        sb.append("# 起点を絞るときは entry.packages を、除外するときは exclude.packages を書きます。\n");
+        for (String key : REQUIRED_KEYS) {
+            sb.append(key).append('=').append(escapeValue(p.getProperty(key, ""))).append('\n');
+        }
+        for (String key : OPTIONAL_KEYS) {
+            String value = p.getProperty(key, "");
+            if (!value.trim().isEmpty()) {
+                sb.append(key).append('=').append(escapeValue(value)).append('\n');
+            }
+        }
+        sb.append("# ").append(Messages.get("generated.entryPackagesNote")).append('\n');
         sb.append("entry.packages=\n");
         sb.append("exclude.packages=\n");
         return sb.toString();
+    }
+
+    /**
+     * properties の値として書くときに、区切りと誤読される文字を逃がす（バックスラッシュと先頭の空白）。
+     *
+     * <p>Windows のパスは {@code C:\\Users\\taro\\.m2\\repository\\org\\unbescape\\...} のように
+     * バックスラッシュを含む。{@link java.util.Properties#load} はこれをエスケープとして読むため、
+     * 逃がさずに書くと「バックスラッシュ + u」が Unicode エスケープと解釈され、
+     * 「Malformed \\uxxxx encoding」で解析ごと失敗する（jar の名前が u で始まるだけで起きる。
+     * 実際 spring-petclinic は Thymeleaf 経由で unbescape に依存していて、これを踏む）。
+     * 例外にならない場合も {@code C:\\temp} が {@code C:temp} になるなど、パスが静かに壊れる。
+     *
+     * <p>VSCode 側の同じ処理（{@code vscode-plugin/src/config.ts} の {@code escapeProperty}）と
+     * 同じ規則にしてある。
+     *
+     * <p>このコメントでバックスラッシュを二重に書いているのは、javac が
+     * <b>コメントの中まで</b> Unicode エスケープを先に処理するためで、1つだと
+     * 「illegal unicode escape」でコンパイルできない。
+     */
+    private static String escapeValue(String value) {
+        String escaped = value.replace("\\", "\\\\");
+        return escaped.startsWith(" ") ? "\\" + escaped : escaped;
     }
 }

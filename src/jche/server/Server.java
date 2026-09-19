@@ -244,7 +244,10 @@ public final class Server {
             Log.resetClock();
             Config config = new Config(path, cacheRoot, LocalDateTime.now());
             AnalysisSnapshot result = Exporter.analyze(config);
-            result.inbound();           // 呼び出し元の索引もここで作る（TREE を待たせない）
+            // 呼び出し元の索引もここで作る（TREE を待たせない）。
+            // 解析の最後に必ず通る重い処理なので、始まりと終わりをログに残す
+            Log.info("呼び出し元の索引を作ります（メソッド数=" + result.graph().methodCount() + "）");
+            Log.info("呼び出し元の索引: " + result.inbound().size() + " 件");
             snapshot = result;
             analyzedFiles = null;       // 解析し直したので AT の索引は作り直す
             status();
@@ -264,7 +267,9 @@ public final class Server {
                 + Protocol.SEP + "inbound=" + snapshot.inbound().size()
                 + Protocol.SEP + "at=" + snapshot.analyzedAt().format(STAMP)
                 + Protocol.SEP + "root=" + Protocol.escape(snapshot.config().projectRoot.toString())
-                + Protocol.SEP + "sourceLevel=" + snapshot.config().sourceLevel);
+                + Protocol.SEP + "sourceLevel=" + snapshot.config().sourceLevel
+                // 0 でなければ解析結果に抜けがある。画面がそれを出せるように必ず返す
+                + Protocol.SEP + "syntaxErrors=" + snapshot.syntaxErrorFiles());
     }
 
     private void find(String key) {

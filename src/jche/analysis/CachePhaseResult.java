@@ -1,6 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.analysis;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** フェーズ1（ソース解析とキャッシュ更新）の集計 */
 public final class CachePhaseResult {
     public int reused;
@@ -17,4 +20,22 @@ public final class CachePhaseResult {
     public int salvaged;
     /** 型解決できなかった呼び出しの件数。クラスパス不足の検知に使う */
     public long unresolved;
+    /**
+     * 構文エラーがあって本体を読めなかったファイル数（新規解析ぶんと再利用ぶんの両方）。
+     * 0 でなければ、そのファイルに書かれた呼び出しは出力に出ていない
+     */
+    public int syntaxErrorFiles;
+    /** そのファイルのパス。多すぎても意味が無いので {@link #SYNTAX_ERROR_SAMPLE} 件まで */
+    public final List<String> syntaxErrorPaths = new ArrayList<>();
+
+    /** ログに出す構文エラーのファイル名の上限 */
+    public static final int SYNTAX_ERROR_SAMPLE = 20;
+
+    /** 構文エラーのあったファイルを1件数える。パスは上限まで覚える */
+    public void addSyntaxErrorFile(String relativePath) {
+        syntaxErrorFiles++;
+        if (syntaxErrorPaths.size() < SYNTAX_ERROR_SAMPLE) {
+            syntaxErrorPaths.add(relativePath);
+        }
+    }
 }

@@ -14,6 +14,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jche.eclipse.Messages;
+
 /**
  * 解析に使う JDK を探す。
  *
@@ -56,7 +58,7 @@ public final class JavaLocator {
 
         @Override
         public String toString() {
-            return executable + "（Java " + version + "）";
+            return Messages.format("java.foundLabel", executable, Integer.valueOf(version));
         }
     }
 

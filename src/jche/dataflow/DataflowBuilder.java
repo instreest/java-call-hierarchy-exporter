@@ -10,6 +10,7 @@ import jche.graph.CallGraph;
 import jche.graph.IntArray;
 import jche.graph.MethodTable;
 import jche.util.Names;
+import jche.util.RunControl;
 
 /**
  * フェーズ2b: データフローの事実をグラフ全体から一括で確定する。
@@ -32,6 +33,9 @@ import jche.util.Names;
  * 元から一括で作っていたものを同じ場所に寄せただけ。
  */
 public final class DataflowBuilder {
+
+    /** 進捗に出す名前 */
+    private static final String PROGRESS_LABEL = "データフローの確定";
 
     // --- リフレクションAPIの種別（DataflowResolver.REFLECT_* と同じ値） ---
     static final byte REFLECT_INVOKE = 1;
@@ -94,12 +98,20 @@ public final class DataflowBuilder {
         DataflowBuilder b = new DataflowBuilder(graph);
         String[] factoryOrigin = new String[methods.size()];
         int decided = 0;
+        // 進捗は 4096 件ごとに出す。メソッド数が数十万になると、ここだけで数分かかることがあり、
+        // 何も出ないと「止まった」と見分けが付かない（docs/eclipse-plugin-progress-log-qa.md）
+        RunControl.progress(PROGRESS_LABEL, 0, factoryOrigin.length);
         for (int id = 0; id < factoryOrigin.length; id++) {
+            if ((id & 0xFFF) == 0xFFF) {
+                RunControl.checkCancelled();
+                RunControl.progress(PROGRESS_LABEL, id + 1, factoryOrigin.length);
+            }
             factoryOrigin[id] = b.factoryOriginOf(id);
             if (factoryOrigin[id] != null) {
                 decided++;
             }
         }
+        RunControl.progress(PROGRESS_LABEL, factoryOrigin.length, factoryOrigin.length);
         return new DataflowFacts(factoryOrigin, usesParameters(graph), reflectKinds,
                 methodsByName(methods), decided, b.cutOff);
     }

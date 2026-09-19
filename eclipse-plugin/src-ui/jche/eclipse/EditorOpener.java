@@ -56,7 +56,7 @@ final class EditorOpener {
             }
             return true;
         } catch (PartInitException | BadLocationException e) {
-            JchePlugin.log(IStatus.WARNING, "エディタを開けませんでした: " + relativePath, e);
+            JchePlugin.log(IStatus.WARNING, Messages.format("editor.openFailed", relativePath), e);
             return false;
         }
     }

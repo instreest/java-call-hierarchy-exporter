@@ -236,6 +236,13 @@ public final class Config {
         Properties p = new Properties();
         try (Reader r = new InputStreamReader(Files.newInputStream(abs), StandardCharsets.UTF_8)) {
             p.load(r);
+        } catch (IllegalArgumentException e) {
+            // properties ではバックスラッシュがエスケープなので、Windows のパスをそのまま書くと
+            // 「バックスラッシュ + u」が Unicode エスケープと解釈されて読めない。
+            // 何が悪いのか分からない例外文言（Malformed uxxxx encoding）のままにしない
+            throw new IOException("設定ファイルを読めません: " + abs + "（" + e.getMessage() + "）。"
+                    + "Windows のパスを書くときは区切りを / にするか、"
+                    + "バックスラッシュを2つ重ねてください", e);
         }
         return p;
     }
