@@ -108,9 +108,21 @@ cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/s
 # ツール本体の版は含めない。キャッシュの形式が変わったときはツール自身が捨てるので、キーで分ける必要が無い
 analysis_cache_key=$(tr '\n' '\0' < "$config_list" | xargs -0 cat | hash_files | cut -c1-16)
 
+# AST 解析キャッシュの置き場所（actions/cache に渡すパス）。
+# uses: ./ で呼ばれたとき GITHUB_ACTION_PATH は「<ワークスペース>/.」になり、そのまま /.cache を足すと
+# ".//.cache" になる。actions/cache は '.' や '..' を含むパターンを受け付けず、警告を出して保存を飛ばすだけなので
+# （ステップは成功のまま、実行間の引き継ぎが黙って効かなくなる）、末尾の /. を落としてから渡す。
+# Windows のランナーでは区切りが \ になるので、そちらも見る
+analysis_cache_dir="$GITHUB_ACTION_PATH"
+case "$analysis_cache_dir" in
+    */.)  analysis_cache_dir=${analysis_cache_dir%/.} ;;
+    *\\.) analysis_cache_dir=${analysis_cache_dir%??} ;;
+esac
+
 {
     echo "config-list=$config_list"
     echo "output-dir-file=$output_dir_file"
     echo "cache-key=$cache_key"
     echo "analysis-cache-key=$analysis_cache_key"
+    echo "analysis-cache-dir=$analysis_cache_dir/.cache"
 } >> "${GITHUB_OUTPUT:-/dev/stdout}"
