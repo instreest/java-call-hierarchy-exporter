@@ -69,6 +69,7 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 - フェーズAの拡張はキャッシュに手がかりを書くので、拡張やその設定・実装ファイルを変えると、
   キャッシュは自動的に捨てられて全件解析し直しになります（変え忘れによる古い結果の混入を防ぐため）
 - 拡張の読み込み・コンパイルに失敗しても解析は止まりません。警告を出して拡張なしで続けます
+- 対応表のどの行が引かれたかは、解析の最後に実行ログへ出ます（下記「効いているかを確かめる」）
 
 ## 3. 例: 文字列連結でクラス名を組み立てるファクトリ
 
@@ -476,3 +477,38 @@ s.execute();            // ← 証拠が2件付く
   並べさせるほうが安全です（絞れないことより誤って絞ることの方が害が大きい）
 - 拡張の中で例外を投げても解析は止まりません。警告を出してその拡張を飛ばします
 - `resolver.candidate.providers` に複数書いた場合は、**先に候補を返した拡張が勝ちます**
+
+---
+
+## 効いているかを確かめる
+
+対応表も契約表と同じで、左辺を間違えても実行時は「引かれない」だけで出力は黙って元のままです。
+同梱の `TypeMappingProvider` は、解析の最後にどの行が引かれたかを実行ログに出します。
+
+```
+[plugin] TypeMappingProvider: 対応表の適用 4/5 行
+[WARN] 対応表で一度も引かれなかった行が 1 件あります。左辺の綴り違いか、その呼び出しが先の段（実装が1つ・その場で new 等）で既に絞れている可能性があります:
+    FACTORY_KEY@NO_SUCH_KEY
+```
+
+引かれなかった原因は 2 つあり、どちらかは機械的に決められないので両方を挙げています。
+
+| 原因 | どうするか |
+|---|---|
+| 左辺の綴り違い（証拠の種別・キー・宣言型の FQN） | 直す。証拠のキーは `plugin.factory.hint.kind` の値と `@` でつないだ形（既定 `FACTORY_KEY@<キー>`） |
+| その呼び出しが[段1・段2](../README.md#具象クラスの解決)で既に絞れていて、拡張まで来ていない | そのままでよい。対応表を書く前から 1 件に絞れていたということ |
+
+自前のフェーズB拡張でも同じ知らせを出せます。`jche.extension.UsageReporter` を一緒に実装すると、
+CSV を書き終えたあとに `reportUsage()` が 1 回呼ばれます（実装しなくても何も起きません）。
+
+```java
+public class MyDiProvider implements TypeCandidateProvider, jche.extension.UsageReporter {
+    @Override
+    public void reportUsage() {
+        jche.util.Log.info("[plugin] MyDiProvider: " + used + "/" + rules.size() + " 件の規則が効きました");
+    }
+}
+```
+
+フェーズA（`CallSiteHintCollector`）では呼ばれません。キャッシュを再利用した実行ではフェーズAが
+そもそも動かないため、「0 件でした」と報告すると誤解を招くからです。

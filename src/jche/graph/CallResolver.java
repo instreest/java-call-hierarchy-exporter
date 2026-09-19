@@ -13,6 +13,7 @@ import jche.cache.RecvKind;
 import jche.extension.Hint;
 import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
+import jche.extension.UsageReporter;
 import jche.util.Log;
 
 /**
@@ -90,6 +91,28 @@ public final class CallResolver {
     /** フレームワークが起点として呼ぶメソッドの契約表 */
     public FrameworkEntries frameworkEntries() {
         return frameworkEntries;
+    }
+
+    /**
+     * 契約表と拡張が「効いたか」を知らせる。CSV を書き終えたあとに 1 回だけ呼ぶ。
+     *
+     * <p>グラフ全体の走査が済んでいることが前提。呼び戻しの契約は {@link #inDegrees()} が全エッジ、
+     * 入口の契約は methods.csv の出力が全メソッドについて問い合わせるので、そこまで終わって初めて
+     * 「一度も当たらなかった」と言える。部分的にしか辿らない経路（解析サーバー）からは呼ばない。
+     */
+    public void reportUsage() {
+        ContractUsage.report(callbacks.usage(), frameworkEntries.usage());
+        for (TypeCandidateProvider provider : providers) {
+            if (provider instanceof UsageReporter reporter) {
+                try {
+                    reporter.reportUsage();
+                } catch (RuntimeException e) {
+                    // 報告の失敗で解析の結果を捨てない。出せなかったことだけ知らせる
+                    Log.warn("拡張の利用状況を報告できません: " + provider.getClass().getName()
+                            + " (" + e + ")");
+                }
+            }
+        }
     }
 
     /**

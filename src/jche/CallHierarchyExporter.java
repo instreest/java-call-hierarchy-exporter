@@ -393,6 +393,10 @@ public class CallHierarchyExporter {
             Log.info("     methods.csv の inHierarchy / absentCause 列で一覧できます。");
         }
 
+        // 契約表・対応表が効いたかを知らせる。methods.csv の出力でグラフ全体を走査し終えた
+        // ここで初めて「一度も当たらなかった」と言える
+        resolver.reportUsage();
+
         Log.heap("フェーズ3完了");
         return rows;
     }

@@ -108,6 +108,14 @@ expect_not_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の
         echo "  DIFF $1 ログ: キャッシュが捨てられていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
 }
+expect_log_missing() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラベル
+    if LC_ALL=C grep -a -q -F -- "$3" "$1/run-$2.log"; then
+        echo "  DIFF $1 ログに出てはいけない行があります ($4): $3"; fail=1
+    else
+        echo "  OK   $1 ログ ($4)"
+    fi
+}
+
 expect_log_contains() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラベル
     if LC_ALL=C grep -a -q -F -- "$3" "$1/run-$2.log"; then
         echo "  OK   $1 ログ ($4)"
@@ -317,6 +325,9 @@ plugin_case() {
     run plugin config.properties 2 "2回目: 同梱の拡張" || return
     expect_log_contains plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
     expect_log_contains plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
+    # 対応表が「効いたか」の知らせ。わざと引かれない行だけが挙がり、効いている行は挙がらない
+    expect_log_contains plugin 2 "FACTORY_KEY@NO_SUCH_KEY" "2回目: 引かれなかった対応表の行を挙げる"
+    expect_log_missing plugin 2 "FACTORY_KEY@REPORT_DAO" "2回目: 効いている対応表の行は挙げない"
     # フェーズAの拡張が増えたので、拡張なしで作ったキャッシュは捨てられて全件解析し直しになる
     expect_not_reused plugin 2 "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
     compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
@@ -364,6 +375,18 @@ for c in $CASES; do
             maven|mavenmulti|gradle)
                 expect_log_contains "$c" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
                 expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた" ;;
+            # 契約表が「効いたか」の知らせ。whole の 2 行はどちらも当たるので挙がってはならず、
+            # entry の contracts.txt はわざと当たらない行だけなので、そのまま挙がる
+            whole)
+                expect_log_missing whole 1 "fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()" \
+                    "1回目: 効いている契約は当たらなかった行として挙げない" ;;
+            entry)
+                expect_log_contains entry 1 "fx.entry.NoSuchDispatcher#submit" \
+                    "1回目: 当たらなかった契約を挙げる（呼び戻し）"
+                expect_log_contains entry 1 "fx.entry.NoSuchEndpoint" \
+                    "1回目: 当たらなかった契約を挙げる（入口）"
+                expect_log_contains entry 1 "fx.entry.Dispatcher#submit(java.lang.Runnable) -> r : run()" \
+                    "1回目: 呼び出し先には一致したが繋げなかった契約を挙げる" ;;
         esac
         compare "$c" expected "1回目: キャッシュ無し"
         expect_run_files "$c" config.properties "1回目"

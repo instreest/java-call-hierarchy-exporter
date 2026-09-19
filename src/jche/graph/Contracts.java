@@ -30,11 +30,15 @@ public final class Contracts {
     }
 
     public static Loaded load(Config config, CallGraph graph, DataflowResolver dataflow) {
-        List<String> callbackLines = new ArrayList<>();
-        List<String> entryLines = new ArrayList<>();
+        List<ContractUsage.Line> callbackLines = new ArrayList<>();
+        List<ContractUsage.Line> entryLines = new ArrayList<>();
         if (config.builtinContracts) {
-            callbackLines.addAll(JdkCallbacks.LINES);
-            entryLines.addAll(BundledFrameworkEntries.LINES);
+            for (String line : JdkCallbacks.LINES) {
+                callbackLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
+            }
+            for (String line : BundledFrameworkEntries.LINES) {
+                entryLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
+            }
         }
         for (Path file : config.contractFiles) {
             List<String> lines;
@@ -55,13 +59,18 @@ public final class Contracts {
                     provider.getClass().getName());
             Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
         }
-        return new Loaded(new CallbackContracts(graph, dataflow, callbackLines),
-                new FrameworkEntries(graph, entryLines));
+        return new Loaded(new CallbackContracts(graph, dataflow, new ContractUsage(callbackLines)),
+                new FrameworkEntries(graph, new ContractUsage(entryLines)));
     }
 
-    /** 行を種類ごとに振り分ける。読めた行数を返す */
-    private static int sort(List<String> lines, List<String> callbacks, List<String> entries,
-                            String from) {
+    /**
+     * 行を種類ごとに振り分ける。読めた行数を返す。
+     *
+     * @param from この行の出所（契約表のパス、または拡張のクラス名）。読めない行の警告と、
+     *             一度も当たらなかった行の報告（{@link ContractUsage}）に使う
+     */
+    private static int sort(List<String> lines, List<ContractUsage.Line> callbacks,
+                            List<ContractUsage.Line> entries, String from) {
         int count = 0;
         for (String raw : lines) {
             String line = (raw == null) ? "" : raw.trim();
@@ -73,13 +82,13 @@ public final class Contracts {
                     Log.warn("契約の行を読めません（" + from + "）: " + line);
                     continue;
                 }
-                callbacks.add(line);
+                callbacks.add(new ContractUsage.Line(line, from, false));
             } else {
                 if (FrameworkEntries.parse(line) == null) {
                     Log.warn("契約の行を読めません（" + from + "）: " + line);
                     continue;
                 }
-                entries.add(line);
+                entries.add(new ContractUsage.Line(line, from, false));
             }
             count++;
         }
