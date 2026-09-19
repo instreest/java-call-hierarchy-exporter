@@ -204,24 +204,34 @@ Save analysis cache
 
 Restore analysis cache
   Cache not found for input keys: …, jche-analysis-Linux-   ← 最も広い前方一致でも 0 件
-ソース解析: 再利用=0 新規解析=127                              ← 毎回すべて解析し直していた
+ソース解析: 再利用=0 新規解析=131                              ← 毎回すべて解析し直していた
 ```
 
-原因は `github.action_path` の形。`uses: ./` で呼ばれたときだけ「`<ワークスペース>/.`」になり、
-`${{ github.action_path }}/.cache` が `.//.cache` になる。`actions/cache` は `.` や `..` を含むパターンを
-受け付けず、**警告を出して対象から外すだけでステップは成功する**ので、保存されないまま緑になっていた。
-保存が無いので復元も当たらず、引き継ぎが丸ごと効いていなかった。
+原因は `github.action_path` の形。`uses: ./` で呼ばれたときだけ「`<ワークスペース>/./`」（末尾の区切りまで
+付いた `.`）になり、`${{ github.action_path }}/.cache` が `.//.cache` になる。`actions/cache` は `.` や `..` を
+含むパターンを受け付けず、**警告を出して対象から外すだけでステップは成功する**ので、保存されないまま
+緑になっていた。保存が無いので復元も当たらず、引き継ぎが丸ごと効いていなかった。
 
-直し方は、`prepare.sh` で末尾の `/.`（Windows のランナーでは `\.`）を落とした `analysis-cache-dir` を出力し、
-`restore` と `save` の `path` をそれに変える。`uses: ./` 以外の形（`uses: owner/repo@ref` の
-`_actions/…/<ref>`、`uses: ./.jche-tool`）は `.` を含まないので、そのまま通る。
+直し方は、`prepare.sh` で末尾の区切りと `.`（Windows のランナーでは `\`）を落とした
+`analysis-cache-dir` を出力し、`restore` と `save` の `path` をそれに変える。`uses: ./` 以外の形
+（`uses: owner/repo@ref` の `_actions/…/<ref>`、`uses: ./.jche-tool`）は `.` を含まないので、そのまま通る。
 
 | `github.action_path` | 渡すパス |
 | --- | --- |
-| `<ワークスペース>/.`（`uses: ./`） | `<ワークスペース>/.cache` |
+| `<ワークスペース>/./`（`uses: ./`） | `<ワークスペース>/.cache` |
 | `_actions/instreest/java-call-hierarchy-exporter/main`（`uses: owner/repo@ref`） | 同じ／`.cache` |
 | `<ワークスペース>/.jche-tool`（`uses: ./.jche-tool`） | 同じ／`.cache` |
-| `D:\a\repo\repo\.`（Windows の `uses: ./`） | `D:\a\repo\repo/.cache` |
+| `D:\a\repo\repo\.\`（Windows の `uses: ./`） | `D:\a\repo\repo/.cache` |
+
+**最初の修正は形を読み違えていて直っていなかった**（1 回目の修正後も同じ警告が出た）。
+ログに出るのは結合後の `.//.cache` だけで、そこから元の値を「末尾が `/.`」と逆算したのが誤り。
+実際は末尾に区切りまで付いた `/./` で、`*/.` の判定に当たらず素通りしていた。
+`/.` と `/./` のどちらも来うるので、**末尾の区切りと `.` を無くなるまで繰り返し落とす**形にし、
+検証も実際の値（`/./`）を含む 9 通りで行った。**結合後の文字列から元の値を推測しない**、が教訓である。
+
+同じ失敗を繰り返さないよう、`prepare.sh` は落ちた後のパスを
+「`解析キャッシュの置き場所: …`」としてログに出し、それでも `.` が残っていれば `::warning::` を出す。
+`actions/cache` 自身の警告はステップの成否に出ないので、こちら側で見えるようにしておく。
 
 **影響があったのはこのリポジトリ自身の `uses: ./` だけ**で、利用者が
 `uses: instreest/java-call-hierarchy-exporter@main` で呼ぶ経路（`_actions/…` 配下）は最初から正しく動いていた。
