@@ -250,6 +250,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[RESOLVED:DATAFLOW_FACTORY]` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `[RESOLVED:DATAFLOW_PARAM]` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `[RESOLVED:DATAFLOW_FIELD]` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
+| `[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
 | `[RESOLVED:DATAFLOW_LAMBDA]` | ラムダ式かメソッド参照が、その関数型インターフェースの実装としてこの呼び出し箇所まで渡ってきたと特定した（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
 | `[RESOLVED:SPRING_DI]` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
 | `[RESOLVED:SPRING_DI_QUALIFIER]` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
@@ -363,6 +364,10 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.vi
 - 同じ変数に複数のラムダが入りうる形（どれが実行されるか決められないので、絞りません）
 
 特定できない場合でも、生成の辺があるので本体の中の呼び出しは階層に出ます。
+
+`new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
+「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
+（`[RESOLVED:CALLBACK]`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
 
 ---
 

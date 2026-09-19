@@ -11,6 +11,7 @@ import jche.config.Config;
 import jche.config.PackagePattern;
 import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
+import jche.graph.CallbackContracts;
 import jche.graph.CallResolver;
 import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
@@ -107,6 +108,8 @@ public final class StreamingTreeWalker {
     /** データフロー・リフレクションで具象クラスを特定した件数（ログ用） */
     private long paramHits;
     private long factoryHits;
+    /** 契約（jar の中のメソッドが渡した値を呼び戻す）で繋いだ件数 */
+    private long callbackHits;
     private long reflectionHits;
     private long fieldHits;
     private long newHits;
@@ -166,6 +169,11 @@ public final class StreamingTreeWalker {
 
     public long newHits() {
         return newHits;
+    }
+
+    /** 契約で呼び戻される側へ繋いだ件数 */
+    public long callbackHits() {
+        return callbackHits;
     }
 
     /** 条件分岐の静的解析で打ち切った呼び出しの件数 */
@@ -344,6 +352,46 @@ public final class StreamingTreeWalker {
                 if (expand && !cycle) {
                     descend(depth + 1);
                 }
+            }
+
+            // 呼び出し先が jar の中でも、契約で「渡した値を呼び戻す」と分かるものは
+            // その先へ繋ぐ（Thread#start → Runnable#run 等。docs/callback-contracts-qa.md）。
+            // 呼び出し先自身の行はそのまま残し、その次に呼び戻される側を並べる
+            if (unreachable == null) {
+                descendCallbacks(depth, e, declaredCallee);
+            }
+        }
+    }
+
+    /**
+     * 契約で呼び戻されるメソッドを、その辺の追加の候補として出力し、降りる。
+     * 通常の候補と同じく、除外・循環の扱いを通す
+     */
+    private void descendCallbacks(int depth, int e, int declaredCallee) throws IOException {
+        for (CallbackContracts.Match match : resolver.callbackTargets(e, path[depth].context())) {
+            if (isRowLimitReached()) {
+                return;
+            }
+            int target = match.target();
+            callbackHits++;
+            if (isExcluded(target)) {
+                markAbsent(target, ABSENT_EXCLUDED);
+                if (!onCurrentPath(target, depth)) {
+                    skipThrough(depth, target, null, null);
+                }
+                continue;
+            }
+            boolean cycle = onCurrentPath(target, depth);
+            if (cycle) {
+                markAbsent(target, ABSENT_CYCLE);
+            }
+            Resolution res = Resolution.single(target, Resolution.CALLBACK);
+            String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null);
+            path[depth + 1].set(target, graph.callLineOf(e),
+                    note + " 契約: " + match.contract(), null, null, null, null);
+            emit(depth + 1);
+            if (!cycle) {
+                descend(depth + 1);
             }
         }
     }

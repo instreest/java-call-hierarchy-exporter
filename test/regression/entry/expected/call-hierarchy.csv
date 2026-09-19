@@ -140,6 +140,7 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,Main.main,M
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
 at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$1,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:112),UserDaoImpl.describe,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe,[RESOLVED:DATAFLOW_PARAM]
+at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
 at fx.app.Main.run(Main.java:68),Counter.bump,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,Main.main,Main.run,Counter.Inner.touch
@@ -320,6 +321,7 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,Main.run,Ma
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
 at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$1,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:112),UserDaoImpl.describe,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe,[RESOLVED:DATAFLOW_PARAM]
+at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
 at fx.app.Main.run(Main.java:68),Counter.bump,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,Main.run,Counter.Inner.touch
@@ -407,6 +409,7 @@ at fx.app.Main.lambda$lambdas$0(Main.java:109),OrderDaoImpl.findById,Main.lambda
 at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$1,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:112),OrderDaoImpl.describe,Main.lambdas,Main.lambda$lambdas$1,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
 at fx.app.Main.lambda$lambdas$1(Main.java:112),UserDaoImpl.describe,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
+at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
 at fx.app.Main.lambda$lambdas$0(Main.java:109),AbstractDao.findById,Main.lambda$lambdas$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
 at fx.app.Main.lambda$lambdas$0(Main.java:109),OrderDaoImpl.findById,Main.lambda$lambdas$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
 at fx.app.Main.lambda$lambdas$1(Main.java:112),OrderDaoImpl.describe,Main.lambda$lambdas$1,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
