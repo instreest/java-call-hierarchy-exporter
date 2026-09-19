@@ -342,8 +342,8 @@ Windows 側（`run.cmd`）にも同じ検査を入れてある（環境変数の
 
 ### Q26. 呼び出す GitHub 公式アクションの版
 
-`actions/checkout@v5` / `actions/setup-java@v5` / `actions/cache@v5` / `actions/upload-artifact@v7` を使う
-（`action.yml` の中と、このリポジトリの 2 つのワークフローで揃えてある）。
+`actions/checkout@v5` / `actions/setup-java@v5` / `actions/cache@v5` / `actions/setup-node@v5` /
+`actions/upload-artifact@v7` を使う（`action.yml` の中と、このリポジトリのワークフロー全部で揃えてある）。
 
 v4 系のままだと、実行のたびに次の警告が付く。
 
@@ -364,6 +364,12 @@ setup-java v4 is deprecated and will no longer receive updates. Please migrate t
 
 `upload-artifact` だけ v7 なのは、v5 / v6 の時点ではまだ `node20` 宣言のままで警告が消えないため
 （`node24` になったのは v7）。v7 では単一ファイルを zip せずにアップロードする `archive` 入力も増えている（Q27）。
+
+選ぶ基準は「最新の版」ではなく「`node24` を宣言している最小の版」である。より新しい major も出ているが
+（checkout v7・setup-java v6・cache v6・setup-node v7）、警告の原因は Node の版だけなので、
+上げる理由が無いものは揃えたままにしておく。入力の名前が変わっていないことを確かめてから上げること
+（setup-node は v7 で `always-auth` が消えているが、ここで使っているのは
+`node-version` / `cache` / `cache-dependency-path` だけなので、上げるとしても影響は無い）。
 
 ### Q27. アーティファクトを zip せず、CSV のまま置けるか
 
