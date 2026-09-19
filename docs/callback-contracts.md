@@ -61,7 +61,9 @@ JDK のうち、「呼び戻す」と言い切れて、実務で経路が切れ�
 
 呼び出し先のキーは JDT のバインディングが返す**宣言型**です。`list.forEach(...)` は `List` が
 `forEach` を上書きしていないので `Iterable#forEach` に、`executor.submit(...)` は `ExecutorService#submit` に
-解決されます。静的な型によって宣言型が変わるものは、それぞれの型で行を持っています。
+解決されます。上書きしていない型で書いた行（`List#forEach`、`ExecutorService#execute`）は永久に当たりません。
+同梱表の行は `bash test/contracts/run.sh` が実行中の JDK と照合します
+（[callback-contracts-qa.md](callback-contracts-qa.md) の Q15）。
 
 ### 契約の書き方（A）
 
