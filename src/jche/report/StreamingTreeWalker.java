@@ -115,6 +115,8 @@ public final class StreamingTreeWalker {
     private long newHits;
     /** 条件分岐の静的解析で「この経路では呼ばれない」と判定して打ち切った件数 */
     private long prunedCalls;
+    /** 絞れなかった呼び出しから作る、契約表のひな形 */
+    private final ContractSuggestions suggestions = new ContractSuggestions();
 
     private int rootId;
     private long totalRows;
@@ -174,6 +176,11 @@ public final class StreamingTreeWalker {
     /** 契約で呼び戻される側へ繋いだ件数 */
     public long callbackHits() {
         return callbackHits;
+    }
+
+    /** 絞れなかった呼び出しから作った、契約表のひな形 */
+    public ContractSuggestions suggestions() {
+        return suggestions;
     }
 
     /** 条件分岐の静的解析で打ち切った呼び出しの件数 */
@@ -298,6 +305,12 @@ public final class StreamingTreeWalker {
             // そこから先へは降りない（候補数^深さ で爆発するため）。
             // 並べる候補数にも上限を設ける
             int[] targets = res.targets();
+            // 絞れなかった呼び出しは、それを直す契約表の行のひな形にしておく。
+            // リフレクション（名前で照合）は契約表では直せないので除く
+            if (res.isMultiple() && unreachable == null
+                    && !Resolution.REFLECTION.equals(res.label())) {
+                suggestions.add(graph, dataflow, e, callerId, declaredCallee, targets);
+            }
             boolean expand = (targets.length == 1) && (unreachable == null);
             int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
 

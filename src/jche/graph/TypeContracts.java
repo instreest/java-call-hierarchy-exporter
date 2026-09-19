@@ -36,6 +36,10 @@ import jche.util.Names;
  * コンパイル時定数（{@code static final String} の参照、リテラルの連結）も値まで評価される。
  * <b>定数の単純名ではなく値</b>で書く点が、同梱の {@code FactoryKeyCollector} と違う。
  *
+ * <p>列挙定数をキーにしているファクトリ（{@code get(Kind.USER)}）は、引用符を付けずに
+ * <b>定数の FQN</b> で書く（{@code #get(jp.co.app.Kind.USER)}）。Java のソースに書く形と同じで、
+ * 文字列のキー（引用符あり）と見分けがつく。引用符も修飾名も無い形は読めない行として弾く。
+ *
  * <p>実引数は先頭から順に見て、<b>最初に表に載っているキー</b>を使う。多引数のファクトリ
  * （{@code get(scope, "USER")}）でも位置を書かずに済ませるための規則で、どの引数が当たったかで
  * 結果が揺れないよう「先頭から最初の 1 つ」に固定している。
@@ -51,13 +55,15 @@ public final class TypeContracts {
      *
      * @param declaredType 左辺の型。C-1 / C-2 は呼び出し先を宣言している型、C-3 はファクトリの型
      * @param methodName   左辺のメソッド名。C-1（型だけ）なら空文字
-     * @param key          C-3 のキー（ファクトリに渡す文字列）。C-1 / C-2 なら空文字
+     * @param key          C-3 のキー（ファクトリに渡す値）。C-1 / C-2 なら空文字
+     * @param keyKind      キーの種別。{@link Origin#LITERAL}（文字列）か {@link Origin#CONST}（列挙定数）。
+     *                     C-1 / C-2 なら {@code 0}
      * @param candidates   右辺の具象型の FQN
      * @param text         元の行（報告用）
      * @param row          契約表の何行目か（{@link ContractUsage} の添字）
      */
-    record Contract(String declaredType, String methodName, String key, String[] candidates,
-                    String text, int row) {
+    record Contract(String declaredType, String methodName, String key, char keyKind,
+                    String[] candidates, String text, int row) {
     }
 
     /** C-1 / C-2: 左辺の型ごとの契約。同じ型に C-1 と C-2 が並ぶことがある */
@@ -78,7 +84,7 @@ public final class TypeContracts {
                 byType.computeIfAbsent(c.declaredType(), k -> new ArrayList<>()).add(c);
             } else {
                 // 同じファクトリ・同じキーの行が 2 つあれば、先に書いたほうを使う
-                byFactoryKey.putIfAbsent(factoryKeyOf(c.declaredType(), c.methodName(), c.key()), c);
+                byFactoryKey.putIfAbsent(leftSideOf(c), c);
             }
         }
     }
@@ -133,18 +139,25 @@ public final class TypeContracts {
             return null;
         }
         String key = "";
+        char keyKind = 0;
         int open = left.indexOf('(');
         if (open >= 0) {
             if (!left.endsWith(")")) {
                 return null;
             }
             String inner = left.substring(open + 1, left.length() - 1).trim();
-            // いまは文字列のキーだけ。列挙定数（V:型.名前）は扱わない
-            if (inner.length() < 2 || inner.charAt(0) != '"'
-                    || inner.charAt(inner.length() - 1) != '"') {
+            if (inner.length() >= 2 && inner.charAt(0) == '"'
+                    && inner.charAt(inner.length() - 1) == '"') {
+                // "…" で囲んだキー。文字列リテラルとコンパイル時定数の値に当たる
+                key = inner.substring(1, inner.length() - 1);
+                keyKind = Origin.LITERAL;
+            } else if (isQualifiedName(inner)) {
+                // 修飾名は列挙定数。Java のソースに書く形（Kind.USER の FQN）に合わせる
+                key = inner;
+                keyKind = Origin.CONST;
+            } else {
                 return null;
             }
-            key = inner.substring(1, inner.length() - 1);
             if (key.isEmpty()) {
                 return null;
             }
@@ -163,7 +176,7 @@ public final class TypeContracts {
         if (!key.isEmpty() && methodName.isEmpty()) {
             return null;   // C-3 はメソッド名が要る
         }
-        return new Contract(type, methodName, key, candidates, s, row);
+        return new Contract(type, methodName, key, keyKind, candidates, s, row);
     }
 
     /** 右辺（カンマ区切りの具象型） */
@@ -190,22 +203,54 @@ public final class TypeContracts {
                 || Origin.kindOf(recvOrigin) != Origin.RETURN) {
             return null;
         }
-        String typeAndName = typeAndNameOf(Origin.valueOf(recvOrigin));
-        if (typeAndName.isEmpty()) {
-            return null;
-        }
-        for (String arg : argOriginsOf(Origin.argsOf(recvOrigin))) {
-            String key = dataflow.literalValueOf(arg, ctx);
-            if (key == null) {
-                continue;
-            }
-            Contract hit = byFactoryKey.get(typeAndNameToKey(typeAndName, key));
+        for (String left : factoryLeftSidesOf(recvOrigin, dataflow, ctx)) {
+            Contract hit = byFactoryKey.get(left);
             if (hit != null) {
                 usage.markReached(hit.row());
                 return hit;   // 実引数の先頭から見て、最初に表に載っているキーを使う
             }
         }
         return null;
+    }
+
+    /**
+     * 呼び出し箇所のレシーバが「ファクトリの戻り値」なら、契約表に書ける左辺
+     * （{@code 型#メソッド("キー")} / {@code 型#メソッド(列挙定数のFQN)}）の候補を、
+     * 実引数の位置の順に返す。ファクトリの戻り値でなければ空。
+     *
+     * <p>契約を引くとき（{@link #matchFactory}）と、絞れなかった呼び出しからひな形を作るとき
+     * （{@code jche.report.ContractSuggestions}）で同じ形を使うために、ここに寄せてある。
+     * 書ける形が増えたときに 2 か所が食い違わないようにするため。
+     *
+     * @param recvOrigin レシーバの出所（{@link CallGraph#recvOrigin}）
+     * @param dataflow   キーの値を引くのに使う
+     * @param ctx        この経路で分かっていること。無ければ null
+     */
+    public static List<String> factoryLeftSidesOf(String recvOrigin, DataflowResolver dataflow,
+                                                  DataflowContext ctx) {
+        if (recvOrigin == null || Origin.kindOf(recvOrigin) != Origin.RETURN) {
+            return List.of();
+        }
+        String typeAndName = typeAndNameOf(Origin.valueOf(recvOrigin));
+        if (typeAndName.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(1);
+        for (String arg : argOriginsOf(Origin.argsOf(recvOrigin))) {
+            // 文字列のキー。リテラルのほか、コンパイル時定数は値まで評価されたものが返る
+            String literal = dataflow.literalValueOf(arg, ctx);
+            if (literal != null) {
+                out.add(leftSideOf(typeAndName, literal, Origin.LITERAL));
+            }
+            // 列挙定数のキー。値グラフには「型FQN.定数名」で載っている
+            if (Origin.kindOf(arg) == Origin.CONST) {
+                String name = Origin.valueOf(arg);
+                if (!name.isEmpty()) {
+                    out.add(leftSideOf(typeAndName, name, Origin.CONST));
+                }
+            }
+        }
+        return out;
     }
 
     /**
@@ -243,13 +288,34 @@ public final class TypeContracts {
         return hit;
     }
 
-    /** C-3 の索引の鍵 */
-    private static String factoryKeyOf(String type, String methodName, String key) {
-        return typeAndNameToKey(type + "#" + methodName, key);
+    /**
+     * C-3 の索引の鍵＝契約表に書く左辺の正規形。
+     * {@link #factoryLeftSidesOf} が呼び出し箇所から組み立てる形と一致させる
+     */
+    private static String leftSideOf(Contract c) {
+        return leftSideOf(c.declaredType() + "#" + c.methodName(), c.key(), c.keyKind());
     }
 
-    private static String typeAndNameToKey(String typeAndName, String key) {
-        return typeAndName + "(" + key + ")";
+    private static String leftSideOf(String typeAndName, String key, char keyKind) {
+        return typeAndName + "(" + (keyKind == Origin.LITERAL ? "\"" + key + "\"" : key) + ")";
+    }
+
+    /** 修飾名（{@code jp.co.app.Kind.USER}）の形か。列挙定数のキーと、ただの書き間違いを分ける */
+    private static boolean isQualifiedName(String s) {
+        if (s.indexOf('.') < 0) {
+            return false;
+        }
+        for (String part : s.split("\\.", -1)) {
+            if (part.isEmpty() || !Character.isJavaIdentifierStart(part.charAt(0))) {
+                return false;
+            }
+            for (int i = 1; i < part.length(); i++) {
+                if (!Character.isJavaIdentifierPart(part.charAt(i))) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /** メソッドキー "jp.co.X#get(java.lang.String)" から "jp.co.X#get" を取り出す */

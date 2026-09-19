@@ -9,6 +9,6 @@ fxp.DaoFactory#get("REPORT_DAO") => fxp.ReportDaoImpl
 # C-1。ファクトリを通らないフィールドの注入はこちらで絞る
 fxp.Service => fxp.BillingService
 
-# C-2。Dao#find の呼び出しは 3 か所とも C-3 が先に当たるので、この行は一度も引かれない
-# （引く順番が C-3 → C-2 → C-1 であることの検査。「当たらなかった行」に挙がる）
-fxp.Dao#find => fxp.AbstractDao
+# ここには C-2（fxp.Dao#find => …）を置かない。置くと、キーが列挙定数で C-3 を書いていない
+# enumKey がそちらに当たってしまい、「拡張と同じ結果になる」という検査の意味が無くなる。
+# 引く順番（C-3 → C-2 → C-1）は contracts.txt の側で検査している

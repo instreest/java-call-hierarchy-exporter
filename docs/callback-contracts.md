@@ -143,6 +143,7 @@ static main(java.lang.String[])                              … public static �
 jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.UserDaoImpl    … その型で宣言された呼び出し全部
 jp.co.xxx.dao.UserDao#find       => jp.co.xxx.dao.CachedUserDao  … その型のそのメソッドだけ
 jp.co.xxx.DaoFactory#get("USER") => jp.co.xxx.dao.UserDaoImpl    … そのファクトリにそのキーを渡した値
+jp.co.xxx.DaoFactory#get(jp.co.xxx.DaoKind.USER) => jp.co.xxx.dao.UserDaoImpl  … キーが列挙定数の場合
 jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.A, jp.co.xxx.dao.B   … 絞り切れないときは複数書ける
 ```
 
@@ -176,7 +177,8 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,Main.run,
 | 定数で渡していてもよい | `get(Keys.USER)` のように `static final String` で渡していても、**定数の値**で引きます。リテラルの連結（`"USER" + "_DAO"`）も評価されます。書くのは**値**であって定数の単純名ではありません |
 | 多引数のファクトリ | 実引数を先頭から見て、**最初に表に載っているキー**を使います。位置は書けません |
 | 前提 | `dataflow.enabled=true`（既定）。`false` にすると引けないので、その旨を警告します |
-| 列挙定数のキー | まだ扱えません（`get(Kind.USER)`）。文字列のキーに読み替えるか、[拡張](instance-analysis-plugin.md)を使ってください |
+| 列挙定数のキー | 引用符を付けず**定数の FQN** で書きます（`#get(jp.co.app.Kind.USER)`）。Java のソースに書く形と同じで、文字列のキーと見分けがつきます |
+| 引用符も修飾名も無い形 | `#get(USER)` は読めない行として警告に出ます（文字列なら `"USER"`、列挙定数なら FQN） |
 
 キーは**呼び出し箇所に書かれている値**から引くので、ファクトリの中でクラス名を組み立てていても
 （`"jp.co.app.impl." + capitalize(key) + "Service"`）、解析器がその文字列演算を再現する必要はありません。
@@ -222,6 +224,28 @@ public class MyContracts implements jche.extension.ContractProvider {
 
 `test/regression/whole/contracts.txt` に、`test/demo` の自前フレームワーク分（`Dispatcher#submit` と
 `@Endpoint`）を足した例があります。
+
+## 何を書けばよいか分からないとき
+
+絞れなかった呼び出しがあると、出力フォルダに **`contracts-suggested.txt`** が出ます。
+そのまま貼れる契約表のひな形なので、書式を覚えなくても「選んでコメントを外す」だけで済みます。
+
+```
+# 3 か所  例) at fxp.App.factoryCall(App.java:17)
+#   候補: fxp.AbstractDao / fxp.OrderDaoImpl / fxp.UserDaoImpl
+# fxp.DaoFactory#get("USER_DAO") => ??
+```
+
+1. 当てはまる行の行頭の `#` を外す
+2. `??` を具象型の FQN に置き換える（候補はその行の上にあります）
+3. `contracts.files` が指す表に貼る
+
+- まとめ方は**呼び出し箇所ごとではなく、それを直す 1 行ごと**です。同じ呼び出しが 100 か所で
+  絞れていなくても、書く行は 1 行だからです。件数の多い順に並びます
+- レシーバがファクトリの戻り値なら、ファクトリとキーの形（C-3）で出ます。そちらのほうが狭く、
+  同じ型を返す他の呼び出しを巻き込みません
+- 解析のたびに作り直すので、直接編集しても残りません
+- 種類が多いときは先頭の 200 行で打ち切ります。上から直していくと、次の実行で残りが出ます
 
 ## 効いているかを確かめる
 

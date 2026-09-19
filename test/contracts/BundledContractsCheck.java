@@ -20,8 +20,8 @@ import java.util.Set;
  *   宣言元  JDK の型は、その型が本当にそのメソッドを「宣言」していること（継承しているだけでは
  *           JDT の getMethodDeclaration がその型を返さず、行は永久に当たらない）
  *   呼び戻し 契約の位置にある値の型が、呼び戻すメソッドを持っていること
- *   具象型  種類 C（{@code 型 => 具象型}、{@code 型#メソッド("キー") => 具象型}）の読み書き。
- *           同梱の行は無いので形だけを見る
+ *   具象型  種類 C（{@code 型 => 具象型}、{@code 型#メソッド("キー") => 具象型}、
+ *           {@code 型#メソッド(列挙定数のFQN) => 具象型}）の読み書き。同梱の行は無いので形だけを見る
  * </pre>
  * 型の照合は実行中の JDK のリフレクションで行う。リフレクションが返す宣言クラスと型消去後の
  * 引数型は .class の記述子そのもので、JDT の {@code getMethodDeclaration().getErasure()} と同じ形になる
@@ -190,11 +190,25 @@ public final class BundledContractsCheck {
             ng(factoryLine, "C-3 の読み取りが違う: 型=" + factory.declaredType()
                     + " メソッド=" + factory.methodName() + " キー=" + factory.key());
         }
-        // キーに引用符が無い形は読まない（助言を添えられるよう、実引数の有無は見分ける）
+        // 列挙定数のキーは引用符なしの FQN。Java のソースに書く形と同じ
         checked++;
-        String unquoted = "jp.co.xxx.Factory#get(USER) => jp.co.xxx.UserImpl";
-        if (TypeContracts.parse(unquoted) != null || !TypeContracts.hasArguments(unquoted)) {
-            ng(unquoted, "引用符の無いキーを読んでしまう、または実引数の形と見分けられていない");
+        String enumLine = "jp.co.xxx.Factory#get(jp.co.xxx.Kind.USER) => jp.co.xxx.UserImpl";
+        TypeContracts.Contract enumKey = TypeContracts.parse(enumLine);
+        if (enumKey == null || !"jp.co.xxx.Kind.USER".equals(enumKey.key())) {
+            ng(enumLine, "列挙定数のキーを読めていない");
+        }
+        // 文字列のキーと列挙定数のキーは、同じ綴りでも別の行として区別されること
+        checked++;
+        TypeContracts.Contract quoted = TypeContracts.parse(
+                "jp.co.xxx.Factory#get(\"jp.co.xxx.Kind.USER\") => jp.co.xxx.UserImpl");
+        if (quoted == null || enumKey == null || quoted.keyKind() == enumKey.keyKind()) {
+            ng(enumLine, "引用符の有無でキーの種別が分かれていない");
+        }
+        // 修飾されていない名前は、書き間違いとして弾く（助言を添えられるよう実引数の有無は見分ける）
+        checked++;
+        String unqualified = "jp.co.xxx.Factory#get(USER) => jp.co.xxx.UserImpl";
+        if (TypeContracts.parse(unqualified) != null || !TypeContracts.hasArguments(unqualified)) {
+            ng(unqualified, "修飾されていないキーを読んでしまう、または実引数の形と見分けられていない");
         }
         checked++;
         if (TypeContracts.hasArguments("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl")) {
@@ -253,6 +267,8 @@ public final class BundledContractsCheck {
             "jp.co.xxx.Factory#get(\"USER\" => jp.co.xxx.Impl",   // 閉じ括弧が無い
             "jp.co.xxx.Factory#get(\"\") => jp.co.xxx.Impl",      // キーが空
             "jp.co.xxx.Factory(\"USER\") => jp.co.xxx.Impl",      // メソッド名が無い
+            "jp.co.xxx.Factory#get(1.5) => jp.co.xxx.Impl",       // 修飾名でも文字列でもない
+            "jp.co.xxx.Factory#get(.USER) => jp.co.xxx.Impl",     // 修飾名の形が壊れている
         };
         for (String s : badTypes) {
             checked++;

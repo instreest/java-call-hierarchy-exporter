@@ -7,6 +7,7 @@ package fxp;
  * chainedCall … 変数に受けずに続けて呼ぶ形でも絞れるか（scopeKey が "@位置" になる経路）
  * injected    … DI 設定由来の「宣言型 -> 具象型」の対応表だけで絞れるか（フェーズBのみ）
  * inheritedImpl … 拡張が返した型が find() を親から継承している場合でも絞れるか（Issue #131）
+ * enumKey     … キーが列挙定数でも絞れるか（契約表の C-3。引用符なしの FQN で書く）
  */
 public class App {
 
@@ -27,6 +28,11 @@ public class App {
 
     public void inheritedImpl() {
         Dao dao = DaoFactory.get("REPORT_DAO");
+        dao.find();
+    }
+
+    public void enumKey() {
+        Dao dao = DaoFactory.get(DaoKind.ORDER);
         dao.find();
     }
 }

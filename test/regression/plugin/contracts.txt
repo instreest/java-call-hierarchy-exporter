@@ -10,5 +10,9 @@ fxp.Dao#find => fxp.UserDaoImpl
 # （正しく書いた C-3 は config-contracts-factory.properties の側で検査する）
 fxp.DaoFactory#get(ORDER_DAO) => fxp.OrderDaoImpl
 
+# C-3（ファクトリ＋キー）で、キーが列挙定数の形。引用符を付けず定数の FQN で書く。
+# Dao#find の C-2 より先に当たるので、この呼び出しだけ OrderDaoImpl になる（引く順番の検査）
+fxp.DaoFactory#get(fxp.DaoKind.ORDER) => fxp.OrderDaoImpl
+
 # 左辺が一度も当たらない行。「当たらなかった行」に挙がることを検査する（出力は変わらない）
 fxp.NoSuchType => fxp.UserDaoImpl

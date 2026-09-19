@@ -98,7 +98,8 @@ public final class Contracts {
                     // よくある書き間違いには助言を添える。綴りを疑って時間を使わせないため
                     Log.warn("契約の行を読めません（" + from + "）: " + line
                             + (TypeContracts.hasArguments(line)
-                                    ? "（ファクトリのキーは \"…\" で囲んでください）" : ""));
+                                    ? "（ファクトリのキーは \"…\" で囲みます。"
+                                            + "列挙定数なら引用符なしで FQN を書きます）" : ""));
                     continue;
                 }
                 types.add(new ContractUsage.Line(line, from, false));

@@ -124,6 +124,7 @@ config/
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8）
+    ├── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
     └── resolved-classpath.txt    解析時の依存jar一覧と要求元
 ```
 
@@ -353,8 +354,10 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
 
-`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます
-（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。
+`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます。
+出力フォルダの `contracts-suggested.txt` に、そのまま貼れる契約表のひな形が出ます
+（[docs/callback-contracts.md](docs/callback-contracts.md)。条件が複雑なら
+[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) の拡張）。
 
 静的解析で絞れる条件・絞れない条件は [docs/static-analysis-limits.md](docs/static-analysis-limits.md) にまとめてあります。
 

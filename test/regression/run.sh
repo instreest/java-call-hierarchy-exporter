@@ -67,6 +67,28 @@ compare() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
     [ $ok = 1 ] || fail=1
 }
 
+# 出力の CSV に、その文字列を含む行があること（ASCII だけを見る）
+expect_csv_contains() {   # $1=case  $2=ASCII の文字列  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ -n "$out" ] && LC_ALL=C grep -a -q -F -- "$2" "$out/call-hierarchy.csv"; then
+        echo "  OK   $1/call-hierarchy.csv ($3)"
+    else
+        echo "  DIFF $1/call-hierarchy.csv に「$2」がありません ($3)"; fail=1
+    fi
+}
+
+# 絞れなかった呼び出しから作るひな形（contracts-suggested.txt）に、その行があること
+expect_suggested() {   # $1=case  $2=ASCII の文字列  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ -n "$out" ] && LC_ALL=C grep -a -q -F -- "$2" "$out/contracts-suggested.txt" 2> /dev/null; then
+        echo "  OK   $1 ひな形 ($3)"
+    else
+        echo "  DIFF $1 ひな形に「$2」がありません ($3)"; fail=1
+    fi
+}
+
 # 拡張（FactoryKeyCollector + TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
 # まったく同じ出力になること。指定の仕方を変えても結果は変わらない、がこの比較の眼目。
 # 期待出力をもう 1 組持つ代わりに、ラベルを同じ綴りに読み替えて expected と突き合わせる
@@ -350,6 +372,11 @@ plugin_case() {
     rm -rf plugin/.cache plugin/output plugin/run-*.log
     run plugin config-before.properties 1 "1回目: 拡張なし" || return
     compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
+    # 絞れなかった呼び出しから、そのまま貼れる契約表のひな形が出ること。
+    # 「候補N件」と言われても何を書けばよいか分からない、への導線
+    expect_suggested plugin 'fxp.DaoFactory#get("USER_DAO") => ??' "1回目: ファクトリとキーのひな形"
+    expect_suggested plugin "fxp.DaoFactory#get(fxp.DaoKind.ORDER) => ??" "1回目: 列挙定数のキーのひな形"
+    expect_suggested plugin "fxp.Service#run => ??" "1回目: 宣言型とメソッド名のひな形"
 
     run plugin config.properties 2 "2回目: 同梱の拡張" || return
     expect_log_contains plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
@@ -377,14 +404,15 @@ plugin_case() {
         "5回目: キーを引用符で囲んでいない行は助言つきの警告で知らせる"
     expect_log_contains plugin 5 "fxp.NoSuchType => fxp.UserDaoImpl" \
         "5回目: 一度も当たらなかった契約を挙げる"
+    # 列挙定数のキー（引用符なしの FQN）。C-2 より先に当たるので enumKey だけ OrderDaoImpl になる
+    expect_csv_contains plugin "App.enumKey,OrderDaoImpl.find" \
+        "5回目: 列挙定数のキーで絞れる"
     compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
 
     # ファクトリ＋キー（C-3）。フェーズAの証拠採取を使わず、データフローの値グラフに載っている
     # 実引数からキーを引く。2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
     run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
     expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
-    expect_log_contains plugin 6 "fxp.Dao#find => fxp.AbstractDao" \
-        "6回目: C-3 が先に当たるので C-2 の行は引かれない"
     expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
 
     # 右辺を採用できない契約は、候補を落として CHA に戻す（呼び出しを落とさない）
