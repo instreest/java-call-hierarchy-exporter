@@ -15,10 +15,15 @@
 #                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
 #                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
-#   plugin               … 拡張（インスタンス解析条件のプラグイン）。拡張なし（config-before）→ 同梱の拡張
-#                          （config.properties。ファクトリのキーと対応表）→ 自前の拡張（config-custom。
-#                          plugins/*.java を実行時にコンパイル）の順に実行し、拡張ありでのみ具象クラスに
-#                          絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを確認する
+#   plugin               … 拡張（インスタンス解析条件のプラグイン）と契約表（種類 C）。拡張なし
+#                          （config-before）→ 同梱の拡張（config.properties。ファクトリのキーと対応表）→
+#                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
+#                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
+#                          ファクトリ＋キーの契約表（config-contracts-factory。拡張と同じ結果になる）→
+#                          算出規則の拡張（config-naming。フェーズAの設定なしでキーが届く）→
+#                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
+#                          拡張・契約表ありでのみ具象クラスに絞れること、フェーズAの拡張を変えると
+#                          キャッシュが捨てられること、契約表では捨てられないことを確認する
 #   cachesplit           … 2 つに分かれたキャッシュ（analysis-cache.tsv / dataflow-cache.tsv）の整合。
 #                          両方そろっていれば再利用し、dataflow を消す・世代の印を書き換えると両方を
 #                          作り直し、dataflow から 1 ブロックだけ消すとそのファイルだけ解析し直して
@@ -57,6 +62,53 @@ compare() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
         else
             echo "  DIFF $1/$f ($3)"
             diff --strip-trailing-cr "$1/$2/$f" "$out/$f" | head -20
+            ok=0
+        fi
+    done
+    [ $ok = 1 ] || fail=1
+}
+
+# 出力の CSV に、その文字列を含む行があること（ASCII だけを見る）
+expect_csv_contains() {   # $1=case  $2=ASCII の文字列  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ -n "$out" ] && LC_ALL=C grep -a -q -F -- "$2" "$out/call-hierarchy.csv"; then
+        echo "  OK   $1/call-hierarchy.csv ($3)"
+    else
+        echo "  DIFF $1/call-hierarchy.csv に「$2」がありません ($3)"; fail=1
+    fi
+}
+
+# 絞れなかった呼び出しから作るひな形（contracts-suggested.txt）に、その行があること
+expect_suggested() {   # $1=case  $2=ASCII の文字列  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ -n "$out" ] && LC_ALL=C grep -a -q -F -- "$2" "$out/contracts-suggested.txt" 2> /dev/null; then
+        echo "  OK   $1 ひな形 ($3)"
+    else
+        echo "  DIFF $1 ひな形に「$2」がありません ($3)"; fail=1
+    fi
+}
+
+# 拡張（FactoryKeyCollector + TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
+# まったく同じ出力になること。指定の仕方を変えても結果は変わらない、がこの比較の眼目。
+# 期待出力をもう 1 組持つ代わりに、ラベルを同じ綴りに読み替えて expected と突き合わせる
+expect_same_as_mapping() {   # $1=ラベル
+    local out ok=1 f
+    out=$(latest_output plugin)
+    if [ -z "$out" ]; then
+        echo "  DIFF plugin: 出力フォルダがありません ($1)"; fail=1; return
+    fi
+    for f in call-hierarchy.csv methods.csv; do
+        if diff --strip-trailing-cr -q \
+                <(sed 's/\[RESOLVED:MAPPING\]/[RESOLVED:=]/' "plugin/expected/$f") \
+                <(sed 's/\[RESOLVED:CONTRACT\]/[RESOLVED:=]/' "$out/$f") > /dev/null; then
+            echo "  OK   plugin/$f ($1)"
+        else
+            echo "  DIFF plugin/$f ($1)"
+            diff --strip-trailing-cr \
+                <(sed 's/\[RESOLVED:MAPPING\]/[RESOLVED:=]/' "plugin/expected/$f") \
+                <(sed 's/\[RESOLVED:CONTRACT\]/[RESOLVED:=]/' "$out/$f") | head -10
             ok=0
         fi
     done
@@ -108,6 +160,14 @@ expect_not_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の
         echo "  DIFF $1 ログ: キャッシュが捨てられていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
 }
+expect_log_missing() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラベル
+    if LC_ALL=C grep -a -q -F -- "$3" "$1/run-$2.log"; then
+        echo "  DIFF $1 ログに出てはいけない行があります ($4): $3"; fail=1
+    else
+        echo "  OK   $1 ログ ($4)"
+    fi
+}
+
 expect_log_contains() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラベル
     if LC_ALL=C grep -a -q -F -- "$3" "$1/run-$2.log"; then
         echo "  OK   $1 ログ ($4)"
@@ -313,10 +373,24 @@ plugin_case() {
     rm -rf plugin/.cache plugin/output plugin/run-*.log
     run plugin config-before.properties 1 "1回目: 拡張なし" || return
     compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
+    # 絞れなかった呼び出しから、そのまま貼れる契約表のひな形が出ること。
+    # 「候補N件」と言われても何を書けばよいか分からない、への導線
+    expect_suggested plugin 'fxp.DaoFactory#get("USER_DAO") => ??' "1回目: ファクトリとキーのひな形"
+    expect_suggested plugin "fxp.DaoFactory#get(fxp.DaoKind.ORDER) => ??" "1回目: 列挙定数のキーのひな形"
+    expect_suggested plugin "fxp.Service#run => ??" "1回目: 宣言型とメソッド名のひな形"
+    # キーが呼び出し元から引数で渡ってくる形も、経路が分かればひな形に出る
+    expect_suggested plugin 'fxp.DaoFactory#get("ORDER_DAO") => ??' \
+        "1回目: 経路で決まるキーのひな形"
+    # キーが決まらず型単位の広い行になったものは、そうと分かる注記を添える
+    expect_suggested plugin "型のこのメソッド全部を同じ実装に決める行です" \
+        "1回目: 広い行だと分かる注記が付く"
 
     run plugin config.properties 2 "2回目: 同梱の拡張" || return
     expect_log_contains plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
     expect_log_contains plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
+    # 対応表が「効いたか」の知らせ。わざと引かれない行だけが挙がり、効いている行は挙がらない
+    expect_log_contains plugin 2 "FACTORY_KEY@NO_SUCH_KEY" "2回目: 引かれなかった対応表の行を挙げる"
+    expect_log_missing plugin 2 "FACTORY_KEY@REPORT_DAO" "2回目: 効いている対応表の行は挙げない"
     # フェーズAの拡張が増えたので、拡張なしで作ったキャッシュは捨てられて全件解析し直しになる
     expect_not_reused plugin 2 "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
     compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
@@ -328,6 +402,56 @@ plugin_case() {
     run plugin config-custom.properties 4 "4回目: 自前の拡張" || return
     expect_log_contains plugin 4 "DiXmlProvider" "4回目: plugins/*.java をコンパイルして読み込んだ"
     compare plugin expected-custom "4回目: 自前の拡張（DI 設定ファイルから絞れる）"
+
+    # 種類 C の契約表。拡張をいっさい使わず、契約表の行だけで同じように絞れる
+    run plugin config-contracts.properties 5 "5回目: 種類Cの契約表" || return
+    # 契約表はキャッシュの指紋に入らないので、表を足しても作り直さない
+    expect_reused plugin 5 "5回目: 契約表を足してもキャッシュを作り直さない"
+    expect_log_contains plugin 5 "fxp.DaoFactory#get(ORDER_DAO)" \
+        "5回目: キーを引用符で囲んでいない行は助言つきの警告で知らせる"
+    expect_log_contains plugin 5 "fxp.NoSuchType => fxp.UserDaoImpl" \
+        "5回目: 一度も当たらなかった契約を挙げる"
+    # 列挙定数のキー（引用符なしの FQN）。C-2 より先に当たるので enumKey だけ OrderDaoImpl になる
+    expect_csv_contains plugin "App.enumKey,OrderDaoImpl.find" \
+        "5回目: 列挙定数のキーで絞れる"
+    # ファクトリの実装が親クラスにあっても、ソースに書いた子クラスの名前で指定できること。
+    # 同じ親を持つ別の子クラス経由（otherFactory）は巻き込まず、C-2 に落ちること
+    expect_csv_contains plugin "App.inheritedFactory,OrderDaoImpl.find" \
+        "5回目: 親で実装されたファクトリを子クラス名で指定できる"
+    expect_csv_contains plugin "App.otherFactory,UserDaoImpl.find" \
+        "5回目: その指定は別の子クラス経由には効かない"
+    # 型単位の広い行（fxp.Dao#find）が先に絞るので、経路ごとのやり直しは起きない。
+    # 既に 1 件に決まったものを経路ごとに覆さない、という規則の検査
+    expect_csv_contains plugin "App.viaParam,App.byKey,UserDaoImpl.find" \
+        "5回目: 先に絞れていれば経路でやり直さない"
+    compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
+
+    # ファクトリ＋キー（C-3）。フェーズAの証拠採取を使わず、データフローの値グラフに載っている
+    # 実引数からキーを引く。2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
+    run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
+    expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
+    # この表は型名を単純名で書いてある。FQN で書いた場合と同じ結果になることを下の比較が見る
+    expect_log_missing plugin 6 "つの型に当たるので使えません" "6回目: 単純名が曖昧になっていない"
+    # キーが呼び出し元から引数で渡ってくる形。経路が分かってから絞れる
+    # （byKey を単独の起点として辿る経路では、キーが分からないので絞れないまま）
+    expect_csv_contains plugin "App.viaParam,App.byKey,OrderDaoImpl.find" \
+        "6回目: 経路で決まるキーでも絞れる"
+    expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
+
+    # 算出規則を書いた自前の拡張。フェーズAの設定（resolver.hint.collectors /
+    # plugin.factory.methods）を書かなくても、ファクトリのキーが Hint として届く
+    run plugin config-naming.properties 7 "7回目: 算出規則の拡張（フェーズAの設定なし）" || return
+    expect_log_missing plugin 7 "FactoryKeyCollector" "7回目: フェーズAの拡張は読み込んでいない"
+    expect_reused plugin 7 "7回目: フェーズAが無いのでキャッシュを作り直さない"
+    expect_csv_contains plugin "App.factoryCall,UserDaoImpl.find" "7回目: 変数に受けた呼び出しを算出規則で絞る"
+    expect_csv_contains plugin "App.chainedCall,OrderDaoImpl.find" "7回目: 変数に受けない呼び出しも絞る"
+    expect_csv_contains plugin "RESOLVED:NAMING" "7回目: 拡張のラベルが出る"
+
+    # 右辺を採用できない契約は、候補を落として CHA に戻す（呼び出しを落とさない）
+    run plugin config-contracts-miss.properties 8 "8回目: 右辺を採用できない契約" || return
+    expect_log_contains plugin 8 "fxp.Dao#find => fxp.Service" \
+        "8回目: 当たったが採用できなかった契約を挙げる"
+    compare plugin expected-before "8回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
 }
 
 for c in $CASES; do
@@ -364,6 +488,18 @@ for c in $CASES; do
             maven|mavenmulti|gradle)
                 expect_log_contains "$c" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
                 expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた" ;;
+            # 契約表が「効いたか」の知らせ。whole の 2 行はどちらも当たるので挙がってはならず、
+            # entry の contracts.txt はわざと当たらない行だけなので、そのまま挙がる
+            whole)
+                expect_log_missing whole 1 "fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()" \
+                    "1回目: 効いている契約は当たらなかった行として挙げない" ;;
+            entry)
+                expect_log_contains entry 1 "fx.entry.NoSuchDispatcher#submit" \
+                    "1回目: 当たらなかった契約を挙げる（呼び戻し）"
+                expect_log_contains entry 1 "fx.entry.NoSuchEndpoint" \
+                    "1回目: 当たらなかった契約を挙げる（入口）"
+                expect_log_contains entry 1 "fx.entry.Dispatcher#submit(java.lang.Runnable) -> r : run()" \
+                    "1回目: 呼び出し先には一致したが繋げなかった契約を挙げる" ;;
         esac
         compare "$c" expected "1回目: キャッシュ無し"
         expect_run_files "$c" config.properties "1回目"

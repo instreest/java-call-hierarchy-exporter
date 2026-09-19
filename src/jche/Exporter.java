@@ -80,7 +80,7 @@ public final class Exporter {
         RunControl.progress("具象クラスの解決の準備", 0, 1);
         Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
         CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
-                contracts.callbacks(), contracts.entries());
+                contracts.callbacks(), contracts.entries(), contracts.types());
         RunControl.progress("具象クラスの解決の準備", 1, 1);
         Log.heap("フェーズ2完了");
         return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles);

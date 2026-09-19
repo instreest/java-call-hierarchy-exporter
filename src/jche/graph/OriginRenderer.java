@@ -151,6 +151,11 @@ final class OriginRenderer {
                 args = args + ";" + Origin.RECEIVER + "=" + Origin.nest(recv);
             }
         }
+        if (!n.staticRecv().isEmpty()) {
+            // ソースに書かれたレシーバの型。宣言元と違うときだけ入っている
+            args = args.isEmpty() ? Origin.STATIC_RECV + "=" + n.staticRecv()
+                    : args + ";" + Origin.STATIC_RECV + "=" + n.staticRecv();
+        }
         return (head.length() + args.length() > BUDGET) ? head : Origin.of(Origin.RETURN, n.value(), args);
     }
 

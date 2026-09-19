@@ -1,0 +1,23 @@
+# 種類 C（具象型）の契約表。拡張を使わず、この表だけで具象クラスに絞れることを検査する
+
+# C-1 宣言型 -> 具象型（DI 設定から機械的に書き出せる形）
+fxp.Service => fxp.BillingService
+
+# C-2 宣言型#メソッド名 -> 具象型。同じ型でもメソッドによって実装が違う場合の形
+fxp.Dao#find => fxp.UserDaoImpl
+
+# キーを引用符で囲んでいない形。読めない行として、助言つきの警告が出ることを検査する
+# （正しく書いた C-3 は config-contracts-factory.properties の側で検査する）
+fxp.DaoFactory#get(ORDER_DAO) => fxp.OrderDaoImpl
+
+# C-3（ファクトリ＋キー）で、キーが列挙定数の形。引用符を付けず定数の FQN で書く。
+# Dao#find の C-2 より先に当たるので、この呼び出しだけ OrderDaoImpl になる（引く順番の検査）
+fxp.DaoFactory#get(fxp.DaoKind.ORDER) => fxp.OrderDaoImpl
+
+# C-3 の左辺を「ソースに書いた子クラスの名前」で指定する。pick を宣言しているのは親の
+# BaseDaoFactory だが、呼び出し側が書いているのは ChildDaoFactory なのでこちらで書ける。
+# 同じ親を持つ OtherDaoFactory 経由の呼び出しには効かず、そちらは下の C-2 に落ちる
+fxp.ChildDaoFactory#pick("ORDER_DAO") => fxp.OrderDaoImpl
+
+# 左辺が一度も当たらない行。「当たらなかった行」に挙がることを検査する（出力は変わらない）
+fxp.NoSuchType => fxp.UserDaoImpl

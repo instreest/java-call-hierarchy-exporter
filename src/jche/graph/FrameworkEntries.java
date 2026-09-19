@@ -29,8 +29,8 @@ import jche.cache.ModifierTokens;
  */
 public final class FrameworkEntries {
 
-    /** 契約の1行 */
-    record Contract(char kind, String value, String sig, String text) {
+    /** 契約の1行。{@code row} は契約表の何行目か（{@link ContractUsage} の添字） */
+    record Contract(char kind, String value, String sig, String text, int row) {
         static final char ANNOTATION = '@';
         static final char SUPER = 's';
         static final char STATIC = 'm';
@@ -39,14 +39,17 @@ public final class FrameworkEntries {
     private final List<Contract> contracts = new ArrayList<>();
     private final CallGraph graph;
     private final MethodTable methods;
+    private final ContractUsage usage;
     /** メソッドIDごとの判定のメモ（null = 未判定、"" = 入口でない） */
     private String[] memo;
 
-    public FrameworkEntries(CallGraph graph, List<String> lines) {
+    public FrameworkEntries(CallGraph graph, ContractUsage usage) {
         this.graph = graph;
         this.methods = graph.methods;
-        for (String line : lines) {
-            Contract c = parse(line);
+        this.usage = usage;
+        List<ContractUsage.Line> lines = usage.lines();
+        for (int row = 0; row < lines.size(); row++) {
+            Contract c = parse(lines.get(row).text(), row);
             if (c != null) {
                 contracts.add(c);
             }
@@ -55,18 +58,28 @@ public final class FrameworkEntries {
 
     /** 同梱の契約だけを持つ表 */
     public static FrameworkEntries bundled(CallGraph graph) {
-        return new FrameworkEntries(graph, BundledFrameworkEntries.LINES);
+        return new FrameworkEntries(graph, ContractUsage.ofBundled(BundledFrameworkEntries.LINES));
+    }
+
+    /** 行ごとの利用状況（どの契約が効いたか） */
+    public ContractUsage usage() {
+        return usage;
     }
 
     /** 1行を読む。空行と {@code #} で始まる行は無視。形が違えば null */
     static Contract parse(String line) {
+        return parse(line, ContractUsage.NO_ROW);
+    }
+
+    /** @param row 契約表の何行目か（利用状況の記録用） */
+    private static Contract parse(String line, int row) {
         String s = (line == null) ? "" : line.trim();
         if (s.isEmpty() || s.startsWith("#")) {
             return null;
         }
         if (s.startsWith("@")) {
             String fqn = s.substring(1).trim();
-            return fqn.isEmpty() ? null : new Contract(Contract.ANNOTATION, fqn, "", s);
+            return fqn.isEmpty() ? null : new Contract(Contract.ANNOTATION, fqn, "", s, row);
         }
         int sp = s.indexOf(' ');
         if (sp < 0) {
@@ -79,10 +92,11 @@ public final class FrameworkEntries {
             if (hash <= 0 || hash == rest.length() - 1) {
                 return null;
             }
-            return new Contract(Contract.SUPER, rest.substring(0, hash), rest.substring(hash + 1), s);
+            return new Contract(Contract.SUPER, rest.substring(0, hash), rest.substring(hash + 1),
+                    s, row);
         }
         if ("static".equals(head)) {
-            return rest.isEmpty() ? null : new Contract(Contract.STATIC, "", rest, s);
+            return rest.isEmpty() ? null : new Contract(Contract.STATIC, "", rest, s, row);
         }
         return null;
     }
@@ -124,12 +138,14 @@ public final class FrameworkEntries {
             switch (c.kind()) {
                 case Contract.ANNOTATION -> {
                     if (AnnotationTokens.has(annotations, c.value())) {
+                        usage.markApplied(c.row());
                         return "@" + simpleName(c.value());
                     }
                 }
                 case Contract.STATIC -> {
                     if (sig.equals(c.sig()) && ModifierTokens.has(mods, "static")
                             && ModifierTokens.has(mods, "public")) {
+                        usage.markApplied(c.row());
                         return "static " + c.sig();
                     }
                 }
@@ -141,6 +157,7 @@ public final class FrameworkEntries {
                         supers = transitiveSupertypes(methods.typeFqn(id));
                     }
                     if (supers.contains(c.value())) {
+                        usage.markApplied(c.row());
                         return simpleName(c.value()) + "#" + c.sig();
                     }
                 }

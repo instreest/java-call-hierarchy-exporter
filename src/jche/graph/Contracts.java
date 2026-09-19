@@ -15,26 +15,39 @@ import jche.util.Log;
 
 /**
  * 契約表の読み込み。同梱の表・設定ファイルで足した表・拡張が返す表を1つにまとめ、
- * 呼び戻し（{@link CallbackContracts}）と入口（{@link FrameworkEntries}）に振り分ける。
+ * 呼び戻し（{@link CallbackContracts}）・入口（{@link FrameworkEntries}）・
+ * 具象型（{@link TypeContracts}）に振り分ける。
  *
- * 行の形で振り分ける。{@code ->} を含む行は呼び戻し、{@code @} / {@code super} / {@code static} で
- * 始まる行は入口。どちらでも読めない行は、設定したのに効いていないことに気づけるよう警告に出す。
+ * 行の形で振り分ける。{@code =>} を含む行は具象型、{@code ->} を含む行は呼び戻し、
+ * {@code @} / {@code super} / {@code static} で始まる行は入口。どれでも読めない行は、
+ * 設定したのに効いていないことに気づけるよう警告に出す。
+ *
+ * {@code =>} と {@code ->} は別の綴りなので取り違えない（{@code "=>"} は {@code "->"} を含まない）。
+ * 順に見るとき {@code =>} を先に判定するのは、将来どちらも含む行を許したくなったときに
+ * 迷わないようにするため。
  */
 public final class Contracts {
 
-    /** 読み込んだ2つの表 */
-    public record Loaded(CallbackContracts callbacks, FrameworkEntries entries) {
+    /** 読み込んだ3つの表 */
+    public record Loaded(CallbackContracts callbacks, FrameworkEntries entries, TypeContracts types) {
     }
 
     private Contracts() {
     }
 
     public static Loaded load(Config config, CallGraph graph, DataflowResolver dataflow) {
-        List<String> callbackLines = new ArrayList<>();
-        List<String> entryLines = new ArrayList<>();
+        List<ContractUsage.Line> callbackLines = new ArrayList<>();
+        List<ContractUsage.Line> entryLines = new ArrayList<>();
+        // 具象型（種類 C）に同梱の行は無い。フレームワークごとの DI の既定を同梱するかは
+        // まだ決めていない（docs/contracts-unification-design.md の §10）
+        List<ContractUsage.Line> typeLines = new ArrayList<>();
         if (config.builtinContracts) {
-            callbackLines.addAll(JdkCallbacks.LINES);
-            entryLines.addAll(BundledFrameworkEntries.LINES);
+            for (String line : JdkCallbacks.LINES) {
+                callbackLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
+            }
+            for (String line : BundledFrameworkEntries.LINES) {
+                entryLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
+            }
         }
         for (Path file : config.contractFiles) {
             List<String> lines;
@@ -45,22 +58,34 @@ public final class Contracts {
                 Log.warn("契約表を読めません: " + file + " (" + e + ")。この表は使わずに続けます");
                 continue;
             }
-            int n = sort(lines, callbackLines, entryLines, file.toString());
+            int n = sort(lines, callbackLines, entryLines, typeLines, file.toString());
             Log.info("契約表を読み込み: " + file + "（" + n + " 行）");
         }
         for (ContractProvider provider : Plugins.load(config, config.contractProviderClasses,
                 ContractProvider.class)) {
             List<String> lines = provider.lines();
-            int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines,
+            int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines, typeLines,
                     provider.getClass().getName());
             Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
         }
-        return new Loaded(new CallbackContracts(graph, dataflow, callbackLines),
-                new FrameworkEntries(graph, entryLines));
+        TypeContracts types = new TypeContracts(new ContractUsage(typeLines), graph.typeNames());
+        if (types.hasFactoryRows() && !dataflow.enabled()) {
+            // キーはデータフローの値グラフから引くので、切られていると永久に当たらない
+            Log.warn("ファクトリとキーを書いた契約（型#メソッド(\"キー\") => 具象型）は、"
+                    + "dataflow.enabled=false では引けません。この形の行は当たりません");
+        }
+        return new Loaded(new CallbackContracts(graph, dataflow, new ContractUsage(callbackLines)),
+                new FrameworkEntries(graph, new ContractUsage(entryLines)), types);
     }
 
-    /** 行を種類ごとに振り分ける。読めた行数を返す */
-    private static int sort(List<String> lines, List<String> callbacks, List<String> entries,
+    /**
+     * 行を種類ごとに振り分ける。読めた行数を返す。
+     *
+     * @param from この行の出所（契約表のパス、または拡張のクラス名）。読めない行の警告と、
+     *             一度も当たらなかった行の報告（{@link ContractUsage}）に使う
+     */
+    private static int sort(List<String> lines, List<ContractUsage.Line> callbacks,
+                            List<ContractUsage.Line> entries, List<ContractUsage.Line> types,
                             String from) {
         int count = 0;
         for (String raw : lines) {
@@ -68,18 +93,28 @@ public final class Contracts {
             if (line.isEmpty() || line.startsWith("#")) {
                 continue;
             }
-            if (line.contains("->")) {
+            if (line.contains("=>")) {
+                if (TypeContracts.parse(line) == null) {
+                    // よくある書き間違いには助言を添える。綴りを疑って時間を使わせないため
+                    Log.warn("契約の行を読めません（" + from + "）: " + line
+                            + (TypeContracts.hasArguments(line)
+                                    ? "（ファクトリのキーは \"…\" で囲みます。"
+                                            + "列挙定数なら引用符なしで FQN を書きます）" : ""));
+                    continue;
+                }
+                types.add(new ContractUsage.Line(line, from, false));
+            } else if (line.contains("->")) {
                 if (CallbackContracts.parse(line) == null) {
                     Log.warn("契約の行を読めません（" + from + "）: " + line);
                     continue;
                 }
-                callbacks.add(line);
+                callbacks.add(new ContractUsage.Line(line, from, false));
             } else {
                 if (FrameworkEntries.parse(line) == null) {
                     Log.warn("契約の行を読めません（" + from + "）: " + line);
                     continue;
                 }
-                entries.add(line);
+                entries.add(new ContractUsage.Line(line, from, false));
             }
             count++;
         }

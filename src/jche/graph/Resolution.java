@@ -27,6 +27,12 @@ public record Resolution(int[] targets, String label) {
     // --- 段2: 同一メソッド内で new された型 ---
     public static final String LOCAL_NEW = "LOCAL_NEW";
     public static final String LOCAL_NEW_MULTI = "LOCAL_NEW_MULTI";
+    // --- 段3: 利用者が与えた条件（拡張が返すラベルはここに並ばない。拡張の label() がそのまま出る） ---
+    /**
+     * 利用者が契約表に書いた「この宣言型（またはこのメソッド）はこの具象型」で決めた
+     * （{@link TypeContracts}）。ツールの推測ではなく、人が与えた条件
+     */
+    public static final String CONTRACT = "CONTRACT";
     // --- 段4: データフロー（"DATAFLOW_" で始まる。何を材料に決めたかで分ける） ---
     public static final String DATAFLOW_PREFIX = "DATAFLOW_";
     public static final String DATAFLOW_NEW = DATAFLOW_PREFIX + "NEW";

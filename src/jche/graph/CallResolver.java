@@ -13,6 +13,7 @@ import jche.cache.RecvKind;
 import jche.extension.Hint;
 import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
+import jche.extension.UsageReporter;
 import jche.util.Log;
 
 /**
@@ -21,7 +22,7 @@ import jche.util.Log;
  *   段0 STATIC_BOUND               仮想ディスパッチされない呼び出し
  *   段1 NO_OVERRIDE / SINGLE_IMPL  オーバーライド候補が1つに定まる
  *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
- *   段3 CUSTOM_*                   拡張（ファクトリ・DI設定・外部リスト等）
+ *   段3 CONTRACT / CUSTOM_*        利用者が与えた条件（契約表の種類 C → 拡張の順に尋ねる）
  *   段4 DATAFLOW_*                 ファクトリの戻り値等から特定（経路非依存の分）
  *   段5 SPRING_DI(_QUALIFIER)      DIコンテナのBean定義で候補を絞る
  *   段6 CHA                        候補が複数のまま（低確度）
@@ -43,6 +44,8 @@ public final class CallResolver {
     private final CallbackContracts callbacks;
     /** フレームワークが起点として呼ぶメソッドの契約表（無ければ空の表） */
     private final FrameworkEntries frameworkEntries;
+    /** 「この宣言型はこの具象型」の契約表（無ければ空の表） */
+    private final TypeContracts typeContracts;
 
     /** 段1の結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
     private int[][] resolvedTargets;
@@ -73,23 +76,46 @@ public final class CallResolver {
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers) {
         this(graph, dataflow, providers, CallbackContracts.jdk(graph, dataflow),
-                FrameworkEntries.bundled(graph));
+                FrameworkEntries.bundled(graph), TypeContracts.empty());
     }
 
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers, CallbackContracts callbacks,
-                        FrameworkEntries frameworkEntries) {
+                        FrameworkEntries frameworkEntries, TypeContracts typeContracts) {
         this.graph = graph;
         this.methods = graph.methods;
         this.dataflow = dataflow;
         this.providers = providers;
         this.callbacks = callbacks;
         this.frameworkEntries = frameworkEntries;
+        this.typeContracts = typeContracts;
     }
 
     /** フレームワークが起点として呼ぶメソッドの契約表 */
     public FrameworkEntries frameworkEntries() {
         return frameworkEntries;
+    }
+
+    /**
+     * 契約表と拡張が「効いたか」を知らせる。CSV を書き終えたあとに 1 回だけ呼ぶ。
+     *
+     * <p>グラフ全体の走査が済んでいることが前提。呼び戻しの契約は {@link #inDegrees()} が全エッジ、
+     * 入口の契約は methods.csv の出力が全メソッドについて問い合わせるので、そこまで終わって初めて
+     * 「一度も当たらなかった」と言える。部分的にしか辿らない経路（解析サーバー）からは呼ばない。
+     */
+    public void reportUsage() {
+        ContractUsage.report(callbacks.usage(), frameworkEntries.usage(), typeContracts.usage());
+        for (TypeCandidateProvider provider : providers) {
+            if (provider instanceof UsageReporter reporter) {
+                try {
+                    reporter.reportUsage();
+                } catch (RuntimeException e) {
+                    // 報告の失敗で解析の結果を捨てない。出せなかったことだけ知らせる
+                    Log.warn("拡張の利用状況を報告できません: " + provider.getClass().getName()
+                            + " (" + e + ")");
+                }
+            }
+        }
     }
 
     /**
@@ -170,7 +196,7 @@ public final class CallResolver {
         if (bindKind != BindKind.VIRTUAL) {
             // 既定では確定として扱うが、ここで打ち切ると拡張に到達せず
             // 呼び出し階層が切れてしまう。opt-inした拡張には必ず声をかける。
-            Resolution custom = askProviders(edgeIndex, calleeId, true);
+            Resolution custom = askProviders(edgeIndex, calleeId, true, null);
             if (custom != null) {
                 return custom;
             }
@@ -214,8 +240,14 @@ public final class CallResolver {
                     fromNew.size() == 1 ? Resolution.LOCAL_NEW : Resolution.LOCAL_NEW_MULTI);
         }
 
-        // --- 段3: 拡張 ---
-        Resolution custom = askProviders(edgeIndex, calleeId, false);
+        // --- 段3: 契約表（種類 C）→ 拡張 ---
+        // 表のほうを先に引く。食い違ったときに「どちらが効いたか」を追いやすいのは、
+        // 読み手が中身を見られる表のほう（docs/contracts-unification-design.md の §4）
+        Resolution fromContract = askTypeContracts(edgeIndex, calleeId, null);
+        if (fromContract != null) {
+            return fromContract;
+        }
+        Resolution custom = askProviders(edgeIndex, calleeId, false, null);
         if (custom != null) {
             return custom;
         }
@@ -250,6 +282,23 @@ public final class CallResolver {
         Resolution res = resolve(edgeIndex);
         int calleeId = graph.calleeOf(edgeIndex);
 
+        // 経路が分かってから、利用者が与えた条件（段3）をもう一度試す。
+        // ファクトリに渡すキーが呼び出し元から引数で渡ってくる形は、経路が決まって初めて値が分かる
+        //
+        //   void run()            { helper("USER_DAO"); }     ← 呼び出し元では決まっている
+        //   void helper(String k) { Factory.get(k).find(); }  ← ここは経路ごとに決まる
+        //
+        // 既に 1 件に絞れているものはやり直さない。広い指定（型単位の契約など）で決まったものを
+        // 経路ごとに覆すと、同じ設定でも経路によって答えが変わり、読み手が追えなくなる
+        if (res.isMultiple()) {
+            Resolution viaContract = askTypeContracts(edgeIndex, calleeId, ctx);
+            if (viaContract == null) {
+                viaContract = askProviders(edgeIndex, calleeId, false, ctx);
+            }
+            if (viaContract != null) {
+                res = viaContract;
+            }
+        }
         if (res.isMultiple() && dataflow.enabled()) {
             String recv = graph.recvOrigin(edgeIndex);
             int viaPath = dataflow.targetOf(recv, calleeId, ctx);
@@ -398,16 +447,61 @@ public final class CallResolver {
     }
 
     /**
+     * 契約表（種類 C）で具象型が決まるか見る。決まらなければ null。
+     *
+     * <p>ファクトリ＋キーの行（C-3）は、レシーバの出所がファクトリの戻り値なら、そこに載っている
+     * 実引数の値で引く。フェーズAの証拠採取は要らない（{@link TypeContracts} の「C-3 のキーは
+     * どこから来るか」）。
+     *
+     * <p>{@code ctx} が null なら経路に依存しない分だけを決める（{@link #resolve} から）。
+     * 経路が分かってからの呼び出し（{@link #resolveOnPath}）では、呼び出し元から引数で渡ってきた
+     * キーも値まで辿れる。
+     *
+     * <p>右辺の型を 1 つも採用できないとき（その型にも親にもその本体が無い）は候補を落として
+     * CHA に戻す。ここで警告は出さず、解析の最後に {@link ContractUsage} がまとめて挙げる
+     * （エッジごとに呼ばれるので、その場で出すと同じ行の警告が何度も並ぶ）。
+     */
+    private Resolution askTypeContracts(int edgeIndex, int calleeId, DataflowContext ctx) {
+        if (typeContracts.isEmpty()) {
+            return null;
+        }
+        // 引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。狭いほうが先
+        TypeContracts.Contract contract = dataflow.enabled()
+                ? typeContracts.matchFactory(graph.recvOrigin(edgeIndex), dataflow, ctx) : null;
+        if (contract == null) {
+            contract = typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
+        }
+        if (contract == null) {
+            return null;
+        }
+        String sig = methods.signature(calleeId);
+        IntArray ids = new IntArray(contract.candidates().length);
+        for (String fqn : contract.candidates()) {
+            // 契約が指す型が自分で宣言していない（親から継承した）実装も拾う。拡張と同じ扱い
+            int id = graph.implementationIn(fqn, sig);
+            if (id >= 0) {
+                ids.addIfAbsent(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return null;
+        }
+        typeContracts.usage().markApplied(contract.row());
+        return new Resolution(ids.toArray(), Resolution.CONTRACT);
+    }
+
+    /**
      * 拡張（フェーズB）に候補を尋ねる。
      *
      * @param staticBoundOnly true なら appliesToStaticBound() が true の拡張だけに尋ねる
      * @return 解決できた場合のみ Resolution。できなければ null
      */
-    private Resolution askProviders(int edgeIndex, int calleeId, boolean staticBoundOnly) {
+    private Resolution askProviders(int edgeIndex, int calleeId, boolean staticBoundOnly,
+                                    DataflowContext ctx) {
         if (providers.isEmpty()) {
             return null;
         }
-        List<Hint> hints = graph.hintsOf(edgeIndex);
+        List<Hint> hints = hintsFor(edgeIndex, ctx);
         String declType = methods.typeFqn(calleeId);
         String sig = methods.signature(calleeId);
 
@@ -428,8 +522,9 @@ public final class CallResolver {
             IntArray ids = new IntArray(candidates.length);
             for (String c : candidates) {
                 // 拡張が返した型が自分で宣言していない（親から継承した）実装も拾う。
-                // 宣言だけを引くと、継承しているだけの型を返した拡張が黙って効かなくなる
-                int id = graph.implementationIn(c, sig);
+                // 宣言だけを引くと、継承しているだけの型を返した拡張が黙って効かなくなる。
+                // 単純名で返されたものは FQN に直す（1 件に定まるときだけ。TypeNames）
+                int id = graph.implementationIn(graph.typeNames().toFqn(c), sig);
                 if (id >= 0) {
                     ids.addIfAbsent(id);
                 } else {
@@ -444,6 +539,45 @@ public final class CallResolver {
     }
 
     /**
+     * 拡張（フェーズB）に渡す証拠。
+     *
+     * <p>フェーズAの拡張が拾ってキャッシュに残したもの（X 行）に加えて、<b>ファクトリに渡された
+     * キーをデータフローから読んで足す</b>。キーは値グラフに載っているので、拾うためだけに
+     * フェーズAの拡張（{@code FactoryKeyCollector}）を設定する必要が無い
+     * （契約表の種類 C と同じ読み口。{@link FactoryCalls}）。
+     *
+     * <p>「どのファクトリから来た値か」も {@link Hint#KIND_FACTORY} で渡すので、同じ型を返す
+     * ファクトリが複数あって規則が違う場合も、自前のフェーズA拡張を書かずに場合分けできる。
+     *
+     * <p>フェーズAが同じ証拠を既に残していれば足さない（同じものが 2 つ並ばないように）。
+     */
+    private List<Hint> hintsFor(int edgeIndex, DataflowContext ctx) {
+        List<Hint> stored = graph.hintsOf(edgeIndex);
+        if (!dataflow.enabled()) {
+            return stored;
+        }
+        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(graph.recvOrigin(edgeIndex), dataflow, ctx);
+        if (keys.isEmpty()) {
+            return stored;
+        }
+        List<Hint> all = new ArrayList<>(stored.size() + keys.size() + 1);
+        all.addAll(stored);
+        addIfAbsent(all, new Hint(Hint.KIND_FACTORY, keys.get(0).typeAndName()));
+        for (FactoryCalls.Key key : keys) {
+            addIfAbsent(all, new Hint(
+                    (key.kind() == Origin.CONST) ? Hint.KIND_FACTORY_CONST : Hint.KIND_FACTORY_KEY,
+                    key.key()));
+        }
+        return all;
+    }
+
+    private static void addIfAbsent(List<Hint> hints, Hint hint) {
+        if (!hints.contains(hint)) {
+            hints.add(hint);
+        }
+    }
+
+    /**
      * 拡張が返した候補を採用できなかったことを知らせる（同じものは 1 回だけ）。
      *
      * 採用できないのは、その型（と親）にそのシグネチャの本体が無いとき。FQN の打ち間違い、
@@ -452,11 +586,20 @@ public final class CallResolver {
      * エッジごとに呼ばれるので、同じ候補で何度も出さないよう記録しておく。
      */
     private void warnUnusableCandidate(TypeCandidateProvider provider, String fqn, String sig) {
-        if (warnedCandidates.add(provider.label() + "\t" + fqn + "#" + sig)) {
-            Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
-                    + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
-                    + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
+        if (!warnedCandidates.add(provider.label() + "\t" + fqn + "#" + sig)) {
+            return;
         }
+        List<String> conflicts = graph.typeNames().ambiguousCandidates(fqn);
+        if (!conflicts.isEmpty()) {
+            // 単純名が複数の型に当たる。どちらかに決めると誤った型へ静かに解決するので使わない
+            Log.warn("拡張が返した候補の型名 " + fqn + " は " + conflicts.size() + " つの型に当たるので"
+                    + "使えません: " + String.join(" / ", conflicts)
+                    + " (" + provider.getClass().getName() + ")。完全修飾名で返してください");
+            return;
+        }
+        Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
+                + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
+                + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
     }
 
     // ------------------------------------------------------------

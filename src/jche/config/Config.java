@@ -68,6 +68,8 @@ public final class Config {
     public static final String METHODS_CSV_NAME = "methods.csv";
     /** conditions.target を指定したときだけ追加で出す、条件の一覧 */
     public static final String CALL_CONDITIONS_CSV_NAME = "call-conditions.csv";
+    /** 絞れなかった呼び出しから作る契約表のひな形。貼る先が UTF-8 固定なので、これも UTF-8 で書く */
+    public static final String CONTRACTS_SUGGESTED_NAME = "contracts-suggested.txt";
     /** 出力フォルダに残す実行ログ（標準出力と同じ内容、UTF-8） */
     public static final String LOG_FILE_NAME = "run.log";
     /** 出力フォルダ名の日時の書式 */
@@ -193,6 +195,8 @@ public final class Config {
     public final Path methodsCsv;
     /** conditions.target を指定したときだけ書く、条件の一覧（通常の出力に追加する） */
     public final Path conditionsCsv;
+    /** 絞れなかった呼び出しから作る契約表のひな形（{@link #CONTRACTS_SUGGESTED_NAME}） */
+    public final Path contractsSuggestedFile;
     public final Path logFile;
 
     /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
@@ -330,6 +334,7 @@ public final class Config {
         this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);
         this.methodsCsv = this.outputDir.resolve(METHODS_CSV_NAME);
         this.conditionsCsv = this.outputDir.resolve(CALL_CONDITIONS_CSV_NAME);
+        this.contractsSuggestedFile = this.outputDir.resolve(CONTRACTS_SUGGESTED_NAME);
         this.logFile = this.outputDir.resolve(LOG_FILE_NAME);
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
