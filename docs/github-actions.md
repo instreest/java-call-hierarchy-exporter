@@ -14,6 +14,9 @@ on:
   workflow_dispatch:
   push:
 
+permissions:
+  contents: read      # 読み取りだけで動く。pull_request_target は使わない（「セキュリティ上の注意」）
+
 jobs:
   export:
     runs-on: ubuntu-latest

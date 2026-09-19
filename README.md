@@ -70,7 +70,23 @@ rem 実行
 解析対象の指定をするとリポジトリのソースコードを解析してCSVファイルをアーティファクトにアップロードします。
 詳細な機能仕様は[docs/github-actions.md](docs/github-actions.md) にあります。
 
+ワークフローはそのまま写せる次の形を推奨します（読み取り権限だけで動き、`pull_request_target` は使いません）。
+
 ```yaml
+name: call hierarchy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v5
 
       # 依存 jar を先にローカルリポジトリへ取得しておく
@@ -87,7 +103,12 @@ rem 実行
           source-encoding: UTF-8
 ```
 
-依存の取得を省くと解析結果が欠けます。詳細は [docs/github-actions.md](docs/github-actions.md) を参照してください。
+初めて使うときの注意:
+
+- 依存の取得を省くと解析結果が欠けます（ジョブに警告が出ます）
+- 依存の取得はランナーの設定（`settings.xml`、プロキシ等）で外部に問い合わせるので、
+  `pull_request_target` では使わず、self-hosted ランナーでは設定の扱いを確認してください
+- 詳細と、依存の取得を省く方法は [docs/github-actions.md](docs/github-actions.md) にあります
 
 ---
 
