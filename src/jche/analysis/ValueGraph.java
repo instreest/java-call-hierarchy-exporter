@@ -183,7 +183,6 @@ final class ValueGraph {
         return sb.toString();
     }
 
-    /** ノードを1つ足す（同じ構造のものが既にあればその番号を返す） */
     /**
      * 呼び出しを<b>ソースに書いたときのレシーバの型</b>。宣言元と同じか、分からなければ空文字。
      *
@@ -204,6 +203,7 @@ final class ValueGraph {
         return (written == null || written.isEmpty() || written.equals(declaringFqn)) ? "" : written;
     }
 
+    /** ノードを1つ足す（同じ構造のものが既にあればその番号を返す） */
     private int node(char kind, String value, int recv, String args, int argCount) {
         return node(kind, value, recv, args, argCount, "");
     }
