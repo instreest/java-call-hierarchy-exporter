@@ -79,6 +79,42 @@ grep -qE "^R${T}1${T}" <<<"$OUT" && ok "呼び出し元（深さ1）が出る" |
 MAXDEPTH=$(grep -E "^R${T}" <<<"$OUT" | cut -f2 | sort -n | tail -1)
 [ "$MAXDEPTH" -le 3 ] && ok "深さの上限（3）が効いている" || fail "深さ上限を超えている（$MAXDEPTH）"
 
+# Eclipse / VSCode プラグインは、設定ファイルをプロジェクトの中ではなく自分の作業フォルダに
+# 書き出して渡す（利用者にファイルを書かせないため）。設定の相対パスの起点は「設定ファイルのフォルダ」
+# なので、そこに project.root=. と書くと<作業フォルダ自身>を解析対象だと解釈してしまう。
+# 実際それで「ソースフォルダを特定できませんでした」と出て解析が1行も動かなかったため、
+# 「プロジェクトの外に置いた設定＋絶対パスの project.root」で動くことを、ここで固定する
+# （docs/eclipse-plugin-folders-qa.md の Q1）
+echo "== プロジェクトの外に置いた設定（プラグインが渡す形） =="
+mkdir -p "$WORK/scratch" "$WORK/outside-output"
+cat > "$WORK/scratch/generated-config.properties" <<EOF
+project.root=$ROOT/test/demo
+source.folders=src
+library.jars=
+source.encoding=UTF-8
+source.level=
+output.folder=$WORK/outside-output
+EOF
+OUT=$(session "ANALYZE\t$WORK/scratch/generated-config.properties\nFIND\t$TARGET\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+grep -qE "^OK${T}analyzed=1${T}methods=[0-9]+" <<<"$OUT" \
+    && ok "設定がプロジェクトの外にあっても、絶対パスの project.root なら解析できる" \
+    || fail "プロジェクトの外に置いた設定で解析できない"
+grep -qE "^OK${T}how=exact" <<<"$OUT" && ok "その結果を FIND で引ける" || fail "外に置いた設定の結果を引けない"
+# 出力先も設定ファイルのフォルダに引きずられないこと（作業フォルダに結果が積もらないように）
+[ -z "$(ls "$WORK/scratch" | grep -v generated-config.properties)" ] \
+    && ok "設定ファイルのフォルダに出力が作られない" \
+    || fail "設定ファイルのフォルダに出力が作られている: $(ls "$WORK/scratch")"
+
+# 同じ設定で project.root だけ相対（.）にすると失敗する。上の指定が効いていることの裏取り
+echo "== 同じ場所に project.root=. と書くと失敗する（上の指定が効いている証拠） =="
+sed "s|^project.root=.*|project.root=.|" "$WORK/scratch/generated-config.properties" \
+    > "$WORK/scratch/relative-config.properties"
+OUT=$(session "ANALYZE\t$WORK/scratch/relative-config.properties\nSHUTDOWN\n")
+grep -q "ソースフォルダを特定できませんでした" <<<"$OUT" \
+    && ok "相対の project.root は設定ファイルのフォルダを指してしまう（想定どおり失敗）" \
+    || fail "project.root=. でも通ってしまう（この検査の前提が崩れている）"
+
 echo "== AT（カーソル位置から囲むメソッドを引く） =="
 # 複数行のメソッド。test/demo/src/fx/dao/UserDaoImpl.java の load(long) は 7〜10 行目
 AT_FILE='src/fx/dao/UserDaoImpl.java'

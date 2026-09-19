@@ -19,6 +19,7 @@ import java.util.TreeSet;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
@@ -167,6 +168,17 @@ public final class ProjectAnalysis {
         if (selected != null && selected.exists()) {
             return ConfigSource.ofFile(selected);
         }
+        return autoConfigSourceOf(project);
+    }
+
+    /**
+     * 利用者が選んだ設定ファイルを抜きにして、そのプロジェクトを解析するなら何を使うか。
+     * 解析できないプロジェクト（Java プロジェクトでなく、設定ファイルも無い）なら null。
+     */
+    static ConfigSource autoConfigSourceOf(IProject project) {
+        if (project == null || !project.isAccessible()) {
+            return null;
+        }
         for (String path : DEFAULT_CONFIG_PATHS) {
             IFile known = project.getFile(path);
             if (known.exists() && known.getLocation() != null && looksLikeJcheConfig(known)) {
@@ -175,6 +187,25 @@ public final class ProjectAnalysis {
         }
         IJavaProject javaProject = EclipseProjectConfig.javaProjectOf(project);
         return (javaProject != null) ? ConfigSource.generated(javaProject) : null;
+    }
+
+    /**
+     * ワークスペースの中で解析できるプロジェクト（名前順）。ビューのプロジェクト選択に使う。
+     *
+     * <p>ビューを開いただけでは何も選ばれておらず、解析を始めることすらできなかった。
+     * 「メソッドを選んでコマンドを実行する」以外の入口が無かったためで、
+     * ここが一覧を出せるようにして、ビュー単体でも始められるようにする
+     * （docs/eclipse-plugin-folders-qa.md の Q4）。
+     */
+    public static List<IProject> analyzableProjects() {
+        List<IProject> result = new ArrayList<>();
+        for (IProject candidate : ResourcesPlugin.getWorkspace().getRoot().getProjects()) {
+            if (autoConfigSourceOf(candidate) != null) {
+                result.add(candidate);
+            }
+        }
+        result.sort(Comparator.comparing(IProject::getName));
+        return result;
     }
 
     /** このツールの設定だと分かる項目（1つでもあれば、このツールの設定として自動で使う） */
@@ -333,7 +364,7 @@ public final class ProjectAnalysis {
                     + "［ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)］で場所を指定するか、取得してください");
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
-        File cacheRoot = new File(PluginRuntime.stateLocation(), "cache");
+        File cacheRoot = PluginFolders.cacheRoot();
         // コンソールは「開いていなくても」内容を溜める。ここで作っておけば、
         // あとからビューを開いた利用者にも起動時のログが見える
         ExporterConsole.getOrCreate().println("解析プロセスを起動します: " + java);
@@ -426,7 +457,7 @@ public final class ProjectAnalysis {
         if (source == null) {
             return;
         }
-        Path scratch = new File(PluginRuntime.stateLocation(), "config/" + project.getName()).toPath();
+        Path scratch = PluginFolders.generatedConfigFolder(project.getName()).toPath();
         AnalysisJob newJob = new AnalysisJob(this, source, scratch, changedFiles());
         newJob.setRule(rule);
         newJob.setUser(user);

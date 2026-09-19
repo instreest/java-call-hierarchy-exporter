@@ -11,9 +11,16 @@ import org.eclipse.jface.preference.IPreferenceStore;
 /**
  * 設定（ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)）の読み書き。
  *
- * <p>決められるのは「解析をどう走らせるか」だけである。解析は Eclipse とは別のプロセスなので、
- * 使う JDK・使う JDT・メモリ・常駐の切り方が、ここで初めて意味を持つ。
- * 何を解析するか（ソースフォルダや除外）は設定ファイル側の役目で、ここには置かない。
+ * <p>決められるのは2つだけである。
+ * <ol>
+ *   <li><b>解析をどう走らせるか</b> … 解析は Eclipse とは別のプロセスなので、
+ *       使う JDK・使う JDT・メモリ・常駐の切り方が、ここで初めて意味を持つ</li>
+ *   <li><b>プラグインが作るファイルをどこへ置くか</b> … キャッシュ・ログ・CSV の出力先
+ *       （既定と内訳は {@link PluginFolders}）。空欄なら既定に戻る</li>
+ * </ol>
+ *
+ * <p>何を解析するか（ソースフォルダや除外）は設定ファイル側の役目で、ここには置かない。
+ * そちらはプロジェクトごとに違い、ワークスペース共通の設定にはならないためである。
  */
 public final class JchePreferences {
 
@@ -27,6 +34,12 @@ public final class JchePreferences {
     public static final String IDLE_MINUTES = "analysis.idleMinutes";
     /** 解析の進捗と作業ログをファイルにも残すか */
     public static final String LOG_TO_FILE = "analysis.logToFile";
+    /** 解析キャッシュの置き場所。空なら {@link PluginFolders#defaultCacheRoot()} */
+    public static final String CACHE_FOLDER = "analysis.cacheFolder";
+    /** 解析ログの置き場所。空なら {@link PluginFolders#defaultLogFolder()} */
+    public static final String LOG_FOLDER = "analysis.logFolder";
+    /** CSV の出力先。空なら {@link PluginFolders#defaultOutputRoot()} */
+    public static final String OUTPUT_FOLDER = "analysis.outputFolder";
 
     /** 既定のアイドル時間（分） */
     public static final int DEFAULT_IDLE_MINUTES = 10;
@@ -42,6 +55,11 @@ public final class JchePreferences {
         // 既定で残す。解析が返ってこないときに後から見られることの方が、
         // 数百KBのログより価値がある（世代は AnalysisLog が絞る）
         store.setDefault(LOG_TO_FILE, true);
+        // 置き場所の既定は空欄＝PluginFolders の既定。ここに実際のパスを入れてしまうと、
+        // ワークスペースを移したときに古いパスが設定として残ってしまう
+        store.setDefault(CACHE_FOLDER, "");
+        store.setDefault(LOG_FOLDER, "");
+        store.setDefault(OUTPUT_FOLDER, "");
     }
 
     private static IPreferenceStore store() {
@@ -84,6 +102,26 @@ public final class JchePreferences {
     public static boolean logToFile() {
         IPreferenceStore store = store();
         return (store == null) || store.getBoolean(LOG_TO_FILE);
+    }
+
+    /** 設定された解析キャッシュの置き場所。未設定なら null（既定を使う） */
+    public static File cacheFolder() {
+        return folder(CACHE_FOLDER);
+    }
+
+    /** 設定された解析ログの置き場所。未設定なら null（既定を使う） */
+    public static File logFolder() {
+        return folder(LOG_FOLDER);
+    }
+
+    /** 設定された CSV の出力先。未設定なら null（既定を使う） */
+    public static File outputFolder() {
+        return folder(OUTPUT_FOLDER);
+    }
+
+    private static File folder(String key) {
+        String value = text(key);
+        return value.isEmpty() ? null : new File(value);
     }
 
     /** アイドルで終わらせるまでの分数。0 なら終わらせない */

@@ -115,6 +115,15 @@ if [ -n "$view_id" ] && grep -q "VIEW_ID = \"$view_id\"" "$PLUGIN/src-ui/jche/ec
 else
     fail "ビュー ID が plugin.xml ($view_id) とソースの VIEW_ID で食い違う。ビューを開けなくなる"
 fi
+# 設定ページの ID。ビューの［▽］メニューからこの ID を指して設定ページを開くので、
+# 食い違うと「設定（JDK・置き場所）…」が空のダイアログになる
+page_id=$(grep -A4 '<page$' "$PLUGIN/plugin.xml" | grep -oE 'id="[^"]+"' | head -1 | sed -E 's|id="(.*)"|\1|')
+if [ -n "$page_id" ] \
+        && grep -q "PREFERENCE_PAGE_ID = \"$page_id\"" "$PLUGIN/src-ui/jche/eclipse/CallHierarchyView.java"; then
+    ok "設定ページ ID ($page_id) が plugin.xml とソースで一致する"
+else
+    fail "設定ページ ID が plugin.xml ($page_id) とソースの PREFERENCE_PAGE_ID で食い違う。ビューから設定を開けない"
+fi
 
 # 6) build.properties と PDE の構成
 echo "== build.properties =="

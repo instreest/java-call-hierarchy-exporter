@@ -20,8 +20,9 @@ import java.util.Date;
  * 「何が起きていたか」を後から見る手段が無く、利用者にやり直しを頼むしかなかった
  * （docs/eclipse-plugin-progress-log-qa.md の Q2）。
  *
- * <p>置き場所はプラグインの状態フォルダの {@code log/}。Eclipse を起動してから最初の1行で
- * 1ファイル作り、以降はそこへ追記する。古いものは {@link #KEEP} 世代だけ残して消す。
+ * <p>置き場所は {@link PluginFolders#logFolder()}（既定はプラグインの状態フォルダの {@code log/}、
+ * 設定で移せる）。Eclipse を起動してから最初の1行で 1ファイル作り、以降はそこへ追記する。
+ * 古いものは {@link #KEEP} 世代だけ残して消す。
  *
  * <p>書くのは受信スレッド（標準出力・標準エラーの2本）なので {@code synchronized} で守り、
  * 1行ごとに {@code flush} する。落ちたときにこそ読みたいログなので、溜めない。
@@ -46,9 +47,9 @@ final class AnalysisLog {
         return INSTANCE;
     }
 
-    /** ログを置くフォルダ（設定画面の「ログフォルダを開く」もここを指す） */
+    /** ログを置くフォルダ（設定画面の「開く」もここを指す） */
     static File folder() {
-        return new File(PluginRuntime.stateLocation(), "log");
+        return PluginFolders.logFolder();
     }
 
     /** いま書いているログファイル。まだ1行も書いていなければ null */
