@@ -214,9 +214,11 @@ public final class CacheFormat {
      * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる。
      * v20 で D 行に endLine（宣言の終了行）を足した。
      * v21 でラムダ式を合成メソッド（D 行 + 生成の C 行）として持つようにし、
-     * 本体の呼び出しの計上先を囲みメソッドからその合成メソッドへ移した
+     * 本体の呼び出しの計上先を囲みメソッドからその合成メソッドへ移した。
+     * v22 で F 行の末尾に構文エラーの数を足した（{@link #syntaxErrorsOf}）。
+     * 再利用したファイルについても「本体を読めていない」と言い続けるために要る
      */
-    public static final String VERSION = "jche-cache-v21";
+    public static final String VERSION = "jche-cache-v22";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
@@ -243,6 +245,23 @@ public final class CacheFormat {
     public static final char ROW_SOURCES = 'T';
     public static final char ROW_LIBRARY = 'L';
     public static final char ROW_FILE = 'F';
+
+    /**
+     * F 行（{@code F パス サイズ エラー数 ハッシュ 構文エラー数}）の構文エラー数。
+     *
+     * <p>列が無ければ 0 とみなす。{@link #VERSION} を上げてあるので古いキャッシュは
+     * そもそも読まないが、読み手を列の有無に依存させない
+     */
+    public static int syntaxErrorsOf(String[] fileRow) {
+        if (fileRow == null || fileRow.length < 6) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(fileRow[5].trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
     public static final char ROW_DEPENDENCIES = 'I';
     public static final char ROW_TYPE = 'H';
     public static final char ROW_METHOD_DECL = 'D';

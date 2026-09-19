@@ -787,6 +787,9 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             case READY:
                 String ready = (last == null) ? Messages.format("state.ready", at)
                         : Messages.format("state.readyWithCount", at, last.field("methods"));
+                // 構文エラーで読めなかったファイルがあると、その呼び出しは木に出てこない。
+                // 「呼び出しを静かに落とさない」ので、結果と同じ行で必ず伝える
+                ready += syntaxErrorNote(last);
                 if (targetKey == null) {
                     setBanner(ready + Messages.get("state.readyPickMethod"),
                             Messages.get("action.methodAtCursor"), this::showMethodAtCursor, false);
@@ -798,6 +801,23 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 setBanner("", null, null, false);
                 break;
         }
+    }
+
+    /**
+     * 構文エラーで本体を読めなかったファイルがあれば、その断り。無ければ空。
+     *
+     * <p>木に出ていないのは「呼び出し元が無い」からではなく「読めていない」からだ、と
+     * 言い分ける唯一の場所である。解析側の警告はログにしか出ないので、ここで拾って画面に出す。
+     */
+    private static String syntaxErrorNote(ServerResponse last) {
+        if (last == null) {
+            return "";
+        }
+        String count = last.field("syntaxErrors");
+        if (count.isEmpty() || "0".equals(count)) {
+            return "";
+        }
+        return Messages.format("state.syntaxErrors", count);
     }
 
     private void reanalyze() {

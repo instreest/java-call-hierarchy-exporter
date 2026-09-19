@@ -26,14 +26,25 @@ public final class AnalysisSnapshot {
     private final CallGraph graph;
     private final CallResolver resolver;
     private final LocalDateTime analyzedAt;
+    private final int syntaxErrorFiles;
     private volatile InboundIndex inbound;
 
-    AnalysisSnapshot(Config config, ProjectLayout layout, CallGraph graph, CallResolver resolver) {
+    AnalysisSnapshot(Config config, ProjectLayout layout, CallGraph graph, CallResolver resolver,
+                     int syntaxErrorFiles) {
         this.config = config;
         this.layout = layout;
         this.graph = graph;
         this.resolver = resolver;
+        this.syntaxErrorFiles = syntaxErrorFiles;
         this.analyzedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 構文エラーで本体を読めなかったファイル数。0 でなければ、この結果には抜けがある。
+     * 画面（Eclipse プラグイン）が利用者に伝えるために使う
+     */
+    public int syntaxErrorFiles() {
+        return syntaxErrorFiles;
     }
 
     public Config config() {

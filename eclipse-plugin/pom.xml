@@ -38,7 +38,7 @@
       release を書き忘れた実行を追加したときの保険として、本体側と同じ 17 にしてある。
 
       プラグインが Eclipse 側に要求する Java の下限はこの値ではなく、MANIFEST.MF の
-      Bundle-RequiredExecutionEnvironment: JavaSE-1.8（古い Eclipse でも動かすため）。
+      Bundle-RequiredExecutionEnvironment: JavaSE-11（下限の Eclipse は 4.17 / 2020-09）。
     -->
     <maven.compiler.release>17</maven.compiler.release>
     <!--
@@ -297,14 +297,14 @@
         </executions>
       </plugin>
       <!--
-        コンパイルは2本立てにする。混ぜると「プラグインが Java 8 で動く」が守れない。
+        コンパイルは2本立てにする。混ぜると「プラグインが Java 11 で動く」が守れない。
 
           解析本体（jche/**。jche/eclipse を除く）
             … release 17。子プロセス（JDK 25）で動くので新しくてよい
           プラグイン（jche/eclipse/**）
-            … release 8。Eclipse の中で動くので、古い Eclipse（Java 8）でも読める形にする
+            … release 11。Eclipse の中で動くので、下限の Eclipse（4.17 / Java 11）でも読める形にする
 
-        古い JDT のモデル API だけで書けていることは test/plugin-api/run.sh が検査する
+        下限の JDT のモデル API だけで書けていることは test/plugin-api/run.sh が検査する
         （このビルドのクラスパスには新しい JDT が載っているため、ここでは分からない）。
       -->
       <plugin>
@@ -344,15 +344,15 @@
             <phase>compile</phase>
             <goals><goal>compile</goal></goals>
             <configuration>
-              <release>8</release>
+              <release>11</release>
               <includes>
                 <include>jche/eclipse/**/*.java</include>
               </includes>
               <compilerArgs>
                 <!--
-                  -options … 「source 8 は古い」という助言を消す。承知のうえで 8 にしている
+                  -options … 「source 11 は古い」という助言を消す。承知のうえで 11 にしている
                   -classfile … 新しい Eclipse の jar にある @Deprecated(since=..., forRemoval=...)
-                               を source 8 の javac が読めない、という類の助言を消す。
+                               を source 11 の javac が読めない、という類の助言を消す。
                                こちらのコードの問題ではなく、依存の jar が新しいだけ
                   これ以外の警告は本体と同じくエラー扱いにする
                 -->

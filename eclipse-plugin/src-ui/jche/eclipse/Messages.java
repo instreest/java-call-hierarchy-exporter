@@ -1,13 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.nio.charset.Charset;
 import java.util.Locale;
-import java.util.Properties;
+import java.util.MissingResourceException;
+import java.util.ResourceBundle;
 
 /**
  * 画面に出す文言。既定は<b>英語</b>で、Eclipse が日本語で動いているときだけ日本語になる。
@@ -19,7 +15,7 @@ import java.util.Properties;
  * 言語ごとのファイルを持つしかない（docs/eclipse-plugin-nls-qa.md）。
  *
  * <ul>
- *   <li>{@code jche/eclipse/messages.properties} … 英語（既定。どの言語でも必ず読む）</li>
+ *   <li>{@code jche/eclipse/messages.properties} … 英語（既定。どの言語でも土台になる）</li>
  *   <li>{@code jche/eclipse/messages_ja.properties} … 日本語（上に重ねる）</li>
  * </ul>
  *
@@ -28,18 +24,16 @@ import java.util.Properties;
  * {@code Bundle-Localization}）。訳の置き場所が2つに分かれるのは、読む側が
  * 「このクラス」と「OSGi のフレームワーク」で別だからである。
  *
- * <h2>なぜ {@code ResourceBundle} でも {@code NLS} でもないのか</h2>
- * <ol>
- *   <li>{@code java.util.ResourceBundle} と {@code org.eclipse.osgi.util.NLS} は、
- *       Java 8 では properties を <b>ISO-8859-1</b> として読む（UTF-8 になるのは Java 9 から）。
- *       このプラグインは Java 8 の Eclipse でも動かすので、日本語が文字化けする。
- *       ここでは読む文字コードを UTF-8 に固定している</li>
- *   <li>{@code NLS} は {@code org.eclipse.osgi} に入っている。この文言は
- *       {@code jche.eclipse.server}（<b>Eclipse に触らない層</b>。Eclipse 無しでコンパイル・
- *       実行できることを test/plugin-client が検査している）からも使うので、
- *       Eclipse の API に依存させられない</li>
- * </ol>
- * そのため、このクラスは <b>JDK の標準 API だけ</b>で書いてある。
+ * <h2>なぜ {@code NLS} ではなく {@code ResourceBundle} なのか</h2>
+ * {@code org.eclipse.osgi.util.NLS} は {@code org.eclipse.osgi} に入っている。この文言は
+ * {@code jche.eclipse.server}（<b>Eclipse に触らない層</b>。Eclipse 無しでコンパイル・実行
+ * できることを test/plugin-client が検査している）からも使うので、Eclipse の API に
+ * 依存させられない。{@code ResourceBundle} は JDK の標準 API なので、その縛りに掛からない。
+ *
+ * <p>properties は UTF-8 として読まれる（Java 9 以降。それ以前は ISO-8859-1 だった）。
+ * プラグインの下限が Java 11 なので、訳文はそのまま書けて {@code \\uXXXX} への変換は要らない
+ * （下限を Java 8 にしていた頃は、この 1 点のために読み込みを自前で書いていた。
+ * docs/eclipse-plugin-java-floor-qa.md）。
  *
  * <h2>置き換え</h2>
  * 値の差し込みは {@code {0}} {@code {1}} … で、{@link #format} が単純に置き換える
@@ -49,17 +43,23 @@ import java.util.Properties;
 public final class Messages {
 
     /** 文言ファイルの置き場所（クラスパス上） */
-    private static final String BASE = "jche/eclipse/messages";
+    private static final String BASE = "jche.eclipse.messages";
 
-    private static final Properties TEXTS = load();
+    private static final ResourceBundle TEXTS = load();
 
     private Messages() {
     }
 
     /** 文言を引く。キーが無ければキー自身を {@code !} で囲んで返す（画面で気づけるように） */
     public static String get(String key) {
-        String text = TEXTS.getProperty(key);
-        return (text == null) ? "!" + key + "!" : text;
+        if (TEXTS != null) {
+            try {
+                return TEXTS.getString(key);
+            } catch (MissingResourceException e) {
+                // 下の既定へ落とす
+            }
+        }
+        return "!" + key + "!";
     }
 
     /** 文言を引いて {@code {0}} {@code {1}} … を差し替える */
@@ -104,44 +104,25 @@ public final class Messages {
     }
 
     /**
-     * 英語を土台にして、その言語のファイルを重ねる。
-     * 重ねる形にしておけば、訳が足りない項目は英語のまま出る（空白にはならない）。
+     * その言語の文言を読む。英語のファイルが親になるので、訳が足りない項目は英語で出る。
      *
-     * <p>文言のファイルが1つも読めなくても <b>null は返さない</b>。読めないのは
-     * バンドルの組み立てを間違えたときで（検査は test/plugin-nls/run.sh）、そのときは
-     * 画面にキー名が出るだけにする。文言のために機能ごと落とさない。
+     * <p>{@code getNoFallbackControl} を使うのは、<b>OS の言語へ勝手に落ちないようにする</b>ためである。
+     * {@code ResourceBundle} の既定は「求めた言語が無ければ OS の言語を試し、それも無ければ土台」で、
+     * 日本語の Windows で英語の Eclipse を使っている人に日本語が出てしまう。
+     * ここで見たいのは Eclipse の言語だけなので、求めた言語 → 土台（英語）の 2 段に限る。
+     *
+     * <p>文言のファイルが1つも読めなくても <b>例外にしない</b>（null を返して、画面にはキー名が出る）。
+     * 読めないのはバンドルの組み立てを間違えたときで（検査は test/plugin-nls/run.sh）、
+     * そのために機能ごと落とさない。
      */
-    private static Properties load() {
-        Properties english = read(BASE + ".properties", null);
-        String language = language();
-        if (language.isEmpty() || "en".equals(language)) {
-            return (english == null) ? new Properties() : english;
-        }
-        Properties localized = read(BASE + "_" + language + ".properties", english);
-        if (localized != null) {
-            return localized;
-        }
-        return (english == null) ? new Properties() : english;
-    }
-
-    /** 読めなければ null（英語すら読めないときは、キー名が画面に出る） */
-    private static Properties read(String resource, Properties defaults) {
-        InputStream in = Messages.class.getClassLoader().getResourceAsStream(resource);
-        if (in == null) {
-            return defaults;
-        }
-        Properties properties = (defaults == null) ? new Properties() : new Properties(defaults);
+    private static ResourceBundle load() {
         try {
-            Reader reader = new InputStreamReader(in, Charset.forName("UTF-8"));
-            try {
-                properties.load(reader);
-            } finally {
-                reader.close();
-            }
-        } catch (IOException e) {
-            return defaults;
+            return ResourceBundle.getBundle(BASE, locale(), Messages.class.getClassLoader(),
+                    ResourceBundle.Control.getNoFallbackControl(
+                            ResourceBundle.Control.FORMAT_PROPERTIES));
+        } catch (RuntimeException e) {   // MissingResourceException もここに入る
+            return null;
         }
-        return properties;
     }
 
     /**
@@ -152,13 +133,13 @@ public final class Messages {
      * <b>Eclipse に合わせる</b>ほうが利用者の期待に合う。Eclipse の外（検査プログラム）では
      * この値が無いので、そのときは JVM の既定にする。
      */
-    private static String language() {
+    private static Locale locale() {
         String nl = System.getProperty("osgi.nl", "");
-        if (!nl.isEmpty()) {
-            int underscore = nl.indexOf('_');
-            return ((underscore < 0) ? nl : nl.substring(0, underscore)).toLowerCase(Locale.ROOT);
+        if (nl.isEmpty()) {
+            return Locale.getDefault();
         }
-        String language = Locale.getDefault().getLanguage();
-        return (language == null) ? "" : language.toLowerCase(Locale.ROOT);
+        int underscore = nl.indexOf('_');
+        String language = (underscore < 0) ? nl : nl.substring(0, underscore);
+        return new Locale(language.toLowerCase(Locale.ROOT));
     }
 }

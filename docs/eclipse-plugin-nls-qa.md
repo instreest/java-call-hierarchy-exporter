@@ -44,25 +44,27 @@ Pleiades を入れても入れなくても、ソースに書いた文字列が�
 
 解析ログ・ドキュメント・解析本体（`src/`）の文言は日本語のままである（Q6）。
 
-### Q3. `ResourceBundle` でも `org.eclipse.osgi.util.NLS` でもなく、自前で読んでいるのはなぜか
+### Q3. `org.eclipse.osgi.util.NLS` を使わないのはなぜか
 
-理由は 2 つある。どちらも「このプラグインの事情」であって、一般には NLS でよい。
+`NLS` は `org.eclipse.osgi` に入っている。文言は `jche.eclipse.server`（子プロセスと
+やりとりする層）からも使う。あそこは **Eclipse の API に触らない**ことになっていて、
+Eclipse 無しでコンパイル・実行できることを `test/plugin-client/run.sh` が検査している。
+そこへ Eclipse の API を持ち込めないので、JDK 標準の `java.util.ResourceBundle` を使う。
 
-1. **Java 8 では properties が ISO-8859-1 として読まれる。**
-   `java.util.ResourceBundle` も `NLS` も、properties を ISO-8859-1 として読む
-   （UTF-8 になるのは Java 9 から）。このプラグインは
-   **Java 8 の Eclipse でも動かす**（`Bundle-RequiredExecutionEnvironment: JavaSE-1.8`）ので、
-   日本語が丸ごと文字化けする。`\uXXXX` に変換して書く手もあるが、
-   訳文が読めない・差分が読めない形になり、直すたびに変換が要る。
-   自前で読めば**文字コードを UTF-8 に固定**でき、訳文はそのまま書ける
-2. **`NLS` は `org.eclipse.osgi` に入っている。**
-   文言は `jche.eclipse.server`（子プロセスとやりとりする層）からも使う。あそこは
-   **Eclipse の API に触らない**ことになっていて、Eclipse 無しでコンパイル・実行できることを
-   `test/plugin-client/run.sh` が検査している。Eclipse の API に依存させられない
+`jche.eclipse.server` が `jche.eclipse.Messages` を参照するようになったが、参照先が
+JDK だけなので「Eclipse に触らない層」は保たれている（検査もそのまま通る）。
 
-そのため `Messages` は JDK の標準 API だけで書いてある。`jche.eclipse.server` が
-`jche.eclipse.Messages` を参照するようになったが、参照先が JDK だけなので
-「Eclipse に触らない層」は保たれている（検査もそのまま通る）。
+`ResourceBundle` には 2 点だけ手当てがある。
+
+- **`getNoFallbackControl` を使う。** 既定では「求めた言語が無ければ *OS の言語* を試す」ので、
+  日本語の Windows で英語の Eclipse を使っている人に日本語が出てしまう。
+  見たいのは Eclipse の言語（`osgi.nl`）だけなので、求めた言語 → 土台（英語）の 2 段に限る
+- **読めなくても例外にしない。** 画面にキー名が出るだけにして、機能ごとは落とさない（Q9）
+
+> **補足（下限を上げる前）**: このプラグインの下限が Java 8 だった頃は、properties が
+> ISO-8859-1 として読まれる（UTF-8 になるのは Java 9 から）ため `ResourceBundle` が使えず、
+> 読み込みを自前で書いていた。下限を Java 11 へ上げたときに標準の API へ戻している
+> （[eclipse-plugin-java-floor-qa.md](eclipse-plugin-java-floor-qa.md)）。
 
 ### Q4. 差し込み（`{0}`）に `MessageFormat` を使わなかったのはなぜか
 
@@ -133,7 +135,7 @@ plugin.xml の `name` / `label` は Eclipse が起動時に読むもので、プ
    （抜けると全部 `!キー名!` になる）
 6. 実際に読ませて、`osgi.nl` で切り替わり、UTF-8 として読めること
 
-6 が要るのは、Java 8 の文字コードの罠（Q3）が**コンパイルでは出ない**ためである。
+6 が要るのは、文字コードと言語の選び方が**コンパイルでは出ない**ためである。
 ここだけは実際に `-Dosgi.nl=ja` で動かして、日本語が正しく出ることを見ている。
 
 ### Q9. 文言のファイルが読めなかったらどうなるか

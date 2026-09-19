@@ -30,14 +30,14 @@ jobs:
       # Eclipse platform の jar（pom の provided 依存）が Java 21 の class ファイル
       # （版 65）で、javac は自分より新しい版を読めないため、JDK 17 の javac だと
       # 「class file has wrong version 65.0, should be 61.0」で止まる。
-      # 読み込む側に 21 が要るだけで、書き出す側は --release 8 に従う。
+      # 読み込む側に 21 が要るだけで、書き出す側は --release 11 に従う。
       # よって Eclipse が Java 17 や 8 で動いていても、出来上がった jar は読める
-      # （MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-1.8 のとおり）。
+      # （MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-11 のとおり）。
       #
-      # なお --release 8 が抑えるのは言語機能と JDK の API だけで、Eclipse 側の API は
+      # なお --release 11 が抑えるのは言語機能と JDK の API だけで、Eclipse 側の API は
       # 抑えない（クラスパスには新しい JDT/JFace が載っているので、新しいメソッドを
-      # 呼べてしまう）。そちらは test/plugin-api/run.sh が古い Eclipse（4.6 相当）の
-      # jar と --release 8 でコンパイルして検査している（smoke.yml の eclipse-plugin
+      # 呼べてしまう）。そちらは test/plugin-api/run.sh が下限の Eclipse（4.17）の
+      # jar と --release 11 でコンパイルして検査している（smoke.yml の eclipse-plugin
       # ジョブで実行。このワークフローと同じ版の JDK を使う）
       - uses: actions/setup-java@v5
         with:

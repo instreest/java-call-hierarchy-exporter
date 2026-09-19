@@ -67,7 +67,7 @@ public final class Exporter {
         ProjectLayout layout = new ProjectLayout(config);
         logAnalysisSettings(config, layout);
 
-        analyzeSources(config, layout);
+        int syntaxErrorFiles = analyzeSources(config, layout);
 
         CallGraph graph = buildGraph(config, layout);
         Log.info("型数=" + graph.typeCount()
@@ -83,7 +83,7 @@ public final class Exporter {
                 contracts.callbacks(), contracts.entries());
         RunControl.progress("具象クラスの解決の準備", 1, 1);
         Log.heap("フェーズ2完了");
-        return new AnalysisSnapshot(config, layout, graph, resolver);
+        return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles);
     }
 
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {
@@ -111,15 +111,21 @@ public final class Exporter {
         }
     }
 
-    /** フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄） */
-    private static void analyzeSources(Config config, ProjectLayout layout) throws Exception {
+    /**
+     * フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄）。
+     *
+     * @return 構文エラーで本体を読めなかったファイル数（画面に出すため呼び出し側へ返す）
+     */
+    private static int analyzeSources(Config config, ProjectLayout layout) throws Exception {
         Log.blank();
         Log.info("=== フェーズ1/3: ソース解析 ===");
         CachePhaseResult result = new CacheUpdater(layout, config).run();
         Log.info("ソース解析: 再利用=" + result.reused
                 + " 新規解析=" + result.parsed + reanalysisBreakdown(result)
                 + " 失敗=" + result.failed
+                + (result.syntaxErrorFiles > 0 ? " 構文エラー=" + result.syntaxErrorFiles : "")
                 + (result.salvaged > 0 ? " 前回の中断からの引き継ぎ=" + result.salvaged : ""));
+        reportSyntaxErrors(config, result);
         if (result.unresolved > 0) {
             Log.info("※ 型解決できなかった呼び出しが " + result.unresolved + " 件あります。");
             Log.info("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
@@ -131,6 +137,39 @@ public final class Exporter {
             Log.info("   件数が多いまま使うと呼び出し階層に抜けが出ます。");
         }
         Log.heap("フェーズ1完了");
+        return result.syntaxErrorFiles;
+    }
+
+    /**
+     * 構文エラーで本体を読めなかったファイルを報告する。
+     *
+     * <p><b>これを黙っていてはいけない。</b>型が見つからない類のエラー（jar 不足）とは違い、
+     * 構文エラーが出たファイルは本体そのものを読めていないので、そこに書かれた呼び出しは
+     * まるごと出力に出ない。影響調査の結果が静かに欠けるということで、
+     * このツールがいちばんしてはいけないことである（docs/syntax-error-report-qa.md）。
+     *
+     * <p>よくある原因は2つ。どちらも「JDT とソースの版が合っていない」という同じ形をしている。
+     * <ul>
+     *   <li>ソースが JDT より新しい文法を使っている（source.level を上げても、JDT が知らなければ読めない）</li>
+     *   <li>ソースが JDT より古い（Java 5 より前の {@code enum} / {@code assert} を識別子に使っている等。
+     *       いまの JDT は 1.8 未満の source.level を受け付けず 1.8 として読むため、構文エラーになる）</li>
+     * </ul>
+     */
+    private static void reportSyntaxErrors(Config config, CachePhaseResult result) {
+        if (result.syntaxErrorFiles == 0) {
+            return;
+        }
+        Log.warn("※ 構文エラーのため本体を読めなかったファイルが " + result.syntaxErrorFiles + " 件あります。");
+        Log.warn("   そのファイルに書かれた呼び出しは、call-hierarchy.csv に出ません（呼び出し階層に抜けが出ます）。");
+        for (String path : result.syntaxErrorPaths) {
+            Log.warn("   - " + path);
+        }
+        if (result.syntaxErrorFiles > result.syntaxErrorPaths.size()) {
+            Log.warn("   - ほか " + (result.syntaxErrorFiles - result.syntaxErrorPaths.size()) + " 件");
+        }
+        Log.warn("   解析に使った Java の版は " + config.sourceLevel
+                + "（このJDTの対応上限: " + JavaCore.latestSupportedJavaVersion() + "）です。");
+        Log.warn("   ソースの版と食い違っていないか、source.level と JDT の版を確かめてください。");
     }
 
     /** 「新規解析」のうち、自分は変わっていないのに解析し直した件数の内訳 */

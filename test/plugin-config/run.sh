@@ -25,7 +25,7 @@ fi
 CP=$(cat "$WORK/cp.txt")
 
 echo "== プラグインと検査プログラムをコンパイルする"
-if ! javac --release 8 -nowarn -cp "$CP" -d "$WORK/classes" -encoding UTF-8 \
+if ! javac --release 11 -nowarn -cp "$CP" -d "$WORK/classes" -encoding UTF-8 \
         $(find "$ROOT/eclipse-plugin/src-ui" -name '*.java') ConfigTextProbe.java 2>"$WORK/javac.log"; then
     echo "NG   コンパイルできない"; sed 's/^/       /' "$WORK/javac.log" | head -20
     echo "FAIL"; exit 1

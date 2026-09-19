@@ -7,8 +7,8 @@
 # プロトコルで話し、返ってきた行を木に組み直すところ――は Eclipse 無しで動かせる。
 # ここが壊れると画面には何も出ないので、自動で守る値打ちがある。
 #
-# 併せて「クライアント層が Java 8 でコンパイルできること」も確認する（--release 8）。
-# プラグインを Java 8 の Eclipse でも動かす計画のため（docs/out-of-process-analysis-design.md）。
+# 併せて「クライアント層が Java 11 でコンパイルできること」も確認する（--release 11）。
+# プラグインの下限が Java 11 の Eclipse だからである（docs/eclipse-plugin-java-floor-qa.md）。
 #
 # 解析に使う lib/（jche-core.jar と jdt/*.jar）は eclipse-plugin をビルドすると作られる。
 # 既にあればそれを使い、無ければ mvn で作る。
@@ -30,17 +30,17 @@ fi
 # 文言（jche.eclipse.Messages）も一緒に入れる。エラーメッセージを英語・日本語で出し分けるために
 # クライアント層から参照しているが、Messages は JDK の標準 API だけで書いてあるので、
 # 「この層は Eclipse に触らない」は変わらない（それを確かめるのがこの検査である）
-echo "== クライアント層を Java 8 でコンパイルする"
-javac --release 8 -nowarn -d "$WORK/client" -encoding UTF-8 \
+echo "== クライアント層を Java 11 でコンパイルする"
+javac --release 11 -nowarn -d "$WORK/client" -encoding UTF-8 \
     "$ROOT"/eclipse-plugin/src-ui/jche/eclipse/server/*.java \
     "$ROOT"/eclipse-plugin/src-ui/jche/eclipse/Messages.java 2>"$WORK/javac.log"
 if [ $? -ne 0 ]; then
-    echo "NG   Java 8 でコンパイルできない"; sed 's/^/       /' "$WORK/javac.log"; echo "FAIL"; exit 1
+    echo "NG   Java 11 でコンパイルできない"; sed 's/^/       /' "$WORK/javac.log"; echo "FAIL"; exit 1
 fi
-echo "  OK   Java 8 でコンパイルできる（Eclipse の jar はクラスパスに無い）"
+echo "  OK   Java 11 でコンパイルできる（Eclipse の jar はクラスパスに無い）"
 mkdir -p "$WORK/client/jche/eclipse"
 cp "$ROOT"/eclipse-plugin/src-ui/jche/eclipse/messages*.properties "$WORK/client/jche/eclipse/"
-javac --release 8 -nowarn -cp "$WORK/client" -d "$WORK/probe" -encoding UTF-8 ClientProbe.java 2>&1 \
+javac --release 11 -nowarn -cp "$WORK/client" -d "$WORK/probe" -encoding UTF-8 ClientProbe.java 2>&1 \
     | grep -v bootstrap
 [ -f "$WORK/probe/ClientProbe.class" ] || { echo "NG   検査プログラムをコンパイルできない"; echo "FAIL"; exit 1; }
 

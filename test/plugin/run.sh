@@ -137,7 +137,7 @@ for dir in $(grep -E '^source\.\. *=' "$PLUGIN/build.properties" \
 done
 if grep -qE '^source\.\. *=.*\bsrc/' "$PLUGIN/build.properties"; then
     fail "build.properties が解析本体（src/）もコンパイル対象にしている。"\
-"プラグインは Java 8、解析本体は Java 17 なので混ぜられない"
+"プラグインは Java 11、解析本体は Java 17 なので混ぜられない"
 else
     ok "PDE がコンパイルするのは src-ui/ だけ（解析本体は lib/jche-core.jar として同梱）"
 fi
@@ -146,10 +146,10 @@ if grep -q 'lib/' "$PLUGIN/build.properties"; then
 else
     fail "bin.includes に lib/ が無い。PDE でエクスポートすると解析本体が入らない"
 fi
-if grep -q 'JavaSE-1.8' "$PLUGIN/META-INF/MANIFEST.MF"; then
-    ok "Bundle-RequiredExecutionEnvironment が JavaSE-1.8（Java 8 の Eclipse でも入る）"
+if grep -q 'JavaSE-11' "$PLUGIN/META-INF/MANIFEST.MF"; then
+    ok "Bundle-RequiredExecutionEnvironment が JavaSE-11（下限は Eclipse 4.17 / 2020-09）"
 else
-    fail "BREE が JavaSE-1.8 ではない"
+    fail "BREE が JavaSE-11 ではない（下限を変えたなら test/plugin-api も揃えること）"
 fi
 
 if [ "$ng" -eq 0 ]; then echo "PASS"; else echo "FAIL ($ng 件)"; exit 1; fi

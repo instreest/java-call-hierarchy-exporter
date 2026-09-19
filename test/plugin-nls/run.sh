@@ -18,7 +18,7 @@
 #   3) 英語と日本語でキーがそろい、差し込み（{0} {1} …）の数も同じこと
 #   4) plugin.xml / MANIFEST.MF の %キー が両方のファイルにあること
 #   5) 配布物（バンドル jar）に文言のファイルが入ること
-#   6) 実際に読ませて、言語で切り替わり、UTF-8 として読めること（Java 8 の既定は ISO-8859-1）
+#   6) 実際に読ませて、言語で切り替わり、UTF-8 として読めること
 #
 # JDK（9 以上。--release のため）が要る。Eclipse の jar は要らない。
 set -uo pipefail
@@ -153,12 +153,12 @@ grep -q '<include>\*\*/\*.properties</include>' "$PLUGIN/pom.xml" \
     || fail "pom.xml が src-ui の *.properties を拾わない（画面にキー名が出る）"
 
 echo "== 6) 実際に読ませる（言語の切り替えと UTF-8） =="
-javac --release 8 -nowarn -d "$WORK/classes" -encoding UTF-8 \
+javac --release 11 -nowarn -d "$WORK/classes" -encoding UTF-8 \
     "$SRC/jche/eclipse/Messages.java" 2>"$WORK/javac.log"
 if [ ! -f "$WORK/classes/jche/eclipse/Messages.class" ]; then
-    fail "Messages を Java 8 でコンパイルできない"; sed 's/^/       /' "$WORK/javac.log" | head -10
+    fail "Messages を Java 11 でコンパイルできない"; sed 's/^/       /' "$WORK/javac.log" | head -10
 else
-    ok "Messages が Eclipse の jar 無し・Java 8 でコンパイルできる"
+    ok "Messages が Eclipse の jar 無し・Java 11 でコンパイルできる"
     cp "$EN" "$JA" "$WORK/classes/jche/eclipse/"
     cat > "$WORK/NlsProbe.java" <<'EOF'
 import jche.eclipse.Messages;
@@ -173,7 +173,7 @@ public final class NlsProbe {
     }
 }
 EOF
-    javac --release 8 -nowarn -cp "$WORK/classes" -d "$WORK/classes" -encoding UTF-8 \
+    javac --release 11 -nowarn -cp "$WORK/classes" -d "$WORK/classes" -encoding UTF-8 \
         "$WORK/NlsProbe.java" 2>/dev/null
     run() { java -Dosgi.nl="$1" -Duser.language="${2:-en}" -cp "$WORK/classes" NlsProbe 2>/dev/null; }
 
