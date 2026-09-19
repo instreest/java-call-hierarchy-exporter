@@ -66,6 +66,7 @@
 | [network-download-confirm-qa.md](network-download-confirm-qa.md) | #86 | ネットワークからの取得（JBang 本体・JDK・依存 jar）の前に操作者の確認を必須にする（`--offline` での起動と目印ファイル、端末が無いときの扱い） |
 | [eclipse-plugin-qa.md](eclipse-plugin-qa.md) | #49 | Eclipse プラグインとしてビルドできるようにする（Tycho を使わない判断、同梱物の構成） |
 | [eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) | #49 | 呼び出し元階層ビューの実装。別プロセス化、Java 8 対応、設定画面 |
+| [eclipse-plugin-progress-log-qa.md](eclipse-plugin-progress-log-qa.md) | — | 解析が返ってこないときに何が起きていたかを残す（子プロセスの標準エラーを読まずに止まる不具合、ログのファイル出力、無通知区間への進捗の追加、応答が無いときの止め方） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |
 | [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断 |

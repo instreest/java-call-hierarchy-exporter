@@ -23,6 +23,7 @@ import jche.graph.DataflowResolver;
 import jche.graph.SpringBeans;
 import jche.util.HeapWatch;
 import jche.util.Log;
+import jche.util.RunControl;
 
 /**
  * フェーズ1（ソース解析とキャッシュ更新）・フェーズ2（グラフ構築とデータフローの確定・具象クラスの解決）。
@@ -75,9 +76,12 @@ public final class Exporter {
         DataflowFacts facts = buildDataflowFacts(config, graph);
         DataflowResolver dataflow =
                 new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
+        // 契約表の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
+        RunControl.progress("具象クラスの解決の準備", 0, 1);
         Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
         CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
                 contracts.callbacks(), contracts.entries());
+        RunControl.progress("具象クラスの解決の準備", 1, 1);
         Log.heap("フェーズ2完了");
         return new AnalysisSnapshot(config, layout, graph, resolver);
     }

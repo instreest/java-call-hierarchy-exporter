@@ -16,7 +16,9 @@ import java.util.List;
  * 解析できない」という縛りが無くなる。
  *
  * <p>標準エラーは飲み込まない。子プロセスが起動に失敗したときの理由（クラスパスの誤り、
- * JDK の版違いなど）はそこにしか出ないので、呼び出し側がコンソールへ流す。
+ * JDK の版違いなど）はそこにしか出ないので、{@link ServerConnection} が専用スレッドで
+ * 読み続けてログへ流す。{@code redirectErrorStream(true)} で標準出力へ混ぜないのは、
+ * そちらがプロトコルの行（{@code OK} / {@code NG} / {@code #P} / {@code #L} / {@code R}）だからである。
  */
 public final class ServerLauncher {
 

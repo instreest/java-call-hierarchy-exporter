@@ -334,10 +334,11 @@ public final class ProjectAnalysis {
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         File cacheRoot = new File(PluginRuntime.stateLocation(), "cache");
-        ExporterConsole console = ExporterConsole.find();
-        if (console != null) {
-            console.println("解析プロセスを起動します: " + java);
-        }
+        // コンソールは「開いていなくても」内容を溜める。ここで作っておけば、
+        // あとからビューを開いた利用者にも起動時のログが見える
+        ExporterConsole.getOrCreate().println("解析プロセスを起動します: " + java);
+        AnalysisLog.get().println(project.getName(), "解析プロセスを起動します: " + java
+                + " / JVM 引数: " + PluginRuntime.vmArguments());
         ServerConnection started = ServerLauncher.start(java.executable(), classpath, cacheRoot,
                 PluginRuntime.vmArguments(), null);
         started.setListener(new ServerConnection.Listener() {
@@ -351,10 +352,13 @@ public final class ProjectAnalysis {
 
             @Override
             public void log(String line) {
+                // 解析本体のログと、子プロセスの標準エラーの両方がここへ来る。
+                // 画面（コンソール）とファイルの両方へ残す
                 ExporterConsole console = ExporterConsole.find();
                 if (console != null) {
                     console.println(line);
                 }
+                AnalysisLog.get().println(project.getName(), line);
             }
         });
         connection = started;
@@ -487,6 +491,14 @@ public final class ProjectAnalysis {
     /** 子プロセスを終わらせる（プラグインの停止時・プロジェクトを見なくなったとき） */
     void dispose() {
         cancel();
+        discardServer();
+    }
+
+    /**
+     * 子プロセスを捨てる。次の要求で新しいものが起動する。
+     * 応答が返らなくなったときに使う（実行中のジョブは中止扱いにしない）
+     */
+    void discardServer() {
         ServerConnection current = connection;
         connection = null;
         if (current != null) {
