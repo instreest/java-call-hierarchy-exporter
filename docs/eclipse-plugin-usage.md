@@ -62,7 +62,7 @@ GitHub の「Actions → eclipse-plugin-jar → Run workflow」で手動実行�
 方法Aと同じ jar が `eclipse-plugin-jar` アーティファクト（zip）として付く。
 展開して出てきた jar を、方法Aと同じように `dropins` へ置く。
 
-保持日数は実行時に指定できる（既定 7 日）。
+アーティファクトの保持日数はリポジトリの既定（通常 90 日）に従う。
 
 ### 方法B: Eclipse（PDE）で開いて開発する
 

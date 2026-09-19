@@ -9,11 +9,6 @@ name: eclipse-plugin-jar
 
 on:
   workflow_dispatch:
-    inputs:
-      retention-days:
-        description: 'アーティファクトの保持日数（プライベートリポジトリでは短くする）'
-        required: false
-        default: '7'
 
 permissions:
   contents: read
@@ -46,7 +41,6 @@ jobs:
           name: eclipse-plugin-jar
           path: eclipse-plugin/target/io.github.instreest.jche.eclipse-*.jar
           if-no-files-found: error
-          retention-days: ${{ inputs.retention-days }}
 
       # ダウンロードしたあと何をすればよいかを、実行のサマリに出しておく
       - name: Summary
