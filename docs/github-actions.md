@@ -11,8 +11,7 @@
 name: call hierarchy
 
 on:
-  workflow_dispatch:
-  push:
+  workflow_dispatch:    # 手動実行。push などで自動実行する場合は「セキュリティ上の注意」を読んでから足す
 
 permissions:
   contents: read      # 読み取りだけで動く。pull_request_target は使わない（「セキュリティ上の注意」）

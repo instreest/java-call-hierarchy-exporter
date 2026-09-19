@@ -70,15 +70,13 @@ rem 実行
 解析対象の指定をするとリポジトリのソースコードを解析してCSVファイルをアーティファクトにアップロードします。
 詳細な機能仕様は[docs/github-actions.md](docs/github-actions.md) にあります。
 
-ワークフローはそのまま写せる次の形を推奨します（読み取り権限だけで動き、`pull_request_target` は使いません）。
+ワークフローはそのまま写せる次の形を推奨します（手動実行のみ、読み取り権限だけで動きます）。
 
 ```yaml
 name: call hierarchy
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
