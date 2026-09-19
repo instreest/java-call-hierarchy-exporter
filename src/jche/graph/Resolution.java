@@ -38,6 +38,11 @@ public record Resolution(int[] targets, String label) {
      * この呼び出し箇所まで渡ってきたと特定できた
      */
     public static final String DATAFLOW_LAMBDA = DATAFLOW_PREFIX + "LAMBDA";
+    /**
+     * ソースの外（JDK 等）のメソッドが、渡された値を呼び戻す契約で繋いだ
+     * （{@link CallbackContracts}）。jar の中を読んだわけではない
+     */
+    public static final String CALLBACK = "CALLBACK";
     // --- 段5: DIコンテナ（Spring）のBean定義で絞る ---
     /** 候補のうちBean登録されている型が1つだけだった */
     public static final String SPRING_DI = "SPRING_DI";

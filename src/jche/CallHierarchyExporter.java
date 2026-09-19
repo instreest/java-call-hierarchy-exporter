@@ -353,6 +353,9 @@ public class CallHierarchyExporter {
                         + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
                         + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
             }
+            if (walker.callbackHits() > 0) {
+                Log.info("jar の中から呼び戻されるメソッドを契約で繋いだ: " + walker.callbackHits() + " 件");
+            }
             if (walker.prunedCalls() > 0) {
                 Log.info("条件分岐の静的解析で「その経路では呼ばれない」と判定して打ち切り: "
                         + walker.prunedCalls() + " 件");

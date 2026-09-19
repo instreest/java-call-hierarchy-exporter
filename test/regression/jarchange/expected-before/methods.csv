@@ -8,7 +8,7 @@ Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,87,1,1,1,NORMAL,0,0,,0,[N
 Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,91,1,1,2,NORMAL,0,1,[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い,0,[NOT_REACHED] 上流が未出力
 Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,95,1,1,2,NORMAL,0,2,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
 Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,100,1,1,4,NORMAL,0,1,[UNEXPANDED:CHA] ローカル変数,0,[NOT_REACHED] 上流が未出力
-Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,108,1,1,10,NORMAL,0,3,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
+Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,108,1,1,10,NORMAL,0,3,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり;[UNEXPANDED:CHA] 型名（static）,0,[NOT_REACHED] 上流が未出力
 Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,120,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,134,1,2,1,NORMAL,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
 Feature.run(boolean),fx.branch.Feature,C,src/fx/branch/Feature.java,17,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
@@ -25,7 +25,7 @@ Feature.one(),fx.branch.Feature,C,src/fx/branch/Feature.java,80,1,1,1,NORMAL,0,0
 Feature.two(),fx.branch.Feature,C,src/fx/branch/Feature.java,84,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 Feature.other(),fx.branch.Feature,C,src/fx/branch/Feature.java,88,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 Feature.trace(String),fx.branch.Feature,C,src/fx/branch/Feature.java,92,1,8,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-AbstractDao.findById(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,7,1,14,1,NORMAL,1,1,[UNEXPANDED:CHA] 自クラス（this）,1,
+AbstractDao.findById(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,7,1,15,1,NORMAL,1,1,[UNEXPANDED:CHA] 自クラス（this）,1,
 AbstractDao.load(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,12,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
 AbstractDao.flush(),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,14,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
 AbstractDao.audit(String),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,18,1,1,1,NORMAL,1,0,,0,[NOT_REACHED] 上流が未出力
@@ -50,10 +50,10 @@ ItemFinder.find(long),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,12,1,0,1,EN
 ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
 LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
 OrderDaoImpl.load(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,11,1,1,0,LEAF,1,0,,1,
-OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,15,1,NORMAL,1,0,,1,
-OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,14,0,LEAF,1,0,,1,
+OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,16,1,NORMAL,1,0,,1,
+OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,16,0,LEAF,1,0,,1,
 UserDaoImpl.load(long),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,7,1,1,1,NORMAL,1,0,,1,
-UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,14,0,LEAF,1,0,,1,
+UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,15,0,LEAF,1,0,,1,
 UserDaoImpl.save(java.util.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,15,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 UserDaoImpl.save(fx.other.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,16,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 Deep.nestedArgument(),fx.deep.Deep,C,src/fx/deep/Deep.java,19,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
@@ -90,9 +90,15 @@ OnlyImpl.m(),fx.inherit.OnlyImpl,C,src/fx/inherit/OnlyImpl.java,6,1,1,0,LEAF,0,0
 Sub2.m(),fx.inherit.Sub2,I,src/fx/inherit/Sub2.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
 Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
 Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
+Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
 Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
+Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] 型名（static）,0,[NOT_REACHED] 上流が未出力
+Starter.viaThread(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,19,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
+Starter.viaSubclass(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,24,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
+Starter.viaExecutor(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,29,1,0,4,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
+Starter.viaVariable(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,36,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
+Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,5,1,NORMAL,0,1,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力
+Starter.Worker.run(),fx.lambda.Starter.Worker,C,src/fx/lambda/Starter.java,62,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力
 Base.init(String),fx.model.Base,C,src/fx/model/Base.java,8,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 Color.area(),fx.model.Color,C,src/fx/model/Color.java,18,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
 Color.code(),fx.model.Color,C,src/fx/model/Color.java,20,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
@@ -120,8 +126,8 @@ Notifier.execute(),fx.service.Notifier,C,src/fx/service/Notifier.java,19,1,2,3,N
 Notifier.ping(),fx.service.Notifier,C,src/fx/service/Notifier.java,27,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 Notifier.pong(),fx.service.Notifier,C,src/fx/service/Notifier.java,31,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
 OrderService.execute(),fx.service.OrderService,C,src/fx/service/OrderService.java,23,1,2,13,NORMAL,1,6,[UNEXPANDED:CHA] フィールド変数;[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-OrderService.helper(),fx.service.OrderService,C,src/fx/service/OrderService.java,38,1,2,2,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
-OrderService.staticHelper(),fx.service.OrderService,C,src/fx/service/OrderService.java,43,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
+OrderService.helper(),fx.service.OrderService,C,src/fx/service/OrderService.java,38,1,3,2,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
+OrderService.staticHelper(),fx.service.OrderService,C,src/fx/service/OrderService.java,43,1,2,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
 OrderService.setMutable(Dao),fx.service.OrderService,C,src/fx/service/OrderService.java,47,1,1,0,LEAF,1,0,,1,
 OrderService.recurse(int),fx.service.OrderService,C,src/fx/service/OrderService.java,51,1,2,1,NORMAL,1,0,,1,
 Repo.execute(),fx.service.Repo,C,src/fx/service/Repo.java,22,1,2,2,NORMAL,0,1,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力

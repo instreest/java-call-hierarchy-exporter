@@ -135,6 +135,7 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,Main.main,M
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
 at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$1,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:112),UserDaoImpl.describe,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe,[RESOLVED:DATAFLOW_PARAM]
+at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
 at fx.app.Main.run(Main.java:68),Counter.bump,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,Main.main,Main.run,Counter.Inner.touch
@@ -225,6 +226,20 @@ at fx.lambda.Holder.lambda$viaForEach$3(Holder.java:51),OrderDaoImpl.findById,Ho
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,Starter.viaThread,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter.viaSubclass(Starter.java:25),Starter.Worker.run,Starter.viaSubclass,Starter.Worker.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,Starter.viaSubclass,Starter.Worker.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,Starter.viaSubclass,Starter.Worker.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,Starter.viaExecutor,Starter.lambda$viaExecutor$0,[RESOLVED:CALLBACK] 契約: ExecutorService#submit(java.util.concurrent.Callable) が call() を呼ぶ
+at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe,Starter.viaExecutor,Starter.lambda$viaExecutor$0,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,Starter.viaExecutor,Starter.lambda$viaExecutor$0
+at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe,Starter.viaExecutor,Starter.lambda$viaExecutor$0,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,Starter.viaVariable,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,Starter.viaVariable,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
 at fx.model.Color.<init>(Color.java:14),Registry.register,Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),Target.<clinit>,Invoker.byConstant,Target.<clinit>,[RESOLVED:REFLECTION_INIT]
 at fx.reflect.Invoker.byConstant(Invoker.java:16),Target.run,Invoker.byConstant,Target.run,[RESOLVED:REFLECTION]

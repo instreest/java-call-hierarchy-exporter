@@ -39,6 +39,8 @@ public final class CallResolver {
     private final MethodTable methods;
     private final DataflowResolver dataflow;
     private final List<TypeCandidateProvider> providers;
+    /** ソースの外を経由して呼び戻される辺の契約表（無ければ空の表） */
+    private final CallbackContracts callbacks;
 
     /** 段1の結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
     private int[][] resolvedTargets;
@@ -68,10 +70,32 @@ public final class CallResolver {
 
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers) {
+        this(graph, dataflow, providers, CallbackContracts.jdk(graph, dataflow));
+    }
+
+    public CallResolver(CallGraph graph, DataflowResolver dataflow,
+                        List<TypeCandidateProvider> providers, CallbackContracts callbacks) {
         this.graph = graph;
         this.methods = graph.methods;
         this.dataflow = dataflow;
         this.providers = providers;
+        this.callbacks = callbacks;
+    }
+
+    /**
+     * その辺の呼び出し先（jar の中）が、契約で呼び戻すメソッド。無ければ空。
+     *
+     * 通常の解決（{@link #resolve}）とは別の候補として扱う。呼び出し先そのものの行は
+     * そのまま出し、その次に呼び戻される側を {@link Resolution#CALLBACK} で並べる。
+     *
+     * @param ctx 経路で分かっていること。null なら経路に依らず決まるもの（new した型・ラムダ）だけ
+     */
+    public List<CallbackContracts.Match> callbackTargets(int edgeIndex, DataflowContext ctx) {
+        int callee = graph.calleeOf(edgeIndex);
+        if (!callbacks.hasContract(callee)) {
+            return List.of();
+        }
+        return callbacks.matchesOf(edgeIndex, ctx);
     }
 
     public DataflowResolver dataflow() {
@@ -142,6 +166,17 @@ public final class CallResolver {
             }
             return Resolution.single(calleeId,
                     Resolution.STATIC_BOUND_PREFIX + BindKind.staticBoundReason(bindKind));
+        }
+
+        // --- ラムダ／メソッド参照が渡ってきた呼び出し（経路に依らず決まる分） ---
+        // 関数型インターフェースのメソッドは、候補が0件（NO_IMPL）でも複数（CHA）でも、
+        // 渡された値がラムダなら実行されるのはその本体。段1の候補数に関係なく先に決める。
+        // 経路の引数で渡ってきたものは resolveOnPath で改めて試す
+        if (dataflow.enabled() && graph.hasFunctionalImpl(calleeId)) {
+            int viaLambda = dataflow.functionalTargetOf(graph.recvOrigin(edgeIndex), null);
+            if (viaLambda >= 0) {
+                return Resolution.single(viaLambda, Resolution.DATAFLOW_LAMBDA);
+            }
         }
 
         // --- 段1: オーバーライド候補 ---
@@ -435,6 +470,11 @@ public final class CallResolver {
                 for (int t : resolve(e).targets()) {
                     inDegree[t]++;
                 }
+                // 契約で呼び戻される側も「呼ばれている」。ここで数えないと
+                // Thread で起動する Runnable の run が ENTRY_CANDIDATE に混ざる
+                for (CallbackContracts.Match m : callbackTargets(e, null)) {
+                    inDegree[m.target()]++;
+                }
             }
         }
         return inDegree;
@@ -454,6 +494,13 @@ public final class CallResolver {
             int cur = queue.poll();
             for (int e = graph.edgeStart(cur); e < graph.edgeEnd(cur); e++) {
                 for (int t : resolve(e).targets()) {
+                    if (!seen[t]) {
+                        seen[t] = true;
+                        queue.add(t);
+                    }
+                }
+                for (CallbackContracts.Match m : callbackTargets(e, null)) {
+                    int t = m.target();
                     if (!seen[t]) {
                         seen[t] = true;
                         queue.add(t);
