@@ -35,7 +35,7 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -63,8 +63,27 @@ jobs:
         id: meta
         run: echo "version=$(node -p "require('./vscode-plugin/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      # v7 なのは Node.js 24 で動く版だから。v4 は Node.js 20 を指しており、
+      # ランナーが強制的に 24 で動かすため「Node.js 20 is deprecated」の注記が出る
+      # （eclipse-plugin-jar.yml・smoke.yml と同じ版。docs/github-actions-qa.md の Q26）
+      - uses: actions/upload-artifact@v7
         with:
           name: java-call-hierarchy-exporter-${{ steps.meta.outputs.version }}-vsix
           path: vscode-plugin/java-call-hierarchy-exporter.vsix
           if-no-files-found: error
+
+      # ダウンロードしたあと何をすればよいかを、実行のサマリに出しておく
+      # （eclipse-plugin-jar.yml と同じ作り）
+      - name: Summary
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          VSIX=vscode-plugin/java-call-hierarchy-exporter.vsix
+          {
+            echo "### VSCode プラグイン"
+            echo ""
+            echo "- \`java-call-hierarchy-exporter.vsix\`（版 $VERSION、$(du -h "$VSIX" | cut -f1)）"
+            echo "- 下の **java-call-hierarchy-exporter-$VERSION-vsix** をダウンロードし、zip を展開する"
+            echo "- VSCode の 拡張機能 → \`…\` → 「VSIX からのインストール」で入れる"
+            echo "- 解析には JDK 17 以上が要る。詳しい手順は [docs/vscode-plugin-usage.md](../blob/${GITHUB_SHA}/docs/vscode-plugin-usage.md)"
+          } >> "$GITHUB_STEP_SUMMARY"
