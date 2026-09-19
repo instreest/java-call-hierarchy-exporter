@@ -14,6 +14,7 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.StringLiteral;
 
 import jche.extension.CallSiteHintCollector;
+import jche.extension.Hint;
 import jche.extension.HintKeys;
 import jche.extension.HintSink;
 import jche.util.Log;
@@ -46,7 +47,7 @@ public final class FactoryKeyCollector implements CallSiteHintCollector {
     /** 残す証拠の種別 */
     public static final String KEY_KIND = "plugin.factory.hint.kind";
 
-    private static final String DEFAULT_KIND = "FACTORY_KEY";
+    private static final String DEFAULT_KIND = Hint.KIND_FACTORY_KEY;
 
     /** @param typeFqn 空文字ならメソッド名だけで照合する */
     private record Target(String typeFqn, String methodName) {

@@ -74,8 +74,10 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 }
 ```
 
-実装するインターフェースは `jche.extension.CallSiteHintCollector`（フェーズA）と
-`jche.extension.TypeCandidateProvider`（フェーズB）です。動く例は
+実装するインターフェースは `jche.extension.TypeCandidateProvider`（フェーズB）です。
+**ファクトリに渡されたキーはツールが渡す**ので、それを拾うためだけに
+`jche.extension.CallSiteHintCollector`（フェーズA）を書く必要はありません
+（呼び出し箇所から独自の証拠を拾いたいときだけ使います）。動く例は
 [test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
 
 - 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の最終列に `[RESOLVED:<ラベル>]`（同梱の実装なら `MAPPING`）が付きます
@@ -159,6 +161,19 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 
 1件に確定し、そこから先（`audit` / `settle`）へも降りるようになります。
 
+### 拡張に渡る証拠（`Hint`）
+
+`candidates()` が受け取る `hints` には、次の 3 つがツールから自動で入ります
+（レシーバがファクトリメソッドの戻り値だった場合）。
+
+| `kind` | `value` | 例 |
+|---|---|---|
+| `Hint.KIND_FACTORY`（`"FACTORY"`） | ファクトリのメソッド（`型FQN#メソッド名`） | `jp.co.app.ServiceFactory#get` |
+| `Hint.KIND_FACTORY_KEY`（`"FACTORY_KEY"`） | 渡された文字列のキー（定数は値まで評価済み） | `user` |
+| `Hint.KIND_FACTORY_CONST`（`"FACTORY_CONST"`） | 渡された列挙定数 | `jp.co.app.Kind.USER` |
+
+フェーズAの拡張が残した証拠があれば、それも同じリストに並びます（種別は拡張が決めた名前）。
+
 ### 3b. 算出規則を書く（自前の拡張）
 
 キーが多くて対応表を並べたくない、あるいはキーが増えるたびに表を直したくない場合は、
@@ -166,18 +181,16 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 実行時にコンパイルされます（Maven / Gradle でのビルドも jar 作りも不要）。
 
 ```properties
-# config.properties
+# config.properties — 書くのはこの 2 行と、拡張が自分で読む設定だけ
 plugin.folders=plugins
-
-# フェーズA: 同梱の実装をそのまま使う（キーの採取だけなので自分で書く必要は無い）
-resolver.hint.collectors=jche.builtin.FactoryKeyCollector
-plugin.factory.methods=jp.co.app.ServiceFactory#get
-
-# フェーズB: 算出規則を書いた自前の拡張
 resolver.candidate.providers=demo.NamingConventionProvider
 demo.naming.prefix=jp.co.app.impl.
 demo.naming.suffix=Service
 ```
+
+> **ファクトリのキーを拾うための設定は要りません。** キーはデータフローの値グラフに載っているので、
+> ツールが証拠（`Hint`）にして拡張へ渡します。フェーズAの拡張（`resolver.hint.collectors` と
+> `plugin.factory.methods`）を書く必要があるのは、**呼び出し箇所から独自の証拠を拾いたいとき**だけです。
 
 ```java
 // config/plugins/NamingConventionProvider.java
@@ -241,225 +254,71 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 
 ### 3c. 「このファクトリのときだけ」という条件の書き方
 
-`candidates` に渡るのは、**解決しようとしている呼び出しの情報**（`declaredType` / `signature`）と
-証拠のリストだけで、**どのファクトリから来た値かは渡りません**。条件は次の3つのどれかで書きます。
-
-| 状況 | 条件の書き方 | 自前のフェーズA拡張 |
-|---|---|---|
-| 対象のファクトリが1つ | 書かなくてよい。`plugin.factory.methods` が既に絞っている | 不要 |
-| ファクトリごとに戻り値の型が違う | `declaredType` で分ける | 不要 |
-| 同じ型を返すファクトリが複数あって規則が違う | **証拠の種別**（`Hint.kind`）で分ける | 必要 |
-
-#### 条件を書かなくてよい場合
-
-`plugin.factory.methods=jp.co.app.ServiceFactory#get` と書いた時点で、証拠が付くのは
-**そのファクトリの戻り値を受けている呼び出しだけ**です。`hints` に `FACTORY_KEY` が入っていること
-自体が「このファクトリから来た」という条件になっているので、3b の例のように種別だけ見れば足ります。
-
-#### 宣言型で分ける
-
-戻り値の型がファクトリごとに違うなら、`declaredType`（呼び出し先を宣言している型の FQN。
-`s.execute()` なら `jp.co.app.Service`）で規則を切り替えられます。フェーズAは同梱の実装のままで済みます。
-
-```properties
-resolver.hint.collectors=jche.builtin.FactoryKeyCollector
-plugin.factory.methods=jp.co.app.ServiceFactory#get, jp.co.app.DaoFactory#lookup
-resolver.candidate.providers=demo.ByDeclaredTypeProvider
-demo.rules=jp.co.app.Service|jp.co.app.impl.|Service, jp.co.app.Dao|jp.co.app.dao.|Dao
-```
+`hints` には **どのファクトリから来た値か**（`Hint.KIND_FACTORY`）が入るので、そのまま条件になります。
 
 ```java
-// 宣言型FQN -> {接頭辞, 接尾辞} の rules を init で読んでおく（組み立ては下の PerFactoryProvider と同じ）
+private static final String FACTORY = "jp.co.app.ServiceFactory#get";
+
 @Override
 public String[] candidates(String declaredType, String signature, List<Hint> hints) {
-    String[] rule = rules.get(declaredType);     // ← ここが条件
-    if (rule == null) {
-        return null;
+    if (!hints.contains(new Hint(Hint.KIND_FACTORY, FACTORY))) {
+        return null;                          // ← このファクトリ以外には何も言わない
     }
     for (Hint hint : hints) {
-        if ("FACTORY_KEY".equals(hint.kind())) {
-            return new String[] {rule[0] + capitalize(hint.value()) + rule[1]};
+        if (Hint.KIND_FACTORY_KEY.equals(hint.kind())) {
+            return new String[] {"jp.co.app.impl." + capitalize(hint.value()) + "Service"};
         }
     }
     return null;
 }
 ```
 
-同梱の `FactoryKeyCollector` は種別を1つしか持たない（`plugin.factory.hint.kind`。既定 `FACTORY_KEY`）ため、
-複数のファクトリを並べても証拠は同じ種別になります。**規則が違うファクトリを並べたまま宣言型を見ないと、
-別のファクトリのキーに誤った規則を当ててしまいます。** 組み立てた FQN が解析対象に無ければ候補は
-採用されず CHA に戻るだけですが、たまたま実在する型名になった場合は**誤った1件に確定します**。
+| 状況 | 条件の書き方 |
+|---|---|
+| 対象のファクトリが 1 つ | `Hint.KIND_FACTORY` と突き合わせる（上の例） |
+| ファクトリごとに戻り値の型が違う | `declaredType`（呼び出し先を宣言している型の FQN）で分けてもよい |
+| 同じ型を返すファクトリが複数あって規則が違う | `Hint.KIND_FACTORY` の値を規則表の鍵にする |
 
-#### 証拠の種別で分ける（同じ型を返すファクトリが複数）
-
-`ServiceFactory.get("user")` と `LegacyFactory.create("user")` がどちらも `Service` を返し、
-組み立て規則だけが違う場合、宣言型もキーも同じなので区別できません。この場合は
-**「どのファクトリから来たか」を証拠の種別に入れる**フェーズA拡張を書きます。
+最後の形は、ファクトリのメソッドキーをそのまま鍵にできます。
 
 ```properties
 plugin.folders=plugins
-resolver.hint.collectors=demo.FactoryScopedKeyCollector
-demo.factory.methods=jp.co.app.ServiceFactory#get, jp.co.app.LegacyFactory#create
 resolver.candidate.providers=demo.PerFactoryProvider
-demo.rules=jp.co.app.ServiceFactory#get|jp.co.app.impl.|Service, jp.co.app.LegacyFactory#create|jp.co.app.legacy.|ServiceImpl
+demo.rules=jp.co.app.ServiceFactory#get|jp.co.app.impl.|Service, \
+           jp.co.app.LegacyFactory#create|jp.co.app.legacy.|ServiceImpl
 ```
 
 ```java
-// config/plugins/FactoryScopedKeyCollector.java
-package demo;
+/** "型FQN#メソッド名" -> {接頭辞, 接尾辞} を init で読んでおく */
+private final Map<String, String[]> rules = new LinkedHashMap<>();
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-
-import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.IMethodBinding;
-import org.eclipse.jdt.core.dom.ITypeBinding;
-import org.eclipse.jdt.core.dom.MethodInvocation;
-import org.eclipse.jdt.core.dom.StringLiteral;
-
-import jche.extension.CallSiteHintCollector;
-import jche.extension.HintKeys;
-import jche.extension.HintSink;
-
-/**
- * フェーズA: 「どのファクトリメソッドから来た値か」を証拠の種別に入れて残す。
- *
- * 同梱の FactoryKeyCollector は種別が1つ（既定 FACTORY_KEY）なので、
- * 同じ宣言型を返すファクトリが複数あって規則が違う場合に区別できない。
- * 種別を "FACTORY:<型FQN>#<メソッド名>" にすれば、フェーズBで条件が書ける。
- */
-public class FactoryScopedKeyCollector implements CallSiteHintCollector {
-
-    private final List<String> targets = new ArrayList<>();
-
-    @Override
-    public void init(Properties config, Path configDir) {
-        for (String one : config.getProperty("demo.factory.methods", "").split(",")) {
-            String t = one.trim();
-            if (!t.isEmpty()) {
-                targets.add(t);
-            }
+@Override
+public String[] candidates(String declaredType, String signature, List<Hint> hints) {
+    String[] rule = null;
+    String key = null;
+    for (Hint hint : hints) {
+        if (Hint.KIND_FACTORY.equals(hint.kind())) {
+            rule = rules.get(hint.value());        // ← ここが「このファクトリのとき」の条件
+        } else if (Hint.KIND_FACTORY_KEY.equals(hint.kind()) && key == null) {
+            key = hint.value();
         }
     }
-
-    @Override
-    public void collect(MethodInvocation node, CompilationUnit cu, String callerMethodKey, HintSink sink) {
-        String target = matched(node);
-        if (target == null) {
-            return;
-        }
-        String key = firstStringLiteral(node);
-        if (key == null) {
-            return;
-        }
-        String scopeKey = HintKeys.ofAssignedVariable(node);
-        if (scopeKey.isEmpty()) {
-            scopeKey = HintKeys.ofPosition(node);
-        }
-        sink.add(scopeKey, "FACTORY:" + target, key);
-    }
-
-    /** 呼び出しが対象のファクトリメソッドなら "型FQN#メソッド名"。違えば null */
-    private String matched(MethodInvocation node) {
-        IMethodBinding binding = node.resolveMethodBinding();
-        if (binding == null) {
-            return null;
-        }
-        ITypeBinding declaring = binding.getDeclaringClass();
-        if (declaring == null) {
-            return null;
-        }
-        String key = declaring.getErasure().getQualifiedName() + "#" + node.getName().getIdentifier();
-        return targets.contains(key) ? key : null;
-    }
-
-    private static String firstStringLiteral(MethodInvocation node) {
-        for (Object o : node.arguments()) {
-            if (o instanceof StringLiteral literal) {
-                return literal.getLiteralValue();
-            }
-        }
-        return null;
-    }
+    return (rule == null || key == null)
+            ? null : new String[] {rule[0] + capitalize(key) + rule[1]};
 }
 ```
 
-```java
-// config/plugins/PerFactoryProvider.java
-package demo;
+`ServiceFactory.get("user")` と `LegacyFactory.create("user")` が同じ `Service` を返していても、
+呼んだファクトリごとに別の実装へ解決できます。
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
-import jche.extension.Hint;
-import jche.extension.TypeCandidateProvider;
-
-/** フェーズB: ファクトリメソッドごとに算出規則を切り替える */
-public class PerFactoryProvider implements TypeCandidateProvider {
-
-    /** "FACTORY:<型FQN>#<メソッド名>" -> {接頭辞, 接尾辞} */
-    private final Map<String, String[]> rules = new LinkedHashMap<>();
-
-    @Override
-    public void init(Properties config, Path configDir) {
-        for (String one : config.getProperty("demo.rules", "").split(",")) {
-            String t = one.trim();
-            if (t.isEmpty()) {
-                continue;
-            }
-            String[] p = t.split("\\|", -1);
-            rules.put("FACTORY:" + p[0].trim(), new String[] {p[1].trim(), p[2].trim()});
-        }
-    }
-
-    @Override
-    public String[] candidates(String declaredType, String signature, List<Hint> hints) {
-        // 証拠は1件とは限らない（同じ変数に複数のファクトリから代入されうる）。
-        // 先頭で return すると、もう一方の経路の実装が黙って消えるので全部返す
-        List<String> out = new ArrayList<>(1);
-        for (Hint hint : hints) {
-            String[] rule = rules.get(hint.kind());     // ← ここが「このファクトリのとき」の条件
-            if (rule == null) {
-                continue;
-            }
-            String fqn = rule[0] + capitalize(hint.value()) + rule[1];
-            if (!out.contains(fqn)) {
-                out.add(fqn);
-            }
-        }
-        return out.isEmpty() ? null : out.toArray(new String[0]);
-    }
-
-    @Override
-    public String label() {
-        return "PER_FACTORY";
-    }
-
-    private static String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
-}
-```
-
-同じキー `"user"`・同じ宣言型 `Service` でも、呼び出したファクトリごとに別の実装へ解決します。
-
-```csv
-at jp.co.app.Main.run(Main.java:5),UserService.execute,Main.run,UserService.execute,[RESOLVED:PER_FACTORY]
-at jp.co.app.impl.UserService.execute(UserService.java:4),UserService.modern,Main.run,UserService.execute,UserService.modern
-at jp.co.app.Main.run(Main.java:6),UserServiceImpl.execute,Main.run,UserServiceImpl.execute,[RESOLVED:PER_FACTORY]
-at jp.co.app.legacy.UserServiceImpl.execute(UserServiceImpl.java:4),UserServiceImpl.legacy,Main.run,UserServiceImpl.execute,UserServiceImpl.legacy
-```
+> 以前はこの場合分けのために、**自前のフェーズA拡張を書いて証拠の種別にファクトリ名を埋める**
+> 必要がありました（`sink.add(scopeKey, "FACTORY:" + target, key)`）。いまはツールが
+> `Hint.KIND_FACTORY` で渡すので要りません。
 
 #### 証拠は1件とは限らない
 
-証拠は「呼び出しのレシーバ」ごとに溜まります。同じ変数に複数のファクトリから代入されると、
-その変数を使う呼び出しには**証拠が複数付きます**。
+フェーズAの拡張が拾った証拠は「呼び出しのレシーバ」ごとに溜まります。同じ変数に複数のファクトリから
+代入されると、その変数を使う呼び出しには**証拠が複数付きます**。
 
 ```java
 Service s = ServiceFactory.get("user");

@@ -20,6 +20,7 @@
 #                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
 #                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
 #                          ファクトリ＋キーの契約表（config-contracts-factory。拡張と同じ結果になる）→
+#                          算出規則の拡張（config-naming。フェーズAの設定なしでキーが届く）→
 #                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
 #                          拡張・契約表ありでのみ具象クラスに絞れること、フェーズAの拡張を変えると
 #                          キャッシュが捨てられること、契約表では捨てられないことを確認する
@@ -415,11 +416,20 @@ plugin_case() {
     expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
     expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
 
+    # 算出規則を書いた自前の拡張。フェーズAの設定（resolver.hint.collectors /
+    # plugin.factory.methods）を書かなくても、ファクトリのキーが Hint として届く
+    run plugin config-naming.properties 7 "7回目: 算出規則の拡張（フェーズAの設定なし）" || return
+    expect_log_missing plugin 7 "FactoryKeyCollector" "7回目: フェーズAの拡張は読み込んでいない"
+    expect_reused plugin 7 "7回目: フェーズAが無いのでキャッシュを作り直さない"
+    expect_csv_contains plugin "App.factoryCall,UserDaoImpl.find" "7回目: 変数に受けた呼び出しを算出規則で絞る"
+    expect_csv_contains plugin "App.chainedCall,OrderDaoImpl.find" "7回目: 変数に受けない呼び出しも絞る"
+    expect_csv_contains plugin "RESOLVED:NAMING" "7回目: 拡張のラベルが出る"
+
     # 右辺を採用できない契約は、候補を落として CHA に戻す（呼び出しを落とさない）
-    run plugin config-contracts-miss.properties 7 "7回目: 右辺を採用できない契約" || return
-    expect_log_contains plugin 7 "fxp.Dao#find => fxp.Service" \
-        "7回目: 当たったが採用できなかった契約を挙げる"
-    compare plugin expected-before "7回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
+    run plugin config-contracts-miss.properties 8 "8回目: 右辺を採用できない契約" || return
+    expect_log_contains plugin 8 "fxp.Dao#find => fxp.Service" \
+        "8回目: 当たったが採用できなかった契約を挙げる"
+    compare plugin expected-before "8回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
 }
 
 for c in $CASES; do

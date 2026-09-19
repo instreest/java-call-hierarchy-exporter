@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 import jche.cache.Origin;
-import jche.util.Names;
 
 /**
  * 具象型の契約表（種類 C）。「この宣言型（またはこの型のこのメソッド、このファクトリのこのキー）は、
@@ -218,37 +217,19 @@ public final class TypeContracts {
      * （{@code 型#メソッド("キー")} / {@code 型#メソッド(列挙定数のFQN)}）の候補を、
      * 実引数の位置の順に返す。ファクトリの戻り値でなければ空。
      *
-     * <p>契約を引くとき（{@link #matchFactory}）と、絞れなかった呼び出しからひな形を作るとき
-     * （{@code jche.report.ContractSuggestions}）で同じ形を使うために、ここに寄せてある。
-     * 書ける形が増えたときに 2 か所が食い違わないようにするため。
-     *
-     * @param recvOrigin レシーバの出所（{@link CallGraph#recvOrigin}）
-     * @param dataflow   キーの値を引くのに使う
-     * @param ctx        この経路で分かっていること。無ければ null
+     * <p>読み取りそのものは {@link FactoryCalls} が持つ。ここはそれを契約表の綴りに直すだけ。
+     * 絞れなかった呼び出しからひな形を作る側（{@code jche.report.ContractSuggestions}）も
+     * これを使うので、ひな形が出す行と実際に引ける行が食い違わない。
      */
     public static List<String> factoryLeftSidesOf(String recvOrigin, DataflowResolver dataflow,
                                                   DataflowContext ctx) {
-        if (recvOrigin == null || Origin.kindOf(recvOrigin) != Origin.RETURN) {
+        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(recvOrigin, dataflow, ctx);
+        if (keys.isEmpty()) {
             return List.of();
         }
-        String typeAndName = typeAndNameOf(Origin.valueOf(recvOrigin));
-        if (typeAndName.isEmpty()) {
-            return List.of();
-        }
-        List<String> out = new ArrayList<>(1);
-        for (String arg : argOriginsOf(Origin.argsOf(recvOrigin))) {
-            // 文字列のキー。リテラルのほか、コンパイル時定数は値まで評価されたものが返る
-            String literal = dataflow.literalValueOf(arg, ctx);
-            if (literal != null) {
-                out.add(leftSideOf(typeAndName, literal, Origin.LITERAL));
-            }
-            // 列挙定数のキー。値グラフには「型FQN.定数名」で載っている
-            if (Origin.kindOf(arg) == Origin.CONST) {
-                String name = Origin.valueOf(arg);
-                if (!name.isEmpty()) {
-                    out.add(leftSideOf(typeAndName, name, Origin.CONST));
-                }
-            }
+        List<String> out = new ArrayList<>(keys.size());
+        for (FactoryCalls.Key key : keys) {
+            out.add(leftSideOf(key.typeAndName(), key.key(), key.kind()));
         }
         return out;
     }
@@ -316,48 +297,6 @@ public final class TypeContracts {
             }
         }
         return true;
-    }
-
-    /** メソッドキー "jp.co.X#get(java.lang.String)" から "jp.co.X#get" を取り出す */
-    private static String typeAndNameOf(String methodKey) {
-        if (methodKey == null) {
-            return "";
-        }
-        int paren = methodKey.indexOf('(');
-        String head = (paren < 0) ? methodKey.trim() : methodKey.substring(0, paren).trim();
-        return (head.indexOf('#') > 0) ? head : "";
-    }
-
-    /**
-     * 実引数リストから、実引数の出所を<b>位置の順</b>に取り出す（{@code n=} と {@code r=} は除く）。
-     *
-     * 位置で並べ直すのは、「先頭から最初に表に載っているキーを使う」規則を、
-     * 書き出しの並びに依存させないため
-     */
-    private static List<String> argOriginsOf(String args) {
-        if (args == null || args.isEmpty()) {
-            return List.of();
-        }
-        List<int[]> order = new ArrayList<>(2);        // {位置, entries の添字}
-        List<String> origins = new ArrayList<>(2);
-        for (String entry : Origin.entriesOf(args)) {
-            int eq = entry.indexOf('=');
-            if (eq <= 0 || !Character.isDigit(entry.charAt(0))) {
-                continue;
-            }
-            int index = Names.parseIntOr(entry.substring(0, eq), -1);
-            if (index < 0) {
-                continue;
-            }
-            order.add(new int[] {index, origins.size()});
-            origins.add(Origin.unnest(entry.substring(eq + 1)));
-        }
-        order.sort((a, b) -> Integer.compare(a[0], b[0]));
-        List<String> out = new ArrayList<>(origins.size());
-        for (int[] pair : order) {
-            out.add(origins.get(pair[1]));
-        }
-        return out;
     }
 
     /** シグネチャ "find(java.lang.String)" からメソッド名だけを取り出す */

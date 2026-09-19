@@ -479,7 +479,7 @@ public final class CallResolver {
         if (providers.isEmpty()) {
             return null;
         }
-        List<Hint> hints = graph.hintsOf(edgeIndex);
+        List<Hint> hints = hintsFor(edgeIndex);
         String declType = methods.typeFqn(calleeId);
         String sig = methods.signature(calleeId);
 
@@ -513,6 +513,45 @@ public final class CallResolver {
             }
         }
         return null;
+    }
+
+    /**
+     * 拡張（フェーズB）に渡す証拠。
+     *
+     * <p>フェーズAの拡張が拾ってキャッシュに残したもの（X 行）に加えて、<b>ファクトリに渡された
+     * キーをデータフローから読んで足す</b>。キーは値グラフに載っているので、拾うためだけに
+     * フェーズAの拡張（{@code FactoryKeyCollector}）を設定する必要が無い
+     * （契約表の種類 C と同じ読み口。{@link FactoryCalls}）。
+     *
+     * <p>「どのファクトリから来た値か」も {@link Hint#KIND_FACTORY} で渡すので、同じ型を返す
+     * ファクトリが複数あって規則が違う場合も、自前のフェーズA拡張を書かずに場合分けできる。
+     *
+     * <p>フェーズAが同じ証拠を既に残していれば足さない（同じものが 2 つ並ばないように）。
+     */
+    private List<Hint> hintsFor(int edgeIndex) {
+        List<Hint> stored = graph.hintsOf(edgeIndex);
+        if (!dataflow.enabled()) {
+            return stored;
+        }
+        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(graph.recvOrigin(edgeIndex), dataflow, null);
+        if (keys.isEmpty()) {
+            return stored;
+        }
+        List<Hint> all = new ArrayList<>(stored.size() + keys.size() + 1);
+        all.addAll(stored);
+        addIfAbsent(all, new Hint(Hint.KIND_FACTORY, keys.get(0).typeAndName()));
+        for (FactoryCalls.Key key : keys) {
+            addIfAbsent(all, new Hint(
+                    (key.kind() == Origin.CONST) ? Hint.KIND_FACTORY_CONST : Hint.KIND_FACTORY_KEY,
+                    key.key()));
+        }
+        return all;
+    }
+
+    private static void addIfAbsent(List<Hint> hints, Hint hint) {
+        if (!hints.contains(hint)) {
+            hints.add(hint);
+        }
     }
 
     /**

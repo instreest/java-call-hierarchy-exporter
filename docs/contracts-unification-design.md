@@ -219,7 +219,9 @@ CSV のラベルは**新しく `CONTRACT` を起こす**ことを勧める（`[R
 
 - **キーを列挙できない場合**。`"jp.co.app.impl." + capitalize(key) + "Service"` のような
   算出規則は、引き続きフェーズBの拡張に書く（instance-analysis-plugin.md の §3b）。
-  種類 C は「列挙できる対応」のための形であって、拡張の置き換えではない
+  種類 C は「列挙できる対応」のための形であって、拡張の置き換えではない。
+  ただし**キーの入手はツールが肩代わりする**ようにした（`FactoryCalls`）ので、拡張を書く側の
+  設定は `plugin.folders` と `resolver.candidate.providers` の 2 行で済む
 - **独自形式の DI 設定ファイルを読む**用途。`ContractProvider` か `TypeCandidateProvider` のまま
 - **フェーズAの拡張の指紋が `plugin.` という命名規約に依存している問題**（改善6）。
   種類 C はフェーズAを使わないので、この穴は残る。自前のフェーズA拡張が
