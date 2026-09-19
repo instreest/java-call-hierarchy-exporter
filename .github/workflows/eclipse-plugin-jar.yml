@@ -1,0 +1,75 @@
+# Eclipse プラグインのバンドル jar を作って、アーティファクトとして持ち帰れるようにする。
+#
+# 手元に Maven やネットワークが無くても、このワークフローを手動で動かせば
+# dropins に置くだけの jar が手に入る（docs/eclipse-plugin-usage.md の §2）。
+#
+# 中身の検査は smoke.yml の eclipse-plugin ジョブが受け持つ（こちらは配布物を作るだけ）。
+# 押すたびに走らせるものなので、手動実行（workflow_dispatch）だけにしてある。
+name: eclipse-plugin-jar
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # ビルドに使う JDK（javac 自身を動かす版であって、出力の版ではない）。
+      # 次の3つは別物なので、ここを 21 にしても Eclipse 側の要件は上がらない。
+      #
+      #   ① javac を動かす JDK   … ここ（21）
+      #   ② 出力する class の版   … pom の release（プラグイン 8 / 解析本体 17）
+      #   ③ Eclipse が読む版      … ②のプラグイン側なので 8（class ファイル版 52）
+      #
+      # 21 が要るのは②ではなく①の都合である。コンパイル時のクラスパスに載る
+      # Eclipse platform の jar（pom の provided 依存）が Java 21 の class ファイル
+      # （版 65）で、javac は自分より新しい版を読めないため、JDK 17 の javac だと
+      # 「class file has wrong version 65.0, should be 61.0」で止まる。
+      # 読み込む側に 21 が要るだけで、書き出す側は --release 8 に従う。
+      # よって Eclipse が Java 17 や 8 で動いていても、出来上がった jar は読める
+      # （MANIFEST.MF の Bundle-RequiredExecutionEnvironment: JavaSE-1.8 のとおり）。
+      #
+      # なお --release 8 が抑えるのは言語機能と JDK の API だけで、Eclipse 側の API は
+      # 抑えない（クラスパスには新しい JDT/JFace が載っているので、新しいメソッドを
+      # 呼べてしまう）。そちらは test/plugin-api/run.sh が古い Eclipse（4.6 相当）の
+      # jar と --release 8 でコンパイルして検査している（smoke.yml の eclipse-plugin
+      # ジョブで実行。このワークフローと同じ版の JDK を使う）
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build the bundle jar
+        run: mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package
+
+      # 版は MANIFEST.MF の Bundle-Version で決まる。ここで固定にすると二重管理に
+      # なるのでワイルドカードで拾う（target 直下の jar はバンドル本体だけ。
+      # 解析本体の jche-core.jar は target/classes/lib/ の中にあり、ここには出てこない）
+      #
+      # v7 なのは Node.js 24 で動く版だから。v4 は Node.js 20 を指しており、
+      # ランナーが強制的に 24 で動かすため「Node.js 20 is deprecated」の注記が出る
+      # （action.yml・smoke.yml の回帰ジョブと同じ版。入力の名前は v4 と変わらない）
+      - uses: actions/upload-artifact@v7
+        with:
+          name: eclipse-plugin-jar
+          path: eclipse-plugin/target/io.github.instreest.jche.eclipse-*.jar
+          if-no-files-found: error
+
+      # ダウンロードしたあと何をすればよいかを、実行のサマリに出しておく
+      - name: Summary
+        run: |
+          JAR=$(ls eclipse-plugin/target/io.github.instreest.jche.eclipse-*.jar)
+          {
+            echo "### Eclipse プラグイン"
+            echo ""
+            echo "- \`$(basename "$JAR")\`（$(du -h "$JAR" | cut -f1)）"
+            echo "- 下の **eclipse-plugin-jar** をダウンロードし、zip を展開する"
+            echo "- Eclipse を終了してから jar を Eclipse インストール先の \`dropins\` へコピーし、初回だけ \`-clean\` を付けて起動する"
+            echo "- 詳しい手順は [docs/eclipse-plugin-usage.md](../blob/${GITHUB_SHA}/docs/eclipse-plugin-usage.md) の §2"
+          } >> "$GITHUB_STEP_SUMMARY"
