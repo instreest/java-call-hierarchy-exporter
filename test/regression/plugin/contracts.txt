@@ -14,5 +14,10 @@ fxp.DaoFactory#get(ORDER_DAO) => fxp.OrderDaoImpl
 # Dao#find の C-2 より先に当たるので、この呼び出しだけ OrderDaoImpl になる（引く順番の検査）
 fxp.DaoFactory#get(fxp.DaoKind.ORDER) => fxp.OrderDaoImpl
 
+# C-3 の左辺を「ソースに書いた子クラスの名前」で指定する。pick を宣言しているのは親の
+# BaseDaoFactory だが、呼び出し側が書いているのは ChildDaoFactory なのでこちらで書ける。
+# 同じ親を持つ OtherDaoFactory 経由の呼び出しには効かず、そちらは下の C-2 に落ちる
+fxp.ChildDaoFactory#pick("ORDER_DAO") => fxp.OrderDaoImpl
+
 # 左辺が一度も当たらない行。「当たらなかった行」に挙がることを検査する（出力は変わらない）
 fxp.NoSuchType => fxp.UserDaoImpl

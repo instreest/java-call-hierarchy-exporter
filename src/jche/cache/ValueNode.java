@@ -25,8 +25,14 @@ package jche.cache;
  * @param recv     レシーバのノード番号。無ければ {@link #NONE}
  * @param args     実引数のノード番号（{@code 位置=番号} をカンマ区切り）。無ければ空文字
  * @param argCount 実引数の数。分からなければ -1（メソッド参照など、呼び出しの形になっていない場合）
+ * @param staticRecv メソッド呼び出しを<b>ソースに書いたときのレシーバの型</b>（FQN）。
+ *                   宣言元と同じか、分からなければ空文字。
+ *                   {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で
+ *                   宣言されていると、{@link #value} のメソッドキーは親になる。契約表や拡張で
+ *                   「ソースに書いてある型」を指定できるように、書かれた型も持っておく
  */
-public record ValueNode(int id, char kind, String value, int recv, String args, int argCount) {
+public record ValueNode(int id, char kind, String value, int recv, String args, int argCount,
+                        String staticRecv) {
 
     /** レシーバが無い・参照先が無いことを表す番号 */
     public static final int NONE = -1;
@@ -36,7 +42,8 @@ public record ValueNode(int id, char kind, String value, int recv, String args, 
 
     public String toRow() {
         return CacheFormat.joinRow("N", String.valueOf(id), String.valueOf(kind),
-                CacheFormat.escape(value), String.valueOf(recv), args, String.valueOf(argCount));
+                CacheFormat.escape(value), String.valueOf(recv), args, String.valueOf(argCount),
+                CacheFormat.escape(staticRecv));
     }
 
     /** 列が足りなければ null */
@@ -52,7 +59,8 @@ public record ValueNode(int id, char kind, String value, int recv, String args, 
                 CacheFormat.unescape(CacheFormat.columnAt(cols, 3)),
                 intOf(CacheFormat.columnAt(cols, 4), NONE),
                 CacheFormat.columnAt(cols, 5),
-                intOf(CacheFormat.columnAt(cols, 6), -1));
+                intOf(CacheFormat.columnAt(cols, 6), -1),
+                CacheFormat.unescape(CacheFormat.columnAt(cols, 7)));
     }
 
     /** 数字でなければ {@code fallback}。行から読む値はすべてここを通す */
@@ -69,6 +77,7 @@ public record ValueNode(int id, char kind, String value, int recv, String args, 
      * ファイルの中で同じ式が何度も現れても、ノードは1つで済む
      */
     public String dedupeKey() {
-        return kind + "\u0000" + value + "\u0000" + recv + "\u0000" + args + "\u0000" + argCount;
+        return kind + "\u0000" + value + "\u0000" + recv + "\u0000" + args + "\u0000" + argCount
+                + "\u0000" + staticRecv;
     }
 }

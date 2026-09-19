@@ -81,6 +81,7 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 [test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
 
 - 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の最終列に `[RESOLVED:<ラベル>]`（同梱の実装なら `MAPPING`）が付きます
+- `candidates()` が返す型名は **単純名でもかまいません**（`UserDaoImpl`）。解析対象で 1 件に定まるときだけ使い、複数の型に当たるときは使わずに警告に出します
 - フェーズAの拡張はキャッシュに手がかりを書くので、拡張やその設定・実装ファイルを変えると、
   キャッシュは自動的に捨てられて全件解析し直しになります（変え忘れによる古い結果の混入を防ぐため）
 - 拡張の読み込み・コンパイルに失敗しても解析は止まりません。警告を出して拡張なしで続けます
@@ -168,7 +169,7 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 
 | `kind` | `value` | 例 |
 |---|---|---|
-| `Hint.KIND_FACTORY`（`"FACTORY"`） | ファクトリのメソッド（`型FQN#メソッド名`） | `jp.co.app.ServiceFactory#get` |
+| `Hint.KIND_FACTORY`（`"FACTORY"`） | ファクトリのメソッド（`型FQN#メソッド名`）。実装が親クラスにあるときは**ソースに書いた型**と**宣言元の型**の両方が入る | `jp.co.app.ChildFactory#pick` と `jp.co.app.BaseFactory#pick` |
 | `Hint.KIND_FACTORY_KEY`（`"FACTORY_KEY"`） | 渡された文字列のキー（定数は値まで評価済み） | `user` |
 | `Hint.KIND_FACTORY_CONST`（`"FACTORY_CONST"`） | 渡された列挙定数 | `jp.co.app.Kind.USER` |
 

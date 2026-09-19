@@ -41,6 +41,7 @@ import java.util.List;
  *   r=レシーバの出所 … メソッド呼び出しの受け手。invoke ← getMethod ← forName のような
  *                      連鎖を読み手が辿るため。入れ子の出所が自身の実引数リストを
  *                      持つ場合は {} で囲む
+ *   s=書かれた型     … 呼び出しをソースに書いたときのレシーバの型。宣言元と違うときだけ
  * </pre>
  *
  * <h2>入れ子に段数の上限は無い</h2>
@@ -108,6 +109,14 @@ public final class Origin {
     public static final char ARGS = '|';
     public static final String RECEIVER = "r";
     public static final String ARG_COUNT = "n";
+    /**
+     * 呼び出しを<b>ソースに書いたときのレシーバの型</b>（FQN）。宣言元と違うときだけ付く。
+     *
+     * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
+     * メソッドキーは親になる。契約表や拡張で「ソースに書いてある型」を指定できるように、
+     * 書かれた型も持つ（{@link jche.graph.FactoryCalls}）
+     */
+    public static final String STATIC_RECV = "s";
     /**
      * 書き出す側（{@code jche.analysis.OriginTracker}）がレシーバの出所を何段まで入れ子にするか
      * （invoke ← getMethod ← forName/getClass で3段）。読み手が受け取る形には上限が無い
@@ -182,6 +191,14 @@ public final class Origin {
     /** "0=T:jp.co.X;2=A:1" から指定位置の出所を取り出す。無ければ null */
     public static String argAt(String args, int index) {
         return entryAt(args, String.valueOf(index));
+    }
+
+    /**
+     * メソッド呼び出しの出所から、ソースに書かれたレシーバの型（s=...）。
+     * 宣言元と同じか分からなければ null
+     */
+    public static String staticReceiverOf(String origin) {
+        return entryAt(argsOf(origin), STATIC_RECV);
     }
 
     /** メソッド呼び出しの出所から、そのレシーバの出所（r=...）。無ければ null */

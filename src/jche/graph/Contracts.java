@@ -68,7 +68,7 @@ public final class Contracts {
                     provider.getClass().getName());
             Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
         }
-        TypeContracts types = new TypeContracts(new ContractUsage(typeLines));
+        TypeContracts types = new TypeContracts(new ContractUsage(typeLines), graph.typeNames());
         if (types.hasFactoryRows() && !dataflow.enabled()) {
             // キーはデータフローの値グラフから引くので、切られていると永久に当たらない
             Log.warn("ファクトリとキーを書いた契約（型#メソッド(\"キー\") => 具象型）は、"

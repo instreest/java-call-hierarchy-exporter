@@ -164,6 +164,7 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,Main.run,
 |---|---|
 | 引く順番 | `ファクトリ#メソッド("キー")` → `宣言型#メソッド名` → `宣言型`。狭いほうが先に当たる |
 | 複数書いたとき | 1 件に絞れたときだけ展開されるのは本体の判定と同じ。複数のままなら `[UNEXPANDED:CHA] 候補N件` |
+| 型名の書き方 | **単純名でもかまいません**（`UserDaoImpl`）。解析対象で 1 件に定まるときだけ使い、複数の型に当たるときは使わずに警告に出します |
 | 右辺の型 | 具象クラスでかまいません。そのメソッドを親から継承しているだけの型を書いても、本体を持つ親まで辿ります |
 | 採用できないとき | その型にも親にもその本体が無ければ、候補を落として CHA に戻します（呼び出しは漏れません）。実行ログに挙がります |
 | 効く位置 | [具象クラスの解決](../README.md#具象クラスの解決)の段3。拡張より先、データフローや Spring の判定より先に効きます |
@@ -177,6 +178,7 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,Main.run,
 | 定数で渡していてもよい | `get(Keys.USER)` のように `static final String` で渡していても、**定数の値**で引きます。リテラルの連結（`"USER" + "_DAO"`）も評価されます。書くのは**値**であって定数の単純名ではありません |
 | 多引数のファクトリ | 実引数を先頭から見て、**最初に表に載っているキー**を使います。位置は書けません |
 | 前提 | `dataflow.enabled=true`（既定）。`false` にすると引けないので、その旨を警告します |
+| ファクトリの型 | **ソースに書いてある型**で書きます。実装が親クラスにあっても、子クラスの名前で指定できます（下記） |
 | 列挙定数のキー | 引用符を付けず**定数の FQN** で書きます（`#get(jp.co.app.Kind.USER)`）。Java のソースに書く形と同じで、文字列のキーと見分けがつきます |
 | 引用符も修飾名も無い形 | `#get(USER)` は読めない行として警告に出ます（文字列なら `"USER"`、列挙定数なら FQN） |
 
@@ -224,6 +226,26 @@ public class MyContracts implements jche.extension.ContractProvider {
 
 `test/regression/whole/contracts.txt` に、`test/demo` の自前フレームワーク分（`Dispatcher#submit` と
 `@Endpoint`）を足した例があります。
+
+### ファクトリの実装が親クラスにある場合
+
+```java
+public class BaseDaoFactory { public static Dao pick(String key) { ... } }
+public class ChildDaoFactory extends BaseDaoFactory { }   // pick は宣言していない
+public class OtherDaoFactory extends BaseDaoFactory { }
+
+Dao dao = ChildDaoFactory.pick("ORDER_DAO");   // ソースに書いてあるのは子クラス
+```
+
+**どちらの型でも書けます。効く範囲が違います。**
+
+| 書き方 | 効く範囲 |
+|---|---|
+| `fxp.ChildDaoFactory#pick("ORDER_DAO")`（ソースに書いた型） | `ChildDaoFactory.pick(...)` と書いてある箇所だけ。`OtherDaoFactory` 経由は含みません |
+| `fxp.BaseDaoFactory#pick("ORDER_DAO")`（宣言元の型） | どの子クラス経由でも。「この親のファクトリなら全部」と言いたいとき |
+
+ふつうは**ソースに書いてある型**で書けば足ります。`contracts-suggested.txt` のひな形も
+そちらの形で出ます。「どの子クラス経由でも同じ実装」と言いたいときだけ、宣言元の型に広げます。
 
 ## 何を書けばよいか分からないとき
 

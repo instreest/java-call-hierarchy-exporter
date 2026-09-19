@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import jche.cache.Origin;
+import jche.util.Log;
 
 /**
  * 具象型の契約表（種類 C）。「この宣言型（またはこの型のこのメソッド、このファクトリのこのキー）は、
@@ -20,6 +21,9 @@ import jche.cache.Origin;
  * </pre>
  * 右辺はカンマ区切りで複数書ける。ただし 1 件に絞れたときだけ展開される規則は変わらないので、
  * 複数書いた箇所は {@code [UNEXPANDED:CHA]} になる。
+ *
+ * <p>型名は完全修飾名でも<b>単純名</b>でもよい（{@link TypeNames}）。単純名が複数の型に当たる
+ * ときは使わず、どれのことか分からないと知らせる。誤った型に静かに解決するのを避けるため。
  *
  * <p>引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。
  * 呼び出しごとに狭いほうを先に見る（同梱の {@link jche.builtin.TypeMappingProvider} と同じ考え方）。
@@ -71,7 +75,11 @@ public final class TypeContracts {
     private final Map<String, Contract> byFactoryKey = new LinkedHashMap<>();
     private final ContractUsage usage;
 
-    public TypeContracts(ContractUsage usage) {
+    /**
+     * @param usage     読み込んだ行
+     * @param typeNames 単純名で書かれた型名を FQN に直す道具。null なら直さない
+     */
+    public TypeContracts(ContractUsage usage, TypeNames typeNames) {
         this.usage = usage;
         List<ContractUsage.Line> lines = usage.lines();
         for (int row = 0; row < lines.size(); row++) {
@@ -79,6 +87,7 @@ public final class TypeContracts {
             if (c == null) {
                 continue;
             }
+            c = withFqn(c, typeNames);
             if (c.key().isEmpty()) {
                 byType.computeIfAbsent(c.declaredType(), k -> new ArrayList<>()).add(c);
             } else {
@@ -90,7 +99,40 @@ public final class TypeContracts {
 
     /** 契約を 1 行も持たない表（同梱の行は無いので、設定を読まない経路はこれになる） */
     public static TypeContracts empty() {
-        return new TypeContracts(new ContractUsage(List.of()));
+        return new TypeContracts(new ContractUsage(List.of()), null);
+    }
+
+    /**
+     * 単純名で書かれた型名を FQN に直した契約。
+     *
+     * <p>読み込みのときに 1 回だけ直す。引くたびに直すと、同じ判断を呼び出しの数だけ繰り返すうえ、
+     * 「曖昧なので使わなかった」という知らせも呼び出しの数だけ出てしまう。
+     */
+    private static Contract withFqn(Contract c, TypeNames typeNames) {
+        if (typeNames == null) {
+            return c;
+        }
+        String type = resolve(typeNames, c.declaredType(), c.text());
+        String[] candidates = new String[c.candidates().length];
+        boolean changed = !type.equals(c.declaredType());
+        for (int i = 0; i < candidates.length; i++) {
+            candidates[i] = resolve(typeNames, c.candidates()[i], c.text());
+            changed |= !candidates[i].equals(c.candidates()[i]);
+        }
+        return changed
+                ? new Contract(type, c.methodName(), c.key(), c.keyKind(), candidates, c.text(), c.row())
+                : c;
+    }
+
+    /** 単純名なら FQN に直す。曖昧なら直さず、どれのことか分からないと知らせる */
+    private static String resolve(TypeNames typeNames, String name, String text) {
+        List<String> conflicts = typeNames.ambiguousCandidates(name);
+        if (!conflicts.isEmpty()) {
+            Log.warn("契約の型名 " + name + " は " + conflicts.size() + " つの型に当たるので使えません: "
+                    + String.join(" / ", conflicts) + "（完全修飾名で書いてください）: " + text);
+            return name;
+        }
+        return typeNames.toFqn(name);
     }
 
     /** 行ごとの利用状況（どの契約が効いたか） */

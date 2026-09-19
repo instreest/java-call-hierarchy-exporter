@@ -408,12 +408,20 @@ plugin_case() {
     # 列挙定数のキー（引用符なしの FQN）。C-2 より先に当たるので enumKey だけ OrderDaoImpl になる
     expect_csv_contains plugin "App.enumKey,OrderDaoImpl.find" \
         "5回目: 列挙定数のキーで絞れる"
+    # ファクトリの実装が親クラスにあっても、ソースに書いた子クラスの名前で指定できること。
+    # 同じ親を持つ別の子クラス経由（otherFactory）は巻き込まず、C-2 に落ちること
+    expect_csv_contains plugin "App.inheritedFactory,OrderDaoImpl.find" \
+        "5回目: 親で実装されたファクトリを子クラス名で指定できる"
+    expect_csv_contains plugin "App.otherFactory,UserDaoImpl.find" \
+        "5回目: その指定は別の子クラス経由には効かない"
     compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
 
     # ファクトリ＋キー（C-3）。フェーズAの証拠採取を使わず、データフローの値グラフに載っている
     # 実引数からキーを引く。2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
     run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
     expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
+    # この表は型名を単純名で書いてある。FQN で書いた場合と同じ結果になることを下の比較が見る
+    expect_log_missing plugin 6 "つの型に当たるので使えません" "6回目: 単純名が曖昧になっていない"
     expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
 
     # 算出規則を書いた自前の拡張。フェーズAの設定（resolver.hint.collectors /

@@ -500,8 +500,9 @@ public final class CallResolver {
             IntArray ids = new IntArray(candidates.length);
             for (String c : candidates) {
                 // 拡張が返した型が自分で宣言していない（親から継承した）実装も拾う。
-                // 宣言だけを引くと、継承しているだけの型を返した拡張が黙って効かなくなる
-                int id = graph.implementationIn(c, sig);
+                // 宣言だけを引くと、継承しているだけの型を返した拡張が黙って効かなくなる。
+                // 単純名で返されたものは FQN に直す（1 件に定まるときだけ。TypeNames）
+                int id = graph.implementationIn(graph.typeNames().toFqn(c), sig);
                 if (id >= 0) {
                     ids.addIfAbsent(id);
                 } else {
@@ -563,11 +564,20 @@ public final class CallResolver {
      * エッジごとに呼ばれるので、同じ候補で何度も出さないよう記録しておく。
      */
     private void warnUnusableCandidate(TypeCandidateProvider provider, String fqn, String sig) {
-        if (warnedCandidates.add(provider.label() + "\t" + fqn + "#" + sig)) {
-            Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
-                    + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
-                    + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
+        if (!warnedCandidates.add(provider.label() + "\t" + fqn + "#" + sig)) {
+            return;
         }
+        List<String> conflicts = graph.typeNames().ambiguousCandidates(fqn);
+        if (!conflicts.isEmpty()) {
+            // 単純名が複数の型に当たる。どちらかに決めると誤った型へ静かに解決するので使わない
+            Log.warn("拡張が返した候補の型名 " + fqn + " は " + conflicts.size() + " つの型に当たるので"
+                    + "使えません: " + String.join(" / ", conflicts)
+                    + " (" + provider.getClass().getName() + ")。完全修飾名で返してください");
+            return;
+        }
+        Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
+                + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
+                + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
     }
 
     // ------------------------------------------------------------

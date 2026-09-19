@@ -1,10 +1,17 @@
 # C-3（ファクトリ＋キー）の契約表。フェーズAの証拠採取を使わず、データフローの値グラフに
-# 載っている実引数からキーを引く。同梱の拡張を使った場合（expected）と同じ結果になる
+# 載っている実引数からキーを引く。同梱の拡張を使った場合（expected）と同じ結果になる。
+#
+# 型名は単純名で書いてある（1 件に定まるものだけ FQN に直される）。FQN で書いても同じ結果になる
+# ことが、拡張を使った 2 回目との比較で分かる
 
-fxp.DaoFactory#get("USER_DAO")   => fxp.UserDaoImpl
-fxp.DaoFactory#get("ORDER_DAO")  => fxp.OrderDaoImpl
+DaoFactory#get("USER_DAO")   => UserDaoImpl
+DaoFactory#get("ORDER_DAO")  => OrderDaoImpl
 # find() を宣言せず親から継承している型。右辺には具象型を書けばよい（Issue #131）
-fxp.DaoFactory#get("REPORT_DAO") => fxp.ReportDaoImpl
+DaoFactory#get("REPORT_DAO") => ReportDaoImpl
+
+# 親（宣言元）の型で書くと、どの子クラス経由の呼び出しにも効く（広い指定）。
+# ソースに書いた子クラスの名前で狭く指定する書き方は contracts.txt の側で検査している
+BaseDaoFactory#pick("ORDER_DAO") => OrderDaoImpl
 
 # C-1。ファクトリを通らないフィールドの注入はこちらで絞る
 fxp.Service => fxp.BillingService

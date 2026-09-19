@@ -24,6 +24,13 @@ import jche.util.Names;
  * 読める形が増えたときに 3 か所が食い違うと、「ひな形が出した行が効かない」「表では引けるのに
  * 拡張には届かない」といった食い違いになるので、読み口はここだけにする。
  *
+ * <h2>ソースに書かれた型と、宣言元の型</h2>
+ * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
+ * 出所に載るメソッドキーは<b>宣言元</b>（{@code BaseFactory#get}）になる。利用者がソースを見て
+ * 書くのは {@code DaoFactory} のほうなので、書かれた型（{@code s=} で持つ）を先に、
+ * 宣言元を次に返す。契約表も拡張もどちらの型でも指定でき、
+ * <b>書かれた型で指定すれば、その型で呼んでいる箇所だけに効く</b>（他の子クラス経由は含まれない）。
+ *
  * <h2>フェーズAの証拠採取は要らない</h2>
  * ここが読むのは値グラフから組み直した出所（{@link OriginRenderer}）で、キャッシュを再利用した
  * 実行でも同じものが手に入る。AST を走査し直す必要が無いので、キャッシュの指紋にも影響しない。
@@ -56,26 +63,48 @@ public final class FactoryCalls {
         if (recvOrigin == null || Origin.kindOf(recvOrigin) != Origin.RETURN) {
             return List.of();
         }
-        String typeAndName = typeAndNameOf(Origin.valueOf(recvOrigin));
-        if (typeAndName.isEmpty()) {
+        List<String> owners = ownersOf(recvOrigin);
+        if (owners.isEmpty()) {
             return List.of();
         }
-        List<Key> out = new ArrayList<>(1);
+        List<Key> out = new ArrayList<>(owners.size());
         for (String arg : argOriginsOf(Origin.argsOf(recvOrigin))) {
             // 文字列のキー。リテラルのほか、コンパイル時定数は値まで評価されたものが返る
             String literal = dataflow.literalValueOf(arg, ctx);
-            if (literal != null) {
-                out.add(new Key(typeAndName, literal, Origin.LITERAL));
-            }
             // 列挙定数のキー。値グラフには「型FQN.定数名」で載っている
-            if (Origin.kindOf(arg) == Origin.CONST) {
-                String name = Origin.valueOf(arg);
-                if (!name.isEmpty()) {
-                    out.add(new Key(typeAndName, name, Origin.CONST));
+            String constant = (Origin.kindOf(arg) == Origin.CONST) ? Origin.valueOf(arg) : null;
+            for (String owner : owners) {
+                if (literal != null) {
+                    out.add(new Key(owner, literal, Origin.LITERAL));
+                }
+                if (constant != null && !constant.isEmpty()) {
+                    out.add(new Key(owner, constant, Origin.CONST));
                 }
             }
         }
         return out;
+    }
+
+    /**
+     * そのファクトリ呼び出しを指すのに使える「型FQN#メソッド名」。
+     *
+     * <p>先頭は<b>ソースに書かれた型</b>、次が<b>宣言元の型</b>。同じなら 1 つだけ。
+     * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
+     * 利用者がソースを見て書くのは {@code DaoFactory} のほうなので、そちらを先に試す。
+     * 宣言元でも書けるようにしてあるのは、親の型で「どの子クラス経由でも」と広く指定したい場合と、
+     * 以前から宣言元で書いてある表のため。
+     */
+    private static List<String> ownersOf(String recvOrigin) {
+        String declaring = typeAndNameOf(Origin.valueOf(recvOrigin));
+        if (declaring.isEmpty()) {
+            return List.of();
+        }
+        String written = Origin.staticReceiverOf(recvOrigin);
+        if (written == null || written.isEmpty()) {
+            return List.of(declaring);
+        }
+        String methodName = declaring.substring(declaring.indexOf('#') + 1);
+        return List.of(written + "#" + methodName, declaring);
     }
 
     /** メソッドキー "jp.co.X#get(java.lang.String)" から "jp.co.X#get" を取り出す */

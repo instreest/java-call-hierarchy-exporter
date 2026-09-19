@@ -168,6 +168,10 @@ import java.security.SecureRandom;
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
  *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
  *       書かれていない暗黙の super() は拾わない</li>
+ *   <li>N 行に「ソースに書いたときのレシーバの型」を追加（dataflow v6）。
+ *       {@code DaoFactory.get(...)} の {@code get} が親で宣言されていると、メソッドキーは
+ *       親になる。利用者が契約表や拡張で指定するのはソースに書いてある型なので、
+ *       違うときだけ書かれた型も残す（{@link jche.graph.FactoryCalls}）</li>
  *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
  *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を追加し、
  *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録するようにした（v14）。
@@ -230,7 +234,7 @@ public final class CacheFormat {
      * v5 で値の種別に Z（ラムダ／メソッド参照が実装しているメソッド）と
      * E（ラムダが捕捉した囲みメソッドの引数）を足した
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v5";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v6";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
