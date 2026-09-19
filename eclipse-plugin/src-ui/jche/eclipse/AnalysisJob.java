@@ -45,7 +45,7 @@ final class AnalysisJob extends Job {
 
     AnalysisJob(ProjectAnalysis analysis, ConfigSource configSource, Path scratchDir,
                 Set<String> handledChanges) {
-        super("呼び出し階層の解析: " + analysis.project().getName());
+        super(Messages.format("job.analyze", analysis.project().getName()));
         this.analysis = analysis;
         this.configSource = configSource;
         this.scratchDir = scratchDir;
@@ -74,20 +74,21 @@ final class AnalysisJob extends Job {
         }
         loggedLabel = label;
         loggedAt = now;
-        AnalysisLog.get().println(analysis.project().getName(), "進捗: " + text);
+        AnalysisLog.get().println(analysis.project().getName(),
+                Messages.format("job.progressLog", text));
     }
 
     @Override
     protected IStatus run(IProgressMonitor progressMonitor) {
         this.monitor = progressMonitor;
-        progressMonitor.beginTask("解析中（別プロセス）", IProgressMonitor.UNKNOWN);
+        progressMonitor.beginTask(Messages.get("job.analyzing"), IProgressMonitor.UNKNOWN);
         long started = System.currentTimeMillis();
         ServerResponse result = null;
         String error = null;
         try {
             ServerConnection connection = analysis.connection();
             Path config = configSource.materialize(scratchDir);
-            String start = "解析を開始します（設定: " + configSource.label() + "）";
+            String start = Messages.format("job.started", configSource.label());
             ExporterConsole.getOrCreate().println(start);
             AnalysisLog.get().println(analysis.project().getName(), start);
             ServerResponse response = connection.request(ANALYZE_TIMEOUT_MS,
@@ -103,7 +104,7 @@ final class AnalysisJob extends Job {
             // 返ってこない子プロセスは、そのままにすると次の解析もそれを待つことになる。
             // 捨てて、次の解析で起動し直す（docs/eclipse-plugin-progress-log-qa.md の Q5）
             analysis.discardServer();
-            error = e.getMessage() + "\n解析プロセスを停止しました（次の解析で起動し直します）。";
+            error = e.getMessage() + "\n" + Messages.get("job.serverStopped");
         } catch (IOException e) {
             error = String.valueOf(e.getMessage());
         } finally {
@@ -116,7 +117,8 @@ final class AnalysisJob extends Job {
             return Status.CANCEL_STATUS;
         }
         if (error != null) {
-            return new Status(IStatus.ERROR, JchePlugin.PLUGIN_ID, "解析に失敗しました: " + error);
+            return new Status(IStatus.ERROR, JchePlugin.PLUGIN_ID,
+                    Messages.format("analysis.failed", error));
         }
         return Status.OK_STATUS;
     }
@@ -126,11 +128,11 @@ final class AnalysisJob extends Job {
         long seconds = (System.currentTimeMillis() - started) / 1000L;
         String line;
         if (error != null) {
-            line = "解析に失敗しました（" + seconds + " 秒）: " + error;
+            line = Messages.format("job.finishedFailed", Long.valueOf(seconds), error);
         } else if (result == null || cancelled) {
-            line = "解析を中止しました（" + seconds + " 秒）";
+            line = Messages.format("job.finishedCancelled", Long.valueOf(seconds));
         } else {
-            line = "解析が終わりました（" + seconds + " 秒）";
+            line = Messages.format("job.finishedOk", Long.valueOf(seconds));
         }
         ExporterConsole console = ExporterConsole.find();
         if (console != null) {
@@ -139,7 +141,7 @@ final class AnalysisJob extends Job {
         AnalysisLog.get().println(analysis.project().getName(), line);
         File file = AnalysisLog.get().file();
         if (error != null && file != null && console != null) {
-            console.println("ログ: " + file.getAbsolutePath());
+            console.println(Messages.format("job.logAt", file.getAbsolutePath()));
         }
     }
 

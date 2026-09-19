@@ -195,10 +195,16 @@ public final class CallEdgeExtractor {
 
     private FileAnalysis collectFacts(SourceFile file, CompilationUnit cu) {
         FileAnalysis result = new FileAnalysis(file.relativePath(), file.size());
-        // 型が見つからない等のエラーは「解決が不完全」の印。依存 jar が増えたら解析し直せるよう数を残す
+        // 型が見つからない等のエラーは「解決が不完全」の印。依存 jar が増えたら解析し直せるよう数を残す。
+        // そのうち構文エラーだけは別に数える。構文エラーの出たファイルは本体を読めていないので、
+        // 「jar を足せば直る」ものとは意味が違う（FileAnalysis#syntaxErrors）
         for (IProblem problem : cu.getProblems()) {
-            if (problem.isError()) {
-                result.errors++;
+            if (!problem.isError()) {
+                continue;
+            }
+            result.errors++;
+            if ((problem.getID() & IProblem.Syntax) != 0) {
+                result.syntaxErrors++;
             }
         }
         collectImports(cu, result);

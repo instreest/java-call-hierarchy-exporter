@@ -323,11 +323,12 @@ jobs:
 
   # Eclipse プラグイン（eclipse-plugin/）の検査。
   # 1) 版・ID・クラスの実在、解析本体がバンドルのクラスパスに混ざっていないこと（ファイルを読むだけ）
-  # 2) 古い Eclipse（4.6 相当）の jar と --release 8 でプラグインがコンパイルできること。
-  #    本番のビルドは新しい jar を使うので、この検査だけが「古い Eclipse でも動く」を守る
+  # 2) 下限の Eclipse（4.17 / 2020-09）の jar と --release 11 でプラグインがコンパイルできること。
+  #    本番のビルドは新しい jar を使うので、この検査だけが「下限の Eclipse でも動く」を守る
   # 3) 自動生成した設定が、解析側と同じ読み方でそのまま読み戻せること（Windows のパスの逃がし）
-  # 4) 子プロセスとのやりとり（クライアント層）が実際に動くこと
-  # 5) バンドル jar が組み立てられること（解析本体は release 17、プラグインは release 8）
+  # 4) 文言が英語・日本語で出し分けられること（既定は英語。Pleiades は訳してくれない）
+  # 5) 子プロセスとのやりとり（クライアント層）が実際に動くこと
+  # 6) バンドル jar が組み立てられること（解析本体は release 17、プラグインは release 11）
   eclipse-plugin:
     runs-on: ubuntu-latest
     steps:
@@ -346,11 +347,14 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Old-Eclipse / Java 8 compatibility check
+      - name: Minimum-Eclipse / Java 11 compatibility check
         run: bash test/plugin-api/run.sh
 
       - name: Generated config round-trip test
         run: bash test/plugin-config/run.sh
+
+      - name: Message bundle (English / Japanese) test
+        run: bash test/plugin-nls/run.sh
 
       - name: Build the bundle jar
         run: mvn -B --no-transfer-progress -f eclipse-plugin/pom.xml package

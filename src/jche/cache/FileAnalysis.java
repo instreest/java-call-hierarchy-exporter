@@ -21,6 +21,16 @@ public final class FileAnalysis {
      */
     public int errors;
     /**
+     * JDT が報告した<b>構文</b>エラーの数（{@code errors} の内数）。
+     *
+     * <p>{@code errors} と分けて持つのは、意味がまるで違うからである。型が見つからない類の
+     * エラーは依存 jar の不足で、AST は最後まで組み上がっていて<b>呼び出しは全部拾えている</b>。
+     * 一方、構文エラーが出たファイルは<b>本体を読めていない</b>ので、そこに書かれた呼び出しは
+     * まるごと出力に出ない。後者だけは利用者に伝えないと、影響調査の結果が静かに欠ける
+     * （docs/syntax-error-report-qa.md）。
+     */
+    public int syntaxErrors;
+    /**
      * 内容のハッシュ（{@link jche.util.FileHash}）。F行の最後の列で、差分更新の同一性判定の本体。
      * 書き手（{@link jche.analysis.CacheUpdater}）がキャッシュへ書く直前に入れる。
      * 空文字なら「不明」で、そのブロックは次回かならず解析し直される（安全側）

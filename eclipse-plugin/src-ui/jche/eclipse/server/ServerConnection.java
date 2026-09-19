@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import jche.eclipse.Messages;
+
 /**
  * 解析サーバー（子プロセス）との1本の接続。
  *
@@ -171,15 +173,15 @@ public final class ServerConnection {
     private String stallDiagnosis() {
         StringBuilder sb = new StringBuilder();
         String progress = lastProgress;
-        sb.append("最後の進捗: ").append((progress == null) ? "（進捗は1件も届いていません）" : progress);
-        sb.append(" / 最後に受信してから ")
-                .append((System.currentTimeMillis() - lastHeard) / 1000L).append(" 秒");
+        sb.append(Messages.format("stall.lastProgress",
+                (progress == null) ? Messages.get("stall.noProgress") : progress,
+                Long.valueOf((System.currentTimeMillis() - lastHeard) / 1000L)));
         List<String> lines = new ArrayList<String>();
         synchronized (recent) {
             lines.addAll(recent);
         }
         if (!lines.isEmpty()) {
-            sb.append("\n直近のログ:");
+            sb.append('\n').append(Messages.get("stall.recentLog"));
             for (String line : lines) {
                 sb.append("\n  ").append(line);
             }
@@ -220,14 +222,15 @@ public final class ServerConnection {
                     line = (wait <= 0) ? null : responses.poll(wait, TimeUnit.MILLISECONDS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new IOException("応答の待機が中断されました", e);
+                    throw new IOException(Messages.get("server.waitInterrupted"), e);
                 }
                 if (line == null) {
                     // 諦めた後に遅れて応答が来ると、次の要求の答えと取り違える。
                     // 数えておいて、次の要求の前に読み捨てる（discardStale）
                     abandoned++;
-                    throw new ServerTimeoutException("解析サーバーが応答しません（"
-                            + timeoutMs + " ms）。\n" + stallDiagnosis());
+                    throw new ServerTimeoutException(
+                            Messages.format("server.noResponse", Long.valueOf(timeoutMs))
+                                    + "\n" + stallDiagnosis());
                 }
                 if (line.startsWith("R" + Wire.SEP)) {
                     ServerRow row = ServerRow.parse(line.split(Wire.SEP, -1));
@@ -253,12 +256,11 @@ public final class ServerConnection {
                 line = responses.poll(STALE_WAIT_MS, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new IOException("応答の待機が中断されました", e);
+                throw new IOException(Messages.get("server.waitInterrupted"), e);
             }
             if (line == null) {
                 close();
-                throw new IOException("前の要求の応答が返らないままです。"
-                        + "解析プロセスを停止しました（次の要求で起動し直します）");
+                throw new IOException(Messages.get("server.previousStuck"));
             }
             if (!line.startsWith("R" + Wire.SEP)) {
                 abandoned--;    // R 行は途中の行。OK / NG が来たら、その要求は終わり
@@ -290,7 +292,7 @@ public final class ServerConnection {
     private void writeLine(String line) throws IOException {
         synchronized (writeLock) {
             if (closed) {
-                throw new IOException("解析サーバーとの接続が閉じています");
+                throw new IOException(Messages.get("server.closed"));
             }
             out.write(line);
             out.write('\n');

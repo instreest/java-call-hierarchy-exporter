@@ -267,7 +267,9 @@ public final class Server {
                 + Protocol.SEP + "inbound=" + snapshot.inbound().size()
                 + Protocol.SEP + "at=" + snapshot.analyzedAt().format(STAMP)
                 + Protocol.SEP + "root=" + Protocol.escape(snapshot.config().projectRoot.toString())
-                + Protocol.SEP + "sourceLevel=" + snapshot.config().sourceLevel);
+                + Protocol.SEP + "sourceLevel=" + snapshot.config().sourceLevel
+                // 0 でなければ解析結果に抜けがある。画面がそれを出せるように必ず返す
+                + Protocol.SEP + "syntaxErrors=" + snapshot.syntaxErrorFiles());
     }
 
     private void find(String key) {

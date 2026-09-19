@@ -1,7 +1,10 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -9,6 +12,7 @@ import java.nio.file.Path;
 import java.util.Properties;
 
 import org.eclipse.core.resources.IFile;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jdt.core.IJavaProject;
 
 /**
@@ -64,7 +68,7 @@ final class ConfigSource {
     String label() {
         return (kind == Kind.FILE)
                 ? file.getProjectRelativePath().toString()
-                : "自動生成（プロジェクトの構成から）";
+                : Messages.get("config.generatedLabel");
     }
 
     /** 自動生成の内容。設定ファイル由来なら null */
@@ -73,21 +77,50 @@ final class ConfigSource {
     }
 
     /**
+     * いま解析に使われる設定の中身。画面に出して確かめられるようにするためのもの
+     * （ビューの「解析に使う設定…」）。
+     *
+     * <p>利用者が設定ファイルを書かなくても解析できるのは値打ちだが、裏返すと
+     * 「何が起点で、どこをソースフォルダだと思っているか」が見えない。
+     * 解析に失敗したときに直しようが無くなるので、中身はいつでも見せる。
+     */
+    String text() throws IOException, CoreException {
+        if (kind == Kind.GENERATED) {
+            return EclipseProjectConfig.toFileText(EclipseProjectConfig.propertiesFor(javaProject));
+        }
+        StringBuilder sb = new StringBuilder();
+        try (InputStream in = file.getContents(true);
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * 子プロセスへ渡すための設定ファイルのパスを返す。
      * 自動生成のときは、渡されたフォルダに書き出す（次の解析でも同じ場所を使い回す）。
+     *
+     * <p>自動生成のときは CSV の出力先（{@code output.folder}）もここで入れる。
+     * 入れないと「設定ファイルと同じフォルダ」＝この作業フォルダが出力先になり、
+     * 利用者から見えない場所に結果が積もる（docs/eclipse-plugin-folders-qa.md の Q2）。
      *
      * @param scratchDir 一時ファイルの置き場所（プラグインの状態フォルダの下）
      */
     Path materialize(Path scratchDir) throws IOException {
         if (kind == Kind.FILE) {
             if (file.getLocation() == null) {
-                throw new IOException("設定ファイルの場所が特定できません: " + file.getFullPath());
+                throw new IOException(Messages.format("config.fileNoLocation", file.getFullPath()));
             }
             return file.getLocation().toFile().toPath();
         }
         Files.createDirectories(scratchDir);
         Path generated = scratchDir.resolve("generated-config.properties");
         Properties properties = EclipseProjectConfig.propertiesFor(javaProject);
+        properties.setProperty("output.folder", PluginFolders.outputRoot().getAbsolutePath());
         try (OutputStream out = Files.newOutputStream(generated)) {
             // Properties#store は ISO-8859-1 でエスケープするが、Config は UTF-8 で読むので
             // 自前で書く（パスに日本語が入っても壊れないようにするため）

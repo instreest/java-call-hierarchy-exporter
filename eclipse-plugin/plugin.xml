@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?eclipse version="3.4"?>
 <!--
+  文言（name / label）は %キー で書き、plugin.properties（英語）と
+  plugin_ja.properties（日本語）から引く。MANIFEST.MF の Bundle-Localization がその置き場所を指す。
+  Pleiades は Eclipse 本体の辞書しか持たないので、このプラグインの文言はここで訳すしかない
+  （docs/eclipse-plugin-nls-qa.md）。
+
   画面への追加は2つ。
   1) 呼び出し元階層ビュー「影響調査 (Call Hierarchy Exporter)」（主ユースケース）。
      メソッドを選んで「影響調査: 呼び出し元階層を表示」で開く。
@@ -12,28 +17,28 @@
    <extension point="org.eclipse.ui.commands">
       <category
             id="io.github.instreest.jche.eclipse.category"
-            name="Java Call Hierarchy Exporter"/>
+            name="%category.name"/>
       <command
             categoryId="io.github.instreest.jche.eclipse.category"
             defaultHandler="jche.eclipse.ExportCallHierarchyHandler"
             id="io.github.instreest.jche.eclipse.export"
-            name="呼び出し階層をCSVに出力"/>
+            name="%command.export.name"/>
       <command
             categoryId="io.github.instreest.jche.eclipse.category"
             defaultHandler="jche.eclipse.ShowCallersHandler"
             id="io.github.instreest.jche.eclipse.showCallers"
-            name="呼び出し元階層を表示"/>
+            name="%command.showCallers.name"/>
    </extension>
 
    <extension point="org.eclipse.ui.views">
       <category
             id="io.github.instreest.jche.eclipse.viewCategory"
-            name="Java Call Hierarchy Exporter"/>
+            name="%category.name"/>
       <view
             category="io.github.instreest.jche.eclipse.viewCategory"
             class="jche.eclipse.CallHierarchyView"
             id="io.github.instreest.jche.eclipse.callHierarchyView"
-            name="影響調査 (Call Hierarchy Exporter)"
+            name="%view.name"
             restorable="true"/>
    </extension>
 
@@ -41,7 +46,7 @@
       <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
          <command
                commandId="io.github.instreest.jche.eclipse.export"
-               label="影響調査: 呼び出し階層をCSVに出力"
+               label="%menu.export.label"
                style="push">
             <!-- 選択が「すべて .properties ファイル」のときだけ出す -->
             <visibleWhen checkEnabled="false">
@@ -64,7 +69,7 @@
       <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
          <command
                commandId="io.github.instreest.jche.eclipse.showCallers"
-               label="影響調査: 呼び出し元階層を表示"
+               label="%menu.showCallers.label"
                style="push"/>
       </menuContribution>
    </extension>
@@ -75,7 +80,7 @@
       <page
             class="jche.eclipse.JchePreferencePage"
             id="io.github.instreest.jche.eclipse.preferences"
-            name="影響調査 (Call Hierarchy Exporter)"/>
+            name="%page.name"/>
    </extension>
 
    <!-- Ctrl+Alt+Shift+H。Eclipse 標準の呼び出し階層（Ctrl+Alt+H）とは別物なので割り当てを分ける -->

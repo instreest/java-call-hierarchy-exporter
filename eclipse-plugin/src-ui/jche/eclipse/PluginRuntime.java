@@ -44,17 +44,17 @@ final class PluginRuntime {
     static List<File> analysisClasspath() throws IOException {
         Bundle bundle = Platform.getBundle(JchePlugin.PLUGIN_ID);
         if (bundle == null) {
-            throw new IOException("プラグインのバンドルが見つかりません");
+            throw new IOException(Messages.get("runtime.bundleMissing"));
         }
         List<File> classpath = new ArrayList<>();
         File core = fileOf(bundle, "lib/jche-core.jar");
         if (core == null) {
-            throw new IOException("解析本体（lib/jche-core.jar）がバンドルに入っていません");
+            throw new IOException(Messages.get("runtime.coreMissing"));
         }
         File configured = JchePreferences.jdtFolder();
         File jdtDir = (configured != null) ? configured : fileOf(bundle, "lib/jdt");
         if (configured != null && !configured.isDirectory()) {
-            throw new IOException("設定で指定された JDT のフォルダがありません: " + configured);
+            throw new IOException(Messages.format("runtime.jdtFolderMissing", configured));
         }
         File[] jars = (jdtDir == null) ? null : jdtDir.listFiles(new java.io.FilenameFilter() {
             @Override
@@ -64,8 +64,8 @@ final class PluginRuntime {
         });
         if (jars == null || jars.length == 0) {
             throw new IOException((configured != null)
-                    ? "指定されたフォルダに jar がありません: " + configured
-                    : "同梱の JDT（lib/jdt/*.jar）がバンドルに入っていません");
+                    ? Messages.format("runtime.jdtFolderEmpty", configured)
+                    : Messages.get("runtime.jdtMissing"));
         }
         Arrays.sort(jars);
         Collections.addAll(classpath, jars);

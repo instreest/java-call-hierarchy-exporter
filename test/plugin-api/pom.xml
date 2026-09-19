@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   「プラグインが古い Eclipse でもコンパイルできるか」を確かめるためだけの POM。
-  ここに並べているのは Eclipse 4.6（Neon、2016年）相当の、Maven Central にある最も古い版である。
+  ここに並べているのは Eclipse 4.17（2020-09）の版である（Maven Central の公開日 2020-09-14 で揃えた）。
   配布物のビルドには使わない（eclipse-plugin/pom.xml が本番）。
 
   なぜ要るか: 本番のビルドは新しい Eclipse の jar でコンパイルするので、
-  「新しい Eclipse にしか無い API」を使っても気づけない。古い版でコンパイルしてみるのが
-  いちばん確実な検査になる（実際 PlatformUI.getDialogSettingsProvider の混入をこれで見つけた）。
+  「新しい Eclipse にしか無い API」を使っても気づけない。下限の版でコンパイルしてみるのが
+  いちばん確実な検査になる（実際 PlatformUI.getDialogSettingsProvider（4.24〜）の混入をこれで見つけた）。
+
+  下限を 4.6（2016年）から 4.17（2020-09）へ上げた経緯は docs/eclipse-plugin-java-floor-qa.md。
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -22,101 +24,101 @@
   </properties>
 
   <dependencies>
-    <!-- JDT はモデル API（IMethod / IJavaProject など）しか使わない。3.10.0 は Central にある最古 -->
+    <!-- JDT はモデル API（IMethod / IJavaProject など）しか使わない -->
     <dependency>
       <groupId>org.eclipse.jdt</groupId>
       <artifactId>org.eclipse.jdt.core</artifactId>
-      <version>3.10.0</version>
+      <version>3.23.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.ui.workbench</artifactId>
-      <version>3.108.2</version>
+      <version>3.120.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.jface</artifactId>
-      <version>3.12.1</version>
+      <version>3.21.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.jface.text</artifactId>
-      <version>3.11.2</version>
+      <version>3.16.400</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.text</artifactId>
-      <version>3.6.0</version>
+      <version>3.10.300</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.ui.workbench.texteditor</artifactId>
-      <version>3.10.1</version>
+      <version>3.15.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.ui.console</artifactId>
-      <version>3.6.201</version>
+      <version>3.9.300</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.ui.ide</artifactId>
-      <version>3.12.2</version>
+      <version>3.17.200</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.core.resources</artifactId>
-      <version>3.11.1</version>
+      <version>3.13.800</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.core.runtime</artifactId>
-      <version>3.12.0</version>
+      <version>3.19.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.core.jobs</artifactId>
-      <version>3.8.0</version>
+      <version>3.10.800</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.core.commands</artifactId>
-      <version>3.8.0</version>
+      <version>3.9.700</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.equinox.common</artifactId>
-      <version>3.8.0</version>
+      <version>3.13.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.equinox.registry</artifactId>
-      <version>3.6.100</version>
+      <version>3.9.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.osgi</artifactId>
-      <version>3.11.2</version>
+      <version>3.16.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.platform</groupId>
       <artifactId>org.eclipse.swt.gtk.linux.x86_64</artifactId>
-      <version>3.105.2</version>
+      <version>3.115.0</version>
       <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
   </dependencies>

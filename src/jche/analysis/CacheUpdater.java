@@ -380,6 +380,12 @@ public final class CacheUpdater {
             writeBlock(fa, cacheOut, flowOut);
             result.unresolved += fa.unresolvedCount();
             result.parsed++;
+            if (fa.syntaxErrors > 0) {
+                // 本体を読めていないので、このファイルの呼び出しは出力に出ない。黙って落とさない
+                result.addSyntaxErrorFile(file.relativePath());
+                Log.warn("構文エラーのため本体を読めませんでした: " + file.relativePath()
+                        + "（エラー " + fa.syntaxErrors + " 件。このファイルの呼び出しは出力に出ません）");
+            }
             countReason();
             if (stale != null && shouldCascade(file, fa)) {
                 for (TypeFact t : fa.types) {
@@ -1111,6 +1117,11 @@ public final class CacheUpdater {
                         writeLine(cacheOut, in.line());
                         copied.add(f[1]);
                         result.reused++;
+                        // 前の実行で構文エラーだったファイルは、書き写した今回も欠けたままである。
+                        // ここで数えないと、2回目以降の実行で警告が消えてしまう
+                        if (CacheFormat.syntaxErrorsOf(f) > 0) {
+                            result.addSyntaxErrorFile(f[1]);
+                        }
                     }
                     continue;
                 }
@@ -1231,7 +1242,8 @@ public final class CacheUpdater {
     private static void writeBlock(FileAnalysis fa, BufferedWriter w, BufferedWriter flowOut)
             throws IOException {
         String fileRow = CacheFormat.joinRow("F", fa.relativePath,
-                String.valueOf(fa.size), String.valueOf(fa.errors), fa.hash);
+                String.valueOf(fa.size), String.valueOf(fa.errors), fa.hash,
+                String.valueOf(fa.syntaxErrors));
         writeLine(w, fileRow);
         writeLine(flowOut, fileRow);
         // dataflow 側にはサイドカーの解析のための事実だけを置く。片方だけに書くことはしない
