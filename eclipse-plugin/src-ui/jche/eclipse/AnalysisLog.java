@@ -93,7 +93,7 @@ final class AnalysisLog {
         try {
             File dir = folder();
             if (!dir.isDirectory() && !dir.mkdirs()) {
-                throw new IOException("ログフォルダを作れません: " + dir);
+                throw new IOException(Messages.format("log.folderNotCreated", dir));
             }
             sweep(dir);
             File target = new File(dir, "analysis-"
@@ -105,7 +105,7 @@ final class AnalysisLog {
         } catch (IOException e) {
             // ログが書けないだけで解析は続けられる。理由は Eclipse のエラーログへ残す
             failed = true;
-            PluginRuntime.logWarning("解析ログをファイルに残せません", e);
+            PluginRuntime.logWarning(Messages.get("log.notWritable"), e);
             return null;
         }
     }

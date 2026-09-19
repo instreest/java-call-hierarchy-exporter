@@ -69,7 +69,7 @@ final class ConfigDialog extends TitleAreaDialog {
     @Override
     protected void configureShell(Shell shell) {
         super.configureShell(shell);
-        shell.setText("解析に使う設定");
+        shell.setText(Messages.get("configDialog.title"));
     }
 
     @Override
@@ -79,8 +79,8 @@ final class ConfigDialog extends TitleAreaDialog {
 
     @Override
     protected Control createDialogArea(Composite parent) {
-        setTitle(analysis.project().getName() + " の解析設定");
-        setMessage("解析はこの内容で行います。うまくいかないときは、まずソースフォルダ（source.folders）を確かめてください。");
+        setTitle(Messages.format("configDialog.heading", analysis.project().getName()));
+        setMessage(Messages.get("configDialog.message"));
 
         Composite area = new Composite((Composite) super.createDialogArea(parent), SWT.NONE);
         area.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
@@ -90,9 +90,8 @@ final class ConfigDialog extends TitleAreaDialog {
         area.setLayout(layout);
 
         autoButton = new Button(area, SWT.RADIO);
-        autoButton.setText("Eclipse のプロジェクト構成から自動生成する（推奨）");
-        autoButton.setToolTipText("ビルド・パスのソースフォルダと依存 jar、文字コード、"
-                + "コンパイラー準拠レベルをそのまま使います。設定ファイルは要りません");
+        autoButton.setText(Messages.get("configDialog.auto"));
+        autoButton.setToolTipText(Messages.get("configDialog.autoTip"));
         span(autoButton);
         autoButton.addSelectionListener(new SelectionAdapter() {
             @Override
@@ -103,7 +102,7 @@ final class ConfigDialog extends TitleAreaDialog {
         });
 
         fileButton = new Button(area, SWT.RADIO);
-        fileButton.setText("設定ファイルを使う:");
+        fileButton.setText(Messages.get("configDialog.useFile"));
         fileButton.setEnabled(!candidates.isEmpty());
         fileButton.addSelectionListener(new SelectionAdapter() {
             @Override
@@ -131,12 +130,12 @@ final class ConfigDialog extends TitleAreaDialog {
 
         if (candidates.isEmpty()) {
             Label none = new Label(area, SWT.WRAP);
-            none.setText("（このプロジェクトには設定ファイル（*.properties）がありません）");
+            none.setText(Messages.get("configDialog.noCandidates"));
             span(none);
         }
 
         Label previewLabel = new Label(area, SWT.NONE);
-        previewLabel.setText("内容:");
+        previewLabel.setText(Messages.get("configDialog.contents"));
         span(previewLabel);
 
         preview = new Text(area, SWT.BORDER | SWT.MULTI | SWT.READ_ONLY | SWT.V_SCROLL | SWT.H_SCROLL);
@@ -147,9 +146,8 @@ final class ConfigDialog extends TitleAreaDialog {
         preview.setLayoutData(previewData);
 
         saveButton = new Button(area, SWT.PUSH);
-        saveButton.setText("この内容を " + ProjectAnalysis.PREFERRED_CONFIG_PATH + " に保存して編集する");
-        saveButton.setToolTipText("自動生成の内容をプロジェクトの中にファイルとして残します。"
-                + "以降はそのファイルが使われるので、除外パッケージなどを手で足せます");
+        saveButton.setText(Messages.format("configDialog.save", ProjectAnalysis.PREFERRED_CONFIG_PATH));
+        saveButton.setToolTipText(Messages.get("configDialog.saveTip"));
         span(saveButton);
         saveButton.addSelectionListener(new SelectionAdapter() {
             @Override
@@ -188,16 +186,13 @@ final class ConfigDialog extends TitleAreaDialog {
                 ? ConfigSource.ofFile(chosen) : ProjectAnalysis.autoConfigSourceOf(analysis.project());
         saveButton.setEnabled(source != null && source.kind() == ConfigSource.Kind.GENERATED);
         if (source == null) {
-            preview.setText("このプロジェクトは解析できません"
-                    + "（Java プロジェクトではなく、設定ファイルもありません）。");
+            preview.setText(Messages.get("state.noConfig"));
             return;
         }
         try {
             preview.setText(source.text());
         } catch (IOException | CoreException | RuntimeException e) {
-            preview.setText("設定を組み立てられませんでした:\n" + e.getMessage()
-                    + "\n\nプロジェクトのプロパティ > Java のビルド・パス を確かめるか、"
-                    + "設定ファイルを用意して上で選んでください。");
+            preview.setText(Messages.format("configDialog.buildFailed", e.getMessage()));
         }
     }
 
@@ -209,8 +204,8 @@ final class ConfigDialog extends TitleAreaDialog {
         }
         IFile target = analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
         if (target.exists()) {
-            MessageDialog.openInformation(getShell(), "影響調査",
-                    "設定ファイルはすでにあります: " + ProjectAnalysis.PREFERRED_CONFIG_PATH);
+            MessageDialog.openInformation(getShell(), Messages.get("dialog.title"),
+                    Messages.format("configDialog.alreadyExists", ProjectAnalysis.PREFERRED_CONFIG_PATH));
             return;
         }
         try {
@@ -222,8 +217,8 @@ final class ConfigDialog extends TitleAreaDialog {
             }
             target.create(new ByteArrayInputStream(bytes), false, null);
         } catch (CoreException | IOException e) {
-            MessageDialog.openError(getShell(), "影響調査",
-                    "設定ファイルを保存できませんでした: " + e.getMessage());
+            MessageDialog.openError(getShell(), Messages.get("dialog.title"),
+                    Messages.format("configDialog.saveFailed", e.getMessage()));
             return;
         }
         // 保存したファイルを、この場で選択済みにする（保存したのに使われない、を避ける）
@@ -236,7 +231,7 @@ final class ConfigDialog extends TitleAreaDialog {
         autoButton.setSelection(false);
         chosen = target;
         updatePreview();
-        setMessage("保存しました。［OK］のあと、パッケージ・エクスプローラーから開いて編集できます。");
+        setMessage(Messages.get("configDialog.saved"));
     }
 
     @Override

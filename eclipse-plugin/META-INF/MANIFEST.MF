@@ -1,10 +1,11 @@
 Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
-Bundle-Name: Java Call Hierarchy Exporter
+Bundle-Name: %bundleName
 Bundle-SymbolicName: io.github.instreest.jche.eclipse;singleton:=true
 Bundle-Version: 1.0.0
-Bundle-Vendor: instreest
+Bundle-Vendor: %bundleVendor
 Bundle-Activator: jche.eclipse.JchePlugin
+Bundle-Localization: plugin
 Bundle-ActivationPolicy: lazy
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Automatic-Module-Name: io.github.instreest.jche.eclipse

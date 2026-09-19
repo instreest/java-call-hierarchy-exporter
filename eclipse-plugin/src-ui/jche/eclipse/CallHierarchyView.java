@@ -159,10 +159,9 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         layout.marginHeight = 3;
         bar.setLayout(layout);
 
-        new Label(bar, SWT.NONE).setText("対象プロジェクト:");
+        new Label(bar, SWT.NONE).setText(Messages.get("view.project"));
         projectCombo = new Combo(bar, SWT.READ_ONLY | SWT.DROP_DOWN);
-        projectCombo.setToolTipText("解析するプロジェクトを選びます"
-                + "（Java プロジェクト、または設定ファイルのあるプロジェクト）");
+        projectCombo.setToolTipText(Messages.get("view.projectTip"));
         projectCombo.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -177,8 +176,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         configLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         Button configButton = new Button(bar, SWT.PUSH);
-        configButton.setText("解析に使う設定…");
-        configButton.setToolTipText("いま何を起点に、どこをソースフォルダとして解析するかを見て、選び直します");
+        configButton.setText(Messages.get("view.configButton"));
+        configButton.setToolTipText(Messages.get("view.configButtonTip"));
         configButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -209,7 +208,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         });
 
         bannerCancel = new Button(banner, SWT.PUSH);
-        bannerCancel.setText("中止");
+        bannerCancel.setText(Messages.get("banner.cancel"));
         bannerCancel.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -228,7 +227,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         bar.setLayout(layout);
 
         filterText = new Text(bar, SWT.SEARCH | SWT.ICON_SEARCH | SWT.ICON_CANCEL);
-        filterText.setMessage("型名・メソッド名で絞り込む（解析は走りません）");
+        filterText.setMessage(Messages.get("view.filterHint"));
         filterText.setText(filters.text);
         filterText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         filterText.addModifyListener(e -> {
@@ -236,7 +235,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             scheduleReload();
         });
 
-        new Label(bar, SWT.NONE).setText("深さ:");
+        new Label(bar, SWT.NONE).setText(Messages.get("view.depth"));
         depthSpinner = new Spinner(bar, SWT.BORDER);
         depthSpinner.setMinimum(1);
         depthSpinner.setMaximum(50);
@@ -247,7 +246,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         });
 
         Button more = new Button(bar, SWT.PUSH);
-        more.setText("フィルタ…");
+        more.setText(Messages.get("view.moreFilters"));
         more.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -259,7 +258,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         });
 
         Button export = new Button(bar, SWT.PUSH);
-        export.setText("CSV出力");
+        export.setText(Messages.get("view.exportCsv"));
         export.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -299,15 +298,15 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     }
 
     private void createActions() {
-        Action showAtCursorAction = new Action("カーソル位置のメソッド") {
+        Action showAtCursorAction = new Action(Messages.get("action.methodAtCursor")) {
             @Override
             public void run() {
                 showMethodAtCursor();
             }
         };
-        showAtCursorAction.setToolTipText("エディタでカーソルを置いているメソッド（または選んでいるメソッド）を表示する");
+        showAtCursorAction.setToolTipText(Messages.get("action.methodAtCursorTip"));
 
-        Action reanalyzeAction = new Action("再解析") {
+        Action reanalyzeAction = new Action(Messages.get("action.reanalyze")) {
             @Override
             public void run() {
                 if (analysis != null) {
@@ -315,9 +314,9 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 }
             }
         };
-        reanalyzeAction.setToolTipText("いま解析し直す（別プロセスで走ります）");
+        reanalyzeAction.setToolTipText(Messages.get("action.reanalyzeTip"));
 
-        autoAnalyzeAction = new Action("自動再解析", Action.AS_CHECK_BOX) {
+        autoAnalyzeAction = new Action(Messages.get("action.autoAnalyze"), Action.AS_CHECK_BOX) {
             @Override
             public void run() {
                 if (analysis != null) {
@@ -325,14 +324,14 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 }
             }
         };
-        autoAnalyzeAction.setToolTipText("ソースが変わったら、ビルド後に自動で解析し直す");
+        autoAnalyzeAction.setToolTipText(Messages.get("action.autoAnalyzeTip"));
         autoAnalyzeAction.setChecked(true);
 
         // 向きは「押すと切り替わるトグル1つ」ではなく、機能ごとに1つずつ置く。
         // トグルだと、いまどちら向きの木を見ているのかがボタンの押下状態でしか分からず、
         // ラベル（「呼び出し先を見る」）も「いまの向き」なのか「押したらなる向き」なのか読めない
         // （docs/eclipse-plugin-folders-qa.md の Q6）
-        callersAction = new Action("呼び出し元を表示", Action.AS_RADIO_BUTTON) {
+        callersAction = new Action(Messages.get("action.showCallers"), Action.AS_RADIO_BUTTON) {
             @Override
             public void run() {
                 if (isChecked()) {
@@ -340,8 +339,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 }
             }
         };
-        callersAction.setToolTipText("このメソッドを呼んでいる側をたどる（影響調査の既定）");
-        calleesAction = new Action("呼び出し先を表示", Action.AS_RADIO_BUTTON) {
+        callersAction.setToolTipText(Messages.get("action.showCallersTip"));
+        calleesAction = new Action(Messages.get("action.showCallees"), Action.AS_RADIO_BUTTON) {
             @Override
             public void run() {
                 if (isChecked()) {
@@ -349,17 +348,17 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 }
             }
         };
-        calleesAction.setToolTipText("このメソッドが呼んでいる側をたどる");
+        calleesAction.setToolTipText(Messages.get("action.showCalleesTip"));
         callersAction.setChecked(callers);
         calleesAction.setChecked(!callers);
 
-        Action expandAction = new Action("すべて展開") {
+        Action expandAction = new Action(Messages.get("action.expandAll")) {
             @Override
             public void run() {
                 viewer.expandAll();
             }
         };
-        Action collapseAction = new Action("折りたたむ") {
+        Action collapseAction = new Action(Messages.get("action.collapseAll")) {
             @Override
             public void run() {
                 viewer.collapseAll();
@@ -368,21 +367,21 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
         createCopyActions();
 
-        Action configAction = new Action("解析に使う設定…") {
+        Action configAction = new Action(Messages.get("view.configButton")) {
             @Override
             public void run() {
                 openConfigDialog();
             }
         };
-        Action preferencesAction = new Action("設定（JDK・置き場所）…") {
+        Action preferencesAction = new Action(Messages.get("action.preferences")) {
             @Override
             public void run() {
                 PreferencesUtil.createPreferenceDialogOn(getSite().getShell(),
                         PREFERENCE_PAGE_ID, new String[] {PREFERENCE_PAGE_ID}, null).open();
             }
         };
-        preferencesAction.setToolTipText("解析に使う JDK と、キャッシュ・ログ・CSV の置き場所");
-        Action openLogAction = new Action("解析ログのフォルダを開く") {
+        preferencesAction.setToolTipText(Messages.get("action.preferencesTip"));
+        Action openLogAction = new Action(Messages.get("action.openLogFolder")) {
             @Override
             public void run() {
                 openLogFolder();
@@ -415,24 +414,24 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
      * （docs/eclipse-plugin-folders-qa.md の Q7）。
      */
     private void createCopyActions() {
-        copyAction = new Action("コピー") {
+        copyAction = new Action(Messages.get("action.copy")) {
             @Override
             public void run() {
                 copyToClipboard(false);
             }
         };
-        copyAction.setToolTipText("選んだ行を、階層の字下げを付けてコピーする");
+        copyAction.setToolTipText(Messages.get("action.copyTip"));
         copyAction.setActionDefinitionId(IWorkbenchCommandConstants.EDIT_COPY);
 
-        copySubtreeAction = new Action("この行から下をコピー") {
+        copySubtreeAction = new Action(Messages.get("action.copySubtree")) {
             @Override
             public void run() {
                 copyToClipboard(true);
             }
         };
-        copySubtreeAction.setToolTipText("選んだ行と、その下にある行（畳んでいるものも含む）をまとめてコピーする");
+        copySubtreeAction.setToolTipText(Messages.get("action.copySubtreeTip"));
 
-        Action openAction = new Action("呼び出している行を開く") {
+        Action openAction = new Action(Messages.get("action.openCallSite")) {
             @Override
             public void run() {
                 openSelectedRow();
@@ -576,9 +575,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         IMethod method = MethodPicker.pick(getSite().getPage(),
                 getSite().getWorkbenchWindow().getSelectionService().getSelection());
         if (method == null) {
-            MessageDialog.openInformation(getSite().getShell(), "影響調査",
-                    "メソッドが特定できませんでした。エディタでメソッドの中にカーソルを置くか、"
-                            + "パッケージ・エクスプローラーでメソッドを選んでから押してください。");
+            MessageDialog.openInformation(getSite().getShell(), Messages.get("dialog.title"),
+                    Messages.get("method.notIdentifiedInView"));
             return;
         }
         IProject project = (method.getResource() != null)
@@ -631,9 +629,10 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         if (analysis == null) {
             setContentDescription("");
         } else if (targetKey == null) {
-            setContentDescription(analysis.project().getName() + "（メソッド未選択）");
+            setContentDescription(Messages.format("view.noMethod", analysis.project().getName()));
         } else {
-            setContentDescription(targetLabel + " の" + (callers ? "呼び出し元" : "呼び出し先"));
+            setContentDescription(Messages.format(
+                    callers ? "view.callersOf" : "view.calleesOf", targetLabel));
         }
     }
 
@@ -644,10 +643,10 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             configLabel.setToolTipText(null);
         } else {
             ConfigSource source = analysis.configSource();
-            String label = (source == null) ? "解析できません" : source.label();
-            configLabel.setText("設定: " + label);
-            configLabel.setToolTipText("設定: " + label
-                    + "\n中身は［解析に使う設定…］で確認できます。");
+            String label = (source == null) ? Messages.get("config.unavailable") : source.label();
+            configLabel.setText(Messages.format("view.configLabel", label));
+            configLabel.setToolTipText(Messages.format("view.configLabel", label)
+                    + "\n" + Messages.get("view.configLabelTip"));
         }
         configLabel.getParent().layout();
     }
@@ -683,20 +682,22 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     private void applyTree(ServerResponse response, String error) {
         if (error != null) {
             viewer.setInput(null);
-            setBanner("✖ 解析サーバーとやりとりできませんでした: " + error, "再解析", this::reanalyze, false);
+            setBanner(Messages.format("banner.serverError", error),
+                    Messages.get("banner.reanalyze"), this::reanalyze, false);
             updateFooter(0, "");
             return;
         }
         if (!response.isOk()) {
             viewer.setInput(null);
             if ("not-found".equals(response.reason())) {
-                setBanner("このメソッドは今の解析結果にありません（解析後に追加された可能性があります）。",
-                        "再解析", this::reanalyze, false);
+                setBanner(Messages.get("banner.methodNotFound"),
+                        Messages.get("banner.reanalyze"), this::reanalyze, false);
             } else if ("not-analyzed".equals(response.reason())) {
-                setBanner("このプロジェクトはまだ解析していません。", "解析する", this::reanalyze, false);
+                setBanner(Messages.get("state.notAnalyzed"),
+                        Messages.get("banner.analyze"), this::reanalyze, false);
             } else {
-                setBanner("✖ 木を取得できませんでした: " + response.reason(),
-                        "再解析", this::reanalyze, false);
+                setBanner(Messages.format("banner.treeError", response.reason()),
+                        Messages.get("banner.reanalyze"), this::reanalyze, false);
             }
             updateFooter(0, "");
             return;
@@ -705,7 +706,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         viewer.setInput(tree);
         viewer.expandToLevel(2);
         int direct = (tree.root() == null) ? 0 : tree.root().children().size();
-        updateFooter(direct, "全 " + response.rows().size() + " 行");
+        updateFooter(direct, Messages.format("footer.totalRows",
+                Integer.valueOf(response.rows().size())));
         updateBanner();
     }
 
@@ -733,9 +735,10 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     }
 
     private void updateFooter(int direct, String extra) {
-        String what = callers ? "呼び出し元" : "呼び出し先";
         footer.setText((targetKey == null) ? ""
-                : "直接の" + what + " " + direct + " 件" + (extra.isEmpty() ? "" : "／" + extra));
+                : Messages.format(callers ? "footer.directCallers" : "footer.directCallees",
+                        Integer.valueOf(direct))
+                        + (extra.isEmpty() ? "" : Messages.format("footer.extra", extra)));
         footer.getParent().layout();
     }
 
@@ -748,12 +751,9 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     private void updateBanner() {
         if (analysis == null) {
             if (projectItems.isEmpty()) {
-                setBanner("解析できるプロジェクトがありません"
-                        + "（Java プロジェクト、または設定ファイルのあるプロジェクトが要ります）。",
-                        null, null, false);
+                setBanner(Messages.get("banner.noProjects"), null, null, false);
             } else {
-                setBanner("上の［対象プロジェクト］でプロジェクトを選んでください。",
-                        null, null, false);
+                setBanner(Messages.get("banner.pickProject"), null, null, false);
             }
             return;
         }
@@ -762,37 +762,36 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         String at = (last == null) ? "" : shortTime(last.field("at"));
         switch (state) {
             case NO_CONFIG:
-                setBanner("このプロジェクトは解析できません（Java プロジェクトではなく、設定ファイルもありません）。",
-                        "解析に使う設定…", this::openConfigDialog, false);
+                setBanner(Messages.get("state.noConfig"),
+                        Messages.get("view.configButton"), this::openConfigDialog, false);
                 break;
             case NOT_ANALYZED:
-                setBanner("このプロジェクトはまだ解析していません。", "解析する", this::reanalyze, false);
+                setBanner(Messages.get("state.notAnalyzed"),
+                        Messages.get("banner.analyze"), this::reanalyze, false);
                 break;
             case ANALYZING:
-                setBanner("解析中です（別プロセス）…", null, null, true);
+                setBanner(Messages.get("state.analyzing"), null, null, true);
                 break;
             case UPDATING:
-                setBanner("更新中です。表示は " + at + " 時点のものです。", null, null, true);
+                setBanner(Messages.format("state.updating", at), null, null, true);
                 break;
             case STALE:
-                setBanner("⚠ " + analysis.changedCount() + " ファイルが変更されています。表示は "
-                        + at + " 時点のものです。", "再解析", this::reanalyze, false);
+                setBanner(Messages.format("state.stale",
+                        Integer.valueOf(analysis.changedCount()), at),
+                        Messages.get("banner.reanalyze"), this::reanalyze, false);
                 break;
             case FAILED:
-                setBanner("✖ 解析に失敗しました: " + analysis.errorMessage()
-                        + "（［解析に使う設定…］で、起点とソースフォルダを確かめられます）",
-                        "再試行", this::reanalyze, false);
+                setBanner(Messages.format("state.failed", analysis.errorMessage()),
+                        Messages.get("banner.retry"), this::reanalyze, false);
                 break;
             case READY:
+                String ready = (last == null) ? Messages.format("state.ready", at)
+                        : Messages.format("state.readyWithCount", at, last.field("methods"));
                 if (targetKey == null) {
-                    setBanner(at + " 時点の解析結果"
-                            + (last == null ? "" : "（メソッド " + last.field("methods") + " 件）")
-                            + "。調べたいメソッドを指定してください。",
-                            "カーソル位置のメソッド", this::showMethodAtCursor, false);
+                    setBanner(ready + Messages.get("state.readyPickMethod"),
+                            Messages.get("action.methodAtCursor"), this::showMethodAtCursor, false);
                 } else {
-                    setBanner(at + " 時点の解析結果"
-                            + (last == null ? "" : "（メソッド " + last.field("methods") + " 件）"),
-                            null, null, false);
+                    setBanner(ready, null, null, false);
                 }
                 break;
             default:
@@ -839,21 +838,23 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         StringBuilder sb = new StringBuilder();
         if (analysis != null) {
             ConfigSource source = analysis.configSource();
-            sb.append("設定: ").append(source == null ? "なし" : source.label()).append('\n');
+            sb.append(Messages.format("view.configLabel",
+                    (source == null) ? Messages.get("tip.none") : source.label())).append('\n');
             ServerResponse info = analysis.serverInfo();
             if (info != null) {
-                sb.append("解析プロセス: JDK ").append(info.field("jvm"))
-                        .append(" / JDT ").append(info.field("jdt"))
-                        .append("（解析できる Java: ").append(info.field("maxJava")).append(" まで）\n");
+                sb.append(Messages.format("tip.serverInfo",
+                        info.field("jvm"), info.field("jdt"), info.field("maxJava"))).append('\n');
             }
             ServerResponse last = analysis.lastAnalysis();
             if (last != null) {
-                sb.append("解析した Java の版: ").append(last.field("sourceLevel")).append('\n');
+                sb.append(Messages.format("tip.sourceLevel", last.field("sourceLevel"))).append('\n');
             }
         }
-        sb.append("キャッシュ: ").append(PluginFolders.cacheRoot().getAbsolutePath()).append('\n');
-        sb.append("ログ: ").append(PluginFolders.logFolder().getAbsolutePath()).append('\n');
-        sb.append("解析は Eclipse とは別のプロセス・別の JDK で走ります。");
+        sb.append(Messages.format("tip.cacheAt", PluginFolders.cacheRoot().getAbsolutePath()))
+                .append('\n');
+        sb.append(Messages.format("tip.logAt", PluginFolders.logFolder().getAbsolutePath()))
+                .append('\n');
+        sb.append(Messages.get("tip.outOfProcess"));
         return sb.toString();
     }
 
@@ -884,7 +885,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         ServerRow row = ((ServerTree.Node) selection.getFirstElement()).row();
         if (row.file().isEmpty()) {
-            setBanner("この行にはソースがありません（依存 jar のメソッドです）。", null, null, false);
+            setBanner(Messages.get("banner.rowNoSource"), null, null, false);
             return;
         }
         ServerResponse last = analysis.lastAnalysis();
@@ -892,7 +893,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         boolean opened = !projectRoot.isEmpty() && EditorOpener.open(getSite().getPage(),
                 java.nio.file.Paths.get(projectRoot), row.file(), row.line());
         if (!opened) {
-            setBanner("ソースを開けませんでした（ワークスペースの外にあるファイルです）。", null, null, false);
+            setBanner(Messages.get("banner.openFailed"), null, null, false);
         }
     }
 
@@ -1003,13 +1004,13 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         for (String filter : filters.toWords()) {
             words.add(filter);
         }
-        analysis.request("呼び出し階層をCSVに出力", (response, error) -> runOnUi(() -> {
+        analysis.request(Messages.get("export.jobName"), (response, error) -> runOnUi(() -> {
             if (error != null || response == null || !response.isOk()) {
-                MessageDialog.openError(getSite().getShell(), "影響調査",
-                        "CSV の出力に失敗しました: "
-                                + (error != null ? error : response.reason()));
+                MessageDialog.openError(getSite().getShell(), Messages.get("dialog.title"),
+                        Messages.format("export.failed",
+                                (error != null) ? error : response.reason()));
             } else {
-                setBanner(path + " に " + response.field("rows") + " 行を書き出しました。",
+                setBanner(Messages.format("export.done", path, response.field("rows")),
                         null, null, false);
             }
         }), 300_000L, words.toArray(new String[0]));
@@ -1018,8 +1019,8 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     /** 「解析に使う設定」ダイアログ。設定を選び直したら、その場で表示に反映する */
     private void openConfigDialog() {
         if (analysis == null) {
-            MessageDialog.openInformation(getSite().getShell(), "影響調査",
-                    "先に、上の［対象プロジェクト］でプロジェクトを選んでください。");
+            MessageDialog.openInformation(getSite().getShell(), Messages.get("dialog.title"),
+                    Messages.get("banner.pickProject"));
             return;
         }
         new ConfigDialog(getSite().getShell(), analysis).open();
@@ -1029,12 +1030,13 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     private void openLogFolder() {
         java.io.File folder = AnalysisLog.folder();
         if (!folder.isDirectory() && !folder.mkdirs()) {
-            MessageDialog.openInformation(getSite().getShell(), "影響調査",
-                    "ログフォルダを作れませんでした: " + folder.getAbsolutePath());
+            MessageDialog.openInformation(getSite().getShell(), Messages.get("dialog.title"),
+                    Messages.format("prefs.folderNotCreated", folder.getAbsolutePath()));
             return;
         }
         if (!org.eclipse.swt.program.Program.launch(folder.getAbsolutePath())) {
-            MessageDialog.openInformation(getSite().getShell(), "影響調査", folder.getAbsolutePath());
+            MessageDialog.openInformation(getSite().getShell(), Messages.get("dialog.title"),
+                    folder.getAbsolutePath());
         }
     }
 

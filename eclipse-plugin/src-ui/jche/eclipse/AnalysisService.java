@@ -60,7 +60,7 @@ public final class AnalysisService {
      * 解放してよい。メモリを抱えたまま居座らせない（大きなプロジェクトでは数百MBになる）。
      */
     private void startIdleSweeper() {
-        sweeper = new org.eclipse.core.runtime.jobs.Job("解析プロセスの見回り") {
+        sweeper = new org.eclipse.core.runtime.jobs.Job(Messages.get("job.sweep")) {
             @Override
             protected org.eclipse.core.runtime.IStatus run(
                     org.eclipse.core.runtime.IProgressMonitor monitor) {
@@ -72,8 +72,8 @@ public final class AnalysisService {
                 for (ProjectAnalysis analysis : all) {
                     if (analysis.closeIfIdle(idleMillis)) {
                         JchePlugin.log(IStatus.INFO,
-                                "使われていない解析プロセスを終了しました: "
-                                        + analysis.project().getName(), null);
+                                Messages.format("service.idleClosed",
+                                        analysis.project().getName()), null);
                     }
                 }
                 schedule(SWEEP_INTERVAL_MS);
@@ -114,7 +114,7 @@ public final class AnalysisService {
             try {
                 listener.analysisChanged(analysis);
             } catch (RuntimeException e) {
-                JchePlugin.log(IStatus.WARNING, "解析状態の通知でエラーが起きました", e);
+                JchePlugin.log(IStatus.WARNING, Messages.get("service.notifyFailed"), e);
             }
         }
     }
@@ -168,7 +168,7 @@ public final class AnalysisService {
                 }
             });
         } catch (CoreException e) {
-            JchePlugin.log(IStatus.WARNING, "ワークスペースの変更を読み取れませんでした", e);
+            JchePlugin.log(IStatus.WARNING, Messages.get("service.deltaFailed"), e);
             return;
         }
         boolean afterBuild = event.getType() == IResourceChangeEvent.POST_BUILD;

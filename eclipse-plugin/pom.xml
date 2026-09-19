@@ -322,8 +322,13 @@
             <goals><goal>compile</goal></goals>
             <configuration>
               <release>17</release>
+              <!--
+                *.java まで書くのは、ソースフォルダに文言の properties も置いてあるため。
+                jche/** だと maven-compiler-plugin がそれを渡されて
+                「Compilation unit is not of SOURCE kind」で落ちる
+              -->
               <includes>
-                <include>jche/**</include>
+                <include>jche/**/*.java</include>
               </includes>
               <excludes>
                 <exclude>jche/eclipse/**</exclude>
@@ -341,7 +346,7 @@
             <configuration>
               <release>8</release>
               <includes>
-                <include>jche/eclipse/**</include>
+                <include>jche/eclipse/**/*.java</include>
               </includes>
               <compilerArgs>
                 <!--
@@ -430,6 +435,8 @@
             <include>jche/eclipse/**</include>
             <include>lib/**</include>
             <include>plugin.xml</include>
+            <!-- plugin.xml とバンドルの名前の訳（MANIFEST.MF の Bundle-Localization が指す） -->
+            <include>plugin*.properties</include>
           </includes>
           <archive>
             <!-- OSGi の情報は MANIFEST.MF が唯一の正。PDE と同じものを使う -->
@@ -441,7 +448,20 @@
     <resources>
       <resource>
         <directory>${project.basedir}</directory>
-        <includes><include>plugin.xml</include></includes>
+        <!-- plugin.properties / plugin_ja.properties は OSGi が読む（Bundle-Localization） -->
+        <includes>
+          <include>plugin.xml</include>
+          <include>plugin*.properties</include>
+        </includes>
+      </resource>
+      <!--
+        画面の文言（jche/eclipse/messages*.properties）。ソースと同じ場所に置いてあるので、
+        ここで拾わないとバンドルに入らず、画面にキー名が出てしまう。
+        PDE（build.properties の source..）は同じことを自動でやる
+      -->
+      <resource>
+        <directory>${project.basedir}/src-ui</directory>
+        <includes><include>**/*.properties</include></includes>
       </resource>
     </resources>
   </build>

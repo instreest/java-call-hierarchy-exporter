@@ -39,7 +39,7 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
         ISelection selection = HandlerUtil.getCurrentSelection(event);
         List<IFile> configFiles = configFilesOf(selection);
         if (configFiles.isEmpty()) {
-            ExporterConsole.show().println("設定ファイル（*.properties）を選んでから実行してください。");
+            ExporterConsole.show().println(Messages.get("export.selectConfigFirst"));
             return null;
         }
         schedule(configFiles);
@@ -61,15 +61,15 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
 
     private static void schedule(List<IFile> configFiles) {
         ExporterConsole console = ExporterConsole.show();
-        Job job = new Job("呼び出し階層をCSVに出力") {
+        Job job = new Job(Messages.get("export.jobName")) {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
-                monitor.beginTask("解析中（別プロセス）", IProgressMonitor.UNKNOWN);
+                monitor.beginTask(Messages.get("job.analyzing"), IProgressMonitor.UNKNOWN);
                 Process process = null;
                 try {
                     List<String> command = commandFor(configFiles);
                     console.clear();
-                    console.println("実行: " + String.join(" ", command));
+                    console.println(Messages.format("export.running", String.join(" ", command)));
                     process = new ProcessBuilder(command).redirectErrorStream(true).start();
                     try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                             process.getInputStream(), ServerLauncher.CHARSET))) {
@@ -86,12 +86,12 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
                     refreshOutput(configFiles);
                     if (exit != 0) {
                         return new Status(IStatus.ERROR, JchePlugin.PLUGIN_ID,
-                                "CSV の出力に失敗しました（終了コード " + exit + "）。コンソールを確認してください。");
+                                Messages.format("export.failedExit", Integer.valueOf(exit)));
                     }
                     return Status.OK_STATUS;
                 } catch (IOException e) {
                     return new Status(IStatus.ERROR, JchePlugin.PLUGIN_ID,
-                            "解析プロセスを起動できませんでした: " + e.getMessage(), e);
+                            Messages.format("export.launchFailed", e.getMessage()), e);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     if (process != null) {
@@ -111,8 +111,8 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
     private static List<String> commandFor(List<IFile> configFiles) throws IOException {
         JavaLocator.Found java = PluginRuntime.findJava(null);
         if (java == null) {
-            throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM + " 以上）が見つかりません。"
-                    + "［ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)］で指定してください");
+            throw new IOException(Messages.format("jdk.notFoundShort",
+                    Integer.valueOf(JavaLocator.MINIMUM)));
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         List<String> command = new ArrayList<>();
@@ -142,7 +142,7 @@ public class ExportCallHierarchyHandler extends AbstractHandler {
                 file.getParent().refreshLocal(IResource.DEPTH_INFINITE, null);
             } catch (CoreException e) {
                 JchePlugin.log(IStatus.WARNING,
-                        "出力フォルダの更新に失敗しました: " + file.getFullPath(), e);
+                        Messages.format("export.refreshFailed", file.getFullPath()), e);
             }
         }
     }

@@ -251,7 +251,8 @@ public final class ProjectAnalysis {
                 collectProperties((org.eclipse.core.resources.IContainer) configDir, result);
             }
         } catch (CoreException e) {
-            JchePlugin.log(IStatus.WARNING, "設定ファイルを探せませんでした: " + project.getName(), e);
+            JchePlugin.log(IStatus.WARNING,
+                    Messages.format("config.searchFailed", project.getName()), e);
         }
         result.sort(Comparator.comparingInt((IFile f) -> configNameRank(f))
                 .thenComparing(IFile::getName));
@@ -359,17 +360,16 @@ public final class ProjectAnalysis {
         }
         JavaLocator.Found java = PluginRuntime.findJava(null);
         if (java == null) {
-            throw new IOException("解析に使う JDK（" + JavaLocator.MINIMUM
-                    + " 以上、推奨 " + JavaLocator.PREFERRED + "）が見つかりません。"
-                    + "［ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)］で場所を指定するか、取得してください");
+            throw new IOException(Messages.format("jdk.notFound",
+                    Integer.valueOf(JavaLocator.MINIMUM), Integer.valueOf(JavaLocator.PREFERRED)));
         }
         List<File> classpath = PluginRuntime.analysisClasspath();
         File cacheRoot = PluginFolders.cacheRoot();
         // コンソールは「開いていなくても」内容を溜める。ここで作っておけば、
         // あとからビューを開いた利用者にも起動時のログが見える
-        ExporterConsole.getOrCreate().println("解析プロセスを起動します: " + java);
-        AnalysisLog.get().println(project.getName(), "解析プロセスを起動します: " + java
-                + " / JVM 引数: " + PluginRuntime.vmArguments());
+        ExporterConsole.getOrCreate().println(Messages.format("server.starting", java));
+        AnalysisLog.get().println(project.getName(),
+                Messages.format("server.startingWithVmArgs", java, PluginRuntime.vmArguments()));
         ServerConnection started = ServerLauncher.start(java.executable(), classpath, cacheRoot,
                 PluginRuntime.vmArguments(), null);
         started.setListener(new ServerConnection.Listener() {
@@ -398,7 +398,7 @@ public final class ProjectAnalysis {
                     String.valueOf(1));
         } catch (IOException e) {
             // 素性が取れなくても解析はできる。画面の表示が少し寂しくなるだけ
-            PluginRuntime.logWarning("解析サーバーの素性を取得できませんでした", e);
+            PluginRuntime.logWarning(Messages.get("server.helloFailed"), e);
         }
         return started;
     }
@@ -429,7 +429,7 @@ public final class ProjectAnalysis {
         words.add(methodKey);
         words.add(callers ? "callers" : "callees");
         words.addAll(Arrays.asList(filters));
-        request("呼び出し階層の取得", callback, 120_000L, words.toArray(new String[0]));
+        request(Messages.get("job.fetchTree"), callback, 120_000L, words.toArray(new String[0]));
     }
 
     // ------------------------------------------------------------

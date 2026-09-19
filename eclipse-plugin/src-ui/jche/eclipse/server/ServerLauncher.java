@@ -7,6 +7,8 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 
+import jche.eclipse.Messages;
+
 /**
  * 解析サーバーを子プロセスとして起動する。
  *
@@ -40,10 +42,10 @@ public final class ServerLauncher {
     public static ServerConnection start(File javaExecutable, List<File> classpath, File cacheRoot,
                                          List<String> vmArguments, File workingDir) throws IOException {
         if (javaExecutable == null || !javaExecutable.isFile()) {
-            throw new IOException("解析に使う java が見つかりません: " + javaExecutable);
+            throw new IOException(Messages.format("launcher.javaNotFound", javaExecutable));
         }
         if (classpath == null || classpath.isEmpty()) {
-            throw new IOException("解析本体（lib/）が見つかりません");
+            throw new IOException(Messages.get("launcher.libMissing"));
         }
         List<String> command = new ArrayList<String>();
         command.add(javaExecutable.getAbsolutePath());

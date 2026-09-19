@@ -34,7 +34,7 @@ final class FilterDialog extends Dialog {
     @Override
     protected void configureShell(Shell shell) {
         super.configureShell(shell);
-        shell.setText("呼び出し階層のフィルタ");
+        shell.setText(Messages.get("filter.title"));
     }
 
     @Override
@@ -45,14 +45,14 @@ final class FilterDialog extends Dialog {
         area.setLayout(layout);
 
         Label note = new Label(area, SWT.WRAP);
-        note.setText("フィルタは表示の絞り込みだけを行います（解析は走りません）。");
+        note.setText(Messages.get("filter.note"));
         note.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
-        includeTests = check(area, "テストのソースにある呼び出し元も出す", settings.includeTests);
-        includeGuessed = check(area, "推測で特定した呼び出し（データフロー由来）も出す", settings.includeGuessed);
-        applyExcludePackages = check(area, "設定ファイルの exclude.packages を画面にも効かせる",
+        includeTests = check(area, Messages.get("filter.includeTests"), settings.includeTests);
+        includeGuessed = check(area, Messages.get("filter.includeGuessed"), settings.includeGuessed);
+        applyExcludePackages = check(area, Messages.get("filter.applyExclude"),
                 settings.applyExcludePackages);
-        dedupeCallers = check(area, "同じ呼び出し元は1回だけ出す（外すと呼び出し行ごとに出す）",
+        dedupeCallers = check(area, Messages.get("filter.dedupe"),
                 settings.dedupeCallers);
         return area;
     }

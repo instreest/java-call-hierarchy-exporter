@@ -10,7 +10,8 @@ Eclipse を使わない通常の利用（コマンドラインで CSV を出す�
 - 設計 … [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md)（画面）、
   [out-of-process-analysis-design.md](out-of-process-analysis-design.md)（別プロセスでの解析）
 - 実装時に迷った点 … [eclipse-plugin-qa.md](eclipse-plugin-qa.md)、[eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md)、
-  [eclipse-plugin-folders-qa.md](eclipse-plugin-folders-qa.md)（初期状態・設定・置き場所・コピー）
+  [eclipse-plugin-folders-qa.md](eclipse-plugin-folders-qa.md)（初期状態・設定・置き場所・コピー）、
+  [eclipse-plugin-nls-qa.md](eclipse-plugin-nls-qa.md)（英語・日本語の出し分け）
 - 版の対応表 … [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md)
 
 ---
@@ -26,6 +27,7 @@ JDT 一式（`lib/jdt/*.jar`）を、別の JDK で子プロセスとして起�
 | Eclipse | **4.6（2016年、Neon）以降** |
 | Eclipse を動かす JDK | **8 以上**（プラグインは Java 8 でコンパイルしている） |
 | 解析に使う JDK | **17 以上、推奨 25**。「設定 → JAVA_HOME → 取得済み → Eclipse を動かしている JVM → PATH の java」の順に探す |
+| 表示言語 | **英語が既定**。Eclipse が日本語で動いていれば日本語（§3.1） |
 
 Pleiades なら、同梱の JDK がそのまま解析にも使える（2023 以降は 17・21、2025 以降は 25）。
 見つからなければ設定画面から取得できる（§4）。
@@ -79,6 +81,31 @@ PDE がコンパイルするのは `src-ui/`（プラグイン）だけである
 Java 17 でコンパイルして `lib/jche-core.jar` に収めるものなので、PDE のビルドには含めない。
 
 ## 3. 使う
+
+### 3.1 表示言語
+
+画面の文言は**英語が既定**で、**Eclipse が日本語で動いていれば日本語**になる。
+Pleiades を使っているかどうかは関係ない（Pleiades は Eclipse 本体の文言を訳す仕組みで、
+個別のプラグインの文言は訳せない。[eclipse-plugin-nls-qa.md](eclipse-plugin-nls-qa.md) の Q1）。
+
+判断に使うのは Eclipse の表示言語（`-nl` / eclipse.ini の指定。無ければ OS の言語）である。
+英語の Eclipse で日本語にしたい（あるいはその逆）なら、eclipse.ini で切り替える。
+
+```
+-nl
+ja
+```
+
+eclipse.ini は**1行に1つの引数**を書く形式で、コメントは書けない。上の 2 行は
+`-vmargs` より前に置くこと（`-vmargs` 以降は JVM への引数になる）。
+
+日本語・英語以外の言語では英語が出る。訳を足したい場合は、プラグインの中の
+`jche/eclipse/messages.properties` を写して `messages_<言語>.properties` を作れば、その言語で出る。
+
+解析そのもののログ（コンソールと `analysis-*.log`）と、解析の失敗理由の本文は日本語のままである
+（同 Q6）。
+
+### 3.2 操作
 
 入口は 2 つある。**メソッドから入る**のが主な使い方で、**ビューから入る**こともできる。
 
@@ -212,12 +239,13 @@ printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo
 
 ## 7. テスト
 
-プラグインまわりには5つの検査がある（いずれも GitHub Actions で実行）。
+プラグインまわりには6つの検査がある（いずれも GitHub Actions で実行）。
 
 ```bash
 bash test/plugin/run.sh          # 版・ID・クラスの実在、解析本体がバンドルに混ざっていないこと
 bash test/plugin-api/run.sh      # 古い Eclipse（4.6 相当）の jar と --release 8 でコンパイルできること
 bash test/plugin-config/run.sh   # 自動生成した設定が、解析側と同じ読み方で読み戻せること
+bash test/plugin-nls/run.sh      # 文言が英語・日本語で出し分けられること（キーのそろい・UTF-8）
 bash test/plugin-client/run.sh   # 子プロセスを実際に起動して、プロトコルと木の組み直しを確認
 bash test/server/run.sh          # サーバーモードの応答（ANALYZE / FIND / TREE / EXPORT ほか）
 ```

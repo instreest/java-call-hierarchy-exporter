@@ -52,7 +52,7 @@ final class EclipseProjectConfig {
                 return JavaCore.create(project);
             }
         } catch (CoreException e) {
-            JchePlugin.log(IStatus.WARNING, "プロジェクトの種別を判定できませんでした: " + project, e);
+            JchePlugin.log(IStatus.WARNING, Messages.format("project.natureFailed", project), e);
         }
         return null;
     }
@@ -73,8 +73,7 @@ final class EclipseProjectConfig {
         IProject project = javaProject.getProject();
         IPath projectLocation = project.getLocation();
         if (projectLocation == null) {
-            throw new IOException("プロジェクトの場所が特定できません（ワークスペース外のリンク）: "
-                    + project.getName());
+            throw new IOException(Messages.format("project.noLocation", project.getName()));
         }
         Properties p = new Properties();
         p.setProperty("project.root", projectLocation.toOSString());
@@ -104,20 +103,18 @@ final class EclipseProjectConfig {
                     // リンクされたソースフォルダ。キャッシュのキーも出力の file 列も
                     // project.root からの相対パスなので、外にあるものは扱えない
                     JchePlugin.log(IStatus.WARNING,
-                            "プロジェクトの外にあるソースフォルダは解析対象から外します: " + location, null);
+                            Messages.format("project.sourceOutside", location), null);
                     continue;
                 }
                 String relative = location.makeRelativeTo(projectLocation).toString();
                 folders.add(relative.isEmpty() ? "." : relative);
             }
         } catch (JavaModelException e) {
-            throw new IOException("クラスパスを読み取れませんでした: " + e.getMessage(), e);
+            throw new IOException(Messages.format("project.rawClasspathFailed", e.getMessage()), e);
         }
         if (folders.isEmpty()) {
-            throw new IOException("Eclipse のクラスパスにソースフォルダがありません: "
-                    + javaProject.getElementName()
-                    + "（プロジェクトのプロパティ > Java のビルド・パス > ソース で追加するか、"
-                    + "ビューの「解析に使う設定…」から設定ファイルを指定してください）");
+            throw new IOException(Messages.format("project.noSourceFolders",
+                    javaProject.getElementName()));
         }
         return folders;
     }
@@ -142,7 +139,7 @@ final class EclipseProjectConfig {
                 }
             }
         } catch (JavaModelException e) {
-            throw new IOException("クラスパスを解決できませんでした: " + e.getMessage(), e);
+            throw new IOException(Messages.format("project.resolvedClasspathFailed", e.getMessage()), e);
         }
         return new ArrayList<>(jars);
     }
@@ -169,7 +166,7 @@ final class EclipseProjectConfig {
         String text = location.toOSString();
         if (text.indexOf(',') >= 0) {
             JchePlugin.log(IStatus.WARNING,
-                    "カンマを含むパスは設定に載せられないため除外します: " + text, null);
+                    Messages.format("project.commaPathSkipped", text), null);
             return;
         }
         jars.add(text);
@@ -205,11 +202,11 @@ final class EclipseProjectConfig {
     /** 自動生成した設定を config.properties の体裁で書き出す（保存用・子プロセスへ渡す用） */
     static String toFileText(Properties p) {
         StringBuilder sb = new StringBuilder();
-        sb.append("# Eclipse のプロジェクト構成から自動生成した設定です。\n");
-        sb.append("# 各項目の意味は、ツール同梱の config.properties のコメントを参照してください。\n");
-        sb.append("# このファイルがあると、ビューは自動生成ではなくこちらを使います。\n");
-        sb.append("# パスは絶対パスで書いてあります（この環境の構成から作ったものなので、\n");
-        sb.append("# 別の PC へ持っていくときは project.root と library.jars を直してください）。\n");
+        // 生成したファイルの見出しも、利用者が読むものなので訳す。行ごとに # を付けるのは
+        // ここで（訳文の側に # を書かせると、付け忘れで設定ファイルが壊れる）
+        for (String line : Messages.get("generated.header").split("\n")) {
+            sb.append("# ").append(line).append('\n');
+        }
         for (String key : REQUIRED_KEYS) {
             sb.append(key).append('=').append(escapeValue(p.getProperty(key, ""))).append('\n');
         }
@@ -219,7 +216,7 @@ final class EclipseProjectConfig {
                 sb.append(key).append('=').append(escapeValue(value)).append('\n');
             }
         }
-        sb.append("# 起点を絞るときは entry.packages を、除外するときは exclude.packages を書きます。\n");
+        sb.append("# ").append(Messages.get("generated.entryPackagesNote")).append('\n');
         sb.append("entry.packages=\n");
         sb.append("exclude.packages=\n");
         return sb.toString();

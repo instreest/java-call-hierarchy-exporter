@@ -28,9 +28,8 @@ public class ShowCallersHandler extends AbstractHandler {
         IWorkbenchPage page = HandlerUtil.getActiveWorkbenchWindow(event).getActivePage();
         IMethod method = MethodPicker.pick(page, HandlerUtil.getCurrentSelection(event));
         if (method == null) {
-            MessageDialog.openInformation(HandlerUtil.getActiveShell(event), "影響調査",
-                    "メソッドが特定できませんでした。メソッドの中にカーソルを置くか、"
-                            + "メソッドを選んでから実行してください。");
+            MessageDialog.openInformation(HandlerUtil.getActiveShell(event),
+                    Messages.get("dialog.title"), Messages.get("method.notIdentified"));
             return null;
         }
         IProject project = method.getResource() != null
@@ -45,7 +44,7 @@ public class ShowCallersHandler extends AbstractHandler {
             CallHierarchyView view = (CallHierarchyView) page.showView(CallHierarchyView.VIEW_ID);
             view.showMethod(analysis, method);
         } catch (PartInitException e) {
-            JchePlugin.log(IStatus.ERROR, "影響調査ビューを開けませんでした", e);
+            JchePlugin.log(IStatus.ERROR, Messages.get("view.openFailed"), e);
         }
         return null;
     }

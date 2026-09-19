@@ -68,7 +68,7 @@ final class ConfigSource {
     String label() {
         return (kind == Kind.FILE)
                 ? file.getProjectRelativePath().toString()
-                : "自動生成（プロジェクトの構成から）";
+                : Messages.get("config.generatedLabel");
     }
 
     /** 自動生成の内容。設定ファイル由来なら null */
@@ -113,7 +113,7 @@ final class ConfigSource {
     Path materialize(Path scratchDir) throws IOException {
         if (kind == Kind.FILE) {
             if (file.getLocation() == null) {
-                throw new IOException("設定ファイルの場所が特定できません: " + file.getFullPath());
+                throw new IOException(Messages.format("config.fileNoLocation", file.getFullPath()));
             }
             return file.getLocation().toFile().toPath();
         }
