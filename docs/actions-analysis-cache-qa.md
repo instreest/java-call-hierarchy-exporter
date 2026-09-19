@@ -190,3 +190,45 @@ PR のブランチからは `main` の最新が当たり、変わったファイ
 ### Q16. 回帰テストで `touch` するとき、リポジトリの作業ツリーは汚れないか
 
 git は更新時刻を追跡しないので、`touch` しても `git status` には出ない。`test/demo` 等の中身は変えていない。
+
+### Q17. `uses: ./` で呼ぶと、キャッシュが一度も保存されていなかった（修正）
+
+Q15 の「実行間の引き継ぎは `call-hierarchy.yml` の 2 回目以降で確かめる」が、実際には確かめられていなかった。
+`call-hierarchy.yml`（`uses: ./`）の実行ログを見ると、毎回こうなっていた。
+
+```
+Save analysis cache
+  path: /home/runner/work/<repo>/<repo>/.//.cache
+  [warning]Invalid pattern '….//.cache'. Relative pathing '.' and '..' is not allowed.
+  outcome=success                                    ← 警告だけでステップは成功
+
+Restore analysis cache
+  Cache not found for input keys: …, jche-analysis-Linux-   ← 最も広い前方一致でも 0 件
+ソース解析: 再利用=0 新規解析=127                              ← 毎回すべて解析し直していた
+```
+
+原因は `github.action_path` の形。`uses: ./` で呼ばれたときだけ「`<ワークスペース>/.`」になり、
+`${{ github.action_path }}/.cache` が `.//.cache` になる。`actions/cache` は `.` や `..` を含むパターンを
+受け付けず、**警告を出して対象から外すだけでステップは成功する**ので、保存されないまま緑になっていた。
+保存が無いので復元も当たらず、引き継ぎが丸ごと効いていなかった。
+
+直し方は、`prepare.sh` で末尾の `/.`（Windows のランナーでは `\.`）を落とした `analysis-cache-dir` を出力し、
+`restore` と `save` の `path` をそれに変える。`uses: ./` 以外の形（`uses: owner/repo@ref` の
+`_actions/…/<ref>`、`uses: ./.jche-tool`）は `.` を含まないので、そのまま通る。
+
+| `github.action_path` | 渡すパス |
+| --- | --- |
+| `<ワークスペース>/.`（`uses: ./`） | `<ワークスペース>/.cache` |
+| `_actions/instreest/java-call-hierarchy-exporter/main`（`uses: owner/repo@ref`） | 同じ／`.cache` |
+| `<ワークスペース>/.jche-tool`（`uses: ./.jche-tool`） | 同じ／`.cache` |
+| `D:\a\repo\repo\.`（Windows の `uses: ./`） | `D:\a\repo\repo/.cache` |
+
+**影響があったのはこのリポジトリ自身の `uses: ./` だけ**で、利用者が
+`uses: instreest/java-call-hierarchy-exporter@main` で呼ぶ経路（`_actions/…` 配下）は最初から正しく動いていた。
+
+検査で気づけなかったのは、Q15 のとおり `smoke.yml` が見ているのが「同じジョブの中に `.cache/` が残っている」
+再利用だからである。この経路はツールが自分でフォルダを作って読み書きするので、`actions/cache` の
+パスが不正でも通ってしまう。`actions/cache` が**不正なパスをエラーにせず警告で済ませる**以上、
+ジョブの成否では検出できない。引き継ぎが効いているかは、`call-hierarchy.yml` の
+「Restore analysis cache」が前回のキーを当てているか（`Cache restored from key:` が出るか）と、
+集計行の `再利用=` が 0 でないかで見る。

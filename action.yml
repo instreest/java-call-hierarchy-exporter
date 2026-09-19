@@ -116,7 +116,10 @@ inputs:
     required: false
     default: 'call-hierarchy'
   artifact-retention-days:
-    description: アーティファクトの保持日数（空欄ならリポジトリの既定）
+    description: >-
+      アーティファクトの保持日数（空欄ならリポジトリの既定。通常 90 日）。
+      プライベートリポジトリではアーティファクトの容量が利用者のストレージの無料枠から引かれるので、
+      繰り返し動かす場合は 7 程度を勧める（docs/github-actions.md の「保存量と保持期間」）
     required: false
     default: ''
 
@@ -186,12 +189,15 @@ runs:
     # 復元したキャッシュが今のソースに合うかはツール自身が判定する（判定は内容で行い、更新時刻は見ない）ので、
     # 古いものが当たっても結果は変わらず、解析し直す量が増えるだけ。
     # 保存は actions/cache の post ステップではなく明示のステップで行う（解析が失敗しても、出来た分を残すため）。
+    # path は github.action_path そのままではなく prepare.sh が正規化したものを使う
+    # （uses: ./ のとき github.action_path が「<ワークスペース>/.」になり、'.' を含むパターンを
+    #   actions/cache が受け付けないため。prepare.sh の analysis_cache_dir のコメント）
     - name: Restore analysis cache
       id: restore-analysis
       if: inputs.analysis-cache == 'true'
       uses: actions/cache/restore@v5
       with:
-        path: ${{ github.action_path }}/.cache
+        path: ${{ steps.prep.outputs.analysis-cache-dir }}
         key: jche-analysis-${{ runner.os }}-${{ steps.prep.outputs.analysis-cache-key }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           jche-analysis-${{ runner.os }}-${{ steps.prep.outputs.analysis-cache-key }}-
@@ -217,7 +223,7 @@ runs:
       if: always() && inputs.analysis-cache == 'true' && steps.restore-analysis.outcome == 'success'
       uses: actions/cache/save@v5
       with:
-        path: ${{ github.action_path }}/.cache
+        path: ${{ steps.prep.outputs.analysis-cache-dir }}
         key: ${{ steps.restore-analysis.outputs.cache-primary-key }}
 
     # 解析が途中で失敗しても、出来ているところまで（run.log を含む）を持ち帰れるようにする
