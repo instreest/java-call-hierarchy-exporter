@@ -21,8 +21,11 @@ Test Explorer や CodeQL のように「重い解析を明示的に走らせ、�
 
 ## 入れ方
 
-1. `.vsix` を用意する … GitHub Actions の `smoke` ワークフローの成果物 `java-call-hierarchy-exporter-vsix`、
-   または手元で作る（[ビルド](#ビルド)）
+1. `.vsix` を用意する … 次のどれかで
+   - GitHub Actions の `vsix` ワークフローを画面の「Run workflow」で起こす（ブランチ・タグを選べる）。
+     成果物は `java-call-hierarchy-exporter-<版>-vsix`
+   - `smoke` ワークフロー（push / PR ごと）の成果物 `java-call-hierarchy-exporter-vsix`
+   - 手元で作る（[ビルド](#ビルド)）
 2. VSCode の 拡張機能 → `…` → 「VSIX からのインストール」で入れる
 3. 解析に使う **JDK 17 以上**を用意する（CLI と結果を揃えるなら 25）。探す順は
    設定 `jche.javaHome` → 環境変数 `JAVA_HOME` → PATH の `java`
