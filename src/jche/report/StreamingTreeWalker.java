@@ -270,7 +270,7 @@ public final class StreamingTreeWalker {
         for (int entry : entries) {
             rootId = entry;
             // 起点メソッドの引数も、そのオブジェクトの生成箇所も、経路の中に無いので分からない
-            path[0].set(rootId, -1, null, null, null, null);
+            path[0].set(rootId, -1, null, null, null, null, null);
             descend(0);
             if (isRowLimitReached()) {
                 break;
@@ -348,6 +348,7 @@ public final class StreamingTreeWalker {
                 path[depth + 1].set(target, graph.callLineOf(e),
                         noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e),
                                 unreachable),
+                        resolvedBy(declaredCallee, res),
                         targetParams, targetCtorArgs,
                         (targetCtorArgs == null) ? null : methods.typeFqn(target),
                         // ラムダの本体へ降りるときだけ、今のフレームの引数を
@@ -402,7 +403,8 @@ public final class StreamingTreeWalker {
             Resolution res = Resolution.single(target, Resolution.CALLBACK);
             String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null);
             path[depth + 1].set(target, graph.callLineOf(e),
-                    note + " 契約: " + match.contract(), null, null, null, null);
+                    note + " 契約: " + match.contract(), resolvedBy(declaredCallee, res),
+                    null, null, null, null);
             emit(depth + 1);
             if (!cycle) {
                 descend(depth + 1);
@@ -532,7 +534,8 @@ public final class StreamingTreeWalker {
         }
         PathFrame saved = path[parentDepth];
         PathFrame replacement = new PathFrame();
-        replacement.set(skippedId, saved.callLine, saved.note, skippedParams, skippedCtorArgs,
+        replacement.set(skippedId, saved.callLine, saved.note, saved.resolvedBy,
+                skippedParams, skippedCtorArgs,
                 (skippedCtorArgs == null) ? null : methods.typeFqn(skippedId));
         path[parentDepth] = replacement;
         // 差し替えた親と読み飛ばす除外メソッドは、path[] からは見えなくなるが祖先のまま
@@ -550,11 +553,46 @@ public final class StreamingTreeWalker {
     }
 
     /**
+     * その行の解決方法（resolved-by 列）。
+     *
+     * 「接頭辞（確度） + 段のラベル（手法）」の形で、必ず値が入る。注記と違って
+     * 固定列なので、Excel のフィルタで確度・手法ごとに行を選べる。
+     *
+     * 判定の順序は {@link #noteFor} と同じにしてある。片方だけを直すと、
+     * 同じ行の列と注記が食い違う（docs/call-hierarchy-columns-qa.md の Q3）。
+     */
+    private String resolvedBy(int declaredCallee, Resolution res) {
+        if (res.isMultiple()) {
+            // 1件に絞れなかった。ラベルは「候補をどう集めたか」を表す
+            // （CHA / LOCAL_NEW_MULTI / CONTRACT / REFLECTION / 拡張のラベル）
+            return ResolvedBy.UNEXPANDED + res.label();
+        }
+        if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
+            // どのラムダが渡ってきたかまで分かった。下の「未特定」とは逆の結論なので先に判定する
+            return ResolvedBy.RESOLVED + res.label();
+        }
+        if (graph.hasFunctionalImpl(declaredCallee)) {
+            // ソース上の実装が1件でも、ラムダ／メソッド参照が同じインターフェースを
+            // 実装している。ラベル（SINGLE_IMPL 等）をそのまま出すと確定に見えるため言い換える
+            return ResolvedBy.UNEXPANDED + ResolvedBy.LAMBDA;
+        }
+        if (res.isGeneratedImpl() || Resolution.NO_IMPL.equals(res.label())) {
+            // 呼び出し先は宣言のままで、その先へは降りられない
+            return ResolvedBy.UNEXPANDED + res.label();
+        }
+        return ResolvedBy.RESOLVED + res.label();
+    }
+
+    /**
      * ノードに付ける注記。call-hierarchy列の最後の要素として出す。
      *
      * 独立した列にすると call-hierarchy より後ろに列ができてしまい、
      * 「可変長の階層を最終列に置く」という構成が崩れるため、
      * 階層の末尾に追記する形にしている（そのぶん行末grepは効かなくなる）。
+     *
+     * 解決方法そのものは resolved-by 列に出るので、注記には
+     * <b>列に無い情報がある場合だけ</b>後半を付ける（候補の件数とレシーバの由来、
+     * 生成される実装のFQN、繋いだ契約）。
      */
     private String noteFor(int target, int declaredCallee, Resolution res, int depth,
                            boolean cycle, char recvKind, String unreachable) {
@@ -600,8 +638,8 @@ public final class StreamingTreeWalker {
             }
         } else if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
             // どのラムダが渡ってきたかまで分かった呼び出し。下の「未特定」とは逆の結論なので、
-            // 先に判定する
-            detail = "[RESOLVED:" + res.label() + "]";
+            // 先に判定する。解決方法は resolved-by 列に出るので注記は付けない
+            detail = null;
         } else if (graph.hasFunctionalImpl(declaredCallee)) {
             // ソース上の実装が1件しか無くても、ラムダ／メソッド参照が
             // 同じインターフェースを実装している。それを数に入れずに
@@ -628,11 +666,13 @@ public final class StreamingTreeWalker {
             // 調べる価値がある側なので、methods.csv の unresolvedCause だけでなく
             // 階層側にも出す
             detail = UNEXPANDED + "NO_IMPL] 本体を持つ実装がソース上に無い";
-        } else if (target != declaredCallee || res.isDataflow()) {
-            // データフローで決めた場合は、宣言型と同じ結論でも「CHAで諦めずに
-            // 絞れた」ことに意味があるので必ず出す
-            detail = "[RESOLVED:" + res.label() + "]";
+        } else if (Resolution.CALLBACK.equals(res.label())) {
+            // 「どの契約で繋いだか」は列に無い情報なので注記に残す。
+            // 契約の本文は descendCallbacks がこの後ろに足す
+            detail = "[RESOLVED:" + Resolution.CALLBACK + "]";
         } else {
+            // 1件に確定した呼び出しは resolved-by 列だけで足りる。
+            // 同じことを注記にも書くと、可変長の階層列が読みにくくなるだけ
             detail = null;
         }
         if (detail != null) {

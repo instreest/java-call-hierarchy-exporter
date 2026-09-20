@@ -123,15 +123,17 @@ jp.co.xxx.action.UserAction#execute メソッド指定
 ### 4.1 `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,level,resolved-by,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,2,RESOLVED:SPRING_DI,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 | この形にする目的 |
 |---|---|---|
 | `caller` | 呼び出し元。`at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**。行番号は**呼び出し箇所**の行 | Eclipseの「Javaスタック・トレース・コンソール」に貼ると `(ファイル:行)` がリンクになりソースへ飛べる。内部クラスは `Outer$Inner`、コンストラクタは `<init>` で書く（コンソールが解釈する形式に合わせる） |
 | `callee` | 呼び出し先。**クラス単純名.メソッド名**（引数は付けない）。内部クラスは `Outer.Inner`、コンストラクタはクラス名 | Excelのフィルタで呼び出し先を選ぶための短い表記。引数を付けないのでオーバーロードは同じ表記にまとまる。行番号は混ぜない（フィルタの選択肢が散らばる） |
+| `level` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノード数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる |
+| `resolved-by` | 解決方法。`接頭辞 + 段のラベル` で、**全ての行に必ず入れる**（下表） | 「どう特定したか・なぜ絞れなかったか」をフィルタできるようにする。注記は可変長列の末尾にあるためフィルタに使えない |
 | `root` | 起点メソッド。`クラス単純名.メソッド名` | フィルタ用の短い表記 |
 | `call-hierarchy` | 起点の次のノードから現ノードまでを**1ノード1列**で展開（可変長・必ず最終列） | 階層をそのまま読む。ヘッダーとデータ行の列数は一致しなくてよい |
 
@@ -147,6 +149,18 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
   可変長列の後ろに固定列を置くと階層が途中で切れる）
 - **降りている行には注記を付けない**。全行に何か書くと、注記が付いた行を目で拾えなくなる
 
+`resolved-by` の値（接頭辞が確度、後半が手法）:
+
+| 値 | 条件 |
+|---|---|
+| `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CONTRACT` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
+| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` 等、候補をどう集めたかのラベル） |
+| `UNEXPANDED:LAMBDA` | 候補は1件だが、ラムダ／メソッド参照も同じインターフェースを実装しており未特定。ラベルをそのまま出すと確定に見えるのでこう言い換える |
+| `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED` / `OUTSIDE_METHOD`）。`level` は `1` |
+| `EXTERNAL_USAGE:{照合の種類}` | 被参照スキャンの行（`EXACT` / `INHERITED` / `IMPLICIT_CTOR`）。`level` は `1` |
+
+判定順は下の注記の後半グループと同じにする。別々に判定すると、同じ行の列と注記が食い違う。
+
 注記の判定順（前半グループは先に当たったもの1つ、後半グループは1つ、両方あれば ` / ` で連結）:
 
 | 順 | 条件 | 出力 |
@@ -160,7 +174,9 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` |
 | 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
-| 後半5 | 解決先が宣言型と違う（リフレクションで解決した `REFLECTION` / `REFLECTION_INIT` を含む）、**または** データフローで決めた（宣言型と同じでも出す） | `[RESOLVED:{ラベル}]` |
+
+1件に確定した呼び出しの注記は付けない（解決方法は `resolved-by` 列に出る）。
+注記に残る `[RESOLVED:*]` は、繋いだ契約という列に無い情報を持つ `[RESOLVED:CALLBACK] 契約: …` だけ。
 
 注記は先頭に大文字のタグを置き、日本語の説明をその後ろに続ける。
 `[UNEXPANDED:*]` は「ここから先へ降りなかった」ことを表し、タグだけで辿り切れなかった箇所を
@@ -1803,7 +1819,12 @@ jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring
 | `call-hierarchy.csv` に `<init>` が現れる列 | `caller` 列だけ |
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
 
-以下、各ケースの期待行は `call-hierarchy.csv` に**この文字列のまま**含まれること。
+以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `root` 以降を書いたもので、
+間の `level` / `resolved-by` の 2 列（4.1）は紙面の都合で省いている。
+ただし 1 件に確定した行だけは、どの段で決まったかが期待値そのものなので、行末に
+`[RESOLVED:{ラベル}]` を付けて示す（**実際の出力ではこれは注記ではなく `resolved-by` 列に入る**。
+`[UNEXPANDED:*]` や `[EXTERNAL]` の注記は実際の出力どおり行末に出る）。
+この順・この文言で含まれること。
 起点の並びは 5.4 の順（このフィクスチャでは `Top.go` → `fx.App` のメソッドが宣言順 →
 `fx.Sample` → `fx.Unit` → `fx.UsesLib`）、同じ呼び出しの複数候補の行はFQN順
 （`fx.AbstractDao` → `fx.MemoDao` → `fx.OrderDao`）。同一入力の実行間で行順まで一致すること。

@@ -134,17 +134,35 @@ config/
 ### `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,level,resolved-by,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,2,RESOLVED:SPRING_DI,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 |
 |---|---|
 | `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excelのフィルタに使える |
+| `level` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
+| `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表） |
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
+
+`resolved-by` は「接頭辞（確度）＋ 解決の段のラベル（手法）」の形で、**どの行にも必ず入ります**。
+
+| 接頭辞 | 意味 |
+|---|---|
+| `RESOLVED:` | 呼び出し先を1件に確定した。後半が[どの段で決めたか](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
+| `UNEXPANDED:` | 1件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
+| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`root` 列は `(型解決失敗)` |
+| `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
+
+後半は解決の段のラベルそのものですが、1つだけ例外があります。ラムダ式・メソッド参照が実装している
+関数型インターフェースの呼び出しは、ソース上の実装が1件でも（ラベルは `SINGLE_IMPL` 等の確定系でも）
+どれが実行されるかは未特定なので `UNEXPANDED:LAMBDA` になります。
+
+Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿り切れなかった呼び出し**、
+`level` で「3 以下」＝**起点の近く**、のように絞り込めます。
 
 コンストラクタの呼び出し自体は行になりません。
 コンストラクタ内からのメソッド呼び出しは行として出力されます。
@@ -153,6 +171,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 具象クラスの候補が複数ある呼び出しは候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
 末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。 （[注記](#注記)）
+解決方法そのものは `resolved-by` 列に出るので、注記には**列に無いこと**（打ち切りの理由、候補の件数と
+レシーバの由来、繋いだ契約）だけが載ります。
 
 
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
@@ -249,13 +269,15 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 注記は先頭に大文字のタグが付きます。日本語の説明はその後ろに続くので、
 タグで grep すれば種類ごとに拾えます。
+解決方法そのものは `resolved-by` 列に出るため、注記に載るのは**その列に無いこと**
+（打ち切りの理由、候補の件数とレシーバの由来、繋いだ契約）だけです。
 
 | タグ | 意味 |
 |---|---|
 | `[UNEXPANDED:*]` | ここから先へ降りなかった。`grep '\[UNEXPANDED'` で辿り切れなかった箇所を一括で拾える |
 | `[EXTERNAL]` | 呼び出し先が自プロジェクトの外。打ち切りではあるが性質が違うので `UNEXPANDED` には入れない |
 | `[UNREACHABLE]` | この経路では実行されないと分かった呼び出し |
-| `[RESOLVED:*]` | 具象クラスをどう特定したか。読み飛ばすなら `grep -v '\[RESOLVED'` |
+| `[RESOLVED:CALLBACK]` | 契約で繋いだ呼び出し。後ろに繋いだ契約が続く。どう特定したかは `resolved-by` 列で分かるので、注記に出る `[RESOLVED:*]` はこれだけ |
 
 | 注記 | 意味 |
 |---|---|
@@ -269,23 +291,13 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[EXTERNAL] ソースが無いため辿れない` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
 | `[EXTERNAL] import から型名を推定（未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
 | `[UNREACHABLE] この経路では呼ばれない: 条件「…」が成立しない（…）` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
-| `[RESOLVED:DATAFLOW_NEW]` | `new` された具象型から特定した（捕捉された変数を含む） |
-| `[RESOLVED:DATAFLOW_FACTORY]` | ファクトリメソッドの戻り値から具象クラスを特定した |
-| `[RESOLVED:DATAFLOW_PARAM]` | 呼び出し元から渡された引数を経路上で追跡して特定した |
-| `[RESOLVED:DATAFLOW_FIELD]` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
 | `[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
-| `[RESOLVED:DATAFLOW_LAMBDA]` | ラムダ式かメソッド参照が、その関数型インターフェースの実装としてこの呼び出し箇所まで渡ってきたと特定した（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
-| `[RESOLVED:SPRING_DI]` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
-| `[RESOLVED:SPRING_DI_QUALIFIER]` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
-| `[RESOLVED:ラベル]` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
-| `[RESOLVED:REFLECTION]` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
-| `[RESOLVED:REFLECTION_INIT]` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
 | `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述）。注記ではなく専用の行 |
 | `被参照:EXACT` 等 | 被参照スキャンの行（後述）。同じく専用の行 |
 
 1つの注記は最大2つのパーツからなり、両方付くときは ` / ` で繋がります。
 前半が打ち切りの理由（`[UNEXPANDED:CYCLE]`・`[UNEXPANDED:DEPTH]`・`[EXTERNAL]`・`[UNREACHABLE]`）、
-後半が絞り込みの結果（`[UNEXPANDED:CHA]`・`[RESOLVED:*]` 等）です。
+後半が絞り込みの結果（`[UNEXPANDED:CHA]` 等）です。
 
 ```
 [UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る / [UNEXPANDED:CHA] 候補5件: フィールド変数
@@ -302,14 +314,14 @@ external.library.folders=./lib
 
 classファイルの命令列を読むため、「どのjar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
 `caller` 列は呼び出し階層の行と同じスタックトレース形式なので、Eclipse の Java スタック・トレース・コンソールに貼れば
-（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入ります。
+（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`level` は `1`、`resolved-by` は `EXTERNAL_USAGE:` で始まります。
 ラムダ式やメソッド参照（`Counter::bump`）からの参照も、それを書いた行として出ます。
 
 ```csv
-caller,callee,root,call-hierarchy
-at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,team-b-batch.jar,OrderService.OrderService,被参照:EXACT
-at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+caller,callee,level,resolved-by,root,call-hierarchy
+at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.OrderService,被参照:EXACT
+at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
 ```
 
 行番号は相手の jar が行番号情報付きでビルドされている（`javac` の既定）ときだけ出ます。
@@ -338,21 +350,28 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 
 インターフェース型で宣言された呼び出しを、どの実装に解決したかを段階的に判定します。
 先に確定した段で打ち切ります。
+ここのラベルが、そのまま `call-hierarchy.csv` の `resolved-by` 列の後半になります
+（1件に確定したら `RESOLVED:`、候補のままなら `UNEXPANDED:` が頭に付く）。
 
 | 段 | ラベル | 判定 |
 |---|---|---|
-| 0 | `STATIC_BOUND:*` | private / static / final メソッド、finalクラス、コンストラクタ、super呼び出し |
+| 0 | `STATIC_BOUND:*` | private / static / final メソッド、finalクラス、コンストラクタ、super呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が1つに定まる |
+| 1 | `NO_IMPL` | 本体を持つ実装がソース上に1つも無い（宣言のまま扱う） |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
 | 3 | `CONTRACT` | 契約表に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/callback-contracts.md](docs/callback-contracts.md)） |
 | 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。契約表の次に尋ねる |
-| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（[注記の表](#注記)） |
-| — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（経路ごとに判定するため段の外） |
-| — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
+| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
+| — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定（経路ごとに判定するため段の外） |
+| — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定（同上） |
 | — | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（同上。下記） |
-| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補を絞った（[注記の表](#注記)） |
+| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
+| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
+| — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
+| — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
 `CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます。
 出力フォルダの `contracts-suggested.txt` に、そのまま貼れる契約表のひな形が出ます
@@ -370,13 +389,13 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 インスタンスを通じて呼び出せるメソッドではないため）。
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,Holder.viaField,Holder.lambda$new$0,[RESOLVED:DATAFLOW_LAMBDA]
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe,[RESOLVED:DATAFLOW_FIELD]
+at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,1,RESOLVED:DATAFLOW_LAMBDA,Holder.viaField,Holder.lambda$new$0
+at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,2,RESOLVED:DATAFLOW_FIELD,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
 ```
 
 ラムダを作った箇所からは、必ず「生成した」1本の辺が出ます。
 どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
-実行箇所を特定できたときは、そちらからも同じノードに繋がります（`[RESOLVED:DATAFLOW_LAMBDA]`）。
+実行箇所を特定できたときは、そちらからも同じノードに繋がります（`resolved-by` が `RESOLVED:DATAFLOW_LAMBDA`）。
 
 実行箇所を特定できる形:
 
@@ -388,7 +407,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.vi
 | メソッド参照 | `Runnable r = this::helper; r.run();` → `helper` に繋がる |
 | ローカルのコレクションに詰めて拡張for文で回す | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
 
-特定できない形（`[UNEXPANDED:LAMBDA]` が付きます）:
+特定できない形（`resolved-by` が `UNEXPANDED:LAMBDA` になります）:
 
 - `list.forEach(Runnable::run)` のように、**jar の中**から呼ばれる形。`forEach` の中はソースが無いので辿れません
 - フィールドのコレクションに詰める形、詰める場所と回す場所が別メソッドの形
@@ -398,7 +417,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,Holder.vi
 
 `new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
-（`[RESOLVED:CALLBACK]`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
+（`RESOLVED:CALLBACK`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
 自前のフレームワーク分は `contracts.files` に表を書いて足せます。
 
 ---
