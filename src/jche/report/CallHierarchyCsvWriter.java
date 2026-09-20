@@ -13,7 +13,7 @@ import jche.graph.MethodTable;
  *
  * ヘッダー:
  * <pre>
- *   caller,callee,level,resolved-by,root,call-hierarchy...
+ *   caller,callee,resolved-by,level,root,call-hierarchy...
  * </pre>
  * callee は「クラス名.メソッド名」。Excel のフィルタで呼び出し先を選びやすくする
  * ため、引数型は付けない（オーバーロードは同じ表記にまとまる）。
@@ -22,10 +22,12 @@ import jche.graph.MethodTable;
  *   <li>caller は Eclipse の Java Stack Trace Console が認識する
  *       "at Class.method(File.java:行)" 形式。貼り付けるだけでソースへ飛べる。
  *       行番号は、呼び出し元が「このノードを呼んでいる行」＝呼び出し箇所</li>
- *   <li>level は起点からの階層の深さ（起点が0、その呼び出し先が1）。
- *       call-hierarchy 列に並ぶノード数と必ず一致する</li>
- *   <li>resolved-by は解決方法（{@link ResolvedBy}）。注記と違って必ず値が入るので、
+ *   <li>resolved-by は解決方法（{@link ResolvedBy}）。この1本の辺（caller から callee）の
+ *       性質なので callee の隣に置く。注記と違って必ず値が入るので、
  *       Excel のフィルタで確度・手法ごとに行を選べる</li>
+ *   <li>level は起点からの階層の深さ（起点が0、その呼び出し先が1）。
+ *       call-hierarchy 列に並ぶノード数と必ず一致する。root・call-hierarchy と同じく
+ *       「この行が木のどこにあるか」を表す列なので、その2つと並べる</li>
  *   <li>call-hierarchy 以降は起点の次のノードから現ノードまでを1ノード1列で
  *       展開するため、ヘッダー行とデータ行の列数は一致しない（意図した仕様）</li>
  *   <li>call-hierarchy より後ろに列を追加してはならない（行末マッチが壊れるため）。
@@ -45,7 +47,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
     public CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom) throws IOException {
         this.writer = Csv.writer(outputCsv, encoding, bom);
         writer.write(String.join(Csv.DELIM,
-                "caller", "callee", "level", "resolved-by", "root", "call-hierarchy"));
+                "caller", "callee", "resolved-by", "level", "root", "call-hierarchy"));
         writer.newLine();
     }
 
@@ -66,11 +68,11 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         // （行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばる）。
         buf.append(Csv.esc(mt.shortLabel(path[depth].methodId))).append(Csv.DELIM);
 
-        // level: 起点からの深さ。call-hierarchy 列のノード数と一致する
-        buf.append(depth).append(Csv.DELIM);
-
         // resolved-by: 解決方法。注記と違い、確定した呼び出しでも必ず値が入る
         buf.append(Csv.esc(path[depth].resolvedBy)).append(Csv.DELIM);
+
+        // level: 起点からの深さ。call-hierarchy 列のノード数と一致する
+        buf.append(depth).append(Csv.DELIM);
 
         // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
         buf.append(Csv.esc(mt.shortLabel(rootId)));
@@ -111,10 +113,10 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         String caller = (callerId >= 0) ? stackTrace(mt, callerId, line) : location;
         buf.append(Csv.esc(caller)).append(Csv.DELIM);
         buf.append(Csv.esc(expression)).append(Csv.DELIM);
+        buf.append(Csv.esc(resolvedBy)).append(Csv.DELIM);
         // 階層は無いが、階層列には式を1つ置くので level は1。
         // 「level = call-hierarchy 列のノード数」をどの種類の行でも保つ
         buf.append(1).append(Csv.DELIM);
-        buf.append(Csv.esc(resolvedBy)).append(Csv.DELIM);
         buf.append(Csv.esc(UNRESOLVED_ROOT));
         buf.append(Csv.DELIM).append(Csv.esc(expression));
         buf.append(Csv.DELIM).append(Csv.esc(reason));
@@ -141,8 +143,8 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.setLength(0);
         buf.append(Csv.esc(caller)).append(Csv.DELIM);
         buf.append(Csv.esc(callee)).append(Csv.DELIM);
-        buf.append(1).append(Csv.DELIM);
         buf.append(Csv.esc(ResolvedBy.EXTERNAL_USAGE + note)).append(Csv.DELIM);
+        buf.append(1).append(Csv.DELIM);
         buf.append(Csv.esc(jarName));
         buf.append(Csv.DELIM).append(Csv.esc(shortCallee));
         buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));

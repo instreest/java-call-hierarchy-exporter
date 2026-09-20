@@ -123,17 +123,17 @@ jp.co.xxx.action.UserAction#execute メソッド指定
 ### 4.1 `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,level,resolved-by,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,2,RESOLVED:SPRING_DI,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 | この形にする目的 |
 |---|---|---|
 | `caller` | 呼び出し元。`at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**。行番号は**呼び出し箇所**の行 | Eclipseの「Javaスタック・トレース・コンソール」に貼ると `(ファイル:行)` がリンクになりソースへ飛べる。内部クラスは `Outer$Inner`、コンストラクタは `<init>` で書く（コンソールが解釈する形式に合わせる） |
 | `callee` | 呼び出し先。**クラス単純名.メソッド名**（引数は付けない）。内部クラスは `Outer.Inner`、コンストラクタはクラス名 | Excelのフィルタで呼び出し先を選ぶための短い表記。引数を付けないのでオーバーロードは同じ表記にまとまる。行番号は混ぜない（フィルタの選択肢が散らばる） |
-| `level` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノード数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる |
-| `resolved-by` | 解決方法。`接頭辞 + 段のラベル` で、**全ての行に必ず入れる**（下表） | 「どう特定したか・なぜ絞れなかったか」をフィルタできるようにする。注記は可変長列の末尾にあるためフィルタに使えない |
+| `resolved-by` | 解決方法。`接頭辞 + 段のラベル` で、**全ての行に必ず入れる**（下表） | 「どう特定したか・なぜ絞れなかったか」をフィルタできるようにする。注記は可変長列の末尾にあるためフィルタに使えない。`caller` → `callee` の1本の辺の性質なので `callee` の隣に置く |
+| `level` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノード数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる。`root` / `call-hierarchy` と同じ「木のどこにあるか」の列なので3つ並べる |
 | `root` | 起点メソッド。`クラス単純名.メソッド名` | フィルタ用の短い表記 |
 | `call-hierarchy` | 起点の次のノードから現ノードまでを**1ノード1列**で展開（可変長・必ず最終列） | 階層をそのまま読む。ヘッダーとデータ行の列数は一致しなくてよい |
 
@@ -1820,7 +1820,7 @@ jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
 
 以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `root` 以降を書いたもので、
-間の `level` / `resolved-by` の 2 列（4.1）は紙面の都合で省いている。
+間の `resolved-by` / `level` の 2 列（4.1）は紙面の都合で省いている。
 ただし 1 件に確定した行だけは、どの段で決まったかが期待値そのものなので、行末に
 `[RESOLVED:{ラベル}]` を付けて示す（**実際の出力ではこれは注記ではなく `resolved-by` 列に入る**。
 `[UNEXPANDED:*]` や `[EXTERNAL]` の注記は実際の出力どおり行末に出る）。

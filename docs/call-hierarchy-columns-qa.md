@@ -1,15 +1,15 @@
-# `level` / `resolved-by` 列 — Q&A
+# `resolved-by` / `level` 列 — Q&A
 
-`call-hierarchy.csv` の `root` 列の左に、起点からの階層の深さ（`level`）と解決方法（`resolved-by`）の
+`call-hierarchy.csv` の `root` 列の左に、解決方法（`resolved-by`）と起点からの階層の深さ（`level`）の
 2 列を足した判断を残す。
 関連: [note-tags-qa.md](note-tags-qa.md)（注記のタグ）、[callee-label-qa.md](callee-label-qa.md)（`callee` 列の表記）、
 [prompt-B-detailed.md](prompt-B-detailed.md) 4.1（列の仕様）。
 
 ## 結論
 
-- ヘッダーは `caller,callee,level,resolved-by,root,call-hierarchy`
-- `level` は起点を `0` とした深さ。**`call-hierarchy` 列に並ぶノード数と必ず一致する**
+- ヘッダーは `caller,callee,resolved-by,level,root,call-hierarchy`
 - `resolved-by` は `接頭辞 + 解決の段のラベル`。接頭辞が確度、後半が手法
+- `level` は起点を `0` とした深さ。**`call-hierarchy` 列に並ぶノード数と必ず一致する**
 
 | 接頭辞 | 意味 | 例 |
 |---|---|---|
@@ -43,6 +43,20 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 
 `level` を足したことで、階層列の終わりが `5 + level` 列目と計算できるようになった。
 注記の有無で 1 列ずれていたのが、列数だけで判定できる。
+
+### Q2-2. 2 列の並びを `resolved-by` → `level` にしたのはなぜか
+
+列のまとまりを意味と合わせるため。最初は `level` → `resolved-by` の順で入れたが、
+次の理由で入れ替えた（列自体を入れたのと同じ日で、利用者のフィルタが列位置に依存し始める前）。
+
+- `resolved-by` は **`caller` → `callee` という 1 本の辺の性質**（なぜこの callee がここに出ているか）
+  なので、`callee` の直後が自然
+- `level` / `root` / `call-hierarchy` は 3 つとも **「この行が木のどこにあるか」** の列。
+  並べておくと、左から「誰が・誰を・どう特定したか ｜ どの経路の何段目か・その経路」と読める
+- 「`level` = `call-hierarchy` 列のノード数」という不変条件も、隣り合っているほうが目で確かめやすい
+
+`level` は 1〜2 文字の細い列なので左端寄りだと常に視界に入る、という反対意見もあったが、
+上の 3 点を採った。
 
 ### Q3. なぜ解決方法を `Resolution.label()` そのままにしなかったのか
 
@@ -103,7 +117,7 @@ Excel の数値フィルタにも空欄が混ざる。
 読まずに固定列だけで判別できるようにする）を目的の節に書いた。設計を任せる版なので、
 形だけ写されて意図が失われると、また注記に埋め込む作りに戻るため。
 
-prompt-B の 3.3 にあるケース別の期待行は、`level` / `resolved-by` の 2 列を省いた表記のままにし、
+prompt-B の 3.3 にあるケース別の期待行は、`resolved-by` / `level` の 2 列を省いた表記のままにし、
 その読み方を断り書きにした。1 件に確定した行だけは、どの段で決まったかが期待値そのものなので
 行末に `[RESOLVED:{ラベル}]` を残している（実際の出力では列に入る）。
 
