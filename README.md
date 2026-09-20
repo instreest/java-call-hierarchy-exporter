@@ -17,7 +17,6 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
-| 画面とログの言語（英語が既定・日本語への切り替え） | [docs/cli.md](docs/cli.md#表示言語) |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
@@ -451,7 +450,6 @@ the impact surface of the feature you are about to change.
 | How to use it, how to start the tool | [Getting started](#getting-started) (this file) |
 | How to read the output CSV | [Output files](#output-files) (this file) |
 | What each config item means | the comments in [config/config.properties](config/config.properties) |
-| Language of the screen and the log (English by default; switching to Japanese) | [docs/cli.md](docs/cli.md#表示言語) |
 | Design notes (what was hard and what was decided, per feature), and the spec for reimplementation | [docs/README.md](docs/README.md) |
 
 ---
