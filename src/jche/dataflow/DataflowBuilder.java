@@ -35,8 +35,14 @@ import jche.util.Messages;
  */
 public final class DataflowBuilder {
 
-    /** 進捗に出す名前 */
-    private static final String PROGRESS_LABEL = Messages.get("dataflow.progress.resolve");
+    /**
+     * 進捗の見出し。{@code static final} にしないのは、そうするとこのクラスが読まれた時点の
+     * 言語で固まってしまうため。設定ファイルの {@code message.language} は解析の直前に効くので、
+     * 使うたびに引き直す（{@code docs/nls-qa.md} の Q2）
+     */
+    private static String progressLabel() {
+        return Messages.get("dataflow.progress.resolve");
+    }
 
     // --- リフレクションAPIの種別（DataflowResolver.REFLECT_* と同じ値） ---
     static final byte REFLECT_INVOKE = 1;
@@ -101,18 +107,18 @@ public final class DataflowBuilder {
         int decided = 0;
         // 進捗は 4096 件ごとに出す。メソッド数が数十万になると、ここだけで数分かかることがあり、
         // 何も出ないと「止まった」と見分けが付かない（docs/eclipse-plugin-progress-log-qa.md）
-        RunControl.progress(PROGRESS_LABEL, 0, factoryOrigin.length);
+        RunControl.progress(progressLabel(), 0, factoryOrigin.length);
         for (int id = 0; id < factoryOrigin.length; id++) {
             if ((id & 0xFFF) == 0xFFF) {
                 RunControl.checkCancelled();
-                RunControl.progress(PROGRESS_LABEL, id + 1, factoryOrigin.length);
+                RunControl.progress(progressLabel(), id + 1, factoryOrigin.length);
             }
             factoryOrigin[id] = b.factoryOriginOf(id);
             if (factoryOrigin[id] != null) {
                 decided++;
             }
         }
-        RunControl.progress(PROGRESS_LABEL, factoryOrigin.length, factoryOrigin.length);
+        RunControl.progress(progressLabel(), factoryOrigin.length, factoryOrigin.length);
         return new DataflowFacts(factoryOrigin, usesParameters(graph), reflectKinds,
                 methodsByName(methods), decided, b.cutOff);
     }

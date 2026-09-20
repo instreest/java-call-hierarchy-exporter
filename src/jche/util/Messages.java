@@ -58,11 +58,18 @@ public final class Messages {
     /** 環境変数・システムプロパティで決まった言語。どちらも無ければ null */
     private static final String FORCED = forcedLanguage();
 
-    /** いま引いている言語 */
-    private static String language = (FORCED != null) ? FORCED : defaultLanguage();
+    /**
+     * いま引いている言語。
+     *
+     * <p>{@code volatile} なのは、言語を決めるのと文言を引くのが別のスレッドになりうるため
+     * （サーバーモードでは要求を読むスレッドと解析するスレッドが分かれている）。
+     * 書き込みは起動時と設定を読んだ直後だけだが、書いた結果が見えないと
+     * 片方のスレッドだけ古い言語のままになる
+     */
+    private static volatile String language = (FORCED != null) ? FORCED : defaultLanguage();
 
-    /** 現在の言語の文言。英語の表に訳を重ねたもの */
-    private static Map<String, String> texts = build(language);
+    /** 現在の言語の文言。英語の表に訳を重ねたもの（差し替えるので {@code volatile}） */
+    private static volatile Map<String, String> texts = build(language);
 
     private Messages() {
     }
