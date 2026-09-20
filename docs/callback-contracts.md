@@ -6,9 +6,9 @@
 
 | 種類 | 何を決めるか | 出力 |
 |---|---|---|
-| **A. 呼び戻し** | 呼び出し箇所で渡した値のどれが、どのメソッドで呼び戻されるか | `call-hierarchy.csv` に `[RESOLVED:CALLBACK]` の行を足す |
+| **A. 呼び戻し** | 呼び出し箇所で渡した値のどれが、どのメソッドで呼び戻されるか | `call-hierarchy.csv` に `RESOLVED:CALLBACK` の行を足す |
 | **B. 起点** | どのメソッドをフレームワークが入口として呼ぶか | `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える |
-| **C. 具象型** | 宣言型（またはその型のメソッド）を、どの実装に解決するか | `call-hierarchy.csv` に `[RESOLVED:CONTRACT]` が付き、その先へ降りる |
+| **C. 具象型** | 宣言型（またはその型のメソッド）を、どの実装に解決するか | `call-hierarchy.csv` の `resolved-by` が `RESOLVED:CONTRACT` になり、その先へ降りる |
 
 > 種類 C は、[インスタンス解析条件の拡張](instance-analysis-plugin.md)と同じことを、Java を書かず
 > 契約表の 1 行で指定するものです。設計の経緯は
@@ -21,8 +21,8 @@
 文章で書けます。ツールはこの契約表を持ち、jar の中を読まずに `start` の先へ辺を張ります。
 
 ```csv
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
-at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,1,RESOLVED:CALLBACK,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,2,UNEXPANDED:CHA,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 ```
 
 `caller` 列は `start()` を呼んでいる行、`callee` 列は呼び戻される側です。呼び出し先（`Thread.start`）自身の行が
@@ -156,8 +156,8 @@ DaoFactory.get("USER").find();     // ← 変数に受けない形でも同じ
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,Main.run,UserDaoImpl.find,[RESOLVED:CONTRACT]
-at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,Main.run,UserDaoImpl.find,UserDaoImpl.load
+at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,1,RESOLVED:CONTRACT,Main.run,UserDaoImpl.find
+at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,2,RESOLVED:NO_OVERRIDE,Main.run,UserDaoImpl.find,UserDaoImpl.load
 ```
 
 | 決まりごと | 内容 |

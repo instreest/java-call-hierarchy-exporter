@@ -22,7 +22,7 @@
 | `test/demo/src/fx/app/Main.java` | 出力された注記 |
 |---|---|
 | 39行目 `DaoFactory.createEither(args.length > 0).findById(2L)` | `[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)` |
-| 40行目 `DaoFactory.byName("fx.dao.OrderDaoImpl").findById(3L)` | `[RESOLVED:DATAFLOW_FACTORY]` |
+| 40行目 `DaoFactory.byName("fx.dao.OrderDaoImpl").findById(3L)` | `RESOLVED:DATAFLOW_FACTORY` |
 
 40行目は `Class.forName(className).getDeclaredConstructor().newInstance()` を返すファクトリ
 （`test/demo/src/fx/dao/DaoFactory.java` の `byName`）なのに1件に確定していて、

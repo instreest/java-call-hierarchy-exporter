@@ -1,9 +1,9 @@
-﻿caller,callee,root,call-hierarchy
-at sample.app.App.main(App.java:6),Service.run,App.main,Service.run
-at sample.app.Service.run(Service.java:17),Greeter.of,App.main,Service.run,Greeter.of,[EXTERNAL] no source to follow
-at sample.app.Service.run(Service.java:18),Formatter.wrap,App.main,Service.run,Formatter.wrap,[EXTERNAL] no source to follow
-at sample.app.Service.run(Service.java:18),Greeter.formatter,App.main,Service.run,Greeter.formatter,[EXTERNAL] no source to follow
-at sample.app.Service.run(Service.java:18),Greeter.greet,App.main,Service.run,Greeter.greet,[EXTERNAL] no source to follow
-at sample.app.Service.run(Service.java:19),Handler.handle,App.main,Service.run,Handler.handle,[EXTERNAL] no source to follow
-at sample.app.Service.run(Service.java:20),Util.count,App.main,Service.run,Util.count
-at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,LogHandler.handle,Util.count
+﻿caller,callee,level,resolved-by,root,call-hierarchy
+at sample.app.App.main(App.java:6),Service.run,1,RESOLVED:NO_OVERRIDE,App.main,Service.run
+at sample.app.Service.run(Service.java:17),Greeter.of,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Greeter.of,[EXTERNAL] no source to follow
+at sample.app.Service.run(Service.java:18),Formatter.wrap,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Formatter.wrap,[EXTERNAL] no source to follow
+at sample.app.Service.run(Service.java:18),Greeter.formatter,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Greeter.formatter,[EXTERNAL] no source to follow
+at sample.app.Service.run(Service.java:18),Greeter.greet,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Greeter.greet,[EXTERNAL] no source to follow
+at sample.app.Service.run(Service.java:19),Handler.handle,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Handler.handle,[EXTERNAL] no source to follow
+at sample.app.Service.run(Service.java:20),Util.count,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Util.count
+at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,1,RESOLVED:STATIC_BOUND:STATIC,LogHandler.handle,Util.count

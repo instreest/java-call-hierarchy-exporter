@@ -159,7 +159,8 @@ public final class UnresolvedReport {
                 ? (callerKey.isEmpty() ? "(unknown)" : callerKey)
                 : currentFile + ":" + u.line();
         out.writeUnresolvedRow(g.methods(), callerId, location,
-                u.line(), u.expression(), reasonText(u.reason()));
+                u.line(), u.expression(), reasonText(u.reason()),
+                ResolvedBy.UNRESOLVED + u.reason());
         return 1L;
     }
 

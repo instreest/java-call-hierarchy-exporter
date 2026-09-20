@@ -1,8 +1,8 @@
-﻿caller,callee,root,call-hierarchy
-at sample.multi.app.Main.main(Main.java:13),Core.hello,Main.main,Core.hello
-at sample.multi.core.Core.hello(Core.java:8),Greeter.greet,Main.main,Core.hello,Greeter.greet,[EXTERNAL] no source to follow
-at sample.multi.core.Core.hello(Core.java:8),Greeter.of,Main.main,Core.hello,Greeter.of,[EXTERNAL] no source to follow
-at sample.multi.app.Main.main(Main.java:14),Strings.upper,Main.main,Strings.upper,[EXTERNAL] no source to follow
-at sample.multi.app.Main.main(Main.java:15),Formatter.wrap,Main.main,Formatter.wrap,[EXTERNAL] no source to follow
-at sample.multi.app.Main.main(Main.java:15),Greeter.formatter,Main.main,Greeter.formatter,[EXTERNAL] no source to follow
-at sample.multi.app.Main.main(Main.java:15),Greeter.of,Main.main,Greeter.of,[EXTERNAL] no source to follow
+﻿caller,callee,level,resolved-by,root,call-hierarchy
+at sample.multi.app.Main.main(Main.java:13),Core.hello,1,RESOLVED:STATIC_BOUND:STATIC,Main.main,Core.hello
+at sample.multi.core.Core.hello(Core.java:8),Greeter.greet,2,RESOLVED:NO_OVERRIDE,Main.main,Core.hello,Greeter.greet,[EXTERNAL] no source to follow
+at sample.multi.core.Core.hello(Core.java:8),Greeter.of,2,RESOLVED:STATIC_BOUND:STATIC,Main.main,Core.hello,Greeter.of,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:14),Strings.upper,1,RESOLVED:STATIC_BOUND:STATIC,Main.main,Strings.upper,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:15),Formatter.wrap,1,RESOLVED:NO_OVERRIDE,Main.main,Formatter.wrap,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:15),Greeter.formatter,1,RESOLVED:NO_OVERRIDE,Main.main,Greeter.formatter,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:15),Greeter.of,1,RESOLVED:STATIC_BOUND:STATIC,Main.main,Greeter.of,[EXTERNAL] no source to follow

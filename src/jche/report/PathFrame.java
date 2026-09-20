@@ -15,8 +15,10 @@ final class PathFrame {
     int methodId;
     /** 1つ上の段がこのメソッドを呼んでいる行 */
     int callLine;
-    /** 注記（[UNEXPANDED:*]・[EXTERNAL]・[UNREACHABLE]・[RESOLVED:*]）。無ければ null */
+    /** 注記（[UNEXPANDED:*]・[EXTERNAL]・[UNREACHABLE]・[RESOLVED:CALLBACK]）。無ければ null */
     String note;
+    /** 解決方法（resolved-by 列。{@link ResolvedBy}）。起点の段だけ null */
+    String resolvedBy;
     /**
      * このメソッドの引数に「この経路では」何が渡ってきているか（i 番目の引数の具象型）。
      * 分からない引数は null。何も分からなければ配列ごと null
@@ -35,16 +37,17 @@ final class PathFrame {
      */
     String[] capturedTypes;
 
-    void set(int methodId, int callLine, String note,
+    void set(int methodId, int callLine, String note, String resolvedBy,
              String[] paramTypes, String[] ctorArgs, String ctorOwner) {
-        set(methodId, callLine, note, paramTypes, ctorArgs, ctorOwner, null);
+        set(methodId, callLine, note, resolvedBy, paramTypes, ctorArgs, ctorOwner, null);
     }
 
-    void set(int methodId, int callLine, String note,
+    void set(int methodId, int callLine, String note, String resolvedBy,
              String[] paramTypes, String[] ctorArgs, String ctorOwner, String[] capturedTypes) {
         this.methodId = methodId;
         this.callLine = callLine;
         this.note = note;
+        this.resolvedBy = resolvedBy;
         this.paramTypes = paramTypes;
         this.ctorArgs = ctorArgs;
         this.ctorOwner = ctorOwner;
