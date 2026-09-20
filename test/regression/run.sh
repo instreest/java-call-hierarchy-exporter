@@ -92,7 +92,7 @@ expect_suggested() {   # $1=case  $2=ASCII の文字列  $3=ラベル
 
 # 拡張（FactoryKeyCollector + TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
 # まったく同じ出力になること。指定の仕方を変えても結果は変わらない、がこの比較の眼目。
-# 期待出力をもう 1 組持つ代わりに、ラベルを同じ綴りに読み替えて expected と突き合わせる
+# 期待出力をもう 1 組持つ代わりに、resolved-by 列のラベルを同じ綴りに読み替えて expected と突き合わせる
 expect_same_as_mapping() {   # $1=ラベル
     local out ok=1 f
     out=$(latest_output plugin)
@@ -101,14 +101,14 @@ expect_same_as_mapping() {   # $1=ラベル
     fi
     for f in call-hierarchy.csv methods.csv; do
         if diff --strip-trailing-cr -q \
-                <(sed 's/\[RESOLVED:MAPPING\]/[RESOLVED:=]/' "plugin/expected/$f") \
-                <(sed 's/\[RESOLVED:CONTRACT\]/[RESOLVED:=]/' "$out/$f") > /dev/null; then
+                <(sed 's/RESOLVED:MAPPING/RESOLVED:=/' "plugin/expected/$f") \
+                <(sed 's/RESOLVED:CONTRACT/RESOLVED:=/' "$out/$f") > /dev/null; then
             echo "  OK   plugin/$f ($1)"
         else
             echo "  DIFF plugin/$f ($1)"
             diff --strip-trailing-cr \
-                <(sed 's/\[RESOLVED:MAPPING\]/[RESOLVED:=]/' "plugin/expected/$f") \
-                <(sed 's/\[RESOLVED:CONTRACT\]/[RESOLVED:=]/' "$out/$f") | head -10
+                <(sed 's/RESOLVED:MAPPING/RESOLVED:=/' "plugin/expected/$f") \
+                <(sed 's/RESOLVED:CONTRACT/RESOLVED:=/' "$out/$f") | head -10
             ok=0
         fi
     done

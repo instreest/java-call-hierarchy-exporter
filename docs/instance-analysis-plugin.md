@@ -80,7 +80,7 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 （呼び出し箇所から独自の証拠を拾いたいときだけ使います）。動く例は
 [test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
 
-- 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の最終列に `[RESOLVED:<ラベル>]`（同梱の実装なら `MAPPING`）が付きます
+- 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の `resolved-by` 列が `RESOLVED:<ラベル>`（同梱の実装なら `MAPPING`）になります
 - `candidates()` が返す型名は **単純名でもかまいません**（`UserDaoImpl`）。解析対象で 1 件に定まるときだけ使い、複数の型に当たるときは使わずに警告に出します
 - フェーズAの拡張はキャッシュに手がかりを書くので、拡張やその設定・実装ファイルを変えると、
   キャッシュは自動的に捨てられて全件解析し直しになります（変え忘れによる古い結果の混入を防ぐため）
@@ -154,9 +154,9 @@ FACTORY_KEY@order = jp.co.app.impl.OrderService
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[RESOLVED:MAPPING]
+at jp.co.app.Main.run(Main.java:6),UserService.execute,1,RESOLVED:MAPPING,Main.run,UserService.execute
 at jp.co.app.impl.UserService.execute(UserService.java:8),UserService.audit,Main.run,UserService.execute,UserService.audit
-at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[RESOLVED:MAPPING]
+at jp.co.app.Main.run(Main.java:8),OrderService.execute,1,RESOLVED:MAPPING,Main.run,OrderService.execute
 at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,Main.run,OrderService.execute,OrderService.settle
 ```
 
@@ -257,9 +257,9 @@ public class NamingConventionProvider implements TypeCandidateProvider {
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[RESOLVED:NAMING_CONVENTION]
+at jp.co.app.Main.run(Main.java:6),UserService.execute,1,RESOLVED:NAMING_CONVENTION,Main.run,UserService.execute
 at jp.co.app.impl.UserService.execute(UserService.java:8),UserService.audit,Main.run,UserService.execute,UserService.audit
-at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[RESOLVED:NAMING_CONVENTION]
+at jp.co.app.Main.run(Main.java:8),OrderService.execute,1,RESOLVED:NAMING_CONVENTION,Main.run,OrderService.execute
 at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,Main.run,OrderService.execute,OrderService.settle
 ```
 

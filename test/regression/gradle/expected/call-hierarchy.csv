@@ -1,10 +1,10 @@
-﻿caller,callee,root,call-hierarchy
-at sample.app.App.main(App.java:6),Service.run,App.main,Service.run
-at sample.app.Service.run(Service.java:19),Greeter.of,App.main,Service.run,Greeter.of,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:20),Formatter.wrap,App.main,Service.run,Formatter.wrap,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:20),Greeter.formatter,App.main,Service.run,Greeter.formatter,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:20),Greeter.greet,App.main,Service.run,Greeter.greet,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:21),Handler.handle,App.main,Service.run,Handler.handle,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:21),Strings.upper,App.main,Service.run,Strings.upper,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:22),Util.count,App.main,Service.run,Util.count
-at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,LogHandler.handle,Util.count
+﻿caller,callee,level,resolved-by,root,call-hierarchy
+at sample.app.App.main(App.java:6),Service.run,1,RESOLVED:NO_OVERRIDE,App.main,Service.run
+at sample.app.Service.run(Service.java:19),Greeter.of,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Greeter.of,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:20),Formatter.wrap,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Formatter.wrap,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:20),Greeter.formatter,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Greeter.formatter,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:20),Greeter.greet,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Greeter.greet,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:21),Handler.handle,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Handler.handle,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:21),Strings.upper,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Strings.upper,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:22),Util.count,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Util.count
+at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,1,RESOLVED:STATIC_BOUND:STATIC,LogHandler.handle,Util.count

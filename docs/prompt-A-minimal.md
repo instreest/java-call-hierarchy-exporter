@@ -26,6 +26,16 @@
 価値は**網羅性**です。きれいな解析結果より「ここは分からなかった」と書いてある解析結果の
 ほうが役に立つので、(c)のために**追えなかったものを黙って捨てません。**
 
+そのうえで、**出力ファイルの上で、各呼び出し階層の「確定状況」が行ごとに分かるようにしてください。**
+影響調査で読み手が最初に判断するのは「この行はどこまで信じてよいか」「どこまで降りた行か」で、
+それを行ごとに（フィルタして）見分けられることが、この道具の実用性を決めます。具体的には
+
+1. **呼び出し先が1件に確定したのか、候補のままなのか**
+2. **確定／候補の根拠は何か**（静的束縛、実装が1つ、CHA で絞れなかった、など）
+3. **起点から何段目の行か**
+
+の3つを、注記の文面を読まなくても**固定の列の値だけで**判別できる形にします（3.1）。
+
 ## 2. 技術の前提
 
 Java 17 以上の普通のJavaアプリ。**Eclipse IDEは起動しません。** 解析エンジンにだけ
@@ -43,9 +53,9 @@ CSV 2本。**BOM付きUTF-8、カンマ区切り**（Excelでダブルクリッ�
 ### 3.1 呼び出し階層（`call-hierarchy.csv`）
 
 ```csv
-caller,callee,root,call-hierarchy
-at a.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,OrderAction.execute,OrderService.findOrder
-at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,OrderAction.execute,OrderService.findOrder,OrderDao.selectById
+caller,callee,level,resolved-by,root,call-hierarchy
+at a.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
+at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,2,UNEXPANDED:CHA,OrderAction.execute,OrderService.findOrder,OrderDao.selectById,[UNEXPANDED:CHA] 候補3件: フィールド変数
 ```
 
 - `caller` … `at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**（行は
@@ -53,21 +63,42 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,Or
   **この形式が(a)の核**なので崩さない
 - `callee` … **クラス単純名.メソッド名**（内部クラスは `Outer.Inner`。引数は付けない）。
   行番号は混ぜない（フィルタの選択肢が散らばる）
+- `level` … 起点からの深さ（起点が `0`、その呼び出し先が `1`）。
+  **`call-hierarchy` 列に並ぶノード数と必ず一致させる**（一致していれば、可変長列がどこで
+  終わって注記がどこから始まるかを列数だけで判定できる）
+- `resolved-by` … **その行の確定状況**。`接頭辞 + 5.2 の段のラベル` の形で、
+  **どの行にも必ず値を入れる**（空欄を作らない）
+
+  | 接頭辞 | 意味 | 例 |
+  |---|---|---|
+  | `RESOLVED:` | 呼び出し先が1件に定まった | `RESOLVED:STATIC_BOUND:PRIVATE`、`RESOLVED:SINGLE_IMPL` |
+  | `UNEXPANDED:` | 1件に絞れず候補のまま（その先へは降りない） | `UNEXPANDED:CHA`、`UNEXPANDED:NO_IMPL` |
+  | `UNRESOLVED:` | 型解決に失敗した行（下記） | `UNRESOLVED:BINDING_FAILED` |
+
+  確定したかどうかを**接頭辞**に、その根拠を**後半**に置くのは、
+  「辿り切れなかった行だけ」を、段のラベルを覚えていなくても1回のフィルタで出せるようにするため。
+  段を足したときは後半のラベルが増えるだけで、読み手のフィルタは変えなくて済みます
 - `root` … 起点メソッド（`クラス単純名.メソッド名`）
 - `call-hierarchy` … 起点の次から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列。
   ヘッダーとデータ行の列数は一致しなくてよい）
 - 呼び出し1件につき1行、起点自身の行は出さない。**`new` そのものも行にしない**（「newしたこと」
   より「その中で何を呼ぶか」が知りたい）が、経路には積んでコンストラクタ内の呼び出しは出す
 
-**「普通に辿れなかった」ことは `call-hierarchy` の最後の要素に注記として足し、独立した列に
+**「普通に辿れなかった」ことの説明は `call-hierarchy` の最後の要素に注記として足し、独立した列に
 しないでください**（種類は後から増えるので、列を増やさない形に）。注記は先頭に大文字のタグを
 置き（`[UNEXPANDED:*]` は「ここから先へ降りなかった」、`[EXTERNAL]` は呼び出し先が自プロジェクトの
-外、`[RESOLVED:*]` は具象クラスの特定）、日本語の説明をその後ろに続けると grep で拾えます。
+外）、日本語の説明をその後ろに続けると grep で拾えます。
 最低限 `[UNEXPANDED:CYCLE]`（循環。打ち切る）、`[UNEXPANDED:DEPTH]`（深さ上限での打ち切り）、
-`[UNEXPANDED:CHA] 候補N件: 理由`（実装を1つに絞れず、候補を1件ずつ行にするが先へは降りない）、
-`[RESOLVED:ラベル]`（5.2）の4種。
+`[UNEXPANDED:CHA] 候補N件: 理由`（実装を1つに絞れず、候補を1件ずつ行にするが先へは降りない）の3種。
 
-末尾に**型解決に失敗した呼び出し**も行として足す（`root` を `(型解決失敗)` にして区別）。
+注記と `resolved-by` 列の役割は分けてください。**確定状況そのもの（どちらに転んだか・何が根拠か）は
+列**に置き、注記に書くのは**列に入らないこと**だけです——打ち切りの理由（循環・深さ上限・
+プロジェクト外）と、候補の件数やレシーバの由来のような「次に何を調べればよいか」。
+両方を同じ判定から作り、同じ行で食い違わないようにします。
+1件に確定した行に `[RESOLVED:ラベル]` のような注記を重ねて出す必要はありません（列で分かるため）。
+
+末尾に**型解決に失敗した呼び出し**も行として足す（`root` を `(型解決失敗)` にし、`resolved-by` を
+`UNRESOLVED:理由コード` にして区別。階層列には呼び出しの式を1つ置くので `level` は `1`）。
 件数はログにも出し、多いときは依存jarの設定漏れが疑われる旨を出す。利用者が最もはまるのが
 依存jar不足で、**これがそれを検知する唯一の手掛かり**です。
 
@@ -116,11 +147,17 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,Or
 打ち切る**形に。各段は「解決できたか」と「根拠のラベル」を返すだけにして、段を足すのが
 1エントリの追加で済むようにします。最初はこの3段で十分です。
 
-| 段 | ラベル | 判定 |
-|---|---|---|
-| 0 | `STATIC_BOUND:理由` | private / static / final メソッド、finalクラス、コンストラクタ、`super`。仮想ディスパッチされない |
-| 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる。本体を持つ候補が皆無なら `NO_IMPL` |
-| 2 | `CHA` | 候補が複数のまま。候補を1件ずつ行にし、**先へは降りない**（候補数^深さで爆発する） |
+| 段 | ラベル | 判定 | `resolved-by` |
+|---|---|---|---|
+| 0 | `STATIC_BOUND:理由` | private / static / final メソッド、finalクラス、コンストラクタ、`super`。仮想ディスパッチされない | `RESOLVED:STATIC_BOUND:理由` |
+| 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる。本体を持つ候補が皆無なら `NO_IMPL` | `RESOLVED:NO_OVERRIDE` / `RESOLVED:SINGLE_IMPL` / `UNEXPANDED:NO_IMPL` |
+| 2 | `CHA` | 候補が複数のまま。候補を1件ずつ行にし、**先へは降りない**（候補数^深さで爆発する） | `UNEXPANDED:CHA` |
+
+**各段が返すラベルは、そのまま `resolved-by` 列の後半になります**（3.1）。
+段を足したら、その段のラベルがそのまま列の値として増えるだけにしてください。
+ラベルをそのまま出すと確定したように見えてしまう段を足すときだけ、列では言い換えます
+（例: 実装が1件でもラムダ／メソッド参照が同じインターフェースを実装していて、どれが走るか
+未特定なら `UNEXPANDED:LAMBDA`）。
 
 **段0の判定軸は「静的束縛か仮想呼び出しか」です。**「宣言型が具象クラスだから確定」は誤りで
 （`Base b = new Derived(); b.m();` で走るのは `Derived.m`）、間違えると静かに違う階層が出ます。
@@ -195,4 +232,8 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,Or
 - 自己再帰・相互再帰で `[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` が付く。除外パッケージの中だけで相互再帰していても
   スタックオーバーフローにならない
 - `caller` 列をEclipseの「Javaスタック・トレース・コンソール」に貼るとソースへ飛べる
+- **全ての行に `resolved-by` の値が入っている**（空欄が無い）。`UNEXPANDED:` で始まる行だけを
+  選ぶと「そこから先へ降りなかった呼び出し」の一覧になり、`UNEXPANDED:CHA` の行の呼び出し箇所
+  （`caller` と `callee` の組）の数が、ログの「絞れなかった呼び出し」の件数と合う
+- **全ての行で `level` が `call-hierarchy` 列のノード数と一致する**（注記の有無に関わらず）
 - 同じソースを Linux と Windows で解析して、両CSVが**行順まで**一致する

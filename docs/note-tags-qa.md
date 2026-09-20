@@ -6,6 +6,11 @@
 [doma-generated-impl-qa.md](doma-generated-impl-qa.md)（`GENERATED_IMPL` を `NO_IMPL` と言い分ける）、
 [branch-pruning-qa.md](branch-pruning-qa.md)（`[UNREACHABLE]` を出す条件）。
 
+> **その後の変更**: 解決方法は [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) で
+> `resolved-by` 列に移した。注記に残る `[RESOLVED:*]` は、繋いだ契約という列に無い情報を持つ
+> `[RESOLVED:CALLBACK] 契約: …` だけになっている。タグの考え方（下の Q1・Q2・Q3）は今も有効で、
+> 列の値もそのタグをそのまま使っている。
+
 ## 結論
 
 - 注記は `[タグ] 日本語の説明` の形にする。タグで grep でき、説明は読めば分かる
