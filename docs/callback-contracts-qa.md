@@ -29,7 +29,7 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 
 通常の解決は「呼び出し先の宣言に対してどの実装が動くか」を決めるもので、
 候補はすべて呼び出し先と同じシグネチャを持つ。契約で繋ぐ先は**別のメソッド**
-（`start()` に対して `run()`）なので、同じ配列に混ぜると `[UNEXPANDED:CHA] 候補N件` の
+（`start()` に対して `run()`）なので、同じ配列に混ぜると `[UNEXPANDED:CHA] N candidates` の
 件数や `methods.csv` の `unresolvedCause` が意味を失う。`CallResolver.callbackTargets` として
 分け、読み手（`StreamingTreeWalker` / `inDegrees` / `reachableFrom`）がそれぞれ足す。
 

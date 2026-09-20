@@ -23,6 +23,7 @@ import java.util.Properties;
 import org.eclipse.jdt.core.JavaCore;
 
 import jche.util.FileHash;
+import jche.util.Messages;
 import jche.util.UserHome;
 
 /**
@@ -201,6 +202,15 @@ public final class Config {
     public final boolean outputBom;
 
     /**
+     * 設定ファイルに書かれた表示言語（{@code message.language}）。未指定なら空。
+     *
+     * <p>実際に何語で出るかは {@link Messages#language()} が持つ。環境変数 {@code JCHE_LANG} と
+     * システムプロパティ {@code jche.lang} のほうが強いので、この値がそのまま使われるとは限らない
+     * （{@code docs/nls-qa.md}）。CSV の中身は言語によらず英語で固定なので、ここは影響しない
+     */
+    public final String messageLanguage;
+
+    /**
      * @param configPath 設定ファイル
      * @param toolRoot   このツールのプロジェクトフォルダ（cache.folder が空欄のときのキャッシュの置き場所）
      * @param startedAt  解析開始日時（出力フォルダ名に使う）
@@ -250,6 +260,12 @@ public final class Config {
         this.configDir = (dir == null) ? Paths.get(".").toAbsolutePath().normalize()
                 : dir.toAbsolutePath().normalize();
         this.startedAt = startedAt;
+
+        // 表示言語は、以降の検証が出すエラーの言語も決めるので真っ先に反映する。
+        // 環境変数 JCHE_LANG / システムプロパティ jche.lang があればそちらが優先される
+        // （Messages.applyConfigured は、その場合は何もしない）
+        this.messageLanguage = p.getProperty("message.language", "").trim();
+        Messages.applyConfigured(this.messageLanguage);
 
         rejectRemovedKeys(p);
 

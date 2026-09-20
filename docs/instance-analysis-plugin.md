@@ -107,10 +107,10 @@ public void run() {
 拡張なしで解析すると、`execute()` の呼び出しは絞れず、その先（`UserService.audit` など）へも降りません。
 
 ```csv
-at jp.co.app.Main.run(Main.java:6),OrderService.execute,Main.run,OrderService.execute,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
-at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
+at jp.co.app.Main.run(Main.java:6),OrderService.execute,Main.run,OrderService.execute,[UNEXPANDED:CHA] 2 candidates: local variable
+at jp.co.app.Main.run(Main.java:6),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 2 candidates: local variable
+at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.execute,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 ```
 
 どちらの手段でも、フェーズA（キーの採取）は同梱の `FactoryKeyCollector` に任せられます。
@@ -458,7 +458,7 @@ s.execute();            // ← 証拠が2件付く
 ここで最初に一致した証拠だけを返すと、**もう一方の経路の実装が黙って消えます**
 （`UserServiceImpl.execute` とその先が出力から無くなる）。一致した証拠は全部返してください。
 
-複数返した呼び出しは「絞れていない」扱いになり、注記が `[UNEXPANDED:CHA] 候補N件` になってその先へは
+複数返した呼び出しは「絞れていない」扱いになり、注記が `[UNEXPANDED:CHA] N candidates` になってその先へは
 降りません。**1件に絞れたときだけ展開される**、という点は本体の判定と同じです。
 降りないのは痛いですが、実装が1つ消えるよりは安全です。
 

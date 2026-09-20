@@ -16,8 +16,8 @@
 文章で書けます。ツールはこの契約表を持ち、jar の中を読まずに `start` の先へ辺を張ります。
 
 ```csv
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
-at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 ```
 
 `caller` 列は `start()` を呼んでいる行、`callee` 列は呼び戻される側です。呼び出し先（`Thread.start`）自身の行が

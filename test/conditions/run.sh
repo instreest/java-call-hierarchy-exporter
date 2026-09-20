@@ -92,7 +92,7 @@ expect_code "終了コード 0" 0
 expect "equals の条件が出る" '"full".equals(name)'
 expect "外側の条件から順に出る" "1. [判定可]"
 expect_missing "指定していないメソッドの呼び出しは出ない" "Feature.pick"
-expect_csv "判定できる条件は decidable=1 と期待値つき" '1,"""full"".equals(name)",引数1,= full'
+expect_csv "判定できる条件は decidable=1 と期待値つき" '1,"""full"".equals(name)",param 1,= full'
 
 echo "== 判定できない条件（fx.excluded.Ping#a の n > 0） =="
 run 'fx.excluded.Ping#a'

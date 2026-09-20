@@ -21,7 +21,7 @@
 
 | `test/demo/src/fx/app/Main.java` | 出力された注記 |
 |---|---|
-| 39行目 `DaoFactory.createEither(args.length > 0).findById(2L)` | `[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）` |
+| 39行目 `DaoFactory.createEither(args.length > 0).findById(2L)` | `[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)` |
 | 40行目 `DaoFactory.byName("fx.dao.OrderDaoImpl").findById(3L)` | `[RESOLVED:DATAFLOW_FACTORY]` |
 
 40行目は `Class.forName(className).getDeclaredConstructor().newInstance()` を返すファクトリ
@@ -147,8 +147,8 @@ factory.get(key)                                // 呼び出し元が get("jp.co
 
 **限界は消せない。消せるのは「限界が見えないこと」だけ**なので、出力には必ず理由が付く。
 
-- `[UNEXPANDED:CHA] 候補N件: <理由>` … 絞れなかったことと、その理由（`grep '\[UNEXPANDED'` で一括で拾える）
-- `(型解決失敗)` の行と件数のログ … クラスパス不足を「呼び出しが無い」と誤読させない
+- `[UNEXPANDED:CHA] N candidates: <reason>` … 絞れなかったことと、その理由（`grep '\[UNEXPANDED'` で一括で拾える）
+- `(unresolved)` の行と件数のログ … クラスパス不足を「呼び出しが無い」と誤読させない
 - `Origin.UNKNOWN` … 「分からない」を型として明示的に持つ
 
 `feature-difficulty.md` でも、どこまで機能を削っても

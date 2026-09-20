@@ -64,10 +64,10 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,Or
 置き（`[UNEXPANDED:*]` は「ここから先へ降りなかった」、`[EXTERNAL]` は呼び出し先が自プロジェクトの
 外、`[RESOLVED:*]` は具象クラスの特定）、日本語の説明をその後ろに続けると grep で拾えます。
 最低限 `[UNEXPANDED:CYCLE]`（循環。打ち切る）、`[UNEXPANDED:DEPTH]`（深さ上限での打ち切り）、
-`[UNEXPANDED:CHA] 候補N件: 理由`（実装を1つに絞れず、候補を1件ずつ行にするが先へは降りない）、
+`[UNEXPANDED:CHA] N candidates: {reason}`（実装を1つに絞れず、候補を1件ずつ行にするが先へは降りない）、
 `[RESOLVED:ラベル]`（5.2）の4種。
 
-末尾に**型解決に失敗した呼び出し**も行として足す（`root` を `(型解決失敗)` にして区別）。
+末尾に**型解決に失敗した呼び出し**も行として足す（`root` を `(unresolved)` にして区別）。
 件数はログにも出し、多いときは依存jarの設定漏れが疑われる旨を出す。利用者が最もはまるのが
 依存jar不足で、**これがそれを検知する唯一の手掛かり**です。
 
@@ -107,7 +107,7 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,Or
 3. **メモリが破綻しないこと。** 階層をツリーとして組み立てず、深さ優先で1行ずつ書く
 4. **出力が決定的であること。** 同じ入力なら**行順まで**同じ。ファイルの並びは `/` 区切りの
    相対パス文字列で比較（`Path#compareTo` はOSで挙動が違う）
-5. **循環は経路単位で見る。** 祖先に同じメソッドがあれば `[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` を出して降りる。
+5. **循環は経路単位で見る。** 祖先に同じメソッドがあれば `[UNEXPANDED:CYCLE] returns to a method already on this path` を出して降りる。
    **グローバルな訪問済み集合は持たない**（ダイヤモンド型の依存を潰すと影響調査に使えない）
 
 ### 5.2 具象クラスの解決は「段階の並び」にする
@@ -189,10 +189,10 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,Or
 ## 7. 完成の確認
 
 - **自分自身のソース**を、JDTのjarを依存に指定して解析したとき**型解決の失敗が0件**になる。
-  指定を空にすると失敗件数が0でなくなり、`(型解決失敗)` の行がログの件数と同数出る
+  指定を空にすると失敗件数が0でなくなり、`(unresolved)` の行がログの件数と同数出る
 - 2回目の実行で全ファイルが再利用され、**出力が1回目と完全に一致する**。ヘッダの版だけを
   書き換えると、再利用せず全件解析する
-- 自己再帰・相互再帰で `[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` が付く。除外パッケージの中だけで相互再帰していても
+- 自己再帰・相互再帰で `[UNEXPANDED:CYCLE] returns to a method already on this path` が付く。除外パッケージの中だけで相互再帰していても
   スタックオーバーフローにならない
 - `caller` 列をEclipseの「Javaスタック・トレース・コンソール」に貼るとソースへ飛べる
 - 同じソースを Linux と Windows で解析して、両CSVが**行順まで**一致する

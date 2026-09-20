@@ -1,45 +1,45 @@
 ﻿caller,callee,root,call-hierarchy
-at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
+at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Legacy.unusedDead(Legacy.java:14),Legacy.callRemote,Legacy.unusedDead,Legacy.callRemote
-at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
-at fx.service.OrderService.execute(OrderService.java:24),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:24),OrderDaoImpl.findById,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
+at fx.service.OrderService.execute(OrderService.java:24),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:24),OrderDaoImpl.findById,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:25),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[RESOLVED:DATAFLOW_FIELD]
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,OrderService.execute,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.service.OrderService.execute(OrderService.java:26),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:26),OrderDaoImpl.findById,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,OrderService.execute,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.service.OrderService.execute(OrderService.java:26),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:26),OrderDaoImpl.findById,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:27),OrderService.helper,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,OrderService.execute,OrderService.lambda$execute$0,[RESOLVED:DATAFLOW_LAMBDA]
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.service.OrderService.execute(OrderService.java:31),OrderService.helper,OrderService.execute,OrderService.helper,[RESOLVED:DATAFLOW_LAMBDA]
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.service.OrderService.execute(OrderService.java:32),OrderService.staticHelper,OrderService.execute,OrderService.staticHelper
-at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:33),OrderService.staticHelper,OrderService.execute,OrderService.staticHelper,[RESOLVED:DATAFLOW_LAMBDA]
-at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:34),OrderService.setMutable,OrderService.execute,OrderService.setMutable
-at fx.service.OrderService.execute(OrderService.java:35),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:35),OrderDaoImpl.findById,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.app.Legacy.callRemote(Legacy.java:9),go,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.app.Legacy.callRemote(Legacy.java:10),close,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.service.OrderService.execute(OrderService.java:35),AbstractDao.findById,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:35),OrderDaoImpl.findById,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.app.Legacy.callRemote(Legacy.java:9),go,(unresolved),go,type resolution failed (missing classpath / dynamic call / etc.)
+at fx.app.Legacy.callRemote(Legacy.java:10),close,(unresolved),close,type resolution failed (missing classpath / dynamic call / etc.)
+at fx.app.Legacy.callRemote(Legacy.java:10),<init>,(unresolved),<init>,type resolution failed (missing classpath / dynamic call / etc.)
+at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,(unresolved),findById,type resolution failed (missing classpath / dynamic call / etc.)

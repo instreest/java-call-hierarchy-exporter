@@ -9,7 +9,7 @@
 - `ProjectLayout.listJavaFiles()` が返す .java ファイルの並びを「ソースフォルダの宣言順 →
   フォルダ内は相対パス（`/` 区切り）の文字列順」に固定する。`Files.walk` の順（ファイルシステム依存）を
   そのまま使わない
-- `UnresolvedReport`（`型解決に失敗（…）` の行）の並びも「ソースフォルダの宣言順 → 相対パス順 →
+- `UnresolvedReport`（`type resolution failed …` の行）の並びも「ソースフォルダの宣言順 → 相対パス順 →
   ファイル内の出現順」に固定する。これまではキャッシュのブロック順のままだった
 - 回帰テストの期待出力（`whole` / `entry` / `jarchange` の `expected-before`）を JDK 25 で作り直す。
   差分は `型解決に失敗` の行 1 件の位置だけ
@@ -24,7 +24,7 @@ Issue の見立ては「MethodTable の ID が初出順で振られ、StreamingT
 木の内部の並びは解析順のまま」だった。直す前に、これがどこまで本当かを実測した。
 
 `listJavaFiles()` の並びを **名前順** と **その逆順** にして `whole` ケースを実行し、
-2 つの `call-hierarchy.csv` を比べた。違ったのは末尾の `型解決に失敗（…）` の節にある 1 行の位置だけで、
+2 つの `call-hierarchy.csv` を比べた。違ったのは末尾の `type resolution failed …` の節にある 1 行の位置だけで、
 呼び出し階層（木）の部分と `methods.csv` は完全に一致した。
 
 木の部分がファイル順に影響されない理由は、並びを決める箇所がすべて明示的に決まっているから。
@@ -42,7 +42,7 @@ ID 順が効くのは、起点の並びで「同じ型・同じ宣言行」に�
 
 ### Q2. では NTFS と ext4 で何が変わっていたのか
 
-`型解決に失敗（…）` の節。`UnresolvedReport` はキャッシュを頭から読み、`U` 行が出てきた順に書いていた。
+`type resolution failed …` の節。`UnresolvedReport` はキャッシュを頭から読み、`U` 行が出てきた順に書いていた。
 キャッシュのブロック順は初回実行では `listJavaFiles()` の順なので、ext4（`fx/dao` が `fx/app` より先に
 列挙される）と NTFS（名前順）で `LibBackedDao.findById` と `Legacy.callRemote` の行の前後が入れ替わる。
 回帰テストの期待出力は ext4 で作られていたので、Windows では毎回この 1 行が DIFF になっていたはず。

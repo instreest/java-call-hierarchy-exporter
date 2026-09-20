@@ -58,7 +58,10 @@ public final class StreamingTreeWalker {
     /**
      * 注記のタグ。
      *
-     * 注記は日本語の説明文だが、先頭に大文字のタグを置いて grep で拾えるようにしている。
+     * 注記は英語の説明文で、先頭に大文字のタグを置いて grep で拾えるようにしている。
+     * <b>CSV の中身は表示言語に関わらず英語で固定</b>である（{@code docs/nls-qa.md} の Q6）。
+     * 期待値との比較・Excel のフィルタ・他のツールへの受け渡しに使われるもので、
+     * 読み手の言語で変わってはいけない。
      * {@code [UNEXPANDED:*]} は「ここから先へ降りなかった」ことを表し、
      * タグだけで「辿り切れなかった箇所」を一括で数えられる。
      * {@code [EXTERNAL]} は自プロジェクトの外を指しているという別の性質なので、
@@ -68,7 +71,25 @@ public final class StreamingTreeWalker {
     /** 自プロジェクトの外を指しているため辿れない辺の印 */
     static final String EXTERNAL_MARK = "[EXTERNAL]";
     /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
-    static final String CYCLE_MARK = UNEXPANDED + "CYCLE] 経路上で既に呼んでいるメソッドへ戻る";
+    static final String CYCLE_MARK = UNEXPANDED + "CYCLE] returns to a method already on this path";
+
+    // --- 階層CSVの注記と methods.csv の unresolvedCause で共通に使う文言 ---
+    // 同じ「絞れなかった」を一覧と階層で別の文にすると、片方で見つけた呼び出しを
+    // もう片方で追えなくなる。1か所に置いて {@link InventoryReport} と分け合う
+    /** 本体を持つ実装がソース上に1つも無い */
+    static final String CAUSE_NO_IMPL = UNEXPANDED + "NO_IMPL] no implementation with a body in the source";
+    /** ラムダ／メソッド参照が同じインターフェースを実装している */
+    static final String CAUSE_LAMBDA = UNEXPANDED + "LAMBDA] implemented by a lambda/method reference";
+
+    /**
+     * 実装がコンパイル時のアノテーション処理で生成される型の注記。
+     *
+     * @param framework 生成するフレームワークの名前（Doma 等）
+     * @return タグ付きの文言
+     */
+    static String generatedCause(String framework) {
+        return UNEXPANDED + "GENERATED] implementation is generated at compile time (" + framework + ")";
+    }
 
     // --- 階層CSVに出なかったメソッドの理由（methods.csv の absentCause 列。弱い順） ---
     /** 観測できていない（呼び出し先として一度も見ていない＝そこへ至る呼び出し自体が出ていない） */
@@ -196,13 +217,13 @@ public final class StreamingTreeWalker {
     String absentCauseOf(int methodId) {
         byte cause = (methodId >= 0 && methodId < absentCause.length) ? absentCause[methodId] : ABSENT_NONE;
         return switch (cause) {
-            case ABSENT_EXCLUDED -> "[EXCLUDED] exclude.packages で除外";
-            case ABSENT_CHA -> UNEXPANDED + "CHA] 候補のため展開されなかった";
-            case ABSENT_CYCLE -> UNEXPANDED + "CYCLE] 循環のため展開されなかった";
+            case ABSENT_EXCLUDED -> "[EXCLUDED] excluded by exclude.packages";
+            case ABSENT_CHA -> UNEXPANDED + "CHA] not expanded (CHA candidate)";
+            case ABSENT_CYCLE -> UNEXPANDED + "CYCLE] not expanded (cycle)";
             case ABSENT_PRUNED_SUBTREE -> PRUNED_SUBTREE_CAUSE;
             // 呼び出し先として一度も見ていない = そこへ至る呼び出し自体が出力されていない
             // （深さ制限・行数上限の先、起点から辿り着かない）
-            default -> "[NOT_REACHED] 上流が未出力";
+            default -> "[NOT_REACHED] no caller row was emitted";
         };
     }
 
@@ -219,7 +240,7 @@ public final class StreamingTreeWalker {
     }
 
     /** 条件分岐の打ち切りが理由で階層CSVに出なかったことを表す文言 */
-    static final String PRUNED_SUBTREE_CAUSE = "[UNREACHABLE] 条件分岐で打ち切った先";
+    static final String PRUNED_SUBTREE_CAUSE = "[UNREACHABLE] below a call pruned by a condition";
 
     /**
      * 打ち切った呼び出しの先にしか無いメソッドに印を付ける。
@@ -388,7 +409,7 @@ public final class StreamingTreeWalker {
             Resolution res = Resolution.single(target, Resolution.CALLBACK);
             String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null);
             path[depth + 1].set(target, graph.callLineOf(e),
-                    note + " 契約: " + match.contract(), null, null, null, null);
+                    note + " contract: " + match.contract(), null, null, null, null);
             emit(depth + 1);
             if (!cycle) {
                 descend(depth + 1);
@@ -558,27 +579,27 @@ public final class StreamingTreeWalker {
             // 検証は経ていない（メンバの実在・オーバーロードは未確認）。
             // ソースが無いのと同じ [EXTERNAL] だが、こちらは推定が外れている
             // 可能性があるため、説明文で言い分ける（タグは分けない）
-            sb.append(EXTERNAL_MARK).append(" import から型名を推定（未検証）");
+            sb.append(EXTERNAL_MARK).append(" type guessed from an import (unverified)");
         } else if (!methods.hasSource(target)) {
-            sb.append(EXTERNAL_MARK).append(" ソースが無いため辿れない");
+            sb.append(EXTERNAL_MARK).append(" no source to follow");
         } else if (depth + 1 >= maxDepth) {
-            sb.append(UNEXPANDED).append("DEPTH] 深さ制限(").append(maxDepth).append(")に達した");
+            sb.append(UNEXPANDED).append("DEPTH] depth limit (").append(maxDepth).append(") reached");
         }
 
         String detail;
         if (res.isMultiple() && Resolution.REFLECTION.equals(res.label())) {
             // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
-            detail = UNEXPANDED + "REFLECTION] 候補" + res.targets().length
-                    + "件: 引数型が不明なため名前で照合";
+            detail = UNEXPANDED + "REFLECTION] " + res.targets().length
+                    + " candidates: matched by name because argument types are unknown";
         } else if (res.isMultiple()) {
             // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる。
             // 候補数が上限を超えたときは、行にならなかった候補があることも書く。
             // 黙って切ると、methods.csv の inDegree（全候補で数える）と行数が合わず、
             // 読み手が「候補が消えた」のか「元から無い」のか区別できない
             int n = res.targets().length;
-            detail = UNEXPANDED + "CHA] 候補" + n + "件: " + RecvKind.describe(recvKind)
+            detail = UNEXPANDED + "CHA] " + n + " candidates: " + RecvKind.describe(recvKind)
                     + ((n > Config.CHA_MAX_CANDIDATES)
-                            ? "（うち先頭" + Config.CHA_MAX_CANDIDATES + "件のみ行に出力）" : "");
+                            ? " (only the first " + Config.CHA_MAX_CANDIDATES + " are written as rows)" : "");
             if (n > Config.CHA_MAX_CANDIDATES && !candidateLimitWarned) {
                 candidateLimitWarned = true;
                 Log.warn("CHA候補が" + Config.CHA_MAX_CANDIDATES + "件を超える呼び出しがあります。"
@@ -595,8 +616,7 @@ public final class StreamingTreeWalker {
             // 確定したように見えてしまう。
             // ここに来るのは、ラムダを値として追えなかった呼び出し（jar の中から
             // 呼ばれる forEach 形式など）。追えた場合は上の DATAFLOW_LAMBDA で確定する
-            detail = UNEXPANDED + "LAMBDA] ラムダ/メソッド参照による実装あり"
-                    + "（どれが実行されるかは未特定）";
+            detail = CAUSE_LAMBDA + " (which one runs is undetermined)";
         } else if (res.isGeneratedImpl()) {
             // 実装はコンパイル時のアノテーション処理で生成される（Doma の @Dao 等）。
             // 生成物はソースコードリポジトリに存在しないため、ここから先は辿れない。
@@ -604,16 +624,16 @@ public final class StreamingTreeWalker {
             String framework = res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length());
             String declType = methods.typeFqn(declaredCallee);
             GeneratedImpl def = GeneratedImpl.of(graph.hierarchy().annotationsOf(declType));
-            detail = UNEXPANDED + "GENERATED] 実装はコンパイル時生成（" + framework + "）: "
+            detail = generatedCause(framework) + ": "
                     + ((def == null) ? declType : def.implFqnOf(declType))
-                    + " はアノテーション処理で生成されるためソース上に無い";
+                    + " is produced by annotation processing and has no source";
         } else if (Resolution.NO_IMPL.equals(res.label())) {
             // 本体を持つ実装がソース上に1つも無い。ソースが読めないだけの
             // [EXTERNAL] とは違い、「読めた上で見つからない」状態で、
             // source.folders の設定漏れかデッドコードの疑いがある。
             // 調べる価値がある側なので、methods.csv の unresolvedCause だけでなく
             // 階層側にも出す
-            detail = UNEXPANDED + "NO_IMPL] 本体を持つ実装がソース上に無い";
+            detail = CAUSE_NO_IMPL;
         } else if (target != declaredCallee || res.isDataflow()) {
             // データフローで決めた場合は、宣言型と同じ結論でも「CHAで諦めずに
             // 絞れた」ことに意味があるので必ず出す

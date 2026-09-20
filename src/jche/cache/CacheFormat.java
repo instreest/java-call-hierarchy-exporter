@@ -230,9 +230,13 @@ public final class CacheFormat {
      * v4 で J 行を受け取り、P 行に recvKey と guard を持たせ、
      * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）。
      * v5 で値の種別に Z（ラムダ／メソッド参照が実装しているメソッド）と
-     * E（ラムダが捕捉した囲みメソッドの引数）を足した
+     * E（ラムダが捕捉した囲みメソッドの引数）を足した。
+     * v6 で guard の text（P 行に書かれる条件式の説明）を英語にした。
+     * 文言の変更でバージョンを上げないのが原則だが、これは<b>読み手ではなく書き手が作る文字列</b>で
+     * キャッシュに焼き込まれる。上げずにおくと、古いキャッシュを再利用したファイルだけ
+     * 日本語の注記が出て、同じ CSV に2つの言語が混ざる（{@code docs/nls-qa.md} の Q7）
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v5";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v6";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。

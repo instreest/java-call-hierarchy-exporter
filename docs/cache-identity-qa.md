@@ -165,7 +165,7 @@ touch -r で更新時刻を書き換え前に戻す
 
 ```
 差分更新: at inc.Branch.run(Branch.java:9),inc.Log.alpha(),...
-全件解析: at inc.Branch.run(Branch.java:9),inc.Log.alpha(),...,"[UNREACHABLE] この経路では呼ばれない: 条件「Switches.MODE.equals(""ALPHA"")」が成立しない（定数 = OMEGA）"
+全件解析: at inc.Branch.run(Branch.java:9),inc.Log.alpha(),...,"[UNREACHABLE] not called on this path: condition 'Switches.MODE.equals(""ALPHA"")' does not hold（定数 = OMEGA）"
 ```
 
 差分更新の側が「呼ばれる」と言っている。呼ばれないほうが正しい。

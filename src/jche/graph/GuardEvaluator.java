@@ -116,13 +116,13 @@ public final class GuardEvaluator {
 
     /** 注記の文言。「どの条件が」「何の値で」成立しないのかを書く */
     private static String reason(String text, String origin, String actual) {
-        StringBuilder sb = new StringBuilder("[UNREACHABLE] この経路では呼ばれない: 条件「");
-        sb.append(text.isEmpty() ? "?" : text).append("」が成立しない");
+        StringBuilder sb = new StringBuilder("[UNREACHABLE] not called on this path: condition '");
+        sb.append(text.isEmpty() ? "?" : text).append("' does not hold");
         if (Origin.kindOf(origin) == Origin.PARAM) {
-            sb.append("（呼び出し元から渡された第").append(paramNumber(origin)).append("引数 = ")
-                    .append(actual).append("）");
+            sb.append(" (argument ").append(paramNumber(origin)).append(" from the caller = ")
+                    .append(actual).append(")");
         } else {
-            sb.append("（定数 = ").append(actual).append("）");
+            sb.append(" (constant = ").append(actual).append(")");
         }
         return sb.toString();
     }

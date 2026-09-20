@@ -150,7 +150,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 行順は、rootメソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、rootメソッドからの呼び出し順（深さ優先）です。
 具象クラスの候補が複数ある呼び出しは候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
-末尾の `型解決に失敗（…）` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
+末尾の `type resolution failed …` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
 注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。 （[注記](#注記)）
 
 
@@ -163,8 +163,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
 OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
-OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
+OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,
 ```
 
@@ -200,25 +200,25 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 | unresolvedCause | 意味 |
 |---|---|
-| `[UNEXPANDED:CHA] 戻り値（ファクトリメソッド等）` | レシーバが他のメソッドの戻り値。ファクトリの実装を[プラグイン](docs/instance-analysis-plugin.md)で教えると絞れることがある |
-| `[UNEXPANDED:CHA] 引数（メソッド外から渡される）` | レシーバが呼び出し元から渡された引数 |
-| `[UNEXPANDED:CHA] フィールド変数` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
-| `[UNEXPANDED:CHA] ローカル変数` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
-| `[UNEXPANDED:CHA] 自クラス（this）` / `型名（static）` / `レシーバ不明` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
-| `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` | 中身を書いたクラスがソース上に1つも無い |
-| `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（名前）` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
-| `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり` | その関数型インターフェースをラムダかメソッド参照が実装している |
+| `[UNEXPANDED:CHA] return value (factory method etc.)` | レシーバが他のメソッドの戻り値。ファクトリの実装を[プラグイン](docs/instance-analysis-plugin.md)で教えると絞れることがある |
+| `[UNEXPANDED:CHA] parameter (passed in from outside the method)` | レシーバが呼び出し元から渡された引数 |
+| `[UNEXPANDED:CHA] field` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
+| `[UNEXPANDED:CHA] local variable` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
+| `[UNEXPANDED:CHA] own class (this)` / `type name (static)` / `receiver unknown` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
+| `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | 中身を書いたクラスがソース上に1つも無い |
+| `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名)` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` | その関数型インターフェースをラムダかメソッド参照が実装している |
 
 `absentCause` は、そのメソッドが `call-hierarchy.csv` に1行も出なかった理由です。
 打ち切りで階層から消えた部分木は、ここでしか見えません。
 
 | absentCause | 意味 |
 |---|---|
-| `[UNEXPANDED:CHA] 候補のため展開されなかった` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
-| `[UNEXPANDED:CYCLE] 循環のため展開されなかった` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
-| `[UNREACHABLE] 条件分岐で打ち切った先` | 条件分岐の静的解析で打ち切った呼び出しから先にしかない（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
-| `[EXCLUDED] exclude.packages で除外` | `exclude.packages` で除外された |
-| `[NOT_REACHED] 上流が未出力` | そこへ至る呼び出し自体が出ていない（深さ制限・行数上限の先、起点から辿り着かない） |
+| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
+| `[UNEXPANDED:CYCLE] not expanded (cycle)` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
+| `[UNREACHABLE] below a call pruned by a condition` | 条件分岐の静的解析で打ち切った呼び出しから先にしかない（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
+| `[EXCLUDED] excluded by exclude.packages` | `exclude.packages` で除外された |
+| `[NOT_REACHED] no caller row was emitted` | そこへ至る呼び出し自体が出ていない（深さ制限・行数上限の先、起点から辿り着かない） |
 
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
@@ -258,36 +258,36 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 | 注記 | 意味 |
 |---|---|
-| `[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
-| `[UNEXPANDED:DEPTH] 深さ制限(N)に達した` | `max.depth` に達した |
-| `[UNEXPANDED:CHA] 候補N件: 理由` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
-| `[UNEXPANDED:REFLECTION] 候補N件: 引数型が不明なため名前で照合` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
-| `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に1つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
-| `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（名前）: FQN は…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
-| `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）` | その関数型インターフェースをラムダかメソッド参照が実装しているが、この呼び出し箇所にどれが渡ってくるかは特定できなかった（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
-| `[EXTERNAL] ソースが無いため辿れない` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
-| `[EXTERNAL] import から型名を推定（未検証）` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
-| `[UNREACHABLE] この経路では呼ばれない: 条件「…」が成立しない（…）` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
+| `[UNEXPANDED:CYCLE] returns to a method already on this path` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
+| `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達した |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表 |
+| `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
+| `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に1つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
+| `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名): FQN is…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
+| `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` | その関数型インターフェースをラムダかメソッド参照が実装しているが、この呼び出し箇所にどれが渡ってくるかは特定できなかった（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
+| `[EXTERNAL] no source to follow` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
+| `[EXTERNAL] type guessed from an import (unverified)` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
+| `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:DATAFLOW_NEW]` | `new` された具象型から特定した（捕捉された変数を含む） |
 | `[RESOLVED:DATAFLOW_FACTORY]` | ファクトリメソッドの戻り値から具象クラスを特定した |
 | `[RESOLVED:DATAFLOW_PARAM]` | 呼び出し元から渡された引数を経路上で追跡して特定した |
 | `[RESOLVED:DATAFLOW_FIELD]` | コンストラクタ注入されたフィールドを経路上で追跡して特定した |
-| `[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
+| `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
 | `[RESOLVED:DATAFLOW_LAMBDA]` | ラムダ式かメソッド参照が、その関数型インターフェースの実装としてこの呼び出し箇所まで渡ってきたと特定した（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
 | `[RESOLVED:SPRING_DI]` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md) 参照） |
 | `[RESOLVED:SPRING_DI_QUALIFIER]` | `@Qualifier` / `@Resource(name=...)` で指定された Bean 名で1つに定まった（同上） |
 | `[RESOLVED:ラベル]` | インターフェース等から具象クラスに解決した（[具象クラスの解決](#具象クラスの解決)参照） |
 | `[RESOLVED:REFLECTION]` | `Method.invoke` / `newInstance` を、リフレクションで指定されたメソッド・コンストラクタに解決した |
 | `[RESOLVED:REFLECTION_INIT]` | `Class.forName` によるクラス初期化。そのクラスの static 初期化子（`<clinit>`）へ繋ぐ |
-| `型解決に失敗（…）` | 呼び出し先の型を特定できなかった行（後述）。注記ではなく専用の行 |
-| `被参照:EXACT` 等 | 被参照スキャンの行（後述）。同じく専用の行 |
+| `type resolution failed …` | 呼び出し先の型を特定できなかった行（後述）。注記ではなく専用の行 |
+| `external-ref:EXACT` 等 | 被参照スキャンの行（後述）。同じく専用の行 |
 
 1つの注記は最大2つのパーツからなり、両方付くときは ` / ` で繋がります。
 前半が打ち切りの理由（`[UNEXPANDED:CYCLE]`・`[UNEXPANDED:DEPTH]`・`[EXTERNAL]`・`[UNREACHABLE]`）、
 後半が絞り込みの結果（`[UNEXPANDED:CHA]`・`[RESOLVED:*]` 等）です。
 
 ```
-[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る / [UNEXPANDED:CHA] 候補5件: フィールド変数
+[UNEXPANDED:CYCLE] returns to a method already on this path / [UNEXPANDED:CHA] 5 candidates: field
 ```
 
 ### jar からの被参照メソッド
@@ -306,9 +306,9 @@ classファイルの命令列を読むため、「どのjar・どのクラスの
 
 ```csv
 caller,callee,root,call-hierarchy
-at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,team-b-batch.jar,OrderService.OrderService,被参照:EXACT
-at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,被参照:EXACT
+at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
+at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```
 
 行番号は相手の jar が行番号情報付きでビルドされている（`javac` の既定）ときだけ出ます。
@@ -322,9 +322,9 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 
 | 注記 | 意味 |
 |---|---|
-| `被参照:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
-| `被参照:INHERITED` | 親から継承したメソッドへの参照。宣言している最も近い親（親クラスの連鎖を先に、次にインターフェース）のメソッドとして出る |
-| `被参照:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
+| `external-ref:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
+| `external-ref:INHERITED` | 親から継承したメソッドへの参照。宣言している最も近い親（親クラスの連鎖を先に、次にインターフェース）のメソッドとして出る |
+| `external-ref:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
 
 自分の型を参照しているのに一致するメソッドが無いもの（引数付きのコンストラクタを含む）は、
 相手のjarが古い版に対してビルドされている可能性があります。件数のみ実行ログに出力されます。

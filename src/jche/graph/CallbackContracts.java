@@ -134,7 +134,7 @@ public final class CallbackContracts {
             for (String origin : valuesAt(edgeIndex, c)) {
                 int id = callbackTargetOf(origin, c.callbackSig(), ctx);
                 if (id >= 0 && methods.hasSource(id) && found.stream().noneMatch(m -> m.target() == id)) {
-                    found.add(new Match(id, shortKey(c.calleeKey()) + " が " + c.callbackSig() + " を呼ぶ"));
+                    found.add(new Match(id, shortKey(c.calleeKey()) + " calls " + c.callbackSig()));
                 }
             }
         }
