@@ -85,6 +85,12 @@ jobs:
       - name: CLI test (java-call-hierarchy-exporter.sh launcher and interactive mode)
         run: bash test/cli/run.sh
 
+      # 文言（英語が既定、日本語は重ねる）。ソースに日本語のリテラルが残っていないこと、
+      # 英語と日本語でキーと差し込みがそろうこと、言語の決まり方（環境変数 > 設定ファイル > OS）、
+      # そして出力 CSV が言語で変わらないこと（CSV は英語で固定）を見る（docs/nls-qa.md）
+      - name: Message bundle test (English default, Japanese overlay)
+        run: bash test/nls/run.sh
+
   # Windows でラッパーを実際に動かす。ラッパーの分岐はほとんどが Windows 固有
   # （javac.exe、パスの \、cmd の遅延展開、powershell への委譲）で、ubuntu 側では
   # 一行も通らない。test\regression\run.cmd は今まで CI で動かしていなかった。

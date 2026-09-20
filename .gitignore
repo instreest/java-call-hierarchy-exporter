@@ -89,6 +89,12 @@ target/
 /test/contracts/build/
 /test/contracts/check/
 
+# test/nls/run.sh（文言の検査）のコンパイル結果・キャッシュ・出力。
+# 英語と日本語で 2 回解析して、CSV が同じになることを見るためのもの
+/test/nls/build/
+/test/nls/.cache/
+/test/nls/output/
+
 # test/conditions/run.sh（条件の調査の検査）が作るもの。
 # ケースごとの設定ファイル（case.properties）とコンパイル結果・実行ログのほか、
 # 「通常の解析ならできる」ことを見るためのキャッシュと出力フォルダ
