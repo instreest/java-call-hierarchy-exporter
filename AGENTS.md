@@ -128,6 +128,10 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - `docs/` のファイル名に `license`、`licence`、`copyright`、`copying`、`patents` を使わない。
   GitHub がルート・`.github/`・`docs/` のこれらの名前をライセンスファイルとみなし、README 横の License 欄に並べてしまう
 - README は「何のためのツールか」「Quick start」「出力 CSV の読み方」に絞る。それ以外の利用者向けの説明は `docs/<機能>.md` に置き、README からは 1 行の要約とリンクだけにする
+- README は日本語が先、その下に同じ内容の英語（`# English` 以降）を置く**対訳**である。
+  片方だけ直すと黙って食い違うので、**必ず両方を直す**。見出しは英語側でも重複しない語にする
+  （GitHub のアンカーに `-1` が付いて、リンクが並べ替えで静かに壊れるのを避けるため）。
+  `docs/` は日本語のままで、英語にするのは README だけ（`docs/nls-qa.md` の Q12）
 - 起動コマンドの名前を参照する箇所は多い（src、docs、test、workflows、`.gitattributes`、`.gitignore`）。
   改名したら `grep -rn` で旧名が残っていないことを確認する
 
