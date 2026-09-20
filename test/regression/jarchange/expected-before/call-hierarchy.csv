@@ -1,45 +1,45 @@
-﻿caller,callee,level,resolved-by,root,call-hierarchy
-at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,1,RESOLVED:EXTERNAL_GUESS,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
-at fx.app.Legacy.unusedDead(Legacy.java:14),Legacy.callRemote,1,RESOLVED:STATIC_BOUND:STATIC,Legacy.unusedDead,Legacy.callRemote
-at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,2,RESOLVED:EXTERNAL_GUESS,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
-at fx.service.OrderService.execute(OrderService.java:24),AbstractDao.findById,1,UNEXPANDED:CHA,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:24),OrderDaoImpl.findById,1,UNEXPANDED:CHA,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:25),AbstractDao.findById,1,RESOLVED:DATAFLOW_FIELD,OrderService.execute,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,2,UNEXPANDED:CHA,OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,2,UNEXPANDED:CHA,OrderService.execute,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.service.OrderService.execute(OrderService.java:26),AbstractDao.findById,1,UNEXPANDED:CHA,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:26),OrderDaoImpl.findById,1,UNEXPANDED:CHA,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:27),OrderService.helper,1,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,2,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,3,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
-at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,1,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,2,UNEXPANDED:CHA,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,2,UNEXPANDED:CHA,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,1,RESOLVED:DATAFLOW_LAMBDA,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,2,UNEXPANDED:CHA,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,2,UNEXPANDED:CHA,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,1,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,2,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,3,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
-at fx.service.OrderService.execute(OrderService.java:31),OrderService.helper,1,RESOLVED:DATAFLOW_LAMBDA,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,2,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,3,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
-at fx.service.OrderService.execute(OrderService.java:32),OrderService.staticHelper,1,RESOLVED:STATIC_BOUND:PRIVATE,OrderService.execute,OrderService.staticHelper
-at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:33),OrderService.staticHelper,1,RESOLVED:DATAFLOW_LAMBDA,OrderService.execute,OrderService.staticHelper
-at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,2,UNEXPANDED:CHA,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:34),OrderService.setMutable,1,RESOLVED:NO_OVERRIDE,OrderService.execute,OrderService.setMutable
-at fx.service.OrderService.execute(OrderService.java:35),AbstractDao.findById,1,UNEXPANDED:CHA,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:35),OrderDaoImpl.findById,1,UNEXPANDED:CHA,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.app.Legacy.callRemote(Legacy.java:9),go,1,UNRESOLVED:BINDING_FAILED,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.app.Legacy.callRemote(Legacy.java:10),close,1,UNRESOLVED:BINDING_FAILED,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.app.Legacy.callRemote(Legacy.java:10),<init>,1,UNRESOLVED:BINDING_FAILED,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,1,UNRESOLVED:BINDING_FAILED,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+﻿caller,callee,resolved-by,level,root,call-hierarchy
+at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,1,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
+at fx.app.Legacy.unusedDead(Legacy.java:14),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,1,Legacy.unusedDead,Legacy.callRemote
+at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,2,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
+at fx.service.OrderService.execute(OrderService.java:24),AbstractDao.findById,UNEXPANDED:CHA,1,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:24),OrderDaoImpl.findById,UNEXPANDED:CHA,1,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:25),AbstractDao.findById,RESOLVED:DATAFLOW_FIELD,1,OrderService.execute,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,2,OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,2,OrderService.execute,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.service.OrderService.execute(OrderService.java:26),AbstractDao.findById,UNEXPANDED:CHA,1,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:26),OrderDaoImpl.findById,UNEXPANDED:CHA,1,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:27),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,1,OrderService.execute,OrderService.helper
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,2,OrderService.execute,OrderService.helper,OrderService.recurse
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,3,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,RESOLVED:STATIC_BOUND:PRIVATE,1,OrderService.execute,OrderService.lambda$execute$0
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,RESOLVED:DATAFLOW_LAMBDA,1,OrderService.execute,OrderService.lambda$execute$0
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,1,OrderService.execute,OrderService.helper
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,2,OrderService.execute,OrderService.helper,OrderService.recurse
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,3,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.execute(OrderService.java:31),OrderService.helper,RESOLVED:DATAFLOW_LAMBDA,1,OrderService.execute,OrderService.helper
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,2,OrderService.execute,OrderService.helper,OrderService.recurse
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,3,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.execute(OrderService.java:32),OrderService.staticHelper,RESOLVED:STATIC_BOUND:PRIVATE,1,OrderService.execute,OrderService.staticHelper
+at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:33),OrderService.staticHelper,RESOLVED:DATAFLOW_LAMBDA,1,OrderService.execute,OrderService.staticHelper
+at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:34),OrderService.setMutable,RESOLVED:NO_OVERRIDE,1,OrderService.execute,OrderService.setMutable
+at fx.service.OrderService.execute(OrderService.java:35),AbstractDao.findById,UNEXPANDED:CHA,1,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:35),OrderDaoImpl.findById,UNEXPANDED:CHA,1,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.app.Legacy.callRemote(Legacy.java:9),go,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:10),close,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.app.Legacy.callRemote(Legacy.java:10),<init>,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）

@@ -5,7 +5,7 @@
 このファイルと Eclipse JDT Core の jar だけでビルドして動きます。
 
 仕様の出典は [docs/prompt-A-minimal.md](../docs/prompt-A-minimal.md)（出力の契約・既定値・解決の段）。
-ただし `call-hierarchy.csv` の `level` / `resolved-by` 列（出典の 3.1）には**追従していません**。
+ただし `call-hierarchy.csv` の `resolved-by` / `level` 列（出典の 3.1）には**追従していません**。
 このお試し版の解決（`resolve`）は候補の配列だけを返し、段のラベルを持たない作りのためです
 （[docs/call-hierarchy-columns-qa.md](../docs/call-hierarchy-columns-qa.md)）。
 
@@ -23,7 +23,7 @@
 
 ## 入っていないもの（本体を参照）
 
-`call-hierarchy.csv` の `level` / `resolved-by` 列（上記）、
+`call-hierarchy.csv` の `resolved-by` / `level` 列（上記）、
 解析結果キャッシュと差分解析、データフロー解析、条件分岐の打ち切り、`call-conditions.csv`、
 被参照スキャン、`pom.xml` / `build.gradle` からの依存 jar 解決、Spring / Doma の解決、
 ラムダ式の合成メソッド化（本体の呼び出しは囲みメソッドに計上したまま）、

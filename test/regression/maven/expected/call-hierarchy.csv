@@ -1,9 +1,9 @@
-﻿caller,callee,level,resolved-by,root,call-hierarchy
-at sample.app.App.main(App.java:6),Service.run,1,RESOLVED:NO_OVERRIDE,App.main,Service.run
-at sample.app.Service.run(Service.java:17),Greeter.of,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Greeter.of,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:18),Formatter.wrap,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Formatter.wrap,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:18),Greeter.formatter,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Greeter.formatter,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:18),Greeter.greet,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Greeter.greet,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:19),Handler.handle,2,RESOLVED:NO_OVERRIDE,App.main,Service.run,Handler.handle,[EXTERNAL] ソースが無いため辿れない
-at sample.app.Service.run(Service.java:20),Util.count,2,RESOLVED:STATIC_BOUND:STATIC,App.main,Service.run,Util.count
-at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,1,RESOLVED:STATIC_BOUND:STATIC,LogHandler.handle,Util.count
+﻿caller,callee,resolved-by,level,root,call-hierarchy
+at sample.app.App.main(App.java:6),Service.run,RESOLVED:NO_OVERRIDE,1,App.main,Service.run
+at sample.app.Service.run(Service.java:17),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,2,App.main,Service.run,Greeter.of,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:18),Formatter.wrap,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Formatter.wrap,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:18),Greeter.formatter,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Greeter.formatter,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:18),Greeter.greet,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Greeter.greet,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:19),Handler.handle,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Handler.handle,[EXTERNAL] ソースが無いため辿れない
+at sample.app.Service.run(Service.java:20),Util.count,RESOLVED:STATIC_BOUND:STATIC,2,App.main,Service.run,Util.count
+at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,RESOLVED:STATIC_BOUND:STATIC,1,LogHandler.handle,Util.count

@@ -21,8 +21,8 @@
 文章で書けます。ツールはこの契約表を持ち、jar の中を読まずに `start` の先へ辺を張ります。
 
 ```csv
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,1,RESOLVED:CALLBACK,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
-at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,2,UNEXPANDED:CHA,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
 ```
 
 `caller` 列は `start()` を呼んでいる行、`callee` 列は呼び戻される側です。呼び出し先（`Thread.start`）自身の行が
@@ -156,8 +156,8 @@ DaoFactory.get("USER").find();     // ← 変数に受けない形でも同じ
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,1,RESOLVED:CONTRACT,Main.run,UserDaoImpl.find
-at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,2,RESOLVED:NO_OVERRIDE,Main.run,UserDaoImpl.find,UserDaoImpl.load
+at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,RESOLVED:CONTRACT,1,Main.run,UserDaoImpl.find
+at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,RESOLVED:NO_OVERRIDE,2,Main.run,UserDaoImpl.find,UserDaoImpl.load
 ```
 
 | 決まりごと | 内容 |
