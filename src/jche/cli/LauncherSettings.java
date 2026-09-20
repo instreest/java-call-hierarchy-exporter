@@ -12,6 +12,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import jche.util.Messages;
+
 /**
  * 起動コマンド（java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd）が読む設定ファイル {@code launcher.properties} の読み書き。
  *
@@ -101,13 +103,13 @@ public final class LauncherSettings {
     /** 既知のキーを決まった順に、知らないキーをその後ろに書く。コメントは書くたびに付け直す */
     public void save() throws IOException {
         List<String> lines = new ArrayList<>();
-        lines.add("# java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。");
-        lines.add("# キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。");
-        lines.add("#   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）");
-        lines.add("#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）");
-        lines.add("#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）");
-        lines.add("#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）");
-        lines.add("#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる");
+        lines.add(Messages.get("cli.launcher.header1"));
+        lines.add(Messages.get("cli.launcher.header2"));
+        lines.add(Messages.get("cli.launcher.header.jbangDir"));
+        lines.add(Messages.get("cli.launcher.header.repo"));
+        lines.add(Messages.get("cli.launcher.header.javaOpts"));
+        lines.add(Messages.get("cli.launcher.header.jbangOpts"));
+        lines.add(Messages.get("cli.launcher.header.allowDownload"));
         for (String key : KNOWN_KEYS) {
             lines.add(key + "=" + get(key));
         }

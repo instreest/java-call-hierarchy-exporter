@@ -39,46 +39,172 @@ SETTINGS="$ROOT/launcher.properties"
 RESTART="$ROOT/.cache/launcher.restart"
 STARTED="$ROOT/.cache/launcher.started"
 
+# --- 表示言語 -------------------------------------------------------
+# 文言は英語が既定で、日本語を選んだときだけ日本語にする（Java 側の jche.util.Messages と同じ作法）。
+# 決め方も同じ順にそろえてある。環境変数 JCHE_LANG（en / ja）→ ロケール（LC_ALL → LC_MESSAGES → LANG）。
+# launcher.properties に JCHE_LANG=ja と書いておくこともできる。load_settings が環境変数にしたあと
+# resolve_lang をもう一度呼ぶので、取得の確認はその言語で出る。ただし初回の置き場所の質問は
+# launcher.properties がまだ無い時点なので、そこだけは環境変数か OS のロケールで決まる。
+#
+# msg <キー> [差し込む値…] で 1 行出す。日本語に無いキーは英語のまま出る（英語に重ねる作り）。
+# 英語にも無ければ !キー! と出るので、訳し忘れに気づける。
+resolve_lang() {
+  local raw="${JCHE_LANG:-}"
+  [ -n "$raw" ] || raw="${LC_ALL:-}"
+  [ -n "$raw" ] || raw="${LC_MESSAGES:-}"
+  [ -n "$raw" ] || raw="${LANG:-}"
+  case "$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')" in
+    ja|ja[-_.]*) printf 'ja' ;;
+    *) printf 'en' ;;
+  esac
+}
+JCHE_MSG_LANG=$(resolve_lang)
+
+msg() {
+  if [ "$JCHE_MSG_LANG" = ja ]; then
+    msg_ja "$@" && return 0
+  fi
+  msg_en "$@"
+}
+
+# 英語（土台）。$2 以降は差し込む値
+msg_en() {
+  case "$1" in
+    first.title)      echo "java-call-hierarchy-exporter: first-time setup" ;;
+    first.where)      echo "Choose where the JDK and JBang this tool uses (a few hundred MB together) should live." ;;
+    first.local)      echo "  1) Inside this project   $2" ;;
+    first.localHint)  echo "     Nothing else is touched; delete the folder to undo. Dependency jars go there too" ;;
+    first.home)       echo "  2) User home             $2 (JBang's default)" ;;
+    first.homeHint)   echo "     Shared with other JBang scripts. Pick this if you already use JBang" ;;
+    first.changeLater) echo "To change it later, use the Environment settings screen in the app, or edit $2." ;;
+    first.downloadLater) echo "(Downloading itself is confirmed again before going to the network.)" ;;
+    first.prompt)     printf 'Number [1]: ' ;;
+    first.saved)      echo "Saved to $2." ;;
+    settings.header1) echo "# Settings read at startup by java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd (the Environment settings screen of the app writes here too)." ;;
+    settings.header2) echo "# Each key becomes an environment variable as is. Relative paths start from the folder holding this file. Empty means the default." ;;
+    settings.jbangDir) echo "#   JBANG_DIR       where JBang itself and the JDK live (default ~/.jbang)" ;;
+    settings.repo)    echo "#   JBANG_REPO      where dependency jars live (default ~/.m2/repository)" ;;
+    settings.javaOpts) echo "#   JCHE_JAVA_OPTS  options for the JVM that runs the analysis (for example: -Xmx4g)" ;;
+    settings.jbangOpts) echo "#   JCHE_JBANG_OPTS extra options for jbang run (for example: --offline)" ;;
+    settings.allowDownload) echo "#   JCHE_ALLOW_DOWNLOAD  yes to download from the network (JBang, the JDK, dependency jars) without asking, no to never download. Empty asks every time" ;;
+    item.jbang)       echo "JBang itself (about ${2}MB)" ;;
+    item.jdk)         echo "JDK $2 to run the tool (about ${3}MB)" ;;
+    item.deps)        echo "dependency jars (JDT and others, about ${2}MB)" ;;
+    item.sep)         printf ', ' ;;
+    from.jbang)       echo "github.com (JBang itself)" ;;
+    from.jdk)         echo "api.foojay.io (the JDK; served from Adoptium on github.com)" ;;
+    from.deps)        echo "Maven Central (dependency jars)" ;;
+    note.jdk)         echo "; the JDK keeps both the unpacked files and the archive" ;;
+    net.needed)       echo "java-call-hierarchy-exporter: something has to be downloaded from the network" ;;
+    net.items)        echo "  To download   : $2" ;;
+    net.size)         echo "  Transfer      : about ${2}MB (the location grows by about ${3}MB$4)" ;;
+    net.sizeNote)     echo "                  A measured estimate. Anything already present is not fetched, so the real figure is lower" ;;
+    net.from)         echo "  From          : $2" ;;
+    net.into)         echo "  Into          : $2 (JBang and the JDK), $3 (dependency jars)" ;;
+    net.offline)      echo "  JCHE_JBANG_OPTS contains --offline, so nothing is downloaded. Remove --offline from $2 to allow it." ;;
+    net.cancelled)    echo "Download cancelled." ;;
+    net.allowYes)     echo "  JCHE_ALLOW_DOWNLOAD=yes, so it downloads without asking." ;;
+    net.allowNo)      echo "  JCHE_ALLOW_DOWNLOAD=no, so nothing is downloaded. Set it to yes in $2, or leave it empty to be asked every time." ;;
+    net.ask)          printf 'Go to the network and download? [y/N]: ' ;;
+    net.noTty)        echo "  There is no terminal to ask on. Nothing is downloaded." ;;
+    net.noTtyYes)     echo "  To download without asking, set JCHE_ALLOW_DOWNLOAD=yes in $2 (or as an environment variable)." ;;
+    net.noTtyOffline) echo "  To run without downloading, prepare a local JDK and the jars first (see the Pleiades/Eclipse environment section in the README)." ;;
+    offline.failed)   echo "Could not start with only the JDK and dependency jars already present (the reason is in the message above)." ;;
+    first.defaultDir) echo "java-call-hierarchy-exporter: the JDK and JBang go into $2 (change it in $3)." ;;
+    restart)          echo "Restarting to apply the settings..." ;;
+    *)                echo "!$1!" ;;
+  esac
+}
+
+# 日本語（英語に重ねる）。知らないキーは 1 を返して英語へ落とす
+msg_ja() {
+  case "$1" in
+    first.title)      echo "java-call-hierarchy-exporter: 初回の設定" ;;
+    first.where)      echo "このツールが使う JDK と JBang（合わせて数百 MB）の置き場所を選んでください。" ;;
+    first.local)      echo "  1) このプロジェクトの中   $2" ;;
+    first.localHint)  echo "     他の環境を汚さず、フォルダごと消せば元に戻る。依存 jar も同じ場所に置く" ;;
+    first.home)       echo "  2) ユーザーのホーム       $2（JBang の既定）" ;;
+    first.homeHint)   echo "     他の JBang スクリプトと共有する。既に JBang を使っているならこちら" ;;
+    first.changeLater) echo "後から変えるときは、アプリの「環境設定」か、$2 を編集する。" ;;
+    first.downloadLater) echo "（取得そのものは、このあとネットワークに出る前にもう一度確認する）" ;;
+    first.prompt)     printf '番号 [1]: ' ;;
+    first.saved)      echo "$2 に保存しました。" ;;
+    settings.header1) echo "# java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。" ;;
+    settings.header2) echo "# キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。" ;;
+    settings.jbangDir) echo "#   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）" ;;
+    settings.repo)    echo "#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）" ;;
+    settings.javaOpts) echo "#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）" ;;
+    settings.jbangOpts) echo "#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）" ;;
+    settings.allowDownload) echo "#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる" ;;
+    item.jbang)       echo "JBang 本体（約 ${2}MB）" ;;
+    item.jdk)         echo "ツールを動かす JDK $2（約 ${3}MB）" ;;
+    item.deps)        echo "依存 jar（JDT ほか。約 ${2}MB）" ;;
+    item.sep)         printf '、' ;;
+    from.jbang)       echo "github.com（JBang 本体）" ;;
+    from.jdk)         echo "api.foojay.io（JDK。実体は Adoptium の github.com）" ;;
+    from.deps)        echo "Maven Central（依存 jar）" ;;
+    note.jdk)         echo "。JDK は展開したものとアーカイブの両方が残るため" ;;
+    net.needed)       echo "java-call-hierarchy-exporter: ネットワークからの取得が必要です" ;;
+    net.items)        echo "  取得するもの : $2" ;;
+    net.size)         echo "  通信量の目安 : 約 ${2}MB（置き場所は約 ${3}MB 増える$4）" ;;
+    net.sizeNote)     echo "                 実測に基づく目安。すでに手元にあるものは取得しないので、実際はこれ以下になる" ;;
+    net.from)         echo "  取得元       : $2" ;;
+    net.into)         echo "  置き場所     : $2（JBang 本体・JDK）、$3（依存 jar）" ;;
+    net.offline)      echo "  JCHE_JBANG_OPTS に --offline があるので取得しません。取得するには $2 の --offline を外してください。" ;;
+    net.cancelled)    echo "取得を取りやめました。" ;;
+    net.allowYes)     echo "  JCHE_ALLOW_DOWNLOAD=yes なので、尋ねずに取得します。" ;;
+    net.allowNo)      echo "  JCHE_ALLOW_DOWNLOAD=no なので取得しません。取得するには $2 で yes にするか空欄（毎回尋ねる）にしてください。" ;;
+    net.ask)          printf 'ネットワークにアクセスして取得しますか？ [y/N]: ' ;;
+    net.noTty)        echo "  端末が無いため確認できません。取得しません。" ;;
+    net.noTtyYes)     echo "  尋ねずに取得するには $2（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。" ;;
+    net.noTtyOffline) echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。" ;;
+    offline.failed)   echo "取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。" ;;
+    first.defaultDir) echo "java-call-hierarchy-exporter: JDK と JBang は $2 に置きます（変えるときは $3）。" ;;
+    restart)          echo "設定を反映するため再起動します..." ;;
+    *)                return 1 ;;
+  esac
+}
+
 # --- 初回: JDK / JBang の置き場所を尋ねる（引数なしで対話できるときだけ。パイプや CI では JBang の既定のまま） ---
 first_run_prompt() {
-  echo "java-call-hierarchy-exporter: 初回の設定"
+  msg first.title
   echo
-  echo "このツールが使う JDK と JBang（合わせて数百 MB）の置き場所を選んでください。"
-  echo "  1) このプロジェクトの中   $ROOT/.jbang"
-  echo "     他の環境を汚さず、フォルダごと消せば元に戻る。依存 jar も同じ場所に置く"
-  echo "  2) ユーザーのホーム       ${HOME}/.jbang（JBang の既定）"
-  echo "     他の JBang スクリプトと共有する。既に JBang を使っているならこちら"
-  echo "後から変えるときは、アプリの「環境設定」か、$SETTINGS を編集する。"
-  echo "（取得そのものは、このあとネットワークに出る前にもう一度確認する）"
+  msg first.where
+  msg first.local "$ROOT/.jbang"
+  msg first.localHint
+  msg first.home "${HOME}/.jbang"
+  msg first.homeHint
+  msg first.changeLater "$SETTINGS"
+  msg first.downloadLater
   echo
   local choice
-  printf '番号 [1]: '
+  msg first.prompt
   IFS= read -r choice || choice=1
   case "$choice" in
     2) write_settings "" "" ;;
     *) write_settings ".jbang" ".jbang/repository" ;;
   esac
-  echo "$SETTINGS に保存しました。"
+  msg first.saved "$SETTINGS"
   echo
 }
 
 # $1=JBANG_DIR  $2=JBANG_REPO（相対はこのフォルダ起点。空欄は JBang の既定）
 # 書く内容は Java 側（LauncherSettings.save）・java-call-hierarchy-exporter.cmd と同じにしておく
 write_settings() {
-  cat > "$SETTINGS" <<EOS
-# java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。
-# キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。
-#   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）
-#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）
-#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）
-#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）
-#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる
-JBANG_DIR=$1
-JBANG_REPO=$2
-JCHE_JAVA_OPTS=
-JCHE_JBANG_OPTS=
-JCHE_ALLOW_DOWNLOAD=
-EOS
+  {
+    msg settings.header1
+    msg settings.header2
+    msg settings.jbangDir
+    msg settings.repo
+    msg settings.javaOpts
+    msg settings.jbangOpts
+    msg settings.allowDownload
+    echo "JBANG_DIR=$1"
+    echo "JBANG_REPO=$2"
+    echo "JCHE_JAVA_OPTS="
+    echo "JCHE_JBANG_OPTS="
+    echo "JCHE_ALLOW_DOWNLOAD="
+  } > "$SETTINGS"
 }
 
 # launcher.properties を環境変数にする（サブシェル内で呼ぶ）
@@ -185,21 +311,22 @@ pending_items() {
 # $1=鍵の一覧。表示用の文（DL_ITEMS / DL_FROM）と合計サイズ（DL_NET / DL_DISK）を作る
 describe_items() {
   DL_ITEMS=""; DL_FROM=""; DL_NET=0; DL_DISK=0; DL_NOTE=""
-  local key
+  local key sep
+  sep=$(msg item.sep)
   for key in $1; do
     case "$key" in
       jbang)
-        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS、}JBang 本体（約 ${SIZE_JBANG_NET}MB）"
-        DL_FROM="${DL_FROM:+$DL_FROM、}github.com（JBang 本体）"
+        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS$sep}$(msg item.jbang "$SIZE_JBANG_NET")"
+        DL_FROM="${DL_FROM:+$DL_FROM$sep}$(msg from.jbang)"
         DL_NET=$((DL_NET + SIZE_JBANG_NET)); DL_DISK=$((DL_DISK + SIZE_JBANG_DISK)) ;;
       jdk)
-        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS、}ツールを動かす JDK $JBANG_DEFAULT_JAVA_VERSION（約 ${SIZE_JDK_NET}MB）"
-        DL_FROM="${DL_FROM:+$DL_FROM、}api.foojay.io（JDK。実体は Adoptium の github.com）"
-        DL_NOTE="。JDK は展開したものとアーカイブの両方が残るため"
+        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS$sep}$(msg item.jdk "$JBANG_DEFAULT_JAVA_VERSION" "$SIZE_JDK_NET")"
+        DL_FROM="${DL_FROM:+$DL_FROM$sep}$(msg from.jdk)"
+        DL_NOTE="$(msg note.jdk)"
         DL_NET=$((DL_NET + SIZE_JDK_NET)); DL_DISK=$((DL_DISK + SIZE_JDK_DISK)) ;;
       deps)
-        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS、}依存 jar（JDT ほか。約 ${SIZE_DEPS_NET}MB）"
-        DL_FROM="${DL_FROM:+$DL_FROM、}Maven Central（依存 jar）"
+        DL_ITEMS="${DL_ITEMS:+$DL_ITEMS$sep}$(msg item.deps "$SIZE_DEPS_NET")"
+        DL_FROM="${DL_FROM:+$DL_FROM$sep}$(msg from.deps)"
         DL_NET=$((DL_NET + SIZE_DEPS_NET)); DL_DISK=$((DL_DISK + SIZE_DEPS_DISK)) ;;
     esac
   done
@@ -214,24 +341,24 @@ approve_download() {
   allow=$(printf '%s' "${JCHE_ALLOW_DOWNLOAD:-}" | tr '[:upper:]' '[:lower:]')
   describe_items "$1"
   echo
-  echo "java-call-hierarchy-exporter: ネットワークからの取得が必要です"
-  echo "  取得するもの : $DL_ITEMS"
-  echo "  通信量の目安 : 約 ${DL_NET}MB（置き場所は約 ${DL_DISK}MB 増える${DL_NOTE}）"
-  echo "                 実測に基づく目安。すでに手元にあるものは取得しないので、実際はこれ以下になる"
-  echo "  取得元       : $DL_FROM"
-  echo "  置き場所     : $jbdir（JBang 本体・JDK）、$repo（依存 jar）"
+  msg net.needed
+  msg net.items "$DL_ITEMS"
+  msg net.size "$DL_NET" "$DL_DISK" "$DL_NOTE"
+  msg net.sizeNote
+  msg net.from "$DL_FROM"
+  msg net.into "$jbdir" "$repo"
   if [ "$OFFLINE_FORCED" = 1 ]; then
-    echo "  JCHE_JBANG_OPTS に --offline があるので取得しません。取得するには $SETTINGS の --offline を外してください。"
-    echo "取得を取りやめました。"
+    msg net.offline "$SETTINGS"
+    msg net.cancelled
     return 1
   fi
   case "$allow" in
     yes|y|true|1)
-      echo "  JCHE_ALLOW_DOWNLOAD=yes なので、尋ねずに取得します。"
+      msg net.allowYes
       return 0 ;;
     no|n|false|0)
-      echo "  JCHE_ALLOW_DOWNLOAD=no なので取得しません。取得するには $SETTINGS で yes にするか空欄（毎回尋ねる）にしてください。"
-      echo "取得を取りやめました。"
+      msg net.allowNo "$SETTINGS"
+      msg net.cancelled
       return 1 ;;
   esac
   # 質問は標準入力ではなく端末（/dev/tty）から読む。標準入力は対話モードのメニュー操作に使われるので、
@@ -241,7 +368,7 @@ approve_download() {
     return 1
   fi
   local answer
-  printf 'ネットワークにアクセスして取得しますか？ [y/N]: ' >&3
+  msg net.ask >&3
   # 端末の口が開いても、その先に誰も居ないことがある（Git Bash はパイプで動かしていても /dev/tty を
   # 渡すので、read がすぐ終わる）。そのときは端末が無いのと同じ扱いにする
   if ! IFS= read -r answer <&3; then
@@ -255,20 +382,22 @@ approve_download() {
   case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
     y|yes) return 0 ;;
   esac
-  echo "取得を取りやめました。"
+  msg net.cancelled
   return 1
 }
 
 # 尋ねる相手が居ないときの案内。取得しなかったことと、先に決めておく方法を出す
 cannot_ask() {
-  echo "  端末が無いため確認できません。取得しません。"
-  echo "  尋ねずに取得するには $SETTINGS（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
-  echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
-  echo "取得を取りやめました。"
+  msg net.noTty
+  msg net.noTtyYes "$SETTINGS"
+  msg net.noTtyOffline
+  msg net.cancelled
 }
 
 run_once() {
   load_settings
+  # launcher.properties の JCHE_LANG を反映する（環境変数が既にあればそれが勝つ＝値は変わらない）
+  JCHE_MSG_LANG=$(resolve_lang)
   local -a opts=()
   local o
   OFFLINE_FORCED=0
@@ -309,7 +438,7 @@ run_once() {
   [ "$code" = 0 ] && return 0
   [ -f "$STARTED" ] && return $code
   echo
-  echo "取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。"
+  msg offline.failed
   approve_download "$(pending_items)" || return 3
   "$jbang" run ${opts[@]+"${opts[@]}"} "$script" "$@"
 }
@@ -328,7 +457,7 @@ if [ "$show_help" = 0 ] && [ ! -f "$SETTINGS" ] && [ -t 0 ] && [ -t 1 ]; then
   if [ "$has_config" = 1 ]; then
     # 引数ありは対話なしで実行する。置き場所は尋ねず、既定（このプロジェクトの中）にして知らせるだけ
     write_settings ".jbang" ".jbang/repository"
-    echo "java-call-hierarchy-exporter: JDK と JBang は $ROOT/.jbang に置きます（変えるときは $SETTINGS）。"
+    msg first.defaultDir "$ROOT/.jbang" "$SETTINGS"
     echo
   else
     first_run_prompt
@@ -340,5 +469,5 @@ while :; do
   ( run_once "$@" )
   code=$?
   [ -f "$RESTART" ] || exit $code
-  echo "設定を反映するため再起動します..."
+  msg restart
 done

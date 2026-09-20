@@ -43,6 +43,14 @@ setlocal
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 set "SETTINGS=%ROOT%\launcher.properties"
+rem 表示言語。JCHE_LANG（en / ja）が優先。無ければ画面のコードページで決める。
+rem このファイルは MS932 なので、日本語を化けずに出せるのはコードページが 932 のときだけである。
+rem 「出せるかどうか」と「出すかどうか」がそろうので、これ以上の見方（ロケールの照会）は要らない。
+rem Java 側（jche.util.Messages）は JCHE_LANG → jche.lang → 設定ファイル → OS の順で、先頭はここと同じ。
+rem launcher.properties に JCHE_LANG=ja と書いておくこともできる。:load_settings のあとに
+rem もう一度呼ぶので、取得の確認はその言語で出る。初回の置き場所の質問はその前なので、
+rem そこだけは環境変数かコードページで決まる。
+call :resolve_lang
 set "RESTART=%ROOT%\.cache\launcher.restart"
 set "STARTED=%ROOT%\.cache\launcher.started"
 
@@ -57,6 +65,8 @@ if not "%~1"=="" (call :first_run_default) else (call :first_run_prompt)
 if exist "%RESTART%" del /q "%RESTART%"
 setlocal
 call :load_settings
+rem launcher.properties の JCHE_LANG を反映する（環境変数が既にあればそれが勝つ＝値は変わらない）
+call :resolve_lang
 set "JCHE_ROOT=%ROOT%"
 rem jbang 自身の更新確認（起動のたびに新しい版があるかを問い合わせる）はネットワークに出るので止める
 set "JBANG_NO_VERSION_CHECK=true"
@@ -84,7 +94,7 @@ call "%ROOT%\jbangw\jbang.cmd" run --offline %JB_OPTS% %R_OPTS% "%ROOT%\src\jche
 set "CODE=%ERRORLEVEL%"
 if exist "%STARTED%" goto :done
 echo.
-echo 取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。
+call :msg offline.failed
 call :pending_items
 call :approve_download
 if errorlevel 1 goto :abort
@@ -100,34 +110,35 @@ set "CODE=3"
 :done
 endlocal & set "CODE=%CODE%"
 if exist "%RESTART%" (
-    echo 設定を反映するため再起動します...
+    call :msg restart
     goto :main
 )
 exit /b %CODE%
 
 :first_run_prompt
-echo java-call-hierarchy-exporter: 初回の設定
+call :msg first.title
 echo.
-echo このツールが使う JDK と JBang（合わせて数百 MB）の置き場所を選んでください。
-echo   1^) このプロジェクトの中   %ROOT%\.jbang
-echo      他の環境を汚さず、フォルダごと消せば元に戻る。依存 jar も同じ場所に置く
-echo   2^) ユーザーのホーム       %USERPROFILE%\.jbang（JBang の既定）
-echo      他の JBang スクリプトと共有する。既に JBang を使っているならこちら
-echo 後から変えるときは、アプリの「環境設定」か、次のファイルを編集する。
+call :msg first.where
+call :msg first.local "%ROOT%\.jbang"
+call :msg first.localHint
+call :msg first.home "%USERPROFILE%\.jbang"
+call :msg first.homeHint
+call :msg first.changeLater
 echo   %SETTINGS%
-echo （取得そのものは、このあとネットワークに出る前にもう一度確認する）
+call :msg first.downloadLater
 echo.
 set "CHOICE=1"
-set /p "CHOICE=番号 [1]: "
+call :msgv first.prompt
+set /p "CHOICE=%MSG%"
 if "%CHOICE%"=="2" (call :write_settings "" "") else (call :write_settings ".jbang" ".jbang/repository")
-echo %SETTINGS% に保存しました。
+call :msg first.saved "%SETTINGS%"
 echo.
 exit /b 0
 
 :first_run_default
 rem 引数ありのときは対話なしで実行する。置き場所は尋ねず、既定（このプロジェクトの中）にして知らせるだけ
 call :write_settings ".jbang" ".jbang/repository"
-echo java-call-hierarchy-exporter: JDK と JBang は %ROOT%\.jbang に置きます（変えるときは %SETTINGS%）。
+call :msg first.defaultDir "%ROOT%\.jbang" "%SETTINGS%"
 echo.
 exit /b 0
 
@@ -135,13 +146,13 @@ exit /b 0
 rem %1=JBANG_DIR  %2=JBANG_REPO（相対はこのフォルダ起点。空欄は JBang の既定）。
 rem 書き出す内容は Java 側（LauncherSettings.save）・java-call-hierarchy-exporter.sh が書くものと同じ
 > "%SETTINGS%" (
-    echo # java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。
-    echo # キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。
-    echo #   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）
-    echo #   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）
-    echo #   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）
-    echo #   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）
-    echo #   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる
+    call :msg settings.header1
+    call :msg settings.header2
+    call :msg settings.jbangDir
+    call :msg settings.repo
+    call :msg settings.javaOpts
+    call :msg settings.jbangOpts
+    call :msg settings.allowDownload
     echo JBANG_DIR=%~1
     echo JBANG_REPO=%~2
     echo JCHE_JAVA_OPTS=
@@ -299,28 +310,48 @@ for %%I in (%DL_LIST%) do call :add_item %%I
 exit /b 0
 
 :add_item
-rem %1=鍵（jbang / jdk / deps）。2 つめ以降は「、」で区切る
+rem %1=鍵（jbang / jdk / deps）。2 つめ以降は区切り（item.sep）を前に置く。
+rem 括弧のブロックにしないのは、その中では %MSG%（:msgv が入れる値）が
+rem ブロックの解析時に展開されてしまい、常に空になるため
 set "SEP="
-if defined DL_ITEMS set "SEP=、"
-if "%~1"=="jbang" (
-    set "DL_ITEMS=%DL_ITEMS%%SEP%JBang 本体（約 %SIZE_JBANG_NET%MB）"
-    set "DL_FROM=%DL_FROM%%SEP%github.com（JBang 本体）"
-    set /a DL_NET+=SIZE_JBANG_NET
-    set /a DL_DISK+=SIZE_JBANG_DISK
-)
-if "%~1"=="jdk" (
-    set "DL_ITEMS=%DL_ITEMS%%SEP%ツールを動かす JDK %JBANG_DEFAULT_JAVA_VERSION%（約 %SIZE_JDK_NET%MB）"
-    set "DL_FROM=%DL_FROM%%SEP%api.foojay.io（JDK。実体は Adoptium の github.com）"
-    set "DL_NOTE=。JDK は展開したものとアーカイブの両方が残るため"
-    set /a DL_NET+=SIZE_JDK_NET
-    set /a DL_DISK+=SIZE_JDK_DISK
-)
-if "%~1"=="deps" (
-    set "DL_ITEMS=%DL_ITEMS%%SEP%依存 jar（JDT ほか。約 %SIZE_DEPS_NET%MB）"
-    set "DL_FROM=%DL_FROM%%SEP%Maven Central（依存 jar）"
-    set /a DL_NET+=SIZE_DEPS_NET
-    set /a DL_DISK+=SIZE_DEPS_DISK
-)
+if defined DL_ITEMS call :set_sep
+if "%~1"=="jbang" goto :add_jbang
+if "%~1"=="jdk" goto :add_jdk
+if "%~1"=="deps" goto :add_deps
+exit /b 0
+
+:set_sep
+call :msgv item.sep
+set "SEP=%MSG%"
+exit /b 0
+
+:add_jbang
+call :msgv item.jbang "%SIZE_JBANG_NET%"
+set "DL_ITEMS=%DL_ITEMS%%SEP%%MSG%"
+call :msgv from.jbang
+set "DL_FROM=%DL_FROM%%SEP%%MSG%"
+set /a DL_NET+=SIZE_JBANG_NET
+set /a DL_DISK+=SIZE_JBANG_DISK
+exit /b 0
+
+:add_jdk
+call :msgv item.jdk "%JBANG_DEFAULT_JAVA_VERSION%" "%SIZE_JDK_NET%"
+set "DL_ITEMS=%DL_ITEMS%%SEP%%MSG%"
+call :msgv from.jdk
+set "DL_FROM=%DL_FROM%%SEP%%MSG%"
+call :msgv note.jdk
+set "DL_NOTE=%MSG%"
+set /a DL_NET+=SIZE_JDK_NET
+set /a DL_DISK+=SIZE_JDK_DISK
+exit /b 0
+
+:add_deps
+call :msgv item.deps "%SIZE_DEPS_NET%"
+set "DL_ITEMS=%DL_ITEMS%%SEP%%MSG%"
+call :msgv from.deps
+set "DL_FROM=%DL_FROM%%SEP%%MSG%"
+set /a DL_NET+=SIZE_DEPS_NET
+set /a DL_DISK+=SIZE_DEPS_DISK
 exit /b 0
 
 :approve_download
@@ -329,12 +360,12 @@ rem 順に、JCHE_JBANG_OPTS の --offline → JCHE_ALLOW_DOWNLOAD（yes / no）→ 端末
 call :jbdirs
 call :describe_items
 echo.
-echo java-call-hierarchy-exporter: ネットワークからの取得が必要です
-echo   取得するもの : %DL_ITEMS%
-echo   通信量の目安 : 約 %DL_NET%MB（置き場所は約 %DL_DISK%MB 増える%DL_NOTE%）
-echo                  実測に基づく目安。すでに手元にあるものは取得しないので、実際はこれ以下になる
-echo   取得元       : %DL_FROM%
-echo   置き場所     : %JBDIR%（JBang 本体・JDK）、%REPO%（依存 jar）
+call :msg net.needed
+call :msg net.items "%DL_ITEMS%"
+call :msg net.size "%DL_NET%" "%DL_DISK%" "%DL_NOTE%"
+call :msg net.sizeNote
+call :msg net.from "%DL_FROM%"
+call :msg net.into "%JBDIR%" "%REPO%"
 if defined OFFLINE_FORCED goto :approve_offline
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="yes" goto :approve_yes
 if /i "%JCHE_ALLOW_DOWNLOAD%"=="y" goto :approve_yes
@@ -352,29 +383,161 @@ rem （CON から読む手も、コンソールが無い環境で永久に待つので使えない。実測は
 rem  docs/network-download-confirm-qa.md の Q18）。choice の /t と /d で待ち時間に上限を設け、
 rem 時間切れなら取りやめ（n）に倒す。errorlevel は選んだ番号（1=y 2=n）、読めなければ 255、Ctrl+C なら 0。
 rem if errorlevel は「N 以上」なので、大きい順に見る（choice のドキュメントにある決まり）
-choice /c yn /n /t %ASK_TIMEOUT% /d n /m "ネットワークにアクセスして取得しますか？ [y/N]（%ASK_TIMEOUT% 秒で取りやめ）: "
+call :msgv net.askTimeout "%ASK_TIMEOUT%"
+choice /c yn /n /t %ASK_TIMEOUT% /d n /m "%MSG%"
 if errorlevel 255 goto :approve_notty
 if errorlevel 2 goto :approve_declined
 if errorlevel 1 exit /b 0
 rem 0 は Ctrl+C / Ctrl+Break
 :approve_declined
 echo.
-echo 取得を取りやめました。
+call :msg net.cancelled
 exit /b 1
 :approve_offline
-echo   JCHE_JBANG_OPTS に --offline があるので取得しません。取得するには %SETTINGS% の --offline を外してください。
-echo 取得を取りやめました。
+call :msg net.offline "%SETTINGS%"
+call :msg net.cancelled
 exit /b 1
 :approve_yes
-echo   JCHE_ALLOW_DOWNLOAD=yes なので、尋ねずに取得します。
+call :msg net.allowYes
 exit /b 0
 :approve_no
-echo   JCHE_ALLOW_DOWNLOAD=no なので取得しません。取得するには %SETTINGS% で yes にするか空欄（毎回尋ねる）にしてください。
-echo 取得を取りやめました。
+call :msg net.allowNo "%SETTINGS%"
+call :msg net.cancelled
 exit /b 1
 :approve_notty
-echo   端末が無いため確認できません。取得しません。
-echo   尋ねずに取得するには %SETTINGS%（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。
-echo   取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。
-echo 取得を取りやめました。
+call :msg net.noTty
+call :msg net.noTtyYes "%SETTINGS%"
+call :msg net.noTtyOffline
+call :msg net.cancelled
 exit /b 1
+
+:resolve_lang
+rem 表示言語を JCHE_MSG_LANG に入れる。JCHE_LANG（en / ja）が優先。
+rem 無ければ画面のコードページで決める。このファイルは MS932 なので、日本語を化けずに
+rem 出せるのはコードページが 932 のときだけである。「出せるかどうか」と「出すかどうか」が
+rem そろうので、これ以上の見方（ロケールの照会）は要らない。
+rem Java 側（jche.util.Messages）は JCHE_LANG → jche.lang → 設定ファイル → OS の順で、先頭はここと同じ。
+set "JCHE_MSG_LANG=en"
+if defined JCHE_LANG goto :lang_from_env
+for /f "tokens=2 delims=:" %%C in ('chcp') do call :lang_from_cp %%C
+exit /b 0
+
+:lang_from_cp
+rem %1=コードページの番号（chcp の「…: 932」の後ろ）。call の引数として受け取ると前後の空白が落ちるので、
+rem %VAR:検索=置換% を使わずに済む（未定義の変数にあの書き方をすると cmd がバッチごと落ちる。
+rem docs/network-download-confirm-qa.md の Q16）
+if "%~1"=="932" set "JCHE_MSG_LANG=ja"
+exit /b 0
+
+:lang_from_env
+if /i "%JCHE_LANG:~0,2%"=="ja" set "JCHE_MSG_LANG=ja"
+exit /b 0
+
+:msgv
+rem 文言を MSG に入れる（画面には出さない）。%1=キー、%2… 差し込む値。
+rem 日本語を選んでいれば日本語の表を先に見て、無ければ英語（土台）へ落とす。
+rem どちらにも無ければ !キー! を返すので、訳し忘れに気づける。
+set "MSG="
+if "%JCHE_MSG_LANG%"=="ja" call :msg_ja %*
+if not defined MSG call :msg_en %*
+if not defined MSG set "MSG=!%~1!"
+exit /b 0
+
+:msg
+rem 文言を 1 行出す。%1=キー、%2… 差し込む値
+call :msgv %*
+echo %MSG%
+exit /b 0
+
+:msg_en
+rem 英語（土台）。括弧のブロックを使わないのは、%VAR% がブロックの解析時に展開されてしまうため
+if "%~1"=="first.title" set "MSG=java-call-hierarchy-exporter: first-time setup"
+if "%~1"=="first.where" set "MSG=Choose where the JDK and JBang this tool uses (a few hundred MB together) should live."
+if "%~1"=="first.local" set "MSG=  1) Inside this project   %~2"
+if "%~1"=="first.localHint" set "MSG=     Nothing else is touched; delete the folder to undo. Dependency jars go there too"
+if "%~1"=="first.home" set "MSG=  2) User home             %~2 (JBang's default)"
+if "%~1"=="first.homeHint" set "MSG=     Shared with other JBang scripts. Pick this if you already use JBang"
+if "%~1"=="first.changeLater" set "MSG=To change it later, use the Environment settings screen in the app, or edit the file below."
+if "%~1"=="first.downloadLater" set "MSG=(Downloading itself is confirmed again before going to the network.)"
+if "%~1"=="first.prompt" set "MSG=Number [1]: "
+if "%~1"=="first.saved" set "MSG=Saved to %~2."
+if "%~1"=="first.defaultDir" set "MSG=java-call-hierarchy-exporter: the JDK and JBang go into %~2 (change it in %~3)."
+if "%~1"=="settings.header1" set "MSG=# Settings read at startup by java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd (the Environment settings screen of the app writes here too)."
+if "%~1"=="settings.header2" set "MSG=# Each key becomes an environment variable as is. Relative paths start from the folder holding this file. Empty means the default."
+if "%~1"=="settings.jbangDir" set "MSG=#   JBANG_DIR       where JBang itself and the JDK live (default ~/.jbang)"
+if "%~1"=="settings.repo" set "MSG=#   JBANG_REPO      where dependency jars live (default ~/.m2/repository)"
+if "%~1"=="settings.javaOpts" set "MSG=#   JCHE_JAVA_OPTS  options for the JVM that runs the analysis (for example: -Xmx4g)"
+if "%~1"=="settings.jbangOpts" set "MSG=#   JCHE_JBANG_OPTS extra options for jbang run (for example: --offline)"
+if "%~1"=="settings.allowDownload" set "MSG=#   JCHE_ALLOW_DOWNLOAD  yes to download from the network (JBang, the JDK, dependency jars) without asking, no to never download. Empty asks every time"
+if "%~1"=="item.sep" set "MSG=, "
+if "%~1"=="item.jbang" set "MSG=JBang itself (about %~2MB)"
+if "%~1"=="item.jdk" set "MSG=JDK %~2 to run the tool (about %~3MB)"
+if "%~1"=="item.deps" set "MSG=dependency jars (JDT and others, about %~2MB)"
+if "%~1"=="from.jbang" set "MSG=github.com (JBang itself)"
+if "%~1"=="from.jdk" set "MSG=api.foojay.io (the JDK; served from Adoptium on github.com)"
+if "%~1"=="from.deps" set "MSG=Maven Central (dependency jars)"
+if "%~1"=="note.jdk" set "MSG=; the JDK keeps both the unpacked files and the archive"
+if "%~1"=="net.needed" set "MSG=java-call-hierarchy-exporter: something has to be downloaded from the network"
+if "%~1"=="net.items" set "MSG=  To download   : %~2"
+if "%~1"=="net.size" set "MSG=  Transfer      : about %~2MB (the location grows by about %~3MB%~4)"
+if "%~1"=="net.sizeNote" set "MSG=                  A measured estimate. Anything already present is not fetched, so the real figure is lower"
+if "%~1"=="net.from" set "MSG=  From          : %~2"
+if "%~1"=="net.into" set "MSG=  Into          : %~2 (JBang and the JDK), %~3 (dependency jars)"
+if "%~1"=="net.offline" set "MSG=  JCHE_JBANG_OPTS contains --offline, so nothing is downloaded. Remove --offline from %~2 to allow it."
+if "%~1"=="net.cancelled" set "MSG=Download cancelled."
+if "%~1"=="net.allowYes" set "MSG=  JCHE_ALLOW_DOWNLOAD=yes, so it downloads without asking."
+if "%~1"=="net.allowNo" set "MSG=  JCHE_ALLOW_DOWNLOAD=no, so nothing is downloaded. Set it to yes in %~2, or leave it empty to be asked every time."
+if "%~1"=="net.askTimeout" set "MSG=Go to the network and download? [y/N] (cancelled after %~2 seconds): "
+if "%~1"=="net.noTty" set "MSG=  There is no terminal to ask on. Nothing is downloaded."
+if "%~1"=="net.noTtyYes" set "MSG=  To download without asking, set JCHE_ALLOW_DOWNLOAD=yes in %~2 (or as an environment variable)."
+if "%~1"=="net.noTtyOffline" set "MSG=  To run without downloading, prepare a local JDK and the jars first (see the Pleiades/Eclipse environment section in the README)."
+if "%~1"=="offline.failed" set "MSG=Could not start with only the JDK and dependency jars already present (the reason is in the message above)."
+if "%~1"=="restart" set "MSG=Restarting to apply the settings..."
+exit /b 0
+
+:msg_ja
+rem 日本語（英語に重ねる）。キーは英語の表とそろえる（test/nls/run.sh が突き合わせる）
+if "%~1"=="first.title" set "MSG=java-call-hierarchy-exporter: 初回の設定"
+if "%~1"=="first.where" set "MSG=このツールが使う JDK と JBang（合わせて数百 MB）の置き場所を選んでください。"
+if "%~1"=="first.local" set "MSG=  1) このプロジェクトの中   %~2"
+if "%~1"=="first.localHint" set "MSG=     他の環境を汚さず、フォルダごと消せば元に戻る。依存 jar も同じ場所に置く"
+if "%~1"=="first.home" set "MSG=  2) ユーザーのホーム       %~2（JBang の既定）"
+if "%~1"=="first.homeHint" set "MSG=     他の JBang スクリプトと共有する。既に JBang を使っているならこちら"
+if "%~1"=="first.changeLater" set "MSG=後から変えるときは、アプリの「環境設定」か、次のファイルを編集する。"
+if "%~1"=="first.downloadLater" set "MSG=（取得そのものは、このあとネットワークに出る前にもう一度確認する）"
+if "%~1"=="first.prompt" set "MSG=番号 [1]: "
+if "%~1"=="first.saved" set "MSG=%~2 に保存しました。"
+if "%~1"=="first.defaultDir" set "MSG=java-call-hierarchy-exporter: JDK と JBang は %~2 に置きます（変えるときは %~3）。"
+if "%~1"=="settings.header1" set "MSG=# java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd が起動時に読む設定（アプリの「環境設定」からも書き換えられる）。"
+if "%~1"=="settings.header2" set "MSG=# キーはそのまま環境変数になる。相対パスはこのファイルのあるフォルダが起点。空欄は既定値。"
+if "%~1"=="settings.jbangDir" set "MSG=#   JBANG_DIR       JBang 本体・JDK の置き場所（既定 ~/.jbang）"
+if "%~1"=="settings.repo" set "MSG=#   JBANG_REPO      依存 jar の置き場所（既定 ~/.m2/repository）"
+if "%~1"=="settings.javaOpts" set "MSG=#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）"
+if "%~1"=="settings.jbangOpts" set "MSG=#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）"
+if "%~1"=="settings.allowDownload" set "MSG=#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる"
+if "%~1"=="item.sep" set "MSG=、"
+if "%~1"=="item.jbang" set "MSG=JBang 本体（約 %~2MB）"
+if "%~1"=="item.jdk" set "MSG=ツールを動かす JDK %~2（約 %~3MB）"
+if "%~1"=="item.deps" set "MSG=依存 jar（JDT ほか。約 %~2MB）"
+if "%~1"=="from.jbang" set "MSG=github.com（JBang 本体）"
+if "%~1"=="from.jdk" set "MSG=api.foojay.io（JDK。実体は Adoptium の github.com）"
+if "%~1"=="from.deps" set "MSG=Maven Central（依存 jar）"
+if "%~1"=="note.jdk" set "MSG=。JDK は展開したものとアーカイブの両方が残るため"
+if "%~1"=="net.needed" set "MSG=java-call-hierarchy-exporter: ネットワークからの取得が必要です"
+if "%~1"=="net.items" set "MSG=  取得するもの : %~2"
+if "%~1"=="net.size" set "MSG=  通信量の目安 : 約 %~2MB（置き場所は約 %~3MB 増える%~4）"
+if "%~1"=="net.sizeNote" set "MSG=                 実測に基づく目安。すでに手元にあるものは取得しないので、実際はこれ以下になる"
+if "%~1"=="net.from" set "MSG=  取得元       : %~2"
+if "%~1"=="net.into" set "MSG=  置き場所     : %~2（JBang 本体・JDK）、%~3（依存 jar）"
+if "%~1"=="net.offline" set "MSG=  JCHE_JBANG_OPTS に --offline があるので取得しません。取得するには %~2 の --offline を外してください。"
+if "%~1"=="net.cancelled" set "MSG=取得を取りやめました。"
+if "%~1"=="net.allowYes" set "MSG=  JCHE_ALLOW_DOWNLOAD=yes なので、尋ねずに取得します。"
+if "%~1"=="net.allowNo" set "MSG=  JCHE_ALLOW_DOWNLOAD=no なので取得しません。取得するには %~2 で yes にするか空欄（毎回尋ねる）にしてください。"
+if "%~1"=="net.askTimeout" set "MSG=ネットワークにアクセスして取得しますか？ [y/N]（%~2 秒で取りやめ）: "
+if "%~1"=="net.noTty" set "MSG=  端末が無いため確認できません。取得しません。"
+if "%~1"=="net.noTtyYes" set "MSG=  尋ねずに取得するには %~2（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
+if "%~1"=="net.noTtyOffline" set "MSG=  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
+if "%~1"=="offline.failed" set "MSG=取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。"
+if "%~1"=="restart" set "MSG=設定を反映するため再起動します..."
+exit /b 0
+

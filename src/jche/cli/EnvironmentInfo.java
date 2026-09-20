@@ -14,6 +14,8 @@ import java.util.stream.Stream;
 
 import org.eclipse.jdt.core.JavaCore;
 
+import jche.util.Messages;
+
 /**
  * 実行環境の状態を表示するための読み取り（実行中の JDK、JDT の jar、フォルダの大きさ）。
  * 表示のためだけのものなので、失敗しても例外にせず「不明」で済ませる。
@@ -68,7 +70,7 @@ public final class EnvironmentInfo {
 
     public static String humanSize(long bytes) {
         if (bytes < 0) {
-            return "（無し）";
+            return Messages.get("cli.env.none");
         }
         if (bytes < 1024L * 1024) {
             return (bytes + 1023) / 1024 + " KB";
