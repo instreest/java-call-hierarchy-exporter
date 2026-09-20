@@ -4,6 +4,19 @@
 設計上の判断と実装時に迷った点は
 [instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) にある。
 
+> **対応表を並べるだけで済むなら、拡張を読み込ませる必要はありません。**
+> 契約表に 1 行書けば同じことができます
+> （[callback-contracts.md の「C. 具象クラスを1件に絞る」](callback-contracts.md#c-具象クラスを1件に絞る)）。
+>
+> ```
+> jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.UserDaoImpl   # DI で注入されるフィールド
+> jp.co.xxx.DaoFactory#get("USER") => jp.co.xxx.dao.UserDaoImpl   # ファクトリのキー
+> ```
+>
+> ここで説明する拡張が要るのは、**キーが多すぎて表に並べたくない**（算出規則を書く）、
+> **独自形式の設定ファイルを読む**、**列挙定数をキーにしている**場合です。経緯は
+> [contracts-unification-design.md](contracts-unification-design.md) にあります。
+
 DI コンテナで注入されるフィールドや、キーで実装を切り替えるファクトリメソッドは、ソースを読むだけでは
 具象クラスが決まりません。既定ではインターフェースの実装を全部候補に挙げる（CHA）ため、
 呼び出し階層が実装の数だけ枝分かれします。解決の条件を外から与えると、1 件に絞れます。
@@ -61,14 +74,18 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 }
 ```
 
-実装するインターフェースは `jche.extension.CallSiteHintCollector`（フェーズA）と
-`jche.extension.TypeCandidateProvider`（フェーズB）です。動く例は
+実装するインターフェースは `jche.extension.TypeCandidateProvider`（フェーズB）です。
+**ファクトリに渡されたキーはツールが渡す**ので、それを拾うためだけに
+`jche.extension.CallSiteHintCollector`（フェーズA）を書く必要はありません
+（呼び出し箇所から独自の証拠を拾いたいときだけ使います）。動く例は
 [test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
 
 - 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の最終列に `[RESOLVED:<ラベル>]`（同梱の実装なら `MAPPING`）が付きます
+- `candidates()` が返す型名は **単純名でもかまいません**（`UserDaoImpl`）。解析対象で 1 件に定まるときだけ使い、複数の型に当たるときは使わずに警告に出します
 - フェーズAの拡張はキャッシュに手がかりを書くので、拡張やその設定・実装ファイルを変えると、
   キャッシュは自動的に捨てられて全件解析し直しになります（変え忘れによる古い結果の混入を防ぐため）
 - 拡張の読み込み・コンパイルに失敗しても解析は止まりません。警告を出して拡張なしで続けます
+- 対応表のどの行が引かれたかは、解析の最後に実行ログへ出ます（下記「効いているかを確かめる」）
 
 ## 3. 例: 文字列連結でクラス名を組み立てるファクトリ
 
@@ -145,6 +162,29 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 
 1件に確定し、そこから先（`audit` / `settle`）へも降りるようになります。
 
+### 拡張に渡る証拠（`Hint`）
+
+`candidates()` が受け取る `hints` には、次の 3 つがツールから自動で入ります
+（レシーバがファクトリメソッドの戻り値だった場合）。
+
+| `kind` | `value` | 例 |
+|---|---|---|
+| `Hint.KIND_FACTORY`（`"FACTORY"`） | ファクトリのメソッド（`型FQN#メソッド名`）。実装が親クラスにあるときは**ソースに書いた型**と**宣言元の型**の両方が入る | `jp.co.app.ChildFactory#pick` と `jp.co.app.BaseFactory#pick` |
+| `Hint.KIND_FACTORY_KEY`（`"FACTORY_KEY"`） | 渡された文字列のキー（定数は値まで評価済み） | `user` |
+| `Hint.KIND_FACTORY_CONST`（`"FACTORY_CONST"`） | 渡された列挙定数 | `jp.co.app.Kind.USER` |
+
+フェーズAの拡張が残した証拠があれば、それも同じリストに並びます（種別は拡張が決めた名前）。
+
+キーが**呼び出し元から引数で渡ってくる**形は、経路が分かって初めて値が決まります。その場合、
+`candidates()` は**経路ごとにもう一度呼ばれ**、そのときの `hints` には経路から分かったキーが入ります。
+
+```java
+void run()            { helper("USER_DAO"); }        // ← 呼び出し元では決まっている
+void helper(String k) { Factory.get(k).find(); }     // ← run から辿った経路では届く
+```
+
+ただし、**既に 1 件に絞れている呼び出しではやり直しません**（先に決めた答えを経路ごとに覆さないため）。
+
 ### 3b. 算出規則を書く（自前の拡張）
 
 キーが多くて対応表を並べたくない、あるいはキーが増えるたびに表を直したくない場合は、
@@ -152,18 +192,16 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 実行時にコンパイルされます（Maven / Gradle でのビルドも jar 作りも不要）。
 
 ```properties
-# config.properties
+# config.properties — 書くのはこの 2 行と、拡張が自分で読む設定だけ
 plugin.folders=plugins
-
-# フェーズA: 同梱の実装をそのまま使う（キーの採取だけなので自分で書く必要は無い）
-resolver.hint.collectors=jche.builtin.FactoryKeyCollector
-plugin.factory.methods=jp.co.app.ServiceFactory#get
-
-# フェーズB: 算出規則を書いた自前の拡張
 resolver.candidate.providers=demo.NamingConventionProvider
 demo.naming.prefix=jp.co.app.impl.
 demo.naming.suffix=Service
 ```
+
+> **ファクトリのキーを拾うための設定は要りません。** キーはデータフローの値グラフに載っているので、
+> ツールが証拠（`Hint`）にして拡張へ渡します。フェーズAの拡張（`resolver.hint.collectors` と
+> `plugin.factory.methods`）を書く必要があるのは、**呼び出し箇所から独自の証拠を拾いたいとき**だけです。
 
 ```java
 // config/plugins/NamingConventionProvider.java
@@ -227,225 +265,71 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 
 ### 3c. 「このファクトリのときだけ」という条件の書き方
 
-`candidates` に渡るのは、**解決しようとしている呼び出しの情報**（`declaredType` / `signature`）と
-証拠のリストだけで、**どのファクトリから来た値かは渡りません**。条件は次の3つのどれかで書きます。
-
-| 状況 | 条件の書き方 | 自前のフェーズA拡張 |
-|---|---|---|
-| 対象のファクトリが1つ | 書かなくてよい。`plugin.factory.methods` が既に絞っている | 不要 |
-| ファクトリごとに戻り値の型が違う | `declaredType` で分ける | 不要 |
-| 同じ型を返すファクトリが複数あって規則が違う | **証拠の種別**（`Hint.kind`）で分ける | 必要 |
-
-#### 条件を書かなくてよい場合
-
-`plugin.factory.methods=jp.co.app.ServiceFactory#get` と書いた時点で、証拠が付くのは
-**そのファクトリの戻り値を受けている呼び出しだけ**です。`hints` に `FACTORY_KEY` が入っていること
-自体が「このファクトリから来た」という条件になっているので、3b の例のように種別だけ見れば足ります。
-
-#### 宣言型で分ける
-
-戻り値の型がファクトリごとに違うなら、`declaredType`（呼び出し先を宣言している型の FQN。
-`s.execute()` なら `jp.co.app.Service`）で規則を切り替えられます。フェーズAは同梱の実装のままで済みます。
-
-```properties
-resolver.hint.collectors=jche.builtin.FactoryKeyCollector
-plugin.factory.methods=jp.co.app.ServiceFactory#get, jp.co.app.DaoFactory#lookup
-resolver.candidate.providers=demo.ByDeclaredTypeProvider
-demo.rules=jp.co.app.Service|jp.co.app.impl.|Service, jp.co.app.Dao|jp.co.app.dao.|Dao
-```
+`hints` には **どのファクトリから来た値か**（`Hint.KIND_FACTORY`）が入るので、そのまま条件になります。
 
 ```java
-// 宣言型FQN -> {接頭辞, 接尾辞} の rules を init で読んでおく（組み立ては下の PerFactoryProvider と同じ）
+private static final String FACTORY = "jp.co.app.ServiceFactory#get";
+
 @Override
 public String[] candidates(String declaredType, String signature, List<Hint> hints) {
-    String[] rule = rules.get(declaredType);     // ← ここが条件
-    if (rule == null) {
-        return null;
+    if (!hints.contains(new Hint(Hint.KIND_FACTORY, FACTORY))) {
+        return null;                          // ← このファクトリ以外には何も言わない
     }
     for (Hint hint : hints) {
-        if ("FACTORY_KEY".equals(hint.kind())) {
-            return new String[] {rule[0] + capitalize(hint.value()) + rule[1]};
+        if (Hint.KIND_FACTORY_KEY.equals(hint.kind())) {
+            return new String[] {"jp.co.app.impl." + capitalize(hint.value()) + "Service"};
         }
     }
     return null;
 }
 ```
 
-同梱の `FactoryKeyCollector` は種別を1つしか持たない（`plugin.factory.hint.kind`。既定 `FACTORY_KEY`）ため、
-複数のファクトリを並べても証拠は同じ種別になります。**規則が違うファクトリを並べたまま宣言型を見ないと、
-別のファクトリのキーに誤った規則を当ててしまいます。** 組み立てた FQN が解析対象に無ければ候補は
-採用されず CHA に戻るだけですが、たまたま実在する型名になった場合は**誤った1件に確定します**。
+| 状況 | 条件の書き方 |
+|---|---|
+| 対象のファクトリが 1 つ | `Hint.KIND_FACTORY` と突き合わせる（上の例） |
+| ファクトリごとに戻り値の型が違う | `declaredType`（呼び出し先を宣言している型の FQN）で分けてもよい |
+| 同じ型を返すファクトリが複数あって規則が違う | `Hint.KIND_FACTORY` の値を規則表の鍵にする |
 
-#### 証拠の種別で分ける（同じ型を返すファクトリが複数）
-
-`ServiceFactory.get("user")` と `LegacyFactory.create("user")` がどちらも `Service` を返し、
-組み立て規則だけが違う場合、宣言型もキーも同じなので区別できません。この場合は
-**「どのファクトリから来たか」を証拠の種別に入れる**フェーズA拡張を書きます。
+最後の形は、ファクトリのメソッドキーをそのまま鍵にできます。
 
 ```properties
 plugin.folders=plugins
-resolver.hint.collectors=demo.FactoryScopedKeyCollector
-demo.factory.methods=jp.co.app.ServiceFactory#get, jp.co.app.LegacyFactory#create
 resolver.candidate.providers=demo.PerFactoryProvider
-demo.rules=jp.co.app.ServiceFactory#get|jp.co.app.impl.|Service, jp.co.app.LegacyFactory#create|jp.co.app.legacy.|ServiceImpl
+demo.rules=jp.co.app.ServiceFactory#get|jp.co.app.impl.|Service, \
+           jp.co.app.LegacyFactory#create|jp.co.app.legacy.|ServiceImpl
 ```
 
 ```java
-// config/plugins/FactoryScopedKeyCollector.java
-package demo;
+/** "型FQN#メソッド名" -> {接頭辞, 接尾辞} を init で読んでおく */
+private final Map<String, String[]> rules = new LinkedHashMap<>();
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-
-import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.IMethodBinding;
-import org.eclipse.jdt.core.dom.ITypeBinding;
-import org.eclipse.jdt.core.dom.MethodInvocation;
-import org.eclipse.jdt.core.dom.StringLiteral;
-
-import jche.extension.CallSiteHintCollector;
-import jche.extension.HintKeys;
-import jche.extension.HintSink;
-
-/**
- * フェーズA: 「どのファクトリメソッドから来た値か」を証拠の種別に入れて残す。
- *
- * 同梱の FactoryKeyCollector は種別が1つ（既定 FACTORY_KEY）なので、
- * 同じ宣言型を返すファクトリが複数あって規則が違う場合に区別できない。
- * 種別を "FACTORY:<型FQN>#<メソッド名>" にすれば、フェーズBで条件が書ける。
- */
-public class FactoryScopedKeyCollector implements CallSiteHintCollector {
-
-    private final List<String> targets = new ArrayList<>();
-
-    @Override
-    public void init(Properties config, Path configDir) {
-        for (String one : config.getProperty("demo.factory.methods", "").split(",")) {
-            String t = one.trim();
-            if (!t.isEmpty()) {
-                targets.add(t);
-            }
+@Override
+public String[] candidates(String declaredType, String signature, List<Hint> hints) {
+    String[] rule = null;
+    String key = null;
+    for (Hint hint : hints) {
+        if (Hint.KIND_FACTORY.equals(hint.kind())) {
+            rule = rules.get(hint.value());        // ← ここが「このファクトリのとき」の条件
+        } else if (Hint.KIND_FACTORY_KEY.equals(hint.kind()) && key == null) {
+            key = hint.value();
         }
     }
-
-    @Override
-    public void collect(MethodInvocation node, CompilationUnit cu, String callerMethodKey, HintSink sink) {
-        String target = matched(node);
-        if (target == null) {
-            return;
-        }
-        String key = firstStringLiteral(node);
-        if (key == null) {
-            return;
-        }
-        String scopeKey = HintKeys.ofAssignedVariable(node);
-        if (scopeKey.isEmpty()) {
-            scopeKey = HintKeys.ofPosition(node);
-        }
-        sink.add(scopeKey, "FACTORY:" + target, key);
-    }
-
-    /** 呼び出しが対象のファクトリメソッドなら "型FQN#メソッド名"。違えば null */
-    private String matched(MethodInvocation node) {
-        IMethodBinding binding = node.resolveMethodBinding();
-        if (binding == null) {
-            return null;
-        }
-        ITypeBinding declaring = binding.getDeclaringClass();
-        if (declaring == null) {
-            return null;
-        }
-        String key = declaring.getErasure().getQualifiedName() + "#" + node.getName().getIdentifier();
-        return targets.contains(key) ? key : null;
-    }
-
-    private static String firstStringLiteral(MethodInvocation node) {
-        for (Object o : node.arguments()) {
-            if (o instanceof StringLiteral literal) {
-                return literal.getLiteralValue();
-            }
-        }
-        return null;
-    }
+    return (rule == null || key == null)
+            ? null : new String[] {rule[0] + capitalize(key) + rule[1]};
 }
 ```
 
-```java
-// config/plugins/PerFactoryProvider.java
-package demo;
+`ServiceFactory.get("user")` と `LegacyFactory.create("user")` が同じ `Service` を返していても、
+呼んだファクトリごとに別の実装へ解決できます。
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
-import jche.extension.Hint;
-import jche.extension.TypeCandidateProvider;
-
-/** フェーズB: ファクトリメソッドごとに算出規則を切り替える */
-public class PerFactoryProvider implements TypeCandidateProvider {
-
-    /** "FACTORY:<型FQN>#<メソッド名>" -> {接頭辞, 接尾辞} */
-    private final Map<String, String[]> rules = new LinkedHashMap<>();
-
-    @Override
-    public void init(Properties config, Path configDir) {
-        for (String one : config.getProperty("demo.rules", "").split(",")) {
-            String t = one.trim();
-            if (t.isEmpty()) {
-                continue;
-            }
-            String[] p = t.split("\\|", -1);
-            rules.put("FACTORY:" + p[0].trim(), new String[] {p[1].trim(), p[2].trim()});
-        }
-    }
-
-    @Override
-    public String[] candidates(String declaredType, String signature, List<Hint> hints) {
-        // 証拠は1件とは限らない（同じ変数に複数のファクトリから代入されうる）。
-        // 先頭で return すると、もう一方の経路の実装が黙って消えるので全部返す
-        List<String> out = new ArrayList<>(1);
-        for (Hint hint : hints) {
-            String[] rule = rules.get(hint.kind());     // ← ここが「このファクトリのとき」の条件
-            if (rule == null) {
-                continue;
-            }
-            String fqn = rule[0] + capitalize(hint.value()) + rule[1];
-            if (!out.contains(fqn)) {
-                out.add(fqn);
-            }
-        }
-        return out.isEmpty() ? null : out.toArray(new String[0]);
-    }
-
-    @Override
-    public String label() {
-        return "PER_FACTORY";
-    }
-
-    private static String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
-}
-```
-
-同じキー `"user"`・同じ宣言型 `Service` でも、呼び出したファクトリごとに別の実装へ解決します。
-
-```csv
-at jp.co.app.Main.run(Main.java:5),UserService.execute,Main.run,UserService.execute,[RESOLVED:PER_FACTORY]
-at jp.co.app.impl.UserService.execute(UserService.java:4),UserService.modern,Main.run,UserService.execute,UserService.modern
-at jp.co.app.Main.run(Main.java:6),UserServiceImpl.execute,Main.run,UserServiceImpl.execute,[RESOLVED:PER_FACTORY]
-at jp.co.app.legacy.UserServiceImpl.execute(UserServiceImpl.java:4),UserServiceImpl.legacy,Main.run,UserServiceImpl.execute,UserServiceImpl.legacy
-```
+> 以前はこの場合分けのために、**自前のフェーズA拡張を書いて証拠の種別にファクトリ名を埋める**
+> 必要がありました（`sink.add(scopeKey, "FACTORY:" + target, key)`）。いまはツールが
+> `Hint.KIND_FACTORY` で渡すので要りません。
 
 #### 証拠は1件とは限らない
 
-証拠は「呼び出しのレシーバ」ごとに溜まります。同じ変数に複数のファクトリから代入されると、
-その変数を使う呼び出しには**証拠が複数付きます**。
+フェーズAの拡張が拾った証拠は「呼び出しのレシーバ」ごとに溜まります。同じ変数に複数のファクトリから
+代入されると、その変数を使う呼び出しには**証拠が複数付きます**。
 
 ```java
 Service s = ServiceFactory.get("user");
@@ -476,3 +360,38 @@ s.execute();            // ← 証拠が2件付く
   並べさせるほうが安全です（絞れないことより誤って絞ることの方が害が大きい）
 - 拡張の中で例外を投げても解析は止まりません。警告を出してその拡張を飛ばします
 - `resolver.candidate.providers` に複数書いた場合は、**先に候補を返した拡張が勝ちます**
+
+---
+
+## 効いているかを確かめる
+
+対応表も契約表と同じで、左辺を間違えても実行時は「引かれない」だけで出力は黙って元のままです。
+同梱の `TypeMappingProvider` は、解析の最後にどの行が引かれたかを実行ログに出します。
+
+```
+[plugin] TypeMappingProvider: 対応表の適用 4/5 行
+[WARN] 対応表で一度も引かれなかった行が 1 件あります。左辺の綴り違いか、その呼び出しが先の段（実装が1つ・その場で new 等）で既に絞れている可能性があります:
+    FACTORY_KEY@NO_SUCH_KEY
+```
+
+引かれなかった原因は 2 つあり、どちらかは機械的に決められないので両方を挙げています。
+
+| 原因 | どうするか |
+|---|---|
+| 左辺の綴り違い（証拠の種別・キー・宣言型の FQN） | 直す。証拠のキーは `plugin.factory.hint.kind` の値と `@` でつないだ形（既定 `FACTORY_KEY@<キー>`） |
+| その呼び出しが[段1・段2](../README.md#具象クラスの解決)で既に絞れていて、拡張まで来ていない | そのままでよい。対応表を書く前から 1 件に絞れていたということ |
+
+自前のフェーズB拡張でも同じ知らせを出せます。`jche.extension.UsageReporter` を一緒に実装すると、
+CSV を書き終えたあとに `reportUsage()` が 1 回呼ばれます（実装しなくても何も起きません）。
+
+```java
+public class MyDiProvider implements TypeCandidateProvider, jche.extension.UsageReporter {
+    @Override
+    public void reportUsage() {
+        jche.util.Log.info("[plugin] MyDiProvider: " + used + "/" + rules.size() + " 件の規則が効きました");
+    }
+}
+```
+
+フェーズA（`CallSiteHintCollector`）では呼ばれません。キャッシュを再利用した実行ではフェーズAが
+そもそも動かないため、「0 件でした」と報告すると誤解を招くからです。

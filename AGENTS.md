@@ -65,11 +65,17 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/server/run.sh` | サーバーモード（`--server`）のプロトコルの検査。`HELLO` → `ANALYZE` → `FIND` / `AT` → `TREE` → `EXPORT` と断り方 |
 | `bash test/vscode/run.sh` | VSCode プラグインの `vscode` に触らない層の検査（Node 22 と npm が要る）。型検査、子プロセスとの一連のやりとり、木の組み直し、設定の用意、拡張本体を束ねられること、文言（英語と日本語でキーと差し込みがそろうこと・ソースに日本語が残っていないこと・`package.json` の `%キー%` が `package.nls*.json` とそろうこと） |
 | `bash test/vscode/package.sh` | VSCode プラグインの配布物（`.vsix`）の検査（上に加えて Maven と JDK 21 以上が要る）。`lib/` が eclipse-plugin のビルドから集まり JDT の版が `//DEPS` と同じこと、入るもの（`package.nls*.json` を含む）・入らないもの |
-| 全ソースの lint | `javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing`（smoke.yml の「Compile with all lint warnings as errors」と同じ引数） |
+| 全ソースの lint | `javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing`（smoke.yml の「Compile with all lint warnings as errors」と同じ引数）。**CI と同じ JDK 25 の javac で走らせる**（下記） |
 
 - ツールを動かす検査スクリプトは `JCHE_LANG=en` を輸出して言語を固定する。既定の経路をそのまま検査でき、
   実行環境のロケールで照合する文字列が変わらなくなる。日本語への切り替えそのものは `test/nls/run.sh` が見る
-- テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）。日本語を選んだ実行の出力を扱うため
+- テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）。ロケール未設定の環境では launcher.properties の
+  日本語書き込みで落ちるうえ、日本語を選んだ実行の出力も扱うため
+- lint は **JDK 25 の javac** で走らせる。古い JDK では通ってしまう検査がある
+  （`dangling-doc-comments`＝どの宣言にも付いていない javadoc は JDK 22 で入った。JDK 21 では警告が出ず、
+  CI の `regression` と `vscode-plugin`（`eclipse-plugin/pom.xml` の `-Xlint:all -Werror` 経由）でだけ落ちる）。
+  手元に無ければ `bash jbangw/jbang jdk install 25` で入れて `PATH` の先頭に置く:
+  `export PATH=$(bash jbangw/jbang jdk home 25)/bin:$PATH`
 - 出力 CSV の期待値（`expected*/`）を更新するときは、差分を確認したうえで最新の `output/*/` からコピーする。
   理由なく期待値を書き換えて通さない
 - テストをスキップ・無効化して通すことはしない
@@ -89,7 +95,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - **出力 CSV のセルは言語に関わらず英語**（注記・`unresolvedCause` / `absentCause`・`call-conditions.csv`・
   被参照の行・プラグインの `EXPORT`）。人向けの文章ではなく、期待値との比較・Excel のフィルタ・
   他のツールへの受け渡しに使う出力のデータだからである。注記にカンマを入れない
-  （セルが引用符で囲まれ、行末の grep が効かなくなる）。`docs/nls-qa.md` の Q6
+  （セルが引用符で囲まれ、行末の grep が効かなくなる）。`docs/nls-qa.md` の Q6。
+  同じ出力フォルダでも `contracts-suggested.txt` は**人が読んで選ぶ案内文**なので表示言語に合わせる
+  （`docs/nls-qa.md` の Q16）
 - キャッシュに焼き込まれる文字列（`Guard` の `text` のように**書き手が作る**もの）を変えるときは、
   文言の変更でもキャッシュの版を上げる。上げないと、再利用したファイルだけ古い言語の注記が出て
   同じ CSV に 2 つの言語が混ざる（`docs/nls-qa.md` の Q7）

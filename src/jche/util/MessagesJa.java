@@ -452,6 +452,20 @@ final class MessagesJa {
             "graph.contracts.loaded", "契約表を読み込み: {0}（{1} 行）",
             "graph.contracts.fromExtension", "契約を拡張から受け取り: {0}（{1} 行）",
             "graph.contracts.badRow", "契約の行を読めません（{0}）: {1}",
+            "graph.provider.ambiguous", "拡張が返した候補の型名 {0} は {1} つの型に当たるので使えません: {2}（{3}）。完全修飾名で返してください",
+            "graph.provider.usageFailed", "拡張の利用状況を報告できません: {0} ({1})",
+            "graph.contracts.origin.bundled", "同梱",
+            "graph.contracts.badRowHint", "（ファクトリのキーは \"…\" で囲みます。列挙定数なら引用符なしで FQN を書きます）",
+            "graph.contracts.factoryNeedsDataflow", "ファクトリとキーを書いた契約（型#メソッド(\"キー\") => 具象型）は、dataflow.enabled=false では引けません。この形の行は当たりません",
+            "graph.contracts.ambiguousType", "契約の型名 {0} は {1} つの型に当たるので使えません: {2}（完全修飾名で書いてください）: {3}",
+            "graph.contracts.usage", "契約表の適用: 自前 {0}/{1} 行（呼び戻し {2}/{3}、入口 {4}/{5}、具象型 {6}/{7}） ／ 同梱 {8} 行",
+            "graph.contracts.unused", "自前の契約表で一度も当たらなかった行が {0} 件あります。型名・シグネチャの綴り違いか、そのプロジェクトでは使っていない機能の行です:",
+            "graph.contracts.declaringTypeHint", "※ 呼び戻しの行の呼び出し先は、JDT が返す「宣言型」で書きます（List#forEach ではなく Iterable#forEach。docs/callback-contracts.md）。",
+            "graph.contracts.nearMiss", "※ {0}が {1} 件あります（表の誤りではありません）:",
+            "graph.contracts.nearMiss.callback", "呼び出し先には一致したが、渡した値の具象型が決まらず繋げなかった行",
+            "graph.contracts.nearMiss.callbackHint", "※ 追える形は docs/callback-contracts.md の「追える条件」にあります。",
+            "graph.contracts.nearMiss.type", "左辺の型には一致したが、右辺の型にその呼び出しの本体が無く採用できなかった行",
+            "graph.contracts.nearMiss.typeHint", "※ 右辺の FQN の綴りと、その型（か親）がそのメソッドを持つかを確かめてください。採用できないときは候補を落として CHA に戻すので、呼び出しは漏れません。",
         };
     }
 
@@ -479,6 +493,25 @@ final class MessagesJa {
             "report.walker.excludeDepthCap", "除外パッケージの読み飛ばしが深さ上限({0})に達したため、その先は辿りません",
             "report.walker.chaCandidateLimit", "CHA候補が{0}件を超える呼び出しがあります。超えた分は行に出しません（注記に件数が出ます）: {1}",
             "report.walker.maxRows", "出力行数の上限({0})に達したため打ち切りました",
+            "report.suggestions.written", "絞れなかった呼び出しを直すひな形: {0}（{1} 行）",
+            "report.suggestions.how1", "  ※ 当てはまる行のコメントを外し、?? を具象型に直して contracts.files の表に貼ると、",
+            "report.suggestions.how2", "     その呼び出しから先も階層に出ます（docs/callback-contracts.md）。",
+            "report.suggestions.failed", "契約表のひな形を書けません: {0} ({1})",
+            "report.suggestions.sites", "{0} か所  例) {1}",
+            "report.suggestions.candidates", "  候補: {0}",
+            "report.suggestions.typeWide1", "  ※ ファクトリに渡すキーが決まらなかったので、型のこのメソッド全部を同じ実装に決める行です。",
+            "report.suggestions.typeWide2", "     呼び出し箇所ごとに実装が違うなら、この行は貼らないでください（拡張で条件を書きます: docs/instance-analysis-plugin.md）。",
+            "report.suggestions.head.what1", "絞れなかった呼び出し（call-hierarchy.csv の [UNEXPANDED:CHA]）から作った、",
+            "report.suggestions.head.what2", "契約表のひな形です。解析のたびに作り直すので、直接編集しても残りません。",
+            "report.suggestions.head.usage", "使い方",
+            "report.suggestions.head.usage1", "  1. 当てはまる行の行頭の # を外す",
+            "report.suggestions.head.usage2", "  2. ?? を具象型の FQN に置き換える（候補はその行の上にあります）",
+            "report.suggestions.head.usage3", "  3. contracts.files が指す表（UTF-8）に貼る",
+            "report.suggestions.head.syntax1", "書き方は docs/callback-contracts.md の「C. 具象クラスを1件に絞る」にあります。",
+            "report.suggestions.head.syntax2", "型のどのメソッドでも同じ実装なら、左辺のメソッド名を落として「型 => 具象型」と書けます。",
+            "report.suggestions.head.syntax3", "候補が複数のままでよければ、右辺をカンマ区切りで並べられます（その場合は展開されません）。",
+            "report.suggestions.head.count", "ひな形 {0} 行",
+            "report.suggestions.head.capped", "※ 種類が多いため {0} 行で打ち切りました。上の行から直していくと、次の実行で残りが出ます。",
         };
     }
 
@@ -519,6 +552,8 @@ final class MessagesJa {
             "extension.typeMapping.file", "[plugin] 対応表: {0}",
             "extension.factoryKeys.noMethods", "{0}: {1} が空欄です（何も拾いません）",
             "extension.factoryKeys.targets", "[plugin] {0}: 対象 {1} 件",
+            "extension.typeMapping.usage", "[plugin] {0}: 対応表の適用 {1}/{2} 行",
+            "extension.typeMapping.unused", "対応表で一度も引かれなかった行が {0} 件あります。左辺の綴り違いか、その呼び出しが先の段（実装が1つ・その場で new 等）で既に絞れている可能性があります:",
         };
     }
 }

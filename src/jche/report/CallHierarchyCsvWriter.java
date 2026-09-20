@@ -138,7 +138,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      * コンソール」が期待するのは内部クラスを $ で区切ったバイナリ名（Outer$Inner）。
      * ドットのままだと内部クラスのメソッドへのジャンプが解決できない。
      */
-    private static String stackTrace(MethodTable mt, int id, int line) {
+    static String stackTrace(MethodTable mt, int id, int line) {
         String file = mt.declFile(id);
         if (file == null || line < 0) {
             return mt.shortLabel(id) + " (unknown)";

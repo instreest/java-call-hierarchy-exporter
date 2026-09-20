@@ -477,6 +477,16 @@ public final class DataflowResolver {
         return (name != null && graph.hierarchy.contains(name)) ? name : null;
     }
 
+    /**
+     * 出所が表す文字列の値（リテラル・コンパイル時定数と、委譲を畳んだ戻り値）。分からなければ null。
+     *
+     * <p>種類 C の契約表（{@link TypeContracts}）が、ファクトリに渡されたキーを引くのに使う。
+     * 辿る段数は {@code dataflow.max.depth} で頭打ちになり、それを超えるものは「分からない」に倒す。
+     */
+    String literalValueOf(String origin, DataflowContext ctx) {
+        return literalOf(origin, ctx, 0);
+    }
+
     /** 出所が表す文字列の値（リテラル・定数・経路上の引数）。分からなければ null */
     private String literalOf(String origin, DataflowContext ctx, int depth) {
         if (origin == null || depth > maxDepth) {

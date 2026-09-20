@@ -34,8 +34,8 @@ import jche.cache.Origin;
  */
 public final class CallbackContracts {
 
-    /** 契約の1行 */
-    record Contract(String calleeKey, char where, int index, String callbackSig, String text) {
+    /** 契約の1行。{@code row} は契約表の何行目か（{@link ContractUsage} の添字） */
+    record Contract(String calleeKey, char where, int index, String callbackSig, String text, int row) {
         static final char RECEIVER = 'r';
         static final char ARGUMENT = 'a';
         static final char CTOR_ARGUMENT = 'c';
@@ -46,13 +46,16 @@ public final class CallbackContracts {
     private final CallGraph graph;
     private final MethodTable methods;
     private final DataflowResolver dataflow;
+    private final ContractUsage usage;
 
-    public CallbackContracts(CallGraph graph, DataflowResolver dataflow, List<String> lines) {
+    public CallbackContracts(CallGraph graph, DataflowResolver dataflow, ContractUsage usage) {
         this.graph = graph;
         this.methods = graph.methods;
         this.dataflow = dataflow;
-        for (String line : lines) {
-            Contract c = parse(line);
+        this.usage = usage;
+        List<ContractUsage.Line> lines = usage.lines();
+        for (int row = 0; row < lines.size(); row++) {
+            Contract c = parse(lines.get(row).text(), row);
             if (c != null) {
                 byCallee.computeIfAbsent(c.calleeKey(), k -> new ArrayList<>()).add(c);
             }
@@ -61,7 +64,12 @@ public final class CallbackContracts {
 
     /** 同梱の JDK の契約だけを持つ表 */
     public static CallbackContracts jdk(CallGraph graph, DataflowResolver dataflow) {
-        return new CallbackContracts(graph, dataflow, JdkCallbacks.LINES);
+        return new CallbackContracts(graph, dataflow, ContractUsage.ofBundled(JdkCallbacks.LINES));
+    }
+
+    /** 行ごとの利用状況（どの契約が効いたか） */
+    public ContractUsage usage() {
+        return usage;
     }
 
     /**
@@ -69,6 +77,11 @@ public final class CallbackContracts {
      * ログに出せるよう null を返す）
      */
     static Contract parse(String line) {
+        return parse(line, ContractUsage.NO_ROW);
+    }
+
+    /** @param row 契約表の何行目か（利用状況の記録用） */
+    private static Contract parse(String line, int row) {
         String s = (line == null) ? "" : line.trim();
         if (s.isEmpty() || s.startsWith("#")) {
             return null;
@@ -102,7 +115,7 @@ public final class CallbackContracts {
         } else {
             return null;
         }
-        return new Contract(callee, where, index, sig, s);
+        return new Contract(callee, where, index, sig, s, row);
     }
 
     public boolean isEmpty() {
@@ -131,9 +144,12 @@ public final class CallbackContracts {
         }
         List<Match> found = new ArrayList<>();
         for (Contract c : contracts) {
+            // 呼び出し先には一致した。繋がらなくても「表の綴りは合っている」と言えるので分けて数える
+            usage.markReached(c.row());
             for (String origin : valuesAt(edgeIndex, c)) {
                 int id = callbackTargetOf(origin, c.callbackSig(), ctx);
                 if (id >= 0 && methods.hasSource(id) && found.stream().noneMatch(m -> m.target() == id)) {
+                    usage.markApplied(c.row());
                     found.add(new Match(id, shortKey(c.calleeKey()) + " calls " + c.callbackSig()));
                 }
             }

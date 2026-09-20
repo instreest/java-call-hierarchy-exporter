@@ -80,7 +80,7 @@ public final class Exporter {
         RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 0, 1);
         Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
         CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
-                contracts.callbacks(), contracts.entries());
+                contracts.callbacks(), contracts.entries(), contracts.types());
         RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
         Log.heap(Messages.get("exporter.heap.phase2"));
         return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles);

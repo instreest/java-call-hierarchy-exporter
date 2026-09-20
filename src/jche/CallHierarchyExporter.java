@@ -55,6 +55,7 @@ import jche.graph.EntryPoints;
 import jche.server.Server;
 import jche.report.CallConditionsReport;
 import jche.report.CallHierarchyCsvWriter;
+import jche.report.ContractSuggestions;
 import jche.report.InventoryReport;
 import jche.report.StreamingTreeWalker;
 import jche.report.UnresolvedReport;
@@ -385,7 +386,34 @@ public class CallHierarchyExporter {
             Log.info(Messages.get("exporter.prunedOut2"));
         }
 
+        // 契約表・対応表が効いたかを知らせる。methods.csv の出力でグラフ全体を走査し終えた
+        // ここで初めて「一度も当たらなかった」と言える
+        resolver.reportUsage();
+
+        // 絞れなかった呼び出しは、そのまま貼れる契約表の行にしておく。
+        // 「候補N件」と言われても何をどこに書けば絞れるかは出力から分からないため
+        writeContractSuggestions(config, walker);
+
         Log.heap(Messages.get("exporter.heap.phase3"));
         return rows;
+    }
+
+    /** 絞れなかった呼び出しから契約表のひな形を書く。1 件も無ければ何も書かない */
+    private static void writeContractSuggestions(Config config, StreamingTreeWalker walker) {
+        ContractSuggestions suggestions = walker.suggestions();
+        if (suggestions.isEmpty()) {
+            return;
+        }
+        try {
+            int lines = suggestions.write(config.contractsSuggestedFile);
+            Log.info(Messages.format("report.suggestions.written",
+                    config.contractsSuggestedFile, lines));
+            Log.info(Messages.get("report.suggestions.how1"));
+            Log.info(Messages.get("report.suggestions.how2"));
+        } catch (IOException e) {
+            // ひな形が書けなくても解析の結果は正しい。出せなかったことだけ知らせる
+            Log.warn(Messages.format("report.suggestions.failed",
+                    config.contractsSuggestedFile, e));
+        }
     }
 }

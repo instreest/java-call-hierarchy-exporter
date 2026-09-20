@@ -8,13 +8,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import jche.extension.Hint;
 import jche.extension.TypeCandidateProvider;
+import jche.extension.UsageReporter;
 import jche.util.Log;
 import jche.util.Messages;
 
@@ -49,7 +52,7 @@ import jche.util.Messages;
  * 引く順番は 3（証拠）→ 2（型＋メソッド）→ 1（型）。呼び出し箇所ごとの情報である証拠を
  * 最優先にし、そこに無ければ型全体の既定に落とす。
  */
-public final class TypeMappingProvider implements TypeCandidateProvider {
+public final class TypeMappingProvider implements TypeCandidateProvider, UsageReporter {
 
     /** 対応表ファイル（設定ファイルのフォルダからの相対、カンマ区切り） */
     public static final String KEY_FILES = "plugin.mapping.files";
@@ -69,6 +72,8 @@ public final class TypeMappingProvider implements TypeCandidateProvider {
     public static final String HINT_SEPARATOR = "@";
 
     private final Map<String, String[]> mapping = new LinkedHashMap<>();
+    /** 実際に引かれた左辺。設定したのに効いていない行を最後に知らせるために数える */
+    private final Set<String> used = new HashSet<>();
     private String label = DEFAULT_LABEL;
     private boolean appliesToStaticBound;
 
@@ -131,19 +136,56 @@ public final class TypeMappingProvider implements TypeCandidateProvider {
     @Override
     public String[] candidates(String declaredType, String signature, List<Hint> hints) {
         for (Hint hint : hints) {
-            String[] byHint = mapping.get(hint.kind() + HINT_SEPARATOR + hint.value());
+            String key = hint.kind() + HINT_SEPARATOR + hint.value();
+            String[] byHint = mapping.get(key);
             if (byHint != null) {
+                used.add(key);
                 return byHint;
             }
         }
         String methodName = methodNameOf(signature);
         if (!methodName.isEmpty()) {
-            String[] byMethod = mapping.get(declaredType + "#" + methodName);
+            String key = declaredType + "#" + methodName;
+            String[] byMethod = mapping.get(key);
             if (byMethod != null) {
+                used.add(key);
                 return byMethod;
             }
         }
-        return mapping.get(declaredType);
+        String[] byType = mapping.get(declaredType);
+        if (byType != null) {
+            used.add(declaredType);
+        }
+        return byType;
+    }
+
+    /**
+     * 対応表のどの行が引かれたかを知らせる。
+     *
+     * <p>引かれなかった行には 2 つの原因がある。左辺の綴り違い（効いていない）と、その呼び出しが
+     * 先の段で既に絞れていて拡張まで来なかった場合（効かせる必要が無い）。どちらかは機械的には
+     * 決められないので、両方を挙げて利用者に確かめてもらう。
+     */
+    @Override
+    public void reportUsage() {
+        if (mapping.isEmpty()) {
+            return;   // init で既に警告済み
+        }
+        Log.info(Messages.format("extension.typeMapping.usage", getClass().getSimpleName(),
+                used.size(), mapping.size()));
+        List<String> unused = new ArrayList<>();
+        for (String key : mapping.keySet()) {
+            if (!used.contains(key)) {
+                unused.add(key);
+            }
+        }
+        if (unused.isEmpty()) {
+            return;
+        }
+        Log.warn(Messages.format("extension.typeMapping.unused", unused.size()));
+        for (String key : unused) {
+            Log.info("    " + key);
+        }
     }
 
     /** シグネチャ "find(java.lang.String)" からメソッド名だけを取り出す */

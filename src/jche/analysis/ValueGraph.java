@@ -7,6 +7,7 @@ import java.util.Map;
 
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeLiteral;
@@ -109,7 +110,8 @@ final class ValueGraph {
             int recv = (mi.getExpression() == null)
                     ? ValueNode.NONE : nodeOf(mi.getExpression(), depth + 1);
             return node(Origin.RETURN, ref.key(), recv,
-                    argsOf(mi.arguments(), depth), mi.arguments().size());
+                    argsOf(mi.arguments(), depth), mi.arguments().size(),
+                    staticReceiverOf(mi, ref.typeFqn()));
         }
         if (e instanceof StringLiteral literal) {
             // 長さも形も問わない。SQL やログ文言もそのまま持つ（analysis 側は捨てていた）
@@ -181,10 +183,35 @@ final class ValueGraph {
         return sb.toString();
     }
 
+    /**
+     * 呼び出しを<b>ソースに書いたときのレシーバの型</b>。宣言元と同じか、分からなければ空文字。
+     *
+     * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
+     * メソッドキーは親になる。利用者が契約表や拡張で指定するのはソースに書いてある型なので、
+     * 違うときだけ書かれた型も残す（同じなら持たない。キャッシュを無駄に太らせないため）。
+     */
+    private String staticReceiverOf(MethodInvocation mi, String declaringFqn) {
+        Expression receiver = mi.getExpression();
+        if (receiver == null) {
+            return "";   // 修飾なしの呼び出し。書かれた型は無い
+        }
+        ITypeBinding type = receiver.resolveTypeBinding();
+        if (type == null) {
+            return "";
+        }
+        String written = names.typeNameOf(BindingNames.erasureOf(type));
+        return (written == null || written.isEmpty() || written.equals(declaringFqn)) ? "" : written;
+    }
+
     /** ノードを1つ足す（同じ構造のものが既にあればその番号を返す） */
     private int node(char kind, String value, int recv, String args, int argCount) {
+        return node(kind, value, recv, args, argCount, "");
+    }
+
+    private int node(char kind, String value, int recv, String args, int argCount,
+                     String staticRecv) {
         ValueNode candidate = new ValueNode(out.valueNodes.size(), kind,
-                (value == null) ? "" : value, recv, args, argCount);
+                (value == null) ? "" : value, recv, args, argCount, staticRecv);
         Integer existing = dedupe.get(candidate.dedupeKey());
         if (existing != null) {
             return existing;

@@ -126,6 +126,7 @@ config/
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8）
+    ├── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
     └── resolved-classpath.txt    解析時の依存jar一覧と要求元
 ```
 
@@ -345,7 +346,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 | 0 | `STATIC_BOUND:*` | private / static / final メソッド、finalクラス、コンストラクタ、super呼び出し |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が1つに定まる |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
-| 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
+| 3 | `CONTRACT` | 契約表に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。契約表の次に尋ねる |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定（[注記の表](#注記)） |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数から特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドから特定（同上） |
@@ -354,8 +356,10 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,team-b-batch.jar,
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
 
-`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます
-（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。
+`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます。
+出力フォルダの `contracts-suggested.txt` に、そのまま貼れる契約表のひな形が出ます
+（[docs/callback-contracts.md](docs/callback-contracts.md)。条件が複雑なら
+[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) の拡張）。
 
 静的解析で絞れる条件・絞れない条件は [docs/static-analysis-limits.md](docs/static-analysis-limits.md) にまとめてあります。
 
@@ -565,6 +569,7 @@ config/
     ├── methods.csv               every method in the source
     ├── config.properties         a copy of the config file used for this run (under the name you passed)
     ├── run.log                   the run log, the same content as standard output (UTF-8)
+    ├── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
     └── resolved-classpath.txt    the dependency jars collected, and who asked for each
 ```
 
@@ -791,7 +796,8 @@ resolved to. It stops at the first step that decides.
 | 0 | `STATIC_BOUND:*` | private / static / final methods, final classes, constructors, super calls |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | The override candidates narrow to one |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | A type `new`-ed inside the same method |
-| 3 | (the label the extension returns) | A factory, a DI configuration, an external list and so on ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |
+| 3 | `CONTRACT` | Decided by a contract table row saying "this declared type (method) is this concrete type" ([docs/callback-contracts.md](docs/callback-contracts.md)) |
+| 3 | (the label the extension returns) | A factory, a DI configuration, an external list and so on ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)). Asked after the contract table |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | Determined from a `new`-ed type or from the return value of a factory method ([table of notes](#notes)) |
 | — | `DATAFLOW_PARAM` | Determined from an argument passed in by the caller (outside the steps, because it is decided per path) |
 | — | `DATAFLOW_FIELD` | Determined from a constructor-injected field (same) |
@@ -800,8 +806,10 @@ resolved to. It stops at the first step that decides.
 | 6 | `CHA` | Several candidates remain (low confidence) |
 | — | `GENERATED_IMPL:name` | A type whose implementation is generated at compile time by annotation processing (a special case of `NO_IMPL`) |
 
-Calls that stay at `CHA` can be narrowed to one by supplying the resolution conditions from outside
-([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)).
+Calls that stay at `CHA` can be narrowed to one by supplying the resolution conditions from outside.
+The output folder holds a `contracts-suggested.txt` with a contract table template you can paste as is
+([docs/callback-contracts.md](docs/callback-contracts.md); for complex conditions, the extensions in
+[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)).
 
 What static analysis can and cannot narrow down is written up in
 [docs/static-analysis-limits.md](docs/static-analysis-limits.md).

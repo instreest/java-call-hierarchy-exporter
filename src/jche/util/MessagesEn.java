@@ -452,6 +452,20 @@ final class MessagesEn {
             "graph.contracts.loaded", "Contract table loaded: {0} ({1} rows)",
             "graph.contracts.fromExtension", "Contracts received from an extension: {0} ({1} rows)",
             "graph.contracts.badRow", "Cannot read a contract row ({0}): {1}",
+            "graph.provider.ambiguous", "Cannot use the type name {0} the extension returned: it matches {1} type(s): {2} ({3}). Please return a fully qualified name",
+            "graph.provider.usageFailed", "Cannot report the usage of an extension: {0} ({1})",
+            "graph.contracts.origin.bundled", "bundled",
+            "graph.contracts.badRowHint", " (a factory key goes inside \"...\"; for an enum constant write the FQN without quotes)",
+            "graph.contracts.factoryNeedsDataflow", "Contracts written with a factory and a key (Type#method(\"key\") => concrete type) cannot be looked up while dataflow.enabled=false. Rows in this shape never match",
+            "graph.contracts.ambiguousType", "Cannot use the contract type name {0}: it matches {1} type(s): {2} (write a fully qualified name): {3}",
+            "graph.contracts.usage", "Contract tables applied: yours {0}/{1} row(s) (callbacks {2}/{3}, entries {4}/{5}, concrete types {6}/{7}) / bundled {8} row(s)",
+            "graph.contracts.unused", "{0} row(s) in your own contract tables never matched. Either a type name or a signature is misspelled, or the rows cover features this project does not use:",
+            "graph.contracts.declaringTypeHint", "Note: the callee of a callback row is written with the declaring type JDT reports (Iterable#forEach, not List#forEach. docs/callback-contracts.md).",
+            "graph.contracts.nearMiss", "Note: {1} row(s) where {0} (this is not an error in the table):",
+            "graph.contracts.nearMiss.callback", "the callee matched but the concrete type of the value passed in was not determined, so nothing was connected",
+            "graph.contracts.nearMiss.callbackHint", "Note: docs/callback-contracts.md lists the shapes that can be followed.",
+            "graph.contracts.nearMiss.type", "the left-hand type matched but the right-hand type has no body for that call, so the candidate was not used",
+            "graph.contracts.nearMiss.typeHint", "Note: check the spelling of the right-hand FQN and that the type (or a parent) has that method. A candidate that cannot be used is dropped and CHA takes over, so no call is missed.",
         };
     }
 
@@ -479,6 +493,25 @@ final class MessagesEn {
             "report.walker.excludeDepthCap", "Skipping excluded packages hit the depth cap ({0}), so nothing below it is followed",
             "report.walker.chaCandidateLimit", "Some calls have more than {0} CHA candidates. The rest are not written as rows (the note shows the count): {1}",
             "report.walker.maxRows", "The row limit ({0}) was reached, so the output stops here",
+            "report.suggestions.written", "Template for the calls that could not be narrowed: {0} ({1} rows)",
+            "report.suggestions.how1", "  Note: uncomment a row that applies, replace ?? with the concrete type and paste it into a contracts.files table,",
+            "report.suggestions.how2", "     and the hierarchy continues past that call (docs/callback-contracts.md).",
+            "report.suggestions.failed", "Cannot write the contract table template: {0} ({1})",
+            "report.suggestions.sites", "{0} site(s)  e.g. {1}",
+            "report.suggestions.candidates", "  candidates: {0}",
+            "report.suggestions.typeWide1", "  Note: the key passed to the factory was not determined, so this row fixes every call of that method on the type to one implementation.",
+            "report.suggestions.typeWide2", "     If the implementation differs per call site, do not paste this row (write the condition in an extension: docs/instance-analysis-plugin.md).",
+            "report.suggestions.head.what1", "A contract table template built from the calls that could not be narrowed",
+            "report.suggestions.head.what2", "([UNEXPANDED:CHA] in call-hierarchy.csv). It is rebuilt on every run, so edits here do not survive.",
+            "report.suggestions.head.usage", "How to use",
+            "report.suggestions.head.usage1", "  1. Remove the leading # from a row that applies",
+            "report.suggestions.head.usage2", "  2. Replace ?? with the FQN of the concrete type (the candidates are listed above the row)",
+            "report.suggestions.head.usage3", "  3. Paste it into a table that contracts.files points at (UTF-8)",
+            "report.suggestions.head.syntax1", "The syntax is described in docs/callback-contracts.md.",
+            "report.suggestions.head.syntax2", "If every method of the type uses the same implementation, drop the method name and write \"Type => concrete type\".",
+            "report.suggestions.head.syntax3", "If several candidates are fine, list them on the right separated by commas (they are then not expanded).",
+            "report.suggestions.head.count", "Template rows: {0}",
+            "report.suggestions.head.capped", "Note: there are too many kinds, so this stopped at {0} rows. Fix the rows above and the rest appear on the next run.",
         };
     }
 
@@ -519,6 +552,8 @@ final class MessagesEn {
             "extension.typeMapping.file", "[plugin] mapping table: {0}",
             "extension.factoryKeys.noMethods", "{0}: {1} is empty (nothing is collected)",
             "extension.factoryKeys.targets", "[plugin] {0}: {1} target(s)",
+            "extension.typeMapping.usage", "[plugin] {0}: mapping table applied to {1}/{2} row(s)",
+            "extension.typeMapping.unused", "{0} row(s) in the mapping table were never looked up. Either the left-hand side is misspelled, or the call was already narrowed at an earlier stage (a single implementation, a direct new, etc.):",
         };
     }
 }

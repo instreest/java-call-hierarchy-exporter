@@ -1,15 +1,36 @@
 caller,callee,root,call-hierarchy
-at fxp.App.factoryCall(App.java:16),DaoFactory.get,App.factoryCall,DaoFactory.get
-at fxp.App.factoryCall(App.java:17),AbstractDao.find,App.factoryCall,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
-at fxp.App.factoryCall(App.java:17),OrderDaoImpl.find,App.factoryCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
-at fxp.App.factoryCall(App.java:17),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
-at fxp.App.chainedCall(App.java:21),AbstractDao.find,App.chainedCall,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
-at fxp.App.chainedCall(App.java:21),OrderDaoImpl.find,App.chainedCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
-at fxp.App.chainedCall(App.java:21),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
-at fxp.App.chainedCall(App.java:21),DaoFactory.get,App.chainedCall,DaoFactory.get
-at fxp.App.injected(App.java:25),BillingService.run,App.injected,BillingService.run,[UNEXPANDED:CHA] 2 candidates: field
-at fxp.App.injected(App.java:25),ReportService.run,App.injected,ReportService.run,[UNEXPANDED:CHA] 2 candidates: field
-at fxp.App.inheritedImpl(App.java:29),DaoFactory.get,App.inheritedImpl,DaoFactory.get
-at fxp.App.inheritedImpl(App.java:30),AbstractDao.find,App.inheritedImpl,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
-at fxp.App.inheritedImpl(App.java:30),OrderDaoImpl.find,App.inheritedImpl,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
-at fxp.App.inheritedImpl(App.java:30),UserDaoImpl.find,App.inheritedImpl,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.factoryCall(App.java:20),DaoFactory.get,App.factoryCall,DaoFactory.get
+at fxp.App.factoryCall(App.java:21),AbstractDao.find,App.factoryCall,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.factoryCall(App.java:21),OrderDaoImpl.find,App.factoryCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.factoryCall(App.java:21),UserDaoImpl.find,App.factoryCall,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.chainedCall(App.java:25),AbstractDao.find,App.chainedCall,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
+at fxp.App.chainedCall(App.java:25),OrderDaoImpl.find,App.chainedCall,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
+at fxp.App.chainedCall(App.java:25),UserDaoImpl.find,App.chainedCall,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
+at fxp.App.chainedCall(App.java:25),DaoFactory.get,App.chainedCall,DaoFactory.get
+at fxp.App.injected(App.java:29),BillingService.run,App.injected,BillingService.run,[UNEXPANDED:CHA] 2 candidates: field
+at fxp.App.injected(App.java:29),ReportService.run,App.injected,ReportService.run,[UNEXPANDED:CHA] 2 candidates: field
+at fxp.App.inheritedImpl(App.java:33),DaoFactory.get,App.inheritedImpl,DaoFactory.get
+at fxp.App.inheritedImpl(App.java:34),AbstractDao.find,App.inheritedImpl,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.inheritedImpl(App.java:34),OrderDaoImpl.find,App.inheritedImpl,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.inheritedImpl(App.java:34),UserDaoImpl.find,App.inheritedImpl,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.enumKey(App.java:38),DaoFactory.get,App.enumKey,DaoFactory.get
+at fxp.App.enumKey(App.java:39),AbstractDao.find,App.enumKey,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.enumKey(App.java:39),OrderDaoImpl.find,App.enumKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.enumKey(App.java:39),UserDaoImpl.find,App.enumKey,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.inheritedFactory(App.java:43),BaseDaoFactory.pick,App.inheritedFactory,BaseDaoFactory.pick
+at fxp.App.inheritedFactory(App.java:44),AbstractDao.find,App.inheritedFactory,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.inheritedFactory(App.java:44),OrderDaoImpl.find,App.inheritedFactory,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.inheritedFactory(App.java:44),UserDaoImpl.find,App.inheritedFactory,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.otherFactory(App.java:48),BaseDaoFactory.pick,App.otherFactory,BaseDaoFactory.pick
+at fxp.App.otherFactory(App.java:49),AbstractDao.find,App.otherFactory,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.otherFactory(App.java:49),OrderDaoImpl.find,App.otherFactory,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.otherFactory(App.java:49),UserDaoImpl.find,App.otherFactory,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.viaParam(App.java:53),App.byKey,App.viaParam,App.byKey
+at fxp.App.byKey(App.java:58),DaoFactory.get,App.viaParam,App.byKey,DaoFactory.get
+at fxp.App.byKey(App.java:59),AbstractDao.find,App.viaParam,App.byKey,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:59),OrderDaoImpl.find,App.viaParam,App.byKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:59),UserDaoImpl.find,App.viaParam,App.byKey,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:58),DaoFactory.get,App.byKey,DaoFactory.get
+at fxp.App.byKey(App.java:59),AbstractDao.find,App.byKey,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:59),OrderDaoImpl.find,App.byKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:59),UserDaoImpl.find,App.byKey,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable

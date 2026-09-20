@@ -5,4 +5,9 @@ public class DaoFactory {
     public static Dao get(String key) {
         return null;
     }
+
+    /** キーを列挙型で受ける形。契約表には fxp.DaoKind.USER のように FQN で書く */
+    public static Dao get(DaoKind kind) {
+        return null;
+    }
 }

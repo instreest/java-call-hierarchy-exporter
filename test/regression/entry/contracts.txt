@@ -1,0 +1,12 @@
+# 契約表が「効いたか」を知らせる仕組みの検査用（test/regression/run.sh が実行ログを見る）。
+# わざと当たらない行だけを書いてあるので、この表を足しても CSV の出力は変わらない。
+# （契約表はキャッシュの指紋に入らないので、キャッシュの再利用の検査にも影響しない）
+
+# 1) 呼び出し先にも一致しない行。型名の綴り違いを想定。[WARN] に挙がる
+fx.entry.NoSuchDispatcher#submit(java.lang.Runnable) -> a0 : run()
+@fx.entry.NoSuchEndpoint
+
+# 2) 呼び出し先には一致するが、渡した値の具象型が決まらない行。
+#    Dispatcher#submit は実在する（Jobs.custom が呼ぶ）が、レシーバの Dispatcher に run() は無い。
+#    「表の誤りではない」ほうの知らせ（※）に挙がる
+fx.entry.Dispatcher#submit(java.lang.Runnable) -> r : run()
