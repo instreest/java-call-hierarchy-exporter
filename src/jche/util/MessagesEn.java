@@ -340,7 +340,7 @@ final class MessagesEn {
             "config.read.failed", "Cannot read the config file: {0} ({1}). When writing a Windows path, use / as the separator or double every backslash",
             "config.pomEncodingLabel", "project.build.sourceEncoding in pom.xml",
             "config.badCharset", "The charset name of setting {0} is not valid: '{1}' (for example: UTF-8, MS932, Shift_JIS)",
-            "config.badSourceLevel", "source.level={0} is not supported by this JDT. Allowed values: {1} (left empty, the highest, {2}, is used)",
+            "config.badSourceLevel", "source.level={0} is not supported by this JDT. Allowed values: {1} (leave it empty to use the highest, {2})",
             "config.removed.outputCsv", "The output location is set with output.folder (a folder) and the file name is fixed to {0}",
             "config.removed.cacheFolders", "The cache is set with cache.folder (singular). Left empty, it is created per analyzed project under {0}/ in the tool's project folder",
             "config.removed", "Setting {0} has been removed. {1}. Delete the line and, if you need it, write it with the new item",
@@ -458,7 +458,7 @@ final class MessagesEn {
             "graph.contracts.badRowHint", " (a factory key goes inside \"...\"; for an enum constant write the FQN without quotes)",
             "graph.contracts.factoryNeedsDataflow", "Contracts written with a factory and a key (Type#method(\"key\") => concrete type) cannot be looked up while dataflow.enabled=false. Rows in this shape never match",
             "graph.contracts.ambiguousType", "Cannot use the contract type name {0}: it matches {1} type(s): {2} (write a fully qualified name): {3}",
-            "graph.contracts.usage", "Contract tables applied: yours {0}/{1} row(s) (callbacks {2}/{3}, entries {4}/{5}, concrete types {6}/{7}) / bundled {8} row(s)",
+            "graph.contracts.usage", "Contract tables applied: your own {0}/{1} row(s) (callbacks {2}/{3}, entries {4}/{5}, concrete types {6}/{7}) / bundled {8} row(s)",
             "graph.contracts.unused", "{0} row(s) in your own contract tables never matched. Either a type name or a signature is misspelled, or the rows cover features this project does not use:",
             "graph.contracts.declaringTypeHint", "Note: the callee of a callback row is written with the declaring type JDT reports (Iterable#forEach, not List#forEach. docs/callback-contracts.md).",
             "graph.contracts.nearMiss", "Note: {1} row(s) where {0} (this is not an error in the table):",
@@ -489,7 +489,7 @@ final class MessagesEn {
             "report.conditions.legendDecidable", "  [decidable]   ... if the caller passes a constant, this path can be shown not to run (used for pruning)",
             "report.conditions.legendUndecidable", "  [undecidable] ... it affects reachability but the value is not known statically. A person has to check the runtime value",
             "report.conditions.written", "Call conditions: {0} ({1} rows)",
-            "report.inventory.summary", "methods={0} entry candidates={1} framework entries={2} isolated={3} leaves={4} unreached={5} not in the hierarchy CSV={6} (of those, below a pruned call={7}) with unresolved calls={8} ({9} constructors and {10} lambda / static initializer / anonymous class methods are not written)",
+            "report.inventory.summary", "methods={0} entryCandidates={1} frameworkEntries={2} isolated={3} leaves={4} unreached={5} notInHierarchyCsv={6} (of those {7} below a pruned call) withUnresolvedCalls={8} ({9} constructors and {10} lambda / static initializer / anonymous class methods are not written)",
             "report.walker.excludeDepthCap", "Skipping excluded packages hit the depth cap ({0}), so nothing below it is followed",
             "report.walker.chaCandidateLimit", "Some calls have more than {0} CHA candidates. The rest are not written as rows (the note shows the count): {1}",
             "report.walker.maxRows", "The row limit ({0}) was reached, so the output stops here",
@@ -511,7 +511,7 @@ final class MessagesEn {
             "report.suggestions.head.syntax2", "If every method of the type uses the same implementation, drop the method name and write \"Type => concrete type\".",
             "report.suggestions.head.syntax3", "If several candidates are fine, list them on the right separated by commas (they are then not expanded).",
             "report.suggestions.head.count", "Template rows: {0}",
-            "report.suggestions.head.capped", "Note: there are too many kinds, so this stopped at {0} rows. Fix the rows above and the rest appear on the next run.",
+            "report.suggestions.head.capped", "Note: there are too many distinct rows, so this stopped at {0}. Work through the rows above and the rest appear on the next run.",
         };
     }
 
