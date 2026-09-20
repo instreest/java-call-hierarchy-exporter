@@ -27,6 +27,7 @@ import jche.graph.TypeHierarchy;
 import jche.report.CallHierarchyCsvWriter;
 import jche.util.Log;
 import jche.util.Names;
+import jche.util.Messages;
 
 /**
  * 他チームのjarを走査し、自分のメソッドがどこから参照されているかを出力する。
@@ -61,12 +62,9 @@ public final class ExternalUsageScanner {
 
         @Override
         public String toString() {
-            return "jar=" + jars + (nestedJars > 0 ? " jar内のjar=" + nestedJars : "")
-                    + " クラス=" + classes
-                    + " 被参照=" + hits + "件（自分のメソッド " + usedMethods + " 個）"
-                    + " 暗黙コンストラクタ=" + implicitCtors
-                    + " 未照合=" + unmatched
-                    + " 自プロジェクトクラスを除外=" + selfClasses;
+            return Messages.format("external.summary", jars,
+                    (nestedJars > 0) ? Messages.format("external.summary.nested", nestedJars) : "",
+                    classes, hits, usedMethods, implicitCtors, unmatched, selfClasses);
         }
     }
 
@@ -97,7 +95,7 @@ public final class ExternalUsageScanner {
     public static Stats scan(CallGraph graph, Config config, CallHierarchyCsvWriter out)
             throws IOException {
         List<Path> jars = collectJars(config.externalLibraryFolders);
-        Log.info("外部jar: " + jars.size() + " 件");
+        Log.info(Messages.format("external.jarCount", jars.size()));
         ExternalUsageScanner scanner = new ExternalUsageScanner(graph, out);
         for (Path jar : jars) {
             scanner.scanJar(jar);
@@ -139,8 +137,8 @@ public final class ExternalUsageScanner {
             try {
                 refs = ClassFileRefs.parse(is);
             } catch (Exception ex) {
-                Log.warn("class解析に失敗（スキップ）: "
-                        + jarLabel + "!/" + entryName + " (" + ex.getMessage() + ")");
+                Log.warn(Messages.format("external.classFailed",
+                        jarLabel + "!/" + entryName + " (" + ex.getMessage() + ")"));
                 return;
             }
             // 自プロジェクトのクラスが混ざったjar（自分のビルド成果物が
@@ -155,8 +153,7 @@ public final class ExternalUsageScanner {
         } else if (isArchiveName(entryName)) {
             String nestedLabel = jarLabel + "!/" + entryName;
             if (depth >= MAX_NESTING) {
-                Log.warn("jar の入れ子が深すぎるため読み飛ばします（" + MAX_NESTING + " 段まで）: "
-                        + nestedLabel);
+                Log.warn(Messages.format("external.nestingTooDeep", MAX_NESTING, nestedLabel));
                 return;
             }
             scanNestedJar(nestedLabel, is, depth + 1);
@@ -183,7 +180,7 @@ public final class ExternalUsageScanner {
                 zip.closeEntry();
             }
         } catch (java.util.zip.ZipException ex) {
-            Log.warn("jar 内の jar を読めません（スキップ）: " + nestedLabel + " (" + ex.getMessage() + ")");
+            Log.warn(Messages.format("external.nestedJarUnreadable", nestedLabel, ex.getMessage()));
             return;
         }
         stats.nestedJars++;
@@ -370,7 +367,7 @@ public final class ExternalUsageScanner {
                             .forEach(out::add);
                 }
             } else {
-                Log.warn("external.library.folders の指定が見つかりません: " + r);
+                Log.warn(Messages.format("external.folderMissing", r));
             }
         }
         return new ArrayList<>(out);

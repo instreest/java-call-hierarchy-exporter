@@ -103,7 +103,7 @@ final class GuardCollector {
         if (recordAll && atoms.size() >= maxAtoms) {
             // 「条件が無い」と「記録を諦めた」を読み手が区別できるようにする
             atoms.add(Guard.atom(Guard.MORE, Origin.UNKNOWN_S, "",
-                    "これ以上の条件は記録していません（上限 " + maxAtoms + " 件）"));
+                    "no further conditions recorded (limit " + maxAtoms + ")"));
         }
         return atoms.isEmpty() ? "" : Guard.join(atoms);
     }
@@ -176,7 +176,7 @@ final class GuardCollector {
                                List<String> atoms) {
         String origin = evaluableOriginOf(selector);
         if (origin == null) {
-            addUnknown(atoms, "switch (" + selector + ") の枝");
+            addUnknown(atoms, "switch (" + selector + ") branch");
             return;
         }
         List<String> allValues = new ArrayList<>();
@@ -186,13 +186,13 @@ final class GuardCollector {
             }
             if (!sc.isSwitchLabeledRule()) {
                 // コロン形式（フォールスルーがあるため判定はしないが、条件としては残す）
-                addUnknown(atoms, "switch (" + selector + ") の case（コロン形式）");
+                addUnknown(atoms, "switch (" + selector + ") case (colon form)");
                 return;
             }
             for (Object e : sc.expressions()) {
                 String v = constantValueOf((Expression) e);
                 if (v == null) {
-                    addUnknown(atoms, "switch (" + selector + ") の case");
+                    addUnknown(atoms, "switch (" + selector + ") case");
                     return;   // 定数として読めない case ラベルがある
                 }
                 allValues.add(v);
@@ -205,7 +205,7 @@ final class GuardCollector {
         String sel = trim(selector.toString());
         if (owner.isDefault()) {
             atoms.add(Guard.atom(Guard.NOT_IN, origin, Guard.values(allValues),
-                    "switch (" + sel + ") の default"));
+                    "switch (" + sel + ") default"));
             return;
         }
         List<String> values = new ArrayList<>();
@@ -213,7 +213,7 @@ final class GuardCollector {
             values.add(constantValueOf((Expression) e));
         }
         atoms.add(Guard.atom(values.size() == 1 ? Guard.EQ : Guard.IN, origin,
-                Guard.values(values), "switch (" + sel + ") の case " + String.join(", ", values)));
+                Guard.values(values), "switch (" + sel + ") case " + String.join(", ", values)));
     }
 
     private static SwitchCase lastCaseBefore(List<?> statements, ASTNode child) {

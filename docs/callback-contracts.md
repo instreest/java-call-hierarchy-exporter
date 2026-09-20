@@ -21,8 +21,8 @@
 文章で書けます。ツールはこの契約表を持ち、jar の中を読まずに `start` の先へ辺を張ります。
 
 ```csv
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
-at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 ```
 
 `caller` 列は `start()` を呼んでいる行、`callee` 列は呼び戻される側です。呼び出し先（`Thread.start`）自身の行が
@@ -134,7 +134,7 @@ static main(java.lang.String[])                              … public static �
 
 ## C. 具象クラスを1件に絞る
 
-インターフェース型で宣言された呼び出しは、実装が複数あると `[UNEXPANDED:CHA] 候補N件` で止まり、
+インターフェース型で宣言された呼び出しは、実装が複数あると `[UNEXPANDED:CHA] N candidates` で止まり、
 その先へ降りません。DI コンテナで注入されるフィールドのように、**どの実装で動くかが設定ファイル側に
 書いてある**ものは、その対応を契約表に書けば 1 件に絞れます。
 
@@ -163,7 +163,7 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,RESOLVED:
 | 決まりごと | 内容 |
 |---|---|
 | 引く順番 | `ファクトリ#メソッド("キー")` → `宣言型#メソッド名` → `宣言型`。狭いほうが先に当たる |
-| 複数書いたとき | 1 件に絞れたときだけ展開されるのは本体の判定と同じ。複数のままなら `[UNEXPANDED:CHA] 候補N件` |
+| 複数書いたとき | 1 件に絞れたときだけ展開されるのは本体の判定と同じ。複数のままなら `[UNEXPANDED:CHA] N candidates` |
 | 型名の書き方 | **単純名でもかまいません**（`UserDaoImpl`）。解析対象で 1 件に定まるときだけ使い、複数の型に当たるときは使わずに警告に出します |
 | 右辺の型 | 具象クラスでかまいません。そのメソッドを親から継承しているだけの型を書いても、本体を持つ親まで辿ります |
 | 採用できないとき | その型にも親にもその本体が無ければ、候補を落として CHA に戻します（呼び出しは漏れません）。実行ログに挙がります |

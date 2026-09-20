@@ -61,6 +61,7 @@ import jche.report.StreamingTreeWalker;
 import jche.report.UnresolvedReport;
 import jche.util.HeapWatch;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * java-call-hierarchy-exporter のエントリポイント。
@@ -149,8 +150,8 @@ public class CallHierarchyExporter {
         }
         if (configPaths.isEmpty()) {
             Path defaultConfig = ConfigCatalog.defaultConfig(Paths.get(""));
-            System.err.println("設定ファイル（" + DEFAULT_CONFIG + "）のパスが指定されていません。");
-            System.err.println("既定値の「" + defaultConfig + "」で実行します。");
+            System.err.println(Messages.format("exporter.noConfigArg", DEFAULT_CONFIG));
+            System.err.println(Messages.format("exporter.useDefaultConfig", defaultConfig));
             configPaths.add(defaultConfig);
         }
 
@@ -180,9 +181,8 @@ public class CallHierarchyExporter {
         }
 
         if (!toolRoot.found) {
-            Log.warn("このツールのプロジェクトフォルダ（src/jche/CallHierarchyExporter.java のある場所）を"
-                    + "作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: "
-                    + toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME));
+            Log.warn(Messages.format("exporter.toolRootNotFound",
+                    toolRoot.dir.resolve(Config.DEFAULT_CACHE_DIR_NAME)));
         }
 
         List<String> summary = new ArrayList<>();
@@ -191,7 +191,7 @@ public class CallHierarchyExporter {
             Path configPath = configPaths.get(i);
             if (configPaths.size() > 1) {
                 Log.blank();
-                Log.info("######## 設定 " + (i + 1) + "/" + configPaths.size() + ": " + configPath + " ########");
+                Log.info(Messages.format("exporter.configHeader", i + 1, configPaths.size(), configPath));
             }
             try {
                 Path outputDir = runOne(configPath, toolRoot.dir);
@@ -201,7 +201,7 @@ public class CallHierarchyExporter {
                 }
             } catch (Throwable t) {
                 failed++;
-                Log.error("設定 " + configPath + " の処理に失敗しました", t);
+                Log.error(Messages.format("exporter.configFailed", configPath), t);
                 summary.add("FAIL  " + configPath + " : " + t);
             } finally {
                 Log.detachFile();
@@ -210,7 +210,7 @@ public class CallHierarchyExporter {
 
         if (configPaths.size() > 1) {
             Log.blank();
-            Log.info("=== 実行結果（" + (configPaths.size() - failed) + "/" + configPaths.size() + " 件成功）===");
+            Log.info(Messages.format("exporter.results", configPaths.size() - failed, configPaths.size()));
             for (String line : summary) {
                 Log.info("  " + line);
             }
@@ -243,7 +243,7 @@ public class CallHierarchyExporter {
                 Files.writeString(file, text, StandardCharsets.UTF_8);
             }
         } catch (IOException e) {
-            Log.warn(OUTPUT_DIR_FILE_ENV + " のファイルに書けません: " + file + " (" + e + ")");
+            Log.warn(Messages.format("exporter.outputDirFileFailed", OUTPUT_DIR_FILE_ENV, file, e));
         }
     }
 
@@ -262,8 +262,7 @@ public class CallHierarchyExporter {
      */
     private static void runConditions(Config config) throws Exception {
         Log.blank();
-        Log.info("=== 追加: 呼び出しに効いている条件（conditions.target="
-                + config.conditionsTarget + "） ===");
+        Log.info(Messages.format("exporter.conditionsHeader", config.conditionsTarget));
         ProjectLayout layout = new ProjectLayout(config);
         CallConditionScanner.Result result =
                 CallConditionScanner.scan(config, layout, config.conditionsTarget);
@@ -286,10 +285,10 @@ public class CallHierarchyExporter {
         // 出力フォルダは解析より前に作る。設定ファイルの複製と実行ログを、解析が途中で落ちても残すため
         Files.createDirectories(config.outputDir);
         Log.attachFile(config.logFile);
-        Log.info("設定: " + config.configPath);
-        Log.info("プロジェクトルート: " + config.projectRoot);
-        Log.info("出力フォルダ: " + config.outputDir);
-        Log.info("キャッシュ: " + config.cacheDir);
+        Log.info(Messages.format("exporter.config", config.configPath));
+        Log.info(Messages.format("exporter.projectRoot", config.projectRoot));
+        Log.info(Messages.format("exporter.outputDir", config.outputDir));
+        Log.info(Messages.format("exporter.cacheDir", config.cacheDir));
         Files.copy(config.configPath, config.outputDir.resolve(config.configPath.getFileName()),
                 StandardCopyOption.REPLACE_EXISTING);
 
@@ -307,9 +306,9 @@ public class CallHierarchyExporter {
             }
 
             Log.blank();
-            Log.info("呼び出し階層: " + config.outputCsv + "（" + rows + " 行）");
-            Log.info("実行ログ: " + config.logFile);
-            Log.info("完了 (" + (System.currentTimeMillis() - start) + " ms)");
+            Log.info(Messages.format("exporter.callHierarchy", config.outputCsv, rows));
+            Log.info(Messages.format("exporter.logFile", config.logFile));
+            Log.info(Messages.format("exporter.done", System.currentTimeMillis() - start));
         } finally {
             heapWatch.close();
         }
@@ -325,17 +324,17 @@ public class CallHierarchyExporter {
     private static long writeReports(Config config, CallGraph graph, CallResolver resolver)
             throws Exception {
         Log.blank();
-        Log.info("=== フェーズ3/3: 出力 ===");
+        Log.info(Messages.get("exporter.phase3"));
         int[] entries = EntryPoints.select(graph, resolver, config);
 
-        Log.info("エントリポイント数: " + entries.length);
+        Log.info(Messages.format("exporter.entryCount", entries.length));
         if (entries.length == 0 && !config.wholeProjectMode) {
-            Log.info("  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）");
+            Log.info(Messages.get("exporter.entryCheck"));
         }
         if (config.wholeProjectMode) {
-            Log.info("  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに");
-            Log.info("     デッドコード・テスト・リフレクション経由が混ざるため、");
-            Log.info("     methods.csv の inDegree / outDegree / role 列で仕分けてください。");
+            Log.info(Messages.get("exporter.entryNote1"));
+            Log.info(Messages.get("exporter.entryNote2"));
+            Log.info(Messages.get("exporter.entryNote3"));
         }
 
         long rows;
@@ -348,22 +347,17 @@ public class CallHierarchyExporter {
             walker = new StreamingTreeWalker(graph, resolver, config, writer);
             rows = walker.walkAll(entries);
             if (config.dataflowEnabled && walker.anyDataflowHits()) {
-                Log.info("データフローで具象クラスを特定: "
-                        + "new された型から " + walker.newHits() + " 件 / "
-                        + "ファクトリの戻り値から " + walker.factoryHits() + " 件 / "
-                        + "呼び出し元から渡された引数から " + walker.paramHits() + " 件 / "
-                        + "コンストラクタ注入されたフィールドから " + walker.fieldHits() + " 件");
+                Log.info(Messages.format("exporter.dataflowHits", walker.newHits(), walker.factoryHits(),
+                        walker.paramHits(), walker.fieldHits()));
             }
             if (walker.callbackHits() > 0) {
-                Log.info("jar の中から呼び戻されるメソッドを契約で繋いだ: " + walker.callbackHits() + " 件");
+                Log.info(Messages.format("exporter.callbackHits", walker.callbackHits()));
             }
             if (walker.prunedCalls() > 0) {
-                Log.info("条件分岐の静的解析で「その経路では呼ばれない」と判定して打ち切り: "
-                        + walker.prunedCalls() + " 件");
+                Log.info(Messages.format("exporter.prunedCalls", walker.prunedCalls()));
             }
             if (walker.reflectionHits() > 0) {
-                Log.info("リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の"
-                        + "呼び出し先を特定: " + walker.reflectionHits() + " 件");
+                Log.info(Messages.format("exporter.reflectionHits", walker.reflectionHits()));
             }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
@@ -371,15 +365,14 @@ public class CallHierarchyExporter {
 
             if (!config.externalLibraryFolders.isEmpty()) {
                 Log.blank();
-                Log.info("=== 外部jarからの被参照スキャン ===");
+                Log.info(Messages.get("exporter.externalScan"));
                 ExternalUsageScanner.Stats ex = ExternalUsageScanner.scan(graph, config, writer);
                 Log.info(ex.toString());
                 rows += ex.hits + ex.implicitCtors;
                 if (ex.unmatched > 0) {
-                    Log.info("※ 自分の型への参照なのにメソッドが一致しなかったものが "
-                            + ex.unmatched + " 件あります。");
-                    Log.info("   相手が古い版のjarに対してビルドされている可能性があるため、");
-                    Log.info("   「使われていない」と即断せず確認してください。");
+                    Log.info(Messages.format("exporter.externalUnmatched", ex.unmatched));
+                    Log.info(Messages.get("exporter.externalUnmatched2"));
+                    Log.info(Messages.get("exporter.externalUnmatched3"));
                 }
             }
         }
@@ -387,11 +380,10 @@ public class CallHierarchyExporter {
         InventoryReport.Stats inventory =
                 InventoryReport.writeMethods(graph, resolver, config, entries, walker);
         Log.info(inventory.toString());
-        Log.info("メソッド一覧: " + config.methodsCsv);
+        Log.info(Messages.format("exporter.methodsCsv", config.methodsCsv));
         if (inventory.prunedOut() > 0) {
-            Log.info("  ※ 条件分岐の打ち切りで階層CSVに出ないメソッドは "
-                    + inventory.prunedOut() + " 件です。");
-            Log.info("     methods.csv の inHierarchy / absentCause 列で一覧できます。");
+            Log.info(Messages.format("exporter.prunedOut", inventory.prunedOut()));
+            Log.info(Messages.get("exporter.prunedOut2"));
         }
 
         // 契約表・対応表が効いたかを知らせる。methods.csv の出力でグラフ全体を走査し終えた
@@ -402,7 +394,7 @@ public class CallHierarchyExporter {
         // 「候補N件」と言われても何をどこに書けば絞れるかは出力から分からないため
         writeContractSuggestions(config, walker);
 
-        Log.heap("フェーズ3完了");
+        Log.heap(Messages.get("exporter.heap.phase3"));
         return rows;
     }
 
@@ -414,13 +406,14 @@ public class CallHierarchyExporter {
         }
         try {
             int lines = suggestions.write(config.contractsSuggestedFile);
-            Log.info("絞れなかった呼び出しを直すひな形: " + config.contractsSuggestedFile
-                    + "（" + lines + " 行）");
-            Log.info("  ※ 当てはまる行のコメントを外し、?? を具象型に直して contracts.files の表に貼ると、");
-            Log.info("     その呼び出しから先も階層に出ます（docs/callback-contracts.md）。");
+            Log.info(Messages.format("report.suggestions.written",
+                    config.contractsSuggestedFile, lines));
+            Log.info(Messages.get("report.suggestions.how1"));
+            Log.info(Messages.get("report.suggestions.how2"));
         } catch (IOException e) {
             // ひな形が書けなくても解析の結果は正しい。出せなかったことだけ知らせる
-            Log.warn("契約表のひな形を書けません: " + config.contractsSuggestedFile + " (" + e + ")");
+            Log.warn(Messages.format("report.suggestions.failed",
+                    config.contractsSuggestedFile, e));
         }
     }
 }

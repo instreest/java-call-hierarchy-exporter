@@ -11,9 +11,9 @@ at fxp.App.inheritedImpl(App.java:33),DaoFactory.get,RESOLVED:STATIC_BOUND:STATI
 at fxp.App.inheritedImpl(App.java:34),AbstractDao.find,RESOLVED:MAPPING,1,App.inheritedImpl,AbstractDao.find
 at fxp.AbstractDao.find(AbstractDao.java:7),AbstractDao.loadCommon,RESOLVED:NO_OVERRIDE,2,App.inheritedImpl,AbstractDao.find,AbstractDao.loadCommon
 at fxp.App.enumKey(App.java:38),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,App.enumKey,DaoFactory.get
-at fxp.App.enumKey(App.java:39),AbstractDao.find,UNEXPANDED:CHA,1,App.enumKey,AbstractDao.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
-at fxp.App.enumKey(App.java:39),OrderDaoImpl.find,UNEXPANDED:CHA,1,App.enumKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
-at fxp.App.enumKey(App.java:39),UserDaoImpl.find,UNEXPANDED:CHA,1,App.enumKey,UserDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.enumKey(App.java:39),AbstractDao.find,UNEXPANDED:CHA,1,App.enumKey,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.enumKey(App.java:39),OrderDaoImpl.find,UNEXPANDED:CHA,1,App.enumKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.enumKey(App.java:39),UserDaoImpl.find,UNEXPANDED:CHA,1,App.enumKey,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
 at fxp.App.inheritedFactory(App.java:43),BaseDaoFactory.pick,RESOLVED:STATIC_BOUND:STATIC,1,App.inheritedFactory,BaseDaoFactory.pick
 at fxp.App.inheritedFactory(App.java:44),OrderDaoImpl.find,RESOLVED:MAPPING,1,App.inheritedFactory,OrderDaoImpl.find
 at fxp.OrderDaoImpl.find(OrderDaoImpl.java:6),OrderDaoImpl.loadOrder,RESOLVED:NO_OVERRIDE,2,App.inheritedFactory,OrderDaoImpl.find,OrderDaoImpl.loadOrder
@@ -25,6 +25,6 @@ at fxp.App.byKey(App.java:58),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,2,App.
 at fxp.App.byKey(App.java:59),OrderDaoImpl.find,RESOLVED:MAPPING,2,App.viaParam,App.byKey,OrderDaoImpl.find
 at fxp.OrderDaoImpl.find(OrderDaoImpl.java:6),OrderDaoImpl.loadOrder,RESOLVED:NO_OVERRIDE,3,App.viaParam,App.byKey,OrderDaoImpl.find,OrderDaoImpl.loadOrder
 at fxp.App.byKey(App.java:58),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,App.byKey,DaoFactory.get
-at fxp.App.byKey(App.java:59),AbstractDao.find,UNEXPANDED:CHA,1,App.byKey,AbstractDao.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
-at fxp.App.byKey(App.java:59),OrderDaoImpl.find,UNEXPANDED:CHA,1,App.byKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
-at fxp.App.byKey(App.java:59),UserDaoImpl.find,UNEXPANDED:CHA,1,App.byKey,UserDaoImpl.find,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fxp.App.byKey(App.java:59),AbstractDao.find,UNEXPANDED:CHA,1,App.byKey,AbstractDao.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:59),OrderDaoImpl.find,UNEXPANDED:CHA,1,App.byKey,OrderDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable
+at fxp.App.byKey(App.java:59),UserDaoImpl.find,UNEXPANDED:CHA,1,App.byKey,UserDaoImpl.find,[UNEXPANDED:CHA] 3 candidates: local variable

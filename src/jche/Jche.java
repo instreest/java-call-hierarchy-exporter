@@ -19,6 +19,7 @@ import jche.cli.App;
 import jche.cli.LauncherSettings;
 import jche.cli.Terminal;
 import jche.config.ToolRoot;
+import jche.util.Messages;
 
 /**
  * 起動コマンドのエントリポイント。プロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から起動する。
@@ -58,7 +59,7 @@ public class Jche {
             }
             if (a.startsWith("-") && !a.equals("-")) {
                 // 設定ファイルのパスとして扱うと「ファイルがありません」になって分かりにくいので、ここで弾く
-                System.err.println("知らないオプションです: " + a);
+                System.err.println(Messages.format("cli.unknownOption", a));
                 System.err.println();
                 usage();
                 System.exit(2);
@@ -84,16 +85,16 @@ public class Jche {
     }
 
     private static void usage() {
-        System.out.println("使い方（Windows は java-call-hierarchy-exporter.cmd。以下は .sh で書く）:");
-        System.out.println("  java-call-hierarchy-exporter.sh                              対話モード（メニューで設定ファイルを選んで解析する）");
-        System.out.println("  java-call-hierarchy-exporter.sh a.properties [b.properties…] 対話なしで解析する。設定ファイルごとに出力フォルダができる");
-        System.out.println("  java-call-hierarchy-exporter.sh --help                       この説明");
+        System.out.println(Messages.get("cli.usage.title"));
+        System.out.println(Messages.get("cli.usage.interactive"));
+        System.out.println(Messages.get("cli.usage.batch"));
+        System.out.println(Messages.get("cli.usage.help"));
         System.out.println();
-        System.out.println("設定ファイルを渡したときは、何も尋ねずに解析だけを行って終わる（バッチやタスクスケジューラ、CI 向け）。");
-        System.out.println("ただし JBang 本体・JDK・依存 jar をネットワークから取得する必要があるときだけは、取得してよいかを確認する。");
-        System.out.println("終了コードは、すべて成功なら 0、1 つでも失敗すれば 1、引数が誤っていれば 2、取得を取りやめたら 3。");
+        System.out.println(Messages.get("cli.usage.batchNote"));
+        System.out.println(Messages.get("cli.usage.downloadNote"));
+        System.out.println(Messages.get("cli.usage.exitCodes"));
         System.out.println();
-        System.out.println("JDK / JBang の置き場所や JVM のオプション、取得の確認の要否（JCHE_ALLOW_DOWNLOAD=yes / no）は");
-        System.out.println("launcher.properties（プロジェクト直下）で決まる。対話モードの「環境設定」から書き換えられる。");
+        System.out.println(Messages.get("cli.usage.settings1"));
+        System.out.println(Messages.get("cli.usage.settings2"));
     }
 }

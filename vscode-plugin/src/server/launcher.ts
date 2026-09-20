@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { ServerConnection, type ConnectionListener } from './connection';
+import { currentLanguage, t } from '../messages';
 
 /**
  * 解析サーバーを子プロセスとして起動する。
@@ -25,21 +26,25 @@ export interface LaunchOptions {
     readonly vmArguments?: readonly string[];
     /** 作業ディレクトリ。無ければ継承する */
     readonly workingDir?: string;
+    /** 解析側のログの言語（en / ja）。省略すると拡張の画面と同じ言語 */
+    readonly messageLanguage?: string;
     readonly listener?: ConnectionListener;
 }
 
 export function launchServer(options: LaunchOptions): ServerConnection {
     if (!existsSync(options.javaExecutable) || !statSync(options.javaExecutable).isFile()) {
-        throw new Error(`解析に使う java が見つかりません: ${options.javaExecutable}`);
+        throw new Error(t('server.javaNotFound', options.javaExecutable));
     }
     if (options.classpath.length === 0) {
-        throw new Error('解析本体（lib/）が見つかりません');
+        throw new Error(t('server.libNotFound'));
     }
     const args = [
         // 子プロセスの入出力は UTF-8 で固定する。これを外すと環境ごとに文字化けする
         '-Dfile.encoding=UTF-8',
         '-Dstdout.encoding=UTF-8',
         '-Dstderr.encoding=UTF-8',
+        // 解析側のログをこの拡張の画面と同じ言語で出す（docs/nls-qa.md の Q8）
+        `-Djche.lang=${options.messageLanguage ?? currentLanguage()}`,
         ...(options.vmArguments ?? []),
         '-cp',
         options.classpath.map((p) => path.resolve(p)).join(path.delimiter),

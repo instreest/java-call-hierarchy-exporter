@@ -41,6 +41,8 @@
 # 期待出力を更新するときは、差分を確認したうえで最新の output/*/ の CSV を expected*/ にコピーする。
 set -uo pipefail
 cd "$(dirname "$0")"
+# 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
+export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
 CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin cachesplit multi"}
@@ -382,7 +384,7 @@ plugin_case() {
     expect_suggested plugin 'fxp.DaoFactory#get("ORDER_DAO") => ??' \
         "1回目: 経路で決まるキーのひな形"
     # キーが決まらず型単位の広い行になったものは、そうと分かる注記を添える
-    expect_suggested plugin "型のこのメソッド全部を同じ実装に決める行です" \
+    expect_suggested plugin "fixes every call of that method on the type to one implementation" \
         "1回目: 広い行だと分かる注記が付く"
 
     run plugin config.properties 2 "2回目: 同梱の拡張" || return
@@ -431,7 +433,7 @@ plugin_case() {
     run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
     expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
     # この表は型名を単純名で書いてある。FQN で書いた場合と同じ結果になることを下の比較が見る
-    expect_log_missing plugin 6 "つの型に当たるので使えません" "6回目: 単純名が曖昧になっていない"
+    expect_log_missing plugin 6 "Cannot use the contract type name" "6回目: 単純名が曖昧になっていない"
     # キーが呼び出し元から引数で渡ってくる形。経路が分かってから絞れる
     # （byKey を単独の起点として辿る経路では、キーが分からないので絞れないまま）
     expect_csv_contains plugin "App.viaParam,App.byKey,OrderDaoImpl.find" \

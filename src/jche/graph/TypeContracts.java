@@ -8,6 +8,7 @@ import java.util.Map;
 
 import jche.cache.Origin;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 具象型の契約表（種類 C）。「この宣言型（またはこの型のこのメソッド、このファクトリのこのキー）は、
@@ -128,8 +129,8 @@ public final class TypeContracts {
     private static String resolve(TypeNames typeNames, String name, String text) {
         List<String> conflicts = typeNames.ambiguousCandidates(name);
         if (!conflicts.isEmpty()) {
-            Log.warn("契約の型名 " + name + " は " + conflicts.size() + " つの型に当たるので使えません: "
-                    + String.join(" / ", conflicts) + "（完全修飾名で書いてください）: " + text);
+            Log.warn(Messages.format("graph.contracts.ambiguousType", name, conflicts.size(),
+                    String.join(" / ", conflicts), text));
             return name;
         }
         return typeNames.toFqn(name);

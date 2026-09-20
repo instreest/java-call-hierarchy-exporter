@@ -5,6 +5,7 @@ import { chmod, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { executableIn, MINIMUM, versionOf } from './javaLocator';
+import { t } from '../messages';
 
 /**
  * 解析に使う JDK が手元に無いときに、取ってきて展開する。
@@ -100,14 +101,14 @@ export async function installJdk(feature: number, targetDir: string, progress?: 
     }
     const java = await findJava(versionDir);
     if (!java) {
-        throw new Error(`展開はできましたが、java が見つかりません: ${versionDir}`);
+        throw new Error(t('jdk.javaNotFound', versionDir));
     }
     if (process.platform !== 'win32') {
         await chmod(java, 0o755);
     }
     const version = versionOf(java);
     if (version < MINIMUM) {
-        throw new Error(`取得した JDK が動きません（版=${version}）: ${java}`);
+        throw new Error(t('jdk.doesNotRun', version, java));
     }
     return java;
 }
@@ -119,14 +120,14 @@ async function download(url: string, target: string, progress?: DownloadProgress
         signal: AbortSignal.timeout(10 * 60_000),
     });
     if (!response.ok || !response.body) {
-        throw new Error(`取得できませんでした（HTTP ${response.status}）: ${url}`);
+        throw new Error(t('jdk.httpFailed', response.status, url));
     }
     const total = Number.parseInt(response.headers.get('content-length') ?? '-1', 10);
     let done = 0;
     const counting = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
             if (progress?.isCancelled()) {
-                controller.error(new Error('取得を中止しました'));
+                controller.error(new Error(t('jdk.cancelled')));
                 return;
             }
             done += chunk.byteLength;
@@ -144,12 +145,12 @@ function extract(archive: string, targetDir: string): Promise<void> {
         const child = spawn('tar', ['-xf', archive, '-C', targetDir], { stdio: ['ignore', 'ignore', 'pipe'] });
         let stderr = '';
         child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-        child.on('error', (e) => reject(new Error(`展開に失敗しました（tar を起動できません）: ${e.message}`)));
+        child.on('error', (e) => reject(new Error(t('jdk.tarFailed', e.message))));
         child.on('close', (code) => {
             if (code === 0) {
                 resolve();
             } else {
-                reject(new Error(`展開に失敗しました: ${archive}\n${stderr.trim()}`));
+                reject(new Error(`${t('jdk.extractFailed', archive)}\n${stderr.trim()}`));
             }
         });
     });

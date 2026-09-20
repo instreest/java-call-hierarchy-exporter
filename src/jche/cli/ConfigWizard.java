@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import jche.util.Messages;
 import jche.util.UserHome;
 
 /**
@@ -45,23 +47,23 @@ public final class ConfigWizard {
     public Path run() throws IOException {
         Path template = ConfigCatalog.defaultConfig(root);
         if (!Files.isRegularFile(template)) {
-            t.println("ひな形の " + template + " がありません。");
+            t.println(Messages.format("cli.wizard.noTemplate", template));
             return null;
         }
         String templateName = relative(template);
-        t.println("新しい設定ファイルを作ります。Enter で [ ] の既定値、q で中止。");
-        t.println("ここで尋ねない項目（exclude.packages、max.depth 等）はひな形の既定値のままになります。");
+        t.println(Messages.get("cli.wizard.intro"));
+        t.println(Messages.get("cli.wizard.introDefaults"));
         t.println();
 
         // --- project.root ---
         Path projectRoot;
         while (true) {
-            String raw = t.ask("解析対象プロジェクトのフォルダ（project.root）", "");
+            String raw = t.ask(Messages.get("cli.wizard.ask.projectRoot"), "");
             if (raw.equalsIgnoreCase("q")) {
                 return null;
             }
             if (raw.isEmpty()) {
-                t.println("  必須です。");
+                t.println(Messages.get("cli.wizard.required"));
                 continue;
             }
             Path p = Paths.get(UserHome.expand(raw));
@@ -69,7 +71,7 @@ public final class ConfigWizard {
             if (Files.isDirectory(projectRoot)) {
                 break;
             }
-            t.println("  フォルダがありません: " + projectRoot);
+            t.println(Messages.format("cli.wizard.noFolder", projectRoot));
         }
         Detected detected = detect(projectRoot);
         t.println("  → " + projectRoot);
@@ -84,7 +86,8 @@ public final class ConfigWizard {
         Path configsDir = root.resolve(ConfigCatalog.CONFIGS_DIR_NAME);
         Path target;
         while (true) {
-            String name = t.ask("設定ファイルの名前（" + ConfigCatalog.CONFIGS_DIR_NAME + "/ の下に作る）", projectName + ".properties");
+            String name = t.ask(Messages.format("cli.wizard.ask.name", ConfigCatalog.CONFIGS_DIR_NAME),
+                    projectName + ".properties");
             if (name.equalsIgnoreCase("q")) {
                 return null;
             }
@@ -93,15 +96,15 @@ public final class ConfigWizard {
             }
             target = configsDir.resolve(name).normalize();
             if (!target.startsWith(configsDir)) {
-                t.println("  " + ConfigCatalog.CONFIGS_DIR_NAME + "/ の中の名前にしてください。");
+                t.println(Messages.format("cli.wizard.nameOutside", ConfigCatalog.CONFIGS_DIR_NAME));
                 continue;
             }
             if (target.equals(template)) {
-                t.println("  ひな形の " + templateName + " 自体は上書きできません。別の名前にしてください。");
+                t.println(Messages.format("cli.wizard.nameIsTemplate", templateName));
                 continue;
             }
             if (Files.exists(target)) {
-                if (t.confirm("  " + relative(target) + " は既にあります。上書きしますか？", false)) {
+                if (t.confirm(Messages.format("cli.wizard.overwrite", relative(target)), false)) {
                     break;
                 }
                 continue;
@@ -113,16 +116,16 @@ public final class ConfigWizard {
         String sourceDefault = String.join(",", detected.sourceFolders);
         String sourceFolders;
         while (true) {
-            sourceFolders = t.ask("ソースフォルダ（source.folders。project.root からの相対、カンマ区切り）", sourceDefault);
+            sourceFolders = t.ask(Messages.get("cli.wizard.ask.sourceFolders"), sourceDefault);
             if (sourceFolders.equalsIgnoreCase("q")) {
                 return null;
             }
             if (sourceFolders.isEmpty()) {
                 if (Files.isRegularFile(projectRoot.resolve(".classpath"))) {
-                    t.println("  空欄なので .classpath の kind=\"src\" を使います。");
+                    t.println(Messages.get("cli.wizard.useClasspath"));
                     break;
                 }
-                t.println("  必須です（.classpath も無いため）。");
+                t.println(Messages.get("cli.wizard.requiredNoClasspath"));
                 continue;
             }
             List<String> missing = new ArrayList<>();
@@ -135,29 +138,29 @@ public final class ConfigWizard {
             if (missing.isEmpty()) {
                 break;
             }
-            t.println("  見つからないフォルダがあります: " + missing);
-            if (t.confirm("  このまま使いますか？", false)) {
+            t.println(Messages.format("cli.wizard.missingFolders", missing));
+            if (t.confirm(Messages.get("cli.wizard.useAnyway"), false)) {
                 break;
             }
         }
 
         // --- library.folders ---
-        String libHint = detected.buildFile == null
-                ? "依存 jar を集めたフォルダ（library.folders。project.root からの相対、カンマ区切り）"
-                : "依存 jar を集めたフォルダ（library.folders。空欄なら " + detected.buildFile + " から自動取得）";
+        String libHint = (detected.buildFile == null)
+                ? Messages.get("cli.wizard.ask.libraryFolders")
+                : Messages.format("cli.wizard.ask.libraryFoldersAuto", detected.buildFile);
         String libraryFolders = t.ask(libHint, "");
         if (libraryFolders.equalsIgnoreCase("q")) {
             return null;
         }
 
         // --- source.encoding ---
-        String encoding = t.ask("ソースの文字コード（source.encoding）", detected.encoding);
+        String encoding = t.ask(Messages.get("cli.wizard.ask.encoding"), detected.encoding);
         if (encoding.equalsIgnoreCase("q")) {
             return null;
         }
 
         // --- entry.packages ---
-        String entry = t.ask("起点のパッケージ（entry.packages。空欄なら全体モード＝呼び出し元が無いメソッドを起点にする）", "");
+        String entry = t.ask(Messages.get("cli.wizard.ask.entryPackages"), "");
         if (entry.equalsIgnoreCase("q")) {
             return null;
         }
@@ -170,19 +173,19 @@ public final class ConfigWizard {
         values.put("entry.packages", entry);
 
         t.println();
-        t.println("--- " + relative(target) + " に書く内容 ---");
+        t.println(Messages.format("cli.wizard.preview", relative(target)));
         for (Map.Entry<String, String> e : values.entrySet()) {
             t.println("  " + e.getKey() + "=" + e.getValue());
         }
-        t.println("  （他の項目は " + templateName + " の既定値）");
-        if (!t.confirm("この内容で作りますか？", true)) {
+        t.println(Messages.format("cli.wizard.previewRest", templateName));
+        if (!t.confirm(Messages.get("cli.wizard.createConfirm"), true)) {
             return null;
         }
 
         Files.createDirectories(configsDir);
         Files.write(target, applyToTemplate(Files.readAllLines(template, StandardCharsets.UTF_8), values),
                 StandardCharsets.UTF_8);
-        t.println("作成しました: " + target);
+        t.println(Messages.format("cli.wizard.created", target));
         return target;
     }
 
@@ -259,16 +262,16 @@ public final class ConfigWizard {
             String enc = ProjectDetector.pomEncoding(projectRoot.resolve("pom.xml"));
             if (enc != null) {
                 d.encoding = enc;
-                d.notes.add("pom.xml の project.build.sourceEncoding=" + enc);
+                d.notes.add(Messages.format("cli.wizard.note.pomEncoding", enc));
             }
-            d.notes.add(d.buildFile + " があります（library.folders を空欄にすると依存 jar を自動取得）");
+            d.notes.add(Messages.format("cli.wizard.note.buildFile", d.buildFile));
         }
         // ソースフォルダの候補。Maven / Gradle の標準配置 → src → マルチモジュールの各モジュール
         d.sourceFolders.addAll(ProjectDetector.sourceFolderCandidates(projectRoot));
         if (!d.sourceFolders.isEmpty()) {
-            d.notes.add("ソースフォルダの候補: " + String.join(", ", d.sourceFolders));
+            d.notes.add(Messages.format("cli.wizard.note.sourceCandidates", String.join(", ", d.sourceFolders)));
         } else if (Files.isRegularFile(projectRoot.resolve(".classpath"))) {
-            d.notes.add(".classpath があります（source.folders を空欄にすると kind=\"src\" を使う）");
+            d.notes.add(Messages.get("cli.wizard.note.classpath"));
         }
         return d;
     }

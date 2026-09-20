@@ -22,14 +22,14 @@
 `interface I { void m(); }`、`abstract class Base { public void m() {} }`（`I` を実装していない）、
 `class C extends Base implements I {}` のとき、`i.m()` で実際に動くのは `Base.m`。
 従来の `resolveVirtual` は「`I` のサブタイプ `C` に `C#m()` の宣言があるか」だけを見ていたので候補が 0 件になり、
-`[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` と出ていた。呼び出しが静かに落ちる典型で、このツールの方針に反する。
+`[UNEXPANDED:NO_IMPL] no implementation with a body in the source` と出ていた。呼び出しが静かに落ちる典型で、このツールの方針に反する。
 
 **結論**: サブタイプごとに `CallGraph.implementationIn(sub, sig)`（本体を持つ宣言まで親を辿る）で「そのサブタイプで
 実際に動く実装」を引き、`addIfAbsent` で重複を除く。Spring の判定やデータフローの判定は以前からこの経路を使っていたので、
 段1 だけが違っていた不整合も無くなる。
 
 同じ変更で、サブインターフェースが本体なしで再宣言する形（`interface Sub2 extends Base2 { void m(); }`）も直る。
-再宣言は候補に数えられていたため、実装が 1 件でも `[UNEXPANDED:CHA] 候補2件` のまま展開が止まっていた。
+再宣言は候補に数えられていたため、実装が 1 件でも `[UNEXPANDED:CHA] 2 candidates` のまま展開が止まっていた。
 `implementationIn` は本体を持つ宣言しか返さないので、再宣言は自然に候補から外れる。
 
 `test/demo/src/fx/inherit/` に両方の形を足し、期待出力で固定した。

@@ -20,6 +20,7 @@ import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.MethodTable;
 import jche.graph.TypeContracts;
+import jche.util.Messages;
 
 /**
  * 絞れなかった呼び出し（{@code [UNEXPANDED:CHA]}）から、契約表の種類 C のひな形を作る。
@@ -163,22 +164,16 @@ public final class ContractSuggestions {
             writeHeader(out, rows.size());
             for (Map.Entry<String, Entry> row : rows) {
                 Entry e = row.getValue();
-                out.write("# " + e.sites + " か所  例) " + e.where);
-                out.newLine();
-                out.write("#   候補: " + String.join(" / ", e.candidates));
-                out.newLine();
+                comment(out, Messages.format("report.suggestions.sites", e.sites, e.where));
+                comment(out, Messages.format("report.suggestions.candidates",
+                        String.join(" / ", e.candidates)));
                 if (e.typeWide) {
                     // 広い行だと分かるようにする。呼び出し箇所ごとに実装が違うなら、そのまま
                     // 貼ると誤った 1 件に確定してしまう
-                    out.write("#   ※ ファクトリに渡すキーが決まらなかったので、型のこのメソッド"
-                            + "全部を同じ実装に決める行です。");
-                    out.newLine();
-                    out.write("#      呼び出し箇所ごとに実装が違うなら、この行は貼らないでください"
-                            + "（拡張で条件を書きます: docs/instance-analysis-plugin.md）。");
-                    out.newLine();
+                    comment(out, Messages.get("report.suggestions.typeWide1"));
+                    comment(out, Messages.get("report.suggestions.typeWide2"));
                 }
-                out.write("# " + row.getKey() + " => " + PLACEHOLDER);
-                out.newLine();
+                comment(out, row.getKey() + " => " + PLACEHOLDER);
                 out.newLine();
             }
         }
@@ -187,27 +182,31 @@ public final class ContractSuggestions {
 
     private void writeHeader(BufferedWriter out, int lines) throws IOException {
         List<String> header = new ArrayList<>(List.of(
-                "# 絞れなかった呼び出し（call-hierarchy.csv の [UNEXPANDED:CHA]）から作った、",
-                "# 契約表のひな形です。解析のたびに作り直すので、直接編集しても残りません。",
-                "#",
-                "# 使い方",
-                "#   1. 当てはまる行の行頭の # を外す",
-                "#   2. ?? を具象型の FQN に置き換える（候補はその行の上にあります）",
-                "#   3. contracts.files が指す表（UTF-8）に貼る",
-                "#",
-                "# 書き方は docs/callback-contracts.md の「C. 具象クラスを1件に絞る」にあります。",
-                "# 型のどのメソッドでも同じ実装なら、左辺のメソッド名を落として「型 => 具象型」と書けます。",
-                "# 候補が複数のままでよければ、右辺をカンマ区切りで並べられます（その場合は展開されません）。",
-                "#",
-                "# ひな形 " + lines + " 行"));
+                Messages.get("report.suggestions.head.what1"),
+                Messages.get("report.suggestions.head.what2"),
+                "",
+                Messages.get("report.suggestions.head.usage"),
+                Messages.get("report.suggestions.head.usage1"),
+                Messages.get("report.suggestions.head.usage2"),
+                Messages.get("report.suggestions.head.usage3"),
+                "",
+                Messages.get("report.suggestions.head.syntax1"),
+                Messages.get("report.suggestions.head.syntax2"),
+                Messages.get("report.suggestions.head.syntax3"),
+                "",
+                Messages.format("report.suggestions.head.count", lines)));
         if (capped) {
-            header.add("# ※ 種類が多いため " + MAX_LINES + " 行で打ち切りました。"
-                    + "上の行から直していくと、次の実行で残りが出ます。");
+            header.add(Messages.format("report.suggestions.head.capped", MAX_LINES));
         }
         for (String line : header) {
-            out.write(line);
-            out.newLine();
+            comment(out, line);
         }
+        out.newLine();
+    }
+
+    /** ひな形はまるごとコメントにして出す。そのまま貼っても壊れないようにするため */
+    private static void comment(BufferedWriter out, String text) throws IOException {
+        out.write(text.isEmpty() ? "#" : "# " + text);
         out.newLine();
     }
 }

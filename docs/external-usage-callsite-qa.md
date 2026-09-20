@@ -69,7 +69,7 @@ LineNumberTable が無ければ行は分からず、SourceFile 属性も無い�
 同じ `at teame.NoDebugJob.run(Unknown Source)` にする。Eclipse の Java スタック・トレース・
 コンソールもこの形を受け付け、クラス名とメソッド名で飛ぶ。
 
-「行番号が無い」ことを別の注記で示す案（`被参照:EXACT/NOLINE` 等）は採らなかった。
+「行番号が無い」ことを別の注記で示す案（`external-ref:EXACT/NOLINE` 等）は採らなかった。
 注記の列は照合の種類を表す列で、行番号の有無は caller 列を見れば分かる。
 jar ごとに行番号の質が違うことは README に書く。
 

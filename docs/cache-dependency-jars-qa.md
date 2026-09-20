@@ -234,7 +234,7 @@ v12 で、jar の型を経由して到達するソース上の親型も `H` 行�
 `H` 行が持つので辿らない。
 
 **確認。** 回帰テスト `jarchange` にこの構成を入れた。`OrderService.execute` の `dao.findById(10L)` は
-jar 無しで `[UNEXPANDED:CHA] 候補2件`（`AbstractDao`、`OrderDaoImpl`）、jar を足した 2 回目の実行で `[UNEXPANDED:CHA] 候補3件`
+jar 無しで `[UNEXPANDED:CHA] 2 candidates`（`AbstractDao`、`OrderDaoImpl`）、jar を足した 2 回目の実行で `[UNEXPANDED:CHA] 3 candidates`
 （`LibBackedDao` が加わる）になる。このとき解析し直したのは `Legacy` と `LibBackedDao`
 （エラーがあった 2 ファイル）と、`Legacy` を参照する `Main` の計 3 ファイルで、`OrderService.java` は
 キャッシュから読んだまま（`再利用=25`）である。jar を外した 3 回目は 2 件に戻る。
@@ -297,7 +297,7 @@ JDT は `setEnvironment(..., includeRunningVMBootclasspath=true)` で、**実行
 | 呼び出し | JDK 17 | JDK 21 | JDK 25 |
 |---|---|---|---|
 | `daos.reversed()`（`List#reversed` は 21 から） | 失敗 | 解決 | 解決 |
-| `first.findById(1L)`（`var first = daos.reversed().get(0)`） | **失敗**（`first` の型が分からない） | 解決 → `[UNEXPANDED:CHA] 候補2件` | 解決 |
+| `first.findById(1L)`（`var first = daos.reversed().get(0)`） | **失敗**（`first` の型が分からない） | 解決 → `[UNEXPANDED:CHA] 2 candidates` | 解決 |
 | `declared.findById(2L)`（`Dao declared = daos.reversed().get(0)`） | 解決 | 解決 | 解決 |
 | `new StringBuilder().repeat("ab", 2)`（21 から） | 失敗 | 解決 | 解決 |
 | `Thread.currentThread().threadId()`（19 から） | 失敗 | 解決 | 解決 |
@@ -308,14 +308,14 @@ JDT は `setEnvironment(..., includeRunningVMBootclasspath=true)` で、**実行
 出力への影響は次の 4 種類。
 
 1. **JDK API の呼び出し自体**は、解決できても `exclude.packages=java.**` で CSV に出ない。
-   解決できないと「(型解決失敗)」の行として出る。`ModernApi` の分は JDK 17 で `reversed` / `get` /
+   解決できないと「(unresolved)」の行として出る。`ModernApi` の分は JDK 17 で `reversed` / `get` /
    `findById` / `repeat` / `threadId` / `println` の 8 行、21 で `disable` と `println` の 2 行、
    25 で `disable` の 1 行。CSV 全体の行数はヘッダ込みで 17: 16 行、21: 12 行、25: 11 行
    （ほかのファイルの型解決失敗 4 行を含む）。
 2. **自プロジェクトのメソッド呼び出しが欠ける。** `var first = daos.reversed().get(0); first.findById(1L);`
    は、JDK 17 では `reversed()` の戻り値の型が分からないので `first` の型も分からず、
    `Dao#findById` への呼び出しが「型解決失敗」になる。21 / 25 では `AbstractDao.findById` と
-   `OrderDaoImpl.findById` への `[UNEXPANDED:CHA] 候補2件` の 2 行が出る。これが一番影響が大きい。
+   `OrderDaoImpl.findById` への `[UNEXPANDED:CHA] 2 candidates` の 2 行が出る。これが一番影響が大きい。
    `var` やメソッドチェーンで JDK メソッドの戻り値を受けている箇所が対象で、宣言型を書いた
    `Dao declared = ...` は影響を受けない。
 3. **methods.csv の数値と列**。`ModernApi.run` の outDegree は 9 / 15 / 16、

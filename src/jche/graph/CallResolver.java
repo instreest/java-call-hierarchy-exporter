@@ -15,6 +15,7 @@ import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
 import jche.extension.UsageReporter;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * エッジ単位の解決パイプライン。呼び出し先の具象候補を求める。
@@ -111,8 +112,8 @@ public final class CallResolver {
                     reporter.reportUsage();
                 } catch (RuntimeException e) {
                     // 報告の失敗で解析の結果を捨てない。出せなかったことだけ知らせる
-                    Log.warn("拡張の利用状況を報告できません: " + provider.getClass().getName()
-                            + " (" + e + ")");
+                    Log.warn(Messages.format("graph.provider.usageFailed",
+                            provider.getClass().getName(), e));
                 }
             }
         }
@@ -513,7 +514,7 @@ public final class CallResolver {
             try {
                 candidates = provider.candidates(declType, sig, hints);
             } catch (RuntimeException e) {
-                Log.warn("candidate provider 失敗: " + provider.getClass().getName() + " (" + e + ")");
+                Log.warn(Messages.format("graph.provider.failed", provider.getClass().getName(), e));
                 continue;
             }
             if (candidates == null || candidates.length == 0) {
@@ -592,14 +593,12 @@ public final class CallResolver {
         List<String> conflicts = graph.typeNames().ambiguousCandidates(fqn);
         if (!conflicts.isEmpty()) {
             // 単純名が複数の型に当たる。どちらかに決めると誤った型へ静かに解決するので使わない
-            Log.warn("拡張が返した候補の型名 " + fqn + " は " + conflicts.size() + " つの型に当たるので"
-                    + "使えません: " + String.join(" / ", conflicts)
-                    + " (" + provider.getClass().getName() + ")。完全修飾名で返してください");
+            Log.warn(Messages.format("graph.provider.ambiguous", fqn, conflicts.size(),
+                    String.join(" / ", conflicts), provider.getClass().getName()));
             return;
         }
-        Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
-                + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
-                + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
+        Log.warn(Messages.format("graph.provider.unusable", fqn, sig,
+                provider.getClass().getName(), provider.label()));
     }
 
     // ------------------------------------------------------------

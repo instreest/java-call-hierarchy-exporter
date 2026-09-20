@@ -33,6 +33,7 @@ import jche.report.Csv;
 import jche.util.CancelledException;
 import jche.util.Log;
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * サーバーモードの本体。標準入力から要求を読み、標準出力へ応答を返す（{@link Protocol}）。
@@ -169,7 +170,7 @@ public final class Server {
         } catch (CancelledException e) {
             respondNg("cancelled");
         } catch (Exception | Error e) {
-            Log.error("要求の処理に失敗しました: " + line, e);
+            Log.error(Messages.format("server.requestFailed", line), e);
             respondNg("error " + Protocol.escape(String.valueOf(e)));
         }
     }
@@ -246,8 +247,8 @@ public final class Server {
             AnalysisSnapshot result = Exporter.analyze(config);
             // 呼び出し元の索引もここで作る（TREE を待たせない）。
             // 解析の最後に必ず通る重い処理なので、始まりと終わりをログに残す
-            Log.info("呼び出し元の索引を作ります（メソッド数=" + result.graph().methodCount() + "）");
-            Log.info("呼び出し元の索引: " + result.inbound().size() + " 件");
+            Log.info(Messages.format("server.inbound.building", result.graph().methodCount()));
+            Log.info(Messages.format("server.inbound.done", result.inbound().size()));
             snapshot = result;
             analyzedFiles = null;       // 解析し直したので AT の索引は作り直す
             status();
@@ -557,7 +558,8 @@ public final class Server {
                 writer.write(Csv.DELIM);
                 writer.write(Csv.esc(tree.reasonOf(row.edgeIndex())));
                 writer.write(Csv.DELIM);
-                writer.write(row.recursive() ? "再帰" : (row.truncated() ? "深さ上限" : ""));
+                // CSV のセルは表示言語に関わらず英語（docs/nls-qa.md の Q6）
+                writer.write(row.recursive() ? "recursive" : (row.truncated() ? "depth-limit" : ""));
                 writer.newLine();
             }
         }

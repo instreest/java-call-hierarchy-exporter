@@ -8,6 +8,7 @@ import jche.extension.CallSiteHintCollector;
 import jche.extension.ContractProvider;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
+import jche.util.Messages;
 
 /** 設定に書かれたFQNから拡張クラスを読み込む */
 public final class Plugins {
@@ -32,11 +33,11 @@ public final class Plugins {
                 T plugin = type.cast(o);
                 init(plugin, config);
                 out.add(plugin);
-                Log.info("[plugin] 読み込み: " + className + " (" + type.getSimpleName() + ")");
+                Log.info(Messages.format("config.plugin.loaded", className, type.getSimpleName()));
             } catch (Exception e) {
                 // 拡張の読み込み失敗は致命的ではないが、黙って無視すると
                 // 「設定したのに効いていない」ことに気づけないため必ず出力する
-                Log.warn("拡張の読み込みに失敗: " + className + " (" + e + ")");
+                Log.warn(Messages.format("config.plugin.loadFailed", className, e));
             }
         }
         return out;
@@ -58,7 +59,7 @@ public final class Plugins {
             }
         } catch (RuntimeException e) {
             // 初期化に失敗した拡張は「設定が効いていない状態」で動くので、必ず知らせる
-            Log.warn("拡張の初期化に失敗: " + plugin.getClass().getName() + " (" + e + ")");
+            Log.warn(Messages.format("config.plugin.initFailed", plugin.getClass().getName(), e));
         }
     }
 }

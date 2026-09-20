@@ -13,9 +13,9 @@
 ## 結論
 
 - `callee` は `クラス単純名.メソッド名`。完全修飾のパッケージも引数型も付けない
-- 外部 jar からの被参照の行（`被参照:*`）の `callee` も同じ表記に揃えた
+- 外部 jar からの被参照の行（`external-ref:*`）の `callee` も同じ表記に揃えた
 - ~~`NO_IMPL`（本体を持つ実装がソース上に1つも無い）の注記 `実装なし（宣言のまま）: 理由` は
-  `call-hierarchy.csv` に出さない~~ → 現在は `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い`
+  `call-hierarchy.csv` に出さない~~ → 現在は `[UNEXPANDED:NO_IMPL] no implementation with a body in the source`
   として出す（[note-tags-qa.md](note-tags-qa.md)）
 - 絞れなかった事実そのものは `methods.csv` の `unresolvedCalls` / `unresolvedCause` にも残る
 

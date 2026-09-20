@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { parseRow, ServerResponse, type ServerRow } from './response';
 import { join, SEP, unescape } from './wire';
+import { t } from '../messages';
 
 /** 進捗とログの受け口。画面（進捗表示と出力チャネル）へ橋渡しする */
 export interface ConnectionListener {
@@ -38,7 +39,7 @@ export class ServerConnection {
         private listener: ConnectionListener = {},
     ) {
         if (!process.stdout || !process.stdin) {
-            throw new Error('子プロセスの標準入出力が開いていません');
+            throw new Error(t('server.noStdio'));
         }
         process.stdout.setEncoding('utf8');
         createInterface({ input: process.stdout, crlfDelay: Infinity }).on('line', (line) => this.onLine(line));
@@ -98,7 +99,7 @@ export class ServerConnection {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.waiter = undefined;
-                reject(new Error(`解析サーバーが応答しません（${timeoutMs} ms）`));
+                reject(new Error(t('server.timeout', timeoutMs)));
             }, timeoutMs);
             this.waiter = (line) => {
                 clearTimeout(timer);
@@ -141,7 +142,7 @@ export class ServerConnection {
 
     private writeLine(line: string): void {
         if (this.closed || !this.process.stdin || this.process.stdin.destroyed) {
-            throw new Error('解析サーバーとの接続が閉じています');
+            throw new Error(t('server.closed'));
         }
         this.process.stdin.write(line + '\n');
     }

@@ -11,6 +11,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import jche.util.Messages;
 
 /**
  * 直接の依存から出発して、ローカルリポジトリにある POM を辿り、推移的な依存の jar を集める。
@@ -145,14 +146,14 @@ final class DependencyCollector {
             if (loc.artifact() != null) {
                 entries.put(ga, new Entry(loc.artifact(), n.coordinates(), n.via()));
             } else if (loc.artifactExpected()) {
-                result.missingJars.add(n.coordinates() + "（" + n.via() + "）");
+                result.missingJars.add(Messages.format("config.dep.missing", n.coordinates(), n.via()));
             }
             if (!transitive) {
                 continue;
             }
             if (loc.project() == null) {
                 if (loc.pomExpected()) {
-                    result.missingPoms.add(n.coordinates() + "（" + n.via() + "）");
+                    result.missingPoms.add(Messages.format("config.dep.missing", n.coordinates(), n.via()));
                 }
                 continue;
             }
@@ -207,17 +208,17 @@ final class DependencyCollector {
             version = won;   // 前の回で「高い版が勝つ」と分かった版
         }
         if (dep.groupId().contains("${") || dep.artifactId().contains("${") || version.contains("${")) {
-            result.unresolved.add(dep.ga() + ":" + version + "（変数が展開できない。" + via + "）");
+            result.unresolved.add(Messages.format("config.dep.noVariable", dep.ga(), version, via));
             return null;
         }
         if (version.isEmpty()) {
-            result.unresolved.add(dep.ga() + "（版が決まらない。" + via + "）");
+            result.unresolved.add(Messages.format("config.dep.noVersion", dep.ga(), via));
             return null;
         }
         if (Versions.isDynamic(version)) {
             String selected = Versions.select(version, repos.versions(dep.groupId(), dep.artifactId()));
             if (selected == null) {
-                result.unresolved.add(dep.ga() + ":" + version + "（範囲に合う版がローカルに無い。" + via + "）");
+                result.unresolved.add(Messages.format("config.dep.noRangeMatch", dep.ga(), version, via));
                 return null;
             }
             version = selected;
@@ -285,8 +286,7 @@ final class DependencyCollector {
             Path classes = moduleDir.resolve("target").resolve("classes");
             if (expectsClasses && !Files.isDirectory(classes)) {
                 // 兄弟モジュールが未ビルド。そのソースを解析対象に含めていれば型はソースから解決されるので、警告ではなく注記
-                result.notes.add("リアクタのモジュール " + dep.ga() + " はビルドされていません（" + classes
-                        + " が無い）。そのモジュールのソースを解析対象に含めていれば問題ありません");
+                result.notes.add(Messages.format("config.dep.reactorNotBuilt", dep.ga(), classes));
                 return new Located(null, false, project, project == null);
             }
             return new Located(expectsClasses ? classes : null, false, project, project == null);

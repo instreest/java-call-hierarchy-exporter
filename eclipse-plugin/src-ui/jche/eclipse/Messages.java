@@ -68,6 +68,19 @@ public final class Messages {
     }
 
     /**
+     * いま画面に出している言語（{@code en} / {@code ja} など）。
+     *
+     * <p>解析は別プロセス（{@code --server}）で動き、そのログはこの画面のコンソールに流れる。
+     * 子プロセスに {@code -Djche.lang=<この値>} を渡すことで、画面と解析ログの言語がそろう
+     * （{@code jche.util.Messages} が同じキーでこの値を読む。docs/nls-qa.md の Q8）。
+     *
+     * @return 言語コード
+     */
+    public static String language() {
+        return locale().getLanguage();
+    }
+
+    /**
      * {@code {n}} を args[n] で置き換える。対応する引数が無ければそのまま残す
      * （訳を直すときに「差し込みが足りない」と気づけるように）。
      */

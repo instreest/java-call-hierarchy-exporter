@@ -1,5 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 
+import { t } from './messages';
+
 /**
  * 木の絞り込み条件。
  *
@@ -66,19 +68,19 @@ export function fromStored(stored: unknown, defaultDepth: number = DEFAULT_FILTE
 export function describeFilters(f: FilterSettings): string {
     const parts: string[] = [];
     if (f.text !== '') {
-        parts.push(`絞り込み: ${f.text}`);
+        parts.push(t('filter.text', f.text));
     }
     if (f.includeTests) {
-        parts.push('テストを含む');
+        parts.push(t('filter.includeTests'));
     }
     if (!f.includeGuessed) {
-        parts.push('推定を除く');
+        parts.push(t('filter.excludeGuessed'));
     }
     if (!f.applyExcludePackages) {
-        parts.push('exclude.packages を無視');
+        parts.push(t('filter.ignoreExcludes'));
     }
     if (!f.dedupe) {
-        parts.push('呼び出し行ごとに表示');
+        parts.push(t('filter.perCallSite'));
     }
     return parts.join(' / ');
 }

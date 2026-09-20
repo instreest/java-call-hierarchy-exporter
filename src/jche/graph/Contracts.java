@@ -12,6 +12,7 @@ import jche.config.Config;
 import jche.config.Plugins;
 import jche.extension.ContractProvider;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 契約表の読み込み。同梱の表・設定ファイルで足した表・拡張が返す表を1つにまとめ、
@@ -43,10 +44,10 @@ public final class Contracts {
         List<ContractUsage.Line> typeLines = new ArrayList<>();
         if (config.builtinContracts) {
             for (String line : JdkCallbacks.LINES) {
-                callbackLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
+                callbackLines.add(new ContractUsage.Line(line, ContractUsage.bundledOrigin(), true));
             }
             for (String line : BundledFrameworkEntries.LINES) {
-                entryLines.add(new ContractUsage.Line(line, ContractUsage.BUNDLED, true));
+                entryLines.add(new ContractUsage.Line(line, ContractUsage.bundledOrigin(), true));
             }
         }
         for (Path file : config.contractFiles) {
@@ -55,24 +56,23 @@ public final class Contracts {
                 lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             } catch (IOException e) {
                 // 表が読めないと「設定したのに効いていない」状態になる。黙らず知らせる
-                Log.warn("契約表を読めません: " + file + " (" + e + ")。この表は使わずに続けます");
+                Log.warn(Messages.format("graph.contracts.unreadable", file, e));
                 continue;
             }
             int n = sort(lines, callbackLines, entryLines, typeLines, file.toString());
-            Log.info("契約表を読み込み: " + file + "（" + n + " 行）");
+            Log.info(Messages.format("graph.contracts.loaded", file, n));
         }
         for (ContractProvider provider : Plugins.load(config, config.contractProviderClasses,
                 ContractProvider.class)) {
             List<String> lines = provider.lines();
             int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines, typeLines,
                     provider.getClass().getName());
-            Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
+            Log.info(Messages.format("graph.contracts.fromExtension", provider.getClass().getName(), n));
         }
         TypeContracts types = new TypeContracts(new ContractUsage(typeLines), graph.typeNames());
         if (types.hasFactoryRows() && !dataflow.enabled()) {
             // キーはデータフローの値グラフから引くので、切られていると永久に当たらない
-            Log.warn("ファクトリとキーを書いた契約（型#メソッド(\"キー\") => 具象型）は、"
-                    + "dataflow.enabled=false では引けません。この形の行は当たりません");
+            Log.warn(Messages.get("graph.contracts.factoryNeedsDataflow"));
         }
         return new Loaded(new CallbackContracts(graph, dataflow, new ContractUsage(callbackLines)),
                 new FrameworkEntries(graph, new ContractUsage(entryLines)), types);
@@ -96,22 +96,21 @@ public final class Contracts {
             if (line.contains("=>")) {
                 if (TypeContracts.parse(line) == null) {
                     // よくある書き間違いには助言を添える。綴りを疑って時間を使わせないため
-                    Log.warn("契約の行を読めません（" + from + "）: " + line
+                    Log.warn(Messages.format("graph.contracts.badRow", from, line)
                             + (TypeContracts.hasArguments(line)
-                                    ? "（ファクトリのキーは \"…\" で囲みます。"
-                                            + "列挙定数なら引用符なしで FQN を書きます）" : ""));
+                                    ? Messages.get("graph.contracts.badRowHint") : ""));
                     continue;
                 }
                 types.add(new ContractUsage.Line(line, from, false));
             } else if (line.contains("->")) {
                 if (CallbackContracts.parse(line) == null) {
-                    Log.warn("契約の行を読めません（" + from + "）: " + line);
+                    Log.warn(Messages.format("graph.contracts.badRow", from, line));
                     continue;
                 }
                 callbacks.add(new ContractUsage.Line(line, from, false));
             } else {
                 if (FrameworkEntries.parse(line) == null) {
-                    Log.warn("契約の行を読めません（" + from + "）: " + line);
+                    Log.warn(Messages.format("graph.contracts.badRow", from, line));
                     continue;
                 }
                 entries.add(new ContractUsage.Line(line, from, false));

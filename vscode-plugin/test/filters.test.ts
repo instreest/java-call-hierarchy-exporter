@@ -18,5 +18,6 @@ test('保存していた値からの復元（壊れていれば項目ごとに�
 
 test('効いている条件の説明', () => {
     assert.equal(describeFilters(DEFAULT_FILTERS), '');
-    assert.equal(describeFilters({ ...DEFAULT_FILTERS, text: 'Order', includeGuessed: false }), '絞り込み: Order / 推定を除く');
+    assert.equal(describeFilters({ ...DEFAULT_FILTERS, text: 'Order', includeGuessed: false }),
+        'filter: Order / exclude guessed');
 });

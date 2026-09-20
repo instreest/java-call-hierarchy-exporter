@@ -90,7 +90,7 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 空欄にすると、列数から階層の終わりを計算する読み方がこの行だけ通らなくなり、
 Excel の数値フィルタにも空欄が混ざる。
 
-これらの行は `root` 列（`(型解決失敗)` / jar 名）と `resolved-by` の接頭辞で
+これらの行は `root` 列（`(unresolved)` / jar 名）と `resolved-by` の接頭辞で
 呼び出し階層の行と見分けられるので、`level` に別の意味を持たせる必要は無かった。
 
 ### Q6. 注記から `[RESOLVED:*]` を落として困らないか
@@ -103,10 +103,10 @@ Excel の数値フィルタにも空欄が混ざる。
 
 | 残した注記 | 列に無い情報 |
 |---|---|
-| `[UNEXPANDED:CHA] 候補N件: {由来}` | 候補の件数、レシーバの由来（次に調べる場所） |
-| `[UNEXPANDED:GENERATED] …: FQN は…` | 生成される実装の FQN |
-| `[RESOLVED:CALLBACK] 契約: …` | 繋いだ契約の本文 |
-| `[UNREACHABLE] …条件「…」が成立しない（…）` | 条件式と、この経路で分かっている値 |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | 候補の件数、レシーバの由来（次に調べる場所） |
+| `[UNEXPANDED:GENERATED] …: FQN is…` | 生成される実装の FQN |
+| `[RESOLVED:CALLBACK] contract: …` | 繋いだ契約の本文 |
+| `[UNREACHABLE] …condition '…' does not hold (…)` | 条件式と、この経路で分かっている値 |
 | `[UNEXPANDED:CYCLE]` / `[UNEXPANDED:DEPTH]` / `[EXTERNAL]` | 打ち切りの理由（解決方法とは別の軸なので列には入れない） |
 
 ### Q7. 再実装用のプロンプトとお試し版（single-file）はどうしたか

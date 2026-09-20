@@ -2,6 +2,7 @@
 package jche.graph;
 
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * 「このメソッドを呼んでいるのは誰か」を引くための転置索引（CSR形式）。
@@ -20,8 +21,13 @@ import jche.util.RunControl;
  */
 public final class InboundIndex {
 
-    /** 進捗に出す名前 */
-    private static final String PROGRESS_LABEL = "呼び出し元の索引";
+    /**
+     * 進捗の見出し。{@code static final} にしないのは、そうするとこのクラスが読まれた時点の
+     * 言語で固まってしまうため（{@code docs/nls-qa.md} の Q2）
+     */
+    private static String progressLabel() {
+        return Messages.get("graph.progress.inbound");
+    }
 
     private final int[] offsets;    // 長さ methodCount + 1
     private final int[] callerIds;  // 長さ = 辺の数
@@ -55,11 +61,11 @@ public final class InboundIndex {
         IntArray edges = new IntArray(1 << 12);
         // 解析サーバーはこの索引を解析の最後に必ず作る。メソッド数が多いと数分かかるので、
         // 中止の受け付けと同じ間隔で進捗も出す（docs/eclipse-plugin-progress-log-qa.md）
-        RunControl.progress(PROGRESS_LABEL, 0, methodCount);
+        RunControl.progress(progressLabel(), 0, methodCount);
         for (int caller = 0; caller < methodCount; caller++) {
             if ((caller & 0xFFF) == 0) {
                 RunControl.checkCancelled();
-                RunControl.progress(PROGRESS_LABEL, caller, methodCount);
+                RunControl.progress(progressLabel(), caller, methodCount);
             }
             for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
                 for (int t : resolver.resolve(e).targets()) {
@@ -73,7 +79,7 @@ public final class InboundIndex {
             }
         }
 
-        RunControl.progress(PROGRESS_LABEL, methodCount, methodCount);
+        RunControl.progress(progressLabel(), methodCount, methodCount);
         int total = targets.size();
         int[] offsets = new int[methodCount + 1];
         for (int i = 0; i < total; i++) {

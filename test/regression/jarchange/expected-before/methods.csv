@@ -1,150 +1,150 @@
 ﻿method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
 Legacy.callRemote(),fx.app.Legacy,C,src/fx/app/Legacy.java,7,1,2,1,NORMAL,1,0,,1,
-Legacy.unusedDead(),fx.app.Legacy,C,src/fx/app/Legacy.java,13,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] 上流が未出力
-Main.main(String[]),fx.app.Main,C,src/fx/app/Main.java,32,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-Main.run(String[]),fx.app.Main,C,src/fx/app/Main.java,36,1,1,58,NORMAL,0,4,[UNEXPANDED:CHA] 戻り値（ファクトリメソッド等）;[UNEXPANDED:CHA] ローカル変数,0,[NOT_REACHED] 上流が未出力
-Main.branches(),fx.app.Main,C,src/fx/app/Main.java,79,1,1,5,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,87,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,91,1,1,2,NORMAL,0,1,[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い,0,[NOT_REACHED] 上流が未出力
-Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,95,1,1,2,NORMAL,0,2,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
-Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,100,1,1,4,NORMAL,0,1,[UNEXPANDED:CHA] ローカル変数,0,[NOT_REACHED] 上流が未出力
-Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,108,1,1,10,NORMAL,0,3,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり;[UNEXPANDED:CHA] 型名（static）,0,[NOT_REACHED] 上流が未出力
-Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,120,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,134,1,2,1,NORMAL,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
-Feature.run(boolean),fx.branch.Feature,C,src/fx/branch/Feature.java,17,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.mode(String),fx.branch.Feature,C,src/fx/branch/Feature.java,28,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.pick(int),fx.branch.Feature,C,src/fx/branch/Feature.java,36,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.select(Mode),fx.branch.Feature,C,src/fx/branch/Feature.java,44,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.report(),fx.branch.Feature,C,src/fx/branch/Feature.java,54,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.summary(),fx.branch.Feature,C,src/fx/branch/Feature.java,58,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.dump(),fx.branch.Feature,C,src/fx/branch/Feature.java,63,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.dumpDetail(),fx.branch.Feature,C,src/fx/branch/Feature.java,68,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.full(),fx.branch.Feature,C,src/fx/branch/Feature.java,72,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.light(),fx.branch.Feature,C,src/fx/branch/Feature.java,76,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.one(),fx.branch.Feature,C,src/fx/branch/Feature.java,80,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.two(),fx.branch.Feature,C,src/fx/branch/Feature.java,84,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.other(),fx.branch.Feature,C,src/fx/branch/Feature.java,88,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Feature.trace(String),fx.branch.Feature,C,src/fx/branch/Feature.java,92,1,8,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-AbstractDao.findById(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,7,1,15,1,NORMAL,1,1,[UNEXPANDED:CHA] 自クラス（this）,1,
-AbstractDao.load(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,12,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-AbstractDao.flush(),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,14,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-AbstractDao.audit(String),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,18,1,1,1,NORMAL,1,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c1(),fx.dao.Chain,C,src/fx/dao/Chain.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c2(),fx.dao.Chain,C,src/fx/dao/Chain.java,8,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c3(),fx.dao.Chain,C,src/fx/dao/Chain.java,9,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c4(),fx.dao.Chain,C,src/fx/dao/Chain.java,10,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c5(),fx.dao.Chain,C,src/fx/dao/Chain.java,11,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c6(),fx.dao.Chain,C,src/fx/dao/Chain.java,12,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Chain.c7(),fx.dao.Chain,C,src/fx/dao/Chain.java,13,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Dao.findById(long),fx.dao.Dao,I,src/fx/dao/Dao.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-Dao.name(),fx.dao.Dao,I,src/fx/dao/Dao.java,5,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] 自クラス（this）,0,[NOT_REACHED] 上流が未出力
-Dao.describe(),fx.dao.Dao,I,src/fx/dao/Dao.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-DaoFactory.create(),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,6,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-DaoFactory.newUserDao(),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,10,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-DaoFactory.createEither(boolean),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,14,1,1,2,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-DaoFactory.byName(String),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,21,1,2,3,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-DaoFactory.passThrough(Dao),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,25,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-ItemDao.selectById(long),fx.dao.ItemDao,I,src/fx/dao/ItemDao.java,15,0,2,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-ItemDao.selectFirst(),fx.dao.ItemDao,I,src/fx/dao/ItemDao.java,18,1,1,1,NORMAL,0,1,[UNEXPANDED:GENERATED] 実装はコンパイル時生成（Doma）,0,[NOT_REACHED] 上流が未出力
-ItemFinder.find(long),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,12,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:GENERATED] 実装はコンパイル時生成（Doma）,0,[NOT_REACHED] 上流が未出力
-ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
+Legacy.unusedDead(),fx.app.Legacy,C,src/fx/app/Legacy.java,13,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Main.main(String[]),fx.app.Main,C,src/fx/app/Main.java,32,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main.run(String[]),fx.app.Main,C,src/fx/app/Main.java,36,1,1,58,NORMAL,0,4,[UNEXPANDED:CHA] return value (factory method etc.);[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
+Main.branches(),fx.app.Main,C,src/fx/app/Main.java,79,1,1,5,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,87,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,91,1,1,2,NORMAL,0,1,[UNEXPANDED:NO_IMPL] no implementation with a body in the source,0,[NOT_REACHED] no caller row was emitted
+Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,95,1,1,2,NORMAL,0,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,100,1,1,4,NORMAL,0,1,[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
+Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,108,1,1,10,NORMAL,0,3,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference;[UNEXPANDED:CHA] type name (static),0,[NOT_REACHED] no caller row was emitted
+Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,120,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,134,1,2,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Feature.run(boolean),fx.branch.Feature,C,src/fx/branch/Feature.java,17,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.mode(String),fx.branch.Feature,C,src/fx/branch/Feature.java,28,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.pick(int),fx.branch.Feature,C,src/fx/branch/Feature.java,36,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.select(Mode),fx.branch.Feature,C,src/fx/branch/Feature.java,44,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.report(),fx.branch.Feature,C,src/fx/branch/Feature.java,54,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.summary(),fx.branch.Feature,C,src/fx/branch/Feature.java,58,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.dump(),fx.branch.Feature,C,src/fx/branch/Feature.java,63,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.dumpDetail(),fx.branch.Feature,C,src/fx/branch/Feature.java,68,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.full(),fx.branch.Feature,C,src/fx/branch/Feature.java,72,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.light(),fx.branch.Feature,C,src/fx/branch/Feature.java,76,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.one(),fx.branch.Feature,C,src/fx/branch/Feature.java,80,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.two(),fx.branch.Feature,C,src/fx/branch/Feature.java,84,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.other(),fx.branch.Feature,C,src/fx/branch/Feature.java,88,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.trace(String),fx.branch.Feature,C,src/fx/branch/Feature.java,92,1,8,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+AbstractDao.findById(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,7,1,15,1,NORMAL,1,1,[UNEXPANDED:CHA] own class (this),1,
+AbstractDao.load(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,12,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+AbstractDao.flush(),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,14,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+AbstractDao.audit(String),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,18,1,1,1,NORMAL,1,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c1(),fx.dao.Chain,C,src/fx/dao/Chain.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c2(),fx.dao.Chain,C,src/fx/dao/Chain.java,8,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c3(),fx.dao.Chain,C,src/fx/dao/Chain.java,9,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c4(),fx.dao.Chain,C,src/fx/dao/Chain.java,10,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c5(),fx.dao.Chain,C,src/fx/dao/Chain.java,11,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c6(),fx.dao.Chain,C,src/fx/dao/Chain.java,12,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Chain.c7(),fx.dao.Chain,C,src/fx/dao/Chain.java,13,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Dao.findById(long),fx.dao.Dao,I,src/fx/dao/Dao.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Dao.name(),fx.dao.Dao,I,src/fx/dao/Dao.java,5,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] own class (this),0,[NOT_REACHED] no caller row was emitted
+Dao.describe(),fx.dao.Dao,I,src/fx/dao/Dao.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+DaoFactory.create(),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,6,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+DaoFactory.newUserDao(),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,10,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+DaoFactory.createEither(boolean),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,14,1,1,2,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+DaoFactory.byName(String),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,21,1,2,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+DaoFactory.passThrough(Dao),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,25,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+ItemDao.selectById(long),fx.dao.ItemDao,I,src/fx/dao/ItemDao.java,15,0,2,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+ItemDao.selectFirst(),fx.dao.ItemDao,I,src/fx/dao/ItemDao.java,18,1,1,1,NORMAL,0,1,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma),0,[NOT_REACHED] no caller row was emitted
+ItemFinder.find(long),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,12,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma),0,[NOT_REACHED] no caller row was emitted
+ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderDaoImpl.load(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,11,1,1,0,LEAF,1,0,,1,
 OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,19,1,NORMAL,1,0,,1,
 OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,19,0,LEAF,1,0,,1,
 UserDaoImpl.load(long),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,7,1,1,1,NORMAL,1,0,,1,
 UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,15,0,LEAF,1,0,,1,
-UserDaoImpl.save(java.util.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,15,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-UserDaoImpl.save(fx.other.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,16,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Deep.nestedArgument(),fx.deep.Deep,C,src/fx/deep/Deep.java,19,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Deep.use(Dao),fx.deep.Deep,C,src/fx/deep/Deep.java,23,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
-Deep.deepReceiver(),fx.deep.Deep,C,src/fx/deep/Deep.java,33,1,0,7,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Deep.longClassName(),fx.deep.Deep,C,src/fx/deep/Deep.java,42,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Holder.get(),fx.deep.Holder,C,src/fx/deep/Holder.java,7,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping(),fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit,C,src/fx/deep/longnamed/AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong(),fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit,C,src/fx/deep/longnamed/AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-AbstractPayment.pay(int),fx.di.AbstractPayment,A,src/fx/di/AbstractPayment.java,8,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] 自クラス（this）,0,[NOT_REACHED] 上流が未出力
-AbstractPayment.record(int),fx.di.AbstractPayment,A,src/fx/di/AbstractPayment.java,12,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-AppConfig.clock(),fx.di.AppConfig,C,src/fx/di/AppConfig.java,12,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-CardPayment.record(int),fx.di.CardPayment,C,src/fx/di/CardPayment.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Checkout.checkout(int),fx.di.Checkout,C,src/fx/di/Checkout.java,14,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Clock.now(),fx.di.Clock,I,src/fx/di/Clock.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-FastNotice.send(),fx.di.FastNotice,C,src/fx/di/FastNotice.java,10,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-FixedClock.now(),fx.di.FixedClock,C,src/fx/di/FixedClock.java,8,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-MockPayment.pay(int),fx.di.MockPayment,C,src/fx/di/MockPayment.java,8,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-Notice.send(),fx.di.Notice,I,src/fx/di/Notice.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-NoticeSender.notifyUser(),fx.di.NoticeSender,C,src/fx/di/NoticeSender.java,16,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-PaymentGateway.pay(int),fx.di.PaymentGateway,I,src/fx/di/PaymentGateway.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-Scheduler.tick(),fx.di.Scheduler,C,src/fx/di/Scheduler.java,14,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-SlowNotice.send(),fx.di.SlowNotice,C,src/fx/di/SlowNotice.java,10,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-SystemClock.now(),fx.di.SystemClock,C,src/fx/di/SystemClock.java,8,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Dispatcher.submit(Runnable),fx.entry.Dispatcher,C,src/fx/entry/Dispatcher.java,12,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Jobs.nightly(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,16,1,1,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-Jobs.onEvent(Object),fx.entry.Jobs,C,src/fx/entry/Jobs.java,22,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,28,1,1,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-Jobs.custom(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,34,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Jobs.internal(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,38,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-SampleTest.runsJob(),fx.entry.SampleTest,C,src/fx/entry/SampleTest.java,9,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-"WebEntry.doGet(HttpServletRequest,HttpServletResponse)",fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,16,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] 上流が未出力
-WebEntry.helper(),fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,21,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Helper.assist(Dao),fx.excluded.Helper,C,src/fx/excluded/Helper.java,7,1,1,3,NORMAL,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
-Ping.a(int),fx.excluded.Ping,C,src/fx/excluded/Ping.java,5,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Pong.b(int),fx.excluded.Pong,C,src/fx/excluded/Pong.java,4,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Base2.m(),fx.inherit.Base2,I,src/fx/inherit/Base2.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-BaseGreeter.greet(),fx.inherit.BaseGreeter,C,src/fx/inherit/BaseGreeter.java,5,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Greeter.greet(),fx.inherit.Greeter,I,src/fx/inherit/Greeter.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-"InheritMain.run(Greeter,Base2)",fx.inherit.InheritMain,C,src/fx/inherit/InheritMain.java,5,1,0,2,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
-LoudGreeter.greet(),fx.inherit.LoudGreeter,C,src/fx/inherit/LoudGreeter.java,5,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-OnlyImpl.m(),fx.inherit.OnlyImpl,C,src/fx/inherit/OnlyImpl.java,6,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Sub2.m(),fx.inherit.Sub2,I,src/fx/inherit/Sub2.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] 引数（メソッド外から渡される）,0,[NOT_REACHED] 上流が未出力
-Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] 型名（static）,0,[NOT_REACHED] 上流が未出力
-Starter.viaThread(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,19,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Starter.viaSubclass(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,24,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Starter.viaExecutor(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,29,1,0,4,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Starter.viaVariable(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,36,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,5,1,NORMAL,0,1,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力
-Starter.Worker.run(),fx.lambda.Starter.Worker,C,src/fx/lambda/Starter.java,62,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力
-Base.init(String),fx.model.Base,C,src/fx/model/Base.java,8,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Color.area(),fx.model.Color,C,src/fx/model/Color.java,18,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Color.code(),fx.model.Color,C,src/fx/model/Color.java,20,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Exporter.export(Shape),fx.model.Exporter,I,src/fx/model/Exporter.java,4,0,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Point.area(),fx.model.Point,C,src/fx/model/Point.java,9,1,2,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Point.origin(),fx.model.Point,C,src/fx/model/Point.java,11,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Registry.register(String),fx.model.Registry,C,src/fx/model/Registry.java,6,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Shape.area(),fx.model.Shape,I,src/fx/model/Shape.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-List.count(),fx.other.List,C,src/fx/other/List.java,4,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.byLiteral(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,9,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.byConstant(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,13,1,0,5,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.byClassLiteral(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,19,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.byGetClass(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,23,1,0,4,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.nameOnly(Class[]),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,28,1,0,3,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] 戻り値（ファクトリメソッド等）,0,[NOT_REACHED] 上流が未出力
-Invoker.viaParam(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,32,1,0,6,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-"Invoker.invokeNamed(String,String)",fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,38,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.create(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,42,1,1,2,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.classOf(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,46,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Invoker.unknown(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,50,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] 上流が未出力
-Target.run(),fx.reflect.Target,C,src/fx/reflect/Target.java,8,1,4,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Target.run(long),fx.reflect.Target,C,src/fx/reflect/Target.java,9,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-"Target.run(String,int)",fx.reflect.Target,C,src/fx/reflect/Target.java,10,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Target.step(),fx.reflect.Target,C,src/fx/reflect/Target.java,11,1,4,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Notifier.execute(),fx.service.Notifier,C,src/fx/service/Notifier.java,19,1,2,3,NORMAL,0,2,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力
-Notifier.ping(),fx.service.Notifier,C,src/fx/service/Notifier.java,27,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Notifier.pong(),fx.service.Notifier,C,src/fx/service/Notifier.java,31,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-OrderService.execute(),fx.service.OrderService,C,src/fx/service/OrderService.java,23,1,2,13,NORMAL,1,6,[UNEXPANDED:CHA] フィールド変数;[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり,0,[NOT_REACHED] 上流が未出力
-OrderService.helper(),fx.service.OrderService,C,src/fx/service/OrderService.java,38,1,3,2,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
-OrderService.staticHelper(),fx.service.OrderService,C,src/fx/service/OrderService.java,43,1,2,1,NORMAL,1,1,[UNEXPANDED:CHA] フィールド変数,1,
+UserDaoImpl.save(java.util.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,15,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+UserDaoImpl.save(fx.other.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,16,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Deep.nestedArgument(),fx.deep.Deep,C,src/fx/deep/Deep.java,19,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Deep.use(Dao),fx.deep.Deep,C,src/fx/deep/Deep.java,23,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Deep.deepReceiver(),fx.deep.Deep,C,src/fx/deep/Deep.java,33,1,0,7,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Deep.longClassName(),fx.deep.Deep,C,src/fx/deep/Deep.java,42,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Holder.get(),fx.deep.Holder,C,src/fx/deep/Holder.java,7,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping(),fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit,C,src/fx/deep/longnamed/AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong(),fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit,C,src/fx/deep/longnamed/AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+AbstractPayment.pay(int),fx.di.AbstractPayment,A,src/fx/di/AbstractPayment.java,8,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] own class (this),0,[NOT_REACHED] no caller row was emitted
+AbstractPayment.record(int),fx.di.AbstractPayment,A,src/fx/di/AbstractPayment.java,12,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+AppConfig.clock(),fx.di.AppConfig,C,src/fx/di/AppConfig.java,12,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+CardPayment.record(int),fx.di.CardPayment,C,src/fx/di/CardPayment.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Checkout.checkout(int),fx.di.Checkout,C,src/fx/di/Checkout.java,14,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Clock.now(),fx.di.Clock,I,src/fx/di/Clock.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+FastNotice.send(),fx.di.FastNotice,C,src/fx/di/FastNotice.java,10,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+FixedClock.now(),fx.di.FixedClock,C,src/fx/di/FixedClock.java,8,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+MockPayment.pay(int),fx.di.MockPayment,C,src/fx/di/MockPayment.java,8,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Notice.send(),fx.di.Notice,I,src/fx/di/Notice.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+NoticeSender.notifyUser(),fx.di.NoticeSender,C,src/fx/di/NoticeSender.java,16,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+PaymentGateway.pay(int),fx.di.PaymentGateway,I,src/fx/di/PaymentGateway.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Scheduler.tick(),fx.di.Scheduler,C,src/fx/di/Scheduler.java,14,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+SlowNotice.send(),fx.di.SlowNotice,C,src/fx/di/SlowNotice.java,10,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+SystemClock.now(),fx.di.SystemClock,C,src/fx/di/SystemClock.java,8,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Dispatcher.submit(Runnable),fx.entry.Dispatcher,C,src/fx/entry/Dispatcher.java,12,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Jobs.nightly(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,16,1,1,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
+Jobs.onEvent(Object),fx.entry.Jobs,C,src/fx/entry/Jobs.java,22,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
+Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,28,1,1,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
+Jobs.custom(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,34,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Jobs.internal(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,38,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+SampleTest.runsJob(),fx.entry.SampleTest,C,src/fx/entry/SampleTest.java,9,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
+"WebEntry.doGet(HttpServletRequest,HttpServletResponse)",fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,16,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
+WebEntry.helper(),fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,21,1,0,1,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Helper.assist(Dao),fx.excluded.Helper,C,src/fx/excluded/Helper.java,7,1,1,3,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Ping.a(int),fx.excluded.Ping,C,src/fx/excluded/Ping.java,5,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Pong.b(int),fx.excluded.Pong,C,src/fx/excluded/Pong.java,4,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Base2.m(),fx.inherit.Base2,I,src/fx/inherit/Base2.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+BaseGreeter.greet(),fx.inherit.BaseGreeter,C,src/fx/inherit/BaseGreeter.java,5,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Greeter.greet(),fx.inherit.Greeter,I,src/fx/inherit/Greeter.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+"InheritMain.run(Greeter,Base2)",fx.inherit.InheritMain,C,src/fx/inherit/InheritMain.java,5,1,0,2,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+LoudGreeter.greet(),fx.inherit.LoudGreeter,C,src/fx/inherit/LoudGreeter.java,5,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+OnlyImpl.m(),fx.inherit.OnlyImpl,C,src/fx/inherit/OnlyImpl.java,6,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Sub2.m(),fx.inherit.Sub2,I,src/fx/inherit/Sub2.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] type name (static),0,[NOT_REACHED] no caller row was emitted
+Starter.viaThread(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,19,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Starter.viaSubclass(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,24,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Starter.viaExecutor(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,29,1,0,4,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Starter.viaVariable(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,36,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,5,1,NORMAL,0,1,[UNEXPANDED:CHA] field,0,[NOT_REACHED] no caller row was emitted
+Starter.Worker.run(),fx.lambda.Starter.Worker,C,src/fx/lambda/Starter.java,62,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] field,0,[NOT_REACHED] no caller row was emitted
+Base.init(String),fx.model.Base,C,src/fx/model/Base.java,8,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Color.area(),fx.model.Color,C,src/fx/model/Color.java,18,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Color.code(),fx.model.Color,C,src/fx/model/Color.java,20,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Exporter.export(Shape),fx.model.Exporter,I,src/fx/model/Exporter.java,4,0,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Point.area(),fx.model.Point,C,src/fx/model/Point.java,9,1,2,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Point.origin(),fx.model.Point,C,src/fx/model/Point.java,11,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Registry.register(String),fx.model.Registry,C,src/fx/model/Registry.java,6,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Shape.area(),fx.model.Shape,I,src/fx/model/Shape.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+List.count(),fx.other.List,C,src/fx/other/List.java,4,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.byLiteral(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,9,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.byConstant(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,13,1,0,5,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.byClassLiteral(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,19,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.byGetClass(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,23,1,0,4,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.nameOnly(Class[]),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,28,1,0,3,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] return value (factory method etc.),0,[NOT_REACHED] no caller row was emitted
+Invoker.viaParam(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,32,1,0,6,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+"Invoker.invokeNamed(String,String)",fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,38,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.create(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,42,1,1,2,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.classOf(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,46,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.unknown(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,50,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Target.run(),fx.reflect.Target,C,src/fx/reflect/Target.java,8,1,4,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Target.run(long),fx.reflect.Target,C,src/fx/reflect/Target.java,9,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+"Target.run(String,int)",fx.reflect.Target,C,src/fx/reflect/Target.java,10,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Target.step(),fx.reflect.Target,C,src/fx/reflect/Target.java,11,1,4,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Notifier.execute(),fx.service.Notifier,C,src/fx/service/Notifier.java,19,1,2,3,NORMAL,0,2,[UNEXPANDED:CHA] field,0,[NOT_REACHED] no caller row was emitted
+Notifier.ping(),fx.service.Notifier,C,src/fx/service/Notifier.java,27,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Notifier.pong(),fx.service.Notifier,C,src/fx/service/Notifier.java,31,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+OrderService.execute(),fx.service.OrderService,C,src/fx/service/OrderService.java,23,1,2,13,NORMAL,1,6,[UNEXPANDED:CHA] field;[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+OrderService.helper(),fx.service.OrderService,C,src/fx/service/OrderService.java,38,1,3,2,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
+OrderService.staticHelper(),fx.service.OrderService,C,src/fx/service/OrderService.java,43,1,2,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
 OrderService.setMutable(Dao),fx.service.OrderService,C,src/fx/service/OrderService.java,47,1,1,0,LEAF,1,0,,1,
 OrderService.recurse(int),fx.service.OrderService,C,src/fx/service/OrderService.java,51,1,2,1,NORMAL,1,0,,1,
-Repo.execute(),fx.service.Repo,C,src/fx/service/Repo.java,22,1,2,2,NORMAL,0,1,[UNEXPANDED:CHA] フィールド変数,0,[NOT_REACHED] 上流が未出力
-Service.execute(),fx.service.Service,I,src/fx/service/Service.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-Counter.bump(),fx.util.Counter,C,src/fx/util/Counter.java,18,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Counter.initial(),fx.util.Counter,C,src/fx/util/Counter.java,26,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Counter.initialCount(),fx.util.Counter,C,src/fx/util/Counter.java,28,1,1,0,LEAF,0,0,,0,[NOT_REACHED] 上流が未出力
-Counter.Inner.touch(),fx.util.Counter.Inner,C,src/fx/util/Counter.java,31,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-Counter.Nested.touch(Counter),fx.util.Counter.Nested,C,src/fx/util/Counter.java,35,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] 上流が未出力
-"HttpServlet.doGet(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,11,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
-"HttpServlet.doPost(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,14,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] 上流が未出力
+Repo.execute(),fx.service.Repo,C,src/fx/service/Repo.java,22,1,2,2,NORMAL,0,1,[UNEXPANDED:CHA] field,0,[NOT_REACHED] no caller row was emitted
+Service.execute(),fx.service.Service,I,src/fx/service/Service.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Counter.bump(),fx.util.Counter,C,src/fx/util/Counter.java,18,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Counter.initial(),fx.util.Counter,C,src/fx/util/Counter.java,26,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Counter.initialCount(),fx.util.Counter,C,src/fx/util/Counter.java,28,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Counter.Inner.touch(),fx.util.Counter.Inner,C,src/fx/util/Counter.java,31,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Counter.Nested.touch(Counter),fx.util.Counter.Nested,C,src/fx/util/Counter.java,35,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+"HttpServlet.doGet(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,11,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+"HttpServlet.doPost(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,14,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted

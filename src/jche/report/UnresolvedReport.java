@@ -167,10 +167,10 @@ public final class UnresolvedReport {
     /** 理由コードの文言（読み手の判断。キャッシュには文言を入れない） */
     static String reasonText(String code) {
         if (UnresolvedCallFact.BINDING_FAILED.equals(code)) {
-            return "型解決に失敗（クラスパス不足・動的呼び出し等の可能性）";
+            return "type resolution failed (missing classpath / dynamic call / etc.)";
         }
         if (UnresolvedCallFact.OUTSIDE_METHOD.equals(code)) {
-            return "メソッド本体の外からの呼び出し";
+            return "call from outside a method body";
         }
         return code;
     }

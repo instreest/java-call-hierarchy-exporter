@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 契約表の行ごとに「効いたか」を数え、解析の最後に知らせる。
@@ -24,8 +25,15 @@ import jche.util.Log;
  */
 public final class ContractUsage {
 
-    /** 出所の表示: 同梱の表 */
-    static final String BUNDLED = "同梱";
+    /**
+     * 出所の表示: 同梱の表。
+     *
+     * <p>{@code static final} にしないのは、クラスを読み込んだ時点の言語で凍ってしまうため
+     * （{@code message.language} を読むのはそれより後）。毎回引き直す。
+     */
+    static String bundledOrigin() {
+        return Messages.get("graph.contracts.origin.bundled");
+    }
 
     /** 契約表の1行と、その出所（契約表のファイル名・拡張のクラス名・同梱） */
     public record Line(String text, String origin, boolean bundled) {
@@ -50,7 +58,7 @@ public final class ContractUsage {
     static ContractUsage ofBundled(List<String> texts) {
         List<Line> out = new ArrayList<>(texts.size());
         for (String text : texts) {
-            out.add(new Line(text, BUNDLED, true));
+            out.add(new Line(text, bundledOrigin(), true));
         }
         return new ContractUsage(out);
     }
@@ -92,37 +100,33 @@ public final class ContractUsage {
         int appliedUser = callbacks.appliedUser() + entries.appliedUser() + types.appliedUser();
         int appliedBundled = callbacks.appliedBundled() + entries.appliedBundled()
                 + types.appliedBundled();
-        Log.info("契約表の適用: 自前 " + appliedUser + "/" + userRows + " 行"
-                + "（呼び戻し " + callbacks.appliedUser() + "/" + callbacks.userRows()
-                + "、入口 " + entries.appliedUser() + "/" + entries.userRows()
-                + "、具象型 " + types.appliedUser() + "/" + types.userRows() + "）"
-                + " ／ 同梱 " + appliedBundled + " 行");
+        Log.info(Messages.format("graph.contracts.usage", appliedUser, userRows,
+                callbacks.appliedUser(), callbacks.userRows(),
+                entries.appliedUser(), entries.userRows(),
+                types.appliedUser(), types.userRows(), appliedBundled));
 
         List<Line> unusedCallbacks = callbacks.unusedUser();
         List<Line> unused = new ArrayList<>(unusedCallbacks);
         unused.addAll(entries.unusedUser());
         unused.addAll(types.unusedUser());
         if (!unused.isEmpty()) {
-            Log.warn("自前の契約表で一度も当たらなかった行が " + unused.size() + " 件あります。"
-                    + "型名・シグネチャの綴り違いか、そのプロジェクトでは使っていない機能の行です:");
+            Log.warn(Messages.format("graph.contracts.unused", unused.size()));
             for (Line line : unused) {
                 Log.info("    " + line.origin() + ": " + line.text());
             }
             if (!unusedCallbacks.isEmpty()) {
                 // 呼び戻しの行でいちばん多い間違い。入口・具象型の行しか無いときは関係が無いので出さない
-                Log.info("    ※ 呼び戻しの行の呼び出し先は、JDT が返す「宣言型」で書きます"
-                        + "（List#forEach ではなく Iterable#forEach。docs/callback-contracts.md）。");
+                Log.info("    " + Messages.get("graph.contracts.declaringTypeHint"));
             }
         }
 
         // 「当たらなかった」と原因も対処も違うので分けて出す。種類ごとに意味が違うため文面も分ける
         reportNearMiss(callbacks.reachedButUnappliedUser(),
-                "呼び出し先には一致したが、渡した値の具象型が決まらず繋げなかった行",
-                "追える形は docs/callback-contracts.md の「追える条件」にあります。");
+                Messages.get("graph.contracts.nearMiss.callback"),
+                Messages.get("graph.contracts.nearMiss.callbackHint"));
         reportNearMiss(types.reachedButUnappliedUser(),
-                "左辺の型には一致したが、右辺の型にその呼び出しの本体が無く採用できなかった行",
-                "右辺の FQN の綴りと、その型（か親）がそのメソッドを持つかを確かめてください。"
-                        + "採用できないときは候補を落として CHA に戻すので、呼び出しは漏れません。");
+                Messages.get("graph.contracts.nearMiss.type"),
+                Messages.get("graph.contracts.nearMiss.typeHint"));
     }
 
     /** 「当たったが効かせられなかった」行を挙げる。無ければ何も出さない */
@@ -130,11 +134,11 @@ public final class ContractUsage {
         if (lines.isEmpty()) {
             return;
         }
-        Log.info("※ " + what + "が " + lines.size() + " 件あります（表の誤りではありません）:");
+        Log.info(Messages.format("graph.contracts.nearMiss", what, lines.size()));
         for (Line line : lines) {
             Log.info("    " + line.origin() + ": " + line.text());
         }
-        Log.info("    ※ " + hint);
+        Log.info("    " + hint);
     }
 
     /** 利用者が足した行数 */

@@ -19,6 +19,7 @@ import jche.extension.HintKeys;
 import jche.extension.HintSink;
 import jche.util.Log;
 import jche.util.Names;
+import jche.util.Messages;
 
 /**
  * 同梱のフェーズA拡張: ファクトリメソッドに渡された文字列キーを証拠として残す。
@@ -75,9 +76,9 @@ public final class FactoryKeyCollector implements CallSiteHintCollector {
             }
         }
         if (targets.isEmpty()) {
-            Log.warn(getClass().getSimpleName() + ": " + KEY_METHODS + " が空欄です（何も拾いません）");
+            Log.warn(Messages.format("extension.factoryKeys.noMethods", getClass().getSimpleName(), KEY_METHODS));
         } else {
-            Log.info("[plugin] " + getClass().getSimpleName() + ": 対象 " + targets.size() + " 件");
+            Log.info(Messages.format("extension.factoryKeys.targets", getClass().getSimpleName(), targets.size()));
         }
     }
 

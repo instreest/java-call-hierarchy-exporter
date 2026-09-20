@@ -16,6 +16,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * ローカルリポジトリ（ダウンロード済みの jar と POM の置き場所）。ここからしか探さず、ネットワークには出ない。
@@ -50,7 +51,7 @@ public final class LocalRepositories {
                 if (Files.isDirectory(p)) {
                     roots.add(p);
                 } else {
-                    Log.warn("library.repositories のフォルダが見つかりません: " + p);
+                    Log.warn(Messages.format("config.repos.missingFolder", p));
                 }
             }
             return new LocalRepositories(roots);
@@ -64,8 +65,7 @@ public final class LocalRepositories {
             roots.add(gradle);
         }
         if (roots.isEmpty()) {
-            Log.warn("ローカルリポジトリが見つかりません（" + maven + "、" + gradle
-                    + "）。別の場所にあるなら library.repositories で指定してください");
+            Log.warn(Messages.format("config.repos.none", maven, gradle));
         }
         return new LocalRepositories(roots);
     }
@@ -85,10 +85,10 @@ public final class LocalRepositories {
                     if (!raw.contains("${")) {
                         return Paths.get(raw).toAbsolutePath().normalize();
                     }
-                    Log.warn("settings.xml の localRepository に展開できない変数があるため既定の場所を使います: " + raw);
+                    Log.warn(Messages.format("config.repos.settingsVariable", raw));
                 }
             } catch (Exception e) {
-                Log.warn("settings.xml を読めないため既定の場所を使います: " + settings + " (" + e + ")");
+                Log.warn(Messages.format("config.repos.settingsUnreadable", settings, e));
             }
         }
         return home.resolve(".m2").resolve("repository");

@@ -2,6 +2,7 @@
 package jche.config;
 
 import java.nio.file.Path;
+import jche.util.Messages;
 
 /**
  * Maven プロジェクト（pom.xml）の依存 jar を、Maven を実行せずに集める。
@@ -25,8 +26,7 @@ final class MavenBuild {
                 DependencyCollector.Strategy.NEAREST, project.managed);
         DependencyCollector.Result result = collector.collect(project.dependencies, "pom.xml", true);
         if (reactor.size() > 1) {
-            result.notes.add("リアクタのモジュール " + reactor.size() + " 件（ルート: " + reactor.root + "）。"
-                    + "兄弟モジュールは target/classes と、その pom.xml の依存で解決する");
+            result.notes.add(Messages.format("config.maven.reactor", reactor.size(), reactor.root));
         }
         return result;
     }

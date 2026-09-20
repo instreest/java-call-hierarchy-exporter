@@ -36,13 +36,13 @@ public final class RecvKind {
     /** 出力に載せる説明。CHAで絞れなかった理由として使う */
     public static String describe(char kind) {
         return switch (kind) {
-            case RETURN -> "戻り値（ファクトリメソッド等）";
-            case PARAM -> "引数（メソッド外から渡される）";
-            case FIELD -> "フィールド変数";
-            case LOCAL -> "ローカル変数";
-            case THIS -> "自クラス（this）";
-            case TYPE -> "型名（static）";
-            default -> "レシーバ不明";
+            case RETURN -> "return value (factory method etc.)";
+            case PARAM -> "parameter (passed in from outside the method)";
+            case FIELD -> "field";
+            case LOCAL -> "local variable";
+            case THIS -> "own class (this)";
+            case TYPE -> "type name (static)";
+            default -> "receiver unknown";
         };
     }
 }

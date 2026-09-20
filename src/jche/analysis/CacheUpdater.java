@@ -44,6 +44,7 @@ import jche.util.FileHash;
 import jche.util.Log;
 import jche.util.Progress;
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * フェーズ1: 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
@@ -157,7 +158,7 @@ public final class CacheUpdater {
         CachePhaseResult result = new CachePhaseResult();
 
         List<Path> javaFiles = layout.listJavaFiles();
-        Log.info("Javaファイル数: " + javaFiles.size());
+        Log.info(Messages.format("analysis.javaFileCount", javaFiles.size()));
 
         // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）
         Map<String, SourceFile> live = new LinkedHashMap<>();
@@ -178,7 +179,8 @@ public final class CacheUpdater {
         Path partialCache = takeOverPartial(config.cacheFile, tmpCache);
         Path partialFlowCache = takeOverPartial(config.dataflowCacheFile, tmpFlowCache);
 
-        Progress progress = new Progress("ソース解析", javaFiles.size(), CallEdgeExtractor.BATCH_SIZE);
+        Progress progress = new Progress(Messages.get("analysis.progress.parse"), javaFiles.size(),
+                CallEdgeExtractor.BATCH_SIZE);
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
 
         // --- パス0: 旧キャッシュの依存 jar（L行）と今回のクラスパスを突き合わせる ---
@@ -187,8 +189,7 @@ public final class CacheUpdater {
         LibraryDiff libraries = LibraryDiff.compute(layout.classpathArray(),
                 oldCacheUsable ? oldLibraries : List.of(), layout.projectRoot);
         if (oldCacheUsable && libraries.any()) {
-            Log.info("[cache] 依存jarの変更を検知: " + libraries
-                    + "。それらのパッケージを参照するファイルと、型解決に失敗していたファイルを解析し直します");
+            Log.info(Messages.format("analysis.libraryChanged", libraries));
         }
 
         // 2 つのキャッシュに書く同じ世代の印。次回の実行で「対で書かれたか」を判定する
@@ -293,7 +294,7 @@ public final class CacheUpdater {
         for (int from = 0; from < files.size(); from += CallEdgeExtractor.BATCH_SIZE) {
             // 中止の確認はバッチの切れ目で行う。ここで抜けてもキャッシュはテンポラリのままなので壊れない
             RunControl.checkCancelled();
-            RunControl.progress("ソース解析", from, files.size());
+            RunControl.progress(Messages.get("analysis.progress.parse"), from, files.size());
             int to = Math.min(files.size(), from + CallEdgeExtractor.BATCH_SIZE);
             extractor.analyzeBatch(files.subList(from, to), writer);
         }
@@ -383,8 +384,7 @@ public final class CacheUpdater {
             if (fa.syntaxErrors > 0) {
                 // 本体を読めていないので、このファイルの呼び出しは出力に出ない。黙って落とさない
                 result.addSyntaxErrorFile(file.relativePath());
-                Log.warn("構文エラーのため本体を読めませんでした: " + file.relativePath()
-                        + "（エラー " + fa.syntaxErrors + " 件。このファイルの呼び出しは出力に出ません）");
+                Log.warn(Messages.format("analysis.syntaxError", file.relativePath(), fa.syntaxErrors));
             }
             countReason();
             if (stale != null && shouldCascade(file, fa)) {
@@ -399,7 +399,7 @@ public final class CacheUpdater {
         public void failed(SourceFile file, Exception error) {
             result.failed++;
             countReason();
-            Log.warn("解析失敗（スキップ）: " + file.relativePath() + " (" + error.getMessage() + ")");
+            Log.warn(Messages.format("analysis.fileFailed", file.relativePath(), error.getMessage()));
             progress.step(++done);
         }
 
@@ -540,7 +540,7 @@ public final class CacheUpdater {
             try {
                 h = FileHash.of(file.path());
             } catch (IOException e) {
-                Log.warn("ソースのハッシュを取れません（このファイルは毎回解析し直します）: " + file.relativePath() + " (" + e + ")");
+                Log.warn(Messages.format("analysis.hashFailed", file.relativePath(), e));
                 h = "";
             }
             hashes.put(file.relativePath(), h);
@@ -571,8 +571,7 @@ public final class CacheUpdater {
             return null;
         }
         if (!Files.isRegularFile(config.dataflowCacheFile)) {
-            Log.info("[cache] データフローのキャッシュ（" + Config.DATAFLOW_CACHE_FILE_NAME
-                    + "）が無いため、両方を作り直します");
+            Log.info(Messages.format("analysis.cache.noDataflow", Config.DATAFLOW_CACHE_FILE_NAME));
             return null;
         }
         try {
@@ -583,7 +582,7 @@ public final class CacheUpdater {
                 // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK が
                 // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
                 // 同じソースでも解析結果が変わるため、F 行の同一性が一致していても再利用してはいけない
-                Log.info("[cache] 形式・ソースレベル・文字コード・JDK のいずれかが異なるため既存キャッシュを破棄します");
+                Log.info(Messages.get("analysis.cache.incompatible"));
                 return null;
             }
             if (!dataflowCachePairsWith(head.generation())) {
@@ -592,7 +591,7 @@ public final class CacheUpdater {
             return head.libraries();
         } catch (IOException | RuntimeException e) {
             // 読めない・文字が壊れているキャッシュ。全件解析し直せば済むので、解析ごと失敗させない
-            Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
+            Log.warn(Messages.format("analysis.cache.unreadable", e));
             return null;
         }
     }
@@ -626,7 +625,7 @@ public final class CacheUpdater {
             // 一時ファイルが無くても、前回が退避した直後に落ちていれば退避先が残っている
             return Files.isRegularFile(partial) ? partial : null;
         } catch (IOException e) {
-            Log.warn("[cache] 中断した前回の実行の一時ファイルを退避できません（引き継ぎません）: " + e);
+            Log.warn(Messages.format("analysis.resume.cannotStash", e));
             return null;
         }
     }
@@ -677,8 +676,7 @@ public final class CacheUpdater {
         if (taken.isEmpty()) {
             return toAnalyze;
         }
-        Log.info("[cache] 中断した前回の実行から " + taken.size()
-                + " ファイルぶんの解析結果を引き継ぎました（解析し直しません）");
+        Log.info(Messages.format("analysis.resume.taken", taken.size()));
         List<SourceFile> rest = new ArrayList<>();
         for (SourceFile f : toAnalyze) {
             if (!taken.contains(f.relativePath())) {
@@ -719,7 +717,7 @@ public final class CacheUpdater {
                 }
             }
         } catch (IOException | RuntimeException e) {
-            Log.warn("[cache] 中断した前回の実行の一時ファイルを読めません（そこまでで引き継ぎを打ち切ります）: " + e);
+            Log.warn(Messages.format("analysis.resume.readFailedPartial", e));
         }
         return paths;
     }
@@ -732,7 +730,7 @@ public final class CacheUpdater {
         try {
             Files.deleteIfExists(partial);
         } catch (IOException e) {
-            Log.warn("[cache] 引き継ぎに使った一時ファイルを消せません: " + e);
+            Log.warn(Messages.format("analysis.resume.cannotDelete", e));
         }
     }
 
@@ -757,22 +755,20 @@ public final class CacheUpdater {
         try {
             head = headOf(partial);
         } catch (IOException | RuntimeException e) {
-            Log.warn("[cache] 中断した前回の実行の一時ファイルを読めません（引き継ぎません）: " + e);
+            Log.warn(Messages.format("analysis.resume.readFailed", e));
             return false;
         }
         if (head == null) {
-            Log.info("[cache] 中断した前回の実行とは形式・ソースレベル・文字コード・JDK のいずれかが"
-                    + "異なるため引き継ぎません");
+            Log.info(Messages.get("analysis.resume.incompatible"));
             return false;
         }
         if (!head.sources().equals(fingerprintOf(live))) {
-            Log.info("[cache] 中断した前回の実行からソースの内容が変わっているため引き継ぎません"
-                    + "（変わっていないファイルの解析結果も、他のファイルの変更で変わりうるため）");
+            Log.info(Messages.get("analysis.resume.sourcesChanged"));
             return false;
         }
         LibraryDiff diff = LibraryDiff.compute(layout.classpathArray(), head.libraries(), layout.projectRoot);
         if (diff.any()) {
-            Log.info("[cache] 中断した前回の実行から依存jarが変わっているため引き継ぎません: " + diff);
+            Log.info(Messages.format("analysis.resume.librariesChanged", diff));
             return false;
         }
         return true;
@@ -810,7 +806,7 @@ public final class CacheUpdater {
             }
             // 最後の F 行から始まるブロックは、途中で切れている可能性があるので使わない
         } catch (IOException | RuntimeException e) {
-            Log.warn("[cache] 中断した前回の実行の一時ファイルを読めません（そこまでで引き継ぎを打ち切ります）: " + e);
+            Log.warn(Messages.format("analysis.resume.readFailedPartial", e));
         }
     }
 
@@ -861,21 +857,19 @@ public final class CacheUpdater {
         try (CacheReader flow = CacheReader.open(config.dataflowCacheFile)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
                     config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint))) {
-                Log.info("[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が"
-                        + "異なるため、両方を作り直します");
+                Log.info(Messages.get("analysis.cache.dataflowIncompatible"));
                 return false;
             }
             String flowGeneration = flow.generation();
             if (flowGeneration.isEmpty() || !flowGeneration.equals(generation)) {
-                Log.info("[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します");
+                Log.info(Messages.get("analysis.cache.differentGeneration"));
                 return false;
             }
         }
         String flowTrailer = trailerOf(config.dataflowCacheFile);
         String trailer = trailerOf(config.cacheFile);
         if (flowTrailer == null || !flowTrailer.equals(trailer)) {
-            Log.info("[cache] 2 つのキャッシュのブロック数が食い違う（どちらかが途中で切れている）ため、"
-                    + "両方を作り直します");
+            Log.info(Messages.get("analysis.cache.blockCountMismatch"));
             return false;
         }
         return true;
@@ -1008,12 +1002,11 @@ public final class CacheUpdater {
                 }
             }
         } catch (IOException | RuntimeException e) {
-            Log.warn("[cache] 既存キャッシュを読めないため破棄して全件解析します: " + e);
+            Log.warn(Messages.format("analysis.cache.unreadable", e));
             return false;
         }
         if (!lastLine.equals(CacheFormat.trailerFor(blocks))) {
-            Log.info("[cache] 既存キャッシュが途中で切れているため破棄して全件解析します"
-                    + "（ファイル " + blocks + " 件ぶんを読みましたが、最後まで書き終えた印がありません）");
+            Log.info(Messages.format("analysis.cache.truncated", blocks));
             return false;
         }
         return true;
@@ -1215,7 +1208,7 @@ public final class CacheUpdater {
             }
             rememberConstants(blockRel, blockConstants);   // 最後のブロック
         } catch (IOException | RuntimeException e) {
-            Log.warn("[cache] データフローのキャッシュを読めないため、両方を破棄して全件解析します: " + e);
+            Log.warn(Messages.format("analysis.cache.dataflowUnreadable", e));
             return false;
         }
         int dropped = 0;
@@ -1228,7 +1221,7 @@ public final class CacheUpdater {
         // jar の追加で解決し直す予定のファイルも、dataflow 側が無ければ同じく通常の再解析に回す
         libraryAffected.retainAll(present);
         if (dropped > 0) {
-            Log.info("[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: " + dropped + " 件");
+            Log.info(Messages.format("analysis.cache.dataflowMissingBlocks", dropped));
         }
         return true;
     }

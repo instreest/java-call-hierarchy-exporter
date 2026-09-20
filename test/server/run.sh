@@ -11,6 +11,8 @@
 # JCHE_CP が無ければ jbang に依存を解決させてコンパイルする（JDK と jbang が要る）。
 set -uo pipefail
 cd "$(dirname "$0")"
+# 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールで照合が変わる）
+export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -116,7 +118,7 @@ echo "== 同じ場所に project.root=. と書くと失敗する（上の指定�
 sed "s|^project.root=.*|project.root=.|" "$WORK/scratch/generated-config.properties" \
     > "$WORK/scratch/relative-config.properties"
 OUT=$(session "ANALYZE\t$WORK/scratch/relative-config.properties\nSHUTDOWN\n")
-grep -q "ソースフォルダを特定できませんでした" <<<"$OUT" \
+grep -q "Could not determine a source folder" <<<"$OUT" \
     && ok "相対の project.root は設定ファイルのフォルダを指してしまう（想定どおり失敗）" \
     || fail "project.root=. でも通ってしまう（この検査の前提が崩れている）"
 
@@ -148,7 +150,7 @@ output.folder=$WORK/syntax/out
 cache.folder=$WORK/syntax/cache
 EOF
 OUT=$(session_log "ANALYZE\t$WORK/syntax/c.properties\nSHUTDOWN\n")
-grep -q "構文エラー=1" <<<"$OUT" && ok "フェーズ1の集計に構文エラーの件数が出る" \
+grep -q "syntax errors=1" <<<"$OUT" && ok "フェーズ1の集計に構文エラーの件数が出る" \
     || fail "構文エラーが集計に出ない（黙って落ちている）"
 grep -q "src/app/Legacy.java" <<<"$OUT" && ok "読めなかったファイル名がログに出る" \
     || fail "読めなかったファイル名が分からない"
@@ -158,8 +160,8 @@ grep -qE "^OK${T}analyzed=1.*${T}syntaxErrors=1" <<<"$OUT" \
 
 # 2回目。キャッシュから書き写すだけでも、結果が欠けている事実は変わらない
 OUT=$(session_log "ANALYZE\t$WORK/syntax/c.properties\nSHUTDOWN\n")
-grep -q "再利用=1" <<<"$OUT" && ok "2回目はキャッシュを再利用する" || fail "2回目に再利用されていない"
-grep -q "構文エラー=1" <<<"$OUT" \
+grep -q "reused=1" <<<"$OUT" && ok "2回目はキャッシュを再利用する" || fail "2回目に再利用されていない"
+grep -q "syntax errors=1" <<<"$OUT" \
     && ok "再利用したときも構文エラーを言い続ける（F行に持っているため）" \
     || fail "2回目に警告が消える（キャッシュに残していない）"
 
@@ -167,7 +169,7 @@ grep -q "構文エラー=1" <<<"$OUT" \
 sed 's/\benum\b/it/g' "$WORK/syntax/src/app/Legacy.java" > "$WORK/syntax/src/app/Legacy.java.tmp"
 mv "$WORK/syntax/src/app/Legacy.java.tmp" "$WORK/syntax/src/app/Legacy.java"
 OUT=$(session_log "ANALYZE\t$WORK/syntax/c.properties\nSHUTDOWN\n")
-grep -q "構文エラー" <<<"$OUT" && fail "直したのに構文エラーが残っている" \
+grep -q "syntax errors" <<<"$OUT" && fail "直したのに構文エラーが残っている" \
     || ok "直せば警告は出ない（型解決のエラーでは警告しない）"
 grep -qE "^OK${T}analyzed=1.*${T}syntaxErrors=0" <<<"$OUT" \
     && ok "応答も syntaxErrors=0 に戻る" || fail "応答が 0 に戻らない"
