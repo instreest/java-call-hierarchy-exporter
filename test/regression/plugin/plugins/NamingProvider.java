@@ -11,7 +11,7 @@ import jche.extension.TypeCandidateProvider;
  * キーが列挙できるなら契約表の 1 行で済むので、拡張を書く価値があるのは
  * 「キーが多すぎて並べたくない」「増え続ける」場合だけ。
  *
- * この例は resolver.hint.collectors（フェーズAの拡張）を設定していない。ファクトリのキーは
+ * ファクトリのキーを拾うための設定は要らない。キーは
  * データフローの値グラフに載っていて、ツールが Hint にして渡すため（jche.graph.FactoryCalls）。
  */
 public class NamingProvider implements TypeCandidateProvider {

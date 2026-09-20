@@ -115,6 +115,9 @@ analysis 側から引き継げたぶんと同じブロックを dataflow 側か�
 
 ### Q6. `hints=`（フェーズAの拡張の指紋）はどちらのヘッダに入れるか
 
+> のちにフェーズAの拡張ごと廃止し、`hints=` の項目も落とした
+> （[instance-analysis-plugin-qa.md の Q28](instance-analysis-plugin-qa.md)）。以下は当時の判断の記録。
+
 今は analysis 側だけ。`X` 行（拡張が拾った証拠）が analysis 側にあるため。
 `X` 行を dataflow 側へ移す段では、指紋も一緒に移す。
 <b>ただし「拡張を差し替えても analysis 側が生き残る」わけではない（Q12 で訂正）。</b>
@@ -221,7 +224,7 @@ analysis 側の `clean`（タブ・改行を空白へ置き換えて捨てる）
 | 行 | 読み手 | 読み方 |
 |---|---|---|
 | `R` | `CallGraphBuilder`（戻り値の出所） | dataflow 側を 1 回走査（`readValues`）。メソッドごとに集約 |
-| `X` | `CallGraphBuilder`（フェーズAの証拠） | 同じ走査で。`呼び出し元キー｜スコープキー` ごとに集約 |
+| `X` | `CallGraphBuilder`（同一メソッド内で `new` された型） | 同じ走査で。`呼び出し元キー｜スコープキー` ごとに集約 |
 | `K` | `CacheUpdater`（定数の連鎖） | パス1b の走査に相乗り。ブロックごとに指紋をまとめる |
 
 `K` をパス1b に相乗りさせたのは、そこで既に dataflow 側の F 行を走査しているため

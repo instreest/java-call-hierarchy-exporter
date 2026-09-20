@@ -26,22 +26,26 @@ Spring の `@Autowired` などは注釈から自動で解決するので、設�
 ── XML や独自形式の DI 設定ファイル、キーで実装を切り替えるファクトリ、社内フレームワークの仕掛けです。
 拡張は Spring の判定より先に効くので、自動の解決を上書きすることもできます。
 
-解決は 2 つの段階に分かれています。必要な情報が手に入るタイミングが違うためです。
+拡張が動くのは**グラフを組み立てるとき 1 回だけ**です。ソースを読み直さないので、
+拡張を足しても外しても**キャッシュは捨てられません**（契約表と同じ性質）。
 
-| 段階 | いつ | すること | 例 |
-| --- | --- | --- | --- |
-| フェーズA | ソースを読みながら | 呼び出し箇所の手がかりを拾う | `DaoFactory.get("USER_DAO")` の `"USER_DAO"` |
-| フェーズB | グラフを組み立てるとき | 手がかりと宣言型から具象クラスを決める | `"USER_DAO"` → `jp.co.xxx.dao.UserDaoImpl` |
+判断の材料（証拠＝`Hint`）は、ツールがデータフローから読んで渡します。
+ファクトリに渡されたキーを拾うための設定は要りません。
+
+| `kind` | いつ付くか | `value` の例 |
+| --- | --- | --- |
+| `FACTORY` | レシーバがファクトリの戻り値のとき | `jp.co.xxx.DaoFactory#get` |
+| `FACTORY_KEY` | 文字列を渡しているとき（コンパイル時定数は値まで評価） | `USER_DAO` |
+| `FACTORY_CONST` | 列挙定数を渡しているとき | `jp.co.app.Kind.USER` |
+| `FACTORY_CLASS` | `Class` リテラルを渡しているとき | `jp.co.xxx.dao.UserDao` |
 
 ## 1. 対応表を書くだけで済ませる（同梱の実装を使う）
 
-多くの場合、条件は「この宣言型（またはこの手がかり）のときは、この具象クラス」という対応表に落ちます。
+多くの場合、条件は「この宣言型（またはこの証拠）のときは、この具象クラス」という対応表に落ちます。
 その形なら Java を書く必要はありません。
 
 ```properties
 # config/config.properties
-resolver.hint.collectors=jche.builtin.FactoryKeyCollector
-plugin.factory.methods=jp.co.xxx.DaoFactory#get
 resolver.candidate.providers=jche.builtin.TypeMappingProvider
 plugin.mapping.files=mapping.properties
 ```
@@ -50,8 +54,9 @@ plugin.mapping.files=mapping.properties
 # config/mapping.properties（UTF-8）
 # 宣言型 -> 具象型（DI 設定から機械的に書き出せる形）
 jp.co.xxx.dao.UserDao = jp.co.xxx.dao.UserDaoImpl
-# 手がかり -> 具象型（区切りは @。properties では : と = が区切り文字なので使えない）
+# 証拠 -> 具象型（区切りは @。properties では : と = が区切り文字なので使えない）
 FACTORY_KEY@USER_DAO = jp.co.xxx.dao.UserDaoImpl
+FACTORY_CLASS@jp.co.xxx.dao.UserDao = jp.co.xxx.dao.UserDaoImpl
 ```
 
 ## 2. 自分で書く（設定ファイルの形式が独自、条件が複雑な場合）
@@ -74,18 +79,17 @@ public class MyDiProvider implements jche.extension.TypeCandidateProvider {
 }
 ```
 
-実装するインターフェースは `jche.extension.TypeCandidateProvider`（フェーズB）です。
-**ファクトリに渡されたキーはツールが渡す**ので、それを拾うためだけに
-`jche.extension.CallSiteHintCollector`（フェーズA）を書く必要はありません
-（呼び出し箇所から独自の証拠を拾いたいときだけ使います）。動く例は
-[test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
+実装するインターフェースは `jche.extension.TypeCandidateProvider` **ひとつだけ**です。
+動く例は [test/regression/plugin/](../test/regression/plugin/)（設定・対応表・自前の拡張・期待出力）にあります。
 
 - 具象クラスを拡張が決めた行は、`call-hierarchy.csv` の `resolved-by` 列が `RESOLVED:<ラベル>`（同梱の実装なら `MAPPING`）になります
 - `candidates()` が返す型名は **単純名でもかまいません**（`UserDaoImpl`）。解析対象で 1 件に定まるときだけ使い、複数の型に当たるときは使わずに警告に出します
-- フェーズAの拡張はキャッシュに手がかりを書くので、拡張やその設定・実装ファイルを変えると、
-  キャッシュは自動的に捨てられて全件解析し直しになります（変え忘れによる古い結果の混入を防ぐため）
+- **拡張はキャッシュに何も書きません。** 足しても外しても全件解析し直しにはなりません
 - 拡張の読み込み・コンパイルに失敗しても解析は止まりません。警告を出して拡張なしで続けます
 - 対応表のどの行が引かれたかは、解析の最後に実行ログへ出ます（下記「効いているかを確かめる」）
+- **ソースを読みながら独自の証拠を拾う差し込み口はありません。** 解析器が読み取るもの自体を
+  増やしたいときは、ツールのソース（`jche.graph.FactoryCalls`）に手を入れます
+  （理由は [instance-analysis-plugin-qa.md の Q28](instance-analysis-plugin-qa.md)）
 
 ## 3. 例: 文字列連結でクラス名を組み立てるファクトリ
 
@@ -130,10 +134,10 @@ at jp.co.app.Main.run(Main.java:8),OrderService.execute,Main.run,OrderService.ex
 at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.execute,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 ```
 
-どちらの手段でも、フェーズA（キーの採取）は同梱の `FactoryKeyCollector` に任せられます。
-`get("user")` の実引数の**最初の文字列リテラル**を、その戻り値を受けている変数（変数に受けずに
-そのまま呼ぶ形なら式そのもの）に結び付けて残します。**算出後の FQN ではなく、呼び出し箇所に
-書かれている生のキー**が証拠になるので、解析器が文字列演算を再現する必要はありません。
+どちらの手段でも、**キーの採取はツールがやります**。`get("user")` の実引数はデータフローの
+値グラフに載っているので、その戻り値を受けている変数（変数に受けずにそのまま呼ぶ形なら式そのもの）
+から辿れます。**算出後の FQN ではなく、呼び出し箇所に書かれている生のキー**が証拠になるので、
+解析器が文字列演算を再現する必要はありません。
 
 ### 3a. 対応表で済ませる
 
@@ -141,8 +145,6 @@ at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.exec
 
 ```properties
 # config.properties
-resolver.hint.collectors=jche.builtin.FactoryKeyCollector
-plugin.factory.methods=jp.co.app.ServiceFactory#get
 resolver.candidate.providers=jche.builtin.TypeMappingProvider
 plugin.mapping.files=mapping.properties
 ```
@@ -164,7 +166,7 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 
 ### 拡張に渡る証拠（`Hint`）
 
-`candidates()` が受け取る `hints` には、次の 3 つがツールから自動で入ります
+`candidates()` が受け取る `hints` には、次の 4 つがツールから自動で入ります
 （レシーバがファクトリメソッドの戻り値だった場合）。
 
 | `kind` | `value` | 例 |
@@ -172,8 +174,12 @@ at jp.co.app.impl.OrderService.execute(OrderService.java:8),OrderService.settle,
 | `Hint.KIND_FACTORY`（`"FACTORY"`） | ファクトリのメソッド（`型FQN#メソッド名`）。実装が親クラスにあるときは**ソースに書いた型**と**宣言元の型**の両方が入る | `jp.co.app.ChildFactory#pick` と `jp.co.app.BaseFactory#pick` |
 | `Hint.KIND_FACTORY_KEY`（`"FACTORY_KEY"`） | 渡された文字列のキー（定数は値まで評価済み） | `user` |
 | `Hint.KIND_FACTORY_CONST`（`"FACTORY_CONST"`） | 渡された列挙定数 | `jp.co.app.Kind.USER` |
+| `Hint.KIND_FACTORY_CLASS`（`"FACTORY_CLASS"`） | 渡された `Class` リテラル（値は型の FQN） | `jp.co.app.UserDao` |
 
-フェーズAの拡張が残した証拠があれば、それも同じリストに並びます（種別は拡張が決めた名前）。
+同一メソッド内で `new` された型（`NEW`）も同じリストに並びます（本体が解決に使う組み込みの証拠）。
+
+どの形をキーとして読むかを決めているのは `jche.graph.FactoryCalls#readsOf` の 1 か所だけです。
+解析対象の書き方に合わせて増やしたいときは、そこに足します（[Q28](instance-analysis-plugin-qa.md)）。
 
 キーが**呼び出し元から引数で渡ってくる**形は、経路が分かって初めて値が決まります。その場合、
 `candidates()` は**経路ごとにもう一度呼ばれ**、そのときの `hints` には経路から分かったキーが入ります。
@@ -200,8 +206,7 @@ demo.naming.suffix=Service
 ```
 
 > **ファクトリのキーを拾うための設定は要りません。** キーはデータフローの値グラフに載っているので、
-> ツールが証拠（`Hint`）にして拡張へ渡します。フェーズAの拡張（`resolver.hint.collectors` と
-> `plugin.factory.methods`）を書く必要があるのは、**呼び出し箇所から独自の証拠を拾いたいとき**だけです。
+> ツールが証拠（`Hint`）にして拡張へ渡します。書くのは上の 2 行と、拡張が自分で読む設定だけです。
 
 ```java
 // config/plugins/NamingConventionProvider.java
@@ -239,7 +244,7 @@ public class NamingConventionProvider implements TypeCandidateProvider {
             if (!kind.equals(hint.kind())) {
                 continue;
             }
-            // FactoryKeyCollector が拾った生のキー（"user"）から FQN を組み立てる
+            // ツールが渡した生のキー（"user"）から FQN を組み立てる
             return new String[] {prefix + capitalize(hint.value()) + suffix};
         }
         return null;   // 証拠が無ければ何も言わない（CHA に任せる）
@@ -322,13 +327,9 @@ public String[] candidates(String declaredType, String signature, List<Hint> hin
 `ServiceFactory.get("user")` と `LegacyFactory.create("user")` が同じ `Service` を返していても、
 呼んだファクトリごとに別の実装へ解決できます。
 
-> 以前はこの場合分けのために、**自前のフェーズA拡張を書いて証拠の種別にファクトリ名を埋める**
-> 必要がありました（`sink.add(scopeKey, "FACTORY:" + target, key)`）。いまはツールが
-> `Hint.KIND_FACTORY` で渡すので要りません。
-
 #### 証拠は1件とは限らない
 
-フェーズAの拡張が拾った証拠は「呼び出しのレシーバ」ごとに溜まります。同じ変数に複数のファクトリから
+証拠は「呼び出しのレシーバ」ごとに溜まります。同じ変数に複数のファクトリから
 代入されると、その変数を使う呼び出しには**証拠が複数付きます**。
 
 ```java
@@ -354,8 +355,11 @@ s.execute();            // ← 証拠が2件付く
 - **候補を1件も採用できないときは警告が出ます。** その型にも親にもそのシグネチャの本体が無い場合
   （FQN の打ち間違い、解析対象外の型、シグネチャ違い）です。候補を落として CHA に戻るだけなので
   呼び出しは漏れませんが、対応表が効いていないことに気づけるよう実行ログに1回出します
-- **キーを定数で渡している場合**（`get(Keys.USER)`）、`FactoryKeyCollector` は定数の**単純名**
-  （`USER`）を証拠にします。定数の値までは追わないので、対応表の左辺や拡張側の判定も単純名で書きます
+- **キーを定数で渡している場合**（`get(Keys.USER)`）、コンパイル時定数なら**値まで評価されたもの**が
+  `FACTORY_KEY` に入ります（`static final String USER = "user"` なら `user`）。列挙定数は評価できないので、
+  `FACTORY_CONST` に**定数の FQN**（`jp.co.app.Kind.USER`）が入ります
+- **`Class` リテラルを渡している場合**（`getDao(UserDao.class)`）は `FACTORY_CLASS` に**型の FQN**が入ります。
+  型名はそのまま具象クラス名の材料になるので、命名規則の拡張とは相性がよい形です
 - **`candidates` が候補を返せないときは `null` を返す。** 誤った型を1件返すより、CHA に候補を
   並べさせるほうが安全です（絞れないことより誤って絞ることの方が害が大きい）
 - 拡張の中で例外を投げても解析は止まりません。警告を出してその拡張を飛ばします
@@ -393,5 +397,4 @@ public class MyDiProvider implements TypeCandidateProvider, jche.extension.Usage
 }
 ```
 
-フェーズA（`CallSiteHintCollector`）では呼ばれません。キャッシュを再利用した実行ではフェーズAが
-そもそも動かないため、「0 件でした」と報告すると誤解を招くからです。
+キャッシュを再利用した実行でも拡張は必ず動くので、報告の件数は実行のたびに同じ意味になります。

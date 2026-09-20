@@ -433,7 +433,6 @@ final class MessagesEn {
             "analysis.cache.dataflowMissingBlocks", "[cache] Re-analyzing the files that have no block in the dataflow cache: {0}",
             "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
             "analysis.batchFailed", "The batch analysis failed, so the remaining {0} file(s) are analyzed one at a time ({1})",
-            "analysis.hintCollectorFailed", "hint collector failed: {0} ({1})",
             "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
             "analysis.libraryUnreadable", "Cannot read a dependency jar (it counts as changed every time): {0} ({1})",
         };
@@ -550,8 +549,6 @@ final class MessagesEn {
             "extension.typeMapping.missingFile", "No such file for {0}: {1}",
             "extension.typeMapping.unreadable", "Cannot read the mapping table: {0} ({1})",
             "extension.typeMapping.file", "[plugin] mapping table: {0}",
-            "extension.factoryKeys.noMethods", "{0}: {1} is empty (nothing is collected)",
-            "extension.factoryKeys.targets", "[plugin] {0}: {1} target(s)",
             "extension.typeMapping.usage", "[plugin] {0}: mapping table applied to {1}/{2} row(s)",
             "extension.typeMapping.unused", "{0} row(s) in the mapping table were never looked up. Either the left-hand side is misspelled, or the call was already narrowed at an earlier stage (a single implementation, a direct new, etc.):",
         };

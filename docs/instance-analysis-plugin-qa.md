@@ -9,18 +9,20 @@ Q&A の形で残す。
 - 拡張クラスの置き場所 `plugin.folders` を足した。**`.java` を置くと実行時にコンパイルされる**
   （`.class` / `.jar` を置いてもよい）。利用者はビルドツールを用意しなくてよい
   （[PluginClassLoaders](../src/jche/config/PluginClassLoaders.java)）
-- 対応表だけで済む用途のために、拡張の実装を 2 つ同梱した
-  （[FactoryKeyCollector](../src/jche/builtin/FactoryKeyCollector.java) /
-  [TypeMappingProvider](../src/jche/builtin/TypeMappingProvider.java)）。Java を書かずに設定と対応表ファイルだけで使える
-- 手がかり（証拠）を結び付けるキーの作り方を [HintKeys](../src/jche/extension/HintKeys.java) に一本化した。
-  本体（`FactVisitor`）も同じものを使う
-- フェーズAの拡張はキャッシュの中身を変えるので、その指紋をキャッシュのヘッダ行に入れ、
-  拡張を変えたら自動で作り直すようにした
+- 対応表だけで済む用途のために、拡張の実装を同梱した
+  （[TypeMappingProvider](../src/jche/builtin/TypeMappingProvider.java)）。Java を書かずに設定と対応表ファイルだけで使える
+- 手がかり（証拠）を結び付けるキーの作り方を [HintKeys](../src/jche/analysis/HintKeys.java) に一本化した。
+  本体（`FactVisitor` と `CallSiteRecorder`）が同じものを使う
 - 回帰テストに `plugin` ケースを足した（`test/regression/plugin`、解析対象は `test/plugin-demo`）
 - 対応表のどの行が引かれたかを解析の最後に知らせるようにした（`jche.extension.UsageReporter`）。
   設定したのに効いていない行に、出力を読み比べずに気づけるようにするため
 - ファクトリに渡されたキーを、ツールが証拠（`Hint`）にして拡張へ渡すようにした
   （`jche.graph.FactoryCalls`）。キーを拾うためだけにフェーズAの拡張を設定する必要が無くなった
+
+> **後日の変更（Q28・Q29）**: 外から差し込むフェーズAの拡張
+> （`CallSiteHintCollector` / `HintSink` / `FactoryKeyCollector` / `resolver.hint.collectors` /
+> `plugin.factory.methods`）は**廃止した**。以下 Q27 までの記述は、その時点の判断の記録として残してある。
+> いまの仕様は [instance-analysis-plugin.md](instance-analysis-plugin.md) を見ること。
 
 ---
 
@@ -319,3 +321,69 @@ DI 設定ファイルは、ソースを読んでも分からないので外か�
 **フェーズAの拡張そのものは残す。** ファクトリのキー以外の証拠（呼び出し箇所の注釈、
 特定の引数の形など）を拾いたい用途はこの変更では代替できない。無くしたのは
 「キーを拾うためだけに書かせる」ことだけ。
+
+### Q28. なぜフェーズAの拡張（外から差し込む証拠採取）を廃止したのか
+
+**キャッシュを揺らす割に、代わりがあるため。** Q27 の時点では「ファクトリのキー以外の証拠を
+拾いたい用途があるかもしれない」と考えて残したが、そのあと実際に必要になったのは
+`Class` リテラルをキーにするファクトリ（`DaoBase.getDao(UserDao.class)`）だけだった。
+そして**それはツール側で読めば済む**（Q29）。
+
+残したときの代償のほうが大きい。
+
+| | 外から差し込むフェーズA | ツールのソースに足す |
+|---|---|---|
+| キャッシュ | 拡張・その設定・実装ファイルの指紋がヘッダ行に入り、**変えるたびに全件解析し直し** | 何も起きない（読むのはグラフを組むとき） |
+| 壊し方 | 利用者の書いた AST 走査が、全ファイルの解析中に毎回動く。例外・重さがそのまま解析時間と結果に出る | 回帰テストの対象内 |
+| 読み口の数 | 契約表・証拠・ひな形の 3 つに対して、採取の口が別にある。**表では引けるのに拡張には届かない**が起きうる | `FactoryCalls` の 1 か所を通る |
+
+「解析器が何を読み取れるか」は**このツールの中身そのもの**で、利用者ごとに差し替えるものではない。
+差し替えたいのは「読み取った材料をどう解釈するか」のほうで、そちらは
+`TypeCandidateProvider`（旧フェーズB）が受け持つ。この線で分けることにした。
+
+**代わりに、内部を足しやすい形にした。** キーとして読む形を決めているのは
+[`FactoryCalls#readsOf`](../src/jche/graph/FactoryCalls.java) の 1 メソッドだけで、
+種類を増やすときはここに 1 行足し、対になる 3 か所（契約表の読み書き・証拠の種別・ひな形）を揃える。
+どれを直せばよいかがメソッドの javadoc に書いてある。
+
+**却下した案。**
+
+- *非推奨にして残す*。設定を書けば動くものが残っていると、キャッシュの指紋も残さざるを得ず、
+  「拡張を変えたら全件解析し直し」という一番大きい代償が消えない
+- *フェーズAを残したままキャッシュの指紋から外す*。拡張を変えても古い証拠を再利用してしまい、
+  黙って古い結果が出る。**呼び出しを静かに落とさない**という原則に反する
+
+**キャッシュの互換。** 形式の版（`DATAFLOW_VERSION`）は上げていない。ヘッダ行から `hints=` を
+落としただけなので、旧版が**拡張つきで**書いたキャッシュは `hints=` を持っていて一致せず、その場で捨てられる。
+旧版が**拡張なしで**書いたキャッシュは以前と同じ行で、X 行も組み込みの `NEW` だけなのでそのまま再利用できる。
+全利用者に再解析を強いずに、危ないものだけを捨てられる。
+
+### Q29. `Class` リテラルをキーにするファクトリに、どう対応したか
+
+`FactoryCalls#readsOf` に 1 種類足した。値グラフには `Foo.class` が `Origin.CLASS`（`K`）として
+既に載っていたので、読んで `Hint`・契約表・ひな形へ流すだけで済んだ。
+
+```java
+DaoBase.getDao(UserDao.class)      // ← ソース
+FACTORY_CLASS  jp.co.app.UserDao   // ← 拡張に渡る証拠
+jp.co.app.DaoBase#getDao(jp.co.app.UserDao.class) => jp.co.app.UserDaoImpl   // ← 契約表
+```
+
+**契約表では FQN に `.class` を付けて書く。** 引用符付き（文字列）・引用符なしの修飾名（列挙定数）と
+並べたとき、Java のソースに書く形と同じにしておけば覚え直さずに済む。
+読む側は列挙定数より先に `.class` を見る。`jp.co.app.UserDao.class` も修飾名の形をしているため。
+
+**種別を `FACTORY_KEY` に混ぜない。** 列挙定数のときと同じ理由で、`"USER_DAO"` のような文字列を
+想定して書かれた拡張に型の FQN が流れ込むと、おかしなクラス名を組み立ててしまう。
+
+**この形は命名規則と相性がよい。** キーが型名なので、`jp.co.app.dao.UserDao` →
+`jp.co.app.dao.impl.UserDaoImpl` のように、文字列を足すだけで具象クラス名になる。
+拡張を書く場合もこれだけで済む。
+
+```java
+for (Hint hint : hints) {
+    if (Hint.KIND_FACTORY_CLASS.equals(hint.kind())) {
+        return new String[] {hint.value().replace(".dao.", ".dao.impl.") + "Impl"};
+    }
+}
+```

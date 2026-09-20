@@ -18,20 +18,13 @@ import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 
-import jche.cache.CacheFormat;
 import jche.cache.CallEdgeFact;
 import jche.cache.CallSiteValues;
 import jche.cache.FileAnalysis;
-import jche.cache.HintFact;
 import jche.cache.MethodRef;
 import jche.cache.ModifierTokens;
 import jche.cache.RecvKind;
 import jche.cache.UnresolvedCallFact;
-import jche.extension.CallSiteHintCollector;
-import jche.extension.HintKeys;
-import jche.extension.HintSink;
-import jche.util.Log;
-import jche.util.Messages;
 
 /**
  * 呼び出し箇所（C行・U行）を記録し、フェーズAの拡張に見せる。
@@ -42,7 +35,6 @@ final class CallSiteRecorder {
     private final CompilationUnit cu;
     private final FileAnalysis out;
     private final BindingNames names;
-    private final List<CallSiteHintCollector> collectors;
     private final GuardCollector guards;
     /** 鍵ごとの件数。同じ鍵が複数あるときの通し番号を振るため（{@link #addValues}） */
     private final java.util.Map<String, Integer> joinKeyCounts = new java.util.HashMap<>();
@@ -53,11 +45,10 @@ final class CallSiteRecorder {
     private java.util.Map<String, String> singleTypeImports;
 
     CallSiteRecorder(CompilationUnit cu, FileAnalysis out, BindingNames names,
-                     List<CallSiteHintCollector> collectors, GuardCollector guards) {
+                     GuardCollector guards) {
         this.cu = cu;
         this.out = out;
         this.names = names;
-        this.collectors = collectors;
         this.guards = guards;
     }
 
@@ -149,38 +140,6 @@ final class CallSiteRecorder {
         int ordinal = joinKeyCounts.merge(candidate.joinKey(), 1, Integer::sum) - 1;
         out.callSiteValues.add(new CallSiteValues(line, caller, displayName, ordinal,
                 values.recvNode(), values.argNodes(), recvKey, guard));
-    }
-
-    /**
-     * フェーズAの拡張に、この呼び出し箇所を見せる。
-     *
-     * 呼び出し元が複数（インスタンス初期化子等）ある場合は、その全員に対して
-     * 見せる。一部にしか見せないと、その呼び出し元経由の解決だけ証拠を
-     * 見つけられなくなるため。CallSiteHintCollector のインターフェースは
-     * 呼び出し元1件を前提にしているため、呼び出し元ごとに1回ずつ呼ぶ。
-     */
-    void offerToHintCollectors(MethodInvocation n, List<MethodRef> callers) {
-        if (callers == null || collectors.isEmpty()) {
-            return;
-        }
-        for (MethodRef caller : callers) {
-            String callerKey = caller.key();
-            HintSink sink = (scopeKey, kind, value) -> {
-                if (scopeKey == null || kind == null || value == null) {
-                    return;
-                }
-                out.hints.add(new HintFact(callerKey, CacheFormat.clean(scopeKey),
-                        CacheFormat.clean(kind), CacheFormat.clean(value)));
-            };
-            for (CallSiteHintCollector collector : collectors) {
-                try {
-                    collector.collect(n, cu, callerKey, sink);
-                } catch (RuntimeException e) {
-                    // 拡張の失敗で解析全体を止めない
-                    Log.warn(Messages.format("analysis.hintCollectorFailed", collector.getClass().getName(), e));
-                }
-            }
-        }
     }
 
     /**

@@ -44,7 +44,7 @@ import jche.util.Messages;
  *   # 2) 宣言型#メソッド -> 具象型（同じ型でもメソッドによって実装が違う場合）
  *   jp.co.xxx.dao.UserDao#find = jp.co.xxx.dao.CachedUserDao
  *
- *   # 3) 証拠 -> 具象型（フェーズAが拾ったキーで引く。ファクトリメソッド用）
+ *   # 3) 証拠 -> 具象型（ファクトリに渡されたキーで引く）
  *   #    区切りは @（properties では : と = が区切り文字なので使えない）
  *   FACTORY_KEY@USER_DAO = jp.co.xxx.dao.UserDaoImpl
  * </pre>

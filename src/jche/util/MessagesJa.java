@@ -433,7 +433,6 @@ final class MessagesJa {
             "analysis.cache.dataflowMissingBlocks", "[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: {0} 件",
             "analysis.conditionsFileFailed", "解析に失敗しました: {0} ({1})",
             "analysis.batchFailed", "一括解析に失敗したため、残り {0} 件は1ファイルずつ解析します ({1})",
-            "analysis.hintCollectorFailed", "hint collector 失敗: {0} ({1})",
             "analysis.libraryDiff", "追加={0} 変更={1} 削除={2} 並び替え={3}（影響するパッケージ {4} 件）",
             "analysis.libraryUnreadable", "依存jarを読み取れません（毎回「変わった」とみなします）: {0} ({1})",
         };
@@ -550,8 +549,6 @@ final class MessagesJa {
             "extension.typeMapping.missingFile", "{0} のファイルがありません: {1}",
             "extension.typeMapping.unreadable", "対応表を読めません: {0} ({1})",
             "extension.typeMapping.file", "[plugin] 対応表: {0}",
-            "extension.factoryKeys.noMethods", "{0}: {1} が空欄です（何も拾いません）",
-            "extension.factoryKeys.targets", "[plugin] {0}: 対象 {1} 件",
             "extension.typeMapping.usage", "[plugin] {0}: 対応表の適用 {1}/{2} 行",
             "extension.typeMapping.unused", "対応表で一度も引かれなかった行が {0} 件あります。左辺の綴り違いか、その呼び出しが先の段（実装が1つ・その場で new 等）で既に絞れている可能性があります:",
         };

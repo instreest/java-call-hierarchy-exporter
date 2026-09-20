@@ -20,10 +20,10 @@
 #                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
 #                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
 #                          ファクトリ＋キーの契約表（config-contracts-factory。拡張と同じ結果になる）→
-#                          算出規則の拡張（config-naming。フェーズAの設定なしでキーが届く）→
+#                          算出規則の拡張（config-naming）→
 #                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
-#                          拡張・契約表ありでのみ具象クラスに絞れること、フェーズAの拡張を変えると
-#                          キャッシュが捨てられること、契約表では捨てられないことを確認する
+#                          拡張・契約表ありでのみ具象クラスに絞れること、拡張も契約表も
+#                          キャッシュを捨てさせないことを確認する
 #   cachesplit           … 2 つに分かれたキャッシュ（analysis-cache.tsv / dataflow-cache.tsv）の整合。
 #                          両方そろっていれば再利用し、dataflow を消す・世代の印を書き換えると両方を
 #                          作り直し、dataflow から 1 ブロックだけ消すとそのファイルだけ解析し直して
@@ -92,7 +92,7 @@ expect_suggested() {   # $1=case  $2=ASCII の文字列  $3=ラベル
     fi
 }
 
-# 拡張（FactoryKeyCollector + TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
+# 拡張（TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
 # まったく同じ出力になること。指定の仕方を変えても結果は変わらない、がこの比較の眼目。
 # 期待出力をもう 1 組持つ代わりに、resolved-by 列のラベルを同じ綴りに読み替えて expected と突き合わせる
 expect_same_as_mapping() {   # $1=ラベル
@@ -379,6 +379,8 @@ plugin_case() {
     # 「候補N件」と言われても何を書けばよいか分からない、への導線
     expect_suggested plugin 'fxp.DaoFactory#get("USER_DAO") => ??' "1回目: ファクトリとキーのひな形"
     expect_suggested plugin "fxp.DaoFactory#get(fxp.DaoKind.ORDER) => ??" "1回目: 列挙定数のキーのひな形"
+    expect_suggested plugin "fxp.DaoFactory#get(fxp.ReportDao.class) => ??" \
+        "1回目: Class リテラルのキーのひな形"
     expect_suggested plugin "fxp.Service#run => ??" "1回目: 宣言型とメソッド名のひな形"
     # キーが呼び出し元から引数で渡ってくる形も、経路が分かればひな形に出る
     expect_suggested plugin 'fxp.DaoFactory#get("ORDER_DAO") => ??' \
@@ -388,13 +390,16 @@ plugin_case() {
         "1回目: 広い行だと分かる注記が付く"
 
     run plugin config.properties 2 "2回目: 同梱の拡張" || return
-    expect_log_contains plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
-    expect_log_contains plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
+    expect_log_contains plugin 2 "TypeMappingProvider" "2回目: 拡張を読み込んだ"
     # 対応表が「効いたか」の知らせ。わざと引かれない行だけが挙がり、効いている行は挙がらない
     expect_log_contains plugin 2 "FACTORY_KEY@NO_SUCH_KEY" "2回目: 引かれなかった対応表の行を挙げる"
     expect_log_missing plugin 2 "FACTORY_KEY@REPORT_DAO" "2回目: 効いている対応表の行は挙げない"
-    # フェーズAの拡張が増えたので、拡張なしで作ったキャッシュは捨てられて全件解析し直しになる
-    expect_not_reused plugin 2 "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
+    # Class リテラルのキー。対応表の左辺は FACTORY_CLASS@<型の FQN>。
+    # 右辺の ReportDaoImpl は find() を親から継承しているので、出るのは AbstractDao.find
+    expect_csv_contains plugin "App.classKey,AbstractDao.find" \
+        "2回目: Class リテラルのキーで絞れる"
+    # 拡張はキャッシュに何も書かないので、拡張なしで作ったキャッシュをそのまま再利用できる
+    expect_reused plugin 2 "2回目: 拡張を足してもキャッシュは捨てない"
     compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
 
     run plugin config.properties 3 "3回目: 同じ拡張" || return
@@ -428,8 +433,8 @@ plugin_case() {
         "5回目: 先に絞れていれば経路でやり直さない"
     compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
 
-    # ファクトリ＋キー（C-3）。フェーズAの証拠採取を使わず、データフローの値グラフに載っている
-    # 実引数からキーを引く。2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
+    # ファクトリ＋キー（C-3）。データフローの値グラフに載っている実引数からキーを引く。
+    # 2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
     run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
     expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
     # この表は型名を単純名で書いてある。FQN で書いた場合と同じ結果になることを下の比較が見る
@@ -438,13 +443,14 @@ plugin_case() {
     # （byKey を単独の起点として辿る経路では、キーが分からないので絞れないまま）
     expect_csv_contains plugin "App.viaParam,App.byKey,OrderDaoImpl.find" \
         "6回目: 経路で決まるキーでも絞れる"
+    # Class リテラルのキー。契約表では FQN に .class を付けて書く
+    expect_csv_contains plugin "App.classKey,AbstractDao.find" \
+        "6回目: Class リテラルのキーで絞れる"
     expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
 
-    # 算出規則を書いた自前の拡張。フェーズAの設定（resolver.hint.collectors /
-    # plugin.factory.methods）を書かなくても、ファクトリのキーが Hint として届く
-    run plugin config-naming.properties 7 "7回目: 算出規則の拡張（フェーズAの設定なし）" || return
-    expect_log_missing plugin 7 "FactoryKeyCollector" "7回目: フェーズAの拡張は読み込んでいない"
-    expect_reused plugin 7 "7回目: フェーズAが無いのでキャッシュを作り直さない"
+    # 算出規則を書いた自前の拡張。採取の設定を書かなくても、ファクトリのキーが Hint として届く
+    run plugin config-naming.properties 7 "7回目: 算出規則の拡張" || return
+    expect_reused plugin 7 "7回目: 拡張を差し替えてもキャッシュを作り直さない"
     expect_csv_contains plugin "App.factoryCall,UserDaoImpl.find" "7回目: 変数に受けた呼び出しを算出規則で絞る"
     expect_csv_contains plugin "App.chainedCall,OrderDaoImpl.find" "7回目: 変数に受けない呼び出しも絞る"
     expect_csv_contains plugin "RESOLVED:NAMING" "7回目: 拡張のラベルが出る"

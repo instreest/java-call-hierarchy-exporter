@@ -1,5 +1,5 @@
-# C-3（ファクトリ＋キー）の契約表。フェーズAの証拠採取を使わず、データフローの値グラフに
-# 載っている実引数からキーを引く。同梱の拡張を使った場合（expected）と同じ結果になる。
+# C-3（ファクトリ＋キー）の契約表。データフローの値グラフに載っている実引数からキーを引く。
+# 同梱の拡張を使った場合（expected）と同じ結果になる。
 #
 # 型名は単純名で書いてある（1 件に定まるものだけ FQN に直される）。FQN で書いても同じ結果になる
 # ことが、拡張を使った 2 回目との比較で分かる
@@ -8,6 +8,8 @@ DaoFactory#get("USER_DAO")   => UserDaoImpl
 DaoFactory#get("ORDER_DAO")  => OrderDaoImpl
 # find() を宣言せず親から継承している型。右辺には具象型を書けばよい（Issue #131）
 DaoFactory#get("REPORT_DAO") => ReportDaoImpl
+# キーが Class リテラルの場合。Java のソースに書く形と同じく FQN に .class を付ける
+DaoFactory#get(fxp.ReportDao.class) => ReportDaoImpl
 
 # 親（宣言元）の型で書くと、どの子クラス経由の呼び出しにも効く（広い指定）。
 # ソースに書いた子クラスの名前で狭く指定する書き方は contracts.txt の側で検査している

@@ -38,15 +38,14 @@ call :expectlog jarchange 3 "jar[^=]*=[1-9]" "3回目: jar 削除で影響ファ
 call :compare jarchange expected-before "3回目: jar 削除"
 
 rem 拡張（インスタンス解析条件のプラグイン）のケース。拡張なし -> 同梱の拡張 -> 自前の拡張の順に
-rem 実行し、拡張ありでのみ具象クラスに絞れること、フェーズAの拡張を変えるとキャッシュが捨てられることを見る
+rem 実行し、拡張ありでのみ具象クラスに絞れること、拡張を足してもキャッシュが捨てられないことを見る
 echo == plugin ==
 call :reset plugin
 call :run plugin config-before.properties 1 "1回目: 拡張なし"
 call :compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
 call :run plugin config.properties 2 "2回目: 同梱の拡張"
-call :expectlog plugin 2 "FactoryKeyCollector" "2回目: フェーズAの拡張を読み込んだ"
-call :expectlog plugin 2 "TypeMappingProvider" "2回目: フェーズBの拡張を読み込んだ"
-call :expectlog plugin 2 "^[^=]*=0" "2回目: フェーズAの拡張が変わったのでキャッシュを捨てた"
+call :expectlog plugin 2 "TypeMappingProvider" "2回目: 拡張を読み込んだ"
+call :expectlog plugin 2 "^[^=]*=[1-9]" "2回目: 拡張を足してもキャッシュは捨てない"
 call :compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
 call :run plugin config.properties 3 "3回目: 同じ拡張"
 call :expectlog plugin 3 "^[^=]*=[1-9]" "3回目: 拡張が同じならキャッシュを再利用"

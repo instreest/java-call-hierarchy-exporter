@@ -21,9 +21,7 @@ import org.eclipse.jdt.core.dom.ImportDeclaration;
 
 import jche.cache.FileAnalysis;
 import jche.config.Config;
-import jche.config.Plugins;
 import jche.config.ProjectLayout;
-import jche.extension.CallSiteHintCollector;
 import jche.util.Log;
 import jche.util.Messages;
 
@@ -75,7 +73,6 @@ public final class CallEdgeExtractor {
     private final String[] classpath;
     private final String[] sourcepath;
     private final String[] sourcepathEncodings;
-    private final List<CallSiteHintCollector> collectors;
 
     /** 判定できない条件も guard に残すか（条件の調査用。{@link CallConditionScanner}） */
     private final boolean recordAllConditions;
@@ -90,7 +87,6 @@ public final class CallEdgeExtractor {
      */
     public CallEdgeExtractor(ProjectLayout layout, Config config, boolean recordAllConditions) {
         this.recordAllConditions = recordAllConditions;
-        this.collectors = Plugins.load(config, config.hintCollectorClasses, CallSiteHintCollector.class);
         this.layout = layout;
         this.encodingName = config.sourceEncoding;
         this.encoding = Charset.forName(config.sourceEncoding);
@@ -209,7 +205,7 @@ public final class CallEdgeExtractor {
             }
         }
         collectImports(cu, result);
-        cu.accept(new FactVisitor(cu, result, collectors, recordAllConditions));
+        cu.accept(new FactVisitor(cu, result, recordAllConditions));
         return result;
     }
 

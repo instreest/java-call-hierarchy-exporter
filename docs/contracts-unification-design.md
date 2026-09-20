@@ -2,7 +2,13 @@
 
 > 現状の使い方は [callback-contracts.md](callback-contracts.md)（契約表）と
 > [instance-analysis-plugin.md](instance-analysis-plugin.md)（インスタンス解析条件の拡張）にある。
-> この文書は**まだ実装していない設計案**で、決めたことと決めきれていないことを残すためのもの。
+> この文書は設計時の記録で、決めたことと決めきれていないことを残すためのもの。
+>
+> **その後の変更**: ここで「残す」としていたフェーズAの拡張
+> （`CallSiteHintCollector` / `FactoryKeyCollector` / `resolver.hint.collectors` /
+> `plugin.factory.methods`）は廃止した。理由と移行先は
+> [instance-analysis-plugin-qa.md の Q28](instance-analysis-plugin-qa.md)。
+> §7 の「旧来の指定は読み続ける」はこの部分について当てはまらない。
 
 利用者が「解決の条件」をツールに与える口は、いま 2 系統に分かれている。
 
@@ -196,8 +202,9 @@ C-3（ファクトリ＋キー） → C-2（型#メソッド） → C-1（型）
 
 ## 7. 既存の指定との関係
 
-旧来の指定は**読み続ける**。`resolver.hint.collectors` / `resolver.candidate.providers` /
-`plugin.*` / `mapping.properties` はそのまま動き、種類 C と併用もできる。
+旧来の指定は**読み続ける**。`resolver.candidate.providers` / `plugin.*` / `mapping.properties` は
+そのまま動き、種類 C と併用もできる。
+（`resolver.hint.collectors` と `plugin.factory.methods` はのちに廃止した。上の注記を参照）
 
 | 旧 | 新（種類 C） |
 |---|---|

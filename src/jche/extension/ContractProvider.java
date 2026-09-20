@@ -16,8 +16,8 @@ import java.util.Properties;
  *   static main(java.lang.String[])
  * </pre>
  * 対応表を書けば済むなら、この拡張を書かずに {@code contracts.files} にファイルを置けばよい。
- * 読み込み方は {@link CallSiteHintCollector} と同じ（{@code plugin.folders} と
- * {@code contracts.providers}）。
+ * 読み込み方は {@link TypeCandidateProvider} と同じ（{@code plugin.folders} に置き、
+ * {@code contracts.providers} に FQN を書く）。
  */
 public interface ContractProvider {
 
