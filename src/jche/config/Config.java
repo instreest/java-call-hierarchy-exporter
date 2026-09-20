@@ -14,7 +14,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,7 +21,6 @@ import java.util.Properties;
 
 import org.eclipse.jdt.core.JavaCore;
 
-import jche.util.FileHash;
 import jche.util.UserHome;
 
 /**
@@ -130,7 +128,6 @@ public final class Config {
 
     /** 拡張の init() に渡す。プロジェクト固有のキーを自由に読ませるため */
     public final Properties raw;
-    public final List<String> hintCollectorClasses;
     public final List<String> candidateProviderClasses;
     /** 契約表のファイル（contracts.files。設定ファイルのフォルダからの相対） */
     public final List<Path> contractFiles;
@@ -138,17 +135,14 @@ public final class Config {
     public final List<String> contractProviderClasses;
     /** 同梱の契約表を使うか（contracts.builtin。既定 true） */
     public final boolean builtinContracts;
-    /** 拡張クラスの置き場所（設定ファイルのフォルダからの相対）。.java / .class / .jar を置く */
-    public final List<Path> pluginFolders;
     /**
-     * フェーズAの拡張（キャッシュに証拠を書く側）の指紋。
+     * 拡張クラスの置き場所（設定ファイルのフォルダからの相対）。.java / .class / .jar を置く。
      *
-     * 拡張を足したり、その設定や実装を変えたりすると、同じソースから拾える証拠が変わる。
-     * ソースの中身だけを見ていると古い証拠を再利用してしまうため、
-     * キャッシュのヘッダ行に入れて丸ごと突き合わせる（{@link jche.cache.CacheFormat#headerFor}）。
-     * フェーズAの拡張を使っていないときは空文字で、従来のキャッシュはそのまま有効。
+     * <p>ここに置く拡張はグラフを組むときにだけ動き、キャッシュには何も書かない。
+     * そのため<b>拡張を足しても外してもキャッシュは捨てられない</b>
+     * （契約表と同じ性質。docs/instance-analysis-plugin-qa.md の Q28）
      */
-    public final String hintPluginFingerprint;
+    public final List<Path> pluginFolders;
 
     public final boolean cacheEnabled;
     /** データフロー解析（ファクトリの戻り値・引数から具象クラスを特定）を使うか */
@@ -297,15 +291,12 @@ public final class Config {
         this.maxDepth = intOf(p, "max.depth", 50);
         this.maxRows = longOf(p, "max.rows", 5_000_000L);
 
-        // 拡張（フェーズA/B）は設定ファイルには載せていない。
-        // 使う場合はこのキーを足せば読み込まれる
-        this.hintCollectorClasses = splitList(p.getProperty("resolver.hint.collectors", ""));
+        // 拡張は設定ファイルのひな形には載せていない。使う場合はこのキーを足せば読み込まれる
         this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
         this.pluginFolders = pluginFoldersOf(p);
         this.contractFiles = contractFilesOf(p);
         this.contractProviderClasses = splitList(p.getProperty("contracts.providers", ""));
         this.builtinContracts = Boolean.parseBoolean(p.getProperty("contracts.builtin", "true").trim());
-        this.hintPluginFingerprint = fingerprintOfHintPlugins(p, this.hintCollectorClasses, this.pluginFolders);
         this.raw = p;
 
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
@@ -475,60 +466,6 @@ public final class Config {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
-    }
-
-    /**
-     * フェーズAの拡張の指紋。拡張のクラス名・{@code plugin.} で始まる設定・拡張フォルダの
-     * ファイル一覧（名前・サイズ・内容ハッシュ）から作る。拡張を使っていなければ空文字。
-     *
-     * 拡張の中身を書き換えれば内容ハッシュが変わるので、キャッシュは自動的に捨てられる。
-     * jar の中身の入れ替えも同様。更新時刻を使わないのは、キャッシュの他の同一性と同じ理由
-     * （git のチェックアウトや CI のように、中身が同じでも更新時刻が変わるため。
-     * docs/cache-identity-qa.md）。拡張のファイルは少数なので、毎回読んでも時間はかからない。
-     */
-    private static String fingerprintOfHintPlugins(Properties p, List<String> collectors, List<Path> folders) {
-        if (collectors.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder(String.join(",", collectors));
-        List<String> keys = new ArrayList<>(p.stringPropertyNames());
-        Collections.sort(keys);
-        for (String key : keys) {
-            if (key.startsWith("plugin.")) {
-                sb.append('\n').append(key).append('=').append(p.getProperty(key));
-            }
-        }
-        for (Path folder : folders) {
-            for (String entry : fileStamps(folder)) {
-                sb.append('\n').append(entry);
-            }
-        }
-        return shortHash(sb.toString());
-    }
-
-    /** フォルダ配下のファイルの「相対パス:サイズ:内容ハッシュ」。読めないフォルダ・ファイルは印だけ残す */
-    private static List<String> fileStamps(Path folder) {
-        List<String> out = new ArrayList<>();
-        if (!Files.isDirectory(folder)) {
-            out.add(folder + ":missing");
-            return out;
-        }
-        try (var walk = Files.walk(folder)) {
-            for (Path path : (Iterable<Path>) walk.filter(Files::isRegularFile)::iterator) {
-                String hash;
-                try {
-                    hash = FileHash.of(path);
-                } catch (IOException e) {
-                    hash = "unreadable";
-                }
-                out.add(folder.relativize(path) + ":" + Files.size(path) + ":" + hash);
-            }
-        } catch (IOException e) {
-            out.add(folder + ":unreadable");
-            return out;
-        }
-        Collections.sort(out);
-        return out;
     }
 
     /** 相対パスは設定ファイルのあるディレクトリを起点に解決する（配下の制限なし。project.root 用） */

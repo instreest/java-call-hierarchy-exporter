@@ -538,18 +538,26 @@ public final class CallResolver {
         return null;
     }
 
+    /** キーの種別（{@link FactoryCalls}）を、拡張へ渡す証拠の種別に直す */
+    private static String hintKindOf(char keyKind) {
+        return switch (keyKind) {
+            case Origin.CONST -> Hint.KIND_FACTORY_CONST;
+            case Origin.CLASS -> Hint.KIND_FACTORY_CLASS;
+            default -> Hint.KIND_FACTORY_KEY;
+        };
+    }
+
     /**
-     * 拡張（フェーズB）に渡す証拠。
+     * 拡張に渡す証拠。
      *
-     * <p>フェーズAの拡張が拾ってキャッシュに残したもの（X 行）に加えて、<b>ファクトリに渡された
-     * キーをデータフローから読んで足す</b>。キーは値グラフに載っているので、拾うためだけに
-     * フェーズAの拡張（{@code FactoryKeyCollector}）を設定する必要が無い
-     * （契約表の種類 C と同じ読み口。{@link FactoryCalls}）。
+     * <p>キャッシュに載っている組み込みの証拠（X 行の {@code NEW}）に加えて、<b>ファクトリに
+     * 渡されたキーをデータフローから読んで足す</b>。キーは値グラフに載っているので、
+     * 呼び出し箇所を走査し直す必要が無い（契約表の種類 C と同じ読み口。{@link FactoryCalls}）。
      *
      * <p>「どのファクトリから来た値か」も {@link Hint#KIND_FACTORY} で渡すので、同じ型を返す
-     * ファクトリが複数あって規則が違う場合も、自前のフェーズA拡張を書かずに場合分けできる。
+     * ファクトリが複数あって規則が違う場合も、拡張の中だけで場合分けできる。
      *
-     * <p>フェーズAが同じ証拠を既に残していれば足さない（同じものが 2 つ並ばないように）。
+     * <p>同じ証拠が既に並んでいれば足さない（同じものが 2 つ並ばないように）。
      */
     private List<Hint> hintsFor(int edgeIndex, DataflowContext ctx) {
         List<Hint> stored = graph.hintsOf(edgeIndex);
@@ -564,9 +572,7 @@ public final class CallResolver {
         all.addAll(stored);
         addIfAbsent(all, new Hint(Hint.KIND_FACTORY, keys.get(0).typeAndName()));
         for (FactoryCalls.Key key : keys) {
-            addIfAbsent(all, new Hint(
-                    (key.kind() == Origin.CONST) ? Hint.KIND_FACTORY_CONST : Hint.KIND_FACTORY_KEY,
-                    key.key()));
+            addIfAbsent(all, new Hint(hintKindOf(key.kind()), key.key()));
         }
         return all;
     }

@@ -105,6 +105,11 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - キャッシュは 2 ファイル（`analysis-cache.tsv` = 呼び出し階層用 / `dataflow-cache.tsv` = サイドカー用）で、
   **常に対で書き、対でしか再利用しない**。行を足すときは「呼び出し階層の出力に使うか」でどちらに置くかを決める
   （`docs/cache-split-qa.md`）。片方だけを書く・片方だけを再利用する作りにしない
+- **解析器が何を読み取るかは、外から差し替えさせない。** 利用者が Java を書ける差し込み口は
+  `jche.extension.TypeCandidateProvider`（読み取った材料の解釈）だけで、AST 走査中に割り込む口は置かない
+  （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは
+  `jche.graph.FactoryCalls#readsOf` に足し、対になる 3 か所（契約表の読み書き `TypeContracts`、
+  証拠の種別 `jche.extension.Hint`、ひな形 `ContractSuggestions`）も揃える
 - 解決の結果はエッジの処理順に依存させない。`CallResolver.resolve` はメモ化されるので、最初の評価と後の評価で答えが変わる
   作りにすると出力が食い違う（`docs/code-review-fixes-qa.md` の Q2）
 - 相対パスの起点は項目ごとに決まっている（`config/config.properties` 冒頭のコメント）。起点の外へ出る相対パスはエラーにする

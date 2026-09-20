@@ -145,8 +145,8 @@ import java.security.SecureRandom;
  * L行の<b>並び順</b>も見る。jar の集合が同じでも、並びが変われば同名クラスの解決先が
  * 変わりうるため（{@link jche.analysis.LibraryDiff} の「並び順」）。
  * 実行中の JDK もブートクラスパスとして解決に加わるため、ヘッダ行に含めて丸ごと突き合わせる。
- * フェーズAの拡張（{@link jche.extension.CallSiteHintCollector}）はキャッシュに X 行を書くので、
- * その拡張とその設定・実装ファイルの指紋もヘッダ行に入れる（{@link jche.config.Config#hintPluginFingerprint}）。
+ * 拡張（{@code plugin.folders}）はグラフを組むときにだけ動いてキャッシュには何も書かないので、
+ * ヘッダ行には入れない。拡張を足しても外しても、キャッシュはそのまま再利用できる。
  *
  * <h2>バージョン（{@link #VERSION} / {@link #DATAFLOW_VERSION}）を上げる基準</h2>
  * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
@@ -314,17 +314,17 @@ public final class CacheFormat {
      *
      * ソースレベル・文字コード・実行 JDK は analysis-cache.tsv と同じ理由で入れる
      * （同じソースでも解析結果が変わる）。
-     * フェーズAの拡張の指紋（{@code hints=}）もこちら。拡張が拾う証拠（X 行）が
-     * この側にあるため、鍵も同じ側に置く（{@code docs/cache-split-qa.md} の Q6・Q12）
+     *
+     * <p>以前はここに外から差し込むフェーズA拡張の指紋（{@code hints=}）も入れていた。
+     * その拡張を廃止したので（{@code docs/instance-analysis-plugin-qa.md} の Q28）項目ごと落とした。
+     * 旧版が拡張つきで書いたキャッシュは {@code hints=} を持つのでこの行と一致せず、そのまま捨てられる。
+     * 拡張なしで書いたキャッシュは以前と同じ行なので、そのまま再利用できる
+     * （X 行が組み込みの {@code NEW} だけになるのは、旧版の拡張なしの実行と同じ）
      */
-    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding,
-                                           String hintPluginFingerprint) {
-        String header = DATAFLOW_VERSION + SEP + "source=" + sourceLevel
+    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding) {
+        return DATAFLOW_VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
-        // フェーズAの拡張を使っていないときは足さない。拡張を使わない利用者のキャッシュを、
-        // この項目の追加だけで捨てさせないため
-        return hintPluginFingerprint.isEmpty() ? header : header + SEP + "hints=" + hintPluginFingerprint;
     }
 
     /**

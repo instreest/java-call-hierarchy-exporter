@@ -41,10 +41,14 @@ public final class FactoryCalls {
      * ファクトリに渡された 1 つのキー。
      *
      * @param typeAndName ファクトリのメソッド（{@code 型FQN#メソッド名}）
-     * @param key         渡された値。文字列そのもの、または列挙定数の {@code 型FQN.定数名}
-     * @param kind        {@link Origin#LITERAL}（文字列）か {@link Origin#CONST}（列挙定数）
+     * @param key         渡された値。{@link #readsOf} の表を参照
+     * @param kind        キーの種別。{@link #readsOf} の表を参照
      */
     public record Key(String typeAndName, String key, char kind) {
+    }
+
+    /** 実引数 1 つから読み取ったキー（{@link Key} から「どのファクトリか」を落とした形） */
+    private record Read(String value, char kind) {
     }
 
     private FactoryCalls() {
@@ -69,17 +73,47 @@ public final class FactoryCalls {
         }
         List<Key> out = new ArrayList<>(owners.size());
         for (String arg : argOriginsOf(Origin.argsOf(recvOrigin))) {
-            // 文字列のキー。リテラルのほか、コンパイル時定数は値まで評価されたものが返る
-            String literal = dataflow.literalValueOf(arg, ctx);
-            // 列挙定数のキー。値グラフには「型FQN.定数名」で載っている
-            String constant = (Origin.kindOf(arg) == Origin.CONST) ? Origin.valueOf(arg) : null;
-            for (String owner : owners) {
-                if (literal != null) {
-                    out.add(new Key(owner, literal, Origin.LITERAL));
+            for (Read read : readsOf(arg, dataflow, ctx)) {
+                for (String owner : owners) {
+                    out.add(new Key(owner, read.value(), read.kind()));
                 }
-                if (constant != null && !constant.isEmpty()) {
-                    out.add(new Key(owner, constant, Origin.CONST));
-                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 実引数 1 つから読み取れるキー。読めなければ空。
+     *
+     * <h4>ここが唯一の追加口</h4>
+     * 「ファクトリの何をキーとして扱うか」を決めているのはこのメソッドだけで、
+     * 契約表・拡張へ渡す証拠・ひな形の 3 つはすべてここを通る（{@link #keysOf} の説明）。
+     * 解析対象の書き方に合わせて種類を足すときは、ここに 1 行足したうえで、
+     * 対になる 3 か所（契約表の読み書き {@code TypeContracts}、証拠の種別
+     * {@code jche.extension.Hint}、ひな形の見出し）も揃える。
+     *
+     * <pre>
+     *   get("USER")            L  Origin.LITERAL  文字列。コンパイル時定数は値まで評価される
+     *   get(Kind.USER)         V  Origin.CONST    列挙定数。値は「型FQN.定数名」
+     *   get(UserDao.class)     K  Origin.CLASS    Class リテラル。値は型の FQN
+     * </pre>
+     *
+     * 読めない形（変数・メソッドの戻り値・{@code null}）は<b>何も返さない</b>。
+     * 当てずっぽうの値を返すと、違う具象クラスへ静かに解決してしまうため
+     */
+    private static List<Read> readsOf(String arg, DataflowResolver dataflow, DataflowContext ctx) {
+        List<Read> out = new ArrayList<>(2);
+        // 文字列のキー。リテラルのほか、コンパイル時定数は値まで評価されたものが返る
+        String literal = dataflow.literalValueOf(arg, ctx);
+        if (literal != null) {
+            out.add(new Read(literal, Origin.LITERAL));
+        }
+        char kind = Origin.kindOf(arg);
+        // 列挙定数は「型FQN.定数名」、Class リテラルは型の FQN が値グラフに載っている
+        if (kind == Origin.CONST || kind == Origin.CLASS) {
+            String value = Origin.valueOf(arg);
+            if (value != null && !value.isEmpty()) {
+                out.add(new Read(value, kind));
             }
         }
         return out;

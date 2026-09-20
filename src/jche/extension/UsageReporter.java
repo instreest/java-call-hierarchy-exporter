@@ -8,12 +8,8 @@ package jche.extension;
  * 設定したのに効いていないことに気づけるよう、拡張自身が使われた件数を知らせられるようにしてある
  * （同梱の {@link jche.builtin.TypeMappingProvider} がこれを実装している）。
  *
- * <p>{@link CallSiteHintCollector}（フェーズA）・{@link TypeCandidateProvider}（フェーズB）・
- * {@link ContractProvider} のどれと一緒に実装してもよい。拡張ポイントそのものではないので、
- * 実装しなくても何も起きない。
- *
- * <p>呼ばれるのはフェーズBの拡張だけである点に注意。フェーズAの拡張はキャッシュを再利用した実行では
- * そもそも動かないため、「0 件でした」と報告すると誤解を招く（docs/instance-analysis-plugin-qa.md の Q26）。
+ * <p>{@link TypeCandidateProvider} と {@link ContractProvider} のどちらと一緒に実装してもよい。
+ * 拡張ポイントそのものではないので、実装しなくても何も起きない。
  */
 public interface UsageReporter {
 

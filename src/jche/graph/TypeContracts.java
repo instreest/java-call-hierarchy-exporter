@@ -19,6 +19,12 @@ import jche.util.Log;
  *   jp.co.xxx.dao.UserDao#find       =&gt; jp.co.xxx.dao.CachedUserDao    … C-2 宣言型#メソッド名
  *   jp.co.xxx.DaoFactory#get("USER") =&gt; jp.co.xxx.dao.UserDaoImpl      … C-3 ファクトリ＋キー
  * </pre>
+ * C-3 のキーは 3 通り書ける（読み口は {@link FactoryCalls} の 1 か所）。
+ * <pre>
+ *   #get("USER")                  文字列。コンパイル時定数は値まで評価される
+ *   #get(jp.co.app.Kind.USER)     列挙定数。引用符を付けず定数の FQN で書く
+ *   #getDao(jp.co.xxx.UserDao.class)  Class リテラル。型の FQN に .class を付ける
+ * </pre>
  * 右辺はカンマ区切りで複数書ける。ただし 1 件に絞れたときだけ展開される規則は変わらないので、
  * 複数書いた箇所は {@code [UNEXPANDED:CHA]} になる。
  *
@@ -29,7 +35,7 @@ import jche.util.Log;
  * 呼び出しごとに狭いほうを先に見る（同梱の {@link jche.builtin.TypeMappingProvider} と同じ考え方）。
  *
  * <h2>C-3 のキーはどこから来るか</h2>
- * フェーズAの証拠採取（{@link jche.extension.CallSiteHintCollector}）は要らない。
+ * 呼び出し箇所を走査し直す必要は無い。
  * {@code Dao dao = DaoFactory.get("USER"); dao.find();} の {@code dao} の出所は、値グラフから
  * 組み直した {@code M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER} の形で既に手元にあり、
  * ここからファクトリのメソッドキーと実引数の値の両方が読める（{@link OriginRenderer}）。
@@ -37,7 +43,7 @@ import jche.util.Log;
  *
  * <p>キーの値は {@link DataflowResolver#literalValueOf} で引くので、文字列リテラルのほか
  * コンパイル時定数（{@code static final String} の参照、リテラルの連結）も値まで評価される。
- * <b>定数の単純名ではなく値</b>で書く点が、同梱の {@code FactoryKeyCollector} と違う。
+ * 表に書くのは<b>定数の単純名ではなく値</b>のほう。
  *
  * <p>列挙定数をキーにしているファクトリ（{@code get(Kind.USER)}）は、引用符を付けずに
  * <b>定数の FQN</b> で書く（{@code #get(jp.co.app.Kind.USER)}）。Java のソースに書く形と同じで、
@@ -53,13 +59,17 @@ import jche.util.Log;
  */
 public final class TypeContracts {
 
+    /** Class リテラルのキーの書き方（{@code jp.co.app.UserDao.class}） */
+    private static final String CLASS_SUFFIX = ".class";
+
     /**
      * 契約の1行。
      *
      * @param declaredType 左辺の型。C-1 / C-2 は呼び出し先を宣言している型、C-3 はファクトリの型
      * @param methodName   左辺のメソッド名。C-1（型だけ）なら空文字
      * @param key          C-3 のキー（ファクトリに渡す値）。C-1 / C-2 なら空文字
-     * @param keyKind      キーの種別。{@link Origin#LITERAL}（文字列）か {@link Origin#CONST}（列挙定数）。
+     * @param keyKind      キーの種別。{@link Origin#LITERAL}（文字列）・{@link Origin#CONST}（列挙定数）・
+     *                     {@link Origin#CLASS}（Class リテラル）のいずれか。
      *                     C-1 / C-2 なら {@code 0}
      * @param candidates   右辺の具象型の FQN
      * @param text         元の行（報告用）
@@ -192,6 +202,12 @@ public final class TypeContracts {
                 // "…" で囲んだキー。文字列リテラルとコンパイル時定数の値に当たる
                 key = inner.substring(1, inner.length() - 1);
                 keyKind = Origin.LITERAL;
+            } else if (inner.endsWith(CLASS_SUFFIX)
+                    && isQualifiedName(inner.substring(0, inner.length() - CLASS_SUFFIX.length()))) {
+                // Class リテラル。Java のソースに書く形（UserDao.class の FQN）に合わせる。
+                // 列挙定数より先に見る。「FQN + .class」も修飾名の形をしているため
+                key = inner.substring(0, inner.length() - CLASS_SUFFIX.length());
+                keyKind = Origin.CLASS;
             } else if (isQualifiedName(inner)) {
                 // 修飾名は列挙定数。Java のソースに書く形（Kind.USER の FQN）に合わせる
                 key = inner;
@@ -320,7 +336,12 @@ public final class TypeContracts {
     }
 
     private static String leftSideOf(String typeAndName, String key, char keyKind) {
-        return typeAndName + "(" + (keyKind == Origin.LITERAL ? "\"" + key + "\"" : key) + ")";
+        String inner = switch (keyKind) {
+            case Origin.LITERAL -> "\"" + key + "\"";
+            case Origin.CLASS -> key + CLASS_SUFFIX;
+            default -> key;
+        };
+        return typeAndName + "(" + inner + ")";
     }
 
     /** 修飾名（{@code jp.co.app.Kind.USER}）の形か。列挙定数のキーと、ただの書き間違いを分ける */

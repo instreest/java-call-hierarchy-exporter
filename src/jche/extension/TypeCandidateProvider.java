@@ -6,14 +6,18 @@ import java.util.List;
 import java.util.Properties;
 
 /**
- * 拡張ポイント・フェーズB（構築時）: 宣言型と証拠から具象型の候補を返す。
+ * 拡張ポイント: 宣言型と証拠（{@link Hint}）から具象型の候補を返す。
  *
- * 実装例（ファクトリの対応表）:
+ * <p>これがこのツールで唯一、解決の条件を Java で書ける差し込み口。グラフを組むときに動き、
+ * キャッシュには何も書かないので、足しても外してもキャッシュは捨てられない。
+ *
+ * <p>実装例（ファクトリの対応表）:
  *   hints に FACTORY_KEY があれば、対応表を引いて具象クラスFQNを返す。
  *   これは同梱の {@link jche.builtin.TypeMappingProvider} がそのまま行うので、
  *   対応表を書けば済む場合は自分で実装しなくてよい。
  *
- * @see CallSiteHintCollector フェーズAと、拡張の読み込み方法
+ * <p>読み込み方は {@code plugin.folders} に {@code .java} / {@code .class} / {@code .jar} を置き、
+ * {@code resolver.candidate.providers} に FQN を書く（docs/instance-analysis-plugin.md）。
  */
 public interface TypeCandidateProvider {
 

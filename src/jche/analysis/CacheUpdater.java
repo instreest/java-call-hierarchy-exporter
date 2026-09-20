@@ -198,7 +198,7 @@ public final class CacheUpdater {
             writeLine(cacheOut, CacheFormat.withGeneration(
                     CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding), generation));
             writeLine(flowOut, CacheFormat.withGeneration(CacheFormat.dataflowHeaderFor(
-                    config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint), generation));
+                    config.sourceLevel, config.sourceEncoding), generation));
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
@@ -860,7 +860,7 @@ public final class CacheUpdater {
     private boolean dataflowCachePairsWith(String generation) throws IOException {
         try (CacheReader flow = CacheReader.open(config.dataflowCacheFile)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
-                    config.sourceLevel, config.sourceEncoding, config.hintPluginFingerprint))) {
+                    config.sourceLevel, config.sourceEncoding))) {
                 Log.info("[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が"
                         + "異なるため、両方を作り直します");
                 return false;

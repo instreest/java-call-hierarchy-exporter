@@ -4,7 +4,6 @@ package jche.config;
 import java.util.ArrayList;
 import java.util.List;
 
-import jche.extension.CallSiteHintCollector;
 import jche.extension.ContractProvider;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
@@ -43,16 +42,13 @@ public final class Plugins {
     }
 
     /**
-     * 拡張に設定を渡す。フェーズA・フェーズBのどちらのインターフェースも同じ形の
-     * {@code init(Properties, Path)} を持つが、共通の親を作ると拡張ポイントが
-     * 1つに見えてしまうため、ここで振り分ける。
+     * 拡張に設定を渡す。どのインターフェースも同じ形の {@code init(Properties, Path)} を
+     * 持つが、共通の親を作ると拡張ポイントが1つに見えてしまうため、ここで振り分ける。
      */
     private static void init(Object plugin, Config config) {
         try {
             if (plugin instanceof TypeCandidateProvider provider) {
                 provider.init(config.raw, config.configDir);
-            } else if (plugin instanceof CallSiteHintCollector collector) {
-                collector.init(config.raw, config.configDir);
             } else if (plugin instanceof ContractProvider contracts) {
                 contracts.init(config.raw, config.configDir);
             }

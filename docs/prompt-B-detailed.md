@@ -102,7 +102,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
 旧項目 `output.csv` / `methods.csv` / `cache.folders` が残っていれば、新しい書き方を示す `IllegalArgumentException` で止める（黙って無視すると出力やキャッシュが別の場所にできて気づきにくい）。
-| `resolver.hint.collectors` / `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照） | — |
+| `resolver.candidate.providers` | 空 | 拡張クラスのFQN（5.3参照） | — |
 | `plugin.folders` | 空 | 拡張クラスの置き場所（設定ファイルのフォルダ起点、カンマ区切り）。`.java` / `.class` / `.jar` | — |
 
 `entry.packages` / `exclude.packages` のパターン書式:
@@ -333,21 +333,26 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 なる（既定の `exclude.packages=java.**` では行にならない）。経路上の引数に依存する分
 （名前やクラスが引数で渡ってくる形）は探索中にもう一度試す。
 
-拡張ポイント: `CallSiteHintCollector`（AST走査中に呼び出し箇所の証拠をキャッシュに残す）と
-`TypeCandidateProvider`（宣言型・シグネチャ・証拠から具象型FQNの配列とラベルを返す。
-`appliesToStaticBound()` が true なら段0の呼び出しにも尋ねる）。設定ファイルの内容と
+拡張ポイントは `TypeCandidateProvider` **1 つだけ**（宣言型・シグネチャ・証拠から具象型FQNの配列と
+ラベルを返す。`appliesToStaticBound()` が true なら段0の呼び出しにも尋ねる）。設定ファイルの内容と
 置き場所を `init()` で渡す。読み込み失敗は警告して続行。
-証拠を結び付けるキーは `HintKeys` に一本化し、呼び出し箇所を記録する側と同じ計算にする。
 実装クラスは `plugin.folders` に置く。`.java` があれば実行時にコンパイルし（`ToolProvider` の
 javac にツール自身のクラスパスを渡す）、`.class` / `.jar` と合わせて URLClassLoader（親は本体の
 クラスローダ）で読む。コンパイル失敗も警告して続行。
-対応表だけで済む用途のために `jche.builtin` に実装を同梱する
-（`FactoryKeyCollector`＝ファクトリの実引数キーを拾う / `TypeMappingProvider`＝properties の対応表を引く。
-左辺は「宣言型」「宣言型#メソッド」「証拠の種別@値」の 3 通り。`:` は properties の区切り文字なので使わない）。
-フェーズAの拡張は X 行を書くので、その指紋（クラス名・`plugin.` で始まる設定・
-`plugin.folders` 配下のファイルの相対パス・サイズ・内容ハッシュ）を、X 行を持つ側
-（`dataflow-cache.tsv`）のヘッダ行に入れ、変われば全件解析し直す。
-フェーズAの拡張が無いときは項目自体を足さない（従来のキャッシュを無効にしないため）。
+対応表だけで済む用途のために `jche.builtin.TypeMappingProvider`（properties の対応表を引く。
+左辺は「宣言型」「宣言型#メソッド」「証拠の種別@値」の 3 通り。`:` は properties の区切り文字なので使わない）を同梱する。
+
+拡張が動くのはグラフ構築時だけで、**キャッシュには何も書かない**。よって拡張やその設定を
+キャッシュのヘッダ行に入れる必要はなく、拡張を足しても外してもキャッシュはそのまま再利用できる。
+AST 走査中に利用者のコードを差し込む口は設けない（キャッシュの鍵が増え、読み口が
+契約表・証拠・ひな形の 3 つとずれるため）。読み取る材料を増やすのはツール本体の仕事で、
+「ファクトリの実引数の何をキーとして読むか」は 1 か所（後述の `FactoryCalls`）にまとめる。
+
+渡す証拠（`Hint`）は `kind` と `value` の 2 つ組。レシーバがファクトリメソッドの戻り値なら、
+値グラフから次を作って渡す。`FACTORY`＝ファクトリの `型FQN#メソッド名`（実装が親クラスにあるときは
+ソースに書いた型と宣言元の両方）、`FACTORY_KEY`＝渡された文字列（コンパイル時定数は値まで評価）、
+`FACTORY_CONST`＝渡された列挙定数の `型FQN.定数名`、`FACTORY_CLASS`＝渡された `Class` リテラルの型FQN。
+同一メソッド内で `new` された型（`NEW`、X 行）も同じリストに並べる。
 
 ### 5.4 探索
 

@@ -2,7 +2,6 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
-import java.util.HashMap;
 import java.util.List;
 
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -47,8 +46,6 @@ import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.cache.RecvKind;
 import jche.cache.ReturnFact;
-import jche.extension.CallSiteHintCollector;
-import jche.extension.HintKeys;
 
 /**
  * ASTを走査して、キャッシュに書く事実（型階層・宣言・呼び出し・フィールド・return・
@@ -122,15 +119,15 @@ final class FactVisitor extends ASTVisitor {
     /** 合成メソッドの修飾子。ラムダ本体はオーバーライドされないので private 相当 */
     private static final String PRIVATE = "private";
 
-    FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors) {
-        this(cu, out, collectors, false);
+    FactVisitor(CompilationUnit cu, FileAnalysis out) {
+        this(cu, out, false);
     }
 
     /**
      * @param recordAllConditions 判定できない条件も guard に残す（条件の調査用。
      *                            {@link GuardCollector} の記録用モード）。キャッシュへは書かない
      */
-    FactVisitor(CompilationUnit cu, FileAnalysis out, List<CallSiteHintCollector> collectors,
+    FactVisitor(CompilationUnit cu, FileAnalysis out,
                 boolean recordAllConditions) {
         this.cu = cu;
         this.out = out;
@@ -138,7 +135,7 @@ final class FactVisitor extends ASTVisitor {
         this.origins = new OriginTracker(names, out);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
         this.types = new TypeContextTracker(out, names);
-        this.calls = new CallSiteRecorder(cu, out, names, collectors,
+        this.calls = new CallSiteRecorder(cu, out, names,
                 new GuardCollector(origins, recordAllConditions));
         // ラムダの名前は、本体の先読み（OriginTracker）より先に決まっている必要がある
         this.lambdaNames = new LambdaNames(cu, names);
@@ -530,7 +527,6 @@ final class FactVisitor extends ASTVisitor {
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b),
                 CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), n,
                 origins.valuesOf(recv, n.arguments()));
-        calls.offerToHintCollectors(n, currentCallers());
         return true;
     }
 

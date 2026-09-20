@@ -144,6 +144,7 @@ jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.UserDaoImpl    … その型�
 jp.co.xxx.dao.UserDao#find       => jp.co.xxx.dao.CachedUserDao  … その型のそのメソッドだけ
 jp.co.xxx.DaoFactory#get("USER") => jp.co.xxx.dao.UserDaoImpl    … そのファクトリにそのキーを渡した値
 jp.co.xxx.DaoFactory#get(jp.co.xxx.DaoKind.USER) => jp.co.xxx.dao.UserDaoImpl  … キーが列挙定数の場合
+jp.co.xxx.DaoBase#getDao(jp.co.xxx.dao.UserDao.class) => jp.co.xxx.dao.UserDaoImpl  … キーが Class リテラルの場合
 jp.co.xxx.dao.UserDao            => jp.co.xxx.dao.A, jp.co.xxx.dao.B   … 絞り切れないときは複数書ける
 ```
 
@@ -181,7 +182,8 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,RESOLVED:
 | 前提 | `dataflow.enabled=true`（既定）。`false` にすると引けないので、その旨を警告します |
 | ファクトリの型 | **ソースに書いてある型**で書きます。実装が親クラスにあっても、子クラスの名前で指定できます（下記） |
 | 列挙定数のキー | 引用符を付けず**定数の FQN** で書きます（`#get(jp.co.app.Kind.USER)`）。Java のソースに書く形と同じで、文字列のキーと見分けがつきます |
-| 引用符も修飾名も無い形 | `#get(USER)` は読めない行として警告に出ます（文字列なら `"USER"`、列挙定数なら FQN） |
+| `Class` リテラルのキー | **型の FQN に `.class` を付けて**書きます（`#getDao(jp.co.app.dao.UserDao.class)`）。これも Java のソースに書く形と同じです |
+| 引用符も修飾名も無い形 | `#get(USER)` は読めない行として警告に出ます（文字列なら `"USER"`、列挙定数なら FQN、`Class` なら FQN + `.class`） |
 
 キーは**呼び出し箇所に書かれている値**から引くので、ファクトリの中でクラス名を組み立てていても
 （`"jp.co.app.impl." + capitalize(key) + "Service"`）、解析器がその文字列演算を再現する必要はありません。
@@ -257,6 +259,7 @@ Dao dao = ChildDaoFactory.pick("ORDER_DAO");   // ソースに書いてあるの
 | `get("USER_DAO")` | ○ | `#get("USER_DAO")` |
 | `get(Keys.USER)`（`static final String`） | ○ | **定数の値**で書く（`#get("USER_DAO")`） |
 | `get(Kind.ALPHA)`（列挙定数） | ○ | `#get(jp.co.app.Kind.ALPHA)` |
+| `getDao(UserDao.class)`（`Class` リテラル） | ○ | `#getDao(jp.co.app.dao.UserDao.class)` |
 | `String k = "USER_DAO"; get(k);` | ○ | `#get("USER_DAO")` |
 | 呼び出し元から引数で渡ってくる | ○（経路ごと） | `#get("USER_DAO")` |
 | フィールド（final でない）を渡す | × | — |

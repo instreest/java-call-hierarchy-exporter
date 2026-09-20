@@ -259,6 +259,8 @@ M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER
 （`static final String` の参照、リテラルの連結）も JDT が評価済みなので値で当たる。
 同梱の `FactoryKeyCollector` が定数の**単純名**を証拠にするのと逆で、こちらは**値**で書く。
 移行するときに書き換えが要る点なので、docs に明記した。
+（`FactoryKeyCollector` はのちに廃止し、拡張へ渡す証拠も値で揃えた。
+[instance-analysis-plugin-qa.md の Q28](instance-analysis-plugin-qa.md)）
 
 **実引数は先頭から見て、最初に表に載っているキーを使う。** 位置を書く構文（`#get(_, "user")`）は
 入れなかった。多引数のファクトリでも位置を数えずに書けるほうが実務で楽で、位置指定が要るほど
