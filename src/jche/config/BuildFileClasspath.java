@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * library.folders が空欄のとき、ビルドファイル（pom.xml / build.gradle）とローカルリポジトリから依存 jar を集める。
@@ -45,18 +46,18 @@ public final class BuildFileClasspath {
      */
     public static List<Path> resolve(Config config, Path projectRoot, List<Path> sourceFolders) {
         if ("none".equals(config.libraryBuildTool)) {
-            Log.info("依存jar: library.folders は空欄ですが library.build.tool=none のため、ビルドファイルからの自動取得はしません");
+            Log.info(Messages.get("config.deps.toolNone"));
             return List.of();
         }
         List<Path> candidates = candidateDirs(projectRoot, sourceFolders);
         if (candidates.isEmpty()) {
-            Log.info("依存jar: library.folders が空欄で、pom.xml / build.gradle も見つからないため、"
-                    + "依存jar無しで解析します（探した場所: 各ソースフォルダから " + projectRoot + " までの上位）");
+            Log.info(Messages.format("config.deps.noBuildFile", projectRoot));
             return List.of();
         }
-        Log.info("依存jar: library.folders が空欄のため、ビルドファイルとローカルリポジトリから集めます（ビルドツールは実行しない）");
+        Log.info(Messages.get("config.deps.fromBuildFiles"));
         LocalRepositories repos = LocalRepositories.discover(config);
-        Log.info("  ローカルリポジトリ: " + (repos.roots().isEmpty() ? "（無し）" : repos.roots().toString()));
+        Log.info(Messages.format("config.deps.repositories", repos.roots().isEmpty()
+                ? Messages.get("config.deps.repositories.none") : repos.roots().toString()));
         MavenModels models = new MavenModels(repos);
 
         Map<Path, DependencyCollector.Entry> all = new LinkedHashMap<>();
@@ -65,13 +66,13 @@ public final class BuildFileClasspath {
             if (detection == null) {
                 continue;
             }
-            Log.info("  " + detection.tool().displayName + ": " + dir + "（" + detection.reason() + "）");
+            Log.info(Messages.format("config.deps.detected", detection.tool().displayName, dir, detection.reason()));
             long start = System.nanoTime();
             DependencyCollector.Result result = (detection.tool() == BuildTool.MAVEN)
                     ? MavenBuild.resolve(dir, repos, models)
                     : GradleBuild.resolve(dir, projectRoot, repos, models);
             if (result == null) {
-                Log.warn("依存jar: " + dir + " のビルドファイルを読めませんでした");
+                Log.warn(Messages.format("config.deps.unreadableBuildFile", dir));
                 continue;
             }
             report(result, (System.nanoTime() - start) / 1_000_000_000.0);
@@ -88,9 +89,9 @@ public final class BuildFileClasspath {
             }
         }
         Path listing = writeListing(config, all.values());
-        Log.info("  取得: jar " + (paths.size() - folders) + " 件"
-                + (folders > 0 ? "、クラスフォルダ " + folders + " 件" : "")
-                + (listing == null ? "" : "（一覧は " + listing + "）"));
+        Log.info(Messages.format("config.deps.collected", paths.size() - folders,
+                (folders > 0) ? Messages.format("config.deps.collected.folders", folders) : "",
+                (listing == null) ? "" : Messages.format("config.deps.collected.listing", listing)));
         return paths;
     }
 
@@ -117,11 +118,10 @@ public final class BuildFileClasspath {
         if ("maven".equals(forced) || "gradle".equals(forced)) {
             BuildTool tool = BuildTool.valueOf(forced.toUpperCase(Locale.ROOT));
             if (!tool.hasBuildFileIn(dir)) {
-                Log.warn("依存jar: library.build.tool=" + forced + " ですが、" + dir + " に "
-                        + tool.buildFileNames + " がありません。このディレクトリは飛ばします");
+                Log.warn(Messages.format("config.deps.forcedToolMissing", forced, dir, tool.buildFileNames));
                 return null;
             }
-            return new BuildTool.Detection(tool, "library.build.tool=" + forced + " の指定による");
+            return new BuildTool.Detection(tool, Messages.format("config.deps.forcedReason", forced));
         }
         return BuildTool.detect(dir);
     }
@@ -133,27 +133,26 @@ public final class BuildFileClasspath {
                 folders++;
             }
         }
-        Log.info("    直接依存 " + result.direct + " 件 → jar " + (result.entries.size() - folders) + " 件"
-                + (folders > 0 ? "、クラスフォルダ " + folders + " 件" : "")
-                + "（辿った依存 " + result.visited + " 件、" + String.format(Locale.ROOT, "%.1f", seconds) + " 秒）");
+        Log.info(Messages.format("config.deps.resolved", result.direct, result.entries.size() - folders,
+                (folders > 0) ? Messages.format("config.deps.collected.folders", folders) : "",
+                result.visited, String.format(Locale.ROOT, "%.1f", seconds)));
         for (String note : result.notes) {
             Log.info("    " + note);
         }
         if (!result.missingJars.isEmpty()) {
-            Log.warn("依存jar: ローカルリポジトリに無い jar: " + result.missingJars.size() + " 件。"
-                    + "Eclipse や Maven で一度ビルド（依存の取得）すると入ります。別の場所にあるなら library.repositories を指定してください");
+            Log.warn(Messages.format("config.deps.missingJars", result.missingJars.size()));
             for (String m : result.missingJars) {
                 Log.info("      " + m);
             }
         }
         if (!result.missingPoms.isEmpty()) {
-            Log.warn("依存jar: POM がローカルリポジトリに無く、その先の推移的な依存を辿れない: " + result.missingPoms.size() + " 件");
+            Log.warn(Messages.format("config.deps.missingPoms", result.missingPoms.size()));
             for (String m : result.missingPoms) {
                 Log.info("      " + m);
             }
         }
         if (!result.unresolved.isEmpty()) {
-            Log.warn("依存jar: 版が決まらない等で飛ばした依存: " + result.unresolved.size() + " 件");
+            Log.warn(Messages.format("config.deps.unresolved", result.unresolved.size()));
             for (String m : result.unresolved) {
                 Log.info("      " + m);
             }
@@ -171,7 +170,7 @@ public final class BuildFileClasspath {
         try {
             Files.createDirectories(dir);
             try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                w.write("# path\tcoordinates\tvia（要求元の連鎖。直接の依存はビルドファイル名）");
+                w.write("# path\tcoordinates\tvia" + Messages.get("config.deps.listingViaNote"));
                 w.newLine();
                 for (DependencyCollector.Entry e : entries) {
                     w.write(e.path() + "\t" + e.coordinates() + "\t" + e.via());
@@ -180,7 +179,7 @@ public final class BuildFileClasspath {
             }
             return file;
         } catch (IOException e) {
-            Log.warn("依存jar: 一覧を書けません: " + file + " (" + e + ")");
+            Log.warn(Messages.format("config.deps.listingFailed", file, e));
             return null;
         }
     }

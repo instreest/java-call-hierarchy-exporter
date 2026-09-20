@@ -8,7 +8,7 @@ package jche.util;
  * {@code !キー!} として画面に出る（{@code test/nls/run.sh} が検出する）。
  *
  * <p>キーは出どころのパッケージに合わせた接頭辞で分けてある
- * （{@code cli.} … 対話モード、{@code launcher.} … 起動コマンド、{@code config.} … 設定の読み取り、
+ * （{@code cli.} … 対話モード、{@code exporter.} … 解析の進行とまとめ、{@code config.} … 設定の読み取り、
  * {@code analysis.} … AST 解析、{@code graph.} … 呼び出しグラフ、{@code dataflow.} … データフロー、
  * {@code report.} … CSV 出力、{@code cache.} … キャッシュ、{@code external.} … jar からの被参照、
  * {@code server.} … サーバーモード、{@code extension.} … プラグイン、
@@ -28,7 +28,40 @@ final class MessagesEn {
     /** 分野ごとの表を並べたもの。1つの表はキーと値が交互に並ぶ */
     static String[][] table() {
         return new String[][] {
+            common(),
             cli(),
+            exporter(),
+            config(),
+            analysis(),
+            graph(),
+            dataflow(),
+            report(),
+            cache(),
+            external(),
+            server(),
+            extension(),
+        };
+    }
+
+    private static String[] common() {
+        return new String[] {
+            "common.cancelled", "Analysis cancelled",
+            "common.log.sinkFailed", "[WARN] Could not write to the log sink, so the rest goes to standard output only: {0}",
+            "common.progress.count", "{0} {1} done",
+            "common.progress.of", "{0} {1}/{2}",
+            "common.progress.recent", " (last {0}: {1})",
+            "common.progress.minutes", "{0}m{1}s",
+            "common.heap.line", "[heap] limit {0}MB",
+            "common.heap.allocated", " / allocated {0}MB",
+            "common.heap.gc", " / GC {0}x",
+            "common.heap.fullGc", " (full {0}x)",
+            "common.heap.gcPercent", " = {0}% of the elapsed time",
+            "common.heap.afterGc", " / peak use after GC {0}%",
+            "common.heap.reason.fullGc", "full GC has run {0} time(s)",
+            "common.heap.reason.afterGc", "{0}% of the limit is still in use right after a GC",
+            "common.heap.reason.gcTime", "{0}% of this phase goes to GC",
+            "common.heap.warn", "The heap limit may be too low ({0}). Raising it can make the run faster.",
+            "common.heap.warnHow", "   Set it in \"Environment settings\" -> \"Heap limit (-Xmx)\" of the interactive mode, or pass -Xmx{0}g in the JCHE_JAVA_OPTS environment variable.",
         };
     }
 
@@ -200,6 +233,291 @@ final class MessagesEn {
             "cli.usage.exitCodes", "Exit code: 0 when all succeed, 1 when at least one fails, 2 for a bad argument, 3 when a download was declined.",
             "cli.usage.settings1", "Where the JDK / JBang live, the JVM options and whether downloads are confirmed (JCHE_ALLOW_DOWNLOAD=yes / no)",
             "cli.usage.settings2", "are set in launcher.properties (in the project root). The Environment settings screen of the interactive mode edits it.",
+        };
+    }
+
+    private static String[] exporter() {
+        return new String[] {
+            "exporter.noConfigArg", "The path of the config file ({0}) was not given.",
+            "exporter.useDefaultConfig", "Running with the default \"{0}\".",
+            "exporter.toolRootNotFound", "Cannot find the tool's project folder (where src/jche/CallHierarchyExporter.java lives) above the working directory. The cache is created under the working directory: {0}",
+            "exporter.configHeader", "######## Config {0}/{1}: {2} ########",
+            "exporter.configFailed", "Config {0} failed",
+            "exporter.results", "=== Results ({0}/{1} succeeded) ===",
+            "exporter.outputDirFileFailed", "Cannot write to the file in {0}: {1} ({2})",
+            "exporter.conditionsHeader", "=== Extra: conditions that gate the calls (conditions.target={0}) ===",
+            "exporter.config", "Config: {0}",
+            "exporter.projectRoot", "Project root: {0}",
+            "exporter.outputDir", "Output folder: {0}",
+            "exporter.cacheDir", "Cache: {0}",
+            "exporter.callHierarchy", "Call hierarchy: {0} ({1} rows)",
+            "exporter.logFile", "Run log: {0}",
+            "exporter.done", "Done ({0} ms)",
+            "exporter.phase3", "=== Phase 3/3: output ===",
+            "exporter.entryCount", "Entry points: {0}",
+            "exporter.entryCheck", "  * Check the entry.packages setting (package names, wildcards)",
+            "exporter.entryNote1", "  * Entry candidates are \"methods with no caller\". Besides real entry points,",
+            "exporter.entryNote2", "    dead code, tests and reflection-only methods land here too, so",
+            "exporter.entryNote3", "    sort them out with the inDegree / outDegree / role columns of methods.csv.",
+            "exporter.dataflowHits", "Concrete classes found by dataflow: {0} from a new-ed type / {1} from a factory return value / {2} from an argument passed by the caller / {3} from a constructor-injected field",
+            "exporter.callbackHits", "Methods called back from inside a jar, connected through a contract: {0}",
+            "exporter.prunedCalls", "Calls pruned because the static analysis of the conditions says they do not run on that path: {0}",
+            "exporter.reflectionHits", "Reflection targets found (Class.forName / getMethod / Method.invoke / newInstance): {0}",
+            "exporter.externalScan", "=== Scanning references from external jars ===",
+            "exporter.externalUnmatched", "* {0} reference(s) point at our own types but no method matched.",
+            "exporter.externalUnmatched2", "   The other side may have been built against an older version of the jar,",
+            "exporter.externalUnmatched3", "   so do not conclude \"unused\" without checking.",
+            "exporter.methodsCsv", "Method list: {0}",
+            "exporter.prunedOut", "  * {0} method(s) are missing from the hierarchy CSV because of condition pruning.",
+            "exporter.prunedOut2", "     The inHierarchy / absentCause columns of methods.csv list them.",
+            "exporter.heap.phase1", "Phase 1 finished",
+            "exporter.heap.phase2", "Phase 2 finished",
+            "exporter.heap.phase3", "Phase 3 finished",
+            "exporter.graphCounts", "types={0} methods={1} edges={2}",
+            "exporter.progress.resolvePrep", "Preparing concrete-class resolution",
+            "exporter.sourceFolders", "Source folders: {0}",
+            "exporter.sourceEncoding", "Source encoding: {0}{1}",
+            "exporter.sourceEncoding.auto", " (source.encoding was empty, so it was decided from project.root)",
+            "exporter.sourceLevel", "Source level: {0}{1} / highest this JDT supports: {2}",
+            "exporter.sourceLevel.auto", " (source.level not set, so the highest this JDT supports)",
+            "exporter.sourceLevel.requested", " (set by source.level={0})",
+            "exporter.sourceLevel.tooOld", "   {0} cannot be handled by this JDT, so the analysis runs as {1}.",
+            "exporter.sourceLevel.tooOld2", "   If you need an older level, use an older version of JDT.",
+            "exporter.classpathCount", "Dependency jars: {0}",
+            "exporter.phase1", "=== Phase 1/3: parsing the sources ===",
+            "exporter.parseSummary", "Source parsing: reused={0} newly parsed={1}{2} failed={3}{4}{5}",
+            "exporter.parseSummary.syntaxErrors", " syntax errors={0}",
+            "exporter.parseSummary.salvaged", " carried over from the interrupted run={0}",
+            "exporter.unresolved", "* {0} call(s) could not have their types resolved.",
+            "exporter.unresolved2", "   A high count suggests library.folders is incomplete (missing dependency jars).",
+            "exporter.unresolved3", "   For a Maven / Gradle project, leaving library.folders empty picks the jars up from pom.xml / build.gradle.",
+            "exporter.unresolved4", "   Add the jars and the next run re-analyzes only the files that are affected.",
+            "exporter.unresolved5", "   Only resolved calls are written to call-hierarchy.csv, so",
+            "exporter.unresolved6", "   leaving the count high means the call hierarchy has gaps.",
+            "exporter.syntaxErrors", "* {0} file(s) had syntax errors and their bodies could not be read.",
+            "exporter.syntaxErrors2", "   The calls written in those files do not appear in call-hierarchy.csv (the call hierarchy has gaps).",
+            "exporter.syntaxErrors.more", "   - and {0} more",
+            "exporter.syntaxErrors.level", "   The analysis used Java {0} (the highest this JDT supports: {1}).",
+            "exporter.syntaxErrors.level2", "   Check that it matches the sources, and check source.level and the JDT version.",
+            "exporter.reanalysis.dependents", "re-analyzed because a dependency changed={0}",
+            "exporter.reanalysis.libraries", "re-analyzed because a dependency jar changed={0}",
+            "exporter.reanalysis.wrap", " (of which {0})",
+            "exporter.reanalysis.sep", ", ",
+            "exporter.phase2", "=== Phase 2/3: building the graph and resolving concrete classes ===",
+            "exporter.diBeans", "DI container beans: {0} type(s){1}",
+            "exporter.diBeans.none", " (spring.di.enabled=true but no bean was found)",
+            "exporter.factories", "Factory return values decided: {0}{1}",
+            "exporter.factories.cutOff", " ({0} could not be decided because the delegation forms a cycle)",
+        };
+    }
+
+    private static String[] config() {
+        return new String[] {
+            "config.deps.toolNone", "Dependency jars: library.folders is empty but library.build.tool=none, so nothing is read from the build files",
+            "config.deps.noBuildFile", "Dependency jars: library.folders is empty and no pom.xml / build.gradle was found, so the analysis runs without dependency jars (looked from each source folder up to {0})",
+            "config.deps.fromBuildFiles", "Dependency jars: library.folders is empty, so they are collected from the build files and the local repository (the build tool is not run)",
+            "config.deps.repositories", "  Local repository: {0}",
+            "config.deps.repositories.none", "(none)",
+            "config.deps.detected", "  {0}: {1} ({2})",
+            "config.deps.unreadableBuildFile", "Dependency jars: could not read the build file in {0}",
+            "config.deps.collected", "  Collected: {0} jar(s){1}{2}",
+            "config.deps.collected.folders", ", {0} class folder(s)",
+            "config.deps.collected.listing", " (the listing is in {0})",
+            "config.deps.forcedToolMissing", "Dependency jars: library.build.tool={0} but {1} has no {2}. Skipping this directory",
+            "config.deps.forcedReason", "set by library.build.tool={0}",
+            "config.deps.resolved", "    {0} direct dependencies -> {1} jar(s){2} ({3} dependencies visited, {4}s)",
+            "config.deps.missingJars", "Dependency jars: {0} jar(s) are not in the local repository. Building once in Eclipse or Maven (fetching the dependencies) brings them in. If they are elsewhere, set library.repositories",
+            "config.deps.missingPoms", "Dependency jars: {0} POM(s) are not in the local repository, so their transitive dependencies cannot be followed",
+            "config.deps.unresolved", "Dependency jars: {0} dependency(ies) skipped because the version could not be decided or similar",
+            "config.deps.listingViaNote", " (the chain that asked for it; a direct dependency shows the build file name)",
+            "config.deps.listingFailed", "Dependency jars: cannot write the listing: {0} ({1})",
+            "config.buildTool.bothEclipseGradle", "both pom.xml and build.gradle are present, and the Eclipse settings (.project / .classpath) say Gradle",
+            "config.buildTool.bothEclipseMaven", "both pom.xml and build.gradle are present, and the Eclipse settings (.project / .classpath) say Maven",
+            "config.buildTool.bothPreferMaven", "both pom.xml and build.gradle are present, so Maven wins (set library.build.tool=gradle for Gradle)",
+            "config.buildTool.maven", "pom.xml is present",
+            "config.buildTool.gradle", "build.gradle / settings.gradle is present",
+            "config.read.failed", "Cannot read the config file: {0} ({1}). When writing a Windows path, use / as the separator or double every backslash",
+            "config.pomEncodingLabel", "project.build.sourceEncoding in pom.xml",
+            "config.badCharset", "The charset name of setting {0} is not valid: '{1}' (for example: UTF-8, MS932, Shift_JIS)",
+            "config.badSourceLevel", "source.level={0} is not supported by this JDT. Allowed values: {1} (left empty, the highest, {2}, is used)",
+            "config.removed.outputCsv", "The output location is set with output.folder (a folder) and the file name is fixed to {0}",
+            "config.removed.cacheFolders", "The cache is set with cache.folder (singular). Left empty, it is created per analyzed project under {0}/ in the tool's project folder",
+            "config.removed", "Setting {0} has been removed. {1}. Delete the line and, if you need it, write it with the new item",
+            "config.baseName.configDir", "the config file's folder",
+            "config.outsideBase", "The relative path '{1}' of setting {0} points outside {2} ({3}). A relative path can only point inside {2}. Use an absolute path to point outside",
+            "config.mustBeUnderBase", "The path '{1}' of setting {0} must be inside {2} ({3}), because the cache key and the file column of the output are relative to {2}",
+            "config.badBuildTool", "The value of setting library.build.tool is not valid: '{0}' (allowed values: auto / maven / gradle / none)",
+            "config.notAnInteger", "The value of setting {0} is not an integer: '{1}'",
+            "config.missingRequired", "A required item is missing from the config file: {0}",
+            "config.dep.missing", "{0} ({1})",
+            "config.dep.noVariable", "{0}:{1} (a variable could not be expanded; {2})",
+            "config.dep.noVersion", "{0} (the version could not be decided; {1})",
+            "config.dep.noRangeMatch", "{0}:{1} (no version in the range is available locally; {2})",
+            "config.dep.reactorNotBuilt", "The reactor module {0} has not been built ({1} is missing). That is fine as long as its sources are part of the analysis",
+            "config.gradle.settingsOutside", "settings.gradle was found outside project.root, so that is treated as the build root: {0} (if that is an unintended parent folder, line project.root up with the build root or set library.folders)",
+            "config.gradle.lockfile", "gradle.lockfile is present, so resolved dependencies come from it (only project() and files() are read from the build.gradle declarations)",
+            "config.gradle.projectMissing", "The directory of project('{0}') was not found: {1}",
+            "config.gradle.projectNotBuilt", "project('{0}') has not been built, so its classes cannot be resolved (neither build/classes nor bin/main is there): {1}",
+            "config.gradle.platformMissing", "The platform BOM is not in the local repository: {0}",
+            "config.gradle.noVersionUseLatest", "{0} has no version, so the newest one available locally, {1}, is used",
+            "config.gradle.platformNoVersion", "The version of the platform cannot be decided: {0}",
+            "config.gradle.filesMissing", "The file in files() does not exist: {0}",
+            "config.gradle.fileTreeMissing", "The folder in fileTree() does not exist: {0}",
+            "config.gradle.unreadableDecl", "Unreadable dependency declaration: {0}",
+            "config.gradle.catalogMissing", "Not in the version catalog: {0}",
+            "config.gradle.lockfileBadRow", "Unreadable row in the lockfile: {0}",
+            "config.gradle.settingsUnreadable", "Dependency jars: {0} is ignored because it cannot be read ({1}). If a line has a value containing \\, write it as \\\\",
+            "config.repos.missingFolder", "The folder in library.repositories was not found: {0}",
+            "config.repos.none", "No local repository was found ({0}, {1}). If it is elsewhere, set library.repositories",
+            "config.repos.settingsVariable", "localRepository in settings.xml has a variable that cannot be expanded, so the default location is used: {0}",
+            "config.repos.settingsUnreadable", "settings.xml cannot be read, so the default location is used: {0} ({1})",
+            "config.maven.reactor", "{0} reactor module(s) (root: {1}). Sibling modules are resolved with target/classes and the dependencies in their pom.xml",
+            "config.maven.parentCycle", "The parent or the BOM forms a cycle: {0}",
+            "config.maven.parentChainCycle", "The chain of parents forms a cycle: {0}",
+            "config.maven.parentMissing", "The parent POM is not in the local repository: {0}:{1}:{2} (the parent of {3})",
+            "config.maven.bomNoVersion", "The version of the BOM cannot be decided: {0}:{1} ({2})",
+            "config.maven.bomMissing", "The BOM is not in the local repository: {0}:{1} ({2})",
+            "config.maven.warn", "Dependency jars: {0}",
+            "config.maven.pomUnreadable", "Cannot read pom.xml: {0} ({1})",
+            "config.plugin.folderMissing", "The folder in plugin.folders does not exist: {0}",
+            "config.plugin.folderUnreadable", "Cannot read plugin.folders: {0} ({1})",
+            "config.plugin.noCompiler", "Cannot compile the .java of an extension (running on a JRE, not a JDK). Put a compiled .class or .jar in plugin.folders",
+            "config.plugin.noOutDir", "Cannot create the compile output for the extension: {0} ({1})",
+            "config.plugin.compiling", "[plugin] compiling: {0} file(s) -> {1}",
+            "config.plugin.compileFailed", "Compiling the extension failed. Continuing without it:",
+            "config.plugin.badUrl", "Cannot turn the extension path into a URL: {0} ({1})",
+            "config.plugin.loaded", "[plugin] loaded: {0} ({1})",
+            "config.plugin.loadFailed", "Loading the extension failed: {0} ({1})",
+            "config.plugin.initFailed", "Initializing the extension failed: {0} ({1})",
+            "config.layout.projectRootMissing", "project.root does not exist as a directory: {0}",
+            "config.layout.sourceFolderMissing", "The folder in source.folders was not found: {0}",
+            "config.layout.sourceFoldersDetected", "source.folders is empty, so it was decided from project.root: {0}",
+            "config.layout.libraryFolderMissing", "The folder in library.folders was not found: {0}",
+            "config.layout.libraryJarMissing", "The file in library.jars was not found: {0}",
+            "config.layout.noSourceFolder", "Could not determine a source folder: {0} (none of src/main/java, src, <module>/src/main/java or .classpath is there, so set source.folders in the config file)",
+            "config.layout.libFromProjectRoot", "library.folders is empty, so the jars in {0} right under project.root are used: {1}",
+            "config.layout.skipOtherProject", "Skipping a reference to another project: {0}",
+            "config.layout.sourceOutsideRoot", "Skipping a source folder in .classpath because it is outside project.root: {0}",
+            "config.layout.classpathLibMissing", "The lib in .classpath was not found: {0}",
+            "config.layout.classpathUnreadable", "Parsing .classpath failed: {0}",
+            "config.layout.noJarInDir", "No jar was found in the classpath directory: {0}",
+            "config.layout.dirUnreadable", "Cannot read the classpath directory: {0} ({1})",
+        };
+    }
+
+    private static String[] analysis() {
+        return new String[] {
+            "analysis.javaFileCount", "Java files: {0}",
+            "analysis.progress.parse", "Parsing sources",
+            "analysis.libraryChanged", "[cache] Dependency jar change detected: {0}. Files referencing those packages, and files whose types failed to resolve, are analyzed again",
+            "analysis.syntaxError", "Could not read the body because of syntax errors: {0} ({1} error(s). The calls in this file are not written to the output)",
+            "analysis.fileFailed", "Analysis failed (skipped): {0} ({1})",
+            "analysis.hashFailed", "Cannot hash the source (this file is analyzed again every time): {0} ({1})",
+            "analysis.cache.noDataflow", "[cache] There is no dataflow cache ({0}), so both are rebuilt",
+            "analysis.cache.incompatible", "[cache] The format, source level, encoding or JDK differs, so the existing cache is discarded",
+            "analysis.cache.unreadable", "[cache] The existing cache cannot be read, so it is discarded and everything is analyzed: {0}",
+            "analysis.resume.cannotStash", "[cache] Cannot set aside the temporary file of the interrupted run (nothing is carried over): {0}",
+            "analysis.resume.taken", "[cache] Carried over the results for {0} file(s) from the interrupted run (they are not analyzed again)",
+            "analysis.resume.readFailedPartial", "[cache] Cannot read the temporary file of the interrupted run (carrying over stops there): {0}",
+            "analysis.resume.cannotDelete", "[cache] Cannot delete the temporary file used for carrying over: {0}",
+            "analysis.resume.readFailed", "[cache] Cannot read the temporary file of the interrupted run (nothing is carried over): {0}",
+            "analysis.resume.incompatible", "[cache] The interrupted run differs in format, source level, encoding or JDK, so nothing is carried over",
+            "analysis.resume.sourcesChanged", "[cache] The sources changed since the interrupted run, so nothing is carried over (results for unchanged files can also change when other files change)",
+            "analysis.resume.librariesChanged", "[cache] The dependency jars changed since the interrupted run, so nothing is carried over: {0}",
+            "analysis.cache.dataflowIncompatible", "[cache] The format, source level, encoding or JDK of the dataflow cache differs, so both are rebuilt",
+            "analysis.cache.differentGeneration", "[cache] The two caches were not written by the same run, so both are rebuilt",
+            "analysis.cache.blockCountMismatch", "[cache] The two caches disagree on the number of blocks (one of them is truncated), so both are rebuilt",
+            "analysis.cache.truncated", "[cache] The existing cache is truncated, so it is discarded and everything is analyzed (read {0} file block(s), but the finished marker is missing)",
+            "analysis.cache.dataflowUnreadable", "[cache] The dataflow cache cannot be read, so both are discarded and everything is analyzed: {0}",
+            "analysis.cache.dataflowMissingBlocks", "[cache] Re-analyzing the files that have no block in the dataflow cache: {0}",
+            "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
+            "analysis.batchFailed", "The batch analysis failed, so the remaining {0} file(s) are analyzed one at a time ({1})",
+            "analysis.hintCollectorFailed", "hint collector failed: {0} ({1})",
+            "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
+            "analysis.libraryUnreadable", "Cannot read a dependency jar (it counts as changed every time): {0} ({1})",
+        };
+    }
+
+    private static String[] graph() {
+        return new String[] {
+            "graph.progress.build", "Building the graph",
+            "graph.progress.inbound", "Caller index",
+            "graph.collected", "Collected: {0} types / {1} methods / {2} edges",
+            "graph.tooManyEdges", "Too many edges: {0}",
+            "graph.dataflowOutOfOrder", "[cache] The dataflow cache does not line up with the call sites ({0} #{1}). The values for this one are not used",
+            "graph.provider.failed", "candidate provider failed: {0} ({1})",
+            "graph.provider.unusable", "Cannot use the candidate the extension returned: {0}#{1} ({2} / {3}) ... neither this type nor its parents have a body for this method. Dropping the candidate",
+            "graph.contracts.unreadable", "Cannot read the contract table: {0} ({1}). Continuing without it",
+            "graph.contracts.loaded", "Contract table loaded: {0} ({1} rows)",
+            "graph.contracts.fromExtension", "Contracts received from an extension: {0} ({1} rows)",
+            "graph.contracts.badRow", "Cannot read a contract row ({0}): {1}",
+        };
+    }
+
+    private static String[] dataflow() {
+        return new String[] {
+            "dataflow.progress.resolve", "Resolving dataflow",
+        };
+    }
+
+    private static String[] report() {
+        return new String[] {
+            "report.conditions.targetNotFound", "No target matches conditions.target: {0}",
+            "report.conditions.targetHow", "  Give a file (src/foo/Bar.java), a line (src/foo/Bar.java:120), a type (foo.Bar) or a method (foo.Bar#method).",
+            "report.conditions.target", "Target: {0}",
+            "report.conditions.files", "Files analyzed: {0} ({1} call sites)",
+            "report.conditions.noCallSite", "No call site matches conditions.target (drop the line or the method name to list every call in that file)",
+            "report.conditions.none", "    (no condition; it always runs once this method is entered)",
+            "report.conditions.decidable", "[decidable]",
+            "report.conditions.undecidable", "[undecidable]",
+            "report.conditions.summary", "Matching call sites: {0} ({1} with conditions / {2} of those include an undecidable condition)",
+            "report.conditions.legendDecidable", "  [decidable]   ... if the caller passes a constant, this path can be shown not to run (used for pruning)",
+            "report.conditions.legendUndecidable", "  [undecidable] ... it affects reachability but the value is not known statically. A person has to check the runtime value",
+            "report.conditions.written", "Call conditions: {0} ({1} rows)",
+            "report.inventory.summary", "methods={0} entry candidates={1} framework entries={2} isolated={3} leaves={4} unreached={5} not in the hierarchy CSV={6} (of those, below a pruned call={7}) with unresolved calls={8} ({9} constructors and {10} lambda / static initializer / anonymous class methods are not written)",
+            "report.walker.excludeDepthCap", "Skipping excluded packages hit the depth cap ({0}), so nothing below it is followed",
+            "report.walker.chaCandidateLimit", "Some calls have more than {0} CHA candidates. The rest are not written as rows (the note shows the count): {1}",
+            "report.walker.maxRows", "The row limit ({0}) was reached, so the output stops here",
+        };
+    }
+
+    private static String[] cache() {
+        return new String[] {
+            "cache.dataflow.missingBlock", "[cache] The dataflow cache has no block for {0}. The values in this file are not used (concrete-class resolution stops at CHA)",
+        };
+    }
+
+    private static String[] external() {
+        return new String[] {
+            "external.notAClassFile", "Not a class file",
+            "external.unknownConstantTag", "Unknown constant pool tag: {0}",
+            "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) implicit constructors={5} unmatched={6} own classes skipped={7}",
+            "external.summary.nested", " jars inside jars={0}",
+            "external.jarCount", "External jars: {0}",
+            "external.classFailed", "Class analysis failed (skipped): {0}",
+            "external.nestingTooDeep", "Jars are nested too deep, so this one is skipped (up to {0} levels): {1}",
+            "external.nestedJarUnreadable", "Cannot read a jar inside a jar (skipped): {0} ({1})",
+            "external.folderMissing", "The entry in external.library.folders was not found: {0}",
+        };
+    }
+
+    private static String[] server() {
+        return new String[] {
+            "server.requestFailed", "Failed to handle the request: {0}",
+            "server.inbound.building", "Building the caller index (methods={0})",
+            "server.inbound.done", "Caller index: {0} entries",
+        };
+    }
+
+    private static String[] extension() {
+        return new String[] {
+            "extension.typeMapping.noFiles", "{0}: {1} is empty (no mapping table, so nothing is resolved)",
+            "extension.typeMapping.loaded", "[plugin] {0}: mapping table has {1} entries",
+            "extension.typeMapping.missingFile", "No such file for {0}: {1}",
+            "extension.typeMapping.unreadable", "Cannot read the mapping table: {0} ({1})",
+            "extension.typeMapping.file", "[plugin] mapping table: {0}",
+            "extension.factoryKeys.noMethods", "{0}: {1} is empty (nothing is collected)",
+            "extension.factoryKeys.targets", "[plugin] {0}: {1} target(s)",
         };
     }
 }

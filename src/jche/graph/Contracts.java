@@ -12,6 +12,7 @@ import jche.config.Config;
 import jche.config.Plugins;
 import jche.extension.ContractProvider;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 契約表の読み込み。同梱の表・設定ファイルで足した表・拡張が返す表を1つにまとめ、
@@ -42,18 +43,18 @@ public final class Contracts {
                 lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             } catch (IOException e) {
                 // 表が読めないと「設定したのに効いていない」状態になる。黙らず知らせる
-                Log.warn("契約表を読めません: " + file + " (" + e + ")。この表は使わずに続けます");
+                Log.warn(Messages.format("graph.contracts.unreadable", file, e));
                 continue;
             }
             int n = sort(lines, callbackLines, entryLines, file.toString());
-            Log.info("契約表を読み込み: " + file + "（" + n + " 行）");
+            Log.info(Messages.format("graph.contracts.loaded", file, n));
         }
         for (ContractProvider provider : Plugins.load(config, config.contractProviderClasses,
                 ContractProvider.class)) {
             List<String> lines = provider.lines();
             int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines,
                     provider.getClass().getName());
-            Log.info("契約を拡張から受け取り: " + provider.getClass().getName() + "（" + n + " 行）");
+            Log.info(Messages.format("graph.contracts.fromExtension", provider.getClass().getName(), n));
         }
         return new Loaded(new CallbackContracts(graph, dataflow, callbackLines),
                 new FrameworkEntries(graph, entryLines));
@@ -70,13 +71,13 @@ public final class Contracts {
             }
             if (line.contains("->")) {
                 if (CallbackContracts.parse(line) == null) {
-                    Log.warn("契約の行を読めません（" + from + "）: " + line);
+                    Log.warn(Messages.format("graph.contracts.badRow", from, line));
                     continue;
                 }
                 callbacks.add(line);
             } else {
                 if (FrameworkEntries.parse(line) == null) {
-                    Log.warn("契約の行を読めません（" + from + "）: " + line);
+                    Log.warn(Messages.format("graph.contracts.badRow", from, line));
                     continue;
                 }
                 entries.add(line);

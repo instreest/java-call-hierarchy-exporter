@@ -31,6 +31,7 @@ import jche.extension.CallSiteHintCollector;
 import jche.extension.HintKeys;
 import jche.extension.HintSink;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 呼び出し箇所（C行・U行）を記録し、フェーズAの拡張に見せる。
@@ -176,7 +177,7 @@ final class CallSiteRecorder {
                     collector.collect(n, cu, callerKey, sink);
                 } catch (RuntimeException e) {
                     // 拡張の失敗で解析全体を止めない
-                    Log.warn("hint collector 失敗: " + collector.getClass().getName() + " (" + e + ")");
+                    Log.warn(Messages.format("analysis.hintCollectorFailed", collector.getClass().getName(), e));
                 }
             }
         }

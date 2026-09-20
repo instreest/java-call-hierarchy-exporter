@@ -2,6 +2,7 @@
 package jche.graph;
 
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * 「このメソッドを呼んでいるのは誰か」を引くための転置索引（CSR形式）。
@@ -21,7 +22,7 @@ import jche.util.RunControl;
 public final class InboundIndex {
 
     /** 進捗に出す名前 */
-    private static final String PROGRESS_LABEL = "呼び出し元の索引";
+    private static final String PROGRESS_LABEL = Messages.get("graph.progress.inbound");
 
     private final int[] offsets;    // 長さ methodCount + 1
     private final int[] callerIds;  // 長さ = 辺の数

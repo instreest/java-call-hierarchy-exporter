@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import jche.util.Messages;
 
 /**
  * 依存を宣言しているビルドファイルの種類（Maven の pom.xml / Gradle の build.gradle）と、その検出。
@@ -65,19 +66,19 @@ public enum BuildTool {
         if (pom && gradle) {
             if (eclipse == GRADLE) {
                 return new Detection(GRADLE,
-                        "pom.xml と build.gradle の両方があり、Eclipse の設定（.project / .classpath）が Gradle のため");
+                        Messages.get("config.buildTool.bothEclipseGradle"));
             }
             if (eclipse == MAVEN) {
                 return new Detection(MAVEN,
-                        "pom.xml と build.gradle の両方があり、Eclipse の設定（.project / .classpath）が Maven のため");
+                        Messages.get("config.buildTool.bothEclipseMaven"));
             }
             return new Detection(MAVEN,
-                    "pom.xml と build.gradle の両方があるため Maven を優先（Gradle にするには library.build.tool=gradle）");
+                    Messages.get("config.buildTool.bothPreferMaven"));
         }
         if (pom) {
-            return new Detection(MAVEN, "pom.xml があるため");
+            return new Detection(MAVEN, Messages.get("config.buildTool.maven"));
         }
-        return new Detection(GRADLE, "build.gradle / settings.gradle があるため");
+        return new Detection(GRADLE, Messages.get("config.buildTool.gradle"));
     }
 
     /** dir に Maven か Gradle のビルドファイルがあるか */

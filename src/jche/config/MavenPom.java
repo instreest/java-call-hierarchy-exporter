@@ -12,6 +12,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import jche.util.Messages;
 
 /**
  * 1 つの pom.xml を読んだままの内容（親からの継承と ${...} の展開はまだしていない）。
@@ -128,7 +129,7 @@ final class MavenPom {
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("pom.xml を読めません: " + file + " (" + e + ")", e);
+            throw new IOException(Messages.format("config.maven.pomUnreadable", file, e), e);
         }
     }
 

@@ -53,6 +53,8 @@ public final class ServerLauncher {
         command.add("-Dfile.encoding=UTF-8");
         command.add("-Dstdout.encoding=UTF-8");
         command.add("-Dstderr.encoding=UTF-8");
+        // 解析側のログをこの画面と同じ言語で出す（docs/nls-qa.md の Q8）
+        command.add("-Djche.lang=" + Messages.language());
         if (vmArguments != null) {
             command.addAll(vmArguments);
         }

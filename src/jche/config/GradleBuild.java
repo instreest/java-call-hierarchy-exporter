@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import jche.util.Messages;
 
 /**
  * Gradle のビルドファイルを実行せずに読んで、依存を集める。
@@ -91,14 +92,13 @@ final class GradleBuild {
 
         Declared all = new Declared();
         if (!root.startsWith(projectRoot.toAbsolutePath().normalize())) {
-            all.notes.add("settings.gradle を project.root の外で見つけたので、そこをビルドのルートとして扱う: " + root
-                    + "（意図しない上位フォルダなら、project.root をビルドのルートに合わせるか library.folders を指定する）");
+            all.notes.add(Messages.format("config.gradle.settingsOutside", root));
         }
         List<DependencyCollector.Entry> projectEntries = new ArrayList<>();
         boolean fromLockfile = GradleLockfile.read(dir, all);
         Declared own = build.declarations(dir);
         if (fromLockfile) {
-            all.notes.add("gradle.lockfile があるので、解決済みの依存はそこから取る（build.gradle の依存の宣言は project() と files() だけ見る）");
+            all.notes.add(Messages.get("config.gradle.lockfile"));
             own.external.clear();
             own.platforms.clear();
         }
@@ -115,12 +115,12 @@ final class GradleBuild {
             }
             Path projectDir = build.projectDirs.getOrDefault(path, root.resolve(path.replace(':', '/').replaceFirst("^/", "")));
             if (!Files.isDirectory(projectDir)) {
-                all.notes.add("project('" + path + "') のディレクトリが見つかりません: " + projectDir);
+                all.notes.add(Messages.format("config.gradle.projectMissing", path, projectDir));
                 continue;
             }
             List<Path> classes = classFolders(projectDir);
             if (classes.isEmpty()) {
-                all.notes.add("project('" + path + "') はビルドされていないため、そのクラスは解決できません（build/classes も bin/main も無い）: " + projectDir);
+                all.notes.add(Messages.format("config.gradle.projectNotBuilt", path, projectDir));
             }
             for (Path c : classes) {
                 projectEntries.add(new DependencyCollector.Entry(c, "project('" + path + "')", "build.gradle"));
@@ -136,7 +136,7 @@ final class GradleBuild {
             String[] p = gav.split(":");
             MavenProject bom = (p.length >= 3) ? models.fromRepository(p[0], p[1], p[2]) : null;
             if (bom == null) {
-                all.notes.add("platform の BOM がローカルリポジトリにありません: " + gav);
+                all.notes.add(Messages.format("config.gradle.platformMissing", gav));
                 continue;
             }
             for (Map.Entry<String, Dependency> e : bom.managed.entrySet()) {
@@ -149,7 +149,7 @@ final class GradleBuild {
             if (d.version().isEmpty() && !managed.containsKey(d.managementKey())) {
                 String latest = Versions.select("+", repos.versions(d.groupId(), d.artifactId()));
                 if (latest != null) {
-                    all.notes.add(d.ga() + " は版の指定が無いので、ローカルにある最も新しい版 " + latest + " を使う");
+                    all.notes.add(Messages.format("config.gradle.noVersionUseLatest", d.ga(), latest));
                     d = d.withVersion(latest);
                 }
             }
@@ -239,7 +239,7 @@ final class GradleBuild {
                     if (!d.version().isEmpty()) {
                         out.platforms.add(d.groupId() + ":" + d.artifactId() + ":" + d.version());
                     } else {
-                        out.notes.add("platform の版が決まりません: " + line.trim());
+                        out.notes.add(Messages.format("config.gradle.platformNoVersion", line.trim()));
                     }
                 }
                 continue;
@@ -252,7 +252,7 @@ final class GradleBuild {
                     if (Files.exists(p)) {
                         out.files.add(p);
                     } else {
-                        out.notes.add("files() のファイルがありません: " + p);
+                        out.notes.add(Messages.format("config.gradle.filesMissing", p));
                     }
                 }
                 continue;
@@ -267,14 +267,14 @@ final class GradleBuild {
                     if (Files.isDirectory(p)) {
                         out.files.addAll(jarsUnder(p));
                     } else {
-                        out.notes.add("fileTree() のフォルダがありません: " + p);
+                        out.notes.add(Messages.format("config.gradle.fileTreeMissing", p));
                     }
                 }
                 continue;
             }
             List<Dependency> found = notations(rest, dir, out, scope);
             if (found.isEmpty() && !rest.trim().isEmpty()) {
-                out.notes.add("読めない依存の宣言: " + line.trim());
+                out.notes.add(Messages.format("config.gradle.unreadableDecl", line.trim()));
             }
             for (Dependency d : found) {
                 out.add(d);
@@ -317,7 +317,7 @@ final class GradleBuild {
                     }
                 }
                 if (libs.isEmpty()) {
-                    out.notes.add("版カタログに無い参照: " + ref.group(0));
+                    out.notes.add(Messages.format("config.gradle.catalogMissing", ref.group(0)));
                 }
                 for (GradleCatalog.Library lib : libs) {
                     found.add(dependency(lib.group(), lib.name(), lib.version(), "", "", scope));

@@ -12,6 +12,6 @@ public class CancelledException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     public CancelledException() {
-        super("解析を中止しました");
+        super(Messages.get("common.cancelled"));
     }
 }

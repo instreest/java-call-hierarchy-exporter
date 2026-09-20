@@ -22,6 +22,7 @@ import java.util.zip.ZipFile;
 import jche.cache.LibraryFact;
 import jche.util.FileHash;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 旧キャッシュの依存 jar（L行）と今回のクラスパスを突き合わせ、追加・変更・削除を求める。
@@ -89,8 +90,8 @@ final class LibraryDiff {
 
     @Override
     public String toString() {
-        return "追加=" + added + " 変更=" + changed + " 削除=" + removed + " 並び替え=" + reordered
-                + "（影響するパッケージ " + changedPackages.size() + " 件）";
+        return Messages.format("analysis.libraryDiff", added, changed, removed, reordered,
+                changedPackages.size());
     }
 
     /**
@@ -195,7 +196,7 @@ final class LibraryDiff {
         try {
             return Files.isDirectory(entry) ? scanClassFolder(entry, key) : scanJar(entry, key);
         } catch (IOException | RuntimeException e) {
-            Log.warn("依存jarを読み取れません（毎回「変わった」とみなします）: " + entry + " (" + e + ")");
+            Log.warn(Messages.format("analysis.libraryUnreadable", entry, e));
             return new LibraryFact(key, "", List.of());
         }
     }

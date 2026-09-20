@@ -17,6 +17,7 @@ import jche.cache.UnresolvedCallFact;
 import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 指定した呼び出し箇所に効いている条件分岐を、その場で調べる（設定ファイルの {@code conditions.target}）。
@@ -226,7 +227,7 @@ public final class CallConditionScanner {
 
             @Override
             public void failed(CallEdgeExtractor.SourceFile file, Exception error) {
-                Log.warn("解析に失敗しました: " + file.relativePath() + " (" + error + ")");
+                Log.warn(Messages.format("analysis.conditionsFileFailed", file.relativePath(), error));
             }
         });
         return new Result(names, sites, total[0]);

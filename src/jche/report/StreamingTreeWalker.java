@@ -20,6 +20,7 @@ import jche.graph.GuardEvaluator;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * フェーズ3: 呼び出し階層を深さ優先で辿りながら、CSVを1行ずつ書き出す。
@@ -533,7 +534,7 @@ public final class StreamingTreeWalker {
         if (parentDepth + skipNesting >= DEPTH_HARD_CAP) {
             if (!skipLimitWarned) {
                 skipLimitWarned = true;
-                Log.warn("除外パッケージの読み飛ばしが深さ上限(" + DEPTH_HARD_CAP + ")に達したため、その先は辿りません");
+                Log.warn(Messages.format("report.walker.excludeDepthCap", DEPTH_HARD_CAP));
             }
             return;
         }
@@ -602,8 +603,8 @@ public final class StreamingTreeWalker {
                             ? " (only the first " + Config.CHA_MAX_CANDIDATES + " are written as rows)" : "");
             if (n > Config.CHA_MAX_CANDIDATES && !candidateLimitWarned) {
                 candidateLimitWarned = true;
-                Log.warn("CHA候補が" + Config.CHA_MAX_CANDIDATES + "件を超える呼び出しがあります。"
-                        + "超えた分は行に出しません（注記に件数が出ます）: " + methods.fullSignature(declaredCallee));
+                Log.warn(Messages.format("report.walker.chaCandidateLimit", Config.CHA_MAX_CANDIDATES,
+                        methods.fullSignature(declaredCallee)));
             }
         } else if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
             // どのラムダが渡ってきたかまで分かった呼び出し。下の「未特定」とは逆の結論なので、
@@ -672,7 +673,7 @@ public final class StreamingTreeWalker {
         }
         if (!limitWarned) {
             limitWarned = true;
-            Log.warn("出力行数の上限(" + config.maxRows + ")に達したため打ち切りました");
+            Log.warn(Messages.format("report.walker.maxRows", config.maxRows));
         }
         return true;
     }

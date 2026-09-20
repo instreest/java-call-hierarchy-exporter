@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * dataflow-cache.tsv を、analysis-cache.tsv と<b>歩調を合わせてブロック単位で</b>読む。
@@ -115,8 +116,7 @@ public final class DataflowBlockReader implements Closeable {
         }
         if (!warned) {
             warned = true;
-            Log.warn("[cache] データフローのキャッシュに " + relativePath
-                    + " のブロックがありません。このファイルの値は使いません（具象クラスの解決は CHA まで）");
+            Log.warn(Messages.format("cache.dataflow.missingBlock", relativePath));
         }
         return Block.EMPTY;
     }

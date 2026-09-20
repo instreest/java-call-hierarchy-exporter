@@ -11,6 +11,7 @@ import jche.graph.IntArray;
 import jche.graph.MethodTable;
 import jche.util.Names;
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * フェーズ2b: データフローの事実をグラフ全体から一括で確定する。
@@ -35,7 +36,7 @@ import jche.util.RunControl;
 public final class DataflowBuilder {
 
     /** 進捗に出す名前 */
-    private static final String PROGRESS_LABEL = "データフローの確定";
+    private static final String PROGRESS_LABEL = Messages.get("dataflow.progress.resolve");
 
     // --- リフレクションAPIの種別（DataflowResolver.REFLECT_* と同じ値） ---
     static final byte REFLECT_INVOKE = 1;

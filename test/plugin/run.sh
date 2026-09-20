@@ -17,6 +17,8 @@
 #   6) build.properties の source.. に挙げたフォルダが実在する（src はリンクフォルダ）
 set -uo pipefail
 cd "$(dirname "$0")"
+# 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
+export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 PLUGIN=$ROOT/eclipse-plugin
 ng=0

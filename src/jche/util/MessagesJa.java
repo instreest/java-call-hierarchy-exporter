@@ -8,7 +8,7 @@ package jche.util;
  * 追加は必ず英語と対にする（{@code test/nls/run.sh} が片側だけのキーを検出する）。
  *
  * <p>キーは出どころのパッケージに合わせた接頭辞で分けてある
- * （{@code cli.} … 対話モード、{@code launcher.} … 起動コマンド、{@code config.} … 設定の読み取り、
+ * （{@code cli.} … 対話モード、{@code exporter.} … 解析の進行とまとめ、{@code config.} … 設定の読み取り、
  * {@code analysis.} … AST 解析、{@code graph.} … 呼び出しグラフ、{@code dataflow.} … データフロー、
  * {@code report.} … CSV 出力、{@code cache.} … キャッシュ、{@code external.} … jar からの被参照、
  * {@code server.} … サーバーモード、{@code extension.} … プラグイン、
@@ -28,7 +28,40 @@ final class MessagesJa {
     /** 分野ごとの表を並べたもの。1つの表はキーと値が交互に並ぶ */
     static String[][] table() {
         return new String[][] {
+            common(),
             cli(),
+            exporter(),
+            config(),
+            analysis(),
+            graph(),
+            dataflow(),
+            report(),
+            cache(),
+            external(),
+            server(),
+            extension(),
+        };
+    }
+
+    private static String[] common() {
+        return new String[] {
+            "common.cancelled", "解析を中止しました",
+            "common.log.sinkFailed", "[WARN] ログの受け口への出力に失敗したため、以降は標準出力だけに書きます: {0}",
+            "common.progress.count", "{0} {1} 件",
+            "common.progress.of", "{0} {1}/{2}",
+            "common.progress.recent", " （直近{0}件: {1}）",
+            "common.progress.minutes", "{0}分{1}秒",
+            "common.heap.line", "[heap] 上限 {0}MB",
+            "common.heap.allocated", " / 確保 {0}MB",
+            "common.heap.gc", " / GC {0}回",
+            "common.heap.fullGc", "（うちフル {0}回）",
+            "common.heap.gcPercent", "＝経過の{0}%",
+            "common.heap.afterGc", " / GC後の最大占有 {0}%",
+            "common.heap.reason.fullGc", "フル GC が {0} 回起きています",
+            "common.heap.reason.afterGc", "GC が済んだ直後でも上限の {0}% が埋まっています",
+            "common.heap.reason.gcTime", "このフェーズの {0}% を GC に費やしています",
+            "common.heap.warn", "ヒープの上限が足りていない可能性があります（{0}）。上限を増やすと速くなることがあります。",
+            "common.heap.warnHow", "   対話モードの「環境設定」の「ヒープ上限（-Xmx）」で設定するか、環境変数 JCHE_JAVA_OPTS に -Xmx{0}g のように指定してください。",
         };
     }
 
@@ -200,6 +233,291 @@ final class MessagesJa {
             "cli.usage.exitCodes", "終了コードは、すべて成功なら 0、1 つでも失敗すれば 1、引数が誤っていれば 2、取得を取りやめたら 3。",
             "cli.usage.settings1", "JDK / JBang の置き場所や JVM のオプション、取得の確認の要否（JCHE_ALLOW_DOWNLOAD=yes / no）は",
             "cli.usage.settings2", "launcher.properties（プロジェクト直下）で決まる。対話モードの「環境設定」から書き換えられる。",
+        };
+    }
+
+    private static String[] exporter() {
+        return new String[] {
+            "exporter.noConfigArg", "設定ファイル（{0}）のパスが指定されていません。",
+            "exporter.useDefaultConfig", "既定値の「{0}」で実行します。",
+            "exporter.toolRootNotFound", "このツールのプロジェクトフォルダ（src/jche/CallHierarchyExporter.java のある場所）を作業ディレクトリの上位に見つけられません。キャッシュは作業ディレクトリの下に作ります: {0}",
+            "exporter.configHeader", "######## 設定 {0}/{1}: {2} ########",
+            "exporter.configFailed", "設定 {0} の処理に失敗しました",
+            "exporter.results", "=== 実行結果（{0}/{1} 件成功）===",
+            "exporter.outputDirFileFailed", "{0} のファイルに書けません: {1} ({2})",
+            "exporter.conditionsHeader", "=== 追加: 呼び出しに効いている条件（conditions.target={0}） ===",
+            "exporter.config", "設定: {0}",
+            "exporter.projectRoot", "プロジェクトルート: {0}",
+            "exporter.outputDir", "出力フォルダ: {0}",
+            "exporter.cacheDir", "キャッシュ: {0}",
+            "exporter.callHierarchy", "呼び出し階層: {0}（{1} 行）",
+            "exporter.logFile", "実行ログ: {0}",
+            "exporter.done", "完了 ({0} ms)",
+            "exporter.phase3", "=== フェーズ3/3: 出力 ===",
+            "exporter.entryCount", "エントリポイント数: {0}",
+            "exporter.entryCheck", "  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）",
+            "exporter.entryNote1", "  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに",
+            "exporter.entryNote2", "     デッドコード・テスト・リフレクション経由が混ざるため、",
+            "exporter.entryNote3", "     methods.csv の inDegree / outDegree / role 列で仕分けてください。",
+            "exporter.dataflowHits", "データフローで具象クラスを特定: new された型から {0} 件 / ファクトリの戻り値から {1} 件 / 呼び出し元から渡された引数から {2} 件 / コンストラクタ注入されたフィールドから {3} 件",
+            "exporter.callbackHits", "jar の中から呼び戻されるメソッドを契約で繋いだ: {0} 件",
+            "exporter.prunedCalls", "条件分岐の静的解析で「その経路では呼ばれない」と判定して打ち切り: {0} 件",
+            "exporter.reflectionHits", "リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の呼び出し先を特定: {0} 件",
+            "exporter.externalScan", "=== 外部jarからの被参照スキャン ===",
+            "exporter.externalUnmatched", "※ 自分の型への参照なのにメソッドが一致しなかったものが {0} 件あります。",
+            "exporter.externalUnmatched2", "   相手が古い版のjarに対してビルドされている可能性があるため、",
+            "exporter.externalUnmatched3", "   「使われていない」と即断せず確認してください。",
+            "exporter.methodsCsv", "メソッド一覧: {0}",
+            "exporter.prunedOut", "  ※ 条件分岐の打ち切りで階層CSVに出ないメソッドは {0} 件です。",
+            "exporter.prunedOut2", "     methods.csv の inHierarchy / absentCause 列で一覧できます。",
+            "exporter.heap.phase1", "フェーズ1完了",
+            "exporter.heap.phase2", "フェーズ2完了",
+            "exporter.heap.phase3", "フェーズ3完了",
+            "exporter.graphCounts", "型数={0} メソッド数={1} エッジ数={2}",
+            "exporter.progress.resolvePrep", "具象クラスの解決の準備",
+            "exporter.sourceFolders", "ソースフォルダ: {0}",
+            "exporter.sourceEncoding", "ソース文字コード: {0}{1}",
+            "exporter.sourceEncoding.auto", "（source.encoding が空欄のため project.root から決めた）",
+            "exporter.sourceLevel", "ソースレベル: {0}{1} / このJDTの対応上限: {2}",
+            "exporter.sourceLevel.auto", "（source.level 未指定のため、JDTが対応する最大値）",
+            "exporter.sourceLevel.requested", "（source.level={0} の指定による）",
+            "exporter.sourceLevel.tooOld", "   {0} はこのJDTでは扱えないため {1} として解析します。",
+            "exporter.sourceLevel.tooOld2", "   より古いレベルが要る場合は、古い版のJDTを使ってください。",
+            "exporter.classpathCount", "依存jar: {0} 件",
+            "exporter.phase1", "=== フェーズ1/3: ソース解析 ===",
+            "exporter.parseSummary", "ソース解析: 再利用={0} 新規解析={1}{2} 失敗={3}{4}{5}",
+            "exporter.parseSummary.syntaxErrors", " 構文エラー={0}",
+            "exporter.parseSummary.salvaged", " 前回の中断からの引き継ぎ={0}",
+            "exporter.unresolved", "※ 型解決できなかった呼び出しが {0} 件あります。",
+            "exporter.unresolved2", "   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。",
+            "exporter.unresolved3", "   Maven / Gradle のプロジェクトなら、library.folders を空欄にすると pom.xml / build.gradle から自動取得します。",
+            "exporter.unresolved4", "   jar を足せば、次回の実行で影響するファイルだけが解析し直されます。",
+            "exporter.unresolved5", "   解決できた呼び出しだけが call-hierarchy.csv に出るため、",
+            "exporter.unresolved6", "   件数が多いまま使うと呼び出し階層に抜けが出ます。",
+            "exporter.syntaxErrors", "※ 構文エラーのため本体を読めなかったファイルが {0} 件あります。",
+            "exporter.syntaxErrors2", "   そのファイルに書かれた呼び出しは、call-hierarchy.csv に出ません（呼び出し階層に抜けが出ます）。",
+            "exporter.syntaxErrors.more", "   - ほか {0} 件",
+            "exporter.syntaxErrors.level", "   解析に使った Java の版は {0}（このJDTの対応上限: {1}）です。",
+            "exporter.syntaxErrors.level2", "   ソースの版と食い違っていないか、source.level と JDT の版を確かめてください。",
+            "exporter.reanalysis.dependents", "依存先の変更による再解析={0}",
+            "exporter.reanalysis.libraries", "依存jarの変更による再解析={0}",
+            "exporter.reanalysis.wrap", "（うち{0}）",
+            "exporter.reanalysis.sep", "、",
+            "exporter.phase2", "=== フェーズ2/3: グラフ構築と具象クラス解決 ===",
+            "exporter.diBeans", "DIコンテナのBean: {0} 型{1}",
+            "exporter.diBeans.none", "（spring.di.enabled=true だが Bean は見つからなかった）",
+            "exporter.factories", "ファクトリの戻り値を確定: {0} 件{1}",
+            "exporter.factories.cutOff", "（委譲が循環しているため決められなかったもの {0} 件）",
+        };
+    }
+
+    private static String[] config() {
+        return new String[] {
+            "config.deps.toolNone", "依存jar: library.folders は空欄ですが library.build.tool=none のため、ビルドファイルからの自動取得はしません",
+            "config.deps.noBuildFile", "依存jar: library.folders が空欄で、pom.xml / build.gradle も見つからないため、依存jar無しで解析します（探した場所: 各ソースフォルダから {0} までの上位）",
+            "config.deps.fromBuildFiles", "依存jar: library.folders が空欄のため、ビルドファイルとローカルリポジトリから集めます（ビルドツールは実行しない）",
+            "config.deps.repositories", "  ローカルリポジトリ: {0}",
+            "config.deps.repositories.none", "（無し）",
+            "config.deps.detected", "  {0}: {1}（{2}）",
+            "config.deps.unreadableBuildFile", "依存jar: {0} のビルドファイルを読めませんでした",
+            "config.deps.collected", "  取得: jar {0} 件{1}{2}",
+            "config.deps.collected.folders", "、クラスフォルダ {0} 件",
+            "config.deps.collected.listing", "（一覧は {0}）",
+            "config.deps.forcedToolMissing", "依存jar: library.build.tool={0} ですが、{1} に {2} がありません。このディレクトリは飛ばします",
+            "config.deps.forcedReason", "library.build.tool={0} の指定による",
+            "config.deps.resolved", "    直接依存 {0} 件 → jar {1} 件{2}（辿った依存 {3} 件、{4} 秒）",
+            "config.deps.missingJars", "依存jar: ローカルリポジトリに無い jar: {0} 件。Eclipse や Maven で一度ビルド（依存の取得）すると入ります。別の場所にあるなら library.repositories を指定してください",
+            "config.deps.missingPoms", "依存jar: POM がローカルリポジトリに無く、その先の推移的な依存を辿れない: {0} 件",
+            "config.deps.unresolved", "依存jar: 版が決まらない等で飛ばした依存: {0} 件",
+            "config.deps.listingViaNote", "（要求元の連鎖。直接の依存はビルドファイル名）",
+            "config.deps.listingFailed", "依存jar: 一覧を書けません: {0} ({1})",
+            "config.buildTool.bothEclipseGradle", "pom.xml と build.gradle の両方があり、Eclipse の設定（.project / .classpath）が Gradle のため",
+            "config.buildTool.bothEclipseMaven", "pom.xml と build.gradle の両方があり、Eclipse の設定（.project / .classpath）が Maven のため",
+            "config.buildTool.bothPreferMaven", "pom.xml と build.gradle の両方があるため Maven を優先（Gradle にするには library.build.tool=gradle）",
+            "config.buildTool.maven", "pom.xml があるため",
+            "config.buildTool.gradle", "build.gradle / settings.gradle があるため",
+            "config.read.failed", "設定ファイルを読めません: {0}（{1}）。Windows のパスを書くときは区切りを / にするか、バックスラッシュを2つ重ねてください",
+            "config.pomEncodingLabel", "pom.xml の project.build.sourceEncoding",
+            "config.badCharset", "設定 {0} の文字コード名が不正です: '{1}'（例: UTF-8、MS932、Shift_JIS）",
+            "config.badSourceLevel", "source.level={0} は、このJDTでは対応していません。指定できる値: {1}（未指定なら最大の {2} で動作します）",
+            "config.removed.outputCsv", "出力先は output.folder（フォルダ）で指定し、ファイル名は {0} に固定になりました",
+            "config.removed.cacheFolders", "キャッシュは cache.folder（単数形）で指定します。空欄ならこのツールのプロジェクトフォルダの {0}/ の下に、解析対象プロジェクトごとに作ります",
+            "config.removed", "設定 {0} は廃止されました。{1}。この行を消して、必要なら新しい項目で書き直してください",
+            "config.baseName.configDir", "設定ファイルのフォルダ",
+            "config.outsideBase", "設定 {0} の相対パス '{1}' が {2}（{3}）の外を指しています。相対パスは {2} の配下だけ指定できます。外を指す場合は絶対パスで書いてください",
+            "config.mustBeUnderBase", "設定 {0} のパス '{1}' は {2}（{3}）の配下でなければなりません。キャッシュのキーと出力の file 列を {2} からの相対パスにするためです",
+            "config.badBuildTool", "設定 library.build.tool の値が不正です: '{0}'（指定できる値: auto / maven / gradle / none）",
+            "config.notAnInteger", "設定 {0} の値が整数ではありません: '{1}'",
+            "config.missingRequired", "設定ファイルに必須項目がありません: {0}",
+            "config.dep.missing", "{0}（{1}）",
+            "config.dep.noVariable", "{0}:{1}（変数が展開できない。{2}）",
+            "config.dep.noVersion", "{0}（版が決まらない。{1}）",
+            "config.dep.noRangeMatch", "{0}:{1}（範囲に合う版がローカルに無い。{2}）",
+            "config.dep.reactorNotBuilt", "リアクタのモジュール {0} はビルドされていません（{1} が無い）。そのモジュールのソースを解析対象に含めていれば問題ありません",
+            "config.gradle.settingsOutside", "settings.gradle を project.root の外で見つけたので、そこをビルドのルートとして扱う: {0}（意図しない上位フォルダなら、project.root をビルドのルートに合わせるか library.folders を指定する）",
+            "config.gradle.lockfile", "gradle.lockfile があるので、解決済みの依存はそこから取る（build.gradle の依存の宣言は project() と files() だけ見る）",
+            "config.gradle.projectMissing", "project('{0}') のディレクトリが見つかりません: {1}",
+            "config.gradle.projectNotBuilt", "project('{0}') はビルドされていないため、そのクラスは解決できません（build/classes も bin/main も無い）: {1}",
+            "config.gradle.platformMissing", "platform の BOM がローカルリポジトリにありません: {0}",
+            "config.gradle.noVersionUseLatest", "{0} は版の指定が無いので、ローカルにある最も新しい版 {1} を使う",
+            "config.gradle.platformNoVersion", "platform の版が決まりません: {0}",
+            "config.gradle.filesMissing", "files() のファイルがありません: {0}",
+            "config.gradle.fileTreeMissing", "fileTree() のフォルダがありません: {0}",
+            "config.gradle.unreadableDecl", "読めない依存の宣言: {0}",
+            "config.gradle.catalogMissing", "版カタログに無い参照: {0}",
+            "config.gradle.lockfileBadRow", "ロックファイルの読めない行: {0}",
+            "config.gradle.settingsUnreadable", "依存jar: {0} を読めないため無視します（{1}）。値に \\ を含む行があれば \\\\ に直してください",
+            "config.repos.missingFolder", "library.repositories のフォルダが見つかりません: {0}",
+            "config.repos.none", "ローカルリポジトリが見つかりません（{0}、{1}）。別の場所にあるなら library.repositories で指定してください",
+            "config.repos.settingsVariable", "settings.xml の localRepository に展開できない変数があるため既定の場所を使います: {0}",
+            "config.repos.settingsUnreadable", "settings.xml を読めないため既定の場所を使います: {0} ({1})",
+            "config.maven.reactor", "リアクタのモジュール {0} 件（ルート: {1}）。兄弟モジュールは target/classes と、その pom.xml の依存で解決する",
+            "config.maven.parentCycle", "親か BOM が循環しています: {0}",
+            "config.maven.parentChainCycle", "親の連鎖が循環しています: {0}",
+            "config.maven.parentMissing", "親 POM がローカルリポジトリにありません: {0}:{1}:{2}（{3} の親）",
+            "config.maven.bomNoVersion", "BOM の版が決まりません: {0}:{1}（{2}）",
+            "config.maven.bomMissing", "BOM がローカルリポジトリにありません: {0}:{1}（{2}）",
+            "config.maven.warn", "依存jar: {0}",
+            "config.maven.pomUnreadable", "pom.xml を読めません: {0} ({1})",
+            "config.plugin.folderMissing", "plugin.folders のフォルダがありません: {0}",
+            "config.plugin.folderUnreadable", "plugin.folders を読めません: {0} ({1})",
+            "config.plugin.noCompiler", "拡張の .java をコンパイルできません（JDK ではなく JRE で動いています）。コンパイル済みの .class か .jar を plugin.folders に置いてください",
+            "config.plugin.noOutDir", "拡張のコンパイル先を作れません: {0} ({1})",
+            "config.plugin.compiling", "[plugin] コンパイル: {0} ファイル -> {1}",
+            "config.plugin.compileFailed", "拡張のコンパイルに失敗しました。拡張なしで続行します:",
+            "config.plugin.badUrl", "拡張のパスを URL にできません: {0} ({1})",
+            "config.plugin.loaded", "[plugin] 読み込み: {0} ({1})",
+            "config.plugin.loadFailed", "拡張の読み込みに失敗: {0} ({1})",
+            "config.plugin.initFailed", "拡張の初期化に失敗: {0} ({1})",
+            "config.layout.projectRootMissing", "project.root がディレクトリとして存在しません: {0}",
+            "config.layout.sourceFolderMissing", "source.folders のフォルダが見つかりません: {0}",
+            "config.layout.sourceFoldersDetected", "source.folders が空欄のため、project.root から決めました: {0}",
+            "config.layout.libraryFolderMissing", "library.folders のフォルダが見つかりません: {0}",
+            "config.layout.libraryJarMissing", "library.jars のファイルが見つかりません: {0}",
+            "config.layout.noSourceFolder", "ソースフォルダを特定できませんでした: {0}（src/main/java、src、<モジュール>/src/main/java、.classpath のいずれも無いので、設定ファイルの source.folders に指定してください）",
+            "config.layout.libFromProjectRoot", "library.folders が空欄のため、project.root 直下の {0} の jar を使います: {1}",
+            "config.layout.skipOtherProject", "他プロジェクト参照はスキップします: {0}",
+            "config.layout.sourceOutsideRoot", ".classpath のソースフォルダが project.root の外にあるためスキップします: {0}",
+            "config.layout.classpathLibMissing", ".classpath のlibが見つかりません: {0}",
+            "config.layout.classpathUnreadable", ".classpath の解析に失敗しました: {0}",
+            "config.layout.noJarInDir", "クラスパスのディレクトリにjarが見つかりません: {0}",
+            "config.layout.dirUnreadable", "クラスパスのディレクトリを読み取れません: {0} ({1})",
+        };
+    }
+
+    private static String[] analysis() {
+        return new String[] {
+            "analysis.javaFileCount", "Javaファイル数: {0}",
+            "analysis.progress.parse", "ソース解析",
+            "analysis.libraryChanged", "[cache] 依存jarの変更を検知: {0}。それらのパッケージを参照するファイルと、型解決に失敗していたファイルを解析し直します",
+            "analysis.syntaxError", "構文エラーのため本体を読めませんでした: {0}（エラー {1} 件。このファイルの呼び出しは出力に出ません）",
+            "analysis.fileFailed", "解析失敗（スキップ）: {0} ({1})",
+            "analysis.hashFailed", "ソースのハッシュを取れません（このファイルは毎回解析し直します）: {0} ({1})",
+            "analysis.cache.noDataflow", "[cache] データフローのキャッシュ（{0}）が無いため、両方を作り直します",
+            "analysis.cache.incompatible", "[cache] 形式・ソースレベル・文字コード・JDK のいずれかが異なるため既存キャッシュを破棄します",
+            "analysis.cache.unreadable", "[cache] 既存キャッシュを読めないため破棄して全件解析します: {0}",
+            "analysis.resume.cannotStash", "[cache] 中断した前回の実行の一時ファイルを退避できません（引き継ぎません）: {0}",
+            "analysis.resume.taken", "[cache] 中断した前回の実行から {0} ファイルぶんの解析結果を引き継ぎました（解析し直しません）",
+            "analysis.resume.readFailedPartial", "[cache] 中断した前回の実行の一時ファイルを読めません（そこまでで引き継ぎを打ち切ります）: {0}",
+            "analysis.resume.cannotDelete", "[cache] 引き継ぎに使った一時ファイルを消せません: {0}",
+            "analysis.resume.readFailed", "[cache] 中断した前回の実行の一時ファイルを読めません（引き継ぎません）: {0}",
+            "analysis.resume.incompatible", "[cache] 中断した前回の実行とは形式・ソースレベル・文字コード・JDK のいずれかが異なるため引き継ぎません",
+            "analysis.resume.sourcesChanged", "[cache] 中断した前回の実行からソースの内容が変わっているため引き継ぎません（変わっていないファイルの解析結果も、他のファイルの変更で変わりうるため）",
+            "analysis.resume.librariesChanged", "[cache] 中断した前回の実行から依存jarが変わっているため引き継ぎません: {0}",
+            "analysis.cache.dataflowIncompatible", "[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK が異なるため、両方を作り直します",
+            "analysis.cache.differentGeneration", "[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します",
+            "analysis.cache.blockCountMismatch", "[cache] 2 つのキャッシュのブロック数が食い違う（どちらかが途中で切れている）ため、両方を作り直します",
+            "analysis.cache.truncated", "[cache] 既存キャッシュが途中で切れているため破棄して全件解析します（ファイル {0} 件ぶんを読みましたが、最後まで書き終えた印がありません）",
+            "analysis.cache.dataflowUnreadable", "[cache] データフローのキャッシュを読めないため、両方を破棄して全件解析します: {0}",
+            "analysis.cache.dataflowMissingBlocks", "[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: {0} 件",
+            "analysis.conditionsFileFailed", "解析に失敗しました: {0} ({1})",
+            "analysis.batchFailed", "一括解析に失敗したため、残り {0} 件は1ファイルずつ解析します ({1})",
+            "analysis.hintCollectorFailed", "hint collector 失敗: {0} ({1})",
+            "analysis.libraryDiff", "追加={0} 変更={1} 削除={2} 並び替え={3}（影響するパッケージ {4} 件）",
+            "analysis.libraryUnreadable", "依存jarを読み取れません（毎回「変わった」とみなします）: {0} ({1})",
+        };
+    }
+
+    private static String[] graph() {
+        return new String[] {
+            "graph.progress.build", "グラフ構築",
+            "graph.progress.inbound", "呼び出し元の索引",
+            "graph.collected", "収集: 型 {0} / メソッド {1} / エッジ {2}",
+            "graph.tooManyEdges", "エッジ数が多すぎます: {0}",
+            "graph.dataflowOutOfOrder", "[cache] データフローのキャッシュの並びが呼び出し箇所と合いません（{0} #{1}）。このぶんの値は使いません",
+            "graph.provider.failed", "candidate provider 失敗: {0} ({1})",
+            "graph.provider.unusable", "拡張が返した候補を使えません: {0}#{1}（{2} / {3}） … この型にも親にもこのメソッドの本体がありません。候補から外します",
+            "graph.contracts.unreadable", "契約表を読めません: {0} ({1})。この表は使わずに続けます",
+            "graph.contracts.loaded", "契約表を読み込み: {0}（{1} 行）",
+            "graph.contracts.fromExtension", "契約を拡張から受け取り: {0}（{1} 行）",
+            "graph.contracts.badRow", "契約の行を読めません（{0}）: {1}",
+        };
+    }
+
+    private static String[] dataflow() {
+        return new String[] {
+            "dataflow.progress.resolve", "データフローの確定",
+        };
+    }
+
+    private static String[] report() {
+        return new String[] {
+            "report.conditions.targetNotFound", "conditions.target の対象が見つかりません: {0}",
+            "report.conditions.targetHow", "  ファイル（src/foo/Bar.java）・行（src/foo/Bar.java:120）・型（foo.Bar）・メソッド（foo.Bar#method）のいずれかで指定してください。",
+            "report.conditions.target", "対象: {0}",
+            "report.conditions.files", "解析したファイル: {0}（呼び出し {1} 件）",
+            "report.conditions.noCallSite", "conditions.target に合う呼び出しがありません（行やメソッド名の指定を外すと、そのファイルの全件を出します）",
+            "report.conditions.none", "    （条件なし。このメソッドに入れば必ず実行される）",
+            "report.conditions.decidable", "[判定可]",
+            "report.conditions.undecidable", "[判定不可]",
+            "report.conditions.summary", "該当した呼び出し: {0} 件（条件つき {1} 件 / うち判定できない条件を含む {2} 件）",
+            "report.conditions.legendDecidable", "  [判定可]   … 呼び出し元から定数が渡れば、その経路では呼ばれないと判定できる（打ち切りに使われる）",
+            "report.conditions.legendUndecidable", "  [判定不可] … 到達には効くが静的には値が決まらない。実行時の値を人が確認する必要がある",
+            "report.conditions.written", "呼び出しの条件: {0}（{1} 行）",
+            "report.inventory.summary", "メソッド={0} 起点候補={1} フレームワークの入口={2} 孤立={3} 末端={4} 未到達={5} 階層CSVに出ない={6}（うち条件分岐で打ち切った先={7}） 未解決の呼び出しを含む={8}（コンストラクタ {9} 個、ラムダ・static 初期化子・匿名クラスのメソッド {10} 個は出力対象外）",
+            "report.walker.excludeDepthCap", "除外パッケージの読み飛ばしが深さ上限({0})に達したため、その先は辿りません",
+            "report.walker.chaCandidateLimit", "CHA候補が{0}件を超える呼び出しがあります。超えた分は行に出しません（注記に件数が出ます）: {1}",
+            "report.walker.maxRows", "出力行数の上限({0})に達したため打ち切りました",
+        };
+    }
+
+    private static String[] cache() {
+        return new String[] {
+            "cache.dataflow.missingBlock", "[cache] データフローのキャッシュに {0} のブロックがありません。このファイルの値は使いません（具象クラスの解決は CHA まで）",
+        };
+    }
+
+    private static String[] external() {
+        return new String[] {
+            "external.notAClassFile", "classファイルではありません",
+            "external.unknownConstantTag", "未知の定数プールタグ: {0}",
+            "external.summary", "jar={0}{1} クラス={2} 被参照={3}件（自分のメソッド {4} 個） 暗黙コンストラクタ={5} 未照合={6} 自プロジェクトクラスを除外={7}",
+            "external.summary.nested", " jar内のjar={0}",
+            "external.jarCount", "外部jar: {0} 件",
+            "external.classFailed", "class解析に失敗（スキップ）: {0}",
+            "external.nestingTooDeep", "jar の入れ子が深すぎるため読み飛ばします（{0} 段まで）: {1}",
+            "external.nestedJarUnreadable", "jar 内の jar を読めません（スキップ）: {0} ({1})",
+            "external.folderMissing", "external.library.folders の指定が見つかりません: {0}",
+        };
+    }
+
+    private static String[] server() {
+        return new String[] {
+            "server.requestFailed", "要求の処理に失敗しました: {0}",
+            "server.inbound.building", "呼び出し元の索引を作ります（メソッド数={0}）",
+            "server.inbound.done", "呼び出し元の索引: {0} 件",
+        };
+    }
+
+    private static String[] extension() {
+        return new String[] {
+            "extension.typeMapping.noFiles", "{0}: {1} が空欄です（対応表が無いので何も解決しません）",
+            "extension.typeMapping.loaded", "[plugin] {0}: 対応表 {1} 件",
+            "extension.typeMapping.missingFile", "{0} のファイルがありません: {1}",
+            "extension.typeMapping.unreadable", "対応表を読めません: {0} ({1})",
+            "extension.typeMapping.file", "[plugin] 対応表: {0}",
+            "extension.factoryKeys.noMethods", "{0}: {1} が空欄です（何も拾いません）",
+            "extension.factoryKeys.targets", "[plugin] {0}: 対象 {1} 件",
         };
     }
 }

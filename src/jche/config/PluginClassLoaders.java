@@ -22,6 +22,7 @@ import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * plugin.folders に置かれた拡張を読み込むためのクラスローダを作る。
@@ -80,7 +81,7 @@ public final class PluginClassLoaders {
         List<Path> classDirs = new ArrayList<>();
         for (Path folder : config.pluginFolders) {
             if (!Files.isDirectory(folder)) {
-                Log.warn("plugin.folders のフォルダがありません: " + folder);
+                Log.warn(Messages.format("config.plugin.folderMissing", folder));
                 continue;
             }
             classDirs.add(folder);   // フォルダ直下に .class を置く使い方も許す
@@ -118,7 +119,7 @@ public final class PluginClassLoaders {
                 }
             });
         } catch (IOException e) {
-            Log.warn("plugin.folders を読めません: " + folder + " (" + e + ")");
+            Log.warn(Messages.format("config.plugin.folderUnreadable", folder, e));
             return;
         }
         found.sort(Comparator.comparing(Path::toString));
@@ -136,8 +137,7 @@ public final class PluginClassLoaders {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             // JRE で動いている場合。JBang は JDK を取ってくるので通常は起きない
-            Log.warn("拡張の .java をコンパイルできません（JDK ではなく JRE で動いています）。"
-                    + "コンパイル済みの .class か .jar を plugin.folders に置いてください");
+            Log.warn(Messages.get("config.plugin.noCompiler"));
             return null;
         }
         Path out = config.cacheDir.resolve(CLASSES_DIR_NAME + "_" + Config.shortHash(config.pluginFolders.toString()));
@@ -145,7 +145,7 @@ public final class PluginClassLoaders {
             deleteRecursively(out);   // 消した .java のクラスが残らないよう、毎回作り直す
             Files.createDirectories(out);
         } catch (IOException e) {
-            Log.warn("拡張のコンパイル先を作れません: " + out + " (" + e + ")");
+            Log.warn(Messages.format("config.plugin.noOutDir", out, e));
             return null;
         }
         StringBuilder classpath = new StringBuilder(System.getProperty("java.class.path", ""));
@@ -160,12 +160,12 @@ public final class PluginClassLoaders {
         for (Path src : sources) {
             args.add(src.toString());
         }
-        Log.info("[plugin] コンパイル: " + sources.size() + " ファイル -> " + out);
+        Log.info(Messages.format("config.plugin.compiling", sources.size(), out));
         java.io.ByteArrayOutputStream err = new java.io.ByteArrayOutputStream();
         int code = compiler.run(null, null, err, args.toArray(new String[0]));
         if (code != 0) {
             // 黙って進むと「拡張を置いたのに効かない」ことに気づけないので、必ず出す
-            Log.warn("拡張のコンパイルに失敗しました。拡張なしで続行します:");
+            Log.warn(Messages.get("config.plugin.compileFailed"));
             for (String line : err.toString(StandardCharsets.UTF_8).split("\\R")) {
                 if (!line.isBlank()) {
                     Log.warn("  " + line);
@@ -197,7 +197,7 @@ public final class PluginClassLoaders {
         try {
             return path.toUri().toURL();
         } catch (MalformedURLException e) {
-            Log.warn("拡張のパスを URL にできません: " + path + " (" + e + ")");
+            Log.warn(Messages.format("config.plugin.badUrl", path, e));
             return null;
         }
     }

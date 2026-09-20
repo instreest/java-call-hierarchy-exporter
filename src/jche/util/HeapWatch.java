@@ -174,25 +174,25 @@ public final class HeapWatch implements AutoCloseable {
         phaseStartNanos = System.nanoTime();
 
         StringBuilder sb = new StringBuilder();
-        sb.append("[heap] 上限 ").append(Runtime.getRuntime().maxMemory() / (1024 * 1024)).append("MB");
+        sb.append(Messages.format("common.heap.line", Runtime.getRuntime().maxMemory() / (1024 * 1024)));
         if (allocatedDelta >= 0) {
             // 環境に依らない「仕事の量」。上限を変えても変わらないので、版ごとの比較に使える
-            sb.append(" / 確保 ").append(allocatedDelta / (1024 * 1024)).append("MB");
+            sb.append(Messages.format("common.heap.allocated", allocatedDelta / (1024 * 1024)));
         }
-        sb.append(" / GC ").append(gcCount).append("回");
+        sb.append(Messages.format("common.heap.gc", gcCount));
         if (fullGcCount > 0) {
-            sb.append("（うちフル ").append(fullGcCount).append("回）");
+            sb.append(Messages.format("common.heap.fullGc", fullGcCount));
         }
         sb.append(" ").append(gcMillis).append("ms");
         if (elapsedMs >= MIN_ELAPSED_MS_FOR_PERCENT) {
-            sb.append("＝経過の").append(100 * gcMillis / elapsedMs).append("%");
+            sb.append(Messages.format("common.heap.gcPercent", 100 * gcMillis / elapsedMs));
         }
         // 見張りを始めてからの最大（フェーズごとの値ではない）。
         // 「いちばん苦しかったとき、どれだけ余裕が残っていたか」を見るための値なので、
         // フェーズごとに取り直すと、その山を見落とす
         int afterGcPercent = afterGcPercent();
         if (afterGcPercent >= 0) {
-            sb.append(" / GC後の最大占有 ").append(afterGcPercent).append("%");
+            sb.append(Messages.format("common.heap.afterGc", afterGcPercent));
         }
         return new Phase(sb.toString(), gcMillis, elapsedMs, fullGcCount);
     }
@@ -206,16 +206,16 @@ public final class HeapWatch implements AutoCloseable {
      */
     private static String shortageReason(Phase phase) {
         if (phase.fullGcCount() > 0) {
-            return "フル GC が " + phase.fullGcCount() + " 回起きています";
+            return Messages.format("common.heap.reason.fullGc", phase.fullGcCount());
         }
         int afterGcPercent = afterGcPercent();
         if (afterGcPercent >= AFTER_GC_PERCENT_LIMIT) {
-            return "GC が済んだ直後でも上限の " + afterGcPercent + "% が埋まっています";
+            return Messages.format("common.heap.reason.afterGc", afterGcPercent);
         }
         if (phase.elapsedMillis() >= MIN_ELAPSED_MS_FOR_PERCENT
                 && 100 * phase.gcMillis() / phase.elapsedMillis() >= GC_TIME_PERCENT_LIMIT) {
-            return "このフェーズの " + (100 * phase.gcMillis() / phase.elapsedMillis())
-                    + "% を GC に費やしています";
+            return Messages.format("common.heap.reason.gcTime",
+                    100 * phase.gcMillis() / phase.elapsedMillis());
         }
         return null;
     }
@@ -235,10 +235,8 @@ public final class HeapWatch implements AutoCloseable {
         }
         watch.warned = true;
         long suggestGb = Math.max(2, Runtime.getRuntime().maxMemory() / (1024L * 1024 * 1024) * 2);
-        Log.warn("ヒープの上限が足りていない可能性があります（" + reason + "）。"
-                + "上限を増やすと速くなることがあります。");
-        Log.info("   対話モードの「環境設定」の「ヒープ上限（-Xmx）」で設定するか、"
-                + "環境変数 JCHE_JAVA_OPTS に -Xmx" + suggestGb + "g のように指定してください。");
+        Log.warn(Messages.format("common.heap.warn", reason));
+        Log.info(Messages.format("common.heap.warnHow", suggestGb));
     }
 
     /** GC が済んだ直後の占有率（%）。見張っていない・まだ GC が起きていないなら -1 */

@@ -11,6 +11,7 @@ import jche.graph.CallResolver;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
 import jche.graph.SourceOrder;
+import jche.util.Messages;
 
 /**
  * methods.csv の出力。
@@ -45,17 +46,9 @@ public final class InventoryReport {
 
         @Override
         public String toString() {
-            return "メソッド=" + methods
-                    + " 起点候補=" + entryCandidates
-                    + " フレームワークの入口=" + frameworkEntries
-                    + " 孤立=" + isolated
-                    + " 末端=" + leaves
-                    + " 未到達=" + unreachable
-                    + " 階層CSVに出ない=" + notInHierarchy
-                    + "（うち条件分岐で打ち切った先=" + prunedOut + "）"
-                    + " 未解決の呼び出しを含む=" + withUnresolved
-                    + "（コンストラクタ " + constructors + " 個、ラムダ・static 初期化子・匿名クラスのメソッド "
-                    + generated + " 個は出力対象外）";
+            return Messages.format("report.inventory.summary", methods, entryCandidates, frameworkEntries,
+                    isolated, leaves, unreachable, notInHierarchy, prunedOut, withUnresolved,
+                    constructors, generated);
         }
     }
 

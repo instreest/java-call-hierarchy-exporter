@@ -14,6 +14,7 @@ import jche.extension.Hint;
 import jche.framework.GeneratedImpl;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * エッジ単位の解決パイプライン。呼び出し先の具象候補を求める。
@@ -419,7 +420,7 @@ public final class CallResolver {
             try {
                 candidates = provider.candidates(declType, sig, hints);
             } catch (RuntimeException e) {
-                Log.warn("candidate provider 失敗: " + provider.getClass().getName() + " (" + e + ")");
+                Log.warn(Messages.format("graph.provider.failed", provider.getClass().getName(), e));
                 continue;
             }
             if (candidates == null || candidates.length == 0) {
@@ -453,9 +454,8 @@ public final class CallResolver {
      */
     private void warnUnusableCandidate(TypeCandidateProvider provider, String fqn, String sig) {
         if (warnedCandidates.add(provider.label() + "\t" + fqn + "#" + sig)) {
-            Log.warn("拡張が返した候補を使えません: " + fqn + "#" + sig
-                    + " (" + provider.getClass().getName() + " / " + provider.label() + ")"
-                    + " … この型にも親にもこのメソッドの本体がありません。候補から外します");
+            Log.warn(Messages.format("graph.provider.unusable", fqn, sig,
+                    provider.getClass().getName(), provider.label()));
         }
     }
 

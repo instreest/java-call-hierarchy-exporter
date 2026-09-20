@@ -36,6 +36,8 @@
 # 期待出力を更新するときは、差分を確認したうえで最新の output/*/ の CSV を expected*/ にコピーする。
 set -uo pipefail
 cd "$(dirname "$0")"
+# 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
+export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
 CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin cachesplit multi"}

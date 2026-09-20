@@ -16,6 +16,8 @@
 # （test/dataflow/run.sh と同じ経路。jbang 自身が作ったスクリプトの jar は除く）。
 set -uo pipefail
 cd "$(dirname "$0")"
+# 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールで照合が変わる）
+export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JBANG="bash $ROOT/jbangw/jbang"
 fail=0
@@ -74,9 +76,9 @@ echo "== 型で指定（fx.branch.Feature）。通常の出力に追加される
 run fx.branch.Feature
 expect_code "終了コード 0" 0
 expect "通常どおり呼び出し階層を出す" "call-hierarchy.csv"
-expect "追加の出力であることが分かる" "=== 追加: 呼び出しに効いている条件（conditions.target=fx.branch.Feature） ==="
-expect "条件の一覧の場所を出す" "呼び出しの条件: "
-expect "判定できる条件が画面にも出る" "[判定可]"
+expect "追加の出力であることが分かる" "=== Extra: conditions that gate the calls (conditions.target=fx.branch.Feature) ==="
+expect "条件の一覧の場所を出す" "Call conditions: "
+expect "判定できる条件が画面にも出る" "[decidable]"
 if [ -f "$OUT/call-hierarchy.csv" ] && [ -f "$OUT/methods.csv" ] && [ -f "$OUT/call-conditions.csv" ] \
    && [ -f "$OUT/run.log" ] && [ -d .cache ]; then
     echo "  OK   通常の出力（call-hierarchy.csv / methods.csv / run.log）とキャッシュはそのまま作る"
@@ -90,29 +92,29 @@ echo "== メソッドで指定（fx.branch.Feature#mode） =="
 run 'fx.branch.Feature#mode'
 expect_code "終了コード 0" 0
 expect "equals の条件が出る" '"full".equals(name)'
-expect "外側の条件から順に出る" "1. [判定可]"
+expect "外側の条件から順に出る" "1. [decidable]"
 expect_missing "指定していないメソッドの呼び出しは出ない" "Feature.pick"
 expect_csv "判定できる条件は decidable=1 と期待値つき" '1,"""full"".equals(name)",param 1,= full'
 
 echo "== 判定できない条件（fx.excluded.Ping#a の n > 0） =="
 run 'fx.excluded.Ping#a'
 expect_code "終了コード 0" 0
-expect "範囲比較は判定できない条件として出る" "[判定不可] n > 0"
+expect "範囲比較は判定できない条件として出る" "[undecidable] n > 0"
 expect_csv "判定できない条件は decidable=0" "0,n > 0,,"
 
 echo "== null 判定も判定できない条件（fx.service.Notifier#execute） =="
 run 'fx.service.Notifier#execute'
-expect "null 判定は判定できない条件" "[判定不可] dao != null"
+expect "null 判定は判定できない条件" "[undecidable] dao != null"
 
 echo "== 行で指定（src/fx/branch/Feature.java:19） =="
 run 'src/fx/branch/Feature.java:19'
 expect_code "終了コード 0" 0
-expect "その行の呼び出しだけが出る" "該当した呼び出し: 1 件"
+expect "その行の呼び出しだけが出る" "Matching call sites: 1 "
 
 echo "== 対象が無いときは警告にとどめ、解析は成功させる =="
 run fx.branch.NoSuchType
 expect_code "終了コード 0（解析そのものは成功）" 0
-expect "見つからないことを警告する" "conditions.target の対象が見つかりません"
+expect "見つからないことを警告する" "No target matches conditions.target"
 expect "通常の出力は行う" "call-hierarchy.csv"
 if [ -f "$OUT/call-conditions.csv" ]; then
     echo "  NG   該当が無いのに call-conditions.csv ができています"; fail=1
@@ -122,7 +124,7 @@ fi
 
 run 'src/fx/branch/Feature.java:1'
 expect_code "該当する呼び出しが無いときも成功" 0
-expect "指定の外し方を案内する" "conditions.target に合う呼び出しがありません"
+expect "指定の外し方を案内する" "No call site matches conditions.target"
 
 echo "== conditions.target が空欄なら、これまでどおり =="
 run ""

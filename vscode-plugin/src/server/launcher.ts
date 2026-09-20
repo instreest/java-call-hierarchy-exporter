@@ -25,6 +25,8 @@ export interface LaunchOptions {
     readonly vmArguments?: readonly string[];
     /** 作業ディレクトリ。無ければ継承する */
     readonly workingDir?: string;
+    /** 解析側のログの言語（en / ja）。省略すると ja（このプラグインの画面の言語） */
+    readonly messageLanguage?: string;
     readonly listener?: ConnectionListener;
 }
 
@@ -40,6 +42,9 @@ export function launchServer(options: LaunchOptions): ServerConnection {
         '-Dfile.encoding=UTF-8',
         '-Dstdout.encoding=UTF-8',
         '-Dstderr.encoding=UTF-8',
+        // 解析側のログの言語。このプラグインの画面はまだ日本語だけなので、そろえて ja を渡す
+        // （画面を多言語にしたら vscode.env.language から決める。docs/nls-qa.md の Q8）
+        `-Djche.lang=${options.messageLanguage ?? 'ja'}`,
         ...(options.vmArguments ?? []),
         '-cp',
         options.classpath.map((p) => path.resolve(p)).join(path.delimiter),

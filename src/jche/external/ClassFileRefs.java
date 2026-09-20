@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import jche.util.Messages;
 
 /**
  * classファイルを読み、参照しているメソッドを「どのメソッドの何行目から」まで含めて列挙する。
@@ -82,7 +83,7 @@ final class ClassFileRefs {
     static ClassFileRefs parse(InputStream raw) throws IOException {
         DataInputStream in = new DataInputStream(raw);
         if (in.readInt() != 0xCAFEBABE) {
-            throw new IOException("classファイルではありません");
+            throw new IOException(Messages.get("external.notAClassFile"));
         }
         in.readUnsignedShort();     // minor
         in.readUnsignedShort();     // major
@@ -114,7 +115,7 @@ final class ClassFileRefs {
                     refA[i] = in.readUnsignedShort();
                     refB[i] = in.readUnsignedShort();
                 }
-                default -> throw new IOException("未知の定数プールタグ: " + tag);
+                default -> throw new IOException(Messages.format("external.unknownConstantTag", tag));
             }
         }
 
@@ -132,7 +133,8 @@ final class ClassFileRefs {
                 && refA[thisClassIdx] < count)
                 ? internalToFqn(utf8[refA[thisClassIdx]]) : null;
         if (thisName == null) {
-            thisName = "(不明)";
+            // CSV のセルは表示言語に関わらず英語（docs/nls-qa.md の Q6）
+            thisName = "(unknown)";
         }
 
         // フィールド（属性は読み飛ばす）
