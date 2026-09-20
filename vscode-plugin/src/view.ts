@@ -6,6 +6,7 @@ import { countMessage, describeRow, viewDescription, type Direction } from './la
 import { FLAG_TRUNCATED, hasFlag, type ServerRow } from './server/response';
 import { buildTree, countNodes, type TreeNode } from './server/tree';
 import type { Session } from './session';
+import { t } from './messages';
 
 /** ビューに出している木の起点 */
 export interface RootSpec {
@@ -99,15 +100,15 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
             return;
         }
         this.view.description = viewDescription(root.label, root.line, this._direction);
-        this.view.message = '取り寄せ中…';
+        this.view.message = t('view.fetching');
         const response = await root.session.tree(root.key, this._direction, this.filterWords());
         if (!response.ok) {
             this.tree = undefined;
             this.view.message = response.reason === 'not-analyzed'
-                ? 'まだ解析していません。解析してから表示してください'
+                ? t('view.notAnalyzed')
                 : response.reason === 'not-found'
-                    ? `このメソッドは解析結果にありません: ${root.key}`
-                    : `取り寄せに失敗しました: ${response.reason}`;
+                    ? t('view.methodNotFound', root.key)
+                    : t('view.fetchFailed', response.reason);
             this.changed.fire(undefined);
             return;
         }
@@ -129,25 +130,25 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
     async exportCsv(): Promise<void> {
         const root = this.root;
         if (!root || !this.tree) {
-            vscode.window.showInformationMessage('先に木を表示してください。');
+            vscode.window.showInformationMessage(t('view.showTreeFirst'));
             return;
         }
         const safe = root.label.replace(/[^\w.]+/g, '_').replace(/^_+|_+$/g, '');
         const target = await vscode.window.showSaveDialog({
             defaultUri: vscode.Uri.file(path.join(root.session.folder.uri.fsPath, `${this._direction}-${safe}.csv`)),
             filters: { CSV: ['csv'] },
-            title: 'この木を CSV に出す',
+            title: t('view.exportTitle'),
         });
         if (!target) {
             return;
         }
         const response = await root.session.export(root.key, this._direction, target.fsPath, this.filterWords());
         if (!response.ok) {
-            vscode.window.showErrorMessage(`CSV に出せませんでした: ${response.reason}`);
+            vscode.window.showErrorMessage(t('view.exportFailed', response.reason));
             return;
         }
         const answer = await vscode.window.showInformationMessage(
-            `${response.field('rows')} 行を書きました: ${target.fsPath}`, '開く');
+            t('view.exportDone', response.field('rows'), target.fsPath), t('view.action.open'));
         if (answer) {
             await vscode.window.showTextDocument(target);
         }
@@ -174,7 +175,7 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
         // 解析後に変更されたファイルの節点。古いことを理由にグレーアウトはしない（読めなくなるだけ）
         if (node.row.file !== '' && this.root?.session.isDirty(node.row.file)) {
             item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
-            item.tooltip = `${look.tooltip}\n⚠ ${node.row.file} は解析後に変更されています。再解析すると変わる可能性があります`;
+            item.tooltip = t('view.staleTooltip', look.tooltip, node.row.file);
         }
         // 根は開いた状態で出す。子がある（か、打ち切りで続きがある）節点は閉じた状態。再帰は開けない
         const isRoot = node === this.tree;
@@ -187,7 +188,7 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
         if (node.row.file !== '') {
             item.command = {
                 command: 'jche.openCallSite',
-                title: '呼び出している行を開く',
+                title: t('view.openCallSite'),
                 arguments: [node],
             };
         }
@@ -209,7 +210,7 @@ export class CallersView implements vscode.TreeDataProvider<TreeNode>, vscode.Di
         this.fetched.add(node);
         const response = await root.session.tree(node.row.key, this._direction, this.filterWords());
         if (!response.ok) {
-            this.log.warn(`続きを取り寄せられませんでした: ${node.row.key}（${response.reason}）`);
+            this.log.warn(t('view.expandFailed', node.row.key, response.reason));
             return [];
         }
         const sub = buildTree(response.rows);
@@ -259,6 +260,7 @@ export async function openAt(folder: vscode.WorkspaceFolder, relativeFile: strin
     try {
         await vscode.window.showTextDocument(uri, { selection: new vscode.Range(position, position), preserveFocus: false });
     } catch (e) {
-        vscode.window.showWarningMessage(`開けませんでした: ${absolute}（${e instanceof Error ? e.message : String(e)}）`);
+        vscode.window.showWarningMessage(
+            t('view.openFailed', absolute, e instanceof Error ? e.message : String(e)));
     }
 }

@@ -18,7 +18,8 @@
 | `config/config.properties` | `message.language`（空欄なら OS の言語）を足した |
 | CSV を書く側（`report` / `server` / `graph` / `analysis`） | **セルの中身は言語に関わらず英語で固定**（Q6） |
 | `eclipse-plugin/.../ServerLauncher.java` | 解析の子プロセスに `-Djche.lang=<画面の言語>` を渡す（Q8） |
-| `test/nls/run.sh` | 上の一式の検査（新規） |
+| `vscode-plugin/src/messages*.ts` | VSCode 拡張の文言（Q15）。`package.json` の寄与は `package.nls*.json` |
+| `test/nls/run.sh` / `test/vscode/run.sh` | 上の一式の検査 |
 
 ---
 
@@ -178,8 +179,8 @@ Eclipse プラグインは、子プロセスを起こすときに
 「バナーの前半は訳されるが、後半（子プロセスから返ってくる理由）は日本語で出る」と
 書いていた食い違いが、これで無くなる。
 
-VSCode プラグインは**画面がまだ日本語だけ**なので、そろえて `ja` を渡している。
-画面を多言語にするときに `vscode.env.language` から決めるようにする（Q12）。
+VSCode 拡張も同じで、`vscode.env.language` から決めた言語を
+`-Djche.lang=` で子プロセスへ渡す（Q15）。
 
 ### Q9. 起動コマンド（`.sh` / `.cmd`）はどう出し分けているのか
 
@@ -229,7 +230,6 @@ VSCode プラグインは**画面がまだ日本語だけ**なので、そろえ
 |---|---|---|
 | `docs/` と `README.md` | 日本語のまま | 量が桁違い。引用されている CSV の値だけは実際の出力（英語）に合わせた |
 | `config/config.properties` のコメント | 日本語のまま（`message.language` の項だけ英語を併記） | 設定を書く人向けの長い説明。訳すなら言語ごとのひな形を持つ形になる |
-| VSCode プラグインの画面 | 日本語のまま | `package.nls.json` と `vscode.l10n` という別の仕組みが要る。解析ログはそろえて `ja` を渡している（Q8） |
 | `action.yml` の入力の説明 | 日本語のまま | CI の利用者向け |
 | `single-file/` のログ | 日本語のまま | お試し版の 1 ファイルに `Messages` を丸ごと持ち込む価値が無い。**CSV の注記だけ**は本体に合わせた（「タグは本体と同じ」を保つため） |
 
@@ -248,6 +248,11 @@ VSCode プラグインは**画面がまだ日本語だけ**なので、そろえ
 
 6 を入れたのは、Q6 の決まりがコードの都合で崩れるのを止めるためである。
 CSV を書く経路のどこかで `Messages` を呼んでしまうと、この 1 つで落ちる。
+
+VSCode 拡張の分は `test/vscode/run.sh`（`test/messages.test.ts`）が同じ観点で見る。
+1〜3 に加えて、`package.json` に日本語が残っていないことと、`%キー%` が
+`package.nls.json` とそろっていることを見る。配布物（`.vsix`）に
+`package.nls*.json` が入ることは `test/vscode/package.sh` が見る。
 
 ### Q14. 既存の検査（`test/plugin-nls/run.sh`）が何も見ていなかった件
 
@@ -269,3 +274,47 @@ CSV を書く経路のどこかで `Messages` を呼んでしまうと、この 
 
 検査を書いたら**わざと壊して落ちることを確かめる**、が教訓である。
 今回の 6 点はすべて、1 つずつ壊して落ちることを確認した。
+
+### Q15. VSCode 拡張はどう出し分けているのか
+
+置き場所が 2 つに分かれる。読む側が別だからで、Eclipse プラグインが
+`messages*.properties` と `plugin*.properties` に分かれているのと同じ事情である（Q7 の表）。
+
+| ファイル | 読む側 | 何の文言か |
+|---|---|---|
+| `src/messages.en.ts` / `messages.ja.ts` | 拡張のコード（`t('キー')`） | 通知・ツールチップ・木の節点・右下の状態・ログ |
+| `package.nls.json` / `package.nls.ja.json` | **VSCode 本体** | `package.json` の寄与（ビュー名・コマンドの見出し・設定の説明） |
+
+`package.json` の寄与は VSCode が**起動時に**読むもので、そのとき拡張のコードは動いていない。
+だから `"%キー%"` と書いて VSCode に解決させる（Eclipse の `plugin.xml` の `%キー` と同じ考え方）。
+逆に、コードが出す文言を VSCode に読ませることはできない。
+
+#### なぜコードの側で `vscode.l10n` を使わないのか
+
+`src/server/` と `src/config.ts` は **`vscode` モジュールに触らない層**で、
+Node だけでコンパイル・実行できることを `test/vscode/run.sh` が検査している
+（[vscode-plugin-design.md](vscode-plugin-design.md) §10）。`vscode.l10n` はそこへ持ち込めない。
+
+画面の層だけ `vscode.l10n`、下の層は自前、と分けると**表が 2 つに増える**。
+キーの対応も差し込みの数も 2 通り検査することになるので、1 つの仕組みにそろえた。
+
+文言の表は TypeScript のモジュールなので、esbuild が `dist/extension.js` に束ねる。
+配布物に別ファイルを入れる必要が無いのは、解析本体で properties を採らなかったのと同じ理由である（Q3）。
+`package.nls*.json` だけは VSCode 本体が読むので、ファイルとして `.vsix` に入れる
+（入っていないと、コマンドパレットに `%command.jche.analyze.title%` のような生のキーが並ぶ。
+`test/vscode/package.sh` が見る）。
+
+#### 言語をどう決めるか
+
+`activate()` の先頭で `vscode.env.language`（`ja`、`en-US` など）を渡す。
+VSCode の表示言語に合わせるので、利用者が言語パックを入れ替えればそれに追従する。
+地域は言語だけ見て、訳の無い言語は英語に落ちる（Q2 と同じ）。
+
+解析の子プロセスにも同じ言語を `-Djche.lang=` で渡すので、
+**画面・拡張のログ・解析のログが必ず同じ言語になる**（Q8）。
+
+#### 訳した文言の外にあるもの
+
+右下の状態に出す時刻は `toLocaleTimeString` で組み立てているので、
+表示言語に合わせて `ja-JP` / `en-GB` を選ぶ（どちらも 24 時間表記）。
+件数の桁区切り（`toLocaleString()`）は数の表記なので、動かしている環境の書式のままにしてある。

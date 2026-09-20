@@ -5,6 +5,7 @@ import { Session } from './session';
 import { StatusItem } from './status';
 import { CallersView, openAt } from './view';
 import type { TreeNode } from './server/tree';
+import { setLanguage, t } from './messages';
 
 /**
  * 拡張の入口。
@@ -23,6 +24,9 @@ let view: CallersView;
 let status: StatusItem;
 
 export function activate(context: vscode.ExtensionContext): void {
+    // 画面の文言の言語。VSCode の表示言語に合わせる（既定は英語）。
+    // 何かを出す前に決める。子プロセスにも同じ言語を渡す（docs/nls-qa.md の Q8）
+    setLanguage(vscode.env.language);
     log = vscode.window.createOutputChannel('Java Call Hierarchy Exporter', { log: true });
     sessions = new Map();
     view = new CallersView(log, context.workspaceState);
@@ -67,25 +71,26 @@ export function activate(context: vscode.ExtensionContext): void {
     const pickSession = async (): Promise<Session | undefined> => {
         const folders = vscode.workspace.workspaceFolders ?? [];
         if (folders.length === 0) {
-            vscode.window.showInformationMessage('フォルダを開いてから解析してください。');
+            vscode.window.showInformationMessage(t('command.openFolderFirst'));
             return undefined;
         }
         const current = currentSession();
         if (current) {
             return current;
         }
-        const picked = await vscode.window.showWorkspaceFolderPick({ placeHolder: '解析するフォルダ' });
+        const picked = await vscode.window.showWorkspaceFolderPick({ placeHolder: t('command.pickFolder') });
         return picked ? sessionOf(picked) : undefined;
     };
 
     /** 解析を走らせる。手動なので通知の進捗（中止ボタン付き）に出す */
     const analyze = async (session: Session): Promise<boolean> => {
         if (session.isAnalyzing) {
-            vscode.window.showInformationMessage(`${session.folder.name} は解析中です。`);
+            vscode.window.showInformationMessage(t('command.alreadyAnalyzing', session.folder.name));
             return false;
         }
         const ok = await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `影響調査: ${session.folder.name} を解析中`, cancellable: true },
+            { location: vscode.ProgressLocation.Notification,
+                title: t('command.analyzingTitle', session.folder.name), cancellable: true },
             async (progress, token) => {
                 const listener = session.onDidChangeState((state) => {
                     if (state.kind === 'analyzing') {
@@ -104,7 +109,8 @@ export function activate(context: vscode.ExtensionContext): void {
             await view.reload();     // 見えている木を新しい結果で描き直す
         }
         if (!ok && session.state.kind === 'failed') {
-            const answer = await vscode.window.showErrorMessage(`解析に失敗しました: ${session.state.reason}`, 'ログを開く');
+            const answer = await vscode.window.showErrorMessage(
+                t('command.analyzeFailed', session.state.reason), t('command.action.openLog'));
             if (answer) {
                 log.show();
             }
@@ -116,25 +122,25 @@ export function activate(context: vscode.ExtensionContext): void {
     const showCallers = async (): Promise<void> => {
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== 'java') {
-            vscode.window.showInformationMessage('Java のファイルでメソッドの中にカーソルを置いてから実行してください。');
+            vscode.window.showInformationMessage(t('command.putCursorInJava'));
             return;
         }
         const folder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
         if (!folder) {
-            vscode.window.showInformationMessage('このファイルはワークスペースのフォルダの外です。');
+            vscode.window.showInformationMessage(t('command.outsideWorkspace'));
             return;
         }
         const session = sessionOf(folder);
         if (!session.isAnalyzed) {
             const answer = await vscode.window.showInformationMessage(
-                `${folder.name} はまだ解析していません。解析しますか？（プロジェクト全体を解析するので時間がかかります）`,
-                '解析する');
-            if (answer !== '解析する' || !(await analyze(session))) {
+                t('command.analyzeNow', folder.name),
+                t('command.action.analyze'));
+            if (answer !== t('command.action.analyze') || !(await analyze(session))) {
                 return;
             }
         }
         if (editor.document.isDirty) {
-            log.warn(`${editor.document.fileName} は未保存です。保存前の行番号で引きます。`);
+            log.warn(t('command.unsaved', editor.document.fileName));
         }
         const relative = path.relative(folder.uri.fsPath, editor.document.uri.fsPath).split(path.sep).join('/');
         const line = editor.selection.active.line + 1;    // サーバーは 1 始まり
@@ -143,16 +149,16 @@ export function activate(context: vscode.ExtensionContext): void {
             switch (at.reason) {
                 case 'file-not-analyzed':
                     vscode.window.showWarningMessage(
-                        `${relative} は解析対象に入っていません（source.folders の外、除外パッケージ、または解析後に増えたファイル）。設定を確認するか、再解析してください。`);
+                        t('command.fileNotAnalyzed', relative));
                     return;
                 case 'not-found':
-                    vscode.window.showInformationMessage('メソッドの中にカーソルを置いてください（ここを囲むメソッドが解析結果にありません）。');
+                    vscode.window.showInformationMessage(t('command.methodNotFound'));
                     return;
                 case 'not-analyzed':
-                    vscode.window.showInformationMessage('まだ解析していません。解析してから実行してください。');
+                    vscode.window.showInformationMessage(t('command.notAnalyzed'));
                     return;
                 default:
-                    vscode.window.showErrorMessage(`メソッドを特定できませんでした: ${at.reason}`);
+                    vscode.window.showErrorMessage(t('command.atFailed', at.reason));
                     return;
             }
         }
@@ -184,8 +190,8 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('jche.export', () => view.exportCsv()),
         vscode.commands.registerCommand('jche.filterText', async () => {
             const text = await vscode.window.showInputBox({
-                title: '絞り込み文字列',
-                prompt: '型名・メソッド名・パッケージの部分一致。* と ** も使えます。空にすると解除',
+                title: t('command.filterText.title'),
+                prompt: t('command.filterText.prompt'),
                 value: view.filters.text,
             });
             if (text !== undefined) {
@@ -196,14 +202,17 @@ export function activate(context: vscode.ExtensionContext): void {
             const f = view.filters;
             type Item = vscode.QuickPickItem & { key: 'includeTests' | 'includeGuessed' | 'applyExcludePackages' | 'dedupe' | 'depth' };
             const items: Item[] = [
-                { key: 'depth', label: `$(list-tree) 深さ: ${f.maxDepth}`, description: '一度に展開する深さを変える', alwaysShow: true },
-                { key: 'includeTests', label: 'テストのソースを含む', description: 'src/test/java 等', picked: f.includeTests },
-                { key: 'includeGuessed', label: '推定（データフロー・リフレクション）で特定した呼び出しを含む', picked: f.includeGuessed },
-                { key: 'applyExcludePackages', label: '設定ファイルの exclude.packages を適用する', picked: f.applyExcludePackages },
-                { key: 'dedupe', label: '同じメソッドを 1 回だけ出す', description: 'OFF なら呼び出している行ごとに出す', picked: f.dedupe },
+                { key: 'depth', label: t('command.filter.depth', f.maxDepth),
+                    description: t('command.filter.depthDescription'), alwaysShow: true },
+                { key: 'includeTests', label: t('command.filter.includeTests'),
+                    description: t('command.filter.includeTestsDescription'), picked: f.includeTests },
+                { key: 'includeGuessed', label: t('command.filter.includeGuessed'), picked: f.includeGuessed },
+                { key: 'applyExcludePackages', label: t('command.filter.applyExcludes'), picked: f.applyExcludePackages },
+                { key: 'dedupe', label: t('command.filter.dedupe'),
+                    description: t('command.filter.dedupeDescription'), picked: f.dedupe },
             ];
             const picked = await vscode.window.showQuickPick(items, {
-                canPickMany: true, title: 'フィルタ設定（解析はやり直しません）',
+                canPickMany: true, title: t('command.filter.title'),
             });
             if (!picked) {
                 return;
@@ -217,8 +226,9 @@ export function activate(context: vscode.ExtensionContext): void {
             };
             if (picked.some((i) => i.key === 'depth')) {
                 const depth = await vscode.window.showInputBox({
-                    title: '深さ', prompt: '一度に展開する深さ（1〜50）', value: String(f.maxDepth),
-                    validateInput: (v) => /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 50 ? undefined : '1〜50 の整数',
+                    title: t('command.depth.title'), prompt: t('command.depth.prompt'), value: String(f.maxDepth),
+                    validateInput: (v) => /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 50
+                        ? undefined : t('command.depth.invalid'),
                 });
                 if (depth !== undefined) {
                     next = { ...next, maxDepth: Number(depth) };
@@ -241,7 +251,7 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             const found = await root.session.find(node.row.key);
             if (!found.ok || found.field('file') === '') {
-                vscode.window.showInformationMessage('宣言の場所が分かりません（ソースが無いか、解析結果にありません）。');
+                vscode.window.showInformationMessage(t('command.declarationUnknown'));
                 return;
             }
             await openAt(root.session.folder, found.field('file'), found.numberField('line', 1));
@@ -256,7 +266,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('jche.selectConfig', async () => {
             const session = await pickSession();
             if (session && (await session.pickConfig())) {
-                vscode.window.showInformationMessage('次の解析からこの設定ファイルを使います。');
+                vscode.window.showInformationMessage(t('command.configSelected'));
             }
         }),
         vscode.window.onDidChangeActiveTextEditor(() => status.render(currentSession())),

@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 import * as path from 'node:path';
 import { FLAG_GUESSED, FLAG_MATCH, FLAG_NO_SOURCE, FLAG_RECURSIVE, FLAG_TRUNCATED, hasFlag, type ServerRow } from './server/response';
+import { t } from './messages';
 
 /**
  * 木の1行をどう見せるか。`vscode` に触らない純粋な関数にしてあるので、Node だけで検査できる。
@@ -26,7 +27,7 @@ export interface RowAppearance {
 export type Direction = 'callers' | 'callees';
 
 export function directionLabel(direction: Direction): string {
-    return direction === 'callers' ? '呼び出し元' : '呼び出し先';
+    return t(direction === 'callers' ? 'label.direction.callers' : 'label.direction.callees');
 }
 
 export function describeRow(row: ServerRow, direction: Direction): RowAppearance {
@@ -60,32 +61,34 @@ export function describeRow(row: ServerRow, direction: Direction): RowAppearance
     const place = row.file !== '' ? `${path.basename(row.file)}:${row.line}` : '';
     const notes: string[] = [];
     if (recursive) {
-        notes.push('再帰');
+        notes.push(t('label.note.recursive'));
     }
     if (guessed) {
-        notes.push(row.reason !== '' ? `推定: ${row.reason}` : '推定');
+        notes.push(row.reason !== '' ? t('label.note.guessedWith', row.reason) : t('label.note.guessed'));
     } else if (row.reason !== '') {
         notes.push(row.reason);
     }
     if (noSource) {
-        notes.push('ソースなし');
+        notes.push(t('label.note.noSource'));
     }
     const description = [place, ...notes].filter((s) => s !== '').join('  ');
 
     const tooltipLines = [row.key];
     if (row.file !== '') {
-        tooltipLines.push(`${directionLabel(direction) === '呼び出し元' ? '呼び出している行' : '呼び出されている行'}: ${row.file}:${row.line}`);
+        // 方向そのもので分ける。訳した見出しと比べると、日本語以外で必ず外れる
+        tooltipLines.push(t(direction === 'callers' ? 'label.tooltip.callSite' : 'label.tooltip.calleeSite',
+            row.file, row.line));
     } else if (noSource) {
-        tooltipLines.push('ソースが無い（依存 jar か、解析対象の外）');
+        tooltipLines.push(t('label.tooltip.noSource'));
     }
     if (row.reason !== '') {
-        tooltipLines.push(`解決の理由: ${row.reason}`);
+        tooltipLines.push(t('label.tooltip.reason', row.reason));
     }
     if (recursive) {
-        tooltipLines.push('再帰。ここで打ち切る');
+        tooltipLines.push(t('label.tooltip.recursive'));
     }
     if (truncated) {
-        tooltipLines.push('深さの上限で打ち切り。開くと続きを取り寄せる');
+        tooltipLines.push(t('label.tooltip.truncated'));
     }
 
     return {
@@ -101,18 +104,18 @@ export function describeRow(row: ServerRow, direction: Direction): RowAppearance
 
 /** ビューの見出し（起点のメソッドと方向）。`TreeView#description` に出す */
 export function viewDescription(rootLabel: string, rootLine: number, direction: Direction): string {
-    const line = rootLine > 0 ? `（${rootLine}行目）` : '';
-    return `${rootLabel}${line} の${directionLabel(direction)}`;
+    const line = rootLine > 0 ? t('label.view.rootLine', rootLine) : '';
+    return t('label.view.description', rootLabel, line, directionLabel(direction));
 }
 
 /** 件数の説明。`TreeView#message` に出す */
 export function countMessage(shown: number, truncatedCount: number, maxRows: number): string {
-    const parts = [`表示 ${shown.toLocaleString()} 件`];
+    const parts = [t('label.count.shown', shown.toLocaleString())];
     if (truncatedCount > 0) {
-        parts.push(`深さの上限で打ち切った節点 ${truncatedCount.toLocaleString()} 件（開くと続きを取り寄せます）`);
+        parts.push(t('label.count.truncated', truncatedCount.toLocaleString()));
     }
     if (shown >= maxRows) {
-        parts.push(`${maxRows.toLocaleString()} 件で打ち切りました。絞り込みか深さを使ってください`);
+        parts.push(t('label.count.maxRows', maxRows.toLocaleString()));
     }
     return parts.join(' / ');
 }
