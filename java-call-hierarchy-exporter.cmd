@@ -153,6 +153,7 @@ rem 書き出す内容は Java 側（LauncherSettings.save）・java-call-hierarchy-exporte
     call :msg settings.javaOpts
     call :msg settings.jbangOpts
     call :msg settings.allowDownload
+    call :msg settings.lang
     echo JBANG_DIR=%~1
     echo JBANG_REPO=%~2
     echo JCHE_JAVA_OPTS=
@@ -469,6 +470,7 @@ if "%~1"=="settings.repo" set "MSG=#   JBANG_REPO      where dependency jars liv
 if "%~1"=="settings.javaOpts" set "MSG=#   JCHE_JAVA_OPTS  options for the JVM that runs the analysis (for example: -Xmx4g)"
 if "%~1"=="settings.jbangOpts" set "MSG=#   JCHE_JBANG_OPTS extra options for jbang run (for example: --offline)"
 if "%~1"=="settings.allowDownload" set "MSG=#   JCHE_ALLOW_DOWNLOAD  yes to download from the network (JBang, the JDK, dependency jars) without asking, no to never download. Empty asks every time"
+if "%~1"=="settings.lang" set "MSG=#   JCHE_LANG       language of the messages (en / ja). Add this line to fix it; without it the OS language decides"
 if "%~1"=="item.sep" set "MSG=, "
 if "%~1"=="item.jbang" set "MSG=JBang itself (about %~2MB)"
 if "%~1"=="item.jdk" set "MSG=JDK %~2 to run the tool (about %~3MB)"
@@ -515,6 +517,7 @@ if "%~1"=="settings.repo" set "MSG=#   JBANG_REPO      依存 jar の置き場所（既定
 if "%~1"=="settings.javaOpts" set "MSG=#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）"
 if "%~1"=="settings.jbangOpts" set "MSG=#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）"
 if "%~1"=="settings.allowDownload" set "MSG=#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる"
+if "%~1"=="settings.lang" set "MSG=#   JCHE_LANG       画面とログの言語（en / ja）。固定したいときにこの行を足す。無ければ OS の言語に従う"
 if "%~1"=="item.sep" set "MSG=、"
 if "%~1"=="item.jbang" set "MSG=JBang 本体（約 %~2MB）"
 if "%~1"=="item.jdk" set "MSG=ツールを動かす JDK %~2（約 %~3MB）"

@@ -15,6 +15,7 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
+| 画面とログの言語（英語が既定・日本語への切り替え） | [docs/cli.md](docs/cli.md#表示言語) |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---

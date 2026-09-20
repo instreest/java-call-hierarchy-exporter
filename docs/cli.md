@@ -89,6 +89,25 @@ jche>
 | `JCHE_JAVA_OPTS` | 解析を動かす JVM のオプション（例: `-Xmx4g`） |
 | `JCHE_JBANG_OPTS` | `jbang run` に足すオプション（例: `--offline`、`--java 21`） |
 | `JCHE_ALLOW_DOWNLOAD` | ネットワークからの取得（JBang 本体・JDK・依存 jar）を尋ねずに行うなら `yes`、行わないなら `no`。空欄なら毎回尋ねる（下記） |
+| `JCHE_LANG` | 画面とログの言語。`en` / `ja`。空欄なら OS の言語（下記） |
+
+## 表示言語
+
+画面・ログ・エラーの文言は**英語が既定**で、日本語を選んだときだけ日本語になります。
+先に決まったものが勝ちます。
+
+1. 環境変数 `JCHE_LANG`（`en` / `ja`）。`launcher.properties` に書いてもかまいません
+2. システムプロパティ `jche.lang`（Eclipse プラグインが解析の子プロセスに渡します）
+3. 設定ファイルの `message.language`（設定ごとに変えたいとき）
+4. OS の言語
+
+```bash
+JCHE_LANG=ja ./java-call-hierarchy-exporter.sh config/config.properties   # 日本語で出す
+```
+
+**出力 CSV の中身は言語で変わりません**（注記も含めて常に英語）。
+期待値との比較・Excel のフィルタ・他のツールへの受け渡しに使うものなので、
+読み手の言語で変わらないほうが都合がよいためです（[nls-qa.md](nls-qa.md)）。
 
 ## 複数の設定ファイルをまとめて処理する
 

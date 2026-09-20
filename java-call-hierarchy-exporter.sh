@@ -87,6 +87,7 @@ msg_en() {
     settings.javaOpts) echo "#   JCHE_JAVA_OPTS  options for the JVM that runs the analysis (for example: -Xmx4g)" ;;
     settings.jbangOpts) echo "#   JCHE_JBANG_OPTS extra options for jbang run (for example: --offline)" ;;
     settings.allowDownload) echo "#   JCHE_ALLOW_DOWNLOAD  yes to download from the network (JBang, the JDK, dependency jars) without asking, no to never download. Empty asks every time" ;;
+    settings.lang)    echo "#   JCHE_LANG       language of the messages (en / ja). Add this line to fix it; without it the OS language decides" ;;
     item.jbang)       echo "JBang itself (about ${2}MB)" ;;
     item.jdk)         echo "JDK $2 to run the tool (about ${3}MB)" ;;
     item.deps)        echo "dependency jars (JDT and others, about ${2}MB)" ;;
@@ -136,6 +137,7 @@ msg_ja() {
     settings.javaOpts) echo "#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）" ;;
     settings.jbangOpts) echo "#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）" ;;
     settings.allowDownload) echo "#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる" ;;
+    settings.lang)    echo "#   JCHE_LANG       画面とログの言語（en / ja）。固定したいときにこの行を足す。無ければ OS の言語に従う" ;;
     item.jbang)       echo "JBang 本体（約 ${2}MB）" ;;
     item.jdk)         echo "ツールを動かす JDK $2（約 ${3}MB）" ;;
     item.deps)        echo "依存 jar（JDT ほか。約 ${2}MB）" ;;
@@ -199,6 +201,7 @@ write_settings() {
     msg settings.javaOpts
     msg settings.jbangOpts
     msg settings.allowDownload
+    msg settings.lang
     echo "JBANG_DIR=$1"
     echo "JBANG_REPO=$2"
     echo "JCHE_JAVA_OPTS="

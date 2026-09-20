@@ -133,6 +133,7 @@ final class MessagesEn {
             "cli.launcher.header.javaOpts", "#   JCHE_JAVA_OPTS  options for the JVM that runs the analysis (for example: -Xmx4g)",
             "cli.launcher.header.jbangOpts", "#   JCHE_JBANG_OPTS extra options for jbang run (for example: --offline)",
             "cli.launcher.header.allowDownload", "#   JCHE_ALLOW_DOWNLOAD  yes to download from the network (JBang, the JDK, dependency jars) without asking, no to never download. Empty asks every time",
+            "cli.launcher.header.lang", "#   JCHE_LANG       language of the messages (en / ja). Add this line to fix it; without it the OS language decides",
             "cli.wizard.noTemplate", "The template {0} is missing.",
             "cli.wizard.intro", "Creating a new config file. Enter takes the default in [ ], q cancels.",
             "cli.wizard.introDefaults", "Items not asked here (exclude.packages, max.depth and so on) keep the template's defaults.",

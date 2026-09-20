@@ -133,6 +133,7 @@ final class MessagesJa {
             "cli.launcher.header.javaOpts", "#   JCHE_JAVA_OPTS  解析を動かす JVM のオプション（例: -Xmx4g）",
             "cli.launcher.header.jbangOpts", "#   JCHE_JBANG_OPTS jbang run に足すオプション（例: --offline）",
             "cli.launcher.header.allowDownload", "#   JCHE_ALLOW_DOWNLOAD  ネットワークからの取得（JBang 本体・JDK・依存 jar）を、尋ねずに行うなら yes、行わないなら no。空欄は毎回尋ねる",
+            "cli.launcher.header.lang", "#   JCHE_LANG       画面とログの言語（en / ja）。固定したいときにこの行を足す。無ければ OS の言語に従う",
             "cli.wizard.noTemplate", "ひな形の {0} がありません。",
             "cli.wizard.intro", "新しい設定ファイルを作ります。Enter で [ ] の既定値、q で中止。",
             "cli.wizard.introDefaults", "ここで尋ねない項目（exclude.packages、max.depth 等）はひな形の既定値のままになります。",

@@ -110,6 +110,7 @@ public final class LauncherSettings {
         lines.add(Messages.get("cli.launcher.header.javaOpts"));
         lines.add(Messages.get("cli.launcher.header.jbangOpts"));
         lines.add(Messages.get("cli.launcher.header.allowDownload"));
+        lines.add(Messages.get("cli.launcher.header.lang"));
         for (String key : KNOWN_KEYS) {
             lines.add(key + "=" + get(key));
         }

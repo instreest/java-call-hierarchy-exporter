@@ -19,6 +19,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
+| `src/jche/util/Messages*.java` | 利用者に見せる文言。英語が既定で、日本語（`MessagesJa`）を重ねる。CSV のセルはここを通さず英語で固定（`docs/nls-qa.md`） |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
 | `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`）。画面の文言は英語が既定で、日本語は `messages_ja.properties` に置く（`docs/eclipse-plugin-nls-qa.md`） |
 | `vscode-plugin/` | VSCode プラグイン（TypeScript、esbuild で1ファイルに束ねる）。同じ `--server` を子プロセスとして使う。`src/server/` と `src/config.ts` は `vscode` に触らない層で、Node だけで検査できる（`docs/vscode-plugin-design.md`） |
@@ -59,13 +60,16 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |
 | `bash test/plugin-config/run.sh` | Eclipse プラグインが自動生成した設定（`EclipseProjectConfig#toFileText`）が、解析側と同じ読み方（`Properties#load`）でそのまま読み戻せること。Windows のパスのバックスラッシュを逃がし忘れると解析ごと失敗する |
 | `bash test/plugin-api/run.sh` | Eclipse プラグインが下限の Eclipse（4.17 / 2020-09）の jar と `--release 11` でコンパイルできること。本番のビルドは新しい jar を使うので、この検査だけが下限を守る |
+| `bash test/nls/run.sh` | ツール全体の文言（英語が既定、日本語は重ねる）の検査。`src/` に日本語のリテラルが残っていないこと、英語と日本語でキーと差し込みがそろうこと、起動コマンドの表がそろうこと、言語の決まり方（`JCHE_LANG` > `jche.lang` > `message.language` > OS）、そして**出力 CSV が言語で変わらないこと**（`docs/nls-qa.md`） |
 | `bash test/plugin-nls/run.sh` | Eclipse プラグインの文言（英語が既定、日本語は重ねる）の検査。ソースに日本語のリテラルが残っていないこと、キーがそろうこと、`plugin.xml` の `%キー` があること、配布物に入ること、`osgi.nl` で切り替わり UTF-8 として読めること（`docs/eclipse-plugin-nls-qa.md`） |
 | `bash test/server/run.sh` | サーバーモード（`--server`）のプロトコルの検査。`HELLO` → `ANALYZE` → `FIND` / `AT` → `TREE` → `EXPORT` と断り方 |
 | `bash test/vscode/run.sh` | VSCode プラグインの `vscode` に触らない層の検査（Node 22 と npm が要る）。型検査、子プロセスとの一連のやりとり、木の組み直し、設定の用意、拡張本体を束ねられること |
 | `bash test/vscode/package.sh` | VSCode プラグインの配布物（`.vsix`）の検査（上に加えて Maven と JDK 21 以上が要る）。`lib/` が eclipse-plugin のビルドから集まり JDT の版が `//DEPS` と同じこと、入るもの・入らないもの |
 | 全ソースの lint | `javac --release 17 -Xlint:all -Werror -Xdoclint:all,-missing`（smoke.yml の「Compile with all lint warnings as errors」と同じ引数） |
 
-- テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）。ロケール未設定の環境では launcher.properties の日本語書き込みで落ちる
+- ツールを動かす検査スクリプトは `JCHE_LANG=en` を輸出して言語を固定する。既定の経路をそのまま検査でき、
+  実行環境のロケールで照合する文字列が変わらなくなる。日本語への切り替えそのものは `test/nls/run.sh` が見る
+- テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）。日本語を選んだ実行の出力を扱うため
 - 出力 CSV の期待値（`expected*/`）を更新するときは、差分を確認したうえで最新の `output/*/` からコピーする。
   理由なく期待値を書き換えて通さない
 - テストをスキップ・無効化して通すことはしない
@@ -77,15 +81,26 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - Java 17 の言語機能で書く（`--release 17` でコンパイルする。実行 JDK は 25）。警告ゼロが前提
 - 文字コードは UTF-8。例外は `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF（`.gitattributes` で `-text`）。
   編集するときは MS932 のまま保存する。この制約の理由は `docs/cli-app-qa.md` の Q15
-- コメント・ログ・ドキュメントは日本語。ログのメッセージは利用者が次に何をすればよいか分かる書き方にする
+- **コメント・ドキュメントは日本語**。読む相手がこのリポジトリを触る人だからである
+- **利用者に見せる文言（画面・ログ・エラー）は英語が既定**で、日本語は重ねる。
+  ソースに文字列を直接書かず `Messages.get("キー")` / `Messages.format("キー", 値…)` で引き、
+  英語を `src/jche/util/MessagesEn.java`、日本語を `MessagesJa.java` の**同じ分野・同じ並び・同じキー**に足す。
+  起動コマンド（`.sh` / `.cmd`）は `msg <キー> [値…]`。ログは利用者が次に何をすればよいか分かる書き方にする
+- **出力 CSV のセルは言語に関わらず英語**（注記・`unresolvedCause` / `absentCause`・`call-conditions.csv`・
+  被参照の行・プラグインの `EXPORT`）。人向けの文章ではなく、期待値との比較・Excel のフィルタ・
+  他のツールへの受け渡しに使う出力のデータだからである。注記にカンマを入れない
+  （セルが引用符で囲まれ、行末の grep が効かなくなる）。`docs/nls-qa.md` の Q6
+- キャッシュに焼き込まれる文字列（`Guard` の `text` のように**書き手が作る**もの）を変えるときは、
+  文言の変更でもキャッシュの版を上げる。上げないと、再利用したファイルだけ古い言語の注記が出て
+  同じ CSV に 2 つの言語が混ざる（`docs/nls-qa.md` の Q7）
 - Eclipse プラグイン（`eclipse-plugin/src-ui`）は **Java 11** の言語機能で書く（`--release 11`）。
   下限は Eclipse 4.17（2020-09）／Java 11 で、`test/plugin-api/run.sh` がその版の jar だけで
   コンパイルして検査する（`docs/eclipse-plugin-java-floor-qa.md`）
-- **Eclipse プラグインの画面の文言だけは例外**で、英語が既定。ソースに文字列を直接書かず
-  `Messages.get("キー")` で引き、英語を `eclipse-plugin/src-ui/jche/eclipse/messages.properties` に、
-  日本語を `messages_ja.properties` に足す（plugin.xml とバンドルの名前は `plugin*.properties`）。
-  日本語のリテラルが残っていないことは `test/plugin-nls/run.sh` が検出する。
-  コメントは今までどおり日本語（`docs/eclipse-plugin-nls-qa.md`）
+- Eclipse プラグインの画面の文言は**置き場所が別**（`--release 11` の別コンパイル単位なので表を共有できない）。
+  英語を `eclipse-plugin/src-ui/jche/eclipse/messages.properties` に、日本語を `messages_ja.properties` に足す
+  （plugin.xml とバンドルの名前は `plugin*.properties`）。引き方は `jche.util.Messages` とそろえてある。
+  日本語のリテラルが残っていないことは `test/plugin-nls/run.sh` が検出する
+  （`docs/eclipse-plugin-nls-qa.md` / `docs/nls-qa.md` の Q4）
 - JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
   （`test/pom/run.sh` が検出する）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
