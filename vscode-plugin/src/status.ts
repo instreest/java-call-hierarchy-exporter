@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 import * as vscode from 'vscode';
 import type { Session, SessionState } from './session';
+import { currentLanguage, t } from './messages';
 
 /**
  * 解析の状態を Language Status Item に出す（エディタ右下の `{}`。vscode-java の "Java: Ready" と同じ場所）。
@@ -23,40 +24,43 @@ export class StatusItem implements vscode.Disposable {
         this.item.busy = false;
         this.item.severity = vscode.LanguageStatusSeverity.Information;
         if (!session || !state || state.kind === 'unanalyzed') {
-            this.item.text = '影響調査: 未解析';
-            this.item.detail = session ? `${session.folder.name} はまだ解析していません` : undefined;
-            this.item.command = { command: 'jche.analyze', title: '解析する' };
+            this.item.text = t('status.unanalyzed');
+            this.item.detail = session ? t('status.unanalyzed.detail', session.folder.name) : undefined;
+            this.item.command = { command: 'jche.analyze', title: t('status.action.analyze') };
             return;
         }
         switch (state.kind) {
             case 'analyzing': {
                 this.item.busy = true;
                 const progress = state.total > 0 ? ` ${state.done.toLocaleString()}/${state.total.toLocaleString()}` : '';
-                this.item.text = `影響調査: 解析中 ${state.label}${progress}`;
+                this.item.text = t('status.analyzing', state.label, progress);
                 this.item.detail = session.folder.name;
-                this.item.command = { command: 'jche.cancel', title: '中止' };
+                this.item.command = { command: 'jche.cancel', title: t('status.action.cancel') };
                 return;
             }
             case 'analyzed': {
-                const time = state.at.toLocaleTimeString('ja-JP', { hour12: false });
+                // 時刻の書式も表示言語に合わせる（どちらも 24 時間表記）
+                const time = state.at.toLocaleTimeString(
+                    currentLanguage() === 'ja' ? 'ja-JP' : 'en-GB', { hour12: false });
                 const dirty = state.dirty.size;
                 if (dirty > 0) {
                     // 見えているものが古い。バナーの代わりにここで知らせる（docs/vscode-plugin-design.md §2.5）
                     this.item.severity = vscode.LanguageStatusSeverity.Warning;
-                    this.item.text = `影響調査: ${time} 時点（${dirty} ファイル変更）`;
-                    this.item.detail = `${session.folder.name} / 解析後に ${dirty} ファイルが変更されています。表示は ${time} 時点のものです`;
+                    this.item.text = t('status.analyzedDirty', time, dirty);
+                    this.item.detail = t('status.analyzedDirty.detail', session.folder.name, dirty, time);
                 } else {
-                    this.item.text = `影響調査: ${time} 時点`;
-                    this.item.detail = `${session.folder.name} / ${state.methods.toLocaleString()} メソッド / ${state.edges.toLocaleString()} 呼び出し / 設定: ${state.configLabel}`;
+                    this.item.text = t('status.analyzed', time);
+                    this.item.detail = t('status.analyzed.detail', session.folder.name,
+                        state.methods.toLocaleString(), state.edges.toLocaleString(), state.configLabel);
                 }
-                this.item.command = { command: 'jche.analyze', title: '再解析' };
+                this.item.command = { command: 'jche.analyze', title: t('status.action.reanalyze') };
                 return;
             }
             case 'failed': {
                 this.item.severity = vscode.LanguageStatusSeverity.Error;
-                this.item.text = '影響調査: 失敗';
+                this.item.text = t('status.failed');
                 this.item.detail = state.reason;
-                this.item.command = { command: 'jche.openLog', title: 'ログを開く' };
+                this.item.command = { command: 'jche.openLog', title: t('status.action.openLog') };
                 return;
             }
         }

@@ -21,6 +21,10 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
+# 文言の言語を固定する。既定は英語なので、既定の経路をそのまま検査することになる。
+# 固定しないと、実行環境のロケール（CI と手元で違う）で照合する文字列が変わる。
+# 日本語への切り替えそのものは test/nls/run.sh が見る
+export JCHE_LANG=en
 JCHE="$ROOT/java-call-hierarchy-exporter.sh"
 SETTINGS="$ROOT/launcher.properties"
 BACKUP="$ROOT/launcher.properties.cli-test-backup"
@@ -103,8 +107,8 @@ write_net_settings() {   # $1=JBANG_DIR  $2=JCHE_JBANG_OPTS  $3=JCHE_ALLOW_DOWNL
 }
 expect_refused() {   # $1=ログ  $2=終了コード  $3=ラベル
     if [ "$2" = 3 ]; then ok "$3: 終了コード 3"; else ng "$3: 終了コードが 3 ではない（$2）"; tail -5 "$1"; fi
-    expect_log "$1" "ネットワークからの取得が必要です" "$3: 取得が必要なことを知らせた"
-    expect_log "$1" "取得を取りやめました" "$3: 取得を取りやめた"
+    expect_log "$1" "has to be downloaded from the network" "$3: 取得が必要なことを知らせた"
+    expect_log "$1" "Download cancelled." "$3: 取得を取りやめた"
     expect_not_log "$1" "Downloading" "$3: 何も取得していない（ラッパーの Downloading が出ていない）"
     if [ -z "$(ls -A "$NET_WORK/repo" 2> /dev/null)" ]; then ok "$3: 依存 jar の置き場所は空のまま"; else ng "$3: 依存 jar の置き場所に何かできた"; fi
 }
@@ -112,24 +116,24 @@ mkdir -p "$NET_WORK/repo"
 write_net_settings "$NET_WORK/jbang-missing" "" ""
 "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-bootstrap.log" 2>&1
 expect_refused "$LOGDIR/run-net-bootstrap.log" $? "JBang 本体が無い"
-expect_log "$LOGDIR/run-net-bootstrap.log" "JBang 本体" "JBang 本体が無い: 取得するものに JBang 本体が挙がった"
+expect_log "$LOGDIR/run-net-bootstrap.log" "JBang itself" "JBang 本体が無い: 取得するものに JBang 本体が挙がった"
 # 取得予定のサイズ（Issue #86 の追加）。まっさらな置き場所なので JBang 本体 15 + JDK 135 + 依存 jar 15 = 165MB
-expect_log "$LOGDIR/run-net-bootstrap.log" "通信量の目安" "JBang 本体が無い: 通信量の目安を出した"
+expect_log "$LOGDIR/run-net-bootstrap.log" "Transfer      :" "JBang 本体が無い: 通信量の目安を出した"
 expect_log "$LOGDIR/run-net-bootstrap.log" "165MB" "JBang 本体が無い: 3 つ分の合計サイズを出した"
 expect_log "$LOGDIR/run-net-bootstrap.log" "135MB" "JBang 本体が無い: 取得するものごとのサイズを出した"
-expect_log "$LOGDIR/run-net-bootstrap.log" "端末が無いため確認できません" "JBang 本体が無い: 端末が無いので尋ねられないと知らせた"
+expect_log "$LOGDIR/run-net-bootstrap.log" "There is no terminal to ask on" "JBang 本体が無い: 端末が無いので尋ねられないと知らせた"
 expect_log "$LOGDIR/run-net-bootstrap.log" "JCHE_ALLOW_DOWNLOAD=yes" "JBang 本体が無い: 尋ねずに取得する方法を知らせた"
 if [ ! -e "$NET_WORK/jbang-missing" ]; then ok "JBang 本体が無い: 置き場所は作られていない"; else ng "JBang 本体が無い: 置き場所に何かできた"; fi
 # b) JCHE_ALLOW_DOWNLOAD=no → 端末の有無によらず取得しない
 write_net_settings "$NET_WORK/jbang-missing" "" "no"
 "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-no.log" 2>&1
 expect_refused "$LOGDIR/run-net-no.log" $? "JCHE_ALLOW_DOWNLOAD=no"
-expect_log "$LOGDIR/run-net-no.log" "JCHE_ALLOW_DOWNLOAD=no なので取得しません" "JCHE_ALLOW_DOWNLOAD=no: 理由を知らせた"
+expect_log "$LOGDIR/run-net-no.log" "JCHE_ALLOW_DOWNLOAD=no, so nothing is downloaded" "JCHE_ALLOW_DOWNLOAD=no: 理由を知らせた"
 # c) JCHE_JBANG_OPTS の --offline → 利用者が「ネットワークに出ない」と決めているので取得しない
 write_net_settings "$NET_WORK/jbang-missing" "--offline" ""
 "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-offline.log" 2>&1
 expect_refused "$LOGDIR/run-net-offline.log" $? "--offline 指定"
-expect_log "$LOGDIR/run-net-offline.log" "JCHE_JBANG_OPTS に --offline があるので取得しません" "--offline 指定: 理由を知らせた"
+expect_log "$LOGDIR/run-net-offline.log" "JCHE_JBANG_OPTS contains --offline, so nothing is downloaded" "--offline 指定: 理由を知らせた"
 # d) JBang 本体はあるが依存 jar が無い（JBang をコピーした新しい置き場所と、空のリポジトリ）
 #    → jbang run --offline がアプリを始める前に失敗し、目印（.cache/launcher.started）ができないので取得の確認になる
 jbang_home="${JBANG_DIR:-$HOME/.jbang}"
@@ -140,10 +144,10 @@ if [ -f "$jbang_home/bin/jbang.jar" ]; then
     rm -f "$ROOT/.cache/launcher.started"
     "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-deps.log" 2>&1
     expect_refused "$LOGDIR/run-net-deps.log" $? "依存 jar が無い"
-    expect_log "$LOGDIR/run-net-deps.log" "取得済みの JDK と依存 jar だけでは起動できませんでした" "依存 jar が無い: --offline での起動に失敗したと知らせた"
+    expect_log "$LOGDIR/run-net-deps.log" "Could not start with only the JDK and dependency jars already present" "依存 jar が無い: --offline での起動に失敗したと知らせた"
     # JBang 本体はあるので、その分（15MB）は合計に入らない（JDK 135 + 依存 jar 15 = 150MB）
     expect_log "$LOGDIR/run-net-deps.log" "150MB" "依存 jar が無い: 手元にあるものを合計から除いた"
-    expect_not_log "$LOGDIR/run-net-deps.log" "JBang 本体（約" "依存 jar が無い: 取得済みの JBang 本体は一覧に出ない"
+    expect_not_log "$LOGDIR/run-net-deps.log" "JBang itself (about" "依存 jar が無い: 取得済みの JBang 本体は一覧に出ない"
     if [ ! -f "$ROOT/.cache/launcher.started" ]; then ok "依存 jar が無い: アプリは始まっていない"; else ng "依存 jar が無い: アプリが始まった目印がある"; fi
 else
     echo "  SKIP JBang 本体（$jbang_home/bin/jbang.jar）が無いので「依存 jar が無い」の検査は飛ばす"
@@ -198,7 +202,7 @@ echo "== 環境設定（ヒープ上限）→ 再起動 → 反映 =="
 printf '3\n3\n512m\nq\ny\n' | "$JCHE" > "$LOGDIR/run-env.log" 2>&1
 if grep -q '^JCHE_JAVA_OPTS=-Xmx512m$' "$SETTINGS"; then ok "launcher.properties に -Xmx512m が書かれた"; else ng "launcher.properties: $(grep JCHE_JAVA_OPTS "$SETTINGS")"; fi
 if [ "${JCHE_TEST_JBANG_OPTS:-}" = "" ] || grep -q "^JCHE_JBANG_OPTS=${JCHE_TEST_JBANG_OPTS}$" "$SETTINGS"; then ok "他の項目は保たれた"; else ng "JCHE_JBANG_OPTS が失われた"; fi
-expect_log "$LOGDIR/run-env.log" "設定を反映するため再起動します" "起動コマンドが再起動した"
+expect_log "$LOGDIR/run-env.log" "Restarting to apply the settings" "起動コマンドが再起動した"
 if [ -e "$ROOT/.cache/launcher.restart" ]; then ng "再起動の目印が残っている"; else ok "再起動の目印は消えた"; fi
 printf '4\n\nq\n' | "$JCHE" > "$LOGDIR/run-status2.log" 2>&1
 expect_log "$LOGDIR/run-status2.log" "512 MB" "次の起動でヒープ上限が反映された"

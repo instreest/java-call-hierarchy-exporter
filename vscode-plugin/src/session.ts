@@ -10,6 +10,7 @@ import { chooseJava, findJavaIn, PREFERRED, type FoundJava } from './server/java
 import { installJdk } from './server/jdkDownload';
 import { bundledClasspath, launchServer } from './server/launcher';
 import type { ServerResponse } from './server/response';
+import { currentLanguage, t } from './messages';
 
 /** 解析の状態。画面（Language Status Item・ビュー）はこれを見て描く */
 export type SessionState =
@@ -80,12 +81,12 @@ export class Session implements vscode.Disposable {
         const candidates = choices ?? resolveConfigSource(this.folder.uri.fsPath, undefined, undefined).choices ?? [];
         if (candidates.length === 0) {
             vscode.window.showInformationMessage(
-                `${this.folder.name} に設定ファイル（*.properties）はありません。project.root だけの設定を自動生成して解析します。`);
+                t('session.noConfigFile', this.folder.name));
             return { kind: 'generated', projectRoot: this.folder.uri.fsPath };
         }
         const picked = await vscode.window.showQuickPick(
             candidates.map((file) => ({ label: path.relative(this.folder.uri.fsPath, file), file })),
-            { placeHolder: `${this.folder.name} の解析に使う設定ファイル` });
+            { placeHolder: t('session.pickConfig', this.folder.name) });
         if (!picked) {
             return undefined;
         }
@@ -98,8 +99,8 @@ export class Session implements vscode.Disposable {
         const target = path.join(this.folder.uri.fsPath, 'config.properties');
         if (existsSync(target)) {
             const answer = await vscode.window.showWarningMessage(
-                `${target} は既にあります。上書きしますか？`, { modal: true }, '上書きする');
-            if (answer !== '上書きする') {
+                t('session.overwrite', target), { modal: true }, t('session.action.overwrite'));
+            if (answer !== t('session.action.overwrite')) {
                 return;
             }
         }
@@ -139,23 +140,23 @@ export class Session implements vscode.Disposable {
      */
     private async offerJdk(): Promise<FoundJava | undefined> {
         const canDownload = this.settings().get<boolean>('jdkDownload', true);
-        const download = `取得する（Adoptium から JDK ${PREFERRED}、約 200MB）`;
-        const specify = 'JDK の場所を指定する…';
+        const download = t('session.jdk.download', PREFERRED);
+        const specify = t('session.jdk.specify');
         const answer = await vscode.window.showWarningMessage(
-            `解析に使う JDK（17 以上）が見つかりません。設定 jche.javaHome、環境変数 JAVA_HOME、PATH の順に探しました。`,
-            { modal: true, detail: canDownload
-                ? '取得する場合は拡張のストレージに置き、環境は汚しません。閉域ネットワークでは「場所を指定する」を選んでください。'
-                : '設定 jche.jdkDownload が OFF なので取得は提案しません。' },
+            t('session.jdk.notFound'),
+            { modal: true, detail: t(canDownload
+                ? 'session.jdk.downloadDetail'
+                : 'session.jdk.downloadOff') },
             ...(canDownload ? [download, specify] : [specify]));
         if (answer === specify) {
             const picked = await vscode.window.showOpenDialog({
-                canSelectFiles: false, canSelectFolders: true, canSelectMany: false, title: 'JDK のフォルダ（bin/java があるところ）' });
+                canSelectFiles: false, canSelectFolders: true, canSelectMany: false, title: t('session.jdk.pickFolder') });
             if (!picked || picked.length === 0) {
                 return undefined;
             }
             const found = chooseJava([picked[0].fsPath]);
             if (!found) {
-                vscode.window.showErrorMessage(`${picked[0].fsPath} は JDK 17 以上として使えません（bin/java が無いか、版が古い）。`);
+                vscode.window.showErrorMessage(t('session.jdk.unusable', picked[0].fsPath));
                 return undefined;
             }
             await vscode.workspace.getConfiguration('jche').update('javaHome', picked[0].fsPath, vscode.ConfigurationTarget.Global);
@@ -167,20 +168,20 @@ export class Session implements vscode.Disposable {
         const targetDir = path.dirname(this.downloadDir());
         try {
             const java = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `JDK ${PREFERRED} を取得中`, cancellable: true },
+                { location: vscode.ProgressLocation.Notification, title: t('session.jdk.downloading', PREFERRED), cancellable: true },
                 (progress, token) => installJdk(PREFERRED, targetDir, {
                     received: (done, total) => progress.report({
                         message: total > 0 ? `${Math.round(done / 1048576)} / ${Math.round(total / 1048576)} MB` : `${Math.round(done / 1048576)} MB`,
                     }),
                     isCancelled: () => token.isCancellationRequested,
                 }));
-            this.log.info(`JDK を取得しました: ${java}（Adoptium Temurin ${PREFERRED}）`);
+            this.log.info(t('session.jdk.downloaded', java, PREFERRED));
             return chooseJava([java]);
         } catch (e) {
             const reason = e instanceof Error ? e.message : String(e);
-            this.log.error(`JDK の取得に失敗しました: ${reason}`);
+            this.log.error(t('session.jdk.downloadFailed', reason));
             const retry = await vscode.window.showErrorMessage(
-                `JDK の取得に失敗しました: ${reason}`, 'JDK の場所を指定する…');
+                t('session.jdk.downloadFailed', reason), t('session.jdk.specify'));
             return retry ? this.offerJdk() : undefined;
         }
     }
@@ -197,18 +198,18 @@ export class Session implements vscode.Disposable {
         }
         const java = this.findJava() ?? (await this.offerJdk());
         if (!java) {
-            throw new Error('解析に使う JDK（17 以上）が見つかりません。設定 jche.javaHome に JDK のフォルダを指定してください。');
+            throw new Error(t('session.jdk.notConfigured'));
         }
         const classpath = this.classpath();
         if (classpath.length === 0) {
-            throw new Error('解析本体（lib/jche-core.jar と lib/jdt/*.jar）が見つかりません。設定 jche.libFolder を確認してください。');
+            throw new Error(t('session.libNotFound'));
         }
         const storage = this.context.storageUri?.fsPath ?? path.join(this.context.globalStorageUri.fsPath, 'ws');
         const cacheRoot = path.join(storage, 'cache');
         await mkdir(cacheRoot, { recursive: true });
-        this.log.info(`解析サーバーを起動します: ${java.executable}（Java ${java.version}）`);
+        this.log.info(t('session.starting', java.executable, java.version));
         if (java.olderThanPreferred) {
-            this.log.warn(`Java ${java.version} で解析します。CLI（Java 25）と結果が少しずれることがあります。`);
+            this.log.warn(t('session.olderJava', java.version));
         }
         const connection = launchServer({
             javaExecutable: java.executable,
@@ -216,6 +217,8 @@ export class Session implements vscode.Disposable {
             cacheRoot,
             vmArguments: this.settings().get<string[]>('vmArguments', []),
             workingDir: this.folder.uri.fsPath,
+            // 解析側のログをこの画面と同じ言語で出す（docs/nls-qa.md の Q8）
+            messageLanguage: currentLanguage(),
             listener: {
                 log: (line) => this.log.info(line),
                 stderr: (line) => this.log.error(line),
@@ -229,9 +232,10 @@ export class Session implements vscode.Disposable {
         const hello = await connection.request(DEFAULT_TIMEOUT_MS, 'HELLO', '1');
         if (!hello.ok) {
             await connection.close();
-            throw new Error(`解析サーバーが起動できません（${hello.reason}）。ログを確認してください。`);
+            throw new Error(t('session.startFailed', hello.reason));
         }
-        this.log.info(`解析サーバー: protocol=${hello.field('protocol')} jdt=${hello.field('jdt')} jvm=${hello.field('jvm')} maxJava=${hello.field('maxJava')}`);
+        this.log.info(t('session.hello', hello.field('protocol'), hello.field('jdt'),
+            hello.field('jvm'), hello.field('maxJava')));
         this.connection = connection;
         this.touch();
         return connection;
@@ -245,7 +249,7 @@ export class Session implements vscode.Disposable {
         }
         const minutes = this.settings().get<number>('idleMinutes', 10);
         if (minutes > 0) {
-            this.idleTimer = setTimeout(() => void this.shutdown('アイドル'), minutes * 60_000);
+            this.idleTimer = setTimeout(() => void this.shutdown(t('session.reason.idle')), minutes * 60_000);
         }
     }
 
@@ -254,9 +258,9 @@ export class Session implements vscode.Disposable {
         const response = await connection.request(timeoutMs, ...words);
         this.touch();
         if (!response.ok && response.reason === 'disconnected') {
-            this.log.error('解析サーバーとの接続が切れました。次の要求で作り直します。');
+            this.log.error(t('session.disconnected'));
             this.connection = undefined;
-            this.setState({ kind: 'failed', reason: '解析サーバーが終了しました' });
+            this.setState({ kind: 'failed', reason: t('session.serverExited') });
         }
         return response;
     }
@@ -270,7 +274,7 @@ export class Session implements vscode.Disposable {
         const connection = this.connection;
         this.connection = undefined;
         if (connection) {
-            this.log.info(`解析サーバーを終了します（${why}）`);
+            this.log.info(t('session.stopping', why));
             await connection.close();
         }
         if (this._state.kind !== 'unanalyzed') {
@@ -293,17 +297,17 @@ export class Session implements vscode.Disposable {
         }
         this.analyzing = true;
         await vscode.commands.executeCommand('setContext', 'jche.analyzing', true);
-        this.setState({ kind: 'analyzing', label: '準備', done: 0, total: 0 });
+        this.setState({ kind: 'analyzing', label: t('session.phase.preparing'), done: 0, total: 0 });
         const cancelListener = token?.onCancellationRequested(() => this.connection?.cancel());
         try {
             const storage = this.context.storageUri?.fsPath ?? path.join(this.context.globalStorageUri.fsPath, 'ws');
             const configPath = await materialize(source, path.join(storage, 'config'));
-            this.log.info(`解析します: ${this.folder.name}（設定: ${labelOf(source, this.folder.uri.fsPath)}）`);
+            this.log.info(t('session.analyzing', this.folder.name, labelOf(source, this.folder.uri.fsPath)));
             const response = await this.request(24 * 60 * 60_000, 'ANALYZE', configPath);
             if (!response.ok) {
-                const reason = response.reason === 'cancelled' ? '中止しました' : response.reason;
+                const reason = response.reason === 'cancelled' ? t('session.cancelled') : response.reason;
                 this.setState({ kind: 'failed', reason });
-                this.log.warn(`解析: ${reason}`);
+                this.log.warn(t('session.analysisReason', reason));
                 return false;
             }
             this.dirty.clear();
@@ -316,7 +320,7 @@ export class Session implements vscode.Disposable {
                 dirty: new Set(),
             });
             this.watch();
-            this.log.info(`解析が終わりました: methods=${response.field('methods')} edges=${response.field('edges')}`);
+            this.log.info(t('session.analyzed', response.field('methods'), response.field('edges')));
             return true;
         } catch (e) {
             const reason = e instanceof Error ? e.message : String(e);
@@ -376,7 +380,7 @@ export class Session implements vscode.Disposable {
             }
             // 自動のときは静かに（右下の細い進捗）。手動と違って通知は出さない
             void vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: `影響調査: ${this.folder.name} を更新中` },
+                { location: vscode.ProgressLocation.Window, title: t('session.updating', this.folder.name) },
                 () => this.analyze());
         }, 3_000);
     }
@@ -418,7 +422,7 @@ export class Session implements vscode.Disposable {
             clearTimeout(this.autoTimer);
         }
         this.watcher?.dispose();
-        void this.shutdown('拡張の終了');
+        void this.shutdown(t('session.reason.shutdown'));
         this.stateEmitter.dispose();
     }
 }

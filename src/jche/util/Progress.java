@@ -53,15 +53,10 @@ public final class Progress {
     private void report() {
         long now = System.nanoTime();
         long recentCount = done - lastDone;
-        StringBuilder sb = new StringBuilder();
-        sb.append(label).append(' ').append(done);
-        if (total > 0) {
-            sb.append('/').append(total);
-        } else {
-            sb.append("件");
-        }
-        sb.append(String.format(" （直近%d件: %s）", recentCount, formatSeconds((now - lastNanos) / 1e9)));
-        Log.info(sb);
+        String head = (total > 0) ? Messages.format("common.progress.of", label, done, total)
+                : Messages.format("common.progress.count", label, done);
+        Log.info(head + Messages.format("common.progress.recent",
+                recentCount, formatSeconds((now - lastNanos) / 1e9)));
         lastNanos = now;
         lastDone = done;
     }
@@ -71,6 +66,6 @@ public final class Progress {
             return String.format("%.1fs", sec);
         }
         long s = (long) sec;
-        return String.format("%d分%02ds", s / 60, s % 60);
+        return Messages.format("common.progress.minutes", s / 60, String.format("%02d", s % 60));
     }
 }

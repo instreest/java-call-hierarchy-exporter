@@ -13,8 +13,8 @@ Q&A の形で残す。
   `src/jche/framework/GeneratedImpl.java` に置き、Doma（`org.seasar.doma.Dao` → `<FQN>Impl`）を同梱した
 - 解決ラベルに `GENERATED_IMPL:名前` を足した（`NO_IMPL` の特殊形）
 - `call-hierarchy.csv` の注記に
-  `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（Doma）: fx.dao.ItemDaoImpl はアノテーション処理で生成されるためソース上に無い` を出す。
-  `methods.csv` の `unresolvedCause` にも `[UNEXPANDED:GENERATED] 実装はコンパイル時生成（Doma）` を出す
+  `[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): fx.dao.ItemDaoImpl is produced by annotation processing and has no source` を出す。
+  `methods.csv` の `unresolvedCause` にも `[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma)` を出す
 - 回帰テストの `test/demo` に `@Dao` を付けたインターフェースと、その呼び出し元を足した
 
 ---

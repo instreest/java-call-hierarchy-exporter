@@ -964,16 +964,16 @@ public final class CallHierarchyExporterSingle {
                     String note = null;
                     if (cycle) {
                         // 注記は本体（src/jche）と同じタグを使う。読み手が同じ grep を書ける
-                        note = "[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る";
+                        note = "[UNEXPANDED:CYCLE] returns to a method already on this path";
                         cycles++;
                     } else if (tooDeep) {
-                        note = "[UNEXPANDED:DEPTH] 深さ制限(" + config.maxDepth + ")に達した";
+                        note = "[UNEXPANDED:DEPTH] depth limit (" + config.maxDepth + ") reached";
                         choppedByDepth++;
                     } else if (cha) {
-                        note = "[UNEXPANDED:CHA] 候補" + targets.length + "件: " + e.recvKind;
+                        note = "[UNEXPANDED:CHA] " + targets.length + " candidates: " + e.recvKind;
                         chaRows++;
                     } else if (!callee.hasBody) {
-                        note = "[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い";
+                        note = "[UNEXPANDED:NO_IMPL] no implementation with a body in the source";
                     }
 
                     path.add(t);
@@ -1015,7 +1015,7 @@ public final class CallHierarchyExporterSingle {
             for (Unresolved u : sorted) {
                 w.write(esc("at " + u.callerBinary + "." + u.callerName + "(" + u.fileName + ":" + u.line + ")")
                         + "," + esc(u.text)
-                        + "," + esc("(型解決失敗)")
+                        + "," + esc("(unresolved)")
                         + "," + esc(u.cause));
                 w.newLine();
                 rows++;
@@ -1076,7 +1076,7 @@ public final class CallHierarchyExporterSingle {
             say("型解決に失敗した呼び出し: " + unresolved.size() + " 件");
             if (!unresolved.isEmpty()) {
                 say("  → 依存jar（library.folders）の指定漏れが疑われます。"
-                        + "call-hierarchy.csv の root 列が「(型解決失敗)」の行と同数です。");
+                        + "call-hierarchy.csv の root 列が「(unresolved)」の行と同数です。");
                 Map<String, Integer> byCause = new LinkedHashMap<>();
                 for (Unresolved u : unresolved) {
                     byCause.merge(u.cause, 1, Integer::sum);
@@ -1166,30 +1166,30 @@ public final class CallHierarchyExporterSingle {
             return "this";
         }
         if (expr instanceof MethodInvocation) {
-            return "戻り値";
+            return "return value";
         }
         if (expr instanceof ClassInstanceCreation) {
             return "new";
         }
         if (expr instanceof FieldAccess) {
-            return "フィールド変数";
+            return "field";
         }
         if (expr instanceof Name name) {
             IBinding b = name.resolveBinding();
             if (b instanceof IVariableBinding v) {
                 if (v.isField()) {
-                    return "フィールド変数";
+                    return "field";
                 }
-                return v.isParameter() ? "引数" : "ローカル変数";
+                return v.isParameter() ? "parameter" : "local variable";
             }
             if (b instanceof ITypeBinding) {
-                return "型名";
+                return "type name";
             }
             if (name instanceof QualifiedName) {
-                return "フィールド変数";
+                return "field";
             }
         }
-        return "その他";
+        return "other";
     }
 
     private static String simpleOf(String fqn) {

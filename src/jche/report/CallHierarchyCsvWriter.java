@@ -39,7 +39,7 @@ import jche.graph.MethodTable;
 public final class CallHierarchyCsvWriter implements AutoCloseable {
 
     /** 型解決に失敗した行の root 列。起点が無いことを示す固定マーカー */
-    static final String UNRESOLVED_ROOT = "(型解決失敗)";
+    static final String UNRESOLVED_ROOT = "(unresolved)";
 
     private final BufferedWriter writer;
     private final StringBuilder buf = new StringBuilder(512);
@@ -147,7 +147,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.append(1).append(Csv.DELIM);
         buf.append(Csv.esc(jarName));
         buf.append(Csv.DELIM).append(Csv.esc(shortCallee));
-        buf.append(Csv.DELIM).append(Csv.esc("被参照:" + note));
+        buf.append(Csv.DELIM).append(Csv.esc("external-ref:" + note));
         writer.write(buf.toString());
         writer.newLine();
     }

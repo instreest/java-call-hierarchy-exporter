@@ -246,7 +246,7 @@ Issue が求めたのは「`library.folders` が空欄なら自動取得、指�
 | `sample.deps:greeter:1.0`（`Greeter` 等） | 直接の依存。`test` スコープと `optional` の依存（jar は無い）が使う側に伝わらないこと |
 | `sample.deps:util:1.0`（`Strings`） | Gradle の版カタログと、Maven の `dependencyManagement`（`maven-multi`）からの参照 |
 
-`Greeter#formatter()` の戻り値が core の `Formatter` なので、`Formatter#wrap` が `[EXTERNAL] ソースが無いため辿れない` の行として
+`Greeter#formatter()` の戻り値が core の `Formatter` なので、`Formatter#wrap` が `[EXTERNAL] no source to follow` の行として
 出力に出れば「POM を辿って推移的な依存を集めた」ことの確認になる。回帰テストのログ検査でも、`greeter-1.0.jar` と
 `core-1.0.jar` が依存 jar の一覧（ASCII 部分）に出ることを見る。
 

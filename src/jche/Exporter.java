@@ -24,6 +24,7 @@ import jche.graph.SpringBeans;
 import jche.util.HeapWatch;
 import jche.util.Log;
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * フェーズ1（ソース解析とキャッシュ更新）・フェーズ2（グラフ構築とデータフローの確定・具象クラスの解決）。
@@ -70,42 +71,41 @@ public final class Exporter {
         int syntaxErrorFiles = analyzeSources(config, layout);
 
         CallGraph graph = buildGraph(config, layout);
-        Log.info("型数=" + graph.typeCount()
-                + " メソッド数=" + graph.methodCount()
-                + " エッジ数=" + graph.edgeCount());
+        Log.info(Messages.format("exporter.graphCounts", graph.typeCount(), graph.methodCount(),
+                graph.edgeCount()));
         DataflowFacts facts = buildDataflowFacts(config, graph);
         DataflowResolver dataflow =
                 new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
         // 契約表の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
-        RunControl.progress("具象クラスの解決の準備", 0, 1);
+        RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 0, 1);
         Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
         CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
                 contracts.callbacks(), contracts.entries(), contracts.types());
-        RunControl.progress("具象クラスの解決の準備", 1, 1);
-        Log.heap("フェーズ2完了");
+        RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
+        Log.heap(Messages.get("exporter.heap.phase2"));
         return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles);
     }
 
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {
-        Log.info("ソースフォルダ: " + layout.sourceFolders);
-        Log.info("ソース文字コード: " + config.sourceEncoding + (config.sourceEncodingAuto ? "（source.encoding が空欄のため project.root から決めた）" : ""));
+        Log.info(Messages.format("exporter.sourceFolders", layout.sourceFolders));
+        Log.info(Messages.format("exporter.sourceEncoding", config.sourceEncoding,
+                config.sourceEncodingAuto ? Messages.get("exporter.sourceEncoding.auto") : ""));
         // どの言語バージョンとして解析したかで結果が変わるため、必ず残す
-        Log.info("ソースレベル: " + config.sourceLevel
-                + (config.sourceLevelAuto
-                        ? "（source.level 未指定のため、JDTが対応する最大値）"
-                        : "（source.level=" + config.sourceLevelRequested + " の指定による）")
-                + " / このJDTの対応上限: " + JavaCore.latestSupportedJavaVersion());
+        Log.info(Messages.format("exporter.sourceLevel", config.sourceLevel,
+                config.sourceLevelAuto ? Messages.get("exporter.sourceLevel.auto")
+                        : Messages.format("exporter.sourceLevel.requested", config.sourceLevelRequested),
+                JavaCore.latestSupportedJavaVersion()));
         if (!config.sourceLevelAuto && !config.sourceLevelRequested.equals(config.sourceLevel)) {
             // JDTが指定値を黙って丸めた。指定が効いていないことを見えるようにする
-            Log.info("※ source.level=" + config.sourceLevelRequested
-                    + " はこのJDTでは扱えないため " + config.sourceLevel + " として解析します。");
-            Log.info("   より古いレベルが要る場合は、古い版のJDTを使ってください。");
+            Log.info(Messages.format("exporter.sourceLevel.tooOld", config.sourceLevelRequested,
+                    config.sourceLevel));
+            Log.info(Messages.get("exporter.sourceLevel.tooOld2"));
         }
         // 依存jarは library.folders でフォルダごと指定できる。ここで出すのは
         // 実際にJDTへ渡す「*.jar に展開した後」の一覧なので、
         // フォルダ指定がjar単位に展開されているかを確認できる
         String[] classpath = layout.classpathArray();
-        Log.info("依存jar: " + classpath.length + " 件");
+        Log.info(Messages.format("exporter.classpathCount", classpath.length));
         for (String cp : classpath) {
             Log.info("  " + cp);
         }
@@ -118,25 +118,26 @@ public final class Exporter {
      */
     private static int analyzeSources(Config config, ProjectLayout layout) throws Exception {
         Log.blank();
-        Log.info("=== フェーズ1/3: ソース解析 ===");
+        Log.info(Messages.get("exporter.phase1"));
         CachePhaseResult result = new CacheUpdater(layout, config).run();
-        Log.info("ソース解析: 再利用=" + result.reused
-                + " 新規解析=" + result.parsed + reanalysisBreakdown(result)
-                + " 失敗=" + result.failed
-                + (result.syntaxErrorFiles > 0 ? " 構文エラー=" + result.syntaxErrorFiles : "")
-                + (result.salvaged > 0 ? " 前回の中断からの引き継ぎ=" + result.salvaged : ""));
+        Log.info(Messages.format("exporter.parseSummary", result.reused, result.parsed,
+                reanalysisBreakdown(result), result.failed,
+                (result.syntaxErrorFiles > 0)
+                        ? Messages.format("exporter.parseSummary.syntaxErrors", result.syntaxErrorFiles) : "",
+                (result.salvaged > 0)
+                        ? Messages.format("exporter.parseSummary.salvaged", result.salvaged) : ""));
         reportSyntaxErrors(config, result);
         if (result.unresolved > 0) {
-            Log.info("※ 型解決できなかった呼び出しが " + result.unresolved + " 件あります。");
-            Log.info("   多い場合は library.folders の設定漏れ（依存jar不足）が疑われます。");
+            Log.info(Messages.format("exporter.unresolved", result.unresolved));
+            Log.info(Messages.get("exporter.unresolved2"));
             if (!config.libraryFolders.isEmpty()) {
-                Log.info("   Maven / Gradle のプロジェクトなら、library.folders を空欄にすると pom.xml / build.gradle から自動取得します。");
+                Log.info(Messages.get("exporter.unresolved3"));
             }
-            Log.info("   jar を足せば、次回の実行で影響するファイルだけが解析し直されます。");
-            Log.info("   解決できた呼び出しだけが call-hierarchy.csv に出るため、");
-            Log.info("   件数が多いまま使うと呼び出し階層に抜けが出ます。");
+            Log.info(Messages.get("exporter.unresolved4"));
+            Log.info(Messages.get("exporter.unresolved5"));
+            Log.info(Messages.get("exporter.unresolved6"));
         }
-        Log.heap("フェーズ1完了");
+        Log.heap(Messages.get("exporter.heap.phase1"));
         return result.syntaxErrorFiles;
     }
 
@@ -159,35 +160,37 @@ public final class Exporter {
         if (result.syntaxErrorFiles == 0) {
             return;
         }
-        Log.warn("※ 構文エラーのため本体を読めなかったファイルが " + result.syntaxErrorFiles + " 件あります。");
-        Log.warn("   そのファイルに書かれた呼び出しは、call-hierarchy.csv に出ません（呼び出し階層に抜けが出ます）。");
+        Log.warn(Messages.format("exporter.syntaxErrors", result.syntaxErrorFiles));
+        Log.warn(Messages.get("exporter.syntaxErrors2"));
         for (String path : result.syntaxErrorPaths) {
             Log.warn("   - " + path);
         }
         if (result.syntaxErrorFiles > result.syntaxErrorPaths.size()) {
-            Log.warn("   - ほか " + (result.syntaxErrorFiles - result.syntaxErrorPaths.size()) + " 件");
+            Log.warn(Messages.format("exporter.syntaxErrors.more",
+                    result.syntaxErrorFiles - result.syntaxErrorPaths.size()));
         }
-        Log.warn("   解析に使った Java の版は " + config.sourceLevel
-                + "（このJDTの対応上限: " + JavaCore.latestSupportedJavaVersion() + "）です。");
-        Log.warn("   ソースの版と食い違っていないか、source.level と JDT の版を確かめてください。");
+        Log.warn(Messages.format("exporter.syntaxErrors.level", config.sourceLevel,
+                JavaCore.latestSupportedJavaVersion()));
+        Log.warn(Messages.get("exporter.syntaxErrors.level2"));
     }
 
     /** 「新規解析」のうち、自分は変わっていないのに解析し直した件数の内訳 */
     private static String reanalysisBreakdown(CachePhaseResult result) {
         List<String> parts = new ArrayList<>();
         if (result.dependents > 0) {
-            parts.add("依存先の変更による再解析=" + result.dependents);
+            parts.add(Messages.format("exporter.reanalysis.dependents", result.dependents));
         }
         if (result.libraryDependents > 0) {
-            parts.add("依存jarの変更による再解析=" + result.libraryDependents);
+            parts.add(Messages.format("exporter.reanalysis.libraries", result.libraryDependents));
         }
-        return parts.isEmpty() ? "" : "（うち" + String.join("、", parts) + "）";
+        return parts.isEmpty() ? "" : Messages.format("exporter.reanalysis.wrap",
+                String.join(Messages.get("exporter.reanalysis.sep"), parts));
     }
 
     /** フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 */
     private static CallGraph buildGraph(Config config, ProjectLayout layout) throws Exception {
         Log.blank();
-        Log.info("=== フェーズ2/3: グラフ構築と具象クラス解決 ===");
+        Log.info(Messages.get("exporter.phase2"));
         List<String> sourceFolderOrder = new ArrayList<>();
         for (Path sourceFolder : layout.sourceFolders) {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
@@ -198,8 +201,8 @@ public final class Exporter {
         CallGraph graph = CallGraphBuilder.build(config.cacheFile,
                 config.dataflowEnabled ? config.dataflowCacheFile : null, sourceFolderOrder, beans);
         if (beans.enabled()) {
-            Log.info("DIコンテナのBean: " + beans.beanCount() + " 型"
-                    + (beans.beanCount() == 0 ? "（spring.di.enabled=true だが Bean は見つからなかった）" : ""));
+            Log.info(Messages.format("exporter.diBeans", beans.beanCount(),
+                    (beans.beanCount() == 0) ? Messages.get("exporter.diBeans.none") : ""));
         }
         return graph;
     }
@@ -211,10 +214,9 @@ public final class Exporter {
     private static DataflowFacts buildDataflowFacts(Config config, CallGraph graph) {
         DataflowFacts facts = DataflowBuilder.build(graph, config.dataflowEnabled);
         if (config.dataflowEnabled) {
-            Log.info("ファクトリの戻り値を確定: " + facts.factoriesDecided() + " 件"
-                    + (facts.factoriesCutOff() > 0
-                            ? "（委譲が循環しているため決められなかったもの " + facts.factoriesCutOff() + " 件）"
-                            : ""));
+            Log.info(Messages.format("exporter.factories", facts.factoriesDecided(),
+                    (facts.factoriesCutOff() > 0)
+                            ? Messages.format("exporter.factories.cutOff", facts.factoriesCutOff()) : ""));
         }
         return facts;
     }

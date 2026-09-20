@@ -8,6 +8,7 @@ import java.util.List;
 import jche.analysis.CallConditionScanner;
 import jche.config.Config;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 「選んだ呼び出しに効いている条件」を出す（{@link CallConditionScanner} の結果の出力）。
@@ -32,17 +33,15 @@ public final class CallConditionsReport {
     public static long write(Config config, String target, CallConditionScanner.Result result)
             throws IOException {
         if (result.files().isEmpty()) {
-            Log.warn("conditions.target の対象が見つかりません: " + target);
-            Log.info("  ファイル（src/foo/Bar.java）・行（src/foo/Bar.java:120）・"
-                    + "型（foo.Bar）・メソッド（foo.Bar#method）のいずれかで指定してください。");
+            Log.warn(Messages.format("report.conditions.targetNotFound", target));
+            Log.info(Messages.get("report.conditions.targetHow"));
             return 0;
         }
-        Log.info("対象: " + target);
-        Log.info("解析したファイル: " + String.join(", ", result.files())
-                + "（呼び出し " + result.callSitesInFiles() + " 件）");
+        Log.info(Messages.format("report.conditions.target", target));
+        Log.info(Messages.format("report.conditions.files",
+                String.join(", ", result.files()), result.callSitesInFiles()));
         if (result.sites().isEmpty()) {
-            Log.warn("conditions.target に合う呼び出しがありません"
-                    + "（行やメソッド名の指定を外すと、そのファイルの全件を出します）");
+            Log.warn(Messages.get("report.conditions.noCallSite"));
             return 0;
         }
 
@@ -59,7 +58,7 @@ public final class CallConditionsReport {
             Log.plain(site.file() + ":" + site.line() + "  " + site.caller() + " → " + site.callee());
             List<CallConditionScanner.Condition> conditions = site.conditions();
             if (conditions.isEmpty()) {
-                Log.plain("    （条件なし。このメソッドに入れば必ず実行される）");
+                Log.plain(Messages.get("report.conditions.none"));
                 Log.plain("");
                 continue;
             }
@@ -77,16 +76,17 @@ public final class CallConditionsReport {
                     Log.plain("    …  " + c.text());
                     continue;
                 }
-                Log.plain("    " + i + ". " + (c.decidable() ? "[判定可] " : "[判定不可] ")
-                        + c.text()
-                        + (c.decidable() ? "   … " + c.subjectKind() + " " + c.expectation() : ""));
+                Log.plain("    " + i + ". "
+                        + Messages.get(c.decidable() ? "report.conditions.decidable" : "report.conditions.undecidable")
+                        + " " + c.text()
+                        + (c.decidable() ? "   ... " + c.subjectKind() + " " + c.expectation() : ""));
             }
             Log.plain("");
         }
-        Log.info("該当した呼び出し: " + result.sites().size() + " 件"
-                + "（条件つき " + guarded + " 件 / うち判定できない条件を含む " + undecidable + " 件）");
-        Log.info("  [判定可]   … 呼び出し元から定数が渡れば、その経路では呼ばれないと判定できる（打ち切りに使われる）");
-        Log.info("  [判定不可] … 到達には効くが静的には値が決まらない。実行時の値を人が確認する必要がある");
+        Log.info(Messages.format("report.conditions.summary",
+                result.sites().size(), guarded, undecidable));
+        Log.info(Messages.get("report.conditions.legendDecidable"));
+        Log.info(Messages.get("report.conditions.legendUndecidable"));
     }
 
     /**
@@ -119,7 +119,7 @@ public final class CallConditionsReport {
                 }
             }
         }
-        Log.info("呼び出しの条件: " + config.conditionsCsv + "（" + rows + " 行）");
+        Log.info(Messages.format("report.conditions.written", config.conditionsCsv, rows));
         return rows;
     }
 

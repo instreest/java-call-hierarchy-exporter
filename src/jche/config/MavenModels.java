@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * pom.xml から実効 POM（{@link MavenProject}）を作る。Maven のモデルビルダーの簡略版。
@@ -49,7 +50,7 @@ final class MavenModels {
             return byFile.get(key);
         }
         if (!building.add(key)) {
-            warnOnce("親か BOM が循環しています: " + key);
+            warnOnce(Messages.format("config.maven.parentCycle", key));
             return null;
         }
         MavenProject project = null;
@@ -96,7 +97,7 @@ final class MavenModels {
                 }
             }
             if (cycle) {
-                warnOnce("親の連鎖が循環しています: " + parent.file);
+                warnOnce(Messages.format("config.maven.parentChainCycle", parent.file));
                 break;
             }
             chain.add(parent);
@@ -195,7 +196,7 @@ final class MavenModels {
         }
         Path pom = repos.find(g, a, v, "", "pom");
         if (pom == null) {
-            warnOnce("親 POM がローカルリポジトリにありません: " + g + ":" + a + ":" + v + "（" + child.file + " の親）");
+            warnOnce(Messages.format("config.maven.parentMissing", g, a, v, child.file));
             return null;
         }
         try {
@@ -226,12 +227,12 @@ final class MavenModels {
         }
         for (Dependency bom : imports) {
             if (bom.version().isEmpty() || bom.version().contains("${")) {
-                warnOnce("BOM の版が決まりません: " + bom.ga() + ":" + bom.version() + "（" + owner + "）");
+                warnOnce(Messages.format("config.maven.bomNoVersion", bom.ga(), bom.version(), owner));
                 continue;
             }
             MavenProject bomProject = fromRepository(bom.groupId(), bom.artifactId(), bom.version());
             if (bomProject == null) {
-                warnOnce("BOM がローカルリポジトリにありません: " + bom.ga() + ":" + bom.version() + "（" + owner + "）");
+                warnOnce(Messages.format("config.maven.bomMissing", bom.ga(), bom.version(), owner));
                 continue;
             }
             for (Map.Entry<String, Dependency> e : bomProject.managed.entrySet()) {
@@ -301,7 +302,7 @@ final class MavenModels {
 
     private void warnOnce(String message) {
         if (warned.add(message)) {
-            Log.warn("依存jar: " + message);
+            Log.warn(Messages.format("config.maven.warn", message));
         }
     }
 }

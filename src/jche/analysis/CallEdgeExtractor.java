@@ -23,6 +23,7 @@ import jche.cache.FileAnalysis;
 import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * ソースをASTパースし、宣言・呼び出し・フィールド・出所などの事実を抽出する。
@@ -139,7 +140,7 @@ public final class CallEdgeExtractor {
         } catch (UncheckedIOException e) {
             throw e.getCause();
         } catch (RuntimeException e) {
-            Log.warn("一括解析に失敗したため、残り " + pending.size() + " 件は1ファイルずつ解析します (" + e + ")");
+            Log.warn(Messages.format("analysis.batchFailed", pending.size(), e));
         }
 
         if (!pending.isEmpty()) {

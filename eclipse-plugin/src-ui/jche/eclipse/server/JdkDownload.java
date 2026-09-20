@@ -13,6 +13,8 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import jche.eclipse.Messages;
+
 /**
  * 解析に使う JDK が手元に無いときに、取ってきて展開する。
  *
@@ -108,7 +110,7 @@ public final class JdkDownload {
         File versionDir = new File(targetDir, String.valueOf(feature));
         File archive = new File(targetDir, archiveNameFor(osName));
         if (!versionDir.isDirectory() && !versionDir.mkdirs()) {
-            throw new IOException("展開先を作れません: " + versionDir);
+            throw new IOException(Messages.format("download.noExtractDir", versionDir));
         }
         download(urlFor(feature, osName, System.getProperty("os.arch", "")), archive, progress);
         try {
@@ -120,14 +122,14 @@ public final class JdkDownload {
         }
         File java = findJava(versionDir);
         if (java == null) {
-            throw new IOException("展開はできましたが、java が見つかりません: " + versionDir);
+            throw new IOException(Messages.format("download.javaNotFound", versionDir));
         }
         if (!java.canExecute() && !java.setExecutable(true)) {
-            throw new IOException("java に実行権限を付けられません: " + java);
+            throw new IOException(Messages.format("download.notExecutable", java));
         }
         int version = JavaLocator.versionOf(java);
         if (version < JavaLocator.MINIMUM) {
-            throw new IOException("取得した JDK が動きません（版=" + version + "）: " + java);
+            throw new IOException(Messages.format("download.doesNotRun", version, java));
         }
         return java;
     }
@@ -144,14 +146,14 @@ public final class JdkDownload {
             String location = connection.getHeaderField("Location");
             connection.disconnect();
             if (location == null) {
-                throw new IOException("取得先が分かりません（" + status + "）: " + url);
+                throw new IOException(Messages.format("download.noLocation", status, url));
             }
             download(location, target, progress);
             return;
         }
         if (status != HttpURLConnection.HTTP_OK) {
             connection.disconnect();
-            throw new IOException("取得できませんでした（HTTP " + status + "）: " + url);
+            throw new IOException(Messages.format("download.httpFailed", status, url));
         }
         long total = connection.getContentLengthLong();
         InputStream in = connection.getInputStream();
@@ -163,7 +165,7 @@ public final class JdkDownload {
                 int read;
                 while ((read = in.read(buffer)) > 0) {
                     if (progress != null && progress.isCancelled()) {
-                        throw new IOException("取得を中止しました");
+                        throw new IOException(Messages.get("download.cancelled"));
                     }
                     out.write(buffer, 0, read);
                     done += read;
@@ -199,12 +201,12 @@ public final class JdkDownload {
                 in.close();
             }
             if (process.waitFor() != 0) {
-                throw new IOException("展開に失敗しました: " + archive);
+                throw new IOException(Messages.format("download.extractFailed", archive));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             process.destroy();
-            throw new IOException("展開が中断されました", e);
+            throw new IOException(Messages.get("download.extractInterrupted"), e);
         }
     }
 
@@ -216,7 +218,7 @@ public final class JdkDownload {
                 File file = new File(targetDir, entry.getName());
                 // zip の中の相対パスで外へ出られないようにする
                 if (!file.getCanonicalPath().startsWith(targetDir.getCanonicalPath() + File.separator)) {
-                    throw new IOException("展開先の外を指す項目があります: " + entry.getName());
+                    throw new IOException(Messages.format("download.outsideTarget", entry.getName()));
                 }
                 if (entry.isDirectory()) {
                     file.mkdirs();

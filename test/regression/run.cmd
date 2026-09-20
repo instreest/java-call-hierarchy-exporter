@@ -7,6 +7,8 @@ rem 期待出力を更新するときは、差分を確認したうえで最新�
 setlocal
 cd /d "%~dp0"
 set "ROOT=%~dp0..\.."
+rem 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
+set "JCHE_LANG=en"
 set "JCHE=call "%ROOT%\jbangw\jbang.cmd" run "%ROOT%\src\jche\CallHierarchyExporter.java""
 set "FAIL=0"
 

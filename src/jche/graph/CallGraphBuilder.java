@@ -28,6 +28,7 @@ import jche.extension.Hint;
 import jche.util.Log;
 import jche.util.Names;
 import jche.util.RunControl;
+import jche.util.Messages;
 
 /**
  * キャッシュファイルをスキャンして {@link CallGraph} を構築する。
@@ -84,14 +85,14 @@ public final class CallGraphBuilder {
         CallGraphBuilder b = new CallGraphBuilder();
         b.graph.sourceFolderOrder = sourceFolderOrder;
         b.graph.beans = beans;
-        RunControl.progress("グラフ構築", 0, 2);
+        RunControl.progress(Messages.get("graph.progress.build"), 0, 2);
         b.firstPass(cacheFile, dataflowCacheFile);
         RunControl.checkCancelled();
         b.allocateEdges();
-        RunControl.progress("グラフ構築", 1, 2);
+        RunControl.progress(Messages.get("graph.progress.build"), 1, 2);
         b.secondPass(cacheFile, dataflowCacheFile);
         b.graph.finishBuild();
-        RunControl.progress("グラフ構築", 2, 2);
+        RunControl.progress(Messages.get("graph.progress.build"), 2, 2);
         return b.graph;
     }
 
@@ -171,10 +172,9 @@ public final class CallGraphBuilder {
             fields.flushInto(graph.fieldOrigins);
         }
         graph.hierarchy.sortForDeterminism();
-        Log.info("収集: 型 " + graph.hierarchy.size()
-                + " / メソッド " + methods.size() + " / エッジ " + edgeCount);
+        Log.info(Messages.format("graph.collected", graph.hierarchy.size(), methods.size(), edgeCount));
         if (edgeCount > Integer.MAX_VALUE) {
-            throw new IOException("エッジ数が多すぎます: " + edgeCount);
+            throw new IOException(Messages.format("graph.tooManyEdges", edgeCount));
         }
     }
 
@@ -380,8 +380,8 @@ public final class CallGraphBuilder {
         }
         if (!warnedAboutJoin) {
             warnedAboutJoin = true;
-            Log.warn("[cache] データフローのキャッシュの並びが呼び出し箇所と合いません（"
-                    + expected.replace('\u0000', ' ') + " #" + ordinal + "）。このぶんの値は使いません");
+            Log.warn(Messages.format("graph.dataflowOutOfOrder",
+                    expected.replace('\u0000', ' '), ordinal));
         }
         return CallSiteValues.NONE;
     }

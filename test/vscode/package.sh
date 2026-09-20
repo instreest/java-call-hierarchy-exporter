@@ -9,7 +9,7 @@
 # 検査項目
 #   1) lib/ が集まる（jche-core.jar と JDT 一式 13 個）
 #   2) 同梱する JDT の版が //DEPS 行と同じ（CLI と同じ JDT で解析するため）
-#   3) .vsix に dist/extension.js・lib/・README・NOTICE・LICENSE が入り、
+#   3) .vsix に dist/extension.js・lib/・README・NOTICE・LICENSE・package.nls*.json が入り、
 #      src/・node_modules/・検査は入っていない
 #   4) .vsix の中の lib/ が eclipse-plugin の lib/ と同じ（出どころが1つであること）
 set -uo pipefail
@@ -53,7 +53,10 @@ npm run package --silent >"$WORK/package.log" 2>&1 || { sed 's/^/       /' "$WOR
 
 unzip -Z1 java-call-hierarchy-exporter.vsix > "$WORK/entries"
 # vsce は README.md を readme.md に、LICENSE を LICENSE.txt に改名して入れる
-for must in extension/dist/extension.js extension/lib/jche-core.jar extension/readme.md extension/changelog.md extension/NOTICE extension/LICENSE.txt extension/package.json; do
+# package.nls*.json は VSCode 本体が起動時に読む（画面の文言は dist に束ねてあるが、
+# package.json の寄与＝ビュー名・コマンドの見出し・設定の説明はこちら。docs/nls-qa.md の Q15）。
+# 入っていないと、コマンドパレットに %command.jche.analyze.title% のような生のキーが並ぶ
+for must in extension/dist/extension.js extension/lib/jche-core.jar extension/readme.md extension/changelog.md extension/NOTICE extension/LICENSE.txt extension/package.json extension/package.nls.json extension/package.nls.ja.json; do
     grep -qx "$must" "$WORK/entries" && ok "入っている: $must" || fail "入っていない: $must"
 done
 VSIX_JDT=$(grep -c '^extension/lib/jdt/.*\.jar$' "$WORK/entries")

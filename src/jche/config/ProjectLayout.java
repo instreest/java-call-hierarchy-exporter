@@ -20,6 +20,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * プロジェクトの構成（ソースフォルダ・依存jar）を読み取る。
@@ -55,12 +56,12 @@ public final class ProjectLayout {
         this.projectRoot = config.projectRoot;
 
         if (!Files.isDirectory(projectRoot)) {
-            throw new IOException("project.root がディレクトリとして存在しません: " + projectRoot);
+            throw new IOException(Messages.format("config.layout.projectRootMissing", projectRoot));
         }
 
         for (Path sf : config.sourceFolders) {
             if (!Files.isDirectory(sf)) {
-                Log.warn("source.folders のフォルダが見つかりません: " + sf);
+                Log.warn(Messages.format("config.layout.sourceFolderMissing", sf));
                 continue;
             }
             if (!sourceFolders.contains(sf)) {
@@ -80,13 +81,13 @@ public final class ProjectLayout {
                 sourceFolders.add(projectRoot.resolve(c).normalize());
             }
             if (!candidates.isEmpty()) {
-                Log.info("source.folders が空欄のため、project.root から決めました: " + String.join(", ", candidates));
+                Log.info(Messages.format("config.layout.sourceFoldersDetected", String.join(", ", candidates)));
             }
         }
 
         for (Path lib : config.libraryFolders) {
             if (!Files.exists(lib)) {
-                Log.warn("library.folders のフォルダが見つかりません: " + lib);
+                Log.warn(Messages.format("config.layout.libraryFolderMissing", lib));
                 continue;
             }
             classpathEntries.add(lib);
@@ -96,16 +97,14 @@ public final class ProjectLayout {
         // Eclipse プラグインが IJavaProject の解決済みクラスパスをそのまま渡すために使う
         for (Path jar : config.libraryJars) {
             if (!Files.exists(jar)) {
-                Log.warn("library.jars のファイルが見つかりません: " + jar);
+                Log.warn(Messages.format("config.layout.libraryJarMissing", jar));
                 continue;
             }
             classpathEntries.add(jar);
         }
 
         if (sourceFolders.isEmpty()) {
-            throw new IOException("ソースフォルダを特定できませんでした: " + projectRoot
-                    + "（src/main/java、src、<モジュール>/src/main/java、.classpath のいずれも無いので、"
-                    + "設定ファイルの source.folders に指定してください）");
+            throw new IOException(Messages.format("config.layout.noSourceFolder", projectRoot));
         }
 
         // library.folders が空欄のときだけ、ビルドファイルとローカルリポジトリから依存 jar を集める。
@@ -118,7 +117,7 @@ public final class ProjectLayout {
                 String lib = ProjectDetector.libraryFolderCandidate(projectRoot);
                 if (lib != null) {
                     Path dir = projectRoot.resolve(lib);
-                    Log.info("library.folders が空欄のため、project.root 直下の " + lib + " の jar を使います: " + dir);
+                    Log.info(Messages.format("config.layout.libFromProjectRoot", lib, dir));
                     classpathEntries.add(dir);
                 }
             }
@@ -140,13 +139,13 @@ public final class ProjectLayout {
                 if ("src".equals(kind)) {
                     // 他プロジェクトへの参照（path が "/" 始まり）は未対応
                     if (path.startsWith("/")) {
-                        Log.warn("他プロジェクト参照はスキップします: " + path);
+                        Log.warn(Messages.format("config.layout.skipOtherProject", path));
                         continue;
                     }
                     Path sf = projectRoot.resolve(path).normalize();
                     if (!sf.startsWith(projectRoot)) {
                         // project.root からの相対パスが作れないため（キャッシュのキー・出力の file 列）
-                        Log.warn(".classpath のソースフォルダが project.root の外にあるためスキップします: " + sf);
+                        Log.warn(Messages.format("config.layout.sourceOutsideRoot", sf));
                         continue;
                     }
                     if (Files.isDirectory(sf) && !sourceFolders.contains(sf)) {
@@ -158,7 +157,7 @@ public final class ProjectLayout {
                     if (Files.exists(jar)) {
                         classpathEntries.add(jar);
                     } else {
-                        Log.warn(".classpath のlibが見つかりません: " + jar);
+                        Log.warn(Messages.format("config.layout.classpathLibMissing", jar));
                     }
                 }
                 // con / output / var は無視（con は BuildTool の検出の手掛かりにだけ使う）
@@ -166,7 +165,7 @@ public final class ProjectLayout {
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException(".classpath の解析に失敗しました: " + dotClasspath, e);
+            throw new IOException(Messages.format("config.layout.classpathUnreadable", dotClasspath), e);
         }
     }
 
@@ -229,7 +228,7 @@ public final class ProjectLayout {
             if (Files.isDirectory(p)) {
                 List<Path> jars = listJarsIn(p);
                 if (jars.isEmpty()) {
-                    Log.warn("クラスパスのディレクトリにjarが見つかりません: " + p);
+                    Log.warn(Messages.format("config.layout.noJarInDir", p));
                 }
                 for (Path jar : jars) {
                     expanded.add(jar.toString());
@@ -252,7 +251,7 @@ public final class ProjectLayout {
                 jars.add(p);
             }
         } catch (IOException e) {
-            Log.warn("クラスパスのディレクトリを読み取れません: " + dir + " (" + e + ")");
+            Log.warn(Messages.format("config.layout.dirUnreadable", dir, e));
             return jars;
         }
         jars.sort((a, b) -> a.getFileName().toString().compareTo(b.getFileName().toString()));

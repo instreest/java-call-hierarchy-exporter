@@ -8,6 +8,8 @@ import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.util.Locale;
 
+import jche.util.Messages;
+
 /**
  * 対話モードの入出力。標準入力から 1 行ずつ読み、標準出力へ書く。
  *
@@ -29,7 +31,7 @@ public final class Terminal {
         private static final long serialVersionUID = 1L;
 
         EndOfInput() {
-            super("標準入力が終了しました");
+            super(Messages.get("cli.eof"));
         }
     }
 
@@ -94,13 +96,13 @@ public final class Terminal {
             if (a.equals("n") || a.equals("no")) {
                 return false;
             }
-            println("  y か n で答えてください。");
+            println(Messages.get("cli.confirm.retry"));
         }
     }
 
     /** Enter を待つ（結果を読んでから次の画面に進むため） */
     public void pause() {
-        readLine("Enter で戻る ");
+        readLine(Messages.get("cli.pause"));
     }
 
     private static Charset stdinCharset() {

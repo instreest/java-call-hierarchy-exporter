@@ -21,6 +21,7 @@ import java.util.Properties;
 
 import org.eclipse.jdt.core.JavaCore;
 
+import jche.util.Messages;
 import jche.util.UserHome;
 
 /**
@@ -199,6 +200,15 @@ public final class Config {
     public final boolean outputBom;
 
     /**
+     * 設定ファイルに書かれた表示言語（{@code message.language}）。未指定なら空。
+     *
+     * <p>実際に何語で出るかは {@link Messages#language()} が持つ。環境変数 {@code JCHE_LANG} と
+     * システムプロパティ {@code jche.lang} のほうが強いので、この値がそのまま使われるとは限らない
+     * （{@code docs/nls-qa.md}）。CSV の中身は言語によらず英語で固定なので、ここは影響しない
+     */
+    public final String messageLanguage;
+
+    /**
      * @param configPath 設定ファイル
      * @param toolRoot   このツールのプロジェクトフォルダ（cache.folder が空欄のときのキャッシュの置き場所）
      * @param startedAt  解析開始日時（出力フォルダ名に使う）
@@ -234,9 +244,7 @@ public final class Config {
             // properties ではバックスラッシュがエスケープなので、Windows のパスをそのまま書くと
             // 「バックスラッシュ + u」が Unicode エスケープと解釈されて読めない。
             // 何が悪いのか分からない例外文言（Malformed uxxxx encoding）のままにしない
-            throw new IOException("設定ファイルを読めません: " + abs + "（" + e.getMessage() + "）。"
-                    + "Windows のパスを書くときは区切りを / にするか、"
-                    + "バックスラッシュを2つ重ねてください", e);
+            throw new IOException(Messages.format("config.read.failed", abs, e.getMessage()), e);
         }
         return p;
     }
@@ -248,6 +256,12 @@ public final class Config {
         this.configDir = (dir == null) ? Paths.get(".").toAbsolutePath().normalize()
                 : dir.toAbsolutePath().normalize();
         this.startedAt = startedAt;
+
+        // 表示言語は、以降の検証が出すエラーの言語も決めるので真っ先に反映する。
+        // 環境変数 JCHE_LANG / システムプロパティ jche.lang があればそちらが優先される
+        // （Messages.applyConfigured は、その場合は何もしない）
+        this.messageLanguage = p.getProperty("message.language", "").trim();
+        Messages.applyConfigured(this.messageLanguage);
 
         rejectRemovedKeys(p);
 
@@ -274,7 +288,7 @@ public final class Config {
         // 正規名にそろえる。"utf-8" と "UTF-8" のような表記の揺れでキャッシュの鍵が
         // 変わってしまうと、設定を変えていないのに全件解析し直しになる
         this.sourceEncoding = this.sourceEncodingAuto
-                ? charsetOf("pom.xml の project.build.sourceEncoding",
+                ? charsetOf(Messages.get("config.pomEncodingLabel"),
                         ProjectDetector.sourceEncoding(this.projectRoot)).name()
                 : charsetOf("source.encoding", enc).name();
         this.sourceLevelRequested = p.getProperty("source.level", "").trim();
@@ -378,8 +392,7 @@ public final class Config {
         try {
             return Charset.forName(raw.trim());
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("設定 " + key + " の文字コード名が不正です: '" + raw.trim()
-                    + "'（例: UTF-8、MS932、Shift_JIS）");
+            throw new IllegalArgumentException(Messages.format("config.badCharset", key, raw.trim()));
         }
     }
 
@@ -405,9 +418,8 @@ public final class Config {
         String latest = JavaCore.latestSupportedJavaVersion();
         if (!requested.isEmpty() && !JavaCore.isSupportedJavaVersion(requested)) {
             throw new IllegalArgumentException(
-                    "source.level=" + requested + " は、このJDTでは対応していません。"
-                    + "指定できる値: " + JavaCore.getAllVersions()
-                    + "（未指定なら最大の " + latest + " で動作します）");
+                    Messages.format("config.badSourceLevel", requested,
+                            JavaCore.getAllVersions(), latest));
         }
         Map<String, String> options = JavaCore.getOptions();
         JavaCore.setComplianceOptions(requested.isEmpty() ? latest : requested, options);
@@ -420,14 +432,12 @@ public final class Config {
      */
     private static void rejectRemovedKeys(Properties p) {
         Map<String, String> removed = Map.of(
-                "output.csv", "出力先は output.folder（フォルダ）で指定し、ファイル名は " + CALL_HIERARCHY_CSV_NAME + " に固定になりました",
-                "methods.csv", "出力先は output.folder（フォルダ）で指定し、ファイル名は " + METHODS_CSV_NAME + " に固定になりました",
-                "cache.folders", "キャッシュは cache.folder（単数形）で指定します。空欄ならこのツールのプロジェクトフォルダの "
-                        + DEFAULT_CACHE_DIR_NAME + "/ の下に、解析対象プロジェクトごとに作ります");
+                "output.csv", Messages.format("config.removed.outputCsv", CALL_HIERARCHY_CSV_NAME),
+                "methods.csv", Messages.format("config.removed.outputCsv", METHODS_CSV_NAME),
+                "cache.folders", Messages.format("config.removed.cacheFolders", DEFAULT_CACHE_DIR_NAME));
         for (Map.Entry<String, String> e : removed.entrySet()) {
             if (p.containsKey(e.getKey())) {
-                throw new IllegalArgumentException("設定 " + e.getKey() + " は廃止されました。" + e.getValue()
-                        + "。この行を消して、必要なら新しい項目で書き直してください");
+                throw new IllegalArgumentException(Messages.format("config.removed", e.getKey(), e.getValue()));
             }
         }
     }
@@ -476,7 +486,7 @@ public final class Config {
 
     /** 設定ファイルのあるディレクトリを起点に解決する。相対パスはその配下に限る */
     private Path resolveUnderConfigDir(String key, String raw) {
-        return resolveUnder(key, configDir, "設定ファイルのフォルダ", raw, false);
+        return resolveUnder(key, configDir, Messages.get("config.baseName.configDir"), raw, false);
     }
 
     /**
@@ -506,14 +516,12 @@ public final class Config {
             return resolved;
         }
         if (!p.isAbsolute()) {
-            throw new IllegalArgumentException("設定 " + key + " の相対パス '" + raw.trim()
-                    + "' が " + baseName + "（" + base + "）の外を指しています。"
-                    + "相対パスは " + baseName + " の配下だけ指定できます。外を指す場合は絶対パスで書いてください");
+            throw new IllegalArgumentException(
+                    Messages.format("config.outsideBase", key, raw.trim(), baseName, base));
         }
         if (absoluteMustBeInside) {
-            throw new IllegalArgumentException("設定 " + key + " のパス '" + raw.trim()
-                    + "' は " + baseName + "（" + base + "）の配下でなければなりません。"
-                    + "キャッシュのキーと出力の file 列を " + baseName + " からの相対パスにするためです");
+            throw new IllegalArgumentException(
+                    Messages.format("config.mustBeUnderBase", key, raw.trim(), baseName, base));
         }
         return resolved;
     }
@@ -530,8 +538,7 @@ public final class Config {
             case "none":
                 return value;
             default:
-                throw new IllegalArgumentException("設定 library.build.tool の値が不正です: '" + raw.trim()
-                        + "'（指定できる値: auto / maven / gradle / none）");
+                throw new IllegalArgumentException(Messages.format("config.badBuildTool", raw.trim()));
         }
     }
 
@@ -545,7 +552,7 @@ public final class Config {
             return Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
-                    "設定 " + key + " の値が整数ではありません: '" + raw.trim() + "'");
+                    Messages.format("config.notAnInteger", key, raw.trim()));
         }
     }
 
@@ -558,7 +565,7 @@ public final class Config {
             return Long.parseLong(raw.trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
-                    "設定 " + key + " の値が整数ではありません: '" + raw.trim() + "'");
+                    Messages.format("config.notAnInteger", key, raw.trim()));
         }
     }
 
@@ -579,7 +586,7 @@ public final class Config {
     private static String require(Properties p, String key) {
         String v = p.getProperty(key);
         if (v == null || v.trim().isEmpty()) {
-            throw new IllegalArgumentException("設定ファイルに必須項目がありません: " + key);
+            throw new IllegalArgumentException(Messages.format("config.missingRequired", key));
         }
         return v.trim();
     }

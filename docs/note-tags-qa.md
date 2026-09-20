@@ -36,7 +36,7 @@
 タグなら `grep '\[UNEXPANDED'` で一括、`grep '\[UNEXPANDED:CHA\]'` で種類ごと、
 `grep -v '\[RESOLVED'` で情報量の薄いものを落とす、が全部書ける。
 
-説明文を消してタグだけにはしなかった。`[UNEXPANDED:CHA] 候補3件: フィールド変数` の
+説明文を消してタグだけにはしなかった。`[UNEXPANDED:CHA] 3 candidates: field` の
 「フィールド変数」は**次に調べる場所**そのもので、これが注記の本体だからである。
 タグは検索のための入口で、読むのは日本語の方。
 
@@ -116,7 +116,7 @@
 辿れない形では下の注記がそのまま残る。
 
 そのため注記は「実装がある」ではなく
-`[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）` と、
+`[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` と、
 特定できていないことを明示する文言にしてある。
 
 ### Q8. `methods.csv` の列まで同じタグに揃えたのはなぜか
@@ -124,7 +124,7 @@
 片方で見つけたものをもう片方で追えるようにするため。
 `methods.csv` で穴のあるメソッドを絞ってから `call-hierarchy.csv` で経路を追う、が
 この 2 つの CSV の想定した使い方で、同じ「絞れなかった」を
-`フィールド変数` と `[UNEXPANDED:CHA] 候補3件: フィールド変数` のように別の名前で書くと、
+`field` と `[UNEXPANDED:CHA] 3 candidates: field` のように別の名前で書くと、
 一覧で見つけた呼び出しを階層側で grep できない。
 `absentCause` の `[EXCLUDED]` / `[NOT_REACHED]` だけは階層側に対応する注記が無い
 （除外されたメソッドと、そこへ至る呼び出しが出ていないメソッドは行自体が出ない）ので、

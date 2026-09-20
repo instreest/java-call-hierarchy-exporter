@@ -1,96 +1,96 @@
 ﻿caller,callee,resolved-by,level,root,call-hierarchy
 at fx.app.Legacy.unusedDead(Legacy.java:14),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,1,Legacy.unusedDead,Legacy.callRemote
-at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,2,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
+at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,2,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Main.<clinit>(Main.java:29),Counter.initialCount,RESOLVED:STATIC_BOUND:STATIC,1,Main.<clinit>,Counter.initialCount
 at fx.app.Main.main(Main.java:33),Main.run,RESOLVED:NO_OVERRIDE,1,Main.main,Main.run
 at fx.app.Main.run(Main.java:37),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,DaoFactory.create,DaoFactory.newUserDao
 at fx.app.Main.run(Main.java:38),AbstractDao.findById,RESOLVED:DATAFLOW_FACTORY,2,Main.main,Main.run,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.app.Main.run(Main.java:39),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
-at fx.app.Main.run(Main.java:39),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: 戻り値（ファクトリメソッド等）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.app.Main.run(Main.java:39),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:39),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 at fx.app.Main.run(Main.java:39),DaoFactory.createEither,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.createEither
 at fx.app.Main.run(Main.java:40),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FACTORY,2,Main.main,Main.run,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.run(Main.java:40),DaoFactory.byName,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.byName
 at fx.app.Main.run(Main.java:41),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FACTORY,2,Main.main,Main.run,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.run(Main.java:41),DaoFactory.passThrough,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.passThrough
 at fx.app.Main.run(Main.java:44),OrderService.execute,RESOLVED:LOCAL_NEW,2,Main.main,Main.run,OrderService.execute
-at fx.service.OrderService.execute(OrderService.java:24),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:24),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:24),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:24),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:25),AbstractDao.findById,RESOLVED:DATAFLOW_FIELD,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.service.OrderService.execute(OrderService.java:26),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:26),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.service.OrderService.execute(OrderService.java:26),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:26),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:27),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.service.OrderService.execute(OrderService.java:31),OrderService.helper,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,OrderService.execute,OrderService.helper
-at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse
-at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.service.OrderService.execute(OrderService.java:32),OrderService.staticHelper,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.staticHelper
-at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:33),OrderService.staticHelper,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,OrderService.execute,OrderService.staticHelper
-at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.staticHelper(OrderService.java:44),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.staticHelper(OrderService.java:44),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.staticHelper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:34),OrderService.setMutable,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,OrderService.execute,OrderService.setMutable
-at fx.service.OrderService.execute(OrderService.java:35),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.OrderService.execute(OrderService.java:35),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.OrderService.execute(OrderService.java:35),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:35),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.<init>(OrderService.java:19),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,OrderService.OrderService,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,OrderService.OrderService,DaoFactory.create,DaoFactory.newUserDao
 at fx.app.Main.run(Main.java:46),Notifier.execute,RESOLVED:LOCAL_NEW,2,Main.main,Main.run,Notifier.execute
-at fx.service.Notifier.execute(Notifier.java:21),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.Notifier.execute(Notifier.java:21),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.Notifier.execute(Notifier.java:23),Main$1.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Main$1.execute,[UNEXPANDED:CHA] 候補5件: フィールド変数
-at fx.service.Notifier.execute(Notifier.java:23),Main$1LocalService.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Main$1LocalService.execute,[UNEXPANDED:CHA] 候補5件: フィールド変数
-at fx.service.Notifier.execute(Notifier.java:23),Notifier.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Notifier.execute,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る / [UNEXPANDED:CHA] 候補5件: フィールド変数
-at fx.service.Notifier.execute(Notifier.java:23),OrderService.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,OrderService.execute,[UNEXPANDED:CHA] 候補5件: フィールド変数
-at fx.service.Notifier.execute(Notifier.java:23),Repo.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Repo.execute,[UNEXPANDED:CHA] 候補5件: フィールド変数
+at fx.service.Notifier.execute(Notifier.java:21),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.Notifier.execute(Notifier.java:21),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.Notifier.execute(Notifier.java:23),Main$1.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Main$1.execute,[UNEXPANDED:CHA] 5 candidates: field
+at fx.service.Notifier.execute(Notifier.java:23),Main$1LocalService.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Main$1LocalService.execute,[UNEXPANDED:CHA] 5 candidates: field
+at fx.service.Notifier.execute(Notifier.java:23),Notifier.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Notifier.execute,[UNEXPANDED:CYCLE] returns to a method already on this path / [UNEXPANDED:CHA] 5 candidates: field
+at fx.service.Notifier.execute(Notifier.java:23),OrderService.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,OrderService.execute,[UNEXPANDED:CHA] 5 candidates: field
+at fx.service.Notifier.execute(Notifier.java:23),Repo.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Notifier.execute,Repo.execute,[UNEXPANDED:CHA] 5 candidates: field
 at fx.service.Notifier.execute(Notifier.java:24),Notifier.ping,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Notifier.execute,Notifier.ping
 at fx.service.Notifier.ping(Notifier.java:28),Notifier.pong,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong
-at fx.service.Notifier.pong(Notifier.java:32),Notifier.ping,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong,Notifier.ping,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.service.Notifier.pong(Notifier.java:32),Notifier.ping,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong,Notifier.ping,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.app.Main.run(Main.java:48),Main.useParam,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.useParam
 at fx.app.Main.useParam(Main.java:96),OrderDaoImpl.findById,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.useParam(Main.java:97),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.describe
 at fx.app.Main.run(Main.java:50),AbstractDao.findById,RESOLVED:LOCAL_NEW,2,Main.main,Main.run,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.app.Main.run(Main.java:52),AbstractDao.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at fx.app.Main.run(Main.java:52),OrderDaoImpl.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at fx.app.Main.run(Main.java:54),AbstractDao.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at fx.app.Main.run(Main.java:54),OrderDaoImpl.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at fx.app.Main.run(Main.java:55),UserDaoImpl.describe,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at fx.app.Main.run(Main.java:55),OrderDaoImpl.describe,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: ローカル変数
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.app.Main.run(Main.java:52),AbstractDao.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.app.Main.run(Main.java:52),OrderDaoImpl.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.app.Main.run(Main.java:54),AbstractDao.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.app.Main.run(Main.java:54),OrderDaoImpl.findById,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.app.Main.run(Main.java:55),UserDaoImpl.describe,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.app.Main.run(Main.java:55),OrderDaoImpl.describe,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
 at fx.app.Main.run(Main.java:56),Main.noSource,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.noSource
-at fx.app.Main.noSource(Main.java:88),Node.getNodeName,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.noSource,Node.getNodeName,[EXTERNAL] ソースが無いため辿れない
+at fx.app.Main.noSource(Main.java:88),Node.getNodeName,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.noSource,Node.getNodeName,[EXTERNAL] no source to follow
 at fx.app.Main.run(Main.java:57),Main.noImpl,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.noImpl
-at fx.app.Main.noImpl(Main.java:92),Exporter.export,UNEXPANDED:NO_IMPL,3,Main.main,Main.run,Main.noImpl,Exporter.export,[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い
+at fx.app.Main.noImpl(Main.java:92),Exporter.export,UNEXPANDED:NO_IMPL,3,Main.main,Main.run,Main.noImpl,Exporter.export,[UNEXPANDED:NO_IMPL] no implementation with a body in the source
 at fx.app.Main.noImpl(Main.java:92),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,2,Main.main,Helper.assist,UserDaoImpl.describe
@@ -107,8 +107,8 @@ at fx.app.Main.run(Main.java:62),UserDaoImpl.describe,RESOLVED:DATAFLOW_FACTORY,
 at fx.app.Main.run(Main.java:62),Chain.c6,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Chain.c6
 at fx.dao.Chain.c6(Chain.java:12),Chain.c7,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Chain.c6,Chain.c7
 at fx.app.Main.run(Main.java:63),Repo.execute,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Repo.execute
-at fx.service.Repo.execute(Repo.java:23),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.service.Repo.execute(Repo.java:23),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.service.Repo.execute(Repo.java:23),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.Repo.execute(Repo.java:23),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.Repo.<init>(Repo.java:18),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Repo.Repo,OrderDaoImpl.describe
 at fx.model.Base.<init>(Base.java:5),Base.init,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Derived.Derived,Base.Base,Base.init
 at fx.model.Base.init(Base.java:9),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Derived.Derived,Base.Base,Base.init,Registry.register
@@ -117,9 +117,9 @@ at fx.reflect.Invoker.byLiteral(Invoker.java:10),Target.run,RESOLVED:REFLECTION,
 at fx.reflect.Target.run(Target.java:9),Target.step,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Invoker.byLiteral,Target.run,Target.step
 at fx.reflect.Invoker.byLiteral(Invoker.java:10),Target.<clinit>,RESOLVED:REFLECTION_INIT,3,Main.main,Main.run,Invoker.byLiteral,Target.<clinit>
 at fx.app.Main.run(Main.java:66),Main.shapes,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.shapes
-at fx.app.Main.shapes(Main.java:102),Color.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color.area,[UNEXPANDED:CHA] 候補3件: ローカル変数
-at fx.app.Main.shapes(Main.java:102),Point.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Point.area,[UNEXPANDED:CHA] 候補3件: ローカル変数
-at fx.app.Main.shapes(Main.java:102),Color$1.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[UNEXPANDED:CHA] 候補3件: ローカル変数
+at fx.app.Main.shapes(Main.java:102),Color.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color.area,[UNEXPANDED:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:102),Point.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Point.area,[UNEXPANDED:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:102),Color$1.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[UNEXPANDED:CHA] 3 candidates: local variable
 at fx.app.Main.shapes(Main.java:103),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.shapes,Point.origin,Point.Point,Registry.register
 at fx.app.Main.shapes(Main.java:104),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
@@ -127,15 +127,15 @@ at fx.app.Main.shapes(Main.java:105),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.lambdas
 at fx.app.Main.lambdas(Main.java:109),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
 at fx.app.Main.lambda$lambdas$0(Main.java:109),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:110),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
 at fx.app.Main.lambda$lambdas$0(Main.java:109),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:112),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
-at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
+at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -149,42 +149,42 @@ at fx.app.Main.run(Main.java:72),UserDaoImpl.save,RESOLVED:NO_OVERRIDE,2,Main.ma
 at fx.dao.UserDaoImpl.save(UserDaoImpl.java:16),List.count,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,UserDaoImpl.save,List.count
 at fx.app.Main.run(Main.java:73),Main.anonymous,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.anonymous
 at fx.app.Main.anonymous(Main.java:131),Main$1.execute,RESOLVED:LOCAL_NEW,3,Main.main,Main.run,Main.anonymous,Main$1.execute
-at fx.app.Main$1.execute(Main.java:126),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
-at fx.app.Main$1.execute(Main.java:126),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
+at fx.app.Main$1.execute(Main.java:126),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1.execute(Main.java:126),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main$1.execute(Main.java:127),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,5,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,6,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,6,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,6,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,6,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.anonymous(Main.java:138),Main$1LocalService.execute,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute
-at fx.app.Main$1LocalService.execute(Main.java:135),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
-at fx.app.Main$1LocalService.execute(Main.java:135),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
+at fx.app.Main$1LocalService.execute(Main.java:135),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1LocalService.execute(Main.java:135),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main.run(Main.java:74),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Legacy.callRemote
-at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,3,Main.main,Main.run,Legacy.callRemote,RemoteClient.send,[EXTERNAL] import から型名を推定（未検証）
+at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,3,Main.main,Main.run,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Main.run(Main.java:75),Main.branches,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.branches
 at fx.app.Main.branches(Main.java:81),Feature.run,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.run
-at fx.branch.Feature.run(Feature.java:19),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.report,[UNREACHABLE] この経路では呼ばれない: 条件「verbose」が成立しない（呼び出し元から渡された第1引数 = false）
+at fx.branch.Feature.run(Feature.java:19),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.report,[UNREACHABLE] not called on this path: condition 'verbose' does not hold (argument 1 from the caller = false)
 at fx.branch.Feature.run(Feature.java:21),Feature.summary,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.summary
 at fx.branch.Feature.summary(Feature.java:59),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
-at fx.branch.Feature.run(Feature.java:24),Feature.dump,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.dump,[UNREACHABLE] この経路では呼ばれない: 条件「DEBUG」が成立しない（定数 = false）
+at fx.branch.Feature.run(Feature.java:24),Feature.dump,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.dump,[UNREACHABLE] not called on this path: condition 'DEBUG' does not hold (constant = false)
 at fx.app.Main.branches(Main.java:82),Feature.mode,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.mode
 at fx.branch.Feature.mode(Feature.java:30),Feature.full,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.mode,Feature.full
 at fx.branch.Feature.full(Feature.java:73),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
-at fx.branch.Feature.mode(Feature.java:32),Feature.light,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"[UNREACHABLE] この経路では呼ばれない: 条件「""light"".equals(name)」が成立しない（呼び出し元から渡された第1引数 = full）"
+at fx.branch.Feature.mode(Feature.java:32),Feature.light,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"[UNREACHABLE] not called on this path: condition '""light"".equals(name)' does not hold (argument 1 from the caller = full)"
 at fx.app.Main.branches(Main.java:83),Feature.pick,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.pick
-at fx.branch.Feature.pick(Feature.java:38),Feature.one,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.one,[UNREACHABLE] この経路では呼ばれない: 条件「switch (kind) の case 1」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:38),Feature.one,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.one,[UNREACHABLE] not called on this path: condition 'switch (kind) case 1' does not hold (argument 1 from the caller = 2)
 at fx.branch.Feature.pick(Feature.java:39),Feature.two,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.two
 at fx.branch.Feature.two(Feature.java:85),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
-at fx.branch.Feature.pick(Feature.java:40),Feature.other,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.other,[UNREACHABLE] この経路では呼ばれない: 条件「switch (kind) の default」が成立しない（呼び出し元から渡された第1引数 = 2）
+at fx.branch.Feature.pick(Feature.java:40),Feature.other,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.other,[UNREACHABLE] not called on this path: condition 'switch (kind) default' does not hold (argument 1 from the caller = 2)
 at fx.app.Main.branches(Main.java:84),Feature.select,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.select
-at fx.branch.Feature.select(Feature.java:46),Feature.full,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.full,[UNREACHABLE] この経路では呼ばれない: 条件「switch (mode) の case fx.branch.Feature.Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
+at fx.branch.Feature.select(Feature.java:46),Feature.full,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.full,[UNREACHABLE] not called on this path: condition 'switch (mode) case fx.branch.Feature.Mode.FULL' does not hold (argument 1 from the caller = fx.branch.Feature.Mode.NONE)
 at fx.branch.Feature.select(Feature.java:47),Feature.light,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.light
 at fx.branch.Feature.light(Feature.java:77),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
-at fx.branch.Feature.select(Feature.java:50),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.report,[UNREACHABLE] この経路では呼ばれない: 条件「mode == Mode.FULL」が成立しない（呼び出し元から渡された第1引数 = fx.branch.Feature.Mode.NONE）
-at fx.dao.Dao.name(Dao.java:5),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.Dao.name(Dao.java:5),UserDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.ItemFinder.find(ItemFinder.java:13),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,1,ItemFinder.find,ItemDao.selectById,[UNEXPANDED:GENERATED] 実装はコンパイル時生成（Doma）: fx.dao.ItemDaoImpl はアノテーション処理で生成されるためソース上に無い
+at fx.branch.Feature.select(Feature.java:50),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.report,[UNREACHABLE] not called on this path: condition 'mode == Mode.FULL' does not hold (argument 1 from the caller = fx.branch.Feature.Mode.NONE)
+at fx.dao.Dao.name(Dao.java:5),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.Dao.name(Dao.java:5),UserDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.ItemFinder.find(ItemFinder.java:13),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,1,ItemFinder.find,ItemDao.selectById,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): fx.dao.ItemDaoImpl is produced by annotation processing and has no source
 at fx.dao.ItemFinder.findFirst(ItemFinder.java:17),ItemDao.selectFirst,RESOLVED:NO_OVERRIDE,1,ItemFinder.findFirst,ItemDao.selectFirst
-at fx.dao.ItemDao.selectFirst(ItemDao.java:19),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,2,ItemFinder.findFirst,ItemDao.selectFirst,ItemDao.selectById,[UNEXPANDED:GENERATED] 実装はコンパイル時生成（Doma）: fx.dao.ItemDaoImpl はアノテーション処理で生成されるためソース上に無い
+at fx.dao.ItemDao.selectFirst(ItemDao.java:19),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,2,ItemFinder.findFirst,ItemDao.selectFirst,ItemDao.selectById,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): fx.dao.ItemDaoImpl is produced by annotation processing and has no source
 at fx.deep.Deep.nestedArgument(Deep.java:20),Deep.use,RESOLVED:STATIC_BOUND:PRIVATE,1,Deep.nestedArgument,Deep.use
 at fx.deep.Deep.use(Deep.java:24),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,2,Deep.nestedArgument,Deep.use,OrderDaoImpl.describe
 at fx.deep.Deep.nestedArgument(Deep.java:20),DaoFactory.byName,RESOLVED:STATIC_BOUND:STATIC,1,Deep.nestedArgument,DaoFactory.byName
@@ -195,8 +195,8 @@ at fx.deep.Deep.deepReceiver(Deep.java:34),Holder.get,RESOLVED:NO_OVERRIDE,1,Dee
 at fx.deep.Deep.longClassName(Deep.java:43),AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping,RESOLVED:REFLECTION,1,Deep.longClassName,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping
 at fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping(AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java:8),AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong,RESOLVED:STATIC_BOUND:PRIVATE,2,Deep.longClassName,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong
 at fx.di.Checkout.checkout(Checkout.java:15),AbstractPayment.pay,RESOLVED:SPRING_DI,1,Checkout.checkout,AbstractPayment.pay
-at fx.di.AbstractPayment.pay(AbstractPayment.java:9),AbstractPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,AbstractPayment.record,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.di.AbstractPayment.pay(AbstractPayment.java:9),CardPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,CardPayment.record,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.di.AbstractPayment.pay(AbstractPayment.java:9),AbstractPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,AbstractPayment.record,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.di.AbstractPayment.pay(AbstractPayment.java:9),CardPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,CardPayment.record,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),SlowNotice.send,RESOLVED:SPRING_DI_QUALIFIER,1,NoticeSender.notifyUser,SlowNotice.send
 at fx.di.Scheduler.tick(Scheduler.java:15),SystemClock.now,RESOLVED:SPRING_DI,1,Scheduler.tick,SystemClock.now
 at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Jobs.nightly,OrderDaoImpl.describe
@@ -205,15 +205,15 @@ at fx.entry.Jobs.internal(Jobs.java:39),Jobs.list,RESOLVED:NO_OVERRIDE,2,Jobs.ni
 at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe
 at fx.entry.Jobs.onEvent(Jobs.java:23),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,1,Jobs.onEvent,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Jobs.list,OrderDaoImpl.describe
 at fx.entry.Jobs.custom(Jobs.java:35),Dispatcher.submit,RESOLVED:NO_OVERRIDE,1,Jobs.custom,Dispatcher.submit
 at fx.entry.Jobs.custom(Jobs.java:35),Jobs.lambda$custom$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Jobs.custom,Jobs.lambda$custom$0
 at fx.entry.Jobs.lambda$custom$0(Jobs.java:35),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.SampleTest.runsJob(SampleTest.java:10),Jobs.nightly,RESOLVED:NO_OVERRIDE,1,SampleTest.runsJob,Jobs.nightly
 at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,SampleTest.runsJob,Jobs.nightly,OrderDaoImpl.describe
 at fx.entry.Jobs.nightly(Jobs.java:18),Jobs.internal,RESOLVED:STATIC_BOUND:PRIVATE,2,SampleTest.runsJob,Jobs.nightly,Jobs.internal
@@ -221,11 +221,11 @@ at fx.entry.Jobs.internal(Jobs.java:39),Jobs.list,RESOLVED:NO_OVERRIDE,3,SampleT
 at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,4,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe
 at fx.entry.WebEntry.doGet(WebEntry.java:17),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,1,WebEntry.doGet,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.WebEntry.helper(WebEntry.java:22),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,WebEntry.helper,OrderDaoImpl.describe
-at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
-at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
+at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
 at fx.lambda.Holder.<init>(Holder.java:27),Holder.lambda$new$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.Holder,Holder.lambda$new$0
 at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.Holder,Holder.lambda$new$0,OrderDaoImpl.describe
@@ -235,13 +235,13 @@ at fx.lambda.Holder.viaParam(Holder.java:34),Holder.runIt,RESOLVED:STATIC_BOUND:
 at fx.lambda.Holder.runIt(Holder.java:38),Holder.lambda$viaParam$1,RESOLVED:DATAFLOW_LAMBDA,2,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1
 at fx.lambda.Holder.lambda$viaParam$1(Holder.java:34),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,3,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.lambda.Holder.viaParam(Holder.java:34),Holder.lambda$viaParam$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaParam,Holder.lambda$viaParam$1
 at fx.lambda.Holder.lambda$viaParam$1(Holder.java:34),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.lambda.Holder.viaCollection(Holder.java:43),Holder.lambda$viaCollection$2,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaCollection,Holder.lambda$viaCollection$2
 at fx.lambda.Holder.lambda$viaCollection$2(Holder.java:43),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaCollection,Holder.lambda$viaCollection$2,OrderDaoImpl.describe
 at fx.lambda.Holder.viaCollection(Holder.java:45),Holder.lambda$viaCollection$2,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaCollection,Holder.lambda$viaCollection$2
@@ -249,22 +249,22 @@ at fx.lambda.Holder.lambda$viaCollection$2(Holder.java:43),OrderDaoImpl.describe
 at fx.lambda.Holder.viaForEach(Holder.java:51),Holder.lambda$viaForEach$3,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaForEach,Holder.lambda$viaForEach$3
 at fx.lambda.Holder.lambda$viaForEach$3(Holder.java:51),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 候補2件: 自クラス（this）
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 候補2件: 型名（static）
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
-at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.lambda.Starter.viaSubclass(Starter.java:25),Starter.Worker.run,RESOLVED:CALLBACK,1,Starter.viaSubclass,Starter.Worker.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
-at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Starter.viaSubclass,Starter.Worker.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,UNEXPANDED:CHA,2,Starter.viaSubclass,Starter.Worker.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,RESOLVED:CALLBACK,1,Starter.viaExecutor,Starter.lambda$viaExecutor$0,[RESOLVED:CALLBACK] 契約: ExecutorService#submit(java.util.concurrent.Callable) が call() を呼ぶ
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Starter.viaSubclass(Starter.java:25),Starter.Worker.run,RESOLVED:CALLBACK,1,Starter.viaSubclass,Starter.Worker.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Starter.viaSubclass,Starter.Worker.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,UNEXPANDED:CHA,2,Starter.viaSubclass,Starter.Worker.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,RESOLVED:CALLBACK,1,Starter.viaExecutor,Starter.lambda$viaExecutor$0,[RESOLVED:CALLBACK] contract: ExecutorService#submit(java.util.concurrent.Callable) calls call()
 at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Starter.viaExecutor,Starter.lambda$viaExecutor$0,OrderDaoImpl.describe
 at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Starter.viaExecutor,Starter.lambda$viaExecutor$0
 at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Starter.viaExecutor,Starter.lambda$viaExecutor$0,OrderDaoImpl.describe
-at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] 契約: Thread#start() が run() を呼ぶ
-at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
-at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 候補2件: フィールド変数
+at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.model.Color.<init>(Color.java:14),Registry.register,RESOLVED:STATIC_BOUND:STATIC,2,Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),Target.<clinit>,RESOLVED:REFLECTION_INIT,1,Invoker.byConstant,Target.<clinit>
 at fx.reflect.Invoker.byConstant(Invoker.java:16),Target.run,RESOLVED:REFLECTION,1,Invoker.byConstant,Target.run
@@ -274,9 +274,9 @@ at fx.reflect.Target.run(Target.java:10),Target.step,RESOLVED:STATIC_BOUND:PRIVA
 at fx.reflect.Target.<init>(Target.java:13),Target.step,RESOLVED:STATIC_BOUND:PRIVATE,2,Invoker.byGetClass,Target.Target,Target.step
 at fx.reflect.Invoker.byGetClass(Invoker.java:25),Target.run,RESOLVED:REFLECTION,1,Invoker.byGetClass,Target.run
 at fx.reflect.Target.run(Target.java:8),Target.step,RESOLVED:STATIC_BOUND:PRIVATE,2,Invoker.byGetClass,Target.run,Target.step
-at fx.reflect.Invoker.nameOnly(Invoker.java:29),Target.run,UNEXPANDED:REFLECTION,1,Invoker.nameOnly,Target.run,[UNEXPANDED:REFLECTION] 候補3件: 引数型が不明なため名前で照合
-at fx.reflect.Invoker.nameOnly(Invoker.java:29),Target.run,UNEXPANDED:REFLECTION,1,Invoker.nameOnly,Target.run,[UNEXPANDED:REFLECTION] 候補3件: 引数型が不明なため名前で照合
-at fx.reflect.Invoker.nameOnly(Invoker.java:29),Target.run,UNEXPANDED:REFLECTION,1,Invoker.nameOnly,Target.run,[UNEXPANDED:REFLECTION] 候補3件: 引数型が不明なため名前で照合
+at fx.reflect.Invoker.nameOnly(Invoker.java:29),Target.run,UNEXPANDED:REFLECTION,1,Invoker.nameOnly,Target.run,[UNEXPANDED:REFLECTION] 3 candidates: matched by name because argument types are unknown
+at fx.reflect.Invoker.nameOnly(Invoker.java:29),Target.run,UNEXPANDED:REFLECTION,1,Invoker.nameOnly,Target.run,[UNEXPANDED:REFLECTION] 3 candidates: matched by name because argument types are unknown
+at fx.reflect.Invoker.nameOnly(Invoker.java:29),Target.run,UNEXPANDED:REFLECTION,1,Invoker.nameOnly,Target.run,[UNEXPANDED:REFLECTION] 3 candidates: matched by name because argument types are unknown
 at fx.reflect.Invoker.viaParam(Invoker.java:33),Invoker.invokeNamed,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.invokeNamed
 at fx.reflect.Invoker.invokeNamed(Invoker.java:39),Target.run,RESOLVED:REFLECTION,2,Invoker.viaParam,Invoker.invokeNamed,Target.run
 at fx.reflect.Target.run(Target.java:9),Target.step,RESOLVED:STATIC_BOUND:PRIVATE,3,Invoker.viaParam,Invoker.invokeNamed,Target.run,Target.step
@@ -286,63 +286,63 @@ at fx.reflect.Invoker.create(Invoker.java:43),Target.<clinit>,RESOLVED:REFLECTIO
 at fx.reflect.Invoker.viaParam(Invoker.java:35),Invoker.classOf,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.classOf
 at fx.service.OrderService.<clinit>(OrderService.java:12),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,1,OrderService.<clinit>,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,2,OrderService.<clinit>,DaoFactory.create,DaoFactory.newUserDao
-at fx.app.Legacy.callRemote(Legacy.java:9),go,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),go,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.app.Legacy.callRemote(Legacy.java:10),close,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),close,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.app.Legacy.callRemote(Legacy.java:10),<init>,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),<init>,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,UNRESOLVED:BINDING_FAILED,1,(型解決失敗),findById,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
-at teamb.NightJob.run(NightJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:15),AbstractDao.findById,EXTERNAL_USAGE:INHERITED,1,team-b-batch.jar,AbstractDao.findById,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:16),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,UserDaoImpl.describe,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:17),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-b-batch.jar,AbstractDao.flush,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderDaoImpl.describe,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:19),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:19),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.bump,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:20),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:20),Counter.Inner.touch,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Inner.touch,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Nested.Nested,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Nested.Nested,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Nested.touch,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Nested.touch,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:22),Notifier.Notifier,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Notifier.Notifier,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:22),Notifier.execute,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Notifier.execute,被参照:EXACT
-at teamc.ReportJob.run(ReportJob.java:13),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,Counter.Counter,被参照:EXACT
-at teamc.ReportJob.run(ReportJob.java:13),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,Counter.bump,被参照:EXACT
-at teamc.ReportJob.run(ReportJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
-at teamc.ReportJob.run(ReportJob.java:14),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,UserDaoImpl.describe,被参照:EXACT
-at teamc.ReportJob.run(ReportJob.java:15),Counter.initialCount,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,Counter.initialCount,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:15),AbstractDao.findById,EXTERNAL_USAGE:INHERITED,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,AbstractDao.findById,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:16),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,UserDaoImpl.describe,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:17),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,AbstractDao.flush,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,OrderDaoImpl.describe,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:19),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:19),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:20),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:20),Counter.Inner.touch,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Inner.touch,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Nested.Nested,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Nested.Nested,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Nested.touch,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Nested.touch,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:22),Notifier.Notifier,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Notifier.Notifier,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:22),Notifier.execute,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Notifier.execute,被参照:EXACT
-at teamd.WebJob.run(WebJob.java:12),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war,OrderDaoImpl.OrderDaoImpl,被参照:EXACT
-at teamd.WebJob.run(WebJob.java:12),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-d-app.ear!/team-d-web.war,AbstractDao.flush,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,UserDaoImpl.UserDaoImpl,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:15),AbstractDao.findById,EXTERNAL_USAGE:INHERITED,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,AbstractDao.findById,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:16),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,UserDaoImpl.describe,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:17),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,AbstractDao.flush,被参照:INHERITED
-at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,OrderDaoImpl.describe,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:19),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:19),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.bump,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:20),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:20),Counter.Inner.touch,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Inner.touch,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Nested.Nested,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Nested.Nested,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Counter,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:21),Counter.Nested.touch,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Nested.touch,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:22),Notifier.Notifier,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Notifier.Notifier,被参照:EXACT
-at teamb.NightJob.run(NightJob.java:22),Notifier.execute,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Notifier.execute,被参照:EXACT
-at teame.LambdaJob.run(LambdaJob.java:13),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.Counter,被参照:EXACT
-at teame.LambdaJob.run(LambdaJob.java:14),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.bump,被参照:EXACT
-at teame.LambdaJob.run(LambdaJob.java:15),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.bump,被参照:EXACT
-at teame.NoDebugJob.run(Unknown Source),Counter.initialCount,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.initialCount,被参照:EXACT
+at fx.app.Legacy.callRemote(Legacy.java:9),go,UNRESOLVED:BINDING_FAILED,1,(unresolved),go,type resolution failed (missing classpath / dynamic call / etc.)
+at fx.app.Legacy.callRemote(Legacy.java:10),close,UNRESOLVED:BINDING_FAILED,1,(unresolved),close,type resolution failed (missing classpath / dynamic call / etc.)
+at fx.app.Legacy.callRemote(Legacy.java:10),<init>,UNRESOLVED:BINDING_FAILED,1,(unresolved),<init>,type resolution failed (missing classpath / dynamic call / etc.)
+at fx.dao.LibBackedDao.findById(LibBackedDao.java:12),findById,UNRESOLVED:BINDING_FAILED,1,(unresolved),findById,type resolution failed (missing classpath / dynamic call / etc.)
+at teamb.NightJob.run(NightJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,UserDaoImpl.UserDaoImpl,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:15),AbstractDao.findById,EXTERNAL_USAGE:INHERITED,1,team-b-batch.jar,AbstractDao.findById,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:16),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,UserDaoImpl.describe,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:17),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-b-batch.jar,AbstractDao.flush,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderDaoImpl.describe,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:19),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:19),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.bump,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:20),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:20),Counter.Inner.touch,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Inner.touch,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Nested.Nested,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Nested.Nested,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Nested.touch,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Counter.Nested.touch,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:22),Notifier.Notifier,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Notifier.Notifier,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:22),Notifier.execute,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,Notifier.execute,external-ref:EXACT
+at teamc.ReportJob.run(ReportJob.java:13),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,Counter.Counter,external-ref:EXACT
+at teamc.ReportJob.run(ReportJob.java:13),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,Counter.bump,external-ref:EXACT
+at teamc.ReportJob.run(ReportJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,UserDaoImpl.UserDaoImpl,external-ref:EXACT
+at teamc.ReportJob.run(ReportJob.java:14),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,UserDaoImpl.describe,external-ref:EXACT
+at teamc.ReportJob.run(ReportJob.java:15),Counter.initialCount,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar,Counter.initialCount,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,UserDaoImpl.UserDaoImpl,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:15),AbstractDao.findById,EXTERNAL_USAGE:INHERITED,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,AbstractDao.findById,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:16),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,UserDaoImpl.describe,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:17),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,AbstractDao.flush,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,OrderDaoImpl.describe,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:19),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:19),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.bump,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:20),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:20),Counter.Inner.touch,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Inner.touch,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Nested.Nested,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Nested.Nested,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Nested.touch,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Counter.Nested.touch,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:22),Notifier.Notifier,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Notifier.Notifier,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:22),Notifier.execute,EXTERNAL_USAGE:EXACT,1,team-c-boot.jar!/BOOT-INF/lib/team-b-batch.jar,Notifier.execute,external-ref:EXACT
+at teamd.WebJob.run(WebJob.java:12),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war,OrderDaoImpl.OrderDaoImpl,external-ref:EXACT
+at teamd.WebJob.run(WebJob.java:12),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-d-app.ear!/team-d-web.war,AbstractDao.flush,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:14),UserDaoImpl.UserDaoImpl,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,UserDaoImpl.UserDaoImpl,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:15),AbstractDao.findById,EXTERNAL_USAGE:INHERITED,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,AbstractDao.findById,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:16),UserDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,UserDaoImpl.describe,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:17),AbstractDao.flush,EXTERNAL_USAGE:INHERITED,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,AbstractDao.flush,external-ref:INHERITED
+at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.OrderDaoImpl,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,OrderDaoImpl.OrderDaoImpl,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:18),OrderDaoImpl.describe,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,OrderDaoImpl.describe,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:19),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:19),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.bump,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:20),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:20),Counter.Inner.touch,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Inner.touch,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Nested.Nested,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Nested.Nested,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Counter,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:21),Counter.Nested.touch,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Counter.Nested.touch,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:22),Notifier.Notifier,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Notifier.Notifier,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:22),Notifier.execute,EXTERNAL_USAGE:EXACT,1,team-d-app.ear!/team-d-web.war!/WEB-INF/lib/team-b-batch.jar,Notifier.execute,external-ref:EXACT
+at teame.LambdaJob.run(LambdaJob.java:13),Counter.Counter,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.Counter,external-ref:EXACT
+at teame.LambdaJob.run(LambdaJob.java:14),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.bump,external-ref:EXACT
+at teame.LambdaJob.run(LambdaJob.java:15),Counter.bump,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.bump,external-ref:EXACT
+at teame.NoDebugJob.run(Unknown Source),Counter.initialCount,EXTERNAL_USAGE:EXACT,1,team-e-lambda.jar,Counter.initialCount,external-ref:EXACT

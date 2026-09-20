@@ -193,10 +193,10 @@ void nested(boolean a, boolean b, String name) {
 そこで `methods.csv`（メソッドの一覧。線形サイズ）に2列足した。
 
 - `inHierarchy` … 呼び出し階層CSVに1行でも出たか
-- `absentCause` … 出なかったときの理由（`[UNREACHABLE] 条件分岐で打ち切った先` / `[EXCLUDED] exclude.packages で除外` /
-  `[UNEXPANDED:CHA] 候補のため展開されなかった` / `[UNEXPANDED:CYCLE] 循環のため展開されなかった` / `[NOT_REACHED] 上流が未出力`）
+- `absentCause` … 出なかったときの理由（`[UNREACHABLE] below a call pruned by a condition` / `[EXCLUDED] excluded by exclude.packages` /
+  `[UNEXPANDED:CHA] not expanded (CHA candidate)` / `[UNEXPANDED:CYCLE] not expanded (cycle)` / `[NOT_REACHED] no caller row was emitted`）
 
-`[UNREACHABLE] 条件分岐で打ち切った先` の範囲は、打ち切った呼び出し先から宣言上のエッジを辿って求める
+`[UNREACHABLE] below a call pruned by a condition` の範囲は、打ち切った呼び出し先から宣言上のエッジを辿って求める
 （`StreamingTreeWalker.markPrunedSubtrees`）。経路ごとの解決までは追わない近似だが、
 **別の経路で1行でも出たメソッドは除く**ので、印が付くのは「打ち切りが無ければ出ていたはず」の
 メソッドだけになる。探索はメソッド数＋エッジ数の1回のBFSで、ストリーミング出力の設計を崩さない。

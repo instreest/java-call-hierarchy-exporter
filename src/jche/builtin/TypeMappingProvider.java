@@ -19,6 +19,7 @@ import jche.extension.Hint;
 import jche.extension.TypeCandidateProvider;
 import jche.extension.UsageReporter;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 同梱のフェーズB拡張: 対応表ファイルを引いて具象型を返す。
@@ -86,7 +87,7 @@ public final class TypeMappingProvider implements TypeCandidateProvider, UsageRe
                 Boolean.parseBoolean(config.getProperty(KEY_STATIC_BOUND, "false").trim());
         String raw = config.getProperty(KEY_FILES, "").trim();
         if (raw.isEmpty()) {
-            Log.warn(getClass().getSimpleName() + ": " + KEY_FILES + " が空欄です（対応表が無いので何も解決しません）");
+            Log.warn(Messages.format("extension.typeMapping.noFiles", getClass().getSimpleName(), KEY_FILES));
             return;
         }
         for (String one : raw.split(",")) {
@@ -96,12 +97,12 @@ public final class TypeMappingProvider implements TypeCandidateProvider, UsageRe
                 load(p.isAbsolute() ? p : configDir.resolve(p));
             }
         }
-        Log.info("[plugin] " + getClass().getSimpleName() + ": 対応表 " + mapping.size() + " 件");
+        Log.info(Messages.format("extension.typeMapping.loaded", getClass().getSimpleName(), mapping.size()));
     }
 
     private void load(Path file) {
         if (!Files.isRegularFile(file)) {
-            Log.warn(KEY_FILES + " のファイルがありません: " + file);
+            Log.warn(Messages.format("extension.typeMapping.missingFile", KEY_FILES, file));
             return;
         }
         Properties p = new Properties();
@@ -109,7 +110,7 @@ public final class TypeMappingProvider implements TypeCandidateProvider, UsageRe
         try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             p.load(r);
         } catch (IOException e) {
-            Log.warn("対応表を読めません: " + file + " (" + e + ")");
+            Log.warn(Messages.format("extension.typeMapping.unreadable", file, e));
             return;
         }
         for (String key : p.stringPropertyNames()) {
@@ -124,7 +125,7 @@ public final class TypeMappingProvider implements TypeCandidateProvider, UsageRe
                 mapping.put(key.trim(), values.toArray(new String[0]));
             }
         }
-        Log.info("[plugin] 対応表: " + file);
+        Log.info(Messages.format("extension.typeMapping.file", file));
     }
 
     @Override
@@ -170,8 +171,8 @@ public final class TypeMappingProvider implements TypeCandidateProvider, UsageRe
         if (mapping.isEmpty()) {
             return;   // init で既に警告済み
         }
-        Log.info("[plugin] " + getClass().getSimpleName() + ": 対応表の適用 "
-                + used.size() + "/" + mapping.size() + " 行");
+        Log.info(Messages.format("extension.typeMapping.usage", getClass().getSimpleName(),
+                used.size(), mapping.size()));
         List<String> unused = new ArrayList<>();
         for (String key : mapping.keySet()) {
             if (!used.contains(key)) {
@@ -181,8 +182,7 @@ public final class TypeMappingProvider implements TypeCandidateProvider, UsageRe
         if (unused.isEmpty()) {
             return;
         }
-        Log.warn("対応表で一度も引かれなかった行が " + unused.size() + " 件あります。左辺の綴り違いか、"
-                + "その呼び出しが先の段（実装が1つ・その場で new 等）で既に絞れている可能性があります:");
+        Log.warn(Messages.format("extension.typeMapping.unused", unused.size()));
         for (String key : unused) {
             Log.info("    " + key);
         }

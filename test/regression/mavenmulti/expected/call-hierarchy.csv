@@ -1,8 +1,8 @@
 ﻿caller,callee,resolved-by,level,root,call-hierarchy
 at sample.multi.app.Main.main(Main.java:13),Core.hello,RESOLVED:STATIC_BOUND:STATIC,1,Main.main,Core.hello
-at sample.multi.core.Core.hello(Core.java:8),Greeter.greet,RESOLVED:NO_OVERRIDE,2,Main.main,Core.hello,Greeter.greet,[EXTERNAL] ソースが無いため辿れない
-at sample.multi.core.Core.hello(Core.java:8),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Core.hello,Greeter.of,[EXTERNAL] ソースが無いため辿れない
-at sample.multi.app.Main.main(Main.java:14),Strings.upper,RESOLVED:STATIC_BOUND:STATIC,1,Main.main,Strings.upper,[EXTERNAL] ソースが無いため辿れない
-at sample.multi.app.Main.main(Main.java:15),Formatter.wrap,RESOLVED:NO_OVERRIDE,1,Main.main,Formatter.wrap,[EXTERNAL] ソースが無いため辿れない
-at sample.multi.app.Main.main(Main.java:15),Greeter.formatter,RESOLVED:NO_OVERRIDE,1,Main.main,Greeter.formatter,[EXTERNAL] ソースが無いため辿れない
-at sample.multi.app.Main.main(Main.java:15),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,1,Main.main,Greeter.of,[EXTERNAL] ソースが無いため辿れない
+at sample.multi.core.Core.hello(Core.java:8),Greeter.greet,RESOLVED:NO_OVERRIDE,2,Main.main,Core.hello,Greeter.greet,[EXTERNAL] no source to follow
+at sample.multi.core.Core.hello(Core.java:8),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Core.hello,Greeter.of,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:14),Strings.upper,RESOLVED:STATIC_BOUND:STATIC,1,Main.main,Strings.upper,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:15),Formatter.wrap,RESOLVED:NO_OVERRIDE,1,Main.main,Formatter.wrap,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:15),Greeter.formatter,RESOLVED:NO_OVERRIDE,1,Main.main,Greeter.formatter,[EXTERNAL] no source to follow
+at sample.multi.app.Main.main(Main.java:15),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,1,Main.main,Greeter.of,[EXTERNAL] no source to follow

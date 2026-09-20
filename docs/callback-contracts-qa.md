@@ -35,7 +35,7 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 
 通常の解決は「呼び出し先の宣言に対してどの実装が動くか」を決めるもので、
 候補はすべて呼び出し先と同じシグネチャを持つ。契約で繋ぐ先は**別のメソッド**
-（`start()` に対して `run()`）なので、同じ配列に混ぜると `[UNEXPANDED:CHA] 候補N件` の
+（`start()` に対して `run()`）なので、同じ配列に混ぜると `[UNEXPANDED:CHA] N candidates` の
 件数や `methods.csv` の `unresolvedCause` が意味を失う。`CallResolver.callbackTargets` として
 分け、読み手（`StreamingTreeWalker` / `inDegrees` / `reachableFrom`）がそれぞれ足す。
 
@@ -304,7 +304,7 @@ get(Kind.USER)     →  #get(jp.co.app.Kind.USER)
 （`contracts-suggested.txt`。`jche.report.ContractSuggestions`）。
 
 この一連の作業の出発点は「指定の仕方に難がある」だった。書式を整えても、
-**機能があることに気づけない**なら意味が無い。`[UNEXPANDED:CHA] 候補2件: ローカル変数` を見て
+**機能があることに気づけない**なら意味が無い。`[UNEXPANDED:CHA] 2 candidates: local variable` を見て
 docs を調べ始められる人は多くない。ひな形があれば「選んでコメントを外す」だけで済む。
 
 **呼び出し箇所ごとではなく、それを直す 1 行ごとにまとめる。** 同じ `Dao#find` が 100 か所で

@@ -139,7 +139,7 @@ public final class Log {
                 sink.accept(line);
             } catch (RuntimeException e) {
                 sink = null;
-                System.out.println("[WARN] ログの受け口への出力に失敗したため、以降は標準出力だけに書きます: " + e);
+                System.out.println(Messages.format("common.log.sinkFailed", e));
             }
         }
         if (file != null) {

@@ -165,14 +165,14 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | 順 | 条件 | 出力 |
 |---|---|---|
-| 前半1 | この経路上に既に現れたメソッドへ戻る | `[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` |
-| 前半2 | import推定（`EXTERNAL_GUESS`） | `[EXTERNAL] import から型名を推定（未検証）` |
-| 前半3 | 呼び出し先の宣言ファイルが無い | `[EXTERNAL] ソースが無いため辿れない` |
-| 前半4 | 次の深さが `max.depth` に達する | `[UNEXPANDED:DEPTH] 深さ制限(N)に達した` |
-| 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `[UNEXPANDED:REFLECTION] 候補N件: 引数型が不明なため名前で照合` |
-| 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] 候補N件: {理由}` |
-| 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）` |
-| 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` |
+| 前半1 | この経路上に既に現れたメソッドへ戻る | `[UNEXPANDED:CYCLE] returns to a method already on this path` |
+| 前半2 | import推定（`EXTERNAL_GUESS`） | `[EXTERNAL] type guessed from an import (unverified)` |
+| 前半3 | 呼び出し先の宣言ファイルが無い | `[EXTERNAL] no source to follow` |
+| 前半4 | 次の深さが `max.depth` に達する | `[UNEXPANDED:DEPTH] depth limit (N) reached` |
+| 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` |
+| 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}` |
+| 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
+| 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
 | 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
 
 1件に確定した呼び出しの注記は付けない（解決方法は `resolved-by` 列に出る）。
@@ -185,8 +185,9 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
 無い＝設定漏れかデッドコードの疑い）と `[EXTERNAL]`（ソースが読めないだけ）は別物なので
 言い分ける。
 
-`{理由}` はレシーバの由来: `戻り値（ファクトリメソッド等）` / `引数（メソッド外から渡される）` /
-`フィールド変数` / `ローカル変数` / `自クラス（this）` / `型名（static）` / `レシーバ不明`。
+`{理由}` はレシーバの由来: `return value (factory method etc.)` /
+`parameter (passed in from outside the method)` / `field` / `local variable` /
+`own class (this)` / `type name (static)` / `receiver unknown`。
 理由を由来で出すのは、**次に調べる場所が由来ごとに違う**から（戻り値ならファクトリの
 `return`、引数なら呼び出し元、フィールドなら代入箇所とDI設定）。注記は失敗の報告ではなく
 次の調査手順として書く。
@@ -194,14 +195,14 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
 さらに、同じファイルに性質の違う2種類の行を追記する。`root` 列で区別できる。
 
 - **型解決に失敗した呼び出し**: `caller` はスタックトレース形式、`callee` はソースに
-  書かれたメソッド名、`root` = `(型解決失敗)`、階層列にメソッド名、末尾に理由
-  `型解決に失敗（クラスパス不足・動的呼び出し等の可能性）`。**静かに消さないための行**
+  書かれたメソッド名、`root` = `(unresolved)`、階層列にメソッド名、末尾に理由
+  `type resolution failed (missing classpath / dynamic call / etc.)`。**静かに消さないための行**
 - **外部jarからの被参照**（`external.library.folders` 指定時）: `caller` = 参照している側の
   クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`root` = jar名（FatJar の中の jar なら
   `外側.jar!/BOOT-INF/lib/中.jar` のように jar URL と同じ `!/` 区切りで場所まで）、階層列に短縮表記、
-  末尾に `被参照:EXACT`（そのクラスで宣言されているメソッド。合成した暗黙のデフォルトコンストラクタを
-  含む）/ `被参照:INHERITED`（親から継承したメソッド。宣言している**最も近い親**のメソッドとして出す）/
-  `被参照:IMPLICIT_CTOR`（引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。
+  末尾に `external-ref:EXACT`（そのクラスで宣言されているメソッド。合成した暗黙のデフォルトコンストラクタを
+  含む）/ `external-ref:INHERITED`（親から継承したメソッド。宣言している**最も近い親**のメソッドとして出す）/
+  `external-ref:IMPLICIT_CTOR`（引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。
   版違いの可能性が高いが生成箇所として有用なので残す）
 
 **行順は環境（OS・ファイルシステム・キャッシュの状態）に依存させない。**
@@ -211,7 +212,7 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
 | 起点 | ソースフォルダの指定順 → 型FQN順 → 宣言行順 → ID順 |
 | 起点の呼び出し先 | ソース上の呼び出し順（深さ優先） |
 | 複数候補の行 | 宣言型自身 → 下位型（直接の下位型はFQN順、そこから深さ優先） |
-| `(型解決失敗)` の行 | ソースフォルダの指定順 → ファイルの相対パス順 → ファイル内の出現順 |
+| `(unresolved)` の行 | ソースフォルダの指定順 → ファイルの相対パス順 → ファイル内の出現順 |
 | 被参照の行 | jar のパス順 → jar の中のクラスの順 |
 | `methods.csv` | ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → ID順 |
 
@@ -235,11 +236,11 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | `outDegree` | 呼び出し数 |
 | `role` | `FRAMEWORK_ENTRY`（契約でフレームワークが呼ぶと分かる入口。in に関係なく優先）/ `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
 | `reachable` | 起点集合から解決後のエッジで到達できるか |
-| `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`[UNEXPANDED:NO_IMPL] 本体を持つ実装がソース上に無い` / `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり` / レシーバ由来） |
+| `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`[UNEXPANDED:NO_IMPL] no implementation with a body in the source` / `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` / レシーバ由来） |
 
 `unresolvedCause` のタグは `call-hierarchy.csv` の注記と同じものを使う。同じ「絞れなかった」を
 一覧と階層で別の名前で書くと、片方で見つけた呼び出しをもう片方で追えなくなる。
-レシーバ由来は `[UNEXPANDED:CHA] {理由}` の形にする。
+レシーバ由来は `[UNEXPANDED:CHA] {reason}` の形にする。
 
 出すのは「他から呼び出せる定義」。ソースの無いメソッド（jar内）、`<init>`、合成した `<clinit>`、ラムダの合成メソッド（`lambda$…`）、匿名クラス（`Outer$1`）のメソッドは出さない（匿名クラスはその場で親の定義を上書きした処理内容で、呼び出し階層で読む）。内部クラス・static なネストクラス・ローカルクラス（`Outer$1Local`）は名前を持つ定義なので出す。
 行順はソースの並び（ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → 同一行はID順）。
@@ -362,7 +363,7 @@ AST 走査中に利用者のコードを差し込む口は設けない（キャ�
 - 型階層の子型・親型リストはFQN順に整列する。CHA候補の並び（＝出力の行順、上限20件で
   打ち切るときにどの候補を載せるか）がキャッシュ上のブロック順に依存すると、
   差分更新後の出力が cold 実行と一致しなくなる
-- 循環検出は経路単位（`[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` を1行出して降りない）。グローバル訪問済み集合は持たない
+- 循環検出は経路単位（`[UNEXPANDED:CYCLE] returns to a method already on this path` を1行出して降りない）。グローバル訪問済み集合は持たない
 - `exclude.packages` 一致ノードは行にしないが、その先は親に繋ぎ直して辿る。
   繋ぎ直すときはデータフローの環境（引数・コンストラクタ実引数）も除外ノードのものに差し替える。
   読み飛ばし中の除外メソッドも循環判定の祖先に含め、読み飛ばしの入れ子数にも深さ上限（512）を
@@ -374,7 +375,7 @@ AST 走査中に利用者のコードを差し込む口は設けない（キャ�
 ### 5.5 型解決できなかった呼び出し
 
 1. レシーバが単純名で、そのファイルの単一型インポートと一致すればそのFQNを採用（未検証）
-2. それも無理なら「型解決失敗」として記録し、件数をログに出し、`(型解決失敗)` 行を出す
+2. それも無理なら「型解決失敗」として記録し、件数をログに出し、`(unresolved)` 行を出す
 
 ### 5.6 被参照スキャン
 
@@ -535,7 +536,7 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 
 **(c) 暗黙のデフォルトコンストラクタ**: 明示コンストラクタが無い型には `<init>()` が存在する。
 型を訪問した時点で宣言を合成しないと、`new B()` の呼び出し先が「宣言の無いメソッド」になり
-`[EXTERNAL] ソースが無いため辿れない` と誤表示される。record の暗黙の正準コンストラクタは
+`[EXTERNAL] no source to follow` と誤表示される。record の暗黙の正準コンストラクタは
 レコードコンポーネントを引数に取るので、`ITypeBinding.getDeclaredMethods()` の
 コンストラクタを正として合成する。
 
@@ -629,7 +630,7 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
   値がぶれる）。これが無いと、匿名クラスが1件あるだけで `SINGLE_IMPL` と判定し、
   **実際に動くラムダとは違う実装に決め打ち**する
 - 候補の絞り込み自体は変えない。値として追えなかった呼び出しでは `[RESOLVED:SINGLE_IMPL]` と
-  書く代わりに `[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（…）` を出し、
+  書く代わりに `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference（…）` を出し、
   `unresolvedCalls` にも数える
 - **ラムダ本体は合成メソッドにする**。名前は javac と同じ `lambda$囲みメソッド名$通し番号`、
   修飾子に `lambda` を付けた D 行を作り、本体の中の呼び出しはその合成メソッドに計上する。
@@ -850,10 +851,10 @@ for (...) { d.select(); d = new OrderDao(); }   // 走査順だと d.select() �
   そのまま使わず、ソースフォルダの宣言順 → 相対パス（`/` 区切り）の文字列順に固定する。
   鍵は `Path#compareTo` ではなく文字列（`Path#compareTo` は Windows で大文字小文字を無視する）
 - 木の部分は「起点の並び」「1メソッドのエッジがそのファイルのブロック内の出現順」「CHA候補の
-  FQN順」で決まっているので、ファイル順に影響されない。影響されるのは `(型解決失敗)` の節で、
+  FQN順」で決まっているので、ファイル順に影響されない。影響されるのは `(unresolved)` の節で、
   キャッシュのブロック順（差分更新で解析し直したファイルが先頭へ移る）のまま出すと、
   ファイルを1つ直すたびに行順が入れ替わる
-- `(型解決失敗)` の節は、全件ためて sort せず（ストリーミングを保つ）、先にキャッシュを1回読んで
+- `(unresolved)` の節は、全件ためて sort せず（ストリーミングを保つ）、先にキャッシュを1回読んで
   F行の相対パスを出力順に並べて順位を振り、もう1回読みながら「次に出すべき順位」のブロックの
   U行はそのまま書き、順番がまだ来ていないブロックのU行だけを保留する。キャッシュが出力順に
   並んでいれば何も保留しない
@@ -1859,9 +1860,9 @@ at fx.Factory.delegate(Factory.java:9),Factory.create,App.viaDelegate,Factory.de
 
 ### T04 2つの型を返しうるファクトリは絞らない
 ```
-at fx.App.viaEither(App.java:23),AbstractDao.select,App.viaEither,AbstractDao.select,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
-at fx.App.viaEither(App.java:23),MemoDao.select,App.viaEither,MemoDao.select,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
-at fx.App.viaEither(App.java:23),OrderDao.select,App.viaEither,OrderDao.select,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
+at fx.App.viaEither(App.java:23),AbstractDao.select,App.viaEither,AbstractDao.select,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
+at fx.App.viaEither(App.java:23),MemoDao.select,App.viaEither,MemoDao.select,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
+at fx.App.viaEither(App.java:23),OrderDao.select,App.viaEither,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
 ```
 検証観点: 候補は `Dao.select()` をオーバーライドしている宣言3件（`AbstractDao` / `MemoDao` /
 `OrderDao`、この順＝FQN順）。`UserDao` は宣言を持たないので候補に**入らない**。候補行の先へは
@@ -1877,8 +1878,8 @@ at fx.App.viaConstant(App.java:35),OrderDao.select,App.viaConstant,OrderDao.sele
 
 ### T06 実行時に決まる文字列・存在しない型名では絞らない
 ```
-at fx.App.viaRuntimeName(App.java:39),OrderDao.select,App.viaRuntimeName,OrderDao.select,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
-at fx.App.viaMissingType(App.java:43),OrderDao.select,App.viaMissingType,OrderDao.select,[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）
+at fx.App.viaRuntimeName(App.java:39),OrderDao.select,App.viaRuntimeName,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
+at fx.App.viaMissingType(App.java:43),OrderDao.select,App.viaMissingType,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)
 ```
 （それぞれ `MemoDao.select` / `AbstractDao.select` の候補行も同様に出る）
 
@@ -1889,8 +1890,8 @@ at fx.App.viaLocalNew(App.java:49),OrderDao.select,App.viaLocalNew,OrderDao.sele
 
 ### T08 ループ内で再代入される変数は候補集合のまま
 ```
-at fx.App.viaLoop(App.java:55),OrderDao.select,App.viaLoop,OrderDao.select,[UNEXPANDED:CHA] 候補2件: ローカル変数
-at fx.App.viaLoop(App.java:55),MemoDao.select,App.viaLoop,MemoDao.select,[UNEXPANDED:CHA] 候補2件: ローカル変数
+at fx.App.viaLoop(App.java:55),OrderDao.select,App.viaLoop,OrderDao.select,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.App.viaLoop(App.java:55),MemoDao.select,App.viaLoop,MemoDao.select,[UNEXPANDED:CHA] 2 candidates: local variable
 ```
 検証観点: 3件のCHA候補が `new` された2型に**狭まる**が、1件には**絞らない**。
 
@@ -1916,9 +1917,9 @@ at fx.Service.helper(Service.java:16),OrderDao.select,App.viaService,Service.exe
 
 ### T11 setter注入・一部のコンストラクタしか代入しない・親クラスのフィールドは絞らない
 ```
-at fx.SetterService.exec(SetterService.java:11),OrderDao.select,App.viaSetter,SetterService.exec,OrderDao.select,[UNEXPANDED:CHA] 候補3件: フィールド変数
-at fx.PartialService.exec(PartialService.java:15),OrderDao.select,App.viaPartial,PartialService.exec,OrderDao.select,[UNEXPANDED:CHA] 候補3件: フィールド変数
-at fx.Base.baseExec(Base.java:11),OrderDao.select,App.viaSub,Base.baseExec,OrderDao.select,[UNEXPANDED:CHA] 候補3件: フィールド変数
+at fx.SetterService.exec(SetterService.java:11),OrderDao.select,App.viaSetter,SetterService.exec,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: field
+at fx.PartialService.exec(PartialService.java:15),OrderDao.select,App.viaPartial,PartialService.exec,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: field
+at fx.Base.baseExec(Base.java:11),OrderDao.select,App.viaSub,Base.baseExec,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: field
 ```
 （各3候補のうち1行を示す。`MemoDao` / `AbstractDao` の行も出る）
 
@@ -1926,7 +1927,7 @@ at fx.Base.baseExec(Base.java:11),OrderDao.select,App.viaSub,Base.baseExec,Order
 ```
 at fx.App.run(App.java:116),App$1.run,App.viaCapture,App.run,App$1.run,[RESOLVED:DATAFLOW_PARAM]
 at fx.App$1.run(App.java:102),OrderDao.select,App.viaCapture,App.run,App$1.run,OrderDao.select,[RESOLVED:DATAFLOW_NEW]
-at fx.App$2.run(App.java:110),OrderDao.select,App.viaCaptureParam,App.run,App$2.run,OrderDao.select,[UNEXPANDED:CHA] 候補3件: 引数（メソッド外から渡される）
+at fx.App$2.run(App.java:110),OrderDao.select,App.viaCaptureParam,App.run,App$2.run,OrderDao.select,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method)
 ```
 検証観点: `new` 由来（`T:`）の捕捉は解決し、囲みメソッドの**引数**（`A:`）の捕捉は解決しない。
 匿名クラスの型名は `fx.App$1` / `fx.App$2`（宣言順）。`Runnable` は `java.**` だが、`App$1.run`
@@ -1934,17 +1935,17 @@ at fx.App$2.run(App.java:110),OrderDao.select,App.viaCaptureParam,App.run,App$2.
 
 ### T13 循環
 ```
-at fx.App.selfRec(App.java:127),App.selfRec,App.cycles,App.selfRec,App.selfRec,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
-at fx.App.mutualB(App.java:136),App.mutualA,App.cycles,App.mutualA,App.mutualB,App.mutualA,[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る
+at fx.App.selfRec(App.java:127),App.selfRec,App.cycles,App.selfRec,App.selfRec,[UNEXPANDED:CYCLE] returns to a method already on this path
+at fx.App.mutualB(App.java:136),App.mutualA,App.cycles,App.mutualA,App.mutualB,App.mutualA,[UNEXPANDED:CYCLE] returns to a method already on this path
 ```
-検証観点: 無限ループしない。`[UNEXPANDED:CYCLE] 経路上で既に呼んでいるメソッドへ戻る` 行の先へ降りない。`methods.csv` で `selfRec` /
+検証観点: 無限ループしない。`[UNEXPANDED:CYCLE] returns to a method already on this path` 行の先へ降りない。`methods.csv` で `selfRec` /
 `mutualA` / `mutualB` は `NORMAL`, `reachable=1`。
 
 ### T14 ラムダ／匿名クラス／メソッド参照
 ```
 at fx.App.viaLambda(App.java:141),Helper.validate,App.viaLambda,Helper.validate
-at fx.App.viaLambda(App.java:142),App$3.handle,App.viaLambda,App$3.handle,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）
-at fx.App.viaAnonHandler(App.java:151),App$3.handle,App.viaAnonHandler,App$3.handle,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり（どれが実行されるかは未特定）
+at fx.App.viaLambda(App.java:142),App$3.handle,App.viaLambda,App$3.handle,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
+at fx.App.viaAnonHandler(App.java:151),App$3.handle,App.viaAnonHandler,App$3.handle,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
 at fx.App$3.handle(App.java:148),Helper.validate,App.viaAnonHandler,App$3.handle,Helper.validate
 at fx.App.viaMethodRef(App.java:156),Repo.save,App.viaMethodRef,Repo.save
 ```
@@ -1955,7 +1956,7 @@ at fx.App.viaMethodRef(App.java:156),Repo.save,App.viaMethodRef,Repo.save
 - `NoCtor::new` はコンストラクタなので行にならない。`String[]::new` は辺にならず、
   型解決失敗の件数（1件）にも**含まれない**
 - `methods.csv` の `App.viaMethodRef()` は `outDegree=6`（save, NoCtor.<init>, handle, get, apply, Repo.<init>）、
-  `unresolvedCalls=3`（handle / get / apply の3件が「[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり」）
+  `unresolvedCalls=3`（handle / get / apply の3件が「[UNEXPANDED:LAMBDA] implemented by a lambda/method reference」）
 
 ### T15 オーバーロードと引数型略名の衝突
 ```
@@ -1973,8 +1974,8 @@ at fx.App.overloads(App.java:173),Repo.save,App.overloads,Repo.save
 
 ### T16 enum がCHAの候補に入る
 ```
-at fx.App.viaShape(App.java:178),Circle.area,App.viaShape,Circle.area,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
-at fx.App.viaShape(App.java:178),Unit.area,App.viaShape,Unit.area,[UNEXPANDED:CHA] 候補2件: 引数（メソッド外から渡される）
+at fx.App.viaShape(App.java:178),Circle.area,App.viaShape,Circle.area,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.App.viaShape(App.java:178),Unit.area,App.viaShape,Unit.area,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 ```
 検証観点: `Circle` だけを見て `SINGLE_IMPL` に**しない**。
 
@@ -2041,10 +2042,10 @@ at fx.internal.Ping.ping(Ping.java:8),Helper.validate,App.viaPingPong,Helper.val
 
 ### T23 import推定と型解決失敗
 ```
-at fx.UsesLib.guess(UsesLib.java:8),StringUtils.isEmpty,UsesLib.guess,StringUtils.isEmpty,[EXTERNAL] import から型名を推定（未検証）
-at fx.UsesLib.fail(UsesLib.java:12),call,(型解決失敗),call,型解決に失敗（クラスパス不足・動的呼び出し等の可能性）
+at fx.UsesLib.guess(UsesLib.java:8),StringUtils.isEmpty,UsesLib.guess,StringUtils.isEmpty,[EXTERNAL] type guessed from an import (unverified)
+at fx.UsesLib.fail(UsesLib.java:12),call,(unresolved),call,type resolution failed (missing classpath / dynamic call / etc.)
 ```
-検証観点: 単一型インポートは推定して残す。ワイルドカードインポートは `(型解決失敗)` 行になり、
+検証観点: 単一型インポートは推定して残す。ワイルドカードインポートは `(unresolved)` 行になり、
 ログの件数（1件）と同数出る。
 
 ### T24 `methods.csv` の抜粋と行順
@@ -2055,7 +2056,7 @@ OrderDao.select(),fx.OrderDao,C,src/fx/OrderDao.java,4,1,18,0,LEAF,1,0,
 AbstractDao.select(),fx.AbstractDao,A,src/fx/AbstractDao.java,4,1,14,1,NORMAL,1,0,
 Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィールド変数
 App.viaEither(),fx.App,C,src/fx/App.java,22,1,0,2,ENTRY_CANDIDATE,1,1,戻り値（ファクトリメソッド等）
-App.viaLambda(),fx.App,C,src/fx/App.java,140,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] ラムダ/メソッド参照による実装あり
+App.viaLambda(),fx.App,C,src/fx/App.java,140,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference
 App$3.handle(String),fx.App$3,C,src/fx/App.java,147,1,3,1,NORMAL,1,0,
 Unit.<clinit>(),fx.Unit,C,src/fx/Unit.java,3,1,0,3,ENTRY_CANDIDATE,1,0,
 Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
@@ -2076,14 +2077,14 @@ Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 |---|---|---|
 | T25 キャッシュ再利用 | 同じ設定で2回目 | ログ `再利用=30 新規解析=0 失敗=0`。`call-hierarchy.csv` が1回目と**バイト単位で一致** |
 | T26 差分再解析 | `App.java` を touch して3回目 | ログ `再利用=29 新規解析=1`。出力は1回目と一致 |
-| T27 深さ制限 | `max.depth=2` | `at fx.App.shared(App.java:70),fx.AbstractDao.select(),App.rootA,App.shared,AbstractDao.select,[UNEXPANDED:DEPTH] 深さ制限(2)に達した / [RESOLVED:DATAFLOW_PARAM]`（前半と後半の注記が ` / ` で連結） |
-| T28 起点指定 | `entry.packages=fx.App#rootB,fx.App#rootA` | ログ `エントリポイント数: 2`。出力は T09 の10行＋T23 の `(型解決失敗)` 行＝ヘッダー含め 11 行。**`rootA` の行が `rootB` より先**（設定に書いた順ではなくソースの宣言順） |
+| T27 深さ制限 | `max.depth=2` | `at fx.App.shared(App.java:70),fx.AbstractDao.select(),App.rootA,App.shared,AbstractDao.select,[UNEXPANDED:DEPTH] depth limit (2) reached / [RESOLVED:DATAFLOW_PARAM]`（前半と後半の注記が ` / ` で連結） |
+| T28 起点指定 | `entry.packages=fx.App#rootB,fx.App#rootA` | ログ `エントリポイント数: 2`。出力は T09 の10行＋T23 の `(unresolved)` 行＝ヘッダー含め 11 行。**`rootA` の行が `rootB` より先**（設定に書いた順ではなくソースの宣言順） |
 | T29 行数上限 | `max.rows=3` | ログ `[WARN] 出力行数の上限(3)に達したため打ち切りました`。階層の行は3行で止まる |
-| T30 データフロー無効 | `dataflow.enabled=false` | T01 が `[UNEXPANDED:CHA] 候補3件: 戻り値（ファクトリメソッド等）` の3行に、T09 が `[UNEXPANDED:CHA] 候補3件: 引数（メソッド外から渡される）` になる。T33〜T38 のリフレクション行は消え、T38 が `[UNEXPANDED:CHA] 候補3件: レシーバ不明` の3行になる。行数は増える（135行） |
+| T30 データフロー無効 | `dataflow.enabled=false` | T01 が `[UNEXPANDED:CHA] 3 candidates: return value (factory method etc.)` の3行に、T09 が `[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method)` になる。T33〜T38 のリフレクション行は消え、T38 が `[UNEXPANDED:CHA] 3 candidates: receiver unknown` の3行になる。行数は増える（135行） |
 | T31 準拠レベル範囲外 | `source.level=99` | 起動時に `IllegalArgumentException`。指定できる値の一覧を含む |
 | T32 準拠レベルの丸め | `source.level=1.4` | ログ `ソースレベル: 1.8（source.level=1.4 の指定による）` と `※ source.level=1.4 はこのJDTでは扱えないため 1.8 として解析します。`。既存キャッシュを破棄した旨が出る |
 | T41 依存先の変更による再解析 | キャッシュがある状態で `Dao.java` の末尾に空行とコメント行を追加して実行 | ログ `再利用=20 新規解析=10（うち依存先の変更による再解析=9） 失敗=0`（`Dao` を参照する9ファイルが再解析される）。両CSVは変更前と**バイト単位で一致**（CHA候補の行順も変わらない） |
-| T42 依存 jar の追加・削除 | `ext.properties` で1回実行してキャッシュを作り、`ext-deps.properties`（`library.folders=deps`）で2回目、`ext.properties` で3回目 | 2回目のログ `[cache] 依存jarの変更を検知: 追加=1 変更=0 削除=0（影響するパッケージ 1 件）…` と `再利用=24 新規解析=6（うち依存先の変更による再解析=2、依存jarの変更による再解析=4）`。T23 の import推定の行が `at fx.UsesLib.guess(UsesLib.java:8),org.apache.commons.lang3.StringUtils.isEmpty(CharSequence),UsesLib.guess,StringUtils.isEmpty,[EXTERNAL] ソースが無いため辿れない` に変わる（jar で解決できたので `callee` に引数型が付き、注記が変わる）。`(型解決失敗)` の行（`Unknown.call()`）は残る。3回目のログ `削除=1` と `再利用=29 新規解析=1（うち依存jarの変更による再解析=1）`、出力は1回目と**バイト単位で一致** |
+| T42 依存 jar の追加・削除 | `ext.properties` で1回実行してキャッシュを作り、`ext-deps.properties`（`library.folders=deps`）で2回目、`ext.properties` で3回目 | 2回目のログ `[cache] 依存jarの変更を検知: 追加=1 変更=0 削除=0（影響するパッケージ 1 件）…` と `再利用=24 新規解析=6（うち依存先の変更による再解析=2、依存jarの変更による再解析=4）`。T23 の import推定の行が `at fx.UsesLib.guess(UsesLib.java:8),org.apache.commons.lang3.StringUtils.isEmpty(CharSequence),UsesLib.guess,StringUtils.isEmpty,[EXTERNAL] no source to follow` に変わる（jar で解決できたので `callee` に引数型が付き、注記が変わる）。`(unresolved)` の行（`Unknown.call()`）は残る。3回目のログ `削除=1` と `再利用=29 新規解析=1（うち依存jarの変更による再解析=1）`、出力は1回目と**バイト単位で一致** |
 | T44 設定の検証 | `cache.folder=../x` | 起動時に `IllegalArgumentException`。メッセージに項目名 `cache.folder`、値 `../x`、「相対パスは設定ファイルのフォルダの配下だけ指定できます。外を指す場合は絶対パスで書いてください」の趣旨を含む |
 | | `max.depth=abc` | 起動時に `IllegalArgumentException`。メッセージに項目名 `max.depth` と値 `abc` を含む |
 | | `max.depth=`（空欄） | 既定値 50 で動き、出力は既定設定と一致 |
@@ -2099,18 +2100,18 @@ Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 パス順で先。同じ `ext.Caller` が FatJar の中と単体の両方から別々の行として出る）。
 
 ```
-ext.Caller,fx.Repo.Repo(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.Repo,被参照:EXACT
-ext.Caller,fx.Repo.save(String),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.save,被参照:EXACT
-ext.Caller,fx.Repo.save(long),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.save,被参照:EXACT
-ext.Caller,fx.UserDao.UserDao(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,UserDao.UserDao,被参照:EXACT
-ext.Caller,fx.AbstractDao.select(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,AbstractDao.select,被参照:INHERITED
-ext.Caller,fx.OrderDao.OrderDao(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,OrderDao.OrderDao,被参照:EXACT
-ext.Caller,fx.Repo.Repo(),ext-caller.jar,Repo.Repo,被参照:EXACT
-ext.Caller,fx.Repo.save(String),ext-caller.jar,Repo.save,被参照:EXACT
-ext.Caller,fx.Repo.save(long),ext-caller.jar,Repo.save,被参照:EXACT
-ext.Caller,fx.UserDao.UserDao(),ext-caller.jar,UserDao.UserDao,被参照:EXACT
-ext.Caller,fx.AbstractDao.select(),ext-caller.jar,AbstractDao.select,被参照:INHERITED
-ext.Caller,fx.OrderDao.OrderDao(),ext-caller.jar,OrderDao.OrderDao,被参照:EXACT
+ext.Caller,fx.Repo.Repo(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.Repo,external-ref:EXACT
+ext.Caller,fx.Repo.save(String),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.save,external-ref:EXACT
+ext.Caller,fx.Repo.save(long),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,Repo.save,external-ref:EXACT
+ext.Caller,fx.UserDao.UserDao(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,UserDao.UserDao,external-ref:EXACT
+ext.Caller,fx.AbstractDao.select(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,AbstractDao.select,external-ref:INHERITED
+ext.Caller,fx.OrderDao.OrderDao(),app-boot.jar!/BOOT-INF/lib/ext-caller.jar,OrderDao.OrderDao,external-ref:EXACT
+ext.Caller,fx.Repo.Repo(),ext-caller.jar,Repo.Repo,external-ref:EXACT
+ext.Caller,fx.Repo.save(String),ext-caller.jar,Repo.save,external-ref:EXACT
+ext.Caller,fx.Repo.save(long),ext-caller.jar,Repo.save,external-ref:EXACT
+ext.Caller,fx.UserDao.UserDao(),ext-caller.jar,UserDao.UserDao,external-ref:EXACT
+ext.Caller,fx.AbstractDao.select(),ext-caller.jar,AbstractDao.select,external-ref:INHERITED
+ext.Caller,fx.OrderDao.OrderDao(),ext-caller.jar,OrderDao.OrderDao,external-ref:EXACT
 ```
 検証観点:
 - 暗黙のデフォルトコンストラクタ（`Repo()` / `UserDao()` / `OrderDao()`）は `EXACT`
@@ -2153,9 +2154,9 @@ at fx.App.invokeByName(App.java:231),Repo.save,App.viaReflectNameArg,App.invokeB
 
 ### T36 引数型が変数のときは名前で照合し、候補を列挙する
 ```
-at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,[UNEXPANDED:REFLECTION] 候補7件: 引数型が不明なため名前で照合
-at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,[UNEXPANDED:REFLECTION] 候補7件: 引数型が不明なため名前で照合
-at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,[UNEXPANDED:REFLECTION] 候補7件: 引数型が不明なため名前で照合
+at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,[UNEXPANDED:REFLECTION] 7 candidates: matched by name because argument types are unknown
+at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,[UNEXPANDED:REFLECTION] 7 candidates: matched by name because argument types are unknown
+at fx.App.viaReflectUnknownTypes(App.java:236),Repo.save,App.viaReflectUnknownTypes,Repo.save,[UNEXPANDED:REFLECTION] 7 candidates: matched by name because argument types are unknown
 ```
 （`Repo.save` の7オーバーロード全部が候補行になる。`methods.csv` の `App.viaReflectUnknownTypes()`
 は `unresolvedCalls=1, unresolvedCause=戻り値（ファクトリメソッド等）`）
@@ -2178,13 +2179,13 @@ at fx.App.viaReflectCtor(App.java:244),OrderDao.select,App.viaReflectCtor,OrderD
 
 ### T40 データフロー無効時のリフレクション
 `dataflow.enabled=false` にすると T33〜T38 の `[RESOLVED:REFLECTION]*` 行と T36 の候補行は消え、
-T38 は `[UNEXPANDED:CHA] 候補3件: レシーバ不明` の3行になる（T30）。
+T38 は `[UNEXPANDED:CHA] 3 candidates: receiver unknown` の3行になる（T30）。
 
 ## 3.5 自己解析
 
 ツール自身のソースを、JDTのjarを `library.folders` に指定して解析する。
 
 - 型解決の失敗が **0件**
-- `library.folders` を空にすると失敗件数が0でなくなり、警告が出て、`(型解決失敗)` 行が同数出る
+- `library.folders` を空にすると失敗件数が0でなくなり、警告が出て、`(unresolved)` 行が同数出る
 - 依存jarフォルダを1つ指定するだけで、展開後のjar数がログに出る
 - 出力の `caller` 列をEclipseの「Javaスタック・トレース・コンソール」に貼るとソースへジャンプできる

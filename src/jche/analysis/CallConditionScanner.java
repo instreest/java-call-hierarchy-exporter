@@ -17,6 +17,7 @@ import jche.cache.UnresolvedCallFact;
 import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
+import jche.util.Messages;
 
 /**
  * 指定した呼び出し箇所に効いている条件分岐を、その場で調べる（設定ファイルの {@code conditions.target}）。
@@ -62,9 +63,9 @@ public final class CallConditionScanner {
         /** 判定対象の由来（「引数1」「定数」「不明」） */
         public String subjectKind() {
             return switch (Origin.kindOf(subject)) {
-                case Origin.PARAM -> "引数" + paramNumber();
-                case Origin.CONST, Origin.LITERAL, Origin.CLASS -> "定数";
-                default -> "不明";
+                case Origin.PARAM -> "param " + paramNumber();
+                case Origin.CONST, Origin.LITERAL, Origin.CLASS -> "constant";
+                default -> "unknown";
             };
         }
 
@@ -226,7 +227,7 @@ public final class CallConditionScanner {
 
             @Override
             public void failed(CallEdgeExtractor.SourceFile file, Exception error) {
-                Log.warn("解析に失敗しました: " + file.relativePath() + " (" + error + ")");
+                Log.warn(Messages.format("analysis.conditionsFileFailed", file.relativePath(), error));
             }
         });
         return new Result(names, sites, total[0]);
@@ -251,14 +252,14 @@ public final class CallConditionScanner {
             } else if (site instanceof UnresolvedCallFact u) {
                 line = u.line();
                 caller = u.caller();
-                callee = u.expression() + "（型解決できず）";
+                callee = u.expression() + " (unresolved type)";
             } else {
                 continue;
             }
             if (!target.matchesSite(line, caller)) {
                 continue;
             }
-            out.add(new CallSiteConditions(file, line, (caller == null) ? "(不明)" : label(caller),
+            out.add(new CallSiteConditions(file, line, (caller == null) ? "(unknown)" : label(caller),
                     callee, conditionsOf(guard)));
         }
     }

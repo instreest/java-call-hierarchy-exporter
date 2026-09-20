@@ -207,7 +207,7 @@ DI の対応表（型 → 具象型）を既定として置きつつ、ファク
 
 | 設定 | 内容 | 期待 |
 | --- | --- | --- |
-| `config-before.properties` | 拡張なし | `[UNEXPANDED:CHA] 候補2件` に広がる |
+| `config-before.properties` | 拡張なし | `[UNEXPANDED:CHA] 2 candidates` に広がる |
 | `config.properties` | 同梱の拡張＋対応表 | `[RESOLVED:MAPPING]` で 1 件に絞れる |
 | `config-custom.properties` | 自前の拡張（`plugins/DiXmlProvider.java`） | `[RESOLVED:DI_XML]` で 1 件に絞れる |
 

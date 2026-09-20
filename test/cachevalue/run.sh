@@ -12,6 +12,8 @@
 # JDT の jar で動かす（test/dataflow/run.sh・test/conditions/run.sh と同じ経路）。
 set -uo pipefail
 cd "$(dirname "$0")"
+# 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
+export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 
 if [ -n "${JCHE_CP:-}" ]; then

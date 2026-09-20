@@ -12,6 +12,7 @@ import java.util.Set;
 
 import jche.CallHierarchyExporter;
 import jche.config.ToolRoot;
+import jche.util.Messages;
 
 /**
  * 対話モードの画面。メニューを出して番号で選ばせる、それだけの素朴な作り。
@@ -51,17 +52,17 @@ public final class App {
      */
     public int run() {
         if (!toolRoot.found) {
-            t.println("[WARN] ツールのプロジェクトフォルダ（src/jche/CallHierarchyExporter.java のある場所）を特定できません: " + root);
-            t.println("       プロジェクト直下の java-call-hierarchy-exporter.sh / java-call-hierarchy-exporter.cmd から起動してください。");
+            t.println(Messages.format("cli.app.rootNotFound", root));
+            t.println(Messages.get("cli.app.rootNotFound.hint"));
         }
         try {
             while (true) {
                 showHeader();
-                t.println(" 1) 解析を実行する");
-                t.println(" 2) 設定ファイルを新しく作る");
-                t.println(" 3) 環境設定（JDK / JBang の置き場所、ヒープ上限、jbang のオプション）");
-                t.println(" 4) 実行環境の状態を表示する");
-                t.println(" q) 終了");
+                t.println(Messages.get("cli.menu.analyze"));
+                t.println(Messages.get("cli.menu.newConfig"));
+                t.println(Messages.get("cli.menu.environment"));
+                t.println(Messages.get("cli.menu.status"));
+                t.println(Messages.get("cli.menu.quit"));
                 String choice = t.readLine("jche> ");
                 switch (choice) {
                     case "1" -> runAnalysis();
@@ -77,7 +78,7 @@ public final class App {
                     }
                     case "" -> {
                     }
-                    default -> t.println("  1〜4 か q を入力してください。");
+                    default -> t.println(Messages.get("cli.menu.invalid"));
                 }
             }
         } catch (Terminal.EndOfInput e) {
@@ -91,13 +92,14 @@ public final class App {
     private void showHeader() throws IOException {
         t.println();
         t.println("================================================================");
-        t.println(" java-call-hierarchy-exporter — 対話モード");
+        t.println(Messages.get("cli.header.title"));
         t.println("================================================================");
-        t.println(" ツールのフォルダ : " + root);
-        t.println(" JDK / JBang      : " + EnvironmentSettingsScreen.describeJbangDir(settings));
-        t.println(" 実行中の JDK     : " + EnvironmentInfo.javaVersion() + "  " + EnvironmentInfo.javaHome());
+        t.println(Messages.format("cli.header.toolDir", root));
+        t.println(Messages.format("cli.header.jbangDir", EnvironmentSettingsScreen.describeJbangDir(settings)));
+        t.println(Messages.format("cli.header.runningJdk",
+                EnvironmentInfo.javaVersion(), EnvironmentInfo.javaHome()));
         List<ConfigCatalog.Entry> configs = ConfigCatalog.scan(root);
-        t.println(" 設定ファイル     : " + configs.size() + " 件（" + ConfigCatalog.CONFIGS_DIR_NAME + "/）");
+        t.println(Messages.format("cli.header.configs", configs.size(), ConfigCatalog.CONFIGS_DIR_NAME));
         t.println();
     }
 
@@ -109,11 +111,11 @@ public final class App {
             return;
         }
         t.println();
-        t.println("次の順に解析します:");
+        t.println(Messages.get("cli.run.order"));
         for (int i = 0; i < selected.size(); i++) {
             t.println("  " + (i + 1) + ". " + display(selected.get(i)));
         }
-        if (!t.confirm("実行しますか？", true)) {
+        if (!t.confirm(Messages.get("cli.run.confirm"), true)) {
             return;
         }
         ConfigCatalog.saveRecent(root, selected);
@@ -123,12 +125,12 @@ public final class App {
         long sec = (System.currentTimeMillis() - start) / 1000;
         t.println();
         if (failed == 0) {
-            t.println("=== 解析が終わりました（" + selected.size() + " 件、" + sec + " 秒）===");
+            t.println(Messages.format("cli.run.done", selected.size(), sec));
         } else {
-            t.println("=== 解析が終わりました（" + failed + "/" + selected.size() + " 件失敗、" + sec + " 秒）===");
-            t.println("失敗の内容は上のログ（[ERROR] の行）にあります。");
+            t.println(Messages.format("cli.run.doneWithFailures", failed, selected.size(), sec));
+            t.println(Messages.get("cli.run.failureHint"));
         }
-        t.println("出力フォルダは各設定の output.folder の下（既定は設定ファイルと同じフォルダ）です。");
+        t.println(Messages.get("cli.run.outputHint"));
         t.pause();
     }
 
@@ -143,13 +145,13 @@ public final class App {
         while (true) {
             t.println();
             if (entries.isEmpty()) {
-                t.println("設定ファイルがありません（" + ConfigCatalog.CONFIGS_DIR_NAME + "/ を探しました）。");
-                t.println("メニューの 2) で作るか、p でパスを直接入力してください。");
+                t.println(Messages.format("cli.select.none", ConfigCatalog.CONFIGS_DIR_NAME));
+                t.println(Messages.get("cli.select.noneHint"));
             } else {
-                t.println("設定ファイルを選んでください（番号。カンマ区切りで複数可。v 番号 で内容を表示、p でパスを入力、q で戻る）");
+                t.println(Messages.get("cli.select.prompt"));
                 for (int i = 0; i < entries.size(); i++) {
                     ConfigCatalog.Entry e = entries.get(i);
-                    String mark = recent.contains(e.path()) ? "  ← 前回" : "";
+                    String mark = recent.contains(e.path()) ? Messages.get("cli.select.recentMark") : "";
                     String pr = e.projectRoot().isEmpty() ? "" : "   project.root=" + e.projectRoot();
                     t.println(String.format("  %2d) %-40s%s%s", i + 1, e.display(), pr, mark));
                 }
@@ -160,10 +162,10 @@ public final class App {
                 return null;
             }
             if (answer.equalsIgnoreCase("p")) {
-                String raw = t.readLine("設定ファイルのパス: ");
+                String raw = t.readLine(Messages.get("cli.select.pathPrompt"));
                 Path p = Paths.get(raw).toAbsolutePath().normalize();
                 if (!Files.isRegularFile(p)) {
-                    t.println("  ファイルがありません: " + p);
+                    t.println(Messages.format("cli.select.noFile", p));
                     continue;
                 }
                 return List.of(p);
@@ -171,7 +173,7 @@ public final class App {
             if (answer.toLowerCase().startsWith("v")) {
                 Integer n = parseIndex(answer.substring(1).trim(), entries.size());
                 if (n == null) {
-                    t.println("  v のあとに番号を付けてください（例: v 1）");
+                    t.println(Messages.get("cli.select.viewNeedsNumber"));
                     continue;
                 }
                 showConfig(entries.get(n - 1).path());
@@ -182,7 +184,7 @@ public final class App {
             for (String s : answer.split(",")) {
                 Integer n = parseIndex(s.trim(), entries.size());
                 if (n == null) {
-                    t.println("  番号が不正です: " + s.trim());
+                    t.println(Messages.format("cli.select.badNumber", s.trim()));
                     ok = false;
                     break;
                 }
@@ -218,11 +220,11 @@ public final class App {
 
     private void showConfig(Path config) throws IOException {
         t.println();
-        t.println("--- " + display(config) + "（コメントを除く）---");
+        t.println(Messages.format("cli.select.showHeader", display(config)));
         for (String line : ConfigCatalog.settingLines(config)) {
             t.println("  " + line);
         }
-        t.println("--- 変更するときはこのファイルをエディタで開いてください: " + config);
+        t.println(Messages.format("cli.select.showFooter", config));
     }
 
     private String display(Path p) {
@@ -236,15 +238,15 @@ public final class App {
         t.println();
         Path created = new ConfigWizard(t, root).run();
         if (created == null) {
-            t.println("中止しました。");
+            t.println(Messages.get("cli.create.cancelled"));
             return;
         }
-        if (t.confirm("続けてこの設定で解析を実行しますか？", false)) {
+        if (t.confirm(Messages.get("cli.create.runNow"), false)) {
             ConfigCatalog.saveRecent(root, List.of(created));
             t.println();
             int failed = CallHierarchyExporter.runAll(List.of(created), toolRoot);
             t.println();
-            t.println(failed == 0 ? "=== 解析が終わりました ===" : "=== 解析に失敗しました（上の [ERROR] を確認してください）===");
+            t.println(Messages.get(failed == 0 ? "cli.create.done" : "cli.create.failed"));
             t.pause();
         }
     }

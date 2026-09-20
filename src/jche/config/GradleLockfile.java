@@ -6,6 +6,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import jche.util.Messages;
 
 /**
  * Gradle のロックファイルを読む。あれば解決済みの依存（推移的なものも）がそのまま揃っているので、
@@ -67,7 +68,7 @@ final class GradleLockfile {
         if (d != null && !d.version().isEmpty()) {
             into.add(d);
         } else {
-            into.notes.add("ロックファイルの読めない行: " + coordinates.trim());
+            into.notes.add(Messages.format("config.gradle.lockfileBadRow", coordinates.trim()));
         }
     }
 
