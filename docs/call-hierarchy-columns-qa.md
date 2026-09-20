@@ -1,15 +1,15 @@
-# `level` / `resolved-by` 列 — Q&A
+# `resolved-by` / `level` 列 — Q&A
 
-`call-hierarchy.csv` の `root` 列の左に、起点からの階層の深さ（`level`）と解決方法（`resolved-by`）の
+`call-hierarchy.csv` の `root` 列の左に、解決方法（`resolved-by`）と起点からの階層の深さ（`level`）の
 2 列を足した判断を残す。
 関連: [note-tags-qa.md](note-tags-qa.md)（注記のタグ）、[callee-label-qa.md](callee-label-qa.md)（`callee` 列の表記）、
 [prompt-B-detailed.md](prompt-B-detailed.md) 4.1（列の仕様）。
 
 ## 結論
 
-- ヘッダーは `caller,callee,level,resolved-by,root,call-hierarchy`
-- `level` は起点を `0` とした深さ。**`call-hierarchy` 列に並ぶノード数と必ず一致する**
+- ヘッダーは `caller,callee,resolved-by,level,root,call-hierarchy`
 - `resolved-by` は `接頭辞 + 解決の段のラベル`。接頭辞が確度、後半が手法
+- `level` は起点を `0` とした深さ。**`call-hierarchy` 列に並ぶノード数と必ず一致する**
 
 | 接頭辞 | 意味 | 例 |
 |---|---|---|
@@ -44,6 +44,20 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 `level` を足したことで、階層列の終わりが `5 + level` 列目と計算できるようになった。
 注記の有無で 1 列ずれていたのが、列数だけで判定できる。
 
+### Q2-2. 2 列の並びを `resolved-by` → `level` にしたのはなぜか
+
+列のまとまりを意味と合わせるため。最初は `level` → `resolved-by` の順で入れたが、
+次の理由で入れ替えた（列自体を入れたのと同じ日で、利用者のフィルタが列位置に依存し始める前）。
+
+- `resolved-by` は **`caller` → `callee` という 1 本の辺の性質**（なぜこの callee がここに出ているか）
+  なので、`callee` の直後が自然
+- `level` / `root` / `call-hierarchy` は 3 つとも **「この行が木のどこにあるか」** の列。
+  並べておくと、左から「誰が・誰を・どう特定したか ｜ どの経路の何段目か・その経路」と読める
+- 「`level` = `call-hierarchy` 列のノード数」という不変条件も、隣り合っているほうが目で確かめやすい
+
+`level` は 1〜2 文字の細い列なので左端寄りだと常に視界に入る、という反対意見もあったが、
+上の 3 点を採った。
+
 ### Q3. なぜ解決方法を `Resolution.label()` そのままにしなかったのか
 
 **ラベルだけでは誤読させる行があるから**。ラムダ式・メソッド参照が実装している
@@ -76,7 +90,7 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 空欄にすると、列数から階層の終わりを計算する読み方がこの行だけ通らなくなり、
 Excel の数値フィルタにも空欄が混ざる。
 
-これらの行は `root` 列（`(型解決失敗)` / jar 名）と `resolved-by` の接頭辞で
+これらの行は `root` 列（`(unresolved)` / jar 名）と `resolved-by` の接頭辞で
 呼び出し階層の行と見分けられるので、`level` に別の意味を持たせる必要は無かった。
 
 ### Q6. 注記から `[RESOLVED:*]` を落として困らないか
@@ -89,10 +103,10 @@ Excel の数値フィルタにも空欄が混ざる。
 
 | 残した注記 | 列に無い情報 |
 |---|---|
-| `[UNEXPANDED:CHA] 候補N件: {由来}` | 候補の件数、レシーバの由来（次に調べる場所） |
-| `[UNEXPANDED:GENERATED] …: FQN は…` | 生成される実装の FQN |
-| `[RESOLVED:CALLBACK] 契約: …` | 繋いだ契約の本文 |
-| `[UNREACHABLE] …条件「…」が成立しない（…）` | 条件式と、この経路で分かっている値 |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | 候補の件数、レシーバの由来（次に調べる場所） |
+| `[UNEXPANDED:GENERATED] …: FQN is…` | 生成される実装の FQN |
+| `[RESOLVED:CALLBACK] contract: …` | 繋いだ契約の本文 |
+| `[UNREACHABLE] …condition '…' does not hold (…)` | 条件式と、この経路で分かっている値 |
 | `[UNEXPANDED:CYCLE]` / `[UNEXPANDED:DEPTH]` / `[EXTERNAL]` | 打ち切りの理由（解決方法とは別の軸なので列には入れない） |
 
 ### Q7. 再実装用のプロンプトとお試し版（single-file）はどうしたか
@@ -103,7 +117,7 @@ Excel の数値フィルタにも空欄が混ざる。
 読まずに固定列だけで判別できるようにする）を目的の節に書いた。設計を任せる版なので、
 形だけ写されて意図が失われると、また注記に埋め込む作りに戻るため。
 
-prompt-B の 3.3 にあるケース別の期待行は、`level` / `resolved-by` の 2 列を省いた表記のままにし、
+prompt-B の 3.3 にあるケース別の期待行は、`resolved-by` / `level` の 2 列を省いた表記のままにし、
 その読み方を断り書きにした。1 件に確定した行だけは、どの段で決まったかが期待値そのものなので
 行末に `[RESOLVED:{ラベル}]` を残している（実際の出力では列に入る）。
 

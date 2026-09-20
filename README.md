@@ -136,17 +136,17 @@ config/
 ### `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,level,resolved-by,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,2,RESOLVED:SPRING_DI,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | 列 | 内容 |
 |---|---|
 | `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excelのフィルタに使える |
+| `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。`caller` → `callee` という1本の呼び出しの性質なので `callee` の隣に置いています |
 | `level` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
-| `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表） |
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
@@ -316,14 +316,14 @@ external.library.folders=./lib
 
 classファイルの命令列を読むため、「どのjar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
 `caller` 列は呼び出し階層の行と同じスタックトレース形式なので、Eclipse の Java スタック・トレース・コンソールに貼れば
-（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`level` は `1`、`resolved-by` は `EXTERNAL_USAGE:` で始まります。
+（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`level` は `1` です。
 ラムダ式やメソッド参照（`Counter::bump`）からの参照も、それを書いた行として出ます。
 
 ```csv
-caller,callee,level,resolved-by,root,call-hierarchy
-at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
-at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
-at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
+caller,callee,resolved-by,level,root,call-hierarchy
+at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
+at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```
 
 行番号は相手の jar が行番号情報付きでビルドされている（`javac` の既定）ときだけ出ます。
@@ -391,8 +391,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,1,EXTERNAL_USAGE:
 インスタンスを通じて呼び出せるメソッドではないため）。
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,1,RESOLVED:DATAFLOW_LAMBDA,Holder.viaField,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,2,RESOLVED:DATAFLOW_FIELD,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
+at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
 ```
 
 ラムダを作った箇所からは、必ず「生成した」1本の辺が出ます。
@@ -597,17 +597,17 @@ The CSV files are UTF-8 with a BOM, so Excel opens them directly.
 ### `call-hierarchy.csv` — the call hierarchy
 
 ```csv
-caller,callee,level,resolved-by,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,2,RESOLVED:SPRING_DI,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
 
 | Column | Content |
 |---|---|
 | `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line |
 | `callee` | The callee, as **ClassName.methodName** (no arguments). Usable as an Excel filter |
+| `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). It describes one `caller` -> `callee` call, so it sits next to `callee` |
 | `level` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
-| `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below) |
 | `root` | The entry method, as ClassName.methodName. Usable as an Excel filter |
 | `call-hierarchy` | The path from the entry point, one node per column (**variable length**) |
 
@@ -786,14 +786,14 @@ Because the instruction stream of the class files is read, you learn **which jar
 method and which line** the reference comes from. The `caller` column uses the same stack trace format as
 the hierarchy rows, so pasting it into Eclipse's Java Stack Trace Console jumps to that line (if the other
 side's source is in the workspace). There is no entry point and no hierarchy here, so the `root` column
-holds the name of the referencing jar, `level` is `1`, and `resolved-by` starts with `EXTERNAL_USAGE:`. References from a lambda or a method reference (`Counter::bump`)
+holds the name of the referencing jar, `resolved-by` starts with `EXTERNAL_USAGE:`, and `level` is `1`. References from a lambda or a method reference (`Counter::bump`)
 appear as the line that wrote them.
 
 ```csv
-caller,callee,level,resolved-by,root,call-hierarchy
-at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
-at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
-at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,1,EXTERNAL_USAGE:EXACT,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
+caller,callee,resolved-by,level,root,call-hierarchy
+at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
+at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
+at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```
 
 Line numbers appear only when the other jar was built with line number information (the default for
@@ -862,8 +862,8 @@ The body of a lambda becomes one node, a **synthetic method** named the way java
 call through an instance.
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,1,RESOLVED:DATAFLOW_LAMBDA,Holder.viaField,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,2,RESOLVED:DATAFLOW_FIELD,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
+at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
 ```
 
 There is always one "created it" edge out of the place that wrote the lambda. That is so the calls inside

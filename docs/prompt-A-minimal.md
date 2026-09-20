@@ -53,9 +53,9 @@ CSV 2本。**BOM付きUTF-8、カンマ区切り**（Excelでダブルクリッ�
 ### 3.1 呼び出し階層（`call-hierarchy.csv`）
 
 ```csv
-caller,callee,level,resolved-by,root,call-hierarchy
-at a.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,1,RESOLVED:NO_OVERRIDE,OrderAction.execute,OrderService.findOrder
-at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,2,UNEXPANDED:CHA,OrderAction.execute,OrderService.findOrder,OrderDao.selectById,[UNEXPANDED:CHA] 候補3件: フィールド変数
+caller,callee,resolved-by,level,root,call-hierarchy
+at a.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UNEXPANDED:CHA,2,OrderAction.execute,OrderService.findOrder,OrderDao.selectById,[UNEXPANDED:CHA] 3 candidates: field
 ```
 
 - `caller` … `at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**（行は
@@ -63,9 +63,6 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,2,
   **この形式が(a)の核**なので崩さない
 - `callee` … **クラス単純名.メソッド名**（内部クラスは `Outer.Inner`。引数は付けない）。
   行番号は混ぜない（フィルタの選択肢が散らばる）
-- `level` … 起点からの深さ（起点が `0`、その呼び出し先が `1`）。
-  **`call-hierarchy` 列に並ぶノード数と必ず一致させる**（一致していれば、可変長列がどこで
-  終わって注記がどこから始まるかを列数だけで判定できる）
 - `resolved-by` … **その行の確定状況**。`接頭辞 + 5.2 の段のラベル` の形で、
   **どの行にも必ず値を入れる**（空欄を作らない）
 
@@ -78,6 +75,9 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,2,
   確定したかどうかを**接頭辞**に、その根拠を**後半**に置くのは、
   「辿り切れなかった行だけ」を、段のラベルを覚えていなくても1回のフィルタで出せるようにするため。
   段を足したときは後半のラベルが増えるだけで、読み手のフィルタは変えなくて済みます
+- `level` … 起点からの深さ（起点が `0`、その呼び出し先が `1`）。
+  **`call-hierarchy` 列に並ぶノード数と必ず一致させる**（一致していれば、可変長列がどこで
+  終わって注記がどこから始まるかを列数だけで判定できる）
 - `root` … 起点メソッド（`クラス単純名.メソッド名`）
 - `call-hierarchy` … 起点の次から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列。
   ヘッダーとデータ行の列数は一致しなくてよい）
