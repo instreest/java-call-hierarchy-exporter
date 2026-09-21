@@ -367,7 +367,7 @@ public final class CallResolver {
             //       C#m は宣言されていないので候補が 0 件（実装なし）になっていた
             //   (2) サブインターフェースでの抽象な再宣言: interface B extends A { m(); } は
             //       本体を持たないのに候補に数えられ、実装が 1 件でも CHA（未展開）のままになっていた
-            // implementationIn は本体を持つ宣言まで親を辿るので、どちらも正しく扱える
+            // implementationOf は本体を持つ宣言まで親を辿るので、どちらも正しく扱える
             int id = graph.implementationOf(sub, calleeId);
             if (id >= 0) {
                 cands.addIfAbsent(id);

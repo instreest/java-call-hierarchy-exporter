@@ -96,11 +96,15 @@ Ping.a(int),fx.excluded.Ping,C,src/fx/excluded/Ping.java,5,1,2,1,NORMAL,0,0,,0,[
 Pong.b(int),fx.excluded.Pong,C,src/fx/excluded/Pong.java,4,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 AbstractStore.put(Object),fx.generic.AbstractStore,A,src/fx/generic/AbstractStore.java,6,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 AbstractStore.fallback(),fx.generic.AbstractStore,A,src/fx/generic/AbstractStore.java,10,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
-"GenericMain.run(Repo,AbstractStore)",fx.generic.GenericMain,C,src/fx/generic/GenericMain.java,5,1,0,4,ENTRY_CANDIDATE,0,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+"GenericMain.run(Repo,AbstractStore,List)",fx.generic.GenericMain,C,src/fx/generic/GenericMain.java,7,1,0,8,ENTRY_CANDIDATE,0,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+OrderPrinter.accept(Order),fx.generic.OrderPrinter,C,src/fx/generic/OrderPrinter.java,16,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+OrderPrinter.printed(),fx.generic.OrderPrinter,C,src/fx/generic/OrderPrinter.java,20,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderRepo.save(Order),fx.generic.OrderRepo,C,src/fx/generic/OrderRepo.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderRepo.stored(),fx.generic.OrderRepo,C,src/fx/generic/OrderRepo.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderStore.put(Order),fx.generic.OrderStore,C,src/fx/generic/OrderStore.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderStore.kept(),fx.generic.OrderStore,C,src/fx/generic/OrderStore.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+RawPrinter.accept(Object),fx.generic.RawPrinter,C,src/fx/generic/RawPrinter.java,9,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+RawPrinter.rawPrinted(),fx.generic.RawPrinter,C,src/fx/generic/RawPrinter.java,13,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 RawRepo.save(Object),fx.generic.RawRepo,C,src/fx/generic/RawRepo.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 RawRepo.logged(),fx.generic.RawRepo,C,src/fx/generic/RawRepo.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 Repo.save(Object),fx.generic.Repo,I,src/fx/generic/Repo.java,12,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted

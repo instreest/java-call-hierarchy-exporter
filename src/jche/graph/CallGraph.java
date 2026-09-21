@@ -229,41 +229,11 @@ public final class CallGraph {
     }
 
     /**
-     * 具象型 typeFqn で、シグネチャ sig の実装を持つメソッドIDを返す。無ければ -1。
-     *
-     * その型自身に宣言が無くても、親クラスから継承していれば親の実装が動く。
-     * 親を辿らないと「ファクトリが UserDaoImpl を返すと分かったのに、
-     * selectById は AbstractDao で宣言されているので見つからない」となる。
-     */
-    public int implementationIn(String typeFqn, String sig) {
-        if (typeFqn == null || typeFqn.isEmpty()) {
-            return -1;
-        }
-        ArrayDeque<String> queue = new ArrayDeque<>();
-        Set<String> seen = new HashSet<>();
-        queue.add(typeFqn);
-        seen.add(typeFqn);
-        while (!queue.isEmpty()) {
-            String t = queue.poll();
-            int id = methods.idOf(t + "#" + sig);
-            if (id >= 0 && methods.hasBody(id)) {
-                return id;
-            }
-            for (String sup : hierarchy.directSupertypes(t)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
-                }
-            }
-        }
-        return -1;
-    }
-
-    /**
      * その具象型で、呼び出し先 {@code calleeId} として実際に動く実装。無ければ -1。
      *
      * <h4>2 つの軸で探す</h4>
      * <ol>
-     *   <li><b>継承</b> … キーが同じ宣言を、その型から親へ辿って探す（{@link #implementationIn}）。
+     *   <li><b>継承</b> … キーが同じ宣言を、その型から親へ辿って探す。
      *       {@code UserDao extends AbstractDao} で {@code select()} が親にしか無い形</li>
      *   <li><b>型引数の置換</b> … キーが食い違う上書きを O行（{@link OverrideIndex}）から引く。
      *       {@code class UserRepo implements Repo<User>} の {@code save(User)} が
@@ -271,24 +241,55 @@ public final class CallGraph {
      * </ol>
      * どちらか一方だけを見ると、もう一方の形の実装が候補から落ちる。落ちた結果が
      * 「実装なし（NO_IMPL）」や、実装が他に1つあるときの「別の実装に確定（SINGLE_IMPL）」になる。
-     * 候補引きはすべてこの入口を通す（段1のCHA・段2のLOCAL_NEW・段3の契約と拡張・段4・段5）。
+     *
+     * 呼び出し先の<b>キーが分かっている</b>ときの入口。段1のCHA・段2のLOCAL_NEW・
+     * 段3の契約と拡張・段4・段5はすべてここを通す。キーを持たない引き方は
+     * {@link #implementationOfSignature} を使う。
+     */
+    public int implementationOf(String typeFqn, int calleeId) {
+        return search(typeFqn, methods.signature(calleeId),
+                overrides.overridersOf(methods.key(calleeId)));
+    }
+
+    /**
+     * その具象型で、シグネチャ {@code sig} として実際に動く実装。無ければ -1。
+     *
+     * 呼び出し先のキー（宣言している型）が分からず、<b>シグネチャだけが分かっている</b>
+     * ときの入口。使うのは 2 か所で、どちらも構造上それしか分からない。
+     * <ul>
+     *   <li>呼び戻しの契約表（{@link CallbackContracts}）… 契約は
+     *       {@code java.lang.Thread#start() -> c* : run()} のように
+     *       「呼び戻されるメソッドのシグネチャ」だけを書く。{@code run()} を宣言している型
+     *       （{@code java.lang.Runnable}）は契約のどこにも現れないので、キーは作れない</li>
+     *   <li>リフレクション（{@link DataflowResolver}）… {@code Method.invoke} の実引数から
+     *       名前と引数型を組み立てるので、宣言している型は分からない</li>
+     * </ul>
+     * そのため上書きの引きもシグネチャで行う（{@link OverrideIndex#overridersOfSignature}）。
+     * キーで引く場合と違い、同じシグネチャに消去される別々のジェネリック型を 1 つの型が
+     * 両方とも上書きしていると、どちらが選ばれるかは決まらない。ただしこれは
+     * キーの照合（{@code 型#シグネチャ}）が元から持っている曖昧さと同じで、
+     * 契約表の仕組みがシグネチャで名指しする以上、ここで新たに生じるものではない。
+     */
+    public int implementationOfSignature(String typeFqn, String sig) {
+        return search(typeFqn, sig, overrides.overridersOfSignature(sig));
+    }
+
+    /**
+     * その型から親へ幅優先で辿り、最初に見つかった本体を持つ実装を返す。無ければ -1。
      *
      * <h4>2 つの軸を同じ探索の中で見る</h4>
-     * {@link #implementationIn} を先に通して駄目なら上書きを見る、では正しくない。
+     * キーの照合を先に通して駄目なら上書きを見る、では正しくない。
      * {@code class OrderStore extends AbstractStore<Order>} が {@code put} を具体化して
      * 上書きしている場合、キーの照合だけで辿ると<b>親の実装</b>に先に当たってしまい、
      * 「上書きは無い」と結論してしまう。実際に動くのは、その型から親へ辿って
      * <b>最初に見つかる実装</b>なので、各段で両方の軸を見る。
+     *
+     * @param overriders その呼び出し先を上書きしているメソッド。無ければ null
+     *                   （その場合はキーの照合だけになる＝ジェネリクスを使わない大多数）
      */
-    public int implementationOf(String typeFqn, int calleeId) {
+    private int search(String typeFqn, String sig, IntArray overriders) {
         if (typeFqn == null || typeFqn.isEmpty()) {
             return -1;
-        }
-        String sig = methods.signature(calleeId);
-        IntArray overriders = overrides.overridersOf(methods.key(calleeId));
-        if (overriders == null) {
-            // 上書き関係が無いなら、キーの照合だけで済む（ジェネリクスを使わない大多数）
-            return implementationIn(typeFqn, sig);
         }
         ArrayDeque<String> queue = new ArrayDeque<>();
         Set<String> seen = new HashSet<>();
@@ -296,12 +297,14 @@ public final class CallGraph {
         seen.add(typeFqn);
         while (!queue.isEmpty()) {
             String t = queue.poll();
-            // 上書きを先に見る。キーが同じ宣言は O行に書かないので、ここで当たるのは
-            // 「型引数を具体化した上書き」だけであり、親から継承した同キーの宣言より
+            // 上書きを先に見る。シグネチャが同じ上書きは O行に書かないので、ここで当たるのは
+            // 「型引数を具体化した上書き」だけであり、親から継承した同シグネチャの宣言より
             // こちらが優先される（実際に動くのは、より近い型の上書きのほう）
-            int overriding = declaredAmong(overriders, t);
-            if (overriding >= 0) {
-                return overriding;
+            if (overriders != null) {
+                int overriding = declaredAmong(overriders, t);
+                if (overriding >= 0) {
+                    return overriding;
+                }
             }
             int id = methods.idOf(t + "#" + sig);
             if (id >= 0 && methods.hasBody(id)) {

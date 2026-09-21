@@ -29,13 +29,25 @@ import jche.cache.OverrideFact;
  */
 public final class OverrideIndex {
 
-    /** 上書きされた側のキー -> 上書きしている側のメソッドID（重複なし・登録順） */
-    private final Map<String, IntArray> overriders = new HashMap<>();
+    /** 上書きされた側のキー（{@code 型FQN#シグネチャ}） -> 上書きしている側のメソッドID */
+    private final Map<String, IntArray> byKey = new HashMap<>();
+    /**
+     * 上書きされた側の<b>シグネチャ</b>（{@code name(paramSig)}） -> 上書きしている側のメソッドID。
+     *
+     * 呼び戻しの契約表とリフレクションは、宣言している型を知らないままシグネチャだけで
+     * 実装を引く（{@link CallGraph#implementationOfSignature} 参照）。そちらのための索引
+     */
+    private final Map<String, IntArray> bySignature = new HashMap<>();
 
     /** O行を1件取り込む。{@code id} はその行が表す宣言のメソッドID */
     void add(OverrideFact fact, int id) {
         for (String key : fact.keys()) {
-            overriders.computeIfAbsent(key, k -> new IntArray(2)).addIfAbsent(id);
+            byKey.computeIfAbsent(key, k -> new IntArray(2)).addIfAbsent(id);
+            int hash = key.indexOf('#');
+            if (hash >= 0) {
+                bySignature.computeIfAbsent(key.substring(hash + 1), k -> new IntArray(2))
+                        .addIfAbsent(id);
+            }
         }
     }
 
@@ -47,17 +59,25 @@ public final class OverrideIndex {
      * 差分更新でブロックが動いても結果は変わらない。
      */
     public IntArray overridersOf(String overriddenKey) {
-        return overriders.get(overriddenKey);
+        return byKey.get(overriddenKey);
+    }
+
+    /**
+     * そのシグネチャの宣言を上書きしているメソッドの一覧。無ければ null。
+     * 宣言している型が分からない引き方（契約表・リフレクション）のための引き口
+     */
+    public IntArray overridersOfSignature(String overriddenSignature) {
+        return bySignature.get(overriddenSignature);
     }
 
     public boolean isEmpty() {
-        return overriders.isEmpty();
+        return byKey.isEmpty();
     }
 
     /** 取り込んだ上書き関係の件数（ログ用） */
     public int size() {
         int n = 0;
-        for (IntArray ids : overriders.values()) {
+        for (IntArray ids : byKey.values()) {
             n += ids.size();
         }
         return n;
@@ -65,6 +85,6 @@ public final class OverrideIndex {
 
     /** 上書きされた側のキー一覧（検査用） */
     public List<String> keys() {
-        return List.copyOf(overriders.keySet());
+        return List.copyOf(byKey.keySet());
     }
 }

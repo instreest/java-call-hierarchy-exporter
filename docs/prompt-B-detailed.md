@@ -636,10 +636,16 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
   段を分けて「キーの照合 → 駄目なら上書き」にすると、`class OrderStore extends AbstractStore<Order>`
   が `put` を具体化して上書きしている場合に**親の実装に先に当たって**しまい、
   「上書きは無い」と誤って結論する。同じ段では上書きを先に見る
-- 候補引きの入口は**1つにする**。段1（CHA）・段2（`LOCAL_NEW`）・段3（契約表と拡張）・
+- 候補引きの入口は**呼び出し先の分かり方で2つだけ**にする。キーが分かるなら
+  `implementationOf(型FQN, 呼び出し先ID)`、シグネチャしか分からないなら
+  `implementationOfSignature(型FQN, シグネチャ)`。どちらも同じ探索を呼び、上書きの引き方だけが違う。
+  後者が要るのは、**呼び戻しの契約表とリフレクションは所有型を知らない**ため。
+  契約は `java.lang.Thread#start() -> c* : run()` のようにシグネチャだけを名指しし、
+  `run()` を宣言している `java.lang.Runnable` はどこにも現れない
+- 入口をこれ以上増やさない。段1（CHA）・段2（`LOCAL_NEW`）・段3（契約表と拡張）・
   段4（dataflow）・段5（Spring DI）がそれぞれ別の関数を呼ぶ作りにすると、
   1か所だけ直したときに残りが静かに取りこぼす（`docs/inherited-impl-candidates-qa.md`、
-  `docs/jls-conformance-qa.md` の Q7。実際に2度やった）
+  `docs/jls-conformance-qa.md` の Q7・Q21。実際に3度やった）
 - 入次数は**解決後の候補**に対して数える。宣言型で数えるとIF経由でしか呼ばれない実装が
   すべて入次数0になり、真の入口と区別がつかない。リフレクションで解決した先（`<clinit>` や
   `invoke` の実体）にも入次数が付くので、`Class.forName("a.B")` があれば `a.B.<clinit>` は

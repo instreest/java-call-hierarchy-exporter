@@ -135,8 +135,10 @@ class OrderStore extends AbstractStore<Order> { public void put(Order item) { ke
 それぞれ `implementationIn` を呼んでいた。`docs/inherited-impl-candidates-qa.md` の Q1 と同じで、
 **1 か所だけ直すと残りが静かに取りこぼす**。今回は `implementationOf` に寄せて入口を 1 つにした。
 
-`DataflowResolver` のリフレクション経路（`Method.invoke` の実引数から名前と引数型を組み立てる）だけは、
-呼び出し先の ID を持たない別の引き方なので `implementationIn` のままにしてある。
+入口は結局 2 つになった。呼び出し先のキーが分かる場合の `implementationOf(型FQN, 呼び出し先ID)` と、
+シグネチャしか分からない場合の `implementationOfSignature(型FQN, シグネチャ)` で、
+どちらも同じ探索（`search`）を呼ぶ。キーだけで引く `implementationIn` は残っていない。
+後者が要る理由は Q21。
 
 ## Q8. 暗黙の `super()` を拾わない判断はどこから来たのか
 
@@ -350,3 +352,64 @@ O 行を作るために、メソッド宣言ごとに推移的な親型を辿る
 
 `test/demo`（91 ファイル）ではフェーズ 1 の時間に測れる差は出なかった。
 大規模プロジェクトでの実測は `docs/ast-analysis-performance-qa.md` の「計測のしかた」に従うこと。
+
+## Q21. 契約表とリフレクションだけ `implementationIn` のままにしたら、同じ穴が残っていた
+
+残っていた。PR の本文を差分と突き合わせて点検したときに見つかったもので、Q7 で
+「呼び出し先の ID を持たない別の引き方だから」と書いて片付けたのが誤りだった。
+ID を持たないことと、上書き関係を見なくてよいことは別の話である。
+
+同梱の JDK の契約表は**消去済みのシグネチャ**を書く。
+
+```
+java.lang.Iterable#forEach(java.util.function.Consumer) -> a0 : accept(java.lang.Object)
+java.util.List#sort(java.util.Comparator)               -> a0 : compare(java.lang.Object,java.lang.Object)
+```
+
+そこに型引数を具体化した実装を渡すと、#154 とまったく同じ取りこぼしになる。
+
+```java
+class OrderPrinter implements Consumer<Order> { public void accept(Order o) { … } }
+orders.forEach(new OrderPrinter());   // RESOLVED:CALLBACK の行が 1 本も出なかった
+```
+
+`Consumer<Object>` の実装なら消去形と一致するので当たる。**当たる実装と当たらない実装が
+混ざる**ので、出力を見ても気づけない。
+
+## Q22. 契約表の側は、なぜキーではなくシグネチャで引くのか
+
+**契約に所有型が書かれていないから**である。これは書き方の都合ではなく、契約の仕組みそのもの。
+
+```
+java.lang.Thread#start() -> c* : run()
+```
+
+呼び戻される `run()` を宣言している型は `java.lang.Runnable` だが、この行のどこにも現れない。
+`-> a0` の形なら呼び出し先の引数型から導けるが、`-> r` と `-> cN` では導けない。
+契約はもともと「呼び戻されるメソッドのシグネチャ」で名指しする仕組みで、
+リフレクション（`Method.invoke` の実引数から名前と引数型を組み立てる）も同じである。
+
+そこで `OverrideIndex` にシグネチャ引きの索引を足し、
+`CallGraph#implementationOfSignature` から使うことにした。
+
+## Q23. シグネチャで引くと、別のジェネリック型の上書きに当たらないか
+
+理屈の上では当たりうる。1 つの型が、消去すると同じシグネチャになる別々のジェネリックメソッドを
+2 つとも上書きしている場合、どちらが選ばれるかは決まらない。
+
+ただしこれは**キーの照合（`型#シグネチャ`）が元から持っている曖昧さと同じ**である。
+`implementationIn` の時代から、契約表は「その型（か親）に `run()` があるか」を見るだけで、
+それが `Runnable#run()` の上書きかどうかは確かめていなかった。
+契約がシグネチャで名指しする以上、ここで新たに生じる曖昧さではない。
+
+そのうえで、直す前は**確実に落ちていた**。落ちるのと、極めて稀な同名衝突で
+どちらかに決まるのとでは、前者のほうが害が大きい。
+
+## Q24. この穴はどう固定したか
+
+`test/demo/src/fx/generic/` に `OrderPrinter implements Consumer<Order>` と
+`RawPrinter implements Consumer<Object>` を置き、`GenericMain.run` から
+`orders.forEach(...)` で両方に渡す。**当たる側と当たらない側を並べてある**ので、
+片方だけが出る状態に戻ったらすぐ分かる。
+
+直す前のコードで実際にこの検査が落ちることを確認してある（`CALLBACK` の行が 2 本ではなく 1 本になる）。

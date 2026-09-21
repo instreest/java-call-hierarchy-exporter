@@ -233,10 +233,14 @@ at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOL
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.WebEntry.helper(WebEntry.java:22),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,WebEntry.helper,OrderDaoImpl.describe
-at fx.generic.GenericMain.run(GenericMain.java:6),OrderRepo.save,UNEXPANDED:CHA,1,GenericMain.run,OrderRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:6),RawRepo.save,UNEXPANDED:CHA,1,GenericMain.run,RawRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:7),AbstractStore.put,UNEXPANDED:CHA,1,GenericMain.run,AbstractStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:7),OrderStore.put,UNEXPANDED:CHA,1,GenericMain.run,OrderStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:8),OrderRepo.save,UNEXPANDED:CHA,1,GenericMain.run,OrderRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:8),RawRepo.save,UNEXPANDED:CHA,1,GenericMain.run,RawRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:9),AbstractStore.put,UNEXPANDED:CHA,1,GenericMain.run,AbstractStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:9),OrderStore.put,UNEXPANDED:CHA,1,GenericMain.run,OrderStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:14),OrderPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,OrderPrinter.accept,[RESOLVED:CALLBACK] contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.generic.OrderPrinter.accept(OrderPrinter.java:17),OrderPrinter.printed,RESOLVED:NO_OVERRIDE,2,GenericMain.run,OrderPrinter.accept,OrderPrinter.printed
+at fx.generic.GenericMain.run(GenericMain.java:15),RawPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,RawPrinter.accept,[RESOLVED:CALLBACK] contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.generic.RawPrinter.accept(RawPrinter.java:10),RawPrinter.rawPrinted,RESOLVED:NO_OVERRIDE,2,GenericMain.run,RawPrinter.accept,RawPrinter.rawPrinted
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m

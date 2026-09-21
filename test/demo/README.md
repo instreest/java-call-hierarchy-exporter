@@ -27,7 +27,10 @@
   - `src/fx/generic/` … 型引数を具体化した実装を CHA の候補に入れられるかの確認用
     （JLS 8.4.2 のサブシグネチャ）。`OrderRepo implements Repo<Order>` は消去後のキーが
     `Repo#save(java.lang.Object)` と食い違うので、上書き関係（O 行）を見ていないと候補から落ちる。
-    継承の軸と重なる形（`OrderStore extends AbstractStore<Order>`）も含みます
+    継承の軸と重なる形（`OrderStore extends AbstractStore<Order>`）も含みます。
+    `OrderPrinter implements Consumer<Order>` と `RawPrinter implements Consumer<Object>` は
+    呼び戻しの契約表（`Iterable#forEach` の `accept(java.lang.Object)`）が
+    シグネチャで名指しする側の確認用で、当たる実装と当たらない実装を並べてあります
     （`docs/jls-conformance-qa.md`）
   - `src/fx/ctor/` … 書かれていない `super()` が辺になるかの確認用（JLS 8.8.7 / 8.8.9）。
     明示コンストラクタで `super()` を書かない形・コンストラクタを1つも書かない形・

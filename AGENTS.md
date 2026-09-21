@@ -134,9 +134,11 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは
   `jche.graph.FactoryCalls#readsOf` に足し、対になる 3 か所（契約表の読み書き `TypeContracts`、
   証拠の種別 `jche.extension.Hint`、ひな形 `ContractSuggestions`）も揃える
-- 具象型からの実装探索は `jche.graph.CallGraph#implementationOf` だけを通す。
-  「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、
-  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7）
+- 具象型からの実装探索は `jche.graph.CallGraph` の 2 つの入口だけを通す。
+  呼び出し先のキーが分かるなら `implementationOf(型FQN, 呼び出し先ID)`、
+  シグネチャしか分からないなら（契約表・リフレクション）`implementationOfSignature(型FQN, シグネチャ)`。
+  どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、
+  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7・Q21）
 - AST の読み取りは Java 言語仕様に合わせる。オーバーライドの判定・暗黙のコンストラクタ呼び出し・
   定数の畳み込みは、自前で近似せず JDT のバインディング（`IMethodBinding.overrides` など）に任せ、
   分からないものは「判定しない」に倒す（`docs/jls-conformance-qa.md`、
