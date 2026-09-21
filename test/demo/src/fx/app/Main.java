@@ -82,6 +82,8 @@ public class Main {
         feature.mode("full");
         feature.pick(2);
         feature.select(Feature.Mode.NONE);
+        feature.narrowed(300);   // (byte)300 == 44 は真。キャストを剥がすと打ち切ってしまう
+        feature.code('A');       // 'A' == 65 は真（二項数値昇格）
     }
 
     void noSource(org.w3c.dom.Node node) {

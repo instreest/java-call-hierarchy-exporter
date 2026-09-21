@@ -117,8 +117,22 @@ final class CallSiteRecorder {
             // （特定できない場合の空リストは、下のループが0回になることで同じ結果になる）
             return;
         }
-        int line = lineOf(node);
-        String guard = guards.guardOf(node);
+        recordSyntheticAt(callers, callee, lineOf(node), calleeMods, recvKind, lambdaDepth,
+                guards.guardOf(node));
+    }
+
+    /**
+     * ソースに対応するASTノードが無い辺を1本記録する（暗黙の {@code super()} など）。
+     *
+     * 行だけを渡すのは、合成した宣言（暗黙のデフォルトコンストラクタ）から張る辺には
+     * 対応するノードが無いため。条件（guard）も持たない。コンストラクタ本体の先頭で
+     * 必ず実行される呼び出しなので、囲む分岐はありえない（JLS 8.8.7）。
+     */
+    void recordSyntheticAt(List<MethodRef> callers, MethodRef callee, int line,
+                           String calleeMods, char recvKind, int lambdaDepth, String guard) {
+        if (callers == null) {
+            return;
+        }
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
                     recvKind, lambdaDepth));

@@ -13,6 +13,10 @@ import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
+
+import jche.cache.RecvKind;
 
 import jche.cache.FileAnalysis;
 import jche.cache.MethodDeclFact;
@@ -32,14 +36,29 @@ final class TypeContextTracker {
     /** 呼び出し元を特定できないことを表す番兵（ArrayDequeはnullを保持できないため） */
     static final List<MethodRef> UNKNOWN_CALLER = List.of();
 
+    /**
+     * 暗黙の {@code super()} の辺を張らない親クラス。
+     *
+     * {@code java.lang.Object} は全てのクラスの親で、辿る先に何も無い
+     * （{@link #collectSupertypes} が親型から除くのと同じ理由）。
+     * {@code java.lang.Enum} / {@code java.lang.Record} は enum 宣言・record 宣言に対して
+     * コンパイラが与える親（JLS 8.9 / 8.10）で、書き手が呼び出しを書いたわけではなく、
+     * やはりソースが無い。辺にすると全ての型に1本ずつ [EXTERNAL] の行が増えるだけになる。
+     */
+    private static final Set<String> IMPLICIT_SUPER_SKIP =
+            Set.of("java.lang.Object", "java.lang.Enum", "java.lang.Record");
+
     private final FileAnalysis out;
     private final BindingNames names;
+    /** 合成した辺（暗黙の {@code super()}）を記録する係 */
+    private final CallSiteRecorder calls;
     /** 現在囲まれている型ごとの状態（{@link TypeContext} 参照） */
     private final ArrayDeque<TypeContext> typeContextStack = new ArrayDeque<>();
 
-    TypeContextTracker(FileAnalysis out, BindingNames names) {
+    TypeContextTracker(FileAnalysis out, BindingNames names, CallSiteRecorder calls) {
         this.out = out;
         this.names = names;
+        this.calls = calls;
     }
 
     /**
@@ -191,6 +210,7 @@ final class TypeContextTracker {
                     out.declarations.add(new MethodDeclFact(ref, declLine, true,
                             ModifierTokens.with(BindingNames.modifiersOf(m.getModifiers()),
                                     ModifierTokens.IMPLICIT)));
+                    recordImplicitSuper(List.of(ref), tb, ref.paramSig(), declLine);
                     synthesized = true;
                 }
             }
@@ -200,17 +220,120 @@ final class TypeContextTracker {
             if (implicit != null) {
                 roots.add(implicit);
                 out.declarations.add(new MethodDeclFact(implicit, declLine, true, ModifierTokens.IMPLICIT));
+                recordImplicitSuper(List.of(implicit), tb, "", declLine);
             }
         }
     }
 
-    /** コンストラクタ本体の先頭文が this(...) か（=他のコンストラクタへの委譲か） */
-    static boolean delegatesToThis(MethodDeclaration md) {
-        Block body = md.getBody();
-        if (body == null || body.statements().isEmpty()) {
-            return false;
+    /**
+     * 暗黙の {@code super(...)} の辺を1本張る（JLS 8.8.7 / 8.8.9）。
+     *
+     * 明示的コンストラクタ呼び出しで始まらないコンストラクタの本体は、暗黙に
+     * {@code super();} で始まる。ソースに文が無いので AST には現れないが、
+     * <b>実行される呼び出しであることに変わりはない</b>。辺にしないと、
+     * {@code super()} を書いていないサブクラスからは親コンストラクタの中の処理
+     * （初期化・テンプレートメソッド）が到達不能になり、影響調査から丸ごと抜ける。
+     *
+     * @param paramSig 呼び出し元コンストラクタの引数シグネチャ。匿名クラスの合成
+     *                 コンストラクタは、選ばれた親コンストラクタと同じ引数を取り、
+     *                 それをそのまま渡す（JLS 15.9.5.1）ので、まず同じ並びのものを探す
+     */
+    void recordImplicitSuper(List<MethodRef> callers, ITypeBinding type, String paramSig,
+                             int line) {
+        IMethodBinding target = implicitSuperTargetOf(type, paramSig);
+        MethodRef ref = names.toRef(target);
+        if (ref != null) {
+            calls.recordSyntheticAt(callers, ref, line,
+                    CallSiteRecorder.targetModsOf(target), RecvKind.TYPE, 0, "");
         }
-        return body.statements().get(0) instanceof ConstructorInvocation;
+    }
+
+    /**
+     * 暗黙の {@code super(...)} の呼び出し先。見つからなければ null。
+     *
+     * 探す順は (1) 呼び出し元と同じ引数の並び（匿名クラスの合成コンストラクタ用）、
+     * (2) 引数なし（通常の暗黙 {@code super()}）、(3) 可変長引数1つだけのもの
+     * （{@code Base(String... a)} しか無い親は {@code super()} がそれに解決される）。
+     * 見つからないときは辺を張らない。合成した呼び出しなので、ソースに対応する文が無く、
+     * 未解決として報告しても利用者が調べようがないためである。
+     */
+    private IMethodBinding implicitSuperTargetOf(ITypeBinding type, String paramSig) {
+        if (type == null) {
+            return null;
+        }
+        ITypeBinding superclass = type.getSuperclass();
+        if (superclass == null
+                || IMPLICIT_SUPER_SKIP.contains(BindingNames.erasureOf(superclass).getQualifiedName())) {
+            return null;
+        }
+        IMethodBinding[] declared = superclass.getDeclaredMethods();
+        if (declared == null) {
+            return null;
+        }
+        IMethodBinding noArg = null;
+        IMethodBinding varargs = null;
+        for (IMethodBinding m : declared) {
+            if (!m.isConstructor()) {
+                continue;
+            }
+            int count = m.getParameterTypes().length;
+            if (count == 0) {
+                noArg = m;
+            } else if (count == 1 && m.isVarargs()) {
+                varargs = m;
+            }
+            if (!paramSig.isEmpty() && paramSig.equals(paramSigOf(m))) {
+                return m;
+            }
+        }
+        return (noArg != null) ? noArg : varargs;
+    }
+
+    /** バインディングの引数シグネチャ（消去済み）。{@link MethodRef} と同じ並びにする */
+    private String paramSigOf(IMethodBinding m) {
+        MethodRef ref = names.toRef(m);
+        return (ref == null) ? null : ref.paramSig();
+    }
+
+    /** コンストラクタが this(...) で他のコンストラクタへ委譲しているか */
+    static boolean delegatesToThis(MethodDeclaration md) {
+        return explicitConstructorInvocationOf(md) instanceof ConstructorInvocation;
+    }
+
+    /**
+     * そのコンストラクタ本体の明示的コンストラクタ呼び出し（{@code this(...)} か
+     * {@code super(...)}）。書かれていなければ null。
+     *
+     * <h4>先頭文だけを見てはいけない</h4>
+     * Java 25 で確定した柔軟なコンストラクタ本体（JEP 513）により、
+     * <b>{@code this(...)} / {@code super(...)} の前に文を書ける</b>ようになった（JLS 8.8.7）。
+     * <pre>
+     *     Box() {
+     *         int v = check(1);   // プロローグ
+     *         this(v);
+     *     }
+     * </pre>
+     * 先頭文だけを見ると、この形を「委譲していない」と取り違える。そうなると
+     * インスタンス初期化子の呼び出しが委譲側にも複製されて二重に数えられ、さらに
+     * D行に {@code delegating} が付かないため、{@link jche.graph.FieldFacts} の
+     * 「委譲コンストラクタを持つ型ではコンストラクタ引数由来の出所を採らない」という
+     * 安全弁が効かなくなる（＝誤って1つに絞る経路が開く）。
+     *
+     * 明示的コンストラクタ呼び出しは本体に高々1つしか書けないので、トップレベルの文を
+     * 順に見て最初に見つかったもので確定する。入れ子のブロックの中には書けない。
+     */
+    static Statement explicitConstructorInvocationOf(MethodDeclaration md) {
+        Block body = md.getBody();
+        if (body == null) {
+            return null;
+        }
+        for (Object statement : body.statements()) {
+            if (statement instanceof ConstructorInvocation
+                    || statement instanceof SuperConstructorInvocation) {
+                return (Statement) statement;
+            }
+        }
+        return null;
     }
 
     /** 明示コンストラクタが無い型の、暗黙のデフォルトコンストラクタの参照を合成する */

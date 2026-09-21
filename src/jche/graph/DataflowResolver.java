@@ -130,7 +130,7 @@ public final class DataflowResolver {
             return -1;
         }
         // 結果が宣言型のままでも、候補が1つに定まったこと自体が成果なので返す
-        return graph.implementationIn(fqn, methods.signature(calleeId));
+        return graph.implementationOf(fqn, calleeId);
     }
 
     /**

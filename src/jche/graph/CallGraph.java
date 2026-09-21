@@ -26,6 +26,8 @@ public final class CallGraph {
 
     final MethodTable methods = new MethodTable();
     final TypeHierarchy hierarchy = new TypeHierarchy();
+    /** 上書き関係の逆引き（O行から。{@link OverrideIndex} 参照） */
+    final OverrideIndex overrides = new OverrideIndex();
     /** 単純名 -> FQN の索引。{@link #typeNames()} で遅延して作る */
     private TypeNames typeNames;
     /** DIコンテナのBean定義（H行・V行・D行のアノテーションから） */
@@ -251,6 +253,75 @@ public final class CallGraph {
                 if (seen.add(sup)) {
                     queue.add(sup);
                 }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * その具象型で、呼び出し先 {@code calleeId} として実際に動く実装。無ければ -1。
+     *
+     * <h4>2 つの軸で探す</h4>
+     * <ol>
+     *   <li><b>継承</b> … キーが同じ宣言を、その型から親へ辿って探す（{@link #implementationIn}）。
+     *       {@code UserDao extends AbstractDao} で {@code select()} が親にしか無い形</li>
+     *   <li><b>型引数の置換</b> … キーが食い違う上書きを O行（{@link OverrideIndex}）から引く。
+     *       {@code class UserRepo implements Repo<User>} の {@code save(User)} が
+     *       {@code Repo#save(java.lang.Object)} を上書きしている形</li>
+     * </ol>
+     * どちらか一方だけを見ると、もう一方の形の実装が候補から落ちる。落ちた結果が
+     * 「実装なし（NO_IMPL）」や、実装が他に1つあるときの「別の実装に確定（SINGLE_IMPL）」になる。
+     * 候補引きはすべてこの入口を通す（段1のCHA・段2のLOCAL_NEW・段3の契約と拡張・段4・段5）。
+     *
+     * <h4>2 つの軸を同じ探索の中で見る</h4>
+     * {@link #implementationIn} を先に通して駄目なら上書きを見る、では正しくない。
+     * {@code class OrderStore extends AbstractStore<Order>} が {@code put} を具体化して
+     * 上書きしている場合、キーの照合だけで辿ると<b>親の実装</b>に先に当たってしまい、
+     * 「上書きは無い」と結論してしまう。実際に動くのは、その型から親へ辿って
+     * <b>最初に見つかる実装</b>なので、各段で両方の軸を見る。
+     */
+    public int implementationOf(String typeFqn, int calleeId) {
+        if (typeFqn == null || typeFqn.isEmpty()) {
+            return -1;
+        }
+        String sig = methods.signature(calleeId);
+        IntArray overriders = overrides.overridersOf(methods.key(calleeId));
+        if (overriders == null) {
+            // 上書き関係が無いなら、キーの照合だけで済む（ジェネリクスを使わない大多数）
+            return implementationIn(typeFqn, sig);
+        }
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        queue.add(typeFqn);
+        seen.add(typeFqn);
+        while (!queue.isEmpty()) {
+            String t = queue.poll();
+            // 上書きを先に見る。キーが同じ宣言は O行に書かないので、ここで当たるのは
+            // 「型引数を具体化した上書き」だけであり、親から継承した同キーの宣言より
+            // こちらが優先される（実際に動くのは、より近い型の上書きのほう）
+            int overriding = declaredAmong(overriders, t);
+            if (overriding >= 0) {
+                return overriding;
+            }
+            int id = methods.idOf(t + "#" + sig);
+            if (id >= 0 && methods.hasBody(id)) {
+                return id;
+            }
+            for (String sup : hierarchy.directSupertypes(t)) {
+                if (seen.add(sup)) {
+                    queue.add(sup);
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** その型が宣言している上書きメソッド。無ければ -1 */
+    private int declaredAmong(IntArray overriders, String typeFqn) {
+        for (int i = 0; i < overriders.size(); i++) {
+            int id = overriders.get(i);
+            if (methods.hasBody(id) && typeFqn.equals(methods.typeFqn(id))) {
+                return id;
             }
         }
         return -1;

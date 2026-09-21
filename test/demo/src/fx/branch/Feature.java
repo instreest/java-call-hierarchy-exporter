@@ -51,6 +51,27 @@ public class Feature {
         }
     }
 
+    /**
+     * 値を変えうるキャストが挟まった条件は判定しない（JLS 5.1.3 縮小プリミティブ変換）。
+     * {@code narrowed(300)} の経路では {@code (byte)300 == 44} が<b>成立する</b>ので、
+     * キャストを剥がして「300 と 44 の比較」にすると、通る経路を落としてしまう
+     */
+    public void narrowed(int mode) {
+        if ((byte) mode == 44) {
+            report();
+        }
+    }
+
+    /**
+     * char と int は二項数値昇格で比較される（JLS 5.6.2）。{@code 'A' == 65} は真なので、
+     * {@code code('A')} の経路では full() に辿り着く
+     */
+    public void code(char c) {
+        if (c == 65) {
+            full();
+        }
+    }
+
     void report() {
         trace("report");
     }

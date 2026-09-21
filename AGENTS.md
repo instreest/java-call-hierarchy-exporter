@@ -53,6 +53,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
 | `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること。文字コードの変更・形式の版が古い・壊れたキャッシュでは再利用せず捨てること。中断した実行から引き継ぐこと。期待値ファイルは持たない |
 | `bash test/cli/run.sh` | 起動コマンドと対話モードの検査。メニューへの答えをパイプで流し込む |
+| `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
 | `bash test/cachevalue/run.sh` | dataflow キャッシュの値の符号化（`escape` / `unescape`）が往復し、行を壊さないこと |
 | `bash test/contracts/run.sh` | 同梱の契約表（`JdkCallbacks` / `BundledFrameworkEntries`）の検査。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが実在すること（実行中の JDK と照合） |
 | `bash test/cachetail/run.sh` | キャッシュの最終行（`Z` 行）を末尾から読む部分の境界（改行の有無・CRLF・読む量の境目・多バイト文字） |
@@ -133,6 +134,13 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは
   `jche.graph.FactoryCalls#readsOf` に足し、対になる 3 か所（契約表の読み書き `TypeContracts`、
   証拠の種別 `jche.extension.Hint`、ひな形 `ContractSuggestions`）も揃える
+- 具象型からの実装探索は `jche.graph.CallGraph#implementationOf` だけを通す。
+  「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、
+  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7）
+- AST の読み取りは Java 言語仕様に合わせる。オーバーライドの判定・暗黙のコンストラクタ呼び出し・
+  定数の畳み込みは、自前で近似せず JDT のバインディング（`IMethodBinding.overrides` など）に任せ、
+  分からないものは「判定しない」に倒す（`docs/jls-conformance-qa.md`、
+  `docs/static-analysis-limits.md` の 7 節）
 - 解決の結果はエッジの処理順に依存させない。`CallResolver.resolve` はメモ化されるので、最初の評価と後の評価で答えが変わる
   作りにすると出力が食い違う（`docs/code-review-fixes-qa.md` の Q2）
 - 相対パスの起点は項目ごとに決まっている（`config/config.properties` 冒頭のコメント）。起点の外へ出る相対パスはエラーにする

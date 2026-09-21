@@ -235,8 +235,13 @@ final class GuardCollector {
      * 判定できる形でなければ何も足さない（＝その条件は読み手から見えない）。
      */
     private void addCondition(Expression cond, boolean expected, List<String> atoms) {
-        Expression e = OriginTracker.unwrap(cond);
-        if (e == null || atoms.size() >= maxAtoms) {
+        if (atoms.size() >= maxAtoms) {
+            return;
+        }
+        Expression e = OriginTracker.unwrapValue(cond);
+        if (e == null) {
+            // 値を変えうるキャストが挟まっている。判定はできないが、条件があることは残す
+            addUnknown(atoms, expectedText(cond, expected));
             return;
         }
         if (e instanceof PrefixExpression p && p.getOperator() == PrefixExpression.Operator.NOT) {
@@ -290,13 +295,19 @@ final class GuardCollector {
     /**
      * {@code x == 定数} / {@code x != 定数}。
      *
-     * 参照型どうしの {@code ==} は同一性の比較なので、値が同じでも false になりうる。
-     * プリミティブと列挙型に限る（{@code null} との比較も、変数が null でないと
-     * 言い切れないため扱わない）。
+     * 参照型どうしの {@code ==} は同一性の比較なので、一般には値が同じでも false になりうる。
+     * それでも {@link #comparableByValue} が文字列を通しているのは、ここで値を畳めるのが
+     * <b>コンパイル時定数だけ</b>だからである。コンパイル時定数の文字列はインターンされて
+     * 同じインスタンスになる（JLS 3.10.5）ので、畳める場合に限り {@code ==} は値の比較と一致する。
+     * 逆に言えば、畳める出所（{@code L} / {@code A} / {@code M}）を広げるときは、
+     * この前提が崩れないかを必ず確かめること。
+     *
+     * 列挙定数は定数ごとに唯一のインスタンスなので {@code ==} で比較してよい（JLS 8.9）。
+     * {@code null} との比較は、変数が null でないと言い切れないため扱わない。
      */
     private void addComparison(InfixExpression in, boolean expected, List<String> atoms) {
-        Expression left = OriginTracker.unwrap(in.getLeftOperand());
-        Expression right = OriginTracker.unwrap(in.getRightOperand());
+        Expression left = OriginTracker.unwrapValue(in.getLeftOperand());
+        Expression right = OriginTracker.unwrapValue(in.getRightOperand());
         if (left == null || right == null || !comparableByValue(left) || !comparableByValue(right)) {
             return;
         }
@@ -345,7 +356,10 @@ final class GuardCollector {
                 trim(mi.toString())));
     }
 
-    /** 値の一致で判定してよい型か（プリミティブ・列挙型・文字列） */
+    /**
+     * 値の一致で判定してよい型か（プリミティブ・列挙型・文字列）。
+     * 文字列を通してよい理由は {@link #addComparison} の説明にある（JLS 3.10.5 のインターン）
+     */
     private static boolean comparableByValue(Expression e) {
         ITypeBinding tb = e.resolveTypeBinding();
         return tb != null && (tb.isPrimitive() || tb.isEnum()
@@ -367,7 +381,13 @@ final class GuardCollector {
      * 囲みメソッドの引数（A:）と定数（V:）だけを通す。
      * ローカル変数は出所の表を経由して A: / V: に畳まれる。
      */
-    private String evaluableOriginOf(Expression e) {
+    private String evaluableOriginOf(Expression ex) {
+        // 値を変えうるキャストが挟まっていたら、その先の出所を値として使ってはいけない。
+        // 判定に使う式はすべてここを通るので、1 か所で止める（{@link OriginTracker#unwrapValue}）
+        Expression e = OriginTracker.unwrapValue(ex);
+        if (e == null) {
+            return null;
+        }
         String origin = Origin.head(origins.originOf(e));
         char kind = Origin.kindOf(origin);
         if (kind == Origin.PARAM || kind == Origin.CONST) {

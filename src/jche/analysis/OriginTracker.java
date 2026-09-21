@@ -140,7 +140,7 @@ final class OriginTracker {
      * 表記は {@link #constantOf} と同じに揃えている
      */
     String enumConstantValueOf(Expression ex) {
-        Expression e = unwrap(ex);
+        Expression e = unwrapValue(ex);
         if (e instanceof SimpleName || e instanceof QualifiedName || e instanceof FieldAccess) {
             IVariableBinding vb = variableBindingOf(e);
             if (vb != null && vb.isEnumConstant()) {
@@ -470,7 +470,7 @@ final class OriginTracker {
      * 列挙定数を単純名にするのは、switch の case ラベルが単純名で書かれるため。
      */
     String constantOf(Expression ex) {
-        Expression e = unwrap(ex);
+        Expression e = unwrapValue(ex);
         if (e == null) {
             return null;
         }
@@ -481,7 +481,7 @@ final class OriginTracker {
             return numericConst(n.getToken());
         }
         if (e instanceof CharacterLiteral c) {
-            return Origin.of(Origin.CONST, String.valueOf(c.charValue()));
+            return charConst(c.charValue());
         }
         if (e instanceof StringLiteral s) {
             return valueConst(s.getLiteralValue());
@@ -494,10 +494,38 @@ final class OriginTracker {
             if (vb.isEnumConstant()) {
                 return enumConstant(vb);
             }
-            Object constant = vb.getConstantValue();
-            return (constant == null) ? null : valueConst(String.valueOf(constant));
+            return constantText(vb.getConstantValue());
         }
         return null;
+    }
+
+    /**
+     * コンパイル時定数の値を出所の表記にする。拾えないものは null。
+     *
+     * <h4>char は数値にする（JLS 5.6.2 二項数値昇格）</h4>
+     * {@code char} と {@code int} を {@code ==} で比べると、どちらも {@code int} に昇格してから
+     * 比較される。{@code 'A' == 65} は真である。値を文字のまま持つと、この 2 つが
+     * 別の値に見えて「条件が成立しない」と誤判定し、実際には通る経路を落としてしまう。
+     * {@code byte} / {@code short} / {@code int} / {@code long} と同じ 10 進表記に揃えることで、
+     * 整数系どうしはどの組み合わせでも一致を判定できる。
+     *
+     * <h4>浮動小数は拾わない</h4>
+     * {@code 1} と {@code 1.0} と {@code 1.0f} は同じ値だが表記が違い、文字列の一致では
+     * 判定できない。誤って打ち切るより判定しないほうがよい（{@link #numericConst} と同じ方針）。
+     */
+    private static String constantText(Object constant) {
+        if (constant == null || constant instanceof Double || constant instanceof Float) {
+            return null;
+        }
+        if (constant instanceof Character c) {
+            return charConst(c.charValue());
+        }
+        return valueConst(String.valueOf(constant));
+    }
+
+    /** char の定数値。整数系と突き合わせられるよう数値にする（{@link #constantText} 参照） */
+    private static String charConst(char value) {
+        return Origin.of(Origin.CONST, String.valueOf((int) value));
     }
 
     private static IVariableBinding variableBindingOf(Expression e) {
@@ -810,7 +838,54 @@ final class OriginTracker {
         return null;
     }
 
-    /** 括弧とキャストを剥がす。どちらも実体のインスタンスは変えない */
+    /**
+     * <b>値の判定に使うために</b>括弧とキャストを剥がす。値を変えうるキャストに
+     * 当たったら null（＝この式の値は判定に使えない）。
+     *
+     * <h4>{@link #unwrap} と分けている理由</h4>
+     * 参照型どうしのキャスト（JLS 5.5）は同じインスタンスを指し続けるので、
+     * <b>どのメソッドが動くか</b>を追う {@link #unwrap} は剥がしてよい。
+     * しかしプリミティブの変換（JLS 5.1.2 拡大 / 5.1.3 縮小）とボックス化・非ボックス化
+     * （5.1.7 / 5.1.8）は<b>値そのものを変える</b>。
+     * <pre>
+     *     void run(int mode) { if ((byte) mode == 44) target(); }
+     *     run(300);          // (byte)300 == 44 は真
+     * </pre>
+     * ここでキャストを剥がすと「mode（=300）と 44 の比較」になり、実際には通る経路を
+     * 「呼ばれない」と判定して、その先の階層をまるごと落としてしまう。
+     * 判定できないほうへ倒すのが安全側である。
+     *
+     * 型が取れないときも「変わりうる」とみなす。分からないものを畳まない側に倒す。
+     */
+    static Expression unwrapValue(Expression ex) {
+        Expression e = ex;
+        for (int guard = 0; guard < 8; guard++) {
+            if (e instanceof ParenthesizedExpression p) {
+                e = p.getExpression();
+            } else if (e instanceof CastExpression c) {
+                if (changesValue(c)) {
+                    return null;
+                }
+                e = c.getExpression();
+            } else {
+                return e;
+            }
+        }
+        return e;
+    }
+
+    /** そのキャストが値を変えうるか。プリミティブが絡めば変えうる（JLS 5.1.2 / 5.1.3 / 5.1.7 / 5.1.8） */
+    private static boolean changesValue(CastExpression cast) {
+        ITypeBinding to = cast.getType().resolveBinding();
+        ITypeBinding from = cast.getExpression().resolveTypeBinding();
+        return to == null || from == null || to.isPrimitive() || from.isPrimitive();
+    }
+
+    /**
+     * 括弧とキャストを剥がす。<b>どのインスタンスを指すか</b>は変わらないので、
+     * 出所（どのメソッドが動くか）の追跡にはこちらを使う。
+     * 値の一致を判定する用途では {@link #unwrapValue} を使うこと
+     */
     static Expression unwrap(Expression ex) {
         Expression e = ex;
         for (int guard = 0; guard < 8; guard++) {

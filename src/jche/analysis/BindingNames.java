@@ -1,10 +1,13 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.analysis;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
@@ -296,6 +299,101 @@ final class BindingNames {
         }
         String name = decl.isConstructor() ? MethodRef.CONSTRUCTOR : decl.getName();
         return new MethodRef(packageOf(erased), typeFqn, name, params.toString());
+    }
+
+    /**
+     * その宣言が上書きしている、親型の宣言のキー（{@code typeFqn#name(paramSig)}）。
+     * シグネチャ（{@code name(paramSig)}）が自分と同じものは含めない
+     * （キーの照合だけで引けるため）。無ければ空。
+     *
+     * <h4>なぜ要るのか</h4>
+     * メソッドのキーは消去済みの引数型で作るが、JLS 8.4.2 のオーバーライドは
+     * 「同じシグネチャ<b>または</b>消去したシグネチャと同じ（サブシグネチャ）」なので、
+     * 型引数を具体化した実装（{@code class UserRepo implements Repo<User>} の
+     * {@code save(User)}）は親（{@code Repo#save(java.lang.Object)}）とキーが一致しない。
+     * 一致しないまま候補を引くと「実装が無い」や「別の実装1件に確定」になる
+     * （{@code docs/generic-override-qa.md}）。
+     *
+     * <h4>判定は JDT に任せる</h4>
+     * {@code IMethodBinding.overrides} は JLS 8.4.8.1 の実装なので、アクセス修飾子・
+     * 静的メソッドの隠蔽・型変数の置換の扱いを自前で組み直さない。親型は<b>型引数を
+     * 具体化したまま</b>（{@code Repo<User>}）辿る。消去してから辿ると置換が失われ、
+     * 判定そのものが成り立たない。
+     */
+    List<String> overriddenKeysOf(IMethodBinding binding) {
+        if (binding == null || binding.isConstructor()
+                || Modifier.isStatic(binding.getModifiers())
+                || Modifier.isPrivate(binding.getModifiers())) {
+            // コンストラクタ・static・private は上書きされない（JLS 8.4.8.1）
+            return List.of();
+        }
+        ITypeBinding declaring = binding.getDeclaringClass();
+        if (declaring == null) {
+            return List.of();
+        }
+        MethodRef self = toRef(binding);
+        if (self == null) {
+            return List.of();
+        }
+        String selfSignature = self.signature();
+        List<String> keys = new ArrayList<>(1);
+        Set<String> seen = new HashSet<>();
+        for (ITypeBinding sup : supertypesOf(declaring)) {
+            for (IMethodBinding candidate : sup.getDeclaredMethods()) {
+                if (candidate.isConstructor()
+                        || !candidate.getName().equals(binding.getName())
+                        || candidate.getParameterTypes().length != binding.getParameterTypes().length
+                        || !binding.overrides(candidate)) {
+                    continue;
+                }
+                MethodRef ref = toRef(candidate);
+                if (ref == null) {
+                    continue;
+                }
+                // シグネチャ（name(paramSig)）が同じ上書きは書かない。読み手は候補を
+                // 「型FQN + '#' + シグネチャ」で引き、その型から親へ辿るので、
+                // シグネチャが同じならキーの照合だけで引ける。書いても嵩むだけである。
+                // 書くのは型引数の置換でシグネチャが食い違う場合だけ
+                String key = ref.key();
+                if (!ref.signature().equals(selfSignature) && seen.add(key)) {
+                    keys.add(key);
+                }
+            }
+        }
+        return keys;
+    }
+
+    /** 推移的な親型（型引数を具体化したまま）。循環と多重継承で同じ型を2度辿らないよう鍵で覚える */
+    private static List<ITypeBinding> supertypesOf(ITypeBinding type) {
+        List<ITypeBinding> out = new ArrayList<>(4);
+        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        queue.add(type);
+        while (!queue.isEmpty()) {
+            ITypeBinding current = queue.poll();
+            ITypeBinding parent = current.getSuperclass();
+            if (parent != null && seen.add(keyOf(parent))) {
+                out.add(parent);
+                queue.add(parent);
+            }
+            ITypeBinding[] interfaces = current.getInterfaces();
+            if (interfaces == null) {
+                continue;
+            }
+            for (ITypeBinding iface : interfaces) {
+                if (seen.add(keyOf(iface))) {
+                    out.add(iface);
+                    queue.add(iface);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 訪問済みの判定用。バインディングの鍵が取れない型は名前で見る */
+    private static String keyOf(ITypeBinding t) {
+        String key = t.getKey();
+        return (key == null || key.isEmpty()) ? t.getQualifiedName() : key;
     }
 
     /** new された具象型。匿名クラスの場合は匿名型そのもの。取れなければ null */

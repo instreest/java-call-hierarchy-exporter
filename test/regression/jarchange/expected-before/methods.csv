@@ -3,28 +3,32 @@ Legacy.callRemote(),fx.app.Legacy,C,src/fx/app/Legacy.java,7,1,2,1,NORMAL,1,0,,1
 Legacy.unusedDead(),fx.app.Legacy,C,src/fx/app/Legacy.java,13,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Main.main(String[]),fx.app.Main,C,src/fx/app/Main.java,32,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
 Main.run(String[]),fx.app.Main,C,src/fx/app/Main.java,36,1,1,58,NORMAL,0,4,[UNEXPANDED:CHA] return value (factory method etc.);[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
-Main.branches(),fx.app.Main,C,src/fx/app/Main.java,79,1,1,5,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,87,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,91,1,1,2,NORMAL,0,1,[UNEXPANDED:NO_IMPL] no implementation with a body in the source,0,[NOT_REACHED] no caller row was emitted
-Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,95,1,1,2,NORMAL,0,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
-Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,100,1,1,4,NORMAL,0,1,[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
-Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,108,1,1,10,NORMAL,0,3,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference;[UNEXPANDED:CHA] type name (static),0,[NOT_REACHED] no caller row was emitted
-Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,120,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,134,1,2,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Main.branches(),fx.app.Main,C,src/fx/app/Main.java,79,1,1,7,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,89,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,93,1,1,2,NORMAL,0,1,[UNEXPANDED:NO_IMPL] no implementation with a body in the source,0,[NOT_REACHED] no caller row was emitted
+Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,97,1,1,2,NORMAL,0,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,102,1,1,4,NORMAL,0,1,[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
+Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,110,1,1,10,NORMAL,0,3,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference;[UNEXPANDED:CHA] type name (static),0,[NOT_REACHED] no caller row was emitted
+Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,122,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,136,1,2,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
 Feature.run(boolean),fx.branch.Feature,C,src/fx/branch/Feature.java,17,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 Feature.mode(String),fx.branch.Feature,C,src/fx/branch/Feature.java,28,1,1,4,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 Feature.pick(int),fx.branch.Feature,C,src/fx/branch/Feature.java,36,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 Feature.select(Mode),fx.branch.Feature,C,src/fx/branch/Feature.java,44,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.report(),fx.branch.Feature,C,src/fx/branch/Feature.java,54,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.summary(),fx.branch.Feature,C,src/fx/branch/Feature.java,58,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.dump(),fx.branch.Feature,C,src/fx/branch/Feature.java,63,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.dumpDetail(),fx.branch.Feature,C,src/fx/branch/Feature.java,68,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.full(),fx.branch.Feature,C,src/fx/branch/Feature.java,72,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.light(),fx.branch.Feature,C,src/fx/branch/Feature.java,76,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.one(),fx.branch.Feature,C,src/fx/branch/Feature.java,80,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.two(),fx.branch.Feature,C,src/fx/branch/Feature.java,84,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.other(),fx.branch.Feature,C,src/fx/branch/Feature.java,88,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-Feature.trace(String),fx.branch.Feature,C,src/fx/branch/Feature.java,92,1,8,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.narrowed(int),fx.branch.Feature,C,src/fx/branch/Feature.java,59,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.code(char),fx.branch.Feature,C,src/fx/branch/Feature.java,69,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.report(),fx.branch.Feature,C,src/fx/branch/Feature.java,75,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.summary(),fx.branch.Feature,C,src/fx/branch/Feature.java,79,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.dump(),fx.branch.Feature,C,src/fx/branch/Feature.java,84,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.dumpDetail(),fx.branch.Feature,C,src/fx/branch/Feature.java,89,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.full(),fx.branch.Feature,C,src/fx/branch/Feature.java,93,1,3,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.light(),fx.branch.Feature,C,src/fx/branch/Feature.java,97,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.one(),fx.branch.Feature,C,src/fx/branch/Feature.java,101,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.two(),fx.branch.Feature,C,src/fx/branch/Feature.java,105,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.other(),fx.branch.Feature,C,src/fx/branch/Feature.java,109,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+Feature.trace(String),fx.branch.Feature,C,src/fx/branch/Feature.java,113,1,8,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+CtorBase.prepare(),fx.ctor.CtorBase,C,src/fx/ctor/CtorBase.java,16,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+CtorMain.run(),fx.ctor.CtorMain,C,src/fx/ctor/CtorMain.java,5,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 AbstractDao.findById(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,7,1,15,1,NORMAL,1,1,[UNEXPANDED:CHA] own class (this),1,
 AbstractDao.load(long),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,12,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 AbstractDao.flush(),fx.dao.AbstractDao,A,src/fx/dao/AbstractDao.java,14,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
@@ -90,6 +94,16 @@ WebEntry.helper(),fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,21,1,0,1,ENTRY_
 Helper.assist(Dao),fx.excluded.Helper,C,src/fx/excluded/Helper.java,7,1,1,3,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
 Ping.a(int),fx.excluded.Ping,C,src/fx/excluded/Ping.java,5,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 Pong.b(int),fx.excluded.Pong,C,src/fx/excluded/Pong.java,4,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+AbstractStore.put(Object),fx.generic.AbstractStore,A,src/fx/generic/AbstractStore.java,6,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+AbstractStore.fallback(),fx.generic.AbstractStore,A,src/fx/generic/AbstractStore.java,10,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+"GenericMain.run(Repo,AbstractStore)",fx.generic.GenericMain,C,src/fx/generic/GenericMain.java,5,1,0,4,ENTRY_CANDIDATE,0,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+OrderRepo.save(Order),fx.generic.OrderRepo,C,src/fx/generic/OrderRepo.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+OrderRepo.stored(),fx.generic.OrderRepo,C,src/fx/generic/OrderRepo.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+OrderStore.put(Order),fx.generic.OrderStore,C,src/fx/generic/OrderStore.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+OrderStore.kept(),fx.generic.OrderStore,C,src/fx/generic/OrderStore.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+RawRepo.save(Object),fx.generic.RawRepo,C,src/fx/generic/RawRepo.java,7,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+RawRepo.logged(),fx.generic.RawRepo,C,src/fx/generic/RawRepo.java,11,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Repo.save(Object),fx.generic.Repo,I,src/fx/generic/Repo.java,12,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 Base2.m(),fx.inherit.Base2,I,src/fx/inherit/Base2.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 BaseGreeter.greet(),fx.inherit.BaseGreeter,C,src/fx/inherit/BaseGreeter.java,5,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 Greeter.greet(),fx.inherit.Greeter,I,src/fx/inherit/Greeter.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted

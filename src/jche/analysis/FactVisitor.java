@@ -44,6 +44,7 @@ import jche.cache.MethodDeclFact;
 import jche.cache.MethodRef;
 import jche.cache.ModifierTokens;
 import jche.cache.Origin;
+import jche.cache.OverrideFact;
 import jche.cache.RecvKind;
 import jche.cache.ReturnFact;
 
@@ -134,9 +135,11 @@ final class FactVisitor extends ASTVisitor {
         this.names = new BindingNames(out);
         this.origins = new OriginTracker(names, out);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
-        this.types = new TypeContextTracker(out, names);
+        // 型コンテキストは、合成した暗黙のコンストラクタから暗黙の super() の辺を張るので、
+        // 呼び出しの記録係を先に作って渡す
         this.calls = new CallSiteRecorder(cu, out, names,
                 new GuardCollector(origins, recordAllConditions));
+        this.types = new TypeContextTracker(out, names, calls);
         // ラムダの名前は、本体の先読み（OriginTracker）より先に決まっている必要がある
         this.lambdaNames = new LambdaNames(cu, names);
         this.origins.lambdaNames(lambdaNames);
@@ -353,7 +356,9 @@ final class FactVisitor extends ASTVisitor {
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
                     node.getBody() != null, mods,
                     names.annotationsOf(binding), endLineOf(node)));
+            recordOverrides(ref, binding);
             methodStack.push(List.of(ref));
+            recordImplicitSuperCall(node, binding);
         } else {
             methodStack.push(UNKNOWN_CALLER);
         }
@@ -374,6 +379,43 @@ final class FactVisitor extends ASTVisitor {
         if (!lambdaDepthStack.isEmpty()) {
             lambdaDepth = lambdaDepthStack.pop();
         }
+    }
+
+    /**
+     * この宣言が上書きしている親の宣言（O行）。無ければ何も書かない。
+     *
+     * メソッドのキーは消去済みの引数型で作るので、型引数を具体化した実装
+     * （{@code class UserRepo implements Repo<User>} の {@code save(User)}）は
+     * 親（{@code Repo#save(java.lang.Object)}）とキーが一致しない。
+     * 一致しないまま候補を引くと「実装が無い」や「別の実装1件に確定」になるため、
+     * <b>上書きしているという事実</b>を残して読み手に渡す（{@link jche.cache.OverrideFact}）。
+     */
+    private void recordOverrides(MethodRef ref, IMethodBinding binding) {
+        List<String> overridden = names.overriddenKeysOf(binding);
+        if (!overridden.isEmpty()) {
+            out.overrides.add(new OverrideFact(ref, overridden));
+        }
+    }
+
+    /**
+     * 書かれていない {@code super()} を辺にする（JLS 8.8.7）。
+     *
+     * 明示的コンストラクタ呼び出し（{@code this(...)} / {@code super(...)}）で始まらない
+     * コンストラクタの本体は、暗黙に {@code super();} で始まる。ASTには現れないが実行される
+     * 呼び出しなので、辺にしないと「{@code super()} を書いていないサブクラス」からは
+     * 親コンストラクタの中の処理が到達不能になり、影響調査から静かに抜ける。
+     *
+     * コンストラクタの本体は言語仕様上かならずあるが、構文エラーから復元した AST では
+     * 欠けうるので、その場合は何もしない。呼び出し元は既に {@link #methodStack} に
+     * 積まれている前提で呼ぶ。
+     */
+    private void recordImplicitSuperCall(MethodDeclaration node, IMethodBinding binding) {
+        if (!node.isConstructor() || node.getBody() == null
+                || TypeContextTracker.explicitConstructorInvocationOf(node) != null) {
+            return;
+        }
+        types.recordImplicitSuper(currentCallers(), binding.getDeclaringClass(), "",
+                lineOf(node.getName()));
     }
 
     /**
