@@ -169,7 +169,7 @@ normalized_facts() {
 check_rows() {   # $1=キャッシュ  $2=ラベル
     local bad
     bad=$(awk 'NR == 1 { next }
-               { if (index("TLFIHDVKACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
+               { if (index("TLFIHDVKOACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
                prev == "F" && substr($0, 1, 1) != "I" { print NR": F 行の次が I 行ではありません: "$0 }
                { prev = substr($0, 1, 1) }' "$1")
     if [ -z "$bad" ]; then

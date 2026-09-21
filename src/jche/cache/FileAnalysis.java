@@ -40,6 +40,11 @@ public final class FileAnalysis {
     public final List<TypeFact> types = new ArrayList<>();
     public final List<HintFact> hints = new ArrayList<>();
     public final List<MethodDeclFact> declarations = new ArrayList<>();
+    /**
+     * メソッド宣言が上書きしている宣言（O行。{@link OverrideFact} 参照）。
+     * シグネチャが自分と同じ上書きは持たない（キーの照合で引けるため）
+     */
+    public final List<OverrideFact> overrides = new ArrayList<>();
     public final List<FieldDeclFact> fieldDecls = new ArrayList<>();
     /** このファイルが宣言するコンパイル時定数（K行。{@link ConstantFact} 参照） */
     public final List<ConstantFact> constants = new ArrayList<>();

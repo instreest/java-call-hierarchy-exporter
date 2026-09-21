@@ -58,6 +58,9 @@ import java.security.SecureRandom;
  *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション  endLine
  *                                                             {@link MethodDeclFact}。endLine は
  *                                                             宣言の終了行（v20）
+ *   O  pkg  typeFqn  method  paramSig  上書き先のキー(;区切り)   {@link OverrideFact}。その宣言が
+ *                                                          上書きしている宣言のキー。ジェネリクスで
+ *                                                          消去シグネチャが食い違う場合にだけ現れる（v23）
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
  *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth
  *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
@@ -118,6 +121,7 @@ import java.security.SecureRandom;
  *                                                      … jche.graph.FieldFacts</li>
  *   <li>import 推定（U の candidate）をエッジとして採用するか … jche.graph.CallGraphBuilder</li>
  *   <li>ラムダ内の呼び出しの計上先                     … jche.graph.CallGraphBuilder（現状は囲みメソッド）</li>
+ *   <li>上書き関係（O行）をどう候補引きに使うか       … jche.graph.OverrideIndex / jche.graph.CallGraph</li>
  *   <li>未解決の理由コードの文言                       … jche.report.UnresolvedReport</li>
  *   <li>どのアノテーションがDIの印か・値をどう解釈するか … jche.graph.SpringBeans</li>
  *   <li>どのアノテーションが「実装はコンパイル時生成」を意味するか … jche.framework.GeneratedImpl</li>
@@ -222,7 +226,7 @@ public final class CacheFormat {
      * v22 で F 行の末尾に構文エラーの数を足した（{@link #syntaxErrorsOf}）。
      * 再利用したファイルについても「本体を読めていない」と言い続けるために要る
      */
-    public static final String VERSION = "jche-cache-v22";
+    public static final String VERSION = "jche-cache-v23";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
@@ -273,6 +277,7 @@ public final class CacheFormat {
     public static final char ROW_DEPENDENCIES = 'I';
     public static final char ROW_TYPE = 'H';
     public static final char ROW_METHOD_DECL = 'D';
+    public static final char ROW_OVERRIDE = 'O';
     public static final char ROW_FIELD_DECL = 'V';
     public static final char ROW_CONSTANT = 'K';
     /** dataflow-cache.tsv 側の行（analysis-cache.tsv には書かない） */

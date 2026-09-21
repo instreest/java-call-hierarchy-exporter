@@ -19,6 +19,7 @@ import jche.cache.FieldDeclFact;
 import jche.cache.FunctionalImplFact;
 import jche.cache.HintFact;
 import jche.cache.MethodDeclFact;
+import jche.cache.OverrideFact;
 import jche.cache.ModifierTokens;
 import jche.cache.MethodRef;
 import jche.cache.ReturnFact;
@@ -136,6 +137,13 @@ public final class CallGraphBuilder {
                             methods.setDeclarationDetails(id, d.annotations(), d.mods());
                             fields.declaration(d);
                             graph.beans.method(id, d);
+                        }
+                    }
+                    case CacheFormat.ROW_OVERRIDE -> {
+                        // O行はD行の直後に並ぶので、ここで intern すれば宣言の情報は揃っている
+                        OverrideFact o = OverrideFact.fromRow(in.columns());
+                        if (o != null) {
+                            graph.overrides.add(o, methods.intern(o.ref()));
                         }
                     }
                     case CacheFormat.ROW_CALL -> {

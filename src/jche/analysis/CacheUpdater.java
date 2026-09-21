@@ -32,6 +32,7 @@ import jche.cache.FunctionalImplFact;
 import jche.cache.HintFact;
 import jche.cache.LibraryFact;
 import jche.cache.MethodDeclFact;
+import jche.cache.OverrideFact;
 import jche.cache.ReturnFact;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
@@ -1258,6 +1259,10 @@ public final class CacheUpdater {
         }
         for (MethodDeclFact d : fa.declarations) {
             writeLine(w, d.toRow());
+        }
+        // O行はD行の直後。読み手は宣言をID化してから上書き関係を引くので、この順でなければならない
+        for (OverrideFact o : fa.overrides) {
+            writeLine(w, o.toRow());
         }
         for (FieldDeclFact v : fa.fieldDecls) {
             writeLine(w, v.toRow());

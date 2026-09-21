@@ -73,11 +73,11 @@ at fx.service.Notifier.execute(Notifier.java:24),Notifier.ping,RESOLVED:NO_OVERR
 at fx.service.Notifier.ping(Notifier.java:28),Notifier.pong,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong
 at fx.service.Notifier.pong(Notifier.java:32),Notifier.ping,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Notifier.execute,Notifier.ping,Notifier.pong,Notifier.ping,[UNEXPANDED:CYCLE] returns to a method already on this path
 at fx.app.Main.run(Main.java:48),Main.useParam,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.useParam
-at fx.app.Main.useParam(Main.java:96),OrderDaoImpl.findById,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById
+at fx.app.Main.useParam(Main.java:98),OrderDaoImpl.findById,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.useParam(Main.java:97),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.describe
+at fx.app.Main.useParam(Main.java:99),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.describe
 at fx.app.Main.run(Main.java:50),AbstractDao.findById,RESOLVED:LOCAL_NEW,2,Main.main,Main.run,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
@@ -88,10 +88,10 @@ at fx.app.Main.run(Main.java:54),OrderDaoImpl.findById,UNEXPANDED:LOCAL_NEW_MULT
 at fx.app.Main.run(Main.java:55),UserDaoImpl.describe,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
 at fx.app.Main.run(Main.java:55),OrderDaoImpl.describe,UNEXPANDED:LOCAL_NEW_MULTI,2,Main.main,Main.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
 at fx.app.Main.run(Main.java:56),Main.noSource,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.noSource
-at fx.app.Main.noSource(Main.java:88),Node.getNodeName,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.noSource,Node.getNodeName,[EXTERNAL] no source to follow
+at fx.app.Main.noSource(Main.java:90),Node.getNodeName,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.noSource,Node.getNodeName,[EXTERNAL] no source to follow
 at fx.app.Main.run(Main.java:57),Main.noImpl,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.noImpl
-at fx.app.Main.noImpl(Main.java:92),Exporter.export,UNEXPANDED:NO_IMPL,3,Main.main,Main.run,Main.noImpl,Exporter.export,[UNEXPANDED:NO_IMPL] no implementation with a body in the source
-at fx.app.Main.noImpl(Main.java:92),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.noImpl,Point.origin
+at fx.app.Main.noImpl(Main.java:94),Exporter.export,UNEXPANDED:NO_IMPL,3,Main.main,Main.run,Main.noImpl,Exporter.export,[UNEXPANDED:NO_IMPL] no implementation with a body in the source
+at fx.app.Main.noImpl(Main.java:94),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,2,Main.main,Helper.assist,UserDaoImpl.describe
 at fx.excluded.Helper.assist(Helper.java:9),AbstractDao.flush,RESOLVED:STATIC_BOUND:FINAL_METHOD,2,Main.main,Helper.assist,AbstractDao.flush
@@ -117,25 +117,25 @@ at fx.reflect.Invoker.byLiteral(Invoker.java:10),Target.run,RESOLVED:REFLECTION,
 at fx.reflect.Target.run(Target.java:9),Target.step,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Invoker.byLiteral,Target.run,Target.step
 at fx.reflect.Invoker.byLiteral(Invoker.java:10),Target.<clinit>,RESOLVED:REFLECTION_INIT,3,Main.main,Main.run,Invoker.byLiteral,Target.<clinit>
 at fx.app.Main.run(Main.java:66),Main.shapes,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.shapes
-at fx.app.Main.shapes(Main.java:102),Color.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color.area,[UNEXPANDED:CHA] 3 candidates: local variable
-at fx.app.Main.shapes(Main.java:102),Point.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Point.area,[UNEXPANDED:CHA] 3 candidates: local variable
-at fx.app.Main.shapes(Main.java:102),Color$1.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[UNEXPANDED:CHA] 3 candidates: local variable
-at fx.app.Main.shapes(Main.java:103),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.shapes,Point.origin
+at fx.app.Main.shapes(Main.java:104),Color.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color.area,[UNEXPANDED:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:104),Point.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Point.area,[UNEXPANDED:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:104),Color$1.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[UNEXPANDED:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:105),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.shapes,Point.origin,Point.Point,Registry.register
-at fx.app.Main.shapes(Main.java:104),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
-at fx.app.Main.shapes(Main.java:105),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.shapes,Color.code
+at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
+at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:109),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:109),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
+at fx.app.Main.lambdas(Main.java:111),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
+at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:110),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:109),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
+at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
+at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
-at fx.app.Main.lambda$lambdas$1(Main.java:112),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
-at fx.app.Main.lambdas(Main.java:117),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
+at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
+at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -148,38 +148,47 @@ at fx.app.Main.run(Main.java:71),UserDaoImpl.save,RESOLVED:NO_OVERRIDE,2,Main.ma
 at fx.app.Main.run(Main.java:72),UserDaoImpl.save,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,UserDaoImpl.save
 at fx.dao.UserDaoImpl.save(UserDaoImpl.java:16),List.count,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,UserDaoImpl.save,List.count
 at fx.app.Main.run(Main.java:73),Main.anonymous,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.anonymous
-at fx.app.Main.anonymous(Main.java:131),Main$1.execute,RESOLVED:LOCAL_NEW,3,Main.main,Main.run,Main.anonymous,Main$1.execute
-at fx.app.Main$1.execute(Main.java:126),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main$1.execute(Main.java:126),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main$1.execute(Main.java:127),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById
+at fx.app.Main.anonymous(Main.java:133),Main$1.execute,RESOLVED:LOCAL_NEW,3,Main.main,Main.run,Main.anonymous,Main$1.execute
+at fx.app.Main$1.execute(Main.java:128),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1.execute(Main.java:128),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1.execute(Main.java:129),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,4,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,5,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,6,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,6,Main.main,Main.run,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.anonymous(Main.java:138),Main$1LocalService.execute,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute
-at fx.app.Main$1LocalService.execute(Main.java:135),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main$1LocalService.execute(Main.java:135),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.anonymous(Main.java:140),Main$1LocalService.execute,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute
+at fx.app.Main$1LocalService.execute(Main.java:137),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1LocalService.execute(Main.java:137),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main.run(Main.java:74),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Legacy.callRemote
 at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,3,Main.main,Main.run,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Main.run(Main.java:75),Main.branches,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.branches
 at fx.app.Main.branches(Main.java:81),Feature.run,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.run
 at fx.branch.Feature.run(Feature.java:19),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.report,[UNREACHABLE] not called on this path: condition 'verbose' does not hold (argument 1 from the caller = false)
 at fx.branch.Feature.run(Feature.java:21),Feature.summary,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.summary
-at fx.branch.Feature.summary(Feature.java:59),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
+at fx.branch.Feature.summary(Feature.java:80),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.run,Feature.summary,Feature.trace
 at fx.branch.Feature.run(Feature.java:24),Feature.dump,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.run,Feature.dump,[UNREACHABLE] not called on this path: condition 'DEBUG' does not hold (constant = false)
 at fx.app.Main.branches(Main.java:82),Feature.mode,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.mode
 at fx.branch.Feature.mode(Feature.java:30),Feature.full,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.mode,Feature.full
-at fx.branch.Feature.full(Feature.java:73),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
+at fx.branch.Feature.full(Feature.java:94),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.mode,Feature.full,Feature.trace
 at fx.branch.Feature.mode(Feature.java:32),Feature.light,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.mode,Feature.light,"[UNREACHABLE] not called on this path: condition '""light"".equals(name)' does not hold (argument 1 from the caller = full)"
 at fx.app.Main.branches(Main.java:83),Feature.pick,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.pick
 at fx.branch.Feature.pick(Feature.java:38),Feature.one,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.one,[UNREACHABLE] not called on this path: condition 'switch (kind) case 1' does not hold (argument 1 from the caller = 2)
 at fx.branch.Feature.pick(Feature.java:39),Feature.two,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.two
-at fx.branch.Feature.two(Feature.java:85),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
+at fx.branch.Feature.two(Feature.java:106),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.pick,Feature.two,Feature.trace
 at fx.branch.Feature.pick(Feature.java:40),Feature.other,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.pick,Feature.other,[UNREACHABLE] not called on this path: condition 'switch (kind) default' does not hold (argument 1 from the caller = 2)
 at fx.app.Main.branches(Main.java:84),Feature.select,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.select
 at fx.branch.Feature.select(Feature.java:46),Feature.full,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.full,[UNREACHABLE] not called on this path: condition 'switch (mode) case fx.branch.Feature.Mode.FULL' does not hold (argument 1 from the caller = fx.branch.Feature.Mode.NONE)
 at fx.branch.Feature.select(Feature.java:47),Feature.light,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.light
-at fx.branch.Feature.light(Feature.java:77),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
+at fx.branch.Feature.light(Feature.java:98),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.select,Feature.light,Feature.trace
 at fx.branch.Feature.select(Feature.java:50),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.select,Feature.report,[UNREACHABLE] not called on this path: condition 'mode == Mode.FULL' does not hold (argument 1 from the caller = fx.branch.Feature.Mode.NONE)
+at fx.app.Main.branches(Main.java:85),Feature.narrowed,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.narrowed
+at fx.branch.Feature.narrowed(Feature.java:61),Feature.report,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.narrowed,Feature.report
+at fx.branch.Feature.report(Feature.java:76),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.narrowed,Feature.report,Feature.trace
+at fx.app.Main.branches(Main.java:86),Feature.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.branches,Feature.code
+at fx.branch.Feature.code(Feature.java:71),Feature.full,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Main.branches,Feature.code,Feature.full
+at fx.branch.Feature.full(Feature.java:94),Feature.trace,RESOLVED:NO_OVERRIDE,5,Main.main,Main.run,Main.branches,Feature.code,Feature.full,Feature.trace
+at fx.ctor.CtorBase.<init>(CtorBase.java:13),CtorBase.prepare,RESOLVED:NO_OVERRIDE,3,CtorMain.run,ImplicitSuper.ImplicitSuper,CtorBase.CtorBase,CtorBase.prepare
+at fx.ctor.CtorBase.<init>(CtorBase.java:13),CtorBase.prepare,RESOLVED:NO_OVERRIDE,3,CtorMain.run,DefaultCtor.DefaultCtor,CtorBase.CtorBase,CtorBase.prepare
+at fx.ctor.CtorBase.<init>(CtorBase.java:13),CtorBase.prepare,RESOLVED:NO_OVERRIDE,3,CtorMain.run,ExplicitSuper.ExplicitSuper,CtorBase.CtorBase,CtorBase.prepare
 at fx.dao.Dao.name(Dao.java:5),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.Dao.name(Dao.java:5),UserDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.ItemFinder.find(ItemFinder.java:13),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,1,ItemFinder.find,ItemDao.selectById,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): fx.dao.ItemDaoImpl is produced by annotation processing and has no source
@@ -229,6 +238,14 @@ at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOL
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.WebEntry.helper(WebEntry.java:22),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,WebEntry.helper,OrderDaoImpl.describe
+at fx.generic.GenericMain.run(GenericMain.java:8),OrderRepo.save,UNEXPANDED:CHA,1,GenericMain.run,OrderRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:8),RawRepo.save,UNEXPANDED:CHA,1,GenericMain.run,RawRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:9),AbstractStore.put,UNEXPANDED:CHA,1,GenericMain.run,AbstractStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:9),OrderStore.put,UNEXPANDED:CHA,1,GenericMain.run,OrderStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.GenericMain.run(GenericMain.java:14),OrderPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,OrderPrinter.accept,[RESOLVED:CALLBACK] contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.generic.OrderPrinter.accept(OrderPrinter.java:17),OrderPrinter.printed,RESOLVED:NO_OVERRIDE,2,GenericMain.run,OrderPrinter.accept,OrderPrinter.printed
+at fx.generic.GenericMain.run(GenericMain.java:15),RawPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,RawPrinter.accept,[RESOLVED:CALLBACK] contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.generic.RawPrinter.accept(RawPrinter.java:10),RawPrinter.rawPrinted,RESOLVED:NO_OVERRIDE,2,GenericMain.run,RawPrinter.accept,RawPrinter.rawPrinted
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
@@ -270,6 +287,7 @@ at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe
 at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
 at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.model.Color.<init>(Color.java:14),Registry.register,RESOLVED:STATIC_BOUND:STATIC,3,Color.<clinit>,Color$1.Color$1,Color.Color,Registry.register
 at fx.model.Color.<init>(Color.java:14),Registry.register,RESOLVED:STATIC_BOUND:STATIC,2,Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),Target.<clinit>,RESOLVED:REFLECTION_INIT,1,Invoker.byConstant,Target.<clinit>
 at fx.reflect.Invoker.byConstant(Invoker.java:16),Target.run,RESOLVED:REFLECTION,1,Invoker.byConstant,Target.run

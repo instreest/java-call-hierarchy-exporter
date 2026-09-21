@@ -218,6 +218,11 @@ public final class CallbackContracts {
             return functional;
         }
         String fqn = dataflow.concreteTypeOf(origin, ctx);
-        return (fqn == null) ? -1 : graph.implementationIn(fqn, callbackSig);
+        // 契約は呼び戻されるメソッドの「シグネチャ」だけを書く（それを宣言している型は
+        // 契約のどこにも現れない。例: Thread#start() -> c* : run() の Runnable）ので、
+        // 上書きの引きもシグネチャで行う。キーの照合だけで引くと、型引数を具体化した実装
+        // （class OrderPrinter implements Consumer<Order> の accept(Order)）が
+        // 消去済みの契約（accept(java.lang.Object)）と一致せず、辺が静かに落ちる
+        return (fqn == null) ? -1 : graph.implementationOfSignature(fqn, callbackSig);
     }
 }

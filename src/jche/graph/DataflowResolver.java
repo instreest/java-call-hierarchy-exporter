@@ -130,7 +130,7 @@ public final class DataflowResolver {
             return -1;
         }
         // 結果が宣言型のままでも、候補が1つに定まったこと自体が成果なので返す
-        return graph.implementationIn(fqn, methods.signature(calleeId));
+        return graph.implementationOf(fqn, calleeId);
     }
 
     /**
@@ -391,9 +391,11 @@ public final class DataflowResolver {
 
         String params = paramTypesOf(recv, 1, ctx);
         if (params != null) {
-            int id = graph.implementationIn(lookup, name + "(" + params + ")");
+            // リフレクションは実引数から名前と引数型を組み立てるので、宣言している型は
+            // 分からない。上書きの引きもシグネチャで行う（implementationOfSignature）
+            int id = graph.implementationOfSignature(lookup, name + "(" + params + ")");
             if (id < 0 && !lookup.equals(owner)) {
-                id = graph.implementationIn(owner, name + "(" + params + ")");
+                id = graph.implementationOfSignature(owner, name + "(" + params + ")");
             }
             return (id < 0) ? null : new int[] {id};
         }
