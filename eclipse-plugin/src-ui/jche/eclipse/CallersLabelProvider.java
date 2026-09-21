@@ -1,11 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
-import org.eclipse.jface.resource.JFaceResources;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
-import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.ISharedImages;
@@ -52,9 +50,6 @@ final class CallersLabelProvider extends ColumnLabelProvider {
         if (row.hasFlag(ServerRow.FLAG_RECURSIVE)) {
             sb.append("  ").append(Messages.get("row.recursive"));
         }
-        if (row.hasFlag(ServerRow.FLAG_TRUNCATED)) {
-            sb.append("  ").append(Messages.get("row.truncated"));
-        }
         return sb.toString();
     }
 
@@ -93,20 +88,10 @@ final class CallersLabelProvider extends ColumnLabelProvider {
     }
 
     @Override
-    public Font getFont(Object element) {
-        ServerRow row = rowOf(element);
-        if (row != null && row.hasFlag(ServerRow.FLAG_MATCH)) {
-            // 絞り込み文字列に直接一致した行を太字にする（一致した子孫のために残した枝と区別する）
-            return JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT);
-        }
-        return null;
-    }
-
-    @Override
     public Color getForeground(Object element) {
         ServerRow row = rowOf(element);
         if (row != null && (row.hasFlag(ServerRow.FLAG_RECURSIVE)
-                || row.hasFlag(ServerRow.FLAG_TRUNCATED) || row.hasFlag(ServerRow.FLAG_GUESSED))) {
+                || row.hasFlag(ServerRow.FLAG_GUESSED))) {
             return Display.getDefault().getSystemColor(SWT.COLOR_DARK_GRAY);
         }
         return null;

@@ -24,11 +24,16 @@ import org.eclipse.core.runtime.IStatus;
  * <p>ここが受け持つのは 2 つだけ。
  * <ol>
  *   <li>プロジェクト → 解析結果の対応を持つ</li>
- *   <li>ワークスペースの変更を購読し、変わった {@code *.java} を「未反映」として数える</li>
+ *   <li>ワークスペースの変更を購読し、変わった {@code *.java} を覚えておく</li>
  * </ol>
  *
  * <p>変更通知は UI スレッドで届く。ここでやるのは集合にパスを足すことだけで、解析はしない
  * （解析は {@link AnalysisJob}）。重い処理をここに書くと、保存やビルドのたびに Eclipse が固まる。
+ *
+ * <p><b>変更を見つけても、解析はしないし、結果も捨てない。</b>覚えたパスは木の行に ⚠ を出すため
+ * だけに使う。解析をやり直す契機も、結果を捨てる契機も、利用者の指示だけである。
+ * 使われていない解析プロセスを見回って終わらせる仕掛けは廃止した。結果が勝手に消えるのは、
+ * メモリが空くことより困るからである（docs/eclipse-plugin-ui-simplify-qa.md の Q1・Q8）。
  */
 public final class AnalysisService {
 
@@ -41,55 +46,17 @@ public final class AnalysisService {
     private final Map<IProject, ProjectAnalysis> byProject = new HashMap<>();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
-    /** アイドルの見回りの間隔（ミリ秒）。設定の分数より細かく見ても意味がないので粗くてよい */
-    private static final long SWEEP_INTERVAL_MS = 60_000L;
-
     private final IResourceChangeListener changeListener = this::resourceChanged;
-    private org.eclipse.core.runtime.jobs.Job sweeper;
 
     void start() {
+        // 見るのは POST_CHANGE だけ。ビルド後（POST_BUILD）を見ていたのは自動再解析のためで、
+        // その自動再解析をやめたので要らない
         ResourcesPlugin.getWorkspace().addResourceChangeListener(
-                changeListener, IResourceChangeEvent.POST_CHANGE | IResourceChangeEvent.POST_BUILD);
-        startIdleSweeper();
-    }
-
-    /**
-     * 使われていない解析プロセスを見回って終わらせる。
-     *
-     * <p>常駐させているのは「木の問い合わせに即答するため」なので、使わなくなったら
-     * 解放してよい。メモリを抱えたまま居座らせない（大きなプロジェクトでは数百MBになる）。
-     */
-    private void startIdleSweeper() {
-        sweeper = new org.eclipse.core.runtime.jobs.Job(Messages.get("job.sweep")) {
-            @Override
-            protected org.eclipse.core.runtime.IStatus run(
-                    org.eclipse.core.runtime.IProgressMonitor monitor) {
-                long idleMillis = JchePreferences.idleMinutes() * 60L * 1000L;
-                List<ProjectAnalysis> all;
-                synchronized (AnalysisService.this) {
-                    all = new ArrayList<>(byProject.values());
-                }
-                for (ProjectAnalysis analysis : all) {
-                    if (analysis.closeIfIdle(idleMillis)) {
-                        JchePlugin.log(IStatus.INFO,
-                                Messages.format("service.idleClosed",
-                                        analysis.project().getName()), null);
-                    }
-                }
-                schedule(SWEEP_INTERVAL_MS);
-                return org.eclipse.core.runtime.Status.OK_STATUS;
-            }
-        };
-        sweeper.setSystem(true);
-        sweeper.schedule(SWEEP_INTERVAL_MS);
+                changeListener, IResourceChangeEvent.POST_CHANGE);
     }
 
     void stop() {
         ResourcesPlugin.getWorkspace().removeResourceChangeListener(changeListener);
-        if (sweeper != null) {
-            sweeper.cancel();
-            sweeper = null;
-        }
         List<ProjectAnalysis> all;
         synchronized (this) {
             all = new ArrayList<>(byProject.values());
@@ -125,8 +92,11 @@ public final class AnalysisService {
     }
 
     /**
-     * 動いている解析プロセスを全部終わらせる。設定（JDK・JDT・JVM 引数）を変えたときに使う。
-     * 次の解析要求で、新しい設定のプロセスが起動する。
+     * 動いている解析プロセスを全部終わらせ、持っている解析結果も捨てる。
+     * 設定（解析に使う JDK・JDT・JVM 引数・キャッシュの置き場所）を変えたときに使う。
+     *
+     * <p>結果まで捨てるのは、結果が子プロセスのメモリにあるからである。プロセスだけ終わらせると
+     * 画面は「解析済み」のままなのに、木を聞くと「まだ解析していません」と返る食い違いになる。
      */
     public void restartAll() {
         List<ProjectAnalysis> all;
@@ -134,8 +104,7 @@ public final class AnalysisService {
             all = new ArrayList<>(byProject.values());
         }
         for (ProjectAnalysis analysis : all) {
-            analysis.dispose();
-            fireChanged(analysis);
+            analysis.clearAnalysis();
         }
     }
 
@@ -171,15 +140,10 @@ public final class AnalysisService {
             JchePlugin.log(IStatus.WARNING, Messages.get("service.deltaFailed"), e);
             return;
         }
-        boolean afterBuild = event.getType() == IResourceChangeEvent.POST_BUILD;
         for (ProjectAnalysis analysis : known) {
             List<IResource> files = changed.get(analysis.project());
             if (files != null && !files.isEmpty()) {
                 analysis.markChanged(files);
-            }
-            if (afterBuild) {
-                // 自動再解析は「ビルドが終わって静かになってから」。タイピング中には走らせない
-                analysis.scheduleAutoAnalysisIfNeeded();
             }
         }
     }

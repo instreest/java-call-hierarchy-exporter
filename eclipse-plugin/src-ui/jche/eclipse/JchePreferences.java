@@ -26,12 +26,8 @@ public final class JchePreferences {
 
     /** 解析に使う JDK。java の実行ファイルでもホームでもよい。空なら自動で探す */
     public static final String JDK = "analysis.jdk";
-    /** 解析に使う JDT の jar を置いたフォルダ。空なら同梱のものを使う */
-    public static final String JDT_FOLDER = "analysis.jdtFolder";
     /** 解析プロセスへ渡す JVM 引数（空白区切り）。例: -Xmx4g */
     public static final String VM_ARGUMENTS = "analysis.vmArguments";
-    /** 何分使われなければ解析プロセスを終わらせるか。0 なら終わらせない */
-    public static final String IDLE_MINUTES = "analysis.idleMinutes";
     /** 解析の進捗と作業ログをファイルにも残すか */
     public static final String LOG_TO_FILE = "analysis.logToFile";
     /** 解析キャッシュの置き場所。空なら {@link PluginFolders#defaultCacheRoot()} */
@@ -41,17 +37,12 @@ public final class JchePreferences {
     /** CSV の出力先。空なら {@link PluginFolders#defaultOutputRoot()} */
     public static final String OUTPUT_FOLDER = "analysis.outputFolder";
 
-    /** 既定のアイドル時間（分） */
-    public static final int DEFAULT_IDLE_MINUTES = 10;
-
     private JchePreferences() {
     }
 
     static void initializeDefaults(IPreferenceStore store) {
         store.setDefault(JDK, "");
-        store.setDefault(JDT_FOLDER, "");
         store.setDefault(VM_ARGUMENTS, "");
-        store.setDefault(IDLE_MINUTES, DEFAULT_IDLE_MINUTES);
         // 既定で残す。解析が返ってこないときに後から見られることの方が、
         // 数百KBのログより価値がある（世代は AnalysisLog が絞る）
         store.setDefault(LOG_TO_FILE, true);
@@ -81,12 +72,6 @@ public final class JchePreferences {
         }
         File file = new File(value);
         return file.isDirectory() ? jche.eclipse.server.JavaLocator.executableIn(file) : file;
-    }
-
-    /** 設定された JDT の jar のフォルダ。未設定なら null */
-    public static File jdtFolder() {
-        String value = text(JDT_FOLDER);
-        return value.isEmpty() ? null : new File(value);
     }
 
     /** 解析プロセスへ渡す JVM 引数 */
@@ -123,11 +108,4 @@ public final class JchePreferences {
         String value = text(key);
         return value.isEmpty() ? null : new File(value);
     }
-
-    /** アイドルで終わらせるまでの分数。0 なら終わらせない */
-    public static int idleMinutes() {
-        IPreferenceStore store = store();
-        return (store == null) ? DEFAULT_IDLE_MINUTES : store.getInt(IDLE_MINUTES);
-    }
-
 }

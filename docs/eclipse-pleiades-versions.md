@@ -126,7 +126,7 @@ AdoptOpenJDK は 2021 年に Eclipse Adoptium（配布物の名前は Temurin）
 2. `<インストール先>/eclipse/eclipse.ini` の `-vm` … Eclipse がどの JDK で動いているか（17 未満なら書き換える）
 3. ヘルプ → Eclipse IDE について → インストール詳細 → プラグイン … `org.eclipse.jdt.core` の版
 
-プラグインを入れた後なら、ビューのバナーのツールチップに「実行 JVM / JDT Core の版 /
+プラグインを入れた後なら、ビューの対象バーの「設定: …」のツールチップに「実行 JVM / JDT Core の版 /
 解析できる Java の上限」が出る。
 
 ## 古い Java で動いている Eclipse について

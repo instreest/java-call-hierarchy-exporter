@@ -6,23 +6,19 @@
   Pleiades は Eclipse 本体の辞書しか持たないので、このプラグインの文言はここで訳すしかない
   （docs/eclipse-plugin-nls-qa.md）。
 
-  画面への追加は2つ。
-  1) 呼び出し元階層ビュー「影響調査 (Call Hierarchy Exporter)」（主ユースケース）。
-     メソッドを選んで「影響調査: 呼び出し元階層を表示」で開く。
-     解析結果はプラグインが常駐で持ち、ビューはそれをフィルタして見せるだけ
-     （docs/eclipse-plugin-ui-design.md）
-  2) 設定ファイル（*.properties）の右クリックからの CSV 一括出力。従来どおりの経路
+  画面への追加は1つだけ。呼び出し元階層ビュー「影響調査 (Call Hierarchy Exporter)」である。
+  メソッドを選んで「影響調査: 呼び出し元階層を表示」で開き、解析結果はプラグインが常駐で持つ
+  （docs/eclipse-plugin-ui-design.md）。CSV はビューの右クリックから書き出す。
+
+  設定ファイル（*.properties）の右クリックからの CSV 一括出力は廃止した。同じことは
+  コマンドライン版でできて、こちらは経路（別プロセスをもう1つ起こす作り）を二重に抱えていた
+  （docs/eclipse-plugin-ui-simplify-qa.md の Q10）
 -->
 <plugin>
    <extension point="org.eclipse.ui.commands">
       <category
             id="io.github.instreest.jche.eclipse.category"
             name="%category.name"/>
-      <command
-            categoryId="io.github.instreest.jche.eclipse.category"
-            defaultHandler="jche.eclipse.ExportCallHierarchyHandler"
-            id="io.github.instreest.jche.eclipse.export"
-            name="%command.export.name"/>
       <command
             categoryId="io.github.instreest.jche.eclipse.category"
             defaultHandler="jche.eclipse.ShowCallersHandler"
@@ -43,27 +39,6 @@
    </extension>
 
    <extension point="org.eclipse.ui.menus">
-      <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
-         <command
-               commandId="io.github.instreest.jche.eclipse.export"
-               label="%menu.export.label"
-               style="push">
-            <!-- 選択が「すべて .properties ファイル」のときだけ出す -->
-            <visibleWhen checkEnabled="false">
-               <with variable="selection">
-                  <and>
-                     <count value="+"/>
-                     <iterate ifEmpty="false" operator="and">
-                        <adapt type="org.eclipse.core.resources.IFile">
-                           <test property="org.eclipse.core.resources.name" value="*.properties"/>
-                        </adapt>
-                     </iterate>
-                  </and>
-               </with>
-            </visibleWhen>
-         </command>
-      </menuContribution>
-
       <!-- メソッドの上での右クリック（エディタ・エクスプローラー・アウトライン）。
            選択の種類は問わない。メソッドが特定できなければハンドラ側が断る -->
       <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions">
@@ -75,7 +50,8 @@
    </extension>
 
    <!-- 設定画面（ウィンドウ > 設定 > 影響調査 (Call Hierarchy Exporter)）。
-        解析は別プロセスなので、使う JDK・JDT・メモリ・常駐の切り方をここで決められる -->
+        解析は別プロセスなので、使う JDK とメモリ（JVM 引数）、そして作ったファイルの
+        置き場所をここで決められる。解析キャッシュの削除もここから -->
    <extension point="org.eclipse.ui.preferencePages">
       <page
             class="jche.eclipse.JchePreferencePage"

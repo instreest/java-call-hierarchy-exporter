@@ -38,8 +38,9 @@ final class PluginRuntime {
     /**
      * 子プロセスに渡すクラスパス（解析本体＋JDT 一式）。
      *
-     * <p>JDT は既定では同梱のものを使う。設定でフォルダが指定されていればそちらを使う
-     * （閉域で新しい JDT を置いたときなど）。
+     * <p>JDT は<b>同梱のものに固定</b>である。別フォルダの JDT に差し替える設定は廃止した。
+     * 解析できる Java の版は同梱の JDT で決まり、それはバンドルの版と対で上げるものだからである
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q9）。
      */
     static List<File> analysisClasspath() throws IOException {
         Bundle bundle = Platform.getBundle(JchePlugin.PLUGIN_ID);
@@ -51,11 +52,7 @@ final class PluginRuntime {
         if (core == null) {
             throw new IOException(Messages.get("runtime.coreMissing"));
         }
-        File configured = JchePreferences.jdtFolder();
-        File jdtDir = (configured != null) ? configured : fileOf(bundle, "lib/jdt");
-        if (configured != null && !configured.isDirectory()) {
-            throw new IOException(Messages.format("runtime.jdtFolderMissing", configured));
-        }
+        File jdtDir = fileOf(bundle, "lib/jdt");
         File[] jars = (jdtDir == null) ? null : jdtDir.listFiles(new java.io.FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
@@ -63,9 +60,7 @@ final class PluginRuntime {
             }
         });
         if (jars == null || jars.length == 0) {
-            throw new IOException((configured != null)
-                    ? Messages.format("runtime.jdtFolderEmpty", configured)
-                    : Messages.get("runtime.jdtMissing"));
+            throw new IOException(Messages.get("runtime.jdtMissing"));
         }
         Arrays.sort(jars);
         Collections.addAll(classpath, jars);
