@@ -30,7 +30,11 @@ public final class JchePreferences {
     public static final String JDT_FOLDER = "analysis.jdtFolder";
     /** 解析プロセスへ渡す JVM 引数（空白区切り）。例: -Xmx4g */
     public static final String VM_ARGUMENTS = "analysis.vmArguments";
-    /** 何分使われなければ解析プロセスを終わらせるか。0 なら終わらせない */
+    /**
+     * 何分使われなければ解析プロセスを終わらせるか。<b>既定は 0（終わらせない）。</b>
+     * 終わらせると、そのプロセスが持っている解析結果も消える
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q2）
+     */
     public static final String IDLE_MINUTES = "analysis.idleMinutes";
     /** 解析の進捗と作業ログをファイルにも残すか */
     public static final String LOG_TO_FILE = "analysis.logToFile";
@@ -41,8 +45,13 @@ public final class JchePreferences {
     /** CSV の出力先。空なら {@link PluginFolders#defaultOutputRoot()} */
     public static final String OUTPUT_FOLDER = "analysis.outputFolder";
 
-    /** 既定のアイドル時間（分） */
-    public static final int DEFAULT_IDLE_MINUTES = 10;
+    /**
+     * 既定のアイドル時間（分）。0＝終わらせない。
+     *
+     * <p>以前は 10 分で、10 分放っておくと解析結果が消えて解析からやり直しだった。
+     * 解析結果は<b>利用者が捨てるまで持つ</b>ことにしたので、既定では終わらせない。
+     */
+    public static final int DEFAULT_IDLE_MINUTES = 0;
 
     private JchePreferences() {
     }

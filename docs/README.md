@@ -28,7 +28,8 @@
 |---|---|
 | [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。2 つに分けた置き場所、事実だけを持つこと、差分更新、依存 jar と JDK の変更への追従 |
 | [out-of-process-analysis-design.md](out-of-process-analysis-design.md) | Eclipse プラグインが解析を別プロセス（別 JDK・同梱の JDT）で行う仕組み。プロトコルと配布物の構成 |
-| [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作） |
+| [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作）。いまの画面との差は冒頭の追補を見る |
+| [eclipse-plugin-features.md](eclipse-plugin-features.md) | Eclipse プラグインの機能一覧（入口・実装・値打ち・費用）。何を残し何をやめるかを決めるための棚卸し |
 | [vscode-plugin-design.md](vscode-plugin-design.md) | VSCode プラグインの設計案（未実装）。既存のサーバープロトコルの再利用、設定の自動生成、カーソル位置からメソッドを引く `AT` の追加 |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
 | [branch-pruning.md](branch-pruning.md) | 条件分岐による打ち切り（`branch.pruning.enabled`）。判定できる条件、打ち切りで階層から消えたメソッドを `methods.csv` で探す方法 |
@@ -70,6 +71,7 @@
 | [eclipse-plugin-qa.md](eclipse-plugin-qa.md) | #49 | Eclipse プラグインとしてビルドできるようにする（Tycho を使わない判断、同梱物の構成） |
 | [eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) | #49 | 呼び出し元階層ビューの実装。別プロセス化、Java 8 対応、設定画面 |
 | [eclipse-plugin-progress-log-qa.md](eclipse-plugin-progress-log-qa.md) | — | 解析が返ってこないときに何が起きていたかを残す（子プロセスの標準エラーを読まずに止まる不具合、ログのファイル出力、無通知区間への進捗の追加、応答が無いときの止め方） |
+| [eclipse-plugin-ui-simplify-qa.md](eclipse-plugin-ui-simplify-qa.md) | — | 解析結果を「捨てるまで持つ」形にする（自動再解析・アイドル終了・設定画面の巻き添えをやめる）、画面を対象バーと木だけに削ぎ落とす、ボタンをアイコンにする、深さとフィルタの廃止 |
 | [eclipse-plugin-folders-qa.md](eclipse-plugin-folders-qa.md) | — | ビューを開いただけでは解析を始められない問題、自動生成した設定の project.root が作業フォルダを指していた不具合、キャッシュ・ログ・出力の置き場所、向きのボタン分け、字下げ付きのコピー |
 | [eclipse-plugin-nls-qa.md](eclipse-plugin-nls-qa.md) | — | プラグインの文言を英語（既定）と日本語で出し分ける。Pleiades が訳してくれない理由、NLS を使わない理由、OS の言語へ落ちないようにする理由、訳し忘れの検査 |
 | [nls-qa.md](nls-qa.md) | — | ツール全体（解析ログ・対話モード・起動コマンド）を英語（既定）と日本語で出し分ける。文言を properties ではなく Java の表に置いた理由、言語の優先順位、**出力 CSV を訳さない**判断、文言なのにキャッシュの版を上げた 1 件、プラグインと解析ログの言語をそろえる仕組み、検査が何も見ていなかった件 |

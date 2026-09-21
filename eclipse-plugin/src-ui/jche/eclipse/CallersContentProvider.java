@@ -2,9 +2,7 @@
 package jche.eclipse;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.Viewer;
@@ -14,28 +12,17 @@ import jche.eclipse.server.ServerTree;
 /**
  * ツリーの中身。サーバーが返した木（{@link ServerTree}）をそのまま見せる。
  *
- * <p>深さの上限で打ち切られた節点は、開かれたときにその節点を根として取り寄せ直す。
- * 取り寄せた木はここに覚えておき、同じ節点を開き直しても問い合わせない。
+ * <p>ここには何の細工も無い。深さの上限で打ち切られた枝を、開いたときに取り寄せ直す仕掛けが
+ * 以前はあったが、深さの指定そのものをやめた（行数の上限だけにした）ので要らなくなった
+ * （docs/eclipse-plugin-ui-simplify-qa.md の Q5）。
  */
 final class CallersContentProvider implements ITreeContentProvider {
 
-    /** 打ち切られた節点の続き（メソッドのキー → その節点を根にした木） */
-    private final Map<String, ServerTree> continuations = new HashMap<>();
     private ServerTree tree;
 
     @Override
     public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
         tree = (newInput instanceof ServerTree) ? (ServerTree) newInput : null;
-        continuations.clear();
-    }
-
-    /** 打ち切られた節点の続きを覚える。覚えたら呼び出し側がツリーを更新する */
-    void addContinuation(String methodKey, ServerTree subtree) {
-        continuations.put(methodKey, subtree);
-    }
-
-    boolean hasContinuation(String methodKey) {
-        return continuations.containsKey(methodKey);
     }
 
     @Override
@@ -55,31 +42,18 @@ final class CallersContentProvider implements ITreeContentProvider {
 
     @Override
     public boolean hasChildren(Object element) {
-        if (!(element instanceof ServerTree.Node)) {
-            return false;
-        }
-        ServerTree.Node node = (ServerTree.Node) element;
-        // 打ち切られた節点は「まだ先がある」ので、開ける形にしておく
-        return node.isTruncated() || !node.children().isEmpty();
+        return !children(element).isEmpty();
     }
 
     private List<ServerTree.Node> children(Object element) {
         if (!(element instanceof ServerTree.Node)) {
             return Collections.emptyList();
         }
-        ServerTree.Node node = (ServerTree.Node) element;
-        if (node.isTruncated()) {
-            ServerTree continuation = continuations.get(node.row().key());
-            if (continuation != null && continuation.root() != null) {
-                return continuation.root().children();
-            }
-            return Collections.emptyList();
-        }
-        return node.children();
+        return ((ServerTree.Node) element).children();
     }
 
     @Override
     public void dispose() {
-        continuations.clear();
+        tree = null;
     }
 }

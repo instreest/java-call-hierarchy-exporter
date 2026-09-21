@@ -24,11 +24,15 @@ import org.eclipse.core.runtime.IStatus;
  * <p>ここが受け持つのは 2 つだけ。
  * <ol>
  *   <li>プロジェクト → 解析結果の対応を持つ</li>
- *   <li>ワークスペースの変更を購読し、変わった {@code *.java} を「未反映」として数える</li>
+ *   <li>ワークスペースの変更を購読し、変わった {@code *.java} を覚えておく</li>
  * </ol>
  *
  * <p>変更通知は UI スレッドで届く。ここでやるのは集合にパスを足すことだけで、解析はしない
  * （解析は {@link AnalysisJob}）。重い処理をここに書くと、保存やビルドのたびに Eclipse が固まる。
+ *
+ * <p><b>変更を見つけても、解析はしないし、結果も捨てない。</b>覚えたパスは木の行に ⚠ を出すため
+ * だけに使う。解析をやり直す契機は利用者の指示だけである
+ * （docs/eclipse-plugin-ui-simplify-qa.md の Q1）。
  */
 public final class AnalysisService {
 
@@ -48,16 +52,18 @@ public final class AnalysisService {
     private org.eclipse.core.runtime.jobs.Job sweeper;
 
     void start() {
+        // 見るのは POST_CHANGE だけ。ビルド後（POST_BUILD）を見ていたのは自動再解析のためで、
+        // その自動再解析をやめたので要らない
         ResourcesPlugin.getWorkspace().addResourceChangeListener(
-                changeListener, IResourceChangeEvent.POST_CHANGE | IResourceChangeEvent.POST_BUILD);
+                changeListener, IResourceChangeEvent.POST_CHANGE);
         startIdleSweeper();
     }
 
     /**
      * 使われていない解析プロセスを見回って終わらせる。
      *
-     * <p>常駐させているのは「木の問い合わせに即答するため」なので、使わなくなったら
-     * 解放してよい。メモリを抱えたまま居座らせない（大きなプロジェクトでは数百MBになる）。
+     * <p><b>既定では何もしない</b>（設定の既定は 0 分＝終わらせない）。終わらせると解析結果も
+     * 消えるので、勝手には消さない。メモリを空けたい人が設定で分数を入れたときだけ働く。
      */
     private void startIdleSweeper() {
         sweeper = new org.eclipse.core.runtime.jobs.Job(Messages.get("job.sweep")) {
@@ -125,8 +131,11 @@ public final class AnalysisService {
     }
 
     /**
-     * 動いている解析プロセスを全部終わらせる。設定（JDK・JDT・JVM 引数）を変えたときに使う。
-     * 次の解析要求で、新しい設定のプロセスが起動する。
+     * 動いている解析プロセスを全部終わらせ、持っている解析結果も捨てる。
+     * 設定（解析に使う JDK・JDT・JVM 引数・キャッシュの置き場所）を変えたときに使う。
+     *
+     * <p>結果まで捨てるのは、結果が子プロセスのメモリにあるからである。プロセスだけ終わらせると
+     * 画面は「解析済み」のままなのに、木を聞くと「まだ解析していません」と返る食い違いになる。
      */
     public void restartAll() {
         List<ProjectAnalysis> all;
@@ -134,8 +143,7 @@ public final class AnalysisService {
             all = new ArrayList<>(byProject.values());
         }
         for (ProjectAnalysis analysis : all) {
-            analysis.dispose();
-            fireChanged(analysis);
+            analysis.clearAnalysis();
         }
     }
 
@@ -171,15 +179,10 @@ public final class AnalysisService {
             JchePlugin.log(IStatus.WARNING, Messages.get("service.deltaFailed"), e);
             return;
         }
-        boolean afterBuild = event.getType() == IResourceChangeEvent.POST_BUILD;
         for (ProjectAnalysis analysis : known) {
             List<IResource> files = changed.get(analysis.project());
             if (files != null && !files.isEmpty()) {
                 analysis.markChanged(files);
-            }
-            if (afterBuild) {
-                // 自動再解析は「ビルドが終わって静かになってから」。タイピング中には走らせない
-                analysis.scheduleAutoAnalysisIfNeeded();
             }
         }
     }

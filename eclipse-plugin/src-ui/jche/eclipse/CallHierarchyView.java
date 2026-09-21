@@ -15,13 +15,10 @@ import org.eclipse.jface.action.IMenuManager;
 import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.jface.action.MenuManager;
 import org.eclipse.jface.action.Separator;
-import org.eclipse.jface.dialogs.IDialogSettings;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.ColumnViewerToolTipSupport;
 import org.eclipse.jface.viewers.DoubleClickEvent;
 import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.viewers.ITreeViewerListener;
-import org.eclipse.jface.viewers.TreeExpansionEvent;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.dnd.Clipboard;
@@ -34,14 +31,15 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
-import org.eclipse.swt.widgets.Spinner;
-import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeItem;
+import org.eclipse.ui.ISharedImages;
 import org.eclipse.ui.IWorkbenchCommandConstants;
+import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.actions.ActionFactory;
 import org.eclipse.ui.dialogs.PreferencesUtil;
 import org.eclipse.ui.part.ViewPart;
@@ -53,21 +51,22 @@ import jche.eclipse.server.ServerTree;
 /**
  * 呼び出し階層ビュー。主ユースケースは「メソッドを選んで、その呼び出し元を階層で辿る」。
  *
- * <p>画面は上から 対象バー／バナー（状態）／フィルタバー／ツリー／件数 の5段
- * （docs/eclipse-plugin-ui-design.md）。解析もフィルタも<b>子プロセス</b>で行い、
+ * <p>画面は<b>木のための場所をできるだけ広く取る</b>。常に出ているのは
+ * 対象バー（どのプロジェクトを、どの設定で解析するか）と木の 2 段だけで、
+ * 状態のバナーは<b>言うことがあるときしか出さない</b>
+ * （docs/eclipse-plugin-ui-simplify-qa.md）。解析もフィルタも<b>子プロセス</b>で行い、
  * ここは返ってきた行を描くだけである（docs/out-of-process-analysis-design.md）。
- * 守っているのは次の3点。
+ *
+ * <p>画面は解析の前後で見た目が変わる。
  * <ul>
- *   <li>解析は待たない。解析中でも、前の結果を出したままバナーだけが動く</li>
- *   <li>フィルタは解析を起こさない。条件を変えたら木を取り寄せ直すだけ</li>
- *   <li>結果が古いことは、バナー・行の警告アイコン・ツールチップの3段階で示す</li>
+ *   <li><b>解析前</b>… 対象バーだけ。［解析する］を押すところまでしかできることが無いので、
+ *       それ以外は出さない</li>
+ *   <li><b>解析後</b>… 木をすべて展開して出す。深さやフィルタの指定は無く、
+ *       {@link #MAX_ROWS} 行で打ち切る（打ち切ったときだけ、その旨をバナーに出す）</li>
  * </ul>
  *
- * <p>一番上の<b>対象バー</b>（プロジェクトと設定）は後から足したものである。以前はビューを
- * 開いただけでは何も指定されておらず、解析を始めることすらできなかった（「メソッドを選んで…」と
- * 出るだけで、ボタンも押せない）。入口がコマンドだけだったためで、
- * ビュー単体でも「プロジェクトを選ぶ → 解析する → メソッドを指す」と進めるようにした
- * （docs/eclipse-plugin-folders-qa.md の Q4）。
+ * <p>解析結果は<b>利用者が捨てるまで消えない</b>。ソースが変わっても解析し直さず、
+ * 変わったファイルの行に ⚠ を出すだけである（{@link ProjectAnalysis}）。
  */
 public class CallHierarchyView extends ViewPart implements AnalysisService.Listener {
 
@@ -76,33 +75,44 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     /** 設定ページの ID（plugin.xml の preferencePages と同じ） */
     private static final String PREFERENCE_PAGE_ID = "io.github.instreest.jche.eclipse.preferences";
 
-    /** 絞り込み文字列を打ち終わるのを待つ時間（ミリ秒） */
-    private static final int FILTER_DELAY_MS = 250;
-
     /** コピーするときの1段ぶんの字下げ */
     private static final String INDENT = "  ";
 
+    /**
+     * 画面に出す行数の上限。これを超えた枝は切り、その旨をバナーに出す。
+     *
+     * <p>上限を置くのは、深さの指定をやめて「すべて展開」で出すようにしたからである。
+     * 大きなプロジェクトの呼び出し元は数万行になることがあり、そのまま展開すると
+     * 木を作る時間も画面の操作も戻ってこない。
+     */
+    private static final int MAX_ROWS = 1000;
+
+    /**
+     * 深さの上限。{@link #MAX_ROWS} 行で打ち切るので、1 行 1 階層でもここには届かない。
+     * つまり<b>実質は無制限</b>で、深さの指定という考え方そのものを画面から無くしている。
+     */
+    private static final int MAX_DEPTH = 1000;
+
     private Combo projectCombo;
     private Label configLabel;
+    private Button analyzeButton;
     private Composite banner;
     private Label bannerLabel;
     private Button bannerAction;
     private Button bannerCancel;
-    private Text filterText;
-    private Spinner depthSpinner;
     private TreeViewer viewer;
     private CallersContentProvider contentProvider;
     private CallersLabelProvider labelProvider;
-    private Label footer;
 
-    private final FilterSettings filters = new FilterSettings();
     private boolean callers = true;
 
     private ProjectAnalysis analysis;
     /** 表示しているメソッド。ID ではなくキーで持つ（解析し直しても指すものが変わらない） */
     private String targetKey;
-    private String targetLabel;
-    private int pendingRebuild;
+
+    /** いま画面に反映してある状態。これが変わらない知らせでは、木を取り寄せ直さない */
+    private ProjectAnalysis.State shownState;
+    private ServerResponse shownAnalysis;
 
     /** プロジェクト選択の並び（{@link #projectCombo} の項目と同じ順） */
     private List<IProject> projectItems = new ArrayList<IProject>();
@@ -110,15 +120,14 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     /** バナーのボタンを押したときにすること。ボタンが隠れているときは null */
     private Runnable bannerActionRun;
 
-    private Action autoAnalyzeAction;
     private Action callersAction;
     private Action calleesAction;
     private Action copyAction;
     private Action copySubtreeAction;
+    private Action exportAction;
 
     @Override
     public void createPartControl(Composite parent) {
-        loadFilters();
         Composite root = new Composite(parent, SWT.NONE);
         GridLayout layout = new GridLayout(1, false);
         layout.marginWidth = 0;
@@ -128,9 +137,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
         createTargetBar(root);
         createBanner(root);
-        createFilterBar(root);
         createTree(root);
-        createFooter(root);
         createActions();
 
         AnalysisService service = JchePlugin.service();
@@ -147,15 +154,16 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     // ------------------------------------------------------------
 
     /**
-     * 対象バー（どのプロジェクトを、どの設定で解析するか）。
+     * 対象バー（どのプロジェクトを、どの設定で解析するか、そして［解析する］）。
      *
-     * <p>ここが無いと、ビューを開いただけの利用者には何もできることが無い。
-     * 「解析する」は<b>プロジェクトが決まって初めて意味を持つ</b>ので、その指定を最初に置く。
+     * <p>解析前に要るのはこの 4 つだけである。プロジェクトが決まらなければ解析は始められず、
+     * 解析が終わらなければ木は出せないので、それ以外を先に見せても選びようがない
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q3）。
      */
     private void createTargetBar(Composite parent) {
         Composite bar = new Composite(parent, SWT.NONE);
         bar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-        GridLayout layout = new GridLayout(4, false);
+        GridLayout layout = new GridLayout(5, false);
         layout.marginHeight = 3;
         bar.setLayout(layout);
 
@@ -184,8 +192,23 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 openConfigDialog();
             }
         });
+
+        analyzeButton = new Button(bar, SWT.PUSH);
+        analyzeButton.setText(Messages.get("view.analyzeButton"));
+        analyzeButton.setToolTipText(Messages.get("view.analyzeButtonTip"));
+        analyzeButton.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
+        analyzeButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                reanalyze();
+            }
+        });
     }
 
+    /**
+     * 状態のバナー。<b>言うことがあるときだけ</b>現れ、無いときは行そのものを畳む。
+     * 「10:31:04 時点の解析結果」のような、読んでも次にすることが変わらない知らせは出さない。
+     */
     private void createBanner(Composite parent) {
         banner = new Composite(parent, SWT.NONE);
         banner.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
@@ -197,6 +220,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         bannerLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         bannerAction = new Button(banner, SWT.PUSH);
+        bannerAction.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
         bannerAction.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -208,6 +232,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         });
 
         bannerCancel = new Button(banner, SWT.PUSH);
+        bannerCancel.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
         bannerCancel.setText(Messages.get("banner.cancel"));
         bannerCancel.addSelectionListener(new SelectionAdapter() {
             @Override
@@ -215,54 +240,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 if (analysis != null) {
                     analysis.cancel();
                 }
-            }
-        });
-    }
-
-    private void createFilterBar(Composite parent) {
-        Composite bar = new Composite(parent, SWT.NONE);
-        bar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
-        GridLayout layout = new GridLayout(5, false);
-        layout.marginHeight = 3;
-        bar.setLayout(layout);
-
-        filterText = new Text(bar, SWT.SEARCH | SWT.ICON_SEARCH | SWT.ICON_CANCEL);
-        filterText.setMessage(Messages.get("view.filterHint"));
-        filterText.setText(filters.text);
-        filterText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        filterText.addModifyListener(e -> {
-            filters.text = filterText.getText();
-            scheduleReload();
-        });
-
-        new Label(bar, SWT.NONE).setText(Messages.get("view.depth"));
-        depthSpinner = new Spinner(bar, SWT.BORDER);
-        depthSpinner.setMinimum(1);
-        depthSpinner.setMaximum(50);
-        depthSpinner.setSelection(filters.maxDepth);
-        depthSpinner.addModifyListener(e -> {
-            filters.maxDepth = depthSpinner.getSelection();
-            scheduleReload();
-        });
-
-        Button more = new Button(bar, SWT.PUSH);
-        more.setText(Messages.get("view.moreFilters"));
-        more.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                if (new FilterDialog(getSite().getShell(), filters).open()
-                        == org.eclipse.jface.window.Window.OK) {
-                    reload();
-                }
-            }
-        });
-
-        Button export = new Button(bar, SWT.PUSH);
-        export.setText(Messages.get("view.exportCsv"));
-        export.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                exportCsv();
             }
         });
     }
@@ -277,26 +254,17 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         viewer.setUseHashlookup(true);
         ColumnViewerToolTipSupport.enableFor(viewer);
         viewer.addDoubleClickListener(this::openSelected);
-        viewer.addSelectionChangedListener(e -> updateCopyActions());
-        viewer.addTreeListener(new ITreeViewerListener() {
-            @Override
-            public void treeExpanded(TreeExpansionEvent event) {
-                loadContinuation(event.getElement());
-            }
-
-            @Override
-            public void treeCollapsed(TreeExpansionEvent event) {
-                // 何もしない
-            }
-        });
+        viewer.addSelectionChangedListener(e -> updateRowActions());
         getSite().setSelectionProvider(viewer);
     }
 
-    private void createFooter(Composite parent) {
-        footer = new Label(parent, SWT.NONE);
-        footer.setLayoutData(new GridData(SWT.FILL, SWT.BOTTOM, true, false));
-    }
-
+    /**
+     * ツールバーと［▽］メニュー。
+     *
+     * <p>押せるものはすべて<b>アイコン</b>にして、文字のボタンを画面から無くした。
+     * Eclipse 標準の「呼び出し階層」ビューと同じ並べ方で、木の場所をボタンに食わせない
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q4）。
+     */
     private void createActions() {
         Action showAtCursorAction = new Action(Messages.get("action.methodAtCursor")) {
             @Override
@@ -305,27 +273,27 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             }
         };
         showAtCursorAction.setToolTipText(Messages.get("action.methodAtCursorTip"));
+        showAtCursorAction.setImageDescriptor(ViewIcons.of(ViewIcons.AT_CURSOR));
 
         Action reanalyzeAction = new Action(Messages.get("action.reanalyze")) {
             @Override
             public void run() {
-                if (analysis != null) {
-                    analysis.reanalyze();
-                }
+                reanalyze();
             }
         };
         reanalyzeAction.setToolTipText(Messages.get("action.reanalyzeTip"));
+        // 再解析（⟳）だけは Eclipse 本体の絵を借りる。同じものを下手に描き直さない
+        reanalyzeAction.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages()
+                .getImageDescriptor(ISharedImages.IMG_ELCL_SYNCED));
 
-        autoAnalyzeAction = new Action(Messages.get("action.autoAnalyze"), Action.AS_CHECK_BOX) {
+        Action clearAction = new Action(Messages.get("action.clearAnalysis")) {
             @Override
             public void run() {
-                if (analysis != null) {
-                    analysis.setAutoAnalyze(isChecked());
-                }
+                clearAnalysis();
             }
         };
-        autoAnalyzeAction.setToolTipText(Messages.get("action.autoAnalyzeTip"));
-        autoAnalyzeAction.setChecked(true);
+        clearAction.setToolTipText(Messages.get("action.clearAnalysisTip"));
+        clearAction.setImageDescriptor(ViewIcons.of(ViewIcons.CLEAR));
 
         // 向きは「押すと切り替わるトグル1つ」ではなく、機能ごとに1つずつ置く。
         // トグルだと、いまどちら向きの木を見ているのかがボタンの押下状態でしか分からず、
@@ -340,6 +308,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             }
         };
         callersAction.setToolTipText(Messages.get("action.showCallersTip"));
+        callersAction.setImageDescriptor(ViewIcons.of(ViewIcons.CALLERS));
         calleesAction = new Action(Messages.get("action.showCallees"), Action.AS_RADIO_BUTTON) {
             @Override
             public void run() {
@@ -349,6 +318,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             }
         };
         calleesAction.setToolTipText(Messages.get("action.showCalleesTip"));
+        calleesAction.setImageDescriptor(ViewIcons.of(ViewIcons.CALLEES));
         callersAction.setChecked(callers);
         calleesAction.setChecked(!callers);
 
@@ -358,14 +328,18 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 viewer.expandAll();
             }
         };
+        expandAction.setToolTipText(Messages.get("action.expandAll"));
+        expandAction.setImageDescriptor(ViewIcons.of(ViewIcons.EXPAND_ALL));
         Action collapseAction = new Action(Messages.get("action.collapseAll")) {
             @Override
             public void run() {
                 viewer.collapseAll();
             }
         };
+        collapseAction.setToolTipText(Messages.get("action.collapseAll"));
+        collapseAction.setImageDescriptor(ViewIcons.of(ViewIcons.COLLAPSE_ALL));
 
-        createCopyActions();
+        createRowActions();
 
         Action configAction = new Action(Messages.get("view.configButton")) {
             @Override
@@ -400,20 +374,21 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         toolbar.add(new Separator());
         toolbar.add(showAtCursorAction);
         toolbar.add(reanalyzeAction);
-        toolbar.add(autoAnalyzeAction);
+        toolbar.add(clearAction);
         toolbar.add(new Separator());
         toolbar.add(expandAction);
         toolbar.add(collapseAction);
     }
 
     /**
-     * コピーと、その右クリックメニュー。
+     * 行に対してできること（コピー・開く・CSV 出力）と、その右クリックメニュー。
      *
      * <p>見えている木は「影響調査の結果そのもの」なので、報告書や課題票へ貼れないと使いにくい。
      * 階層が分からなくなると意味が変わってしまうため、<b>字下げを付けて</b>持ち出す
-     * （docs/eclipse-plugin-folders-qa.md の Q7）。
+     * （docs/eclipse-plugin-folders-qa.md の Q7）。CSV 出力も、たまにしか使わないので
+     * ボタンを常に置かず、ここに入れてある。
      */
-    private void createCopyActions() {
+    private void createRowActions() {
         copyAction = new Action(Messages.get("action.copy")) {
             @Override
             public void run() {
@@ -431,12 +406,20 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         };
         copySubtreeAction.setToolTipText(Messages.get("action.copySubtreeTip"));
 
-        Action openAction = new Action(Messages.get("action.openCallSite")) {
+        final Action openAction = new Action(Messages.get("action.openCallSite")) {
             @Override
             public void run() {
                 openSelectedRow();
             }
         };
+
+        exportAction = new Action(Messages.get("action.exportCsv")) {
+            @Override
+            public void run() {
+                exportCsv();
+            }
+        };
+        exportAction.setToolTipText(Messages.get("action.exportCsvTip"));
 
         // Ctrl+C。ビューに焦点があるときだけ効く（Eclipse の共通のやり方）
         getViewSite().getActionBars().setGlobalActionHandler(
@@ -452,20 +435,23 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 manager.add(copySubtreeAction);
                 manager.add(new Separator());
                 manager.add(openAction);
+                manager.add(new Separator());
+                manager.add(exportAction);
             }
         });
         Tree tree = viewer.getTree();
         tree.setMenu(context.createContextMenu(tree));
-        updateCopyActions();
+        updateRowActions();
     }
 
-    private void updateCopyActions() {
+    private void updateRowActions() {
         if (copyAction == null) {
             return;   // 画面の組み立て中（選択はまだ起きないが、順序に頼らない）
         }
         boolean any = viewer.getTree().getSelectionCount() > 0;
         copyAction.setEnabled(any);
         copySubtreeAction.setEnabled(any);
+        exportAction.setEnabled(targetKey != null && analysis != null && analysis.isAnalyzed());
     }
 
     // ------------------------------------------------------------
@@ -553,8 +539,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         analysis = picked;
         targetKey = null;
-        targetLabel = null;
-        autoAnalyzeAction.setChecked(picked.isAutoAnalyze());
         syncProjectSelection();
         refresh();
     }
@@ -563,8 +547,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     public void showMethod(ProjectAnalysis target, IMethod method) {
         this.analysis = target;
         this.targetKey = MethodKeys.keyOf(method);
-        this.targetLabel = method.getElementName();
-        autoAnalyzeAction.setChecked(target.isAutoAnalyze());
         reloadProjects();
         syncProjectSelection();
         refresh();
@@ -593,7 +575,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             return;
         }
         callers = toCallers;
-        updateContentDescription();
         reload();
     }
 
@@ -606,7 +587,16 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         if (changed != analysis) {
             return;
         }
-        runOnUi(this::refresh);
+        runOnUi(() -> {
+            if (analysis != null && analysis.state() == shownState
+                    && analysis.lastAnalysis() == shownAnalysis) {
+                // 変わったのは「解析後に触られたファイル」だけ。行の ⚠ を付け替えれば足りる。
+                // ここで木を取り寄せ直すと、保存のたびに子プロセスへ問い合わせることになる
+                viewer.refresh();
+                return;
+            }
+            refresh();
+        });
     }
 
     private void runOnUi(Runnable action) {
@@ -619,24 +609,18 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     }
 
     private void refresh() {
-        updateContentDescription();
+        shownState = (analysis == null) ? null : analysis.state();
+        shownAnalysis = (analysis == null) ? null : analysis.lastAnalysis();
         updateConfigLabel();
+        updateAnalyzeButton();
         updateBanner();
         reload();
     }
 
-    private void updateContentDescription() {
-        if (analysis == null) {
-            setContentDescription("");
-        } else if (targetKey == null) {
-            setContentDescription(Messages.format("view.noMethod", analysis.project().getName()));
-        } else {
-            setContentDescription(Messages.format(
-                    callers ? "view.callersOf" : "view.calleesOf", targetLabel));
-        }
-    }
-
-    /** 対象バーの「設定: …」。何を見て解析するかを、いつでも出しておく */
+    /**
+     * 対象バーの「設定: …」。何を見て解析するかを、いつでも出しておく。
+     * どの JDK で・どこにファイルを作ったかは、この吹き出しにまとめる。
+     */
     private void updateConfigLabel() {
         if (analysis == null) {
             configLabel.setText("");
@@ -645,33 +629,34 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             ConfigSource source = analysis.configSource();
             String label = (source == null) ? Messages.get("config.unavailable") : source.label();
             configLabel.setText(Messages.format("view.configLabel", label));
-            configLabel.setToolTipText(Messages.format("view.configLabel", label)
-                    + "\n" + Messages.get("view.configLabelTip"));
+            configLabel.setToolTipText(Messages.get("view.configLabelTip")
+                    + "\n\n" + environmentTooltip());
         }
         configLabel.getParent().layout();
     }
 
-    /** 入力が続いている間は取り寄せ直さない（打鍵ごとに子プロセスへ聞かない） */
-    private void scheduleReload() {
-        pendingRebuild++;
-        int generation = pendingRebuild;
-        viewer.getControl().getDisplay().timerExec(FILTER_DELAY_MS, () -> {
-            if (!viewer.getControl().isDisposed() && generation == pendingRebuild) {
-                reload();
-            }
-        });
+    /** ［解析する］は解析前にだけ出す。解析のやり直しはツールバーの⟳ */
+    private void updateAnalyzeButton() {
+        boolean needed = analysis != null && !analysis.isAnalyzed() && !analysis.isAnalyzing()
+                && analysis.configSource() != null;
+        show(analyzeButton, needed);
+        analyzeButton.getParent().layout();
     }
 
     /** いまの条件で木を取り寄せ、届いたら描き直す */
     private void reload() {
+        updateRowActions();
         if (analysis == null || targetKey == null || !analysis.isAnalyzed()) {
             viewer.setInput(null);
-            updateFooter(0, "");
             return;
         }
-        saveFilters();
+        if (analysis.isAnalyzing() && viewer.getInput() != null) {
+            // 解析し直している間は、前の木をそのまま見せる。子プロセスとのやりとりは
+            // 1 件ずつ（ServerConnection）なので、ここで聞いても解析が終わるまで返らない
+            return;
+        }
         final String requestedKey = targetKey;
-        analysis.requestTree(targetKey, callers, filters.toWords(), (response, error) -> runOnUi(() -> {
+        analysis.requestTree(targetKey, callers, treeWords(true), (response, error) -> runOnUi(() -> {
             if (!requestedKey.equals(targetKey)) {
                 return;   // 待っている間に別のメソッドへ切り替わった
             }
@@ -679,12 +664,33 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }));
     }
 
+    /**
+     * 木を切り出す条件。画面から選べるものは何も無い（深さもフィルタも廃止した）。
+     *
+     * <p>落とすのは設定ファイルの {@code exclude.packages} だけで、テストからの呼び出しも
+     * 推測で特定した呼び出しも出す。画面に切り替えが無い以上、<b>黙って落とさない</b>ほうを選ぶ
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q5）。
+     *
+     * @param limited 画面に出すための行数の上限を付けるか（CSV 出力では付けない）
+     */
+    private static String[] treeWords(boolean limited) {
+        List<String> words = new ArrayList<String>();
+        words.add("depth=" + MAX_DEPTH);
+        words.add("tests=1");
+        words.add("guessed=1");
+        words.add("exclude=1");
+        words.add("dedupe=1");
+        if (limited) {
+            words.add("max=" + MAX_ROWS);
+        }
+        return words.toArray(new String[0]);
+    }
+
     private void applyTree(ServerResponse response, String error) {
         if (error != null) {
             viewer.setInput(null);
             setBanner(Messages.format("banner.serverError", error),
                     Messages.get("banner.reanalyze"), this::reanalyze, false);
-            updateFooter(0, "");
             return;
         }
         if (!response.isOk()) {
@@ -694,112 +700,80 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                         Messages.get("banner.reanalyze"), this::reanalyze, false);
             } else if ("not-analyzed".equals(response.reason())) {
                 setBanner(Messages.get("state.notAnalyzed"),
-                        Messages.get("banner.analyze"), this::reanalyze, false);
+                        Messages.get("view.analyzeButton"), this::reanalyze, false);
             } else {
                 setBanner(Messages.format("banner.treeError", response.reason()),
                         Messages.get("banner.reanalyze"), this::reanalyze, false);
             }
-            updateFooter(0, "");
             return;
         }
-        ServerTree tree = ServerTree.of(response.rows());
-        viewer.setInput(tree);
-        viewer.expandToLevel(2);
-        int direct = (tree.root() == null) ? 0 : tree.root().children().size();
-        updateFooter(direct, Messages.format("footer.totalRows",
-                Integer.valueOf(response.rows().size())));
+        viewer.setInput(ServerTree.of(response.rows()));
+        // 「すべて展開」した姿で出す。畳んだ木から毎回開き直すのが手間だったため
+        viewer.expandAll();
         updateBanner();
-    }
-
-    /** 深さ上限で打ち切られた節点が開かれたら、その先を取り寄せる */
-    private void loadContinuation(Object element) {
-        if (analysis == null || !(element instanceof ServerTree.Node)) {
-            return;
+        if (response.rows().size() >= MAX_ROWS) {
+            // 打ち切りは黙らない。出ていない呼び出しがあることは、必ず画面で言う
+            setBanner(Messages.format("banner.rowLimit", Integer.valueOf(MAX_ROWS)),
+                    null, null, false);
         }
-        final ServerTree.Node node = (ServerTree.Node) element;
-        if (!node.isTruncated()) {
-            return;
-        }
-        String key = node.row().key();
-        if (contentProvider.hasContinuation(key)) {
-            return;
-        }
-        analysis.requestTree(key, callers, filters.toWords(), (response, error) -> runOnUi(() -> {
-            if (error != null || response == null || !response.isOk()) {
-                return;
-            }
-            contentProvider.addContinuation(key, ServerTree.of(response.rows()));
-            viewer.refresh(node);
-            viewer.expandToLevel(node, 1);
-        }));
-    }
-
-    private void updateFooter(int direct, String extra) {
-        footer.setText((targetKey == null) ? ""
-                : Messages.format(callers ? "footer.directCallers" : "footer.directCallees",
-                        Integer.valueOf(direct))
-                        + (extra.isEmpty() ? "" : Messages.format("footer.extra", extra)));
-        footer.getParent().layout();
     }
 
     /**
-     * バナーの書き換え。状態は1行に畳んである（docs/eclipse-plugin-ui-design.md §2）。
+     * バナーの書き換え。
      *
-     * <p>プロジェクトが決まっていない・決まったがメソッドがまだ、という段階もここで案内する。
-     * 「次に何をすればよいか」が書いていない画面は、利用者にとって行き止まりと同じだからである。
+     * <p>出すのは「次に何かしないと先へ進めないこと」と「黙ってはいけないこと」だけである。
+     * 解析が終わって木が出ているときは何も出さない（その行ぶん木が広くなる）。
      */
     private void updateBanner() {
         if (analysis == null) {
-            if (projectItems.isEmpty()) {
-                setBanner(Messages.get("banner.noProjects"), null, null, false);
-            } else {
-                setBanner(Messages.get("banner.pickProject"), null, null, false);
-            }
+            setBanner(projectItems.isEmpty()
+                    ? Messages.get("banner.noProjects") : Messages.get("banner.pickProject"),
+                    null, null, false);
             return;
         }
         ProjectAnalysis.State state = analysis.state();
-        ServerResponse last = analysis.lastAnalysis();
-        String at = (last == null) ? "" : shortTime(last.field("at"));
         switch (state) {
             case NO_CONFIG:
                 setBanner(Messages.get("state.noConfig"),
                         Messages.get("view.configButton"), this::openConfigDialog, false);
                 break;
             case NOT_ANALYZED:
-                setBanner(Messages.get("state.notAnalyzed"),
-                        Messages.get("banner.analyze"), this::reanalyze, false);
+                // 案内は要らない。対象バーの［解析する］が、そのまま次にすることである
+                clearBanner();
                 break;
             case ANALYZING:
-                setBanner(Messages.get("state.analyzing"), null, null, true);
-                break;
             case UPDATING:
-                setBanner(Messages.format("state.updating", at), null, null, true);
-                break;
-            case STALE:
-                setBanner(Messages.format("state.stale",
-                        Integer.valueOf(analysis.changedCount()), at),
-                        Messages.get("banner.reanalyze"), this::reanalyze, false);
+                setBanner(Messages.get("state.analyzing"), null, null, true);
                 break;
             case FAILED:
                 setBanner(Messages.format("state.failed", analysis.errorMessage()),
                         Messages.get("banner.retry"), this::reanalyze, false);
                 break;
             case READY:
-                String ready = (last == null) ? Messages.format("state.ready", at)
-                        : Messages.format("state.readyWithCount", at, last.field("methods"));
-                // 構文エラーで読めなかったファイルがあると、その呼び出しは木に出てこない。
-                // 「呼び出しを静かに落とさない」ので、結果と同じ行で必ず伝える
-                ready += syntaxErrorNote(last);
-                if (targetKey == null) {
-                    setBanner(ready + Messages.get("state.readyPickMethod"),
-                            Messages.get("action.methodAtCursor"), this::showMethodAtCursor, false);
-                } else {
-                    setBanner(ready, null, null, false);
-                }
+                readyBanner();
                 break;
             default:
-                setBanner("", null, null, false);
+                clearBanner();
                 break;
+        }
+    }
+
+    /**
+     * 解析済みのときのバナー。ふつうは何も出さない。
+     *
+     * <p>出すのは2つだけ。メソッドをまだ選んでいないとき（次にすることがある）と、
+     * 構文エラーで読めなかったファイルがあるとき（木に出ていない呼び出しがある）である。
+     */
+    private void readyBanner() {
+        String note = syntaxErrorNote(analysis.lastAnalysis());
+        if (targetKey == null) {
+            String message = Messages.get("banner.pickMethod");
+            setBanner(note.isEmpty() ? message : message + " " + note,
+                    Messages.get("action.methodAtCursor"), this::showMethodAtCursor, false);
+        } else if (!note.isEmpty()) {
+            setBanner(note, null, null, false);
+        } else {
+            clearBanner();
         }
     }
 
@@ -826,40 +800,54 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
     }
 
-    /** {@code 2026-09-12T10:31:04.123} のうち時刻だけを出す */
-    private static String shortTime(String stamp) {
-        int t = stamp.indexOf('T');
-        if (t < 0) {
-            return stamp;
+    /**
+     * 解析結果を捨てる（手動）。確かめてから捨てるのは、作り直すのに時間がかかるからである。
+     * ディスクのキャッシュは残るので、作り直しは差分で済む。
+     */
+    private void clearAnalysis() {
+        if (analysis == null || !analysis.isAnalyzed()) {
+            return;
         }
-        String time = stamp.substring(t + 1);
-        int dot = time.indexOf('.');
-        return (dot < 0) ? time : time.substring(0, dot);
+        if (!MessageDialog.openConfirm(getSite().getShell(), Messages.get("dialog.title"),
+                Messages.format("dialog.clearConfirm", analysis.project().getName()))) {
+            return;
+        }
+        targetKey = null;
+        analysis.clearAnalysis();
     }
 
+    private void clearBanner() {
+        setBanner("", null, null, false);
+    }
+
+    /** バナーの書き換え。message が空なら、バナーの行そのものを畳む */
     private void setBanner(String message, String actionLabel, Runnable action, boolean cancellable) {
         bannerLabel.setText(message);
-        bannerLabel.setToolTipText(environmentTooltip());
         bannerActionRun = action;
         bannerAction.setText(actionLabel == null ? "" : actionLabel);
-        bannerAction.setVisible(actionLabel != null);
-        ((GridData) layoutDataOf(bannerAction)).exclude = (actionLabel == null);
-        bannerCancel.setVisible(cancellable);
-        ((GridData) layoutDataOf(bannerCancel)).exclude = !cancellable;
+        show(bannerAction, actionLabel != null);
+        show(bannerCancel, cancellable);
+        show(banner, !message.isEmpty());
         banner.layout(true, true);
         banner.getParent().layout(true, true);
     }
 
+    /** 部品を出す・引っ込める。引っ込めるときは場所も空けさせる（exclude） */
+    private static void show(Control control, boolean visible) {
+        control.setVisible(visible);
+        Object data = control.getLayoutData();
+        if (data instanceof GridData) {
+            ((GridData) data).exclude = !visible;
+        }
+    }
+
     /**
-     * バナーのツールチップ。「どの設定で」「何の上で」解析し、「どこにファイルを作ったか」を出す。
+     * 「どの設定で」「何の上で」解析し、「どこにファイルを作ったか」。
      * 解析は別プロセスなので、Eclipse を動かしている JDK とは別のものが使われる。
      */
     private String environmentTooltip() {
         StringBuilder sb = new StringBuilder();
         if (analysis != null) {
-            ConfigSource source = analysis.configSource();
-            sb.append(Messages.format("view.configLabel",
-                    (source == null) ? Messages.get("tip.none") : source.label())).append('\n');
             ServerResponse info = analysis.serverInfo();
             if (info != null) {
                 sb.append(Messages.format("tip.serverInfo",
@@ -876,13 +864,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 .append('\n');
         sb.append(Messages.get("tip.outOfProcess"));
         return sb.toString();
-    }
-
-    private static Object layoutDataOf(Button button) {
-        if (!(button.getLayoutData() instanceof GridData)) {
-            button.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
-        }
-        return button.getLayoutData();
     }
 
     // ------------------------------------------------------------
@@ -923,10 +904,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
     /**
      * 選んだ行をクリップボードへ。字下げは<b>画面に見えているとおりの深さ</b>で付ける。
-     *
-     * <p>行の深さ（{@code ServerRow#depth}）を使わないのは、深さ上限で打ち切った先を
-     * 取り寄せ直した枝（継続）では、その枝の中で深さが 0 から振り直されるためである。
-     * ツリーの項目（{@code TreeItem}）の親をたどれば、見えているとおりの段数になる。
      *
      * @param withDescendants その行の下にある行も含めるか（畳んでいるものも含む）
      */
@@ -1003,6 +980,12 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
 
     // ------------------------------------------------------------
 
+    /**
+     * いま見ている木を CSV に書き出す（右クリックから）。
+     *
+     * <p>画面と違って<b>行数の上限は付けない</b>。画面の上限は「読める大きさに収める」ための
+     * もので、ファイルに書き出すなら全部あったほうがよいからである。
+     */
     private void exportCsv() {
         if (analysis == null || targetKey == null || !analysis.isAnalyzed()) {
             return;
@@ -1012,17 +995,17 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         dialog.setFileName("call-hierarchy-view.csv");
         dialog.setFilterPath(PluginFolders.outputRoot().getAbsolutePath());
         dialog.setOverwrite(true);
-        String path = dialog.open();
+        final String path = dialog.open();
         if (path == null) {
             return;
         }
-        List<String> words = new ArrayList<>();
+        List<String> words = new ArrayList<String>();
         words.add("EXPORT");
         words.add(targetKey);
         words.add(callers ? "callers" : "callees");
         words.add(path);
-        for (String filter : filters.toWords()) {
-            words.add(filter);
+        for (String word : treeWords(false)) {
+            words.add(word);
         }
         analysis.request(Messages.get("export.jobName"), (response, error) -> runOnUi(() -> {
             if (error != null || response == null || !response.isOk()) {
@@ -1065,42 +1048,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         return analysis != null && analysis.isChangedSinceAnalysis(relativePath);
     }
 
-    /**
-     * フィルタの保存先。
-     *
-     * <p>{@code AbstractUIPlugin#getDialogSettings()} を使う。新しい Eclipse には
-     * {@code PlatformUI.getDialogSettingsProvider} があるが、そちらは 2022 年（4.24）からで、
-     * 古い Eclipse では存在しない。このプラグインは古い Eclipse でも動かすので、
-     * 両方にある古い方を使う（test/plugin-api/run.sh が古い jar でのコンパイルを検査する）。
-     */
-    @SuppressWarnings("deprecation")
-    private IDialogSettings dialogSettings() {
-        JchePlugin plugin = JchePlugin.getDefault();
-        if (plugin == null) {
-            return null;
-        }
-        IDialogSettings root = plugin.getDialogSettings();
-        if (root == null) {
-            return null;
-        }
-        IDialogSettings section = root.getSection(VIEW_ID);
-        return (section != null) ? section : root.addNewSection(VIEW_ID);
-    }
-
-    private void loadFilters() {
-        IDialogSettings settings = dialogSettings();
-        if (settings != null) {
-            filters.load(settings);
-        }
-    }
-
-    private void saveFilters() {
-        IDialogSettings settings = dialogSettings();
-        if (settings != null) {
-            filters.save(settings);
-        }
-    }
-
     @Override
     public void setFocus() {
         // 開いている間にプロジェクトが増えることもある。戻ってきたときに拾い直す
@@ -1114,7 +1061,6 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         if (service != null) {
             service.removeListener(this);
         }
-        saveFilters();
         super.dispose();
     }
 }

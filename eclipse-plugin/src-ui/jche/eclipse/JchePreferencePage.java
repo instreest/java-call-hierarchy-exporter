@@ -88,6 +88,15 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
     private void createProcessGroup(Composite root) {
         Group group = group(root, Messages.get("prefs.processGroup"));
 
+        // ここを変えると解析プロセスを終わらせる＝解析結果も消える。押してから驚かないよう先に断る
+        Label note = new Label(group, SWT.WRAP);
+        note.setText(Messages.get("prefs.processNote"));
+        GridData noteData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        noteData.horizontalSpan = 3;
+        // 折り返す Label は widthHint を与えないと1行ぶんの幅を要求し、設定画面が横に伸びる
+        noteData.widthHint = TEXT_WIDTH;
+        note.setLayoutData(noteData);
+
         // --- 解析に使う JDK ---
         new Label(group, SWT.NONE).setText(Messages.get("prefs.jdk"));
         jdkText = new Text(group, SWT.BORDER);
@@ -406,6 +415,11 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
 
     @Override
     public boolean performOk() {
+        // 解析プロセスに関わる設定が「実際に変わったか」を、書き込む前に見る
+        boolean restart = changed(JchePreferences.JDK, jdkText.getText().trim())
+                | changed(JchePreferences.JDT_FOLDER, jdtText.getText().trim())
+                | changed(JchePreferences.VM_ARGUMENTS, vmArgumentsText.getText().trim())
+                | changed(JchePreferences.CACHE_FOLDER, cacheFolderText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.JDK, jdkText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.JDT_FOLDER, jdtText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.VM_ARGUMENTS, vmArgumentsText.getText().trim());
@@ -416,12 +430,19 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
         getPreferenceStore().setValue(JchePreferences.OUTPUT_FOLDER, outputFolderText.getText().trim());
         // 書きかけのログは古いフォルダを掴んだままなので閉じる。次の1行で新しい場所に作り直す
         AnalysisLog.get().close();
-        // 設定を変えたら、いま動いている解析プロセスは古い設定のままなので終わらせる。
-        // 次の解析で新しい設定のものが起動する（キャッシュの場所も起動時に渡している）
+        // 古い設定のまま動いている解析プロセスは終わらせる。次の解析で新しい設定のものが起動する。
+        // 変わっていないなら何もしない。［OK］を押しただけで解析結果が消えるのは、
+        // 利用者にとっては「勝手に消えた」のと同じだからである
+        // （docs/eclipse-plugin-ui-simplify-qa.md の Q2）
         AnalysisService service = JchePlugin.service();
-        if (service != null) {
+        if (restart && service != null) {
             service.restartAll();
         }
         return true;
+    }
+
+    /** その設定が、いま保存されている値と違うか */
+    private boolean changed(String key, String value) {
+        return !value.equals(getPreferenceStore().getString(key));
     }
 }

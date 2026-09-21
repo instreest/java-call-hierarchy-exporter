@@ -15,6 +15,7 @@
 #   4) plugin.xml が指すクラス（ハンドラ・ビュー・Bundle-Activator）が実在する
 #   5) plugin.xml のコマンド ID / ビュー ID が、キーバインドとソースの定数と食い違わない
 #   6) build.properties の source.. に挙げたフォルダが実在する（src はリンクフォルダ）
+#   7) ツールバーのアイコン（ViewIcons の文字盤）が 16 行 × 16 文字で、決めた文字しか使っていない
 set -uo pipefail
 cd "$(dirname "$0")"
 # 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
@@ -152,6 +153,27 @@ if grep -q 'JavaSE-11' "$PLUGIN/META-INF/MANIFEST.MF"; then
     ok "Bundle-RequiredExecutionEnvironment が JavaSE-11（下限は Eclipse 4.17 / 2020-09）"
 else
     fail "BREE が JavaSE-11 ではない（下限を変えたなら test/plugin-api も揃えること）"
+fi
+
+# 7) ツールバーのアイコン。絵を文字盤で持っているので、大きさと文字をここで検査できる
+#    （画像ファイルなら中身を見られないが、文字盤なら「16×16 か」「知らない文字が無いか」が分かる。
+#     ずれたまま動かすと、アイコンが欠けるか、SWT が例外を投げる）
+echo "== ツールバーのアイコン（ViewIcons） =="
+ICONS=$PLUGIN/src-ui/jche/eclipse/ViewIcons.java
+if [ ! -f "$ICONS" ]; then
+    fail "ViewIcons.java が無い"
+else
+    rows=$(grep -oE '^ +"[.agw]*",$' "$ICONS" | sed -E 's|^ +"(.*)",$|\1|')
+    total=$(printf '%s\n' "$rows" | grep -c . )
+    bad=$(printf '%s\n' "$rows" | awk '{ if (length($0) != 16) print NR": "length($0) }')
+    maps=$(grep -cE '^ +static final String\[\] [A-Z_]+ = \{$' "$ICONS")
+    if [ -n "$bad" ]; then
+        fail "16 文字でない行がある: $(echo "$bad" | tr '\n' ' ')"
+    elif [ "$maps" -eq 0 ] || [ "$total" -ne $((maps * 16)) ]; then
+        fail "文字盤 $maps 枚に対して行数が $total（16 行 × 枚数であること）"
+    else
+        ok "アイコン $maps 枚が 16 行 × 16 文字（使う文字は . a g w のみ）"
+    fi
 fi
 
 if [ "$ng" -eq 0 ]; then echo "PASS"; else echo "FAIL ($ng 件)"; exit 1; fi

@@ -24,9 +24,6 @@ import jche.eclipse.server.ServerTimeoutException;
  */
 final class AnalysisJob extends Job {
 
-    /** 自動再解析を始めるまでの待ち時間。連続した変更をまとめる（タイピング中に走らせない） */
-    static final long AUTO_DELAY_MS = 3000L;
-
     /** 解析の応答を待つ上限。大きなプロジェクトでも足りるように長めに取る */
     private static final long ANALYZE_TIMEOUT_MS = 60L * 60L * 1000L;
 

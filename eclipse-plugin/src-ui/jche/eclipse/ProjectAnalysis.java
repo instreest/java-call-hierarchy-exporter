@@ -40,6 +40,11 @@ import jche.eclipse.server.ServerResponse;
  *
  * <p>子プロセスはプロジェクトごとに1つ常駐し、解析結果をメモリに持ち続ける。
  * だから木の問い合わせは速く、解析のやり直しも差分で済む。
+ *
+ * <p><b>解析結果は、利用者が捨てるまで持ち続ける。</b>ソースが変わっても勝手に解析し直さないし、
+ * 結果を捨てもしない。変わったファイルは覚えておき、木の行に ⚠ を出して
+ * 「この行は解析より新しい」とだけ伝える。作り直すかどうかは利用者が決める
+ * （［再解析］と［解析結果をクリア］。docs/eclipse-plugin-ui-simplify-qa.md の Q1）。
  */
 public final class ProjectAnalysis {
 
@@ -53,10 +58,8 @@ public final class ProjectAnalysis {
         ANALYZING,
         /** 前の結果を見せたまま解析中 */
         UPDATING,
-        /** 最新 */
+        /** 解析済み（ソースが変わっていても、捨てるまではこのまま） */
         READY,
-        /** 結果はあるが、その後ソースが変わっている */
-        STALE,
         /** 解析に失敗した */
         FAILED
     }
@@ -109,7 +112,6 @@ public final class ProjectAnalysis {
     private volatile AnalysisJob job;
     private volatile String errorMessage;
     private volatile IFile configFile;
-    private volatile boolean autoAnalyze = true;
 
     /** 最後に子プロセスを使った時刻。アイドル判定に使う */
     private volatile long lastUsed = System.currentTimeMillis();
@@ -151,15 +153,6 @@ public final class ProjectAnalysis {
     /** サーバーの素性（jdt / jvm / maxJava）。未起動なら null */
     public ServerResponse serverInfo() {
         return serverInfo;
-    }
-
-    public boolean isAutoAnalyze() {
-        return autoAnalyze;
-    }
-
-    public void setAutoAnalyze(boolean value) {
-        autoAnalyze = value;
-        service.fireChanged(this);
     }
 
     /** 解析に使う設定の出どころ。解析できないときだけ null */
@@ -297,7 +290,7 @@ public final class ProjectAnalysis {
         if (errorMessage != null) {
             return State.FAILED;
         }
-        return changedCount() > 0 ? State.STALE : State.READY;
+        return State.READY;
     }
 
     // ------------------------------------------------------------
@@ -306,10 +299,6 @@ public final class ProjectAnalysis {
 
     public synchronized Set<String> changedFiles() {
         return new LinkedHashSet<>(changedFiles);
-    }
-
-    public synchronized int changedCount() {
-        return changedFiles.size();
     }
 
     /** そのファイルが解析後に変わっているか（木の ⚠ 判定） */
@@ -436,20 +425,32 @@ public final class ProjectAnalysis {
     // 解析の起動と中止
     // ------------------------------------------------------------
 
-    void scheduleAutoAnalysisIfNeeded() {
-        if (!autoAnalyze || isAnalyzing() || changedCount() == 0 || lastAnalysis == null) {
-            return;
-        }
-        schedule(false);
-    }
-
-    /** 利用者が明示的に指示した解析 */
+    /** 利用者が明示的に指示した解析。解析が始まる契機はこれだけである */
     public void reanalyze() {
         cancel();
-        schedule(true);
+        schedule();
     }
 
-    private synchronized void schedule(boolean user) {
+    /**
+     * 持っている解析結果を捨てる（利用者の明示的な指示）。
+     *
+     * <p>子プロセスも終わらせる。解析結果はそちらのメモリにあるので、
+     * 残したままにすると「画面には無いが、メモリは抱えている」状態になるからである。
+     * ディスクのキャッシュ（{@link PluginFolders#cacheRoot()}）は消さない。あれは
+     * 次の解析を速くするためのもので、消すと作り直しに時間がかかるだけである。
+     */
+    public void clearAnalysis() {
+        cancel();
+        discardServer();
+        lastAnalysis = null;
+        errorMessage = null;
+        synchronized (this) {
+            changedFiles.clear();
+        }
+        service.fireChanged(this);
+    }
+
+    private synchronized void schedule() {
         if (job != null) {
             return;
         }
@@ -460,12 +461,11 @@ public final class ProjectAnalysis {
         Path scratch = PluginFolders.generatedConfigFolder(project.getName()).toPath();
         AnalysisJob newJob = new AnalysisJob(this, source, scratch, changedFiles());
         newJob.setRule(rule);
-        newJob.setUser(user);
-        newJob.setPriority(user ? org.eclipse.core.runtime.jobs.Job.INTERACTIVE
-                : org.eclipse.core.runtime.jobs.Job.LONG);
+        newJob.setUser(true);
+        newJob.setPriority(org.eclipse.core.runtime.jobs.Job.INTERACTIVE);
         job = newJob;
         service.fireChanged(this);
-        newJob.schedule(user ? 0L : AnalysisJob.AUTO_DELAY_MS);
+        newJob.schedule();
     }
 
     /** 走っている解析を中止する（子プロセスは生かしたまま） */
@@ -500,8 +500,11 @@ public final class ProjectAnalysis {
     /**
      * しばらく使われていない解析プロセスを終わらせる。
      *
-     * <p>解析結果をメモリに持ち続けるのが常駐の値打ちなので、短く切りすぎると毎回作り直しになる。
-     * 既定は 10 分で、設定で変えられる（0 なら終わらせない）。解析中は対象にしない。
+     * <p><b>既定では行わない（設定の既定は 0 分＝終わらせない）。</b>解析結果は子プロセスの
+     * メモリにあるので、終わらせるとその結果も消え、次は解析からやり直しになる。
+     * 勝手に消えるのが困る、というのがこの作りを変えた理由である
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q2）。大きなプロジェクトを何個も開いて
+     * メモリを空けたい人のために、設定で分数を入れたときだけ働く。解析中は対象にしない。
      *
      * @return 終わらせたら true
      */

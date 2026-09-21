@@ -176,7 +176,7 @@ public final class NlsProbe {
     public static void main(String[] args) throws Exception {
         java.io.PrintStream out = new java.io.PrintStream(System.out, true, "UTF-8");
         out.println(Messages.get("view.project"));
-        out.println(Messages.format("state.stale", Integer.valueOf(12), "10:31:04"));
+        out.println(Messages.format("export.done", "/tmp/out.csv", Integer.valueOf(12)));
         out.println(Messages.get("no.such.key"));
     }
 }
@@ -187,14 +187,15 @@ EOF
 
     EN_OUT=$(run en en)
     grep -qx 'Project:' <<<"$EN_OUT" && ok "既定（英語）で英語が出る" || fail "英語が出ない: $(head -1 <<<"$EN_OUT")"
-    grep -q '12 file(s) have changed' <<<"$EN_OUT" && ok "英語で差し込みが効く" || fail "英語の差し込みが効かない"
+    # 差し込みの順が言語で入れ替わる文言を選んである（英語は {1} が先、日本語は {0} が先）
+    grep -q 'Wrote 12 rows to /tmp/out.csv' <<<"$EN_OUT" && ok "英語で差し込みが効く" || fail "英語の差し込みが効かない"
 
     # Pleiades は Eclipse を日本語で動かす。-nl / eclipse.ini の指定は osgi.nl に入る
     JA_OUT=$(run ja en)
     grep -qx '対象プロジェクト:' <<<"$JA_OUT" \
         && ok "osgi.nl=ja（Pleiades）で日本語が出て、UTF-8 として正しく読める" \
         || fail "日本語にならない、または文字化けしている: $(head -1 <<<"$JA_OUT")"
-    grep -q '12 ファイルが変更されています。表示は 10:31:04 時点' <<<"$JA_OUT" \
+    grep -q '/tmp/out.csv に 12 行を書き出しました' <<<"$JA_OUT" \
         && ok "日本語で差し込みが効く" || fail "日本語の差し込みが効かない"
 
     # osgi.nl が無い環境（Eclipse の外）では OS の言語に従う
