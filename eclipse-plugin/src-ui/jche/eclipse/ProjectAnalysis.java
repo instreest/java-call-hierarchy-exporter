@@ -369,10 +369,14 @@ public final class ProjectAnalysis {
             @Override
             public void log(String line) {
                 // 解析本体のログと、子プロセスの標準エラーの両方がここへ来る。
-                // 画面（コンソール）とファイルの両方へ残す
+                // 画面（コンソール）とファイルの両方へ残し、標準エラーは色を変えて見分けられるようにする
                 ExporterConsole console = ExporterConsole.find();
                 if (console != null) {
-                    console.println(line);
+                    if (line.startsWith(ServerConnection.STDERR_PREFIX)) {
+                        console.printlnError(line);
+                    } else {
+                        console.println(line);
+                    }
                 }
                 AnalysisLog.get().println(project.getName(), line);
             }

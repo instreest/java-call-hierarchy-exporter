@@ -79,6 +79,9 @@ final class AnalysisJob extends Job {
     protected IStatus run(IProgressMonitor progressMonitor) {
         this.monitor = progressMonitor;
         progressMonitor.beginTask(Messages.get("job.analyzing"), IProgressMonitor.UNKNOWN);
+        // 解析を始めたらコンソールを前面に出す。子プロセスの標準エラー（JVM の警告や
+        // OutOfMemoryError の痕跡）はここにしか流れてこないので、見えるところに置く
+        ExporterConsole console = ExporterConsole.show();
         long started = System.currentTimeMillis();
         ServerResponse result = null;
         String error = null;
@@ -86,7 +89,7 @@ final class AnalysisJob extends Job {
             ServerConnection connection = analysis.connection();
             Path config = configSource.materialize(scratchDir);
             String start = Messages.format("job.started", configSource.label());
-            ExporterConsole.getOrCreate().println(start);
+            console.println(start);
             AnalysisLog.get().println(analysis.project().getName(), start);
             ServerResponse response = connection.request(ANALYZE_TIMEOUT_MS,
                     "ANALYZE", config.toAbsolutePath().toString());
@@ -133,7 +136,12 @@ final class AnalysisJob extends Job {
         }
         ExporterConsole console = ExporterConsole.find();
         if (console != null) {
-            console.println(line);
+            // 失敗は標準エラーと同じ赤で書く。溜まったログの中で終わり方が目に入るように
+            if (error != null) {
+                console.printlnError(line);
+            } else {
+                console.println(line);
+            }
         }
         AnalysisLog.get().println(analysis.project().getName(), line);
         File file = AnalysisLog.get().file();
