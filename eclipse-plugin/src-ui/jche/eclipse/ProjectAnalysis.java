@@ -113,9 +113,6 @@ public final class ProjectAnalysis {
     private volatile String errorMessage;
     private volatile IFile configFile;
 
-    /** 最後に子プロセスを使った時刻。アイドル判定に使う */
-    private volatile long lastUsed = System.currentTimeMillis();
-
     /** 直近の解析の結果（サーバーが返した値）。未解析なら null */
     private volatile ServerResponse lastAnalysis;
     /** サーバーの素性（JDT の版・JVM の版・解析できる Java の上限） */
@@ -342,7 +339,6 @@ public final class ProjectAnalysis {
      * 解析用の JDK が見つからないときは、その旨を例外で返して画面に出す。
      */
     synchronized ServerConnection connection() throws IOException {
-        lastUsed = System.currentTimeMillis();
         ServerConnection current = connection;
         if (current != null && current.isAlive()) {
             return current;
@@ -495,31 +491,6 @@ public final class ProjectAnalysis {
             errorMessage = error;
         }
         service.fireChanged(this);
-    }
-
-    /**
-     * しばらく使われていない解析プロセスを終わらせる。
-     *
-     * <p><b>既定では行わない（設定の既定は 0 分＝終わらせない）。</b>解析結果は子プロセスの
-     * メモリにあるので、終わらせるとその結果も消え、次は解析からやり直しになる。
-     * 勝手に消えるのが困る、というのがこの作りを変えた理由である
-     * （docs/eclipse-plugin-ui-simplify-qa.md の Q2）。大きなプロジェクトを何個も開いて
-     * メモリを空けたい人のために、設定で分数を入れたときだけ働く。解析中は対象にしない。
-     *
-     * @return 終わらせたら true
-     */
-    boolean closeIfIdle(long idleMillis) {
-        if (idleMillis <= 0 || isAnalyzing() || connection == null) {
-            return false;
-        }
-        if (System.currentTimeMillis() - lastUsed < idleMillis) {
-            return false;
-        }
-        dispose();
-        // 次に開いたときは「まだ解析していない」状態から始まる（グラフは子プロセスにあったため）
-        lastAnalysis = null;
-        service.fireChanged(this);
-        return true;
     }
 
     /** 子プロセスを終わらせる（プラグインの停止時・プロジェクトを見なくなったとき） */

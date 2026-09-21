@@ -89,8 +89,8 @@ final class ViewIcons {
         "................",
     };
 
-    /** 解析結果をクリア。ごみ箱（捨てる） */
-    static final String[] CLEAR = {
+    /** リセット（解析結果を捨てて解析前に戻す）。ごみ箱 */
+    static final String[] RESET = {
         "................",
         "......gggg......",
         "................",

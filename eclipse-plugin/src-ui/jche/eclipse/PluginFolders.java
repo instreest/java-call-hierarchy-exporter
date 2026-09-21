@@ -34,6 +34,15 @@ import java.io.File;
  */
 final class PluginFolders {
 
+    /**
+     * 解析側がキャッシュを作るフォルダの名前（{@link #cacheRoot()} の下）。
+     *
+     * <p>解析本体の {@code jche.config.Config.DEFAULT_CACHE_DIR_NAME} と同じでなければならない。
+     * プラグインは解析本体のクラスを参照しない（別プロセス・別の Java の版で動かすため）ので、
+     * ここに写してある。食い違っていないことは {@code test/plugin/run.sh} が検査する。
+     */
+    static final String CACHE_DIR_NAME = ".cache";
+
     private PluginFolders() {
     }
 
@@ -59,6 +68,19 @@ final class PluginFolders {
      */
     static File cacheRoot() {
         return or(JchePreferences.cacheFolder(), defaultCacheRoot());
+    }
+
+    /**
+     * 解析キャッシュのファイルが実際にできるフォルダ（{@code <置き場所>/.cache}）。
+     * 設定画面の［解析キャッシュを削除］が消す範囲でもある。
+     *
+     * <p>この下は解析側が {@code <プロジェクト名>_<識別子>/} に分けて使う。
+     * 置き場所そのものは利用者が指定した共有フォルダかもしれないので、消してよいのはここから下だけ。
+     *
+     * @param root 置き場所（{@link #cacheRoot()} か、設定画面で入力中の値）
+     */
+    static File cacheFilesFolder(File root) {
+        return new File(root, CACHE_DIR_NAME);
     }
 
     /** 解析ログの置き場所 */

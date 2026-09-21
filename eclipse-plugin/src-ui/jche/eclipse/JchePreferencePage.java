@@ -4,6 +4,11 @@ package jche.eclipse;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -23,7 +28,6 @@ import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
-import org.eclipse.swt.widgets.Spinner;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
@@ -34,10 +38,9 @@ import jche.eclipse.server.JdkDownload;
 /**
  * 設定画面。扱うのは「解析をどう走らせるか」と「作ったファイルをどこへ置くか」の2つ。
  *
- * <p>解析は Eclipse とは別プロセスなので、使う JDK と JDT をここで選べる。
+ * <p>解析は Eclipse とは別プロセスなので、使う JDK をここで選べる。
  * 既定（何も指定しない状態）でも動くようにしてあり、指定するのは
- * 「CLI と同じ JDK 25 で揃えたい」「閉域で新しい JDT を別に置いた」「メモリを増やしたい」
- * といったときだけでよい。
+ * 「CLI と同じ JDK 25 で揃えたい」「メモリを増やしたい」といったときだけでよい。
  *
  * <p>置き場所（キャッシュ・ログ・CSV）は<b>空欄でも実際のパスを出す</b>。
  * プラグインの状態フォルダは {@code <ワークスペース>/.metadata/.plugins/...} という
@@ -51,9 +54,7 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
 
     private Text jdkText;
     private Label jdkStatus;
-    private Text jdtText;
     private Text vmArgumentsText;
-    private Spinner idleSpinner;
     private Button logToFileCheck;
     private Text cacheFolderText;
     private Text logFolderText;
@@ -131,33 +132,12 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
             }
         });
 
-        // --- JDT の差し替え ---
-        new Label(group, SWT.NONE).setText(Messages.get("prefs.jdtFolder"));
-        jdtText = new Text(group, SWT.BORDER);
-        jdtText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        jdtText.setText(getPreferenceStore().getString(JchePreferences.JDT_FOLDER));
-        jdtText.setToolTipText(Messages.get("prefs.jdtFolderTip"));
-        browseFolder(group, jdtText, Messages.get("prefs.chooseJdtFolder"));
-
         // --- JVM 引数 ---
         new Label(group, SWT.NONE).setText(Messages.get("prefs.vmArguments"));
         vmArgumentsText = new Text(group, SWT.BORDER);
         vmArgumentsText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         vmArgumentsText.setText(getPreferenceStore().getString(JchePreferences.VM_ARGUMENTS));
         vmArgumentsText.setToolTipText(Messages.get("prefs.vmArgumentsTip"));
-        new Label(group, SWT.NONE);
-
-        // --- アイドル終了 ---
-        new Label(group, SWT.NONE).setText(Messages.get("prefs.idle"));
-        Composite idleRow = new Composite(group, SWT.NONE);
-        GridLayout idleLayout = new GridLayout(2, false);
-        idleLayout.marginWidth = 0;
-        idleRow.setLayout(idleLayout);
-        idleSpinner = new Spinner(idleRow, SWT.BORDER);
-        idleSpinner.setMinimum(0);
-        idleSpinner.setMaximum(24 * 60);
-        idleSpinner.setSelection(getPreferenceStore().getInt(JchePreferences.IDLE_MINUTES));
-        new Label(idleRow, SWT.NONE).setText(Messages.get("prefs.idleUnit"));
         new Label(group, SWT.NONE);
     }
 
@@ -181,6 +161,7 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
         cacheFolderText = folderRow(group, Messages.get("prefs.cacheFolder"),
                 JchePreferences.CACHE_FOLDER, Messages.get("prefs.cacheFolderTip"));
         cacheFolderStatus = folderStatus(group);
+        createCacheDeleteRow(group);
 
         logFolderText = folderRow(group, Messages.get("prefs.logFolder"),
                 JchePreferences.LOG_FOLDER, Messages.get("prefs.logFolderTip"));
@@ -200,6 +181,123 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
         new Label(group, SWT.NONE);
 
         updateFolderStatus();
+    }
+
+    /**
+     * 解析キャッシュを実際に消す行。
+     *
+     * <p>ビューの［リセット］は<b>持っている解析結果</b>を捨てるだけで、ディスクのファイルは残す
+     * （次の解析を速く終わらせるため）。ファイルごと消したくなるのは
+     * 「置き場所を移したので前の場所に置き去りがある」「キャッシュを疑っている」
+     * 「容量を空けたい」といったときで、それはここでしかできない
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q8）。
+     */
+    private void createCacheDeleteRow(Group group) {
+        new Label(group, SWT.NONE);
+        Label note = new Label(group, SWT.WRAP);
+        note.setText(Messages.get("prefs.deleteCacheNote"));
+        GridData noteData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        noteData.widthHint = TEXT_WIDTH;
+        note.setLayoutData(noteData);
+        Button delete = new Button(group, SWT.PUSH);
+        delete.setText(Messages.get("prefs.deleteCache"));
+        delete.setToolTipText(Messages.get("prefs.deleteCacheTip"));
+        delete.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                deleteCache();
+            }
+        });
+    }
+
+    /**
+     * 解析キャッシュのファイルを消す。
+     *
+     * <p>消す範囲は<b>入力欄に見えている置き場所の下の {@code .cache/}</b> だけである。
+     * 置き場所そのもの（利用者が指定した共有フォルダかもしれない）には手を付けない。
+     * 見えている値を使うのは、保存前に入力欄を書き換えた利用者が、
+     * 画面に出ているのと違う場所を消されないようにするためである。
+     *
+     * <p>消す前に解析プロセスを全部終わらせる。動いたままだとファイルを掴んでいて消せず
+     * （Windows）、消せたとしても、そのプロセスが持っている解析結果とキャッシュが食い違う。
+     */
+    private void deleteCache() {
+        String typed = cacheFolderText.getText().trim();
+        File root = typed.isEmpty() ? PluginFolders.defaultCacheRoot() : new File(typed);
+        File caches = PluginFolders.cacheFilesFolder(root);
+        if (!caches.isDirectory()) {
+            MessageDialog.openInformation(getShell(), Messages.get("dialog.title"),
+                    Messages.format("prefs.deleteCacheNone", caches.getAbsolutePath()));
+            return;
+        }
+        if (!MessageDialog.openConfirm(getShell(), Messages.get("dialog.title"),
+                Messages.format("prefs.deleteCacheConfirm", caches.getAbsolutePath()))) {
+            return;
+        }
+        AnalysisService service = JchePlugin.service();
+        if (service != null) {
+            service.restartAll();
+        }
+        int[] counts = deleteTree(caches);
+        if (counts[1] > 0) {
+            MessageDialog.openError(getShell(), Messages.get("dialog.title"),
+                    Messages.format("prefs.deleteCacheFailed", Integer.valueOf(counts[1]),
+                            caches.getAbsolutePath()));
+        } else {
+            MessageDialog.openInformation(getShell(), Messages.get("dialog.title"),
+                    Messages.format("prefs.deleteCacheDone", Integer.valueOf(counts[0]),
+                            caches.getAbsolutePath()));
+        }
+    }
+
+    /**
+     * フォルダを中身ごと消す。
+     *
+     * @return {@code {消せたファイル数, 消せなかったファイル数}}。1つ消せなくても残りは消す
+     *         （掴まれているファイルが1つあるだけで、何も消えないほうが困る）
+     */
+    private static int[] deleteTree(File folder) {
+        final int[] counts = new int[2];
+        try {
+            Files.walkFileTree(folder.toPath(), new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                    if (delete(file)) {
+                        counts[0]++;
+                    } else {
+                        counts[1]++;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException failure) {
+                    counts[1]++;
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, IOException failure) {
+                    // 空になっていれば消える。消えなくても数に入れない（数えるのは中身のファイル）
+                    delete(dir);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException e) {
+            PluginRuntime.logWarning(Messages.format("prefs.deleteCacheFailed",
+                    Integer.valueOf(counts[1] + 1), folder.getAbsolutePath()), e);
+            counts[1]++;
+        }
+        return counts;
+    }
+
+    private static boolean delete(Path path) {
+        try {
+            Files.delete(path);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private Group group(Composite parent, String title) {
@@ -401,9 +499,7 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
     @Override
     protected void performDefaults() {
         jdkText.setText("");
-        jdtText.setText("");
         vmArgumentsText.setText("");
-        idleSpinner.setSelection(JchePreferences.DEFAULT_IDLE_MINUTES);
         logToFileCheck.setSelection(true);
         cacheFolderText.setText("");
         logFolderText.setText("");
@@ -417,13 +513,10 @@ public class JchePreferencePage extends PreferencePage implements IWorkbenchPref
     public boolean performOk() {
         // 解析プロセスに関わる設定が「実際に変わったか」を、書き込む前に見る
         boolean restart = changed(JchePreferences.JDK, jdkText.getText().trim())
-                | changed(JchePreferences.JDT_FOLDER, jdtText.getText().trim())
                 | changed(JchePreferences.VM_ARGUMENTS, vmArgumentsText.getText().trim())
                 | changed(JchePreferences.CACHE_FOLDER, cacheFolderText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.JDK, jdkText.getText().trim());
-        getPreferenceStore().setValue(JchePreferences.JDT_FOLDER, jdtText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.VM_ARGUMENTS, vmArgumentsText.getText().trim());
-        getPreferenceStore().setValue(JchePreferences.IDLE_MINUTES, idleSpinner.getSelection());
         getPreferenceStore().setValue(JchePreferences.LOG_TO_FILE, logToFileCheck.getSelection());
         getPreferenceStore().setValue(JchePreferences.CACHE_FOLDER, cacheFolderText.getText().trim());
         getPreferenceStore().setValue(JchePreferences.LOG_FOLDER, logFolderText.getText().trim());

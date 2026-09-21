@@ -56,13 +56,6 @@ final class ExporterConsole {
         return wrap(created);
     }
 
-    /** コンソールを（無ければ作って）前面に出す */
-    static synchronized ExporterConsole show() {
-        ExporterConsole result = getOrCreate();
-        result.console.activate();
-        return result;
-    }
-
     private static MessageConsole lookup() {
         IConsoleManager manager = ConsolePlugin.getDefault().getConsoleManager();
         for (IConsole existing : manager.getConsoles()) {
@@ -83,10 +76,5 @@ final class ExporterConsole {
 
     void println(String line) {
         stream.println(line);
-    }
-
-    /** 実行ごとに前回の内容を消す。どこまでが今回のログか分からなくなるのを避ける */
-    void clear() {
-        console.clearConsole();
     }
 }

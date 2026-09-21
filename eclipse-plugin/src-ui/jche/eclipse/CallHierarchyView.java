@@ -286,14 +286,14 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         reanalyzeAction.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages()
                 .getImageDescriptor(ISharedImages.IMG_ELCL_SYNCED));
 
-        Action clearAction = new Action(Messages.get("action.clearAnalysis")) {
+        Action resetAction = new Action(Messages.get("action.reset")) {
             @Override
             public void run() {
-                clearAnalysis();
+                resetAnalysis();
             }
         };
-        clearAction.setToolTipText(Messages.get("action.clearAnalysisTip"));
-        clearAction.setImageDescriptor(ViewIcons.of(ViewIcons.CLEAR));
+        resetAction.setToolTipText(Messages.get("action.resetTip"));
+        resetAction.setImageDescriptor(ViewIcons.of(ViewIcons.RESET));
 
         // 向きは「押すと切り替わるトグル1つ」ではなく、機能ごとに1つずつ置く。
         // トグルだと、いまどちら向きの木を見ているのかがボタンの押下状態でしか分からず、
@@ -374,7 +374,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         toolbar.add(new Separator());
         toolbar.add(showAtCursorAction);
         toolbar.add(reanalyzeAction);
-        toolbar.add(clearAction);
+        toolbar.add(resetAction);
         toolbar.add(new Separator());
         toolbar.add(expandAction);
         toolbar.add(collapseAction);
@@ -801,15 +801,19 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     }
 
     /**
-     * 解析結果を捨てる（手動）。確かめてから捨てるのは、作り直すのに時間がかかるからである。
-     * ディスクのキャッシュは残るので、作り直しは差分で済む。
+     * 解析をリセットする（手動）。持っている解析結果を捨て、解析前の画面に戻す。
+     *
+     * <p>確かめてから捨てるのは、作り直すのに時間がかかるからである。
+     * 消すのは<b>メモリの中の解析結果だけ</b>で、ディスクのキャッシュは残す（作り直しが速く済む）。
+     * ディスクのファイルごと消したいときは設定画面の［解析キャッシュを削除］
+     * （docs/eclipse-plugin-ui-simplify-qa.md の Q8）。
      */
-    private void clearAnalysis() {
+    private void resetAnalysis() {
         if (analysis == null || !analysis.isAnalyzed()) {
             return;
         }
         if (!MessageDialog.openConfirm(getSite().getShell(), Messages.get("dialog.title"),
-                Messages.format("dialog.clearConfirm", analysis.project().getName()))) {
+                Messages.format("dialog.resetConfirm", analysis.project().getName()))) {
             return;
         }
         targetKey = null;

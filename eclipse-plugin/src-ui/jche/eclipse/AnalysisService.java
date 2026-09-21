@@ -31,8 +31,9 @@ import org.eclipse.core.runtime.IStatus;
  * （解析は {@link AnalysisJob}）。重い処理をここに書くと、保存やビルドのたびに Eclipse が固まる。
  *
  * <p><b>変更を見つけても、解析はしないし、結果も捨てない。</b>覚えたパスは木の行に ⚠ を出すため
- * だけに使う。解析をやり直す契機は利用者の指示だけである
- * （docs/eclipse-plugin-ui-simplify-qa.md の Q1）。
+ * だけに使う。解析をやり直す契機も、結果を捨てる契機も、利用者の指示だけである。
+ * 使われていない解析プロセスを見回って終わらせる仕掛けは廃止した。結果が勝手に消えるのは、
+ * メモリが空くことより困るからである（docs/eclipse-plugin-ui-simplify-qa.md の Q1・Q8）。
  */
 public final class AnalysisService {
 
@@ -45,57 +46,17 @@ public final class AnalysisService {
     private final Map<IProject, ProjectAnalysis> byProject = new HashMap<>();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
-    /** アイドルの見回りの間隔（ミリ秒）。設定の分数より細かく見ても意味がないので粗くてよい */
-    private static final long SWEEP_INTERVAL_MS = 60_000L;
-
     private final IResourceChangeListener changeListener = this::resourceChanged;
-    private org.eclipse.core.runtime.jobs.Job sweeper;
 
     void start() {
         // 見るのは POST_CHANGE だけ。ビルド後（POST_BUILD）を見ていたのは自動再解析のためで、
         // その自動再解析をやめたので要らない
         ResourcesPlugin.getWorkspace().addResourceChangeListener(
                 changeListener, IResourceChangeEvent.POST_CHANGE);
-        startIdleSweeper();
-    }
-
-    /**
-     * 使われていない解析プロセスを見回って終わらせる。
-     *
-     * <p><b>既定では何もしない</b>（設定の既定は 0 分＝終わらせない）。終わらせると解析結果も
-     * 消えるので、勝手には消さない。メモリを空けたい人が設定で分数を入れたときだけ働く。
-     */
-    private void startIdleSweeper() {
-        sweeper = new org.eclipse.core.runtime.jobs.Job(Messages.get("job.sweep")) {
-            @Override
-            protected org.eclipse.core.runtime.IStatus run(
-                    org.eclipse.core.runtime.IProgressMonitor monitor) {
-                long idleMillis = JchePreferences.idleMinutes() * 60L * 1000L;
-                List<ProjectAnalysis> all;
-                synchronized (AnalysisService.this) {
-                    all = new ArrayList<>(byProject.values());
-                }
-                for (ProjectAnalysis analysis : all) {
-                    if (analysis.closeIfIdle(idleMillis)) {
-                        JchePlugin.log(IStatus.INFO,
-                                Messages.format("service.idleClosed",
-                                        analysis.project().getName()), null);
-                    }
-                }
-                schedule(SWEEP_INTERVAL_MS);
-                return org.eclipse.core.runtime.Status.OK_STATUS;
-            }
-        };
-        sweeper.setSystem(true);
-        sweeper.schedule(SWEEP_INTERVAL_MS);
     }
 
     void stop() {
         ResourcesPlugin.getWorkspace().removeResourceChangeListener(changeListener);
-        if (sweeper != null) {
-            sweeper.cancel();
-            sweeper = null;
-        }
         List<ProjectAnalysis> all;
         synchronized (this) {
             all = new ArrayList<>(byProject.values());
