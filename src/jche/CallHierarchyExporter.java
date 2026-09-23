@@ -62,6 +62,7 @@ import jche.report.UnresolvedReport;
 import jche.util.HeapWatch;
 import jche.util.Log;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * java-call-hierarchy-exporter のエントリポイント。
@@ -201,9 +202,15 @@ public class CallHierarchyExporter {
                 }
             } catch (Throwable t) {
                 failed++;
-                Log.error(Messages.format("exporter.configFailed", configPath), t);
+                Warnings.error(Warnings.Topic.FAILED, Messages.format("exporter.configFailed", configPath), t);
                 summary.add("FAIL  " + configPath + " : " + t);
             } finally {
+                // 確認してほしいことがあれば warnings.txt に書き、最後に目立つよう知らせる。
+                // 失敗した実行でも、出力フォルダを作れていれば書く
+                Path warnings = Warnings.end();
+                if (warnings != null) {
+                    Log.warn(Messages.format("exporter.warnings.written", warnings));
+                }
                 Log.detachFile();
             }
         }
@@ -285,6 +292,7 @@ public class CallHierarchyExporter {
         // 出力フォルダは解析より前に作る。設定ファイルの複製と実行ログを、解析が途中で落ちても残すため
         Files.createDirectories(config.outputDir);
         Log.attachFile(config.logFile);
+        Warnings.begin(config.outputDir.resolve(Warnings.FILE_NAME));
         Log.info(Messages.format("exporter.config", config.configPath));
         Log.info(Messages.format("exporter.projectRoot", config.projectRoot));
         Log.info(Messages.format("exporter.outputDir", config.outputDir));

@@ -21,15 +21,19 @@ status=0
 bash "$GITHUB_ACTION_PATH/jbangw/jbang" run "$GITHUB_ACTION_PATH/src/jche/CallHierarchyExporter.java" "${configs[@]}" || status=$?
 
 # 依存 jar の警告をジョブに見せる。ツールはローカルリポジトリに無い jar を警告して解析を続ける
-# （結果は欠けるがジョブは緑のまま）ので、run.log の「[WARN] 依存jar:」行を GitHub の warning
+# （結果は欠けるがジョブは緑のまま）ので、run.log の依存 jar の [WARN] 行を GitHub の warning
 # アノテーションとジョブサマリに出し、アーティファクトを開かなくても気づけるようにする。
-# 明細（座標と要求元）は run.log と resolved-classpath.txt にある。
+# 明細（座標と要求元）は run.log にある。
+# ログの言語は設定（message.language）やランナーのロケールで変わるので、英語（既定）と日本語の
+# 両方の書き出しを拾う。書き出しは src/jche/util/MessagesEn.java / MessagesJa.java の config.deps.* と
+# そろえてあり、test/action/run.sh が両方の言語で拾えることを確かめる。
+DEPS_WARN_PREFIXES=('[WARN] Dependency jars:' '[WARN] 依存jar:')
 summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 dir_file="${JCHE_OUTPUT_DIR_FILE:-}"
 if [ -n "$dir_file" ] && [ -f "$dir_file" ]; then
     while IFS= read -r d; do
         [ -n "$d" ] && [ -f "$d/run.log" ] || continue
-        warnings=$(grep -F '[WARN] 依存jar:' "$d/run.log" | sed 's/^.*\[WARN\] //' || true)
+        warnings=$(grep -F "${DEPS_WARN_PREFIXES[@]/#/-e}" "$d/run.log" | sed 's/^.*\[WARN\] //' || true)
         [ -n "$warnings" ] || continue
         {
             echo "### 依存 jar の警告（\`$(basename "$d")\`）"
@@ -38,7 +42,7 @@ if [ -n "$dir_file" ] && [ -f "$dir_file" ]; then
             echo ""
             echo "解析は続けましたが、無い jar の型を使う呼び出しは出力から欠けます。"
             echo "このアクションより前に依存を取得しておいてください（例: \`mvn -B dependency:go-offline\`）。"
-            echo "明細は \`run.log\` と \`resolved-classpath.txt\` にあります。"
+            echo "明細は \`run.log\` にあります。"
             echo ""
         } >> "$summary"
         printf '%s\n' "$warnings" | while IFS= read -r w; do

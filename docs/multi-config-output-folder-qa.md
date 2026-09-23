@@ -71,6 +71,9 @@ CSV を開く側（Excel、`diff`）も名前が固定のほうが扱いやす�
 キャッシュフォルダには「最後の実行のもの」しか残らない。出力フォルダなら実行ごとに残る。
 `BuildFileClasspath.writeListing` の書き先を `config.outputDir` に変えただけで、内容は同じ。
 
+（追記）その後、出力ファイルを減らすため別ファイルをやめ、同じ内容を `run.log` に書くようにした
+（[output-files-simplify-qa.md](output-files-simplify-qa.md) の Q1）。「実行ごとに残る」という理由はそのまま満たす。
+
 ---
 
 ## 標準出力ログの複写

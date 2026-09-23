@@ -63,6 +63,7 @@
 | [cache-identity-qa.md](cache-identity-qa.md) | #102 #103 #104 | キャッシュの「同じファイルか」の判定をパス・サイズ・内容の指紋に統一する（更新時刻をやめる）。クラスパスの並び順の変化を検知する。サーバーモードの `SHUTDOWN` が実行中の解析を中止していた件 |
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
+| [output-files-simplify-qa.md](output-files-simplify-qa.md) | — | 出力ファイルの役割の整理。`resolved-classpath.txt` を `run.log` にまとめる判断、依存 jar を取得しない（ネットワークに出ない）仕様の確認、想定どおりに動かなかった実行でだけ出す `warnings.txt`（何を出したら作るか、典型の項目、ビルドが通っていないことの判定） |
 | [config-folder-qa.md](config-folder-qa.md) | #62 | 既定の設定ファイルを `config/` に置く。相対パスの起点 |
 | [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。本体は `config.properties` のまま、プラグインが利用者のプロジェクトに書くのは `jche.properties`（誤検出を中身で防ぐ） |
 | [cli-app-qa.md](cli-app-qa.md) | #63 | 起動コマンドと対話モード。`.cmd` が MS932 でなければならない理由（Q15） |
@@ -79,7 +80,7 @@
 | [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |
-| [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断 |
+| [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断。依存 jar の警告を英語・日本語どちらのログからも拾う（Q31） |
 | [actions-analysis-cache-qa.md](actions-analysis-cache-qa.md) | #79 | GitHub Actions で解析キャッシュを実行間で引き継ぐ |
 | [jpms-modularity-qa.md](jpms-modularity-qa.md) | — | JPMS でモジュール化するかの検討（結論: しない） |
 | [samples-demo-move-qa.md](samples-demo-move-qa.md) | #51 | `samples/demo` を `test/demo` へ移した |

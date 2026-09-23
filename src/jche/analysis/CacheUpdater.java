@@ -46,6 +46,7 @@ import jche.util.Log;
 import jche.util.Progress;
 import jche.util.RunControl;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * フェーズ1: 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
@@ -382,10 +383,11 @@ public final class CacheUpdater {
             writeBlock(fa, cacheOut, flowOut);
             result.unresolved += fa.unresolvedCount();
             result.parsed++;
+            result.countErrors(file.relativePath(), fa.errors, fa.syntaxErrors);
             if (fa.syntaxErrors > 0) {
                 // 本体を読めていないので、このファイルの呼び出しは出力に出ない。黙って落とさない
-                result.addSyntaxErrorFile(file.relativePath());
-                Log.warn(Messages.format("analysis.syntaxError", file.relativePath(), fa.syntaxErrors));
+                Warnings.warn(Warnings.Topic.BUILD,
+                        Messages.format("analysis.syntaxError", file.relativePath(), fa.syntaxErrors));
             }
             countReason();
             if (stale != null && shouldCascade(file, fa)) {
@@ -400,7 +402,8 @@ public final class CacheUpdater {
         public void failed(SourceFile file, Exception error) {
             result.failed++;
             countReason();
-            Log.warn(Messages.format("analysis.fileFailed", file.relativePath(), error.getMessage()));
+            Warnings.warn(Warnings.Topic.INCOMPLETE,
+                    Messages.format("analysis.fileFailed", file.relativePath(), error.getMessage()));
             progress.step(++done);
         }
 
@@ -824,6 +827,11 @@ public final class CacheUpdater {
         for (String line : block) {
             writeLine(cacheOut, line);
             switch (CacheFormat.rowTypeOf(line)) {
+                case CacheFormat.ROW_FILE -> {
+                    // 引き継いだファイルも、解析したファイルと同じくエラーを数える（数えないと警告が消える）
+                    String[] f = CacheFormat.columnsOf(line);
+                    result.countErrors(rel, CacheFormat.errorsOf(f), CacheFormat.syntaxErrorsOf(f));
+                }
                 case CacheFormat.ROW_TYPE -> {
                     TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
                     if (t != null) {
@@ -1111,11 +1119,9 @@ public final class CacheUpdater {
                         writeLine(cacheOut, in.line());
                         copied.add(f[1]);
                         result.reused++;
-                        // 前の実行で構文エラーだったファイルは、書き写した今回も欠けたままである。
+                        // 前の実行でエラーだったファイルは、書き写した今回もエラーのままである。
                         // ここで数えないと、2回目以降の実行で警告が消えてしまう
-                        if (CacheFormat.syntaxErrorsOf(f) > 0) {
-                            result.addSyntaxErrorFile(f[1]);
-                        }
+                        result.countErrors(f[1], CacheFormat.errorsOf(f), CacheFormat.syntaxErrorsOf(f));
                     }
                     continue;
                 }

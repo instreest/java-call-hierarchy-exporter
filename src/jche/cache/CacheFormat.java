@@ -274,11 +274,23 @@ public final class CacheFormat {
      * そもそも読まないが、読み手を列の有無に依存させない
      */
     public static int syntaxErrorsOf(String[] fileRow) {
-        if (fileRow == null || fileRow.length < 6) {
+        return intColumn(fileRow, 5);
+    }
+
+    /**
+     * F 行のエラー数（コンパイルエラーの総数。構文エラーを含む）。
+     * 0 でなければ、そのファイルは「ビルドが通らない」状態で解析されている（warnings.txt に載せる）
+     */
+    public static int errorsOf(String[] fileRow) {
+        return intColumn(fileRow, 3);
+    }
+
+    private static int intColumn(String[] row, int index) {
+        if (row == null || row.length <= index) {
             return 0;
         }
         try {
-            return Integer.parseInt(fileRow[5].trim());
+            return Integer.parseInt(row[index].trim());
         } catch (NumberFormatException e) {
             return 0;
         }

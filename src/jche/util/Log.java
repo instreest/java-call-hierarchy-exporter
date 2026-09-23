@@ -43,11 +43,13 @@ public final class Log {
     /** 利用者が対処すべきこと（設定漏れ・読み飛ばし等）。必ず [WARN] を付けて目立たせる */
     public static void warn(Object message) {
         info("[WARN] " + message);
+        Warnings.logged("[WARN] " + message);   // warnings.txt に載せる（Warnings の javadoc）
     }
 
     /** 処理を続けられない失敗。スタックトレースも標準出力（とファイル）に残す */
     public static void error(Object message, Throwable cause) {
         info("[ERROR] " + message);
+        Warnings.logged("[ERROR] " + message);
         if (cause != null) {
             StringWriter sw = new StringWriter();
             cause.printStackTrace(new PrintWriter(sw));

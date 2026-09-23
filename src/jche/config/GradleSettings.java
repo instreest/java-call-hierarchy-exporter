@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 
 import jche.util.Log;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * Gradle ビルドの「構成」を読む: settings.gradle の include（プロジェクトパス → ディレクトリ）、
@@ -100,7 +101,8 @@ final class GradleSettings {
                     // 壊れた gradle.properties（Windows のパスをそのまま書いた行など）で
                     // 解析ごと落とさない。この値は $var の置き換えに使うだけで、
                     // 読めなくても依存の並びは build.gradle から取れる
-                    Log.warn(Messages.format("config.gradle.settingsUnreadable", f, e));
+                    Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                            Messages.format("config.gradle.settingsUnreadable", f, e));
                     continue;
                 }
                 for (String name : p.stringPropertyNames()) {
