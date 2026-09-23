@@ -410,7 +410,7 @@ FatJar（Spring Boot の `BOOT-INF/lib/*.jar`、war の `WEB-INF/lib/*.jar`、ea
 Gradle は宣言的な書き方（文字列の座標、map 形式、変数、版カタログ `libs.x.y`、`platform()`、`project()`、`files()`）だけ
 読み、`gradle.lockfile` があればそれを使う。読めない宣言はログに出す。
 集めた jar とクラスフォルダをそのまま JDT に渡す（jar はローカルリポジトリに置かれたまま）。無い jar は警告に座標と
-要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を出力フォルダの `resolved-classpath.txt` に残す。
+要求元の経路を出し、無いまま解析を続ける。集めた一覧（パス・座標・要求元の連鎖）を実行ログ（`run.log`）に残す。
 
 ## 6. 設計上の優先順位
 

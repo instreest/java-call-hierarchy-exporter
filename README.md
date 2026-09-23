@@ -125,9 +125,8 @@ config/
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
-    ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8）
-    ├── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
-    └── resolved-classpath.txt    解析時の依存jar一覧と要求元
+    ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8。ビルドファイルから集めた依存jarの一覧と要求元も含む）
+    └── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
 ```
 
 出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
@@ -587,9 +586,8 @@ config/
     ├── call-hierarchy.csv        the call hierarchy
     ├── methods.csv               every method in the source
     ├── config.properties         a copy of the config file used for this run (under the name you passed)
-    ├── run.log                   the run log, the same content as standard output (UTF-8)
-    ├── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
-    └── resolved-classpath.txt    the dependency jars collected, and who asked for each
+    ├── run.log                   the run log, the same content as standard output (UTF-8; includes the dependency jars collected from the build files, and who asked for each)
+    └── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
 ```
 
 The CSV files are UTF-8 with a BOM, so Excel opens them directly.

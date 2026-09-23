@@ -1,9 +1,6 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.config;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,11 +26,11 @@ import jche.util.Messages;
  * マルチモジュールで project.root がアグリゲータなら、ソースフォルダを持つモジュールごとに読む
  * （兄弟モジュールへの依存はリアクタとして解決される）。
  *
- * 集めた一覧は出力フォルダの resolved-classpath.txt に残す（何がどこから来たかを後から確認できる）。
+ * 集めた一覧（パス・座標・要求元）は実行ログ（run.log）に書く（何がどこから来たかを後から確認できる）。
+ * 以前は出力フォルダの resolved-classpath.txt に別に書いていたが、出力ファイルを減らすためログにまとめた
+ * （{@code docs/output-files-simplify-qa.md}）。
  */
 public final class BuildFileClasspath {
-
-    static final String LISTING_FILE = "resolved-classpath.txt";
 
     private BuildFileClasspath() {
     }
@@ -88,10 +85,9 @@ public final class BuildFileClasspath {
                 folders++;
             }
         }
-        Path listing = writeListing(config, all.values());
         Log.info(Messages.format("config.deps.collected", paths.size() - folders,
-                (folders > 0) ? Messages.format("config.deps.collected.folders", folders) : "",
-                (listing == null) ? "" : Messages.format("config.deps.collected.listing", listing)));
+                (folders > 0) ? Messages.format("config.deps.collected.folders", folders) : ""));
+        logListing(all.values());
         return paths;
     }
 
@@ -160,27 +156,13 @@ public final class BuildFileClasspath {
     }
 
     /**
-     * 集めた一覧（パス、座標、要求元の経路）を出力フォルダに書く。書けなければ null。
-     * キャッシュフォルダではなく出力フォルダに置くのは、「この実行で何を渡したか」の記録だから
-     * （キャッシュは複数の設定・実行で共有される）
+     * 集めた一覧（パス、座標、要求元の経路）をログに書く。表として読むものなので時刻は付けない（{@link Log#plain}）。
+     * 1 行の形は旧 resolved-classpath.txt と同じタブ区切りで、先頭に字下げを付けてログの他の行と見分ける
      */
-    private static Path writeListing(Config config, Iterable<DependencyCollector.Entry> entries) {
-        Path dir = config.outputDir;
-        Path file = dir.resolve(LISTING_FILE);
-        try {
-            Files.createDirectories(dir);
-            try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                w.write("# path\tcoordinates\tvia" + Messages.get("config.deps.listingViaNote"));
-                w.newLine();
-                for (DependencyCollector.Entry e : entries) {
-                    w.write(e.path() + "\t" + e.coordinates() + "\t" + e.via());
-                    w.newLine();
-                }
-            }
-            return file;
-        } catch (IOException e) {
-            Log.warn(Messages.format("config.deps.listingFailed", file, e));
-            return null;
+    private static void logListing(Iterable<DependencyCollector.Entry> entries) {
+        Log.plain("    # path\tcoordinates\tvia" + Messages.get("config.deps.listingViaNote"));
+        for (DependencyCollector.Entry e : entries) {
+            Log.plain("    " + e.path() + "\t" + e.coordinates() + "\t" + e.via());
         }
     }
 }

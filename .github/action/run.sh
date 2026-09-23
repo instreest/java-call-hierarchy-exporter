@@ -23,7 +23,7 @@ bash "$GITHUB_ACTION_PATH/jbangw/jbang" run "$GITHUB_ACTION_PATH/src/jche/CallHi
 # 依存 jar の警告をジョブに見せる。ツールはローカルリポジトリに無い jar を警告して解析を続ける
 # （結果は欠けるがジョブは緑のまま）ので、run.log の「[WARN] 依存jar:」行を GitHub の warning
 # アノテーションとジョブサマリに出し、アーティファクトを開かなくても気づけるようにする。
-# 明細（座標と要求元）は run.log と resolved-classpath.txt にある。
+# 明細（座標と要求元）は run.log にある。
 summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 dir_file="${JCHE_OUTPUT_DIR_FILE:-}"
 if [ -n "$dir_file" ] && [ -f "$dir_file" ]; then
@@ -38,7 +38,7 @@ if [ -n "$dir_file" ] && [ -f "$dir_file" ]; then
             echo ""
             echo "解析は続けましたが、無い jar の型を使う呼び出しは出力から欠けます。"
             echo "このアクションより前に依存を取得しておいてください（例: \`mvn -B dependency:go-offline\`）。"
-            echo "明細は \`run.log\` と \`resolved-classpath.txt\` にあります。"
+            echo "明細は \`run.log\` にあります。"
             echo ""
         } >> "$summary"
         printf '%s\n' "$warnings" | while IFS= read -r w; do

@@ -226,6 +226,9 @@ Issue が求めたのは「`library.folders` が空欄なら自動取得、指�
 「なぜこの jar が入っているのか」「なぜ入っていないのか」を後から追えるようにするためで、
 ログにも同じ内容の要約（直接依存 N 件 → jar M 件、辿った依存 K 件、無い jar の一覧）を出す。
 
+（追記）置き場所はその後、出力フォルダへ移り（[multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) の Q6）、
+さらに別ファイルをやめて `run.log` に一覧ごと書くようになった（[output-files-simplify-qa.md](output-files-simplify-qa.md) の Q1）。
+
 ### Q17. 毎回ビルドファイルを読み直すのか
 
 読み直す。実測は数十ミリ秒から 0.1 秒程度（POM の数に比例。Spring Boot の BOM を含めても 1 秒は掛からない）で、
