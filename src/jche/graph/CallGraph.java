@@ -65,6 +65,8 @@ public final class CallGraph {
      * ラムダ／メソッド参照が実装している関数型インターフェースのメソッドキー。
      * ここに載っているメソッドは「ソース上に見えている実装のほかに、
      * 展開できない実装がある」ことを意味する。
+     * 書き手が、そのメソッドが上書きしている親インターフェースの宣言の鍵も書いてある
+     * （{@code jche.analysis.FactVisitor#recordFunctionalImpl}）ので、ここは完全一致で引いてよい。
      */
     final Set<String> functionalImpls = new HashSet<>();
 
@@ -150,6 +152,29 @@ public final class CallGraph {
 
     public int callLineOf(int edgeIndex) {
         return callLines[edgeIndex];
+    }
+
+    /**
+     * {@code callerId} が、ラムダの合成メソッド {@code lambdaId} を<b>生成した</b>メソッドか。
+     *
+     * 生成の辺（囲みメソッド → 合成メソッド。{@code jche.analysis.FactVisitor#synthesizeLambda}）は
+     * 呼び出し先が合成メソッドそのものになる唯一の辺なので、宣言どおりの呼び出し先に
+     * その合成メソッドを持つ辺があるかで判定できる。{@code r.run()} のような関数型インターフェース
+     * 経由の辺は、宣言どおりの呼び出し先が {@code Runnable#run()} なのでここには当たらない。
+     *
+     * 読み手は、ラムダが捕捉した引数（{@link jche.cache.Origin#CAPTURED}）を
+     * 生成したメソッドの段でだけ当てるためにこれを使う。
+     */
+    public boolean createsLambda(int callerId, int lambdaId) {
+        if (callerId < 0 || callerId + 1 >= offsets.length) {
+            return false;
+        }
+        for (int e = offsets[callerId], end = offsets[callerId + 1]; e < end; e++) {
+            if (calleeIds[e] == lambdaId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 束縛の種別（{@link BindKind}） */

@@ -17,6 +17,8 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
   `E`（{@code Origin.CAPTURED}。ラムダが捕捉した囲みメソッドの引数）を足した
 - 実行箇所を特定できたら `[RESOLVED:DATAFLOW_LAMBDA]`。できなければ従来どおり `[UNEXPANDED:LAMBDA]`
 - キャッシュは analysis v21 / dataflow v5
+- **その後の修正**: 捕捉した引数（`E`）は、ラムダを生成したメソッドの段でだけ当てる（Q10）。
+  M 行は SAM が上書きしている親インターフェースの宣言の鍵でも書く（Q11。analysis v24）
 
 ### Q1. なぜ合成メソッドにしたのか。囲みメソッドに計上したままではだめか
 
@@ -44,8 +46,9 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 `A:`（引数）のまま持ち込むと、合成メソッド自身の引数を誤って当ててしまう。
 
 そこで `E:`（{@code Origin.CAPTURED}）という別の種別にし、読み手はラムダの合成メソッドへ
-**降りるときだけ**、そのフレーム（＝生成箇所）の引数を「捕捉した値」として渡す。
-生成の辺が必ずあるので、生成箇所は経路の1つ上に必ず来る。
+降りるとき、**今の段がそのラムダを生成したメソッドである場合だけ**、その段の引数を
+「捕捉した値」として渡す（Q10）。生成の辺の先と、生成したメソッドの中で `r.run()` した形が
+これに当たる。
 
 これを入れないと、合成メソッドに移したことで従来解決できていた
 `DATAFLOW_PARAM` が解けなくなる（実際に回帰テストで検出した）。
@@ -129,3 +132,65 @@ CSV とログを突き合わせられる。通し番号は**型ごと**に振る
 出さないぶん、ラムダを持つメソッドの `outDegree` は本体の呼び出しを含まない
 （生成の辺1本だけを数える）。本体の中の呼び出しは `call-hierarchy.csv` で追う。
 出力対象外にした件数は実行ログに出す。
+
+### Q10. 捕捉した引数を、実行した側のフレームで当ててしまっていた
+
+当初は「合成メソッドへ降りるときは、必ず 1 つ上の段の引数を捕捉した値として渡す」としていた。
+生成の辺（囲みメソッド → 合成メソッド）だけを考えれば 1 つ上は生成箇所なのでこれでよいが、
+`DATAFLOW_LAMBDA` の辺では 1 つ上の段は**実行箇所**であって、生成箇所とは限らない。
+
+```java
+private void captureOuter(Dao dao) {                       // dao = new OrderDaoImpl()
+    runWithOther(new UserDaoImpl(), () -> dao.describe());
+}
+private void runWithOther(Dao other, Runnable r) { r.run(); }
+```
+
+`runWithOther` の段から本体へ降りると、`E:0` が `runWithOther` の第 1 引数（`UserDaoImpl`）に
+当たり、`UserDaoImpl.describe` に **`RESOLVED:DATAFLOW_PARAM` で誤って確定**していた。
+捕捉した値はラムダを作った時点で決まる（JLS 15.27.2。捕捉できるのは実質的 final な変数だけ）ので、
+実行した側の引数を当てるのは値の取り違えである。
+
+直し方は、降りる先の合成メソッドを**今の段のメソッドが生成したか**（`CallGraph.createsLambda`。
+宣言どおりの呼び出し先がその合成メソッドである辺＝生成の辺を持つか）で判定し、
+生成したメソッドの段でだけ引数を渡す。それ以外の段では null にして、捕捉した引数への
+呼び出しは CHA のまま残す（`test/demo` の `fx.lambda.Captured`）。
+
+却下した案は、`Z:` の値に生成箇所の引数環境を一緒に持ち運ぶ（クロージャとして扱う）もの。
+引数で渡した先で捕捉した引数まで解けるようになるが、値の文字列に環境を埋め込む形になり
+キャッシュの形式と読み手の両方が大きくなる。「引数で渡した先で呼ぶ」形で本体まで繋がることは
+変わらず（Q6 の表のとおり）、失うのは本体の中の**捕捉した引数**への呼び出しの絞り込みだけなので、
+安全側に倒すだけにした。
+
+### Q11. 親インターフェースの型で受けた呼び出しで、ラムダが無視されていた
+
+M 行（`FunctionalImplFact`）の鍵は SAM（`ITypeBinding.getFunctionalInterfaceMethod`）の宣言型で
+作っていた。関数型インターフェースのメソッドが親インターフェースの抽象メソッドを
+再宣言している場合（JLS 9.4.1.3）、SAM はその再宣言の側になる。
+
+```java
+interface Handler<T> { void handle(T value); }
+interface StringHandler extends Handler<String> { @Override void handle(String value); }
+class LoggingHandler implements StringHandler { ... }      // ソース上の唯一の実装クラス
+
+StringHandler h = value -> dao.describe();
+dispatch(h);
+private void dispatch(Handler<String> h) { h.handle("x"); }
+```
+
+ラムダの M 行の鍵は `StringHandler#handle(java.lang.String)`、`h.handle("x")` の呼び出し先の鍵は
+`Handler#handle(java.lang.Object)` で一致しない。読み手（`CallGraph.hasFunctionalImpl`）は
+完全一致で引くので「ラムダの実装は無い」と見え、`LoggingHandler.handle` に
+**`RESOLVED:SINGLE_IMPL` で決め打ち**していた。候補が複数のときは
+`DataflowResolver.targetOf` が別経路で `Z:` を試すので偶然救われることがあるが、それも
+同じ鍵の M 行が別のラムダから出ている場合だけである。
+
+直し方は書き手の側で、SAM が上書きしている親の宣言すべての鍵でも M 行を書く
+（`BindingNames.overriddenKeysOf(sam, true)`）。O 行と違ってシグネチャが同じ再宣言
+（`interface MyRunnable extends Runnable { void run(); }`）も含める。読み手は型を辿らず鍵の
+完全一致で引く作りのままなので、親の鍵が無ければ当たらないためである。
+上書きの判定は O 行と同じく `IMethodBinding.overrides` に任せる。
+キャッシュに書く内容が変わるので analysis の版を v24 に上げた（`test/demo` の `fx.lambda.Redeclared`）。
+
+読み手の側で `OverrideIndex` を引く案は、O 行がシグネチャの同じ上書きを持たない
+（キーの照合で引けるので書かない）ため `MyRunnable` の形を救えず、却下した。

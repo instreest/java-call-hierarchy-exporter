@@ -373,9 +373,14 @@ public final class StreamingTreeWalker {
                         resolvedBy(declaredCallee, res),
                         targetParams, targetCtorArgs,
                         (targetCtorArgs == null) ? null : methods.typeFqn(target),
-                        // ラムダの本体へ降りるときだけ、今のフレームの引数を
-                        // 「捕捉した値」として渡す（jche.cache.Origin#CAPTURED）
-                        methods.isLambdaBody(target) ? path[depth].paramTypes : null);
+                        // ラムダの本体へ降りるとき、今の段が「そのラムダを生成したメソッド」なら
+                        // その引数を「捕捉した値」として渡す（jche.cache.Origin#CAPTURED）。
+                        // 生成の辺の先と、生成したメソッドの中で r.run() した形がこれに当たる。
+                        // 引数で渡した先（runIt(Runnable r) の r.run()）のように別のメソッドの段から
+                        // 降りるときは渡さない。捕捉した値はラムダを作った時点で決まる
+                        // （JLS 15.27.2）ので、実行した側の引数を当てると別の値を指してしまう
+                        // （docs/lambda-expansion-qa.md の Q10）
+                        capturedTypesFor(depth, target));
 
                 // コンストラクタ呼び出しそのものは行にしない。
                 // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
@@ -446,6 +451,17 @@ public final class StreamingTreeWalker {
         if (res.isReflection()) {
             reflectionHits++;
         }
+    }
+
+    /**
+     * ラムダの合成メソッド {@code target} へ降りるときに渡す「捕捉した値」。
+     * 今の段がそのラムダを生成したメソッドでなければ null（捕捉した引数は解決しない）
+     */
+    private String[] capturedTypesFor(int depth, int target) {
+        if (!methods.isLambdaBody(target) || !graph.createsLambda(path[depth].methodId, target)) {
+            return null;
+        }
+        return path[depth].paramTypes;
     }
 
     /**

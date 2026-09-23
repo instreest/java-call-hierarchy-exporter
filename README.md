@@ -417,6 +417,10 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 
 特定できない場合でも、生成の辺があるので本体の中の呼び出しは階層に出ます。
 
+ラムダが捕捉した囲みメソッドの引数（`(Dao dao) -> … () -> dao.describe()` の `dao`）の具象型は、
+ラムダを作ったメソッドの段でだけ当てます。引数で渡した先から本体へ降りたときは、その先の引数は
+捕捉した値ではないので絞りません（捕捉した値はラムダを作った時点で決まります）。
+
 `new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
 （`RESOLVED:CALLBACK`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
@@ -891,6 +895,11 @@ Shapes where it cannot (`resolved-by` becomes `UNEXPANDED:LAMBDA`):
 
 Even when it cannot be determined, the "created it" edge means the calls inside the body still appear in
 the hierarchy.
+
+The concrete type of an enclosing method's parameter that a lambda captured (`dao` in
+`(Dao dao) -> … () -> dao.describe()`) is applied only at the level of the method that created the lambda.
+When the body is entered from the method the lambda was passed to, that method's arguments are not the
+captured values, so nothing is narrowed there (captured values are fixed when the lambda is created).
 
 Shapes **called back from inside a jar**, such as `new Thread(task).start()` or `executor.submit(task)`,
 are connected through a contract table saying "`Thread#start()` calls `run()` on the `Runnable` you

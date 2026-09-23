@@ -224,9 +224,12 @@ public final class CacheFormat {
      * v21 でラムダ式を合成メソッド（D 行 + 生成の C 行）として持つようにし、
      * 本体の呼び出しの計上先を囲みメソッドからその合成メソッドへ移した。
      * v22 で F 行の末尾に構文エラーの数を足した（{@link #syntaxErrorsOf}）。
-     * 再利用したファイルについても「本体を読めていない」と言い続けるために要る
+     * 再利用したファイルについても「本体を読めていない」と言い続けるために要る。
+     * v24 で M 行を、関数型インターフェースのメソッドが上書きしている親インターフェースの
+     * 宣言の鍵でも書くようにした（{@code docs/lambda-expansion-qa.md} の Q11）。
+     * 古いキャッシュを再利用すると、親の型で受けた呼び出しでラムダが無視される
      */
-    public static final String VERSION = "jche-cache-v23";
+    public static final String VERSION = "jche-cache-v24";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

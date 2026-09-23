@@ -2,6 +2,7 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -498,6 +499,16 @@ final class FactVisitor extends ASTVisitor {
      * ラムダ本体は {@link #synthesizeLambda} で合成メソッドにしてあり、値として
      * 追えた呼び出しはそちらに解決される（{@code DATAFLOW_LAMBDA}）。この M 行は
      * 追えなかった呼び出し（jar の中から呼ばれる forEach 形式など）のために残す。
+     *
+     * <h4>親インターフェースの宣言の鍵でも書く</h4>
+     * 関数型インターフェースのメソッドは、親インターフェースの抽象メソッドを上書きした
+     * 再宣言であることがある（{@code interface StrFoo extends Foo<String> { void accept(String s); }}。
+     * JLS 9.4.1.3）。このラムダは親の型で受けた変数への呼び出し（{@code Foo<String> f; f.accept(x)}）
+     * でも実行されるが、その呼び出し先の鍵は親の宣言（{@code Foo#accept(java.lang.Object)}）で、
+     * SAM の鍵（{@code StrFoo#accept(java.lang.String)}）とは一致しない。読み手は M 行を
+     * 鍵の完全一致で引くので、SAM が上書きしている宣言すべての鍵でも M 行を書く。
+     * 上書きの判定は {@code IMethodBinding.overrides}（JLS 8.4.8.1）に任せる
+     * （docs/lambda-expansion-qa.md の Q11）。
      */
     private void recordFunctionalImpl(ITypeBinding fnType, ASTNode node, String kind) {
         if (fnType == null) {
@@ -511,15 +522,24 @@ final class FactVisitor extends ASTVisitor {
         if (ref == null) {
             return;
         }
+        List<String> keys = new ArrayList<>(2);
+        keys.add(ref.key());
+        for (String overridden : names.overriddenKeysOf(sam, true)) {
+            if (!keys.contains(overridden)) {
+                keys.add(overridden);
+            }
+        }
         int line = lineOf(node);
         List<MethodRef> callers = currentCallers();
-        if (callers == null) {
-            out.functionalImpls.add(new FunctionalImplFact(line, null, ref.key(), kind));
-            return;
-        }
-        // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
-        for (MethodRef caller : callers) {
-            out.functionalImpls.add(new FunctionalImplFact(line, caller, ref.key(), kind));
+        for (String key : keys) {
+            if (callers == null) {
+                out.functionalImpls.add(new FunctionalImplFact(line, null, key, kind));
+                continue;
+            }
+            // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
+            for (MethodRef caller : callers) {
+                out.functionalImpls.add(new FunctionalImplFact(line, caller, key, kind));
+            }
         }
     }
 

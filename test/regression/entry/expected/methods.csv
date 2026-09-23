@@ -55,9 +55,9 @@ ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,E
 LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderDaoImpl.load(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,11,1,1,0,LEAF,1,0,,1,
 OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,19,1,NORMAL,1,0,,1,
-OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,19,0,LEAF,1,0,,1,
+OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,21,0,LEAF,1,0,,1,
 UserDaoImpl.load(long),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,7,1,1,1,NORMAL,1,0,,1,
-UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,15,0,LEAF,1,0,,1,
+UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,16,0,LEAF,1,0,,1,
 UserDaoImpl.save(java.util.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,15,1,1,1,NORMAL,1,0,,1,
 UserDaoImpl.save(fx.other.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,16,1,1,1,NORMAL,1,0,,1,
 Deep.nestedArgument(),fx.deep.Deep,C,src/fx/deep/Deep.java,19,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
@@ -115,17 +115,26 @@ Greeter.greet(),fx.inherit.Greeter,I,src/fx/inherit/Greeter.java,5,0,0,0,ISOLATE
 LoudGreeter.greet(),fx.inherit.LoudGreeter,C,src/fx/inherit/LoudGreeter.java,5,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 OnlyImpl.m(),fx.inherit.OnlyImpl,C,src/fx/inherit/OnlyImpl.java,6,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 Sub2.m(),fx.inherit.Sub2,I,src/fx/inherit/Sub2.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Captured.viaCapture(),fx.lambda.Captured,C,src/fx/lambda/Captured.java,22,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Captured.captureOuter(Dao),fx.lambda.Captured,C,src/fx/lambda/Captured.java,26,1,1,3,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+"Captured.runWithOther(Dao,Runnable)",fx.lambda.Captured,C,src/fx/lambda/Captured.java,30,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
+Handler.handle(Object),fx.lambda.Handler,I,src/fx/lambda/Handler.java,5,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
 Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] type name (static),0,[NOT_REACHED] no caller row was emitted
+LoggingHandler.handle(String),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,11,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
+LoggingHandler.logged(),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,15,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
+Redeclared.viaSuperInterface(),fx.lambda.Redeclared,C,src/fx/lambda/Redeclared.java,16,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Redeclared.dispatch(Handler),fx.lambda.Redeclared,C,src/fx/lambda/Redeclared.java,21,1,1,1,NORMAL,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Starter.viaThread(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,19,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 Starter.viaSubclass(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,24,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 Starter.viaExecutor(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,29,1,0,4,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 Starter.viaVariable(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,36,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
-Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,5,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
+Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,6,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
 Starter.Worker.run(),fx.lambda.Starter.Worker,C,src/fx/lambda/Starter.java,62,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] field,0,[NOT_REACHED] no caller row was emitted
+StringHandler.handle(String),fx.lambda.StringHandler,I,src/fx/lambda/StringHandler.java,10,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 Base.init(String),fx.model.Base,C,src/fx/model/Base.java,8,1,1,1,NORMAL,1,0,,1,
 Color.area(),fx.model.Color,C,src/fx/model/Color.java,18,1,1,0,LEAF,1,0,,1,
 Color.code(),fx.model.Color,C,src/fx/model/Color.java,20,1,1,0,LEAF,1,0,,1,
