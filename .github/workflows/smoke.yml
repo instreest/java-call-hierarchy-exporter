@@ -311,6 +311,11 @@ jobs:
       - name: JBang wrapper check
         run: bash test/jbangw/run.sh
 
+      # 複合アクションが依存 jar の警告を英語・日本語どちらのログからも拾うこと。
+      # jbang はスタブに差し替えて解析は動かさないので、これも数秒で終わる
+      - name: Action dependency-jar warning test
+        run: bash test/action/run.sh
+
   # Eclipse（Pleiades）用の pom.xml の検査。
   # 1) //DEPS 行と pom.xml の依存が同じ版であること（ファイルを読むだけ、数秒）
   # 2) その pom.xml で実際に依存が解決でき、ソースがコンパイルできること

@@ -38,7 +38,7 @@ jobs:
 ```
 
 依存の取得を省いても解析は動きますが、ローカルリポジトリに無い jar の型を使う呼び出しは出力から欠けます。
-その場合、アクションは `run.log` の `[WARN] 依存jar:` 行を GitHub の warning アノテーションとジョブサマリに出すので、
+その場合、アクションは `run.log` の依存 jar の警告（`[WARN] Dependency jars:`、日本語表示なら `[WARN] 依存jar:`）を GitHub の warning アノテーションとジョブサマリに出すので、
 アーティファクトを開かなくても気づけます（明細は `run.log`）。
 Gradle の場合は `mvn` の行を `./gradlew dependencies` 等に読み替えてください。
 
