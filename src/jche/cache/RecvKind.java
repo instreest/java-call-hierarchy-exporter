@@ -20,7 +20,10 @@ public final class RecvKind {
     public static final char LOCAL = 'L';
     /** レシーバなし（this / 暗黙） */
     public static final char THIS = 'T';
-    /** 型名（static呼び出し） */
+    /**
+     * 型名。static 呼び出しと、型名で書いたメソッド参照（{@code Dao::describe}）。
+     * static 呼び出しは静的束縛なので CHA にならず、CHA の理由として出るのは後者だけ
+     */
     public static final char TYPE = 'S';
     /** 配列要素・キャスト式・条件式など、上記に当てはまらないもの */
     public static final char OTHER = 'O';
@@ -41,7 +44,9 @@ public final class RecvKind {
             case FIELD -> "field";
             case LOCAL -> "local variable";
             case THIS -> "own class (this)";
-            case TYPE -> "type name (static)";
+            // CHA の理由として出るのは、型名で書いたメソッド参照（Dao::describe）だけ。
+            // レシーバは呼び出し時の第1引数で、static 呼び出しではない（JLS 15.13.1）
+            case TYPE -> "type name (unbound method reference)";
             default -> "receiver unknown";
         };
     }

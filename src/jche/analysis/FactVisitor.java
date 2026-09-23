@@ -2,7 +2,6 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -330,7 +329,7 @@ final class FactVisitor extends ASTVisitor {
      * インターフェースのフィールドが暗黙にstaticになる（キーワードが無くても）
      * ケースを正しく扱うため。
      */
-    private static boolean isStaticField(FieldDeclaration node) {
+    static boolean isStaticField(FieldDeclaration node) {
         List<?> fragments = node.fragments();
         if (!fragments.isEmpty() && fragments.get(0) instanceof VariableDeclarationFragment frag) {
             IVariableBinding vb = frag.resolveBinding();
@@ -512,9 +511,11 @@ final class FactVisitor extends ASTVisitor {
      * JLS 9.4.1.3）。このラムダは親の型で受けた変数への呼び出し（{@code Foo<String> f; f.accept(x)}）
      * でも実行されるが、その呼び出し先の鍵は親の宣言（{@code Foo#accept(java.lang.Object)}）で、
      * SAM の鍵（{@code StrFoo#accept(java.lang.String)}）とは一致しない。読み手は M 行を
-     * 鍵の完全一致で引くので、SAM が上書きしている宣言すべての鍵でも M 行を書く。
-     * 上書きの判定は {@code IMethodBinding.overrides}（JLS 8.4.8.1）に任せる
-     * （docs/lambda-expansion-qa.md の Q11）。
+     * 鍵の完全一致で引くので、SAM と上書き同等な親の抽象メソッドすべての鍵でも M 行を書く。
+     * 上書きの関係に無い2つの親から同じメソッドを継承した形
+     * （{@code interface C extends A, B {}} で A・B とも {@code void go()}。JLS 9.8）も、
+     * ラムダは両方を実装するので含める。判定は {@link BindingNames#functionalKeysOf} に任せる
+     * （docs/lambda-expansion-qa.md の Q11・Q15）。
      */
     private void recordFunctionalImpl(ITypeBinding fnType, ASTNode node, String kind) {
         if (fnType == null) {
@@ -524,16 +525,9 @@ final class FactVisitor extends ASTVisitor {
         if (sam == null) {
             return;
         }
-        MethodRef ref = names.toRef(sam);
-        if (ref == null) {
+        List<String> keys = names.functionalKeysOf(fnType, sam);
+        if (keys.isEmpty()) {
             return;
-        }
-        List<String> keys = new ArrayList<>(2);
-        keys.add(ref.key());
-        for (String overridden : names.overriddenKeysOf(sam, true)) {
-            if (!keys.contains(overridden)) {
-                keys.add(overridden);
-            }
         }
         int line = lineOf(node);
         List<MethodRef> callers = currentCallers();

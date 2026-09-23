@@ -81,6 +81,11 @@ public final class StreamingTreeWalker {
     static final String CAUSE_NO_IMPL = UNEXPANDED + "NO_IMPL] no implementation with a body in the source";
     /** ラムダ／メソッド参照が同じインターフェースを実装している */
     static final String CAUSE_LAMBDA = UNEXPANDED + "LAMBDA] implemented by a lambda/method reference";
+    /**
+     * 契約で呼び戻す値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかったときの
+     * 候補の由来（{@code [UNEXPANDED:CHA] N candidates: } に続ける）
+     */
+    static final String CALLBACK_METHOD_REF = "method reference to an overridable method";
 
     /**
      * 実装がコンパイル時のアノテーション処理で生成される型の注記。
@@ -426,14 +431,25 @@ public final class StreamingTreeWalker {
             boolean cycle = onCurrentPath(target, depth);
             if (cycle) {
                 markAbsent(target, ABSENT_CYCLE);
+            } else if (match.isMultiple()) {
+                markAbsent(target, ABSENT_CHA);
             }
             Resolution res = Resolution.single(target, Resolution.CALLBACK);
             String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null);
+            String resolvedBy = resolvedBy(declaredCallee, res);
+            if (match.isMultiple()) {
+                // 渡した値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかった。
+                // 候補を全部並べたことを、通常の CHA と同じ言い方で残す（確定に見せない）
+                note = note.replace("[RESOLVED:" + Resolution.CALLBACK + "]",
+                        UNEXPANDED + "CHA] " + match.candidates() + " candidates: " + CALLBACK_METHOD_REF);
+                resolvedBy = ResolvedBy.UNEXPANDED + Resolution.CALLBACK;
+            }
             path[depth + 1].set(target, graph.callLineOf(e),
-                    note + " contract: " + match.contract(), resolvedBy(declaredCallee, res),
+                    note + " contract: " + match.contract(), resolvedBy,
                     null, null, null, null);
             emit(depth + 1);
-            if (!cycle) {
+            // 候補を並べただけの行は、通常の CHA と同じくその先へ降りない（候補数^深さ で爆発するため）
+            if (!cycle && !match.isMultiple()) {
                 descend(depth + 1);
             }
         }

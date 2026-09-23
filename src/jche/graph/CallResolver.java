@@ -132,7 +132,7 @@ public final class CallResolver {
         if (!callbacks.hasContract(callee)) {
             return List.of();
         }
-        return callbacks.matchesOf(edgeIndex, ctx);
+        return callbacks.matchesOf(edgeIndex, ctx, this::functionalResolution);
     }
 
     public DataflowResolver dataflow() {

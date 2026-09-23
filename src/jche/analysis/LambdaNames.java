@@ -36,16 +36,26 @@ import jche.cache.MethodRef;
  * （差分更新でファイルを解析し直しても変わらない）。
  *
  * <h2>名前の形</h2>
- * javac が付けるものに合わせて {@code lambda$囲みメソッド名$通し番号}。
- * 実際のスタックトレースに現れる名前と同じ形なので、読み手が結び付けられる。
- * 通し番号は型ごとに振る（オーバーロードで囲みメソッド名が同じでも重ならないため）。
+ * javac に似せて {@code lambda$囲みメソッド名$通し番号}。スタックトレースに現れる名前と
+ * 同じ形なので、読み手が結び付けやすい。ただし<b>番号の振り方は javac の版で変わる</b>ので、
+ * 番号まで一致するとは限らない（docs/lambda-expansion-qa.md の Q13）。
  *
- * 番号は javac と同じく<b>本体を読み終えた順</b>（後行順）に振る。入れ子のラムダは
- * 内側が先に番号を得る（{@code () -> { () -> {} }} は内側が {@code $0}、外側が {@code $1}）。
- * enum 定数の引数の中のラムダは {@code lambda$static$N}（定数の初期化は {@code <clinit>} で走る。
- * JLS 8.9.2）。javac がメソッド参照の一部（配列の {@code ::new} や {@code super::m} など）を
- * 内部でラムダに変換して番号を消費する場合は、そこから先の番号がずれる
- * （docs/lambda-expansion-qa.md の Q13）。
+ * このツールは javac 21 の振り方に合わせている。番号は型ごとに、<b>本体を読み終えた順</b>
+ * （後行順）に振る。入れ子のラムダは内側が先に番号を得る
+ * （{@code () -> { () -> {} }} は内側が {@code $0}、外側が {@code $1}）。
+ * static 初期化子・static フィールド（インターフェースのフィールドを含む。JLS 9.3）・
+ * enum 定数の引数（JLS 8.9.2）の中のラムダは {@code lambda$static$N}。
+ *
+ * javac 21 とも次の場合は食い違う。
+ * <ul>
+ *   <li>javac がメソッド参照の一部（配列の {@code ::new} や {@code super::m} など）を内部でラムダに
+ *       変換して番号を消費する。そこから先の番号がずれる</li>
+ *   <li>直列化可能なラムダ。javac は {@code lambda$main$ハッシュ$1} の別の形にし、番号も別に数える</li>
+ *   <li>匿名クラスのフィールド初期化子の中。javac 21 は {@code lambda$$0}（囲みメソッド名が空）</li>
+ * </ul>
+ * JDK 25 の javac（ツールの実行に使う版）は振り方そのものが違い、
+ * 番号を<b>囲みメソッド名ごと</b>に 0 から、入れ子は<b>外側を先</b>に振る。
+ * 決まった名前は D 行・C 行・M 行に焼き込まれるので、振り方を変えるならキャッシュの版を上げる。
  */
 final class LambdaNames {
 
@@ -100,8 +110,9 @@ final class LambdaNames {
          * そのラムダを囲んでいるメソッド。
          *
          * メソッドの中なら そのメソッド、フィールド初期化子やインスタンス初期化ブロックの中なら
-         * 「そのクラスのコンストラクタ」、static 初期化子と enum 定数の引数の中なら
-         * {@code <clinit>} を表す {@link MethodRef}（{@code FactVisitor} が呼び出し元にするものと同じ）。名前を決めるためだけに使うので、初期化子が実際には
+         * 「そのクラスのコンストラクタ」、static 初期化子・static フィールド（インターフェースのフィールドを含む）の
+         * 初期化子・enum 定数の引数の中なら {@code <clinit>} を表す {@link MethodRef}
+         * （{@code FactVisitor} が呼び出し元にするものと同じ）。名前を決めるためだけに使うので、初期化子が実際には
          * 複数のコンストラクタに複製されることは、ここでは考えなくてよい
          * （呼び出し元としての複製は {@link FactVisitor} が別に扱う）。
          */
@@ -117,7 +128,9 @@ final class LambdaNames {
                     // enum 定数は static final フィールドで、その引数は <clinit> で評価される
                     staticContext = true;
                 } else if (n instanceof FieldDeclaration field) {
-                    staticContext = Modifier.isStatic(field.getModifiers());
+                    // 書かれた修飾子ではなくバインディングで見る。インターフェースのフィールドは
+                    // static と書かなくても static（JLS 9.3）で、初期化は <clinit> で走る
+                    staticContext = FactVisitor.isStaticField(field);
                 } else if (n instanceof AnonymousClassDeclaration anon) {
                     return initializerRefOf(anon.resolveBinding(), staticContext);
                 } else if (n instanceof AbstractTypeDeclaration type) {

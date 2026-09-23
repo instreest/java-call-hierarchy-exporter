@@ -8,7 +8,7 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 
 ## 結論
 
-- ラムダ式の本体は、javac と同じ名前（`lambda$囲みメソッド名$通し番号`）の**合成メソッド**にする。
+- ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）の**合成メソッド**にする。
   D 行（修飾子に `lambda`）を足し、本体の中の呼び出しはその合成メソッドに計上する。
   `methods.csv` には出さない（Q9）
 - 囲みメソッドからは「ラムダを生成した」辺を1本必ず張る。実行箇所を特定できなくても
@@ -20,8 +20,13 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 - **その後の修正**: 捕捉した引数（`E`）は、ラムダを生成したメソッドの段でだけ当てる（Q10）。
   M 行は SAM が上書きしている親インターフェースの宣言の鍵でも書く（Q11。analysis v24）。
   メソッド参照の参照先が仮想メソッドなら、束縛したレシーバの具象型か上書き候補で実装まで繋ぐ（Q12。dataflow v7）。
-  合成メソッドの番号は javac と同じ後行順にし、enum 定数の引数の中は `lambda$static$N`（Q13。analysis v25）。
-  式本体のラムダにも R 行を書き、`s.get()` の戻り値をラムダの return から追う（Q14）
+  合成メソッドの番号は javac 21 と同じ後行順にし、enum 定数の引数の中は `lambda$static$N`（Q13。analysis v25）。
+  式本体のラムダにも R 行を書き、`s.get()` の戻り値をラムダの return から追う（Q14）。
+  M 行は、上書きの関係に無い2つの親から継承した同じ抽象メソッドの鍵でも書く（Q15。analysis v26）。
+  呼び戻しの契約に渡したメソッド参照も、参照先が仮想メソッドなら実装まで繋ぐ（Q16）。
+  インターフェースのフィールドの中のラムダは `lambda$static$N`（Q17。analysis v26）。
+  型名で書いたメソッド参照の注記を `type name (unbound method reference)` にし、
+  methods.csv の `unresolvedCause` の判定順を階層の注記と揃えた（Q18）
 
 ### Q1. なぜ合成メソッドにしたのか。囲みメソッドに計上したままではだめか
 
@@ -61,9 +66,10 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 
 ### Q4. 名前を `lambda$囲みメソッド名$通し番号` にしたのはなぜか
 
-javac が付ける名前と同じ形だから。実行時のスタックトレースに現れる名前と一致するので、
-CSV とログを突き合わせられる。通し番号は**型ごと**に、javac と同じく本体を読み終えた順（後行順）に振る
-（javac はクラスごとなので同じ。オーバーロードで囲みメソッド名が同じでも重ならない。Q13）。
+javac が付ける名前と同じ形だから。実行時のスタックトレースに現れる名前と同じ形なので、
+CSV とログを突き合わせやすい。ただし番号の振り方は javac の版で変わるので、番号まで一致するとは限らない（Q13）。
+通し番号は**型ごと**に、javac 21 と同じく本体を読み終えた順（後行順）に振る
+（オーバーロードで囲みメソッド名が同じでも重ならない）。
 
 名前は {@code LambdaNames} がファイル単位で**先に**配る。名前を決める場所が
 「本体の先読み（{@code OriginTracker.scanOrigins}）」と「本走査（{@code FactVisitor}）」の
@@ -196,7 +202,8 @@ private void dispatch(Handler<String> h) { h.handle("x"); }
 同じ鍵の M 行が別のラムダから出ている場合だけである。
 
 直し方は書き手の側で、SAM が上書きしている親の宣言すべての鍵でも M 行を書く
-（`BindingNames.overriddenKeysOf(sam, true)`）。O 行と違ってシグネチャが同じ再宣言
+（当初は `BindingNames.overriddenKeysOf(sam, true)`。Q15 で `BindingNames.functionalKeysOf` に置き換えた）。
+O 行と違ってシグネチャが同じ再宣言
 （`interface MyRunnable extends Runnable { void run(); }`）も含める。読み手は型を辿らず鍵の
 完全一致で引く作りのままなので、親の鍵が無ければ当たらないためである。
 上書きの判定は O 行と同じく `IMethodBinding.overrides` に任せる。
@@ -243,9 +250,22 @@ JLS 15.13.3 では、メソッド参照の実行時には参照先の宣言で�
   `lambda$new$N` になっていた。`FactVisitor` は生成の辺を `<clinit>` から張るので、ツールの中でも
   食い違っていた。enum 定数を static 文脈として扱うようにした
 
-残る差は、javac がメソッド参照の一部（配列の `Type[]::new`、`super::m`、可変長引数の調整が要るもの等）を
-内部でラムダに変換して番号を消費する場合。このツールはメソッド参照に合成メソッドを作らないので、
-その後ろの番号がずれる。名前は「javac と同じ形」であって、一致は保証しない。
+javac 21 と比べて残る差は次のとおり。名前は「javac と同じ形」であって、番号の一致は保証しない。
+
+- javac がメソッド参照の一部（配列の `Type[]::new`、`super::m`、可変長引数の調整が要るもの等）を
+  内部でラムダに変換して番号を消費する場合。このツールはメソッド参照に合成メソッドを作らないので、
+  その後ろの番号がずれる
+- 直列化可能なラムダ（`(Runnable & Serializable) () -> ...`）。javac は `lambda$main$422b1e3c$1` のような
+  別の形にし、番号も別に数える。javac 21 ではその後ろの番号もずれる
+- 匿名クラスのフィールド初期化子の中のラムダ。javac 21 は `lambda$$0`（囲みメソッド名が空）と付ける
+
+**javac の版で振り方そのものが違う。** JDK 25 の javac（このツールの実行と CI に使う版）で同じソースを
+コンパイルすると、番号は**囲みメソッド名ごと**に 0 から振られ（`lambda$main$0` と `lambda$new$0` が並ぶ）、
+入れ子は**外側が先**（先行順）になる。このツールは javac 21 の振り方に合わせたままにした。
+解析対象のプロジェクトがどの版の javac でコンパイルされているかはツールから分からず、
+どちらかに合わせても片方とは食い違うため。名前が役に立つのは「どのメソッドのどのラムダか」の
+見当を付けるところまでで、スタックトレースとの照合は行番号（`at ...(File.java:行)`）で行う。
+
 名前は D 行・C 行・M 行に焼き込まれるので analysis の版を v25 に上げた。
 
 ### Q14. 式本体のラムダの戻り値が R 行になっていなかった
@@ -259,3 +279,83 @@ JLS 15.13.3 では、メソッド参照の実行時には参照先の宣言で�
 レシーバがラムダ／メソッド参照と分かり、かつ呼び出し先が関数型インターフェースのメソッド
 （M 行がある）なら、戻り値の出所はその本体の R 行で決める（`DataflowResolver.concreteTypeOf`）。
 `Object#toString()` のような関数型インターフェースと関係ない呼び出しには当てない。
+
+### Q15. 2 つの親から同じ抽象メソッドを継承した関数型インターフェースで、別の実装に確定していた
+
+JLS 9.8 では、関数型インターフェースの抽象メソッドは 1 つとは限らない。
+親から継承した抽象メソッドのうち、互いに上書き同等（シグネチャが一方の subsignature）なものは
+まとめて 1 つの関数型を成し、ラムダはその**すべて**を実装する。
+
+```java
+interface Opener { void act(); }
+interface Closer { void act(); }
+interface Door extends Opener, Closer {}      // 抽象メソッドは Opener#act と Closer#act の 2 つ
+class PlainOpener implements Opener { ... }   // ソース上の唯一の Opener 実装クラス
+
+Door d = () -> dao.describe();
+viaOpener(d);                                 // viaOpener(Opener o) { o.act(); }
+```
+
+JDT の `getFunctionalInterfaceMethod` はこのうち 1 つ（ここでは `Closer#act`）しか返さない。
+`Closer#act` は `Opener#act` を上書きしていないので、Q11 の `overriddenKeysOf(sam, true)` でも
+`Opener#act()` の鍵は出てこない。その結果 `o.act()` は `PlainOpener.act` に `RESOLVED:SINGLE_IMPL` で
+**誤って確定**していた（実際に動くのはラムダ）。
+
+直し方は Q11 と同じく書き手の側で、`BindingNames.functionalKeysOf(ラムダの型, SAM)` が
+ラムダの型とその親インターフェース（型引数を具体化したまま）を辿り、SAM と上書き同等な抽象メソッド
+すべての鍵を返す。判定は `IMethodBinding.isSubsignature`（JLS 8.4.2）に任せる。Q11 の
+再宣言（`StringHandler extends Handler<String>`）もこの判定に含まれるので、`overriddenKeysOf` の
+`includeSameSignature` 版は要らなくなり、消した。交差型（`(Runnable & Serializable) () -> ...`）は
+成分ごとに辿る。
+
+M 行の中身が変わるので analysis の版を v26 に上げた（`test/demo` の `fx.lambda.TwoParents`）。
+
+### Q16. 呼び戻しの契約に渡したメソッド参照が、参照先の宣言に確定していた
+
+Q12 で `r.run()` のような関数型インターフェース経由の呼び出しは直したが、jar の中から呼び戻される
+経路（`CallbackContracts`）は別に値を引いており、参照先の宣言をそのまま呼び戻し先にしていた。
+
+```java
+new Thread(this::hook).start();   // 子クラスが hook を上書きしていても CallbackRefs.hook だけ
+daos.forEach(Dao::describe);      // 本体の無い Dao.describe が RESOLVED:CALLBACK の葉になる
+```
+
+呼び戻し先の決め方を `CallResolver.functionalResolution` と同じにした（`CallbackContracts.FunctionalLookup`
+として渡す。決め方を 2 か所に持たないため）。束縛したレシーバの具象型が分かればその実装に確定し
+（`new Thread(dao::describe)` は `RESOLVED:CALLBACK`）、分からなければ上書き候補を全部出す。
+候補が複数の行は確定に見せないよう、`resolved-by` を `UNEXPANDED:CALLBACK`、注記を
+`[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: ...` にする。
+通常の CHA と同じく、候補の行からその先へは降りない（候補数^深さで爆発するため）。
+
+ただし**参照先の宣言が jar の中**（`list.forEach(Runnable::run)` の `Runnable#run`）なら、上書き候補は
+`Runnable` の全実装になる。これは契約表の「jar の型の全実装のような広い候補は出さない」
+（[callback-contracts.md](callback-contracts.md) の「追える条件」）に反するので、従来どおり辺を張らない。
+参照を書いた箇所からの辺（`Main.lambdas → Starter.Job.run` の CHA）は別にあるので、本体の呼び出しは落ちない。
+
+`test/demo` の `fx.lambda.CallbackRefs`。
+
+### Q17. インターフェースのフィールドの中のラムダが `lambda$new$N` になっていた
+
+```java
+interface Defaults { Runnable DEFAULT = () -> ...; }
+```
+
+インターフェースのフィールドは `static` と書かなくても static（JLS 9.3）で、初期化は `<clinit>` で走る。
+javac は `lambda$static$0` と付け、`FactVisitor` も生成の辺を `<clinit>` から張る。ところが
+`LambdaNames.enclosingOf` は書かれた修飾子（`FieldDeclaration.getModifiers()`）を見ていたので
+`lambda$new$0` になり、Q13 の enum 定数と同じ「ツールの中での食い違い」が残っていた。
+`FactVisitor.isStaticField`（バインディングで判定する。まさにこの落とし穴のためにある）を使うようにした。
+analysis の版は Q15 と同じ v26（`test/demo` の `fx.lambda.Defaults`）。
+
+### Q18. 注記と methods.csv の表記を直した
+
+- **型名で書いたメソッド参照の注記**。`Dao::describe` のように型名で書いた参照が CHA になったとき、
+  理由が `type name (static)` と出ていた。レシーバの種別 `RecvKind.TYPE` は static 呼び出しと共用だが、
+  static 呼び出しは静的束縛なので CHA にならず、この理由が出るのは型名で書いたメソッド参照だけである。
+  その参照のレシーバは呼び出し時の第 1 引数で、static 呼び出しではない（JLS 15.13.1）。
+  `type name (unbound method reference)` に改めた。読み手が作る文言なのでキャッシュの版は上げていない
+- **`unresolvedCause` の判定順**。`InventoryReport` は `NO_IMPL` を `LAMBDA` より先に見ていたので、
+  ソース上に実装クラスが無くラムダだけが実装している関数型インターフェース（Q15 の `Closer`）への
+  呼び出しが、methods.csv では `[UNEXPANDED:NO_IMPL]`、call-hierarchy.csv では `LAMBDA` 系と食い違っていた。
+  注記（`StreamingTreeWalker.noteFor`）と同じく `LAMBDA` を先に見る
+

@@ -321,19 +321,6 @@ final class BindingNames {
      * 判定そのものが成り立たない。
      */
     List<String> overriddenKeysOf(IMethodBinding binding) {
-        return overriddenKeysOf(binding, false);
-    }
-
-    /**
-     * {@link #overriddenKeysOf(IMethodBinding)} と同じだが、{@code includeSameSignature} が true なら
-     * シグネチャが自分と同じ上書きも含める。
-     *
-     * 関数型インターフェースのメソッド（M 行）が使う。読み手はそちらを型を辿らずに
-     * 鍵の完全一致だけで引くので、{@code interface MyRunnable extends Runnable { void run(); }} のような
-     * シグネチャが同じ再宣言でも、親の宣言の鍵（{@code Runnable#run()}）を書いておかないと当たらない
-     * （{@code docs/lambda-expansion-qa.md} の Q11）。
-     */
-    List<String> overriddenKeysOf(IMethodBinding binding, boolean includeSameSignature) {
         if (binding == null || binding.isConstructor()
                 || Modifier.isStatic(binding.getModifiers())
                 || Modifier.isPrivate(binding.getModifiers())) {
@@ -368,8 +355,69 @@ final class BindingNames {
                 // シグネチャが同じならキーの照合だけで引ける。書いても嵩むだけである。
                 // 書くのは型引数の置換でシグネチャが食い違う場合だけ
                 String key = ref.key();
-                if ((includeSameSignature || !ref.signature().equals(selfSignature)) && seen.add(key)) {
+                if (!ref.signature().equals(selfSignature) && seen.add(key)) {
                     keys.add(key);
+                }
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * 関数型インターフェース {@code fnType} のラムダ／メソッド参照が実装するメソッドの鍵すべて。
+     *
+     * JLS 9.8 では、関数型インターフェースの抽象メソッドは1つとは限らない。親から継承した
+     * 抽象メソッドのうち、互いに上書き同等（シグネチャが一方の subsignature）なものはまとめて
+     * 1つの関数型を成し、ラムダはその<b>すべて</b>を実装する。JDT の
+     * {@code getFunctionalInterfaceMethod} はそのうちの1つしか返さないので、残りをここで集める。
+     * <pre>
+     *   interface A { void go(); }  interface B { void go(); }  interface C extends A, B {}
+     *   C c = () -> ...;   // A#go() と B#go() の両方を実装する（SAM は片方だけ）
+     *
+     *   interface StrFoo extends Foo&lt;String&gt; { void accept(String s); }
+     *   // StrFoo#accept(java.lang.String) と Foo#accept(java.lang.Object) の両方
+     * </pre>
+     * 読み手（M 行）は鍵の完全一致で引くので、親の宣言の鍵が無いと、親の型で受けた変数への
+     * 呼び出しでラムダが見えず、別の実装1件に誤って確定する（docs/lambda-expansion-qa.md の Q11・Q15）。
+     * 親型は型引数を具体化したまま辿り、上書き同等かの判定は
+     * {@code IMethodBinding.isSubsignature}（JLS 8.4.2）に任せる。
+     *
+     * @return 先頭は SAM 自身の鍵。SAM の鍵を作れなければ空
+     */
+    List<String> functionalKeysOf(ITypeBinding fnType, IMethodBinding sam) {
+        MethodRef self = toRef(sam);
+        if (self == null) {
+            return List.of();
+        }
+        List<String> keys = new ArrayList<>(2);
+        keys.add(self.key());
+        if (fnType == null) {
+            return keys;
+        }
+        // 交差型（(Runnable & Serializable) () -> ...）は、各成分とその親を見る
+        List<ITypeBinding> roots = fnType.isIntersectionType()
+                ? List.of(fnType.getTypeBounds()) : List.of(fnType);
+        Set<String> seenTypes = new HashSet<>();
+        for (ITypeBinding root : roots) {
+            List<ITypeBinding> types = new ArrayList<>();
+            types.add(root);
+            types.addAll(supertypesOf(root));
+            for (ITypeBinding type : types) {
+                if (!type.isInterface() || !seenTypes.add(keyOf(type))) {
+                    continue;
+                }
+                for (IMethodBinding candidate : type.getDeclaredMethods()) {
+                    int mods = candidate.getModifiers();
+                    if (!Modifier.isAbstract(mods) || Modifier.isStatic(mods)
+                            || !candidate.getName().equals(sam.getName())
+                            || candidate.getParameterTypes().length != sam.getParameterTypes().length
+                            || !(sam.isSubsignature(candidate) || candidate.isSubsignature(sam))) {
+                        continue;
+                    }
+                    MethodRef ref = toRef(candidate);
+                    if (ref != null && !keys.contains(ref.key())) {
+                        keys.add(ref.key());
+                    }
                 }
             }
         }

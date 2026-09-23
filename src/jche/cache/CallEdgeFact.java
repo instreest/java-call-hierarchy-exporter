@@ -13,7 +13,8 @@ import jche.util.Names;
  *                    （jche.graph.BindKind）。finalclass / super も含みうる
  * @param recvKind    レシーバの由来（{@link RecvKind}）。CHAで絞れなかった理由の説明に使う。
  *                    構文上の分類であって値ではないので、こちら（analysis 側）に残す
- * @param lambdaDepth 呼び出し箇所を囲むラムダ式の深さ。0 ならラムダの外
+ * @param lambdaDepth 呼び出し箇所を囲む、合成メソッドに<b>できなかった</b>ラムダ式の深さ。
+ *                    合成メソッドにしたラムダの本体の中は 0（本体が自分のメソッドになるため）
  *
  * <p>レシーバと実引数の出所・識別キー・囲む条件分岐は<b>値</b>なので、この行には無い。
  * dataflow 側の P 行（{@link CallSiteValues}）が持ち、読み手がブロック単位で突き合わせる
