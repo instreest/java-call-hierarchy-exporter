@@ -231,9 +231,12 @@ public final class CacheFormat {
      * v25 でラムダの合成メソッドの通し番号を javac と同じ後行順にし、enum 定数の引数の中の
      * ラムダを {@code lambda$static$N} にした（同 Q13）。名前は D 行・C 行・M 行に焼き込まれる。
      * v26 で M 行を、上書きの関係に無い2つの親から継承した同じ抽象メソッドの鍵でも書くようにし
-     * （同 Q15）、インターフェースのフィールドの中のラムダを {@code lambda$static$N} にした（同 Q17）
+     * （同 Q15）、インターフェースのフィールドの中のラムダを {@code lambda$static$N} にした（同 Q17）。
+     * v27 でインターフェース（アノテーション型を含む）に暗黙のコンストラクタの D 行を合成しないようにした
+     * （JLS 8.8.9。{@code docs/jls-conformance-qa.md} の Q25）。古いキャッシュを再利用すると、
+     * そのファイルのインターフェースにだけ呼ばれない {@code <init>} が残る
      */
-    public static final String VERSION = "jche-cache-v26";
+    public static final String VERSION = "jche-cache-v27";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

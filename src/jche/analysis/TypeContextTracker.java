@@ -163,6 +163,13 @@ final class TypeContextTracker {
      * 明示コンストラクタが1つも無ければ、暗黙のデフォルトコンストラクタが
      * 1つ存在する。匿名クラスは明示コンストラクタを書けない言語仕様のため、
      * 常にこちらに倒れる（曖昧さは生じない）。
+     *
+     * ただしインターフェース（アノテーション型を含む）にはコンストラクタが無い。
+     * デフォルトコンストラクタはクラスにだけ暗黙に宣言される（JLS 8.8.9）もので、
+     * インターフェースの本体にはコンストラクタを宣言できず（JLS 9.1.4）、インスタンスも作れない。
+     * 合成すると、呼ばれることの無い {@code <init>} の宣言と、そこから親への暗黙の {@code super()} が
+     * 生じる。インターフェースのフィールドは暗黙に static（JLS 9.3）なので、インスタンス初期化子の
+     * 複製先（rootConstructors）も要らない。
      */
     private TypeContext buildTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
         List<MethodRef> roots = new ArrayList<>();
@@ -180,7 +187,7 @@ final class TypeContextTracker {
                 roots.add(ref);
             }
         }
-        if (!anyConstructor) {
+        if (!anyConstructor && (tb == null || !tb.isInterface())) {
             synthesizeImplicitConstructor(tb, declLine, roots);
         }
         return new TypeContext(tb, roots, declLine);

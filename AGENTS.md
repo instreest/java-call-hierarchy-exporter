@@ -53,7 +53,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
 | `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること。文字コードの変更・形式の版が古い・壊れたキャッシュでは再利用せず捨てること。中断した実行から引き継ぐこと。期待値ファイルは持たない |
 | `bash test/cli/run.sh` | 起動コマンドと対話モードの検査。メニューへの答えをパイプで流し込む |
-| `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
+| `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。Q25）。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
 | `bash test/warnings/run.sh` | 確認してほしいことの案内（出力フォルダの `warnings.txt`）の検査。正常な状態では作らないこと、依存 jar の不足・ローカルリポジトリの欠け・設定の指定先の欠け・コンパイルエラー・実行の失敗で作り該当の項目が載ること、`warnings.txt` の有無が `run.log` の `[WARN]` / `[ERROR]` の有無と一致すること。使い捨てのプロジェクトをその場で作る |
 | `bash test/cachevalue/run.sh` | dataflow キャッシュの値の符号化（`escape` / `unescape`）が往復し、行を壊さないこと |
 | `bash test/contracts/run.sh` | 同梱の契約表（`JdkCallbacks` / `BundledFrameworkEntries`）の検査。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが実在すること（実行中の JDK と照合） |
