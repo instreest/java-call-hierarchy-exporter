@@ -229,9 +229,11 @@ public final class CacheFormat {
      * 宣言の鍵でも書くようにした（{@code docs/lambda-expansion-qa.md} の Q11）。
      * 古いキャッシュを再利用すると、親の型で受けた呼び出しでラムダが無視される。
      * v25 でラムダの合成メソッドの通し番号を javac と同じ後行順にし、enum 定数の引数の中の
-     * ラムダを {@code lambda$static$N} にした（同 Q13）。名前は D 行・C 行・M 行に焼き込まれる
+     * ラムダを {@code lambda$static$N} にした（同 Q13）。名前は D 行・C 行・M 行に焼き込まれる。
+     * v26 で M 行を、上書きの関係に無い2つの親から継承した同じ抽象メソッドの鍵でも書くようにし
+     * （同 Q15）、インターフェースのフィールドの中のラムダを {@code lambda$static$N} にした（同 Q17）
      */
-    public static final String VERSION = "jche-cache-v25";
+    public static final String VERSION = "jche-cache-v26";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

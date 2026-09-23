@@ -227,7 +227,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:CHA] parameter (passed in from outside the method)` | レシーバが呼び出し元から渡された引数 |
 | `[UNEXPANDED:CHA] field` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
 | `[UNEXPANDED:CHA] local variable` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
-| `[UNEXPANDED:CHA] own class (this)` / `type name (static)` / `receiver unknown` | それぞれ `this`・暗黙のレシーバ、static 呼び出し、配列要素やキャスト式など |
+| `[UNEXPANDED:CHA] own class (this)` / `type name (unbound method reference)` / `receiver unknown` | それぞれ `this`・暗黙のレシーバ、型名で書いたメソッド参照（`Dao::describe`。レシーバは呼び出し時の第1引数）、配列要素やキャスト式など |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | 中身を書いたクラスがソース上に1つも無い |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名)` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` | その関数型インターフェースをラムダかメソッド参照が実装している |
@@ -294,6 +294,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[EXTERNAL] type guessed from an import (unverified)` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: …` | 同じく契約で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を1つに決められなかった。候補を1件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
 | `type resolution failed …` | 呼び出し先の型を特定できなかった行（後述）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（後述）。同じく専用の行 |
 
@@ -370,7 +371,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。渡したメソッド参照の実装を1つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
 | — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
 | — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
@@ -386,11 +387,14 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 
 ## ラムダ式・メソッド参照
 
-ラムダ式の本体は、javac と同じ名前（`lambda$囲みメソッド名$通し番号`）を付けた
+ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
 **合成メソッド**として1つのノードにします（`methods.csv` には出しません。
-インスタンスを通じて呼び出せるメソッドではないため）。通し番号は javac と同じく本体を読み終えた順
-（入れ子は内側が先）で、enum 定数の引数の中は `lambda$static$N` です。javac がメソッド参照の一部
-（配列の `Type[]::new` など）を内部でラムダに変換した場合は、それ以降の番号がずれます。
+インスタンスを通じて呼び出せるメソッドではないため）。通し番号は javac 21 と同じく型ごとに本体を読み終えた順
+（入れ子は内側が先）で、static 初期化子・static フィールド（インターフェースのフィールドを含む）・
+enum 定数の引数の中は `lambda$static$N` です。番号の振り方は javac の版で変わる（JDK 25 の javac は
+囲みメソッド名ごと・外側が先）ほか、直列化可能なラムダや、javac がメソッド参照の一部（配列の `Type[]::new` など）を
+内部でラムダに変換した場合もずれるので、番号まで一致するとは限りません
+（[docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md) の Q13）。
 
 ```csv
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -431,6 +435,8 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 `new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
 （`RESOLVED:CALLBACK`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
+渡したのが上書きされうるメソッドへのメソッド参照（`new Thread(this::hook).start()`）で、動く実装を
+1つに決められないときは、上書き候補を全部出します（`UNEXPANDED:CALLBACK`）。
 自前のフレームワーク分は `contracts.files` に表を書いて足せます。
 
 ---
@@ -705,7 +711,7 @@ the list and `grep` for it on the hierarchy side.
 | `[UNEXPANDED:CHA] parameter (passed in from outside the method)` | The receiver is an argument passed in by the caller |
 | `[UNEXPANDED:CHA] field` | The receiver is a field. If it is injected by DI, a [plugin](docs/instance-analysis-plugin.md) can narrow it down |
 | `[UNEXPANDED:CHA] local variable` | The receiver is a local variable (a `new` inside the same method is already tracked; this is what is left) |
-| `[UNEXPANDED:CHA] own class (this)` / `type name (static)` / `receiver unknown` | Respectively `this` or an implicit receiver, a static call, and things like array elements or cast expressions |
+| `[UNEXPANDED:CHA] own class (this)` / `type name (unbound method reference)` / `receiver unknown` | Respectively `this` or an implicit receiver, a method reference written with a type name (`Dao::describe`, whose receiver is the first argument at the call), and things like array elements or cast expressions |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | No class in the source writes the body |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (framework)` | A type whose implementation is generated at build time by annotation processing (see [docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md)) |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` | A lambda or method reference implements that functional interface |
@@ -773,6 +779,7 @@ grepping for its tag.
 | `[EXTERNAL] type guessed from an import (unverified)` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import`. Neither the method's existence nor the overload was checked, so **the guess may be wrong** |
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)). The inside of the jar was not read |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: ...` | Also connected by a contract, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
 | `type resolution failed ...` | A row for a call whose callee type could not be determined (see below). Not a note but a row of its own |
 | `external-ref:EXACT` and the like | A row of the external reference scan (see below). Also a row of its own |
 
@@ -851,7 +858,7 @@ The label here becomes the second half of the `resolved-by` column of `call-hier
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | The bean definitions of the DI container (Spring) narrowed it to one. `SPRING_DI_QUALIFIER` means the bean name from `@Qualifier` / `@Resource(name=...)` decided it ([docs/spring-di-qa.md](docs/spring-di-qa.md)) |
 | 6 | `CHA` | Several candidates remain (low confidence) |
 | — | `GENERATED_IMPL:name` | A type whose implementation is generated at compile time by annotation processing (a special case of `NO_IMPL`) |
-| — | `CALLBACK` | Connected across the inside of a jar by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)) |
+| — | `CALLBACK` | Connected across the inside of a jar by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, it is `UNEXPANDED:CALLBACK` |
 | — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` resolved to the method or constructor named through reflection / class initialization through `Class.forName` (connected to `<clinit>`) |
 | — | `EXTERNAL_GUESS` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import` (**unverified**) |
 | — | `LAMBDA` | A lambda or method reference implements it and which one runs is undetermined. This is a rewording used only in the `resolved-by` column, and it always appears as `UNEXPANDED:LAMBDA` |
@@ -868,12 +875,15 @@ What static analysis can and cannot narrow down is written up in
 
 ## Lambdas and method references
 
-The body of a lambda becomes one node, a **synthetic method** named the way javac names it
+The body of a lambda becomes one node, a **synthetic method** with a name modeled on javac's
 (`lambda$enclosingMethod$serial`). It is not listed in `methods.csv`, because it is not a method you can
-call through an instance. The serial is assigned the way javac does it, in the order the bodies are
-finished (an inner lambda comes before its outer one), and a lambda inside an enum constant's arguments is
-`lambda$static$N`. When javac turns some method references (such as an array `Type[]::new`) into lambdas
-internally, the serials after that point differ.
+call through an instance. The serial is assigned the way javac 21 does it, per type and in the order the
+bodies are finished (an inner lambda comes before its outer one), and a lambda inside a static initializer,
+a static field (including an interface field) or an enum constant's arguments is `lambda$static$N`.
+The serials do not always match javac: the numbering scheme changes between javac versions (the JDK 25
+javac counts per enclosing method name and numbers the outer lambda first), and serializable lambdas or
+method references that javac turns into lambdas internally (such as an array `Type[]::new`) also shift them
+([docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md), Q13).
 
 ```csv
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -919,6 +929,9 @@ captured values, so nothing is narrowed there (captured values are fixed when th
 Shapes **called back from inside a jar**, such as `new Thread(task).start()` or `executor.submit(task)`,
 are connected through a contract table saying "`Thread#start()` calls `run()` on the `Runnable` you
 passed" (`RESOLVED:CALLBACK`; [docs/callback-contracts.md](docs/callback-contracts.md)).
+When what you pass is a method reference to a method that can be overridden (`new Thread(this::hook).start()`)
+and the implementation that runs cannot be narrowed to one, all override candidates are written
+(`UNEXPANDED:CALLBACK`).
 Add your own frameworks by writing a table in `contracts.files`.
 
 ---

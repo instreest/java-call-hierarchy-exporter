@@ -39,10 +39,12 @@ at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:C
 | `Runnable` 実装クラスを `new` して渡す | `new Thread(new Job()).start()` | ○ |
 | `Thread` を継承して `run` を上書き | `new Worker().start()` | ○ |
 | ラムダを渡す | `pool.submit(() -> ...)` | ○ |
+| レシーバを束縛したメソッド参照を渡す | `new Thread(dao::describe).start()` | `dao` の具象型が分かれば ○（その実装） |
+| 上書きされうるメソッドへのメソッド参照で、具象型が分からない | `new Thread(this::hook).start()`、`daos.forEach(Dao::describe)` | 上書き候補を全部出す（`UNEXPANDED:CALLBACK`。参照先の宣言がソースにあるときだけ） |
 | ローカル変数に入れて渡す | `Runnable t = new Job(); new Thread(t).start();` | ○ |
 | 引数で受け取ったものを渡す | `void kick(Runnable r) { new Thread(r).start(); }` | 呼び出し元でその引数が分かる経路なら ○ |
 | `Runnable` 型のフィールド（出所が1つに定まらない） | `this.task` を後から差し替える | × |
-| `list.forEach(Runnable::run)` | 要素の `run` を呼ぶが、要素が何かは分からない | × |
+| `list.forEach(Runnable::run)` | 要素の `run` を呼ぶが、要素が何かは分からない。参照先の `Runnable#run` は jar の中なので、上書き候補は `Runnable` の全実装になる | × |
 
 分からないときは辺を張りません。`Runnable` の全実装を候補に並べるような広い候補は出しません
 （誤って絞るより、絞れないと分かる方が害が少ないため）。

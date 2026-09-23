@@ -13,7 +13,8 @@ package jche.cache;
  * @param fieldName    フィールド名
  * @param access       read / write（代入の左辺）/ readwrite（複合代入・++/--）
  * @param mods         そのフィールドの修飾子（他の型のフィールドでもバインディングから分かる）
- * @param lambdaDepth  参照箇所を囲むラムダ式の深さ（0=ラムダの外）
+ * @param lambdaDepth  参照箇所を囲む、合成メソッドにできなかったラムダ式の深さ
+ *                     （合成メソッドにしたラムダの本体の中は 0）
  */
 public record FieldAccessFact(int line, MethodRef caller, String ownerTypeFqn, String fieldName,
                               String access, String mods, int lambdaDepth) {

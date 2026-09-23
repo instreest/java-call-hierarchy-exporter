@@ -197,11 +197,13 @@ public final class InventoryReport {
             count++;
             // タグは call-hierarchy.csv の注記と揃える。同じ「絞れなかった」を
             // 一覧と階層で別の名前で書くと、片方で見つけた呼び出しを
-            // もう片方で追えなくなる
-            String cause = noImpl ? StreamingTreeWalker.CAUSE_NO_IMPL
+            // もう片方で追えなくなる。判定の順も注記（StreamingTreeWalker.noteFor）と揃える。
+            // ラムダが実装しているメソッドはソース上に実装クラスが無くても（NO_IMPL でも）、
+            // 「実装が無い」のではなく「どのラムダが動くか未特定」なので LAMBDA を先に見る
+            String cause = fnImpl && !multi ? StreamingTreeWalker.CAUSE_LAMBDA
+                    : noImpl ? StreamingTreeWalker.CAUSE_NO_IMPL
                     : generated ? StreamingTreeWalker.generatedCause(
                             res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length()))
-                    : fnImpl && !multi ? StreamingTreeWalker.CAUSE_LAMBDA
                     : StreamingTreeWalker.UNEXPANDED + "CHA] " + RecvKind.describe(g.recvKindOf(e));
             // 同じ理由は1回だけ並べる。件数はcount側で分かる
             if (causes.indexOf(cause) < 0) {

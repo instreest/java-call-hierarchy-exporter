@@ -127,17 +127,37 @@ public final class CallbackContracts {
         return !byCallee.isEmpty() && byCallee.containsKey(methods.key(calleeId));
     }
 
-    /** 契約で繋がった1件: 呼び戻されるメソッドと、当たった契約の文言（注記用） */
-    public record Match(int target, String contract) {
+    /**
+     * 契約で繋がった1件: 呼び戻されるメソッドと、当たった契約の文言（注記用）。
+     *
+     * @param candidates 同じ値から引いた候補の数。1 なら確定。2 以上は、渡した値が
+     *                   上書き可能なメソッドへのメソッド参照で、実際に動く実装を1つに
+     *                   決められなかった（上書き候補を全部並べた）ことを表す
+     */
+    public record Match(int target, String contract, int candidates) {
+        public boolean isMultiple() {
+            return candidates > 1;
+        }
+    }
+
+    /**
+     * ラムダ／メソッド参照が渡された値の解決。{@link CallResolver} の
+     * 関数型インターフェース経由の呼び出しと同じ判断を使う（決め方を2か所に持たないため）。
+     */
+    @FunctionalInterface
+    public interface FunctionalLookup {
+        /** 値がラムダ／メソッド参照でなければ null */
+        Resolution resolve(String origin, DataflowContext ctx);
     }
 
     /**
      * その辺の契約で呼び戻されるメソッド。無ければ空。
      *
-     * @param ctx この経路で分かっていること（引数で渡ってきた値など）。無ければ null。
-     *            null でも、{@code new} した型やラムダのように経路に依らず決まるものは返す
+     * @param ctx        この経路で分かっていること（引数で渡ってきた値など）。無ければ null。
+     *                   null でも、{@code new} した型やラムダのように経路に依らず決まるものは返す
+     * @param functional ラムダ／メソッド参照の解決（{@link CallResolver} から渡す）
      */
-    public List<Match> matchesOf(int edgeIndex, DataflowContext ctx) {
+    public List<Match> matchesOf(int edgeIndex, DataflowContext ctx, FunctionalLookup functional) {
         List<Contract> contracts = byCallee.get(methods.key(graph.calleeOf(edgeIndex)));
         if (contracts == null) {
             return List.of();
@@ -146,11 +166,14 @@ public final class CallbackContracts {
         for (Contract c : contracts) {
             // 呼び出し先には一致した。繋がらなくても「表の綴りは合っている」と言えるので分けて数える
             usage.markReached(c.row());
+            String text = shortKey(c.calleeKey()) + " calls " + c.callbackSig();
             for (String origin : valuesAt(edgeIndex, c)) {
-                int id = callbackTargetOf(origin, c.callbackSig(), ctx);
-                if (id >= 0 && methods.hasSource(id) && found.stream().noneMatch(m -> m.target() == id)) {
-                    usage.markApplied(c.row());
-                    found.add(new Match(id, shortKey(c.calleeKey()) + " calls " + c.callbackSig()));
+                int[] ids = callbackTargetsOf(origin, c.callbackSig(), ctx, functional);
+                for (int id : ids) {
+                    if (id >= 0 && methods.hasSource(id) && found.stream().noneMatch(m -> m.target() == id)) {
+                        usage.markApplied(c.row());
+                        found.add(new Match(id, text, ids.length));
+                    }
                 }
             }
         }
@@ -209,13 +232,26 @@ public final class CallbackContracts {
     }
 
     /**
-     * 値の出所から、呼び戻されるメソッドを決める。
-     * ラムダ／メソッド参照ならその本体、型が決まるならその型の実装
+     * 値の出所から、呼び戻されるメソッドを決める。決まらなければ空。
+     *
+     * ラムダならその本体。メソッド参照は参照先が上書き可能なメソッドなら、実際に動くのは
+     * レシーバの実行時クラスの実装（JLS 15.13.3）なので、通常の呼び出しと同じく
+     * 束縛したレシーバの具象型か上書き候補から引く（候補が複数なら全部返す。ただし参照先の
+     * 宣言が jar の中なら、その全実装になるので返さない）。
+     * 参照先の宣言をそのまま返すと、上書きした実装や、抽象メソッドの先の実装が落ちる
+     * （docs/lambda-expansion-qa.md の Q16）。型が決まる値ならその型の実装
      */
-    private int callbackTargetOf(String origin, String callbackSig, DataflowContext ctx) {
-        int functional = dataflow.functionalTargetOf(origin, ctx);
-        if (functional >= 0) {
-            return functional;
+    private int[] callbackTargetsOf(String origin, String callbackSig, DataflowContext ctx,
+                                    FunctionalLookup functional) {
+        Resolution viaFunctional = functional.resolve(origin, ctx);
+        if (viaFunctional != null) {
+            if (viaFunctional.isMultiple() && !declaredInSource(origin, ctx)) {
+                // 参照先の宣言が jar の中（list.forEach(Runnable::run) の Runnable#run）なら、
+                // その全実装を並べることになる。jar の型の全実装のような広い候補は出さない
+                // （docs/callback-contracts.md の「追える条件」）
+                return new int[0];
+            }
+            return viaFunctional.targets();
         }
         String fqn = dataflow.concreteTypeOf(origin, ctx);
         // 契約は呼び戻されるメソッドの「シグネチャ」だけを書く（それを宣言している型は
@@ -223,6 +259,14 @@ public final class CallbackContracts {
         // 上書きの引きもシグネチャで行う。キーの照合だけで引くと、型引数を具体化した実装
         // （class OrderPrinter implements Consumer<Order> の accept(Order)）が
         // 消去済みの契約（accept(java.lang.Object)）と一致せず、辺が静かに落ちる
-        return (fqn == null) ? -1 : graph.implementationOfSignature(fqn, callbackSig);
+        int id = (fqn == null) ? -1 : graph.implementationOfSignature(fqn, callbackSig);
+        return (id < 0) ? new int[0] : new int[] {id};
+    }
+
+    /** 渡した値がメソッド参照で、その参照先（コンパイル時宣言）がソースにあるか */
+    private boolean declaredInSource(String origin, DataflowContext ctx) {
+        String functional = dataflow.functionalOriginOf(origin, ctx);
+        int declared = (functional == null) ? -1 : methods.idOf(Origin.valueOf(functional));
+        return declared >= 0 && methods.hasSource(declared);
     }
 }

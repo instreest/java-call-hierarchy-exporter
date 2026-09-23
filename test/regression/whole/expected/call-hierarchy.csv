@@ -135,7 +135,7 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
-at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -249,6 +249,16 @@ at fx.generic.RawPrinter.accept(RawPrinter.java:10),RawPrinter.rawPrinted,RESOLV
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CALLBACK,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Thread#start() calls run()
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CALLBACK,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Thread#start() calls run()
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: receiver unknown
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: receiver unknown
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CALLBACK,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CALLBACK,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,RESOLVED:CALLBACK,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe
 at fx.lambda.Captured.viaCapture(Captured.java:23),Captured.captureOuter,RESOLVED:STATIC_BOUND:PRIVATE,1,Captured.viaCapture,Captured.captureOuter
 at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.runWithOther,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther
 at fx.lambda.Captured.runWithOther(Captured.java:31),Captured.lambda$captureOuter$0,RESOLVED:DATAFLOW_LAMBDA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0
@@ -256,6 +266,8 @@ at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),OrderDaoImpl.descr
 at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.lambda$captureOuter$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.lambda$captureOuter$0
 at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Captured.viaCapture,Captured.captureOuter,Captured.lambda$captureOuter$0,OrderDaoImpl.describe
+at fx.lambda.Defaults.<clinit>(Defaults.java:11),Defaults.lambda$static$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Defaults.<clinit>,Defaults.lambda$static$0
+at fx.lambda.Defaults.lambda$static$0(Defaults.java:11),OrderDaoImpl.describe,RESOLVED:NO_OVERRIDE,2,Defaults.<clinit>,Defaults.lambda$static$0,OrderDaoImpl.describe
 at fx.lambda.Holder.<init>(Holder.java:27),Holder.lambda$new$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.Holder,Holder.lambda$new$0
 at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.Holder,Holder.lambda$new$0,OrderDaoImpl.describe
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -280,7 +292,7 @@ at fx.lambda.Holder.lambda$viaForEach$3(Holder.java:51),OrderDaoImpl.findById,RE
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.Nested.viaNested(Nested.java:20),Nested.lambda$viaNested$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.viaNested,Nested.lambda$viaNested$1
 at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
 at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
@@ -300,8 +312,8 @@ at fx.lambda.Redeclared.dispatch(Redeclared.java:22),Redeclared.lambda$viaSuperI
 at fx.lambda.Redeclared.lambda$viaSuperInterface$0(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Redeclared.viaSuperInterface,Redeclared.dispatch,Redeclared.lambda$viaSuperInterface$0,OrderDaoImpl.describe
 at fx.lambda.Refs.viaBoundRef(Refs.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Refs.viaBoundRef,OrderDaoImpl.describe
 at fx.lambda.Refs.viaBoundRef(Refs.java:28),OrderDaoImpl.describe,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaBoundRef,OrderDaoImpl.describe
-at fx.lambda.Refs.viaUnboundRef(Refs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (static)
-at fx.lambda.Refs.viaUnboundRef(Refs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.lambda.Refs.viaUnboundRef(Refs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.Refs.viaUnboundRef(Refs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.Refs.viaUnboundRef(Refs.java:33),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
 at fx.lambda.Refs.viaUnboundRef(Refs.java:33),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
 at fx.lambda.Refs.viaExprBody(Refs.java:37),Refs.lambda$viaExprBody$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Refs.viaExprBody,Refs.lambda$viaExprBody$0
@@ -323,6 +335,16 @@ at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe
 at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
 at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),TwoParents.lambda$viaDoor$0,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.lambda$viaDoor$0
+at fx.lambda.TwoParents.lambda$viaDoor$0(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,TwoParents.viaDoor,TwoParents.lambda$viaDoor$0,OrderDaoImpl.describe
+at fx.lambda.TwoParents.viaDoor(TwoParents.java:17),TwoParents.viaOpener,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.viaOpener
+at fx.lambda.TwoParents.viaOpener(TwoParents.java:22),TwoParents.lambda$viaDoor$0,RESOLVED:DATAFLOW_LAMBDA,2,TwoParents.viaDoor,TwoParents.viaOpener,TwoParents.lambda$viaDoor$0
+at fx.lambda.TwoParents.lambda$viaDoor$0(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,TwoParents.viaDoor,TwoParents.viaOpener,TwoParents.lambda$viaDoor$0,OrderDaoImpl.describe
+at fx.lambda.TwoParents.viaDoor(TwoParents.java:18),TwoParents.viaCloser,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.viaCloser
+at fx.lambda.TwoParents.viaCloser(TwoParents.java:26),TwoParents.lambda$viaDoor$0,RESOLVED:DATAFLOW_LAMBDA,2,TwoParents.viaDoor,TwoParents.viaCloser,TwoParents.lambda$viaDoor$0
+at fx.lambda.TwoParents.lambda$viaDoor$0(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,TwoParents.viaDoor,TwoParents.viaCloser,TwoParents.lambda$viaDoor$0,OrderDaoImpl.describe
+at fx.lambda.TwoParents.openAny(TwoParents.java:30),PlainOpener.act,UNEXPANDED:LAMBDA,1,TwoParents.openAny,PlainOpener.act,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
+at fx.lambda.PlainOpener.act(PlainOpener.java:12),PlainOpener.opened,RESOLVED:NO_OVERRIDE,2,TwoParents.openAny,PlainOpener.act,PlainOpener.opened
 at fx.model.Color.<init>(Color.java:14),Registry.register,RESOLVED:STATIC_BOUND:STATIC,3,Color.<clinit>,Color$1.Color$1,Color.Color,Registry.register
 at fx.model.Color.<init>(Color.java:14),Registry.register,RESOLVED:STATIC_BOUND:STATIC,2,Color.<clinit>,Color.Color,Registry.register
 at fx.reflect.Invoker.byConstant(Invoker.java:14),Target.<clinit>,RESOLVED:REFLECTION_INIT,1,Invoker.byConstant,Target.<clinit>

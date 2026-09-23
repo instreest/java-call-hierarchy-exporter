@@ -154,7 +154,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 値 | 条件 |
 |---|---|
 | `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CONTRACT` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
-| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` 等、候補をどう集めたかのラベル） |
+| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（契約で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
 | `UNEXPANDED:LAMBDA` | 候補は1件だが、ラムダ／メソッド参照も同じインターフェースを実装しており未特定。ラベルをそのまま出すと確定に見えるのでこう言い換える |
 | `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED` / `OUTSIDE_METHOD`）。`level` は `1` |
 | `EXTERNAL_USAGE:{照合の種類}` | 被参照スキャンの行（`EXACT` / `INHERITED` / `IMPLICIT_CTOR`）。`level` は `1` |
@@ -174,6 +174,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
 | 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
+| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 契約: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
 
 1件に確定した呼び出しの注記は付けない（解決方法は `resolved-by` 列に出る）。
 注記に残る `[RESOLVED:*]` は、繋いだ契約という列に無い情報を持つ `[RESOLVED:CALLBACK] 契約: …` だけ。
@@ -187,7 +188,7 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
 
 `{理由}` はレシーバの由来: `return value (factory method etc.)` /
 `parameter (passed in from outside the method)` / `field` / `local variable` /
-`own class (this)` / `type name (static)` / `receiver unknown`。
+`own class (this)` / `type name (unbound method reference)` / `receiver unknown`。
 理由を由来で出すのは、**次に調べる場所が由来ごとに違う**から（戻り値ならファクトリの
 `return`、引数なら呼び出し元、フィールドなら代入箇所とDI設定）。注記は失敗の報告ではなく
 次の調査手順として書く。
@@ -669,14 +670,21 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
   （`interface StringHandler extends Handler<String> { void handle(String v); }` のラムダは
   `StringHandler#handle(java.lang.String)` と `Handler#handle(java.lang.Object)` の両方）。
   親の型で受けた変数への呼び出しでも実行されるのはこのラムダであり、読み手は鍵の完全一致で
-  引くため。シグネチャが同じ再宣言も含める（上書きの判定は `IMethodBinding.overrides`）
+  引くため。シグネチャが同じ再宣言も含める。上書きの関係に無い2つの親から同じ抽象メソッドを
+  継承した形（`interface Door extends Opener, Closer {}` で両方に `void act()`。JLS 9.8）も、
+  ラムダは両方を実装するので両方の鍵で書く。JDT の `getFunctionalInterfaceMethod` は片方しか
+  返さないので、ラムダの型の親インターフェースを辿り、SAM と上書き同等（`IMethodBinding.isSubsignature`）な
+  抽象メソッドをすべて集める
 - 候補の絞り込み自体は変えない。値として追えなかった呼び出しでは `[RESOLVED:SINGLE_IMPL]` と
   書く代わりに `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference（…）` を出し、
   `unresolvedCalls` にも数える
-- **ラムダ本体は合成メソッドにする**。名前は javac と同じ `lambda$囲みメソッド名$通し番号`、
+- **ラムダ本体は合成メソッドにする**。名前は javac に似せた `lambda$囲みメソッド名$通し番号`、
   修飾子に `lambda` を付けた D 行を作り、本体の中の呼び出しはその合成メソッドに計上する。
-  通し番号は型ごとに、javac と同じく本体を読み終えた順（後行順。入れ子は内側が先）。
-  enum 定数の引数の中は `lambda$static$N`（定数の初期化は `<clinit>`）。名前はファイル単位で
+  通し番号は型ごとに、javac 21 と同じく本体を読み終えた順（後行順。入れ子は内側が先）。
+  static 初期化子・static フィールド（インターフェースのフィールドは書かなくても static）・
+  enum 定数の引数の中は `lambda$static$N`（初期化は `<clinit>`）。static かどうかは書かれた修飾子
+  ではなくバインディングで見る。番号の振り方は javac の版で変わる（JDK 25 の javac は囲みメソッド名ごと・
+  外側が先）ので、番号の一致は保証しない。名前はファイル単位で
   **先に**配る（本体の先読みと本走査の2か所で決めると食い違うため）。
   式本体（`() -> new X()`）も `return 式;` と同じく R 行にする
 - **囲みメソッドから合成メソッドへ「生成の辺」を必ず1本張る**。これが無いと、`forEach` のように
