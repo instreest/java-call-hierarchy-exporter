@@ -388,7 +388,9 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 
 ラムダ式の本体は、javac と同じ名前（`lambda$囲みメソッド名$通し番号`）を付けた
 **合成メソッド**として1つのノードにします（`methods.csv` には出しません。
-インスタンスを通じて呼び出せるメソッドではないため）。
+インスタンスを通じて呼び出せるメソッドではないため）。通し番号は javac と同じく本体を読み終えた順
+（入れ子は内側が先）で、enum 定数の引数の中は `lambda$static$N` です。javac がメソッド参照の一部
+（配列の `Type[]::new` など）を内部でラムダに変換した場合は、それ以降の番号がずれます。
 
 ```csv
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -407,7 +409,12 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 | 引数で渡した先で呼ぶ | `runIt(() -> ...)` の中の `r.run()` |
 | フィールドに保持して呼ぶ | `private final Runnable task = () -> ...;` の `task.run()` |
 | メソッド参照 | `Runnable r = this::helper; r.run();` → `helper` に繋がる |
+| レシーバを束縛したメソッド参照 | `Runnable r = dao::describe; r.run();` → `dao` の具象型が分かればその実装（`OrderDaoImpl.describe`）に繋がる。分からなければ上書き候補（`UNEXPANDED:CHA`） |
+| ラムダの戻り値に対する呼び出し | `Supplier<Dao> s = () -> new X(); s.get().describe();` → ラムダの `return` から `X.describe` に繋がる |
 | ローカルのコレクションに詰めて拡張for文で回す | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
+
+型名で書いたメソッド参照（`Consumer<Dao> c = Dao::describe;`）は、レシーバが呼び出し時の第1引数なので追わず、
+上書き候補を全部出します（`UNEXPANDED:CHA`）。
 
 特定できない形（`resolved-by` が `UNEXPANDED:LAMBDA` になります）:
 
@@ -416,6 +423,10 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 - 同じ変数に複数のラムダが入りうる形（どれが実行されるか決められないので、絞りません）
 
 特定できない場合でも、生成の辺があるので本体の中の呼び出しは階層に出ます。
+
+ラムダが捕捉した囲みメソッドの引数（`(Dao dao) -> … () -> dao.describe()` の `dao`）の具象型は、
+ラムダを作ったメソッドの段でだけ当てます。引数で渡した先から本体へ降りたときは、その先の引数は
+捕捉した値ではないので絞りません（捕捉した値はラムダを作った時点で決まります）。
 
 `new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
@@ -859,7 +870,10 @@ What static analysis can and cannot narrow down is written up in
 
 The body of a lambda becomes one node, a **synthetic method** named the way javac names it
 (`lambda$enclosingMethod$serial`). It is not listed in `methods.csv`, because it is not a method you can
-call through an instance.
+call through an instance. The serial is assigned the way javac does it, in the order the bodies are
+finished (an inner lambda comes before its outer one), and a lambda inside an enum constant's arguments is
+`lambda$static$N`. When javac turns some method references (such as an array `Type[]::new`) into lambdas
+internally, the serials after that point differ.
 
 ```csv
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -879,7 +893,12 @@ Shapes where the execution site can be determined:
 | Pass it as an argument and call it there | `r.run()` inside `runIt(() -> ...)` |
 | Hold it in a field and call it | `task.run()` for `private final Runnable task = () -> ...;` |
 | A method reference | `Runnable r = this::helper; r.run();` connects to `helper` |
+| A method reference with a bound receiver | `Runnable r = dao::describe; r.run();` connects to the implementation for the concrete type of `dao` (`OrderDaoImpl.describe`) when it is known, otherwise to the override candidates (`UNEXPANDED:CHA`) |
+| A call on what a lambda returns | `Supplier<Dao> s = () -> new X(); s.get().describe();` connects to `X.describe` through the lambda's `return` |
 | Put it in a local collection and iterate with an enhanced for | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
+
+A method reference written with a type name (`Consumer<Dao> c = Dao::describe;`) is not followed, because its
+receiver is the first argument at the call; all override candidates are written (`UNEXPANDED:CHA`).
 
 Shapes where it cannot (`resolved-by` becomes `UNEXPANDED:LAMBDA`):
 
@@ -891,6 +910,11 @@ Shapes where it cannot (`resolved-by` becomes `UNEXPANDED:LAMBDA`):
 
 Even when it cannot be determined, the "created it" edge means the calls inside the body still appear in
 the hierarchy.
+
+The concrete type of an enclosing method's parameter that a lambda captured (`dao` in
+`(Dao dao) -> … () -> dao.describe()`) is applied only at the level of the method that created the lambda.
+When the body is entered from the method the lambda was passed to, that method's arguments are not the
+captured values, so nothing is narrowed there (captured values are fixed when the lambda is created).
 
 Shapes **called back from inside a jar**, such as `new Thread(task).start()` or `executor.submit(task)`,
 are connected through a contract table saying "`Thread#start()` calls `run()` on the `Runnable` you

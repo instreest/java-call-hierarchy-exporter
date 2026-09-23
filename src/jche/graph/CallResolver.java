@@ -210,9 +210,9 @@ public final class CallResolver {
         // 渡された値がラムダなら実行されるのはその本体。段1の候補数に関係なく先に決める。
         // 経路の引数で渡ってきたものは resolveOnPath で改めて試す
         if (dataflow.enabled() && graph.hasFunctionalImpl(calleeId)) {
-            int viaLambda = dataflow.functionalTargetOf(graph.recvOrigin(edgeIndex), null);
-            if (viaLambda >= 0) {
-                return Resolution.single(viaLambda, Resolution.DATAFLOW_LAMBDA);
+            Resolution viaLambda = functionalResolution(graph.recvOrigin(edgeIndex), null);
+            if (viaLambda != null) {
+                return viaLambda;
             }
         }
 
@@ -315,9 +315,9 @@ public final class CallResolver {
         // そうしないと、ラムダを入れた変数への Object#toString() のような
         // 関数型インターフェースと関係ない呼び出しまでラムダ本体に繋いでしまう
         if (dataflow.enabled() && graph.hasFunctionalImpl(calleeId)) {
-            int viaLambda = dataflow.functionalTargetOf(graph.recvOrigin(edgeIndex), ctx);
-            if (viaLambda >= 0) {
-                res = Resolution.single(viaLambda, Resolution.DATAFLOW_LAMBDA);
+            Resolution viaLambda = functionalResolution(graph.recvOrigin(edgeIndex), ctx);
+            if (viaLambda != null) {
+                res = viaLambda;
             }
         }
         // リフレクション: クラス名・メソッド名が引数で渡ってくる形は、
@@ -329,6 +329,50 @@ public final class CallResolver {
             }
         }
         return res;
+    }
+
+    /**
+     * ラムダ／メソッド参照が渡ってきた呼び出しの解決。渡ってきていなければ null。
+     *
+     * ラムダなら本体（合成メソッド）で確定。メソッド参照は参照先が「コンパイル時宣言」
+     * （JLS 15.13.1）で、実際に動くのは呼び出し時のレシーバの実行時クラスの実装（JLS 15.13.3）。
+     * そこで参照先が仮想メソッドなら、通常の呼び出しと同じ段を踏む:
+     * <ol>
+     *   <li>束縛したレシーバ（{@code dao::describe} の {@code dao}）の具象型が分かれば、その実装
+     *       （{@link DataflowResolver#functionalTargetOf} が引く）</li>
+     *   <li>分からなければ上書き候補（{@link #resolveVirtual}）。1件なら確定、複数なら CHA として
+     *       候補を全部出す。本体を持つ候補が無ければ宣言のまま</li>
+     * </ol>
+     * 参照先を宣言のまま「確定」と書くと、本体の無い抽象メソッドが葉になり、その先の
+     * 実装の階層が出ない（docs/lambda-expansion-qa.md の Q12）。
+     */
+    private Resolution functionalResolution(String recvOrigin, DataflowContext ctx) {
+        if (recvOrigin == null) {
+            return null;
+        }
+        String functional = dataflow.functionalOriginOf(recvOrigin, ctx);
+        if (functional == null) {
+            return null;
+        }
+        int target = methods.idOf(Origin.valueOf(functional));
+        if (target < 0) {
+            return null;
+        }
+        if (methods.isLambdaBody(target)
+                || BindKind.of(methods.methodName(target), methods.mods(target)) != BindKind.VIRTUAL) {
+            return Resolution.single(target, Resolution.DATAFLOW_LAMBDA);
+        }
+        int viaReceiver = dataflow.functionalReceiverImpl(functional, target);
+        if (viaReceiver >= 0) {
+            return Resolution.single(viaReceiver, Resolution.DATAFLOW_LAMBDA);
+        }
+        Resolution base = resolveVirtual(target);
+        if (base.isMultiple()) {
+            return base;
+        }
+        // 1件（宣言のまま／唯一の実装）。本体を持つ候補が無い場合も宣言のままで確定と書く。
+        // ここへ来た時点で「どのメソッド参照か」は決まっており、無いのはソース上の実装だけ
+        return Resolution.single(base.targets()[0], Resolution.DATAFLOW_LAMBDA);
     }
 
     /**

@@ -665,13 +665,20 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
   事実を残し、読み手は「ある／なし」だけを使う（件数を判定に使うとファイル単位の部分再利用で
   値がぶれる）。これが無いと、匿名クラスが1件あるだけで `SINGLE_IMPL` と判定し、
   **実際に動くラムダとは違う実装に決め打ち**する
+- その記録は、SAM が上書きしている**親インターフェースの宣言の鍵でも**書く
+  （`interface StringHandler extends Handler<String> { void handle(String v); }` のラムダは
+  `StringHandler#handle(java.lang.String)` と `Handler#handle(java.lang.Object)` の両方）。
+  親の型で受けた変数への呼び出しでも実行されるのはこのラムダであり、読み手は鍵の完全一致で
+  引くため。シグネチャが同じ再宣言も含める（上書きの判定は `IMethodBinding.overrides`）
 - 候補の絞り込み自体は変えない。値として追えなかった呼び出しでは `[RESOLVED:SINGLE_IMPL]` と
   書く代わりに `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference（…）` を出し、
   `unresolvedCalls` にも数える
 - **ラムダ本体は合成メソッドにする**。名前は javac と同じ `lambda$囲みメソッド名$通し番号`、
   修飾子に `lambda` を付けた D 行を作り、本体の中の呼び出しはその合成メソッドに計上する。
-  通し番号は型ごと。名前はファイル単位で**先に**配る（本体の先読みと本走査の2か所で
-  決めると食い違うため）
+  通し番号は型ごとに、javac と同じく本体を読み終えた順（後行順。入れ子は内側が先）。
+  enum 定数の引数の中は `lambda$static$N`（定数の初期化は `<clinit>`）。名前はファイル単位で
+  **先に**配る（本体の先読みと本走査の2か所で決めると食い違うため）。
+  式本体（`() -> new X()`）も `return 式;` と同じく R 行にする
 - **囲みメソッドから合成メソッドへ「生成の辺」を必ず1本張る**。これが無いと、`forEach` のように
   `exclude.packages`（既定 `java.**`）で除外されるAPIに渡したラムダの本体が到達不能になり、
   出力から丸ごと消える（順序の正確さより取りこぼさないこと）
@@ -679,9 +686,20 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
   ラムダなら合成メソッド、メソッド参照なら参照先そのもの）を持ち、ローカル変数・引数・
   フィールド・ローカルのコレクションの要素として呼び出し箇所まで流れてきたら
   `DATAFLOW_LAMBDA` で確定する
+- メソッド参照の参照先は**コンパイル時宣言**（JLS 15.13.1）で、参照先が仮想メソッドなら実行時には
+  レシーバの実行時クラスで仮想ディスパッチされる（JLS 15.13.3）。レシーバを束縛した形
+  （`dao::describe`）は `Z` にレシーバの出所（`|r=`）を付け、読み手はその具象型での実装に繋ぐ。
+  分からなければ上書き候補（1 件なら確定、複数なら CHA）。宣言のまま「確定」と書くと、
+  本体の無い抽象メソッドが葉になる。ラムダの本体と静的束縛の参照先はそのまま確定。
+  レシーバの出所は参照を書いたメソッドから見たものなので、経路の引数の環境は使わない
+- `s.get().describe()` のように関数型インターフェースのメソッドの戻り値を受ける呼び出しは、
+  レシーバがラムダ／メソッド参照と分かれば、その本体の R 行を戻り値の出所にする
 - ラムダが捕捉した囲みメソッドの引数は、種別 `E`（captured）として持つ。`A`（引数）のまま
-  持ち込むと合成メソッド自身の引数を誤って当てる。読み手は合成メソッドへ降りるときだけ、
-  そのフレームの引数を捕捉した値として渡す（生成の辺があるので生成箇所は必ず1つ上に来る）
+  持ち込むと合成メソッド自身の引数を誤って当てる。読み手は合成メソッドへ降りるとき、
+  **今の段がそのラムダを生成したメソッドである場合だけ**（生成の辺を持つ）、その段の引数を
+  捕捉した値として渡す。引数で渡した先（`runIt(Runnable r)` の `r.run()`）から降りる段では渡さない。
+  捕捉した値はラムダを作った時点で決まる（JLS 15.27.2）ので、実行した側の引数を当てると
+  別の値に誤って確定する
 - 匿名クラスは実型（`fx.App$1`）として扱う。名前を持ち型階層に載るので、インターフェース経由の
   呼び出しから正しく辿れる
 
@@ -962,7 +980,8 @@ V  typeFqn  fieldName  mods  declType                 （フィールド宣言�
 C  callerPkg callerType callerMethod callerParams  calleePkg calleeType calleeMethod calleeParams
    callLine  calleeMods  recvKind(M/P/F/L/T/S/O)  lambda
    calleeMods: 呼び出し先の修飾子。D の語彙に加えて finalclass（宣言クラスが final）、super
-   lambda: 呼び出し箇所を囲むラムダの深さ（現在の読み手は使わないが事実として残す）
+   lambda: 呼び出し箇所を囲む「合成メソッドにできなかったラムダ」の深さ（合成した本体の中は 0。
+           現在の読み手は使わないが事実として残す）
    値（レシーバ・実引数の出所、ガード）は持たない。dataflow 側の P 行にある
 U  line  callerPkg callerType callerMethod callerParams  expr  reason  candidate  recvKind  lambda
    reason: BINDING_FAILED / OUTSIDE_METHOD（呼び出し元を特定できない。caller は空）
@@ -1979,15 +1998,20 @@ at fx.App.mutualB(App.java:136),App.mutualA,App.cycles,App.mutualA,App.mutualB,A
 
 ### T14 ラムダ／匿名クラス／メソッド参照
 ```
-at fx.App.viaLambda(App.java:141),Helper.validate,App.viaLambda,Helper.validate
-at fx.App.viaLambda(App.java:142),App$3.handle,App.viaLambda,App$3.handle,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
+at fx.App.viaLambda(App.java:141),App.lambda$viaLambda$0,App.viaLambda,App.lambda$viaLambda$0
+at fx.App.lambda$viaLambda$0(App.java:141),Helper.validate,App.viaLambda,App.lambda$viaLambda$0,Helper.validate
+at fx.App.viaLambda(App.java:142),App.lambda$viaLambda$0,App.viaLambda,App.lambda$viaLambda$0
+at fx.App.lambda$viaLambda$0(App.java:141),Helper.validate,App.viaLambda,App.lambda$viaLambda$0,Helper.validate
 at fx.App.viaAnonHandler(App.java:151),App$3.handle,App.viaAnonHandler,App$3.handle,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
 at fx.App$3.handle(App.java:148),Helper.validate,App.viaAnonHandler,App$3.handle,Helper.validate
 at fx.App.viaMethodRef(App.java:156),Repo.save,App.viaMethodRef,Repo.save
 ```
 検証観点:
-- ラムダ本体の `Helper.validate` は `viaLambda`（囲みメソッド）からの呼び出し（141行）
-- `h.handle` は唯一のソース上実装 `App$3.handle` に繋がるが、`[RESOLVED:SINGLE_IMPL]` と**書かない**
+- ラムダ本体の `Helper.validate` は合成メソッド `App.lambda$viaLambda$0` からの呼び出し（141行）。
+  `viaLambda` からは生成の辺（141行、`resolved-by` は `RESOLVED:STATIC_BOUND:PRIVATE`）と、
+  `h.handle("x")` を値として追った辺（142行、`RESOLVED:DATAFLOW_LAMBDA`）の 2 本が同じ合成メソッドに繋がる
+- `viaAnonHandler` の `h.handle` は唯一のソース上実装 `App$3.handle` に繋がるが、
+  ラムダも同じインターフェースを実装しているので `[RESOLVED:SINGLE_IMPL]` と**書かない**
 - `repo::save` が `Repo.save(String)` への辺になる（156行）
 - `NoCtor::new` はコンストラクタなので行にならない。`String[]::new` は辺にならず、
   型解決失敗の件数（1件）にも**含まれない**

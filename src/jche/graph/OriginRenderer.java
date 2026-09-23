@@ -114,7 +114,8 @@ final class OriginRenderer {
         if (depth >= MAX_DEPTH) {
             return head;
         }
-        if (n.kind() != Origin.NEW && n.kind() != Origin.RETURN) {
+        if (n.kind() != Origin.NEW && n.kind() != Origin.RETURN
+                && !(n.kind() == Origin.FUNCTIONAL && n.recv() != ValueNode.NONE)) {
             memo.put(id, head);
             return head;
         }
@@ -131,7 +132,8 @@ final class OriginRenderer {
      *
      * 書き手が作っていた形をそのまま再現する。new には実引数の数を付けず、
      * メソッド呼び出しには {@code n=実引数の数} と {@code r=レシーバの出所} を付ける
-     * （数は「出所が分からず省いた引数」と「引数が無い」を区別するために要る）
+     * （数は「出所が分からず省いた引数」と「引数が無い」を区別するために要る）。
+     * レシーバを束縛したメソッド参照（Z）には {@code r=} だけを付ける
      */
     private String withArgs(ValueNode n, String head, int depth) {
         String args = argList(n.args(), depth + 1);
@@ -148,7 +150,8 @@ final class OriginRenderer {
         if (n.recv() != ValueNode.NONE) {
             String recv = render(n.recv(), depth + 1);
             if (recv != null) {
-                args = args + ";" + Origin.RECEIVER + "=" + Origin.nest(recv);
+                String entry = Origin.RECEIVER + "=" + Origin.nest(recv);
+                args = args.isEmpty() ? entry : args + ";" + entry;
             }
         }
         if (!n.staticRecv().isEmpty()) {
@@ -156,7 +159,7 @@ final class OriginRenderer {
             args = args.isEmpty() ? Origin.STATIC_RECV + "=" + n.staticRecv()
                     : args + ";" + Origin.STATIC_RECV + "=" + n.staticRecv();
         }
-        return (head.length() + args.length() > BUDGET) ? head : Origin.of(Origin.RETURN, n.value(), args);
+        return (head.length() + args.length() > BUDGET) ? head : Origin.of(n.kind(), n.value(), args);
     }
 
     /** 実引数リストを組む。予算を使い切ったらそれ以上は展開しない */

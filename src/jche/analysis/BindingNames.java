@@ -321,6 +321,19 @@ final class BindingNames {
      * 判定そのものが成り立たない。
      */
     List<String> overriddenKeysOf(IMethodBinding binding) {
+        return overriddenKeysOf(binding, false);
+    }
+
+    /**
+     * {@link #overriddenKeysOf(IMethodBinding)} と同じだが、{@code includeSameSignature} が true なら
+     * シグネチャが自分と同じ上書きも含める。
+     *
+     * 関数型インターフェースのメソッド（M 行）が使う。読み手はそちらを型を辿らずに
+     * 鍵の完全一致だけで引くので、{@code interface MyRunnable extends Runnable { void run(); }} のような
+     * シグネチャが同じ再宣言でも、親の宣言の鍵（{@code Runnable#run()}）を書いておかないと当たらない
+     * （{@code docs/lambda-expansion-qa.md} の Q11）。
+     */
+    List<String> overriddenKeysOf(IMethodBinding binding, boolean includeSameSignature) {
         if (binding == null || binding.isConstructor()
                 || Modifier.isStatic(binding.getModifiers())
                 || Modifier.isPrivate(binding.getModifiers())) {
@@ -355,7 +368,7 @@ final class BindingNames {
                 // シグネチャが同じならキーの照合だけで引ける。書いても嵩むだけである。
                 // 書くのは型引数の置換でシグネチャが食い違う場合だけ
                 String key = ref.key();
-                if (!ref.signature().equals(selfSignature) && seen.add(key)) {
+                if ((includeSameSignature || !ref.signature().equals(selfSignature)) && seen.add(key)) {
                     keys.add(key);
                 }
             }

@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.MethodReference;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeLiteral;
 
@@ -141,10 +142,15 @@ final class ValueGraph {
         if (enumConstant != null) {
             return node(Origin.CONST, enumConstant, ValueNode.NONE, "", -1);
         }
-        // ラムダ／メソッド参照は、実際に動くメソッドを指すノードにする
+        // ラムダ／メソッド参照は、実際に動くメソッドを指すノードにする。
+        // レシーバを束縛したメソッド参照（dao::describe）は、そのレシーバをノードで持つ
+        // （読み手が参照先の実装をレシーバの具象型から引くため。OriginTracker.functionalOriginOf）
         String functional = origins.functionalOriginOf(e);
         if (functional != null) {
-            return node(Origin.FUNCTIONAL, Origin.valueOf(functional), ValueNode.NONE, "", -1);
+            Expression receiver = (e instanceof MethodReference ref)
+                    ? OriginTracker.boundReceiverOf(ref) : null;
+            int recv = (receiver == null) ? ValueNode.NONE : nodeOf(receiver, depth + 1);
+            return node(Origin.FUNCTIONAL, Origin.valueOf(functional), recv, "", -1);
         }
         // ローカル変数は、その代入元の式から作ったノードをそのまま指す。
         // 出所の文字列（上限付き）と違い、入れ子をノードの参照で保てる

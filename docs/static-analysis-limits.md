@@ -103,6 +103,15 @@ factory.get(key)                                // 呼び出し元が get("jp.co
 引数経由の解決（`DATAFLOW_PARAM`）は**経路ごと**に判定する。同じファクトリでも、
 呼び出し元Xからの経路では確定、Yからの経路では不明、という出方をする。
 
+ラムダ式・メソッド参照は値として追う（`DATAFLOW_LAMBDA`）。追える形と追えない形の一覧は
+[lambda-expansion-qa.md](lambda-expansion-qa.md) の Q6。要点は次のとおり。
+
+```java
+Runnable r = () -> dao.describe(); r.run();     // ローカル変数・引数・フィールド・ローカルのコレクション経由
+Runnable r = dao::describe;                     // 束縛したレシーバ（dao）の具象型が分かれば、その実装
+Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの return を戻り値の出所にする
+```
+
 ### 解決できない
 
 | 形 | 理由 |
@@ -114,6 +123,9 @@ factory.get(key)                                // 呼び出し元が get("jp.co
 | `POOL.get(fqn)` の戻り値 | コレクションの要素を追う仕組みが無い。Map / List に入れた時点で出所が `U` になる |
 | `if (flag) A else B` で `flag` が実行時値 | 候補は複数のまま（2節の39行目） |
 | 文字列が64文字を超える | 出所に載せる値の長さの上限（`OriginTracker.MAX_VALUE_LENGTH`） |
+| `list.forEach(Runnable::run)` | `forEach` の中は jar なのでソースが無い。生成の辺があるので本体の呼び出しは階層に出るが、実行箇所からは繋がらない（`[UNEXPANDED:LAMBDA]`） |
+| `Dao::describe`（型名で書いたメソッド参照） | レシーバは呼び出し時の第1引数で、追っていない。上書き候補（CHA）を全部出す |
+| ラムダが捕捉した引数を、渡した先で呼ぶ | 捕捉した値はラムダを作った時点で決まるが、生成箇所の引数を実行箇所の経路へ持ち運んでいない。生成したメソッドの段でだけ当てる（[lambda-expansion-qa.md](lambda-expansion-qa.md) の Q10） |
 
 ---
 

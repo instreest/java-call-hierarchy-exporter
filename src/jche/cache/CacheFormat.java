@@ -224,9 +224,14 @@ public final class CacheFormat {
      * v21 でラムダ式を合成メソッド（D 行 + 生成の C 行）として持つようにし、
      * 本体の呼び出しの計上先を囲みメソッドからその合成メソッドへ移した。
      * v22 で F 行の末尾に構文エラーの数を足した（{@link #syntaxErrorsOf}）。
-     * 再利用したファイルについても「本体を読めていない」と言い続けるために要る
+     * 再利用したファイルについても「本体を読めていない」と言い続けるために要る。
+     * v24 で M 行を、関数型インターフェースのメソッドが上書きしている親インターフェースの
+     * 宣言の鍵でも書くようにした（{@code docs/lambda-expansion-qa.md} の Q11）。
+     * 古いキャッシュを再利用すると、親の型で受けた呼び出しでラムダが無視される。
+     * v25 でラムダの合成メソッドの通し番号を javac と同じ後行順にし、enum 定数の引数の中の
+     * ラムダを {@code lambda$static$N} にした（同 Q13）。名前は D 行・C 行・M 行に焼き込まれる
      */
-    public static final String VERSION = "jche-cache-v23";
+    public static final String VERSION = "jche-cache-v25";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
@@ -239,12 +244,14 @@ public final class CacheFormat {
      * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）。
      * v5 で値の種別に Z（ラムダ／メソッド参照が実装しているメソッド）と
      * E（ラムダが捕捉した囲みメソッドの引数）を足した。
+     * v7 で Z（メソッド参照）にレシーバの出所（{@code |r=}）を付け、式本体のラムダにも
+     * R 行を書くようにした（{@code docs/lambda-expansion-qa.md} の Q12・Q14）。
      * v6 で guard の text（P 行に書かれる条件式の説明）を英語にした。
      * 文言の変更でバージョンを上げないのが原則だが、これは<b>読み手ではなく書き手が作る文字列</b>で
      * キャッシュに焼き込まれる。上げずにおくと、古いキャッシュを再利用したファイルだけ
      * 日本語の注記が出て、同じ CSV に2つの言語が混ざる（{@code docs/nls-qa.md} の Q7）
      */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v6";
+    public static final String DATAFLOW_VERSION = "jche-dataflow-v7";
 
     /**
      * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。

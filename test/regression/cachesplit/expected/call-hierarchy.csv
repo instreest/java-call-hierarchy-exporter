@@ -244,6 +244,13 @@ at fx.generic.RawPrinter.accept(RawPrinter.java:10),RawPrinter.rawPrinted,RESOLV
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
+at fx.lambda.Captured.viaCapture(Captured.java:23),Captured.captureOuter,RESOLVED:STATIC_BOUND:PRIVATE,1,Captured.viaCapture,Captured.captureOuter
+at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.runWithOther,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther
+at fx.lambda.Captured.runWithOther(Captured.java:31),Captured.lambda$captureOuter$0,RESOLVED:DATAFLOW_LAMBDA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0
+at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.lambda$captureOuter$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.lambda$captureOuter$0
+at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Captured.viaCapture,Captured.captureOuter,Captured.lambda$captureOuter$0,OrderDaoImpl.describe
 at fx.lambda.Holder.<init>(Holder.java:27),Holder.lambda$new$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.Holder,Holder.lambda$new$0
 at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.Holder,Holder.lambda$new$0,OrderDaoImpl.describe
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -269,6 +276,35 @@ at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOL
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.lambda.Nested.viaNested(Nested.java:20),Nested.lambda$viaNested$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.viaNested,Nested.lambda$viaNested$1
+at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
+at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
+at fx.lambda.Nested.lambda$viaNested$1(Nested.java:22),Nested.lambda$viaNested$0,RESOLVED:DATAFLOW_LAMBDA,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
+at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
+at fx.lambda.Nested.viaNested(Nested.java:24),Nested.lambda$viaNested$1,RESOLVED:DATAFLOW_LAMBDA,1,Nested.viaNested,Nested.lambda$viaNested$1
+at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
+at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
+at fx.lambda.Nested.lambda$viaNested$1(Nested.java:22),Nested.lambda$viaNested$0,RESOLVED:DATAFLOW_LAMBDA,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
+at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
+at fx.lambda.Nested$Mode.<init>(Nested.java:31),Nested.Mode.lambda$static$0,RESOLVED:DATAFLOW_LAMBDA,2,Nested.Mode.<clinit>,Nested.Mode.Mode,Nested.Mode.lambda$static$0
+at fx.lambda.Nested$Mode.<clinit>(Nested.java:28),Nested.Mode.lambda$static$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.Mode.<clinit>,Nested.Mode.lambda$static$0
+at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),Redeclared.lambda$viaSuperInterface$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.lambda$viaSuperInterface$0
+at fx.lambda.Redeclared.lambda$viaSuperInterface$0(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Redeclared.viaSuperInterface,Redeclared.lambda$viaSuperInterface$0,OrderDaoImpl.describe
+at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:18),Redeclared.dispatch,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.dispatch
+at fx.lambda.Redeclared.dispatch(Redeclared.java:22),Redeclared.lambda$viaSuperInterface$0,RESOLVED:DATAFLOW_LAMBDA,2,Redeclared.viaSuperInterface,Redeclared.dispatch,Redeclared.lambda$viaSuperInterface$0
+at fx.lambda.Redeclared.lambda$viaSuperInterface$0(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Redeclared.viaSuperInterface,Redeclared.dispatch,Redeclared.lambda$viaSuperInterface$0,OrderDaoImpl.describe
+at fx.lambda.Refs.viaBoundRef(Refs.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Refs.viaBoundRef,OrderDaoImpl.describe
+at fx.lambda.Refs.viaBoundRef(Refs.java:28),OrderDaoImpl.describe,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaBoundRef,OrderDaoImpl.describe
+at fx.lambda.Refs.viaUnboundRef(Refs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.lambda.Refs.viaUnboundRef(Refs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (static)
+at fx.lambda.Refs.viaUnboundRef(Refs.java:33),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.lambda.Refs.viaUnboundRef(Refs.java:33),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.lambda.Refs.viaExprBody(Refs.java:37),Refs.lambda$viaExprBody$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Refs.viaExprBody,Refs.lambda$viaExprBody$0
+at fx.lambda.Refs.viaExprBody(Refs.java:38),UserDaoImpl.describe,RESOLVED:DATAFLOW_FACTORY,1,Refs.viaExprBody,UserDaoImpl.describe
+at fx.lambda.Refs.viaExprBody(Refs.java:38),Refs.lambda$viaExprBody$0,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaExprBody,Refs.lambda$viaExprBody$0
+at fx.lambda.Refs.viaBlockBody(Refs.java:42),Refs.lambda$viaBlockBody$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Refs.viaBlockBody,Refs.lambda$viaBlockBody$1
+at fx.lambda.Refs.viaBlockBody(Refs.java:45),UserDaoImpl.describe,RESOLVED:DATAFLOW_FACTORY,1,Refs.viaBlockBody,UserDaoImpl.describe
+at fx.lambda.Refs.viaBlockBody(Refs.java:45),Refs.lambda$viaBlockBody$1,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaBlockBody,Refs.lambda$viaBlockBody$1
 at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
 at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field

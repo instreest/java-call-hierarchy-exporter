@@ -17,6 +17,7 @@ import java.util.List;
  *   L:jp.co.xxx.UserDaoImpl       文字列リテラル（またはコンパイル時定数）
  *   V:false                       コンパイル時定数の値（条件分岐の判定に使う）
  *   Z:jp.co.xxx.App#lambda$run$0()  ラムダ／メソッド参照が実装しているメソッド
+ *                                 （レシーバを束縛したメソッド参照 dao::describe は |r=レシーバの出所 付き）
  *   E:0                           ラムダが捕捉した、囲みメソッドの1番目の引数
  *   C:0                           Class.forName(引数) で名前指定された型
  *   K:jp.co.xxx.UserDaoImpl       クラスオブジェクト（X.class）

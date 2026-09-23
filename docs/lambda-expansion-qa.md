@@ -17,6 +17,11 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
   `E`（{@code Origin.CAPTURED}。ラムダが捕捉した囲みメソッドの引数）を足した
 - 実行箇所を特定できたら `[RESOLVED:DATAFLOW_LAMBDA]`。できなければ従来どおり `[UNEXPANDED:LAMBDA]`
 - キャッシュは analysis v21 / dataflow v5
+- **その後の修正**: 捕捉した引数（`E`）は、ラムダを生成したメソッドの段でだけ当てる（Q10）。
+  M 行は SAM が上書きしている親インターフェースの宣言の鍵でも書く（Q11。analysis v24）。
+  メソッド参照の参照先が仮想メソッドなら、束縛したレシーバの具象型か上書き候補で実装まで繋ぐ（Q12。dataflow v7）。
+  合成メソッドの番号は javac と同じ後行順にし、enum 定数の引数の中は `lambda$static$N`（Q13。analysis v25）。
+  式本体のラムダにも R 行を書き、`s.get()` の戻り値をラムダの return から追う（Q14）
 
 ### Q1. なぜ合成メソッドにしたのか。囲みメソッドに計上したままではだめか
 
@@ -44,8 +49,9 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 `A:`（引数）のまま持ち込むと、合成メソッド自身の引数を誤って当ててしまう。
 
 そこで `E:`（{@code Origin.CAPTURED}）という別の種別にし、読み手はラムダの合成メソッドへ
-**降りるときだけ**、そのフレーム（＝生成箇所）の引数を「捕捉した値」として渡す。
-生成の辺が必ずあるので、生成箇所は経路の1つ上に必ず来る。
+降りるとき、**今の段がそのラムダを生成したメソッドである場合だけ**、その段の引数を
+「捕捉した値」として渡す（Q10）。生成の辺の先と、生成したメソッドの中で `r.run()` した形が
+これに当たる。
 
 これを入れないと、合成メソッドに移したことで従来解決できていた
 `DATAFLOW_PARAM` が解けなくなる（実際に回帰テストで検出した）。
@@ -56,8 +62,8 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 ### Q4. 名前を `lambda$囲みメソッド名$通し番号` にしたのはなぜか
 
 javac が付ける名前と同じ形だから。実行時のスタックトレースに現れる名前と一致するので、
-CSV とログを突き合わせられる。通し番号は**型ごと**に振る
-（javac はクラスごとなので同じ。オーバーロードで囲みメソッド名が同じでも重ならない）。
+CSV とログを突き合わせられる。通し番号は**型ごと**に、javac と同じく本体を読み終えた順（後行順）に振る
+（javac はクラスごとなので同じ。オーバーロードで囲みメソッド名が同じでも重ならない。Q13）。
 
 名前は {@code LambdaNames} がファイル単位で**先に**配る。名前を決める場所が
 「本体の先読み（{@code OriginTracker.scanOrigins}）」と「本走査（{@code FactVisitor}）」の
@@ -70,6 +76,10 @@ CSV とログを突き合わせられる。通し番号は**型ごと**に振る
 合成メソッドは要らない（`helper` は実在するメソッド）。
 `r.run()` はそのまま `helper` に繋がる。
 
+参照先が仮想メソッド（`dao::describe` の `Dao#describe()`）なら、`Z:` が指すのはコンパイル時宣言で、
+実際に動くのはレシーバの実行時クラスの実装。読み手はレシーバの具象型が分かればその実装に、
+分からなければ上書き候補に繋ぐ（Q12）。
+
 ### Q6. どこまで追えるのか
 
 追えるのは、ラムダが**値として**呼び出し箇所まで流れてくる形。
@@ -80,6 +90,9 @@ CSV とログを突き合わせられる。通し番号は**型ごと**に振る
 | 引数で渡した先で呼ぶ | ○ | 経路の引数環境に `Z:` を載せる（`DATAFLOW_PARAM` と同じ枠組み） |
 | フィールドに保持して呼ぶ | ○ | 出所が1つに定まるフィールドの表（`FieldFacts`）に `Z:` が載る |
 | ローカルのコレクションに詰めて拡張for文で回す | ○ | 「詰めた要素の出所」を覚え、ループ変数に当てる |
+| レシーバを束縛したメソッド参照（`dao::describe`） | ○ | `Z:` にレシーバの出所（`\|r=`）を付け、その具象型での実装を引く（Q12） |
+| 型名で書いたメソッド参照（`Dao::describe`） | △ | レシーバは呼び出し時の第1引数で追っていない。上書き候補（CHA）を全部出す |
+| ラムダの戻り値に対する呼び出し（`s.get().describe()`） | ○ | `s.get()` のレシーバがラムダなら、その本体の `return` を戻り値の出所にする（Q14） |
 | `list.forEach(Runnable::run)` | × | `forEach` の中は jar なのでソースが無く、辿れない |
 | フィールドのコレクション、詰める場所と回す場所が別メソッド | × | 要素の出所はメソッドの中でしか追っていない |
 | 同じ変数に複数のラムダが入りうる | × | どれが実行されるか決められないので U（不明）に倒す |
@@ -129,3 +142,120 @@ CSV とログを突き合わせられる。通し番号は**型ごと**に振る
 出さないぶん、ラムダを持つメソッドの `outDegree` は本体の呼び出しを含まない
 （生成の辺1本だけを数える）。本体の中の呼び出しは `call-hierarchy.csv` で追う。
 出力対象外にした件数は実行ログに出す。
+
+### Q10. 捕捉した引数を、実行した側のフレームで当ててしまっていた
+
+当初は「合成メソッドへ降りるときは、必ず 1 つ上の段の引数を捕捉した値として渡す」としていた。
+生成の辺（囲みメソッド → 合成メソッド）だけを考えれば 1 つ上は生成箇所なのでこれでよいが、
+`DATAFLOW_LAMBDA` の辺では 1 つ上の段は**実行箇所**であって、生成箇所とは限らない。
+
+```java
+private void captureOuter(Dao dao) {                       // dao = new OrderDaoImpl()
+    runWithOther(new UserDaoImpl(), () -> dao.describe());
+}
+private void runWithOther(Dao other, Runnable r) { r.run(); }
+```
+
+`runWithOther` の段から本体へ降りると、`E:0` が `runWithOther` の第 1 引数（`UserDaoImpl`）に
+当たり、`UserDaoImpl.describe` に **`RESOLVED:DATAFLOW_PARAM` で誤って確定**していた。
+捕捉した値はラムダを作った時点で決まる（JLS 15.27.2。捕捉できるのは実質的 final な変数だけ）ので、
+実行した側の引数を当てるのは値の取り違えである。
+
+直し方は、降りる先の合成メソッドを**今の段のメソッドが生成したか**（`CallGraph.createsLambda`。
+宣言どおりの呼び出し先がその合成メソッドである辺＝生成の辺を持つか）で判定し、
+生成したメソッドの段でだけ引数を渡す。それ以外の段では null にして、捕捉した引数への
+呼び出しは CHA のまま残す（`test/demo` の `fx.lambda.Captured`）。
+
+却下した案は、`Z:` の値に生成箇所の引数環境を一緒に持ち運ぶ（クロージャとして扱う）もの。
+引数で渡した先で捕捉した引数まで解けるようになるが、値の文字列に環境を埋め込む形になり
+キャッシュの形式と読み手の両方が大きくなる。「引数で渡した先で呼ぶ」形で本体まで繋がることは
+変わらず（Q6 の表のとおり）、失うのは本体の中の**捕捉した引数**への呼び出しの絞り込みだけなので、
+安全側に倒すだけにした。
+
+### Q11. 親インターフェースの型で受けた呼び出しで、ラムダが無視されていた
+
+M 行（`FunctionalImplFact`）の鍵は SAM（`ITypeBinding.getFunctionalInterfaceMethod`）の宣言型で
+作っていた。関数型インターフェースのメソッドが親インターフェースの抽象メソッドを
+再宣言している場合（JLS 9.4.1.3）、SAM はその再宣言の側になる。
+
+```java
+interface Handler<T> { void handle(T value); }
+interface StringHandler extends Handler<String> { @Override void handle(String value); }
+class LoggingHandler implements StringHandler { ... }      // ソース上の唯一の実装クラス
+
+StringHandler h = value -> dao.describe();
+dispatch(h);
+private void dispatch(Handler<String> h) { h.handle("x"); }
+```
+
+ラムダの M 行の鍵は `StringHandler#handle(java.lang.String)`、`h.handle("x")` の呼び出し先の鍵は
+`Handler#handle(java.lang.Object)` で一致しない。読み手（`CallGraph.hasFunctionalImpl`）は
+完全一致で引くので「ラムダの実装は無い」と見え、`LoggingHandler.handle` に
+**`RESOLVED:SINGLE_IMPL` で決め打ち**していた。候補が複数のときは
+`DataflowResolver.targetOf` が別経路で `Z:` を試すので偶然救われることがあるが、それも
+同じ鍵の M 行が別のラムダから出ている場合だけである。
+
+直し方は書き手の側で、SAM が上書きしている親の宣言すべての鍵でも M 行を書く
+（`BindingNames.overriddenKeysOf(sam, true)`）。O 行と違ってシグネチャが同じ再宣言
+（`interface MyRunnable extends Runnable { void run(); }`）も含める。読み手は型を辿らず鍵の
+完全一致で引く作りのままなので、親の鍵が無ければ当たらないためである。
+上書きの判定は O 行と同じく `IMethodBinding.overrides` に任せる。
+キャッシュに書く内容が変わるので analysis の版を v24 に上げた（`test/demo` の `fx.lambda.Redeclared`）。
+
+読み手の側で `OverrideIndex` を引く案は、O 行がシグネチャの同じ上書きを持たない
+（キーの照合で引けるので書かない）ため `MyRunnable` の形を救えず、却下した。
+
+### Q12. メソッド参照の参照先が仮想メソッドのとき、宣言を「確定」と書いていた
+
+`Z:` はメソッド参照の**コンパイル時宣言**（JLS 15.13.1）を指す。`Runnable r = dao::describe; r.run();`
+なら `Z:fx.Dao#describe()` で、読み手はこれをそのまま実行先にしていた。出力は
+`Dao.describe, RESOLVED:DATAFLOW_LAMBDA` で、本体の無い抽象メソッドが葉になり、その先の
+`OrderDaoImpl.describe` の階層は出なかった（参照箇所の辺 `viaBoundRef → Dao#describe` の側では
+`DATAFLOW_FIELD` で実装まで出るので、取りこぼしではないが「確定」と書いた先が動かないメソッドだった）。
+
+JLS 15.13.3 では、メソッド参照の実行時には参照先の宣言ではなくレシーバの実行時クラスで
+仮想ディスパッチされる。レシーバを束縛した形（`dao::describe`）のレシーバは参照を作った時点で
+評価される。そこで:
+
+- 書き手は、束縛したレシーバの出所を `Z:` に付ける（`Z:fx.Dao#describe()|r=F:fx.Refs#dao`。
+  値グラフの N 行ではレシーバをノードで持つ）。型名で書いた形（`Dao::describe`。レシーバは
+  呼び出し時の第1引数）、`super::m`、`Type::new` には付けない
+- 読み手（`CallResolver.functionalResolution`）は、参照先が仮想メソッドなら通常の呼び出しと同じ段を踏む。
+  レシーバの具象型が分かればその実装（`DataflowResolver.functionalReceiverImpl`）、分からなければ
+  上書き候補（`resolveVirtual`）で、1 件なら確定、複数なら CHA として全部出す。本体を持つ候補が
+  無ければ宣言のまま。ラムダの本体と静的束縛の参照先（private / static / final / コンストラクタ）は
+  従来どおりそのまま確定
+
+レシーバの出所は参照を書いたメソッドから見たもので、今歩いている経路のフレームとは別なので、
+経路の文脈（引数の環境）は使わない（Q10 と同じ理由）。`new`・出所が 1 つに定まるフィールド・
+引数を使わないファクトリのように、フレームに依らない出所だけで決める。
+`super::m` は静的束縛だが `Z:` の形ではそれが分からず、上書き候補を出す（絞りすぎる側ではないので許容した）。
+
+### Q13. 合成メソッドの番号が javac と一致しなかった
+
+「javac と同じ名前」と書いていたが、javac 21 で確かめると 2 つずれていた。
+
+- **入れ子のラムダ**。javac は本体を読み終えた順（後行順）に番号を振るので、
+  `() -> { () -> {} }` は内側が `$0`、外側が `$1`。`LambdaNames` は `visit` で振っていたので逆だった。
+  `endVisit` で振るようにした
+- **enum 定数の引数の中のラムダ**。定数の初期化は `<clinit>` で走る（JLS 8.9.2）ので javac は
+  `lambda$static$N` と付けるが、`LambdaNames.enclosingOf` は `EnumConstantDeclaration` を見ておらず
+  `lambda$new$N` になっていた。`FactVisitor` は生成の辺を `<clinit>` から張るので、ツールの中でも
+  食い違っていた。enum 定数を static 文脈として扱うようにした
+
+残る差は、javac がメソッド参照の一部（配列の `Type[]::new`、`super::m`、可変長引数の調整が要るもの等）を
+内部でラムダに変換して番号を消費する場合。このツールはメソッド参照に合成メソッドを作らないので、
+その後ろの番号がずれる。名前は「javac と同じ形」であって、一致は保証しない。
+名前は D 行・C 行・M 行に焼き込まれるので analysis の版を v25 に上げた。
+
+### Q14. 式本体のラムダの戻り値が R 行になっていなかった
+
+`() -> { return new X(); }` はブロックの `return` で R 行になるが、`() -> new X()` は
+`ReturnStatement` が無いので何も残らなかった。JLS 15.27.2 で式本体は `return 式;` と同じなので、
+`visit(LambdaExpression)` で本体が式なら同じ条件で R 行を書く。
+
+あわせて、その R 行を使う経路を足した。`s.get().describe()` の `s.get()` の出所は
+`M:Supplier#get()|r=Z:...lambda$m$0()` で、`Supplier#get()` 自体は jar の中なので R 行が無い。
+レシーバがラムダ／メソッド参照と分かり、かつ呼び出し先が関数型インターフェースのメソッド
+（M 行がある）なら、戻り値の出所はその本体の R 行で決める（`DataflowResolver.concreteTypeOf`）。
+`Object#toString()` のような関数型インターフェースと関係ない呼び出しには当てない。
