@@ -2,6 +2,7 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -99,13 +100,14 @@ final class FactVisitor extends ASTVisitor {
     private final ArrayDeque<List<MethodRef>> methodStack = new ArrayDeque<>();
 
     /**
-     * 現在のラムダ式の入れ子の深さ。
+     * 合成メソッドに<b>できなかった</b>ラムダ式の入れ子の深さ。
      *
-     * ラムダ式の中の return は、囲みメソッドの return ではなくラムダ自身の
-     * 戻り値。これを囲みメソッドの戻り値として記録すると、ファクトリメソッドの
-     * 戻り値型を誤って狭めてしまうため、0 のときだけ R行を記録する。
-     * （呼び出しの帰属はこれまで通り囲みメソッドのままでよい。
-     *   ラムダの中の呼び出しは、実際にその囲みメソッドの一部として書かれている）
+     * 合成できたラムダは本体を自分のメソッドとして持つので、その中では 0 に戻す。
+     * 合成できなかったラムダ（関数型インターフェースや囲みメソッドを特定できない）の中の
+     * return は、囲みメソッドの return ではなくラムダ自身の戻り値。これを囲みメソッドの
+     * 戻り値として記録すると、ファクトリメソッドの戻り値型を誤って狭めてしまうため、
+     * 0 のときだけ R行を記録する。C 行の lambda 列にもこの値が出る
+     * （合成した本体の中の呼び出しは 0）。
      */
     private int lambdaDepth;
     /** MethodDeclaration をまたぐときに lambdaDepth を退避するスタック */
@@ -446,6 +448,11 @@ final class FactVisitor extends ASTVisitor {
         // 囲みメソッドではなくこの合成メソッドの戻り値になった
         lambdaDepthStack.push(lambdaDepth);
         lambdaDepth = 0;
+        if (node.getBody() instanceof Expression bodyExpression) {
+            // 式本体（() -> new X()）は「return 式;」と同じ（JLS 15.27.2）。
+            // ブロック本体の return と同じく R 行にしないと、書き方で結果が変わる
+            recordReturn(bodyExpression);
+        }
         return true;
     }
 
@@ -498,6 +505,16 @@ final class FactVisitor extends ASTVisitor {
      * ラムダ本体は {@link #synthesizeLambda} で合成メソッドにしてあり、値として
      * 追えた呼び出しはそちらに解決される（{@code DATAFLOW_LAMBDA}）。この M 行は
      * 追えなかった呼び出し（jar の中から呼ばれる forEach 形式など）のために残す。
+     *
+     * <h4>親インターフェースの宣言の鍵でも書く</h4>
+     * 関数型インターフェースのメソッドは、親インターフェースの抽象メソッドを上書きした
+     * 再宣言であることがある（{@code interface StrFoo extends Foo<String> { void accept(String s); }}。
+     * JLS 9.4.1.3）。このラムダは親の型で受けた変数への呼び出し（{@code Foo<String> f; f.accept(x)}）
+     * でも実行されるが、その呼び出し先の鍵は親の宣言（{@code Foo#accept(java.lang.Object)}）で、
+     * SAM の鍵（{@code StrFoo#accept(java.lang.String)}）とは一致しない。読み手は M 行を
+     * 鍵の完全一致で引くので、SAM が上書きしている宣言すべての鍵でも M 行を書く。
+     * 上書きの判定は {@code IMethodBinding.overrides}（JLS 8.4.8.1）に任せる
+     * （docs/lambda-expansion-qa.md の Q11）。
      */
     private void recordFunctionalImpl(ITypeBinding fnType, ASTNode node, String kind) {
         if (fnType == null) {
@@ -511,15 +528,24 @@ final class FactVisitor extends ASTVisitor {
         if (ref == null) {
             return;
         }
+        List<String> keys = new ArrayList<>(2);
+        keys.add(ref.key());
+        for (String overridden : names.overriddenKeysOf(sam, true)) {
+            if (!keys.contains(overridden)) {
+                keys.add(overridden);
+            }
+        }
         int line = lineOf(node);
         List<MethodRef> callers = currentCallers();
-        if (callers == null) {
-            out.functionalImpls.add(new FunctionalImplFact(line, null, ref.key(), kind));
-            return;
-        }
-        // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
-        for (MethodRef caller : callers) {
-            out.functionalImpls.add(new FunctionalImplFact(line, caller, ref.key(), kind));
+        for (String key : keys) {
+            if (callers == null) {
+                out.functionalImpls.add(new FunctionalImplFact(line, null, key, kind));
+                continue;
+            }
+            // 囲みメソッドごとに1件（初期化子の中なら根のコンストラクタそれぞれ）
+            for (MethodRef caller : callers) {
+                out.functionalImpls.add(new FunctionalImplFact(line, caller, key, kind));
+            }
         }
     }
 
@@ -535,18 +561,24 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(ReturnStatement node) {
         Expression ex = node.getExpression();
         if (ex == null || lambdaDepth > 0) {
-            // void の return、またはラムダ式自身の戻り値
+            // void の return、または合成できなかったラムダ式自身の戻り値
             return true;
         }
+        recordReturn(ex);
+        return true;
+    }
+
+    /** 今の呼び出し元（メソッドまたはラムダの合成メソッド）が返す値の出所を R 行にする */
+    private void recordReturn(Expression ex) {
         ITypeBinding tb = ex.resolveTypeBinding();
         if (tb != null && (tb.isPrimitive() || tb.isArray()
                 || "java.lang.String".equals(tb.getQualifiedName()))) {
             // 具象クラスの絞り込みに使えない戻り値。記録しても嵩むだけ
-            return true;
+            return;
         }
         List<MethodRef> callers = currentCallers();
         if (callers == null) {
-            return true;
+            return;
         }
         String origin = origins.originOf(ex);
         if (origin == null) {
@@ -555,7 +587,6 @@ final class FactVisitor extends ASTVisitor {
         for (MethodRef caller : callers) {
             out.returns.add(new ReturnFact(caller, origin));
         }
-        return true;
     }
 
     // ================================================================

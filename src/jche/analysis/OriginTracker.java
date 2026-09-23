@@ -40,6 +40,7 @@ import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
 import jche.cache.CacheFormat;
 import jche.cache.MethodRef;
+import jche.cache.RecvKind;
 import jche.cache.Origin;
 import jche.cache.ValueNode;
 
@@ -428,9 +429,16 @@ final class OriginTracker {
     /**
      * 式がラムダ式かメソッド参照なら、実際に動くメソッドを指す出所（{@link Origin#FUNCTIONAL}）。
      *
-     * ラムダは本体を持つ合成メソッド、メソッド参照は参照先のメソッドそのもの。
+     * ラムダは本体を持つ合成メソッド、メソッド参照は参照先のメソッド
+     * （コンパイル時宣言。JLS 15.13.1）。
      * これがあると「関数型インターフェースの変数に何が入っているか」を
      * 他の値と同じように追える（{@code Runnable r = this::helper; r.run();} が繋がる）。
+     *
+     * <p>レシーバを束縛したメソッド参照（{@code dao::describe}）には、そのレシーバの出所を
+     * {@code r=} に付ける（{@code Z:fx.Dao#describe()|r=F:fx.App#dao}）。参照先が仮想メソッドなら
+     * 実際に動くのはレシーバの実行時クラスの実装（JLS 15.13.3）で、読み手はこの出所から
+     * その実装を引く。レシーバは参照を作った時点で評価されるので、出所は参照を書いた
+     * メソッドから見たもの（docs/lambda-expansion-qa.md の Q12）。
      */
     String functionalOriginOf(Expression ex) {
         Expression e = unwrap(ex);
@@ -440,9 +448,29 @@ final class OriginTracker {
         }
         if (e instanceof MethodReference ref) {
             MethodRef target = names.toRef(methodBindingOf(ref));
-            return (target == null) ? null : Origin.of(Origin.FUNCTIONAL, target.key());
+            if (target == null) {
+                return null;
+            }
+            Expression receiver = boundReceiverOf(ref);
+            String recvOrigin = (receiver == null) ? null : originOf(receiver);
+            return (recvOrigin == null) ? Origin.of(Origin.FUNCTIONAL, target.key())
+                    : Origin.of(Origin.FUNCTIONAL, target.key(),
+                            Origin.RECEIVER + "=" + Origin.nest(recvOrigin));
         }
         return null;
+    }
+
+    /**
+     * メソッド参照が束縛しているレシーバの式（{@code dao::describe} の {@code dao}）。
+     * 型名を書いた形（{@code Dao::describe}。レシーバは呼び出し時の第1引数）、
+     * {@code super::m}、{@code Type::new} には無いので null
+     */
+    static Expression boundReceiverOf(MethodReference ref) {
+        if (!(ref instanceof ExpressionMethodReference expr)) {
+            return null;
+        }
+        Expression receiver = expr.getExpression();
+        return (CallSiteRecorder.recvKindOf(receiver) == RecvKind.TYPE) ? null : receiver;
     }
 
     /** メソッド参照の4つの形から、参照先のバインディングを取る */

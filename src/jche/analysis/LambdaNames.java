@@ -10,6 +10,7 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
@@ -31,13 +32,20 @@ import jche.cache.MethodRef;
  * 出所が指すメソッドと宣言したメソッドが別物になってしまう。
  *
  * そこでコンパイル単位を1度だけ先に走査し、ラムダ式のノードそのもの（同一性）を
- * 鍵にして名前を配る。走査順＝ソースの並び順なので、同じソースからは必ず同じ名前になる
+ * 鍵にして名前を配る。走査順はソースの並びで決まるので、同じソースからは必ず同じ名前になる
  * （差分更新でファイルを解析し直しても変わらない）。
  *
  * <h2>名前の形</h2>
  * javac が付けるものに合わせて {@code lambda$囲みメソッド名$通し番号}。
  * 実際のスタックトレースに現れる名前と同じ形なので、読み手が結び付けられる。
  * 通し番号は型ごとに振る（オーバーロードで囲みメソッド名が同じでも重ならないため）。
+ *
+ * 番号は javac と同じく<b>本体を読み終えた順</b>（後行順）に振る。入れ子のラムダは
+ * 内側が先に番号を得る（{@code () -> { () -> {} }} は内側が {@code $0}、外側が {@code $1}）。
+ * enum 定数の引数の中のラムダは {@code lambda$static$N}（定数の初期化は {@code <clinit>} で走る。
+ * JLS 8.9.2）。javac がメソッド参照の一部（配列の {@code ::new} や {@code super::m} など）を
+ * 内部でラムダに変換して番号を消費する場合は、そこから先の番号がずれる
+ * （docs/lambda-expansion-qa.md の Q13）。
  */
 final class LambdaNames {
 
@@ -68,8 +76,12 @@ final class LambdaNames {
             this.binding = binding;
         }
 
+        /**
+         * 名前は本体を読み終えてから付ける（後行順）。javac の番号の振り方に合わせるため。
+         * visit で付けると、入れ子のラムダは外側が先の番号になって javac と食い違う
+         */
         @Override
-        public boolean visit(LambdaExpression node) {
+        public void endVisit(LambdaExpression node) {
             ITypeBinding fnType = node.resolveTypeBinding();
             IMethodBinding sam = (fnType == null) ? null : fnType.getFunctionalInterfaceMethod();
             MethodRef samRef = (sam == null) ? null : binding.toRef(sam);
@@ -77,20 +89,19 @@ final class LambdaNames {
             if (samRef == null || enclosing == null) {
                 // 関数型インターフェースか囲みメソッドを特定できないラムダには名前を付けない。
                 // 呼び出しは従来どおり囲みメソッドに計上される（取りこぼさない側に倒す）
-                return true;
+                return;
             }
             int index = counts.merge(enclosing.typeFqn(), 1, Integer::sum) - 1;
             names.put(node, new MethodRef(enclosing.pkg(), enclosing.typeFqn(),
                     "lambda$" + baseNameOf(enclosing) + "$" + index, samRef.paramSig()));
-            return true;
         }
 
         /**
          * そのラムダを囲んでいるメソッド。
          *
          * メソッドの中なら そのメソッド、フィールド初期化子やインスタンス初期化ブロックの中なら
-         * 「そのクラスのコンストラクタ」、static 初期化子の中なら {@code <clinit>} を表す
-         * {@link MethodRef}。名前を決めるためだけに使うので、初期化子が実際には
+         * 「そのクラスのコンストラクタ」、static 初期化子と enum 定数の引数の中なら
+         * {@code <clinit>} を表す {@link MethodRef}（{@code FactVisitor} が呼び出し元にするものと同じ）。名前を決めるためだけに使うので、初期化子が実際には
          * 複数のコンストラクタに複製されることは、ここでは考えなくてよい
          * （呼び出し元としての複製は {@link FactVisitor} が別に扱う）。
          */
@@ -102,6 +113,9 @@ final class LambdaNames {
                 }
                 if (n instanceof Initializer init) {
                     staticContext = Modifier.isStatic(init.getModifiers());
+                } else if (n instanceof EnumConstantDeclaration) {
+                    // enum 定数は static final フィールドで、その引数は <clinit> で評価される
+                    staticContext = true;
                 } else if (n instanceof FieldDeclaration field) {
                     staticContext = Modifier.isStatic(field.getModifiers());
                 } else if (n instanceof AnonymousClassDeclaration anon) {
