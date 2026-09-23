@@ -565,6 +565,21 @@ public final class StreamingTreeWalker {
         return bound;
     }
 
+    /**
+     * 行にする範囲（先頭 {@link Config#CHA_MAX_CANDIDATES} 件）の候補のうち、
+     * exclude.packages で除外されて行にならないものの数
+     */
+    private int excludedAmongWritten(int[] targets) {
+        int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
+        int excluded = 0;
+        for (int i = 0; i < limit; i++) {
+            if (isExcluded(targets[i])) {
+                excluded++;
+            }
+        }
+        return excluded;
+    }
+
     private boolean isExcluded(int id) {
         return PackagePattern.matchesAny(config.excludePatterns,
                 methods.pkg(id), methods.typeFqn(id), methods.methodName(id));
@@ -681,11 +696,18 @@ public final class StreamingTreeWalker {
             // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる。
             // 候補数が上限を超えたときは、行にならなかった候補があることも書く。
             // 黙って切ると、methods.csv の inDegree（全候補で数える）と行数が合わず、
-            // 読み手が「候補が消えた」のか「元から無い」のか区別できない
+            // 読み手が「候補が消えた」のか「元から無い」のか区別できない。
+            // exclude.packages で除外した候補（行にしない）も同じ理由で数を書く。
+            // jar のインターフェース（java.lang.Runnable 等）の宣言は「jar の中にも実装がありうる」
+            // 候補として数に入る（MethodTable の hasBody の既定）ので、既定の除外（java.**）だけで
+            // 「2 candidates」なのに行が1本しか無い、という形がよく起きる
             int n = res.targets().length;
+            int excluded = excludedAmongWritten(res.targets());
             detail = UNEXPANDED + "CHA] " + n + " candidates: " + RecvKind.describe(recvKind)
                     + ((n > Config.CHA_MAX_CANDIDATES)
-                            ? " (only the first " + Config.CHA_MAX_CANDIDATES + " are written as rows)" : "");
+                            ? " (only the first " + Config.CHA_MAX_CANDIDATES + " are written as rows)" : "")
+                    + ((excluded > 0)
+                            ? " (" + excluded + " excluded by exclude.packages and not written as rows)" : "");
             if (n > Config.CHA_MAX_CANDIDATES && !candidateLimitWarned) {
                 candidateLimitWarned = true;
                 Log.warn(Messages.format("report.walker.chaCandidateLimit", Config.CHA_MAX_CANDIDATES,

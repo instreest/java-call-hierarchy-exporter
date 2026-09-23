@@ -135,7 +135,7 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
-at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -287,7 +287,7 @@ at fx.lambda.Holder.lambda$viaForEach$3(Holder.java:51),OrderDaoImpl.findById,RE
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.lambda.Nested.viaNested(Nested.java:20),Nested.lambda$viaNested$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.viaNested,Nested.lambda$viaNested$1
 at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
 at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe

@@ -170,7 +170,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 前半3 | 呼び出し先の宣言ファイルが無い | `[EXTERNAL] no source to follow` |
 | 前半4 | 次の深さが `max.depth` に達する | `[UNEXPANDED:DEPTH] depth limit (N) reached` |
 | 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` |
-| 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}` |
+| 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}`。行にしない候補があれば数を後ろに足す（上限で切った `(only the first N are written as rows)`、除外した `(K excluded by exclude.packages and not written as rows)`） |
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
 | 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
