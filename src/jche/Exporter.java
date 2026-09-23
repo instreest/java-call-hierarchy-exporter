@@ -25,6 +25,7 @@ import jche.util.HeapWatch;
 import jche.util.Log;
 import jche.util.RunControl;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * フェーズ1（ソース解析とキャッシュ更新）・フェーズ2（グラフ構築とデータフローの確定・具象クラスの解決）。
@@ -126,9 +127,10 @@ public final class Exporter {
                         ? Messages.format("exporter.parseSummary.syntaxErrors", result.syntaxErrorFiles) : "",
                 (result.salvaged > 0)
                         ? Messages.format("exporter.parseSummary.salvaged", result.salvaged) : ""));
+        reportCompileErrors(result);
         reportSyntaxErrors(config, result);
         if (result.unresolved > 0) {
-            Log.info(Messages.format("exporter.unresolved", result.unresolved));
+            Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.unresolved", result.unresolved));
             Log.info(Messages.get("exporter.unresolved2"));
             if (!config.libraryFolders.isEmpty()) {
                 Log.info(Messages.get("exporter.unresolved3"));
@@ -160,18 +162,41 @@ public final class Exporter {
         if (result.syntaxErrorFiles == 0) {
             return;
         }
-        Log.warn(Messages.format("exporter.syntaxErrors", result.syntaxErrorFiles));
-        Log.warn(Messages.get("exporter.syntaxErrors2"));
+        Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors", result.syntaxErrorFiles));
+        Warnings.warn(Warnings.Topic.BUILD, Messages.get("exporter.syntaxErrors2"));
         for (String path : result.syntaxErrorPaths) {
-            Log.warn("   - " + path);
+            Warnings.warn(Warnings.Topic.BUILD, "   - " + path);
         }
         if (result.syntaxErrorFiles > result.syntaxErrorPaths.size()) {
-            Log.warn(Messages.format("exporter.syntaxErrors.more",
+            Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors.more",
                     result.syntaxErrorFiles - result.syntaxErrorPaths.size()));
         }
-        Log.warn(Messages.format("exporter.syntaxErrors.level", config.sourceLevel,
+        Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors.level", config.sourceLevel,
                 JavaCore.latestSupportedJavaVersion()));
-        Log.warn(Messages.get("exporter.syntaxErrors.level2"));
+        Warnings.warn(Warnings.Topic.BUILD, Messages.get("exporter.syntaxErrors.level2"));
+    }
+
+    /**
+     * コンパイルエラーのあったファイルを報告する。
+     *
+     * <p>このツールは「ビルドが通る」ことを正常な状態としている。エラーの多くは依存 jar の不足・
+     * Java の版の食い違い・ビルド時に生成されるソースの欠け（Lombok、アノテーション処理）で、
+     * どれもその箇所の呼び出しが型解決に失敗して階層から抜ける。解析は続けるが、黙ってはいけない
+     * （warnings.txt の「ソースにコンパイルエラーがある」の項目になる。{@code docs/output-files-simplify-qa.md} の Q6）。
+     * 構文エラーはこの一部で、影響がより重いので {@link #reportSyntaxErrors} で別に言う。
+     */
+    private static void reportCompileErrors(CachePhaseResult result) {
+        if (result.compileErrorFiles == 0) {
+            return;
+        }
+        Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.compileErrors", result.compileErrorFiles));
+        for (String path : result.compileErrorPaths) {
+            Warnings.warn(Warnings.Topic.BUILD, "   - " + path);
+        }
+        if (result.compileErrorFiles > result.compileErrorPaths.size()) {
+            Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors.more",
+                    result.compileErrorFiles - result.compileErrorPaths.size()));
+        }
     }
 
     /** 「新規解析」のうち、自分は変わっていないのに解析し直した件数の内訳 */

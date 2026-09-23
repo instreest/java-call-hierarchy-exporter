@@ -28,6 +28,7 @@ import jche.report.CallHierarchyCsvWriter;
 import jche.util.Log;
 import jche.util.Names;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * 他チームのjarを走査し、自分のメソッドがどこから参照されているかを出力する。
@@ -367,7 +368,7 @@ public final class ExternalUsageScanner {
                             .forEach(out::add);
                 }
             } else {
-                Log.warn(Messages.format("external.folderMissing", r));
+                Warnings.warn(Warnings.Topic.CONFIG, Messages.format("external.folderMissing", r));
             }
         }
         return new ArrayList<>(out);

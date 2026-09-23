@@ -17,6 +17,7 @@ import org.w3c.dom.Element;
 
 import jche.util.Log;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * ローカルリポジトリ（ダウンロード済みの jar と POM の置き場所）。ここからしか探さず、ネットワークには出ない。
@@ -51,7 +52,7 @@ public final class LocalRepositories {
                 if (Files.isDirectory(p)) {
                     roots.add(p);
                 } else {
-                    Log.warn(Messages.format("config.repos.missingFolder", p));
+                    Warnings.warn(Warnings.Topic.DEPENDENCIES, Messages.format("config.repos.missingFolder", p));
                 }
             }
             return new LocalRepositories(roots);
@@ -65,7 +66,7 @@ public final class LocalRepositories {
             roots.add(gradle);
         }
         if (roots.isEmpty()) {
-            Log.warn(Messages.format("config.repos.none", maven, gradle));
+            Warnings.warn(Warnings.Topic.DEPENDENCIES, Messages.format("config.repos.none", maven, gradle));
         }
         return new LocalRepositories(roots);
     }
@@ -85,10 +86,11 @@ public final class LocalRepositories {
                     if (!raw.contains("${")) {
                         return Paths.get(raw).toAbsolutePath().normalize();
                     }
-                    Log.warn(Messages.format("config.repos.settingsVariable", raw));
+                    Warnings.warn(Warnings.Topic.DEPENDENCIES, Messages.format("config.repos.settingsVariable", raw));
                 }
             } catch (Exception e) {
-                Log.warn(Messages.format("config.repos.settingsUnreadable", settings, e));
+                Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                        Messages.format("config.repos.settingsUnreadable", settings, e));
             }
         }
         return home.resolve(".m2").resolve("repository");

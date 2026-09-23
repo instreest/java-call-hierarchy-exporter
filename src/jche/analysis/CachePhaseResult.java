@@ -28,8 +28,32 @@ public final class CachePhaseResult {
     /** そのファイルのパス。多すぎても意味が無いので {@link #SYNTAX_ERROR_SAMPLE} 件まで */
     public final List<String> syntaxErrorPaths = new ArrayList<>();
 
-    /** ログに出す構文エラーのファイル名の上限 */
+    /**
+     * コンパイルエラー（構文エラーを含む）のあったファイル数（新規解析ぶんと再利用ぶんの両方）。
+     * 0 でなければビルドが通らない状態で解析しており、その箇所の呼び出しは型解決に失敗しうる
+     */
+    public int compileErrorFiles;
+    /** そのファイルのパス。{@link #SYNTAX_ERROR_SAMPLE} 件まで */
+    public final List<String> compileErrorPaths = new ArrayList<>();
+
+    /** ログに出す構文エラー・コンパイルエラーのファイル名の上限 */
     public static final int SYNTAX_ERROR_SAMPLE = 20;
+
+    /**
+     * F 行（またはその中身）から、コンパイルエラー・構文エラーのあったファイルを数える。
+     * 新規解析・再利用・中断からの引き継ぎのどの経路でも同じ数え方にするため、ここにまとめる
+     */
+    public void countErrors(String relativePath, int errors, int syntaxErrors) {
+        if (errors > 0 || syntaxErrors > 0) {
+            compileErrorFiles++;
+            if (compileErrorPaths.size() < SYNTAX_ERROR_SAMPLE) {
+                compileErrorPaths.add(relativePath);
+            }
+        }
+        if (syntaxErrors > 0) {
+            addSyntaxErrorFile(relativePath);
+        }
+    }
 
     /** 構文エラーのあったファイルを1件数える。パスは上限まで覚える */
     public void addSyntaxErrorFile(String relativePath) {

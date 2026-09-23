@@ -14,6 +14,7 @@ import java.util.Set;
 
 import jche.util.Log;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * pom.xml から実効 POM（{@link MavenProject}）を作る。Maven のモデルビルダーの簡略版。
@@ -302,7 +303,7 @@ final class MavenModels {
 
     private void warnOnce(String message) {
         if (warned.add(message)) {
-            Log.warn(Messages.format("config.maven.warn", message));
+            Warnings.warn(Warnings.Topic.DEPENDENCIES, Messages.format("config.maven.warn", message));
         }
     }
 }

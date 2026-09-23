@@ -33,15 +33,17 @@ message() {
 : > "$WORK/dirs.txt"
 for lang in En Ja; do
     msg=$(message "Messages$lang.java" config.deps.missingJars)
+    repo=$(message "Messages$lang.java" config.repos.none)
     count=$(message "Messages$lang.java" exporter.classpathCount)
-    if [ -z "$msg" ] || [ -z "$count" ]; then
+    if [ -z "$msg" ] || [ -z "$repo" ] || [ -z "$count" ]; then
         ng "Messages$lang.java から文言を取れない"
         continue
     fi
     d="$WORK/out-$lang"
     mkdir -p "$d"
     # 警告ではない依存 jar の行（件数の報告）は拾わないこと
-    printf '[00:00.100s] %s\n[00:00.200s] [WARN] %s\n' "$count" "$msg" > "$d/run.log"
+    # ローカルリポジトリの警告も同じ書き出しでそろえてある（docs/output-files-simplify-qa.md の Q9）
+    printf '[00:00.100s] %s\n[00:00.150s] [WARN] %s\n[00:00.200s] [WARN] %s\n' "$count" "$repo" "$msg" > "$d/run.log"
     echo "$d" >> "$WORK/dirs.txt"
 done
 echo "dummy.properties" > "$WORK/configs.txt"
@@ -54,11 +56,17 @@ status=$?
 
 for lang in En Ja; do
     msg=$(message "Messages$lang.java" config.deps.missingJars)
+    repo=$(message "Messages$lang.java" config.repos.none)
     [ -n "$msg" ] || continue
     if printf '%s\n' "$out" | grep -qF "::warning title=依存jar::out-$lang: $msg"; then
         ok "$lang: warning アノテーションが出る"
     else
         ng "$lang: warning アノテーションが出ない"
+    fi
+    if printf '%s\n' "$out" | grep -qF "::warning title=依存jar::out-$lang: $repo"; then
+        ok "$lang: ローカルリポジトリの警告も warning アノテーションが出る"
+    else
+        ng "$lang: ローカルリポジトリの警告が拾われない"
     fi
     if grep -qF -- "- $msg" "$WORK/summary.md" 2>/dev/null; then
         ok "$lang: ジョブサマリに載る"
@@ -67,6 +75,6 @@ for lang in En Ja; do
     fi
 done
 n=$(printf '%s\n' "$out" | grep -c '^::warning')
-[ "$n" -eq 2 ] && ok "警告ではない行は拾わない（warning は 2 件）" || ng "warning が $n 件（期待は 2 件）: $out"
+[ "$n" -eq 4 ] && ok "警告ではない行は拾わない（warning は 4 件）" || ng "warning が $n 件（期待は 4 件）: $out"
 
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

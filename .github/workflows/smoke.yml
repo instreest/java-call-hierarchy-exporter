@@ -61,6 +61,11 @@ jobs:
       - name: Constructor body test (JEP 513 flexible constructor bodies)
         run: bash test/ctorbody/run.sh
 
+      # 確認してほしいことの案内（warnings.txt）。正常な状態では作らず、依存 jar の不足・
+      # 設定の指定先の欠け・コンパイルエラー・実行の失敗で作ること。使い捨てのプロジェクトをその場で作る
+      - name: Warnings file test (warnings.txt)
+        run: bash test/warnings/run.sh
+
       # dataflow キャッシュの値の符号化。SQL やログ文言のような長さも中身も選べない文字列を
       # そのまま持つための土台なので、全制御文字・バックスラッシュの連なりまで機械的にかける
       - name: Cache value encoding test (escape round-trip)

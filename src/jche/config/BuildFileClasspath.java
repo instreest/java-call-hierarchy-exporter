@@ -13,6 +13,7 @@ import java.util.Set;
 
 import jche.util.Log;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * library.folders が空欄のとき、ビルドファイル（pom.xml / build.gradle）とローカルリポジトリから依存 jar を集める。
@@ -69,7 +70,7 @@ public final class BuildFileClasspath {
                     ? MavenBuild.resolve(dir, repos, models)
                     : GradleBuild.resolve(dir, projectRoot, repos, models);
             if (result == null) {
-                Log.warn(Messages.format("config.deps.unreadableBuildFile", dir));
+                Warnings.warn(Warnings.Topic.DEPENDENCIES, Messages.format("config.deps.unreadableBuildFile", dir));
                 continue;
             }
             report(result, (System.nanoTime() - start) / 1_000_000_000.0);
@@ -114,7 +115,8 @@ public final class BuildFileClasspath {
         if ("maven".equals(forced) || "gradle".equals(forced)) {
             BuildTool tool = BuildTool.valueOf(forced.toUpperCase(Locale.ROOT));
             if (!tool.hasBuildFileIn(dir)) {
-                Log.warn(Messages.format("config.deps.forcedToolMissing", forced, dir, tool.buildFileNames));
+                Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                        Messages.format("config.deps.forcedToolMissing", forced, dir, tool.buildFileNames));
                 return null;
             }
             return new BuildTool.Detection(tool, Messages.format("config.deps.forcedReason", forced));
@@ -136,21 +138,27 @@ public final class BuildFileClasspath {
             Log.info("    " + note);
         }
         if (!result.missingJars.isEmpty()) {
-            Log.warn(Messages.format("config.deps.missingJars", result.missingJars.size()));
+            Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                    Messages.format("config.deps.missingJars", result.missingJars.size()));
             for (String m : result.missingJars) {
                 Log.info("      " + m);
+                Warnings.detail(Warnings.Topic.DEPENDENCIES, "  " + m);
             }
         }
         if (!result.missingPoms.isEmpty()) {
-            Log.warn(Messages.format("config.deps.missingPoms", result.missingPoms.size()));
+            Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                    Messages.format("config.deps.missingPoms", result.missingPoms.size()));
             for (String m : result.missingPoms) {
                 Log.info("      " + m);
+                Warnings.detail(Warnings.Topic.DEPENDENCIES, "  " + m);
             }
         }
         if (!result.unresolved.isEmpty()) {
-            Log.warn(Messages.format("config.deps.unresolved", result.unresolved.size()));
+            Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                    Messages.format("config.deps.unresolved", result.unresolved.size()));
             for (String m : result.unresolved) {
                 Log.info("      " + m);
+                Warnings.detail(Warnings.Topic.DEPENDENCIES, "  " + m);
             }
         }
     }

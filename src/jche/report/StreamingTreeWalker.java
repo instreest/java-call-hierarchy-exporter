@@ -21,6 +21,7 @@ import jche.graph.MethodTable;
 import jche.graph.Resolution;
 import jche.util.Log;
 import jche.util.Messages;
+import jche.util.Warnings;
 
 /**
  * フェーズ3: 呼び出し階層を深さ優先で辿りながら、CSVを1行ずつ書き出す。
@@ -727,7 +728,7 @@ public final class StreamingTreeWalker {
         }
         if (!limitWarned) {
             limitWarned = true;
-            Log.warn(Messages.format("report.walker.maxRows", config.maxRows));
+            Warnings.warn(Warnings.Topic.INCOMPLETE, Messages.format("report.walker.maxRows", config.maxRows));
         }
         return true;
     }

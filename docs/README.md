@@ -63,7 +63,7 @@
 | [cache-identity-qa.md](cache-identity-qa.md) | #102 #103 #104 | キャッシュの「同じファイルか」の判定をパス・サイズ・内容の指紋に統一する（更新時刻をやめる）。クラスパスの並び順の変化を検知する。サーバーモードの `SHUTDOWN` が実行中の解析を中止していた件 |
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
-| [output-files-simplify-qa.md](output-files-simplify-qa.md) | — | 出力ファイルを減らす。`resolved-classpath.txt` を `run.log` にまとめる判断と、依存 jar を取得しない（ネットワークに出ない）仕様の確認 |
+| [output-files-simplify-qa.md](output-files-simplify-qa.md) | — | 出力ファイルの役割の整理。`resolved-classpath.txt` を `run.log` にまとめる判断、依存 jar を取得しない（ネットワークに出ない）仕様の確認、想定どおりに動かなかった実行でだけ出す `warnings.txt`（何を出したら作るか、典型の項目、ビルドが通っていないことの判定） |
 | [config-folder-qa.md](config-folder-qa.md) | #62 | 既定の設定ファイルを `config/` に置く。相対パスの起点 |
 | [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。本体は `config.properties` のまま、プラグインが利用者のプロジェクトに書くのは `jche.properties`（誤検出を中身で防ぐ） |
 | [cli-app-qa.md](cli-app-qa.md) | #63 | 起動コマンドと対話モード。`.cmd` が MS932 でなければならない理由（Q15） |
