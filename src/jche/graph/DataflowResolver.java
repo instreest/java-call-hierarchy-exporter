@@ -139,25 +139,56 @@ public final class DataflowResolver {
      * ここだけは具象「型」を経由しない。ラムダの本体は合成メソッドで、
      * 関数型インターフェースのメソッド（{@code Runnable#run()}）を
      * オーバーライドしているわけではないので、型とシグネチャからは引けないため。
+     *
+     * <p>メソッド参照の参照先が仮想メソッドで、束縛したレシーバ（{@code dao::describe} の
+     * {@code dao}）の具象型が分かるなら、その型で実際に動く実装を返す（JLS 15.13.3）。
+     * 分からなければ参照先の宣言そのもの。仮想メソッドの候補を複数返す形は
+     * {@link CallResolver} が {@link #functionalOriginOf} から組み立てる
      */
     public int functionalTargetOf(String recvOrigin, DataflowContext ctx) {
-        String key = functionalKeyOf(recvOrigin, ctx);
-        return (key == null) ? -1 : methods.idOf(key);
+        String functional = functionalOriginOf(recvOrigin, ctx);
+        if (functional == null) {
+            return -1;
+        }
+        int target = methods.idOf(Origin.valueOf(functional));
+        if (target < 0) {
+            return -1;
+        }
+        int viaReceiver = functionalReceiverImpl(functional, target);
+        return (viaReceiver >= 0) ? viaReceiver : target;
     }
 
-    /** 出所が指している「関数型インターフェースの実装」のメソッドキー。無ければ null */
-    private String functionalKeyOf(String origin, DataflowContext ctx) {
+    /**
+     * メソッド参照が束縛したレシーバの具象型で実際に動く実装。決まらなければ -1。
+     *
+     * レシーバの出所は参照を書いたメソッドから見たもので、今歩いている経路の
+     * フレームとは別なので、経路の文脈（引数の環境）は使わない。フレームに依らず決まる
+     * 出所（new・出所が1つのフィールド・引数を使わないファクトリ）だけで決める
+     */
+    public int functionalReceiverImpl(String functionalOrigin, int target) {
+        String receiver = Origin.receiverOf(functionalOrigin);
+        if (receiver == null || methods.isLambdaBody(target)) {
+            return -1;
+        }
+        String fqn = concreteTypeOf(Origin.unnest(receiver), null);
+        return (fqn == null) ? -1 : graph.implementationOf(fqn, target);
+    }
+
+    /**
+     * 出所が指している「関数型インターフェースの実装」の出所（{@code Z:メソッドキー}。
+     * 束縛したレシーバがあれば {@code |r=} 付き）。無ければ null
+     */
+    public String functionalOriginOf(String origin, DataflowContext ctx) {
         char kind = Origin.kindOf(origin);
         if (kind == Origin.FUNCTIONAL) {
-            return Origin.valueOf(origin);
+            return origin;
         }
         if (kind == Origin.FIELD) {
             // フィールドに保持されたラムダ（private Runnable task = () -> ...;）。
             // 出所が1つに定まっているフィールドだけが表に載っているので、
             // どのラムダが入るかは経路を見なくても決まる
             String held = graph.fieldOrigin(Origin.valueOf(origin));
-            return (held != null && Origin.kindOf(held) == Origin.FUNCTIONAL)
-                    ? Origin.valueOf(held) : null;
+            return (held != null && Origin.kindOf(held) == Origin.FUNCTIONAL) ? held : null;
         }
         // 引数・捕捉した引数として渡ってきたラムダ。経路の環境には Z: のまま入っている
         if (ctx == null) {
@@ -173,8 +204,7 @@ public final class DataflowResolver {
             return null;
         }
         String value = args[idx];
-        return (value != null && Origin.kindOf(value) == Origin.FUNCTIONAL)
-                ? Origin.valueOf(value) : null;
+        return (value != null && Origin.kindOf(value) == Origin.FUNCTIONAL) ? value : null;
     }
 
     // ------------------------------------------------------------
@@ -191,6 +221,16 @@ public final class DataflowResolver {
             int factory = methods.idOf(Origin.valueOf(origin));
             if (factory < 0) {
                 return null;
+            }
+            // 関数型インターフェースのメソッドの戻り値（s.get()）で、レシーバがラムダ／メソッド参照と
+            // 分かるなら、返す値はその本体（またはメソッド参照の参照先）の return で決まる。
+            // 関数型インターフェースのメソッド以外（Object#toString() 等）には当てない
+            String receiver = Origin.receiverOf(origin);
+            if (receiver != null && graph.hasFunctionalImpl(factory)) {
+                int impl = functionalTargetOf(Origin.unnest(receiver), ctx);
+                if (impl >= 0) {
+                    factory = impl;
+                }
             }
             return applyInvocationArgs(factoryReturnOrigin(factory), Origin.argsOf(origin), ctx);
         }
@@ -544,14 +584,17 @@ public final class DataflowResolver {
             case Origin.LITERAL:
             case Origin.CLASS:
             case Origin.CONST:   // 条件分岐の判定に使う定数（jche.graph.GuardEvaluator）
-            case Origin.FUNCTIONAL:   // 実引数で渡されたラムダ／メソッド参照
                 return Origin.head(origin);
+            case Origin.FUNCTIONAL:
+                // 実引数で渡されたラムダ／メソッド参照。束縛したレシーバ（|r=）は落とさない。
+                // 読み手はフレームに依らない出所だけでレシーバを判定する（functionalReceiverImpl）
+                return origin;
             case Origin.PARAM:
             case Origin.CAPTURED: {
                 // ラムダそのものが引数として渡ってきた形も、値として次のフレームへ渡す
-                String functional = functionalKeyOf(origin, ctx);
+                String functional = functionalOriginOf(origin, ctx);
                 if (functional != null) {
-                    return Origin.of(Origin.FUNCTIONAL, functional);
+                    return functional;
                 }
                 return (Origin.kindOf(origin) == Origin.PARAM) ? paramValueOf(origin, ctx) : null;
             }

@@ -55,9 +55,9 @@ ItemFinder.findFirst(),fx.dao.ItemFinder,C,src/fx/dao/ItemFinder.java,16,1,0,1,E
 LibBackedDao.findById(long),fx.dao.LibBackedDao,C,src/fx/dao/LibBackedDao.java,11,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] no caller row was emitted
 OrderDaoImpl.load(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,11,1,1,0,LEAF,1,0,,1,
 OrderDaoImpl.findById(long),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,16,1,19,1,NORMAL,1,0,,1,
-OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,21,0,LEAF,1,0,,1,
+OrderDaoImpl.describe(),fx.dao.OrderDaoImpl,C,src/fx/dao/OrderDaoImpl.java,22,1,26,0,LEAF,1,0,,1,
 UserDaoImpl.load(long),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,7,1,1,1,NORMAL,1,0,,1,
-UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,16,0,LEAF,1,0,,1,
+UserDaoImpl.describe(),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,13,1,20,0,LEAF,1,0,,1,
 UserDaoImpl.save(java.util.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,15,1,1,1,NORMAL,1,0,,1,
 UserDaoImpl.save(fx.other.List),fx.dao.UserDaoImpl,C,src/fx/dao/UserDaoImpl.java,16,1,1,1,NORMAL,1,0,,1,
 Deep.nestedArgument(),fx.deep.Deep,C,src/fx/deep/Deep.java,19,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
@@ -126,13 +126,18 @@ Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENT
 Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] type name (static),0,[NOT_REACHED] no caller row was emitted
 LoggingHandler.handle(String),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,11,1,1,1,NORMAL,1,0,,0,[NOT_REACHED] no caller row was emitted
 LoggingHandler.logged(),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,15,1,1,0,LEAF,1,0,,0,[NOT_REACHED] no caller row was emitted
+Nested.viaNested(),fx.lambda.Nested,C,src/fx/lambda/Nested.java,19,1,0,2,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Redeclared.viaSuperInterface(),fx.lambda.Redeclared,C,src/fx/lambda/Redeclared.java,16,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Redeclared.dispatch(Handler),fx.lambda.Redeclared,C,src/fx/lambda/Redeclared.java,21,1,1,1,NORMAL,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,1,
+Refs.viaBoundRef(),fx.lambda.Refs,C,src/fx/lambda/Refs.java,26,1,0,2,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Refs.viaUnboundRef(),fx.lambda.Refs,C,src/fx/lambda/Refs.java,31,1,0,3,ENTRY_CANDIDATE,1,2,[UNEXPANDED:CHA] type name (static);[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
+Refs.viaExprBody(),fx.lambda.Refs,C,src/fx/lambda/Refs.java,36,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Refs.viaBlockBody(),fx.lambda.Refs,C,src/fx/lambda/Refs.java,41,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Starter.viaThread(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,19,1,0,3,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Starter.viaSubclass(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,24,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Starter.viaExecutor(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,29,1,0,4,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Starter.viaVariable(),fx.lambda.Starter,C,src/fx/lambda/Starter.java,36,1,0,3,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
-Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,6,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
+Starter.Job.run(),fx.lambda.Starter.Job,C,src/fx/lambda/Starter.java,49,1,7,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
 Starter.Worker.run(),fx.lambda.Starter.Worker,C,src/fx/lambda/Starter.java,62,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
 StringHandler.handle(String),fx.lambda.StringHandler,I,src/fx/lambda/StringHandler.java,10,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 Base.init(String),fx.model.Base,C,src/fx/model/Base.java,8,1,1,1,NORMAL,1,0,,1,
