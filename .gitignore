@@ -77,6 +77,12 @@ target/
 /test/incremental/jarorder.properties
 /test/incremental/jarwork/
 
+# test/cacheversion/run.sh（キャッシュの形式の版の上げ忘れの検査）のコンパイル結果・キャッシュ・出力
+/test/cacheversion/build/
+/test/cacheversion/.cache/
+/test/cacheversion/out/
+/test/cacheversion/out.log
+
 # test/ctorbody/run.sh（コンストラクタ本体の読み取りの検査）が作る使い捨てのプロジェクト
 /test/ctorbody/work/
 

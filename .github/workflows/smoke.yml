@@ -96,6 +96,12 @@ jobs:
       - name: Cache integrity test (differential update equals full analysis)
         run: bash test/incremental/run.sh
 
+      # キャッシュの形式の版（CacheFormat.VERSION）の上げ忘れを捕まえる。決まった題材を全件解析した
+      # キャッシュの事実の指紋を test/cacheversion/facts.txt に記録しておき、版・題材・環境が同じなのに
+      # 事実が変わったら落とす（迷ったら上げる。上げ忘れは検査で捕まえる）
+      - name: Cache format version guard (facts changed without a version bump)
+        run: bash test/cacheversion/run.sh
+
       # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う。
       # 起動コマンドはネットワークからの取得の前に確認を出し、端末が無ければ取得せずに終わる（Issue #86）。

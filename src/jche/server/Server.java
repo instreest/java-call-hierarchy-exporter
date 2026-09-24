@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import jche.AnalysisSnapshot;
 import jche.Exporter;
+import jche.analysis.JdtVersion;
 import jche.config.Config;
 import jche.graph.MethodTable;
 import jche.report.Csv;
@@ -185,36 +186,10 @@ public final class Server {
 
     private void hello() {
         respondOk("protocol=" + Protocol.VERSION
-                + Protocol.SEP + "jdt=" + jdtVersion()
+                + Protocol.SEP + "jdt=" + JdtVersion.current()
                 + Protocol.SEP + "jvm=" + System.getProperty("java.version", "?")
                 // この JDT で解析できる Java の上限。画面はこれを使って「新しい文法は取りこぼす」と伝えられる
                 + Protocol.SEP + "maxJava=" + org.eclipse.jdt.core.JavaCore.latestSupportedJavaVersion());
-    }
-
-    /**
-     * 使っている JDT の版。クラスパス上の jar の MANIFEST（Bundle-Version）から読む。
-     * 「どの JDT で解析したか」は結果の説明に要るので、起動時に必ず伝える。
-     */
-    private static String jdtVersion() {
-        try {
-            java.security.CodeSource source =
-                    org.eclipse.jdt.core.JavaCore.class.getProtectionDomain().getCodeSource();
-            if (source == null || source.getLocation() == null) {
-                return "?";
-            }
-            Path jar = Paths.get(source.getLocation().toURI());
-            if (!Files.isRegularFile(jar)) {
-                return "?";
-            }
-            try (java.util.jar.JarFile file = new java.util.jar.JarFile(jar.toFile())) {
-                java.util.jar.Manifest manifest = file.getManifest();
-                String version = (manifest == null) ? null
-                        : manifest.getMainAttributes().getValue("Bundle-Version");
-                return (version == null || version.isBlank()) ? "?" : version;
-            }
-        } catch (Exception e) {
-            return "?";
-        }
     }
 
     private void analyze(String configPath) throws Exception {

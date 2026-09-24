@@ -341,6 +341,12 @@ discard_case "形式の版が古い analysis キャッシュ" \
     "sed -i '1s/^jche-cache-v[0-9]*/jche-cache-v1/' \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
 
+# 解析に使った JDT の版が違うキャッシュ。バインディングの解決・JLS の解釈・条件式のテキストは JDT の版で
+# 変わりうるので、鍵（ヘッダ行の jdt=）が違えば捨てる。以前は鍵に入っておらず、JDT を上げても再利用していた
+discard_case "JDT の版が違うキャッシュ" \
+    "sed -i -E '1s/\tjdt=[^\t]*/\tjdt=0.0.0/' \$(ls .cache/*/analysis-cache.tsv)" \
+    "[cache]" yes
+
 # dataflow 側の版も同じ。こちらだけ古い場合、対の判定で両方が捨てられる
 discard_case "形式の版が古い dataflow キャッシュ" \
     "sed -i '1s/^jche-dataflow-v[0-9]*/jche-dataflow-v1/' \$(ls .cache/*/dataflow-cache.tsv)" \

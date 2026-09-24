@@ -1,0 +1,6 @@
+version jche-cache-v30 jche-dataflow-v7
+env jdk=25 jdt=3.46.0.v20260520-1003+3.46.0.v20260528-0407
+fixture f99dc0941a000527
+facts demo 4ff54bf76b808e15
+facts incremental dfdb6fc9fa4faeea
+facts jls 67dea26f516eed35

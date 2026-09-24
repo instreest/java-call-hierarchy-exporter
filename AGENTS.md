@@ -52,6 +52,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/dataflow/run.sh` | 解決の決定性の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること |
 | `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
 | `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること。文字コードの変更・形式の版が古い・壊れたキャッシュでは再利用せず捨てること。中断した実行から引き継ぐこと。期待値ファイルは持たない |
+| `bash test/cacheversion/run.sh` | キャッシュの形式の版の上げ忘れの検査。決まった題材（`test/demo`・`test/incremental`・`test/jls/project`）を全件解析したキャッシュの事実の指紋を `test/cacheversion/facts.txt` と比べ、版・題材・環境が同じなのに事実が変わっていれば落とす。版を上げたら・題材を変えたら `--update` で記録を更新する |
 | `bash test/cli/run.sh` | 起動コマンドと対話モードの検査。メニューへの答えをパイプで流し込む |
 | `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。Q25）。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
 | `bash test/jls/run.sh` | Java 言語仕様（JLS SE 26）への適合と javac との整合の検査。`test/jls/project/src/` の各ソースが JLS の 1 つの節に対応し（パッケージ名が節番号。`jls.s14_14_02` = §14.14.2）、節ごとの期待値（`test/jls/expect.tsv`。1 行 1 テストで節番号と説明を持つ）を出力とキャッシュに当てる。あわせて同じソースを JDK 26 の javac（`--release 26`）でコンパイルし、型・宣言・呼び出し・ラムダ・ブリッジをキャッシュの事実と突き合わせる（`test/jls/JlsCheck.java`。JDK 26 は jbang が取得）。新しい構文の読み取りを直したら節を足す（`docs/jls-conformance-test-qa.md`） |
@@ -107,9 +108,13 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   （セルが引用符で囲まれ、行末の grep が効かなくなる）。`docs/nls-qa.md` の Q6。
   同じ出力フォルダでも `contracts-suggested.txt` は**人が読んで選ぶ案内文**なので表示言語に合わせる
   （`docs/nls-qa.md` の Q16）
-- キャッシュに焼き込まれる文字列（`Guard` の `text` のように**書き手が作る**もの）を変えるときは、
-  文言の変更でもキャッシュの版を上げる。上げないと、再利用したファイルだけ古い言語の注記が出て
-  同じ CSV に 2 つの言語が混ざる（`docs/nls-qa.md` の Q7）
+- **キャッシュの形式の版（`CacheFormat.VERSION`）は迷ったら上げる。上げ忘れは `test/cacheversion/run.sh` が捕まえる。**
+  書き手（`src/jche/analysis`・`src/jche/cache`）の変更でキャッシュに入る事実が変わりうるなら、列や意味の変更で
+  なくても上げる（収集範囲・値の正規化・`Guard` の `text` のように**書き手が作る文字列**の文言も含む）。
+  上げ忘れると、再利用したファイルだけが古い事実のまま残り、壊れ方が「エラー」ではなく「静かに違う結果」になる
+  （`docs/cache-split-qa.md` の Q22、`docs/nls-qa.md` の Q7）。上げると利用者は 1 回だけ全件解析になるが、
+  それは安全側の費用として受け入れる。上げたら `bash test/cacheversion/run.sh --update` で記録（`facts.txt`）を更新する。
+  読み手だけの変更（解決の方針・CSV の列・フィルタ・注記の文言）では事実が変わらないので上げなくてよい
 - Eclipse プラグイン（`eclipse-plugin/src-ui`）は **Java 11** の言語機能で書く（`--release 11`）。
   下限は Eclipse 4.17（2020-09）／Java 11 で、`test/plugin-api/run.sh` がその版の jar だけで
   コンパイルして検査する（`docs/eclipse-plugin-java-floor-qa.md`）
@@ -124,7 +129,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   `"%キー%"` と書き、`package.nls.json` / `package.nls.ja.json` に足す。
   検査は `test/vscode/run.sh`（`test/messages.test.ts`）（`docs/nls-qa.md` の Q15）
 - JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
-  （`test/pom/run.sh` が検出する）
+  （`test/pom/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
+  入っていて、変われば古いキャッシュは自動で捨てられるので、形式の版は上げなくてよい
+  （`bash test/cacheversion/run.sh --update` で記録だけ合わせる）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
   `**` は区切り文字をまたぐが 0 階層は含まないため、`**/*.java` だけでは同じフォルダ直下のファイルに当たらない
   （`cannot find symbol` になる）。直下ぶんの `*.java` を必ず併記する（`docs/entrypoint-package-qa.md`）

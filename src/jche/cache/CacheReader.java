@@ -67,10 +67,17 @@ public final class CacheReader implements Closeable {
     }
 
     /**
-     * ヘッダの形式が期待どおりか（版・ソースレベル・JDK・拡張の指紋が一致するか）。
-     * 世代の印（{@link CacheFormat#GENERATION_PREFIX}）は互換性とは別の軸なので比べない
+     * ヘッダの形式が期待どおりか（版・ソースレベル・文字コード・JDK・JDT の版が一致するか）。
+     * 世代の印（{@link CacheFormat#GENERATION_PREFIX}）は互換性とは別の軸なので比べない。
+     *
+     * <p>期待する側に分からない値（{@code ?}。JDT の版が読めなかった等）が入っていれば、
+     * 書かれている側と同じ文字列でも一致とはみなさない。「分からない」どうしが一致しても、
+     * 同じ環境で書かれたとは言えないため（安全側に倒す）
      */
     public boolean headerMatches(String expected) {
+        if (expected.contains("=?")) {
+            return false;
+        }
         return CacheFormat.compatibilityPartOf(header).equals(expected);
     }
 

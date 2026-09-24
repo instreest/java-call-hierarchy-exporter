@@ -198,10 +198,10 @@ public final class CacheUpdater {
         String generation = CacheFormat.newGeneration();
         try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8);
              BufferedWriter flowOut = Files.newBufferedWriter(tmpFlowCache, StandardCharsets.UTF_8)) {
-            writeLine(cacheOut, CacheFormat.withGeneration(
-                    CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding), generation));
+            writeLine(cacheOut, CacheFormat.withGeneration(CacheFormat.headerFor(
+                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()), generation));
             writeLine(flowOut, CacheFormat.withGeneration(CacheFormat.dataflowHeaderFor(
-                    config.sourceLevel, config.sourceEncoding), generation));
+                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()), generation));
             for (LibraryFact l : libraries.current) {
                 writeLine(cacheOut, l.toRow());
             }
@@ -796,7 +796,7 @@ public final class CacheUpdater {
         }
         try (CacheReader flow = CacheReader.open(partialFlow)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
-                    config.sourceLevel, config.sourceEncoding))) {
+                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()))) {
                 Log.info(Messages.get("analysis.resume.incompatible"));
                 return false;
             }
@@ -895,7 +895,7 @@ public final class CacheUpdater {
     private boolean dataflowCachePairsWith(String generation) throws IOException {
         try (CacheReader flow = CacheReader.open(config.dataflowCacheFile)) {
             if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
-                    config.sourceLevel, config.sourceEncoding))) {
+                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()))) {
                 Log.info(Messages.get("analysis.cache.dataflowIncompatible"));
                 return false;
             }
@@ -943,7 +943,8 @@ public final class CacheUpdater {
      */
     private CacheHead headOf(Path cacheFile) throws IOException {
         try (CacheReader in = CacheReader.open(cacheFile)) {
-            if (!in.headerMatches(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding))) {
+            if (!in.headerMatches(CacheFormat.headerFor(
+                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()))) {
                 return null;
             }
             List<LibraryFact> libraries = new ArrayList<>();

@@ -152,11 +152,20 @@ import java.security.SecureRandom;
  * 拡張（{@code plugin.folders}）はグラフを組むときにだけ動いてキャッシュには何も書かないので、
  * ヘッダ行には入れない。拡張を足しても外しても、キャッシュはそのまま再利用できる。
  *
- * <h2>バージョン（{@link #VERSION} / {@link #DATAFLOW_VERSION}）を上げる基準</h2>
- * 事実の意味・列・収集範囲が変わったときだけ上げる（全件再解析になる）。
- * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
- * 2 つは独立に上げられる。データフロー側の事実を足すときは {@link #DATAFLOW_VERSION} だけを上げればよく、
- * 呼び出し階層の出力は変わらない（再解析は起きるが、出力とその期待値は動かない）。
+ * <h2>バージョン（{@link #VERSION} / {@link #DATAFLOW_VERSION}）を上げる基準: 迷ったら上げる</h2>
+ * 書き手の変更でキャッシュに入る事実が変わりうるなら上げる。列や意味の変更に限らず、収集範囲・
+ * 値の正規化・書き手が作る文字列（{@link Guard} の text）の変更も含む。上げると利用者は 1 回だけ
+ * 全件解析になるが、上げ忘れると再利用したファイルだけが古い事実のまま残り、「静かに違う結果」になる。
+ * 前者は安全側の費用なので、迷ったら上げる。
+ * 上げ忘れは {@code test/cacheversion/run.sh} が捕まえる（決まった題材の事実の指紋を記録と比べる）。
+ * 上げたら {@code bash test/cacheversion/run.sh --update} で記録を更新する。
+ * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、注記の文言）では事実が変わらないので上げなくてよい。
+ * JDT の版と実行 JDK のメジャー版はヘッダ行の鍵（{@link #headerFor}）に入っているので、
+ * それらを変えるだけなら版は上げなくてよい。
+ *
+ * <p>以前は「2 つは独立に上げられる。データフロー側だけを上げれば呼び出し階層の出力は変わらない」と
+ * 書いていたが誤り。dataflow 側の値（P・N・J・R・X 行）は具象クラスの解決と条件分岐の打ち切りを通じて
+ * 呼び出し階層の出力に効く。
  *
  * <h2>事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）</h2>
  * <ul>
@@ -346,17 +355,26 @@ public final class CacheFormat {
      * JDK の版が変わると標準 API の解決結果も変わりうる。
      * ソースの中身だけを見ていると、設定や実行環境を変えたのに古い結果を
      * 再利用してしまうため、1行目に含めて丸ごと突き合わせる。
+     *
+     * <p>解析に使う JDT の版（{@code jdt=}。{@code jche.analysis.JdtVersion}）も入れる。
+     * バインディングの解決・JLS の解釈・ガードの条件式のテキスト（JDT の AST の文字列化）は
+     * JDT の版で変わりうるのに、以前は鍵に入っておらず、JDT を上げても古い事実を再利用していた。
+     * 版が分からない（{@code ?}）ときは、鍵が一致しないとみなす（{@link CacheReader#headerMatches}）。
+     *
+     * @param jdtVersion {@code jche.analysis.JdtVersion#current()}。この層は JDT に依存しないので
+     *                   呼び出し側から渡す
      */
-    public static String headerFor(String sourceLevel, String sourceEncoding) {
+    public static String headerFor(String sourceLevel, String sourceEncoding, String jdtVersion) {
         return VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
-                + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+                + SEP + "jdk=" + System.getProperty("java.specification.version", "?")
+                + SEP + "jdt=" + jdtVersion;
     }
 
     /**
      * dataflow-cache.tsv の1行目（互換性の部分）。
      *
-     * ソースレベル・文字コード・実行 JDK は analysis-cache.tsv と同じ理由で入れる
+     * ソースレベル・文字コード・実行 JDK・JDT の版は analysis-cache.tsv と同じ理由で入れる
      * （同じソースでも解析結果が変わる）。
      *
      * <p>以前はここに外から差し込むフェーズA拡張の指紋（{@code hints=}）も入れていた。
@@ -365,10 +383,11 @@ public final class CacheFormat {
      * 拡張なしで書いたキャッシュは以前と同じ行なので、そのまま再利用できる
      * （X 行が組み込みの {@code NEW} だけになるのは、旧版の拡張なしの実行と同じ）
      */
-    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding) {
+    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding, String jdtVersion) {
         return DATAFLOW_VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
-                + SEP + "jdk=" + System.getProperty("java.specification.version", "?");
+                + SEP + "jdk=" + System.getProperty("java.specification.version", "?")
+                + SEP + "jdt=" + jdtVersion;
     }
 
     /**
