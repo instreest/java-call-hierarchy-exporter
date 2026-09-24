@@ -61,16 +61,21 @@ package jche.cache;
  *                                                          依存する型は、このファイルのバインディング解決が参照した型の
  *                                                          FQN、ソースに書かれた型の名前、ラムダの目標の型とその親、
  *                                                          解決できなかった呼び出し・フィールド参照の受け手と実引数の型
- *                                                          （型変数は上限の消去）、import 文の型（オンデマンド import は
- *                                                          "pkg.*"）。自分が宣言する型は含まない。これらの型を宣言する
- *                                                          ファイルが変わっていたら再解析する。
+ *                                                          （型変数は上限の消去）、呼び出し先の throws の型、拡張 for 文・
+ *                                                          switch のセレクタ・throw の式の型、アノテーションの型、
+ *                                                          switch の case に書いた型とその親、import 文の型（オンデマンド
+ *                                                          import は "pkg.*"）。型解決に失敗したブロックでは、これらの型の
+ *                                                          推移的な親も載せる。自分が宣言する型は含まない。これらの型を
+ *                                                          宣言するファイルが変わっていたら再解析する。
  *                                                          型の形の指紋は、宣言する型の、継承したものを含むメンバーの
- *                                                          署名と親型のハッシュの頭 16 文字（jche.analysis.TypeShape）。
+ *                                                          署名（可変長引数か・throws の型と検査例外かを含む）と親型の
+ *                                                          ハッシュの頭 16 文字（jche.analysis.TypeShape）。私的メンバーは、
+ *                                                          宣言した型の親のメンバーと名前が当たるものだけ入れる。
  *                                                          解析し直した結果これが変わったら、この型を使う側も解析し直す。
  *                                                          解決できなかった名前は、型解決に失敗したブロック（エラーか
  *                                                          BINDING_FAILED の U 行がある）でだけ書く。エラーの引数に
  *                                                          現れた点区切りの識別子で、拾えなければ {@link #ANY_NAME}。
- *                                                          新しい型ができたとき、これに当たるブロックを解析し直す
+ *                                                          変わった型（新しい型を含む）に当たるブロックを解析し直す
  *   S  番号  pkg  typeFqn  method  paramSig                   ブロック内のメソッドの記号表（{@link SymbolTable}）。
  *                                                          番号は 0 から詰めて振る。下の「記号」はこの番号
  *   N  番号  kind  value  recv  args  argCount  staticRecv    {@link ValueNode}。値グラフのノード。
@@ -297,9 +302,13 @@ public final class CacheFormat {
      *       インスタンスフィールドの読み取りを値（{@code F:}）にしない。{@code this.m()} のレシーバの由来を
      *       this にする。拡張 for の要素の出所を、要素を詰めた値だけと言い切れるコレクションに限る
      *       （{@code docs/value-safety-qa.md} の Q18〜Q20）</li>
+     *   <li>v36 型の形（I 行の 2 列目）のメソッドに可変長引数か・throws の型と検査例外かを足し、親型のメンバーと
+     *       名前の当たらない私的メンバーを外した。I 行に呼び出し先の throws の型、拡張 for 文・switch のセレクタ・
+     *       throw の式・アノテーションの型、switch の case の型とその親、型解決に失敗したブロックでは参照した型の
+     *       親を足した（{@code docs/cache-unification-qa.md} の Q51〜Q55）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v35";
+    public static final String VERSION = "jche-cache-v36";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

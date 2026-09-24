@@ -91,6 +91,8 @@ final class CallSiteRecorder {
                 MethodInvocation guessSource, CallValues values, String qualifier) {
         int line = lineOf(node);
         noteOperandTypes(node);
+        // 呼び出し先の throws の型（検査例外かどうかで、呼び出し側のエラーが変わる）
+        names.noteThrownTypes(binding);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
         List<Guard.Atom> guard = guards.guardOf(node);
         if (callers == null) {
