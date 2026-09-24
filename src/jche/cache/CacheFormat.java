@@ -62,7 +62,7 @@ import java.security.SecureRandom;
  *                                                          上書きしている宣言のキー。ジェネリクスで
  *                                                          消去シグネチャが食い違う場合にだけ現れる（v23）
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth
+ *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth  qualifier
  *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
  *                                                             値（レシーバ・実引数の出所、ガード）は
  *                                                             dataflow 側の P 行にある
@@ -239,9 +239,12 @@ public final class CacheFormat {
      * {@code iterator()} / {@code hasNext()} / {@code next()}、try-with-resources の {@code close()}、
      * レコードパターンのアクセサ）を C 行にし、コンパクトなコンパイル単位の暗黙のクラス（JLS 7.3）を
      * H 行・D 行に載せた（{@code docs/jls-conformance-test-qa.md}）。古いキャッシュを再利用すると、
-     * そのファイルからだけこれらの辺が抜ける
+     * そのファイルからだけこれらの辺が抜ける。
+     * v29 で拡張 for 文の {@code hasNext()} / {@code next()} の呼び出し先を JLS 14.14.2 どおり
+     * {@code java.util.Iterator} にし、C 行の末尾に呼び出しを修飾する型（JLS 13.1）の列を足した。
+     * 古いキャッシュを再利用すると、そのファイルの呼び出しだけ CHA の候補が宣言した型から引かれる
      */
-    public static final String VERSION = "jche-cache-v28";
+    public static final String VERSION = "jche-cache-v29";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

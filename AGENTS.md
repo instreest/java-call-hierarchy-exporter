@@ -146,7 +146,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   呼び出し先のキーが分かるなら `implementationOf(型FQN, 呼び出し先ID)`、
   シグネチャしか分からないなら（契約表・リフレクション）`implementationOfSignature(型FQN, シグネチャ)`。
   どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、
-  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7・Q21）
+  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7・Q21）。
+  CHA の候補を数え始める型は、呼び出し先を宣言した型ではなく呼び出しを修飾する型（JLS 13.1。C 行の
+  qualifier。`CallResolver#usableQualifier`）で、jar の型なら宣言した型に倒す（`docs/jls-conformance-test-qa.md` の Q18）
 - AST の読み取りは Java 言語仕様に合わせる。オーバーライドの判定・暗黙のコンストラクタ呼び出し・
   定数の畳み込みは、自前で近似せず JDT のバインディング（`IMethodBinding.overrides` など）に任せ、
   分からないものは「判定しない」に倒す（`docs/jls-conformance-qa.md`、

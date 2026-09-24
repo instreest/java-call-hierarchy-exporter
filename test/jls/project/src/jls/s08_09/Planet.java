@@ -7,7 +7,8 @@ package jls.s08_09;
  *   <li>§8.9.1: 本体を持つ enum 定数（{@code MARS}）は、その enum を親に持つ匿名クラスのインスタンス。
  *       javac のバイナリ名は {@code Planet$1}（§13.1）。匿名クラスの暗黙のコンストラクタは
  *       {@code Planet(String)} を呼ぶ（§15.9.5.1）</li>
- *   <li>§8.9.2 / §12.4.2: enum 定数はクラスの初期化（{@code <clinit>}）で生成される</li>
+ *   <li>§8.9.3 / §12.4.2: enum 定数は暗黙に宣言された static final のフィールドが初期化されるときに
+ *       生成される。つまりクラスの初期化（{@code <clinit>}）で生成される</li>
  *   <li>§8.9.3: {@code values()} と {@code valueOf(String)} は暗黙に宣言されるメンバで、ソースに本体は無い</li>
  *   <li>§8.4.8.1: 定数の本体の {@code weight()} は {@code Planet.weight()} を上書きする。
  *       {@code Planet} 型で呼ぶと、両方が候補になる</li>

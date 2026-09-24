@@ -53,6 +53,11 @@ public final class CallGraph {
     int[] argOriginIds;
     /** エッジごとの、呼び出し箇所を囲む条件分岐（jche.cache.Guard）。-1 なら条件なし */
     int[] guardIds;
+    /**
+     * エッジごとの、呼び出しを修飾する型（JLS 13.1。C 行の qualifier）。-1 なら宣言した型と同じ。
+     * 値は出所と同じ共有プールのインデックス（型名は激しく重複するため）
+     */
+    int[] qualifierIds;
     private final ArrayList<String> originPool = new ArrayList<>();
     private final HashMap<String, Integer> originPoolIndex = new HashMap<>();
 
@@ -208,6 +213,20 @@ public final class CallGraph {
     public String guard(int edgeIndex) {
         int i = guardIds[edgeIndex];
         return (i < 0) ? null : originPool.get(i);
+    }
+
+    /**
+     * 呼び出しを修飾する型（JLS 13.1）。呼び出し先を宣言した型と同じなら null。
+     * CHA の候補はこの型の部分型に限られる（{@link CallResolver} の段 1）
+     */
+    public String qualifierOf(int edgeIndex) {
+        int i = qualifierIds[edgeIndex];
+        return (i < 0) ? null : originPool.get(i);
+    }
+
+    /** 構築時: エッジの修飾する型を記録する（空なら何もしない） */
+    void setQualifier(int pos, String qualifier) {
+        qualifierIds[pos] = internOrigin(qualifier);
     }
 
     /** エッジに結び付いた証拠。無ければ空 */

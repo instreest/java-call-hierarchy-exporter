@@ -5,6 +5,7 @@ import java.lang.classfile.ClassModel;
 import java.lang.classfile.CodeElement;
 import java.lang.classfile.CodeModel;
 import java.lang.classfile.MethodModel;
+import java.lang.classfile.Opcode;
 import java.lang.classfile.attribute.InnerClassInfo;
 import java.lang.classfile.attribute.MethodParameterInfo;
 import java.lang.classfile.attribute.RecordComponentInfo;
@@ -63,6 +64,8 @@ import java.util.stream.Stream;
  *   <li>ラムダ本体の合成メソッドの番号は javac の版で違い、JLS も決めていないので、ラムダの中の呼び出しは
  *       それを囲む本物のメソッドの呼び出しとして照合する（ラムダを生成した側へ辿る）。
  *       ラムダそのものは（囲む本物のメソッド・行）で照合する</li>
+ *   <li>呼び出しを修飾する型（JLS 13.1）: invokevirtual / invokeinterface の所有型が、C 行の qualifier
+ *       （空なら呼び出し先を宣言した型）と同じであること。CHA の候補はこの型の部分型から引く</li>
  *   <li>ブリッジメソッド: javac が消去後のシグネチャの違う上書きのために作ったブリッジ（JLS 15.12.4.5）には、
  *       対応する O 行があること</li>
  * </ul>
@@ -281,7 +284,7 @@ public final class JlsCheck {
         Map<String, List<String>> infos = new TreeMap<>(JlsCheck::compareSections);
         for (String pkg : javac.packages()) {
             problems.put(sectionOf(pkg), new ArrayList<>());
-            counts.put(sectionOf(pkg), new int[4]);
+            counts.put(sectionOf(pkg), new int[5]);
             infos.put(sectionOf(pkg), new ArrayList<>());
         }
 
@@ -353,15 +356,23 @@ public final class JlsCheck {
                 continue;
             }
             String s = sectionOf(javac.packageOfKey(e.caller));
-            String jdkOwner = javac.qualifiedBySupertype(e, javacDecls.get(e.callee));
-            if (jdkOwner != null) {
-                // JLS の変換どおりの静的な型で呼び出し先を引いたもの。javac は同じ呼び出しを親の型
-                // （JDK の型）で修飾して書くので、呼び出し先がこのソースに無いように見えるだけで、
-                // 実行時に動くメソッドは同じ（JLS 15.12.4.4）
-                infos.computeIfAbsent(s, k -> new ArrayList<>()).add("javac は " + jdkOwner
-                        + " で修飾して呼ぶ（実行時に動くのは同じメソッド。§15.12.4.4）: " + e);
-            } else {
-                problems.computeIfAbsent(s, k -> new ArrayList<>()).add("C 行にあるのに javac は呼ばない: " + e);
+            problems.computeIfAbsent(s, k -> new ArrayList<>()).add("C 行にあるのに javac は呼ばない: " + e);
+        }
+
+        // --- 呼び出しを修飾する型（JLS 13.1） ---
+        // javac の invokevirtual / invokeinterface の所有型は、JLS 13.1 の「修飾する型」そのもの。
+        // ツールは C 行の qualifier（空なら呼び出し先を宣言した型）に持つ。両方にある呼び出しで突き合わせる
+        Map<Edge, Set<String>> toolQualifiers = tool.qualifiers(javacTypes);
+        for (Map.Entry<Edge, Set<String>> e : javac.qualifiers().entrySet()) {
+            Set<String> mine = toolQualifiers.get(e.getKey());
+            if (mine == null) {
+                continue;   // 呼び出しそのものの食い違いは上で数えている
+            }
+            String s = sectionOf(javac.packageOfKey(e.getKey().caller));
+            counts.get(s)[4]++;
+            if (!mine.equals(e.getValue())) {
+                problems.get(s).add("修飾する型が違う（javac は " + e.getValue() + "、ツールは " + mine + "）: "
+                        + e.getKey());
             }
         }
 
@@ -397,9 +408,9 @@ public final class JlsCheck {
 
         for (Map.Entry<String, List<String>> e : problems.entrySet()) {
             String s = e.getKey();
-            int[] n = counts.getOrDefault(s, new int[4]);
-            String summary = String.format("型 %d・宣言 %d・呼び出し %d・ラムダ %d 件が javac と一致",
-                    n[0], n[1], n[2], n[3]);
+            int[] n = counts.getOrDefault(s, new int[5]);
+            String summary = String.format("型 %d・宣言 %d・呼び出し %d（修飾する型 %d）・ラムダ %d 件が javac と一致",
+                    n[0], n[1], n[2], n[4], n[3]);
             String id = "javac-" + s.replace('.', '_');
             if (e.getValue().isEmpty()) {
                 ok(s, id, summary);
@@ -494,7 +505,7 @@ public final class JlsCheck {
         final Map<String, Integer> declLines = new HashMap<>();
         /** O 行: キー → 上書き先のキー */
         final Map<String, List<String>> overrides = new HashMap<>();
-        /** C 行（呼び出し元, 呼び出し先, 行, 呼び出し先の修飾子） */
+        /** C 行（呼び出し元, 呼び出し先, 行, 呼び出し先の修飾子, 修飾する型） */
         final List<String[]> calls = new ArrayList<>();
         /** M 行（呼び出し元, 行, 種別） */
         final List<String[]> functionals = new ArrayList<>();
@@ -520,7 +531,8 @@ public final class JlsCheck {
                     }
                     case "O" -> t.overrides.put(key(c[2], c[3], c[4]), List.of(c[5].split(";")));
                     case "C" -> t.calls.add(new String[] {
-                            key(c[2], c[3], c[4]), key(c[6], c[7], c[8]), c[9], c[10]});
+                            key(c[2], c[3], c[4]), key(c[6], c[7], c[8]), c[9], c[10],
+                            c.length > 13 ? c[13] : ""});
                     case "M" -> t.functionals.add(new String[] {key(c[3], c[4], c[5]), c[1], c[7]});
                     case "F" -> t.fileErrors.put(c[1], Integer.parseInt(c[3]));
                     default -> {
@@ -615,6 +627,26 @@ public final class JlsCheck {
                 }
                 for (String root : roots(c[0], parents)) {
                     out.add(new Edge(root, Integer.parseInt(c[2]), c[1]));
+                }
+            }
+            return out;
+        }
+
+        /**
+         * 呼び出しごとの修飾する型（JLS 13.1）。C 行の qualifier、空なら呼び出し先を宣言した型。
+         * 呼び出し先がソースの型（javac が作った型）のものだけ
+         */
+        Map<Edge, Set<String>> qualifiers(Set<String> sourceTypes) {
+            Map<String, Set<String>> parents = lambdaParents();
+            Map<Edge, Set<String>> out = new HashMap<>();
+            for (String[] c : calls) {
+                String calleeType = c[1].substring(0, c[1].indexOf('#'));
+                if (isLambda(c[1]) || !sourceTypes.contains(calleeType)) {
+                    continue;
+                }
+                String q = c[4].isEmpty() ? calleeType : c[4];
+                for (String root : roots(c[0], parents)) {
+                    out.computeIfAbsent(new Edge(root, Integer.parseInt(c[2]), c[1]), k -> new TreeSet<>()).add(q);
                 }
             }
             return out;
@@ -962,55 +994,15 @@ public final class JlsCheck {
             return null;
         }
 
-        /** 呼び出し 1 件（呼び出し元のメソッド・行・呼び出し先）と、ラムダの生成 1 件 */
-        private record Site(Method caller, int line, Method callee, boolean lambda) {
-        }
-
-        /** 呼び出し先が JDK のメソッドの invoke 命令（所有型の内部名・名前・記述子） */
-        private record JdkSite(Method caller, int line, String owner, String name, String desc) {
+        /**
+         * 呼び出し 1 件（呼び出し元のメソッド・行・呼び出し先）と、ラムダの生成 1 件。
+         * {@code qualifier} は invokevirtual / invokeinterface の所有型（JLS 13.1 の修飾する型）を
+         * ツールの型名にしたもの。それ以外（static・コンストラクタ・super・private・invokedynamic）は null
+         */
+        private record Site(Method caller, int line, Method callee, boolean lambda, String qualifier) {
         }
 
         private List<Site> sites;
-        private final List<JdkSite> jdkSites = new ArrayList<>();
-
-        /**
-         * ツールにだけある呼び出しが、javac では JDK の親の型で修飾された同じ呼び出しなら、その型の内部名。
-         * 同じ呼び出し元・同じ行に、同じ名前・同じ引数の記述子の JDK の invoke があり、
-         * 呼び出し先の型がその JDK の型の部分型であるとき。違えば null
-         */
-        String qualifiedBySupertype(Edge e, Method callee) {
-            if (callee == null) {
-                return null;
-            }
-            Map<Method, Set<Method>> parents = lambdaParents();
-            String params = callee.type.descriptorString();
-            params = params.substring(0, params.indexOf(')') + 1);
-            for (JdkSite j : jdkSites) {
-                if (j.line == e.line && j.name.equals(callee.name) && j.desc.startsWith(params)
-                        && roots(j.caller, parents).contains(e.caller)
-                        && isSubtype(callee.owner, j.owner)) {
-                    return j.owner;
-                }
-            }
-            return null;
-        }
-
-        private boolean isSubtype(Cls c, String ancestor) {
-            if (c == null) {
-                return false;
-            }
-            Optional<ClassEntry> sup = c.model.superclass();
-            if (sup.isPresent() && (sup.get().asInternalName().equals(ancestor)
-                    || isSubtype(classes.get(sup.get().asInternalName()), ancestor))) {
-                return true;
-            }
-            for (ClassEntry i : c.model.interfaces()) {
-                if (i.asInternalName().equals(ancestor) || isSubtype(classes.get(i.asInternalName()), ancestor)) {
-                    return true;
-                }
-            }
-            return false;
-        }
 
         List<Site> sites() {
             if (sites != null) {
@@ -1037,10 +1029,11 @@ public final class JlsCheck {
                             Method target = resolve(ii.owner().asInternalName(), ii.name().stringValue(),
                                     ii.typeSymbol().descriptorString());
                             if (target != null && !target.synthetic()) {
-                                sites.add(new Site(m, line, target, false));
-                            } else if (target == null) {
-                                jdkSites.add(new JdkSite(m, line, ii.owner().asInternalName(),
-                                        ii.name().stringValue(), ii.typeSymbol().descriptorString()));
+                                boolean virtual = (ii.opcode() == Opcode.INVOKEVIRTUAL
+                                        || ii.opcode() == Opcode.INVOKEINTERFACE)
+                                        && !target.model.flags().has(AccessFlag.PRIVATE);
+                                sites.add(new Site(m, line, target, false,
+                                        virtual ? typeName(ii.owner().asSymbol()) : null));
                             }
                         } else if (e instanceof InvokeDynamicInstruction indy) {
                             addIndy(m, line, indy);
@@ -1071,9 +1064,9 @@ public final class JlsCheck {
                 return;
             }
             if (target.lambda()) {
-                sites.add(new Site(m, line, target, true));
+                sites.add(new Site(m, line, target, true, null));
             } else if (!target.synthetic()) {
-                sites.add(new Site(m, line, target, false));
+                sites.add(new Site(m, line, target, false, null));
             }
         }
 
@@ -1107,6 +1100,22 @@ public final class JlsCheck {
                 }
                 for (String root : roots(s.caller, parents)) {
                     out.add(new Edge(root, s.line, s.callee.key()));
+                }
+            }
+            return out;
+        }
+
+        /** invokevirtual / invokeinterface の呼び出しごとの所有型（JLS 13.1 の修飾する型） */
+        Map<Edge, Set<String>> qualifiers() {
+            Map<Method, Set<Method>> parents = lambdaParents();
+            Map<Edge, Set<String>> out = new HashMap<>();
+            for (Site s : sites()) {
+                if (s.lambda || s.qualifier == null) {
+                    continue;
+                }
+                for (String root : roots(s.caller, parents)) {
+                    out.computeIfAbsent(new Edge(root, s.line, s.callee.key()), k -> new TreeSet<>())
+                            .add(s.qualifier);
                 }
             }
             return out;

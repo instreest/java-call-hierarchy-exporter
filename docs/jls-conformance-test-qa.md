@@ -11,14 +11,16 @@ Issue なし（依頼: 「AST 解析結果の出力が Java 言語仕様を満�
 - 検査は 2 段。**期待値**（`test/jls/expect.tsv`。1 行が 1 テストで、節番号・ID・説明を持つ）を出力 CSV と
   キャッシュに当てる段と、同じソースを **javac 26**（`--release 26`）でコンパイルしたクラスファイルと
   キャッシュの事実を突き合わせる段（`test/jls/JlsCheck.java`）
-- 検査を書いたら、ツールが JLS と食い違っている所が 5 つ見つかったので直した（Q9〜Q12）
+- 検査を書いたら、ツールが JLS と食い違っている所が見つかったので直した（Q9〜Q12・Q18）
   - 拡張 for 文の `iterator()` / `hasNext()` / `next()`（§14.14.2）、try-with-resources の `close()`（§14.20.3）、
     レコードパターンのアクセサ（§14.30.2）を辺にしていなかった
-  - コンパクトなコンパイル単位が暗黙に宣言するクラス（§7.3）を型として読んでいなかった
+  - コンパクトなコンパイル単位が暗黙に宣言するクラス（§7.3・§8.1.8）を型として読んでいなかった
   - 引数なし・インスタンスメソッドの `main`（§12.1.4）を起動の入口にしていなかった
   - 別パッケージのサブクラスの同じシグネチャのメソッドを、パッケージアクセスのメソッドの上書きとして
     CHA の候補に入れていた（§8.4.8.1）
-- キャッシュの版を `jche-cache-v28` に上げた（C 行・H 行・D 行が増えるため）
+  - CHA の候補を、呼び出しを修飾する型（§13.1）ではなくメソッドを宣言した型の部分型から引いていた
+- 節番号と各節の主張を JLS SE 26 の原文（docs.oracle.com）と照合し、誤りを直した（Q19）
+- キャッシュの版を `jche-cache-v29` に上げた（C 行・H 行・D 行が増え、C 行に修飾する型の列を足したため）
 - 回帰テストの期待値は `Holder.viaCollection()` の outDegree だけが変わった（Q15）
 
 ---
@@ -56,6 +58,7 @@ javac との突き合わせで見つかった。
 | メソッド（合成・ブリッジを除く） | D 行 | キー（`型#名前(消去した引数型)`） |
 | invoke 命令のうち、呼び出し先がこのソースで宣言されたもの | C 行 | （呼び出し元・行・呼び出し先）の組 |
 | `LambdaMetafactory` の invokedynamic | D 行のラムダ・M 行 | ラムダを囲む本物のメソッドと行（Q4） |
+| invokevirtual / invokeinterface の所有型 | C 行の qualifier（空なら呼び出し先を宣言した型） | 呼び出しを修飾する型（§13.1。Q18） |
 | ブリッジメソッド | O 行 | ブリッジのシグネチャが O 行の上書き先にあること |
 
 クラスファイルは JDK 24 で確定した `java.lang.classfile` で読む。外部のライブラリ（ASM など）を
@@ -75,21 +78,23 @@ invokedynamic の実装メソッドから、ツール側は「ラムダを生成
 ラムダそのものは（囲む本物のメソッド・行）で照合する。javac がメソッド参照の一部（`super::m`、
 配列の `::new`）を合成メソッドにする分は、ツールの M 行（`methodref` / `ctorref`）の場所と照合する。
 
-## Q5. 拡張 for 文の `hasNext()` の呼び出し先が javac と違う
+## Q5. 拡張 for 文の `hasNext()` の呼び出し先はどの型か
 
-違ってよい、というより JLS に合わせるとこうなる。JLS 14.14.2 の変換は
+`java.util.Iterator` である。JLS 14.14.2 の変換は
 
 ```
-for (I #i = Expression.iterator(); #i.hasNext(); ) { ... #i.next() ... }
+for (I #i = Expression.iterator(); #i.hasNext(); ) { ... (TargetType) #i.next() ... }
 ```
 
-で、`#i` の型 I は **`iterator()` の戻り値の型**である。`Countdown.iterator()` が `CountIterator` を返すなら、
-`#i.hasNext()` の呼び出し先は `CountIterator.hasNext()` になる。javac は `java.util.Iterator.hasNext()` で
-修飾して書くが、実行時に動くメソッドは同じである（§15.12.4.4）。ツールは JLS の型を使う。候補を
-`Iterator` の全実装に広げずに済むからである。
+で、`#i` の型 I は「式の型が `Iterable<X>` の部分型なら `java.util.Iterator<X>`、そうでなければ生の
+`java.util.Iterator`」と定められている。`Countdown.iterator()` が `CountIterator` を返しても、
+`#i.hasNext()` は `Iterator` のメソッドの呼び出しで、javac のバイトコードも `java/util/Iterator.hasNext` になる。
+実際に動く `CountIterator.hasNext()` は、読み手が `Iterator` の実装から探す（§15.12.4.4）。
 
-突き合わせでは、ツールにだけある呼び出しのうち、「同じ呼び出し元・同じ行に、同じ名前・同じ引数の
-JDK の型の invoke があり、呼び出し先の型がその JDK の型の部分型」であるものを INFO として出して通す。
+**最初はここを誤読していた。** 「I は `iterator()` の戻り値の型」と読んで `CountIterator.hasNext()` を
+呼び出し先にし、javac と食い違うのを「javac は親の型で修飾するが、動くメソッドは同じ」という例外として
+検査で通していた。原文と照合して（Q19）誤りと分かったので、JLS どおりに直し、その例外も検査から外した。
+仕様と javac が一致しているのに検査側で例外を作ると、誤読がそのまま固定されるという教訓である。
 
 ## Q6. try-with-resources の `close()` が javac では 2 行に出る
 
@@ -137,7 +142,7 @@ if (o instanceof Point(int x, int y)) { ... }   // ((Point) o).x() / .y()
 |---|---|---|
 | 呼び出し先が引けないとき | 何も記録しない（U 行にしない） | ソースに対応する式が無いので、「未解決」と報告しても利用者が調べようがない（暗黙の `super()` と同じ。`docs/jls-conformance-qa.md` の Q11） |
 | 拡張 for 文の行 | for 文の行 | javac が行番号表に書くのと同じ |
-| `close()` の行・順 | 資源の行。宣言と逆の順に、本体を読み終えた後で記録する | JLS 14.20.3.1 の実行順 |
+| `close()` の行・順 | 資源の行。宣言と逆の順に、本体を読み終えた後で記録する | JLS 14.20.3（初期化と逆の順に閉じる）の実行順 |
 | `_` の成分 | アクセサを呼ぶ | JLS 14.30.2 は成分の値をアクセサで取り出すと定めていて、パターンが何にでも一致するかどうかは関係ない。javac も呼ぶ |
 | 配列の拡張 for 文 | 何も記録しない | 添字で回すのでメソッドを呼ばない |
 
@@ -154,14 +159,16 @@ Java 25 で確定したインスタンスの main（コンパクトなソース�
 無し、private でないメソッドを入口にする（static でもインスタンスでもよい）。起動器は 1 つのクラスで
 `main(String[])` を `main()` より優先するが、両方を入口にする（どちらが選ばれるかは起動したときに決まる）。
 インスタンスの main のために引数なしのコンストラクタがあるかまでは見ない。
+JLS 12.1.4 は戻り値が `void` であることも求める（「a void result」）が、D 行は戻り値の型を持たないので見ない。
+void でない `main` まで入口になるが、多すぎる側なので許した。
 
 従来の `static main(java.lang.String[])` の形は残してある（利用者の契約表に書かれていても意味は変わらない）。
 注記の文言も、従来の `public static main(String[])` では `static main(java.lang.String[])` のままにした。
 
-## Q11. コンパクトなコンパイル単位のクラスを読んでいなかった（§7.3）
+## Q11. コンパクトなコンパイル単位のクラスを読んでいなかった（§7.3・§8.1.8）
 
-直した。パッケージ宣言も型宣言も無いファイルのトップレベルのメソッドは、ファイル名を名前に持つ
-final なクラスのメンバになる。JDT はこれを `TypeDeclaration` ではなく `ImplicitTypeDeclaration` として返すので、
+直した。パッケージ宣言も型宣言も無いファイル（§7.3）のトップレベルのメソッドは、暗黙に宣言された
+final なトップレベルのクラスのメンバになる（§8.1.8。名前はファイル名から決まる）。JDT はこれを `TypeDeclaration` ではなく `ImplicitTypeDeclaration` として返すので、
 visit が無いと H 行が無く、暗黙のデフォルトコンストラクタ（§8.8.9）も合成されなかった。
 D 行と C 行は出ていたので呼び出し階層はほぼ出ていたが、型階層に載らないので型として扱えなかった。
 
@@ -193,11 +200,12 @@ O 行の上書き（型引数を具体化したもの）は JDT の `IMethodBind
 
 | 何か | なぜ直さないか |
 |---|---|
-| 呼び出しを修飾する型（§13.1） | C 行の呼び出し先は宣言した型で持つので、`Plain p; p.greet()`（`greet` は `Greeter` のデフォルトメソッド）の候補に、`Plain` の部分型でない `Greeter` の実装（`Polite.greet`）も入る。直すには C 行に受け手の静的な型の列が要り、キャッシュの形も読み手も大きく変わる。多すぎる側（安全側）の近似なので、`docs/static-analysis-limits.md` の 7 節に書いて残した |
 | record・enum の暗黙のメンバの D 行（§8.9.3・§8.10.3） | Q8 |
 | 文字列変換の `toString()`（§5.1.11） | Q9 |
+| `main` の戻り値が void か（§12.1.4） | Q10 |
 
 どれも「動くメソッドを落とす」形ではない。落とす形のもの（Q9〜Q11）は全部直した。
+呼び出しを修飾する型（§13.1）も最初はここに入れていたが、直した（Q18）。
 
 ## Q14. 期待値をどう書くか。節番号はどこに書くのか
 
@@ -241,3 +249,60 @@ README の手順で javac でコンパイルして jar を作る。Java 26 で�
 
 JDK 26 の javac を使うのは `--release 26` のためで、クラスファイルを読む API（`java.lang.classfile`）は
 JDK 24 以降ならどれでもよい。
+
+## Q18. CHA の候補を、呼び出しを修飾する型から引くようにした（§13.1）
+
+直した。C 行の呼び出し先はバインディングの**宣言**（メソッドを宣言した型）なので、CHA は宣言した型の
+部分型すべてから候補を引いていた。
+
+```java
+interface Greeter { default void greet() { ... } }
+class Plain implements Greeter { }
+class Polite implements Greeter { public void greet() { ... } }
+
+void f(Plain p) { p.greet(); }   // Polite.greet() は動きえない
+```
+
+JLS 13.1 は、javac がメソッドを参照するときの型を「修飾する型」として定めている（`式.m()` なら式の
+コンパイル時の型の消去、単純名の `m()` なら m をメンバに持つ最も内側の囲む型、`Type::m` なら Type。
+交差型なら最初の型）。実行時に動くのは受け手の実行時のクラスから探した実装で（§15.12.4.4）、
+受け手の実行時のクラスは修飾する型の部分型である。したがって `Polite.greet()` は候補から外してよい。
+
+| どこで | 何をしたか |
+|---|---|
+| 書き手（`CallSiteRecorder#qualifierOf`） | 修飾する型を求め、宣言した型と違うときだけ C 行の末尾（qualifier）に書く。static・private・コンストラクタ・`super` の呼び出しと、宣言した型が `Object` のもの（§13.1 の通り Object）は書かない |
+| 読み手（`CallResolver#usableQualifier`） | 段 1（CHA）の候補を修飾する型から引く（その型から見た実装と、部分型それぞれの実装）。段 5（Spring の Bean）も同じ型から引く。段 1 で外した型の Bean に確定しないため |
+
+**修飾する型がソースに宣言の無い型（jar の型）のときは使わない。** 型階層（H 行）は「ソースの型の、直接の親と
+jar を経由して届くソースの親」しか持たないので、jar の中の中間の型（`List` に対する `AbstractList` など）を
+経由した部分型を数え漏らしうる。漏れると候補が落ちるので、そのときは従来どおり宣言した型から引く
+（多すぎる側に倒す）。型階層の上で宣言した型の部分型になっていないときも同じ。
+
+javac のバイトコードとの突き合わせにも、invokevirtual / invokeinterface の所有型（＝修飾する型）と
+C 行の qualifier の照合を足した。拡張 for 文の `iterator()`・try-with-resources の `close()`・レコードパターンの
+アクセサも、JLS の変換後の式の型を修飾する型として書く。
+
+`test/demo` では 7 本の C 行に qualifier が付いたが、6 本は修飾する型が jar の型（`java.util.List` など）で
+使われず、残る 1 本（`fx.excluded.Helper`）は `exclude.packages` で出力から除いているパッケージの中の呼び出しなので、
+回帰テストの期待値は変わっていない。
+`test/jls/project/src/jls/s13_01/` に、受け手の型・単純名・型変数・メソッド参照の 4 つの形を置いた。
+
+## Q19. 節番号と主張を JLS SE 26 の原文と照合した
+
+検査を足した時点では docs.oracle.com に届かず、節番号を記憶で書いていた。届くようになってから、
+目次（`jls/se26/html/index.html`）と各章の本文を取得して、リポジトリ全体の `JLS n.n` / `§n.n` の引用を
+照合した。節番号はすべて SE 26 の目次に実在したが、**内容の食い違いが次のとおりあった**。
+
+| 誤り | 正しくは | どこ |
+|---|---|---|
+| §14.14.2 の `#i` の型を `iterator()` の戻り値の型と読んだ | `java.util.Iterator<X>`（Q5） | 実装・検査・この文書 |
+| インターフェースにコンストラクタが無い根拠を §9.1.4 とした | §9.1.4 は許可された直接の部分型（sealed）。本体の宣言は §9.1.5 | 既存の `TypeContextTracker`・`docs/jls-conformance-qa.md` の Q25 と `expect.tsv` |
+| enum 定数がクラスの初期化で生成される根拠を §8.9.2 とした | 「定数は暗黙に宣言されたフィールドの初期化で生成される」は §8.9.3 | 既存の `LambdaNames`・`docs/lambda-expansion-qa.md`・`expect.tsv` |
+| 暗黙に宣言されたクラスが final で名前がファイル名であることを §7.3 とした | §7.3 は「クラスを暗黙に宣言する」まで。性質は §8.1.8 | `expect.tsv`・`CompactMain.java` |
+| 資源が逆の順に閉じられる根拠を §14.20.3.1 とした | 順は §14.20.3。§14.20.3.1 は変換 | `FactVisitor`・`TryWithResources.java` |
+| ラムダ本体が呼ばれたときに実行されること・式本体の値を返すことを §15.27.2 とした | §15.27.4（実行時の評価）。§15.27.2 は本体の形と実質的 final | 既存の `FactVisitor`・`StreamingTreeWalker`・`docs/lambda-expansion-qa.md`・`expect.tsv` |
+| char と int の比較を「§5.6.2 二項数値昇格」とした | SE 14 で §5.6「Numeric Contexts」にまとめられ、§5.6.2 は無い | 既存の `OriginTracker`・`docs/branch-pruning.md`・`docs/jls-conformance-qa.md`・`docs/static-analysis-limits.md`・`test/demo` のコメント |
+| §12.1.4 の起動メソッドの条件から「戻り値が void」を落としていた | 「a void result」も条件（Q10） | `FrameworkEntries`・`docs/callback-contracts.md` |
+
+`test/demo` のコメントの修正は行数を変えていないので、回帰テストの期待値は変わらない。
+

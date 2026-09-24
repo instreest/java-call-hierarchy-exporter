@@ -246,7 +246,7 @@ final class FactVisitor extends ASTVisitor {
     }
 
     /**
-     * コンパクトなコンパイル単位（JLS 7.3）が暗黙に宣言するクラス。
+     * コンパクトなコンパイル単位（JLS 7.3）が暗黙に宣言するクラス（JLS 8.1.8）。
      *
      * パッケージ宣言も型宣言も無いファイルのトップレベルのメソッド・フィールドは、ファイル名を
      * 名前に持つ final なクラスのメンバになる。JDT はこれを TypeDeclaration ではなく
@@ -473,7 +473,7 @@ final class FactVisitor extends ASTVisitor {
         lambdaDepthStack.push(lambdaDepth);
         lambdaDepth = 0;
         if (node.getBody() instanceof Expression bodyExpression) {
-            // 式本体（() -> new X()）は「return 式;」と同じ（JLS 15.27.2）。
+            // 式本体（() -> new X()）は「return 式;」と同じ（JLS 15.27.4。本体の式の値を返す）。
             // ブロック本体の return と同じく R 行にしないと、書き方で結果が変わる
             recordReturn(bodyExpression);
         }
@@ -616,9 +616,12 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(MethodInvocation n) {
         IMethodBinding b = n.resolveMethodBinding();
         Expression recv = n.getExpression();
+        // 修飾する型（JLS 13.1）: 式があればその型、単純名なら m をメンバに持つ最も内側の囲む型
+        ITypeBinding qualifying = (recv != null) ? recv.resolveTypeBinding()
+                : CallSiteRecorder.enclosingForSimpleName(n, b);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b),
                 CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), n,
-                origins.valuesOf(recv, n.arguments()));
+                origins.valuesOf(recv, n.arguments()), calls.qualifierOf(b, qualifying));
         return true;
     }
 
@@ -679,7 +682,8 @@ final class FactVisitor extends ASTVisitor {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b), CallSiteRecorder.recvKeyOf(recv),
-                CallSiteRecorder.recvKindOf(recv), null, origins.valuesOf(recv, null));
+                CallSiteRecorder.recvKindOf(recv), null, origins.valuesOf(recv, null),
+                calls.qualifierOf(b, recv.resolveTypeBinding()));
         return true;
     }
 
@@ -689,7 +693,7 @@ final class FactVisitor extends ASTVisitor {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.targetModsOf(b), "",
-                RecvKind.TYPE, null, CallValues.NONE);
+                RecvKind.TYPE, null, CallValues.NONE, calls.qualifierOf(b, n.getType().resolveBinding()));
         return true;
     }
 
@@ -735,8 +739,9 @@ final class FactVisitor extends ASTVisitor {
      * と同じ意味なので、{@code iterator()}・{@code hasNext()}・{@code next()} を呼ぶ。
      * 配列は添字で回すのでメソッドを呼ばない。
      *
-     * {@code #i} の型 I は {@code iterator()} の戻り値の型なので、{@code hasNext()} と
-     * {@code next()} はその型から引く（利用者の Iterator を返すなら、そのメソッドになる）。
+     * {@code #i} の型 I は {@code java.util.Iterator<X>}（JLS 14.14.2）なので、{@code hasNext()} と
+     * {@code next()} は {@code java.util.Iterator} のメソッドになる。{@code iterator()} が利用者の
+     * Iterator の型を返しても同じで、実際に動く実装は読み手が Iterator の実装から探す。
      * 行は for 文の行（javac が行番号表に書くのと同じ）。
      */
     @Override
@@ -751,11 +756,12 @@ final class FactVisitor extends ASTVisitor {
             return true;
         }
         recordImplicit(iterator, n, CallSiteRecorder.recvKeyOf(ex), CallSiteRecorder.recvKindOf(ex),
-                origins.valuesOf(ex, null));
+                origins.valuesOf(ex, null), type);
         for (String name : List.of("hasNext", "next")) {
-            IMethodBinding m = ImplicitCalls.findNoArgMethod(iterator.getReturnType(), name);
+            IMethodBinding m = ImplicitCalls.findNoArgMethodOf(iterator.getReturnType(),
+                    "java.util.Iterator", name);
             if (m != null) {
-                recordImplicit(m, n, "", RecvKind.RETURN, CallValues.NONE);
+                recordImplicit(m, n, "", RecvKind.RETURN, CallValues.NONE, null);
             }
         }
         return true;
@@ -763,7 +769,7 @@ final class FactVisitor extends ASTVisitor {
 
     /**
      * try-with-resources（JLS 14.20.3）。資源は、try ブロックを抜けるときに宣言と逆の順で
-     * {@code close()} が呼ばれる（14.20.3.1）。資源が null なら呼ばれないが、呼ばれうることに変わりはない。
+     * {@code close()} が呼ばれる（14.20.3。変換は 14.20.3.1）。資源が null なら呼ばれないが、呼ばれうることに変わりはない。
      *
      * 本体の呼び出しより後に実行されるので、本体を読み終えた endVisit で記録する。
      * 行は資源を書いた行。
@@ -782,7 +788,8 @@ final class FactVisitor extends ASTVisitor {
             }
             Expression recv = ImplicitCalls.resourceReceiver(resource);
             recordImplicit(close, resource, CallSiteRecorder.recvKeyOf(recv),
-                    CallSiteRecorder.recvKindOf(recv), origins.valuesOf(recv, null));
+                    CallSiteRecorder.recvKindOf(recv), origins.valuesOf(recv, null),
+                    ImplicitCalls.resourceType(resource));
         }
     }
 
@@ -795,16 +802,21 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(RecordPattern n) {
         ITypeBinding type = (n.getPatternType() == null) ? null : n.getPatternType().resolveBinding();
         for (IMethodBinding accessor : ImplicitCalls.accessorsOf(type)) {
-            recordImplicit(accessor, n, "", RecvKind.OTHER, CallValues.NONE);
+            recordImplicit(accessor, n, "", RecvKind.OTHER, CallValues.NONE, type);
         }
         return true;
     }
 
-    /** ソースに呼び出し式が無い呼び出しを 1 件記録する（import からの推定はしない） */
+    /**
+     * ソースに呼び出し式が無い呼び出しを 1 件記録する（import からの推定はしない）。
+     *
+     * @param qualifying 呼び出しを修飾する型（JLS 13.1。変換後の式の静的な型）。無ければ null
+     */
     private void recordImplicit(IMethodBinding b, ASTNode node, String recvKey, char recvKind,
-                                CallValues values) {
+                                CallValues values, ITypeBinding qualifying) {
         calls.record(currentCallers(), lambdaDepth, b, node, b.getName(),
-                CallSiteRecorder.targetModsOf(b), recvKey, recvKind, null, values);
+                CallSiteRecorder.targetModsOf(b), recvKey, recvKind, null, values,
+                calls.qualifierOf(b, qualifying));
     }
 
     // ================================================================

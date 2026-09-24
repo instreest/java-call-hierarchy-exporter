@@ -27,11 +27,11 @@ import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
  * 拾わないと、{@code Resource.close()} や {@code Point.x()} を変えたときの影響が
  * それらの構文から辿れず、静かに抜ける（docs/jls-conformance-test-qa.md）。
  *
- * 呼び出し先は、JLS の変換どおりの<b>式の静的な型</b>から引く。javac は拡張 for 文の
- * {@code hasNext()} / {@code next()} を {@code java.util.Iterator} で修飾して呼ぶが、
- * JLS 14.14.2 の {@code #i} の型は {@code iterator()} の戻り値の型 I なので、
- * 利用者の型を返す {@code iterator()} ならその型のメソッドになる。実行時に動くメソッドは同じ
- * （JLS 15.12.4.4）で、こちらのほうが候補を絞れる。
+ * 呼び出し先は、JLS の変換どおりの<b>静的な型</b>から引く。拡張 for 文の {@code iterator()} は式の型、
+ * {@code #i.hasNext()} / {@code #i.next()} は {@code #i} の型から引く。JLS 14.14.2 は {@code #i} の型 I を
+ * {@code java.util.Iterator<X>}（式の型が {@code Iterable<X>} の部分型でなければ生の {@code Iterator}）と定めているので、
+ * {@code iterator()} が利用者の Iterator の型を返しても、呼び出し先は {@code java.util.Iterator} のメソッドになる
+ * （javac のバイトコードも同じ）。実際に動く実装は、読み手が {@code Iterator} の実装から探す（JLS 15.12.4.4）。
  */
 final class ImplicitCalls {
 
@@ -64,6 +64,47 @@ final class ImplicitCalls {
                         && !Modifier.isStatic(m.getModifiers()) && !m.isConstructor()) {
                     return m;
                 }
+            }
+            if (t.getSuperclass() != null) {
+                queue.add(t.getSuperclass());
+            }
+            for (ITypeBinding i : t.getInterfaces()) {
+                queue.add(i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 型 {@code type} から見た、型 {@code declaringFqn}（消去した名前）のメンバのうち、名前が一致する
+     * 引数なしのインスタンスメソッド。{@code type} の親型をたどって {@code declaringFqn} を探し、
+     * 見つけた型（パラメータ化されたまま）の宣言を返す。無ければ null。
+     *
+     * 拡張 for 文の {@code #i.hasNext()} のように、JLS の変換が変数の型を決まった型
+     * （{@code java.util.Iterator<X>}）と定めているときに使う。{@code X} は {@code type} の親型の
+     * 型引数から決まる。
+     */
+    static IMethodBinding findNoArgMethodOf(ITypeBinding type, String declaringFqn, String name) {
+        if (type == null || type.isPrimitive() || type.isArray() || type.isNullType()) {
+            return null;
+        }
+        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        queue.add(type);
+        while (!queue.isEmpty()) {
+            ITypeBinding t = queue.poll();
+            if (!seen.add(t.getKey() == null ? t.getQualifiedName() : t.getKey())) {
+                continue;
+            }
+            ITypeBinding erased = t.getErasure();
+            if (erased != null && declaringFqn.equals(erased.getQualifiedName())) {
+                for (IMethodBinding m : t.getDeclaredMethods()) {
+                    if (m.getName().equals(name) && m.getParameterTypes().length == 0
+                            && !Modifier.isStatic(m.getModifiers())) {
+                        return m;
+                    }
+                }
+                return null;
             }
             if (t.getSuperclass() != null) {
                 queue.add(t.getSuperclass());

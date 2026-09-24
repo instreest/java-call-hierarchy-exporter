@@ -30,8 +30,9 @@ import jche.cache.ModifierTokens;
  * {@code String[]} 1 つか無し、private でないもの。static でもインスタンスメソッドでもよい
  * （Java 25 で確定したインスタンスの main メソッド。コンパクトなコンパイル単位の {@code void main()} が典型）。
  * 起動器は 1 つのクラスで {@code main(String[])} を {@code main()} より優先するが、両方を入口にする
- * （どちらが選ばれるかは、そのクラスを起動したときに決まるため）。インスタンスの main のために
- * 起動器が使う引数なしのコンストラクタがあるかまでは見ない。
+ * （どちらが選ばれるかは、そのクラスを起動したときに決まるため）。JLS 12.1.4 は戻り値が void であることも
+ * 求めるが、D 行は戻り値の型を持たないので見ない（void でない main も入口にする。多すぎる側）。
+ * インスタンスの main のために起動器が使う引数なしのコンストラクタがあるかまでは見ない。
  * {@code super} の型は jar の中でよい（H 行の親型に jar の型の名前も入っている）。
  */
 public final class FrameworkEntries {
