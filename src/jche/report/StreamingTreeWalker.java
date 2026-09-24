@@ -384,7 +384,7 @@ public final class StreamingTreeWalker {
                         // 生成の辺の先と、生成したメソッドの中で r.run() した形がこれに当たる。
                         // 引数で渡した先（runIt(Runnable r) の r.run()）のように別のメソッドの段から
                         // 降りるときは渡さない。捕捉した値はラムダを作った時点で決まる
-                        // （JLS 15.27.2）ので、実行した側の引数を当てると別の値を指してしまう
+                        // （JLS 15.27.4）ので、実行した側の引数を当てると別の値を指してしまう
                         // （docs/lambda-expansion-qa.md の Q10）
                         capturedTypesFor(depth, target));
 

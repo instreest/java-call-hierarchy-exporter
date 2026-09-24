@@ -129,7 +129,7 @@ Handler.handle(Object),fx.lambda.Handler,I,src/fx/lambda/Handler.java,5,0,0,0,IS
 Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
-Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,4,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,7,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
 Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] type name (unbound method reference),0,[NOT_REACHED] no caller row was emitted
 LoggingHandler.handle(String),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,11,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 LoggingHandler.logged(),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,15,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted

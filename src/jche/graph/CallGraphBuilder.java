@@ -277,6 +277,8 @@ public final class CallGraphBuilder {
         Arrays.fill(graph.argOriginIds, -1);
         graph.guardIds = new int[edges];
         Arrays.fill(graph.guardIds, -1);
+        graph.qualifierIds = new int[edges];
+        Arrays.fill(graph.qualifierIds, -1);
 
         // R行（戻り値の出所）をメソッドIDの配列に移す。
         // 1回目のスキャンで全メソッドがID化されているのでここで確定できる。
@@ -336,6 +338,7 @@ public final class CallGraphBuilder {
                     graph.calleeIds[pos] = methods.intern(c.callee());
                     graph.callLines[pos] = c.callLine();
                     graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
+                    graph.setQualifier(pos, c.qualifier());
                     graph.fillCallSite(pos, c.caller().key(), values.recvKey(), c.recvKind(),
                             renderer.originOf(values.recv()),
                             renderer.argOriginsOf(values.args()), values.guard());

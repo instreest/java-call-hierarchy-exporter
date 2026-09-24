@@ -80,6 +80,11 @@ target/
 # test/ctorbody/run.sh（コンストラクタ本体の読み取りの検査）が作る使い捨てのプロジェクト
 /test/ctorbody/work/
 
+# test/jls/run.sh（JLS SE 26 への適合と javac との整合の検査）のコンパイル結果（ツールと javac 26）・
+# 実行ログと、解析のキャッシュ（出力の project/out/ は上の out/ で除外済み）
+/test/jls/build/
+/test/jls/project/.cache/
+
 # test/warnings/run.sh（warnings.txt の検査）のコンパイル結果と使い捨てのプロジェクト
 /test/warnings/build/
 /test/warnings/work/

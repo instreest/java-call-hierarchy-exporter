@@ -145,6 +145,9 @@ public final class BundledContractsCheck {
                         ng(line, "static 名前(引数,...) の形でない");
                     }
                 }
+                case FrameworkEntries.Contract.MAIN -> {
+                    // 引数の無い 1 語の行。起動の入口（JLS 12.1.4）の条件は FrameworkEntries が持つ
+                }
                 default -> ng(line, "知らない種類: " + c.kind());
             }
         }

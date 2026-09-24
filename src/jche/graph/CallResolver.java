@@ -217,7 +217,8 @@ public final class CallResolver {
         }
 
         // --- 段1: オーバーライド候補 ---
-        Resolution base = resolveVirtual(calleeId);
+        String qualifier = usableQualifier(edgeIndex, calleeId);
+        Resolution base = resolveVirtual(calleeId, qualifier);
         if (!Resolution.CHA.equals(base.label())) {
             return base;
         }
@@ -263,7 +264,7 @@ public final class CallResolver {
         }
 
         // --- 段5: DIコンテナのBean定義 ---
-        Resolution di = springResolution(edgeIndex, calleeId, base);
+        Resolution di = springResolution(edgeIndex, calleeId, base, qualifier);
         if (di != null) {
             return di;
         }
@@ -388,6 +389,67 @@ public final class CallResolver {
      * 宣言の数」。サブクラスが多くてもオーバーライドが1件なら候補は1件のまま。
      */
     private Resolution resolveVirtual(int calleeId) {
+        return resolveVirtual(calleeId, null);
+    }
+
+    /**
+     * そのエッジの、呼び出しを修飾する型（JLS 13.1）。CHA の候補をそこから引いてよいときだけ返し、
+     * 宣言した型から引くべきときは null。
+     *
+     * 実行時に動くのは受け手の実行時のクラスから探した実装で（JLS 15.12.4.4）、受け手の実行時の
+     * クラスは修飾する型の部分型である。{@code Plain p; p.greet()} で {@code greet} を宣言した
+     * {@code Greeter} の実装のうち、{@code Plain} の部分型でないものは動かない。
+     *
+     * ただし修飾する型の部分型を<b>漏れなく</b>数えられるときに限る。ソースに宣言の無い型（jar の型）は、
+     * jar の中の中間の型を経由した部分型が型階層に載らないことがあるので使わない（宣言した型から引く＝
+     * 多すぎる側に倒す）。型階層の上で宣言した型の部分型になっていないときも同じ。
+     */
+    private String usableQualifier(int edgeIndex, int calleeId) {
+        String q = graph.qualifierOf(edgeIndex);
+        if (q == null || !graph.hierarchy.contains(q)
+                || !graph.hierarchy.isSubtypeOf(q, methods.typeFqn(calleeId))) {
+            return null;
+        }
+        return q;
+    }
+
+    /** 修飾する型ごとの段 1 の結果（"呼び出し先ID|型"。修飾する型があるエッジは少ないので Map で持つ） */
+    private final HashMap<String, Resolution> qualifiedResolutions = new HashMap<>();
+
+    /**
+     * {@link #resolveVirtual(int)} の候補を、修飾する型 {@code qualifier} の部分型に限ったもの。
+     * null なら宣言した型から引く（従来どおり）。
+     *
+     * 修飾する型から見た実装（{@code implementationOf(qualifier, …)}。宣言した型から継承したものか、
+     * 間の型での上書き）と、その部分型それぞれの実装が候補になる。宣言した型そのものの実装は、
+     * 修飾する型が継承していなければ候補に入らない（その型の実行時のインスタンスは受け手になりえない）。
+     */
+    private Resolution resolveVirtual(int calleeId, String qualifier) {
+        if (qualifier == null) {
+            return resolveVirtualByDeclaration(calleeId);
+        }
+        String memoKey = calleeId + "|" + qualifier;
+        Resolution known = qualifiedResolutions.get(memoKey);
+        if (known != null) {
+            return known;
+        }
+        IntArray cands = new IntArray(4);
+        int own = graph.implementationOf(qualifier, calleeId);
+        if (own >= 0) {
+            cands.add(own);
+        }
+        for (String sub : graph.hierarchy.transitiveSubtypes(qualifier)) {
+            int id = graph.implementationOf(sub, calleeId);
+            if (id >= 0) {
+                cands.addIfAbsent(id);
+            }
+        }
+        Resolution res = labelCandidates(calleeId, cands);
+        qualifiedResolutions.put(memoKey, res);
+        return res;
+    }
+
+    private Resolution resolveVirtualByDeclaration(int calleeId) {
         if (resolvedTargets == null) {
             resolvedTargets = new int[methods.size()][];
             resolvedLabels = new String[methods.size()];
@@ -418,6 +480,15 @@ public final class CallResolver {
             }
         }
 
+        Resolution res = labelCandidates(calleeId, cands);
+        resolvedTargets[calleeId] = res.targets();
+        resolvedLabels[calleeId] = res.label();
+        return res;
+    }
+
+    /** 段 1 の候補に名前を付ける（{@link #resolveVirtual(int)} の表） */
+    private Resolution labelCandidates(int calleeId, IntArray cands) {
+        String declType = methods.typeFqn(calleeId);
         int[] targets;
         String label;
         if (cands.isEmpty()) {
@@ -434,8 +505,6 @@ public final class CallResolver {
             targets = cands.toArray();
             label = Resolution.CHA;
         }
-        resolvedTargets[calleeId] = targets;
-        resolvedLabels[calleeId] = label;
         return new Resolution(targets, label);
     }
 
@@ -455,9 +524,11 @@ public final class CallResolver {
      * 基底クラスの宣言しか現れず、Beanかどうかで照合できないため。
      *
      * @param base 段1の結果（CHA＝候補が複数）
+     * @param searchFrom 呼び出しを修飾する型（JLS 13.1。{@link #usableQualifier}）。null なら宣言した型。
+     *                   段 1 と同じ型から引かないと、段 1 が候補から外した型の Bean に確定してしまう
      * @return 1つに定まったときだけ Resolution。定まらなければ null
      */
-    private Resolution springResolution(int edgeIndex, int calleeId, Resolution base) {
+    private Resolution springResolution(int edgeIndex, int calleeId, Resolution base, String searchFrom) {
         SpringBeans beans = graph.beans();
         if (!beans.enabled() || !base.isMultiple()) {
             return null;
@@ -470,8 +541,7 @@ public final class CallResolver {
         String qualifier = (Origin.kindOf(recvOrigin) == Origin.FIELD)
                 ? beans.qualifierOf(Origin.valueOf(Origin.head(recvOrigin))) : null;
 
-        String declType = methods.typeFqn(calleeId);
-        String sig = methods.signature(calleeId);
+        String declType = (searchFrom == null) ? methods.typeFqn(calleeId) : searchFrom;
         IntArray hits = new IntArray(2);
         List<String> types = new ArrayList<>(graph.hierarchy.transitiveSubtypes(declType));
         types.add(declType);

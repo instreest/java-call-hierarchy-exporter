@@ -71,6 +71,17 @@ final class CallSiteRecorder {
     void record(List<MethodRef> callers, int lambdaDepth, IMethodBinding binding, ASTNode node,
                 String displayName, String calleeMods, String recvKey, char recvKind,
                 MethodInvocation guessSource, CallValues values) {
+        record(callers, lambdaDepth, binding, node, displayName, calleeMods, recvKey, recvKind,
+                guessSource, values, "");
+    }
+
+    /**
+     * {@link #record} に、呼び出しを修飾する型（JLS 13.1。{@link #qualifierOf} で求める）を添えたもの。
+     * 宣言した型と同じなら空文字列を渡す。
+     */
+    void record(List<MethodRef> callers, int lambdaDepth, IMethodBinding binding, ASTNode node,
+                String displayName, String calleeMods, String recvKey, char recvKind,
+                MethodInvocation guessSource, CallValues values, String qualifier) {
         int line = lineOf(node);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
         String guard = guards.guardOf(node);
@@ -98,9 +109,101 @@ final class CallSiteRecorder {
         // 実際にコンパイル後それぞれから1回ずつ呼ばれるため、これは近似ではない
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
-                    recvKind, lambdaDepth));
+                    recvKind, lambdaDepth, qualifier));
             addValues(line, caller, displayName, values, recvKey, guard);
         }
+    }
+
+    /**
+     * 呼び出しを修飾する型（JLS 13.1 の qualifying class or interface）。呼び出し先を宣言した型と
+     * 同じ・仮想呼び出しでない・求められないときは空文字列。
+     *
+     * javac はこの型でメソッドを参照し、実行時に動くのは受け手の実行時のクラスから探した実装である
+     * （JLS 15.12.4.4）。受け手の実行時のクラスはこの型の部分型なので、宣言した型の部分型のうち
+     * この型の部分型でないもの（{@code Plain p; p.greet()} で {@code greet} を宣言した {@code Greeter} の、
+     * {@code Plain} と無関係な実装）は動かない。読み手はここから CHA の候補を引く。
+     *
+     * <ul>
+     *   <li>{@code 式.m()} / {@code 式::m} … 式のコンパイル時の型の消去（交差型なら最初の型）</li>
+     *   <li>{@code 型名::m} … その型の消去</li>
+     *   <li>{@code m()}（単純名）… m をメンバに持つ、最も内側の囲む型（{@code enclosingForSimpleName}）</li>
+     * </ul>
+     * 宣言した型が {@code java.lang.Object} のときは JLS 13.1 の通り Object なので空。
+     *
+     * @param qualifying JLS 13.1 の規則で選んだ型（消去前でよい）。null なら空
+     */
+    String qualifierOf(IMethodBinding b, ITypeBinding qualifying) {
+        if (b == null || qualifying == null) {
+            return "";
+        }
+        IMethodBinding decl = b.getMethodDeclaration();
+        if (decl == null || decl.isConstructor() || Modifier.isStatic(decl.getModifiers())
+                || Modifier.isPrivate(decl.getModifiers())) {
+            return "";
+        }
+        ITypeBinding declaring = decl.getDeclaringClass();
+        if (declaring == null || "java.lang.Object".equals(declaring.getErasure().getQualifiedName())) {
+            return "";
+        }
+        ITypeBinding q = qualifying;
+        if (q.isIntersectionType() && q.getTypeBounds().length > 0) {
+            q = q.getTypeBounds()[0];
+        }
+        q = q.getErasure();
+        if (q == null || q.isArray() || q.isPrimitive() || q.isNullType()) {
+            return "";
+        }
+        String name = names.typeNameOf(q);
+        String declName = names.typeNameOf(declaring.getErasure());
+        return (name == null || name.equals(declName)) ? "" : name;
+    }
+
+    /**
+     * 単純名の呼び出し {@code m()} を修飾する型: m をメンバに持つ（宣言か継承で）、最も内側の囲む型
+     * （JLS 13.1）。見つからなければ null。{@code node} から親をたどって型の宣言を探す
+     */
+    static ITypeBinding enclosingForSimpleName(ASTNode node, IMethodBinding b) {
+        IMethodBinding decl = (b == null) ? null : b.getMethodDeclaration();
+        ITypeBinding declaring = (decl == null) ? null : decl.getDeclaringClass();
+        if (declaring == null) {
+            return null;
+        }
+        for (ASTNode n = node.getParent(); n != null; n = n.getParent()) {
+            ITypeBinding t = null;
+            if (n instanceof org.eclipse.jdt.core.dom.AbstractTypeDeclaration td) {
+                t = td.resolveBinding();
+            } else if (n instanceof org.eclipse.jdt.core.dom.AnonymousClassDeclaration ac) {
+                t = ac.resolveBinding();
+            }
+            if (t != null && isSubtype(t, declaring.getErasure())) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /** {@code type}（の消去）が {@code ancestor}（消去した型）かその部分型か。バインディングの親型をたどる */
+    private static boolean isSubtype(ITypeBinding type, ITypeBinding ancestor) {
+        java.util.ArrayDeque<ITypeBinding> queue = new java.util.ArrayDeque<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        queue.add(type);
+        String target = ancestor.getKey();
+        while (!queue.isEmpty()) {
+            ITypeBinding t = queue.poll().getErasure();
+            if (t == null || !seen.add(t.getKey())) {
+                continue;
+            }
+            if (t.getKey().equals(target)) {
+                return true;
+            }
+            if (t.getSuperclass() != null) {
+                queue.add(t.getSuperclass());
+            }
+            for (ITypeBinding i : t.getInterfaces()) {
+                queue.add(i);
+            }
+        }
+        return false;
     }
 
     /**
@@ -135,7 +238,7 @@ final class CallSiteRecorder {
         }
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
-                    recvKind, lambdaDepth));
+                    recvKind, lambdaDepth, ""));
             addValues(line, caller, callee.name(), CallValues.NONE, "", guard);
         }
     }
