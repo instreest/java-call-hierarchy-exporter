@@ -547,6 +547,11 @@ public final class CallResolver {
         IntArray hits = new IntArray(2);
         List<String> types = new ArrayList<>(graph.hierarchy.transitiveSubtypes(declType));
         types.add(declType);
+        if (beans.mayBeUndeterminedBean(types)) {
+            // 返す具象型の決まらない @Bean メソッドの Bean が、この呼び出しに注入されうる。
+            // 分かっている Bean だけで 1 つに決めると、その Bean の実装への呼び出しを黙って落とす
+            return null;
+        }
         for (String type : types) {
             if (!beans.isBean(type) || (qualifier != null && !beans.hasBeanName(type, qualifier))) {
                 continue;

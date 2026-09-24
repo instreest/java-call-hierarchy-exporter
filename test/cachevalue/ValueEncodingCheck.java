@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 
 import java.io.IOException;
+import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,10 +14,12 @@ import jche.cache.CacheReader;
 /**
  * キャッシュの列の符号化（{@link CacheFormat#escape} / {@link CacheFormat#unescape}）を検査する。
  *
- * 見る性質は 2 つ。
+ * 見る性質は 3 つ。
  * <pre>
- *   往復   unescape(escape(s)) が s に戻る（どんな文字列でも）
+ *   往復   unescape(escape(s)) が s に戻る（どんな文字列でも。対になっていないサロゲートを含む）
  *   無害化 escape(s) にタブ・改行・制御文字が残らない（行が割れない）
+ *   UTF-8  escape(s) を UTF-8 に書ける（対になっていないサロゲートが残らない。キャッシュの書き手は
+ *          書けない文字で例外にするので、残ると解析ごと失敗する）
  * </pre>
  * ソースに実際に現れる文字列（SQL・書式・Windows のパス・正規表現）と、
  * そこには出てこないが形式を壊しうる文字（全制御文字、バックスラッシュの連なり、
@@ -38,17 +41,33 @@ public final class ValueEncodingCheck {
         for (String s : corpus()) {
             check(s);
         }
-        // 全 BMP を機械的に。1文字ずつと、前後に文字を足した形で
+        // 全 BMP を機械的に。1文字ずつと、前後に文字を足した形で。単独のサロゲートも含める
+        // （Java の文字列としては作れ、ソースの "\uD800" や途中で切った絵文字として実際に現れる）
         for (int c = 0; c <= 0xFFFF; c++) {
-            if (Character.isSurrogate((char) c)) {
-                continue;   // 単独のサロゲートは文字列として不正なので除く
-            }
             String one = String.valueOf((char) c);
             check(one);
             check("a" + one + "b");
         }
-        // サロゲートペア（絵文字など）が壊れないこと
+        // サロゲートペア（絵文字など）が壊れないこと。対になっていれば符号化せずにそのまま書く
         check("値 \uD83D\uDE00 と \uD83D\uDE00\uD83D\uDE00");
+        if (!CacheFormat.escape("\uD83D\uDE00").equals("\uD83D\uDE00")) {
+            failed++;
+            System.out.println("  NG   対になったサロゲートを符号化しています");
+        }
+        // 対になっていないサロゲートの並び（上位だけ・下位だけ・逆順・上位の連続・ペアの前後に単独）
+        check("\uD83D");
+        check("\uDE00");
+        check("\uDE00\uD83D");
+        check("\uD83D\uD83D\uDE00");
+        check("\uD83D\uDE00\uDE00");
+        check("x\uD800");
+        check("AAAA\uD83D");                // 60 文字で切った条件式の末尾に残る形
+        check("\\uD800\uD800");           // 符号化の形をした文字と、本物の単独サロゲート
+        if (!CacheFormat.escape("a\uD800b").equals("a\\ud800b")) {
+            failed++;
+            System.out.println("  NG   単独のサロゲートの符号化が \\uXXXX（小文字の 16 進 4 桁）ではありません: "
+                    + visible(CacheFormat.escape("a\uD800b")));
+        }
         readBack();
 
         System.out.println(failed == 0
@@ -96,6 +115,11 @@ public final class ValueEncodingCheck {
         }
         if (CacheFormat.hasControlChar(escaped)) {
             report("符号化しても制御文字が残ります", original, escaped, back);
+            return;
+        }
+        CharsetEncoder utf8 = StandardCharsets.UTF_8.newEncoder();   // 書けない文字で例外にする（キャッシュの書き手と同じ）
+        if (!utf8.canEncode(escaped)) {
+            report("符号化しても UTF-8 に書けない文字（対になっていないサロゲート）が残ります", original, escaped, back);
             return;
         }
         // 行に組み込む。joinRow が符号化するので、生の値を渡す
@@ -163,7 +187,7 @@ public final class ValueEncodingCheck {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < s.length() && i < 120; i++) {
             char c = s.charAt(i);
-            if (c < ' ' || c == '\u007f') {
+            if (c < ' ' || c == '\u007f' || Character.isSurrogate(c)) {
                 sb.append("<").append(String.format("%02x", (int) c)).append(">");
             } else {
                 sb.append(c);

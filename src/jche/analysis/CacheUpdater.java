@@ -96,12 +96,15 @@ import jche.util.Warnings;
  *   （何も変わっていなければ、ここで終わる。下記「何も変わっていないとき」）
  *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
  *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
+ *           前回どのブロックも宣言していなかった型は「新しい型」としても覚える（下記「新しい型」）。
  *   パス3 … 依存の索引を読み、有効なブロックのうち、I行（依存する型）が
  *           「変わった型」または「変わったパッケージ」に触れるものを再解析に回す。
  *           触れるものは、バインディング解決の結果が変わっている可能性があるため。
+ *           新しい型があれば、型解決に失敗していたブロックのうち解決できなかった名前が新しい型に当たるものと、
+ *           新しい型に名前を隠されうるブロックも回す。
  *   パス4 … パス3で再解析に回したファイルを解析し、追記する。そのファイルが宣言する定数
- *           （K行）の値が変わっていたら、宣言する型を「変わった型」に加えてパス3へ戻る
- *           （下記「定数の連鎖」）。
+ *           （K行）の値か、型の形（I 行の指紋）が旧キャッシュと違っていたら、宣言する型を「変わった型」に
+ *           加えてパス3へ戻る（下記「定数の連鎖」「親型の連鎖」）。
  *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す（行に戻さず、バイトの範囲のまま）。
  * </pre>
  *
@@ -151,6 +154,33 @@ import jche.util.Warnings;
  * 加えてパス3からやり直す。連鎖するのは値が実際に変わった定数を参照しているファイルだけなので、
  * 全件再解析にはならず、何も変わらなければ1周で止まる。
  *
+ * <h2>親型の連鎖（継承したものは I 行に載らない）</h2>
+ * {@code D extends E}、{@code E extends F} のとき、D を使う側の I 行には D しか載らない。だがその事実
+ * （継承したメソッドへの呼び出しの解決・どのオーバーロードが選ばれるか）は F の宣言にも依存する。F を書き換えると、
+ * E は F を参照しているので解析し直すが、E の定数が変わらなければ連鎖しないので、D の利用者が古いまま残る。
+ * そこで、各ブロックの I 行に型の形（継承したものを含むメンバーの署名・親型。{@link TypeShape}）の指紋を書き、
+ * パス4 で解析し直した結果これが旧キャッシュと違えば、そのファイルの型も「変わった型」に加える。
+ * 連鎖するかはそのファイルの解析結果と旧キャッシュの比較だけで決まるので、同じ周回の中で親と子をどの順に
+ * 解析し直しても結果は変わらない（親が「変わった型」に入る前に子を見て連鎖し損ねる、ということが無い）。
+ * 親のメソッドの本体・コメントだけの変更では形が変わらないので連鎖しない（docs/cache-unification-qa.md の Q44）。
+ *
+ * <h2>新しい型（前回は無かった型は、参照していた側の I 行に載らない）</h2>
+ * 前回どのブロックも宣言していなかった型（ソースを足した・消したファイルを戻した・既存のファイルに型を
+ * 足した）は、次の 2 通りで、I 行に触れずに他のファイルの解決結果を変える。
+ * <ul>
+ *   <li>無い型の名前（{@code Foo.run()}）には JDT がバインディングを返さないので、参照した側の依存には
+ *       何も残らない。そのファイルは F 行のエラー数か U 行の BINDING_FAILED として型解決に失敗していて、
+ *       I 行の 3 列目にエラーの引数に現れた名前（{@code Foo}・{@code org.missing}）を持つ。新しい型があれば、
+ *       型解決に失敗していたブロックのうち、その名前が新しい型に当たるもの（{@link StaleTypes#matchesNewType}）を
+ *       解析し直す。無名・ローカルの型は名前で参照できないので当たらない（docs/cache-unification-qa.md の Q42）</li>
+ *   <li>同じパッケージに足したトップレベルの型は、オンデマンド import（{@code import q.*}）と {@code java.lang} の型を
+ *       隠す（JLS 6.4.1）。自分のパッケージは I 行に無いので、新しい型のパッケージと同じパッケージの
+ *       ブロックのうち、I 行に同じ単純名の型があるものを解析し直す（Q43）</li>
+ * </ul>
+ * 「前回は無かった」は、パス1 で無効になったブロックの H 行（変わった・消えたファイルが宣言していた型）に
+ * 無いことで見る。有効なブロックの H 行は読まないので、別のファイルに同じ名前の型が重複しているときも
+ * 新しい型とみなす（解析し直すファイルが増えるだけで、結果は変わらない）。
+ *
  * 依存 jar の変更も同じ仕組みで扱う。jar の中の型は解析し直せない（ソースが無い）ので、
  * 「その jar のパッケージの型を参照しているファイル」を再解析の対象にする。
  * 型ではなくパッケージで見るのは、jar の版を差し替えたときに旧版にだけあった型を
@@ -172,6 +202,11 @@ public final class CacheUpdater {
      * ファイルごとに 16 文字のハッシュ1つなので、ヒープに載せても軽い
      */
     private final Map<String, String> oldConstants = new HashMap<>();
+    /**
+     * 相対パス -> 旧キャッシュの I 行の型の形の指紋（{@link TypeShape}）。有効なブロックのぶんだけ持つ。
+     * パス4で解析し直した結果と突き合わせて、形が変わったかだけを見る（「親型の連鎖」）
+     */
+    private final Map<String, String> oldShapes = new HashMap<>();
     /**
      * 検査値が合わなかったブロックのうち、そのファイルを今回解析し直すものの数
      * （旧キャッシュと引き継ぎの一時ファイルの合計。ログに 1 回だけ出す）。
@@ -236,7 +271,11 @@ public final class CacheUpdater {
                 valid.clear();
                 libraryAffected.clear();
                 oldConstants.clear();
+                oldShapes.clear();
             }
+            // ここまでに集めた型（無効になったブロックが宣言していた型）が「前回宣言されていた型」。
+            // パス2 で宣言された型がこれに無ければ「新しい型」（クラスの説明「新しい型」）
+            stale.endOfOldCache();
             // ソース一覧の指紋（T行）。ハッシュはパス1 と共通で、1ファイル 1 回しか読まない（hashOf）
             String sources = fingerprintOf(live);
             // ヘッダ・L 行・T 行。この並びは形式で決まっている
@@ -273,7 +312,8 @@ public final class CacheUpdater {
                 for (String line : head) {
                     writeLine(cacheOut, line);
                 }
-                BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants);
+                BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants,
+                        oldShapes);
 
                 // --- パス2: 変更・追加されたファイルを解析 ---
                 writer.stale = stale;
@@ -440,7 +480,8 @@ public final class CacheUpdater {
         /** 常に加える（パス2。ファイル自身が変わっているので、型の改名・追加がありうる） */
         ALWAYS,
         /**
-         * 宣言している定数（K行）の値が旧キャッシュと違うときだけ加える（パス4）。
+         * 宣言している定数（K行）の値か、型の形（I 行の指紋。{@link TypeShape}）が旧キャッシュと違うときだけ
+         * 加える（パス4。後者は「親型の連鎖」）。
          *
          * コンパイル時定数の値は、それを使っている側のファイルに焼き込まれる。
          * このファイルを解析し直した結果その値が変わっていたなら、使っている側にも
@@ -463,7 +504,9 @@ public final class CacheUpdater {
         private final Function<SourceFile, String> hasher;
         /** 相対パス -> 旧キャッシュの定数の指紋（{@link Cascade#WHEN_CONSTANTS_CHANGED} の判定用） */
         private final Map<String, String> oldConstants;
-        /** 「変わった型」の集合。非nullのときだけ {@link #cascade} に従って型を加える */
+        /** 相対パス -> 旧キャッシュの型の形の指紋（{@link Cascade#WHEN_CONSTANTS_CHANGED} の判定用） */
+        private final Map<String, String> oldShapes;
+        /** 「変わった型」の集合。非nullのときだけ {@link #cascade} に従って型を加える（連鎖の判定にも使う） */
         StaleTypes stale;
         /** 解析したファイルが宣言する型を「変わった型」に加える条件 */
         Cascade cascade = Cascade.ALWAYS;
@@ -472,29 +515,42 @@ public final class CacheUpdater {
         private long done;
 
         BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
-                    Function<SourceFile, String> hasher, Map<String, String> oldConstants) {
+                    Function<SourceFile, String> hasher, Map<String, String> oldConstants,
+                    Map<String, String> oldShapes) {
             this.cacheOut = cacheOut;
             this.result = result;
             this.progress = progress;
             this.hasher = hasher;
             this.oldConstants = oldConstants;
+            this.oldShapes = oldShapes;
         }
 
-        /** 解析したファイルが宣言する型を「変わった型」に加えるか */
-        private boolean shouldCascade(SourceFile file, FileAnalysis fa) {
+        /**
+         * 解析したファイルが宣言する型を「変わった型」に加えるか。
+         * パス4 では、定数の値か型の形（{@code shape}）が旧キャッシュと違うときだけ加える。
+         * どちらもこのファイルの解析結果と旧キャッシュの比較だけで決まり、ほかのファイルをどの順に解析し直したか
+         * （「変わった型」がその時点で何を含むか）には依らない
+         */
+        private boolean shouldCascade(SourceFile file, FileAnalysis fa, String shape) {
             if (cascade == Cascade.ALWAYS) {
                 return true;
             }
             String before = oldConstants.getOrDefault(file.relativePath(), "");
-            return !before.equals(constantsDigestOf(fa));
+            if (!before.equals(constantsDigestOf(fa))) {
+                return true;
+            }
+            // 親型の連鎖。継承したものを含むメンバーが変わっていれば、この型を使う側（I 行にはこの型しか無い）の
+            // 事実も変わりうる。旧キャッシュに形が無ければ（読めなかった）変わったとみなす
+            return !shape.equals(oldShapes.get(file.relativePath()));
         }
 
         @Override
         public void accept(SourceFile file, FileAnalysis fa) throws IOException {
             fa.hash = hasher.apply(file);
+            String shape = shapeDigestOf(fa);
             // writeBlock はブロックをメモリ上で組み終えてから書くので、途中で例外が出ても書きかけは残らない
             // （例外は呼び出し元がこのファイルの失敗として数える）。書けたら直後に数え、Z 行の数と揃える
-            writeBlock(fa, cacheOut);
+            writeBlock(fa, shape, cacheOut);
             result.parsed++;
             result.unresolved += fa.unresolvedCount();
             result.countErrors(file.relativePath(), fa.errors, fa.syntaxErrors);
@@ -504,9 +560,15 @@ public final class CacheUpdater {
                         Messages.format("analysis.syntaxError", file.relativePath(), fa.syntaxErrors));
             }
             countReason();
-            if (stale != null && shouldCascade(file, fa)) {
+            if (stale != null && shouldCascade(file, fa, shape)) {
                 for (TypeFact t : fa.types) {
-                    stale.add(t.typeFqn(), t.pkg());
+                    if (cascade == Cascade.ALWAYS && countAs == Reason.UNTOUCHED) {
+                        // ファイル自身が変わった・増えた。新しい型かも見る（jar の追加で解析し直すファイルは
+                        // 中身が変わっていないので、宣言する型も前回と同じ）
+                        stale.addDeclared(t.typeFqn(), t.pkg());
+                    } else {
+                        stale.add(t.typeFqn(), t.pkg());
+                    }
                 }
             }
             progress.step(++done);
@@ -545,6 +607,24 @@ public final class CacheUpdater {
         private final Set<String> types = new HashSet<>();
         private final Set<String> packages = new HashSet<>();
         private final Set<String> libraryPackages;
+        /**
+         * パス1 の終わりの {@link #types}（無効になったブロックが宣言していた型）。パス2 で宣言された型が
+         * これに無ければ新しい型。{@link #endOfOldCache} を呼ぶまでは null（新しい型を数えない）
+         */
+        private Set<String> declaredBefore;
+        /**
+         * 新しい型の単純名（FQN の最後の点より後。無名・ローカルの型は {@code Main$1} の形なので、エラーの引数の
+         * 名前には当たらない）。型解決に失敗していたブロックのうち、解決できなかった名前（I 行）のどれかの
+         * 区切りがこれに当たるものを解析し直す
+         */
+        private final Set<String> newSimpleNames = new HashSet<>();
+        /**
+         * 新しい型の FQN の、点で区切った頭の部分（{@code org}・{@code org.acme}・{@code org.acme.New}）。
+         * 解決できなかった名前がこれに当たるブロック（{@code import org cannot be resolved}）も解析し直す
+         */
+        private final Set<String> newPrefixes = new HashSet<>();
+        /** パッケージ -> そこに新しく宣言されたトップレベルの型の単純名（同じパッケージの名前の隠蔽を見る） */
+        private final Map<String, Set<String>> newTopLevel = new HashMap<>();
 
         StaleTypes(Set<String> libraryPackages) {
             this.libraryPackages = libraryPackages;
@@ -553,6 +633,62 @@ public final class CacheUpdater {
         void add(String typeFqn, String pkg) {
             types.add(typeFqn);
             packages.add(pkg == null ? "" : pkg);
+        }
+
+        /** パス1 を読み終えた。ここまでの型を「前回宣言されていた型」として固定する */
+        void endOfOldCache() {
+            declaredBefore = new HashSet<>(types);
+        }
+
+        /**
+         * 変わった（または新しい）ファイルが宣言する型を加える。前回宣言されていなかった型なら、
+         * 新しい型としても覚える（クラスの説明「新しい型」）
+         */
+        void addDeclared(String typeFqn, String pkg) {
+            add(typeFqn, pkg);
+            if (declaredBefore == null || declaredBefore.contains(typeFqn)) {
+                return;
+            }
+            newSimpleNames.add(typeFqn.substring(typeFqn.lastIndexOf('.') + 1));
+            for (int dot = typeFqn.indexOf('.'); dot > 0; dot = typeFqn.indexOf('.', dot + 1)) {
+                newPrefixes.add(typeFqn.substring(0, dot));
+            }
+            newPrefixes.add(typeFqn);
+            String p = (pkg == null) ? "" : pkg;
+            String rest = p.isEmpty() ? typeFqn
+                    : typeFqn.startsWith(p + ".") ? typeFqn.substring(p.length() + 1) : null;
+            if (rest != null && !rest.isEmpty() && rest.indexOf('.') < 0) {
+                // トップレベルの型だけ。入れ子の型（Main.Inner）は外側の型（前回もあった）を通してしか名前にならない
+                newTopLevel.computeIfAbsent(p, k -> new HashSet<>()).add(rest);
+            }
+        }
+
+        /** 新しい型があったか */
+        boolean hasNewTypes() {
+            return !newSimpleNames.isEmpty();
+        }
+
+        /**
+         * 型解決に失敗していたブロックの、解決できなかった名前（I 行。{@link FileAnalysis#unresolvedNames}）が
+         * 新しい型に当たるか。名前の区切りのどれかが新しい型の単純名か（{@code Foo}・{@code q.Foo}・
+         * {@code Foo.Inner}）、名前が新しい型の FQN の頭の部分か（{@code org}・{@code org.acme}）。
+         * {@link CacheFormat#ANY_NAME}（名前を拾えなかった）は何にでも当たる
+         *
+         * @param namesCsv 名前のカンマ区切り
+         */
+        boolean matchesNewType(String namesCsv) {
+            if (newSimpleNames.isEmpty()) {
+                return false;
+            }
+            if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
+                return true;
+            }
+            for (String name : namesCsv.split(",")) {
+                if (newPrefixes.contains(name) || hasSegment(name, newSimpleNames)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /** 「変わった型」も「変わった jar のパッケージ」も無い（＝どのブロックも再解析に回らない） */
@@ -573,15 +709,24 @@ public final class CacheUpdater {
          * "pkg.*"（オンデマンド import）は、そのパッケージの型が1つでも変わっていれば触れているとみなす。
          * ソースの変更に触れていればそちらを理由として返す（集計の内訳のため）。
          *
+         * <p>自分のパッケージ（{@code ownPackage}）に新しいトップレベルの型ができていて、I 行のどれかの型名に
+         * その単純名が含まれていれば（{@code q.Helper} と新しい {@code p.Helper}、{@code java.lang.Math} と
+         * 新しい {@code p.Math}）、名前が隠されて別の型に解決されうるので触れているとみなす（JLS 6.4.1）
+         *
+         * @param ownPackage そのブロックが宣言する型のパッケージ。分からなければ null
          */
-        Reason touches(String depsCsv) {
+        Reason touches(String depsCsv, String ownPackage) {
             if (depsCsv.isEmpty() || (types.isEmpty() && libraryPackages.isEmpty())) {
                 return Reason.UNTOUCHED;
             }
+            Set<String> shadowing = (ownPackage == null) ? null : newTopLevel.get(ownPackage);
             boolean library = false;
             for (String d : depsCsv.split(",")) {
                 if (d.isEmpty()) {
                     continue;
+                }
+                if (shadowing != null && !d.endsWith(".*") && hasSegment(d, shadowing)) {
+                    return Reason.BY_SOURCE;
                 }
                 if (d.endsWith(".*")) {
                     String p = d.substring(0, d.length() - 2);
@@ -596,6 +741,23 @@ public final class CacheUpdater {
                 }
             }
             return library ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
+        }
+
+        /** 型名を "." で区切ったどれかが、names に含まれるか */
+        private static boolean hasSegment(String typeFqn, Set<String> names) {
+            int from = 0;
+            while (from <= typeFqn.length()) {
+                int dot = typeFqn.indexOf('.', from);
+                int end = (dot < 0) ? typeFqn.length() : dot;
+                if (names.contains(typeFqn.substring(from, end))) {
+                    return true;
+                }
+                if (dot < 0) {
+                    return false;
+                }
+                from = dot + 1;
+            }
+            return false;
         }
 
         /**
@@ -909,7 +1071,7 @@ public final class CacheUpdater {
             if (CacheFormat.rowTypeOf(line) == CacheFormat.ROW_TYPE) {
                 TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(line));
                 if (t != null) {
-                    stale.add(t.typeFqn(), t.pkg());
+                    stale.addDeclared(t.typeFqn(), t.pkg());
                 }
             }
         }
@@ -1006,12 +1168,16 @@ public final class CacheUpdater {
         final List<String> typeRows = new ArrayList<>();
         /** K 行の指紋（定数の連鎖。{@link #rememberConstants}） */
         final List<String> constants = new ArrayList<>();
-        /** 理由が BINDING_FAILED の U 行があったか（jar が追加・変更されたときだけ見る） */
+        /** 理由が BINDING_FAILED の U 行があったか（jar の追加・変更と、新しい型で解析し直すかを見る） */
         boolean bindingFailed;
         /** F 行の直後の行をまだ読んでいないか */
         boolean firstRow = true;
         /** I 行（F 行の直後）の依存。I 行が無ければ空 */
         String deps = "";
+        /** I 行の型の形の指紋（親型の連鎖）。I 行が無ければ null（変わったとみなす） */
+        String shape;
+        /** I 行の解決できなかった名前（新しい型で解析し直すか）。I 行が無ければ空（何にでも当たる） */
+        String names = "";
 
         OldBlock(String[] f, boolean inSources, boolean identical, long start, long irregularAtStart) {
             this.rel = (f.length >= 2) ? f[1] : null;
@@ -1041,8 +1207,22 @@ public final class CacheUpdater {
         int[] errors = new int[64];
         int[] syntaxErrors = new int[64];
         int[] unresolved = new int[64];
+        /** 宣言する型のパッケージ（最初の H 行。無ければ null）。同じ中身の文字列は 1 つを共有する */
+        String[] packages = new String[64];
         /** 書き手の書くとおりの形でないブロック（空行・CRLF を含む）。書き写すときは行に戻して書き直す */
         final BitSet irregular = new BitSet();
+        /**
+         * 型解決に失敗していたブロック（F 行のエラー数が 0 でない、または U 行に BINDING_FAILED がある）。
+         * 新しい型があれば解析し直す（クラスの説明「新しい型」）
+         */
+        final BitSet unresolvedTypes = new BitSet();
+        /**
+         * 型解決に失敗していたブロックの、解決できなかった名前（I 行。カンマ区切り）。
+         * 失敗していないブロックは null。新しい型に当たるものだけを解析し直す（{@link StaleTypes#matchesNewType}）
+         */
+        String[] unresolvedNames = new String[64];
+        /** {@link #packages} の文字列を共有するための表 */
+        private final Map<String, String> packageNames = new HashMap<>();
         int size;
 
         /** F 行の数 */
@@ -1055,10 +1235,12 @@ public final class CacheUpdater {
         boolean writtenAsIs;
 
         void add(String path, long start, long end, int errorCount, int syntaxErrorCount, int unresolvedCount,
-                 boolean irregularBlock) {
+                 boolean irregularBlock, boolean failedTypes, String names, String pkg) {
             if (size == paths.length) {
                 int grown = size + (size >> 1) + 16;
                 paths = Arrays.copyOf(paths, grown);
+                packages = Arrays.copyOf(packages, grown);
+                unresolvedNames = Arrays.copyOf(unresolvedNames, grown);
                 starts = Arrays.copyOf(starts, grown);
                 ends = Arrays.copyOf(ends, grown);
                 errors = Arrays.copyOf(errors, grown);
@@ -1074,6 +1256,11 @@ public final class CacheUpdater {
             if (irregularBlock) {
                 irregular.set(size);
             }
+            if (failedTypes) {
+                unresolvedTypes.set(size);
+                unresolvedNames[size] = names;
+            }
+            packages[size] = (pkg == null) ? null : packageNames.computeIfAbsent(pkg, k -> k);
             size++;
         }
     }
@@ -1147,7 +1334,10 @@ public final class CacheUpdater {
                     // F 行の直後。I 行なら依存（パス3 が見る）。無ければ依存なしとみなす
                     block.firstRow = false;
                     if (rowType == CacheFormat.ROW_DEPENDENCIES) {
-                        block.deps = in.column(1);
+                        String[] cols = in.columns();
+                        block.deps = CacheFormat.columnAt(cols, 1);
+                        block.shape = CacheFormat.columnAt(cols, 2);
+                        block.names = CacheFormat.columnAt(cols, 3);
                     }
                 }
                 in.addTo(block.checksum);
@@ -1158,10 +1348,10 @@ public final class CacheUpdater {
                     if (k != null) {
                         block.constants.add(k.fingerprint());
                     }
-                } else if (librariesAddedOrChanged && rowType == CacheFormat.ROW_UNRESOLVED
+                } else if (!block.bindingFailed && rowType == CacheFormat.ROW_UNRESOLVED
                         && UnresolvedCallFact.BINDING_FAILED.equals(
                                 UnresolvedCallFact.reasonColumn(in.columns()))) {
-                    // エラーとしては報告されなかったが呼び出し先が解決できなかった。jar の追加で変わりうる
+                    // エラーとしては報告されなかったが呼び出し先が解決できなかった。jar の追加や新しい型で変わりうる
                     block.bindingFailed = true;
                 }
             }
@@ -1204,6 +1394,9 @@ public final class CacheUpdater {
         boolean intact = block.checksum.hex().equals(block.expectedCrc);
         if (intact && block.rel != null) {
             rememberConstants(block.rel, block.constants);
+            if (block.shape != null) {
+                oldShapes.put(block.rel, block.shape);
+            }
         }
         if (intact && block.identical) {
             // 有効なブロックは今のソースにある（isValidBlock）。パスは今のソース一覧の文字列を使い回す
@@ -1214,9 +1407,10 @@ public final class CacheUpdater {
             } else {
                 valid.add(rel);
                 old.add(rel, block.start, end, block.errors, block.syntaxErrors, block.unresolved,
-                        irregularAtEnd != block.irregularAtStart);
+                        irregularAtEnd != block.irregularAtStart, block.errors > 0 || block.bindingFailed,
+                        block.names, packageOf(block.typeRows));
                 if (!block.deps.isEmpty()) {
-                    deps.add(rel, block.deps);
+                    deps.add(old.size - 1, block.deps);
                 }
             }
             return 0;
@@ -1232,6 +1426,15 @@ public final class CacheUpdater {
         return (!intact && block.inSources) ? 1 : 0;
     }
 
+    /** ブロックが宣言する型のパッケージ（最初の H 行）。H 行が無ければ null */
+    private static String packageOf(List<String> typeRows) {
+        if (typeRows.isEmpty()) {
+            return null;
+        }
+        TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(typeRows.get(0)));
+        return (t == null) ? null : t.pkg();
+    }
+
     /** 1ブロック分の K 行の指紋をまとめて覚える */
     private void rememberConstants(String rel, List<String> fingerprints) {
         if (!fingerprints.isEmpty()) {
@@ -1241,7 +1444,8 @@ public final class CacheUpdater {
 
     /**
      * パス1 が書き、パス3 が読む依存の索引（一時ファイル。{@link TempFiles#DEPS}）。1 行に 1 ブロック、
-     * {@code パス 依存}（{@link CacheFormat#joinRow} で符号化）を旧キャッシュのブロックの順に書く。
+     * {@code 番号 依存}（番号は {@link OldCache} の添字。{@link CacheFormat#joinRow} で符号化）を
+     * 旧キャッシュのブロックの順に書く。
      * 最初の行を書くときにファイルを作る（書くものが無ければ作らない）。
      *
      * <p>名前は実行ごとに違い（{@link TempFiles#create}）、書くのも読むのも作ったときに開いた 1 つのチャネルで行う
@@ -1268,8 +1472,8 @@ public final class CacheUpdater {
             this.cacheFile = cacheFile;
         }
 
-        /** 1 ブロックの依存を書く。書けなければ索引を捨てる（例外は投げない） */
-        void add(String rel, String deps) {
+        /** 1 ブロックの依存を書く（{@code index} は {@link OldCache} の添字）。書けなければ索引を捨てる（例外は投げない） */
+        void add(int index, String deps) {
             if (unwritable) {
                 return;
             }
@@ -1281,7 +1485,7 @@ public final class CacheUpdater {
                     out = new BufferedWriter(new OutputStreamWriter(Channels.newOutputStream(channel),
                             StandardCharsets.UTF_8.newEncoder()));
                 }
-                writeLine(out, CacheFormat.joinRow(rel, deps));
+                writeLine(out, CacheFormat.joinRow(String.valueOf(index), deps));
                 lines++;
             } catch (IOException | RuntimeException e) {
                 giveUp(e);
@@ -1335,7 +1539,7 @@ public final class CacheUpdater {
             while ((line = in.readLine()) != null) {
                 read++;
                 String[] cols = CacheFormat.columnsOf(line);
-                each.accept(cols[0], CacheFormat.columnAt(cols, 1));
+                each.accept(Integer.parseInt(cols[0]), CacheFormat.columnAt(cols, 1));
             }
             if (read != lines) {
                 throw new IOException(Messages.format("analysis.cache.depsIndexMismatch", file, lines, read));
@@ -1357,10 +1561,10 @@ public final class CacheUpdater {
         }
     }
 
-    /** 依存の索引の 1 行（パスと依存）を受け取る */
+    /** 依存の索引の 1 行（{@link OldCache} の添字と依存）を受け取る */
     @FunctionalInterface
     private interface DepsConsumer {
-        void accept(String rel, String deps);
+        void accept(int index, String deps);
     }
 
     /**
@@ -1386,16 +1590,29 @@ public final class CacheUpdater {
         if (stale.isEmpty()) {
             return;   // 触れる先が無いので、読み直すだけ無駄
         }
+        // 新しい型があれば、型解決に失敗していたブロックのうち、解決できなかった名前が新しい型に当たるものを
+        // 解析し直す。無い型の名前は依存（I 行の型）に残らないので、依存では見つけられない
+        // （クラスの説明「新しい型」）。1 周目に回す
+        List<String> unresolvedBefore = new ArrayList<>();
+        if (stale.hasNewTypes()) {
+            for (int i = old.unresolvedTypes.nextSetBit(0); i >= 0; i = old.unresolvedTypes.nextSetBit(i + 1)) {
+                if (stale.matchesNewType(old.unresolvedNames[i]) && valid.remove(old.paths[i])) {
+                    unresolvedBefore.add(old.paths[i]);
+                }
+            }
+        }
         int mark;
         do {
             mark = stale.mark();
-            List<String> dependents = new ArrayList<>();
+            List<String> dependents = new ArrayList<>(unresolvedBefore);
+            unresolvedBefore.clear();
             List<String> libraryDependents = new ArrayList<>();
-            DepsConsumer select = (rel, depsCsv) -> {
+            DepsConsumer select = (index, depsCsv) -> {
+                String rel = old.paths[index];
                 if (!valid.contains(rel)) {
                     return;   // すでに再解析に回した
                 }
-                Reason touched = stale.touches(depsCsv);
+                Reason touched = stale.touches(depsCsv, old.packages[index]);
                 if (touched == Reason.BY_SOURCE) {
                     valid.remove(rel);
                     dependents.add(rel);
@@ -1429,26 +1646,26 @@ public final class CacheUpdater {
             return;
         }
         int k = 0;
-        String pending = null;   // F 行を読んだ、依存の判定待ちのブロック
+        int pending = -1;   // F 行を読んだ、依存の判定待ちのブロック（OldCache の添字）
         try (CacheReader in = CacheReader.openAt(config.cacheFile, old.starts[0])) {
             while (in.next()) {
                 char rowType = in.rowType();
                 boolean blockStart = rowType == CacheFormat.ROW_FILE || rowType == CacheFormat.ROW_END;
-                if (pending != null) {
+                if (pending >= 0) {
                     // F 行の直後。I 行なら依存、無ければ依存なし（パス1 と同じ見方）
                     select.accept(pending, (!blockStart && rowType == CacheFormat.ROW_DEPENDENCIES)
                             ? in.column(1) : "");
-                    pending = null;
+                    pending = -1;
                 }
                 if (k == old.size) {
                     break;
                 }
                 if (rowType == CacheFormat.ROW_FILE && in.lineStart() == old.starts[k]) {
-                    pending = old.paths[k++];
+                    pending = k++;
                 }
             }
         }
-        if (pending != null) {
+        if (pending >= 0) {
             select.accept(pending, "");
         }
         if (k != old.size) {
@@ -1560,7 +1777,7 @@ public final class CacheUpdater {
      * <p>new の証拠（{@link FileAnalysis#hints}）は行にせず、ここで呼び出し箇所に結びつけて C 行・U 行の
      * hints 列に書く（{@link #hintsByScope}）。
      */
-    private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
+    private static void writeBlock(FileAnalysis fa, String shape, BufferedWriter w) throws IOException {
         if (fa.callSites.size() != fa.callSiteValues.size()) {
             // 呼び出し箇所と値は同じ位置どうしで 1 行にする。数が違えば書き手の誤り
             throw new IllegalStateException(Messages.format("analysis.cache.valuesMismatch",
@@ -1606,8 +1823,10 @@ public final class CacheUpdater {
         }
 
         List<String> body = new ArrayList<>();
-        // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
-        body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));
+        // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）。
+        // 依存・型の形の指紋・解決できなかった名前の 3 列
+        body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa)), shape,
+                unresolvedNamesOf(fa)));
         body.addAll(symbols.rows());
         // 値グラフ（N行）は番号順。参照する行（G・R・C/U・J 行）より前にあれば、読み手は 1 回で取り込める
         for (ValueNode n : fa.valueNodes) {
@@ -1740,6 +1959,34 @@ public final class CacheUpdater {
             sb.append(f).append('\n');
         }
         return FileHash.ofText(sb.toString());
+    }
+
+    /**
+     * 型の形（{@link FileAnalysis#shape}）の指紋。I 行の 2 列目。形の行を並べ替えてハッシュにし、頭の 16 文字を使う
+     * （ファイルごとに比べるだけなので、それで足りる）。宣言する型が無ければ空文字
+     */
+    private static String shapeDigestOf(FileAnalysis fa) {
+        String digest = digestOf(new ArrayList<>(fa.shape));
+        return digest.length() > SHAPE_DIGEST_LENGTH ? digest.substring(0, SHAPE_DIGEST_LENGTH) : digest;
+    }
+
+    private static final int SHAPE_DIGEST_LENGTH = 16;
+
+    /**
+     * I 行の 3 列目。型解決に失敗したブロック（エラーがある、または理由が BINDING_FAILED の U 行がある）なら、
+     * エラーの引数に現れた名前のカンマ区切り（{@link FileAnalysis#unresolvedNames}）。名前を 1 つも拾えなければ
+     * {@link CacheFormat#ANY_NAME}（どの新しい型でも解析し直す）。失敗していないブロックは空文字
+     */
+    private static String unresolvedNamesOf(FileAnalysis fa) {
+        boolean failed = fa.errors > 0;
+        for (int i = 0; !failed && i < fa.callSites.size(); i++) {
+            failed = fa.callSites.get(i) instanceof UnresolvedCallFact u
+                    && UnresolvedCallFact.BINDING_FAILED.equals(u.reason());
+        }
+        if (!failed) {
+            return "";
+        }
+        return fa.unresolvedNames.isEmpty() ? CacheFormat.ANY_NAME : String.join(",", fa.unresolvedNames);
     }
 
     /**

@@ -48,6 +48,7 @@ final class FieldAccessRecorder {
         if (node.isDeclaration()) {
             return;
         }
+        noteQualifier(node);
         if (!(node.resolveBinding() instanceof IVariableBinding vb) || !vb.isField()) {
             return;
         }
@@ -71,6 +72,22 @@ final class FieldAccessRecorder {
         for (MethodRef caller : callers) {
             out.fieldAccesses.add(new FieldAccessFact(line, caller, ownerFqn, vb.getName(),
                     access, mods, lambdaDepth));
+        }
+    }
+
+    /**
+     * 修飾された名前（{@code a.getB().count} の count、{@code a.b.count} の count、{@code Outer.Missing} の
+     * Missing）の、左側の式・名前の型を I 行に数える（{@link BindingNames#noteReachedType}）。
+     * どのフィールド・入れ子の型に解決されるかはその型のメンバーで決まる（足す・隠すと変わる）が、型の名前が
+     * ソースに無ければほかの経路では I 行に載らない（docs/cache-unification-qa.md の Q50）。
+     * 解決できなかった名前も見る
+     */
+    private void noteQualifier(SimpleName node) {
+        ASTNode parent = node.getParent();
+        if (parent instanceof QualifiedName qn && qn.getName() == node) {
+            names.noteReachedType(qn.getQualifier().resolveTypeBinding());
+        } else if (parent instanceof FieldAccess fa && fa.getName() == node) {
+            names.noteReachedType(fa.getExpression().resolveTypeBinding());
         }
     }
 

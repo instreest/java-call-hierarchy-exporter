@@ -19,7 +19,7 @@
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
 # 起点は「呼び出し元が無いメソッド」（entry.packages が空）なので、ケースどうしは混ざらない。
 # 契約表（work/contracts.txt）は KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory の行だけで、それを使うケースにしか効かない。
-# DI（Spring）の Bean 登録は Sb・Sk・Sn で始まる型だけに付ける（Dao の実装を Bean にすると、引数やフィールドで
+# DI（Spring）の Bean 登録（@Bean・@Repository）は Sb・Sk・Sn で始まる型だけに付ける（Dao の実装を Bean にすると、引数やフィールドで
 # 受け取った Dao の呼び出しがすべて段 5 で絞られ、他のケースが変わってしまうため）。
 #
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
@@ -136,6 +136,11 @@ cat > "$SRC/Autowired.java" <<'EOF'
 package pr;
 
 @interface Autowired { }
+EOF
+cat > "$SRC/Repository.java" <<'EOF'
+package pr;
+
+@interface Repository { }
 EOF
 # キーの文字列で具象クラスを返すファクトリ。契約表の 1 行（"A" => DaoA）で絞れる
 cat > "$SRC/KeyFactory.java" <<'EOF'
@@ -1904,6 +1909,126 @@ public class SbTwo {
 EOF
 expect_ listed SbTwo.run SbTwoB.find "同上（SbTwoB も残す）"
 
+# 返す具象型が値から決まらない @Bean メソッド（ファクトリ・引数・フィールド・条件演算子）。@Repository の SbXxA が
+# ステレオタイプの Bean で、SbXxB は @Bean メソッドが返す。@Bean の Bean を数えないと、段 5 が SbXxA だけに絞って
+# SbXxB.find を黙って落とす（docs/value-safety-qa.md の Q17）
+case_ listed SbFac SbFac.run SbFacB.find "@Bean メソッドがファクトリの戻り値を返す（return SbFacB.make();）なら、その Bean（宣言した型 SbFacI の何か）を数え、段 5 で @Repository の SbFacA に絞らない" <<'EOF'
+package pr;
+
+interface SbFacI { void find(); }
+@Repository class SbFacA implements SbFacI { public void find() { System.out.println("a"); } }
+class SbFacB implements SbFacI {
+    static SbFacB make() { return new SbFacB(); }
+    public void find() { System.out.println("b"); }
+}
+class SbFacCfg { @Bean SbFacI b() { return SbFacB.make(); } }
+
+public class SbFac {
+    @Autowired private SbFacI r;
+    public static void main(String[] args) { new SbFac().run(); }
+    void run() { r.find(); }
+}
+EOF
+expect_ listed SbFac.run SbFacA.find "同上（SbFacA も残す）"
+
+case_ listed SbPar SbPar.run SbParB.find "@Bean メソッドが引数を返す（@Bean SbParI b(SbParB p) { return p; }）なら、段 5 で SbParA に絞らない" <<'EOF'
+package pr;
+
+interface SbParI { void find(); }
+@Repository class SbParA implements SbParI { public void find() { System.out.println("a"); } }
+class SbParB implements SbParI { public void find() { System.out.println("b"); } }
+class SbParCfg { @Bean SbParI b(SbParB p) { return p; } }
+
+public class SbPar {
+    @Autowired private SbParI r;
+    public static void main(String[] args) { new SbPar().run(); }
+    void run() { r.find(); }
+}
+EOF
+expect_ listed SbPar.run SbParA.find "同上（SbParA も残す）"
+
+case_ listed SbFld SbFld.run SbFldB.find "@Bean メソッドがフィールドを返す（return f; f は new SbFldB()）なら、段 5 で SbFldA に絞らない" <<'EOF'
+package pr;
+
+interface SbFldI { void find(); }
+@Repository class SbFldA implements SbFldI { public void find() { System.out.println("a"); } }
+class SbFldB implements SbFldI { public void find() { System.out.println("b"); } }
+class SbFldCfg {
+    private final SbFldB f = new SbFldB();
+    @Bean SbFldI b() { return f; }
+}
+
+public class SbFld {
+    @Autowired private SbFldI r;
+    public static void main(String[] args) { new SbFld().run(); }
+    void run() { r.find(); }
+}
+EOF
+expect_ listed SbFld.run SbFldA.find "同上（SbFldA も残す）"
+
+case_ listed SbCond SbCond.run SbCondB.find "@Bean メソッドが条件演算子を返す（return c ? new SbCondB() : new SbCondB();）なら、段 5 で SbCondA に絞らない" <<'EOF'
+package pr;
+
+interface SbCondI { void find(); }
+@Repository class SbCondA implements SbCondI { public void find() { System.out.println("a"); } }
+class SbCondB implements SbCondI { public void find() { System.out.println("b"); } }
+class SbCondCfg { @Bean SbCondI b(boolean c) { return c ? new SbCondB() : new SbCondB(); } }
+
+public class SbCond {
+    @Autowired private SbCondI r;
+    public static void main(String[] args) { new SbCond().run(); }
+    void run() { r.find(); }
+}
+EOF
+expect_ listed SbCond.run SbCondA.find "同上（SbCondA も残す）"
+
+case_ resolved:RESOLVED:SPRING_DI SbUnrel SbUnrel.run SbUnA.find "対照: 返す具象型の決まらない @Bean メソッドがあっても、宣言した型（SbUnOther）が候補の型に触れなければ、段 5 で @Repository の SbUnA に絞る" <<'EOF'
+package pr;
+
+interface SbUnI { void find(); }
+@Repository class SbUnA implements SbUnI { public void find() { System.out.println("a"); } }
+class SbUnB implements SbUnI { public void find() { System.out.println("b"); } }
+class SbUnOther { static SbUnOther make() { return new SbUnOther(); } }
+class SbUnCfg { @Bean SbUnOther other() { return SbUnOther.make(); } }
+
+public class SbUnrel {
+    @Autowired private SbUnI r;
+    public static void main(String[] args) { new SbUnrel().run(); }
+    void run() { r.find(); }
+}
+EOF
+expect_ absent SbUnrel.run SbUnB.find "同上（SbUnB の行が無い）"
+
+# 対になっていないサロゲートを含む文字列リテラル（"\uD800x"）。キャッシュは UTF-8 で書くので、符号化しないと
+# 書けずに解析ごと失敗していた。値は \uXXXX として符号化し、読み戻すと元の char に戻る（別のサロゲートの値とは
+# 等しくならない。置換文字に潰すと両方が同じになって、成立しない条件まで通してしまう）。docs/cache-unification-qa.md の Q49
+case_ reachable SurLit SurLit.run SurLit.hit "対になっていないサロゲートの文字列（\"\\uD800x\"）の定数を渡した経路で、同じ文字列との equals を打ち切らない" <<'EOF'
+package pr;
+
+public class SurLit {
+    static final String K = "\uD800x";
+    public static void main(String[] args) { run(K); other("\uDBFFx"); }
+    static void run(String k) { if ("\uD800x".equals(k)) { hit(); } }
+    static void other(String k) { if ("\uD800x".equals(k)) { miss(); } }
+    static void hit() { System.out.println("h"); }
+    static void miss() { System.out.println("m"); }
+}
+EOF
+expect_ pruned SurLit.other SurLit.miss "対照: 別のサロゲート（\"\\uDBFFx\"）を渡した経路では打ち切る（値を置換文字に潰していない）"
+
+# 注記の条件式は 60 文字で切る。絵文字（サロゲートペア）がちょうど切れ目にかかっても、ペアの途中で切らない
+# （条件式の文字列はソースの書き方のままなので、絵文字はエスケープせずにそのまま書く。s.equals(" の 10 文字と
+# A の 49 文字の次、60 文字目が絵文字の上位サロゲート）
+case_ pruned EmojiCut EmojiCut.run EmojiCut.target "60 文字目で切れる絵文字を含む条件でも解析でき、打ち切る（条件式の文字列をサロゲートペアの途中で切らない）" <<'EOF'
+package pr;
+
+public class EmojiCut {
+    public static void main(String[] args) { run("zz"); }
+    static void run(String s) { if (s.equals("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA😀")) { target(); } }
+    static void target() { System.out.println("t"); }
+}
+EOF
+
 case_ listed CbParam CbParam.each DaoA.find "引数で渡ったメソッド参照（Dao::find。参照先はソースにある）を forEach の呼び戻し先にし、実装が 2 つでも落とさない" <<'EOF'
 package pr;
 
@@ -2029,6 +2154,87 @@ for c in "${CASES[@]}"; do
             ng "未知の期待 $expect（$label）" ;;
     esac
 done
+
+# 絵文字で切れる条件式の注記。サロゲートペアの片方だけが残ると、CSV では置換文字（?）になる
+emoji=$(rows_of EmojiCut.run EmojiCut.target)
+if grep -q -F 'A…' <<< "$emoji" && ! grep -q -F 'A?…' <<< "$emoji"; then
+    ok "EmojiCut.run -> EmojiCut.target: 注記の条件式は絵文字の手前で切れている（サロゲートの片方が残らない）"
+else
+    ng "EmojiCut.run -> EmojiCut.target: 注記の条件式の切れ目が期待と違います"
+    echo "       $(head -1 <<< "$emoji")"
+fi
+
+# ---------------------------------------------------------------------------
+# 値を読まない指定（dataflow.enabled=false）の @Bean。R 行を読まないので、@Bean メソッドが返す具象型は
+# return new RepoB(); でも決まらない。その Bean を数えないと、段 5 が @Repository の RepoA だけに絞って
+# RepoB.find を黙って落とす（docs/value-safety-qa.md の Q17）。別の小さなプロジェクトを設定を変えて解析する
+# ---------------------------------------------------------------------------
+NODF=work/nodf
+mkdir -p "$NODF/src/nd"
+cat > "$NODF/config.properties" <<'EOF'
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+entry.packages=
+dataflow.enabled=false
+output.folder=./out
+cache.folder=./.cache
+EOF
+for a in Bean Autowired Repository; do
+    printf 'package nd;\n\n@interface %s { }\n' "$a" > "$NODF/src/nd/$a.java"
+done
+cat > "$NODF/src/nd/Svc.java" <<'EOF'
+package nd;
+
+interface Repo { void find(); }
+@Repository class RepoA implements Repo { public void find() { System.out.println("a"); } }
+class RepoB implements Repo { public void find() { System.out.println("b"); } }
+class Cfg { @Bean Repo repoB() { return new RepoB(); } }
+
+public class Svc {
+    @Autowired private Repo repo;
+    void run() { repo.find(); }
+    void viaParam(Repo r) { r.find(); }
+}
+EOF
+# 対照: @Bean メソッドの宣言した型に触れない呼び出しは、値を読まなくてもステレオタイプの Bean（MailA）に絞る
+cat > "$NODF/src/nd/Notifier.java" <<'EOF'
+package nd;
+
+interface Mail { void send(); }
+@Repository class MailA implements Mail { public void send() { System.out.println("a"); } }
+class MailB implements Mail { public void send() { System.out.println("b"); } }
+
+public class Notifier {
+    @Autowired private Mail mail;
+    void run() { mail.send(); }
+}
+EOF
+( cd "$NODF" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > "$NODF/run.log" 2>&1
+NCSV=$(ls -d "$NODF"/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
+nd_rows() {   # $1=呼び出し元 Class.method  $2=呼び出し先 Class.method
+    awk -F, -v c="at nd.$1(" -v d="$2" 'index($1, c) == 1 && $2 == d' "$NCSV" 2>/dev/null
+}
+if [ ! -f "$NCSV" ]; then
+    ng "値を読まない指定: 解析できませんでした（test/pruning/$NODF/run.log）"
+else
+    for caller in Svc.run Svc.viaParam; do
+        for callee in RepoA.find RepoB.find; do
+            if [ -n "$(nd_rows "$caller" "$callee")" ]; then
+                ok "値を読まない指定: $caller -> $callee（@Bean の Bean を数え、段 5 で RepoA に絞らない）"
+            else
+                ng "値を読まない指定: $caller -> $callee の行がありません"
+                grep "^at nd.$caller(" "$NCSV" | head -2
+            fi
+        done
+    done
+    got=$(nd_rows Notifier.run MailA.send | head -1 | cut -d, -f3)
+    if [ "$got" = RESOLVED:SPRING_DI ] && [ -z "$(nd_rows Notifier.run MailB.send)" ]; then
+        ok "値を読まない指定: 対照 Notifier.run -> MailA.send は段 5 で絞る（RESOLVED:SPRING_DI）"
+    else
+        ng "値を読まない指定: 対照 Notifier.run -> MailA.send が段 5 で絞られていません（$got）"
+    fi
+fi
 
 [ $fail = 0 ] && echo "PASS" || echo "FAIL"
 exit $fail

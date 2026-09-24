@@ -161,8 +161,9 @@ public final class Config {
      * 条件分岐の静的解析で「その経路では呼ばれない」呼び出しの先を辿らないか。
      *
      * 打ち切った呼び出し自体は理由付きで1行出力する（呼び出しが書かれている事実は消さない）。
-     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶため、
-     * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
+     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶ。dataflow.enabled=false のときは
+     * 条件の表（G 行）と呼び出し箇所の条件の列を読まないので、コンパイル時定数の条件も含めて
+     * どの条件も判定せず、この設定は効かない（打ち切りは起きない）。
      */
     public final boolean branchPruningEnabled;
     /**

@@ -538,9 +538,21 @@ final class GuardCollector {
         return b instanceof IVariableBinding vb && (!vb.isField() || vb.isEnumConstant());
     }
 
-    /** 注記に出す条件式のテキスト。長い式は縮める */
+    /**
+     * 注記に出す条件式のテキスト。長い式は縮める。
+     *
+     * <p>サロゲートペア（絵文字など）の途中では切らない。上位サロゲートだけが残ると UTF-8 に書けない文字になり、
+     * 注記が化けるうえ、以前はキャッシュを書けずに解析ごと失敗していた（docs/cache-unification-qa.md の Q49）
+     */
     private static String trim(String text) {
         String t = Guard.clean(text).replaceAll("\\s+", " ").trim();
-        return (t.length() <= Guard.MAX_TEXT) ? t : t.substring(0, Guard.MAX_TEXT) + "…";
+        if (t.length() <= Guard.MAX_TEXT) {
+            return t;
+        }
+        int end = Guard.MAX_TEXT;
+        if (Character.isHighSurrogate(t.charAt(end - 1)) && Character.isLowSurrogate(t.charAt(end))) {
+            end--;
+        }
+        return t.substring(0, end) + "…";
     }
 }

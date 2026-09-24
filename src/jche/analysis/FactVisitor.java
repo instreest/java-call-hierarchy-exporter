@@ -32,14 +32,17 @@ import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.NameQualifiedType;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.QualifiedType;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.RecordPattern;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SimpleType;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
@@ -388,9 +391,12 @@ final class FactVisitor extends ASTVisitor {
             if (node.isConstructor() && TypeContextTracker.delegatesToThis(node)) {
                 mods = ModifierTokens.with(mods, ModifierTokens.DELEGATING);
             }
+            String annotations = names.annotationsOf(binding);
+            // 戻り値の型はアノテーションの付いたメソッドにだけ書く（読むのは DI の @Bean だけ。MethodDeclFact）
+            String returnType = (annotations.isEmpty() || node.isConstructor())
+                    ? "" : names.declTypeName(binding.getReturnType());
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
-                    node.getBody() != null, mods,
-                    names.annotationsOf(binding), endLineOf(node)));
+                    node.getBody() != null, mods, annotations, endLineOf(node), returnType));
             recordOverrides(ref, binding);
             methodStack.push(List.of(ref));
             recordImplicitSuperCall(node, binding);
@@ -559,6 +565,8 @@ final class FactVisitor extends ASTVisitor {
         if (sam == null) {
             return;
         }
+        // 目標の型とその親は I 行に載せる（functionalKeysOf が辿る）。親が変わると、このラムダが実装する
+        // メソッドの鍵（M 行）が変わるため（docs/cache-unification-qa.md の Q45）
         List<String> keys = names.functionalKeysOf(fnType, sam);
         if (keys.isEmpty()) {
             return;
@@ -1016,6 +1024,38 @@ final class FactVisitor extends ASTVisitor {
     // ================================================================
     // フィールドの参照箇所（A行）
     // ================================================================
+
+    // ================================================================
+    // ソースに書かれた型の名前（I行）
+    // ================================================================
+
+    /**
+     * ソースに書かれた型の名前を、このファイルが依存する型（I 行）に数える。
+     *
+     * <p>戻り値・throws・ローカル変数・キャストの型のように、宣言にだけ書かれて呼び出しにも値にも
+     * 現れない型は、ほかの経路（{@link BindingNames#typeNameOf}）を通らない。I 行に無いと、その型を
+     * 消した・改名したときに差分更新がこのファイルを解析し直さず、全件解析ならコンパイルエラーになる
+     * ファイルがエラー 0 のまま残る（warnings.txt の件数が食い違い、jar の追加で解析し直す判定にも効く）。
+     * 型の名前の節（{@link SimpleType}・{@link QualifiedType}・{@link NameQualifiedType}）で拾う
+     * （docs/cache-unification-qa.md の Q46）。
+     */
+    @Override
+    public boolean visit(SimpleType node) {
+        names.noteDependency(node.resolveBinding());
+        return true;
+    }
+
+    @Override
+    public boolean visit(QualifiedType node) {
+        names.noteDependency(node.resolveBinding());
+        return true;
+    }
+
+    @Override
+    public boolean visit(NameQualifiedType node) {
+        names.noteDependency(node.resolveBinding());
+        return true;
+    }
 
     /** import 文の中の名前は参照箇所ではない（依存としては CallEdgeExtractor が別に数える） */
     @Override

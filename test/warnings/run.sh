@@ -9,6 +9,7 @@
 #   - 典型の状態（依存 jar が無い・ローカルリポジトリが無い・設定の指定先が無い・コンパイルエラー・
 #     実行の失敗）で作り、該当の項目と明細が載ること
 #   - どの実行でも「warnings.txt がある」⇔「run.log に [WARN] / [ERROR] の行がある」こと
+#   - コンパイルエラー・構文エラーのファイルの一覧（上限まで）が、差分更新でも全件解析と同じこと
 #   - 表示言語を日本語にすると日本語で書かれること
 # を確かめる。
 #
@@ -167,6 +168,49 @@ expect_in_warnings build "src/main/java/sample/app/Syntax.java"
 analyze build
 check_invariant "build(2回目)"
 expect_in_warnings "build(2回目)" "src/main/java/sample/app/Broken.java"
+
+# 5a. コンパイルエラー・構文エラーのファイルが多いとき（上限の 20 件を超える）、並べるファイルは
+#     キャッシュの状態によらず同じであること。数える順は差分更新では「解析し直したファイル → 書き写したブロック」で、
+#     全件解析と違う。先に来た順で残すと、同じソースでも載るファイルと並びが変わる（パスの順で小さいものを残す）
+make_project sample ""
+SAMPLE_SRC=work/sample/src/main/java/sample/app
+for n in Aa Bb Cc Dd Ee Ff Gg Hh Ii Jj Kk Ll Mm Nn Oo Pp Qq Rr Ss Tt Uu Vv Ww Xx Yy; do
+    printf 'package sample.app;\n\npublic class Err%s {\n    void run() { new NoSuchType().go(); }\n}\n' "$n" \
+        > "$SAMPLE_SRC/Err$n.java"
+done
+sample_lines() {   # $1=ファイル。ファイルの一覧（「- パス」）と「ほか N 件」の行
+    grep -E -e '- src/' -e '- and [0-9]+ more' "$1" 2>/dev/null | sed 's/^\[[^]]*\] //'
+}
+same_sample() {   # $1=ラベル  $2=全件解析の一覧  $3=差分更新の一覧  $4=先頭に来るはずのファイル  $5=載らないはずのファイル
+    if [ -n "$2" ] && grep -q -F "$4" <<< "$2" && ! grep -q -F "$5" <<< "$2" && [ "$2" = "$3" ]; then
+        ok "sample: $1 はパスの順で選び、差分更新でも全件解析と同じ"
+    else
+        ng "sample: $1 が差分更新と全件解析で違う（またはパスの順で選んでいない）"
+        diff <(echo "$2") <(echo "$3") | head -6
+    fi
+}
+# コンパイルエラーだけ。warnings.txt の一覧そのものを比べる
+analyze sample
+check_invariant sample
+full_sample=$(sample_lines "$OUT/warnings.txt")
+# 並びの最後のファイルだけを書き換える。差分更新ではこれが最初に数えられる
+printf '\n// changed\n' >> "$SAMPLE_SRC/ErrYy.java"
+analyze sample
+same_sample "warnings.txt のコンパイルエラーのファイル" "$full_sample" "$(sample_lines "$OUT/warnings.txt")" \
+    "src/main/java/sample/app/ErrAa.java" "src/main/java/sample/app/ErrYy.java"
+# 構文エラーも上限を超える。warnings.txt は明細の上限（50 行）で切れるので、同じ一覧を出す run.log で比べる
+# （構文エラーのファイルごとの行は解析したファイルにだけ出るので、明細の上限までに載る行は差分更新で変わりうる）
+for n in Aa Bb Cc Dd Ee Ff Gg Hh Ii Jj Kk Ll Mm Nn Oo Pp Qq Rr Ss Tt Uu Vv; do
+    printf 'package sample.app;\n\npublic class Syn%s {\n    void run( {\n    }\n}\n' "$n" > "$SAMPLE_SRC/Syn$n.java"
+done
+rm -rf work/sample/.cache
+analyze sample
+full_sample=$(sample_lines "$OUT/run.log")
+printf '\n// changed\n' >> "$SAMPLE_SRC/SynVv.java"
+printf '\n// changed again\n' >> "$SAMPLE_SRC/ErrYy.java"
+analyze sample
+same_sample "run.log のコンパイルエラー・構文エラーのファイル" "$full_sample" "$(sample_lines "$OUT/run.log")" \
+    "src/main/java/sample/app/SynAa.java" "src/main/java/sample/app/SynVv.java"
 
 # 5b. var の使い方の誤り（Java 10 より前のコードの class var を、source.level を指定せずに読む）。
 #     JDT は構文エラーの印を付けるが、本体は読めている。コンパイルエラーとしては案内し、

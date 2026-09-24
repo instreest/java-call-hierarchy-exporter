@@ -26,6 +26,8 @@ Issue なし（キャッシュを 1 ファイルにまとめる作業の途中�
 - **`equals` の型**: 比べる相手の静的な型と定数の型が揃うとき（`String` どうし・同じ列挙型・
   ボックス型と箱詰めされる定数）だけ条件にする
 - キャッシュの版を `jche-cache-v32` に上げた（書き手が作る事実が変わったため）
+- **返す具象型の決まらない @Bean メソッド**（あとから足した。Q17）: その Bean を宣言した戻り値の型とその部分型の
+  どれかとして数え、候補の型が触れる呼び出しを DI（段 5）で 1 つに絞らない。値を読まない指定でも効く
 - 検査は `test/pruning/run.sh`（使い捨てのプロジェクトをその場で作る）。直した書き方ごとに「落とさない」ことと、
   仕組みごとに「打ち切られる・絞られる」対照を見る。`test/regression` の期待出力は変わっていない
 
@@ -337,3 +339,40 @@ for (Dao x : list) {                 // list には DaoA だけを入れてい�
   は、実引数が空文字に見えて `semicolon` に `[UNREACHABLE] … (argument 2 from the caller = )` が付く。
   書き手の値（N 行）は正しく、読み手（`jche.graph.OriginRenderer` / `jche.cache.Origin`）の問題なので、別の作業で扱う
   （stage B で直した。読み手は出所の文字列ではなく値の表を読む。`docs/cache-unification-qa.md` の「読み手が値の表を読む」）
+
+## Q17. 返す具象型が値から決まらない @Bean メソッドで、なぜ DI の絞り込みが呼び出しを落としたのか
+
+段 5（`CallResolver.springResolution`）は、候補の型のうちコンテナに登録された Bean が 1 つだけなら、それに絞る。
+@Bean メソッドが登録する型は、戻り値（R 行）の値がどれも同じ型の `new` のときだけ決まる（`SpringBeans`）。
+それ以外の @Bean メソッドは、これまで**何も登録しなかった**。すると次の形で、`@Repository` の RepoA だけが
+Bean に見え、段 5 が RepoA に絞って、コンテナが実際に注入しうる RepoB の呼び出しを黙って落とした。
+
+```java
+@Repository class RepoA implements Repo { … }
+class RepoB implements Repo { … }
+@Configuration class Cfg { @Bean Repo repoB() { return RepoB.builder().build(); } }
+@Service class Svc { @Autowired private Repo repo; void run() { repo.find(); } }   // → RepoA.find だけ
+```
+
+決まらない形は、ファクトリ・ビルダーの戻り値（`return FacB.make();`）、引数（`@Bean ParI b(ParB p) { return p; }`）、
+フィールド（`return f;`）、条件演算子（`return c ? new B() : new B();`）、return が 2 通りの型。値を読まない指定
+（`dataflow.enabled=false`）では R 行を読まないので、`return new RepoB();` でも決まらず、すべての @Bean メソッドが
+この形になっていた（`config/config.properties` は「その Bean は数えない」とだけ書き、絞り込みを誤ることは書いていなかった）。
+
+今は、返す具象型が決まらない @Bean メソッド（上書きした本体を含む）の Bean を、**宣言した戻り値の型とその部分型の
+どれか**として覚え、候補の型（呼び出しを修飾する型とその部分型）がそこに触れれば段 5 で絞らない（CHA の候補を残す）。
+宣言した戻り値の型は D 行に書く（形式 v34。アノテーションの付いたメソッドにだけ書く。読むのはここだけなので、
+全メソッドに書いてキャッシュを嵩ませない）。値を読まない指定でも D 行は読むので効く。戻り値の型が分からない・
+`Object` なら、どの呼び出しでも段 5 で絞らない（H 行の親型は `Object` を含まないので部分型を引けない）。
+上書きした本体の戻り値の型は D 行に無いこと（`@Bean` を付け直していなければアノテーションが無い）があるので、
+上書きされた宣言の型を使う（上書きした本体の型はその部分型で、広い側に倒れる）。
+
+対照として、決まらない @Bean メソッドがあっても、宣言した型が候補の型に触れなければ（`@Bean SbUnOther other()` と
+`SbUnI` の呼び出し）これまでどおり段 5 で絞る。決まる @Bean メソッド（`return new SkDaoA();`）も絞る（SbKeep）。
+
+却下した案: 決まらない @Bean メソッドが 1 つでもあれば段 5 をまるごと止める。値を読まない指定では @Bean を使う
+プロジェクトのほぼすべてで段 5 が効かなくなり、ステレオタイプだけで決まる呼び出しまで CHA に戻る。
+
+検査は `test/pruning/run.sh` の SbFac・SbPar・SbFld・SbCond（値を読む指定で 4 つの形。両方の実装が残ること）と、
+対照の SbUnrel・SbKeep、値を読まない指定の小さなプロジェクト（`work/nodf`。RepoA・RepoB の両方が残り、@Bean に
+触れない呼び出しは `RESOLVED:SPRING_DI` のまま）。どれも 6c41201 では落ちる（対照は通る）。

@@ -2,7 +2,9 @@
 package jche.graph;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,8 +39,18 @@ import jche.cache.TypeFact;
  *       付いた具象型。単純名で照合するので、それらを合成した独自注釈は
  *       {@code spring.di.bean.annotations} に足せば同じ扱いになる</li>
  *   <li>&#64;Bean を付けたメソッドが {@code return new Impl();} の形で返す具象型
- *       （R行の出所が全て同じ {@code T:FQN}）。&#64;Configuration クラスの定義を拾うため</li>
+ *       （R行の値が全て同じ型の new）。&#64;Configuration クラスの定義を拾うため</li>
  * </ul>
+ *
+ * <h2>返す具象型が決まらない &#64;Bean メソッド</h2>
+ * {@code return Impl.builder().build();}（ファクトリ・ビルダー）、{@code return p;}（引数）、
+ * {@code return field;}、{@code return c ? new A() : new A();}、return が 2 通りの型、そして値を読まない指定
+ * （{@code dataflow.enabled=false}。R 行を読まない）のときは、どの具象型が Bean になるか分からない。
+ * 以前はそのメソッドを数えずに済ませていたので、ステレオタイプ注釈の Bean が 1 つだけ残り、段 5 がそれに
+ * 絞って &#64;Bean の実装への呼び出しを黙って落としていた。今は、宣言した戻り値の型（D 行。
+ * {@link MethodDeclFact#returnType}）とその部分型を「分からない Bean がなりうる型」として覚え、呼び出しの
+ * 候補の型がそこに触れれば段 5 で絞らない（{@link #mayBeUndeterminedBean}。docs/value-safety-qa.md の Q17）。
+ * 戻り値の型が分からない・{@code Object} なら、どの呼び出しでも絞らない。
  * Bean名は注釈の値（{@code @Service("userDao")}）、無ければ単純名の先頭を小文字にしたもの
  * （Springの既定の命名）。&#64;Bean メソッドはメソッド名。
  *
@@ -87,8 +99,19 @@ public final class SpringBeans {
     private final Map<String, Set<String>> beanNames = new LinkedHashMap<>();
     /** "typeFqn#fieldName" -> 注入時に指定されたBean名。指定が無ければ空文字 */
     private final Map<String, String> injectionPoints = new HashMap<>();
-    /** &#64;Bean メソッドのID -> Bean名。R行が読み終わってから型を確定する */
-    private final Map<Integer, String> beanMethods = new LinkedHashMap<>();
+    /** &#64;Bean メソッドのID -> Bean名と宣言した戻り値の型。R行が読み終わってから型を確定する */
+    private final Map<Integer, BeanMethod> beanMethods = new LinkedHashMap<>();
+    /**
+     * 返す具象型が決まらなかった &#64;Bean メソッドの Bean がなりうる型（宣言した戻り値の型とその部分型すべて。
+     * クラスの説明「返す具象型が決まらない &#64;Bean メソッド」）
+     */
+    private final Set<String> undeterminedTypes = new HashSet<>();
+    /** 返す具象型も宣言した戻り値の型も分からない（または {@code Object} の）&#64;Bean メソッドがあった */
+    private boolean undeterminedAnyType;
+
+    /** &#64;Bean メソッドの Bean 名と、宣言した戻り値の型（分からなければ空） */
+    private record BeanMethod(String name, String returnType) {
+    }
 
     private SpringBeans(boolean enabled, List<String> extraStereotypes) {
         this.enabled = enabled;
@@ -157,7 +180,8 @@ public final class SpringBeans {
     void method(int methodId, MethodDeclFact d) {
         if (enabled && AnnotationTokens.has(d.annotations(), BEAN)) {
             String name = AnnotationTokens.valueOf(d.annotations(), BEAN);
-            beanMethods.put(methodId, (name == null || name.isEmpty()) ? d.ref().name() : name);
+            beanMethods.put(methodId, new BeanMethod((name == null || name.isEmpty()) ? d.ref().name() : name,
+                    d.returnType()));
         }
     }
 
@@ -171,24 +195,49 @@ public final class SpringBeans {
      * メソッドを上書きしていれば（&#64;Bean を付け直していなくても）、動くのは上書きした本体で、登録されるのは
      * その本体が返す型になる。宣言の本体が返す型だけを登録すると、上書きした本体の型が Bean に数えられず、
      * 段 5 がもう一方の Bean へ誤って絞る。そこで上書きした本体（{@link CallGraph#overridingImplementations}）
-     * が返す型も同じ名前で登録する。Bean を多く数える側は絞り込みを減らすだけで、呼び出しを落とさない
+     * が返す型も同じ名前で登録する。Bean を多く数える側は絞り込みを減らすだけで、呼び出しを落とさない。
+     *
+     * <p>返す具象型が決まらない本体（値を読まないときは全部）は、宣言した戻り値の型の「分からない Bean」として
+     * 数える（{@link #undetermined}）。上書きした本体の戻り値の型は D 行に無いこと（&#64;Bean を付け直して
+     * いなければアノテーションが無い）があるので、上書きされた宣言の型を使う（上書きした本体の型はその部分型で、
+     * 広い側に倒す）
      */
     void resolveBeanMethods(CallGraph graph) {
-        for (Map.Entry<Integer, String> e : beanMethods.entrySet()) {
+        for (Map.Entry<Integer, BeanMethod> e : beanMethods.entrySet()) {
             int methodId = e.getKey();
-            registerReturnedType(graph, methodId, e.getValue());
+            BeanMethod bean = e.getValue();
+            if (!registerReturnedType(graph, methodId, bean.name())) {
+                undetermined(graph, bean.returnType());
+            }
             if (graph.hasOverriders(methodId)) {
                 IntArray overriding = graph.overridingImplementations(methodId);
                 for (int i = 0; i < overriding.size(); i++) {
-                    registerReturnedType(graph, overriding.get(i), e.getValue());
+                    if (!registerReturnedType(graph, overriding.get(i), bean.name())) {
+                        undetermined(graph, bean.returnType());
+                    }
                 }
             }
         }
         beanMethods.clear();
     }
 
-    /** メソッドの return がどれも同じ {@code new 具象型} なら、その型を Bean として登録する */
-    private void registerReturnedType(CallGraph graph, int methodId, String beanName) {
+    /** 返す具象型が決まらない &#64;Bean メソッドの Bean を、宣言した戻り値の型とその部分型の「どれか」として覚える */
+    private void undetermined(CallGraph graph, String returnType) {
+        if (returnType.isEmpty() || "java.lang.Object".equals(returnType)) {
+            // H 行の親型は java.lang.Object を含まないので、部分型を引けない。どの型にもなりうる
+            undeterminedAnyType = true;
+        } else if (undeterminedTypes.add(returnType)) {
+            undeterminedTypes.addAll(graph.hierarchy.transitiveSubtypes(returnType));
+        }
+    }
+
+    /**
+     * メソッドの return がどれも同じ {@code new 具象型} なら、その型を Bean として登録する。
+     *
+     * @return 登録した（返す具象型が決まった）か。return が無い（値を読まない指定を含む）・new 以外の値がある・
+     *         型が 2 通り以上なら false
+     */
+    private boolean registerReturnedType(CallGraph graph, int methodId, String beanName) {
         ValueStore values = graph.values();
         int count = graph.returnCount(methodId);
         int type = -1;
@@ -202,9 +251,11 @@ public final class SpringBeans {
             type = values.valueId(ref);
         }
         String fqn = (type < 0) ? "" : values.strings().get(type);
-        if (!fqn.isEmpty()) {
-            register(fqn, beanName);
+        if (fqn.isEmpty()) {
+            return false;
         }
+        register(fqn, beanName);
+        return true;
     }
 
     private void register(String typeFqn, String beanName) {
@@ -217,6 +268,27 @@ public final class SpringBeans {
 
     public boolean isBean(String typeFqn) {
         return beanNames.containsKey(typeFqn);
+    }
+
+    /**
+     * 候補の型（呼び出しを修飾する型とその部分型）のどれかが、返す具象型の決まらなかった &#64;Bean メソッドの
+     * Bean でありうるか。ありうるなら、コンテナはその Bean を注入しうるので段 5 で絞ってはいけない。
+     * 候補の型が「分からない Bean」の宣言した戻り値の型そのものかその部分型なら、実際の Bean はその型か
+     * 部分型で、候補の型に代入できる場合がある
+     */
+    public boolean mayBeUndeterminedBean(Collection<String> candidateTypes) {
+        if (undeterminedAnyType) {
+            return true;
+        }
+        if (undeterminedTypes.isEmpty()) {
+            return false;
+        }
+        for (String type : candidateTypes) {
+            if (undeterminedTypes.contains(type)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

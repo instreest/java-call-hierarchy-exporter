@@ -260,6 +260,49 @@ final class BindingNames {
         typeNameOf(erasureOf(t));
     }
 
+    /**
+     * 式の型を I 行に数える。{@link #noteDependency} と違い、型変数・捕捉された型変数（{@code Box<?>} の
+     * {@code b.get()} の型）・ワイルドカード・交差型は飛ばさず、上限の消去で数える（上限が複数なら全部）。
+     *
+     * <p>呼び出しの受け手と実引数、修飾された名前・フィールド参照の左側の式の型に使う（解決できたかどうかに
+     * 関わらない）。その型の名前はソースに無いことがあり（{@code a.getB().x()} の B、{@code D extends E<Foo>} の
+     * {@code d.get()} の Foo）、ほかの経路では I 行に載らない。載らないと、その型にメンバーを足す・親を変えても
+     * 差分更新がこのファイルを解析し直さず、全件解析なら解決できる呼び出しが BINDING_FAILED のまま残る・
+     * 別のオーバーロードに解決したまま残る（docs/cache-unification-qa.md の Q50）。
+     */
+    void noteReachedType(ITypeBinding t) {
+        noteReachedType(t, 0);
+    }
+
+    /** 上限を辿る深さの上限（{@code T extends Comparable<T>} のような自己参照でも止まるように） */
+    private static final int MAX_BOUND_DEPTH = 8;
+
+    private void noteReachedType(ITypeBinding t, int depth) {
+        while (t != null && t.isArray()) {
+            t = t.getComponentType();
+        }
+        if (t == null || t.isPrimitive() || t.isNullType() || depth > MAX_BOUND_DEPTH) {
+            return;
+        }
+        if (t.isWildcardType()) {
+            noteReachedType(t.getBound(), depth + 1);
+            return;
+        }
+        if (t.isTypeVariable() || t.isCapture() || t.isIntersectionType()) {
+            ITypeBinding[] bounds = t.getTypeBounds();
+            if (bounds != null) {
+                for (ITypeBinding b : bounds) {
+                    noteReachedType(b, depth + 1);
+                }
+            }
+            if (t.isCapture()) {
+                noteReachedType(t.getWildcard(), depth + 1);
+            }
+            return;
+        }
+        typeNameOf(erasureOf(t));
+    }
+
     /** メソッドの4つ組。宣言型か引数型の名前が取れなければ null */
     MethodRef toRef(IMethodBinding binding) {
         if (binding == null) {
@@ -312,7 +355,7 @@ final class BindingNames {
      * 型引数を具体化した実装（{@code class UserRepo implements Repo<User>} の
      * {@code save(User)}）は親（{@code Repo#save(java.lang.Object)}）とキーが一致しない。
      * 一致しないまま候補を引くと「実装が無い」や「別の実装1件に確定」になる
-     * （{@code docs/generic-override-qa.md}）。
+     * （{@code docs/jls-conformance-qa.md} の Q1。ジェネリックなメソッドの上書き、Issue #154）。
      *
      * <h4>判定は JDT に任せる</h4>
      * {@code IMethodBinding.overrides} は JLS 8.4.8.1 の実装なので、アクセス修飾子・
@@ -382,6 +425,9 @@ final class BindingNames {
      * 親型は型引数を具体化したまま辿り、上書き同等かの判定は
      * {@code IMethodBinding.isSubsignature}（JLS 8.4.2）に任せる。
      *
+     * <p>辿った型（目標の型とその親）はすべて I 行に数える。目標の型（{@code interface Door extends Opener}
+     * の Door）は、SAM を宣言していなければほかの経路で名前にならないが、その親を変えると返す鍵が変わる。
+     *
      * @return 先頭は SAM 自身の鍵。SAM の鍵を作れなければ空
      */
     List<String> functionalKeysOf(ITypeBinding fnType, IMethodBinding sam) {
@@ -403,6 +449,7 @@ final class BindingNames {
             types.add(root);
             types.addAll(supertypesOf(root));
             for (ITypeBinding type : types) {
+                noteDependency(type);
                 if (!type.isInterface() || !seenTypes.add(keyOf(type))) {
                     continue;
                 }

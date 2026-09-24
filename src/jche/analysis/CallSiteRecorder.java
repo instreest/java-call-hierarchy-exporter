@@ -6,7 +6,9 @@ import java.util.List;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
@@ -17,6 +19,8 @@ import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 
 import jche.cache.CallEdgeFact;
 import jche.cache.CallSiteValues;
@@ -85,6 +89,7 @@ final class CallSiteRecorder {
                 String displayName, String calleeMods, String recvKey, char recvKind,
                 MethodInvocation guessSource, CallValues values, String qualifier) {
         int line = lineOf(node);
+        noteOperandTypes(node);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
         List<Guard.Atom> guard = guards.guardOf(node);
         if (callers == null) {
@@ -113,6 +118,49 @@ final class CallSiteRecorder {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
                     recvKind, lambdaDepth, qualifier));
             addValues(values, recvKey, guard);
+        }
+    }
+
+    /**
+     * 呼び出しの受け手と実引数の式の型を I 行に数える（{@link BindingNames#noteReachedType}）。
+     *
+     * <p>どのメソッドが選ばれるか（JLS 15.12）は、受け手の型のメンバーと実引数の型（とその親）で決まる。
+     * その型の名前がソースに無いと（{@code a.getB().x()} の B、{@code a.m(b.getC())} の C）、ほかの経路では
+     * I 行に載らない。載らないと、B に x を足す・C の親を変える（{@code m(Object)} から {@code m(I)} に変わる）と
+     * 全件解析では解決先が変わるのに、差分更新はこのファイルを解析し直さず、BINDING_FAILED や古い解決先が残る
+     * （docs/cache-unification-qa.md の Q50）。解決できた呼び出しも見る
+     */
+    private void noteOperandTypes(ASTNode node) {
+        List<?> arguments = null;
+        if (node instanceof MethodInvocation mi) {
+            if (mi.getExpression() != null) {
+                names.noteReachedType(mi.getExpression().resolveTypeBinding());
+            }
+            arguments = mi.arguments();
+        } else if (node instanceof ClassInstanceCreation cic) {
+            if (cic.getExpression() != null) {
+                names.noteReachedType(cic.getExpression().resolveTypeBinding());
+            }
+            names.noteReachedType(cic.getType().resolveBinding());
+            arguments = cic.arguments();
+        } else if (node instanceof SuperMethodInvocation smi) {
+            arguments = smi.arguments();
+        } else if (node instanceof ConstructorInvocation ci) {
+            arguments = ci.arguments();
+        } else if (node instanceof SuperConstructorInvocation sci) {
+            if (sci.getExpression() != null) {
+                names.noteReachedType(sci.getExpression().resolveTypeBinding());
+            }
+            arguments = sci.arguments();
+        } else if (node instanceof ExpressionMethodReference emr) {
+            names.noteReachedType(emr.getExpression().resolveTypeBinding());
+        }
+        if (arguments != null) {
+            for (Object a : arguments) {
+                if (a instanceof Expression e) {
+                    names.noteReachedType(e.resolveTypeBinding());
+                }
+            }
         }
     }
 

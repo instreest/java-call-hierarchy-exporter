@@ -263,10 +263,12 @@ check_rows() {   # $1=キャッシュ  $2=ラベル
 }
 
 # 1 ケース: 書き換え -> 差分更新 -> キャッシュを消して全件解析 -> 一致を見る
-case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行以外）が変わるべきか(yes/no)
+# $4（省略可）は最初の解析の前に行う用意（題材に無いファイルを work/ に足す）
+case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行以外）が変わるべきか(yes/no)  $4=用意するコマンド
     echo "== $1 =="
     rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
+    if [ -n "${4:-}" ]; then eval "$4"; fi
     run base.tsv || return
     local base_csv=$OUT
 
@@ -383,6 +385,545 @@ if [ -n "${OUT:-}" ] && [ -f "$OUT/methods.csv" ]; then
     else
         echo "  NG   同じ行のメソッドとラムダの起点の並びが期待と違います（$same_line_roots）"; fail=1
     fi
+fi
+
+# --- 別のファイルの変化が I 行に載らない依存 ---------------------------------
+# 次のケースは、書き換えたファイルを I 行に持たないファイルの事実が、全件解析では変わるもの。
+# 差分更新がそのファイルを解析し直さないと、古い事実（未解決・欠けた上書き・欠けた M 行・別のクラスへの
+# 解決・コンパイルエラーの数）のまま残る（docs/cache-unification-qa.md の Q42〜Q46・Q50）。
+# 題材は work/ にだけ足す（test/incremental/src は他のケースと共有しているので触らない）
+
+jfile() {   # $1=work/src からの相対パス。本文は標準入力
+    mkdir -p "work/src/$(dirname "$1")"
+    cat > "work/src/$1"
+}
+
+# 無かった型のソースを後から足す。JDT は無い型の名前にバインディングを返さないので、参照していた側の
+# I 行には載らない（コンパイルエラーか BINDING_FAILED として残る）。git stash / checkout で消えて戻る場合も同じ
+setup_missing_type() {
+    jfile miss/Caller.java <<'EOF'
+package miss;
+public class Caller {
+    // 型の名前だけの static 呼び出し。new Foo() や Foo 型の変数なら、JDT が型を miss.Foo として
+    // 復元するので I 行に載る（その形は今でも追随できる）。名前だけの形は何も残らない
+    public void call() { Foo.run(); }
+}
+EOF
+}
+edit_missing_type() {
+    jfile miss/Foo.java <<'EOF'
+package miss;
+public class Foo {
+    public static void run() { new Foo().go(); }
+    public void go() { }
+}
+EOF
+}
+case_of "無かった型のソースを後から足す" edit_missing_type yes setup_missing_type
+
+# 既存のファイルを書き換えて、無かった型を宣言する（新しいファイルが増えなくても型は増える）
+setup_missing_type_in_file() {
+    jfile miss2/Caller.java <<'EOF'
+package miss2;
+public class Caller {
+    public void call() { Extra.work(); }
+}
+EOF
+    jfile miss2/Holder.java <<'EOF'
+package miss2;
+public class Holder { }
+EOF
+}
+edit_missing_type_in_file() {
+    printf '\nclass Extra { static void work() { } }\n' >> work/src/miss2/Holder.java
+}
+case_of "既存のファイルに無かった型を足す" edit_missing_type_in_file yes setup_missing_type_in_file
+
+# 祖父母の型に抽象メソッドを足す。D の I 行は親の E だけで、F は載らない。E は F に依存するので解析し直すが、
+# 定数が変わらなければ E の型は連鎖しないので、D の上書き（O 行 D#m(String) -> F#m(Object)）が欠けたまま残る
+setup_super_chain() {
+    jfile sup/F.java <<'EOF'
+package sup;
+public abstract class F<T> { }
+EOF
+    jfile sup/E.java <<'EOF'
+package sup;
+public abstract class E extends F<String> { }
+EOF
+    jfile sup/D.java <<'EOF'
+package sup;
+public class D extends E {
+    public void m(String s) { System.out.println(s); }
+}
+EOF
+    jfile sup/U.java <<'EOF'
+package sup;
+public class U {
+    void go(F<String> f) { f.toString(); }
+}
+EOF
+}
+edit_super_chain() {
+    jfile sup/F.java <<'EOF'
+package sup;
+public abstract class F<T> {
+    public abstract void m(T t);
+}
+EOF
+    sed -i 's/f.toString();/f.m("x");/' work/src/sup/U.java
+}
+case_of "祖父母の型に抽象メソッドを足す（上書きの事実）" edit_super_chain yes setup_super_chain
+
+# 祖父母の型にオーバーロードを足す。A の new B().m(1) は B#m(long) から C#m(int) に変わる
+setup_super_overload() {
+    jfile ovl/C.java <<'EOF'
+package ovl;
+public class C { }
+EOF
+    jfile ovl/B.java <<'EOF'
+package ovl;
+public class B extends C {
+    public void m(long x) { }
+}
+EOF
+    jfile ovl/A.java <<'EOF'
+package ovl;
+public class A {
+    void a() { new B().m(1); }
+}
+EOF
+}
+edit_super_overload() {
+    jfile ovl/C.java <<'EOF'
+package ovl;
+public class C {
+    public void m(int x) { }
+}
+EOF
+}
+case_of "祖父母の型にオーバーロードを足す" edit_super_overload yes setup_super_overload
+
+# ラムダの目標の関数型インターフェースの親を変える。T の I 行には SAM を宣言した Opener は載るが、
+# 目標の Door は載らない。Door が Closer も継承すると、ラムダは Closer#act() の実装にもなる（M 行が増える）
+setup_lambda_target() {
+    jfile lam/Opener.java <<'EOF'
+package lam;
+interface Opener { void act(); }
+EOF
+    jfile lam/Closer.java <<'EOF'
+package lam;
+interface Closer { void act(); }
+EOF
+    jfile lam/Door.java <<'EOF'
+package lam;
+interface Door extends Opener { }
+EOF
+    jfile lam/T.java <<'EOF'
+package lam;
+public class T {
+    public static void main(String[] args) {
+        Door d = () -> System.out.println("x");
+        close((Closer) (Object) d);
+    }
+    static void close(Closer c) { c.act(); }
+}
+EOF
+}
+edit_lambda_target() {
+    sed -i 's/extends Opener { }/extends Opener, Closer { }/' work/src/lam/Door.java
+}
+case_of "ラムダの目標の型の親を変える" edit_lambda_target yes setup_lambda_target
+
+# 同じパッケージに型を足して、オンデマンド import（shq.*）と java.lang の型を隠す（JLS 6.4.1）。
+# Main の I 行は shq.Helper と java.lang.Math で、足した shp.Helper・shp.Math にはどちらも触れない
+setup_shadow() {
+    jfile shq/Helper.java <<'EOF'
+package shq;
+public class Helper {
+    public static void work() { }
+}
+EOF
+    jfile shp/Main.java <<'EOF'
+package shp;
+import shq.*;
+public class Main {
+    void go() {
+        Helper.work();
+        Math.abs(1);
+    }
+}
+EOF
+}
+edit_shadow() {
+    jfile shp/Helper.java <<'EOF'
+package shp;
+public class Helper {
+    public static void work() { }
+}
+EOF
+    jfile shp/Math.java <<'EOF'
+package shp;
+class Math {
+    static int abs(int x) { return x; }
+}
+EOF
+}
+case_of "同じパッケージの型が import と java.lang を隠す" edit_shadow yes setup_shadow
+
+# 宣言にだけ書いた型（戻り値・throws・ローカル変数の型）を消す。呼び出しも値も無いので I 行に載らず、
+# 全件解析ではコンパイルエラーになるのに、差分更新ではエラー 0 のまま残る（warnings.txt の件数が食い違う）
+setup_decl_only() {
+    jfile dec/Dao.java <<'EOF'
+package dec;
+public interface Dao { }
+EOF
+    jfile dec/DecEx.java <<'EOF'
+package dec;
+public class DecEx extends Exception { }
+EOF
+    jfile dec/Chain.java <<'EOF'
+package dec;
+public class Chain {
+    public static Dao c1() { return null; }
+    static void t() throws DecEx { }
+    static void local() { Dao d = null; }
+}
+EOF
+}
+edit_decl_only() {
+    rm -f work/src/dec/Dao.java work/src/dec/DecEx.java
+}
+case_of "宣言にだけ書いた型を消す" edit_decl_only yes setup_decl_only
+
+# 親型の連鎖は処理の順に依らない。部分型（D・A）のパスが親（E・I2）より前に並ぶので、同じ周回で親より先に
+# 解析し直される。そのときに「親が変わった型か」を見ると、まだ親が変わった型に入っていないので連鎖せず、
+# 部分型の利用者（U）が古いまま残る。連鎖は、解析し直した型の形（継承したものを含むメンバーの指紋。I 行）が
+# 前回と違うかで決める（docs/cache-unification-qa.md の Q44）
+setup_order_class() {
+    jfile ordc/F.java <<'EOF'
+package ordc;
+public abstract class F<T> { }
+EOF
+    jfile ordc/E.java <<'EOF'
+package ordc;
+public class E extends F<String> { }
+EOF
+    jfile ordc/D.java <<'EOF'
+package ordc;
+public class D extends E {
+    public void m(long x) { System.out.println(x); }
+    public F<String> self() { return this; }
+}
+EOF
+    jfile ordc/U.java <<'EOF'
+package ordc;
+public class U {
+    void go(D d) { d.m(1); }
+}
+EOF
+}
+edit_order_class() {
+    jfile ordc/F.java <<'EOF'
+package ordc;
+public abstract class F<T> {
+    public void m(int x) { System.out.println(x); }
+}
+EOF
+}
+case_of "部分型のパスが親より前に並ぶ（クラス）" edit_order_class yes setup_order_class
+
+setup_order_iface() {
+    jfile ordi/I1.java <<'EOF'
+package ordi;
+public interface I1 { }
+EOF
+    jfile ordi/I2.java <<'EOF'
+package ordi;
+public interface I2 extends I1 { }
+EOF
+    jfile ordi/A.java <<'EOF'
+package ordi;
+public class A implements I2 {
+    public I1 self() { return this; }
+}
+EOF
+    jfile ordi/U.java <<'EOF'
+package ordi;
+public class U {
+    void go(A a) { a.m2(); }
+}
+EOF
+}
+edit_order_iface() {
+    jfile ordi/I1.java <<'EOF'
+package ordi;
+public interface I1 {
+    default void m2() { System.out.println(1); }
+}
+EOF
+}
+case_of "部分型のパスが親より前に並ぶ（インターフェース）" edit_order_iface yes setup_order_iface
+
+# 式の型にだけ現れる型にメンバーを足す。U の a.getB().x() は、x が無いうちは解決できない（BINDING_FAILED と
+# コンパイルエラー）。ソースに B の名前は無いので、解決できなかった呼び出しの受け手の型（B）を I 行に載せて
+# おかないと、B に x を足しても U を解析し直さない（docs/cache-unification-qa.md の Q50）
+setup_expr_member() {
+    jfile exm/B.java <<'EOF'
+package exm;
+public class B { }
+EOF
+    jfile exm/A.java <<'EOF'
+package exm;
+public class A {
+    public B b;
+    public B getB() { return b; }
+}
+EOF
+    jfile exm/U.java <<'EOF'
+package exm;
+public class U {
+    void go(A a) { a.getB().x(); }
+    int count(A a) { return a.getB().count + a.b.count; }
+}
+EOF
+}
+edit_expr_member() {
+    jfile exm/B.java <<'EOF'
+package exm;
+public class B {
+    public int count;
+    public void x() { System.out.println(1); }
+}
+EOF
+}
+case_of "式の型にだけ現れる型にメソッドとフィールドを足す" edit_expr_member yes setup_expr_member
+
+# 親の型引数にだけ現れる型（D extends E<Foo> の Foo）にメソッドを足す。d.get() の型は Foo だが、U のソースにも
+# E の宣言にも Foo の名前は無い
+setup_type_arg_member() {
+    jfile tam/E.java <<'EOF'
+package tam;
+public class E<T> {
+    T v;
+    public T get() { return v; }
+}
+EOF
+    jfile tam/D.java <<'EOF'
+package tam;
+public class D extends E<Foo> { }
+EOF
+    jfile tam/Foo.java <<'EOF'
+package tam;
+public class Foo { }
+EOF
+    jfile tam/U.java <<'EOF'
+package tam;
+public class U {
+    void go(D d) { d.get().x(); }
+}
+EOF
+}
+edit_type_arg_member() {
+    jfile tam/Foo.java <<'EOF'
+package tam;
+public class Foo {
+    public void x() { System.out.println(1); }
+}
+EOF
+}
+case_of "親の型引数にだけ現れる型にメソッドを足す" edit_type_arg_member yes setup_type_arg_member
+
+# 型変数の上限の親にメソッドを足す。Box<?> の b.get() の型は捕捉された型変数で、その上限（Mid）で探す。
+# Box は Mid を参照しているので解析し直すが、Mid の部分型ではないので連鎖しない。解決できなかった呼び出しの
+# 受け手の型を、型変数なら上限の消去で I 行に載せる
+setup_bound_member() {
+    jfile bnd/Base.java <<'EOF'
+package bnd;
+public class Base { }
+EOF
+    jfile bnd/Mid.java <<'EOF'
+package bnd;
+public class Mid extends Base { }
+EOF
+    jfile bnd/Box.java <<'EOF'
+package bnd;
+public class Box<T extends Mid> {
+    T v;
+    public T get() { return v; }
+}
+EOF
+    jfile bnd/User.java <<'EOF'
+package bnd;
+public class User {
+    void go(Box<?> b) { b.get().n(); }
+}
+EOF
+}
+edit_bound_member() {
+    jfile bnd/Base.java <<'EOF'
+package bnd;
+public class Base {
+    public void n() { System.out.println(1); }
+}
+EOF
+}
+case_of "型変数の上限の親にメソッドを足す" edit_bound_member yes setup_bound_member
+
+# 実引数の式の型の親を変える。a.m(b.getC()) の C は U のソースに無い。C が I を実装すると、選ばれるメソッドが
+# A#m(Object) から A#m(I) に変わる（JLS 15.12.2）。解決できた呼び出しでも、受け手と実引数の式の型を I 行に載せる
+setup_arg_type() {
+    jfile arg/C.java <<'EOF'
+package arg;
+public class C { }
+EOF
+    jfile arg/I.java <<'EOF'
+package arg;
+public interface I { }
+EOF
+    jfile arg/A.java <<'EOF'
+package arg;
+public class A {
+    public void m(Object o) { System.out.println(1); }
+    public void m(I i) { System.out.println(2); }
+}
+EOF
+    jfile arg/B.java <<'EOF'
+package arg;
+public class B {
+    public C getC() { return null; }
+}
+EOF
+    jfile arg/U.java <<'EOF'
+package arg;
+public class U {
+    void go(A a, B b) { a.m(b.getC()); }
+}
+EOF
+}
+edit_arg_type() {
+    sed -i 's/public class C { }/public class C implements I { }/' work/src/arg/C.java
+}
+case_of "実引数の式の型の親を変える（オーバーロードの選択が変わる）" edit_arg_type yes setup_arg_type
+
+# 式の型に、親のフィールドを隠すフィールドを足す。a.getB().count は P#count から B#count に変わる（A 行）
+setup_field_hide() {
+    jfile fhd/P.java <<'EOF'
+package fhd;
+public class P {
+    public int count;
+}
+EOF
+    jfile fhd/B.java <<'EOF'
+package fhd;
+public class B extends P { }
+EOF
+    jfile fhd/A.java <<'EOF'
+package fhd;
+public class A {
+    public B getB() { return null; }
+}
+EOF
+    jfile fhd/U.java <<'EOF'
+package fhd;
+public class U {
+    int go(A a) { return a.getB().count; }
+}
+EOF
+}
+edit_field_hide() {
+    sed -i 's/public class B extends P { }/public class B extends P { public int count; }/' work/src/fhd/B.java
+}
+case_of "式の型に親のフィールドを隠すフィールドを足す" edit_field_hide yes setup_field_hide
+
+# 新しい型で解析し直すのは、解決できなかった名前（コンパイルエラーの引数。I 行）が新しい型の名前に当たる
+# ブロックだけ。無名クラス・入れ子の型を足しても、名前の違う型で失敗しているブロック（Fail）は解析し直さない
+# （docs/cache-unification-qa.md の Q42）。名前の当たるブロック（Caller2）は解析し直す
+setup_new_type_names() {
+    jfile ntn/Fail.java <<'EOF'
+package ntn;
+import org.missing.Lib;
+public class Fail {
+    void f(Lib l) { l.go(); }
+}
+EOF
+    jfile ntn/Caller2.java <<'EOF'
+package ntn;
+public class Caller2 {
+    void call() { Foo2.run(); }
+}
+EOF
+    jfile ntn/Main.java <<'EOF'
+package ntn;
+public class Main {
+    void run() { System.out.println(1); }
+}
+EOF
+}
+edit_new_type_anon() {
+    jfile ntn/Main.java <<'EOF'
+package ntn;
+public class Main {
+    static class Inner { }
+    void run() {
+        Runnable r = new Runnable() { public void run() { System.out.println(2); } };
+        r.run();
+    }
+}
+EOF
+}
+case_of "無名クラス・入れ子の型を足す（名前の違う型で失敗しているブロックは解析し直さない）" \
+    edit_new_type_anon yes setup_new_type_names
+if [ "$INC_PARSED" = 1 ]; then
+    echo "  OK   解析し直したのは書き換えた 1 件だけ（新規解析=$INC_PARSED）"
+else
+    echo "  NG   無名クラス・入れ子の型を足しただけで、ほかのブロックも解析し直しています（新規解析=$INC_PARSED）"; fail=1
+fi
+edit_new_type_named() {
+    jfile ntn/Foo2.java <<'EOF'
+package ntn;
+public class Foo2 {
+    public static void run() { }
+}
+EOF
+}
+case_of "無かった型を足す（名前の当たるブロックだけを解析し直す）" edit_new_type_named yes setup_new_type_names
+if [ "$INC_PARSED" = 2 ]; then
+    echo "  OK   解析し直したのは足した Foo2 と名前の当たる Caller2 の 2 件（新規解析=$INC_PARSED）"
+else
+    echo "  NG   新しい型の名前に当たらないブロックも解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
+fi
+
+# 親型の本体だけを変えても、部分型の利用者へは連鎖しない。Sub は Base を参照しているので解析し直すが、
+# Sub の形（継承したものを含むメンバー）は変わらないので、Sub だけを参照する User（s.n() の n は Sub の宣言）は
+# 再利用する（docs/cache-unification-qa.md の Q44）
+setup_body_only() {
+    jfile bod/Base.java <<'EOF'
+package bod;
+public class Base {
+    public void m() { System.out.println(1); }
+}
+EOF
+    jfile bod/Sub.java <<'EOF'
+package bod;
+public class Sub extends Base {
+    public void n() { m(); }
+}
+EOF
+    jfile bod/User.java <<'EOF'
+package bod;
+public class User {
+    void go(Sub s) { s.n(); }
+}
+EOF
+}
+edit_body_only() {
+    sed -i 's/println(1)/println(2)/' work/src/bod/Base.java
+}
+case_of "親型のメソッドの本体だけを変える（部分型の利用者へは連鎖しない）" edit_body_only yes setup_body_only
+if [ "$INC_PARSED" = 2 ]; then
+    echo "  OK   解析し直したのは Base と Sub の 2 件（新規解析=$INC_PARSED）"
+else
+    echo "  NG   親型の本体だけの変更で、部分型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
 fi
 
 # --- 何も変わっていなければ書き直さない -----------------------------------

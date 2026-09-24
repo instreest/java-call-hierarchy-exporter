@@ -55,11 +55,22 @@ package jche.cache;
  *                                                          未解決数は使える候補の無い U 行の数
  *                                                          （{@link UnresolvedCallFact#hasUsableCandidate}）。
  *                                                          crc はブロックの残りの行の検査値（下の「ブロックの検査値」）
- *   I  依存する型（カンマ区切り）                             必ず F 行の直後。このファイルのバインディング解決が
- *                                                          参照した型の FQN と、import 文の型（オンデマンド import は
- *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
- *                                                          これらの型を宣言するファイルが変わっていたら
- *                                                          再解析する（{@link jche.analysis.CacheUpdater} 参照）
+ *   I  依存する型（カンマ区切り）  型の形の指紋  解決できなかった名前（カンマ区切り）
+ *                                                          必ず F 行の直後。差分更新（{@link jche.analysis.CacheUpdater}）が
+ *                                                          使う 3 列。
+ *                                                          依存する型は、このファイルのバインディング解決が参照した型の
+ *                                                          FQN、ソースに書かれた型の名前、ラムダの目標の型とその親、
+ *                                                          解決できなかった呼び出し・フィールド参照の受け手と実引数の型
+ *                                                          （型変数は上限の消去）、import 文の型（オンデマンド import は
+ *                                                          "pkg.*"）。自分が宣言する型は含まない。これらの型を宣言する
+ *                                                          ファイルが変わっていたら再解析する。
+ *                                                          型の形の指紋は、宣言する型の、継承したものを含むメンバーの
+ *                                                          署名と親型のハッシュの頭 16 文字（jche.analysis.TypeShape）。
+ *                                                          解析し直した結果これが変わったら、この型を使う側も解析し直す。
+ *                                                          解決できなかった名前は、型解決に失敗したブロック（エラーか
+ *                                                          BINDING_FAILED の U 行がある）でだけ書く。エラーの引数に
+ *                                                          現れた点区切りの識別子で、拾えなければ {@link #ANY_NAME}。
+ *                                                          新しい型ができたとき、これに当たるブロックを解析し直す
  *   S  番号  pkg  typeFqn  method  paramSig                   ブロック内のメソッドの記号表（{@link SymbolTable}）。
  *                                                          番号は 0 から詰めて振る。下の「記号」はこの番号
  *   N  番号  kind  value  recv  args  argCount  staticRecv    {@link ValueNode}。値グラフのノード。
@@ -78,7 +89,9 @@ package jche.cache;
  *                                                          以前の形式と同じ ID の順になる。jche.graph.CallGraphBuilder 参照）
  *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
  *                                                          {@link TypeFact}
- *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine
+ *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine  [returnType]
+ *                                                          returnType はアノテーションの付いたメソッドにだけ書く
+ *                                                          （宣言した戻り値の消去型。DI の &#64;Bean が使う）。
  *                                                          {@link MethodDeclFact}。AST を訪ねた順に置く（同じ
  *                                                          ソースからは必ず同じ並び）。読み手はブロックの中で何番目の
  *                                                          D 行かを「宣言の順番」として、同じ行に並ぶ宣言の前後を
@@ -274,15 +287,24 @@ public final class CacheFormat {
      *       条件の期待値を切り詰めない）。new の証拠（X 行）と C 行・U 行の recvKey を無くし、
      *       証拠は C 行・U 行の hints に直接持つ。R 行を書くかどうかを return の式の型ではなく
      *       宣言の戻り値の型で決める（{@code docs/cache-unification-qa.md}）</li>
+     *   <li>v34 I 行にソースに書かれた型の名前（戻り値・throws・ローカル変数などの型）とラムダの目標の型を
+     *       足した。D 行にアノテーションの付いたメソッドの戻り値の型を足した。対になっていないサロゲートを
+     *       符号化し、条件の文字列をサロゲートペアの途中で切らない（{@code docs/cache-unification-qa.md} の
+     *       Q42〜Q49）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v33";
+    public static final String VERSION = "jche-cache-v34";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
     public static final char ROW_LIBRARY = 'L';
     public static final char ROW_FILE = 'F';
     public static final char ROW_DEPENDENCIES = 'I';
+    /**
+     * I 行の 3 列目（解決できなかった名前）で、名前を 1 つも拾えなかった印。どの新しい型にも当たるとみなす
+     * （新しい型ができたら必ず解析し直す）
+     */
+    public static final String ANY_NAME = "*";
     /** ブロック内のメソッドの記号表（{@link SymbolTable}） */
     public static final char ROW_SYMBOL = 'S';
     /** 値グラフのノード（{@link ValueNode}） */
@@ -499,8 +521,13 @@ public final class CacheFormat {
      *   LF      ->  \n
      *   CR      ->  \r
      *   その他の制御文字（U+0000〜U+001F と U+007F）  ->  &#92;uXXXX（小文字の16進4桁）
+     *   対になっていないサロゲート（U+D800〜U+DFFF）    ->  &#92;uXXXX（同上）
      * </pre>
-     * それ以外の文字はそのまま。非 ASCII は UTF-8 のまま書くので符号化しない。
+     * それ以外の文字はそのまま。非 ASCII は UTF-8 のまま書くので符号化しない（対になったサロゲートは
+     * 補助文字 1 つとして UTF-8 に書ける）。対になっていないサロゲートは UTF-8 に書けない（キャッシュの
+     * 書き手は符号化できない文字で例外にする）ので、ソースの "&#92;uD800" のような文字列リテラルや、
+     * 途中で切った絵文字を持つ値があっても行を書けるように符号化する。{@link #unescape} は
+     * &#92;uXXXX を同じ char に戻すので、値は変わらない。
      * {@link Guard} が区切りに使う {@code U+0001}〜{@code U+0003} も「その他の制御文字」として
      * 符号化されるので、値と区切りが衝突しない。
      *
@@ -518,6 +545,15 @@ public final class CacheFormat {
         sb.append(s, 0, at);
         for (int i = at; i < s.length(); i++) {
             char c = s.charAt(i);
+            if (Character.isSurrogate(c)) {
+                if (isPaired(s, i)) {
+                    sb.append(c).append(s.charAt(i + 1));   // 補助文字はそのまま（UTF-8 に書ける）
+                    i++;
+                } else {
+                    sb.append("\\u").append(String.format("%04x", (int) c));
+                }
+                continue;
+            }
             switch (c) {
                 case '\\' -> sb.append("\\\\");
                 case '\t' -> sb.append("\\t");
@@ -542,8 +578,20 @@ public final class CacheFormat {
             if (c == '\\' || c < ' ' || c == '\u007f') {
                 return i;
             }
+            if (Character.isSurrogate(c)) {
+                if (!isPaired(s, i)) {
+                    return i;
+                }
+                i++;   // 対になった下位サロゲートは飛ばす
+            }
         }
         return -1;
+    }
+
+    /** {@code s.charAt(i)} が上位サロゲートで、直後に下位サロゲートが続くか（対になったサロゲートの先頭か） */
+    private static boolean isPaired(String s, int i) {
+        return Character.isHighSurrogate(s.charAt(i)) && i + 1 < s.length()
+                && Character.isLowSurrogate(s.charAt(i + 1));
     }
 
     /**

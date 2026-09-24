@@ -217,10 +217,49 @@ public final class CallEdgeExtractor {
             if (isSyntaxError(problem.getID())) {
                 result.syntaxErrors++;
             }
+            namesOf(problem.getArguments(), result.unresolvedNames);
         }
         collectImports(cu, result);
         cu.accept(new FactVisitor(cu, result, recordAllConditions));
         return result;
+    }
+
+    /**
+     * エラーの引数から、点区切りの識別子（{@code Foo}・{@code org.missing}・{@code p.Outer.Inner}）を取り出す。
+     *
+     * <p>無い型・import・名前のエラー（「Foo cannot be resolved」「The import org.missing cannot be resolved」）の
+     * 引数には、解決できなかった名前が書いたとおりに入る。差分更新は新しい型ができたとき、この名前に当たる
+     * ブロックだけを解析し直す（{@link CacheUpdater} の「新しい型」）。エラーの種類では絞らず、どのエラーの
+     * 引数も拾う（型の名前が入りうるものを取りこぼさないため。余分に拾っても解析し直すファイルが増えるだけ）
+     */
+    static void namesOf(String[] arguments, java.util.Set<String> out) {
+        if (arguments == null) {
+            return;
+        }
+        for (String a : arguments) {
+            if (a == null) {
+                continue;
+            }
+            int i = 0;
+            int n = a.length();
+            while (i < n) {
+                if (!Character.isJavaIdentifierStart(a.charAt(i))) {
+                    i++;
+                    continue;
+                }
+                int start = i;
+                int end = i;
+                // 識別子を点でつないだ並び（末尾の点は含めない）
+                while (i < n && Character.isJavaIdentifierPart(a.charAt(i))) {
+                    i++;
+                    end = i;
+                    if (i + 1 < n && a.charAt(i) == '.' && Character.isJavaIdentifierStart(a.charAt(i + 1))) {
+                        i++;
+                    }
+                }
+                out.add(a.substring(start, end));
+            }
+        }
     }
 
     /**

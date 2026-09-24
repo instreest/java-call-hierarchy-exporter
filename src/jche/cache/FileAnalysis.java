@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * ソース1ファイルから抽出した解析結果（キャッシュの1ブロック分）。
@@ -38,6 +39,18 @@ public final class FileAnalysis {
     public String hash = "";
 
     public final List<TypeFact> types = new ArrayList<>();
+    /**
+     * 宣言する型の形（継承したものを含むメンバーの署名・親型。{@code jche.analysis.TypeShape}）の行。
+     * 並べ替えて指紋にし、I 行に書く。差分更新で、ソースの変わっていないファイルを解析し直した結果、
+     * これが前回と違えば、その型を使う側も解析し直す（親型の連鎖）
+     */
+    public final List<String> shape = new ArrayList<>();
+    /**
+     * エラー（{@link #errors}）の引数に現れた名前（{@code Foo}・{@code org.missing}・{@code q.Bar} のような
+     * 点区切りの識別子）。I 行に書き、差分更新で新しい型ができたとき、その名前に当たるブロックだけを
+     * 解析し直すのに使う
+     */
+    public final Set<String> unresolvedNames = new TreeSet<>();
     /**
      * 同じメソッドの中で new された型の証拠（キャッシュの行にはしない）。書き手がブロックを書くときに、
      * 呼び出し元とレシーバの変数のキー（{@link CallSiteValues#recvKey}）でこのファイルの呼び出し箇所に

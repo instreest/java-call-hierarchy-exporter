@@ -71,8 +71,10 @@ at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,
 値が分かるのは「呼び出し元からコンパイル時定数が渡された引数」と「コンパイル時定数
 （`static final` の定数・列挙定数・リテラル）」だけです。**値が分からない条件は、これまでどおり
 すべて辿ります**（分からないことを理由に階層を消さない、という安全側の方針）。
-経路ごとの引数の値は `dataflow.enabled` の仕組みで運ぶため、`dataflow.enabled=false` のときは
-コンパイル時定数の条件だけが判定されます。
+経路ごとの引数の値は `dataflow.enabled` の仕組みで運びます。`dataflow.enabled=false` のときは
+条件の表（キャッシュの G 行）と呼び出し箇所の条件の列を読まないので、**どの条件も判定しません**
+（コンパイル時定数の条件も含みます。`if (DEBUG)` のような定数の `false` の分岐も辿ります）。
+`branch.pruning.enabled=true` にしていても打ち切りは起きず、`[UNREACHABLE]` の行は出ません。
 
 意図的に見ないもの:
 
