@@ -424,6 +424,37 @@ final class BindingNames {
         return keys;
     }
 
+    /**
+     * try-with-resources がリソースに対して暗黙に呼ぶ {@code close()}（JLS 14.20.3.1）。見つからなければ null。
+     *
+     * 暗黙の呼び出しはリソースの<b>静的型</b>に対する {@code close()} の呼び出しとして解決されるので、
+     * その型から親へ（親クラスを先に、インターフェースを後に）辿って最初に見つかる宣言を返す。
+     * 実際に動く実装を選ぶのは読み手（レシーバの出所と CHA）で、通常の呼び出しと変わらない。
+     *
+     * 型変数・キャプチャ・交差型（{@code var r = f ? a : b} の推論結果など）は上限の各成分を見る。
+     */
+    static IMethodBinding closeMethodOf(ITypeBinding type) {
+        if (type == null) {
+            return null;
+        }
+        List<ITypeBinding> roots = (type.isTypeVariable() || type.isCapture() || type.isIntersectionType())
+                ? List.of(type.getTypeBounds()) : List.of(type);
+        for (ITypeBinding root : roots) {
+            List<ITypeBinding> types = new ArrayList<>();
+            types.add(root);
+            types.addAll(supertypesOf(root));
+            for (ITypeBinding t : types) {
+                for (IMethodBinding m : t.getDeclaredMethods()) {
+                    if ("close".equals(m.getName()) && m.getParameterTypes().length == 0
+                            && !m.isConstructor() && !Modifier.isStatic(m.getModifiers())) {
+                        return m;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     /** 推移的な親型（型引数を具体化したまま）。循環と多重継承で同じ型を2度辿らないよう鍵で覚える */
     private static List<ITypeBinding> supertypesOf(ITypeBinding type) {
         List<ITypeBinding> out = new ArrayList<>(4);

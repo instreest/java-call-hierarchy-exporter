@@ -52,7 +52,7 @@
 | [call-conditions-qa.md](call-conditions-qa.md) | #67 | 呼び出しに効いている条件を `call-conditions.csv` に出す（モードにせず出力を1つ足す判断、キャッシュに載せない判断） |
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
 | [callback-contracts-qa.md](callback-contracts-qa.md) | #136 | ソースの外との契約表（呼び戻しの辺、フレームワークの入口、設定ファイル・拡張で足す形）。辺の足し方、`inDegree` への効かせ方、広い候補を出さない判断、`role` に優先させる判断、当たらなかった行の知らせ方、列挙定数のキーの書き方、ひな形の出し方と注記、単純名の扱い、ファクトリが親クラスにある場合の指定、経路ごとに決まるキーの扱い |
-| [jls-conformance-qa.md](jls-conformance-qa.md) | #154-#157 | AST の読み取りが Java 言語仕様と食い違って呼び出しが静かに落ちていた 4 件。ジェネリックなオーバーライドの照合（O 行と `implementationOf`）、暗黙の `super()`、値を変えうるキャストと char の定数、柔軟なコンストラクタ本体（JEP 513） |
+| [jls-conformance-qa.md](jls-conformance-qa.md) | #154-#157 | AST の読み取りが Java 言語仕様と食い違って呼び出しが静かに落ちていた 4 件。ジェネリックなオーバーライドの照合（O 行と `implementationOf`）、暗黙の `super()`、値を変えうるキャストと char の定数、柔軟なコンストラクタ本体（JEP 513）。追記として try-with-resources の暗黙の `close()`（JLS 14.20.3） |
 | [inherited-impl-candidates-qa.md](inherited-impl-candidates-qa.md) | #131 | 段2（`LOCAL_NEW`）と段3（拡張）が、親から継承した実装を候補にできていなかった件。`implementationIn` への統一と、採用できなかった候補の警告 |
 | [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの契約に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
 | [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `level`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
@@ -77,7 +77,7 @@
 | [eclipse-plugin-nls-qa.md](eclipse-plugin-nls-qa.md) | — | プラグインの文言を英語（既定）と日本語で出し分ける。Pleiades が訳してくれない理由、NLS を使わない理由、OS の言語へ落ちないようにする理由、訳し忘れの検査 |
 | [nls-qa.md](nls-qa.md) | — | ツール全体（解析ログ・対話モード・起動コマンド）を英語（既定）と日本語で出し分ける。文言を properties ではなく Java の表に置いた理由、言語の優先順位、**出力 CSV を訳さない**判断、文言なのにキャッシュの版を上げた 1 件、プラグインと解析ログの言語をそろえる仕組み、検査が何も見ていなかった件 |
 | [eclipse-plugin-java-floor-qa.md](eclipse-plugin-java-floor-qa.md) | — | プラグインの下限を Java 8 / Eclipse 4.6 から Java 11 / Eclipse 4.17 へ上げる。「解析対象の Java の版」と「Eclipse を動かす Java の版」を取り違えていた話、Java 8 対応が何を買って何を払っていたか |
-| [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため） |
+| [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため）、`var` の使い方の誤りを構文エラーに数えない理由 |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |
 | [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断。依存 jar の警告を英語・日本語どちらのログからも拾う（Q31） |

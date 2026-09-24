@@ -35,6 +35,9 @@
   - `src/fx/ctor/` … 書かれていない `super()` が辺になるかの確認用（JLS 8.8.7 / 8.8.9）。
     明示コンストラクタで `super()` を書かない形・コンストラクタを1つも書かない形・
     `super()` を書いた形の3つが、どれも `CtorBase.prepare` へ辿れること
+  - `src/fx/resource/` … try-with-resources の暗黙の `close()` が辺になるかの確認用（JLS 14.20.3.1）。
+    `var` で受けた `new`・2 つ並べたリソース（逆順に閉じる）・既存の変数をリソースにする形（Java 9）の3つが、
+    `close()` の実装（`ConnPool.release` / `ConnPool.commit`）へ辿れること
   - `src/org/springframework/` … 上記が使う Spring の注釈のスタブ（本物の Spring には依存させないため、
     このプロジェクト自身に置いています）
   - `src/org/seasar/doma/` … 同じく Doma の注釈（`@Dao` / `@Select`）のスタブ

@@ -27,14 +27,17 @@ import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
+import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
 import jche.cache.FileAnalysis;
@@ -633,6 +636,45 @@ final class FactVisitor extends ASTVisitor {
         calls.record(currentCallers(), lambdaDepth, ctor, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(ctor), "", RecvKind.TYPE,
                 null, origins.valuesOf(null, n.arguments()));
         return true;
+    }
+
+    /**
+     * try-with-resources の暗黙の {@code close()}（JLS 14.20.3.1）。
+     *
+     * 本体を抜けるときに、リソースを<b>宣言と逆の順</b>で閉じる呼び出しがコンパイラによって足される。
+     * AST には現れないので、記録しないと {@code close()} の実装（接続の返却・コミット等）が
+     * 呼ばれていないように見える。暗黙の {@code super()}（{@code docs/jls-conformance-qa.md} の Q8）と
+     * 同じ形の穴である。
+     *
+     * レシーバはリソースの変数（{@code try (Res r = …)} の {@code r}、Java 9 以降の {@code try (r)} の {@code r}）
+     * として扱う。通常の {@code r.close()} と同じく、{@code new} した型や dataflow で具象クラスを絞れる。
+     * 行はリソースを書いた行。本体の呼び出しより後に実行されるので、endVisit で逆順に積む
+     * （{@code docs/jls-conformance-qa.md} の Q25〜Q28）。
+     */
+    @Override
+    public void endVisit(TryStatement n) {
+        List<?> resources = n.resources();
+        for (int i = resources.size() - 1; i >= 0; i--) {
+            if (resources.get(i) instanceof Expression resource) {
+                recordImplicitClose(resource);
+            }
+        }
+    }
+
+    private void recordImplicitClose(Expression resource) {
+        Expression recv = resource;
+        if (resource instanceof VariableDeclarationExpression decl) {
+            if (decl.fragments().isEmpty()) {
+                return;
+            }
+            recv = ((VariableDeclarationFragment) decl.fragments().get(0)).getName();
+        }
+        ITypeBinding type = (recv instanceof Name name && name.resolveBinding() instanceof IVariableBinding vb)
+                ? vb.getType() : recv.resolveTypeBinding();
+        IMethodBinding b = BindingNames.closeMethodOf(type);
+        calls.record(currentCallers(), lambdaDepth, b, resource, "close", CallSiteRecorder.targetModsOf(b),
+                CallSiteRecorder.recvKeyOf(recv), CallSiteRecorder.recvKindOf(recv), null,
+                origins.valuesOf(recv, null));
     }
 
     /**

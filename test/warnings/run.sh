@@ -153,6 +153,31 @@ analyze build
 check_invariant "build(2回目)"
 expect_in_warnings "build(2回目)" "src/main/java/sample/app/Broken.java"
 
+# 5b. var の使い方の誤り（Java 10 より前のコードの class var を、source.level を指定せずに読む）。
+#     JDT は構文エラーの印を付けるが、本体は読めている。コンパイルエラーとしては案内し、
+#     「本体を読めなかった」とは言わない。呼び出しも出力に出る（docs/syntax-error-report-qa.md の Q7）
+make_project varname ""
+cat > work/varname/src/main/java/sample/app/var.java <<'EOF'
+package sample.app;
+
+public class var {
+    void run() {
+        Util.count("legacy");
+    }
+}
+EOF
+analyze varname
+check_invariant varname
+expect_in_warnings varname "src/main/java/sample/app/var.java"
+if [ -n "$OUT" ] && ! grep -q -F "syntax errors" "$OUT/run.log"; then
+    ok "varname: var の使い方の誤りを構文エラー（本体を読めなかった）として数えない"
+else
+    ng "varname: var の使い方の誤りが構文エラーとして報告された"
+fi
+grep -q "^at sample.app.var.run(var.java:5),Util.count," "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && ok "varname: そのファイルの本体の呼び出しが出力に出る" \
+    || ng "varname: そのファイルの本体の呼び出しが出力に無い"
+
 # 6. 実行の失敗（出力フォルダを作った後で失敗する: ソースフォルダが 1 つも無い）
 make_project failed "source.folders=src/missing"
 analyze failed

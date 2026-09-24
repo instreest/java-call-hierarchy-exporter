@@ -116,3 +116,44 @@ jar 不足        : syntaxBit=false catID=40 : Missing cannot be resolved to a t
 
 どちらも警告に「解析に使った Java の版」と「この JDT の対応上限」を添えてあるので、
 どちら側にずれているかはその場で分かる。
+
+### Q7. `IProblem.Syntax` のビットだけで「本体を読めなかった」と言ってよいのか
+
+言えない場合があった。JDT は **`var` の使い方の誤り**にも `IProblem.Syntax` のビットを付ける。
+
+```
+class var { … }            : syntaxBit=true id=1509 'var' is not a valid type name
+var x = 1, y = 2;          : syntaxBit=true id=1500 'var' is not allowed in a compound declaration
+var z;                     : syntaxBit=true id=1503 Cannot use 'var' on variable without initializer
+```
+
+これらは**文法を最後まで読んだあとで**、`var` の置き場所を JLS 14.4.1・JLS 3.9 に照らして
+検査した結果である。構文そのものは読めているので、AST は欠けていない。
+実測では、上の誤りをすべて書いたメソッドでも呼び出しは全件解決され、`MALFORMED` / `RECOVERED` の
+印の付いたノードは 1 つも無かった。
+
+それでも構文エラーに数えていたので、Java 10 より前のコードで `var` という名前のクラスを持つものを
+`source.level` を指定せずに読むと、「構文エラーのため本体を読めませんでした（このファイルの呼び出しは
+出力に出ません）」と警告しながら、**そのファイルの呼び出しは出力に出ていた**。
+警告が事実と逆のことを言うと、利用者は出力のほうを疑うことになる。
+
+そこで、`var` の誤りを表す 9 個の ID（`IProblem.VarLocalMultipleDeclarators` 〜
+`VarCannotBeUsedWithTypeArguments`。すべて `Syntax` のビットを持つ）を
+構文エラーの数から外した（`CallEdgeExtractor#isSyntaxError`）。
+エラーであることには変わりないので `errors` には数え、「コンパイルエラーのあるファイル」として案内する。
+その案内には「Java の版が食い違っている（`source.level`）」が対処として載っているので、
+利用者が次にすべきことは変わらない。
+
+外すのは `var` の誤りだけにした。`Syntax` のビットを持つ ID は他にもあるが、本体が欠けないと
+実測で確かめたのはこの 9 個だけである。確かめていないものを外すと、今度は
+「読めていないのに黙る」側に倒れる（Q1 の不具合そのもの）。
+
+### Q8. キャッシュの版は上げたか
+
+上げた（`jche-cache-v26` → `v27`）。F 行の構文エラー数は Q3 のとおり**書き手が数えてキャッシュに持つ**ので、
+古いキャッシュを再利用すると、そのファイルだけ前の数え方の警告が出続ける。
+同じ版で try-with-resources の暗黙の `close()` も C 行に足している
+（[jls-conformance-qa.md](jls-conformance-qa.md) の Q25〜Q29）。
+
+検査は `test/warnings/run.sh` の `varname`。`class var` を持つファイルが、コンパイルエラーとしては案内され、
+構文エラーとしては数えられず、本体の呼び出しが出力に出ることを見る。
