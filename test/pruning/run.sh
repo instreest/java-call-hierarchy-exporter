@@ -17,7 +17,11 @@
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
 # 起点は「呼び出し元が無いメソッド」（entry.packages が空）なので、ケースどうしは混ざらない。
-# 契約表（work/contracts.txt）は共通の KeyFactory の 1 行だけで、KeyFactory を使うケースにしか効かない。
+# 契約表（work/contracts.txt）は KeyFactory と SepFactory の行だけで、それを使うケースにしか効かない。
+#
+# 期待の前に char: を付けたケースは「特性の記録（characterization）」で、今の読み手の誤った振る舞いを
+# そのまま書いてある（値が出所の文字列の文法の文字 | ; { を含むと、読み手が値を途中で切って読み違える）。
+# 値の読み手を文字列から値の表へ移すコミット（stage B の B3）で、char: を外して正しい期待に書き換える。
 #
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
 # （test/ctorbody/run.sh と同じ経路。JCHE_CP / JCHE_CLASSES / JCHE_JAVA / JCHE_JAVAC で差し替えられる）。
@@ -61,9 +65,14 @@ output.folder=./out
 cache.folder=./.cache
 contracts.files=contracts.txt
 EOF
-# ファクトリに渡したキーで絞る契約（KeyFactory を使うケースだけに効く）
+# ファクトリに渡したキーで絞る契約（KeyFactory・SepFactory を使うケースだけに効く）。
+# SepFactory の行はキーが出所の文法の文字（| と ;）を含む。どちらの行に当たったかで、キーを切って読んだかが分かる
 cat > work/contracts.txt <<'EOF'
 pr.KeyFactory#get("A") => pr.DaoA
+pr.SepFactory#get("USER") => pr.DaoA
+pr.SepFactory#get("USER|X") => pr.DaoB
+pr.SepFactory#get("S") => pr.DaoA
+pr.SepFactory#get("S;T") => pr.DaoB
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -102,6 +111,17 @@ public class Factory {
     }
 }
 EOF
+# 契約表だけが実装を決めるファクトリ（戻り値が 2 通り）。キーが | ; を含むケースで使う
+cat > "$SRC/SepFactory.java" <<'EOF'
+package pr;
+
+public class SepFactory {
+    public static Dao get(String key) {
+        if (key.isEmpty()) { return new DaoA(); }
+        return new DaoB();
+    }
+}
+EOF
 # キーの文字列で具象クラスを返すファクトリ。契約表の 1 行（"A" => DaoA）で絞れる
 cat > "$SRC/KeyFactory.java" <<'EOF'
 package pr;
@@ -123,10 +143,17 @@ CASES=()
 #     pruned         その呼び出しの行があり、[UNREACHABLE] が付く（打ち切られるべき。対照）
 #     listed         その呼び出しの行が候補として出る（絞り込みで落ちていない）
 #     resolved:<種別> その行の resolved-by が <種別>（RESOLVED:LOCAL_NEW など。絞り込みが効く対照）
-#   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける
+#     absent         その呼び出しの行が無い（絞り込みで別の実装に決まった対照）
+#     char:<期待>    特性の記録（上の説明）。<期待> と同じに確かめ、OK の行に [特性] と付ける
+#   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける。
+#   クラス名を / で始めると無名パッケージのクラスになる（/Kind なら work/src/Kind.java。呼び出し元も /Kind.m と書く）
 case_() {
     local expect=$1 cls=$2 caller=$3 callee=$4 desc=$5
-    cat > "$SRC/$cls.java"
+    if [ "${cls#/}" != "$cls" ]; then
+        cat > "work/src/${cls#/}.java"
+    else
+        cat > "$SRC/$cls.java"
+    fi
     CASES+=("$expect	$caller	$callee	$desc")
 }
 
@@ -1111,6 +1138,121 @@ public class FacKeyRet {
 EOF
 
 # ---------------------------------------------------------------------------
+# 経路の値を読み違えない（stage B の B0。値の表へ移す前に文字列の側で直したもの）
+# ---------------------------------------------------------------------------
+case_ reachable /Kind /Kind.check /Kind.hitKind "無名パッケージの型 Kind（K で始まる）を経路の値（K: のクラス）と取り違えて、k.equals(\"x\") を空文字で打ち切らない" <<'EOF'
+public class Kind {
+    public static void main(String[] args) { check((String) make()); }
+    static Object make() { return new Kind(); }
+    static void check(String k) { if (k.equals("x")) { hitKind(); } }
+    static void hitKind() { System.out.println("k"); }
+}
+EOF
+
+case_ listed ReflField ReflField.run ReflField.take "getMethod の引数型の p.getClass()（p はコンストラクタで受け取った文字列）を、型でない値のままクラスとみなして呼び出しを落とさない" <<'EOF'
+package pr;
+
+public class ReflField {
+    private final Object p;
+    public ReflField(Object p) { this.p = p; }
+    public void run(String name) throws Exception { ReflField.class.getMethod(name, p.getClass()).invoke(this, p); }
+    public void take(String s) { System.out.println(s); }
+    public static void main(String[] args) throws Exception { new ReflField("x").run("take"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# 値が出所の文字列の文法の文字（| ; {）を含む（特性の記録。stage B の B3 で char: を外して期待を直す）
+# ---------------------------------------------------------------------------
+case_ char:pruned SemiArg SemiArg.parse SemiArg.semicolon "特性: 実引数の \";\" を ; で切って空文字と読み、\";\".equals(delim) を打ち切る（B3 の後は reachable）" <<'EOF'
+package pr;
+
+public class SemiArg {
+    public static void main(String[] args) { parse("x", ";"); }
+    static void parse(String s, String delim) { if (";".equals(delim)) { semicolon(); } }
+    static void semicolon() { System.out.println(";"); }
+}
+EOF
+
+case_ pruned SemiArgOther SemiArgOther.parse SemiArgOther.semicolon "対照: 実引数が \",\" の経路では \";\".equals(delim) を打ち切る" <<'EOF'
+package pr;
+
+public class SemiArgOther {
+    public static void main(String[] args) { parse("x", ","); }
+    static void parse(String s, String delim) { if (";".equals(delim)) { semicolon(); } }
+    static void semicolon() { System.out.println(";"); }
+}
+EOF
+
+case_ char:pruned PipeArg PipeArg.parse2 PipeArg.notAb "特性: 実引数の \"a|c\" を | で切って \"a\" と読み、!mode.equals(\"a|b\") を打ち切る（B3 の後は reachable）" <<'EOF'
+package pr;
+
+public class PipeArg {
+    public static void main(String[] args) { parse2("x", "a|c"); }
+    static void parse2(String s, String mode) { if (!mode.equals("a|b")) { notAb(); } }
+    static void notAb() { System.out.println("n"); }
+}
+EOF
+
+case_ pruned PipeArgSame PipeArgSame.parse2 PipeArgSame.notAb "対照: 実引数が \"a|b\" の経路では !mode.equals(\"a|b\") を打ち切る" <<'EOF'
+package pr;
+
+public class PipeArgSame {
+    public static void main(String[] args) { parse2("x", "a|b"); }
+    static void parse2(String s, String mode) { if (!mode.equals("a|b")) { notAb(); } }
+    static void notAb() { System.out.println("n"); }
+}
+EOF
+
+case_ char:pruned BraceArg BraceArg.brace BraceArg.hitBrace "特性: 実引数の \"{\" から後ろを入れ子とみなして次の実引数まで飲み込み、\"{\".equals(first) を打ち切る（B3 の後は reachable）" <<'EOF'
+package pr;
+
+public class BraceArg {
+    public static void main(String[] args) { brace("{", "k"); }
+    static void brace(String first, String second) {
+        if ("{".equals(first)) { hitBrace(); }
+        if ("x".equals(second)) { braceMiss(); }
+    }
+    static void hitBrace() { System.out.println("{"); }
+    static void braceMiss() { System.out.println("x"); }
+}
+EOF
+expect_ char:reachable BraceArg.brace BraceArg.braceMiss "特性: 飲み込まれた 2 つ目の実引数（\"k\"）は見えないので \"x\".equals(second) を判定しない（B3 の後は pruned）"
+
+case_ char:resolved:RESOLVED:CONTRACT SepPipeKey SepPipeKey.run DaoA.find "特性: ファクトリのキー \"USER|X\" を | で切って契約表の get(\"USER\") に当てる（B3 の後は get(\"USER|X\") の DaoB）" <<'EOF'
+package pr;
+
+public class SepPipeKey {
+    public static void main(String[] args) { run(); }
+    static void run() { SepFactory.get("USER|X").find(); }
+}
+EOF
+expect_ char:absent SepPipeKey.run DaoB.find "特性: 同上（DaoB の行が無い）"
+
+case_ char:resolved:RESOLVED:CONTRACT SepSemiKey SepSemiKey.run DaoA.find "特性: ファクトリのキー \"S;T\" を ; で切って契約表の get(\"S\") に当てる（B3 の後は get(\"S;T\") の DaoB）" <<'EOF'
+package pr;
+
+public class SepSemiKey {
+    public static void main(String[] args) { run(); }
+    static void run() { SepFactory.get("S;T").find(); }
+}
+EOF
+expect_ char:absent SepSemiKey.run DaoB.find "特性: 同上（DaoB の行が無い）"
+
+case_ char:pruned HolderSemi HolderSemi.helper HolderSemi.hitHolder "特性: new の実引数 \"a;r=K:x.Y\" を ; で切り、コンストラクタで受け取るフィールドの値を \"a\" と読んで打ち切る（B3 の後は reachable）" <<'EOF'
+package pr;
+
+public class HolderSemi {
+    private final String v;
+    public HolderSemi(String v) { this.v = v; }
+    public void run() { helper(v); }
+    static void helper(String s) { if (s.equals("a;r=K:x.Y")) { hitHolder(); } }
+    static void hitHolder() { System.out.println("h"); }
+    public static void main(String[] args) { new HolderSemi("a;r=K:x.Y").run(); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
 ( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > work/run.log 2>&1
@@ -1125,14 +1267,31 @@ grep -q "compile errors\|syntax errors" work/run.log \
     || ok "題材をエラーなしで解析できた"
 
 # 呼び出し元（Class.method）から呼び出し先（Class.method）への行。列は caller,callee,resolved-by,…
+# 呼び出し元・呼び出し先が / で始まれば無名パッケージのクラス
 rows_of() {
-    awk -F, -v c="at pr.$1(" -v d="$2" 'index($1, c) == 1 && $2 == d' "$CSV"
+    local c="at pr.$1(" d=$2
+    [ "${1#/}" != "$1" ] && c="at ${1#/}("
+    d=${d#/}
+    awk -F, -v c="$c" -v d="$d" 'index($1, c) == 1 && $2 == d' "$CSV"
 }
 
 for c in "${CASES[@]}"; do
     IFS=$'\t' read -r expect caller callee desc <<< "$c"
     rows=$(rows_of "$caller" "$callee")
     label="$caller -> $callee: $desc"
+    # 特性の記録（char:）は同じに確かめ、OK の行で分かるようにする
+    if [ "${expect#char:}" != "$expect" ]; then
+        expect=${expect#char:}
+        label="[特性] $label"
+    fi
+    if [ "$expect" = absent ]; then
+        if [ -z "$rows" ]; then
+            ok "$label"
+        else
+            ng "$label（行がある）"; echo "       $(head -1 <<< "$rows")"
+        fi
+        continue
+    fi
     if [ -z "$rows" ]; then
         ng "$label（行がありません）"
         continue

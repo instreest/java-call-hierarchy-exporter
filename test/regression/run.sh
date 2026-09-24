@@ -35,6 +35,12 @@
 #                          各ブロックの検査値とブロック数が合っていること（最終行の Z 行があること）。
 #                          型解決できなかった呼び出しの件数（ログの警告）が、再利用・一部の解析し直しでも
 #                          変わらないこと
+#   values               … 値そのもの（文字列リテラル・定数）が出所の文字列の文法の文字（| ; { }）を含む題材
+#                          （values/project）。config.properties（expected/。契約表のひな形 contracts-suggested.txt
+#                          も比べる）→ 同じ設定でキャッシュを再利用 → config-nodataflow.properties
+#                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。expected/ は
+#                          値の読み手を値の表へ移す前（stage B の B1）の「特性の記録」で、今の読み手の読み違いを
+#                          そのまま含む（values/config.properties の冒頭の説明）
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
@@ -50,7 +56,7 @@ cd "$(dirname "$0")"
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks multi"}
+CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -422,6 +428,43 @@ PY
     expect_cache_intact "7回目"
 }
 
+# 値が出所の文字列の文法の文字を含む題材のケース（values/config.properties の冒頭の説明）
+values_case() {
+    echo "== values =="
+    rm -rf values/.cache values/output values/run-*.log
+    run values config.properties 1 "1回目: キャッシュ無し" || return
+    compare values expected "1回目: キャッシュ無し"
+    compare_suggested values expected "1回目: 契約表のひな形"
+    run values config.properties 2 "2回目" || return
+    expect_reused values 2 "2回目: キャッシュを再利用"
+    compare values expected "2回目: キャッシュ再利用"
+    compare_suggested values expected "2回目: 契約表のひな形"
+    # 値を読まない指定。キャッシュは同じものを再利用し、値の行だけを読まない
+    run values config-nodataflow.properties 3 "3回目: dataflow.enabled=false" || return
+    expect_reused values 3 "3回目: キャッシュを再利用"
+    compare values expected-nodataflow "3回目: dataflow.enabled=false"
+    compare_suggested values expected-nodataflow "3回目: 契約表のひな形"
+}
+
+# 契約表のひな形（contracts-suggested.txt）が期待と同じこと（期待のフォルダに無ければ、出力にも無いこと）
+compare_suggested() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ ! -f "$1/$2/contracts-suggested.txt" ]; then
+        if [ -f "$out/contracts-suggested.txt" ]; then
+            echo "  DIFF $1/contracts-suggested.txt があります ($3)"; fail=1
+        else
+            echo "  OK   $1/contracts-suggested.txt は無い ($3)"
+        fi
+    elif diff --strip-trailing-cr -q "$1/$2/contracts-suggested.txt" "$out/contracts-suggested.txt" > /dev/null 2>&1; then
+        echo "  OK   $1/contracts-suggested.txt ($3)"
+    else
+        echo "  DIFF $1/contracts-suggested.txt ($3)"
+        diff --strip-trailing-cr "$1/$2/contracts-suggested.txt" "$out/contracts-suggested.txt" | head -20
+        fail=1
+    fi
+}
+
 # 拡張のケース。同じソースを 3 通りの設定で解析し、拡張の効き目とキャッシュの扱いを見る
 plugin_case() {
     echo "== plugin =="
@@ -524,6 +567,9 @@ for c in $CASES; do
     fi
     if [ "$c" = cacheblocks ]; then
         cacheblocks_case; continue
+    fi
+    if [ "$c" = values ]; then
+        values_case; continue
     fi
     echo "== $c =="
     rm -rf "$c/.cache" "$c/output" "$c"/run-*.log

@@ -1,0 +1,39 @@
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
+Kind.main(String[]),Kind,C,src/Kind.java,6,1,0,2,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
+Kind.make(),Kind,C,src/Kind.java,10,1,1,1,NORMAL,1,0,,1,
+Kind.check(String),Kind,C,src/Kind.java,14,1,1,2,NORMAL,1,0,,1,
+Kind.hitKind(),Kind,C,src/Kind.java,20,1,1,1,NORMAL,1,0,,1,
+Brace.main(String[]),vals.Brace,C,src/vals/Brace.java,9,1,0,1,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
+"Brace.brace(String,String)",vals.Brace,C,src/vals/Brace.java,13,1,1,4,NORMAL,1,0,,1,
+Brace.hitBrace(),vals.Brace,C,src/vals/Brace.java,22,1,1,1,NORMAL,1,0,,1,
+Brace.braceMiss(),vals.Brace,C,src/vals/Brace.java,26,1,1,1,NORMAL,1,0,,1,
+Dao.find(),vals.Dao,I,src/vals/Dao.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+DaoFactory.get(String),vals.DaoFactory,C,src/vals/DaoFactory.java,5,1,3,3,NORMAL,1,0,,1,
+Delim.main(String[]),vals.Delim,C,src/vals/Delim.java,9,1,0,1,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
+Delim.other(),vals.Delim,C,src/vals/Delim.java,13,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+"Delim.parse(String,String)",vals.Delim,C,src/vals/Delim.java,17,1,2,2,NORMAL,1,0,,1,
+Delim.semicolon(),vals.Delim,C,src/vals/Delim.java,23,1,1,1,NORMAL,1,0,,1,
+Holder.run(),vals.Holder,C,src/vals/Holder.java,14,1,1,1,NORMAL,1,0,,1,
+Holder.helper(String),vals.Holder,C,src/vals/Holder.java,18,1,1,2,NORMAL,1,0,,1,
+Holder.hitHolder(),vals.Holder,C,src/vals/Holder.java,24,1,1,1,NORMAL,1,0,,1,
+Holder.main(String[]),vals.Holder,C,src/vals/Holder.java,28,1,0,2,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
+Keys.v5s(),vals.Keys,C,src/vals/Keys.java,9,1,0,2,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] return value (factory method etc.),0,[NOT_REACHED] no caller row was emitted
+Keys.v5(),vals.Keys,C,src/vals/Keys.java,13,1,0,2,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] return value (factory method etc.),0,[NOT_REACHED] no caller row was emitted
+Keys.v6(),vals.Keys,C,src/vals/Keys.java,17,1,0,2,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] return value (factory method etc.),0,[NOT_REACHED] no caller row was emitted
+OrderDaoImpl.find(),vals.OrderDaoImpl,C,src/vals/OrderDaoImpl.java,5,1,3,1,NORMAL,1,0,,1,
+Pipe.main(String[]),vals.Pipe,C,src/vals/Pipe.java,15,1,0,1,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
+Pipe.mainB(),vals.Pipe,C,src/vals/Pipe.java,19,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Pipe.mainEq(),vals.Pipe,C,src/vals/Pipe.java,23,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Pipe.mainConst(),vals.Pipe,C,src/vals/Pipe.java,27,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+"Pipe.parse2(String,String)",vals.Pipe,C,src/vals/Pipe.java,31,1,1,2,NORMAL,1,0,,1,
+"Pipe.parse2b(String,String)",vals.Pipe,C,src/vals/Pipe.java,37,1,1,2,NORMAL,1,0,,1,
+Pipe.eq(String),vals.Pipe,C,src/vals/Pipe.java,43,1,1,2,NORMAL,1,0,,1,
+Pipe.konst(),vals.Pipe,C,src/vals/Pipe.java,49,1,1,2,NORMAL,1,0,,1,
+Pipe.notAb(),vals.Pipe,C,src/vals/Pipe.java,55,1,1,1,NORMAL,1,0,,1,
+Pipe.notAbB(),vals.Pipe,C,src/vals/Pipe.java,59,1,1,1,NORMAL,1,0,,1,
+Pipe.hit(),vals.Pipe,C,src/vals/Pipe.java,63,1,1,1,NORMAL,1,0,,1,
+Pipe.hitConst(),vals.Pipe,C,src/vals/Pipe.java,67,1,1,1,NORMAL,1,0,,1,
+Refl.run(String),vals.Refl,C,src/vals/Refl.java,15,1,1,3,NORMAL,1,0,,1,
+Refl.take(String),vals.Refl,C,src/vals/Refl.java,19,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Refl.main(String[]),vals.Refl,C,src/vals/Refl.java,23,1,0,2,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
+UserDaoImpl.find(),vals.UserDaoImpl,C,src/vals/UserDaoImpl.java,5,1,3,1,NORMAL,1,0,,1,

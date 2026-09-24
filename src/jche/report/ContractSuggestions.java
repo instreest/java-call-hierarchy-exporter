@@ -107,8 +107,8 @@ public final class ContractSuggestions {
         }
     }
 
-    /** 契約の左辺と、それがファクトリとキーの形（C-3）かどうか */
-    private record Left(String text, boolean fromFactory) {
+    /** 契約の左辺と、それがファクトリとキーの形（C-3）かどうか（test/dataflow の TraceCheck も読む） */
+    record Left(String text, boolean fromFactory) {
     }
 
     /**
@@ -119,7 +119,7 @@ public final class ContractSuggestions {
      * （C-2）に落ちるが、それは<b>その型のそのメソッドを全部同じ実装に決める</b>広い行なので、
      * ひな形でもそうと分かるようにする。
      */
-    private static Left leftSideFor(CallGraph graph, DataflowResolver dataflow, DataflowContext ctx,
+    static Left leftSideFor(CallGraph graph, DataflowResolver dataflow, DataflowContext ctx,
                                     int edgeIndex, MethodTable methods, int declaredCallee) {
         if (dataflow.enabled()) {
             List<String> factories =

@@ -1,0 +1,18 @@
+# A contract table template built from the calls that could not be narrowed
+# ([UNEXPANDED:CHA] in call-hierarchy.csv). It is rebuilt on every run, so edits here do not survive.
+#
+# How to use
+#   1. Remove the leading # from a row that applies
+#   2. Replace ?? with the FQN of the concrete type (the candidates are listed above the row)
+#   3. Paste it into a table that contracts.files points at (UTF-8)
+#
+# The syntax is described in docs/callback-contracts.md.
+# If every method of the type uses the same implementation, drop the method name and write "Type => concrete type".
+# If several candidates are fine, list them on the right separated by commas (they are then not expanded).
+#
+# Template rows: 1
+
+# 1 site(s)  e.g. at vals.Keys.v5s(Keys.java:10)
+#   candidates: vals.OrderDaoImpl / vals.UserDaoImpl
+# vals.DaoFactory#get("Z") => ??
+

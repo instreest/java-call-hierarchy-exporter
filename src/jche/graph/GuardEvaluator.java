@@ -124,8 +124,11 @@ public final class GuardEvaluator {
             return null;
         }
         // 経路の環境には具象型（FQN）と値（V: / L: / K:）が混ざって入っている。
-        // 条件の判定に使えるのは値の方だけ
-        return Origin.constantValueOf(params[index]);
+        // 条件の判定に使えるのは値の方だけ。値は必ず ':' を含み、型の FQN は含まない。
+        // 種別の文字だけを見ると、既定のパッケージの型（Kind・Vec・Lib のように K / V / L で始まる名前）を
+        // 値と取り違え、':' が無いので値を空文字として比べてしまう（呼ばれる呼び出しを誤って打ち切る）
+        String bound = params[index];
+        return (bound == null || bound.indexOf(':') < 0) ? null : Origin.constantValueOf(bound);
     }
 
     /** 注記の文言。「どの条件が」「何の値で」成立しないのかを書く */

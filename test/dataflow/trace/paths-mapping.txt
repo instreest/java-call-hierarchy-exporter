@@ -1,0 +1,674 @@
+# paths-mapping の経路の記録（test/dataflow/TraceCheck.java。stage B の間だけ置く）
+# --- 経路 ---
+V 0 LampUse#main(java.lang.String[]) @13 -> LampUse#use(java.lang.Object)
+  res STATIC_BOUND:STATIC LampUse#use(java.lang.Object)
+  T LampUse#use(java.lang.Object) p=[Lamp] c=- o=- k=-
+V 1 LampUse#use(java.lang.Object) @10 -> pp.Dao#find()
+  res DATAFLOW_FACTORY pp.ADao#find()
+  ctx p=[Lamp] c=- o=- k=-
+  T pp.ADao#find() p=- c=- o=- k=-
+V 2 pp.ADao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 1 LampUse#use(java.lang.Object) @10 -> LampUse#make(java.lang.Object)
+  res STATIC_BOUND:STATIC LampUse#make(java.lang.Object)
+  ctx p=[Lamp] c=- o=- k=-
+  T LampUse#make(java.lang.Object) p=- c=- o=- k=-
+V 2 LampUse#make(java.lang.Object) @7 -> pp.ADao#<init>()
+  res STATIC_BOUND:CTOR pp.ADao#<init>()
+  T pp.ADao#<init>() p=- c=- o=- k=-
+V 0 LampUse#main(java.lang.String[]) @13 -> Lamp#<init>()
+  res STATIC_BOUND:CTOR Lamp#<init>()
+  T Lamp#<init>() p=- c=- o=- k=-
+V 0 pp.Base#f() @6 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.BoundRef#main(java.lang.String[]) @10 -> pp.CDao#<init>()
+  res STATIC_BOUND:CTOR pp.CDao#<init>()
+  T pp.CDao#<init>() p=- c=- o=- k=-
+V 0 pp.BoundRef#main(java.lang.String[]) @11 -> pp.BoundRef#runIt(java.lang.Runnable)
+  res STATIC_BOUND:STATIC pp.BoundRef#runIt(java.lang.Runnable)
+  T pp.BoundRef#runIt(java.lang.Runnable) p=[Z:pp.Dao#find()|r=T:pp.CDao] c=- o=- k=-
+V 1 pp.BoundRef#runIt(java.lang.Runnable) @8 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.CDao#find()
+  ctx p=[Z:pp.Dao#find()|r=T:pp.CDao] c=- o=- k=-
+  T pp.CDao#find() p=- c=- o=- k=-
+V 2 pp.CDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.BoundRef#main(java.lang.String[]) @11 -> pp.Dao#find()
+  res LOCAL_NEW pp.CDao#find()
+  T pp.CDao#find() p=- c=- o=- k=-
+V 1 pp.CDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Captured#main(java.lang.String[]) @31 -> pp.Captured#outer(java.lang.Runnable)
+  res STATIC_BOUND:STATIC pp.Captured#outer(java.lang.Runnable)
+  T pp.Captured#outer(java.lang.Runnable) p=[Z:pp.Captured#lambda$main$3()] c=- o=- k=-
+V 1 pp.Captured#outer(java.lang.Runnable) @15 -> pp.Captured#lambda$outer$0()
+  res STATIC_BOUND:PRIVATE pp.Captured#lambda$outer$0()
+  ctx p=[Z:pp.Captured#lambda$main$3()] c=- o=- k=-
+  T pp.Captured#lambda$outer$0() p=- c=- o=- k=[Z:pp.Captured#lambda$main$3()]
+V 2 pp.Captured#lambda$outer$0() @15 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$main$3()
+  ctx p=- c=- o=- k=[Z:pp.Captured#lambda$main$3()]
+  T pp.Captured#lambda$main$3() p=- c=- o=- k=-
+V 3 pp.Captured#lambda$main$3() @31 -> pp.Captured#hit()
+  res STATIC_BOUND:STATIC pp.Captured#hit()
+  T pp.Captured#hit() p=- c=- o=- k=-
+V 4 pp.Captured#hit() @28 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 1 pp.Captured#outer(java.lang.Runnable) @16 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$outer$0()
+  ctx p=[Z:pp.Captured#lambda$main$3()] c=- o=- k=-
+  T pp.Captured#lambda$outer$0() p=- c=- o=- k=[Z:pp.Captured#lambda$main$3()]
+V 2 pp.Captured#lambda$outer$0() @15 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$main$3()
+  ctx p=- c=- o=- k=[Z:pp.Captured#lambda$main$3()]
+  T pp.Captured#lambda$main$3() p=- c=- o=- k=-
+V 3 pp.Captured#lambda$main$3() @31 -> pp.Captured#hit()
+  res STATIC_BOUND:STATIC pp.Captured#hit()
+  T pp.Captured#hit() p=- c=- o=- k=-
+V 4 pp.Captured#hit() @28 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Captured#main(java.lang.String[]) @31 -> pp.Captured#lambda$main$3()
+  res STATIC_BOUND:PRIVATE pp.Captured#lambda$main$3()
+  T pp.Captured#lambda$main$3() p=- c=- o=- k=-
+V 1 pp.Captured#lambda$main$3() @31 -> pp.Captured#hit()
+  res STATIC_BOUND:STATIC pp.Captured#hit()
+  T pp.Captured#hit() p=- c=- o=- k=-
+V 2 pp.Captured#hit() @28 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Captured#main(java.lang.String[]) @32 -> pp.Captured#outer2(pp.Dao)
+  res STATIC_BOUND:STATIC pp.Captured#outer2(pp.Dao)
+  T pp.Captured#outer2(pp.Dao) p=[pp.BDao] c=- o=- k=-
+V 1 pp.Captured#outer2(pp.Dao) @19 -> pp.Captured#lambda$outer2$1()
+  res STATIC_BOUND:PRIVATE pp.Captured#lambda$outer2$1()
+  ctx p=[pp.BDao] c=- o=- k=-
+  T pp.Captured#lambda$outer2$1() p=- c=- o=- k=[pp.BDao]
+V 2 pp.Captured#lambda$outer2$1() @19 -> pp.Captured#use(pp.Dao)
+  res STATIC_BOUND:STATIC pp.Captured#use(pp.Dao)
+  ctx p=- c=- o=- k=[pp.BDao]
+  T pp.Captured#use(pp.Dao) p=[pp.BDao] c=- o=- k=-
+V 3 pp.Captured#use(pp.Dao) @27 -> pp.Dao#find()
+  res DATAFLOW_PARAM pp.BDao#find()
+  ctx p=[pp.BDao] c=- o=- k=-
+  T pp.BDao#find() p=- c=- o=- k=-
+V 4 pp.BDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 1 pp.Captured#outer2(pp.Dao) @20 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$outer2$1()
+  ctx p=[pp.BDao] c=- o=- k=-
+  T pp.Captured#lambda$outer2$1() p=- c=- o=- k=[pp.BDao]
+V 2 pp.Captured#lambda$outer2$1() @19 -> pp.Captured#use(pp.Dao)
+  res STATIC_BOUND:STATIC pp.Captured#use(pp.Dao)
+  ctx p=- c=- o=- k=[pp.BDao]
+  T pp.Captured#use(pp.Dao) p=[pp.BDao] c=- o=- k=-
+V 3 pp.Captured#use(pp.Dao) @27 -> pp.Dao#find()
+  res DATAFLOW_PARAM pp.BDao#find()
+  ctx p=[pp.BDao] c=- o=- k=-
+  T pp.BDao#find() p=- c=- o=- k=-
+V 4 pp.BDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Captured#main(java.lang.String[]) @32 -> pp.BDao#<init>()
+  res STATIC_BOUND:CTOR pp.BDao#<init>()
+  T pp.BDao#<init>() p=- c=- o=- k=-
+V 0 pp.Captured#main(java.lang.String[]) @33 -> pp.Captured#outer3(java.lang.Runnable)
+  res STATIC_BOUND:STATIC pp.Captured#outer3(java.lang.Runnable)
+  T pp.Captured#outer3(java.lang.Runnable) p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+V 1 pp.Captured#outer3(java.lang.Runnable) @23 -> pp.Captured#lambda$outer3$2()
+  res STATIC_BOUND:PRIVATE pp.Captured#lambda$outer3$2()
+  ctx p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+  T pp.Captured#lambda$outer3$2() p=- c=- o=- k=[Z:pp.Captured#lambda$main$4()]
+V 2 pp.Captured#lambda$outer3$2() @23 -> pp.Captured#relay(java.lang.Runnable)
+  res STATIC_BOUND:STATIC pp.Captured#relay(java.lang.Runnable)
+  ctx p=- c=- o=- k=[Z:pp.Captured#lambda$main$4()]
+  T pp.Captured#relay(java.lang.Runnable) p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+V 3 pp.Captured#relay(java.lang.Runnable) @26 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$main$4()
+  ctx p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+  T pp.Captured#lambda$main$4() p=- c=- o=- k=-
+V 4 pp.Captured#lambda$main$4() @33 -> pp.Captured#hit3()
+  res STATIC_BOUND:STATIC pp.Captured#hit3()
+  T pp.Captured#hit3() p=- c=- o=- k=-
+V 5 pp.Captured#hit3() @29 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 1 pp.Captured#outer3(java.lang.Runnable) @24 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$outer3$2()
+  ctx p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+  T pp.Captured#lambda$outer3$2() p=- c=- o=- k=[Z:pp.Captured#lambda$main$4()]
+V 2 pp.Captured#lambda$outer3$2() @23 -> pp.Captured#relay(java.lang.Runnable)
+  res STATIC_BOUND:STATIC pp.Captured#relay(java.lang.Runnable)
+  ctx p=- c=- o=- k=[Z:pp.Captured#lambda$main$4()]
+  T pp.Captured#relay(java.lang.Runnable) p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+V 3 pp.Captured#relay(java.lang.Runnable) @26 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA pp.Captured#lambda$main$4()
+  ctx p=[Z:pp.Captured#lambda$main$4()] c=- o=- k=-
+  T pp.Captured#lambda$main$4() p=- c=- o=- k=-
+V 4 pp.Captured#lambda$main$4() @33 -> pp.Captured#hit3()
+  res STATIC_BOUND:STATIC pp.Captured#hit3()
+  T pp.Captured#hit3() p=- c=- o=- k=-
+V 5 pp.Captured#hit3() @29 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Captured#main(java.lang.String[]) @33 -> pp.Captured#lambda$main$4()
+  res STATIC_BOUND:PRIVATE pp.Captured#lambda$main$4()
+  T pp.Captured#lambda$main$4() p=- c=- o=- k=-
+V 1 pp.Captured#lambda$main$4() @33 -> pp.Captured#hit3()
+  res STATIC_BOUND:STATIC pp.Captured#hit3()
+  T pp.Captured#hit3() p=- c=- o=- k=-
+V 2 pp.Captured#hit3() @29 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @14 -> pp.Child#mine()
+  res NO_OVERRIDE pp.Child#mine()
+  T pp.Child#mine() p=- c=[pp.ADao, pp.BDao] o=pp.Child k=-
+V 1 pp.Child#mine() @12 -> pp.Dao#find()
+  res DATAFLOW_FIELD pp.ADao#find()
+  ctx p=- c=[pp.ADao, pp.BDao] o=pp.Child k=-
+  T pp.ADao#find() p=- c=- o=- k=-
+V 2 pp.ADao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 1 pp.Child#mine() @12 -> pp.Dao#find()
+  res CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+  ctx p=- c=[pp.ADao, pp.BDao] o=pp.Child k=-
+  left pp.Dao#find type
+  T pp.ADao#find() p=- c=- o=- k=-
+  T pp.BDao#find() p=- c=- o=- k=-
+  T pp.CDao#find() p=- c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @14 -> pp.Child#<init>(pp.Dao,pp.Dao)
+  res STATIC_BOUND:CTOR pp.Child#<init>(pp.Dao,pp.Dao)
+  T pp.Child#<init>(pp.Dao,pp.Dao) p=[pp.ADao, pp.BDao] c=- o=- k=-
+V 1 pp.Child#<init>(pp.Dao,pp.Dao) @11 -> pp.Parent#<init>(pp.Dao)
+  res STATIC_BOUND:CTOR pp.Parent#<init>(pp.Dao)
+  ctx p=[pp.ADao, pp.BDao] c=- o=- k=-
+  T pp.Parent#<init>(pp.Dao) p=[pp.BDao] c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @14 -> pp.ADao#<init>()
+  res STATIC_BOUND:CTOR pp.ADao#<init>()
+  T pp.ADao#<init>() p=- c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @14 -> pp.BDao#<init>()
+  res STATIC_BOUND:CTOR pp.BDao#<init>()
+  T pp.BDao#<init>() p=- c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @15 -> pp.Parent#go()
+  res NO_OVERRIDE pp.Parent#go()
+  T pp.Parent#go() p=- c=- o=- k=-
+V 1 pp.Parent#go() @7 -> pp.Dao#find()
+  res CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+  left pp.Dao#find type
+  T pp.ADao#find() p=- c=- o=- k=-
+  T pp.BDao#find() p=- c=- o=- k=-
+  T pp.CDao#find() p=- c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @15 -> pp.Child#<init>(pp.Dao,pp.Dao)
+  res STATIC_BOUND:CTOR pp.Child#<init>(pp.Dao,pp.Dao)
+  T pp.Child#<init>(pp.Dao,pp.Dao) p=[pp.ADao, pp.BDao] c=- o=- k=-
+V 1 pp.Child#<init>(pp.Dao,pp.Dao) @11 -> pp.Parent#<init>(pp.Dao)
+  res STATIC_BOUND:CTOR pp.Parent#<init>(pp.Dao)
+  ctx p=[pp.ADao, pp.BDao] c=- o=- k=-
+  T pp.Parent#<init>(pp.Dao) p=[pp.BDao] c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @15 -> pp.ADao#<init>()
+  res STATIC_BOUND:CTOR pp.ADao#<init>()
+  T pp.ADao#<init>() p=- c=- o=- k=-
+V 0 pp.Child#main(java.lang.String[]) @15 -> pp.BDao#<init>()
+  res STATIC_BOUND:CTOR pp.BDao#<init>()
+  T pp.BDao#<init>() p=- c=- o=- k=-
+V 0 pp.DaoKind#<clinit>() @4 -> pp.DaoKind#<init>()
+  res STATIC_BOUND:CTOR pp.DaoKind#<init>()
+  T pp.DaoKind#<init>() p=- c=- o=- k=-
+V 0 pp.DaoKind#<clinit>() @4 -> pp.DaoKind#<init>()
+  res STATIC_BOUND:CTOR pp.DaoKind#<init>()
+  T pp.DaoKind#<init>() p=- c=- o=- k=-
+V 0 pp.FieldArg#main(java.lang.String[]) @11 -> pp.Dao#find()
+  res DATAFLOW_FACTORY pp.CDao#find()
+  T pp.CDao#find() p=- c=- o=- k=-
+V 1 pp.CDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.FieldArg#main(java.lang.String[]) @11 -> pp.FieldArg#pick()
+  res NO_OVERRIDE pp.FieldArg#pick()
+  T pp.FieldArg#pick() p=- c=- o=- k=-
+V 1 pp.FieldArg#pick() @10 -> pp.FieldArg#id(pp.Dao)
+  res STATIC_BOUND:STATIC pp.FieldArg#id(pp.Dao)
+  T pp.FieldArg#id(pp.Dao) p=[pp.CDao] c=- o=- k=-
+V 0 pp.FieldArg#main(java.lang.String[]) @11 -> pp.FieldArg#<init>()
+  res STATIC_BOUND:CTOR pp.FieldArg#<init>()
+  T pp.FieldArg#<init>() p=- c=- o=- k=-
+V 1 pp.FieldArg#<init>() @8 -> pp.CDao#<init>()
+  res STATIC_BOUND:CTOR pp.CDao#<init>()
+  T pp.CDao#<init>() p=- c=- o=- k=-
+V 0 pp.FieldRef#main(java.lang.String[]) @11 -> pp.FieldRef#run()
+  res NO_OVERRIDE pp.FieldRef#run()
+  T pp.FieldRef#run() p=- c=- o=- k=-
+V 1 pp.FieldRef#run() @10 -> java.lang.Runnable#run()
+  res CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+  left java.lang.Runnable#run type
+  T pp.ADao#find() p=- c=- o=- k=-
+  T pp.BDao#find() p=- c=- o=- k=-
+  T pp.CDao#find() p=- c=- o=- k=-
+V 0 pp.FieldRef#main(java.lang.String[]) @11 -> pp.FieldRef#<init>()
+  res STATIC_BOUND:CTOR pp.FieldRef#<init>()
+  T pp.FieldRef#<init>() p=- c=- o=- k=-
+V 1 pp.FieldRef#<init>() @8 -> pp.BDao#<init>()
+  res STATIC_BOUND:CTOR pp.BDao#<init>()
+  T pp.BDao#<init>() p=- c=- o=- k=-
+V 1 pp.FieldRef#<init>() @9 -> pp.Dao#find()
+  res DATAFLOW_FIELD pp.BDao#find()
+  T pp.BDao#find() p=- c=- o=- k=-
+V 2 pp.BDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.InGuard#main(java.lang.String[]) @16 -> pp.InGuard#check(int)
+  res STATIC_BOUND:STATIC pp.InGuard#check(int)
+  T pp.InGuard#check(int) p=[V:3] c=- o=- k=-
+V 1 pp.InGuard#check(int) @10 -> pp.InGuard#hit()
+  res STATIC_BOUND:STATIC pp.InGuard#hit()
+  ctx p=[V:3] c=- o=- k=-
+  unreachable [UNREACHABLE] not called on this path: condition 'switch (k) case 1, 2' does not hold (argument 1 from the caller = 3)
+  T pp.InGuard#hit() p=- c=- o=- k=-
+V 1 pp.InGuard#check(int) @11 -> pp.InGuard#other()
+  res STATIC_BOUND:STATIC pp.InGuard#other()
+  ctx p=[V:3] c=- o=- k=-
+  T pp.InGuard#other() p=- c=- o=- k=-
+V 2 pp.InGuard#other() @15 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.KindFactory#main(java.lang.String[]) @15 -> pp.Dao#find()
+  res MAPPING pp.ADao#find()
+  keys pp.KindFactory#get|V|pp.DaoKind.A
+  T pp.ADao#find() p=- c=- o=- k=-
+V 1 pp.ADao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.KindFactory#main(java.lang.String[]) @15 -> pp.KindFactory#get(pp.DaoKind)
+  res STATIC_BOUND:STATIC pp.KindFactory#get(pp.DaoKind)
+  T pp.KindFactory#get(pp.DaoKind) p=[V:pp.DaoKind.A] c=- o=- k=-
+V 1 pp.KindFactory#get(pp.DaoKind) @11 -> pp.ADao#<init>()
+  res STATIC_BOUND:CTOR pp.ADao#<init>()
+  ctx p=[V:pp.DaoKind.A] c=- o=- k=-
+  T pp.ADao#<init>() p=- c=- o=- k=-
+V 1 pp.KindFactory#get(pp.DaoKind) @13 -> pp.BDao#<init>()
+  res STATIC_BOUND:CTOR pp.BDao#<init>()
+  ctx p=[V:pp.DaoKind.A] c=- o=- k=-
+  T pp.BDao#<init>() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @30 -> pp.Refl#make(java.lang.Class)
+  res STATIC_BOUND:STATIC pp.Refl#make(java.lang.Class)
+  T pp.Refl#make(java.lang.Class) p=[K:pp.Derived] c=- o=- k=-
+V 1 pp.Refl#make(java.lang.Class) @20 -> java.lang.Class#newInstance()
+  res REFLECTION pp.Derived#<init>()
+  ctx p=[K:pp.Derived] c=- o=- k=-
+  T pp.Derived#<init>() p=- c=- o=- k=-
+V 2 pp.Derived#<init>() @5 -> pp.Base#<init>()
+  res STATIC_BOUND:CTOR pp.Base#<init>()
+  T pp.Base#<init>() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @31 -> java.lang.Class#newInstance()
+  res REFLECTION pp.Derived#<init>()
+  T pp.Derived#<init>() p=- c=- o=- k=-
+V 1 pp.Derived#<init>() @5 -> pp.Base#<init>()
+  res STATIC_BOUND:CTOR pp.Base#<init>()
+  T pp.Base#<init>() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @31 -> pp.Refl#type()
+  res STATIC_BOUND:STATIC pp.Refl#type()
+  T pp.Refl#type() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @32 -> pp.Refl#make(java.lang.Class)
+  res STATIC_BOUND:STATIC pp.Refl#make(java.lang.Class)
+  T pp.Refl#make(java.lang.Class) p=[K:pp.Derived] c=- o=- k=-
+V 1 pp.Refl#make(java.lang.Class) @20 -> java.lang.Class#newInstance()
+  res REFLECTION pp.Derived#<init>()
+  ctx p=[K:pp.Derived] c=- o=- k=-
+  T pp.Derived#<init>() p=- c=- o=- k=-
+V 2 pp.Derived#<init>() @5 -> pp.Base#<init>()
+  res STATIC_BOUND:CTOR pp.Base#<init>()
+  T pp.Base#<init>() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @32 -> pp.Refl#type()
+  res STATIC_BOUND:STATIC pp.Refl#type()
+  T pp.Refl#type() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @33 -> pp.Refl#viaInvoke()
+  res STATIC_BOUND:STATIC pp.Refl#viaInvoke()
+  T pp.Refl#viaInvoke() p=- c=- o=- k=-
+V 1 pp.Refl#viaInvoke() @22 -> java.lang.Class#getMethod(java.lang.String,java.lang.Class[])
+  res STATIC_BOUND:FINAL_CLASS java.lang.Class#getMethod(java.lang.String,java.lang.Class[])
+  T java.lang.Class#getMethod(java.lang.String,java.lang.Class[]) p=- c=- o=- k=-
+V 1 pp.Refl#viaInvoke() @23 -> java.lang.reflect.Method#invoke(java.lang.Object,java.lang.Object[])
+  res REFLECTION pp.Derived#f()
+  keys java.lang.Class#getMethod|L|f
+  T pp.Derived#f() p=- c=- o=- k=-
+V 2 pp.Derived#f() @6 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 1 pp.Refl#viaInvoke() @23 -> pp.Derived#<init>()
+  res STATIC_BOUND:CTOR pp.Derived#<init>()
+  T pp.Derived#<init>() p=- c=- o=- k=-
+V 2 pp.Derived#<init>() @5 -> pp.Base#<init>()
+  res STATIC_BOUND:CTOR pp.Base#<init>()
+  T pp.Base#<init>() p=- c=- o=- k=-
+V 0 pp.Refl#main(java.lang.String[]) @34 -> pp.Refl#spaced()
+  res STATIC_BOUND:STATIC pp.Refl#spaced()
+  T pp.Refl#spaced() p=- c=- o=- k=-
+V 1 pp.Refl#spaced() @26 -> java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+  res STATIC_BOUND:FINAL_CLASS java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+  T java.lang.reflect.Constructor#newInstance(java.lang.Object[]) p=- c=- o=- k=-
+V 1 pp.Refl#spaced() @26 -> java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+  res STATIC_BOUND:FINAL_CLASS java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+  keys java.lang.Class#forName|L| pp.Derived
+  T java.lang.Class#getDeclaredConstructor(java.lang.Class[]) p=- c=- o=- k=-
+V 1 pp.Refl#spaced() @26 -> java.lang.Class#forName(java.lang.String)
+  res STATIC_BOUND:STATIC java.lang.Class#forName(java.lang.String)
+  T java.lang.Class#forName(java.lang.String) p=- c=- o=- k=-
+V 0 pp.ReflFactory#main(java.lang.String[]) @16 -> pp.Dao#find()
+  res DATAFLOW_FACTORY pp.ADao#find()
+  T pp.ADao#find() p=- c=- o=- k=-
+V 1 pp.ADao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.ReflFactory#main(java.lang.String[]) @16 -> pp.ReflFactory#adao()
+  res STATIC_BOUND:STATIC pp.ReflFactory#adao()
+  T pp.ReflFactory#adao() p=- c=- o=- k=-
+V 1 pp.ReflFactory#adao() @13 -> pp.ReflFactory#byName(java.lang.String)
+  res STATIC_BOUND:STATIC pp.ReflFactory#byName(java.lang.String)
+  T pp.ReflFactory#byName(java.lang.String) p=[L:pp.ADao] c=- o=- k=-
+V 2 pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+  res REFLECTION pp.ADao#<init>()
+  ctx p=[L:pp.ADao] c=- o=- k=-
+  T pp.ADao#<init>() p=- c=- o=- k=-
+V 2 pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+  res STATIC_BOUND:FINAL_CLASS java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+  ctx p=[L:pp.ADao] c=- o=- k=-
+  keys java.lang.Class#forName|L|pp.ADao
+  T java.lang.Class#getDeclaredConstructor(java.lang.Class[]) p=- c=- o=- k=-
+V 2 pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.Class#forName(java.lang.String)
+  res STATIC_BOUND:STATIC java.lang.Class#forName(java.lang.String)
+  ctx p=[L:pp.ADao] c=- o=- k=-
+  T java.lang.Class#forName(java.lang.String) p=- c=- o=- k=-
+V 0 pp.ReflFactory#main(java.lang.String[]) @17 -> pp.Dao#find()
+  res CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+  left pp.Dao#find type
+  T pp.ADao#find() p=- c=- o=- k=-
+  T pp.BDao#find() p=- c=- o=- k=-
+  T pp.CDao#find() p=- c=- o=- k=-
+V 0 pp.ReflFactory#main(java.lang.String[]) @17 -> pp.ReflFactory#none()
+  res STATIC_BOUND:STATIC pp.ReflFactory#none()
+  T pp.ReflFactory#none() p=- c=- o=- k=-
+V 1 pp.ReflFactory#none() @14 -> pp.ReflFactory#byName(java.lang.String)
+  res STATIC_BOUND:STATIC pp.ReflFactory#byName(java.lang.String)
+  T pp.ReflFactory#byName(java.lang.String) p=[L:pp.NoSuchDao] c=- o=- k=-
+V 2 pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+  res STATIC_BOUND:FINAL_CLASS java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+  ctx p=[L:pp.NoSuchDao] c=- o=- k=-
+  T java.lang.reflect.Constructor#newInstance(java.lang.Object[]) p=- c=- o=- k=-
+V 2 pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+  res STATIC_BOUND:FINAL_CLASS java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+  ctx p=[L:pp.NoSuchDao] c=- o=- k=-
+  keys java.lang.Class#forName|L|pp.NoSuchDao
+  T java.lang.Class#getDeclaredConstructor(java.lang.Class[]) p=- c=- o=- k=-
+V 2 pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.Class#forName(java.lang.String)
+  res STATIC_BOUND:STATIC java.lang.Class#forName(java.lang.String)
+  ctx p=[L:pp.NoSuchDao] c=- o=- k=-
+  T java.lang.Class#forName(java.lang.String) p=- c=- o=- k=-
+V 0 pp.StrFactory#main(java.lang.String[]) @26 -> pp.Dao#find()
+  res MAPPING pp.CDao#find()
+  keys pp.StrFactory#get|L|KEY_C
+  T pp.CDao#find() p=- c=- o=- k=-
+V 1 pp.CDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.StrFactory#main(java.lang.String[]) @26 -> pp.StrFactory#get(java.lang.String)
+  res STATIC_BOUND:STATIC pp.StrFactory#get(java.lang.String)
+  T pp.StrFactory#get(java.lang.String) p=[L:KEY_C] c=- o=- k=-
+V 1 pp.StrFactory#get(java.lang.String) @13 -> java.lang.String#equals(java.lang.Object)
+  res STATIC_BOUND:FINAL_CLASS java.lang.String#equals(java.lang.Object)
+  ctx p=[L:KEY_C] c=- o=- k=-
+  T java.lang.String#equals(java.lang.Object) p=- c=- o=- k=-
+V 1 pp.StrFactory#get(java.lang.String) @14 -> pp.CDao#<init>()
+  res STATIC_BOUND:CTOR pp.CDao#<init>()
+  ctx p=[L:KEY_C] c=- o=- k=-
+  T pp.CDao#<init>() p=- c=- o=- k=-
+V 1 pp.StrFactory#get(java.lang.String) @16 -> pp.BDao#<init>()
+  res STATIC_BOUND:CTOR pp.BDao#<init>()
+  ctx p=[L:KEY_C] c=- o=- k=-
+  T pp.BDao#<init>() p=- c=- o=- k=-
+V 0 pp.StrFactory#main(java.lang.String[]) @26 -> pp.StrFactory#key()
+  res STATIC_BOUND:STATIC pp.StrFactory#key()
+  T pp.StrFactory#key() p=- c=- o=- k=-
+V 0 pp.StrFactory#main(java.lang.String[]) @27 -> pp.Dao#find()
+  res DATAFLOW_FACTORY pp.CDao#find()
+  T pp.CDao#find() p=- c=- o=- k=-
+V 1 pp.CDao#find() @2 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.StrFactory#main(java.lang.String[]) @27 -> pp.StrFactory#pick(boolean)
+  res STATIC_BOUND:STATIC pp.StrFactory#pick(boolean)
+  T pp.StrFactory#pick(boolean) p=- c=- o=- k=-
+V 1 pp.StrFactory#pick(boolean) @21 -> pp.CDao#<init>()
+  res STATIC_BOUND:CTOR pp.CDao#<init>()
+  T pp.CDao#<init>() p=- c=- o=- k=-
+V 1 pp.StrFactory#pick(boolean) @23 -> pp.CDao#<init>()
+  res STATIC_BOUND:CTOR pp.CDao#<init>()
+  T pp.CDao#<init>() p=- c=- o=- k=-
+V 0 pp.Threads#main(java.lang.String[]) @11 -> java.lang.Thread#start()
+  res NO_OVERRIDE java.lang.Thread#start()
+  T java.lang.Thread#start() p=- c=- o=- k=-
+  CB pp.Threads#lambda$main$0() [Thread#start() calls run()] 1
+V 1 pp.Threads#lambda$main$0() @11 -> pp.Threads#hit()
+  res STATIC_BOUND:STATIC pp.Threads#hit()
+  T pp.Threads#hit() p=- c=- o=- k=-
+V 2 pp.Threads#hit() @9 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Threads#main(java.lang.String[]) @11 -> java.lang.Thread#<init>(java.lang.ThreadGroup,java.lang.Runnable)
+  res STATIC_BOUND:CTOR java.lang.Thread#<init>(java.lang.ThreadGroup,java.lang.Runnable)
+  T java.lang.Thread#<init>(java.lang.ThreadGroup,java.lang.Runnable) p=- c=- o=- k=-
+V 0 pp.Threads#main(java.lang.String[]) @11 -> java.lang.ThreadGroup#<init>(java.lang.String)
+  res STATIC_BOUND:CTOR java.lang.ThreadGroup#<init>(java.lang.String)
+  T java.lang.ThreadGroup#<init>(java.lang.String) p=- c=- o=- k=-
+V 0 pp.Threads#main(java.lang.String[]) @11 -> pp.Threads#lambda$main$0()
+  res STATIC_BOUND:PRIVATE pp.Threads#lambda$main$0()
+  T pp.Threads#lambda$main$0() p=- c=- o=- k=-
+V 1 pp.Threads#lambda$main$0() @11 -> pp.Threads#hit()
+  res STATIC_BOUND:STATIC pp.Threads#hit()
+  T pp.Threads#hit() p=- c=- o=- k=-
+V 2 pp.Threads#hit() @9 -> java.io.PrintStream#println(java.lang.String)
+  res NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+  T java.io.PrintStream#println(java.lang.String) p=- c=- o=- k=-
+# --- 経路によらない事実 ---
+M LampUse#make(java.lang.Object) fo=T:pp.ADao up=0 R=[T:pp.ADao]
+M LampUse#use(java.lang.Object) fo=- up=1 R=-
+M pp.BoundRef#runIt(java.lang.Runnable) fo=- up=1 R=-
+M pp.Captured#outer(java.lang.Runnable) fo=- up=1 R=-
+M pp.Captured#outer2(pp.Dao) fo=- up=1 R=-
+M pp.Captured#outer3(java.lang.Runnable) fo=- up=1 R=-
+M pp.Captured#relay(java.lang.Runnable) fo=- up=1 R=-
+M pp.Captured#use(pp.Dao) fo=- up=1 R=-
+M pp.Child#<init>(pp.Dao,pp.Dao) fo=- up=1 R=-
+M pp.FieldArg#id(pp.Dao) fo=A:0 up=0 R=[A:0]
+M pp.FieldArg#pick() fo=T:pp.CDao up=0 R=[M:pp.FieldArg#id(pp.Dao)|0=F:pp.FieldArg#f;n=1]
+M pp.InGuard#check(int) fo=- up=1 R=-
+M pp.KindFactory#get(pp.DaoKind) fo=- up=1 R=[T:pp.ADao, T:pp.BDao]
+M pp.Refl#make(java.lang.Class) fo=- up=1 R=-
+M pp.Refl#type() fo=- up=0 R=[K:pp.Derived]
+M pp.ReflFactory#adao() fo=T:pp.ADao up=0 R=[M:pp.ReflFactory#byName(java.lang.String)|0=L:pp.ADao;n=1]
+M pp.ReflFactory#byName(java.lang.String) fo=C:0 up=1 R=[C:0]
+M pp.ReflFactory#none() fo=- up=0 R=[M:pp.ReflFactory#byName(java.lang.String)|0=L:pp.NoSuchDao;n=1]
+M pp.StrFactory#get(java.lang.String) fo=- up=1 R=[T:pp.CDao, T:pp.BDao]
+M pp.StrFactory#key() fo=- up=0 R=[L:KEY_C]
+M pp.StrFactory#pick(boolean) fo=T:pp.CDao up=1 R=[T:pp.CDao]
+F pp.Child#own A:0
+F pp.FieldArg#f T:pp.CDao
+F pp.FieldRef#dao T:pp.BDao
+F pp.FieldRef#r Z:pp.Dao#find()
+F pp.Parent#dao A:0
+E LampUse#main(java.lang.String[]) @13 -> LampUse#use(java.lang.Object) | STATIC_BOUND:STATIC LampUse#use(java.lang.Object)
+E LampUse#main(java.lang.String[]) @13 -> Lamp#<init>() | STATIC_BOUND:CTOR Lamp#<init>()
+E LampUse#make(java.lang.Object) @7 -> pp.ADao#<init>() | STATIC_BOUND:CTOR pp.ADao#<init>()
+E LampUse#use(java.lang.Object) @10 -> pp.Dao#find() | DATAFLOW_FACTORY pp.ADao#find()
+E LampUse#use(java.lang.Object) @10 -> LampUse#make(java.lang.Object) | STATIC_BOUND:STATIC LampUse#make(java.lang.Object)
+E pp.ADao#find() @2 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.BDao#find() @2 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.Base#f() @6 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.BoundRef#main(java.lang.String[]) @10 -> pp.CDao#<init>() | STATIC_BOUND:CTOR pp.CDao#<init>()
+E pp.BoundRef#main(java.lang.String[]) @11 -> pp.BoundRef#runIt(java.lang.Runnable) | STATIC_BOUND:STATIC pp.BoundRef#runIt(java.lang.Runnable)
+E pp.BoundRef#main(java.lang.String[]) @11 -> pp.Dao#find() | LOCAL_NEW pp.CDao#find()
+E pp.BoundRef#runIt(java.lang.Runnable) @8 -> java.lang.Runnable#run() | NO_OVERRIDE java.lang.Runnable#run()
+E pp.CDao#find() @2 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.Captured#hit() @28 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.Captured#hit3() @29 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.Captured#lambda$main$3() @31 -> pp.Captured#hit() | STATIC_BOUND:STATIC pp.Captured#hit()
+E pp.Captured#lambda$main$4() @33 -> pp.Captured#hit3() | STATIC_BOUND:STATIC pp.Captured#hit3()
+E pp.Captured#lambda$outer$0() @15 -> java.lang.Runnable#run() | NO_OVERRIDE java.lang.Runnable#run()
+E pp.Captured#lambda$outer2$1() @19 -> pp.Captured#use(pp.Dao) | STATIC_BOUND:STATIC pp.Captured#use(pp.Dao)
+E pp.Captured#lambda$outer3$2() @23 -> pp.Captured#relay(java.lang.Runnable) | STATIC_BOUND:STATIC pp.Captured#relay(java.lang.Runnable)
+E pp.Captured#main(java.lang.String[]) @31 -> pp.Captured#outer(java.lang.Runnable) | STATIC_BOUND:STATIC pp.Captured#outer(java.lang.Runnable)
+E pp.Captured#main(java.lang.String[]) @31 -> pp.Captured#lambda$main$3() | STATIC_BOUND:PRIVATE pp.Captured#lambda$main$3()
+E pp.Captured#main(java.lang.String[]) @32 -> pp.Captured#outer2(pp.Dao) | STATIC_BOUND:STATIC pp.Captured#outer2(pp.Dao)
+E pp.Captured#main(java.lang.String[]) @32 -> pp.BDao#<init>() | STATIC_BOUND:CTOR pp.BDao#<init>()
+E pp.Captured#main(java.lang.String[]) @33 -> pp.Captured#outer3(java.lang.Runnable) | STATIC_BOUND:STATIC pp.Captured#outer3(java.lang.Runnable)
+E pp.Captured#main(java.lang.String[]) @33 -> pp.Captured#lambda$main$4() | STATIC_BOUND:PRIVATE pp.Captured#lambda$main$4()
+E pp.Captured#outer(java.lang.Runnable) @15 -> pp.Captured#lambda$outer$0() | STATIC_BOUND:PRIVATE pp.Captured#lambda$outer$0()
+E pp.Captured#outer(java.lang.Runnable) @16 -> java.lang.Runnable#run() | DATAFLOW_LAMBDA pp.Captured#lambda$outer$0()
+E pp.Captured#outer2(pp.Dao) @19 -> pp.Captured#lambda$outer2$1() | STATIC_BOUND:PRIVATE pp.Captured#lambda$outer2$1()
+E pp.Captured#outer2(pp.Dao) @20 -> java.lang.Runnable#run() | DATAFLOW_LAMBDA pp.Captured#lambda$outer2$1()
+E pp.Captured#outer3(java.lang.Runnable) @23 -> pp.Captured#lambda$outer3$2() | STATIC_BOUND:PRIVATE pp.Captured#lambda$outer3$2()
+E pp.Captured#outer3(java.lang.Runnable) @24 -> java.lang.Runnable#run() | DATAFLOW_LAMBDA pp.Captured#lambda$outer3$2()
+E pp.Captured#relay(java.lang.Runnable) @26 -> java.lang.Runnable#run() | NO_OVERRIDE java.lang.Runnable#run()
+E pp.Captured#use(pp.Dao) @27 -> pp.Dao#find() | CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+E pp.Child#<init>(pp.Dao,pp.Dao) @11 -> pp.Parent#<init>(pp.Dao) | STATIC_BOUND:CTOR pp.Parent#<init>(pp.Dao)
+E pp.Child#main(java.lang.String[]) @14 -> pp.Child#mine() | NO_OVERRIDE pp.Child#mine()
+E pp.Child#main(java.lang.String[]) @14 -> pp.Child#<init>(pp.Dao,pp.Dao) | STATIC_BOUND:CTOR pp.Child#<init>(pp.Dao,pp.Dao)
+E pp.Child#main(java.lang.String[]) @14 -> pp.ADao#<init>() | STATIC_BOUND:CTOR pp.ADao#<init>()
+E pp.Child#main(java.lang.String[]) @14 -> pp.BDao#<init>() | STATIC_BOUND:CTOR pp.BDao#<init>()
+E pp.Child#main(java.lang.String[]) @15 -> pp.Parent#go() | NO_OVERRIDE pp.Parent#go()
+E pp.Child#main(java.lang.String[]) @15 -> pp.Child#<init>(pp.Dao,pp.Dao) | STATIC_BOUND:CTOR pp.Child#<init>(pp.Dao,pp.Dao)
+E pp.Child#main(java.lang.String[]) @15 -> pp.ADao#<init>() | STATIC_BOUND:CTOR pp.ADao#<init>()
+E pp.Child#main(java.lang.String[]) @15 -> pp.BDao#<init>() | STATIC_BOUND:CTOR pp.BDao#<init>()
+E pp.Child#mine() @12 -> pp.Dao#find() | CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+E pp.Child#mine() @12 -> pp.Dao#find() | CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+E pp.DaoKind#<clinit>() @4 -> pp.DaoKind#<init>() | STATIC_BOUND:CTOR pp.DaoKind#<init>()
+E pp.DaoKind#<clinit>() @4 -> pp.DaoKind#<init>() | STATIC_BOUND:CTOR pp.DaoKind#<init>()
+E pp.Derived#<init>() @5 -> pp.Base#<init>() | STATIC_BOUND:CTOR pp.Base#<init>()
+E pp.Derived#f() @6 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.FieldArg#<init>() @8 -> pp.CDao#<init>() | STATIC_BOUND:CTOR pp.CDao#<init>()
+E pp.FieldArg#main(java.lang.String[]) @11 -> pp.Dao#find() | DATAFLOW_FACTORY pp.CDao#find()
+E pp.FieldArg#main(java.lang.String[]) @11 -> pp.FieldArg#pick() | NO_OVERRIDE pp.FieldArg#pick()
+E pp.FieldArg#main(java.lang.String[]) @11 -> pp.FieldArg#<init>() | STATIC_BOUND:CTOR pp.FieldArg#<init>()
+E pp.FieldArg#pick() @10 -> pp.FieldArg#id(pp.Dao) | STATIC_BOUND:STATIC pp.FieldArg#id(pp.Dao)
+E pp.FieldRef#<init>() @8 -> pp.BDao#<init>() | STATIC_BOUND:CTOR pp.BDao#<init>()
+E pp.FieldRef#<init>() @9 -> pp.Dao#find() | DATAFLOW_FIELD pp.BDao#find()
+E pp.FieldRef#main(java.lang.String[]) @11 -> pp.FieldRef#run() | NO_OVERRIDE pp.FieldRef#run()
+E pp.FieldRef#main(java.lang.String[]) @11 -> pp.FieldRef#<init>() | STATIC_BOUND:CTOR pp.FieldRef#<init>()
+E pp.FieldRef#run() @10 -> java.lang.Runnable#run() | CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+E pp.InGuard#check(int) @10 -> pp.InGuard#hit() | STATIC_BOUND:STATIC pp.InGuard#hit()
+E pp.InGuard#check(int) @11 -> pp.InGuard#other() | STATIC_BOUND:STATIC pp.InGuard#other()
+E pp.InGuard#hit() @14 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.InGuard#main(java.lang.String[]) @16 -> pp.InGuard#check(int) | STATIC_BOUND:STATIC pp.InGuard#check(int)
+E pp.InGuard#other() @15 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.KindFactory#get(pp.DaoKind) @11 -> pp.ADao#<init>() | STATIC_BOUND:CTOR pp.ADao#<init>()
+E pp.KindFactory#get(pp.DaoKind) @13 -> pp.BDao#<init>() | STATIC_BOUND:CTOR pp.BDao#<init>()
+E pp.KindFactory#main(java.lang.String[]) @15 -> pp.Dao#find() | MAPPING pp.ADao#find()
+E pp.KindFactory#main(java.lang.String[]) @15 -> pp.KindFactory#get(pp.DaoKind) | STATIC_BOUND:STATIC pp.KindFactory#get(pp.DaoKind)
+E pp.Parent#go() @7 -> pp.Dao#find() | CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+E pp.Refl#main(java.lang.String[]) @30 -> pp.Refl#make(java.lang.Class) | STATIC_BOUND:STATIC pp.Refl#make(java.lang.Class)
+E pp.Refl#main(java.lang.String[]) @31 -> java.lang.Class#newInstance() | REFLECTION pp.Derived#<init>()
+E pp.Refl#main(java.lang.String[]) @31 -> pp.Refl#type() | STATIC_BOUND:STATIC pp.Refl#type()
+E pp.Refl#main(java.lang.String[]) @32 -> pp.Refl#make(java.lang.Class) | STATIC_BOUND:STATIC pp.Refl#make(java.lang.Class)
+E pp.Refl#main(java.lang.String[]) @32 -> pp.Refl#type() | STATIC_BOUND:STATIC pp.Refl#type()
+E pp.Refl#main(java.lang.String[]) @33 -> pp.Refl#viaInvoke() | STATIC_BOUND:STATIC pp.Refl#viaInvoke()
+E pp.Refl#main(java.lang.String[]) @34 -> pp.Refl#spaced() | STATIC_BOUND:STATIC pp.Refl#spaced()
+E pp.Refl#make(java.lang.Class) @20 -> java.lang.Class#newInstance() | STATIC_BOUND:FINAL_CLASS java.lang.Class#newInstance()
+E pp.Refl#spaced() @26 -> java.lang.reflect.Constructor#newInstance(java.lang.Object[]) | STATIC_BOUND:FINAL_CLASS java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+E pp.Refl#spaced() @26 -> java.lang.Class#getDeclaredConstructor(java.lang.Class[]) | STATIC_BOUND:FINAL_CLASS java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+E pp.Refl#spaced() @26 -> java.lang.Class#forName(java.lang.String) | STATIC_BOUND:STATIC java.lang.Class#forName(java.lang.String)
+E pp.Refl#viaInvoke() @22 -> java.lang.Class#getMethod(java.lang.String,java.lang.Class[]) | STATIC_BOUND:FINAL_CLASS java.lang.Class#getMethod(java.lang.String,java.lang.Class[])
+E pp.Refl#viaInvoke() @23 -> java.lang.reflect.Method#invoke(java.lang.Object,java.lang.Object[]) | REFLECTION pp.Derived#f()
+E pp.Refl#viaInvoke() @23 -> pp.Derived#<init>() | STATIC_BOUND:CTOR pp.Derived#<init>()
+E pp.ReflFactory#adao() @13 -> pp.ReflFactory#byName(java.lang.String) | STATIC_BOUND:STATIC pp.ReflFactory#byName(java.lang.String)
+E pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.reflect.Constructor#newInstance(java.lang.Object[]) | STATIC_BOUND:FINAL_CLASS java.lang.reflect.Constructor#newInstance(java.lang.Object[])
+E pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.Class#getDeclaredConstructor(java.lang.Class[]) | STATIC_BOUND:FINAL_CLASS java.lang.Class#getDeclaredConstructor(java.lang.Class[])
+E pp.ReflFactory#byName(java.lang.String) @11 -> java.lang.Class#forName(java.lang.String) | STATIC_BOUND:STATIC java.lang.Class#forName(java.lang.String)
+E pp.ReflFactory#main(java.lang.String[]) @16 -> pp.Dao#find() | DATAFLOW_FACTORY pp.ADao#find()
+E pp.ReflFactory#main(java.lang.String[]) @16 -> pp.ReflFactory#adao() | STATIC_BOUND:STATIC pp.ReflFactory#adao()
+E pp.ReflFactory#main(java.lang.String[]) @17 -> pp.Dao#find() | CHA pp.ADao#find() pp.BDao#find() pp.CDao#find()
+E pp.ReflFactory#main(java.lang.String[]) @17 -> pp.ReflFactory#none() | STATIC_BOUND:STATIC pp.ReflFactory#none()
+E pp.ReflFactory#none() @14 -> pp.ReflFactory#byName(java.lang.String) | STATIC_BOUND:STATIC pp.ReflFactory#byName(java.lang.String)
+E pp.StrFactory#get(java.lang.String) @13 -> java.lang.String#equals(java.lang.Object) | STATIC_BOUND:FINAL_CLASS java.lang.String#equals(java.lang.Object)
+E pp.StrFactory#get(java.lang.String) @14 -> pp.CDao#<init>() | STATIC_BOUND:CTOR pp.CDao#<init>()
+E pp.StrFactory#get(java.lang.String) @16 -> pp.BDao#<init>() | STATIC_BOUND:CTOR pp.BDao#<init>()
+E pp.StrFactory#main(java.lang.String[]) @26 -> pp.Dao#find() | MAPPING pp.CDao#find()
+E pp.StrFactory#main(java.lang.String[]) @26 -> pp.StrFactory#get(java.lang.String) | STATIC_BOUND:STATIC pp.StrFactory#get(java.lang.String)
+E pp.StrFactory#main(java.lang.String[]) @26 -> pp.StrFactory#key() | STATIC_BOUND:STATIC pp.StrFactory#key()
+E pp.StrFactory#main(java.lang.String[]) @27 -> pp.Dao#find() | DATAFLOW_FACTORY pp.CDao#find()
+E pp.StrFactory#main(java.lang.String[]) @27 -> pp.StrFactory#pick(boolean) | STATIC_BOUND:STATIC pp.StrFactory#pick(boolean)
+E pp.StrFactory#pick(boolean) @21 -> pp.CDao#<init>() | STATIC_BOUND:CTOR pp.CDao#<init>()
+E pp.StrFactory#pick(boolean) @23 -> pp.CDao#<init>() | STATIC_BOUND:CTOR pp.CDao#<init>()
+E pp.Threads#hit() @9 -> java.io.PrintStream#println(java.lang.String) | NO_OVERRIDE java.io.PrintStream#println(java.lang.String)
+E pp.Threads#lambda$main$0() @11 -> pp.Threads#hit() | STATIC_BOUND:STATIC pp.Threads#hit()
+E pp.Threads#main(java.lang.String[]) @11 -> java.lang.Thread#start() | NO_OVERRIDE java.lang.Thread#start() | CB pp.Threads#lambda$main$0() [Thread#start() calls run()] 1
+E pp.Threads#main(java.lang.String[]) @11 -> java.lang.Thread#<init>(java.lang.ThreadGroup,java.lang.Runnable) | STATIC_BOUND:CTOR java.lang.Thread#<init>(java.lang.ThreadGroup,java.lang.Runnable)
+E pp.Threads#main(java.lang.String[]) @11 -> java.lang.ThreadGroup#<init>(java.lang.String) | STATIC_BOUND:CTOR java.lang.ThreadGroup#<init>(java.lang.String)
+E pp.Threads#main(java.lang.String[]) @11 -> pp.Threads#lambda$main$0() | STATIC_BOUND:PRIVATE pp.Threads#lambda$main$0()
+I Lamp#<init>() 1
+I LampUse#make(java.lang.Object) 1
+I LampUse#use(java.lang.Object) 1
+I java.io.PrintStream#println(java.lang.String) 10
+I java.lang.Class#forName(java.lang.String) 2
+I java.lang.Class#getDeclaredConstructor(java.lang.Class[]) 2
+I java.lang.Class#getMethod(java.lang.String,java.lang.Class[]) 1
+I java.lang.Class#newInstance() 1
+I java.lang.Runnable#run() 3
+I java.lang.String#equals(java.lang.Object) 1
+I java.lang.Thread#<init>(java.lang.ThreadGroup,java.lang.Runnable) 1
+I java.lang.Thread#start() 1
+I java.lang.ThreadGroup#<init>(java.lang.String) 1
+I java.lang.reflect.Constructor#newInstance(java.lang.Object[]) 2
+I pp.ADao#<init>() 4
+I pp.ADao#find() 9
+I pp.BDao#<init>() 6
+I pp.BDao#find() 7
+I pp.Base#<init>() 1
+I pp.BoundRef#runIt(java.lang.Runnable) 1
+I pp.CDao#<init>() 5
+I pp.CDao#find() 10
+I pp.Captured#hit() 1
+I pp.Captured#hit3() 1
+I pp.Captured#lambda$main$3() 1
+I pp.Captured#lambda$main$4() 1
+I pp.Captured#lambda$outer$0() 2
+I pp.Captured#lambda$outer2$1() 2
+I pp.Captured#lambda$outer3$2() 2
+I pp.Captured#outer(java.lang.Runnable) 1
+I pp.Captured#outer2(pp.Dao) 1
+I pp.Captured#outer3(java.lang.Runnable) 1
+I pp.Captured#relay(java.lang.Runnable) 1
+I pp.Captured#use(pp.Dao) 1
+I pp.Child#<init>(pp.Dao,pp.Dao) 2
+I pp.Child#mine() 1
+I pp.DaoKind#<init>() 2
+I pp.Derived#<init>() 2
+I pp.Derived#f() 1
+I pp.FieldArg#<init>() 1
+I pp.FieldArg#id(pp.Dao) 1
+I pp.FieldArg#pick() 1
+I pp.FieldRef#<init>() 1
+I pp.FieldRef#run() 1
+I pp.InGuard#check(int) 1
+I pp.InGuard#hit() 1
+I pp.InGuard#other() 1
+I pp.KindFactory#get(pp.DaoKind) 1
+I pp.Parent#<init>(pp.Dao) 1
+I pp.Parent#go() 1
+I pp.Refl#make(java.lang.Class) 2
+I pp.Refl#spaced() 1
+I pp.Refl#type() 2
+I pp.Refl#viaInvoke() 1
+I pp.ReflFactory#adao() 1
+I pp.ReflFactory#byName(java.lang.String) 2
+I pp.ReflFactory#none() 1
+I pp.StrFactory#get(java.lang.String) 1
+I pp.StrFactory#key() 1
+I pp.StrFactory#pick(boolean) 1
+I pp.Threads#hit() 1
+I pp.Threads#lambda$main$0() 2

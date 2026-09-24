@@ -490,7 +490,10 @@ public final class DataflowResolver {
                     return classNameOf(Origin.argAt(Origin.argsOf(origin), 0), ctx);
                 }
                 if (OBJECT_GET_CLASS.equals(v)) {
-                    return concreteTypeOf(Origin.receiverOf(origin), ctx);
+                    // 具象型だけを採る。コンストラクタで受け取るフィールドの出所は、経路の環境の値
+                    // （L: / K: などの ':' を含む文字列）をそのまま返しうる（fieldTypeOf）が、それは型ではない
+                    String type = concreteTypeOf(Origin.receiverOf(origin), ctx);
+                    return (type == null || type.indexOf(':') >= 0) ? null : type;
                 }
                 // ソース上のメソッドが Class を返す形。全ての return が同じクラスなら決まる
                 String[] returns = graph.returnOriginsOf(methods.idOf(v));

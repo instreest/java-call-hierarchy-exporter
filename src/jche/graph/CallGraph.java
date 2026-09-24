@@ -67,6 +67,25 @@ public final class CallGraph {
     final HashMap<String, String> fieldOrigins = new HashMap<>();
     private Set<String> typesWithInjectedFields;
 
+    // --- 値の表（stage B の途中は、上の文字列と二重に持つ。文字列の側は読み手を移し終えたら消す） ---
+
+    /** 値の表（呼び出し箇所・戻り値・フィールドへの代入・条件の値）。値を読まない指定なら空 */
+    ValueStore values;
+    /** 条件の表 */
+    GuardTable guardTable;
+    /** エッジごとのレシーバの参照（{@link ValueStore}）。無ければ {@link ValueStore#NONE} */
+    int[] recvNodes;
+    /** エッジごとの実引数の並びのノードの参照。無ければ {@link ValueStore#NONE} */
+    int[] argsNodes;
+    /** エッジごとの条件の番号（{@link GuardTable}）。無ければ {@link GuardTable#NONE} */
+    int[] guardRefs;
+    /** 戻り値の参照の範囲（{@code returnOff[メソッドID]} から {@code returnOff[メソッドID + 1]} の手前まで） */
+    int[] returnOff = new int[1];
+    /** 戻り値の参照（追跡できない return は {@link ValueStore#NONE}） */
+    int[] returnRef = new int[0];
+    /** "typeFqn#fieldName" -> 代入される値の頭（葉の参照）。コンストラクタ注入されたフィールドだけが入る */
+    final HashMap<String, Integer> fieldHeads = new HashMap<>();
+
     /**
      * ラムダ／メソッド参照が実装している関数型インターフェースのメソッドキー。
      * ここに載っているメソッドは「ソース上に見えている実装のほかに、
@@ -218,6 +237,31 @@ public final class CallGraph {
         return (i < 0) ? null : originPool.get(i);
     }
 
+    /** 値の表（呼び出し箇所・戻り値・フィールドへの代入・条件の値。{@link ValueStore}） */
+    public ValueStore values() {
+        return values;
+    }
+
+    /** 条件の表（{@link GuardTable}） */
+    public GuardTable guards() {
+        return guardTable;
+    }
+
+    /** エッジのレシーバの参照（{@link ValueStore}）。無ければ {@link ValueStore#NONE} */
+    public int recvNode(int edgeIndex) {
+        return recvNodes[edgeIndex];
+    }
+
+    /** エッジの実引数の並びのノードの参照（{@link ValueStore#ARG_LIST}）。無ければ {@link ValueStore#NONE} */
+    public int argsNode(int edgeIndex) {
+        return argsNodes[edgeIndex];
+    }
+
+    /** エッジを囲む条件の番号（{@link GuardTable}）。無ければ {@link GuardTable#NONE} */
+    public int guardOf(int edgeIndex) {
+        return guardRefs[edgeIndex];
+    }
+
     /** エッジに結び付いた証拠。無ければ空 */
     public List<Hint> hintsOf(int edgeIndex) {
         int i = edgeHint[edgeIndex];
@@ -230,6 +274,26 @@ public final class CallGraph {
     public String[] returnOriginsOf(int methodId) {
         return (returnOrigins == null || methodId < 0 || methodId >= returnOrigins.length)
                 ? null : returnOrigins[methodId];
+    }
+
+    /**
+     * そのメソッドの return が返しうる値の数（R 行。同じ参照は 1 つにまとめてある）。
+     * 追跡できない return も {@link ValueStore#NONE} として数える。R 行が無ければ 0
+     */
+    public int returnCount(int methodId) {
+        return (methodId < 0 || methodId + 1 >= returnOff.length)
+                ? 0 : returnOff[methodId + 1] - returnOff[methodId];
+    }
+
+    /** そのメソッドの k 番目の戻り値の参照（ファイル上で初めて現れた順）。追跡できなければ {@link ValueStore#NONE} */
+    public int returnAt(int methodId, int k) {
+        return returnRef[returnOff[methodId] + k];
+    }
+
+    /** コンストラクタ注入されたフィールド "typeFqn#fieldName" に必ず入る値の頭（葉の参照）。無ければ {@link ValueStore#NONE} */
+    public int fieldHead(String fieldKey) {
+        Integer head = fieldHeads.get(fieldKey);
+        return (head == null) ? ValueStore.NONE : head;
     }
 
     /** コンストラクタ注入されたフィールド "typeFqn#fieldName" に必ず入る値の出所。無ければ null */

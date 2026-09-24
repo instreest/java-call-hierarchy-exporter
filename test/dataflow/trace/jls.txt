@@ -1,0 +1,897 @@
+# jls の経路の記録（test/dataflow/TraceCheck.java。stage B の間だけ置く）
+# --- 経路 ---
+V 0 CompactMain#main() @14 -> CompactMain#greet()
+  res STATIC_BOUND:FINAL_CLASS CompactMain#greet()
+  T CompactMain#greet() p=- c=- o=- k=-
+V 1 CompactMain#greet() @18 -> jls.s07_03.CompactTarget#hello()
+  res STATIC_BOUND:STATIC jls.s07_03.CompactTarget#hello()
+  T jls.s07_03.CompactTarget#hello() p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @13 -> jls.s06_01.Sink#sideEffect()
+  res STATIC_BOUND:STATIC jls.s06_01.Sink#sideEffect()
+  T jls.s06_01.Sink#sideEffect() p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @15 -> jls.s06_01.Sink#mayThrow()
+  res STATIC_BOUND:STATIC jls.s06_01.Sink#mayThrow()
+  T jls.s06_01.Sink#mayThrow() p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @17 -> jls.s06_01.Sink#handled()
+  res STATIC_BOUND:STATIC jls.s06_01.Sink#handled()
+  T jls.s06_01.Sink#handled() p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @19 -> jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object)
+  res STATIC_BOUND:PRIVATE jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object)
+  T jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) p=- c=- o=- k=-
+V 1 jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) @19 -> jls.s06_01.Sink#pickFirst(int)
+  res STATIC_BOUND:STATIC jls.s06_01.Sink#pickFirst(int)
+  T jls.s06_01.Sink#pickFirst(int) p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @20 -> jls.s06_01.Pair#left()
+  res STATIC_BOUND:FINAL_CLASS jls.s06_01.Pair#left()
+  T jls.s06_01.Pair#left() p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @20 -> jls.s06_01.Pair#right()
+  res STATIC_BOUND:FINAL_CLASS jls.s06_01.Pair#right()
+  T jls.s06_01.Pair#right() p=- c=- o=- k=-
+V 0 jls.s06_01.Unnamed#run(java.lang.Object) @21 -> java.util.function.BiFunction#apply(java.lang.Object,java.lang.Object)
+  res DATAFLOW_LAMBDA jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object)
+  T jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) p=[V:1, V:2] c=- o=- k=-
+V 1 jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) @19 -> jls.s06_01.Sink#pickFirst(int)
+  res STATIC_BOUND:STATIC jls.s06_01.Sink#pickFirst(int)
+  ctx p=[V:1, V:2] c=- o=- k=-
+  T jls.s06_01.Sink#pickFirst(int) p=- c=- o=- k=-
+V 0 jls.s07_05_05.ModuleImport#run() @14 -> java.util.List#of(java.lang.Object)
+  res STATIC_BOUND:STATIC java.util.List#of(java.lang.Object)
+  T java.util.List#of(java.lang.Object) p=- c=- o=- k=-
+V 0 jls.s07_05_05.ModuleImport#run() @15 -> java.lang.String#length()
+  res STATIC_BOUND:FINAL_CLASS java.lang.String#length()
+  T java.lang.String#length() p=- c=- o=- k=-
+V 0 jls.s07_05_05.ModuleImport#run() @16 -> jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function)
+  res STATIC_BOUND:STATIC jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function)
+  T jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function) p=- c=- o=- k=-
+V 0 jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @25 -> jls.s08_01_03.Outer.Inner#<init>(int)
+  res STATIC_BOUND:CTOR jls.s08_01_03.Outer.Inner#<init>(int)
+  T jls.s08_01_03.Outer.Inner#<init>(int) p=[V:1] c=- o=- k=-
+V 1 jls.s08_01_03.Outer.Inner#<init>(int) @14 -> jls.s08_01_03.Sink#inner(int)
+  res STATIC_BOUND:STATIC jls.s08_01_03.Sink#inner(int)
+  ctx p=[V:1] c=- o=- k=-
+  T jls.s08_01_03.Sink#inner(int) p=- c=- o=- k=-
+V 0 jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @26 -> jls.s08_01_03.Outer.Inner#<init>(int)
+  res STATIC_BOUND:CTOR jls.s08_01_03.Outer.Inner#<init>(int)
+  T jls.s08_01_03.Outer.Inner#<init>(int) p=[V:2] c=- o=- k=-
+V 1 jls.s08_01_03.Outer.Inner#<init>(int) @14 -> jls.s08_01_03.Sink#inner(int)
+  res STATIC_BOUND:STATIC jls.s08_01_03.Sink#inner(int)
+  ctx p=[V:2] c=- o=- k=-
+  T jls.s08_01_03.Sink#inner(int) p=- c=- o=- k=-
+V 0 jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @27 -> jls.s08_01_03.Outer.Nested#<init>()
+  res STATIC_BOUND:CTOR jls.s08_01_03.Outer.Nested#<init>()
+  T jls.s08_01_03.Outer.Nested#<init>() p=- c=- o=- k=-
+V 1 jls.s08_01_03.Outer.Nested#<init>() @20 -> jls.s08_01_03.Sink#nested()
+  res STATIC_BOUND:STATIC jls.s08_01_03.Sink#nested()
+  T jls.s08_01_03.Sink#nested() p=- c=- o=- k=-
+V 0 jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @33 -> jls.s08_01_03.Outer$1Local#go()
+  res NO_OVERRIDE jls.s08_01_03.Outer$1Local#go()
+  T jls.s08_01_03.Outer$1Local#go() p=- c=- o=- k=-
+V 1 jls.s08_01_03.Outer$1Local#go() @30 -> jls.s08_01_03.Sink#local(int)
+  res STATIC_BOUND:STATIC jls.s08_01_03.Sink#local(int)
+  T jls.s08_01_03.Sink#local(int) p=- c=- o=- k=-
+V 0 jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @33 -> jls.s08_01_03.Outer$1Local#<init>()
+  res STATIC_BOUND:CTOR jls.s08_01_03.Outer$1Local#<init>()
+  T jls.s08_01_03.Outer$1Local#<init>() p=- c=- o=- k=-
+V 0 jls.s08_04_08.Derived#<init>() @51 -> jls.s08_04_08.Base#<init>()
+  res STATIC_BOUND:CTOR jls.s08_04_08.Base#<init>()
+  T jls.s08_04_08.Base#<init>() p=- c=- o=- k=-
+V 0 jls.s08_04_08.Derived#describe() @53 -> jls.s08_04_08.Sink#derivedStatic()
+  res STATIC_BOUND:STATIC jls.s08_04_08.Sink#derivedStatic()
+  T jls.s08_04_08.Sink#derivedStatic() p=- c=- o=- k=-
+V 0 jls.s08_04_08.Derived#secret() @58 -> jls.s08_04_08.Sink#derivedPrivate()
+  res STATIC_BOUND:STATIC jls.s08_04_08.Sink#derivedPrivate()
+  T jls.s08_04_08.Sink#derivedPrivate() p=- c=- o=- k=-
+V 0 jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) @18 -> jls.s08_04_08.Store#put(java.lang.Object)
+  res CHA jls.s08_04_08.Store#put(java.lang.Object) jls.s08_04_08.TextStore#put(java.lang.String)
+  left jls.s08_04_08.Store#put type
+  T jls.s08_04_08.Store#put(java.lang.Object) p=- c=- o=- k=-
+  T jls.s08_04_08.TextStore#put(java.lang.String) p=- c=- o=- k=-
+V 0 jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) @19 -> jls.s08_04_08.Base#describe()
+  res STATIC_BOUND:STATIC jls.s08_04_08.Base#describe()
+  T jls.s08_04_08.Base#describe() p=- c=- o=- k=-
+V 1 jls.s08_04_08.Base#describe() @39 -> jls.s08_04_08.Sink#baseStatic()
+  res STATIC_BOUND:STATIC jls.s08_04_08.Sink#baseStatic()
+  T jls.s08_04_08.Sink#baseStatic() p=- c=- o=- k=-
+V 0 jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) @20 -> jls.s08_04_08.Base#template()
+  res NO_OVERRIDE jls.s08_04_08.Base#template()
+  T jls.s08_04_08.Base#template() p=- c=- o=- k=-
+V 1 jls.s08_04_08.Base#template() @47 -> jls.s08_04_08.Base#secret()
+  res STATIC_BOUND:PRIVATE jls.s08_04_08.Base#secret()
+  T jls.s08_04_08.Base#secret() p=- c=- o=- k=-
+V 2 jls.s08_04_08.Base#secret() @43 -> jls.s08_04_08.Sink#basePrivate()
+  res STATIC_BOUND:STATIC jls.s08_04_08.Sink#basePrivate()
+  T jls.s08_04_08.Sink#basePrivate() p=- c=- o=- k=-
+V 0 jls.s08_04_08.TextStore#<init>() @30 -> jls.s08_04_08.Store#<init>()
+  res STATIC_BOUND:CTOR jls.s08_04_08.Store#<init>()
+  T jls.s08_04_08.Store#<init>() p=- c=- o=- k=-
+V 0 jls.s08_04_08.a.PackageBase#run() @13 -> jls.s08_04_08.a.PackageBase#hook()
+  res CHA jls.s08_04_08.a.PackageBase#hook() jls.s08_04_08.a.Widened#hook() jls.s08_04_08.b.WidenedSub#hook()
+  left jls.s08_04_08.a.PackageBase#hook type
+  T jls.s08_04_08.a.PackageBase#hook() p=- c=- o=- k=-
+  T jls.s08_04_08.a.Widened#hook() p=- c=- o=- k=-
+  T jls.s08_04_08.b.WidenedSub#hook() p=- c=- o=- k=-
+V 0 jls.s08_04_08.b.OtherPackageSub#<init>() @9 -> jls.s08_04_08.a.PackageBase#<init>()
+  res STATIC_BOUND:CTOR jls.s08_04_08.a.PackageBase#<init>()
+  T jls.s08_04_08.a.PackageBase#<init>() p=- c=- o=- k=-
+V 0 jls.s08_04_08.b.WidenedSub#<init>() @10 -> jls.s08_04_08.a.Widened#<init>()
+  res STATIC_BOUND:CTOR jls.s08_04_08.a.Widened#<init>()
+  T jls.s08_04_08.a.Widened#<init>() p=- c=- o=- k=-
+V 1 jls.s08_04_08.a.Widened#<init>() @9 -> jls.s08_04_08.a.PackageBase#<init>()
+  res STATIC_BOUND:CTOR jls.s08_04_08.a.PackageBase#<init>()
+  T jls.s08_04_08.a.PackageBase#<init>() p=- c=- o=- k=-
+V 0 jls.s08_08.Constructors#run() @19 -> jls.s08_08.ImplicitSuper#<init>()
+  res STATIC_BOUND:CTOR jls.s08_08.ImplicitSuper#<init>()
+  T jls.s08_08.ImplicitSuper#<init>() p=- c=- o=- k=-
+V 1 jls.s08_08.ImplicitSuper#<init>() @37 -> jls.s08_08.Parent#<init>()
+  res STATIC_BOUND:CTOR jls.s08_08.Parent#<init>()
+  T jls.s08_08.Parent#<init>() p=- c=- o=- k=-
+V 2 jls.s08_08.Parent#<init>() @28 -> jls.s08_08.Sink#parentNoArg()
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#parentNoArg()
+  T jls.s08_08.Sink#parentNoArg() p=- c=- o=- k=-
+V 1 jls.s08_08.ImplicitSuper#<init>() @38 -> jls.s08_08.Sink#body()
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#body()
+  T jls.s08_08.Sink#body() p=- c=- o=- k=-
+V 0 jls.s08_08.Constructors#run() @20 -> jls.s08_08.Prologue#<init>(int)
+  res STATIC_BOUND:CTOR jls.s08_08.Prologue#<init>(int)
+  T jls.s08_08.Prologue#<init>(int) p=[V:1] c=- o=- k=-
+V 1 jls.s08_08.Prologue#<init>(int) @44 -> jls.s08_08.Sink#check(int)
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#check(int)
+  ctx p=[V:1] c=- o=- k=-
+  T jls.s08_08.Sink#check(int) p=- c=- o=- k=-
+V 1 jls.s08_08.Prologue#<init>(int) @45 -> jls.s08_08.Parent#<init>(int)
+  res STATIC_BOUND:CTOR jls.s08_08.Parent#<init>(int)
+  ctx p=[V:1] c=- o=- k=-
+  T jls.s08_08.Parent#<init>(int) p=- c=- o=- k=-
+V 2 jls.s08_08.Parent#<init>(int) @32 -> jls.s08_08.Sink#parentInt(int)
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#parentInt(int)
+  T jls.s08_08.Sink#parentInt(int) p=- c=- o=- k=-
+V 0 jls.s08_08.Constructors#run() @21 -> jls.s08_08.Fields#<init>(int)
+  res STATIC_BOUND:CTOR jls.s08_08.Fields#<init>(int)
+  T jls.s08_08.Fields#<init>(int) p=[V:2] c=- o=- k=-
+V 1 jls.s08_08.Fields#<init>(int) @61 -> jls.s08_08.Fields#<init>()
+  res STATIC_BOUND:CTOR jls.s08_08.Fields#<init>()
+  ctx p=[V:2] c=- o=- k=-
+  T jls.s08_08.Fields#<init>() p=- c=- o=- k=-
+V 2 jls.s08_08.Fields#<init>() @50 -> jls.s08_08.Sink#fieldInit()
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#fieldInit()
+  T jls.s08_08.Sink#fieldInit() p=- c=- o=- k=-
+V 2 jls.s08_08.Fields#<init>() @53 -> jls.s08_08.Sink#instanceInit()
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#instanceInit()
+  T jls.s08_08.Sink#instanceInit() p=- c=- o=- k=-
+V 2 jls.s08_08.Fields#<init>() @57 -> jls.s08_08.Sink#body()
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#body()
+  T jls.s08_08.Sink#body() p=- c=- o=- k=-
+V 1 jls.s08_08.Fields#<init>(int) @62 -> jls.s08_08.Sink#delegated(int)
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#delegated(int)
+  ctx p=[V:2] c=- o=- k=-
+  T jls.s08_08.Sink#delegated(int) p=- c=- o=- k=-
+V 0 jls.s08_08.Constructors#run() @22 -> jls.s08_08.DefaultCtor#<init>()
+  res STATIC_BOUND:CTOR jls.s08_08.DefaultCtor#<init>()
+  T jls.s08_08.DefaultCtor#<init>() p=- c=- o=- k=-
+V 1 jls.s08_08.DefaultCtor#<init>() @66 -> jls.s08_08.Parent#<init>()
+  res STATIC_BOUND:CTOR jls.s08_08.Parent#<init>()
+  T jls.s08_08.Parent#<init>() p=- c=- o=- k=-
+V 2 jls.s08_08.Parent#<init>() @28 -> jls.s08_08.Sink#parentNoArg()
+  res STATIC_BOUND:STATIC jls.s08_08.Sink#parentNoArg()
+  T jls.s08_08.Sink#parentNoArg() p=- c=- o=- k=-
+V 0 jls.s08_09.Planet#<clinit>() @18 -> jls.s08_09.Planet#<init>(java.lang.String)
+  res STATIC_BOUND:CTOR jls.s08_09.Planet#<init>(java.lang.String)
+  T jls.s08_09.Planet#<init>(java.lang.String) p=[L:e] c=- o=- k=-
+V 1 jls.s08_09.Planet#<init>(java.lang.String) @27 -> jls.s08_09.Sink#register(java.lang.String)
+  res STATIC_BOUND:STATIC jls.s08_09.Sink#register(java.lang.String)
+  ctx p=[L:e] c=- o=- k=-
+  T jls.s08_09.Sink#register(java.lang.String) p=- c=- o=- k=-
+V 0 jls.s08_09.Planet#<clinit>() @19 -> jls.s08_09.Planet$1#<init>(java.lang.String)
+  res STATIC_BOUND:CTOR jls.s08_09.Planet$1#<init>(java.lang.String)
+  T jls.s08_09.Planet$1#<init>(java.lang.String) p=- c=- o=- k=-
+V 1 jls.s08_09.Planet$1#<init>(java.lang.String) @19 -> jls.s08_09.Planet#<init>(java.lang.String)
+  res STATIC_BOUND:CTOR jls.s08_09.Planet#<init>(java.lang.String)
+  T jls.s08_09.Planet#<init>(java.lang.String) p=- c=- o=- k=-
+V 2 jls.s08_09.Planet#<init>(java.lang.String) @27 -> jls.s08_09.Sink#register(java.lang.String)
+  res STATIC_BOUND:STATIC jls.s08_09.Sink#register(java.lang.String)
+  T jls.s08_09.Sink#register(java.lang.String) p=- c=- o=- k=-
+V 0 jls.s08_09.Planet#run(java.lang.String) @35 -> jls.s08_09.Planet#weight()
+  res CHA jls.s08_09.Planet#weight() jls.s08_09.Planet$1#weight()
+  left jls.s08_09.Planet#weight type
+  T jls.s08_09.Planet#weight() p=- c=- o=- k=-
+  T jls.s08_09.Planet$1#weight() p=- c=- o=- k=-
+V 0 jls.s08_09.Planet#run(java.lang.String) @35 -> jls.s08_09.Planet#valueOf(java.lang.String)
+  res STATIC_BOUND:STATIC jls.s08_09.Planet#valueOf(java.lang.String)
+  T jls.s08_09.Planet#valueOf(java.lang.String) p=- c=- o=- k=-
+V 0 jls.s08_09.Planet#run(java.lang.String) @36 -> jls.s08_09.Planet#values()
+  res STATIC_BOUND:STATIC jls.s08_09.Planet#values()
+  T jls.s08_09.Planet#values() p=- c=- o=- k=-
+V 0 jls.s08_09.Planet#run(java.lang.String) @37 -> jls.s08_09.Planet#weight()
+  res CHA jls.s08_09.Planet#weight() jls.s08_09.Planet$1#weight()
+  left jls.s08_09.Planet#weight type
+  T jls.s08_09.Planet#weight() p=- c=- o=- k=-
+  T jls.s08_09.Planet$1#weight() p=- c=- o=- k=-
+V 0 jls.s08_10.Records#run() @17 -> jls.s08_10.Range#<init>(int,int)
+  res STATIC_BOUND:CTOR jls.s08_10.Range#<init>(int,int)
+  T jls.s08_10.Range#<init>(int,int) p=- c=- o=- k=-
+V 1 jls.s08_10.Range#<init>(int,int) @25 -> jls.s08_10.Sink#validate(int,int)
+  res STATIC_BOUND:STATIC jls.s08_10.Sink#validate(int,int)
+  T jls.s08_10.Sink#validate(int,int) p=- c=- o=- k=-
+V 0 jls.s08_10.Records#run() @18 -> jls.s08_10.Pair#<init>(java.lang.String,int)
+  res STATIC_BOUND:CTOR jls.s08_10.Pair#<init>(java.lang.String,int)
+  T jls.s08_10.Pair#<init>(java.lang.String,int) p=- c=- o=- k=-
+V 0 jls.s08_10.Records#run() @19 -> jls.s08_10.Range#low()
+  res STATIC_BOUND:FINAL_CLASS jls.s08_10.Range#low()
+  T jls.s08_10.Range#low() p=- c=- o=- k=-
+V 1 jls.s08_10.Range#low() @30 -> jls.s08_10.Sink#accessLow()
+  res STATIC_BOUND:STATIC jls.s08_10.Sink#accessLow()
+  T jls.s08_10.Sink#accessLow() p=- c=- o=- k=-
+V 0 jls.s08_10.Records#run() @19 -> jls.s08_10.Range#high()
+  res STATIC_BOUND:FINAL_CLASS jls.s08_10.Range#high()
+  T jls.s08_10.Range#high() p=- c=- o=- k=-
+V 0 jls.s08_10.Records#run() @19 -> jls.s08_10.Pair#count()
+  res STATIC_BOUND:FINAL_CLASS jls.s08_10.Pair#count()
+  T jls.s08_10.Pair#count() p=- c=- o=- k=-
+V 0 jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) @17 -> jls.s09_04.Greeter#greet()
+  res NO_OVERRIDE jls.s09_04.Greeter#greet()
+  T jls.s09_04.Greeter#greet() p=- c=- o=- k=-
+V 1 jls.s09_04.Greeter#greet() @25 -> jls.s09_04.Greeter#helper()
+  res STATIC_BOUND:PRIVATE jls.s09_04.Greeter#helper()
+  T jls.s09_04.Greeter#helper() p=- c=- o=- k=-
+V 2 jls.s09_04.Greeter#helper() @29 -> jls.s09_04.Sink#privateHelper()
+  res STATIC_BOUND:STATIC jls.s09_04.Sink#privateHelper()
+  T jls.s09_04.Sink#privateHelper() p=- c=- o=- k=-
+V 0 jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) @18 -> jls.s09_04.Polite#greet()
+  res NO_OVERRIDE jls.s09_04.Polite#greet()
+  T jls.s09_04.Polite#greet() p=- c=- o=- k=-
+V 1 jls.s09_04.Polite#greet() @43 -> jls.s09_04.Sink#polite()
+  res STATIC_BOUND:STATIC jls.s09_04.Sink#polite()
+  T jls.s09_04.Sink#polite() p=- c=- o=- k=-
+V 1 jls.s09_04.Polite#greet() @44 -> jls.s09_04.Greeter#greet()
+  res STATIC_BOUND:SUPER jls.s09_04.Greeter#greet()
+  T jls.s09_04.Greeter#greet() p=- c=- o=- k=-
+V 2 jls.s09_04.Greeter#greet() @25 -> jls.s09_04.Greeter#helper()
+  res STATIC_BOUND:PRIVATE jls.s09_04.Greeter#helper()
+  T jls.s09_04.Greeter#helper() p=- c=- o=- k=-
+V 3 jls.s09_04.Greeter#helper() @29 -> jls.s09_04.Sink#privateHelper()
+  res STATIC_BOUND:STATIC jls.s09_04.Sink#privateHelper()
+  T jls.s09_04.Sink#privateHelper() p=- c=- o=- k=-
+V 0 jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) @19 -> jls.s09_04.Greeter#util()
+  res STATIC_BOUND:STATIC jls.s09_04.Greeter#util()
+  T jls.s09_04.Greeter#util() p=- c=- o=- k=-
+V 1 jls.s09_04.Greeter#util() @33 -> jls.s09_04.Sink#staticUtil()
+  res STATIC_BOUND:STATIC jls.s09_04.Sink#staticUtil()
+  T jls.s09_04.Sink#staticUtil() p=- c=- o=- k=-
+V 0 jls.s12_04.ClassInit#<clinit>() @16 -> jls.s12_04.Sink#first()
+  res STATIC_BOUND:STATIC jls.s12_04.Sink#first()
+  T jls.s12_04.Sink#first() p=- c=- o=- k=-
+V 0 jls.s12_04.ClassInit#<clinit>() @19 -> jls.s12_04.Sink#staticBlock()
+  res STATIC_BOUND:STATIC jls.s12_04.Sink#staticBlock()
+  T jls.s12_04.Sink#staticBlock() p=- c=- o=- k=-
+V 0 jls.s12_04.ClassInit#<clinit>() @22 -> jls.s12_04.Sink#last()
+  res STATIC_BOUND:STATIC jls.s12_04.Sink#last()
+  T jls.s12_04.Sink#last() p=- c=- o=- k=-
+V 0 jls.s12_04.Config#<clinit>() @26 -> jls.s12_04.Sink#size()
+  res STATIC_BOUND:STATIC jls.s12_04.Sink#size()
+  T jls.s12_04.Sink#size() p=- c=- o=- k=-
+V 0 jls.s13_01.Base#work() @73 -> jls.s13_01.Sink#base()
+  res STATIC_BOUND:STATIC jls.s13_01.Sink#base()
+  T jls.s13_01.Sink#base() p=- c=- o=- k=-
+V 0 jls.s13_01.Leaf#<init>() @84 -> jls.s13_01.Mid#<init>()
+  res STATIC_BOUND:CTOR jls.s13_01.Mid#<init>()
+  T jls.s13_01.Mid#<init>() p=- c=- o=- k=-
+V 1 jls.s13_01.Mid#<init>() @77 -> jls.s13_01.Base#<init>()
+  res STATIC_BOUND:CTOR jls.s13_01.Base#<init>()
+  T jls.s13_01.Base#<init>() p=- c=- o=- k=-
+V 0 jls.s13_01.LeafUser#<init>() @42 -> jls.s13_01.Mid#<init>()
+  res STATIC_BOUND:CTOR jls.s13_01.Mid#<init>()
+  T jls.s13_01.Mid#<init>() p=- c=- o=- k=-
+V 1 jls.s13_01.Mid#<init>() @77 -> jls.s13_01.Base#<init>()
+  res STATIC_BOUND:CTOR jls.s13_01.Base#<init>()
+  T jls.s13_01.Base#<init>() p=- c=- o=- k=-
+V 0 jls.s13_01.LeafUser#call() @44 -> jls.s13_01.Mid#work()
+  res NO_OVERRIDE jls.s13_01.Mid#work()
+  T jls.s13_01.Mid#work() p=- c=- o=- k=-
+V 1 jls.s13_01.Mid#work() @80 -> jls.s13_01.Sink#mid()
+  res STATIC_BOUND:STATIC jls.s13_01.Sink#mid()
+  T jls.s13_01.Sink#mid() p=- c=- o=- k=-
+V 0 jls.s13_01.Other#<init>() @91 -> jls.s13_01.Base#<init>()
+  res STATIC_BOUND:CTOR jls.s13_01.Base#<init>()
+  T jls.s13_01.Base#<init>() p=- c=- o=- k=-
+V 0 jls.s13_01.Other#work() @94 -> jls.s13_01.Sink#other()
+  res STATIC_BOUND:STATIC jls.s13_01.Sink#other()
+  T jls.s13_01.Sink#other() p=- c=- o=- k=-
+V 0 jls.s13_01.PlainChild#<init>() @57 -> jls.s13_01.Plain#<init>()
+  res STATIC_BOUND:CTOR jls.s13_01.Plain#<init>()
+  T jls.s13_01.Plain#<init>() p=- c=- o=- k=-
+V 0 jls.s13_01.Polite#greet() @67 -> jls.s13_01.Sink#polite()
+  res STATIC_BOUND:STATIC jls.s13_01.Sink#polite()
+  T jls.s13_01.Sink#polite() p=- c=- o=- k=-
+V 0 jls.s13_01.Qualifying#viaInterfaceDefault(jls.s13_01.Plain) @26 -> jls.s13_01.Greeter#greet()
+  res CHA jls.s13_01.Greeter#greet() jls.s13_01.PlainChild#greet()
+  left jls.s13_01.Greeter#greet type
+  T jls.s13_01.Greeter#greet() p=- c=- o=- k=-
+  T jls.s13_01.PlainChild#greet() p=- c=- o=- k=-
+V 0 jls.s13_01.Qualifying#viaSubclass(jls.s13_01.Mid) @30 -> jls.s13_01.Mid#work()
+  res CHA jls.s13_01.Mid#work() jls.s13_01.Leaf#work()
+  left jls.s13_01.Mid#work type
+  T jls.s13_01.Mid#work() p=- c=- o=- k=-
+  T jls.s13_01.Leaf#work() p=- c=- o=- k=-
+V 0 jls.s13_01.Qualifying#viaTypeVariable(jls.s13_01.Mid) @34 -> jls.s13_01.Mid#work()
+  res CHA jls.s13_01.Mid#work() jls.s13_01.Leaf#work()
+  left jls.s13_01.Mid#work type
+  T jls.s13_01.Mid#work() p=- c=- o=- k=-
+  T jls.s13_01.Leaf#work() p=- c=- o=- k=-
+V 0 jls.s13_01.Qualifying#viaMethodRef(jls.s13_01.Mid) @38 -> jls.s13_01.Mid#work()
+  res CHA jls.s13_01.Mid#work() jls.s13_01.Leaf#work()
+  left jls.s13_01.Mid#work type
+  T jls.s13_01.Mid#work() p=- c=- o=- k=-
+  T jls.s13_01.Leaf#work() p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @18 -> jls.s14_11.Sink#isLarge(int)
+  res STATIC_BOUND:STATIC jls.s14_11.Sink#isLarge(int)
+  T jls.s14_11.Sink#isLarge(int) p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @18 -> jls.s14_11.Circle#r()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_11.Circle#r()
+  T jls.s14_11.Circle#r() p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @18 -> jls.s14_11.Sink#large()
+  res STATIC_BOUND:STATIC jls.s14_11.Sink#large()
+  T jls.s14_11.Sink#large() p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @19 -> jls.s14_11.Sink#circle(int)
+  res STATIC_BOUND:STATIC jls.s14_11.Sink#circle(int)
+  T jls.s14_11.Sink#circle(int) p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @19 -> jls.s14_11.Circle#r()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_11.Circle#r()
+  T jls.s14_11.Circle#r() p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @20 -> jls.s14_11.Sink#square(int)
+  res STATIC_BOUND:STATIC jls.s14_11.Sink#square(int)
+  T jls.s14_11.Sink#square(int) p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#area(jls.s14_11.Shape) @20 -> jls.s14_11.Square#side()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_11.Square#side()
+  T jls.s14_11.Square#side() p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#label(java.lang.String) @26 -> jls.s14_11.Sink#kindA()
+  res STATIC_BOUND:STATIC jls.s14_11.Sink#kindA()
+  T jls.s14_11.Sink#kindA() p=- c=- o=- k=-
+V 0 jls.s14_11.Switches#label(java.lang.String) @27 -> jls.s14_11.Sink#kindB()
+  res STATIC_BOUND:STATIC jls.s14_11.Sink#kindB()
+  T jls.s14_11.Sink#kindB() p=- c=- o=- k=-
+V 0 jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) @20 -> jls.s14_14_02.Countdown#iterator()
+  res NO_OVERRIDE jls.s14_14_02.Countdown#iterator()
+  T jls.s14_14_02.Countdown#iterator() p=- c=- o=- k=-
+V 1 jls.s14_14_02.Countdown#iterator() @33 -> jls.s14_14_02.CountIterator#<init>(int)
+  res STATIC_BOUND:CTOR jls.s14_14_02.CountIterator#<init>(int)
+  T jls.s14_14_02.CountIterator#<init>(int) p=[V:3] c=- o=- k=-
+V 0 jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) @20 -> java.util.Iterator#hasNext()
+  res CHA java.util.Iterator#hasNext() jls.s14_14_02.CountIterator#hasNext()
+  left java.util.Iterator#hasNext type
+  T java.util.Iterator#hasNext() p=- c=- o=- k=-
+  T jls.s14_14_02.CountIterator#hasNext() p=- c=- o=- k=-
+V 0 jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) @20 -> java.util.Iterator#next()
+  res CHA java.util.Iterator#next() jls.s14_14_02.CountIterator#next()
+  left java.util.Iterator#next type
+  T java.util.Iterator#next() p=- c=- o=- k=-
+  T jls.s14_14_02.CountIterator#next() p=- c=- o=- k=-
+V 0 jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @13 -> jls.s14_20_03.Resource#<init>()
+  res STATIC_BOUND:CTOR jls.s14_20_03.Resource#<init>()
+  T jls.s14_20_03.Resource#<init>() p=- c=- o=- k=-
+V 0 jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @14 -> jls.s14_20_03.Sink#body()
+  res STATIC_BOUND:STATIC jls.s14_20_03.Sink#body()
+  T jls.s14_20_03.Sink#body() p=- c=- o=- k=-
+V 0 jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @13 -> jls.s14_20_03.Resource#close()
+  res NO_OVERRIDE jls.s14_20_03.Resource#close()
+  T jls.s14_20_03.Resource#close() p=- c=- o=- k=-
+V 1 jls.s14_20_03.Resource#close() @22 -> jls.s14_20_03.Sink#closed()
+  res STATIC_BOUND:STATIC jls.s14_20_03.Sink#closed()
+  T jls.s14_20_03.Sink#closed() p=- c=- o=- k=-
+V 0 jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @13 -> jls.s14_20_03.Resource#close()
+  res NO_OVERRIDE jls.s14_20_03.Resource#close()
+  T jls.s14_20_03.Resource#close() p=- c=- o=- k=-
+V 1 jls.s14_20_03.Resource#close() @22 -> jls.s14_20_03.Sink#closed()
+  res STATIC_BOUND:STATIC jls.s14_20_03.Sink#closed()
+  T jls.s14_20_03.Sink#closed() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @15 -> jls.s14_30.Point#x()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#x()
+  T jls.s14_30.Point#x() p=- c=- o=- k=-
+V 1 jls.s14_30.Point#x() @28 -> jls.s14_30.Sink#readX()
+  res STATIC_BOUND:STATIC jls.s14_30.Sink#readX()
+  T jls.s14_30.Sink#readX() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @15 -> jls.s14_30.Point#y()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#y()
+  T jls.s14_30.Point#y() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Line#end()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_30.Line#end()
+  T jls.s14_30.Line#end() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Line#start()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_30.Line#start()
+  T jls.s14_30.Line#start() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Point#x()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#x()
+  T jls.s14_30.Point#x() p=- c=- o=- k=-
+V 1 jls.s14_30.Point#x() @28 -> jls.s14_30.Sink#readX()
+  res STATIC_BOUND:STATIC jls.s14_30.Sink#readX()
+  T jls.s14_30.Sink#readX() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Point#y()
+  res STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#y()
+  T jls.s14_30.Point#y() p=- c=- o=- k=-
+V 0 jls.s14_30.Patterns#run(java.lang.Object) @19 -> jls.s14_30.Point#hashCode()
+  res STATIC_BOUND:FINAL_METHOD jls.s14_30.Point#hashCode()
+  T jls.s14_30.Point#hashCode() p=- c=- o=- k=-
+V 0 jls.s15_09_05.Anonymous#make() @13 -> jls.s15_09_05.Anonymous$1#<init>(int)
+  res STATIC_BOUND:CTOR jls.s15_09_05.Anonymous$1#<init>(int)
+  T jls.s15_09_05.Anonymous$1#<init>(int) p=- c=- o=- k=-
+V 1 jls.s15_09_05.Anonymous$1#<init>(int) @13 -> jls.s15_09_05.Task#<init>(int)
+  res STATIC_BOUND:CTOR jls.s15_09_05.Task#<init>(int)
+  T jls.s15_09_05.Task#<init>(int) p=- c=- o=- k=-
+V 2 jls.s15_09_05.Task#<init>(int) @24 -> jls.s15_09_05.Sink#taskInit(int)
+  res STATIC_BOUND:STATIC jls.s15_09_05.Sink#taskInit(int)
+  T jls.s15_09_05.Sink#taskInit(int) p=- c=- o=- k=-
+V 0 jls.s15_09_05.Anonymous$1#perform() @16 -> jls.s15_09_05.Sink#anonymousPerform()
+  res STATIC_BOUND:STATIC jls.s15_09_05.Sink#anonymousPerform()
+  T jls.s15_09_05.Sink#anonymousPerform() p=- c=- o=- k=-
+V 0 jls.s15_12.Cat#<init>() @86 -> jls.s15_12.Animal#<init>()
+  res STATIC_BOUND:CTOR jls.s15_12.Animal#<init>()
+  T jls.s15_12.Animal#<init>() p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @31 -> jls.s15_12.Invocation#pick(long)
+  res NO_OVERRIDE jls.s15_12.Invocation#pick(long)
+  T jls.s15_12.Invocation#pick(long) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @32 -> jls.s15_12.Invocation#box(java.lang.Integer)
+  res NO_OVERRIDE jls.s15_12.Invocation#box(java.lang.Integer)
+  T jls.s15_12.Invocation#box(java.lang.Integer) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @33 -> jls.s15_12.Invocation#vararg(int[])
+  res NO_OVERRIDE jls.s15_12.Invocation#vararg(int[])
+  T jls.s15_12.Invocation#vararg(int[]) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @34 -> jls.s15_12.Invocation#specific(java.lang.String)
+  res NO_OVERRIDE jls.s15_12.Invocation#specific(java.lang.String)
+  T jls.s15_12.Invocation#specific(java.lang.String) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @35 -> jls.s15_12.Invocation#id(java.lang.Number)
+  res NO_OVERRIDE jls.s15_12.Invocation#id(java.lang.Number)
+  T jls.s15_12.Invocation#id(java.lang.Number) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @35 -> java.lang.Integer#valueOf(int)
+  res STATIC_BOUND:STATIC java.lang.Integer#valueOf(int)
+  T java.lang.Integer#valueOf(int) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @36 -> jls.s15_12.Animal#kingdom()
+  res STATIC_BOUND:STATIC jls.s15_12.Animal#kingdom()
+  T jls.s15_12.Animal#kingdom() p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @37 -> jls.s15_12.Animal#sound()
+  res CHA jls.s15_12.Animal#sound() jls.s15_12.Cat#sound() jls.s15_12.Dog#sound()
+  left jls.s15_12.Animal#sound type
+  T jls.s15_12.Animal#sound() p=- c=- o=- k=-
+  T jls.s15_12.Cat#sound() p=- c=- o=- k=-
+  T jls.s15_12.Dog#sound() p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @38 -> jls.s15_12.Dog#bark(java.lang.Integer)
+  res NO_OVERRIDE jls.s15_12.Dog#bark(java.lang.Integer)
+  T jls.s15_12.Dog#bark(java.lang.Integer) p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @38 -> jls.s15_12.Dog#<init>()
+  res STATIC_BOUND:CTOR jls.s15_12.Dog#<init>()
+  T jls.s15_12.Dog#<init>() p=- c=- o=- k=-
+V 1 jls.s15_12.Dog#<init>() @76 -> jls.s15_12.Animal#<init>()
+  res STATIC_BOUND:CTOR jls.s15_12.Animal#<init>()
+  T jls.s15_12.Animal#<init>() p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @39 -> jls.s15_12.Dog#sound()
+  res NO_OVERRIDE jls.s15_12.Dog#sound()
+  T jls.s15_12.Dog#sound() p=- c=- o=- k=-
+V 1 jls.s15_12.Dog#sound() @79 -> jls.s15_12.Animal#sound()
+  res STATIC_BOUND:SUPER jls.s15_12.Animal#sound()
+  T jls.s15_12.Animal#sound() p=- c=- o=- k=-
+V 0 jls.s15_12.Invocation#run(jls.s15_12.Animal) @39 -> jls.s15_12.Dog#<init>()
+  res STATIC_BOUND:CTOR jls.s15_12.Dog#<init>()
+  T jls.s15_12.Dog#<init>() p=- c=- o=- k=-
+V 1 jls.s15_12.Dog#<init>() @76 -> jls.s15_12.Animal#<init>()
+  res STATIC_BOUND:CTOR jls.s15_12.Animal#<init>()
+  T jls.s15_12.Animal#<init>() p=- c=- o=- k=-
+V 0 jls.s15_13.MethodRefs#<init>() @22 -> jls.s15_13.Base#<init>()
+  res STATIC_BOUND:CTOR jls.s15_13.Base#<init>()
+  T jls.s15_13.Base#<init>() p=- c=- o=- k=-
+V 0 jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @24 -> jls.s15_13.Helper#parse(java.lang.String)
+  res STATIC_BOUND:STATIC jls.s15_13.Helper#parse(java.lang.String)
+  T jls.s15_13.Helper#parse(java.lang.String) p=- c=- o=- k=-
+V 1 jls.s15_13.Helper#parse(java.lang.String) @45 -> java.lang.String#length()
+  res STATIC_BOUND:FINAL_CLASS java.lang.String#length()
+  T java.lang.String#length() p=- c=- o=- k=-
+V 0 jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @25 -> jls.s15_13.Helper#name()
+  res NO_OVERRIDE jls.s15_13.Helper#name()
+  T jls.s15_13.Helper#name() p=- c=- o=- k=-
+V 0 jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @26 -> jls.s15_13.Helper#greet(java.lang.String)
+  res NO_OVERRIDE jls.s15_13.Helper#greet(java.lang.String)
+  T jls.s15_13.Helper#greet(java.lang.String) p=- c=- o=- k=-
+V 0 jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @27 -> jls.s15_13.Base#baseWork()
+  res STATIC_BOUND:SUPER jls.s15_13.Base#baseWork()
+  T jls.s15_13.Base#baseWork() p=- c=- o=- k=-
+V 0 jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @28 -> jls.s15_13.Helper#<init>()
+  res STATIC_BOUND:CTOR jls.s15_13.Helper#<init>()
+  T jls.s15_13.Helper#<init>() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#<clinit>() @19 -> jls.s15_27.Lambdas#lambda$static$0()
+  res STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$static$0()
+  T jls.s15_27.Lambdas#lambda$static$0() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$static$0() @19 -> jls.s15_27.Sink#staticJob()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#staticJob()
+  T jls.s15_27.Sink#staticJob() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#<init>() @20 -> jls.s15_27.Lambdas#lambda$new$1()
+  res STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$new$1()
+  T jls.s15_27.Lambdas#lambda$new$1() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$new$1() @20 -> jls.s15_27.Sink#instanceJob()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#instanceJob()
+  T jls.s15_27.Sink#instanceJob() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#<init>(int) @20 -> jls.s15_27.Lambdas#lambda$new$1()
+  res STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$new$1()
+  T jls.s15_27.Lambdas#lambda$new$1() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$new$1() @20 -> jls.s15_27.Sink#instanceJob()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#instanceJob()
+  T jls.s15_27.Sink#instanceJob() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#<init>(int) @26 -> jls.s15_27.Sink#use(int)
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#use(int)
+  T jls.s15_27.Sink#use(int) p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#run() @30 -> jls.s15_27.Lambdas#lambda$run$3()
+  res STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$run$3()
+  T jls.s15_27.Lambdas#lambda$run$3() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$run$3() @31 -> jls.s15_27.Lambdas#lambda$run$2()
+  res STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$run$2()
+  T jls.s15_27.Lambdas#lambda$run$2() p=- c=- o=- k=-
+V 2 jls.s15_27.Lambdas#lambda$run$2() @31 -> jls.s15_27.Sink#inner()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#inner()
+  T jls.s15_27.Sink#inner() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$run$3() @32 -> java.util.function.Supplier#get()
+  res DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$run$2()
+  T jls.s15_27.Lambdas#lambda$run$2() p=- c=- o=- k=-
+V 2 jls.s15_27.Lambdas#lambda$run$2() @31 -> jls.s15_27.Sink#inner()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#inner()
+  T jls.s15_27.Sink#inner() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#run() @34 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$run$3()
+  T jls.s15_27.Lambdas#lambda$run$3() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$run$3() @31 -> jls.s15_27.Lambdas#lambda$run$2()
+  res STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$run$2()
+  T jls.s15_27.Lambdas#lambda$run$2() p=- c=- o=- k=-
+V 2 jls.s15_27.Lambdas#lambda$run$2() @31 -> jls.s15_27.Sink#inner()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#inner()
+  T jls.s15_27.Sink#inner() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$run$3() @32 -> java.util.function.Supplier#get()
+  res DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$run$2()
+  T jls.s15_27.Lambdas#lambda$run$2() p=- c=- o=- k=-
+V 2 jls.s15_27.Lambdas#lambda$run$2() @31 -> jls.s15_27.Sink#inner()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#inner()
+  T jls.s15_27.Sink#inner() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#run() @35 -> java.lang.Runnable#run()
+  res DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$new$1()
+  T jls.s15_27.Lambdas#lambda$new$1() p=- c=- o=- k=-
+V 1 jls.s15_27.Lambdas#lambda$new$1() @20 -> jls.s15_27.Sink#instanceJob()
+  res STATIC_BOUND:STATIC jls.s15_27.Sink#instanceJob()
+  T jls.s15_27.Sink#instanceJob() p=- c=- o=- k=-
+V 0 jls.s15_27.Lambdas#run() @36 -> java.lang.Runnable#run()
+  res NO_OVERRIDE java.lang.Runnable#run()
+  T java.lang.Runnable#run() p=- c=- o=- k=-
+# --- 経路によらない事実 ---
+M jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) fo=- up=1 R=[M:jls.s06_01.Sink#pickFirst(int)|0=A:0;n=1]
+M jls.s08_01_03.Outer.Inner#<init>(int) fo=- up=1 R=-
+M jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) fo=- up=1 R=-
+M jls.s08_08.Parent#<init>(int) fo=- up=1 R=-
+M jls.s08_08.Prologue#<init>(int) fo=- up=1 R=-
+M jls.s08_09.Planet#<init>(java.lang.String) fo=- up=1 R=-
+M jls.s08_09.Planet#run(java.lang.String) fo=- up=1 R=-
+M jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) fo=- up=1 R=-
+M jls.s13_01.Qualifying#viaInterfaceDefault(jls.s13_01.Plain) fo=- up=1 R=-
+M jls.s13_01.Qualifying#viaMethodRef(jls.s13_01.Mid) fo=- up=1 R=[Z:jls.s13_01.Mid#work()|r=A:0]
+M jls.s13_01.Qualifying#viaSubclass(jls.s13_01.Mid) fo=- up=1 R=-
+M jls.s13_01.Qualifying#viaTypeVariable(jls.s13_01.Mid) fo=- up=1 R=-
+M jls.s14_11.Switches#label(java.lang.String) fo=- up=1 R=-
+M jls.s14_14_02.CountIterator#next() fo=- up=0 R=[U]
+M jls.s14_14_02.Countdown#iterator() fo=T:jls.s14_14_02.CountIterator up=0 R=[T:jls.s14_14_02.CountIterator|0=V:3]
+M jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) fo=- up=1 R=-
+M jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) fo=- up=1 R=-
+M jls.s15_09_05.Anonymous#make() fo=T:jls.s15_09_05.Anonymous$1 up=0 R=[T:jls.s15_09_05.Anonymous$1|0=V:5]
+M jls.s15_09_05.Task#<init>(int) fo=- up=1 R=-
+M jls.s15_12.Invocation#id(java.lang.Number) fo=A:0 up=0 R=[A:0]
+M jls.s15_12.Invocation#run(jls.s15_12.Animal) fo=- up=1 R=-
+M jls.s15_13.Helper#parse(java.lang.String) fo=- up=1 R=[M:java.lang.String#length()|n=0;r=A:0]
+M jls.s15_13.MethodRefs#run(jls.s15_13.Helper) fo=- up=1 R=[U]
+M jls.s15_27.Lambdas#<init>(int) fo=- up=1 R=-
+M jls.s15_27.Lambdas#lambda$run$2() fo=- up=0 R=[M:jls.s15_27.Sink#inner()|n=0]
+F jls.s08_08.Fields#a M:jls.s08_08.Sink#fieldInit()
+F jls.s14_14_02.CountIterator#left A:0
+F jls.s15_27.Lambdas#job Z:jls.s15_27.Lambdas#lambda$new$1()
+E CompactMain#greet() @18 -> jls.s07_03.CompactTarget#hello() | STATIC_BOUND:STATIC jls.s07_03.CompactTarget#hello()
+E CompactMain#main() @14 -> CompactMain#greet() | STATIC_BOUND:FINAL_CLASS CompactMain#greet()
+E jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) @19 -> jls.s06_01.Sink#pickFirst(int) | STATIC_BOUND:STATIC jls.s06_01.Sink#pickFirst(int)
+E jls.s06_01.Unnamed#run(java.lang.Object) @13 -> jls.s06_01.Sink#sideEffect() | STATIC_BOUND:STATIC jls.s06_01.Sink#sideEffect()
+E jls.s06_01.Unnamed#run(java.lang.Object) @15 -> jls.s06_01.Sink#mayThrow() | STATIC_BOUND:STATIC jls.s06_01.Sink#mayThrow()
+E jls.s06_01.Unnamed#run(java.lang.Object) @17 -> jls.s06_01.Sink#handled() | STATIC_BOUND:STATIC jls.s06_01.Sink#handled()
+E jls.s06_01.Unnamed#run(java.lang.Object) @19 -> jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) | STATIC_BOUND:PRIVATE jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object)
+E jls.s06_01.Unnamed#run(java.lang.Object) @20 -> jls.s06_01.Pair#left() | STATIC_BOUND:FINAL_CLASS jls.s06_01.Pair#left()
+E jls.s06_01.Unnamed#run(java.lang.Object) @20 -> jls.s06_01.Pair#right() | STATIC_BOUND:FINAL_CLASS jls.s06_01.Pair#right()
+E jls.s06_01.Unnamed#run(java.lang.Object) @21 -> java.util.function.BiFunction#apply(java.lang.Object,java.lang.Object) | DATAFLOW_LAMBDA jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object)
+E jls.s07_05_05.ModuleImport#run() @14 -> java.util.List#of(java.lang.Object) | STATIC_BOUND:STATIC java.util.List#of(java.lang.Object)
+E jls.s07_05_05.ModuleImport#run() @15 -> java.lang.String#length() | STATIC_BOUND:FINAL_CLASS java.lang.String#length()
+E jls.s07_05_05.ModuleImport#run() @16 -> jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function) | STATIC_BOUND:STATIC jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function)
+E jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @25 -> jls.s08_01_03.Outer.Inner#<init>(int) | STATIC_BOUND:CTOR jls.s08_01_03.Outer.Inner#<init>(int)
+E jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @26 -> jls.s08_01_03.Outer.Inner#<init>(int) | STATIC_BOUND:CTOR jls.s08_01_03.Outer.Inner#<init>(int)
+E jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @27 -> jls.s08_01_03.Outer.Nested#<init>() | STATIC_BOUND:CTOR jls.s08_01_03.Outer.Nested#<init>()
+E jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @33 -> jls.s08_01_03.Outer$1Local#go() | NO_OVERRIDE jls.s08_01_03.Outer$1Local#go()
+E jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int) @33 -> jls.s08_01_03.Outer$1Local#<init>() | STATIC_BOUND:CTOR jls.s08_01_03.Outer$1Local#<init>()
+E jls.s08_01_03.Outer$1Local#go() @30 -> jls.s08_01_03.Sink#local(int) | STATIC_BOUND:STATIC jls.s08_01_03.Sink#local(int)
+E jls.s08_01_03.Outer.Inner#<init>(int) @14 -> jls.s08_01_03.Sink#inner(int) | STATIC_BOUND:STATIC jls.s08_01_03.Sink#inner(int)
+E jls.s08_01_03.Outer.Nested#<init>() @20 -> jls.s08_01_03.Sink#nested() | STATIC_BOUND:STATIC jls.s08_01_03.Sink#nested()
+E jls.s08_04_08.Base#describe() @39 -> jls.s08_04_08.Sink#baseStatic() | STATIC_BOUND:STATIC jls.s08_04_08.Sink#baseStatic()
+E jls.s08_04_08.Base#secret() @43 -> jls.s08_04_08.Sink#basePrivate() | STATIC_BOUND:STATIC jls.s08_04_08.Sink#basePrivate()
+E jls.s08_04_08.Base#template() @47 -> jls.s08_04_08.Base#secret() | STATIC_BOUND:PRIVATE jls.s08_04_08.Base#secret()
+E jls.s08_04_08.Derived#<init>() @51 -> jls.s08_04_08.Base#<init>() | STATIC_BOUND:CTOR jls.s08_04_08.Base#<init>()
+E jls.s08_04_08.Derived#describe() @53 -> jls.s08_04_08.Sink#derivedStatic() | STATIC_BOUND:STATIC jls.s08_04_08.Sink#derivedStatic()
+E jls.s08_04_08.Derived#secret() @58 -> jls.s08_04_08.Sink#derivedPrivate() | STATIC_BOUND:STATIC jls.s08_04_08.Sink#derivedPrivate()
+E jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) @18 -> jls.s08_04_08.Store#put(java.lang.Object) | CHA jls.s08_04_08.Store#put(java.lang.Object) jls.s08_04_08.TextStore#put(java.lang.String)
+E jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) @19 -> jls.s08_04_08.Base#describe() | STATIC_BOUND:STATIC jls.s08_04_08.Base#describe()
+E jls.s08_04_08.Overriding#run(jls.s08_04_08.Store,jls.s08_04_08.Base) @20 -> jls.s08_04_08.Base#template() | NO_OVERRIDE jls.s08_04_08.Base#template()
+E jls.s08_04_08.Store#put(java.lang.Object) @26 -> jls.s08_04_08.Sink#generic() | STATIC_BOUND:STATIC jls.s08_04_08.Sink#generic()
+E jls.s08_04_08.TextStore#<init>() @30 -> jls.s08_04_08.Store#<init>() | STATIC_BOUND:CTOR jls.s08_04_08.Store#<init>()
+E jls.s08_04_08.TextStore#put(java.lang.String) @33 -> jls.s08_04_08.Sink#text() | STATIC_BOUND:STATIC jls.s08_04_08.Sink#text()
+E jls.s08_04_08.a.PackageBase#run() @13 -> jls.s08_04_08.a.PackageBase#hook() | CHA jls.s08_04_08.a.PackageBase#hook() jls.s08_04_08.a.Widened#hook() jls.s08_04_08.b.WidenedSub#hook()
+E jls.s08_04_08.a.Widened#<init>() @9 -> jls.s08_04_08.a.PackageBase#<init>() | STATIC_BOUND:CTOR jls.s08_04_08.a.PackageBase#<init>()
+E jls.s08_04_08.b.OtherPackageSub#<init>() @9 -> jls.s08_04_08.a.PackageBase#<init>() | STATIC_BOUND:CTOR jls.s08_04_08.a.PackageBase#<init>()
+E jls.s08_04_08.b.WidenedSub#<init>() @10 -> jls.s08_04_08.a.Widened#<init>() | STATIC_BOUND:CTOR jls.s08_04_08.a.Widened#<init>()
+E jls.s08_08.Constructors#run() @19 -> jls.s08_08.ImplicitSuper#<init>() | STATIC_BOUND:CTOR jls.s08_08.ImplicitSuper#<init>()
+E jls.s08_08.Constructors#run() @20 -> jls.s08_08.Prologue#<init>(int) | STATIC_BOUND:CTOR jls.s08_08.Prologue#<init>(int)
+E jls.s08_08.Constructors#run() @21 -> jls.s08_08.Fields#<init>(int) | STATIC_BOUND:CTOR jls.s08_08.Fields#<init>(int)
+E jls.s08_08.Constructors#run() @22 -> jls.s08_08.DefaultCtor#<init>() | STATIC_BOUND:CTOR jls.s08_08.DefaultCtor#<init>()
+E jls.s08_08.DefaultCtor#<init>() @66 -> jls.s08_08.Parent#<init>() | STATIC_BOUND:CTOR jls.s08_08.Parent#<init>()
+E jls.s08_08.Fields#<init>() @50 -> jls.s08_08.Sink#fieldInit() | STATIC_BOUND:STATIC jls.s08_08.Sink#fieldInit()
+E jls.s08_08.Fields#<init>() @53 -> jls.s08_08.Sink#instanceInit() | STATIC_BOUND:STATIC jls.s08_08.Sink#instanceInit()
+E jls.s08_08.Fields#<init>() @57 -> jls.s08_08.Sink#body() | STATIC_BOUND:STATIC jls.s08_08.Sink#body()
+E jls.s08_08.Fields#<init>(int) @61 -> jls.s08_08.Fields#<init>() | STATIC_BOUND:CTOR jls.s08_08.Fields#<init>()
+E jls.s08_08.Fields#<init>(int) @62 -> jls.s08_08.Sink#delegated(int) | STATIC_BOUND:STATIC jls.s08_08.Sink#delegated(int)
+E jls.s08_08.ImplicitSuper#<init>() @37 -> jls.s08_08.Parent#<init>() | STATIC_BOUND:CTOR jls.s08_08.Parent#<init>()
+E jls.s08_08.ImplicitSuper#<init>() @38 -> jls.s08_08.Sink#body() | STATIC_BOUND:STATIC jls.s08_08.Sink#body()
+E jls.s08_08.Parent#<init>() @28 -> jls.s08_08.Sink#parentNoArg() | STATIC_BOUND:STATIC jls.s08_08.Sink#parentNoArg()
+E jls.s08_08.Parent#<init>(int) @32 -> jls.s08_08.Sink#parentInt(int) | STATIC_BOUND:STATIC jls.s08_08.Sink#parentInt(int)
+E jls.s08_08.Prologue#<init>(int) @44 -> jls.s08_08.Sink#check(int) | STATIC_BOUND:STATIC jls.s08_08.Sink#check(int)
+E jls.s08_08.Prologue#<init>(int) @45 -> jls.s08_08.Parent#<init>(int) | STATIC_BOUND:CTOR jls.s08_08.Parent#<init>(int)
+E jls.s08_09.Planet#<clinit>() @18 -> jls.s08_09.Planet#<init>(java.lang.String) | STATIC_BOUND:CTOR jls.s08_09.Planet#<init>(java.lang.String)
+E jls.s08_09.Planet#<clinit>() @19 -> jls.s08_09.Planet$1#<init>(java.lang.String) | STATIC_BOUND:CTOR jls.s08_09.Planet$1#<init>(java.lang.String)
+E jls.s08_09.Planet#<init>(java.lang.String) @27 -> jls.s08_09.Sink#register(java.lang.String) | STATIC_BOUND:STATIC jls.s08_09.Sink#register(java.lang.String)
+E jls.s08_09.Planet#run(java.lang.String) @35 -> jls.s08_09.Planet#weight() | CHA jls.s08_09.Planet#weight() jls.s08_09.Planet$1#weight()
+E jls.s08_09.Planet#run(java.lang.String) @35 -> jls.s08_09.Planet#valueOf(java.lang.String) | STATIC_BOUND:STATIC jls.s08_09.Planet#valueOf(java.lang.String)
+E jls.s08_09.Planet#run(java.lang.String) @36 -> jls.s08_09.Planet#values() | STATIC_BOUND:STATIC jls.s08_09.Planet#values()
+E jls.s08_09.Planet#run(java.lang.String) @37 -> jls.s08_09.Planet#weight() | CHA jls.s08_09.Planet#weight() jls.s08_09.Planet$1#weight()
+E jls.s08_09.Planet#weight() @31 -> jls.s08_09.Sink#defaultWeight() | STATIC_BOUND:STATIC jls.s08_09.Sink#defaultWeight()
+E jls.s08_09.Planet$1#<init>(java.lang.String) @19 -> jls.s08_09.Planet#<init>(java.lang.String) | STATIC_BOUND:CTOR jls.s08_09.Planet#<init>(java.lang.String)
+E jls.s08_09.Planet$1#weight() @22 -> jls.s08_09.Sink#marsWeight() | STATIC_BOUND:STATIC jls.s08_09.Sink#marsWeight()
+E jls.s08_10.Range#<init>(int,int) @25 -> jls.s08_10.Sink#validate(int,int) | STATIC_BOUND:STATIC jls.s08_10.Sink#validate(int,int)
+E jls.s08_10.Range#low() @30 -> jls.s08_10.Sink#accessLow() | STATIC_BOUND:STATIC jls.s08_10.Sink#accessLow()
+E jls.s08_10.Records#run() @17 -> jls.s08_10.Range#<init>(int,int) | STATIC_BOUND:CTOR jls.s08_10.Range#<init>(int,int)
+E jls.s08_10.Records#run() @18 -> jls.s08_10.Pair#<init>(java.lang.String,int) | STATIC_BOUND:CTOR jls.s08_10.Pair#<init>(java.lang.String,int)
+E jls.s08_10.Records#run() @19 -> jls.s08_10.Range#low() | STATIC_BOUND:FINAL_CLASS jls.s08_10.Range#low()
+E jls.s08_10.Records#run() @19 -> jls.s08_10.Range#high() | STATIC_BOUND:FINAL_CLASS jls.s08_10.Range#high()
+E jls.s08_10.Records#run() @19 -> jls.s08_10.Pair#count() | STATIC_BOUND:FINAL_CLASS jls.s08_10.Pair#count()
+E jls.s09_04.Greeter#greet() @25 -> jls.s09_04.Greeter#helper() | STATIC_BOUND:PRIVATE jls.s09_04.Greeter#helper()
+E jls.s09_04.Greeter#helper() @29 -> jls.s09_04.Sink#privateHelper() | STATIC_BOUND:STATIC jls.s09_04.Sink#privateHelper()
+E jls.s09_04.Greeter#util() @33 -> jls.s09_04.Sink#staticUtil() | STATIC_BOUND:STATIC jls.s09_04.Sink#staticUtil()
+E jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) @17 -> jls.s09_04.Greeter#greet() | NO_OVERRIDE jls.s09_04.Greeter#greet()
+E jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) @18 -> jls.s09_04.Polite#greet() | NO_OVERRIDE jls.s09_04.Polite#greet()
+E jls.s09_04.Interfaces#run(jls.s09_04.Plain,jls.s09_04.Polite) @19 -> jls.s09_04.Greeter#util() | STATIC_BOUND:STATIC jls.s09_04.Greeter#util()
+E jls.s09_04.Polite#greet() @43 -> jls.s09_04.Sink#polite() | STATIC_BOUND:STATIC jls.s09_04.Sink#polite()
+E jls.s09_04.Polite#greet() @44 -> jls.s09_04.Greeter#greet() | STATIC_BOUND:SUPER jls.s09_04.Greeter#greet()
+E jls.s12_04.ClassInit#<clinit>() @16 -> jls.s12_04.Sink#first() | STATIC_BOUND:STATIC jls.s12_04.Sink#first()
+E jls.s12_04.ClassInit#<clinit>() @19 -> jls.s12_04.Sink#staticBlock() | STATIC_BOUND:STATIC jls.s12_04.Sink#staticBlock()
+E jls.s12_04.ClassInit#<clinit>() @22 -> jls.s12_04.Sink#last() | STATIC_BOUND:STATIC jls.s12_04.Sink#last()
+E jls.s12_04.Config#<clinit>() @26 -> jls.s12_04.Sink#size() | STATIC_BOUND:STATIC jls.s12_04.Sink#size()
+E jls.s13_01.Base#work() @73 -> jls.s13_01.Sink#base() | STATIC_BOUND:STATIC jls.s13_01.Sink#base()
+E jls.s13_01.Greeter#greet() @50 -> jls.s13_01.Sink#greeterDefault() | STATIC_BOUND:STATIC jls.s13_01.Sink#greeterDefault()
+E jls.s13_01.Leaf#<init>() @84 -> jls.s13_01.Mid#<init>() | STATIC_BOUND:CTOR jls.s13_01.Mid#<init>()
+E jls.s13_01.Leaf#work() @87 -> jls.s13_01.Sink#leaf() | STATIC_BOUND:STATIC jls.s13_01.Sink#leaf()
+E jls.s13_01.LeafUser#<init>() @42 -> jls.s13_01.Mid#<init>() | STATIC_BOUND:CTOR jls.s13_01.Mid#<init>()
+E jls.s13_01.LeafUser#call() @44 -> jls.s13_01.Mid#work() | NO_OVERRIDE jls.s13_01.Mid#work()
+E jls.s13_01.Mid#<init>() @77 -> jls.s13_01.Base#<init>() | STATIC_BOUND:CTOR jls.s13_01.Base#<init>()
+E jls.s13_01.Mid#work() @80 -> jls.s13_01.Sink#mid() | STATIC_BOUND:STATIC jls.s13_01.Sink#mid()
+E jls.s13_01.Other#<init>() @91 -> jls.s13_01.Base#<init>() | STATIC_BOUND:CTOR jls.s13_01.Base#<init>()
+E jls.s13_01.Other#work() @94 -> jls.s13_01.Sink#other() | STATIC_BOUND:STATIC jls.s13_01.Sink#other()
+E jls.s13_01.PlainChild#<init>() @57 -> jls.s13_01.Plain#<init>() | STATIC_BOUND:CTOR jls.s13_01.Plain#<init>()
+E jls.s13_01.PlainChild#greet() @60 -> jls.s13_01.Sink#plainChild() | STATIC_BOUND:STATIC jls.s13_01.Sink#plainChild()
+E jls.s13_01.Polite#greet() @67 -> jls.s13_01.Sink#polite() | STATIC_BOUND:STATIC jls.s13_01.Sink#polite()
+E jls.s13_01.Qualifying#viaInterfaceDefault(jls.s13_01.Plain) @26 -> jls.s13_01.Greeter#greet() | CHA jls.s13_01.Greeter#greet() jls.s13_01.PlainChild#greet()
+E jls.s13_01.Qualifying#viaMethodRef(jls.s13_01.Mid) @38 -> jls.s13_01.Mid#work() | CHA jls.s13_01.Mid#work() jls.s13_01.Leaf#work()
+E jls.s13_01.Qualifying#viaSubclass(jls.s13_01.Mid) @30 -> jls.s13_01.Mid#work() | CHA jls.s13_01.Mid#work() jls.s13_01.Leaf#work()
+E jls.s13_01.Qualifying#viaTypeVariable(jls.s13_01.Mid) @34 -> jls.s13_01.Mid#work() | CHA jls.s13_01.Mid#work() jls.s13_01.Leaf#work()
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @18 -> jls.s14_11.Sink#isLarge(int) | STATIC_BOUND:STATIC jls.s14_11.Sink#isLarge(int)
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @18 -> jls.s14_11.Circle#r() | STATIC_BOUND:FINAL_CLASS jls.s14_11.Circle#r()
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @18 -> jls.s14_11.Sink#large() | STATIC_BOUND:STATIC jls.s14_11.Sink#large()
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @19 -> jls.s14_11.Sink#circle(int) | STATIC_BOUND:STATIC jls.s14_11.Sink#circle(int)
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @19 -> jls.s14_11.Circle#r() | STATIC_BOUND:FINAL_CLASS jls.s14_11.Circle#r()
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @20 -> jls.s14_11.Sink#square(int) | STATIC_BOUND:STATIC jls.s14_11.Sink#square(int)
+E jls.s14_11.Switches#area(jls.s14_11.Shape) @20 -> jls.s14_11.Square#side() | STATIC_BOUND:FINAL_CLASS jls.s14_11.Square#side()
+E jls.s14_11.Switches#label(java.lang.String) @26 -> jls.s14_11.Sink#kindA() | STATIC_BOUND:STATIC jls.s14_11.Sink#kindA()
+E jls.s14_11.Switches#label(java.lang.String) @27 -> jls.s14_11.Sink#kindB() | STATIC_BOUND:STATIC jls.s14_11.Sink#kindB()
+E jls.s14_14_02.Countdown#iterator() @33 -> jls.s14_14_02.CountIterator#<init>(int) | STATIC_BOUND:CTOR jls.s14_14_02.CountIterator#<init>(int)
+E jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) @20 -> jls.s14_14_02.Countdown#iterator() | NO_OVERRIDE jls.s14_14_02.Countdown#iterator()
+E jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) @20 -> java.util.Iterator#hasNext() | CHA java.util.Iterator#hasNext() jls.s14_14_02.CountIterator#hasNext()
+E jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[]) @20 -> java.util.Iterator#next() | CHA java.util.Iterator#next() jls.s14_14_02.CountIterator#next()
+E jls.s14_20_03.Resource#close() @22 -> jls.s14_20_03.Sink#closed() | STATIC_BOUND:STATIC jls.s14_20_03.Sink#closed()
+E jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @13 -> jls.s14_20_03.Resource#<init>() | STATIC_BOUND:CTOR jls.s14_20_03.Resource#<init>()
+E jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @14 -> jls.s14_20_03.Sink#body() | STATIC_BOUND:STATIC jls.s14_20_03.Sink#body()
+E jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @13 -> jls.s14_20_03.Resource#close() | NO_OVERRIDE jls.s14_20_03.Resource#close()
+E jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource) @13 -> jls.s14_20_03.Resource#close() | NO_OVERRIDE jls.s14_20_03.Resource#close()
+E jls.s14_30.Patterns#run(java.lang.Object) @15 -> jls.s14_30.Point#x() | STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#x()
+E jls.s14_30.Patterns#run(java.lang.Object) @15 -> jls.s14_30.Point#y() | STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#y()
+E jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Line#end() | STATIC_BOUND:FINAL_CLASS jls.s14_30.Line#end()
+E jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Line#start() | STATIC_BOUND:FINAL_CLASS jls.s14_30.Line#start()
+E jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Point#x() | STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#x()
+E jls.s14_30.Patterns#run(java.lang.Object) @18 -> jls.s14_30.Point#y() | STATIC_BOUND:FINAL_CLASS jls.s14_30.Point#y()
+E jls.s14_30.Patterns#run(java.lang.Object) @19 -> jls.s14_30.Point#hashCode() | STATIC_BOUND:FINAL_METHOD jls.s14_30.Point#hashCode()
+E jls.s14_30.Point#x() @28 -> jls.s14_30.Sink#readX() | STATIC_BOUND:STATIC jls.s14_30.Sink#readX()
+E jls.s15_09_05.Anonymous#make() @13 -> jls.s15_09_05.Anonymous$1#<init>(int) | STATIC_BOUND:CTOR jls.s15_09_05.Anonymous$1#<init>(int)
+E jls.s15_09_05.Anonymous$1#<init>(int) @13 -> jls.s15_09_05.Task#<init>(int) | STATIC_BOUND:CTOR jls.s15_09_05.Task#<init>(int)
+E jls.s15_09_05.Anonymous$1#perform() @16 -> jls.s15_09_05.Sink#anonymousPerform() | STATIC_BOUND:STATIC jls.s15_09_05.Sink#anonymousPerform()
+E jls.s15_09_05.Task#<init>(int) @24 -> jls.s15_09_05.Sink#taskInit(int) | STATIC_BOUND:STATIC jls.s15_09_05.Sink#taskInit(int)
+E jls.s15_12.Cat#<init>() @86 -> jls.s15_12.Animal#<init>() | STATIC_BOUND:CTOR jls.s15_12.Animal#<init>()
+E jls.s15_12.Dog#<init>() @76 -> jls.s15_12.Animal#<init>() | STATIC_BOUND:CTOR jls.s15_12.Animal#<init>()
+E jls.s15_12.Dog#sound() @79 -> jls.s15_12.Animal#sound() | STATIC_BOUND:SUPER jls.s15_12.Animal#sound()
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @31 -> jls.s15_12.Invocation#pick(long) | NO_OVERRIDE jls.s15_12.Invocation#pick(long)
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @32 -> jls.s15_12.Invocation#box(java.lang.Integer) | NO_OVERRIDE jls.s15_12.Invocation#box(java.lang.Integer)
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @33 -> jls.s15_12.Invocation#vararg(int[]) | NO_OVERRIDE jls.s15_12.Invocation#vararg(int[])
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @34 -> jls.s15_12.Invocation#specific(java.lang.String) | NO_OVERRIDE jls.s15_12.Invocation#specific(java.lang.String)
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @35 -> jls.s15_12.Invocation#id(java.lang.Number) | NO_OVERRIDE jls.s15_12.Invocation#id(java.lang.Number)
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @35 -> java.lang.Integer#valueOf(int) | STATIC_BOUND:STATIC java.lang.Integer#valueOf(int)
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @36 -> jls.s15_12.Animal#kingdom() | STATIC_BOUND:STATIC jls.s15_12.Animal#kingdom()
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @37 -> jls.s15_12.Animal#sound() | CHA jls.s15_12.Animal#sound() jls.s15_12.Cat#sound() jls.s15_12.Dog#sound()
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @38 -> jls.s15_12.Dog#bark(java.lang.Integer) | NO_OVERRIDE jls.s15_12.Dog#bark(java.lang.Integer)
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @38 -> jls.s15_12.Dog#<init>() | STATIC_BOUND:CTOR jls.s15_12.Dog#<init>()
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @39 -> jls.s15_12.Dog#sound() | NO_OVERRIDE jls.s15_12.Dog#sound()
+E jls.s15_12.Invocation#run(jls.s15_12.Animal) @39 -> jls.s15_12.Dog#<init>() | STATIC_BOUND:CTOR jls.s15_12.Dog#<init>()
+E jls.s15_13.Helper#parse(java.lang.String) @45 -> java.lang.String#length() | STATIC_BOUND:FINAL_CLASS java.lang.String#length()
+E jls.s15_13.MethodRefs#<init>() @22 -> jls.s15_13.Base#<init>() | STATIC_BOUND:CTOR jls.s15_13.Base#<init>()
+E jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @24 -> jls.s15_13.Helper#parse(java.lang.String) | STATIC_BOUND:STATIC jls.s15_13.Helper#parse(java.lang.String)
+E jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @25 -> jls.s15_13.Helper#name() | NO_OVERRIDE jls.s15_13.Helper#name()
+E jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @26 -> jls.s15_13.Helper#greet(java.lang.String) | NO_OVERRIDE jls.s15_13.Helper#greet(java.lang.String)
+E jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @27 -> jls.s15_13.Base#baseWork() | STATIC_BOUND:SUPER jls.s15_13.Base#baseWork()
+E jls.s15_13.MethodRefs#run(jls.s15_13.Helper) @28 -> jls.s15_13.Helper#<init>() | STATIC_BOUND:CTOR jls.s15_13.Helper#<init>()
+E jls.s15_27.Lambdas#<clinit>() @19 -> jls.s15_27.Lambdas#lambda$static$0() | STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$static$0()
+E jls.s15_27.Lambdas#<init>() @20 -> jls.s15_27.Lambdas#lambda$new$1() | STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$new$1()
+E jls.s15_27.Lambdas#<init>(int) @20 -> jls.s15_27.Lambdas#lambda$new$1() | STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$new$1()
+E jls.s15_27.Lambdas#<init>(int) @26 -> jls.s15_27.Sink#use(int) | STATIC_BOUND:STATIC jls.s15_27.Sink#use(int)
+E jls.s15_27.Lambdas#lambda$new$1() @20 -> jls.s15_27.Sink#instanceJob() | STATIC_BOUND:STATIC jls.s15_27.Sink#instanceJob()
+E jls.s15_27.Lambdas#lambda$run$2() @31 -> jls.s15_27.Sink#inner() | STATIC_BOUND:STATIC jls.s15_27.Sink#inner()
+E jls.s15_27.Lambdas#lambda$run$3() @31 -> jls.s15_27.Lambdas#lambda$run$2() | STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$run$2()
+E jls.s15_27.Lambdas#lambda$run$3() @32 -> java.util.function.Supplier#get() | DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$run$2()
+E jls.s15_27.Lambdas#lambda$static$0() @19 -> jls.s15_27.Sink#staticJob() | STATIC_BOUND:STATIC jls.s15_27.Sink#staticJob()
+E jls.s15_27.Lambdas#run() @30 -> jls.s15_27.Lambdas#lambda$run$3() | STATIC_BOUND:PRIVATE jls.s15_27.Lambdas#lambda$run$3()
+E jls.s15_27.Lambdas#run() @34 -> java.lang.Runnable#run() | DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$run$3()
+E jls.s15_27.Lambdas#run() @35 -> java.lang.Runnable#run() | DATAFLOW_LAMBDA jls.s15_27.Lambdas#lambda$new$1()
+E jls.s15_27.Lambdas#run() @36 -> java.lang.Runnable#run() | NO_OVERRIDE java.lang.Runnable#run()
+I CompactMain#greet() 1
+I java.lang.Integer#valueOf(int) 1
+I java.lang.Runnable#run() 1
+I java.lang.String#length() 2
+I java.util.Iterator#hasNext() 1
+I java.util.Iterator#next() 1
+I java.util.List#of(java.lang.Object) 1
+I jls.s06_01.Pair#left() 1
+I jls.s06_01.Pair#right() 1
+I jls.s06_01.Sink#handled() 1
+I jls.s06_01.Sink#mayThrow() 1
+I jls.s06_01.Sink#pickFirst(int) 1
+I jls.s06_01.Sink#sideEffect() 1
+I jls.s06_01.Unnamed#lambda$run$0(java.lang.Object,java.lang.Object) 2
+I jls.s07_03.CompactTarget#hello() 1
+I jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function) 1
+I jls.s08_01_03.Outer$1Local#<init>() 1
+I jls.s08_01_03.Outer$1Local#go() 1
+I jls.s08_01_03.Outer.Inner#<init>(int) 2
+I jls.s08_01_03.Outer.Nested#<init>() 1
+I jls.s08_01_03.Sink#inner(int) 1
+I jls.s08_01_03.Sink#local(int) 1
+I jls.s08_01_03.Sink#nested() 1
+I jls.s08_04_08.Base#<init>() 1
+I jls.s08_04_08.Base#describe() 1
+I jls.s08_04_08.Base#secret() 1
+I jls.s08_04_08.Base#template() 1
+I jls.s08_04_08.Sink#basePrivate() 1
+I jls.s08_04_08.Sink#baseStatic() 1
+I jls.s08_04_08.Sink#derivedPrivate() 1
+I jls.s08_04_08.Sink#derivedStatic() 1
+I jls.s08_04_08.Sink#generic() 1
+I jls.s08_04_08.Sink#text() 1
+I jls.s08_04_08.Store#<init>() 1
+I jls.s08_04_08.Store#put(java.lang.Object) 1
+I jls.s08_04_08.TextStore#put(java.lang.String) 1
+I jls.s08_04_08.a.PackageBase#<init>() 2
+I jls.s08_04_08.a.PackageBase#hook() 1
+I jls.s08_04_08.a.Widened#<init>() 1
+I jls.s08_04_08.a.Widened#hook() 1
+I jls.s08_04_08.b.WidenedSub#hook() 1
+I jls.s08_08.DefaultCtor#<init>() 1
+I jls.s08_08.Fields#<init>() 1
+I jls.s08_08.Fields#<init>(int) 1
+I jls.s08_08.ImplicitSuper#<init>() 1
+I jls.s08_08.Parent#<init>() 2
+I jls.s08_08.Parent#<init>(int) 1
+I jls.s08_08.Prologue#<init>(int) 1
+I jls.s08_08.Sink#body() 2
+I jls.s08_08.Sink#check(int) 1
+I jls.s08_08.Sink#delegated(int) 1
+I jls.s08_08.Sink#fieldInit() 1
+I jls.s08_08.Sink#instanceInit() 1
+I jls.s08_08.Sink#parentInt(int) 1
+I jls.s08_08.Sink#parentNoArg() 1
+I jls.s08_09.Planet#<init>(java.lang.String) 2
+I jls.s08_09.Planet#valueOf(java.lang.String) 1
+I jls.s08_09.Planet#values() 1
+I jls.s08_09.Planet#weight() 2
+I jls.s08_09.Planet$1#<init>(java.lang.String) 1
+I jls.s08_09.Planet$1#weight() 2
+I jls.s08_09.Sink#defaultWeight() 1
+I jls.s08_09.Sink#marsWeight() 1
+I jls.s08_09.Sink#register(java.lang.String) 1
+I jls.s08_10.Pair#<init>(java.lang.String,int) 1
+I jls.s08_10.Pair#count() 1
+I jls.s08_10.Range#<init>(int,int) 1
+I jls.s08_10.Range#high() 1
+I jls.s08_10.Range#low() 1
+I jls.s08_10.Sink#accessLow() 1
+I jls.s08_10.Sink#validate(int,int) 1
+I jls.s09_04.Greeter#greet() 2
+I jls.s09_04.Greeter#helper() 1
+I jls.s09_04.Greeter#util() 1
+I jls.s09_04.Polite#greet() 1
+I jls.s09_04.Sink#polite() 1
+I jls.s09_04.Sink#privateHelper() 1
+I jls.s09_04.Sink#staticUtil() 1
+I jls.s12_04.Sink#first() 1
+I jls.s12_04.Sink#last() 1
+I jls.s12_04.Sink#size() 1
+I jls.s12_04.Sink#staticBlock() 1
+I jls.s13_01.Base#<init>() 2
+I jls.s13_01.Greeter#greet() 1
+I jls.s13_01.Leaf#work() 3
+I jls.s13_01.Mid#<init>() 2
+I jls.s13_01.Mid#work() 4
+I jls.s13_01.Plain#<init>() 1
+I jls.s13_01.PlainChild#greet() 1
+I jls.s13_01.Sink#base() 1
+I jls.s13_01.Sink#greeterDefault() 1
+I jls.s13_01.Sink#leaf() 1
+I jls.s13_01.Sink#mid() 1
+I jls.s13_01.Sink#other() 1
+I jls.s13_01.Sink#plainChild() 1
+I jls.s13_01.Sink#polite() 1
+I jls.s14_11.Circle#r() 2
+I jls.s14_11.Sink#circle(int) 1
+I jls.s14_11.Sink#isLarge(int) 1
+I jls.s14_11.Sink#kindA() 1
+I jls.s14_11.Sink#kindB() 1
+I jls.s14_11.Sink#large() 1
+I jls.s14_11.Sink#square(int) 1
+I jls.s14_11.Square#side() 1
+I jls.s14_14_02.CountIterator#<init>(int) 1
+I jls.s14_14_02.CountIterator#hasNext() 1
+I jls.s14_14_02.CountIterator#next() 1
+I jls.s14_14_02.Countdown#iterator() 1
+I jls.s14_20_03.Resource#<init>() 1
+I jls.s14_20_03.Resource#close() 2
+I jls.s14_20_03.Sink#body() 1
+I jls.s14_20_03.Sink#closed() 1
+I jls.s14_30.Line#end() 1
+I jls.s14_30.Line#start() 1
+I jls.s14_30.Point#hashCode() 1
+I jls.s14_30.Point#x() 2
+I jls.s14_30.Point#y() 2
+I jls.s14_30.Sink#readX() 1
+I jls.s15_09_05.Anonymous$1#<init>(int) 1
+I jls.s15_09_05.Sink#anonymousPerform() 1
+I jls.s15_09_05.Sink#taskInit(int) 1
+I jls.s15_09_05.Task#<init>(int) 1
+I jls.s15_12.Animal#<init>() 2
+I jls.s15_12.Animal#kingdom() 1
+I jls.s15_12.Animal#sound() 2
+I jls.s15_12.Cat#sound() 1
+I jls.s15_12.Dog#<init>() 2
+I jls.s15_12.Dog#bark(java.lang.Integer) 1
+I jls.s15_12.Dog#sound() 2
+I jls.s15_12.Invocation#box(java.lang.Integer) 1
+I jls.s15_12.Invocation#id(java.lang.Number) 1
+I jls.s15_12.Invocation#pick(long) 1
+I jls.s15_12.Invocation#specific(java.lang.String) 1
+I jls.s15_12.Invocation#vararg(int[]) 1
+I jls.s15_13.Base#<init>() 1
+I jls.s15_13.Base#baseWork() 1
+I jls.s15_13.Helper#<init>() 1
+I jls.s15_13.Helper#greet(java.lang.String) 1
+I jls.s15_13.Helper#name() 1
+I jls.s15_13.Helper#parse(java.lang.String) 1
+I jls.s15_27.Lambdas#lambda$new$1() 3
+I jls.s15_27.Lambdas#lambda$run$2() 2
+I jls.s15_27.Lambdas#lambda$run$3() 2
+I jls.s15_27.Lambdas#lambda$static$0() 1
+I jls.s15_27.Sink#inner() 1
+I jls.s15_27.Sink#instanceJob() 1
+I jls.s15_27.Sink#staticJob() 1
+I jls.s15_27.Sink#use(int) 1

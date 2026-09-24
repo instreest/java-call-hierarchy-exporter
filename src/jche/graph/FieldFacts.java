@@ -36,10 +36,20 @@ import jche.cache.Origin;
  */
 final class FieldFacts {
 
+    /**
+     * 代入 1 件。値は 2 通りの形で持つ（stage B の途中。文字列の側は読み手を移し終えたら消す）
+     *
+     * @param site     代入した場所（コンストラクタのシグネチャか {@link FieldAssignFact#SITE_INITIALIZER}）
+     * @param origin   値の頭の文字列（{@code 種別:値}）。追跡できなければ U
+     * @param head     値の頭の葉の参照（{@link ValueStore}）。追跡できなければ {@link ValueStore#NONE}
+     * @param headKind 値の頭の種別。追跡できなければ {@link Origin#UNKNOWN}
+     */
+    private record Assign(String site, String origin, int head, char headKind) {
+    }
+
     private static final class Field {
         final String mods;
-        /** {site, origin} */
-        final List<String[]> assigns = new ArrayList<>(2);
+        final List<Assign> assigns = new ArrayList<>(2);
 
         Field(String mods) {
             this.mods = mods;
@@ -75,21 +85,35 @@ final class FieldFacts {
      *               キャッシュの J 行はノード番号なので、読み手（{@link CallGraphBuilder}）が同じブロックの
      *               値グラフから組み直して渡す。頭だけで比べるのは、{@code new X(a)} と {@code new X(b)} を
      *               同じ出所（{@code T:X}）とみなすため（以前の J 行も頭だけを持っていた）
+     * @param head     同じ値の頭の葉の参照（{@link ValueStoreBuilder#importHead}）。追跡できなければ
+     *                 {@link ValueStore#NONE}。葉は種別と値の組ごとに 1 つなので、参照が同じなら頭も同じ
+     * @param headKind 値の頭の種別。追跡できなければ {@link Origin#UNKNOWN}
      */
-    void assignment(FieldAssignFact j, String origin) {
+    void assignment(FieldAssignFact j, String origin, int head, char headKind) {
         Field fd = fields.get(j.typeFqn() + "#" + j.fieldName());
         if (fd != null) {
-            fd.assigns.add(new String[] {j.site(), origin});
+            fd.assigns.add(new Assign(j.site(), origin, head, headKind));
         }
     }
 
-    /** 溜めた事実から判定し、確定したフィールドの出所を fieldOrigins に足して、溜めた事実を捨てる */
-    void flushInto(Map<String, String> fieldOrigins) {
+    /**
+     * 溜めた事実から判定し、確定したフィールドの出所を fieldOrigins に、値の頭の参照を fieldHeads に足して、
+     * 溜めた事実を捨てる。2 つは同じ判定を文字列と参照でそれぞれ行ったもの（stage B の途中）
+     */
+    void flushInto(Map<String, String> fieldOrigins, Map<String, Integer> fieldHeads) {
         for (Map.Entry<String, Field> e : fields.entrySet()) {
             String key = e.getKey();
-            String origin = injectedOriginOf(key, e.getValue());
+            String typeFqn = key.substring(0, key.indexOf('#'));
+            if (!assignedOnEveryPath(typeFqn, e.getValue())) {
+                continue;
+            }
+            String origin = agreedOriginOf(typeFqn, e.getValue());
             if (origin != null) {
                 fieldOrigins.put(key, origin);
+            }
+            int head = agreedHeadOf(typeFqn, e.getValue());
+            if (head != ValueStore.NONE) {
+                fieldHeads.put(key, head);
             }
         }
         fields.clear();
@@ -97,42 +121,62 @@ final class FieldFacts {
         typesWithDelegatingCtor.clear();
     }
 
-    /** 条件 (a)〜(d) を全て満たすなら、そのフィールドに必ず入る値の出所。満たさなければ null */
-    private String injectedOriginOf(String key, Field fd) {
+    /** 条件 (a)〜(c) を満たすか（代入の値には依らない部分） */
+    private boolean assignedOnEveryPath(String typeFqn, Field fd) {
         if (ModifierTokens.has(fd.mods, "static")
                 || !(ModifierTokens.has(fd.mods, "private") || ModifierTokens.has(fd.mods, "final"))) {
-            return null;   // (a)
+            return false;   // (a)
         }
-        String typeFqn = key.substring(0, key.indexOf('#'));
+        if (fd.assigns.isEmpty()) {
+            return false;
+        }
         Set<String> roots = rootCtors.get(typeFqn);
         int rootCount = (roots == null) ? 0 : roots.size();
-        String origin = null;
         boolean hasInitializer = false;
         Set<String> assignedIn = new HashSet<>();
-        for (String[] a : fd.assigns) {
-            String site = a[0];
-            String assigned = a[1];
-            if (FieldAssignFact.SITE_INITIALIZER.equals(site)) {
+        for (Assign a : fd.assigns) {
+            if (FieldAssignFact.SITE_INITIALIZER.equals(a.site())) {
                 hasInitializer = true;
-            } else if (roots != null && roots.contains(site)) {
-                assignedIn.add(site);
+            } else if (roots != null && roots.contains(a.site())) {
+                assignedIn.add(a.site());
             } else {
-                return null;   // (b) 生成後に差し替わりうる
+                return false;   // (b) 生成後に差し替わりうる
             }
-            if (Origin.isUnknown(assigned) || (origin != null && !origin.equals(assigned))) {
+        }
+        // (c) 代入されない生成経路がある
+        return hasInitializer || assignedIn.size() >= rootCount;
+    }
+
+    /** 条件 (d)・(e) を満たすなら、そのフィールドに必ず入る値の出所。満たさなければ null */
+    private String agreedOriginOf(String typeFqn, Field fd) {
+        String origin = null;
+        for (Assign a : fd.assigns) {
+            if (Origin.isUnknown(a.origin()) || (origin != null && !origin.equals(a.origin()))) {
                 return null;   // (d)
             }
-            origin = assigned;
-        }
-        if (origin == null) {
-            return null;
-        }
-        if (!hasInitializer && assignedIn.size() < rootCount) {
-            return null;   // (c) 代入されない生成経路がある
+            origin = a.origin();
         }
         if (Origin.kindOf(origin) == Origin.PARAM && typesWithDelegatingCtor.contains(typeFqn)) {
             return null;   // (e) 委譲があると実引数の位置が根コンストラクタと一致しない
         }
         return origin;
+    }
+
+    /** {@link #agreedOriginOf} と同じ判定を、値の頭の葉の参照で行う。満たさなければ {@link ValueStore#NONE} */
+    private int agreedHeadOf(String typeFqn, Field fd) {
+        int head = ValueStore.NONE;
+        char kind = Origin.UNKNOWN;
+        for (Assign a : fd.assigns) {
+            if (a.head() == ValueStore.NONE || a.headKind() == Origin.UNKNOWN
+                    || (head != ValueStore.NONE && head != a.head())) {
+                return ValueStore.NONE;   // (d)
+            }
+            head = a.head();
+            kind = a.headKind();
+        }
+        if (kind == Origin.PARAM && typesWithDelegatingCtor.contains(typeFqn)) {
+            return ValueStore.NONE;   // (e)
+        }
+        return head;
     }
 }
