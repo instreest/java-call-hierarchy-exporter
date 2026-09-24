@@ -236,8 +236,8 @@ public final class CallConditionScanner {
     /** 1ファイル分の呼び出しから、対象に合うものだけ取り出す */
     private static void collect(Target target, String file, FileAnalysis analysis,
                                 List<CallSiteConditions> out) {
-        // ガードは値なので dataflow 側（P 行）にある。callSiteValues は callSites と
-        // 同じ数・同じ順で並ぶので、同じ位置から取る（docs/cache-split-qa.md の Q20）
+        // ガードは呼び出し箇所の値（callSiteValues）が持つ。callSiteValues は callSites と
+        // 同じ数・同じ順で並ぶので、同じ位置から取る（キャッシュでも同じ位置どうしを 1 行にしている）
         for (int i = 0; i < analysis.callSites.size(); i++) {
             CallSite site = analysis.callSites.get(i);
             int line;

@@ -9,7 +9,7 @@ import jche.cache.Origin;
 import jche.cache.ValueNode;
 
 /**
- * 値グラフ（dataflow-cache.tsv の N 行）を {@link Origin} の文字列に組み直す。
+ * 値グラフ（キャッシュの N 行）を {@link Origin} の文字列に組み直す。
  *
  * <h2>なぜ組み直すのか</h2>
  * 読み手（{@link DataflowResolver} / {@link GuardEvaluator} / {@link CallResolver} /
@@ -59,7 +59,7 @@ final class OriginRenderer {
     }
 
     /**
-     * P 行の実引数（{@code 位置=ノード番号} のカンマ区切り）を、
+     * 呼び出し箇所の実引数（C 行・U 行の args 列。{@code 位置=ノード番号} のカンマ区切り）を、
      * 出所の実引数リスト（{@code 位置=出所;位置=出所}）にする。
      *
      * 入れ子を剥がさないのがここの本題。{@code repo.save(mapper.toEntity(dto))} の

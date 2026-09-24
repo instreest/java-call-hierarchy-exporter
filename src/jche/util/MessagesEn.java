@@ -453,7 +453,6 @@ final class MessagesEn {
             "analysis.syntaxError", "Could not read the body because of syntax errors: {0} ({1} error(s). The calls in this file are not written to the output)",
             "analysis.fileFailed", "Analysis failed (skipped): {0} ({1})",
             "analysis.hashFailed", "Cannot hash the source (this file is analyzed again every time): {0} ({1})",
-            "analysis.cache.noDataflow", "[cache] There is no dataflow cache ({0}), so both are rebuilt",
             "analysis.cache.incompatible", "[cache] The format, source level, encoding, JDK or JDT differs, so the existing cache is discarded",
             "analysis.cache.unreadable", "[cache] The existing cache cannot be read, so it is discarded and everything is analyzed: {0}",
             "analysis.resume.cannotStash", "[cache] Cannot set aside the temporary file of the interrupted run (nothing is carried over): {0}",
@@ -464,12 +463,11 @@ final class MessagesEn {
             "analysis.resume.incompatible", "[cache] The interrupted run differs in format, source level, encoding, JDK or JDT, so nothing is carried over",
             "analysis.resume.sourcesChanged", "[cache] The sources changed since the interrupted run, so nothing is carried over (results for unchanged files can also change when other files change)",
             "analysis.resume.librariesChanged", "[cache] The dependency jars changed since the interrupted run, so nothing is carried over: {0}",
-            "analysis.cache.dataflowIncompatible", "[cache] The format, source level, encoding, JDK or JDT of the dataflow cache differs, so both are rebuilt",
-            "analysis.cache.differentGeneration", "[cache] The two caches were not written by the same run, so both are rebuilt",
-            "analysis.cache.blockCountMismatch", "[cache] The two caches disagree on the number of blocks (one of them is truncated), so both are rebuilt",
             "analysis.cache.truncated", "[cache] The existing cache is truncated, so it is discarded and everything is analyzed (read {0} file block(s), but the finished marker is missing)",
-            "analysis.cache.dataflowUnreadable", "[cache] The dataflow cache cannot be read, so both are discarded and everything is analyzed: {0}",
-            "analysis.cache.dataflowMissingBlocks", "[cache] Re-analyzing the files that have no block in the dataflow cache: {0}",
+            "analysis.cache.damagedBlocks", "[cache] {0} block(s) of the cache failed the integrity check, so they are not reused (those files are analyzed again)",
+            "analysis.cache.legacyDeleted", "[cache] Deleted {0}, left by an older version (the cache is now a single file)",
+            "analysis.cache.legacyNotDeleted", "[cache] Cannot delete {0}, left by an older version (it is no longer used and can be deleted by hand): {1}",
+            "analysis.cache.valuesMismatch", "Internal error while writing the cache: {0} has {1} call site(s) but {2} set(s) of call-site values",
             "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
             "analysis.batchFailed", "The batch analysis failed, so the remaining {0} file(s) are analyzed one at a time ({1})",
             "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
@@ -483,7 +481,6 @@ final class MessagesEn {
             "graph.progress.inbound", "Caller index",
             "graph.collected", "Collected: {0} types / {1} methods / {2} edges",
             "graph.tooManyEdges", "Too many edges: {0}",
-            "graph.dataflowOutOfOrder", "[cache] The dataflow cache does not line up with the call sites ({0} #{1}). The values for this one are not used",
             "graph.provider.failed", "candidate provider failed: {0} ({1})",
             "graph.provider.unusable", "Cannot use the candidate the extension returned: {0}#{1} ({2} / {3}) ... neither this type nor its parents have a body for this method. Dropping the candidate",
             "graph.contracts.unreadable", "Cannot read the contract table: {0} ({1}). Continuing without it",
@@ -555,7 +552,8 @@ final class MessagesEn {
 
     private static String[] cache() {
         return new String[] {
-            "cache.dataflow.missingBlock", "[cache] The dataflow cache has no block for {0}. The values in this file are not used (concrete-class resolution stops at CHA)",
+            "cache.badReference", "[cache] The cache {0} has a row that refers outside its file block or to an unreadable row, so that row or value is not used. The cache may have been edited or damaged: delete the cache folder {1} and run again",
+            "cache.dump.usage", "Usage: java -cp <tool classes and JDT jars> jche.cache.CacheDump <analysis-cache.tsv>   (prints the cache with method symbols expanded to 4 columns)",
         };
     }
 

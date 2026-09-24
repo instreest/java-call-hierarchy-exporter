@@ -23,7 +23,7 @@ import java.util.Map;
  * {@code eclipse-plugin/pom.xml}（{@code jche/**} を取り込んでプラグインの jar に入れる）・
  * VSCode プラグインの配布物・GitHub Actions、そして
  * <b>{@code javac -d <出力先>} で直接コンパイルしている検査スクリプト</b>
- * （{@code test/cachetail} / {@code cachevalue} / {@code conditions} / {@code contracts} /
+ * （{@code test/cachevalue} / {@code conditions} / {@code contracts} /
  * {@code dataflow} / {@code incremental} / {@code server}）から使われる。
  * properties にすると、このすべてに「リソースを一緒に配る」処理が要る。
  * そして 1 か所でも漏れると<b>例外も警告も出ずに、画面にキー名が出るだけ</b>になる。

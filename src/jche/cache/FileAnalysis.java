@@ -57,15 +57,12 @@ public final class FileAnalysis {
     /** 呼び出し箇所（{@link CallEdgeFact} と {@link UnresolvedCallFact}）をソース上の順で */
     public final List<CallSite> callSites = new ArrayList<>();
     public final List<ReturnFact> returns = new ArrayList<>();
-    /**
-     * 値グラフのノード（dataflow 側の N 行）。上限の無い形で値の流れを持つ。
-     * {@link CallSite} の出所（上限付き）と同じ式から作られ、両方が書き出される
-     * （読み手が移るまでの並走。{@code docs/cache-split-qa.md}）
-     */
+    /** 値グラフのノード（N 行）。上限の無い形で値の流れを持つ。番号は並びの位置 */
     public final List<ValueNode> valueNodes = new ArrayList<>();
     /**
-     * 呼び出し箇所ごとの値（dataflow 側の P 行）。{@link #callSites} と同じ数・同じ順で並ぶ
-     * （1 対 1 で結びつけられるようにするため）
+     * 呼び出し箇所ごとの値。{@link #callSites} と<b>同じ数・同じ順</b>で並び、同じ位置どうしが組になる。
+     * キャッシュでは組にした 2 つを 1 行（C 行・U 行）に書く。条件の調査
+     * （{@code jche.analysis.CallConditionScanner}）もキャッシュを通さず、同じ位置で組にして読む
      */
     public final List<CallSiteValues> callSiteValues = new ArrayList<>();
     public final List<FunctionalImplFact> functionalImpls = new ArrayList<>();
@@ -75,11 +72,15 @@ public final class FileAnalysis {
         this.size = size;
     }
 
-    /** 型解決できなかった呼び出しの数（import から推定した候補があるものは除く） */
+    /**
+     * 型解決できなかった呼び出しの数。読み手がエッジにできる U 行（import から推定した候補があり、
+     * 呼び出し元も分かるもの。{@link UnresolvedCallFact#hasUsableCandidate}）は除く。
+     * F 行の未解決数（{@link CacheFormat#unresolvedOf}）もこの数
+     */
     public int unresolvedCount() {
         int n = 0;
         for (CallSite site : callSites) {
-            if (site instanceof UnresolvedCallFact u && u.candidate().isEmpty()) {
+            if (site instanceof UnresolvedCallFact u && !u.hasUsableCandidate()) {
                 n++;
             }
         }

@@ -454,12 +454,10 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 （ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、
 どこから実行しても、キャッシュの場所は変わりません。
 
-ファイルは 2 つで、常に対で作られます。片方だけを消しても、次の実行で両方が作り直されます。
-
-| ファイル | 中身 |
-|---|---|
-| `analysis-cache.tsv` | 呼び出し階層を出すための事実（構造とバインディング） |
-| `dataflow-cache.tsv` | 呼び出し階層の出力には使わない、値の追跡のための事実 |
+キャッシュは `analysis-cache.tsv` の 1 ファイルです。解析で分かった事実（呼び出し階層の構造と、
+値の追跡に使う値）をソースファイル 1 つにつき 1 ブロックで持ち、ブロックごとに壊れていないかを確かめます。
+壊れたブロックがあれば、そのファイルだけを解析し直します。以前の版が作った `dataflow-cache.tsv` が
+残っていれば、次の実行で消します。
 
 - 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
 - 2 回目以降は変更されたファイルだけを解析し直します。依存 jar を足したときも、
@@ -954,13 +952,10 @@ Config files pointing at the same project share the same cache, and projects wit
 different places (checkouts per branch, for instance) do not get mixed up. Wherever you put the config
 file and wherever you run from, the cache location does not change.
 
-There are two files, and they are always created as a pair. Deleting one of them makes the next run
-rebuild both.
-
-| File | Content |
-|---|---|
-| `analysis-cache.tsv` | The facts needed to write the call hierarchy (structure and bindings) |
-| `dataflow-cache.tsv` | Facts for tracking values, which the call hierarchy output does not use |
+The cache is a single file, `analysis-cache.tsv`. It holds the facts the analysis found (the structure of
+the call hierarchy and the values used for value tracking), one block per source file, and each block is
+checked for damage. If a block is damaged, only that file is analyzed again. A `dataflow-cache.tsv` left
+by an older version is deleted on the next run.
 
 - Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
 - From the second run on, only the changed files are analyzed again. When you add a dependency jar, only

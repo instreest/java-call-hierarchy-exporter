@@ -4,20 +4,17 @@ package jche.cache;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 
 /**
  * キャッシュファイルを先頭から 1 行ずつ読む。
  *
- * 読み手（{@code CacheUpdater} のパス0・1・3、{@code CallGraphBuilder} の 2 回のスキャン、
- * {@code UnresolvedReport} の 2 回のスキャン）はどれも「ヘッダ行を飛ばし、行種別で分岐し、
- * F 行でブロックが切り替わる」という同じ形をしていた。ここに 1 本にまとめて、
- * ヘッダの扱い・空行の読み飛ばし・列の分割が読み手ごとにずれないようにする。
+ * 読み手（{@code CacheUpdater} のパス0・1・3・5、{@code CallGraphBuilder} の 2 回のスキャン、
+ * {@code UnresolvedReport} の 2 回のスキャン、{@link CacheDump}）はどれも「ヘッダ行を飛ばし、
+ * 行種別で分岐し、F 行でブロックが切り替わる」という同じ形をしている。ここに 1 本にまとめて、
+ * ヘッダの扱い・空行の読み飛ばし・列の分割と符号化の戻し方が読み手ごとにずれないようにする。
  *
  * <pre>
  *   try (CacheReader in = CacheReader.open(cacheFile)) {
@@ -27,17 +24,9 @@ import java.nio.file.StandardOpenOption;
  *   }
  * </pre>
  * 列の分割（{@link #columns}）は必要になった行でだけ行う。行種別だけ見て読み飛ばす行が多いため。
- *
- * <p>例外は {@link #lastLineOf} で、最終行（Z 行）だけを見たい場面のためにファイルの末尾だけを読む。
- * 形式を知っているのはこのクラスなので、読み方もここに置いている。
+ * 行の区切りは LF でも CRLF でもよい（書き手は常に LF で書く）。
  */
 public final class CacheReader implements Closeable {
-
-    /**
-     * {@link #lastLineOf} が末尾から読む量。最終行として想定しているのは Z 行
-     * （{@code Z<TAB>ブロック数}）で、これよりはるかに短い
-     */
-    private static final int TAIL_BYTES = 512;
 
     private final BufferedReader in;
     private final String header;
@@ -61,14 +50,13 @@ public final class CacheReader implements Closeable {
         }
     }
 
-    /** ヘッダ行（{@link CacheFormat#headerFor} の形。末尾に世代の印が付く）。無ければ空文字 */
+    /** ヘッダ行（{@link CacheFormat#headerFor} の形）。無ければ空文字 */
     public String header() {
         return header;
     }
 
     /**
      * ヘッダの形式が期待どおりか（版・ソースレベル・文字コード・JDK・JDT の版が一致するか）。
-     * 世代の印（{@link CacheFormat#GENERATION_PREFIX}）は互換性とは別の軸なので比べない。
      *
      * <p>期待する側に分からない値（{@code ?}。JDT の版が読めなかった等）が入っていれば、
      * 書かれている側と同じ文字列でも一致とはみなさない。「分からない」どうしが一致しても、
@@ -78,15 +66,7 @@ public final class CacheReader implements Closeable {
         if (expected.contains("=?")) {
             return false;
         }
-        return CacheFormat.compatibilityPartOf(header).equals(expected);
-    }
-
-    /**
-     * ヘッダの世代の印。無ければ空文字。
-     * 2 つのキャッシュが同じ実行で書かれたかを突き合わせるのに使う
-     */
-    public String generation() {
-        return CacheFormat.generationOf(header);
+        return header.equals(expected);
     }
 
     /**
@@ -104,7 +84,7 @@ public final class CacheReader implements Closeable {
         return false;
     }
 
-    /** 今の行（生の文字列） */
+    /** 今の行（ファイルに書かれたままの文字列。列は符号化されたまま） */
     public String line() {
         return line;
     }
@@ -118,7 +98,10 @@ public final class CacheReader implements Closeable {
         return rowType() == rowType;
     }
 
-    /** 今の行をタブで分割したもの（この行で初めて呼ばれたときに分割する） */
+    /**
+     * 今の行をタブで分割し、各列の符号化を戻したもの（{@link CacheFormat#columnsOf}。
+     * この行で初めて呼ばれたときに分割する）
+     */
     public String[] columns() {
         if (columns == null) {
             columns = CacheFormat.columnsOf(line);
@@ -126,53 +109,9 @@ public final class CacheReader implements Closeable {
         return columns;
     }
 
-    /** 今の行の指定位置の列。無ければ空文字 */
+    /** 今の行の指定位置の列（符号化を戻したもの）。無ければ空文字 */
     public String column(int index) {
         return CacheFormat.columnAt(columns(), index);
-    }
-
-    /**
-     * ファイルの最終行（空行を除く）。ファイルを<b>末尾からだけ</b>読む。
-     *
-     * 最終行（Z 行）だけを見たい場面のためにある。先頭から 1 行ずつ読むと、数百MBの
-     * キャッシュでも最後の 1 行を取るためにファイル全体を走ることになるため
-     * （{@code CacheUpdater} が 2 つのキャッシュの対を判定するたびに起きていた）。
-     *
-     * <p>{@link #TAIL_BYTES} の中に行の区切りが無ければ null を返す。そこまで長い行は
-     * Z 行ではありえないので、呼び出し側の「最終行が Z 行でなければ対でない」という判定と
-     * 同じ結論になる。改行の前を探すので、UTF-8 の多バイト文字を途中で切ることはない
-     * （0x0A は継続バイトには現れない）。改行は LF / CRLF のどちらでもよい。
-     *
-     * @return 最終行（前後の空白と改行を落としたもの）。空ファイル・空行だけ・長すぎる行なら null
-     */
-    public static String lastLineOf(Path file) throws IOException {
-        try (SeekableByteChannel ch = Files.newByteChannel(file, StandardOpenOption.READ)) {
-            long size = ch.size();
-            if (size == 0) {
-                return null;
-            }
-            int len = (int) Math.min(size, TAIL_BYTES);
-            ByteBuffer buf = ByteBuffer.allocate(len);
-            ch.position(size - len);
-            while (buf.hasRemaining() && ch.read(buf) > 0) {
-                // 読めるだけ読む（ファイルの末尾なので、途中で 0 を返されても残りは無い）
-            }
-            byte[] tail = buf.array();
-            int end = buf.position();
-            // 末尾の改行を落とす（書き出しは必ず改行で終わる。空行が続いていればそれも飛ばす）
-            while (end > 0 && (tail[end - 1] == '\n' || tail[end - 1] == '\r')) {
-                end--;
-            }
-            int start = end;
-            while (start > 0 && tail[start - 1] != '\n') {
-                start--;
-            }
-            if (start == 0 && len < size) {
-                return null;   // 最終行が読んだ範囲に収まらない（Z 行ではありえない長さ）
-            }
-            String line = new String(tail, start, end - start, StandardCharsets.UTF_8).trim();
-            return line.isEmpty() ? null : line;
-        }
     }
 
     /** F 行（ブロックの先頭）の相対パス。F 行でなければ空文字 */

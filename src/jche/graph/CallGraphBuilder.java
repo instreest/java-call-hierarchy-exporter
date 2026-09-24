@@ -13,46 +13,51 @@ import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
 import jche.cache.CallEdgeFact;
 import jche.cache.CallSiteValues;
-import jche.cache.DataflowBlockReader;
 import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
 import jche.cache.FunctionalImplFact;
 import jche.cache.HintFact;
 import jche.cache.MethodDeclFact;
-import jche.cache.OverrideFact;
-import jche.cache.ModifierTokens;
 import jche.cache.MethodRef;
+import jche.cache.ModifierTokens;
+import jche.cache.Origin;
+import jche.cache.OverrideFact;
 import jche.cache.ReturnFact;
+import jche.cache.SymbolTable;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
+import jche.cache.ValueNode;
 import jche.extension.Hint;
 import jche.util.Log;
+import jche.util.Messages;
 import jche.util.Names;
 import jche.util.RunControl;
-import jche.util.Messages;
 
 /**
  * キャッシュファイルをスキャンして {@link CallGraph} を構築する。
  * <pre>
  *   1回目 … メソッドをID化し、呼び出し元ごとの本数を数える。
- *           型階層・フィールド注入の判定・戻り値の出所・拡張の証拠もこの回で済ませる
+ *           型階層・フィールド注入の判定・戻り値の出所・証拠（X 行）もこの回で済ませる
  *   2回目 … 数えた本数から offsets を作り、実際のエッジを流し込む
  * </pre>
- * どちらもストリーミングなので、キャッシュ全体をヒープに載せない。
+ * どちらもストリーミングなので、キャッシュ全体をヒープに載せない。ヒープに載るのは
+ * 1 ブロック分の記号表（S 行）と値グラフ（N 行）だけ。
  *
- * <h2>値は dataflow 側から、歩調を合わせて読む</h2>
- * 値に関わる事実（呼び出しの出所・ガード・フィールドへの代入・戻り値の出所・拡張の証拠）は
- * dataflow 側のキャッシュにある（{@code docs/cache-split-qa.md} の Q11）。
- * 2 つのキャッシュは常に同じブロックを同じ順で持つので、analysis 側の F 行に出会うたびに
- * dataflow 側も同じブロックまで読み進める（{@link DataflowBlockReader}）。
- * ヒープに載るのは 1 ブロック分だけ。
+ * <h2>ブロックの読み方</h2>
+ * メソッドを指す列は、ブロックの記号表（S 行）の番号で書かれている（{@link SymbolTable}）。
+ * S 行を読んだ時点ではメソッドを ID 化せず、参照する行を読んだときに ID 化する。
+ * {@link MethodTable} の ID は初めて ID 化した順に振られ、ID の順は出力の並びの同点決着に使われるので、
+ * ID 化の順は「戻り値（R 行）→ 宣言（D 行）→ 上書き（O 行）→ 呼び出し（C・U 行。呼び出し元、呼び出し先の順）」
+ * で固定している（書き手もブロックの行をこの順に並べる）。M 行・A 行の呼び出し元は ID 化しない。
  *
- * <p>呼び出し箇所の値（P 行）は C 行・U 行と<b>同じ数・同じ順</b>で並ぶので、ブロックの中では
- * 位置で対応が取れる。鍵（行番号・呼び出し元・呼び出し先の表示名）も持っているので、
- * 位置が合っているかをそこで検算する（食い違えば値を使わない側に倒す）。
+ * <p>呼び出し箇所の値（レシーバ・実引数・識別キー・ガード）は C 行・U 行の末尾の列にある
+ * （{@link CallSiteValues}）。ノード番号は同じブロックの N 行を指し、出所の文字列は
+ * {@link OriginRenderer} がそこから組み直す。フィールドへの代入（J 行）は同じブロックの
+ * V 行・D 行と組で判定するので、ブロックを読み終えてから渡す。
  *
- * <p>dataflow 側を読まない指定（{@code dataflow.enabled=false}）のときは、
- * 値が無いものとして組む。具象クラスの解決は CHA まで、条件分岐の打ち切りは起きない
+ * <p>値を読まない指定（{@code dataflow.enabled=false}）のときは、N・R・J・X 行と
+ * 呼び出し箇所の値の列を読まない。値が無いものとして組むので、具象クラスの解決は CHA まで、
+ * 条件分岐の打ち切りは起きない
  *
  * 読み手の判断として、U行（型解決失敗）に import からの推定候補があれば、
  * それをエッジにする（クラスパス不足で階層から消えるより、未検証と分かる形で残す方針）。
@@ -61,6 +66,9 @@ public final class CallGraphBuilder {
 
     private final CallGraph graph = new CallGraph();
     private final MethodTable methods = graph.methods;
+    private final Path cacheFile;
+    /** 値（N・R・J・X 行と呼び出し箇所の値）を読むか（{@code dataflow.enabled}） */
+    private final boolean readValues;
 
     /** 1回目のスキャンで数える、呼び出し元ごとのエッジ数 */
     private final IntArray outDegree = new IntArray(1 << 16);
@@ -70,28 +78,32 @@ public final class CallGraphBuilder {
 
     /** 2回目のスキャンで、呼び出し元ごとに次に書く位置 */
     private int[] cursor;
-    /** P 行の並びが合わなかったことを警告したか（1度だけ出す） */
-    private boolean warnedAboutJoin;
+    /** ブロックの外を指す番号に出会ったことを警告したか（1度だけ出す） */
+    private boolean warnedAboutReference;
 
-    private CallGraphBuilder() {
+    private CallGraphBuilder(Path cacheFile, boolean readValues) {
+        this.cacheFile = cacheFile;
+        this.readValues = readValues;
     }
 
     /**
+     * @param readValues        値（値グラフ・戻り値の出所・フィールドへの代入・証拠・呼び出し箇所の値）を
+     *                          読むか。{@code dataflow.enabled=false} なら false
      * @param sourceFolderOrder 起点の並び替えに使うソースフォルダの順（プロジェクトルートからの相対パス）
      * @param beans             DIコンテナのBean定義の取り込み先（使わないなら {@link SpringBeans#DISABLED}）
      */
-    public static CallGraph build(Path cacheFile, Path dataflowCacheFile,
+    public static CallGraph build(Path cacheFile, boolean readValues,
                                  List<String> sourceFolderOrder, SpringBeans beans)
             throws IOException {
-        CallGraphBuilder b = new CallGraphBuilder();
+        CallGraphBuilder b = new CallGraphBuilder(cacheFile, readValues);
         b.graph.sourceFolderOrder = sourceFolderOrder;
         b.graph.beans = beans;
         RunControl.progress(Messages.get("graph.progress.build"), 0, 2);
-        b.firstPass(cacheFile, dataflowCacheFile);
+        b.firstPass();
         RunControl.checkCancelled();
         b.allocateEdges();
         RunControl.progress(Messages.get("graph.progress.build"), 1, 2);
-        b.secondPass(cacheFile, dataflowCacheFile);
+        b.secondPass();
         b.graph.finishBuild();
         RunControl.progress(Messages.get("graph.progress.build"), 2, 2);
         return b.graph;
@@ -101,21 +113,26 @@ public final class CallGraphBuilder {
     // 1回目: ID化と本数カウント
     // ------------------------------------------------------------
 
-    private void firstPass(Path cacheFile, Path dataflowCacheFile) throws IOException {
-        try (CacheReader in = CacheReader.open(cacheFile);
-             DataflowBlockReader flow = openFlow(dataflowCacheFile)) {
+    private void firstPass() throws IOException {
+        try (CacheReader in = CacheReader.open(cacheFile)) {
             String currentFile = null;
+            SymbolTable.Reader symbols = new SymbolTable.Reader();
             while (in.next()) {
                 switch (in.rowType()) {
                     case CacheFormat.ROW_FILE -> {
-                        // ファイル単位で完結する判定（フィールド注入）をここで確定する。
-                        // 代入（J行）は dataflow 側にあり、宣言（V行）より先に読めてしまうので、
-                        // ブロックを読み終えたこの時点で渡す
+                        // ファイル単位で完結する判定（フィールド注入）を、読み終えた前のブロックについて確定する。
+                        // 代入（J行）はブロックの後ろにあるので、宣言（V行・D行）が揃ったこの時点で渡す
                         applyPendingAssigns();
                         fields.flushInto(graph.fieldOrigins);
                         currentFile = in.filePath();
-                        // dataflow 側の同じブロックへ進み、値の事実を取り込む
-                        readBlockValues(flow, currentFile);
+                        symbols.clear();
+                    }
+                    case CacheFormat.ROW_SYMBOL -> symbols.add(in.columns());
+                    case CacheFormat.ROW_RETURN -> {
+                        // D 行より前に並ぶので、戻り値のあるメソッドは宣言より先に ID 化される
+                        if (readValues && inRange(in.columns(), symbols.array())) {
+                            readReturn(ReturnFact.fromRow(in.columns(), symbols.array()));
+                        }
                     }
                     case CacheFormat.ROW_TYPE -> {
                         TypeFact t = TypeFact.fromRow(in.columns());
@@ -125,7 +142,8 @@ public final class CallGraphBuilder {
                         }
                     }
                     case CacheFormat.ROW_METHOD_DECL -> {
-                        MethodDeclFact d = MethodDeclFact.fromRow(in.columns());
+                        MethodDeclFact d = inRange(in.columns(), symbols.array())
+                                ? MethodDeclFact.fromRow(in.columns(), symbols.array()) : null;
                         if (d != null) {
                             int id = methods.intern(d.ref());
                             ensure(outDegree, id);
@@ -141,19 +159,20 @@ public final class CallGraphBuilder {
                     }
                     case CacheFormat.ROW_OVERRIDE -> {
                         // O行はD行の直後に並ぶので、ここで intern すれば宣言の情報は揃っている
-                        OverrideFact o = OverrideFact.fromRow(in.columns());
+                        OverrideFact o = inRange(in.columns(), symbols.array())
+                                ? OverrideFact.fromRow(in.columns(), symbols.array()) : null;
                         if (o != null) {
                             graph.overrides.add(o, methods.intern(o.ref()));
                         }
                     }
                     case CacheFormat.ROW_CALL -> {
-                        CallEdgeFact c = CallEdgeFact.fromRow(in.columns());
+                        CallEdgeFact c = callOf(in.columns(), symbols.array());
                         if (c != null) {
                             countEdge(methods.intern(c.caller()), methods.intern(c.callee()));
                         }
                     }
                     case CacheFormat.ROW_UNRESOLVED -> {
-                        UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
+                        UnresolvedCallFact u = unresolvedOf(in.columns(), symbols.array());
                         if (u != null && u.hasUsableCandidate()) {
                             countEdge(methods.intern(u.caller()), internGuessedCallee(u));
                         }
@@ -166,13 +185,31 @@ public final class CallGraphBuilder {
                         }
                     }
                     case CacheFormat.ROW_FUNCTIONAL_IMPL -> {
-                        FunctionalImplFact m = FunctionalImplFact.fromRow(in.columns());
+                        // 使うのは関数型インターフェースのメソッドキーだけで、呼び出し元は使わない。
+                        // 呼び出し元の記号が壊れていても行は捨てない（呼び出し元 null として読む）
+                        FunctionalImplFact m = FunctionalImplFact.fromRow(in.columns(), symbols.array());
                         if (m != null && !m.ifaceMethodKey().isEmpty()) {
                             graph.functionalImpls.add(m.ifaceMethodKey());
                         }
                     }
+                    case CacheFormat.ROW_FIELD_ASSIGN -> {
+                        // 代入はフィールドの宣言（V 行）が揃ってからでないと拾われないので、
+                        // ここでは溜めるだけにして、ブロックを読み終えてから渡す
+                        FieldAssignFact j = readValues ? FieldAssignFact.fromRow(in.columns()) : null;
+                        if (j != null) {
+                            pendingAssigns.add(j);
+                        }
+                    }
+                    case CacheFormat.ROW_HINT -> {
+                        // 証拠は呼び出し元と変数の鍵で集約するだけなので、どのブロックで出会っても同じ結果になる
+                        HintFact h = readValues ? HintFact.fromRow(in.columns()) : null;
+                        if (h != null) {
+                            graph.hintsByScope.computeIfAbsent(h.callerKey() + "|" + h.scopeKey(),
+                                    k -> new ArrayList<>()).add(new Hint(h.kind(), h.value()));
+                        }
+                    }
                     default -> {
-                        // I行は差分更新のためだけの行で、読み手は使わない
+                        // I行は差分更新のためだけの行、N行は2回目で読む、A行・K行は今の読み手は使わない
                     }
                 }
             }
@@ -186,48 +223,67 @@ public final class CallGraphBuilder {
         }
     }
 
-    /** dataflow 側を開く。読まない指定なら null（{@link #readBlockValues} が何もしない） */
-    private static DataflowBlockReader openFlow(Path dataflowCacheFile) throws IOException {
-        return (dataflowCacheFile == null) ? null : DataflowBlockReader.open(dataflowCacheFile);
-    }
-
     /** 今のブロックのフィールドへの代入（J行）。宣言が揃ってから {@link #fields} に渡す */
-    private List<FieldAssignFact> pendingAssigns = List.of();
+    private final List<FieldAssignFact> pendingAssigns = new ArrayList<>();
 
     /** 溜めた代入を渡して捨てる。{@code fields.flushInto} の直前に呼ぶ */
     private void applyPendingAssigns() {
         for (FieldAssignFact j : pendingAssigns) {
             fields.assignment(j);
         }
-        pendingAssigns = List.of();
+        pendingAssigns.clear();
     }
 
     /**
-     * 1回目のスキャンで、dataflow 側の同じブロックから値の事実を取り込む。
-     *
-     * フィールドへの代入（J行）はそのブロックの V 行と組で判定するのでここで渡す。
-     * 戻り値の出所（R行）と拡張の証拠（X行）はメソッド・証拠の鍵で集約するだけなので、
-     * どのブロックで出会っても同じ結果になる
+     * R 行（戻り値の出所）1 件。メソッドを ID 化し、出所を集める。
+     * 戻り値の出所はメソッドの鍵で集約するだけなので、どのブロックで出会っても同じ結果になる
      */
-    private void readBlockValues(DataflowBlockReader flow, String path) throws IOException {
-        if (flow == null || path == null) {
+    private void readReturn(ReturnFact r) {
+        if (r == null) {
             return;
         }
-        DataflowBlockReader.Block block = flow.advanceTo(path);
-        // 代入はフィールドの宣言（analysis 側の V 行）が揃ってからでないと拾われないので、
-        // ここでは溜めるだけにして、ブロックを読み終えてから渡す
-        pendingAssigns = block.fieldAssigns();
-        for (ReturnFact r : block.returns()) {
-            int id = methods.intern(r.method());
-            ensure(outDegree, id);
-            List<String> origins = returnsById.computeIfAbsent(id, k -> new ArrayList<>(2));
-            if (!origins.contains(r.origin())) {
-                origins.add(r.origin());
-            }
+        int id = methods.intern(r.method());
+        ensure(outDegree, id);
+        List<String> origins = returnsById.computeIfAbsent(id, k -> new ArrayList<>(2));
+        if (!origins.contains(r.origin())) {
+            origins.add(r.origin());
         }
-        for (HintFact h : block.hints()) {
-            graph.hintsByScope.computeIfAbsent(h.callerKey() + "|" + h.scopeKey(),
-                    k -> new ArrayList<>()).add(new Hint(h.kind(), h.value()));
+    }
+
+    /**
+     * C 行を読む。記号がブロックの外を指す・列が足りなければ null。
+     * 1 回目と 2 回目で同じ判定をする（食い違うと呼び出し元ごとの本数と書く位置がずれる）
+     */
+    private CallEdgeFact callOf(String[] cols, MethodRef[] symbols) {
+        return inRange(cols, symbols) ? CallEdgeFact.fromRow(cols, symbols) : null;
+    }
+
+    /** U 行を読む。{@link #callOf} と同じく、1 回目と 2 回目で同じ判定をする */
+    private UnresolvedCallFact unresolvedOf(String[] cols, MethodRef[] symbols) {
+        return inRange(cols, symbols) ? UnresolvedCallFact.fromRow(cols, symbols) : null;
+    }
+
+    /**
+     * 行の記号がどれもブロックの記号表の読めた S 行を指すか（{@link SymbolTable#refsInRange}）。
+     * 範囲の外、または読めなかった S 行を指していれば 1 度だけ警告して false（その行は使わない）。
+     *
+     * <p>差分更新（{@code CacheUpdater} のパス1）がブロックの検査値を確かめているので、ここで外れることは
+     * 事実上ない。外れたときに黙って読み飛ばすと呼び出しが静かに消えるので、利用者に知らせる
+     */
+    private boolean inRange(String[] cols, MethodRef[] symbols) {
+        if (SymbolTable.refsInRange(cols, symbols)) {
+            return true;
+        }
+        warnBadReference();
+        return false;
+    }
+
+    private void warnBadReference() {
+        if (!warnedAboutReference) {
+            warnedAboutReference = true;
+            Path dir = cacheFile.toAbsolutePath().getParent();
+            Log.warn(Messages.format("cache.badReference", cacheFile.getFileName(),
+                    (dir == null) ? cacheFile : dir));
         }
     }
 
@@ -301,99 +357,141 @@ public final class CallGraphBuilder {
     // 2回目: エッジを流し込む
     // ------------------------------------------------------------
 
-    private void secondPass(Path cacheFile, Path dataflowCacheFile) throws IOException {
-        try (CacheReader in = CacheReader.open(cacheFile);
-             DataflowBlockReader flow = openFlow(dataflowCacheFile)) {
-            // 今のブロックの P 行と、そこを何件目まで使ったか。C 行・U 行と同じ順に並ぶ
-            List<CallSiteValues> blockValues = List.of();
-            // 同じブロックの値グラフ（N 行）。出所の文字列はここから組み直す
-            OriginRenderer renderer = new OriginRenderer(List.of());
-            int valueIndex = 0;
-            joinKeyCounts.clear();
+    private void secondPass() throws IOException {
+        try (CacheReader in = CacheReader.open(cacheFile)) {
+            SymbolTable.Reader symbols = new SymbolTable.Reader();
+            BlockNodes nodes = new BlockNodes();
             while (in.next()) {
-                char rowType = in.rowType();
-                if (rowType == CacheFormat.ROW_FILE) {
-                    DataflowBlockReader.Block block = (flow == null)
-                            ? DataflowBlockReader.Block.empty() : flow.advanceTo(in.filePath());
-                    blockValues = block.callSiteValues();
-                    renderer = new OriginRenderer(block.valueNodes());
-                    valueIndex = 0;
-                    joinKeyCounts.clear();
-                    continue;
-                }
-                if (rowType != CacheFormat.ROW_CALL && rowType != CacheFormat.ROW_UNRESOLVED) {
-                    continue;
-                }
-                // C 行・U 行 1 行につき P 行 1 行。エッジにならない U 行でも位置を進める
-                CallSiteValues values = (valueIndex < blockValues.size())
-                        ? blockValues.get(valueIndex) : CallSiteValues.NONE;
-                valueIndex++;
-                if (rowType == CacheFormat.ROW_CALL) {
-                    CallEdgeFact c = CallEdgeFact.fromRow(in.columns());
-                    if (c == null) {
-                        continue;
+                switch (in.rowType()) {
+                    case CacheFormat.ROW_FILE -> {
+                        symbols.clear();
+                        nodes.clear();
                     }
-                    values = verified(values, c.callLine(), c.caller(), c.callee().name());
-                    int pos = cursor[methods.intern(c.caller())]++;
-                    graph.calleeIds[pos] = methods.intern(c.callee());
-                    graph.callLines[pos] = c.callLine();
-                    graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
-                    graph.setQualifier(pos, c.qualifier());
-                    graph.fillCallSite(pos, c.caller().key(), values.recvKey(), c.recvKind(),
-                            renderer.originOf(values.recv()),
-                            renderer.argOriginsOf(values.args()), values.guard());
-                } else {
-                    UnresolvedCallFact u = UnresolvedCallFact.fromRow(in.columns());
-                    if (u == null) {
-                        continue;
+                    case CacheFormat.ROW_SYMBOL -> symbols.add(in.columns());
+                    case CacheFormat.ROW_VALUE_NODE -> {
+                        if (readValues) {
+                            nodes.add(ValueNode.fromRow(in.columns()));
+                        }
                     }
-                    // エッジにならない U 行でも検算は通す。同じ鍵の通し番号を数え進めるため
-                    values = verified(values, u.line(), u.caller(), u.expression());
-                    if (!u.hasUsableCandidate()) {
-                        continue;
+                    case CacheFormat.ROW_CALL -> addCall(in.columns(), symbols.array(), nodes);
+                    case CacheFormat.ROW_UNRESOLVED -> addUnresolved(in.columns(), symbols.array(), nodes);
+                    default -> {
+                        // ほかの行は1回目で読み終えている
                     }
-                    int pos = cursor[methods.intern(u.caller())]++;
-                    graph.calleeIds[pos] = internGuessedCallee(u);
-                    graph.callLines[pos] = u.line();
-                    graph.bindKinds[pos] = (byte) BindKind.GUESSED;
-                    graph.fillCallSite(pos, u.caller().key(), values.recvKey(), u.recvKind(),
-                            renderer.originOf(values.recv()),
-                            renderer.argOriginsOf(values.args()), values.guard());
                 }
             }
         }
     }
 
-    /** 今のブロックで、同じ鍵（行番号・呼び出し元・表示名）の C 行・U 行を何本見たか */
-    private final Map<String, Integer> joinKeyCounts = new HashMap<>();
+    /** C 行 1 行をエッジにする */
+    private void addCall(String[] cols, MethodRef[] symbols, BlockNodes nodes) {
+        CallEdgeFact c = callOf(cols, symbols);
+        if (c == null) {
+            return;
+        }
+        CallSiteValues values = valuesOf(cols, nodes);
+        int pos = cursor[methods.intern(c.caller())]++;
+        graph.calleeIds[pos] = methods.intern(c.callee());
+        graph.callLines[pos] = c.callLine();
+        graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
+        graph.setQualifier(pos, c.qualifier());
+        OriginRenderer renderer = nodes.renderer();
+        graph.fillCallSite(pos, c.caller().key(), values.recvKey(), c.recvKind(),
+                renderer.originOf(values.recv()), renderer.argOriginsOf(values.args()), values.guard());
+    }
+
+    /** U 行 1 行を、import からの推定候補があればエッジにする */
+    private void addUnresolved(String[] cols, MethodRef[] symbols, BlockNodes nodes) {
+        UnresolvedCallFact u = unresolvedOf(cols, symbols);
+        if (u == null || !u.hasUsableCandidate()) {
+            return;
+        }
+        CallSiteValues values = valuesOf(cols, nodes);
+        int pos = cursor[methods.intern(u.caller())]++;
+        graph.calleeIds[pos] = internGuessedCallee(u);
+        graph.callLines[pos] = u.line();
+        graph.bindKinds[pos] = (byte) BindKind.GUESSED;
+        OriginRenderer renderer = nodes.renderer();
+        graph.fillCallSite(pos, u.caller().key(), values.recvKey(), u.recvKind(),
+                renderer.originOf(values.recv()), renderer.argOriginsOf(values.args()), values.guard());
+    }
 
     /**
-     * 位置で取った P 行が、本当にこの呼び出し箇所のものかを検算する。
-     *
-     * P 行は C 行・U 行と同じ順に書かれるので位置で対応が取れるが、鍵（行番号・呼び出し元・
-     * 呼び出し先の表示名）と通し番号も持っているので突き合わせる。通し番号は
-     * 書き手（{@code CallSiteRecorder}）と同じく「同じ鍵をこのブロックで何本見たか」で数え、
-     * {@code f(g(), g())} のようにまったく同じ鍵が並ぶ箇所でもずれを検出できるようにする
-     * （位置だけの対応が最も弱いのがそこなので）。
-     * 食い違っていれば<b>値を使わない</b>方に倒す
-     * （呼び出しは消えず、具象クラスの解決が CHA 止まりになるだけ）。
-     * 2 つのキャッシュが対である限り起きないので、起きたら1度だけ警告を出す
+     * 呼び出し箇所の値。値を読まない指定なら {@link CallSiteValues#NONE}。
+     * ノード番号がブロックの外を指していれば 1 度だけ警告する（その値は組み直せないので使われない）
      */
-    private CallSiteValues verified(CallSiteValues values, int line, MethodRef caller, String calleeName) {
-        String expected = line + "\u0000" + ((caller == null) ? "" : caller.key()) + "\u0000" + calleeName;
-        // 値が無くても数える。数え漏らすと、それ以降の同じ鍵の通し番号が全部ずれる
-        int ordinal = joinKeyCounts.merge(expected, 1, Integer::sum) - 1;
-        if (values == CallSiteValues.NONE) {
-            return values;
+    private CallSiteValues valuesOf(String[] cols, BlockNodes nodes) {
+        if (!readValues) {
+            return CallSiteValues.NONE;
         }
-        if (expected.equals(values.joinKey()) && values.ordinal() == ordinal) {
-            return values;
+        CallSiteValues values = CallSiteValues.fromRow(cols);
+        if (!nodes.inRange(values.recv(), true) || !nodes.argsInRange(values.args())) {
+            warnBadReference();
         }
-        if (!warnedAboutJoin) {
-            warnedAboutJoin = true;
-            Log.warn(Messages.format("graph.dataflowOutOfOrder",
-                    expected.replace('\u0000', ' '), ordinal));
+        return values;
+    }
+
+    /**
+     * 1 ブロック分の値グラフ（N 行）。番号は並びの位置。
+     * 出所の組み直し（{@link OriginRenderer}）はブロックの最初の呼び出し箇所で作る
+     * （N 行は C 行・U 行より前に並ぶので、そのときには揃っている）。
+     */
+    private final class BlockNodes {
+
+        private final List<ValueNode> nodes = new ArrayList<>();
+        private OriginRenderer renderer;
+
+        void clear() {
+            nodes.clear();
+            renderer = null;
         }
-        return CallSiteValues.NONE;
+
+        /**
+         * N 行を 1 つ足す。番号は並びの位置なので、読めない行や番号が並びと食い違う行でも
+         * <b>読み飛ばさず</b>「追跡できない」ノードで場所を埋める。読み飛ばすと以降の番号が
+         * 1 つずつずれ、別の値を別の呼び出し箇所に結びつけてしまう（ブロックの crc があるので
+         * 実際には起きないが、起きたら 1 度だけ警告する）
+         */
+        void add(ValueNode n) {
+            if (n == null || n.id() != nodes.size()) {
+                warnBadReference();
+                n = new ValueNode(nodes.size(), Origin.UNKNOWN, "", ValueNode.NONE, "", -1, "");
+            }
+            nodes.add(n);
+            renderer = null;
+        }
+
+        /** このブロックの組み直し。作るときに、ノードどうしの参照がブロックに収まるかを 1 度だけ確かめる */
+        OriginRenderer renderer() {
+            if (renderer == null) {
+                for (ValueNode n : nodes) {
+                    if (!inRange(n.recv(), true) || !argsInRange(n.args())) {
+                        warnBadReference();
+                        break;
+                    }
+                }
+                renderer = new OriginRenderer(nodes);
+            }
+            return renderer;
+        }
+
+        /** ノード番号がブロックに収まるか。{@code allowNone} なら {@link ValueNode#NONE} も収まるとみなす */
+        boolean inRange(int id, boolean allowNone) {
+            return (allowNone && id == ValueNode.NONE) || (id >= 0 && id < nodes.size());
+        }
+
+        /** 実引数の列（{@code 位置=番号} のカンマ区切り）の番号がどれもブロックに収まるか */
+        boolean argsInRange(String args) {
+            if (args.isEmpty()) {
+                return true;
+            }
+            for (String entry : args.split(String.valueOf(ValueNode.ARG_SEP))) {
+                int eq = entry.indexOf('=');
+                if (eq < 0 || !inRange(ValueNode.intOf(entry.substring(eq + 1), Integer.MIN_VALUE), false)) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 }

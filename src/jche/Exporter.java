@@ -221,10 +221,10 @@ public final class Exporter {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
         }
         SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
-        // dataflow 側は「値」を持つ。dataflow.enabled=false のときは開かない
+        // dataflow.enabled=false のときは値（値グラフ・戻り値・代入・証拠・呼び出し箇所の値）を読まない
         // （具象クラスの解決は CHA まで、条件分岐の打ち切りは起きない）
-        CallGraph graph = CallGraphBuilder.build(config.cacheFile,
-                config.dataflowEnabled ? config.dataflowCacheFile : null, sourceFolderOrder, beans);
+        CallGraph graph = CallGraphBuilder.build(config.cacheFile, config.dataflowEnabled,
+                sourceFolderOrder, beans);
         if (beans.enabled()) {
             Log.info(Messages.format("exporter.diBeans", beans.beanCount(),
                     (beans.beanCount() == 0) ? Messages.get("exporter.diBeans.none") : ""));

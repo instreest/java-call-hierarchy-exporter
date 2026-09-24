@@ -7,5 +7,11 @@ package jche.cache;
  */
 public sealed interface CallSite permits CallEdgeFact, UnresolvedCallFact {
 
-    String toRow();
+    /**
+     * キャッシュの行にする。呼び出し箇所の値（レシーバ・実引数・識別キー・ガード）も同じ行の末尾に持つ。
+     *
+     * @param symbols ブロックの記号表。呼び出し元・呼び出し先の番号をここで振る
+     * @param values  この呼び出し箇所の値（{@link FileAnalysis#callSiteValues} の同じ位置のもの）
+     */
+    String toRow(SymbolTable symbols, CallSiteValues values);
 }

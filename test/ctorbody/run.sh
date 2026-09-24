@@ -13,7 +13,9 @@
 #      同じ呼び出し階層になること
 #   3. インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。
 #      デフォルトコンストラクタはクラスにだけある）。クラスには従来どおり合成すること。
-#      CSV には <init> が出ないので、キャッシュの D 行で見る（docs/jls-conformance-qa.md の Q25）
+#      CSV には <init> が出ないので、キャッシュの D 行で見る（docs/jls-conformance-qa.md の Q25）。
+#      キャッシュの D 行はメソッドを記号（S 行の番号）で指すので、名前で引けるよう
+#      jche.cache.CacheDump で 4 列に戻した形（work/<ケース>/cache-dump.tsv）を見る
 #
 # この構文は Java 25 でないと書けないので、test/demo には置かない。
 # test/demo は多くの検査が共有するうえ、README.md の手順で javac でコンパイルして
@@ -128,10 +130,22 @@ make_project classic '        this(Helper.check(1));'
 make_project prologue '        int v = Helper.check(1);
         this(v);'
 
-analyze() {   # $1=フォルダ名 -> 出力 CSV のパスを ANALYZED に入れる
+analyze() {   # $1=フォルダ名 -> 出力 CSV のパスを ANALYZED に入れる。キャッシュの読める形を work/$1/cache-dump.tsv に
     ( cd "work/$1" && "$JAVA_BIN" -cp "$CLASSES:$CP" \
         jche.CallHierarchyExporter config.properties ) > "work/$1/run.log" 2>&1
     ANALYZED=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    local cache
+    cache=$(ls "work/$1"/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)
+    rm -f "work/$1/cache-dump.tsv"
+    if [ -z "$cache" ]; then
+        ng "$1: キャッシュができていません（work/$1/run.log）"
+    elif ! "$JAVA_BIN" -cp "$CLASSES:$CP" jche.cache.CacheDump "$cache" > "work/$1/cache-dump.tsv" \
+            2> "work/$1/cache-dump.log"; then
+        # 読める形にできなかった。途中までの出力が残ると、下の「無いこと」の検査が素通りするので消す
+        ng "$1: キャッシュを読める形にできませんでした（work/$1/cache-dump.log）"
+        grep -v JAVA_TOOL_OPTIONS "work/$1/cache-dump.log" | tail -5
+        rm -f "work/$1/cache-dump.tsv"
+    fi
 }
 
 for case in classic prologue; do
@@ -166,15 +180,15 @@ if [ -f work/classic.csv ] && [ -f work/prologue.csv ]; then
 fi
 
 # D 行の delegating（FieldFacts の安全弁がこれを見る）
-DELEG=$(grep -P "^D\tg\tg.Box\t<init>\t\t" work/prologue/.cache/*/analysis-cache.tsv 2>/dev/null \
+DELEG=$(grep -P "^D\tg\tg.Box\t<init>\t\t" work/prologue/cache-dump.tsv 2>/dev/null \
     | grep -c "delegating")
 [ "$DELEG" = "1" ] && ok "プロローグ付きでも D 行に delegating が付く" \
     || ng "D 行に delegating が付いていない（FieldFacts の安全弁が効かなくなる）"
 
 # 暗黙のコンストラクタ（JLS 8.8.9）。インターフェースとアノテーション型には無く、クラスには有る
-DCACHE=$(ls work/classic/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)
-if [ -z "$DCACHE" ]; then
-    ng "キャッシュが見つかりません（work/classic/.cache）"
+DCACHE=$(ls work/classic/cache-dump.tsv 2>/dev/null | head -1)
+if [ -z "$DCACHE" ] || [ ! -s "$DCACHE" ]; then
+    ng "キャッシュ（の読める形）が見つかりません（work/classic/.cache・work/classic/cache-dump.tsv）"
 else
     for t in Shape Tag; do
         grep -qP "^D\tg\tg.$t\t<init>\t" "$DCACHE" \

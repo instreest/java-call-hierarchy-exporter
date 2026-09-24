@@ -23,9 +23,12 @@ public record FieldAccessFact(int line, MethodRef caller, String ownerTypeFqn, S
     public static final String WRITE = "write";
     public static final String READ_WRITE = "readwrite";
 
-    public String toRow() {
-        String[] c = (caller == null) ? MethodRef.emptyColumns() : caller.toColumns();
-        return CacheFormat.joinRow("A", String.valueOf(line), c[0], c[1], c[2], c[3],
+    /**
+     * {@code A line 呼び出し元の記号 ownerTypeFqn fieldName access mods lambdaDepth}。
+     * 記号はブロックの記号表（{@link SymbolTable}）の番号で、囲みメソッドが無ければ {@link SymbolTable#NO_SYMBOL}
+     */
+    public String toRow(SymbolTable symbols) {
+        return CacheFormat.joinRow("A", String.valueOf(line), symbols.columnOf(caller),
                 ownerTypeFqn, fieldName, access, mods, String.valueOf(lambdaDepth));
     }
 }

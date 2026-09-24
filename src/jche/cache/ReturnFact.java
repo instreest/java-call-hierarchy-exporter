@@ -12,17 +12,21 @@ package jche.cache;
  */
 public record ReturnFact(MethodRef method, String origin) {
 
-    public String toRow() {
-        return CacheFormat.joinRow("R", method.pkg(), method.typeFqn(), method.name(),
-                method.paramSig(), origin);
+    /** {@code R 記号 origin}。記号はブロックの記号表（{@link SymbolTable}）の番号 */
+    public String toRow(SymbolTable symbols) {
+        return CacheFormat.joinRow("R", symbols.columnOf(method), origin);
     }
 
-    /** 列が足りなければ null */
-    public static ReturnFact fromRow(String[] cols) {
-        if (cols.length < 6) {
+    /**
+     * 列が足りない・記号が引けなければ null
+     *
+     * @param symbols ブロックの記号表（{@link SymbolTable.Reader#array}）
+     */
+    public static ReturnFact fromRow(String[] cols, MethodRef[] symbols) {
+        if (cols.length < 3) {
             return null;
         }
-        MethodRef method = MethodRef.fromColumns(cols, 1);
-        return (method == null) ? null : new ReturnFact(method, cols[5]);
+        MethodRef method = SymbolTable.resolve(symbols, cols[1]);
+        return (method == null) ? null : new ReturnFact(method, cols[2]);
     }
 }

@@ -10,16 +10,20 @@
 #
 # 見るもの:
 #   1) call-hierarchy.csv / methods.csv が一致すること
-#   2) キャッシュファイル 2 つ（analysis-cache.tsv / dataflow-cache.tsv）の中身が一致すること
-#      （ブロックの並びは差分更新で変わるので、行を並べ替えて比較）。
-#      CSV に出ない事実（注釈の値など）の取りこぼしはここで捕まる。
-#      2 つのブロック（F 行）が常に対になっていることも見る
+#   2) キャッシュファイル（analysis-cache.tsv）の中身が一致すること
+#      （ブロックの並びは差分更新で変わるので、ブロックをパスの順に並べ替えて比較。ブロックの中の行の
+#      並びは保つ。記号・ノードの番号はブロックの中だけで通じるので、行を全部並べ替えると比較にならない）。
+#      CSV に出ない事実（注釈の値など）の取りこぼしはここで捕まる
 #   3) 書き換えで事実が実際に変わっていること（何も変わらない編集だと 1) 2) が素通りしてしまう）
 #   5) 定数の値が変わっていない書き換えでは、連鎖して余計に解析し直さないこと
 #   6) 事実の作り方が変わったとき（文字コード）と、キャッシュが壊れているときは、
-#      中途半端に再利用せず全件解析し直すこと
+#      中途半端に再利用せず全件解析し直すこと。1 ブロックだけが壊れていれば、そのファイルだけを解析し直すこと
 #   7) 中断した前回の実行が残した一時ファイルから、解析済みのぶんを引き継ぐこと
-#   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行）
+#      （検査値の合わないブロックは引き継がず、そのファイルだけを解析し直すこと）
+#   8) 以前の形式が残した dataflow-cache.tsv を消すこと
+#   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行。ブロックの中の行が
+#      決まった順に並ぶこと。記号（S 行）とノード（N 行）の番号がブロックの中で 0 から詰まっていて、
+#      参照がブロックに収まること）
 #
 # 解析対象は src/ を work/ に複製したもので、書き換えるのは複製だけ（作業ツリーは汚さない）。
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
@@ -54,7 +58,6 @@ else
 fi
 
 CACHE=.cache/*/analysis-cache.tsv
-FLOW_CACHE=.cache/*/dataflow-cache.tsv
 
 CONFIG=config.properties
 
@@ -72,106 +75,123 @@ run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し�
     REUSED=$(LC_ALL=C sed -E 's/^[^=]*=([0-9]+).*$/\1/' <<< "$summary")
     PARSED=$(LC_ALL=C sed -E 's/^[^=]*=[0-9]+[^=]*=([0-9]+).*$/\1/' <<< "$summary")
     cp $CACHE "$1"
-    cp $FLOW_CACHE "${1%.tsv}-flow.tsv"
 }
 
-# 2 つのキャッシュのブロック（F 行）が完全に一致すること。これが崩れると
-# 「呼び出し階層は再利用、データフローは欠けている」ブロックが生まれる
-check_paired() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
-    local flow="${1%.tsv}-flow.tsv"
-    if diff -q <(grep '^F	' "$1") <(grep '^F	' "$flow") > /dev/null; then
-        echo "  OK   $2 2 つのキャッシュのブロックが対"
-    else
-        echo "  NG   $2 2 つのキャッシュの F 行が一致しません"
-        diff <(grep '^F	' "$1") <(grep '^F	' "$flow") | head -5; fail=1
-    fi
-}
-
-# dataflow 側の行が壊れていないこと（種別は F / A / J / K / N / P / R / X / Z だけ）と、
-# 値グラフ（N 行）の不変条件。番号がブロックごとに 0 から詰まっていて、
-# レシーバ・実引数の参照が同じブロックの範囲に収まっていること。
+# ブロックの中の番号の不変条件。記号（S 行）とノード（N 行）の番号がブロックごとに 0 から詰まっていて、
+# 記号の参照（D・O・R・C 行は 0 以上、U・M・A 行の呼び出し元は -1 も可）とノードの参照（N 行のレシーバ・
+# 実引数は自分より前のノード、C・U 行のレシーバ・実引数はブロックのノード）がブロックの範囲に収まること。
 # 番号がブロック内ローカルなので、ここが崩れると差分更新でブロックを書き写した瞬間に参照がずれる
-check_flow_rows() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
+check_refs() {   # $1=キャッシュの複製  $2=ラベル
     local bad
     bad=$(awk -F'\t' '
+        function nodeok(v, n) { return v ~ /^[0-9]+$/ && v + 0 < n }
+        function symok(v, none) { return (none && v == "-1") || (v ~ /^[0-9]+$/ && v + 0 < syms) }
+        function argsok(a, n,    k, i, as, kv) {
+            if (a == "") return 1
+            k = split(a, as, ",")
+            for (i = 1; i <= k; i++) {
+                if (split(as[i], kv, "=") != 2 || !nodeok(kv[2], n)) return 0
+            }
+            return 1
+        }
         NR == 1 { next }
         { kind = substr($0, 1, 1) }
-        index("FAJKNPRXZ", kind) == 0 { print NR": 未知の行種別: "$0; next }
-        kind == "F" { nodes = 0; next }
+        kind == "F" { syms = 0; nodes = 0; next }
+        kind == "S" {
+            if ($2 != syms) { print NR": S 行の番号が連番ではありません（期待 "syms"）: "$0 }
+            syms++
+            next
+        }
         kind == "N" {
             if ($2 != nodes) { print NR": N 行の番号が連番ではありません（期待 "nodes"）: "$0 }
-            if ($5 != -1 && ($5 < 0 || $5 >= nodes)) { print NR": recv がブロックの範囲外です: "$0 }
-            if ($6 != "") {
-                n = split($6, as, ",")
-                for (i = 1; i <= n; i++) {
-                    split(as[i], kv, "=")
-                    if (kv[2] < 0 || kv[2] >= nodes) { print NR": 実引数がブロックの範囲外です: "$0 }
-                }
-            }
+            if ($5 != -1 && !nodeok($5, nodes)) { print NR": N 行の recv がブロックの範囲外です: "$0 }
+            if (!argsok($6, nodes)) { print NR": N 行の実引数がブロックの範囲外です: "$0 }
             nodes++
             next
         }
-        kind == "P" {
-            if ($9 != -1 && ($9 < 0 || $9 >= nodes)) { print NR": P 行の recv がブロックの範囲外です: "$0 }
-            if ($10 != "") {
-                n = split($10, as, ",")
-                for (i = 1; i <= n; i++) {
-                    split(as[i], kv, "=")
-                    if (kv[2] < 0 || kv[2] >= nodes) { print NR": P 行の実引数がブロックの範囲外です: "$0 }
-                }
-            }
-        }' "${1%.tsv}-flow.tsv")
+        kind == "D" || kind == "O" || kind == "R" {
+            if (!symok($2, 0)) { print NR": "kind" 行の記号が範囲外です: "$0 }
+        }
+        kind == "C" {
+            if (!symok($2, 0) || !symok($3, 0)) { print NR": C 行の記号が範囲外です: "$0 }
+        }
+        kind == "U" || kind == "M" || kind == "A" {
+            if (!symok($3, 1)) { print NR": "kind" 行の呼び出し元の記号が範囲外です: "$0 }
+        }
+        kind == "C" || kind == "U" {
+            if ($9 != -1 && !nodeok($9, nodes)) { print NR": "kind" 行の recv がブロックの範囲外です: "$0 }
+            if (!argsok($10, nodes)) { print NR": "kind" 行の実引数がブロックの範囲外です: "$0 }
+        }' "$1")
     if [ -z "$bad" ]; then
-        echo "  OK   $2 データフローのキャッシュの行と値グラフの参照が壊れていない"
+        echo "  OK   $2 記号と値グラフの番号・参照が壊れていない"
     else
-        echo "  NG   $2 データフローのキャッシュが壊れています"; echo "$bad" | head -5; fail=1
+        echo "  NG   $2 記号か値グラフの番号・参照が壊れています"; echo "$bad" | head -5; fail=1
     fi
 }
 
-# analysis 側が上限で捨てている値を、dataflow 側が上限なしで持っていること。
-# ここが空になると「分けたのに上限が外れていない」＝2b の意味が無い状態を見逃す
-check_unbounded_values() {   # $1=キャッシュの複製（analysis 側）  $2=ラベル
-    local flow="${1%.tsv}-flow.tsv" long
+# 値グラフが文字列を上限なしで持っていること（長い SQL がそのまま、タブ・改行は符号化されて入っている）
+check_unbounded_values() {   # $1=キャッシュの複製  $2=ラベル
+    local long
     # 64 文字を超える値を持つ N 行（Awkward.longLiteral の SQL）。符号化されているのでタブ・改行は \t \n
-    long=$(awk -F'\t' 'substr($0,1,1)=="N" && $3=="L" && length($4) > 64' "$flow" | wc -l)
-    if [ "$long" -ge 1 ] && grep -q 'ORDER BY id DESC' "$flow"; then
+    long=$(awk -F'\t' 'substr($0,1,1)=="N" && $3=="L" && length($4) > 64' "$1" | wc -l)
+    if [ "$long" -ge 1 ] && grep -q 'ORDER BY id DESC' "$1"; then
         echo "  OK   $2 64 文字超の文字列を値グラフが保持（$long 件）"
     else
         echo "  NG   $2 64 文字超の文字列が値グラフにありません（$long 件）"; fail=1
     fi
     # 符号化されたタブ・改行が入っていること（生のタブ・改行なら行が割れている）
-    if grep -q 'SELECT id, name, kind, created_at\\n\\tFROM orders' "$flow"; then
+    if grep -q 'SELECT id, name, kind, created_at\\n\\tFROM orders' "$1"; then
         echo "  OK   $2 タブ・改行が符号化されて 1 行に収まっている"
     else
         echo "  NG   $2 タブ・改行の符号化が期待と違います"
-        grep -o 'SELECT id[^\t]*' "$flow" | head -2; fail=1
+        grep -o 'SELECT id[^\t]*' "$1" | head -2; fail=1
     fi
 }
 
-# 差分更新でブロックの並びが変わるので、行を並べ替えてから比べる。
-# ヘッダの世代の印（gen=）は「2 つのキャッシュが同じ実行で書かれたか」を表すだけで、
-# 実行ごとに変わる（事実ではない）ので比較から外す
-strip_generation() { LC_ALL=C sed -E 's/\tgen=[0-9a-f]+$//' "$1"; }
-normalized() { strip_generation "$1" | LC_ALL=C sort; }
-
-# F 行（サイズ・エラー数・内容ハッシュ）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
-# どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
-# 「事実が変わったか」を見るときはこちらで比べる。
-# 事実は 2 つのキャッシュに分かれている（値の出所・フィールドへの代入は dataflow 側）ので、
-# 片方だけを見ると「値だけが変わった書き換え」を取りこぼす
-normalized_facts() {
-    { strip_generation "$1"; strip_generation "${1%.tsv}-flow.tsv"; } \
-        | LC_ALL=C grep -v -E "^[FT]	" | LC_ALL=C sort
+# 差分更新でブロックの並びが変わるので、ブロックを F 行のパスの順に並べ替えてから比べる。
+# ブロックの中の行の並びは保つ（記号・ノードの番号はブロックの中だけで通じるので、
+# 行を全部並べ替えると、同じ行が別のブロックでは別のものを指していても一致してしまう）。
+# ヘッダ・L 行・T 行はブロックより前、最終行は最後に置く
+blocks_sorted() {   # $1=キャッシュ  $2=外す行種別（grep -E の文字クラス。空なら外さない）
+    awk -F'\t' -v OFS='\t' -v drop="$2" '
+        NR == 1 { printf "0\t\t%08d\t%s\n", NR, $0; next }
+        substr($0, 1, 1) == "F" { path = $2; n = 0 }
+        substr($0, 1, 1) == "Z" { printf "2\t\t%08d\t%s\n", 0, $0; next }
+        drop != "" && substr($0, 1, 1) ~ ("^[" drop "]$") { next }
+        path == "" { printf "0\t\t%08d\t%s\n", NR, $0; next }
+        { printf "1\t%s\t%08d\t%s\n", path, n++, $0 }
+    ' "$1" | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3 | cut -f4-
 }
+normalized() { blocks_sorted "$1" ""; }
+
+# F 行（サイズ・エラー数・内容ハッシュ・検査値）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
+# どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
+# 「事実が変わったか」を見るときはこちらで比べる（ブロックの区切りと並べ替えには F 行のパスを使う）
+normalized_facts() { blocks_sorted "$1" "FT"; }
 
 # 行頭が既知の種別で、F 行の直後が必ず I 行であること。
-# 値に紛れ込んだタブ・改行で行が割れると、ここで引っかかる
+# 値に紛れ込んだタブ・改行で行が割れると、ここで引っかかる。
+# ブロックの中の行の並び（CacheFormat の「行の種別と列」の順。読み手がこの並びに依存している）:
+#   F, I, S*, N*, R*, H*, D*, O*, V*, C と U（ソース上の順で混ざる）, M*, A*, K*, J*, X*
+# ある種別の行が、それより後ろに並ぶべき種別の行より後に出てこないこと。L・T 行はブロックより前、Z 行は最後
 check_rows() {   # $1=キャッシュ  $2=ラベル
     local bad
-    bad=$(awk 'NR == 1 { next }
-               { if (index("TLFIHDVKOACRMXUZ", substr($0, 1, 1)) == 0) { print NR": 未知の行種別: "$0; next } }
-               prev == "F" && substr($0, 1, 1) != "I" { print NR": F 行の次が I 行ではありません: "$0 }
-               { prev = substr($0, 1, 1) }' "$1")
+    bad=$(awk 'BEGIN { split("F I S N R H D O V C M A K J X", order, " ")
+                       for (i in order) rank[order[i]] = i + 0   # 添字は文字列なので数に直す
+                       rank["U"] = rank["C"] }
+               NR == 1 { next }
+               { kind = substr($0, 1, 1) }
+               { if (index("TLFISNRHDOVCUMAKJXZ", kind) == 0) { print NR": 未知の行種別: "$0; next } }
+               prev == "F" && kind != "I" { print NR": F 行の次が I 行ではありません: "$0 }
+               ended { print NR": Z 行（最終行）の後に行があります: "$0 }
+               kind == "Z" { ended = 1 }
+               kind == "L" || kind == "T" { if (inBlock) print NR": "kind" 行がブロックの中にあります: "$0 }
+               kind == "F" { inBlock = 1; last = rank["F"] }
+               inBlock && kind in rank && kind != "F" {
+                   if (rank[kind] < last) print NR": "kind" 行がブロックの中で並ぶべき位置より後にあります: "$0
+                   else last = rank[kind]
+               }
+               { prev = kind }' "$1")
     if [ -z "$bad" ]; then
         echo "  OK   $2 キャッシュの行が壊れていない"
     else
@@ -182,7 +202,7 @@ check_rows() {   # $1=キャッシュ  $2=ラベル
 # 1 ケース: 書き換え -> 差分更新 -> キャッシュを消して全件解析 -> 一致を見る
 case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行以外）が変わるべきか(yes/no)
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv base-flow.tsv inc-flow.tsv full-flow.tsv
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     run base.tsv || return
     local base_csv=$OUT
@@ -213,14 +233,7 @@ case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行�
         echo "  NG   $1 キャッシュが差分更新と全件解析で違います"
         diff <(normalized inc.tsv) <(normalized full.tsv) | head -10; fail=1
     fi
-    if diff -q <(normalized inc-flow.tsv) <(normalized full-flow.tsv) > /dev/null; then
-        echo "  OK   $1 データフローのキャッシュ（差分更新 == 全件解析）"
-    else
-        echo "  NG   $1 データフローのキャッシュが差分更新と全件解析で違います"
-        diff <(normalized inc-flow.tsv) <(normalized full-flow.tsv) | head -10; fail=1
-    fi
-    check_paired inc.tsv "$1 差分更新"
-    check_flow_rows inc.tsv "$1 差分更新"
+    check_refs inc.tsv "$1 差分更新"
     check_unbounded_values inc.tsv "$1 差分更新"
 
     # 書き換えが効いていることの確認。何も変わらない編集だと上の比較が素通りしてしまう
@@ -286,7 +299,7 @@ fi
 # 呼び出しが静かに欠ける。丸ごと捨てて全件解析し直すこと
 discard_case() {   # $1=ラベル  $2=壊す・変えるコマンド  $3=ログに出るはずの文字列  $4=出力が基準と一致すべきか(yes/no)
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv base-flow.tsv inc-flow.tsv full-flow.tsv case.properties
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
     cp config.properties case.properties
     CONFIG=case.properties
@@ -337,7 +350,7 @@ discard_case "文字が壊れたキャッシュ" \
 # 形式の版が古いキャッシュ。列の並びが変わっているので、再利用すると「エラー」ではなく
 # 「静かに違う結果」になる（実際に、C 行の列を変えたのに版を上げ忘れたことがある。
 # そのときは recvKey を recvKind として読んでいた）。版だけを書き換えて、捨てることを見る
-discard_case "形式の版が古い analysis キャッシュ" \
+discard_case "形式の版が古いキャッシュ" \
     "sed -i '1s/^jche-cache-v[0-9]*/jche-cache-v1/' \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
 
@@ -347,32 +360,145 @@ discard_case "JDT の版が違うキャッシュ" \
     "sed -i -E '1s/\tjdt=[^\t]*/\tjdt=0.0.0/' \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
 
-# dataflow 側の版も同じ。こちらだけ古い場合、対の判定で両方が捨てられる
-discard_case "形式の版が古い dataflow キャッシュ" \
-    "sed -i '1s/^jche-dataflow-v[0-9]*/jche-dataflow-v1/' \$(ls .cache/*/dataflow-cache.tsv)" \
-    "[cache]" yes
+# --- 1 ブロックだけが壊れたキャッシュ ------------------------------------
+# 各ブロックは F 行に検査値（crc）を持つ。行の形を保ったまま中身だけが変わった（書き換え・化け）ブロックは、
+# 検査値が合わないのでそのファイルだけを解析し直す（ほかのブロックは再利用する）。検査値が無ければ
+# 壊れた中身がそのまま出力に出る
+TOTAL_FILES=$(ls src/inc/*.java | wc -l)
+
+# C 行 1 行の、呼び出し箇所の行番号の最後の 1 文字だけを別の数字にする（行の形は保つ）。壊したブロックの
+# パスを出力する。$2=first なら最初に C 行を持つブロック、middle なら最初でも最後でもないブロックのうち
+# C 行を持つものの真ん中（中断した実行の一時ファイルは最後のブロックが書きかけなので、それ以外を壊す）
+damage_call_row() {   # $1=キャッシュ（か一時ファイル）  $2=first|middle
+    python3 - "$1" "$2" <<'PY'
+import sys
+p, where = sys.argv[1], sys.argv[2]
+lines = open(p, encoding='utf-8').read().split('\n')
+blocks = []                     # [パス, 最初の C 行の位置]
+for i, line in enumerate(lines):
+    if line.startswith('F\t'):
+        blocks.append([line.split('\t')[1], None])
+    elif blocks and blocks[-1][1] is None and line.startswith('C\t'):
+        blocks[-1][1] = i
+if where == 'middle':
+    candidates = [b for b in blocks[1:-1] if b[1] is not None]
+    target = candidates[len(candidates) // 2] if candidates else None
+else:
+    target = next((b for b in blocks if b[1] is not None), None)
+if target is None:
+    sys.exit(0)
+i = target[1]
+cols = lines[i].split('\t')
+cols[3] = cols[3][:-1] + str((int(cols[3][-1]) + 1) % 10)
+lines[i] = '\t'.join(cols)
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+print(target[0])
+PY
+}
+
+damaged_block_case() {
+    echo "== ブロックの中身が壊れていたら、そのファイルだけ解析し直す =="
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    mkdir -p work && cp -r src work/src
+    run base.tsv || return
+    local damaged
+    damaged=$(damage_call_row "$(ls $CACHE)" first)
+    if [ -z "$damaged" ]; then
+        echo "  NG   C 行が見つからず、壊せませんでした"; fail=1; return
+    fi
+    run inc.tsv || return
+    local inc_csv=$OUT
+    check_rows inc.tsv "壊れたブロック 差分更新"
+    check_refs inc.tsv "壊れたブロック 差分更新"
+    if [ "$PARSED" -ge 1 ] && [ "$PARSED" -lt "$TOTAL_FILES" ] && [ "$REUSED" -ge 1 ]; then
+        echo "  OK   壊れたブロック（$damaged）を含む $PARSED / $TOTAL_FILES 件だけを解析し直した"
+    else
+        echo "  NG   壊れたブロックの扱いが期待と違います（新規解析=$PARSED 再利用=$REUSED / $TOTAL_FILES 件）"; fail=1
+    fi
+    if grep -q -F -- "failed the integrity check" out.log; then
+        echo "  OK   壊れたブロック 検査値が合わないことをログに出す"
+    else
+        echo "  NG   壊れたブロック 検査値が合わないことがログに出ていません"; fail=1
+    fi
+    # 壊れたブロックは解析し直せば済み、利用者が対処することは無い（Log.info）。案内は作らない
+    if [ -f "$inc_csv/warnings.txt" ]; then
+        echo "  NG   壊れたブロック 解析し直しただけで warnings.txt ができています"; head -5 "$inc_csv/warnings.txt"; fail=1
+    else
+        echo "  OK   壊れたブロック warnings.txt は作らない（利用者が対処することではない）"
+    fi
+    rm -rf .cache
+    run full.tsv || return
+    for f in call-hierarchy.csv methods.csv; do
+        if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
+            echo "  OK   壊れたブロック $f（解析し直し == 全件解析）"
+        else
+            echo "  NG   壊れたブロック $f が全件解析と違います"
+            diff --strip-trailing-cr "$inc_csv/$f" "$OUT/$f" | head -10; fail=1
+        fi
+    done
+    if diff -q <(normalized inc.tsv) <(normalized full.tsv) > /dev/null; then
+        echo "  OK   壊れたブロック キャッシュ（解析し直し == 全件解析）"
+    else
+        echo "  NG   壊れたブロック キャッシュが全件解析と違います"
+        diff <(normalized inc.tsv) <(normalized full.tsv) | head -10; fail=1
+    fi
+}
+damaged_block_case
+
+# --- 以前の形式が残したファイル ------------------------------------------
+# キャッシュが 2 ファイルだった版の dataflow-cache.tsv（と一時ファイル）は、もう読まないので消す。
+# 利用者が対処することではないので、確認してほしいことの案内（warnings.txt）は作らない。
+# 残っていてもキャッシュの再利用には影響しない
+legacy_files_case() {
+    echo "== 以前の形式が残した dataflow-cache.tsv を消す =="
+    rm -rf work .cache out out.log base.tsv inc.tsv
+    mkdir -p work && cp -r src work/src
+    run base.tsv || return
+    local dir f
+    dir=$(dirname "$(ls $CACHE)")
+    for f in dataflow-cache.tsv dataflow-cache.tsv.tmp dataflow-cache.tsv.partial; do
+        printf 'jche-dataflow-v7\tsource=17\n' > "$dir/$f"
+    done
+    run inc.tsv || return
+    if ls "$dir"/dataflow-cache.tsv* > /dev/null 2>&1; then
+        echo "  NG   以前の形式のファイルが残っています: $(ls "$dir")"; fail=1
+    else
+        echo "  OK   以前の形式のファイル（dataflow-cache.tsv と一時ファイル）を消した"
+    fi
+    if grep -q -F -- "[cache] Deleted dataflow-cache.tsv" out.log; then
+        echo "  OK   消したことをログに出す"
+    else
+        echo "  NG   消したことがログに出ていません"; fail=1
+    fi
+    if [ -f "$OUT/warnings.txt" ]; then
+        echo "  NG   消しただけで warnings.txt ができています"; head -5 "$OUT/warnings.txt"; fail=1
+    else
+        echo "  OK   warnings.txt は作らない（利用者が対処することではない）"
+    fi
+    if [ "$PARSED" = 0 ] && [ "$REUSED" = "$TOTAL_FILES" ]; then
+        echo "  OK   キャッシュはそのまま再利用した（$REUSED 件）"
+    else
+        echo "  NG   以前の形式のファイルがあるだけで解析し直しています（新規解析=$PARSED 再利用=$REUSED）"; fail=1
+    fi
+}
+legacy_files_case
 
 # --- 中断した実行からの引き継ぎ -----------------------------------------
 # フェーズ1の途中で実行が終わると一時ファイル（.tmp）だけが残る。次の実行は、これから解析する
 # ファイルのぶんをパースし直さずに書き写す。正しさの理屈は変えないので、結果は引き継ぎ無しと一致する
-TOTAL_FILES=$(ls src/inc/*.java | wc -l)
-
 # 中断した実行が残す一時ファイルを作る。完成したキャッシュを .tmp へ移し、末尾を削って
-# 「最後のブロックが書き終わっていない」状態にする（実際の中断と同じ形）。
-# キャッシュは 2 つあり、本物の中断では両方の .tmp が残るので、ここでも両方作る。
-# 引き継ぐのは「両方の一時ファイルにそろっているブロック」だけなので、片方だけでは引き継がない
+# 「最後のブロックが書き終わっていない」状態にする（実際の中断と同じ形）
 make_partial() {
-    local cache flow
+    local cache
     cache=$(ls .cache/*/analysis-cache.tsv)
-    flow=$(ls .cache/*/dataflow-cache.tsv)
     head -n -3 "$cache" > "$cache.tmp"
-    head -n -3 "$flow" > "$flow.tmp"
-    rm -f "$cache" "$flow"
+    rm -f "$cache"
 }
 
 salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空なら何もしない）  $3=引き継げるはずか(yes/no)
+                   # $4=引き継ぎありの実行のログに出るはずの文字列（省略可）
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv base-flow.tsv inc-flow.tsv full-flow.tsv case.properties
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
     run base.tsv || return          # まず完成したキャッシュを作る
     make_partial
@@ -382,6 +508,15 @@ salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空
     local inc_csv=$OUT
     SALVAGE_PARSED=$PARSED
     check_rows inc.tsv "$1 引き継ぎ"
+    check_refs inc.tsv "$1 引き継ぎ"
+    # ログは次の実行（引き継ぎ無し）で上書きされるので、ここで見る
+    if [ -n "${4:-}" ]; then
+        if grep -q -F -- "$4" out.log; then
+            echo "  OK   $1 ログに「$4」が出る"
+        else
+            echo "  NG   $1 ログに「$4」が出ていません"; fail=1
+        fi
+    fi
 
     if [ "$3" = yes ]; then
         if [ "$PARSED" -lt "$TOTAL_FILES" ]; then
@@ -418,16 +553,23 @@ salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空
         echo "  NG   $1 キャッシュが引き継ぎの有無で違います"
         diff <(normalized inc.tsv) <(normalized full.tsv) | head -10; fail=1
     fi
-    if diff -q <(normalized inc-flow.tsv) <(normalized full-flow.tsv) > /dev/null; then
-        echo "  OK   $1 データフローのキャッシュ（引き継ぎ == 引き継ぎ無し）"
-    else
-        echo "  NG   $1 データフローのキャッシュが引き継ぎの有無で違います"
-        diff <(normalized inc-flow.tsv) <(normalized full-flow.tsv) | head -10; fail=1
-    fi
-    check_paired inc.tsv "$1 引き継ぎ"
 }
 
 salvage_case "中断した実行からの引き継ぎ" "" yes
+plain_salvage_parsed=$SALVAGE_PARSED
+
+# 一時ファイルの途中のブロックが壊れていたら（行の形を保ったまま中身が変わった）、そのブロックだけを
+# 引き継がずに解析し直す。旧キャッシュのパス1 と同じく検査値で見る。検査値を見ていないと、
+# 壊れた行がそのまま新しいキャッシュと出力に書き写される（下の「引き継ぎ無し」との比較で捕まる）
+salvage_case "一時ファイルの途中のブロックが壊れていたら、そのファイルだけ解析し直す" \
+    "DAMAGED=\$(damage_call_row \$(ls .cache/*/analysis-cache.tsv.tmp) middle)" yes "failed the integrity check"
+if [ -z "${DAMAGED:-}" ]; then
+    echo "  NG   一時ファイルの途中に C 行を持つブロックが無く、壊せませんでした"; fail=1
+elif [ -n "$plain_salvage_parsed" ] && [ "$SALVAGE_PARSED" = $((plain_salvage_parsed + 1)) ]; then
+    echo "  OK   壊れたブロック（$DAMAGED）のファイルだけが増えて $SALVAGE_PARSED 件を解析し直した"
+else
+    echo "  NG   解析し直した件数が期待と違います（$SALVAGE_PARSED 件。壊さなければ $plain_salvage_parsed 件）"; fail=1
+fi
 
 # 更新時刻だけが変わっても引き継ぐ（git のチェックアウトや CI のワークスペース作り直しの再現）。
 # 同一性に更新時刻を入れていると、ここで引き継げなくなる
@@ -441,10 +583,10 @@ salvage_case "更新時刻だけ変わっても引き継ぐ" \
 salvage_case "中断後にソースが変わったら引き継がない" \
     "sed -i 's/inc.AlphaDao/inc.BetaDao/' work/src/inc/Base.java" no
 
-# 中断のあとで dataflow 側の形式の版だけが上がった（ツールを更新した）。analysis 側の一時ファイルは
-# 今回と同じ形式なので、dataflow 側のヘッダを見ていないと旧形式の行を新しいキャッシュへ書き写してしまう
-salvage_case "dataflow 側の一時ファイルの版が古ければ引き継がない" \
-    "sed -i '1s/^jche-dataflow-v[0-9]*/jche-dataflow-v1/' \$(ls .cache/*/dataflow-cache.tsv.tmp)" no
+# 中断のあとで形式の版が上がった（ツールを更新した）。一時ファイルのヘッダを見ていないと、
+# 旧形式の行を新しいキャッシュへそのまま書き写してしまう
+salvage_case "一時ファイルの版が古ければ引き継がない" \
+    "sed -i '1s/^jche-cache-v[0-9]*/jche-cache-v1/' \$(ls .cache/*/analysis-cache.tsv.tmp)" no
 
 # --- 依存 jar の並び順 -------------------------------------------------
 # jar の集合が同じでも、クラスパス上の並びが変われば同名クラスの解決先が変わる（先勝ち）。

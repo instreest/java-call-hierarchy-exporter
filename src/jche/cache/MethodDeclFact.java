@@ -3,6 +3,10 @@ package jche.cache;
 
 /**
  * メソッド宣言の1件（D行）。
+ * <pre>
+ *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine
+ * </pre>
+ * 記号はブロックの記号表（{@link SymbolTable}）の番号。
  *
  * @param ref      宣言されたメソッド
  * @param declLine 宣言行
@@ -32,30 +36,34 @@ public record MethodDeclFact(MethodRef ref, int declLine, boolean hasBody, Strin
         endLine = (endLine < declLine) ? declLine : endLine;
     }
 
-    public String toRow() {
-        return CacheFormat.joinRow("D", ref.pkg(), ref.typeFqn(), ref.name(), ref.paramSig(),
+    public String toRow(SymbolTable symbols) {
+        return CacheFormat.joinRow("D", symbols.columnOf(ref),
                 String.valueOf(declLine), hasBody ? "1" : "0", mods, annotations,
                 String.valueOf(endLine));
     }
 
-    /** 列が足りなければ null */
-    public static MethodDeclFact fromRow(String[] cols) {
-        if (cols.length < 6) {
+    /**
+     * 列が足りない・記号が引けなければ null
+     *
+     * @param symbols ブロックの記号表（{@link SymbolTable.Reader#array}）
+     */
+    public static MethodDeclFact fromRow(String[] cols, MethodRef[] symbols) {
+        if (cols.length < 3) {
             return null;
         }
-        MethodRef ref = MethodRef.fromColumns(cols, 1);
+        MethodRef ref = SymbolTable.resolve(symbols, cols[1]);
         if (ref == null) {
             return null;
         }
         int declLine;
         try {
-            declLine = Integer.parseInt(cols[5]);
+            declLine = Integer.parseInt(cols[2]);
         } catch (NumberFormatException ignore) {
             declLine = -1;
         }
-        boolean hasBody = (cols.length < 7) || !"0".equals(cols[6]);
-        return new MethodDeclFact(ref, declLine, hasBody, CacheFormat.columnAt(cols, 7),
-                CacheFormat.columnAt(cols, 8), parseLine(CacheFormat.columnAt(cols, 9), declLine));
+        boolean hasBody = (cols.length < 4) || !"0".equals(cols[3]);
+        return new MethodDeclFact(ref, declLine, hasBody, CacheFormat.columnAt(cols, 4),
+                CacheFormat.columnAt(cols, 5), parseLine(CacheFormat.columnAt(cols, 6), declLine));
     }
 
     /** 終了行の列。空や壊れた値なら宣言行（＝その行だけの範囲）に倒す */

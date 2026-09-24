@@ -93,13 +93,12 @@ for name in demo incremental jls; do
 done
 
 version=$(grep -oE 'VERSION = "[^"]+"' "$ROOT/src/jche/cache/CacheFormat.java" | head -1 | cut -d'"' -f2)
-dataflow_version=$(grep -oE 'DATAFLOW_VERSION = "[^"]+"' "$ROOT/src/jche/cache/CacheFormat.java" | head -1 | cut -d'"' -f2)
 header=$(head -1 "$(ls .cache/demo/*/analysis-cache.tsv | head -1)")
 jdk=$(grep -oE 'jdk=[^[:space:]]+' <<< "$header" | head -1)
 jdt=$(grep -oE 'jdt=[^[:space:]]+' <<< "$header" | head -1)
 
 current=$(cat <<EOF
-version $version ${dataflow_version}
+version $version
 env $jdk $jdt
 fixture $(fixture_digest)
 $(printf '%s' "$facts" | sed 's/^/facts /')

@@ -13,6 +13,7 @@ import java.util.Map;
 
 import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
+import jche.cache.SymbolTable;
 import jche.cache.UnresolvedCallFact;
 import jche.config.Config;
 import jche.graph.CallGraph;
@@ -34,6 +35,10 @@ import jche.graph.CallGraph;
  * 「次に出すべきファイル」のブロックはそのまま流し、順番がまだ来ていないファイルの行だけを
  * 順番が来るまで保留する。キャッシュがすでにその順で並んでいれば（初回実行、全ファイル再利用）
  * 何も保留しない。
+ *
+ * <p>U 行の呼び出し元はブロックの記号表（S 行。{@link SymbolTable}）の番号で書かれているので、
+ * ブロックごとに S 行を読んで引く。引いた呼び出し元はグラフのメソッド表で ID を<b>引くだけ</b>で、
+ * ID 化はしない（メソッドの数を変えないため）。
  */
 public final class UnresolvedReport {
 
@@ -55,14 +60,20 @@ public final class UnresolvedReport {
         // パス2: U行を読み、順位どおりに書き出す
         long rows = 0L;
         boolean[] finished = new boolean[order.length];         // そのファイルのブロックを読み終えたか
-        Map<Integer, List<String>> pending = new HashMap<>();   // 順番待ちのファイルのU行（生の行）
+        // 順番待ちのファイルのU行（記号表を引いたもの。記号はブロックの中でしか引けないので、引いてから溜める）
+        Map<Integer, List<UnresolvedCallFact>> pending = new HashMap<>();
         int next = 0;            // 次に書き出すべきファイルの順位
         int currentRank = -1;    // 読んでいる最中のブロックの順位
+        SymbolTable.Reader symbols = new SymbolTable.Reader();
         try (CacheReader in = CacheReader.open(config.cacheFile)) {
             while (in.next()) {
-                String line = in.line();
                 char rowType = in.rowType();
+                if (rowType == CacheFormat.ROW_SYMBOL) {
+                    symbols.add(in.columns());
+                    continue;
+                }
                 if (rowType == CacheFormat.ROW_FILE) {
+                    symbols.clear();
                     if (currentRank >= 0) {
                         finished[currentRank] = true;
                         while (next < order.length && finished[next]) {
@@ -74,15 +85,25 @@ public final class UnresolvedReport {
                     currentRank = (rank == null) ? -1 : rank;
                     continue;
                 }
-                if (rowType != CacheFormat.ROW_UNRESOLVED || !isReportable(line)) {
+                if (rowType != CacheFormat.ROW_UNRESOLVED) {
+                    continue;
+                }
+                // 呼び出し元の記号が壊れていても行は捨てず、呼び出し元不明として出す（OUTSIDE_METHOD の行と同じ）。
+                // グラフを組む側（CallGraphBuilder）はその行を警告して使わないので、ここで落とすと黙って消える
+                UnresolvedCallFact u = UnresolvedCallFact.fromRowKeepingUnknownCaller(
+                        in.columns(), symbols.array());
+                // import 推定でエッジになっている行は、call-hierarchy.csv 側に
+                // 「[EXTERNAL] import から型名を推定（未検証）」の注記付きで出ているので、ここでは出さない
+                // （F 行の未解決数と同じ定義。呼び出し元が引けなかった行はエッジになっていないので出す）
+                if (u == null || u.hasUsableCandidate()) {
                     continue;
                 }
                 if (currentRank < 0 || currentRank <= next) {
                     // 順番が来ているブロック（順位が無い・重複したブロックも溜めずにそのまま出す）
                     String file = (currentRank < 0) ? null : order[currentRank];
-                    rows += emit(g, out, file, line);
+                    rows += emit(g, out, file, u);
                 } else {
-                    pending.computeIfAbsent(currentRank, k -> new ArrayList<>()).add(line);
+                    pending.computeIfAbsent(currentRank, k -> new ArrayList<>()).add(u);
                 }
             }
         }
@@ -120,37 +141,25 @@ public final class UnresolvedReport {
      *
      * @return 書き出した行数
      */
-    private static long flush(CallGraph g, CallHierarchyCsvWriter out, String file, List<String> lines)
-            throws IOException {
-        if (lines == null) {
+    private static long flush(CallGraph g, CallHierarchyCsvWriter out, String file,
+                              List<UnresolvedCallFact> facts) throws IOException {
+        if (facts == null) {
             return 0L;
         }
         long rows = 0L;
-        for (String line : lines) {
-            rows += emit(g, out, file, line);
+        for (UnresolvedCallFact u : facts) {
+            rows += emit(g, out, file, u);
         }
         return rows;
-    }
-
-    /** このU行を報告するか。import 推定でエッジになっているものは除く */
-    private static boolean isReportable(String line) {
-        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
-        // import 推定でエッジになっている行は、call-hierarchy.csv 側に
-        // 「[EXTERNAL] import から型名を推定（未検証）」の注記付きで出ているので、ここでは出さない
-        return u != null && !u.hasUsableCandidate();
     }
 
     /**
      * U行を1行書き出す。
      *
-     * @return 書き出した行数（0 か 1）
+     * @return 書き出した行数（1）
      */
-    private static long emit(CallGraph g, CallHierarchyCsvWriter out, String currentFile, String line)
+    private static long emit(CallGraph g, CallHierarchyCsvWriter out, String currentFile, UnresolvedCallFact u)
             throws IOException {
-        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
-        if (u == null) {
-            return 0L;
-        }
         // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
         // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
         String callerKey = (u.caller() == null) ? "" : u.caller().key();

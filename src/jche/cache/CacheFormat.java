@@ -1,24 +1,18 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
-import java.security.SecureRandom;
-
 /**
- * キャッシュファイルの形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）。
+ * キャッシュファイル（{@code analysis-cache.tsv}）の形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）。
  *
- * <h2>キャッシュは 2 つに分かれている</h2>
- * <pre>
- *   analysis-cache.tsv   呼び出し階層を出すための事実（構造とバインディング）
- *   dataflow-cache.tsv   呼び出し階層には要らない、データフローのための事実
- * </pre>
- * 呼び出し階層（{@code call-hierarchy.csv} / {@code methods.csv}）は前者だけで出せる。
- * 後者はサイドカーの解析（値の追跡など）のためにあり、文字列の長さの上限を設けない。
- * 分けた理由と、どちらに何を置くかの基準は {@code docs/cache-split-qa.md} にある。
- *
- * <b>2 つは常に同じ実行で一緒に書かれ、片方だけが新しい状態は許さない。</b>
- * 両方のヘッダに同じ世代の印（{@link #GENERATION_PREFIX}）を書き、読むときに突き合わせる。
- * 食い違えば両方とも捨てて全件解析し直す（ブロック単位のズレを許すと、同じソースでも
- * 「どちらのキャッシュがどこまで新しいか」で出力が変わってしまう）。
+ * <h2>キャッシュは 1 ファイル</h2>
+ * 呼び出し階層の構造（宣言・呼び出し・型階層）と、データフローの値（値グラフ・戻り値の出所・
+ * フィールドへの代入・条件分岐）を、ソースファイル 1 つにつき 1 ブロックとして同じファイルに持つ。
+ * 以前は 2 ファイル（{@code analysis-cache.tsv} / {@code dataflow-cache.tsv}）に分け、世代の印と
+ * ブロックの突き合わせで対を保っていたが、値も呼び出し階層の出力に効く（具象クラスの解決と
+ * 条件分岐の打ち切り）ので分けても片方だけでは足りず、対を保つための仕組み（世代・ブロックの突き合わせ・
+ * 呼び出し箇所の値の結びつけ）だけが残っていた。1 ファイルにしてそれらを無くした
+ * （{@code docs/cache-unification-qa.md}）。旧形式の {@code dataflow-cache.tsv} が残っていれば
+ * {@code jche.analysis.CacheUpdater} が消す。
  *
  * <h2>原則: キャッシュは「ASTから分かった事実」だけを持ち、判断は読む側でする</h2>
  * <pre>
@@ -31,8 +25,20 @@ import java.security.SecureRandom;
  * 見分ける問いは「この値を変えたくなるのは、出力や解決の方針を変えるときか、
  * Javaの意味論が変わるときか」。前者なら判断であり、読み手に置く。
  *
+ * <h2>ファイルの並び</h2>
+ * <pre>
+ *   ヘッダ行   {@link #VERSION} source=… enc=… jdk=… jdt=…（{@link #headerFor}）
+ *   L 行       依存 jar（クラスパス順）
+ *   T 行       ソース一覧の指紋
+ *   ブロック   ソースファイル 1 つにつき 1 つ（F 行から次の F 行・Z 行の手前まで）
+ *   Z 行       ブロック数（最終行）
+ * </pre>
+ * 行は必ず {@code '\n'} で終える（OS の改行に合わせない。どの OS で書いても同じバイト列になる）。
+ * 読むときは CRLF も受け付ける。
+ *
  * <h2>行の種別と列</h2>
  * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
+ * ブロックの中の行は<b>この順に並ぶ</b>（読み手がこの並びに依存している。理由は各行の説明）。
  * <pre>
  *   T  ソース一覧の指紋                                       解析対象のソースファイル一覧（パス・サイズ・
  *                                                          内容ハッシュ）のハッシュ。L 行の直後に1行。
@@ -40,77 +46,75 @@ import java.security.SecureRandom;
  *   L  jarのパス  指紋  パッケージ(カンマ区切り)            {@link LibraryFact}。ヘッダ行の直後に
  *                                                          クラスパス順で並ぶ（並び自体も意味を持つ。
  *                                                          JDT は同名クラスを先勝ちで解決するため）。
- *                                                          解析時の依存 jar。
  *                                                          指紋は中に入っているクラスの一覧
  *                                                          （{@link jche.analysis.LibraryDiff}）。読めなければ空
- *   F  相対パス  サイズ  エラー数  内容ハッシュ                （ファイルのブロックの先頭）。エラー数は
- *                                                          JDT が報告したエラーの件数（解決が不完全な印）。
- *                                                          内容ハッシュは {@link jche.util.FileHash}（読めなければ空）
- *   I  依存する型（カンマ区切り）                             このファイルのバインディング解決が参照した型の
- *                                                          FQNと、import 文の型（オンデマンド import は
+ *   F  相対パス  サイズ  エラー数  内容ハッシュ  構文エラー数  未解決数  crc
+ *                                                          ブロックの先頭。エラー数は JDT が報告したエラーの件数
+ *                                                          （解決が不完全な印）。内容ハッシュは
+ *                                                          {@link jche.util.FileHash}（読めなければ空）。
+ *                                                          未解決数は使える候補の無い U 行の数
+ *                                                          （{@link UnresolvedCallFact#hasUsableCandidate}）。
+ *                                                          crc はブロックの残りの行の検査値（下の「ブロックの検査値」）
+ *   I  依存する型（カンマ区切り）                             必ず F 行の直後。このファイルのバインディング解決が
+ *                                                          参照した型の FQN と、import 文の型（オンデマンド import は
  *                                                          "pkg.*"）。自分が宣言する型は含まない。差分更新時に、
  *                                                          これらの型を宣言するファイルが変わっていたら
  *                                                          再解析する（{@link jche.analysis.CacheUpdater} 参照）
+ *   S  番号  pkg  typeFqn  method  paramSig                   ブロック内のメソッドの記号表（{@link SymbolTable}）。
+ *                                                          番号は 0 から詰めて振る。下の「記号」はこの番号
+ *   N  番号  kind  value  recv  args  argCount  staticRecv    {@link ValueNode}。値グラフのノード。
+ *                                                          番号はブロック内の 0 始まりの連番で、recv と args は
+ *                                                          同じブロックのノードを指す
+ *   R  記号  origin                                          {@link ReturnFact}。戻り値の出所。D 行より前に置く
+ *                                                          （読み手はここでメソッドを ID 化するので、以前の形式と
+ *                                                          同じ ID の順になる。ID の順は出力の並びの同点決着に効く。
+ *                                                          jche.graph.CallGraphBuilder 参照）
  *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
- *                                                          {@link TypeFact}。親型は直接の親と、
- *                                                          jar の型を経由して到達するソース上の親。
- *                                                          アノテーションは {@link AnnotationTokens}
- *   D  pkg  typeFqn  method  paramSig  declLine  hasBody(1/0)  mods  アノテーション  endLine
- *                                                             {@link MethodDeclFact}。endLine は
- *                                                             宣言の終了行（v20）
- *   O  pkg  typeFqn  method  paramSig  上書き先のキー(;区切り)   {@link OverrideFact}。その宣言が
- *                                                          上書きしている宣言のキー。ジェネリクスで
- *                                                          消去シグネチャが食い違う場合にだけ現れる（v23）
+ *                                                          {@link TypeFact}
+ *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine
+ *                                                          {@link MethodDeclFact}
+ *   O  記号  上書き先のキー(;区切り)                          {@link OverrideFact}。D 行より後
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth  qualifier
- *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
- *                                                             値（レシーバ・実引数の出所、ガード）は
- *                                                             dataflow 側の P 行にある
- *   M  line  caller(4列)  ifaceTypeFqn#method(paramSig)  kind   {@link FunctionalImplFact}
- *   U  line  caller(4列)  expr  reason  candidate  recvKind  lambdaDepth
- *                                                             {@link UnresolvedCallFact}。C 行と同じく、
- *                                                             値は dataflow 側の P 行にある
+ *   C  呼び出し元の記号  呼び出し先の記号  callLine  calleeMods  recvKind  lambdaDepth  qualifier
+ *      recv  args  recvKey  guard                            {@link CallEdgeFact} と、その呼び出し箇所の値
+ *                                                          （{@link CallSiteValues}）
+ *   U  line  呼び出し元の記号  expr  reason  candidate  recvKind  lambdaDepth  recv  args  recvKey  guard
+ *                                                          {@link UnresolvedCallFact} と、その呼び出し箇所の値。
+ *                                                          C 行と U 行はソース上の順のまま混ざって並ぶ
+ *   M  line  呼び出し元の記号  ifaceTypeFqn#method(paramSig)  kind
+ *                                                          {@link FunctionalImplFact}
+ *   A  line  呼び出し元の記号  ownerTypeFqn  fieldName  access  mods  lambdaDepth
+ *                                                          {@link FieldAccessFact}（今の読み手は使わない）
+ *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}
+ *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
+ *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}
  *   Z  ブロック数                                              最終行。ここまで書き終えた印
  *                                                          （{@link #trailerFor}）。これが無い・数が合わない
  *                                                          キャッシュは途中で切れているとみなして捨てる
  * </pre>
+ * 呼び出し元が特定できない U 行（{@link UnresolvedCallFact#OUTSIDE_METHOD}）の記号は {@code -1}。
+ * recv はノード番号（無ければ {@code -1}）、args は {@code 位置=ノード番号} のカンマ区切り。
  *
- * <h2>行の種別と列（dataflow-cache.tsv）</h2>
- * F 行と Z 行の意味と並びは analysis-cache.tsv と同じ（同じブロックが同じ順で並び、同じ数になる）。
- * <pre>
- *   F  相対パス  サイズ  エラー数  内容ハッシュ                （ファイルのブロックの先頭）
- *   A  line  caller(4列)  ownerTypeFqn  fieldName  access  mods  lambda   {@link FieldAccessFact}。
- *                                                          フィールドの参照箇所（読み取り・書き込み。
- *                                                          他の型のフィールドも含む）
- *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}。フィールドへの代入。
- *                                                          「どこから来た値か」なので dataflow 側に置く。
- *                                                          同じブロックの V 行（analysis 側のフィールド宣言）と
- *                                                          組で判定するので、ブロックの対応が要る
- *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}。このファイルが宣言する
- *                                                          コンパイル時定数（static final の値と注釈の
- *                                                          メンバの既定値）。定数の値は使う側に焼き込まれる
- *                                                          ので、差分更新で「値が変わった」を知るために持つ
- *                                                          （定数の連鎖の判断もこちらを読んで行う）
- *   R  pkg  typeFqn  method  paramSig  origin                  {@link ReturnFact}。戻り値の出所
- *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}（フェーズAが拾った証拠）
- *   N  id  kind  value  recv  args  argCount              {@link ValueNode}。値グラフのノード。
- *                                                          id はブロック内ローカルの連番で、recv と args は
- *                                                          同じブロックのノードを指す。入れ子を展開しないので
- *                                                          深さの上限が要らず、value の長さにも上限が無い。
- *                                                          value は {@link #escape} で符号化して書く
- *   P  line  caller(4列)  calleeName  ordinal  recv  args  recvKey  guard
- *                                                          {@link CallSiteValues}。呼び出し箇所ごとの値。
- *                                                          analysis 側の C 行・U 行と 1 対 1 で並び、
- *                                                          鍵（行番号・呼び出し元・呼び出し先の表示名・
- *                                                          同じ鍵の中での通し番号）で結びつける。
- *                                                          recv・args は値グラフ（N 行）のノード番号で、
- *                                                          読み手は {@link jche.graph.OriginRenderer} で
- *                                                          そこから出所の文字列を組み直す（上限が無い）
- *   Z  ブロック数                                              最終行。analysis 側と同じ数でなければ
- *                                                          対になっていないとみなして両方を捨てる
- * </pre>
- * caller(4列) は pkg, typeFqn, method, paramSig（{@link MethodRef}）。
- * F行が現れるたびに、以降の行はそのファイルに属する。I行はF行の直後に置く。
+ * <h2>記号表（S 行）</h2>
+ * メソッドを指す列（宣言・上書き・戻り値・呼び出し元・呼び出し先）は、4 列（pkg・typeFqn・名前・引数）を
+ * 繰り返す代わりに、ブロックの S 行の番号で指す。番号はブロックの中だけで通じるので、ブロックを
+ * まるごと書き写す差分更新でも参照が壊れない。番号は行を書く順（R・D・O・C/U・M・A）に初めて現れた順に振る。
+ * 同じ解析結果からは同じ番号になる。人が読むときは {@link CacheDump} で 4 列に戻した形を出せる。
+ *
+ * <h2>列の符号化（1 つの規則）</h2>
+ * どの列も {@link #joinRow} が {@link #escape} で符号化して書き、読むときは {@link #columnsOf}
+ * （{@link CacheReader#columns}）が {@link #unescape} で戻す。値そのものは失わない
+ * （SQL の文字列や改行を含む値もそのまま持てる）。record の {@code toRow} は生の値を渡し、
+ * {@code fromRow} は戻した値を受け取る。値を<b>拾わない</b>判断（{@link #hasControlChar}）は
+ * 事実を作る側の判断で、符号化とは別である。
+ *
+ * <h2>ブロックの検査値（F 行の crc）</h2>
+ * F 行の次の行から、次の F 行・Z 行の手前までの各行を UTF-8 にし、{@code '\n'} を付けて並べた
+ * バイト列の CRC32（{@link BlockChecksum}）。書き手はブロックをメモリ上で組んでから検査値を求めて書く。
+ * 差分更新（パス1）はブロックごとに検査値を計算し直し、合わなければそのブロックだけを無効にして
+ * 解析し直す（ほかのブロックは再利用する）。行の書き換え・化けのほか、記号やノードの番号が
+ * ブロックの外を指す壊れ方もこれで捕まえる。それでも読み手は番号の範囲を確かめる
+ * （{@link SymbolTable#refsInRange}。呼び出しを黙って落とさないため）。
  *
  * <h2>読み手の責務（キャッシュに入れない判断）</h2>
  * <ul>
@@ -135,7 +139,7 @@ import java.security.SecureRandom;
  * 起きうる。どちらも中身を見れば起きない（docs/cache-identity-qa.md）。
  *
  * <h2>差分更新と依存</h2>
- * 再利用の判定は「F行のサイズと内容ハッシュが一致する」に加えて
+ * 再利用の判定は「F行のサイズと内容ハッシュが一致し、ブロックの検査値が合う」に加えて
  * 「I行の型を宣言するファイルがどれも変わっていない」。
  * 呼び出し先・フィールドの所有型・修飾子・親型はバインディング解決の
  * 結果であり、別のファイルを変えると変わりうるため（{@link jche.analysis.CacheUpdater} 参照）。
@@ -152,7 +156,7 @@ import java.security.SecureRandom;
  * 拡張（{@code plugin.folders}）はグラフを組むときにだけ動いてキャッシュには何も書かないので、
  * ヘッダ行には入れない。拡張を足しても外しても、キャッシュはそのまま再利用できる。
  *
- * <h2>バージョン（{@link #VERSION} / {@link #DATAFLOW_VERSION}）を上げる基準: 迷ったら上げる</h2>
+ * <h2>バージョン（{@link #VERSION}）を上げる基準: 迷ったら上げる</h2>
  * 書き手の変更でキャッシュに入る事実が変わりうるなら上げる。列や意味の変更に限らず、収集範囲・
  * 値の正規化・書き手が作る文字列（{@link Guard} の text）の変更も含む。上げると利用者は 1 回だけ
  * 全件解析になるが、上げ忘れると再利用したファイルだけが古い事実のまま残り、「静かに違う結果」になる。
@@ -163,52 +167,36 @@ import java.security.SecureRandom;
  * JDT の版と実行 JDK のメジャー版はヘッダ行の鍵（{@link #headerFor}）に入っているので、
  * それらを変えるだけなら版は上げなくてよい。
  *
- * <p>以前は「2 つは独立に上げられる。データフロー側だけを上げれば呼び出し階層の出力は変わらない」と
- * 書いていたが誤り。dataflow 側の値（P・N・J・R・X 行）は具象クラスの解決と条件分岐の打ち切りを通じて
- * 呼び出し階層の出力に効く。
- *
  * <h2>事実の収集範囲（書き手の打ち切り。変えたらバージョンを上げる）</h2>
  * <ul>
- *   <li>値グラフ（N 行）の入れ子には段数の上限が無い（v4）。1つの式を1ノードとして持ち、
+ *   <li>値グラフ（N 行）の入れ子には段数の上限が無い。1つの式を1ノードとして持ち、
  *       参照はノード番号で行うので、大きさが式の数に比例し、深さに依存しないため。
  *       読み手はここから出所を組み直す（{@link jche.graph.OriginRenderer}）</li>
  *   <li>外側スコープの変数の出所は、final または実質 final のときだけ持ち込む</li>
  *   <li>ローカル変数の出所の先読みは1回（後方で宣言された変数への別名付けは U）</li>
- *   <li>値グラフの文字列リテラル・定数の値には長さと内容の上限が無い（v4）。
+ *   <li>値グラフの文字列リテラル・定数の値には長さと内容の上限が無い。
  *       SQL やログ文言もそのまま持ち、行形式を壊す文字は {@link #escape} で符号化する</li>
  *   <li>プリミティブ・配列・String を返す return は記録しない</li>
  *   <li>フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
- *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする（v10 で super(...) を追加）。
- *       書かれていない暗黙の super() は拾わない</li>
- *   <li>N 行に「ソースに書いたときのレシーバの型」を追加（dataflow v6）。
+ *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする。
+ *       ソースに呼び出し式が無いが JLS が「呼ぶ」と定める呼び出し（暗黙の super()、拡張 for 文の
+ *       iterator() / hasNext() / next()、try-with-resources の close()、レコードパターンのアクセサ）も C 行にする</li>
+ *   <li>N 行に「ソースに書いたときのレシーバの型」を持つ。
  *       {@code DaoFactory.get(...)} の {@code get} が親で宣言されていると、メソッドキーは
  *       親になる。利用者が契約表や拡張で指定するのはソースに書いてある型なので、
  *       違うときだけ書かれた型も残す（{@link jche.graph.FactoryCalls}）</li>
- *   <li>v11 で L 行（依存 jar）とF行のエラー数、ヘッダの jdk を追加</li>
- *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を追加し、
- *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録するようにした（v14）。
+ *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を持ち、
+ *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録する。
  *       「その経路では呼ばれない」と言い切れる呼び出しを読み手が見分けるため</li>
- *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める（v12）。
+ *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める。
  *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
- *   <li>H 行・D 行・V 行にアノテーションを持つ（v13。{@link AnnotationTokens}）。選別はせず、
+ *   <li>H 行・D 行・V 行にアノテーションを持つ（{@link AnnotationTokens}）。選別はせず、
  *       付いているものを宣言順に全部残す。値は単一メンバと value / name の文字列だけ。
  *       どのアノテーションに意味があるかは読み手の判断
  *       （{@link jche.graph.SpringBeans} / {@link jche.framework.GeneratedImpl}）</li>
- *   <li>F 行と L 行の末尾に内容ハッシュの列を足した（v13 のまま。事実の意味は変わらないので
- *       バージョンは上げていない）</li>
- *   <li>T 行（解析開始時のソース一覧の指紋）と Z 行（最後まで書き終えた印）を足した（v15）。
- *       T 行は中断した実行からの引き継ぎの判定に、Z 行は途中で切れたキャッシュを見分けるのに使う</li>
- *   <li>K 行（このファイルが宣言するコンパイル時定数の値）を足した（v15。{@link ConstantFact}）。
- *       定数の値は使う側のファイルに焼き込まれるので、差分更新で取りこぼさないよう宣言側にも残す。
- *       あわせて、行形式を壊す値（タブ・改行を含む文字列定数、複数行の注釈の値）は事実として
- *       拾わないことにした。以前はそのまま書いていたため行が割れ、以降の呼び出しが読めなくなっていた</li>
- *   <li>D 行に endLine（宣言の終了行）を足した（v20。docs/method-decl-range-qa.md）。
- *       開始行だけでは「カーソルのある行を囲むメソッド」を引くときに、メソッドの外にいても
- *       直前のメソッドを返してしまうため。暗黙のコンストラクタのように本体が書かれていない
- *       ものは開始行と同じ値になる</li>
- *   <li>F 行から更新時刻の列を落とし、L 行を「パスと指紋」に置き換えた（v16）。
- *       同一性をパス・サイズ・内容で統一したため（上の「同一性」。docs/cache-identity-qa.md）</li>
+ *   <li>行形式を壊す値（タブ・改行を含む文字列定数、複数行の注釈の値）は K 行・アノテーションの
+ *       事実としては拾わない（値ではなくハッシュにする・持たない）。値グラフは符号化して全部持つ</li>
  * </ul>
  *
  * H行は「単一実装ショートカット」と「CHA」に必須。これが無いと
@@ -221,77 +209,96 @@ public final class CacheFormat {
     public static final String SEP = "\t";
 
     /**
-     * analysis-cache.tsv の形式。変更した場合はここを上げる。旧キャッシュは自動的に破棄される。
-     * 上げるのは「事実の意味・列・収集範囲」が変わったときだけ。
-     * 読み手だけの変更（解決ラベル、CSVの列、フィルタ、文言）では上げない。
+     * キャッシュの形式の版。変更した場合はここを上げる。旧キャッシュは自動的に破棄される
+     * （上げる基準はクラスの説明「迷ったら上げる」）。
      *
-     * v17 で A 行（フィールドの参照箇所）を、v18 で K 行（定数）・R 行（戻り値の出所）・
-     * X 行（拡張の証拠）を dataflow-cache.tsv に移した。
-     * v19 で C 行・U 行から値の列（recvKey・出所・guard）を落とし、J 行（フィールドへの代入）も
-     * dataflow-cache.tsv へ移した。これで analysis 側だけでは具象クラスの解決は CHA 止まりになる。
-     * v20 で D 行に endLine（宣言の終了行）を足した。
-     * v21 でラムダ式を合成メソッド（D 行 + 生成の C 行）として持つようにし、
-     * 本体の呼び出しの計上先を囲みメソッドからその合成メソッドへ移した。
-     * v22 で F 行の末尾に構文エラーの数を足した（{@link #syntaxErrorsOf}）。
-     * 再利用したファイルについても「本体を読めていない」と言い続けるために要る。
-     * v24 で M 行を、関数型インターフェースのメソッドが上書きしている親インターフェースの
-     * 宣言の鍵でも書くようにした（{@code docs/lambda-expansion-qa.md} の Q11）。
-     * 古いキャッシュを再利用すると、親の型で受けた呼び出しでラムダが無視される。
-     * v25 でラムダの合成メソッドの通し番号を javac と同じ後行順にし、enum 定数の引数の中の
-     * ラムダを {@code lambda$static$N} にした（同 Q13）。名前は D 行・C 行・M 行に焼き込まれる。
-     * v26 で M 行を、上書きの関係に無い2つの親から継承した同じ抽象メソッドの鍵でも書くようにし
-     * （同 Q15）、インターフェースのフィールドの中のラムダを {@code lambda$static$N} にした（同 Q17）。
-     * v27 でインターフェース（アノテーション型を含む）に暗黙のコンストラクタの D 行を合成しないようにした
-     * （JLS 8.8.9。{@code docs/jls-conformance-qa.md} の Q25）。古いキャッシュを再利用すると、
-     * そのファイルのインターフェースにだけ呼ばれない {@code <init>} が残る。
-     * v28 で、ソースに呼び出し式が無いが JLS が「呼ぶ」と定める呼び出し（拡張 for 文の
-     * {@code iterator()} / {@code hasNext()} / {@code next()}、try-with-resources の {@code close()}、
-     * レコードパターンのアクセサ）を C 行にし、コンパクトなコンパイル単位の暗黙のクラス（JLS 7.3）を
-     * H 行・D 行に載せた（{@code docs/jls-conformance-test-qa.md}）。古いキャッシュを再利用すると、
-     * そのファイルからだけこれらの辺が抜ける。
-     * v29 で拡張 for 文の {@code hasNext()} / {@code next()} の呼び出し先を JLS 14.14.2 どおり
-     * {@code java.util.Iterator} にし、C 行の末尾に呼び出しを修飾する型（JLS 13.1）の列を足した。
-     * 古いキャッシュを再利用すると、そのファイルの呼び出しだけ CHA の候補が宣言した型から引かれる。
-     * v30 で F 行の構文エラーの数から {@code var} の使い方の誤り（本体は読めている）を外した
-     * （{@code docs/syntax-error-report-qa.md} の Q7）。古いキャッシュを再利用すると、そのファイルだけ
-     * 「本体を読めなかった」と事実と違う警告が出続ける
+     * <p>主な変更（詳しい経緯は docs/ の各 *-qa.md）:
+     * <ul>
+     *   <li>v16 同一性をパス・サイズ・内容ハッシュにした（更新時刻の列を落とした）</li>
+     *   <li>v19 値の列を当時の dataflow-cache.tsv へ分けた</li>
+     *   <li>v20 D 行に endLine を足した</li>
+     *   <li>v21 ラムダ式を合成メソッドとして持つようにした</li>
+     *   <li>v22 F 行に構文エラーの数を足した</li>
+     *   <li>v24〜v26 M 行・ラムダの合成メソッドの名前の規則を JLS / javac に合わせた</li>
+     *   <li>v27 インターフェースに暗黙のコンストラクタを合成しないようにした</li>
+     *   <li>v28 JLS が「呼ぶ」と定める暗黙の呼び出しを C 行にした</li>
+     *   <li>v29 C 行に呼び出しを修飾する型（qualifier）を足した</li>
+     *   <li>v30 F 行の構文エラーの数から var の使い方の誤りを外した</li>
+     *   <li>v31 2 ファイルを 1 ファイルにまとめ、値を呼び出し箇所の行に持たせ、メソッドを
+     *       ブロック内の記号表（S 行）で指し、F 行に未解決数とブロックの検査値を足した
+     *       （{@code docs/cache-unification-qa.md}）</li>
+     * </ul>
      */
-    public static final String VERSION = "jche-cache-v30";
-
-    /**
-     * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
-     * サイドカーのための事実を足すときはこちらだけを上げればよく、
-     * 呼び出し階層の出力（{@link #VERSION} の側）は影響を受けない。
-     *
-     * v2 で N 行（値グラフ）と P 行（呼び出し箇所ごとの値）を足し、
-     * v3 で K 行・R 行・X 行を analysis 側から受け取った。
-     * v4 で J 行を受け取り、P 行に recvKey と guard を持たせ、
-     * 上限付きの出所の列（recvOrigin / argOrigins）を落とした（読み手が N 行から組み直すため）。
-     * v5 で値の種別に Z（ラムダ／メソッド参照が実装しているメソッド）と
-     * E（ラムダが捕捉した囲みメソッドの引数）を足した。
-     * v7 で Z（メソッド参照）にレシーバの出所（{@code |r=}）を付け、式本体のラムダにも
-     * R 行を書くようにした（{@code docs/lambda-expansion-qa.md} の Q12・Q14）。
-     * v6 で guard の text（P 行に書かれる条件式の説明）を英語にした。
-     * 文言の変更でバージョンを上げないのが原則だが、これは<b>読み手ではなく書き手が作る文字列</b>で
-     * キャッシュに焼き込まれる。上げずにおくと、古いキャッシュを再利用したファイルだけ
-     * 日本語の注記が出て、同じ CSV に2つの言語が混ざる（{@code docs/nls-qa.md} の Q7）
-     */
-    public static final String DATAFLOW_VERSION = "jche-dataflow-v7";
-
-    /**
-     * ヘッダの最後に付ける世代の印。2 つのキャッシュが同じ実行で書かれたことを表す。
-     * 形式の互換性（版・ソースレベル・文字コード・JDK）とは別の軸なので、
-     * ヘッダの突き合わせではこの項目を外して比べる（{@link #compatibilityPartOf}）
-     */
-    public static final String GENERATION_PREFIX = "gen=";
+    public static final String VERSION = "jche-cache-v31";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
     public static final char ROW_LIBRARY = 'L';
     public static final char ROW_FILE = 'F';
+    public static final char ROW_DEPENDENCIES = 'I';
+    /** ブロック内のメソッドの記号表（{@link SymbolTable}） */
+    public static final char ROW_SYMBOL = 'S';
+    /** 値グラフのノード（{@link ValueNode}） */
+    public static final char ROW_VALUE_NODE = 'N';
+    public static final char ROW_RETURN = 'R';
+    public static final char ROW_TYPE = 'H';
+    public static final char ROW_METHOD_DECL = 'D';
+    public static final char ROW_OVERRIDE = 'O';
+    public static final char ROW_FIELD_DECL = 'V';
+    public static final char ROW_CALL = 'C';
+    public static final char ROW_UNRESOLVED = 'U';
+    public static final char ROW_FUNCTIONAL_IMPL = 'M';
+    /** フィールドの参照箇所（今の読み手は使わない。{@link FieldAccessFact}） */
+    public static final char ROW_FIELD_ACCESS = 'A';
+    public static final char ROW_CONSTANT = 'K';
+    public static final char ROW_FIELD_ASSIGN = 'J';
+    public static final char ROW_HINT = 'X';
+    public static final char ROW_END = 'Z';
 
     /**
-     * F 行（{@code F パス サイズ エラー数 ハッシュ 構文エラー数}）の構文エラー数。
+     * C 行・U 行で、呼び出し箇所の値（{@link CallSiteValues}）が始まる列。
+     * recv・args・recvKey・guard の順に並ぶ
+     */
+    public static final int CALL_VALUES_COLUMN = 8;
+
+    private static final int[] SYMBOLS_CALL = {1, 2};
+    private static final int[] SYMBOLS_AT_1 = {1};
+    private static final int[] SYMBOLS_AT_2 = {2};
+    private static final int[] NONE = {};
+
+    private CacheFormat() {
+    }
+
+    /**
+     * その種別の行で、記号（S 行の番号）を持つ列の位置（昇順）。記号を持たない種別なら空。
+     *
+     * <p>記号の列はどれも「メソッドを 4 列（pkg・typeFqn・名前・引数）で書いていた位置」にある。
+     * 範囲の検査（{@link SymbolTable#refsInRange}）と、4 列に戻して見せる {@link CacheDump} が使う。
+     * 行ごとに通るので配列を作り直さずに返す（呼び出し側は書き換えない）
+     */
+    static int[] symbolColumnsOf(char rowType) {
+        return switch (rowType) {
+            case ROW_CALL -> SYMBOLS_CALL;
+            case ROW_METHOD_DECL, ROW_OVERRIDE, ROW_RETURN -> SYMBOLS_AT_1;
+            case ROW_UNRESOLVED, ROW_FUNCTIONAL_IMPL, ROW_FIELD_ACCESS -> SYMBOLS_AT_2;
+            default -> NONE;
+        };
+    }
+
+    /**
+     * F 行（{@code F パス サイズ エラー数 ハッシュ 構文エラー数 未解決数 crc}）を作る。
+     *
+     * @param unresolved 使える候補の無い U 行の数（{@link UnresolvedCallFact#hasUsableCandidate}）
+     * @param crc        ブロックの検査値（{@link BlockChecksum#hex}）
+     */
+    public static String fileRow(String relativePath, long size, int errors, String hash, int syntaxErrors,
+                                 int unresolved, String crc) {
+        return joinRow(String.valueOf(ROW_FILE), relativePath, String.valueOf(size), String.valueOf(errors),
+                hash, String.valueOf(syntaxErrors), String.valueOf(unresolved), crc);
+    }
+
+    /**
+     * F 行の構文エラー数。
      *
      * <p>列が無ければ 0 とみなす。{@link #VERSION} を上げてあるので古いキャッシュは
      * そもそも読まないが、読み手を列の有無に依存させない
@@ -308,6 +315,18 @@ public final class CacheFormat {
         return intColumn(fileRow, 3);
     }
 
+    /**
+     * F 行の未解決数（使える候補の無い U 行の数）。ブロックを書き写すときに U 行を読まずに数えるため
+     */
+    public static int unresolvedOf(String[] fileRow) {
+        return intColumn(fileRow, 6);
+    }
+
+    /** F 行に書かれたブロックの検査値。無ければ空文字（どの計算結果とも一致しない） */
+    public static String crcOf(String[] fileRow) {
+        return columnAt(fileRow, 7);
+    }
+
     private static int intColumn(String[] row, int index) {
         if (row == null || row.length <= index) {
             return 0;
@@ -317,28 +336,6 @@ public final class CacheFormat {
         } catch (NumberFormatException e) {
             return 0;
         }
-    }
-    public static final char ROW_DEPENDENCIES = 'I';
-    public static final char ROW_TYPE = 'H';
-    public static final char ROW_METHOD_DECL = 'D';
-    public static final char ROW_OVERRIDE = 'O';
-    public static final char ROW_FIELD_DECL = 'V';
-    public static final char ROW_CONSTANT = 'K';
-    /** dataflow-cache.tsv 側の行（analysis-cache.tsv には書かない） */
-    public static final char ROW_FIELD_ACCESS = 'A';
-    /** dataflow-cache.tsv 側の行。値グラフのノード（{@link ValueNode}） */
-    public static final char ROW_VALUE_NODE = 'N';
-    /** dataflow-cache.tsv 側の行。呼び出し箇所ごとの値（{@link CallSiteValues}） */
-    public static final char ROW_CALL_VALUES = 'P';
-    public static final char ROW_FIELD_ASSIGN = 'J';
-    public static final char ROW_CALL = 'C';
-    public static final char ROW_RETURN = 'R';
-    public static final char ROW_FUNCTIONAL_IMPL = 'M';
-    public static final char ROW_HINT = 'X';
-    public static final char ROW_UNRESOLVED = 'U';
-    public static final char ROW_END = 'Z';
-
-    private CacheFormat() {
     }
 
     /**
@@ -372,64 +369,6 @@ public final class CacheFormat {
     }
 
     /**
-     * dataflow-cache.tsv の1行目（互換性の部分）。
-     *
-     * ソースレベル・文字コード・実行 JDK・JDT の版は analysis-cache.tsv と同じ理由で入れる
-     * （同じソースでも解析結果が変わる）。
-     *
-     * <p>以前はここに外から差し込むフェーズA拡張の指紋（{@code hints=}）も入れていた。
-     * その拡張を廃止したので（{@code docs/instance-analysis-plugin-qa.md} の Q28）項目ごと落とした。
-     * 旧版が拡張つきで書いたキャッシュは {@code hints=} を持つのでこの行と一致せず、そのまま捨てられる。
-     * 拡張なしで書いたキャッシュは以前と同じ行なので、そのまま再利用できる
-     * （X 行が組み込みの {@code NEW} だけになるのは、旧版の拡張なしの実行と同じ）
-     */
-    public static String dataflowHeaderFor(String sourceLevel, String sourceEncoding, String jdtVersion) {
-        return DATAFLOW_VERSION + SEP + "source=" + sourceLevel
-                + SEP + "enc=" + sourceEncoding
-                + SEP + "jdk=" + System.getProperty("java.specification.version", "?")
-                + SEP + "jdt=" + jdtVersion;
-    }
-
-    /**
-     * ヘッダ行に世代の印を足す。2 つのキャッシュには同じ値を書く。
-     *
-     * @param header     {@link #headerFor} か {@link #dataflowHeaderFor} が返した互換性の部分
-     * @param generation この実行の世代（{@link #newGeneration}）
-     */
-    public static String withGeneration(String header, String generation) {
-        return header + SEP + GENERATION_PREFIX + generation;
-    }
-
-    /**
-     * ヘッダ行から世代の印を外した部分。形式の互換性を突き合わせるのに使う。
-     * 旧いキャッシュ（世代の印が無い）はそのまま返るので、版が違うとして捨てられる
-     */
-    public static String compatibilityPartOf(String header) {
-        int at = header.lastIndexOf(SEP + GENERATION_PREFIX);
-        return (at < 0) ? header : header.substring(0, at);
-    }
-
-    /**
-     * ヘッダ行の世代の印。無ければ空文字。
-     *
-     * 空文字は「世代が分からない」であり、2 つのキャッシュの世代が両方とも空文字でも
-     * 一致とはみなさない（{@code CacheUpdater} が明示的に弾く）
-     */
-    public static String generationOf(String header) {
-        int at = header.lastIndexOf(SEP + GENERATION_PREFIX);
-        return (at < 0) ? "" : header.substring(at + 1 + GENERATION_PREFIX.length());
-    }
-
-    /**
-     * この実行の世代。2 つのキャッシュが同じ実行で書かれたことを表すだけなので、
-     * 内容から導く必要はなく、重複しなければよい（乱数）。
-     * 内容から導くと書き出す前に全体を読む必要があり、ストリーミングで書けなくなる
-     */
-    public static String newGeneration() {
-        return String.format("%016x", new SecureRandom().nextLong());
-    }
-
-    /**
      * 解析対象のソースファイル一覧の指紋（相対パス・サイズ・内容ハッシュ）。
      *
      * 中断した前回の実行から解析結果を引き継いでよいかの判定だけに使う
@@ -458,7 +397,6 @@ public final class CacheFormat {
      * 途中で切れたキャッシュは、切れた場所より前のブロックが「サイズも内容ハッシュも一致する」
      * ように見えてしまうので、印が無ければ丸ごと捨てて全件解析し直す。
      * 数まで見るのは、途中のブロックが抜けた場合も気づけるようにするため。
-     * 2 つのキャッシュそれぞれの最終行に書き、数が食い違えば対になっていないとみなす。
      */
     public static String trailerFor(long blocks) {
         return ROW_END + SEP + blocks;
@@ -470,11 +408,12 @@ public final class CacheFormat {
     }
 
     /**
-     * 1行をタブで分割する。末尾の空列も落とさない。
+     * 1行をタブで分割し、各列を {@link #unescape} で戻す。末尾の空列も落とさない。
      *
      * {@code String.split} を使わず自前で分けるのは、キャッシュを読む経路で
      * 行の数だけ通るため。区切りの数を先に数えて配列を1つだけ作れば、
-     * 途中の可変長リストとその作り直しが要らない
+     * 途中の可変長リストとその作り直しが要らない。
+     * 符号化されていない列（バックスラッシュを含まない列。ほとんどがそう）は作り直さない
      */
     public static String[] columnsOf(String line) {
         char sep = SEP.charAt(0);
@@ -489,11 +428,11 @@ public final class CacheFormat {
         int from = 0;
         for (int i = 0; i < line.length(); i++) {
             if (line.charAt(i) == sep) {
-                cols[at++] = line.substring(from, i);
+                cols[at++] = unescape(line.substring(from, i));
                 from = i + 1;
             }
         }
-        cols[at] = line.substring(from);
+        cols[at] = unescape(line.substring(from));
         return cols;
     }
 
@@ -503,46 +442,7 @@ public final class CacheFormat {
     }
 
     /**
-     * タブ・改行が値に混ざると形式が壊れるため除去する。
-     *
-     * {@link Guard} のアトム区切り（{@code \u0001}〜{@code \u0003}）は行を壊さないので残す。
-     */
-    public static String clean(String s) {
-        if (s == null) {
-            return "";
-        }
-        // 大半の値は落とす文字を含まない。まず1回だけ走査して、含まなければそのまま返す
-        // （以前は含まない場合でも replace を3回通していた）
-        int at = -1;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\t' || c == '\n' || c == '\r') {
-                at = i;
-                break;
-            }
-        }
-        if (at < 0) {
-            return s;
-        }
-        char[] chars = s.toCharArray();
-        for (int i = at; i < chars.length; i++) {
-            char c = chars[i];
-            if (c == '\t' || c == '\n' || c == '\r') {
-                chars[i] = ' ';
-            }
-        }
-        return new String(chars);
-    }
-
-    /**
-     * dataflow-cache.tsv の値を、行形式を壊さない形に符号化する（逆は {@link #unescape}）。
-     *
-     * <h4>analysis 側の {@link #clean} との違い</h4>
-     * analysis 側はタブ・改行を空白へ<b>置き換えて捨てる</b>。呼び出し階層の出力に使う値は
-     * 識別子やクラス名で、制御文字が混ざるのは異常なケースだけなので、落として構わない。
-     * dataflow 側は SQL やログ文言のような<b>長さも中身も選べない文字列を、そのまま持つ</b>のが目的なので、
-     * 捨てるのではなく符号化する。だから 2 つのキャッシュで規則が違ってよく、
-     * 分けたこと自体がこの違いを許している（{@code docs/cache-split-qa.md}）。
+     * 値を、行形式を壊さない形に符号化する（逆は {@link #unescape}）。{@link #joinRow} がすべての列に通す。
      *
      * <h4>規則</h4>
      * <pre>
@@ -554,10 +454,9 @@ public final class CacheFormat {
      * </pre>
      * それ以外の文字はそのまま。非 ASCII は UTF-8 のまま書くので符号化しない。
      * {@link Guard} が区切りに使う {@code U+0001}〜{@code U+0003} も「その他の制御文字」として
-     * 符号化されるので、ガードを dataflow 側へ移しても値と区切りが衝突しない。
+     * 符号化されるので、値と区切りが衝突しない。
      *
      * <p>符号化した結果にタブ・改行・制御文字は残らない（{@link #hasControlChar} が false になる）。
-     * したがって {@link #joinRow} を通しても {@link #clean} に何も削られない。
      */
     public static String escape(String s) {
         if (s == null) {
@@ -604,7 +503,7 @@ public final class CacheFormat {
      *
      * 規則にない並び（{@code \x} のような、符号化では作られない形）は、文字どおり
      * バックスラッシュと次の文字として返す。手で編集された・壊れたキャッシュでも例外にせず、
-     * 読めるところまで読む（キャッシュが壊れていれば、どうせブロックの突き合わせで捨てられる）。
+     * 読めるところまで読む（キャッシュが壊れていれば、ブロックの検査値で捨てられる）。
      */
     public static String unescape(String s) {
         if (s == null) {
@@ -673,12 +572,12 @@ public final class CacheFormat {
     }
 
     /**
-     * 行形式を壊す文字（タブ・改行のほか、{@link Guard} が区切りに使う制御文字）を含むか。
+     * 行形式を壊しうる文字（タブ・改行のほか、{@link Guard} が区切りに使う制御文字）を含むか。
      *
-     * 事実を<b>作る側</b>が「この値は持たない」と判断するために使う。書き出すときに
-     * {@link #clean} で空白へ置き換えるだけだと、{@code '\t'} と {@code ' '} が
-     * 同じ値になって条件の判定を誤りうるため、値そのものを拾わない方に倒す
-     * （{@code jche.analysis.OriginTracker} / {@link AnnotationTokens}）。
+     * 事実を<b>作る側</b>が「この値は持たない」と判断するために使う。符号化（{@link #escape}）すれば
+     * 行は壊れないが、K 行の値やアノテーションの値のように「持たない」と決めてある事実では、
+     * 値そのものを拾わない方に倒す（{@code jche.analysis.OriginTracker} / {@link AnnotationTokens} /
+     * {@link ConstantFact}）。
      */
     public static boolean hasControlChar(String s) {
         if (s == null) {
@@ -696,9 +595,8 @@ public final class CacheFormat {
     /**
      * 列を並べて1行にする。
      *
-     * 列の値は必ず {@link #clean} を通す。ここが行を書き出す唯一の入口なので、
-     * 値を作る側の取りこぼし（ソース由来の文字列にタブや改行が混ざる）が
-     * そのまま行の破壊にならないよう、最後の関所としてここで落とす。
+     * 列の値は必ず {@link #escape} で符号化する。ここが行を書き出す唯一の入口なので、
+     * 値を作る側がどんな文字を渡しても行は壊れず、値も失われない（読むときに {@link #columnsOf} が戻す）。
      */
     public static String joinRow(String... cols) {
         // 行の長さを先に見積もっておく（継ぎ足しのたびに内部の配列を作り直さないため）
@@ -713,7 +611,7 @@ public final class CacheFormat {
             if (i > 0) {
                 sb.append(SEP);
             }
-            sb.append(clean(cols[i]));
+            sb.append(escape(cols[i]));
         }
         return sb.toString();
     }

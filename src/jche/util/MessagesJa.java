@@ -453,7 +453,6 @@ final class MessagesJa {
             "analysis.syntaxError", "構文エラーのため本体を読めませんでした: {0}（エラー {1} 件。このファイルの呼び出しは出力に出ません）",
             "analysis.fileFailed", "解析失敗（スキップ）: {0} ({1})",
             "analysis.hashFailed", "ソースのハッシュを取れません（このファイルは毎回解析し直します）: {0} ({1})",
-            "analysis.cache.noDataflow", "[cache] データフローのキャッシュ（{0}）が無いため、両方を作り直します",
             "analysis.cache.incompatible", "[cache] 形式・ソースレベル・文字コード・JDK・JDT のいずれかが異なるため既存キャッシュを破棄します",
             "analysis.cache.unreadable", "[cache] 既存キャッシュを読めないため破棄して全件解析します: {0}",
             "analysis.resume.cannotStash", "[cache] 中断した前回の実行の一時ファイルを退避できません（引き継ぎません）: {0}",
@@ -464,12 +463,11 @@ final class MessagesJa {
             "analysis.resume.incompatible", "[cache] 中断した前回の実行とは形式・ソースレベル・文字コード・JDK・JDT のいずれかが異なるため引き継ぎません",
             "analysis.resume.sourcesChanged", "[cache] 中断した前回の実行からソースの内容が変わっているため引き継ぎません（変わっていないファイルの解析結果も、他のファイルの変更で変わりうるため）",
             "analysis.resume.librariesChanged", "[cache] 中断した前回の実行から依存jarが変わっているため引き継ぎません: {0}",
-            "analysis.cache.dataflowIncompatible", "[cache] データフローのキャッシュの形式・ソースレベル・文字コード・JDK・JDT が異なるため、両方を作り直します",
-            "analysis.cache.differentGeneration", "[cache] 2 つのキャッシュが同じ実行で書かれたものではないため、両方を作り直します",
-            "analysis.cache.blockCountMismatch", "[cache] 2 つのキャッシュのブロック数が食い違う（どちらかが途中で切れている）ため、両方を作り直します",
             "analysis.cache.truncated", "[cache] 既存キャッシュが途中で切れているため破棄して全件解析します（ファイル {0} 件ぶんを読みましたが、最後まで書き終えた印がありません）",
-            "analysis.cache.dataflowUnreadable", "[cache] データフローのキャッシュを読めないため、両方を破棄して全件解析します: {0}",
-            "analysis.cache.dataflowMissingBlocks", "[cache] データフローのキャッシュにブロックが無いファイルを解析し直します: {0} 件",
+            "analysis.cache.damagedBlocks", "[cache] キャッシュの {0} ブロックが検査値と合わないため再利用しません（それらのファイルは解析し直します）",
+            "analysis.cache.legacyDeleted", "[cache] 以前の版が残した {0} を消しました（キャッシュは 1 ファイルになりました）",
+            "analysis.cache.legacyNotDeleted", "[cache] 以前の版が残した {0} を消せません（もう使わないので手で消して構いません）: {1}",
+            "analysis.cache.valuesMismatch", "キャッシュの書き出しで内部エラー: {0} の呼び出し箇所は {1} 件なのに、呼び出し箇所の値は {2} 件です",
             "analysis.conditionsFileFailed", "解析に失敗しました: {0} ({1})",
             "analysis.batchFailed", "一括解析に失敗したため、残り {0} 件は1ファイルずつ解析します ({1})",
             "analysis.libraryDiff", "追加={0} 変更={1} 削除={2} 並び替え={3}（影響するパッケージ {4} 件）",
@@ -483,7 +481,6 @@ final class MessagesJa {
             "graph.progress.inbound", "呼び出し元の索引",
             "graph.collected", "収集: 型 {0} / メソッド {1} / エッジ {2}",
             "graph.tooManyEdges", "エッジ数が多すぎます: {0}",
-            "graph.dataflowOutOfOrder", "[cache] データフローのキャッシュの並びが呼び出し箇所と合いません（{0} #{1}）。このぶんの値は使いません",
             "graph.provider.failed", "candidate provider 失敗: {0} ({1})",
             "graph.provider.unusable", "拡張が返した候補を使えません: {0}#{1}（{2} / {3}） … この型にも親にもこのメソッドの本体がありません。候補から外します",
             "graph.contracts.unreadable", "契約表を読めません: {0} ({1})。この表は使わずに続けます",
@@ -555,7 +552,8 @@ final class MessagesJa {
 
     private static String[] cache() {
         return new String[] {
-            "cache.dataflow.missingBlock", "[cache] データフローのキャッシュに {0} のブロックがありません。このファイルの値は使いません（具象クラスの解決は CHA まで）",
+            "cache.badReference", "[cache] キャッシュ {0} にファイルのブロックの外（または読めない行）を指す行があるため、その行（または値）は使いません。キャッシュが書き換えられたか壊れています。キャッシュのフォルダ {1} を消してから実行し直してください",
+            "cache.dump.usage", "使い方: java -cp <ツールのクラスと JDT の jar> jche.cache.CacheDump <analysis-cache.tsv>   （メソッドの記号を 4 列に戻してキャッシュを出力します）",
         };
     }
 

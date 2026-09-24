@@ -48,7 +48,7 @@ import java.util.List;
  * <h2>入れ子に段数の上限は無い</h2>
  * この文法自体は、レシーバも実引数も何段でも入れ子にできる（{@code {}} で囲むため、
  * 境界は {@link #indexAtTop} で判定できる）。読み手が受け取る出所は
- * {@code jche.graph.OriginRenderer} が値グラフ（dataflow 側の N 行）から組み直すので、
+ * {@code jche.graph.OriginRenderer} が値グラフ（キャッシュの N 行）から組み直すので、
  * 段数の上限は無い。要素を走るときは素の {@code split(";")} ではなく
  * {@link #entriesOf} と {@link #unnest} を通すこと。
  *

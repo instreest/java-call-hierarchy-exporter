@@ -37,7 +37,7 @@ import java.util.stream.Stream;
  * Java 言語仕様（JLS SE 26）への適合と、javac（JDK 26）との整合を見る検査（test/jls/run.sh から呼ぶ）。
  *
  * <pre>
- *   java JlsCheck.java expect.tsv 出力フォルダ analysis-cache.tsv javacのクラスフォルダ
+ *   java JlsCheck.java expect.tsv 出力フォルダ cache-dump.tsv javacのクラスフォルダ
  * </pre>
  *
  * 検査は 2 段ある。
@@ -46,6 +46,11 @@ import java.util.stream.Stream;
  * 1 行が 1 つのテストで、JLS の節番号・ID・検査の種類・引数・説明を持つ。節ごとの意味（何が呼ばれるはずか）を
  * 人が書いた期待値で、ツールの出力（call-hierarchy.csv / methods.csv）とキャッシュ（analysis-cache.tsv）に
  * 当てる。種類は {@link #check} の switch を参照。
+ *
+ * <p>キャッシュはメソッドをブロックの記号表（S 行）の番号で指すので、そのままでは名前で照合できない。
+ * run.sh がツールの {@code jche.cache.CacheDump} で記号を 4 列（pkg・typeFqn・名前・引数）に戻した形
+ * （{@code build/cache-dump.tsv}）を作って渡すので、ここではその列を位置で読む。この検査は JDK 26 で
+ * ソースのまま動かし、ツールのクラスを読み込まない（読み込めない）ため、戻すのはツールに任せている。
  *
  * <h2>2. javac のバイトコードとの突き合わせ</h2>
  * 同じソースを javac 26 でコンパイルしたクラスファイルを {@code java.lang.classfile} で読み、ツールの
@@ -79,7 +84,7 @@ public final class JlsCheck {
 
     public static void main(String[] args) throws IOException {
         if (args.length != 4) {
-            System.err.println("usage: java JlsCheck.java expect.tsv outDir analysis-cache.tsv javacClasses");
+            System.err.println("usage: java JlsCheck.java expect.tsv outDir cache-dump.tsv javacClasses");
             System.exit(2);
         }
         Tool tool = Tool.load(Path.of(args[2]), Path.of(args[1]));

@@ -52,14 +52,17 @@ public final class Config {
 
     /** CHA候補を呼び出し階層で展開する際の候補数の上限 */
     public static final int CHA_MAX_CANDIDATES = 20;
-    /** キャッシュフォルダ内に置く、呼び出し階層のためのキャッシュの名前（構造とバインディングの事実） */
+    /**
+     * キャッシュフォルダ内に置く、解析結果のキャッシュの名前（構造とバインディングと値の事実。
+     * ソースファイルごとのブロックに全部入る。{@code jche.cache.CacheFormat}）
+     */
     public static final String CACHE_FILE_NAME = "analysis-cache.tsv";
     /**
-     * キャッシュフォルダ内に置く、データフローのためのキャッシュの名前。
-     * 呼び出し階層の出力には要らない事実（サイドカーの解析が使うもの）をこちらに分ける。
-     * 2 つは常に同じ実行で一緒に書かれ、片方だけを使うことはない（{@code docs/cache-split-qa.md}）
+     * 以前の形式（キャッシュが 2 ファイルだった版）が値の事実を置いていたファイルの名前。
+     * 今は読みも書きもしない。残っていれば {@code jche.analysis.CacheUpdater} が一時ファイルごと消す
+     * （{@code docs/cache-unification-qa.md}）
      */
-    public static final String DATAFLOW_CACHE_FILE_NAME = "dataflow-cache.tsv";
+    public static final String LEGACY_DATAFLOW_CACHE_FILE_NAME = "dataflow-cache.tsv";
     /** cache.folder が空欄のときの置き場所（このツールのプロジェクトフォルダからの相対） */
     public static final String DEFAULT_CACHE_DIR_NAME = ".cache";
     /** 出力フォルダ内のファイル名（固定） */
@@ -174,10 +177,8 @@ public final class Config {
     public final String conditionsTarget;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
-    /** 呼び出し階層のためのキャッシュ（{@link #CACHE_FILE_NAME}） */
+    /** 解析結果のキャッシュ（{@link #CACHE_FILE_NAME}） */
     public final Path cacheFile;
-    /** データフローのためのキャッシュ（{@link #DATAFLOW_CACHE_FILE_NAME}）。cacheFile と対で作られる */
-    public final Path dataflowCacheFile;
 
     /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
     public final List<Path> externalLibraryFolders;
@@ -323,7 +324,6 @@ public final class Config {
         this.conditionsTarget = p.getProperty("conditions.target", "").trim();
         this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
-        this.dataflowCacheFile = this.cacheDir.resolve(DATAFLOW_CACHE_FILE_NAME);
 
         // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
         // ソースや依存jarと同じく project.root からの相対で書けるようにする

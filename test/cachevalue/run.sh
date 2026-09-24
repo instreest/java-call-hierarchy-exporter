@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# dataflow-cache.tsv の値の符号化（CacheFormat.escape / unescape）の検査。
+# キャッシュの列の符号化（CacheFormat.escape / unescape。joinRow が書き、CacheReader が戻す）の検査。
 #
 #   bash test/cachevalue/run.sh
 #   JCHE_CP="build/classes:依存jar..." bash test/cachevalue/run.sh   # コンパイル済みの classpath を使う
 #
 # 見る性質は「どんな文字列でも往復する」「符号化した結果に行を壊す文字が残らない」の 2 つ。
-# SQL やログ文言のような長さも中身も選べない文字列を dataflow 側にそのまま持つための土台なので、
+# SQL やログ文言のような長さも中身も選べない文字列をキャッシュにそのまま持つための土台なので、
 # 実データでは踏まない形（全制御文字、バックスラッシュの連なり、途中で切れた符号）まで機械的にかける。
 #
 # ツール本体（src/）と検査プログラムを javac でコンパイルし、jbang が用意した JDK 25 と

@@ -59,7 +59,11 @@ public final class CallEdgeExtractor {
 
     /** 解析結果の受け手。1ファイル分ずつ渡すので、受け手は書き出したら捨てられる */
     public interface Sink {
-        /** 解析できた1ファイル。IOException はキャッシュへの書き込み失敗で、解析全体を止める */
+        /**
+         * 解析できた1ファイル。IOException はキャッシュへの書き込み失敗で、解析全体を止める。
+         * RuntimeException（書き手の誤りなど）はそのファイルの失敗として {@link #failed} に回すので、
+         * 受け手は失敗したときに書きかけを残さないこと
+         */
         void accept(SourceFile file, FileAnalysis analysis) throws IOException;
 
         /** 解析に失敗した1ファイル（読み飛ばして続行する） */
@@ -134,6 +138,11 @@ public final class CallEdgeExtractor {
                         sink.accept(file, facts);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);   // 下の catch で IOException に戻す
+                    } catch (RuntimeException e) {
+                        // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
+                        // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
+                        // 1 ファイルずつの解析にも回らず、失敗とも数えられずに黙って消える
+                        sink.failed(file, e);
                     }
                 }
             }, null);
@@ -152,7 +161,12 @@ public final class CallEdgeExtractor {
                     sink.failed(file, e);
                     continue;
                 }
-                sink.accept(file, facts);
+                try {
+                    sink.accept(file, facts);
+                } catch (RuntimeException e) {
+                    // 一括パースの側と同じく、受け手の失敗はこのファイルの失敗として数えて続ける
+                    sink.failed(file, e);
+                }
             }
         }
     }

@@ -27,8 +27,11 @@ import jche.cache.RecvKind;
 import jche.cache.UnresolvedCallFact;
 
 /**
- * 呼び出し箇所（C行・U行）を記録し、フェーズAの拡張に見せる。
+ * 呼び出し箇所（C行・U行）とその値（{@link CallSiteValues}）を記録する。
  * 呼び出し元のスタックは {@link FactVisitor} が持ち、ここには「今の呼び出し元」を渡してもらう。
+ *
+ * <p>{@code out.callSites} に 1 件積むたびに {@code out.callSiteValues} にも必ず 1 件積む
+ * （同じ位置どうしが組になり、キャッシュでは 1 行に書かれる）。
  */
 final class CallSiteRecorder {
 
@@ -36,8 +39,6 @@ final class CallSiteRecorder {
     private final FileAnalysis out;
     private final BindingNames names;
     private final GuardCollector guards;
-    /** 鍵ごとの件数。同じ鍵が複数あるときの通し番号を振るため（{@link #addValues}） */
-    private final java.util.Map<String, Integer> joinKeyCounts = new java.util.HashMap<>();
     /**
      * 単一型インポートの「単純名 -> FQN」。{@link #externalGuessRef} 用に、
      * このファイルで最初に必要になったときだけ作る（インポートが無いファイルでは作らない）
@@ -90,7 +91,7 @@ final class CallSiteRecorder {
             // （型のバインディング解決に失敗した等）
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
                     UnresolvedCallFact.OUTSIDE_METHOD, "", recvKind, lambdaDepth));
-            addValues(line, null, displayName, values, recvKey, guard);
+            addValues(values, recvKey, guard);
             return;
         }
         MethodRef callee = names.toRef(binding);
@@ -101,7 +102,7 @@ final class CallSiteRecorder {
             for (MethodRef caller : callers) {
                 out.callSites.add(new UnresolvedCallFact(line, caller, displayName,
                         UnresolvedCallFact.BINDING_FAILED, externalGuess, recvKind, lambdaDepth));
-                addValues(line, caller, displayName, values, recvKey, guard);
+                addValues(values, recvKey, guard);
             }
             return;
         }
@@ -110,7 +111,7 @@ final class CallSiteRecorder {
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
                     recvKind, lambdaDepth, qualifier));
-            addValues(line, caller, displayName, values, recvKey, guard);
+            addValues(values, recvKey, guard);
         }
     }
 
@@ -210,8 +211,8 @@ final class CallSiteRecorder {
      * こちらで作ったメソッド（ラムダの合成メソッド）への辺を1本記録する。
      *
      * 呼び出し先がバインディングではなく合成した {@link MethodRef} なので
-     * {@link #record} は通せないが、P 行との1対1（同じ数・同じ順）は
-     * 呼び出し箇所の突き合わせの前提なので、値が無くても {@link #addValues} は必ず通す。
+     * {@link #record} は通せないが、呼び出し箇所と値の1対1（同じ数・同じ順）は
+     * 1 行に組にして書く前提なので、値が無くても {@link #addValues} は必ず通す。
      */
     void recordSynthetic(List<MethodRef> callers, MethodRef callee, ASTNode node,
                          String calleeMods, char recvKind, int lambdaDepth) {
@@ -239,24 +240,16 @@ final class CallSiteRecorder {
         for (MethodRef caller : callers) {
             out.callSites.add(new CallEdgeFact(caller, callee, line, calleeMods,
                     recvKind, lambdaDepth, ""));
-            addValues(line, caller, callee.name(), CallValues.NONE, "", guard);
+            addValues(CallValues.NONE, "", guard);
         }
     }
 
     /**
-     * dataflow 側の P 行を1件積む。{@code out.callSites} に1行積むたびに必ず1件積むので、
-     * 2 つのキャッシュの呼び出し箇所は同じ数・同じ順で並ぶ。
-     *
-     * 通し番号は「同じ鍵（行番号・呼び出し元・表示名）が既に何件あるか」。
-     * {@code f(g(), g())} のようにまったく同じ鍵が並ぶ場合を読み手が区別できるようにする
+     * 呼び出し箇所の値を1件積む。{@code out.callSites} に1行積むたびに必ず1件積むので、
+     * 呼び出し箇所と値は同じ数・同じ順で並ぶ（書き手が同じ位置どうしを 1 行にする）。
      */
-    private void addValues(int line, MethodRef caller, String displayName, CallValues values,
-                           String recvKey, String guard) {
-        CallSiteValues candidate = new CallSiteValues(line, caller, displayName, 0,
-                values.recvNode(), values.argNodes(), recvKey, guard);
-        int ordinal = joinKeyCounts.merge(candidate.joinKey(), 1, Integer::sum) - 1;
-        out.callSiteValues.add(new CallSiteValues(line, caller, displayName, ordinal,
-                values.recvNode(), values.argNodes(), recvKey, guard));
+    private void addValues(CallValues values, String recvKey, String guard) {
+        out.callSiteValues.add(new CallSiteValues(values.recvNode(), values.argNodes(), recvKey, guard));
     }
 
     /**

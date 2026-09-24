@@ -1,12 +1,17 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 import jche.cache.CacheFormat;
+import jche.cache.CacheReader;
 
 /**
- * dataflow-cache.tsv の値の符号化（{@link CacheFormat#escape} / {@link CacheFormat#unescape}）を検査する。
+ * キャッシュの列の符号化（{@link CacheFormat#escape} / {@link CacheFormat#unescape}）を検査する。
  *
  * 見る性質は 2 つ。
  * <pre>
@@ -17,16 +22,19 @@ import jche.cache.CacheFormat;
  * そこには出てこないが形式を壊しうる文字（全制御文字、バックスラッシュの連なり、
  * 途中で切れた符号）を両方かける。実データでは踏まない形をここで潰しておくため。
  *
- * <p>行そのものへの組み込み（{@link CacheFormat#joinRow} を通しても値が変わらないこと）も見る。
- * joinRow は analysis 側の規則で {@code clean} を通すので、escape 済みの値が
- * そこで削られないことを確かめる意味がある。
+ * <p>行そのものへの組み込みも見る。キャッシュのどの列も {@link CacheFormat#joinRow} が符号化して書き、
+ * {@link CacheReader#columns} が戻して読む（1 つの規則）。生の値を joinRow に渡して 1 行にし、
+ * それをファイルに書いて CacheReader で読み戻したとき、列の数が変わらず、値が元に戻ること。
  */
 public final class ValueEncodingCheck {
 
     private static int checked;
     private static int failed;
+    /** 行に組み込んだ値と、その行（あとでファイルに書いて CacheReader で読み戻す） */
+    private static final List<String> originals = new ArrayList<>();
+    private static final List<String> rows = new ArrayList<>();
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         for (String s : corpus()) {
             check(s);
         }
@@ -41,6 +49,7 @@ public final class ValueEncodingCheck {
         }
         // サロゲートペア（絵文字など）が壊れないこと
         check("値 \uD83D\uDE00 と \uD83D\uDE00\uD83D\uDE00");
+        readBack();
 
         System.out.println(failed == 0
                 ? "OK   " + checked + " 通りの値が往復し、行を壊さない"
@@ -89,15 +98,53 @@ public final class ValueEncodingCheck {
             report("符号化しても制御文字が残ります", original, escaped, back);
             return;
         }
-        // 行に組み込んでも値が変わらないこと（joinRow は clean を通す）
-        String row = CacheFormat.joinRow("N", "0", "L", escaped);
-        String[] cols = CacheFormat.columnsOf(row);
-        if (cols.length != 4 || !escaped.equals(cols[3])) {
-            report("行に組み込むと値が変わります（列数 " + cols.length + "）", original, escaped, back);
+        // 行に組み込む。joinRow が符号化するので、生の値を渡す
+        String row = CacheFormat.joinRow("N", "0", "L", original);
+        if (!row.equals("N\t0\tL\t" + escaped)) {
+            report("joinRow の符号化が escape と違います", original, escaped, back);
             return;
         }
-        if (!original.equals(CacheFormat.unescape(cols[3]))) {
-            report("行から読み戻せません", original, escaped, back);
+        if (CacheFormat.hasControlChar(row.replace('\t', ' '))) {
+            report("行に区切り以外の制御文字が残ります", original, escaped, back);
+            return;
+        }
+        String[] cols = CacheFormat.columnsOf(row);
+        if (cols.length != 4 || !original.equals(cols[3])) {
+            report("行から読み戻すと値が変わります（列数 " + cols.length + "）", original, escaped, back);
+            return;
+        }
+        originals.add(original);
+        rows.add(row);
+    }
+
+    /** 組み込んだ行をファイルに書き、CacheReader で読み戻して列が元に戻ることを見る */
+    private static void readBack() throws IOException {
+        Path file = Files.createTempFile("value-encoding", ".tsv");
+        try {
+            StringBuilder sb = new StringBuilder("header\n");
+            for (String row : rows) {
+                sb.append(row).append('\n');
+            }
+            Files.writeString(file, sb.toString(), StandardCharsets.UTF_8);
+            int i = 0;
+            try (CacheReader in = CacheReader.open(file)) {
+                while (in.next()) {
+                    checked++;
+                    String original = (i < originals.size()) ? originals.get(i) : "";
+                    String[] cols = in.columns();
+                    if (i >= originals.size() || cols.length != 4 || !original.equals(cols[3])) {
+                        report("ファイルから CacheReader で読み戻すと値が変わります（" + (i + 1) + " 行目、列数 "
+                                + cols.length + "）", original, CacheFormat.escape(original), in.column(3));
+                    }
+                    i++;
+                }
+            }
+            if (i != rows.size()) {
+                failed++;
+                System.out.println("  NG   ファイルの行数が変わります（書いた " + rows.size() + " 行、読んだ " + i + " 行）");
+            }
+        } finally {
+            Files.deleteIfExists(file);
         }
     }
 

@@ -69,7 +69,7 @@ final class OriginTracker {
 
     private final BindingNames names;
     /**
-     * 同じ式から作る上限の無い値グラフ（dataflow 側の N 行）。
+     * 同じ式から作る上限の無い値グラフ（キャッシュの N 行）。
      * ここが出所の文字列を作るのと同じ場所で作ることで、2 つの表現が同じ式から出ることを保証する
      */
     private final ValueGraph graph;
@@ -121,8 +121,7 @@ final class OriginTracker {
     }
 
     /**
-     * 呼び出し箇所1件の値。上限付きの出所（analysis 側の C 行・U 行）と、
-     * 上限の無いノード参照（dataflow 側の P 行）を<b>同じ式から一度に</b>作る。
+     * 呼び出し箇所1件の値（上限の無いノード参照。キャッシュでは C 行・U 行の末尾の列）を作る。
      *
      * @param recv レシーバの式。無ければ null
      * @param args 実引数。メソッド参照のように実引数が無い形では null（出所も作らない）

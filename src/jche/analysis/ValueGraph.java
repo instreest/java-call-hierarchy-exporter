@@ -73,7 +73,7 @@ final class ValueGraph {
      * 式のノード番号。追跡できなければ {@link ValueNode#NONE}。
      *
      * 「分からない」を {@link Origin#UNKNOWN} のノードとして残すことはしない。
-     * 参照する側（P 行のレシーバ・実引数）が {@link ValueNode#NONE} を置くので、
+     * 参照する側（C 行・U 行のレシーバ・実引数）が {@link ValueNode#NONE} を置くので、
      * 同じことを2通りで表さない
      */
     int nodeOf(Expression ex) {
