@@ -36,6 +36,9 @@ import jche.cache.Origin;
  * 拾う範囲は、その型自身のフィールド初期化子と、その型自身のメソッド・
  * コンストラクタ本体の中の代入（インスタンス初期化ブロックと内部クラスからの
  * 代入は拾わない。範囲を変えるときはキャッシュのバージョンを上げる）。
+ *
+ * 出所は、この型の枠（囲むメソッドから切り離した空のスコープ）の上で求める（{@link #collect}）。
+ * 匿名クラス・ローカルクラスの初期化子が囲むメソッドの引数を読んでも、この型のコンストラクタ引数には見えない。
  */
 final class FieldFactCollector {
 
@@ -57,12 +60,23 @@ final class FieldFactCollector {
         if (typeFqn == null) {
             return;
         }
-        for (Object o : bodyDeclarations) {
-            if (o instanceof FieldDeclaration fd) {
-                scanFieldDeclaration(fd, typeFqn);
-            } else if (o instanceof MethodDeclaration md) {
-                scanAssignments(md, typeFqn, siteOf(md));
+        // この型の枠を 1 枚挟む。型の宣言に入った時点では、囲むメソッド（匿名クラス・ローカルクラスなら
+        // それを書いたメソッド、フィールド初期化子のラムダならそのラムダ）のスコープが一番上に積まれている。
+        // そのまま初期化子の出所を求めると、囲むメソッドの引数（A:0）が「今のフレームの引数」として
+        // 返り、読み手（jche.graph.FieldFacts）がこの型のコンストラクタの第 1 引数と取り違える。
+        // 空の枠を挟めば、外側の変数は捕捉した変数として扱われ、A: / F: は捨てられ
+        // T: / M: は頭だけが残る（OriginTracker.frameIndependent。メソッド本体の代入と同じ規則）
+        origins.enterScope(origins.newScope());
+        try {
+            for (Object o : bodyDeclarations) {
+                if (o instanceof FieldDeclaration fd) {
+                    scanFieldDeclaration(fd, typeFqn);
+                } else if (o instanceof MethodDeclaration md) {
+                    scanAssignments(md, typeFqn, siteOf(md));
+                }
             }
+        } finally {
+            origins.leaveScope();
         }
         scanAnnotationDefaults(typeBinding, typeFqn);
     }

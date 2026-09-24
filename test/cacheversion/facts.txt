@@ -1,6 +1,6 @@
-version jche-cache-v31
+version jche-cache-v32
 env jdk=25 jdt=3.46.0.v20260520-1003+3.46.0.v20260528-0407
 fixture c20b22be8e7d65a2
-facts demo 23ed98fa53097140
+facts demo ea323770723cc2c4
 facts incremental 962064366c494caf
 facts jls b75fe8edf03abd03

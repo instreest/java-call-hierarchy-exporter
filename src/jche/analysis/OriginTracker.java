@@ -3,8 +3,10 @@ package jche.analysis;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -29,6 +31,8 @@ import org.eclipse.jdt.core.dom.MethodReference;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.NumberLiteral;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
+import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
@@ -48,7 +52,7 @@ import jche.cache.ValueNode;
  * 式の「出所」（{@link Origin}）を求める。データフロー解析で具象クラスを特定するための材料集め。
  *
  * <h2>変数の出所の表</h2>
- * メソッドに入る直前に、そのメソッド本体を1回だけ先読みして
+ * メソッドに入る直前に、そのメソッド本体を先読みして
  * 「変数 -> 出所」の表を作る（{@link #scanOrigins}）。走査しながら作らないのは、
  * 同じ変数への代入が後ろにある場合に取りこぼすため。
  * <pre>
@@ -58,6 +62,7 @@ import jche.cache.ValueNode;
  * 走査順に作ると x.m() の時点では x は A に見えるが、2周目は B。
  * 先読みして「複数の出所があれば U（不明）」に倒すことで、
  * 具象クラスを誤って1つに決め打ちすることを防ぐ。フロー非依存・安全側の方針。
+ * 別の変数へ写した値（{@code X y = x;}）にも後ろの代入が届くよう、先読みは表が変わらなくなるまで繰り返す。
  *
  * 表はメソッドの入れ子（匿名クラス・ローカルクラス）に合わせてスタックで持ち、
  * {@link FactVisitor} がメソッドの出入りで push/pop する。
@@ -128,7 +133,7 @@ final class OriginTracker {
      */
     CallValues valuesOf(Expression recv, List<?> args) {
         int recvNode = (recv == null) ? ValueNode.NONE : graph.nodeOf(recv);
-        String argNodes = (args == null) ? "" : graph.argsOf(args, 0);
+        String argNodes = (args == null) ? "" : graph.argsOf(args);
         return new CallValues(recvNode, argNodes);
     }
 
@@ -159,14 +164,20 @@ final class OriginTracker {
         return new Scope();
     }
 
+    /**
+     * スコープを積む。値グラフの式ごとの控え（{@link ValueGraph#forgetExpressions}）はここで捨てる。
+     * 同じ式でも、見えている変数の表が変われば値が変わりうるため
+     */
     void enterScope(Scope scope) {
         scopes.push(scope);
+        graph.forgetExpressions();
     }
 
     void leaveScope() {
         if (!scopes.isEmpty()) {
             scopes.pop();
         }
+        graph.forgetExpressions();
     }
 
     /**
@@ -221,9 +232,46 @@ final class OriginTracker {
      * 本体を先読みして、ローカル変数の出所を集める。
      *
      * 同じ変数に出所の違う代入が複数あれば U（不明）にする。
-     * ローカル変数どうしの別名付け（{@code Y y = x;}）は、先読みが1回のため
-     * x が y より後ろで宣言されていると追えない。安全側（U）に倒れるだけなので
-     * 実害は「解決できない」に留まる。
+     *
+     * <h4>表が変わらなくなるまで読み直す</h4>
+     * 代入の右辺の出所は、先読みの<b>その時点</b>の表で求める。ループの中では、ソースで後ろにある
+     * 代入が前の行に届く。
+     * <pre>
+     *     int n = 0;
+     *     for (String s : items) { int copy = n; if (copy != 0) notFirst(); n++; }
+     *
+     *     Dao x = new DaoA();
+     *     for (...) { Dao y = x; y.find(); x = new DaoB(); }
+     * </pre>
+     * 1 回読むだけでは、{@code copy} は {@code n} が {@code 0} だった時点の値（{@code V:0}）、
+     * {@code y} は {@code x} が {@code DaoA} だった時点の値のまま残る。{@code n++} / {@code x = new DaoB()} で
+     * {@code n} / {@code x} が U になっても、写した先には伝わらない。読み手は {@code copy != 0} を偽と判定して
+     * {@code notFirst} を落とし、{@code y.find()} を {@code DaoA} だけに絞って {@code DaoB} を落とす。
+     *
+     * そこで、表（出所の文字列とノード）が変わらなくなるまで本体を読み直す（{@link Scan}）。
+     * 2 回目以降は、前の回で揃った表で右辺を求めるので、後ろの代入が前の行に届く。
+     * 表の値は「最初の値」から U（ノードは {@link ValueNode#NONE}）へ動くだけで戻らないので、必ず止まる。
+     * 念のため回数に上限（{@link #MAX_SCAN_PASSES}）を置き、使い切ったらこの先読みで書いた変数を
+     * すべて U にする（安全側）。
+     *
+     * 1 回目で、どの変数にも 2 回目の書き込み（再代入・{@code ++}・複合代入）が無ければ、読み直さない。
+     * ローカル変数は宣言より前では読めないので、1 回しか書かれない変数は、読んだ時点で既に最後の値である。
+     *
+     * 読み直すたびに、値グラフの式ごとの控え（{@link ValueGraph#forgetExpressions}）と
+     * コレクションの要素の出所（{@link Scope#elements}）を捨てる。どちらも前の回の途中の表から作ったもので、
+     * 残すと古い値（{@code x} が {@code DaoA} だけだった頃）をそのまま使ってしまう。
+     *
+     * <h4>値を書き換えるのは {@code =} だけではない</h4>
+     * 複合代入（{@code n += 1}）と {@code ++} / {@code --} も変数の値を変える。右辺だけを
+     * 出所として足すと {@code int n = 1; n += 1;} の n が 1 のまま（右辺も 1）に見え、
+     * {@code n++} を見落とすと {@code int n = 0; … n++; if (n != 0) …} の条件を偽と判定して、
+     * 数を数える典型的な書き方の先を落とす。どちらも U にする。
+     *
+     * 宣言が値を受け取る変数（{@code catch} の引数・拡張 for の変数・パターンの変数）は、
+     * 宣言の時点で U にしておく。そうしないと本体の中の代入（{@code x = new A();}）が
+     * 唯一の出所に見え、宣言が受け取った値（コレクションの要素・投げられた例外）を落とす。
+     * 引数（{@link #paramScopeOf}）と要素の出所が分かった拡張 for の変数（{@link Scan#bindLoopVariable}）は
+     * 先に表にあるので、そのままにする。
      */
     Scope scanOrigins(ASTNode body, Scope scope) {
         if (body == null) {
@@ -232,33 +280,25 @@ final class OriginTracker {
         // 先読み中は originOf() が参照するスコープを差し替える
         enterScope(scope);
         try {
-            body.accept(new ASTVisitor() {
-                @Override
-                public boolean visit(VariableDeclarationFragment n) {
-                    IVariableBinding vb = n.resolveBinding();
-                    if (vb != null && !vb.isField()) {
-                        mergeOrigin(scope, vb.getKey(), n.getInitializer());
-                    }
-                    return true;
+            Scan scan = new Scan(scope, body);
+            for (int pass = 1; ; pass++) {
+                Map<String, String> originsBefore = new HashMap<>(scope.origins);
+                Map<String, Integer> nodesBefore = new HashMap<>(scope.nodes);
+                // 前の回の途中の表から作ったものを捨てる
+                graph.forgetExpressions();
+                scope.elements.clear();
+                scan.rewritten = false;
+                body.accept(scan);
+                boolean settled = (pass == 1) ? !scan.rewritten
+                        : originsBefore.equals(scope.origins) && nodesBefore.equals(scope.nodes);
+                if (settled) {
+                    break;
                 }
-
-                @Override
-                public boolean visit(Assignment n) {
-                    if (!(n.getLeftHandSide() instanceof SimpleName lhs)) {
-                        return true;
-                    }
-                    if (lhs.resolveBinding() instanceof IVariableBinding vb && !vb.isField()) {
-                        mergeOrigin(scope, vb.getKey(), n.getRightHandSide());
-                    }
-                    return true;
+                if (pass >= MAX_SCAN_PASSES) {
+                    scan.giveUp();
+                    break;
                 }
-
-                @Override
-                public boolean visit(EnhancedForStatement n) {
-                    bindLoopVariable(scope, body, n);
-                    return true;
-                }
-            });
+            }
         } finally {
             leaveScope();
         }
@@ -266,10 +306,178 @@ final class OriginTracker {
     }
 
     /**
+     * 先読みを読み直す回数の上限（{@link #scanOrigins}）。
+     *
+     * 1 回読み直すごとに、U が代入 1 段ぶん伝わる。後ろから前へ写す代入が長く連なる
+     * （{@code a = b; b = c; c = d; …} をループで回す）ような書き方でなければ、3 回ほどで止まる。
+     * 上限は、その連なりが長すぎるときに時間を使いすぎないための安全策で、使い切ったら U に倒す
+     */
+    private static final int MAX_SCAN_PASSES = 8;
+
+    /**
+     * 先読みの 1 回ぶん。表が変わらなくなるまで同じものを何度でも本体に通す（{@link #scanOrigins}）。
+     *
+     * 表への書き込みはすべて {@link #write} / {@link #writeUnknown} を通し、書いた変数と
+     * 「既にある変数への書き込み（再代入）」があったかを控える
+     */
+    private final class Scan extends ASTVisitor {
+        private final Scope scope;
+        private final ASTNode body;
+        /** この先読みで書いた変数（回数の上限を使い切ったときに U に倒す相手） */
+        private final Set<String> written = new HashSet<>();
+        /** この回に、表に既にある変数へ書き込んだか（1 回目にこれが無ければ読み直さない） */
+        boolean rewritten;
+
+        Scan(Scope scope, ASTNode body) {
+            this.scope = scope;
+            this.body = body;
+        }
+
+        private void write(String key, Expression value) {
+            if (key == null) {
+                return;
+            }
+            touch(key);
+            mergeOrigin(scope, key, value);
+        }
+
+        private void writeUnknown(String key) {
+            touch(key);
+            mergeUnknown(scope, key);
+        }
+
+        private void touch(String key) {
+            written.add(key);
+            rewritten |= scope.origins.containsKey(key);
+        }
+
+        /** 回数の上限を使い切った。書いた変数はどれも最後の値と言い切れないので、すべて U にする */
+        void giveUp() {
+            for (String key : written) {
+                mergeUnknown(scope, key);
+            }
+        }
+
+        @Override
+        public boolean visit(VariableDeclarationFragment n) {
+            IVariableBinding vb = n.resolveBinding();
+            if (vb != null && !vb.isField()) {
+                write(vb.getKey(), n.getInitializer());
+            }
+            return true;
+        }
+
+        @Override
+        public boolean visit(SingleVariableDeclaration n) {
+            IVariableBinding vb = n.resolveBinding();
+            if (vb != null && !vb.isField() && vb.getKey() != null
+                    && !scope.origins.containsKey(vb.getKey())) {
+                writeUnknown(vb.getKey());
+            }
+            return true;
+        }
+
+        @Override
+        public boolean visit(Assignment n) {
+            String key = localKeyOf(n.getLeftHandSide());
+            if (key == null) {
+                return true;
+            }
+            if (n.getOperator() == Assignment.Operator.ASSIGN) {
+                write(key, n.getRightHandSide());
+            } else {
+                writeUnknown(key);   // 複合代入。元の値と右辺から新しい値を作る
+            }
+            return true;
+        }
+
+        @Override
+        public boolean visit(PostfixExpression n) {
+            String key = localKeyOf(n.getOperand());
+            if (key != null) {
+                writeUnknown(key);
+            }
+            return true;
+        }
+
+        @Override
+        public boolean visit(PrefixExpression n) {
+            PrefixExpression.Operator op = n.getOperator();
+            String key = (op == PrefixExpression.Operator.INCREMENT
+                    || op == PrefixExpression.Operator.DECREMENT) ? localKeyOf(n.getOperand()) : null;
+            if (key != null) {
+                writeUnknown(key);
+            }
+            return true;
+        }
+
+        @Override
+        public boolean visit(EnhancedForStatement n) {
+            bindLoopVariable(n);
+            return true;
+        }
+
+        /**
+         * 拡張for文の変数に、回しているコレクションの要素の出所を当てる。
+         * {@code for (Runnable t : tasks) t.run();} の {@code t} を追えるようにする。
+         *
+         * 置き換えずに、ほかの代入と同じく<b>合わせる</b>（食い違えば U）。読み直しの 2 回目以降は、
+         * 本体の代入（{@code x = new DaoA();}）で U になった変数が表に既にある。置き換えると
+         * その回の途中だけ要素の出所に戻り、その間に写した変数（入れ子のループの {@code Dao y = x;}）が
+         * 要素の出所のまま残ってしまう。要素の出所が前の回と変わった（途中の表で求めた値だった）ときも U になる
+         */
+        private void bindLoopVariable(EnhancedForStatement n) {
+            IVariableBinding loopVar = n.getParameter().resolveBinding();
+            if (loopVar == null || loopVar.getKey() == null) {
+                return;
+            }
+            String key = loopVar.getKey();
+            String element = elementOf(n);
+            if (element == null) {
+                // 要素の出所が分からない。宣言（SingleVariableDeclaration）が受け取る値として U にする。
+                // 2 回目以降で表に既にあるなら、ここで U に合わせる
+                if (scope.origins.containsKey(key)) {
+                    writeUnknown(key);
+                }
+                return;
+            }
+            touch(key);
+            String prev = scope.origins.get(key);
+            if (prev != null && !prev.equals(element)) {
+                mergeUnknown(scope, key);
+            } else {
+                scope.origins.put(key, element);
+            }
+        }
+
+        /** 拡張for文で回しているローカル変数のコレクションの要素の出所。分からなければ null */
+        private String elementOf(EnhancedForStatement n) {
+            if (!(unwrap(n.getExpression()) instanceof SimpleName source)
+                    || !(source.resolveBinding() instanceof IVariableBinding sourceVar)
+                    || sourceVar.isField()) {
+                return null;
+            }
+            String element = elementOriginOf(scope, body, sourceVar.getKey());
+            return Origin.isUnknown(element) ? null : element;
+        }
+    }
+
+    /** 書き換えの対象がフィールド以外の変数（ローカル変数・引数）なら、そのキー。違えば null */
+    private static String localKeyOf(Expression target) {
+        Expression e = target;
+        while (e instanceof ParenthesizedExpression p) {
+            e = p.getExpression();   // (x) = ... も x への代入（JLS 15.26）
+        }
+        return (e instanceof SimpleName name && name.resolveBinding() instanceof IVariableBinding vb
+                && !vb.isField()) ? vb.getKey() : null;
+    }
+
+    /**
      * {@code list.add(() -> ...)} のように、そのコレクションへ詰められた要素の出所。
      *
      * 本体を走査して集める。拡張for文があるときだけ呼ぶので、
-     * ループの無いメソッドに走査を増やさない。結果は変数ごとに覚えておく。
+     * ループの無いメソッドに走査を増やさない。結果は変数ごとに覚えておく
+     * （先読みを読み直すたびに捨てる。{@link #scanOrigins}）。
      *
      * 出所が1つに定まらなければ U（不明）。拾えるのは「レシーバがそのローカル変数」の形だけで、
      * フィールドのコレクションや、他のメソッドへ渡してから詰める形は追わない（安全側）。
@@ -326,26 +534,17 @@ final class OriginTracker {
     }
 
     /**
-     * 拡張for文の変数に、回しているコレクションの要素の出所を当てる。
-     * {@code for (Runnable t : tasks) t.run();} の {@code t} を追えるようにする
+     * 同じ変数に別の出所が現れたら U（不明）に落とす。値グラフ側も同じ判断で揃える。
+     *
+     * 出所の文字列が食い違ったら、ノードも必ず無し（{@link ValueNode#NONE}）にする。
+     * 引数・ラムダの引数・拡張 for の変数は、文字列の表にだけ最初の値（{@code A:0} など）が入っていて
+     * ノードの表には無い。ノードの表だけで合わせると、{@code void m(Dao d) { if (d == null) d = new A(); d.find(); }}
+     * の d が「new A() だけ」に見え、呼び出し元が渡す実装を落としてしまう。
+     *
+     * 「文字列が U」だけでは無しにしない。文字列が持てない値（識別子の形でない文字列リテラル
+     * {@code "light mode"} など。{@link #classNameLiteral}）は、1 つしか代入されていなくても文字列は U になるが、
+     * ノードは値をそのまま持てる
      */
-    private void bindLoopVariable(Scope scope, ASTNode body, EnhancedForStatement n) {
-        if (!(unwrap(n.getExpression()) instanceof SimpleName source)
-                || !(source.resolveBinding() instanceof IVariableBinding sourceVar)
-                || sourceVar.isField()) {
-            return;
-        }
-        String element = elementOriginOf(scope, body, sourceVar.getKey());
-        if (Origin.isUnknown(element)) {
-            return;
-        }
-        IVariableBinding loopVar = n.getParameter().resolveBinding();
-        if (loopVar != null && loopVar.getKey() != null) {
-            scope.origins.put(loopVar.getKey(), element);
-        }
-    }
-
-    /** 同じ変数に別の出所が現れたら U（不明）に落とす。値グラフ側も同じ判断で揃える */
     private void mergeOrigin(Scope scope, String varKey, Expression value) {
         if (varKey == null) {
             return;
@@ -355,12 +554,19 @@ final class OriginTracker {
             origin = Origin.UNKNOWN_S;
         }
         String prev = scope.origins.get(varKey);
-        scope.origins.put(varKey, (prev == null || prev.equals(origin)) ? origin : Origin.UNKNOWN_S);
+        boolean conflict = prev != null && !prev.equals(origin);
+        scope.origins.put(varKey, conflict ? Origin.UNKNOWN_S : origin);
 
         int node = graph.nodeOf(value);
         Integer prevNode = scope.nodes.get(varKey);
-        scope.nodes.put(varKey,
-                (prevNode == null || prevNode == node) ? node : ValueNode.NONE);
+        scope.nodes.put(varKey, (!conflict && (prevNode == null || prevNode == node))
+                ? node : ValueNode.NONE);
+    }
+
+    /** 値が分からない書き換え（複合代入・{@code ++}・宣言が受け取る値）。どちらの表も U に落とす */
+    private static void mergeUnknown(Scope scope, String varKey) {
+        scope.origins.put(varKey, Origin.UNKNOWN_S);
+        scope.nodes.put(varKey, ValueNode.NONE);
     }
 
     // ------------------------------------------------------------
@@ -379,9 +585,15 @@ final class OriginTracker {
 
     /** @param depth レシーバの入れ子の深さ（{@link Origin#MAX_RECEIVER_DEPTH} で打ち切る） */
     private String originOf(Expression ex, int depth) {
-        Expression e = unwrap(ex);
-        if (e == null) {
+        if (ex == null) {
             return null;
+        }
+        // 剥がすのは値を変えないキャストだけ（{@link #unwrapValue}）。値を変えうるキャストの先の
+        // 出所を使うと、(byte) p が p（A:0）に見えて、300 を渡した経路で (byte)300 == 44 を偽と判定してしまう
+        Expression e = unwrapValue(ex);
+        if (e == null) {
+            // 値を変えうるキャスト。コンパイル時定数なら JDT が畳んだ値（(byte)300 は 44）だけを持つ
+            return constantOf(ex);
         }
         if (e instanceof ClassInstanceCreation cic) {
             String type = names.createdTypeOf(cic);
@@ -440,7 +652,7 @@ final class OriginTracker {
      * メソッドから見たもの（docs/lambda-expansion-qa.md の Q12）。
      */
     String functionalOriginOf(Expression ex) {
-        Expression e = unwrap(ex);
+        Expression e = unwrapValue(ex);
         if (e instanceof LambdaExpression lambda) {
             MethodRef body = (lambdaNames == null) ? null : lambdaNames.of(lambda);
             return (body == null) ? null : Origin.of(Origin.FUNCTIONAL, body.key());
@@ -497,15 +709,25 @@ final class OriginTracker {
      * 列挙定数を単純名にするのは、switch の case ラベルが単純名で書かれるため。
      */
     String constantOf(Expression ex) {
+        if (ex == null) {
+            return null;
+        }
         Expression e = unwrapValue(ex);
         if (e == null) {
-            return null;
+            // 値を変えうるキャスト。リテラルの表記からは値を読めない（(byte)300 の 300 は値ではない）。
+            // コンパイル時定数（JLS 15.29。プリミティブへのキャストを含む）なら、JDT が型変換まで
+            // 済ませて畳んだ値を使う
+            return constantValueText(ex.resolveConstantExpressionValue());
         }
         if (e instanceof BooleanLiteral b) {
             return Origin.of(Origin.CONST, String.valueOf(b.booleanValue()));
         }
         if (e instanceof NumberLiteral n) {
-            return numericConst(n.getToken());
+            // 値は JDT が評価したものを使う（{@link #constantText}。浮動小数は拾わない）。
+            // 表記から読むと、int の 0x80000000（-2147483648）が 2147483648 に見える。
+            // 呼び出し元の値（{@link ValueGraph}）は JDT の値なので、条件の期待値と食い違って
+            // 実際には通る経路を「呼ばれない」と判定してしまう
+            return constantValueText(n.resolveConstantExpressionValue());
         }
         if (e instanceof CharacterLiteral c) {
             return charConst(c.charValue());
@@ -521,13 +743,27 @@ final class OriginTracker {
             if (vb.isEnumConstant()) {
                 return enumConstant(vb);
             }
-            return constantText(vb.getConstantValue());
+            return constantValueText(vb.getConstantValue());
         }
         return null;
     }
 
     /**
-     * コンパイル時定数の値を出所の表記にする。拾えないものは null。
+     * コンパイル時定数の値を出所（{@code V:}）にする。拾えないものは null。
+     * 表記は {@link #constantText}、長さと内容の上限は {@link #valueConst}
+     */
+    private static String constantValueText(Object constant) {
+        String text = constantText(constant);
+        return (text == null) ? null : valueConst(text);
+    }
+
+    /**
+     * コンパイル時定数の値（{@code resolveConstantExpressionValue} / {@code getConstantValue} の結果）の
+     * 表記。拾えないもの（浮動小数と null）は null。長さの上限は掛けない。
+     *
+     * 出所の文字列（{@link #constantOf}。上限あり）と値グラフ（{@link ValueGraph}。上限なし）の
+     * 両方がこの表記を使う。2 か所で表記が食い違うと、ガードの期待値（{@code "1"}）と
+     * 呼び出し元の値（{@code "1.0"}）のような比べられない組ができてしまう。
      *
      * <h4>char は数値にする（JLS 5.6 の数値昇格）</h4>
      * {@code char} と {@code int} を {@code ==} で比べると、どちらも {@code int} に昇格してから
@@ -538,16 +774,22 @@ final class OriginTracker {
      *
      * <h4>浮動小数は拾わない</h4>
      * {@code 1} と {@code 1.0} と {@code 1.0f} は同じ値だが表記が違い、文字列の一致では
-     * 判定できない。誤って打ち切るより判定しないほうがよい（{@link #numericConst} と同じ方針）。
+     * 判定できない。誤って打ち切るより判定しないほうがよい。
+     *
+     * <h4>数値はリテラルの表記から読まない</h4>
+     * 数値リテラルも JDT が評価した値（{@code resolveConstantExpressionValue}）をここに通す（{@link #constantOf}）。
+     * 16 進・8 進の int リテラルは最上位ビットが立つと負の値になる（JLS 3.10.1。{@code 0x80000000} は
+     * {@code -2147483648}、{@code 0xFFFFFFFF} は {@code -1}）。表記を {@code long} として読むと正の値になり、
+     * JDT の値を使う呼び出し元の側（{@link ValueGraph}・{@code static final} の定数）と食い違う。
      */
-    private static String constantText(Object constant) {
+    static String constantText(Object constant) {
         if (constant == null || constant instanceof Double || constant instanceof Float) {
             return null;
         }
         if (constant instanceof Character c) {
-            return charConst(c.charValue());
+            return String.valueOf((int) c.charValue());
         }
-        return valueConst(String.valueOf(constant));
+        return String.valueOf(constant);
     }
 
     /** char の定数値。整数系と突き合わせられるよう数値にする（{@link #constantText} 参照） */
@@ -576,23 +818,6 @@ final class OriginTracker {
         String ownerFqn = (owner == null) ? null : names.typeNameOf(BindingNames.erasureOf(owner));
         return (ownerFqn == null || ownerFqn.isEmpty())
                 ? null : Origin.of(Origin.CONST, ownerFqn + "." + vb.getName());
-    }
-
-    /** 数値リテラルは表記の揺れ（1L / 0x10 / 1_000）を値に正規化する。できなければ拾わない */
-    private static String numericConst(String token) {
-        String t = token.replace("_", "");
-        try {
-            if (t.indexOf('.') >= 0 || t.indexOf('e') > 0 || t.indexOf('E') > 0
-                    || t.endsWith("f") || t.endsWith("F") || t.endsWith("d") || t.endsWith("D")) {
-                return null;   // 浮動小数の一致判定はしない
-            }
-            if (t.endsWith("l") || t.endsWith("L")) {
-                t = t.substring(0, t.length() - 1);
-            }
-            return Origin.of(Origin.CONST, String.valueOf(Long.decode(t)));
-        } catch (NumberFormatException ignore) {
-            return null;
-        }
     }
 
     /**
@@ -724,7 +949,7 @@ final class OriginTracker {
      * 別のフレームへ持ち込むと別物を指してしまう）。呼び出し側は頭だけの葉に落とす
      */
     int localNodeOf(Expression ex) {
-        IVariableBinding vb = variableBindingOf(unwrap(ex));
+        IVariableBinding vb = variableBindingOf(unwrapValue(ex));
         if (vb == null || vb.isField()) {
             return ValueNode.NONE;
         }
@@ -854,7 +1079,7 @@ final class OriginTracker {
         if (forName.arguments().isEmpty()) {
             return null;
         }
-        String argOrigin = originOf(unwrap((Expression) forName.arguments().get(0)));
+        String argOrigin = originOf((Expression) forName.arguments().get(0));
         if (Origin.kindOf(argOrigin) == Origin.LITERAL) {
             // クラス名が文字列で確定している。生成される型そのものが分かる
             return Origin.of(Origin.NEW, Origin.valueOf(argOrigin));
@@ -866,23 +1091,29 @@ final class OriginTracker {
     }
 
     /**
-     * <b>値の判定に使うために</b>括弧とキャストを剥がす。値を変えうるキャストに
-     * 当たったら null（＝この式の値は判定に使えない）。
+     * 括弧と、<b>値を変えないキャスト</b>を剥がす。値を変えうるキャストに当たったら null
+     * （＝この式の先の出所を、この式の値として使ってはいけない）。
      *
-     * <h4>{@link #unwrap} と分けている理由</h4>
-     * 参照型どうしのキャスト（JLS 5.5）は同じインスタンスを指し続けるので、
-     * <b>どのメソッドが動くか</b>を追う {@link #unwrap} は剥がしてよい。
-     * しかしプリミティブの変換（JLS 5.1.2 拡大 / 5.1.3 縮小）とボックス化・非ボックス化
-     * （5.1.7 / 5.1.8）は<b>値そのものを変える</b>。
+     * 値として使う経路はすべてここを通す。条件（{@link GuardCollector}）の両辺だけでなく、
+     * 出所（{@link #originOf}。R 行・J 行・ローカル変数の表）と値グラフ（{@link ValueGraph}。
+     * 呼び出し箇所の実引数）もである。読み手は呼び出し元の実引数の値を引数（{@code A:}）に当てて
+     * 条件を判定するので、どこか 1 か所でもキャストを剥がしすぎると、同じ誤判定になる。
      * <pre>
      *     void run(int mode) { if ((byte) mode == 44) target(); }
      *     run(300);          // (byte)300 == 44 は真
-     * </pre>
-     * ここでキャストを剥がすと「mode（=300）と 44 の比較」になり、実際には通る経路を
-     * 「呼ばれない」と判定して、その先の階層をまるごと落としてしまう。
-     * 判定できないほうへ倒すのが安全側である。
      *
-     * 型が取れないときも「変わりうる」とみなす。分からないものを畳まない側に倒す。
+     *     run((byte) 300);   // 実引数が 300 に見えると、void run(byte mode) { if (mode == 44) … } を偽と判定する
+     * </pre>
+     * キャストを剥がすと「300 と 44 の比較」になり、実際には通る経路を
+     * 「呼ばれない」と判定して、その先の階層をまるごと落としてしまう。
+     * 判定できないほうへ倒すのが安全側である。値を変えうるキャストの式でも、コンパイル時定数なら
+     * JDT が畳んだ値（{@code (byte)300} は 44）を使える（{@link #constantOf}・{@link ValueGraph}）。
+     *
+     * どのキャストが値を変えないかは {@link #preservesValue}。型が取れないときも「変わりうる」とみなす。
+     *
+     * <h4>{@link #unwrap} と分けている理由</h4>
+     * {@link #unwrap} は値を変えるキャストも剥がす。どのインスタンスを指すか（参照型の変数・レシーバ）
+     * だけを見る場面では同じ結果になるが、値として使う経路では使わないこと。
      */
     static Expression unwrapValue(Expression ex) {
         Expression e = ex;
@@ -890,7 +1121,7 @@ final class OriginTracker {
             if (e instanceof ParenthesizedExpression p) {
                 e = p.getExpression();
             } else if (e instanceof CastExpression c) {
-                if (changesValue(c)) {
+                if (!preservesValue(c)) {
                     return null;
                 }
                 e = c.getExpression();
@@ -901,17 +1132,57 @@ final class OriginTracker {
         return e;
     }
 
-    /** そのキャストが値を変えうるか。プリミティブが絡めば変えうる（JLS 5.1.2 / 5.1.3 / 5.1.7 / 5.1.8） */
-    private static boolean changesValue(CastExpression cast) {
+    /**
+     * そのキャストが値を変えないと言い切れるか（JLS 5.5 のキャスト変換）。
+     *
+     * <ul>
+     *   <li>参照型どうし（JLS 5.1.5 拡大参照 / 5.1.6 縮小参照）… 同じインスタンスを指し続ける</li>
+     *   <li>同じプリミティブ型（JLS 5.1.1 恒等変換）</li>
+     *   <li>値が正確に保たれる拡大プリミティブ変換（JLS 5.1.2）。精度を失いうる
+     *       {@code int}・{@code long} → {@code float}、{@code long} → {@code double} は除く</li>
+     * </ul>
+     * それ以外（縮小プリミティブ変換 5.1.3、拡大と縮小 5.1.4、ボックス化 5.1.7・非ボックス化 5.1.8、
+     * 型が取れない）は「変えうる」。
+     */
+    static boolean preservesValue(CastExpression cast) {
         ITypeBinding to = cast.getType().resolveBinding();
         ITypeBinding from = cast.getExpression().resolveTypeBinding();
-        return to == null || from == null || to.isPrimitive() || from.isPrimitive();
+        if (to == null || from == null) {
+            return false;
+        }
+        if (!to.isPrimitive() && !from.isPrimitive()) {
+            return true;
+        }
+        return to.isPrimitive() && from.isPrimitive() && exactPrimitiveConversion(from.getName(), to.getName());
+    }
+
+    /** プリミティブ型 from から to への変換で、どの値もそのまま保たれるか（恒等か正確な拡大。JLS 5.1.1 / 5.1.2） */
+    private static boolean exactPrimitiveConversion(String from, String to) {
+        if (from.equals(to)) {
+            return true;
+        }
+        return switch (from) {
+            case "byte" -> switch (to) {
+                case "short", "int", "long", "float", "double" -> true;
+                default -> false;
+            };
+            case "short", "char" -> switch (to) {
+                case "int", "long", "float", "double" -> true;
+                default -> false;
+            };
+            case "int" -> "long".equals(to) || "double".equals(to);
+            case "float" -> "double".equals(to);
+            default -> false;
+        };
     }
 
     /**
-     * 括弧とキャストを剥がす。<b>どのインスタンスを指すか</b>は変わらないので、
-     * 出所（どのメソッドが動くか）の追跡にはこちらを使う。
-     * 値の一致を判定する用途では {@link #unwrapValue} を使うこと
+     * 括弧とキャストを、値を変えるものも含めて剥がす。
+     *
+     * 使ってよいのは、参照型の変数やレシーバが<b>どのインスタンスを指すか</b>だけを見る場面
+     * （代入先の変数・コレクションの変数・{@code Class.forName(...)} の連鎖）に限る。
+     * そこに現れるキャストは参照型どうしで、値を変えない。
+     * 式の値（出所・値グラフ・条件）を求める用途では {@link #unwrapValue} を使うこと
      */
     static Expression unwrap(Expression ex) {
         Expression e = ex;

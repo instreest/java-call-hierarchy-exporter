@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ForStatement;
 import org.eclipse.jdt.core.dom.IfStatement;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.LambdaExpression;
@@ -64,6 +65,7 @@ final class GuardCollector {
     private static final int MAX_ATOMS = 8;
     /** 記録用モードの上限。キャッシュに入らないので、判定用より多く残してよい */
     private static final int MAX_ATOMS_RECORD_ALL = 32;
+    private static final String STRING = "java.lang.String";
 
     private final OriginTracker origins;
     /** 判定できない条件も残すか（記録用モード） */
@@ -329,9 +331,14 @@ final class GuardCollector {
                 trim(in.toString())));
     }
 
-    /** {@code s.equals("x")}。equals は値の比較なので、参照型でも判定できる */
+    /**
+     * {@code s.equals("x")}。equals は値の比較なので、参照型でも判定できる。
+     *
+     * ただし、比べる相手（{@code subject}）と定数の型が揃うときだけ（{@link #equalsComparable}）
+     */
     private void addEqualsCall(MethodInvocation mi, boolean expected, List<String> atoms) {
-        if (!"equals".equals(mi.getName().getIdentifier()) || mi.arguments().size() != 1) {
+        if (!"equals".equals(mi.getName().getIdentifier()) || mi.arguments().size() != 1
+                || !isObjectEquals(mi.resolveMethodBinding())) {
             return;
         }
         Expression recv = mi.getExpression();
@@ -341,11 +348,13 @@ final class GuardCollector {
         }
         String value = constantValueOf(arg);
         Expression subject = recv;
+        Expression constant = arg;
         if (value == null) {
             value = constantValueOf(recv);
             subject = arg;
+            constant = recv;
         }
-        if (value == null) {
+        if (value == null || !equalsComparable(subject, constant)) {
             return;
         }
         String origin = evaluableOriginOf(subject);
@@ -357,13 +366,88 @@ final class GuardCollector {
     }
 
     /**
-     * 値の一致で判定してよい型か（プリミティブ・列挙型・文字列）。
-     * 文字列を通してよい理由は {@link #addComparison} の説明にある（JLS 3.10.5 のインターン）
+     * 値の一致で判定してよい型か（浮動小数を除くプリミティブ・列挙型・文字列）。
+     * 文字列を通してよい理由は {@link #addComparison} の説明にある（JLS 3.10.5 のインターン）。
+     *
+     * <h4>浮動小数は判定しない</h4>
+     * 値の表記を文字列の一致で比べるので、{@code 1} と {@code 1.0} を同じ値と見られない。
+     * 浮動小数の定数は出所にも値グラフにも持たない（{@link OriginTracker#constantOf}・{@link ValueGraph}）が、
+     * 整数の実引数は {@code float} / {@code double} の引数へ暗黙に拡大される（JLS 5.3）。
+     * {@code int} → {@code float} と {@code long} → {@code float} / {@code double} は精度を失いうる
+     * （JLS 5.1.2）ので、{@code f(16777217)} の {@code f == 16777216} は真なのに、表記の比較では偽になる。
+     * 比べる片方が浮動小数なら判定しない（{@code docs/jls-conformance-qa.md} の Q14）
      */
     private static boolean comparableByValue(Expression e) {
         ITypeBinding tb = e.resolveTypeBinding();
-        return tb != null && (tb.isPrimitive() || tb.isEnum()
-                || "java.lang.String".equals(tb.getQualifiedName()));
+        if (tb == null || "float".equals(tb.getName()) || "double".equals(tb.getName())) {
+            return false;
+        }
+        return tb.isPrimitive() || tb.isEnum() || STRING.equals(tb.getQualifiedName());
+    }
+
+    /** {@code equals(Object)} か（{@code Object#equals} とその上書き）。同じ名前の別の多重定義は中身が分からない */
+    private static boolean isObjectEquals(IMethodBinding mb) {
+        if (mb == null) {
+            return false;
+        }
+        ITypeBinding[] params = mb.getParameterTypes();
+        return params.length == 1 && "java.lang.Object".equals(params[0].getQualifiedName());
+    }
+
+    /**
+     * {@code equals} の結果を、値の表記の一致で言い当てられる組み合わせか。
+     *
+     * 条件は値を<b>表記</b>（文字列）で比べるが、{@code equals} は実行時の型が違えば、表記が同じでも偽になる。
+     * <pre>
+     *     void check(Long id) { if (!id.equals(0)) hit(); }   // 0 は Integer に箱詰めされる
+     *     check(0L);                                        // Long.equals(Integer) は常に偽。hit は必ず呼ばれる
+     * </pre>
+     * 表記ではどちらも {@code 0} なので「{@code !id.equals(0)} は成立しない」と判定し、{@code hit} を落としてしまう。
+     * 同じことは {@code Object o} に {@code 5L} / {@code 'A'}（値は数値 65 で持つ）/ 拡大された {@code double} が
+     * 入ってくる場合、{@code "5".equals(o)} に {@code 5} が入ってくる場合にも起きる。
+     *
+     * そこで、比べる相手の<b>静的な型</b>から実行時の型が 1 つに決まり、それが定数と同じ型のときだけ判定する。
+     * <ul>
+     *   <li>{@code String} の相手と文字列の定数（{@code String} は final）</li>
+     *   <li>同じ列挙型の相手と列挙定数（{@code Enum#equals} は final で、同一性の比較）</li>
+     *   <li>ボックス型の相手と、それに箱詰めされるプリミティブの定数（{@code Integer} と {@code int}、{@code Long} と
+     *       {@code long} など。ボックス型はどれも final）。浮動小数（{@code Float} / {@code Double}）は除く
+     *       （{@link #comparableByValue} と同じ理由）</li>
+     * </ul>
+     * {@code Object}・インターフェース・型変数・型の食い違う組み合わせは判定しない（条件を作らない＝打ち切らない）。
+     * 型はキャストを剥がす前の式で見る（{@code (String) o} は {@code String}。実行時に違う型なら
+     * キャストで例外になり、その先には進まない）
+     */
+    private static boolean equalsComparable(Expression subject, Expression constant) {
+        ITypeBinding s = subject.resolveTypeBinding();
+        ITypeBinding c = constant.resolveTypeBinding();
+        if (s == null || c == null) {
+            return false;
+        }
+        if (STRING.equals(s.getQualifiedName())) {
+            return STRING.equals(c.getQualifiedName());
+        }
+        if (s.isEnum()) {
+            return c.isEnum() && s.getErasure().isEqualTo(c.getErasure());
+        }
+        String box = boxOf(c);
+        return box != null && box.equals(s.getQualifiedName());
+    }
+
+    /** プリミティブ型を箱詰めした型の名前。浮動小数とプリミティブ以外は null */
+    private static String boxOf(ITypeBinding type) {
+        if (!type.isPrimitive()) {
+            return null;
+        }
+        return switch (type.getName()) {
+            case "boolean" -> "java.lang.Boolean";
+            case "byte" -> "java.lang.Byte";
+            case "short" -> "java.lang.Short";
+            case "char" -> "java.lang.Character";
+            case "int" -> "java.lang.Integer";
+            case "long" -> "java.lang.Long";
+            default -> null;   // float / double は表記で比べない。void もここ
+        };
     }
 
     private static boolean isBoolean(Expression e) {

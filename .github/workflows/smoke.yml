@@ -61,6 +61,13 @@ jobs:
       - name: Constructor body test (JEP 513 flexible constructor bodies)
         run: bash test/ctorbody/run.sh
 
+      # 値の読み違いで呼び出しを黙って落とさないこと（値を変えうるキャスト・浮動小数・16 進のリテラル・
+      # 複合代入と ++・ループの中で写した変数・型の揃わない equals・引数やフィールドへの new・
+      # 匿名クラスのフィールド初期化子）。仕組みごとの対照は打ち切られること。
+      # 使い捨てのプロジェクトをその場で作る
+      - name: Value safety test (no false pruning or narrowing)
+        run: bash test/pruning/run.sh
+
       # Java 言語仕様（JLS SE 26）への適合と javac との整合。test/jls/project/src の各ソースが JLS の
       # 1 つの節に対応し（パッケージ名が節番号）、節ごとの期待値（test/jls/expect.tsv）と、同じソースを
       # javac 26（--release 26）でコンパイルしたバイトコードとの突き合わせで見る。

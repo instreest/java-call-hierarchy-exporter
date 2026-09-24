@@ -2,7 +2,11 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
@@ -29,6 +33,9 @@ import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
+import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.RecordPattern;
 import org.eclipse.jdt.core.dom.ReturnStatement;
@@ -39,7 +46,9 @@ import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
+import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
 import jche.cache.FileAnalysis;
 import jche.cache.FunctionalImplFact;
@@ -823,50 +832,140 @@ final class FactVisitor extends ASTVisitor {
     // 同一メソッド内の new（X行の NEW）
     //
     // フロー依存解析（分岐やループを厳密に追う）はコストが高いので、
-    // 「そのメソッド内でその変数に代入される new を全部集める」という
-    // フロー非依存・安全側の方針を取る。
-    //   1件   -> LOCAL_NEW（確定）
-    //   複数件 -> LOCAL_NEW_MULTI（候補集合。CHAよりはるかに狭い）
+    // 「そのローカル変数への代入を全部集める」というフロー非依存・安全側の方針を取る。
+    //   代入がすべて new で、型が1種類  -> LOCAL_NEW（確定）
+    //   代入がすべて new で、型が複数種類 -> LOCAL_NEW_MULTI（候補集合。CHAよりはるかに狭い）
+    //   new 以外の代入が1つでもある     -> 何も残さない（段2を使わない）
     //
+    // 読み手（jche.graph.CallResolver の段2）は、この証拠があれば候補をその型だけに絞る。
+    // 「new 以外の値も入りうる変数」に証拠を残すと、入ってくるほかの実装が黙って落ちる。
+    //   void m(Dao d) { if (d == null) d = new DefaultDao(); d.find(); }   // 呼び出し元が渡す実装が落ちる
+    // そのため対象は、宣言文で宣言したローカル変数（for 文の初期化部・try の資源を含む）に限る。
+    // 引数（ラムダの引数を含む）・フィールド・catch の引数・拡張 for の変数・パターンの変数は、
+    // 宣言そのものが new 以外の値を受け取るので対象にしない。フィールドは別のメソッドからも
+    // 代入されるので、このメソッドの中の代入だけでは言い切れない。
+    //
+    // 全部の代入を見終えるまで判断できないので、ファイルの終わり（endVisit(CompilationUnit)）で書く。
     // 変数の同定は名前ではなく IVariableBinding.getKey() で行う。
     // 名前で照合すると、同名変数がスコープ違いで複数ある場合に誤解決する。
     // ================================================================
 
+    /** 証拠の候補になるローカル変数ごとの、代入の集計（変数のキー -> 集計）。宣言した順に並ぶ */
+    private final Map<String, LocalAssignments> localAssignments = new LinkedHashMap<>();
+
+    /** 1つのローカル変数への代入の集計 */
+    private static final class LocalAssignments {
+        /** 宣言したときの呼び出し元（初期化ブロックの中なら根のコンストラクタそれぞれ）。無ければ null */
+        final List<MethodRef> callers;
+        /** new した型（最初に現れた順） */
+        final Set<String> newTypes = new LinkedHashSet<>();
+        /** new 以外の代入（複合代入・++/-- を含む）が1つでもあったか */
+        boolean other;
+
+        LocalAssignments(List<MethodRef> callers) {
+            this.callers = callers;
+        }
+    }
+
     @Override
     public boolean visit(VariableDeclarationFragment node) {
-        if (node.getInitializer() instanceof ClassInstanceCreation cic) {
-            IVariableBinding vb = node.resolveBinding();
-            if (vb != null) {
-                addNewHint(HintKeys.ofVariable(vb), cic);
-            }
+        IVariableBinding vb = node.resolveBinding();
+        if (vb == null || vb.isField() || vb.isParameter()
+                || !(node.getParent() instanceof VariableDeclarationStatement
+                        || node.getParent() instanceof VariableDeclarationExpression)) {
+            return true;
+        }
+        String key = HintKeys.ofVariable(vb);
+        if (key.isEmpty()) {
+            return true;
+        }
+        LocalAssignments assignments = localAssignments.computeIfAbsent(key,
+                k -> new LocalAssignments(currentCallers()));
+        if (node.getInitializer() != null) {
+            recordLocalAssignment(assignments, node.getInitializer());
         }
         return true;
     }
 
     @Override
     public boolean visit(Assignment node) {
-        if (node.getRightHandSide() instanceof ClassInstanceCreation cic
-                && node.getLeftHandSide() instanceof SimpleName lhs
-                && lhs.resolveBinding() instanceof IVariableBinding vb) {
-            addNewHint(HintKeys.ofVariable(vb), cic);
+        LocalAssignments assignments = localAssignmentsOf(node.getLeftHandSide());
+        if (assignments != null) {
+            if (node.getOperator() == Assignment.Operator.ASSIGN) {
+                recordLocalAssignment(assignments, node.getRightHandSide());
+            } else {
+                assignments.other = true;   // 複合代入（+= など）
+            }
         }
         return true;
     }
 
-    private void addNewHint(String varKey, ClassInstanceCreation cic) {
-        List<MethodRef> callers = currentCallers();
-        if (callers == null || varKey == null || varKey.isEmpty()) {
-            return;
+    /** {@code x++} / {@code x--}。参照型には付かないが、new 以外の代入であることに変わりはない */
+    @Override
+    public boolean visit(PostfixExpression node) {
+        LocalAssignments assignments = localAssignmentsOf(node.getOperand());
+        if (assignments != null) {
+            assignments.other = true;
         }
-        String type = names.createdTypeOf(cic);
+        return true;
+    }
+
+    /** {@code ++x} / {@code --x}（{@link #visit(PostfixExpression)} と同じ） */
+    @Override
+    public boolean visit(PrefixExpression node) {
+        PrefixExpression.Operator op = node.getOperator();
+        if (op == PrefixExpression.Operator.INCREMENT || op == PrefixExpression.Operator.DECREMENT) {
+            LocalAssignments assignments = localAssignmentsOf(node.getOperand());
+            if (assignments != null) {
+                assignments.other = true;
+            }
+        }
+        return true;
+    }
+
+    /** 代入先が証拠の候補のローカル変数なら、その集計。違えば null（引数・フィールドなど） */
+    private LocalAssignments localAssignmentsOf(Expression target) {
+        Expression e = target;
+        while (e instanceof ParenthesizedExpression p) {
+            e = p.getExpression();   // (x) = ... も x への代入（JLS 15.26）
+        }
+        if (e instanceof SimpleName name && name.resolveBinding() instanceof IVariableBinding vb) {
+            return localAssignments.get(HintKeys.ofVariable(vb));
+        }
+        return null;
+    }
+
+    /**
+     * 代入される値を1つ集計する。値を変えないキャストを挟んだ new（{@code (Dao) new DaoImpl()}）も new。
+     * 型が決められない new は、new 以外と同じに扱う（候補を狭められないので証拠を残さない）
+     */
+    private void recordLocalAssignment(LocalAssignments assignments, Expression value) {
+        String type = (OriginTracker.unwrapValue(value) instanceof ClassInstanceCreation cic)
+                ? names.createdTypeOf(cic) : null;
         if (type == null) {
-            return;
+            assignments.other = true;
+        } else {
+            assignments.newTypes.add(type);
         }
-        // 呼び出し元が複数（インスタンス初期化子等）でも全件に紐づける。
-        // 一部にしか付けないと、その呼び出し元経由の解決だけ証拠を見つけられなくなる。
-        for (MethodRef caller : callers) {
-            out.hints.add(new HintFact(caller.key(), varKey, HintFact.KIND_NEW, type));
+    }
+
+    /** 代入を全部見終えたので、代入がすべて new だったローカル変数の証拠を書く */
+    @Override
+    public void endVisit(CompilationUnit node) {
+        for (Map.Entry<String, LocalAssignments> e : localAssignments.entrySet()) {
+            LocalAssignments assignments = e.getValue();
+            if (assignments.other || assignments.callers == null) {
+                continue;
+            }
+            // 呼び出し元が複数（インスタンス初期化子等）でも全件に紐づける。
+            // 一部にしか付けないと、その呼び出し元経由の解決だけ証拠を見つけられなくなる。
+            for (MethodRef caller : assignments.callers) {
+                for (String type : assignments.newTypes) {
+                    out.hints.add(new HintFact(caller.key(), e.getKey(), HintFact.KIND_NEW, type));
+                }
+            }
         }
+        localAssignments.clear();
     }
 
     // ================================================================
