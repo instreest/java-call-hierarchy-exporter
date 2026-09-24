@@ -110,4 +110,20 @@ public final class FileAnalysis {
         }
         return n;
     }
+
+    /**
+     * 型解決に失敗したか（エラーがある、または理由が BINDING_FAILED の U 行がある）。失敗したファイルは、I 行の
+     * 3 列目に解決できなかった名前を書き、参照した型の親も依存に持つ（docs/cache-unification-qa.md の Q42・Q51）
+     */
+    public boolean resolutionFailed() {
+        if (errors > 0) {
+            return true;
+        }
+        for (CallSite site : callSites) {
+            if (site instanceof UnresolvedCallFact u && UnresolvedCallFact.BINDING_FAILED.equals(u.reason())) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

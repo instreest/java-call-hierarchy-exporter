@@ -163,6 +163,9 @@ import jche.util.Warnings;
  * 連鎖するかはそのファイルの解析結果と旧キャッシュの比較だけで決まるので、同じ周回の中で親と子をどの順に
  * 解析し直しても結果は変わらない（親が「変わった型」に入る前に子を見て連鎖し損ねる、ということが無い）。
  * 親のメソッドの本体・コメントだけの変更では形が変わらないので連鎖しない（docs/cache-unification-qa.md の Q44）。
+ * 形には、親型のメンバーと名前の当たらない私的メンバーを入れない（外からは見えず、継承もされない）ので、親に私的な
+ * 補助メソッドを足しても部分型の利用者へは連鎖しない。型解決に失敗しているファイルだけは JDT が見えない私的メンバーに
+ * 解決しうるので、参照した型の親を I 行に持ち、依存で拾う（Q51）。
  *
  * <h2>新しい型（前回は無かった型は、参照していた側の I 行に載らない）</h2>
  * 前回どのブロックも宣言していなかった型（ソースを足した・消したファイルを戻した・既存のファイルに型を
@@ -170,9 +173,11 @@ import jche.util.Warnings;
  * <ul>
  *   <li>無い型の名前（{@code Foo.run()}）には JDT がバインディングを返さないので、参照した側の依存には
  *       何も残らない。そのファイルは F 行のエラー数か U 行の BINDING_FAILED として型解決に失敗していて、
- *       I 行の 3 列目にエラーの引数に現れた名前（{@code Foo}・{@code org.missing}）を持つ。新しい型があれば、
- *       型解決に失敗していたブロックのうち、その名前が新しい型に当たるもの（{@link StaleTypes#matchesNewType}）を
- *       解析し直す。無名・ローカルの型は名前で参照できないので当たらない（docs/cache-unification-qa.md の Q42）</li>
+ *       I 行の 3 列目にエラーの引数に現れた名前（{@code Foo}・{@code org.missing}）を持つ。型解決に失敗していた
+ *       ブロックのうち、その名前が変わった型（新しい型を含む）に当たるもの（{@link StaleTypes#matchesChangedType}）を
+ *       周回ごとに解析し直す。無名・ローカルの型は名前で参照できないので当たらない（docs/cache-unification-qa.md の
+ *       Q42）。新しい型に限らないのは、見えなかった型を public にしたとき（{@code The type p.Hidden is not visible}）も
+ *       同じ形で失敗が解けるため（Q53）</li>
  *   <li>同じパッケージに足したトップレベルの型は、オンデマンド import（{@code import q.*}）と {@code java.lang} の型を
  *       隠す（JLS 6.4.1）。自分のパッケージは I 行に無いので、新しい型のパッケージと同じパッケージの
  *       ブロックのうち、I 行に同じ単純名の型があるものを解析し直す（Q43）</li>
@@ -185,7 +190,8 @@ import jche.util.Warnings;
  * 「その jar のパッケージの型を参照しているファイル」を再解析の対象にする。
  * 型ではなくパッケージで見るのは、jar の版を差し替えたときに旧版にだけあった型を
  * 新しい jar からは知れないためで、L 行にパッケージ一覧を残すのは jar が削除された後にも
- * 影響範囲を知るため（{@link LibraryDiff}）。
+ * 影響範囲を知るため（{@link LibraryDiff}）。jar の型が自分と同じパッケージにできたときは、新しい型と同じく
+ * オンデマンド import と {@code java.lang} の型を隠しうるので、そのパッケージのブロックも見る（Q54）。
  */
 public final class CacheUpdater {
 
@@ -612,27 +618,40 @@ public final class CacheUpdater {
          * これに無ければ新しい型。{@link #endOfOldCache} を呼ぶまでは null（新しい型を数えない）
          */
         private Set<String> declaredBefore;
-        /**
-         * 新しい型の単純名（FQN の最後の点より後。無名・ローカルの型は {@code Main$1} の形なので、エラーの引数の
-         * 名前には当たらない）。型解決に失敗していたブロックのうち、解決できなかった名前（I 行）のどれかの
-         * 区切りがこれに当たるものを解析し直す
-         */
-        private final Set<String> newSimpleNames = new HashSet<>();
-        /**
-         * 新しい型の FQN の、点で区切った頭の部分（{@code org}・{@code org.acme}・{@code org.acme.New}）。
-         * 解決できなかった名前がこれに当たるブロック（{@code import org cannot be resolved}）も解析し直す
-         */
-        private final Set<String> newPrefixes = new HashSet<>();
         /** パッケージ -> そこに新しく宣言されたトップレベルの型の単純名（同じパッケージの名前の隠蔽を見る） */
         private final Map<String, Set<String>> newTopLevel = new HashMap<>();
+        /**
+         * 変わった型（{@link #types}。新しい型を含む）の単純名（FQN の最後の点より後。無名・ローカルの型は
+         * {@code Main$1} の形なので、エラーの引数の名前には当たらない）。型解決に失敗していたブロックのうち、
+         * 解決できなかった名前（I 行）のどれかの区切りがこれに当たるものを解析し直す（{@link #matchesChangedType}）。
+         * 新しい型に限らないのは、見えなかった型を public にした（{@code The type vp.Hidden is not visible}）ときの
+         * ように、前からあった型の変更でも失敗が解けるため（docs/cache-unification-qa.md の Q53）
+         */
+        private final Set<String> changedSimpleNames = new HashSet<>();
+        /**
+         * 変わった型の FQN の、点で区切った頭の部分（{@code org}・{@code org.acme}・{@code org.acme.New}）。
+         * 解決できなかった名前がこれに当たるブロック（{@code import org cannot be resolved}）も解析し直す
+         */
+        private final Set<String> changedPrefixes = new HashSet<>();
 
         StaleTypes(Set<String> libraryPackages) {
             this.libraryPackages = libraryPackages;
         }
 
         void add(String typeFqn, String pkg) {
-            types.add(typeFqn);
+            if (types.add(typeFqn)) {
+                changedSimpleNames.add(typeFqn.substring(typeFqn.lastIndexOf('.') + 1));
+                addPrefixes(typeFqn, changedPrefixes);
+            }
             packages.add(pkg == null ? "" : pkg);
+        }
+
+        /** FQN の点で区切った頭の部分（{@code org}・{@code org.acme}）と FQN そのものを足す */
+        private static void addPrefixes(String typeFqn, Set<String> out) {
+            for (int dot = typeFqn.indexOf('.'); dot > 0; dot = typeFqn.indexOf('.', dot + 1)) {
+                out.add(typeFqn.substring(0, dot));
+            }
+            out.add(typeFqn);
         }
 
         /** パス1 を読み終えた。ここまでの型を「前回宣言されていた型」として固定する */
@@ -649,11 +668,6 @@ public final class CacheUpdater {
             if (declaredBefore == null || declaredBefore.contains(typeFqn)) {
                 return;
             }
-            newSimpleNames.add(typeFqn.substring(typeFqn.lastIndexOf('.') + 1));
-            for (int dot = typeFqn.indexOf('.'); dot > 0; dot = typeFqn.indexOf('.', dot + 1)) {
-                newPrefixes.add(typeFqn.substring(0, dot));
-            }
-            newPrefixes.add(typeFqn);
             String p = (pkg == null) ? "" : pkg;
             String rest = p.isEmpty() ? typeFqn
                     : typeFqn.startsWith(p + ".") ? typeFqn.substring(p.length() + 1) : null;
@@ -663,28 +677,23 @@ public final class CacheUpdater {
             }
         }
 
-        /** 新しい型があったか */
-        boolean hasNewTypes() {
-            return !newSimpleNames.isEmpty();
-        }
-
         /**
          * 型解決に失敗していたブロックの、解決できなかった名前（I 行。{@link FileAnalysis#unresolvedNames}）が
-         * 新しい型に当たるか。名前の区切りのどれかが新しい型の単純名か（{@code Foo}・{@code q.Foo}・
-         * {@code Foo.Inner}）、名前が新しい型の FQN の頭の部分か（{@code org}・{@code org.acme}）。
+         * 変わった型（新しい型を含む）に当たるか。名前の区切りのどれかが変わった型の単純名か（{@code Foo}・
+         * {@code q.Foo}・{@code Foo.Inner}）、名前が変わった型の FQN の頭の部分か（{@code org}・{@code org.acme}）。
          * {@link CacheFormat#ANY_NAME}（名前を拾えなかった）は何にでも当たる
          *
          * @param namesCsv 名前のカンマ区切り
          */
-        boolean matchesNewType(String namesCsv) {
-            if (newSimpleNames.isEmpty()) {
+        boolean matchesChangedType(String namesCsv) {
+            if (changedSimpleNames.isEmpty()) {
                 return false;
             }
             if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
                 return true;
             }
             for (String name : namesCsv.split(",")) {
-                if (newPrefixes.contains(name) || hasSegment(name, newSimpleNames)) {
+                if (changedPrefixes.contains(name) || hasSegment(name, changedSimpleNames)) {
                     return true;
                 }
             }
@@ -713,13 +722,19 @@ public final class CacheUpdater {
          * その単純名が含まれていれば（{@code q.Helper} と新しい {@code p.Helper}、{@code java.lang.Math} と
          * 新しい {@code p.Math}）、名前が隠されて別の型に解決されうるので触れているとみなす（JLS 6.4.1）
          *
+         * <p>自分のパッケージに変わった jar の型があれば（同じパッケージを jar とソースに分けて置く）、jar の型も
+         * 同じパッケージの型として、オンデマンド import と {@code java.lang} の型を隠しうる（JLS 6.4.1）。jar のどの
+         * 型が増えたかは分からないので、I 行にオンデマンド import か {@code java.lang} の型があれば触れているとみなす
+         * （docs/cache-unification-qa.md の Q54）
+         *
          * @param ownPackage そのブロックが宣言する型のパッケージ。分からなければ null
          */
         Reason touches(String depsCsv, String ownPackage) {
-            if (depsCsv.isEmpty() || (types.isEmpty() && libraryPackages.isEmpty())) {
+            if (depsCsv.isEmpty() || isEmpty()) {
                 return Reason.UNTOUCHED;
             }
             Set<String> shadowing = (ownPackage == null) ? null : newTopLevel.get(ownPackage);
+            boolean ownPackageInJar = ownPackage != null && libraryPackages.contains(ownPackage);
             boolean library = false;
             for (String d : depsCsv.split(",")) {
                 if (d.isEmpty()) {
@@ -733,11 +748,11 @@ public final class CacheUpdater {
                     if (types.contains(p) || packages.contains(p)) {
                         return Reason.BY_SOURCE;
                     }
-                    library |= libraryPackages.contains(p);
+                    library |= ownPackageInJar || libraryPackages.contains(p);
                 } else if (types.contains(d)) {
                     return Reason.BY_SOURCE;
                 } else {
-                    library |= inLibraryPackage(d);
+                    library |= inLibraryPackage(d) || (ownPackageInJar && d.startsWith("java.lang."));
                 }
             }
             return library ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
@@ -1218,7 +1233,7 @@ public final class CacheUpdater {
         final BitSet unresolvedTypes = new BitSet();
         /**
          * 型解決に失敗していたブロックの、解決できなかった名前（I 行。カンマ区切り）。
-         * 失敗していないブロックは null。新しい型に当たるものだけを解析し直す（{@link StaleTypes#matchesNewType}）
+         * 失敗していないブロックは null。変わった型に当たるものだけを解析し直す（{@link StaleTypes#matchesChangedType}）
          */
         String[] unresolvedNames = new String[64];
         /** {@link #packages} の文字列を共有するための表 */
@@ -1590,22 +1605,19 @@ public final class CacheUpdater {
         if (stale.isEmpty()) {
             return;   // 触れる先が無いので、読み直すだけ無駄
         }
-        // 新しい型があれば、型解決に失敗していたブロックのうち、解決できなかった名前が新しい型に当たるものを
-        // 解析し直す。無い型の名前は依存（I 行の型）に残らないので、依存では見つけられない
-        // （クラスの説明「新しい型」）。1 周目に回す
-        List<String> unresolvedBefore = new ArrayList<>();
-        if (stale.hasNewTypes()) {
-            for (int i = old.unresolvedTypes.nextSetBit(0); i >= 0; i = old.unresolvedTypes.nextSetBit(i + 1)) {
-                if (stale.matchesNewType(old.unresolvedNames[i]) && valid.remove(old.paths[i])) {
-                    unresolvedBefore.add(old.paths[i]);
-                }
-            }
-        }
         int mark;
         do {
             mark = stale.mark();
-            List<String> dependents = new ArrayList<>(unresolvedBefore);
-            unresolvedBefore.clear();
+            List<String> dependents = new ArrayList<>();
+            // 型解決に失敗していたブロックのうち、解決できなかった名前が変わった型（新しい型を含む）に当たるもの。
+            // 無い型・見えない型の名前は依存（I 行の型）に残らないので、依存では見つけられない（クラスの説明
+            // 「新しい型」、docs/cache-unification-qa.md の Q53）。連鎖で変わった型が増えるので、周回ごとに見直す
+            for (int i = old.unresolvedTypes.nextSetBit(0); i >= 0; i = old.unresolvedTypes.nextSetBit(i + 1)) {
+                if (valid.contains(old.paths[i]) && stale.matchesChangedType(old.unresolvedNames[i])) {
+                    valid.remove(old.paths[i]);
+                    dependents.add(old.paths[i]);
+                }
+            }
             List<String> libraryDependents = new ArrayList<>();
             DepsConsumer select = (index, depsCsv) -> {
                 String rel = old.paths[index];
@@ -1978,12 +1990,7 @@ public final class CacheUpdater {
      * {@link CacheFormat#ANY_NAME}（どの新しい型でも解析し直す）。失敗していないブロックは空文字
      */
     private static String unresolvedNamesOf(FileAnalysis fa) {
-        boolean failed = fa.errors > 0;
-        for (int i = 0; !failed && i < fa.callSites.size(); i++) {
-            failed = fa.callSites.get(i) instanceof UnresolvedCallFact u
-                    && UnresolvedCallFact.BINDING_FAILED.equals(u.reason());
-        }
-        if (!failed) {
+        if (!fa.resolutionFailed()) {
             return "";
         }
         return fa.unresolvedNames.isEmpty() ? CacheFormat.ANY_NAME : String.join(",", fa.unresolvedNames);

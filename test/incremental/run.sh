@@ -926,6 +926,411 @@ else
     echo "  NG   親型の本体だけの変更で、部分型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
 fi
 
+# --- 3 回目のレビューで見つかった、I 行と型の形に載っていなかった依存 ---------------------
+# どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）
+
+# 祖父母の型のメソッドを可変長引数にする。m(int[]) と m(int...) はキーが同じなので、型の形にも入っていなかった。
+# U の d.m(1, 2) は D#m(long) の BINDING_FAILED から F#m(int[]) への呼び出しに変わる（JLS 15.12.2.4）
+setup_varargs() {
+    jfile vag/F.java <<'EOF'
+package vag;
+public class F {
+    public void m(int[] a) { System.out.println(a); }
+}
+EOF
+    jfile vag/D.java <<'EOF'
+package vag;
+public class D extends F {
+    public void m(long x) { System.out.println(x); }
+}
+EOF
+    jfile vag/U.java <<'EOF'
+package vag;
+public class U {
+    public void go(D d) { d.m(1, 2); }
+}
+EOF
+}
+edit_varargs() { sed -i 's/int\[\] a/int... a/' work/src/vag/F.java; }
+case_of "祖父母の型のメソッドを可変長引数にする" edit_varargs yes setup_varargs
+
+# 拡張 for 文の式の型（a.getRepo() の Repo）を Iterable にする。Repo の名前は U のソースに無い。
+# 全件解析では iterator() / hasNext() / next() の暗黙の呼び出しが増え、エラーが消える（JLS 14.14.2）
+setup_foreach_type() {
+    jfile fex/Repo.java <<'EOF'
+package fex;
+public class Repo { }
+EOF
+    jfile fex/A.java <<'EOF'
+package fex;
+public class A {
+    public Repo getRepo() { return new Repo(); }
+}
+EOF
+    jfile fex/U.java <<'EOF'
+package fex;
+public class U {
+    public void go(A a) {
+        for (Object s : a.getRepo()) { System.out.println(s); }
+    }
+}
+EOF
+}
+edit_foreach_type() {
+    jfile fex/Repo.java <<'EOF'
+package fex;
+public class Repo implements Iterable<Object> {
+    public java.util.Iterator<Object> iterator() { return java.util.List.<Object>of().iterator(); }
+}
+EOF
+}
+case_of "拡張 for 文の式の型を Iterable にする" edit_foreach_type yes setup_foreach_type
+
+# switch のセレクタの列挙型に定数を足す。s.kind() の型 Kind は U のソースに無い。case C のエラーが消える
+setup_switch_enum() {
+    jfile swe/Kind.java <<'EOF'
+package swe;
+public enum Kind { A, B }
+EOF
+    jfile swe/Src.java <<'EOF'
+package swe;
+public class Src { public Kind kind() { return Kind.A; } }
+EOF
+    jfile swe/U.java <<'EOF'
+package swe;
+public class U {
+    public void go(Src s) {
+        switch (s.kind()) { case C: System.out.println(1); break; default: System.out.println(2); }
+    }
+}
+EOF
+}
+edit_switch_enum() { sed -i 's/A, B/A, B, C/' work/src/swe/Kind.java; }
+case_of "switch のセレクタの列挙型に定数を足す" edit_switch_enum yes setup_switch_enum
+
+# 呼び出し先の throws の型・throw する式の型を検査例外にする。どちらも U のソースに名前が無い。
+# 全件解析では U に「例外を処理していない」エラーが出る（JLS 11.2）
+setup_checked() {
+    jfile chk/MyEx.java <<'EOF'
+package chk;
+public class MyEx extends RuntimeException { }
+EOF
+    jfile chk/D.java <<'EOF'
+package chk;
+public class D {
+    public void m() throws MyEx { System.out.println(1); }
+    public MyEx make() { return new MyEx(); }
+}
+EOF
+    jfile chk/U.java <<'EOF'
+package chk;
+public class U {
+    public void go(D d) { d.m(); }
+    public void th(D d) { throw d.make(); }
+}
+EOF
+}
+edit_checked() { sed -i 's/extends RuntimeException/extends Exception/' work/src/chk/MyEx.java; }
+case_of "例外の型を検査例外にする（throws と throw）" edit_checked yes setup_checked
+
+# 引数・ローカル変数に付けたアノテーションの型を消す。アノテーションの型の名前は Name の節なので、
+# 型の名前の節（SimpleType）では拾えていなかった
+setup_ann_use() {
+    jfile anu/Ann.java <<'EOF'
+package anu;
+public @interface Ann { }
+EOF
+    jfile anu/Loc.java <<'EOF'
+package anu;
+public @interface Loc { }
+EOF
+    jfile anu/U.java <<'EOF'
+package anu;
+public class U {
+    public void m(@Ann String s) { System.out.println(s); }
+}
+EOF
+    jfile anu/V.java <<'EOF'
+package anu;
+public class V {
+    public void m() { @Loc String s = "x"; System.out.println(s); }
+}
+EOF
+}
+edit_ann_use() { rm work/src/anu/Ann.java work/src/anu/Loc.java; }
+case_of "引数・ローカル変数のアノテーションの型を消す" edit_ann_use yes setup_ann_use
+
+# 見えなかった型を public にする。完全修飾名で参照していた U は「The type vis.Hidden is not visible」で
+# 型解決に失敗していて、I 行には vis.Hidden が無い。新しい型ではないので、新しい型の名前との突き合わせにも
+# 当たらなかった。変わった型の名前と突き合わせる（Q53）
+setup_visibility() {
+    jfile vis/Hidden.java <<'EOF'
+package vis;
+class Hidden { public static void run() { System.out.println(1); } }
+EOF
+    jfile vis/Pub.java <<'EOF'
+package vis;
+public class Pub { }
+EOF
+    jfile vit/U.java <<'EOF'
+package vit;
+public class U {
+    public void go() { vis.Hidden.run(); }
+}
+EOF
+    jfile vit/U2.java <<'EOF'
+package vit;
+import vis.Hidden;
+public class U2 {
+    public void go() { Hidden.run(); }
+}
+EOF
+}
+edit_visibility() { sed -i 's/^class Hidden/public class Hidden/' work/src/vis/Hidden.java; }
+case_of "見えなかった型を public にする（完全修飾名と import）" edit_visibility yes setup_visibility
+
+# 同じパッケージの型を jar に足す。jsp.Main の Helper は import jsq.* の jsq.Helper だったが、jar の
+# jsp.Helper（同じパッケージ）に隠される（JLS 6.4.1）。jar の型は新しい型として数えられないので、
+# 自分のパッケージが変わった jar のパッケージなら、オンデマンド import を持つブロックを解析し直す（Q54）
+setup_jar_split() {
+    mkdir -p work/lib
+    jfile jsq/Helper.java <<'EOF'
+package jsq;
+public class Helper { public static void work() { System.out.println(1); } }
+EOF
+    jfile jsp/Main.java <<'EOF'
+package jsp;
+import jsq.*;
+public class Main {
+    void go() { Helper.work(); }
+}
+EOF
+}
+edit_jar_split() {
+    rm -rf jarsplit && mkdir -p jarsplit/src/jsp jarsplit/classes
+    cat > jarsplit/src/jsp/Helper.java <<'EOF'
+package jsp;
+public class Helper { public static void work() { } }
+EOF
+    "$JAVAC_BIN" -d jarsplit/classes jarsplit/src/jsp/Helper.java \
+        && ( cd jarsplit/classes && "$JAR_BIN" cf ../../work/lib/split.jar jsp ) \
+        || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf jarsplit
+}
+case_of "同じパッケージの型を jar に足す（import q.* を隠す）" edit_jar_split yes setup_jar_split
+
+# sealed の permits に部分型を足す。U の switch は A1・A2・B で網羅的だったが、A が A3 も許すと網羅的でなくなる
+# （JLS 14.11.1.1）。permits はバインディングから取れないので、case に書いた型の親（A）を U の依存に数える
+setup_sealed() {
+    jfile sld/S.java <<'EOF'
+package sld;
+public sealed interface S permits A, B { }
+EOF
+    jfile sld/A.java <<'EOF'
+package sld;
+public sealed interface A extends S permits A1, A2 { }
+EOF
+    jfile sld/A1.java <<'EOF'
+package sld;
+public record A1() implements A { }
+EOF
+    jfile sld/A2.java <<'EOF'
+package sld;
+public record A2() implements A { }
+EOF
+    jfile sld/B.java <<'EOF'
+package sld;
+public record B() implements S { }
+EOF
+    jfile sld/U.java <<'EOF'
+package sld;
+public class U {
+    public int go(S s) {
+        return switch (s) { case A1 a -> 1; case A2 a -> 2; case B b -> 3; };
+    }
+}
+EOF
+}
+edit_sealed() {
+    sed -i 's/permits A1, A2/permits A1, A2, A3/' work/src/sld/A.java
+    jfile sld/A3.java <<'EOF'
+package sld;
+public record A3() implements A { }
+EOF
+}
+case_of "sealed の permits に部分型を足す（switch の網羅性）" edit_sealed yes setup_sealed
+
+# --- 親型の私的メンバー（docs/cache-unification-qa.md の Q51）--------------------------------
+# 型の形には、親型のメンバーと名前の当たる私的メンバーだけを入れる。当たるものは、部分型から親のメンバーを
+# 隠す・継承を止めるので、部分型 C だけを参照する X の解決が変わる（X は P を参照していない）。
+# 題材: G <- P <- C（別ファイル）、X は別のパッケージ
+setup_private_base() {
+    jfile prv/G.java <<'EOF'
+package prv;
+public class G {
+    public int f;
+    public static class Inner { public static void run() { System.out.println("gi"); } }
+    public void m() { System.out.println("gm"); }
+    public static void s(long x) { System.out.println("gs"); }
+}
+EOF
+    jfile prv/P.java <<'EOF'
+package prv;
+public class P extends G {
+    public P() { }
+}
+EOF
+    jfile prv/C.java <<'EOF'
+package prv;
+public class C extends P { }
+EOF
+}
+private_add() {   # $1=P のコンストラクタの次に足す行
+    sed -i "s/^    public P() { }/    public P() { }\n    $1/" work/src/prv/P.java
+}
+
+# (a) 私的フィールドが親のフィールドを隠す（JLS 8.3）。X の c.f は G.f からエラーに変わる
+setup_private_field() {
+    setup_private_base
+    jfile prw/X.java <<'EOF'
+package prw;
+public class X { public int go(prv.C c) { System.out.println(c.f); return c.f; } }
+EOF
+}
+case_of "親に、親の親のフィールドと同じ名前の私的フィールドを足す（隠蔽）" \
+    "private_add 'private int f;'" yes setup_private_field
+
+# (b) 私的な入れ子の型が親の入れ子の型を隠す（JLS 8.5）。X の C.Inner.run() は G.Inner からエラーに変わる
+setup_private_type() {
+    setup_private_base
+    jfile prw/X.java <<'EOF'
+package prw;
+public class X { public void go() { prv.C.Inner.run(); } }
+EOF
+}
+case_of "親に、親の親の入れ子の型と同じ名前の私的な入れ子の型を足す（隠蔽）" \
+    "private_add 'private static class Inner { static void run() { } }'" yes setup_private_type
+
+# (c) 私的メソッドが親の同じシグネチャのメソッドの継承を止める（JLS 8.4.8。P はエラー）。
+# (d) 私的な static メソッドと、static import した名前
+setup_private_method() {
+    setup_private_base
+    jfile prw/X.java <<'EOF'
+package prw;
+import static prv.C.s;
+public class X { public void go(prv.C c) { c.m(); s(1); } }
+EOF
+}
+case_of "親に、親の親のメソッドと同じ名前の私的メソッド・static メソッドを足す" \
+    "private_add 'private void m() { }\n    private static void s(int x) { }'" yes setup_private_method
+
+# 型解決に失敗している利用者。JDT はエラーを回復するとき、見えない私的メンバーにもバインディングを返すので、
+# X の c.helper2() は BINDING_FAILED から P#helper2 への呼び出しに変わる。型の形には入らない（名前が当たらない）
+# ので、型解決に失敗したファイルは参照した型の親（P）を依存に持つ
+setup_private_failing() {
+    setup_private_base
+    jfile prw/X.java <<'EOF'
+package prw;
+public class X { public int go(prv.C c) { c.helper2(); return c.extra; } }
+EOF
+}
+case_of "型解決に失敗している利用者の、参照した型の親に私的メンバーを足す" \
+    "private_add 'private int extra;\n    private void helper2() { }'" yes setup_private_failing
+
+# (e)(f) 名前の当たらない私的メンバー（フィールド・メソッド・入れ子の型・static・コンストラクタ）を足しても、
+# 外側のクラスのメンバーへの解決（JLS 6.4.1・15.12.1）、部分型の同じ名前のメソッド（上書きにも隠蔽にも
+# ならない）、同じファイルの入れ子のクラスからの私的メンバーの参照は、全件解析と同じになる。
+# 解析し直すのは書き換えた P と、P を参照する C、P の入れ子の型 Peer を参照する W の 3 件だけで、C だけを参照する
+# Outer・Z へは連鎖しない（52453ae では C の形が変わって 5 件）
+setup_private_unrelated() {
+    jfile prz/P.java <<'EOF'
+package prz;
+public class P {
+    public P() { }
+    private int secret() { return 1; }
+    public static class Peer { public int peek(P p) { return p.secret(); } }
+}
+EOF
+    jfile prz/C.java <<'EOF'
+package prz;
+public class C extends P { }
+EOF
+    jfile prw/Outer.java <<'EOF'
+package prw;
+public class Outer {
+    int f = 1;
+    void m() { System.out.println("om"); }
+    static class Inner { static void run() { System.out.println("oi"); } }
+    class Y extends prz.C {
+        int go() { m(); Inner.run(); return f; }
+    }
+    void anon() { new prz.C() { void h() { m(); Inner.run(); System.out.println(f); } }.h(); }
+}
+EOF
+    jfile prw/Z.java <<'EOF'
+package prw;
+public class Z extends prz.C {
+    public void h() { System.out.println("zh"); }
+    static void h2() { System.out.println("zh2"); }
+    void h4() { System.out.println("zh4"); }
+    public static void use(Z z) { z.h(); h2(); z.h4(); }
+}
+EOF
+    jfile prw/W.java <<'EOF'
+package prw;
+public class W { public void go() { new prz.C(); new Z().h(); Z.use(null); new prz.P.Peer().peek(null); } }
+EOF
+}
+edit_private_unrelated() {
+    sed -i 's/^    public P() { }/    public P() { }\n    private int f;\n    private void m() { }\n    private static class Inner { static void run() { } }\n    private void h() { }\n    private void h2() { }\n    private static void h4() { }\n    private P(int x) { }/' work/src/prz/P.java
+    sed -i 's/return 1;/return Integer.parseInt("2");/' work/src/prz/P.java
+}
+case_of "名前の当たらない私的メンバーを親に足す（部分型の利用者へは連鎖しない）" \
+    edit_private_unrelated yes setup_private_unrelated
+if [ "$INC_PARSED" = 3 ]; then
+    echo "  OK   解析し直したのは P・C・W の 3 件（新規解析=$INC_PARSED）"
+else
+    echo "  NG   名前の当たらない私的メンバーで、部分型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
+fi
+
+# (g)(h) 私的なインターフェースのメソッド（Java 9）。親インターフェースの default メソッドと同じシグネチャなら
+# 継承を止める（JLS 9.4.1）。実装するのはレコードと列挙型（暗黙の私的メンバーを持つ）
+setup_private_iface() {
+    jfile pri/I1.java <<'EOF'
+package pri;
+public interface I1 { default void m() { System.out.println("i1"); } }
+EOF
+    jfile pri/I2.java <<'EOF'
+package pri;
+public interface I2 extends I1 { }
+EOF
+    jfile pri/K.java <<'EOF'
+package pri;
+public record K(int a) implements I2 { }
+EOF
+    jfile pri/E.java <<'EOF'
+package pri;
+public enum E implements I2 { A }
+EOF
+    jfile prw/X.java <<'EOF'
+package prw;
+public class X { public void go(pri.K k) { k.m(); pri.E.A.m(); System.out.println(k.a()); } }
+EOF
+}
+edit_private_iface() {   # $1=足す私的メソッドの名前
+    sed -i "s/^public interface I2 extends I1 { }/public interface I2 extends I1 { private void $1() { } }/" \
+        work/src/pri/I2.java
+}
+case_of "親インターフェースの default メソッドと同じ名前の私的メソッドを足す（レコード・列挙型）" \
+    "edit_private_iface m" yes setup_private_iface
+case_of "名前の当たらない私的なインターフェースのメソッドを足す（実装する型の利用者へは連鎖しない）" \
+    "edit_private_iface helper" yes setup_private_iface
+if [ "$INC_PARSED" = 3 ]; then
+    echo "  OK   解析し直したのは I2 と、I2 を実装する K・E の 3 件（新規解析=$INC_PARSED）"
+else
+    echo "  NG   名前の当たらない私的メソッドで、実装する型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
+fi
+
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
 # なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。

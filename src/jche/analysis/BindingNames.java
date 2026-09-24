@@ -274,6 +274,87 @@ final class BindingNames {
         noteReachedType(t, 0);
     }
 
+    /**
+     * 呼び出したメソッド・コンストラクタの throws の型を I 行に数える（型変数は上限の消去）。
+     *
+     * <p>その例外が検査例外かどうか（JLS 11.1.1。親を {@code RuntimeException} から {@code Exception} に変えた）で、
+     * 呼び出し側が「例外を処理していない」エラーになるかが変わる（11.2.3）。throws の型は呼び出し側のソースに
+     * 書かれていないことが多く、ほかの経路では I 行に載らない（docs/cache-unification-qa.md の Q52）。
+     * {@code java.*} の例外（{@code IOException} など）は数えない（JDK の版はキャッシュの鍵に入っていて、変われば
+     * 全件解析になる）
+     */
+    void noteThrownTypes(IMethodBinding b) {
+        if (b == null) {
+            return;
+        }
+        for (ITypeBinding e : b.getExceptionTypes()) {
+            if (e.isTypeVariable() || !isJdk(e)) {
+                noteReachedType(e);
+            }
+        }
+    }
+
+    /** 型を I 行に数える。ただし {@code java.*} の型は数えない（{@link #noteNonJdk} と同じ理由） */
+    void noteDependencyUnlessJdk(ITypeBinding t) {
+        if (t != null && !isJdk(t)) {
+            noteDependency(t);
+        }
+    }
+
+    /** {@code java.*} の型か（消去で見る） */
+    private static boolean isJdk(ITypeBinding t) {
+        String p = packageOf(erasureOf(t));
+        return p.equals("java") || p.startsWith("java.");
+    }
+
+    /**
+     * 型とその推移的な親型をすべて I 行に数える。switch の case に書いた型（パターン・列挙定数の型）に使う。
+     *
+     * <p>switch が網羅的か（JLS 14.11.1.1）は、sealed の型が permits に並べた部分型で決まる。case に書いた型から
+     * セレクタの型までの途中の型（{@code case A1 a} の A1 の親の {@code sealed interface A permits A1, A2}）は、
+     * ソースに名前が無くても permits を変えると網羅性が変わり、エラーになる・エラーが解ける。permits は
+     * バインディングから取れないので、途中の型そのものを依存に数え、そのファイルが変われば解析し直す
+     * （docs/cache-unification-qa.md の Q52）。{@code java.*} の親（{@code java.lang.Record} など）は数えない
+     * （JDK の版はキャッシュの鍵に入っていて、変われば全件解析になる）
+     */
+    void noteSupertypes(ITypeBinding t) {
+        if (t == null) {
+            return;
+        }
+        noteReachedType(t);
+        noteNonJdk(supertypesOf(t));
+    }
+
+    /**
+     * これまでに名前にした型（I 行に載る型）すべての、推移的な親型を I 行に数える。型解決に失敗したファイル
+     * （エラーか BINDING_FAILED がある）でだけ、ファイルの終わりに呼ぶ。
+     *
+     * <p>JDT はエラーを回復するとき、見えない私的メンバーにもバインディングを返す（{@code c.helper2()} は、C の親の親に
+     * 私的な {@code helper2()} を足すと、BINDING_FAILED からその私的メソッドへの呼び出しに変わる）。私的メンバーは
+     * 型の形（{@link TypeShape}）に入らないので連鎖では届かない。型解決に失敗したファイルだけは、参照した型の親の
+     * どれが変わっても解析し直せるよう、親を依存に持つ（docs/cache-unification-qa.md の Q51）。失敗していない
+     * ファイルの解決結果は、名前の当たらない私的メンバーでは変わらない（JLS 6.6.1・8.2。同じ Q51 で確かめた）。
+     * {@code java.*} の親は数えない
+     */
+    void noteAncestorsOfNamedTypes() {
+        List<ITypeBinding> named = new ArrayList<>();
+        for (Map.Entry<ITypeBinding, String> e : typeNames.entrySet()) {
+            if (!e.getValue().isEmpty()) {
+                named.add(e.getKey());
+            }
+        }
+        for (ITypeBinding t : named) {
+            noteNonJdk(supertypesOf(t));
+        }
+    }
+
+    /** {@code java.*} 以外の型を I 行に数える（JDK の型は JDK の版で決まり、版はキャッシュの鍵に入っている） */
+    private void noteNonJdk(List<ITypeBinding> types) {
+        for (ITypeBinding t : types) {
+            noteDependencyUnlessJdk(t);
+        }
+    }
+
     /** 上限を辿る深さの上限（{@code T extends Comparable<T>} のような自己参照でも止まるように） */
     private static final int MAX_BOUND_DEPTH = 8;
 
