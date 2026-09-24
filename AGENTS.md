@@ -15,7 +15,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 |---|---|
 | `src/jche/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
 | `src/jche/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
-| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る）に分担）、`graph`（呼び出しグラフ・具象クラス解決。`OriginRenderer` が dataflow キャッシュの値グラフを出所の文字列へ組み直す）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
+| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担）、`graph`（呼び出しグラフ・具象クラス解決。`OriginRenderer` が dataflow キャッシュの値グラフを出所の文字列へ組み直す）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
@@ -53,7 +53,8 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
 | `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること。文字コードの変更・形式の版が古い・壊れたキャッシュでは再利用せず捨てること。中断した実行から引き継ぐこと。期待値ファイルは持たない |
 | `bash test/cli/run.sh` | 起動コマンドと対話モードの検査。メニューへの答えをパイプで流し込む |
-| `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
+| `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。Q25）。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
+| `bash test/jls/run.sh` | Java 言語仕様（JLS SE 26）への適合と javac との整合の検査。`test/jls/project/src/` の各ソースが JLS の 1 つの節に対応し（パッケージ名が節番号。`jls.s14_14_02` = §14.14.2）、節ごとの期待値（`test/jls/expect.tsv`。1 行 1 テストで節番号と説明を持つ）を出力とキャッシュに当てる。あわせて同じソースを JDK 26 の javac（`--release 26`）でコンパイルし、型・宣言・呼び出し・ラムダ・ブリッジをキャッシュの事実と突き合わせる（`test/jls/JlsCheck.java`。JDK 26 は jbang が取得）。新しい構文の読み取りを直したら節を足す（`docs/jls-conformance-test-qa.md`） |
 | `bash test/warnings/run.sh` | 確認してほしいことの案内（出力フォルダの `warnings.txt`）の検査。正常な状態では作らないこと、依存 jar の不足・ローカルリポジトリの欠け・設定の指定先の欠け・コンパイルエラー・実行の失敗で作り該当の項目が載ること、`warnings.txt` の有無が `run.log` の `[WARN]` / `[ERROR]` の有無と一致すること。使い捨てのプロジェクトをその場で作る |
 | `bash test/cachevalue/run.sh` | dataflow キャッシュの値の符号化（`escape` / `unescape`）が往復し、行を壊さないこと |
 | `bash test/contracts/run.sh` | 同梱の契約表（`JdkCallbacks` / `BundledFrameworkEntries`）の検査。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが実在すること（実行中の JDK と照合） |
@@ -145,7 +146,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   呼び出し先のキーが分かるなら `implementationOf(型FQN, 呼び出し先ID)`、
   シグネチャしか分からないなら（契約表・リフレクション）`implementationOfSignature(型FQN, シグネチャ)`。
   どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、
-  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7・Q21）
+  別の引き方を足すと片方を取りこぼす（`docs/jls-conformance-qa.md` の Q6・Q7・Q21）。
+  CHA の候補を数え始める型は、呼び出し先を宣言した型ではなく呼び出しを修飾する型（JLS 13.1。C 行の
+  qualifier。`CallResolver#usableQualifier`）で、jar の型なら宣言した型に倒す（`docs/jls-conformance-test-qa.md` の Q18）
 - AST の読み取りは Java 言語仕様に合わせる。オーバーライドの判定・暗黙のコンストラクタ呼び出し・
   定数の畳み込みは、自前で近似せず JDT のバインディング（`IMethodBinding.overrides` など）に任せ、
   分からないものは「判定しない」に倒す（`docs/jls-conformance-qa.md`、

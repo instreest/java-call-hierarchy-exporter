@@ -164,7 +164,7 @@ private void runWithOther(Dao other, Runnable r) { r.run(); }
 
 `runWithOther` の段から本体へ降りると、`E:0` が `runWithOther` の第 1 引数（`UserDaoImpl`）に
 当たり、`UserDaoImpl.describe` に **`RESOLVED:DATAFLOW_PARAM` で誤って確定**していた。
-捕捉した値はラムダを作った時点で決まる（JLS 15.27.2。捕捉できるのは実質的 final な変数だけ）ので、
+捕捉した値はラムダを作った時点で決まる（JLS 15.27.4。捕捉できるのは実質的 final な変数だけ＝JLS 15.27.2）ので、
 実行した側の引数を当てるのは値の取り違えである。
 
 直し方は、降りる先の合成メソッドを**今の段のメソッドが生成したか**（`CallGraph.createsLambda`。
@@ -245,7 +245,7 @@ JLS 15.13.3 では、メソッド参照の実行時には参照先の宣言で�
 - **入れ子のラムダ**。javac は本体を読み終えた順（後行順）に番号を振るので、
   `() -> { () -> {} }` は内側が `$0`、外側が `$1`。`LambdaNames` は `visit` で振っていたので逆だった。
   `endVisit` で振るようにした
-- **enum 定数の引数の中のラムダ**。定数の初期化は `<clinit>` で走る（JLS 8.9.2）ので javac は
+- **enum 定数の引数の中のラムダ**。定数の初期化は `<clinit>` で走る（JLS 8.9.3）ので javac は
   `lambda$static$N` と付けるが、`LambdaNames.enclosingOf` は `EnumConstantDeclaration` を見ておらず
   `lambda$new$N` になっていた。`FactVisitor` は生成の辺を `<clinit>` から張るので、ツールの中でも
   食い違っていた。enum 定数を static 文脈として扱うようにした
@@ -271,7 +271,7 @@ javac 21 と比べて残る差は次のとおり。名前は「javac と同じ�
 ### Q14. 式本体のラムダの戻り値が R 行になっていなかった
 
 `() -> { return new X(); }` はブロックの `return` で R 行になるが、`() -> new X()` は
-`ReturnStatement` が無いので何も残らなかった。JLS 15.27.2 で式本体は `return 式;` と同じなので、
+`ReturnStatement` が無いので何も残らなかった。JLS 15.27.4 で式本体は「その式の値を返す」ので `return 式;` と同じであり、
 `visit(LambdaExpression)` で本体が式なら同じ条件で R 行を書く。
 
 あわせて、その R 行を使う経路を足した。`s.get().describe()` の `s.get()` の出所は

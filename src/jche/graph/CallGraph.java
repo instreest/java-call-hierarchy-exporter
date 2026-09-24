@@ -9,6 +9,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
+import jche.cache.ModifierTokens;
 import jche.extension.Hint;
 
 /**
@@ -52,6 +53,11 @@ public final class CallGraph {
     int[] argOriginIds;
     /** エッジごとの、呼び出し箇所を囲む条件分岐（jche.cache.Guard）。-1 なら条件なし */
     int[] guardIds;
+    /**
+     * エッジごとの、呼び出しを修飾する型（JLS 13.1。C 行の qualifier）。-1 なら宣言した型と同じ。
+     * 値は出所と同じ共有プールのインデックス（型名は激しく重複するため）
+     */
+    int[] qualifierIds;
     private final ArrayList<String> originPool = new ArrayList<>();
     private final HashMap<String, Integer> originPoolIndex = new HashMap<>();
 
@@ -209,6 +215,20 @@ public final class CallGraph {
         return (i < 0) ? null : originPool.get(i);
     }
 
+    /**
+     * 呼び出しを修飾する型（JLS 13.1）。呼び出し先を宣言した型と同じなら null。
+     * CHA の候補はこの型の部分型に限られる（{@link CallResolver} の段 1）
+     */
+    public String qualifierOf(int edgeIndex) {
+        int i = qualifierIds[edgeIndex];
+        return (i < 0) ? null : originPool.get(i);
+    }
+
+    /** 構築時: エッジの修飾する型を記録する（空なら何もしない） */
+    void setQualifier(int pos, String qualifier) {
+        qualifierIds[pos] = internOrigin(qualifier);
+    }
+
     /** エッジに結び付いた証拠。無ければ空 */
     public List<Hint> hintsOf(int edgeIndex) {
         int i = edgeHint[edgeIndex];
@@ -273,7 +293,58 @@ public final class CallGraph {
      */
     public int implementationOf(String typeFqn, int calleeId) {
         return search(typeFqn, methods.signature(calleeId),
-                overrides.overridersOf(methods.key(calleeId)));
+                overrides.overridersOf(methods.key(calleeId)), packageAccessOf(calleeId));
+    }
+
+    /**
+     * 呼び出し先がパッケージアクセス（public / protected / private のどれでもない）の、ソースにある
+     * 宣言なら、そのパッケージ。そうでなければ null。
+     *
+     * パッケージアクセスのメソッドは、同じパッケージで宣言されたメソッドからしか上書きされない
+     * （JLS 8.4.8.1）。別パッケージのサブクラスが同じシグネチャを宣言しても、それは別のメソッドで、
+     * 親の型で呼んだときには動かない。修飾子は D 行からしか分からないので、jar のメソッドには使わない
+     * （分からないものは「判定しない」に倒す）。
+     */
+    private String packageAccessOf(int calleeId) {
+        if (!methods.hasSource(calleeId)) {
+            return null;
+        }
+        String mods = methods.mods(calleeId);
+        if (ModifierTokens.has(mods, "public") || ModifierTokens.has(mods, "protected")
+                || ModifierTokens.has(mods, "private")) {
+            return null;
+        }
+        return methods.pkg(calleeId);
+    }
+
+    /**
+     * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッドを
+     * 上書きしているか（JLS 8.4.8.1）。
+     *
+     * 直接は上書きできないが、推移的には上書きしうる。{@code pkg} の中の中間の型が同じシグネチャを
+     * public か protected で宣言し直していれば、その宣言は元のメソッドを上書きしていて
+     * （同じパッケージなので）、別パッケージの宣言はその中間の宣言を上書きできる。
+     * 親型をすべて見て、そういう中間の宣言が 1 つでもあれば上書きとみなす（取りこぼさない側に倒す）。
+     */
+    private boolean overridesAcrossPackage(int id, String sig, String pkg) {
+        ArrayDeque<String> queue = new ArrayDeque<>(hierarchy.directSupertypes(methods.typeFqn(id)));
+        Set<String> seen = new HashSet<>(queue);
+        while (!queue.isEmpty()) {
+            String t = queue.poll();
+            int mid = methods.idOf(t + "#" + sig);
+            if (mid >= 0 && pkg.equals(methods.pkg(mid))) {
+                String mods = methods.mods(mid);
+                if (ModifierTokens.has(mods, "public") || ModifierTokens.has(mods, "protected")) {
+                    return true;
+                }
+            }
+            for (String sup : hierarchy.directSupertypes(t)) {
+                if (seen.add(sup)) {
+                    queue.add(sup);
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -296,7 +367,7 @@ public final class CallGraph {
      * 契約表の仕組みがシグネチャで名指しする以上、ここで新たに生じるものではない。
      */
     public int implementationOfSignature(String typeFqn, String sig) {
-        return search(typeFqn, sig, overrides.overridersOfSignature(sig));
+        return search(typeFqn, sig, overrides.overridersOfSignature(sig), null);
     }
 
     /**
@@ -311,8 +382,11 @@ public final class CallGraph {
      *
      * @param overriders その呼び出し先を上書きしているメソッド。無ければ null
      *                   （その場合はキーの照合だけになる＝ジェネリクスを使わない大多数）
+     * @param packageAccess 呼び出し先がパッケージアクセスなら、その宣言のパッケージ。別パッケージの
+     *                   同じシグネチャの宣言は上書きではないので飛ばして親へ進む（JLS 8.4.8.1）。
+     *                   O 行の上書きは JDT の判定（{@code IMethodBinding.overrides}）なので、ここでは見ない
      */
-    private int search(String typeFqn, String sig, IntArray overriders) {
+    private int search(String typeFqn, String sig, IntArray overriders, String packageAccess) {
         if (typeFqn == null || typeFqn.isEmpty()) {
             return -1;
         }
@@ -332,7 +406,9 @@ public final class CallGraph {
                 }
             }
             int id = methods.idOf(t + "#" + sig);
-            if (id >= 0 && methods.hasBody(id)) {
+            if (id >= 0 && methods.hasBody(id)
+                    && (packageAccess == null || packageAccess.equals(methods.pkg(id))
+                        || overridesAcrossPackage(id, sig, packageAccess))) {
                 return id;
             }
             for (String sup : hierarchy.directSupertypes(t)) {

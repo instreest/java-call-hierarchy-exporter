@@ -63,7 +63,7 @@ public class Feature {
     }
 
     /**
-     * char と int は二項数値昇格で比較される（JLS 5.6.2）。{@code 'A' == 65} は真なので、
+     * char と int は数値昇格で比較される（JLS 5.6）。{@code 'A' == 65} は真なので、
      * {@code code('A')} の経路では full() に辿り着く
      */
     public void code(char c) {

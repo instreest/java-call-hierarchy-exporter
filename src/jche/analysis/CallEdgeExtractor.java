@@ -200,13 +200,37 @@ public final class CallEdgeExtractor {
                 continue;
             }
             result.errors++;
-            if ((problem.getID() & IProblem.Syntax) != 0) {
+            if (isSyntaxError(problem.getID())) {
                 result.syntaxErrors++;
             }
         }
         collectImports(cu, result);
         cu.accept(new FactVisitor(cu, result, recordAllConditions));
         return result;
+    }
+
+    /**
+     * 本体を読めていない構文エラーか。
+     *
+     * JDT は {@code var} の使い方の誤り（JLS 14.4.1・JLS 3.9。{@code class var}、
+     * 初期化子の無い {@code var}、{@code var} の配列など）にも {@link IProblem#Syntax} の印を付けるが、
+     * これらは構文を最後まで読んだあとで検査されるもので、本体の呼び出しはすべて AST に残っている。
+     * 構文エラーに数えると「このファイルの呼び出しは出力に出ない」と事実と違う警告になるので外す
+     * （エラーとしては {@link FileAnalysis#errors} に数えたまま）。
+     * Java 10 より前のコードで {@code var} を型名に使っているときに、source.level を指定しないと出る
+     * （{@code docs/syntax-error-report-qa.md} の Q7）。
+     */
+    static boolean isSyntaxError(int problemId) {
+        if ((problemId & IProblem.Syntax) == 0) {
+            return false;
+        }
+        return switch (problemId) {
+            case IProblem.VarLocalMultipleDeclarators, IProblem.VarLocalCannotBeArray,
+                 IProblem.VarLocalReferencesItself, IProblem.VarLocalWithoutInitizalier,
+                 IProblem.VarIsReserved, IProblem.VarIsReservedInFuture, IProblem.VarIsNotAllowedHere,
+                 IProblem.VarCannotBeMixedWithNonVarParams, IProblem.VarCannotBeUsedWithTypeArguments -> false;
+            default -> true;
+        };
     }
 
     /**
