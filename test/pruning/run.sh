@@ -12,16 +12,15 @@
 #   - 打ち切られなければならない（pruned / resolved）… 対照。仕組みごと効かなくして通すことを防ぐ
 #     （真偽値の定数・int の定数・16 進の定数・文字列 / ボックス型 / 列挙型の equals・enum の switch・
 #       書き換えない変数の別名・定数フィールドを写した変数・| を含む文字列の定数・new だけのローカル変数・
-#       コンストラクタで受け取るフィールド・識別子の形の文字列を返すメソッド・契約表のキーになる戻り値）
+#       コンストラクタで受け取るフィールド・識別子の形の文字列を返すメソッド・契約表のキーになる戻り値・
+#       上書きされないメソッド（static・private・final・継承だけ）の戻り値・上書きされない @Bean メソッド）
 #
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
 # 起点は「呼び出し元が無いメソッド」（entry.packages が空）なので、ケースどうしは混ざらない。
-# 契約表（work/contracts.txt）は KeyFactory と SepFactory の行だけで、それを使うケースにしか効かない。
-#
-# 期待の前に char: を付けたケースは「特性の記録（characterization）」で、今の読み手の誤った振る舞いを
-# そのまま書いてある（値が出所の文字列の文法の文字 | ; { を含むと、読み手が値を途中で切って読み違える）。
-# 値の読み手を文字列から値の表へ移すコミット（stage B の B3）で、char: を外して正しい期待に書き換える。
+# 契約表（work/contracts.txt）は KeyFactory・SepFactory・EnumKeyFac の行だけで、それを使うケースにしか効かない。
+# DI（Spring）の Bean 登録は Sb・Sk・Sn で始まる型だけに付ける（Dao の実装を Bean にすると、引数やフィールドで
+# 受け取った Dao の呼び出しがすべて段 5 で絞られ、他のケースが変わってしまうため）。
 #
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
 # （test/ctorbody/run.sh と同じ経路。JCHE_CP / JCHE_CLASSES / JCHE_JAVA / JCHE_JAVAC で差し替えられる）。
@@ -73,6 +72,7 @@ pr.SepFactory#get("USER") => pr.DaoA
 pr.SepFactory#get("USER|X") => pr.DaoB
 pr.SepFactory#get("S") => pr.DaoA
 pr.SepFactory#get("S;T") => pr.DaoB
+pr.EnumKeyFac#get("pr.EkMode.X") => pr.DaoA
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -122,6 +122,17 @@ public class SepFactory {
     }
 }
 EOF
+# DI（Spring）の注釈。単純名で照合するので、同じ名前の注釈型をここで宣言すれば Spring の jar は要らない
+cat > "$SRC/Bean.java" <<'EOF'
+package pr;
+
+@interface Bean { }
+EOF
+cat > "$SRC/Autowired.java" <<'EOF'
+package pr;
+
+@interface Autowired { }
+EOF
 # キーの文字列で具象クラスを返すファクトリ。契約表の 1 行（"A" => DaoA）で絞れる
 cat > "$SRC/KeyFactory.java" <<'EOF'
 package pr;
@@ -144,7 +155,9 @@ CASES=()
 #     listed         その呼び出しの行が候補として出る（絞り込みで落ちていない）
 #     resolved:<種別> その行の resolved-by が <種別>（RESOLVED:LOCAL_NEW など。絞り込みが効く対照）
 #     absent         その呼び出しの行が無い（絞り込みで別の実装に決まった対照）
-#     char:<期待>    特性の記録（上の説明）。<期待> と同じに確かめ、OK の行に [特性] と付ける
+#     pruned=<値>    pruned に加えて、打ち切りの注記の値が <値>（注記の「= <値>)」。値を切らずに読んだことを見る）
+#     from:<起点>    その呼び出しの行のうち、起点（root 列）が <起点> の行がある（呼び出し先がどこからも呼ばれず
+#                    それ自身が起点になった行と区別する。リフレクションで繋ぐ先を取り違えると、正しい先は起点に回る）
 #   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける。
 #   クラス名を / で始めると無名パッケージのクラスになる（/Kind なら work/src/Kind.java。呼び出し元も /Kind.m と書く）
 case_() {
@@ -1137,6 +1150,57 @@ public class FacKeyRet {
 }
 EOF
 
+# 返す文字列が以前の出所の文字列の文法の文字（| ;）を含んでも、値を切り詰めずにそのまま使う
+# （以前の読み手は値を途中で切って読み違えるので、こういう戻り値を U（分からない）として渡していた。
+# 読み手が値の表を読むようになって外した。docs/cache-unification-qa.md の Q9）
+case_ reachable PipeRetEq PipeRetEq.run PipeRetEq.hit "| を含む文字列（\"a|b\"）を返すメソッドの値をそのまま読み、s.equals(\"a|b\") を打ち切らない" <<'EOF'
+package pr;
+
+public class PipeRetEq {
+    public static void main(String[] args) { run((String) key()); }
+    static Object key() { return (Object) "a|b"; }
+    static void run(String s) {
+        if (s.equals("a|b")) { hit(); }
+        if (!s.equals("a|b")) { miss(); }
+    }
+    static void hit() { System.out.println("h"); }
+    static void miss() { System.out.println("m"); }
+}
+EOF
+expect_ pruned PipeRetEq.run PipeRetEq.miss "対照: 同じ値で !s.equals(\"a|b\") は打ち切る（返す値を U にせず、切り詰めずに読んでいる）"
+
+case_ reachable PipeRetSwitch PipeRetSwitch.sel PipeRetSwitch.exact "| を含む文字列（\"ORDER|DESC\"）を返すメソッドの値で、switch の case \"ORDER|DESC\" を打ち切らない" <<'EOF'
+package pr;
+
+public class PipeRetSwitch {
+    public static void main(String[] args) { sel((String) key()); }
+    static Object key() { Object v = "ORDER|DESC"; return v; }
+    static void sel(String s) {
+        switch (s) {
+            case "ORDER|DESC" -> exact();
+            case "ORDER" -> order();
+            default -> other();
+        }
+    }
+    static void exact() { System.out.println("e"); }
+    static void order() { System.out.println("o"); }
+    static void other() { System.out.println("x"); }
+}
+EOF
+expect_ pruned PipeRetSwitch.sel PipeRetSwitch.order "対照: case \"ORDER\" は打ち切る（| の手前で切って \"ORDER\" と読まない）"
+expect_ pruned PipeRetSwitch.sel PipeRetSwitch.other "対照: default は打ち切る（値が case の 1 つと一致する）"
+
+case_ resolved:RESOLVED:CONTRACT SemiRetKey SemiRetKey.run DaoB.find "; を含むキー（\"S;T\"）を返すメソッドの値で、契約表の SepFactory#get(\"S;T\") に当てる" <<'EOF'
+package pr;
+
+public class SemiRetKey {
+    public static void main(String[] args) { run(); }
+    static void run() { SepFactory.get((String) key()).find(); }
+    static Object key() { Object v = "S;T"; return v; }
+}
+EOF
+expect_ absent SemiRetKey.run DaoA.find "同上（; で切って get(\"S\") の DaoA に当てない）"
+
 # ---------------------------------------------------------------------------
 # 経路の値を読み違えない（stage B の B0。値の表へ移す前に文字列の側で直したもの）
 # ---------------------------------------------------------------------------
@@ -1162,9 +1226,11 @@ public class ReflField {
 EOF
 
 # ---------------------------------------------------------------------------
-# 値が出所の文字列の文法の文字（| ; {）を含む（特性の記録。stage B の B3 で char: を外して期待を直す）
+# 値が以前の出所の文字列の文法の文字（| ; {）を含む。以前の読み手は値を出所の文字列に組み直してから
+# 区切り文字で分けていたので、値を途中で切って読み違えていた。今の読み手は値の表（jche.graph.ValueStore）を
+# 読み、値を切り詰めずに比べる（stage B）
 # ---------------------------------------------------------------------------
-case_ char:pruned SemiArg SemiArg.parse SemiArg.semicolon "特性: 実引数の \";\" を ; で切って空文字と読み、\";\".equals(delim) を打ち切る（B3 の後は reachable）" <<'EOF'
+case_ reachable SemiArg SemiArg.parse SemiArg.semicolon "実引数の \";\" を ; で切って空文字と読み、\";\".equals(delim) を打ち切らない" <<'EOF'
 package pr;
 
 public class SemiArg {
@@ -1184,7 +1250,7 @@ public class SemiArgOther {
 }
 EOF
 
-case_ char:pruned PipeArg PipeArg.parse2 PipeArg.notAb "特性: 実引数の \"a|c\" を | で切って \"a\" と読み、!mode.equals(\"a|b\") を打ち切る（B3 の後は reachable）" <<'EOF'
+case_ reachable PipeArg PipeArg.parse2 PipeArg.notAb "実引数の \"a|c\" を | で切って \"a\" と読み、!mode.equals(\"a|b\") を打ち切らない" <<'EOF'
 package pr;
 
 public class PipeArg {
@@ -1204,7 +1270,7 @@ public class PipeArgSame {
 }
 EOF
 
-case_ char:pruned BraceArg BraceArg.brace BraceArg.hitBrace "特性: 実引数の \"{\" から後ろを入れ子とみなして次の実引数まで飲み込み、\"{\".equals(first) を打ち切る（B3 の後は reachable）" <<'EOF'
+case_ reachable BraceArg BraceArg.brace BraceArg.hitBrace "実引数の \"{\" から後ろを入れ子とみなして次の実引数まで飲み込み、\"{\".equals(first) を打ち切らない" <<'EOF'
 package pr;
 
 public class BraceArg {
@@ -1217,9 +1283,9 @@ public class BraceArg {
     static void braceMiss() { System.out.println("x"); }
 }
 EOF
-expect_ char:reachable BraceArg.brace BraceArg.braceMiss "特性: 飲み込まれた 2 つ目の実引数（\"k\"）は見えないので \"x\".equals(second) を判定しない（B3 の後は pruned）"
+expect_ pruned BraceArg.brace BraceArg.braceMiss "対照: 2 つ目の実引数（\"k\"）も読めるので \"x\".equals(second) は打ち切る（以前は飲み込まれて見えなかった）"
 
-case_ char:resolved:RESOLVED:CONTRACT SepPipeKey SepPipeKey.run DaoA.find "特性: ファクトリのキー \"USER|X\" を | で切って契約表の get(\"USER\") に当てる（B3 の後は get(\"USER|X\") の DaoB）" <<'EOF'
+case_ resolved:RESOLVED:CONTRACT SepPipeKey SepPipeKey.run DaoB.find "ファクトリのキー \"USER|X\" は契約表の get(\"USER|X\") に当てる（| で切って get(\"USER\") に当てない）" <<'EOF'
 package pr;
 
 public class SepPipeKey {
@@ -1227,9 +1293,9 @@ public class SepPipeKey {
     static void run() { SepFactory.get("USER|X").find(); }
 }
 EOF
-expect_ char:absent SepPipeKey.run DaoB.find "特性: 同上（DaoB の行が無い）"
+expect_ absent SepPipeKey.run DaoA.find "同上（get(\"USER\") の DaoA の行が無い）"
 
-case_ char:resolved:RESOLVED:CONTRACT SepSemiKey SepSemiKey.run DaoA.find "特性: ファクトリのキー \"S;T\" を ; で切って契約表の get(\"S\") に当てる（B3 の後は get(\"S;T\") の DaoB）" <<'EOF'
+case_ resolved:RESOLVED:CONTRACT SepSemiKey SepSemiKey.run DaoB.find "ファクトリのキー \"S;T\" は契約表の get(\"S;T\") に当てる（; で切って get(\"S\") に当てない）" <<'EOF'
 package pr;
 
 public class SepSemiKey {
@@ -1237,9 +1303,9 @@ public class SepSemiKey {
     static void run() { SepFactory.get("S;T").find(); }
 }
 EOF
-expect_ char:absent SepSemiKey.run DaoB.find "特性: 同上（DaoB の行が無い）"
+expect_ absent SepSemiKey.run DaoA.find "同上（get(\"S\") の DaoA の行が無い）"
 
-case_ char:pruned HolderSemi HolderSemi.helper HolderSemi.hitHolder "特性: new の実引数 \"a;r=K:x.Y\" を ; で切り、コンストラクタで受け取るフィールドの値を \"a\" と読んで打ち切る（B3 の後は reachable）" <<'EOF'
+case_ reachable HolderSemi HolderSemi.helper HolderSemi.hitHolder "new の実引数 \"a;r=K:x.Y\" を ; で切り、コンストラクタで受け取るフィールドの値を \"a\" と読んで打ち切らない" <<'EOF'
 package pr;
 
 public class HolderSemi {
@@ -1251,6 +1317,375 @@ public class HolderSemi {
     public static void main(String[] args) { new HolderSemi("a;r=K:x.Y").run(); }
 }
 EOF
+
+# ---------------------------------------------------------------------------
+# 戻り値の値（R 行）は、呼び出しがその宣言の本体でしか動かないときだけ使う（CallGraph#hasOverriders）。
+# 部分型が上書きしていれば、実際に動くのは部分型の本体かもしれない。宣言の return の値を当てると、
+# 呼ばれる呼び出しを [UNREACHABLE] にしたり、宣言の本体が返す型へ絞ったりして、上書きした本体の側を落とす。
+# 条件分岐の値（literalOf）・契約表のキー（literalOf）・ファクトリの畳み込み（DataflowBuilder の reduce と
+# 実引数の畳み込み、DataflowResolver の concreteSlotOf）・Class を返すメソッド（classOf）・@Bean の登録の
+# どれで使っても同じ
+# ---------------------------------------------------------------------------
+case_ reachable OvrLit OvrLit.chk OvrLit.notAb "上書きされうるメソッド b.mode() の値を、宣言（OvrLitBase）の return \"a|b\" と読んで打ち切らない" <<'EOF'
+package pr;
+
+class OvrLitBase { public Object mode() { return "a|b"; } }
+class OvrLitSub extends OvrLitBase { @Override public Object mode() { return "x"; } }
+
+public class OvrLit {
+    public static void main(String[] args) { o1(new OvrLitSub()); }
+    static void o1(OvrLitBase b) { chk((String) b.mode()); }
+    static void chk(String s) {
+        if (!s.equals("a|b")) { notAb(); }
+        if (s.equals("x")) { isX(); }
+    }
+    static void notAb() { System.out.println("n"); }
+    static void isX() { System.out.println("x"); }
+}
+EOF
+expect_ reachable OvrLit.chk OvrLit.isX "同上（上書きした本体が返す \"x\" の側の s.equals(\"x\") も打ち切らない）"
+
+case_ listed OvrKey OvrKey.run DaoA.find "上書きされうるメソッド c.key() の値（宣言は \"USER|X\"）を契約表のキーにして、get(\"USER|X\") の DaoB に絞らない" <<'EOF'
+package pr;
+
+class OvrKeyCfg { public Object key() { return "USER|X"; } }
+class OvrKeyProd extends OvrKeyCfg { @Override public Object key() { return "S"; } }
+
+public class OvrKey {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        OvrKeyCfg c = new OvrKeyProd();
+        SepFactory.get((String) c.key()).find();
+    }
+}
+EOF
+expect_ listed OvrKey.run DaoB.find "同上（DaoB も残す）"
+
+case_ listed OvrFac OvrFac.run DaoB.find "上書きされうるファクトリ f.make() の値を、宣言の return new DaoA() と畳んで DaoA に絞らない" <<'EOF'
+package pr;
+
+class OvrFacBase { Dao make() { return new DaoA(); } }
+class OvrFacSub extends OvrFacBase { @Override Dao make() { return new DaoB(); } }
+
+public class OvrFac {
+    public static void main(String[] args) { run(new OvrFacSub()); }
+    static void run(OvrFacBase f) { f.make().find(); }
+}
+EOF
+expect_ listed OvrFac.run DaoA.find "同上（DaoA も残す）"
+
+case_ listed OvrFacDel OvrFacDel.run DaoB.find "委譲 return f.make(); を畳むときも、上書きされうる委譲先の宣言の return で決めない（DataflowBuilder の reduce）" <<'EOF'
+package pr;
+
+class OvrDelBase { Dao make() { return new DaoA(); } }
+class OvrDelSub extends OvrDelBase { @Override Dao make() { return new DaoB(); } }
+
+public class OvrFacDel {
+    public static void main(String[] args) { run(new OvrDelSub()); }
+    static Dao make2(OvrDelBase f) { return f.make(); }
+    static void run(OvrDelBase f) { make2(f).find(); }
+}
+EOF
+expect_ listed OvrFacDel.run DaoA.find "同上（DaoA も残す）"
+
+case_ listed OvrFacArg OvrFacArg.run DaoB.find "実引数 id(f.make()) の f.make() を畳むときも、上書きされうる宣言の return で決めない（DataflowBuilder の実引数の畳み込み）" <<'EOF'
+package pr;
+
+class OvrArgBase { Dao make() { return new DaoA(); } }
+class OvrArgSub extends OvrArgBase { @Override Dao make() { return new DaoB(); } }
+
+public class OvrFacArg {
+    public static void main(String[] args) { run(new OvrArgSub()); }
+    static Dao id(Dao d) { return d; }
+    static Dao wrap(OvrArgBase f) { return id(f.make()); }
+    static void run(OvrArgBase f) { wrap(f).find(); }
+}
+EOF
+expect_ listed OvrFacArg.run DaoA.find "同上（DaoA も残す）"
+
+case_ listed OvrRef OvrRef.useU DaoB.find "束縛したレシーバの型が分からないメソッド参照 b::make の戻り値を、上書きされうる参照先の宣言の return で決めない" <<'EOF'
+package pr;
+
+import java.util.function.Supplier;
+
+class OvrRefBase { Dao make() { return new DaoA(); } }
+class OvrRefSub extends OvrRefBase { @Override Dao make() { return new DaoB(); } }
+
+public class OvrRef {
+    public static void main(String[] args) { viaUnknown(new OvrRefSub()); viaNew(); }
+    static void viaUnknown(OvrRefBase b) { useU(b::make); }
+    static void viaNew() { useN(new OvrRefSub()::make); }
+    static void useU(Supplier<Dao> s) { s.get().find(); }
+    static void useN(Supplier<Dao> s) { s.get().find(); }
+}
+EOF
+expect_ listed OvrRef.useU DaoA.find "同上（DaoA も残す）"
+expect_ resolved:RESOLVED:DATAFLOW_FACTORY OvrRef.useN DaoB.find "対照: 束縛したレシーバが new OvrRefSub() なら、その型で実際に動く本体（OvrRefSub.make）の return で絞る"
+expect_ absent OvrRef.useN DaoA.find "同上（宣言の本体の DaoA の行が無い）"
+
+case_ listed OvrCls OvrCls.run Method.invoke "上書きされうるメソッド b.type() が返す Class を、宣言の return OvrClsA.class と読んでリフレクションを OvrClsA.go に絞らない" <<'EOF'
+package pr;
+
+class OvrClsA { public void go() { System.out.println("a"); } }
+class OvrClsB { public void go() { System.out.println("b"); } }
+class OvrClsBase { Class<?> type() { return OvrClsA.class; } }
+class OvrClsSub extends OvrClsBase { @Override Class<?> type() { return OvrClsB.class; } }
+
+public class OvrCls {
+    public static void main(String[] args) throws Exception { run(new OvrClsSub(), new OvrClsB()); }
+    static void run(OvrClsBase b, Object target) throws Exception { b.type().getMethod("go").invoke(target); }
+}
+EOF
+expect_ absent OvrCls.run OvrClsA.go "同上（OvrClsA.go だけに決めた行が無い）"
+
+case_ listed SbOver SbOver.run SbDaoB.find "@Bean メソッドを部分型の設定クラスが上書きしていれば、上書きした本体が返す型（SbDaoB）も Bean に数え、段 5 で SbDaoA に絞らない" <<'EOF'
+package pr;
+
+interface SbDao { void find(); }
+class SbDaoA implements SbDao { public void find() { System.out.println("a"); } }
+class SbDaoB implements SbDao { public void find() { System.out.println("b"); } }
+class SbCfg { @Bean SbDao dao() { return new SbDaoA(); } }
+class SbCfgTest extends SbCfg { @Override SbDao dao() { return new SbDaoB(); } }
+
+public class SbOver {
+    @Autowired private SbDao dao;
+    public static void main(String[] args) { new SbOver().run(); }
+    void run() { dao.find(); }
+}
+EOF
+expect_ listed SbOver.run SbDaoA.find "同上（SbDaoA も残す）"
+
+# 対照: 上書きされえないメソッドは、これまでどおり return の値を使う（仕組みごと外して通すことを防ぐ）
+case_ pruned=a\|b OvrStatic OvrStatic.chk OvrStatic.isX "対照: static メソッドは部分型が同じシグネチャを宣言しても隠蔽で上書きではないので、OvrStaticBase.mode() の値 \"a|b\" で打ち切る" <<'EOF'
+package pr;
+
+class OvrStaticBase { static Object mode() { return "a|b"; } }
+class OvrStaticSub extends OvrStaticBase { static Object mode() { return "x"; } }
+
+public class OvrStatic {
+    public static void main(String[] args) { chk((String) OvrStaticBase.mode()); }
+    static void chk(String s) { if (s.equals("x")) { isX(); } }
+    static void isX() { System.out.println("x"); }
+}
+EOF
+
+case_ pruned=a\|b OvrPriv OvrPriv.chk OvrPriv.isX "対照: private メソッドは部分型が同じシグネチャを宣言しても別のメソッドなので、mode() の値 \"a|b\" で打ち切る" <<'EOF'
+package pr;
+
+public class OvrPriv {
+    private Object mode() { return "a|b"; }
+    public static void main(String[] args) { new OvrPrivSub().run(); }
+    void run() { chk((String) mode()); }
+    static void chk(String s) { if (s.equals("x")) { isX(); } }
+    static void isX() { System.out.println("x"); }
+}
+
+class OvrPrivSub extends OvrPriv {
+    @SuppressWarnings("unused")
+    private Object mode() { return "x"; }
+}
+EOF
+
+case_ pruned=a\|b OvrFinal OvrFinal.chk OvrFinal.isX "対照: final メソッドは上書きされないので、b.mode() の値 \"a|b\" で打ち切る" <<'EOF'
+package pr;
+
+class OvrFinalBase { final Object mode() { return "a|b"; } }
+class OvrFinalSub extends OvrFinalBase { }
+
+public class OvrFinal {
+    public static void main(String[] args) { run(new OvrFinalSub()); }
+    static void run(OvrFinalBase b) { chk((String) b.mode()); }
+    static void chk(String s) { if (s.equals("x")) { isX(); } }
+    static void isX() { System.out.println("x"); }
+}
+EOF
+
+case_ resolved:RESOLVED:DATAFLOW_FACTORY OvrInh OvrInh.run DaoB.find "対照: 部分型が上書きせずに継承しているだけなら、宣言の return new DaoB() で絞る" <<'EOF'
+package pr;
+
+class OvrInhBase { Dao make() { return new DaoB(); } }
+class OvrInhSub extends OvrInhBase { }
+
+public class OvrInh {
+    public static void main(String[] args) { run(new OvrInhSub()); }
+    static void run(OvrInhBase f) { f.make().find(); }
+}
+EOF
+expect_ absent OvrInh.run DaoA.find "同上（DaoA の行が無い）"
+
+case_ resolved:RESOLVED:SPRING_DI SbKeep SbKeep.run SkDaoA.find "対照: 上書きされない @Bean メソッドが返す型（SkDaoA）だけが Bean なら、段 5 で SkDaoA に絞る" <<'EOF'
+package pr;
+
+interface SkDao { void find(); }
+class SkDaoA implements SkDao { public void find() { System.out.println("a"); } }
+class SkDaoB implements SkDao { public void find() { System.out.println("b"); } }
+class SkCfg { @Bean SkDao dao() { return new SkDaoA(); } }
+class SkCfgSub extends SkCfg { }
+
+public class SbKeep {
+    @Autowired private SkDao dao;
+    public static void main(String[] args) { new SbKeep().run(); }
+    void run() { dao.find(); }
+}
+EOF
+expect_ absent SbKeep.run SkDaoB.find "同上（SkDaoB の行が無い）"
+
+# ---------------------------------------------------------------------------
+# 値の表の読み手（stage B で値の表を読むようにした DataflowResolver・GuardEvaluator・StreamingTreeWalker・
+# FactoryCalls・SpringBeans）の分かれ道。どれも 1 行の取り違えで、呼び出しを黙って落とすか、
+# 違う先へ繋ぐか、打ち切りが効かなくなる（test/dataflow の TraceCheck が消えた後も守るため）
+# ---------------------------------------------------------------------------
+case_ resolved:UNEXPANDED:REFLECTION ReflNullArg ReflNullArg.main ReflNullArg.take "getMethod の引数型に値の分からない実引数（null）があれば、引数の数（n=）まで見て型は分からないとし、名前の一致する take() と take(String) の両方を候補に残す" <<'EOF'
+package pr;
+
+public class ReflNullArg {
+    public void take() { a(); }
+    public void take(String s) { b(); }
+    static void a() { System.out.println("a"); }
+    static void b() { System.out.println("b"); }
+    public static void main(String[] args) throws Exception {
+        ReflNullArg.class.getMethod("take", (Class<?>) null).invoke(new ReflNullArg(), "x");
+    }
+}
+EOF
+
+case_ from:ReflCtor.main ReflCtor ReflCtor.'<init>' ReflCtor.withArg "getConstructor(String.class) の引数型は第 1 引数から数え、newInstance(\"x\") を <init>(String) に繋ぐ（<init>() に繋がない）" <<'EOF'
+package pr;
+
+public class ReflCtor {
+    public ReflCtor() { noArg(); }
+    public ReflCtor(String s) { withArg(); }
+    static void noArg() { System.out.println("0"); }
+    static void withArg() { System.out.println("1"); }
+    public static void main(String[] args) throws Exception {
+        ReflCtor.class.getConstructor(String.class).newInstance("x");
+    }
+}
+EOF
+
+case_ pruned=\; SparseArg SparseArg.parse SparseArg.miss "値の分からない実引数（null）の後ろの実引数 \";\" を、実引数の位置（2 番目）の引数に当てる（詰めて 1 番目に当てない）" <<'EOF'
+package pr;
+
+public class SparseArg {
+    public static void main(String[] args) { parse(null, ";"); }
+    static void parse(String s, String d) {
+        if (d.equals("x")) { miss(); }
+        if (!";".equals(s)) { hitS(); }
+    }
+    static void miss() { System.out.println("m"); }
+    static void hitS() { System.out.println("s"); }
+}
+EOF
+expect_ reachable SparseArg.parse SparseArg.hitS "同上（1 番目の引数 s は null で値が分からないので、!\";\".equals(s) を打ち切らない）"
+
+case_ resolved:UNEXPANDED:LAMBDA FieldTask FieldTask.go Runnable.run "フィールドの値が関数型の値（Z）でないとき（makeTask() の戻り値）は、そのフィールドのラムダとして繋がない" <<'EOF'
+package pr;
+
+public class FieldTask {
+    private final Runnable task = makeTask();
+    static Runnable makeTask() { return () -> System.out.println("x"); }
+    void go() { task.run(); }
+    public static void main(String[] args) { new FieldTask().go(); }
+}
+EOF
+expect_ absent FieldTask.go FieldTask.makeTask "同上（task.run() を makeTask へ繋いだ行が無い）"
+
+case_ listed ClsRet ClsRet.main Method.invoke "Class を返すメソッドの return が 2 通り（ClsRet.class と ClsRetOther.class）なら、先頭の return だけでリフレクションを決めない" <<'EOF'
+package pr;
+
+class ClsRetOther { public void take(String s) { System.out.println("o"); } }
+
+public class ClsRet {
+    public void take(String s) { System.out.println("c"); }
+    static Class<?> owner(boolean b) {
+        if (b) { return ClsRet.class; }
+        return ClsRetOther.class;
+    }
+    public static void main(String[] args) throws Exception {
+        owner(args.length > 0).getMethod("take", String.class).invoke(new ClsRet(), "x");
+    }
+}
+EOF
+expect_ absent ClsRet.main ClsRet.take "同上（ClsRet.take だけに決めた行が無い）"
+
+case_ pruned=a\;b HolderPass HolderPass.helper HolderPass.miss "対照: コンストラクタで受け取るフィールドは、経路の実引数の値（\"a;b\"）をそのまま次の呼び出しへ運び、s.equals(\"zz\") を打ち切る" <<'EOF'
+package pr;
+
+public class HolderPass {
+    private final String v;
+    HolderPass(String v) { this.v = v; }
+    public static void main(String[] args) { new HolderPass("a;b").run(); }
+    void run() { helper(v); }
+    static void helper(String s) { if (s.equals("zz")) { miss(); } }
+    static void miss() { System.out.println("m"); }
+}
+EOF
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD InjParam InjParam.run DaoB.find "対照: new InjParam(d) の実引数 d（呼び出し元の引数）は呼び出し元の経路で解き、コンストラクタで受け取るフィールドを DaoB に絞る" <<'EOF'
+package pr;
+
+public class InjParam {
+    private final Dao dao;
+    InjParam(Dao dao) { this.dao = dao; }
+    public static void main(String[] args) { make(new DaoB()); }
+    static void make(Dao d) { new InjParam(d).run(); }
+    void run() { dao.find(); }
+}
+EOF
+expect_ absent InjParam.run DaoA.find "同上（DaoA の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_FACTORY IdFac IdFac.run DaoB.find "対照: 引数をそのまま返すメソッド id(d) の d は呼び出し元の経路で解き、DaoB に絞る" <<'EOF'
+package pr;
+
+public class IdFac {
+    static Dao id(Dao x) { return x; }
+    public static void main(String[] args) { run(new DaoB()); }
+    static void run(Dao d) { id(d).find(); }
+}
+EOF
+expect_ absent IdFac.run DaoA.find "同上（DaoA の行が無い）"
+
+case_ pruned=q MultiAtom MultiAtom.run MultiAtom.miss "対照: && の条件に値の分からない項（s）があっても、残りの項（t.equals(\"zz\")）で打ち切る" <<'EOF'
+package pr;
+
+public class MultiAtom {
+    public static void main(String[] args) { run(String.valueOf(args.length), "q"); }
+    static void run(String s, String t) { if (s.equals("a") && t.equals("zz")) { miss(); } }
+    static void miss() { System.out.println("m"); }
+}
+EOF
+
+case_ listed EnumKey EnumKey.run DaoB.find "引数で渡った列挙定数（EkMode.X）を文字列のキー \"pr.EkMode.X\" と取り違えて、契約表の get(\"pr.EkMode.X\") の DaoA に絞らない" <<'EOF'
+package pr;
+
+enum EkMode { X, Y }
+
+class EnumKeyFac {
+    static Dao get(Object key) { return (key.hashCode() > 0) ? new DaoA() : new DaoB(); }
+}
+
+public class EnumKey {
+    public static void main(String[] args) { run(EkMode.X); }
+    static void run(EkMode m) { EnumKeyFac.get(m).find(); }
+}
+EOF
+expect_ listed EnumKey.run DaoA.find "同上（DaoA も残す）"
+
+case_ listed SbName SbName.run SnDaoA.find "@Bean メソッドが返す Class の値（SnDaoA.class）を Bean の型と取り違えず（new の値だけを登録する）、段 5 で SnDaoA に絞らない" <<'EOF'
+package pr;
+
+interface SnDao { void find(); }
+class SnDaoA implements SnDao { public void find() { System.out.println("a"); } }
+class SnDaoB implements SnDao { public void find() { System.out.println("b"); } }
+class SnCfg { @Bean Class<?> daoType() { return SnDaoA.class; } }
+
+public class SbName {
+    @Autowired private SnDao dao;
+    public static void main(String[] args) { new SbName().run(); }
+    void run() { dao.find(); }
+}
+EOF
+expect_ listed SbName.run SnDaoB.find "同上（SnDaoB も残す）"
 
 # ---------------------------------------------------------------------------
 # 解析して確かめる
@@ -1279,11 +1714,6 @@ for c in "${CASES[@]}"; do
     IFS=$'\t' read -r expect caller callee desc <<< "$c"
     rows=$(rows_of "$caller" "$callee")
     label="$caller -> $callee: $desc"
-    # 特性の記録（char:）は同じに確かめ、OK の行で分かるようにする
-    if [ "${expect#char:}" != "$expect" ]; then
-        expect=${expect#char:}
-        label="[特性] $label"
-    fi
     if [ "$expect" = absent ]; then
         if [ -z "$rows" ]; then
             ok "$label"
@@ -1310,6 +1740,25 @@ for c in "${CASES[@]}"; do
                 echo "       $(head -1 <<< "$rows")"
             else
                 ok "$label"
+            fi ;;
+        pruned=*)
+            want=${expect#pruned=}
+            if grep -qv '\[UNREACHABLE\]' <<< "$rows"; then
+                ng "$label（打ち切られていない）"
+                echo "       $(head -1 <<< "$rows")"
+            elif ! grep -qF "= $want)" <<< "$rows"; then
+                ng "$label（注記の値が $want ではない）"
+                echo "       $(head -1 <<< "$rows")"
+            else
+                ok "$label"
+            fi ;;
+        from:*)
+            want=${expect#from:}
+            if awk -F, -v r="$want" '$5 == r { f = 1 } END { exit !f }' <<< "$rows"; then
+                ok "$label"
+            else
+                ng "$label（起点が $want の行がありません）"
+                echo "       $(head -1 <<< "$rows")"
             fi ;;
         resolved:*)
             want=${expect#resolved:}

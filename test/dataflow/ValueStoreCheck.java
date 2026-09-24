@@ -90,7 +90,7 @@ public final class ValueStoreCheck {
         for (int m = 0; m < graph.methodCount(); m++) {
             List<String> typed = new ArrayList<>();
             for (int k = 0; k < graph.returnCount(m); k++) {
-                String s = returnText(vs, lr, graph.returnAt(m, k));
+                String s = returnText(lr, graph.returnAt(m, k));
                 if (!typed.contains(s)) {
                     typed.add(s);
                 }
@@ -185,15 +185,9 @@ public final class ValueStoreCheck {
         return ok;
     }
 
-    /** 戻り値 1 つを、今の文字列の側と同じ規則で文字列にする（追跡できない・暫定の読めない文字列は U） */
-    private static String returnText(ValueStore vs, LegacyRender lr, int ref) {
-        if (ref == ValueStore.NONE) {
-            return "U";
-        }
-        if (vs.kind(ref) == 'L' && !jche.cache.Origin.isNameShaped(vs.value(ref))) {
-            return "U";   // CallGraphBuilder#unreadableLiteral（暫定。値を正確に読むようになったら外す）
-        }
-        return lr.render(ref);
+    /** 戻り値 1 つを、今の文字列の側と同じ規則で文字列にする（追跡できないものは U） */
+    private static String returnText(LegacyRender lr, int ref) {
+        return (ref == ValueStore.NONE) ? "U" : lr.render(ref);
     }
 
     private static void same(List<String> problems, String what, String legacy, String typed) {

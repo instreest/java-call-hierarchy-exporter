@@ -1,5 +1,7 @@
 # values ケースの契約表。キーが出所の文法の文字（| と ;）を含むファクトリ呼び出しを、どちらのキーで引いたかで
-# 見分ける（V5・V6。project/src/vals/Keys.java）。今の読み手は値を | ; の手前で切るので、短いほうの行に当たる
+# 見分ける（V5・V6。project/src/vals/Keys.java）。長いほう（書いたとおりのキー）の行に当たるのが正しい
+# （以前の読み手は値を | ; の手前で切って短いほうの行に当てていた）。短いほうの行は当たらないので、
+# 実行のたびに「当たらなかった行」として warnings.txt に載る
 vals.DaoFactory#get("USER") => vals.UserDaoImpl
 vals.DaoFactory#get("USER|X") => vals.OrderDaoImpl
 vals.DaoFactory#get("A") => vals.UserDaoImpl

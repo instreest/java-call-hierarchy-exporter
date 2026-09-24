@@ -1,14 +1,14 @@
 package vals;
 
 // V3 / V3c / V3e / V3k: 値が | を含む。
-//   V3  parse2("x", "a|c") の経路の !mode.equals("a|b")
-//       移す前: 実引数を | で切って "a" と読み、期待値も "a" に切るので「一致する」と見て notAb を
-//               [UNREACHABLE]（= a）にする（誤り）。移した後: notAb はふつうの行
-//   V3c parse2b("x", "a|b") の経路の同じ条件。移す前も後も [UNREACHABLE] だが、注記の値が
-//       移す前は "a"（切った値）、移した後は "a|b"
-//   V3e eq("a|b") の経路の m.equals("a|b")。移す前も後も成立する（hit はふつうの行）。
-//       期待値だけを正確に読み、実引数を切ったままにすると誤って打ち切る
-//   V3k 定数どうしの MODE.equals("a|b")。移す前も後も成立する（hitConst はふつうの行）
+//   V3  parse2("x", "a|c") の経路の !mode.equals("a|b")。期待: notAb はふつうの行。
+//       以前の誤り: 実引数を | で切って "a" と読み、期待値も "a" に切るので「一致する」と見て notAb を
+//               [UNREACHABLE]（= a）にしていた
+//   V3c parse2b("x", "a|b") の経路の同じ条件。期待: [UNREACHABLE] で、注記の値は "a|b"
+//       （以前は切った値 "a"）
+//   V3e eq("a|b") の経路の m.equals("a|b")。成立する（hit はふつうの行）。
+//       期待値だけを正確に読み、実引数を切ったままにすると誤って打ち切る（両方を切らずに読むことの確認）
+//   V3k 定数どうしの MODE.equals("a|b")。成立する（hitConst はふつうの行）
 public class Pipe {
     static final String MODE = "a|b";
 

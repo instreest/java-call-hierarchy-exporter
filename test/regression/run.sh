@@ -38,9 +38,9 @@
 #   values               … 値そのもの（文字列リテラル・定数）が出所の文字列の文法の文字（| ; { }）を含む題材
 #                          （values/project）。config.properties（expected/。契約表のひな形 contracts-suggested.txt
 #                          も比べる）→ 同じ設定でキャッシュを再利用 → config-nodataflow.properties
-#                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。expected/ は
-#                          値の読み手を値の表へ移す前（stage B の B1）の「特性の記録」で、今の読み手の読み違いを
-#                          そのまま含む（values/config.properties の冒頭の説明）
+#                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。以前の読み手は値を
+#                          その文字の手前で切って読み違えていた。expected/ は値を切り詰めずに読んだ正しい結果
+#                          （values/config.properties の冒頭の説明）
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE

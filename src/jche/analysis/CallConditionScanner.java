@@ -49,14 +49,20 @@ import jche.util.Messages;
 public final class CallConditionScanner {
 
     /**
-     * 呼び出し1件に効いている条件1つ
+     * 呼び出し1件に効いている条件1つ（アトム {@link Guard.Atom} と、判定される式のノードの種別と値）
      *
-     * @param op      判定の種別（{@link Guard#EQ} など）
-     * @param subject 判定される式の出所の頭（{@code A:0} / {@code V:true}。分からなければ {@code U}）
-     * @param values  比較する値（{@link Guard#VALUE_SEP} 区切り。{@link Guard#values}）
-     * @param text    ソースに書かれていた条件式
+     * @param op           判定の種別（{@link Guard#EQ} など）
+     * @param subjectType  判定される式の種別（{@link Origin#PARAM} / {@link Origin#CONST} など。
+     *                     分からなければ {@link Origin#UNKNOWN}）
+     * @param subjectValue 判定される式の値（引数なら引数位置。分からなければ空文字）
+     * @param values       比較する値（切り詰めない。書き手のアトムの値そのもの）
+     * @param text         ソースに書かれていた条件式
      */
-    public record Condition(String op, String subject, String values, String text) {
+    public record Condition(String op, char subjectType, String subjectValue, List<String> values, String text) {
+
+        public Condition {
+            values = List.copyOf(values);
+        }
 
         /** 経路ごとの値と突き合わせて判定できる条件か */
         public boolean decidable() {
@@ -70,7 +76,7 @@ public final class CallConditionScanner {
 
         /** 判定対象の由来（「引数1」「定数」「不明」） */
         public String subjectKind() {
-            return switch (Origin.kindOf(subject)) {
+            return switch (subjectType) {
                 case Origin.PARAM -> "param " + paramNumber();
                 case Origin.CONST, Origin.LITERAL, Origin.CLASS -> "constant";
                 default -> "unknown";
@@ -79,21 +85,36 @@ public final class CallConditionScanner {
 
         private String paramNumber() {
             try {
-                return String.valueOf(Integer.parseInt(Origin.valueOf(subject)) + 1);
+                return String.valueOf(Integer.parseInt(subjectValue) + 1);
             } catch (NumberFormatException ignore) {
                 return "?";
             }
         }
 
-        /** 成立する条件を人が読める形にする（「= false」「∈ {1, 2}」など） */
+        /**
+         * 成立する条件を人が読める形にする（「= false」「∈ {1, 2}」など）。値の中の制御文字は空白にする
+         * （{@link Guard#clean}。CSV の 1 セルに収めるため）
+         */
         public String expectation() {
             return switch (op) {
-                case Guard.EQ -> "= " + values;
-                case Guard.NE -> "≠ " + values;
-                case Guard.IN -> "∈ {" + String.join(", ", Guard.valuesOf(values)) + "}";
-                case Guard.NOT_IN -> "∉ {" + String.join(", ", Guard.valuesOf(values)) + "}";
+                case Guard.EQ -> "= " + Guard.values(values);
+                case Guard.NE -> "≠ " + Guard.values(values);
+                case Guard.IN -> "∈ {" + joinCleaned() + "}";
+                case Guard.NOT_IN -> "∉ {" + joinCleaned() + "}";
                 default -> "";
             };
+        }
+
+        /** 値を {@code ", "} でつなぐ（それぞれ {@link Guard#clean} を通す） */
+        private String joinCleaned() {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(Guard.clean(values.get(i)));
+            }
+            return sb.toString();
         }
     }
 
@@ -273,16 +294,17 @@ public final class CallConditionScanner {
     }
 
     /**
-     * アトムを条件にする。subject は値グラフ（{@code nodes}）のノードの頭（{@code A:0} / {@code V:true}）にし、
-     * ノードが無い（記録用モードの {@link Guard#UNKNOWN} / {@link Guard#MORE}）なら {@code U}
+     * アトムを条件にする。判定される式は値グラフ（{@code nodes}）のノードの種別と値をそのまま持ち、
+     * ノードが無い（記録用モードの {@link Guard#UNKNOWN} / {@link Guard#MORE}）なら種別 {@link Origin#UNKNOWN}。
+     * 出所の文字列（{@code A:0}）には組み直さないので、定数の値が {@code |} を含んでも切れない
      */
     private static List<Condition> conditionsOf(List<Guard.Atom> guard, List<ValueNode> nodes) {
         List<Condition> conditions = new ArrayList<>(guard.size());
         for (Guard.Atom atom : guard) {
             int id = atom.subject();
-            String subject = (id >= 0 && id < nodes.size())
-                    ? Origin.of(nodes.get(id).kind(), nodes.get(id).value()) : Origin.UNKNOWN_S;
-            conditions.add(new Condition(atom.op(), subject, Guard.values(atom.values()), atom.text()));
+            ValueNode node = (id >= 0 && id < nodes.size()) ? nodes.get(id) : null;
+            conditions.add(new Condition(atom.op(), (node == null) ? Origin.UNKNOWN : node.kind(),
+                    (node == null) ? "" : node.value(), atom.values(), atom.text()));
         }
         return conditions;
     }

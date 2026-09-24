@@ -3,26 +3,26 @@ at Kind.main(Kind.java:7),Kind.check,RESOLVED:STATIC_BOUND:STATIC,1,Kind.main,Ki
 at Kind.check(Kind.java:16),Kind.hitKind,RESOLVED:STATIC_BOUND:STATIC,2,Kind.main,Kind.check,Kind.hitKind
 at Kind.main(Kind.java:7),Kind.make,RESOLVED:STATIC_BOUND:STATIC,1,Kind.main,Kind.make
 at vals.Brace.main(Brace.java:10),Brace.brace,RESOLVED:STATIC_BOUND:STATIC,1,Brace.main,Brace.brace
-at vals.Brace.brace(Brace.java:15),Brace.hitBrace,RESOLVED:STATIC_BOUND:STATIC,2,Brace.main,Brace.brace,Brace.hitBrace,"[UNREACHABLE] not called on this path: condition '""{"".equals(first)' does not hold (argument 1 from the caller = {;1=L:k)"
-at vals.Brace.brace(Brace.java:18),Brace.braceMiss,RESOLVED:STATIC_BOUND:STATIC,2,Brace.main,Brace.brace,Brace.braceMiss
+at vals.Brace.brace(Brace.java:15),Brace.hitBrace,RESOLVED:STATIC_BOUND:STATIC,2,Brace.main,Brace.brace,Brace.hitBrace
+at vals.Brace.brace(Brace.java:18),Brace.braceMiss,RESOLVED:STATIC_BOUND:STATIC,2,Brace.main,Brace.brace,Brace.braceMiss,"[UNREACHABLE] not called on this path: condition '""x"".equals(second)' does not hold (argument 2 from the caller = k)"
 at vals.Delim.main(Delim.java:10),Delim.parse,RESOLVED:STATIC_BOUND:STATIC,1,Delim.main,Delim.parse
-at vals.Delim.parse(Delim.java:19),Delim.semicolon,RESOLVED:STATIC_BOUND:STATIC,2,Delim.main,Delim.parse,Delim.semicolon,"[UNREACHABLE] not called on this path: condition '"";"".equals(delim)' does not hold (argument 2 from the caller = )"
+at vals.Delim.parse(Delim.java:19),Delim.semicolon,RESOLVED:STATIC_BOUND:STATIC,2,Delim.main,Delim.parse,Delim.semicolon
 at vals.Delim.other(Delim.java:14),Delim.parse,RESOLVED:STATIC_BOUND:STATIC,1,Delim.other,Delim.parse
 at vals.Delim.parse(Delim.java:19),Delim.semicolon,RESOLVED:STATIC_BOUND:STATIC,2,Delim.other,Delim.parse,Delim.semicolon,"[UNREACHABLE] not called on this path: condition '"";"".equals(delim)' does not hold (argument 2 from the caller = ,)"
 at vals.Holder.main(Holder.java:29),Holder.run,RESOLVED:NO_OVERRIDE,1,Holder.main,Holder.run
 at vals.Holder.run(Holder.java:15),Holder.helper,RESOLVED:STATIC_BOUND:STATIC,2,Holder.main,Holder.run,Holder.helper
-at vals.Holder.helper(Holder.java:20),Holder.hitHolder,RESOLVED:STATIC_BOUND:STATIC,3,Holder.main,Holder.run,Holder.helper,Holder.hitHolder,"[UNREACHABLE] not called on this path: condition 's.equals(""a;r=K:x.Y"")' does not hold (argument 1 from the caller = a)"
+at vals.Holder.helper(Holder.java:20),Holder.hitHolder,RESOLVED:STATIC_BOUND:STATIC,3,Holder.main,Holder.run,Holder.helper,Holder.hitHolder
 at vals.Keys.v5s(Keys.java:10),OrderDaoImpl.find,UNEXPANDED:CHA,1,Keys.v5s,OrderDaoImpl.find,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 at vals.Keys.v5s(Keys.java:10),UserDaoImpl.find,UNEXPANDED:CHA,1,Keys.v5s,UserDaoImpl.find,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 at vals.Keys.v5s(Keys.java:10),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v5s,DaoFactory.get
-at vals.Keys.v5(Keys.java:14),UserDaoImpl.find,RESOLVED:CONTRACT,1,Keys.v5,UserDaoImpl.find
+at vals.Keys.v5(Keys.java:14),OrderDaoImpl.find,RESOLVED:CONTRACT,1,Keys.v5,OrderDaoImpl.find
 at vals.Keys.v5(Keys.java:14),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v5,DaoFactory.get
-at vals.Keys.v6(Keys.java:18),UserDaoImpl.find,RESOLVED:CONTRACT,1,Keys.v6,UserDaoImpl.find
+at vals.Keys.v6(Keys.java:18),OrderDaoImpl.find,RESOLVED:CONTRACT,1,Keys.v6,OrderDaoImpl.find
 at vals.Keys.v6(Keys.java:18),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v6,DaoFactory.get
 at vals.Pipe.main(Pipe.java:16),Pipe.parse2,RESOLVED:STATIC_BOUND:STATIC,1,Pipe.main,Pipe.parse2
-at vals.Pipe.parse2(Pipe.java:33),Pipe.notAb,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.main,Pipe.parse2,Pipe.notAb,"[UNREACHABLE] not called on this path: condition 'mode.equals(""a|b"")' does not hold (argument 2 from the caller = a)"
+at vals.Pipe.parse2(Pipe.java:33),Pipe.notAb,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.main,Pipe.parse2,Pipe.notAb
 at vals.Pipe.mainB(Pipe.java:20),Pipe.parse2b,RESOLVED:STATIC_BOUND:STATIC,1,Pipe.mainB,Pipe.parse2b
-at vals.Pipe.parse2b(Pipe.java:39),Pipe.notAbB,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.mainB,Pipe.parse2b,Pipe.notAbB,"[UNREACHABLE] not called on this path: condition 'mode.equals(""a|b"")' does not hold (argument 2 from the caller = a)"
+at vals.Pipe.parse2b(Pipe.java:39),Pipe.notAbB,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.mainB,Pipe.parse2b,Pipe.notAbB,"[UNREACHABLE] not called on this path: condition 'mode.equals(""a|b"")' does not hold (argument 2 from the caller = a|b)"
 at vals.Pipe.mainEq(Pipe.java:24),Pipe.eq,RESOLVED:STATIC_BOUND:STATIC,1,Pipe.mainEq,Pipe.eq
 at vals.Pipe.eq(Pipe.java:45),Pipe.hit,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.mainEq,Pipe.eq,Pipe.hit
 at vals.Pipe.mainConst(Pipe.java:28),Pipe.konst,RESOLVED:STATIC_BOUND:STATIC,1,Pipe.mainConst,Pipe.konst

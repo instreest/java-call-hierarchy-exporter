@@ -14,5 +14,5 @@
 
 # 1 site(s)  e.g. at vals.Keys.v5s(Keys.java:10)
 #   candidates: vals.OrderDaoImpl / vals.UserDaoImpl
-# vals.DaoFactory#get("Z") => ??
+# vals.DaoFactory#get("Z|W") => ??
 

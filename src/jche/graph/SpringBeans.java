@@ -162,34 +162,49 @@ public final class SpringBeans {
     }
 
     /**
-     * &#64;Bean メソッドの戻り値の出所から、そのメソッドが登録する具象型を決める。
-     * 返しうる出所が全て同じ {@code new 具象型} のときだけ採る（分岐して複数の型を
-     * 返しうるメソッドは、どれが登録されるか静的には決まらない）
+     * &#64;Bean メソッドの戻り値（値の表の参照。{@link CallGraph#returnAt}）から、そのメソッドが登録する
+     * 具象型を決める。返しうる値が全て同じ {@code new 具象型} のときだけ採る（分岐して複数の型を
+     * 返しうるメソッドは、どれが登録されるか静的には決まらない）。型が同じかは値の番号で比べる
+     * （同じ中身の文字列は同じ番号）。
+     *
+     * <p>コンテナは設定クラスのインスタンスで &#64;Bean メソッドを呼ぶので、部分型の設定クラスがその
+     * メソッドを上書きしていれば（&#64;Bean を付け直していなくても）、動くのは上書きした本体で、登録されるのは
+     * その本体が返す型になる。宣言の本体が返す型だけを登録すると、上書きした本体の型が Bean に数えられず、
+     * 段 5 がもう一方の Bean へ誤って絞る。そこで上書きした本体（{@link CallGraph#overridingImplementations}）
+     * が返す型も同じ名前で登録する。Bean を多く数える側は絞り込みを減らすだけで、呼び出しを落とさない
      */
     void resolveBeanMethods(CallGraph graph) {
         for (Map.Entry<Integer, String> e : beanMethods.entrySet()) {
-            String[] origins = graph.returnOriginsOf(e.getKey());
-            if (origins == null || origins.length == 0) {
-                continue;
-            }
-            String type = null;
-            for (String origin : origins) {
-                if (Origin.kindOf(origin) != Origin.NEW) {
-                    type = null;
-                    break;
+            int methodId = e.getKey();
+            registerReturnedType(graph, methodId, e.getValue());
+            if (graph.hasOverriders(methodId)) {
+                IntArray overriding = graph.overridingImplementations(methodId);
+                for (int i = 0; i < overriding.size(); i++) {
+                    registerReturnedType(graph, overriding.get(i), e.getValue());
                 }
-                String fqn = Origin.valueOf(Origin.head(origin));
-                if (type != null && !type.equals(fqn)) {
-                    type = null;
-                    break;
-                }
-                type = fqn;
-            }
-            if (type != null && !type.isEmpty()) {
-                register(type, e.getValue());
             }
         }
         beanMethods.clear();
+    }
+
+    /** メソッドの return がどれも同じ {@code new 具象型} なら、その型を Bean として登録する */
+    private void registerReturnedType(CallGraph graph, int methodId, String beanName) {
+        ValueStore values = graph.values();
+        int count = graph.returnCount(methodId);
+        int type = -1;
+        for (int k = 0; k < count; k++) {
+            int ref = graph.returnAt(methodId, k);
+            if (values.kind(ref) != Origin.NEW
+                    || (type >= 0 && type != values.valueId(ref))) {
+                type = -1;
+                break;
+            }
+            type = values.valueId(ref);
+        }
+        String fqn = (type < 0) ? "" : values.strings().get(type);
+        if (!fqn.isEmpty()) {
+            register(fqn, beanName);
+        }
     }
 
     private void register(String typeFqn, String beanName) {

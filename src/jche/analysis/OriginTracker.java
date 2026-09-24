@@ -1026,7 +1026,6 @@ final class OriginTracker {
      * 使われないだけで害はない。
      */
     private static String classNameLiteral(String value) {
-        // 形の判定は読み手の暫定の扱い（jche.graph.CallGraphBuilder の R 行）と共有する
         return Origin.isNameShaped(value) ? Origin.of(Origin.LITERAL, value) : null;
     }
 

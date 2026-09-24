@@ -3,7 +3,6 @@ package jche.report;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
-import java.util.Arrays;
 import java.util.List;
 
 import jche.cache.Origin;
@@ -20,6 +19,7 @@ import jche.graph.IntArray;
 import jche.graph.GuardEvaluator;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
+import jche.graph.ValueStore;
 import jche.util.Log;
 import jche.util.Messages;
 import jche.util.Warnings;
@@ -126,9 +126,9 @@ public final class StreamingTreeWalker {
         void edge(int depth, int callerId, int edgeIndex, DataflowContext ctx, Resolution res,
                   String unreachable);
 
-        /** 候補 1 つへ降りる前に、束縛した値（引数・コンストラクタ実引数・捕捉した値） */
-        void target(int edgeIndex, int target, String[] params, String[] ctorArgs, String ctorOwner,
-                    String[] captured);
+        /** 候補 1 つへ降りる前に、束縛した値（引数・コンストラクタ実引数・捕捉した値。枠は {@code jche.graph.Slot}） */
+        void target(int edgeIndex, int target, long[] params, long[] ctorArgs, String ctorOwner,
+                    long[] captured);
 
         /** 契約で呼び戻す先 */
         void callbacks(int edgeIndex, List<CallbackContracts.Match> matches);
@@ -193,7 +193,7 @@ public final class StreamingTreeWalker {
         this.methods = graph.methods();
         this.resolver = resolver;
         this.dataflow = resolver.dataflow();
-        this.guards = new GuardEvaluator(config.branchPruningEnabled);
+        this.guards = new GuardEvaluator(config.branchPruningEnabled, graph);
         this.config = config;
         this.writer = writer;
         this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
@@ -348,7 +348,7 @@ public final class StreamingTreeWalker {
 
             // この呼び出しを囲む条件が、この経路では成立しないと言い切れるか。
             // 言い切れるなら、呼び出し自体は理由付きで1行出すが、その先へは降りない
-            String unreachable = guards.unreachableReason(graph.guard(e), path[depth].context());
+            String unreachable = guards.unreachableReason(graph.guardOf(e), path[depth].context());
             if (unreachable != null) {
                 prunedCalls++;
             }
@@ -375,8 +375,8 @@ public final class StreamingTreeWalker {
                     return;
                 }
                 int target = targets[ti];
-                String[] targetParams = bindArguments(e, depth, target);
-                String[] targetCtorArgs = bindConstructorArguments(e, depth, target);
+                long[] targetParams = bindArguments(e, depth, target);
+                long[] targetCtorArgs = bindConstructorArguments(e, depth, target);
                 if (probe != null) {
                     probe.target(e, target, targetParams, targetCtorArgs,
                             (targetCtorArgs == null) ? null : methods.typeFqn(target),
@@ -510,11 +510,11 @@ public final class StreamingTreeWalker {
      * ラムダの合成メソッド {@code target} へ降りるときに渡す「捕捉した値」。
      * 今の段がそのラムダを生成したメソッドでなければ null（捕捉した引数は解決しない）
      */
-    private String[] capturedTypesFor(int depth, int target) {
+    private long[] capturedTypesFor(int depth, int target) {
         if (!methods.isLambdaBody(target) || !graph.createsLambda(path[depth].methodId, target)) {
             return null;
         }
-        return path[depth].paramTypes;
+        return path[depth].params;
     }
 
     /**
@@ -526,11 +526,11 @@ public final class StreamingTreeWalker {
      * 何も分からない場合や、呼び出し先が引数を使い回さない場合は null を返す。
      * null を返せば以降の深さでは何もしないので、解析コストが必要な箇所だけに絞れる。
      */
-    private String[] bindArguments(int edgeIndex, int depth, int target) {
+    private long[] bindArguments(int edgeIndex, int depth, int target) {
         if (!dataflow.enabled() || !dataflow.usesContext(target)) {
             return null;
         }
-        return resolveArgs(graph.argOrigins(edgeIndex), depth);
+        return dataflow.bindArgs(graph.argsNode(edgeIndex), path[depth].context());
     }
 
     /**
@@ -541,7 +541,7 @@ public final class StreamingTreeWalker {
      * レシーバが無い（this への呼び出し）場合は、同じオブジェクトの
      * 別のメソッドを呼んでいるので、今の環境をそのまま引き継ぐ。
      */
-    private String[] bindConstructorArguments(int edgeIndex, int depth, int target) {
+    private long[] bindConstructorArguments(int edgeIndex, int depth, int target) {
         if (!dataflow.enabled()) {
             return null;
         }
@@ -549,56 +549,19 @@ public final class StreamingTreeWalker {
         if (!graph.hasInjectedFields(targetType)) {
             return null;   // 注入されたフィールドを持たない型には渡す意味が無い
         }
-        String recvOrigin = graph.recvOrigin(edgeIndex);
-        if (recvOrigin == null) {
+        int recv = graph.recvNode(edgeIndex);
+        if (recv == ValueStore.NONE) {
             // レシーバなし = this。同じ型のメソッドを呼んでいる間だけ引き継ぐ
             return targetType.equals(path[depth].ctorOwner) ? path[depth].ctorArgs : null;
         }
-        if (Origin.kindOf(recvOrigin) != Origin.NEW || !targetType.equals(Origin.valueOf(recvOrigin))) {
+        ValueStore values = graph.values();
+        if (values.kind(recv) != Origin.NEW || !targetType.equals(values.value(recv))) {
             // new 以外（引数・フィールド・戻り値）から来たオブジェクトは、
             // どのコンストラクタ実引数で作られたかがこの経路では分からない
             return null;
         }
-        return resolveArgs(Origin.argsOf(recvOrigin), depth);
-    }
-
-    /** "位置=出所;..." を、この経路で分かっている具象型の配列に変換する */
-    private String[] resolveArgs(String spec, int depth) {
-        if (spec == null || spec.isEmpty()) {
-            return null;
-        }
-        DataflowContext ctx = path[depth].context();
-        String[] bound = null;
-        // 入れ子（{} の中）の ';' で切らないよう、必ず Origin 側の分け方を通す
-        for (String entry : Origin.entriesOf(spec)) {
-            int eq = entry.indexOf('=');
-            if (eq <= 0) {
-                continue;
-            }
-            int index;
-            try {
-                index = Integer.parseInt(entry.substring(0, eq));
-            } catch (NumberFormatException ignore) {
-                continue;
-            }
-            String origin = Origin.unnest(entry.substring(eq + 1));
-            String fqn = dataflow.concreteTypeOf(origin, ctx);
-            if (fqn == null) {
-                // 具象型は決まらないが、リテラルやクラスリテラルなら「値」として渡す
-                // （リフレクションのメソッド名・クラスが引数で渡ってくる形のため）
-                fqn = dataflow.valueOriginOf(origin, ctx);
-            }
-            if (fqn == null) {
-                continue;
-            }
-            if (bound == null) {
-                bound = new String[index + 1];
-            } else if (index >= bound.length) {
-                bound = Arrays.copyOf(bound, index + 1);
-            }
-            bound[index] = fqn;
-        }
-        return bound;
+        // new のノードは実引数を持つので、呼び出し箇所の実引数と同じ読み方で枠にする
+        return dataflow.bindArgs(recv, path[depth].context());
     }
 
     /**
@@ -628,7 +591,7 @@ public final class StreamingTreeWalker {
      * 除外されたメソッドの中の呼び出しに、その呼び出し元の引数を当ててしまう。
      */
     private void skipThrough(int parentDepth, int skippedId,
-                             String[] skippedParams, String[] skippedCtorArgs) throws IOException {
+                             long[] skippedParams, long[] skippedCtorArgs) throws IOException {
         // 読み飛ばしは path[] の深さを増やさずに再帰する。相異なる除外メソッドの連鎖が
         // 長くても Java のスタックを使い切らないよう、経路の深さと合わせて上限を掛ける
         if (parentDepth + skipNesting >= DEPTH_HARD_CAP) {

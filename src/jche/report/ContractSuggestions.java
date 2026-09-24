@@ -123,7 +123,7 @@ public final class ContractSuggestions {
                                     int edgeIndex, MethodTable methods, int declaredCallee) {
         if (dataflow.enabled()) {
             List<String> factories =
-                    TypeContracts.factoryLeftSidesOf(graph.recvOrigin(edgeIndex), dataflow, ctx);
+                    TypeContracts.factoryLeftSidesOf(graph.recvNode(edgeIndex), dataflow, ctx);
             if (!factories.isEmpty()) {
                 return new Left(factories.get(0), true);
             }

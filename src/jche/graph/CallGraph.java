@@ -67,7 +67,8 @@ public final class CallGraph {
     final HashMap<String, String> fieldOrigins = new HashMap<>();
     private Set<String> typesWithInjectedFields;
 
-    // --- 値の表（stage B の途中は、上の文字列と二重に持つ。文字列の側は読み手を移し終えたら消す） ---
+    // --- 値の表（読み手はこちらを読む。stage B の途中は上の文字列も二重に持つが、読み手はもう読まない。
+    //     test/dataflow の ValueStoreCheck が突き合わせるためだけに残してあり、次の段で消す） ---
 
     /** 値の表（呼び出し箇所・戻り値・フィールドへの代入・条件の値）。値を読まない指定なら空 */
     ValueStore values;
@@ -85,6 +86,11 @@ public final class CallGraph {
     int[] returnRef = new int[0];
     /** "typeFqn#fieldName" -> 代入される値の頭（葉の参照）。コンストラクタ注入されたフィールドだけが入る */
     final HashMap<String, Integer> fieldHeads = new HashMap<>();
+    /**
+     * メソッドIDごとの「呼び出しがこの宣言の本体以外へ振り分けられうるか」のメモ
+     * （0 = まだ調べていない、1 = 振り分けられない、2 = 振り分けられうる）。{@link #hasOverriders} が遅延して埋める
+     */
+    private byte[] overriddenMemo;
 
     /**
      * ラムダ／メソッド参照が実装している関数型インターフェースのメソッドキー。
@@ -206,22 +212,22 @@ public final class CallGraph {
         return (char) recvKinds[edgeIndex];
     }
 
-    /** エッジのレシーバの出所。無ければ null */
+    /** エッジのレシーバの出所。無ければ null（stage B の途中の検査用。読み手は {@link #recvNode} を読む） */
     public String recvOrigin(int edgeIndex) {
         int i = recvOriginIds[edgeIndex];
         return (i < 0) ? null : originPool.get(i);
     }
 
-    /** エッジの実引数の出所（"位置=出所;..."）。無ければ null */
+    /** エッジの実引数の出所（"位置=出所;..."）。無ければ null（stage B の途中の検査用。読み手は {@link #argsNode} を読む） */
     public String argOrigins(int edgeIndex) {
         int i = argOriginIds[edgeIndex];
         return (i < 0) ? null : originPool.get(i);
     }
 
     /**
-     * その呼び出しを囲む条件分岐（jche.cache.Guard）。無ければ null。
+     * その呼び出しを囲む条件分岐（jche.cache.Guard の文字列）。無ければ null。
      *
-     * 「その条件がこの経路で成立しないか」の判定は {@link GuardEvaluator} が行う。
+     * stage B の途中の検査用。読み手（{@link GuardEvaluator}）は {@link #guardOf} で条件の表を読む。
      */
     public String guard(int edgeIndex) {
         int i = guardIds[edgeIndex];
@@ -270,7 +276,7 @@ public final class CallGraph {
 
     // --- メソッド・型の事実 ---
 
-    /** そのメソッドの return が返しうる値の出所（R行）。無ければ null */
+    /** そのメソッドの return が返しうる値の出所（R行）。無ければ null（stage B の途中の検査用。読み手は {@link #returnAt} を読む） */
     public String[] returnOriginsOf(int methodId) {
         return (returnOrigins == null || methodId < 0 || methodId >= returnOrigins.length)
                 ? null : returnOrigins[methodId];
@@ -296,19 +302,22 @@ public final class CallGraph {
         return (head == null) ? ValueStore.NONE : head;
     }
 
-    /** コンストラクタ注入されたフィールド "typeFqn#fieldName" に必ず入る値の出所。無ければ null */
+    /**
+     * コンストラクタ注入されたフィールド "typeFqn#fieldName" に必ず入る値の出所。無ければ null
+     * （stage B の途中の検査用。読み手は {@link #fieldHead} を読む）
+     */
     public String fieldOrigin(String fieldKey) {
         return fieldOrigins.get(fieldKey);
     }
 
-    /** その型がコンストラクタ注入されたフィールドを持つか */
+    /** その型がコンストラクタ注入されたフィールドを持つか（{@link #fieldHead} に載っているフィールドがあるか） */
     public boolean hasInjectedFields(String typeFqn) {
-        if (typeFqn == null || fieldOrigins.isEmpty()) {
+        if (typeFqn == null || fieldHeads.isEmpty()) {
             return false;
         }
         if (typesWithInjectedFields == null) {
             typesWithInjectedFields = new HashSet<>();
-            for (String key : fieldOrigins.keySet()) {
+            for (String key : fieldHeads.keySet()) {
                 typesWithInjectedFields.add(key.substring(0, key.indexOf('#')));
             }
         }
@@ -347,6 +356,85 @@ public final class CallGraph {
     public int implementationOf(String typeFqn, int calleeId) {
         return search(typeFqn, methods.signature(calleeId),
                 overrides.overridersOf(methods.key(calleeId)), packageAccessOf(calleeId));
+    }
+
+    /**
+     * そのメソッドを呼び出し先（ソースに書かれた呼び出しの静的なキー）とする呼び出しが、実行時に
+     * この宣言の本体とは<b>別の本体へ振り分けられうる</b>か。
+     *
+     * <p>メソッドの return の値（R 行。{@link #returnAt}）を「その呼び出しの戻り値」として使ってよいのは、
+     * 呼び出しがこの宣言の本体でしか動かないときだけ。{@code Base b; b.mode()} の {@code mode} を
+     * 部分型が上書きしていれば、実際に動くのは部分型の本体かもしれず、Base の return の値を当てると
+     * 呼ばれる呼び出しを [UNREACHABLE] にしたり、違う具象クラスへ絞ったりして、呼び出しを黙って落とす。
+     *
+     * <p>振り分けられない（false）のは次のどちらか。
+     * <ul>
+     *   <li>静的に束縛される: static・private・final のメソッド、コンストラクタ、static 初期化子、
+     *       ラムダの本体。static と private は、部分型が同じシグネチャを宣言しても上書きではない
+     *       （隠蔽か別のメソッド。JLS 8.4.8）ので、部分型を調べる前に決める</li>
+     *   <li>宣言した型のソース上の部分型のどれから引いても、実際に動く実装がこの宣言のまま
+     *       （部分型が上書きしていない。final クラスは部分型を持たないのでここに入る）</li>
+     * </ul>
+     * ソースに宣言の無いメソッド（jar の中）は、部分型を漏れなく数えられないので「振り分けられうる」とする
+     * （分からないものは使わない側に倒す）。{@code super.m()} の形も区別できないので仮想の呼び出しとして扱う
+     * （使わない側に倒れるだけで、呼び出しを落とすことはない）
+     */
+    public boolean hasOverriders(int methodId) {
+        if (methodId < 0 || methodId >= methods.size()) {
+            return true;
+        }
+        byte[] memo = overriddenMemo;
+        if (memo == null || memo.length != methods.size()) {
+            memo = new byte[methods.size()];
+            overriddenMemo = memo;
+        }
+        if (memo[methodId] == 0) {
+            memo[methodId] = (byte) (dispatchesElsewhere(methodId) ? 2 : 1);
+        }
+        return memo[methodId] == 2;
+    }
+
+    private boolean dispatchesElsewhere(int methodId) {
+        if (!methods.hasSource(methodId)) {
+            return true;
+        }
+        if (methods.isConstructor(methodId) || methods.isStaticInitializer(methodId)
+                || methods.isLambdaBody(methodId)) {
+            return false;
+        }
+        String mods = methods.mods(methodId);
+        if (ModifierTokens.has(mods, "static") || ModifierTokens.has(mods, "private")
+                || ModifierTokens.has(mods, "final")) {
+            return false;
+        }
+        // CHA（CallResolver の段 1）と同じく、部分型ごとに実際に動く実装を implementationOf で引く。
+        // 上書きの判定を別に書くと、継承と型引数の置換のどちらかの形を取りこぼす。
+        // 部分型から引けない（-1）ことは型階層が揃っていれば起きないが、起きたら別の本体があるとみなす
+        for (String sub : hierarchy.transitiveSubtypes(methods.typeFqn(methodId))) {
+            if (implementationOf(sub, methodId) != methodId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * そのメソッドを呼び出し先とする呼び出しが実行時に動きうる、この宣言<b>以外</b>の本体
+     * （宣言した型のソース上の部分型それぞれで実際に動く実装のうち、この宣言でないもの。
+     * 引き方は {@link #hasOverriders} と同じ）。無ければ空。静的に束縛されるかどうかは見ない
+     */
+    public IntArray overridingImplementations(int methodId) {
+        IntArray out = new IntArray(2);
+        if (methodId < 0 || methodId >= methods.size()) {
+            return out;
+        }
+        for (String sub : hierarchy.transitiveSubtypes(methods.typeFqn(methodId))) {
+            int id = implementationOf(sub, methodId);
+            if (id >= 0 && id != methodId) {
+                out.addIfAbsent(id);
+            }
+        }
+        return out;
     }
 
     /**

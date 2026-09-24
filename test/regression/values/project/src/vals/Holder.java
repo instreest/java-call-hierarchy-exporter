@@ -1,9 +1,9 @@
 package vals;
 
 // V7: コンストラクタで受け取るフィールドに、出所の文法に似た文字列（"a;r=K:x.Y"）が入る。
-// 移す前: new の実引数を ; で切って "a" と読み、フィールド v の値を "a" として helper に渡すので、
-//         hitHolder を [UNREACHABLE]（= a）にする（誤り）。
-// 移した後: hitHolder はふつうの行（コンストラクタの実引数からフィールドを経て値が渡る道は残す）
+// 期待: hitHolder はふつうの行（コンストラクタの実引数からフィールドを経て値が渡る道は残したまま、値をそのまま比べる）。
+// 以前の誤り: new の実引数を ; で切って "a" と読み、フィールド v の値を "a" として helper に渡すので、
+//         hitHolder を [UNREACHABLE]（= a）にしていた
 public class Holder {
     private final String v;
 

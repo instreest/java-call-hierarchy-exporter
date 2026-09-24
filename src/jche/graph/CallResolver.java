@@ -210,7 +210,7 @@ public final class CallResolver {
         // 渡された値がラムダなら実行されるのはその本体。段1の候補数に関係なく先に決める。
         // 経路の引数で渡ってきたものは resolveOnPath で改めて試す
         if (dataflow.enabled() && graph.hasFunctionalImpl(calleeId)) {
-            Resolution viaLambda = functionalResolution(graph.recvOrigin(edgeIndex), null);
+            Resolution viaLambda = functionalResolution(graph.recvNode(edgeIndex), null);
             if (viaLambda != null) {
                 return viaLambda;
             }
@@ -256,10 +256,10 @@ public final class CallResolver {
 
         // --- 段4: データフロー（経路に依存しない分） ---
         if (dataflow.enabled()) {
-            String recv = graph.recvOrigin(edgeIndex);
+            int recv = graph.recvNode(edgeIndex);
             int resolved = dataflow.targetOf(recv, calleeId, null);
             if (resolved >= 0) {
-                return Resolution.single(resolved, DataflowResolver.labelFor(recv));
+                return Resolution.single(resolved, DataflowResolver.labelFor(graph.values().kind(recv)));
             }
         }
 
@@ -302,10 +302,10 @@ public final class CallResolver {
             }
         }
         if (res.isMultiple() && dataflow.enabled()) {
-            String recv = graph.recvOrigin(edgeIndex);
+            int recv = graph.recvNode(edgeIndex);
             int viaPath = dataflow.targetOf(recv, calleeId, ctx);
             if (viaPath >= 0) {
-                res = Resolution.single(viaPath, DataflowResolver.labelFor(recv));
+                res = Resolution.single(viaPath, DataflowResolver.labelFor(graph.values().kind(recv)));
             }
         }
         // ラムダ／メソッド参照が渡ってきた呼び出し。候補が複数かどうかに関係なく試す。
@@ -316,7 +316,7 @@ public final class CallResolver {
         // そうしないと、ラムダを入れた変数への Object#toString() のような
         // 関数型インターフェースと関係ない呼び出しまでラムダ本体に繋いでしまう
         if (dataflow.enabled() && graph.hasFunctionalImpl(calleeId)) {
-            Resolution viaLambda = functionalResolution(graph.recvOrigin(edgeIndex), ctx);
+            Resolution viaLambda = functionalResolution(graph.recvNode(edgeIndex), ctx);
             if (viaLambda != null) {
                 res = viaLambda;
             }
@@ -346,16 +346,18 @@ public final class CallResolver {
      * </ol>
      * 参照先を宣言のまま「確定」と書くと、本体の無い抽象メソッドが葉になり、その先の
      * 実装の階層が出ない（docs/lambda-expansion-qa.md の Q12）。
+     *
+     * @param ref 渡された値（値の表の参照。{@link CallGraph#recvNode} など）。無ければ {@link ValueStore#NONE}
      */
-    private Resolution functionalResolution(String recvOrigin, DataflowContext ctx) {
-        if (recvOrigin == null) {
+    private Resolution functionalResolution(int ref, DataflowContext ctx) {
+        if (ref == ValueStore.NONE) {
             return null;
         }
-        String functional = dataflow.functionalOriginOf(recvOrigin, ctx);
-        if (functional == null) {
+        int functional = dataflow.functionalRefOf(ref, ctx);
+        if (functional == ValueStore.NONE) {
             return null;
         }
-        int target = methods.idOf(Origin.valueOf(functional));
+        int target = graph.values().methodId(functional);
         if (target < 0) {
             return null;
         }
@@ -537,9 +539,9 @@ public final class CallResolver {
         if (recvKind != RecvKind.FIELD && recvKind != RecvKind.PARAM) {
             return null;
         }
-        String recvOrigin = graph.recvOrigin(edgeIndex);
-        String qualifier = (Origin.kindOf(recvOrigin) == Origin.FIELD)
-                ? beans.qualifierOf(Origin.valueOf(Origin.head(recvOrigin))) : null;
+        int recv = graph.recvNode(edgeIndex);
+        String qualifier = (graph.values().kind(recv) == Origin.FIELD)
+                ? beans.qualifierOf(graph.values().value(recv)) : null;
 
         String declType = (searchFrom == null) ? methods.typeFqn(calleeId) : searchFrom;
         IntArray hits = new IntArray(2);
@@ -582,7 +584,7 @@ public final class CallResolver {
         }
         // 引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。狭いほうが先
         TypeContracts.Contract contract = dataflow.enabled()
-                ? typeContracts.matchFactory(graph.recvOrigin(edgeIndex), dataflow, ctx) : null;
+                ? typeContracts.matchFactory(graph.recvNode(edgeIndex), dataflow, ctx) : null;
         if (contract == null) {
             contract = typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
         }
@@ -679,7 +681,7 @@ public final class CallResolver {
         if (!dataflow.enabled()) {
             return stored;
         }
-        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(graph.recvOrigin(edgeIndex), dataflow, ctx);
+        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(graph.recvNode(edgeIndex), dataflow, ctx);
         if (keys.isEmpty()) {
             return stored;
         }

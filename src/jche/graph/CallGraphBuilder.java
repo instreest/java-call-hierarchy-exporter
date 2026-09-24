@@ -75,24 +75,24 @@ import jche.util.RunControl;
  * （{@link MethodTable#compareDeclarationOrder}）。
  *
  * <p>呼び出し箇所の値（レシーバ・実引数・ガードの番号・new の証拠）は C 行・U 行の末尾の列にある
- * （{@link CallSiteValues.Row}）。値はどれも同じブロックの N 行のノードを番号で指し、読み手（DataflowResolver など）が
- * 受け取る出所の文字列は、ここで読む直前に組み直す（{@link OriginRenderer}）。
+ * （{@link CallSiteValues.Row}）。値はどれも同じブロックの N 行のノードを番号で指す。読み手（{@link DataflowResolver}・
+ * {@link GuardEvaluator} など）は、それを取り込んだ値の表と条件の表（下の「値の表」）を読む。
  * <ul>
- *   <li>戻り値（R 行）… ノードを丸ごと組み直す。追跡できない（-1）は U。戻り値そのものが
- *       クラス名・識別子の形でない文字列リテラルなら U（暫定。{@link #unreadableLiteral}）</li>
- *   <li>フィールドへの代入（J 行）… ノードの頭（{@code 種別:値}）だけ（{@link FieldFacts} は頭で比べる）</li>
- *   <li>条件（G 行の表）… 以前の guard 列の文字列（{@link jche.cache.Guard}）に組み直す。subject は
- *       ノードの頭。{@link GuardEvaluator} はこの文字列を読む</li>
+ *   <li>戻り値（R 行）… ノードを丸ごと取り込む。追跡できない（-1）は {@link ValueStore#NONE}</li>
+ *   <li>フィールドへの代入（J 行）… ノードの頭（種別と値の葉）だけ（{@link FieldFacts} は頭で比べる）</li>
+ *   <li>条件（G 行の表）… 条件の表に写す。判定される式はノードの頭の葉</li>
  *   <li>証拠（hints 列）… 型の並びを証拠のリストにして、エッジに直接付ける</li>
  * </ul>
  * フィールドへの代入（J 行）は同じブロックの V 行・D 行と組で判定するので、ブロックを読み終えてから渡す。
  *
- * <h2>値の表（stage B の途中は二重に持つ）</h2>
- * 上の出所の文字列と並べて、同じ値を値の表（{@link ValueStore}）と条件の表（{@link GuardTable}）にも
- * 取り込む（{@link ValueStoreBuilder} / {@link GuardTableBuilder}）。取り込むのは戻り値・代入・条件・
- * 呼び出し箇所から辿れるノードだけ。表は文字列の文法を通さないので、値が {@code | ; { }} を含んでも
- * 読み違えない。読み手はまだ文字列を読む。読み手を表へ移し終えたら文字列の側を消す
- * （test/dataflow の ValueStoreCheck が、表を組み直した文字列が今の文字列と一致することを確かめている）。
+ * <h2>値の表</h2>
+ * 値を値の表（{@link ValueStore}）と条件の表（{@link GuardTable}）に取り込む（{@link ValueStoreBuilder} /
+ * {@link GuardTableBuilder}）。取り込むのは戻り値・代入・条件・呼び出し箇所から辿れるノードだけ。
+ * 表は文字列の文法を通さないので、値が {@code | ; { }} を含んでも読み違えない。
+ *
+ * <p><b>stage B の途中:</b> 以前の読み手が受け取っていた出所の文字列（{@link OriginRenderer} で組み直したもの。
+ * エッジのレシーバ・実引数・条件、メソッドの戻り値、フィールドの値）も並べて作っている。読み手はもう読まず、
+ * test/dataflow の ValueStoreCheck が表を組み直した文字列と突き合わせるためだけに残してある（次の段で消す）。
  *
  * <p>値を読まない指定（{@code dataflow.enabled=false}）のときは、N・G・R・J 行と
  * 呼び出し箇所の値の列を読まない。値が無いものとして組むので、具象クラスの解決は CHA まで、
@@ -337,12 +337,10 @@ public final class CallGraphBuilder {
      * 組み直せない（ブロックの外を指す）ものは U（「1 つでも U があれば戻り値は不定」の判定に効く）。
      * 戻り値の出所はメソッドの鍵で集約するだけなので、どのブロックで出会っても同じ結果になる
      *
-     * <p><b>暫定（stage B で値を正確に読むようになったら外す）:</b> 戻り値そのものが文字列リテラル
-     * （ノードの種別が {@link Origin#LITERAL}）で、クラス名・識別子の形（{@link Origin#isNameShaped}）で
-     * ないものは U として渡す（{@link #unreadableLiteral}）。
-     *
-     * <p>値の表には、この暫定の規則を通さず、ノードをそのまま取り込む（追跡できない・ブロックの外は
-     * {@link ValueStore#NONE}）。並びはファイル上の順で、同じ参照はスキャンの後で 1 つにまとめる
+     * <p>値の表にも同じノードを取り込む（追跡できない・ブロックの外は {@link ValueStore#NONE}）。
+     * 並びはファイル上の順で、同じ参照はスキャンの後で 1 つにまとめる。読み手は値の表の側を読み、
+     * 値を切り詰めないので、戻り値の文字列リテラルが {@code | ;} を含んでもそのまま使える
+     * （以前は、そういう文字列を読み違えないよう U として渡していた。docs/cache-unification-qa.md の Q9）
      */
     private void readReturn(ReturnFact r, BlockNodes nodes) {
         if (r == null) {
@@ -356,7 +354,7 @@ public final class CallGraphBuilder {
         if (r.node() != ValueNode.NONE) {
             if (!nodes.inRange(r.node(), false)) {
                 warnBadReference();
-            } else if (!unreadableLiteral(nodes.at(r.node()))) {
+            } else {
                 origin = nodes.renderer().originOf(r.node());
             }
         }
@@ -367,26 +365,6 @@ public final class CallGraphBuilder {
         if (!origins.contains(origin)) {
             origins.add(origin);
         }
-    }
-
-    /**
-     * 戻り値として今の読み手に渡すと読み違える文字列リテラルか。
-     *
-     * <p><b>暫定（stage B で値を正確に読むようになったら外す）。</b>今の読み手（{@link DataflowResolver} の
-     * 戻り値の文字列・契約表のキー、{@link GuardEvaluator} に渡る経路の値）は、組み直した出所の文字列から
-     * {@link Origin#valueOf} で値を取り出すので、値が出所の文法の文字（{@code | ; { }}）を含むと途中で切れる。
-     * {@code Object key() { return (Object) "a|b"; }} を渡した経路では値が {@code "a"} に見え、
-     * {@code !s.equals("a")} の呼び出しや {@code switch} の {@code default} を誤って {@code [UNREACHABLE]} にし、
-     * 契約表の {@code Fac#get("A")} に誤って当てて {@code "B"} の側の実装を落とす。
-     * 以前の書き手（形式 v32 まで）は、この形でない文字列を R 行に U として書いていたので、読むところで
-     * その振る舞いに戻す。判定は以前の書き手と同じ {@link Origin#isNameShaped}（64 文字以内）。
-     *
-     * <p>対象は戻り値そのもの（木の頂点）だけで、実引数やレシーバの入れ子の中の文字列はそのまま渡す
-     * （呼び出し箇所の値と同じ扱い）。test/pruning の {@code NePipeRet} / {@code PipeRetLocal} /
-     * {@code FacPipeRet} と、docs/cache-unification-qa.md の Q9 が対になっているので、外すときは一緒に直す
-     */
-    private static boolean unreadableLiteral(ValueNode n) {
-        return n != null && n.kind() == Origin.LITERAL && !Origin.isNameShaped(n.value());
     }
 
     /** C 行を読む。記号がブロックの外を指す・列が足りなければ null */
@@ -590,8 +568,9 @@ public final class CallGraphBuilder {
 
         // R行（戻り値の出所）をメソッドIDの配列に移す。
         // スキャンで全メソッドがID化されているのでここで確定できる。
-        // 追跡できない return（U）も含めて持ち、「1つでも不明なら不定」の判定は
-        // DataflowResolver.factoryReturnOrigin() が行う
+        // この文字列の配列は stage B の途中の検査（test/dataflow）用で、読み手はもう読まない。
+        // 読み手は値の表の戻り値（CallGraph#returnAt）を読み、「1つでも不明なら不定」の判定は
+        // jche.dataflow.DataflowBuilder の畳み込みと DataflowResolver の classOf / literalOf が行う
         graph.returnOrigins = new String[n][];
         for (Map.Entry<Integer, List<String>> e : returnsById.entrySet()) {
             int id = e.getKey();
@@ -797,11 +776,6 @@ public final class CallGraphBuilder {
             return Origin.of(n.kind(), n.value());
         }
 
-        /** ノード番号のノード。ブロックに収まらなければ null */
-        ValueNode at(int id) {
-            return inRange(id, false) ? nodes.get(id) : null;
-        }
-
         /** ノード番号がブロックに収まるか。{@code allowNone} なら {@link ValueNode#NONE} も収まるとみなす */
         boolean inRange(int id, boolean allowNone) {
             return (allowNone && id == ValueNode.NONE) || (id >= 0 && id < nodes.size());
@@ -824,11 +798,11 @@ public final class CallGraphBuilder {
     /**
      * 1 ブロック分の条件の表（G 行）。ガード番号は並びの位置（0 から詰めて振ってある）。
      *
-     * <p>読み手（{@link GuardEvaluator}・{@code jche.dataflow.DataflowBuilder}）はまだ以前の guard 列の文字列
-     * （{@link Guard}。アトムを {@link Guard#ATOM_SEP} で、項目を {@link Guard#FIELD_SEP} で区切る）を受け取るので、
-     * C 行・U 行が使うたびにその形へ組み直す（同じガードは 1 度だけ）。subject はノードの頭
+     * <p>読み手（{@link GuardEvaluator}・{@code jche.dataflow.DataflowBuilder}）は条件の表（{@link GuardTable}）を読む。
+     * 以前の読み手が受け取っていた guard 列の文字列（{@link Guard}。アトムを {@link Guard#ATOM_SEP} で、項目を
+     * {@link Guard#FIELD_SEP} で区切る）も、stage B の途中は test/dataflow の ValueStoreCheck と突き合わせるために
+     * C 行・U 行が使うたびに組み直す（同じガードは 1 度だけ）。subject はノードの頭
      * （{@code A:0} / {@code V:true}）で、以前の書き手が持っていた出所の頭（{@link Origin#head}）と同じ形にする。
-     * 期待値は切り詰めずに渡し、以前の切り詰めの再現は {@link GuardEvaluator} が行う。
      *
      * <p>壊れた行（番号が並びと食い違う・列が足りない）は 1 度だけ警告して、そのアトムを使わない。
      * アトムが減ったガードは条件が弱くなるだけなので、打ち切りが増えることはない（安全側）

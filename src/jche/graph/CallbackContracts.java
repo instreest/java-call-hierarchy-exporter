@@ -45,12 +45,14 @@ public final class CallbackContracts {
     private final Map<String, List<Contract>> byCallee = new HashMap<>();
     private final CallGraph graph;
     private final MethodTable methods;
+    private final ValueStore values;
     private final DataflowResolver dataflow;
     private final ContractUsage usage;
 
     public CallbackContracts(CallGraph graph, DataflowResolver dataflow, ContractUsage usage) {
         this.graph = graph;
         this.methods = graph.methods;
+        this.values = graph.values();
         this.dataflow = dataflow;
         this.usage = usage;
         List<ContractUsage.Line> lines = usage.lines();
@@ -146,8 +148,12 @@ public final class CallbackContracts {
      */
     @FunctionalInterface
     public interface FunctionalLookup {
-        /** 値がラムダ／メソッド参照でなければ null */
-        Resolution resolve(String origin, DataflowContext ctx);
+        /**
+         * 値がラムダ／メソッド参照でなければ null
+         *
+         * @param ref 渡された値（値の表の参照）
+         */
+        Resolution resolve(int ref, DataflowContext ctx);
     }
 
     /**
@@ -167,8 +173,9 @@ public final class CallbackContracts {
             // 呼び出し先には一致した。繋がらなくても「表の綴りは合っている」と言えるので分けて数える
             usage.markReached(c.row());
             String text = shortKey(c.calleeKey()) + " calls " + c.callbackSig();
-            for (String origin : valuesAt(edgeIndex, c)) {
-                int[] ids = callbackTargetsOf(origin, c.callbackSig(), ctx, functional);
+            IntArray passed = valuesAt(edgeIndex, c);
+            for (int i = 0; i < passed.size(); i++) {
+                int[] ids = callbackTargetsOf(passed.get(i), c.callbackSig(), ctx, functional);
                 for (int id : ids) {
                     if (id >= 0 && methods.hasSource(id) && found.stream().noneMatch(m -> m.target() == id)) {
                         usage.markApplied(c.row());
@@ -188,51 +195,48 @@ public final class CallbackContracts {
         return (dot < 0) ? key : key.substring(dot + 1);
     }
 
-    /** 契約の位置に当たる値の出所（複数のこともある） */
-    private List<String> valuesAt(int edgeIndex, Contract c) {
-        List<String> values = new ArrayList<>();
-        String recv = graph.recvOrigin(edgeIndex);
+    /** 契約の位置に当たる値（値の表の参照。複数のこともある） */
+    private IntArray valuesAt(int edgeIndex, Contract c) {
+        IntArray found = new IntArray(2);
+        int recv = graph.recvNode(edgeIndex);
         switch (c.where()) {
             case Contract.RECEIVER -> {
-                if (recv != null) {
-                    values.add(recv);
+                if (recv != ValueStore.NONE) {
+                    found.add(recv);
                 }
             }
-            case Contract.ARGUMENT -> collectArgs(graph.argOrigins(edgeIndex), c.index(), values);
+            case Contract.ARGUMENT -> collectArgs(graph.argsNode(edgeIndex), c.index(), found);
             case Contract.CTOR_ARGUMENT -> {
                 // レシーバが new X(...) の形のときだけ、その実引数が分かる
-                if (recv != null && Origin.kindOf(recv) == Origin.NEW) {
-                    collectArgs(Origin.argsOf(recv), c.index(), values);
+                if (values.kind(recv) == Origin.NEW) {
+                    collectArgs(recv, c.index(), found);
                 }
             }
             default -> {
             }
         }
-        return values;
+        return found;
     }
 
-    private static void collectArgs(String args, int index, List<String> into) {
-        if (args == null || args.isEmpty()) {
-            return;
-        }
+    /**
+     * 実引数を持つ値（実引数の並び・new）から、その位置の実引数（{@link Contract#ANY} なら全部を
+     * 書かれた順に）を足す
+     */
+    private void collectArgs(int holder, int index, IntArray into) {
         if (index != Contract.ANY) {
-            String one = Origin.argAt(args, index);
-            if (one != null) {
-                into.add(Origin.unnest(one));
+            int one = values.argAt(holder, index);
+            if (one != ValueStore.NONE) {
+                into.add(one);
             }
             return;
         }
-        for (String entry : Origin.entriesOf(args)) {
-            int eq = entry.indexOf('=');
-            if (eq <= 0 || !Character.isDigit(entry.charAt(0))) {
-                continue;   // n= / r= は実引数ではない
-            }
-            into.add(Origin.unnest(entry.substring(eq + 1)));
+        for (int k = values.argBegin(holder), end = values.argEnd(holder); k < end; k++) {
+            into.add(values.argRef(k));
         }
     }
 
     /**
-     * 値の出所から、呼び戻されるメソッドを決める。決まらなければ空。
+     * 値から、呼び戻されるメソッドを決める。決まらなければ空。
      *
      * ラムダならその本体。メソッド参照は参照先が上書き可能なメソッドなら、実際に動くのは
      * レシーバの実行時クラスの実装（JLS 15.13.3）なので、通常の呼び出しと同じく
@@ -241,11 +245,11 @@ public final class CallbackContracts {
      * 参照先の宣言をそのまま返すと、上書きした実装や、抽象メソッドの先の実装が落ちる
      * （docs/lambda-expansion-qa.md の Q16）。型が決まる値ならその型の実装
      */
-    private int[] callbackTargetsOf(String origin, String callbackSig, DataflowContext ctx,
+    private int[] callbackTargetsOf(int ref, String callbackSig, DataflowContext ctx,
                                     FunctionalLookup functional) {
-        Resolution viaFunctional = functional.resolve(origin, ctx);
+        Resolution viaFunctional = functional.resolve(ref, ctx);
         if (viaFunctional != null) {
-            if (viaFunctional.isMultiple() && !declaredInSource(origin, ctx)) {
+            if (viaFunctional.isMultiple() && !declaredInSource(ref, ctx)) {
                 // 参照先の宣言が jar の中（list.forEach(Runnable::run) の Runnable#run）なら、
                 // その全実装を並べることになる。jar の型の全実装のような広い候補は出さない
                 // （docs/callback-contracts.md の「追える条件」）
@@ -253,7 +257,7 @@ public final class CallbackContracts {
             }
             return viaFunctional.targets();
         }
-        String fqn = dataflow.concreteTypeOf(origin, ctx);
+        String fqn = dataflow.concreteTypeOf(ref, ctx);
         // 契約は呼び戻されるメソッドの「シグネチャ」だけを書く（それを宣言している型は
         // 契約のどこにも現れない。例: Thread#start() -> c* : run() の Runnable）ので、
         // 上書きの引きもシグネチャで行う。キーの照合だけで引くと、型引数を具体化した実装
@@ -264,9 +268,9 @@ public final class CallbackContracts {
     }
 
     /** 渡した値がメソッド参照で、その参照先（コンパイル時宣言）がソースにあるか */
-    private boolean declaredInSource(String origin, DataflowContext ctx) {
-        String functional = dataflow.functionalOriginOf(origin, ctx);
-        int declared = (functional == null) ? -1 : methods.idOf(Origin.valueOf(functional));
+    private boolean declaredInSource(int ref, DataflowContext ctx) {
+        int functional = dataflow.functionalRefOf(ref, ctx);
+        int declared = (functional == ValueStore.NONE) ? -1 : values.methodId(functional);
         return declared >= 0 && methods.hasSource(declared);
     }
 }

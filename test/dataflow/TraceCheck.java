@@ -85,7 +85,8 @@ public final class TraceCheck {
         CallResolver resolver = snapshot.resolver();
         int[] entries = EntryPoints.select(graph, resolver, config);
         Files.createDirectories(config.outputDir);
-        TraceProbe probe = TraceProbe.install(graph, resolver.dataflow());
+        LegacyRender lr = new LegacyRender(graph.values());
+        TraceProbe probe = TraceProbe.install(graph, resolver.dataflow(), lr::render);
         try (CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
                 config.outputCsv, config.outputEncoding, config.outputBom)) {
             new StreamingTreeWalker(graph, resolver, config, writer).walkAll(entries);
