@@ -17,6 +17,8 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
@@ -41,6 +43,7 @@ import jche.util.Log;
 import jche.util.Messages;
 import jche.util.Names;
 import jche.util.RunControl;
+import jche.util.Warnings;
 
 /**
  * キャッシュファイルをスキャンして {@link CallGraph} を構築する。
@@ -92,6 +95,10 @@ import jche.util.RunControl;
  * <p>値を読まない指定（{@code dataflow.enabled=false}）のときは、N・G・R・J 行と
  * 呼び出し箇所の値の列を読まない。値が無いものとして組むので、具象クラスの解決は CHA まで、
  * 条件分岐の打ち切りは起きない
+ *
+ * <p>読み終えたら、フェーズ1 が最後まで書き終えたキャッシュか（ヘッダの形式の版・最終行の Z 行とブロック数）を
+ * 確かめ、違えば組まずに例外にする。書きかけのキャッシュ（同じキャッシュのフォルダを使う別の実行と重なった、など）
+ * から組むと、呼び出しの欠けたグラフで CSV を「成功」として書いてしまうため（{@code docs/cache-unification-qa.md} の Q51）。
  *
  * 読み手の判断として、U行（型解決失敗）に import からの推定候補があれば、
  * それをエッジにする（クラスパス不足で階層から消えるより、未検証と分かる形で残す方針）。
@@ -178,6 +185,12 @@ public final class CallGraphBuilder {
         long step = Math.max(size / 50, 1L << 16);
         long nextReport = 0;
         try (CacheReader in = CacheReader.open(cacheFile)) {
+            // フェーズ1 が書き終えたキャッシュか（形式の版・最終行の Z 行とブロック数）。書きかけ・別の形式のものを
+            // 読んで組んだグラフは呼び出しが欠けているので、組まずに止める（下の checkComplete）
+            boolean headerOk = in.header().startsWith(CacheFormat.VERSION + CacheFormat.SEP);
+            long blocks = 0;
+            long trailer = -1;
+            boolean afterTrailer = false;
             String currentFile = null;
             SymbolTable.Reader symbols = new SymbolTable.Reader();
             BlockNodes nodes = new BlockNodes();
@@ -185,8 +198,13 @@ public final class CallGraphBuilder {
             // ブロックの中で次に読む D 行の位置（ファイルの中の宣言の順番）
             int declOrdinal = 0;
             while (in.next()) {
+                if (trailer >= 0) {
+                    afterTrailer = true;   // Z 行（最終行）の後ろに行がある
+                }
                 switch (in.rowType()) {
+                    case CacheFormat.ROW_END -> trailer = CacheFormat.trailerCountOf(in.columns());
                     case CacheFormat.ROW_FILE -> {
+                        blocks++;
                         // 中止の受け付けと進捗はブロックの切れ目で（途中で抜けてもキャッシュは読むだけなので壊れない）
                         RunControl.checkCancelled();
                         if (in.lineStart() >= nextReport) {
@@ -240,12 +258,14 @@ public final class CallGraphBuilder {
                         if (d != null) {
                             int id = methods.intern(d.ref());
                             ensure(outDegree, id);
-                            methods.setDeclaration(id, currentFile, d.declLine(), d.endLine(),
-                                    d.hasBody(), ordinal);
-                            if (ModifierTokens.has(d.mods(), ModifierTokens.LAMBDA)) {
-                                methods.markLambdaBody(id);
+                            if (takesDeclaration(id, currentFile, d)) {
+                                methods.setDeclaration(id, currentFile, d.declLine(), d.endLine(),
+                                        d.hasBody(), ordinal);
+                                if (ModifierTokens.has(d.mods(), ModifierTokens.LAMBDA)) {
+                                    methods.markLambdaBody(id);
+                                }
+                                methods.setDeclarationDetails(id, d.annotations(), d.mods());
                             }
-                            methods.setDeclarationDetails(id, d.annotations(), d.mods());
                             fields.declaration(d);
                             graph.beans.method(id, d);
                         }
@@ -294,6 +314,13 @@ public final class CallGraphBuilder {
             applyPendingAssigns();
             fields.flushInto(graph.fieldHeads);
             RunControl.progress(label, size, size);
+            warnDuplicateTypes();
+            if (!headerOk || afterTrailer || trailer != blocks) {
+                // ふつうは起きない（フェーズ1 が書き終えたものを、同じキャッシュのフォルダの錠を持ったまま読む）。
+                // 起きたら、呼び出しの欠けたグラフで CSV を「成功」として書かないよう、ここで止める
+                throw new IOException(Messages.format("graph.cacheIncomplete", cacheFile, blocks,
+                        (trailer < 0) ? "-" : String.valueOf(trailer)));
+            }
         }
         spill.finishWriting();
         if (unresolved != null) {
@@ -305,6 +332,56 @@ public final class CallGraphBuilder {
             throw new IOException(Messages.format("graph.tooManyEdges", edgeCount));
         }
     }
+
+    /**
+     * D 行の宣言をメソッド表に記録するか。同じメソッドが 2 つのファイルで宣言されている（同じクラスが 2 つの
+     * ソースフォルダにある）ときは、先に並ぶソースフォルダの宣言を使う（JDT がソースパスの先勝ちで解決するのと
+     * 同じ。同じフォルダならパスの順）。以前は後から読んだ宣言が勝ち、キャッシュの中のブロックの並び（差分更新で
+     * 変わる）で methods.csv の宣言の場所が変わっていた。重なったことは警告する（{@link #warnDuplicateTypes}）
+     */
+    private boolean takesDeclaration(int id, String file, MethodDeclFact d) {
+        String prev = methods.declFile(id);
+        if (prev == null || prev.equals(file)) {
+            return true;
+        }
+        String first = (prev.compareTo(file) < 0) ? prev : file;
+        String second = first.equals(prev) ? file : prev;
+        if (duplicateTypes.size() < DUPLICATE_TYPES_LIMIT || duplicateTypes.containsKey(first + '\n' + second)) {
+            duplicateTypes.putIfAbsent(first + '\n' + second, d.ref().typeFqn());
+        } else {
+            duplicateTypesOmitted = true;
+        }
+        int now = graph.sourceFolderIndexOf(file);
+        int before = graph.sourceFolderIndexOf(prev);
+        return now < before || (now == before && file.compareTo(prev) < 0);
+    }
+
+    /**
+     * 同じ型を宣言しているファイルの組を警告する（ビルドが通らない状態の 1 つ。warnings.txt の
+     * 「ソースにコンパイルエラーがある」に載る）。同じ型が 2 つのソースフォルダにあると、どちらのファイルの
+     * 呼び出しが出力に出るかがソースフォルダの並びとバッチの組み方で決まり、片方の呼び出しは出ない
+     * （{@code docs/cache-unification-qa.md} の Q56）
+     */
+    private void warnDuplicateTypes() {
+        for (Map.Entry<String, String> e : duplicateTypes.entrySet()) {
+            String[] files = e.getKey().split("\n", 2);
+            int a = graph.sourceFolderIndexOf(files[0]);
+            int b = graph.sourceFolderIndexOf(files[1]);
+            String used = (b < a) ? files[1] : files[0];
+            Warnings.warn(Warnings.Topic.BUILD, Messages.format("graph.duplicateType", e.getValue(), files[0],
+                    files[1], used));
+        }
+        if (duplicateTypesOmitted) {
+            Warnings.warn(Warnings.Topic.BUILD, Messages.format("graph.duplicateType.more", DUPLICATE_TYPES_LIMIT));
+        }
+    }
+
+    /** 警告するファイルの組の上限 */
+    private static final int DUPLICATE_TYPES_LIMIT = 20;
+    /** 同じメソッドを宣言していたファイルの組（パスの順に改行でつないだもの）-> 型 */
+    private final Map<String, String> duplicateTypes = new TreeMap<>();
+    /** 上限を超えて警告しなかった組があったか */
+    private boolean duplicateTypesOmitted;
 
     /**
      * J 行 1 件と、その値（ノードの頭の葉の参照 {@link BlockNodes#headOf} と、その種別）

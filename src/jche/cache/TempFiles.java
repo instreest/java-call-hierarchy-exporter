@@ -22,6 +22,7 @@ import jche.util.Messages;
  *   analysis-cache.tsv.deps-*.tmp          差分更新（パス1 → パス3）。有効なブロックの依存（I 行）
  *   analysis-cache.tsv.edges-*.tmp         グラフの構築。エッジの記録（{@code jche.graph.CallGraphBuilder}）
  *   analysis-cache.tsv.unresolved-*.tmp    型解決に失敗した呼び出しの一覧に出す行（{@code jche.graph.UnresolvedCalls}）
+ *   analysis-cache.tsv.rewrite-*.tmp       解析のあいだにソースが書き換えられたときの、キャッシュの書き直し先
  * </pre>
  * キャッシュ本体の一時ファイル（{@code analysis-cache.tsv.tmp}）は中断からの引き継ぎに使うので、ここには入れない
  * （{@code jche.analysis.CacheUpdater}）。強制終了のときにも消さない（次の実行が引き継ぐ）。
@@ -45,9 +46,14 @@ public final class TempFiles {
     public static final String EDGES = "edges";
     /** 型解決に失敗した呼び出しの一覧に出す行 */
     public static final String UNRESOLVED = "unresolved";
+    /**
+     * 差分更新が書き終えたキャッシュの一時ファイルを書き直すときの書き先（解析のあいだにソースが書き換えられたとき
+     * だけ。{@code jche.analysis.CacheUpdater}）。書き終えたら一時ファイルと差し替える
+     */
+    public static final String REWRITE = "rewrite";
 
     /** 一時ファイルの種類（{@link #create}。前の実行の残り物を探すときにも使う） */
-    private static final List<String> KINDS = List.of(DEPS, EDGES, UNRESOLVED);
+    private static final List<String> KINDS = List.of(DEPS, EDGES, UNRESOLVED, REWRITE);
     private static final String SUFFIX = ".tmp";
 
     /**

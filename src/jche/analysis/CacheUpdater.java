@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -29,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import jche.cache.BlockChecksum;
@@ -76,7 +80,8 @@ import jche.util.Warnings;
  * <h2>キャッシュは 1 ファイル、壊れたかどうかはブロックごとに見る</h2>
  * キャッシュ（{@code analysis-cache.tsv}）は、ソースファイル 1 つにつき 1 ブロックで、構造と値を
  * 同じブロックに持つ（{@link jche.cache.CacheFormat}）。一時ファイルに書いてから本物に差し替える。
- * F 行にはブロックの検査値（crc）を書き、パス1 はブロックごとに計算し直して突き合わせる。
+ * F 行にはブロックの検査値（crc。F 行自身の件数の列も含む）を書き、パス1 はブロックごとに計算し直して突き合わせる。
+ * 先頭の行（ヘッダ・L 行・T 行）の検査値は T 行の最後の列にあり、合わなければ丸ごと捨てる。
  * 合わないブロック（書き換え・文字化け）はそのファイルだけ解析し直し、ほかのブロックは再利用する。
  * 最終行（Z 行）のブロック数が合わない・読めないキャッシュは、丸ごと捨てて全件解析し直す。
  * 以前の形式が残した {@code dataflow-cache.tsv}（とその一時ファイル）は、実行の最初に消す。
@@ -107,6 +112,29 @@ import jche.util.Warnings;
  *           加えてパス3へ戻る（下記「定数の連鎖」「親型の連鎖」）。
  *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す（行に戻さず、バイトの範囲のまま）。
  * </pre>
+ *
+ * <h2>旧キャッシュの読み方（1 つのチャネル）</h2>
+ * 旧キャッシュは実行の最初に 1 回だけ開き（{@link #openOldCache}）、パス0 のヘッダ、パス1 の全体、パス3 の I 行
+ * （索引を書けなかったとき）、パス5 の書き写しまで、同じチャネルで読む。パス5 はパス1 で覚えたバイトの範囲を
+ * そのまま写すので、名前で開き直すと、そのあいだに差し替えられた別のファイルの、関係の無い範囲を写しかねない。
+ * 読むたびに大きさが開いたときのままかを確かめ、違えば止める（{@link #checkOldCacheUnchanged}。パス1 の中なら
+ * 読めないキャッシュとして丸ごと捨て、パス3・パス5 なら解析を失敗にする）。
+ * 同じキャッシュのフォルダを使う実行は、フェーズ1 とフェーズ2 のあいだ錠で 1 つずつにしてある
+ * （{@link jche.cache.CacheLock}。{@code jche.Exporter} が取る）ので、ふつうは差し替えも書き換えも起きない。
+ *
+ * <h2>実行中に書き換えられたソース</h2>
+ * 内容ハッシュはパス1 で取り、JDT はそのあとでファイルを読む。そのあいだにソースが書き換えられると、前の中身の
+ * ハッシュと後の中身の事実が組になる。そのあとで元に戻すと、ハッシュが一致して書き換えた中身の事実を再利用し
+ * 続けていた。そこで
+ * <ul>
+ *   <li>解析したファイルは、JDT が読んだ直後にハッシュを取り直し、前と違えば F 行の内容ハッシュを空にして書く
+ *       （{@link BlockWriter#hashAfterParse}。空のハッシュはどの中身とも一致しない）</li>
+ *   <li>書き終えたら、どのソースも一覧を作ったときの大きさと更新時刻のままかを見て、変わったファイルのブロックの
+ *       内容ハッシュも空にする（{@link #invalidateChangedDuringRun}。JDT はほかのファイルを解析するときにも
+ *       ソースパスから読むので、再利用したブロックのファイルでも、その中身を読んだファイルがある）</li>
+ * </ul>
+ * 次の実行はそれらを解析し直し、宣言する型を「変わった型」にして、依存するファイルも解析し直す。
+ * 更新時刻は実行のあいだの見張りにだけ使い、キャッシュには書かない（下の「同一性」は変えない）。
  *
  * <h2>何も変わっていないとき</h2>
  * 解析するファイルが 1 つも無く（変更・追加・削除・壊れたブロック・jar の変化が無い）、先頭の行
@@ -214,6 +242,27 @@ public final class CacheUpdater {
      * （「それらのファイルは解析し直す」という案内が事実と食い違うため）
      */
     private int damagedBlocks;
+    /**
+     * 解析したファイルのうち、解析のあいだに中身が変わったもの（解析の前と後で内容ハッシュが違う）。
+     * F 行の内容ハッシュを空にして書いてある（次の実行で必ず解析し直す）。クラスの説明「実行中に書き換えられたソース」
+     */
+    private final Set<String> changedDuringRun = new HashSet<>();
+    /** 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）。run の最初に作る */
+    private SameUnitFiles units = SameUnitFiles.NONE;
+    /**
+     * 旧キャッシュ。パス0 で開き、パス1（全体を読む）・パス3（索引が無いときの I 行）・パス5（書き写し）まで
+     * このチャネルだけで読む（名前で開き直さない）。無い・使わない設定なら null
+     */
+    private FileChannel oldChannel;
+    /** 開いたときの旧キャッシュの大きさ。読むたびに見比べ、違えば止める（{@link #checkOldCacheUnchanged}） */
+    private long oldSize;
+
+    /**
+     * 検査用の差し込み口（test/incremental の EditDuringRunCheck だけが使う。本番では null）。
+     * バッチを JDT に渡す直前に、そのバッチのファイルを渡す。解析の途中でソースを書き換える場面を、
+     * 時間に頼らずに作るため
+     */
+    static volatile Consumer<List<SourceFile>> beforeBatchForTest;
 
     public CacheUpdater(ProjectLayout layout, Config config) {
         this.layout = layout;
@@ -226,12 +275,18 @@ public final class CacheUpdater {
         List<Path> javaFiles = layout.listJavaFiles();
         Log.info(Messages.format("analysis.javaFileCount", javaFiles.size()));
 
-        // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）
+        // 相対パス -> ソースファイルの実体情報（これだけはヒープに載せる）。
+        // あわせて、解析を始めたときの更新時刻を live の並びの順に覚える。実行中にソースが書き換えられたかを
+        // 見るためだけに使い、キャッシュには書かない（クラスの説明「実行中に書き換えられたソース」）
         Map<String, SourceFile> live = new LinkedHashMap<>();
+        long[] startTimes = new long[javaFiles.size()];
         for (Path f : javaFiles) {
             String rel = layout.relativeOf(f);
-            live.put(rel, new SourceFile(f, rel, Files.size(f)));
+            BasicFileAttributes attrs = Files.readAttributes(f, BasicFileAttributes.class);
+            startTimes[live.size()] = attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS);
+            live.put(rel, new SourceFile(f, rel, attrs.size()));
         }
+        units = SameUnitFiles.of(live, layout);
 
         Path parent = config.cacheFile.toAbsolutePath().getParent();
         if (parent != null) {
@@ -241,14 +296,41 @@ public final class CacheUpdater {
         TempFiles.deleteLeftovers(config.cacheFile);
         Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
         // 前回が途中で終わっていれば、その一時ファイルを退避して「パースの使い回し」に使う
+        // （決まった名前だが、同じキャッシュのフォルダを使う実行は錠で 1 つずつにしてある。jche.cache.CacheLock）
         Path partialCache = takeOverPartial(config.cacheFile, tmpCache);
 
         Progress progress = new Progress(Messages.get("analysis.progress.parse"), javaFiles.size(),
                 CallEdgeExtractor.BATCH_SIZE);
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
 
+        // 旧キャッシュはここで 1 回だけ開き、パス0 からパス5 まで同じチャネルで読む（クラスの説明「旧キャッシュの読み方」）。
+        // 差し替える（最後の move）前に必ず閉じる（Windows は開いているファイルを置き換えられない）
+        openOldCache();
+        boolean written;
+        try {
+            written = update(live, tmpCache, partialCache, progress, extractor, result);
+        } finally {
+            closeOldCache();
+        }
+        if (!written) {
+            return result;   // 何も変わっていない。旧キャッシュをそのまま残した
+        }
+        progress.finish();
+
+        invalidateChangedDuringRun(tmpCache, live, startTimes);
+        Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
+        return result;
+    }
+
+    /**
+     * パス0〜パス5。新キャッシュを一時ファイルに書く。
+     *
+     * @return 一時ファイルに書いたか。何も変わっていなくて旧キャッシュをそのまま残すなら false
+     */
+    private boolean update(Map<String, SourceFile> live, Path tmpCache, Path partialCache, Progress progress,
+                           CallEdgeExtractor extractor, CachePhaseResult result) throws IOException {
         // --- パス0: 旧キャッシュの依存 jar（L行）と今回のクラスパスを突き合わせる ---
-        List<LibraryFact> oldLibraries = config.cacheEnabled ? readOldLibraries() : null;
+        List<LibraryFact> oldLibraries = (oldChannel != null) ? readOldLibraries() : null;
         boolean oldCacheUsable = (oldLibraries != null);
         LibraryDiff libraries = LibraryDiff.compute(layout.classpathArray(),
                 oldCacheUsable ? oldLibraries : List.of(), layout.projectRoot);
@@ -291,6 +373,8 @@ public final class CacheUpdater {
                     changed.add(en.getValue());
                 }
             }
+            // 同じクラスが 2 つのソースフォルダにあるとき、その組は必ず一緒に解析する（SameUnitFiles）
+            units.pullInto(changed, unresolvedBefore, valid, live);
 
             if (canKeepAsIs(old, changed, unresolvedBefore, stale, head)) {
                 // 何も変わっていない。書き直しても同じバイト列になるので、旧キャッシュをそのまま残す
@@ -301,7 +385,7 @@ public final class CacheUpdater {
                 keepAsIs(old, result);
                 progress.step(result.reused);
                 progress.finish();
-                return result;
+                return false;
             }
 
             FileChannel outChannel = FileChannel.open(tmpCache, StandardOpenOption.CREATE,
@@ -313,7 +397,7 @@ public final class CacheUpdater {
                     writeLine(cacheOut, line);
                 }
                 BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants,
-                        oldShapes);
+                        oldShapes, changedDuringRun);
 
                 // --- パス2: 変更・追加されたファイルを解析 ---
                 writer.stale = stale;
@@ -347,21 +431,40 @@ public final class CacheUpdater {
                 writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged));
             }
         }
-        progress.finish();
-
-        Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
-        return result;
+        return true;
     }
 
-    /** キャッシュの先頭の行（ヘッダ行・依存 jar の L 行・ソース一覧の T 行）。書くときも、旧キャッシュと比べるときも使う */
+    /**
+     * キャッシュの先頭の行（ヘッダ行・依存 jar の L 行・ソース一覧の T 行）。書くときも、旧キャッシュと比べるときも使う。
+     * T 行の最後の列は先頭の行の検査値（ヘッダ行・L 行と、検査値の列を空にした T 行の CRC32。{@link BlockChecksum}）
+     */
     private List<String> headLinesOf(List<LibraryFact> libraries, String sources) {
         List<String> lines = new ArrayList<>(libraries.size() + 2);
-        lines.add(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding, JdtVersion.current()));
+        BlockChecksum checksum = new BlockChecksum();
+        String header = expectedHeader();
+        lines.add(header);
+        checksum.add(header);
         for (LibraryFact l : libraries) {
-            lines.add(l.toRow());
+            String row = l.toRow();
+            lines.add(row);
+            checksum.add(row);
         }
-        lines.add(CacheFormat.sourcesRow(sources));
+        checksum.addWithoutLastColumn(CacheFormat.sourcesRow(sources, ""));
+        lines.add(CacheFormat.sourcesRow(sources, checksum.hex()));
         return lines;
+    }
+
+    /**
+     * 今回のヘッダ行（キャッシュの鍵）。形式の版・ソースレベル・文字コード・JDK・JDT の版に加えて、
+     * ソースフォルダの並び（project.root からの相対パス）も入れる。JDT は同じ名前の型が 2 つのソースフォルダに
+     * あると先に並ぶ方で解決するので、並びが変われば同じソースでも解決先が変わる（{@link CacheFormat#headerFor}）
+     */
+    private String expectedHeader() {
+        List<String> folders = new ArrayList<>(layout.sourceFolders.size());
+        for (Path sf : layout.sourceFolders) {
+            folders.add(layout.relativeOf(sf));
+        }
+        return CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding, JdtVersion.current(), folders);
     }
 
     /**
@@ -391,11 +494,12 @@ public final class CacheUpdater {
         if (old.blocksStart != expected.length) {
             return false;
         }
-        byte[] actual;
-        try (InputStream in = Files.newInputStream(config.cacheFile)) {
-            actual = in.readNBytes(expected.length);
+        checkOldCacheUnchanged();
+        ByteBuffer actual = ByteBuffer.allocate(expected.length);
+        while (actual.hasRemaining() && oldChannel.read(actual, actual.position()) > 0) {
+            // 旧キャッシュの先頭を、パス1 と同じチャネルから読む
         }
-        return Arrays.equals(actual, expected);
+        return !actual.hasRemaining() && Arrays.equals(actual.array(), expected);
     }
 
     /**
@@ -444,15 +548,24 @@ public final class CacheUpdater {
         return files;
     }
 
-    /** BATCH_SIZE 件ずつまとめてパースし、1ファイル分ずつ writer に渡す */
-    private static void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> files,
-                                         BlockWriter writer) throws IOException {
-        for (int from = 0; from < files.size(); from += CallEdgeExtractor.BATCH_SIZE) {
+    /**
+     * BATCH_SIZE 件ずつまとめてパースし、1ファイル分ずつ writer に渡す。
+     * 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）は、同じバッチに並べる
+     * （{@link SameUnitFiles#batches}。全件解析でも差分更新でも同じ組で JDT に渡すため）
+     */
+    private void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> files,
+                                  BlockWriter writer) throws IOException {
+        int done = 0;
+        for (List<SourceFile> batch : units.batches(files, CallEdgeExtractor.BATCH_SIZE)) {
             // 中止の確認はバッチの切れ目で行う。ここで抜けてもキャッシュはテンポラリのままなので壊れない
             RunControl.checkCancelled();
-            RunControl.progress(Messages.get("analysis.progress.parse"), from, files.size());
-            int to = Math.min(files.size(), from + CallEdgeExtractor.BATCH_SIZE);
-            extractor.analyzeBatch(files.subList(from, to), writer);
+            RunControl.progress(Messages.get("analysis.progress.parse"), done, files.size());
+            Consumer<List<SourceFile>> hook = beforeBatchForTest;
+            if (hook != null) {
+                hook.accept(batch);
+            }
+            extractor.analyzeBatch(batch, writer);
+            done += batch.size();
         }
     }
 
@@ -506,6 +619,8 @@ public final class CacheUpdater {
         private final Map<String, String> oldConstants;
         /** 相対パス -> 旧キャッシュの型の形の指紋（{@link Cascade#WHEN_CONSTANTS_CHANGED} の判定用） */
         private final Map<String, String> oldShapes;
+        /** 解析のあいだに中身が変わったファイル（{@link CacheUpdater#changedDuringRun}）を積む先 */
+        private final Set<String> changedDuringRun;
         /** 「変わった型」の集合。非nullのときだけ {@link #cascade} に従って型を加える（連鎖の判定にも使う） */
         StaleTypes stale;
         /** 解析したファイルが宣言する型を「変わった型」に加える条件 */
@@ -516,13 +631,14 @@ public final class CacheUpdater {
 
         BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
                     Function<SourceFile, String> hasher, Map<String, String> oldConstants,
-                    Map<String, String> oldShapes) {
+                    Map<String, String> oldShapes, Set<String> changedDuringRun) {
             this.cacheOut = cacheOut;
             this.result = result;
             this.progress = progress;
             this.hasher = hasher;
             this.oldConstants = oldConstants;
             this.oldShapes = oldShapes;
+            this.changedDuringRun = changedDuringRun;
         }
 
         /**
@@ -546,7 +662,7 @@ public final class CacheUpdater {
 
         @Override
         public void accept(SourceFile file, FileAnalysis fa) throws IOException {
-            fa.hash = hasher.apply(file);
+            fa.hash = hashAfterParse(file);
             String shape = shapeDigestOf(fa);
             // writeBlock はブロックをメモリ上で組み終えてから書くので、途中で例外が出ても書きかけは残らない
             // （例外は呼び出し元がこのファイルの失敗として数える）。書けたら直後に数え、Z 行の数と揃える
@@ -572,6 +688,29 @@ public final class CacheUpdater {
                 }
             }
             progress.step(++done);
+        }
+
+        /**
+         * F 行に書く内容ハッシュ。解析の前（パス1 で求めたもの）と、JDT が読み終えた今とで中身が同じなら、そのハッシュ。
+         * 違えば空文字（JDT が読んだのが前と後のどちらの中身か分からない。空のハッシュはどの中身とも一致しないので、
+         * 次の実行で必ず解析し直す）。前のハッシュのまま書くと、解析のあいだに書き換えて元に戻したファイルが、
+         * 書き換えた中身の事実のまま再利用され続ける（クラスの説明「実行中に書き換えられたソース」）
+         */
+        private String hashAfterParse(SourceFile file) {
+            String before = hasher.apply(file);
+            String now;
+            try {
+                now = FileHash.of(file.path());
+            } catch (IOException e) {
+                now = "";
+            }
+            if (!before.isEmpty() && before.equals(now)) {
+                return before;
+            }
+            if (!before.isEmpty()) {
+                changedDuringRun.add(file.relativePath());
+            }
+            return "";
         }
 
         @Override
@@ -804,6 +943,155 @@ public final class CacheUpdater {
         return !recorded.isEmpty() && recorded.equals(hashOf(st));
     }
 
+    /** 旧キャッシュを開く（無い・使わない設定なら開かない。開けなければ使わない） */
+    private void openOldCache() {
+        if (!config.cacheEnabled || !Files.isRegularFile(config.cacheFile)) {
+            return;
+        }
+        try {
+            oldChannel = FileChannel.open(config.cacheFile, StandardOpenOption.READ);
+            oldSize = oldChannel.size();
+        } catch (IOException | RuntimeException e) {
+            // 読めない・開けないキャッシュ。全件解析し直せば済むので、解析ごと失敗させない
+            Log.warn(Messages.format("analysis.cache.unreadable", e));
+            closeOldCache();
+        }
+    }
+
+    private void closeOldCache() {
+        if (oldChannel == null) {
+            return;
+        }
+        try {
+            oldChannel.close();
+        } catch (IOException e) {
+            Log.info(Messages.format("analysis.cache.unreadable", e));
+        }
+        oldChannel = null;
+    }
+
+    /**
+     * 旧キャッシュが開いたときの大きさのままか。違えば、読んでいるあいだに書き換えられた（同じキャッシュのフォルダを
+     * 錠を持たずに使うもの＝錠を知らない古い版のこのツールや、手での書き換え）。パス1 で覚えた位置が当てにならないので、
+     * 例外にして解析を止める（パス1 の中なら、読めないキャッシュとして丸ごと捨てる）
+     */
+    private void checkOldCacheUnchanged() throws IOException {
+        if (oldChannel == null || oldChannel.size() != oldSize) {
+            throw new IOException(Messages.format("analysis.cache.changedWhileReading", config.cacheFile));
+        }
+    }
+
+    /**
+     * 解析のあいだにソースが書き換えられていたら、そのファイルのブロックの内容ハッシュを空にする
+     * （次の実行で必ず解析し直し、そのファイルの型を「変わった型」として依存するファイルも解析し直す）。
+     *
+     * <p>JDT は解析するファイルのほかに、参照している型のソースもソースパスから読む。解析のあいだに書き換えられた
+     * ファイル X を読んだ別のファイルの事実は、X の書き換え後の中身に基づく。X の F 行に解析を始めたときのハッシュが
+     * 残っていると、X を元に戻したあとの実行で X は「変わっていない」と見なされ、書き換え後の中身で解析したファイルが
+     * 古いまま再利用され続ける。更新時刻（と大きさ）で見るのは実行のあいだの見張りだけで、キャッシュには書かない
+     * （同一性は内容ハッシュで見る。クラスの説明「同一性」）。解析したファイルは JDT が読んだ直後のハッシュでも
+     * 確かめてある（{@link BlockWriter#hashAfterParse}）
+     *
+     * @param startTimes 解析を始めたときの更新時刻（{@code live} の並びの順）
+     */
+    private void invalidateChangedDuringRun(Path tmpCache, Map<String, SourceFile> live, long[] startTimes)
+            throws IOException {
+        Set<String> blank = new HashSet<>();
+        int i = 0;
+        for (SourceFile f : live.values()) {
+            long started = startTimes[i++];
+            if (changedDuringRun.contains(f.relativePath())) {
+                continue;   // 内容ハッシュを空にして書いてある
+            }
+            try {
+                BasicFileAttributes attrs = Files.readAttributes(f.path(), BasicFileAttributes.class);
+                if (attrs.size() == f.size() && attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS) == started) {
+                    continue;
+                }
+            } catch (IOException e) {
+                // 消された。次の実行ではブロックのファイルがソースに無いので、何もしなくても解析し直される
+                continue;
+            }
+            blank.add(f.relativePath());
+        }
+        if (blank.isEmpty() && changedDuringRun.isEmpty()) {
+            return;
+        }
+        List<String> all = new ArrayList<>(new TreeSet<>(changedDuringRun));
+        for (String rel : new TreeSet<>(blank)) {
+            all.add(rel);
+        }
+        Log.info(Messages.format("analysis.cache.changedDuringRun", all.size(),
+                String.join(", ", all.subList(0, Math.min(all.size(), 5)))));
+        if (!blank.isEmpty()) {
+            blankHashes(tmpCache, blank);
+        }
+    }
+
+    /**
+     * 書き終えた一時ファイルのうち、{@code paths} のブロックの F 行の内容ハッシュを空にする（検査値も求め直す）。
+     * めったに通らない経路なので、一時ファイルを行として読み直して別の一時ファイルに書き、差し替える
+     * （ヒープに載せるのは書き直すブロック 1 つ分だけ）
+     */
+    private void blankHashes(Path tmpCache, Set<String> paths) throws IOException {
+        Path rewritten = TempFiles.create(config.cacheFile, TempFiles.REWRITE);
+        try {
+            try (CacheReader in = CacheReader.open(tmpCache);
+                 BufferedWriter out = new BufferedWriter(new OutputStreamWriter(Files.newOutputStream(rewritten),
+                         StandardCharsets.UTF_8.newEncoder()))) {
+                writeLine(out, in.header());
+                String[] fileRow = null;          // 書き直すブロックの F 行（書き直さないなら null）
+                List<String> body = new ArrayList<>();
+                while (in.next()) {
+                    char rowType = in.rowType();
+                    if (rowType == CacheFormat.ROW_FILE || rowType == CacheFormat.ROW_END) {
+                        flushBlanked(fileRow, body, out);
+                        fileRow = null;
+                        body.clear();
+                        if (rowType == CacheFormat.ROW_FILE && paths.contains(in.filePath())) {
+                            fileRow = in.columns();
+                            continue;
+                        }
+                    }
+                    if (fileRow != null) {
+                        body.add(in.line());
+                    } else {
+                        writeLine(out, in.line());
+                    }
+                }
+                flushBlanked(fileRow, body, out);
+            }
+            Files.move(rewritten, tmpCache, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            TempFiles.delete(rewritten);
+        }
+    }
+
+    /** 内容ハッシュを空にした F 行と、求め直した検査値でブロックを書く（{@code fileRow} が null なら何もしない） */
+    private static void flushBlanked(String[] fileRow, List<String> body, BufferedWriter out) throws IOException {
+        if (fileRow == null) {
+            return;
+        }
+        String[] f = Arrays.copyOf(fileRow, Math.max(fileRow.length, 8));
+        for (int i = 0; i < f.length; i++) {
+            if (f[i] == null) {
+                f[i] = "";
+            }
+        }
+        f[4] = "";   // 内容ハッシュ
+        f[7] = "";   // 検査値（下で求め直す）
+        BlockChecksum checksum = new BlockChecksum();
+        checksum.addWithoutLastColumn(CacheFormat.joinRow(f));
+        for (String line : body) {
+            checksum.add(line);
+        }
+        f[7] = checksum.hex();
+        writeLine(out, CacheFormat.joinRow(f));
+        for (String line : body) {
+            writeLine(out, line);
+        }
+    }
+
     /** 今のソースの内容ハッシュ（計算は 1 ファイル 1 回）。読めなければ空文字 */
     private String hashOf(SourceFile file) {
         String h = hashes.get(file.relativePath());
@@ -833,16 +1121,18 @@ public final class CacheUpdater {
      * 途中で切れている・壊れているかは、全体を読むパス1（{@link #scanOldCache}）が見る
      */
     private List<LibraryFact> readOldLibraries() {
-        if (!Files.isRegularFile(config.cacheFile)) {
-            return null;
-        }
-        try {
-            CacheHead head = headOf(config.cacheFile);
+        try (CacheReader in = CacheReader.open(oldChannel)) {
+            CacheHead head = headOf(in);
             if (head == null) {
-                // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK・JDT が
+                // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK・JDT・ソースフォルダの並びが
                 // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
                 // 同じソースでも解析結果が変わるため、F 行の同一性が一致していても再利用してはいけない
                 Log.info(Messages.get("analysis.cache.incompatible"));
+                return null;
+            }
+            if (!head.intact()) {
+                // L 行・T 行が書き換えられた・化けた。L 行を信用できなければ、どの jar が変わったかを言えない
+                Log.info(Messages.get("analysis.cache.headDamaged"));
                 return null;
             }
             return head.libraries();
@@ -981,14 +1271,18 @@ public final class CacheUpdater {
      */
     private boolean isPartialUsable(Path partial, String sources, List<LibraryFact> libraries) {
         CacheHead head;
-        try {
-            head = headOf(partial);
+        try (CacheReader in = CacheReader.open(partial)) {
+            head = headOf(in);
         } catch (IOException | RuntimeException e) {
             Log.warn(Messages.format("analysis.resume.readFailed", e));
             return false;
         }
         if (head == null) {
             Log.info(Messages.get("analysis.resume.incompatible"));
+            return false;
+        }
+        if (!head.intact()) {
+            Log.info(Messages.get("analysis.resume.headDamaged"));
             return false;
         }
         if (!head.sources().equals(sources)) {
@@ -1039,10 +1333,13 @@ public final class CacheUpdater {
                     continue;
                 }
                 String[] f = in.columns();
-                if (f.length >= 2 && wanted.contains(f[1]) && !taken.contains(f[1])
+                // 同じクラスが 2 つのソースフォルダにあるファイルは引き継がない（組のもう片方と一緒に解析し直す。
+                // 片方だけ引き継ぐと、組が別々のバッチで解析されたことになる。SameUnitFiles）
+                if (f.length >= 2 && wanted.contains(f[1]) && !taken.contains(f[1]) && !units.contains(f[1])
                         && isValidBlock(f, live)) {
                     fileRow = f;
                     block.add(in.line());   // F 行の中身（パス・サイズ・ハッシュ）は今と一致している
+                    in.addWithoutLastColumnTo(checksum);
                 }
             }
             // 最後の F 行から始まるブロックは、途中で切れている可能性があるので使わない
@@ -1084,36 +1381,46 @@ public final class CacheUpdater {
      *
      * @param libraries  解析時の依存 jar（L行）
      * @param sources    解析開始時のソース一覧の指紋（T行）。無ければ空文字
+     * @param intact     先頭の行の検査値（T 行の最後の列）が合うか。合わなければ L 行・T 行を信用しない
      */
-    private record CacheHead(List<LibraryFact> libraries, String sources) {
+    private record CacheHead(List<LibraryFact> libraries, String sources, boolean intact) {
     }
 
     /**
      * ヘッダが今回と一致すれば、続く T 行・L 行を返す。一致しなければ null。
      * 既存キャッシュ（パス0）と、中断した前回の実行の一時ファイル（引き継ぎ）で共通。
+     * 先頭の行の検査値（T 行の最後の列。{@link #headLinesOf}）も確かめる。T 行が無い・2 つある・L 行が T 行より
+     * 後ろにある・検査値が合わないなら {@link CacheHead#intact} が false
      */
-    private CacheHead headOf(Path cacheFile) throws IOException {
-        try (CacheReader in = CacheReader.open(cacheFile)) {
-            if (!in.headerMatches(CacheFormat.headerFor(
-                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()))) {
-                return null;
-            }
-            List<LibraryFact> libraries = new ArrayList<>();
-            String sources = "";
-            while (in.next()) {
-                if (in.is(CacheFormat.ROW_LIBRARY)) {
-                    LibraryFact l = LibraryFact.fromRow(in.columns());
-                    if (l != null) {
-                        libraries.add(l);
-                    }
-                } else if (in.is(CacheFormat.ROW_SOURCES)) {
-                    sources = in.column(1);
-                } else {
-                    break;   // ブロックが始まった
-                }
-            }
-            return new CacheHead(libraries, sources);
+    private CacheHead headOf(CacheReader in) throws IOException {
+        if (!in.headerMatches(expectedHeader())) {
+            return null;
         }
+        BlockChecksum checksum = new BlockChecksum();
+        checksum.add(in.header());
+        List<LibraryFact> libraries = new ArrayList<>();
+        String sources = "";
+        String expectedCrc = null;
+        boolean wellFormed = true;
+        while (in.next()) {
+            if (in.is(CacheFormat.ROW_LIBRARY)) {
+                wellFormed &= (expectedCrc == null);   // L 行は T 行より前
+                in.addTo(checksum);
+                LibraryFact l = LibraryFact.fromRow(in.columns());
+                if (l != null) {
+                    libraries.add(l);
+                }
+            } else if (in.is(CacheFormat.ROW_SOURCES)) {
+                wellFormed &= (expectedCrc == null);   // T 行は 1 つだけ
+                in.addWithoutLastColumnTo(checksum);
+                sources = in.column(1);
+                expectedCrc = CacheFormat.headCrcOf(in.columns());
+            } else {
+                break;   // ブロックが始まった
+            }
+        }
+        return new CacheHead(libraries, sources,
+                wellFormed && expectedCrc != null && expectedCrc.equals(checksum.hex()));
     }
 
     /**
@@ -1302,7 +1609,8 @@ public final class CacheUpdater {
         String lastLine = "";
         // 索引への書き込みの失敗はここでは受けない（索引の側で受けて、パス3 を旧キャッシュから読む形に切り替える）。
         // 受けると「既存キャッシュを読めない」と取り違えて、読めているキャッシュを丸ごと捨ててしまう
-        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
+        try (CacheReader in = CacheReader.open(oldChannel)) {   // ヘッダはパス0で検証済み
+            checkOldCacheUnchanged();
             OldBlock block = null;
             while (in.next()) {
                 char rowType = in.rowType();
@@ -1322,6 +1630,8 @@ public final class CacheUpdater {
                         boolean inSources = f.length >= 2 && live.containsKey(f[1]);
                         block = new OldBlock(f, inSources, isValidBlock(f, live), in.lineStart(),
                                 in.irregularities());
+                        // F 行の件数（エラー数・未解決数など）も検査値で守る（crc 列だけを空にした形で足す）
+                        in.addWithoutLastColumnTo(block.checksum);
                     } else {
                         trailers++;
                     }
@@ -1360,6 +1670,8 @@ public final class CacheUpdater {
                         librariesAddedOrChanged, libraryAffected, old, deps);
             }
             old.writtenAsIs = (in.irregularities() == 0 && trailers == 1);
+            // 読んでいるあいだに書き換えられていれば、読んだものを信用しない（丸ごと捨てて全件解析し直す）
+            checkOldCacheUnchanged();
         } catch (IOException | RuntimeException e) {
             Log.warn(Messages.format("analysis.cache.unreadable", e));
             return null;
@@ -1626,6 +1938,8 @@ public final class CacheUpdater {
             } else {
                 selectDependentsFromCache(old, select);
             }
+            // 同じクラスが 2 つのソースフォルダにあるとき、その組は必ず一緒に解析する（SameUnitFiles）
+            units.pullIntoPaths(dependents, libraryDependents, valid);
             writer.countAs = Reason.BY_SOURCE;
             analyzeInBatches(extractor, filesOf(dependents, live), writer);
             writer.countAs = Reason.BY_LIBRARY;
@@ -1647,7 +1961,8 @@ public final class CacheUpdater {
         }
         int k = 0;
         int pending = -1;   // F 行を読んだ、依存の判定待ちのブロック（OldCache の添字）
-        try (CacheReader in = CacheReader.openAt(config.cacheFile, old.starts[0])) {
+        checkOldCacheUnchanged();
+        try (CacheReader in = CacheReader.openAt(oldChannel, old.starts[0])) {
             while (in.next()) {
                 char rowType = in.rowType();
                 boolean blockStart = rowType == CacheFormat.ROW_FILE || rowType == CacheFormat.ROW_END;
@@ -1692,34 +2007,37 @@ public final class CacheUpdater {
      */
     private void copyValidBlocks(OldCache old, Set<String> valid, FileChannel out, BufferedWriter cacheOut,
                                  CachePhaseResult result) throws IOException {
-        try (FileChannel in = FileChannel.open(config.cacheFile, StandardOpenOption.READ)) {
-            long pendingStart = -1;   // まだ写していない、隣り合うブロックをまとめた範囲
-            long pendingEnd = -1;
-            for (int i = 0; i < old.size; i++) {
-                String rel = old.paths[i];
-                if (!valid.contains(rel)) {
-                    continue;   // パス3 で解析し直した
-                }
-                result.reused++;
-                // 前の実行でエラーだったファイルは、書き写した今回もエラーのままである。
-                // ここで数えないと、2回目以降の実行で警告が消えてしまう
-                result.countErrors(rel, old.errors[i], old.syntaxErrors[i]);
-                result.unresolved += old.unresolved[i];
-                if (old.irregular.get(i)) {
-                    transfer(in, pendingStart, pendingEnd, out, cacheOut);
-                    pendingStart = -1;
-                    pendingEnd = -1;
-                    rewriteLines(old.starts[i], old.ends[i], cacheOut);
-                } else if (pendingEnd == old.starts[i]) {
-                    pendingEnd = old.ends[i];
-                } else {
-                    transfer(in, pendingStart, pendingEnd, out, cacheOut);
-                    pendingStart = old.starts[i];
-                    pendingEnd = old.ends[i];
-                }
+        // パス1 で読んだのと同じチャネルから写す（名前で開き直すと、そのあいだに差し替えられたファイルの、
+        // パス1 で覚えた位置とは関係の無いバイトを写しかねない）。大きさが変わっていれば止める
+        checkOldCacheUnchanged();
+        FileChannel in = oldChannel;
+        long pendingStart = -1;   // まだ写していない、隣り合うブロックをまとめた範囲
+        long pendingEnd = -1;
+        for (int i = 0; i < old.size; i++) {
+            String rel = old.paths[i];
+            if (!valid.contains(rel)) {
+                continue;   // パス3 で解析し直した
             }
-            transfer(in, pendingStart, pendingEnd, out, cacheOut);
+            result.reused++;
+            // 前の実行でエラーだったファイルは、書き写した今回もエラーのままである。
+            // ここで数えないと、2回目以降の実行で警告が消えてしまう
+            result.countErrors(rel, old.errors[i], old.syntaxErrors[i]);
+            result.unresolved += old.unresolved[i];
+            if (old.irregular.get(i)) {
+                transfer(in, pendingStart, pendingEnd, out, cacheOut);
+                pendingStart = -1;
+                pendingEnd = -1;
+                rewriteLines(old.starts[i], old.ends[i], cacheOut);
+            } else if (pendingEnd == old.starts[i]) {
+                pendingEnd = old.ends[i];
+            } else {
+                transfer(in, pendingStart, pendingEnd, out, cacheOut);
+                pendingStart = old.starts[i];
+                pendingEnd = old.ends[i];
+            }
         }
+        transfer(in, pendingStart, pendingEnd, out, cacheOut);
+        checkOldCacheUnchanged();
     }
 
     /**
@@ -1749,7 +2067,7 @@ public final class CacheUpdater {
 
     /** 旧キャッシュの {@code [start, end)} を行に戻し、空行を除いて {@code '\n'} で書き直す */
     private void rewriteLines(long start, long end, BufferedWriter cacheOut) throws IOException {
-        try (CacheReader in = CacheReader.openAt(config.cacheFile, start)) {
+        try (CacheReader in = CacheReader.openAt(oldChannel, start)) {
             while (in.next() && in.lineStart() < end) {
                 writeLine(cacheOut, in.line());
             }
@@ -1858,7 +2176,10 @@ public final class CacheUpdater {
             body.add(j.toRow());
         }
 
+        // 検査値は F 行（crc 列を空にした形）から始める。F 行の件数も守る（CacheFormat の「ブロックの検査値」）
         BlockChecksum checksum = new BlockChecksum();
+        checksum.addWithoutLastColumn(CacheFormat.fileRow(fa.relativePath, fa.size, fa.errors, fa.hash,
+                fa.syntaxErrors, fa.unresolvedCount(), ""));
         for (String line : body) {
             checksum.add(line);
         }

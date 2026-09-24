@@ -48,6 +48,10 @@ public final class CacheReader implements Closeable {
     private static final int BUFFER_SIZE = 1 << 16;
 
     private final FileChannel channel;
+    /** {@link #close} でチャネルも閉じるか（開いたチャネルを借りて読むときは閉じない） */
+    private final boolean ownsChannel;
+    /** 次に読み足すファイル上の位置（チャネルの位置は使わない。1 つのチャネルを何度も読み直せるように） */
+    private long readPos;
     private final CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT);
@@ -72,8 +76,10 @@ public final class CacheReader implements Closeable {
     /** 今の行より前（ファイルの {@code [0, lineStart)}）の {@link #irregular} */
     private long irregularBeforeLine;
 
-    private CacheReader(FileChannel channel, long offset) {
+    private CacheReader(FileChannel channel, long offset, boolean ownsChannel) {
         this.channel = channel;
+        this.ownsChannel = ownsChannel;
+        this.readPos = offset;
         this.bufStart = offset;
         this.lineStart = offset;
         this.nextLineStart = offset;
@@ -81,7 +87,24 @@ public final class CacheReader implements Closeable {
 
     /** ファイルを開き、ヘッダ行（1 行目）を読んだ状態にする。ヘッダは {@link #header} で見られる */
     public static CacheReader open(Path cacheFile) throws IOException {
-        CacheReader in = openAt(cacheFile, 0L);
+        return withHeader(openAt(cacheFile, 0L));
+    }
+
+    /**
+     * 開いてあるチャネルを先頭から読む（ヘッダ行を読んだ状態にする）。{@link #close} してもチャネルは閉じない。
+     * 差分更新が旧キャッシュを 1 つのチャネルで何度かに分けて読むときに使う（途中でファイルが差し替えられても、
+     * 最初に開いたものを読み続ける。{@code jche.analysis.CacheUpdater}）
+     */
+    public static CacheReader open(FileChannel channel) throws IOException {
+        return withHeader(new CacheReader(channel, 0L, false));
+    }
+
+    /** {@link #open(FileChannel)} と同じく、開いてあるチャネルを {@code offset} バイト目（行の先頭）から読む */
+    public static CacheReader openAt(FileChannel channel, long offset) {
+        return new CacheReader(channel, offset, false);
+    }
+
+    private static CacheReader withHeader(CacheReader in) throws IOException {
         try {
             if (in.readRaw()) {
                 in.header = in.decode().trim();
@@ -98,14 +121,7 @@ public final class CacheReader implements Closeable {
      * （{@link #header} は空文字）。覚えておいたブロックの位置から読み直すときに使う
      */
     public static CacheReader openAt(Path file, long offset) throws IOException {
-        FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
-        try {
-            channel.position(offset);
-            return new CacheReader(channel, offset);
-        } catch (IOException | RuntimeException e) {
-            channel.close();
-            throw e;
-        }
+        return new CacheReader(FileChannel.open(file, StandardOpenOption.READ), offset, true);
     }
 
     /** ヘッダ行（{@link CacheFormat#headerFor} の形）。無ければ空文字 */
@@ -200,6 +216,22 @@ public final class CacheReader implements Closeable {
     }
 
     /**
+     * 今の行（F 行か T 行）を、最後の列（検査値の列）を空にした形で検査値に足す
+     * （{@link BlockChecksum#addWithoutLastColumn(String)} と同じバイト列。最後のタブまでを足す）
+     */
+    public void addWithoutLastColumnTo(BlockChecksum checksum) {
+        int end = lineOff + lineLen;
+        int cut = lineOff;   // タブが無ければ空の行として足す（書き手はそういう行を書かないので、検査値は合わない）
+        for (int i = end - 1; i >= lineOff; i--) {
+            if (buf[i] == '\t') {
+                cut = i + 1;
+                break;
+            }
+        }
+        checksum.add(buf, lineOff, cut - lineOff);
+    }
+
+    /**
      * 今の行より前（ファイルの先頭から {@link #lineStart} まで）にあった、書き手が書かない形の数
      * （読み飛ばした空行・行末の {@code '\r'}・{@code '\n'} で終わらない行）。{@link #next} が false を
      * 返したあとは、ファイル全体の数。
@@ -214,7 +246,9 @@ public final class CacheReader implements Closeable {
 
     @Override
     public void close() throws IOException {
-        channel.close();
+        if (ownsChannel) {
+            channel.close();
+        }
     }
 
     // ------------------------------------------------------------
@@ -290,12 +324,13 @@ public final class CacheReader implements Closeable {
         if (limit == buf.length) {
             buf = Arrays.copyOf(buf, buf.length * 2);
         }
-        int n = channel.read(ByteBuffer.wrap(buf, limit, buf.length - limit));
+        int n = channel.read(ByteBuffer.wrap(buf, limit, buf.length - limit), readPos);
         if (n < 0) {
             eof = true;
             return false;
         }
         limit += n;
+        readPos += n;
         return true;
     }
 

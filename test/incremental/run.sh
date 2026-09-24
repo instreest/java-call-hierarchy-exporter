@@ -1601,4 +1601,332 @@ EOF
 
 jar_order_case
 
+# --- キャッシュの健全性（同じフォルダを使う実行・解析のあいだの書き換え・ソースフォルダの並び・同じクラスが 2 つ） ---
+# 作業フォルダは integrity/。検査用の小さなプログラム（tools/）もここにコンパイルする
+IW=integrity
+rm -rf $IW && mkdir -p $IW
+if ! "$JAVAC_BIN" --release 17 -encoding UTF-8 -cp "$CP" -d $IW/tools \
+        tools/*.java tools/jche/analysis/*.java 2> $IW/javac.log; then
+    echo "  NG   検査用のプログラム（tools/）のコンパイルに失敗しました"; grep -v JAVA_TOOL_OPTIONS $IW/javac.log | head -5
+    echo "FAIL"; exit 1
+fi
+TOOLS_CP="$IW/tools:$CP"
+
+integrity_config() {   # $1=設定ファイル  $2=project.root  $3=source.folders  $4=キャッシュのフォルダ  $5=出力フォルダ
+    cat > "$1" <<EOF
+project.root=$2
+source.folders=$3
+library.folders=
+library.build.tool=none
+source.encoding=UTF-8
+source.level=17
+exclude.packages=java.**,javax.**
+cache.enabled=true
+cache.folder=$4
+dataflow.enabled=true
+output.encoding=UTF-8
+output.folder=$5
+EOF
+}
+# 解析を 1 回。終了コードを IRC に、出力フォルダを IOUT に、集計の再利用・新規解析の件数を IREUSED・IPARSED に入れる
+integrity_run() {   # $1=設定ファイル  $2=ログ  （環境変数はそのまま渡る）
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter "$1" > "$2" 2>&1
+    IRC=$?
+    IOUT=$(ls -d "$(dirname "$1")"/out-"$(basename "$1" .properties)"/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    local summary
+    summary=$(LC_ALL=C grep -a -E -m1 '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' "$2")
+    IREUSED=$(LC_ALL=C sed -E 's/^[^=]*=([0-9]+).*$/\1/' <<< "$summary")
+    IPARSED=$(LC_ALL=C sed -E 's/^[^=]*=[0-9]+[^=]*=([0-9]+).*$/\1/' <<< "$summary")
+}
+# 設定ファイル（$1）と同じフォルダに、出力フォルダ out-<設定ファイル名>/ とキャッシュ cache/ を使う設定を書く
+integrity_cfg() {   # $1=設定ファイル  $2=project.root  $3=source.folders  [$4=キャッシュのフォルダ]
+    local d
+    d=$(cd "$(dirname "$1")" && pwd)
+    integrity_config "$1" "$2" "$3" "${4:-$d/cache}" "$d/out-$(basename "$1" .properties)"
+}
+same_csv() {   # $1=ラベル  $2=出力フォルダ  $3=比べる出力フォルダ
+    local f
+    for f in call-hierarchy.csv methods.csv; do
+        if [ -s "$2/$f" ] && diff --strip-trailing-cr -q "$2/$f" "$3/$f" > /dev/null; then
+            echo "  OK   $1 $f（全件解析と同じ）"
+        else
+            echo "  NG   $1 $f が全件解析と違います（または空）"
+            diff --strip-trailing-cr "$2/$f" "$3/$f" 2>&1 | head -10; fail=1
+        fi
+    done
+}
+wait_for_file() {   # $1=ファイル。最大 60 秒待つ。できれば 0
+    local i
+    for ((i = 0; i < 600; i++)); do
+        [ -e "$1" ] && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# 同じキャッシュのフォルダを使う実行（CLI と Eclipse・VS Code のプラグインの解析サーバー、同じフォルダを使う CI の
+# ジョブ）は、フォルダの錠（jche.cache.CacheLock）で 1 つずつにする。以前は錠が無く、片方がもう片方の書きかけの
+# 一時ファイル（analysis-cache.tsv.tmp）を引き継ぎに奪って本物に差し替え、呼び出しの 1 本も無い CSV を「成功」として
+# 出すことがあった（docs/cache-unification-qa.md の Q51）
+lock_case() {
+    echo "== 同じキャッシュのフォルダを使う実行は 1 つずつ（錠） =="
+    local d=$IW/lock
+    rm -rf $d && mkdir -p $d && cp -r src $d/src
+    integrity_cfg $d/a.properties "$PWD/$d" src
+    integrity_cfg $d/b.properties "$PWD/$d" src "$PWD/$d/cache"
+    integrity_cfg $d/full.properties "$PWD/$d" src "$PWD/$d/fullcache"
+    integrity_run $d/a.properties $d/a0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/a0.log; fail=1; return; }
+    local cache
+    cache=$(ls $d/cache/*/analysis-cache.tsv)
+
+    # (1) 待つ上限を過ぎたら、何を待っていたかを言って失敗する（錠なしで進めない）
+    "$JAVA_BIN" -cp "$TOOLS_CP" LockHolder "$cache" 15000 $d/held1 > $d/holder1.log 2>&1 &
+    local holder=$!
+    wait_for_file $d/held1 || { echo "  NG   錠を持つ役のプログラムが錠を取れません"; cat $d/holder1.log; fail=1; return; }
+    printf '\n// changed 1\n' >> $d/src/inc/Log.java
+    JCHE_CACHE_LOCK_WAIT_SECONDS=1 integrity_run $d/a.properties $d/a1.log
+    if [ "$IRC" != 0 ] && grep -q -F "kept using the cache folder" $d/a1.log \
+            && [ -n "$IOUT" ] && grep -q -F "The run failed" "$IOUT/warnings.txt" 2>/dev/null; then
+        echo "  OK   錠を持たれたまま待つ上限を過ぎたら、理由を言って失敗する（warnings.txt の「The run failed」）"
+    else
+        echo "  NG   錠を持たれているのに、待たずに進んだか、失敗の理由が出ていません（終了コード $IRC）"
+        grep -a -E 'WARN|ERROR|cache\]' $d/a1.log | head -5; fail=1
+    fi
+    kill $holder 2>/dev/null; wait $holder 2>/dev/null
+
+    # (2) ほかの実行が錠を放すまで待ち、放されたら最後まで進む
+    "$JAVA_BIN" -cp "$TOOLS_CP" LockHolder "$cache" 3000 $d/held2 > $d/holder2.log 2>&1 &
+    holder=$!
+    wait_for_file $d/held2 || { echo "  NG   錠を持つ役のプログラムが錠を取れません"; cat $d/holder2.log; fail=1; return; }
+    integrity_run $d/a.properties $d/a2.log
+    wait $holder 2>/dev/null
+    local waited_out=$IOUT
+    if [ "$IRC" = 0 ] && grep -q -F "waiting until it finishes" $d/a2.log; then
+        echo "  OK   ほかの実行が錠を持っているあいだは待ち、放されたら最後まで進む"
+    else
+        echo "  NG   錠を待っていません（終了コード $IRC）"; grep -a -E 'WARN|ERROR|cache\]' $d/a2.log | head -5; fail=1
+    fi
+    integrity_run $d/full.properties $d/full2.log
+    same_csv "錠を待った実行" "$waited_out" "$IOUT"
+
+    # (3) 2 つの実行を同時に始める（どちらも書き直す）。どちらも成功し、どちらの出力も全件解析と同じ
+    printf '\n// changed 3\n' >> $d/src/inc/Log.java
+    printf '\n// changed 3\n' >> $d/src/inc/Client.java
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter $d/a.properties > $d/a3.log 2>&1 &
+    local pa=$!
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter $d/b.properties > $d/b3.log 2>&1 &
+    local pb=$!
+    wait $pa; local ra=$?
+    wait $pb; local rb=$?
+    rm -rf $d/fullcache
+    integrity_run $d/full.properties $d/full3.log
+    local full_out=$IOUT
+    if [ "$ra" = 0 ] && [ "$rb" = 0 ]; then
+        echo "  OK   同時に始めた 2 つの実行がどちらも成功する"
+    else
+        echo "  NG   同時に始めた実行が失敗しました（$ra / $rb）"; tail -n 3 $d/a3.log $d/b3.log; fail=1
+    fi
+    same_csv "同時に始めた実行 1" "$(ls -d $d/out-a/*/ | sort | tail -1 | sed 's#/$##')" "$full_out"
+    same_csv "同時に始めた実行 2" "$(ls -d $d/out-b/*/ | sort | tail -1 | sed 's#/$##')" "$full_out"
+    # 残ったキャッシュは壊れておらず、そのまま再利用できる
+    integrity_run $d/a.properties $d/a4.log
+    if [ "$IRC" = 0 ] && [ "$IPARSED" = 0 ] && ! grep -q -F "failed the integrity check" $d/a4.log; then
+        echo "  OK   同時に始めた実行のあとのキャッシュは壊れておらず、全件再利用できる"
+    else
+        echo "  NG   同時に始めた実行のあとのキャッシュを再利用できません（新規解析=$IPARSED）"; fail=1
+    fi
+    same_csv "同時に始めた実行のあとの再利用" "$IOUT" "$full_out"
+    local left
+    left=$(find $d/cache -name '*.tmp' -o -name '*.partial')
+    if [ -z "$left" ]; then
+        echo "  OK   一時ファイルが残らない（錠のファイル analysis-cache.tsv.lock だけが残る）"
+    else
+        echo "  NG   一時ファイルが残っています: $left"; fail=1
+    fi
+
+    # (4) グラフの構築は、書き終えていない・別の版のキャッシュから組まない（黙って空の CSV を出さない）
+    if "$JAVA_BIN" -cp "$TOOLS_CP" GraphCheck "$(ls $d/cache/*/analysis-cache.tsv)" $d/graph > $d/graph.log 2>&1; then
+        grep -a -E '^  (OK|NG)' $d/graph.log
+    else
+        grep -a -E '^  (OK|NG)|Exception' $d/graph.log | head -10
+        echo "  NG   グラフの構築が、書き終えていないキャッシュを受け付けました（test/incremental/$d/graph.log）"; fail=1
+    fi
+}
+lock_case
+
+# 解析のあいだに書き換えたソース。F 行の内容ハッシュは解析の前（パス1）に取るので、JDT が読む前に書き換えられると、
+# 前の中身のハッシュと後の中身の事実が組になって残る。そのあとで元に戻すと、ハッシュが一致して古い事実を
+# 再利用し続けていた（docs/cache-unification-qa.md の Q52）。書き換えは jche.analysis.EditDuringRunCheck が
+# 決まった時点（そのファイルを含むバッチを JDT に渡す直前）で行う
+edit_project() {   # $1=フォルダ
+    mkdir -p "$1/src/e"
+    cat > "$1/src/e/Main.java" <<'EOF'
+package e;
+
+public class Main {
+    public static void main(String[] args) {
+        new Worker().work();
+    }
+}
+EOF
+    cat > "$1/src/e/Worker.java" <<'EOF'
+package e;
+
+public class Worker {
+    void work() {
+        Helper.one();
+    }
+}
+EOF
+    cat > "$1/src/e/Helper.java" <<'EOF'
+package e;
+
+public class Helper {
+    static void one() {
+    }
+
+    static void two() {
+    }
+}
+EOF
+}
+edit_during_run_case() {   # $1=ラベル  $2=書き換えるファイル（src/e/ の名前）  $3=書き換えた後の中身
+    echo "== 解析のあいだに書き換えたソース（$1） =="
+    local d=$IW/edit
+    rm -rf $d && mkdir -p $d && edit_project $d
+    integrity_cfg $d/c.properties "$PWD/$d" src
+    integrity_cfg $d/full.properties "$PWD/$d" src "$PWD/$d/fullcache"
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    # Worker を変える（この実行で解析する）。解析の直前に $2 を $3 に書き換え、実行のあとで元に戻す
+    sed -i 's/Helper.one();/Helper.one();\n        Helper.one();/' $d/src/e/Worker.java
+    cp $d/src/e/$2 $d/before.java
+    printf '%s\n' "$3" > $d/during.java
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.EditDuringRunCheck $d/c.properties \
+        src/e/Worker.java $d/src/e/$2 $d/during.java > $d/c1.log 2>&1
+    local rc=$?
+    cp $d/before.java $d/src/e/$2
+    if [ "$rc" != 0 ]; then
+        echo "  NG   書き換えを挟んだ解析が失敗しました（終了コード $rc）"; grep -a -E 'NG|ERROR' $d/c1.log | head -5; fail=1; return
+    fi
+    if grep -q -F "changed while the analysis was running" $d/c1.log; then
+        echo "  OK   解析のあいだに書き換えられたことをログに出す"
+    else
+        echo "  NG   解析のあいだに書き換えられたことがログに出ていません"; fail=1
+    fi
+    # 元に戻したソースで差分更新 -> 全件解析と同じであること（書き換えた中身の事実を再利用しない）
+    integrity_run $d/c.properties $d/c2.log
+    local inc_out=$IOUT
+    if [ "$IRC" = 0 ] && [ "${IPARSED:-0}" -ge 1 ]; then
+        echo "  OK   書き換えられたファイルを次の実行で解析し直した（新規解析=$IPARSED）"
+    else
+        echo "  NG   書き換えられたファイルを次の実行で解析し直していません（新規解析=${IPARSED:-?}）"; fail=1
+    fi
+    integrity_run $d/full.properties $d/full.log
+    same_csv "解析のあいだに書き換えたソース（$1）" "$inc_out" "$IOUT"
+    if diff -q <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+               <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") > /dev/null; then
+        echo "  OK   解析のあいだに書き換えたソース（$1） キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   解析のあいだに書き換えたソース（$1） キャッシュが全件解析と違います"
+        diff <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+             <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") | head -10; fail=1
+    fi
+}
+# 解析するファイルそのものを、JDT が読む前に書き換える（呼び出し先を Helper.two に）
+edit_during_run_case "解析するファイル" Worker.java "$(printf 'package e;\n\npublic class Worker {\n    void work() {\n        Helper.two();\n    }\n}')"
+# 解析するファイルが参照するファイル（再利用するブロック）を書き換える。JDT はソースパスから書き換え後の中身を読む
+edit_during_run_case "参照されるファイル" Helper.java "$(printf 'package e;\n\npublic class Helper {\n    static void oneRenamed() {\n    }\n}')"
+
+# 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
+# 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q56）。
+# ソースフォルダの並びを入れ替えると、どちらのファイルがエラーになるかも変わる（Q53）
+dup_project() {   # $1=フォルダ
+    mkdir -p "$1/s1/p" "$1/s2/p"
+    cat > "$1/s1/p/Main.java" <<'EOF'
+package p;
+
+public class Main {
+    public static void main(String[] args) {
+        new Dup().a();
+        new Dup().b();
+    }
+
+    static void x() {
+    }
+
+    static void y() {
+    }
+}
+EOF
+    cat > "$1/s1/p/Dup.java" <<'EOF'
+package p;
+
+public class Dup {
+    public void a() {
+        Main.x();
+    }
+}
+EOF
+    cat > "$1/s2/p/Dup.java" <<'EOF'
+package p;
+
+public class Dup {
+    public void b() {
+        Main.y();
+    }
+}
+EOF
+}
+dup_case() {
+    echo "== 同じクラスが 2 つのソースフォルダにある =="
+    local d=$IW/dup
+    rm -rf $d && mkdir -p $d && dup_project $d
+    integrity_cfg $d/c.properties "$PWD/$d" s1,s2
+    integrity_cfg $d/full.properties "$PWD/$d" s1,s2 "$PWD/$d/fullcache"
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    printf '\n// changed\n' >> $d/s2/p/Dup.java
+    integrity_run $d/c.properties $d/c1.log
+    local inc_out=$IOUT
+    integrity_run $d/full.properties $d/full.log
+    same_csv "片方だけを書き換えた差分更新" "$inc_out" "$IOUT"
+    if diff -q <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+               <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") > /dev/null; then
+        echo "  OK   片方だけを書き換えた差分更新 キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   片方だけを書き換えた差分更新 キャッシュが全件解析と違います"
+        diff <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+             <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") | head -10; fail=1
+    fi
+    # 重複を黙って通さない（2 つ目のファイルはコンパイルエラーとして warnings.txt に載る。全件解析でも差分更新でも）
+    if grep -q -F -- "- s2/p/Dup.java" "$inc_out/warnings.txt" 2>/dev/null \
+            && grep -q -F -- "- s2/p/Dup.java" "$IOUT/warnings.txt" 2>/dev/null; then
+        echo "  OK   重複した型のファイルが warnings.txt に載る（差分更新でも全件解析でも）"
+    else
+        echo "  NG   重複した型のファイルが warnings.txt に載っていません"; fail=1
+    fi
+
+    echo "== ソースフォルダの並びを入れ替える =="
+    integrity_cfg $d/c.properties "$PWD/$d" s2,s1
+    integrity_cfg $d/full.properties "$PWD/$d" s2,s1 "$PWD/$d/fullcache2"
+    integrity_run $d/c.properties $d/c2.log
+    inc_out=$IOUT
+    if [ "$IRC" = 0 ] && [ "$IREUSED" = 0 ] && grep -q -F "source folder order" $d/c2.log; then
+        echo "  OK   並びを入れ替えたらキャッシュを再利用しない"
+    else
+        echo "  NG   並びを入れ替えたのにキャッシュを再利用しています（再利用=${IREUSED:-?}）"; fail=1
+    fi
+    integrity_run $d/full.properties $d/full2.log
+    same_csv "ソースフォルダの並びを入れ替えた実行" "$inc_out" "$IOUT"
+    # 入れ替えで解決先が実際に変わっていること（変わらなければ検査が素通りする）
+    if diff -q "$inc_out/call-hierarchy.csv" "$(ls -d $d/out-c/*/ | sort | head -1)call-hierarchy.csv" > /dev/null; then
+        echo "  NG   並びを入れ替えても出力が変わっていません（検査が素通りします）"; fail=1
+    else
+        echo "  OK   並びを入れ替えると出力が変わる"
+    fi
+}
+dup_case
+
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

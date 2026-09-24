@@ -155,3 +155,7 @@ var z;                     : syntaxBit=true id=1503 Cannot use 'var' on variable
 
 検査は `test/warnings/run.sh` の `varname`。`class var` を持つファイルが、コンパイルエラーとしては案内され、
 構文エラーとしては数えられず、本体の呼び出しが出力に出ることを見る。
+
+その後、switch 式の検査（default が無い・列挙定数や sealed の許可リストを網羅していない・switch 式の外への
+break / continue / return）にも同じ印が付き、本体は読めているのに構文エラーと報告していたことが分かった。同じく
+構文エラーの数から外した（形式 v35。[cache-unification-qa.md](cache-unification-qa.md) の Q58。検査は `test/warnings/run.sh` の `switches`）。
