@@ -85,7 +85,7 @@ public final class Exporter {
         UnresolvedCalls unresolved = collectUnresolved ? new UnresolvedCalls(config.cacheFile) : null;
         try {
             // キャッシュを読み書きするあいだ（フェーズ1 とフェーズ2 のグラフの構築）は、同じキャッシュのフォルダを使う
-            // ほかの実行を待たせる（jche.cache.CacheLock。docs/cache-unification-qa.md の Q51）。
+            // ほかの実行を待たせる（jche.cache.CacheLock。docs/cache-unification-qa.md の Q56）。
             // try-with-resources にしないのは、錠を本体で使わないため（-Xlint:try が警告する）
             int syntaxErrorFiles;
             CallGraph graph;

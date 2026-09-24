@@ -1667,7 +1667,7 @@ wait_for_file() {   # $1=ファイル。最大 60 秒待つ。できれば 0
 # 同じキャッシュのフォルダを使う実行（CLI と Eclipse・VS Code のプラグインの解析サーバー、同じフォルダを使う CI の
 # ジョブ）は、フォルダの錠（jche.cache.CacheLock）で 1 つずつにする。以前は錠が無く、片方がもう片方の書きかけの
 # 一時ファイル（analysis-cache.tsv.tmp）を引き継ぎに奪って本物に差し替え、呼び出しの 1 本も無い CSV を「成功」として
-# 出すことがあった（docs/cache-unification-qa.md の Q51）
+# 出すことがあった（docs/cache-unification-qa.md の Q56）
 lock_case() {
     echo "== 同じキャッシュのフォルダを使う実行は 1 つずつ（錠） =="
     local d=$IW/lock
@@ -1757,7 +1757,7 @@ lock_case
 
 # 解析のあいだに書き換えたソース。F 行の内容ハッシュは解析の前（パス1）に取るので、JDT が読む前に書き換えられると、
 # 前の中身のハッシュと後の中身の事実が組になって残る。そのあとで元に戻すと、ハッシュが一致して古い事実を
-# 再利用し続けていた（docs/cache-unification-qa.md の Q52）。書き換えは jche.analysis.EditDuringRunCheck が
+# 再利用し続けていた（docs/cache-unification-qa.md の Q57）。書き換えは jche.analysis.EditDuringRunCheck が
 # 決まった時点（そのファイルを含むバッチを JDT に渡す直前）で行う
 edit_project() {   # $1=フォルダ
     mkdir -p "$1/src/e"
@@ -1840,8 +1840,8 @@ edit_during_run_case "解析するファイル" Worker.java "$(printf 'package e
 edit_during_run_case "参照されるファイル" Helper.java "$(printf 'package e;\n\npublic class Helper {\n    static void oneRenamed() {\n    }\n}')"
 
 # 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
-# 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q56）。
-# ソースフォルダの並びを入れ替えると、どちらのファイルがエラーになるかも変わる（Q53）
+# 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q61）。
+# ソースフォルダの並びを入れ替えると、どちらのファイルがエラーになるかも変わる（Q58）
 dup_project() {   # $1=フォルダ
     mkdir -p "$1/s1/p" "$1/s2/p"
     cat > "$1/s1/p/Main.java" <<'EOF'

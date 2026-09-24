@@ -239,7 +239,7 @@ grep -q "^at sample.app.var.run(var.java:5),Util.count," "$OUT/call-hierarchy.cs
 
 # 5c. 網羅していない switch 式（sealed の許可リストに型を足したのに switch を直していない、など）。JDT は構文エラーの印を
 #     付けるが、フロー解析で出るもので本体は読めている。コンパイルエラーとしては案内し、「本体を読めなかった」とは
-#     言わない。呼び出しも出力に出る（docs/cache-unification-qa.md の Q58）
+#     言わない。呼び出しも出力に出る（docs/cache-unification-qa.md の Q63）
 make_project switches "source.level=21"
 cat > work/switches/src/main/java/sample/app/Shapes.java <<'EOF'
 package sample.app;
@@ -280,7 +280,7 @@ grep -q "^at sample.app.Shapes.area(Shapes.java:12),Util.count," "$OUT/call-hier
 
 # 5d. 式の入れ子が深すぎて JDT のスタックが溢れるファイル（メソッド呼び出しを 1 万段つないだ式）。そのファイルだけを
 #     失敗として案内し（warnings.txt の「打ち切られた」）、ほかのファイルは最後まで解析して出力する。以前は
-#     StackOverflowError を捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（docs/cache-unification-qa.md の Q57）
+#     StackOverflowError を捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（docs/cache-unification-qa.md の Q62）
 make_project deep ""
 {
     printf 'package sample.app;\n\npublic class Deep {\n    String chain() {\n        return new StringBuilder()'
@@ -299,7 +299,7 @@ grep -q -F "Util.count" "$OUT/call-hierarchy.csv" 2>/dev/null \
 
 # 5e. 名前の違う 2 つのファイルで同じ型を宣言している（public でないトップレベルの型）。間に 100 を超えるファイルが
 #     あると別々のバッチで解析され、JDT はどちらにもエラーを出さない。片方の呼び出しは出力に出ないので、グラフを
-#     組むときに警告する（warnings.txt の「ソースにコンパイルエラーがある」。docs/cache-unification-qa.md の Q56）
+#     組むときに警告する（warnings.txt の「ソースにコンパイルエラーがある」。docs/cache-unification-qa.md の Q61）
 make_project twins ""
 TWINS=work/twins/src/main/java/sample/app
 printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    void t() {\n        Util.count("a");\n    }\n}\n' > $TWINS/Aaa.java

@@ -98,7 +98,7 @@ import jche.util.Warnings;
  *
  * <p>読み終えたら、フェーズ1 が最後まで書き終えたキャッシュか（ヘッダの形式の版・最終行の Z 行とブロック数）を
  * 確かめ、違えば組まずに例外にする。書きかけのキャッシュ（同じキャッシュのフォルダを使う別の実行と重なった、など）
- * から組むと、呼び出しの欠けたグラフで CSV を「成功」として書いてしまうため（{@code docs/cache-unification-qa.md} の Q51）。
+ * から組むと、呼び出しの欠けたグラフで CSV を「成功」として書いてしまうため（{@code docs/cache-unification-qa.md} の Q56）。
  *
  * 読み手の判断として、U行（型解決失敗）に import からの推定候補があれば、
  * それをエッジにする（クラスパス不足で階層から消えるより、未検証と分かる形で残す方針）。
@@ -360,7 +360,7 @@ public final class CallGraphBuilder {
      * 同じ型を宣言しているファイルの組を警告する（ビルドが通らない状態の 1 つ。warnings.txt の
      * 「ソースにコンパイルエラーがある」に載る）。同じ型が 2 つのソースフォルダにあると、どちらのファイルの
      * 呼び出しが出力に出るかがソースフォルダの並びとバッチの組み方で決まり、片方の呼び出しは出ない
-     * （{@code docs/cache-unification-qa.md} の Q56）
+     * （{@code docs/cache-unification-qa.md} の Q61）
      */
     private void warnDuplicateTypes() {
         for (Map.Entry<String, String> e : duplicateTypes.entrySet()) {

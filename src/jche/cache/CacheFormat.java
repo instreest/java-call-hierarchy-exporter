@@ -306,12 +306,12 @@ public final class CacheFormat {
      *       足した。D 行にアノテーションの付いたメソッドの戻り値の型を足した。対になっていないサロゲートを
      *       符号化し、条件の文字列をサロゲートペアの途中で切らない（{@code docs/cache-unification-qa.md} の
      *       Q42〜Q49）</li>
-     *   <li>v35 ブロックの検査値に F 行（crc 列を空にした形）を入れた。T 行に先頭の行の検査値を足した。ヘッダ行の鍵に
+     *   <li>v36 ブロックの検査値に F 行（crc 列を空にした形）を入れた。T 行に先頭の行の検査値を足した。ヘッダ行の鍵に
      *       ソースフォルダの並びを足した。F 行の構文エラー数から switch 式の網羅性などの検査を外した
-     *       （{@code docs/cache-unification-qa.md} の Q51〜Q58）</li>
+     *       （{@code docs/cache-unification-qa.md} の Q56〜Q63）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v35";
+    public static final String VERSION = "jche-cache-v36";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
@@ -449,7 +449,7 @@ public final class CacheFormat {
      * <p>ソースフォルダの並び（{@code folders=}。project.root からの相対パスを並びのまま改行でつないだものの
      * {@link FileHash}）も入れる。JDT は同じ名前の型が 2 つのソースフォルダにあると、ソースパスの先に並ぶ方で
      * 解決する（先勝ち）。フォルダの並びを入れ替えると、どのソースも変わっていないのに解決先が変わるので、
-     * 並びが違えば丸ごと作り直す（L 行の依存 jar の並びと同じ考え方。docs/cache-unification-qa.md の Q53）。
+     * 並びが違えば丸ごと作り直す（L 行の依存 jar の並びと同じ考え方。docs/cache-unification-qa.md の Q58）。
      * パスそのものではなくハッシュにするのは、ヘッダ行が符号化しない行で、フォルダ名にタブ・改行が入っても
      * 行を壊さないため。
      *

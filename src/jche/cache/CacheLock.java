@@ -26,7 +26,7 @@ import jche.util.RunControl;
  * パス5 でその範囲を書き写す）。2 つの実行（CLI と Eclipse プラグインの解析サーバー、CI の並列ジョブなど）が
  * 同じフォルダで重なると、片方がもう片方の書きかけの一時ファイルを引き継ぎに奪い、書きかけのものを本物に
  * 差し替えてしまう。そのまま進むと、呼び出しの 1 本も無い CSV が「成功」として出ることがあった
- * （{@code docs/cache-unification-qa.md} の Q51）。
+ * （{@code docs/cache-unification-qa.md} の Q56）。
  *
  * <h2>待ち方</h2>
  * OS のファイルの錠（{@link FileChannel#tryLock}）を使う。プロセスが落ちれば OS が放すので、錠が残って

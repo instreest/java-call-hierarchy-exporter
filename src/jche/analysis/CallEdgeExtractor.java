@@ -113,7 +113,7 @@ public final class CallEdgeExtractor {
      * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
      * 深くなりすぎるファイル）も、そのファイルの失敗として扱う。一括パースの途中で溢れたら残りを 1 ファイルずつ
      * 解析し、溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）。
-     * 以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（{@code docs/cache-unification-qa.md} の Q57）。
+     * 以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（{@code docs/cache-unification-qa.md} の Q62）。
      * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
@@ -295,7 +295,7 @@ public final class CallEdgeExtractor {
      *
      * <p>switch 式の検査（網羅していない・default が無い・switch 式の外への break / continue / return）も同じで、
      * {@link IProblem#Syntax} の印が付くが、構文を読み終えたあとのフロー解析で出るもので、本体は AST に残っている
-     * （{@code docs/cache-unification-qa.md} の Q58）。網羅していないパターンの switch は、sealed の許可リストに
+     * （{@code docs/cache-unification-qa.md} の Q63）。網羅していないパターンの switch は、sealed の許可リストに
      * 型を足したのに switch を直していないときによく出る。
      * 外す印は、本体が AST に残ることを確かめたものだけにする。確かめていないものは構文エラーに数えたままにする
      * （数えすぎても警告が余計に出るだけだが、数え落とすと本体を読めていないファイルを黙って通してしまう）

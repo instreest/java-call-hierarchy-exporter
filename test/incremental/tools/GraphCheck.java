@@ -20,7 +20,7 @@ import jche.graph.SpringBeans;
  *   java GraphCheck &lt;完成した analysis-cache.tsv&gt; &lt;壊したものを置くフォルダ&gt;
  * </pre>
  * 同じキャッシュのフォルダを 2 つの実行で使うと、片方が書きかけの一時ファイルを本物に差し替えることがあった
- * （docs/cache-unification-qa.md の Q51）。その形（途中で切れた・最終行が無い・最終行の数が合わない・版が違う）を
+ * （docs/cache-unification-qa.md の Q56）。その形（途中で切れた・最終行が無い・最終行の数が合わない・版が違う）を
  * 手で作って読ませる。完成したキャッシュは組めること、壊したものはどれも例外になることを見る。
  * 結果は 1 行ずつ「OK」「NG」で出し、NG があれば終了コード 1。
  */
