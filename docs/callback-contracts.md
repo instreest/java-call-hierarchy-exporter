@@ -112,7 +112,7 @@ Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,29,1,1,1,FRAMEWORK_ENTRY,1,0,
 
 | 区分 | 契約 |
 |---|---|
-| JDK | `public static main(String[])` |
+| JDK | 起動の入口になる `main`（JLS 12.1.4。`static void main(String[])` のほか、引数なしのもの・インスタンスメソッドのものも） |
 | Servlet | `HttpServlet#doGet/doPost/doPut/doDelete/service`、`GenericServlet#service/init`、`Filter#doFilter`、`ServletContextListener` の上書き |
 | Spring Web | `@RequestMapping` / `@GetMapping` / `@PostMapping` / `@PutMapping` / `@DeleteMapping` / `@PatchMapping` / `@ExceptionHandler` / `@InitBinder` / `@ModelAttribute` |
 | Spring スケジュール・イベント・ライフサイクル | `@Scheduled`、`@EventListener`、`@TransactionalEventListener`、`ApplicationListener#onApplicationEvent`、`InitializingBean#afterPropertiesSet`、`DisposableBean#destroy`、`CommandLineRunner#run`、`ApplicationRunner#run`、`@PostConstruct` / `@PreDestroy` |
@@ -128,7 +128,12 @@ Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,29,1,1,1,FRAMEWORK_ENTRY,1,0,
 super javax.servlet.http.HttpServlet#doGet(javax.servlet.http.HttpServletRequest,javax.servlet.http.HttpServletResponse)
                                                              … その型を継承（実装）した型の、同じシグネチャのメソッド
 static main(java.lang.String[])                              … public static でそのシグネチャのメソッド
+main                                                         … 起動の入口になる main メソッド（JLS 12.1.4）
 ```
+
+`main` は Java 言語仕様 12.1.4 の起動メソッドの条件そのものです。名前が `main` で、引数が `String[]` 1 つか無し、
+`private` でないメソッドを入口にします。`static` でもインスタンスメソッドでも構いません
+（Java 25 で確定したインスタンスの main メソッド。コンパクトなソースファイルの `void main()` が典型です）。
 
 `super` の型は jar の中で構いません（型階層には jar の親型の名前も入っています）。
 判定はメソッド単位です。`@Controller` のようなクラスのアノテーションだけでは入口にしません

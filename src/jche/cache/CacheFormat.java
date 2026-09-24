@@ -234,9 +234,14 @@ public final class CacheFormat {
      * （同 Q15）、インターフェースのフィールドの中のラムダを {@code lambda$static$N} にした（同 Q17）。
      * v27 でインターフェース（アノテーション型を含む）に暗黙のコンストラクタの D 行を合成しないようにした
      * （JLS 8.8.9。{@code docs/jls-conformance-qa.md} の Q25）。古いキャッシュを再利用すると、
-     * そのファイルのインターフェースにだけ呼ばれない {@code <init>} が残る
+     * そのファイルのインターフェースにだけ呼ばれない {@code <init>} が残る。
+     * v28 で、ソースに呼び出し式が無いが JLS が「呼ぶ」と定める呼び出し（拡張 for 文の
+     * {@code iterator()} / {@code hasNext()} / {@code next()}、try-with-resources の {@code close()}、
+     * レコードパターンのアクセサ）を C 行にし、コンパクトなコンパイル単位の暗黙のクラス（JLS 7.3）を
+     * H 行・D 行に載せた（{@code docs/jls-conformance-test-qa.md}）。古いキャッシュを再利用すると、
+     * そのファイルからだけこれらの辺が抜ける
      */
-    public static final String VERSION = "jche-cache-v27";
+    public static final String VERSION = "jche-cache-v28";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

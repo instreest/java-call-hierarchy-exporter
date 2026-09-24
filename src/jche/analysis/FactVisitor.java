@@ -13,6 +13,7 @@ import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.CreationReference;
+import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
 import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
@@ -21,6 +22,7 @@ import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
+import org.eclipse.jdt.core.dom.ImplicitTypeDeclaration;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.LambdaExpression;
@@ -28,11 +30,13 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
+import org.eclipse.jdt.core.dom.RecordPattern;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -71,6 +75,7 @@ import jche.cache.ReturnFact;
  *   <li>{@link FieldFactCollector} … フィールドの宣言と代入</li>
  *   <li>{@link TypeContextTracker} … 型のスタックと合成メソッド（{@code <clinit>}・暗黙コンストラクタ）</li>
  *   <li>{@link CallSiteRecorder} … 呼び出し箇所（C行・U行）と拡張への引き渡し</li>
+ *   <li>{@link ImplicitCalls} … 構文が呼ぶメソッド（拡張 for 文・try-with-resources・レコードパターン）の呼び出し先</li>
  *   <li>{@link FieldAccessRecorder} … フィールドの参照箇所（A行）</li>
  * </ul>
  */
@@ -237,6 +242,26 @@ final class FactVisitor extends ASTVisitor {
 
     @Override
     public void endVisit(AnnotationTypeDeclaration node) {
+        leaveType();
+    }
+
+    /**
+     * コンパクトなコンパイル単位（JLS 7.3）が暗黙に宣言するクラス。
+     *
+     * パッケージ宣言も型宣言も無いファイルのトップレベルのメソッド・フィールドは、ファイル名を
+     * 名前に持つ final なクラスのメンバになる。JDT はこれを TypeDeclaration ではなく
+     * ImplicitTypeDeclaration として返すので、visit が無いと型階層（H 行）にも
+     * 型コンテキストにも載らず、暗黙のデフォルトコンストラクタ（JLS 8.8.9）も合成されない。
+     * 名前が無いので、宣言行はノードの開始位置で代える。
+     */
+    @Override
+    public boolean visit(ImplicitTypeDeclaration node) {
+        enterType(node.resolveBinding(), node.bodyDeclarations(), lineOf(node));
+        return true;
+    }
+
+    @Override
+    public void endVisit(ImplicitTypeDeclaration node) {
         leaveType();
     }
 
@@ -691,6 +716,95 @@ final class FactVisitor extends ASTVisitor {
         }
         calls.record(currentCallers(), lambdaDepth, b, n, MethodRef.CONSTRUCTOR, CallSiteRecorder.targetModsOf(b), "", RecvKind.TYPE, null, CallValues.NONE);
         return true;
+    }
+
+    // ================================================================
+    // ソースに書かれていない呼び出し（JLS が「呼ぶ」と定めるもの）
+    //
+    // 呼び出し式は AST に無いが、言語仕様の変換どおりに必ず（あるいは条件を満たせば）
+    // 呼ばれるもの。辺にしないと、呼ばれる側を変えたときの影響がこれらの構文から辿れない。
+    // 呼び出し先は ImplicitCalls が JLS の変換どおりの静的な型から引く。見つからないとき
+    // （型の解決に失敗した等）は何も記録しない。ソースに対応する式が無い呼び出しを
+    // 「未解決」と報告しても利用者が調べようがないため（暗黙の super() と同じ。
+    // docs/jls-conformance-qa.md の Q11）
+    // ================================================================
+
+    /**
+     * 拡張 for 文（JLS 14.14.2）。式の型が Iterable の部分型なら
+     * {@code for (I #i = Expression.iterator(); #i.hasNext(); ) { T x = (T) #i.next(); ... }}
+     * と同じ意味なので、{@code iterator()}・{@code hasNext()}・{@code next()} を呼ぶ。
+     * 配列は添字で回すのでメソッドを呼ばない。
+     *
+     * {@code #i} の型 I は {@code iterator()} の戻り値の型なので、{@code hasNext()} と
+     * {@code next()} はその型から引く（利用者の Iterator を返すなら、そのメソッドになる）。
+     * 行は for 文の行（javac が行番号表に書くのと同じ）。
+     */
+    @Override
+    public boolean visit(EnhancedForStatement n) {
+        Expression ex = n.getExpression();
+        ITypeBinding type = ex.resolveTypeBinding();
+        if (type == null || type.isArray()) {
+            return true;
+        }
+        IMethodBinding iterator = ImplicitCalls.findNoArgMethod(type, "iterator");
+        if (iterator == null) {
+            return true;
+        }
+        recordImplicit(iterator, n, CallSiteRecorder.recvKeyOf(ex), CallSiteRecorder.recvKindOf(ex),
+                origins.valuesOf(ex, null));
+        for (String name : List.of("hasNext", "next")) {
+            IMethodBinding m = ImplicitCalls.findNoArgMethod(iterator.getReturnType(), name);
+            if (m != null) {
+                recordImplicit(m, n, "", RecvKind.RETURN, CallValues.NONE);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * try-with-resources（JLS 14.20.3）。資源は、try ブロックを抜けるときに宣言と逆の順で
+     * {@code close()} が呼ばれる（14.20.3.1）。資源が null なら呼ばれないが、呼ばれうることに変わりはない。
+     *
+     * 本体の呼び出しより後に実行されるので、本体を読み終えた endVisit で記録する。
+     * 行は資源を書いた行。
+     */
+    @Override
+    public void endVisit(TryStatement n) {
+        List<?> resources = n.resources();
+        for (int i = resources.size() - 1; i >= 0; i--) {
+            if (!(resources.get(i) instanceof Expression resource)) {
+                continue;
+            }
+            IMethodBinding close = ImplicitCalls.findNoArgMethod(ImplicitCalls.resourceType(resource),
+                    "close");
+            if (close == null) {
+                continue;
+            }
+            Expression recv = ImplicitCalls.resourceReceiver(resource);
+            recordImplicit(close, resource, CallSiteRecorder.recvKeyOf(recv),
+                    CallSiteRecorder.recvKindOf(recv), origins.valuesOf(recv, null));
+        }
+    }
+
+    /**
+     * レコードパターン（JLS 14.30.2）。値がレコードパターンに一致するかは、各成分の値を
+     * アクセサを呼んで取り出して判定する。成分のパターンが {@code _}（何にでも一致する）でも
+     * 取り出しは起きる。入れ子のパターンは、子の RecordPattern の visit がそれぞれ記録する。
+     */
+    @Override
+    public boolean visit(RecordPattern n) {
+        ITypeBinding type = (n.getPatternType() == null) ? null : n.getPatternType().resolveBinding();
+        for (IMethodBinding accessor : ImplicitCalls.accessorsOf(type)) {
+            recordImplicit(accessor, n, "", RecvKind.OTHER, CallValues.NONE);
+        }
+        return true;
+    }
+
+    /** ソースに呼び出し式が無い呼び出しを 1 件記録する（import からの推定はしない） */
+    private void recordImplicit(IMethodBinding b, ASTNode node, String recvKey, char recvKind,
+                                CallValues values) {
+        calls.record(currentCallers(), lambdaDepth, b, node, b.getName(),
+                CallSiteRecorder.targetModsOf(b), recvKey, recvKind, null, values);
     }
 
     // ================================================================
