@@ -242,9 +242,12 @@ public final class CacheFormat {
      * そのファイルからだけこれらの辺が抜ける。
      * v29 で拡張 for 文の {@code hasNext()} / {@code next()} の呼び出し先を JLS 14.14.2 どおり
      * {@code java.util.Iterator} にし、C 行の末尾に呼び出しを修飾する型（JLS 13.1）の列を足した。
-     * 古いキャッシュを再利用すると、そのファイルの呼び出しだけ CHA の候補が宣言した型から引かれる
+     * 古いキャッシュを再利用すると、そのファイルの呼び出しだけ CHA の候補が宣言した型から引かれる。
+     * v30 で F 行の構文エラーの数から {@code var} の使い方の誤り（本体は読めている）を外した
+     * （{@code docs/syntax-error-report-qa.md} の Q7）。古いキャッシュを再利用すると、そのファイルだけ
+     * 「本体を読めなかった」と事実と違う警告が出続ける
      */
-    public static final String VERSION = "jche-cache-v29";
+    public static final String VERSION = "jche-cache-v30";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。
