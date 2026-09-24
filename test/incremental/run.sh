@@ -92,14 +92,26 @@ run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し�
     fi
 }
 
-# ブロックの中の番号の不変条件。記号（S 行）とノード（N 行）の番号がブロックごとに 0 から詰まっていて、
-# 記号の参照（D・O・R・C 行は 0 以上、U・M・A 行の呼び出し元は -1 も可）とノードの参照（N 行のレシーバ・
-# 実引数は自分より前のノード、C・U 行のレシーバ・実引数はブロックのノード）がブロックの範囲に収まること。
-# 番号がブロック内ローカルなので、ここが崩れると差分更新でブロックを書き写した瞬間に参照がずれる
+# ブロックの中の番号の不変条件。記号（S 行）とノード（N 行）とガード（G 行）の番号がブロックごとに 0 から
+# 詰まっていて、記号の参照（D・O・R・C 行は 0 以上、U・M・A 行の呼び出し元は -1 も可）とノードの参照
+# （N 行のレシーバ・実引数は自分より前のノード、R 行と J 行の値・C 行と U 行のレシーバと実引数は
+# ブロックのノード。値は -1 も可）とガードの参照（C・U 行の guard はブロックのガードか -1）が
+# ブロックの範囲に収まること。番号がブロック内ローカルなので、ここが崩れると差分更新でブロックを
+# 書き写した瞬間に参照がずれる。
+# G 行はさらに、書き手の決まりどおりであること:
+#   - 番号は今のガードの続き（同じ番号）か次のガード（1 つ大きい番号）だけ
+#   - subject はブロックのノードで、種別が引数（A）か定数（V）（-1 は条件の調査のメモリ上だけで、書かない）
+#   - op は EQ / NE / IN / NI だけで、値の数は EQ・NE が 1 つ、IN・NI が 1 つ以上（列は 5 + 値の数）
+#   - ガード番号は C・U 行が初めて使う順に振られていて（まだ使っていない番号を飛ばして指さない）、
+#     ブロックのガードはどれも使われている
 check_refs() {   # $1=キャッシュの複製  $2=ラベル
     local bad
     bad=$(awk -F'\t' '
         function nodeok(v, n) { return v ~ /^[0-9]+$/ && v + 0 < n }
+        function endblock() {
+            if (inb && used != guards) print NR": 使われていない G 行のガードがあります（使用 "used" / "guards"）"
+            inb = 0
+        }
         function symok(v, none) { return (none && v == "-1") || (v ~ /^[0-9]+$/ && v + 0 < syms) }
         function argsok(a, n,    k, i, as, kv) {
             if (a == "") return 1
@@ -111,7 +123,7 @@ check_refs() {   # $1=キャッシュの複製  $2=ラベル
         }
         NR == 1 { next }
         { kind = substr($0, 1, 1) }
-        kind == "F" { syms = 0; nodes = 0; next }
+        kind == "F" || kind == "Z" { endblock(); inb = (kind == "F"); syms = 0; nodes = 0; guards = 0; used = 0; delete nk; next }
         kind == "S" {
             if ($2 != syms) { print NR": S 行の番号が連番ではありません（期待 "syms"）: "$0 }
             syms++
@@ -121,11 +133,27 @@ check_refs() {   # $1=キャッシュの複製  $2=ラベル
             if ($2 != nodes) { print NR": N 行の番号が連番ではありません（期待 "nodes"）: "$0 }
             if ($5 != -1 && !nodeok($5, nodes)) { print NR": N 行の recv がブロックの範囲外です: "$0 }
             if (!argsok($6, nodes)) { print NR": N 行の実引数がブロックの範囲外です: "$0 }
+            nk[$2] = $3
             nodes++
+            next
+        }
+        kind == "G" {
+            if ($2 == guards) { guards++ }
+            else if ($2 != guards - 1 || guards == 0) { print NR": G 行の番号が詰まっていません（期待 "guards - 1" か "guards"）: "$0 }
+            if (!nodeok($4, nodes)) { print NR": G 行の subject がブロックのノードではありません: "$0 }
+            else if (nk[$4] != "A" && nk[$4] != "V") { print NR": G 行の subject が A か V のノードではありません（"nk[$4]"）: "$0 }
+            if ($3 !~ /^(EQ|NE|IN|NI)$/) { print NR": G 行の op が EQ / NE / IN / NI ではありません: "$0 }
+            else if ((($3 == "EQ" || $3 == "NE") && NF != 6) || NF < 6) { print NR": G 行の op と値の数が合いません: "$0 }
             next
         }
         kind == "D" || kind == "O" || kind == "R" {
             if (!symok($2, 0)) { print NR": "kind" 行の記号が範囲外です: "$0 }
+        }
+        kind == "R" {
+            if ($3 != -1 && !nodeok($3, nodes)) { print NR": R 行の値がブロックの範囲外です: "$0 }
+        }
+        kind == "J" {
+            if ($5 != -1 && !nodeok($5, nodes)) { print NR": J 行の値がブロックの範囲外です: "$0 }
         }
         kind == "C" {
             if (!symok($2, 0) || !symok($3, 0)) { print NR": C 行の記号が範囲外です: "$0 }
@@ -136,7 +164,12 @@ check_refs() {   # $1=キャッシュの複製  $2=ラベル
         kind == "C" || kind == "U" {
             if ($9 != -1 && !nodeok($9, nodes)) { print NR": "kind" 行の recv がブロックの範囲外です: "$0 }
             if (!argsok($10, nodes)) { print NR": "kind" 行の実引数がブロックの範囲外です: "$0 }
-        }' "$1")
+            if ($11 != -1 && !nodeok($11, guards)) { print NR": "kind" 行の guard がブロックの範囲外です: "$0 }
+            else if ($11 != -1 && $11 + 0 > used) { print NR": "kind" 行の guard が初めて使う順になっていません（次は "used"）: "$0 }
+            else if ($11 != -1 && $11 + 0 == used) { used++ }
+            if (NF != 12) { print NR": "kind" 行の列の数が 12 ではありません: "$0 }
+        }
+        END { endblock() }' "$1")
     if [ -z "$bad" ]; then
         echo "  OK   $2 記号と値グラフの番号・参照が壊れていない"
     else
@@ -160,6 +193,21 @@ check_unbounded_values() {   # $1=キャッシュの複製  $2=ラベル
     else
         echo "  NG   $2 タブ・改行の符号化が期待と違います"
         grep -o 'SELECT id[^\t]*' "$1" | head -2; fail=1
+    fi
+}
+
+# new の証拠（C 行の hints 列）が載っていて、呼び出しの絞り込みに効いていること。題材の Client.local
+# （Dao local = new AlphaDao(); local.select();）の 1 件。書き手がファイルの中で呼び出し元と変数を結びつけて
+# 書くので、差分更新で解析し直したブロックでも書き写したブロックでも同じに載っていなければならない。
+# これが無いと、上の「差分更新 == 全件解析」の比較が hints 列について素通りする
+check_hints() {   # $1=キャッシュの複製  $2=出力フォルダ  $3=ラベル
+    local n
+    n=$(awk -F'\t' 'substr($0, 1, 1) == "C" && $12 == "inc.AlphaDao"' "$1" | wc -l)
+    if [ "$n" -ge 1 ] && awk -F, 'index($1, "at inc.Client.local(") == 1 && $2 == "AlphaDao.select" \
+            && $3 == "RESOLVED:LOCAL_NEW" { found = 1 } END { exit !found }' "$2/call-hierarchy.csv"; then
+        echo "  OK   $3 new の証拠（hints）が C 行に載り、LOCAL_NEW に絞れている"
+    else
+        echo "  NG   $3 new の証拠（hints）が載っていないか、絞り込みに効いていません（C 行 $n 件）"; fail=1
     fi
 }
 
@@ -187,16 +235,16 @@ normalized_facts() { blocks_sorted "$1" "FT"; }
 # 行頭が既知の種別で、F 行の直後が必ず I 行であること。
 # 値に紛れ込んだタブ・改行で行が割れると、ここで引っかかる。
 # ブロックの中の行の並び（CacheFormat の「行の種別と列」の順。読み手がこの並びに依存している）:
-#   F, I, S*, N*, R*, H*, D*, O*, V*, C と U（ソース上の順で混ざる）, M*, A*, K*, J*, X*
+#   F, I, S*, N*, G*, R*, H*, D*, O*, V*, C と U（ソース上の順で混ざる）, M*, A*, K*, J*
 # ある種別の行が、それより後ろに並ぶべき種別の行より後に出てこないこと。L・T 行はブロックより前、Z 行は最後
 check_rows() {   # $1=キャッシュ  $2=ラベル
     local bad
-    bad=$(awk 'BEGIN { split("F I S N R H D O V C M A K J X", order, " ")
+    bad=$(awk 'BEGIN { split("F I S N G R H D O V C M A K J", order, " ")
                        for (i in order) rank[order[i]] = i + 0   # 添字は文字列なので数に直す
                        rank["U"] = rank["C"] }
                NR == 1 { next }
                { kind = substr($0, 1, 1) }
-               { if (index("TLFISNRHDOVCUMAKJXZ", kind) == 0) { print NR": 未知の行種別: "$0; next } }
+               { if (index("TLFISNGRHDOVCUMAKJZ", kind) == 0) { print NR": 未知の行種別: "$0; next } }
                prev == "F" && kind != "I" { print NR": F 行の次が I 行ではありません: "$0 }
                ended { print NR": Z 行（最終行）の後に行があります: "$0 }
                kind == "Z" { ended = 1 }
@@ -250,6 +298,7 @@ case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行�
     fi
     check_refs inc.tsv "$1 差分更新"
     check_unbounded_values inc.tsv "$1 差分更新"
+    check_hints inc.tsv "$inc_csv" "$1 差分更新"
 
     # 書き換えが効いていることの確認。何も変わらない編集だと上の比較が素通りしてしまう
     if diff -q <(normalized_facts base.tsv) <(normalized_facts full.tsv) > /dev/null; then

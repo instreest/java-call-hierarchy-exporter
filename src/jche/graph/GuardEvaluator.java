@@ -68,8 +68,8 @@ public final class GuardEvaluator {
     /** 条件が成立するか。op は {@link Guard} の判定種別 */
     private static boolean holds(String op, String expected, String actual) {
         return switch (op) {
-            case Guard.EQ -> actual.equals(expected);
-            case Guard.NE -> !actual.equals(expected);
+            case Guard.EQ -> actual.equals(legacyCut(expected));
+            case Guard.NE -> !actual.equals(legacyCut(expected));
             case Guard.IN -> contains(expected, actual);
             case Guard.NOT_IN -> !contains(expected, actual);
             default -> true;   // 知らない種別は判定しない
@@ -78,11 +78,25 @@ public final class GuardEvaluator {
 
     private static boolean contains(String values, String actual) {
         for (String v : Guard.valuesOf(values)) {
-            if (v.equals(actual)) {
+            if (legacyCut(v).equals(actual)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * 期待値を、以前の書き手が切り詰めていた形に戻す（出力を変えないための一時的な再現）。
+     *
+     * <p>以前の書き手は期待値を出所の文字列から取り出していた（{@link Origin#valueOf}）ので、最初の
+     * {@code |}（入れ子の {@code {}} の外）で切れていた（{@code "a|b"} は {@code "a"}）。キャッシュの G 行は
+     * 値そのものを持つようになった（切り詰めない）が、実際の値（{@link #valueOf}）はまだ出所の文字列から
+     * 取り出すので同じところで切れる。片方だけを正確にすると、{@code "a|b"} を渡した経路で
+     * {@code eq("a|b")} を「成立しない」と誤って判定してしまう。両方を値のまま比べる読み手に
+     * 置き換えるときに、これも外す
+     */
+    private static String legacyCut(String expected) {
+        return Origin.valueOf(Origin.of(Origin.CONST, expected));
     }
 
     /**

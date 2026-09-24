@@ -53,10 +53,10 @@ import java.util.List;
  * {@link #entriesOf} と {@link #unnest} を通すこと。
  *
  * <p>一方、{@code jche.analysis.OriginTracker} が作る形には、まだ上限がある
- * （実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段）。呼び出し箇所については
- * この形はもう作っていない（{@code docs/cache-split-qa.md} の Q22）。
- * 残っているのは {@code R} 行（戻り値の出所）・{@code J} 行（フィールドへの代入）・
- * {@code X} 行（拡張の証拠）と、値グラフの葉の判定のため。
+ * （実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段）。キャッシュの値（呼び出し箇所・
+ * {@code R} 行・{@code J} 行・条件）はもうこの形では書かず、値グラフのノードを指す
+ * （{@code docs/cache-split-qa.md} の Q22、{@link CacheFormat} の「値はノードで持つ」）。
+ * 書き手に残っているのは、ローカル変数の表で代入の食い違いを見る判定と、値グラフの葉の判定のため。
  */
 public final class Origin {
 
@@ -124,7 +124,55 @@ public final class Origin {
      */
     public static final int MAX_RECEIVER_DEPTH = 3;
 
+    /** {@link #isNameShaped} が名前の形とみなす文字列の長さの上限 */
+    public static final int MAX_NAME_LENGTH = 64;
+
     private Origin() {
+    }
+
+    /**
+     * 文字列が「完全修飾クラス名の形」か「識別子の形」か（{@link #MAX_NAME_LENGTH} 文字以内）。
+     *
+     * クラス名は「ドットを含み、各要素が識別子で、最後の要素が英大文字で始まる」、
+     * メソッド名・フィールド名は「識別子1つ」。書き手（{@code jche.analysis.OriginTracker}）が
+     * 文字列リテラルを出所（{@link #LITERAL}）として残すのはこの形のものだけで、
+     * この形の値は出所の文法の区切り（{@code | ; { } =}）を含まない
+     */
+    public static boolean isNameShaped(String value) {
+        if (value == null || value.isEmpty() || value.length() > MAX_NAME_LENGTH) {
+            return false;
+        }
+        if (value.indexOf('.') < 0) {
+            // 識別子の形。getMethod("run") のようにメソッド名として渡されるもの
+            if (!Character.isJavaIdentifierStart(value.charAt(0))) {
+                return false;
+            }
+            for (int i = 1; i < value.length(); i++) {
+                if (!Character.isJavaIdentifierPart(value.charAt(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        int last = 0;
+        for (int i = 0; i <= value.length(); i++) {
+            if (i < value.length() && value.charAt(i) != '.') {
+                char c = value.charAt(i);
+                if (!Character.isJavaIdentifierPart(c) && c != '$') {
+                    return false;
+                }
+                continue;
+            }
+            if (i == last) {
+                return false;   // 空の要素（先頭・末尾・連続するドット）
+            }
+            if (!Character.isJavaIdentifierStart(value.charAt(last))) {
+                return false;
+            }
+            last = i + 1;
+        }
+        int dot = value.lastIndexOf('.');
+        return Character.isUpperCase(value.charAt(dot + 1));
     }
 
     public static boolean isUnknown(String origin) {

@@ -560,7 +560,7 @@ final class MessagesJa {
             "cache.badReference", "[cache] キャッシュ {0} にファイルのブロックの外（または読めない行）を指す行があるため、その行（または値）は使いません。キャッシュが書き換えられたか壊れています。キャッシュのフォルダ {1} を消してから実行し直してください",
             "cache.tempNotDeleted", "[cache] 一時ファイル {0} を消せません（次の実行で消します）: {1}",
             "cache.tempShuttingDown", "プロセスが終了しようとしているため、{0} に一時ファイルを作れません",
-            "cache.dump.usage", "使い方: java -cp <ツールのクラスと JDT の jar> jche.cache.CacheDump <analysis-cache.tsv>   （メソッドの記号を 4 列に戻してキャッシュを出力します）",
+            "cache.dump.usage", "使い方: java -cp <ツールのクラスと JDT の jar> jche.cache.CacheDump <analysis-cache.tsv>   （メソッドの記号を 4 列に戻し、R 行・J 行の値と G 行の subject のノードを出所の形にしてキャッシュを出力します）",
         };
     }
 

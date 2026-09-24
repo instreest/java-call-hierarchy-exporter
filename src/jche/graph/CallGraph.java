@@ -5,10 +5,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
+import jche.cache.HintFact;
 import jche.cache.ModifierTokens;
 import jche.extension.Hint;
 
@@ -80,16 +80,10 @@ public final class CallGraph {
     int[] edgeHint;
     private final ArrayList<List<Hint>> hintTable = new ArrayList<>();
     /**
-     * 同じ証拠のリストを hintTable に 2 回載せないための逆引き（構築時だけ使う）。
-     * 同じレシーバへの呼び出しが 1 メソッド内に複数あれば同じリストを共有する
+     * 同じ証拠のリストを hintTable に 2 回載せないための逆引き（C 行・U 行の hints 列の文字列 -> インデックス。
+     * 構築時だけ使い、{@link #finishBuild} で捨てる）。同じ変数への呼び出しが複数あれば同じリストを共有する
      */
-    private IdentityHashMap<List<Hint>, Integer> hintIndex = new IdentityHashMap<>();
-    /**
-     * callerKey + "|" + scopeKey -> 証拠のリスト。構築時だけ使い、{@link #finishBuild} で捨てる。
-     * キーはメソッドキー＋バインディングキーの長い文字列で、ラムダや new のたびに増えるため、
-     * 解析が終わるまで抱えているとエッジ配列より大きくなりうる
-     */
-    HashMap<String, List<Hint>> hintsByScope = new HashMap<>();
+    private HashMap<String, Integer> hintIndex = new HashMap<>();
 
     /**
      * 起点の並び替え用。ソースフォルダの順（プロジェクトルートからの相対パス。
@@ -466,27 +460,37 @@ public final class CallGraph {
     }
 
     /**
-     * 構築時: 呼び出し箇所（呼び出し元メソッド＋レシーバの識別キー）に紐づく証拠をエッジに引き当てる。
-     * 証拠（X 行）はキャッシュ全体から集め終えてから引く（どのブロックの X 行でも同じ鍵に集約されるため）
+     * 構築時: C 行・U 行の hints 列（new された型の FQN のカンマ区切り。書き手が同じファイルの中で
+     * 呼び出し元とレシーバの変数を結びつけたもの）を証拠のリストにして、そのインデックスを返す。空なら -1。
+     * エッジの配列はまだ無いので、番号にしておき配置のときに置く（{@link #edgeHint}）
      */
-    void setHint(int pos, String callerKey, String recvKey) {
-        List<Hint> hints = hintsByScope.get(callerKey + "|" + recvKey);
+    int internHints(String hints) {
         if (hints == null || hints.isEmpty()) {
-            return;
+            return -1;
         }
         Integer index = hintIndex.get(hints);
-        if (index == null) {
-            hintTable.add(hints);
-            index = hintTable.size() - 1;
-            hintIndex.put(hints, index);
+        if (index != null) {
+            return index;
         }
-        edgeHint[pos] = index;
+        List<Hint> list = new ArrayList<>(2);
+        for (String type : hints.split(",")) {
+            Hint h = new Hint(HintFact.KIND_NEW, type);
+            if (!type.isEmpty() && !list.contains(h)) {
+                list.add(h);
+            }
+        }
+        if (list.isEmpty()) {
+            return -1;
+        }
+        hintTable.add(List.copyOf(list));
+        int id = hintTable.size() - 1;
+        hintIndex.put(hints, id);
+        return id;
     }
 
     /** 構築が終わったら、構築時にしか使わない索引を捨てる（エッジからは hintTable 経由で引ける） */
     void finishBuild() {
-        hintsByScope = new HashMap<>();
-        hintIndex = new IdentityHashMap<>();
+        hintIndex = new HashMap<>();
         originPoolIndex.clear();
     }
 }

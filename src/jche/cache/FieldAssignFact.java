@@ -8,26 +8,24 @@ package jche.cache;
  * @param typeFqn   フィールドを宣言している型
  * @param fieldName フィールド名
  * @param site      代入箇所。{@link #SITE_INITIALIZER} か、メソッド／コンストラクタの "name(paramSig)"
- * @param origin    代入された値の出所（{@link Origin}）。追跡できなければ U
+ * @param node      代入された値の、同じブロックの値グラフのノード番号（{@link ValueNode}）。
+ *                  入れ子（実引数・レシーバ）も付いたノードを指す。読み手はノードの頭（種別と値）だけで
+ *                  比べる（jche.graph.CallGraphBuilder）。追跡できなければ {@link ValueNode#NONE}
  */
-public record FieldAssignFact(String typeFqn, String fieldName, String site, String origin) {
+public record FieldAssignFact(String typeFqn, String fieldName, String site, int node) {
 
     /** フィールド初期化子での代入を表す site */
     public static final String SITE_INITIALIZER = "<field>";
 
-    public FieldAssignFact {
-        origin = Origin.isUnknown(origin) ? Origin.UNKNOWN_S : origin;
-    }
-
     public String toRow() {
-        return CacheFormat.joinRow("J", typeFqn, fieldName, site, origin);
+        return CacheFormat.joinRow("J", typeFqn, fieldName, site, String.valueOf(node));
     }
 
-    /** 列が足りなければ null */
+    /** 列が足りなければ null。ノード番号が読めなければ {@link ValueNode#NONE}（追跡できない） */
     public static FieldAssignFact fromRow(String[] cols) {
         if (cols.length < 5) {
             return null;
         }
-        return new FieldAssignFact(cols[1], cols[2], cols[3], cols[4]);
+        return new FieldAssignFact(cols[1], cols[2], cols[3], ValueNode.intOf(cols[4], ValueNode.NONE));
     }
 }

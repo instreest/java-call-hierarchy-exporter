@@ -28,11 +28,10 @@ import jche.cache.ValueNode;
  *
  * <h2>{@link OriginTracker} との関係</h2>
  * {@link OriginTracker} は同じ式から「上限付きの出所の文字列」を作る。
- * 呼び出し箇所の値（{@code P} 行）を持つのは<b>こちらだけ</b>で、読み手は
- * {@code jche.graph.OriginRenderer} が読む直前に出所の文字列へ組み直す
- * （{@code docs/cache-split-qa.md} の Q21・Q22）。
- * 前者が残るのは {@code R} 行・{@code J} 行・条件（{@code guard}）と、この葉の判定のためだけ
- * （{@code X} 行は出所ではなく new した型の名前。{@link FactVisitor} が作る）。
+ * キャッシュの値（呼び出し箇所のレシーバ・実引数、戻り値の {@code R} 行、フィールドへの代入の {@code J} 行、
+ * 条件の subject）を持つのは<b>こちらだけ</b>で、読み手は {@code jche.graph.OriginRenderer} が
+ * 読む直前に出所の文字列へ組み直す（{@code docs/cache-split-qa.md} の Q21・Q22）。
+ * 前者が残るのは、ローカル変数の表で代入の食い違いを見る判定と、この葉の判定のためだけ。
  *
  * <h2>外れた上限</h2>
  * <pre>
@@ -250,6 +249,16 @@ final class ValueGraph {
         }
         String text = OriginTracker.constantText(constant);
         return (text == null) ? ValueNode.NONE : node(Origin.CONST, text, ValueNode.NONE, "", -1);
+    }
+
+    /** 定数の値（{@link Origin#CONST}）のノード。条件の subject（文字列の定数）に使う（{@link GuardCollector}） */
+    int constantValueNode(String value) {
+        return node(Origin.CONST, value, ValueNode.NONE, "", -1);
+    }
+
+    /** ノードの種別。番号が範囲外（{@link ValueNode#NONE} を含む）なら {@link Origin#UNKNOWN} */
+    char kindOf(int id) {
+        return (id >= 0 && id < out.valueNodes.size()) ? out.valueNodes.get(id).kind() : Origin.UNKNOWN;
     }
 
     /**

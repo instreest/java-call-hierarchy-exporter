@@ -2,7 +2,7 @@
 package jche.cache;
 
 /**
- * 呼び出し箇所を囲む条件分岐（ガード）。C行・U行の列として持つ「事実」。
+ * 呼び出し箇所を囲む条件分岐（ガード）。ブロックの G 行の表に置き、C行・U行が番号で指す「事実」。
  *
  * <h2>何のためにあるか</h2>
  * 呼び出しがソースに書かれていても、その経路では条件が成立せず実行されないことがある。
@@ -18,17 +18,32 @@ package jche.cache;
  * {@link CacheFormat} の原則どおりの分担。
  *
  * <h2>形式</h2>
- * 条件（アトム）を {@link #ATOM_SEP} で並べたもの。全て成立して初めて呼び出しに到達する
- * （論理積）。1つのアトムは {@link #FIELD_SEP} 区切りの4項目。
+ * 条件（アトム。{@link Atom}）を並べたもの。全て成立して初めて呼び出しに到達する（論理積）。
+ * 1つのアトムは 4 項目。
  * <pre>
- *   op    判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}。
- *         条件の調査（conditions.target）ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
- *   origin 判定される式の出所（{@link Origin}。A:引数位置 か V:定数 だけ）
- *   value  比較する値。IN / NOT_IN は {@link #VALUE_SEP} 区切りで複数
- *   text   ソースに書かれていた条件式（注記に出すためだけの文字列。判定には使わない）
+ *   op      判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}。
+ *           条件の調査（conditions.target）ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
+ *   subject 判定される式の値グラフのノード（{@link ValueNode}。種別 A:引数位置 か V:定数 だけ）
+ *   values  比較する値。EQ / NE は 1 つ、IN / NOT_IN は 1 つ以上。定数の値そのもの（切り詰めない）
+ *   text    ソースに書かれていた条件式（注記に出すためだけの文字列。判定には使わない）
  * </pre>
+ *
+ * <h3>キャッシュでは G 行の表（ブロックごと）</h3>
+ * ブロックの N 行の直後に、アトム 1 つにつき 1 行（{@link Atom#toRow}）を置く。
+ * <pre>
+ *   G  ガード番号  op  subject（ノード番号）  text  値1  値2 …
+ * </pre>
+ * ガード番号はブロック内の 0 始まりで、C 行・U 行が初めて使った順に振る（同じアトムの並びは同じ番号）。
+ * 1 つのガードのアトムは、番号が同じ行としてアトムの順に続けて並ぶ。C 行・U 行は番号で指す（無ければ -1）。
+ * 同じ分岐の中の呼び出しは同じガードを持つので、呼び出しごとに条件を書き並べずに済む。
+ * 値は後ろの列に 1 つずつ置くので、値の中の文字（{@code |} など）で区切りが崩れることはない。
+ *
+ * <h3>読み手に渡す文字列（{@code jche.graph.GuardEvaluator} が読む形）</h3>
+ * 読み手はまだ文字列を受け取る。G 行から組み直すときは、アトムを {@link #ATOM_SEP} で並べ、1 つのアトムを
+ * {@link #FIELD_SEP} 区切りの4項目（op・出所・値・text。{@link #atom}）にし、IN / NOT_IN の値は
+ * {@link #VALUE_SEP} で並べる。出所は subject のノードの頭（{@code A:0} / {@code V:true}）。
  * 区切りに制御文字を使うのは、条件式のテキストに現れうる文字（{@code & | ~ ^ , ; =}）を
- * 避けるため。エスケープを持たずに済み、タブ区切りのキャッシュ形式とも衝突しない。
+ * 避けるため。エスケープを持たずに済む。
  *
  * <h2>安全側の方針</h2>
  * 判定できる形（引数・定数と、定数との比較）だけをアトムにする。分からない条件は
@@ -55,7 +70,7 @@ public final class Guard {
     /**
      * 判定できない条件（条件があることだけが分かっている）。
      *
-     * 打ち切りの判定には使えないので、キャッシュの guard 列には入れない。
+     * 打ち切りの判定には使えないので、キャッシュ（G 行）には入れない。
      * 「この呼び出しに効いている条件を漏れなく見たい」条件の調査
      * （設定ファイルの conditions.target。jche.analysis.CallConditionScanner）だけがこの種別を作る。
      * 読み手は知らない種別として読み飛ばすので、混ざっても打ち切りの結論は変わらない。
@@ -71,7 +86,56 @@ public final class Guard {
     }
 
     /**
-     * アトム1件を文字列にする（value は {@link #clean} 済み。IN / NOT_IN は {@link #values} で並べる）。
+     * アトム 1 つ（書き手がメモリ上で持つ形。キャッシュでは G 行 1 行）。
+     *
+     * @param op      判定の種別（{@link #EQ} など）
+     * @param subject 判定される式の値グラフのノード番号（{@link ValueNode}。A か V の種別）。
+     *                条件の調査だけが作る {@link #UNKNOWN} / {@link #MORE} では {@link ValueNode#NONE}
+     * @param values  比較する値（定数の値そのもの）。{@link #UNKNOWN} / {@link #MORE} では空
+     * @param text    ソースに書かれていた条件式（注記用）
+     */
+    public record Atom(String op, int subject, java.util.List<String> values, String text) {
+
+        public Atom {
+            values = java.util.List.copyOf(values);
+            text = (text == null) ? "" : text;
+        }
+
+        /** {@code G ガード番号 op subject text 値…}（符号化は {@link CacheFormat#joinRow} が行う） */
+        public String toRow(int guardId) {
+            String[] cols = new String[5 + values.size()];
+            cols[0] = String.valueOf(CacheFormat.ROW_GUARD);
+            cols[1] = String.valueOf(guardId);
+            cols[2] = op;
+            cols[3] = String.valueOf(subject);
+            cols[4] = text;
+            for (int i = 0; i < values.size(); i++) {
+                cols[5 + i] = values.get(i);
+            }
+            return CacheFormat.joinRow(cols);
+        }
+
+        /** G 行のガード番号。読めなければ -1 */
+        public static int guardIdOf(String[] cols) {
+            return (cols.length < 2) ? -1 : ValueNode.intOf(cols[1], -1);
+        }
+
+        /** G 行のアトム。列が足りなければ null。列は {@link CacheFormat#columnsOf} で符号化を戻したもの */
+        public static Atom fromRow(String[] cols) {
+            if (cols.length < 5) {
+                return null;
+            }
+            java.util.List<String> values = new java.util.ArrayList<>(cols.length - 5);
+            for (int i = 5; i < cols.length; i++) {
+                values.add(cols[i]);
+            }
+            return new Atom(cols[2], ValueNode.intOf(cols[3], ValueNode.NONE), values, cols[4]);
+        }
+    }
+
+    /**
+     * 読み手に渡す文字列の形で、アトム1件を文字列にする（value は {@link #clean} 済み。
+     * IN / NOT_IN は {@link #values} で並べる）。
      *
      * origin は出所（{@link Origin}）で、定数の値（{@code V:}）を含みうる。値にこの形式の
      * 区切り文字が混ざると読み戻せなくなるので、value / text と同じく必ず落とす。

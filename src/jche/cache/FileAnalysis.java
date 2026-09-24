@@ -38,6 +38,11 @@ public final class FileAnalysis {
     public String hash = "";
 
     public final List<TypeFact> types = new ArrayList<>();
+    /**
+     * 同じメソッドの中で new された型の証拠（キャッシュの行にはしない）。書き手がブロックを書くときに、
+     * 呼び出し元とレシーバの変数のキー（{@link CallSiteValues#recvKey}）でこのファイルの呼び出し箇所に
+     * 結びつけ、C 行・U 行の hints 列に書く
+     */
     public final List<HintFact> hints = new ArrayList<>();
     public final List<MethodDeclFact> declarations = new ArrayList<>();
     /**
@@ -48,6 +53,7 @@ public final class FileAnalysis {
     public final List<FieldDeclFact> fieldDecls = new ArrayList<>();
     /** このファイルが宣言するコンパイル時定数（K行。{@link ConstantFact} 参照） */
     public final List<ConstantFact> constants = new ArrayList<>();
+    /** フィールドへの代入（J 行）。値は {@link #valueNodes} のノード番号 */
     public final List<FieldAssignFact> fieldAssigns = new ArrayList<>();
     public final List<FieldAccessFact> fieldAccesses = new ArrayList<>();
     /** バインディング解決で参照した型のFQN（I行の元。自分が宣言する型は書き出し時に除く） */
@@ -56,13 +62,18 @@ public final class FileAnalysis {
     public final Set<String> imports = new LinkedHashSet<>();
     /** 呼び出し箇所（{@link CallEdgeFact} と {@link UnresolvedCallFact}）をソース上の順で */
     public final List<CallSite> callSites = new ArrayList<>();
+    /** return の値（R 行）。値は {@link #valueNodes} のノード番号 */
     public final List<ReturnFact> returns = new ArrayList<>();
-    /** 値グラフのノード（N 行）。上限の無い形で値の流れを持つ。番号は並びの位置 */
+    /**
+     * 値グラフのノード（N 行）。上限の無い形で値の流れを持つ。番号は並びの位置。
+     * 戻り値・フィールドへの代入・条件の subject・呼び出し箇所のレシーバと実引数は、どれもここを指す
+     */
     public final List<ValueNode> valueNodes = new ArrayList<>();
     /**
      * 呼び出し箇所ごとの値。{@link #callSites} と<b>同じ数・同じ順</b>で並び、同じ位置どうしが組になる。
-     * キャッシュでは組にした 2 つを 1 行（C 行・U 行）に書く。条件の調査
-     * （{@code jche.analysis.CallConditionScanner}）もキャッシュを通さず、同じ位置で組にして読む
+     * キャッシュでは組にした 2 つを 1 行（C 行・U 行）に書く（条件のアトムは G 行の表にまとめ、番号で指す）。
+     * 条件の調査（{@code jche.analysis.CallConditionScanner}）もキャッシュを通さず、同じ位置で組にして
+     * アトムをそのまま読む（subject は {@link #valueNodes} で引く）
      */
     public final List<CallSiteValues> callSiteValues = new ArrayList<>();
     public final List<FunctionalImplFact> functionalImpls = new ArrayList<>();

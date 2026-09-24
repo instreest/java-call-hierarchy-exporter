@@ -24,6 +24,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,12 +34,15 @@ import java.util.function.Function;
 import jche.cache.BlockChecksum;
 import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
+import jche.cache.CallSite;
+import jche.cache.CallSiteValues;
 import jche.cache.ConstantFact;
 import jche.cache.FieldAccessFact;
 import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
 import jche.cache.FileAnalysis;
 import jche.cache.FunctionalImplFact;
+import jche.cache.Guard;
 import jche.cache.HintFact;
 import jche.cache.LibraryFact;
 import jche.cache.MethodDeclFact;
@@ -1550,7 +1554,11 @@ public final class CacheUpdater {
      * <p>ブロックはメモリ上で組んでから書く。記号表（S 行）は参照する行より前に置くが、記号の番号は
      * 参照する行を組みながら振るので先に書けないのと、F 行に書く検査値はブロックの残りの行が
      * 揃ってから決まるため。記号は行を書く順（R・D・O・C/U・M・A）に初めて現れた順に振る
-     * （{@link SymbolTable}）。
+     * （{@link SymbolTable}）。条件の表（G 行）も同じで、ガードの番号は C 行・U 行を組みながら、
+     * 初めて使った順に振る（同じアトムの並びは同じ番号）。
+     *
+     * <p>new の証拠（{@link FileAnalysis#hints}）は行にせず、ここで呼び出し箇所に結びつけて C 行・U 行の
+     * hints 列に書く（{@link #hintsByScope}）。
      */
     private static void writeBlock(FileAnalysis fa, BufferedWriter w) throws IOException {
         if (fa.callSites.size() != fa.callSiteValues.size()) {
@@ -1575,10 +1583,18 @@ public final class CacheUpdater {
         }
         // 呼び出し箇所（解決できたものも失敗したものも）はソース上の順のまま書く。
         // 読み手が import 推定の候補をエッジにしたとき、元の呼び出しの並びが保たれる。
-        // 値（レシーバ・実引数・識別キー・ガード）は同じ位置の callSiteValues を同じ行の末尾に書く
+        // 値（レシーバ・実引数・ガードの番号・new の証拠）は同じ位置の callSiteValues から作り、同じ行の末尾に書く
+        Map<List<Guard.Atom>, Integer> guardIds = new HashMap<>();
+        List<String> guards = new ArrayList<>();
+        Map<String, String> hints = hintsByScope(fa);
         List<String> calls = new ArrayList<>(fa.callSites.size());
         for (int i = 0; i < fa.callSites.size(); i++) {
-            calls.add(fa.callSites.get(i).toRow(symbols, fa.callSiteValues.get(i)));
+            CallSite site = fa.callSites.get(i);
+            CallSiteValues v = fa.callSiteValues.get(i);
+            int guard = guardIdOf(v.guard(), guardIds, guards);
+            String hint = (site.caller() == null || v.recvKey().isEmpty())
+                    ? "" : hints.getOrDefault(scopeOf(site.caller().key(), v.recvKey()), "");
+            calls.add(site.toRow(symbols, new CallSiteValues.Row(v.recv(), v.args(), guard, hint)));
         }
         List<String> functionals = new ArrayList<>(fa.functionalImpls.size());
         for (FunctionalImplFact m : fa.functionalImpls) {
@@ -1593,11 +1609,13 @@ public final class CacheUpdater {
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
         body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));
         body.addAll(symbols.rows());
-        // 値グラフ（N行）は番号順。参照する行（C 行・U 行）より前にあれば、読み手は 1 回で組み直せる
+        // 値グラフ（N行）は番号順。参照する行（G・R・C/U・J 行）より前にあれば、読み手は 1 回で組み直せる
         for (ValueNode n : fa.valueNodes) {
             body.add(n.toRow());
         }
-        // return は全部書く（追跡できないものも U として）。
+        // 条件の表（G 行）は N 行の直後。subject はノードを指し、C 行・U 行はガードの番号で指す
+        body.addAll(guards);
+        // return は全部書く（追跡できないものも -1 として。読み手には U）。
         // 「追跡できない return が1つでもあれば戻り値は不定」という判定は読み手が行う。
         // D 行より前に置く（読み手はここでメソッドを ID 化する。以前の形式と同じ順にするため）
         body.addAll(returns);
@@ -1620,9 +1638,6 @@ public final class CacheUpdater {
         for (FieldAssignFact j : fa.fieldAssigns) {
             body.add(j.toRow());
         }
-        for (HintFact h : fa.hints) {
-            body.add(h.toRow());
-        }
 
         BlockChecksum checksum = new BlockChecksum();
         for (String line : body) {
@@ -1633,6 +1648,57 @@ public final class CacheUpdater {
         for (String line : body) {
             writeLine(w, line);
         }
+    }
+
+    /**
+     * 条件（アトムの並び）のガード番号。無ければ -1。初めて出てきた並びなら番号を振り、G 行を足す
+     * （番号は 0 から詰めて、初めて使った順。1 つのガードのアトムは同じ番号で続けて並ぶ）
+     */
+    private static int guardIdOf(List<Guard.Atom> atoms, Map<List<Guard.Atom>, Integer> ids, List<String> rows) {
+        if (atoms.isEmpty()) {
+            return -1;
+        }
+        Integer known = ids.get(atoms);
+        if (known != null) {
+            return known;
+        }
+        int id = ids.size();
+        ids.put(atoms, id);
+        for (Guard.Atom atom : atoms) {
+            rows.add(atom.toRow(id));
+        }
+        return id;
+    }
+
+    /**
+     * new の証拠を「呼び出し元＋変数のキー」（{@link #scopeOf}）でまとめ、型の FQN をカンマ区切りにしたもの。
+     *
+     * <p>以前は X 行として書き、読み手がキャッシュ全体から同じ鍵で集めていた。変数のキー（バインディングキー）は
+     * そのファイルの宣言を指すので、結びつけは同じファイルの中で閉じる。1 つだけ違うのは、同じメソッドキーが
+     * 2 つのファイルにある（同じクラスが重複している）場合で、以前は両方のファイルの証拠が混ざっていたが、
+     * 今はそれぞれのファイルの証拠がそれぞれのファイルの呼び出し箇所にだけ付く（その方が正しい）
+     */
+    private static Map<String, String> hintsByScope(FileAnalysis fa) {
+        if (fa.hints.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Set<String>> types = new LinkedHashMap<>();
+        for (HintFact h : fa.hints) {
+            if (HintFact.KIND_NEW.equals(h.kind())) {
+                types.computeIfAbsent(scopeOf(h.callerKey(), h.scopeKey()), k -> new LinkedHashSet<>())
+                        .add(h.value());
+            }
+        }
+        Map<String, String> joined = new HashMap<>();
+        for (Map.Entry<String, Set<String>> e : types.entrySet()) {
+            joined.put(e.getKey(), String.join(",", e.getValue()));
+        }
+        return joined;
+    }
+
+    /** 証拠を引く鍵（呼び出し元のメソッドキーと変数のキー） */
+    private static String scopeOf(String callerKey, String variableKey) {
+        return callerKey + '\u0000' + variableKey;
     }
 
     /** K行を指紋の順に並べたもの */

@@ -138,6 +138,26 @@ final class OriginTracker {
     }
 
     /**
+     * 式の値グラフのノード番号（上限の無い形。{@link ValueGraph#nodeOf}）。追跡できなければ {@link ValueNode#NONE}。
+     *
+     * キャッシュの値（戻り値の R 行・フィールドへの代入の J 行・条件の subject）は、どれもここで作ったノードを指す。
+     * 今のスコープ（変数の表）で求めるので、呼ぶ側はその式を見ているスコープの中で呼ぶこと
+     */
+    int nodeOf(Expression ex) {
+        return graph.nodeOf(ex);
+    }
+
+    /** ノードの種別（{@link Origin} の種別の文字）。ノードが無ければ {@link Origin#UNKNOWN} */
+    char kindOfNode(int node) {
+        return graph.kindOf(node);
+    }
+
+    /** 定数の値（{@link Origin#CONST}）のノード。同じ値なら同じノード */
+    int constantNodeOf(String value) {
+        return graph.constantValueNode(value);
+    }
+
+    /**
      * 式が列挙定数なら、その値（宣言型で修飾した形。{@code cx.Mode.FULL}）。違えば null。
      *
      * 列挙定数はコンパイル時定数ではないので {@code resolveConstantExpressionValue} では取れない。
@@ -1006,40 +1026,8 @@ final class OriginTracker {
      * 使われないだけで害はない。
      */
     private static String classNameLiteral(String value) {
-        if (value == null || value.isEmpty() || value.length() > MAX_VALUE_LENGTH) {
-            return null;
-        }
-        if (value.indexOf('.') < 0) {
-            // 識別子の形。getMethod("run") のようにメソッド名として渡されるもの
-            if (!Character.isJavaIdentifierStart(value.charAt(0))) {
-                return null;
-            }
-            for (int i = 1; i < value.length(); i++) {
-                if (!Character.isJavaIdentifierPart(value.charAt(i))) {
-                    return null;
-                }
-            }
-            return Origin.of(Origin.LITERAL, value);
-        }
-        int last = 0;
-        for (int i = 0; i <= value.length(); i++) {
-            if (i < value.length() && value.charAt(i) != '.') {
-                char c = value.charAt(i);
-                if (!Character.isJavaIdentifierPart(c) && c != '$') {
-                    return null;
-                }
-                continue;
-            }
-            if (i == last) {
-                return null;   // 空の要素（先頭・末尾・連続するドット）
-            }
-            if (!Character.isJavaIdentifierStart(value.charAt(last))) {
-                return null;
-            }
-            last = i + 1;
-        }
-        int dot = value.lastIndexOf('.');
-        return Character.isUpperCase(value.charAt(dot + 1)) ? Origin.of(Origin.LITERAL, value) : null;
+        // 形の判定は読み手の暫定の扱い（jche.graph.CallGraphBuilder の R 行）と共有する
+        return Origin.isNameShaped(value) ? Origin.of(Origin.LITERAL, value) : null;
     }
 
     /**
@@ -1095,8 +1083,8 @@ final class OriginTracker {
      * （＝この式の先の出所を、この式の値として使ってはいけない）。
      *
      * 値として使う経路はすべてここを通す。条件（{@link GuardCollector}）の両辺だけでなく、
-     * 出所（{@link #originOf}。R 行・J 行・ローカル変数の表）と値グラフ（{@link ValueGraph}。
-     * 呼び出し箇所の実引数）もである。読み手は呼び出し元の実引数の値を引数（{@code A:}）に当てて
+     * 出所（{@link #originOf}。ローカル変数の表）と値グラフ（{@link ValueGraph}。呼び出し箇所の実引数・
+     * R 行・J 行・条件の subject）もである。読み手は呼び出し元の実引数の値を引数（{@code A:}）に当てて
      * 条件を判定するので、どこか 1 か所でもキャストを剥がしすぎると、同じ誤判定になる。
      * <pre>
      *     void run(int mode) { if ((byte) mode == 44) target(); }

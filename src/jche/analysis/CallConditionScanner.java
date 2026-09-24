@@ -14,6 +14,7 @@ import jche.cache.Guard;
 import jche.cache.MethodRef;
 import jche.cache.Origin;
 import jche.cache.UnresolvedCallFact;
+import jche.cache.ValueNode;
 import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
@@ -47,7 +48,14 @@ import jche.util.Messages;
  */
 public final class CallConditionScanner {
 
-    /** 呼び出し1件に効いている条件1つ */
+    /**
+     * 呼び出し1件に効いている条件1つ
+     *
+     * @param op      判定の種別（{@link Guard#EQ} など）
+     * @param subject 判定される式の出所の頭（{@code A:0} / {@code V:true}。分からなければ {@code U}）
+     * @param values  比較する値（{@link Guard#VALUE_SEP} 区切り。{@link Guard#values}）
+     * @param text    ソースに書かれていた条件式
+     */
     public record Condition(String op, String subject, String values, String text) {
 
         /** 経路ごとの値と突き合わせて判定できる条件か */
@@ -243,8 +251,8 @@ public final class CallConditionScanner {
             int line;
             MethodRef caller;
             String callee;
-            String guard = (i < analysis.callSiteValues.size())
-                    ? analysis.callSiteValues.get(i).guard() : "";
+            List<Guard.Atom> guard = (i < analysis.callSiteValues.size())
+                    ? analysis.callSiteValues.get(i).guard() : List.of();
             if (site instanceof CallEdgeFact c) {
                 line = c.callLine();
                 caller = c.caller();
@@ -260,15 +268,21 @@ public final class CallConditionScanner {
                 continue;
             }
             out.add(new CallSiteConditions(file, line, (caller == null) ? "(unknown)" : label(caller),
-                    callee, conditionsOf(guard)));
+                    callee, conditionsOf(guard, analysis.valueNodes)));
         }
     }
 
-    private static List<Condition> conditionsOf(String guard) {
-        List<Condition> conditions = new ArrayList<>();
-        for (String atom : Guard.atomsOf(guard)) {
-            conditions.add(new Condition(Guard.fieldOf(atom, 0), Guard.fieldOf(atom, 1),
-                    Guard.fieldOf(atom, 2), Guard.fieldOf(atom, 3)));
+    /**
+     * アトムを条件にする。subject は値グラフ（{@code nodes}）のノードの頭（{@code A:0} / {@code V:true}）にし、
+     * ノードが無い（記録用モードの {@link Guard#UNKNOWN} / {@link Guard#MORE}）なら {@code U}
+     */
+    private static List<Condition> conditionsOf(List<Guard.Atom> guard, List<ValueNode> nodes) {
+        List<Condition> conditions = new ArrayList<>(guard.size());
+        for (Guard.Atom atom : guard) {
+            int id = atom.subject();
+            String subject = (id >= 0 && id < nodes.size())
+                    ? Origin.of(nodes.get(id).kind(), nodes.get(id).value()) : Origin.UNKNOWN_S;
+            conditions.add(new Condition(atom.op(), subject, Guard.values(atom.values()), atom.text()));
         }
         return conditions;
     }

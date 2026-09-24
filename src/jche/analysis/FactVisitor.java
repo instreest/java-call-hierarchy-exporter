@@ -56,10 +56,10 @@ import jche.cache.HintFact;
 import jche.cache.MethodDeclFact;
 import jche.cache.MethodRef;
 import jche.cache.ModifierTokens;
-import jche.cache.Origin;
 import jche.cache.OverrideFact;
 import jche.cache.RecvKind;
 import jche.cache.ReturnFact;
+import jche.cache.ValueNode;
 
 /**
  * ASTを走査して、キャッシュに書く事実（型階層・宣言・呼び出し・フィールド・return・
@@ -484,7 +484,7 @@ final class FactVisitor extends ASTVisitor {
         if (node.getBody() instanceof Expression bodyExpression) {
             // 式本体（() -> new X()）は「return 式;」と同じ（JLS 15.27.4。本体の式の値を返す）。
             // ブロック本体の return と同じく R 行にしないと、書き方で結果が変わる
-            recordReturn(bodyExpression);
+            recordReturn(node, bodyExpression);
         }
         return true;
     }
@@ -578,10 +578,10 @@ final class FactVisitor extends ASTVisitor {
     }
 
     /**
-     * このメソッドの return が返しうる値の出所を記録する（R行）。
+     * このメソッドの return が返しうる値を記録する（R行。値は値グラフのノード）。
      *
      * ファクトリメソッド（{@code Factory.create()}）の戻り値に対する呼び出しを
-     * 具象クラスまで辿るために使う。追跡できない return も U として
+     * 具象クラスまで辿るために使う。追跡できない return も {@link ValueNode#NONE}（読み手には U）として
      * 記録するのが重要で、そうしないと「実は複数の型を返しうるメソッド」を
      * 分かった分だけで1つに決め打ちしてしまう。
      */
@@ -592,15 +592,28 @@ final class FactVisitor extends ASTVisitor {
             // void の return、または合成できなかったラムダ式自身の戻り値
             return true;
         }
-        recordReturn(ex);
+        recordReturn(enclosingDeclarationOf(node), ex);
         return true;
     }
 
-    /** 今の呼び出し元（メソッドまたはラムダの合成メソッド）が返す値の出所を R 行にする */
-    private void recordReturn(Expression ex) {
-        ITypeBinding tb = ex.resolveTypeBinding();
-        if (tb != null && (tb.isPrimitive() || tb.isArray()
-                || "java.lang.String".equals(tb.getQualifiedName()))) {
+    /**
+     * 今の呼び出し元（メソッドまたはラムダの合成メソッド）が返す値を R 行にする。
+     *
+     * 値は呼び出し箇所の値と同じ値グラフのノードで持つ（上限なし。実引数・レシーバの入れ子も、
+     * ソースに書かれたレシーバの型も残る）。今のスコープ（先読みした変数の表）で求めるので、
+     * ローカル変数は代入元のノードに畳まれる。
+     *
+     * <p>記録するかどうかは、return の式の型ではなく<b>囲むメソッド・ラムダの宣言の戻り値の型</b>で決める
+     * （{@link #tracksReturnValue}）。式の型で決めると、
+     * {@code Object key(boolean b) { if (b) return "x"; Object v = "y z"; return v; }} の
+     * {@code return "x"} だけが記録されず、読み手は残った値（{@code "y z"}）を「必ずこれを返す」と読んで、
+     * {@code key()} を渡した経路の {@code s.equals("x")} を打ち切ってしまう。宣言で決めれば、
+     * 1 つのメソッドの return は全部記録するか、全部しないかのどちらかになる
+     *
+     * @param declaration return を囲むメソッド宣言かラムダ式（見つからなければ null。そのときは記録する）
+     */
+    private void recordReturn(ASTNode declaration, Expression ex) {
+        if (!tracksReturnValue(declaration)) {
             // 具象クラスの絞り込みに使えない戻り値。記録しても嵩むだけ
             return;
         }
@@ -608,13 +621,43 @@ final class FactVisitor extends ASTVisitor {
         if (callers == null) {
             return;
         }
-        String origin = origins.originOf(ex);
-        if (origin == null) {
-            origin = Origin.UNKNOWN_S;
-        }
+        int node = origins.nodeOf(ex);
         for (MethodRef caller : callers) {
-            out.returns.add(new ReturnFact(caller, origin));
+            out.returns.add(new ReturnFact(caller, node));
         }
+    }
+
+    /**
+     * 宣言の戻り値を R 行にするか。宣言の戻り値の型がプリミティブ（void を含む）・配列・String なら
+     * 記録しない（具象クラスの絞り込みに使えない）。ラムダは関数型インターフェースのメソッドの戻り値の型
+     * （{@link LambdaExpression#resolveMethodBinding}）で決める。
+     *
+     * 宣言の型が引けないときは記録する。同じメソッドの return はどれも同じ宣言から決まるので、
+     * 全部記録するか全部しないかは崩れない
+     */
+    private static boolean tracksReturnValue(ASTNode declaration) {
+        IMethodBinding b = null;
+        if (declaration instanceof MethodDeclaration md) {
+            b = md.resolveBinding();
+        } else if (declaration instanceof LambdaExpression lambda) {
+            b = lambda.resolveMethodBinding();
+        }
+        ITypeBinding tb = (b == null) ? null : b.getReturnType();
+        return tb == null || !(tb.isPrimitive() || tb.isArray()
+                || "java.lang.String".equals(tb.getQualifiedName()));
+    }
+
+    /**
+     * return 文を囲む、いちばん内側のメソッド宣言かラムダ式（その return が値を返す先）。
+     * 匿名クラス・ローカルクラスのメソッドの中なら、そのメソッド。見つからなければ null
+     */
+    private static ASTNode enclosingDeclarationOf(ASTNode node) {
+        for (ASTNode p = node.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof MethodDeclaration || p instanceof LambdaExpression) {
+                return p;
+            }
+        }
+        return null;
     }
 
     // ================================================================
@@ -829,7 +872,7 @@ final class FactVisitor extends ASTVisitor {
     }
 
     // ================================================================
-    // 同一メソッド内の new（X行の NEW）
+    // 同一メソッド内の new（証拠の NEW。C 行・U 行の hints 列）
     //
     // フロー依存解析（分岐やループを厳密に追う）はコストが高いので、
     // 「そのローカル変数への代入を全部集める」というフロー非依存・安全側の方針を取る。
@@ -845,7 +888,9 @@ final class FactVisitor extends ASTVisitor {
     // 宣言そのものが new 以外の値を受け取るので対象にしない。フィールドは別のメソッドからも
     // 代入されるので、このメソッドの中の代入だけでは言い切れない。
     //
-    // 全部の代入を見終えるまで判断できないので、ファイルの終わり（endVisit(CompilationUnit)）で書く。
+    // 全部の代入を見終えるまで判断できないので、ファイルの終わり（endVisit(CompilationUnit)）で集める。
+    // 呼び出し箇所への結びつけ（呼び出し元＋レシーバの変数のキー）は、ブロックを書くときに書き手が行う
+    // （jche.analysis.CacheUpdater の writeBlock）。
     // 変数の同定は名前ではなく IVariableBinding.getKey() で行う。
     // 名前で照合すると、同名変数がスコープ違いで複数ある場合に誤解決する。
     // ================================================================

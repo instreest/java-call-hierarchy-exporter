@@ -9,10 +9,10 @@ import jche.util.Names;
  *
  * 記録するのは事実だけ。理由はコードで持ち、文言は読み手が付ける。
  * <pre>
- *   U  line  呼び出し元の記号  expr  reason  candidate  recvKind  lambdaDepth  recv  args  recvKey  guard
+ *   U  line  呼び出し元の記号  expr  reason  candidate  recvKind  lambdaDepth  recv  args  guard  hints
  * </pre>
  * 呼び出し元の記号はブロックの記号表（{@link SymbolTable}）の番号で、特定できなければ
- * {@link SymbolTable#NO_SYMBOL}。末尾の 4 列はこの呼び出し箇所の値（{@link CallSiteValues}）。
+ * {@link SymbolTable#NO_SYMBOL}。末尾の 4 列はこの呼び出し箇所の値（{@link CallSiteValues.Row}）。
  * import から推定した候補も「候補」として持つだけで、エッジにするかは読み手が決める。
  *
  * @param line        呼び出し箇所の行
@@ -23,7 +23,7 @@ import jche.util.Names;
  * @param recvKind    {@link CallEdgeFact#recvKind()} と同じ
  * @param lambdaDepth {@link CallEdgeFact#lambdaDepth()} と同じ
  *
- * <p>出所・識別キー・囲む条件分岐は {@link CallEdgeFact} と同じく {@link CallSiteValues} が持ち、
+ * <p>出所・囲む条件分岐・new の証拠は {@link CallEdgeFact} と同じく {@link CallSiteValues} が持ち、
  * 同じ行の末尾に書く。
  */
 public record UnresolvedCallFact(int line, MethodRef caller, String expression, String reason,
@@ -40,7 +40,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
     }
 
     @Override
-    public String toRow(SymbolTable symbols, CallSiteValues values) {
+    public String toRow(SymbolTable symbols, CallSiteValues.Row values) {
         String[] v = values.toColumns();
         return CacheFormat.joinRow("U", String.valueOf(line), symbols.columnOf(caller),
                 expression, reason, candidate,
@@ -62,7 +62,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
 
     /**
      * 列が足りない・呼び出し元の記号が引けなければ null（呼び出し元が {@link SymbolTable#NO_SYMBOL} なら
-     * 呼び出し元 null の行として読む）。値の列（{@link CallSiteValues#fromRow}）は読まない
+     * 呼び出し元 null の行として読む）。値の列（{@link CallSiteValues.Row#fromRow}）は読まない
      *
      * @param symbols ブロックの記号表（{@link SymbolTable.Reader#array}）
      */

@@ -251,7 +251,7 @@ final class TypeContextTracker {
         MethodRef ref = names.toRef(target);
         if (ref != null) {
             calls.recordSyntheticAt(callers, ref, line,
-                    CallSiteRecorder.targetModsOf(target), RecvKind.TYPE, 0, "");
+                    CallSiteRecorder.targetModsOf(target), RecvKind.TYPE, 0, List.of());
         }
     }
 

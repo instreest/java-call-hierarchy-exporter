@@ -11,11 +11,13 @@
 #   - 落としてはいけない（reachable / listed）… 以前は誤って打ち切り・絞り込みをしていた書き方
 #   - 打ち切られなければならない（pruned / resolved）… 対照。仕組みごと効かなくして通すことを防ぐ
 #     （真偽値の定数・int の定数・16 進の定数・文字列 / ボックス型 / 列挙型の equals・enum の switch・
-#       書き換えない変数の別名・new だけのローカル変数・コンストラクタで受け取るフィールド）
+#       書き換えない変数の別名・定数フィールドを写した変数・| を含む文字列の定数・new だけのローカル変数・
+#       コンストラクタで受け取るフィールド・識別子の形の文字列を返すメソッド・契約表のキーになる戻り値）
 #
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
 # 起点は「呼び出し元が無いメソッド」（entry.packages が空）なので、ケースどうしは混ざらない。
+# 契約表（work/contracts.txt）は共通の KeyFactory の 1 行だけで、KeyFactory を使うケースにしか効かない。
 #
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
 # （test/ctorbody/run.sh と同じ経路。JCHE_CP / JCHE_CLASSES / JCHE_JAVA / JCHE_JAVAC で差し替えられる）。
@@ -57,6 +59,11 @@ source.encoding=UTF-8
 entry.packages=
 output.folder=./out
 cache.folder=./.cache
+contracts.files=contracts.txt
+EOF
+# ファクトリに渡したキーで絞る契約（KeyFactory を使うケースだけに効く）
+cat > work/contracts.txt <<'EOF'
+pr.KeyFactory#get("A") => pr.DaoA
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -92,6 +99,17 @@ package pr;
 public class Factory {
     static Dao create(String cls) throws Exception {
         return (Dao) Class.forName(cls).getDeclaredConstructor().newInstance();
+    }
+}
+EOF
+# キーの文字列で具象クラスを返すファクトリ。契約表の 1 行（"A" => DaoA）で絞れる
+cat > "$SRC/KeyFactory.java" <<'EOF'
+package pr;
+
+public class KeyFactory {
+    public static Dao get(String key) {
+        if (key.equals("A")) { return new DaoA(); }
+        return new DaoB();
     }
 }
 EOF
@@ -894,6 +912,201 @@ public class NewOnly {
         Dao d = new DaoA();
         d.find();
     }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# 条件の値は値グラフのノードで持ち、期待値は切り詰めない（キャッシュの G 行）
+# ---------------------------------------------------------------------------
+case_ reachable PipeEq PipeEq.check PipeEq.hit "期待値に | を含む equals（\"a|b\"）は、\"a|b\" を渡した経路で打ち切らない" <<'EOF'
+package pr;
+
+public class PipeEq {
+    public static void main(String[] args) { check("a|b"); }
+    static void check(String s) { if (s.equals("a|b")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable PipeConst PipeConst.run PipeConst.hit "| を含む文字列の定数どうしの equals（成立する）を打ち切らない" <<'EOF'
+package pr;
+
+public class PipeConst {
+    static final String MODE = "a|b";
+    public static void main(String[] args) { run(); }
+    static void run() { if (MODE.equals("a|b")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable ConstCopyHit ConstCopyHit.run ConstCopyHit.hit "定数フィールドを写したローカル変数（int m = MODE;）で成立する条件を打ち切らない" <<'EOF'
+package pr;
+
+public class ConstCopyHit {
+    static final int MODE = 3;
+    public static void main(String[] args) { run(); }
+    static void run() { int m = MODE; if (m == 3) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable ConstCopyRewrite ConstCopyRewrite.run ConstCopyRewrite.hit "定数フィールドを写した後で書き換わるローカル変数は定数とみなさない" <<'EOF'
+package pr;
+
+public class ConstCopyRewrite {
+    static final int MODE = 3;
+    public static void main(String[] args) { run(args.length > 0); }
+    static void run(boolean b) {
+        int m = MODE;
+        if (b) { m = 4; }
+        if (m == 4) { hit(); }
+    }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ pruned ConstCopy ConstCopy.run ConstCopy.hit "対照: 定数フィールドを写しただけのローカル変数（int m = MODE; の m == 4）は定数として打ち切る" <<'EOF'
+package pr;
+
+public class ConstCopy {
+    static final int MODE = 3;
+    public static void main(String[] args) { run(); }
+    static void run() { int m = MODE; if (m == 4) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ pruned PipeConstOther PipeConstOther.run PipeConstOther.hit "対照: | を含む文字列の定数と別の値の equals は打ち切る" <<'EOF'
+package pr;
+
+public class PipeConstOther {
+    static final String MODE = "a|b";
+    public static void main(String[] args) { run(); }
+    static void run() { if (MODE.equals("zz")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable DefaultOnly DefaultOnly.sel DefaultOnly.hit "case の無い switch の default は、空文字を渡した経路でも打ち切らない（必ず通る）" <<'EOF'
+package pr;
+
+public class DefaultOnly {
+    public static void main(String[] args) { sel(""); }
+    static void sel(String s) {
+        switch (s) {
+            default -> hit();
+        }
+    }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# 戻り値の値（R 行）。読み手は「メソッドが返す値が 1 つに決まる」ときだけ、その値を経路の値として使う
+# （docs/cache-unification-qa.md の Q8・Q9）
+# ---------------------------------------------------------------------------
+case_ reachable MixedRet MixedRet.run MixedRet.hit "Object を返すメソッドの return \"x\"（式の型は String）も戻り値に数える" <<'EOF'
+package pr;
+
+public class MixedRet {
+    public static void main(String[] args) { run((String) key(args.length > 0)); }
+    static Object key(boolean b) {
+        if (b) { return "x"; }
+        Object v = "y z";
+        return v;
+    }
+    static void run(String s) { if (s.equals("x")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable MixedRetId MixedRetId.run MixedRetId.hit "同上。残りの return が識別子の形の文字列（\"yz\"）でも、\"x\" を返す経路を残す" <<'EOF'
+package pr;
+
+public class MixedRetId {
+    public static void main(String[] args) { run((String) key(args.length > 0)); }
+    static Object key(boolean b) {
+        if (b) { return "x"; }
+        Object v = "yz";
+        return v;
+    }
+    static void run(String s) { if (s.equals("x")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable NePipeRet NePipeRet.run NePipeRet.hit "| を含む文字列を返すメソッドの値を | の手前（\"a\"）と読んで !s.equals(\"a\") を打ち切らない" <<'EOF'
+package pr;
+
+public class NePipeRet {
+    public static void main(String[] args) { run((String) key()); }
+    static Object key() { return (Object) "a|b"; }
+    static void run(String s) { if (!s.equals("a")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable PipeRetLocal PipeRetLocal.sel PipeRetLocal.other "| を含む文字列をローカル変数から返しても、switch の default（NI）を打ち切らない" <<'EOF'
+package pr;
+
+public class PipeRetLocal {
+    public static void main(String[] args) { sel((String) key()); }
+    static Object key() { Object v = "ORDER|DESC"; return v; }
+    static void sel(String s) {
+        switch (s) {
+            case "ORDER" -> order();
+            default -> other();
+        }
+    }
+    static void order() { System.out.println("o"); }
+    static void other() { System.out.println("x"); }
+}
+EOF
+
+case_ listed FacPipeRet FacPipeRet.run DaoB.find "| を含むキー（\"A|B\"）を返すメソッドの値で、契約表の KeyFactory#get(\"A\") に当てない" <<'EOF'
+package pr;
+
+public class FacPipeRet {
+    public static void main(String[] args) { run(); }
+    static void run() { KeyFactory.get((String) key()).find(); }
+    static Object key() { Object v = "A|B"; return v; }
+}
+EOF
+expect_ listed FacPipeRet.run DaoA.find "同上（DaoA も残す）"
+
+case_ pruned LitRet LitRet.run LitRet.hit "対照: Object を返すメソッドの return がどれも同じ識別子の形の文字列なら、その値で打ち切る" <<'EOF'
+package pr;
+
+public class LitRet {
+    public static void main(String[] args) { run((String) key(args.length > 0)); }
+    static Object key(boolean b) {
+        if (b) { return "zz"; }
+        Object v = "zz";
+        return v;
+    }
+    static void run(String s) { if (s.equals("x")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ pruned LitRetLocal LitRetLocal.run LitRetLocal.hit "対照: ローカル変数から返す識別子の形の文字列も、その値で打ち切る" <<'EOF'
+package pr;
+
+public class LitRetLocal {
+    public static void main(String[] args) { run((String) key()); }
+    static Object key() { Object v = "zz"; return v; }
+    static void run(String s) { if (s.equals("x")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ resolved:RESOLVED:CONTRACT FacKeyRet FacKeyRet.run DaoA.find "対照: 識別子の形のキー（\"A\"）を返すメソッドの値は、契約表の KeyFactory#get(\"A\") で絞る" <<'EOF'
+package pr;
+
+public class FacKeyRet {
+    public static void main(String[] args) { run(); }
+    static void run() { KeyFactory.get((String) key()).find(); }
+    static Object key() { Object v = "A"; return v; }
 }
 EOF
 

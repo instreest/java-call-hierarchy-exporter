@@ -560,7 +560,7 @@ final class MessagesEn {
             "cache.badReference", "[cache] The cache {0} has a row that refers outside its file block or to an unreadable row, so that row or value is not used. The cache may have been edited or damaged: delete the cache folder {1} and run again",
             "cache.tempNotDeleted", "[cache] Cannot delete the temporary file {0} (the next run deletes it): {1}",
             "cache.tempShuttingDown", "Cannot create a temporary file in {0} because the process is shutting down",
-            "cache.dump.usage", "Usage: java -cp <tool classes and JDT jars> jche.cache.CacheDump <analysis-cache.tsv>   (prints the cache with method symbols expanded to 4 columns)",
+            "cache.dump.usage", "Usage: java -cp <tool classes and JDT jars> jche.cache.CacheDump <analysis-cache.tsv>   (prints the cache with method symbols expanded to 4 columns, and the value nodes of R and J rows and G row subjects shown as origins)",
         };
     }
 

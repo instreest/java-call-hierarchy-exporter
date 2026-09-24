@@ -8,10 +8,10 @@ import jche.util.Names;
  *
  * <pre>
  *   C  呼び出し元の記号  呼び出し先の記号  callLine  calleeMods  recvKind  lambdaDepth  qualifier
- *      recv  args  recvKey  guard
+ *      recv  args  guard  hints
  * </pre>
  * 記号はブロックの記号表（{@link SymbolTable}）の番号。末尾の 4 列はこの呼び出し箇所の値
- * （{@link CallSiteValues}）。
+ * （{@link CallSiteValues.Row}）。
  *
  * @param caller      呼び出し元
  * @param callee      呼び出し先（バインディングの宣言側）
@@ -28,7 +28,7 @@ import jche.util.Names;
  *                    この型の部分型の実装に限られる（JLS 15.12.4.4）ので、読み手は CHA の候補をここから引く。
  *                    式の静的な型という構文上の事実（v29）
  *
- * <p>レシーバと実引数の出所・識別キー・囲む条件分岐は<b>値</b>なので、この record には無い。
+ * <p>レシーバと実引数の出所・囲む条件分岐・new の証拠は<b>値</b>なので、この record には無い。
  * {@link CallSiteValues} が持ち、同じ行の末尾に書く（{@link #toRow}）。
  */
 public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, String calleeMods,
@@ -40,7 +40,7 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
     }
 
     @Override
-    public String toRow(SymbolTable symbols, CallSiteValues values) {
+    public String toRow(SymbolTable symbols, CallSiteValues.Row values) {
         // 呼び出し元 → 呼び出し先の順に番号を振る（読み手が intern する順と同じ）
         String callerSym = symbols.columnOf(caller);
         String calleeSym = symbols.columnOf(callee);
@@ -51,7 +51,7 @@ public record CallEdgeFact(MethodRef caller, MethodRef callee, int callLine, Str
     }
 
     /**
-     * 列が足りない・記号が引けなければ null。値の列（{@link CallSiteValues#fromRow}）は読まない
+     * 列が足りない・記号が引けなければ null。値の列（{@link CallSiteValues.Row#fromRow}）は読まない
      *
      * @param symbols ブロックの記号表（{@link SymbolTable.Reader#array}）
      */

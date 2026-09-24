@@ -68,10 +68,18 @@ final class FieldFacts {
         fields.putIfAbsent(v.typeFqn() + "#" + v.fieldName(), new Field(v.mods()));
     }
 
-    void assignment(FieldAssignFact j) {
+    /**
+     * 代入 1 件を溜める。
+     *
+     * @param origin 代入された値の出所の頭（{@code 種別:値}。実引数リストは付けない）。追跡できなければ U。
+     *               キャッシュの J 行はノード番号なので、読み手（{@link CallGraphBuilder}）が同じブロックの
+     *               値グラフから組み直して渡す。頭だけで比べるのは、{@code new X(a)} と {@code new X(b)} を
+     *               同じ出所（{@code T:X}）とみなすため（以前の J 行も頭だけを持っていた）
+     */
+    void assignment(FieldAssignFact j, String origin) {
         Field fd = fields.get(j.typeFqn() + "#" + j.fieldName());
         if (fd != null) {
-            fd.assigns.add(new String[] {j.site(), j.origin()});
+            fd.assigns.add(new String[] {j.site(), origin});
         }
     }
 

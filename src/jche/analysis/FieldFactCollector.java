@@ -23,7 +23,6 @@ import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
 import jche.cache.FileAnalysis;
 import jche.cache.MethodRef;
-import jche.cache.Origin;
 
 /**
  * 1つの型について、フィールドの宣言（V行）・そのフィールドへの代入（J行）・
@@ -37,8 +36,12 @@ import jche.cache.Origin;
  * コンストラクタ本体の中の代入（インスタンス初期化ブロックと内部クラスからの
  * 代入は拾わない。範囲を変えるときはキャッシュのバージョンを上げる）。
  *
- * 出所は、この型の枠（囲むメソッドから切り離した空のスコープ）の上で求める（{@link #collect}）。
+ * 代入された値は値グラフのノード（{@link OriginTracker#nodeOf}）で持つ。入れ子（実引数・レシーバ）も付いた
+ * ノードを指し、読み手はノードの頭（種別と値）だけで比べる（以前の出所の文字列の頭と同じ）。
+ * 値は、この型の枠（囲むメソッドから切り離した空のスコープ）の上で求める（{@link #collect}）。
  * 匿名クラス・ローカルクラスの初期化子が囲むメソッドの引数を読んでも、この型のコンストラクタ引数には見えない。
+ * メソッド本体の代入は引数の表だけで求める（ローカル変数の先読みはしない。{@code this.f = local;} は
+ * 「追跡できない」のまま。範囲を変えるときはキャッシュのバージョンを上げる）。
  */
 final class FieldFactCollector {
 
@@ -125,8 +128,7 @@ final class FieldFactCollector {
                     names.annotationsOf(vb)));
             if (frag.getInitializer() != null) {
                 out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(),
-                        FieldAssignFact.SITE_INITIALIZER,
-                        Origin.head(origins.originOf(frag.getInitializer()))));
+                        FieldAssignFact.SITE_INITIALIZER, origins.nodeOf(frag.getInitializer())));
             }
             // コンパイル時定数は、使っている側のファイルに値が焼き込まれる。
             // 値が変わったことを差分更新が知れるよう、宣言している側に値を残す（K行）
@@ -153,7 +155,7 @@ final class FieldFactCollector {
                         return true;
                     }
                     out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(), site,
-                            Origin.head(origins.originOf(n.getRightHandSide()))));
+                            origins.nodeOf(n.getRightHandSide())));
                     return true;
                 }
             });

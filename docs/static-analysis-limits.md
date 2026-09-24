@@ -122,7 +122,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 | `get(request.getParameter("type"))` | 同上（実行時入力） |
 | `POOL.get(fqn)` の戻り値 | コレクションの要素を追う仕組みが無い。Map / List に入れた時点で出所が `U` になる |
 | `if (flag) A else B` で `flag` が実行時値 | 候補は複数のまま（2節の39行目） |
-| 文字列が64文字を超える | 出所に載せる値の長さの上限（`OriginTracker.MAX_VALUE_LENGTH`） |
+| メソッドが返す文字列（`return "…";`）が64文字を超える、またはクラス名・識別子の形でない | 戻り値の文字列リテラルは、64 文字以内でクラス名・識別子の形のものだけを値として読む（暫定の扱い。[cache-unification-qa.md](cache-unification-qa.md) の Q9）。呼び出し箇所で渡す文字列・定数には長さの上限が無い |
 | `list.forEach(Runnable::run)` | `forEach` の中は jar なのでソースが無い。生成の辺があるので本体の呼び出しは階層に出るが、実行箇所からは繋がらない（`[UNEXPANDED:LAMBDA]`） |
 | `Dao::describe`（型名で書いたメソッド参照） | レシーバは呼び出し時の第1引数で、追っていない。上書き候補（CHA）を全部出す |
 | ラムダが捕捉した引数を、渡した先で呼ぶ | 捕捉した値はラムダを作った時点で決まるが、生成箇所の引数を実行箇所の経路へ持ち運んでいない。生成したメソッドの段でだけ当てる（[lambda-expansion-qa.md](lambda-expansion-qa.md) の Q10） |

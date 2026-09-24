@@ -21,6 +21,7 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import jche.cache.CallEdgeFact;
 import jche.cache.CallSiteValues;
 import jche.cache.FileAnalysis;
+import jche.cache.Guard;
 import jche.cache.MethodRef;
 import jche.cache.ModifierTokens;
 import jche.cache.RecvKind;
@@ -85,7 +86,7 @@ final class CallSiteRecorder {
                 MethodInvocation guessSource, CallValues values, String qualifier) {
         int line = lineOf(node);
         // 呼び出し箇所を囲む条件分岐（その経路で呼ばれないと言い切れるかは読み手が判断する）
-        String guard = guards.guardOf(node);
+        List<Guard.Atom> guard = guards.guardOf(node);
         if (callers == null) {
             // 呼び出し元の型・コンストラクタ自体を特定できないケース
             // （型のバインディング解決に失敗した等）
@@ -229,11 +230,11 @@ final class CallSiteRecorder {
      * ソースに対応するASTノードが無い辺を1本記録する（暗黙の {@code super()} など）。
      *
      * 行だけを渡すのは、合成した宣言（暗黙のデフォルトコンストラクタ）から張る辺には
-     * 対応するノードが無いため。条件（guard）も持たない。コンストラクタ本体の先頭で
-     * 必ず実行される呼び出しなので、囲む分岐はありえない（JLS 8.8.7）。
+     * 対応するノードが無いため。暗黙の {@code super()} は条件（guard）も持たない（空を渡す）。
+     * コンストラクタ本体の先頭で必ず実行される呼び出しなので、囲む分岐はありえない（JLS 8.8.7）。
      */
     void recordSyntheticAt(List<MethodRef> callers, MethodRef callee, int line,
-                           String calleeMods, char recvKind, int lambdaDepth, String guard) {
+                           String calleeMods, char recvKind, int lambdaDepth, List<Guard.Atom> guard) {
         if (callers == null) {
             return;
         }
@@ -248,7 +249,7 @@ final class CallSiteRecorder {
      * 呼び出し箇所の値を1件積む。{@code out.callSites} に1行積むたびに必ず1件積むので、
      * 呼び出し箇所と値は同じ数・同じ順で並ぶ（書き手が同じ位置どうしを 1 行にする）。
      */
-    private void addValues(CallValues values, String recvKey, String guard) {
+    private void addValues(CallValues values, String recvKey, List<Guard.Atom> guard) {
         out.callSiteValues.add(new CallSiteValues(values.recvNode(), values.argNodes(), recvKey, guard));
     }
 
@@ -319,10 +320,8 @@ final class CallSiteRecorder {
     }
 
     /**
-     * レシーバの識別キー。
-     * ローカル変数なら変数のバインディングキー、そうでなければ "@開始位置"。
-     * 後者にしておくと、変数を介さない呼び出し
-     * （DaoFactory.get("X").execute(...) など）にも拡張が証拠を結び付けられる。
+     * レシーバの識別キー（{@link HintKeys#ofReceiver}）。変数でなければ空。
+     * new の証拠（{@link FileAnalysis#hints}）を呼び出し箇所に結びつけるためだけに使い、キャッシュには書かない
      */
     static String recvKeyOf(Expression ex) {
         return HintKeys.ofReceiver(ex);

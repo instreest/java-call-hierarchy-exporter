@@ -64,10 +64,18 @@ package jche.cache;
  *                                                          番号は 0 から詰めて振る。下の「記号」はこの番号
  *   N  番号  kind  value  recv  args  argCount  staticRecv    {@link ValueNode}。値グラフのノード。
  *                                                          番号はブロック内の 0 始まりの連番で、recv と args は
- *                                                          同じブロックのノードを指す
- *   R  記号  origin                                          {@link ReturnFact}。戻り値の出所。D 行より前に置く
- *                                                          （読み手はここでメソッドを ID 化するので、以前の形式と
- *                                                          同じ ID の順になる。jche.graph.CallGraphBuilder 参照）
+ *                                                          同じブロックの、自分より前のノードを指す。
+ *                                                          キャッシュの値（戻り値・代入・条件・呼び出し箇所）は
+ *                                                          どれもここのノードを番号で指す（下の「値はノードで持つ」）
+ *   G  ガード番号  op  subject  text  値1  値2 …              {@link Guard.Atom}。条件分岐の表。アトム 1 つにつき 1 行。
+ *                                                          ガード番号はブロック内の 0 始まりで、C 行・U 行が初めて
+ *                                                          使った順。1 つのガードのアトムは同じ番号で続けて並ぶ。
+ *                                                          subject はノード番号（種別 A か V）。値は後ろの列に 1 つずつ
+ *                                                          （EQ / NE は 1 つ、IN / NI は 1 つ以上）で、定数の値そのもの。
+ *                                                          case の無い switch の default は条件にしない（必ず通る）
+ *   R  記号  node                                            {@link ReturnFact}。戻り値のノード（-1 は「追跡できない」）。
+ *                                                          D 行より前に置く（読み手はここでメソッドを ID 化するので、
+ *                                                          以前の形式と同じ ID の順になる。jche.graph.CallGraphBuilder 参照）
  *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
  *                                                          {@link TypeFact}
  *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine
@@ -78,9 +86,9 @@ package jche.cache;
  *   O  記号  上書き先のキー(;区切り)                          {@link OverrideFact}。D 行より後
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
  *   C  呼び出し元の記号  呼び出し先の記号  callLine  calleeMods  recvKind  lambdaDepth  qualifier
- *      recv  args  recvKey  guard                            {@link CallEdgeFact} と、その呼び出し箇所の値
- *                                                          （{@link CallSiteValues}）
- *   U  line  呼び出し元の記号  expr  reason  candidate  recvKind  lambdaDepth  recv  args  recvKey  guard
+ *      recv  args  guard  hints                              {@link CallEdgeFact} と、その呼び出し箇所の値
+ *                                                          （{@link CallSiteValues.Row}）
+ *   U  line  呼び出し元の記号  expr  reason  candidate  recvKind  lambdaDepth  recv  args  guard  hints
  *                                                          {@link UnresolvedCallFact} と、その呼び出し箇所の値。
  *                                                          C 行と U 行はソース上の順のまま混ざって並ぶ
  *   M  line  呼び出し元の記号  ifaceTypeFqn#method(paramSig)  kind
@@ -88,20 +96,30 @@ package jche.cache;
  *   A  line  呼び出し元の記号  ownerTypeFqn  fieldName  access  mods  lambdaDepth
  *                                                          {@link FieldAccessFact}（今の読み手は使わない）
  *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}
- *   J  typeFqn  fieldName  site  origin                       {@link FieldAssignFact}
- *   X  callerMethodキー  scopeKey  種別  値                     {@link HintFact}
+ *   J  typeFqn  fieldName  site  node                         {@link FieldAssignFact}（node は代入された値。-1 は「追跡できない」）
  *   Z  ブロック数                                              最終行。ここまで書き終えた印
  *                                                          （{@link #trailerFor}）。これが無い・数が合わない
  *                                                          キャッシュは途中で切れているとみなして捨てる
  * </pre>
  * 呼び出し元が特定できない U 行（{@link UnresolvedCallFact#OUTSIDE_METHOD}）の記号は {@code -1}。
- * recv はノード番号（無ければ {@code -1}）、args は {@code 位置=ノード番号} のカンマ区切り。
+ * recv はノード番号（無ければ {@code -1}）、args は {@code 位置=ノード番号} のカンマ区切り、
+ * guard は G 行のガード番号（無ければ {@code -1}）、hints はレシーバの変数に new だけが代入されている
+ * ときの、その型の FQN のカンマ区切り（無ければ空。{@link CallSiteValues.Row#hints}）。
+ *
+ * <h2>値はノードで持つ</h2>
+ * 値（戻り値の R 行・代入の J 行・条件の G 行の subject・呼び出し箇所の recv と args）は、どれも N 行の
+ * ノードを番号で指す。以前は R 行・J 行・条件が出所の文字列（{@link Origin}）を持っていて、文字列の側には
+ * 上限（実引数は 1 段・レシーバは 3 段・文字列は 64 文字で識別子の形だけ）があった。値グラフは上限なしで
+ * 同じ式を 1 ノードにするので、どの値も同じ表し方・同じ細かさになる。読み手（jche.graph.CallGraphBuilder）は
+ * 読む直前にノードから出所の文字列へ組み直す（戻り値は丸ごと、代入はノードの頭 {@code 種別:値} だけ、
+ * 条件の subject も頭だけ）。
  *
  * <h2>記号表（S 行）</h2>
  * メソッドを指す列（宣言・上書き・戻り値・呼び出し元・呼び出し先）は、4 列（pkg・typeFqn・名前・引数）を
  * 繰り返す代わりに、ブロックの S 行の番号で指す。番号はブロックの中だけで通じるので、ブロックを
  * まるごと書き写す差分更新でも参照が壊れない。番号は行を書く順（R・D・O・C/U・M・A）に初めて現れた順に振る。
  * 同じ解析結果からは同じ番号になる。人が読むときは {@link CacheDump} で 4 列に戻した形を出せる。
+ * ノードの番号（N 行）とガードの番号（G 行）も同じく、ブロックの中だけで通じる。
  *
  * <h2>列の符号化（1 つの規則）</h2>
  * どの列も {@link #joinRow} が {@link #escape} で符号化して書き、読むときは {@link #columnsOf}
@@ -173,7 +191,8 @@ package jche.cache;
  * <ul>
  *   <li>値グラフ（N 行）の入れ子には段数の上限が無い。1つの式を1ノードとして持ち、
  *       参照はノード番号で行うので、大きさが式の数に比例し、深さに依存しないため。
- *       読み手はここから出所を組み直す（{@link jche.graph.OriginRenderer}）</li>
+ *       読み手はここから出所を組み直す（{@link jche.graph.OriginRenderer}）。戻り値（R 行）・代入（J 行）・
+ *       条件の subject（G 行）も同じノードで持つ</li>
  *   <li>外側スコープの変数の出所は、final または実質 final のときだけ持ち込む。
  *       匿名・ローカルクラスのフィールド初期化子（J 行）も、囲むメソッドの変数は捕捉した変数として読む</li>
  *   <li>ローカル変数の出所の先読みは、表が変わらなくなるまで繰り返す（ループの中で後ろの代入が
@@ -183,14 +202,19 @@ package jche.cache;
  *   <li>値として使う式は、括弧と値を変えないキャストだけを剥がす。値を変えうるキャストの式は、
  *       コンパイル時定数なら変換後の値、そうでなければ U。浮動小数の定数は持たない。
  *       数値リテラルの値は表記からではなく JDT の評価から取る（{@code 0x80000000} は {@code -2147483648}）</li>
- *   <li>条件（guard 列）の {@code equals} は、比べる相手の静的な型が {@code String}・定数と同じ列挙型・
+ *   <li>条件（G 行）の {@code equals} は、比べる相手の静的な型が {@code String}・定数と同じ列挙型・
  *       定数を箱詰めした型（浮動小数を除く）のときだけアトムにする</li>
- *   <li>new の証拠（X 行）は、代入がすべて new のローカル変数にだけ持つ（引数・フィールド・
- *       拡張 for の変数には持たない）</li>
+ *   <li>条件の subject は、値グラフのノードが引数（A）か定数（V）のときだけアトムにする。
+ *       文字列のコンパイル時定数（ノードは L）は、64 文字以内で制御文字を含まなければ V のノードにする。
+ *       期待値（G 行の値）はコンパイル時定数の値そのもの（64 文字以内で制御文字を含まないもの）</li>
+ *   <li>new の証拠（C 行・U 行の hints）は、代入がすべて new のローカル変数にだけ持つ（引数・フィールド・
+ *       拡張 for の変数には持たない）。呼び出し元とレシーバの変数で、同じファイルの中だけで結びつける</li>
  *   <li>値グラフの深さの上限（安全策）は、式の木の中での深さで判定する（同じ式は 1 つのノード）</li>
  *   <li>値グラフの文字列リテラル・定数の値には長さと内容の上限が無い。
  *       SQL やログ文言もそのまま持ち、行形式を壊す文字は {@link #escape} で符号化する</li>
- *   <li>プリミティブ・配列・String を返す return は記録しない</li>
+ *   <li>戻り値の宣言型（ラムダは関数型インターフェースのメソッドの戻り値の型）がプリミティブ・void・配列・
+ *       String のメソッドの return は記録しない。return の式の型では決めないので、1 つのメソッドの
+ *       return は全部記録するか、全部しないかのどちらか</li>
  *   <li>フィールドへの代入は、その型自身のメソッド・コンストラクタ本体とフィールド初期化子から拾う
  *       （インスタンス初期化ブロックと内部クラスからの代入は拾わない）</li>
  *   <li>コンストラクタ呼び出しは new / this(...) / super(...) を C 行にする。
@@ -200,8 +224,8 @@ package jche.cache;
  *       {@code DaoFactory.get(...)} の {@code get} が親で宣言されていると、メソッドキーは
  *       親になる。利用者が契約表や拡張で指定するのはソースに書いてある型なので、
  *       違うときだけ書かれた型も残す（{@link jche.graph.FactoryCalls}）</li>
- *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}）を持ち、
- *       コンパイル時定数の値を出所（{@link Origin#CONST}）として記録する。
+ *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}。中身は G 行）を持ち、
+ *       コンパイル時定数の値を定数のノード（{@link Origin#CONST}）として記録する。
  *       「その経路では呼ばれない」と言い切れる呼び出しを読み手が見分けるため</li>
  *   <li>H 行の親型は、jar の型を経由して到達するソース上の親型も含める。
  *       jar の基底クラスがソースのインターフェースを実装している構成で、その子を CHA の候補に入れるため</li>
@@ -246,9 +270,13 @@ public final class CacheFormat {
      *       代入（J 行）を囲むメソッドの枠から切り離す・new の証拠（X 行）を new だけが代入されるローカル変数に
      *       限る・同じ式を 1 つのノードにする・数値リテラルの値を JDT から取る・ローカル変数の先読みを
      *       表が変わらなくなるまで繰り返す・型の揃わない equals を条件にしない（{@code docs/value-safety-qa.md}）</li>
+     *   <li>v33 値をすべて値グラフのノードで持つ（R 行・J 行はノード番号、条件は G 行の表を番号で指す、
+     *       条件の期待値を切り詰めない）。new の証拠（X 行）と C 行・U 行の recvKey を無くし、
+     *       証拠は C 行・U 行の hints に直接持つ。R 行を書くかどうかを return の式の型ではなく
+     *       宣言の戻り値の型で決める（{@code docs/cache-unification-qa.md}）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v32";
+    public static final String VERSION = "jche-cache-v33";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
@@ -259,6 +287,8 @@ public final class CacheFormat {
     public static final char ROW_SYMBOL = 'S';
     /** 値グラフのノード（{@link ValueNode}） */
     public static final char ROW_VALUE_NODE = 'N';
+    /** 条件分岐のアトム（{@link Guard.Atom}）。N 行の直後に並ぶ */
+    public static final char ROW_GUARD = 'G';
     public static final char ROW_RETURN = 'R';
     public static final char ROW_TYPE = 'H';
     public static final char ROW_METHOD_DECL = 'D';
@@ -271,12 +301,11 @@ public final class CacheFormat {
     public static final char ROW_FIELD_ACCESS = 'A';
     public static final char ROW_CONSTANT = 'K';
     public static final char ROW_FIELD_ASSIGN = 'J';
-    public static final char ROW_HINT = 'X';
     public static final char ROW_END = 'Z';
 
     /**
-     * C 行・U 行で、呼び出し箇所の値（{@link CallSiteValues}）が始まる列。
-     * recv・args・recvKey・guard の順に並ぶ
+     * C 行・U 行で、呼び出し箇所の値（{@link CallSiteValues.Row}）が始まる列。
+     * recv・args・guard・hints の順に並ぶ
      */
     public static final int CALL_VALUES_COLUMN = 8;
 
