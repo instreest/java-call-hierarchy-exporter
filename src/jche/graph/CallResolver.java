@@ -599,7 +599,7 @@ public final class CallResolver {
         if (!dataflow.enabled()) {
             // 値を読まない指定。レシーバがどのフィールド・引数かは値の表にしか無いので、呼び出しを書いた
             // メソッドから判定する（フィールドは、そのメソッドの型か親に注入点のフィールドがあるとき。
-            // 引数は、そのメソッドの引数が注入点のとき）。値を読むときより粗い（docs/spring-di-qa.md の Q6）
+            // 引数は、そのメソッドの引数が注入点のとき）。値を読むときより粗い（docs/spring-di-qa.md の Q5）
             return (recvKind == RecvKind.FIELD)
                     ? beans.hasInjectedFields(methods.typeFqn(caller), graph.hierarchy) : injectedParams;
         }

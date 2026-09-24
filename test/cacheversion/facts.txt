@@ -1,4 +1,4 @@
-version jche-cache-v36
+version jche-cache-v37
 env jdk=25 jdt=3.46.0.v20260520-1003+3.46.0.v20260528-0407
 fixture 70a9678e1c6af021
 facts demo aef687385affa814

@@ -456,7 +456,8 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 
 キャッシュは `analysis-cache.tsv` の 1 ファイルです。解析で分かった事実（呼び出し階層の構造と、
 値の追跡に使う値）をソースファイル 1 つにつき 1 ブロックで持ち、ブロックごとに壊れていないかを確かめます。
-壊れたブロックがあれば、そのファイルだけを解析し直します。何も変わっていなければキャッシュは書き直しません。
+壊れたブロックがあれば、全件ではなく、そのファイルと、そのファイルの型を使っているファイルだけを解析し直します。
+何も変わっていなければキャッシュは書き直しません。
 実行中は同じフォルダに一時ファイル（`*.tmp`）を作り、終わると消します。以前の版が作った `dataflow-cache.tsv` が
 残っていれば、次の実行で消します。
 同じキャッシュのフォルダを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うときは、
@@ -464,8 +465,9 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 そのための錠のファイル `analysis-cache.tsv.lock`（中身は空）がフォルダに残ります。
 
 - 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
-- 2 回目以降は変更されたファイルだけを解析し直します。依存 jar を足したときも、
-  その jar の型を使っているファイルだけが対象です
+- 2 回目以降は、変更されたファイルと、その変更で解析結果が変わりうるファイル（変更されたファイルの型を使っている
+  ファイルなど）だけを解析し直します。依存 jar を足した・差し替えたときは、その jar の型を使っているファイルと、
+  前回型解決に失敗していたファイルが対象です（外したときは、その jar の型を使っていたファイルだけ）
 - 大規模なコードベースで `OutOfMemoryError` にならないための作りと、差分更新が
   何を見て判断しているかは [docs/cache-design.md](docs/cache-design.md) にあります
 
@@ -958,17 +960,19 @@ file and wherever you run from, the cache location does not change.
 
 The cache is a single file, `analysis-cache.tsv`. It holds the facts the analysis found (the structure of
 the call hierarchy and the values used for value tracking), one block per source file, and each block is
-checked for damage. If a block is damaged, only that file is analyzed again. When nothing has changed, the
-cache is not rewritten. While running, the tool creates temporary files (`*.tmp`) in the same folder and deletes
-them when it finishes. A `dataflow-cache.tsv` left by an older version is deleted on the next run.
+checked for damage. If a block is damaged, the whole project is not analyzed again: only that file and the files
+that use its types are. When nothing has changed, the cache is not rewritten. While running, the tool creates
+temporary files (`*.tmp`) in the same folder and deletes them when it finishes. A `dataflow-cache.tsv` left by an older version is deleted on the next run.
 When two runs use the same cache folder at the same time (the CLI and the Eclipse or VS Code plugin, CI jobs, and so on),
 the later run waits until the earlier one finishes (at most 30 minutes; set the environment variable
 `JCHE_CACHE_LOCK_WAIT_SECONDS` to change the number of seconds). The lock file used for this,
 `analysis-cache.tsv.lock` (empty), stays in the folder.
 
 - Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
-- From the second run on, only the changed files are analyzed again. When you add a dependency jar, only
-  the files that use types from that jar are affected
+- From the second run on, only the changed files and the files whose results the change can affect (such as
+  the files that use the changed files' types) are analyzed again. When you add or replace a dependency jar, the
+  files that use types from that jar and the files whose type resolution failed last time are affected (when you
+  remove a jar, only the files that used its types)
 - How it is built so that a large code base does not hit `OutOfMemoryError`, and what the differential
   update looks at, are in [docs/cache-design.md](docs/cache-design.md)
 

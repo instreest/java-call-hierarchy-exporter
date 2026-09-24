@@ -251,13 +251,21 @@ public final class CallEdgeExtractor {
      * 引数には、解決できなかった名前が書いたとおりに入る。差分更新は新しい型ができたとき、この名前に当たる
      * ブロックだけを解析し直す（{@link CacheUpdater} の「新しい型」）。エラーの種類では絞らず、どのエラーの
      * 引数も拾う（型の名前が入りうるものを取りこぼさないため。余分に拾っても解析し直すファイルが増えるだけ）
+     *
+     * <p>ただし、パスの区切り（{@code /} か {@code \}）を含む引数は拾わない。型が重複しているエラー
+     * （{@code The type Dup is already defined}）などは、引数にソースファイルのパスを入れる。一括で解析するときの
+     * パスは絶対パスなので、そのまま拾うと {@code home}・{@code user} のようなチェックアウトの場所のフォルダ名が
+     * キャッシュ（I 行の 3 列目）に入り、同じソースでも置き場所によってキャッシュの事実が変わる。パスの中の名前は
+     * フォルダとファイルの名前で、型の名前は同じエラーの別の引数に入る。型の名前・パッケージの名前の引数は点で
+     * 区切るのでパスの区切りを含まない。演算子の引数（{@code /}）は識別子を含まないので、落としても何も失わない
+     * （docs/cache-unification-qa.md の Q64）
      */
     static void namesOf(String[] arguments, java.util.Set<String> out) {
         if (arguments == null) {
             return;
         }
         for (String a : arguments) {
-            if (a == null) {
+            if (a == null || a.indexOf('/') >= 0 || a.indexOf('\\') >= 0) {
                 continue;
             }
             int i = 0;

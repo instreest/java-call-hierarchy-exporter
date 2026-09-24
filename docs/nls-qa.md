@@ -75,8 +75,10 @@ Eclipse プラグインは `messages.properties` を `ResourceBundle` で読ん�
 - `eclipse-plugin/pom.xml`（`jche/**` を取り込んでプラグインの jar に入れる）
 - VSCode プラグインの配布物（`.vsix`）
 - GitHub Actions の複合アクション
-- **`javac -d <出力先>` で直接コンパイルしている 7 本の検査スクリプト**
-  （`test/cachetail` / `cachevalue` / `conditions` / `contracts` / `dataflow` / `incremental` / `server`）
+- **`javac -d <出力先>` で直接コンパイルしている検査スクリプト**
+  （当時は `test/cachetail` / `cachevalue` / `conditions` / `contracts` / `dataflow` / `incremental` / `server` の 7 本。
+  `test/cachetail` はその後キャッシュを 1 ファイルにしたときに無くなり、今は `cachevalue` / `cacheversion` / `conditions` /
+  `contracts` / `ctorbody` / `dataflow` / `incremental` / `jls` / `pruning` / `server` / `vscode` / `warnings` の 12 本）
 
 properties にすると、このすべてに「リソースを一緒に配る」処理が要る。
 そして 1 か所でも漏れると、**例外も警告も出ずに画面にキー名（`!キー!`）が出るだけ**になる。
