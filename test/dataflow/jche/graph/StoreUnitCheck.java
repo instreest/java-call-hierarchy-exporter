@@ -7,14 +7,13 @@ import java.util.Objects;
 
 /**
  * 検査用: 値の表を組む側（{@link ValueStoreBuilder} / {@link GuardTableBuilder} / {@link StringPoolBuilder}）を、
- * 書き手が作らない行で直接たたく（stage B の間の検査。test/dataflow/run.sh が src と一緒にコンパイルして動かす）。
+ * 書き手が作らない行で直接たたく（test/dataflow/run.sh が src と一緒にコンパイルして動かす）。
  *
- * <p>ValueStoreCheck は実際のプロジェクトのキャッシュ（書き手が作った行）で、表を組み直した文字列が今の文字列と
- * 一致することを見る。書き手が作らない行（手で書き換えたキャッシュ）と、組み直した文字列では区別が付かない形
- * （条件の値を区切りでつなぐと、値の数が消える）は、そこでは見えないので、ここで表の中身を直接見る。
+ * <p>ValueStoreCheck は実際のプロジェクトのキャッシュ（書き手が作った行）で、組み上がった表の決まりを見る。
+ * 書き手が作らない行（手で書き換えたキャッシュ）の扱いは、そこでは見えないので、ここで表の中身を直接見る。
  * <pre>
  *   条件の値   … EQ / NE は値 1 つ（丸ごと）、IN / NOT_IN は区切りで分けたもの、値の無い行は空文字 1 つ、
- *                制御文字は空白（以前の読み手 GuardEvaluator が受け取っていた文字列の読み方のまま）
+ *                制御文字は空白（以前の文字列の読み手が受け取っていた値のまま。{@code GuardTableBuilder} の説明）
  *   実引数の位置 … 書き手の書く形（String.valueOf）で 0〜32767 のものだけ。01・+1・-0・ASCII でない数字・
  *                32768 以上・r・n・s・空の鍵は無いものとする
  *   種別        … Origin の種別でない文字（実引数の並びの印 '(' を含む）は U
@@ -70,9 +69,8 @@ public final class StoreUnitCheck {
     }
 
     /**
-     * 条件の値。期待する値は、以前の読み手が受け取っていた文字列（{@code CallGraphBuilder.BlockGuards#guardOf} が
-     * {@code Guard.atom(op, 出所, Guard.values(値), テキスト)} で作る）を {@code GuardEvaluator} が読んだときの値
-     * （EQ / NE は項目を丸ごと、IN / NOT_IN は {@code Guard.valuesOf} で分けたもの）
+     * 条件の値。期待する値は、以前の文字列の読み手が受け取っていた値（値を {@code Guard.values} で 1 つの項目に
+     * 並べ、EQ / NE は項目を丸ごと、IN / NOT_IN は {@code Guard.VALUE_SEP} で分けたもの）
      */
     private void guardValues() {
         List<GuardCase> cases = List.of(

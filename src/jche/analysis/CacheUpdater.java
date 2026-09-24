@@ -1609,7 +1609,7 @@ public final class CacheUpdater {
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）
         body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa))));
         body.addAll(symbols.rows());
-        // 値グラフ（N行）は番号順。参照する行（G・R・C/U・J 行）より前にあれば、読み手は 1 回で組み直せる
+        // 値グラフ（N行）は番号順。参照する行（G・R・C/U・J 行）より前にあれば、読み手は 1 回で取り込める
         for (ValueNode n : fa.valueNodes) {
             body.add(n.toRow());
         }

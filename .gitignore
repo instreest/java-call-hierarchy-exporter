@@ -59,13 +59,11 @@ target/
 /test/cli/run-*.log
 
 # test/dataflow/run.sh（解決の決定性・値の表の検査）のコンパイル結果・キャッシュ・出力。
-# work/ は ValueStoreCheck / TraceCheck が解析するプロジェクトごとのキャッシュ・出力とログ
+# work/ は ValueStoreCheck が解析するプロジェクトごとのキャッシュ・出力とログ
 /test/dataflow/build/
 /test/dataflow/.cache/
 /test/dataflow/output/
 /test/dataflow/work/
-/test/dataflow/projects/*/.cache/
-/test/dataflow/projects/*/output/
 
 # test/incremental/run.sh（差分更新の検査）が作るもの。
 # 解析対象は src/ を複製した work/ で、書き換えるのはそちらだけ（src/ は汚さない）。

@@ -1,14 +1,11 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
-import java.lang.reflect.Field;
-import java.util.List;
 import java.util.Map;
 
 /**
- * 検査用: 値の表と、グラフのパッケージの中だけで見える事実を test/dataflow の検査に見せる
+ * 検査用: 値の表と、グラフのパッケージの中だけで見える事実を test/dataflow の ValueStoreCheck に見せる
  * （test/dataflow/run.sh が src と一緒にコンパイルするので、同じパッケージとして読める）。
- * stage B の間だけ使う。
  */
 public final class StoreInspector {
 
@@ -50,50 +47,23 @@ public final class StoreInspector {
         return guards.columnBytes();
     }
 
-    /** コンストラクタ注入されたフィールドの出所（文字列の側） */
-    public static Map<String, String> fieldOrigins(CallGraph graph) {
-        return graph.fieldOrigins;
-    }
-
-    /** コンストラクタ注入されたフィールドの値の頭（値の表の側） */
+    /** コンストラクタ注入されたフィールドの値の頭 */
     public static Map<String, Integer> fieldHeads(CallGraph graph) {
         return graph.fieldHeads;
     }
 
-    /** 出所・条件・修飾する型の共有プール（文字列の側。読むだけ） */
-    public static List<?> originPool(CallGraph graph) {
-        try {
-            Field f = CallGraph.class.getDeclaredField("originPool");
-            f.setAccessible(true);
-            return (List<?>) f.get(graph);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    /** 戻り値の参照の CSR の範囲の配列の長さ（値の表の側。メソッドの数 + 1） */
+    /** 戻り値の参照の CSR の範囲の配列の長さ（メソッドの数 + 1） */
     public static int returnOffsetCount(CallGraph graph) {
         return graph.returnOff.length;
     }
 
-    /** 戻り値の参照の数（値の表の側。メソッドごとに重なりを除いたもの） */
+    /** 戻り値の参照の数（メソッドごとに重なりを除いたもの） */
     public static int returnRefCount(CallGraph graph) {
         return graph.returnRef.length;
     }
 
-    /** 戻り値の出所の配列（文字列の側。読むだけ） */
-    public static String[][] returnOrigins(CallGraph graph) {
-        return graph.returnOrigins;
-    }
-
-    /** DI コンテナに登録された型と Bean 名（読むだけ） */
-    public static Map<?, ?> beanNames(SpringBeans beans) {
-        try {
-            Field f = SpringBeans.class.getDeclaredField("beanNames");
-            f.setAccessible(true);
-            return (Map<?, ?>) f.get(beans);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
+    /** エッジの修飾する型の、文字列の置き場の番号（無ければ -1） */
+    public static int qualifierId(CallGraph graph, int edgeIndex) {
+        return graph.qualifierIds[edgeIndex];
     }
 }

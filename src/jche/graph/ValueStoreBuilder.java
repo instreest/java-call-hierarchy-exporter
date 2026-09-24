@@ -18,15 +18,18 @@ import jche.cache.ValueNode;
  * 取り込むときに形をそろえ（下の表）、葉をグラフ全体でまとめるため。子を親より先に取り込むので、
  * 子の参照は必ず親の参照より小さい。
  *
- * <h2>形のそろえ方（{@link OriginRenderer} が書き出す文字列と同じ中身にする）</h2>
+ * <h2>形のそろえ方（以前の読み手が受け取っていた出所の文字列と同じ中身にする）</h2>
+ * 読み手を文字列から表へ移すとき（{@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）、
+ * 以前の組み直しが文字列に書き出していた項目と同じものだけを持たせた。種別ごとの項目の有無が
+ * 読み手の分かれ道（{@code n=} の有無など）を決めるので、それを変えないため。
  * <pre>
  *   T                          実引数（あるものだけ）。n= r= s= は付けない
  *   M                          実引数、n=（数が分かれば）、r=（レシーバがあれば）、s=（空でなければ）
- *   Z でレシーバの番号がある    M と同じ（番号がブロックの外を指していても。組み直しは Z と M を区別しない）
+ *   Z でレシーバの番号がある    M と同じ（番号がブロックの外を指していても。以前の組み直しは Z と M を区別しない）
  *   それ以外（A E F L K V C U、レシーバの無い Z）   葉（頭だけ）
  *   項目が 1 つも残らなかったノード                  葉（ほかの葉と同じくまとめる）
  * </pre>
- * ブロックの外を指す子、親より小さくない子は、無いものとして扱う（組み直しでは外を指す子は現れない）。
+ * ブロックの外を指す子、親より小さくない子は、無いものとして扱う（以前の組み直しでも外を指す子は現れない）。
  *
  * <h2>書き手が作らない行の扱い（手で書き換えたキャッシュ）</h2>
  * 次のものは書き手（{@code jche.analysis.ValueGraph}）が作らない。どれも「無い」「追跡できない」の側に倒す
@@ -35,11 +38,10 @@ import jche.cache.ValueNode;
  *   <li>実引数の位置 … 書き手は {@code 0} 以上の数を {@link String#valueOf(int)} の形で書く。その形
  *       （{@code String.valueOf(位置).equals(書かれた文字列)}）で、{@code 0}〜{@link Short#MAX_VALUE} のものだけを
  *       位置とし、ほかの組は無いものとする。{@code 01}・{@code +1}・{@code -0}・ASCII でない数字・{@code 32768} 以上
- *       （Java の引数は 255 個まで）と、{@code r}・{@code n}・{@code s}・空の鍵がこれに当たる。以前の組み直し
- *       （{@link OriginRenderer}）は鍵の文字列をそのまま写すので、{@code r=番号} がレシーバに、{@code 01=番号} が
- *       どの位置でもない実引数に読まれていたが、書き手の行には現れないので出力は変わらない
- *       （test/dataflow の ValueStoreCheck が、検査に使うどのプロジェクトでも組み直しが一致することを、
- *       StoreUnitCheck がこの扱いそのものを確かめている）</li>
+ *       （Java の引数は 255 個まで）と、{@code r}・{@code n}・{@code s}・空の鍵がこれに当たる。以前の組み直しは
+ *       鍵の文字列をそのまま写すので、{@code r=番号} がレシーバに、{@code 01=番号} がどの位置でもない実引数に
+ *       読まれていたが、書き手の行には現れないので出力は変わらない（test/dataflow の StoreUnitCheck が
+ *       この扱いそのものを確かめている）</li>
  *   <li>種別 … {@link Origin} の種別（T A M F L C K V Z E U）でない文字は「追跡できない」（U）にする。
  *       実引数の並びの印（{@link ValueStore#ARG_LIST}）と取り違えないため</li>
  * </ul>
@@ -146,7 +148,7 @@ final class ValueStoreBuilder {
         sArgOff[n] = sArgs;
     }
 
-    /** {@code 位置=番号} のカンマ区切りを組にして足す。形の崩れた組は足さない（組み直しも読み飛ばす） */
+    /** {@code 位置=番号} のカンマ区切りを組にして足す。形の崩れた組は足さない */
     private void parseArgs(String args) {
         if (args == null || args.isEmpty()) {
             return;
@@ -268,7 +270,7 @@ final class ValueStoreBuilder {
 
     /**
      * 呼び出し箇所の実引数（{@code 位置=番号} のカンマ区切り）を取り込み、実引数の並びのノードの参照を返す。
-     * 取り込めた実引数が 1 つも無ければ {@link ValueStore#NONE}（組み直しの空文字と同じ「実引数の値なし」）
+     * 取り込めた実引数が 1 つも無ければ {@link ValueStore#NONE}（「実引数の値なし」）
      */
     int importArgs(String args) {
         if (args == null || args.isEmpty()) {
@@ -297,7 +299,7 @@ final class ValueStoreBuilder {
         return ref;
     }
 
-    /** 組み直しと同じく、実引数・レシーバの項目を持ちうる種別か（T・M と、レシーバの番号がある Z） */
+    /** 実引数・レシーバの項目を持ちうる種別か（T・M と、レシーバの番号がある Z。クラスの説明の表） */
     private boolean hasArgs(char k, int local) {
         return k == Origin.NEW || k == Origin.RETURN
                 || (k == Origin.FUNCTIONAL && sRecv[local] != ValueNode.NONE);

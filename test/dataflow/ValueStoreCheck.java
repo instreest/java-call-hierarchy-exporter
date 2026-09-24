@@ -5,9 +5,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
+import java.util.TreeMap;
 
 import jche.AnalysisSnapshot;
 import jche.config.Config;
@@ -20,27 +19,25 @@ import jche.graph.TypeHierarchy;
 import jche.graph.ValueStore;
 
 /**
- * 値の表（{@link ValueStore}・{@link GuardTable}）が、今の読み手が受け取っている出所の文字列と
- * 同じ中身を持つことの検査（stage B。値の読み手を文字列から表へ移す前の証明）。
+ * 値の表（{@link ValueStore}・{@link GuardTable}）の決まりの検査。読み手（{@code DataflowResolver}・
+ * {@code GuardEvaluator} など）はこの決まりを前提に、値を番号の比較と前からの 1 回の走査で読む。
+ * 実際のプロジェクトを解析して、組み上がった表を全部見る。
  *
  * <pre>
- *   (1) 組み直しの一致  … 表から組み直した文字列（{@link LegacyRender}）が、エッジごとのレシーバ・実引数・
- *                        条件、メソッドごとの戻り値の並び、フィールドの値の頭と 1 文字も違わない
- *   (2) 読み方の一致    … 組み直した文字列を今の読み方（{@link LegacyOrigin}）で読むと、表の構造（種別・値・
- *                        レシーバ・実引数の数・書かれた型・位置ごとの実引数・実引数の並び・引数を含むか）と
- *                        同じものが返る。返らない参照を「あいまい」と数える
- *   (3) 表の決まり      … 子の参照 &lt; 親の参照、実引数の項目が先頭に位置の昇順で重なりなく並ぶ、
- *                        new と実引数の並びは実引数の項目だけ、葉は種別と値の文字列の組ごとに 1 つ、
- *                        文字列の置き場は同じ中身を 2 つ持たずメソッドキーはメソッド表の文字列を共有する、
- *                        フィールドの値と条件の判定される式は項目の無い葉（頭だけ）、
- *                        メソッドごとの戻り値の参照に重なりが無い、
- *                        new の値（型）とメソッド表・型階層の型名が ':' を含まない（I0 / I1）、
- *                        組み直しが予算・深さの安全弁に当たっていない
- *   (4) 合格の条件      … 値に文法の文字を含まないプロジェクト（{@link CheckProjects#STRICT}）はあいまいな参照が
- *                        0。含むプロジェクト（values）はあいまいな参照があり、どれも部分木の値が
- *                        {@code ; | { }} のどれか（か、引数を使う印の {@code =A:} / {@code =E:}）を含む
- *                        （読み違いの原因がその文字であること）
+ *   子 &lt; 親        項目の子（実引数・レシーバ）の参照は親の参照より小さい（前から 1 回で部分木を畳める）
+ *   項目の並び      実引数の項目が先頭に位置の昇順で重なりなく並び、その後ろに n= r= s= がこの順で 1 つずつ。
+ *                  new と実引数の並びは実引数の項目だけ。項目を持てるのは T・M・Z・実引数の並びだけ。
+ *                  空の実引数の並びは作らない
+ *   葉の一意        項目の無いノード（葉）は、種別と値の「文字列」の組ごとに 1 つ（頭どうしは参照の比較で済む）
+ *   文字列の一意    文字列の置き場は同じ中身を 2 つ持たない（値どうしは番号の比較で済む）。メソッドキーと同じ中身の
+ *                  文字列は、メソッド表の文字列そのもの（同じ文字列を 2 つ持たない）
+ *   頭は葉          フィールドの値と条件の判定される式は、項目を持たない葉（頭だけを取り込む）
+ *   戻り値          メソッドごとの戻り値の参照に重なりが無い
+ *   修飾する型      エッジの修飾する型は文字列の置き場の番号で、置き場の範囲に収まる
+ *   I0 / I1        new の値（型）、型階層の型名、メソッド表のキーの型の部分は ':' を含まない
+ *                  （経路の値の枠 jche.graph.Slot が、型とそれ以外を取り違えないための前提）
  * </pre>
+ * 最後に表の大きさ（ノード・項目・文字列の数と、列と文字列のおおよそのバイト数）を 1 行出す。
  * 使い方: test/dataflow/run.sh を参照
  */
 public final class ValueStoreCheck {
@@ -49,20 +46,17 @@ public final class ValueStoreCheck {
     }
 
     /**
-     * 引数なしなら {@link CheckProjects} のプロジェクトを全部検査する。
-     * {@code <名前> <設定ファイル> [--loose]} を渡すと、そのプロジェクトだけを検査する（手で測るとき用。
-     * {@code --loose} は値に文法の文字を含むプロジェクトとして扱う）
+     * 引数なしなら {@link CheckProjects#ALL} のプロジェクトを全部検査する。
+     * {@code <名前> <設定ファイル>} を渡すと、そのプロジェクトだけを検査する（手で測るとき用）
      */
     public static void main(String[] args) throws Exception {
         boolean ok = true;
         if (args.length >= 2) {
-            ok = check(new CheckProjects.Project(args[0], Path.of(args[1]).toAbsolutePath().toString(),
-                    !(args.length > 2 && "--loose".equals(args[2]))));
+            ok = check(new CheckProjects.Project(args[0], Path.of(args[1]).toAbsolutePath().toString()));
         } else {
-            for (CheckProjects.Project p : CheckProjects.STRICT) {
+            for (CheckProjects.Project p : CheckProjects.ALL) {
                 ok &= check(p);
             }
-            ok &= check(CheckProjects.VALUES);
         }
         if (!ok) {
             System.exit(1);
@@ -75,232 +69,50 @@ public final class ValueStoreCheck {
         CallGraph graph = snapshot.graph();
         ValueStore vs = graph.values();
         GuardTable gt = graph.guards();
-        LegacyRender lr = new LegacyRender(vs);
         List<String> problems = new ArrayList<>();
 
-        // (1) 組み直しの一致
-        MethodTable methods = graph.methods();
-        for (int e = 0; e < graph.edgeCount(); e++) {
-            same(problems, "edge " + e + " recv", graph.recvOrigin(e), lr.render(graph.recvNode(e)));
-            same(problems, "edge " + e + " args", graph.argOrigins(e), lr.renderArgs(graph.argsNode(e)));
-            same(problems, "edge " + e + " guard", graph.guard(e),
-                    LegacyRender.renderGuard(vs, gt, graph.guardOf(e)));
-        }
-        int returnLists = 0;
-        for (int m = 0; m < graph.methodCount(); m++) {
-            List<String> typed = new ArrayList<>();
-            for (int k = 0; k < graph.returnCount(m); k++) {
-                String s = returnText(lr, graph.returnAt(m, k));
-                if (!typed.contains(s)) {
-                    typed.add(s);
-                }
-            }
-            String[] legacy = graph.returnOriginsOf(m);
-            List<String> expected = (legacy == null) ? List.of() : List.of(legacy);
-            if (!expected.isEmpty()) {
-                returnLists++;
-            }
-            if (!expected.equals(typed)) {
-                problems.add("returns of " + methods.key(m) + ": 文字列=" + LegacyOrigin.clean(expected.toString())
-                        + " / 表=" + LegacyOrigin.clean(typed.toString()));
-            }
-        }
-        Map<String, String> fieldOrigins = StoreInspector.fieldOrigins(graph);
-        Map<String, Integer> fieldHeads = StoreInspector.fieldHeads(graph);
-        same(problems, "field keys", String.valueOf(new TreeSet<>(fieldOrigins.keySet())),
-                String.valueOf(new TreeSet<>(fieldHeads.keySet())));
-        for (Map.Entry<String, Integer> f : fieldHeads.entrySet()) {
-            int h = f.getValue();
-            same(problems, "field " + f.getKey(), fieldOrigins.get(f.getKey()), vs.kind(h) + ":" + vs.value(h));
-        }
-
-        // (2) 読み方の一致
-        boolean[] hasParam = subtreeHas(vs, 'A');
-        boolean[] hasCaptured = subtreeHas(vs, 'E');
-        Set<Integer> ambiguous = new TreeSet<>();
-        for (int ref = 0; ref < vs.size(); ref++) {
-            if (!readsAgree(vs, lr, ref, hasParam[ref], hasCaptured[ref])) {
-                ambiguous.add(ref);
-            }
-        }
-        Set<Integer> ambiguousGuards = new TreeSet<>();
-        for (int e = 0; e < graph.edgeCount(); e++) {
-            if (LegacyOrigin.guardsOnParam(graph.guard(e)) != gt.onParam(graph.guardOf(e))) {
-                ambiguousGuards.add(graph.guardOf(e));
-            }
-        }
-
-        // (3) 表の決まり
-        invariants(problems, vs);
-        sharedWithMethods(problems, vs, methods);
-        headsAreLeaves(problems, vs, gt, fieldHeads);
+        Shapes shapes = nodes(problems, vs);
+        strings(problems, vs, graph.methods());
+        headsAreLeaves(problems, vs, gt, StoreInspector.fieldHeads(graph));
         returnsUnique(problems, graph);
+        qualifiers(problems, graph, vs.strings());
         typeNames(problems, graph);
-        if (lr.cutOffs > 0) {
-            problems.add("組み直しが予算・深さの安全弁に当たった: " + lr.cutOffs + " 回");
-        }
 
-        // (4) 合格の条件
-        boolean ok = problems.isEmpty();
         for (String s : problems.subList(0, Math.min(problems.size(), 10))) {
-            System.out.println("  NG   " + p.name() + ": " + s);
+            System.out.println("  NG   " + p.name() + ": " + clean(s));
         }
         if (problems.size() > 10) {
             System.out.println("  NG   " + p.name() + ": ほか " + (problems.size() - 10) + " 件");
         }
-        if (p.strict()) {
-            for (int ref : ambiguous) {
-                System.out.println("  NG   " + p.name() + ": あいまいな参照 " + ref + " = "
-                        + LegacyOrigin.clean(describe(vs, lr, ref)));
-                ok = false;
-            }
-            if (!ambiguousGuards.isEmpty()) {
-                System.out.println("  NG   " + p.name() + ": 引数を見ているかの判定が食い違う条件 " + ambiguousGuards);
-                ok = false;
-            }
-        } else {
-            if (ambiguous.isEmpty()) {
-                System.out.println("  NG   " + p.name() + ": あいまいな参照が 1 つも無い（文法の文字を含む値が取り込まれていない）");
-                ok = false;
-            }
-            for (int ref : ambiguous) {
-                System.out.println("     あいまい（" + p.name() + "）: " + LegacyOrigin.clean(describe(vs, lr, ref)));
-                if (!subtreeHasGrammar(vs, ref)) {
-                    System.out.println("  NG   " + p.name() + ": 文法の文字を含まないのにあいまいな参照 " + ref + " = "
-                            + LegacyOrigin.clean(describe(vs, lr, ref)));
-                    ok = false;
-                }
-            }
-            if (!ambiguousGuards.isEmpty()) {
-                System.out.println("  NG   " + p.name() + ": 引数を見ているかの判定が食い違う条件 " + ambiguousGuards);
-                ok = false;
-            }
-        }
-        System.out.println((ok ? "OK   " : "NG   ") + p.name() + (p.strict() ? "" : "（文法の文字を含む）")
-                + ": edges=" + graph.edgeCount() + " nodes=" + vs.size()
-                + " entries=" + StoreInspector.entryCount(vs) + " strings=" + vs.strings().size()
-                + " guards=" + gt.size() + " returnLists=" + returnLists + " fields=" + fieldHeads.size()
-                + " ambiguous=" + ambiguous.size());
-        System.out.println("     heap " + p.name() + ": " + heap(graph, vs, gt));
+        boolean ok = problems.isEmpty();
+        System.out.println((ok ? "OK   " : "NG   ") + p.name() + ": edges=" + graph.edgeCount()
+                + " nodes=" + vs.size() + " entries=" + StoreInspector.entryCount(vs)
+                + " strings=" + vs.strings().size() + " guards=" + gt.size()
+                + " fields=" + StoreInspector.fieldHeads(graph).size() + " " + shapes);
+        System.out.println("     size " + p.name() + ": " + size(graph, vs, gt));
         return ok;
     }
 
-    /** 戻り値 1 つを、今の文字列の側と同じ規則で文字列にする（追跡できないものは U） */
-    private static String returnText(LegacyRender lr, int ref) {
-        return (ref == ValueStore.NONE) ? "U" : lr.render(ref);
-    }
-
-    private static void same(List<String> problems, String what, String legacy, String typed) {
-        if (!Objects.equals(legacy, typed)) {
-            problems.add(what + ": 文字列=" + LegacyOrigin.clean(legacy) + " / 表=" + LegacyOrigin.clean(typed));
+    /** 項目の形の数（題材がどの形を踏んでいるかの目安） */
+    private record Shapes(int leaves, int newWithArgs, int calls, int functionalWithReceiver, int argLists,
+                          int counts, int receivers, int staticReceivers) {
+        @Override
+        public String toString() {
+            return "leaves=" + leaves + " T(args)=" + newWithArgs + " M=" + calls + " Z(r=)=" + functionalWithReceiver
+                    + " (=" + argLists + " n==" + counts + " r==" + receivers + " s==" + staticReceivers;
         }
     }
 
-    /** 組み直した文字列を今の読み方で読んだ結果が、表の構造と一致するか */
-    private static boolean readsAgree(ValueStore vs, LegacyRender lr, int ref, boolean param, boolean captured) {
-        char kind = vs.kind(ref);
-        if (kind == ValueStore.ARG_LIST) {
-            String r = lr.renderArgs(ref);
-            return positionalAgree(vs, lr, ref, r)
-                    && LegacyOrigin.mentions(r, 'A') == param && LegacyOrigin.mentions(r, 'E') == captured;
-        }
-        String r = lr.render(ref);
-        if (LegacyOrigin.kindOf(r) != kind || !LegacyOrigin.valueOf(r).equals(vs.value(ref))
-                || !LegacyOrigin.head(r).equals(kind + ":" + vs.value(ref))) {
-            return false;
-        }
-        if (!Objects.equals(LegacyOrigin.unnest(LegacyOrigin.receiverOf(r)), lr.render(vs.receiver(ref)))
-                || LegacyOrigin.argCountOf(r) != vs.argCount(ref)
-                || !Objects.equals(LegacyOrigin.staticReceiverOf(r), vs.staticReceiver(ref))) {
-            return false;
-        }
-        if (!positionalAgree(vs, lr, ref, LegacyOrigin.argsOf(r))) {
-            return false;
-        }
-        boolean a = LegacyOrigin.kindOf(r) == 'A' || LegacyOrigin.mentions(r, 'A');
-        boolean e = LegacyOrigin.kindOf(r) == 'E' || LegacyOrigin.mentions(r, 'E');
-        return a == param && e == captured;
-    }
-
-    /**
-     * 位置ごとの実引数（{@code Origin.argAt}）と、実引数の並び（{@code Origin.entriesOf} の数字で始まる要素。
-     * {@code FactoryCalls} の読み方）が、表の実引数の項目と一致するか
-     */
-    private static boolean positionalAgree(ValueStore vs, LegacyRender lr, int ref, String args) {
-        List<String> typed = new ArrayList<>();
-        for (int k = vs.argBegin(ref); k < vs.argEnd(ref); k++) {
-            int pos = vs.argPos(k);
-            if (!Objects.equals(LegacyOrigin.argAt(args, pos), lr.render(vs.argAt(ref, pos)))) {
-                return false;
-            }
-            typed.add(pos + "=" + lr.render(vs.argRef(k)));
-        }
-        List<String> legacy = new ArrayList<>();
-        for (String entry : LegacyOrigin.entriesOf(args)) {
-            int eq = entry.indexOf('=');
-            if (eq <= 0 || !Character.isDigit(entry.charAt(0))) {
-                continue;
-            }
-            int pos = jche.util.Names.parseIntOr(entry.substring(0, eq), -1);
-            if (pos >= 0) {
-                legacy.add(pos + "=" + LegacyOrigin.unnest(entry.substring(eq + 1)));
-            }
-        }
-        return typed.equals(legacy);
-    }
-
-    /** 参照ごとに、自分か部分木（実引数・レシーバ）にその種別の葉があるか。子 &lt; 親なので前から 1 回で決まる */
-    private static boolean[] subtreeHas(ValueStore vs, char kind) {
-        boolean[] has = new boolean[vs.size()];
-        for (int ref = 0; ref < vs.size(); ref++) {
-            boolean h = vs.kind(ref) == kind;
-            for (int k = vs.argBegin(ref); !h && k < vs.argEnd(ref); k++) {
-                h = vs.argRef(k) >= 0 && vs.argRef(k) < ref && has[vs.argRef(k)];
-            }
-            int r = vs.receiver(ref);
-            if (!h && r >= 0 && r < ref) {
-                h = has[r];
-            }
-            has[ref] = h;
-        }
-        return has;
-    }
-
-    /**
-     * 自分か部分木の値が、出所の文法の文字（{@code ; | { }}）を含むか。今の読み手が文字列を探して
-     * 引数を使うかを決める印（{@code =A:} / {@code =E:}）を含む値も、同じく読み違いの原因として数える
-     */
-    private static boolean subtreeHasGrammar(ValueStore vs, int ref) {
-        String v = vs.value(ref);
-        if (v.indexOf(';') >= 0 || v.indexOf('|') >= 0 || v.indexOf('{') >= 0 || v.indexOf('}') >= 0
-                || v.contains("=A:") || v.contains("=E:")) {
-            return true;
-        }
-        for (int k = vs.argBegin(ref); k < vs.argEnd(ref); k++) {
-            if (subtreeHasGrammar(vs, vs.argRef(k))) {
-                return true;
-            }
-        }
-        int r = vs.receiver(ref);
-        return r != ValueStore.NONE && subtreeHasGrammar(vs, r);
-    }
-
-    private static String describe(ValueStore vs, LegacyRender lr, int ref) {
-        return (vs.kind(ref) == ValueStore.ARG_LIST) ? "(" + lr.renderArgs(ref) + ")" : lr.render(ref);
-    }
-
-    /** (3) の表の決まり */
-    private static void invariants(List<String> problems, ValueStore vs) {
-        // 文字列の置き場は同じ中身を 2 つ持たない（番号の比較で値を比べられることの前提）
-        StringPool pool = vs.strings();
-        Set<String> strings = new HashSet<>();
-        for (int i = 0; i < pool.size(); i++) {
-            if (!strings.add(pool.get(i))) {
-                problems.add("文字列の置き場に同じ中身が 2 つある（" + LegacyOrigin.clean(pool.get(i)) + "）");
-            }
-        }
-        // 葉は種別と値の「文字列」の組で 1 つ（番号で見ると、置き場が同じ中身に 2 つの番号を振ったときに見逃す）
+    /** 子 &lt; 親・項目の並び・葉の一意・I0 */
+    private static Shapes nodes(List<String> problems, ValueStore vs) {
         Set<String> leaves = new HashSet<>();
+        int newWithArgs = 0;
+        int calls = 0;
+        int functional = 0;
+        int argLists = 0;
+        int counts = 0;
+        int receivers = 0;
+        int statics = 0;
         for (int ref = 0; ref < vs.size(); ref++) {
             char kind = vs.kind(ref);
             int begin = StoreInspector.entryBegin(vs, ref);
@@ -328,8 +140,20 @@ public final class ValueStoreCheck {
                         problems.add("参照 " + ref + ": n= r= s= の並びが違う・重なる");
                     }
                     lastTail = key;
-                    if (key == -2 && (val < 0 || val >= ref)) {
-                        problems.add("参照 " + ref + ": レシーバの子 " + val + " が親より小さくない");
+                    if (key == -1) {
+                        counts++;
+                    } else if (key == -2) {
+                        receivers++;
+                        if (val < 0 || val >= ref) {
+                            problems.add("参照 " + ref + ": レシーバの子 " + val + " が親より小さくない");
+                        }
+                    } else if (key == -3) {
+                        statics++;
+                        if (vs.strings().get(val) == null) {
+                            problems.add("参照 " + ref + ": 書かれた型の番号 " + val + " が文字列の置き場の外");
+                        }
+                    } else {
+                        problems.add("参照 " + ref + ": 知らない項目の鍵 " + key);
                     }
                 }
             }
@@ -343,22 +167,37 @@ public final class ValueStoreCheck {
                 if (!leaves.add(kind + ":" + vs.value(ref))) {
                     problems.add("参照 " + ref + ": 同じ葉が 2 つある（" + kind + ":" + vs.value(ref) + "）");
                 }
-            } else if (kind != 'T' && kind != 'M' && kind != 'Z' && kind != ValueStore.ARG_LIST) {
-                problems.add("参照 " + ref + ": 項目を持てない種別 " + kind);
+            } else {
+                switch (kind) {
+                    case 'T' -> newWithArgs++;
+                    case 'M' -> calls++;
+                    case 'Z' -> functional++;
+                    case ValueStore.ARG_LIST -> argLists++;
+                    default -> problems.add("参照 " + ref + ": 項目を持てない種別 " + kind);
+                }
             }
             if (kind == 'T' && vs.value(ref).indexOf(':') >= 0) {
                 problems.add("I0: new の型が ':' を含む: " + vs.value(ref));
             }
         }
+        return new Shapes(leaves.size(), newWithArgs, calls, functional, argLists, counts, receivers, statics);
     }
 
-    /** 文字列の置き場の、メソッドキーと同じ中身の文字列は、メソッド表の文字列そのもの（同じ文字列を 2 つ持たない） */
-    private static void sharedWithMethods(List<String> problems, ValueStore vs, MethodTable methods) {
+    /**
+     * 文字列の置き場は同じ中身を 2 つ持たない（番号の比較で値を比べられることの前提）。メソッドキーと同じ中身の
+     * 文字列は、メソッド表の文字列そのもの
+     */
+    private static void strings(List<String> problems, ValueStore vs, MethodTable methods) {
         StringPool pool = vs.strings();
+        Set<String> seen = new HashSet<>();
         for (int i = 0; i < pool.size(); i++) {
-            int id = methods.idOf(pool.get(i));
-            if (id >= 0 && methods.key(id) != pool.get(i)) {
-                problems.add("文字列の置き場のメソッドキーが、メソッド表の文字列を共有していない（" + pool.get(i) + "）");
+            String s = pool.get(i);
+            if (!seen.add(s)) {
+                problems.add("文字列の置き場に同じ中身が 2 つある（" + s + "）");
+            }
+            int id = methods.idOf(s);
+            if (id >= 0 && methods.key(id) != s) {
+                problems.add("文字列の置き場のメソッドキーが、メソッド表の文字列を共有していない（" + s + "）");
             }
         }
     }
@@ -366,11 +205,11 @@ public final class ValueStoreCheck {
     /**
      * フィールドの値と条件の判定される式は、頭だけの葉（項目を持たない）。J 行と G 行の subject は
      * ノードの頭だけを取り込む（{@code ValueStoreBuilder#importHead}）。丸ごと取り込むと、束縛したレシーバ（r=）や
-     * 実引数を持ったままになり、頭だけを見ていた以前の読み手と食い違う
+     * 実引数を持ったままになり、頭だけで比べる読み手（{@code FieldFacts}・{@code GuardEvaluator}）と食い違う
      */
     private static void headsAreLeaves(List<String> problems, ValueStore vs, GuardTable gt,
                                        Map<String, Integer> fieldHeads) {
-        for (Map.Entry<String, Integer> f : new java.util.TreeMap<>(fieldHeads).entrySet()) {
+        for (Map.Entry<String, Integer> f : new TreeMap<>(fieldHeads).entrySet()) {
             int h = f.getValue();
             if (h < 0 || h >= vs.size() || StoreInspector.entryBegin(vs, h) != StoreInspector.entryEnd(vs, h)) {
                 problems.add("フィールド " + f.getKey() + " の値が頭だけの葉でない（参照 " + h + "）");
@@ -402,6 +241,16 @@ public final class ValueStoreCheck {
         }
     }
 
+    /** 修飾する型は文字列の置き場の番号で、範囲に収まり、空でない */
+    private static void qualifiers(List<String> problems, CallGraph graph, StringPool pool) {
+        for (int e = 0; e < graph.edgeCount(); e++) {
+            int id = StoreInspector.qualifierId(graph, e);
+            if (id != -1 && (pool.get(id) == null || pool.get(id).isEmpty())) {
+                problems.add("エッジ " + e + " の修飾する型の番号 " + id + " が文字列の置き場の外か空");
+            }
+        }
+    }
+
     /** I1: 型階層の型名とメソッド表のキーの型の部分が ':' を含まない */
     private static void typeNames(List<String> problems, CallGraph graph) {
         TypeHierarchy h = graph.hierarchy();
@@ -424,12 +273,11 @@ public final class ValueStoreCheck {
     }
 
     /**
-     * おおよそのヒープ（バイト）。表の側は列（値の表・条件の表・戻り値の参照の CSR）と
-     * 文字列の置き場（メソッド表と共有した文字列は除く）とフィールドの値の頭の表、文字列の側は共有プールの
-     * 文字列（索引は除く）と戻り値の出所の配列とフィールドの出所の表。フィールドの表の鍵は両方の表が
-     * 同じ文字列を指すので数えない（HashMap の 1 件は、表の枠 4 B と Node 32 B で数える）
+     * おおよそのヒープ（バイト）。列（値の表・条件の表・戻り値の参照の CSR）と、文字列の置き場（メソッド表と
+     * 共有した文字列は除く）と、フィールドの値の頭の表（HashMap の 1 件は表の枠 4 B と Node 32 B で数え、
+     * 鍵の文字列は数えない）
      */
-    private static String heap(CallGraph graph, ValueStore vs, GuardTable gt) {
+    private static String size(CallGraph graph, ValueStore vs, GuardTable gt) {
         StringPool pool = vs.strings();
         MethodTable methods = graph.methods();
         long poolBytes = 16L + 4L * pool.size();
@@ -446,33 +294,13 @@ public final class ValueStoreCheck {
         long columns = StoreInspector.columnBytes(vs) + StoreInspector.columnBytes(gt)
                 + 16L + 4L * StoreInspector.returnOffsetCount(graph)
                 + 16L + 4L * StoreInspector.returnRefCount(graph);
-        Map<String, Integer> fieldHeads = StoreInspector.fieldHeads(graph);
         long fields = 0;
-        for (int h : fieldHeads.values()) {
+        for (int h : StoreInspector.fieldHeads(graph).values()) {
             // Integer は -128〜127 なら共有のもの、それを超えると 1 つ 16 B
             fields += 4 + 32 + ((h >= -128 && h <= 127) ? 0 : 16);
         }
-        long legacy = 0;
-        for (Object o : StoreInspector.originPool(graph)) {
-            legacy += 4 + stringBytes((String) o);
-        }
-        for (String origin : StoreInspector.fieldOrigins(graph).values()) {
-            legacy += 4 + 32 + stringBytes(origin);
-        }
-        String[][] returns = StoreInspector.returnOrigins(graph);
-        if (returns != null) {
-            legacy += 16L + 4L * returns.length;
-            for (String[] r : returns) {
-                if (r != null) {
-                    legacy += 16L + 4L * r.length;
-                    for (String s : r) {
-                        legacy += stringBytes(s);
-                    }
-                }
-            }
-        }
-        return "表=" + (columns + poolBytes + fields) + " B（列 " + columns + " + 文字列 " + poolBytes
-                + " + フィールド " + fields + "。メソッド表と共有 " + shared + " 個） / 文字列の側=" + legacy + " B";
+        return (columns + poolBytes + fields) + " B（列 " + columns + " + 文字列 " + poolBytes
+                + " + フィールド " + fields + "。メソッド表と共有した文字列 " + shared + " 個）";
     }
 
     /** String 1 つのおおよそのバイト数（Latin-1 なら 1 文字 1 バイト） */
@@ -483,5 +311,15 @@ public final class ValueStoreCheck {
         }
         long body = 16L + (latin1 ? s.length() : 2L * s.length());
         return 24L + ((body + 7) / 8) * 8;
+    }
+
+    /** 制御文字を空白にする（1 行に収める） */
+    private static String clean(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            sb.append((c < ' ') ? ' ' : c);
+        }
+        return sb.toString();
     }
 }

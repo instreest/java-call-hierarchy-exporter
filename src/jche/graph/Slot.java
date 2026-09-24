@@ -80,15 +80,9 @@ public final class Slot {
     }
 
     /**
-     * 定数として比べられる値（文字列リテラル・クラス・定数）の文字列。ほか（具象型・ラムダ・分からない）は null。
-     * 条件の判定（{@link GuardEvaluator}）が使う
+     * 定数として比べられる値（文字列リテラル・クラス・定数）の番号（{@link StringPool}。同じ中身なら同じ番号）。
+     * ほか（具象型・ラムダ・分からない）は -1。条件の判定（{@link GuardEvaluator}）が使う
      */
-    public static String constantValue(long s, StringPool strings) {
-        int id = constantValueId(s);
-        return (id < 0) ? null : strings.get(id);
-    }
-
-    /** {@link #constantValue} の値の番号（{@link StringPool}。同じ中身なら同じ番号）。定数でなければ -1 */
     public static int constantValueId(long s) {
         int t = tag(s);
         return (t == LITERAL || t == CLASS || t == CONST) ? payload(s) : -1;

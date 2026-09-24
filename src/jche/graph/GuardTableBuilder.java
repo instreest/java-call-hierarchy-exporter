@@ -17,22 +17,21 @@ import jche.cache.Origin;
  * （{@link #global}。初めて指された順。同じブロックの同じガードは同じ番号）。ブロックをまたいでは
  * まとめない。値と条件式のテキストはノードの値と同じ文字列の置き場に置く。
  *
- * <h2>値の持ち方（以前の読み手が見ていたとおり）</h2>
- * 値は切り詰めない。そのうえで、以前の読み手（{@link GuardEvaluator} が受け取る guard の文字列。
- * {@code CallGraphBuilder.BlockGuards#guardOf}）が見ていたとおりの並びにする（{@link #valuesAsRead}）。
- * 以前の読み手は G 行の値を {@link Guard#values} で 1 つの項目に並べ（制御文字は空白に置き換わる）、
- * EQ / NE はその項目を丸ごと 1 つの値として、IN / NOT_IN は {@link Guard#VALUE_SEP} で分けて読んでいた。
+ * <h2>値の持ち方</h2>
+ * 値は切り詰めない。書き手は EQ / NE に値を 1 つ、IN / NOT_IN に 1 つ以上、制御文字を含まない値だけを書く
+ * （{@code jche.analysis.GuardCollector}）ので、書き手が作った行では G 行の値そのものになる。
+ * 書き手が作らない行（手で書き換えたキャッシュ）は、値を {@link Guard#values} で 1 つの項目に並べ
+ * （制御文字は空白に置き換わる）、EQ / NE はその項目を丸ごと 1 つの値に、IN / NOT_IN は {@link Guard#VALUE_SEP} で
+ * 分けたものにする（{@link #valuesAsRead}。以前の文字列の読み手が見ていた値と同じ）。
  * <pre>
  *   EQ / NE          値 1 つ（項目そのもの。値が 2 つある行は区切りでつないだ 1 つ、値の無い行は空文字 1 つ）
  *   IN / NOT_IN      項目を区切りで分けたもの（値の無い行は空文字 1 つ）
  *   知らない種別      IN と同じ形（判定に使わないのでどちらでもよいが、そろえておく）
  * </pre>
- * 書き手は EQ / NE に値を 1 つ、IN / NOT_IN に 1 つ以上、制御文字を含まない値だけを書く
- * （{@code jche.analysis.GuardCollector}）ので、書き手が作った行では G 行の値そのものになる。
- * 違いが出るのは手で書き換えたキャッシュだけで、そのときも以前の読み手と同じ値を持つ。
+ * 壊れた行の読み方を新しく決めずに以前の読み手にそろえたのは、そういう行で打ち切りの結論が変わらないようにするため
+ * （この並べ方は test/dataflow の StoreUnitCheck が確かめる）。
  * 条件式のテキストも同じく {@link Guard#clean} を通す（書き手は通してから書く）。判定される式は値の表の葉を
- * そのまま指す（以前の読み手は頭の文字列にも {@link Guard#clean} を通していたが、書き手が subject に置く
- * A・V のノードの値は位置の数か制御文字を含まない定数なので、書き手が作った行では同じになる）。
+ * そのまま指す（書き手が subject に置く A・V のノードの値は、位置の数か制御文字を含まない定数）。
  */
 final class GuardTableBuilder {
 
@@ -89,16 +88,15 @@ final class GuardTableBuilder {
     }
 
     /**
-     * G 行の値を、以前の読み手が見ていたとおりの並びにする（クラスの説明の表）。
-     * 以前の読み手の読み方（{@link Guard#values} で並べてから、EQ / NE は丸ごと、ほかは {@link Guard#valuesOf}
-     * で分ける）をそのまま使う
+     * G 行の値を、表に置く並びにする（クラスの説明の表）。{@link Guard#values} で並べてから、EQ / NE は丸ごと、
+     * ほかは {@link Guard#VALUE_SEP} で分ける（書き手が作った行では G 行の値そのものになる）
      */
     static List<String> valuesAsRead(byte op, List<String> values) {
         String field = Guard.values(values);
         if (op == GuardTable.EQ || op == GuardTable.NE) {
             return List.of(field);
         }
-        return List.of(Guard.valuesOf(field));
+        return List.of(field.split(String.valueOf(Guard.VALUE_SEP), -1));
     }
 
     /** ブロックのガード番号の、グラフ全体の番号。条件なし（-1）・ブロックの外なら {@link GuardTable#NONE} */

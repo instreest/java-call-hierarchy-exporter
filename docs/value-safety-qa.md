@@ -333,3 +333,4 @@ for (Dao x : list) {                 // list には DaoA だけを入れてい�
   読み手が値グラフから出所の文字列に組み直すときに区切りで切られる。`parse("x", ";")` → `if (";".equals(delim)) semicolon();`
   は、実引数が空文字に見えて `semicolon` に `[UNREACHABLE] … (argument 2 from the caller = )` が付く。
   書き手の値（N 行）は正しく、読み手（`jche.graph.OriginRenderer` / `jche.cache.Origin`）の問題なので、別の作業で扱う
+  （stage B で直した。読み手は出所の文字列ではなく値の表を読む。`docs/cache-unification-qa.md` の「読み手が値の表を読む」）

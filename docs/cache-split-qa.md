@@ -326,6 +326,8 @@ P  39  inc  inc.Awkward  nestedArgs     write  0  -1  0=4
 2c-2b で、読み手が受け取る出所を**値グラフ（N 行）から組み直す**形にした。
 `jche.graph.OriginRenderer` が、`P` 行の `recv` / `args`（ノード番号）と同じブロックの `N` 行から
 `Origin` の文字列を作る。これで**読み手を1つも書き換えずに上限だけが外れる**。
+（後に stage B で `OriginRenderer` は外した。読み手は文字列を組み直さず、値グラフを取り込んだ値の表
+`jche.graph.ValueStore` を読む。`docs/cache-unification-qa.md` の「読み手が値の表を読む」）
 
 `Origin` の文法はもともと入れ子を `{}` で囲めるので、段数に制約が無い。
 上限は文法の都合ではなく、**文字列が深さ d・引数 k で k^d に膨らむこと**から来ていた。

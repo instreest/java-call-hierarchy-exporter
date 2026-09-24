@@ -37,7 +37,7 @@ import jche.util.Messages;
  * </pre>
  * 値のノード番号（R 行・J 行の値と G 行の subject）は、同じブロックの N 行から出所の形
  * （{@link Origin}。{@code T:a.B|0=A:0} のような形）に組み直して出す（{@link #originOf}。-1 は {@code U}）。
- * 人が読むための形で、読み手（jche.graph.OriginRenderer）が組み直す形と細部まで同じとは限らない。
+ * 人が読むための形で、読み手はこの形を読まない（ノードを値の表 jche.graph.ValueStore に取り込んで読む）。
  * C 行・U 行の recv・args・guard は番号のまま出す（N 行・G 行と突き合わせて読む）。
  * S 行は出さない（戻した列に入っている）。ヘッダ行・F 行・記号も値も持たない行はファイルのまま出す。
  * 戻した行も列ごとに同じ規則（{@link CacheFormat#escape}）で符号化し直すので、1 行は 1 行のまま。

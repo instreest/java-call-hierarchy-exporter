@@ -148,7 +148,7 @@ public final class DataflowBuilder {
             }
         }
         RunControl.progress(progressLabel(), n, n);
-        return new DataflowFacts(graph.values().strings(), factoryKind, factoryValueId, usesParameters(graph),
+        return new DataflowFacts(factoryKind, factoryValueId, usesParameters(graph),
                 reflectKinds, methodsByName(methods), decided, b.cutOff);
     }
 

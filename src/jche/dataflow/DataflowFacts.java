@@ -27,8 +27,6 @@ import jche.graph.StringPool;
  */
 public final class DataflowFacts {
 
-    /** 値の番号を文字列に戻す置き場（値の表と同じもの）。事実を持たない空の事実では null */
-    private final StringPool strings;
     /** メソッドごとの戻り値の種別（0 = 決められない、{@code 'T'} / {@code 'C'} / {@code 'A'}） */
     private final byte[] factoryKind;
     /** メソッドごとの戻り値の値の番号（{@link StringPool}。決められなければ -1） */
@@ -39,10 +37,9 @@ public final class DataflowFacts {
     private final int factoriesDecided;
     private final int factoriesCutOff;
 
-    DataflowFacts(StringPool strings, byte[] factoryKind, int[] factoryValueId, boolean[] usesParameters,
+    DataflowFacts(byte[] factoryKind, int[] factoryValueId, boolean[] usesParameters,
                   byte[] reflectKinds, Map<String, IntArray> methodsByName, int factoriesDecided,
                   int factoriesCutOff) {
-        this.strings = strings;
         this.factoryKind = factoryKind;
         this.factoryValueId = factoryValueId;
         this.usesParameters = usesParameters;
@@ -54,7 +51,7 @@ public final class DataflowFacts {
 
     /** 事実を持たない（データフロー解析が無効なときの）空の事実。リフレクションの種別だけは持つ */
     static DataflowFacts empty(int methodCount, byte[] reflectKinds) {
-        return new DataflowFacts(null, new byte[methodCount], new int[0], new boolean[methodCount],
+        return new DataflowFacts(new byte[methodCount], new int[0], new boolean[methodCount],
                 reflectKinds, new HashMap<>(), 0, 0);
     }
 
@@ -75,18 +72,6 @@ public final class DataflowFacts {
     /** そのメソッドが必ず返す値の、値の番号（{@link StringPool}）。特定できなければ -1 */
     public int factoryValueId(int methodId) {
         return (factoryKind(methodId) == 0) ? -1 : factoryValueId[methodId];
-    }
-
-    /**
-     * そのメソッドが必ず返す値を、以前の出所の文字列の形（{@code 種別:値}）にしたもの。特定できなければ null。
-     *
-     * <p><b>一時的なもの（stage B の間だけ）。</b>読み手は {@link #factoryKind} / {@link #factoryValueId} を読む。
-     * test/dataflow の TraceCheck が、以前の記録と突き合わせるためだけに使う。型の FQN と引数位置は
-     * 出所の文法の文字を含まないので、以前の文字列とそのまま同じになる
-     */
-    public String factoryOrigin(int methodId) {
-        int kind = factoryKind(methodId);
-        return (kind == 0) ? null : (char) kind + ":" + strings.get(factoryValueId[methodId]);
     }
 
     /** そのメソッドに経路の情報（引数の具象型）を渡す意味があるか */

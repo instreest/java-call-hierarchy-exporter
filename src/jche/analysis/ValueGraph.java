@@ -29,8 +29,8 @@ import jche.cache.ValueNode;
  * <h2>{@link OriginTracker} との関係</h2>
  * {@link OriginTracker} は同じ式から「上限付きの出所の文字列」を作る。
  * キャッシュの値（呼び出し箇所のレシーバ・実引数、戻り値の {@code R} 行、フィールドへの代入の {@code J} 行、
- * 条件の subject）を持つのは<b>こちらだけ</b>で、読み手は {@code jche.graph.OriginRenderer} が
- * 読む直前に出所の文字列へ組み直す（{@code docs/cache-split-qa.md} の Q21・Q22）。
+ * 条件の subject）を持つのは<b>こちらだけ</b>で、読み手はノードを値の表（{@code jche.graph.ValueStore}）に
+ * 取り込んで読む（{@code docs/cache-split-qa.md} の Q21・Q22、{@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
  * 前者が残るのは、ローカル変数の表で代入の食い違いを見る判定と、この葉の判定のためだけ。
  *
  * <h2>外れた上限</h2>

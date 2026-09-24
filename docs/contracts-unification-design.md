@@ -269,6 +269,8 @@ CSV のラベルは**新しく `CONTRACT` を起こす**ことを勧める（`[R
 `OriginTracker` が作る R 行・J 行・X 行の側だけで、呼び出し箇所についてはその形をもう作っていない
 （`cache-split-qa.md` の Q21・Q22）。つまり「出所の文字列を読む」と「値グラフを読む」は同じもので、
 `recvOrigin` を読めば上限なしの情報が手に入る。
+（後に stage B で、読み手は文字列ではなく値の表 `CallGraph.recvNode` / `jche.graph.ValueStore` を読むようになり、
+`recvOrigin` は消した。`docs/cache-unification-qa.md` の「読み手が値の表を読む」）
 
 ```
 M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER

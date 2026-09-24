@@ -38,12 +38,11 @@ package jche.cache;
  * 同じ分岐の中の呼び出しは同じガードを持つので、呼び出しごとに条件を書き並べずに済む。
  * 値は後ろの列に 1 つずつ置くので、値の中の文字（{@code |} など）で区切りが崩れることはない。
  *
- * <h3>読み手に渡す文字列（{@code jche.graph.GuardEvaluator} が読む形）</h3>
- * 読み手はまだ文字列を受け取る。G 行から組み直すときは、アトムを {@link #ATOM_SEP} で並べ、1 つのアトムを
- * {@link #FIELD_SEP} 区切りの4項目（op・出所・値・text。{@link #atom}）にし、IN / NOT_IN の値は
- * {@link #VALUE_SEP} で並べる。出所は subject のノードの頭（{@code A:0} / {@code V:true}）。
- * 区切りに制御文字を使うのは、条件式のテキストに現れうる文字（{@code & | ~ ^ , ; =}）を
- * 避けるため。エスケープを持たずに済む。
+ * <h3>読み手（{@code jche.graph.GuardTable}）</h3>
+ * 読み手は G 行を条件の表（{@code jche.graph.GuardTable}）に写し、アトムの種別・判定される式（値の表の葉）・
+ * 値を列で引く（{@code jche.graph.CallGraphBuilder}）。値を 1 つの文字列につないで読み戻すことはしないので、
+ * 値が {@code |} などを含んでも切れない（以前は制御文字で区切った 1 つの文字列を読み手に渡していた。
+ * {@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
  *
  * <h2>安全側の方針</h2>
  * 判定できる形（引数・定数と、定数との比較）だけをアトムにする。分からない条件は
@@ -52,11 +51,11 @@ package jche.cache;
  */
 public final class Guard {
 
-    /** アトムの区切り（論理積） */
-    public static final char ATOM_SEP = '\u0001';
-    /** アトムの中の項目の区切り */
-    public static final char FIELD_SEP = '\u0002';
-    /** IN / NOT_IN の値の区切り */
+    /**
+     * 値を 1 つの項目に並べるときの区切り（{@link #values}）。値は {@link #clean} を通すので、区切りと
+     * 取り違えない。条件の一覧（{@code jche.analysis.CallConditionScanner}）の EQ / NE の表記と、手で書き換えた
+     * キャッシュの値の並びをそろえるとき（{@code jche.graph.GuardTableBuilder}）に使う
+     */
     public static final char VALUE_SEP = '\u0003';
 
     /** 値が一致すること */
@@ -133,18 +132,7 @@ public final class Guard {
         }
     }
 
-    /**
-     * 読み手に渡す文字列の形で、アトム1件を文字列にする（value は {@link #clean} 済み。
-     * IN / NOT_IN は {@link #values} で並べる）。
-     *
-     * origin は出所（{@link Origin}）で、定数の値（{@code V:}）を含みうる。値にこの形式の
-     * 区切り文字が混ざると読み戻せなくなるので、value / text と同じく必ず落とす。
-     */
-    public static String atom(String op, String origin, String value, String text) {
-        return op + FIELD_SEP + clean(origin) + FIELD_SEP + value + FIELD_SEP + clean(text);
-    }
-
-    /** IN / NOT_IN の値を並べる */
+    /** 値を {@link #VALUE_SEP} で並べて 1 つの項目にする（それぞれ {@link #clean} を通す） */
     public static String values(java.util.List<String> values) {
         StringBuilder sb = new StringBuilder();
         for (String v : values) {
@@ -156,27 +144,7 @@ public final class Guard {
         return sb.toString();
     }
 
-    /** アトムを並べてガード1件にする */
-    public static String join(java.util.List<String> atoms) {
-        return String.join(String.valueOf(ATOM_SEP), atoms);
-    }
-
-    /** ガードをアトムに分解する。空なら空配列 */
-    public static String[] atomsOf(String guard) {
-        return (guard == null || guard.isEmpty()) ? new String[0] : guard.split(String.valueOf(ATOM_SEP), -1);
-    }
-
-    /** アトムの項目。範囲外なら空文字 */
-    public static String fieldOf(String atom, int index) {
-        String[] f = atom.split(String.valueOf(FIELD_SEP), -1);
-        return (index < f.length) ? f[index] : "";
-    }
-
-    public static String[] valuesOf(String field) {
-        return field.split(String.valueOf(VALUE_SEP), -1);
-    }
-
-    /** 区切り文字とタブ・改行を落とす（エスケープを持たない形式のため） */
+    /** 制御文字（区切り文字とタブ・改行）を空白にする（注記・CSV の 1 セルに収め、{@link #VALUE_SEP} と取り違えないため） */
     public static String clean(String s) {
         if (s == null) {
             return "";

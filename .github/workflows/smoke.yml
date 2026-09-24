@@ -46,7 +46,8 @@ jobs:
         run: bash test/regression/run.sh
 
       # CallResolver.resolve が呼ぶ順・回数によらず同じ結果を返すこと（Issue #80）。
-      # test/demo の全エッジを「昇順 → もう一度昇順 → 新しい resolver で降順」の 3 通りで解決して突き合わせる
+      # test/demo の全エッジを「昇順 → もう一度昇順 → 新しい resolver で降順」の 3 通りで解決して突き合わせる。
+      # 値の表（jche.graph.ValueStore）が読み手の前提の決まりを守ることも見る（StoreUnitCheck・ValueStoreCheck）
       - name: Resolve order-independence test (test/dataflow)
         run: bash test/dataflow/run.sh
 

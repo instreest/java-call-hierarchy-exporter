@@ -98,11 +98,6 @@ public final class DataflowResolver {
         this.maxDepth = (maxDepth > 0) ? maxDepth : 1;
     }
 
-    /** フェーズ2bで確定した事実 */
-    public DataflowFacts facts() {
-        return facts;
-    }
-
     public boolean enabled() {
         return enabled;
     }

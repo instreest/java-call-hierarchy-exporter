@@ -42,35 +42,19 @@ public final class CallGraph {
     byte[] recvKinds;   // 長さ = エッジ数。レシーバの由来（RecvKind）
 
     /**
-     * エッジごとのレシーバ・実引数の出所（jche.cache.Origin）。
-     * 値は originPool のインデックスで、-1 なら情報なし。
-     *
-     * 文字列の配列をエッジ数ぶん持つとメモリ設計が崩れるため、
-     * 実体は共有プールに1つずつだけ置き、エッジ側は int で参照する
-     * （出所の文字列は "A:0" や型名なので、実際には激しく重複する）。
-     */
-    int[] recvOriginIds;
-    int[] argOriginIds;
-    /** エッジごとの、呼び出し箇所を囲む条件分岐（jche.cache.Guard）。-1 なら条件なし */
-    int[] guardIds;
-    /**
      * エッジごとの、呼び出しを修飾する型（JLS 13.1。C 行の qualifier）。-1 なら宣言した型と同じ。
-     * 値は出所と同じ共有プールのインデックス（型名は激しく重複するため）
+     * 値は値の表と同じ文字列の置き場（{@link StringPool}）の番号（型名は激しく重複するため）
      */
     int[] qualifierIds;
-    private final ArrayList<String> originPool = new ArrayList<>();
-    private final HashMap<String, Integer> originPoolIndex = new HashMap<>();
-
-    /** メソッドIDごとの「返しうる値の出所」。null は情報なし */
-    String[][] returnOrigins;
-    /** "typeFqn#fieldName" -> 出所。コンストラクタ注入されたフィールドだけが入る */
-    final HashMap<String, String> fieldOrigins = new HashMap<>();
+    /** "typeFqn" の集まり。コンストラクタ注入されたフィールドを持つ型（{@link #hasInjectedFields} が遅延して作る） */
     private Set<String> typesWithInjectedFields;
 
-    // --- 値の表（読み手はこちらを読む。stage B の途中は上の文字列も二重に持つが、読み手はもう読まない。
-    //     test/dataflow の ValueStoreCheck が突き合わせるためだけに残してあり、次の段で消す） ---
+    // --- 値（読み手はここを読む。CallGraphBuilder が値の表へ取り込む） ---
 
-    /** 値の表（呼び出し箇所・戻り値・フィールドへの代入・条件の値）。値を読まない指定なら空 */
+    /**
+     * 値の表（呼び出し箇所・戻り値・フィールドへの代入・条件の値）。値を読まない指定なら空。
+     * 文字列の置き場（{@link ValueStore#strings}）は、修飾する型（{@link #qualifierOf}）も持つ
+     */
     ValueStore values;
     /** 条件の表 */
     GuardTable guardTable;
@@ -212,35 +196,13 @@ public final class CallGraph {
         return (char) recvKinds[edgeIndex];
     }
 
-    /** エッジのレシーバの出所。無ければ null（stage B の途中の検査用。読み手は {@link #recvNode} を読む） */
-    public String recvOrigin(int edgeIndex) {
-        int i = recvOriginIds[edgeIndex];
-        return (i < 0) ? null : originPool.get(i);
-    }
-
-    /** エッジの実引数の出所（"位置=出所;..."）。無ければ null（stage B の途中の検査用。読み手は {@link #argsNode} を読む） */
-    public String argOrigins(int edgeIndex) {
-        int i = argOriginIds[edgeIndex];
-        return (i < 0) ? null : originPool.get(i);
-    }
-
-    /**
-     * その呼び出しを囲む条件分岐（jche.cache.Guard の文字列）。無ければ null。
-     *
-     * stage B の途中の検査用。読み手（{@link GuardEvaluator}）は {@link #guardOf} で条件の表を読む。
-     */
-    public String guard(int edgeIndex) {
-        int i = guardIds[edgeIndex];
-        return (i < 0) ? null : originPool.get(i);
-    }
-
     /**
      * 呼び出しを修飾する型（JLS 13.1）。呼び出し先を宣言した型と同じなら null。
      * CHA の候補はこの型の部分型に限られる（{@link CallResolver} の段 1）
      */
     public String qualifierOf(int edgeIndex) {
         int i = qualifierIds[edgeIndex];
-        return (i < 0) ? null : originPool.get(i);
+        return (i < 0) ? null : values.strings().get(i);
     }
 
     /** 値の表（呼び出し箇所・戻り値・フィールドへの代入・条件の値。{@link ValueStore}） */
@@ -276,12 +238,6 @@ public final class CallGraph {
 
     // --- メソッド・型の事実 ---
 
-    /** そのメソッドの return が返しうる値の出所（R行）。無ければ null（stage B の途中の検査用。読み手は {@link #returnAt} を読む） */
-    public String[] returnOriginsOf(int methodId) {
-        return (returnOrigins == null || methodId < 0 || methodId >= returnOrigins.length)
-                ? null : returnOrigins[methodId];
-    }
-
     /**
      * そのメソッドの return が返しうる値の数（R 行。同じ参照は 1 つにまとめてある）。
      * 追跡できない return も {@link ValueStore#NONE} として数える。R 行が無ければ 0
@@ -300,14 +256,6 @@ public final class CallGraph {
     public int fieldHead(String fieldKey) {
         Integer head = fieldHeads.get(fieldKey);
         return (head == null) ? ValueStore.NONE : head;
-    }
-
-    /**
-     * コンストラクタ注入されたフィールド "typeFqn#fieldName" に必ず入る値の出所。無ければ null
-     * （stage B の途中の検査用。読み手は {@link #fieldHead} を読む）
-     */
-    public String fieldOrigin(String fieldKey) {
-        return fieldOrigins.get(fieldKey);
     }
 
     /** その型がコンストラクタ注入されたフィールドを持つか（{@link #fieldHead} に載っているフィールドがあるか） */
@@ -594,24 +542,6 @@ public final class CallGraph {
     // --- 構築時にだけ使う ---
 
     /**
-     * 構築時: 出所・条件・修飾する型の文字列を共有プールに入れてインデックスを返す。空なら -1。
-     * エッジの配列はまだ無い（{@link CallGraphBuilder} はスキャンで番号にしておき、配置のときに置く）
-     */
-    int internOrigin(String origin) {
-        if (origin == null || origin.isEmpty()) {
-            return -1;
-        }
-        Integer i = originPoolIndex.get(origin);
-        if (i != null) {
-            return i;
-        }
-        int id = originPool.size();
-        originPool.add(origin);
-        originPoolIndex.put(origin, id);
-        return id;
-    }
-
-    /**
      * 構築時: C 行・U 行の hints 列（new された型の FQN のカンマ区切り。書き手が同じファイルの中で
      * 呼び出し元とレシーバの変数を結びつけたもの）を証拠のリストにして、そのインデックスを返す。空なら -1。
      * エッジの配列はまだ無いので、番号にしておき配置のときに置く（{@link #edgeHint}）
@@ -643,6 +573,5 @@ public final class CallGraph {
     /** 構築が終わったら、構築時にしか使わない索引を捨てる（エッジからは hintTable 経由で引ける） */
     void finishBuild() {
         hintIndex = new HashMap<>();
-        originPoolIndex.clear();
     }
 }

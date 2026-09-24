@@ -15,7 +15,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 |---|---|
 | `src/jche/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
 | `src/jche/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
-| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担）、`graph`（呼び出しグラフ・具象クラス解決。`OriginRenderer` がキャッシュの値グラフを出所の文字列へ組み直す）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
+| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担）、`graph`（呼び出しグラフ・具象クラス解決。キャッシュの値グラフは `ValueStoreBuilder` が値の表 `ValueStore`（＋条件の表 `GuardTable`・文字列の置き場 `StringPool`）に取り込み、読み手はそれを番号で引く。経路の値は型付きの枠 `Slot`）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
@@ -49,7 +49,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | コマンド | 内容 |
 |---|---|
 | `bash test/regression/run.sh` | 回帰テスト。`test/demo` 等を解析して `expected*/` の CSV と比較。キャッシュ再利用・値を読まない指定（`novalues`。`dataflow.enabled=false`）・jar 増減・Maven / Gradle・プラグイン・キャッシュのブロックの整合（`cacheblocks`。1 ブロックが壊れたらそのファイルだけ解析し直し、最終行の欠け・化けでは作り直す。型解決できなかった件数が再利用でも変わらない）・複数設定の各ケース |
-| `bash test/dataflow/run.sh` | 解決の決定性の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること |
+| `bash test/dataflow/run.sh` | 解決の決定性と値の表の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること（ResolveOrderCheck）。値の表を組む側を手で書き換えた行でたたく（StoreUnitCheck）。回帰テストの題材を解析して、組み上がった値の表が読み手の前提にしている決まり（子 < 親・項目の並び・葉と文字列の一意・頭は葉・型名が `:` を含まない など）を守ること（ValueStoreCheck） |
 | `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
 | `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること。文字コードの変更・形式の版や JDT の版が違う・途中で切れた・読めないキャッシュでは再利用せず捨てること。1 ブロックの中身だけが壊れていれば（検査値が合わない）そのファイルだけを解析し直すこと。中断した実行から引き継ぐこと（検査値の合わないブロックは引き継がない）。以前の形式が残した `dataflow-cache.tsv` を消すこと。キャッシュの行の並びと記号・値グラフの番号の検査。期待値ファイルは持たない |
 | `bash test/cacheversion/run.sh` | キャッシュの形式の版の上げ忘れの検査。決まった題材（`test/demo`・`test/incremental`・`test/jls/project`）を全件解析したキャッシュの事実の指紋を `test/cacheversion/facts.txt` と比べ、版・題材・環境が同じなのに事実が変わっていれば落とす。版を上げたら・題材を変えたら `--update` で記録を更新する |
@@ -86,6 +86,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - テストをスキップ・無効化して通すことはしない
 - `test/profile/` は合否の検査ではなく**性能を測るための道具**（CI では動かさない）。
   測り方と結果の読み方は `docs/ast-analysis-performance-qa.md` の「計測のしかた」
+  （解析結果が持ち続けるヒープは `RetainedHeap.java`。`docs/cache-unification-qa.md` の Q17）
 
 ## コードの決まり
 

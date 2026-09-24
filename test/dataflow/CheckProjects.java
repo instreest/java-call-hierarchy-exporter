@@ -14,7 +14,7 @@ import jche.Exporter;
 import jche.config.Config;
 
 /**
- * 検査用: ValueStoreCheck と TraceCheck が解析するプロジェクトの一覧と、その解析のしかた。
+ * 検査用: ValueStoreCheck が解析するプロジェクトの一覧と、その解析のしかた。
  *
  * <p>どのプロジェクトも既存の設定ファイルをそのまま読み、キャッシュと出力の置き場所だけを
  * {@code test/dataflow/work/<名前>/} に差し替える（設定ファイルの中の相対パスの起点は元のフォルダのまま。
@@ -25,36 +25,23 @@ final class CheckProjects {
     /**
      * 解析するプロジェクト 1 つ。
      *
-     * @param name   名前（作業フォルダと、TraceCheck の記録のファイル名）
+     * @param name   名前（作業フォルダの名前）
      * @param config 設定ファイル（リポジトリのルートからの相対パス）
-     * @param strict 値に出所の文法の文字（{@code | ; { }}）を含まないプロジェクトか。含むもの（values）は
-     *               文字列の読み方があいまいになる参照があって当然で、その参照が文法の文字を含むことを確かめる
      */
-    record Project(String name, String config, boolean strict) {
+    record Project(String name, String config) {
     }
 
     /**
-     * 値に文法の文字を含まないプロジェクト（ValueStoreCheck の厳しい側と TraceCheck）。
-     * plugin-mapping / plugin-naming は、ファクトリに渡したキーを証拠として読む拡張（組み込みの
-     * TypeMappingProvider と、plugins/ の NamingProvider）。paths は読み手の分かれ道を踏むための題材
-     * （test/dataflow/projects/paths。config.properties の説明）で、paths-mapping はそれに TypeMappingProvider を
-     * 付けたもの（列挙定数のキーの証拠の種別）
+     * 値の表を組む題材（回帰テストの題材を 1 つずつ）。値の表は設定ではなくソースから決まるので、同じ題材の
+     * ほかの設定（test/regression の entry は test/demo、plugin のほかの設定は test/plugin-demo）は並べない。
+     * plugin は test/plugin-demo（ファクトリの実引数・書かれた型 s=）。values は値に出所の文法の文字
+     * （{@code | ; { }}）をわざと含むプロジェクト（test/regression/values）
      */
-    static final List<Project> STRICT = List.of(
-            new Project("demo", "test/dataflow/config.properties", true),
-            new Project("jls", "test/jls/project/config.properties", true),
-            new Project("entry", "test/regression/entry/config.properties", true),
-            new Project("plugin-contracts", "test/regression/plugin/config-contracts.properties", true),
-            new Project("plugin-contracts-factory", "test/regression/plugin/config-contracts-factory.properties",
-                    true),
-            new Project("plugin-custom", "test/regression/plugin/config-custom.properties", true),
-            new Project("plugin-mapping", "test/regression/plugin/config.properties", true),
-            new Project("plugin-naming", "test/regression/plugin/config-naming.properties", true),
-            new Project("paths", "test/dataflow/projects/paths/config.properties", true),
-            new Project("paths-mapping", "test/dataflow/projects/paths/config-mapping.properties", true));
-
-    /** 値に文法の文字をわざと含むプロジェクト（test/regression/values） */
-    static final Project VALUES = new Project("values", "test/regression/values/config.properties", false);
+    static final List<Project> ALL = List.of(
+            new Project("demo", "test/dataflow/config.properties"),
+            new Project("jls", "test/jls/project/config.properties"),
+            new Project("plugin", "test/regression/plugin/config-contracts.properties"),
+            new Project("values", "test/regression/values/config.properties"));
 
     private CheckProjects() {
     }

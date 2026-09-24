@@ -18,7 +18,7 @@
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
 # 起点は「呼び出し元が無いメソッド」（entry.packages が空）なので、ケースどうしは混ざらない。
-# 契約表（work/contracts.txt）は KeyFactory・SepFactory・EnumKeyFac の行だけで、それを使うケースにしか効かない。
+# 契約表（work/contracts.txt）は KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory の行だけで、それを使うケースにしか効かない。
 # DI（Spring）の Bean 登録は Sb・Sk・Sn で始まる型だけに付ける（Dao の実装を Bean にすると、引数やフィールドで
 # 受け取った Dao の呼び出しがすべて段 5 で絞られ、他のケースが変わってしまうため）。
 #
@@ -64,8 +64,10 @@ output.folder=./out
 cache.folder=./.cache
 contracts.files=contracts.txt
 EOF
-# ファクトリに渡したキーで絞る契約（KeyFactory・SepFactory を使うケースだけに効く）。
-# SepFactory の行はキーが出所の文法の文字（| と ;）を含む。どちらの行に当たったかで、キーを切って読んだかが分かる
+# ファクトリに渡したキーで絞る契約（KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory を使うケースだけに効く）。
+# SepFactory の行はキーが出所の文法の文字（| と ;）を含む。どちらの行に当たったかで、キーを切って読んだかが分かる。
+# TwoKeyFactory は 2 つのキーを受け取り、表には 1 つのキーの行しか無い。どの行に当たったかで、実引数を
+# どの位置から読んだかが分かる
 cat > work/contracts.txt <<'EOF'
 pr.KeyFactory#get("A") => pr.DaoA
 pr.SepFactory#get("USER") => pr.DaoA
@@ -73,6 +75,8 @@ pr.SepFactory#get("USER|X") => pr.DaoB
 pr.SepFactory#get("S") => pr.DaoA
 pr.SepFactory#get("S;T") => pr.DaoB
 pr.EnumKeyFac#get("pr.EkMode.X") => pr.DaoA
+pr.TwoKeyFactory#get("A") => pr.DaoA
+pr.TwoKeyFactory#get("B") => pr.DaoB
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -140,6 +144,17 @@ package pr;
 public class KeyFactory {
     public static Dao get(String key) {
         if (key.equals("A")) { return new DaoA(); }
+        return new DaoB();
+    }
+}
+EOF
+# 2 つのキーを受け取るファクトリ（戻り値が 2 通り。契約表の TwoKeyFactory の行だけが実装を決める）
+cat > "$SRC/TwoKeyFactory.java" <<'EOF'
+package pr;
+
+public class TwoKeyFactory {
+    public static Dao get(String k1, String k2) {
+        if (k1.isEmpty()) { return new DaoA(); }
         return new DaoB();
     }
 }
@@ -1533,7 +1548,10 @@ expect_ absent SbKeep.run SkDaoB.find "同上（SkDaoB の行が無い）"
 # ---------------------------------------------------------------------------
 # 値の表の読み手（stage B で値の表を読むようにした DataflowResolver・GuardEvaluator・StreamingTreeWalker・
 # FactoryCalls・SpringBeans）の分かれ道。どれも 1 行の取り違えで、呼び出しを黙って落とすか、
-# 違う先へ繋ぐか、打ち切りが効かなくなる（test/dataflow の TraceCheck が消えた後も守るため）
+# 違う先へ繋ぐか、打ち切りが効かなくなる。移し替えの間だけ置いた経路の記録（test/dataflow の TraceCheck）を消したあとは、
+# この節と下の「洗い出した穴」の節が読み手の分かれ道を守る。1 行ずつ壊す変異 96 個のうち、このスクリプトが 66 個、
+# test/regression が残りの 16 個を検出する（TraceCheck があったときは 80 個）。検出しない 14 個とその理由
+# （同値・保守側に倒れるだけ・検出できていない 3 個）は docs/cache-unification-qa.md の Q16
 # ---------------------------------------------------------------------------
 case_ resolved:UNEXPANDED:REFLECTION ReflNullArg ReflNullArg.main ReflNullArg.take "getMethod の引数型に値の分からない実引数（null）があれば、引数の数（n=）まで見て型は分からないとし、名前の一致する take() と take(String) の両方を候補に残す" <<'EOF'
 package pr;
@@ -1686,6 +1704,248 @@ public class SbName {
 }
 EOF
 expect_ listed SbName.run SnDaoB.find "同上（SnDaoB も残す）"
+
+# ---------------------------------------------------------------------------
+# 経路の記録（TraceCheck）を消すときに、読み手の分かれ道を 1 行ずつ壊す変異で洗い出した穴
+# （DataflowResolver・DataflowBuilder・GuardEvaluator・StreamingTreeWalker・FactoryCalls・CallbackContracts・
+# FieldFacts・SpringBeans）。TraceCheck だけが検出していた取り違え（リフレクションの受け手の具象型・引数で渡った
+# Class・契約表の実引数の位置・呼び戻しの 2 番目以降の実引数・this の呼び出しと継承したメソッドへのコンストラクタ
+# 実引数・親のフィールドの持ち主・static や値の食い違うフィールドをコンストラクタ注入とみなさないこと・
+# フィールドを実引数にしたファクトリ・複数の値の case）と、どの検査も検出していなかった取り違え（引数で渡った
+# メソッド参照・return が 2 通りの @Bean・private でも final でもないフィールド・setter でも代入するフィールド）を
+# 1 つずつ押さえる（docs/cache-unification-qa.md の Q16）
+# ---------------------------------------------------------------------------
+case_ resolved:RESOLVED:REFLECTION ReflRecv ReflRecv.run ReflRecvSub.f "invoke の第 1 引数（new ReflRecvSub()）の具象型で getMethod の先の上書きを引き、ReflRecvSub.f に繋ぐ（宣言の ReflRecv.f に決めない）" <<'EOF'
+package pr;
+
+import java.lang.reflect.Method;
+
+class ReflRecvSub extends ReflRecv {
+    @Override public void f() { System.out.println("s"); }
+}
+
+public class ReflRecv {
+    public void f() { System.out.println("b"); }
+    public static void run() throws Exception {
+        Method m = ReflRecv.class.getMethod("f");
+        m.invoke(new ReflRecvSub());
+    }
+}
+EOF
+expect_ absent ReflRecv.run ReflRecv.f "同上（宣言の ReflRecv.f に繋いだ行が無い）"
+
+case_ from:ClsParam.main ClsParam ClsParamT.'<init>' ClsParamT.hit "引数で渡った Class（ClsParamT.class）から c.getDeclaredConstructor().newInstance() をそのコンストラクタに繋ぐ（コンストラクタが起点に回らない）" <<'EOF'
+package pr;
+
+class ClsParamT {
+    ClsParamT() { hit(); }
+    static void hit() { System.out.println("t"); }
+}
+
+public class ClsParam {
+    static void make(Class<?> c) throws Exception { c.getDeclaredConstructor().newInstance(); }
+    public static void main(String[] args) throws Exception { make(ClsParamT.class); }
+}
+EOF
+
+case_ pruned=c InSwitch InSwitch.check InSwitch.hit "case \"a\", \"b\"（IN）は、経路の値 \"c\" がどれとも一致しないので打ち切る" <<'EOF'
+package pr;
+
+public class InSwitch {
+    public static void main(String[] args) { check("c"); }
+    static void check(String k) {
+        switch (k) {
+            case "a", "b" -> hit();
+            default -> other();
+        }
+    }
+    static void hit() { System.out.println("h"); }
+    static void other() { System.out.println("o"); }
+}
+EOF
+expect_ reachable InSwitch.check InSwitch.other "同上（default は打ち切らない）"
+
+case_ resolved:RESOLVED:CONTRACT TwoKeyFirst TwoKeyFirst.run DaoA.find "2 つのキー get(\"A\", \"B\") は実引数の先頭から引き、get(\"A\") の DaoA に絞る（位置の順を逆にしない）" <<'EOF'
+package pr;
+
+public class TwoKeyFirst {
+    static void run() { TwoKeyFactory.get("A", "B").find(); }
+}
+EOF
+expect_ absent TwoKeyFirst.run DaoB.find "同上（get(\"B\") の DaoB に当てない）"
+
+case_ resolved:RESOLVED:CONTRACT TwoKeySecond TwoKeySecond.run DaoB.find "2 番目の実引数だけが表に載るキー get(\"X\", \"B\") も、その位置の実引数を読んで DaoB に絞る" <<'EOF'
+package pr;
+
+public class TwoKeySecond {
+    static void run() { TwoKeyFactory.get("X", "B").find(); }
+}
+EOF
+expect_ absent TwoKeySecond.run DaoA.find "同上（DaoA の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD ThisInj ThisInj.use DaoB.find "コンストラクタ実引数（new ThisInj(new DaoB())）は、同じオブジェクトへの this の呼び出し（run → use）にも引き継ぎ、フィールド d を DaoB に絞る" <<'EOF'
+package pr;
+
+public class ThisInj {
+    private final Dao d;
+    ThisInj(Dao d) { this.d = d; }
+    public static void main(String[] args) { new ThisInj(new DaoB()).run(); }
+    void run() { use(); }
+    void use() { d.find(); }
+}
+EOF
+expect_ absent ThisInj.use DaoA.find "同上（DaoA の行が無い）"
+
+case_ listed BaseInj BaseInj.go DaoB.find "new SubInj(new DaoA(), new DaoB()).go() の go は親 BaseInj の宣言。SubInj のコンストラクタ実引数を BaseInj の引数の位置で読んで d を DaoA に絞らない（実際は super(y) の DaoB）" <<'EOF'
+package pr;
+
+class SubInj extends BaseInj {
+    SubInj(Dao x, Dao y) { super(y); }
+}
+
+public class BaseInj {
+    private final Dao d;
+    BaseInj(Dao d) { this.d = d; }
+    void go() { d.find(); }
+    public static void main(String[] args) { new SubInj(new DaoA(), new DaoB()).go(); }
+}
+EOF
+
+case_ listed FfStatic FfStatic.use DaoB.find "static フィールドは生成ごとに上書きされるのでコンストラクタ注入とみなさない。new FfStatic(new DaoA()) の経路でも last を DaoA に絞らない（その間の new FfStatic(new DaoB()) が入れ替える）" <<'EOF'
+package pr;
+
+public class FfStatic {
+    private static Dao last;
+    FfStatic(Dao x) { last = x; }
+    void run() { new FfStatic(new DaoB()); use(); }
+    void use() { last.find(); }
+    public static void main(String[] args) { new FfStatic(new DaoA()).run(); }
+}
+EOF
+expect_ listed FfStatic.use DaoA.find "同上（DaoA も残す）"
+
+case_ listed FfPkg FfPkg.use DaoB.find "private でも final でもないフィールドはクラスの外から代入されうる（FfPkgOther.poke）ので、コンストラクタ実引数の DaoA に絞らない" <<'EOF'
+package pr;
+
+class FfPkgOther { static void poke(FfPkg p) { p.d = new DaoB(); } }
+
+public class FfPkg {
+    Dao d;
+    FfPkg(Dao x) { d = x; }
+    void run() { FfPkgOther.poke(this); use(); }
+    void use() { d.find(); }
+    public static void main(String[] args) { new FfPkg(new DaoA()).run(); }
+}
+EOF
+expect_ listed FfPkg.use DaoA.find "同上（DaoA も残す）"
+
+case_ listed FfSet FfSet.use DaoB.find "コンストラクタの外（setter）でも代入されるフィールドは、コンストラクタ実引数の DaoA に絞らない（set(new DaoB()) の後に use）" <<'EOF'
+package pr;
+
+public class FfSet {
+    private Dao d;
+    FfSet(Dao x) { d = x; }
+    void set(Dao x) { d = x; }
+    void run() { set(new DaoB()); use(); }
+    void use() { d.find(); }
+    public static void main(String[] args) { new FfSet(new DaoA()).run(); }
+}
+EOF
+expect_ listed FfSet.use DaoA.find "同上（DaoA も残す）"
+
+case_ listed FfTwo FfTwo.use DaoA.find "コンストラクタごとに違う値を入れるフィールド（new DaoA() と new DaoB()）は、どちらか一方に絞らない" <<'EOF'
+package pr;
+
+public class FfTwo {
+    private final Dao d;
+    FfTwo() { d = new DaoA(); }
+    FfTwo(int k) { d = new DaoB(); }
+    void use() { d.find(); }
+    public static void main(String[] args) { new FfTwo().use(); new FfTwo(1).use(); }
+}
+EOF
+expect_ listed FfTwo.use DaoB.find "同上（DaoB も残す）"
+
+case_ listed ReflNone ReflNone.run DaoA.find "解析対象に無いクラス名（\"pr.NoSuchDao\"）を Class.forName に渡すファクトリへの委譲（none() → Factory.create）は、その名前の型に畳まない（CHA の候補を残す）" <<'EOF'
+package pr;
+
+public class ReflNone {
+    static Dao none() throws Exception { return Factory.create("pr.NoSuchDao"); }
+    static void run() throws Exception { none().find(); }
+}
+EOF
+expect_ listed ReflNone.run DaoB.find "同上（DaoB も残す）"
+
+case_ resolved:RESOLVED:DATAFLOW_FACTORY FieldArgFac FieldArgFac.run DaoB.find "引数をそのまま返すメソッドにフィールド（private final Dao f = new DaoB()）を渡すファクトリ pick() を、フィールドの型 DaoB に畳む" <<'EOF'
+package pr;
+
+public class FieldArgFac {
+    private final Dao f = new DaoB();
+    static Dao id(Dao d) { return d; }
+    Dao pick() { return id(f); }
+    static void run() { new FieldArgFac().pick().find(); }
+}
+EOF
+expect_ absent FieldArgFac.run DaoA.find "同上（DaoA の行が無い）"
+
+case_ listed SbTwo SbTwo.run SbTwoA.find "@Bean メソッドの return が 2 つの型（new SbTwoA() と new SbTwoB()）なら Bean を登録せず、段 5 で後の return の型に絞らない" <<'EOF'
+package pr;
+
+interface SbTwoDao { void find(); }
+class SbTwoA implements SbTwoDao { public void find() { System.out.println("a"); } }
+class SbTwoB implements SbTwoDao { public void find() { System.out.println("b"); } }
+class SbTwoCfg { @Bean SbTwoDao dao(boolean b) { if (b) { return new SbTwoA(); } return new SbTwoB(); } }
+
+public class SbTwo {
+    @Autowired private SbTwoDao dao;
+    public static void main(String[] args) { new SbTwo().run(); }
+    void run() { dao.find(); }
+}
+EOF
+expect_ listed SbTwo.run SbTwoB.find "同上（SbTwoB も残す）"
+
+case_ listed CbParam CbParam.each DaoA.find "引数で渡ったメソッド参照（Dao::find。参照先はソースにある）を forEach の呼び戻し先にし、実装が 2 つでも落とさない" <<'EOF'
+package pr;
+
+import java.util.List;
+import java.util.function.Consumer;
+
+public class CbParam {
+    static void each(List<Dao> l, Consumer<Dao> c) { l.forEach(c); }
+    public static void main(String[] args) { each(List.of(new DaoA(), new DaoB()), Dao::find); }
+}
+EOF
+expect_ listed CbParam.each DaoB.find "同上（DaoB も残す）"
+
+case_ listed OwnField OwnChild.go DaoB.find "親 OwnParent のフィールド d（コンストラクタ引数 0 番）に、子 OwnChild のコンストラクタ実引数の 0 番（DaoA）を当てて絞らない（実際は super(y) の DaoB）" <<'EOF'
+package pr;
+
+class OwnParent {
+    final Dao d;
+    OwnParent(Dao d) { this.d = d; }
+}
+
+class OwnChild extends OwnParent {
+    private final String tag;
+    OwnChild(Dao x, Dao y) { super(y); tag = "t"; }
+    void go() { d.find(); }
+}
+
+public class OwnField {
+    public static void main(String[] args) { new OwnChild(new DaoA(), new DaoB()).go(); }
+}
+EOF
+
+case_ resolved:RESOLVED:CALLBACK ThreadArg2 ThreadArg2.main 'ThreadArg2.lambda$main$0' "Thread の 2 番目のコンストラクタ実引数のラムダ（new Thread(group, () -> hit())）も start() の呼び戻し先にする" <<'EOF'
+package pr;
+
+public class ThreadArg2 {
+    static void hit() { System.out.println("t"); }
+    public static void main(String[] args) {
+        new Thread(new ThreadGroup("g"), () -> hit()).start();
+    }
+}
+EOF
 
 # ---------------------------------------------------------------------------
 # 解析して確かめる

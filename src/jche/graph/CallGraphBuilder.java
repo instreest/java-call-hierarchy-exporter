@@ -16,9 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
@@ -48,18 +46,18 @@ import jche.util.RunControl;
  * キャッシュファイルをスキャンして {@link CallGraph} を構築する。
  * <pre>
  *   スキャン（1 回）… メソッドを ID 化し、呼び出し元ごとの本数を数える。型階層・フィールド注入の判定・
- *                    戻り値の出所もこの回で済ませる。エッジ 1 本ごとに、ID と呼び出し箇所の値
- *                    （出所・条件は共有プールの番号、値の表の参照・条件の表の番号、証拠は証拠の表の
+ *                    戻り値もこの回で済ませる。エッジ 1 本ごとに、ID と呼び出し箇所の値
+ *                    （値の表の参照・条件の表の番号、修飾する型は文字列の置き場の番号、証拠は証拠の表の
  *                    番号にしたもの）を一時ファイルへ固定長のバイナリの記録として書き出す（{@link EdgeSpill}）
  *   配置         … 数えた本数から offsets とちょうどの長さのエッジ配列を作り、一時ファイルを
  *                    先頭から読み直して、各記録を {@code cursor[呼び出し元]++} の位置に置く
  * </pre>
- * キャッシュを 2 回スキャンしていた以前の形と、ID の振られ方・エッジの並び（呼び出し元ごとにファイル上の順）・
- * 共有プールの並びはまったく同じになる（どちらもファイル上の順に処理するため）。
- * ヒープに載るのは以前と同じで、1 ブロック分の記号表（S 行）と値グラフ（N 行）と条件の表（G 行）、
- * ちょうどの長さのエッジ配列。エッジの一覧をヒープに溜めない代わりに、一時ファイル（エッジ 1 本あたり 46 バイト）を
- * 使う。一時ファイルはキャッシュと同じフォルダに作り、終われば（失敗しても）消す。
- * これに、取り込んだノードだけの値の表（下の「値の表」）が加わる。
+ * キャッシュを 2 回スキャンしていた以前の形と、ID の振られ方・エッジの並び（呼び出し元ごとにファイル上の順）は
+ * まったく同じになる（どちらもファイル上の順に処理するため）。
+ * ヒープに載るのは、1 ブロック分の記号表（S 行）と値グラフ（N 行）と条件（G 行）の手元、取り込んだノードだけの
+ * 値の表（下の「値の表」）、ちょうどの長さのエッジ配列。エッジの一覧をヒープに溜めない代わりに、
+ * 一時ファイル（エッジ 1 本あたり 34 バイト）を使う。一時ファイルはキャッシュと同じフォルダに作り、
+ * 終われば（失敗しても）消す。
  *
  * <p>型解決に失敗した呼び出しの一覧（{@code call-hierarchy.csv} の末尾。{@code jche.report.UnresolvedReport}）
  * に出す U 行も、このスキャンで拾って {@link UnresolvedCalls} に渡す（CSV を書く側がキャッシュを
@@ -88,11 +86,8 @@ import jche.util.RunControl;
  * <h2>値の表</h2>
  * 値を値の表（{@link ValueStore}）と条件の表（{@link GuardTable}）に取り込む（{@link ValueStoreBuilder} /
  * {@link GuardTableBuilder}）。取り込むのは戻り値・代入・条件・呼び出し箇所から辿れるノードだけ。
- * 表は文字列の文法を通さないので、値が {@code | ; { }} を含んでも読み違えない。
- *
- * <p><b>stage B の途中:</b> 以前の読み手が受け取っていた出所の文字列（{@link OriginRenderer} で組み直したもの。
- * エッジのレシーバ・実引数・条件、メソッドの戻り値、フィールドの値）も並べて作っている。読み手はもう読まず、
- * test/dataflow の ValueStoreCheck が表を組み直した文字列と突き合わせるためだけに残してある（次の段で消す）。
+ * 表は文字列の文法を通さないので、値が {@code | ; { }} を含んでも読み違えない
+ * （以前は出所の文字列 {@link Origin} に組み直して渡していた。{@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
  *
  * <p>値を読まない指定（{@code dataflow.enabled=false}）のときは、N・G・R・J 行と
  * 呼び出し箇所の値の列を読まない。値が無いものとして組むので、具象クラスの解決は CHA まで、
@@ -113,11 +108,10 @@ public final class CallGraphBuilder {
 
     /** スキャンで数える、呼び出し元ごとのエッジ数 */
     private final IntArray outDegree = new IntArray(1 << 16);
-    private final Map<Integer, List<String>> returnsById = new HashMap<>();
     private final FieldFacts fields = new FieldFacts();
     private long edgeCount;
 
-    /** 値の表と条件の表が共有する文字列の置き場 */
+    /** 値の表と条件の表が共有する文字列の置き場（修飾する型も置く） */
     private final StringPoolBuilder strings = new StringPoolBuilder();
     private final ValueStoreBuilder valueBuilder = new ValueStoreBuilder(strings, methods);
     private final GuardTableBuilder guardBuilder = new GuardTableBuilder(strings, valueBuilder);
@@ -202,7 +196,7 @@ public final class CallGraphBuilder {
                         // ファイル単位で完結する判定（フィールド注入）を、読み終えた前のブロックについて確定する。
                         // 代入（J行）はブロックの後ろにあるので、宣言（V行・D行）が揃ったこの時点で渡す
                         applyPendingAssigns();
-                        fields.flushInto(graph.fieldOrigins, graph.fieldHeads);
+                        fields.flushInto(graph.fieldHeads);
                         currentFile = in.filePath();
                         symbols.clear();
                         nodes.clear();
@@ -285,11 +279,10 @@ public final class CallGraphBuilder {
                     case CacheFormat.ROW_FIELD_ASSIGN -> {
                         // 代入はフィールドの宣言（V 行）が揃ってからでないと拾われないので、
                         // ここでは溜めるだけにして、ブロックを読み終えてから渡す。
-                        // 値はノードの頭（種別:値）に直しておく（N 行はブロックの先頭にあるので揃っている）
+                        // 値はノードの頭の葉に直しておく（N 行はブロックの先頭にあるので揃っている）
                         FieldAssignFact j = readValues ? FieldAssignFact.fromRow(in.columns()) : null;
                         if (j != null) {
-                            int head = valueBuilder.importHead(j.node());
-                            pendingAssigns.add(new PendingAssign(j, nodes.headOf(j.node()), head,
+                            pendingAssigns.add(new PendingAssign(j, nodes.headOf(j.node()),
                                     valueBuilder.localKind(j.node())));
                         }
                     }
@@ -299,7 +292,7 @@ public final class CallGraphBuilder {
                 }
             }
             applyPendingAssigns();
-            fields.flushInto(graph.fieldOrigins, graph.fieldHeads);
+            fields.flushInto(graph.fieldHeads);
             RunControl.progress(label, size, size);
         }
         spill.finishWriting();
@@ -314,10 +307,9 @@ public final class CallGraphBuilder {
     }
 
     /**
-     * J 行 1 件と、その値（ノードの頭の文字列 {@link BlockNodes#headOf} と、頭の葉の参照
-     * {@link ValueStoreBuilder#importHead}・その種別）
+     * J 行 1 件と、その値（ノードの頭の葉の参照 {@link BlockNodes#headOf} と、その種別）
      */
-    private record PendingAssign(FieldAssignFact fact, String origin, int head, char headKind) {
+    private record PendingAssign(FieldAssignFact fact, int head, char headKind) {
     }
 
     /** 今のブロックのフィールドへの代入（J行）。宣言が揃ってから {@link #fields} に渡す */
@@ -326,19 +318,16 @@ public final class CallGraphBuilder {
     /** 溜めた代入を渡して捨てる。{@code fields.flushInto} の直前に呼ぶ */
     private void applyPendingAssigns() {
         for (PendingAssign a : pendingAssigns) {
-            fields.assignment(a.fact(), a.origin(), a.head(), a.headKind());
+            fields.assignment(a.fact(), a.head(), a.headKind());
         }
         pendingAssigns.clear();
     }
 
     /**
-     * R 行（戻り値）1 件。メソッドを ID 化し、出所を集める。
-     * 出所は同じブロックの値グラフから丸ごと組み直す（{@link OriginRenderer}）。追跡できない（-1）・
-     * 組み直せない（ブロックの外を指す）ものは U（「1 つでも U があれば戻り値は不定」の判定に効く）。
-     * 戻り値の出所はメソッドの鍵で集約するだけなので、どのブロックで出会っても同じ結果になる
-     *
-     * <p>値の表にも同じノードを取り込む（追跡できない・ブロックの外は {@link ValueStore#NONE}）。
-     * 並びはファイル上の順で、同じ参照はスキャンの後で 1 つにまとめる。読み手は値の表の側を読み、
+     * R 行（戻り値）1 件。メソッドを ID 化し、値のノードを子も含めて値の表に取り込む。
+     * 追跡できない（-1）・ブロックの外を指すものは {@link ValueStore#NONE}（「1 つでも追跡できなければ戻り値は
+     * 不定」の判定に効く。ブロックの外は 1 度だけ警告する）。並びはファイル上の順で、同じ参照はスキャンの後で
+     * 1 つにまとめる（{@link #freezeValues}）。メソッドの鍵で集めるだけなので、どのブロックで出会っても同じ結果になる。
      * 値を切り詰めないので、戻り値の文字列リテラルが {@code | ;} を含んでもそのまま使える
      * （以前は、そういう文字列を読み違えないよう U として渡していた。docs/cache-unification-qa.md の Q9）
      */
@@ -348,23 +337,15 @@ public final class CallGraphBuilder {
         }
         int id = methods.intern(r.method());
         ensure(outDegree, id);
-        returnMethods.add(id);
-        returnRefs.add(valueBuilder.importValue(r.node()));
-        String origin = null;
         if (r.node() != ValueNode.NONE) {
-            if (!nodes.inRange(r.node(), false)) {
-                warnBadReference();
+            if (nodes.inRange(r.node(), false)) {
+                nodes.checkReferences();
             } else {
-                origin = nodes.renderer().originOf(r.node());
+                warnBadReference();
             }
         }
-        if (origin == null) {
-            origin = Origin.UNKNOWN_S;
-        }
-        List<String> origins = returnsById.computeIfAbsent(id, k -> new ArrayList<>(2));
-        if (!origins.contains(origin)) {
-            origins.add(origin);
-        }
+        returnMethods.add(id);
+        returnRefs.add(valueBuilder.importValue(r.node()));
     }
 
     /** C 行を読む。記号がブロックの外を指す・列が足りなければ null */
@@ -408,11 +389,7 @@ public final class CallGraphBuilder {
         edgeCount++;
     }
 
-    /**
-     * C 行 1 行をエッジにする。本数を数え、エッジの中身を一時ファイルへ書く。
-     * 出所・条件・修飾する型を共有プールに入れる順（修飾する型 → レシーバ → 実引数 → 条件）は、
-     * キャッシュを 2 回スキャンしていたときの 2 回目と同じ
-     */
+    /** C 行 1 行をエッジにする。本数を数え、エッジの中身を一時ファイルへ書く */
     private void addCall(String[] cols, MethodRef[] symbols, BlockNodes nodes, BlockGuards guards,
                          EdgeSpill spill) throws IOException {
         CallEdgeFact c = callOf(cols, symbols);
@@ -423,13 +400,10 @@ public final class CallGraphBuilder {
         int callee = methods.intern(c.callee());
         countEdge(caller, callee);
         CallSiteValues.Row values = valuesOf(cols, nodes, guards);
-        int qualifier = graph.internOrigin(c.qualifier());
-        OriginRenderer renderer = nodes.renderer();
-        int recv = graph.internOrigin(renderer.originOf(values.recv()));
-        int args = graph.internOrigin(renderer.argOriginsOf(values.args()));
-        int guard = graph.internOrigin(guards.guardOf(values.guard()));
+        String q = c.qualifier();
+        int qualifier = (q == null || q.isEmpty()) ? -1 : strings.intern(q);
         spill.write(caller, callee, c.callLine(), (byte) BindKind.of(c.callee().name(), c.calleeMods()),
-                (byte) c.recvKind(), qualifier, recv, args, guard, graph.internHints(values.hints()),
+                (byte) c.recvKind(), qualifier, graph.internHints(values.hints()),
                 valueBuilder.importValue(values.recv()), valueBuilder.importArgs(values.args()),
                 guardBuilder.global(values.guard()));
     }
@@ -446,12 +420,8 @@ public final class CallGraphBuilder {
             int callee = internGuessedCallee(u);
             countEdge(caller, callee);
             CallSiteValues.Row values = valuesOf(cols, nodes, guards);
-            OriginRenderer renderer = nodes.renderer();
-            int recv = graph.internOrigin(renderer.originOf(values.recv()));
-            int args = graph.internOrigin(renderer.argOriginsOf(values.args()));
-            int guard = graph.internOrigin(guards.guardOf(values.guard()));
             spill.write(caller, callee, u.line(), (byte) BindKind.GUESSED, (byte) u.recvKind(),
-                    -1, recv, args, guard, graph.internHints(values.hints()),
+                    -1, graph.internHints(values.hints()),
                     valueBuilder.importValue(values.recv()), valueBuilder.importArgs(values.args()),
                     guardBuilder.global(values.guard()));
         }
@@ -494,8 +464,8 @@ public final class CallGraphBuilder {
      * メソッド表の文字列を共有する形にそろえる（メソッド表はスキャンを終えてそろっている）。
      *
      * <p>戻り値は、ファイル上の順に溜めた組をメソッドID で安定に並べ（同じメソッドの中の順は保つ）、
-     * 同じ参照は最初の 1 つだけ残す。参照が違っても組み直すと同じ文字列になるもの（ブロックをまたいで
-     * まとめないノード）は残るが、読み手はどれも「すべての戻り値が一致するか」で畳むので結果は変わらない
+     * 同じ参照は最初の 1 つだけ残す。参照が違っても項目の同じノード（ブロックをまたいでまとめないもの）は
+     * 残るが、読み手はどれも「すべての戻り値が一致するか」で畳むので結果は変わらない
      */
     private void freezeValues() {
         StringPool pool = strings.freeze(methods);
@@ -558,27 +528,11 @@ public final class CallGraphBuilder {
         graph.recvKinds = new byte[edges];
         graph.edgeHint = new int[edges];
         Arrays.fill(graph.edgeHint, -1);
-        graph.recvOriginIds = new int[edges];
-        graph.argOriginIds = new int[edges];
-        graph.guardIds = new int[edges];
         graph.qualifierIds = new int[edges];
         graph.recvNodes = new int[edges];
         graph.argsNodes = new int[edges];
         graph.guardRefs = new int[edges];
-
-        // R行（戻り値の出所）をメソッドIDの配列に移す。
-        // スキャンで全メソッドがID化されているのでここで確定できる。
-        // この文字列の配列は stage B の途中の検査（test/dataflow）用で、読み手はもう読まない。
-        // 読み手は値の表の戻り値（CallGraph#returnAt）を読み、「1つでも不明なら不定」の判定は
-        // jche.dataflow.DataflowBuilder の畳み込みと DataflowResolver の classOf / literalOf が行う
-        graph.returnOrigins = new String[n][];
-        for (Map.Entry<Integer, List<String>> e : returnsById.entrySet()) {
-            int id = e.getKey();
-            if (id < n) {
-                graph.returnOrigins[id] = e.getValue().toArray(new String[0]);
-            }
-        }
-        // @Bean メソッドが登録する型は、R行（戻り値の出所）が揃って初めて決まる
+        // @Bean メソッドが登録する型は、戻り値（R 行。値の表の側）が揃って初めて決まる
         graph.beans.resolveBeanMethods(graph);
     }
 
@@ -606,9 +560,6 @@ public final class CallGraphBuilder {
                 graph.bindKinds[pos] = in.readByte();
                 graph.recvKinds[pos] = in.readByte();
                 graph.qualifierIds[pos] = in.readInt();
-                graph.recvOriginIds[pos] = in.readInt();
-                graph.argOriginIds[pos] = in.readInt();
-                graph.guardIds[pos] = in.readInt();
                 graph.edgeHint[pos] = in.readInt();
                 graph.recvNodes[pos] = in.readInt();
                 graph.argsNodes[pos] = in.readInt();
@@ -626,9 +577,9 @@ public final class CallGraphBuilder {
     /**
      * エッジの記録を置く一時ファイル（キャッシュと同じフォルダ。{@link TempFiles}）。
      *
-     * <p>1 本の記録は、呼び出し元・呼び出し先の ID、行、束縛の種別、レシーバの由来、修飾する型・
-     * レシーバの出所・実引数の出所・条件の共有プールの番号と、証拠の表の番号（{@link CallGraph#internHints}）、
-     * レシーバ・実引数の並びの値の表の参照と条件の表の番号（どれも無ければ -1）。固定長（46 バイト）。
+     * <p>1 本の記録は、呼び出し元・呼び出し先の ID、行、束縛の種別、レシーバの由来、修飾する型の
+     * 文字列の置き場の番号、証拠の表の番号（{@link CallGraph#internHints}）、レシーバ・実引数の並びの
+     * 値の表の参照と条件の表の番号（どれも無ければ -1）。固定長（34 バイト）。
      *
      * <p>最初の記録を書くときにファイルを作る（エッジが 1 本も無ければ作らない）。書くのも読むのも
      * 作ったときに開いた 1 つのチャネルで行い、名前で開き直さない（別の実行が残り物として消しても読める）。
@@ -646,8 +597,7 @@ public final class CallGraphBuilder {
         }
 
         void write(int caller, int callee, int line, byte bindKind, byte recvKind,
-                   int qualifier, int recvOrigin, int argOrigins, int guard, int hints,
-                   int recvNode, int argsNode, int guardRef)
+                   int qualifier, int hints, int recvNode, int argsNode, int guardRef)
                 throws IOException {
             if (out == null) {
                 file = TempFiles.create(cacheFile, TempFiles.EDGES);
@@ -660,9 +610,6 @@ public final class CallGraphBuilder {
             out.writeByte(bindKind);
             out.writeByte(recvKind);
             out.writeInt(qualifier);
-            out.writeInt(recvOrigin);
-            out.writeInt(argOrigins);
-            out.writeInt(guard);
             out.writeInt(hints);
             out.writeInt(recvNode);
             out.writeInt(argsNode);
@@ -700,7 +647,7 @@ public final class CallGraphBuilder {
 
     /**
      * 呼び出し箇所の値。値を読まない指定なら {@link CallSiteValues.Row#NONE}。
-     * ノード番号・ガード番号がブロックの外を指していれば 1 度だけ警告する（その値は組み直せないので使われない。
+     * ノード番号・ガード番号がブロックの外を指していれば 1 度だけ警告する（その値は取り込まれないので使われない。
      * 条件なら「条件なし」になるので、打ち切りには使われない）
      */
     private CallSiteValues.Row valuesOf(String[] cols, BlockNodes nodes, BlockGuards guards) {
@@ -712,22 +659,30 @@ public final class CallGraphBuilder {
                 || !guards.inRange(values.guard())) {
             warnBadReference();
         }
+        nodes.checkReferences();
         return values;
     }
 
     /**
-     * 1 ブロック分の値グラフ（N 行）。番号は並びの位置。
-     * 出所の組み直し（{@link OriginRenderer}）はブロックの最初の呼び出し箇所で作る
-     * （N 行は C 行・U 行より前に並ぶので、そのときには揃っている）。
+     * 1 ブロック分の値グラフ（N 行）の数と、ノードどうしの参照がブロックに収まるかの見張り。
+     * ノードそのものは値の表の組み手（{@link ValueStoreBuilder#node}）が持つ。番号は並びの位置。
+     *
+     * <p>ノードが指す子（レシーバ・実引数）がブロックの外を指していれば、ブロックの最初の呼び出し箇所か
+     * 戻り値で 1 度だけ警告する（N 行は C 行・U 行・R 行より前に並ぶので、そのときには揃っている）。
+     * 外を指す子は取り込まない（無いものとして扱う。{@link ValueStoreBuilder}）
      */
     private final class BlockNodes {
 
-        private final List<ValueNode> nodes = new ArrayList<>();
-        private OriginRenderer renderer;
+        private int size;
+        /** ノードが指す子の番号の最大（無ければ -1） */
+        private int maxChild = -1;
+        /** 負の番号・形の崩れた実引数を指すノードがあったか */
+        private boolean malformedChild;
 
         void clear() {
-            nodes.clear();
-            renderer = null;
+            size = 0;
+            maxChild = -1;
+            malformedChild = false;
         }
 
         /**
@@ -737,48 +692,54 @@ public final class CallGraphBuilder {
          * 実際には起きないが、起きたら 1 度だけ警告する）
          */
         void add(ValueNode n) {
-            if (n == null || n.id() != nodes.size()) {
+            if (n == null || n.id() != size) {
                 warnBadReference();
-                n = new ValueNode(nodes.size(), Origin.UNKNOWN, "", ValueNode.NONE, "", -1, "");
+                n = new ValueNode(size, Origin.UNKNOWN, "", ValueNode.NONE, "", -1, "");
             }
-            nodes.add(n);
-            renderer = null;
+            size++;
+            noteChild(n.recv(), true);
+            if (!n.args().isEmpty()) {
+                for (String entry : n.args().split(String.valueOf(ValueNode.ARG_SEP))) {
+                    int eq = entry.indexOf('=');
+                    noteChild((eq < 0) ? Integer.MIN_VALUE
+                            : ValueNode.intOf(entry.substring(eq + 1), Integer.MIN_VALUE), false);
+                }
+            }
             valueBuilder.node(n.kind(), n.value(), n.recv(), n.args(), n.argCount(), n.staticRecv());
         }
 
-        /** このブロックの組み直し。作るときに、ノードどうしの参照がブロックに収まるかを 1 度だけ確かめる */
-        OriginRenderer renderer() {
-            if (renderer == null) {
-                for (ValueNode n : nodes) {
-                    if (!inRange(n.recv(), true) || !argsInRange(n.args())) {
-                        warnBadReference();
-                        break;
-                    }
-                }
-                renderer = new OriginRenderer(nodes);
+        private void noteChild(int id, boolean allowNone) {
+            if (allowNone && id == ValueNode.NONE) {
+                return;
             }
-            return renderer;
+            if (id < 0) {
+                malformedChild = true;
+            } else if (id > maxChild) {
+                maxChild = id;
+            }
         }
 
-        /**
-         * ノードの頭（{@code 種別:値}。実引数リストは付けない）。{@link ValueNode#NONE} なら U。
-         * ブロックの外を指していれば 1 度だけ警告して U（「追跡できない」は安全側）
-         */
-        String headOf(int id) {
-            if (id == ValueNode.NONE) {
-                return Origin.UNKNOWN_S;
-            }
-            if (!inRange(id, false)) {
+        /** ノードどうしの参照がどれもブロックに収まるか。収まらなければ 1 度だけ警告する */
+        void checkReferences() {
+            if (malformedChild || maxChild >= size) {
                 warnBadReference();
-                return Origin.UNKNOWN_S;
             }
-            ValueNode n = nodes.get(id);
-            return Origin.of(n.kind(), n.value());
         }
 
         /** ノード番号がブロックに収まるか。{@code allowNone} なら {@link ValueNode#NONE} も収まるとみなす */
         boolean inRange(int id, boolean allowNone) {
-            return (allowNone && id == ValueNode.NONE) || (id >= 0 && id < nodes.size());
+            return (allowNone && id == ValueNode.NONE) || (id >= 0 && id < size);
+        }
+
+        /**
+         * ノードの頭の葉（{@link ValueStoreBuilder#importHead}）。{@link ValueNode#NONE} なら {@link ValueStore#NONE}。
+         * ブロックの外を指していれば 1 度だけ警告して {@link ValueStore#NONE}（「追跡できない」は安全側）
+         */
+        int headOf(int id) {
+            if (id != ValueNode.NONE && !inRange(id, false)) {
+                warnBadReference();
+            }
+            return valueBuilder.importHead(id);
         }
 
         /** 実引数の列（{@code 位置=番号} のカンマ区切り）の番号がどれもブロックに収まるか */
@@ -795,14 +756,10 @@ public final class CallGraphBuilder {
             return true;
         }
     }
+
     /**
-     * 1 ブロック分の条件の表（G 行）。ガード番号は並びの位置（0 から詰めて振ってある）。
-     *
-     * <p>読み手（{@link GuardEvaluator}・{@code jche.dataflow.DataflowBuilder}）は条件の表（{@link GuardTable}）を読む。
-     * 以前の読み手が受け取っていた guard 列の文字列（{@link Guard}。アトムを {@link Guard#ATOM_SEP} で、項目を
-     * {@link Guard#FIELD_SEP} で区切る）も、stage B の途中は test/dataflow の ValueStoreCheck と突き合わせるために
-     * C 行・U 行が使うたびに組み直す（同じガードは 1 度だけ）。subject はノードの頭
-     * （{@code A:0} / {@code V:true}）で、以前の書き手が持っていた出所の頭（{@link Origin#head}）と同じ形にする。
+     * 1 ブロック分の条件（G 行）の数。ガード番号は並びの位置（0 から詰めて振ってある）。
+     * アトムは条件の表の組み手（{@link GuardTableBuilder#atom}）が持つ。判定される式（subject）はノードの頭の葉。
      *
      * <p>壊れた行（番号が並びと食い違う・列が足りない）は 1 度だけ警告して、そのアトムを使わない。
      * アトムが減ったガードは条件が弱くなるだけなので、打ち切りが増えることはない（安全側）
@@ -810,63 +767,37 @@ public final class CallGraphBuilder {
     private final class BlockGuards {
 
         private final BlockNodes nodes;
-        private final List<List<Guard.Atom>> guards = new ArrayList<>();
-        /** 組み直した文字列（番号 -&gt; 文字列。まだなら null） */
-        private final List<String> rendered = new ArrayList<>();
+        private int size;
 
         BlockGuards(BlockNodes nodes) {
             this.nodes = nodes;
         }
 
         void clear() {
-            guards.clear();
-            rendered.clear();
+            size = 0;
         }
 
         /** G 行を 1 つ足す。番号は今のガード（続きのアトム）か、次のガード（新しい番号）のどちらか */
         void add(String[] cols) {
             int id = Guard.Atom.guardIdOf(cols);
             Guard.Atom atom = Guard.Atom.fromRow(cols);
-            if (atom == null || id < 0 || id > guards.size()) {
+            if (atom == null || id < 0 || id > size) {
                 warnBadReference();
                 return;
             }
-            if (id == guards.size()) {
-                guards.add(new ArrayList<>(2));
-                rendered.add(null);
-            } else if (id != guards.size() - 1) {
+            if (id == size) {
+                size++;
+            } else if (id != size - 1) {
                 warnBadReference();   // 前のガードに戻っている。並びが崩れているので使わない
                 return;
             }
-            guards.get(id).add(atom);
-            // 値の表にも同じアトムを置く。subject はノードの頭の葉（ノードが無い・ブロックの外なら NONE）
-            guardBuilder.atom(id, atom.op(), valueBuilder.importHead(atom.subject()), atom.values(),
-                    atom.text());
+            // subject はノードの頭の葉（ノードが無い・ブロックの外なら NONE。読み手は判定しない）
+            guardBuilder.atom(id, atom.op(), nodes.headOf(atom.subject()), atom.values(), atom.text());
         }
 
         /** ガード番号がブロックに収まるか（-1 は「条件なし」で、収まるとみなす） */
         boolean inRange(int id) {
-            return id == -1 || (id >= 0 && id < guards.size());
-        }
-
-        /** ガード番号の条件を、読み手に渡す文字列にする。条件なし・ブロックの外なら空文字 */
-        String guardOf(int id) {
-            if (id < 0 || id >= guards.size()) {
-                return "";
-            }
-            String known = rendered.get(id);
-            if (known != null) {
-                return known;
-            }
-            List<String> atoms = new ArrayList<>(guards.get(id).size());
-            for (Guard.Atom a : guards.get(id)) {
-                // subject はノードの頭。ノードが無い・ブロックの外なら U（読み手は判定しない）
-                String subject = Origin.head(nodes.headOf(a.subject()));
-                atoms.add(Guard.atom(a.op(), subject, Guard.values(a.values()), a.text()));
-            }
-            String guard = Guard.join(atoms);
-            rendered.set(id, guard);
-            return guard;
+            return id == -1 || (id >= 0 && id < size);
         }
     }
 }

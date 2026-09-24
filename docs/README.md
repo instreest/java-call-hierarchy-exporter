@@ -48,7 +48,7 @@
 | [fatjar-external-usage-qa.md](fatjar-external-usage-qa.md) | #35 | 被参照スキャンの FatJar / war / ear 対応 |
 | [external-usage-callsite-qa.md](external-usage-callsite-qa.md) | — | 被参照スキャンで呼び出し元メソッドと行番号まで出す（class の命令列を自前で読む） |
 | [cache-split-qa.md](cache-split-qa.md) | — | キャッシュを呼び出し階層用とデータフロー用の 2 つに分け、対でしか再利用しないようにする |
-| [cache-unification-qa.md](cache-unification-qa.md) | — | キャッシュを 1 ファイルにまとめる（執筆中）。値をすべて値グラフのノードで持つ（R・J 行はノード番号、条件は G 行の表、new の証拠は C・U 行の hints 列。期待値を切り詰めない。`default` しか無い `switch` の誤判定。R 行を宣言の戻り値の型で書く） |
+| [cache-unification-qa.md](cache-unification-qa.md) | — | キャッシュを 1 ファイルにまとめる（執筆中）。値をすべて値グラフのノードで持つ（R・J 行はノード番号、条件は G 行の表、new の証拠は C・U 行の hints 列。期待値を切り詰めない。`default` しか無い `switch` の誤判定。R 行を宣言の戻り値の型で書く。上書きされうるメソッドの戻り値は使わない）。読み手が出所の文字列ではなく値の表（`ValueStore`・`GuardTable`・`StringPool`、経路の値は `Slot`）を読む（`| ; { }` を含む値の読み違い、切り替えの前提と確かめ方、ヒープの計測、一時ファイルへの写像を見送った理由） |
 | [branch-pruning-qa.md](branch-pruning-qa.md) | #67 | 変数値と条件分岐の静的解析で、その経路では呼ばれない呼び出しを区別する |
 | [call-conditions-qa.md](call-conditions-qa.md) | #67 | 呼び出しに効いている条件を `call-conditions.csv` に出す（モードにせず出力を1つ足す判断、キャッシュに載せない判断） |
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |

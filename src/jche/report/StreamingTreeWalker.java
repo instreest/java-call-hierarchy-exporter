@@ -3,7 +3,6 @@ package jche.report;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
-import java.util.List;
 
 import jche.cache.Origin;
 import jche.cache.RecvKind;
@@ -13,7 +12,6 @@ import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
 import jche.graph.CallbackContracts;
 import jche.graph.CallResolver;
-import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.IntArray;
 import jche.graph.GuardEvaluator;
@@ -110,29 +108,6 @@ public final class StreamingTreeWalker {
     static final byte ABSENT_CHA = 3;
     /** exclude.packages で除外された */
     static final byte ABSENT_EXCLUDED = 4;
-
-    /**
-     * 検査用の差し込み口（一時的なもの）。本番では常に null で、何もしない。
-     *
-     * <p>値の読み手を文字列から値の表（{@code jche.graph.ValueStore}）へ移す間（stage B）だけ置く。
-     * test/dataflow の TraceCheck が、経路を歩いた中身（解決・打ち切り・束縛した値・呼び戻し）を
-     * 記録して、移す前に記録したものと 1 文字も違わないことを確かめる。移し終えたら消す
-     */
-    static Probe probe;
-
-    /** {@link #probe} が受け取るもの。呼び出し 1 つ（辺 1 本）を経路の上で見るたびに呼ばれる */
-    interface Probe {
-        /** 辺を見た（解決と打ち切りの判定の後） */
-        void edge(int depth, int callerId, int edgeIndex, DataflowContext ctx, Resolution res,
-                  String unreachable);
-
-        /** 候補 1 つへ降りる前に、束縛した値（引数・コンストラクタ実引数・捕捉した値。枠は {@code jche.graph.Slot}） */
-        void target(int edgeIndex, int target, long[] params, long[] ctorArgs, String ctorOwner,
-                    long[] captured);
-
-        /** 契約で呼び戻す先 */
-        void callbacks(int edgeIndex, List<CallbackContracts.Match> matches);
-    }
 
     private final CallGraph graph;
     private final MethodTable methods;
@@ -352,9 +327,6 @@ public final class StreamingTreeWalker {
             if (unreachable != null) {
                 prunedCalls++;
             }
-            if (probe != null) {
-                probe.edge(depth, callerId, e, path[depth].context(), res, unreachable);
-            }
 
             // CHAで候補が複数になった呼び出しは、候補を1件ずつ行にして見せるが、
             // そこから先へは降りない（候補数^深さ で爆発するため）。
@@ -377,11 +349,6 @@ public final class StreamingTreeWalker {
                 int target = targets[ti];
                 long[] targetParams = bindArguments(e, depth, target);
                 long[] targetCtorArgs = bindConstructorArguments(e, depth, target);
-                if (probe != null) {
-                    probe.target(e, target, targetParams, targetCtorArgs,
-                            (targetCtorArgs == null) ? null : methods.typeFqn(target),
-                            capturedTypesFor(depth, target));
-                }
 
                 if (unreachable != null) {
                     // 打ち切った呼び出し自体は行になるが、その先の階層は消える。
@@ -448,11 +415,7 @@ public final class StreamingTreeWalker {
      * 通常の候補と同じく、除外・循環の扱いを通す
      */
     private void descendCallbacks(int depth, int e, int declaredCallee) throws IOException {
-        List<CallbackContracts.Match> matches = resolver.callbackTargets(e, path[depth].context());
-        if (probe != null) {
-            probe.callbacks(e, matches);
-        }
-        for (CallbackContracts.Match match : matches) {
+        for (CallbackContracts.Match match : resolver.callbackTargets(e, path[depth].context())) {
             if (isRowLimitReached()) {
                 return;
             }
