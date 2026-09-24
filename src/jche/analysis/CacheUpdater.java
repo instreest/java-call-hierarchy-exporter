@@ -1,13 +1,24 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.analysis;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.Closeable;
+import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -34,6 +45,7 @@ import jche.cache.MethodDeclFact;
 import jche.cache.OverrideFact;
 import jche.cache.ReturnFact;
 import jche.cache.SymbolTable;
+import jche.cache.TempFiles;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
 import jche.cache.ValueNode;
@@ -51,8 +63,9 @@ import jche.util.Warnings;
  * フェーズ1: 旧キャッシュを先頭から読みながら新キャッシュを書き出す、ストリーミングマージ。
  *
  * 1ファイル分の結果が出来るたびにキャッシュファイルへ直接書き出して破棄するため、
- * ランダムアクセスも全件保持も不要。ヒープ常駐は「ソースファイルの一覧＋サイズ」と
- * 「変わった型の集合」だけ。未解決呼び出しの件数も、この過程で同時に数える（溜め込まない）。
+ * 全件保持は不要。ヒープ常駐は「ソースファイルの一覧＋サイズ」「変わった型の集合」と、
+ * 書き写すブロックの位置（ブロックあたり数十バイトの配列）だけ。未解決呼び出しの件数も、
+ * この過程で同時に数える（溜め込まない）。
  * パース自体は {@link CallEdgeExtractor#BATCH_SIZE} 件ずつまとめて行う（1ファイルずつでは
  * 規模に比例して遅くなるため）。
  *
@@ -74,16 +87,33 @@ import jche.util.Warnings;
  *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
  *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
  *           定数の連鎖のために、各ブロックの K 行の指紋もここで覚える。
+ *           旧キャッシュを行として読むのはこの 1 回だけ。有効なブロックの依存（I 行）は一時ファイル
+ *           （依存の索引）に書き、ファイル上の範囲と F 行の件数は配列に覚えておく（パス3・パス5 が使う）。
+ *   （何も変わっていなければ、ここで終わる。下記「何も変わっていないとき」）
  *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
  *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。
- *   パス3 … 旧キャッシュをもう一度読み、有効なブロックのうち、I行（依存する型）が
+ *   パス3 … 依存の索引を読み、有効なブロックのうち、I行（依存する型）が
  *           「変わった型」または「変わったパッケージ」に触れるものを再解析に回す。
  *           触れるものは、バインディング解決の結果が変わっている可能性があるため。
  *   パス4 … パス3で再解析に回したファイルを解析し、追記する。そのファイルが宣言する定数
  *           （K行）の値が変わっていたら、宣言する型を「変わった型」に加えてパス3へ戻る
  *           （下記「定数の連鎖」）。
- *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す。
+ *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す（行に戻さず、バイトの範囲のまま）。
  * </pre>
+ *
+ * <h2>何も変わっていないとき</h2>
+ * 解析するファイルが 1 つも無く（変更・追加・削除・壊れたブロック・jar の変化が無い）、先頭の行
+ * （ヘッダ・L 行・T 行）も同じなら、書き直しても旧キャッシュとまったく同じバイト列になる。
+ * そのときは書き直さず、旧キャッシュのファイルをそのまま残す（{@link #canKeepAsIs}）。件数の数え方は
+ * 書き直したときと同じ。旧キャッシュが書き手の書くとおりの形でない（空行・CRLF を含む）ときは、
+ * 書き直すとバイト列が変わるので残さない。
+ *
+ * <h2>一時ファイル</h2>
+ * キャッシュ本体の一時ファイル（{@code .tmp}。中断からの引き継ぎに使う）のほかに、パス1 が書いて
+ * パス3 が読む依存の索引（{@link DepsIndex}。{@link TempFiles}）を使う。索引は実行の終わりに（失敗しても）消し、
+ * 強制終了（SIGINT / SIGTERM）のときは JVM の終了フックが消し、それでも残ったものは実行の最初に消す。
+ * 索引を書けない（ディスクの空きが無い・権限が無い）ときは、パス3 は旧キャッシュから I 行を読む
+ * （索引を使う前と同じ読み方。結果は変わらない）。
  *
  * <h2>同一性（何をもって「同じファイル」とみなすか）</h2>
  * <b>相対パス・サイズ・内容ハッシュ</b>の3つで見る。更新時刻は記録も参照もしない。
@@ -169,6 +199,7 @@ public final class CacheUpdater {
             Files.createDirectories(parent);
         }
         deleteLegacyFiles();
+        TempFiles.deleteLeftovers(config.cacheFile);
         Path tmpCache = config.cacheFile.resolveSibling(config.cacheFile.getFileName() + ".tmp");
         // 前回が途中で終わっていれば、その一時ファイルを退避して「パースの使い回し」に使う
         Path partialCache = takeOverPartial(config.cacheFile, tmpCache);
@@ -186,31 +217,28 @@ public final class CacheUpdater {
             Log.info(Messages.format("analysis.libraryChanged", libraries));
         }
 
-        try (BufferedWriter cacheOut = Files.newBufferedWriter(tmpCache, StandardCharsets.UTF_8)) {
-            writeLine(cacheOut, CacheFormat.headerFor(
-                    config.sourceLevel, config.sourceEncoding, JdtVersion.current()));
-            for (LibraryFact l : libraries.current) {
-                writeLine(cacheOut, l.toRow());
-            }
-            BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants);
-
+        // パス1 が書き、パス3 が読む依存の索引（有効なブロックの I 行）。何があっても最後に消す
+        try (DepsIndex deps = new DepsIndex(config.cacheFile)) {
             // --- パス1: 有効なブロックと「変わった型」を集める ---
             Set<String> valid = new HashSet<>();
             StaleTypes stale = new StaleTypes(libraries.changedPackages);
             Set<String> libraryAffected = new HashSet<>();   // 型解決に失敗していて、jar の追加で変わりうるファイル
-            if (oldCacheUsable && !scanOldCache(live, valid, stale, libraries.anyAddedOrChanged(),
-                    libraryAffected)) {
+            OldCache old = oldCacheUsable
+                    ? scanOldCache(live, valid, stale, libraries.anyAddedOrChanged(), libraryAffected, deps)
+                    : null;
+            if (old == null) {
                 // 途中で切れている・読めないキャッシュ。中途半端に再利用すると呼び出しが静かに欠けるので、
                 // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
                 valid.clear();
                 libraryAffected.clear();
                 oldConstants.clear();
             }
-            // ソース一覧の指紋（T行）。L 行の直後という位置は形式で決まっている。
-            // ハッシュはパス1 と共通で、1ファイル 1 回しか読まない（hashOf）
-            writeLine(cacheOut, CacheFormat.sourcesRow(fingerprintOf(live)));
+            // ソース一覧の指紋（T行）。ハッシュはパス1 と共通で、1ファイル 1 回しか読まない（hashOf）
+            String sources = fingerprintOf(live);
+            // ヘッダ・L 行・T 行。この並びは形式で決まっている
+            List<String> head = headLinesOf(libraries.current, sources);
 
-            // --- パス2: 変更・追加されたファイルを解析 ---
+            // --- パス2 で解析するファイル ---
             List<SourceFile> changed = new ArrayList<>();
             List<SourceFile> unresolvedBefore = new ArrayList<>();
             for (Map.Entry<String, SourceFile> en : live.entrySet()) {
@@ -220,39 +248,123 @@ public final class CacheUpdater {
                     changed.add(en.getValue());
                 }
             }
-            writer.stale = stale;
-            // ファイル自身が変わっているので、宣言する型は無条件に「変わった型」へ（改名・追加に備える）
-            writer.cascade = Cascade.ALWAYS;
-            if (partialCache != null) {
-                changed = salvageFrom(partialCache, changed, live, cacheOut, stale, result);
-                writer.skipped(result.salvaged);
-            }
-            deletePartial(partialCache);
-            if (damagedBlocks > 0) {
-                // 検査値の合わないブロックは再利用も引き継ぎもしていない（そのファイルは解析し直す）
-                Log.info(Messages.format("analysis.cache.damagedBlocks", damagedBlocks));
-            }
-            analyzeInBatches(extractor, changed, writer);
-            writer.countAs = Reason.BY_LIBRARY;
-            analyzeInBatches(extractor, unresolvedBefore, writer);
 
-            // --- パス3・パス4: 依存で無効になったファイルを解析し直す（定数が絡むと連鎖するので不動点まで） ---
-            writer.cascade = Cascade.WHEN_CONSTANTS_CHANGED;
-            if (oldCacheUsable && !valid.isEmpty()) {
-                reanalyzeDependents(extractor, writer, live, valid, stale);
-
-                // --- パス5: 最後まで有効だったブロックを書き写す ---
-                copyValidBlocks(valid, cacheOut, result);
-                writer.skipped(result.reused);
+            if (canKeepAsIs(old, changed, unresolvedBefore, stale, head)) {
+                // 何も変わっていない。書き直しても同じバイト列になるので、旧キャッシュをそのまま残す
+                if (partialCache != null) {
+                    salvageFrom(partialCache, changed, live, sources, libraries.current, null, stale, result);
+                }
+                deletePartial(partialCache);
+                keepAsIs(old, result);
+                progress.step(result.reused);
+                progress.finish();
+                return result;
             }
 
-            // 最終行。次回、ここまで書き終えたキャッシュかどうか（とブロックの数）を見分けるための印
-            writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged));
+            FileChannel outChannel = FileChannel.open(tmpCache, StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+            // 閉じると outChannel も閉じる（Channels.newOutputStream の close は元のチャネルを閉じる）
+            try (BufferedWriter cacheOut = new BufferedWriter(new OutputStreamWriter(
+                    Channels.newOutputStream(outChannel), StandardCharsets.UTF_8.newEncoder()))) {
+                for (String line : head) {
+                    writeLine(cacheOut, line);
+                }
+                BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants);
+
+                // --- パス2: 変更・追加されたファイルを解析 ---
+                writer.stale = stale;
+                // ファイル自身が変わっているので、宣言する型は無条件に「変わった型」へ（改名・追加に備える）
+                writer.cascade = Cascade.ALWAYS;
+                if (partialCache != null) {
+                    changed = salvageFrom(partialCache, changed, live, sources, libraries.current, cacheOut,
+                            stale, result);
+                    writer.skipped(result.salvaged);
+                }
+                deletePartial(partialCache);
+                if (damagedBlocks > 0) {
+                    // 検査値の合わないブロックは再利用も引き継ぎもしていない（そのファイルは解析し直す）
+                    Log.info(Messages.format("analysis.cache.damagedBlocks", damagedBlocks));
+                }
+                analyzeInBatches(extractor, changed, writer);
+                writer.countAs = Reason.BY_LIBRARY;
+                analyzeInBatches(extractor, unresolvedBefore, writer);
+
+                // --- パス3・パス4: 依存で無効になったファイルを解析し直す（定数が絡むと連鎖するので不動点まで） ---
+                writer.cascade = Cascade.WHEN_CONSTANTS_CHANGED;
+                if (old != null && !valid.isEmpty()) {
+                    reanalyzeDependents(extractor, writer, live, valid, stale, deps, old);
+
+                    // --- パス5: 最後まで有効だったブロックを書き写す ---
+                    copyValidBlocks(old, valid, outChannel, cacheOut, result);
+                    writer.skipped(result.reused);
+                }
+
+                // 最終行。次回、ここまで書き終えたキャッシュかどうか（とブロックの数）を見分けるための印
+                writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged));
+            }
         }
         progress.finish();
 
         Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
         return result;
+    }
+
+    /** キャッシュの先頭の行（ヘッダ行・依存 jar の L 行・ソース一覧の T 行）。書くときも、旧キャッシュと比べるときも使う */
+    private List<String> headLinesOf(List<LibraryFact> libraries, String sources) {
+        List<String> lines = new ArrayList<>(libraries.size() + 2);
+        lines.add(CacheFormat.headerFor(config.sourceLevel, config.sourceEncoding, JdtVersion.current()));
+        for (LibraryFact l : libraries) {
+            lines.add(l.toRow());
+        }
+        lines.add(CacheFormat.sourcesRow(sources));
+        return lines;
+    }
+
+    /**
+     * 旧キャッシュを書き直さずにそのまま残してよいか。書き直した結果が旧キャッシュとバイト単位で同じになるときだけ
+     * true にする（残しても書き直しても、次の実行とフェーズ2 が読むものは同じ）。
+     * <ul>
+     *   <li>解析するファイルが無い（変更・追加・jar の追加で解析し直すファイルが無い。依存で解析し直すファイルも
+     *       無い＝「変わった型」も「変わった jar のパッケージ」も無い）</li>
+     *   <li>旧キャッシュのどのブロックも有効（消えたファイル・壊れたブロックが無い）</li>
+     *   <li>先頭の行（ヘッダ・L 行の中身と並び・T 行）が今回書くものと同じ</li>
+     *   <li>旧キャッシュが書き手の書くとおりの形（空行・CRLF が無く、最終行の Z 行が 1 つだけ）。
+     *       そうでなければ、書き直すと形が整うぶんだけバイト列が変わる</li>
+     * </ul>
+     * 中断した前回の実行から引き継ぐものも無い（解析するファイルが無ければ引き継ぎもしない）。
+     */
+    private boolean canKeepAsIs(OldCache old, List<SourceFile> changed, List<SourceFile> unresolvedBefore,
+                                StaleTypes stale, List<String> head) throws IOException {
+        if (old == null || !old.allKept || !old.writtenAsIs || !changed.isEmpty() || !unresolvedBefore.isEmpty()
+                || !stale.isEmpty()) {
+            return false;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String line : head) {
+            sb.append(line).append('\n');
+        }
+        byte[] expected = sb.toString().getBytes(StandardCharsets.UTF_8);
+        if (old.blocksStart != expected.length) {
+            return false;
+        }
+        byte[] actual;
+        try (InputStream in = Files.newInputStream(config.cacheFile)) {
+            actual = in.readNBytes(expected.length);
+        }
+        return Arrays.equals(actual, expected);
+    }
+
+    /**
+     * 旧キャッシュをそのまま残すときの集計。書き直したとき（パス5 で全ブロックを書き写したとき）と同じ数え方にする
+     */
+    private static void keepAsIs(OldCache old, CachePhaseResult result) {
+        Log.info(Messages.get("analysis.cache.unchanged"));
+        for (int i = 0; i < old.size; i++) {
+            result.reused++;
+            // 前の実行でエラーだったファイルは、今回もエラーのままである（数えないと警告が消える）
+            result.countErrors(old.paths[i], old.errors[i], old.syntaxErrors[i]);
+            result.unresolved += old.unresolved[i];
+        }
     }
 
     /**
@@ -632,13 +744,17 @@ public final class CacheUpdater {
      *       途中で切れている可能性があるので使わない</li>
      * </ul>
      *
+     * @param sources   今回のソース一覧の指紋（T 行）
+     * @param libraries 今回の依存 jar（L 行。{@link LibraryDiff#current}）
+     * @param cacheOut  書き写す先。解析するファイルが無いとき（{@code toAnalyze} が空）は書かないので null でもよい
      * @return まだ解析が必要なファイル（引き継げたぶんを除いたもの）
      */
     private List<SourceFile> salvageFrom(Path partial, List<SourceFile> toAnalyze,
-                                         Map<String, SourceFile> live, BufferedWriter cacheOut,
+                                         Map<String, SourceFile> live, String sources,
+                                         List<LibraryFact> libraries, BufferedWriter cacheOut,
                                          StaleTypes stale, CachePhaseResult result) throws IOException {
         Set<String> taken = new HashSet<>();
-        if (isPartialUsable(partial, live)) {
+        if (isPartialUsable(partial, sources, libraries)) {
             Set<String> wanted = pathsOf(toAnalyze);
             if (!wanted.isEmpty()) {
                 copySalvageable(partial, wanted, live, cacheOut, stale, result, taken);
@@ -692,8 +808,12 @@ public final class CacheUpdater {
      * 引き継ぎが効いてほしい場面は「中断してすぐ同じソースで実行し直す」なので、
      * 一覧が丸ごと同じときだけに絞る簡単な形にした。違えば引き継がないだけで、
      * 差分更新はこれまでどおり動く。
+     *
+     * <p>依存 jar は、今回の L 行（パス0 で旧キャッシュと突き合わせた {@link LibraryDiff#current}）と比べる。
+     * クラスパスを走査し直さない（クラスフォルダなら {@code .class} をすべて読み直すことになる）。
+     * 比べ方は {@link LibraryDiff#unchangedSince} を参照（走査し直して突き合わせたときと同じ答えになる）。
      */
-    private boolean isPartialUsable(Path partial, Map<String, SourceFile> live) {
+    private boolean isPartialUsable(Path partial, String sources, List<LibraryFact> libraries) {
         CacheHead head;
         try {
             head = headOf(partial);
@@ -705,11 +825,11 @@ public final class CacheUpdater {
             Log.info(Messages.get("analysis.resume.incompatible"));
             return false;
         }
-        if (!head.sources().equals(fingerprintOf(live))) {
+        if (!head.sources().equals(sources)) {
             Log.info(Messages.get("analysis.resume.sourcesChanged"));
             return false;
         }
-        LibraryDiff diff = LibraryDiff.compute(layout.classpathArray(), head.libraries(), layout.projectRoot);
+        LibraryDiff diff = LibraryDiff.unchangedSince(head.libraries(), libraries);
         if (diff.any()) {
             Log.info(Messages.format("analysis.resume.librariesChanged", diff));
             return false;
@@ -733,7 +853,7 @@ public final class CacheUpdater {
                 if (rowType != CacheFormat.ROW_FILE && rowType != CacheFormat.ROW_END) {
                     if (fileRow != null) {
                         block.add(in.line());
-                        checksum.add(in.line());
+                        in.addTo(checksum);
                     }
                     continue;
                 }
@@ -868,8 +988,15 @@ public final class CacheUpdater {
         final boolean inSources;
         /** F 行のサイズと内容ハッシュが今のソースと一致するか */
         final boolean identical;
+        /** F 行のエラー数・構文エラー数・未解決数 */
         final int errors;
+        final int syntaxErrors;
+        final int unresolved;
         final String expectedCrc;
+        /** F 行の先頭のファイル上の位置（バイト） */
+        final long start;
+        /** F 行を読んだ時点の {@link CacheReader#irregularities}（ブロックが書き手の書くとおりの形かを見る） */
+        final long irregularAtStart;
         final BlockChecksum checksum = new BlockChecksum();
         /** H 行（ファイルに書かれたまま）。無効なブロックだったときだけ読んで「変わった型」に加える */
         final List<String> typeRows = new ArrayList<>();
@@ -877,13 +1004,73 @@ public final class CacheUpdater {
         final List<String> constants = new ArrayList<>();
         /** 理由が BINDING_FAILED の U 行があったか（jar が追加・変更されたときだけ見る） */
         boolean bindingFailed;
+        /** F 行の直後の行をまだ読んでいないか */
+        boolean firstRow = true;
+        /** I 行（F 行の直後）の依存。I 行が無ければ空 */
+        String deps = "";
 
-        OldBlock(String rel, boolean inSources, boolean identical, int errors, String expectedCrc) {
-            this.rel = rel;
+        OldBlock(String[] f, boolean inSources, boolean identical, long start, long irregularAtStart) {
+            this.rel = (f.length >= 2) ? f[1] : null;
             this.inSources = inSources;
             this.identical = identical;
-            this.errors = errors;
-            this.expectedCrc = expectedCrc;
+            this.errors = CacheFormat.errorsOf(f);
+            this.syntaxErrors = CacheFormat.syntaxErrorsOf(f);
+            this.unresolved = CacheFormat.unresolvedOf(f);
+            this.expectedCrc = CacheFormat.crcOf(f);
+            this.start = start;
+            this.irregularAtStart = irregularAtStart;
+        }
+    }
+
+    /**
+     * パス1 で読んだ旧キャッシュのうち、パス5 で書き写す候補（有効だったブロック）と、ファイル全体の形。
+     *
+     * <p>ブロックごとに持つのは、パス（今のソース一覧 {@code live} の文字列そのもの）・ファイル上の範囲
+     * （F 行の先頭から、次の F 行・Z 行の手前まで）・F 行の件数（エラー数・構文エラー数・未解決数）だけで、
+     * 有効なブロックの数に比例する小さな配列に持つ。パス5 はこの範囲をバイトのまま書き写し、件数もここから数える
+     * （旧キャッシュを行として読み直さない）。
+     */
+    private static final class OldCache {
+        String[] paths = new String[64];
+        long[] starts = new long[64];
+        long[] ends = new long[64];
+        int[] errors = new int[64];
+        int[] syntaxErrors = new int[64];
+        int[] unresolved = new int[64];
+        /** 書き手の書くとおりの形でないブロック（空行・CRLF を含む）。書き写すときは行に戻して書き直す */
+        final BitSet irregular = new BitSet();
+        int size;
+
+        /** F 行の数 */
+        long blocks;
+        /** どのブロックも有効だったか（書き写す候補になったか） */
+        boolean allKept = true;
+        /** 最初の F 行（ブロックが無ければ Z 行）の位置。ここより前はヘッダ・L 行・T 行 */
+        long blocksStart = -1;
+        /** ファイル全体が書き手の書くとおりの形か（空行・CRLF・改行で終わらない行が無く、Z 行が 1 つだけ） */
+        boolean writtenAsIs;
+
+        void add(String path, long start, long end, int errorCount, int syntaxErrorCount, int unresolvedCount,
+                 boolean irregularBlock) {
+            if (size == paths.length) {
+                int grown = size + (size >> 1) + 16;
+                paths = Arrays.copyOf(paths, grown);
+                starts = Arrays.copyOf(starts, grown);
+                ends = Arrays.copyOf(ends, grown);
+                errors = Arrays.copyOf(errors, grown);
+                syntaxErrors = Arrays.copyOf(syntaxErrors, grown);
+                unresolved = Arrays.copyOf(unresolved, grown);
+            }
+            paths[size] = path;
+            starts[size] = start;
+            ends[size] = end;
+            errors[size] = errorCount;
+            syntaxErrors[size] = syntaxErrorCount;
+            unresolved[size] = unresolvedCount;
+            if (irregularBlock) {
+                irregular.set(size);
+            }
+            size++;
         }
     }
 
@@ -897,44 +1084,69 @@ public final class CacheUpdater {
      * <p>最後まで書き終えたキャッシュか（最終行の印。{@link CacheFormat#trailerFor}）もここで見る。
      * 途中で切れたキャッシュは、切れた場所より前のブロックが「サイズもハッシュも一致する」ように
      * 見えるため、そのまま再利用すると呼び出しが静かに欠ける。印が無い・ブロック数が合わなければ
-     * false を返して丸ごと捨てさせる。読めない（文字が壊れている）ときも同じ。
+     * null を返して丸ごと捨てさせる。読めない（文字が壊れている）ときも同じ。
      *
      * <p>定数の連鎖のために、各ブロックの K 行（宣言している定数の値）の指紋もここで覚える
      * （{@link #oldConstants}）。
      *
+     * <p>旧キャッシュを行として読むのは実行ごとにこの 1 回だけにする。あとで要るものはここで取っておく。
+     * <ul>
+     *   <li>パス3 が見る依存（I 行）… 有効なブロックのぶんを一時ファイル（{@link DepsIndex}）に書く。
+     *       ヒープには持たない（依存の型名はブロックの数に比例して多い）。書けなくても続ける
+     *       （パス3 が旧キャッシュから読む）</li>
+     *   <li>パス5 が書き写すブロックの範囲と F 行の件数 … {@link OldCache} に持つ</li>
+     * </ul>
+     *
      * @param librariesAddedOrChanged jar が追加・変更されたか。そのときは型解決に失敗していたブロック
      *                                （F行のエラー数が 0 でない、または U 行に BINDING_FAILED がある）を
      *                                有効から外し、libraryAffected に積む
-     * @return 旧キャッシュをそのまま使ってよければ true。途中で切れている・読めないなら false
+     * @param deps                    有効なブロックの依存を書く索引（依存の無いブロックは書かない）
+     * @return 旧キャッシュをそのまま使ってよければ、書き写す候補。途中で切れている・読めないなら null
      */
-    private boolean scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
-                                 boolean librariesAddedOrChanged, Set<String> libraryAffected) {
-        long blocks = 0;
+    private OldCache scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
+                                  boolean librariesAddedOrChanged, Set<String> libraryAffected, DepsIndex deps) {
+        OldCache old = new OldCache();
         int damaged = 0;   // 丸ごと捨てるときは数えないので、読み終えるまで damagedBlocks に足さない
+        int trailers = 0;
         String lastLine = "";
+        // 索引への書き込みの失敗はここでは受けない（索引の側で受けて、パス3 を旧キャッシュから読む形に切り替える）。
+        // 受けると「既存キャッシュを読めない」と取り違えて、読めているキャッシュを丸ごと捨ててしまう
         try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
             OldBlock block = null;
             while (in.next()) {
                 char rowType = in.rowType();
                 lastLine = in.line();
                 if (rowType == CacheFormat.ROW_FILE || rowType == CacheFormat.ROW_END) {
+                    if (old.blocksStart < 0) {
+                        old.blocksStart = in.lineStart();
+                    }
                     if (block != null) {
-                        damaged += finishOldBlock(block, valid, stale, librariesAddedOrChanged, libraryAffected);
+                        damaged += finishOldBlock(block, in.lineStart(), in.irregularities(), live, valid, stale,
+                                librariesAddedOrChanged, libraryAffected, old, deps);
                         block = null;
                     }
                     if (rowType == CacheFormat.ROW_FILE) {
-                        blocks++;
+                        old.blocks++;
                         String[] f = in.columns();
-                        String rel = (f.length >= 2) ? f[1] : null;
-                        block = new OldBlock(rel, rel != null && live.containsKey(rel), isValidBlock(f, live),
-                                CacheFormat.errorsOf(f), CacheFormat.crcOf(f));
+                        boolean inSources = f.length >= 2 && live.containsKey(f[1]);
+                        block = new OldBlock(f, inSources, isValidBlock(f, live), in.lineStart(),
+                                in.irregularities());
+                    } else {
+                        trailers++;
                     }
                     continue;
                 }
                 if (block == null) {
                     continue;   // 最初のブロックより前（L 行・T 行）
                 }
-                block.checksum.add(in.line());
+                if (block.firstRow) {
+                    // F 行の直後。I 行なら依存（パス3 が見る）。無ければ依存なしとみなす
+                    block.firstRow = false;
+                    if (rowType == CacheFormat.ROW_DEPENDENCIES) {
+                        block.deps = in.column(1);
+                    }
+                }
+                in.addTo(block.checksum);
                 if (rowType == CacheFormat.ROW_TYPE) {
                     block.typeRows.add(in.line());
                 } else if (rowType == CacheFormat.ROW_CONSTANT) {
@@ -950,18 +1162,21 @@ public final class CacheUpdater {
                 }
             }
             if (block != null) {
-                damaged += finishOldBlock(block, valid, stale, librariesAddedOrChanged, libraryAffected);
+                damaged += finishOldBlock(block, in.nextLineStart(), in.irregularities(), live, valid, stale,
+                        librariesAddedOrChanged, libraryAffected, old, deps);
             }
+            old.writtenAsIs = (in.irregularities() == 0 && trailers == 1);
         } catch (IOException | RuntimeException e) {
             Log.warn(Messages.format("analysis.cache.unreadable", e));
-            return false;
+            return null;
         }
-        if (!lastLine.equals(CacheFormat.trailerFor(blocks))) {
-            Log.info(Messages.format("analysis.cache.truncated", blocks));
-            return false;
+        if (!lastLine.equals(CacheFormat.trailerFor(old.blocks))) {
+            Log.info(Messages.format("analysis.cache.truncated", old.blocks));
+            return null;
         }
         damagedBlocks += damaged;
-        return true;
+        deps.finishWriting();
+        return old;
     }
 
     /**
@@ -969,27 +1184,40 @@ public final class CacheUpdater {
      *
      * <ul>
      *   <li>検査値が合い、サイズと内容ハッシュも一致する … 有効（jar が追加・変更されていて、
-     *       型解決に失敗していたブロックなら libraryAffected）</li>
+     *       型解決に失敗していたブロックなら libraryAffected）。有効なら書き写す候補（{@code old}）に積み、
+     *       依存（I 行）を索引（{@code deps}）に書く</li>
      *   <li>それ以外 … 無効。宣言していた型（H 行）を「変わった型」に加える
      *       （改名・削除された型を参照していたファイルを解析し直すため）</li>
      * </ul>
      *
+     * @param end              ブロックの終わり（次の F 行・Z 行の先頭）のファイル上の位置
+     * @param irregularAtEnd   そのときの {@link CacheReader#irregularities}
      * @return 検査値が合わず、そのファイルを解析し直すブロックなら 1（ログの件数に数える）。それ以外は 0
      */
-    private int finishOldBlock(OldBlock block, Set<String> valid, StaleTypes stale,
-                               boolean librariesAddedOrChanged, Set<String> libraryAffected) {
+    private int finishOldBlock(OldBlock block, long end, long irregularAtEnd, Map<String, SourceFile> live,
+                               Set<String> valid, StaleTypes stale, boolean librariesAddedOrChanged,
+                               Set<String> libraryAffected, OldCache old, DepsIndex deps) {
         boolean intact = block.checksum.hex().equals(block.expectedCrc);
         if (intact && block.rel != null) {
             rememberConstants(block.rel, block.constants);
         }
         if (intact && block.identical) {
+            // 有効なブロックは今のソースにある（isValidBlock）。パスは今のソース一覧の文字列を使い回す
+            String rel = live.get(block.rel).relativePath();
             if (librariesAddedOrChanged && (block.errors > 0 || block.bindingFailed)) {
-                libraryAffected.add(block.rel);   // 宣言する型はパス2の解析時に「変わった型」へ入る
+                libraryAffected.add(rel);   // 宣言する型はパス2の解析時に「変わった型」へ入る
+                old.allKept = false;
             } else {
-                valid.add(block.rel);
+                valid.add(rel);
+                old.add(rel, block.start, end, block.errors, block.syntaxErrors, block.unresolved,
+                        irregularAtEnd != block.irregularAtStart);
+                if (!block.deps.isEmpty()) {
+                    deps.add(rel, block.deps);
+                }
             }
             return 0;
         }
+        old.allKept = false;
         for (String row : block.typeRows) {
             TypeFact t = TypeFact.fromRow(CacheFormat.columnsOf(row));
             if (t != null) {
@@ -1008,14 +1236,148 @@ public final class CacheUpdater {
     }
 
     /**
+     * パス1 が書き、パス3 が読む依存の索引（一時ファイル。{@link TempFiles#DEPS}）。1 行に 1 ブロック、
+     * {@code パス 依存}（{@link CacheFormat#joinRow} で符号化）を旧キャッシュのブロックの順に書く。
+     * 最初の行を書くときにファイルを作る（書くものが無ければ作らない）。
+     *
+     * <p>名前は実行ごとに違い（{@link TempFiles#create}）、書くのも読むのも作ったときに開いた 1 つのチャネルで行う
+     * （パス3 の周回ごとに先頭へ戻す。名前で開き直さない）。同じキャッシュのフォルダを使う別の実行が
+     * 残り物として消しても読めるし、前の実行の残り物を読むこともない。書いた行数を数えておき、読んだ行数が
+     * 違えば例外にする（解析は失敗として終わる。依存を読み落として再解析を静かに飛ばすよりよい）。
+     *
+     * <p>書けなかった（ディスクの空きが無い・権限が無い）ときは、索引を捨てて {@link #unwritable} を立てる。
+     * 旧キャッシュは読めているので、キャッシュを捨てたりせず、パス3 は旧キャッシュから I 行を読む
+     * （{@link CacheUpdater#selectDependentsFromCache}）。利用者が対処することではないので {@code Log.info} で知らせる。
+     * {@link #close} で閉じて消す
+     */
+    private static final class DepsIndex implements Closeable {
+        private final Path cacheFile;
+        private Path file;
+        private FileChannel channel;
+        private BufferedWriter out;
+        /** 書いた行の数 */
+        private long lines;
+        /** 書けなかった。パス3 は旧キャッシュから読む */
+        private boolean unwritable;
+
+        DepsIndex(Path cacheFile) {
+            this.cacheFile = cacheFile;
+        }
+
+        /** 1 ブロックの依存を書く。書けなければ索引を捨てる（例外は投げない） */
+        void add(String rel, String deps) {
+            if (unwritable) {
+                return;
+            }
+            try {
+                if (out == null) {
+                    file = TempFiles.create(cacheFile, TempFiles.DEPS);
+                    channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE);
+                    // 閉じない（閉じるとチャネルも閉じる）。書き終えたら flush だけする
+                    out = new BufferedWriter(new OutputStreamWriter(Channels.newOutputStream(channel),
+                            StandardCharsets.UTF_8.newEncoder()));
+                }
+                writeLine(out, CacheFormat.joinRow(rel, deps));
+                lines++;
+            } catch (IOException | RuntimeException e) {
+                giveUp(e);
+            }
+        }
+
+        /** パス1 を読み終えた。溜めた分をファイルへ出す（チャネルは開いたまま。パス3 が読む） */
+        void finishWriting() {
+            if (out == null || unwritable) {
+                return;
+            }
+            try {
+                out.flush();
+            } catch (IOException | RuntimeException e) {
+                giveUp(e);
+            }
+        }
+
+        /** 書けなかった。索引を捨て、以後は書かない（パス3 は旧キャッシュから読む） */
+        private void giveUp(Exception e) {
+            Log.info(Messages.format("analysis.cache.depsIndexUnwritable",
+                    file != null ? file : cacheFile.toAbsolutePath().getParent(), e));
+            unwritable = true;
+            out = null;
+            close();
+        }
+
+        /** 書けたか（false なら、パス3 は旧キャッシュから読む） */
+        boolean usable() {
+            return !unwritable;
+        }
+
+        /**
+         * 書いた行を先頭から順に渡す（パス3 の 1 周ぶん）。1 行も書いていなければ何も渡さない。
+         *
+         * @throws IOException 読めない、または読んだ行数が書いた行数と違う
+         */
+        void forEach(DepsConsumer each) throws IOException {
+            if (channel == null) {
+                if (lines != 0) {
+                    throw new IOException(Messages.format("analysis.cache.depsIndexMismatch", file, lines, 0));
+                }
+                return;
+            }
+            channel.position(0);
+            // 閉じない（閉じるとチャネルも閉じる。次の周回でまた読む）
+            BufferedReader in = new BufferedReader(new InputStreamReader(Channels.newInputStream(channel),
+                    StandardCharsets.UTF_8.newDecoder()));
+            long read = 0;
+            String line;
+            while ((line = in.readLine()) != null) {
+                read++;
+                String[] cols = CacheFormat.columnsOf(line);
+                each.accept(cols[0], CacheFormat.columnAt(cols, 1));
+            }
+            if (read != lines) {
+                throw new IOException(Messages.format("analysis.cache.depsIndexMismatch", file, lines, read));
+            }
+        }
+
+        /** 閉じて消す */
+        @Override
+        public void close() {
+            try {
+                if (channel != null) {
+                    channel.close();
+                }
+            } catch (IOException e) {
+                Log.info(Messages.format("cache.tempNotDeleted", file, e));
+            }
+            channel = null;
+            TempFiles.delete(file);
+        }
+    }
+
+    /** 依存の索引の 1 行（パスと依存）を受け取る */
+    @FunctionalInterface
+    private interface DepsConsumer {
+        void accept(String rel, String deps);
+    }
+
+    /**
      * パス3・パス4。「変わった型」に触れる有効ブロックを再解析に回し、解析し直した結果として
      * 「変わった型」が増えていたら（定数の連鎖。{@link CacheUpdater} のクラスコメント参照）もう一周する。
      *
      * ふつうは1周で止まる。周回が続くのは、定数を宣言しているファイルが数珠つなぎになっている
      * ときだけ。1周ごとに valid は減るだけで増えないので、必ず止まる。
+     *
+     * <p>パス3 は、パス1 が書いた依存の索引を先頭から読み、まだ有効なブロックのうち「変わった型」または
+     * 「変わった jar のパッケージ」に触れるものを valid から外し、再解析の一覧に積む（旧キャッシュのブロックの順）。
+     * 索引に無いブロックは依存が無い（どの型にも触れない）。旧キャッシュは読み直さない（索引を書けなかったときだけ
+     * 読む。{@link #selectDependentsFromCache}）。ここでは何も書き出さない。書き写しは、連鎖が止まってから
+     * {@link #copyValidBlocks} で行う。
+     *
+     * @param deps 依存の索引
+     * @param old  パス1 で覚えたブロックの位置（索引を書けなかったときに、旧キャッシュから I 行を読むのに使う）
      */
     private void reanalyzeDependents(CallEdgeExtractor extractor, BlockWriter writer,
-                                     Map<String, SourceFile> live, Set<String> valid, StaleTypes stale)
+                                     Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
+                                     DepsIndex deps, OldCache old)
             throws IOException {
         if (stale.isEmpty()) {
             return;   // 触れる先が無いので、読み直すだけ無駄
@@ -1025,7 +1387,24 @@ public final class CacheUpdater {
             mark = stale.mark();
             List<String> dependents = new ArrayList<>();
             List<String> libraryDependents = new ArrayList<>();
-            selectDependents(valid, stale, dependents, libraryDependents);
+            DepsConsumer select = (rel, depsCsv) -> {
+                if (!valid.contains(rel)) {
+                    return;   // すでに再解析に回した
+                }
+                Reason touched = stale.touches(depsCsv);
+                if (touched == Reason.BY_SOURCE) {
+                    valid.remove(rel);
+                    dependents.add(rel);
+                } else if (touched == Reason.BY_LIBRARY) {
+                    valid.remove(rel);
+                    libraryDependents.add(rel);
+                }
+            };
+            if (deps.usable()) {
+                deps.forEach(select);
+            } else {
+                selectDependentsFromCache(old, select);
+            }
             writer.countAs = Reason.BY_SOURCE;
             analyzeInBatches(extractor, filesOf(dependents, live), writer);
             writer.countAs = Reason.BY_LIBRARY;
@@ -1034,79 +1413,124 @@ public final class CacheUpdater {
     }
 
     /**
-     * パス3。旧キャッシュを1行ずつ読み、有効なブロックのうち「変わった型」または
-     * 「変わった jar のパッケージ」に触れるものを valid から外し、再解析の一覧に積む。
+     * パス3 で依存の索引が使えない（書けなかった）ときの代わり。旧キャッシュを読み、パス1 で書き写す候補にした
+     * ブロック（{@code old} に覚えた F 行の位置）の I 行を、索引に書くはずだったのと同じ順に渡す
+     * （索引を使う前の読み方。ブロックの位置で照らすので、同じパスのブロックが 2 つある壊れたキャッシュでも
+     * 索引と同じものを読む）。
      *
-     * 依存はブロック先頭のI行で判定する（F行の直後に置いてあるので、先読みは1行で済む）。
-     * ここでは何も書き出さない。書き写しは、連鎖が止まってから {@link #copyValidBlocks} で行う。
+     * @throws IOException 読めない、または覚えた位置に F 行が無い（実行の途中で旧キャッシュが書き換えられた）
      */
-    private void selectDependents(Set<String> valid, StaleTypes stale,
-                                  List<String> dependents, List<String> libraryDependents)
-            throws IOException {
-        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
-            String pendingRel = null;   // 依存の判定待ちのファイル
+    private void selectDependentsFromCache(OldCache old, DepsConsumer select) throws IOException {
+        if (old.size == 0) {
+            return;
+        }
+        int k = 0;
+        String pending = null;   // F 行を読んだ、依存の判定待ちのブロック
+        try (CacheReader in = CacheReader.openAt(config.cacheFile, old.starts[0])) {
             while (in.next()) {
                 char rowType = in.rowType();
-                if (rowType == CacheFormat.ROW_FILE) {
-                    String[] f = in.columns();
-                    pendingRel = (f.length >= 2 && valid.contains(f[1])) ? f[1] : null;
-                    continue;
+                boolean blockStart = rowType == CacheFormat.ROW_FILE || rowType == CacheFormat.ROW_END;
+                if (pending != null) {
+                    // F 行の直後。I 行なら依存、無ければ依存なし（パス1 と同じ見方）
+                    select.accept(pending, (!blockStart && rowType == CacheFormat.ROW_DEPENDENCIES)
+                            ? in.column(1) : "");
+                    pending = null;
                 }
-                if (pendingRel == null) {
-                    continue;
+                if (k == old.size) {
+                    break;
                 }
-                // F行の直後。I行なら依存を判定し、無ければ依存なしとみなす
-                String deps = (rowType == CacheFormat.ROW_DEPENDENCIES) ? in.column(1) : "";
-                Reason touched = stale.touches(deps);
-                if (touched == Reason.BY_SOURCE) {
-                    valid.remove(pendingRel);
-                    dependents.add(pendingRel);
-                } else if (touched == Reason.BY_LIBRARY) {
-                    valid.remove(pendingRel);
-                    libraryDependents.add(pendingRel);
+                if (rowType == CacheFormat.ROW_FILE && in.lineStart() == old.starts[k]) {
+                    pending = old.paths[k++];
                 }
-                pendingRel = null;
             }
+        }
+        if (pending != null) {
+            select.accept(pending, "");
+        }
+        if (k != old.size) {
+            // 依存を読み落としたまま進めると、解析し直すべきファイルを静かに再利用してしまう
+            throw new IOException(Messages.format("analysis.cache.changedWhileReading", config.cacheFile));
         }
     }
 
     /**
-     * パス5。旧キャッシュを1行ずつ読み、最後まで有効だったブロックをそのまま新キャッシュへ書き写す。
+     * パス5。最後まで有効だったブロックを、旧キャッシュでの順のまま新キャッシュへ書き写す。
      *
      * F 行も含めてそのまま書き写す。F 行の中身（パス・サイズ・内容ハッシュ・検査値）は、有効だと
      * 判定した時点で今のファイルと一致しているので、書き直す必要がない。
-     * L 行はブロックの外（先頭）にあり、ここでは書き写さない（パス0で新しいものを書いている）。
+     * L 行はブロックの外（先頭）にあり、ここでは書き写さない（新しいものを先頭に書いている）。
+     *
+     * <p>パス1 で覚えたブロックの範囲を、行に戻さずバイトのまま写す（{@link FileChannel#transferTo}。
+     * 隣り合うブロックはまとめて 1 回で写す）。書き手の書くとおりの形でないブロック（空行・CRLF を含む。
+     * 手で直した・改行を変換したキャッシュ）だけは行に戻し、{@code '\n'} で書き直す（行として読んで
+     * 書き直していたときと同じバイト列にするため）。
      *
      * 書き写したブロックの数を {@code result.reused} に、そこに含まれる型解決できなかった
      * 呼び出しの件数（F 行の未解決数）を {@code result.unresolved} に足す。数は最終行
      * （{@link CacheFormat#trailerFor}）にも出すので、valid の件数ではなく実際に書いた数を数える。
      */
-    private void copyValidBlocks(Set<String> valid, BufferedWriter cacheOut, CachePhaseResult result)
+    private void copyValidBlocks(OldCache old, Set<String> valid, FileChannel out, BufferedWriter cacheOut,
+                                 CachePhaseResult result) throws IOException {
+        try (FileChannel in = FileChannel.open(config.cacheFile, StandardOpenOption.READ)) {
+            long pendingStart = -1;   // まだ写していない、隣り合うブロックをまとめた範囲
+            long pendingEnd = -1;
+            for (int i = 0; i < old.size; i++) {
+                String rel = old.paths[i];
+                if (!valid.contains(rel)) {
+                    continue;   // パス3 で解析し直した
+                }
+                result.reused++;
+                // 前の実行でエラーだったファイルは、書き写した今回もエラーのままである。
+                // ここで数えないと、2回目以降の実行で警告が消えてしまう
+                result.countErrors(rel, old.errors[i], old.syntaxErrors[i]);
+                result.unresolved += old.unresolved[i];
+                if (old.irregular.get(i)) {
+                    transfer(in, pendingStart, pendingEnd, out, cacheOut);
+                    pendingStart = -1;
+                    pendingEnd = -1;
+                    rewriteLines(old.starts[i], old.ends[i], cacheOut);
+                } else if (pendingEnd == old.starts[i]) {
+                    pendingEnd = old.ends[i];
+                } else {
+                    transfer(in, pendingStart, pendingEnd, out, cacheOut);
+                    pendingStart = old.starts[i];
+                    pendingEnd = old.ends[i];
+                }
+            }
+            transfer(in, pendingStart, pendingEnd, out, cacheOut);
+        }
+    }
+
+    /**
+     * 旧キャッシュの {@code [start, end)} を新キャッシュの今の位置へバイトのまま写す（{@code start < 0} なら何もしない）。
+     * それまでに {@code cacheOut} へ書いた行を先に吐き出してから写す（同じファイルの続きに並ぶように）
+     */
+    private void transfer(FileChannel in, long start, long end, FileChannel out, BufferedWriter cacheOut)
             throws IOException {
-        try (CacheReader in = CacheReader.open(config.cacheFile)) {   // ヘッダはパス0で検証済み
-            boolean keeping = false;
-            while (in.next()) {
-                char rowType = in.rowType();
-                if (rowType == CacheFormat.ROW_FILE) {
-                    String[] f = in.columns();
-                    keeping = (f.length >= 2 && valid.contains(f[1]));
-                    if (keeping) {
-                        writeLine(cacheOut, in.line());
-                        result.reused++;
-                        // 前の実行でエラーだったファイルは、書き写した今回もエラーのままである。
-                        // ここで数えないと、2回目以降の実行で警告が消えてしまう
-                        result.countErrors(f[1], CacheFormat.errorsOf(f), CacheFormat.syntaxErrorsOf(f));
-                        result.unresolved += CacheFormat.unresolvedOf(f);
-                    }
-                    continue;
-                }
-                if (rowType == CacheFormat.ROW_END) {
-                    keeping = false;   // 旧キャッシュの最終行。新しいものを書き終わりに1行だけ書く
-                    continue;
-                }
-                if (keeping) {
-                    writeLine(cacheOut, in.line());
-                }
+        if (start < 0 || end <= start) {
+            return;
+        }
+        cacheOut.flush();
+        long at = out.position();
+        long done = 0;
+        long count = end - start;
+        while (done < count) {
+            long n = in.transferTo(start + done, count - done, out);
+            if (n <= 0) {
+                // パス1 で読んだ範囲が読めない（実行の途中で旧キャッシュが書き換えられた）
+                throw new EOFException(config.cacheFile + " @" + (start + done));
+            }
+            done += n;
+            // 書いた先の位置を明示しておく（続きの行の書き出しと次の転送が、写した範囲の直後から始まるように）
+            out.position(at + done);
+        }
+    }
+
+    /** 旧キャッシュの {@code [start, end)} を行に戻し、空行を除いて {@code '\n'} で書き直す */
+    private void rewriteLines(long start, long end, BufferedWriter cacheOut) throws IOException {
+        try (CacheReader in = CacheReader.openAt(config.cacheFile, start)) {
+            while (in.next() && in.lineStart() < end) {
+                writeLine(cacheOut, in.line());
             }
         }
     }

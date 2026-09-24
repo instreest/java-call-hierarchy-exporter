@@ -1,8 +1,20 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.Closeable;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -24,6 +36,7 @@ import jche.cache.Origin;
 import jche.cache.OverrideFact;
 import jche.cache.ReturnFact;
 import jche.cache.SymbolTable;
+import jche.cache.TempFiles;
 import jche.cache.TypeFact;
 import jche.cache.UnresolvedCallFact;
 import jche.cache.ValueNode;
@@ -36,12 +49,22 @@ import jche.util.RunControl;
 /**
  * キャッシュファイルをスキャンして {@link CallGraph} を構築する。
  * <pre>
- *   1回目 … メソッドをID化し、呼び出し元ごとの本数を数える。
- *           型階層・フィールド注入の判定・戻り値の出所・証拠（X 行）もこの回で済ませる
- *   2回目 … 数えた本数から offsets を作り、実際のエッジを流し込む
+ *   スキャン（1 回）… メソッドを ID 化し、呼び出し元ごとの本数を数える。型階層・フィールド注入の判定・
+ *                    戻り値の出所・証拠（X 行）もこの回で済ませる。エッジ 1 本ごとに、ID と
+ *                    呼び出し箇所の値（出所・条件は共有プールの番号にしたもの）を一時ファイルへ
+ *                    固定長に近いバイナリの記録として書き出す（{@link EdgeSpill}）
+ *   配置         … 数えた本数から offsets とちょうどの長さのエッジ配列を作り、一時ファイルを
+ *                    先頭から読み直して、各記録を {@code cursor[呼び出し元]++} の位置に置く
  * </pre>
- * どちらもストリーミングなので、キャッシュ全体をヒープに載せない。ヒープに載るのは
- * 1 ブロック分の記号表（S 行）と値グラフ（N 行）だけ。
+ * キャッシュを 2 回スキャンしていた以前の形と、ID の振られ方・エッジの並び（呼び出し元ごとにファイル上の順）・
+ * 共有プールの並びはまったく同じになる（どちらもファイル上の順に処理するため）。
+ * ヒープに載るのは以前と同じで、1 ブロック分の記号表（S 行）と値グラフ（N 行）、ちょうどの長さの
+ * エッジ配列。エッジの一覧をヒープに溜めない代わりに、一時ファイル（エッジ 1 本あたり約 35 バイト）を
+ * 使う。一時ファイルはキャッシュと同じフォルダに作り、終われば（失敗しても）消す。
+ *
+ * <p>型解決に失敗した呼び出しの一覧（{@code call-hierarchy.csv} の末尾。{@code jche.report.UnresolvedReport}）
+ * に出す U 行も、このスキャンで拾って {@link UnresolvedCalls} に渡す（CSV を書く側がキャッシュを
+ * 読み直さなくて済むように。解析サーバーは一覧を書かないので拾わない）。
  *
  * <h2>ブロックの読み方</h2>
  * メソッドを指す列は、ブロックの記号表（S 行）の番号で書かれている（{@link SymbolTable}）。
@@ -71,21 +94,32 @@ public final class CallGraphBuilder {
     private final Path cacheFile;
     /** 値（N・R・J・X 行と呼び出し箇所の値）を読むか（{@code dataflow.enabled}） */
     private final boolean readValues;
+    /** 型解決に失敗した呼び出しの一覧に出す U 行の置き場。拾わないなら null（解析サーバー） */
+    private final UnresolvedCalls unresolved;
 
-    /** 1回目のスキャンで数える、呼び出し元ごとのエッジ数 */
+    /** スキャンで数える、呼び出し元ごとのエッジ数 */
     private final IntArray outDegree = new IntArray(1 << 16);
     private final Map<Integer, List<String>> returnsById = new HashMap<>();
     private final FieldFacts fields = new FieldFacts();
     private long edgeCount;
 
-    /** 2回目のスキャンで、呼び出し元ごとに次に書く位置 */
-    private int[] cursor;
     /** ブロックの外を指す番号に出会ったことを警告したか（1度だけ出す） */
     private boolean warnedAboutReference;
 
-    private CallGraphBuilder(Path cacheFile, boolean readValues) {
+    private CallGraphBuilder(Path cacheFile, boolean readValues, UnresolvedCalls unresolved) {
         this.cacheFile = cacheFile;
         this.readValues = readValues;
+        this.unresolved = unresolved;
+    }
+
+    /**
+     * 型解決に失敗した呼び出しを拾わずに組む（{@link #build(Path, boolean, List, SpringBeans, UnresolvedCalls)}
+     * の最後を null にしたもの）
+     */
+    public static CallGraph build(Path cacheFile, boolean readValues,
+                                 List<String> sourceFolderOrder, SpringBeans beans)
+            throws IOException {
+        return build(cacheFile, readValues, sourceFolderOrder, beans, null);
     }
 
     /**
@@ -93,46 +127,68 @@ public final class CallGraphBuilder {
      *                          読むか。{@code dataflow.enabled=false} なら false
      * @param sourceFolderOrder 起点の並び替えに使うソースフォルダの順（プロジェクトルートからの相対パス）
      * @param beans             DIコンテナのBean定義の取り込み先（使わないなら {@link SpringBeans#DISABLED}）
+     * @param unresolved        型解決に失敗した呼び出しの一覧に出す U 行の置き場。拾わないなら null
      */
     public static CallGraph build(Path cacheFile, boolean readValues,
-                                 List<String> sourceFolderOrder, SpringBeans beans)
+                                 List<String> sourceFolderOrder, SpringBeans beans,
+                                 UnresolvedCalls unresolved)
             throws IOException {
-        CallGraphBuilder b = new CallGraphBuilder(cacheFile, readValues);
+        CallGraphBuilder b = new CallGraphBuilder(cacheFile, readValues, unresolved);
         b.graph.sourceFolderOrder = sourceFolderOrder;
         b.graph.beans = beans;
-        RunControl.progress(Messages.get("graph.progress.build"), 0, 2);
-        b.firstPass();
-        RunControl.checkCancelled();
-        b.allocateEdges();
-        RunControl.progress(Messages.get("graph.progress.build"), 1, 2);
-        b.secondPass();
+        try (EdgeSpill spill = new EdgeSpill(cacheFile)) {
+            b.scan(spill);
+            RunControl.checkCancelled();
+            b.allocateEdges();
+            b.placeEdges(spill);
+        }
         b.graph.finishBuild();
-        RunControl.progress(Messages.get("graph.progress.build"), 2, 2);
         return b.graph;
     }
 
     // ------------------------------------------------------------
-    // 1回目: ID化と本数カウント
+    // スキャン: ID化と本数カウント、エッジの記録を一時ファイルへ
     // ------------------------------------------------------------
 
-    private void firstPass() throws IOException {
+    private void scan(EdgeSpill spill) throws IOException {
+        String label = Messages.get("graph.progress.build");
+        long size = Files.size(cacheFile);
+        // 進捗はブロックの切れ目で、読んだバイト数がおよそ 2% 進むごとに出す（解析サーバーは通知を 1 行ずつ送るため）
+        long step = Math.max(size / 50, 1L << 16);
+        long nextReport = 0;
         try (CacheReader in = CacheReader.open(cacheFile)) {
             String currentFile = null;
             SymbolTable.Reader symbols = new SymbolTable.Reader();
+            BlockNodes nodes = new BlockNodes();
             // ブロックの中で次に読む D 行の位置（ファイルの中の宣言の順番）
             int declOrdinal = 0;
             while (in.next()) {
                 switch (in.rowType()) {
                     case CacheFormat.ROW_FILE -> {
+                        // 中止の受け付けと進捗はブロックの切れ目で（途中で抜けてもキャッシュは読むだけなので壊れない）
+                        RunControl.checkCancelled();
+                        if (in.lineStart() >= nextReport) {
+                            RunControl.progress(label, in.lineStart(), size);
+                            nextReport = in.lineStart() + step;
+                        }
                         // ファイル単位で完結する判定（フィールド注入）を、読み終えた前のブロックについて確定する。
                         // 代入（J行）はブロックの後ろにあるので、宣言（V行・D行）が揃ったこの時点で渡す
                         applyPendingAssigns();
                         fields.flushInto(graph.fieldOrigins);
                         currentFile = in.filePath();
                         symbols.clear();
+                        nodes.clear();
                         declOrdinal = 0;
+                        if (unresolved != null) {
+                            unresolved.beginBlock(currentFile);
+                        }
                     }
                     case CacheFormat.ROW_SYMBOL -> symbols.add(in.columns());
+                    case CacheFormat.ROW_VALUE_NODE -> {
+                        if (readValues) {
+                            nodes.add(ValueNode.fromRow(in.columns()));
+                        }
+                    }
                     case CacheFormat.ROW_RETURN -> {
                         // D 行より前に並ぶので、戻り値のあるメソッドは宣言より先に ID 化される
                         if (readValues && inRange(in.columns(), symbols.array())) {
@@ -172,18 +228,8 @@ public final class CallGraphBuilder {
                             graph.overrides.add(o, methods.intern(o.ref()));
                         }
                     }
-                    case CacheFormat.ROW_CALL -> {
-                        CallEdgeFact c = callOf(in.columns(), symbols.array());
-                        if (c != null) {
-                            countEdge(methods.intern(c.caller()), methods.intern(c.callee()));
-                        }
-                    }
-                    case CacheFormat.ROW_UNRESOLVED -> {
-                        UnresolvedCallFact u = unresolvedOf(in.columns(), symbols.array());
-                        if (u != null && u.hasUsableCandidate()) {
-                            countEdge(methods.intern(u.caller()), internGuessedCallee(u));
-                        }
-                    }
+                    case CacheFormat.ROW_CALL -> addCall(in.columns(), symbols.array(), nodes, spill);
+                    case CacheFormat.ROW_UNRESOLVED -> addUnresolved(in.columns(), symbols.array(), nodes, spill);
                     case CacheFormat.ROW_FIELD_DECL -> {
                         FieldDeclFact v = FieldDeclFact.fromRow(in.columns());
                         if (v != null) {
@@ -208,7 +254,8 @@ public final class CallGraphBuilder {
                         }
                     }
                     case CacheFormat.ROW_HINT -> {
-                        // 証拠は呼び出し元と変数の鍵で集約するだけなので、どのブロックで出会っても同じ結果になる
+                        // 証拠は呼び出し元と変数の鍵で集約するだけなので、どのブロックで出会っても同じ結果になる。
+                        // エッジに結び付けるのは配置のとき（全ブロックの X 行が揃ってから）
                         HintFact h = readValues ? HintFact.fromRow(in.columns()) : null;
                         if (h != null) {
                             graph.hintsByScope.computeIfAbsent(h.callerKey() + "|" + h.scopeKey(),
@@ -216,12 +263,17 @@ public final class CallGraphBuilder {
                         }
                     }
                     default -> {
-                        // I行は差分更新のためだけの行、N行は2回目で読む、A行・K行は今の読み手は使わない
+                        // I行は差分更新のためだけの行、A行・K行は今の読み手は使わない
                     }
                 }
             }
             applyPendingAssigns();
             fields.flushInto(graph.fieldOrigins);
+            RunControl.progress(label, size, size);
+        }
+        spill.finishWriting();
+        if (unresolved != null) {
+            unresolved.finishWriting();
         }
         graph.hierarchy.sortForDeterminism();
         Log.info(Messages.format("graph.collected", graph.hierarchy.size(), methods.size(), edgeCount));
@@ -257,15 +309,12 @@ public final class CallGraphBuilder {
         }
     }
 
-    /**
-     * C 行を読む。記号がブロックの外を指す・列が足りなければ null。
-     * 1 回目と 2 回目で同じ判定をする（食い違うと呼び出し元ごとの本数と書く位置がずれる）
-     */
+    /** C 行を読む。記号がブロックの外を指す・列が足りなければ null */
     private CallEdgeFact callOf(String[] cols, MethodRef[] symbols) {
         return inRange(cols, symbols) ? CallEdgeFact.fromRow(cols, symbols) : null;
     }
 
-    /** U 行を読む。{@link #callOf} と同じく、1 回目と 2 回目で同じ判定をする */
+    /** U 行を読む。{@link #callOf} と同じく、記号がブロックの外を指す・列が足りなければ null */
     private UnresolvedCallFact unresolvedOf(String[] cols, MethodRef[] symbols) {
         return inRange(cols, symbols) ? UnresolvedCallFact.fromRow(cols, symbols) : null;
     }
@@ -302,6 +351,63 @@ public final class CallGraphBuilder {
     }
 
     /**
+     * C 行 1 行をエッジにする。本数を数え、エッジの中身を一時ファイルへ書く。
+     * 出所・条件・修飾する型を共有プールに入れる順（修飾する型 → レシーバ → 実引数 → 条件）は、
+     * キャッシュを 2 回スキャンしていたときの 2 回目と同じ
+     */
+    private void addCall(String[] cols, MethodRef[] symbols, BlockNodes nodes, EdgeSpill spill)
+            throws IOException {
+        CallEdgeFact c = callOf(cols, symbols);
+        if (c == null) {
+            return;
+        }
+        int caller = methods.intern(c.caller());
+        int callee = methods.intern(c.callee());
+        countEdge(caller, callee);
+        CallSiteValues values = valuesOf(cols, nodes);
+        int qualifier = graph.internOrigin(c.qualifier());
+        OriginRenderer renderer = nodes.renderer();
+        int recv = graph.internOrigin(renderer.originOf(values.recv()));
+        int args = graph.internOrigin(renderer.argOriginsOf(values.args()));
+        int guard = graph.internOrigin(values.guard());
+        spill.write(caller, callee, c.callLine(), (byte) BindKind.of(c.callee().name(), c.calleeMods()),
+                (byte) c.recvKind(), qualifier, recv, args, guard, values.recvKey());
+    }
+
+    /**
+     * U 行 1 行を、import からの推定候補があればエッジにする。
+     * 型解決に失敗した呼び出しの一覧に出す行（使える候補が無い行）なら {@link #unresolved} に渡す
+     */
+    private void addUnresolved(String[] cols, MethodRef[] symbols, BlockNodes nodes, EdgeSpill spill)
+            throws IOException {
+        UnresolvedCallFact u = unresolvedOf(cols, symbols);
+        if (u != null && u.hasUsableCandidate()) {
+            int caller = methods.intern(u.caller());
+            int callee = internGuessedCallee(u);
+            countEdge(caller, callee);
+            CallSiteValues values = valuesOf(cols, nodes);
+            OriginRenderer renderer = nodes.renderer();
+            int recv = graph.internOrigin(renderer.originOf(values.recv()));
+            int args = graph.internOrigin(renderer.argOriginsOf(values.args()));
+            int guard = graph.internOrigin(values.guard());
+            spill.write(caller, callee, u.line(), (byte) BindKind.GUESSED, (byte) u.recvKind(),
+                    -1, recv, args, guard, values.recvKey());
+        }
+        if (unresolved != null) {
+            // 一覧には、呼び出し元の記号が壊れていても行を捨てず、呼び出し元不明として出す（OUTSIDE_METHOD の行と同じ）。
+            // グラフの側はその行を警告して使わないので、ここで落とすと黙って消える
+            UnresolvedCallFact r = UnresolvedCallFact.fromRowKeepingUnknownCaller(cols, symbols);
+            // import 推定でエッジになっている行は、call-hierarchy.csv 側に
+            // 「[EXTERNAL] import から型名を推定（未検証）」の注記付きで出ているので、一覧には出さない
+            // （F 行の未解決数と同じ定義。呼び出し元が引けなかった行はエッジになっていないので出す）
+            if (r != null && !r.hasUsableCandidate()) {
+                unresolved.add(r.line(), (r.caller() == null) ? "" : r.caller().key(),
+                        r.expression(), r.reason());
+            }
+        }
+    }
+
+    /**
      * U行の候補（レシーバの単純名と一致する単一型 import）を呼び出し先としてID化する。
      * パッケージ名は FQN の最後のドットまで、とみなす（推定なので厳密ではない）
      */
@@ -335,16 +441,12 @@ public final class CallGraphBuilder {
         graph.edgeHint = new int[edges];
         Arrays.fill(graph.edgeHint, -1);
         graph.recvOriginIds = new int[edges];
-        Arrays.fill(graph.recvOriginIds, -1);
         graph.argOriginIds = new int[edges];
-        Arrays.fill(graph.argOriginIds, -1);
         graph.guardIds = new int[edges];
-        Arrays.fill(graph.guardIds, -1);
         graph.qualifierIds = new int[edges];
-        Arrays.fill(graph.qualifierIds, -1);
 
         // R行（戻り値の出所）をメソッドIDの配列に移す。
-        // 1回目のスキャンで全メソッドがID化されているのでここで確定できる。
+        // スキャンで全メソッドがID化されているのでここで確定できる。
         // 追跡できない return（U）も含めて持ち、「1つでも不明なら不定」の判定は
         // DataflowResolver.factoryReturnOrigin() が行う
         graph.returnOrigins = new String[n][];
@@ -356,71 +458,132 @@ public final class CallGraphBuilder {
         }
         // @Bean メソッドが登録する型は、R行（戻り値の出所）が揃って初めて決まる
         graph.beans.resolveBeanMethods(graph);
-
-        cursor = Arrays.copyOf(graph.offsets, n == 0 ? 0 : n);
     }
 
     // ------------------------------------------------------------
-    // 2回目: エッジを流し込む
+    // 配置: 一時ファイルのエッジを CSR の位置に置く
     // ------------------------------------------------------------
 
-    private void secondPass() throws IOException {
-        try (CacheReader in = CacheReader.open(cacheFile)) {
-            SymbolTable.Reader symbols = new SymbolTable.Reader();
-            BlockNodes nodes = new BlockNodes();
-            while (in.next()) {
-                switch (in.rowType()) {
-                    case CacheFormat.ROW_FILE -> {
-                        symbols.clear();
-                        nodes.clear();
-                    }
-                    case CacheFormat.ROW_SYMBOL -> symbols.add(in.columns());
-                    case CacheFormat.ROW_VALUE_NODE -> {
-                        if (readValues) {
-                            nodes.add(ValueNode.fromRow(in.columns()));
-                        }
-                    }
-                    case CacheFormat.ROW_CALL -> addCall(in.columns(), symbols.array(), nodes);
-                    case CacheFormat.ROW_UNRESOLVED -> addUnresolved(in.columns(), symbols.array(), nodes);
-                    default -> {
-                        // ほかの行は1回目で読み終えている
-                    }
+    /**
+     * 一時ファイルの記録を先頭から読み、{@code cursor[呼び出し元]++} の位置に置く。
+     * 記録はキャッシュ上の順に並んでいるので、呼び出し元ごとのエッジの並びはファイル上の順になる。
+     * 証拠（X 行）はキャッシュ全体から集め終えているので、ここで引き当てる
+     */
+    private void placeEdges(EdgeSpill spill) throws IOException {
+        int n = methods.size();
+        int[] cursor = Arrays.copyOf(graph.offsets, n);
+        int edges = (int) edgeCount;
+        try (DataInputStream in = spill.reader()) {
+            for (int placed = 0; placed < edges; placed++) {
+                if ((placed & 0xFFFF) == 0) {
+                    RunControl.checkCancelled();
+                }
+                int caller = in.readInt();
+                int pos = cursor[caller]++;
+                graph.calleeIds[pos] = in.readInt();
+                graph.callLines[pos] = in.readInt();
+                graph.bindKinds[pos] = in.readByte();
+                graph.recvKinds[pos] = in.readByte();
+                graph.qualifierIds[pos] = in.readInt();
+                graph.recvOriginIds[pos] = in.readInt();
+                graph.argOriginIds[pos] = in.readInt();
+                graph.guardIds[pos] = in.readInt();
+                String recvKey = EdgeSpill.readString(in);
+                if (!recvKey.isEmpty()) {
+                    graph.setHint(pos, methods.key(caller), recvKey);
                 }
             }
+            if (in.read() >= 0) {
+                // 数えた本数と書いた記録の数が食い違う（書き手の誤り）。黙って配列の外にずれないよう止める
+                throw new IOException(Messages.format("graph.spillMismatch", edges));
+            }
+        } catch (EOFException e) {
+            throw new IOException(Messages.format("graph.spillMismatch", edges), e);
         }
     }
 
-    /** C 行 1 行をエッジにする */
-    private void addCall(String[] cols, MethodRef[] symbols, BlockNodes nodes) {
-        CallEdgeFact c = callOf(cols, symbols);
-        if (c == null) {
-            return;
-        }
-        CallSiteValues values = valuesOf(cols, nodes);
-        int pos = cursor[methods.intern(c.caller())]++;
-        graph.calleeIds[pos] = methods.intern(c.callee());
-        graph.callLines[pos] = c.callLine();
-        graph.bindKinds[pos] = (byte) BindKind.of(c.callee().name(), c.calleeMods());
-        graph.setQualifier(pos, c.qualifier());
-        OriginRenderer renderer = nodes.renderer();
-        graph.fillCallSite(pos, c.caller().key(), values.recvKey(), c.recvKind(),
-                renderer.originOf(values.recv()), renderer.argOriginsOf(values.args()), values.guard());
-    }
+    /**
+     * エッジの記録を置く一時ファイル（キャッシュと同じフォルダ。{@link TempFiles}）。
+     *
+     * <p>1 本の記録は、呼び出し元・呼び出し先の ID、行、束縛の種別、レシーバの由来、修飾する型・
+     * レシーバの出所・実引数の出所・条件の共有プールの番号（無ければ -1）と、レシーバの識別キー
+     * （証拠を引く鍵。長さ付きの UTF-8。無ければ長さ 0）。識別キーだけは文字列のまま書く。
+     * 番号にするとその表をヒープに持つことになるため（証拠は配置のときに引く）。
+     *
+     * <p>最初の記録を書くときにファイルを作る（エッジが 1 本も無ければ作らない）。書くのも読むのも
+     * 作ったときに開いた 1 つのチャネルで行い、名前で開き直さない（別の実行が残り物として消しても読める）。
+     * {@link #close} で閉じて消す
+     */
+    private static final class EdgeSpill implements Closeable {
 
-    /** U 行 1 行を、import からの推定候補があればエッジにする */
-    private void addUnresolved(String[] cols, MethodRef[] symbols, BlockNodes nodes) {
-        UnresolvedCallFact u = unresolvedOf(cols, symbols);
-        if (u == null || !u.hasUsableCandidate()) {
-            return;
+        private final Path cacheFile;
+        private Path file;
+        private FileChannel channel;
+        private DataOutputStream out;
+
+        EdgeSpill(Path cacheFile) {
+            this.cacheFile = cacheFile;
         }
-        CallSiteValues values = valuesOf(cols, nodes);
-        int pos = cursor[methods.intern(u.caller())]++;
-        graph.calleeIds[pos] = internGuessedCallee(u);
-        graph.callLines[pos] = u.line();
-        graph.bindKinds[pos] = (byte) BindKind.GUESSED;
-        OriginRenderer renderer = nodes.renderer();
-        graph.fillCallSite(pos, u.caller().key(), values.recvKey(), u.recvKind(),
-                renderer.originOf(values.recv()), renderer.argOriginsOf(values.args()), values.guard());
+
+        void write(int caller, int callee, int line, byte bindKind, byte recvKind,
+                   int qualifier, int recvOrigin, int argOrigins, int guard, String recvKey)
+                throws IOException {
+            if (out == null) {
+                file = TempFiles.create(cacheFile, TempFiles.EDGES);
+                channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE);
+                out = new DataOutputStream(new BufferedOutputStream(Channels.newOutputStream(channel), 1 << 16));
+            }
+            out.writeInt(caller);
+            out.writeInt(callee);
+            out.writeInt(line);
+            out.writeByte(bindKind);
+            out.writeByte(recvKind);
+            out.writeInt(qualifier);
+            out.writeInt(recvOrigin);
+            out.writeInt(argOrigins);
+            out.writeInt(guard);
+            byte[] key = recvKey.getBytes(StandardCharsets.UTF_8);
+            out.writeInt(key.length);
+            out.write(key);
+        }
+
+        /** 書き終えた（読み直す前に、溜めた分をファイルへ出す。チャネルは開いたまま） */
+        void finishWriting() throws IOException {
+            if (out != null) {
+                out.flush();
+            }
+        }
+
+        /** 書いた記録を先頭から読む。1 本も書いていなければ空。閉じるとチャネルも閉じる */
+        DataInputStream reader() throws IOException {
+            if (channel == null) {
+                return new DataInputStream(InputStream.nullInputStream());
+            }
+            channel.position(0);
+            return new DataInputStream(new BufferedInputStream(Channels.newInputStream(channel), 1 << 16));
+        }
+
+        static String readString(DataInputStream in) throws IOException {
+            int length = in.readInt();
+            if (length == 0) {
+                return "";
+            }
+            byte[] bytes = new byte[length];
+            in.readFully(bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public void close() {
+            try {
+                if (channel != null) {
+                    channel.close();
+                }
+            } catch (IOException e) {
+                Log.info(Messages.format("cache.tempNotDeleted", file, e));
+            }
+            TempFiles.delete(file);
+        }
     }
 
     /**

@@ -66,6 +66,21 @@ analyze() {   # $1=フォルダ名 -> 出力フォルダを OUT に、終了コ�
         jche.CallHierarchyExporter config.properties ) > "work/$1.console.log" 2>&1
     STATUS=$?
     OUT=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    check_no_temp_files "$1"
+}
+
+# 実行のあとに、キャッシュのフォルダに一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行。
+# jche.cache.TempFiles）が残らないこと。型解決に失敗した呼び出しの行は、そういう呼び出しがある実行でだけ作るので、
+# ここ（依存 jar の不足・コンパイルエラーのケースがある）で見る。キャッシュ本体の一時ファイル
+# （analysis-cache.tsv.tmp）は中断からの引き継ぎに使うので、失敗した実行では残ってよい
+check_no_temp_files() {   # $1=フォルダ名
+    local left
+    left=$(find "work/$1/.cache" -name '*.tmp' ! -name 'analysis-cache.tsv.tmp' 2>/dev/null)
+    if [ -z "$left" ]; then
+        ok "$1: キャッシュのフォルダに一時ファイルが残らない"
+    else
+        ng "$1: キャッシュのフォルダに一時ファイルが残っている: $left"
+    fi
 }
 
 # warnings.txt がある ⇔ run.log に [WARN] / [ERROR] がある

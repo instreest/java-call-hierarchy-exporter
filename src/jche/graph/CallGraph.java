@@ -19,7 +19,7 @@ import jche.extension.Hint;
  * その範囲の calleeIds[] / callLines[] が各エッジの内容。
  * エッジ1本あたり int 2個で済むため、オブジェクトで持つ場合に比べ桁違いに省メモリ。
  *
- * 構築は {@link CallGraphBuilder}（キャッシュを2回スキャン）。
+ * 構築は {@link CallGraphBuilder}（キャッシュを 1 回スキャンし、エッジは一時ファイルを経て置く）。
  * 解決は {@link CallResolver} と {@link DataflowResolver} が、このクラスの事実を読んで行う。
  * 現在の出力は下流（呼び出し先）のみ使うため、逆引きCSRは構築していない。
  */
@@ -222,11 +222,6 @@ public final class CallGraph {
     public String qualifierOf(int edgeIndex) {
         int i = qualifierIds[edgeIndex];
         return (i < 0) ? null : originPool.get(i);
-    }
-
-    /** 構築時: エッジの修飾する型を記録する（空なら何もしない） */
-    void setQualifier(int pos, String qualifier) {
-        qualifierIds[pos] = internOrigin(qualifier);
     }
 
     /** エッジに結び付いた証拠。無ければ空 */
@@ -452,8 +447,11 @@ public final class CallGraph {
 
     // --- 構築時にだけ使う ---
 
-    /** 出所・条件の文字列を共有プールに入れてインデックスを返す。空なら -1 */
-    private int internOrigin(String origin) {
+    /**
+     * 構築時: 出所・条件・修飾する型の文字列を共有プールに入れてインデックスを返す。空なら -1。
+     * エッジの配列はまだ無い（{@link CallGraphBuilder} はスキャンで番号にしておき、配置のときに置く）
+     */
+    int internOrigin(String origin) {
         if (origin == null || origin.isEmpty()) {
             return -1;
         }
@@ -467,26 +465,22 @@ public final class CallGraph {
         return id;
     }
 
-    /** エッジのレシーバ由来・証拠・出所を書き込む（C行とU行で共通） */
-    void fillCallSite(int pos, String callerKey, String recvKey, char recvKind,
-                      String recvOrigin, String argOrigins, String guard) {
-        recvKinds[pos] = (byte) recvKind;
-        // 呼び出し箇所（呼び出し元メソッド＋レシーバ）に紐づく証拠を引き当てる
-        if (!recvKey.isEmpty()) {
-            List<Hint> hints = hintsByScope.get(callerKey + "|" + recvKey);
-            if (hints != null && !hints.isEmpty()) {
-                Integer index = hintIndex.get(hints);
-                if (index == null) {
-                    hintTable.add(hints);
-                    index = hintTable.size() - 1;
-                    hintIndex.put(hints, index);
-                }
-                edgeHint[pos] = index;
-            }
+    /**
+     * 構築時: 呼び出し箇所（呼び出し元メソッド＋レシーバの識別キー）に紐づく証拠をエッジに引き当てる。
+     * 証拠（X 行）はキャッシュ全体から集め終えてから引く（どのブロックの X 行でも同じ鍵に集約されるため）
+     */
+    void setHint(int pos, String callerKey, String recvKey) {
+        List<Hint> hints = hintsByScope.get(callerKey + "|" + recvKey);
+        if (hints == null || hints.isEmpty()) {
+            return;
         }
-        recvOriginIds[pos] = internOrigin(recvOrigin);
-        argOriginIds[pos] = internOrigin(argOrigins);
-        guardIds[pos] = internOrigin(guard);
+        Integer index = hintIndex.get(hints);
+        if (index == null) {
+            hintTable.add(hints);
+            index = hintTable.size() - 1;
+            hintIndex.put(hints, index);
+        }
+        edgeHint[pos] = index;
     }
 
     /** 構築が終わったら、構築時にしか使わない索引を捨てる（エッジからは hintTable 経由で引ける） */

@@ -467,7 +467,11 @@ final class MessagesJa {
             "analysis.cache.damagedBlocks", "[cache] キャッシュの {0} ブロックが検査値と合わないため再利用しません（それらのファイルは解析し直します）",
             "analysis.cache.legacyDeleted", "[cache] 以前の版が残した {0} を消しました（キャッシュは 1 ファイルになりました）",
             "analysis.cache.legacyNotDeleted", "[cache] 以前の版が残した {0} を消せません（もう使わないので手で消して構いません）: {1}",
+            "analysis.cache.unchanged", "[cache] 何も変わっていないため、キャッシュはそのまま使います",
             "analysis.cache.valuesMismatch", "キャッシュの書き出しで内部エラー: {0} の呼び出し箇所は {1} 件なのに、呼び出し箇所の値は {2} 件です",
+            "analysis.cache.depsIndexUnwritable", "[cache] 依存の索引（一時ファイル {0}）を書けないため、依存は既存のキャッシュから読みます（結果は変わりません）: {1}",
+            "analysis.cache.depsIndexMismatch", "キャッシュの更新で内部エラー: 依存の索引（一時ファイル）{0} の行が、書いた {1} 行ではなく {2} 行です",
+            "analysis.cache.changedWhileReading", "キャッシュの更新で内部エラー: 読んでいる途中で {0} が書き換えられました（別の実行が同じキャッシュのフォルダを使っているかもしれません）",
             "analysis.conditionsFileFailed", "解析に失敗しました: {0} ({1})",
             "analysis.batchFailed", "一括解析に失敗したため、残り {0} 件は1ファイルずつ解析します ({1})",
             "analysis.libraryDiff", "追加={0} 変更={1} 削除={2} 並び替え={3}（影響するパッケージ {4} 件）",
@@ -481,6 +485,7 @@ final class MessagesJa {
             "graph.progress.inbound", "呼び出し元の索引",
             "graph.collected", "収集: 型 {0} / メソッド {1} / エッジ {2}",
             "graph.tooManyEdges", "エッジ数が多すぎます: {0}",
+            "graph.spillMismatch", "グラフの構築で内部エラー: 一時ファイルのエッジが、数えた {0} 本と一致しません",
             "graph.provider.failed", "candidate provider 失敗: {0} ({1})",
             "graph.provider.unusable", "拡張が返した候補を使えません: {0}#{1}（{2} / {3}） … この型にも親にもこのメソッドの本体がありません。候補から外します",
             "graph.contracts.unreadable", "契約表を読めません: {0} ({1})。この表は使わずに続けます",
@@ -553,6 +558,8 @@ final class MessagesJa {
     private static String[] cache() {
         return new String[] {
             "cache.badReference", "[cache] キャッシュ {0} にファイルのブロックの外（または読めない行）を指す行があるため、その行（または値）は使いません。キャッシュが書き換えられたか壊れています。キャッシュのフォルダ {1} を消してから実行し直してください",
+            "cache.tempNotDeleted", "[cache] 一時ファイル {0} を消せません（次の実行で消します）: {1}",
+            "cache.tempShuttingDown", "プロセスが終了しようとしているため、{0} に一時ファイルを作れません",
             "cache.dump.usage", "使い方: java -cp <ツールのクラスと JDT の jar> jche.cache.CacheDump <analysis-cache.tsv>   （メソッドの記号を 4 列に戻してキャッシュを出力します）",
         };
     }

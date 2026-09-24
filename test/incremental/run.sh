@@ -23,6 +23,12 @@
 #   8) 以前の形式が残した dataflow-cache.tsv を消すこと
 #   9) 同じ行に並ぶ宣言（1 行に書いたメソッド、同じ行のラムダ）の前後が、ID の振られ方（キャッシュ上の
 #      ブロックの並び）によらず、ファイルの中の宣言の順番になること
+#  10) 何も変わっていなければキャッシュを書き直さないこと（ファイルそのもの＝inode と更新時刻が変わらない）。
+#      書き手の書くとおりの形でない（CRLF に変換された）キャッシュは、再利用しつつ書き直して形を戻すこと
+#  11) どの実行のあとも、キャッシュのフォルダに一時ファイル（*.tmp・*.partial。依存の索引・エッジの記録・
+#      型解決に失敗した呼び出しの行を含む）が残らないこと。前の実行が残したもの（SIGKILL・停電）は、次の実行の
+#      最初に消すこと。強制終了（SIGTERM）のときは JVM の終了フックが消すこと。どちらでも、中断からの引き継ぎに
+#      使うキャッシュ本体の一時ファイル（analysis-cache.tsv.tmp）は消さずに引き継ぐこと
 #   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行。ブロックの中の行が
 #      決まった順に並ぶこと。記号（S 行）とノード（N 行）の番号がブロックの中で 0 から詰まっていて、
 #      参照がブロックに収まること）
@@ -77,6 +83,13 @@ run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し�
     REUSED=$(LC_ALL=C sed -E 's/^[^=]*=([0-9]+).*$/\1/' <<< "$summary")
     PARSED=$(LC_ALL=C sed -E 's/^[^=]*=[0-9]+[^=]*=([0-9]+).*$/\1/' <<< "$summary")
     cp $CACHE "$1"
+    # 実行の中で使う一時ファイル（キャッシュ本体の .tmp・引き継ぎの .partial・依存の索引 *.deps-*.tmp・
+    # エッジの記録 *.edges-*.tmp・型解決に失敗した呼び出しの行 *.unresolved-*.tmp）は、終われば残らない
+    local left
+    left=$(find .cache -name '*.tmp' -o -name '*.partial' 2>/dev/null)
+    if [ -n "$left" ]; then
+        echo "  NG   実行のあとに一時ファイルが残っています: $left"; fail=1
+    fi
 }
 
 # ブロックの中の番号の不変条件。記号（S 行）とノード（N 行）の番号がブロックごとに 0 から詰まっていて、
@@ -323,6 +336,101 @@ if [ -n "${OUT:-}" ] && [ -f "$OUT/methods.csv" ]; then
     fi
 fi
 
+# --- 何も変わっていなければ書き直さない -----------------------------------
+# 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
+# なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。
+# 書き手の書くとおりの形でない（CRLF に変換された）キャッシュは、ブロックを再利用しつつ書き直して形を戻す
+# （ブロックをバイトのまま写さず、行に戻して '\n' で書き直す経路）
+unchanged_case() {
+    echo "== 何も変わっていなければキャッシュを書き直さない =="
+    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    mkdir -p work && cp -r src work/src
+    run base.tsv || return
+    local before after
+    before=$(stat -c %i:%Y "$(ls $CACHE)")
+    sleep 1.1   # 書き直していれば更新時刻が変わるように、秒をまたぐ
+    run inc.tsv || return
+    after=$(stat -c %i:%Y "$(ls $CACHE)")
+    if [ "$before" = "$after" ] && cmp -s base.tsv inc.tsv; then
+        echo "  OK   キャッシュのファイルはそのまま（inode:更新時刻 $after、中身も同じ）"
+    else
+        echo "  NG   何も変わっていないのにキャッシュを書き直しています（$before -> $after）"; fail=1
+    fi
+    if [ "$PARSED" = 0 ] && [ "$REUSED" = "$TOTAL_FILES" ]; then
+        echo "  OK   全件を再利用として数える（再利用=$REUSED）"
+    else
+        echo "  NG   再利用・新規解析の件数が書き直したときと違います（新規解析=$PARSED 再利用=$REUSED / $TOTAL_FILES 件）"; fail=1
+    fi
+    if grep -q -F -- "[cache] Nothing changed" out.log; then
+        echo "  OK   そのまま使うことをログに出す"
+    else
+        echo "  NG   そのまま使うことがログに出ていません"; fail=1
+    fi
+
+    # CRLF に変換されたキャッシュ（git の改行変換を通ったなど）。そのままは残さず、書き直して '\n' に戻す
+    sed -i 's/$/\r/' "$(ls $CACHE)"
+    run crlf.tsv || return
+    if cmp -s base.tsv crlf.tsv && [ "$PARSED" = 0 ] && [ "$REUSED" = "$TOTAL_FILES" ]; then
+        echo "  OK   CRLF のキャッシュは全件再利用し、'\n' で書き直す（元のキャッシュと同じバイト列）"
+    else
+        echo "  NG   CRLF のキャッシュの扱いが期待と違います（新規解析=$PARSED 再利用=$REUSED）"
+        cmp base.tsv crlf.tsv | head -2; fail=1
+    fi
+    if grep -q -F -- "[cache] Nothing changed" out.log; then
+        echo "  NG   CRLF のキャッシュを書き直さずに残しています"; fail=1
+    fi
+    # F 行（ブロックの先頭）だけが CRLF。ブロックの範囲は F 行から始まるので、F 行の CR もそのブロックの形の崩れ
+    # として見ること（前のブロックのものとして数えると、最後のブロックが CR ごとバイトのまま写される）
+    sed -i '/^F\t/s/$/\r/' "$(ls $CACHE)"
+    run crlf.tsv || return
+    if cmp -s base.tsv crlf.tsv && [ "$PARSED" = 0 ]; then
+        echo "  OK   F 行だけ CRLF のキャッシュも '\n' で書き直す（元のキャッシュと同じバイト列）"
+    else
+        echo "  NG   F 行だけ CRLF のキャッシュの扱いが期待と違います（新規解析=$PARSED）"
+        cmp base.tsv crlf.tsv | head -2; fail=1
+    fi
+
+    # CRLF のまま 1 ファイルだけ変える。書き直すブロック（行に戻す経路）とそのまま写すブロックが混ざらないこと、
+    # 全件解析と一致すること
+    sed -i 's/$/\r/' "$(ls $CACHE)"
+    printf '\n// comment only\n' >> work/src/inc/OneLineUser.java
+    run inc.tsv || return
+    local inc_csv=$OUT
+    check_rows inc.tsv "CRLF のキャッシュから差分更新"
+    if grep -q $'\r' inc.tsv; then
+        echo "  NG   CRLF のキャッシュから差分更新 CR が残っています"; fail=1
+    fi
+    rm -rf .cache
+    run full.tsv || return
+    for f in call-hierarchy.csv methods.csv; do
+        if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
+            echo "  OK   CRLF のキャッシュから差分更新 $f（差分更新 == 全件解析）"
+        else
+            echo "  NG   CRLF のキャッシュから差分更新 $f が全件解析と違います"
+            diff --strip-trailing-cr "$inc_csv/$f" "$OUT/$f" | head -10; fail=1
+        fi
+    done
+    if diff -q <(normalized inc.tsv) <(normalized full.tsv) > /dev/null; then
+        echo "  OK   CRLF のキャッシュから差分更新 キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   CRLF のキャッシュから差分更新 キャッシュが全件解析と違います"
+        diff <(normalized inc.tsv) <(normalized full.tsv) | head -10; fail=1
+    fi
+
+    # 1 ファイルだけ変えれば書き直す（そのまま残す判定が効きすぎていないこと）
+    before=$(stat -c %i:%Y "$(ls $CACHE)")
+    sleep 1.1
+    printf '\n// comment only\n' >> work/src/inc/OneLineUser.java
+    run inc.tsv || return
+    after=$(stat -c %i:%Y "$(ls $CACHE)")
+    if [ "$before" != "$after" ] && [ "$PARSED" -ge 1 ]; then
+        echo "  OK   1 ファイル変えれば書き直す（新規解析=$PARSED）"
+    else
+        echo "  NG   1 ファイル変えたのに書き直していません（新規解析=$PARSED、$before -> $after）"; fail=1
+    fi
+    rm -f crlf.tsv
+}
+
 # --- キャッシュを捨てる条件 ---------------------------------------------
 # 事実の作り方が変わった（文字コード）／キャッシュが壊れている場合は、中途半端に再利用すると
 # 呼び出しが静かに欠ける。丸ごと捨てて全件解析し直すこと
@@ -473,6 +581,7 @@ damaged_block_case() {
     fi
 }
 damaged_block_case
+unchanged_case
 
 # --- 以前の形式が残したファイル ------------------------------------------
 # キャッシュが 2 ファイルだった版の dataflow-cache.tsv（と一時ファイル）は、もう読まないので消す。
@@ -616,6 +725,203 @@ salvage_case "中断後にソースが変わったら引き継がない" \
 # 旧形式の行を新しいキャッシュへそのまま書き写してしまう
 salvage_case "一時ファイルの版が古ければ引き継がない" \
     "sed -i '1s/^jche-cache-v[0-9]*/jche-cache-v1/' \$(ls .cache/*/analysis-cache.tsv.tmp)" no
+
+# --- 前の実行が残した一時ファイル ----------------------------------------
+# 終了フックも動かない終わり方（SIGKILL・停電）では、依存の索引・エッジの記録・型解決に失敗した呼び出しの行が
+# キャッシュのフォルダに残る。次の実行の最初に消すこと（GitHub Actions はフォルダを丸ごと保存するので、
+# 残すと保存するキャッシュが無駄に大きくなる）。解析し直せば済み、利用者が対処することではないので
+# warnings.txt は作らない。キャッシュ本体の一時ファイル（analysis-cache.tsv.tmp）は中断からの引き継ぎに
+# 使うので、消さずに引き継ぐこと（ほかの一時ファイルと取り違えて消していないこと）
+LEFTOVERS="analysis-cache.tsv.deps-1.tmp analysis-cache.tsv.edges-1.tmp analysis-cache.tsv.unresolved-2.tmp"
+plant_leftovers() {   # $1=キャッシュのフォルダ
+    local f
+    for f in $LEFTOVERS; do
+        printf 'left by a killed run\n' > "$1/$f"
+    done
+}
+check_leftovers_gone() {   # $1=キャッシュのフォルダ  $2=ラベル
+    local f left=""
+    for f in $LEFTOVERS; do
+        [ -e "$1/$f" ] && left="$left $f"
+    done
+    if [ -z "$left" ]; then
+        echo "  OK   $2 前の実行が残した一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行）を消した"
+    else
+        echo "  NG   $2 前の実行が残した一時ファイルが残っています:$left"; fail=1
+    fi
+    if [ -n "${OUT:-}" ] && [ -f "$OUT/warnings.txt" ]; then
+        echo "  NG   $2 一時ファイルを消しただけで warnings.txt ができています"; head -5 "$OUT/warnings.txt"; fail=1
+    else
+        echo "  OK   $2 warnings.txt は作らない（利用者が対処することではない）"
+    fi
+}
+
+leftover_temp_case() {
+    echo "== 前の実行が残した一時ファイルを消す =="
+    rm -rf work .cache out out.log base.tsv inc.tsv
+    mkdir -p work && cp -r src work/src
+    run base.tsv || return
+    local dir
+    dir=$(dirname "$(ls $CACHE)")
+
+    # 中断した実行が残すキャッシュ本体の一時ファイル（引き継ぐ）と、消すべき一時ファイルを一緒に置く
+    make_partial
+    plant_leftovers "$dir"
+    run inc.tsv || return   # run は、実行のあとに *.tmp が 1 つでも残っていれば NG にする
+    check_leftovers_gone "$dir" "引き継ぎのある実行"
+    if [ "$PARSED" -lt "$TOTAL_FILES" ]; then
+        echo "  OK   analysis-cache.tsv.tmp は消さずに引き継いだ（解析し直したのは $PARSED / $TOTAL_FILES 件）"
+    else
+        echo "  NG   analysis-cache.tsv.tmp を引き継いでいません（$PARSED / $TOTAL_FILES 件を解析し直した）"; fail=1
+    fi
+
+    # 何も変わっていない実行（キャッシュを書き直さずに終わる経路）でも消す
+    plant_leftovers "$dir"
+    run inc.tsv || return
+    check_leftovers_gone "$dir" "何も変わっていない実行"
+    if grep -q -F -- "[cache] Nothing changed" out.log; then
+        echo "  OK   何も変わっていない実行 一時ファイルがあってもキャッシュはそのまま使う"
+    else
+        echo "  NG   何も変わっていない実行 一時ファイルがあるだけでキャッシュを書き直しています"; fail=1
+    fi
+}
+leftover_temp_case
+
+# --- 強制終了（SIGTERM）でも一時ファイルが残らない ---------------------------
+# Ctrl+C・kill・GitHub Actions の中止や時間切れ・IDE が解析サーバーを止めたとき（SIGINT / SIGTERM）は
+# finally が動かない。JVM の終了フック（jche.cache.TempFiles）が、依存の索引・エッジの記録・型解決に失敗した
+# 呼び出しの行を消すこと。キャッシュ本体の一時ファイル（analysis-cache.tsv.tmp）は次の実行が引き継ぐので消さないこと。
+#
+# ログの「Phase 2/3」を待つのではなく、一時ファイルそのものができたのを見てから止める（止めた時点で消すべき
+# ファイルがあったことが確かになる）。10 ミリ秒おきに見る。
+#   フェーズ2・3 … test/demo を初めて解析し、エッジの記録か型解決に失敗した呼び出しの行ができたら止める。
+#                  test/demo は小さく、グラフの構築から出力までが 0.1 秒ほどで終わるので、止める前に終わって
+#                  しまったら、このツール自身のソース（依存 jar なしで読むので型解決に失敗した呼び出しが多く、
+#                  出力に数秒かかる）でやり直す
+#   フェーズ1   … 解析済みの test/demo のファイルを 1 つ変えて解析し、依存の索引とキャッシュ本体の一時ファイルが
+#                  そろったら（パス2 の解析中）止める
+# 止める前に解析が終わってしまったときだけ、理由を出して飛ばす（NG にはしない）
+KW=killwork
+kill_config() {   # $1=解析するプロジェクト（src を持つフォルダ）
+    cat > $KW/kill.properties <<EOF
+project.root=$1
+source.folders=src
+library.folders=
+library.build.tool=none
+source.encoding=UTF-8
+cache.enabled=true
+cache.folder=./cache
+dataflow.enabled=true
+output.encoding=UTF-8
+output.folder=./out
+EOF
+}
+kill_left() {   # 消すべき一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行）
+    find $KW/cache \( -name '*.deps-*.tmp' -o -name '*.edges-*.tmp' -o -name '*.unresolved-*.tmp' \) 2>/dev/null
+}
+seen_graph_temps() {   # フェーズ2・3 の一時ファイル（エッジの記録・型解決に失敗した呼び出しの行）がある
+    [ -n "$(find $KW/cache \( -name '*.edges-*.tmp' -o -name '*.unresolved-*.tmp' \) 2>/dev/null)" ]
+}
+seen_phase1_temps() {   # 依存の索引とキャッシュ本体の一時ファイルがそろっている（パス1 を終えて、パス2 以降にいる）
+    [ -n "$(find $KW/cache -name '*.deps-*.tmp' 2>/dev/null)" ] \
+        && [ -n "$(find $KW/cache -name 'analysis-cache.tsv.tmp' 2>/dev/null)" ]
+}
+# 解析を裏で始め、$1（条件の関数）が成り立ったら SIGTERM を送る。KILL_STATUS に終了コードを入れる
+# （SIGTERM で終われば 143。0 なら止める前に終わった）
+kill_when() {
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter $KW/kill.properties \
+        > $KW/kill.log 2>&1 &
+    local pid=$! i
+    for ((i = 0; i < 12000; i++)); do   # 最大 2 分
+        if "$1"; then
+            kill -TERM "$pid" 2>/dev/null
+            break
+        fi
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.01
+    done
+    wait "$pid"
+    KILL_STATUS=$?
+}
+kill_run_plain() {   # 止めずに最後まで解析する -> KILL_STATUS
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter $KW/kill.properties \
+        > $KW/kill.log 2>&1
+    KILL_STATUS=$?
+}
+check_killed() {   # $1=ラベル。止めたあとに消すべき一時ファイルが残っていないこと
+    local left
+    left=$(kill_left)
+    if [ -z "$left" ]; then
+        echo "  OK   $1 SIGTERM で止めても一時ファイルが残らない（終了フックが消した）"
+    else
+        echo "  NG   $1 SIGTERM で止めたあとに一時ファイルが残っています: $left"; fail=1
+    fi
+}
+
+kill_case() {
+    echo "== 強制終了（SIGTERM）でも一時ファイルが残らない =="
+    local label project killed=""
+    # フェーズ2・3。止める前に終わってしまったら、大きいプロジェクトで 1 回だけやり直す
+    for project in "$ROOT/test/demo" "$ROOT"; do
+        if [ "$project" = "$ROOT" ]; then label="フェーズ2・3（このツールのソース）"; else label="フェーズ2・3（demo）"; fi
+        rm -rf $KW && mkdir -p $KW
+        kill_config "$project"
+        kill_when seen_graph_temps
+        if [ "$KILL_STATUS" = 143 ]; then
+            killed=1
+            check_killed "$label"
+            break
+        elif [ "$KILL_STATUS" = 0 ]; then
+            echo "  --   $label 一時ファイルを見て止める前に解析が終わりました"
+        else
+            echo "  NG   $label 解析が失敗しました（終了コード $KILL_STATUS）"; tail -5 $KW/kill.log; fail=1
+            killed=failed
+            break
+        fi
+    done
+    if [ -z "$killed" ]; then
+        echo "  SKIP フェーズ2・3 どちらのプロジェクトでも止める前に解析が終わったため、終了フックを確かめられませんでした"
+    fi
+
+    # フェーズ1。解析済みのキャッシュがあり、1 ファイル変えた実行を、依存の索引があるあいだに止める
+    label="フェーズ1（demo）"
+    rm -rf $KW && mkdir -p $KW
+    cp -r "$ROOT/test/demo/src" $KW/src
+    kill_config "$PWD/$KW"
+    kill_run_plain
+    if [ "$KILL_STATUS" != 0 ]; then
+        echo "  NG   $label 最初の解析が失敗しました（終了コード $KILL_STATUS）"; tail -5 $KW/kill.log; fail=1; return
+    fi
+    printf '\n// changed\n' >> $KW/src/fx/dao/UserDaoImpl.java
+    kill_when seen_phase1_temps
+    if [ "$KILL_STATUS" = 0 ]; then
+        echo "  SKIP $label 依存の索引を見て止める前に解析が終わったため、終了フックを確かめられませんでした"
+        rm -rf $KW
+        return
+    elif [ "$KILL_STATUS" != 143 ]; then
+        echo "  NG   $label 解析が失敗しました（終了コード $KILL_STATUS）"; tail -5 $KW/kill.log; fail=1; return
+    fi
+    check_killed "$label"
+    # キャッシュ本体の一時ファイルは引き継ぎに使うので、終了フックは消さない。ただし、止める合図が届く前に
+    # フェーズ1 を終えていれば（集計の行がログにある）、一時ファイルは本物のキャッシュに置き換わっている
+    if [ -n "$(find $KW/cache -name 'analysis-cache.tsv.tmp')" ]; then
+        echo "  OK   $label 中断からの引き継ぎに使う analysis-cache.tsv.tmp は消さない"
+    elif LC_ALL=C grep -a -q -E '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' $KW/kill.log; then
+        echo "  --   $label 止める合図が届く前にフェーズ1 を終えていました（analysis-cache.tsv.tmp は本物に置き換わった）"
+    else
+        echo "  NG   $label 終了フックが analysis-cache.tsv.tmp（中断からの引き継ぎに使う）まで消しています"; fail=1
+    fi
+    # 次の実行は引き継いで最後まで進み、何も残さない
+    kill_run_plain
+    if [ "$KILL_STATUS" = 0 ] && [ -z "$(find $KW/cache -name '*.tmp' -o -name '*.partial')" ]; then
+        echo "  OK   $label 次の実行は最後まで進み、一時ファイルを残さない"
+    else
+        echo "  NG   $label 止めたあとの実行が失敗したか、一時ファイルが残っています（終了コード $KILL_STATUS）: $(ls $KW/cache/*/)"
+        fail=1
+    fi
+    rm -rf $KW
+}
+kill_case
 
 # --- 依存 jar の並び順 -------------------------------------------------
 # jar の集合が同じでも、クラスパス上の並びが変われば同名クラスの解決先が変わる（先勝ち）。

@@ -300,6 +300,65 @@ OUT=$( (printf 'ANALYZE\t%s\n' "$CONFIG"; sleep 0.3; printf 'CANCEL\nSHUTDOWN\n'
 grep -qE "^NG${T}cancelled" <<<"$OUT" && ok "CANCEL で中止される" \
     || fail "CANCEL が効いていない（$(grep -m1 -E '^(OK|NG)' <<<"$OUT" | head -c 40)）"
 
+# 中止しても一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行。jche.cache.TempFiles）を残さないこと
+# （サーバーは IDE が開いているあいだ動き続け、同じキャッシュのフォルダを何度も使う）。
+# ここはサーバーが終わってから見る。サーバーが動いたままでの確認は、次のグラフの構築中の CANCEL で行う
+temp_files_in() { find "$1" \( -name '*.deps-*.tmp' -o -name '*.edges-*.tmp' -o -name '*.unresolved-*.tmp' \) 2>/dev/null; }
+LEFT=$(temp_files_in "$WORK/cache2")
+[ -z "$LEFT" ] && ok "中止しても一時ファイルが残らない" || fail "中止したあとに一時ファイルが残っている: $LEFT"
+
+# 上の CANCEL は解析の最初（ソースの読み取り）に届き、一時ファイルはまだ無い。グラフの構築中（エッジの記録＝
+# 一時ファイルがあるあいだ）に届いた中止でも、その一時ファイルを消すこと。グラフの構築の進捗（#P）が 5% を
+# 過ぎたのを見て（エッジの記録ができていることも確かめて）から CANCEL を送る。
+# test/demo はグラフの構築が数十ミリ秒で終わり、CANCEL が構築の後に届いてしまうので、このツール自身のソースを
+# 依存 jar なしで解析する（エッジが 1 万本ほどあり、構築に 0.1 秒以上かかる）。
+# 応答は 1 行ずつ読む（まとめて読むと、構築を終えたしるしのログ行 Collected: を読み飛ばしうる）。
+# ソースの読み取りのあいだはログ行が少なく、読み手は遅れずについていけるので、進捗が届いてから CANCEL を送るまでは短い
+echo "== グラフの構築中の CANCEL も一時ファイルを残さない =="
+mkdir -p "$WORK/self"
+cat > "$WORK/self/c.properties" <<EOF
+project.root=$ROOT
+source.folders=src
+library.folders=
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=$WORK/self/out
+cache.folder=$WORK/self/cache
+EOF
+coproc SRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache3" 2>/dev/null; }
+# サーバーが終わると bash は SRV・SRV_PID を消すので、先に控えておく
+SRV_OUT=${SRV[0]}
+SRV_IN=${SRV[1]}
+SRV_PROC=$SRV_PID
+printf 'ANALYZE\t%s\n' "$WORK/self/c.properties" >&"$SRV_IN"
+SENT=0 SPILL_AT_SEND="" BUILT_BEFORE_NG=0 RESPONSE=""
+while IFS= read -r -t 300 line <&"$SRV_OUT"; do
+    if [ "$SENT" = 0 ] && [[ "$line" == "#P${T}Building the graph${T}"* ]]; then
+        IFS="$T" read -r _ _ DONE TOTAL <<<"$line"
+        [ $((DONE * 20)) -gt "$TOTAL" ] || continue
+        SPILL_AT_SEND=$(find "$WORK/self/cache" -name '*.edges-*.tmp' 2>/dev/null)
+        printf 'CANCEL\n' >&"$SRV_IN"
+        SENT=1
+        continue
+    fi
+    # グラフを組み終えたしるし（CallGraphBuilder の graph.collected）。これが先に来たら、中止は構築の後に届いた
+    [ "$SENT" = 1 ] && [[ "$line" == "#L${T}"*"Collected: "* ]] && BUILT_BEFORE_NG=1
+    case "$line" in OK*|NG*) RESPONSE=$line; break ;; esac
+done
+# サーバーが終わる前に見る（終われば JVM の終了フックも消すので、中止の経路で消したかが分からなくなる）
+LEFT=$(temp_files_in "$WORK/self/cache")
+printf 'SHUTDOWN\n' >&"$SRV_IN" 2>/dev/null
+cat <&"$SRV_OUT" > /dev/null 2>&1
+wait "$SRV_PROC" 2>/dev/null
+grep -qE "^NG${T}cancelled" <<<"$RESPONSE" && ok "CANCEL で中止される" \
+    || fail "CANCEL が効いていない（${RESPONSE:0:40}）"
+[ -n "$SPILL_AT_SEND" ] && ok "CANCEL を送った時点でエッジの記録（一時ファイル）があった" \
+    || fail "CANCEL を送った時点でエッジの記録が無い（グラフの構築中に送れていない）"
+[ "$BUILT_BEFORE_NG" = 0 ] && ok "中止はグラフの構築中に届いた" \
+    || fail "中止がグラフの構築の後に届いた（この検査の前提が崩れている）"
+[ -z "$LEFT" ] && ok "グラフの構築中に中止しても一時ファイルが残らない（サーバーは動いたまま）" \
+    || fail "グラフの構築中に中止したあとに一時ファイルが残っている: $LEFT"
+
 echo "== 知らない要求 =="
 OUT=$(session 'NOSUCHCOMMAND\tx\nSHUTDOWN\n')
 grep -qE "^NG${T}unknown-command" <<<"$OUT" && ok "知らない要求は NG を返して落ちない" || fail "知らない要求の扱いが違う"

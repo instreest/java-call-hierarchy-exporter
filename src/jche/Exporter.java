@@ -21,6 +21,7 @@ import jche.graph.CallResolver;
 import jche.graph.Contracts;
 import jche.graph.DataflowResolver;
 import jche.graph.SpringBeans;
+import jche.graph.UnresolvedCalls;
 import jche.util.HeapWatch;
 import jche.util.Log;
 import jche.util.RunControl;
@@ -45,7 +46,8 @@ public final class Exporter {
     }
 
     /**
-     * フェーズ1・2 を実行し、結果をメモリに返す。CSV は書かない。
+     * フェーズ1・2 を実行し、結果をメモリに返す。CSV は書かない。型解決に失敗した呼び出しの一覧
+     * （{@link AnalysisSnapshot#unresolvedCalls}）は拾わない（解析サーバーはこちら）。
      *
      * <p>進捗の通知と中止は {@link jche.util.RunControl} 経由。呼び出し側が受け口を付けていなければ
      * 何も起きない（CLI はこれ）。中止された場合は {@link jche.util.CancelledException} が飛ぶ。
@@ -54,37 +56,56 @@ public final class Exporter {
      * @return この時点の解析結果
      */
     public static AnalysisSnapshot analyze(Config config) throws Exception {
+        return analyze(config, false);
+    }
+
+    /**
+     * {@link #analyze(Config)} と同じ。{@code collectUnresolved} なら、型解決に失敗した呼び出しの一覧に出す行を
+     * グラフを組むときに拾っておく（CSV を書く CLI。一覧を書く側がキャッシュを読み直さなくて済む）。
+     * 拾った行は一時ファイルにあるので、使い終えたら {@link AnalysisSnapshot#unresolvedCalls} を閉じること
+     * （閉じると一時ファイルが消える）
+     */
+    public static AnalysisSnapshot analyze(Config config, boolean collectUnresolved) throws Exception {
         // ヒープの見張りの登録と解除はフェーズの出入りで持つ。解析サーバーは 1 つの JVM で
         // 解析を何度も走らせるので、解除しないと GC のリスナーが積み上がって二重に数える。
         // try-with-resources にしないのは、handle を本体で使わないため（-Xlint:try が警告する）
         HeapWatch heapWatch = HeapWatch.start();
         try {
-            return analyzePhases(config);
+            return analyzePhases(config, collectUnresolved);
         } finally {
             heapWatch.close();
         }
     }
 
-    private static AnalysisSnapshot analyzePhases(Config config) throws Exception {
+    private static AnalysisSnapshot analyzePhases(Config config, boolean collectUnresolved) throws Exception {
         ProjectLayout layout = new ProjectLayout(config);
         logAnalysisSettings(config, layout);
 
         int syntaxErrorFiles = analyzeSources(config, layout);
 
-        CallGraph graph = buildGraph(config, layout);
-        Log.info(Messages.format("exporter.graphCounts", graph.typeCount(), graph.methodCount(),
-                graph.edgeCount()));
-        DataflowFacts facts = buildDataflowFacts(config, graph);
-        DataflowResolver dataflow =
-                new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
-        // 契約表の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
-        RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 0, 1);
-        Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
-        CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
-                contracts.callbacks(), contracts.entries(), contracts.types());
-        RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
-        Log.heap(Messages.get("exporter.heap.phase2"));
-        return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles);
+        UnresolvedCalls unresolved = collectUnresolved ? new UnresolvedCalls(config.cacheFile) : null;
+        try {
+            CallGraph graph = buildGraph(config, layout, unresolved);
+            Log.info(Messages.format("exporter.graphCounts", graph.typeCount(), graph.methodCount(),
+                    graph.edgeCount()));
+            DataflowFacts facts = buildDataflowFacts(config, graph);
+            DataflowResolver dataflow =
+                    new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
+            // 契約表の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
+            RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 0, 1);
+            Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
+            CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
+                    contracts.callbacks(), contracts.entries(), contracts.types());
+            RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
+            Log.heap(Messages.get("exporter.heap.phase2"));
+            return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles, unresolved);
+        } catch (Exception | Error e) {
+            // 結果を返せなかった。拾った行の一時ファイルは受け取る側がいないので、ここで消す
+            if (unresolved != null) {
+                unresolved.close();
+            }
+            throw e;
+        }
     }
 
     private static void logAnalysisSettings(Config config, ProjectLayout layout) {
@@ -212,8 +233,13 @@ public final class Exporter {
                 String.join(Messages.get("exporter.reanalysis.sep"), parts));
     }
 
-    /** フェーズ2: キャッシュを2回スキャンしてCSRグラフを構築 */
-    private static CallGraph buildGraph(Config config, ProjectLayout layout) throws Exception {
+    /**
+     * フェーズ2: キャッシュを 1 回スキャンして CSR グラフを構築する
+     *
+     * @param unresolved 型解決に失敗した呼び出しの一覧に出す行を拾う先。拾わないなら null
+     */
+    private static CallGraph buildGraph(Config config, ProjectLayout layout, UnresolvedCalls unresolved)
+            throws Exception {
         Log.blank();
         Log.info(Messages.get("exporter.phase2"));
         List<String> sourceFolderOrder = new ArrayList<>();
@@ -224,7 +250,7 @@ public final class Exporter {
         // dataflow.enabled=false のときは値（値グラフ・戻り値・代入・証拠・呼び出し箇所の値）を読まない
         // （具象クラスの解決は CHA まで、条件分岐の打ち切りは起きない）
         CallGraph graph = CallGraphBuilder.build(config.cacheFile, config.dataflowEnabled,
-                sourceFolderOrder, beans);
+                sourceFolderOrder, beans, unresolved);
         if (beans.enabled()) {
             Log.info(Messages.format("exporter.diBeans", beans.beanCount(),
                     (beans.beanCount() == 0) ? Messages.get("exporter.diBeans.none") : ""));

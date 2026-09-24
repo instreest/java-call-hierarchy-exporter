@@ -74,7 +74,8 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
      * {@link #fromRow} と同じだが、呼び出し元の記号が引けない（壊れた参照）ときも行を捨てず、
      * 呼び出し元 null として読む。列が足りなければ null。
      *
-     * <p>型解決できなかった呼び出しを一覧に出す側（{@code UnresolvedReport}）が使う。呼び出し元が
+     * <p>型解決できなかった呼び出しの一覧（{@code UnresolvedReport}）に出す行を拾うとき
+     * （{@code CallGraphBuilder} のスキャン）に使う。呼び出し元が
      * 分からなくても、ファイル・行・式・理由は出せるので、呼び出し元の外の U 行（{@link #OUTSIDE_METHOD}）と
      * 同じく「呼び出し元不明」として出す（黙って消さない）。呼び出し元 null の行は
      * {@link #hasUsableCandidate()} が false なので、エッジにはならない

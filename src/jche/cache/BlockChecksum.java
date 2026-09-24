@@ -29,6 +29,16 @@ public final class BlockChecksum {
         crc.update('\n');
     }
 
+    /**
+     * 1 行を、ファイルに書かれたままのバイトで足す（{@link CacheReader#addTo}。{@link #add(String)} と
+     * 同じ検査値になる。行は UTF-8 として正しいことを読み手が確かめてあるので、文字列にしてから
+     * UTF-8 に戻したバイト列と同じ）
+     */
+    public void add(byte[] line, int offset, int length) {
+        crc.update(line, offset, length);
+        crc.update('\n');
+    }
+
     /** ここまでに足した行の検査値（小文字の16進8桁） */
     public String hex() {
         return String.format("%08x", crc.getValue());

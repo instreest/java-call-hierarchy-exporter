@@ -467,7 +467,11 @@ final class MessagesEn {
             "analysis.cache.damagedBlocks", "[cache] {0} block(s) of the cache failed the integrity check, so they are not reused (those files are analyzed again)",
             "analysis.cache.legacyDeleted", "[cache] Deleted {0}, left by an older version (the cache is now a single file)",
             "analysis.cache.legacyNotDeleted", "[cache] Cannot delete {0}, left by an older version (it is no longer used and can be deleted by hand): {1}",
+            "analysis.cache.unchanged", "[cache] Nothing changed; the cache is kept as is",
             "analysis.cache.valuesMismatch", "Internal error while writing the cache: {0} has {1} call site(s) but {2} set(s) of call-site values",
+            "analysis.cache.depsIndexUnwritable", "[cache] Cannot write the temporary dependency index ({0}), so the dependencies are read from the existing cache instead (the result is the same): {1}",
+            "analysis.cache.depsIndexMismatch", "Internal error while updating the cache: the temporary dependency index {0} holds {2} line(s) instead of the {1} written",
+            "analysis.cache.changedWhileReading", "Internal error while updating the cache: {0} changed while it was being read (another run may be using the same cache folder)",
             "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
             "analysis.batchFailed", "The batch analysis failed, so the remaining {0} file(s) are analyzed one at a time ({1})",
             "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
@@ -481,6 +485,7 @@ final class MessagesEn {
             "graph.progress.inbound", "Caller index",
             "graph.collected", "Collected: {0} types / {1} methods / {2} edges",
             "graph.tooManyEdges", "Too many edges: {0}",
+            "graph.spillMismatch", "Internal error while building the graph: the temporary file does not hold exactly the {0} edge(s) counted",
             "graph.provider.failed", "candidate provider failed: {0} ({1})",
             "graph.provider.unusable", "Cannot use the candidate the extension returned: {0}#{1} ({2} / {3}) ... neither this type nor its parents have a body for this method. Dropping the candidate",
             "graph.contracts.unreadable", "Cannot read the contract table: {0} ({1}). Continuing without it",
@@ -553,6 +558,8 @@ final class MessagesEn {
     private static String[] cache() {
         return new String[] {
             "cache.badReference", "[cache] The cache {0} has a row that refers outside its file block or to an unreadable row, so that row or value is not used. The cache may have been edited or damaged: delete the cache folder {1} and run again",
+            "cache.tempNotDeleted", "[cache] Cannot delete the temporary file {0} (the next run deletes it): {1}",
+            "cache.tempShuttingDown", "Cannot create a temporary file in {0} because the process is shutting down",
             "cache.dump.usage", "Usage: java -cp <tool classes and JDT jars> jche.cache.CacheDump <analysis-cache.tsv>   (prints the cache with method symbols expanded to 4 columns)",
         };
     }

@@ -100,6 +100,44 @@ final class LibraryDiff {
      * @param projectRoot L 行のパスを相対にする基準
      */
     static LibraryDiff compute(String[] classpath, List<LibraryFact> old, Path projectRoot) {
+        List<LibraryFact> scanned = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String cp : classpath) {
+            Path entry = Paths.get(cp);
+            String key = keyOf(entry, projectRoot);
+            if (!seen.add(key)) {
+                continue;   // 同じ jar が2度渡されても1件として扱う
+            }
+            scanned.add(scan(entry, key));
+        }
+        return diff(scanned, old);
+    }
+
+    /**
+     * 記録してある依存 jar（{@code recorded}。中断した実行の一時ファイルの L 行）から、今回の依存 jar
+     * （{@code current}。{@link #compute} で作った {@link #current}）までの差分。クラスパスを走査し直さない。
+     *
+     * <p>{@link #compute}（クラスパスを走査し直して {@code recorded} と突き合わせる）と同じ答えになる。
+     * {@code current} は走査した結果（{@code scanned}）と、次の点で同じだからである。
+     * <ul>
+     *   <li>パスとその並び … どちらも同じクラスパスから同じ規則（{@link #keyOf}、重複は 1 件）で作る</li>
+     *   <li>指紋と「読めたか」（{@link LibraryFact#known}）… {@code current} の各要素は、走査した結果そのものか、
+     *       指紋が走査した結果と一致した旧キャッシュの要素（{@link #compute} は中身の変わらない jar に
+     *       旧キャッシュの要素を使い回す）。どちらでも指紋は走査した結果と同じ</li>
+     *   <li>パッケージ … 指紋が同じなら中の一覧（エントリ名）が同じなので、パッケージも同じ</li>
+     * </ul>
+     * {@link #diff} が見るのはこの 3 つ（と {@code recorded}）だけなので、追加・変更・削除・並び替えの
+     * 数も「変わったパッケージ」も同じになる。
+     */
+    static LibraryDiff unchangedSince(List<LibraryFact> recorded, List<LibraryFact> current) {
+        return diff(current, recorded);
+    }
+
+    /**
+     * @param scanned 今回のクラスパスを走査した結果（クラスパス順、パスの重複なし）
+     * @param old     突き合わせる相手の L 行
+     */
+    private static LibraryDiff diff(List<LibraryFact> scanned, List<LibraryFact> old) {
         Map<String, LibraryFact> oldByPath = new HashMap<>();
         for (LibraryFact l : old) {
             oldByPath.put(l.path(), l);
@@ -107,13 +145,9 @@ final class LibraryDiff {
         LibraryDiff diff = new LibraryDiff();
         Set<String> seen = new HashSet<>();
         Set<String> unchanged = new HashSet<>();   // 並び順の突き合わせに使う（addReorderedPackages）
-        for (String cp : classpath) {
-            Path entry = Paths.get(cp);
-            String key = keyOf(entry, projectRoot);
-            if (!seen.add(key)) {
-                continue;   // 同じ jar が2度渡されても1件として扱う
-            }
-            LibraryFact now = scan(entry, key);
+        for (LibraryFact now : scanned) {
+            String key = now.path();
+            seen.add(key);
             LibraryFact prev = oldByPath.get(key);
             // 指紋が取れなかったものは同一性を判定できない。毎回「変わった」に倒す（安全側）
             if (prev != null && now.known() && prev.fingerprint().equals(now.fingerprint())) {
