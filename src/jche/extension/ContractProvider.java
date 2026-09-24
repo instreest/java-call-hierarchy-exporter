@@ -14,6 +14,7 @@ import java.util.Properties;
  *   &#64;jp.co.xxx.Endpoint                                             … 入口（種類 B）
  *   super jp.co.xxx.BaseAction#execute()
  *   static main(java.lang.String[])
+ *   main                                                          … 起動の入口（JLS 12.1.4）
  * </pre>
  * 対応表を書けば済むなら、この拡張を書かずに {@code contracts.files} にファイルを置けばよい。
  * 読み込み方は {@link TypeCandidateProvider} と同じ（{@code plugin.folders} に置き、

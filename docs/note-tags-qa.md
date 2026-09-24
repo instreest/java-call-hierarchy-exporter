@@ -139,3 +139,36 @@
 現時点で設定から消せるのは、注記の種類ではなく機能そのもの
 （`branch.pruning.enabled` / `dataflow.enabled` / `spring.di.enabled` / `max.depth` /
 `external.library.folders`）である。
+
+### Q10. `[UNEXPANDED:CHA] 2 candidates` なのに行が 1 本しか無いのはなぜか
+
+候補のうち 1 件が `exclude.packages` で除外され、行にしていなかったため。
+黙って行を減らしていたので、候補の数と行の数が食い違い、読み手には「候補が消えた」のか
+「数え方がおかしい」のか区別できなかった。
+
+```java
+class Job implements Runnable { public void run() { ... } }
+static void exec(Runnable r) { r.run(); }   // [UNEXPANDED:CHA] 2 candidates … なのに行は Job.run だけ
+```
+
+2 件目は `java.lang.Runnable#run()` の宣言そのもの。D 行の無いメソッド（jar の中）は本体の有無が
+分からないので、`MethodTable` は「本体を持ちうる」（`hasBody` の既定が true）として候補に残す。
+jar のインターフェースは jar の中にも実装があり、jar のコードが作ったインスタンスが渡ってくることも
+あるので、これを数えずに `Job.run` 1 件へ `SINGLE_IMPL` で確定すると**誤って絞る**ことになる。
+数に入れるのは正しく、既定の除外（`java.**`）で行にならないのも正しい。
+**直すべきは、行にしなかったことを書いていなかった点**だった。
+
+`Config.CHA_MAX_CANDIDATES` で切った候補について `(only the first N are written as rows)` と書くのと
+同じ理由で、行にする範囲の候補のうち除外したものの数を
+`(K excluded by exclude.packages and not written as rows)` と書く
+（`StreamingTreeWalker.noteFor`）。読み手が作る文言なのでキャッシュの版は上げていない。
+
+`Runnable` の宣言を候補から外す案は却下した。外すと上の例は `Job.run` に `RESOLVED:SINGLE_IMPL` で
+確定し、jar の中で作られた `Runnable`（ライブラリが返すタスク等）が渡ってくる経路を確定と偽ることになる。
+除外した候補を行に出す案も却下した。`exclude.packages` は「出力に出さない」ための設定で、
+出すなら設定の意味が変わる。
+
+もとは「サブインターフェースで抽象メソッドを再宣言すると候補が 2 件に数えられる」と疑っていたが、
+再宣言の無い形（上の例）でも同じく 2 件だった。再宣言は関係なく、`CallGraph.implementationOf` は
+再宣言した型から親（`Runnable`）へ辿って同じ宣言に当たり、重複は `addIfAbsent` で消えている。
+

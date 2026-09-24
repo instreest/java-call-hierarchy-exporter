@@ -135,7 +135,7 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
 at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
-at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -292,7 +292,7 @@ at fx.lambda.Holder.lambda$viaForEach$3(Holder.java:51),OrderDaoImpl.findById,RE
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.lambda.Nested.viaNested(Nested.java:20),Nested.lambda$viaNested$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.viaNested,Nested.lambda$viaNested$1
 at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
 at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
@@ -365,20 +365,6 @@ at fx.reflect.Invoker.invokeNamed(Invoker.java:39),Target.<clinit>,RESOLVED:REFL
 at fx.reflect.Invoker.viaParam(Invoker.java:34),Invoker.create,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.create
 at fx.reflect.Invoker.create(Invoker.java:43),Target.<clinit>,RESOLVED:REFLECTION_INIT,2,Invoker.viaParam,Invoker.create,Target.<clinit>
 at fx.reflect.Invoker.viaParam(Invoker.java:35),Invoker.classOf,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.classOf
-at fx.resource.ResourceMain.pooled(ResourceMain.java:13),PooledConn.query,RESOLVED:NO_OVERRIDE,1,ResourceMain.pooled,PooledConn.query
-at fx.resource.ResourceMain.pooled(ResourceMain.java:12),PooledConn.close,RESOLVED:NO_OVERRIDE,1,ResourceMain.pooled,PooledConn.close
-at fx.resource.PooledConn.close(PooledConn.java:12),ConnPool.release,RESOLVED:STATIC_BOUND:STATIC,2,ResourceMain.pooled,PooledConn.close,ConnPool.release
-at fx.resource.ResourceMain.both(ResourceMain.java:19),ConnPool.open,RESOLVED:STATIC_BOUND:STATIC,1,ResourceMain.both,ConnPool.open
-at fx.resource.ResourceMain.both(ResourceMain.java:20),PooledConn.query,RESOLVED:LOCAL_NEW,1,ResourceMain.both,PooledConn.query
-at fx.resource.ResourceMain.both(ResourceMain.java:21),TxConn.query,RESOLVED:DATAFLOW_FACTORY,1,ResourceMain.both,TxConn.query
-at fx.resource.ResourceMain.both(ResourceMain.java:19),TxConn.close,RESOLVED:DATAFLOW_FACTORY,1,ResourceMain.both,TxConn.close
-at fx.resource.TxConn.close(TxConn.java:12),ConnPool.commit,RESOLVED:STATIC_BOUND:STATIC,2,ResourceMain.both,TxConn.close,ConnPool.commit
-at fx.resource.ResourceMain.both(ResourceMain.java:19),PooledConn.close,RESOLVED:LOCAL_NEW,1,ResourceMain.both,PooledConn.close
-at fx.resource.PooledConn.close(PooledConn.java:12),ConnPool.release,RESOLVED:STATIC_BOUND:STATIC,2,ResourceMain.both,PooledConn.close,ConnPool.release
-at fx.resource.ResourceMain.existing(ResourceMain.java:28),PooledConn.query,UNEXPANDED:CHA,1,ResourceMain.existing,PooledConn.query,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.resource.ResourceMain.existing(ResourceMain.java:28),TxConn.query,UNEXPANDED:CHA,1,ResourceMain.existing,TxConn.query,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.resource.ResourceMain.existing(ResourceMain.java:27),PooledConn.close,UNEXPANDED:CHA,1,ResourceMain.existing,PooledConn.close,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.resource.ResourceMain.existing(ResourceMain.java:27),TxConn.close,UNEXPANDED:CHA,1,ResourceMain.existing,TxConn.close,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.service.OrderService.<clinit>(OrderService.java:12),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,1,OrderService.<clinit>,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,2,OrderService.<clinit>,DaoFactory.create,DaoFactory.newUserDao
 at fx.app.Legacy.callRemote(Legacy.java:9),go,UNRESOLVED:BINDING_FAILED,1,(unresolved),go,type resolution failed (missing classpath / dynamic call / etc.)

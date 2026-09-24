@@ -61,6 +61,13 @@ jobs:
       - name: Constructor body test (JEP 513 flexible constructor bodies)
         run: bash test/ctorbody/run.sh
 
+      # Java 言語仕様（JLS SE 26）への適合と javac との整合。test/jls/project/src の各ソースが JLS の
+      # 1 つの節に対応し（パッケージ名が節番号）、節ごとの期待値（test/jls/expect.tsv）と、同じソースを
+      # javac 26（--release 26）でコンパイルしたバイトコードとの突き合わせで見る。
+      # ツール本体は JDK 25 のまま動かし、javac 26 と検査プログラムの JDK 26 は jbang が取得する
+      - name: JLS SE 26 conformance and javac 26 cross-check
+        run: bash test/jls/run.sh
+
       # 確認してほしいことの案内（warnings.txt）。正常な状態では作らず、依存 jar の不足・
       # 設定の指定先の欠け・コンパイルエラー・実行の失敗で作ること。使い捨てのプロジェクトをその場で作る
       - name: Warnings file test (warnings.txt)

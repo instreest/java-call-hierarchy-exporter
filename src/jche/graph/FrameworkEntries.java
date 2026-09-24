@@ -24,7 +24,15 @@ import jche.cache.ModifierTokens;
  *   &#64;org.springframework.scheduling.annotation.Scheduled      … そのアノテーションが付いたメソッド
  *   super javax.servlet.http.HttpServlet#doGet(...)                … その型を継承（実装）した型の、同じシグネチャのメソッド
  *   static main(java.lang.String[])                                 … public static でそのシグネチャのメソッド
+ *   main                                                            … 起動の入口になる main メソッド（JLS 12.1.4）
  * </pre>
+ * {@code main} は JLS 12.1.4 の起動メソッドの条件をそのまま表す。名前が {@code main} で、引数が
+ * {@code String[]} 1 つか無し、private でないもの。static でもインスタンスメソッドでもよい
+ * （Java 25 で確定したインスタンスの main メソッド。コンパクトなコンパイル単位の {@code void main()} が典型）。
+ * 起動器は 1 つのクラスで {@code main(String[])} を {@code main()} より優先するが、両方を入口にする
+ * （どちらが選ばれるかは、そのクラスを起動したときに決まるため）。JLS 12.1.4 は戻り値が void であることも
+ * 求めるが、D 行は戻り値の型を持たないので見ない（void でない main も入口にする。多すぎる側）。
+ * インスタンスの main のために起動器が使う引数なしのコンストラクタがあるかまでは見ない。
  * {@code super} の型は jar の中でよい（H 行の親型に jar の型の名前も入っている）。
  */
 public final class FrameworkEntries {
@@ -34,7 +42,11 @@ public final class FrameworkEntries {
         static final char ANNOTATION = '@';
         static final char SUPER = 's';
         static final char STATIC = 'm';
+        static final char MAIN = 'L';
     }
+
+    /** JLS 12.1.4 の起動メソッドのシグネチャ（引数が String[] か、無し） */
+    private static final List<String> LAUNCH_SIGNATURES = List.of("main(java.lang.String[])", "main()");
 
     private final List<Contract> contracts = new ArrayList<>();
     private final CallGraph graph;
@@ -80,6 +92,9 @@ public final class FrameworkEntries {
         if (s.startsWith("@")) {
             String fqn = s.substring(1).trim();
             return fqn.isEmpty() ? null : new Contract(Contract.ANNOTATION, fqn, "", s, row);
+        }
+        if ("main".equals(s)) {
+            return new Contract(Contract.MAIN, "", "", s, row);
         }
         int sp = s.indexOf(' ');
         if (sp < 0) {
@@ -147,6 +162,13 @@ public final class FrameworkEntries {
                             && ModifierTokens.has(mods, "public")) {
                         usage.markApplied(c.row());
                         return "static " + c.sig();
+                    }
+                }
+                case Contract.MAIN -> {
+                    if (LAUNCH_SIGNATURES.contains(sig) && !ModifierTokens.has(mods, "private")) {
+                        usage.markApplied(c.row());
+                        // 従来の public static main(String[]) と同じ文言になるよう static を前に付ける
+                        return ModifierTokens.has(mods, "static") ? "static " + sig : sig;
                     }
                 }
                 case Contract.SUPER -> {

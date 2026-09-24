@@ -44,7 +44,7 @@ import jche.cache.MethodRef;
  * （後行順）に振る。入れ子のラムダは内側が先に番号を得る
  * （{@code () -> { () -> {} }} は内側が {@code $0}、外側が {@code $1}）。
  * static 初期化子・static フィールド（インターフェースのフィールドを含む。JLS 9.3）・
- * enum 定数の引数（JLS 8.9.2）の中のラムダは {@code lambda$static$N}。
+ * enum 定数の引数（JLS 8.9.3）の中のラムダは {@code lambda$static$N}。
  *
  * javac 21 とも次の場合は食い違う。
  * <ul>

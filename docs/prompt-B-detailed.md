@@ -170,7 +170,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 前半3 | 呼び出し先の宣言ファイルが無い | `[EXTERNAL] no source to follow` |
 | 前半4 | 次の深さが `max.depth` に達する | `[UNEXPANDED:DEPTH] depth limit (N) reached` |
 | 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` |
-| 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}` |
+| 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}`。行にしない候補があれば数を後ろに足す（上限で切った `(only the first N are written as rows)`、除外した `(K excluded by exclude.packages and not written as rows)`） |
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
 | 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
@@ -295,7 +295,6 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 ### 5.2 抽出する呼び出し
 
 メソッド呼び出し、`super.m()`、`new`、`this(...)`/`super(...)`、**書かれていない暗黙の `super()`**、
-**try-with-resources の暗黙の `close()`**、
 enum定数の生成、メソッド参照4種（`obj::m` / `Type::m` / `super::m` / `Type::new`）。
 ラムダ本体の呼び出しは、ラムダごとの合成メソッド（`lambda$…`）に帰属させる（第2部 2.9）。
 フィールド初期化子・初期化ブロックは `static` なら `<clinit>`、インスタンスなら
@@ -560,13 +559,6 @@ String effective = options.get(JavaCore.COMPILER_SOURCE);   // ← 実際に効�
 （コンパイラが与える親で、辿る先が無い）。匿名クラスの合成コンストラクタは**選ばれた親
 コンストラクタと同じ引数**を取ってそのまま渡す（JLS 15.9.5.1）ので、引数なし固定にしない。
 詳細は `docs/jls-conformance-qa.md` の Q8〜Q11。
-
-**try-with-resources の暗黙の `close()` も辺にする。** JLS 14.20.3.1 のとおり、本体を抜けるときに
-リソースを宣言と逆の順で `close()` する呼び出しがコンパイラによって足される。辺にしないと
-`close()` の実装（接続の返却・コミット等）が入次数0になる。呼び出し先はリソースの静的型から親へ辿って
-最初に見つかる `close()` の宣言、レシーバはリソースの変数（`try (r)` の既存変数・final フィールドも）とし、
-通常の `r.close()` と同じく出所で絞る。行はリソースを書いた行、並びは本体の呼び出しの後に逆順。
-詳細は `docs/jls-conformance-qa.md` の Q25〜Q29。
 
 **(f) `this(...)` 委譲の判定**: 本体の**先頭文**ではなく、トップレベルの文から最初の
 `ConstructorInvocation` / `SuperConstructorInvocation` を探す。Java 25 で確定した柔軟な

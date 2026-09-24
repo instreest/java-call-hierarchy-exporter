@@ -21,7 +21,9 @@ final class BundledFrameworkEntries {
 
     static final List<String> LINES = List.of(
             // --- JDK ---
-            "static main(java.lang.String[])",
+            // 起動の入口（JLS 12.1.4）。public static main(String[]) に限らず、引数なしのものと
+            // インスタンスメソッドのもの（コンパクトなコンパイル単位の void main() など）も含む
+            "main",
             // --- Servlet（javax / jakarta） ---
             "super javax.servlet.http.HttpServlet#doGet(" + HTTP_REQ_RES_JAVAX + ")",
             "super javax.servlet.http.HttpServlet#doPost(" + HTTP_REQ_RES_JAVAX + ")",

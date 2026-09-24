@@ -29,6 +29,8 @@
 - `test/demo/src/fx/generic/` と `test/demo/src/fx/ctor/` を足し、
   `test/demo/src/fx/branch/Feature.java` にキャストと char の条件を足した。
   JEP 513 は `test/ctorbody/run.sh`（使い捨てのプロジェクトをその場で作る）で見る
+- **その後**: インターフェース（アノテーション型を含む）に暗黙のコンストラクタを合成していたのを
+  やめた（Q25。キャッシュの版を `jche-cache-v27` に上げた）
 
 ---
 
@@ -237,7 +239,7 @@ null なら出所を返さない。
 
 なる（`case 'a'` の値が `97` と出る）。それでも数値にした。
 
-JLS 5.6.2 の二項数値昇格により、`char` と `int` を `==` で比べると両方 `int` に昇格してから比較される。
+JLS 5.6 の数値昇格により（SE 13 までの 5.6.2「二項数値昇格」。SE 14 で 5.6 にまとめられた）、`char` と `int` を `==` で比べると両方 `int` に昇格してから比較される。
 `'A' == 65` は真である。値を文字のまま持つと、この 2 つが別の値に見えて
 「条件が成立しない」と誤判定してしまう。
 
@@ -414,88 +416,30 @@ java.lang.Thread#start() -> c* : run()
 
 直す前のコードで実際にこの検査が落ちることを確認してある（`CALLBACK` の行が 2 本ではなく 1 本になる）。
 
----
+## Q25. インターフェースにも暗黙のコンストラクタを合成していた
 
-## 追記: try-with-resources の暗黙の `close()`（JLS 14.20.3）
+`TypeContextTracker` は、明示コンストラクタが 1 つも無い型に暗黙のデフォルトコンストラクタ（`<init>()`）を
+合成して D 行にする。このとき型の種類を見ておらず、**インターフェースとアノテーション型にも**
+`D  p  p.Task  <init>  ...  implicit` を書いていた。
 
-`var` の扱いが JLS どおりかを確かめたときに、`var` とは別に見つかった穴。
-暗黙の `super()`（Q8）と同じく、**AST に現れないが実行される呼び出し**を辺にしていなかった。
+JLS 8.8.9 でデフォルトコンストラクタが暗黙に宣言されるのは**クラスだけ**である。インターフェースの本体に
+コンストラクタは宣言できず（JLS 9.1.5）、インスタンスも作れない。合成した `<init>` は誰からも呼ばれない
+実在しないメソッドとして、メソッドの表とグラフに残る（親クラスが無いので、Q8〜Q10 の暗黙の `super()` の辺は
+張られていなかった）。
 
-対応の要点:
+**出力 CSV は変わらない。** `<init>` は `methods.csv` に出さず（`docs/lambda-expansion-qa.md` の Q9）、
+呼び出し元の無いこの宣言は `call-hierarchy.csv` の起点にもならなかったので、回帰テストの期待値には
+現れていなかった。そのぶん見つけにくく、グラフの中の余計なノードとして残り続けていた。
 
-- `FactVisitor#endVisit(TryStatement)` で、リソースごとに `close()` の呼び出し箇所（C 行・U 行）を記録する。
-  宣言と逆の順に積み、行はリソースを書いた行にする
-- 呼び出し先はリソースの静的型から引いた `close()` の宣言（`BindingNames#closeMethodOf`）。
-  レシーバはリソースの変数なので、`new` した型・ファクトリの戻り値・フィールドの出所で通常どおり絞れる
-- 同じ版で `var` の使い方の誤りを構文エラーから外したこと（`docs/syntax-error-report-qa.md` の Q7）と合わせて、
-  キャッシュの版を `jche-cache-v27` に上げた
-- `test/demo/src/fx/resource/` を足した
+直し方は、合成する前に `ITypeBinding.isInterface()` を見る（JDT ではアノテーション型も true を返す）。
+インターフェースのフィールドは暗黙に static（JLS 9.3）で初期化は `<clinit>` で走るので、
+インスタンス初期化子の複製先（`rootConstructors`）が空になっても困らない。
 
-## Q25. 何が起きていたのか
+出力に出ないので回帰テストでは固定できない。`test/ctorbody/run.sh` の使い捨てのプロジェクトに
+インターフェース（`Shape`）・アノテーション型（`Tag`）・それを実装するクラス（`Square`）を足し、
+キャッシュの D 行で「前 2 つには `<init>` が無く、クラスには有る」ことを見る。
+直す前のコードでこの検査が落ちることを確認してある。
 
-`try (Conn c = pool.borrow()) { … }` の `c.close()` は、コンパイラが本体の後ろに足す呼び出しで
-（JLS 14.20.3.1）、ソースには書かれていない。辺にしていなかったので、
+D 行の中身が変わるので、キャッシュの版を `jche-cache-v27` に上げた。
+上げないと、再利用したファイルのインターフェースにだけ `<init>` が残る。
 
-```java
-class PooledConn implements Conn { public void close() { ConnPool.release(); } }   // 返却
-class TxConn     implements Conn { public void close() { ConnPool.commit();  } }   // コミット
-```
-
-のような `close()` の実装は**呼び出し元が 0 件**になり、`methods.csv` では入口の候補
-（`ENTRY_CANDIDATE`）に並んでいた。接続の返却やコミットは影響調査でまさに追いたい処理なので、
-「呼ばれていない」と見えるのは害が大きい。
-
-`var` とは関係なく、型を明示したリソース（`try (Res r = …)`）でも同じように落ちていた。
-
-## Q26. 呼び出し先はどの `close()` にするのか
-
-**リソースの静的型から親へ辿って最初に見つかる `close()` の宣言**である（`BindingNames#closeMethodOf`）。
-JLS 14.20.3.1 の変換は `#resource.close()` という普通のメソッド呼び出しなので、
-ソースに `r.close()` と書いたときに JDT が選ぶのと同じものを選べばよい。
-親クラスを先に、インターフェースを後に見る（`supertypesOf` の順）。
-
-実際に動く実装を選ぶのは、ほかの呼び出しと同じく読み手（出所と CHA）に任せる。
-ここで具象型まで決めてしまうと、書き手と読み手に同じ判断が 2 つできる。
-
-型変数（`<T extends AutoCloseable> … try (t)`）・キャプチャ・交差型（`var r = f ? a : b` の推論結果）は
-上限の各成分から探す。見つからなければバインディング無しとして U 行（`BINDING_FAILED`）に落とし、
-黙って消さない。
-
-## Q27. レシーバは何として扱うのか
-
-**リソースの変数**（`try (Res r = …)` の `r`、Java 9 以降の `try (r)` の `r`、`try (this.field)` の `field`）。
-通常の `r.close()` とまったく同じ扱いになるので、既存の絞り込みがそのまま効く。
-
-| 書き方 | 結果 |
-|---|---|
-| `try (var c = new PooledConn())` | `PooledConn.close` に確定（静的型がもともと具象） |
-| `try (Conn a = new PooledConn())` | `LOCAL_NEW` で確定 |
-| `try (Conn b = ConnPool.open())` | `DATAFLOW_FACTORY` で確定 |
-| `try (this.field)`（final フィールド） | `DATAFLOW_FIELD` で確定 |
-| `try (c)`（引数） | `UNEXPANDED:CHA`（候補を並べる。外から渡されるので絞れない） |
-
-レシーバの識別キー（`recvKey`）も通常の呼び出しと同じ作り方なので、拡張
-（`TypeCandidateProvider`）もこの呼び出しに証拠を結び付けられる。
-
-## Q28. 行と並びはどうしたか
-
-行は**リソースを書いた行**にした。ソースに対応する文が無いので、利用者が
-「どこで閉じられるのか」を探すなら、そのリソースの宣言を見るのが最も近い。
-
-並びは実行の順に合わせた。`close()` は本体を抜けたあとに、**宣言と逆の順**で呼ばれる（JLS 14.20.3.1）。
-`endVisit` で後ろのリソースから積むので、`call-hierarchy.csv` でも本体の呼び出しより後ろに、
-`try (a; b)` なら `b.close` → `a.close` の順で並ぶ。行番号だけを見ると前後しているように見えるが、
-行の並びはキャッシュの C / U 行の順（呼び出し箇所を記録した順）で決まる（`docs/deterministic-row-order-qa.md`）ので決定的である。
-
-条件（guard）はリソースの位置から数えるので、`try` を囲む分岐だけが効く。
-`close()` はリソースが `null` のときだけ呼ばれないが、これは実行時の値の話なので条件にしない
-（Q9 の暗黙 `super()` と同じく「必ず実行される」側に倒す）。
-
-## Q29. 回帰テストの期待値はどう変わったか
-
-`test/demo/src/fx/resource/` を足したぶん、`whole` / `entry` / `cachesplit` / `jarchange` の
-期待値に行が**増えただけ**で、消えた行も変わった行も無い。`test/demo` の既存のソースには
-try-with-resources が無いので、既存の行が変わらないのは正しい。
-
-`ResourceMain` の 3 つの書き方（`var` で受けた `new`・2 つ並べたリソース・既存の変数）が、
-`close()` の実装の中の `ConnPool.release` / `ConnPool.commit` まで辿れることを見ている。

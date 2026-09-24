@@ -62,7 +62,7 @@ import java.security.SecureRandom;
  *                                                          上書きしている宣言のキー。ジェネリクスで
  *                                                          消去シグネチャが食い違う場合にだけ現れる（v23）
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
- *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth
+ *   C  caller(4列)  callee(4列)  callLine  calleeMods  recvKind  lambdaDepth  qualifier
  *                                                             {@link CallEdgeFact}。呼び出しの「事実」だけを持ち、
  *                                                             値（レシーバ・実引数の出所、ガード）は
  *                                                             dataflow 側の P 行にある
@@ -232,11 +232,22 @@ public final class CacheFormat {
      * ラムダを {@code lambda$static$N} にした（同 Q13）。名前は D 行・C 行・M 行に焼き込まれる。
      * v26 で M 行を、上書きの関係に無い2つの親から継承した同じ抽象メソッドの鍵でも書くようにし
      * （同 Q15）、インターフェースのフィールドの中のラムダを {@code lambda$static$N} にした（同 Q17）。
-     * v27 で try-with-resources の暗黙の {@code close()} を C 行・U 行にし、F 行の構文エラーの数から
-     * {@code var} の使い方の誤り（本体は読めている）を外した
-     * （{@code docs/jls-conformance-qa.md} の Q25〜Q29、{@code docs/syntax-error-report-qa.md} の Q7）
+     * v27 でインターフェース（アノテーション型を含む）に暗黙のコンストラクタの D 行を合成しないようにした
+     * （JLS 8.8.9。{@code docs/jls-conformance-qa.md} の Q25）。古いキャッシュを再利用すると、
+     * そのファイルのインターフェースにだけ呼ばれない {@code <init>} が残る。
+     * v28 で、ソースに呼び出し式が無いが JLS が「呼ぶ」と定める呼び出し（拡張 for 文の
+     * {@code iterator()} / {@code hasNext()} / {@code next()}、try-with-resources の {@code close()}、
+     * レコードパターンのアクセサ）を C 行にし、コンパクトなコンパイル単位の暗黙のクラス（JLS 7.3）を
+     * H 行・D 行に載せた（{@code docs/jls-conformance-test-qa.md}）。古いキャッシュを再利用すると、
+     * そのファイルからだけこれらの辺が抜ける。
+     * v29 で拡張 for 文の {@code hasNext()} / {@code next()} の呼び出し先を JLS 14.14.2 どおり
+     * {@code java.util.Iterator} にし、C 行の末尾に呼び出しを修飾する型（JLS 13.1）の列を足した。
+     * 古いキャッシュを再利用すると、そのファイルの呼び出しだけ CHA の候補が宣言した型から引かれる。
+     * v30 で F 行の構文エラーの数から {@code var} の使い方の誤り（本体は読めている）を外した
+     * （{@code docs/syntax-error-report-qa.md} の Q7）。古いキャッシュを再利用すると、そのファイルだけ
+     * 「本体を読めなかった」と事実と違う警告が出続ける
      */
-    public static final String VERSION = "jche-cache-v27";
+    public static final String VERSION = "jche-cache-v30";
 
     /**
      * dataflow-cache.tsv の形式。analysis-cache.tsv とは独立に上げられる。

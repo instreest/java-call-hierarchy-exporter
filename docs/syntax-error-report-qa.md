@@ -150,10 +150,8 @@ var z;                     : syntaxBit=true id=1503 Cannot use 'var' on variable
 
 ### Q8. キャッシュの版は上げたか
 
-上げた（`jche-cache-v26` → `v27`）。F 行の構文エラー数は Q3 のとおり**書き手が数えてキャッシュに持つ**ので、
+上げた（`jche-cache-v29` → `v30`）。F 行の構文エラー数は Q3 のとおり**書き手が数えてキャッシュに持つ**ので、
 古いキャッシュを再利用すると、そのファイルだけ前の数え方の警告が出続ける。
-同じ版で try-with-resources の暗黙の `close()` も C 行に足している
-（[jls-conformance-qa.md](jls-conformance-qa.md) の Q25〜Q29）。
 
 検査は `test/warnings/run.sh` の `varname`。`class var` を持つファイルが、コンパイルエラーとしては案内され、
 構文エラーとしては数えられず、本体の呼び出しが出力に出ることを見る。

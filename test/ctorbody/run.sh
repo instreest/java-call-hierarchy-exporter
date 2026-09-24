@@ -3,7 +3,7 @@
 #
 #   bash test/ctorbody/run.sh
 #
-# 見るのは 2 つ。
+# 見るのは 3 つ。
 #   1. 柔軟なコンストラクタ本体（JEP 513。Java 25 で確定）で this(...) の前に文が書ける形を、
 #      「委譲していない」と取り違えないこと。取り違えると、インスタンス初期化子の呼び出しが
 #      委譲側にも複製されて二重に数えられ、さらに D 行に delegating が付かないため
@@ -11,6 +11,9 @@
 #      が効かなくなる
 #   2. 同じ意味の 2 つの書き方（従来形＝先頭が this(...) と、プロローグ付き）が
 #      同じ呼び出し階層になること
+#   3. インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。
+#      デフォルトコンストラクタはクラスにだけある）。クラスには従来どおり合成すること。
+#      CSV には <init> が出ないので、キャッシュの D 行で見る（docs/jls-conformance-qa.md の Q25）
 #
 # この構文は Java 25 でないと書けないので、test/demo には置かない。
 # test/demo は多くの検査が共有するうえ、README.md の手順で javac でコンパイルして
@@ -74,6 +77,30 @@ $2
     }
 }
 EOF
+    # インターフェース（フィールドは暗黙に static で、初期化は <clinit>）と、それを実装するクラス、
+    # アノテーション型。どれもコンストラクタを書かない
+    cat > "work/$1/src/g/Shape.java" <<'EOF'
+package g;
+
+public interface Shape {
+    int SIZE = Helper.check(3);
+    int area();
+}
+EOF
+    cat > "work/$1/src/g/Square.java" <<'EOF'
+package g;
+
+public class Square implements Shape {
+    public int area() { return SIZE; }
+}
+EOF
+    cat > "work/$1/src/g/Tag.java" <<'EOF'
+package g;
+
+public @interface Tag {
+    String value() default "";
+}
+EOF
     cat > "work/$1/src/g/Main.java" <<'EOF'
 package g;
 
@@ -81,6 +108,7 @@ public class Main {
     public static void main(String[] args) {
         new Box();
         new Box(1);
+        new Square().area();
     }
 }
 EOF
@@ -142,6 +170,21 @@ DELEG=$(grep -P "^D\tg\tg.Box\t<init>\t\t" work/prologue/.cache/*/analysis-cache
     | grep -c "delegating")
 [ "$DELEG" = "1" ] && ok "プロローグ付きでも D 行に delegating が付く" \
     || ng "D 行に delegating が付いていない（FieldFacts の安全弁が効かなくなる）"
+
+# 暗黙のコンストラクタ（JLS 8.8.9）。インターフェースとアノテーション型には無く、クラスには有る
+DCACHE=$(ls work/classic/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)
+if [ -z "$DCACHE" ]; then
+    ng "キャッシュが見つかりません（work/classic/.cache）"
+else
+    for t in Shape Tag; do
+        grep -qP "^D\tg\tg.$t\t<init>\t" "$DCACHE" \
+            && ng "$t に暗黙のコンストラクタの D 行がある（インターフェースにコンストラクタは無い）" \
+            || ok "$t に暗黙のコンストラクタを合成していない"
+    done
+    grep -qP "^D\tg\tg.Square\t<init>\t\t.*implicit" "$DCACHE" \
+        && ok "クラス（Square）には暗黙のコンストラクタを合成している" \
+        || ng "クラス（Square）の暗黙のコンストラクタの D 行が無い"
+fi
 
 [ $fail = 0 ] && echo "PASS" || echo "FAIL"
 exit $fail
