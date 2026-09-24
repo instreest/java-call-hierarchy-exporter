@@ -53,6 +53,7 @@
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
 | [callback-contracts-qa.md](callback-contracts-qa.md) | #136 | ソースの外との契約表（呼び戻しの辺、フレームワークの入口、設定ファイル・拡張で足す形）。辺の足し方、`inDegree` への効かせ方、広い候補を出さない判断、`role` に優先させる判断、当たらなかった行の知らせ方、列挙定数のキーの書き方、ひな形の出し方と注記、単純名の扱い、ファクトリが親クラスにある場合の指定、経路ごとに決まるキーの扱い |
 | [jls-conformance-qa.md](jls-conformance-qa.md) | #154-#157 | AST の読み取りが Java 言語仕様と食い違って呼び出しが静かに落ちていた 4 件。ジェネリックなオーバーライドの照合（O 行と `implementationOf`）、暗黙の `super()`、値を変えうるキャストと char の定数、柔軟なコンストラクタ本体（JEP 513）、インターフェースに暗黙のコンストラクタを合成しない（JLS 8.8.9） |
+| [jls-conformance-test-qa.md](jls-conformance-test-qa.md) | — | Java 言語仕様（SE 26）の節ごとの検査と javac 26 のバイトコードとの突き合わせ（`test/jls`）。見つかった食い違いの修正（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッド、コンパクトなソースファイルのクラス、インスタンスの main、パッケージアクセスの上書き） |
 | [inherited-impl-candidates-qa.md](inherited-impl-candidates-qa.md) | #131 | 段2（`LOCAL_NEW`）と段3（拡張）が、親から継承した実装を候補にできていなかった件。`implementationIn` への統一と、採用できなかった候補の警告 |
 | [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの契約に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
 | [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `level`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |

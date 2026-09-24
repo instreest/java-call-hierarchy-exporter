@@ -1,0 +1,119 @@
+# Java 言語仕様（JLS SE 26）の節ごとの期待値。1 行が 1 テスト（test/jls/run.sh → JlsCheck.java）。
+#
+# 列（タブ区切り）: 節  ID  検査  引数1  引数2  引数3  説明
+#   節     JLS SE 26 の節番号。対応するソースは test/jls/project/src/jls/s<節>/（§7.3 は src/CompactMain.java）
+#   引数   使わないものは「-」
+#
+# 検査の種類（メソッドのキーは キャッシュと同じ「型#名前(消去した引数型,…)」。コンストラクタは <init>）
+#   call       C 行がある（引数1 → 引数2。行は問わない）          nocall    C 行が無い
+#   callcount  C 行の数が 引数3（ソース上の呼び出し箇所の数）
+#   csv        call-hierarchy.csv に行がある。引数1 は caller 列の「at」と「(」の間、引数2 は callee 列、
+#              引数3 は resolved-by 列の前方一致（- なら問わない）                    nocsv  その行が無い
+#   path       root 列から call-hierarchy 列にかけて、「 > 」区切りのノードがこの順で連続して現れる  nopath その並びが無い
+#   decl       D 行がある（引数2 は修飾子の語。- なら問わない）                        nodecl D 行が無い
+#   type       H 行がある
+#   override   O 行で 引数1 が 引数2 を上書きしている
+#   role       methods.csv の method 列が 引数1 の行の role が 引数2
+#   noerror    F 行のエラー数が 0（JDT が構文・型の誤りを報告していない。引数1 は project からの相対パス）
+#
+# 節	ID	検査	引数1	引数2	引数3	説明
+6.1	unnamed-parse	noerror	src/jls/s06_01/Unnamed.java	-	-	無名の変数 _（局所変数・catch の仮引数・ラムダの仮引数・パターンの成分）を含むソースを誤りなく読める
+6.1	unnamed-local-init	call	jls.s06_01.Unnamed#run(java.lang.Object)	jls.s06_01.Sink#sideEffect()	-	無名の局所変数でも初期化子の呼び出しは実行される
+6.1	unnamed-catch-body	call	jls.s06_01.Unnamed#run(java.lang.Object)	jls.s06_01.Sink#handled()	-	無名の例外の仮引数を持つ catch 節の本体の呼び出し
+6.1	unnamed-lambda-param	csv	jls.s06_01.Unnamed.lambda$run$0	Sink.pickFirst	RESOLVED:STATIC_BOUND:STATIC	無名の仮引数を持つラムダの本体の呼び出し
+6.1	unnamed-pattern-accessor	call	jls.s06_01.Unnamed#run(java.lang.Object)	jls.s06_01.Pair#right()	-	成分が _ でもレコードパターンはアクセサで値を取り出す（§14.30.2）
+7.3	compact-type	type	CompactMain	-	-	コンパクトなコンパイル単位はファイル名を名前に持つクラスを暗黙に宣言する
+7.3	compact-parse	noerror	src/CompactMain.java	-	-	コンパクトなコンパイル単位を誤りなく読める
+7.3	compact-default-ctor	decl	CompactMain#<init>()	implicit	-	暗黙に宣言されたクラスにもデフォルトコンストラクタがある（§8.8.9）
+7.3	compact-call	path	CompactMain.main > CompactMain.greet > CompactTarget.hello	-	-	トップレベルのメソッドどうしの呼び出しと、名前付きパッケージの型の呼び出し
+7.3	compact-final	csv	CompactMain.main	CompactMain.greet	RESOLVED:STATIC_BOUND:FINAL_CLASS	暗黙に宣言されたクラスは final なので上書きされない
+12.1.4	instance-main-entry	role	CompactMain.main()	FRAMEWORK_ENTRY	-	引数なしのインスタンスメソッド main() も起動の入口になる
+7.5.5	module-import-parse	noerror	src/jls/s07_05_05/ModuleImport.java	-	-	単一モジュールインポート宣言 import module java.base; を誤りなく読める
+7.5.5	module-import-types	call	jls.s07_05_05.ModuleImport#run()	jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function)	-	モジュールインポートだけで見える型（List・Function）を引数に持つ呼び出し先のキーが作れる
+8.1.3	inner-ctor-source-params	call	jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int)	jls.s08_01_03.Outer.Inner#<init>(int)	-	内部クラスのコンストラクタのキーは外側のインスタンスを含まないソース上の引数で作る
+8.1.3	qualified-inner-creation	callcount	jls.s08_01_03.Outer#run(jls.s08_01_03.Outer,int)	jls.s08_01_03.Outer.Inner#<init>(int)	2	new Inner(1) と other.new Inner(2)（修飾したクラスインスタンス生成式）の両方が辺になる
+8.1.3	inner-ctor-body	path	Outer.run > Outer.Inner.Inner > Sink.inner	-	-	内部クラスのコンストラクタ本体まで辿れる
+14.3	local-class-binary-name	type	jls.s08_01_03.Outer$1Local	-	-	ローカルクラスは正準名を持たず、バイナリ名 Outer$1Local で表す（§6.7・§13.1）
+14.3	local-class-call	path	Outer.run > Outer$1Local.go > Sink.local	-	-	ローカルクラスのメソッドとその中の呼び出し
+8.4.8.1	generic-override-fact	override	jls.s08_04_08.TextStore#put(java.lang.String)	jls.s08_04_08.Store#put(java.lang.Object)	-	型引数を具体化した上書きは消去したシグネチャが違っても上書き（§8.4.2）
+8.4.8.1	generic-override-dispatch	csv	jls.s08_04_08.Overriding.run	TextStore.put	-	親の型（Store<String>）で呼ぶと、型引数を具体化した上書きも候補になる
+8.4.8.1	package-access-same-pkg	csv	jls.s08_04_08.a.PackageBase.run	PackageBase.hook	-	パッケージアクセスのメソッドの仮想呼び出しは宣言そのものに届く
+8.4.8.1	package-access-no-override	nocsv	jls.s08_04_08.a.PackageBase.run	OtherPackageSub.hook	-	別パッケージのサブクラスの同じシグネチャのメソッドはパッケージアクセスのメソッドを上書きしない
+8.4.8.1	package-access-transitive	csv	jls.s08_04_08.a.PackageBase.run	WidenedSub.hook	-	同じパッケージで public に広げた中間の宣言を経由すれば別パッケージからも推移的に上書きする
+8.4.8.2	static-hiding	csv	jls.s08_04_08.Overriding.run	Base.describe	RESOLVED:STATIC_BOUND:STATIC	static メソッドの呼び出しは静的に束縛される
+8.4.8.2	static-hiding-not-override	nocsv	jls.s08_04_08.Overriding.run	Derived.describe	-	サブクラスの同じシグネチャの static メソッドは隠蔽であって上書きではない
+8.4.8	private-not-inherited	csv	jls.s08_04_08.Base.template	Base.secret	RESOLVED:STATIC_BOUND:PRIVATE	private メソッドの呼び出しは静的に束縛される
+8.4.8	private-not-overridden	nocsv	jls.s08_04_08.Base.template	Derived.secret	-	サブクラスの同じシグネチャの private メソッドは上書きではない
+8.8.7	implicit-super	call	jls.s08_08.ImplicitSuper#<init>()	jls.s08_08.Parent#<init>()	-	明示的コンストラクタ呼び出しで始まらない本体は暗黙に super() を呼ぶ
+8.8.7	implicit-super-path	path	Constructors.run > ImplicitSuper.ImplicitSuper > Parent.Parent > Sink.parentNoArg	-	-	暗黙の super() を経由して親のコンストラクタ本体まで辿れる
+8.8.7	prologue-call	call	jls.s08_08.Prologue#<init>(int)	jls.s08_08.Sink#check(int)	-	柔軟なコンストラクタ本体: super(...) の前（プロローグ）の呼び出し
+8.8.7	prologue-explicit-super	call	jls.s08_08.Prologue#<init>(int)	jls.s08_08.Parent#<init>(int)	-	プロローグの後の明示的な super(w)
+8.8.7	prologue-no-implicit-super	nocall	jls.s08_08.Prologue#<init>(int)	jls.s08_08.Parent#<init>()	-	明示的コンストラクタ呼び出しがあれば、先頭の文でなくても暗黙の super() は無い
+8.8.7.1	delegating-mark	decl	jls.s08_08.Fields#<init>(int)	delegating	-	this(...) で委譲するコンストラクタ
+8.8.7.1	delegating-call	call	jls.s08_08.Fields#<init>(int)	jls.s08_08.Fields#<init>()	-	this(...) の呼び出し
+12.5	field-init-in-root-ctor	call	jls.s08_08.Fields#<init>()	jls.s08_08.Sink#fieldInit()	-	インスタンス変数の初期化子は委譲しないコンストラクタで実行される
+12.5	instance-init-in-root-ctor	call	jls.s08_08.Fields#<init>()	jls.s08_08.Sink#instanceInit()	-	インスタンス初期化子は委譲しないコンストラクタで実行される
+12.5	no-field-init-in-delegating	nocall	jls.s08_08.Fields#<init>(int)	jls.s08_08.Sink#fieldInit()	-	委譲するコンストラクタはインスタンス変数の初期化子を実行しない（§8.8.7.1）
+12.5	no-instance-init-in-delegating	nocall	jls.s08_08.Fields#<init>(int)	jls.s08_08.Sink#instanceInit()	-	委譲するコンストラクタはインスタンス初期化子を実行しない（§8.8.7.1）
+8.8.9	default-ctor	decl	jls.s08_08.DefaultCtor#<init>()	implicit	-	コンストラクタを書かないクラスにはデフォルトコンストラクタが暗黙に宣言される
+8.8.9	default-ctor-super	call	jls.s08_08.DefaultCtor#<init>()	jls.s08_08.Parent#<init>()	-	デフォルトコンストラクタは親の引数なしコンストラクタを呼ぶ
+8.9.1	enum-body-anonymous	type	jls.s08_09.Planet$1	-	-	本体を持つ enum 定数は匿名クラス（バイナリ名 Planet$1）のインスタンス
+8.9.1	enum-body-ctor	path	Planet.<clinit> > Planet$1.Planet$1 > Planet.Planet > Sink.register	-	-	定数の匿名クラスのコンストラクタは実引数をそのまま渡して enum のコンストラクタを呼ぶ（§15.9.5.1）
+8.9.2	enum-constant-clinit	call	jls.s08_09.Planet#<clinit>()	jls.s08_09.Planet#<init>(java.lang.String)	-	enum 定数はクラスの初期化で生成される（§12.4.2）
+8.9.1	enum-body-override	csv	jls.s08_09.Planet.run	Planet$1.weight	-	定数の本体の上書きは enum の型で呼んだときの候補になる
+8.9.3	enum-values	call	jls.s08_09.Planet#run(java.lang.String)	jls.s08_09.Planet#values()	-	暗黙に宣言される values() の呼び出し
+8.9.3	enum-valueof	call	jls.s08_09.Planet#run(java.lang.String)	jls.s08_09.Planet#valueOf(java.lang.String)	-	暗黙に宣言される valueOf(String) の呼び出し
+8.10.4.2	compact-canonical-key	decl	jls.s08_10.Range#<init>(int,int)	-	-	コンパクトな正準コンストラクタの引数は record の成分と同じ
+8.10.4.2	compact-canonical-body	path	Records.run > Range.Range > Sink.validate	-	-	コンパクトな正準コンストラクタの本体まで辿れる
+8.10.4	implicit-canonical	decl	jls.s08_10.Pair#<init>(java.lang.String,int)	implicit	-	正準コンストラクタを書かない record には成分と同じ引数の正準コンストラクタが暗黙に宣言される
+8.10.3	explicit-accessor	path	Records.run > Range.low > Sink.accessLow	-	-	明示的に宣言したアクセサの本体まで辿れる
+8.10	record-final	csv	jls.s08_10.Records.run	Range.low	RESOLVED:STATIC_BOUND:FINAL_CLASS	record は暗黙に final なのでアクセサは上書きされない
+9.1.4	no-interface-ctor	nodecl	jls.s09_04.Greeter#<init>()	-	-	インターフェースはコンストラクタを持たない（デフォルトコンストラクタはクラスだけ。§8.8.9）
+9.4.1	default-inherited	csv	jls.s09_04.Interfaces.run	Greeter.greet	-	上書きしないクラスの型で呼ぶと、継承したデフォルトメソッドが呼ばれる
+15.12.1	interface-super	csv	jls.s09_04.Polite.greet	Greeter.greet	RESOLVED:STATIC_BOUND:SUPER	TypeName.super.m() は親インターフェースのデフォルトメソッドを名指しで呼ぶ（仮想呼び出しではない）
+9.4	interface-private	csv	jls.s09_04.Greeter.greet	Greeter.helper	RESOLVED:STATIC_BOUND:PRIVATE	インターフェースの private メソッドは上書きされない
+9.4	interface-static	csv	jls.s09_04.Interfaces.run	Greeter.util	RESOLVED:STATIC_BOUND:STATIC	インターフェースの static メソッドは型名で呼ぶ
+12.4.2	class-var-init	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#first()	-	クラス変数の初期化子はクラスの初期化で実行される
+12.4.2	static-block	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#staticBlock()	-	static 初期化子（§8.7）はクラスの初期化で実行される
+12.4.2	class-var-init-after-block	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#last()	-	static 初期化子より後に書いたクラス変数の初期化子もクラスの初期化に含まれる
+9.3	interface-field-init	call	jls.s12_04.Config#<clinit>()	jls.s12_04.Sink#size()	-	インターフェースのフィールドは暗黙に static で、初期化子はインターフェースの初期化で実行される
+14.11.1	switch-guard	csv	jls.s14_11.Switches.area	Sink.isLarge	-	case のガード（when）の中の呼び出し
+14.11.1	switch-guarded-arm	csv	jls.s14_11.Switches.area	Sink.large	-	ガード付きの case の本体
+14.11.1.1	switch-sealed-arms	csv	jls.s14_11.Switches.area	Sink.square	-	sealed な型を型パターンで網羅した switch の各アーム
+14.11	switch-string	csv	jls.s14_11.Switches.label	Sink.kindB	-	文字列の switch の各アーム
+14.14.2	foreach-iterator	call	jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[])	jls.s14_14_02.Countdown#iterator()	-	拡張 for 文は Expression.iterator() を呼ぶ
+14.14.2	foreach-hasnext	call	jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[])	jls.s14_14_02.CountIterator#hasNext()	-	拡張 for 文は #i.hasNext() を呼ぶ（#i の型は iterator() の戻り値の型）
+14.14.2	foreach-next	call	jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[])	jls.s14_14_02.CountIterator#next()	-	拡張 for 文は #i.next() を呼ぶ
+14.14.2	foreach-once	callcount	jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[])	jls.s14_14_02.Countdown#iterator()	1	配列に対する拡張 for 文はメソッドを呼ばない（iterator() は Iterable の 1 つだけ）
+14.14.2	foreach-output	csv	jls.s14_14_02.EnhancedFor.run	Countdown.iterator	-	拡張 for 文の iterator() が call-hierarchy.csv の行として出る（Countdown.iterator() が「呼び出し元なし」にならない）
+14.20.3.1	twr-close-each	callcount	jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource)	jls.s14_20_03.Resource#close()	2	資源ごとに close() が呼ばれる（宣言した資源と、既存の変数を指定した資源）
+14.20.3.1	twr-close-body	path	TryWithResources.run > Resource.close > Sink.closed	-	-	close() の本体まで辿れる
+14.30.2	record-pattern-accessors	call	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Point#y()	-	レコードパターンは成分の値をアクセサを呼んで取り出す
+14.30.2	record-pattern-explicit-accessor	path	Patterns.run > Point.x > Sink.readX	-	-	明示的に宣言したアクセサなら、その本体が実行される
+14.30.1	nested-record-pattern	callcount	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Point#x()	2	入れ子のレコードパターンの内側でもアクセサを呼ぶ（instanceof Point(...) と Line(Point(...), ...) の 2 か所）
+14.30.1	nested-record-outer	call	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Line#end()	-	外側のレコードパターンの成分のアクセサ
+15.9.5	anonymous-binary-name	type	jls.s15_09_05.Anonymous$1	-	-	匿名クラスのバイナリ名は Anonymous$1（§13.1）
+15.9.5.1	anonymous-ctor	call	jls.s15_09_05.Anonymous$1#<init>(int)	jls.s15_09_05.Task#<init>(int)	-	匿名コンストラクタは生成式の実引数をそのまま渡して親のコンストラクタを呼ぶ
+15.9.5.1	anonymous-ctor-path	path	Anonymous.make > Anonymous$1.Anonymous$1 > Task.Task > Sink.taskInit	-	-	匿名クラスの生成から親のコンストラクタ本体まで辿れる
+15.12.2.2	strict-before-loose	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#pick(long)	-	厳密な呼び出し（拡大変換）で当てはまる pick(long) が選ばれる
+15.12.2.2	no-boxing-when-strict	nocall	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#pick(java.lang.Integer)	-	ボックス化の要る pick(Integer) は選ばれない
+15.12.2.3	loose-before-varargs	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#box(java.lang.Integer)	-	緩い呼び出し（ボックス化）で当てはまる box(Integer) が可変長引数より先に選ばれる
+15.12.2.3	no-varargs-when-loose	nocall	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#box(int[])	-	可変長引数の box(int...) は選ばれない
+15.12.2.4	varargs	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#vararg(int[])	-	可変長引数でしか当てはまらない呼び出し
+15.12.2.5	most-specific	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#specific(java.lang.String)	-	最も特定的なメソッド specific(String) が選ばれる
+15.12.2.5	not-less-specific	nocall	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#specific(java.lang.Object)	-	より特定的でない specific(Object) は選ばれない
+15.12.2.5	generic-erasure	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#id(java.lang.Number)	-	ジェネリックメソッドの呼び出し先は型変数を境界で消去したシグネチャ
+15.12.4.1	static-via-instance	csv	jls.s15_12.Invocation.run	Animal.kingdom	RESOLVED:STATIC_BOUND:STATIC	インスタンスの式で修飾しても static メソッドは静的に束縛される
+15.12.4.4	super-nonvirtual	csv	jls.s15_12.Dog.sound	Animal.sound	RESOLVED:STATIC_BOUND:SUPER	super.m() は上書きを探さない
+15.12.4.4	virtual-dispatch-dog	csv	jls.s15_12.Invocation.run	Dog.sound	-	仮想呼び出しは実行時のクラスの上書きを呼びうる（Dog）
+15.12.4.4	virtual-dispatch-cat	csv	jls.s15_12.Invocation.run	Cat.sound	-	仮想呼び出しは実行時のクラスの上書きを呼びうる（Cat）
+15.12.4.4	virtual-dispatch-base	csv	jls.s15_12.Invocation.run	Animal.sound	-	実行時のクラスが Animal そのものなら宣言が呼ばれる
+15.13.3	ref-static	csv	jls.s15_13.MethodRefs.run	Helper.parse	RESOLVED:STATIC_BOUND:STATIC	ClassName::staticMethod
+15.13.3	ref-bound	csv	jls.s15_13.MethodRefs.run	Helper.name	-	expression::instanceMethod（束縛されたレシーバ）
+15.13.3	ref-unbound	csv	jls.s15_13.MethodRefs.run	Helper.greet	-	ClassName::instanceMethod（最初の引数がレシーバ）
+15.13.3	ref-super	csv	jls.s15_13.MethodRefs.run	Base.baseWork	RESOLVED:STATIC_BOUND:SUPER	super::m は仮想呼び出しではない
+15.13.3	ref-super-not-own	nocsv	jls.s15_13.MethodRefs.run	MethodRefs.baseWork	-	super::m は自分の上書きを呼ばない
+15.13.3	ref-ctor	call	jls.s15_13.MethodRefs#run(jls.s15_13.Helper)	jls.s15_13.Helper#<init>()	-	ClassName::new はコンストラクタを呼ぶ
+15.27.2	lambda-static-field	path	Lambdas.<clinit> > Lambdas.lambda$static$0 > Sink.staticJob	-	-	クラス変数の初期化子の中のラムダはクラスの初期化で生成される（§12.4.2）
+15.27.2	lambda-field-each-ctor	call	jls.s15_27.Lambdas#<init>(int)	jls.s15_27.Lambdas#lambda$new$1()	-	インスタンス変数の初期化子の中のラムダは委譲しない各コンストラクタで生成される（§12.5）
+15.27.2	lambda-nested	path	Lambdas.run > Lambdas.lambda$run$3 > Lambdas.lambda$run$2 > Sink.inner	-	-	入れ子のラムダの本体まで辿れる
