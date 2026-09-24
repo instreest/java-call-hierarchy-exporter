@@ -154,6 +154,28 @@ public final class CallGraph {
         return edgeEnd(callerId) - edgeStart(callerId);
     }
 
+    /**
+     * そのエッジを持つ呼び出し元のメソッドID。エッジは呼び出し元ごとに並んでいるので、区切り（offsets）を
+     * 二分探索で引く（エッジごとの表を持たない。ヒープを増やさないため）。範囲外なら -1
+     */
+    public int callerOf(int edgeIndex) {
+        if (edgeIndex < 0 || offsets.length < 2 || edgeIndex >= offsets[offsets.length - 1]) {
+            return -1;
+        }
+        int lo = 0;
+        int hi = offsets.length - 2;
+        // offsets[id] <= edgeIndex < offsets[id + 1] を満たす id を探す（空の区切りは飛ばす）
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (offsets[mid] <= edgeIndex) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return lo;
+    }
+
     /** 呼び出し先（宣言型のメソッド。解決前） */
     public int calleeOf(int edgeIndex) {
         return calleeIds[edgeIndex];

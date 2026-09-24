@@ -116,7 +116,7 @@ LoudGreeter.greet(),fx.inherit.LoudGreeter,C,src/fx/inherit/LoudGreeter.java,5,1
 OnlyImpl.m(),fx.inherit.OnlyImpl,C,src/fx/inherit/OnlyImpl.java,6,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 Sub2.m(),fx.inherit.Sub2,I,src/fx/inherit/Sub2.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 CallbackRefs.hook(),fx.lambda.CallbackRefs,C,src/fx/lambda/CallbackRefs.java,23,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
-CallbackRefs.viaThread(),fx.lambda.CallbackRefs,C,src/fx/lambda/CallbackRefs.java,27,1,0,3,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] receiver unknown,0,[NOT_REACHED] no caller row was emitted
+CallbackRefs.viaThread(),fx.lambda.CallbackRefs,C,src/fx/lambda/CallbackRefs.java,27,1,0,3,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] own class (this),0,[NOT_REACHED] no caller row was emitted
 CallbackRefs.viaForEach(List),fx.lambda.CallbackRefs,C,src/fx/lambda/CallbackRefs.java,31,1,0,2,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] type name (unbound method reference),0,[NOT_REACHED] no caller row was emitted
 CallbackRefs.viaBoundField(),fx.lambda.CallbackRefs,C,src/fx/lambda/CallbackRefs.java,35,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 LoudCallbackRefs.hook(),fx.lambda.LoudCallbackRefs,C,src/fx/lambda/CallbackRefs.java,44,1,2,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted

@@ -291,9 +291,15 @@ public final class CacheFormat {
      *       足した。D 行にアノテーションの付いたメソッドの戻り値の型を足した。対になっていないサロゲートを
      *       符号化し、条件の文字列をサロゲートペアの途中で切らない（{@code docs/cache-unification-qa.md} の
      *       Q42〜Q49）</li>
+     *   <li>v35 フィールドへの書き込み（J 行）を漏れなく拾う: 入れ子のクラス・外側のクラスからの private
+     *       フィールドへの書き込み、複合代入と {@code ++} / {@code --}、初期化ブロック、条件の中のコンストラクタの
+     *       書き込み（site を {@code ?} にする）、書き換えられる引数を読む右辺。{@code this} 以外を修飾した
+     *       インスタンスフィールドの読み取りを値（{@code F:}）にしない。{@code this.m()} のレシーバの由来を
+     *       this にする。拡張 for の要素の出所を、要素を詰めた値だけと言い切れるコレクションに限る
+     *       （{@code docs/value-safety-qa.md} の Q18〜Q20）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v34";
+    public static final String VERSION = "jche-cache-v35";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

@@ -197,8 +197,8 @@ at fx.generic.GenericMain.run(GenericMain.java:9),OrderStore.put,UNEXPANDED:CHA,
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
-at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: receiver unknown
-at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: receiver unknown
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field

@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -15,6 +16,7 @@ import java.util.Set;
 import jche.cache.AnnotationTokens;
 import jche.cache.FieldDeclFact;
 import jche.cache.MethodDeclFact;
+import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.cache.TypeFact;
 
@@ -55,6 +57,10 @@ import jche.cache.TypeFact;
  * （Springの既定の命名）。&#64;Bean メソッドはメソッド名。
  *
  * <h2>絞り込みに使う注入点の情報</h2>
+ * 絞るのは、レシーバがコンテナの値を入れうる注入点のときだけ（{@link #isInjectedField} /
+ * {@link #injectsParameters}。&#64;Autowired 等を付けたフィールド・メソッド、ステレオタイプ注釈の Bean の
+ * フィールドとコンストラクタの引数、&#64;Bean メソッドの引数）。それ以外のフィールド・引数には利用者のコードが
+ * 何を入れてもよい（docs/spring-di-qa.md の Q5・Q6）。
  * フィールドに &#64;Qualifier / &#64;Resource(name) が付いていれば、そのBean名の型に絞る。
  * 付いていなければ型で絞る（候補のうちBeanが1つだけなら確定）。
  *
@@ -108,6 +114,17 @@ public final class SpringBeans {
     private final Set<String> undeterminedTypes = new HashSet<>();
     /** 返す具象型も宣言した戻り値の型も分からない（または {@code Object} の）&#64;Bean メソッドがあった */
     private boolean undeterminedAnyType;
+    /**
+     * ステレオタイプ注釈で登録された型。コンテナがインスタンスを作るので、コンストラクタの引数と
+     * フィールドが注入点になりうる（&#64;Bean メソッドが返す型は、利用者のコードが {@code new} するので含めない）
+     */
+    private final Set<String> stereotypeBeans = new HashSet<>();
+    /** 引数が注入点になるメソッドの ID（&#64;Autowired / &#64;Inject / &#64;Resource を付けたメソッド・コンストラクタと &#64;Bean メソッド） */
+    private final Set<Integer> injectingMethods = new HashSet<>();
+    /** 参照型の static フィールド（"typeFqn#fieldName"）。コンテナは static フィールドに注入しない */
+    private final Set<String> staticFields = new HashSet<>();
+    /** &#64;Autowired 等を付けたフィールドを宣言している型（値を読まない指定のときの判定。{@link #hasInjectedFields}） */
+    private final Set<String> injectedOwners = new HashSet<>();
 
     /** &#64;Bean メソッドの Bean 名と、宣言した戻り値の型（分からなければ空） */
     private record BeanMethod(String name, String returnType) {
@@ -153,13 +170,20 @@ public final class SpringBeans {
             if (AnnotationTokens.has(t.annotations(), stereotype)) {
                 String name = AnnotationTokens.valueOf(t.annotations(), stereotype);
                 register(t.typeFqn(), (name == null || name.isEmpty()) ? defaultBeanName(t.typeFqn()) : name);
+                stereotypeBeans.add(t.typeFqn());
                 return;
             }
         }
     }
 
     void field(FieldDeclFact v) {
-        if (!enabled || v.annotations().isEmpty()) {
+        if (!enabled) {
+            return;
+        }
+        if (ModifierTokens.has(v.mods(), "static") && !isPrimitiveOrString(v.declType())) {
+            staticFields.add(v.typeFqn() + "#" + v.fieldName());
+        }
+        if (v.annotations().isEmpty()) {
             return;
         }
         boolean injected = false;
@@ -174,11 +198,22 @@ public final class SpringBeans {
             name = AnnotationTokens.valueOf(v.annotations(), RESOURCE);
         }
         injectionPoints.put(v.typeFqn() + "#" + v.fieldName(), (name == null) ? "" : name);
+        injectedOwners.add(v.typeFqn());
     }
 
     /** &#64;Bean メソッドを覚えておく（返す具象型は R行が揃ってから {@link #resolveBeanMethods} で決める） */
     void method(int methodId, MethodDeclFact d) {
-        if (enabled && AnnotationTokens.has(d.annotations(), BEAN)) {
+        if (!enabled) {
+            return;
+        }
+        boolean injecting = AnnotationTokens.has(d.annotations(), BEAN);
+        for (String inject : INJECT_ANNOTATIONS) {
+            injecting |= AnnotationTokens.has(d.annotations(), inject);
+        }
+        if (injecting) {
+            injectingMethods.add(methodId);
+        }
+        if (AnnotationTokens.has(d.annotations(), BEAN)) {
             String name = AnnotationTokens.valueOf(d.annotations(), BEAN);
             beanMethods.put(methodId, new BeanMethod((name == null || name.isEmpty()) ? d.ref().name() : name,
                     d.returnType()));
@@ -289,6 +324,89 @@ public final class SpringBeans {
             }
         }
         return false;
+    }
+
+    /**
+     * そのフィールドが、コンテナが値を入れうる注入点か（段 5 で絞ってよいレシーバか）。
+     *
+     * &#64;Autowired / &#64;Inject / &#64;Resource を付けたフィールドか、ステレオタイプ注釈の Bean（またはその部分型が
+     * そうである型。抽象基底クラスのフィールドを部分型のコンストラクタ注入で埋める形）の static でない
+     * フィールド。それ以外（Bean でない型のフィールド・static フィールド）には、利用者のコードが何を入れても
+     * よいので、Bean だけに絞ると入れた実装への呼び出しを落とす（docs/spring-di-qa.md の Q5・Q6）
+     */
+    public boolean isInjectedField(String fieldKey, TypeHierarchy hierarchy) {
+        if (injectionPoints.containsKey(fieldKey)) {
+            return true;
+        }
+        int hash = fieldKey.indexOf('#');
+        if (hash <= 0 || staticFields.contains(fieldKey)) {
+            return false;
+        }
+        return isStereotypeOrBase(fieldKey.substring(0, hash), hierarchy);
+    }
+
+    /**
+     * そのメソッドの引数が、コンテナが値を入れうる注入点か（段 5 で絞ってよいレシーバか）。
+     *
+     * &#64;Autowired / &#64;Inject / &#64;Resource を付けたメソッド・コンストラクタ、&#64;Bean メソッド、
+     * ステレオタイプ注釈の Bean（またはその部分型がそうである型）のコンストラクタ。
+     * 普通のメソッドの引数には呼び出し元が何を渡してもよい（docs/spring-di-qa.md の Q5・Q6）
+     */
+    public boolean injectsParameters(int methodId, boolean constructor, String typeFqn, TypeHierarchy hierarchy) {
+        if (injectingMethods.contains(methodId)) {
+            return true;
+        }
+        return constructor && isStereotypeOrBase(typeFqn, hierarchy);
+    }
+
+    /**
+     * その型のメソッドが読むフィールドに、注入点がありうるか（値を読まない指定のときの粗い判定）。
+     *
+     * 値を読まないと、レシーバがどのフィールドかが分からない。そこで、その型がステレオタイプ注釈の Bean
+     * （またはその基底）か、その型か親の型に &#64;Autowired 等を付けたフィールドがあるときだけ、フィールドの
+     * レシーバを注入点とみなす。Bean でもなく注入点も持たない型のフィールドは、利用者のコードが入れたもの
+     */
+    public boolean hasInjectedFields(String typeFqn, TypeHierarchy hierarchy) {
+        if (isStereotypeOrBase(typeFqn, hierarchy)) {
+            return true;
+        }
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        queue.add(typeFqn);
+        seen.add(typeFqn);
+        while (!queue.isEmpty()) {
+            String t = queue.poll();
+            if (injectedOwners.contains(t)) {
+                return true;
+            }
+            for (String s : hierarchy.directSupertypes(t)) {
+                if (seen.add(s)) {
+                    queue.add(s);
+                }
+            }
+        }
+        return false;
+    }
+
+    /** ステレオタイプ注釈の Bean か、部分型にそれがある型か */
+    private boolean isStereotypeOrBase(String typeFqn, TypeHierarchy hierarchy) {
+        if (stereotypeBeans.contains(typeFqn)) {
+            return true;
+        }
+        for (String sub : hierarchy.transitiveSubtypes(typeFqn)) {
+            if (stereotypeBeans.contains(sub)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 基本型か String か（コンテナが Bean を注入しない型。static フィールドの控えを太らせないために除く） */
+    private static boolean isPrimitiveOrString(String declType) {
+        return switch (declType) {
+            case "boolean", "byte", "char", "short", "int", "long", "float", "double", "java.lang.String" -> true;
+            default -> false;
+        };
     }
 
     /**

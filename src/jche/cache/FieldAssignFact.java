@@ -7,7 +7,8 @@ package jche.cache;
  *
  * @param typeFqn   フィールドを宣言している型
  * @param fieldName フィールド名
- * @param site      代入箇所。{@link #SITE_INITIALIZER} か、メソッド／コンストラクタの "name(paramSig)"
+ * @param site      代入箇所。{@link #SITE_INITIALIZER} か、メソッド／コンストラクタの "name(paramSig)" か、
+ *                  「生成のたびに必ず通るとは言えない場所」の {@link #SITE_ELSEWHERE}
  * @param node      代入された値の、同じブロックの値グラフのノード番号（{@link ValueNode}）。
  *                  入れ子（実引数・レシーバ）も付いたノードを指す。読み手はノードの頭（種別と値）だけで
  *                  比べる（jche.graph.CallGraphBuilder）。追跡できなければ {@link ValueNode#NONE}
@@ -16,6 +17,15 @@ public record FieldAssignFact(String typeFqn, String fieldName, String site, int
 
     /** フィールド初期化子での代入を表す site */
     public static final String SITE_INITIALIZER = "<field>";
+
+    /**
+     * 生成のたびに必ず通るとは言えない代入の site。コンストラクタ・インスタンス初期化ブロックの中でも
+     * 条件・ループ・ラムダ・入れ子の型の中にあるもの、{@code this} 以外のインスタンスへの代入、
+     * static 初期化ブロックの中、入れ子の型など別の型の本体から private フィールドへ書いたもの。
+     * 読み手（jche.graph.FieldFacts）はコンストラクタでも初期化子でもない site として扱い、
+     * そのフィールドを「必ずこの値が入る」とはみなさない
+     */
+    public static final String SITE_ELSEWHERE = "?";
 
     public String toRow() {
         return CacheFormat.joinRow("J", typeFqn, fieldName, site, String.valueOf(node));

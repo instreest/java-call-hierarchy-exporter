@@ -301,7 +301,10 @@ public final class CallResolver {
                 res = viaContract;
             }
         }
-        if (res.isMultiple() && dataflow.enabled()) {
+        // DI の段 5 で唯一の Bean に絞った呼び出しも、経路で実際に渡った値の具象型が分かればそちらを採る。
+        // Bean のコンストラクタや @Autowired のメソッドも、利用者のコードが直接呼んで Bean でない実装を渡せる。
+        // 値を追った結果はコンテナの構成からの推定より根拠が強い（docs/spring-di-qa.md の Q4・Q6）
+        if ((res.isMultiple() || isSpringDi(res)) && dataflow.enabled()) {
             int recv = graph.recvNode(edgeIndex);
             int viaPath = dataflow.targetOf(recv, calleeId, ctx);
             if (viaPath >= 0) {
@@ -517,9 +520,9 @@ public final class CallResolver {
      * Beanとして登録された型だけ。候補のうちBeanが1つだけなら、そのBeanが動く。
      * &#64;Qualifier / &#64;Resource(name) の指定があればBean名でさらに絞る。
      *
-     * レシーバがフィールドか引数のときだけ適用する。DIで受け取ったインスタンスは
-     * 必ずこのどちらかの形で現れ、その場で new したレシーバ（段2で解決済み）や
-     * static 呼び出しにコンテナの都合を持ち込むと、かえって誤って絞ることになるため。
+     * レシーバが注入点（コンテナが値を入れうるフィールド・引数。{@link #isInjectionPoint}）のときだけ適用する。
+     * DIで受け取ったインスタンスは必ずこの形で現れ、それ以外のフィールド・引数・その場で new したレシーバ
+     * （段2で解決済み）・static 呼び出しにコンテナの都合を持ち込むと、かえって誤って絞ることになるため。
      *
      * 候補は宣言型のサブタイプから引き直す。Beanクラス自身がそのメソッドを
      * オーバーライドせず、抽象基底クラスから継承している場合、CHAの候補には
@@ -535,8 +538,7 @@ public final class CallResolver {
         if (!beans.enabled() || !base.isMultiple()) {
             return null;
         }
-        char recvKind = graph.recvKindOf(edgeIndex);
-        if (recvKind != RecvKind.FIELD && recvKind != RecvKind.PARAM) {
+        if (!isInjectionPoint(edgeIndex, beans)) {
             return null;
         }
         int recv = graph.recvNode(edgeIndex);
@@ -566,6 +568,53 @@ public final class CallResolver {
         }
         return Resolution.single(hits.get(0),
                 (qualifier == null) ? Resolution.SPRING_DI : Resolution.SPRING_DI_QUALIFIER);
+    }
+
+    /**
+     * そのエッジのレシーバが、コンテナが値を入れうる注入点か（段 5 で Bean に絞ってよいか）。
+     *
+     * <ul>
+     *   <li>フィールド … 値の表で {@code this} のフィールドと分かり（{@code F:型#名前}）、
+     *       {@link SpringBeans#isInjectedField} が注入点と答えるもの</li>
+     *   <li>引数 … その呼び出しを書いたメソッドの引数で、{@link SpringBeans#injectsParameters} が
+     *       注入点と答えるメソッド（Bean のコンストラクタ・&#64;Autowired 等を付けたメソッド・&#64;Bean メソッド）</li>
+     * </ul>
+     * 以前はレシーバがフィールドか引数なら何でも絞っていた。Bean でないクラスの static メソッドの引数や、
+     * 利用者が {@code new} して渡したフィールドまで唯一の Bean に確定し、実際に渡した実装への呼び出しを
+     * 落としていた（docs/spring-di-qa.md の Q5・Q6）
+     */
+    private boolean isInjectionPoint(int edgeIndex, SpringBeans beans) {
+        char recvKind = graph.recvKindOf(edgeIndex);
+        if (recvKind != RecvKind.FIELD && recvKind != RecvKind.PARAM) {
+            return false;
+        }
+        int caller = graph.callerOf(edgeIndex);
+        if (caller < 0) {
+            return false;
+        }
+        // 引数が注入点になるメソッドか（ラムダの本体の引数は、関数型インターフェースを呼んだ側が渡す）
+        boolean injectedParams = !methods.isLambdaBody(caller)
+                && beans.injectsParameters(caller, methods.isConstructor(caller), methods.typeFqn(caller),
+                        graph.hierarchy);
+        if (!dataflow.enabled()) {
+            // 値を読まない指定。レシーバがどのフィールド・引数かは値の表にしか無いので、呼び出しを書いた
+            // メソッドから判定する（フィールドは、そのメソッドの型か親に注入点のフィールドがあるとき。
+            // 引数は、そのメソッドの引数が注入点のとき）。値を読むときより粗い（docs/spring-di-qa.md の Q6）
+            return (recvKind == RecvKind.FIELD)
+                    ? beans.hasInjectedFields(methods.typeFqn(caller), graph.hierarchy) : injectedParams;
+        }
+        int recv = graph.recvNode(edgeIndex);
+        ValueStore values = graph.values();
+        if (recvKind == RecvKind.FIELD) {
+            return values.kind(recv) == Origin.FIELD && beans.isInjectedField(values.value(recv), graph.hierarchy);
+        }
+        // 引数。本体で書き換えた引数は値が分からない（A: にならない）ので、ここで外れる
+        return values.kind(recv) == Origin.PARAM && injectedParams;
+    }
+
+    /** 段 5（DI）で絞った結果か。経路で具象型が分かれば、そちらで置き換える（{@link #resolveOnPath}） */
+    private static boolean isSpringDi(Resolution res) {
+        return res.label().startsWith(Resolution.SPRING_DI);
     }
 
     /**

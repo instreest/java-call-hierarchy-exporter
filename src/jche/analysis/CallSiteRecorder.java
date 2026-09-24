@@ -21,6 +21,7 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.ThisExpression;
 
 import jche.cache.CallEdgeFact;
 import jche.cache.CallSiteValues;
@@ -384,6 +385,12 @@ final class CallSiteRecorder {
      */
     static char recvKindOf(Expression ex) {
         if (ex == null) {
+            return RecvKind.THIS;
+        }
+        // this.m() も同じオブジェクトへの呼び出し。読み手はレシーバが this の呼び出しでだけ、今のオブジェクトの
+        // コンストラクタ実引数を呼び出し先へ引き継ぐ（jche.report.StreamingTreeWalker の bindConstructorArguments）。
+        // Outer.this.m() は別のインスタンスなので含めない
+        if (ex instanceof ThisExpression t && t.getQualifier() == null) {
             return RecvKind.THIS;
         }
         if (ex instanceof MethodInvocation) {

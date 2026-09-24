@@ -3,7 +3,9 @@ package jche.report;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 
+import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.cache.RecvKind;
 import jche.config.Config;
@@ -347,7 +349,7 @@ public final class StreamingTreeWalker {
                     return;
                 }
                 int target = targets[ti];
-                long[] targetParams = bindArguments(e, depth, target);
+                long[] targetParams = bindArguments(e, depth, target, declaredCallee, res);
                 long[] targetCtorArgs = bindConstructorArguments(e, depth, target);
 
                 if (unreachable != null) {
@@ -488,12 +490,60 @@ public final class StreamingTreeWalker {
      *
      * 何も分からない場合や、呼び出し先が引数を使い回さない場合は null を返す。
      * null を返せば以降の深さでは何もしないので、解析コストが必要な箇所だけに絞れる。
+     *
+     * 実引数の位置と呼び出し先の引数の位置は、いつも揃うとは限らない（{@link #argumentShift}）。
+     * 揃え方が分からなければ環境を渡さない（引数の値で条件を判定しない＝落とさない側）。
      */
-    private long[] bindArguments(int edgeIndex, int depth, int target) {
+    private long[] bindArguments(int edgeIndex, int depth, int target, int declaredCallee, Resolution res) {
         if (!dataflow.enabled() || !dataflow.usesContext(target)) {
             return null;
         }
-        return dataflow.bindArgs(graph.argsNode(edgeIndex), path[depth].context());
+        int shift = argumentShift(declaredCallee, target, res);
+        if (shift < 0) {
+            return null;
+        }
+        long[] bound = dataflow.bindArgs(graph.argsNode(edgeIndex), path[depth].context());
+        if (shift == 0 || bound == null) {
+            return bound;
+        }
+        return (bound.length <= shift) ? null : Arrays.copyOfRange(bound, shift, bound.length);
+    }
+
+    /**
+     * 呼び出し箇所の実引数の位置から、呼び出し先の引数の位置を引く数。揃え方が分からなければ -1。
+     *
+     * <ul>
+     *   <li>宣言どおりの呼び出し先か、その上書き（引数の数が同じ）… 0</li>
+     *   <li>{@code Method.invoke(obj, a, b)} から呼ばれるメソッド … 1（第 1 実引数はレシーバ）</li>
+     *   <li>型名で書いたメソッド参照（{@code Mode::chk}）の参照先 … 1。関数型インターフェースのメソッドの
+     *       第 1 実引数がレシーバになり、2 番目からが参照先の引数になる（JLS 15.13.3）。
+     *       {@code c.accept(Mode.B, Mode.A)} の {@code Mode.A} が {@code chk(Mode other)} の {@code other}</li>
+     *   <li>それ以外で引数の数が違う（可変長引数が絡むなど）… -1</li>
+     * </ul>
+     * 参照先の最後の引数が配列なら、可変長引数にまとめられているかもしれず、数からは揃え方を決められない
+     * ので -1 にする（docs/value-safety-qa.md の Q21）
+     */
+    private int argumentShift(int declaredCallee, int target, Resolution res) {
+        if (target == declaredCallee || declaredCallee < 0) {
+            return 0;
+        }
+        if (res.isReflection()) {
+            return (dataflow.reflectiveKindOf(declaredCallee) == DataflowResolver.REFLECT_INVOKE) ? 1 : 0;
+        }
+        if (methods.isLambdaBody(target)) {
+            return 0;   // ラムダの本体の引数は、関数型インターフェースのメソッドの引数と同じ並び
+        }
+        if (methods.lastParamIsArray(target)) {
+            return -1;
+        }
+        int declared = methods.paramCount(declaredCallee);
+        int actual = methods.paramCount(target);
+        if (declared == actual) {
+            return 0;
+        }
+        boolean instance = !methods.isConstructor(target)
+                && !ModifierTokens.has(methods.mods(target), "static");
+        return (instance && declared == actual + 1) ? 1 : -1;
     }
 
     /**
@@ -514,8 +564,13 @@ public final class StreamingTreeWalker {
         }
         int recv = graph.recvNode(edgeIndex);
         if (recv == ValueStore.NONE) {
-            // レシーバなし = this。同じ型のメソッドを呼んでいる間だけ引き継ぐ
-            return targetType.equals(path[depth].ctorOwner) ? path[depth].ctorArgs : null;
+            // レシーバの値が無いのは、this への呼び出し（m() / this.m()）だけではない。拡張 for の変数・
+            // パターンの変数・配列の要素・条件式など、値を追えなかったレシーバも無しになる。
+            // それを this とみなすと、別のインスタンスに今のオブジェクトのコンストラクタ実引数を当てて、
+            // 誤った具象型に確定する（docs/value-safety-qa.md の Q19）。レシーバが this と分かる呼び出しで、
+            // 同じ型のメソッドを呼んでいる間だけ引き継ぐ
+            return (graph.recvKindOf(edgeIndex) == RecvKind.THIS && targetType.equals(path[depth].ctorOwner))
+                    ? path[depth].ctorArgs : null;
         }
         ValueStore values = graph.values();
         if (values.kind(recv) != Origin.NEW || !targetType.equals(values.value(recv))) {

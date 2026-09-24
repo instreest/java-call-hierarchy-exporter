@@ -195,6 +195,24 @@ public final class MethodTable {
         return k.substring(k.indexOf('(', k.indexOf('#')) + 1, k.lastIndexOf(')'));
     }
 
+    /** 引数の数（引数型は消去済みでカンマを含まないので、カンマで数えられる。{@link #shortParams}） */
+    public int paramCount(int id) {
+        String raw = rawParams(id);
+        if (raw.isEmpty()) {
+            return 0;
+        }
+        int count = 1;
+        for (int i = raw.indexOf(','); i >= 0; i = raw.indexOf(',', i + 1)) {
+            count++;
+        }
+        return count;
+    }
+
+    /** 最後の引数が配列型か（可変長引数はここに入る。可変長かどうかはキーからは分からない） */
+    public boolean lastParamIsArray(int id) {
+        return rawParams(id).endsWith("[]");
+    }
+
     public String pkg(int id) {
         return pkgs.get(id);
     }

@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
+import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.dataflow.DataflowFacts;
 import jche.util.Names;
@@ -527,24 +528,62 @@ public final class DataflowResolver {
         }
         String name = strings.get(nameId);
         String owner = strings.get(ownerId);
+        boolean declaredOnly = CLASS_GET_DECLARED_METHOD.equals(v);
         String recvType = concreteTypeOf(values.argAt(invokeArgs, 0), ctx);
-        String lookup = (recvType != null && graph.hierarchy.isSubtypeOf(recvType, owner)) ? recvType : owner;
+        String dispatch = (recvType != null && graph.hierarchy.isSubtypeOf(recvType, owner)) ? recvType : null;
 
         String params = paramTypesOf(recv, 1, ctx);
         if (params != null) {
             // リフレクションは実引数から名前と引数型を組み立てるので、宣言している型は
             // 分からない。上書きの引きもシグネチャで行う（implementationOfSignature）
-            int id = graph.implementationOfSignature(lookup, name + "(" + params + ")");
-            if (id < 0 && !lookup.equals(owner)) {
-                id = graph.implementationOfSignature(owner, name + "(" + params + ")");
+            String sig = name + "(" + params + ")";
+            int found = declaredOnly ? declaredIn(owner, sig) : graph.implementationOfSignature(owner, sig);
+            if (found >= 0 && !dispatchesVirtually(found)) {
+                return new int[] {found};   // private・static は実行時のクラスで選び直さない
+            }
+            int id = (dispatch == null) ? -1 : graph.implementationOfSignature(dispatch, sig);
+            if (id < 0) {
+                id = found;
             }
             return (id < 0) ? null : new int[] {id};
         }
-        IntArray ids = methodsNamed(lookup, name);
-        if (ids.isEmpty() && !lookup.equals(owner)) {
-            ids = methodsNamed(owner, name);
+        IntArray ids = new IntArray(2);
+        IntArray named = declaredOnly ? facts.methodsNamed(owner, name) : methodsNamedAlongSupertypes(owner, name);
+        for (int i = 0; named != null && i < named.size(); i++) {
+            int id = named.get(i);
+            if (dispatchesVirtually(id)) {
+                // 実際に動くのは、受け手の実行時のクラス（分からなければ owner）から探した実装
+                String from = (dispatch == null) ? owner : dispatch;
+                int impl = graph.implementationOfSignature(from, methods.signature(id));
+                if (impl >= 0) {
+                    id = impl;
+                }
+            }
+            ids.addIfAbsent(id);
+        }
+        if (ids.isEmpty() && dispatch != null) {
+            // owner の宣言に本体が無い（インターフェース・抽象メソッド）。受け手の実行時のクラスから引く
+            IntArray fromReceiver = methodsNamedAlongSupertypes(dispatch, name);
+            for (int i = 0; i < fromReceiver.size(); i++) {
+                ids.addIfAbsent(fromReceiver.get(i));
+            }
         }
         return ids.isEmpty() ? null : ids.toArray();
+    }
+
+    /**
+     * リフレクションの invoke が、受け手の実行時のクラスで実装を選び直すメソッドか（JLS 15.12.4.4 と同じ）。
+     * private（上書きされない。JLS 8.4.8）と static（受け手を使わない）は、見つけた宣言そのものが動く
+     */
+    private boolean dispatchesVirtually(int id) {
+        String mods = methods.mods(id);
+        return !ModifierTokens.has(mods, "private") && !ModifierTokens.has(mods, "static");
+    }
+
+    /** その型自身が宣言している、そのシグネチャのメソッド（{@code getDeclaredMethod} は親を探さない）。無ければ -1 */
+    private int declaredIn(String typeFqn, String sig) {
+        int id = methods.idOf(typeFqn + "#" + sig);
+        return (id >= 0 && methods.hasBody(id)) ? id : -1;
     }
 
     /**
@@ -739,8 +778,16 @@ public final class DataflowResolver {
         }
     }
 
-    /** 型（と親型）の中で、その名前を持つ本体付きメソッド。最初に見つかった型のものだけ */
-    private IntArray methodsNamed(String typeFqn, String name) {
+    /**
+     * 型と、その親型すべての中で、その名前を持つ本体付きメソッド（{@code getMethod} は継承したメソッドも返す）。
+     *
+     * 最初に見つかった型のものだけにすると、{@code C.class.getMethod("m", types)} で引数型が分からないとき、
+     * 親から継承した多重定義（{@code P#m(int)}）を落として、{@code C#m(String)} だけに確定してしまう
+     * （docs/value-safety-qa.md の Q22）。親の private なメソッドは {@code getMethod} では見つからないので除く
+     * （その型自身のものは除かない。多すぎる側に倒す）
+     */
+    private IntArray methodsNamedAlongSupertypes(String typeFqn, String name) {
+        IntArray found = new IntArray(2);
         ArrayDeque<String> queue = new ArrayDeque<>();
         Set<String> seen = new HashSet<>();
         queue.add(typeFqn);
@@ -748,8 +795,11 @@ public final class DataflowResolver {
         while (!queue.isEmpty()) {
             String t = queue.poll();
             IntArray ids = facts.methodsNamed(t, name);
-            if (ids != null && !ids.isEmpty()) {
-                return ids;
+            for (int i = 0; ids != null && i < ids.size(); i++) {
+                int id = ids.get(i);
+                if (t.equals(typeFqn) || !ModifierTokens.has(methods.mods(id), "private")) {
+                    found.addIfAbsent(id);
+                }
             }
             for (String s : graph.hierarchy.directSupertypes(t)) {
                 if (seen.add(s)) {
@@ -757,6 +807,6 @@ public final class DataflowResolver {
                 }
             }
         }
-        return new IntArray(1);
+        return found;
     }
 }

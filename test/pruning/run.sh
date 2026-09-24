@@ -13,7 +13,10 @@
 #     （真偽値の定数・int の定数・16 進の定数・文字列 / ボックス型 / 列挙型の equals・enum の switch・
 #       書き換えない変数の別名・定数フィールドを写した変数・| を含む文字列の定数・new だけのローカル変数・
 #       コンストラクタで受け取るフィールド・識別子の形の文字列を返すメソッド・契約表のキーになる戻り値・
-#       上書きされないメソッド（static・private・final・継承だけ）の戻り値・上書きされない @Bean メソッド）
+#       上書きされないメソッド（static・private・final・継承だけ）の戻り値・上書きされない @Bean メソッド・
+#       入れ子のクラスが別のフィールドにだけ書くフィールド・this.m() と this.f・空の new に add しただけのリスト・
+#       static メソッドの参照の実引数・private / static のメソッドへの invoke・Bean のコンストラクタと @Autowired の
+#       メソッドの引数）
 #
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
@@ -178,6 +181,9 @@ CASES=()
 #     pruned=<値>    pruned に加えて、打ち切りの注記の値が <値>（注記の「= <値>)」。値を切らずに読んだことを見る）
 #     from:<起点>    その呼び出しの行のうち、起点（root 列）が <起点> の行がある（呼び出し先がどこからも呼ばれず
 #                    それ自身が起点になった行と区別する。リフレクションで繋ぐ先を取り違えると、正しい先は起点に回る）
+#     via:<Class.method>:<期待>  経路（root 列と call-hierarchy 列）に <Class.method> を通る行だけで <期待> を見る
+#                    （メソッド参照は、参照を書いたメソッドから参照先への辺も持つ。関数型インターフェースを
+#                    呼んだ側（run の c.accept）から降りた経路だけを見たいときに使う）
 #   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける。
 #   クラス名を / で始めると無名パッケージのクラスになる（/Kind なら work/src/Kind.java。呼び出し元も /Kind.m と書く）
 case_() {
@@ -2073,6 +2079,627 @@ public class ThreadArg2 {
 EOF
 
 # ---------------------------------------------------------------------------
+# フィールドへの書き込みを 1 つでも取りこぼすと、読み手（FieldFacts）はコンストラクタで入れた値だけが入ると
+# 言い切り、フィールドのレシーバをその型に絞ったり、フィールドの値で条件を打ち切ったりする。
+# 入れ子のクラス・static な入れ子のクラス・++ と複合代入・初期化ブロック・初期化子のラムダからの書き込み、
+# 条件の中や return の後ろのコンストラクタの書き込み（通らない経路では既定値 0 / false / null が残る）、
+# 書き換えた引数を入れる代入（docs/value-safety-qa.md の Q18）
+# ---------------------------------------------------------------------------
+case_ listed FfInner FfInner.go DaoB.find "内部クラス（Setter）がフィールド dao に書くなら、コンストラクタ実引数の DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfInner {
+    private Dao dao;
+    FfInner(Dao d) { this.dao = d; }
+    class Setter { void set(Dao d) { dao = d; } }
+    void go() { dao.find(); }
+    public static void main(String[] args) {
+        FfInner f = new FfInner(new DaoA());
+        f.new Setter().set(new DaoB());
+        f.go();
+    }
+}
+EOF
+expect_ listed FfInner.go DaoA.find "同上（DaoA も残す）"
+
+case_ listed FfNested FfNested.go DaoB.find "static な入れ子のクラス（Mut.set）が f.dao に書くなら、コンストラクタ実引数の DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfNested {
+    private Dao dao;
+    FfNested(Dao d) { this.dao = d; }
+    static class Mut { static void set(FfNested f, Dao d) { f.dao = d; } }
+    void go() { dao.find(); }
+    public static void main(String[] args) {
+        FfNested f = new FfNested(new DaoA());
+        Mut.set(f, new DaoB());
+        f.go();
+    }
+}
+EOF
+
+case_ reachable FfIncr FfIncr.check FfIncr.hit "n++ で書き換えるフィールドは、コンストラクタ実引数（0）のままとみなして x == 1 を打ち切らない" <<'EOF'
+package pr;
+
+public class FfIncr {
+    private int n;
+    FfIncr(int n) { this.n = n; }
+    void inc() { n++; }
+    void go() { check(n); }
+    void check(int x) { if (x == 1) { hit(); } }
+    void hit() { System.out.println("h"); }
+    public static void main(String[] args) { FfIncr f = new FfIncr(0); f.inc(); f.go(); }
+}
+EOF
+
+case_ reachable FfCompound FfCompound.check FfCompound.hit "コンストラクタの this.m += n は右辺（n）の値を入れるのではない。m を n の値 1 とみなして x == 2 を打ち切らない" <<'EOF'
+package pr;
+
+public class FfCompound {
+    private int m;
+    FfCompound(int n) { this.m = n; this.m += n; }
+    void go() { check(m); }
+    void check(int x) { if (x == 2) { hit(); } }
+    void hit() { System.out.println("h"); }
+    public static void main(String[] args) { new FfCompound(1).go(); }
+}
+EOF
+
+case_ listed FfBlock FfBlock.go DaoB.find "初期化ブロック（{ dao = new DaoB(); }）とコンストラクタの条件の中の書き込みがあれば、コンストラクタ実引数の DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfBlock {
+    private Dao dao;
+    { dao = new DaoB(); }
+    FfBlock(Dao d, boolean use) { if (use) { this.dao = d; } }
+    void go() { dao.find(); }
+    public static void main(String[] args) { new FfBlock(new DaoA(), false).go(); }
+}
+EOF
+
+case_ reachable FfCond FfCond.check FfCond.hit "コンストラクタの条件の中でだけ書くフィールドは、通らない経路で既定値 0 のまま。x == 0 を打ち切らない" <<'EOF'
+package pr;
+
+public class FfCond {
+    private int mode;
+    FfCond(int m, boolean use) { if (use) { this.mode = m; } }
+    void go() { check(mode); }
+    void check(int x) { if (x == 0) { hit(); } }
+    void hit() { System.out.println("h"); }
+    public static void main(String[] args) { new FfCond(1, false).go(); }
+}
+EOF
+
+case_ reachable FfReturn FfReturn.check FfReturn.hit "return の後ろのコンストラクタの書き込みも、return で抜ける経路では既定値 false のまま。!on を打ち切らない" <<'EOF'
+package pr;
+
+public class FfReturn {
+    private boolean on;
+    FfReturn(boolean v, boolean skip) {
+        if (skip) { return; }
+        this.on = v;
+    }
+    void go() { check(on); }
+    void check(boolean x) { if (!x) { hit(); } }
+    void hit() { System.out.println("h"); }
+    public static void main(String[] args) { new FfReturn(true, true).go(); }
+}
+EOF
+
+case_ listed FfReParam FfReParam.go DaoB.find "コンストラクタの中で書き換えた引数（d = new DaoB();）を入れるフィールドは、渡された DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfReParam {
+    private final Dao dao;
+    FfReParam(Dao d, boolean swap) {
+        if (swap) { d = new DaoB(); }
+        this.dao = d;
+    }
+    void go() { dao.find(); }
+    public static void main(String[] args) { new FfReParam(new DaoA(), true).go(); }
+}
+EOF
+
+case_ reachable FfReInt FfReInt.check FfReInt.hit "m = m + 1; this.mode = m; の mode は渡された 1 ではない。x == 2 を打ち切らない" <<'EOF'
+package pr;
+
+public class FfReInt {
+    private final int mode;
+    FfReInt(int m) { m = m + 1; this.mode = m; }
+    void go() { check(mode); }
+    void check(int x) { if (x == 2) { hit(); } }
+    void hit() { System.out.println("h"); }
+    public static void main(String[] args) { new FfReInt(1).go(); }
+}
+EOF
+
+case_ listed FfLambdaInit FfLambdaInit.go DaoB.find "フィールド初期化子のラムダ（setter = x -> this.dao = x）が書くフィールドは、コンストラクタ実引数の DaoA に絞らない" <<'EOF'
+package pr;
+
+import java.util.function.Consumer;
+
+public class FfLambdaInit {
+    private Dao dao;
+    final Consumer<Dao> setter = x -> this.dao = x;
+    FfLambdaInit(Dao d) { this.dao = d; }
+    void go() { dao.find(); }
+    public static void main(String[] args) {
+        FfLambdaInit f = new FfLambdaInit(new DaoA());
+        f.setter.accept(new DaoB());
+        f.go();
+    }
+}
+EOF
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD FfKeep FfKeep.go DaoB.find "対照: 入れ子のクラスと初期化ブロックが別のフィールドにだけ書くなら、dao はコンストラクタ実引数の DaoB に絞る" <<'EOF'
+package pr;
+
+public class FfKeep {
+    private final Dao dao;
+    private int count;
+    { count = 1; }
+    FfKeep(Dao d) { this.dao = d; }
+    class Counter { void up() { count++; } }
+    void go() { dao.find(); }
+    public static void main(String[] args) {
+        FfKeep f = new FfKeep(new DaoB());
+        f.new Counter().up();
+        f.go();
+    }
+}
+EOF
+expect_ absent FfKeep.go DaoA.find "同上（DaoA の行が無い）"
+
+# ---------------------------------------------------------------------------
+# コンストラクタ実引数は、今のオブジェクト（this）にしか当てない。別のインスタンスのフィールド（other.dao）や、
+# 値を追えないレシーバ（拡張 for の変数・パターンの変数・配列の要素）への呼び出しに、今のオブジェクトの
+# コンストラクタ実引数を当てると、別のオブジェクトの中身を取り違える（docs/value-safety-qa.md の Q19）
+# ---------------------------------------------------------------------------
+case_ listed OtherFld OtherFld.cmp DaoB.find "other.dao は other のフィールド。this のコンストラクタ実引数（DaoA）に絞らない" <<'EOF'
+package pr;
+
+public class OtherFld {
+    private final Dao dao;
+    OtherFld(Dao d) { this.dao = d; }
+    void cmp(OtherFld other) { other.dao.find(); }
+    public static void main(String[] args) { new OtherFld(new DaoA()).cmp(new OtherFld(new DaoB())); }
+}
+EOF
+
+case_ reachable OtherInt OtherInt.check OtherInt.hit "other.mode は other のフィールド。this のコンストラクタ実引数（1）を当てて x == 2 を打ち切らない" <<'EOF'
+package pr;
+
+public class OtherInt {
+    private final int mode;
+    OtherInt(int m) { this.mode = m; }
+    void cmp(OtherInt other) { check(other.mode); }
+    void check(int x) { if (x == 2) { hit(); } }
+    void hit() { System.out.println("h"); }
+    public static void main(String[] args) { new OtherInt(1).cmp(new OtherInt(2)); }
+}
+EOF
+
+case_ listed EachRecv EachRecv.go DaoB.find "拡張 for の変数 h への h.go() は this の呼び出しではない。今のオブジェクトのコンストラクタ実引数（DaoA）を当てない" <<'EOF'
+package pr;
+
+import java.util.List;
+
+public class EachRecv {
+    private final Dao dao;
+    EachRecv(Dao d) { this.dao = d; }
+    void go() { dao.find(); }
+    void each(List<EachRecv> all) { for (EachRecv h : all) { h.go(); } }
+    public static void main(String[] args) {
+        new EachRecv(new DaoA()).each(List.of(new EachRecv(new DaoB())));
+    }
+}
+EOF
+
+case_ listed PatRecv PatRecv.go DaoB.find "パターンの変数 other への other.go() も this の呼び出しではない" <<'EOF'
+package pr;
+
+public class PatRecv {
+    private final Dao dao;
+    PatRecv(Dao d) { this.dao = d; }
+    void go() { dao.find(); }
+    void cmp(Object o) { if (o instanceof PatRecv other) { other.go(); } }
+    public static void main(String[] args) { new PatRecv(new DaoA()).cmp(new PatRecv(new DaoB())); }
+}
+EOF
+
+case_ listed ArrRecv ArrRecv.go DaoB.find "配列の要素への peers[0].go() も this の呼び出しではない" <<'EOF'
+package pr;
+
+public class ArrRecv {
+    private final Dao dao;
+    ArrRecv(Dao d) { this.dao = d; }
+    void go() { dao.find(); }
+    void first(ArrRecv[] peers) { peers[0].go(); }
+    public static void main(String[] args) {
+        new ArrRecv(new DaoA()).first(new ArrRecv[] { new ArrRecv(new DaoB()) });
+    }
+}
+EOF
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD ThisDotInj ThisDotInj.use DaoB.find "対照: this.use() と this.d も今のオブジェクト。コンストラクタ実引数（DaoB）を引き継いで絞る" <<'EOF'
+package pr;
+
+public class ThisDotInj {
+    private final Dao d;
+    ThisDotInj(Dao d) { this.d = d; }
+    public static void main(String[] args) { new ThisDotInj(new DaoB()).run(); }
+    void run() { this.use(); }
+    void use() { this.d.find(); }
+}
+EOF
+expect_ absent ThisDotInj.use DaoA.find "同上（DaoA の行が無い）"
+
+# ---------------------------------------------------------------------------
+# 拡張 for の要素の出所は、要素を詰めた値だけと言い切れるコレクション（この本体で引数なしの new をした
+# java.util のローカル変数で、再代入せず、要素を足すメソッドのレシーバと拡張 for にしか使わない）に限る。
+# コンストラクタの実引数・addAll・他のメソッドへ渡す・別名・再代入・引数のコレクション・listIterator().add・
+# list::add で入った要素を見落とすと、見えた add の値だけに絞る（docs/value-safety-qa.md の Q20）
+# ---------------------------------------------------------------------------
+case_ listed ElemCtor ElemCtor.run DaoB.find "new ArrayList<>(List.of(new DaoB())) の要素は add した DaoA だけではない" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemCtor {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>(List.of(new DaoB()));
+        list.add(new DaoA());
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+expect_ listed ElemCtor.run DaoA.find "同上（DaoA も残す）"
+
+case_ listed ElemPass ElemPass.run DaoB.find "別のメソッドへ渡して詰めてもらった要素（fill(list)）も残す" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemPass {
+    static void fill(List<Dao> l) { l.add(new DaoB()); }
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        fill(list);
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+
+case_ listed ElemAlias ElemAlias.run DaoB.find "別名（alias = list）から add した要素も残す" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemAlias {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        List<Dao> alias = list;
+        alias.add(new DaoB());
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+
+case_ listed ElemAddAll ElemAddAll.run DaoB.find "addAll で入った要素も残す" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemAddAll {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        list.addAll(List.of(new DaoB()));
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+
+case_ listed ElemReset ElemReset.run DaoB.find "再代入（list = make();）したコレクションの要素も残す" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemReset {
+    static List<Dao> make() { return new ArrayList<>(List.of(new DaoB())); }
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        list = make();
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+
+case_ listed ElemParam ElemParam.run DaoB.find "引数のコレクションは呼び出し元が詰めた要素（DaoB）も持つ" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemParam {
+    static void run(List<Dao> tasks) {
+        tasks.add(new DaoA());
+        for (Dao d : tasks) { d.find(); }
+    }
+    public static void main(String[] args) {
+        List<Dao> l = new ArrayList<>();
+        l.add(new DaoB());
+        run(l);
+    }
+}
+EOF
+
+case_ listed ElemIter ElemIter.run DaoB.find "listIterator().add で入った要素も残す" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemIter {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        list.listIterator().add(new DaoB());
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+
+case_ listed ElemRef ElemRef.run DaoB.find "メソッド参照 list::add で入った要素も残す" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+
+public class ElemRef {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        Stream.of(new DaoB()).forEach(list::add);
+        for (Dao d : list) { d.find(); }
+    }
+}
+EOF
+
+case_ resolved:RESOLVED:DATAFLOW_NEW ElemOnly ElemOnly.run DaoA.find "対照: new した空のリストに add した値だけなら、要素（DaoA）に絞る（size() の問い合わせは要素を変えない）" <<'EOF'
+package pr;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ElemOnly {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        List<Dao> list = new ArrayList<>();
+        list.add(new DaoA());
+        if (list.size() > 0) {
+            for (Dao d : list) { d.find(); }
+        }
+    }
+}
+EOF
+expect_ absent ElemOnly.run DaoB.find "同上（DaoB の行が無い）"
+
+# ---------------------------------------------------------------------------
+# 型名で書いたメソッド参照（Type::instMethod）は、関数型インターフェースのメソッドの第 1 実引数がレシーバで、
+# 2 番目からが参照先の引数（JLS 15.13.3）。位置をずらさずに当てると、別の実引数で条件を判定して打ち切ったり、
+# 引数の具象型を取り違えたりする（docs/value-safety-qa.md の Q21）
+# ---------------------------------------------------------------------------
+case_ reachable MrefUn MrefMode.chk MrefUn.hit "c.accept(B, A) を Mode::chk へ繋ぐとき、other は 2 番目の実引数（A）。1 番目（B）を当てて other == A を打ち切らない" <<'EOF'
+package pr;
+
+import java.util.function.BiConsumer;
+
+enum MrefMode {
+    A, B;
+    void chk(MrefMode other) {
+        if (other == MrefMode.A) { MrefUn.hit(); }
+        if (other == MrefMode.B) { MrefUn.miss(); }
+    }
+}
+
+public class MrefUn {
+    public static void main(String[] args) { run(MrefMode::chk); }
+    static void run(BiConsumer<MrefMode, MrefMode> c) { c.accept(MrefMode.B, MrefMode.A); }
+    static void hit() { System.out.println("h"); }
+    static void miss() { System.out.println("m"); }
+}
+EOF
+expect_ via:MrefUn.run:pruned MrefMode.chk MrefUn.miss "対照: 位置をずらして当てるので、other == B（実際は A）は打ち切る"
+
+case_ via:MrefMerge.run:resolved:RESOLVED:DATAFLOW_PARAM MrefMerge MrefMerger.merge DaoB.find "c.accept(new MrefMerger(), new DaoB()) の Merger::merge の other は DaoB（レシーバの MrefMerger ではない）" <<'EOF'
+package pr;
+
+import java.util.function.BiConsumer;
+
+class MrefMerger implements Dao {
+    public void find() { System.out.println("m"); }
+    void merge(Dao other) { other.find(); }
+}
+
+public class MrefMerge {
+    public static void main(String[] args) { run(MrefMerger::merge); }
+    static void run(BiConsumer<MrefMerger, Dao> c) { c.accept(new MrefMerger(), new DaoB()); }
+}
+EOF
+expect_ via:MrefMerge.run:absent MrefMerger.merge MrefMerger.find "同上（レシーバの MrefMerger.find に絞った行が無い）"
+
+case_ via:MrefStatic.run:pruned MrefStatic MrefStatic.chk MrefStatic.hit "対照: static メソッドの参照（MrefStatic::chk）は実引数の位置のまま当てる。a は B なので a == A は打ち切る" <<'EOF'
+package pr;
+
+import java.util.function.BiConsumer;
+
+public class MrefStatic {
+    public static void main(String[] args) { run(MrefStatic::chk); }
+    static void run(BiConsumer<MrefMode, MrefMode> c) { c.accept(MrefMode.B, MrefMode.A); }
+    static void chk(MrefMode a, MrefMode b) { if (a == MrefMode.A) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# リフレクションの invoke は、private と static のメソッドを受け手の実行時のクラスで選び直さない（上書きされない・
+# 受け手を使わない）。引数型が分からない getMethod は、親から継承した多重定義も候補にする（docs/value-safety-qa.md の Q22）
+# ---------------------------------------------------------------------------
+case_ listed ReflOverload ReflOverload.run ReflOvP.m "C.class.getMethod(\"m\", types) で引数型が分からなければ、親から継承した ReflOvP.m(int) も候補に残す" <<'EOF'
+package pr;
+
+import java.lang.reflect.Method;
+
+class ReflOvP { public void m(int x) { System.out.println("p"); } }
+class ReflOvC extends ReflOvP { public void m(String s) { System.out.println("c"); } }
+
+public class ReflOverload {
+    static void run(Class<?>[] types, Object arg) throws Exception {
+        Method mm = ReflOvC.class.getMethod("m", types);
+        mm.invoke(new ReflOvC(), arg);
+    }
+    public static void main(String[] args) throws Exception { run(new Class<?>[] { int.class }, 5); }
+}
+EOF
+expect_ listed ReflOverload.run ReflOvC.m "同上（ReflOvC.m(String) も残す）"
+
+case_ resolved:RESOLVED:REFLECTION ReflPriv ReflPriv.main ReflPrivP.m "getDeclaredMethod で引いた private の ReflPrivP.m は、invoke(new ReflPrivC()) でも上書きされない（ReflPrivC.m に繋がない）" <<'EOF'
+package pr;
+
+import java.lang.reflect.Method;
+
+class ReflPrivP { private void m() { System.out.println("p"); } }
+class ReflPrivC extends ReflPrivP { public void m() { System.out.println("c"); } }
+
+public class ReflPriv {
+    public static void main(String[] args) throws Exception {
+        Method mm = ReflPrivP.class.getDeclaredMethod("m");
+        mm.setAccessible(true);
+        mm.invoke(new ReflPrivC());
+    }
+}
+EOF
+expect_ absent ReflPriv.main ReflPrivC.m "同上（ReflPrivC.m の行が無い）"
+
+case_ resolved:RESOLVED:REFLECTION ReflStatic ReflStatic.main ReflStP.s "static の ReflStP.s は受け手（new ReflStC()）を使わない。部分型の ReflStC.s に繋がない" <<'EOF'
+package pr;
+
+import java.lang.reflect.Method;
+
+class ReflStP { public static void s() { System.out.println("p"); } }
+class ReflStC extends ReflStP { public static void s() { System.out.println("c"); } }
+
+public class ReflStatic {
+    public static void main(String[] args) throws Exception {
+        Method mm = ReflStP.class.getMethod("s");
+        mm.invoke(new ReflStC());
+    }
+}
+EOF
+expect_ absent ReflStatic.main ReflStC.s "同上（ReflStC.s の行が無い）"
+
+# ---------------------------------------------------------------------------
+# DI（段 5）で唯一の Bean に絞るのは、レシーバがコンテナの値を入れうる注入点のときだけ。Bean でないクラスの
+# 引数やフィールドには利用者のコードが何を入れてもよい。Bean のコンストラクタでも、経路で実際に渡した値の
+# 具象型が分かればそちらを採る（docs/spring-di-qa.md の Q5・Q6）
+# ---------------------------------------------------------------------------
+case_ listed SbPlainParam SbPlainParam.process SbPpB.find "Bean でないクラスの static メソッドの引数（process(new SbPpB())）は、唯一の Bean の SbPpA に絞らない" <<'EOF'
+package pr;
+
+interface SbPpI { void find(); }
+@Repository class SbPpA implements SbPpI { public void find() { System.out.println("a"); } }
+class SbPpB implements SbPpI { public void find() { System.out.println("b"); } }
+
+public class SbPlainParam {
+    static void process(SbPpI d) { d.find(); }
+    public static void main(String[] args) { process(new SbPpB()); }
+}
+EOF
+expect_ absent SbPlainParam.process SbPpA.find "同上（SbPpA だけに絞った行が無い）"
+
+case_ listed SbPlainField SbPlainField.go SbPfB.find "Bean でないクラスのフィールド（注釈なし）は、唯一の Bean の SbPfA に絞らない（渡した値は SbPfA か SbPfB）" <<'EOF'
+package pr;
+
+interface SbPfI { void find(); }
+@Repository class SbPfA implements SbPfI { public void find() { System.out.println("a"); } }
+class SbPfB implements SbPfI { public void find() { System.out.println("b"); } }
+
+public class SbPlainField {
+    private final SbPfI dao;
+    SbPlainField(SbPfI d) { this.dao = d; }
+    void go() { dao.find(); }
+    public static void main(String[] args) {
+        SbPfI d = args.length > 0 ? new SbPfA() : new SbPfB();
+        new SbPlainField(d).go();
+    }
+}
+EOF
+expect_ listed SbPlainField.go SbPfA.find "同上（SbPfA も残す）"
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD SbManual SbManual.go SbMnB.find "Bean のコンストラクタでも、利用者が new SbManual(new SbMnB()) と渡した経路では、渡した SbMnB を採る（段 5 の SbMnA に決めない）" <<'EOF'
+package pr;
+
+interface SbMnI { void find(); }
+@Repository class SbMnA implements SbMnI { public void find() { System.out.println("a"); } }
+class SbMnB implements SbMnI { public void find() { System.out.println("b"); } }
+
+@Repository
+public class SbManual {
+    private final SbMnI dao;
+    SbManual(SbMnI d) { this.dao = d; }
+    void go() { dao.find(); }
+    public static void main(String[] args) { new SbManual(new SbMnB()).go(); }
+}
+EOF
+expect_ absent SbManual.go SbMnA.find "同上（SbMnA の行が無い）"
+
+case_ resolved:RESOLVED:SPRING_DI SbCtorKeep SbCtorKeep.run SbCkA.find "対照: ステレオタイプの Bean のコンストラクタで受け取るフィールド（注釈なし）は注入点。段 5 で SbCkA に絞る" <<'EOF'
+package pr;
+
+interface SbCkI { void find(); }
+@Repository class SbCkA implements SbCkI { public void find() { System.out.println("a"); } }
+class SbCkB implements SbCkI { public void find() { System.out.println("b"); } }
+
+@Repository
+public class SbCtorKeep {
+    private final SbCkI r;
+    SbCtorKeep(SbCkI r) { this.r = r; }
+    void run() { r.find(); }
+}
+EOF
+expect_ absent SbCtorKeep.run SbCkB.find "同上（SbCkB の行が無い）"
+
+case_ resolved:RESOLVED:SPRING_DI SbSetterKeep SbSetterKeep.setRepo SbSkA.find "対照: @Autowired を付けたメソッドの引数は注入点。段 5 で SbSkA に絞る" <<'EOF'
+package pr;
+
+interface SbSkI { void find(); }
+@Repository class SbSkA implements SbSkI { public void find() { System.out.println("a"); } }
+class SbSkB implements SbSkI { public void find() { System.out.println("b"); } }
+
+public class SbSetterKeep {
+    @Autowired void setRepo(SbSkI r) { r.find(); }
+}
+EOF
+expect_ absent SbSetterKeep.setRepo SbSkB.find "同上（SbSkB の行が無い）"
+
+# ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
 ( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > work/run.log 2>&1
@@ -2099,6 +2726,14 @@ for c in "${CASES[@]}"; do
     IFS=$'\t' read -r expect caller callee desc <<< "$c"
     rows=$(rows_of "$caller" "$callee")
     label="$caller -> $callee: $desc"
+    if [ "${expect#via:}" != "$expect" ]; then
+        # via:<Class.method>:<期待> … 経路（root 列と call-hierarchy 列）に <Class.method> を通る行だけで <期待> を見る
+        rest=${expect#via:}
+        through=${rest%%:*}
+        expect=${rest#*:}
+        rows=$(awk -F, -v m="$through" '{ for (i = 5; i <= NF; i++) if ($i == m) { print; next } }' <<< "$rows")
+        label="$label（$through を通る経路）"
+    fi
     if [ "$expect" = absent ]; then
         if [ -z "$rows" ]; then
             ok "$label"
@@ -2210,6 +2845,15 @@ public class Notifier {
     void run() { mail.send(); }
 }
 EOF
+# 値を読まない指定でも、Bean でないクラスの static メソッドの引数は注入点ではないので絞らない
+# （レシーバがどの引数かは値の表にしか無いが、引数が注入点になるかは呼び出しを書いたメソッドで決まる）
+cat > "$NODF/src/nd/Plain.java" <<'EOF'
+package nd;
+
+public class Plain {
+    static void proc(Mail m) { m.send(); }
+}
+EOF
 ( cd "$NODF" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > "$NODF/run.log" 2>&1
 NCSV=$(ls -d "$NODF"/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
 nd_rows() {   # $1=呼び出し元 Class.method  $2=呼び出し先 Class.method
@@ -2227,6 +2871,14 @@ else
                 grep "^at nd.$caller(" "$NCSV" | head -2
             fi
         done
+    done
+    for callee in MailA.send MailB.send; do
+        if [ -n "$(nd_rows Plain.proc "$callee")" ]; then
+            ok "値を読まない指定: Plain.proc -> $callee（Bean でないクラスの static メソッドの引数は段 5 で絞らない）"
+        else
+            ng "値を読まない指定: Plain.proc -> $callee の行がありません"
+            grep "^at nd.Plain.proc(" "$NCSV" | head -2
+        fi
     done
     got=$(nd_rows Notifier.run MailA.send | head -1 | cut -d, -f3)
     if [ "$got" = RESOLVED:SPRING_DI ] && [ -z "$(nd_rows Notifier.run MailB.send)" ]; then

@@ -38,6 +38,7 @@ import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
+import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -499,8 +500,21 @@ final class OriginTracker {
      * ループの無いメソッドに走査を増やさない。結果は変数ごとに覚えておく
      * （先読みを読み直すたびに捨てる。{@link #scanOrigins}）。
      *
-     * 出所が1つに定まらなければ U（不明）。拾えるのは「レシーバがそのローカル変数」の形だけで、
-     * フィールドのコレクションや、他のメソッドへ渡してから詰める形は追わない（安全側）。
+     * <h4>要素を「詰めた値だけ」と言い切れるコレクションに限る</h4>
+     * 詰める経路は {@code add} だけではない。コンストラクタの実引数（{@code new ArrayList<>(List.of(b))}）、
+     * {@code addAll}・{@code Collections.addAll(list, …)}、別のメソッドへ渡して詰めてもらう形、別名
+     * （{@code alias = list; alias.add(b)}）、再代入、{@code list.listIterator().add(b)}、{@code list::add} を
+     * 渡す形、{@code replaceAll}。1 つでも見落とすと、見えた {@code add} の値だけに絞って、実際に回る要素への
+     * 呼び出しを落とす（docs/value-safety-qa.md の Q20）。そこで、次を全部満たすときだけ要素の出所を使う。
+     * <ul>
+     *   <li>この本体の中で、引数の無い {@code new}（匿名クラスの本体なし）で初期化したローカル変数。
+     *       作る型は {@code java.util} のコレクション（利用者の型は、コンストラクタや反復子が何を返すか分からない）</li>
+     *   <li>再代入しない</li>
+     *   <li>使うのは、要素を足すメソッド（{@link #elementArgumentOf}）のレシーバ、拡張 for の回す式、
+     *       要素を足さず外へも漏らさない問い合わせ（{@link #isQueryOnly}）のレシーバだけ</li>
+     * </ul>
+     * 引数・フィールドのコレクションは、外で何が詰められたか分からないので使わない。
+     * 出所が1つに定まらなければ U（不明）。
      */
     private String elementOriginOf(Scope scope, ASTNode body, String varKey) {
         String known = scope.elements.get(varKey);
@@ -508,30 +522,86 @@ final class OriginTracker {
             return known;
         }
         String[] merged = {null};
+        boolean[] ok = {true};
+        int[] declarations = {0};
         body.accept(new ASTVisitor() {
             @Override
-            public boolean visit(MethodInvocation n) {
-                if (!(unwrap(n.getExpression()) instanceof SimpleName recv)
-                        || !(recv.resolveBinding() instanceof IVariableBinding vb)
-                        || !varKey.equals(vb.getKey())) {
+            public boolean visit(VariableDeclarationFragment n) {
+                IVariableBinding vb = n.resolveBinding();
+                if (vb != null && varKey.equals(vb.getKey())) {
+                    declarations[0]++;
+                    ok[0] &= isFreshLocalCollection(n.getInitializer());
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(SingleVariableDeclaration n) {
+                IVariableBinding vb = n.resolveBinding();
+                if (vb != null && varKey.equals(vb.getKey())) {
+                    ok[0] = false;   // 引数・catch の引数・拡張 for の変数など、外から値を受け取る宣言
+                }
+                return true;
+            }
+
+            @Override
+            public boolean visit(SimpleName n) {
+                if (!(n.resolveBinding() instanceof IVariableBinding vb) || !varKey.equals(vb.getKey())
+                        || n.getLocationInParent() == VariableDeclarationFragment.NAME_PROPERTY
+                        || n.getLocationInParent() == SingleVariableDeclaration.NAME_PROPERTY) {
                     return true;
                 }
-                int at = elementArgumentOf(n.getName().getIdentifier(), n.arguments().size());
-                if (at < 0 || !(n.arguments().get(at) instanceof Expression element)) {
+                ASTNode parent = n.getParent();
+                if (parent instanceof EnhancedForStatement loop && loop.getExpression() == n) {
                     return true;
                 }
-                String origin = originOf(element);
-                if (origin == null) {
-                    origin = Origin.UNKNOWN_S;
+                if (parent instanceof MethodInvocation mi && mi.getExpression() == n) {
+                    String name = mi.getName().getIdentifier();
+                    int at = elementArgumentOf(name, mi.arguments().size());
+                    if (at >= 0 && mi.arguments().get(at) instanceof Expression element) {
+                        String origin = originOf(element);
+                        if (origin == null) {
+                            origin = Origin.UNKNOWN_S;
+                        }
+                        merged[0] = (merged[0] == null || merged[0].equals(origin))
+                                ? origin : Origin.UNKNOWN_S;
+                        return true;
+                    }
+                    if (isQueryOnly(name)) {
+                        return true;
+                    }
                 }
-                merged[0] = (merged[0] == null || merged[0].equals(origin))
-                        ? origin : Origin.UNKNOWN_S;
+                ok[0] = false;   // それ以外の使い方（渡す・写す・再代入・他のメソッドのレシーバ・メソッド参照）
                 return true;
             }
         });
-        String result = (merged[0] == null) ? Origin.UNKNOWN_S : merged[0];
+        String result = (!ok[0] || declarations[0] != 1 || merged[0] == null) ? Origin.UNKNOWN_S : merged[0];
         scope.elements.put(varKey, result);
         return result;
+    }
+
+    /**
+     * 初期化子が、中身の空の {@code java.util} のコレクションを作る {@code new} か
+     * （{@code new ArrayList<>()}。実引数も匿名クラスの本体も無い）
+     */
+    private boolean isFreshLocalCollection(Expression initializer) {
+        if (!(unwrap(initializer) instanceof ClassInstanceCreation cic)
+                || !cic.arguments().isEmpty() || cic.getAnonymousClassDeclaration() != null) {
+            return false;
+        }
+        String type = names.createdTypeOf(cic);
+        return type != null && type.startsWith("java.util.");
+    }
+
+    /**
+     * 要素を足さず、コレクションそのものも反復子も外へ渡さない問い合わせ・削除か。
+     * 削除は要素を減らすだけなので、「詰めた値のどれか」という答えは崩れない
+     */
+    private static boolean isQueryOnly(String name) {
+        return switch (name) {
+            case "size", "isEmpty", "contains", "clear", "remove", "hashCode", "toString" -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -639,13 +709,13 @@ final class OriginTracker {
         if (e instanceof SimpleName || e instanceof QualifiedName) {
             IBinding b = (e instanceof SimpleName sn) ? sn.resolveBinding()
                     : ((QualifiedName) e).resolveBinding();
-            if (b instanceof IVariableBinding vb) {
+            if (b instanceof IVariableBinding vb && !(e instanceof QualifiedName && isInstanceField(vb))) {
                 return variableOriginOf(vb);
             }
         }
         if (e instanceof FieldAccess fa) {
             IVariableBinding vb = fa.resolveFieldBinding();
-            if (vb != null) {
+            if (vb != null && (!isInstanceField(vb) || isThis(fa.getExpression()))) {
                 String origin = variableOriginOf(vb);
                 if (origin != null) {
                     return origin;
@@ -882,6 +952,26 @@ final class OriginTracker {
             }
         }
         return Origin.of(Origin.RETURN, ref.key(), args);
+    }
+
+    /**
+     * インスタンスフィールドか（static でも列挙定数でもないフィールド）。
+     *
+     * フィールドの出所（{@code F:型#名前}）は「今のオブジェクト（{@code this}）のフィールド」という意味で、
+     * 読み手は経路で分かっている今のオブジェクトのコンストラクタ実引数を当てる（jche.graph.DataflowResolver の
+     * fieldSlotOf）。{@code other.dao}・{@code getPeer().mode}・{@code Outer.this.dao} のように別のインスタンス
+     * （かもしれないもの）を修飾したインスタンスフィールドをこの出所にすると、{@code other} の値のはずが
+     * {@code this} のコンストラクタ実引数に見えて、誤った具象型に確定し、条件を誤って偽と判定する。
+     * そこで修飾した読み取りは出所にしない（コンパイル時定数なら値だけは使う。{@link #constantOf}）。
+     * 修飾の無い名前と {@code this.f} だけを {@code F:} にする（docs/value-safety-qa.md の Q19）
+     */
+    private static boolean isInstanceField(IVariableBinding vb) {
+        return vb.isField() && !vb.isEnumConstant() && !Modifier.isStatic(vb.getModifiers());
+    }
+
+    /** 修飾の無い {@code this}（{@code Outer.this} は別のインスタンスなので含めない） */
+    private static boolean isThis(Expression ex) {
+        return unwrap(ex) instanceof ThisExpression t && t.getQualifier() == null;
     }
 
     /** ローカル変数・引数はスコープ表から、フィールドは宣言型から出所を決める */
