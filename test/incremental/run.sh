@@ -435,6 +435,11 @@ salvage_case "更新時刻だけ変わっても引き継ぐ" \
 salvage_case "中断後にソースが変わったら引き継がない" \
     "sed -i 's/inc.AlphaDao/inc.BetaDao/' work/src/inc/Base.java" no
 
+# 中断のあとで dataflow 側の形式の版だけが上がった（ツールを更新した）。analysis 側の一時ファイルは
+# 今回と同じ形式なので、dataflow 側のヘッダを見ていないと旧形式の行を新しいキャッシュへ書き写してしまう
+salvage_case "dataflow 側の一時ファイルの版が古ければ引き継がない" \
+    "sed -i '1s/^jche-dataflow-v[0-9]*/jche-dataflow-v1/' \$(ls .cache/*/dataflow-cache.tsv.tmp)" no
+
 # --- 依存 jar の並び順 -------------------------------------------------
 # jar の集合が同じでも、クラスパス上の並びが変われば同名クラスの解決先が変わる（先勝ち）。
 # 並び順を見ていないと、追加も変更も削除も 0 件になって全ファイルが再利用され、

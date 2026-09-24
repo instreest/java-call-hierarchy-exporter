@@ -643,7 +643,7 @@ public final class CacheUpdater {
      * 「変わったファイル」のまま（宣言する型は「変わった型」に入り、依存の判定も連鎖も回る）。
      * 変わるのは「JDT でパースするか、書き写すか」だけなので、差分更新の正しさの理屈には触れない。
      *
-     * <p>引き継ぐ条件（{@link #isPartialUsable}）:
+     * <p>引き継ぐ条件（{@link #usablePartialGeneration} / {@link #partialFlowPairsWith}）:
      * <ul>
      *   <li>ヘッダ（形式・ソースレベル・文字コード・JDK・拡張の指紋）が今回と一致する</li>
      *   <li>ソース一覧（T行。パス・サイズ・内容ハッシュ）が当時と丸ごと同じ。
@@ -667,7 +667,8 @@ public final class CacheUpdater {
                                          BufferedWriter flowOut, StaleTypes stale,
                                          CachePhaseResult result) throws IOException {
         Set<String> taken = new HashSet<>();
-        if (isPartialUsable(partial, live)) {
+        String generation = usablePartialGeneration(partial, live);
+        if (generation != null && partialFlowPairsWith(partialFlow, generation)) {
             // dataflow 側の退避ファイルにブロックがあるファイルだけを引き継ぎの候補にする
             Set<String> wanted = blockPathsOf(partialFlow);
             wanted.retainAll(pathsOf(toAnalyze));
@@ -739,9 +740,9 @@ public final class CacheUpdater {
     }
 
     /**
-     * 退避した一時ファイルを引き継いでよいか。
+     * 退避した一時ファイル（analysis 側）を引き継いでよいか。
      *
-     * ヘッダ（形式・ソースレベル・文字コード・JDK・拡張の指紋）・依存 jar・<b>ソース一覧</b>が
+     * ヘッダ（形式・ソースレベル・文字コード・JDK）・依存 jar・<b>ソース一覧</b>が
      * どれも当時と同じときだけ引き継ぐ。
      *
      * <p>ソース一覧まで見るのは、引き継ぐブロックが「そのファイルの内容」だけでなく
@@ -753,29 +754,58 @@ public final class CacheUpdater {
      * 引き継ぎが効いてほしい場面は「中断してすぐ同じソースで実行し直す」なので、
      * 一覧が丸ごと同じときだけに絞る簡単な形にした。違えば引き継がないだけで、
      * 差分更新はこれまでどおり動く。
+     *
+     * @return 引き継いでよければ、その一時ファイルの世代の印（dataflow 側との対の判定に使う）。
+     *         引き継がないなら null
      */
-    private boolean isPartialUsable(Path partial, Map<String, SourceFile> live) {
+    private String usablePartialGeneration(Path partial, Map<String, SourceFile> live) {
         CacheHead head;
         try {
             head = headOf(partial);
         } catch (IOException | RuntimeException e) {
             Log.warn(Messages.format("analysis.resume.readFailed", e));
-            return false;
+            return null;
         }
         if (head == null) {
             Log.info(Messages.get("analysis.resume.incompatible"));
-            return false;
+            return null;
         }
         if (!head.sources().equals(fingerprintOf(live))) {
             Log.info(Messages.get("analysis.resume.sourcesChanged"));
-            return false;
+            return null;
         }
         LibraryDiff diff = LibraryDiff.compute(layout.classpathArray(), head.libraries(), layout.projectRoot);
         if (diff.any()) {
             Log.info(Messages.format("analysis.resume.librariesChanged", diff));
+            return null;
+        }
+        return head.generation();
+    }
+
+    /**
+     * dataflow 側の退避ファイルが、analysis 側の退避ファイルと同じ実行で書かれた対か。
+     *
+     * <p>既存キャッシュの対はパス0（{@link #dataflowCachePairsWith}）で確かめるが、退避ファイルは
+     * パス0を通らない。以前はここを見ておらず、中断のあとで {@code DATAFLOW_VERSION} だけが上がった
+     * ツールで実行し直すと、旧形式の行が新しいキャッシュへそのまま書き写されていた。
+     * 既存キャッシュと同じく、形式の互換性（版・ソースレベル・文字コード・JDK）と世代の両方を見る。
+     */
+    private boolean partialFlowPairsWith(Path partialFlow, String generation) {
+        if (!Files.isRegularFile(partialFlow)) {
             return false;
         }
-        return true;
+        try (CacheReader flow = CacheReader.open(partialFlow)) {
+            if (!flow.headerMatches(CacheFormat.dataflowHeaderFor(
+                    config.sourceLevel, config.sourceEncoding))) {
+                Log.info(Messages.get("analysis.resume.incompatible"));
+                return false;
+            }
+            String flowGeneration = flow.generation();
+            return !flowGeneration.isEmpty() && flowGeneration.equals(generation);
+        } catch (IOException | RuntimeException e) {
+            Log.warn(Messages.format("analysis.resume.readFailed", e));
+            return false;
+        }
     }
 
     /** 引き継げるブロックを新キャッシュへ書き写す。書き写せたファイルを taken に積む */
