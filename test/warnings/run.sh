@@ -237,6 +237,80 @@ grep -q "^at sample.app.var.run(var.java:5),Util.count," "$OUT/call-hierarchy.cs
     && ok "varname: そのファイルの本体の呼び出しが出力に出る" \
     || ng "varname: そのファイルの本体の呼び出しが出力に無い"
 
+# 5c. 網羅していない switch 式（sealed の許可リストに型を足したのに switch を直していない、など）。JDT は構文エラーの印を
+#     付けるが、フロー解析で出るもので本体は読めている。コンパイルエラーとしては案内し、「本体を読めなかった」とは
+#     言わない。呼び出しも出力に出る（docs/cache-unification-qa.md の Q63）
+make_project switches "source.level=21"
+cat > work/switches/src/main/java/sample/app/Shapes.java <<'EOF'
+package sample.app;
+
+public class Shapes {
+    sealed interface Shape permits Circle, Square, Triangle {}
+    record Circle(int r) implements Shape {}
+    record Square(int s) implements Shape {}
+    record Triangle(int b) implements Shape {}
+    enum Color { RED, GREEN }
+
+    int area(Shape shape) {
+        return switch (shape) {
+            case Circle c -> { Util.count("circle"); yield 1; }
+            case Square q -> { Util.count("square"); yield 2; }
+        };
+    }
+
+    int code(Color color) {
+        return switch (color) {
+            case RED -> { Util.count("red"); yield 3; }
+        };
+    }
+}
+EOF
+analyze switches
+check_invariant switches
+expect_in_warnings switches "src/main/java/sample/app/Shapes.java"
+if [ -n "$OUT" ] && ! grep -q -F "syntax errors" "$OUT/run.log"; then
+    ok "switches: 網羅していない switch 式を構文エラー（本体を読めなかった）として数えない"
+else
+    ng "switches: 網羅していない switch 式が構文エラーとして報告された"
+fi
+grep -q "^at sample.app.Shapes.area(Shapes.java:12),Util.count," "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && grep -q "^at sample.app.Shapes.code(Shapes.java:19),Util.count," "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && ok "switches: そのファイルの本体の呼び出しが出力に出る" \
+    || ng "switches: そのファイルの本体の呼び出しが出力に無い"
+
+# 5d. 式の入れ子が深すぎて JDT のスタックが溢れるファイル（メソッド呼び出しを 1 万段つないだ式）。そのファイルだけを
+#     失敗として案内し（warnings.txt の「打ち切られた」）、ほかのファイルは最後まで解析して出力する。以前は
+#     StackOverflowError を捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（docs/cache-unification-qa.md の Q62）
+make_project deep ""
+{
+    printf 'package sample.app;\n\npublic class Deep {\n    String chain() {\n        return new StringBuilder()'
+    for ((i = 0; i < 10000; i++)); do printf '.append(%d)' "$i"; done
+    printf '.toString();\n    }\n}\n'
+} > work/deep/src/main/java/sample/app/Deep.java
+analyze deep
+check_invariant deep
+[ "$STATUS" = 0 ] && ok "deep: 1 ファイルのスタックが溢れても、実行は成功する" \
+    || ng "deep: 1 ファイルのスタックが溢れて、実行ごと失敗した（終了コード $STATUS）"
+expect_in_warnings deep "The analysis or the output stopped partway"
+expect_in_warnings deep "src/main/java/sample/app/Deep.java"
+expect_in_warnings deep "stack overflow"
+grep -q -F "Util.count" "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && ok "deep: ほかのファイルの呼び出しは出力に出る" || ng "deep: ほかのファイルの呼び出しが出力に無い"
+
+# 5e. 名前の違う 2 つのファイルで同じ型を宣言している（public でないトップレベルの型）。間に 100 を超えるファイルが
+#     あると別々のバッチで解析され、JDT はどちらにもエラーを出さない。片方の呼び出しは出力に出ないので、グラフを
+#     組むときに警告する（warnings.txt の「ソースにコンパイルエラーがある」。docs/cache-unification-qa.md の Q61）
+make_project twins ""
+TWINS=work/twins/src/main/java/sample/app
+printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    void t() {\n        Util.count("a");\n    }\n}\n' > $TWINS/Aaa.java
+printf 'package sample.app;\n\npublic class Zzz {\n}\n\nclass Twin {\n    void t() {\n        Util.count("z");\n    }\n}\n' > $TWINS/Zzz.java
+for ((i = 100; i < 220; i++)); do
+    printf 'package sample.app;\n\npublic class Fill%d {\n}\n' "$i" > "$TWINS/Fill$i.java"
+done
+analyze twins
+check_invariant twins
+expect_in_warnings twins "The type sample.app.Twin is declared in both src/main/java/sample/app/Aaa.java and src/main/java/sample/app/Zzz.java"
+
 # 6. 実行の失敗（出力フォルダを作った後で失敗する: ソースフォルダが 1 つも無い）
 make_project failed "source.folders=src/missing"
 analyze failed

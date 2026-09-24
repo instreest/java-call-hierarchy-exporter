@@ -80,6 +80,8 @@ target/
 /test/incremental/jarwork/
 # 強制終了（SIGTERM）で一時ファイルが残らないことを見るケースの作業フォルダ
 /test/incremental/killwork/
+# 同じキャッシュのフォルダを使う実行・解析のあいだの書き換え・同じクラスが 2 つの検査の作業フォルダと、検査用のプログラム（tools/）のコンパイル結果
+/test/incremental/integrity/
 
 # test/cacheversion/run.sh（キャッシュの形式の版の上げ忘れの検査）のコンパイル結果・キャッシュ・出力
 /test/cacheversion/build/

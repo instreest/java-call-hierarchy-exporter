@@ -109,6 +109,12 @@ public final class CallEdgeExtractor {
      *
      * JDT が受け付けなかったファイルや、一括パース自体が失敗したときの残りは、
      * 1ファイルずつ {@link #analyze} で解析する。1ファイルの失敗で他を巻き込まないため。
+     *
+     * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
+     * 深くなりすぎるファイル）も、そのファイルの失敗として扱う。一括パースの途中で溢れたら残りを 1 ファイルずつ
+     * 解析し、溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）。
+     * 以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（{@code docs/cache-unification-qa.md} の Q62）。
+     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
         Map<String, SourceFile> pending = new LinkedHashMap<>();
@@ -133,6 +139,9 @@ public final class CallEdgeExtractor {
                     } catch (RuntimeException e) {
                         sink.failed(file, e);
                         return;
+                    } catch (StackOverflowError e) {
+                        sink.failed(file, tooDeep(e));
+                        return;
                     }
                     try {
                         sink.accept(file, facts);
@@ -150,6 +159,9 @@ public final class CallEdgeExtractor {
             throw e.getCause();
         } catch (RuntimeException e) {
             Log.warn(Messages.format("analysis.batchFailed", pending.size(), e));
+        } catch (StackOverflowError e) {
+            // どのファイルで溢れたかは分からない。残りを 1 ファイルずつ解析して、溢れたファイルだけを失敗にする
+            Log.info(Messages.format("analysis.batchTooDeep", pending.size()));
         }
 
         if (!pending.isEmpty()) {
@@ -160,6 +172,9 @@ public final class CallEdgeExtractor {
                 } catch (IOException | RuntimeException e) {
                     sink.failed(file, e);
                     continue;
+                } catch (StackOverflowError e) {
+                    sink.failed(file, tooDeep(e));
+                    continue;
                 }
                 try {
                     sink.accept(file, facts);
@@ -169,6 +184,11 @@ public final class CallEdgeExtractor {
                 }
             }
         }
+    }
+
+    /** スタックが溢れたことを、そのファイルの失敗の理由として伝える例外（利用者が対処を選べる文言にする） */
+    private static Exception tooDeep(StackOverflowError e) {
+        return new IllegalStateException(Messages.get("analysis.tooDeep"), e);
     }
 
     /** 1ファイルだけをパースする（一括パースの補完用） */
@@ -272,6 +292,13 @@ public final class CallEdgeExtractor {
      * （エラーとしては {@link FileAnalysis#errors} に数えたまま）。
      * Java 10 より前のコードで {@code var} を型名に使っているときに、source.level を指定しないと出る
      * （{@code docs/syntax-error-report-qa.md} の Q7）。
+     *
+     * <p>switch 式の検査（網羅していない・default が無い・switch 式の外への break / continue / return）も同じで、
+     * {@link IProblem#Syntax} の印が付くが、構文を読み終えたあとのフロー解析で出るもので、本体は AST に残っている
+     * （{@code docs/cache-unification-qa.md} の Q63）。網羅していないパターンの switch は、sealed の許可リストに
+     * 型を足したのに switch を直していないときによく出る。
+     * 外す印は、本体が AST に残ることを確かめたものだけにする。確かめていないものは構文エラーに数えたままにする
+     * （数えすぎても警告が余計に出るだけだが、数え落とすと本体を読めていないファイルを黙って通してしまう）
      */
     static boolean isSyntaxError(int problemId) {
         if ((problemId & IProblem.Syntax) == 0) {
@@ -281,7 +308,12 @@ public final class CallEdgeExtractor {
             case IProblem.VarLocalMultipleDeclarators, IProblem.VarLocalCannotBeArray,
                  IProblem.VarLocalReferencesItself, IProblem.VarLocalWithoutInitizalier,
                  IProblem.VarIsReserved, IProblem.VarIsReservedInFuture, IProblem.VarIsNotAllowedHere,
-                 IProblem.VarCannotBeMixedWithNonVarParams, IProblem.VarCannotBeUsedWithTypeArguments -> false;
+                 IProblem.VarCannotBeMixedWithNonVarParams, IProblem.VarCannotBeUsedWithTypeArguments,
+                 IProblem.SwitchExpressionsYieldMissingDefaultCase,
+                 IProblem.SwitchExpressionsYieldMissingEnumConstantCase,
+                 IProblem.SwitchExpressionsBreakOutOfSwitchExpression,
+                 IProblem.SwitchExpressionsContinueOutOfSwitchExpression,
+                 IProblem.SwitchExpressionsReturnWithinSwitchExpression -> false;
             default -> true;
         };
     }

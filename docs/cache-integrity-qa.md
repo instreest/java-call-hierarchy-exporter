@@ -502,12 +502,13 @@ Eclipse プラグインだけが `CancelledException` でバッチの切れ目�
 
 ## 限界（対応しないと決めたこと）
 
-- **同時実行**。同じ `project.root` を指す 2 プロセス（CLI と Eclipse プラグインのサーバーなど）が
+- **同時実行**（その後、キャッシュのフォルダの錠で 1 つずつにした。[cache-unification-qa.md](cache-unification-qa.md) の Q56）。
+  同じ `project.root` を指す 2 プロセス（CLI と Eclipse プラグインのサーバーなど）が
   同じ `analysis-cache.tsv.tmp` を奪い合う。1 つのプロセスの中は逐次なので単独なら問題ない。
   ロックファイルか、一時ファイルの名前に PID を入れれば防げるが、今回の 4 件とは別の話として残す
   （その後、実行の中だけで使う一時ファイル（依存の索引・エッジの記録など）は実行ごとに違う名前にしたが、
-  `analysis-cache.tsv.tmp` は中断からの引き継ぎに使うので決まった名前のままで、この限界は残っている。
-  `docs/cache-unification-qa.md` の Q41）
+  `analysis-cache.tsv.tmp` は中断からの引き継ぎに使うので決まった名前のままだった。のちにキャッシュのフォルダの錠
+  （`analysis-cache.tsv.lock`）を入れ、同じフォルダを使う実行を 1 つずつにした。`docs/cache-unification-qa.md` の Q41・Q56）
 - ~~**更新時刻とサイズが一致するのに中身が違うファイル**。差分更新の基本方針どおり、
   更新時刻が一致していれば内容ハッシュは取らない~~ → 同一性をパス・サイズ・内容の指紋で見るようにして
   解消した（v16。[cache-identity-qa.md](cache-identity-qa.md)。`test/incremental/run.sh` の

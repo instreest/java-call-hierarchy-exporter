@@ -9,6 +9,7 @@ import org.eclipse.jdt.core.JavaCore;
 
 import jche.analysis.CachePhaseResult;
 import jche.analysis.CacheUpdater;
+import jche.cache.CacheLock;
 import jche.config.Config;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
@@ -81,11 +82,20 @@ public final class Exporter {
         ProjectLayout layout = new ProjectLayout(config);
         logAnalysisSettings(config, layout);
 
-        int syntaxErrorFiles = analyzeSources(config, layout);
-
         UnresolvedCalls unresolved = collectUnresolved ? new UnresolvedCalls(config.cacheFile) : null;
         try {
-            CallGraph graph = buildGraph(config, layout, unresolved);
+            // キャッシュを読み書きするあいだ（フェーズ1 とフェーズ2 のグラフの構築）は、同じキャッシュのフォルダを使う
+            // ほかの実行を待たせる（jche.cache.CacheLock。docs/cache-unification-qa.md の Q56）。
+            // try-with-resources にしないのは、錠を本体で使わないため（-Xlint:try が警告する）
+            int syntaxErrorFiles;
+            CallGraph graph;
+            CacheLock lock = CacheLock.acquire(config.cacheFile);
+            try {
+                syntaxErrorFiles = analyzeSources(config, layout);
+                graph = buildGraph(config, layout, unresolved);
+            } finally {
+                lock.close();
+            }
             Log.info(Messages.format("exporter.graphCounts", graph.typeCount(), graph.methodCount(),
                     graph.edgeCount()));
             DataflowFacts facts = buildDataflowFacts(config, graph);

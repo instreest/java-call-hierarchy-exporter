@@ -286,38 +286,54 @@ cacheblocks_case() {
     echo "== cacheblocks =="
     rm -rf cacheblocks/.cache cacheblocks/output cacheblocks/run-*.log
     local dir=cacheblocks/.cache/demo_*
-    # キャッシュが 1 ファイルだけで（以前の dataflow-cache.tsv が無い）、各ブロックの検査値（F 行の最後の列）と
-    # 最終行のブロック数が合っていること
+    # キャッシュが 1 ファイルだけで（以前の dataflow-cache.tsv が無い。同じフォルダを使う実行を 1 つずつにする
+    # 錠のファイル analysis-cache.tsv.lock は中身の無い印なので数えない）、各ブロックの検査値（F 行の最後の列。
+    # F 行の crc 列を空にした形とブロックの残りの行の CRC32）と、先頭の行の検査値（T 行の最後の列。ヘッダ行・L 行と
+    # 最後の列を空にした T 行の CRC32）と、最終行のブロック数が合っていること
     expect_cache_intact() {   # $1=ラベル
         local cache bad
         cache=$(ls $dir/analysis-cache.tsv 2>/dev/null)
-        if [ -z "$cache" ] || [ "$(ls $dir | wc -l)" != 1 ]; then
+        if [ -z "$cache" ] || [ "$(ls $dir | grep -v -x -F analysis-cache.tsv.lock | wc -l)" != 1 ]; then
             echo "  DIFF cacheblocks キャッシュが analysis-cache.tsv の 1 ファイルではありません ($1): $(ls $dir 2>/dev/null)"
             fail=1; return
         fi
         bad=$(python3 - "$cache" <<'PY'
 import sys, zlib
 lines = open(sys.argv[1], 'rb').read().split(b'\n')
-blocks, crc, want, errors, trailer = 0, 0, None, [], False
+blocks, crc, want, errors, trailer, heads = 0, 0, None, [], False, 0
+head = zlib.crc32(lines[0] + b'\n')
 def close():
     if want is not None and '%08x' % crc != want:
         errors.append('crc: ' + want)
+def column(line, i):   # 列が足りなければ空（どの検査値とも合わない）
+    cols = line.split(b'\t')
+    return cols[i].decode() if i < len(cols) else ''
 for line in lines[1:]:
     if not line:
         continue
+    if blocks == 0 and line[:1] == b'L':
+        head = zlib.crc32(line + b'\n', head)
+    elif blocks == 0 and line[:1] == b'T':
+        heads += 1
+        head = zlib.crc32(line[:line.rindex(b'\t') + 1] + b'\n', head)
+        if '%08x' % head != column(line, 2):
+            errors.append('T: ' + line.decode())
     if line[:1] in (b'F', b'Z'):
         close()
         want = None
         if line[:1] == b'Z':
             trailer = True
-            if int(line.split(b'\t')[1]) != blocks:
+            if column(line, 1) != str(blocks):
                 errors.append('Z: ' + line.decode())
             continue
         blocks += 1
-        crc, want = 0, line.split(b'\t')[7].decode()
+        want = column(line, 7)
+        crc = zlib.crc32(line[:line.rindex(b'\t') + 1] + b'\n')
     elif want is not None:
         crc = zlib.crc32(line + b'\n', crc)
 close()
+if heads != 1:
+    errors.append('T 行（先頭の行の検査値）が 1 つではありません: %d' % heads)
 if not trailer:
     errors.append('Z 行（最終行）がありません')
 print('\n'.join(errors))
@@ -426,6 +442,51 @@ PY
     expect_not_reused cacheblocks 7 "7回目: 読めなければ解析を失敗させず作り直す"
     compare cacheblocks expected "7回目: 途中の文字が壊れた"
     expect_cache_intact "7回目"
+
+    # F 行の件数（未解決数）だけを 0 にする。検査値の列はそのまま。書き写すブロックの件数は U 行を読まずに
+    # この列から数えるので、F 行が検査値に入っていないと、型解決できなかった呼び出しの警告の件数が黙って減る
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+for i, line in enumerate(lines):
+    cols = line.split('\t')
+    if cols[0] == 'F' and len(cols) > 7 and cols[6] not in ('', '0'):
+        cols[6] = '0'
+        lines[i] = '\t'.join(cols)
+        break
+else:
+    sys.exit('未解決数が 0 でない F 行が見つかりません')
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+PY
+    run cacheblocks config.properties 8 "8回目: F 行の件数が書き換えられた" || return
+    expect_parsed cacheblocks 8 2 "8回目: 件数を書き換えたブロックのファイルと、その型を使う 1 ファイルだけを解析し直す"
+    expect_log_contains cacheblocks 8 "failed the integrity check" "8回目: 検査値が合わないことをログに出す"
+    expect_unresolved_count cacheblocks 8 "$unresolved" "8回目: 型解決できなかった呼び出しの件数は変わらない（警告が残る）"
+    compare cacheblocks expected "8回目: F 行の件数が書き換えられた"
+    expect_cache_intact "8回目"
+
+    # T 行（ソース一覧の指紋）だけを書き換える。先頭の行（ヘッダ・L 行・T 行）は T 行の最後の列の検査値で守る。
+    # L 行（依存 jar）を信用できなければ jar の変化を見落とすので、合わなければ丸ごと作り直す
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+for i, line in enumerate(lines):
+    cols = line.split('\t')
+    if cols[0] == 'T':
+        cols[1] = '0' * len(cols[1])
+        lines[i] = '\t'.join(cols)
+        break
+else:
+    sys.exit('T 行が見つかりません')
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+PY
+    run cacheblocks config.properties 9 "9回目: 先頭の行が書き換えられた" || return
+    expect_not_reused cacheblocks 9 "9回目: 先頭の行の検査値が合わなければ作り直す"
+    expect_log_contains cacheblocks 9 "first lines of the existing cache" "9回目: 先頭の行が合わないことをログに出す"
+    compare cacheblocks expected "9回目: 先頭の行が書き換えられた"
+    expect_cache_intact "9回目"
 }
 
 # 値が出所の文字列の文法の文字を含む題材のケース（values/config.properties の冒頭の説明）

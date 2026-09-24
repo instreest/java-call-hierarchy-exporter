@@ -10,8 +10,8 @@
 # 「エラー」ではなく「静かに違う結果」になる（docs/cache-split-qa.md の Q22 に実例がある）。
 # 版を上げるかどうかを人の判断だけに任せず、「迷ったら上げる。上げ忘れは検査で捕まえる」ために置く。
 #
-# 決まった題材（test/demo・test/incremental・test/jls/project）を全件解析し、できたキャッシュの
-# ブロック（F 行から次の F 行まで）の中身の指紋を facts.txt に記録しておく。次の場合に落とす。
+# 決まった題材（test/demo・test/demo を依存 jar ありで・test/incremental・test/jls/project）を全件解析し、できたキャッシュの
+# ブロック（F 行から次の F 行まで）の中身と L 行（依存 jar）の指紋を facts.txt に記録しておく。次の場合に落とす。
 #
 #   事実の指紋が変わったのに、版・題材・環境（JDK・JDT）が記録と同じ
 #       … 書き手の変更で事実が変わった。CacheFormat.VERSION を上げてから --update する
@@ -24,8 +24,9 @@
 #       … どちらもキャッシュの鍵（ヘッダ行）に入っていて、変われば古いキャッシュは自動で捨てられるので
 #         版は上げなくてよい。--update で記録を合わせる
 #
-# 比べるのはブロックの中身だけ。ヘッダ行（版・環境）、L 行（依存 jar の絶対パスを含む）、T 行（題材の指紋）、
-# 最終行は外す。ブロックはパスの順に並べ替えてから比べる（解析の順に依存させない）。
+# 比べるのはブロックの中身と L 行。ヘッダ行（版・環境）、T 行（題材の指紋）、最終行は外す。L 行は jar のパスを
+# ファイル名だけにして比べる（置き場所の絶対パスは環境で変わる。中身の指紋とパッケージの一覧は残す）。
+# ブロックはパスの順に並べ替えてから比べる（解析の順に依存させない）。
 #
 # 限界: 題材に現れない事実の変更は捕まえられない。題材と書き手を同じコミットで変えたときは
 # 「題材が変わった」としか言えない（そのときは上の案内に従って自分で判断する）。
@@ -59,12 +60,19 @@ fi
 # 題材の指紋。題材のソースと、ここの設定ファイルの中身（パスつき）から作る
 fixture_digest() {
     {
-        for f in demo.properties incremental.properties jls.properties; do
+        for f in demo.properties demojar.properties incremental.properties jls.properties; do
             printf '%s\n' "$f"; cat "$f"
         done
-        ( cd .. && find demo/src incremental/src jls/project/src -type f -name '*.java' | LC_ALL=C sort \
-            | while read -r f; do printf '%s\n' "$f"; cat "$f"; done )
+        ( cd .. && find demo/src demo/deps incremental/src jls/project/src -type f \( -name '*.java' -o -name '*.jar' \) \
+            | LC_ALL=C sort | while read -r f; do printf '%s\n' "$f"; cat "$f"; done )
     } | sha256sum | cut -c1-16
+}
+
+# L 行（依存 jar）を、jar のパスをファイル名だけにして出す（クラスパスの並びのまま）
+libs_of() {
+    for f in "$@"; do
+        awk -F'\t' -v OFS='\t' 'substr($0, 1, 1) == "L" { n = split($2, parts, "/"); $2 = parts[n]; print }' "$f"
+    done
 }
 
 # キャッシュのブロックだけを、パスの順に並べ替えて出す（ブロックの中の行の並びは保つ）
@@ -79,7 +87,7 @@ blocks_of() {
 
 rm -rf .cache out out.log
 facts=""
-for name in demo incremental jls; do
+for name in demo demojar incremental jls; do
     if ! "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter "$name.properties" \
             > out.log 2>&1; then
         echo "  NG   題材 $name の解析に失敗しました"; tail -5 out.log; echo "FAIL"; exit 1
@@ -88,8 +96,11 @@ for name in demo incremental jls; do
     if [ -z "$caches" ]; then
         echo "  NG   題材 $name のキャッシュができていません"; echo "FAIL"; exit 1
     fi
+    if [ "$name" = demojar ] && ! grep -q '^L' $caches; then
+        echo "  NG   題材 demojar のキャッシュに L 行（依存 jar）がありません"; echo "FAIL"; exit 1
+    fi
     # shellcheck disable=SC2086
-    facts="$facts$name $(blocks_of $caches | sha256sum | cut -c1-16)"$'\n'
+    facts="$facts$name $( { libs_of $caches; blocks_of $caches; } | sha256sum | cut -c1-16)"$'\n'
 done
 
 version=$(grep -oE 'VERSION = "[^"]+"' "$ROOT/src/jche/cache/CacheFormat.java" | head -1 | cut -d'"' -f2)
@@ -132,7 +143,7 @@ if [ "$(now env)" != "$(recorded env)" ]; then
     echo "FAIL"; exit 1
 fi
 if [ "$(now fixture)" != "$(recorded fixture)" ]; then
-    echo "  NG   題材（test/demo・test/incremental・test/jls/project のソースか、ここの設定）が記録と違います"
+    echo "  NG   題材（test/demo のソースと依存 jar・test/incremental・test/jls/project のソースか、ここの設定）が記録と違います"
     echo "       題材だけを変えたなら版は上げずに --update してください。"
     echo "       同じ変更で事実の作り方（src/jche/analysis・src/jche/cache）も変えたなら、"
     echo "       CacheFormat.VERSION を上げてから --update してください（迷ったら上げる）"

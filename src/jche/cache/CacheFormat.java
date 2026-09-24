@@ -1,6 +1,10 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import java.util.List;
+
+import jche.util.FileHash;
+
 /**
  * キャッシュファイル（{@code analysis-cache.tsv}）の形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）。
  *
@@ -27,7 +31,7 @@ package jche.cache;
  *
  * <h2>ファイルの並び</h2>
  * <pre>
- *   ヘッダ行   {@link #VERSION} source=… enc=… jdk=… jdt=…（{@link #headerFor}）
+ *   ヘッダ行   {@link #VERSION} source=… enc=… jdk=… jdt=… folders=…（{@link #headerFor}）
  *   L 行       依存 jar（クラスパス順）
  *   T 行       ソース一覧の指紋
  *   ブロック   ソースファイル 1 つにつき 1 つ（F 行から次の F 行・Z 行の手前まで）
@@ -40,9 +44,10 @@ package jche.cache;
  * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
  * ブロックの中の行は<b>この順に並ぶ</b>（読み手がこの並びに依存している。理由は各行の説明）。
  * <pre>
- *   T  ソース一覧の指紋                                       解析対象のソースファイル一覧（パス・サイズ・
+ *   T  ソース一覧の指紋  先頭の行の検査値                     解析対象のソースファイル一覧（パス・サイズ・
  *                                                          内容ハッシュ）のハッシュ。L 行の直後に1行。
- *                                                          中断した実行からの引き継ぎ（{@link #sourcesRow}）でだけ使う
+ *                                                          中断した実行からの引き継ぎ（{@link #sourcesRow}）でだけ使う。
+ *                                                          最後の列は先頭の行の検査値（下の「先頭の行の検査値」）
  *   L  jarのパス  指紋  パッケージ(カンマ区切り)            {@link LibraryFact}。ヘッダ行の直後に
  *                                                          クラスパス順で並ぶ（並び自体も意味を持つ。
  *                                                          JDT は同名クラスを先勝ちで解決するため）。
@@ -54,7 +59,9 @@ package jche.cache;
  *                                                          {@link jche.util.FileHash}（読めなければ空）。
  *                                                          未解決数は使える候補の無い U 行の数
  *                                                          （{@link UnresolvedCallFact#hasUsableCandidate}）。
- *                                                          crc はブロックの残りの行の検査値（下の「ブロックの検査値」）
+ *                                                          crc はブロックの検査値（下の「ブロックの検査値」）。
+ *                                                          内容ハッシュが空の F 行は、解析のあいだにソースが
+ *                                                          書き換えられた印でもある（次の実行で必ず解析し直す）
  *   I  依存する型（カンマ区切り）  型の形の指紋  解決できなかった名前（カンマ区切り）
  *                                                          必ず F 行の直後。差分更新（{@link jche.analysis.CacheUpdater}）が
  *                                                          使う 3 列。
@@ -147,12 +154,20 @@ package jche.cache;
  * 事実を作る側の判断で、符号化とは別である。
  *
  * <h2>ブロックの検査値（F 行の crc）</h2>
- * F 行の次の行から、次の F 行・Z 行の手前までの各行を UTF-8 にし、{@code '\n'} を付けて並べた
- * バイト列の CRC32（{@link BlockChecksum}）。書き手はブロックをメモリ上で組んでから検査値を求めて書く。
+ * F 行（自分の crc 列を空にした形。最後のタブまで）と、その次の行から次の F 行・Z 行の手前までの各行を UTF-8 にし、
+ * {@code '\n'} を付けて並べたバイト列の CRC32（{@link BlockChecksum}）。書き手はブロックをメモリ上で組んでから
+ * 検査値を求めて書く。F 行も入れるのは、差分更新がブロックを書き写すときに F 行のエラー数・構文エラー数・
+ * 未解決数から件数を数えるため（化けると警告の件数が黙って変わる。v34 までは入れていなかった）。
  * 差分更新（パス1）はブロックごとに検査値を計算し直し、合わなければそのブロックだけを無効にして
  * 解析し直す（ほかのブロックは再利用する）。行の書き換え・化けのほか、記号やノードの番号が
  * ブロックの外を指す壊れ方もこれで捕まえる。それでも読み手は番号の範囲を確かめる
  * （{@link SymbolTable#refsInRange}。呼び出しを黙って落とさないため）。
+ *
+ * <h2>先頭の行の検査値（T 行の最後の列）</h2>
+ * ヘッダ行・L 行と、最後の列を空にした T 行を同じ手順で並べたバイト列の CRC32。L 行（依存 jar の指紋と
+ * パッケージ）を書き換えられると、jar の変化を見落として古い解決結果を再利用しうるので、合わなければ
+ * キャッシュを丸ごと捨てる（中断した実行の一時ファイルなら引き継がない）。T 行が最後の行なので、ブロックの
+ * 検査値と同じく、検査値を書く行が最後に来る（書き手は先頭の行をすべて組んでから書く）。
  *
  * <h2>読み手の責務（キャッシュに入れない判断）</h2>
  * <ul>
@@ -306,6 +321,9 @@ public final class CacheFormat {
      *       名前の当たらない私的メンバーを外した。I 行に呼び出し先の throws の型、拡張 for 文・switch のセレクタ・
      *       throw の式・アノテーションの型、switch の case の型とその親、型解決に失敗したブロックでは参照した型の
      *       親を足した（{@code docs/cache-unification-qa.md} の Q51〜Q55）</li>
+     *   <li>v36 ブロックの検査値に F 行（crc 列を空にした形）を入れた。T 行に先頭の行の検査値を足した。ヘッダ行の鍵に
+     *       ソースフォルダの並びを足した。F 行の構文エラー数から switch 式の網羅性などの検査を外した
+     *       （{@code docs/cache-unification-qa.md} の Q56〜Q63）</li>
      * </ul>
      */
     public static final String VERSION = "jche-cache-v36";
@@ -443,14 +461,24 @@ public final class CacheFormat {
      * JDT の版で変わりうるのに、以前は鍵に入っておらず、JDT を上げても古い事実を再利用していた。
      * 版が分からない（{@code ?}）ときは、鍵が一致しないとみなす（{@link CacheReader#headerMatches}）。
      *
-     * @param jdtVersion {@code jche.analysis.JdtVersion#current()}。この層は JDT に依存しないので
-     *                   呼び出し側から渡す
+     * <p>ソースフォルダの並び（{@code folders=}。project.root からの相対パスを並びのまま改行でつないだものの
+     * {@link FileHash}）も入れる。JDT は同じ名前の型が 2 つのソースフォルダにあると、ソースパスの先に並ぶ方で
+     * 解決する（先勝ち）。フォルダの並びを入れ替えると、どのソースも変わっていないのに解決先が変わるので、
+     * 並びが違えば丸ごと作り直す（L 行の依存 jar の並びと同じ考え方。docs/cache-unification-qa.md の Q58）。
+     * パスそのものではなくハッシュにするのは、ヘッダ行が符号化しない行で、フォルダ名にタブ・改行が入っても
+     * 行を壊さないため。
+     *
+     * @param jdtVersion    {@code jche.analysis.JdtVersion#current()}。この層は JDT に依存しないので
+     *                      呼び出し側から渡す
+     * @param sourceFolders ソースフォルダ（project.root からの相対パス）。JDT に渡すソースパスの並びのまま
      */
-    public static String headerFor(String sourceLevel, String sourceEncoding, String jdtVersion) {
+    public static String headerFor(String sourceLevel, String sourceEncoding, String jdtVersion,
+                                   List<String> sourceFolders) {
         return VERSION + SEP + "source=" + sourceLevel
                 + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?")
-                + SEP + "jdt=" + jdtVersion;
+                + SEP + "jdt=" + jdtVersion
+                + SEP + "folders=" + FileHash.ofText(String.join("\n", sourceFolders));
     }
 
     /**
@@ -468,9 +496,16 @@ public final class CacheFormat {
      *
      * <p>差分更新（F行の同一性、I行の依存）には使わない。あちらは
      * 「変わったファイルとその依存元だけを解析し直す」ので、丸ごと一致している必要はない。
+     *
+     * @param headCrc 先頭の行の検査値（上の「先頭の行の検査値」。T 行の最後の列）。検査値を求めるときは空文字を渡す
      */
-    public static String sourcesRow(String fingerprint) {
-        return joinRow(String.valueOf(ROW_SOURCES), fingerprint);
+    public static String sourcesRow(String fingerprint, String headCrc) {
+        return joinRow(String.valueOf(ROW_SOURCES), fingerprint, headCrc);
+    }
+
+    /** T 行に書かれた先頭の行の検査値。無ければ空文字（どの計算結果とも一致しない） */
+    public static String headCrcOf(String[] sourcesRow) {
+        return columnAt(sourcesRow, 2);
     }
 
     /**
@@ -485,6 +520,18 @@ public final class CacheFormat {
      */
     public static String trailerFor(long blocks) {
         return ROW_END + SEP + blocks;
+    }
+
+    /** Z 行（{@link #trailerFor}）の列から、書かれたブロック数。読めなければ -2（どのブロック数とも一致しない） */
+    public static long trailerCountOf(String[] cols) {
+        if (cols.length != 2) {
+            return -2;
+        }
+        try {
+            return Long.parseLong(cols[1]);
+        } catch (NumberFormatException e) {
+            return -2;
+        }
     }
 
     /** 行の先頭1文字（種別）。空行なら '\0' */
