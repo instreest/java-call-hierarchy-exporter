@@ -88,6 +88,7 @@
 | [jbangw-readme-notice-qa.md](jbangw-readme-notice-qa.md) | #50 | 同梱した JBang ラッパーへのライセンス表記と README |
 | [method-decl-range-qa.md](method-decl-range-qa.md) | #115 | メソッドの宣言範囲（終了行）をキャッシュと `MethodTable` に持つ。カーソル位置から囲むメソッドを引く `AT`（近似をやめる判断、`methods.csv` に出さない判断） |
 | [callee-label-qa.md](callee-label-qa.md) | — | `call-hierarchy.csv` の `callee` 列を「クラス名.メソッド名」だけにし、`NO_IMPL` の注記を出さなくした |
+| [micro-execution-qa.md](micro-execution-qa.md) | — | 静的解析で解けない断片（文字列の計算・jar からの呼び戻し）だけを実行して補う案（未実装）の用語と境界。「断片実行」と呼ぶ理由、単体テスト・実行トレース・モニタリングとの線引き、結果で候補を減らさない判断 |
 | [entrypoint-package-qa.md](entrypoint-package-qa.md) | — | 入口 2 つを既定パッケージから `jche` パッケージへ移した。`//SOURCES` の glob が直下に当たらない理由 |
 
 ## 再実装用の仕様
