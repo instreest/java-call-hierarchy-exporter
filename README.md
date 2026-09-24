@@ -456,7 +456,8 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 
 キャッシュは `analysis-cache.tsv` の 1 ファイルです。解析で分かった事実（呼び出し階層の構造と、
 値の追跡に使う値）をソースファイル 1 つにつき 1 ブロックで持ち、ブロックごとに壊れていないかを確かめます。
-壊れたブロックがあれば、そのファイルだけを解析し直します。以前の版が作った `dataflow-cache.tsv` が
+壊れたブロックがあれば、そのファイルだけを解析し直します。何も変わっていなければキャッシュは書き直しません。
+実行中は同じフォルダに一時ファイル（`*.tmp`）を作り、終わると消します。以前の版が作った `dataflow-cache.tsv` が
 残っていれば、次の実行で消します。
 
 - 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
@@ -954,8 +955,9 @@ file and wherever you run from, the cache location does not change.
 
 The cache is a single file, `analysis-cache.tsv`. It holds the facts the analysis found (the structure of
 the call hierarchy and the values used for value tracking), one block per source file, and each block is
-checked for damage. If a block is damaged, only that file is analyzed again. A `dataflow-cache.tsv` left
-by an older version is deleted on the next run.
+checked for damage. If a block is damaged, only that file is analyzed again. When nothing has changed, the
+cache is not rewritten. While running, the tool creates temporary files (`*.tmp`) in the same folder and deletes
+them when it finishes. A `dataflow-cache.tsv` left by an older version is deleted on the next run.
 
 - Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
 - From the second run on, only the changed files are analyzed again. When you add a dependency jar, only

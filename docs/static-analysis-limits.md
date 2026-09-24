@@ -65,7 +65,9 @@ public final class ServiceFactory {
 
 ## 3. 何をどう追っているか
 
-式の「出所」を記号で持つ（`src/jche/cache/Origin.java`）。
+式の「出所」を、1 つの式を 1 ノードとする値グラフ（キャッシュの N 行。`src/jche/cache/ValueNode.java`）で持つ。
+ノードは種別の 1 文字（`src/jche/cache/Origin.java`）と値を持ち、呼び出しなら実引数とレシーバのノードも指す。
+下は人が読むときの表記（`jche.cache.CacheDump` の出力と同じ）。
 
 ```
 T:jp.co.UserDaoImpl        new された具象型（その場で確定）
@@ -164,7 +166,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 
 - `[UNEXPANDED:CHA] N candidates: <reason>` … 絞れなかったことと、その理由（`grep '\[UNEXPANDED'` で一括で拾える）
 - `(unresolved)` の行と件数のログ … クラスパス不足を「呼び出しが無い」と誤読させない
-- `Origin.UNKNOWN` … 「分からない」を型として明示的に持つ
+- 種別 `U`（キャッシュでは `-1`）… 「分からない」を値として明示的に持つ
 
 `feature-difficulty.md` でも、どこまで機能を削っても
 **1-9（型解決失敗を行として残す）と 2-2（絞れなかった理由の注記）だけは残す**ことにしている。

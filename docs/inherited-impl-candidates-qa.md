@@ -42,7 +42,9 @@
 
 なお `dataflow.enabled=false` にすると段2 は継承の有無に関係なく発火しない。
 `NEW` の証拠（H 行）は dataflow 側のキャッシュに置いているためで、これは本件とは別の話。
-今回は触っていない。
+今回は触っていない。（その後キャッシュは 1 ファイルになり、`NEW` の証拠は C 行・U 行の hints 列に持つ。
+`dataflow.enabled=false` はそれを含む値の列を読まないので、段2 が発火しないことは変わらない。
+`docs/cache-unification-qa.md` の Q5）
 
 ## Q3. `test/demo` の `multi` の行が 1 件から 2 件に増えた。精度が落ちたのでは
 

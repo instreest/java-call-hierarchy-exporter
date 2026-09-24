@@ -105,7 +105,8 @@ cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/s
 
 # AST 解析キャッシュのキー。使う設定ファイルの内容（生成した場合は絶対パス込みで毎回同じになる）から作る。
 # 同じリポジトリの別ジョブが別の設定でこのアクションを呼んでも、互いのキャッシュを上書きしないようにするため。
-# ツール本体の版は含めない。キャッシュの形式が変わったときはツール自身が捨てるので、キーで分ける必要が無い
+# ツール本体の版は含めない。キャッシュの形式が変わったときはツール自身が捨てる（以前の形式が残した
+# dataflow-cache.tsv も消す）ので、キーで分ける必要が無い
 analysis_cache_key=$(tr '\n' '\0' < "$config_list" | xargs -0 cat | hash_files | cut -c1-16)
 
 # AST 解析キャッシュの置き場所（actions/cache に渡すパス）。

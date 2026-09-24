@@ -27,6 +27,9 @@
 > `contracts-suggested.txt` に出す（`jche.report.ContractSuggestions`）。
 > `test/regression` の plugin ケースで、同梱の拡張（`FactoryKeyCollector` ＋ `TypeMappingProvider`）と
 > **由来ラベル以外はまったく同じ出力**になることを検査している。
+>
+> （その後キャッシュは `analysis-cache.tsv` の 1 ファイルになった。この文書の「dataflow キャッシュ」は、今は
+> 同じファイルの値の行（値グラフの N 行と、C 行・U 行の値の列）を指す。`docs/cache-unification-qa.md`）
 
 ---
 
@@ -158,6 +161,7 @@ C-3（ファクトリ＋キー） → C-2（型#メソッド） → C-1（型）
 - 値グラフには深さの上限が無い（`jche.cache.ValueNode` の「`Origin` との違い」と、
   `ValueGraph` の「レシーバの段数に上限を設けない」）
 - 呼び出し箇所ごとの実引数は `jche.cache.CallSiteValues`（P 行）にも記録されている
+  （その後キャッシュは 1 ファイルになり、呼び出し箇所の値は C 行・U 行の列に直接持つ。`docs/cache-unification-qa.md` の Q22）
 
 しかも**同じ形の判定が既に動いている**。`DataflowResolver.applyInvocationArgs` は
 「レシーバは `Class.forName(引数)` の戻り値 → その規則が指す位置の実引数が `LITERAL` なら、

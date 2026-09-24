@@ -163,6 +163,12 @@ Eclipse プラグインと同じ理由である。`MessageFormat` は `'` を引
 「呼び出し階層の出力には影響しない」ほう（`docs/cache-split-qa.md`）なので、
 全件再解析は起きるが出力とその期待値は動かない。
 
+（訂正）この「呼び出し階層の出力には影響しない」は誤りだった。条件の説明の文字列は、打ち切った呼び出しの注記
+（`[UNREACHABLE] not called on this path: condition 'verbose' does not hold …` の `verbose`）として
+`call-hierarchy.csv` に出る（`call-conditions.csv` にも出る）。版を上げる理由（再利用したファイルだけ古い文言が残る）は
+そのまま成り立ち、むしろ出力に出るので上げる必要が強い。キャッシュはその後 1 ファイルにまとめて版も 1 つになり、
+条件はブロックの G 行に持つ。版は「迷ったら上げる」にした（[cache-unification-qa.md](cache-unification-qa.md) の Q20・Q22）。
+
 判断の基準はこうなる。**その文字列を作っているのが書き手か読み手か**を見る。
 読み手（`StreamingTreeWalker` の注記、`UnresolvedReport` の理由）なら版は要らない。
 書き手（`Guard` の `text`）なら要る。

@@ -117,10 +117,12 @@ at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,
 
 | 段階 | クラス | すること |
 |---|---|---|
-| フェーズ1（抽出） | `jche.analysis.GuardCollector` | 呼び出し箇所を囲む条件を**事実**としてキャッシュに記録する（C行・U行の `guard` 列）。判断はしない |
+| フェーズ1（抽出） | `jche.analysis.GuardCollector` | 呼び出し箇所を囲む条件を**事実**としてキャッシュに記録する（ブロックの G 行の表に置き、C行・U行の `guard` 列がその番号を指す）。判断はしない |
 | フェーズ3（出力） | `jche.graph.GuardEvaluator` | その経路で渡ってきた値と条件を突き合わせ、成立しないと言い切れるかを判定する |
 
-条件の文字列の形は `jche.cache.Guard`、値の出所は `jche.cache.Origin`（`V:` が値）にあります。
+条件の形は `jche.cache.Guard`（アトム 1 つが G 行 1 行。比べる値は切り詰めずに列に 1 つずつ持つ）にあります。
+条件で判定される式（subject）は値グラフのノード（種別 `A` の引数か `V` の定数）で、フェーズ3 は値の表
+（`jche.graph.ValueStore`）と条件の表（`jche.graph.GuardTable`）を番号で引いて比べます。
 判定できない条件はフェーズ1で**そもそも記録しない**ので、読み手は従来どおりの出力になります。
 
 キャッシュ形式は v13 → v14（`guard` 列の追加とコンパイル時定数の値の記録）。

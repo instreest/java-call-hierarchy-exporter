@@ -348,6 +348,8 @@ jar を作る**（`extjars/demo-app.jar`）。Java 25 でしか書けない構�
 
 `jche-cache-v22` → `v23`。dataflow 側の版（`DATAFLOW_VERSION`）は、
 2 つが常に対で書かれ対でしか再利用されない（`docs/cache-split-qa.md`）ので据え置いた。
+（その後キャッシュを 1 ファイルにまとめ、版は `CacheFormat.VERSION` の 1 つだけになった。
+`docs/cache-unification-qa.md` の Q22）
 
 ## Q20. 性能への影響は
 

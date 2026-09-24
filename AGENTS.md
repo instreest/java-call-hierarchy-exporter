@@ -150,7 +150,13 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   値を読まない指定（`dataflow.enabled=false`）は「値の行・列を読まない」で表し、ファイルは分けない。
   ブロックの中の行の並び・記号表（S 行）の番号の振り方・F 行の検査値（crc）は読み手が依存しているので、
   行を足すときは `CacheFormat` の並びに合わせて書き手と読み手の両方を直す。
-  メソッドを指す列は S 行の番号で、目で追うときは `jche.cache.CacheDump` で 4 列に戻した形を見る
+  メソッドを指す列は S 行の番号で、目で追うときは `jche.cache.CacheDump` で 4 列に戻した形を見る。
+  値（戻り値・代入・条件・呼び出し箇所の値）はどれも値グラフ（N 行）のノードを番号で指し、読み手は値の表
+  （`jche.graph.ValueStore`）を番号で引く。出所の文字列（`Origin` の文法）に組み直して読む形に戻さない
+  （値が `| ; { }` を含むと読み違える。`docs/cache-unification-qa.md` の Q11）
+- キャッシュを読み直さないための索引や中間データは、ヒープではなくキャッシュのフォルダの一時ファイルに置き
+  （利用者の優先順位はヒープが先）、`jche.cache.TempFiles` で作る（一意の名前・終了フック・次の実行の掃除。
+  GitHub Actions はフォルダを丸ごと保存するので残さない。`docs/cache-unification-qa.md` の Q32・Q36）
 - **解析器が何を読み取るかは、外から差し替えさせない。** 利用者が Java を書ける差し込み口は
   `jche.extension.TypeCandidateProvider`（読み取った材料の解釈）だけで、AST 走査中に割り込む口は置かない
   （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは

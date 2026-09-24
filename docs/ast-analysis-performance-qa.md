@@ -362,6 +362,11 @@ $ java -cp test/profile JfrReport run.jfr jche.
 $ java -cp test/profile JfrReport run.jfr jche. 2.88 17.71   # ← フェーズ1 だけ
 ```
 
+（この出力はキャッシュが 2 ファイルだった版で取ったもの。今はキャッシュが `analysis-cache.tsv` の 1 ファイルなので、
+フェーズ1 の印は `analysis-cache.tsv.tmp` だけになる。フェーズ2 では、エッジの記録を書く一時ファイル
+`analysis-cache.tsv.edges-*.tmp` への書き込みがグラフの構築の時間帯の印になる。
+何も変わっていない実行ではキャッシュを書き直さないので、`analysis-cache.tsv.tmp` への書き込み自体が無い）
+
 ログの `[00:12.198s]` のような経過時間を窓にするのは勧めない。`Log` の基準点は
 クラス初期化時（`resetClock()` でさらに動く）で、記録の開始時刻とは一致しないため。
 恒久的に測るなら `jdk.jfr.Event` を継承した印を各フェーズの境目で `commit()` するのが確実。
