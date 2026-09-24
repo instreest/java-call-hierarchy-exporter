@@ -1,7 +1,10 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.dataflow;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jche.cache.Guard;
@@ -349,7 +352,14 @@ public final class DataflowBuilder {
         return kinds;
     }
 
-    /** "typeFqn#name" → 本体を持つ（ソース上の）メソッドID */
+    /**
+     * "typeFqn#name" → 本体を持つ（ソース上の）メソッドID。
+     *
+     * 並びはリフレクションの候補（{@code Method.invoke} で名前しか分からないとき）として
+     * call-hierarchy.csv の行の順になり、候補の数の上限で切るときにどれが残るかも決めるので、
+     * ID の順（キャッシュ上の並びで変わる）にせず宣言の位置の順
+     * （宣言ファイル → {@link MethodTable#compareDeclarationOrder}）に並べる
+     */
     private static Map<String, IntArray> methodsByName(MethodTable methods) {
         Map<String, IntArray> map = new HashMap<>();
         for (int id = 0; id < methods.size(); id++) {
@@ -358,6 +368,22 @@ public final class DataflowBuilder {
             }
             String k = methods.typeFqn(id) + "#" + methods.methodName(id);
             map.computeIfAbsent(k, key -> new IntArray(2)).add(id);
+        }
+        // 並べ替えが要るのは同名のメソッド（オーバーロード）がある名前だけ。ほとんどは 1 件なので触らない
+        Comparator<Integer> order = Comparator.<Integer, String>comparing(methods::declFile)
+                .thenComparing(methods::compareDeclarationOrder);
+        for (IntArray ids : map.values()) {
+            if (ids.size() < 2) {
+                continue;
+            }
+            List<Integer> sorted = new ArrayList<>(ids.size());
+            for (int i = 0; i < ids.size(); i++) {
+                sorted.add(ids.get(i));
+            }
+            sorted.sort(order);
+            for (int i = 0; i < sorted.size(); i++) {
+                ids.set(i, sorted.get(i));
+            }
         }
         return map;
     }

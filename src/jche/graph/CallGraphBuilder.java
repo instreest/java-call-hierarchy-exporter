@@ -46,9 +46,11 @@ import jche.util.RunControl;
  * <h2>ブロックの読み方</h2>
  * メソッドを指す列は、ブロックの記号表（S 行）の番号で書かれている（{@link SymbolTable}）。
  * S 行を読んだ時点ではメソッドを ID 化せず、参照する行を読んだときに ID 化する。
- * {@link MethodTable} の ID は初めて ID 化した順に振られ、ID の順は出力の並びの同点決着に使われるので、
- * ID 化の順は「戻り値（R 行）→ 宣言（D 行）→ 上書き（O 行）→ 呼び出し（C・U 行。呼び出し元、呼び出し先の順）」
- * で固定している（書き手もブロックの行をこの順に並べる）。M 行・A 行の呼び出し元は ID 化しない。
+ * {@link MethodTable} の ID は初めて ID 化した順に振られ、ID 化の順は「戻り値（R 行）→ 宣言（D 行）→
+ * 上書き（O 行）→ 呼び出し（C・U 行。呼び出し元、呼び出し先の順）」である（書き手もブロックの行をこの順に並べる）。
+ * M 行・A 行の呼び出し元は ID 化しない。ID の順はブロックの並び（差分更新で変わる）に左右されるので、
+ * 出力の並びには使わない。同じ行に並ぶ宣言の前後は、D 行がブロックの中で何番目か（宣言の順番）で決める
+ * （{@link MethodTable#compareDeclarationOrder}）。
  *
  * <p>呼び出し箇所の値（レシーバ・実引数・識別キー・ガード）は C 行・U 行の末尾の列にある
  * （{@link CallSiteValues}）。ノード番号は同じブロックの N 行を指し、出所の文字列は
@@ -117,6 +119,8 @@ public final class CallGraphBuilder {
         try (CacheReader in = CacheReader.open(cacheFile)) {
             String currentFile = null;
             SymbolTable.Reader symbols = new SymbolTable.Reader();
+            // ブロックの中で次に読む D 行の位置（ファイルの中の宣言の順番）
+            int declOrdinal = 0;
             while (in.next()) {
                 switch (in.rowType()) {
                     case CacheFormat.ROW_FILE -> {
@@ -126,6 +130,7 @@ public final class CallGraphBuilder {
                         fields.flushInto(graph.fieldOrigins);
                         currentFile = in.filePath();
                         symbols.clear();
+                        declOrdinal = 0;
                     }
                     case CacheFormat.ROW_SYMBOL -> symbols.add(in.columns());
                     case CacheFormat.ROW_RETURN -> {
@@ -142,13 +147,15 @@ public final class CallGraphBuilder {
                         }
                     }
                     case CacheFormat.ROW_METHOD_DECL -> {
+                        // 読めない行も数える（順番は書き手が D 行を並べた位置そのもの。どの行が読めたかに左右させない）
+                        int ordinal = declOrdinal++;
                         MethodDeclFact d = inRange(in.columns(), symbols.array())
                                 ? MethodDeclFact.fromRow(in.columns(), symbols.array()) : null;
                         if (d != null) {
                             int id = methods.intern(d.ref());
                             ensure(outDegree, id);
                             methods.setDeclaration(id, currentFile, d.declLine(), d.endLine(),
-                                    d.hasBody());
+                                    d.hasBody(), ordinal);
                             if (ModifierTokens.has(d.mods(), ModifierTokens.LAMBDA)) {
                                 methods.markLambdaBody(id);
                             }

@@ -21,6 +21,8 @@
 #   7) 中断した前回の実行が残した一時ファイルから、解析済みのぶんを引き継ぐこと
 #      （検査値の合わないブロックは引き継がず、そのファイルだけを解析し直すこと）
 #   8) 以前の形式が残した dataflow-cache.tsv を消すこと
+#   9) 同じ行に並ぶ宣言（1 行に書いたメソッド、同じ行のラムダ）の前後が、ID の振られ方（キャッシュ上の
+#      ブロックの並び）によらず、ファイルの中の宣言の順番になること
 #   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行。ブロックの中の行が
 #      決まった順に並ぶこと。記号（S 行）とノード（N 行）の番号がブロックの中で 0 から詰まっていて、
 #      参照がブロックに収まること）
@@ -292,6 +294,33 @@ if [ -n "$changed_parsed" ] && [ -n "$unchanged_parsed" ] \
 else
     echo "  NG   定数の値が変わらないのに、変わったときと同じだけ解析し直しています（$unchanged_parsed / $changed_parsed）"
     fail=1
+fi
+
+# 同じ行に並ぶ宣言の前後。1 行に書いた 2 つのメソッド（OneLine）と、1 行に書いたメソッドとその中の 2 つの
+# ラムダ（OneLineLambdas。entry.packages で起点にしている）は、どちらも戻り値の出所（R 行）を持つ側が
+# 宣言（D 行）より先に ID 化される。呼び出し側（OneLineUser）だけを書き換えると、そのブロックがキャッシュの
+# 先頭へ移り、R 行を持たない側（OneLine.a・OneLineLambdas.pair）が先に ID 化される。同着を ID で決めていると、
+# methods.csv と call-hierarchy.csv（起点の並び）が全件解析と差分更新とで食い違う
+# （docs/deterministic-row-order-qa.md の Q14）
+case_of "同じ行に並ぶ宣言（呼び出し側だけを解析し直す）" \
+    "printf '\n// comment only\n' >> work/src/inc/OneLineUser.java" no
+
+# 並びそのものも見る（上の比較は「どちらの実行でも同じ」までしか見ない）。同じ行の宣言はファイルの中の
+# 宣言の順番で並ぶ。メソッドどうしはソースの並び、メソッドとその中のラムダは外側が先
+if [ -n "${OUT:-}" ] && [ -f "$OUT/methods.csv" ]; then
+    same_line_methods=$(grep -o '^OneLine\.[ab]()' "$OUT/methods.csv" | paste -sd' ')
+    if [ "$same_line_methods" = "OneLine.a() OneLine.b()" ]; then
+        echo "  OK   同じ行のメソッドは methods.csv でソースの並び（$same_line_methods）"
+    else
+        echo "  NG   同じ行のメソッドの並びが期待と違います（$same_line_methods）"; fail=1
+    fi
+    same_line_roots=$(sed -nE 's/^[^,]*,[^,]*,[^,]*,[0-9]+,(OneLineLambdas\.(pair|lambda\$pair\$[0-9]+)),.*/\1/p' \
+        "$OUT/call-hierarchy.csv" | uniq | paste -sd' ')
+    if [ "$same_line_roots" = 'OneLineLambdas.pair OneLineLambdas.lambda$pair$0 OneLineLambdas.lambda$pair$1' ]; then
+        echo "  OK   同じ行のメソッドとラムダは起点の並びで外側が先・ソースの並び（$same_line_roots）"
+    else
+        echo "  NG   同じ行のメソッドとラムダの起点の並びが期待と違います（$same_line_roots）"; fail=1
+    fi
 fi
 
 # --- キャッシュを捨てる条件 ---------------------------------------------

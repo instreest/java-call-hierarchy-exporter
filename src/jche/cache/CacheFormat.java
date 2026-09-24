@@ -67,12 +67,14 @@ package jche.cache;
  *                                                          同じブロックのノードを指す
  *   R  記号  origin                                          {@link ReturnFact}。戻り値の出所。D 行より前に置く
  *                                                          （読み手はここでメソッドを ID 化するので、以前の形式と
- *                                                          同じ ID の順になる。ID の順は出力の並びの同点決着に効く。
- *                                                          jche.graph.CallGraphBuilder 参照）
+ *                                                          同じ ID の順になる。jche.graph.CallGraphBuilder 参照）
  *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
  *                                                          {@link TypeFact}
  *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine
- *                                                          {@link MethodDeclFact}
+ *                                                          {@link MethodDeclFact}。AST を訪ねた順に置く（同じ
+ *                                                          ソースからは必ず同じ並び）。読み手はブロックの中で何番目の
+ *                                                          D 行かを「宣言の順番」として、同じ行に並ぶ宣言の前後を
+ *                                                          決める（jche.graph.MethodTable#compareDeclarationOrder）
  *   O  記号  上書き先のキー(;区切り)                          {@link OverrideFact}。D 行より後
  *   V  typeFqn  fieldName  mods  declType  アノテーション      {@link FieldDeclFact}
  *   C  呼び出し元の記号  呼び出し先の記号  callLine  calleeMods  recvKind  lambdaDepth  qualifier

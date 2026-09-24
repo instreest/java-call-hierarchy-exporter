@@ -227,6 +227,39 @@ grep -qE "^NG${T}file-not-analyzed" <<<"$OUT" && ok "解析していないファ
 OUT=$(session "AT\t$AT_FILE\t7\nSHUTDOWN\n")
 grep -qE "^NG${T}not-analyzed" <<<"$OUT" && ok "解析前の AT は not-analyzed" || fail "解析前の AT が断られない"
 
+echo "== AT（同じ行に並ぶ宣言） =="
+# 1 行に書いた 2 つのメソッドや、1 行に書いたメソッドとその中のラムダは、範囲（宣言行〜終了行）の広さが同じになる。
+# 同着は宣言の位置が先のもの（同じ行なら先に宣言したもの。入れ子なら外側）を採る。以前は ID の小さいものを採っていて、
+# 戻り値の出所（R 行）を持つ側（b・2 つ目のラムダ）が先に ID 化されるため、そちらが返っていた
+# （docs/deterministic-row-order-qa.md の Q14）。使い捨てのプロジェクトをその場で作る
+mkdir -p "$WORK/oneline/src/p"
+cat > "$WORK/oneline/src/p/OneLine.java" <<'EOF'
+package p;
+public class OneLine {
+    int a() { return 1; } Object b() { return new Object(); }
+    void pair() { use(() -> ready(), () -> make()); }
+    static void use(java.util.function.BooleanSupplier c, java.util.function.Supplier<Object> m) { }
+    static boolean ready() { return true; }
+    static Object make() { return new Object(); }
+}
+EOF
+cat > "$WORK/oneline/config.properties" <<EOF
+project.root=$WORK/oneline
+source.folders=src
+library.jars=
+source.encoding=UTF-8
+source.level=
+output.folder=$WORK/oneline/output
+EOF
+OUT=$(session "ANALYZE\t$WORK/oneline/config.properties\nAT\tsrc/p/OneLine.java\t3\nAT\tsrc/p/OneLine.java\t4\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+grep -qE "^OK${T}how=enclosing${T}key=p\.OneLine#a\(\)${T}" <<<"$OUT" \
+    && ok "1 行に並ぶ 2 つのメソッドは、先に宣言した a() を返す" \
+    || fail "1 行に並ぶ 2 つのメソッドで、先に宣言した a() を返さない"
+grep -qE "^OK${T}how=enclosing${T}key=p\.OneLine#pair\(\)${T}" <<<"$OUT" \
+    && ok "1 行に書いたメソッドとその中のラムダは、外側の pair() を返す" \
+    || fail "1 行に書いたメソッドとその中のラムダで、外側の pair() を返さない"
+
 echo "== フィルタは解析をやり直さない =="
 OUT=$(session "ANALYZE\t$CONFIG\nTREE\t$TARGET\tcallers\tdepth=5\nTREE\t$TARGET\tcallers\tdepth=5\ttext=zzz-no-such-name\nSHUTDOWN\n")
 WIDE=$(grep -oE "^OK${T}rows=[0-9]+" <<<"$OUT" | head -1 | grep -oE '[0-9]+')
