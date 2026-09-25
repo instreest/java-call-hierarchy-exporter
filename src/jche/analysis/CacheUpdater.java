@@ -103,7 +103,7 @@ import jche.util.Warnings;
  *           どのブロックの H 行の親型も部分型の索引に足す（下記「親型の連鎖」）。
  *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
  *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
- *           定数の連鎖のために、各ブロックの K 行の指紋もここで覚える。
+ *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 3 列目）もここで覚える。
  *           今のソースに無いファイルと同じコンパイル単位の名前のファイルも有効から外す
  *           （{@link SameUnitFiles#pairedWithDeleted}）。
  *           旧キャッシュを行として読むのはこの 1 回だけ。有効なブロックの依存（I 行）は一時ファイル
@@ -117,9 +117,9 @@ import jche.util.Warnings;
  *           触れるものは、バインディング解決の結果が変わっている可能性があるため。
  *           新しい型があれば、型解決に失敗していたブロックのうち解決できなかった名前が新しい型に当たるものと、
  *           新しい型に名前を隠されうるブロックも回す。
- *   パス4 … パス3で再解析に回したファイルを解析し、追記する。そのファイルが宣言する定数
- *           （K行）の値が旧キャッシュと違っていたら、宣言する型を「変わった型」に加えてパス3へ戻る
- *           （下記「定数の連鎖」）。「変わった型」は、どの時点でも部分型で閉じている（下記「親型の連鎖」）。
+ *   パス4 … パス3で再解析に回したファイルを解析し、追記する。そのファイルの自分の宣言の指紋（宣言と定数の値）が
+ *           旧キャッシュと違っていたら、または jar の変化で解析し直したなら、宣言する型を「変わった型」に加えて
+ *           パス3へ戻る（下記「宣言の連鎖」）。「変わった型」は、どの時点でも部分型で閉じている（下記「親型の連鎖」）。
  *           「変わった型」が増えなくなるまで繰り返す。
  *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す（行に戻さず、バイトの範囲のまま）。
  * </pre>
@@ -173,12 +173,21 @@ import jche.util.Warnings;
  * （オーバーロードの追加、フィールドの改名、親型の変更など）でこのファイルの解決結果が
  * 変わりうるため、下の依存（I行）の突き合わせが要る。
  *
- * <h2>定数の連鎖（依存を 1 段で済ませられない場合の 1 つ目）</h2>
- * 依存（I 行）を 1 段辿るだけでは足りない場合が 3 つある。定数の連鎖（この節）、親型の連鎖、新しい型（下の 2 節）。
- * ファイルAを解析し直しても、Aのソースが変わっていなければ、Aが宣言する型の名前と宣言は変わらない。それでも
- * Aに依存するファイルの事実が変わりうるのは、Aの事実のうち、Aが参照した別の型から持ち込んだもの（定数の値、
- * 継承したメンバー。前の 2 つ）が、Aを使う側にも効くときである。3 つ目は、I 行にそもそも載らない型（前回は
- * 無かった型・見えなかった型）の変化である。
+ * <h2>宣言の連鎖（依存を 1 段で済ませられない場合の 1 つ目）</h2>
+ * 依存（I 行）を 1 段辿るだけでは足りない場合が 3 つある。宣言の連鎖（この節）、親型の連鎖、新しい型（下の 2 節）。
+ * ファイルAを解析し直しても、Aのソースが変わっていなければ、Aが宣言する型の名前は変わらない。それでも
+ * Aに依存するファイルの事実が変わりうるのは、Aの事実のうち、Aが参照した別の型から持ち込んだもの（宣言に書いた型の
+ * 解決先・定数の値、継承したメンバー。前の 2 つ）が、Aを使う側にも効くときである。3 つ目は、I 行にそもそも載らない型
+ * （前回は無かった型・見えなかった型）の変化である。
+ *
+ * <p>宣言に書いた型の名前の解決先は、Aのソースが同じでも変わる。{@code import q.*} の {@code Foo} は、同じパッケージに
+ * {@code p.Foo} ができると {@code p.Foo} になる（JLS 6.4.1）。すると A のメソッドの引数・戻り値の型、フィールドの型が変わり、
+ * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の 3 列目に自分の宣言の指紋（宣言する型・
+ * メソッド・フィールドの JDT のバインディングの鍵と修飾子と、K 行の指紋。{@link jche.cache.FileAnalysis#declarationKeys}）を
+ * 書き、パス4 で解析し直した結果がこれと違えば、そのファイルが宣言する型も「変わった型」に加えてパス3からやり直す
+ * （docs/cache-unification-qa.md の Q83）。継承したものは入れない（親の変化は「親型の連鎖」で届く）。
+ * jar の変化で解析し直したファイルの型は、指紋に関わらず「変わった型」に加える（jar の親の親から継承したものは
+ * 指紋にも H 行にも現れない。Q84）。
  *
  * <p>コンパイル時定数（{@code static final} の値）は、
  * <b>使う側のファイルに値そのものが焼き込まれる</b>（Javaの言語仕様どおり、JDTもそう解決する）。
@@ -191,17 +200,18 @@ import jche.util.Warnings;
  * 古い "ALPHA" が残ってしまう（条件分岐の打ち切りや、クラス名の文字列からの具象クラスの
  * 特定が、古い値のまま出る）。
  *
- * <p>そこで、宣言している定数の値を K 行（{@link jche.cache.ConstantFact}）として残しておき、
- * パス4で解析し直した結果その値が変わっていたら、そのファイルが宣言する型も「変わった型」に
- * 加えてパス3からやり直す。連鎖するのは値が実際に変わった定数を参照しているファイルだけなので、
- * 全件再解析にはならず、何も変わらなければ1周で止まる。
+ * <p>そこで、宣言している定数の値を K 行（{@link jche.cache.ConstantFact}）として残し、その指紋を自分の宣言の指紋に
+ * 入れる。パス4で解析し直した結果その値が変わっていたら、指紋が変わるので、そのファイルが宣言する型も
+ * 「変わった型」に加えてパス3からやり直す。連鎖するのは宣言か値が実際に変わったファイルを参照しているファイルだけ
+ * なので、全件再解析にはならず、何も変わらなければ1周で止まる。
  *
  * <h2>親型の連鎖（継承したものは I 行に載らない。依存を 1 段で済ませられない場合の 2 つ目）</h2>
  * {@code D extends E}、{@code E extends F} のとき、D を使う側の I 行には D しか載らない。だがその事実
  * （継承したメソッドへの呼び出しの解決・どのオーバーロードが選ばれるか・私的メンバーによる隠蔽・エラー）は
  * F の宣言にも依存する。そこで、ある型が「変わった型」になったら、その部分型もすべて（推移的に）「変わった型」に
- * する。F が変われば E と D も変わった型になり、D を使う側を解析し直す。変わった jar のパッケージの型を親に持つ
- * ソースの型も、同じく変わった型にする（jar の親の版が変わると、継承したものが変わる）。
+ * する。F が変われば E と D も変わった型になり、D を使う側を解析し直す。親が jar の型なら、その親（別の jar の型の
+ * ことも）は H 行に無いので、I 行に jar の型の推移的な親型を載せ（{@link BindingNames}。Q86）、jar の変化で解析し直した
+ * ファイルの型を変わった型にする（上の「宣言の連鎖」）。
  *
  * <p>部分型は、H 行の親型の列から作る部分型の索引（{@link StaleTypes#register}）で引く。索引には、旧キャッシュの
  * すべてのブロック（有効なものも無効なものも）と、今回解析した・引き継いだブロックの H 行を足す（親型の関係は
@@ -232,6 +242,9 @@ import jche.util.Warnings;
  *   <li>同じパッケージに足したトップレベルの型は、オンデマンド import（{@code import q.*}）と {@code java.lang} の型を
  *       隠す（JLS 6.4.1）。自分のパッケージは I 行に無いので、新しい型のパッケージと同じパッケージの
  *       ブロックのうち、I 行に同じ単純名の型があるものを解析し直す（Q43）</li>
+ *   <li>パッケージと同じ名前の型（パッケージ {@code a.b} があるのに足したパッケージ {@code a} のクラス {@code b}）は、
+ *       {@code a.b.C} の解決を変える（JLS 6.5.2・7.1）。I 行の型の名前の頭の部分が変わった型に当たるブロックも
+ *       解析し直す（{@link StaleTypes#touches}。Q87）</li>
  * </ul>
  * 「前回は無かった」は、パス1 を読み終えたときの「変わった型」（無効になったブロックが宣言していた型と、
  * その部分型）に無いことで見る。有効なブロックの型でも部分型でなければそこに無いので、別のファイルに同じ名前の型が
@@ -258,11 +271,11 @@ public final class CacheUpdater {
      */
     private final Map<String, String> hashes = new HashMap<>();
     /**
-     * 相対パス -> 旧キャッシュの K 行（宣言している定数）の指紋。
-     * パス4で解析し直した結果と突き合わせて、定数の値が変わったかだけを見る（「定数の連鎖」）。
+     * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の 3 列目。有効なブロックのぶん）。
+     * パス4で解析し直した結果と突き合わせて、宣言と定数の値が変わったかだけを見る（「宣言の連鎖」）。
      * ファイルごとに 16 文字のハッシュ1つなので、ヒープに載せても軽い
      */
-    private final Map<String, String> oldConstants = new HashMap<>();
+    private final Map<String, String> oldDeclarations = new HashMap<>();
     /**
      * 検査値が合わなかったブロックのうち、そのファイルを今回解析し直すものの数
      * （旧キャッシュと引き継ぎの一時ファイルの合計。ログに 1 回だけ出す）。
@@ -387,7 +400,7 @@ public final class CacheUpdater {
                 // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
                 valid.clear();
                 libraryAffected.clear();
-                oldConstants.clear();
+                oldDeclarations.clear();
             } else {
                 // 同じ名前のファイルの組の片方が消えた（フォルダを外した場合も）。残ったほうのブロックには、組が同じ
                 // バッチにいたときの「型が重複している」エラーが残っているので、再利用せずに解析し直す（SameUnitFiles）
@@ -434,7 +447,7 @@ public final class CacheUpdater {
                 for (String line : head) {
                     writeLine(cacheOut, line);
                 }
-                BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldConstants,
+                BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldDeclarations,
                         changedDuringRun);
 
                 // --- パス2: 変更・追加されたファイルを解析 ---
@@ -455,8 +468,8 @@ public final class CacheUpdater {
                 writer.countAs = Reason.BY_LIBRARY;
                 analyzeInBatches(extractor, unresolvedBefore, writer);
 
-                // --- パス3・パス4: 依存で無効になったファイルを解析し直す（定数が絡むと連鎖するので不動点まで） ---
-                writer.cascade = Cascade.WHEN_CONSTANTS_CHANGED;
+                // --- パス3・パス4: 依存で無効になったファイルを解析し直す（宣言が変わると連鎖するので不動点まで） ---
+                writer.cascade = Cascade.WHEN_DECLARATIONS_CHANGED;
                 if (old != null && !valid.isEmpty()) {
                     reanalyzeDependents(extractor, writer, live, valid, stale, deps, old);
 
@@ -647,22 +660,24 @@ public final class CacheUpdater {
      * 解析し直したファイルが宣言する型を「変わった型」に加えるかどうか。
      *
      * 加えると、その型を参照しているファイルがもう一周で再解析に回る（{@link CacheUpdater} の
-     * 「定数の連鎖」）。無条件に加えると、解析し直すたびに参照元へ芋づる式に広がって
+     * 「宣言の連鎖」）。無条件に加えると、解析し直すたびに参照元へ芋づる式に広がって
      * 差分更新の意味が無くなるので、必要な場合だけに絞る。
      */
     private enum Cascade {
         /** 常に加える（パス2。ファイル自身が変わっているので、型の改名・追加がありうる） */
         ALWAYS,
         /**
-         * 宣言している定数（K行）の値が旧キャッシュと違うときだけ加える（パス4）。
+         * 自分の宣言の指紋（宣言の鍵と修飾子・定数の値。I 行の 3 列目）が旧キャッシュと違うときと、
+         * jar の変化で解析し直したときに加える（パス4）。
          *
-         * コンパイル時定数の値は、それを使っている側のファイルに焼き込まれる。
-         * このファイルを解析し直した結果その値が変わっていたなら、使っている側にも
-         * 古い値が残っているので解析し直す必要がある。値が変わっていなければ、
-         * 使っている側の事実は変わらないので連鎖させない（ここが「案3」との違いで、
-         * 不要な再解析が増えないようにしている）
+         * ほかのファイルの事実は、このファイルの宣言（メソッドの引数と戻り値の型・フィールドの型・親型・修飾子）と
+         * 定数の値（使う側に焼き込まれる）に依る。中身の変わっていないファイルでも、宣言に書いた名前の解決先
+         * （同じパッケージに足した型による隠蔽）や参照した定数の値が変わると、それらが変わる。変わっていなければ、
+         * 使っている側の事実は変わらないので連鎖させない（ここが「案3」との違いで、不要な再解析が増えないように
+         * している）。jar の変化で解析し直したときは、指紋に入らない継承したもの（jar の親の親のメンバー）が
+         * 変わりうるので、常に加える（docs/cache-unification-qa.md の Q84）
          */
-        WHEN_CONSTANTS_CHANGED
+        WHEN_DECLARATIONS_CHANGED
     }
 
     /**
@@ -675,8 +690,8 @@ public final class CacheUpdater {
         private final Progress progress;
         /** 解析したファイルの内容ハッシュを求める（F行に書くため） */
         private final Function<SourceFile, String> hasher;
-        /** 相対パス -> 旧キャッシュの定数の指紋（{@link Cascade#WHEN_CONSTANTS_CHANGED} の判定用） */
-        private final Map<String, String> oldConstants;
+        /** 相対パス -> 旧キャッシュの自分の宣言の指紋（{@link Cascade#WHEN_DECLARATIONS_CHANGED} の判定用） */
+        private final Map<String, String> oldDeclarations;
         /** 解析のあいだに中身が変わったファイル（{@link CacheUpdater#changedDuringRun}）を積む先 */
         private final Set<String> changedDuringRun;
         /** 「変わった型」の集合。非nullのときだけ {@link #cascade} に従って型を加える（連鎖の判定にも使う） */
@@ -688,24 +703,25 @@ public final class CacheUpdater {
         private long done;
 
         BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
-                    Function<SourceFile, String> hasher, Map<String, String> oldConstants,
+                    Function<SourceFile, String> hasher, Map<String, String> oldDeclarations,
                     Set<String> changedDuringRun) {
             this.cacheOut = cacheOut;
             this.result = result;
             this.progress = progress;
             this.hasher = hasher;
-            this.oldConstants = oldConstants;
+            this.oldDeclarations = oldDeclarations;
             this.changedDuringRun = changedDuringRun;
         }
 
         /**
          * 解析したファイルが宣言する型を「変わった型」に加えるか。
-         * パス4 では、定数の値が旧キャッシュと違うときだけ加える。このファイルの解析結果と旧キャッシュの比較だけで
-         * 決まり、ほかのファイルをどの順に解析し直したか（「変わった型」がその時点で何を含むか）には依らない
+         * パス4 では、jar の変化で解析し直したときと、自分の宣言の指紋が旧キャッシュと違うときだけ加える。
+         * このファイルの解析結果と旧キャッシュの比較だけで決まり、ほかのファイルをどの順に解析し直したか
+         * （「変わった型」がその時点で何を含むか）には依らない
          */
         private boolean shouldCascade(SourceFile file, FileAnalysis fa) {
-            return cascade == Cascade.ALWAYS
-                    || !oldConstants.getOrDefault(file.relativePath(), "").equals(constantsDigestOf(fa));
+            return cascade == Cascade.ALWAYS || countAs == Reason.BY_LIBRARY
+                    || !oldDeclarations.getOrDefault(file.relativePath(), "").equals(declarationsDigestOf(fa));
         }
 
         @Override
@@ -890,10 +906,11 @@ public final class CacheUpdater {
         }
 
         /**
-         * H 行 1 つの親型の関係を部分型の索引に足す。親がすでに変わった型か、変わった jar のパッケージの型なら、
-         * この型も（その部分型も）変わった型にする。索引に足すのと変わった型を広げるのをどちらの向きでも行うので、
-         * 変わった型はいつでも「索引に載った関係について部分型で閉じている」。H 行をどの順に読んでも、型をどの順に
-         * 変わった型にしても、最後に同じ集合になる
+         * H 行 1 つの親型の関係を部分型の索引に足す。親がすでに変わった型なら、この型も（その部分型も）変わった型に
+         * する（親が変わった jar のパッケージの型なら、この型を宣言するファイルは親を I 行に持つので jar の変化で
+         * 解析し直し、そのとき変わった型になる。{@link Cascade#WHEN_DECLARATIONS_CHANGED}）。索引に足すのと
+         * 変わった型を広げるのをどちらの向きでも行うので、変わった型はいつでも「索引に載った関係について部分型で
+         * 閉じている」。H 行をどの順に読んでも、型をどの順に変わった型にしても、最後に同じ集合になる
          */
         void register(TypeFact t) {
             String child = t.typeFqn();
@@ -911,7 +928,7 @@ public final class CacheUpdater {
                     List<String> list = (List<String>) known;
                     list.add(child);
                 }
-                if (types.contains(parent) || inLibraryPackage(parent)) {
+                if (types.contains(parent)) {
                     mark(child);
                 }
             }
@@ -1016,6 +1033,9 @@ public final class CacheUpdater {
          * 型が増えたかは分からないので、I 行にオンデマンド import か {@code java.lang} の型があれば触れているとみなす
          * （docs/cache-unification-qa.md の Q54）
          *
+         * <p>I 行の型の名前の頭の部分が変わった型なら（パッケージ {@code a.b} と同じ名前の型 {@code a.b} を足した）、
+         * {@code a.b.C} の解決が変わるので触れているとみなす（{@link #underChangedType}）
+         *
          * @param ownPackage そのブロックが宣言する型のパッケージ。分からなければ null
          */
         Reason touches(String depsCsv, String ownPackage) {
@@ -1034,17 +1054,34 @@ public final class CacheUpdater {
                 }
                 if (d.endsWith(".*")) {
                     String p = d.substring(0, d.length() - 2);
-                    if (types.contains(p) || packages.contains(p)) {
+                    if (types.contains(p) || packages.contains(p) || underChangedType(p)) {
                         return Reason.BY_SOURCE;
                     }
                     library |= ownPackageInJar || libraryPackages.contains(p);
-                } else if (types.contains(d)) {
+                } else if (types.contains(d) || underChangedType(d)) {
                     return Reason.BY_SOURCE;
                 } else {
                     library |= inLibraryPackage(d) || (ownPackageInJar && d.startsWith("java.lang."));
                 }
             }
             return library ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
+        }
+
+        /**
+         * 名前の頭の部分（{@code a.b.C} の {@code a}・{@code a.b}。名前そのものは除く）のどれかが変わった型か。
+         * パッケージ {@code a.b} と同じ名前の型 {@code a.b}（パッケージ {@code a} のクラス {@code b}）を足す・消すと、
+         * {@code a.b.C} と書いたファイルの解決が変わる（JLS 6.5.2・7.1。docs/cache-unification-qa.md の Q87）。
+         * 入れ子の型（{@code p.Outer.Inner} と変わった {@code p.Outer}）も当たる。入れ子の型はたいてい外側の型と
+         * 一緒に変わった型になっている（同じファイル）ので、これで増えるのは外側の型だけが部分型の索引で変わった型に
+         * なったときだけである（多すぎても解析し直すファイルが増えるだけ）
+         */
+        private boolean underChangedType(String name) {
+            for (int dot = name.indexOf('.'); dot > 0; dot = name.indexOf('.', dot + 1)) {
+                if (types.contains(name.substring(0, dot))) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /** 型名を "." で区切ったどれかが、names に含まれるか */
@@ -1651,8 +1688,6 @@ public final class CacheUpdater {
         final BlockChecksum checksum = new BlockChecksum();
         /** H 行（ファイルに書かれたまま）。部分型の索引に足し、無効なブロックなら「変わった型」に加える */
         final List<String> typeRows = new ArrayList<>();
-        /** K 行の指紋（定数の連鎖。{@link #rememberConstants}） */
-        final List<String> constants = new ArrayList<>();
         /** 理由が BINDING_FAILED の U 行があったか（jar の追加・変更と、新しい型で解析し直すかを見る） */
         boolean bindingFailed;
         /** F 行の直後の行をまだ読んでいないか */
@@ -1661,6 +1696,8 @@ public final class CacheUpdater {
         String deps = "";
         /** I 行の解決できなかった名前（新しい型で解析し直すか）。I 行が無ければ空（何にでも当たる） */
         String names = "";
+        /** I 行の自分の宣言の指紋（宣言の連鎖。{@link #oldDeclarations}）。I 行が無ければ空 */
+        String declarations = "";
 
         OldBlock(String[] f, boolean inSources, boolean identical, long start, long irregularAtStart) {
             this.rel = (f.length >= 2) ? f[1] : null;
@@ -1762,8 +1799,8 @@ public final class CacheUpdater {
      * 見えるため、そのまま再利用すると呼び出しが静かに欠ける。印が無い・ブロック数が合わなければ
      * null を返して丸ごと捨てさせる。読めない（文字が壊れている）ときも同じ。
      *
-     * <p>定数の連鎖のために、各ブロックの K 行（宣言している定数の値）の指紋もここで覚える
-     * （{@link #oldConstants}）。
+     * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 3 列目）もここで覚える
+     * （{@link #oldDeclarations}）。
      *
      * <p>旧キャッシュを行として読むのは実行ごとにこの 1 回だけにする。あとで要るものはここで取っておく。
      * <ul>
@@ -1828,16 +1865,12 @@ public final class CacheUpdater {
                         String[] cols = in.columns();
                         block.deps = CacheFormat.columnAt(cols, 1);
                         block.names = CacheFormat.columnAt(cols, 2);
+                        block.declarations = CacheFormat.columnAt(cols, 3);
                     }
                 }
                 in.addTo(block.checksum);
                 if (rowType == CacheFormat.ROW_TYPE) {
                     block.typeRows.add(in.line());
-                } else if (rowType == CacheFormat.ROW_CONSTANT) {
-                    ConstantFact k = ConstantFact.fromRow(in.columns());
-                    if (k != null) {
-                        block.constants.add(k.fingerprint());
-                    }
                 } else if (!block.bindingFailed && rowType == CacheFormat.ROW_UNRESOLVED
                         && UnresolvedCallFact.BINDING_FAILED.equals(
                                 UnresolvedCallFact.reasonColumn(in.columns()))) {
@@ -1884,9 +1917,6 @@ public final class CacheUpdater {
                                Set<String> valid, StaleTypes stale, boolean librariesAddedOrChanged,
                                Set<String> libraryAffected, OldCache old, DepsIndex deps) {
         boolean intact = block.checksum.hex().equals(block.expectedCrc);
-        if (intact && block.rel != null) {
-            rememberConstants(block.rel, block.constants);
-        }
         // 親型の関係はどのブロックのものも部分型の索引に足す（有効なブロックの型が、無効になったブロックや
         // 今回解析するファイルの型の部分型かもしれない。壊れたブロックの関係を足しても、解析し直すファイルが増えるだけ）
         List<TypeFact> declared = new ArrayList<>(block.typeRows.size());
@@ -1906,6 +1936,9 @@ public final class CacheUpdater {
                 old.allKept = false;
             } else {
                 valid.add(rel);
+                if (!block.declarations.isEmpty()) {
+                    oldDeclarations.put(rel, block.declarations);
+                }
                 for (TypeFact t : declared) {
                     stale.packageNow(t.pkg());
                 }
@@ -1924,13 +1957,6 @@ public final class CacheUpdater {
         }
         // 今のソースに無いファイルのブロックは、壊れていても解析し直さないので数えない
         return (!intact && block.inSources) ? 1 : 0;
-    }
-
-    /** 1ブロック分の K 行の指紋をまとめて覚える */
-    private void rememberConstants(String rel, List<String> fingerprints) {
-        if (!fingerprints.isEmpty()) {
-            oldConstants.put(rel, digestOf(fingerprints));
-        }
     }
 
     /**
@@ -2060,10 +2086,10 @@ public final class CacheUpdater {
 
     /**
      * パス3・パス4。「変わった型」に触れる有効ブロックを再解析に回し、解析し直した結果として
-     * 「変わった型」が増えていたら（定数の連鎖。{@link CacheUpdater} のクラスコメント参照）もう一周する。
+     * 「変わった型」が増えていたら（宣言の連鎖。{@link CacheUpdater} のクラスコメント参照）もう一周する。
      *
-     * ふつうは1周で止まる。周回が続くのは、定数を宣言しているファイルが数珠つなぎになっている
-     * ときだけ。1周ごとに valid は減るだけで増えないので、必ず止まる。
+     * ふつうは1周で止まる。周回が続くのは、解析し直したファイルの宣言か定数の値が変わったとき（数珠つなぎに
+     * なっているとき）と、jar の変化で解析し直したファイルがあったときだけ。1周ごとに valid は減るだけで増えないので、必ず止まる。
      *
      * <p>パス3 は、パス1 が書いた依存の索引を先頭から読み、まだ有効なブロックのうち「変わった型」または
      * 「変わった jar のパッケージ」に触れるものを valid から外し、再解析の一覧に積む（旧キャッシュのブロックの順）。
@@ -2318,8 +2344,9 @@ public final class CacheUpdater {
 
         List<String> body = new ArrayList<>();
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）。
-        // 依存・解決できなかった名前の 2 列
-        body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa)), unresolvedNamesOf(fa)));
+        // 依存・解決できなかった名前・自分の宣言の指紋の 3 列
+        body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa)), unresolvedNamesOf(fa),
+                declarationsDigestOf(fa)));
         body.addAll(symbols.rows());
         // 値グラフ（N行）は番号順。参照する行（G・R・C/U・J 行）より前にあれば、読み手は 1 回で取り込める
         for (ValueNode n : fa.valueNodes) {
@@ -2344,7 +2371,7 @@ public final class CacheUpdater {
         body.addAll(functionals);
         body.addAll(accesses);
         // K行は指紋の順に並べる。同じソースならいつ解析しても同じ並びになり、
-        // 旧キャッシュとの突き合わせ（定数の連鎖）が並び順に振り回されない
+        // 旧キャッシュとの突き合わせ（宣言の連鎖）が並び順に振り回されない
         body.addAll(sortedConstantRows(fa));
         // フィールドへの代入は、同じブロックの V 行（フィールド宣言）と組で判定する（読み手はブロックの終わりで渡す）
         for (FieldAssignFact j : fa.fieldAssigns) {
@@ -2428,19 +2455,18 @@ public final class CacheUpdater {
     }
 
     /**
-     * 解析結果が宣言している定数の指紋（K行の指紋を並べてハッシュにしたもの）。定数が無ければ空文字。
+     * 自分の宣言の指紋（I 行の 3 列目）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
+     * 定数の値（K 行の指紋）を並べてハッシュにしたもの。どちらも無ければ空文字。
      *
-     * 旧キャッシュ側の同じ形（{@link #rememberConstants}）と突き合わせて、
-     * 「値が変わったか」だけを見る。値そのものをヒープに持たないよう、ファイルごとに
+     * 旧キャッシュの同じ列（{@link #oldDeclarations}）と突き合わせて、「宣言か定数の値が変わったか」だけを見る
+     * （{@link Cascade#WHEN_DECLARATIONS_CHANGED}）。中身をヒープに持たないよう、ファイルごとに
      * ハッシュ1つ（16文字）だけ覚える
      */
-    private static String constantsDigestOf(FileAnalysis fa) {
-        if (fa.constants.isEmpty()) {
-            return "";
-        }
-        List<String> lines = new ArrayList<>(fa.constants.size());
+    private static String declarationsDigestOf(FileAnalysis fa) {
+        List<String> lines = new ArrayList<>(fa.declarationKeys.size() + fa.constants.size());
+        lines.addAll(fa.declarationKeys);
         for (ConstantFact k : fa.constants) {
-            lines.add(k.fingerprint());
+            lines.add("K " + k.fingerprint());
         }
         return digestOf(lines);
     }

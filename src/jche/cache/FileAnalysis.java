@@ -61,6 +61,14 @@ public final class FileAnalysis {
     public final List<FieldDeclFact> fieldDecls = new ArrayList<>();
     /** このファイルが宣言するコンパイル時定数（K行。{@link ConstantFact} 参照） */
     public final List<ConstantFact> constants = new ArrayList<>();
+    /**
+     * このファイルが宣言する型と、その型が宣言するメソッド・フィールドの、JDT のバインディングの鍵と修飾子
+     * （継承したものは含めない。{@code jche.analysis.TypeContextTracker#recordDeclarations}）。行にはせず、
+     * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の 3 列目）にする。
+     * 差分更新は、中身の変わっていないファイルを解析し直したとき、この指紋が前回と違えば宣言する型を
+     * 「変わった型」にする（docs/cache-unification-qa.md の Q83）
+     */
+    public final List<String> declarationKeys = new ArrayList<>();
     /** フィールドへの代入（J 行）。値は {@link #valueNodes} のノード番号 */
     public final List<FieldAssignFact> fieldAssigns = new ArrayList<>();
     public final List<FieldAccessFact> fieldAccesses = new ArrayList<>();

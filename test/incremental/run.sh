@@ -1009,6 +1009,129 @@ edit_body_only() {
 }
 case_of "親型のメソッドの本体だけを変える" edit_body_only yes setup_body_only
 
+# --- 型の形をやめたあとのレビューで見つかった取りこぼし（docs/cache-unification-qa.md の Q83〜Q87）--------
+# どれも 1cba882 では「差分更新と全件解析が違う」で落ちる
+
+# 中身の変わっていないファイルの宣言が変わる。p.X は import q.* の Foo を宣言に使っていたが、同じパッケージに足した
+# p.Foo に隠される（JLS 6.4.1）。X は新しい p.Foo の単純名を I 行に持つので解析し直すが、中身は変わっていないので、
+# 以前は定数の値が変わったときにしか X の型を変わった型にせず、X だけを使う r.U（q.Foo を渡す x.m(f)・x.f.run()・
+# x.get().run()）を解析し直さなかった。今は自分の宣言の指紋（宣言の鍵と修飾子と定数の値。I 行の 3 列目）が
+# 前回と違えば変わった型にする（Q83）。戻り値の型は H・D・V 行に無い（D 行はアノテーションの付いたメソッドにだけ
+# 戻り値の型を書く）ので、行から作る指紋では拾えない
+setup_shadow_decl() {
+    printf 'package q;\npublic class Foo { public void run() { } }\n' | jfile q/Foo.java
+    jfile p/X.java <<'EOF'
+package p;
+import q.*;
+public class X {
+    public Foo f;
+    public void m(Foo foo) { System.out.println("foo"); }
+    public void m(Object o) { System.out.println("obj"); }
+    public Foo get() { return null; }
+}
+EOF
+    printf 'package r;\npublic class U1 { void go(p.X x, q.Foo f) { x.m(f); } }\n' | jfile r/U1.java
+    printf 'package r;\npublic class U2 { void go(p.X x) { x.f.run(); } }\n' | jfile r/U2.java
+    printf 'package r;\npublic class U3 { void go(p.X x) { x.get().run(); } }\n' | jfile r/U3.java
+}
+case_of "同じパッケージに足した型が、中身の変わっていないファイルの宣言の型を隠す（引数・フィールド・戻り値）" \
+    "printf 'package p;\npublic class Foo { public void run() { System.out.println(); } }\n' > work/src/p/Foo.java" \
+    yes setup_shadow_decl
+
+# jar の型の親（別の jar の型）にメソッドを足す。l1.Mid（l1.jar）の親 l2.Top（l2.jar）に m(String) を足すと、
+# app.U の s.m("x") の解決先が変わる。
+#   jar2a: ソースの app.Sub extends l1.Mid。Sub の H 行には直接の親 l1.Mid しか無く、l2 のパッケージに当たらない。
+#          Sub は l2.Top を I 行に持つので jar の変化で解析し直すが、以前は中身が変わっていなければ Sub の型を
+#          変わった型にしなかったので、Sub だけを使う U を解析し直さなかった。今は jar の変化で解析し直したファイルの型は
+#          変わった型にする（Q84）
+#   jar2b: U が jar の型 l1.Mid を直接使う。以前は U の I 行に l1.Mid しか無く、l2 のパッケージに当たらなかった。
+#          今は jar の型の推移的な親型も I 行に数える（Q86）
+make_chain_jars() {   # $1 = l2.Top の本体。l1.jar は最初の 1 回だけ作る（変わるのは l2.jar だけ）
+    rm -rf jarchain && mkdir -p jarchain/src/l1 jarchain/src/l2 jarchain/c1 jarchain/c2 work/lib
+    printf 'package l2;\npublic class Top { %s }\n' "$1" > jarchain/src/l2/Top.java
+    printf 'package l1;\npublic class Mid extends l2.Top { public void m(Object o) { } }\n' > jarchain/src/l1/Mid.java
+    "$JAVAC_BIN" -d jarchain/c2 jarchain/src/l2/Top.java \
+        && ( cd jarchain/c2 && "$JAR_BIN" cf ../../work/lib/l2.jar l2 ) \
+        || { echo "  NG   jar を作れませんでした"; fail=1; }
+    if [ ! -f work/lib/l1.jar ]; then
+        "$JAVAC_BIN" -cp jarchain/c2 -d jarchain/c1 jarchain/src/l1/Mid.java \
+            && ( cd jarchain/c1 && "$JAR_BIN" cf ../../work/lib/l1.jar l1 ) \
+            || { echo "  NG   jar を作れませんでした"; fail=1; }
+    fi
+    rm -rf jarchain
+}
+setup_jar_chain_sub() {
+    make_chain_jars ''
+    printf 'package app;\npublic class Sub extends l1.Mid { }\n' | jfile app/Sub.java
+    printf 'package app;\npublic class U { public void go(Sub s) { s.m("x"); } }\n' | jfile app/U.java
+}
+setup_jar_chain_direct() {
+    make_chain_jars ''
+    printf 'package app;\npublic class U { public void go(l1.Mid s) { s.m("x"); } }\n' | jfile app/U.java
+}
+# jar の中身の更新時刻が同じ秒に収まっても指紋（中のクラスの一覧と内容）で変化を見るので、待たない
+case_of "jar の親の親（別の jar）にメソッドを足す（ソースの部分型を使うファイル）" \
+    "make_chain_jars 'public void m(String s) { }'" yes setup_jar_chain_sub
+case_of "jar の型の親（別の jar）にメソッドを足す（jar の型を使うファイル）" \
+    "make_chain_jars 'public void m(String s) { }'" yes setup_jar_chain_direct
+
+# 型引数にだけ現れる型の親を変える。Foo extends Bar をやめると、U1〜U4 の解決が変わる。どのファイルのソースにも
+# Foo は無い（式の型の型引数 List<Foo>・Box<Foo> と、ArrayList<Foo> の add(int, E) の E）。以前は式の型を消去で
+# 数えていたので List・Box しか I 行に無く、java.* の型が宣言する候補（ArrayList の add）は見ていなかった。
+# 今は式と型の節の型の型引数も数え、呼び出しの候補は型引数を付けたまま辿る（java.* の型の候補は、型引数を
+# 置き換えた java.* でない引数の型だけ）（Q85）
+setup_type_args() {
+    printf 'package tya;\npublic class Bar { }\n' | jfile tya/Bar.java
+    printf 'package tya;\npublic class Foo extends Bar { }\n' | jfile tya/Foo.java
+    printf 'package tya;\npublic class A {\n    public java.util.List<Foo> foos() { return null; }\n    public Box<Foo> box() { return null; }\n}\n' \
+        | jfile tya/A.java
+    jfile tya/X.java <<'EOF'
+package tya;
+public class X {
+    public void m(java.util.Collection<? extends Bar> c) { System.out.println("coll"); }
+    public void m(Object o) { System.out.println("obj"); }
+}
+EOF
+    jfile tya/Box.java <<'EOF'
+package tya;
+public class Box<T> {
+    public void put(T t) { System.out.println("t"); }
+    public void put(Bar b) { System.out.println("bar"); }
+}
+EOF
+    jfile tya/S.java <<'EOF'
+package tya;
+public class S extends java.util.ArrayList<Foo> {
+    public void add(int i, Bar b) { System.out.println("bar"); }
+}
+EOF
+    printf 'package tyu;\npublic class U1 { void go(tya.X x, tya.A a) { x.m(a.foos()); } }\n' | jfile tyu/U1.java
+    printf 'package tyu;\npublic class U2 { void go(tya.A a) { a.box().put(null); } }\n' | jfile tyu/U2.java
+    printf 'package tyu;\npublic class U3 { void go(tya.A a) { for (tya.Bar b : a.foos()) { System.out.println(b); } } }\n' \
+        | jfile tyu/U3.java
+    printf 'package tyu;\npublic class U4 { void go(tya.S s) { s.add(0, null); } }\n' | jfile tyu/U4.java
+}
+case_of "型引数にだけ現れる型の親を変える（式の型の型引数・型引数を置き換えた候補・java.* の型の候補）" \
+    "sed -i 's/ extends Bar//' work/src/tya/Foo.java" yes setup_type_args
+
+# jar のパッケージ a.b と同じ名前の型 a.b（パッケージ a のクラス b）をソースに足す。u.U の a.b.C.m() は jar の a.b.C の
+# 呼び出しからエラーに変わる（JLS 6.5.2・7.1）。U の I 行には a.b.C があるが、足した型 a.b は I 行のどの型とも
+# 一致しなかった。今は I 行の型の名前の頭の部分が変わった型でも触れているとみなす（Q87）。
+# a.b.C がソースにあると、パッケージ a.b のファイル自身のエラー（「パッケージが型と衝突する」）は同じバッチで先に a.b を
+# 解析したときにしか出ない（JDT の振る舞い。解析し直しても出ない）ので、題材は jar に置く
+setup_pkg_type() {
+    rm -rf jarpkg && mkdir -p jarpkg/src/a/b jarpkg/classes work/lib
+    printf 'package a.b;\npublic class C { public static void m() { } }\n' > jarpkg/src/a/b/C.java
+    "$JAVAC_BIN" -d jarpkg/classes jarpkg/src/a/b/C.java \
+        && ( cd jarpkg/classes && "$JAR_BIN" cf ../../work/lib/ab.jar a ) \
+        || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf jarpkg
+    printf 'package a;\npublic class A0 { }\n' | jfile a/A0.java
+    printf 'package u;\npublic class U { void go() { a.b.C.m(); } }\n' | jfile u/U.java
+}
+case_of "jar のパッケージ a.b と同じ名前の型 a.b をソースに足す" \
+    "printf 'package a;\npublic class b { }\n' > work/src/a/b.java" yes setup_pkg_type
+
 # --- 3 回目のレビューで見つかった、I 行と型の形に載っていなかった依存 ---------------------
 # どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）。
 # 型の形はやめた（Q77）が、同じ書き換えで差分更新が全件解析と同じであることを見続ける

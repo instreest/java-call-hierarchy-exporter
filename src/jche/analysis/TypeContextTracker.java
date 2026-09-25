@@ -11,6 +11,7 @@ import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Statement;
@@ -111,6 +112,64 @@ final class TypeContextTracker {
         collectSupertypes(erased, supers, new HashSet<>(), true, 0);
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
                 names.annotationsOf(erased)));
+        recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
+    }
+
+    /**
+     * 自分の宣言の指紋の材料（{@link FileAnalysis#declarationKeys}）。型とその直接の親型（型引数を含む）と型引数の上限、
+     * 型が宣言するメソッド（暗黙のもの＝既定のコンストラクタ・レコードのアクセサ・列挙型の values も含む）と
+     * フィールドの、JDT のバインディングの鍵・修飾子・戻り値や型・throws・可変長引数か。
+     *
+     * <p>ほかのファイルの事実（呼び出しの解決・どのオーバーロードが選ばれるか・式の型・エラー）は、このファイルの宣言に
+     * 依る。ファイルの中身が同じでも、宣言に書いた名前の解決先が変わる（同じパッケージに足した型がオンデマンド import を
+     * 隠す）と宣言が変わるので、差分更新はこれを前回と比べて、違えば宣言する型を「変わった型」にする
+     * （docs/cache-unification-qa.md の Q83）。継承したものは入れない（親の変化は、部分型を「変わった型」にする
+     * 決まりで届く）。何を入れるかを JLS から選ばず、JDT が宣言として返すものをそのまま入れる
+     */
+    private void recordDeclarations(ITypeBinding type) {
+        StringBuilder sb = new StringBuilder("T ").append(type.getKey()).append(' ').append(type.getModifiers());
+        appendKey(sb, type.getSuperclass());
+        for (ITypeBinding i : type.getInterfaces()) {
+            appendKey(sb, i);
+        }
+        appendTypeParameters(sb, type.getTypeParameters());
+        out.declarationKeys.add(sb.toString());
+        for (IMethodBinding m : type.getDeclaredMethods()) {
+            sb.setLength(0);
+            sb.append("M ").append(m.getKey()).append(' ').append(m.getModifiers())
+                    .append(m.isVarargs() ? " varargs" : "");
+            appendKey(sb, m.getReturnType());
+            for (ITypeBinding p : m.getParameterTypes()) {
+                appendKey(sb, p);
+            }
+            sb.append(" throws");
+            for (ITypeBinding e : m.getExceptionTypes()) {
+                appendKey(sb, e);
+            }
+            appendTypeParameters(sb, m.getTypeParameters());
+            out.declarationKeys.add(sb.toString());
+        }
+        for (IVariableBinding f : type.getDeclaredFields()) {
+            sb.setLength(0);
+            sb.append("F ").append(f.getKey()).append(' ').append(f.getModifiers());
+            appendKey(sb, f.getType());
+            out.declarationKeys.add(sb.toString());
+        }
+    }
+
+    private static void appendTypeParameters(StringBuilder sb, ITypeBinding[] parameters) {
+        for (ITypeBinding p : parameters) {
+            sb.append(" <");
+            appendKey(sb, p);
+            for (ITypeBinding b : p.getTypeBounds()) {
+                appendKey(sb, b);
+            }
+            sb.append('>');
+        }
+    }
+
+    private static void appendKey(StringBuilder sb, ITypeBinding t) {
+        sb.append(' ').append(t == null ? "-" : t.getKey());
     }
 
     /** jar の型を経由して親型を辿る深さの上限（JDK の GUI クラス等でも十数段） */

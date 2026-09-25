@@ -68,9 +68,9 @@ import java.util.Set;
  *                                                          crc はブロックの検査値（下の「ブロックの検査値」）。
  *                                                          内容ハッシュが空の F 行は、解析のあいだにソースが
  *                                                          書き換えられた印でもある（次の実行で必ず解析し直す）
- *   I  依存する型（カンマ区切り）  解決できなかった名前（カンマ区切り）
+ *   I  依存する型（カンマ区切り）  解決できなかった名前（カンマ区切り）  自分の宣言の指紋
  *                                                          必ず F 行の直後。差分更新（{@link jche.analysis.CacheUpdater}）が
- *                                                          使う 2 列。
+ *                                                          使う 3 列。
  *                                                          <b>依存する型</b>（FQN の昇順。自分が宣言する型は含まない。
  *                                                          配列は要素の型、プリミティブは除く）は次の和。これらの型を
  *                                                          宣言するファイルが変わっていたら再解析する。
@@ -79,17 +79,22 @@ import java.util.Set;
  *                                                              親型、宣言の型など。jche.analysis.BindingNames#typeNameOf）
  *                                                          (b) すべての式（名前・呼び出し・ラムダ・アノテーションを含む）の
  *                                                              型と、すべての型の節の型。型変数・捕捉された型変数・
- *                                                              ワイルドカード・交差型は上限の消去で数える。ただし JDT が
+ *                                                              ワイルドカード・交差型は上限の消去で数え、型引数
+ *                                                              （{@code List<Foo>} の Foo）も数える。ただし JDT が
  *                                                              解決できなかった名前（バインディングが無いか回復したもの）は
  *                                                              数えず、アノテーションの型は {@code java.*} のものを数えない
  *                                                              （jche.analysis.FactVisitor#preVisit2）。呼び出し・メソッド
  *                                                              参照・new・super(...) では、呼び出しの候補（探す型とその親が
- *                                                              宣言する同じ名前のメソッド・コンストラクタ。{@code java.*} の
- *                                                              型のものは除く）の引数の型も数える
+ *                                                              宣言する同じ名前のメソッド・コンストラクタ。探す型は型引数を
+ *                                                              付けたまま辿る）の引数の型も数える。{@code java.*} の型の
+ *                                                              候補は、型引数を置き換えた {@code java.*} でない型だけ
  *                                                              （jche.analysis.BindingNames#noteCandidates）
  *                                                          (c) 呼び出したメソッド・コンストラクタの throws の型
  *                                                              （型変数は上限の消去。{@code java.*} の型は数えない）
  *                                                          (d) import 文の型（オンデマンド import は "pkg.*"）
+ *                                                          (e) (a)〜(c) で数えた jar の型（ソースの無い、{@code java.*} で
+ *                                                              ない型）の推移的な親型（{@code java.*} の型で止める。
+ *                                                              jar の型には H 行が無いので、親の jar の変化をここで拾う）
  *                                                          親型の変化は、差分更新が H 行から作る部分型の索引で拾う
  *                                                          （親が変わった型の部分型も変わった型にする）ので、親型は
  *                                                          (a)(b) で名前にしたもの以外を数えない。
@@ -99,7 +104,14 @@ import java.util.Set;
  *                                                          頭の部分なら、書かれた名前全体。
  *                                                          jche.analysis.CallEdgeExtractor#namesOf）で、1 つも拾えなければ
  *                                                          {@link #ANY_NAME}。変わった型（新しい型を含む）に当たる
- *                                                          ブロックを解析し直す
+ *                                                          ブロックを解析し直す。
+ *                                                          <b>自分の宣言の指紋</b>は、このファイルが宣言する型・メソッド・
+ *                                                          フィールドの JDT のバインディングの鍵と修飾子・戻り値や型・
+ *                                                          throws（継承したものは含めない）と K 行の指紋を並べたハッシュ
+ *                                                          （{@link jche.cache.FileAnalysis#declarationKeys}）。中身の
+ *                                                          変わっていないファイルを解析し直して、これが前回と違えば、
+ *                                                          宣言する型を変わった型にする（宣言に書いた名前の解決先が
+ *                                                          変わった・参照した定数の値が変わった）
  *   S  番号  pkg  typeFqn  method  paramSig                   ブロック内のメソッドの記号表（{@link SymbolTable}）。
  *                                                          番号は 0 から詰めて振る。下の「記号」はこの番号
  *   N  番号  kind  value  recv  args  argCount  staticRecv    {@link ValueNode}。値グラフのノード。
@@ -394,9 +406,13 @@ public final class CacheFormat {
      *       型解決に失敗したブロックの
      *       参照した型の親を数えるのをやめた。解決できなかった名前は、エラーの位置に書かれた名前の頭の部分なら書かれた
      *       名前全体にした（バッチの組み方に依らない）（{@code docs/cache-unification-qa.md} の Q77〜Q82）</li>
+     *   <li>v42 I 行に自分の宣言の指紋（3 列目。宣言の鍵と修飾子と定数の値）を足した。依存する型に、式・型の節の型の
+     *       型引数（{@code List<Foo>} の Foo）、呼び出しの候補を型引数を付けたまま辿った引数の型（{@code java.*} の型が
+     *       宣言する候補の、型引数を置き換えた {@code java.*} でない型も）、jar の型の推移的な親型（{@code java.*} で
+     *       止める）を足した（{@code docs/cache-unification-qa.md} の Q83〜Q88）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v41";
+    public static final String VERSION = "jche-cache-v42";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
