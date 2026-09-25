@@ -538,7 +538,7 @@ public final class CallResolver {
         if (!beans.enabled() || !base.isMultiple()) {
             return null;
         }
-        if (!isInjectionPoint(edgeIndex, beans)) {
+        if (!isInjectionPoint(edgeIndex, calleeId, beans)) {
             return null;
         }
         int recv = graph.recvNode(edgeIndex);
@@ -583,7 +583,7 @@ public final class CallResolver {
      * 利用者が {@code new} して渡したフィールドまで唯一の Bean に確定し、実際に渡した実装への呼び出しを
      * 落としていた（docs/spring-di-qa.md の Q5・Q6）
      */
-    private boolean isInjectionPoint(int edgeIndex, SpringBeans beans) {
+    private boolean isInjectionPoint(int edgeIndex, int calleeId, SpringBeans beans) {
         char recvKind = graph.recvKindOf(edgeIndex);
         if (recvKind != RecvKind.FIELD && recvKind != RecvKind.PARAM) {
             return false;
@@ -598,10 +598,17 @@ public final class CallResolver {
                         graph.hierarchy);
         if (!dataflow.enabled()) {
             // 値を読まない指定。レシーバがどのフィールド・引数かは値の表にしか無いので、呼び出しを書いた
-            // メソッドから判定する（フィールドは、そのメソッドの型か親に注入点のフィールドがあるとき。
-            // 引数は、そのメソッドの引数が注入点のとき）。値を読むときより粗い（docs/spring-di-qa.md の Q5）
-            return (recvKind == RecvKind.FIELD)
-                    ? beans.hasInjectedFields(methods.typeFqn(caller), graph.hierarchy) : injectedParams;
+            // メソッドから判定する（フィールドは、そのメソッドの型か親に注入点のフィールドがあり、読みうるフィールドに
+            // ソースが引数でない値を入れるもの（型の当たるもの）が無いとき。引数は、そのメソッドの引数が注入点のとき）。
+            // 値を読むときより粗い（docs/spring-di-qa.md の Q5・Q16）
+            if (recvKind != RecvKind.FIELD) {
+                return injectedParams;
+            }
+            String callerType = methods.typeFqn(caller);
+            String written = graph.qualifierOf(edgeIndex);
+            String receiverType = (written == null || written.isEmpty()) ? methods.typeFqn(calleeId) : written;
+            return beans.hasInjectedFields(callerType, graph.hierarchy)
+                    && !graph.mayReadOwnValuedField(callerType, receiverType);
         }
         int recv = graph.recvNode(edgeIndex);
         ValueStore values = graph.values();

@@ -23,6 +23,7 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
@@ -41,6 +42,7 @@ import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
 import jche.cache.FileAnalysis;
 import jche.cache.MethodRef;
+import jche.cache.Origin;
 import jche.cache.ValueNode;
 
 /**
@@ -57,12 +59,15 @@ import jche.cache.ValueNode;
  *   <li>その型自身のメソッド・コンストラクタ・インスタンス初期化ブロック・static 初期化ブロックの中の書き込み。
  *       {@code =} だけでなく複合代入（{@code n += 1}）と {@code ++} / {@code --} も書き込みで、値は
  *       「追跡できない」（{@link ValueNode#NONE}）にする</li>
- *   <li>別の型の本体（入れ子のクラス・static な入れ子のクラス・外側のクラス）から、ほかの型の private な
- *       インスタンスフィールドへの書き込み。書いた側の型を拾うときに、宣言した型の事実として
- *       {@link FieldAssignFact#SITE_ELSEWHERE} で残す。private なフィールドに書けるのは同じ
- *       コンパイル単位の中だけで（JLS 6.6.1）、同じファイルのブロックに V 行と並ぶので、読み手はブロックの
- *       終わりで一緒に判定できる。private でない final なフィールドには、宣言した型の初期化の中でしか
- *       書けない（JLS 8.3.1.2）</li>
+ *   <li>別の型の本体（入れ子のクラス・static な入れ子のクラス・外側のクラス・子クラス・ほかのファイルの型）から、
+ *       ほかの型のインスタンスフィールドへの書き込み（{@link #recordElsewhere}）。書いた側の型を拾うときに、
+ *       宣言した型の事実として {@link FieldAssignFact#SITE_ELSEWHERE}・値は「追跡できない」で残す。
+ *       private なフィールドに書けるのは同じコンパイル単位の中だけで（JLS 6.6.1）、同じファイルのブロックに V 行と
+ *       並ぶ。private でないフィールドには別のファイルからも書ける（{@code svc.dao = …}・子クラスのコンストラクタの
+ *       {@code this.dao = …}・{@code Outer.this.dao = …}・{@code super.dao = …}）ので、J 行は<b>書いた側のファイルの
+ *       ブロック</b>に載る。読み手はブロックをまたいで集める（jche.graph.FieldFacts の「よその書き込み」。
+ *       docs/spring-di-qa.md の Q15）。private でない final なフィールドには、宣言した型の初期化の中でしか
+ *       書けない（JLS 8.3.1.2・16）</li>
  * </ul>
  * コンストラクタとインスタンス初期化ブロックの書き込みのうち、site に「そのコンストラクタ」「初期化子」として
  * 残すのは、生成のたびに必ず通る {@code this} への書き込みだけ（{@link #definiteIn}）。条件・ループ・try・
@@ -78,6 +83,10 @@ import jche.cache.ValueNode;
  * メソッド本体の代入は引数の表だけで求める（ローカル変数の先読みはしない。{@code this.f = local;} は
  * 「追跡できない」のまま）。本体の中で書き換えられる引数（{@code d = new LogDao(d); this.dao = d;}）を
  * 右辺が読むときも「追跡できない」にする。引数の表の {@code A:n} は呼ばれた時点の値で、書き換えた後の値ではない。
+ * {@code Objects.requireNonNull(d)}（{@code java.util.Objects} のもの。{@code (d, "msg")}・{@code (d, supplier)} も）は
+ * 第 1 引数をそのまま返すので、書き込みの値は第 1 引数として読む（{@link #storedValueOf}。docs/value-safety-qa.md の Q28）。
+ * J 行には値のノードの種別も書く（{@link FieldAssignFact#kind}。値を読まない指定の読み手が、N 行を読まずに
+ * 「引数を入れる書き込みか」を見るため）。
  * 範囲を変えるときはキャッシュのバージョンを上げる。
  */
 final class FieldFactCollector {
@@ -171,8 +180,9 @@ final class FieldFactCollector {
                     BindingNames.modifiersOf(vb.getModifiers()), names.declTypeName(vb.getType()),
                     names.annotationsOf(vb)));
             if (frag.getInitializer() != null) {
+                int node = origins.nodeOf(storedValueOf(frag.getInitializer()));
                 out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(),
-                        FieldAssignFact.SITE_INITIALIZER, origins.nodeOf(frag.getInitializer())));
+                        FieldAssignFact.SITE_INITIALIZER, node, origins.kindOfNode(node)));
                 // 初期化子の中のラムダ（{@code Consumer<Dao> setter = x -> this.dao = x;}）が書くフィールドも拾う。
                 // 後から走るので、生成のたびに必ず通る書き込みではない（本体が式なので definiteIn が偽になる）
                 scanWrites(frag.getInitializer(), null, typeFqn, FieldAssignFact.SITE_ELSEWHERE, true);
@@ -264,7 +274,7 @@ final class FieldFactCollector {
                         return;
                     }
                     if (!isOwnField(vb, typeFqn)) {
-                        // 別の型の private フィールド（入れ子のクラスから外側へ、外側から入れ子へ）。
+                        // 別の型のフィールド（入れ子のクラスから外側へ、外側から入れ子へ、子クラスから親へ、ほかの型のインスタンスへ）。
                         // 入れ子の型の本体の中の書き込みは、その型を拾うときに拾う（ここで拾うと、
                         // ローカルクラスのコンストラクタでの自分のフィールドへの代入まで「よそからの書き込み」にしてしまう）
                         if (nestedTypes == 0) {
@@ -276,8 +286,9 @@ final class FieldFactCollector {
                     if (everyBuild && (nestedTypes > 0 || !isThisTarget(target) || !definiteIn(writeExpr, definite))) {
                         at = FieldAssignFact.SITE_ELSEWHERE;
                     }
-                    int node = (value == null) ? ValueNode.NONE : origins.nodeOf(value);
-                    out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(), at, node));
+                    int node = (value == null) ? ValueNode.NONE : origins.nodeOf(storedValueOf(value));
+                    out.fieldAssigns.add(new FieldAssignFact(typeFqn, vb.getName(), at, node,
+                            origins.kindOfNode(node)));
                 }
             });
         } finally {
@@ -286,14 +297,27 @@ final class FieldFactCollector {
     }
 
     /**
-     * 別の型の本体からの書き込みを、宣言した型の事実として残す。読み手の判定に効くのは
-     * private なインスタンスフィールドだけ（static は対象外、private でない final には外から書けない）なので、
-     * それ以外は残さない（キャッシュを太らせない）
+     * 別の型の本体からの書き込みを、宣言した型の事実として残す（site は {@code ?}、値は「追跡できない」）。
+     *
+     * <p>読み手の判定に効くのは次の 2 つ（static は対象外。private でない final には外から書けない）。
+     * <ul>
+     *   <li>private なインスタンスフィールド … 値の判定（jche.graph.FieldFacts の条件 (b)）。型を問わない
+     *       （基本型のフィールドの値も条件分岐の判定に使う）</li>
+     *   <li>private でない参照型のインスタンスフィールド … DI の注入点の判定（ソースが引数でない値を入れるか。
+     *       FieldFacts の ownValued）。子クラスのコンストラクタ・内部クラス・ほかのファイルの型から書ける。
+     *       基本型のフィールドは値の判定（private か final が要る）にも注入点にも関わらないので残さない</li>
+     * </ul>
+     * 値は書かない（「追跡できない」）。よその型の書き込みは、その型の生成や注入の形とは限らない（{@code static void
+     * wire(Svc s, Dao d) { s.dao = d; }} の {@code d} はコンテナの値ではない）ので、引数を入れる書き込みでも
+     * コンテナが入れた値とは読まない（docs/spring-di-qa.md の Q15）
      */
     private void recordElsewhere(IVariableBinding vb) {
         int mods = vb.getModifiers();
-        if (!Modifier.isPrivate(mods) || Modifier.isStatic(mods)) {
+        if (Modifier.isStatic(mods)) {
             return;
+        }
+        if (!Modifier.isPrivate(mods) && vb.getType() != null && vb.getType().isPrimitive()) {
+            return;   // 型の分からないフィールドは残す（拾わない側に倒すと書き込みを見落とす）
         }
         ITypeBinding owner = vb.getDeclaringClass();
         String ownerFqn = (owner == null) ? null : names.typeNameOf(BindingNames.erasureOf(owner));
@@ -301,7 +325,41 @@ final class FieldFactCollector {
             return;
         }
         out.fieldAssigns.add(new FieldAssignFact(ownerFqn, vb.getName(), FieldAssignFact.SITE_ELSEWHERE,
-                ValueNode.NONE));
+                ValueNode.NONE, Origin.UNKNOWN));
+    }
+
+    /**
+     * 書き込みの値として読む式。{@code java.util.Objects#requireNonNull(x)}（{@code (x, message)}・
+     * {@code (x, messageSupplier)} も）は x をそのまま返す（null なら例外で抜けるので、書き込みは起きない）ので、
+     * x に読み替える。入れ子（{@code requireNonNull(requireNonNull(d))}）・括弧・値を変えないキャストも剥がす。
+     * それ以外の式はそのまま（値グラフが読む）。
+     *
+     * <p>読み替えないと、コンストラクタ注入の {@code this.dao = Objects.requireNonNull(d);} の値はメソッドの戻り値
+     * （{@code M:}）になり、引数を入れる書き込みと読めない。DI の段 5 がそのフィールドを注入点から外し、経路で
+     * コンストラクタ実引数を当てることもできずに CHA に戻っていた（docs/value-safety-qa.md の Q28）
+     */
+    static Expression storedValueOf(Expression value) {
+        Expression e = value;
+        for (int guard = 0; guard < 8; guard++) {
+            if (OriginTracker.unwrapValue(e) instanceof MethodInvocation mi && isRequireNonNull(mi)) {
+                e = (Expression) mi.arguments().get(0);
+            } else {
+                return e;
+            }
+        }
+        return e;
+    }
+
+    /** {@code java.util.Objects} の static な {@code requireNonNull}（第 1 引数を返す）の呼び出しか */
+    private static boolean isRequireNonNull(MethodInvocation mi) {
+        if (!"requireNonNull".equals(mi.getName().getIdentifier()) || mi.arguments().isEmpty()) {
+            return false;
+        }
+        IMethodBinding b = mi.resolveMethodBinding();
+        if (b == null || !Modifier.isStatic(b.getModifiers()) || b.getDeclaringClass() == null) {
+            return false;
+        }
+        return "java.util.Objects".equals(b.getDeclaringClass().getErasure().getQualifiedName());
     }
 
     /**

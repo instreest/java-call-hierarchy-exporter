@@ -72,9 +72,16 @@ public final class CallGraph {
     final HashMap<String, Integer> fieldHeads = new HashMap<>();
     /**
      * ソースが引数でない値を入れる、参照型の static でないフィールド（"typeFqn#fieldName"）。
-     * DI（段 5）はこれを注入点にしない（{@link FieldFacts}。値を読まない指定では J 行を読まないので空）
+     * DI（段 5）はこれを注入点にしない（{@link FieldFacts}。別のファイルからの書き込みも含む。
+     * 値を読まない指定でも J 行の種別の列から作る）
      */
     final HashSet<String> ownValuedFields = new HashSet<>();
+    /**
+     * 値を読まない指定でだけ作る: フィールドを宣言した型 -> その型の {@link #ownValuedFields} のフィールドの宣言の型
+     * （宣言の型の分からない、よその書き込みだけのフィールドは {@link FieldFacts#ANY_TYPE}）。
+     * レシーバがどのフィールドかが分からないときの粗い判定に使う（{@link #mayReadOwnValuedField}）
+     */
+    final HashMap<String, Set<String>> ownValuedTypes = new HashMap<>();
     /**
      * メソッドIDごとの「呼び出しがこの宣言の本体以外へ振り分けられうるか」のメモ
      * （0 = まだ調べていない、1 = 振り分けられない、2 = 振り分けられうる）。{@link #hasOverriders} が遅延して埋める
@@ -288,6 +295,62 @@ public final class CallGraph {
     /** ソースがそのフィールドに引数でない値を入れるか（{@link #ownValuedFields}） */
     public boolean isOwnValued(String fieldKey) {
         return ownValuedFields.contains(fieldKey);
+    }
+
+    /**
+     * 値を読まない指定で、{@code callerType} のメソッドが {@code this} のフィールド（修飾の無い名前・{@code this.f}・
+     * 外側のインスタンスの {@code f}）として読む、型が {@code receiverType} に当たるフィールドに、
+     * {@link #ownValuedFields} のものがありうるか。
+     *
+     * <p>レシーバがどのフィールドかは値の表にしか無いので、読みうるフィールドを型で絞る。見る型は、呼び出しを書いた型と
+     * その親、外側の型（入れ子・ローカル・匿名の型の外側）とその親。フィールドの宣言の型と {@code receiverType}
+     * （呼び出しを修飾する型。無ければ呼び出し先を宣言した型）が同じか、どちらかがもう片方の部分型なら当たる。
+     * {@code receiverType} が {@code java.lang.Object}（{@code toString()} など。修飾する型が残らない）なら、
+     * どのフィールドにも当たる。宣言の型の分からないもの（{@link FieldFacts#ANY_TYPE}）もどれにも当たる。
+     * 同じ型の注入のフィールドと並んでいると、そちらの呼び出しも「ありうる」になる（絞らない側。
+     * docs/spring-di-qa.md の Q16）
+     */
+    public boolean mayReadOwnValuedField(String callerType, String receiverType) {
+        if (callerType == null || ownValuedTypes.isEmpty()) {
+            return false;
+        }
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        for (String t = callerType; t != null && seen.add(t); t = enclosingTypeOf(t)) {
+            queue.add(t);
+        }
+        while (!queue.isEmpty()) {
+            String t = queue.poll();
+            Set<String> declTypes = ownValuedTypes.get(t);
+            if (declTypes != null) {
+                for (String d : declTypes) {
+                    if (d.equals(FieldFacts.ANY_TYPE) || receiverType == null || "java.lang.Object".equals(receiverType)
+                            || d.equals(receiverType) || hierarchy.isSubtypeOf(d, receiverType)
+                            || hierarchy.isSubtypeOf(receiverType, d)) {
+                        return true;
+                    }
+                }
+            }
+            for (String s : hierarchy.directSupertypes(t)) {
+                if (seen.add(s)) {
+                    queue.add(s);
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 外側の型の名前。入れ子の型は {@code p.Outer.Inner}、ローカル・匿名の型は {@code p.Outer$1Local}・{@code p.Outer$1}
+     * （jche.analysis.BindingNames#typeNameOf）。名前を切り詰めた形がソース上の型（H 行）でなければ null（パッケージ）
+     */
+    private String enclosingTypeOf(String type) {
+        int cut = Math.max(type.lastIndexOf('.'), type.lastIndexOf('$'));
+        if (cut <= 0) {
+            return null;
+        }
+        String outer = type.substring(0, cut);
+        return hierarchy.contains(outer) ? outer : null;
     }
 
     /** その型がコンストラクタ注入されたフィールドを持つか（{@link #fieldHead} に載っているフィールドがあるか） */
@@ -552,17 +615,20 @@ public final class CallGraph {
         return -1;
     }
 
-    /** declFile が属するソースフォルダの、ソースフォルダ順のインデックス。不明なら最大値 */
+    /**
+     * declFile が属するソースフォルダの、ソースフォルダ順のインデックス。不明なら最大値。
+     * どちらも {@code jche.config.ProjectLayout#relativeOf} の綴り（区切りは {@code /}。名前の中の {@code \} は
+     * そのまま）なので、綴りを直さずに比べる
+     */
     public int sourceFolderIndexOf(String declFile) {
         if (declFile == null) {
             return Integer.MAX_VALUE;
         }
-        String norm = declFile.replace('\\', '/');
         int bestIndex = Integer.MAX_VALUE;
         int bestLen = -1;
         for (int i = 0; i < sourceFolderOrder.size(); i++) {
             String prefix = sourceFolderOrder.get(i);
-            boolean matches = prefix.isEmpty() || norm.equals(prefix) || norm.startsWith(prefix + "/");
+            boolean matches = prefix.isEmpty() || declFile.equals(prefix) || declFile.startsWith(prefix + "/");
             if (matches && prefix.length() > bestLen) {
                 bestLen = prefix.length();
                 bestIndex = i;

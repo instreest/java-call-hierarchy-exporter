@@ -44,6 +44,12 @@ Issue なし（キャッシュを 1 ファイルにまとめる作業の途中�
   - **フレームワークが書くフィールド**（Q27）: 注釈の付いたフィールドと、DI のステレオタイプ以外の注釈の付いた型のフィールドは
     値を 1 つに決めない（`@Autowired(required = false)` の既定など）。DI の段 5 も、ソースが引数でない値を入れるフィールドを
     注入点にしない（`docs/spring-di-qa.md` の Q15）
+- あとから足したもの（5 回目のレビュー（67d7fd9 に対するもの）で見つかった。Q28 と `docs/spring-di-qa.md` の Q15・Q16。
+  キャッシュの版を `jche-cache-v40` に上げた）:
+  - **別の型から private でないフィールドへの書き込み**: 子クラス・内部クラス・ほかのファイルの型からの書き込みも J 行に載せ
+    （書いた側のブロック）、DI の段 5 がそのフィールドを注入点にしない。値を読まない指定でも同じフィールドを外す
+    （J 行に値の種別の列を足した）。フィールドの値の判定（private か final が要る）には効かない（Q18 の規則の補足）
+  - **`Objects.requireNonNull(d)`**（Q28）: 書き込みの値を d として読む（コンストラクタ注入の精度を戻す）
 
 ---
 
@@ -417,7 +423,8 @@ class RepoB implements Repo { … }
   インスタンスフィールド**への書き込み。後者は書いた側の型を拾うときに、宣言した型の事実として残す。private な
   フィールドに書けるのは同じコンパイル単位の中だけ（JLS 6.6.1）なので、同じファイルのブロックに V 行と並び、
   読み手はブロックの終わりで一緒に判定できる。private でない final なフィールドには宣言した型の初期化の中でしか
-  書けない（JLS 8.3.1.2）ので、外からの書き込みを探す必要は無い
+  書けない（JLS 8.3.1.2）ので、外からの書き込みを探す必要は無い（値の判定のためには。DI の段 5 のためには、private でない
+  参照型のフィールドへの別の型からの書き込みも拾う。5 回目のレビューで足した。`docs/spring-di-qa.md` の Q15）
 - **`++` / `--` / 複合代入は値が分からない書き込み**（ノード無し）。値の頭が揃わなくなり、そのフィールドは決まらない
 - **コンストラクタ・インスタンス初期化ブロックの中でも、生成のたびに必ず通る `this` への書き込みだけを
   「そのコンストラクタの書き込み」にする。** 本体の直下の式文で、それより前の文に `return` が無いこと。条件・ループ・
@@ -694,3 +701,48 @@ J 行に初期化子の書き込みしか無いので、読み手（`FieldFacts`
 の型の注釈の無いフィールド）と、DI の SnReq（`@Autowired(required = false)` の既定と Bean の両方が残る）・SnReset、対照の
 FwDeprecated（`java.lang` の注釈だけなら絞る）・SnStereo（ステレオタイプの Bean の注釈の無いフィールドは絞る）。
 対照以外は f491e2e で落ち、今は通る。段 5 の変更を外すと SnReq・SnReset が落ちることも確かめた。
+
+## Q28. `this.dao = Objects.requireNonNull(d);` のコンストラクタ注入を、なぜ絞れなくなっていたのか
+
+5 回目のレビュー（67d7fd9 に対するもの）で見つかった。精度の穴で、呼び出しを落とす穴ではない（絞らない側）。
+
+```java
+@Service
+public class D3 {
+    private final Dao dao;
+    D3(Dao d) { this.dao = Objects.requireNonNull(d); }
+    void go() { dao.find(); }        // → CHA（DaoA・DaoB の両方）。以前は段 5 で Bean の DaoB に絞れた
+}
+```
+
+J 行の値は右辺の式の値グラフのノードで、`Objects.requireNonNull(d)` はメソッドの戻り値（`M:java.util.Objects#requireNonNull(…)`）に
+なる。引数（`A:0`）ではないので、読み手は「ソースが引数でない値を入れるフィールド」（[spring-di-qa.md](spring-di-qa.md) の Q15）と
+読んで段 5 の注入点から外し、経路で分かるコンストラクタ実引数を当てる判定（`FieldFacts` の条件 (d)・(e)）にも乗らなかった。
+防御的にコンストラクタ引数を確かめるこの書き方はよく使われる。
+
+`java.util.Objects#requireNonNull` は、どの形（`(obj)`・`(obj, message)`・`(obj, messageSupplier)`）も obj をそのまま返し、
+null なら例外で抜ける（書き込みは起きない）。そこで書き手（`FieldFactCollector#storedValueOf`）が、書き込みの値（J 行。
+代入の右辺とフィールド初期化子）に限って `requireNonNull(x, …)` を x に読み替える。入れ子・括弧・値を変えないキャスト
+（`(Dao) requireNonNull(o)`）も剥がす。static import した `requireNonNull(d)` も、バインディングで `java.util.Objects` の
+static メソッドと確かめて同じに扱う。
+
+読み替えないもの:
+
+- `Objects.requireNonNullElse(d, new DaoA())`・`requireNonNullElseGet` … d が null なら既定の値を返す。引数そのものとは限らない
+- 同じ名前のほかのクラスのメソッド（Guava の `Preconditions.checkNotNull` など）… 返す値を知らない。必要になったら、
+  JDK の API のように返す値が仕様で決まっているものだけを足す
+
+却下した案:
+
+- **値グラフ全体で `requireNonNull(x)` を x のノードにする**（ローカル変数・呼び出しの受け手も）。精度は上がるが、書き手の
+  事実（N 行）がすべての呼び出し箇所で変わり、読み手の値の表の前提（呼び出しのノードは呼び出し）にも触れる。
+  レビューで挙がったのはフィールドの書き込みだけなので、J 行に限った
+- **読み手（`FieldFacts`）がメソッドの戻り値のノードの実引数を見て読み替える。** 読み手は J 行の値の頭（種別と値）だけで
+  比べ、値を読まない指定では種別の列しか見ない。書き手で読み替えれば、どちらの指定でも同じ答えになる
+
+書き手の作る事実（J 行の値）が変わるので、キャッシュの版を `jche-cache-v40` に上げた（[cache-unification-qa.md](cache-unification-qa.md) の Q76）。
+
+検査: `test/pruning` の SnRnn（Bean のコンストラクタ注入を `Objects.requireNonNull(d, "dao")` で包む。段 5 で SnRnB に絞る）・
+RnnPath（static import の `requireNonNull(d)`。経路のコンストラクタ実引数 DaoB で `DATAFLOW_FIELD` に絞る）は対照で、
+67d7fd9 ではどちらも CHA になる。RnnElse（`requireNonNullElse(d, new DaoA())`）は読み替えないことの確かめで、DaoA と DaoB の
+両方が残る。

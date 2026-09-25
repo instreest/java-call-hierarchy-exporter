@@ -269,8 +269,34 @@ public final class ProjectLayout {
         return javaFile.getFileName().toString();
     }
 
-    /** キャッシュのキー・出力表示に使う、プロジェクトルートからの相対パス */
+    /** キャッシュのキー・出力表示に使う、プロジェクトルートからの相対パス（綴りは {@link #pathKeyOf}） */
     public String relativeOf(Path javaFile) {
-        return projectRoot.relativize(javaFile).toString().replace('\\', '/');
+        return pathKeyOf(projectRoot.relativize(javaFile));
+    }
+
+    /**
+     * キャッシュのキー（F 行・T 行のパス、ヘッダ行のソースフォルダ、L 行の jar）に使うパスの綴り。パスの要素（名前）を
+     * {@code /} でつなぐ。絶対パスなら根（{@code /}・{@code C:\}）も {@code \} を {@code /} にして前に付ける。
+     *
+     * <p>以前は {@code toString()} の {@code \} を {@code /} に置き換えていた。Linux・macOS では {@code \} は名前の中の
+     * ただの文字なので、{@code x\y} という名前のフォルダと入れ子の {@code x/y} が同じキーになり、フォルダの名前を
+     * 変えても「ソースフォルダは変わっていない」と読んで旧キャッシュ（と中断した実行の一時ファイル）を使い続けた
+     * （docs/cache-unification-qa.md の Q75）。要素ごとにつなげば、名前の中の {@code \} は残る。Windows では
+     * {@code \} は区切りなので要素に現れず、どちらの書き方でも以前と同じ綴りになる
+     */
+    public static String pathKeyOf(Path path) {
+        StringBuilder sb = new StringBuilder();
+        Path root = path.getRoot();
+        if (root != null) {
+            sb.append(root.toString().replace('\\', '/'));
+        }
+        int names = path.getNameCount();
+        for (int i = 0; i < names; i++) {
+            if (i > 0) {
+                sb.append('/');
+            }
+            sb.append(path.getName(i).toString());
+        }
+        return sb.toString();
     }
 }

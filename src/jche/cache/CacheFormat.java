@@ -57,7 +57,10 @@ import java.util.Set;
  *                                                          指紋は中に入っているクラスの一覧
  *                                                          （{@link jche.analysis.LibraryDiff}）。読めなければ空
  *   F  相対パス  サイズ  エラー数  内容ハッシュ  構文エラー数  未解決数  crc
- *                                                          ブロックの先頭。エラー数は JDT が報告したエラーの件数
+ *                                                          ブロックの先頭。相対パスは project.root からのパスの要素を
+ *                                                          {@code /} でつないだもの（jche.config.ProjectLayout#pathKeyOf。
+ *                                                          ヘッダ行のソースフォルダ・T 行・L 行の jar も同じ綴り）。
+ *                                                          エラー数は JDT が報告したエラーの件数
  *                                                          （解決が不完全な印）。内容ハッシュは
  *                                                          {@link jche.util.FileHash}（読めなければ空）。
  *                                                          未解決数は使える候補の無い U 行の数
@@ -158,7 +161,9 @@ import java.util.Set;
  *   A  line  呼び出し元の記号  ownerTypeFqn  fieldName  access  mods  lambdaDepth
  *                                                          {@link FieldAccessFact}（今の読み手は使わない）
  *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}
- *   J  typeFqn  fieldName  site  node                         {@link FieldAssignFact}（node は代入された値。-1 は「追跡できない」）
+ *   J  typeFqn  fieldName  site  node  kind                   {@link FieldAssignFact}（node は代入された値。-1 は「追跡できない」。
+ *                                                          kind はそのノードの種別（-1 なら U）。値を読まない指定の読み手は
+ *                                                          N 行を読まずに kind だけを見る）
  *   Z  ブロック数                                              最終行。ここまで書き終えた印
  *                                                          （{@link #trailerFor}）。これが無い・数が合わない
  *                                                          キャッシュは途中で切れているとみなして捨てる
@@ -298,7 +303,9 @@ import java.util.Set;
  *       return は全部記録するか、全部しないかのどちらか</li>
  *   <li>フィールドへの書き込み（J 行）は漏れなく拾う: その型自身のメソッド・コンストラクタ・初期化ブロック
  *       （static を含む）・フィールド初期化子（その中のラムダを含む）の書き込みと、別の型の本体（入れ子のクラス・
- *       外側のクラス）から private なインスタンスフィールドへの書き込み（宣言した型の事実として書く）。
+ *       外側のクラス・子クラス・ほかのファイルの型）から、private なインスタンスフィールドと、private でない参照型の
+ *       インスタンスフィールドへの書き込み（宣言した型の事実として、書いた側のブロックに書く。値は -1）。
+ *       {@code java.util.Objects#requireNonNull(x, …)} を書き込んだ値は x の値にする。
  *       複合代入と {@code ++} / {@code --} は値の分からない書き込み（node は -1）。site をコンストラクタ・初期化子に
  *       するのは、生成のたびに必ず通る {@code this} への書き込み（本体の直下の式文で、前に {@code return} が無い）
  *       だけで、それ以外（条件・ループ・try・ラムダ・入れ子の型の中、{@code this} 以外のインスタンス、static 初期化
@@ -399,9 +406,15 @@ public final class CacheFormat {
      *       フィールドへの書き込み（J 行）にした（{@code docs/value-safety-qa.md} の Q26）。v38 の差分更新は、JDT が
      *       受け付けないソースフォルダを足しても旧キャッシュのブロックを使い続けたので、その実行が残したキャッシュも
      *       捨てる（{@code docs/cache-unification-qa.md} の Q73・Q74）</li>
+     *   <li>v40 別の型（子クラス・内部クラス・ほかのファイルの型）から private でない参照型のフィールドへの書き込みも
+     *       J 行にした（書いた側のブロックに載る）。J 行に値のノードの種別の列を足した（値を読まない指定の DI の判定）。
+     *       {@code Objects.requireNonNull(x)} を書き込んだ値は x の値にした（{@code docs/spring-di-qa.md} の Q15、
+     *       {@code docs/value-safety-qa.md} の Q28）。パスのキー（F 行・T 行・ヘッダ行のソースフォルダ・L 行）を
+     *       パスの要素を {@code /} でつないだ綴りにした（Linux・macOS で名前に {@code \} を含むフォルダが入れ子のフォルダと
+     *       同じキーにならない。{@code docs/cache-unification-qa.md} の Q75・Q76）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v39";
+    public static final String VERSION = "jche-cache-v40";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

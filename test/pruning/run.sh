@@ -17,7 +17,9 @@
 #       入れ子のクラスが別のフィールドにだけ書くフィールド・this.m() と this.f・空の new に add しただけのリスト・
 #       static メソッドの参照の実引数・private / static のメソッドへの invoke・Bean のコンストラクタと @Autowired の
 #       メソッドの引数・別のインスタンスのフィールドでもどのインスタンスでも同じ値（初期化子の new・コンストラクタで入れるラムダ）・
-#       フレームワークが書かないフィールドの初期化子（java.lang の注釈だけのフィールド・ステレオタイプの Bean の注釈の無いフィールド））
+#       フレームワークが書かないフィールドの初期化子（java.lang の注釈だけのフィールド・ステレオタイプの Bean の注釈の無いフィールド）・
+#       よその型が別のフィールドにだけ書く Bean のフィールド・Objects.requireNonNull で包んだコンストラクタ注入・
+#       値を読まない指定で、型の当たらないフィールドにだけ new を入れる Bean のフィールド）
 #
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
@@ -2986,6 +2988,184 @@ EOF
 expect_ listed SnReset.use SnRsB.find "同上（注入される SnRsB も残す）"
 
 # ---------------------------------------------------------------------------
+# 別の型（子クラス・内部クラス・ほかのパッケージの型）から、private でないフィールドへの書き込み。
+# 39 版の書き手は private なフィールドへの書き込みしか拾わず、ソースが引数でない値を入れるフィールドなのに段 5 が
+# 唯一の Bean に絞っていた。J 行は書いた側のファイルのブロックに載り、読み手はブロックをまたいで集める
+# （docs/spring-di-qa.md の Q15）
+# ---------------------------------------------------------------------------
+cat > "$SRC/SnSubBase.java" <<'EOF'
+package pr;
+
+interface SnSbI { void find(); }
+class SnSbA implements SnSbI { public void find() { System.out.println("a"); } }
+@Repository class SnSbB implements SnSbI { public void find() { System.out.println("b"); } }
+
+public abstract class SnSubBase {
+    @Autowired
+    protected SnSbI dao;
+    void go() { dao.find(); }
+}
+EOF
+case_ listed SnSub SnSubBase.go SnSbA.find "別のファイルの子クラスのコンストラクタが this.dao = new SnSbA() と書く protected なフィールドは、段 5 で唯一の Bean（SnSbB）に絞らない" <<'EOF'
+package pr;
+
+@Component
+public class SnSub extends SnSubBase {
+    SnSub() { this.dao = new SnSbA(); }
+}
+EOF
+expect_ listed SnSubBase.go SnSbB.find "同上（注入される SnSbB も残す）"
+
+case_ listed SnInner SnInner.go SnInA.find "内部クラスが SnInner.this.dao = new SnInA() と書くパッケージ private なフィールドは、段 5 で唯一の Bean（SnInB）に絞らない" <<'EOF'
+package pr;
+
+interface SnInI { void find(); }
+class SnInA implements SnInI { public void find() { System.out.println("a"); } }
+@Repository class SnInB implements SnInI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnInner {
+    SnInI dao;
+    SnInner(SnInI d) { this.dao = d; }
+    void go() { dao.find(); }
+    class Resetter { void reset() { SnInner.this.dao = new SnInA(); } }
+}
+EOF
+expect_ listed SnInner.go SnInB.find "同上（注入される SnInB も残す）"
+
+cat > "$SRC/SnOtI.java" <<'EOF'
+package pr;
+
+public interface SnOtI { void find(); }
+EOF
+cat > "$SRC/SnOtA.java" <<'EOF'
+package pr;
+
+public class SnOtA implements SnOtI { public void find() { System.out.println("a"); } }
+EOF
+mkdir -p "$SRC/wire"
+cat > "$SRC/wire/SnOtWire.java" <<'EOF'
+package pr.wire;
+
+public class SnOtWire {
+    public static void wire(pr.SnOther s) { s.dao = new pr.SnOtA(); }
+}
+EOF
+case_ listed SnOther SnOther.go SnOtA.find "ほかのパッケージのクラスが s.dao = new SnOtA() と書く public なフィールドは、段 5 で唯一の Bean（SnOtB）に絞らない" <<'EOF'
+package pr;
+
+@Repository class SnOtB implements SnOtI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnOther {
+    public SnOtI dao;
+    SnOther(SnOtI d) { this.dao = d; }
+    void go() { dao.find(); }
+}
+EOF
+expect_ listed SnOther.go SnOtB.find "同上（注入される SnOtB も残す）"
+
+cat > "$SRC/SnSuperSub.java" <<'EOF'
+package pr;
+
+public class SnSuperSub extends SnSuper {
+    SnSuperSub() {
+        super(null);
+        super.dao = new SnSuA();
+    }
+}
+EOF
+case_ listed SnSuper SnSuper.go SnSuA.find "別のファイルの子クラスが super.dao = new SnSuA() と書く protected なフィールドは、段 5 で唯一の Bean（SnSuB）に絞らない" <<'EOF'
+package pr;
+
+interface SnSuI { void find(); }
+class SnSuA implements SnSuI { public void find() { System.out.println("a"); } }
+@Repository class SnSuB implements SnSuI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnSuper {
+    protected SnSuI dao;
+    SnSuper(SnSuI d) { this.dao = d; }
+    void go() { dao.find(); }
+}
+EOF
+expect_ listed SnSuper.go SnSuB.find "同上（注入される SnSuB も残す）"
+
+cat > "$SRC/SnKeepWriter.java" <<'EOF'
+package pr;
+
+public class SnKeepWriter {
+    static void touch(SnKeepPub k) { k.note = new StringBuilder(); }
+}
+EOF
+case_ resolved:RESOLVED:SPRING_DI SnKeepPub SnKeepPub.go SnKpB.find "対照: よその型の書き込みはフィールドごと。別のフィールド（note）に new を書かれても、コンストラクタで受け取るだけの dao は段 5 で SnKpB に絞る" <<'EOF'
+package pr;
+
+interface SnKpI { void find(); }
+class SnKpA implements SnKpI { public void find() { System.out.println("a"); } }
+@Repository class SnKpB implements SnKpI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnKeepPub {
+    SnKpI dao;
+    StringBuilder note;
+    SnKeepPub(SnKpI d) { this.dao = d; }
+    void go() { dao.find(); }
+}
+EOF
+expect_ absent SnKeepPub.go SnKpA.find "同上（SnKpA の行が無い）"
+
+# ---------------------------------------------------------------------------
+# Objects.requireNonNull(d) は d をそのまま返す。書き込みの値を引数として読む（docs/value-safety-qa.md の Q28）。
+# 39 版は値をメソッドの戻り値として読み、コンストラクタ注入を注入点から外して CHA に戻していた（精度の対照）
+# ---------------------------------------------------------------------------
+case_ resolved:RESOLVED:SPRING_DI SnRnn SnRnn.go SnRnB.find "対照: コンストラクタ注入を Objects.requireNonNull(d, \"dao\") で包んでも引数を入れる書き込み。段 5 で SnRnB に絞る" <<'EOF'
+package pr;
+
+import java.util.Objects;
+
+interface SnRnI { void find(); }
+class SnRnA implements SnRnI { public void find() { System.out.println("a"); } }
+@Repository class SnRnB implements SnRnI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnRnn {
+    private final SnRnI dao;
+    SnRnn(SnRnI d) { this.dao = Objects.requireNonNull(d, "dao"); }
+    void go() { dao.find(); }
+}
+EOF
+expect_ absent SnRnn.go SnRnA.find "同上（SnRnA の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD RnnPath RnnPath.use DaoB.find "対照: this.dao = requireNonNull(d)（static import）のフィールドにも、経路のコンストラクタ実引数（DaoB）を当てて絞る" <<'EOF'
+package pr;
+
+import static java.util.Objects.requireNonNull;
+
+public class RnnPath {
+    private final Dao dao;
+    RnnPath(Dao d) { this.dao = requireNonNull(d); }
+    void use() { dao.find(); }
+    public static void main(String[] args) { new RnnPath(new DaoB()).use(); }
+}
+EOF
+expect_ absent RnnPath.use DaoA.find "同上（DaoA の行が無い）"
+
+case_ listed RnnElse RnnElse.use DaoA.find "Objects.requireNonNullElse(d, new DaoA()) は d を返すとは限らない（null なら既定の DaoA）。引数として読まず、DaoB に絞らない" <<'EOF'
+package pr;
+
+import java.util.Objects;
+
+public class RnnElse {
+    private final Dao dao;
+    RnnElse(Dao d) { this.dao = Objects.requireNonNullElse(d, new DaoA()); }
+    void use() { dao.find(); }
+    public static void main(String[] args) { new RnnElse(new DaoB()).use(); }
+}
+EOF
+expect_ listed RnnElse.use DaoB.find "同上（渡した DaoB も残す）"
+
+# ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
 ( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > work/run.log 2>&1
@@ -3101,7 +3281,7 @@ dataflow.enabled=false
 output.folder=./out
 cache.folder=./.cache
 EOF
-for a in Bean Autowired Repository; do
+for a in Bean Autowired Repository Component; do
     printf 'package nd;\n\n@interface %s { }\n' "$a" > "$NODF/src/nd/$a.java"
 done
 cat > "$NODF/src/nd/Svc.java" <<'EOF'
@@ -3140,6 +3320,65 @@ public class Plain {
     static void proc(Mail m) { m.send(); }
 }
 EOF
+# 値を読まない指定でも、ソースが引数でない値を入れるフィールドは段 5 で絞らない（docs/spring-di-qa.md の Q15）。
+# レシーバがどのフィールドかは値の表にしか無いので、呼び出しを書いた型（と親・外側の型）のフィールドのうち、型の当たるものに
+# そういうフィールドがあれば絞らない。J 行の値の種別の列（N 行を読まずに分かる）から決める。39 版はどれも唯一の Bean に絞っていた
+cat > "$NODF/src/nd/NdInit.java" <<'EOF'
+package nd;
+
+interface Ping { void ping(); }
+class PingA implements Ping { public void ping() { System.out.println("a"); } }
+@Repository class PingB implements Ping { public void ping() { System.out.println("b"); } }
+
+public class NdInit {
+    @Autowired private Ping p = new PingA();
+    void run() { p.ping(); }
+}
+EOF
+cat > "$NODF/src/nd/NdReset.java" <<'EOF'
+package nd;
+
+interface Pong { void pong(); }
+class PongA implements Pong { public void pong() { System.out.println("a"); } }
+@Repository class PongB implements Pong { public void pong() { System.out.println("b"); } }
+
+@Component
+public class NdReset {
+    private Pong p;
+    NdReset(Pong x) { this.p = x; }
+    void reset() { this.p = new PongA(); }
+    void run() { p.pong(); }
+}
+EOF
+cat > "$NODF/src/nd/NdBase.java" <<'EOF'
+package nd;
+
+interface Pang { void pang(); }
+class PangA implements Pang { public void pang() { System.out.println("a"); } }
+@Repository class PangB implements Pang { public void pang() { System.out.println("b"); } }
+
+public abstract class NdBase {
+    @Autowired protected Pang p;
+    void run() { p.pang(); }
+}
+EOF
+cat > "$NODF/src/nd/NdSub.java" <<'EOF'
+package nd;
+
+public class NdSub extends NdBase {
+    NdSub() { this.p = new PangA(); }
+}
+EOF
+# 対照: 型の当たらないフィールド（StringBuilder）に new を入れていても、Mail のフィールドの呼び出しは絞る
+cat > "$NODF/src/nd/NdMixed.java" <<'EOF'
+package nd;
+
+public class NdMixed {
+    @Autowired private Mail mail;
+    private final StringBuilder log = new StringBuilder();
+    void run() { mail.send(); log.append("x"); }
+}
+EOF
 ( cd "$NODF" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > "$NODF/run.log" 2>&1
 NCSV=$(ls -d "$NODF"/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
 nd_rows() {   # $1=呼び出し元 Class.method  $2=呼び出し先 Class.method
@@ -3171,6 +3410,25 @@ else
         ok "値を読まない指定: 対照 Notifier.run -> MailA.send は段 5 で絞る（RESOLVED:SPRING_DI）"
     else
         ng "値を読まない指定: 対照 Notifier.run -> MailA.send が段 5 で絞られていません（$got）"
+    fi
+    for c in "NdInit.run Ping.ping 初期化子（new PingA()）" "NdReset.run Pong.pong new の代入（reset）" \
+             "NdBase.run Pang.pang 別のファイルの子クラスの this.p = new PangA()"; do
+        read -r caller iface why <<< "$c"
+        m=${iface#*.}
+        for impl in "${iface%.*}A" "${iface%.*}B"; do
+            if [ -n "$(nd_rows "$caller" "$impl.$m")" ]; then
+                ok "値を読まない指定: $caller -> $impl.$m（$why のあるフィールドは段 5 で絞らない）"
+            else
+                ng "値を読まない指定: $caller -> $impl.$m の行がありません（$why のあるフィールドを段 5 で絞った）"
+                grep "^at nd.$caller(" "$NCSV" | head -2
+            fi
+        done
+    done
+    got=$(nd_rows NdMixed.run MailA.send | head -1 | cut -d, -f3)
+    if [ "$got" = RESOLVED:SPRING_DI ] && [ -z "$(nd_rows NdMixed.run MailB.send)" ]; then
+        ok "値を読まない指定: 対照 NdMixed.run -> MailA.send は、型の当たらないフィールドの new に引きずられず段 5 で絞る"
+    else
+        ng "値を読まない指定: 対照 NdMixed.run -> MailA.send が段 5 で絞られていません（$got）"
     fi
 fi
 

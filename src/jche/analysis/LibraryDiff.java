@@ -20,6 +20,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import jche.cache.LibraryFact;
+import jche.config.ProjectLayout;
 import jche.util.FileHash;
 import jche.util.Log;
 import jche.util.Messages;
@@ -282,13 +283,16 @@ final class LibraryDiff {
         return FileHash.ofText(sb.toString());
     }
 
-    /** project.root 配下なら相対パス（プロジェクトを移動しても同じ jar と分かる）、外なら絶対パス */
+    /**
+     * project.root 配下なら相対パス（プロジェクトを移動しても同じ jar と分かる）、外なら絶対パス。
+     * 綴りは {@link ProjectLayout#pathKeyOf}（名前の中の {@code \} を区切りと取り違えない）
+     */
     private static String keyOf(Path jar, Path projectRoot) {
         Path abs = jar.toAbsolutePath().normalize();
         if (abs.startsWith(projectRoot)) {
-            return projectRoot.relativize(abs).toString().replace('\\', '/');
+            return ProjectLayout.pathKeyOf(projectRoot.relativize(abs));
         }
-        return abs.toString().replace('\\', '/');
+        return ProjectLayout.pathKeyOf(abs);
     }
 
     /**

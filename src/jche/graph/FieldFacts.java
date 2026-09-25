@@ -50,6 +50,15 @@ import jche.cache.TypeFact;
  * だけが来るとは言えないからである（&#64;Autowired(required = false) の既定・コンテナの外で new したインスタンス・
  * 後から差し替える書き込み。docs/spring-di-qa.md の Q15）。判定できたフィールドも控える。値の頭が {@code new} でなければ
  * （{@code = makeDao()}）経路で具象型が決まらず、段 5 の結論が残るため。
+ *
+ * <p><b>よその書き込み</b>: private でないフィールドには、別のファイルの型（子クラスのコンストラクタ・ほかのクラスの
+ * {@code svc.dao = …}）からも書ける。その J 行は書いた側のブロックにあり、同じブロックに宣言（V 行）が無い。
+ * そういう J 行はファイルをまたいで控え（ブロックの並びに依らない和集合）、ownValued に足す（書き手は値を書かないので、
+ * どれも引数でない書き込み）。値の判定（条件 (a)〜(e)）には効かない。private でも final でもないフィールドは
+ * 条件 (a) で外れ、private なフィールドへの書き込みは必ず同じファイルにある（JLS 6.6.1）からである。
+ * 引数を入れる書き込みかは J 行の種別の列（{@link FieldAssignFact#kind}）で見るので、値を読まない指定（N 行を読まない）でも
+ * 同じ ownValued になる。値を読まない指定では、レシーバがどのフィールドかが分からないので、ownValued のフィールドの
+ * 宣言の型を型ごとに控える（{@link #flushInto} の {@code ownValuedTypes}。{@link CallGraph#mayReadOwnValuedField}）。
  */
 final class FieldFacts {
 
@@ -67,16 +76,24 @@ final class FieldFacts {
         final String mods;
         /** フレームワークが書きうる（条件 (f)） */
         final boolean framework;
-        /** 基本型でも String でもない（DI の注入点になりうる。{@link #ownValued}） */
-        final boolean reference;
+        /** 宣言の型（V 行の declType） */
+        final String declType;
         final List<Assign> assigns = new ArrayList<>(2);
 
-        Field(String mods, boolean framework, boolean reference) {
+        Field(String mods, boolean framework, String declType) {
             this.mods = mods;
             this.framework = framework;
-            this.reference = reference;
+            this.declType = declType;
+        }
+
+        /** 基本型でも String でもない（DI の注入点になりうる。{@link #ownValued}） */
+        boolean reference() {
+            return !SpringBeans.isPrimitiveOrString(declType);
         }
     }
+
+    /** 値を読まない指定で、宣言の型の分からない ownValued のフィールドを持つ型に控える印（どの型のレシーバにも当たる） */
+    static final String ANY_TYPE = "*";
 
     /** "typeFqn#fieldName" -> 宣言と代入 */
     private final LinkedHashMap<String, Field> fields = new LinkedHashMap<>();
@@ -86,6 +103,11 @@ final class FieldFacts {
     private final Set<String> typesWithDelegatingCtor = new HashSet<>();
     /** DI のステレオタイプ注釈以外のアノテーションが付いた型（条件 (f)）。H 行は同じブロックの V 行より前に並ぶ */
     private final Set<String> frameworkTypes = new HashSet<>();
+    /**
+     * このブロックの、同じブロックに宣言（V 行）の無いフィールドへの、引数でない書き込みの鍵（クラスの説明の
+     * 「よその書き込み」）
+     */
+    private final Set<String> foreignWrites = new HashSet<>();
 
     /** 型の宣言（H 行）。条件 (f) の型のアノテーションを見る */
     void type(TypeFact t) {
@@ -107,8 +129,7 @@ final class FieldFacts {
 
     void field(FieldDeclFact v) {
         boolean framework = !v.annotations().isEmpty() || frameworkTypes.contains(v.typeFqn());
-        fields.putIfAbsent(v.typeFqn() + "#" + v.fieldName(),
-                new Field(v.mods(), framework, !SpringBeans.isPrimitiveOrString(v.declType())));
+        fields.putIfAbsent(v.typeFqn() + "#" + v.fieldName(), new Field(v.mods(), framework, v.declType()));
     }
 
     /**
@@ -119,28 +140,42 @@ final class FieldFacts {
      *                 キャッシュの J 行はノード番号なので、読み手（{@link CallGraphBuilder}）が同じブロックの
      *                 値グラフから取り込んで渡す。頭だけで比べるのは、{@code new X(a)} と {@code new X(b)} を
      *                 同じ値（{@code T:X}）とみなすため（以前の J 行も頭だけを持っていた）。
-     *                 葉は種別と値の組ごとに 1 つなので、参照が同じなら頭も同じ
-     * @param headKind 値の頭の種別。追跡できなければ {@link Origin#UNKNOWN}
+     *                 葉は種別と値の組ごとに 1 つなので、参照が同じなら頭も同じ。
+     *                 値を読まない指定では常に {@link ValueStore#NONE}（値の判定はしない）
      */
-    void assignment(FieldAssignFact j, int head, char headKind) {
-        Field fd = fields.get(j.typeFqn() + "#" + j.fieldName());
+    void assignment(FieldAssignFact j, int head) {
+        String key = j.typeFqn() + "#" + j.fieldName();
+        Field fd = fields.get(key);
         if (fd != null) {
-            fd.assigns.add(new Assign(j.site(), head, headKind));
+            fd.assigns.add(new Assign(j.site(), head, j.kind()));
+        } else if (j.kind() != Origin.PARAM) {
+            foreignWrites.add(key);   // 宣言が別のブロックにある（よその書き込み）
         }
     }
 
     /**
      * 溜めた事実から判定し、確定したフィールドの値の頭の参照を fieldHeads に足して、溜めた事実を捨てる。
      *
-     * @param ownValued ソースが引数でない値を入れる、参照型の static でないフィールドの鍵を足す先
-     *                  （クラスの説明の最後の段落）
+     * @param ownValued      ソースが引数でない値を入れる、参照型の static でないフィールドの鍵を足す先
+     *                       （クラスの説明。よその書き込みの鍵も足す）
+     * @param ownValuedTypes ownValued のフィールドの宣言の型を、フィールドを宣言した型ごとに足す先（値を読まない
+     *                       指定のときだけ。要らなければ null）。よその書き込みは宣言の型が分からないので {@link #ANY_TYPE}
      */
-    void flushInto(Map<String, Integer> fieldHeads, Set<String> ownValued) {
+    void flushInto(Map<String, Integer> fieldHeads, Set<String> ownValued, Map<String, Set<String>> ownValuedTypes) {
+        for (String key : foreignWrites) {
+            ownValued.add(key);
+            if (ownValuedTypes != null) {
+                ownValuedTypes.computeIfAbsent(key.substring(0, key.indexOf('#')), k -> new HashSet<>()).add(ANY_TYPE);
+            }
+        }
         for (Map.Entry<String, Field> e : fields.entrySet()) {
             String key = e.getKey();
             String typeFqn = key.substring(0, key.indexOf('#'));
             if (ownValued(e.getValue())) {
                 ownValued.add(key);
+                if (ownValuedTypes != null) {
+                    ownValuedTypes.computeIfAbsent(typeFqn, k -> new HashSet<>()).add(e.getValue().declType);
+                }
             }
             if (!assignedOnEveryPath(typeFqn, e.getValue())) {
                 continue;
@@ -154,6 +189,7 @@ final class FieldFacts {
         rootCtors.clear();
         typesWithDelegatingCtor.clear();
         frameworkTypes.clear();
+        foreignWrites.clear();
     }
 
     /**
@@ -161,7 +197,7 @@ final class FieldFacts {
      * 引数を入れる書き込み（コンストラクタ注入・setter 注入の形）だけなら、コンテナが渡した値と読める
      */
     private static boolean ownValued(Field fd) {
-        if (!fd.reference || ModifierTokens.has(fd.mods, "static")) {
+        if (!fd.reference() || ModifierTokens.has(fd.mods, "static")) {
             return false;
         }
         for (Assign a : fd.assigns) {

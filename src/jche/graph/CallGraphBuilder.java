@@ -95,9 +95,10 @@ import jche.util.Warnings;
  * 表は文字列の文法を通さないので、値が {@code | ; { }} を含んでも読み違えない
  * （以前は出所の文字列 {@link Origin} に組み直して渡していた。{@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
  *
- * <p>値を読まない指定（{@code dataflow.enabled=false}）のときは、N・G・R・J 行と
+ * <p>値を読まない指定（{@code dataflow.enabled=false}）のときは、N・G・R 行と J 行の値（node の列）と
  * 呼び出し箇所の値の列を読まない。値が無いものとして組むので、具象クラスの解決は CHA まで、
- * 条件分岐の打ち切りは起きない
+ * 条件分岐の打ち切りは起きない。J 行のうち、どのフィールドに・どこで・どの種別の値を書いたか（node 以外の列）は
+ * 読む。DI の注入点の判定（ソースが引数でない値を入れるフィールドを外す。{@link FieldFacts}）に要るため
  *
  * <p>読み終えたら、フェーズ1 が最後まで書き終えたキャッシュか（ヘッダの形式の版・最終行の Z 行とブロック数）を
  * 確かめ、違えば組まずに例外にする。書きかけのキャッシュ（同じキャッシュのフォルダを使う別の実行と重なった、など）
@@ -217,7 +218,7 @@ public final class CallGraphBuilder {
                         // ファイル単位で完結する判定（フィールド注入）を、読み終えた前のブロックについて確定する。
                         // 代入（J行）はブロックの後ろにあるので、宣言（V行・D行）が揃ったこの時点で渡す
                         applyPendingAssigns();
-                        fields.flushInto(graph.fieldHeads, graph.ownValuedFields);
+                        flushFields();
                         currentFile = in.filePath();
                         symbols.clear();
                         nodes.clear();
@@ -304,11 +305,12 @@ public final class CallGraphBuilder {
                     case CacheFormat.ROW_FIELD_ASSIGN -> {
                         // 代入はフィールドの宣言（V 行）が揃ってからでないと拾われないので、
                         // ここでは溜めるだけにして、ブロックを読み終えてから渡す。
-                        // 値はノードの頭の葉に直しておく（N 行はブロックの先頭にあるので揃っている）
-                        FieldAssignFact j = readValues ? FieldAssignFact.fromRow(in.columns()) : null;
+                        // 値はノードの頭の葉に直しておく（N 行はブロックの先頭にあるので揃っている）。
+                        // 値を読まない指定でも行は読む（値の種別は行の列にある。FieldFacts の ownValued）
+                        FieldAssignFact j = FieldAssignFact.fromRow(in.columns());
                         if (j != null) {
-                            pendingAssigns.add(new PendingAssign(j, nodes.headOf(j.node()),
-                                    valueBuilder.localKind(j.node())));
+                            pendingAssigns.add(new PendingAssign(j,
+                                    readValues ? nodes.headOf(j.node()) : ValueStore.NONE));
                         }
                     }
                     default -> {
@@ -317,7 +319,7 @@ public final class CallGraphBuilder {
                 }
             }
             applyPendingAssigns();
-            fields.flushInto(graph.fieldHeads, graph.ownValuedFields);
+            flushFields();
             RunControl.progress(label, size, size);
             typeFiles.clear();
             warnDuplicateTypes();
@@ -428,20 +430,29 @@ public final class CallGraphBuilder {
     private final Map<String, String> typeFiles = new HashMap<>();
 
     /**
-     * J 行 1 件と、その値（ノードの頭の葉の参照 {@link BlockNodes#headOf} と、その種別）
+     * J 行 1 件と、その値（ノードの頭の葉の参照 {@link BlockNodes#headOf}。値を読まない指定では
+     * {@link ValueStore#NONE}）。値の種別は行の列（{@link FieldAssignFact#kind}）
      */
-    private record PendingAssign(FieldAssignFact fact, int head, char headKind) {
+    private record PendingAssign(FieldAssignFact fact, int head) {
     }
 
     /** 今のブロックのフィールドへの代入（J行）。宣言が揃ってから {@link #fields} に渡す */
     private final List<PendingAssign> pendingAssigns = new ArrayList<>();
 
-    /** 溜めた代入を渡して捨てる。{@code fields.flushInto} の直前に呼ぶ */
+    /** 溜めた代入を渡して捨てる。{@link #flushFields} の直前に呼ぶ */
     private void applyPendingAssigns() {
         for (PendingAssign a : pendingAssigns) {
-            fields.assignment(a.fact(), a.head(), a.headKind());
+            fields.assignment(a.fact(), a.head());
         }
         pendingAssigns.clear();
+    }
+
+    /**
+     * 読み終えたブロックのフィールドの判定を確定する。宣言の型ごとの控え（{@link CallGraph#ownValuedTypes}）は、
+     * レシーバのフィールドが分からない値を読まない指定のときだけ作る
+     */
+    private void flushFields() {
+        fields.flushInto(graph.fieldHeads, graph.ownValuedFields, readValues ? null : graph.ownValuedTypes);
     }
 
     /**

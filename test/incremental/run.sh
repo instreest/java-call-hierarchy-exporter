@@ -1402,6 +1402,108 @@ EOF
 case_of "java.* の親型の上（AbstractMap.SimpleEntry）を隠す私的な入れ子の型を足す" \
     "sed -i 's/^}$/    private static class SimpleEntry { }\n}/' work/src/pjs/Base.java" yes setup_jdk_hide_simple
 
+# --- 別のファイルからのフィールドへの書き込み（J 行は書いた側のブロックに載る） ------------------------
+# private でないフィールドには、別のファイルの型（子クラスのコンストラクタなど）からも書ける。その J 行は書いた側の
+# ブロックにあり、宣言した側（V 行）のブロックとは別。読み手（jche.graph.FieldFacts）はブロックをまたいで集めて、
+# ソースが引数でない値を入れるフィールドを DI の段 5 で唯一の Bean に絞らない（docs/spring-di-qa.md の Q15）。
+# 書き手のファイルを足す・書き換える・消すと、宣言した側のブロックは再利用のまま結論だけが変わる。全件解析と同じになること。
+# inc.Main から ow.Svc.go を呼んで、call-hierarchy.csv にも結論（SPRING_DI か CHA か）が出るようにする
+setup_other_writer() {
+    sed -i 's/new Awkward().separators();/new Awkward().separators();\n        ow.Svc.entry();/' work/src/inc/Main.java
+    jfile ow/Service.java <<'EOF'
+package ow;
+
+public @interface Service {
+}
+EOF
+    jfile ow/Repository.java <<'EOF'
+package ow;
+
+public @interface Repository {
+}
+EOF
+    jfile ow/Autowired.java <<'EOF'
+package ow;
+
+public @interface Autowired {
+}
+EOF
+    jfile ow/Dao.java <<'EOF'
+package ow;
+
+public interface Dao {
+    void find();
+}
+EOF
+    jfile ow/DaoA.java <<'EOF'
+package ow;
+
+public class DaoA implements Dao {
+    public void find() {
+    }
+}
+EOF
+    jfile ow/DaoB.java <<'EOF'
+package ow;
+
+@Repository
+public class DaoB implements Dao {
+    public void find() {
+    }
+}
+EOF
+    jfile ow/Svc.java <<'EOF'
+package ow;
+
+@Service
+public class Svc {
+    @Autowired
+    protected Dao dao;
+
+    public void go() {
+        dao.find();
+    }
+
+    public static void entry() {
+        new Svc().go();
+    }
+}
+EOF
+}
+write_other_writer() {
+    jfile ow/Sub.java <<'EOF'
+package ow;
+
+@Service
+public class Sub extends Svc {
+    public Sub() {
+        this.dao = new DaoA();
+    }
+}
+EOF
+}
+# $1=期待（cha=DaoA と DaoB の両方が出る / di=段 5 で DaoB に絞る）  $2=ラベル
+other_writer_outcome() {
+    local rows
+    rows=$(grep -a '^at ow\.Svc\.go(' "$OUT/call-hierarchy.csv")
+    if [ "$1" = cha ] && grep -q ',DaoA\.find,' <<< "$rows" && grep -q ',DaoB\.find,' <<< "$rows"; then
+        echo "  OK   $2: Svc.go の dao.find() は DaoA・DaoB の両方が出る（よその書き込みを集めた）"
+    elif [ "$1" = di ] && grep -q ',DaoB\.find,RESOLVED:SPRING_DI,' <<< "$rows" && ! grep -q ',DaoA\.find,' <<< "$rows"; then
+        echo "  OK   $2: Svc.go の dao.find() は段 5 で DaoB に絞る（よその書き込みが無い）"
+    else
+        echo "  NG   $2: Svc.go の dao.find() の結論が期待（$1）と違います"; echo "$rows" | head -3; fail=1
+    fi
+}
+case_of "別のファイルの子クラスが private でないフィールドに new を書く（書き手のファイルを足す）" \
+    write_other_writer yes setup_other_writer
+other_writer_outcome cha "書き手のファイルを足した"
+case_of "別のファイルの子クラスが private でないフィールドに new を書く（書き込みを消す）" \
+    "sed -i 's/this.dao = new DaoA();/super.go();/' work/src/ow/Sub.java" yes "setup_other_writer; write_other_writer"
+other_writer_outcome di "書き込みを消した"
+case_of "別のファイルの子クラスが private でないフィールドに new を書く（書き手のファイルを消す）" \
+    "rm work/src/ow/Sub.java" yes "setup_other_writer; write_other_writer"
+other_writer_outcome di "書き手のファイルを消した"
+
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
 # なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。
@@ -2633,6 +2735,65 @@ env_rejected_case() {
     same_all "JDT が受け付けない設定の差分更新" "$inc_out" "$IOUT" $d/cache $d/fullcache
 }
 env_rejected_case
+
+# 名前に \ を含むフォルダ（Linux・macOS では \ は名前の中のただの文字）を、入れ子のフォルダ x/y と同じキーにしない。
+# f491e2e（形式 v39）までの書き手はパスの \ を / に置き換えてキー（F 行・T 行・ヘッダ行のソースフォルダ）にしていたので、
+# x/y を x\y という名前に変えても「ソースフォルダもファイルも変わっていない」と読み、旧キャッシュのブロックを使い続けた
+# （JDT は x\y を受け付けないので、全件解析ではどのファイルも解析できない。上の env_rejected_case の確かめ（Q73）も、
+# フォルダが変わっていないと読むので走らない）。中断した実行の一時ファイル（.partial）からの引き継ぎも同じで、
+# ヘッダ行とソース一覧が同じに見えて、当時のブロックを書き写した（docs/cache-unification-qa.md の Q75）
+backslash_folder_case() {
+    local d=$IW/bsfold inc_out mode c
+    case "$(uname -s)" in
+        Linux*) ;;
+        *) echo "== 入れ子のフォルダを名前に \\ を含むフォルダに変える（Linux でだけ見る。名前に \\ を含むフォルダを作れない） =="; return ;;
+    esac
+    for mode in cache partial; do
+        echo "== 入れ子のフォルダ x/y を、名前に \\ を含むフォルダ x\\y に変える（$mode） =="
+        rm -rf $d && mkdir -p $d/s1/p $d/x/y/q
+        printf 'package p;\n\npublic class A {\n    public static void main(String[] args) {\n        q.C.c();\n    }\n}\n' > $d/s1/p/A.java
+        printf 'package q;\n\npublic class C {\n    public static void c() {\n    }\n}\n' > $d/x/y/q/C.java
+        integrity_cfg $d/c.properties "$PWD/$d" s1,x/y
+        integrity_run $d/c.properties $d/c0.log
+        [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+        if [ $mode = partial ]; then
+            # 書き終えたキャッシュを、中断した実行が残した一時ファイルにする（次の実行はこれを引き継ぎに使う。
+            # 旧キャッシュは無いので、どのファイルも「これから解析する」ファイルになる）
+            c=$(ls $d/cache/*/analysis-cache.tsv)
+            mv "$c" "$c.tmp"
+        fi
+        mv $d/x/y "$d/x\\y"
+        rmdir $d/x
+        # properties の値では \ を \\ と書く
+        integrity_cfg $d/c.properties "$PWD/$d" 's1,x\\y'
+        integrity_cfg $d/full.properties "$PWD/$d" 's1,x\\y' "$PWD/$d/fullcache"
+        integrity_run $d/c.properties $d/c1.log
+        inc_out=$IOUT
+        if [ $mode = cache ]; then
+            if [ "${IREUSED:-1}" = 0 ] && grep -q -F "does not accept the class path" $d/c1.log; then
+                echo "  OK   フォルダが変わったと読み、JDT が受け付けないので旧キャッシュを使わない"
+            else
+                echo "  NG   x\\y を x/y と同じフォルダと読んで旧キャッシュを使いました（再利用=${IREUSED:-?}）"
+                grep -a -E 'cache\]|WARN' $d/c1.log | head -5; fail=1
+            fi
+        else
+            if ! grep -q -F "Carried over the results" $d/c1.log; then
+                echo "  OK   中断した実行の一時ファイルから引き継がない（ヘッダ行のソースフォルダが違う）"
+            else
+                echo "  NG   x\\y を x/y と同じフォルダと読んで、中断した実行のブロックを引き継ぎました"
+                grep -a -E 'cache\]' $d/c1.log | head -5; fail=1
+            fi
+        fi
+        integrity_run $d/full.properties $d/full.log
+        if grep -q -F "invalid environment settings" $d/full.log; then
+            echo "  OK   全件解析では JDT が受け付けない（題材が効いている）"
+        else
+            echo "  NG   全件解析で JDT が受け付けています（題材が効いていない）"; fail=1
+        fi
+        same_all "x/y を x\\y に変えた実行（$mode）" "$inc_out" "$IOUT" $d/cache $d/fullcache
+    done
+}
+backslash_folder_case
 
 # 受け手（キャッシュへ書く側）の中でスタックが溢れたファイルも、そのファイルの失敗として数え、ほかのファイルの
 # 解析を続ける。01eb510 は受け手の StackOverflowError を一括パースのファイルごとには捕まえず、そのファイルは
