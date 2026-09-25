@@ -14,10 +14,14 @@ import java.util.Map;
 
 import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FileASTRequestor;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.eclipse.jdt.core.dom.Name;
+import org.eclipse.jdt.core.dom.NodeFinder;
+import org.eclipse.jdt.core.dom.SimpleType;
 
 import jche.cache.FileAnalysis;
 import jche.config.Config;
@@ -262,7 +266,7 @@ public final class CallEdgeExtractor {
             if (isSyntaxError(problem.getID())) {
                 result.syntaxErrors++;
             }
-            namesOf(problem.getArguments(), result.unresolvedNames);
+            namesOf(problem.getArguments(), writtenNameAt(cu, problem), result.unresolvedNames);
         }
         collectImports(cu, result);
         cu.accept(new FactVisitor(cu, result, recordAllConditions));
@@ -280,12 +284,21 @@ public final class CallEdgeExtractor {
      * <p>ただし、パスの区切り（{@code /} か {@code \}）を含む引数は拾わない。型が重複しているエラー
      * （{@code The type Dup is already defined}）などは、引数にソースファイルのパスを入れる。一括で解析するときの
      * パスは絶対パスなので、そのまま拾うと {@code home}・{@code user} のようなチェックアウトの場所のフォルダ名が
-     * キャッシュ（I 行の 3 列目）に入り、同じソースでも置き場所によってキャッシュの事実が変わる。パスの中の名前は
+     * キャッシュ（I 行の 2 列目）に入り、同じソースでも置き場所によってキャッシュの事実が変わる。パスの中の名前は
      * フォルダとファイルの名前で、型の名前は同じエラーの別の引数に入る。型の名前・パッケージの名前の引数は点で
      * 区切るのでパスの区切りを含まない。演算子の引数（{@code /}）は識別子を含まないので、落としても何も失わない
      * （docs/cache-unification-qa.md の Q64）
+     *
+     * <p>拾った名前が、エラーの位置に書かれた名前（{@code written}）の頭の部分なら、書かれた名前全体に置き換える。
+     * 依存 jar が無いとき、式の中の {@code org.missing.pkg.Type.run()} のエラーは、同じバッチで先に別のファイルが
+     * 同じ名前を型の文脈で解決しようとしたかどうかで、{@code org.missing cannot be resolved} にも
+     * {@code org.missing.pkg.Type cannot be resolved to a type} にもなる（JDT は回復のために作った型をバッチの中で
+     * 使い回す）。どちらも書かれた名前 {@code org.missing.pkg.Type} にそろえ、キャッシュの事実がバッチの組み方に
+     * 依らないようにする（docs/cache-unification-qa.md の Q79）
+     *
+     * @param written エラーの位置に書かれた名前（{@link #writtenNameAt}）。無ければ null
      */
-    static void namesOf(String[] arguments, java.util.Set<String> out) {
+    static void namesOf(String[] arguments, String written, java.util.Set<String> out) {
         if (arguments == null) {
             return;
         }
@@ -310,9 +323,34 @@ public final class CallEdgeExtractor {
                         i++;
                     }
                 }
-                out.add(a.substring(start, end));
+                String name = a.substring(start, end);
+                boolean head = written != null && (written.equals(name) || written.startsWith(name + "."));
+                out.add(head ? written : name);
             }
         }
+    }
+
+    /**
+     * エラーの位置に書かれた名前（点でつないだ名前全体。{@code org.missing.pkg.Type.run()} の
+     * {@code org.missing} の位置なら {@code org.missing.pkg.Type}）。位置が名前の中でなければ null
+     */
+    static String writtenNameAt(CompilationUnit cu, IProblem problem) {
+        int start = problem.getSourceStart();
+        int end = problem.getSourceEnd();
+        if (start < 0 || end < start) {
+            return null;
+        }
+        ASTNode node = NodeFinder.perform(cu, start, end - start + 1);
+        if (node instanceof SimpleType t) {
+            node = t.getName();
+        }
+        if (!(node instanceof Name)) {
+            return null;
+        }
+        while (node.getParent() instanceof Name) {
+            node = node.getParent();
+        }
+        return ((Name) node).getFullyQualifiedName();
     }
 
     /**

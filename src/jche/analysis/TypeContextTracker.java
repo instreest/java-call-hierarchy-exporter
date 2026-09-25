@@ -99,8 +99,6 @@ final class TypeContextTracker {
         if (tb == null) {
             return;
         }
-        // 型の形（I 行の指紋。差分更新の「親型の連鎖」。TypeShape）
-        TypeShape.collect(tb, out.shape);
         ITypeBinding erased = BindingNames.erasureOf(tb);
         String fqn = names.typeNameOf(erased);
         if (fqn == null) {

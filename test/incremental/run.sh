@@ -598,8 +598,8 @@ case_of "宣言にだけ書いた型を消す" edit_decl_only yes setup_decl_onl
 
 # 親型の連鎖は処理の順に依らない。部分型（D・A）のパスが親（E・I2）より前に並ぶので、同じ周回で親より先に
 # 解析し直される。そのときに「親が変わった型か」を見ると、まだ親が変わった型に入っていないので連鎖せず、
-# 部分型の利用者（U）が古いまま残る。連鎖は、解析し直した型の形（継承したものを含むメンバーの指紋。I 行）が
-# 前回と違うかで決める（docs/cache-unification-qa.md の Q44）
+# 部分型の利用者（U）が古いまま残る（docs/cache-unification-qa.md の Q44）。今は、変わった型の部分型を H 行から作る
+# 索引で推移的に変わった型にするので、解析の順に依らない（Q77）
 setup_order_class() {
     jfile ordc/F.java <<'EOF'
 package ordc;
@@ -894,9 +894,96 @@ else
     echo "  NG   新しい型の名前に当たらないブロックも解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
 fi
 
-# 親型の本体だけを変えても、部分型の利用者へは連鎖しない。Sub は Base を参照しているので解析し直すが、
-# Sub の形（継承したものを含むメンバー）は変わらないので、Sub だけを参照する User（s.n() の n は Sub の宣言）は
-# 再利用する（docs/cache-unification-qa.md の Q44）
+# 依存 jar が無いときの事実がバッチの組み方に依らない（docs/cache-unification-qa.md の Q79）。JDT は、無いパッケージの
+# 名前を回復するために作った型を、同じバッチの中で使い回す。型の文脈で org.missing.pkg.Type と書いた A1Type が同じ
+# バッチで先に解析されると、式の中の org.missing.pkg.Type.staticCall()（B2Expr）は「org.missing.pkg.Type cannot be
+# resolved to a type」になり、名前 org.missing に回復した型 org.missing が付く。B2Expr だけを解析し直す差分更新では
+# 「org.missing cannot be resolved」で、回復した型も無い。以前は B2Expr の I 行（依存する型と解決できなかった名前）が
+# 全件解析と食い違った（全件解析は全ファイルを 1 つのバッチで、パスの順に解析する）
+setup_batch_nojar() {
+    jfile bat/A1Type.java <<'EOF'
+package bat;
+public class A1Type {
+    Object k = org.missing.pkg.Type.class;
+    org.missing.pkg.Type field;
+    void f(org.missing.pkg.Type t) { t.run(); }
+    org.missing.other.Ret g() { return null; }
+}
+EOF
+    jfile bat/B2Expr.java <<'EOF'
+package bat;
+public class B2Expr {
+    void go() {
+        org.missing.pkg.Type.staticCall();
+        Object o = org.missing.pkg.Type.FIELD;
+        System.out.println(org.missing.other.Ret.X);
+    }
+}
+EOF
+    jfile bat/C3User.java <<'EOF'
+package bat;
+public class C3User {
+    void go(A1Type a) { a.g(); new B2Expr().go(); org.missing.pkg.Type.staticCall(); }
+}
+EOF
+}
+case_of "依存 jar が無いとき、式に完全修飾名を書いたファイルだけを解析し直す（バッチの組み方）" \
+    "printf '\n// c\n' >> work/src/bat/B2Expr.java" no setup_batch_nojar
+case_of "依存 jar が無いとき、型解決に失敗したファイルの 2 つを解析し直す（バッチの組み方）" \
+    "printf '\n// c\n' >> work/src/bat/B2Expr.java; printf '\n// c\n' >> work/src/bat/C3User.java" no setup_batch_nojar
+
+# 完全修飾名の途中のパッケージ（org.missing）に型ができる・無くなる。JDT がどこまでをパッケージとして読むかが変わり、
+# 回復した型の名前（I 行の依存する型と、A1Type の org.missing.pkg.Type.class のノードの値）が org.missing から
+# org.missing.pkg に変わる。解決できなかった名前（書かれた名前 org.missing.pkg.Type）は変わらず、足した型の名前（Foo）にも
+# 当たらないので、以前は解析し直さずに古い名前が残った（docs/cache-unification-qa.md の Q80）
+edit_batch_package() {
+    jfile org/missing/Foo.java <<'EOF'
+package org.missing;
+public class Foo { }
+EOF
+}
+case_of "依存 jar が無いとき、完全修飾名の途中のパッケージに型を足す" edit_batch_package yes setup_batch_nojar
+case_of "依存 jar が無いとき、完全修飾名の途中のパッケージの型を消す" "rm -r work/src/org" yes \
+    "setup_batch_nojar; edit_batch_package"
+
+# 選ばれなかったオーバーロードの引数の型を消す。どの候補が選ばれるか（曖昧か）は、選ばれなかった候補の引数の型にも依る
+# （x.m(null) は m(Y) と m(Z) で曖昧だが、Z を消すと m(Y) に決まる）。利用者のソースにも、選ばれた呼び出し先の鍵にも Z は
+# 無い。以前は候補を宣言した型の形（Q44）が変わって連鎖していたので、形をやめたら候補の引数の型を I 行に数える
+# （docs/cache-unification-qa.md の Q78）。new・継承したメソッド・単純名・static import・super.m()・super(...) の
+# 探し方がそれぞれ違うので、利用者を別々のファイルにする（どれか 1 つでも解析し直さなければ全件解析と違う）
+setup_overload() {
+    for t in Y Z Y2 Z2 Y3 Z3 Y4 Z4 Y5 Z5; do
+        printf 'package ovl;\npublic class %s { }\n' $t | jfile ovl/$t.java
+    done
+    printf 'package ovl;\npublic class C1 {\n    public C1(Y y) { }\n    public C1(Z z) { }\n}\n' | jfile ovl/C1.java
+    printf 'package ovl;\npublic class S {\n    public void m(Z z) { }\n}\n' | jfile ovl/S.java
+    printf 'package ovl;\npublic class X extends S {\n    public void m(Y y) { }\n}\n' | jfile ovl/X.java
+    printf 'package ovl;\npublic class S2 {\n    public void q(Y2 y) { }\n    public void q(Z2 z) { }\n}\n' | jfile ovl/S2.java
+    printf 'package ovl;\npublic class St {\n    public static void s(Y3 y) { }\n    public static void s(Z3 z) { }\n}\n' \
+        | jfile ovl/St.java
+    printf 'package ovl;\npublic class S3 {\n    public void r(Y4 y) { }\n    public void r(Z4 z) { }\n}\n' | jfile ovl/S3.java
+    printf 'package ovl;\npublic class S5 {\n    public S5(Y5 y) { }\n    public S5(Z5 z) { }\n}\n' | jfile ovl/S5.java
+    printf 'package ovu;\npublic class U1 {\n    void go() { new ovl.C1(null); }\n}\n' | jfile ovu/U1.java
+    printf 'package ovu;\npublic class U2 {\n    void go(ovl.X x) { x.m(null); }\n}\n' | jfile ovu/U2.java
+    printf 'package ovu;\nimport static ovl.St.s;\npublic class U3 {\n    void go() { s(null); }\n}\n' | jfile ovu/U3.java
+    printf 'package ovu;\npublic class V extends ovl.S2 {\n    void go() { q(null); }\n}\n' | jfile ovu/V.java
+    printf 'package ovu;\npublic class W extends ovl.S3 {\n    void go() { super.r(null); }\n}\n' | jfile ovu/W.java
+    printf 'package ovu;\npublic class W2 extends ovl.S5 {\n    W2() { super(null); }\n}\n' | jfile ovu/W2.java
+    # ラムダを渡す呼び出し。候補の関数型インターフェース Fn の形が変わると、どちらの k が選ばれるか（曖昧か）が変わる
+    printf 'package ovl;\npublic interface Fn { void apply(); }\n' | jfile ovl/Fn.java
+    printf 'package ovl;\npublic class K {\n    public void k(Runnable r) { }\n    public void k(Fn f) { }\n}\n' | jfile ovl/K.java
+    printf 'package ovu;\npublic class L {\n    void go(ovl.K k) { k.k(() -> { }); }\n}\n' | jfile ovu/L.java
+}
+case_of "選ばれなかったオーバーロードの引数の型を消す（new・継承・単純名・static import・super）" \
+    "rm work/src/ovl/Z.java work/src/ovl/Z2.java work/src/ovl/Z3.java work/src/ovl/Z4.java work/src/ovl/Z5.java" \
+    yes setup_overload
+case_of "ラムダを渡す呼び出しの、選ばれなかった候補の関数型インターフェースの形を変える" \
+    "printf 'package ovl;\npublic interface Fn { void apply(int x); }\n' > work/src/ovl/Fn.java" yes setup_overload
+
+# 親型の本体だけを変える。部分型 Sub も変わった型になり、Sub だけを参照する User（s.n() の n は Sub の宣言）も
+# 解析し直す（何が変わったかは見ない）。以前は型の形の指紋で絞り、User を再利用していた（件数を 2 と見ていた）が、
+# 絞り方で取りこぼしが続いたのでやめた。差分更新が全件解析と同じであることだけを見る
+# （docs/cache-unification-qa.md の Q44・Q77）
 setup_body_only() {
     jfile bod/Base.java <<'EOF'
 package bod;
@@ -920,15 +1007,11 @@ EOF
 edit_body_only() {
     sed -i 's/println(1)/println(2)/' work/src/bod/Base.java
 }
-case_of "親型のメソッドの本体だけを変える（部分型の利用者へは連鎖しない）" edit_body_only yes setup_body_only
-if [ "$INC_PARSED" = 2 ]; then
-    echo "  OK   解析し直したのは Base と Sub の 2 件（新規解析=$INC_PARSED）"
-else
-    echo "  NG   親型の本体だけの変更で、部分型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
-fi
+case_of "親型のメソッドの本体だけを変える" edit_body_only yes setup_body_only
 
 # --- 3 回目のレビューで見つかった、I 行と型の形に載っていなかった依存 ---------------------
-# どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）
+# どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）。
+# 型の形はやめた（Q77）が、同じ書き換えで差分更新が全件解析と同じであることを見続ける
 
 # 祖父母の型のメソッドを可変長引数にする。m(int[]) と m(int...) はキーが同じなので、型の形にも入っていなかった。
 # U の d.m(1, 2) は D#m(long) の BINDING_FAILED から F#m(int[]) への呼び出しに変わる（JLS 15.12.2.4）
@@ -1161,9 +1244,10 @@ EOF
 }
 case_of "sealed の permits に部分型を足す（switch の網羅性）" edit_sealed yes setup_sealed
 
-# --- 親型の私的メンバー（docs/cache-unification-qa.md の Q51）--------------------------------
-# 型の形には、親型のメンバーと名前の当たる私的メンバーだけを入れる。当たるものは、部分型から親のメンバーを
-# 隠す・継承を止めるので、部分型 C だけを参照する X の解決が変わる（X は P を参照していない）。
+# --- 親型の私的メンバー（docs/cache-unification-qa.md の Q51・Q77）--------------------------------
+# 親型に足した私的メンバーのうち、親の親のメンバーと名前の当たるものは、部分型から親のメンバーを隠す・継承を止めるので、
+# 部分型 C だけを参照する X の解決が変わる（X は P を参照していない）。以前は型の形にこれらの私的メンバーだけを入れて
+# 連鎖させていた。今は P が変われば部分型 C も変わった型になるので、何を足しても X を解析し直す。
 # 題材: G <- P <- C（別ファイル）、X は別のパッケージ
 setup_private_base() {
     jfile prv/G.java <<'EOF'
@@ -1226,8 +1310,8 @@ case_of "親に、親の親のメソッドと同じ名前の私的メソッド�
     "private_add 'private void m() { }\n    private static void s(int x) { }'" yes setup_private_method
 
 # 型解決に失敗している利用者。JDT はエラーを回復するとき、見えない私的メンバーにもバインディングを返すので、
-# X の c.helper2() は BINDING_FAILED から P#helper2 への呼び出しに変わる。型の形には入らない（名前が当たらない）
-# ので、型解決に失敗したファイルは参照した型の親（P）を依存に持つ
+# X の c.helper2() は BINDING_FAILED から P#helper2 への呼び出しに変わる。以前は型の形に入らない（名前が当たらない）
+# ので、型解決に失敗したファイルに参照した型の親（P）を依存として持たせていた。今は P の部分型 C が変わった型になる
 setup_private_failing() {
     setup_private_base
     jfile prw/X.java <<'EOF'
@@ -1241,8 +1325,8 @@ case_of "型解決に失敗している利用者の、参照した型の親に�
 # (e)(f) 名前の当たらない私的メンバー（フィールド・メソッド・入れ子の型・static・コンストラクタ）を足しても、
 # 外側のクラスのメンバーへの解決（JLS 6.4.1・15.12.1）、部分型の同じ名前のメソッド（上書きにも隠蔽にも
 # ならない）、同じファイルの入れ子のクラスからの私的メンバーの参照は、全件解析と同じになる。
-# 解析し直すのは書き換えた P と、P を参照する C、P の入れ子の型 Peer を参照する W の 3 件だけで、C だけを参照する
-# Outer・Z へは連鎖しない（52453ae では C の形が変わって 5 件）
+# 以前は C だけを参照する Outer・Z へは連鎖しないこと（解析し直すのは P・C・W の 3 件）も見ていたが、今は C も
+# 変わった型になるので 5 件を解析し直す（Q77）。差分更新が全件解析と同じであることだけを見る
 setup_private_unrelated() {
     jfile prz/P.java <<'EOF'
 package prz;
@@ -1286,13 +1370,7 @@ edit_private_unrelated() {
     sed -i 's/^    public P() { }/    public P() { }\n    private int f;\n    private void m() { }\n    private static class Inner { static void run() { } }\n    private void h() { }\n    private void h2() { }\n    private static void h4() { }\n    private P(int x) { }/' work/src/prz/P.java
     sed -i 's/return 1;/return Integer.parseInt("2");/' work/src/prz/P.java
 }
-case_of "名前の当たらない私的メンバーを親に足す（部分型の利用者へは連鎖しない）" \
-    edit_private_unrelated yes setup_private_unrelated
-if [ "$INC_PARSED" = 3 ]; then
-    echo "  OK   解析し直したのは P・C・W の 3 件（新規解析=$INC_PARSED）"
-else
-    echo "  NG   名前の当たらない私的メンバーで、部分型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
-fi
+case_of "名前の当たらない私的メンバーを親に足す" edit_private_unrelated yes setup_private_unrelated
 
 # (g)(h) 私的なインターフェースのメソッド（Java 9）。親インターフェースの default メソッドと同じシグネチャなら
 # 継承を止める（JLS 9.4.1）。実装するのはレコードと列挙型（暗黙の私的メンバーを持つ）
@@ -1324,19 +1402,15 @@ edit_private_iface() {   # $1=足す私的メソッドの名前
 }
 case_of "親インターフェースの default メソッドと同じ名前の私的メソッドを足す（レコード・列挙型）" \
     "edit_private_iface m" yes setup_private_iface
-case_of "名前の当たらない私的なインターフェースのメソッドを足す（実装する型の利用者へは連鎖しない）" \
-    "edit_private_iface helper" yes setup_private_iface
-if [ "$INC_PARSED" = 3 ]; then
-    echo "  OK   解析し直したのは I2 と、I2 を実装する K・E の 3 件（新規解析=$INC_PARSED）"
-else
-    echo "  NG   名前の当たらない私的メソッドで、実装する型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
-fi
+# 名前の当たらない私的メソッド。以前は実装する型の利用者（X）へは連鎖しないこと（I2・K・E の 3 件）も見ていた（Q77）
+case_of "名前の当たらない私的なインターフェースのメソッドを足す" "edit_private_iface helper" yes setup_private_iface
 
 # 私的メンバーが隠すのは、java.* の親型のさらに上のメンバーでもよい（docs/cache-unification-qa.md の Q65）。
 # Registry extends HashMap の私的な入れ子の型 Entry は、HashMap ではなく Map が宣言する Map.Entry を隠す（JLS 8.5）。
 # 部分型 Client の単純名 Entry は、継承した Map.Entry から同じパッケージの pjd.Entry に変わる。Client は Registry を
-# 参照していない（NamedRegistry の形の連鎖でしか届かない）。01eb510 は最初の java.* の親型（HashMap）のメンバーの
-# 名前しか数えず、この Entry を型の形から外していたので、差分更新だけ Map.Entry#getKey のまま残った
+# 参照していない（NamedRegistry を通してしか届かない）。01eb510 は最初の java.* の親型（HashMap）のメンバーの
+# 名前しか数えず、この Entry を型の形から外していたので、差分更新だけ Map.Entry#getKey のまま残った。今は Registry の
+# 部分型（NamedRegistry・Client）がどれも変わった型になる（Q77）
 setup_jdk_hide() {   # $1=Registry に最初から置く行（空なら置かない）
     jfile pjd/Registry.java <<EOF
 package pjd;
@@ -2486,11 +2560,11 @@ dup_case() {
     else
         echo "  NG   重複した型のファイルが warnings.txt に載っていません"; fail=1
     fi
-    # 型が重複しているエラーの引数には、ソースファイルの絶対パスが入る。解決できなかった名前（I 行の 3 列目）に
+    # 型が重複しているエラーの引数には、ソースファイルの絶対パスが入る。解決できなかった名前（I 行の 2 列目）に
     # パスの途中のフォルダ名（home・incremental など）を拾うと、同じソースでも置き場所でキャッシュの事実が変わる
     # （docs/cache-unification-qa.md の Q64）
     local names part leaked=""
-    names=$(awk -F'\t' '$1 == "F" { f = $2 } $1 == "I" && f == "s2/p/Dup.java" { print $4 }' \
+    names=$(awk -F'\t' '$1 == "F" { f = $2 } $1 == "I" && f == "s2/p/Dup.java" { print $3 }' \
         "$(ls $d/cache/*/analysis-cache.tsv)")
     for part in $(printf '%s' "$PWD/$d" | tr -c 'A-Za-z0-9_$' ' '); do
         case ",$names," in *",$part,"*) leaked="$leaked $part" ;; esac

@@ -40,15 +40,10 @@ public final class FileAnalysis {
 
     public final List<TypeFact> types = new ArrayList<>();
     /**
-     * 宣言する型の形（継承したものを含むメンバーの署名・親型。{@code jche.analysis.TypeShape}）の行。
-     * 並べ替えて指紋にし、I 行に書く。差分更新で、ソースの変わっていないファイルを解析し直した結果、
-     * これが前回と違えば、その型を使う側も解析し直す（親型の連鎖）
-     */
-    public final List<String> shape = new ArrayList<>();
-    /**
-     * エラー（{@link #errors}）の引数に現れた名前（{@code Foo}・{@code org.missing}・{@code q.Bar} のような
-     * 点区切りの識別子）。I 行に書き、差分更新で新しい型ができたとき、その名前に当たるブロックだけを
-     * 解析し直すのに使う
+     * エラー（{@link #errors}）の引数に現れた名前（{@code Foo}・{@code org.missing.Lib}・{@code q.Bar} のような
+     * 点区切りの識別子。エラーの位置に書かれた名前の頭の部分なら、書かれた名前全体。
+     * {@code jche.analysis.CallEdgeExtractor#namesOf}）。I 行に書き、差分更新で新しい型ができたとき、その名前に
+     * 当たるブロックだけを解析し直すのに使う
      */
     public final Set<String> unresolvedNames = new TreeSet<>();
     /**
@@ -113,7 +108,7 @@ public final class FileAnalysis {
 
     /**
      * 型解決に失敗したか（エラーがある、または理由が BINDING_FAILED の U 行がある）。失敗したファイルは、I 行の
-     * 3 列目に解決できなかった名前を書き、参照した型の親も依存に持つ（docs/cache-unification-qa.md の Q42・Q51）
+     * 2 列目に解決できなかった名前を書く（docs/cache-unification-qa.md の Q42）
      */
     public boolean resolutionFailed() {
         if (errors > 0) {

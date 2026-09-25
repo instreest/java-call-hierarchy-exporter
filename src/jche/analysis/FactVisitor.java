@@ -10,6 +10,8 @@ import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
+import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.Assignment;
@@ -24,41 +26,32 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.ImplicitTypeDeclaration;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.LambdaExpression;
-import org.eclipse.jdt.core.dom.MarkerAnnotation;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
-import org.eclipse.jdt.core.dom.NameQualifiedType;
+import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.Modifier;
-import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.ParenthesizedExpression;
-import org.eclipse.jdt.core.dom.Pattern;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
-import org.eclipse.jdt.core.dom.QualifiedType;
+import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.RecordPattern;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
-import org.eclipse.jdt.core.dom.SimpleType;
-import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
-import org.eclipse.jdt.core.dom.SwitchCase;
-import org.eclipse.jdt.core.dom.SwitchExpression;
-import org.eclipse.jdt.core.dom.SwitchStatement;
-import org.eclipse.jdt.core.dom.ThrowStatement;
 import org.eclipse.jdt.core.dom.TryStatement;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
-import org.eclipse.jdt.core.dom.TypePattern;
-import org.eclipse.jdt.core.dom.VariableDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
@@ -575,8 +568,8 @@ final class FactVisitor extends ASTVisitor {
         if (sam == null) {
             return;
         }
-        // 目標の型とその親は I 行に載せる（functionalKeysOf が辿る）。親が変わると、このラムダが実装する
-        // メソッドの鍵（M 行）が変わるため（docs/cache-unification-qa.md の Q45）
+        // 目標の型は式の型として I 行に載る（preVisit2）。その親が変わったときは、差分更新が部分型の側で拾う
+        // （docs/cache-unification-qa.md の Q45・Q77）
         List<String> keys = names.functionalKeysOf(fnType, sam);
         if (keys.isEmpty()) {
             return;
@@ -818,9 +811,6 @@ final class FactVisitor extends ASTVisitor {
     public boolean visit(EnhancedForStatement n) {
         Expression ex = n.getExpression();
         ITypeBinding type = ex.resolveTypeBinding();
-        // 式の型（a.getRepo() の Repo）は、ソースに名前が無くても、Iterable を実装するか・iterator() を
-        // どこで宣言するかで暗黙の呼び出しとエラーが変わる（docs/cache-unification-qa.md の Q52）
-        names.noteReachedType(type);
         if (type == null || type.isArray()) {
             return true;
         }
@@ -874,9 +864,6 @@ final class FactVisitor extends ASTVisitor {
     @Override
     public boolean visit(RecordPattern n) {
         ITypeBinding type = (n.getPatternType() == null) ? null : n.getPatternType().resolveBinding();
-        if (inSwitchLabel(n)) {
-            names.noteSupertypes(type);
-        }
         for (IMethodBinding accessor : ImplicitCalls.accessorsOf(type)) {
             recordImplicit(accessor, n, "", RecvKind.OTHER, CallValues.NONE, type);
         }
@@ -1035,11 +1022,6 @@ final class FactVisitor extends ASTVisitor {
             }
         }
         localAssignments.clear();
-        // 型解決に失敗したファイルは、参照した型の親も依存に持つ（私的メンバーの変化に追随するため。
-        // BindingNames#noteAncestorsOfNamedTypes）。U 行はここまでに出そろっている
-        if (out.resolutionFailed()) {
-            names.noteAncestorsOfNamedTypes();
-        }
     }
 
     // ================================================================
@@ -1047,122 +1029,115 @@ final class FactVisitor extends ASTVisitor {
     // ================================================================
 
     // ================================================================
-    // ソースに書かれた型の名前（I行）
+    // 依存する型（I 行）: 式と型の節の型をすべて数える
     // ================================================================
 
     /**
-     * ソースに書かれた型の名前を、このファイルが依存する型（I 行）に数える。
+     * どの節でも、式（{@link Expression}。名前・呼び出し・ラムダ・アノテーションを含む）の型と、型の節
+     * （{@link Type}）の型を、このファイルが依存する型（I 行）に数える。型変数・捕捉された型変数・ワイルドカード・
+     * 交差型は上限の消去で数える（{@link BindingNames#noteReachedType}）。
      *
-     * <p>戻り値・throws・ローカル変数・キャストの型のように、宣言にだけ書かれて呼び出しにも値にも
-     * 現れない型は、ほかの経路（{@link BindingNames#typeNameOf}）を通らない。I 行に無いと、その型を
-     * 消した・改名したときに差分更新がこのファイルを解析し直さず、全件解析ならコンパイルエラーになる
-     * ファイルがエラー 0 のまま残る（warnings.txt の件数が食い違い、jar の追加で解析し直す判定にも効く）。
-     * 型の名前の節（{@link SimpleType}・{@link QualifiedType}・{@link NameQualifiedType}）で拾う
-     * （docs/cache-unification-qa.md の Q46）。
+     * <p>このファイルの事実（呼び出しの解決・エラー・暗黙の呼び出し・網羅性）は、ソースに名前が書かれていない型
+     * （{@code a.getB().x()} の B、{@code for (x : a.getRepo())} の Repo、{@code throw d.make()} の型、switch の
+     * セレクタの列挙型）のメンバーと親にも依存する。以前は場面ごと（呼び出しの受け手と実引数・修飾された名前の左側・
+     * 拡張 for 文・switch・throw・アノテーション・型の名前の節）に拾っていたが、拾い漏らしが見つかるたびに場面を
+     * 足すことになったので、「すべての式と型の節」の 1 つの決まりにした（docs/cache-unification-qa.md の Q78）。
+     * 親型の変化は、型を数えておけば差分更新が部分型の側で拾う（{@link CacheUpdater} の「親型の連鎖」）。
+     * 呼び出しの節では、選ばれなかった候補の引数の型も数える（{@link #noteCandidates(ASTNode)}）。
+     *
+     * <p>例外は 2 つ。
+     * <ul>
+     *   <li>JDT が解決できなかった名前（{@link Name} の節で、バインディングが無いか、回復して作ったもの）は数えない。
+     *       依存 jar が無いときの式の中の {@code org.missing.pkg.Type.run()} の {@code org.missing} には、同じバッチで
+     *       先に別のファイルが {@code org.missing.pkg.Type.class} のような型の文脈で同じ名前を解決しようとしたかどうかで、
+     *       JDT が回復した型（{@code org.missing}）を返したり返さなかったりする。数えると I 行がバッチの組み方で変わる
+     *       （Q79）。解決できなかった名前は、エラーの側（I 行の 2 列目）で拾う。型の節（{@link Type}）は回復した型でも
+     *       数える（型の文脈の回復はバッチに依らない。途中のパッケージができる・無くなると変わるが、それは差分更新が
+     *       解決できなかった名前の側で拾う。Q80）</li>
+     *   <li>アノテーションの型は、{@code java.*} のもの（{@code @Override} など）を数えない（JDK の版はキャッシュの鍵に
+     *       入っていて、変われば全件解析になる。どのファイルにも付くので I 行が嵩むだけ）。型の名前の節はアノテーションの
+     *       節の側で数えるので、名前の側では数えない</li>
+     * </ul>
      */
     @Override
-    public boolean visit(SimpleType node) {
-        names.noteDependency(node.resolveBinding());
-        return true;
-    }
-
-    @Override
-    public boolean visit(QualifiedType node) {
-        names.noteDependency(node.resolveBinding());
-        return true;
-    }
-
-    @Override
-    public boolean visit(NameQualifiedType node) {
-        names.noteDependency(node.resolveBinding());
+    public boolean preVisit2(ASTNode node) {
+        noteCandidates(node);
+        if (node instanceof Annotation a) {
+            names.noteDependencyUnlessJdk(a.resolveTypeBinding());
+        } else if (node instanceof Name n) {
+            if (!(n.getParent() instanceof Annotation a && n.getLocationInParent() == a.getTypeNameProperty())
+                    && resolved(n.resolveBinding())) {
+                names.noteReachedType(n.resolveTypeBinding());
+            }
+        } else if (node instanceof Expression e) {
+            names.noteReachedType(e.resolveTypeBinding());
+        } else if (node instanceof Type t) {
+            names.noteReachedType(t.resolveBinding());
+        }
         return true;
     }
 
     /**
-     * switch のセレクタの式の型（{@code switch (s.kind())} の列挙型）。列挙定数を足す・消すと、case の名前の解決と
-     * 網羅性（JLS 14.11.1.1）が変わるが、型の名前はソースに無いことがある（docs/cache-unification-qa.md の Q52）
+     * 呼び出し・メソッド参照・new・super(...) の節では、呼び出しの候補（同じ名前のメソッド・コンストラクタ）の引数の型も
+     * 数える（{@link BindingNames#noteCandidates}。選ばれなかった候補の型も、どの候補が選ばれるかに効く）。探す型は、
+     * 修飾する式・型があればその型、単純名・{@code super.m()} なら囲む型すべて（とその親）、new・コンストラクタ参照なら
+     * 作る型、{@code super(...)} なら親のクラス。{@code this(...)} の候補は自分のコンストラクタで、引数の型はこのファイルに
+     * 書いてあるので見ない
      */
-    @Override
-    public boolean visit(SwitchStatement n) {
-        names.noteReachedType(n.getExpression().resolveTypeBinding());
-        return true;
-    }
-
-    @Override
-    public boolean visit(SwitchExpression n) {
-        names.noteReachedType(n.getExpression().resolveTypeBinding());
-        return true;
+    private void noteCandidates(ASTNode node) {
+        if (node instanceof MethodInvocation n) {
+            noteCandidates(n.getExpression() == null ? null : n.getExpression().resolveTypeBinding(), n,
+                    n.getName().getIdentifier());
+        } else if (node instanceof SuperMethodInvocation n) {
+            noteCandidates(null, n, n.getName().getIdentifier());
+        } else if (node instanceof SuperMethodReference n) {
+            noteCandidates(null, n, n.getName().getIdentifier());
+        } else if (node instanceof ExpressionMethodReference n) {
+            names.noteCandidates(n.getExpression().resolveTypeBinding(), n.getName().getIdentifier());
+        } else if (node instanceof TypeMethodReference n) {
+            names.noteCandidates(n.getType().resolveBinding(), n.getName().getIdentifier());
+        } else if (node instanceof ClassInstanceCreation n) {
+            names.noteCandidates(n.getType().resolveBinding(), null);
+        } else if (node instanceof CreationReference n) {
+            names.noteCandidates(n.getType().resolveBinding(), null);
+        } else if (node instanceof SuperConstructorInvocation n) {
+            IMethodBinding b = n.resolveConstructorBinding();
+            names.noteCandidates((b == null) ? null : b.getDeclaringClass(), null);
+        }
     }
 
     /**
-     * case に書いた列挙定数の型とその親（sealed なインターフェースを列挙型が実装するとき、網羅性は途中の型の
-     * permits で決まる。{@link BindingNames#noteSupertypes}）
+     * 修飾する型（{@code qualifying}）があればその型で、無ければ {@code node} を囲む型すべてと、static import した型
+     * （{@code import static p.X.name} と {@code import static p.X.*} の X）で候補を探す（JLS 15.12.1）
      */
-    @Override
-    public boolean visit(SwitchCase n) {
-        for (Object e : n.expressions()) {
-            if (e instanceof Expression ex && !(e instanceof Pattern)) {
-                ITypeBinding type = ex.resolveTypeBinding();
-                if (type != null && type.isEnum()) {
-                    names.noteSupertypes(type);
-                }
+    private void noteCandidates(ITypeBinding qualifying, ASTNode node, String name) {
+        if (qualifying != null) {
+            names.noteCandidates(qualifying, name);
+            return;
+        }
+        for (ASTNode p = node.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof AbstractTypeDeclaration td) {
+                names.noteCandidates(td.resolveBinding(), name);
+            } else if (p instanceof AnonymousClassDeclaration ac) {
+                names.noteCandidates(ac.resolveBinding(), name);
             }
         }
-        return true;
-    }
-
-    /** switch の case の型パターン。型とその親を依存に数える（網羅性。{@link BindingNames#noteSupertypes}） */
-    @Override
-    public boolean visit(TypePattern n) {
-        if (inSwitchLabel(n)) {
-            VariableDeclaration v = n.getPatternVariable2();
-            IVariableBinding b = (v == null) ? null : v.resolveBinding();
-            names.noteSupertypes((b == null) ? null : b.getType());
+        for (Object o : cu.imports()) {
+            ImportDeclaration imp = (ImportDeclaration) o;
+            if (!imp.isStatic()) {
+                continue;
+            }
+            if (imp.isOnDemand()) {
+                names.noteCandidates(imp.getName().resolveTypeBinding(), name);
+            } else if (imp.getName() instanceof QualifiedName qn && qn.getName().getIdentifier().equals(name)) {
+                names.noteCandidates(qn.getQualifier().resolveTypeBinding(), name);
+            }
         }
-        return true;
     }
 
-    /** パターンが switch の case に書かれたものか（入れ子のパターン・when の付いたパターンを含む） */
-    private static boolean inSwitchLabel(Pattern n) {
-        ASTNode p = n.getParent();
-        while (p instanceof Pattern) {
-            p = p.getParent();
-        }
-        return p instanceof SwitchCase;
-    }
-
-    /**
-     * throw する式の型。検査例外かどうか（JLS 11.1.1）で、throws に書いていない・catch していないエラーが変わる
-     * （{@code throw d.make();} の型はソースに名前が無い。docs/cache-unification-qa.md の Q52）
-     */
-    @Override
-    public boolean visit(ThrowStatement n) {
-        names.noteReachedType(n.getExpression().resolveTypeBinding());
-        return true;
-    }
-
-    /**
-     * アノテーションの型。宣言に付いたもの（{@link BindingNames#annotationsOf}）のほか、引数・ローカル変数・
-     * 型の使用に付いたものも、型を消す・改名するとエラーになる。型の名前は Name の節なので、型の名前の節の
-     * visit では拾えない（docs/cache-unification-qa.md の Q52）。{@code java.*} のもの（{@code @Override} など）は
-     * 変わらないので数えない
-     */
-    @Override
-    public boolean visit(MarkerAnnotation n) {
-        names.noteDependencyUnlessJdk(n.resolveTypeBinding());
-        return true;
-    }
-
-    @Override
-    public boolean visit(NormalAnnotation n) {
-        names.noteDependencyUnlessJdk(n.resolveTypeBinding());
-        return true;
-    }
-
-    @Override
-    public boolean visit(SingleMemberAnnotation n) {
-        names.noteDependencyUnlessJdk(n.resolveTypeBinding());
-        return true;
+    /** JDT が解決できた（バインディングがあり、回復して作ったものでない）か */
+    private static boolean resolved(IBinding b) {
+        return b != null && !b.isRecovered();
     }
 
     /** import 文の中の名前は参照箇所ではない（依存としては CallEdgeExtractor が別に数える） */
