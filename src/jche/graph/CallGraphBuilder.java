@@ -16,9 +16,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
@@ -214,7 +217,7 @@ public final class CallGraphBuilder {
                         // ファイル単位で完結する判定（フィールド注入）を、読み終えた前のブロックについて確定する。
                         // 代入（J行）はブロックの後ろにあるので、宣言（V行・D行）が揃ったこの時点で渡す
                         applyPendingAssigns();
-                        fields.flushInto(graph.fieldHeads);
+                        fields.flushInto(graph.fieldHeads, graph.ownValuedFields);
                         currentFile = in.filePath();
                         symbols.clear();
                         nodes.clear();
@@ -246,8 +249,10 @@ public final class CallGraphBuilder {
                     case CacheFormat.ROW_TYPE -> {
                         TypeFact t = TypeFact.fromRow(in.columns());
                         if (t != null) {
+                            noteTypeDeclaration(t.typeFqn(), currentFile);
                             graph.hierarchy.add(t);
                             graph.beans.type(t);
+                            fields.type(t);
                         }
                     }
                     case CacheFormat.ROW_METHOD_DECL -> {
@@ -312,8 +317,9 @@ public final class CallGraphBuilder {
                 }
             }
             applyPendingAssigns();
-            fields.flushInto(graph.fieldHeads);
+            fields.flushInto(graph.fieldHeads, graph.ownValuedFields);
             RunControl.progress(label, size, size);
+            typeFiles.clear();
             warnDuplicateTypes();
             if (!headerOk || afterTrailer || trailer != blocks) {
                 // ふつうは起きない（フェーズ1 が書き終えたものを、同じキャッシュのフォルダの錠を持ったまま読む）。
@@ -344,29 +350,64 @@ public final class CallGraphBuilder {
         if (prev == null || prev.equals(file)) {
             return true;
         }
-        String first = (prev.compareTo(file) < 0) ? prev : file;
-        String second = first.equals(prev) ? file : prev;
-        if (duplicateTypes.size() < DUPLICATE_TYPES_LIMIT || duplicateTypes.containsKey(first + '\n' + second)) {
-            duplicateTypes.putIfAbsent(first + '\n' + second, d.ref().typeFqn());
-        } else {
-            duplicateTypesOmitted = true;
-        }
+        noteDuplicateType(d.ref().typeFqn(), prev, file);
         int now = graph.sourceFolderIndexOf(file);
         int before = graph.sourceFolderIndexOf(prev);
         return now < before || (now == before && file.compareTo(prev) < 0);
     }
 
     /**
+     * H 行の型を、宣言したファイル（ブロック）とともに覚える。同じ型を別のファイルの H 行が宣言していれば、重なりとして
+     * 警告する（{@link #warnDuplicateTypes}）。2 つの宣言に同じメソッドが無い（{@code Hid(int)} と {@code a()}、
+     * 暗黙の {@code Hid()} と {@code b()}）と、{@link #takesDeclaration} では重なりに気づけなかった
+     * （docs/cache-unification-qa.md の Q72）
+     */
+    private void noteTypeDeclaration(String typeFqn, String file) {
+        if (file == null) {
+            return;
+        }
+        String prev = typeFiles.putIfAbsent(typeFqn, file);
+        if (prev != null && !prev.equals(file)) {
+            noteDuplicateType(typeFqn, prev, file);
+        }
+    }
+
+    /**
+     * 同じ型を宣言している 2 つのファイルを覚える。型ごとにファイルの集合で持つ（どのファイルと組にして出会ったかは
+     * ブロックの並び＝差分更新で変わる、に依るが、集合は依らない。組は {@link #warnDuplicateTypes} で集合から作る）
+     */
+    private void noteDuplicateType(String typeFqn, String fileA, String fileB) {
+        Set<String> files = duplicateTypes.computeIfAbsent(typeFqn, k -> new TreeSet<>());
+        files.add(fileA);
+        files.add(fileB);
+    }
+
+    /**
      * 同じ型を宣言しているファイルの組を警告する（ビルドが通らない状態の 1 つ。warnings.txt の
      * 「ソースにコンパイルエラーがある」に載る）。名前の違う 2 つのファイルが同じ型を宣言していると、JDT は
      * 同じバッチなら後ろの方を「型が重複している」エラーにしてその型を読まず、別々のバッチなら両方を読む
-     * （ここに来るのは両方を読んだとき。同じメソッドの宣言は 1 つにまとまり、呼び出しは両方のものが出る）。
+     * （ここに来るのは両方を読んだとき。両方の H 行があり、同じメソッドの宣言は 1 つにまとまり、呼び出しは両方のものが出る）。
      * どちらになるかは一緒に解析したファイルの組み合わせで決まり、差分更新と全件解析とで変わりうる。文言は
      * それをそのまま伝える（「片方の呼び出しは出ない」とは言い切らない。{@code docs/cache-unification-qa.md} の
-     * Q61・Q68）
+     * Q61・Q68）。直し方は、2 つのファイルが同じフォルダにあっても違うフォルダにあっても通じるように書く（Q72）
      */
     private void warnDuplicateTypes() {
-        for (Map.Entry<String, String> e : duplicateTypes.entrySet()) {
+        // ファイルの組（パスの順に改行でつないだもの）-> 型（名前の順で最初のもの）。型ごとに、パスの順で最初のファイルと
+        // ほかのファイルを組にする（どれもブロックの並びに依らない）
+        Map<String, String> pairs = new TreeMap<>();
+        for (Map.Entry<String, TreeSet<String>> e : duplicateTypes.entrySet()) {
+            String first = e.getValue().first();
+            for (String other : e.getValue().tailSet(first, false)) {
+                pairs.merge(first + '\n' + other, e.getKey(), (a, b) -> (a.compareTo(b) <= 0) ? a : b);
+            }
+        }
+        duplicateTypes.clear();
+        int shown = 0;
+        for (Map.Entry<String, String> e : pairs.entrySet()) {
+            if (shown++ == DUPLICATE_TYPES_LIMIT) {
+                Warnings.warn(Warnings.Topic.BUILD, Messages.format("graph.duplicateType.more", DUPLICATE_TYPES_LIMIT));
+                break;
+            }
             String[] files = e.getKey().split("\n", 2);
             int a = graph.sourceFolderIndexOf(files[0]);
             int b = graph.sourceFolderIndexOf(files[1]);
@@ -374,17 +415,17 @@ public final class CallGraphBuilder {
             Warnings.warn(Warnings.Topic.BUILD, Messages.format("graph.duplicateType", e.getValue(), files[0],
                     files[1], used));
         }
-        if (duplicateTypesOmitted) {
-            Warnings.warn(Warnings.Topic.BUILD, Messages.format("graph.duplicateType.more", DUPLICATE_TYPES_LIMIT));
-        }
     }
 
-    /** 警告するファイルの組の上限 */
+    /** 警告するファイルの組の上限（組はパスの順に並べ、先頭からこの数だけ挙げる） */
     private static final int DUPLICATE_TYPES_LIMIT = 20;
-    /** 同じメソッドを宣言していたファイルの組（パスの順に改行でつないだもの）-> 型 */
-    private final Map<String, String> duplicateTypes = new TreeMap<>();
-    /** 上限を超えて警告しなかった組があったか */
-    private boolean duplicateTypesOmitted;
+    /**
+     * 2 つ以上のファイルが宣言していた型 -> そのファイル（パスの順）。上限を超えても全部覚える（どの組を挙げるかを
+     * ブロックの並びに依らせないため。ビルドの通らない状態なので、ふつうは数件）
+     */
+    private final Map<String, TreeSet<String>> duplicateTypes = new TreeMap<>();
+    /** 型 -> その型の H 行を最初に読んだブロックのファイル（スキャンのあいだだけ持つ。{@link #noteTypeDeclaration}） */
+    private final Map<String, String> typeFiles = new HashMap<>();
 
     /**
      * J 行 1 件と、その値（ノードの頭の葉の参照 {@link BlockNodes#headOf} と、その種別）

@@ -16,7 +16,8 @@
 #       上書きされないメソッド（static・private・final・継承だけ）の戻り値・上書きされない @Bean メソッド・
 #       入れ子のクラスが別のフィールドにだけ書くフィールド・this.m() と this.f・空の new に add しただけのリスト・
 #       static メソッドの参照の実引数・private / static のメソッドへの invoke・Bean のコンストラクタと @Autowired の
-#       メソッドの引数・別のインスタンスのフィールドでもどのインスタンスでも同じ値（初期化子の new・コンストラクタで入れるラムダ））
+#       メソッドの引数・別のインスタンスのフィールドでもどのインスタンスでも同じ値（初期化子の new・コンストラクタで入れるラムダ）・
+#       フレームワークが書かないフィールドの初期化子（java.lang の注釈だけのフィールド・ステレオタイプの Bean の注釈の無いフィールド））
 #
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
@@ -138,7 +139,36 @@ EOF
 cat > "$SRC/Autowired.java" <<'EOF'
 package pr;
 
-@interface Autowired { }
+@interface Autowired { boolean required() default true; }
+EOF
+# フレームワークが生成の後にフィールドへ書く注釈（docs/value-safety-qa.md の Q27）。Component はステレオタイプなので、
+# ほかの DI の注釈と同じく Sb・Sk・Sn で始まる型にだけ付ける
+# Inject は既にケースのクラス名（pr.Inject）なので、別のパッケージに置く（単純名で照合するので、どこにあってもよい）
+mkdir -p "$SRC/di"
+cat > "$SRC/di/Inject.java" <<'EOF'
+package pr.di;
+
+public @interface Inject { }
+EOF
+cat > "$SRC/Resource.java" <<'EOF'
+package pr;
+
+@interface Resource { String name() default ""; }
+EOF
+cat > "$SRC/Value.java" <<'EOF'
+package pr;
+
+@interface Value { String value(); }
+EOF
+cat > "$SRC/Component.java" <<'EOF'
+package pr;
+
+@interface Component { }
+EOF
+cat > "$SRC/ConfigurationProperties.java" <<'EOF'
+package pr;
+
+@interface ConfigurationProperties { String value() default ""; }
 EOF
 cat > "$SRC/Repository.java" <<'EOF'
 package pr;
@@ -2250,6 +2280,66 @@ public class FfKeep {
 EOF
 expect_ absent FfKeep.go DaoA.find "同上（DaoA の行が無い）"
 
+# super で修飾した書き込み（super.dao = …・Outer.super.dao = …・(super.dao) = …）も書き込み。入れ子の子クラスは外側の親クラスの
+# private なフィールドに super.f で書ける。f491e2e は super.f を代入先として拾わず、初期化子の new DaoA() だけが入ると
+# 判定して、this の読み取り（F:）も別のインスタンスの読み取り（O:）も DaoA に絞っていた（docs/value-safety-qa.md の Q26）
+case_ listed FfSuper FfSuper.use DaoB.find "入れ子の子クラスのコンストラクタが super.dao = new DaoB() と書くなら、dao.find() を初期化子の DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfSuper {
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }
+    static class Sub extends FfSuper {
+        Sub() { super.dao = new DaoB(); }
+    }
+    public static void main(String[] args) { new Sub().use(); }
+}
+EOF
+expect_ listed FfSuper.use DaoA.find "同上（DaoA も残す）"
+
+case_ listed FfSuperO FfSuperO.use DaoB.find "括弧で囲んだ (super.dao) = new DaoB() も書き込み。別のインスタンスの o.dao.find() も DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfSuperO {
+    private Dao dao = new DaoA();
+    void use(FfSuperO o) { o.dao.find(); }
+    static class Sub extends FfSuperO {
+        Sub() { (super.dao) = new DaoB(); }
+    }
+    public static void main(String[] args) { new FfSuperO().use(new Sub()); }
+}
+EOF
+
+case_ listed FfOuterSuper FfOuterSuper.use DaoB.find "内部クラスからの Sub.super.dao = new DaoB() も書き込み。o.dao.find() を DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfOuterSuper {
+    private Dao dao = new DaoA();
+    void use(FfOuterSuper o) { o.dao.find(); }
+    static class Sub extends FfOuterSuper {
+        class In { void w() { Sub.super.dao = new DaoB(); } }
+    }
+    public static void main(String[] args) {
+        Sub s = new Sub();
+        s.new In().w();
+        new FfOuterSuper().use(s);
+    }
+}
+EOF
+
+case_ listed FfCastThis FfCastThis.use DaoB.find "((FfCastThis) this).dao = new DaoB() も書き込み（別のインスタンスかもしれない書き込み）。DaoA に絞らない" <<'EOF'
+package pr;
+
+public class FfCastThis {
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }
+    static class Sub extends FfCastThis {
+        Sub() { ((FfCastThis) this).dao = new DaoB(); }
+    }
+    public static void main(String[] args) { new Sub().use(); }
+}
+EOF
+
 # ---------------------------------------------------------------------------
 # コンストラクタ実引数は、今のオブジェクト（this）にしか当てない。別のインスタンスのフィールド（other.dao）や、
 # 値を追えないレシーバ（拡張 for の変数・パターンの変数・配列の要素）への呼び出しに、今のオブジェクトの
@@ -2761,6 +2851,139 @@ public class SbSetterKeep {
 }
 EOF
 expect_ absent SbSetterKeep.setRepo SbSkB.find "同上（SbSkB の行が無い）"
+
+# ---------------------------------------------------------------------------
+# フレームワークが生成の後に書くフィールド。@Autowired・@Inject・@Resource・@Value のようにフィールドに注釈が付いている
+# か、宣言した型にステレオタイプ以外の注釈（@ConfigurationProperties・@Entity など）が付いていれば、リフレクションや
+# 生成されたコードがソースに見えない書き込みをする。f491e2e は注釈を見ずに、初期化子の値（@Autowired(required = false) の
+# 既定）だけが入ると判定していた。this の読み取り（F:）も別のインスタンスの読み取り（O:）も同じ（docs/value-safety-qa.md の Q27）。
+# DI（段 5）も、ソースが引数でない値を入れるフィールド（初期化子・new の代入）を注入点にしない。コンテナが入れた値だけが
+# 来るとは言えない（docs/spring-di-qa.md の Q15）
+# ---------------------------------------------------------------------------
+case_ listed FwAuto FwAuto.use DaoB.find "@Autowired(required = false) の初期化子（new DaoA()）は既定にすぎない。注入されれば別の値になるので絞らない" <<'EOF'
+package pr;
+
+public class FwAuto {
+    @Autowired(required = false)
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }
+    public static void main(String[] args) { new FwAuto().use(); }
+}
+EOF
+expect_ listed FwAuto.use DaoA.find "同上（DaoA も残す）"
+
+case_ listed FwAutoO FwAutoO.cmp DaoB.find "同上を別のインスタンス（o.dao）から読んでも絞らない" <<'EOF'
+package pr;
+
+public class FwAutoO {
+    @Autowired(required = false)
+    private Dao dao = new DaoA();
+    void cmp(FwAutoO o) { o.dao.find(); }
+    public static void main(String[] args) { new FwAutoO().cmp(new FwAutoO()); }
+}
+EOF
+
+case_ listed FwInject FwInject.use DaoB.find "@Inject の初期化子も既定にすぎない" <<'EOF'
+package pr;
+
+import pr.di.Inject;
+
+public class FwInject {
+    @Inject
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }
+    public static void main(String[] args) { new FwInject().use(); }
+}
+EOF
+
+case_ listed FwResource FwResource.use DaoB.find "@Resource(name = \"daoB\") の初期化子も既定にすぎない" <<'EOF'
+package pr;
+
+public class FwResource {
+    @Resource(name = "daoB")
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }
+    public static void main(String[] args) { new FwResource().use(); }
+}
+EOF
+
+case_ listed FwValue FwValue.cmp DaoB.find "@Value(\"#{daoB}\") の初期化子も既定にすぎない（別のインスタンスから読む形）" <<'EOF'
+package pr;
+
+public class FwValue {
+    @Value("#{daoB}")
+    private Dao dao = new DaoA();
+    void cmp(FwValue o) { o.dao.find(); }
+    public static void main(String[] args) { new FwValue().cmp(new FwValue()); }
+}
+EOF
+
+case_ listed FwProps FwProps.use DaoB.find "@ConfigurationProperties の型のフィールドはフレームワークが結び付ける。注釈の無いフィールドでも初期化子に絞らない" <<'EOF'
+package pr;
+
+@ConfigurationProperties("app")
+public class FwProps {
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }
+    public static void main(String[] args) { new FwProps().use(); }
+}
+EOF
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD FwDeprecated FwDeprecated.use DaoA.find "対照: java.lang の注釈（@Deprecated）は記録しないので、フィールドは初期化子の DaoA に絞る" <<'EOF'
+package pr;
+
+public class FwDeprecated {
+    @Deprecated
+    private final Dao dao = new DaoA();
+    void use() { dao.find(); }
+    public static void main(String[] args) { new FwDeprecated().use(); }
+}
+EOF
+expect_ absent FwDeprecated.use DaoB.find "同上（DaoB の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_FIELD SnStereo SnStereo.use DaoA.find "対照: ステレオタイプの Bean（@Component）の注釈の無いフィールドにコンテナは書かない。初期化子の DaoA に絞る" <<'EOF'
+package pr;
+
+@Component
+public class SnStereo {
+    private final Dao dao = new DaoA();
+    void use() { dao.find(); }
+}
+EOF
+expect_ absent SnStereo.use DaoB.find "同上（DaoB の行が無い）"
+
+case_ listed SnReq SnReq.use SnRqA.find "@Autowired(required = false) の初期化子（new SnRqA()）があるフィールドは、段 5 で唯一の Bean（SnRqB）に絞らない（Bean が無ければ既定が残る・コンテナの外で new すれば既定のまま）" <<'EOF'
+package pr;
+
+interface SnRqI { void find(); }
+class SnRqA implements SnRqI { public void find() { System.out.println("a"); } }
+@Repository class SnRqB implements SnRqI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnReq {
+    @Autowired(required = false)
+    private SnRqI dao = new SnRqA();
+    void use() { dao.find(); }
+}
+EOF
+expect_ listed SnReq.use SnRqB.find "同上（注入される SnRqB も残す）"
+
+case_ listed SnReset SnReset.use SnRsA.find "ステレオタイプの Bean のフィールドでも、ソースが引数でない値（new SnRsA()）を入れるなら、段 5 で唯一の Bean（SnRsB）に絞らない" <<'EOF'
+package pr;
+
+interface SnRsI { void find(); }
+class SnRsA implements SnRsI { public void find() { System.out.println("a"); } }
+@Repository class SnRsB implements SnRsI { public void find() { System.out.println("b"); } }
+
+@Component
+public class SnReset {
+    private SnRsI dao;
+    SnReset(SnRsI d) { this.dao = d; }
+    void reset() { this.dao = new SnRsA(); }
+    void use() { dao.find(); }
+}
+EOF
+expect_ listed SnReset.use SnRsB.find "同上（注入される SnRsB も残す）"
 
 # ---------------------------------------------------------------------------
 # 解析して確かめる

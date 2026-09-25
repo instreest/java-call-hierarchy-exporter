@@ -39,6 +39,10 @@ import jche.config.ProjectLayout;
  * 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。組にしないと、片方だけを書き換えた差分更新と
  * 全件解析とで warnings.txt（コンパイルエラーのファイルの一覧）が食い違った（{@code docs/cache-unification-qa.md} の Q66）。
  *
+ * <p>組の片方を消した（ソースフォルダから外した場合も同じ）ときは、残ったほうを解析し直す（{@link #pairedWithDeleted}）。
+ * 組が同じバッチにいたあいだ、後ろのほうには「型が重複している」エラーが付いていたので、再利用するとそのエラー
+ * （と読まなかった型）が残る。全件解析では 1 つだけになったので付かない（{@code docs/cache-unification-qa.md} の Q71）。
+ *
  * <p>ヒープに残るのは組になったファイルのぶんだけ（ふつうは空）。
  */
 final class SameUnitFiles {
@@ -75,6 +79,50 @@ final class SameUnitFiles {
             }
         }
         return new SameUnitFiles(groups);
+    }
+
+    /**
+     * 消えたファイル（旧キャッシュにブロックがあり、今のソースに無い。外したソースフォルダのファイルも含む）と
+     * 同じコンパイル単位の名前を持つ、今のソースのファイルの相対パス。
+     *
+     * <p>消えたファイルの名前は、旧キャッシュのヘッダ行のソースフォルダの一覧（{@code oldFolders}。
+     * {@link jche.cache.CacheFormat#foldersOf}）で求める。外したフォルダは今の設定に無いので、今の一覧では求められない。
+     * どのフォルダにも入らないパスは {@link ProjectLayout#unitNameOf} と同じくファイル名にする（多めに当たるだけで、
+     * 解析し直すファイルが増えるほうに倒れる）。今のファイルの名前は今の設定で求める。
+     *
+     * @param deleted    消えたファイルの相対パス（project.root から。{@code /} 区切り）
+     * @param oldFolders 旧キャッシュのソースフォルダ（project.root からの相対パス。project.root そのものは空文字）
+     */
+    static Set<String> pairedWithDeleted(List<String> deleted, List<String> oldFolders,
+                                         Map<String, SourceFile> live, ProjectLayout layout) {
+        if (deleted.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> units = new HashSet<>();
+        for (String rel : deleted) {
+            units.add(unitNameOf(rel, oldFolders));
+        }
+        Set<String> paired = new HashSet<>();
+        for (SourceFile f : live.values()) {
+            if (units.contains(layout.unitNameOf(f.path()))) {
+                paired.add(f.relativePath());
+            }
+        }
+        return paired;
+    }
+
+    /** 相対パスの、ソースフォルダの一覧から見たコンパイル単位の名前（{@link ProjectLayout#unitNameOf} と同じ決め方） */
+    static String unitNameOf(String rel, List<String> folders) {
+        for (String folder : folders) {
+            if (folder.isEmpty()) {
+                return rel;
+            }
+            if (rel.startsWith(folder + "/")) {
+                return rel.substring(folder.length() + 1);
+            }
+        }
+        int slash = rel.lastIndexOf('/');
+        return (slash < 0) ? rel : rel.substring(slash + 1);
     }
 
     /** そのファイルが組に入っているか（同じ名前のファイルがほかのソースフォルダにあるか） */

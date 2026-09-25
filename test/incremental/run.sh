@@ -2470,6 +2470,54 @@ pkginfo_case() {
 }
 pkginfo_case
 
+# 同じ名前のファイルの組の片方を消す・そのフォルダを source.folders から外す。組が同じバッチにいたあいだ、後ろのほうには
+# 「型が重複している」エラーが付いている。f491e2e は組を今のソースの一覧からしか作らず、消えたほうと組にならないので、
+# 残ったほうのブロック（エラー付き）を再利用し、全件解析（エラーなし）と warnings.txt・キャッシュが食い違った
+# （docs/cache-unification-qa.md の Q71）。消えたファイルの名前は旧キャッシュのヘッダ行のフォルダの一覧で求める
+# （外したフォルダは今の設定に無い）。アノテーションの付いた package-info.java と、同じ名前の普通のクラスの両方で見る
+pair_delete_case() {
+    local d=$IW/pairdel kind route inc_out
+    for kind in pkginfo dup; do
+        for route in delete unlist; do
+            echo "== 同じ名前のファイルの組の片方を消す（$kind・$route） =="
+            rm -rf $d && mkdir -p $d/s1/p $d/s2/p
+            if [ $kind = pkginfo ]; then
+                printf '@Deprecated\npackage p;\n' > $d/s1/p/package-info.java
+                printf '@Deprecated\npackage p;\n' > $d/s2/p/package-info.java
+            else
+                printf 'package p;\n\npublic class Dup {\n    void a() {\n        A.x();\n    }\n}\n' > $d/s1/p/Dup.java
+                printf 'package p;\n\npublic class Dup {\n    void b() {\n        A.x();\n    }\n}\n' > $d/s2/p/Dup.java
+            fi
+            printf 'package p;\n\npublic class A {\n    static void x() {\n    }\n\n    public static void main(String[] args) {\n        x();\n    }\n}\n' \
+                > $d/s2/p/A.java
+            integrity_cfg $d/c.properties "$PWD/$d" s1,s2
+            integrity_run $d/c.properties $d/c0.log
+            [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+            if [ $kind = pkginfo ] && ! grep -q -F -- "- s2/p/package-info.java" "$IOUT/warnings.txt" 2>/dev/null; then
+                echo "  NG   組がそろっているあいだ、後ろの package-info.java に重複のエラーが付いていません（題材が効いていない）"; fail=1
+            fi
+            if [ $route = delete ]; then
+                rm $d/s1/p/*.java
+                integrity_cfg $d/c.properties "$PWD/$d" s1,s2
+                integrity_cfg $d/full.properties "$PWD/$d" s1,s2 "$PWD/$d/fullcache"
+            else
+                integrity_cfg $d/c.properties "$PWD/$d" s2
+                integrity_cfg $d/full.properties "$PWD/$d" s2 "$PWD/$d/fullcache"
+            fi
+            integrity_run $d/c.properties $d/c1.log
+            inc_out=$IOUT
+            integrity_run $d/full.properties $d/full.log
+            same_all "組の片方を消した差分更新（$kind・$route）" "$inc_out" "$IOUT" $d/cache $d/fullcache
+            if grep -q -F -- "s2/p/" "$inc_out/warnings.txt" 2>/dev/null; then
+                echo "  NG   残ったほうに前のエラーが残っています（$kind・$route）"; grep -F -- "s2/p/" "$inc_out/warnings.txt" | head -3; fail=1
+            else
+                echo "  OK   残ったほうのファイルは、もうエラーとして載らない（$kind・$route）"
+            fi
+        done
+    done
+}
+pair_delete_case
+
 # ソースフォルダを足す・外す。ヘッダ行のソースフォルダの一覧は、両方にあるフォルダの並びが同じで入れ子が無ければ
 # 旧キャッシュを使い続けてよい（足したフォルダのファイルは足したファイル、外したフォルダのファイルは消したファイル）。
 # 01eb510 は一覧のハッシュを鍵にしていたので、同じ project.root・同じキャッシュのフォルダで source.folders だけが
@@ -2547,6 +2595,44 @@ EOF
     same_all "入れ子のソースフォルダを足した実行" "$inc_out" "$IOUT" $d/cache $d/fullcache
 }
 folders_case
+
+# ソースフォルダを足したら、JDT がその実行のクラスパス・ソースパスを受け付けなくなった（Linux で名前に \ を含むフォルダ。
+# JDT は \ もパスの区切りとして読むので、そのフォルダが見つからない）。全件解析ではどのファイルも解析できない。
+# f491e2e はフォルダを足しただけとして旧キャッシュのブロックを使い続け、差分更新だけが前の設定の結果を出した
+# （docs/cache-unification-qa.md の Q73）。今は JDT が受け付けないなら旧キャッシュを使わない
+env_rejected_case() {
+    local d=$IW/envrej inc_out
+    case "$(uname -s)" in
+        Linux*) ;;
+        *) echo "== ソースフォルダを足したら JDT が受け付けない（Linux でだけ見る。名前に \\ を含むフォルダを作れない） =="; return ;;
+    esac
+    echo "== ソースフォルダを足したら JDT が受け付けない（名前に \\ を含むフォルダ） =="
+    rm -rf $d && mkdir -p $d/s1/p "$d/b\\x/q"
+    printf 'package p;\n\npublic class A {\n    public static void main(String[] args) {\n        q.C.c();\n    }\n}\n' > $d/s1/p/A.java
+    printf 'package q;\n\npublic class C {\n    public static void c() {\n    }\n}\n' > "$d/b\\x/q/C.java"
+    integrity_cfg $d/c.properties "$PWD/$d" s1
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    # properties の値では \ を \\ と書く
+    integrity_cfg $d/c.properties "$PWD/$d" 's1,b\\x'
+    integrity_cfg $d/full.properties "$PWD/$d" 's1,b\\x' "$PWD/$d/fullcache"
+    integrity_run $d/c.properties $d/c1.log
+    inc_out=$IOUT
+    if [ "${IREUSED:-1}" = 0 ] && grep -q -F "does not accept the class path" $d/c1.log; then
+        echo "  OK   JDT が受け付けないなら旧キャッシュを使わない（ログに理由を出す）"
+    else
+        echo "  NG   JDT が受け付けないのに旧キャッシュを使いました（再利用=${IREUSED:-?}）"
+        grep -a -E 'cache\]|WARN' $d/c1.log | head -5; fail=1
+    fi
+    integrity_run $d/full.properties $d/full.log
+    if grep -q -F "invalid environment settings" $d/full.log; then
+        echo "  OK   全件解析でも JDT が受け付けない（題材が効いている）"
+    else
+        echo "  NG   全件解析で JDT が受け付けています（題材が効いていない）"; fail=1
+    fi
+    same_all "JDT が受け付けない設定の差分更新" "$inc_out" "$IOUT" $d/cache $d/fullcache
+}
+env_rejected_case
 
 # 受け手（キャッシュへ書く側）の中でスタックが溢れたファイルも、そのファイルの失敗として数え、ほかのファイルの
 # 解析を続ける。01eb510 は受け手の StackOverflowError を一括パースのファイルごとには捕まえず、そのファイルは

@@ -69,12 +69,30 @@ public final class ValueEncodingCheck {
                     + visible(CacheFormat.escape("a\uD800b")));
         }
         readBack();
+        // ヘッダ行のソースフォルダの一覧（folders=）が往復すること（CacheFormat#foldersOf。消えたファイルの
+        // コンパイル単位の名前を旧キャッシュの一覧で求めるのに使う。docs/cache-unification-qa.md の Q71）。
+        // 名前の中のカンマ・空白・バックスラッシュ・タブ・符号化の形をした文字も元に戻ること。project.root そのものは空文字
+        checkFolders(List.of());
+        checkFolders(List.of(""));
+        checkFolders(List.of("src"));
+        checkFolders(List.of("src/main/java", "a, b", "\u00fc\\x", " lead ", "t\tab", "c,d", "\\u002c", "", "x\uD800"));
 
         System.out.println(failed == 0
                 ? "OK   " + checked + " 通りの値が往復し、行を壊さない"
                 : "NG   " + failed + " / " + checked + " 件で失敗");
         if (failed != 0) {
             System.exit(1);
+        }
+    }
+
+    /** ソースフォルダの一覧をヘッダ行に書いて読み戻すと、同じ一覧に戻るか */
+    private static void checkFolders(List<String> folders) {
+        checked++;
+        List<String> back = CacheFormat.foldersOf(CacheFormat.headerFor("17", "UTF-8", "x", folders));
+        if (!back.equals(folders)) {
+            failed++;
+            System.out.println("  NG   ヘッダ行のソースフォルダの一覧が往復しません: " + visible(folders.toString())
+                    + " -> " + visible(back.toString()));
         }
     }
 

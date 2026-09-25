@@ -76,8 +76,11 @@ import jche.cache.TypeFact;
  */
 public final class SpringBeans {
 
-    /** Bean登録の印とみなす注釈の単純名（既定） */
-    private static final List<String> DEFAULT_STEREOTYPES = List.of(
+    /**
+     * Bean登録の印とみなす注釈の単純名（既定）。コンテナがインスタンスを作るだけで、注釈の無いフィールドには
+     * 書かない注釈でもある（{@link FieldFacts} が「フレームワークが書きうるフィールド」から外すのに使う）
+     */
+    static final List<String> DEFAULT_STEREOTYPES = List.of(
             "Component", "Service", "Repository", "Controller", "RestController",
             "Configuration", "ControllerAdvice", "RestControllerAdvice",
             "Named", "ManagedBean", "Singleton");
@@ -402,7 +405,7 @@ public final class SpringBeans {
     }
 
     /** 基本型か String か（コンテナが Bean を注入しない型。static フィールドの控えを太らせないために除く） */
-    private static boolean isPrimitiveOrString(String declType) {
+    static boolean isPrimitiveOrString(String declType) {
         return switch (declType) {
             case "boolean", "byte", "char", "short", "int", "long", "float", "double", "java.lang.String" -> true;
             default -> false;

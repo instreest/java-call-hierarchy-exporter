@@ -192,6 +192,25 @@ public final class CallEdgeExtractor {
         }
     }
 
+    /**
+     * JDT がこの実行のクラスパス・ソースパス（ソースフォルダと依存 jar。{@link #newParser}）を受け付けるか。
+     * 受け付けなければ、JDT がその理由を返す（{@code invalid environment settings} など）。受け付けるなら null。
+     *
+     * <p>JDT は解析のたびに、渡されたパスからクラスパスを組み立て、組み立てられないもの（無いフォルダ・jar でも
+     * フォルダでもないもの。JDT は {@code \} もパスの区切りとして読むので、Linux で名前に {@code \} を含むフォルダは
+     * 見つからない）があると、どのファイルも解析せずに例外を投げる。ファイルに依らない失敗なので、空のファイルの一覧で
+     * 確かめられる。差分更新はこれを見て、受け付けられなければ旧キャッシュを使わない
+     * （{@code CacheUpdater}。docs/cache-unification-qa.md の Q73）
+     */
+    public String environmentProblem() {
+        try {
+            newParser().createASTs(new String[0], new String[0], new String[0], new FileASTRequestor() { }, null);
+            return null;
+        } catch (RuntimeException e) {
+            return String.valueOf(e.getMessage());
+        }
+    }
+
     /** スタックが溢れたことを、そのファイルの失敗の理由として伝える例外（利用者が対処を選べる文言にする） */
     private static Exception tooDeep(StackOverflowError e) {
         return new IllegalStateException(Messages.get("analysis.tooDeep"), e);

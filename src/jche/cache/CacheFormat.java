@@ -395,9 +395,13 @@ public final class CacheFormat {
      *       ヘッダ行の {@code folders=} をソースフォルダの一覧（ハッシュではなく名前）にした。{@code this} 以外で修飾した
      *       インスタンスフィールドの読み取りを値グラフのノード {@code O:}（{@link Origin#OTHER_FIELD}）にした
      *       （{@code docs/cache-unification-qa.md} の Q65〜Q67、{@code docs/value-safety-qa.md} の Q25）</li>
+     *   <li>v39 {@code super.f}・{@code Outer.super.f} への書き込み（{@code =}・複合代入・{@code ++} / {@code --}）も
+     *       フィールドへの書き込み（J 行）にした（{@code docs/value-safety-qa.md} の Q26）。v38 の差分更新は、JDT が
+     *       受け付けないソースフォルダを足しても旧キャッシュのブロックを使い続けたので、その実行が残したキャッシュも
+     *       捨てる（{@code docs/cache-unification-qa.md} の Q73・Q74）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v38";
+    public static final String VERSION = "jche-cache-v39";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
@@ -603,8 +607,11 @@ public final class CacheFormat {
      *       足したフォルダのファイルは旧キャッシュに無いので、足したファイルとして解析され（宣言する型は
      *       「変わった型」になり、使う側も解析し直す）、外したフォルダのファイルは消したファイルとして扱われる。
      *       同じ名前のファイルが 2 つのフォルダにある組（{@code jche.analysis.SameUnitFiles}）は今のソースの一覧から
-     *       作るので、組の片方を足しても、もう片方を解析し直す</li>
+     *       作るので、組の片方を足しても、もう片方を解析し直す。組の片方を外したときは、外したファイルの名前を
+     *       旧キャッシュのヘッダ行の一覧（{@link #foldersOf}）で求めて、残ったほうを解析し直す（Q71）</li>
      * </ul>
+     * ソースフォルダが変わったときは、JDT が今回のクラスパスを受け付けるかも確かめる（受け付けなければ旧キャッシュを
+     * 使わない。{@code jche.analysis.CacheUpdater}。Q73）。
      * docs/cache-unification-qa.md の Q58・Q67
      */
     public static boolean headerReusable(String written, String expected) {
@@ -652,6 +659,32 @@ public final class CacheFormat {
             }
         }
         return true;
+    }
+
+    /**
+     * ヘッダ行に書かれたソースフォルダの一覧（project.root からの相対パス。区切りは {@code /}。project.root そのものは
+     * 空文字）。符号化（{@link #folderToken}）は戻す。{@code folders=} が無ければ空のリスト。
+     *
+     * <p>旧キャッシュのブロックのパス（F 行。project.root からの相対パス）から、当時のコンパイル単位の名前
+     * （ソースフォルダからの相対パス）を求めるのに使う。外したフォルダのファイルは今の設定のどのフォルダにも入らないので、
+     * 当時の一覧で求めるしかない（{@code jche.analysis.SameUnitFiles#pairedWithDeleted}。docs/cache-unification-qa.md の Q71）
+     */
+    public static List<String> foldersOf(String header) {
+        for (String field : header.split(SEP, -1)) {
+            if (!field.startsWith(FOLDERS_KEY)) {
+                continue;
+            }
+            String value = field.substring(FOLDERS_KEY.length());
+            if (value.isEmpty()) {
+                return List.of();
+            }
+            List<String> folders = new ArrayList<>();
+            for (String token : value.split(FOLDER_SEP, -1)) {
+                folders.add(".".equals(token) ? "" : unescape(token));
+            }
+            return folders;
+        }
+        return List.of();
     }
 
     /**

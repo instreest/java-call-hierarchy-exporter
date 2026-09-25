@@ -122,6 +122,10 @@
 15.12.4.4	virtual-dispatch-cat	csv	jls.s15_12.Invocation.run	Cat.sound	-	仮想呼び出しは実行時のクラスの上書きを呼びうる（Cat）
 15.12.4.4	virtual-dispatch-base	csv	jls.s15_12.Invocation.run	Animal.sound	-	実行時のクラスが Animal そのものなら宣言が呼ばれる
 15.13.3	ref-static	csv	jls.s15_13.MethodRefs.run	Helper.parse	RESOLVED:STATIC_BOUND:STATIC	ClassName::staticMethod
+15.11.2	super-field-parse	noerror	src/jls/s15_11_02/SuperAccess.java	-	-	super で修飾したフィールドへの代入を含むソースを誤りなく読める
+15.11.2	super-field-write	csv	jls.s15_11_02.SuperAccess.run	FastWorker.work	-	super.worker = new FastWorker() も worker への書き込み（§15.26.1）。初期化子の SlowWorker だけに絞らない
+15.11.2	super-field-write-init	csv	jls.s15_11_02.SuperAccess.run	SlowWorker.work	-	初期化子の SlowWorker も残す
+15.11.1	primary-field-other	csv	jls.s15_11_02.SuperAccess.peer	FastWorker.work	-	一次式で修飾した別のインスタンスのフィールド（other.worker）でも同じ
 15.13.3	ref-bound	csv	jls.s15_13.MethodRefs.run	Helper.name	-	expression::instanceMethod（束縛されたレシーバ）
 15.13.3	ref-unbound	csv	jls.s15_13.MethodRefs.run	Helper.greet	-	ClassName::instanceMethod（最初の引数がレシーバ）
 15.13.3	ref-super	csv	jls.s15_13.MethodRefs.run	Base.baseWork	RESOLVED:STATIC_BOUND:SUPER	super::m は仮想呼び出しではない

@@ -9,11 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import jche.cache.AnnotationTokens;
 import jche.cache.FieldAssignFact;
 import jche.cache.FieldDeclFact;
 import jche.cache.MethodDeclFact;
 import jche.cache.ModifierTokens;
 import jche.cache.Origin;
+import jche.cache.TypeFact;
 
 /**
  * D行・V行・J行から「コンストラクタ注入されたフィールド」を判定する（読み手の判断）。
@@ -30,9 +32,24 @@ import jche.cache.Origin;
  *       A:n は根コンストラクタの引数位置だが、経路側で分かる実引数は new X(...) が実際に呼んだ
  *       コンストラクタのもので、委譲があると位置が食い違い、誤った具象型に確定しうる。
  *       「絞れないことより誤って絞ることの方が害が大きい」ので採用しない
+ *   (f) フレームワークが書きうるフィールドでない。フィールドにアノテーションが付いている
+ *       （&#64;Autowired・&#64;Inject・&#64;Resource・&#64;Value の注入、JPA の列、JSON の項目、モックなど）か、
+ *       宣言した型に DI のステレオタイプ注釈（{@link SpringBeans#DEFAULT_STEREOTYPES}）以外のアノテーションが
+ *       付いている（&#64;ConfigurationProperties の結び付け、JPA の &#64;Entity の読み込みなど）なら、生成の後に
+ *       リフレクションや生成されたコードがソースに見えない書き込みをする。&#64;Autowired(required = false) の
+ *       初期化子は「注入されなかったときの既定」で、注入されれば別の値になる（docs/value-safety-qa.md の Q27）。
+ *       どの注釈がそうかを一覧で持つと、載っていない注釈で誤って絞るので、付いていれば外す側に倒す。
+ *       {@code java.lang} の注釈（{@code @Deprecated} など）は書き手が記録しないので、ここでは数えない
  * </pre>
  * 事実はファイル（F行）ごとに溜め、次のF行またはEOFで確定する。
  * static フィールドは対象外（インスタンスの生成経路と無関係なため）。
+ *
+ * <p>あわせて、ソースが引数でない値を入れるフィールド（参照型の static でないフィールドで、初期化子・初期化ブロック・
+ * コンストラクタ・メソッドのどこかに、値の頭が引数（{@code A:n}）でない書き込みがある。値の分からない書き込みも含む。
+ * {@link #flushInto} の {@code ownValued}）を控える。DI（段 5）はそういうフィールドを注入点にしない。コンテナが入れた値
+ * だけが来るとは言えないからである（&#64;Autowired(required = false) の既定・コンテナの外で new したインスタンス・
+ * 後から差し替える書き込み。docs/spring-di-qa.md の Q15）。判定できたフィールドも控える。値の頭が {@code new} でなければ
+ * （{@code = makeDao()}）経路で具象型が決まらず、段 5 の結論が残るため。
  */
 final class FieldFacts {
 
@@ -48,10 +65,16 @@ final class FieldFacts {
 
     private static final class Field {
         final String mods;
+        /** フレームワークが書きうる（条件 (f)） */
+        final boolean framework;
+        /** 基本型でも String でもない（DI の注入点になりうる。{@link #ownValued}） */
+        final boolean reference;
         final List<Assign> assigns = new ArrayList<>(2);
 
-        Field(String mods) {
+        Field(String mods, boolean framework, boolean reference) {
             this.mods = mods;
+            this.framework = framework;
+            this.reference = reference;
         }
     }
 
@@ -61,6 +84,15 @@ final class FieldFacts {
     private final HashMap<String, Set<String>> rootCtors = new HashMap<>();
     /** this(...)委譲するコンストラクタを1つでも持つ型（条件 (e)） */
     private final Set<String> typesWithDelegatingCtor = new HashSet<>();
+    /** DI のステレオタイプ注釈以外のアノテーションが付いた型（条件 (f)）。H 行は同じブロックの V 行より前に並ぶ */
+    private final Set<String> frameworkTypes = new HashSet<>();
+
+    /** 型の宣言（H 行）。条件 (f) の型のアノテーションを見る */
+    void type(TypeFact t) {
+        if (!AnnotationTokens.onlyAmong(t.annotations(), SpringBeans.DEFAULT_STEREOTYPES)) {
+            frameworkTypes.add(t.typeFqn());
+        }
+    }
 
     void declaration(MethodDeclFact d) {
         if (!d.ref().isConstructor()) {
@@ -74,7 +106,9 @@ final class FieldFacts {
     }
 
     void field(FieldDeclFact v) {
-        fields.putIfAbsent(v.typeFqn() + "#" + v.fieldName(), new Field(v.mods()));
+        boolean framework = !v.annotations().isEmpty() || frameworkTypes.contains(v.typeFqn());
+        fields.putIfAbsent(v.typeFqn() + "#" + v.fieldName(),
+                new Field(v.mods(), framework, !SpringBeans.isPrimitiveOrString(v.declType())));
     }
 
     /**
@@ -95,11 +129,19 @@ final class FieldFacts {
         }
     }
 
-    /** 溜めた事実から判定し、確定したフィールドの値の頭の参照を fieldHeads に足して、溜めた事実を捨てる */
-    void flushInto(Map<String, Integer> fieldHeads) {
+    /**
+     * 溜めた事実から判定し、確定したフィールドの値の頭の参照を fieldHeads に足して、溜めた事実を捨てる。
+     *
+     * @param ownValued ソースが引数でない値を入れる、参照型の static でないフィールドの鍵を足す先
+     *                  （クラスの説明の最後の段落）
+     */
+    void flushInto(Map<String, Integer> fieldHeads, Set<String> ownValued) {
         for (Map.Entry<String, Field> e : fields.entrySet()) {
             String key = e.getKey();
             String typeFqn = key.substring(0, key.indexOf('#'));
+            if (ownValued(e.getValue())) {
+                ownValued.add(key);
+            }
             if (!assignedOnEveryPath(typeFqn, e.getValue())) {
                 continue;
             }
@@ -111,13 +153,33 @@ final class FieldFacts {
         fields.clear();
         rootCtors.clear();
         typesWithDelegatingCtor.clear();
+        frameworkTypes.clear();
     }
 
-    /** 条件 (a)〜(c) を満たすか（代入の値には依らない部分） */
+    /**
+     * 参照型で static でなく、値の頭が引数でない書き込み（値の分からない書き込みを含む）がある。
+     * 引数を入れる書き込み（コンストラクタ注入・setter 注入の形）だけなら、コンテナが渡した値と読める
+     */
+    private static boolean ownValued(Field fd) {
+        if (!fd.reference || ModifierTokens.has(fd.mods, "static")) {
+            return false;
+        }
+        for (Assign a : fd.assigns) {
+            if (a.headKind() != Origin.PARAM) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 条件 (a)〜(c)・(f) を満たすか（代入の値には依らない部分） */
     private boolean assignedOnEveryPath(String typeFqn, Field fd) {
         if (ModifierTokens.has(fd.mods, "static")
                 || !(ModifierTokens.has(fd.mods, "private") || ModifierTokens.has(fd.mods, "final"))) {
             return false;   // (a)
+        }
+        if (fd.framework) {
+            return false;   // (f)
         }
         if (fd.assigns.isEmpty()) {
             return false;

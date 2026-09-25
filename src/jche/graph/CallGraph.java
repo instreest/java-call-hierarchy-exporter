@@ -71,6 +71,11 @@ public final class CallGraph {
     /** "typeFqn#fieldName" -> 代入される値の頭（葉の参照）。コンストラクタ注入されたフィールドだけが入る */
     final HashMap<String, Integer> fieldHeads = new HashMap<>();
     /**
+     * ソースが引数でない値を入れる、参照型の static でないフィールド（"typeFqn#fieldName"）。
+     * DI（段 5）はこれを注入点にしない（{@link FieldFacts}。値を読まない指定では J 行を読まないので空）
+     */
+    final HashSet<String> ownValuedFields = new HashSet<>();
+    /**
      * メソッドIDごとの「呼び出しがこの宣言の本体以外へ振り分けられうるか」のメモ
      * （0 = まだ調べていない、1 = 振り分けられない、2 = 振り分けられうる）。{@link #hasOverriders} が遅延して埋める
      */
@@ -278,6 +283,11 @@ public final class CallGraph {
     public int fieldHead(String fieldKey) {
         Integer head = fieldHeads.get(fieldKey);
         return (head == null) ? ValueStore.NONE : head;
+    }
+
+    /** ソースがそのフィールドに引数でない値を入れるか（{@link #ownValuedFields}） */
+    public boolean isOwnValued(String fieldKey) {
+        return ownValuedFields.contains(fieldKey);
     }
 
     /** その型がコンストラクタ注入されたフィールドを持つか（{@link #fieldHead} に載っているフィールドがあるか） */

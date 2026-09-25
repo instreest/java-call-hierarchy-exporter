@@ -310,6 +310,51 @@ done
 analyze twins
 check_invariant twins
 expect_in_warnings twins "The type sample.app.Twin is declared in both src/main/java/sample/app/Aaa.java and src/main/java/sample/app/Zzz.java"
+# 直し方は、2 つのファイルが同じフォルダにあっても通じる（「どちらかのフォルダだけを書く」だけでは直せない）
+expect_in_warnings twins "Remove or rename one of the two declarations"
+
+# 5f. 同じ型の 2 つの宣言に、同じシグネチャのメソッドが 1 つも無い（Twin(int) と a()、暗黙の Twin() と z()）。
+#     メソッドの宣言の重なりだけを見ていた f491e2e は警告しなかった。型の宣言（H 行）の重なりで警告する
+#     （docs/cache-unification-qa.md の Q72）
+make_project twins2 ""
+TWINS2=work/twins2/src/main/java/sample/app
+printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    Twin(int v) {\n    }\n\n    void a() {\n        Util.count("a");\n    }\n}\n' > $TWINS2/Aaa.java
+printf 'package sample.app;\n\npublic class Zzz {\n}\n\nclass Twin {\n    void z() {\n        Util.count("z");\n    }\n}\n' > $TWINS2/Zzz.java
+for ((i = 100; i < 220; i++)); do
+    printf 'package sample.app;\n\npublic class Fill%d {\n}\n' "$i" > "$TWINS2/Fill$i.java"
+done
+analyze twins2
+check_invariant twins2
+expect_in_warnings twins2 "The type sample.app.Twin is declared in both src/main/java/sample/app/Aaa.java and src/main/java/sample/app/Zzz.java"
+
+# 5g. 3 つのファイルが同じ型を宣言している（どれも別々のバッチ）。組と文言をキャッシュのブロックの並びに依らせない。
+#     最後のファイルだけを書き換えた差分更新では、そのブロックがキャッシュの先頭に移る。出会った順に組を作ると、
+#     全件解析と挙げる組が変わる（docs/cache-unification-qa.md の Q72）
+make_project twins3 ""
+TWINS3=work/twins3/src/main/java/sample/app
+printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    Twin(int v) {\n    }\n\n    void a() {\n        Util.count("a");\n    }\n}\n' > $TWINS3/Aaa.java
+printf 'package sample.app;\n\npublic class Mmm {\n}\n\nclass Twin {\n    void m() {\n        Util.count("m");\n    }\n}\n' > $TWINS3/Mmm.java
+printf 'package sample.app;\n\npublic class Zzz {\n}\n\nclass Twin {\n    void z() {\n        Util.count("z");\n    }\n}\n' > $TWINS3/Zzz.java
+for ((i = 100; i < 220; i++)); do
+    printf 'package sample.app;\n\npublic class Fill%d {\n}\n' "$i" > "$TWINS3/Fill$i.java"
+    printf 'package sample.app;\n\npublic class Nfill%d {\n}\n' "$i" > "$TWINS3/Nfill$i.java"
+done
+twin_lines() {   # $1=warnings.txt。同じ型を宣言するファイルの組の行
+    grep -o -E 'The type sample\.app\.Twin is declared in both [^ ]+ and [^ ]+\.java' "$1" 2>/dev/null
+}
+analyze twins3
+check_invariant twins3
+full_twins=$(twin_lines "$OUT/warnings.txt")
+printf '\n// changed\n' >> "$TWINS3/Zzz.java"
+analyze twins3
+inc_twins=$(twin_lines "$OUT/warnings.txt")
+if [ "$(wc -l <<< "$full_twins")" = 2 ] && grep -q -F "Aaa.java and src/main/java/sample/app/Mmm.java" <<< "$full_twins" \
+        && grep -q -F "Aaa.java and src/main/java/sample/app/Zzz.java" <<< "$full_twins" && [ "$full_twins" = "$inc_twins" ]; then
+    ok "twins3: 3 つのファイルが同じ型を宣言していても、組（パスの順で最初のファイルとほかのファイル）は差分更新でも全件解析と同じ"
+else
+    ng "twins3: 同じ型を宣言するファイルの組が期待と違うか、差分更新と全件解析で違います"
+    diff <(echo "$full_twins") <(echo "$inc_twins") | head -6
+fi
 
 # 6. 実行の失敗（出力フォルダを作った後で失敗する: ソースフォルダが 1 つも無い）
 make_project failed "source.folders=src/missing"

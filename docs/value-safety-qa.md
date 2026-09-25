@@ -38,6 +38,12 @@ Issue なし（キャッシュを 1 ファイルにまとめる作業の途中�
   - **拡張 for の要素**（Q20）: 要素を詰めた値だけと言い切れるローカルのコレクションに限る
   - **型名で書いたメソッド参照の引数の位置**（Q21）と **リフレクションの invoke の引き先**（Q22）
   - **DI の段 5 を注入点だけに**（Q23。`docs/spring-di-qa.md` の Q5・Q6 を書き直した）
+- あとから足したもの（4 回目のレビュー（f491e2e に対するもの。`docs/cache-unification-qa.md` の「4 回目のレビューの修正」）で
+  見つかった。Q26・Q27。キャッシュの版を `jche-cache-v39` に上げた）:
+  - **`super.f` への書き込み**（Q26）: `super.dao = …`・`Outer.super.dao = …` もフィールドへの書き込みとして J 行に載せる
+  - **フレームワークが書くフィールド**（Q27）: 注釈の付いたフィールドと、DI のステレオタイプ以外の注釈の付いた型のフィールドは
+    値を 1 つに決めない（`@Autowired(required = false)` の既定など）。DI の段 5 も、ソースが引数でない値を入れるフィールドを
+    注入点にしない（`docs/spring-di-qa.md` の Q15）
 
 ---
 
@@ -603,3 +609,88 @@ Q19 で、`this` 以外で修飾したインスタンスフィールドの読み
 
 書き手の作る事実（値グラフのノードの種別）が変わるので、キャッシュの版を `jche-cache-v38` に上げた
 （[cache-unification-qa.md](cache-unification-qa.md) の Q70）。
+
+## Q26. `super.dao = …` と書いたのに、なぜ初期化子の値だけが入ると判定したのか
+
+4 回目のレビュー（f491e2e に対するもの）で見つかった。書き手（`FieldFactCollector#assignedFieldOf`）は、代入先がフィールドかを
+修飾の無い名前（`f`）・名前で修飾したもの（`obj.f`）・式で修飾したもの（`this.f`・`Outer.this.f`・`((Base) this).f`）の 3 つで
+見ていて、**`super` で修飾したもの（`super.f`・`Outer.super.f`。JDT の `SuperFieldAccess`）を拾っていなかった**。
+入れ子の子クラスは外側の親クラスの private なフィールドに `super.f` で書ける（JLS 6.6.1・15.11.2）。
+
+```java
+public class SupF {
+    private Dao dao = new DaoA();
+    void use() { dao.find(); }                       // → DaoA.find だけ（実際は DaoB）
+    static class Sub extends SupF {
+        Sub() { super.dao = new DaoB(); }
+    }
+}
+```
+
+J 行に初期化子の書き込みしか無いので、読み手（`FieldFacts`）は「必ず `new DaoA()` が入る」と判定し、`this` の読み取り（`F:`）も
+別のインスタンスの読み取り（`o.dao`。`O:`、Q25）も `DATAFLOW_FIELD` で DaoA に絞って、DaoB の呼び出しを黙って落とした。
+`super.dao = (super.dao instanceof DaoA) ? … : …`・`Sub.super.dao = …`（内部クラスから）・`(super.dao) = …`・
+`super.n++`・`super.n += 1` も同じ（どれも同じ代入先の判定を通る）。
+
+今は `SuperFieldAccess` も代入先として拾う。書いたのは子クラスの本体なので、宣言した型の事実としては「よそからの書き込み」
+（site が `?`。Q18 の入れ子のクラスからの書き込みと同じ）になり、そのフィールドは判定しない。
+
+代入先の形をほかにも見直した（JLS 15.26 の左辺）:
+
+| 形 | 扱い |
+|---|---|
+| `f`・`obj.f`・`Outer.f` | 以前から拾う |
+| `this.f` | 以前から拾う（コンストラクタの中なら「そのコンストラクタの書き込み」） |
+| `Outer.this.f`・`((Base) this).f`・`get().f` | 以前から拾う（別のインスタンスかもしれないので site は `?`） |
+| `super.f`・`Outer.super.f`（括弧で囲んでも同じ） | **今回から拾う**（site は `?`） |
+| `f[0] = x`（フィールドが指す配列の要素） | フィールドの書き込みではない（フィールドが指す配列は変わらない） |
+
+書き手の作る事実（J 行）が変わるので、キャッシュの版を `jche-cache-v39` に上げた（[cache-unification-qa.md](cache-unification-qa.md) の Q74）。
+
+検査: `test/pruning` の FfSuper（`F:`）・FfSuperO（`(super.dao) = …` と `O:`）・FfOuterSuper（`Sub.super.dao`）・FfCastThis
+（`((FfCastThis) this).dao`。以前から通る対照）。FfCastThis 以外は f491e2e で落ち、今は通る。`test/jls` の §15.11.2
+（`SuperAccess`。`test/cacheversion` の題材にもなる）。
+
+## Q27. `@Autowired(required = false) private Dao dao = new DaoA();` を、なぜ既定の DaoA に絞っていたのか
+
+同じレビューで見つかった。読み手（`FieldFacts`）の判定は「private か final で、書き込みがコンストラクタと初期化子の必ず通る
+位置だけ」で、**フィールドの注釈を見ていなかった**。`@Autowired(required = false)` の初期化子は「注入されなかったときの既定」で、
+コンテナが Bean を注入すれば別の値になる。ソースに書き込みが見えないので、既定の `new DaoA()` だけが入ると判定して DaoA に
+絞っていた（`F:` の読み取りも `O:` の読み取りも）。`@Inject`・`@Resource`・`@Value` も同じで、生成の後にリフレクションが書く。
+
+注入に限らない。フィールドにアノテーションを付けるのは、ほとんどがフレームワークにそのフィールドを扱わせるためで
+（JPA の列・関連、JSON の項目、モックの差し込み、Lombok の setter の生成）、どれもソースに見えない書き込みをしうる。
+型に付けるものも同じで、`@ConfigurationProperties` は設定値を結び付け、JPA の `@Entity`・`@Embeddable` はデータベースから読んだ
+値を注釈の無いフィールドにも書く。
+
+今の規則（`FieldFacts` の条件 (f)）: 次のフィールドは判定しない（値を 1 つに決めない）。
+
+- フィールドにアノテーションが付いている（キャッシュの V 行に載るもの。`java.lang` の注釈（`@Deprecated` など）は書き手が
+  記録しないので数えない）
+- 宣言した型に、DI のステレオタイプ注釈（`@Component`・`@Service` など。`SpringBeans.DEFAULT_STEREOTYPES`）以外の
+  アノテーションが付いている。ステレオタイプはコンテナがインスタンスを作るだけで、注釈の無いフィールドには書かない
+
+注釈も V 行・H 行も以前から書いているので、読み手だけの変更で、キャッシュの版は上げなくてよい（この Q の分は）。
+
+あわせて、DI（段 5）がこのフィールドを唯一の Bean に絞らないようにした（[spring-di-qa.md](spring-di-qa.md) の Q15）。
+`FieldFacts` が判定しなくなっただけでは、上の例は段 5 で `@Repository` の DaoB に絞られ、既定の DaoA（Bean が無いとき・
+コンテナの外で `new` したインスタンス）の呼び出しを落とす。
+
+却下した案:
+
+- **注入の注釈（`@Autowired`・`@Inject`・`@Resource`・`@Value`）の一覧だけを見る。** 一覧に無い注釈（`@PersistenceContext`・
+  `@Column`・`@JsonProperty`・`@Mock`・独自の合成注釈）で誤って絞る。一覧は絞る側（段 5 の Bean の判定）に使うなら漏れても
+  絞らないだけだが、ここは絞らない側に使うので、漏れがそのまま呼び出しの取りこぼしになる
+- **害の無い注釈（`@Nullable`・`@Getter` など）を一覧にして、それ以外で判定しない。** 害が無いと言い切れる注釈を選べない
+  （`@Getter` と並ぶ `@Setter` は書き込みを生成する）。精度の損は注釈の付いたフィールドの初期化子だけで小さい
+- **型の注釈をすべて数える。** `@Service` の Bean の `private final Helper h = new HelperA();` まで絞れなくなる。
+  コンテナが注釈の無いフィールドに書かないことは Spring の仕様で決まっている
+
+残る限界: 注釈の無いフィールドを、注釈の無い型のままリフレクションで書くもの（Gson・Jackson のフィールドの推定・
+`ObjectInputStream`）は見えない。書き込みがソースに無い以上、書き手の事実からは分からない
+（[static-analysis-limits.md](static-analysis-limits.md)）。
+
+検査: `test/pruning` の FwAuto（`F:`）・FwAutoO（`O:`）・FwInject・FwResource・FwValue（`O:`）・FwProps（`@ConfigurationProperties`
+の型の注釈の無いフィールド）と、DI の SnReq（`@Autowired(required = false)` の既定と Bean の両方が残る）・SnReset、対照の
+FwDeprecated（`java.lang` の注釈だけなら絞る）・SnStereo（ステレオタイプの Bean の注釈の無いフィールドは絞る）。
+対照以外は f491e2e で落ち、今は通る。段 5 の変更を外すと SnReq・SnReset が落ちることも確かめた。

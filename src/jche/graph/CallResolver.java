@@ -606,7 +606,11 @@ public final class CallResolver {
         int recv = graph.recvNode(edgeIndex);
         ValueStore values = graph.values();
         if (recvKind == RecvKind.FIELD) {
-            return values.kind(recv) == Origin.FIELD && beans.isInjectedField(values.value(recv), graph.hierarchy);
+            // ソースが引数でない値を入れるフィールド（初期化子・new の代入など）には、コンテナが入れた値だけが
+            // 来るとは言えない（@Autowired(required = false) の既定・コンテナの外で new したインスタンス・
+            // 後からの差し替え。docs/spring-di-qa.md の Q15）
+            return values.kind(recv) == Origin.FIELD && !graph.isOwnValued(values.value(recv))
+                    && beans.isInjectedField(values.value(recv), graph.hierarchy);
         }
         // 引数。本体で書き換えた引数は値が分からない（A: にならない）ので、ここで外れる
         return values.kind(recv) == Origin.PARAM && injectedParams;

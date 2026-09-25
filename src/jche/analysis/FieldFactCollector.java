@@ -31,6 +31,7 @@ import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
@@ -436,11 +437,24 @@ final class FieldFactCollector {
         return found[0];
     }
 
-    /** 代入先がフィールドなら、そのバインディング */
+    /**
+     * 代入先がフィールドなら、そのバインディング。
+     *
+     * <p>フィールドを指す代入先の形は、修飾の無い名前（{@code f}）・名前で修飾したもの（{@code obj.f}・{@code Outer.f}）・
+     * 式で修飾したもの（{@code this.f}・{@code Outer.this.f}・{@code ((Base) this).f}・{@code get().f}）・
+     * {@code super} で修飾したもの（{@code super.f}・{@code Outer.super.f}）の 4 つ（JLS 15.26 の左辺のうち、配列の要素を
+     * 除いたもの。括弧は剥がす）。{@code super.f} を拾っていなかったので、入れ子の子クラスのコンストラクタから外側の
+     * 親クラスの private なフィールドへの書き込み（{@code super.dao = new DaoB();}）が J 行に載らず、読み手は初期化子の
+     * 値だけが入ると判定していた（docs/value-safety-qa.md の Q26）。配列の要素（{@code f[0] = x}）はフィールドの
+     * 書き込みではない（フィールドが指す配列は変わらない）
+     */
     private static IVariableBinding assignedFieldOf(Expression lhs) {
         Expression e = OriginTracker.unwrap(lhs);
         if (e instanceof FieldAccess fa) {
             return fa.resolveFieldBinding();
+        }
+        if (e instanceof SuperFieldAccess sfa) {
+            return sfa.resolveFieldBinding();
         }
         IBinding b = null;
         if (e instanceof SimpleName sn) {

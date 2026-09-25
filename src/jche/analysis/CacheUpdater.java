@@ -95,11 +95,15 @@ import jche.util.Warnings;
  *           先頭の行の検査値（T 行の最後の列）を検証し、
  *           L 行（解析時の依存 jar）を読んで今回のクラスパスと突き合わせる。
  *           追加・変更・削除された jar のパッケージを「変わったパッケージ」として集める。
+ *           ソースフォルダか jar が変わっていれば、JDT が今回のクラスパスを受け付けるかを確かめ、
+ *           受け付けなければ旧キャッシュを使わない（{@link #environmentStillAccepted}）。
  *   パス1 … 旧キャッシュを順に読み、サイズと内容ハッシュが一致し、検査値も合うファイル（有効）を覚える。
  *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
  *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
  *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
  *           定数の連鎖のために、各ブロックの K 行の指紋もここで覚える。
+ *           今のソースに無いファイルと同じコンパイル単位の名前のファイルも有効から外す
+ *           （{@link SameUnitFiles#pairedWithDeleted}）。
  *           旧キャッシュを行として読むのはこの 1 回だけ。有効なブロックの依存（I 行）は一時ファイル
  *           （依存の索引）に書き、ファイル上の範囲と F 行の件数は配列に覚えておく（パス3・パス5 が使う）。
  *   （何も変わっていなければ、ここで終わる。下記「何も変わっていないとき」）
@@ -267,6 +271,13 @@ public final class CacheUpdater {
     /** 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）。run の最初に作る */
     private SameUnitFiles units = SameUnitFiles.NONE;
     /**
+     * 旧キャッシュのヘッダ行のソースフォルダ（{@link CacheFormat#foldersOf}）。パス0 で読む。
+     * 消えたファイルのコンパイル単位の名前を求めるのに使う（{@link SameUnitFiles#pairedWithDeleted}）
+     */
+    private List<String> oldFolders = List.of();
+    /** 旧キャッシュのヘッダ行と今回のヘッダ行で、ソースフォルダの一覧だけが違うか。パス0 で読む */
+    private boolean foldersChanged;
+    /**
      * 旧キャッシュ。パス0 で開き、パス1（全体を読む）・パス3（索引が無いときの I 行）・パス5（書き写し）まで
      * このチャネルだけで読む（名前で開き直さない）。無い・使わない設定なら null
      */
@@ -348,9 +359,9 @@ public final class CacheUpdater {
                            CallEdgeExtractor extractor, CachePhaseResult result) throws IOException {
         // --- パス0: 旧キャッシュの依存 jar（L行）と今回のクラスパスを突き合わせる ---
         List<LibraryFact> oldLibraries = (oldChannel != null) ? readOldLibraries() : null;
-        boolean oldCacheUsable = (oldLibraries != null);
         LibraryDiff libraries = LibraryDiff.compute(layout.classpathArray(),
-                oldCacheUsable ? oldLibraries : List.of(), layout.projectRoot);
+                (oldLibraries != null) ? oldLibraries : List.of(), layout.projectRoot);
+        boolean oldCacheUsable = (oldLibraries != null) && environmentStillAccepted(extractor, libraries);
         if (oldCacheUsable && libraries.any()) {
             Log.info(Messages.format("analysis.libraryChanged", libraries));
         }
@@ -371,6 +382,10 @@ public final class CacheUpdater {
                 libraryAffected.clear();
                 oldConstants.clear();
                 oldShapes.clear();
+            } else {
+                // 同じ名前のファイルの組の片方が消えた（フォルダを外した場合も）。残ったほうのブロックには、組が同じ
+                // バッチにいたときの「型が重複している」エラーが残っているので、再利用せずに解析し直す（SameUnitFiles）
+                valid.removeAll(SameUnitFiles.pairedWithDeleted(old.deleted, oldFolders, live, layout));
             }
             // ここまでに集めた型（無効になったブロックが宣言していた型）が「前回宣言されていた型」。
             // パス2 で宣言された型がこれに無ければ「新しい型」（クラスの説明「新しい型」）
@@ -449,6 +464,28 @@ public final class CacheUpdater {
             }
         }
         return true;
+    }
+
+    /**
+     * 旧キャッシュを書いたときからソースフォルダか依存 jar が変わったなら、JDT が今回のクラスパス・ソースパスを
+     * 受け付けるかを確かめる（{@link CallEdgeExtractor#environmentProblem}）。受け付けなければ false（旧キャッシュを使わない）。
+     *
+     * <p>受け付けられないと、どのファイルも解析できない（全件解析ではすべて失敗し、ブロックが 1 つも無い）。
+     * それでも旧キャッシュのブロックを使うと、差分更新だけが前の設定の結果を出す（docs/cache-unification-qa.md の Q73）。
+     * どちらも変わっていなければ確かめない。ヘッダ行（JDK・ソースレベル・文字コード・ソースフォルダ）と L 行が同じなら
+     * JDT に渡すものも同じで、旧キャッシュにブロックがあるならそれを書いた実行で受け付けられている（受け付けられなかった
+     * 実行はブロックを書かない）。何も変わっていない実行で JDT を読み込まずに済ませるため（確かめると 0.3 秒ほどかかる）
+     */
+    private boolean environmentStillAccepted(CallEdgeExtractor extractor, LibraryDiff libraries) {
+        if (!foldersChanged && !libraries.any()) {
+            return true;
+        }
+        String problem = extractor.environmentProblem();
+        if (problem == null) {
+            return true;
+        }
+        Log.info(Messages.format("analysis.cache.environmentRejected", problem));
+        return false;
     }
 
     /**
@@ -1157,11 +1194,13 @@ public final class CacheUpdater {
                 Log.info(Messages.get("analysis.cache.incompatible"));
                 return null;
             }
-            if (!in.headerMatches(expectedHeader())) {
+            foldersChanged = !in.headerMatches(expectedHeader());
+            if (foldersChanged) {
                 // ソースフォルダを足した・外しただけ（並びは同じ。CacheFormat#headerReusable）。そのフォルダの
                 // ファイルは、足した・消したファイルとして扱う（docs/cache-unification-qa.md の Q67）
                 Log.info(Messages.get("analysis.cache.foldersChanged"));
             }
+            oldFolders = CacheFormat.foldersOf(in.header());
             if (!head.intact()) {
                 // L 行・T 行が書き換えられた・化けた。L 行を信用できなければ、どの jar が変わったかを言えない
                 Log.info(Messages.get("analysis.cache.headDamaged"));
@@ -1570,6 +1609,8 @@ public final class CacheUpdater {
 
         /** F 行の数 */
         long blocks;
+        /** 今のソースに無いファイル（消した・外したフォルダの）のブロックのパス（{@link SameUnitFiles#pairedWithDeleted}） */
+        final List<String> deleted = new ArrayList<>();
         /** どのブロックも有効だったか（書き写す候補になったか） */
         boolean allKept = true;
         /** 最初の F 行（ブロックが無ければ Z 行）の位置。ここより前はヘッダ・L 行・T 行 */
@@ -1664,6 +1705,9 @@ public final class CacheUpdater {
                         old.blocks++;
                         String[] f = in.columns();
                         boolean inSources = f.length >= 2 && live.containsKey(f[1]);
+                        if (!inSources && f.length >= 2) {
+                            old.deleted.add(f[1]);
+                        }
                         block = new OldBlock(f, inSources, isValidBlock(f, live), in.lineStart(),
                                 in.irregularities());
                         // F 行の件数（エラー数・未解決数など）も検査値で守る（crc 列だけを空にした形で足す）
