@@ -152,6 +152,10 @@ public final class CallEdgeExtractor {
                         // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
                         // 1 ファイルずつの解析にも回らず、失敗とも数えられずに黙って消える
                         sink.failed(file, e);
+                    } catch (StackOverflowError e) {
+                        // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
+                        // 外してあるので 1 ファイルずつの解析にも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
+                        sink.failed(file, tooDeep(e));
                     }
                 }
             }, null);
@@ -181,6 +185,8 @@ public final class CallEdgeExtractor {
                 } catch (RuntimeException e) {
                     // 一括パースの側と同じく、受け手の失敗はこのファイルの失敗として数えて続ける
                     sink.failed(file, e);
+                } catch (StackOverflowError e) {
+                    sink.failed(file, tooDeep(e));
                 }
             }
         }

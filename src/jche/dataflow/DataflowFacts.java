@@ -18,6 +18,7 @@ import jche.graph.StringPool;
  *   <li>{@link #factoryKind} / {@link #factoryValueId}: メソッドが必ず返す値（委譲を畳んだ後）の種別と値。
  *       決められなければ種別 0</li>
  *   <li>{@link #usesParameters}: 引数をレシーバに使う、または引数を次へ渡すメソッドか</li>
+ *   <li>{@link #usesCapturedValues}: 呼び出しのレシーバか実引数に、捕捉した引数（{@code E:}）を使うメソッド（ラムダの本体）か</li>
  *   <li>{@link #reflectKind}: リフレクションAPIの種別（{@code DataflowResolver.REFLECT_*}）</li>
  *   <li>{@link #methodsNamed}: "typeFqn#name" → 本体を持つメソッドID（引数型が分からないときの名前照合用）</li>
  * </ul>
@@ -32,17 +33,19 @@ public final class DataflowFacts {
     /** メソッドごとの戻り値の値の番号（{@link StringPool}。決められなければ -1） */
     private final int[] factoryValueId;
     private final boolean[] usesParameters;
+    private final boolean[] usesCaptured;
     private final byte[] reflectKinds;
     private final Map<String, IntArray> methodsByName;
     private final int factoriesDecided;
     private final int factoriesCutOff;
 
-    DataflowFacts(byte[] factoryKind, int[] factoryValueId, boolean[] usesParameters,
+    DataflowFacts(byte[] factoryKind, int[] factoryValueId, boolean[] usesParameters, boolean[] usesCaptured,
                   byte[] reflectKinds, Map<String, IntArray> methodsByName, int factoriesDecided,
                   int factoriesCutOff) {
         this.factoryKind = factoryKind;
         this.factoryValueId = factoryValueId;
         this.usesParameters = usesParameters;
+        this.usesCaptured = usesCaptured;
         this.reflectKinds = reflectKinds;
         this.methodsByName = methodsByName;
         this.factoriesDecided = factoriesDecided;
@@ -52,7 +55,7 @@ public final class DataflowFacts {
     /** 事実を持たない（データフロー解析が無効なときの）空の事実。リフレクションの種別だけは持つ */
     static DataflowFacts empty(int methodCount, byte[] reflectKinds) {
         return new DataflowFacts(new byte[methodCount], new int[0], new boolean[methodCount],
-                reflectKinds, new HashMap<>(), 0, 0);
+                new boolean[methodCount], reflectKinds, new HashMap<>(), 0, 0);
     }
 
     /**
@@ -77,6 +80,14 @@ public final class DataflowFacts {
     /** そのメソッドに経路の情報（引数の具象型）を渡す意味があるか */
     public boolean usesParameters(int methodId) {
         return methodId >= 0 && methodId < usesParameters.length && usesParameters[methodId];
+    }
+
+    /**
+     * そのメソッド（ラムダの本体）が、呼び出しのレシーバか実引数に捕捉した引数（{@code E:}）を使うか。
+     * 使うなら、本体の呼び出しの解決は、ラムダを作ったときのフレームの引数（生成したメソッドの段で渡す捕捉した値）に依る
+     */
+    public boolean usesCapturedValues(int methodId) {
+        return methodId >= 0 && methodId < usesCaptured.length && usesCaptured[methodId];
     }
 
     /** リフレクションAPIの種別。該当しなければ 0（{@code DataflowResolver.REFLECT_NONE}） */

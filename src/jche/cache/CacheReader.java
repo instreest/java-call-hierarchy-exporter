@@ -144,6 +144,15 @@ public final class CacheReader implements Closeable {
     }
 
     /**
+     * 旧キャッシュを今回の実行で使い続けてよいか。{@link #headerMatches} に加えて、ソースフォルダを足した・外した
+     * だけ（両方にあるフォルダの並びが同じで、入れ子が無い）なら使える（{@link CacheFormat#headerReusable}）。
+     * 足した・外したフォルダのファイルは、足した・消したファイルとして扱う
+     */
+    public boolean headerReusable(String expected) {
+        return CacheFormat.headerReusable(header, expected);
+    }
+
+    /**
      * 次の行へ進む。空行は読み飛ばす。
      *
      * @return 行があれば true。ファイルの終わりなら false

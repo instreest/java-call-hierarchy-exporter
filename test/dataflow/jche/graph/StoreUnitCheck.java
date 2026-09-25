@@ -182,7 +182,7 @@ public final class StoreUnitCheck {
         for (char k : bad) {
             vb.node(k, "v", -1, "", -1, "");
         }
-        String known = "TAMFLCKVZEU";
+        String known = "TAMFOLCKVZEU";
         for (char k : known.toCharArray()) {
             vb.node(k, "w", -1, "", -1, "");
         }

@@ -11,7 +11,8 @@ package jche.cache;
  *   T:jp.co.xxx.UserDaoImpl       new された具象型（その場で確定）
  *   A:2                           囲みメソッドの3番目の引数（呼び出し元まで遡って初めて分かる）
  *   M:jp.co.xxx.Factory#create()  メソッドの戻り値（その宣言のreturnを見れば分かる）
- *   F:jp.co.xxx.Service#dao       フィールド変数
+ *   F:jp.co.xxx.Service#dao       フィールド変数（this のもの）
+ *   O:jp.co.xxx.Service#dao       別のインスタンスのフィールド（other.dao。コンストラクタ実引数を当てない）
  *   L:jp.co.xxx.UserDaoImpl       文字列リテラル（またはコンパイル時定数）
  *   V:false                       コンパイル時定数の値（条件分岐の判定に使う）
  *   Z:jp.co.xxx.App#lambda$run$0()  ラムダ／メソッド参照が実装しているメソッド
@@ -64,8 +65,18 @@ public final class Origin {
     public static final char PARAM = 'A';
     /** メソッドの戻り値。値はメソッドキー（typeFqn#method(params)） */
     public static final char RETURN = 'M';
-    /** フィールド変数。値は typeFqn#fieldName */
+    /** フィールド変数（今のオブジェクト＝this のインスタンスフィールドか、static フィールド）。値は typeFqn#fieldName */
     public static final char FIELD = 'F';
+    /**
+     * {@code this} 以外で修飾したインスタンスフィールド（{@code other.dao}・{@code getPeer().mode}・
+     * {@code Outer.this.dao}）。値は typeFqn#fieldName。
+     *
+     * <p>{@link #FIELD} は今のオブジェクトのフィールドで、読み手は経路で分かっている今のオブジェクトの
+     * コンストラクタ実引数を当てる。こちらはどのインスタンスか分からないので、コンストラクタ実引数は当てず、
+     * どのインスタンスでも同じになる値（初期化子やコンストラクタで入れる {@code new}・捕捉した引数を使わないラムダ）だけを使う
+     * （jche.graph.DataflowResolver。docs/value-safety-qa.md の Q19・Q25）
+     */
+    public static final char OTHER_FIELD = 'O';
     /** 文字列リテラル（またはコンパイル時定数）。値はその文字列 */
     public static final char LITERAL = 'L';
     /** Class.forName(引数) で名前指定された型。値は0始まりの引数位置 */

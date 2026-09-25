@@ -148,7 +148,8 @@ public final class DataflowBuilder {
             }
         }
         RunControl.progress(progressLabel(), n, n);
-        return new DataflowFacts(factoryKind, factoryValueId, usesParameters(graph),
+        boolean[] usesCaptured = new boolean[graph.methodCount()];
+        return new DataflowFacts(factoryKind, factoryValueId, usesParameters(graph, usesCaptured), usesCaptured,
                 reflectKinds, methodsByName(methods), decided, b.cutOff);
     }
 
@@ -307,7 +308,8 @@ public final class DataflowBuilder {
             Folded f = fold(factory, 0);
             return applyInvocationArgs(f.kind(), f.valueId(), ref);
         }
-        if (kind == Origin.FIELD) {
+        if (kind == Origin.FIELD || kind == Origin.OTHER_FIELD) {
+            // new の型はどのインスタンスでも同じなので、別のインスタンスのフィールド（O）でも使える
             int head = graph.fieldHead(values.value(ref));
             return (values.kind(head) == Origin.NEW) ? values.valueId(head) : -1;
         }
@@ -326,8 +328,11 @@ public final class DataflowBuilder {
      * （子の参照は親より小さいので、子の答えは先に決まっている）。自分自身と、実引数・レシーバ（r=）の
      * 部分木を見る（new は実引数だけを持つ）。出所の文字列から {@code =A:} を探していたときと違い、
      * 文字列リテラルの中の {@code =A:} を引数と取り違えない
+     *
+     * @param usesCaptured メソッドごとに、呼び出しのレシーバか実引数に捕捉した引数（E）を使うかを書き込む先
+     *                     （{@link DataflowFacts#usesCapturedValues}）
      */
-    private static boolean[] usesParameters(CallGraph graph) {
+    private static boolean[] usesParameters(CallGraph graph, boolean[] usesCaptured) {
         ValueStore values = graph.values();
         GuardTable guards = graph.guards();
         BitSet hasParam = new BitSet(values.size());
@@ -353,7 +358,6 @@ public final class DataflowBuilder {
             }
         }
         boolean[] flags = new boolean[graph.methodCount()];
-        boolean[] usesCaptured = new boolean[graph.methodCount()];
         for (int caller = 0; caller < flags.length; caller++) {
             for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
                 if (has(hasParam, graph.recvNode(e)) || has(hasParam, graph.argsNode(e))

@@ -709,14 +709,21 @@ final class OriginTracker {
         if (e instanceof SimpleName || e instanceof QualifiedName) {
             IBinding b = (e instanceof SimpleName sn) ? sn.resolveBinding()
                     : ((QualifiedName) e).resolveBinding();
-            if (b instanceof IVariableBinding vb && !(e instanceof QualifiedName && isInstanceField(vb))) {
-                return variableOriginOf(vb);
+            if (b instanceof IVariableBinding vb) {
+                if (!(e instanceof QualifiedName && isInstanceField(vb))) {
+                    return variableOriginOf(vb);
+                }
+                String other = otherFieldOriginOf(vb);
+                if (other != null) {
+                    return other;
+                }
             }
         }
         if (e instanceof FieldAccess fa) {
             IVariableBinding vb = fa.resolveFieldBinding();
-            if (vb != null && (!isInstanceField(vb) || isThis(fa.getExpression()))) {
-                String origin = variableOriginOf(vb);
+            if (vb != null) {
+                String origin = (!isInstanceField(vb) || isThis(fa.getExpression()))
+                        ? variableOriginOf(vb) : otherFieldOriginOf(vb);
                 if (origin != null) {
                     return origin;
                 }
@@ -962,11 +969,31 @@ final class OriginTracker {
      * fieldSlotOf）。{@code other.dao}・{@code getPeer().mode}・{@code Outer.this.dao} のように別のインスタンス
      * （かもしれないもの）を修飾したインスタンスフィールドをこの出所にすると、{@code other} の値のはずが
      * {@code this} のコンストラクタ実引数に見えて、誤った具象型に確定し、条件を誤って偽と判定する。
-     * そこで修飾した読み取りは出所にしない（コンパイル時定数なら値だけは使う。{@link #constantOf}）。
-     * 修飾の無い名前と {@code this.f} だけを {@code F:} にする（docs/value-safety-qa.md の Q19）
+     * そこで修飾した読み取りは {@code F:} にしない（コンパイル時定数なら値だけは使う。{@link #constantOf}）。
+     * 修飾の無い名前と {@code this.f} だけを {@code F:} にする（docs/value-safety-qa.md の Q19）。修飾した読み取りは
+     * 別の種別 {@code O:} にする（{@link #otherFieldOriginOf}。Q25）
      */
     private static boolean isInstanceField(IVariableBinding vb) {
         return vb.isField() && !vb.isEnumConstant() && !Modifier.isStatic(vb.getModifiers());
+    }
+
+    /**
+     * {@code this} 以外で修飾したインスタンスフィールドの読み取り（{@code other.dao}・{@code getPeer().mode}・
+     * {@code Outer.this.dao}）の出所（{@link Origin#OTHER_FIELD}）。コンパイル時定数（定数変数）なら null
+     * （呼び出し側が値だけを拾う。{@link #constantOf}）。
+     *
+     * <p>{@code F:} にすると、読み手は今のオブジェクトのコンストラクタ実引数を当ててしまう（上の {@link #isInstanceField}）。
+     * かといって出所にしないと、どのインスタンスでも同じ値（初期化子の {@code new DaoA()}・コンストラクタで入れる
+     * ラムダ）で絞れていた呼び出しまで CHA に戻る。種別を分け、読み手はコンストラクタ実引数を当てずに、どの
+     * インスタンスでも同じ値だけを使う（docs/value-safety-qa.md の Q25）
+     */
+    private String otherFieldOriginOf(IVariableBinding vb) {
+        if (vb.getConstantValue() != null) {
+            return null;
+        }
+        ITypeBinding owner = vb.getDeclaringClass();
+        String ownerFqn = (owner == null) ? null : names.typeNameOf(BindingNames.erasureOf(owner));
+        return (ownerFqn == null) ? null : Origin.of(Origin.OTHER_FIELD, ownerFqn + "#" + vb.getName());
     }
 
     /** 修飾の無い {@code this}（{@code Outer.this} は別のインスタンスなので含めない） */

@@ -118,7 +118,7 @@ public final class DataflowResolver {
      */
     public static String labelFor(char recvKind) {
         return switch (recvKind) {
-            case Origin.FIELD -> Resolution.DATAFLOW_FIELD;
+            case Origin.FIELD, Origin.OTHER_FIELD -> Resolution.DATAFLOW_FIELD;
             case Origin.PARAM, Origin.CAPTURED -> Resolution.DATAFLOW_PARAM;
             case Origin.NEW -> Resolution.DATAFLOW_NEW;
             case Origin.FUNCTIONAL -> Resolution.DATAFLOW_LAMBDA;
@@ -213,6 +213,16 @@ public final class DataflowResolver {
             int held = graph.fieldHead(values.value(ref));
             return (values.kind(held) == Origin.FUNCTIONAL) ? held : ValueStore.NONE;
         }
+        if (kind == Origin.OTHER_FIELD) {
+            // 別のインスタンスのフィールドのラムダ。本体はどのインスタンスでも同じだが、本体が捕捉した引数（E）を
+            // 使うなら、その値はそのインスタンスを作ったときのフレームのもので、今の経路のフレームのものではない。
+            // 経路を歩く側は、ラムダを生成したメソッドの段から降りると今のフレームの引数を捕捉した値として渡す
+            // （StreamingTreeWalker#capturedTypesFor）ので、コンストラクタの中で別のインスタンスのラムダを呼ぶと、
+            // 今のオブジェクトの実引数を当ててしまう。捕捉した引数を使わない本体だけにする（docs/value-safety-qa.md の Q25）
+            int held = graph.fieldHead(values.value(ref));
+            return (values.kind(held) == Origin.FUNCTIONAL && !facts.usesCapturedValues(values.methodId(held)))
+                    ? held : ValueStore.NONE;
+        }
         // 引数・捕捉した引数として渡ってきたラムダ。経路の環境には FUNCTIONAL の枠で入っている
         if (ctx == null) {
             return ValueStore.NONE;
@@ -269,6 +279,11 @@ public final class DataflowResolver {
         }
         if (kind == Origin.FIELD) {
             return fieldSlotOf(values.value(ref), ctx);
+        }
+        if (kind == Origin.OTHER_FIELD) {
+            // 別のインスタンスのフィールド。今のオブジェクトのコンストラクタ実引数は当てない（経路を渡さない）ので、
+            // 使えるのはどのインスタンスでも同じ型になる new だけ（docs/value-safety-qa.md の Q19・Q25）
+            return fieldSlotOf(values.value(ref), null);
         }
         return Slot.NONE;
     }
@@ -365,6 +380,9 @@ public final class DataflowResolver {
      *
      * <p>コンストラクタの引数なら、経路で分かっている実引数の枠を<b>そのまま</b>返す（値のこともある）。
      * コンストラクタで受け取った文字列を、フィールドを経て別のメソッドへ渡す経路で、その値を運ぶため
+     *
+     * @param ctx 今のオブジェクト（this）のフィールドなら経路。別のインスタンスのフィールド（{@link Origin#OTHER_FIELD}）は
+     *            null（コンストラクタ実引数を当てない）
      */
     private long fieldSlotOf(String fieldKey, DataflowContext ctx) {
         int head = graph.fieldHead(fieldKey);

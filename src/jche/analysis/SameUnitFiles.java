@@ -32,8 +32,12 @@ import jche.config.ProjectLayout;
  *
  * <p>名前の違うファイルで同じ型を宣言している場合（public でないトップレベルの型）は、ここでは組にならない
  * （ファイル名から分からない）。グラフを組むときに、同じメソッドが 2 つのファイルで宣言されていれば警告する
- * （{@code jche.graph.CallGraphBuilder}）。{@code package-info.java}・{@code module-info.java} は型を持たず、
- * メインとテストのソースフォルダに同じ名前でよく置かれるので組にしない。
+ * （{@code jche.graph.CallGraphBuilder}）。
+ *
+ * <p>{@code package-info.java}・{@code module-info.java} も組にする。メインとテストのソースフォルダに同じ名前で
+ * よく置かれるが、JDT はアノテーションの付いたパッケージ宣言に {@code package-info} という型を作るので、同じバッチの
+ * 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。組にしないと、片方だけを書き換えた差分更新と
+ * 全件解析とで warnings.txt（コンパイルエラーのファイルの一覧）が食い違った（{@code docs/cache-unification-qa.md} の Q66）。
  *
  * <p>ヒープに残るのは組になったファイルのぶんだけ（ふつうは空）。
  */
@@ -55,9 +59,6 @@ final class SameUnitFiles {
         Map<String, List<String>> byUnit = new LinkedHashMap<>();  // 2 つ目が見つかった名前だけ
         for (SourceFile f : live.values()) {
             String unit = layout.unitNameOf(f.path());
-            if (unit.endsWith("package-info.java") || unit.endsWith("module-info.java")) {
-                continue;
-            }
             String seen = first.putIfAbsent(unit, f.relativePath());
             if (seen != null) {
                 byUnit.computeIfAbsent(unit, k -> new ArrayList<>(List.of(seen))).add(f.relativePath());

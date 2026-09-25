@@ -111,8 +111,8 @@ final class ValueStoreBuilder {
      */
     static char knownKind(char k) {
         return switch (k) {
-            case Origin.NEW, Origin.PARAM, Origin.RETURN, Origin.FIELD, Origin.LITERAL, Origin.REFLECT,
-                 Origin.CLASS, Origin.CONST, Origin.FUNCTIONAL, Origin.CAPTURED, Origin.UNKNOWN -> k;
+            case Origin.NEW, Origin.PARAM, Origin.RETURN, Origin.FIELD, Origin.OTHER_FIELD, Origin.LITERAL,
+                 Origin.REFLECT, Origin.CLASS, Origin.CONST, Origin.FUNCTIONAL, Origin.CAPTURED, Origin.UNKNOWN -> k;
             default -> Origin.UNKNOWN;
         };
     }

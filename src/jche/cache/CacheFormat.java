@@ -1,9 +1,11 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
-
-import jche.util.FileHash;
+import java.util.Set;
 
 /**
  * キャッシュファイル（{@code analysis-cache.tsv}）の形式（タブ区切り。外部ライブラリ不要でデバッグしやすい）。
@@ -31,7 +33,8 @@ import jche.util.FileHash;
  *
  * <h2>ファイルの並び</h2>
  * <pre>
- *   ヘッダ行   {@link #VERSION} source=… enc=… jdk=… jdt=… folders=…（{@link #headerFor}）
+ *   ヘッダ行   {@link #VERSION} source=… enc=… jdk=… jdt=… folders=…（{@link #headerFor}。folders= はソースフォルダの
+ *              一覧で、旧キャッシュを使い続けてよいかは {@link #headerReusable} が決める）
  *   L 行       依存 jar（クラスパス順）
  *   T 行       ソース一覧の指紋
  *   ブロック   ソースファイル 1 つにつき 1 つ（F 行から次の F 行・Z 行の手前まで）
@@ -303,6 +306,8 @@ import jche.util.FileHash;
  *       （jche.analysis.FieldFactCollector。docs/value-safety-qa.md の Q18）</li>
  *   <li>インスタンスフィールドの読み取りを値（{@code F:}）にするのは、修飾の無い名前と {@code this.f} だけ
  *       （{@code other.f} は今のオブジェクトのフィールドではない。static フィールド・定数は修飾に関わらない）。
+ *       {@code this} 以外で修飾したもの（{@code other.f}・{@code Outer.this.f}）は別の種別 {@code O:}
+ *       （{@link Origin#OTHER_FIELD}。読み手はコンストラクタ実引数を当てない。docs/value-safety-qa.md の Q25）。
  *       {@code this.m()} のレシーバの由来は修飾の無い {@code m()} と同じ this（docs/value-safety-qa.md の Q19）</li>
  *   <li>拡張 for の変数の値（要素の出所）は、その本体で引数なしの new をした {@code java.util} のローカル変数で、
  *       再代入せず、要素を足すメソッドのレシーバ・拡張 for の式・要素を足さず外へも漏らさない問い合わせ
@@ -384,9 +389,15 @@ public final class CacheFormat {
      *       （{@code docs/cache-unification-qa.md} の Q56〜Q63）</li>
      *   <li>v37 I 行の 3 列目（解決できなかった名前）に、パスの区切りを含むエラーの引数（型が重複しているエラーの
      *       ソースファイルの絶対パス）を拾わない（{@code docs/cache-unification-qa.md} の Q64）</li>
+     *   <li>v38 型の形（I 行の 2 列目）の私的メンバーの判定で、{@code java.*} の親型の上（JDK の親型・インターフェース・
+     *       インターフェースの {@code Object} のメンバー）まで名前の当たりを見る。{@code package-info.java}・
+     *       {@code module-info.java} も同じ名前の組にして同じバッチで解析する（F 行のエラー数・I 行が変わる）。
+     *       ヘッダ行の {@code folders=} をソースフォルダの一覧（ハッシュではなく名前）にした。{@code this} 以外で修飾した
+     *       インスタンスフィールドの読み取りを値グラフのノード {@code O:}（{@link Origin#OTHER_FIELD}）にした
+     *       （{@code docs/cache-unification-qa.md} の Q65〜Q67、{@code docs/value-safety-qa.md} の Q25）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v37";
+    public static final String VERSION = "jche-cache-v38";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
@@ -521,12 +532,12 @@ public final class CacheFormat {
      * JDT の版で変わりうるのに、以前は鍵に入っておらず、JDT を上げても古い事実を再利用していた。
      * 版が分からない（{@code ?}）ときは、鍵が一致しないとみなす（{@link CacheReader#headerMatches}）。
      *
-     * <p>ソースフォルダの並び（{@code folders=}。project.root からの相対パスを並びのまま改行でつないだものの
-     * {@link FileHash}）も入れる。JDT は同じ名前の型が 2 つのソースフォルダにあると、ソースパスの先に並ぶ方で
-     * 解決する（先勝ち）。フォルダの並びを入れ替えると、どのソースも変わっていないのに解決先が変わるので、
-     * 並びが違えば丸ごと作り直す（L 行の依存 jar の並びと同じ考え方。docs/cache-unification-qa.md の Q58）。
-     * パスそのものではなくハッシュにするのは、ヘッダ行が符号化しない行で、フォルダ名にタブ・改行が入っても
-     * 行を壊さないため。
+     * <p>ソースフォルダの並び（{@code folders=}。project.root からの相対パスを並びのままカンマでつないだもの。
+     * 名前は {@link #folderToken} で符号化する）も入れる。JDT は同じ名前の型が 2 つのソースフォルダにあると、
+     * ソースパスの先に並ぶ方で解決する（先勝ち）。フォルダの並びを入れ替えると、どのソースも変わっていないのに
+     * 解決先が変わるので、両方にあるフォルダの並びが違えば丸ごと作り直す（L 行の依存 jar の並びと同じ考え方）。
+     * フォルダを足した・外しただけなら、そのフォルダのファイルを足した・消したファイルとして扱えるので作り直さない
+     * （{@link #headerReusable}。docs/cache-unification-qa.md の Q58・Q67）。
      *
      * @param jdtVersion    {@code jche.analysis.JdtVersion#current()}。この層は JDT に依存しないので
      *                      呼び出し側から渡す
@@ -538,7 +549,109 @@ public final class CacheFormat {
                 + SEP + "enc=" + sourceEncoding
                 + SEP + "jdk=" + System.getProperty("java.specification.version", "?")
                 + SEP + "jdt=" + jdtVersion
-                + SEP + "folders=" + FileHash.ofText(String.join("\n", sourceFolders));
+                + SEP + FOLDERS_KEY + foldersValue(sourceFolders);
+    }
+
+    /** ヘッダ行のソースフォルダの一覧の項目名 */
+    private static final String FOLDERS_KEY = "folders=";
+
+    /** ソースフォルダの一覧の区切り（{@link #folderToken} は名前の中のカンマを符号化するので、名前には現れない） */
+    private static final String FOLDER_SEP = ",";
+
+    /** ソースフォルダの一覧の値（{@link #folderToken} を並びのままカンマでつないだもの） */
+    private static String foldersValue(List<String> sourceFolders) {
+        StringBuilder sb = new StringBuilder();
+        for (String f : sourceFolders) {
+            if (sb.length() > 0) {
+                sb.append(FOLDER_SEP);
+            }
+            sb.append(folderToken(f));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * ヘッダ行に書くソースフォルダの名前（project.root からの相対パス。区切りは {@code /}）。
+     * ヘッダ行は符号化しない行なので、{@link #escape} で符号化したうえで、一覧の区切りのカンマと、行の読み取りで
+     * 端が削られる空白も &#92;uXXXX にする。project.root そのもの（相対パスが空）は {@code .} にする。
+     *
+     * <p>文字ごとの置き換えで、置き換えた形はどれもほかの形の頭にならない（符号化した文字はすべて {@code \} で始まり、
+     * {@code \} そのものも符号化する）。そのため、符号化した名前どうしで「同じか」「{@code a/} で始まるか
+     * （a の中のフォルダか）」を見ても、元の名前で見たのと同じ答えになる（{@link #headerReusable} が使う）
+     */
+    static String folderToken(String folder) {
+        if (folder.isEmpty()) {
+            return ".";
+        }
+        return escape(folder).replace(",", "\\u002c").replace(" ", "\\u0020");
+    }
+
+    /**
+     * 旧キャッシュのヘッダ行（{@code written}）を、今回のヘッダ行（{@code expected}）の実行で使い続けてよいか。
+     *
+     * <ul>
+     *   <li>同じなら使える。期待する側に分からない値（{@code =?}）があれば使わない
+     *       （{@link CacheReader#headerMatches} と同じ）</li>
+     *   <li>違うのがソースフォルダの一覧（{@code folders=}）だけなら、次をすべて満たすときに使える。
+     *       <ul>
+     *         <li>両方にあるフォルダが、両方で同じ順に並んでいる。JDT は同じ名前の型を先に並ぶフォルダで解決するので、
+     *             並びが入れ替わると、どのソースも変わっていないのに解決先が変わる</li>
+     *         <li>どちらかの一覧のフォルダが、どちらかの一覧の別のフォルダの中に無い（入れ子が無い）。入れ子の
+     *             フォルダを足す・外すと、同じファイル（同じ相対パス・同じ中身）のソースフォルダからの相対パス
+     *             （コンパイル単位の名前）と、ソースパスから見つかる型が変わる。足した・消したファイルとしては扱えない</li>
+     *       </ul>
+     *       足したフォルダのファイルは旧キャッシュに無いので、足したファイルとして解析され（宣言する型は
+     *       「変わった型」になり、使う側も解析し直す）、外したフォルダのファイルは消したファイルとして扱われる。
+     *       同じ名前のファイルが 2 つのフォルダにある組（{@code jche.analysis.SameUnitFiles}）は今のソースの一覧から
+     *       作るので、組の片方を足しても、もう片方を解析し直す</li>
+     * </ul>
+     * docs/cache-unification-qa.md の Q58・Q67
+     */
+    public static boolean headerReusable(String written, String expected) {
+        if (expected.contains("=?")) {
+            return false;
+        }
+        if (written.equals(expected)) {
+            return true;
+        }
+        String[] w = written.split(SEP, -1);
+        String[] e = expected.split(SEP, -1);
+        if (w.length != e.length) {
+            return false;
+        }
+        List<String> oldFolders = null;
+        List<String> newFolders = null;
+        for (int i = 0; i < w.length; i++) {
+            if (w[i].startsWith(FOLDERS_KEY) && e[i].startsWith(FOLDERS_KEY)) {
+                oldFolders = List.of(w[i].substring(FOLDERS_KEY.length()).split(FOLDER_SEP, -1));
+                newFolders = List.of(e[i].substring(FOLDERS_KEY.length()).split(FOLDER_SEP, -1));
+            } else if (!w[i].equals(e[i])) {
+                return false;
+            }
+        }
+        if (oldFolders == null || new HashSet<>(oldFolders).size() != oldFolders.size()
+                || new HashSet<>(newFolders).size() != newFolders.size()) {
+            return false;
+        }
+        // 両方にあるフォルダの並び
+        List<String> commonOld = new ArrayList<>(oldFolders);
+        commonOld.retainAll(newFolders);
+        List<String> commonNew = new ArrayList<>(newFolders);
+        commonNew.retainAll(oldFolders);
+        if (!commonOld.equals(commonNew)) {
+            return false;
+        }
+        // 入れ子
+        Set<String> all = new LinkedHashSet<>(oldFolders);
+        all.addAll(newFolders);
+        for (String a : all) {
+            for (String b : all) {
+                if (!a.equals(b) && (a.equals(".") || b.startsWith(a + "/"))) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**

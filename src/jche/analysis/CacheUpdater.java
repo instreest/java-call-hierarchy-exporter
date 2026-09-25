@@ -90,7 +90,8 @@ import jche.util.Warnings;
  *
  * 手順:
  * <pre>
- *   パス0 … 旧キャッシュのヘッダ（形式・ソースレベル・文字コード・JDK・JDT・ソースフォルダの並び）と
+ *   パス0 … 旧キャッシュのヘッダ（形式・ソースレベル・文字コード・JDK・JDT・ソースフォルダの並び。フォルダを足した・
+ *           外しただけなら使い続ける。{@link CacheFormat#headerReusable}）と
  *           先頭の行の検査値（T 行の最後の列）を検証し、
  *           L 行（解析時の依存 jar）を読んで今回のクラスパスと突き合わせる。
  *           追加・変更・削除された jar のパッケージを「変わったパッケージ」として集める。
@@ -473,7 +474,8 @@ public final class CacheUpdater {
     /**
      * 今回のヘッダ行（キャッシュの鍵）。形式の版・ソースレベル・文字コード・JDK・JDT の版に加えて、
      * ソースフォルダの並び（project.root からの相対パス）も入れる。JDT は同じ名前の型が 2 つのソースフォルダに
-     * あると先に並ぶ方で解決するので、並びが変われば同じソースでも解決先が変わる（{@link CacheFormat#headerFor}）
+     * あると先に並ぶ方で解決するので、並びが変われば同じソースでも解決先が変わる（{@link CacheFormat#headerFor}）。
+     * フォルダを足した・外しただけなら旧キャッシュを使い続ける（{@link CacheFormat#headerReusable}）
      */
     private String expectedHeader() {
         List<String> folders = new ArrayList<>(layout.sourceFolders.size());
@@ -1147,13 +1149,18 @@ public final class CacheUpdater {
      */
     private List<LibraryFact> readOldLibraries() {
         try (CacheReader in = CacheReader.open(oldChannel)) {
-            CacheHead head = headOf(in);
+            CacheHead head = headOf(in, true);
             if (head == null) {
                 // 形式が変わった場合のほか、source.level・ソースの文字コード・実行 JDK・JDT・ソースフォルダの並びが
                 // 変わった場合もここで破棄する。言語バージョン・文字コード・ブートクラスパスが違えば
                 // 同じソースでも解析結果が変わるため、F 行の同一性が一致していても再利用してはいけない
                 Log.info(Messages.get("analysis.cache.incompatible"));
                 return null;
+            }
+            if (!in.headerMatches(expectedHeader())) {
+                // ソースフォルダを足した・外しただけ（並びは同じ。CacheFormat#headerReusable）。そのフォルダの
+                // ファイルは、足した・消したファイルとして扱う（docs/cache-unification-qa.md の Q67）
+                Log.info(Messages.get("analysis.cache.foldersChanged"));
             }
             if (!head.intact()) {
                 // L 行・T 行が書き換えられた・化けた。L 行を信用できなければ、どの jar が変わったかを言えない
@@ -1297,7 +1304,7 @@ public final class CacheUpdater {
     private boolean isPartialUsable(Path partial, String sources, List<LibraryFact> libraries) {
         CacheHead head;
         try (CacheReader in = CacheReader.open(partial)) {
-            head = headOf(in);
+            head = headOf(in, false);
         } catch (IOException | RuntimeException e) {
             Log.warn(Messages.format("analysis.resume.readFailed", e));
             return false;
@@ -1416,9 +1423,13 @@ public final class CacheUpdater {
      * 既存キャッシュ（パス0）と、中断した前回の実行の一時ファイル（引き継ぎ）で共通。
      * 先頭の行の検査値（T 行の最後の列。{@link #headLinesOf}）も確かめる。T 行が無い・2 つある・L 行が T 行より
      * 後ろにある・検査値が合わないなら {@link CacheHead#intact} が false
+     *
+     * @param foldersMayChange ソースフォルダを足した・外しただけのヘッダも一致とみなすか（既存キャッシュは true。
+     *                         {@link CacheReader#headerReusable}）。引き継ぎはソースの一覧が丸ごと同じときだけなので false
      */
-    private CacheHead headOf(CacheReader in) throws IOException {
-        if (!in.headerMatches(expectedHeader())) {
+    private CacheHead headOf(CacheReader in, boolean foldersMayChange) throws IOException {
+        String expected = expectedHeader();
+        if (!(foldersMayChange ? in.headerReusable(expected) : in.headerMatches(expected))) {
             return null;
         }
         BlockChecksum checksum = new BlockChecksum();

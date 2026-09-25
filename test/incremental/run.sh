@@ -1332,6 +1332,76 @@ else
     echo "  NG   名前の当たらない私的メソッドで、実装する型の利用者まで解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
 fi
 
+# 私的メンバーが隠すのは、java.* の親型のさらに上のメンバーでもよい（docs/cache-unification-qa.md の Q65）。
+# Registry extends HashMap の私的な入れ子の型 Entry は、HashMap ではなく Map が宣言する Map.Entry を隠す（JLS 8.5）。
+# 部分型 Client の単純名 Entry は、継承した Map.Entry から同じパッケージの pjd.Entry に変わる。Client は Registry を
+# 参照していない（NamedRegistry の形の連鎖でしか届かない）。01eb510 は最初の java.* の親型（HashMap）のメンバーの
+# 名前しか数えず、この Entry を型の形から外していたので、差分更新だけ Map.Entry#getKey のまま残った
+setup_jdk_hide() {   # $1=Registry に最初から置く行（空なら置かない）
+    jfile pjd/Registry.java <<EOF
+package pjd;
+public class Registry extends java.util.HashMap<String, Object> {
+$1
+}
+EOF
+    jfile pjd/NamedRegistry.java <<'EOF'
+package pjd;
+public class NamedRegistry extends Registry { }
+EOF
+    jfile pjd/Entry.java <<'EOF'
+package pjd;
+public class Entry {
+    public Object getKey() { return audit(); }
+    static Object audit() { return null; }
+}
+EOF
+    jfile pjd/Client.java <<'EOF'
+package pjd;
+public class Client extends NamedRegistry {
+    public static void main(String[] args) {
+        Object o = args;
+        ((Entry) o).getKey();
+    }
+}
+EOF
+}
+case_of "java.* の親型の上（Map.Entry）を隠す私的な入れ子の型を足す" \
+    "sed -i 's/^\$/    private static final class Entry { }/' work/src/pjd/Registry.java" yes "setup_jdk_hide ''"
+case_of "java.* の親型の上（Map.Entry）を隠していた私的な入れ子の型を消す" \
+    "sed -i '/private static final class Entry/d' work/src/pjd/Registry.java" yes \
+    "setup_jdk_hide '    private static final class Entry { }'"
+
+# 同じく、HashMap の親の AbstractMap が宣言する AbstractMap.SimpleEntry を隠す（HashMap 自身は宣言していない）
+setup_jdk_hide_simple() {
+    jfile pjs/Base.java <<'EOF'
+package pjs;
+public class Base extends java.util.HashMap<String, Object> {
+}
+EOF
+    jfile pjs/Mid.java <<'EOF'
+package pjs;
+public class Mid extends Base { }
+EOF
+    jfile pjs/SimpleEntry.java <<'EOF'
+package pjs;
+public class SimpleEntry {
+    public SimpleEntry(Object k, Object v) { }
+    public Object getKey() { return mark(); }
+    static Object mark() { return null; }
+}
+EOF
+    jfile pjs/Client.java <<'EOF'
+package pjs;
+public class Client extends Mid {
+    public static void main(String[] args) {
+        new SimpleEntry("k", "v").getKey();
+    }
+}
+EOF
+}
+case_of "java.* の親型の上（AbstractMap.SimpleEntry）を隠す私的な入れ子の型を足す" \
+    "sed -i 's/^}$/    private static class SimpleEntry { }\n}/' work/src/pjs/Base.java" yes setup_jdk_hide_simple
+
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
 # なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。
@@ -2350,5 +2420,169 @@ dup_case() {
     fi
 }
 dup_case
+
+# 差分更新と全件解析で、CSV・warnings.txt・キャッシュ（ブロックの並べ替え後）が同じこと
+same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件解析の出力フォルダ  $4=差分更新のキャッシュのフォルダ  $5=全件解析のキャッシュのフォルダ
+    same_csv "$1" "$2" "$3"
+    if diff -q <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) > /dev/null; then
+        echo "  OK   $1 warnings.txt（全件解析と同じ）"
+    else
+        echo "  NG   $1 warnings.txt が全件解析と違います"
+        diff <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) | head -10; fail=1
+    fi
+    if diff -q <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
+        echo "  OK   $1 キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   $1 キャッシュが全件解析と違います"
+        diff <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") | head -10
+        fail=1
+    fi
+}
+
+# アノテーションの付いた package-info.java が 2 つのソースフォルダにある。JDT はアノテーションの付いたパッケージ宣言に
+# package-info という型を作るので、同じバッチの 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。
+# 01eb510 は package-info.java を同じ名前の組にせず、片方だけを書き換えた差分更新では warnings.txt（コンパイルエラーの
+# ファイルの一覧）が全件解析と食い違った（docs/cache-unification-qa.md の Q66）。どちらを書き換えても同じであること
+pkginfo_case() {
+    local d=$IW/pkginfo which inc_out
+    for which in s2 s1; do
+        echo "== アノテーションの付いた package-info.java が 2 つのソースフォルダにある（$which を書き換える） =="
+        rm -rf $d && mkdir -p $d/s1/p $d/s2/p
+        printf '@Deprecated\npackage p;\n' > $d/s1/p/package-info.java
+        printf '@Deprecated\npackage p;\n' > $d/s2/p/package-info.java
+        printf 'package p;\n\npublic class A {\n    static void x() {\n    }\n\n    public static void main(String[] args) {\n        x();\n    }\n}\n' \
+            > $d/s1/p/A.java
+        integrity_cfg $d/c.properties "$PWD/$d" s1,s2
+        integrity_cfg $d/full.properties "$PWD/$d" s1,s2 "$PWD/$d/fullcache"
+        integrity_run $d/c.properties $d/c0.log
+        [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+        printf '// touched\n' >> $d/$which/p/package-info.java
+        integrity_run $d/c.properties $d/c1.log
+        inc_out=$IOUT
+        integrity_run $d/full.properties $d/full.log
+        same_all "package-info.java（$which を書き換えた差分更新）" "$inc_out" "$IOUT" $d/cache $d/fullcache
+        if grep -q -F -- "- s2/p/package-info.java" "$inc_out/warnings.txt" 2>/dev/null; then
+            echo "  OK   後ろのフォルダの package-info.java が、差分更新でも重複した型として warnings.txt に載る"
+        else
+            echo "  NG   後ろのフォルダの package-info.java が warnings.txt に載っていません（題材が効いていない）"; fail=1
+        fi
+    done
+}
+pkginfo_case
+
+# ソースフォルダを足す・外す。ヘッダ行のソースフォルダの一覧は、両方にあるフォルダの並びが同じで入れ子が無ければ
+# 旧キャッシュを使い続けてよい（足したフォルダのファイルは足したファイル、外したフォルダのファイルは消したファイル）。
+# 01eb510 は一覧のハッシュを鍵にしていたので、同じ project.root・同じキャッシュのフォルダで source.folders だけが
+# 違う 2 つの設定（src と src,test）を交互に動かすと、毎回全件解析していた（docs/cache-unification-qa.md の Q67）。
+# 題材は、足すフォルダ s2 に s1 と同じ名前のファイル（p/Dup.java。先に並べると解決先が変わる）と、s1 の型を使う
+# ファイルを置く。入れ子のフォルダを足したときは使い続けない（コンパイル単位の名前が変わる）
+folders_case() {
+    local d=$IW/folders step folders inc_out
+    rm -rf $d && mkdir -p $d/s1/p $d/s2/p $d/s2/q
+    cat > $d/s1/p/Main.java <<'EOF'
+package p;
+
+public class Main {
+    public static void main(String[] args) {
+        new Dup().a();
+        new Dup().b();
+        Helper.h();
+    }
+
+    static void x() {
+    }
+
+    static void y() {
+    }
+}
+EOF
+    printf 'package p;\n\npublic class Dup {\n    public void a() {\n        Main.x();\n    }\n}\n' > $d/s1/p/Dup.java
+    printf 'package p;\n\npublic class Helper {\n    static void h() {\n    }\n}\n' > $d/s1/p/Helper.java
+    printf 'package p;\n\npublic class Dup {\n    public void a() {\n        Main.y();\n    }\n\n    public void b() {\n        Main.y();\n    }\n}\n' \
+        > $d/s2/p/Dup.java
+    printf 'package q;\n\npublic class T {\n    void t() {\n        p.Main.main(null);\n    }\n}\n' > $d/s2/q/T.java
+    integrity_cfg $d/c.properties "$PWD/$d" s1
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    local first_out=$IOUT
+    step=0
+    for folders in s2,s1 s1 s1,s2; do
+        step=$((step + 1))
+        echo "== ソースフォルダを足す・外す（$folders） =="
+        integrity_cfg $d/c.properties "$PWD/$d" $folders
+        integrity_run $d/c.properties $d/c$step.log
+        inc_out=$IOUT
+        if [ "$IRC" = 0 ] && [ "${IREUSED:-0}" -ge 1 ] && grep -q -F "Source folders were added or removed" $d/c$step.log; then
+            echo "  OK   並びの変わらないフォルダの追加・削除では、キャッシュを使い続ける（再利用=$IREUSED 新規解析=$IPARSED）"
+        else
+            echo "  NG   フォルダを足した・外しただけなのにキャッシュを使っていません（再利用=${IREUSED:-?}）"; fail=1
+        fi
+        rm -rf $d/fullcache
+        integrity_cfg $d/full.properties "$PWD/$d" $folders "$PWD/$d/fullcache"
+        integrity_run $d/full.properties $d/full$step.log
+        same_all "ソースフォルダを $folders にした差分更新" "$inc_out" "$IOUT" $d/cache $d/fullcache
+    done
+    # 先に並べた s2 の Dup に解決先が変わっていること（変わらなければ、足したフォルダの扱いを見ていない）
+    if diff -q "$first_out/call-hierarchy.csv" "$(ls -d $d/out-c/*/ | sort | sed -n 2p)call-hierarchy.csv" > /dev/null; then
+        echo "  NG   s2 を先に足しても出力が変わっていません（検査が素通りします）"; fail=1
+    else
+        echo "  OK   s2 を先に足すと出力が変わる"
+    fi
+
+    echo "== 入れ子のソースフォルダを足す =="
+    mkdir -p $d/s1/gen/r
+    printf 'package r;\n\npublic class G {\n    void g() {\n        p.Main.main(null);\n    }\n}\n' > $d/s1/gen/r/G.java
+    integrity_cfg $d/c.properties "$PWD/$d" s1,s1/gen
+    integrity_run $d/c.properties $d/c9.log
+    inc_out=$IOUT
+    if [ "$IRC" = 0 ] && [ "$IREUSED" = 0 ] && grep -q -F "source folder order" $d/c9.log; then
+        echo "  OK   入れ子のフォルダを足したらキャッシュを使い続けない（破棄したことをログに出す）"
+    else
+        echo "  NG   入れ子のフォルダを足したのに、キャッシュを使い続けたか、破棄したことがログに出ていません（再利用=${IREUSED:-?}）"
+        fail=1
+    fi
+    rm -rf $d/fullcache
+    integrity_cfg $d/full.properties "$PWD/$d" s1,s1/gen "$PWD/$d/fullcache"
+    integrity_run $d/full.properties $d/full9.log
+    same_all "入れ子のソースフォルダを足した実行" "$inc_out" "$IOUT" $d/cache $d/fullcache
+}
+folders_case
+
+# 受け手（キャッシュへ書く側）の中でスタックが溢れたファイルも、そのファイルの失敗として数え、ほかのファイルの
+# 解析を続ける。01eb510 は受け手の StackOverflowError を一括パースのファイルごとには捕まえず、そのファイルは
+# 受け取ったとも失敗したとも数えられずに消え、1 ファイルずつの解析の経路では例外が外へ抜けた
+# （docs/cache-unification-qa.md の Q69。jche.analysis.SinkOverflowCheck）
+sink_overflow_case() {
+    echo "== 受け手の中でスタックが溢れたファイルも失敗として数える =="
+    local d=$IW/sink
+    rm -rf $d && mkdir -p $d/src/p $d/deep/p
+    printf 'package p;\n\npublic class A {\n    void a() {\n        B.b();\n    }\n}\n' > $d/src/p/A.java
+    printf 'package p;\n\npublic class B {\n    static void b() {\n    }\n}\n' > $d/src/p/B.java
+    printf 'package p;\n\npublic class C {\n    void c() {\n        B.b();\n    }\n}\n' > $d/src/p/C.java
+    {
+        printf 'package p;\n\npublic class Deep {\n    String chain() {\n        return new StringBuilder()'
+        for ((i = 0; i < 10000; i++)); do printf '.append(%d)' "$i"; done
+        printf '.toString();\n    }\n}\n'
+    } > $d/deep/p/Deep.java
+    integrity_cfg $d/c1.properties "$PWD/$d" src
+    integrity_cfg $d/c2.properties "$PWD/$d" deep,src
+    local rc
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c1.properties \
+        src/p/B.java > $d/c1.log 2>&1
+    rc=$?
+    grep -a -E '^  (OK|NG)' $d/c1.log
+    [ "$rc" = 0 ] || { echo "  NG   一括パースの受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c1.log）"; fail=1; }
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c2.properties \
+        src/p/B.java deep/p/Deep.java > $d/c2.log 2>&1
+    rc=$?
+    grep -a -E '^  (OK|NG)' $d/c2.log
+    [ "$rc" = 0 ] || { echo "  NG   1 ファイルずつの解析の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c2.log）"; fail=1; }
+    if grep -q -F "analyzed one at a time" $d/c2.log; then
+        echo "  OK   深い式のファイルで一括パースが溢れ、残りを 1 ファイルずつ解析する経路を通った"
+    else
+        echo "  NG   一括パースが溢れず、1 ファイルずつの解析の経路を通っていません（題材が効いていない）"; fail=1
+    fi
+}
+sink_overflow_case
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

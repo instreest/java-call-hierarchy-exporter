@@ -39,9 +39,10 @@ import org.eclipse.jdt.core.dom.Modifier;
  * <b>自分の親型のメンバーを隠す・継承を止める</b>場合で、私的フィールドは親の同じ名前のフィールドを隠し（8.3）、
  * 私的な入れ子の型は親の同じ名前の型を隠し（8.5）、私的メソッドは親の同じシグネチャのメソッドの継承を止める
  * （8.4.8・9.4.1）。どれも部分型から親のメンバーが見えなくなる（{@code c.f} が {@code G.f} からエラーに変わる）。
- * そこで、私的メンバーは、それを宣言した型の親型（推移的に）のどれかに、私的でない同じ名前のメンバー（種類は
- * 問わない）があるときだけ行に入れる。私的なコンストラクタは入れない（コンストラクタは継承されず、暗黙の
- * {@code super()} は直接の親のものを呼ぶ。直接の子は親を参照しているので、親が変われば解析し直す）。
+ * そこで、私的メンバーは、それを宣言した型の親型（推移的に。{@code java.*} の親型とその上も含む）のどれかに、
+ * 私的でない同じ名前のメンバー（種類は問わない）があるときだけ行に入れる。私的なコンストラクタは入れない
+ * （コンストラクタは継承されず、暗黙の {@code super()} は直接の親のものを呼ぶ。直接の子は親を参照しているので、
+ * 親が変われば解析し直す）。
  *
  * <p>判定は私的メンバーを宣言した型とその親型だけで決まり、どの型の形を作っているか（{@code owner}）に依らない。
  * そのため、子・孫の形にも同じ行が入るか入らないかのどちらかで、親の私的メンバーだけを変えても、解析し直さない
@@ -53,6 +54,13 @@ final class TypeShape {
 
     /** 親型を辿る深さの上限（jar の型を経由しても十数段で足りる） */
     private static final int MAX_DEPTH = 64;
+
+    /**
+     * {@code java.lang.Object} の public・protected なメソッドの名前。インターフェースは {@code Object} を親に
+     * 持たないが、その public メソッドに当たるメンバーを暗黙に宣言する（JLS 9.2）ので、{@link #namesAbove} が数える
+     */
+    private static final Set<String> OBJECT_METHOD_NAMES = Set.of("getClass", "hashCode", "equals", "clone",
+            "toString", "notify", "notifyAll", "wait", "finalize");
 
     private TypeShape() {
     }
@@ -131,9 +139,19 @@ final class TypeShape {
 
     /**
      * {@code t} の親型（推移的に。{@code t} 自身は含まない）が宣言する、私的でないメンバー（メソッド・フィールド・
-     * 入れ子の型。コンストラクタは継承されないので除く）の名前。{@code java.*} の親型は、そのメンバーの名前までは
-     * 数え、さらに上は辿らない（{@link #walk} と同じ範囲）。種類はまたいで見る（JLS の隠蔽は同じ種類どうしだが、
-     * 名前の分類（6.5.2）の扱いを JDT の実装に頼らず、広めに取る）
+     * 入れ子の型。コンストラクタは継承されないので除く）の名前。種類はまたいで見る（JLS の隠蔽は同じ種類どうしだが、
+     * 名前の分類（6.5.2）の扱いを JDT の実装に頼らず、広めに取る）。
+     *
+     * <p>{@code java.*} の親型でも止めず、その上（JDK の親型・インターフェース）まで辿る。私的メンバーが隠すのは
+     * 直接の親のメンバーに限らない。{@code Registry extends HashMap<String, Object>} の私的な入れ子の型 {@code Entry} は、
+     * {@code HashMap} ではなく {@code Map} が宣言する {@code Map.Entry} を隠す（JLS 8.5）。以前は最初の {@code java.*} の
+     * 親型のメンバーの名前だけを数えてその上を辿らず、この {@code Entry} を形から外していたので、部分型の利用者の
+     * {@code ((Entry) o).getKey()} が {@code Map.Entry} のまま残った（docs/cache-unification-qa.md の Q65）。
+     * JDK の型のメンバーを形の行にしない（{@link #walk}）のは JDK の版がキャッシュの鍵に入っているからで、名前の
+     * 当たりを調べるのはそれとは別の話である。
+     *
+     * <p>インターフェースは {@code Object} を親に持たないが、{@code Object} の public メソッドに当たるメンバーを
+     * 暗黙に宣言する（JLS 9.2）ので、その名前（{@link #OBJECT_METHOD_NAMES}）も数える
      */
     private static Set<String> namesAbove(ITypeBinding t, Map<String, Set<String>> memo, int depth) {
         String key = keyOf(t);
@@ -143,8 +161,11 @@ final class TypeShape {
         }
         Set<String> names = new HashSet<>();
         memo.put(key, names);   // 循環（コンパイルエラー）でも止まるように、先に置く
-        if (depth > MAX_DEPTH || isJdk(t)) {
+        if (depth > MAX_DEPTH) {
             return names;
+        }
+        if (t.isInterface()) {
+            names.addAll(OBJECT_METHOD_NAMES);
         }
         List<ITypeBinding> parents = new ArrayList<>();
         if (t.getSuperclass() != null) {

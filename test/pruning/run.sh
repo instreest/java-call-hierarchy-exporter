@@ -16,7 +16,7 @@
 #       上書きされないメソッド（static・private・final・継承だけ）の戻り値・上書きされない @Bean メソッド・
 #       入れ子のクラスが別のフィールドにだけ書くフィールド・this.m() と this.f・空の new に add しただけのリスト・
 #       static メソッドの参照の実引数・private / static のメソッドへの invoke・Bean のコンストラクタと @Autowired の
-#       メソッドの引数）
+#       メソッドの引数・別のインスタンスのフィールドでもどのインスタンスでも同じ値（初期化子の new・コンストラクタで入れるラムダ））
 #
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
@@ -2333,6 +2333,69 @@ public class ThisDotInj {
 }
 EOF
 expect_ absent ThisDotInj.use DaoA.find "同上（DaoA の行が無い）"
+
+# 別のインスタンスのフィールドでも、どのインスタンスでも同じ値（初期化子の new・コンストラクタで入れるラムダ）なら絞る。
+# コンストラクタ実引数から来た値だけは当てない（上の OtherFld・OtherInt）。01eb510 は別のインスタンスの読み取りを
+# 値にしなかったので、どちらも CHA / UNEXPANDED:LAMBDA に戻っていた（docs/value-safety-qa.md の Q25）
+case_ resolved:RESOLVED:DATAFLOW_FIELD OtherInit OtherInit.cmp DaoA.find "対照: o.dao の初期化子が new DaoA() だけなら、別のインスタンスでも DaoA に絞る" <<'EOF'
+package pr;
+
+public class OtherInit {
+    private final Dao dao = new DaoA();
+    void cmp(OtherInit o) { o.dao.find(); }
+    public static void main(String[] args) { new OtherInit().cmp(new OtherInit()); }
+}
+EOF
+expect_ absent OtherInit.cmp DaoB.find "同上（DaoB の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_LAMBDA OtherLambda OtherLambda.main 'OtherLambda.lambda$new$0' "対照: どのコンストラクタでも同じラムダを入れる final なフィールドは、f.setter.accept でもそのラムダに繋ぐ" <<'EOF'
+package pr;
+
+import java.util.function.Consumer;
+
+public class OtherLambda {
+    private Dao dao;
+    final Consumer<Dao> setter;
+    OtherLambda(Dao d) { this.dao = d; this.setter = x -> this.dao = x; }
+    void go() { dao.find(); }
+    public static void main(String[] args) {
+        OtherLambda f = new OtherLambda(new DaoA());
+        f.setter.accept(new DaoB());
+        f.go();
+    }
+}
+EOF
+expect_ listed OtherLambda.go DaoB.find "同上（ラムダが dao を書き換えるので、go の dao.find は DaoB も残す）"
+
+case_ listed OtherNewArg OtherNewArg.cmp DaoB.find "コンストラクタ実引数を new の実引数に渡しても、new の型（Holder）が決まるだけ。o.h.dao は絞らない" <<'EOF'
+package pr;
+
+public class OtherNewArg {
+    static class Holder {
+        final Dao dao;
+        Holder(Dao d) { this.dao = d; }
+    }
+    private final Holder h;
+    OtherNewArg(Dao d) { this.h = new Holder(d); }
+    void cmp(OtherNewArg o) { o.h.dao.find(); }
+    public static void main(String[] args) { new OtherNewArg(new DaoA()).cmp(new OtherNewArg(new DaoB())); }
+}
+EOF
+expect_ listed OtherNewArg.cmp DaoA.find "同上（DaoA も残す）"
+
+case_ resolved:UNEXPANDED:LAMBDA OtherCap 'OtherCap.<init>' Runnable.run "別のインスタンスのラムダが捕捉した引数（d）を使うなら、そのラムダに繋がない（コンストラクタの中で呼ぶと、今のオブジェクトの d を当てて DaoB に絞ってしまう）" <<'EOF'
+package pr;
+
+public class OtherCap {
+    final Runnable r;
+    OtherCap(Dao d, OtherCap prev) {
+        this.r = () -> d.find();
+        if (prev != null) { prev.r.run(); }
+    }
+    static OtherCap make(Dao d) { return new OtherCap(d, null); }
+    public static void main(String[] args) { new OtherCap(new DaoB(), make(new DaoA())); }
+}
+EOF
 
 # ---------------------------------------------------------------------------
 # 拡張 for の要素の出所は、要素を詰めた値だけと言い切れるコレクション（この本体で引数なしの new をした
