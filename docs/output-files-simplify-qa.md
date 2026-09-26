@@ -27,6 +27,8 @@
   当たるものは「何が起きたか・影響・対処・該当」の項目に、それ以外は末尾の「その他の警告」に並べる
 - ビルドが通っていないことを直接言えるよう、コンパイルエラーのあるファイルを数えて警告するようにした（Q6）
 - ローカルリポジトリについての警告（`config.repos.*`）の書き出しを `依存jar:` / `Dependency jars:` にそろえた（Q9）
+- その後: 相対パスの起点の案内を `Config` の読み方に合わせた（`library.jars` は設定ファイルのフォルダから。Q10）。
+  出力の探索の打ち切りに、行を書かずに続けて通ったノードの上限を足した（[output-walk-limit-qa.md](output-walk-limit-qa.md)）
 
 ## Q&A
 
@@ -100,7 +102,7 @@ Eclipse / VSCode プラグインのコンソール（`Log.attachSink`）にも�
 | 設定ファイルで指定したフォルダやファイルが見つからない | `source.folders` / `library.folders` / `library.jars` / `.classpath` の lib / `external.library.folders` の指定先が無い等（`config.layout.*`、`external.folderMissing`） |
 | 依存 jar が解決できていない | ローカルリポジトリに無い jar・POM、版が決まらない依存、ビルドファイルを読めない、ローカルリポジトリが無い（`config.deps.*`、`config.repos.*`、`config.maven.warn`、`config.gradle.settingsUnreadable`）。無い jar の座標と要求元も明細に並べる |
 | ソースにコンパイルエラーがある | コンパイルエラーのあるファイル（Q6）、構文エラーのファイル、型解決できなかった呼び出しの件数 |
-| 解析や出力が途中で打ち切られた | ファイルの解析の失敗（`analysis.fileFailed`）、行数の上限（`report.walker.maxRows`） |
+| 解析や出力が途中で打ち切られた | ファイルの解析の失敗（`analysis.fileFailed`）、行数の上限（`report.walker.maxRows`）、行を書かずに続けて通ったノードの上限（`report.walker.maxSilentNodes`。[output-walk-limit-qa.md](output-walk-limit-qa.md)） |
 
 載せ方は、警告を出す箇所で `Log.warn(…)` の代わりに `Warnings.warn(Topic, …)` を呼ぶだけ。ログへの出方は変わらない。
 項目の説明（影響と対処）は文言の表（`exporter.warnings.<項目>.*`）に置き、明細には警告の文そのものを並べる。
@@ -148,4 +150,24 @@ GitHub Actions のアクションは `run.log` から依存 jar の警告（`[WA
 指定先が無い・`settings.xml` を読めない、の警告だけ書き出しが違い、アクションが拾っていなかった。
 どれも依存 jar が解決できない原因そのものなので、書き出しを `依存jar:` / `Dependency jars:` にそろえた
 （`warnings.txt` でも同じ「依存 jar が解決できていない」の項目に載る）。
+
+### Q10. 「指定したフォルダやファイルが見つからない」の対処が、library.jars の起点を project.root と書いていたのはなぜか
+
+v42 の穴探し（`docs/cache-unification-qa.md` の「v42 の穴探し（形式 v43）」の Q128）で見つかった文言の誤り。
+
+`Config` は `library.jars` を設定ファイルのフォルダから読む（`resolveFromConfigDir`。`~/.m2` などプロジェクトの外を指すのが
+普通なので、配下の制限も掛けない）。ところが「設定ファイルで指定したフォルダやファイルが見つからない」の対処
+（`exporter.warnings.config.remedy2`）は、`library.jars` を `project.root` から読む項目に並べていた。
+`project.root=./work`、`library.jars=cls`（実物は `work/cls`）だと、同じ warnings.txt に「library.jars のファイルが
+見つかりません: <設定のフォルダ>/cls」と「library.jars は project.root から」が並び、案内どおりに直しても見つからない。
+
+**今の決まり: 案内は `Config` の読み方に合わせる。** `project.root` から読むのは `source.folders` / `library.folders` /
+`external.library.folders` の 3 つだけで、それ以外（`project.root` / `library.jars` / `output.folder` / `cache.folder` など。
+`library.repositories`・`contracts.files`・`plugin.folders` もこちら）は設定ファイルのフォルダから、と書く。
+`Config` の javadoc の一覧も同じにした。
+
+**却下した案**: `library.jars` を `project.root` から読むように変える。Eclipse プラグインは絶対パスを渡し、既存の設定は今の
+読み方に頼っている。読み方を変えると、動いていた設定が黙って別のファイルを指す。
+
+**検査**: `test/warnings` の 4（config のケースの warnings.txt に、直した案内の文が載る。直す前の版では載らない）。
 

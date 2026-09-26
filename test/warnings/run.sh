@@ -461,6 +461,7 @@ done
 # 以前は行数だけを上限に数えたので、それだけでつながる枝分かれ（C_i のフィールド初期化子が C_{i+1} と C_{i+2} を
 # new する）は経路の数（フィボナッチ数）だけ辿られ、0 行・警告なしのまま終わらなくなった（N=40 で 30 秒超）。
 # 行にしないノードの数にも max.rows と同じ上限を掛け、越えたら「途中で止まった」の項目に載せる
+# （docs/output-walk-limit-qa.md）
 make_dag() {   # $1=フォルダ名  $2=ctor（コンストラクタの連鎖）/ excluded（除外パッケージのメソッドの連鎖）
     local dir=work/$1 n=30 i
     mkdir -p "$dir/src/p" "$dir/src/q"
@@ -555,7 +556,7 @@ for kind in jdk excluded ctor; do
     fi
 done
 
-# 8. jar のクラス（q.Api）が参照するクラス（q.Missing）が無いとき、事実を集めるときの問い合わせが同じバッチの後ろの
+# 10. jar のクラス（q.Api）が参照するクラス（q.Missing）が無いとき、事実を集めるときの問い合わせが同じバッチの後ろの
 #    ファイル（app/B.java）のメソッドを先に解決させ、B の番で JDT が例外を投げて一括解析が落ちていた（「The batch analysis
 #    failed」が全件解析の warnings.txt にだけ載った）。今は事実をバッチの全ファイルを JDT が解決し終えてから集める
 #    （docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）。A は B の呼び出し（呼び出しの候補）・

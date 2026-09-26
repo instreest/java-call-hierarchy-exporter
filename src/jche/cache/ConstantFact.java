@@ -18,13 +18,17 @@ import jche.util.FileHash;
  *   C.java   if (X.KIND.equals("BETA")) { … }      ← ここにも "ALPHA" が焼き込まれる
  * </pre>
  * C.java が参照している型は X だけなので、P.java を変えても C.java は再解析されない。
- * K行は「このファイルが宣言する定数の値」を残しておき、解析し直した結果その値が変わったときだけ
- * 使っている側も解析し直すためにある（{@link jche.analysis.CacheUpdater} の「定数の連鎖」）。
+ * K行は「このファイルが宣言する定数の値」を残しておくためにある。書き手は各行の {@link #fingerprint} を
+ * 自分の宣言の指紋（I 行の 3 列目。{@link FileAnalysis#declarationKeys}）に入れ、差分更新は解析し直した結果
+ * その指紋が変わったとき（値か宣言が変わったとき）に使っている側も解析し直す（{@link jche.analysis.CacheUpdater} の
+ * 「宣言の連鎖」。docs/cache-unification-qa.md の Q83）。差分更新は K 行そのものを読み直さない（指紋の材料と、
+ * {@link CacheDump} で人が見るため）。
  *
  * <h2>値の持ち方</h2>
  * 値はそのまま持つ（{@link #KIND_VALUE}）。ただし長すぎる値・行形式を壊す文字を含む値は
  * ハッシュにして持つ（{@link #KIND_HASH}）。SQL や Base64 のような長い定数でキャッシュが
- * 膨らむのを避けつつ、変化は取りこぼさないため。どちらの形かを列に持つのは、
+ * 膨らむのを避けつつ、変化は取りこぼさないため。ハッシュ（{@link FileHash#ofText}）は対になっていない
+ * サロゲートも失わない形でとる（サロゲートだけが違う値を同じハッシュにしない）。どちらの形かを列に持つのは、
  * 「たまたまハッシュと同じ綴りの短い値」と区別するため。
  *
  * @param typeFqn 宣言している型（注釈のメンバなら注釈型）
@@ -69,7 +73,7 @@ public record ConstantFact(String typeFqn, String name, String kind, String valu
         return new ConstantFact(cols[1], cols[2], cols[3], CacheFormat.columnAt(cols, 4));
     }
 
-    /** 値が変わったかを見るための文字列（{@link jche.analysis.CacheUpdater} が突き合わせる） */
+    /** 値が変わったかを見るための文字列（{@link jche.analysis.CacheUpdater} が自分の宣言の指紋に入れる） */
     public String fingerprint() {
         return typeFqn + "#" + name + "=" + kind + ":" + value;
     }

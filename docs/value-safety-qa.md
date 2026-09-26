@@ -50,6 +50,10 @@ Issue なし（キャッシュを 1 ファイルにまとめる作業の途中�
     （書いた側のブロック）、DI の段 5 がそのフィールドを注入点にしない。値を読まない指定でも同じフィールドを外す
     （J 行に値の種別の列を足した）。フィールドの値の判定（private か final が要る）には効かない（Q18 の規則の補足）
   - **`Objects.requireNonNull(d)`**（Q28）: 書き込みの値を d として読む（コンストラクタ注入の精度を戻す）
+- その後（v42 の穴探し。形式 `jche-cache-v43`）: 実装の探し方を JVM の選び方にそろえたことで、リフレクションの引き直しが
+  親クラスの private を拾わなくなり（Q22 の追記）、親クラスの連鎖に jar のクラスが挟まる実装や親インターフェースの default の
+  戻り値で絞らなくなった。検査は `test/pruning` の `DrRet`・`DtwrP`・`JarHold`・`GiRet` と「外部の jar からの被参照」
+  （[jls-conformance-qa.md](jls-conformance-qa.md) の Q26〜Q33）
 
 ---
 
@@ -536,6 +540,15 @@ class RepoB implements Repo { … }
 
 却下した案: **受け手の具象型を使わない**。上書きされたメソッドへの invoke（対照 ReflRecv）で、宣言の本体に繋いで
 実際に動く部分型の実装を落とす。
+
+> **その後（形式 v43）**: 実行時のクラスから実装を引き直す探索（`CallGraph#implementationOfSignature`）そのものが、
+> 親型を名前順の幅優先で辿り、親クラスの private も拾っていた。`class Impl extends PBase implements Api2`（`PBase` の
+> `private void m()`、`Api` の `default void m()`）で `Impl.class.getMethod("m").invoke(new Impl())` を `PBase.m` に
+> 決め、それが private なので上の決まりで選び直さずに確定していた（動くのは `Api.m`）。今は探索が親クラスの連鎖を先に、
+> その型より上の private を飛ばして見るので、`Api.m` に届く。親クラスの public な static メソッドは今までどおり返す
+> （`Class.getMethod` も返す）。[jls-conformance-qa.md](jls-conformance-qa.md) の Q28。
+> 戻り値の側も同じ段で直した。部分型から実装までの親クラスの連鎖に jar のクラスが挟まるときは、その実装の return の値を
+> 使わない（jar のクラスの見えない宣言が動きうる。同じく Q32）。
 
 ## Q23. DI（段 5）で、注入と関係ない引数・フィールドまで唯一の Bean に絞っていたのはなぜか
 

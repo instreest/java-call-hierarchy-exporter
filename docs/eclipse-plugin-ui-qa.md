@@ -251,6 +251,13 @@ Eclipse は必要な情報をすでに持っているので、**プロジェク�
   `library.folders` と `library.jars` がどちらも空のときだけ、従来どおりビルドファイルからの
   自動取得が働く
 
+  （その後、v42 の穴探しで）`library.jars` は jar か**クラスフォルダ**（依存プロジェクトの出力フォルダ）を 1 件ずつ
+  指定する項目で、フォルダは展開せずクラスフォルダとしてそのまま JDT に渡す。以前は解析側が `library.jars` の
+  フォルダを「jar を集めたフォルダ」として直下の `*.jar` に展開していて、依存プロジェクトの出力フォルダの型が
+  どれも解決できず（`UNRESOLVED:BINDING_FAILED`）、warnings.txt に「jar が見つかりません」が出ていた。jar しか無い
+  フォルダ（`.class` も `.java` も無い）を書いたときだけ、中の jar は使わないと警告する
+  （[build-tool-classpath-qa.md](build-tool-classpath-qa.md) の Q13 の追記、`docs/cache-unification-qa.md` の Q126）
+
 検証は、同じ `test/demo` を「設定ファイル経由」と「メモリ上の設定（プラグインと同じ形）」の
 両方で解析し、メソッド数・エッジ数が一致することを確認した（149 メソッド / 201 エッジ）。
 

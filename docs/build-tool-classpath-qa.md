@@ -16,7 +16,7 @@
 - Gradle のビルドファイルは宣言的な書き方（文字列の座標、map 形式、変数、版カタログ、`platform()`、`project()`、
   `files()`）を読む。`gradle.lockfile` があればそれを使う
 - 集めた jar とクラスフォルダはそのまま JDT に渡し、キャッシュの `L` 行で変更を検知する（クラスフォルダは
-  `.class` の数と最新の更新時刻で）
+  `.class` の数と最新の更新時刻で。その後、中身の指紋に変え、`.java` も入れた。Q13 の追記）
 - 設定に `library.build.tool`（auto / maven / gradle / none）と `library.repositories` を足した
 - 回帰テストに `maven` / `mavenmulti` / `gradle` の 3 ケースを加えた（依存は `test/localrepo` から取るので、
   ビルドツールもネットワークも要らない）
@@ -201,6 +201,28 @@ JDT で確かめた。`setEnvironment` のクラスパスは「実行 JVM のブ
 クラスフォルダの指紋は `.class` の `相対パス / サイズ / 内容ハッシュ` から作る。毎回中を歩くのは変わらない。
 `touch` しただけの `.class` は「変更」と見なされなくなった（中身が同じなので、そのほうが正しい）。
 経緯は [cache-identity-qa.md](cache-identity-qa.md)。
+
+**追記（v42 の穴探し。形式 v43。`docs/cache-unification-qa.md` の Q121・Q122・Q126）**: 3 つ直した。
+
+- **設定と `.classpath` から来たフォルダの意味**: 上の「設定と `.classpath` から来たフォルダを jar を集めたフォルダとして
+  展開する」は、`library.folders`（と `project.root` 直下の `lib`）にだけ正しかった。`library.jars` は jar かクラスフォルダを
+  1 件ずつ書く項目で、`.classpath` の `kind="lib"` も Eclipse では jar かクラスフォルダの 1 件である。Eclipse プラグインは
+  依存プロジェクトの出力フォルダを `library.jars` に書く（[eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) の Q14）ので、
+  ワークスペースの別プロジェクトへの呼び出しがどれも `UNRESOLVED:BINDING_FAILED` になっていた。今は `library.jars` と
+  `.classpath` の `kind="lib"` のフォルダを展開せず、クラスフォルダとしてそのまま渡す（ビルドファイルから来たフォルダと
+  同じ扱い）。1 件ずつの指定のフォルダが jar しか持たない（`.class` も `.java` も無い）ときだけ、jar を集めたフォルダの
+  書き間違いとみなして警告する（Eclipse の出力フォルダにはソースフォルダに置いた jar が写されるので、jar があるだけで
+  警告すると、対処の要らない構成で warnings.txt ができる）。フォルダの中身で意味（展開するか）は変えない。
+  `classpathArray()` の答えは 1 回だけ作って覚える（以前は 3 か所から呼ぶたびに作り、「jar が見つかりません」の警告が
+  3 回出ていた）
+- **クラスフォルダの `.java`**: JDT の `setEnvironment` はクラスパスのフォルダを「ソースとクラスの両方」として読む
+  （ecj の `ClasspathDirectory`。`X.class` が無ければ `X.java` を、両方あれば `.java` の更新時刻が厳密に新しいときだけ
+  `.java` を使う）。`src/main/java` をリソースとして `target/classes` に写す pom（GWT、MyBatis の XML と一緒に写す書き方）で
+  起きる。クラスフォルダの指紋は `.class` と `.java` の両方から作り、同じ名前の `.class` があれば JDT がどちらを読むかだけを
+  足す（更新時刻そのものは入れない）。上の本文の「ソースパスが先」は今も同じで、解析対象のソースにある型はソースが勝つ
+- **シンボリックリンク**: クラスフォルダ（や、中のパッケージのフォルダ）がシンボリックリンクだと、指紋が空の一覧のまま
+  毎回同じで、リンクの先のクラスを作り直しても誰も解析し直さなかった。JDT はリンクの先も読むので、歩くときにリンクを
+  たどる（祖先を指して輪になるリンクの先には入らない）。ソースフォルダの一覧も同じ
 
 ### Q14. ローカルリポジトリに無い jar はどうするか
 
