@@ -10,6 +10,7 @@
 #     実行の失敗）で作り、該当の項目と明細が載ること
 #   - どの実行でも「warnings.txt がある」⇔「run.log に [WARN] / [ERROR] の行がある」こと
 #   - コンパイルエラー・構文エラーのファイルの一覧（上限まで）が、差分更新でも全件解析と同じこと
+#   - パッケージの宣言がフォルダと合わないファイルを、全件解析でも差分更新でも警告すること
 #   - 表示言語を日本語にすると日本語で書かれること
 # を確かめる。
 #
@@ -355,6 +356,22 @@ else
     ng "twins3: 同じ型を宣言するファイルの組が期待と違うか、差分更新と全件解析で違います"
     diff <(echo "$full_twins") <(echo "$inc_twins") | head -6
 fi
+
+# 5h. パッケージの宣言がフォルダと合わない（sample/app/Moved.java が package sample.other を宣言する）。JDT はソースパスから
+#     sample/other/Moved.java を探すので、この型はほかのファイルと一緒に解析したときにしか見つからず、結果がバッチの組み方で
+#     変わる。全件解析では何の手がかりも出なかった。構文だけで読んだパッケージの宣言をフォルダと比べて、実行のたびに警告する
+#     （Moved.java を再利用する差分更新でも同じ行が出る）
+make_project pkgdir ""
+PKGDIR=work/pkgdir/src/main/java/sample/app
+printf 'package sample.other;\n\npublic class Moved {\n    public static void m() {\n    }\n}\n' > $PKGDIR/Moved.java
+PKGDIR_LINE="src/main/java/sample/app/Moved.java declares package sample.other, but its folder corresponds to package sample.app"
+analyze pkgdir
+check_invariant pkgdir
+expect_in_warnings pkgdir "$PKGDIR_LINE"
+printf 'package sample.app;\n\npublic class Touched {\n}\n' > $PKGDIR/Touched.java
+analyze pkgdir
+check_invariant "pkgdir(差分更新)"
+expect_in_warnings "pkgdir(差分更新)" "$PKGDIR_LINE"
 
 # 6. 実行の失敗（出力フォルダを作った後で失敗する: ソースフォルダが 1 つも無い）
 make_project failed "source.folders=src/missing"

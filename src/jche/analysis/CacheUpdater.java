@@ -351,6 +351,14 @@ public final class CacheUpdater {
         Progress progress = new Progress(Messages.get("analysis.progress.parse"), javaFiles.size(),
                 CallEdgeExtractor.BATCH_SIZE);
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
+        // ソースの全体を構文だけで読み、どのバッチにも添えるファイルを決める（CallEdgeExtractor#prepare）。
+        // 解析するファイルが少ない差分更新でも全体を読む。添えるファイルと下の警告がソースの中身だけで決まり、
+        // 全件解析と同じになるようにするため
+        ProjectScan scan = extractor.prepare(new ArrayList<>(live.values()));
+        if (!scan.context.isEmpty()) {
+            Log.info(Messages.format("analysis.contextFiles", scan.context.size()));
+        }
+        scan.warnPackageMismatches();
 
         // 旧キャッシュはここで 1 回だけ開き、パス0 からパス5 まで同じチャネルで読む（クラスの説明「旧キャッシュの読み方」）。
         // 差し替える（最後の move）前に必ず閉じる（Windows は開いているファイルを置き換えられない）

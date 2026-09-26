@@ -2,23 +2,33 @@
 package jche.analysis;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FileASTRequestor;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.SimpleType;
@@ -75,7 +85,6 @@ public final class CallEdgeExtractor {
     }
 
     private final ProjectLayout layout;
-    private final Charset encoding;
     private final String encodingName;
     private final Map<String, String> compilerOptions;
     private final String[] classpath;
@@ -84,6 +93,9 @@ public final class CallEdgeExtractor {
 
     /** 判定できない条件も guard に残すか（条件の調査用。{@link CallConditionScanner}） */
     private final boolean recordAllConditions;
+
+    /** どのバッチにも添えるファイルなどの材料（{@link #prepare}）。呼ばれていなければ空（何も添えない） */
+    private ProjectScan project = ProjectScan.EMPTY;
 
     public CallEdgeExtractor(ProjectLayout layout, Config config) {
         this(layout, config, false);
@@ -97,7 +109,6 @@ public final class CallEdgeExtractor {
         this.recordAllConditions = recordAllConditions;
         this.layout = layout;
         this.encodingName = config.sourceEncoding;
-        this.encoding = Charset.forName(config.sourceEncoding);
         // 準拠レベル（source.level）は Config が解決済み。
         // 既定のまま使うと generics・diamond演算子・ラムダ式・enum等が
         // 軒並み構文/型解決に失敗するので、必ずこちらを使うこと
@@ -109,90 +120,391 @@ public final class CallEdgeExtractor {
     }
 
     /**
+     * 解析するソースの全体を構文だけで読み（型は解決しない。メソッドの本体も読まない）、どのバッチにも添えるファイルと、
+     * パッケージの宣言がフォルダと合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。
+     *
+     * <p>全件解析でも差分更新でも、解析するファイルだけでなくソースの全体を渡す。添えるファイルがソースの中身だけで
+     * 決まり、どの実行でも同じになるようにするため。読めなかったファイル（JDT の例外・スタックの溢れ）は材料にしない
+     * （添えない・警告しない）。呼ばなければ何も添えない。
+     *
+     * @param all 解析するソースの全体（ソース一覧の並び）
+     */
+    public ProjectScan prepare(List<SourceFile> all) {
+        Map<String, ProjectScan.Info> infos = new HashMap<>();
+        Map<String, SourceFile> pending = byPath(all);
+        // 構文だけの読み取りは速い（1 ファイル 1 ミリ秒を切る）が、javadoc の中までは読まない
+        Map<String, String> options = new HashMap<>(compilerOptions);
+        options.put(JavaCore.COMPILER_DOC_COMMENT_SUPPORT, JavaCore.DISABLED);
+        while (!pending.isEmpty()) {
+            String[] paths = pending.keySet().toArray(new String[0]);
+            String[] fileEncodings = new String[paths.length];
+            Arrays.fill(fileEncodings, encodingName);
+            ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+            parser.setKind(ASTParser.K_COMPILATION_UNIT);
+            parser.setCompilerOptions(options);
+            parser.setResolveBindings(false);
+            parser.setIgnoreMethodBodies(true);
+            try {
+                parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
+                    @Override
+                    public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+                        SourceFile file = pending.remove(sourceFilePath);
+                        if (file != null) {
+                            infos.put(file.relativePath(), infoOf(cu));
+                        }
+                    }
+                }, null);
+            } catch (RuntimeException | StackOverflowError e) {
+                // 読めなかったファイルは材料にしない（下で外して続ける）
+            }
+            if (!pending.isEmpty()) {
+                // JDT は渡した順に読む。受け取れなかった先頭のファイルで止まったので、それを外して残りを読む
+                pending.remove(pending.keySet().iterator().next());
+            }
+        }
+        project = ProjectScan.of(all, layout, infos);
+        return project;
+    }
+
+    /** 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前 */
+    private static ProjectScan.Info infoOf(CompilationUnit cu) {
+        String pkg = (cu.getPackage() == null) ? "" : cu.getPackage().getName().getFullyQualifiedName();
+        List<String> types = new ArrayList<>();
+        for (Object t : cu.types()) {
+            types.add(((AbstractTypeDeclaration) t).getName().getIdentifier());
+        }
+        return new ProjectScan.Info(pkg, List.copyOf(types));
+    }
+
+    /**
      * 複数のファイルをまとめてパースし、1ファイル分ずつ sink へ渡す。
      *
-     * JDT が受け付けなかったファイルや、一括パース自体が失敗したときの残りは、
-     * 1ファイルずつ {@link #analyze} で解析する。1ファイルの失敗で他を巻き込まないため。
+     * <h4>どのファイルといっしょに JDT に渡すか</h4>
+     * 事実がバッチの組み方（全件解析は {@link #BATCH_SIZE} 件ずつ、差分更新は変わったファイルだけ）に依らないよう、
+     * 次のファイルを「添えるファイル」として解析するファイルの後ろに並べて渡す（事実は書かない）。
+     * <ul>
+     *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）</li>
+     *   <li>jar の型が参照していた、ソースの入れ子の型（{@code app.Outer$Inner}）を宣言するファイル。JDT は jar の
+     *       クラスファイルから {@code app/Outer$Inner} という名前で型を探し、ソースパスからは見つけられない
+     *       （{@code app.Outer} をすでに読んでいれば、その入れ子の型として見つかる）。見つからないと、その型の名前が
+     *       {@code $} のまま事実（I 行）に残るので、それを見て、宣言するファイル（{@code app/Outer.java}）を添えて
+     *       解析し直す（{@link #memberTypeFilesOf}）。同じファイルを同じバッチで解析していれば初めから見つかるので、
+     *       どちらでも同じ事実になる</li>
+     * </ul>
+     * JDT は渡した順にファイルを解析して 1 つずつ返すので、解析するファイルを受け取り終えたら止める
+     * （添えたファイルは型を作るところまでで、本体は読まない）。
+     *
+     * <p>{@code module-info.java} は、ほかのファイルと同じバッチに入れない。JDT はソースのモジュール宣言を、
+     * それが同じバッチにいるときだけ知っているので、{@code import module app;}（JEP 511）がエラーになるかどうかが
+     * バッチの組み方で変わった。いつも別にしておけば、ほかのファイルの事実は module-info.java に依らない
+     * （ソースのモジュールの import はいつも解決できない。JDT は同じバッチにいてもその import から型を解決しない）。
+     *
+     * <h4>JDT が途中で止まったとき</h4>
+     * JDT は、1 つのファイルの解析で例外（スタックの溢れ・JDT の内部の誤り）を出すと、そのバッチの残りを返さない。
+     * 例外を出さずに残りを返さずに戻ることもある（依存 jar に無いクラスを、ソースパスから読んだ型の中で参照して
+     * いると、JDT は解析をまるごと打ち切る）。どちらも、受け取れなかった最初のファイル（とその同じ名前の組。
+     * {@link SameUnitFiles}）で止まったとみなして脇に置き、残りをまた 1 つのバッチで続ける。以前は残りを 1 ファイルずつ
+     * 自前で読み直しており、読み方（文字コードの誤りの扱い・BOM・コンパイル単位の名前）も組の扱いもバッチと違い、
+     * 例外の無い打ち切りでは何も言わずに残りを 1 ファイルずつにしていた。
+     * 脇に置いた組は、同じフォルダのファイル（同じパッケージ。打ち切りの原因の型を宣言していることが多い）を添えて
+     * 解析し直し、それでも受け取れなければ 1 ファイルずつ解析し、それでもだめなら失敗として数える
+     * （{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）。
      *
      * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
-     * 深くなりすぎるファイル）も、そのファイルの失敗として扱う。一括パースの途中で溢れたら残りを 1 ファイルずつ
-     * 解析し、溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）。
-     * 以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（{@code docs/cache-unification-qa.md} の Q62）。
+     * 深くなりすぎるファイル）も、そのファイルの失敗として扱う（{@code docs/cache-unification-qa.md} の Q62）。
      * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
-        Map<String, SourceFile> pending = new LinkedHashMap<>();
+        List<SourceFile> modules = new ArrayList<>();
+        List<SourceFile> others = new ArrayList<>();
         for (SourceFile file : files) {
-            pending.put(file.path().toString(), file);
+            (ProjectScan.isModuleInfo(file) ? modules : others).add(file);
         }
-        String[] paths = pending.keySet().toArray(new String[0]);
-        String[] fileEncodings = new String[paths.length];
-        Arrays.fill(fileEncodings, encodingName);
+        new Batch(sink, true).run(others);
+        new Batch(sink, false).run(modules);
+    }
 
-        try {
-            newParser().createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
-                @Override
-                public void acceptAST(String sourceFilePath, CompilationUnit cu) {
-                    SourceFile file = pending.remove(sourceFilePath);
-                    if (file == null) {
-                        return;
-                    }
-                    FileAnalysis facts;
-                    try {
-                        facts = collectFacts(file, cu);
-                    } catch (RuntimeException e) {
-                        sink.failed(file, e);
-                        return;
-                    } catch (StackOverflowError e) {
-                        sink.failed(file, tooDeep(e));
-                        return;
-                    }
-                    try {
-                        sink.accept(file, facts);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);   // 下の catch で IOException に戻す
-                    } catch (RuntimeException e) {
-                        // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
-                        // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
-                        // 1 ファイルずつの解析にも回らず、失敗とも数えられずに黙って消える
-                        sink.failed(file, e);
-                    } catch (StackOverflowError e) {
-                        // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
-                        // 外してあるので 1 ファイルずつの解析にも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
-                        sink.failed(file, tooDeep(e));
-                    }
-                }
-            }, null);
-        } catch (UncheckedIOException e) {
-            throw e.getCause();
-        } catch (RuntimeException e) {
-            Log.warn(Messages.format("analysis.batchFailed", pending.size(), e));
-        } catch (StackOverflowError e) {
-            // どのファイルで溢れたかは分からない。残りを 1 ファイルずつ解析して、溢れたファイルだけを失敗にする
-            Log.info(Messages.format("analysis.batchTooDeep", pending.size()));
+    /** 相対パスではなく、JDT に渡す絶対パスの文字列を鍵にした一覧（並びはそのまま） */
+    private static Map<String, SourceFile> byPath(List<SourceFile> files) {
+        Map<String, SourceFile> map = new LinkedHashMap<>();
+        for (SourceFile file : files) {
+            map.put(file.path().toString(), file);
+        }
+        return map;
+    }
+
+    /** 1 回の {@link #analyzeBatch} の中の状態 */
+    private final class Batch {
+        private final Sink sink;
+        /** {@link ProjectScan#context} を添えるか。module-info.java だけのバッチでは添えない */
+        private final boolean withContext;
+        /** jar の型が参照していたソースの入れ子の型を宣言するファイル（{@link #memberTypeFilesOf}）。増えるだけ */
+        private final List<SourceFile> memberTypeFiles = new ArrayList<>();
+
+        Batch(Sink sink, boolean withContext) {
+            this.sink = sink;
+            this.withContext = withContext;
         }
 
-        if (!pending.isEmpty()) {
-            for (SourceFile file : new ArrayList<>(pending.values())) {
-                FileAnalysis facts;
-                try {
-                    facts = analyze(file);
-                } catch (IOException | RuntimeException e) {
-                    sink.failed(file, e);
-                    continue;
-                } catch (StackOverflowError e) {
-                    sink.failed(file, tooDeep(e));
-                    continue;
+        void run(List<SourceFile> files) throws IOException {
+            List<SourceFile> todo = files;
+            while (!todo.isEmpty()) {
+                Map<SourceFile, List<SourceFile>> deferred = new LinkedHashMap<>();
+                analyzeAll(todo, deferred);
+                // 足りなかったファイルを添えて、受け取らずにおいたファイルを解析し直す。受け取らずにおくのは、添えた
+                // ファイルに無いものが要るときだけなので、添えるファイルは周回ごとに増え、いつかは終わる
+                for (List<SourceFile> needs : deferred.values()) {
+                    for (SourceFile f : needs) {
+                        if (!memberTypeFiles.contains(f)) {
+                            memberTypeFiles.add(f);
+                        }
+                    }
                 }
-                try {
-                    sink.accept(file, facts);
-                } catch (RuntimeException e) {
-                    // 一括パースの側と同じく、受け手の失敗はこのファイルの失敗として数えて続ける
-                    sink.failed(file, e);
-                } catch (StackOverflowError e) {
-                    sink.failed(file, tooDeep(e));
+                todo = new ArrayList<>(deferred.keySet());
+            }
+        }
+
+        /** JDT が途中で止まったら、止まったファイルの組を脇に置いて残りを続ける。脇に置いた組は最後に解析し直す */
+        private void analyzeAll(List<SourceFile> files, Map<SourceFile, List<SourceFile>> deferred)
+                throws IOException {
+            Map<String, SourceFile> pending = byPath(files);
+            List<List<SourceFile>> aside = new ArrayList<>();
+            while (!pending.isEmpty()) {
+                Throwable stop = parse(pending, List.of(), deferred);
+                if (pending.isEmpty()) {
+                    break;
+                }
+                List<SourceFile> unit = takeFirstUnit(pending);
+                String at = unit.get(0).relativePath();
+                if (stop instanceof StackOverflowError) {
+                    Log.info(Messages.format("analysis.batchTooDeep", at, pending.size()));
+                } else if (stop != null) {
+                    Log.info(Messages.format("analysis.batchFailed", at, pending.size(), stop));
+                } else {
+                    Log.info(Messages.format("analysis.batchStopped", at, pending.size()));
+                }
+                aside.add(unit);
+            }
+            for (List<SourceFile> unit : aside) {
+                retry(unit, deferred);
+            }
+        }
+
+        /** 受け取れなかった最初のファイルと、それと同じコンパイル単位の名前のファイル（組）を取り出す */
+        private List<SourceFile> takeFirstUnit(Map<String, SourceFile> pending) {
+            String name = layout.unitNameOf(pending.values().iterator().next().path());
+            List<SourceFile> unit = new ArrayList<>();
+            for (Iterator<SourceFile> it = pending.values().iterator(); it.hasNext(); ) {
+                SourceFile f = it.next();
+                if (layout.unitNameOf(f.path()).equals(name)) {
+                    unit.add(f);
+                    it.remove();
                 }
             }
+            return unit;
+        }
+
+        /**
+         * 脇に置いた組を、同じフォルダのファイルと、組が import しているファイルを添えて解析し直す。それでも受け取れ
+         * なかったファイルは 1 つずつ（組でも分ける。組のもう片方で止まっていることがあるため）解析し、それでもだめなら
+         * 失敗として数える。
+         *
+         * <p>例外なしの打ち切りは、ソースパスから読んだ型（B）の中の、依存 jar に無いクラスで起きる。B を同じバッチに
+         * 入れれば起きない（全件解析で A と B が同じバッチにいれば、A はふつうに解析できる）。B は A と同じパッケージか、
+         * A が import している型であることが多いので、それを添える。どちらでもない（完全修飾名で書いた）ときは、
+         * 全件解析で A と B が同じバッチにいるかどうかで結果が変わる。B を探すにはソースの全体を添えるしかなく、
+         * ヒープがプロジェクトの大きさに比例するので、そこまではしない（失敗として warnings.txt に載る。直すには
+         * 足りない jar を足す）
+         */
+        private void retry(List<SourceFile> unit, Map<SourceFile, List<SourceFile>> deferred) throws IOException {
+            Map<String, SourceFile> pending = byPath(unit);
+            List<SourceFile> related = new ArrayList<>(project.folder(layout.unitNameOf(unit.get(0).path())));
+            for (SourceFile file : unit) {
+                related.addAll(importedFiles(file));
+            }
+            Throwable stop = parse(pending, related, deferred);
+            for (SourceFile file : new ArrayList<>(pending.values())) {
+                Map<String, SourceFile> one = byPath(List.of(file));
+                Throwable alone = parse(one, List.of(), deferred);
+                if (!one.isEmpty()) {
+                    sink.failed(file, reasonOf(file, (alone != null) ? alone : stop));
+                }
+            }
+        }
+
+        /**
+         * pending のファイルを 1 回の createASTs で解析し、受け取ったものを pending から外す。
+         *
+         * @param extra このときだけ添えるファイル（脇に置いた組を解析し直すときの、同じフォルダのファイル）
+         * @return JDT が投げた例外。例外なしに戻った（止まったかどうかは pending を見る）なら null
+         */
+        private Throwable parse(Map<String, SourceFile> pending, List<SourceFile> extra,
+                                Map<SourceFile, List<SourceFile>> deferred) throws IOException {
+            List<SourceFile> candidates = new ArrayList<>();
+            if (withContext) {
+                candidates.addAll(project.context);
+            }
+            candidates.addAll(memberTypeFiles);
+            candidates.addAll(extra);
+            List<SourceFile> context = project.sorted(candidates, pending.keySet());
+            context.removeIf(ProjectScan::isModuleInfo);
+
+            List<String> all = new ArrayList<>(pending.keySet());
+            for (SourceFile f : context) {
+                all.add(f.path().toString());
+            }
+            Set<String> present = new HashSet<>(all);
+            String[] paths = all.toArray(new String[0]);
+            String[] fileEncodings = new String[paths.length];
+            Arrays.fill(fileEncodings, encodingName);
+            // 解析するファイルを受け取り終えたら止める（後ろに並べた添えるファイルは、型を作るだけで本体を読まない）
+            IProgressMonitor stopWhenDone = new NullProgressMonitor() {
+                @Override
+                public boolean isCanceled() {
+                    return pending.isEmpty();
+                }
+            };
+            try {
+                newParser().createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
+                    @Override
+                    public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+                        SourceFile file = pending.remove(sourceFilePath);
+                        if (file == null) {
+                            return;
+                        }
+                        FileAnalysis facts;
+                        try {
+                            facts = collectFacts(file, cu);
+                        } catch (RuntimeException e) {
+                            // 型の解決は遅れて行われるので、事実を集めるあいだに JDT が文言の無い例外（見つからない
+                            // クラスでの打ち切り）を投げることがある
+                            sink.failed(file, explained(e));
+                            return;
+                        } catch (StackOverflowError e) {
+                            sink.failed(file, tooDeep(e));
+                            return;
+                        }
+                        List<SourceFile> needs = memberTypeFilesOf(facts, present);
+                        if (!needs.isEmpty()) {
+                            deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
+                            return;
+                        }
+                        deliver(file, facts);
+                    }
+                }, stopWhenDone);
+                return null;
+            } catch (UncheckedIOException e) {
+                throw e.getCause();
+            } catch (OperationCanceledException e) {
+                return pending.isEmpty() ? null : e;
+            } catch (RuntimeException | StackOverflowError e) {
+                return e;
+            }
+        }
+
+        private void deliver(SourceFile file, FileAnalysis facts) {
+            try {
+                sink.accept(file, facts);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);   // parse の catch で IOException に戻す
+            } catch (RuntimeException e) {
+                // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
+                // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
+                // 解析し直しにも回らず、失敗とも数えられずに黙って消える
+                sink.failed(file, explained(e));
+            } catch (StackOverflowError e) {
+                // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
+                // 外してあるので解析し直しにも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
+                sink.failed(file, tooDeep(e));
+            }
+        }
+    }
+
+    /**
+     * jar の型が参照していたのに見つからなかった、ソースの入れ子の型（事実に {@code app.Outer$Inner} の形で残る）を
+     * 宣言するファイル（{@code app/Outer.java}。同じ名前の組ごと）のうち、今回 JDT に渡していないもの。
+     *
+     * <p>{@code $} を含む名前は、見つからなかった型の名前（JDT がクラスファイルの名前のまま作る）か、無名クラス・
+     * ローカルクラスの名前（{@code app.A$1}）。後者は自分や、渡したファイルの型なので当たらない。ソースの型の名前に
+     * {@code $} を書いていれば余分に当たるが、添えるファイルが増えるだけで事実は変わらない
+     */
+    private List<SourceFile> memberTypeFilesOf(FileAnalysis facts, Set<String> present) {
+        List<SourceFile> needs = new ArrayList<>();
+        for (Set<String> names : List.of(facts.referencedTypes, facts.unresolvedNames)) {
+            for (String name : names) {
+                int dollar = name.indexOf('$');
+                if (dollar <= 0) {
+                    continue;
+                }
+                List<SourceFile> declaring = project.unit(name.substring(0, dollar).replace('.', '/') + ".java");
+                boolean given = false;
+                for (SourceFile f : declaring) {
+                    given |= present.contains(f.path().toString());
+                }
+                if (!given) {
+                    for (SourceFile f : declaring) {
+                        if (!needs.contains(f)) {
+                            needs.add(f);
+                        }
+                    }
+                }
+            }
+        }
+        return needs;
+    }
+
+    /**
+     * ファイルの import が指すソースのファイル（構文だけで読む）。{@code import a.b.C;}・{@code import static a.b.C.m;} は
+     * 名前の頭の部分のどれかが型なので、{@code a/b/C/m.java}・{@code a/b/C.java}・{@code a/b.java}… のうちソースにあるもの。
+     * {@code import a.b.*;} は、そのうえで {@code a/b} のフォルダのファイル。読めなければ空
+     */
+    private List<SourceFile> importedFiles(SourceFile file) {
+        List<SourceFile> files = new ArrayList<>();
+        ASTParser parser = ASTParser.newParser(AST.getJLSLatest());
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+        parser.setCompilerOptions(compilerOptions);
+        parser.setResolveBindings(false);
+        parser.setIgnoreMethodBodies(true);
+        try {
+            parser.createASTs(new String[] {file.path().toString()}, new String[] {encodingName}, new String[0],
+                    new FileASTRequestor() {
+                        @Override
+                        public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+                            for (Object o : cu.imports()) {
+                                ImportDeclaration imp = (ImportDeclaration) o;
+                                if (Modifier.isModule(imp.getModifiers())) {
+                                    continue;
+                                }
+                                String path = imp.getName().getFullyQualifiedName().replace('.', '/');
+                                if (imp.isOnDemand()) {
+                                    files.addAll(project.folder(path + "/x.java"));
+                                }
+                                for (String p = path; !p.isEmpty(); p = p.substring(0, Math.max(0, p.lastIndexOf('/')))) {
+                                    files.addAll(project.unit(p + ".java"));
+                                }
+                            }
+                        }
+                    }, null);
+        } catch (RuntimeException | StackOverflowError e) {
+            // 読めなければ import のファイルは添えない（同じフォルダのファイルだけで解析し直す）
+        }
+        return files;
+    }
+
+    /** 解析し直しても受け取れなかったファイルの、失敗の理由 */
+    private static Exception reasonOf(SourceFile file, Throwable stop) {
+        if (stop instanceof StackOverflowError e) {
+            return tooDeep(e);
+        }
+        if (stop instanceof Exception e) {
+            return explained(e);
+        }
+        try (InputStream in = Files.newInputStream(file.path())) {
+            // 読める（1 バイト読んでみる）。JDT が理由を言わずに打ち切った
+            in.read();
+            return new IllegalStateException(Messages.get("analysis.stopped"));
+        } catch (IOException e) {
+            return e;
         }
     }
 
@@ -215,31 +527,21 @@ public final class CallEdgeExtractor {
         }
     }
 
+    /**
+     * 失敗の理由として伝える例外。JDT の例外には文言の無いもの（見つからないクラスでの打ち切り {@code AbortCompilation}
+     * など）があり、そのままでは warnings.txt の行が「()」だけになって何が起きたか分からないので、例外の名前を添えた
+     * 文言にする
+     */
+    private static Exception explained(Exception e) {
+        if (e.getMessage() == null || e.getMessage().isBlank()) {
+            return new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e);
+        }
+        return e;
+    }
+
     /** スタックが溢れたことを、そのファイルの失敗の理由として伝える例外（利用者が対処を選べる文言にする） */
     private static Exception tooDeep(StackOverflowError e) {
         return new IllegalStateException(Messages.get("analysis.tooDeep"), e);
-    }
-
-    /** 1ファイルだけをパースする（一括パースの補完用） */
-    public FileAnalysis analyze(SourceFile file) throws IOException {
-        // 読み込みは「バイト列 -> 文字列 -> char[]」と写し取らず、復号した文字列から直接 char[] を作る
-        // （大きなファイルほど、要らない写しがそのままヒープの山になる）
-        char[] source = charsOf(Files.readString(file.path(), encoding));
-        ASTParser parser = newParser();
-        parser.setUnitName(layout.unitNameOf(file.path()));  // バインディング解決に必須
-        parser.setSource(source);
-        CompilationUnit cu = (CompilationUnit) parser.createAST(null);
-        return collectFacts(file, cu);
-    }
-
-    /**
-     * 文字列を char[] にする。JDT が受け取るのは char[] なので写しは1回だけで済ませる
-     * （{@code String.toCharArray()} も写しを作るが、元の文字列をここで捨てられる形にしておく）
-     */
-    private static char[] charsOf(String text) {
-        char[] chars = new char[text.length()];
-        text.getChars(0, text.length(), chars, 0);
-        return chars;
     }
 
     /** ワークスペース非依存で型解決するための設定を済ませたパーサ */

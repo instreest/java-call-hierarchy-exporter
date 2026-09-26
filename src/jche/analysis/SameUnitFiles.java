@@ -38,6 +38,11 @@ import jche.config.ProjectLayout;
  * よく置かれるが、JDT はアノテーションの付いたパッケージ宣言に {@code package-info} という型を作るので、同じバッチの
  * 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。組にしないと、片方だけを書き換えた差分更新と
  * 全件解析とで warnings.txt（コンパイルエラーのファイルの一覧）が食い違った（{@code docs/cache-unification-qa.md} の Q66）。
+ * なお {@code module-info.java} は、解析するときにほかのファイルと同じ JDT の呼び出しに入れない
+ * （{@link CallEdgeExtractor#analyzeBatch}。組は module-info.java どうしで保つ）。
+ *
+ * <p>JDT が一括パースの途中で止まったときも、止まったファイルは組ごと脇に置いて解析し直すので、組は分かれない
+ * （{@link CallEdgeExtractor#analyzeBatch}）。
  *
  * <p>組の片方を消した（ソースフォルダから外した場合も同じ）ときは、残ったほうを解析し直す（{@link #pairedWithDeleted}）。
  * 組が同じバッチにいたあいだ、後ろのほうには「型が重複している」エラーが付いていたので、再利用するとそのエラー
