@@ -448,7 +448,60 @@ for kind in ctor excluded; do
     analyze "dag_$kind"
     [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
     check_invariant "dag_$kind"
-    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods"
+    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) in a row"
+done
+
+# 行を書き進めている探索は、行にならないノードが行より多くても行数の上限まで止めない。
+# 既定の exclude.packages（java.**）に当たる JDK の呼び出しも読み飛ばし（行にならないノード）なので、
+# 普通のコードでも行にならないノードは行より多く通る。通った数の合計を max.rows で打ち切ると
+# （この上限を入れた当初の形）、行数が max.rows に届かない探索でも途中で止まり、以前は出ていた行が落ちる。
+# 各メソッドが行にならない呼び出し（JDK の呼び出し 3 つ・除外パッケージの中の 11 の呼び出し・5 段の継承の
+# new 3 つ）と Leaf.x() を持つ形を 40 個並べ、max.rows=100 で Leaf.x の 40 行がすべて出て、打ち切りの警告が無いこと
+make_busy() {   # $1=フォルダ名  $2=jdk / excluded / ctor
+    local dir=work/$1 i
+    mkdir -p "$dir/src/p" "$dir/src/q"
+    echo 'package p; public class Leaf { public static void x() { } }' > "$dir/src/p/Leaf.java"
+    {
+        echo 'package p; public class Main {'
+        for i in $(seq 1 40); do
+            case "$2" in
+                jdk) echo "public void m$i(StringBuilder sb) { sb.append(1); sb.append(\"a\"); System.out.println(sb); Leaf.x(); }" ;;
+                excluded) echo "public void m$i() { q.U.m(); }" ;;
+                ctor) echo "public void m$i() { new D4(); new D4(); new D4(); Leaf.x(); }" ;;
+            esac
+        done
+        echo '}'
+    } > "$dir/src/p/Main.java"
+    {
+        echo 'package q; public class U { public static void m() {'
+        for i in $(seq 1 10); do echo "h$i();"; done
+        echo 'p.Leaf.x(); }'
+        for i in $(seq 1 10); do echo "static void h$i() { }"; done
+        echo '}'
+    } > "$dir/src/q/U.java"
+    echo 'package p; public class D0 { }' > "$dir/src/p/D0.java"
+    for i in 1 2 3 4; do echo "package p; public class D$i extends D$((i - 1)) { }" > "$dir/src/p/D$i.java"; done
+    cat > "$dir/config.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+exclude.packages=java.**,javax.**,q.**
+max.rows=100
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+for kind in jdk excluded ctor; do
+    make_busy "busy_$kind" "$kind"
+    analyze "busy_$kind"
+    check_invariant "busy_$kind"
+    # 起点が Main.m1〜m40 で、Leaf.x へ届いた行（q.U.m を起点にした行は数えない）
+    ROWS=$(grep -c -E ',Main\.m[0-9]+,Leaf\.x' "$OUT/call-hierarchy.csv" 2>/dev/null)
+    if [ "$ROWS" = 40 ] && [ ! -f "$OUT/warnings.txt" ]; then
+        ok "busy_$kind: 行数の上限に届かない探索は打ち切らない（Leaf.x の 40 行）"
+    else
+        ng "busy_$kind: Leaf.x の行が ${ROWS:-0} 行（40 のはず）、または warnings.txt がある"
+    fi
 done
 
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi
