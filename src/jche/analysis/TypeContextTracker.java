@@ -122,8 +122,9 @@ final class TypeContextTracker {
             superclasses.add(n);
             sc = e.isFromSource() ? null : e.getSuperclass();
         }
+        ITypeBinding declared = tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb;
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
-                names.annotationsOf(erased), superclasses));
+                names.annotationsOf(erased), superclasses, names.inheritedImplementationsOf(declared)));
         recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
     }
 

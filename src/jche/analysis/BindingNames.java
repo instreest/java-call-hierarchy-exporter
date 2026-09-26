@@ -532,6 +532,124 @@ final class BindingNames {
     }
 
     /**
+     * クラス {@code type} で、親クラスから継承したメソッドが親インターフェースのメソッドを実装していて、
+     * 両者のキー（消去した引数型）が食い違うものの組（{@code 実装される側のキー>実装する側のキー}。名前順）。
+     * {@link jche.cache.TypeFact#inheritedImpls()} に書く。
+     *
+     * <pre>
+     *   interface Repo&lt;T&gt; { void save(T t); }                      Repo#save(java.lang.Object)
+     *   class BaseRepo { public void save(User u) {...} }              BaseRepo#save(p.User)
+     *   class UserRepo extends BaseRepo implements Repo&lt;User&gt; { }   ← BaseRepo.save が Repo.save を実装する
+     * </pre>
+     * BaseRepo は Repo を実装していないので、BaseRepo.save の O 行（{@link #overriddenKeysOf}）には現れない。
+     * 実装の関係は UserRepo から見たときにだけ成り立ち（JLS 8.4.8.1。javac は UserRepo にブリッジを作る）、
+     * {@code class Other extends BaseRepo implements Repo<Order>} では成り立たないので、型ごとの事実にする。
+     * 無いと読み手は UserRepo の {@code save(Object)} の実装を見つけられず、{@code Repo<User> r; r.save(u)} を
+     * 「実装なし」にして BaseRepo.save を落とす（default があれば default に決めてしまう）。
+     *
+     * <p>判定は JDT に任せる: 親インターフェースのメソッド（型引数を置き換えたもの。private・static は除く）ごとに、
+     * {@code type} 自身が同じシグネチャ（{@code isSubsignature}）を宣言していなければ、親クラスを近い順に見て
+     * 最初に {@code isSubsignature} の当たる宣言（static・private を除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
+     * キーが同じなら読み手はキーの照合で引けるので書かない。実装する側の型が実装される側のインターフェースを
+     * 実装していれば、その宣言の O 行が同じことを言うので書かない
+     */
+    List<String> inheritedImplementationsOf(ITypeBinding type) {
+        if (type == null || type.isInterface() || type.getSuperclass() == null) {
+            return List.of();
+        }
+        List<IMethodBinding> interfaceMethods = new ArrayList<>();
+        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        for (ITypeBinding c = type; c != null && seen.add(keyOf(c)); c = c.getSuperclass()) {
+            queue.addAll(java.util.Arrays.asList(c.getInterfaces()));
+        }
+        while (!queue.isEmpty()) {
+            ITypeBinding i = queue.poll();
+            if (!seen.add(keyOf(i))) {
+                continue;
+            }
+            for (IMethodBinding m : i.getDeclaredMethods()) {
+                if (!m.isConstructor() && !Modifier.isStatic(m.getModifiers())
+                        && !Modifier.isPrivate(m.getModifiers())) {
+                    interfaceMethods.add(m);
+                }
+            }
+            queue.addAll(java.util.Arrays.asList(i.getInterfaces()));
+        }
+        java.util.TreeSet<String> out = new java.util.TreeSet<>();
+        for (IMethodBinding mi : interfaceMethods) {
+            if (subsignatureIn(type, mi) != null) {
+                continue;   // その型自身の宣言が実装する（キーか O 行で引ける）
+            }
+            Set<String> classes = new HashSet<>();
+            for (ITypeBinding sc = type.getSuperclass(); sc != null && classes.add(keyOf(sc));
+                    sc = sc.getSuperclass()) {
+                IMethodBinding mc = subsignatureIn(sc, mi);
+                if (mc == null) {
+                    continue;
+                }
+                MethodRef implemented = toRef(mi);
+                MethodRef implementing = toRef(mc);
+                if (implemented != null && implementing != null
+                        && !implemented.signature().equals(implementing.signature())
+                        && !isSupertypeOf(mi.getDeclaringClass(), mc.getDeclaringClass())) {
+                    out.add(implemented.key() + ">" + implementing.key());
+                }
+                break;
+            }
+        }
+        return out.isEmpty() ? List.of() : new ArrayList<>(out);
+    }
+
+    /** 型 {@code t} が宣言する、{@code mi} の subsignature（JLS 8.4.2）のインスタンスメソッド（private を除く）。無ければ null */
+    private static IMethodBinding subsignatureIn(ITypeBinding t, IMethodBinding mi) {
+        for (IMethodBinding m : t.getDeclaredMethods()) {
+            if (!m.isConstructor() && m.getName().equals(mi.getName())
+                    && m.getParameterTypes().length == mi.getParameterTypes().length
+                    && !Modifier.isStatic(m.getModifiers()) && !Modifier.isPrivate(m.getModifiers())
+                    && isSubsignature(m, mi)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@code m} が {@code mi} の subsignature か（JLS 8.4.2）。JDT の {@code isSubsignature} は、{@code m} を宣言した型が
+     * パラメータ化された型（{@code GenBase<String>} の {@code save(String)}）だと型引数を置き換える前の宣言
+     * （{@code save(T)}）に戻して比べるので、置き換えた引数の型がそろう（同じシグネチャ）ことは先に自分で見る。
+     * 型引数を持つメソッドは JDT の判定だけにする
+     */
+    private static boolean isSubsignature(IMethodBinding m, IMethodBinding mi) {
+        if (m.getTypeParameters().length == 0 && mi.getTypeParameters().length == 0) {
+            ITypeBinding[] a = m.getParameterTypes();
+            ITypeBinding[] b = mi.getParameterTypes();
+            boolean same = true;
+            for (int k = 0; k < a.length && same; k++) {
+                same = a[k].isEqualTo(b[k]);
+            }
+            if (same) {
+                return true;
+            }
+        }
+        return m.isSubsignature(mi);
+    }
+
+    /** {@code sup} が {@code sub} の親型（消去して比べる）か */
+    private static boolean isSupertypeOf(ITypeBinding sup, ITypeBinding sub) {
+        if (sup == null || sub == null) {
+            return false;
+        }
+        String want = keyOf(sup.getErasure());
+        for (ITypeBinding t : supertypesOf(sub)) {
+            if (keyOf(t.getErasure()).equals(want)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 関数型インターフェース {@code fnType} のラムダ／メソッド参照が実装するメソッドの鍵すべて。
      *
      * JLS 9.8 では、関数型インターフェースの抽象メソッドは1つとは限らない。親から継承した

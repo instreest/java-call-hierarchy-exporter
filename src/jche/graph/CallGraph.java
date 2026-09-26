@@ -397,7 +397,7 @@ public final class CallGraph {
      * {@link #implementationOfSignature} を使う。
      */
     public int implementationOf(String typeFqn, int calleeId) {
-        return search(typeFqn, methods.signature(calleeId),
+        return search(typeFqn, methods.key(calleeId), methods.signature(calleeId),
                 overrides.overridersOf(methods.key(calleeId)), packageAccessOf(calleeId));
     }
 
@@ -583,7 +583,7 @@ public final class CallGraph {
      * 契約表の仕組みがシグネチャで名指しする以上、ここで新たに生じるものではない。
      */
     public int implementationOfSignature(String typeFqn, String sig) {
-        return search(typeFqn, sig, overrides.overridersOfSignature(sig), null);
+        return search(typeFqn, null, sig, overrides.overridersOfSignature(sig), null);
     }
 
     /**
@@ -616,13 +616,19 @@ public final class CallGraph {
      * 上書きしている場合、キーの照合だけで辿ると<b>親の実装</b>に先に当たってしまい、
      * 「上書きは無い」と結論してしまう。各段（型）で両方の軸を見る。
      *
+     * <h4>継承した実装</h4>
+     * 各段では、その型の H 行の「継承した実装」（{@link TypeHierarchy#inheritedImplementations}）も見る。
+     * {@code class UserRepo extends BaseRepo implements Repo<User>} で {@code BaseRepo.save(User)} が
+     * {@code Repo#save(java.lang.Object)} を実装する形は、キーも O 行も当たらない（その型から見たときだけの関係）。
+     *
+     * @param calleeKey 呼び出し先のキー（継承した実装を引く）。null ならシグネチャで引く
      * @param overriders その呼び出し先を上書きしているメソッド。無ければ null
      *                   （その場合はキーの照合だけになる＝ジェネリクスを使わない大多数）
      * @param packageAccess 呼び出し先がパッケージアクセスなら、その宣言のパッケージ。別パッケージの
      *                   同じシグネチャの宣言は上書きではないので飛ばして親へ進む（JLS 8.4.8.1）。
      *                   O 行の上書きは JDT の判定（{@code IMethodBinding.overrides}）なので、ここでは見ない
      */
-    private int search(String typeFqn, String sig, IntArray overriders, String packageAccess) {
+    private int search(String typeFqn, String calleeKey, String sig, IntArray overriders, String packageAccess) {
         if (typeFqn == null || typeFqn.isEmpty()) {
             return -1;
         }
@@ -632,6 +638,10 @@ public final class CallGraph {
             if (id >= 0 && methods.hasBody(id)
                     && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
                 return id;
+            }
+            int inherited = inheritedImplementationIn(chain.get(i), calleeKey, sig);
+            if (inherited >= 0 && methods.hasBody(inherited)) {
+                return inherited;
             }
         }
         List<String> declaring = new ArrayList<>();
@@ -662,6 +672,29 @@ public final class CallGraph {
             }
         }
         return fallback;
+    }
+
+    /**
+     * 型 {@code t} の H 行が持つ「継承した実装」のうち、呼び出し先（キー。null ならシグネチャ {@code sig}）を
+     * 実装するもの。無ければ -1
+     */
+    private int inheritedImplementationIn(String t, String calleeKey, String sig) {
+        for (String pair : hierarchy.inheritedImplementations(t)) {
+            int gt = pair.indexOf('>');
+            if (gt < 0) {
+                continue;
+            }
+            String implemented = pair.substring(0, gt);
+            boolean hit = (calleeKey != null) ? implemented.equals(calleeKey)
+                    : implemented.substring(implemented.indexOf('#') + 1).equals(sig);
+            if (hit) {
+                int id = methods.idOf(pair.substring(gt + 1));
+                if (id >= 0) {
+                    return id;
+                }
+            }
+        }
+        return -1;
     }
 
     /**

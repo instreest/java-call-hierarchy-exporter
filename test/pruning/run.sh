@@ -3276,6 +3276,20 @@ public class JarHold {
 EOF
 expect_ listed JarHold.ref DaoB.find "戻り値: メソッド参照の束縛したレシーバ（JhImpl）から引いた default も、jar のクラスが挟まるので本体の戻り値に使わない"
 
+case_ listed GiRet GiRet.use DaoB.find "戻り値: 親クラスから継承した create(String) が GiFac<String>.create(T) を実装する（キーが食い違う）ので、default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+interface GiFac<T> { default Dao create(T t) { return new DaoA(); } }
+class GiBase { public Dao create(String s) { return new DaoB(); } }
+class GiImpl extends GiBase implements GiFac<String> { }
+
+public class GiRet {
+    public static void main(String[] args) { use(new GiImpl()); }
+    static void use(GiFac<String> f) { f.create("x").find(); }
+}
+EOF
+expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラスの GiBase.create(String)（GiFac の default ではない。GiImpl から見たときだけの実装の関係）"
+
 # ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------

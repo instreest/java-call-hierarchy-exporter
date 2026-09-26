@@ -61,6 +61,12 @@
 8.4.8	class-wins-same-level	csv	jls.s08_04_08.ClassWins.viaAuditable	CwService.audit	-	同じ深さでも（CwOrder extends CwService implements CwAuditable）親クラスの実装が勝つ
 8.4.8	private-super-not-member	csv	jls.s08_04_08.ClassWins.viaPrivate	CwApi.m	-	親クラスの private メソッドは継承されないので、動くのは親インターフェースの default（§8.2）
 8.4.8	private-super-not-selected	nocsv	jls.s08_04_08.ClassWins.viaPrivate	CwHidden.m	-	親クラスの private メソッドは仮想呼び出しで選ばれない（JVMS 5.4.6）
+8.4.8.1	inherited-impl-generic	csv	jls.s08_04_08.InheritedImpl.viaRepo	IiBase.save	-	親クラスから継承した save(IiUser) が、型引数を置き換えた IiRepo<IiUser>.save(T) を実装する（IiBase 自身は IiRepo を実装しない。javac は IiUserRepo にブリッジを作る）
+8.4.8.1	inherited-impl-generic-super	csv	jls.s08_04_08.InheritedImpl.viaStr	IiGen.put	-	型引数を持つ親クラス IiGen<String> から継承した put(T) が IiStr.put(String) を実装する
+8.4.8.1	inherited-impl-beats-default	csv	jls.s08_04_08.InheritedImpl.mk	IiMaker.make	-	継承した実装はクラスのメソッドなので、キーが食い違っても親インターフェースの default より勝つ（§8.4.8）
+8.4.8.1	inherited-impl-no-default	nocsv	jls.s08_04_08.InheritedImpl.mk	IiFac.make	-	同上。default の IiFac.make は動かない
+8.4.8.1	inherited-impl-per-type	csv	jls.s08_04_08.InheritedImpl.other	IiFac.make	-	同じ IiMaker を継承しても IiFac<Integer> の make(Integer) は実装しない（型ごとの関係）ので default が動く
+8.4.8.1	inherited-impl-per-type-not-class	nocsv	jls.s08_04_08.InheritedImpl.other	IiMaker.make	-	同上。IiMaker.make(String) は動かない
 8.8.7	implicit-super	call	jls.s08_08.ImplicitSuper#<init>()	jls.s08_08.Parent#<init>()	-	明示的コンストラクタ呼び出しで始まらない本体は暗黙に super() を呼ぶ
 8.8.7	implicit-super-path	path	Constructors.run > ImplicitSuper.ImplicitSuper > Parent.Parent > Sink.parentNoArg	-	-	暗黙の super() を経由して親のコンストラクタ本体まで辿れる
 8.8.7	prologue-call	call	jls.s08_08.Prologue#<init>(int)	jls.s08_08.Sink#check(int)	-	柔軟なコンストラクタ本体: super(...) の前（プロローグ）の呼び出し

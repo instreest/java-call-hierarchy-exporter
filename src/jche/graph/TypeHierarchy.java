@@ -32,6 +32,11 @@ public final class TypeHierarchy {
      * {@link #directSupertypes} は名前順に並べ替えるので、どれが親クラスかはここでしか分からない
      */
     private final HashMap<String, List<String>> superclasses = new HashMap<>();
+    /**
+     * 型 -> 親クラスから継承したメソッドが親インターフェースのメソッドを実装する組（H 行の
+     * {@link TypeFact#inheritedImpls()}。{@code 実装される側のキー>実装する側のキー}）。空の型は入れない
+     */
+    private final HashMap<String, List<String>> inheritedImpls = new HashMap<>();
     /** {@link #classChain} の結果 */
     private final HashMap<String, List<String>> classChainCache = new HashMap<>();
     /** {@link #superinterfaces} の結果 */
@@ -44,6 +49,12 @@ public final class TypeHierarchy {
             List<String> known = superclasses.get(t.typeFqn());
             if (known == null || String.join(",", t.superclasses()).compareTo(String.join(",", known)) < 0) {
                 superclasses.put(t.typeFqn(), List.copyOf(t.superclasses()));
+            }
+        }
+        if (!t.inheritedImpls().isEmpty()) {
+            List<String> known = inheritedImpls.get(t.typeFqn());
+            if (known == null || String.join(";", t.inheritedImpls()).compareTo(String.join(";", known)) < 0) {
+                inheritedImpls.put(t.typeFqn(), List.copyOf(t.inheritedImpls()));
             }
         }
         if (!t.annotations().isEmpty()) {
@@ -111,6 +122,15 @@ public final class TypeHierarchy {
     public List<String> directSupertypes(String type) {
         List<String> sups = directSupertypes.get(type);
         return (sups == null) ? List.of() : sups;
+    }
+
+    /**
+     * その型で、親クラスから継承したメソッドが親インターフェースのメソッドを実装する組
+     * （{@code 実装される側のキー>実装する側のキー}。{@link TypeFact#inheritedImpls()}）。無ければ空
+     */
+    public List<String> inheritedImplementations(String type) {
+        List<String> l = inheritedImpls.get(type);
+        return (l == null) ? List.of() : l;
     }
 
     /**
