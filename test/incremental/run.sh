@@ -30,6 +30,8 @@
 #      型解決に失敗した呼び出しの行を含む）が残らないこと。前の実行が残したもの（SIGKILL・停電）は、次の実行の
 #      最初に消すこと。強制終了（SIGTERM）のときは JVM の終了フックが消すこと。どちらでも、中断からの引き継ぎに
 #      使うキャッシュ本体の一時ファイル（analysis-cache.tsv.tmp）は消さずに引き継ぐこと
+#  12) JDT に一緒に渡すファイル（バッチ）の組み方に事実が依らないこと（JDT が途中で止まったあとの経路・名前の違う
+#      ファイルの型・jar が参照するソースの入れ子の型・ソースのモジュールの import。CallEdgeExtractor#analyzeBatch）
 #   4) キャッシュの行が壊れていないこと（行頭が既知の種別で、F 行の次は必ず I 行。ブロックの中の行が
 #      決まった順に並ぶこと。記号（S 行）とノード（N 行）の番号がブロックの中で 0 から詰まっていて、
 #      参照がブロックに収まること）
@@ -4876,24 +4878,34 @@ sink_overflow_case() {
     rc=$?
     grep -a -E '^  (OK|NG)' $d/c1.log
     [ "$rc" = 0 ] || { echo "  NG   一括パースの受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c1.log）"; fail=1; }
+    # 受け手が文言の無い例外を投げたときも、失敗の理由に例外の名前を添える（JDT の打ち切り AbortCompilation も文言を
+    # 持たず、warnings.txt の行が「()」だけになっていた）
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -Dcheck.blank=src/p/C.java -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck \
+        $d/c1.properties src/p/B.java > $d/c3.log 2>&1
+    rc=$?
+    grep -a -E '^  (OK|NG)' $d/c3.log
+    [ "$rc" = 0 ] || { echo "  NG   文言の無い例外で失敗したファイルの理由が期待と違います（test/incremental/$d/c3.log）"; fail=1; }
     "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c2.properties \
         src/p/B.java deep/p/Deep.java > $d/c2.log 2>&1
     rc=$?
     grep -a -E '^  (OK|NG)' $d/c2.log
-    [ "$rc" = 0 ] || { echo "  NG   一括パースが溢れたあとの受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c2.log）"; fail=1; }
-    if grep -q -F "is analyzed on its own" $d/c2.log; then
-        echo "  OK   深い式のファイルで一括パースが溢れ、そのファイルを単独で、残りをもう一度まとめて解析する経路を通った"
+    [ "$rc" = 0 ] || { echo "  NG   一括パースが溢れたあとに解析し直す経路の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c2.log）"; fail=1; }
+    # 深い式のファイルがバッチの先頭にあると、どのファイルも渡さないうちに溢れる。最初の組（深いファイル）だけで試すと
+    # また溢れるので、そのファイルを脇に置き、残りは 1 つのバッチで続ける（半分には分けない）
+    if grep -q -F "ran out of stack in a batch" $d/c2.log && ! grep -q -F "two smaller batches" $d/c2.log \
+            && grep -q -F "deep/p/Deep.java is set aside" $d/c2.log; then
+        echo "  OK   深い式のファイルで一括パースが溢れ、最初のファイルだけで確かめて、そのファイルを脇に置いて解析し直す経路を通った"
     else
         echo "  NG   一括パースが溢れず、溢れたあとの経路を通っていません（題材が効いていない）"; fail=1
     fi
     "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c1.properties \
-        src/p/B.java --alone > $d/c3.log 2>&1
+        src/p/B.java --alone > $d/c3a.log 2>&1
     rc=$?
-    grep -a -E '^  (OK|NG)' $d/c3.log
-    [ "$rc" = 0 ] || { echo "  NG   1 ファイルずつの解析の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c3.log）"; fail=1; }
+    grep -a -E '^  (OK|NG)' $d/c3a.log
+    [ "$rc" = 0 ] || { echo "  NG   1 ファイルずつの解析の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c3a.log）"; fail=1; }
     # 型の宣言を深く入れ子にしたファイルは、JDT がどのファイルも渡さないうち（型の束縛を作るところ）に溢れさせる。
-    # それをバッチの最後に置く。どのファイルで溢れたかは分からないので、最初のファイルを単独にせず、バッチを半分ずつに
-    # 分けて解析し直す。以前は前から 1 つずつ関係の無いファイル（src/p/A.java …）を単独にしてバッチ全体を解析し直し、
+    # それをバッチの最後に置く。どのファイルで溢れたかは分からないので、最初のファイルだけで試し（溢れない）、
+    # 関係の無いそのファイルを脇に置かずに、バッチを半分ずつに分けて解析し直す。以前は前から 1 つずつ関係の無いファイル（src/p/A.java …）を単独にしてバッチ全体を解析し直し、
     # 案内もそのファイルの名前を挙げていた（docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）
     mkdir -p $d/nest/p
     {
@@ -4908,13 +4920,320 @@ sink_overflow_case() {
     rc=$?
     grep -a -E '^  (OK|NG)' $d/c4.log
     [ "$rc" = 0 ] || { echo "  NG   どのファイルも渡さないうちに溢れたあとの受け手の扱いが期待と違います（test/incremental/$d/c4.log）"; fail=1; }
-    if grep -q -F "before any file was finished" $d/c4.log && ! grep -q -F "while reading src/" $d/c4.log; then
+    if grep -q -F "before any file was finished" $d/c4.log && grep -q -F "two smaller batches" $d/c4.log \
+            && ! grep -q -E "before returning src/|src/p/[A-Za-z]+\.java is set aside" $d/c4.log; then
         echo "  OK   どのファイルも渡さないうちに溢れたら、関係の無いファイルを単独にせず、バッチを半分ずつに分けて解析し直した"
     else
         echo "  NG   どのファイルも渡さないうちに溢れたときに、関係の無いファイルを単独にしています（test/incremental/$d/c4.log）"
         grep -a -F "ran out of stack" $d/c4.log | head -3; fail=1
     fi
+    # 深い式のファイルがバッチの最後にあると、JDT はほかのファイルを渡したあとで溢れる。渡したファイルの事実はまだ集めて
+    # いない（バッチの全ファイルを解決し終えてから集める）ので、それだけで 1 つのバッチとして解析し直し、深いファイルは
+    # 脇に置いて最後に 1 つだけで解析する（失敗になる）。どのファイルも 1 回だけ数えられる
+    integrity_cfg $d/c5.properties "$PWD/$d" src,deep
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c5.properties \
+        src/p/B.java deep/p/Deep.java > $d/c5.log 2>&1
+    rc=$?
+    grep -a -E '^  (OK|NG)' $d/c5.log
+    [ "$rc" = 0 ] || { echo "  NG   溢れる前に受け取ったファイルがあるときの受け手の扱いが期待と違います（test/incremental/$d/c5.log）"; fail=1; }
+    if grep -q -F "ran out of stack in a batch before returning deep/p/Deep.java" $d/c5.log \
+            && grep -q -F "finished before deep/p/Deep.java are analyzed again as a batch of their own" $d/c5.log \
+            && grep -q -F "deep/p/Deep.java is set aside" $d/c5.log; then
+        echo "  OK   溢れる前に受け取ったファイルはそれだけで解析し直し、溢れたファイルを脇に置いた"
+    else
+        echo "  NG   溢れる前に受け取ったファイルがあるときの経路を通っていません（test/incremental/$d/c5.log）"
+        grep -a -F "Java parser" $d/c5.log | head -5; fail=1
+    fi
 }
 sink_overflow_case
+
+# ---- JDT に一緒に渡すファイル（バッチ）の組み方に事実を依らせない ----
+# JDT は、同じ createASTs に渡したファイルの型はどれも見つけるが、渡していない型はソースパスから
+# 「パッケージのフォルダ／型の名前.java」で探す。この探し方で見つからない型は、宣言したファイルが同じバッチにいる
+# ときだけ見つかるので、全件解析（100 件ずつ）と差分更新（変わったファイルだけ）とで事実が食い違っていた。
+# 題材は $IW/batch/p にその場で作り、書き換えのあとの差分更新と、キャッシュを消した全件解析を比べる
+# （CSV・warnings.txt・キャッシュ。jche.analysis.CallEdgeExtractor#analyzeBatch）
+batch_config() {   # $1=設定ファイル  $2=project.root  $3=source.folders  $4=キャッシュのフォルダ  $5=source.level
+    local d
+    d=$(cd "$(dirname "$1")" && pwd)
+    cat > "$1" <<EOF
+project.root=$2
+source.folders=$3
+library.folders=
+library.build.tool=none
+source.encoding=UTF-8
+source.level=$5
+exclude.packages=java.**,javax.**
+cache.enabled=true
+cache.folder=$4
+dataflow.enabled=true
+output.encoding=UTF-8
+output.folder=$d/out-$(basename "$1" .properties)
+EOF
+}
+bfile() {   # $1=ファイル。本文は標準入力
+    mkdir -p "$(dirname "$1")" && cat > "$1"
+}
+deep_file() {   # $1=ファイル  $2=パッケージ（空なら既定のパッケージ）。呼び出しを 1 万段つないだ式（Q62。JDT のスタックが溢れる）
+    mkdir -p "$(dirname "$1")"
+    {
+        [ -n "$2" ] && printf 'package %s;\n' "$2"
+        printf 'public class ADeep {\n    String chain() {\n        return new StringBuilder()'
+        for ((i = 0; i < 10000; i++)); do printf '.append(%d)' "$i"; done
+        printf '.toString();\n    }\n}\n'
+    } > "$1"
+}
+# $1=ラベル  $2=用意する関数  $3=書き換える関数（どちらも題材のフォルダを受け取る）  $4=source.folders  $5=source.level
+# $6=差分更新のログに出るはずの文字列（題材が効いていることの確かめ。空なら見ない）
+batch_case() {
+    echo "== $1 =="
+    local d=$IW/batch
+    rm -rf $d && mkdir -p $d/p
+    "$2" $d/p
+    batch_config $d/c.properties "$PWD/$d/p" "${4:-src}" "$PWD/$d/cache" "${5:-17}"
+    batch_config $d/full.properties "$PWD/$d/p" "${4:-src}" "$PWD/$d/fullcache" "${5:-17}"
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    "$3" $d/p
+    integrity_run $d/c.properties $d/c1.log
+    [ "$IRC" = 0 ] || { echo "  NG   差分更新に失敗しました"; tail -5 $d/c1.log; fail=1; return; }
+    local inc_out=$IOUT
+    if [ -n "${6:-}" ]; then
+        if grep -q -F "$6" $d/c1.log $d/c0.log; then
+            echo "  OK   $1 題材が効いている（ログに「$6」）"
+        else
+            echo "  NG   $1 題材が効いていません（ログに「$6」が無い）"; fail=1
+        fi
+    fi
+    integrity_run $d/full.properties $d/full.log
+    [ "$IRC" = 0 ] || { echo "  NG   全件解析に失敗しました"; tail -5 $d/full.log; fail=1; return; }
+    same_all "$1" "$inc_out" "$IOUT" $d/cache $d/fullcache
+}
+
+# 依存 jar に無いクラス（q.Missing）を、ソースパスから読んだ型（B・other.O）のシグネチャが参照している。JDT は A の
+# 解析の途中で B のシグネチャを読み、見つからないクラスで解析をまるごと打ち切る（例外を出さずに、A と後ろの
+# ファイルを返さない）。B が同じバッチにいれば打ち切らない。以前は何も言わずに残りを 1 ファイルずつ読み直し、A は
+# 型の解決の無い事実になり、同じバッチの C は D.java の record Helper を見失っていた。今は止まったファイルを脇に置いて
+# 残りを 1 つのバッチで続け、脇に置いたファイルは同じフォルダのファイルと import しているファイルを添えて解析し直す。
+# 見つからないクラスは B と O で別にする（同じクラスだと、JDT がそれを知らせるのがバッチで最初に出会ったファイル
+# だけになり、ここで見たいこととは別の理由で食い違う）
+bc_setup_abort() {
+    mkdir -p $1/jsrc/q $1/jcls $1/lib
+    printf 'package q;\npublic interface Missing { int X = 1; }\n' > $1/jsrc/q/Missing.java
+    printf 'package q;\npublic class Api { public Missing[] probs() { return null; } }\n' > $1/jsrc/q/Api.java
+    printf 'package q;\npublic interface Missing2 { int X = 1; }\n' > $1/jsrc/q/Missing2.java
+    printf 'package q;\npublic class Api2 { public Missing2[] probs() { return null; } }\n' > $1/jsrc/q/Api2.java
+    "$JAVAC_BIN" -d $1/jcls $1/jsrc/q/*.java && rm $1/jcls/q/Missing.class $1/jcls/q/Missing2.class \
+        && ( cd $1/jcls && "$JAR_BIN" cf ../lib/q.jar q ) || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf $1/jsrc $1/jcls
+    printf 'package app;\npublic class A { Object o = new B() { }; }\n' | bfile $1/src/app/A.java
+    printf 'package app;\nimport q.Missing;\npublic class B { public B() { } static void w(q.Api a, Missing m) { } }\n' \
+        | bfile $1/src/app/B.java
+    printf 'package app;\npublic class C { public void c() { new Helper().go(); } }\n' | bfile $1/src/app/C.java
+    printf 'package app;\npublic class D { }\nrecord Helper() { public void go() { } }\n' | bfile $1/src/app/D.java
+    printf 'package app;\nimport other.O;\npublic class E { Object o = new O() { }; public void e() { new C().c(); } }\n' \
+        | bfile $1/src/app/E.java
+    printf 'package other;\nimport q.Missing2;\npublic class O { public O() { } public static void w(q.Api2 a, Missing2 m) { } }\n' \
+        | bfile $1/src/other/O.java
+}
+bc_edit_abort() {
+    local f
+    for f in A C D E; do printf '\n// changed\n' >> $1/src/app/$f.java; done
+}
+batch_case "依存 jar に無いクラスで JDT が打ち切る（例外なし）" bc_setup_abort bc_edit_abort src 17 \
+    "stopped in a batch without an error"
+
+# JDT が例外で止まったとき（深い式でスタックが溢れる。Q62）に残りのファイルを読む経路が、バッチと同じ読み方であること。
+# 以前は残りを 1 ファイルずつ Files.readString で読み直していて、source.encoding で読めないバイトがあるとファイルごと
+# 失敗し、UTF-8 の BOM を構文エラーにし、既定のパッケージのファイルの名前を I 行に入れていた（バッチは JDT が読み、
+# 読めないバイトは置き換え、BOM は捨て、ファイル名は拾わない）。深い式のファイルを足した差分更新は、残りのファイルを
+# 再利用するので、全件解析とだけ違っていた
+bc_setup_reader() {
+    mkdir -p $1/src/p
+    printf 'package p;\n// comment: @@\npublic class Bad { public void b() { new User().done(); } }\n' > $1/src/p/Bad.java
+    python3 -c "import sys; p=sys.argv[1]; b=open(p,'rb').read().replace(b'@@', b'\xff\xfe'); open(p,'wb').write(b)" \
+        $1/src/p/Bad.java
+    printf '\xef\xbb\xbfpackage p;\npublic class Bom { public void b() { new User().done(); } }\n' > $1/src/p/Bom.java
+    printf 'package p;\npublic class User { void u() { new Bad().b(); new Bom().b(); } void done() { } }\n' \
+        | bfile $1/src/p/User.java
+    printf 'public class Right { public void r() { } }\n' | bfile $1/src/Wrong.java
+    printf 'public class UsesRight { void u() { new Right().r(); } }\n' | bfile $1/src/UsesRight.java
+}
+bc_edit_reader() { deep_file $1/src/ADeep.java ""; }
+batch_case "スタックが溢れたあとの残りのファイルの読み方（読めないバイト・BOM・既定のパッケージ）" \
+    bc_setup_reader bc_edit_reader src 17 "ran out of stack in a batch"
+
+# 同じクラスが 2 つのソースフォルダにある組（SameUnitFiles。Q61）は、JDT が途中で止まったあとも一緒に解析する。
+# 以前は残りを 1 ファイルずつ解析して組を分け、2 つ目の Dup の「型が重複している」エラーが消えていた
+bc_setup_pair() {
+    printf 'package p;\npublic class Dup { public void a() { } }\n' | bfile $1/src1/p/Dup.java
+    printf 'package p;\npublic class Dup { public void b() { } }\n' | bfile $1/src2/p/Dup.java
+    printf 'package q;\npublic class User { void u() { new p.Dup().a(); new p.Dup().b(); } }\n' | bfile $1/src2/q/User.java
+}
+bc_edit_pair() { deep_file $1/src1/a/ADeep.java a; }
+batch_case "スタックが溢れたあとも、同じ名前のファイルの組を分けない" bc_setup_pair bc_edit_pair src1,src2 17 \
+    "ran out of stack in a batch"
+
+# 名前の違うファイルで宣言したトップレベルの型（Result.java の record Ok・Patterns.java の record の後ろの class Sink・
+# Bases.java の record の後ろの class Base）。JDT はこの型をパッケージのファイルを Java 8 の文法で読み直して探すので、
+# record・sealed の宣言とそれより後ろの型を見落とし、宣言したファイルが同じバッチにいるときだけ見つかった。
+# q.QUser は見つからないと f.toString() をエラーなしで Object.toString に結び付け、Base.toString の呼び出しが
+# 黙って消えた。今はそのようなファイルをどのバッチにも添える
+bc_setup_secondary() {
+    printf 'package p;\npublic sealed interface Result permits Ok, Err { }\nrecord Ok(String value) implements Result { String shout() { return value.toUpperCase(); } }\nrecord Err(String message) implements Result { }\n' \
+        | bfile $1/src/p/Result.java
+    printf 'package p;\npublic class Patterns { }\nrecord Point(int x, int y) { }\nclass Sink { static void readX() { } }\n' \
+        | bfile $1/src/p/Patterns.java
+    printf 'package p;\npublic class Bases { }\nrecord R() { }\nclass Base { @Override public String toString() { return "b"; } public void b() { } }\n' \
+        | bfile $1/src/p/Bases.java
+    printf 'package p;\npublic class Foo extends Base { }\n' | bfile $1/src/p/Foo.java
+    printf 'package p;\npublic class User { String make() { return new Ok("x").shout(); } void go() { Sink.readX(); } }\n' \
+        | bfile $1/src/p/User.java
+    printf 'package q;\npublic class QUser { void go(p.Foo f) { f.toString(); f.b(); } }\n' | bfile $1/src/q/QUser.java
+}
+bc_edit_secondary() {
+    printf '\n// changed\n' >> $1/src/p/User.java
+    printf '\n// changed\n' >> $1/src/q/QUser.java
+}
+batch_case "名前の違うファイルで宣言した record と、その後ろの型" bc_setup_secondary bc_edit_secondary src 17 \
+    "declare a top-level type whose name differs from the file name"
+
+# 同じことが、全件解析のバッチ（100 件ずつ）の切れ目でも起きる。宣言したファイル（AaPatterns.java）と使うファイル
+# （ZUser.java）のあいだに 100 のファイルを置くと、全件解析では別々のバッチになり、Sink.readX を解決できなかった。
+# 両方を書き換えた差分更新は同じバッチで解析するので解決していた
+bc_setup_secondary_far() {
+    printf 'package a;\npublic class AaPatterns { }\nrecord Point(int x, int y) { }\nclass Sink { static void readX() { } }\n' \
+        | bfile $1/src/a/AaPatterns.java
+    local i
+    for ((i = 100; i < 200; i++)); do
+        printf 'package a;\npublic class F%d { }\n' $i | bfile $1/src/a/F$i.java
+    done
+    printf 'package a;\npublic class ZUser { void go() { Sink.readX(); } }\n' | bfile $1/src/a/ZUser.java
+}
+bc_edit_secondary_far() {
+    printf '\n// changed\n' >> $1/src/a/AaPatterns.java
+    printf '\n// changed\n' >> $1/src/a/ZUser.java
+}
+batch_case "名前の違うファイルで宣言した型（全件解析のバッチの切れ目）" bc_setup_secondary_far bc_edit_secondary_far src 17
+
+# jar のクラスがソースの入れ子の型（app.Outer.Inner）を参照している。JDT はクラスファイルの名前（app/Outer$Inner）で
+# 型を探し、ソースパスからは見つけられない（app.Outer を読んでいれば、その入れ子の型として見つかる）。以前は Outer.java が
+# 同じバッチにいるときだけ見つかり、U の呼び出しが BINDING_FAILED になり、ビルドの通るソースがコンパイルエラーと
+# 報告された。今は $ のまま残った名前を見て、宣言するファイルを添えて解析し直す
+bc_setup_member() {
+    mkdir -p $1/jsrc/app $1/jsrc/lib $1/jcls $1/lib
+    printf 'package app;\npublic class Outer { public static class Inner { public void hi() { } } }\n' > $1/jsrc/app/Outer.java
+    printf 'package lib;\npublic class L { public app.Outer.Inner make() { return null; } }\n' > $1/jsrc/lib/L.java
+    printf 'package lib;\npublic class L2 extends app.Outer.Inner { }\n' > $1/jsrc/lib/L2.java
+    "$JAVAC_BIN" -d $1/jcls $1/jsrc/app/Outer.java $1/jsrc/lib/*.java && rm -r $1/jcls/app \
+        && ( cd $1/jcls && "$JAR_BIN" cf ../lib/l.jar lib ) || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf $1/jsrc $1/jcls
+    printf 'package app;\npublic class Outer { public static class Inner { public void hi() { } } }\n' | bfile $1/src/app/Outer.java
+    printf 'package u;\npublic class U { void u() { new lib.L().make().hi(); new lib.L2().hi(); } }\n' | bfile $1/src/u/U.java
+}
+bc_edit_member_user() { printf '\n// changed\n' >> $1/src/u/U.java; }
+bc_edit_member_decl() {
+    printf 'package app;\npublic class Outer { public static class Inner { public void hi() { } public void ho() { } } }\n' \
+        > $1/src/app/Outer.java
+}
+batch_case "jar のクラスが参照するソースの入れ子の型（使う側を書き換える）" bc_setup_member bc_edit_member_user
+batch_case "jar のクラスが参照するソースの入れ子の型（宣言する側を書き換える）" bc_setup_member bc_edit_member_decl
+
+# ソースのモジュールの import（JEP 511）。JDT はソースの module-info.java を、それが同じバッチにいるときだけ知っているので、
+# import module app; がエラーになるかどうかがバッチの組み方で決まった。module-info.java を書き換えても、import する
+# ファイルは解析し直されなかった。今は module-info.java をほかのファイルと同じバッチに入れない
+bc_setup_module() {
+    printf 'module app { }\n' | bfile $1/src/module-info.java
+    printf 'package app;\npublic class V { public void run() { } }\n' | bfile $1/src/app/V.java
+    printf 'package app;\nimport module app;\npublic class W { public void go(V v) { v.run(); } }\n' | bfile $1/src/app/W.java
+}
+bc_edit_module_user() { printf '\n// changed\n' >> $1/src/app/W.java; }
+bc_edit_module_rename() { printf 'module app2 { }\n' > $1/src/module-info.java; }
+batch_case "ソースのモジュールの import（使う側を書き換える）" bc_setup_module bc_edit_module_user src 25
+batch_case "ソースのモジュールの import（モジュールの名前を変える）" bc_setup_module bc_edit_module_rename src 25
+
+# jar のクラスが参照するソースの入れ子の型を、あとから足す（レビューでの追加）。はじめ app/Outer.java に Inner が無いので、
+# U の事実には見つからなかった名前が app.Outer$Inner のまま残る（Outer.java を添えても同じ）。Outer.java に Inner を足したら
+# U を解析し直さないと、全件解析では解決できる呼び出しが BINDING_FAILED のまま残る。I 行の名前の「$」の前の部分
+# （app.Outer）も変わった型として当てる（CacheUpdater の underChangedType・hasSegment）
+bc_setup_member_later() {
+    bc_setup_member $1
+    printf 'package app;\npublic class Outer { }\n' > $1/src/app/Outer.java
+}
+bc_edit_member_later() {
+    printf 'package app;\npublic class Outer { public static class Inner { public void hi() { } } }\n' > $1/src/app/Outer.java
+}
+batch_case "jar のクラスが参照するソースの入れ子の型（入れ子の型を後から足す）" bc_setup_member_later bc_edit_member_later
+
+# 打ち切りの原因の型を完全修飾名で書いた（other.O・other.B。同じフォルダにも import にも無い）（レビューでの追加）。
+# JDT が止まったファイルに名前を書いた型のファイルは、import に無くても添えて解析し直すので、全件解析と同じになる
+bc_setup_abort_fqn() {
+    bc_setup_abort $1
+    printf 'package app;\npublic class E { Object o = new other.O() { }; void e() { other.O.w(null, null); } }\n' \
+        > $1/src/app/E.java
+}
+bc_edit_abort_fqn() { printf '\n// changed\n' >> $1/src/app/E.java; }
+batch_case "依存 jar に無いクラスで JDT が打ち切る（原因の型を完全修飾名で書いた）" bc_setup_abort_fqn bc_edit_abort_fqn src 17 \
+    "stopped in a batch without an error"
+
+# 同じ原因で多くのファイルが止まるとき（レビューでの追加）。30 のファイルがどれも、依存 jar に無いクラスを参照する other.B の
+# static メソッドを呼ぶ。30 のファイルだけを書き換えた差分更新では B が同じバッチにいないので、添えなければファイルごとに
+# JDT が止まり、残りを 30 回解析し直していた（1000 ファイルの題材で全件解析が 4 倍遅くなった）。止まったファイルに関わる
+# ファイル（B）はバッチの残りにも添えるので、止まるのは 1 回だけで、結果は全件解析と同じ
+bc_setup_abort_many() {
+    bc_setup_abort $1
+    rm -f $1/src/app/*.java
+    local i
+    for ((i = 10; i < 40; i++)); do
+        printf 'package app;\nimport other.O;\npublic class F%d { void f() { O.w(null, null); } }\n' $i | bfile $1/src/app/F$i.java
+    done
+}
+bc_edit_abort_many() {
+    local f
+    for f in $1/src/app/F*.java; do printf '\n// changed\n' >> $f; done
+}
+batch_case "依存 jar に無いクラスで多くのファイルが止まる" bc_setup_abort_many bc_edit_abort_many src 17 \
+    "stopped in a batch without an error"
+stops=$(grep -c -F "stopped in a batch without an error" $IW/batch/c1.log)
+if [ "$stops" = 1 ]; then
+    echo "  OK   止まったのは 1 回だけ（止まったファイルに関わるファイルをバッチの残りにも添える）"
+else
+    echo "  NG   JDT が $stops 回止まりました（1 回のはず。止まったファイルに関わるファイルをバッチの残りに添えていない）"; fail=1
+fi
+
+# 打ち切りの原因の型（third.B）を、止まったファイル（E）が書いた名前の型（other.Q）のシグネチャを通してしか使っていない
+# ときは、関わるファイル（同じフォルダ・名前を書いた型のファイル）を添えても JDT が打ち切る。そのファイルは型の解決の
+# 無い事実として黙って書かず、失敗として数えて、warnings.txt に理由とともに載せる（全件解析で E と B が同じバッチに
+# いれば打ち切らないので、ここは全件解析と違いうる。受け入れた限界）
+abort_limit_case() {
+    echo "== JDT の打ち切りの原因の型を、名前を書いた型のシグネチャを通してしか使っていない（受け入れた限界） =="
+    local d=$IW/batch
+    rm -rf $d && mkdir -p $d/p
+    bc_setup_abort $d/p
+    printf 'package app;\npublic class E { void e() { other.Q.b().w(null, null); } }\n' > $d/p/src/app/E.java
+    printf 'package other;\npublic class Q { public static third.B b() { return null; } }\n' | bfile $d/p/src/other/Q.java
+    printf 'package third;\nimport q.Missing;\npublic class B { public static void w(q.Api a, Missing m) { } }\n' \
+        | bfile $d/p/src/third/B.java
+    batch_config $d/c.properties "$PWD/$d/p" src "$PWD/$d/cache" 17
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    printf '\n// changed\n' >> $d/p/src/app/E.java
+    integrity_run $d/c.properties $d/c1.log
+    [ "$IRC" = 0 ] || { echo "  NG   差分更新に失敗しました"; tail -5 $d/c1.log; fail=1; return; }
+    if grep -q -F "src/app/E.java" "$IOUT/warnings.txt" 2>/dev/null \
+            && grep -q -F "the Java parser stopped analyzing this file" "$IOUT/warnings.txt"; then
+        echo "  OK   打ち切ったファイルを失敗として warnings.txt に理由とともに載せる"
+    else
+        echo "  NG   打ち切ったファイルが warnings.txt に失敗として載っていません"; fail=1
+    fi
+    # 失敗したファイルには印のブロック（内容ハッシュが空の F 行と空の I 行）だけを書く（次の実行で解析し直す）。
+    # 内容ハッシュのある F 行は、型の解決の無い事実を解析できたものとして書いたことになる
+    if awk -F'\t' '$1 == "F" && $2 == "src/app/E.java" && $5 != ""' "$(ls $d/cache/*/analysis-cache.tsv)" | grep -q .; then
+        echo "  NG   打ち切ったファイルのブロックを書きました（型の解決の無い事実）"; fail=1
+    else
+        echo "  OK   打ち切ったファイルには失敗の印のブロックだけを書く（次の実行で解析し直す）"
+    fi
+}
+abort_limit_case
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

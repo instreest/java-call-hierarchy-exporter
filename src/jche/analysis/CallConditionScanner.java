@@ -225,7 +225,8 @@ public final class CallConditionScanner {
     public static Result scan(Config config, ProjectLayout layout, String target) throws IOException {
         Target t = Target.parse(target);
         List<Path> matched = new ArrayList<>();
-        for (Path java : layout.listJavaFiles()) {
+        List<Path> all = layout.listJavaFiles();
+        for (Path java : all) {
             if (t.matchesFile(layout.relativeOf(java))) {
                 matched.add(java);
             }
@@ -245,6 +246,12 @@ public final class CallConditionScanner {
 
         // 判定できない条件も残すモードで解析する。結果はキャッシュへ書かず、ここで捨てる
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config, true);
+        // キャッシュの解析と同じファイルを添える（CallEdgeExtractor#prepare。警告はキャッシュの解析が出す）
+        List<CallEdgeExtractor.SourceFile> everything = new ArrayList<>();
+        for (Path java : all) {
+            everything.add(new CallEdgeExtractor.SourceFile(java, layout.relativeOf(java), Files.size(java)));
+        }
+        extractor.prepare(everything);
         List<CallSiteConditions> sites = new ArrayList<>();
         int[] total = {0};
         extractor.analyzeBatch(files, new CallEdgeExtractor.Sink() {
