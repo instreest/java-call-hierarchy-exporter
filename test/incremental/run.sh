@@ -2647,6 +2647,129 @@ edit_during_run_case "解析するファイル" Worker.java "$(printf 'package e
 # 解析するファイルが参照するファイル（再利用するブロック）を書き換える。JDT はソースパスから書き換え後の中身を読む
 edit_during_run_case "参照されるファイル" Helper.java "$(printf 'package e;\n\npublic class Helper {\n    static void oneRenamed() {\n    }\n}')"
 
+# 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
+# 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q61）。
+# ソースフォルダの並びを入れ替えると、どちらのファイルがエラーになるかも変わる（Q58）
+dup_project() {   # $1=フォルダ
+    mkdir -p "$1/s1/p" "$1/s2/p"
+    cat > "$1/s1/p/Main.java" <<'EOF'
+package p;
+
+public class Main {
+    public static void main(String[] args) {
+        new Dup().a();
+        new Dup().b();
+    }
+
+    static void x() {
+    }
+
+    static void y() {
+    }
+}
+EOF
+    cat > "$1/s1/p/Dup.java" <<'EOF'
+package p;
+
+public class Dup {
+    public void a() {
+        Main.x();
+    }
+}
+EOF
+    cat > "$1/s2/p/Dup.java" <<'EOF'
+package p;
+
+public class Dup {
+    public void b() {
+        Main.y();
+    }
+}
+EOF
+}
+dup_case() {
+    echo "== 同じクラスが 2 つのソースフォルダにある =="
+    local d=$IW/dup
+    rm -rf $d && mkdir -p $d && dup_project $d
+    integrity_cfg $d/c.properties "$PWD/$d" s1,s2
+    integrity_cfg $d/full.properties "$PWD/$d" s1,s2 "$PWD/$d/fullcache"
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    printf '\n// changed\n' >> $d/s2/p/Dup.java
+    integrity_run $d/c.properties $d/c1.log
+    local inc_out=$IOUT
+    integrity_run $d/full.properties $d/full.log
+    same_csv "片方だけを書き換えた差分更新" "$inc_out" "$IOUT"
+    if diff -q <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+               <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") > /dev/null; then
+        echo "  OK   片方だけを書き換えた差分更新 キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   片方だけを書き換えた差分更新 キャッシュが全件解析と違います"
+        diff <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+             <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") | head -10; fail=1
+    fi
+    # 重複を黙って通さない（2 つ目のファイルはコンパイルエラーとして warnings.txt に載る。全件解析でも差分更新でも）
+    if grep -q -F -- "- s2/p/Dup.java" "$inc_out/warnings.txt" 2>/dev/null \
+            && grep -q -F -- "- s2/p/Dup.java" "$IOUT/warnings.txt" 2>/dev/null; then
+        echo "  OK   重複した型のファイルが warnings.txt に載る（差分更新でも全件解析でも）"
+    else
+        echo "  NG   重複した型のファイルが warnings.txt に載っていません"; fail=1
+    fi
+    # 型が重複しているエラーの引数には、ソースファイルの絶対パスが入る。解決できなかった名前（I 行の 2 列目）に
+    # パスの途中のフォルダ名（home・incremental など）を拾うと、同じソースでも置き場所でキャッシュの事実が変わる
+    # （docs/cache-unification-qa.md の Q64）
+    local names part leaked=""
+    names=$(awk -F'\t' '$1 == "F" { f = $2 } $1 == "I" && f == "s2/p/Dup.java" { print $3 }' \
+        "$(ls $d/cache/*/analysis-cache.tsv)")
+    for part in $(printf '%s' "$PWD/$d" | tr -c 'A-Za-z0-9_$' ' '); do
+        case ",$names," in *",$part,"*) leaked="$leaked $part" ;; esac
+    done
+    if [ -n "$names" ] && [ -z "$leaked" ]; then
+        echo "  OK   重複した型のファイルの解決できなかった名前（$names）に、置き場所のフォルダ名が入らない"
+    else
+        echo "  NG   重複した型のファイルの解決できなかった名前が空か、置き場所のフォルダ名を含みます（${names:-空}。${leaked# }）"
+        fail=1
+    fi
+
+    echo "== ソースフォルダの並びを入れ替える =="
+    integrity_cfg $d/c.properties "$PWD/$d" s2,s1
+    integrity_cfg $d/full.properties "$PWD/$d" s2,s1 "$PWD/$d/fullcache2"
+    integrity_run $d/c.properties $d/c2.log
+    inc_out=$IOUT
+    if [ "$IRC" = 0 ] && [ "$IREUSED" = 0 ] && grep -q -F "source folder order" $d/c2.log; then
+        echo "  OK   並びを入れ替えたらキャッシュを再利用しない"
+    else
+        echo "  NG   並びを入れ替えたのにキャッシュを再利用しています（再利用=${IREUSED:-?}）"; fail=1
+    fi
+    integrity_run $d/full.properties $d/full2.log
+    same_csv "ソースフォルダの並びを入れ替えた実行" "$inc_out" "$IOUT"
+    # 入れ替えで解決先が実際に変わっていること（変わらなければ検査が素通りする）
+    if diff -q "$inc_out/call-hierarchy.csv" "$(ls -d $d/out-c/*/ | sort | head -1)call-hierarchy.csv" > /dev/null; then
+        echo "  NG   並びを入れ替えても出力が変わっていません（検査が素通りします）"; fail=1
+    else
+        echo "  OK   並びを入れ替えると出力が変わる"
+    fi
+}
+dup_case
+
+# 差分更新と全件解析で、CSV・warnings.txt・キャッシュ（ブロックの並べ替え後）が同じこと
+same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件解析の出力フォルダ  $4=差分更新のキャッシュのフォルダ  $5=全件解析のキャッシュのフォルダ
+    same_csv "$1" "$2" "$3"
+    if diff -q <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) > /dev/null; then
+        echo "  OK   $1 warnings.txt（全件解析と同じ）"
+    else
+        echo "  NG   $1 warnings.txt が全件解析と違います"
+        diff <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) | head -10; fail=1
+    fi
+    if diff -q <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
+        echo "  OK   $1 キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   $1 キャッシュが全件解析と違います"
+        diff <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") | head -10
+        fail=1
+    fi
+}
+
 # --- クラスパスとソースの形（シンボリックリンク・クラスフォルダの .java・jmod・同じ名前のエントリ・1 件ずつ指定した
 #     クラスフォルダ・解析のあいだの依存 jar の書き換え）---------------------------------------------------------
 # JDT はソースパスとクラスパスのフォルダをリンクをたどって読み、クラスフォルダの .java もソースとして読み、jmod は
@@ -2956,129 +3079,6 @@ setup_swap_cls() {
 classpath_swap_case "jar を差し替える" setup_swap_jar p/lib/l.jar temp.jar src "library.folders=lib"
 classpath_swap_case "クラスフォルダのクラスを消す" setup_swap_cls p/a/target/classes/gen/G.class - \
     "$REACTOR_FOLDERS" "$REACTOR_CFG"
-
-# 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
-# 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q61）。
-# ソースフォルダの並びを入れ替えると、どちらのファイルがエラーになるかも変わる（Q58）
-dup_project() {   # $1=フォルダ
-    mkdir -p "$1/s1/p" "$1/s2/p"
-    cat > "$1/s1/p/Main.java" <<'EOF'
-package p;
-
-public class Main {
-    public static void main(String[] args) {
-        new Dup().a();
-        new Dup().b();
-    }
-
-    static void x() {
-    }
-
-    static void y() {
-    }
-}
-EOF
-    cat > "$1/s1/p/Dup.java" <<'EOF'
-package p;
-
-public class Dup {
-    public void a() {
-        Main.x();
-    }
-}
-EOF
-    cat > "$1/s2/p/Dup.java" <<'EOF'
-package p;
-
-public class Dup {
-    public void b() {
-        Main.y();
-    }
-}
-EOF
-}
-dup_case() {
-    echo "== 同じクラスが 2 つのソースフォルダにある =="
-    local d=$IW/dup
-    rm -rf $d && mkdir -p $d && dup_project $d
-    integrity_cfg $d/c.properties "$PWD/$d" s1,s2
-    integrity_cfg $d/full.properties "$PWD/$d" s1,s2 "$PWD/$d/fullcache"
-    integrity_run $d/c.properties $d/c0.log
-    [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
-    printf '\n// changed\n' >> $d/s2/p/Dup.java
-    integrity_run $d/c.properties $d/c1.log
-    local inc_out=$IOUT
-    integrity_run $d/full.properties $d/full.log
-    same_csv "片方だけを書き換えた差分更新" "$inc_out" "$IOUT"
-    if diff -q <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
-               <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") > /dev/null; then
-        echo "  OK   片方だけを書き換えた差分更新 キャッシュ（差分更新 == 全件解析）"
-    else
-        echo "  NG   片方だけを書き換えた差分更新 キャッシュが全件解析と違います"
-        diff <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
-             <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") | head -10; fail=1
-    fi
-    # 重複を黙って通さない（2 つ目のファイルはコンパイルエラーとして warnings.txt に載る。全件解析でも差分更新でも）
-    if grep -q -F -- "- s2/p/Dup.java" "$inc_out/warnings.txt" 2>/dev/null \
-            && grep -q -F -- "- s2/p/Dup.java" "$IOUT/warnings.txt" 2>/dev/null; then
-        echo "  OK   重複した型のファイルが warnings.txt に載る（差分更新でも全件解析でも）"
-    else
-        echo "  NG   重複した型のファイルが warnings.txt に載っていません"; fail=1
-    fi
-    # 型が重複しているエラーの引数には、ソースファイルの絶対パスが入る。解決できなかった名前（I 行の 2 列目）に
-    # パスの途中のフォルダ名（home・incremental など）を拾うと、同じソースでも置き場所でキャッシュの事実が変わる
-    # （docs/cache-unification-qa.md の Q64）
-    local names part leaked=""
-    names=$(awk -F'\t' '$1 == "F" { f = $2 } $1 == "I" && f == "s2/p/Dup.java" { print $3 }' \
-        "$(ls $d/cache/*/analysis-cache.tsv)")
-    for part in $(printf '%s' "$PWD/$d" | tr -c 'A-Za-z0-9_$' ' '); do
-        case ",$names," in *",$part,"*) leaked="$leaked $part" ;; esac
-    done
-    if [ -n "$names" ] && [ -z "$leaked" ]; then
-        echo "  OK   重複した型のファイルの解決できなかった名前（$names）に、置き場所のフォルダ名が入らない"
-    else
-        echo "  NG   重複した型のファイルの解決できなかった名前が空か、置き場所のフォルダ名を含みます（${names:-空}。${leaked# }）"
-        fail=1
-    fi
-
-    echo "== ソースフォルダの並びを入れ替える =="
-    integrity_cfg $d/c.properties "$PWD/$d" s2,s1
-    integrity_cfg $d/full.properties "$PWD/$d" s2,s1 "$PWD/$d/fullcache2"
-    integrity_run $d/c.properties $d/c2.log
-    inc_out=$IOUT
-    if [ "$IRC" = 0 ] && [ "$IREUSED" = 0 ] && grep -q -F "source folder order" $d/c2.log; then
-        echo "  OK   並びを入れ替えたらキャッシュを再利用しない"
-    else
-        echo "  NG   並びを入れ替えたのにキャッシュを再利用しています（再利用=${IREUSED:-?}）"; fail=1
-    fi
-    integrity_run $d/full.properties $d/full2.log
-    same_csv "ソースフォルダの並びを入れ替えた実行" "$inc_out" "$IOUT"
-    # 入れ替えで解決先が実際に変わっていること（変わらなければ検査が素通りする）
-    if diff -q "$inc_out/call-hierarchy.csv" "$(ls -d $d/out-c/*/ | sort | head -1)call-hierarchy.csv" > /dev/null; then
-        echo "  NG   並びを入れ替えても出力が変わっていません（検査が素通りします）"; fail=1
-    else
-        echo "  OK   並びを入れ替えると出力が変わる"
-    fi
-}
-dup_case
-
-# 差分更新と全件解析で、CSV・warnings.txt・キャッシュ（ブロックの並べ替え後）が同じこと
-same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件解析の出力フォルダ  $4=差分更新のキャッシュのフォルダ  $5=全件解析のキャッシュのフォルダ
-    same_csv "$1" "$2" "$3"
-    if diff -q <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) > /dev/null; then
-        echo "  OK   $1 warnings.txt（全件解析と同じ）"
-    else
-        echo "  NG   $1 warnings.txt が全件解析と違います"
-        diff <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) | head -10; fail=1
-    fi
-    if diff -q <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
-        echo "  OK   $1 キャッシュ（差分更新 == 全件解析）"
-    else
-        echo "  NG   $1 キャッシュが全件解析と違います"
-        diff <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") | head -10
-        fail=1
-    fi
-}
 
 # アノテーションの付いた package-info.java が 2 つのソースフォルダにある。JDT はアノテーションの付いたパッケージ宣言に
 # package-info という型を作るので、同じバッチの 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。
