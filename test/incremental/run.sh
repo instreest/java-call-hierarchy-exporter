@@ -2559,6 +2559,43 @@ case_of "依存 jar が無いとき、単純名から作られた無い型の名
     "printf '\n// c\n' >> work/src/rcv/other/A.java && printf '\n// c\n' >> work/src/rcb/b/Base.java" \
     no setup_missing_simple_names
 
+# 同じく、単純名から作られた無い型の名前が、無名パッケージにある本物の型の名前と重ならないこと。名前付きのパッケージの
+# rdp/B.java は無名パッケージの Template を参照できない（JLS 7.5）ので、extends Template は無い型。無い型を単純名
+# Template と書くと、読み手は B を本物の Template の部分型とみなし、DefUser.use の t.run() の候補に B.run を足して
+# 展開をやめ（UNEXPANDED:CHA）、B.run が起点から外れて B.run -> C.helper の行が出力から消えた（起点を絞らない設定で）。
+# 今は無い型を ?.Template と書く
+setup_missing_simple_default_package() {
+    jfile Template.java <<'EOF'
+public class Template { public void run() { System.out.println("real"); } }
+EOF
+    jfile DefUser.java <<'EOF'
+public class DefUser { void use(Template t) { t.run(); } }
+EOF
+    jfile rdp/B.java <<'EOF'
+package rdp;
+import org.lib.*;
+public class B extends Template {
+    public void go(Template x) { x.run(); }
+    public void run() { C.helper(); }
+}
+EOF
+    jfile rdp/C.java <<'EOF'
+package rdp;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+}
+case_of "依存 jar が無いとき、単純名から作られた無い型の名前が無名パッケージの本物の型と重ならない" \
+    "printf '\n// c\n' >> work/src/rdp/C.java" no setup_missing_simple_default_package
+# この設定は起点を inc の型に絞っているので、呼び出し階層ではなく methods.csv の次数で見る（inDegree は 7 列目、
+# outDegree は 8 列目）。DefUser.use の t.run() の候補は本物の Template.run だけで、B.run を呼ぶものは無い
+if grep -q -a '^B\.run(),rdp\.B,C,src/rdp/B\.java,5,1,0,1,' "$OUT/methods.csv" \
+        && grep -q -a '^DefUser\.use(Template),DefUser,C,src/DefUser\.java,1,1,0,1,' "$OUT/methods.csv"; then
+    echo "  OK   無い型 Template を無名パッケージの Template の部分型とみなさない（B.run を呼ぶものが無い）"
+else
+    echo "  NG   無い型 Template を無名パッケージの Template と取り違えています"
+    grep -a -E '^(DefUser\.use|B\.run)' "$OUT/methods.csv" | head -5; fail=1
+fi
+
 # jar のクラス（qm.Api）が参照しているクラス（qm.Missing）が無いとき。事実を集めるときのバインディングへの問い合わせ
 # （拡張 for 文・try-with-resources の暗黙の呼び出しの宣言・呼び出しの候補）が、同じバッチの後ろのファイル（ear/B.java）の
 # メソッドを先に解決させると、JDT はそのメソッドを引数の無いまま残し、B の番で例外になった。全件解析だけバッチの残りを
@@ -3990,6 +4027,29 @@ sink_overflow_case() {
     rc=$?
     grep -a -E '^  (OK|NG)' $d/c3.log
     [ "$rc" = 0 ] || { echo "  NG   1 ファイルずつの解析の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c3.log）"; fail=1; }
+    # 型の宣言を深く入れ子にしたファイルは、JDT がどのファイルも渡さないうち（型の束縛を作るところ）に溢れさせる。
+    # それをバッチの最後に置く。どのファイルで溢れたかは分からないので、最初のファイルを単独にせず、バッチを半分ずつに
+    # 分けて解析し直す。以前は前から 1 つずつ関係の無いファイル（src/p/A.java …）を単独にしてバッチ全体を解析し直し、
+    # 案内もそのファイルの名前を挙げていた（docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）
+    mkdir -p $d/nest/p
+    {
+        printf 'package p;\n\npublic class Nest {'
+        for ((i = 0; i < 20000; i++)); do printf ' static class N%d {' "$i"; done
+        for ((i = 0; i < 20000; i++)); do printf ' }'; done
+        printf ' }\n'
+    } > $d/nest/p/Nest.java
+    integrity_cfg $d/c4.properties "$PWD/$d" src,nest
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c4.properties \
+        src/p/B.java nest/p/Nest.java > $d/c4.log 2>&1
+    rc=$?
+    grep -a -E '^  (OK|NG)' $d/c4.log
+    [ "$rc" = 0 ] || { echo "  NG   どのファイルも渡さないうちに溢れたあとの受け手の扱いが期待と違います（test/incremental/$d/c4.log）"; fail=1; }
+    if grep -q -F "before any file was finished" $d/c4.log && ! grep -q -F "while reading src/" $d/c4.log; then
+        echo "  OK   どのファイルも渡さないうちに溢れたら、関係の無いファイルを単独にせず、バッチを半分ずつに分けて解析し直した"
+    else
+        echo "  NG   どのファイルも渡さないうちに溢れたときに、関係の無いファイルを単独にしています（test/incremental/$d/c4.log）"
+        grep -a -F "ran out of stack" $d/c4.log | head -3; fail=1
+    fi
 }
 sink_overflow_case
 

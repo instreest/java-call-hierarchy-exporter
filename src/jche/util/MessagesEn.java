@@ -481,6 +481,8 @@ final class MessagesEn {
             "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
             "analysis.batchFailed", "The batch analysis failed while reading {0}, so that file is analyzed on its own and the other {1} file(s) are analyzed again as a batch ({2})",
             "analysis.batchTooDeep", "The Java parser ran out of stack in a batch while reading {0}, so that file is analyzed on its own and the other {1} file(s) are analyzed again as a batch (only the file that is too deep fails)",
+            "analysis.batchFailedEarly", "The batch analysis of {0} file(s) failed before any file was finished, so it is not known which file caused it; the files are analyzed again as two smaller batches ({1})",
+            "analysis.batchTooDeepEarly", "The Java parser ran out of stack in a batch of {0} file(s) before any file was finished, so the files are analyzed again as two smaller batches (only the file that is too deep fails)",
             "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
             "analysis.libraryUnreadable", "Cannot read a dependency jar (it counts as changed every time): {0} ({1})",
         };

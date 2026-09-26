@@ -60,7 +60,13 @@ final class BindingNames {
         return (erased != null) ? erased : t;
     }
 
-    /** 型のパッケージ。単純名から作られた無い型（{@link #qualifiedNameOf}）はパッケージを持たないとみなして空 */
+    /**
+     * JDT が単純名から作った無い型（{@link #qualifiedNameOf}）の名前に付ける頭。{@code ?.Template} のように書く。
+     * {@code ?} は Java の名前に使えない文字なので、本物の型の名前（特に無名パッケージの型 {@code Template}）とは重ならない
+     */
+    static final String MISSING_PREFIX = "?.";
+
+    /** 型のパッケージ。単純名から作られた無い型（{@link #qualifiedNameOf}）はパッケージが分からないので空 */
     static String packageOf(ITypeBinding t) {
         if (missingSimpleNameOf(t) != null) {
             return "";
@@ -72,14 +78,20 @@ final class BindingNames {
      * キャッシュに書く型の完全修飾名（{@code getQualifiedName}）。配列は要素型に {@code []} を付ける。
      *
      * <p>ただし、JDT が<b>単純名から作った無い型</b>（依存 jar が無いときの {@code Template x}。鍵が {@code LTemplate;} の
-     * ようにパッケージを持たない）は、単純名（鍵の名前）にする。JDT はこの型を、同じバッチ（1 回の {@code createASTs}）で
-     * 最初にその名前の解決に失敗したファイルのパッケージに作って登録し、あとのファイルがオンデマンド import
-     * （{@code import app.other.*;}）で同じ名前を引くと、その型が当たる。そのため {@code getQualifiedName} は、同じソースでも
-     * 同じバッチに先に何が並んだかで {@code app.other.Template} にも {@code app.web.Template} にもなり、メソッドの鍵
-     * （{@code B.go(app.other.Template)}）がバッチの組み方で変わっていた。鍵は {@code LTemplate;} のまま変わらないので
-     * 宣言の指紋（{@link TypeContextTracker}）も変わらず、呼び出す側のキャッシュが古い鍵のまま残って呼び出しが切れた
-     * （docs/cache-unification-qa.md の「単純名から作られた無い型の名前」）。名前を鍵から作れば、名前はバッチに依らず、
-     * 鍵の変化と一緒にしか変わらない。
+     * ようにパッケージを持たない）は、鍵の名前に {@link #MISSING_PREFIX} を付けて {@code ?.Template} にする。JDT はこの型を、
+     * 同じバッチ（1 回の {@code createASTs}）で最初にその名前の解決に失敗したファイルのパッケージに作って登録し、あとの
+     * ファイルがオンデマンド import（{@code import app.other.*;}）で同じ名前を引くと、その型が当たる。そのため
+     * {@code getQualifiedName} は、同じソースでも同じバッチに先に何が並んだかで {@code app.other.Template} にも
+     * {@code app.web.Template} にもなり、メソッドの鍵（{@code B.go(app.other.Template)}）がバッチの組み方で変わっていた。
+     * 鍵は {@code LTemplate;} のまま変わらないので宣言の指紋（{@link TypeContextTracker}）も変わらず、呼び出す側のキャッシュが
+     * 古い鍵のまま残って呼び出しが切れた（docs/cache-unification-qa.md の「単純名から作られた無い型の名前」）。名前を鍵から
+     * 作れば、名前はバッチに依らず、鍵の変化と一緒にしか変わらない。
+     *
+     * <p>頭を付けずに単純名 {@code Template} にすると、無名パッケージにある本物の型 {@code Template} と同じ名前になる。
+     * 名前付きのパッケージのコードは無名パッケージの型を参照できない（JLS 7.5）ので別の型だが、読み手は名前で型を
+     * 引くので、{@code class B extends Template}（無い型）を本物の {@code Template} の部分型とみなし、本物の
+     * {@code Template.run()} の呼び出しの候補に {@code B.run()} を足して展開をやめ（{@code UNEXPANDED:CHA}）、
+     * {@code B.run()} から先の呼び出しが出力から消えた。
      *
      * <p>鍵がパッケージを持つ無い型（{@code import org.missing.Lib;} の {@code Lib}。鍵は {@code Lorg/missing/Lib;}）は
      * そのまま完全修飾名にする（依存 jar が後から来たときに解析し直すための I 行の名前。docs/cache-unification-qa.md の Q79）
@@ -90,13 +102,13 @@ final class BindingNames {
             return qualifiedNameOf(element) + "[]".repeat(t.getDimensions());
         }
         String simple = missingSimpleNameOf(t);
-        return (simple != null) ? simple : t.getQualifiedName();
+        return (simple != null) ? MISSING_PREFIX + simple : t.getQualifiedName();
     }
 
     /**
      * JDT が単純名から作った無い型なら、その単純名。そうでなければ null。回復した型（{@code isRecovered}）のうち、鍵が
      * {@code L<識別子>;} の形（パッケージ・入れ子の型・型引数を持たない）のもの。無名パッケージの本物の型も同じ形の鍵を
-     * 持つが、その型の完全修飾名は単純名そのものなので、どちらで名付けても同じになる
+     * 持つが、回復した型ではないので当たらない
      */
     private static String missingSimpleNameOf(ITypeBinding t) {
         if (t == null || !t.isRecovered() || t.isArray()) {

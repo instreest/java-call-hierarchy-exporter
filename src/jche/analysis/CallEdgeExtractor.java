@@ -6,8 +6,10 @@ import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,19 +119,26 @@ public final class CallEdgeExtractor {
      *
      * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
      * 深くなりすぎるファイル）も、そのファイルの失敗として扱う。一括パースの途中で溢れたら、そのとき JDT が解析していた
-     * ファイルを 1 ファイルで解析し直し、溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の
-     * 「打ち切られた」に載る）。以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた
-     * （{@code docs/cache-unification-qa.md} の Q62）。溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
+     * ファイルを 1 ファイルで解析し直し（どのファイルも渡さないうちに溢れたら、バッチを半分ずつに分けて解析し直し）、
+     * 溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）。
+     * 以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（{@code docs/cache-unification-qa.md} の Q62）。
+     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
-        List<SourceFile> rest = files;
-        while (!rest.isEmpty()) {
-            rest = parseTogether(rest, sink);
+        Deque<List<SourceFile>> work = new ArrayDeque<>();
+        work.add(files);
+        while (!work.isEmpty()) {
+            List<List<SourceFile>> again = parseTogether(work.poll(), sink);
+            for (int i = again.size() - 1; i >= 0; i--) {
+                if (!again.get(i).isEmpty()) {
+                    work.push(again.get(i));   // 解析し直すバッチは、残りより先に、元の並びで
+                }
+            }
         }
     }
 
     /**
-     * {@code files} をまとめてパースし、事実を集めて sink へ渡す。まとめて解析し直すファイルを返す（全部済めば空）。
+     * {@code files} をまとめてパースし、事実を集めて sink へ渡す。まとめて解析し直すバッチを返す（全部済めば空）。
      *
      * <h4>事実は、バッチの全ファイルを JDT が解決し終えてから集める</h4>
      * JDT は {@code createASTs} のファイルを順に 1 つずつ解決し（本体まで）、そのたびに AST を {@code acceptAST} で渡す。
@@ -153,11 +162,18 @@ public final class CallEdgeExtractor {
      * {@code acceptAST} の中で集める。
      *
      * <p>一括パースが途中で失敗したら（JDT の例外・スタックの溢れ）、そのとき JDT が解析していたファイル（まだ受け取って
-     * いない最初のファイル）を 1 ファイルで解析し、預かった分と残りはまとめて解析し直す（戻り値）。JDT が一部のファイルを
-     * 渡さずに戻ったときも、渡さなかったファイルは 1 ファイルずつ、預かった分はまとめて解析し直す。どちらも 1 回ごとに
-     * 少なくとも 1 ファイル減るので、繰り返しは終わる。
+     * いない最初のファイル）を 1 ファイルで解析し、預かった分と残りはまとめて解析し直す（戻り値）。ただし、まだ 1 つも
+     * 受け取っていないうちに失敗したら、どのファイルで失敗したかは分からない（JDT は本体を解決する前に、バッチの全ファイルの
+     * 構文解析・型の束縛・親型のつなぎを済ませる。深く入れ子にした型の宣言はそこで溢れる）。そのときは最初のファイルを
+     * 疑わず、バッチを半分に分けてそれぞれまとめて解析し直す（1 ファイルになれば 1 ファイルで解析する）。最初のファイルを
+     * 単独にして残りをまとめ直すやり方だと、失敗の元がバッチの後ろにあるとき、前から 1 つずつ単独に外しながらバッチ全体を
+     * 何十回も解析し直し、そのたびに関係の無いファイルの名前を挙げた案内が出ていた（外れたファイルは、1 ファイルでの解析
+     * なので、ほかのファイルの入れ子でない型が見えないなど事実も変わりうる）。半分に分ければ、解析し直しは
+     * log2(件数) 段で済み、失敗の元でないファイルはまとめて解析される。
+     * JDT が一部のファイルを渡さずに戻ったときも、渡さなかったファイルは 1 ファイルずつ、預かった分はまとめて解析し直す。
+     * どの場合も解析し直すバッチは元より小さいので、繰り返しは終わる。
      */
-    private List<SourceFile> parseTogether(List<SourceFile> files, Sink sink) throws IOException {
+    private List<List<SourceFile>> parseTogether(List<SourceFile> files, Sink sink) throws IOException {
         Map<String, SourceFile> pending = new LinkedHashMap<>();
         for (SourceFile file : files) {
             pending.put(file.path().toString(), file);
@@ -197,18 +213,27 @@ public final class CallEdgeExtractor {
             throw e.getCause();
         } catch (RuntimeException e) {
             if (!collected[0] && !pending.isEmpty()) {
+                if (acceptedFiles.isEmpty() && files.size() > 1) {
+                    Log.warn(Messages.format("analysis.batchFailedEarly", files.size(), e));
+                    return halves(files);
+                }
                 List<SourceFile> rest = othersThan(files, first(pending));
                 Log.warn(Messages.format("analysis.batchFailed", first(pending).relativePath(), rest.size(), e));
                 analyzeAlone(first(pending), sink);
-                return rest;
+                return List.of(rest);
             }
         } catch (StackOverflowError e) {
             if (!collected[0] && !pending.isEmpty()) {
+                if (acceptedFiles.isEmpty() && files.size() > 1) {
+                    // どのファイルで溢れたかは、分けたバッチがそのファイルだけになったときの失敗として warnings.txt に載る
+                    Log.info(Messages.format("analysis.batchTooDeepEarly", files.size()));
+                    return halves(files);
+                }
                 // どのファイルで溢れたかは、そのファイルを 1 ファイルで解析したときの失敗として warnings.txt に載る
                 List<SourceFile> rest = othersThan(files, first(pending));
                 Log.info(Messages.format("analysis.batchTooDeep", first(pending).relativePath(), rest.size()));
                 analyzeAlone(first(pending), sink);
-                return rest;
+                return List.of(rest);
             }
         }
         if (collected[0]) {
@@ -218,7 +243,13 @@ public final class CallEdgeExtractor {
         for (SourceFile file : new ArrayList<>(pending.values())) {
             analyzeAlone(file, sink);
         }
-        return acceptedFiles;
+        return List.of(acceptedFiles);
+    }
+
+    /** バッチを前後の半分に分ける（元の並びのまま。{@link #parseTogether} の、まだ 1 つも受け取らないうちの失敗） */
+    private static List<List<SourceFile>> halves(List<SourceFile> files) {
+        int mid = files.size() / 2;
+        return List.of(new ArrayList<>(files.subList(0, mid)), new ArrayList<>(files.subList(mid, files.size())));
     }
 
     /**

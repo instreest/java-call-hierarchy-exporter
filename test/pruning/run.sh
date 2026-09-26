@@ -217,10 +217,12 @@ CASES=()
 #                    （メソッド参照は、参照を書いたメソッドから参照先への辺も持つ。関数型インターフェースを
 #                    呼んだ側（run の c.accept）から降りた経路だけを見たいときに使う）
 #   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける。
-#   クラス名を / で始めると無名パッケージのクラスになる（/Kind なら work/src/Kind.java。呼び出し元も /Kind.m と書く）
+#   クラス名を / で始めると無名パッケージのクラスになる（/Kind なら work/src/Kind.java。呼び出し元も /Kind.m と書く）。
+#   /pq/PkgBase のようにパスを書けば pr 以外のパッケージのクラスも置ける（ソースの package 宣言はパスに合わせる）
 case_() {
     local expect=$1 cls=$2 caller=$3 callee=$4 desc=$5
     if [ "${cls#/}" != "$cls" ]; then
+        mkdir -p "$(dirname "work/src/${cls#/}.java")"   # /pq/PkgBase のように、pr 以外のパッケージにも置ける
         cat > "work/src/${cls#/}.java"
     else
         cat > "$SRC/$cls.java"
@@ -3243,6 +3245,70 @@ EOF
 expect_ absent MemberTv.viaClose PrivTwBase.close "同上（private な PrivTwBase.close() の行が無い）"
 expect_ listed MemberTv.viaFor PubItApi.iterator "型変数の式の拡張 for 文の iterator() は PubItApi の既定のメソッド"
 expect_ absent MemberTv.viaFor PrivTwBase.iterator "同上（private な PrivTwBase.iterator() の行が無い）"
+
+# ---------------------------------------------------------------------------
+# 同じく、別のパッケージのパッケージアクセスの close()・iterator() は継承されない（JLS 8.4.8）。呼ぶのは
+# AutoCloseable.close()・Iterable.iterator() を実装する public なメソッドだけなので、public でない宣言は飛ばす。
+# 以前は親クラス pq.PkgBase のパッケージアクセスの宣言を呼び出し先にし、読み手はそれを別のパッケージの Impl.close() が
+# 上書きするとはみなさないので、実際に動く Impl.close()・Impl.iterator() への行が黙って消えていた（抽象クラスの資源・
+# 型変数の資源とも）。交差型のキャスト (Coll & Zmark) o の拡張 for 文は、交差型の鍵が最初の成分（JDT は成分を名前の順に
+# 並べる。Coll が先）と同じで成分を飛ばしてしまい、iterator()・hasNext()・next() が 1 つも記録されなかった
+# ---------------------------------------------------------------------------
+case_ absent /pq/PkgBase PkgMember.viaClose PkgBase.close "別のパッケージの親クラスのパッケージアクセスの close() を呼び出し先にしない" <<'EOF'
+package pq;
+
+public class PkgBase {
+    void close() { System.out.println("pkg"); }
+    java.util.Iterator<String> iterator() { return null; }
+}
+EOF
+case_ listed PkgMember PkgMember.viaClose PkgMember.Impl.close "抽象クラスの資源の close() は AutoCloseable.close() で、実装の Impl.close() に届く" <<'EOF'
+package pr;
+
+import java.util.Iterator;
+import java.util.List;
+
+public class PkgMember {
+    public abstract static class Res extends pq.PkgBase implements AutoCloseable, Iterable<String> {
+    }
+
+    public static class Impl extends Res {
+        @Override
+        public void close() { System.out.println("impl"); }
+        @Override
+        public Iterator<String> iterator() { return List.of("i").iterator(); }
+    }
+
+    interface Coll extends Iterable<String> {
+    }
+
+    interface Zmark {
+    }
+
+    static class CollImpl implements Coll, Zmark {
+        @Override
+        public Iterator<String> iterator() { return List.of("c").iterator(); }
+    }
+
+    static void viaClose(Res r) throws Exception { try (Res x = r) { System.out.println("body"); } }
+    static void viaFor(Res r) { for (String s : r) { System.out.println(s); } }
+    static <T extends pq.PkgBase & AutoCloseable> void tvClose(T t) throws Exception { try (T x = t) { System.out.println("t"); } }
+    static void inter(Object o) { for (String s : (Coll & Zmark) o) { System.out.println(s); } }
+
+    public static void main(String[] args) throws Exception {
+        viaClose(new Impl());
+        viaFor(new Impl());
+        tvClose(new Impl());
+        inter(new CollImpl());
+    }
+}
+EOF
+expect_ listed PkgMember.viaFor PkgMember.Impl.iterator "抽象クラスの式の iterator() は Iterable.iterator() で、実装の Impl.iterator() に届く"
+expect_ absent PkgMember.viaFor PkgBase.iterator "同上（パッケージアクセスの PkgBase.iterator() の行が無い）"
+expect_ listed PkgMember.tvClose PkgMember.Impl.close "型変数 T extends pq.PkgBase & AutoCloseable の資源の close() も Impl.close() に届く"
+expect_ absent PkgMember.tvClose PkgBase.close "同上（パッケージアクセスの PkgBase.close() の行が無い）"
+expect_ listed PkgMember.inter PkgMember.CollImpl.iterator "交差型のキャストの拡張 for 文の iterator() を記録し、実装の CollImpl.iterator() に届く"
+expect_ listed PkgMember.inter Iterator.hasNext "同上（hasNext() も記録する）"
 
 # ---------------------------------------------------------------------------
 # 解析して確かめる

@@ -43,16 +43,27 @@ final class ImplicitCalls {
      * {@code Expression.iterator()} が呼ぶ宣言）。無ければ null。
      *
      * <ol>
-     *   <li>型そのものと、親クラスの連なり（型変数・交差型は境界のクラス。{@code getSuperclass}）を近い順に見る。
+     *   <li>型そのものと、親クラスの連なり（型変数は境界のクラス。{@code getSuperclass}）を近い順に見る。
      *       クラスのメソッドは、インターフェースの既定のメソッドより先に選ばれる（JLS 8.4.8。親クラスの {@code close()} は
      *       インターフェースの {@code default close()} を実装・上書きする）</li>
      *   <li>クラスの連なりに無ければ、それらのインターフェース（推移的に）が宣言するもののうち、最も特定的なもの
      *       （宣言した型が、ほかの候補の宣言した型の親でないもの。JLS 9.4.1）。同じ特定さのものが複数なら、近い順で先のもの</li>
      * </ol>
-     * 型そのもの以外の型の {@code private} なメソッドは飛ばす。private なメンバーは継承されず（JLS 8.4.8・9.4.1）、
-     * 呼び出しの候補にならない。飛ばさないと、{@code <T extends PBase & PApi>} の {@code try (T r = t)} で、PBase の
-     * private な {@code close()} を呼び出し先にしてしまい、実際に動く {@code PApi.close()} への呼び出しが無くなっていた。
-     * static なメソッドも飛ばす（インスタンスメソッドの呼び出しにならない）。
+     * 交差型（{@code (Coll & Serializable) o}・{@code var r = (Base & AutoCloseable) o}）は、成分（{@code getTypeBounds}）から
+     * 始める。クラスの成分はクラスの連なりに、インターフェースの成分はインターフェースの候補に入れる。交差型そのものの鍵は
+     * 最初の成分と同じになることがあり、以前はそれを訪問済みとして成分を飛ばし、{@code for (String s : (Coll & Serializable) o)}
+     * の {@code iterator()} が見つからず、暗黙の呼び出しが 3 つとも記録されなかった。
+     *
+     * <p><b>public な宣言だけを見る</b>（static も飛ばす。インスタンスメソッドの呼び出しにならない）。呼ぶのは
+     * {@code AutoCloseable.close()}・{@code Iterable.iterator()} で、どちらも public なので、それを実装・継承する
+     * メンバーの宣言も必ず public である（JLS 8.4.8.3: 上書きは可視性を下げられない）。public でない宣言に当たるのは、
+     * 継承されないもの（private、別のパッケージのパッケージアクセス。JLS 8.4.8）か、コンパイルエラーのコードだけである。
+     * 以前は親クラスの連なりの public でない宣言も拾い、{@code <T extends PBase & PApi>}（PBase の private な
+     * {@code close()}）や、{@code abstract class Y extends a.Base implements AutoCloseable}（パッケージ b。a.Base の
+     * パッケージアクセスの {@code close()} は Y に継承されない）の {@code try (Y r = y)} で、実際には呼ばれない宣言を
+     * 呼び出し先にし、動く {@code close()} への呼び出しが黙って消えていた（読み手はパッケージアクセスのメソッドを別の
+     * パッケージの同じ名前のメソッドが上書きするとはみなさない）。可視性を自前で判定するより、この決まりのほうが単純で、
+     * 迷う場面（コンパイルエラー）ではインターフェースのメソッドに倒れる（読み手が実装を広く探す）。
      * パラメータ化された型は、型引数を置換したメソッドのバインディングが返るので、
      * {@code iterator()} の戻り値（{@code Iterator<Integer>} など）もそのまま使える。
      */
@@ -62,13 +73,19 @@ final class ImplicitCalls {
         }
         Set<String> seen = new HashSet<>();
         ArrayDeque<ITypeBinding> interfaces = new ArrayDeque<>();
-        // 1. 型そのものと親クラスの連なり
-        for (ITypeBinding c = type; c != null && seen.add(keyOf(c)); c = c.getSuperclass()) {
-            IMethodBinding m = declaredNoArgMethod(c, name, c == type);
-            if (m != null) {
-                return m;
+        // 1. 型そのものと親クラスの連なり（交差型は成分から）
+        for (ITypeBinding start : type.isIntersectionType() ? type.getTypeBounds() : new ITypeBinding[] {type}) {
+            if (type.isIntersectionType() && start.isInterface()) {
+                interfaces.add(start);
+                continue;
             }
-            interfaces.addAll(List.of(c.getInterfaces()));
+            for (ITypeBinding c = start; c != null && seen.add(keyOf(c)); c = c.getSuperclass()) {
+                IMethodBinding m = declaredNoArgMethod(c, name);
+                if (m != null) {
+                    return m;
+                }
+                interfaces.addAll(List.of(c.getInterfaces()));
+            }
         }
         // 2. インターフェース（近い順）。候補を全部集めてから、最も特定的なものを選ぶ
         List<IMethodBinding> candidates = new ArrayList<>();
@@ -77,7 +94,7 @@ final class ImplicitCalls {
             if (!seen.add(keyOf(i))) {
                 continue;
             }
-            IMethodBinding m = declaredNoArgMethod(i, name, i == type);
+            IMethodBinding m = declaredNoArgMethod(i, name);
             if (m != null) {
                 candidates.add(m);
             }
@@ -91,12 +108,12 @@ final class ImplicitCalls {
         return null;
     }
 
-    /** 型が宣言する、名前が一致する引数なしのインスタンスメソッド。{@code ownType} でなければ private は飛ばす */
-    private static IMethodBinding declaredNoArgMethod(ITypeBinding t, String name, boolean ownType) {
+    /** 型が宣言する、名前が一致する引数なしの public なインスタンスメソッド（{@link #findNoArgMethod} の決まり） */
+    private static IMethodBinding declaredNoArgMethod(ITypeBinding t, String name) {
         for (IMethodBinding m : t.getDeclaredMethods()) {
             int mods = m.getModifiers();
             if (m.getName().equals(name) && m.getParameterTypes().length == 0 && !m.isConstructor()
-                    && !Modifier.isStatic(mods) && (ownType || !Modifier.isPrivate(mods))) {
+                    && !Modifier.isStatic(mods) && Modifier.isPublic(mods)) {
                 return m;
             }
         }
