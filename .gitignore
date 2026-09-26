@@ -50,6 +50,10 @@ target/
 /test/*/*/target/
 /test/*/.gradle/
 
+# samples/ のサンプルを解析したときの出力（各サンプルの設定ファイルが output.folder=./output で書き出す先）。
+# ビルドの出力 target/ は上で除外済み
+/samples/*/output/
+
 # test/gradle-demo/app は Eclipse（Buildship）で開いた形のサンプルなので、そのメタデータは追跡する
 # （上の .project / .classpath の除外はこのツール自身のもの）
 !/test/gradle-demo/app/.project

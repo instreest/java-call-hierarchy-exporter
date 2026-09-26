@@ -85,6 +85,7 @@
 | [actions-analysis-cache-qa.md](actions-analysis-cache-qa.md) | #79 | GitHub Actions で解析キャッシュを実行間で引き継ぐ |
 | [jpms-modularity-qa.md](jpms-modularity-qa.md) | — | JPMS でモジュール化するかの検討（結論: しない） |
 | [samples-demo-move-qa.md](samples-demo-move-qa.md) | #51 | `samples/demo` を `test/demo` へ移した |
+| [jjug-order-export-sample-qa.md](jjug-order-export-sample-qa.md) | — | JJUG 発表用サンプル `samples/jjug-order-export`（Spring Boot + Doma）。呼び出し元で実装が変わるインターフェース呼び出しの題材の選び方、`new` で渡す形にした理由（Bean を注入して渡す形は経路ごとに絞れない）、回帰テストに入れない判断 |
 | [source-header-qa.md](source-header-qa.md) | #47 | ソースの著作権表示・ライセンス表記の簡略化 |
 | [jbangw-readme-notice-qa.md](jbangw-readme-notice-qa.md) | #50 | 同梱した JBang ラッパーへのライセンス表記と README |
 | [method-decl-range-qa.md](method-decl-range-qa.md) | #115 | メソッドの宣言範囲（終了行）をキャッシュと `MethodTable` に持つ。カーソル位置から囲むメソッドを引く `AT`（近似をやめる判断、`methods.csv` に出さない判断） |

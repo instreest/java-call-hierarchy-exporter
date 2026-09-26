@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JJUG での発表用サンプル。java-call-hierarchy-exporter の解析対象として使う。
+  「宣言型はインターフェースで、実際に動くインスタンスは呼び出し元によって変わる」呼び出しの最小例。
+  Spring Boot（Web MVC）と Doma（DAO）で書いてある。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.8</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.example</groupId>
+  <artifactId>order-export</artifactId>
+  <version>1.0.0</version>
+
+  <properties>
+    <java.version>17</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <doma.version>3.14.0</doma.version>
+    <doma-spring-boot.version>3.0.0</doma-spring-boot.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.seasar.doma.boot</groupId>
+      <artifactId>doma-spring-boot-starter</artifactId>
+      <version>${doma-spring-boot.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.seasar.doma</groupId>
+      <artifactId>doma-core</artifactId>
+      <version>${doma.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- DAO の実装クラス（OrderDaoImpl）は Doma のアノテーションプロセッサがコンパイル時に生成する -->
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.seasar.doma</groupId>
+              <artifactId>doma-processor</artifactId>
+              <version>${doma.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
