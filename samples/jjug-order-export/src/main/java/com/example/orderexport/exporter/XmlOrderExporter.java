@@ -7,21 +7,15 @@ import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 
+import org.springframework.stereotype.Component;
+
 import com.example.orderexport.domain.Order;
 
-/**
- * 取引先連携向けの XML。取引先と取り決めた要素名・属性名で 1 件ずつ書き出し、
- * どの取引先に渡したものかを partner 属性に入れる。
- */
+/** 取引先連携向けの XML。取引先と取り決めた要素名・属性名で 1 件ずつ書き出す */
+@Component
 public class XmlOrderExporter implements OrderExporter {
 
     private static final XMLOutputFactory FACTORY = XMLOutputFactory.newInstance();
-
-    private final String partnerCode;
-
-    public XmlOrderExporter(String partnerCode) {
-        this.partnerCode = partnerCode;
-    }
 
     @Override
     public String export(List<Order> orders) {
@@ -30,7 +24,6 @@ public class XmlOrderExporter implements OrderExporter {
             XMLStreamWriter xml = FACTORY.createXMLStreamWriter(out);
             xml.writeStartDocument("UTF-8", "1.0");
             xml.writeStartElement("orders");
-            xml.writeAttribute("partner", partnerCode);
             for (Order order : orders) {
                 writeOrder(xml, order);
             }

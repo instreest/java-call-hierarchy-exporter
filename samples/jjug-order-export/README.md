@@ -4,8 +4,9 @@ JJUG での発表用のサンプルです。java-call-hierarchy-exporter で解�
 **宣言型はインターフェースで、実際に動くインスタンスは呼び出し元によって変わる**呼び出しが
 呼び出し階層にどう出るかを見せるために置いています。
 Spring Boot（Web MVC）と Doma（DAO）で書いた、受注データを外部へ書き出す小さな Web アプリです。
+書き方は Spring のデファクト（実装は `@Component` の Bean、使う側はコンストラクタ注入）に合わせています。
 
-設計の判断（題材の選び方、`new` で渡す形にした理由など）は
+設計の判断（題材の選び方、書き方を変えたときの結果など）は
 [docs/jjug-order-export-sample-qa.md](../../docs/jjug-order-export-sample-qa.md) にあります。
 
 ## 題材
@@ -14,12 +15,12 @@ Spring Boot（Web MVC）と Doma（DAO）で書いた、受注データを外部
 
 | 入口 | 用途 | 形式 | 渡す実装 |
 |---|---|---|---|
-| `GET /api/orders` | 画面（SPA）向けの API | JSON | `new JsonOrderExporter()` |
-| `GET /partners/{partnerCode}/orders` | 取引先システムとの連携 | XML（取り決めた要素名・属性名。取引先コード入り） | `new XmlOrderExporter(partnerCode)` |
+| `GET /api/orders` | 画面（SPA）向けの API | JSON | コンストラクタ注入した `JsonOrderExporter` |
+| `GET /partner/orders` | 取引先システムとの連携 | XML（取引先と取り決めた要素名・属性名） | コンストラクタ注入した `XmlOrderExporter` |
 
 ```
-OrderApiController.orders      … new JsonOrderExporter() を渡す
-PartnerOrderController.orders  … new XmlOrderExporter(partnerCode) を渡す
+OrderApiController.orders      … 注入された JsonOrderExporter を渡す
+PartnerOrderController.orders  … 注入された XmlOrderExporter を渡す
   └─ OrderExportService.export(from, to, exporter)
        ├─ orderDao.selectByOrderDate(from, to)  … Doma の DAO。実装 OrderDaoImpl はコンパイル時に生成
        └─ exporter.export(orders)               … 宣言型は OrderExporter。動く実装は呼び出し元で決まる
@@ -35,18 +36,34 @@ public String export(LocalDate from, LocalDate to, OrderExporter exporter) {
 ```
 
 このメソッドだけを見ても、`exporter.export` で `JsonOrderExporter` と `XmlOrderExporter` のどちらが動くかは分かりません。
-決めているのは、`exporter` を作って渡している呼び出し元です。
+決めているのは、`exporter` を渡している呼び出し元です。
+
+```java
+@RestController
+public class PartnerOrderController {
+
+    private final OrderExportService orderExportService;
+    private final XmlOrderExporter xmlOrderExporter;       // @Component の Bean をコンストラクタ注入
+
+    public PartnerOrderController(OrderExportService orderExportService, XmlOrderExporter xmlOrderExporter) { ... }
+
+    @GetMapping(value = "/partner/orders", produces = MediaType.APPLICATION_XML_VALUE)
+    public String orders(...) {
+        return orderExportService.export(from, to, xmlOrderExporter);
+    }
+}
+```
 
 ## ファイル
 
 | ファイル | 内容 |
 |---|---|
-| `src/main/java/com/example/orderexport/web/OrderApiController.java` | 入口 1。JSON の実装を作って渡す |
-| `src/main/java/com/example/orderexport/web/PartnerOrderController.java` | 入口 2。取引先コードを持たせた XML の実装を作って渡す |
+| `src/main/java/com/example/orderexport/web/OrderApiController.java` | 入口 1。注入された JSON の実装を渡す |
+| `src/main/java/com/example/orderexport/web/PartnerOrderController.java` | 入口 2。注入された XML の実装を渡す |
 | `src/main/java/com/example/orderexport/service/OrderExportService.java` | 共通処理。DAO で読み出し、渡された実装で書き出す |
 | `src/main/java/com/example/orderexport/exporter/OrderExporter.java` | 書き出し形式のインターフェース |
-| `src/main/java/com/example/orderexport/exporter/JsonOrderExporter.java` | JSON（Jackson） |
-| `src/main/java/com/example/orderexport/exporter/XmlOrderExporter.java` | XML（StAX） |
+| `src/main/java/com/example/orderexport/exporter/JsonOrderExporter.java` | JSON（`@Component`。Spring Boot の `JsonMapper` を注入） |
+| `src/main/java/com/example/orderexport/exporter/XmlOrderExporter.java` | XML（`@Component`。StAX） |
 | `src/main/java/com/example/orderexport/dao/OrderDao.java` | Doma の DAO。SQL は `src/main/resources/META-INF/.../OrderDao/selectByOrderDate.sql` |
 | `src/main/java/com/example/orderexport/domain/Order.java` | 受注のエンティティ（record） |
 | `src/main/resources/schema.sql` / `data.sql` | H2（インメモリ）の表と初期データ |
@@ -65,8 +82,8 @@ mvn spring-boot:run
 curl "http://localhost:8080/api/orders?from=2026-09-01&to=2026-09-05"
 # [{"id":1,"customerName":"Tanaka Shoji","orderDate":"2026-09-01","amount":12000},{"id":2,...}]
 
-curl "http://localhost:8080/partners/A001/orders?from=2026-09-01&to=2026-09-05"
-# <?xml version="1.0" encoding="UTF-8"?><orders partner="A001"><order id="1" customer="Tanaka Shoji" .../>...</orders>
+curl "http://localhost:8080/partner/orders?from=2026-09-01&to=2026-09-05"
+# <?xml version="1.0" encoding="UTF-8"?><orders><order id="1" customer="Tanaka Shoji" .../>...</orders>
 ```
 
 ## 解析する
@@ -82,71 +99,63 @@ cd ../..
 ```
 
 結果は `samples/jjug-order-export/output/<解析開始日時>_jjug-order-export/` に出ます。
-依存 jar を取得せずに解析すると、`warnings.txt` ができて依存 jar がローカルリポジトリに無いことと対処が書かれます（JSON・XML の経路の解決自体は変わりませんが、Spring・Jackson の型を使う呼び出しが抜けます）。
+依存 jar を取得せずに解析すると、`warnings.txt` ができて依存 jar がローカルリポジトリに無いことと対処が書かれます。
 
 ## 結果（`call-hierarchy.csv`）
 
-`caller` 列を省き、`call-hierarchy` 列は起点（`root`）の次から並べています（全 13 行）。
+`caller` 列を省き、`call-hierarchy` 列は起点（`root`）の次から並べています（全 8 行）。
 
 | root | level | callee | resolved-by | call-hierarchy（注記は末尾） |
 |---|---|---|---|---|
 | OrderApiController.orders | 1 | OrderExportService.export | RESOLVED:NO_OVERRIDE | OrderExportService.export |
 | OrderApiController.orders | 2 | OrderDao.selectByOrderDate | UNEXPANDED:GENERATED_IMPL:Doma | … OrderDao.selectByOrderDate, `[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): …` |
-| OrderApiController.orders | 2 | **JsonOrderExporter.export** | **RESOLVED:DATAFLOW_PARAM** | OrderExportService.export, JsonOrderExporter.export |
-| OrderApiController.orders | 3 | ObjectMapper.writeValueAsString | RESOLVED:NO_OVERRIDE | … JsonOrderExporter.export, ObjectMapper.writeValueAsString, `[EXTERNAL] no source to follow` |
-| OrderApiController.orders | 3 | JsonMapper.shared | RESOLVED:STATIC_BOUND:STATIC | … JsonOrderExporter.export, JsonMapper.shared, `[EXTERNAL] no source to follow` |
+| OrderApiController.orders | 2 | **JsonOrderExporter.export** | **UNEXPANDED:CHA** | … JsonOrderExporter.export, `[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)` |
+| OrderApiController.orders | 2 | **XmlOrderExporter.export** | **UNEXPANDED:CHA** | … XmlOrderExporter.export, （同じ注記） |
 | PartnerOrderController.orders | 1 | OrderExportService.export | RESOLVED:NO_OVERRIDE | OrderExportService.export |
 | PartnerOrderController.orders | 2 | OrderDao.selectByOrderDate | UNEXPANDED:GENERATED_IMPL:Doma | （上と同じ） |
-| PartnerOrderController.orders | 2 | **XmlOrderExporter.export** | **RESOLVED:DATAFLOW_PARAM** | OrderExportService.export, XmlOrderExporter.export |
-| PartnerOrderController.orders | 3 | XmlOrderExporter.writeOrder | RESOLVED:STATIC_BOUND:PRIVATE | … XmlOrderExporter.export, XmlOrderExporter.writeOrder |
-| PartnerOrderController.orders | 4 | Order.id（ほか customerName / orderDate / amount の 4 行） | RESOLVED:STATIC_BOUND:FINAL_CLASS | … XmlOrderExporter.writeOrder, Order.id, `[EXTERNAL] no source to follow` |
+| PartnerOrderController.orders | 2 | **JsonOrderExporter.export** | **UNEXPANDED:CHA** | （上と同じ） |
+| PartnerOrderController.orders | 2 | **XmlOrderExporter.export** | **UNEXPANDED:CHA** | （上と同じ） |
 
 実際の行（抜粋）:
 
 ```csv
 caller,callee,resolved-by,level,root,call-hierarchy
-at com.example.orderexport.service.OrderExportService.export(OrderExportService.java:29),JsonOrderExporter.export,RESOLVED:DATAFLOW_PARAM,2,OrderApiController.orders,OrderExportService.export,JsonOrderExporter.export
-at com.example.orderexport.service.OrderExportService.export(OrderExportService.java:29),XmlOrderExporter.export,RESOLVED:DATAFLOW_PARAM,2,PartnerOrderController.orders,OrderExportService.export,XmlOrderExporter.export
+at com.example.orderexport.service.OrderExportService.export(OrderExportService.java:29),JsonOrderExporter.export,UNEXPANDED:CHA,2,PartnerOrderController.orders,OrderExportService.export,JsonOrderExporter.export,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at com.example.orderexport.service.OrderExportService.export(OrderExportService.java:29),XmlOrderExporter.export,UNEXPANDED:CHA,2,PartnerOrderController.orders,OrderExportService.export,XmlOrderExporter.export,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 ```
 
 読みどころ:
 
-- **同じ `OrderExportService.java:29` の呼び出しが、経路ごとに別の実装へ確定しています。**
-  `OrderApiController.orders` から来た経路では `JsonOrderExporter.export`、
-  `PartnerOrderController.orders` から来た経路では `XmlOrderExporter.export` だけが行になり、
-  どちらも `resolved-by` が `RESOLVED:DATAFLOW_PARAM`（呼び出し元から渡された引数を経路上で追って特定した）です。
-  もう片方の実装は、その経路には出ません
-- そのため、確定した実装の**先**（XML なら `writeOrder`）まで経路ごとに降りていけます。
-  1 件に絞れなかった呼び出しは候補を並べるだけで先へ降りないので（`UNEXPANDED:CHA`）、ここが確定するかどうかで見える深さが変わります
-- 影響調査の向き: Excel で `callee` 列を `XmlOrderExporter.export` に絞ると、`root` は `PartnerOrderController.orders` だけです。
-  「XML の書き出しを直したら、取引先連携の口だけを確認すればよい」と分かります。
-  逆に `OrderExportService.export` を直すと、`root` が 2 つとも出ます
+- **29 行目の呼び出しは、どちらの経路でも実装を 1 つに絞れていません。**
+  `PartnerOrderController.orders`（実際には XML しか動かない）から来た経路にも `JsonOrderExporter.export` の行が出ます。
+  渡している値はコントローラのフィールドで、そこに何が入るかは DI コンテナが決める（ソースに `new` が無い）ため、
+  引数を呼び出し元まで遡っても型が決まらないからです。両方の実装が Bean なので、Bean 定義（`SPRING_DI`）でも 1 つに定まりません
+- **絞れなくても、候補は 2 つとも行として残ります。** 呼び出しを静かに落とさず、行が多めに出る側に倒れています。
+  `resolved-by` の `UNEXPANDED:` と注記の `[UNEXPANDED:CHA]` が「ここは辿り切れていない」の目印で、
+  Excel で `resolved-by` が `UNEXPANDED:` で始まる行に絞れば、確かめるべき箇所だけが残ります
+- **候補の先へは降りません。** 候補数ぶん枝分かれして爆発するのを避けるためで、JSON 側の `jsonMapper.writeValueAsString`、
+  XML 側の `writeOrder` は `call-hierarchy.csv` に出てきません。`methods.csv` では `XmlOrderExporter.writeOrder` が
+  `inHierarchy=0` になっており、ここから「階層に出てこなかったメソッド」を拾えます
+- 影響調査の向き: Excel で `callee` 列を `XmlOrderExporter.export` に絞ると、`root` は 2 つとも出ます。
+  実際に影響するのは取引先連携の口だけですが、静的解析で言い切れないので両方を挙げています（多めに出る側の誤り）
 - `OrderDao.selectByOrderDate` は Doma の DAO で、実装クラス（`OrderDaoImpl`）はアノテーション処理がコンパイル時に作るのでソースにありません。
   「実装が無い」のではなく「コンパイル時に生成される」ことが注記（`[UNEXPANDED:GENERATED]`）で分かります
 
-`methods.csv` の `OrderExportService.export(LocalDate,LocalDate,OrderExporter)` の行は、`unresolvedCause` に
-`[UNEXPANDED:CHA] parameter (passed in from outside the method)` が出ます。
-`methods.csv` はメソッド 1 つにつき 1 行で経路を持たないため、「このメソッドの中だけを見ると引数の実装は決まらない」という意味です。
-経路ごとの答えは `call-hierarchy.csv` のほうにあります。
+出力フォルダの `contracts-suggested.txt` には、絞れなかった呼び出しを 1 件に決めるための契約表のひな形
+（`OrderExporter#export => ??`）が出ます。ただしこの行は呼び出し箇所に関係なく 1 つの実装に決めてしまうので、
+このサンプルのように経路で実装が変わる場合は貼らないでください（ひな形の注記にもそう書かれます）。
 
 ## 書き方を変えるとどうなるか（発表の補足）
 
-実装を `new` で作って渡すのではなく、**Spring の Bean として注入したものを引数で渡す**書き方もよくあります。
+同じ題材を、注入の書き方だけ変えて解析した結果です。
 
-```java
-// JsonOrderExporter / XmlOrderExporter に @Component を付け、コントローラはコンストラクタ注入で受ける
-private final XmlOrderExporter xmlOrderExporter;
-...
-return orderExportService.export(from, to, xmlOrderExporter);
-```
+| 呼び出し元の書き方 | 29 行目の結果 |
+|---|---|
+| 具象型のフィールドにコンストラクタ注入（**このサンプル**） | 両方の経路で `UNEXPANDED:CHA`（2 候補） |
+| インターフェース型のフィールドにコンストラクタ注入し、引数に `@Qualifier("xmlOrderExporter")` | 同上 |
+| インターフェース型のフィールドに `@Autowired @Qualifier("xmlOrderExporter")` でフィールド注入 | 同上 |
+| Bean にせず、呼び出し元で `new XmlOrderExporter()` して渡す | 経路ごとに 1 件に確定（`RESOLVED:DATAFLOW_PARAM`）。JSON の経路には `JsonOrderExporter.export` だけ、XML の経路には `XmlOrderExporter.export` だけが出て、その先（`writeOrder`）まで降りる |
 
-この形では、いまのツールは経路ごとには絞れません。29 行目の呼び出しは、どちらの経路でも
-`UNEXPANDED:CHA` の 2 行（`JsonOrderExporter.export` と `XmlOrderExporter.export`）になり、注記は
-`[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)` です。
-渡した値の出所がフィールドで、そのフィールドに何が入るかは DI コンテナが決める（ソースに `new` が無い）ためです。
-`@Qualifier` 付きのフィールドを渡す形も同じ結果でした。
-
-絞れなかったときも、**候補は 2 つとも行として残ります**（呼び出しを静かに落とさない）。
-取りこぼしは無く、行が多めに出る側に倒れる、ということです。
-なお、このときの `contracts-suggested.txt` のひな形（`OrderExporter#export => ??`）は、呼び出し箇所に関係なく 1 つの実装に決めてしまう行なので、
-このサンプルのように経路で実装が変わる場合は貼らないでください（ひな形の注記にもそう書かれます）。
+`@Qualifier` は、その注入先のフィールドを受け手にした呼び出しを絞るのには使われますが（`SPRING_DI_QUALIFIER`）、
+引数として別のメソッドへ渡った先までは運ばれません。
+呼び出し元で `new` した値は、引数を経路上で遡れば型が決まるので、経路ごとに確定します。

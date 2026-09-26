@@ -24,7 +24,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`）。画面の文言は英語が既定で、日本語は `messages_ja.properties` に置く（`docs/eclipse-plugin-nls-qa.md`） |
 | `vscode-plugin/` | VSCode プラグイン（TypeScript、esbuild で1ファイルに束ねる）。同じ `--server` を子プロセスとして使う。`src/server/` と `src/config.ts` は `vscode` に触らない層で、Node だけで検査できる（`docs/vscode-plugin-design.md`）。画面の文言は英語が既定で、日本語は `src/messages.ja.ts`。`package.json` の寄与は `package.nls*.json`（`docs/nls-qa.md` の Q15） |
 | `test/` | 回帰テストと検査スクリプト（後述） |
-| `samples/` | 解析対象のサンプル（回帰テストでは使わない）。`jjug-order-export/` は JJUG 発表用の Spring Boot + Doma のアプリで、呼び出し元によって実装が変わるインターフェース呼び出しを経路ごとに解決する例（`docs/jjug-order-export-sample-qa.md`） |
+| `samples/` | 解析対象のサンプル（回帰テストでは使わない）。`jjug-order-export/` は JJUG 発表用の Spring Boot + Doma のアプリで、呼び出し元によって実装が変わるインターフェース呼び出しの例（デファクトの DI の書き方では経路ごとに絞れず CHA になる）（`docs/jjug-order-export-sample-qa.md`） |
 | `docs/README.md` | `docs/` の索引。使い方の詳細（`cli.md`、`build-tool-classpath.md`、`instance-analysis-plugin.md`、`github-actions.md`）、設計の説明（`cache-design.md`）、設計の記録、再実装用の仕様に分かれる |
 | `docs/*-qa.md` | 機能ごとの「実装時に迷ったこと・困ったことと結論」を Q&A 形式で残した記録 |
 | `docs/prompt-*.md` / `docs/feature-difficulty.md` | このツールを別環境で再実装するための仕様プロンプトと難易度表 |

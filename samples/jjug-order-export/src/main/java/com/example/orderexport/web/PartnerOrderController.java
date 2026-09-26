@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -17,16 +16,17 @@ import com.example.orderexport.service.OrderExportService;
 public class PartnerOrderController {
 
     private final OrderExportService orderExportService;
+    private final XmlOrderExporter xmlOrderExporter;
 
-    public PartnerOrderController(OrderExportService orderExportService) {
+    public PartnerOrderController(OrderExportService orderExportService, XmlOrderExporter xmlOrderExporter) {
         this.orderExportService = orderExportService;
+        this.xmlOrderExporter = xmlOrderExporter;
     }
 
-    @GetMapping(value = "/partners/{partnerCode}/orders", produces = MediaType.APPLICATION_XML_VALUE)
+    @GetMapping(value = "/partner/orders", produces = MediaType.APPLICATION_XML_VALUE)
     public String orders(
-            @PathVariable String partnerCode,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return orderExportService.export(from, to, new XmlOrderExporter(partnerCode));
+        return orderExportService.export(from, to, xmlOrderExporter);
     }
 }
