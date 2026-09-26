@@ -1075,6 +1075,38 @@ case_of "jar の親の親（別の jar）にメソッドを足す（ソースの
 case_of "jar の型の親（別の jar）にメソッドを足す（jar の型を使うファイル）" \
     "make_chain_jars 'public void m(String s) { }'" yes setup_jar_chain_direct
 
+# jar の変化とソースの変化の両方に触れるファイル。Sub は I 行に l2.Top（jar）と、同じ実行で変わった
+# ソースの型（app.T・パッケージ util・コンパイルエラーのあるファイルの app.X）の両方を持つ。以前は選ばれた理由が
+# ソースの側になり、jar の変化による連鎖（Q84）が付かず、Sub だけを使う U を解析し直さなかった。今は選ばれた
+# 理由に依らず、旧キャッシュで変わった jar に触れていたファイルの型を変わった型にする（Q89）。
+# Sub が m(Object) を上書きしているので、U の呼び出しは Sub.m に結び付き、U の I 行は jar に触れない
+setup_jar_chain_and_source() {
+    make_chain_jars ''
+    printf 'package app;\npublic class T { }\n' | jfile app/T.java
+    printf 'package app;\npublic class Sub extends l1.Mid { T t; public void m(Object o) { } }\n' | jfile app/Sub.java
+    printf 'package app;\npublic class U { public void go(Sub s) { s.m("x"); } }\n' | jfile app/U.java
+}
+setup_jar_chain_and_star() {
+    make_chain_jars ''
+    printf 'package util;\npublic class Other { }\n' | jfile util/Other.java
+    printf 'package app;\nimport util.*;\npublic class Sub extends l1.Mid { public void m(Object o) { } }\n' | jfile app/Sub.java
+    printf 'package app;\npublic class U { public void go(Sub s) { s.m("x"); } }\n' | jfile app/U.java
+}
+setup_jar_chain_and_error() {
+    make_chain_jars ''
+    printf 'package app;\npublic class X { public static void x() { } zz.Missing broken; }\n' | jfile app/X.java
+    printf 'package app;\npublic class Sub extends l1.Mid { public void m(Object o) { X.x(); } }\n' | jfile app/Sub.java
+    printf 'package app;\npublic class U { public void go(Sub s) { s.m("x"); } }\n' | jfile app/U.java
+}
+case_of "jar の親の親の変化と、同じファイルが使うソースの型の変化が重なる" \
+    "make_chain_jars 'public void m(String s) { }' && printf '\n// comment only\n' >> work/src/app/T.java" \
+    yes setup_jar_chain_and_source
+case_of "jar の親の親の変化と、同じファイルのオンデマンド import のパッケージの変化が重なる" \
+    "make_chain_jars 'public void m(String s) { }' && printf '\n// comment only\n' >> work/src/util/Other.java" \
+    yes setup_jar_chain_and_star
+case_of "jar の親の親の変化だけ（同じファイルがコンパイルエラーのあるファイルを使う）" \
+    "make_chain_jars 'public void m(String s) { }'" yes setup_jar_chain_and_error
+
 # 型引数にだけ現れる型の親を変える。Foo extends Bar をやめると、U1〜U4 の解決が変わる。どのファイルのソースにも
 # Foo は無い（式の型の型引数 List<Foo>・Box<Foo> と、ArrayList<Foo> の add(int, E) の E）。以前は式の型を消去で
 # 数えていたので List・Box しか I 行に無く、java.* の型が宣言する候補（ArrayList の add）は見ていなかった。

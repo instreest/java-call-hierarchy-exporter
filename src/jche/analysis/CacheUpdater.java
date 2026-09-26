@@ -118,7 +118,7 @@ import jche.util.Warnings;
  *           新しい型があれば、型解決に失敗していたブロックのうち解決できなかった名前が新しい型に当たるものと、
  *           新しい型に名前を隠されうるブロックも回す。
  *   パス4 … パス3で再解析に回したファイルを解析し、追記する。そのファイルの自分の宣言の指紋（宣言と定数の値）が
- *           旧キャッシュと違っていたら、または jar の変化で解析し直したなら、宣言する型を「変わった型」に加えて
+ *           旧キャッシュと違っていたら、または旧キャッシュで変わった jar に触れていたなら、宣言する型を「変わった型」に加えて
  *           パス3へ戻る（下記「宣言の連鎖」）。「変わった型」は、どの時点でも部分型で閉じている（下記「親型の連鎖」）。
  *           「変わった型」が増えなくなるまで繰り返す。
  *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す（行に戻さず、バイトの範囲のまま）。
@@ -186,8 +186,9 @@ import jche.util.Warnings;
  * メソッド・フィールドの JDT のバインディングの鍵と修飾子と、K 行の指紋。{@link jche.cache.FileAnalysis#declarationKeys}）を
  * 書き、パス4 で解析し直した結果がこれと違えば、そのファイルが宣言する型も「変わった型」に加えてパス3からやり直す
  * （docs/cache-unification-qa.md の Q83）。継承したものは入れない（親の変化は「親型の連鎖」で届く）。
- * jar の変化で解析し直したファイルの型は、指紋に関わらず「変わった型」に加える（jar の親の親から継承したものは
- * 指紋にも H 行にも現れない。Q84）。
+ * 旧キャッシュの I 行（か解決できなかった名前）が変わった jar のパッケージに触れていたファイルの型は、指紋に関わらず、
+ * どの理由で選ばれたか（ソースの変化にも触れていた・名前が当たった・同じ名前のファイルの組）にも関わらず
+ * 「変わった型」に加える（jar の親の親から継承したものは指紋にも H 行にも現れない。Q84・Q89）。
  *
  * <p>コンパイル時定数（{@code static final} の値）は、
  * <b>使う側のファイルに値そのものが焼き込まれる</b>（Javaの言語仕様どおり、JDTもそう解決する）。
@@ -210,8 +211,8 @@ import jche.util.Warnings;
  * （継承したメソッドへの呼び出しの解決・どのオーバーロードが選ばれるか・私的メンバーによる隠蔽・エラー）は
  * F の宣言にも依存する。そこで、ある型が「変わった型」になったら、その部分型もすべて（推移的に）「変わった型」に
  * する。F が変われば E と D も変わった型になり、D を使う側を解析し直す。親が jar の型なら、その親（別の jar の型の
- * ことも）は H 行に無いので、I 行に jar の型の推移的な親型を載せ（{@link BindingNames}。Q86）、jar の変化で解析し直した
- * ファイルの型を変わった型にする（上の「宣言の連鎖」）。
+ * ことも）は H 行に無いので、I 行に jar の型の推移的な親型を載せ（{@link BindingNames}。Q86）、I 行が変わった jar に
+ * 触れていたファイルの型を変わった型にする（上の「宣言の連鎖」）。
  *
  * <p>部分型は、H 行の親型の列から作る部分型の索引（{@link StaleTypes#register}）で引く。索引には、旧キャッシュの
  * すべてのブロック（有効なものも無効なものも）と、今回解析した・引き継いだブロックの H 行を足す（親型の関係は
@@ -668,14 +669,14 @@ public final class CacheUpdater {
         ALWAYS,
         /**
          * 自分の宣言の指紋（宣言の鍵と修飾子・定数の値。I 行の 3 列目）が旧キャッシュと違うときと、
-         * jar の変化で解析し直したときに加える（パス4）。
+         * 旧キャッシュでそのファイルが変わった jar のパッケージに触れていたとき（選ばれた理由に依らない）に加える（パス4）。
          *
          * ほかのファイルの事実は、このファイルの宣言（メソッドの引数と戻り値の型・フィールドの型・親型・修飾子）と
          * 定数の値（使う側に焼き込まれる）に依る。中身の変わっていないファイルでも、宣言に書いた名前の解決先
          * （同じパッケージに足した型による隠蔽）や参照した定数の値が変わると、それらが変わる。変わっていなければ、
          * 使っている側の事実は変わらないので連鎖させない（ここが「案3」との違いで、不要な再解析が増えないように
-         * している）。jar の変化で解析し直したときは、指紋に入らない継承したもの（jar の親の親のメンバー）が
-         * 変わりうるので、常に加える（docs/cache-unification-qa.md の Q84）
+         * している）。変わった jar に触れていたファイルは、指紋に入らない継承したもの（jar の親の親のメンバー）が
+         * 変わりうるので、常に加える（docs/cache-unification-qa.md の Q84・Q89）
          */
         WHEN_DECLARATIONS_CHANGED
     }
@@ -698,8 +699,14 @@ public final class CacheUpdater {
         StaleTypes stale;
         /** 解析したファイルが宣言する型を「変わった型」に加える条件 */
         Cascade cascade = Cascade.ALWAYS;
-        /** 解析した理由。集計の内訳に使う（UNTOUCHED は「自分が変わった・新規」） */
+        /** 解析した理由。集計の内訳にだけ使う（UNTOUCHED は「自分が変わった・新規」。連鎖の判定には使わない） */
         Reason countAs = Reason.UNTOUCHED;
+        /**
+         * 旧キャッシュの I 行か解決できなかった名前が、変わった jar のパッケージに触れていたファイル（相対パス）。
+         * どの理由で選ばれたか（{@link #countAs}）に依らず、解析し直したら宣言する型を「変わった型」に加える（Q84）。
+         * 理由で決めると、同じファイルがソースの変化にも触れていたときに連鎖を落とす（Q89）
+         */
+        final Set<String> jarDriven = new HashSet<>();
         private long done;
 
         BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
@@ -715,12 +722,13 @@ public final class CacheUpdater {
 
         /**
          * 解析したファイルが宣言する型を「変わった型」に加えるか。
-         * パス4 では、jar の変化で解析し直したときと、自分の宣言の指紋が旧キャッシュと違うときだけ加える。
-         * このファイルの解析結果と旧キャッシュの比較だけで決まり、ほかのファイルをどの順に解析し直したか
-         * （「変わった型」がその時点で何を含むか）には依らない
+         * パス4 では、旧キャッシュでそのファイルが変わった jar のパッケージに触れていたとき（{@link #jarDriven}）と、
+         * 自分の宣言の指紋が旧キャッシュと違うときだけ加える。
+         * このファイルの旧キャッシュと解析結果だけで決まり、ほかのファイルをどの順に解析し直したか
+         * （「変わった型」がその時点で何を含むか）にも、どの理由で選ばれたかにも依らない
          */
         private boolean shouldCascade(SourceFile file, FileAnalysis fa) {
-            return cascade == Cascade.ALWAYS || countAs == Reason.BY_LIBRARY
+            return cascade == Cascade.ALWAYS || jarDriven.contains(file.relativePath())
                     || !oldDeclarations.getOrDefault(file.relativePath(), "").equals(declarationsDigestOf(fa));
         }
 
@@ -1042,29 +1050,73 @@ public final class CacheUpdater {
             if (depsCsv.isEmpty() || isEmpty()) {
                 return Reason.UNTOUCHED;
             }
+            if (touchesSource(depsCsv, ownPackage)) {
+                return Reason.BY_SOURCE;
+            }
+            return touchesLibrary(depsCsv, ownPackage) ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
+        }
+
+        /** I 行がソースの変化（変わった型・パッケージ・名前を隠す新しい型）に触れるか。{@link #touches} のソースの側 */
+        private boolean touchesSource(String depsCsv, String ownPackage) {
             Set<String> shadowing = (ownPackage == null) ? null : newTopLevel.get(ownPackage);
-            boolean ownPackageInJar = ownPackage != null && libraryPackages.contains(ownPackage);
-            boolean library = false;
             for (String d : depsCsv.split(",")) {
                 if (d.isEmpty()) {
                     continue;
                 }
                 if (shadowing != null && !d.endsWith(".*") && hasSegment(d, shadowing)) {
-                    return Reason.BY_SOURCE;
+                    return true;
                 }
-                if (d.endsWith(".*")) {
-                    String p = d.substring(0, d.length() - 2);
-                    if (types.contains(p) || packages.contains(p) || underChangedType(p)) {
-                        return Reason.BY_SOURCE;
-                    }
-                    library |= ownPackageInJar || libraryPackages.contains(p);
-                } else if (types.contains(d) || underChangedType(d)) {
-                    return Reason.BY_SOURCE;
-                } else {
-                    library |= inLibraryPackage(d) || (ownPackageInJar && d.startsWith("java.lang."));
+                String p = d.endsWith(".*") ? d.substring(0, d.length() - 2) : d;
+                if (types.contains(p) || underChangedType(p) || (d.endsWith(".*") && packages.contains(p))) {
+                    return true;
                 }
             }
-            return library ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
+            return false;
+        }
+
+        /**
+         * I 行が変わった jar のパッケージに触れるか。{@link #touches} の jar の側で、ソースの変化に触れるかとは
+         * 別に見る（解析し直したときに連鎖させるか。{@link BlockWriter#jarDriven}）
+         */
+        boolean touchesLibrary(String depsCsv, String ownPackage) {
+            if (depsCsv.isEmpty() || libraryPackages.isEmpty()) {
+                return false;
+            }
+            boolean ownPackageInJar = ownPackage != null && libraryPackages.contains(ownPackage);
+            for (String d : depsCsv.split(",")) {
+                if (d.isEmpty()) {
+                    continue;
+                }
+                if (d.endsWith(".*")) {
+                    if (ownPackageInJar || libraryPackages.contains(d.substring(0, d.length() - 2))) {
+                        return true;
+                    }
+                } else if (inLibraryPackage(d) || (ownPackageInJar && d.startsWith("java.lang."))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * 解決できなかった名前（I 行の 2 列目）が、変わった jar のパッケージ（とその頭の部分）に当たりうるか。
+         * 名前を拾えなかった（空・{@link CacheFormat#ANY_NAME}）ときは、jar が変わっていれば当たるとみなす
+         */
+        boolean namesUnderLibrary(String namesCsv) {
+            if (libraryPackages.isEmpty()) {
+                return false;
+            }
+            if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
+                return true;
+            }
+            for (String name : namesCsv.split(",")) {
+                for (int dot = name.indexOf('.'); dot > 0; dot = name.indexOf('.', dot + 1)) {
+                    if (libraryPrefixes.contains(name.substring(0, dot))) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /**
@@ -2118,11 +2170,19 @@ public final class CacheUpdater {
                 if (valid.contains(old.paths[i]) && stale.matchesChangedType(old.unresolvedNames[i])) {
                     valid.remove(old.paths[i]);
                     dependents.add(old.paths[i]);
+                    if (stale.namesUnderLibrary(old.unresolvedNames[i])) {
+                        writer.jarDriven.add(old.paths[i]);
+                    }
                 }
             }
             List<String> libraryDependents = new ArrayList<>();
             DepsConsumer select = (index, depsCsv) -> {
                 String rel = old.paths[index];
+                // jar に触れていたかは、ほかの理由で選ばれた（名前が当たった・ソースの変化にも触れた・同じ名前の
+                // ファイルの組として引き込まれた）ファイルでも見る。連鎖は選ばれた理由ではなくこれで決める（Q89）
+                if (stale.touchesLibrary(depsCsv, old.packages[index])) {
+                    writer.jarDriven.add(rel);
+                }
                 if (!valid.contains(rel)) {
                     return;   // すでに再解析に回した
                 }
