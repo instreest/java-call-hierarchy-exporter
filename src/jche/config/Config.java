@@ -90,12 +90,16 @@ public final class Config {
     public final LocalDateTime startedAt;
     /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
     public final List<Path> sourceFolders;
-    /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
+    /**
+     * 依存jarを集めたフォルダ（project.root からの相対）。直下の *.jar に展開する。
+     * .classpath の kind="lib"（jar かクラスフォルダの 1 件ずつ。展開しない）があれば合算する
+     */
     public final List<Path> libraryFolders;
     /**
-     * 依存 jar を1件ずつ指定するもの（library.jars）。フォルダ単位で書けない構成のための逃げ道で、
-     * Eclipse プラグインが IJavaProject の解決済みクラスパスを渡すのに使う。
-     * 置き場所はどこでもよい（~/.m2 の下など、プロジェクトの外が普通）
+     * 依存 jar（またはクラスフォルダ）を1件ずつ指定するもの（library.jars）。フォルダ単位で書けない構成のための
+     * 逃げ道で、Eclipse プラグインが IJavaProject の解決済みクラスパス（依存プロジェクトの出力フォルダを含む）を
+     * 渡すのに使う。フォルダはクラスフォルダとしてそのまま JDT に渡し、中の jar には展開しない
+     * （{@link ProjectLayout#classpathArray}）。置き場所はどこでもよい（~/.m2 の下など、プロジェクトの外が普通）
      */
     public final List<Path> libraryJars;
     /**
