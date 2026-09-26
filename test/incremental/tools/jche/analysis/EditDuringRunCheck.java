@@ -22,6 +22,10 @@ import jche.config.ToolRoot;
  * 差分更新が、きっかけのファイルを含むバッチを JDT に渡す直前（パス1 で内容ハッシュを取ったあと）に、
  * 書き換えるファイルの中身を差し替えてから、ふつうに解析する（jche.analysis.CacheUpdater の検査用の差し込み口。
  * ソースと同じパッケージに置いて、パッケージの中だけで見える口を使う）。終了コードは失敗した設定の数。
+ *
+ * <p>書き換えるファイルが無ければ、書き換えた後の中身で作る（解析のあいだに足したファイル）。書き換えた後の中身の
+ * ファイルに {@code -} を渡すと、書き換えるファイルを {@code <名前>.away} へ動かす（解析のあいだに消したファイル。
+ * 戻すのは呼び出し元）。
  */
 public final class EditDuringRunCheck {
 
@@ -39,7 +43,11 @@ public final class EditDuringRunCheck {
                 return;
             }
             try {
-                Files.copy(replacement, target, StandardCopyOption.REPLACE_EXISTING);
+                if (args[3].equals("-")) {
+                    Files.move(target, target.resolveSibling(target.getFileName() + ".away"));
+                } else {
+                    Files.copy(replacement, target, StandardCopyOption.REPLACE_EXISTING);
+                }
             } catch (java.io.IOException e) {
                 throw new java.io.UncheckedIOException(e);
             }

@@ -1164,6 +1164,255 @@ setup_pkg_type() {
 case_of "jar のパッケージ a.b と同じ名前の型 a.b をソースに足す" \
     "printf 'package a;\npublic class b { }\n' > work/src/a/b.java" yes setup_pkg_type
 
+# --- 8 回目のレビューで見つかった、パッケージ・jar・解析の失敗の取りこぼし ----------------------------
+# どれも 40b235e では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q90〜）
+
+# jarsrc/<名前>/ のソースを work/lib/<名前>.jar にする。$2 はコンパイルのクラスパス（jar に入れない）
+lib_jar() {   # $1=jar の名前  [$2=クラスパス]
+    rm -rf jarbuild && mkdir -p jarbuild work/lib
+    "$JAVAC_BIN" -nowarn -d jarbuild ${2:+-cp "$2"} $(find "jarsrc/$1" -name '*.java') \
+        && ( cd jarbuild && "$JAR_BIN" cf "../work/lib/$1.jar" . ) \
+        || { echo "  NG   jar $1 を作れませんでした"; fail=1; }
+    rm -rf jarbuild
+}
+jsrc() {   # $1=jarsrc からの相対パス。本文は標準入力
+    mkdir -p "jarsrc/$(dirname "$1")"
+    cat > "jarsrc/$1"
+}
+
+# jar の型のメンバーを持ち込む import（import static org.lib.K.*）。I 行には org.lib.K.* と載るが、変わった jar の
+# パッケージ org.lib とは名前が一致しないので、K が foo(String) を足しても X を解析し直さず、a.A.foo(Object) の
+# 呼び出しのまま残った（全件解析は K.foo(String) を選ぶ）
+setup_static_jar() {
+    rm -rf jarsrc
+    printf 'package org.lib;\npublic class K {\n    public static void bar() { }\n}\n' | jsrc sk/org/lib/K.java
+    lib_jar sk
+    printf 'package a;\npublic class A { public static void foo(Object o) { } }\n' | jfile a/A.java
+    printf 'package p;\nimport static a.A.*;\nimport static org.lib.K.*;\npublic class X { void go() { foo("x"); } }\n' \
+        | jfile p/X.java
+}
+edit_static_jar() {
+    printf 'package org.lib;\npublic class K {\n    public static void bar() { }\n    public static void foo(String s) { }\n}\n' \
+        | jsrc sk/org/lib/K.java
+    lib_jar sk
+}
+case_of "static オンデマンド import した jar の型にオーバーロードを足す" edit_static_jar yes setup_static_jar
+
+# 入れ子の型のオンデマンド import（import org.lib.Outer.*）。jar の Outer が入れ子の型 Helper を足すと、import q.* の
+# q.Helper と曖昧になる（全件解析はエラー）のに、X を解析し直さなかった
+setup_nested_jar() {
+    rm -rf jarsrc
+    printf 'package org.lib;\npublic class Outer {\n}\n' | jsrc nj/org/lib/Outer.java
+    lib_jar nj
+    printf 'package q;\npublic class Helper { public void run() { } }\n' | jfile q/Helper.java
+    printf 'package p;\nimport q.*;\nimport org.lib.Outer.*;\npublic class X { void go(Helper h) { h.run(); } }\n' \
+        | jfile p/X.java
+}
+edit_nested_jar() {
+    printf 'package org.lib;\npublic class Outer {\n    public static class Helper { public void run() { } }\n}\n' \
+        | jsrc nj/org/lib/Outer.java
+    lib_jar nj
+}
+case_of "入れ子の型をオンデマンド import した jar の型に入れ子の型を足す" edit_nested_jar yes setup_nested_jar
+
+# import static org.lib.K.* の K（sk2.jar）の親 org.other.Base（別の sk1.jar）が foo(String) を足す。変わった jar は
+# sk1 だけで、X の I 行には K も Base も無かった（今は import が名指す型とその jar の親型を I 行に数える）
+setup_static_jar_parent() {
+    rm -rf jarsrc
+    printf 'package org.other;\npublic class Base {\n}\n' | jsrc sk1/org/other/Base.java
+    lib_jar sk1
+    printf 'package org.lib;\npublic class K extends org.other.Base {\n    public static void bar() { }\n}\n' \
+        | jsrc sk2/org/lib/K.java
+    lib_jar sk2 work/lib/sk1.jar
+    printf 'package a;\npublic class A { public static void foo(Object o) { } }\n' | jfile a/A.java
+    printf 'package p;\nimport static a.A.*;\nimport static org.lib.K.*;\npublic class X { void go() { foo("x"); } }\n' \
+        | jfile p/X.java
+}
+edit_static_jar_parent() {
+    printf 'package org.other;\npublic class Base {\n    public static void foo(String s) { }\n}\n' \
+        | jsrc sk1/org/other/Base.java
+    lib_jar sk1
+}
+case_of "static オンデマンド import した jar の型の親（別の jar）にオーバーロードを足す" \
+    edit_static_jar_parent yes setup_static_jar_parent
+
+# import a.* のパッケージ a が下のパッケージ a.b だけでできている。a.b が無くなると、全件解析は「import a を解決できない」の
+# エラーを出すのに、I 行の a.* はどの変わった型・パッケージにも当たらなかった（できた・無くなったパッケージも見る）
+setup_subpackage_only() {
+    printf 'package a.b;\npublic class C { public static void k() { } }\n' | jfile a/b/C.java
+    printf 'package u;\nimport a.*;\npublic class U { void go() { } }\n' | jfile u/U.java
+}
+case_of "オンデマンド import したパッケージの唯一の下のパッケージを消す" "rm -rf work/src/a" yes setup_subpackage_only
+
+setup_subpackage_only_jar() {
+    rm -rf jarsrc
+    printf 'package a.b;\npublic class C { public static void k() { } }\n' | jsrc spj/a/b/C.java
+    lib_jar spj
+    printf 'package u;\nimport a.*;\npublic class U { void go() { } }\n' | jfile u/U.java
+}
+case_of "オンデマンド import したパッケージの唯一の下のパッケージを持つ jar を消す" "rm -f work/lib/spj.jar" yes \
+    setup_subpackage_only_jar
+
+# package-info.java は H 行を持たないので自分のパッケージが分からず、同じパッケージに足した型による名前の隠蔽
+# （import q.* の q.Ann を p.Ann が隠す）を見ていなかった。自分のパッケージが分からなければ、どのパッケージでもありうる
+# とみなす
+setup_package_info() {
+    printf 'package q;\nimport java.lang.annotation.*;\n@Target(ElementType.PACKAGE)\npublic @interface Ann { }\n' \
+        | jfile q/Ann.java
+    printf '@Ann\npackage p;\nimport q.*;\n' | jfile p/package-info.java
+    printf 'package p;\npublic class A { public void m() { } }\n' | jfile p/A.java
+}
+case_of "package-info.java のオンデマンド import を同じパッケージに足した型が隠す" \
+    "printf 'package p;\npublic class Ann { public static void z() { } }\n' > work/src/p/Ann.java" yes setup_package_info
+
+setup_package_info_jar() {
+    rm -rf jarsrc
+    printf 'package org.lib;\npublic class K { public static void bar() { } }\n' | jsrc pij/org/lib/K.java
+    lib_jar pij
+    setup_package_info
+}
+edit_package_info_jar() {
+    printf 'package p;\npublic class Ann { public static void z() { } }\n' | jsrc pij/p/Ann.java
+    lib_jar pij
+}
+case_of "package-info.java のオンデマンド import を jar が同じパッケージに足した型が隠す" \
+    edit_package_info_jar yes setup_package_info_jar
+
+# 型 a.b と衝突していたパッケージ a.b が無くなる（Q87 の逆向き）。型のファイル a/b.java の「パッケージと衝突する」エラーは
+# JDT がフォルダを見て出すのでバッチに依らないのに、a/b.java は I 行が何にも当たらず、エラーのまま残った。
+# 衝突していたパッケージのファイル（a/b/C.java）は JDT が型を落とすので H 行が無い。パッケージがあるかは置き場所の
+# フォルダでも数える
+setup_collision_vanish() {
+    printf 'package a;\npublic class b { public static void m() { } }\n' | jfile a/b.java
+    printf 'package u;\npublic class U { void go() { a.b.m(); } }\n' | jfile u/U.java
+    printf 'package a.b;\npublic class C { public static void k() { } }\n' | jfile a/b/C.java
+}
+case_of "型と衝突していたパッケージを消す" "rm -rf work/src/a/b" yes setup_collision_vanish
+
+# jar がパッケージ a.b を足す・消す。ソースの型 a.b のファイルの衝突のエラーが出る・消える
+setup_collision_jar() {
+    rm -rf jarsrc
+    printf 'package z;\npublic class Z { }\n' | jsrc cz/z/Z.java
+    lib_jar cz
+    printf 'package a;\npublic class b { public static void m() { } }\n' | jfile a/b.java
+    printf 'package app;\npublic class U { public void go() { a.b.m(); } }\n' | jfile app/U.java
+}
+edit_collision_jar() {
+    printf 'package a.b;\npublic class Y { public static void k() { } }\n' | jsrc cab/a/b/Y.java
+    lib_jar cab
+}
+case_of "型と同じ名前のパッケージを jar が足す" edit_collision_jar yes setup_collision_jar
+setup_collision_jar_removed() {
+    setup_collision_jar
+    edit_collision_jar
+}
+case_of "型と同じ名前のパッケージを持つ jar を消す" "rm -f work/lib/cab.jar" yes setup_collision_jar_removed
+
+# jar の無名パッケージ（デフォルトパッケージ）のクラス。L 行のパッケージに入らなかったので、変えても・足しても・
+# 消しても、それを使う無名パッケージのソースを解析し直さなかった
+setup_unnamed_jar() {
+    rm -rf jarsrc
+    printf 'public class Base { }\n' | jsrc unj/Base.java
+    lib_jar unj
+    printf 'public class Sub extends Base { public void m(Object o) { System.out.println(o); } }\n' | jfile Sub.java
+    printf 'public class UseSub { public void go(Sub s) { s.m("x"); } }\n' | jfile UseSub.java
+}
+edit_unnamed_jar() {
+    printf 'public class Base { public void m(String s) { } }\n' | jsrc unj/Base.java
+    lib_jar unj
+}
+case_of "jar の無名パッケージのクラスにメソッドを足す" edit_unnamed_jar yes setup_unnamed_jar
+case_of "jar の無名パッケージのクラスを消す" "rm -f work/lib/unj.jar" yes setup_unnamed_jar
+setup_unnamed_shadow() {
+    rm -rf jarsrc
+    printf 'package z;\npublic class Z { }\n' | jsrc uns/z/Z.java
+    lib_jar uns
+    printf 'public class UseMath { public int go() { return Math.abs(1); } }\n' | jfile UseMath.java
+}
+edit_unnamed_shadow() {
+    printf 'public class Math { public static int abs(int i) { return i; } }\n' | jsrc uns/Math.java
+    lib_jar uns
+}
+case_of "jar が無名パッケージに java.lang の型を隠すクラスを足す" edit_unnamed_shadow yes setup_unnamed_shadow
+rm -rf jarsrc
+
+# 解析に失敗するファイル（JDT のスタックが溢れる深い式。Q62）の型。ブロックを書かないので H 行が無く、書き換えても・
+# 消しても、その型を使うファイルを解析し直さなかった。今は印のブロックを書き、そのパッケージを中身の分からない
+# パッケージ（変わった jar のパッケージと同じ扱い）にする
+deep_base() {   # $1=Base に足すメソッド
+    mkdir -p work/src/fl
+    {
+        printf 'package fl;\npublic class Base {\n    %s\n    String chain() {\n        return new StringBuilder()' "$1"
+        for ((i = 0; i < 10000; i++)); do printf '.append(1)'; done
+        printf '.toString();\n    }\n}\n'
+    } > work/src/fl/Base.java
+}
+setup_failing() {
+    printf 'package fl;\npublic class A { public void run() { } }\n' | jfile fl/A.java
+    printf 'package fl;\npublic class B { public void run() { } }\n' | jfile fl/B.java
+    printf 'package flu;\npublic class U { public void go(fl.Base b) { b.get().run(); } }\n' | jfile flu/U.java
+    deep_base 'public A get() { return new A(); }'
+}
+case_of "解析に失敗するファイルのメソッドの戻り値の型を変える" \
+    "deep_base 'public B get() { return new B(); }'" yes setup_failing
+case_of "解析に失敗するファイルを消す" "rm -f work/src/fl/Base.java" yes setup_failing
+
+# レビューでの追加。解析に失敗するファイルに 2 つ目のトップレベルの型を足すと、同じパッケージのファイルが解決できなかった
+# 点のある名前（Base2.Inner。頭の区切りが同じパッケージの型の単純名）が解ける。以前は点の無い名前だけを同じパッケージの型の
+# 候補として見ていた（StaleTypes#namesUnderOpaque）
+deep_base_after() {   # $1=Base の後ろに足すトップレベルの型
+    mkdir -p work/src/fl
+    {
+        printf 'package fl;\npublic class Base {\n    String chain() {\n        return new StringBuilder()'
+        for ((i = 0; i < 10000; i++)); do printf '.append(1)'; done
+        printf '.toString();\n    }\n}\n%s\n' "$1"
+    } > work/src/fl/Base.java
+}
+setup_failing_nested() {
+    printf 'package fl;\npublic interface I { Base2.Inner get(); }\n' | jfile fl/I.java
+    printf 'package fl;\npublic class Impl { void go(I i) { i.get().run(); } }\n' | jfile fl/Impl.java
+    deep_base_after ''
+}
+case_of "解析に失敗するファイルに足した型の入れ子の型を、同じパッケージのファイルが点のある名前で使う" \
+    "deep_base_after 'class Base2 { static class Inner { void run() { } } }'" yes setup_failing_nested
+
+# レビューでの追加。自分のパッケージにできた型 a は、完全修飾名 a.b.C の頭の a を隠す（JLS 6.5.2 で型が先）。自分の
+# パッケージが変わった jar・中身の分からないパッケージにあるとき、以前はオンデマンド import と java.lang の型だけを見ていて、
+# I 行がそれらを持たないインターフェースを解析し直さなかった（StaleTypes#touchesPackages）。jar の側は Q54 の続き
+setup_qualified_head() {   # $1=U を置くパッケージ（空なら無名パッケージ）
+    printf 'package a.b;\npublic class C { public static void k() { } }\n' | jfile a/b/C.java
+    if [ -n "$1" ]; then
+        printf 'package %s;\npublic interface U { default void go() { a.b.C.k(); } }\n' "$1" | jfile "$1/U.java"
+    else
+        printf 'public interface U { default void go() { a.b.C.k(); } }\n' | jfile U.java
+    fi
+}
+setup_qualified_head_jar() {   # $1=U を置くパッケージ（空なら無名パッケージ）
+    rm -rf jarsrc
+    printf 'package z;\npublic class Z { }\n' | jsrc qh/z/Z.java
+    lib_jar qh
+    setup_qualified_head "$1"
+}
+edit_qualified_head_jar() {   # $1=jar に型 a を足すパッケージ（空なら無名パッケージ）
+    if [ -n "$1" ]; then
+        printf 'package %s;\npublic class a { }\n' "$1" | jsrc "qh/$1/a.java"
+    else
+        printf 'public class a { }\n' | jsrc qh/a.java
+    fi
+    lib_jar qh
+}
+case_of "jar が自分のパッケージに足した型が完全修飾名の頭を隠す" "edit_qualified_head_jar qp" yes \
+    "setup_qualified_head_jar qp"
+case_of "jar が無名パッケージに足した型が完全修飾名の頭を隠す" "edit_qualified_head_jar ''" yes \
+    "setup_qualified_head_jar ''"
+rm -rf jarsrc
+setup_qualified_head_failing() {
+    setup_qualified_head fl
+    deep_base_after ''
+}
+case_of "解析に失敗するファイルに足した型が完全修飾名の頭を隠す" "deep_base_after 'class a { }'" yes \
+    setup_qualified_head_failing
+
 # --- 3 回目のレビューで見つかった、I 行と型の形に載っていなかった依存 ---------------------
 # どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）。
 # 型の形はやめた（Q77）が、同じ書き換えで差分更新が全件解析と同じであることを見続ける
@@ -3292,20 +3541,21 @@ kill_case
 #
 # jarorder/libsrc/a と b は同じ dup.Shared を別のシグネチャで持つ。解析対象は run(1) を呼ぶので、
 # run(int) を持つ b が勝てば run(int)、a が勝てば run(long) に解決される。
-jar_order_case() {
-    echo "== 依存 jar の並び順 =="
+jar_order_case() {   # $1=題材のフォルダ（src/ と libsrc/a・libsrc/b を持つ）  [$2=ラベルに足す言葉]
+    local label="依存 jar の並び順${2:+（$2）}"
+    echo "== $label =="
     rm -rf jarwork .cache out out.log inc.tsv full.tsv jarorder.properties
     mkdir -p jarwork
-    cp -r jarorder/src jarwork/src
+    cp -r "$1/src" jarwork/src
     # 標準エラーはいったんファイルへ（JAVA_TOOL_OPTIONS の通知が混ざるため）。
     # 失敗したときだけ、その通知を除いて中身を出す
     for v in a b; do
-        if ! "$JAVAC_BIN" -d "jarwork/classes-$v" $(find "jarorder/libsrc/$v" -name '*.java') 2> jarwork/tool.log; then
+        if ! "$JAVAC_BIN" -d "jarwork/classes-$v" $(find "$1/libsrc/$v" -name '*.java') 2> jarwork/tool.log; then
             echo "  NG   検査用 jar のコンパイルに失敗しました"
             grep -v JAVA_TOOL_OPTIONS jarwork/tool.log | head -5; fail=1; return
         fi
         mkdir -p "jarwork/lib$v"
-        if ! ( cd "jarwork/classes-$v" && "$JAR_BIN" cf "../lib$v/dup-$v.jar" dup ) 2> jarwork/tool.log; then
+        if ! ( cd "jarwork/classes-$v" && "$JAR_BIN" cf "../lib$v/dup-$v.jar" . ) 2> jarwork/tool.log; then
             echo "  NG   検査用 jar を作れませんでした"
             grep -v JAVA_TOOL_OPTIONS jarwork/tool.log | head -5; fail=1; return
         fi
@@ -3319,7 +3569,7 @@ source.folders=src
 library.folders=$1
 library.build.tool=none
 source.encoding=UTF-8
-entry.packages=app.Main
+entry.packages=${ORDER_ENTRY-app.Main}
 exclude.packages=java.**,javax.**
 cache.enabled=true
 cache.folder=./.cache
@@ -3336,42 +3586,53 @@ EOF
     order_config "libb,liba"            # 並びだけを入れ替える（jar の中身は同じ）
     run inc.tsv || { CONFIG=config.properties; return; }
     local inc_csv=$OUT
-    check_rows inc.tsv "依存 jar の並び順 差分更新"
+    check_rows inc.tsv "$label 差分更新"
     if [ "$PARSED" -ge 1 ]; then
-        echo "  OK   依存 jar の並び順 入れ替えを検知して解析し直した"
+        echo "  OK   $label 入れ替えを検知して解析し直した"
     else
-        echo "  NG   依存 jar の並び順 入れ替えを検知していません（新規解析=$PARSED）"; fail=1
+        echo "  NG   $label 入れ替えを検知していません（新規解析=$PARSED）"; fail=1
     fi
 
     rm -rf .cache
     run full.tsv || { CONFIG=config.properties; return; }
     for f in call-hierarchy.csv methods.csv; do
         if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
-            echo "  OK   依存 jar の並び順 $f（差分更新 == 全件解析）"
+            echo "  OK   $label $f（差分更新 == 全件解析）"
         else
-            echo "  NG   依存 jar の並び順 $f が差分更新と全件解析で違います"
+            echo "  NG   $label $f が差分更新と全件解析で違います"
             diff --strip-trailing-cr "$inc_csv/$f" "$OUT/$f" | head -10; fail=1
         fi
     done
     # 入れ替えで解決先が実際に変わっていること（変わらなければ検査が素通りする）
     if diff -q <(normalized_facts base.tsv) <(normalized_facts full.tsv) > /dev/null; then
-        echo "  NG   依存 jar の並び順 入れ替えで解決先が変わっていません（検査が素通りします）"; fail=1
+        echo "  NG   $label 入れ替えで解決先が変わっていません（検査が素通りします）"; fail=1
     else
-        echo "  OK   依存 jar の並び順 入れ替えで解決先が変わっている"
+        echo "  OK   $label 入れ替えで解決先が変わっている"
     fi
 
     # 並びを変えずにもう一度。並び順の判定が効きすぎて毎回解析し直していないこと
     run again.tsv || { CONFIG=config.properties; return; }
     CONFIG=config.properties
     if [ "$PARSED" = 0 ]; then
-        echo "  OK   依存 jar の並び順 変えなければ解析し直さない"
+        echo "  OK   $label 変えなければ解析し直さない"
     else
-        echo "  NG   依存 jar の並び順 変えていないのに解析し直しています（新規解析=$PARSED）"; fail=1
+        echo "  NG   $label 変えていないのに解析し直しています（新規解析=$PARSED）"; fail=1
     fi
     rm -f again.tsv
 }
 
-jar_order_case
+jar_order_case jarorder
+
+# jar の無名パッケージ（デフォルトパッケージ）のクラスの並び。以前は L 行のパッケージに無名パッケージが入らず、
+# 並びを入れ替えても検知しなかった（LibraryFact#UNNAMED_PACKAGE）
+rm -rf jarorder-unnamed && mkdir -p jarorder-unnamed/src jarorder-unnamed/libsrc/a jarorder-unnamed/libsrc/b
+printf 'public class UseBase {\n    public void go() {\n        new Base().m("x");\n    }\n}\n' \
+    > jarorder-unnamed/src/UseBase.java
+printf 'public class Base {\n    public void m(Object o) {\n    }\n}\n' > jarorder-unnamed/libsrc/a/Base.java
+printf 'public class Base {\n    public void m(Object o) {\n    }\n\n    public void m(String s) {\n    }\n}\n' \
+    > jarorder-unnamed/libsrc/b/Base.java
+ORDER_ENTRY= jar_order_case jarorder-unnamed "無名パッケージ"
+rm -rf jarorder-unnamed
 
 # --- キャッシュの健全性（同じフォルダを使う実行・解析のあいだの書き換え・ソースフォルダの並び・同じクラスが 2 つ） ---
 # 作業フォルダは integrity/。検査用の小さなプログラム（tools/）もここにコンパイルする
@@ -3610,6 +3871,60 @@ edit_during_run_case() {   # $1=ラベル  $2=書き換えるファイル（src/
 edit_during_run_case "解析するファイル" Worker.java "$(printf 'package e;\n\npublic class Worker {\n    void work() {\n        Helper.two();\n    }\n}')"
 # 解析するファイルが参照するファイル（再利用するブロック）を書き換える。JDT はソースパスから書き換え後の中身を読む
 edit_during_run_case "参照されるファイル" Helper.java "$(printf 'package e;\n\npublic class Helper {\n    static void oneRenamed() {\n    }\n}')"
+
+# 解析のあいだにソースを消して戻す・足して消す。一覧を作ったときのファイルの大きさと更新時刻だけを見ていたので、
+# (1) 消したファイルは「次の実行ではソースに無いので解析し直される」として見逃し、同じ中身で戻すと、消えていたあいだに
+# 解析したファイル（Worker。Helper が無いのでエラー）のブロックを再利用し続けた。(2) 一覧に無かったファイル
+# （Worker と同じパッケージの Util。オンデマンド import の q.Util を隠す）を足して解析のあとで消すと、Worker は
+# 消えた e.Util を呼ぶブロックのまま再利用され続け、q.Util.x の呼び出しが出なかった。今は、ソースが消えた・増えたら
+# この実行で解析したファイルのブロックの内容ハッシュも空にする（CacheUpdater#invalidateChangedDuringRun）
+edit_during_run_set_case() {   # $1=ラベル  $2=delete|add
+    echo "== 解析のあいだにソースを$1 =="
+    local d=$IW/editset
+    rm -rf $d && mkdir -p $d && edit_project $d
+    mkdir -p $d/src/q
+    printf 'package q;\n\npublic class Util {\n    public static void x() {\n    }\n}\n' > $d/src/q/Util.java
+    sed -i 's/^package e;$/package e;\n\nimport q.*;/; s/Helper.one();/Helper.one();\n        Util.x();/' $d/src/e/Worker.java
+    integrity_cfg $d/c.properties "$PWD/$d" src
+    integrity_cfg $d/full.properties "$PWD/$d" src "$PWD/$d/fullcache"
+    integrity_run $d/c.properties $d/c0.log
+    sed -i 's/Helper.one();/Helper.one();\n        Helper.one();/' $d/src/e/Worker.java
+    local rc
+    if [ "$2" = delete ]; then
+        "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.EditDuringRunCheck $d/c.properties \
+            src/e/Worker.java $d/src/e/Helper.java - > $d/c1.log 2>&1
+        rc=$?
+        mv $d/src/e/Helper.java.away $d/src/e/Helper.java
+    else
+        printf 'package e;\n\npublic class Util {\n    public static void x() {\n    }\n}\n' > $d/during.java
+        "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.EditDuringRunCheck $d/c.properties \
+            src/e/Worker.java $d/src/e/Util.java $d/during.java > $d/c1.log 2>&1
+        rc=$?
+        rm -f $d/src/e/Util.java
+    fi
+    if [ "$rc" != 0 ]; then
+        echo "  NG   ソースを$1解析が失敗しました（終了コード $rc）"; grep -a -E 'NG|ERROR' $d/c1.log | head -5; fail=1; return
+    fi
+    if grep -q -F "changed while the analysis was running" $d/c1.log; then
+        echo "  OK   解析のあいだにソースが消えた・増えたことをログに出す"
+    else
+        echo "  NG   解析のあいだにソースが消えた・増えたことがログに出ていません"; fail=1
+    fi
+    integrity_run $d/c.properties $d/c2.log
+    local inc_out=$IOUT
+    integrity_run $d/full.properties $d/full.log
+    same_csv "解析のあいだにソースを$1" "$inc_out" "$IOUT"
+    if diff -q <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+               <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") > /dev/null; then
+        echo "  OK   解析のあいだにソースを$1 キャッシュ（差分更新 == 全件解析）"
+    else
+        echo "  NG   解析のあいだにソースを$1 キャッシュが全件解析と違います"
+        diff <(normalized "$(ls $d/cache/*/analysis-cache.tsv)") \
+             <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") | head -10; fail=1
+    fi
+}
+edit_during_run_set_case "消して戻す" delete
+edit_during_run_set_case "足して消す" add
 
 # 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
 # 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q61）。
