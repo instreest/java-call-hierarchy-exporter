@@ -68,6 +68,17 @@ public final class Messages {
      */
     private static volatile String language = (FORCED != null) ? FORCED : defaultLanguage();
 
+    /**
+     * 設定ファイルが {@code message.language} を書いていないときに戻る言語（起動時は OS の言語。
+     * {@link #setLanguage} で決めればそれ）。
+     *
+     * <p>言語は JVM に 1 つの状態なので、1 つの JVM で設定を続けて読む使い方（引数に設定を複数渡す・
+     * 対話モードで解析を繰り返す・解析サーバーの ANALYZE）では、前の設定の {@code message.language} が
+     * 後の設定に残ってしまう。空欄の設定を読んだらここへ戻すことで、設定ごとの言語が
+     * 「環境変数 &gt; システムプロパティ &gt; その設定の message.language &gt; OS」だけで決まる
+     */
+    private static volatile String baseline = language;
+
     /** 現在の言語の文言。英語の表に訳を重ねたもの（差し替えるので {@code volatile}） */
     private static volatile Map<String, String> texts = build(language);
 
@@ -78,7 +89,9 @@ public final class Messages {
      * 設定ファイルの {@code message.language} を反映する。
      *
      * <p>環境変数・システムプロパティで既に決まっているときは<b>何もしない</b>（そちらが優先）。
-     * 空欄や知らない言語も無視して、それまでの言語のままにする。
+     * 空欄や知らない言語なら、それまでの言語のままにはせず、OS の言語（{@code baseline}）に戻す。
+     * 同じ JVM で前に読んだ設定の言語を引き継がないためである
+     * （引数に設定を複数渡したとき、後の設定の warnings.txt が前の設定の言語になっていた）。
      *
      * @param configured 設定ファイルに書かれた値。未指定なら空文字か null
      */
@@ -87,21 +100,20 @@ public final class Messages {
             return;
         }
         String lang = normalize(configured);
-        if (lang == null) {
-            return;
-        }
-        switchTo(lang);
+        switchTo((lang != null) ? lang : baseline);
     }
 
     /**
      * 言語を直接決める。プラグインが自分の画面の言語に解析側を合わせるときに使う
      * （Eclipse は {@code osgi.nl}、VSCode は表示言語）。
+     * 決めた言語は、以後 {@code message.language} を書いていない設定を読んだときに戻る言語にもなる。
      *
      * @param requested {@code en} / {@code ja} など。知らない言語なら何もしない
      */
     public static synchronized void setLanguage(String requested) {
         String lang = normalize(requested);
         if (lang != null) {
+            baseline = lang;
             switchTo(lang);
         }
     }
@@ -183,7 +195,7 @@ public final class Messages {
      *
      * <p>国と地域（{@code ja_JP} / {@code ja-JP}）は言語だけ見る。地域まで分ける訳を持つ予定が無く、
      * 持つときになってから足せばよい。訳を持たない言語（{@code fr} など）は null を返し、
-     * 呼び出し側でそれまでの言語（初期化時は英語）のままにする。
+     * 呼び出し側で扱いを決める（初期化時は英語、{@link #applyConfigured} は OS の言語に戻す、{@link #setLanguage} は何もしない）。
      */
     private static String normalize(String raw) {
         if (raw == null) {

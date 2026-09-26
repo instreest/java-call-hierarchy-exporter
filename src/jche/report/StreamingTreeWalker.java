@@ -34,7 +34,11 @@ import jche.util.Warnings;
  * 安全策:
  * <ul>
  *   <li>max.depth … 深さ制限（0以下で無制限だが、循環検出があるため止まる）</li>
- *   <li>max.rows … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）</li>
+ *   <li>max.rows … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）。
+ *       行を 1 行も書かずに続けて通ったノード（コンストラクタ呼び出し・除外パッケージの読み飛ばし）の数にも
+ *       同じ上限を掛ける（{@code silentRun}）。そうしないと、行を出さない部分木（フィールド初期化子の
+ *       {@code new} だけでつながるコンストラクタの連鎖など）が経路の数だけ辿られ、行数の上限に当たらないまま
+ *       終わらなくなる。行を書くたびに数え直すので、行を書き進めている探索は行数の上限までしか止まらない</li>
  *   <li>循環検出 … 「現在の経路（rootからそのノードまでの祖先）」に同じメソッドが
  *       既にあれば、その辺を1行だけ出力してそこから先へは降りない。
  *       判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
@@ -123,7 +127,7 @@ public final class StreamingTreeWalker {
     /** 現在の経路（深さぶんだけ確保） */
     private final PathFrame[] path;
     /**
-     * 除外パッケージの読み飛ばし（{@link #skipThrough}）で path[] から外れているが、
+     * 除外パッケージの読み飛ばし（{@code skipThrough}）で path[] から外れているが、
      * 呼び出しの連鎖としては祖先にあたるメソッド。差し替えられた親と、読み飛ばし中の
      * 除外メソッドが入る。{@link #onCurrentPath} はこれも経路上とみなす。
      * これが無いと、除外メソッド A → B → A の相互再帰を検出できず、深さも行数も
@@ -149,6 +153,19 @@ public final class StreamingTreeWalker {
 
     private int rootId;
     private long totalRows;
+    /**
+     * 最後に行を書いてから、行にせずに続けて通ったノードの数（コンストラクタ呼び出し・除外パッケージの読み飛ばし）。
+     * 探索は経路ごとで訪問済みの集合を持たないので、行を出さない部分木も経路の数だけ辿る。
+     * 行数だけを数えると、そういう部分木（{@code new} だけでつながるコンストラクタの連鎖など）は
+     * max.rows に当たらず、深さの上限（既定 50）まで指数的に辿り続ける。これが max.rows に達したら、
+     * 行数の上限と同じく打ち切って知らせる。
+     *
+     * <p>通した数の合計ではなく「行を書かずに続けて」の数にするのは、既定の exclude.packages（java.**）に
+     * 当たる JDK の呼び出しも読み飛ばし（{@code skipThrough}）で、普通のコードでも行より多く通るため。
+     * 合計を max.rows で打ち切ると、行数の上限に届かない探索まで途中で止まり、以前は出ていた行が落ちる。
+     * 行を書くたびに 0 に戻せば、行を書き進めている探索の結果は変わらない
+     */
+    private long silentRun;
     private boolean limitWarned;
     private boolean candidateLimitWarned;
 
@@ -395,6 +412,8 @@ public final class StreamingTreeWalker {
                 // call-hierarchy 列に <init> を含んだ形で出力される
                 if (!methods.isConstructor(target)) {
                     emit(depth + 1);
+                } else {
+                    silentRun++;   // 行にならないノードも上限に数える（isRowLimitReached）
                 }
 
                 // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
@@ -619,6 +638,7 @@ public final class StreamingTreeWalker {
             }
             return;
         }
+        silentRun++;   // 読み飛ばした除外メソッドは行にならないが、上限には数える（isRowLimitReached）
         PathFrame saved = path[parentDepth];
         PathFrame replacement = new PathFrame();
         replacement.set(skippedId, saved.callLine, saved.note, saved.resolvedBy,
@@ -793,13 +813,16 @@ public final class StreamingTreeWalker {
         return hiddenAncestors.contains(methodId);
     }
 
+    /** 出力行数か、行を書かずに続けて通ったノードの数（{@link #silentRun}）が max.rows に達したか */
     private boolean isRowLimitReached() {
-        if (config.maxRows <= 0 || totalRows < config.maxRows) {
+        if (config.maxRows <= 0 || (totalRows < config.maxRows && silentRun < config.maxRows)) {
             return false;
         }
         if (!limitWarned) {
             limitWarned = true;
-            Warnings.warn(Warnings.Topic.INCOMPLETE, Messages.format("report.walker.maxRows", config.maxRows));
+            Warnings.warn(Warnings.Topic.INCOMPLETE, (totalRows >= config.maxRows)
+                    ? Messages.format("report.walker.maxRows", config.maxRows)
+                    : Messages.format("report.walker.maxSilentNodes", config.maxRows));
         }
         return true;
     }
@@ -812,5 +835,6 @@ public final class StreamingTreeWalker {
             inHierarchy[id] = true;
         }
         totalRows++;
+        silentRun = 0;   // 行を書いた。行にならないノードは、ここから数え直す
     }
 }

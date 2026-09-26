@@ -139,6 +139,9 @@ analyze config
 check_invariant config
 expect_in_warnings config "A folder or file given in the config file was not found"
 expect_in_warnings config "src/missing"
+# 対処の案内の相対パスの起点が、Config の読み方と合っていること。library.jars は設定ファイルのフォルダから読む
+# （Config#resolveFromConfigDir）のに、以前の案内は project.root からと書いていた
+expect_in_warnings config "source.folders / library.folders / external.library.folders from project.root, and the other items (project.root / library.jars /"
 
 # 5. コンパイルエラー（型が無い）と構文エラー
 make_project build ""
@@ -403,6 +406,137 @@ cp work/deps/pom.xml work/deps_ja/pom.xml
 JCHE_LANG=ja analyze deps_ja
 check_invariant deps_ja
 expect_in_warnings deps_ja "依存 jar が解決できていません"
+
+# 8. 1 つの JVM で設定を続けて処理する（引数に設定を複数渡す。対話モードで解析を繰り返すのも同じ経路）。
+# どの設定の warnings.txt も、その設定だけを動かしたときと同じ中身になること。
+#   - 拡張の置き場所の警告（plugin.folders のフォルダが無い）が 2 つ目の設定にも載る
+#     （以前は拡張のクラスローダを JVM の中で使い回していて、最初の設定にしか載らなかった）
+#   - message.language を書いていない設定は、前の設定の言語（ここでは ja）を引き継がず OS の言語（en）で書く
+#     （拡張の警告に関わらず warnings.txt ができるよう、どちらの設定にも無い jar を指定しておく）
+# 言語の引き継ぎを見るので JCHE_LANG を外し、OS の言語は user.language で英語に固定する
+make_project multi "library.jars=no-such.jar"
+sed -i '/^output.folder=/d' work/multi/config.properties
+{ cat work/multi/config.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
+  echo "message.language=ja"; } > work/multi/c1.properties
+{ cat work/multi/config.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
+    > work/multi/c2.properties
+( cd work/multi && env -u JCHE_LANG "$JAVA_BIN" -Duser.language=en -cp "$CLASSES:$CP" \
+    jche.CallHierarchyExporter c1.properties c2.properties ) > work/multi.console.log 2>&1
+for n in 1 2; do
+    OUT=$(ls -d work/multi/out$n/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    check_invariant "multi(c$n)"
+    if [ "$n" = 1 ]; then
+        expect_in_warnings "multi(c1)" "plugin.folders のフォルダがありません"
+    else
+        expect_in_warnings "multi(c2)" "The folder in plugin.folders does not exist"
+        # 見出しの「What to do:」（日本語なら「対処:」）で何語で書いたかを見る
+        if [ -n "$OUT" ] && grep -q -F "What to do:" "$OUT/warnings.txt" 2>/dev/null \
+                && ! grep -q -F "対処:" "$OUT/warnings.txt"; then
+            ok "multi(c2): message.language を書いていない設定は前の設定の言語を引き継がない"
+        else
+            ng "multi(c2): 前の設定の言語（ja）を引き継いでいる（または warnings.txt が無い）"
+        fi
+    fi
+done
+
+# 9. 行にならないノードだけでできた部分木も max.rows で打ち切って知らせる。
+# 出力の探索（StreamingTreeWalker）は経路ごとに辿り、コンストラクタ呼び出しと除外パッケージのメソッドは行にしない。
+# 以前は行数だけを上限に数えたので、それだけでつながる枝分かれ（C_i のフィールド初期化子が C_{i+1} と C_{i+2} を
+# new する）は経路の数（フィボナッチ数）だけ辿られ、0 行・警告なしのまま終わらなくなった（N=40 で 30 秒超）。
+# 行にしないノードの数にも max.rows と同じ上限を掛け、越えたら「途中で止まった」の項目に載せる
+make_dag() {   # $1=フォルダ名  $2=ctor（コンストラクタの連鎖）/ excluded（除外パッケージのメソッドの連鎖）
+    local dir=work/$1 n=30 i
+    mkdir -p "$dir/src/p" "$dir/src/q"
+    for i in $(seq 0 $((n - 1))); do
+        if [ "$2" = ctor ]; then
+            if [ "$i" -lt $((n - 2)) ]; then
+                echo "package p; public class C$i { private final Object a = new C$((i + 1))(); private final Object b = new C$((i + 2))(); }"
+            else
+                echo "package p; public class C$i { }"
+            fi > "$dir/src/p/C$i.java"
+        else
+            if [ "$i" -lt $((n - 2)) ]; then
+                echo "package q; public class M$i { public static void m() { M$((i + 1)).m(); M$((i + 2)).m(); } }"
+            else
+                echo "package q; public class M$i { public static void m() { } }"
+            fi > "$dir/src/q/M$i.java"
+        fi
+    done
+    if [ "$2" = ctor ]; then
+        echo 'package p; public class Main { public static void main(String[] a) { new C0(); } }'
+    else
+        echo 'package p; public class Main { public static void main(String[] a) { q.M0.m(); } }'
+    fi > "$dir/src/p/Main.java"
+    cat > "$dir/config.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+exclude.packages=java.**,javax.**,q.**
+max.rows=1000
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+for kind in ctor excluded; do
+    make_dag "dag_$kind" "$kind"
+    analyze "dag_$kind"
+    [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
+    check_invariant "dag_$kind"
+    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) in a row"
+done
+
+# 行を書き進めている探索は、行にならないノードが行より多くても行数の上限まで止めない。
+# 既定の exclude.packages（java.**）に当たる JDK の呼び出しも読み飛ばし（行にならないノード）なので、
+# 普通のコードでも行にならないノードは行より多く通る。通った数の合計を max.rows で打ち切ると
+# （この上限を入れた当初の形）、行数が max.rows に届かない探索でも途中で止まり、以前は出ていた行が落ちる。
+# 各メソッドが行にならない呼び出し（JDK の呼び出し 3 つ・除外パッケージの中の 11 の呼び出し・5 段の継承の
+# new 3 つ）と Leaf.x() を持つ形を 40 個並べ、max.rows=100 で Leaf.x の 40 行がすべて出て、打ち切りの警告が無いこと
+make_busy() {   # $1=フォルダ名  $2=jdk / excluded / ctor
+    local dir=work/$1 i
+    mkdir -p "$dir/src/p" "$dir/src/q"
+    echo 'package p; public class Leaf { public static void x() { } }' > "$dir/src/p/Leaf.java"
+    {
+        echo 'package p; public class Main {'
+        for i in $(seq 1 40); do
+            case "$2" in
+                jdk) echo "public void m$i(StringBuilder sb) { sb.append(1); sb.append(\"a\"); System.out.println(sb); Leaf.x(); }" ;;
+                excluded) echo "public void m$i() { q.U.m(); }" ;;
+                ctor) echo "public void m$i() { new D4(); new D4(); new D4(); Leaf.x(); }" ;;
+            esac
+        done
+        echo '}'
+    } > "$dir/src/p/Main.java"
+    {
+        echo 'package q; public class U { public static void m() {'
+        for i in $(seq 1 10); do echo "h$i();"; done
+        echo 'p.Leaf.x(); }'
+        for i in $(seq 1 10); do echo "static void h$i() { }"; done
+        echo '}'
+    } > "$dir/src/q/U.java"
+    echo 'package p; public class D0 { }' > "$dir/src/p/D0.java"
+    for i in 1 2 3 4; do echo "package p; public class D$i extends D$((i - 1)) { }" > "$dir/src/p/D$i.java"; done
+    cat > "$dir/config.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+exclude.packages=java.**,javax.**,q.**
+max.rows=100
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+for kind in jdk excluded ctor; do
+    make_busy "busy_$kind" "$kind"
+    analyze "busy_$kind"
+    check_invariant "busy_$kind"
+    # 起点が Main.m1〜m40 で、Leaf.x へ届いた行（q.U.m を起点にした行は数えない）
+    ROWS=$(grep -c -E ',Main\.m[0-9]+,Leaf\.x' "$OUT/call-hierarchy.csv" 2>/dev/null)
+    if [ "$ROWS" = 40 ] && [ ! -f "$OUT/warnings.txt" ]; then
+        ok "busy_$kind: 行数の上限に届かない探索は打ち切らない（Leaf.x の 40 行）"
+    else
+        ng "busy_$kind: Leaf.x の行が ${ROWS:-0} 行（40 のはず）、または warnings.txt がある"
+    fi
+done
 
 # 8. jar のクラス（q.Api）が参照するクラス（q.Missing）が無いとき、事実を集めるときの問い合わせが同じバッチの後ろの
 #    ファイル（app/B.java）のメソッドを先に解決させ、B の番で JDT が例外を投げて一括解析が落ちていた（「The batch analysis

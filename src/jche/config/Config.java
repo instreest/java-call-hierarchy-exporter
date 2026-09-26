@@ -32,7 +32,8 @@ import jche.util.UserHome;
  *
  * 相対パスの起点は項目ごとに異なる。
  * <ul>
- *   <li>project.root / output.folder / cache.folder … この設定ファイルが置かれているディレクトリ</li>
+ *   <li>project.root / library.jars / library.repositories / output.folder / cache.folder / contracts.files /
+ *       plugin.folders … この設定ファイルが置かれているディレクトリ（下の 3 項目以外はすべてこちら）</li>
  *   <li>source.folders / library.folders / external.library.folders … project.root</li>
  * </ul>
  * 設定ファイルと関連ファイルをひとまとめに配置でき、どこから実行しても同じ結果になる。
@@ -265,7 +266,8 @@ public final class Config {
 
         // 表示言語は、以降の検証が出すエラーの言語も決めるので真っ先に反映する。
         // 環境変数 JCHE_LANG / システムプロパティ jche.lang があればそちらが優先される
-        // （Messages.applyConfigured は、その場合は何もしない）
+        // （Messages.applyConfigured は、その場合は何もしない）。空欄なら OS の言語に戻す。
+        // 同じ JVM で前に読んだ設定（引数の前の設定・対話モードの前の実行・サーバーの前の ANALYZE）の言語を引き継がない
         this.messageLanguage = p.getProperty("message.language", "").trim();
         Messages.applyConfigured(this.messageLanguage);
 

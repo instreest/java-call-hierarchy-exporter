@@ -359,6 +359,77 @@ grep -qE "^NG${T}cancelled" <<<"$RESPONSE" && ok "CANCEL で中止される" \
 [ -z "$LEFT" ] && ok "グラフの構築中に中止しても一時ファイルが残らない（サーバーは動いたまま）" \
     || fail "グラフの構築中に中止したあとに一時ファイルが残っている: $LEFT"
 
+# CANCEL は、それまでに読んだ ANALYZE のうち、まだ始まっていないもの（前の要求の処理中に待ち行列にあるもの）も止める。
+# 後から送った ANALYZE には効かない。要求をまとめて流し込むので、CANCEL を読んだ時点では 1 つ目の ANALYZE が
+# 動いていて、2 つ目はまだ待ち行列にある（以前は ANALYZE の始まりで中止の旗を下ろしていたので、2 つ目は最後まで走った）
+echo "== 始まる前の ANALYZE にも CANCEL が効く =="
+OUT=$(session "ANALYZE\t$CONFIG\nANALYZE\t$CONFIG\nCANCEL\nANALYZE\t$CONFIG\nSHUTDOWN\n" | grep -E '^(OK|NG)')
+echo "$OUT" | sed 's/^/       /' | cut -c1-60
+RESULTS=$(cut -f1-2 <<<"$OUT" | head -3 | sed 's/analyzed=.*/analyzed/' | paste -sd' ')
+[ "$RESULTS" = "NG${T}cancelled NG${T}cancelled OK${T}analyzed" ] \
+    && ok "CANCEL より前に読んだ 2 つの ANALYZE は中止され、後の ANALYZE は動く" \
+    || fail "CANCEL の効き方が期待と違う（$RESULTS）"
+
+# 拡張（plugin.folders）は ANALYZE のたびに読み直す。IDE はサーバーを動かしたまま ANALYZE を繰り返すので、
+# 拡張を直したら次の ANALYZE から効くこと（以前は拡張のクラスローダを JVM の中で使い回していて、
+# 直した拡張が効かず、候補を狭めた古い拡張のせいで呼び出しが黙って落ちていた）
+echo "== 拡張を直したら次の ANALYZE から効く =="
+PL=$WORK/plug
+mkdir -p "$PL/proj/src/p" "$PL/plugins/demo"
+echo 'package p; public interface Svc { void run(); }' > "$PL/proj/src/p/Svc.java"
+echo 'package p; public class A implements Svc { public void run() { } }' > "$PL/proj/src/p/A.java"
+echo 'package p; public class B implements Svc { public void run() { } }' > "$PL/proj/src/p/B.java"
+echo 'package p; public class Main { void go(Svc s) { s.run(); } }' > "$PL/proj/src/p/Main.java"
+write_pick() {   # $1=p.Svc の候補として返す型
+    cat > "$PL/plugins/demo/Pick.java" <<EOF
+package demo;
+import java.util.List;
+import jche.extension.*;
+public class Pick implements TypeCandidateProvider {
+    public String[] candidates(String t, String sig, List<Hint> h) { return "p.Svc".equals(t) ? new String[] {"$1"} : null; }
+    public String label() { return "PICK"; }
+}
+EOF
+}
+write_pick p.A
+cat > "$PL/c.properties" <<EOF
+project.root=proj
+source.folders=src
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=out
+cache.folder=cache
+plugin.folders=plugins
+resolver.candidate.providers=demo.Pick
+EOF
+coproc PSRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$PL/scache" 2>/dev/null; }
+PSRV_OUT=${PSRV[0]}
+PSRV_IN=${PSRV[1]}
+PSRV_PROC=$PSRV_PID
+# 1 つの要求を送り、OK / NG までの R 行と応答をつないで返す
+psrv() {
+    printf '%s\n' "$1" >&"$PSRV_IN"
+    local line acc=""
+    while IFS= read -r -t 300 line <&"$PSRV_OUT"; do
+        case "$line" in
+            R*) acc+="$(cut -f3 <<<"$line") " ;;
+            OK*|NG*) printf '%s%s' "$acc" "$(cut -f1 <<<"$line")"; return ;;
+        esac
+    done
+}
+psrv "ANALYZE${T}$PL/c.properties" > /dev/null
+TREE1=$(psrv "TREE${T}p.Main#go(p.Svc)${T}callees${T}depth=3")
+write_pick p.B
+psrv "ANALYZE${T}$PL/c.properties" > /dev/null
+TREE2=$(psrv "TREE${T}p.Main#go(p.Svc)${T}callees${T}depth=3")
+printf 'SHUTDOWN\n' >&"$PSRV_IN" 2>/dev/null
+cat <&"$PSRV_OUT" > /dev/null 2>&1
+wait "$PSRV_PROC" 2>/dev/null
+[ "$TREE1" = "p.Main#go(p.Svc) p.A#run() OK" ] && ok "1 回目は拡張が返す p.A へ繋ぐ" \
+    || fail "1 回目の TREE が期待と違う（$TREE1）"
+[ "$TREE2" = "p.Main#go(p.Svc) p.B#run() OK" ] && ok "拡張を直した後の ANALYZE では p.B へ繋ぐ" \
+    || fail "拡張を直しても古い拡張が動いている（$TREE2）"
+
 # 同じ更新時刻のまま上書きした jar を、同じサーバーの次の ANALYZE が読むこと。JDT は開いた jar を閉じず（GC まで開いたまま）、
 # 開いているあいだ JDK は同じ jar（inode と更新時刻が同じもの）の目次をプロセスの中で共有するので、依存 jar の指紋も
 # JDT も前の目次を読み、「何も変わっていない」として古い事実を使い続けていた（新しいプロセスなら今の中身を読む）。
