@@ -82,17 +82,24 @@ import java.util.Set;
  *                                                              ワイルドカード・交差型は上限の消去で数え、型引数
  *                                                              （{@code List<Foo>} の Foo）も数える。ただし JDT が
  *                                                              解決できなかった名前（バインディングが無いか回復したもの）は
- *                                                              数えず、アノテーションの型は {@code java.*} のものを数えない
+ *                                                              数えない。アノテーションの型は {@code java.*} のものも数える
  *                                                              （jche.analysis.FactVisitor#preVisit2）。呼び出し・メソッド
- *                                                              参照・new・super(...) では、呼び出しの候補（探す型とその親が
+ *                                                              参照・new・super(...)（書いていない暗黙の super() も。
+ *                                                              jche.analysis.TypeContextTracker#recordImplicitSuper）
+ *                                                              では、呼び出しの候補（探す型とその親が
  *                                                              宣言する同じ名前のメソッド・コンストラクタ。探す型は型引数を
  *                                                              付けたまま辿る）の引数の型も数える。{@code java.*} の型の
  *                                                              候補は、型引数を置き換えた {@code java.*} でない型だけ
  *                                                              （jche.analysis.BindingNames#noteCandidates）
- *                                                          (c) 呼び出したメソッド・コンストラクタの throws の型
- *                                                              （型変数は上限の消去。{@code java.*} の型は数えない）
+ *                                                          (c) 呼び出したメソッド・コンストラクタ（暗黙の super() を
+ *                                                              含む）の throws の型（型変数は上限の消去。
+ *                                                              {@code java.*} の型は数えない）
  *                                                          (d) import 文の型（オンデマンド import は "pkg.*"）
- *                                                          (e) (a)〜(c) で数えた jar の型（ソースの無い、{@code java.*} で
+ *                                                          (f) このファイルが宣言する型が継承するメソッド（推移的な
+ *                                                              親型が宣言するもの）の戻り値と throws の型のうち
+ *                                                              {@code java.*} でないもの（継承したメソッドどうしの
+ *                                                              突き合わせ。jche.analysis.BindingNames#noteInheritedSignatures）
+ *                                                          (e) (a)〜(c)・(f) で数えた jar の型（ソースの無い、{@code java.*} で
  *                                                              ない型）の推移的な親型（{@code java.*} の型で止める。
  *                                                              jar の型には H 行が無いので、親の jar の変化をここで拾う）
  *                                                          親型の変化は、差分更新が H 行から作る部分型の索引で拾う
@@ -107,11 +114,14 @@ import java.util.Set;
  *                                                          ブロックを解析し直す。
  *                                                          <b>自分の宣言の指紋</b>は、このファイルが宣言する型・メソッド・
  *                                                          フィールドの JDT のバインディングの鍵と修飾子・戻り値や型・
- *                                                          throws（継承したものは含めない）と K 行の指紋を並べたハッシュ
+ *                                                          throws（継承したものは含めない）・インターフェースの関数型と
+ *                                                          K 行の指紋を並べたハッシュ
  *                                                          （{@link jche.cache.FileAnalysis#declarationKeys}）。中身の
  *                                                          変わっていないファイルを解析し直して、これが前回と違えば、
  *                                                          宣言する型を変わった型にする（宣言に書いた名前の解決先が
- *                                                          変わった・参照した定数の値が変わった）
+ *                                                          変わった・参照した定数の値が変わった）。sealed な型か
+ *                                                          アノテーション型を宣言するファイルは、指紋に依らず変わった型に
+ *                                                          する（{@link jche.cache.FileAnalysis#cascadesWhenReanalysed}）
  *   S  番号  pkg  typeFqn  method  paramSig                   ブロック内のメソッドの記号表（{@link SymbolTable}）。
  *                                                          番号は 0 から詰めて振る。下の「記号」はこの番号
  *   N  番号  kind  value  recv  args  argCount  staticRecv    {@link ValueNode}。値グラフのノード。

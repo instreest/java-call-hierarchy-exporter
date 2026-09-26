@@ -1044,8 +1044,12 @@ final class FactVisitor extends ASTVisitor {
      * 足すことになったので、「すべての式と型の節」の 1 つの決まりにした（docs/cache-unification-qa.md の Q78）。
      * 親型の変化は、型を数えておけば差分更新が部分型の側で拾う（{@link CacheUpdater} の「親型の連鎖」）。
      * 呼び出しの節では、選ばれなかった候補の引数の型も数える（{@link #noteCandidates(ASTNode)}）。
+     * このファイルに名前の現れない型のうち、sealed な型の許した部分型（網羅性・キャストが成り立つか）と、アノテーション型の
+     * メタ注釈・{@code @Repeatable} の入れ物の型は、ここでは数えず、それを宣言したファイルの側で連鎖させる
+     * （{@link jche.cache.FileAnalysis#cascadesWhenReanalysed}）。継承したメソッドの戻り値と throws の型は、型の宣言の側で
+     * 数える（{@link BindingNames#noteInheritedSignatures}）。
      *
-     * <p>例外は 2 つ。
+     * <p>例外は 1 つ。
      * <ul>
      *   <li>JDT が解決できなかった名前（{@link Name} の節で、バインディングが無いか、回復して作ったもの）は数えない。
      *       依存 jar が無いときの式の中の {@code org.missing.pkg.Type.run()} の {@code org.missing} には、同じバッチで
@@ -1054,16 +1058,17 @@ final class FactVisitor extends ASTVisitor {
      *       （Q79）。解決できなかった名前は、エラーの側（I 行の 2 列目）で拾う。型の節（{@link Type}）は回復した型でも
      *       数える（型の文脈の回復はバッチに依らない。途中のパッケージができる・無くなると変わるが、それは差分更新が
      *       解決できなかった名前の側で拾う。Q80）</li>
-     *   <li>アノテーションの型は、{@code java.*} のもの（{@code @Override} など）を数えない（JDK の版はキャッシュの鍵に
-     *       入っていて、変われば全件解析になる。どのファイルにも付くので I 行が嵩むだけ）。型の名前の節はアノテーションの
-     *       節の側で数えるので、名前の側では数えない</li>
      * </ul>
+     * アノテーションの型は、アノテーションの節の側で数える（型の名前の節は数えない）。{@code java.*} のもの
+     * （{@code @Override}・{@code @Target}）も数える。同じパッケージに {@code Override} や {@code Target} という型を
+     * 足すと、書いた名前がそちらに解決される（JLS 6.4.1）。差分更新は I 行の単純名でそれを見つけるので、数えないと
+     * 解析し直さない。
      */
     @Override
     public boolean preVisit2(ASTNode node) {
         noteCandidates(node);
         if (node instanceof Annotation a) {
-            names.noteDependencyUnlessJdk(a.resolveTypeBinding());
+            names.noteDependency(a.resolveTypeBinding());
         } else if (node instanceof Name n) {
             if (!(n.getParent() instanceof Annotation a && n.getLocationInParent() == a.getTypeNameProperty())
                     && resolved(n.resolveBinding())) {

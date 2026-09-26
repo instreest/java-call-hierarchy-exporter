@@ -108,6 +108,13 @@
 15.9.5	anonymous-binary-name	type	jls.s15_09_05.Anonymous$1	-	-	匿名クラスのバイナリ名は Anonymous$1（§13.1）
 15.9.5.1	anonymous-ctor	call	jls.s15_09_05.Anonymous$1#<init>(int)	jls.s15_09_05.Task#<init>(int)	-	匿名コンストラクタは生成式の実引数をそのまま渡して親のコンストラクタを呼ぶ
 15.9.5.1	anonymous-ctor-path	path	Anonymous.make > Anonymous$1.Anonymous$1 > Task.Task > Sink.taskInit	-	-	匿名クラスの生成から親のコンストラクタ本体まで辿れる
+15.9.5.1	anonymous-generic-typevar	call	jls.s15_09_05.GenericSuper$1#<init>(jls.s15_09_05.Item)	jls.s15_09_05.Holder#<init>(java.lang.Object)	-	親がジェネリックでも、匿名コンストラクタは型引数を置き換えた引数の並び（Holder<Item> の Holder(T) は Holder(Item)）で選ばれた親のコンストラクタを呼ぶ
+15.9.5.1	anonymous-generic-typevar-path	path	GenericSuper.typeVar > GenericSuper$1.GenericSuper$1 > Holder.Holder > GSink.holderValue	-	-	型変数 T を引数に取る親のコンストラクタの本体まで辿れる
+15.9.5.1	anonymous-generic-typevar-not-noarg	nopath	GenericSuper$1.GenericSuper$1 > Holder.Holder > GSink.holderNoArg	-	-	引数なしのコンストラクタには向かない
+15.9.5.1	anonymous-generic-array	path	GenericSuper.array > GenericSuper$2.GenericSuper$2 > Arr.Arr > GSink.array	-	-	T[] を引数に取る親のコンストラクタ（Arr<String> の Arr(String[])）
+15.9.5.1	anonymous-generic-varargs	path	GenericSuper.varargs > GenericSuper$3.GenericSuper$3 > Va.Va > GSink.vaValues	-	-	可変長引数 Va(T...) を呼ぶ（匿名コンストラクタの引数は String[]）
+15.9.5.1	anonymous-generic-varargs-not-noarg	nopath	GenericSuper$3.GenericSuper$3 > Va.Va > GSink.vaNoArg	-	-	可変長引数の隣の引数なしのコンストラクタには向かない
+15.9.5.1	anonymous-generic-diamond	path	GenericSuper.diamond > GenericSuper$4.GenericSuper$4 > Holder.Holder > GSink.holderValue	-	-	ダイヤモンドの匿名クラス（§15.9.3）でも、推論した型引数で置き換えて比べる
 15.12.2.2	strict-before-loose	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#pick(long)	-	厳密な呼び出し（拡大変換）で当てはまる pick(long) が選ばれる
 15.12.2.2	no-boxing-when-strict	nocall	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#pick(java.lang.Integer)	-	ボックス化の要る pick(Integer) は選ばれない
 15.12.2.3	loose-before-varargs	call	jls.s15_12.Invocation#run(jls.s15_12.Animal)	jls.s15_12.Invocation#box(java.lang.Integer)	-	緩い呼び出し（ボックス化）で当てはまる box(Integer) が可変長引数より先に選ばれる

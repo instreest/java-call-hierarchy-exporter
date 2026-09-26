@@ -368,10 +368,36 @@ final class BindingNames {
         }
     }
 
-    /** 型を I 行に数える。ただし {@code java.*} の型は数えない（JDK の型は JDK の版で決まり、版はキャッシュの鍵に入っている） */
-    void noteDependencyUnlessJdk(ITypeBinding t) {
-        if (t != null && !isJdk(t)) {
-            noteDependency(t);
+    /**
+     * 型が継承するメソッドの戻り値と throws の型を I 行に数える（{@link TypeContextTracker} が型の宣言ごとに呼ぶ）。
+     * 推移的な親型（型引数を具体化したまま）が宣言するメソッド（コンストラクタを除く）すべての、戻り値の型と throws の
+     * 型のうち {@code java.*} でないもの（型引数・上限は辿る）。{@code java.*} の型が宣言するものは、型引数を置き換えた
+     * 型だけを見る（{@link #noteCandidates} と同じ。JDK の版はキャッシュの鍵に入っている）。
+     *
+     * <p>JDT は型の宣言を解決するとき、継承したメソッドどうしが合うか（JLS 8.4.8.3・8.4.8.4・9.4.1.3。親クラスの
+     * {@code Bar get()} がインターフェースの {@code Foo get()} を実装できるか＝Bar が Foo の部分型か、throws が
+     * 収まるか）を確かめ、合わなければこのファイルのエラーにする。比べる型（Bar・Foo）は親型のメンバーの宣言にしか
+     * 現れず、このファイルのどこにも書かれていない。部分型の決まり（親が変われば部分型も変わった型）は親型の側からしか
+     * 届かないので、Bar の親を変えても、ここで数えておかなければ差分更新はこのファイルを解析し直さない
+     * （docs/cache-unification-qa.md の「継承したメソッドどうしの突き合わせ」）。どのメソッドどうしが比べられるかを JLS から選ばず、全部数える
+     */
+    void noteInheritedSignatures(ITypeBinding type) {
+        if (type == null) {
+            return;
+        }
+        for (ITypeBinding t : supertypesOf(type)) {
+            if (isJdk(t) && !t.isParameterizedType()) {
+                continue;
+            }
+            for (IMethodBinding m : t.getDeclaredMethods()) {
+                if (m.isConstructor()) {
+                    continue;
+                }
+                noteReachedType(m.getReturnType(), 0, false);
+                for (ITypeBinding e : m.getExceptionTypes()) {
+                    noteReachedType(e, 0, false);
+                }
+            }
         }
     }
 

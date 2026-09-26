@@ -10,6 +10,7 @@ import java.util.List;
 
 import jche.cache.CacheFormat;
 import jche.cache.CacheReader;
+import jche.util.FileHash;
 
 /**
  * キャッシュの列の符号化（{@link CacheFormat#escape} / {@link CacheFormat#unescape}）を検査する。
@@ -28,6 +29,9 @@ import jche.cache.CacheReader;
  * <p>行そのものへの組み込みも見る。キャッシュのどの列も {@link CacheFormat#joinRow} が符号化して書き、
  * {@link CacheReader#columns} が戻して読む（1 つの規則）。生の値を joinRow に渡して 1 行にし、
  * それをファイルに書いて CacheReader で読み戻したとき、列の数が変わらず、値が元に戻ること。
+ *
+ * <p>文字列のハッシュ（{@link FileHash#ofText}）も見る。対になっていないサロゲートだけが違う文字列が、違うハッシュに
+ * なること（長い定数の値と自分の宣言の指紋はハッシュで比べるので、同じになると変化を見落とす）。
  */
 public final class ValueEncodingCheck {
 
@@ -76,12 +80,50 @@ public final class ValueEncodingCheck {
         checkFolders(List.of(""));
         checkFolders(List.of("src"));
         checkFolders(List.of("src/main/java", "a, b", "\u00fc\\x", " lead ", "t\tab", "c,d", "\\u002c", "", "x\uD800"));
+        // 文字列のハッシュ（FileHash.ofText。64 文字を超える定数の K 行と、自分の宣言の指紋）が、対になっていない
+        // サロゲートだけが違う文字列を区別すること。UTF-8 を経ると '?' に置き換わって同じハッシュになり、定数の値が
+        // 変わっても差分更新が使う側へ連鎖しなかった。正しい UTF-16 の文字列は、これまでどおり UTF-8 のハッシュと同じ
+        checkHashes();
 
         System.out.println(failed == 0
                 ? "OK   " + checked + " 通りの値が往復し、行を壊さない"
                 : "NG   " + failed + " / " + checked + " 件で失敗");
         if (failed != 0) {
             System.exit(1);
+        }
+    }
+
+    /** 違う文字列が違うハッシュになるか（対になっていないサロゲート）。正しい文字列は UTF-8 の SHA-256 の先頭 16 桁か */
+    private static void checkHashes() {
+        List<String> distinct = List.of("\uD800", "\uD801", "?", "\uFFFD", "\uDC00", "\uD800\uDC00", "\uDC00\uD800",
+                "x\uD800", "x?", "x\uDBFF", "\uD83D\uDE00", "\uD83D", "\uDE00", "\uD83D?");
+        java.util.Map<String, String> seen = new java.util.HashMap<>();
+        for (String s : distinct) {
+            checked++;
+            String h = FileHash.ofText(s);
+            String other = seen.put(h, s);
+            if (other != null) {
+                failed++;
+                System.out.println("  NG   違う文字列が同じハッシュになります: " + visible(s) + " と " + visible(other));
+            }
+        }
+        for (String s : List.of("", "abc", "値 \uD83D\uDE00 と", "SELECT *\n\tFROM t")) {
+            checked++;
+            String expected;
+            try {
+                byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 8; i++) {
+                    sb.append(String.format("%02x", d[i]));
+                }
+                expected = sb.toString();
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
+            if (!FileHash.ofText(s).equals(expected)) {
+                failed++;
+                System.out.println("  NG   正しい文字列のハッシュが UTF-8 の SHA-256 と違います: " + visible(s));
+            }
         }
     }
 

@@ -69,6 +69,20 @@ public final class FileAnalysis {
      * 「変わった型」にする（docs/cache-unification-qa.md の Q83）
      */
     public final List<String> declarationKeys = new ArrayList<>();
+    /**
+     * このファイルが sealed な型かアノテーション型を宣言しているか（行にはしない）。差分更新は、中身の変わっていない
+     * このファイルを解析し直したら、自分の宣言の指紋が前回と同じでも、宣言する型を「変わった型」にする
+     * （{@code jche.analysis.CacheUpdater} の連鎖の判定）。
+     *
+     * <p>sealed な型を使うファイルの事実（switch の網羅性・キャストと instanceof が成り立つか。JLS 14.11.1.1・5.1.6.1）は、
+     * 許した部分型（入れ子の sealed の許した部分型まで）の宣言に依るが、使う側はそれらの名前を書いていないことがある。
+     * アノテーションを使うファイルの事実（付けられる場所・繰り返せるか。JLS 9.6.4.1・9.6.3）は、注釈型のメタ注釈の
+     * 解決先と、{@code @Repeatable} の入れ物の型の中身に依るが、使う側はそれらの名前を書いていない。どちらも、
+     * それらの名前を書いているのは宣言したファイルの側（permits・メタ注釈）なので、そのファイルは変化のたびに
+     * 解析し直される。そこで連鎖させれば、部分型の決まりと同じ経路で使う側まで届く。何が変わったかを JLS から
+     * 選んで指紋に入れる代わりに、「解析し直したら連鎖」の 1 つの決まりにしてある
+     */
+    public boolean cascadesWhenReanalysed;
     /** フィールドへの代入（J 行）。値は {@link #valueNodes} のノード番号 */
     public final List<FieldAssignFact> fieldAssigns = new ArrayList<>();
     public final List<FieldAccessFact> fieldAccesses = new ArrayList<>();

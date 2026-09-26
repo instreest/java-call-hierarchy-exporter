@@ -183,12 +183,18 @@ import jche.util.Warnings;
  * <p>宣言に書いた型の名前の解決先は、Aのソースが同じでも変わる。{@code import q.*} の {@code Foo} は、同じパッケージに
  * {@code p.Foo} ができると {@code p.Foo} になる（JLS 6.4.1）。すると A のメソッドの引数・戻り値の型、フィールドの型が変わり、
  * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の 3 列目に自分の宣言の指紋（宣言する型・
- * メソッド・フィールドの JDT のバインディングの鍵と修飾子と、K 行の指紋。{@link jche.cache.FileAnalysis#declarationKeys}）を
+ * メソッド・フィールドの JDT のバインディングの鍵と修飾子・インターフェースの関数型と、K 行の指紋。
+ * {@link jche.cache.FileAnalysis#declarationKeys}）を
  * 書き、パス4 で解析し直した結果がこれと違えば、そのファイルが宣言する型も「変わった型」に加えてパス3からやり直す
  * （docs/cache-unification-qa.md の Q83）。継承したものは入れない（親の変化は「親型の連鎖」で届く）。
  * 旧キャッシュの I 行（か解決できなかった名前）が変わった jar のパッケージに触れていたファイルの型は、指紋に関わらず、
  * どの理由で選ばれたか（ソースの変化にも触れていた・名前が当たった・同じ名前のファイルの組）にも関わらず
  * 「変わった型」に加える（jar の親の親から継承したものは指紋にも H 行にも現れない。Q84・Q89）。
+ * sealed な型かアノテーション型を宣言するファイルも、解析し直したら指紋に関わらず「変わった型」に加える。使う側の
+ * 事実（switch の網羅性・キャストと instanceof・注釈を付けられる場所と繰り返し）は、許した部分型（入れ子の sealed の
+ * 先まで）の宣言やメタ注釈の解決先・{@code @Repeatable} の入れ物の型に依るが、それらの名前を書いているのは宣言した
+ * ファイルの側（permits・メタ注釈）だけなので、その変化はそのファイルを解析し直す形でしか届かない
+ * （{@link jche.cache.FileAnalysis#cascadesWhenReanalysed}）。
  *
  * <p>コンパイル時定数（{@code static final} の値）は、
  * <b>使う側のファイルに値そのものが焼き込まれる</b>（Javaの言語仕様どおり、JDTもそう解決する）。
@@ -676,7 +682,9 @@ public final class CacheUpdater {
          * （同じパッケージに足した型による隠蔽）や参照した定数の値が変わると、それらが変わる。変わっていなければ、
          * 使っている側の事実は変わらないので連鎖させない（ここが「案3」との違いで、不要な再解析が増えないように
          * している）。変わった jar に触れていたファイルは、指紋に入らない継承したもの（jar の親の親のメンバー）が
-         * 変わりうるので、常に加える（docs/cache-unification-qa.md の Q84・Q89）
+         * 変わりうるので、常に加える（docs/cache-unification-qa.md の Q84・Q89）。sealed な型かアノテーション型を
+         * 宣言するファイルも、使う側の事実が指紋に入らないもの（許した部分型の宣言・メタ注釈の解決先）に依るので、
+         * 常に加える（{@link FileAnalysis#cascadesWhenReanalysed}）
          */
         WHEN_DECLARATIONS_CHANGED
     }
@@ -723,12 +731,14 @@ public final class CacheUpdater {
         /**
          * 解析したファイルが宣言する型を「変わった型」に加えるか。
          * パス4 では、旧キャッシュでそのファイルが変わった jar のパッケージに触れていたとき（{@link #jarDriven}）と、
+         * sealed な型かアノテーション型を宣言しているとき（{@link FileAnalysis#cascadesWhenReanalysed}）と、
          * 自分の宣言の指紋が旧キャッシュと違うときだけ加える。
          * このファイルの旧キャッシュと解析結果だけで決まり、ほかのファイルをどの順に解析し直したか
          * （「変わった型」がその時点で何を含むか）にも、どの理由で選ばれたかにも依らない
          */
         private boolean shouldCascade(SourceFile file, FileAnalysis fa) {
             return cascade == Cascade.ALWAYS || jarDriven.contains(file.relativePath())
+                    || fa.cascadesWhenReanalysed
                     || !oldDeclarations.getOrDefault(file.relativePath(), "").equals(declarationsDigestOf(fa));
         }
 

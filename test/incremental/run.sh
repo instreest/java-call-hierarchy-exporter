@@ -1359,7 +1359,7 @@ EOF
 case_of "同じパッケージの型を jar に足す（import q.* を隠す）" edit_jar_split yes setup_jar_split
 
 # sealed の permits に部分型を足す。U の switch は A1・A2・B で網羅的だったが、A が A3 も許すと網羅的でなくなる
-# （JLS 14.11.1.1）。permits はバインディングから取れないので、case に書いた型の親（A）を U の依存に数える
+# （JLS 14.11.1.1）。A.java を書き換えるので A とその部分型（A1・A2）は変わった型になり、それらを case に書いた U を解析し直す
 setup_sealed() {
     jfile sld/S.java <<'EOF'
 package sld;
@@ -1732,6 +1732,413 @@ other_writer_outcome di "書き込みを消した"
 case_of "別のファイルの子クラスが private でないフィールドに new を書く（書き手のファイルを消す）" \
     "rm work/src/ow/Sub.java" yes "setup_other_writer; write_other_writer"
 other_writer_outcome di "書き手のファイルを消した"
+
+# --- 暗黙の super()・継承したメソッドの突き合わせ・sealed の家族・アノテーション型・サロゲートの定数 ---------
+# 暗黙の super()（既定のコンストラクタと、this(...) も super(...) も書かないコンストラクタ）は AST に節が無い。
+# 書いた super() と同じく、呼び出し先の throws の型と、候補（親のコンストラクタすべて）の引数の型を I 行に数える
+# （TypeContextTracker#recordImplicitSuper）。S1 は既定のコンストラクタ、S2 は super() を書かないコンストラクタ
+setup_isuper_throws() {
+    jfile isl/MyEx.java <<'EOF'
+package isl;
+public class MyEx extends RuntimeException { }
+EOF
+    jfile isl/Res.java <<'EOF'
+package isl;
+public class Res { public Res() throws MyEx { } }
+EOF
+    jfile isa/S1.java <<'EOF'
+package isa;
+public class S1 extends isl.Res { }
+EOF
+    jfile isa/S2.java <<'EOF'
+package isa;
+public class S2 extends isl.Res { public S2() { } }
+EOF
+}
+case_of "暗黙の super() の呼び出し先の throws の例外を検査例外にする" \
+    "sed -i 's/extends RuntimeException/extends Exception/' work/src/isl/MyEx.java" yes setup_isuper_throws
+
+# 同じことを jar で。tl1.Res（tl1.jar）の throws の tl2.MyEx（tl2.jar）を検査例外にする。S1・S2 の I 行に tl2 の型が
+# 無ければ、tl2.jar の変化で解析し直さない
+make_throws_jars() {   # $1 = tl2.MyEx の親。tl1.jar は最初の 1 回だけ作る（変わるのは tl2.jar だけ）
+    rm -rf jarthr && mkdir -p jarthr/src/tl1 jarthr/src/tl2 jarthr/c1 jarthr/c2 work/lib
+    printf 'package tl2;\npublic class MyEx extends %s { }\n' "$1" > jarthr/src/tl2/MyEx.java
+    printf 'package tl1;\npublic class Res { public Res() throws tl2.MyEx { } }\n' > jarthr/src/tl1/Res.java
+    "$JAVAC_BIN" -d jarthr/c2 jarthr/src/tl2/MyEx.java \
+        && ( cd jarthr/c2 && "$JAR_BIN" cf ../../work/lib/tl2.jar tl2 ) \
+        || { echo "  NG   jar を作れませんでした"; fail=1; }
+    if [ ! -f work/lib/tl1.jar ]; then
+        "$JAVAC_BIN" -cp jarthr/c2 -d jarthr/c1 jarthr/src/tl1/Res.java \
+            && ( cd jarthr/c1 && "$JAR_BIN" cf ../../work/lib/tl1.jar tl1 ) \
+            || { echo "  NG   jar を作れませんでした"; fail=1; }
+    fi
+    rm -rf jarthr
+}
+setup_isuper_throws_jar() {
+    make_throws_jars RuntimeException
+    printf 'package isa;\npublic class S1 extends tl1.Res { }\n' | jfile isa/S1.java
+    printf 'package isa;\npublic class S2 extends tl1.Res { public S2() { } }\n' | jfile isa/S2.java
+}
+case_of "暗黙の super() の呼び出し先（jar）の throws の例外（別の jar）を検査例外にする" \
+    "make_throws_jars Exception" yes setup_isuper_throws_jar
+
+# 暗黙の super() が曖昧になる。Base(Foo...) と Base(Bar...) は Foo が Bar の部分型なら Base(Foo...) が最も特殊だが、
+# Foo の親から Bar を外すと曖昧（JLS 15.12.2.5）。Sub・Sub2 は Foo をどこにも書いていない
+setup_isuper_ambiguous() {
+    jfile isb/Bar.java <<'EOF'
+package isb;
+public class Bar { }
+EOF
+    jfile isb/Foo.java <<'EOF'
+package isb;
+public class Foo extends Bar { }
+EOF
+    jfile isb/Base.java <<'EOF'
+package isb;
+public class Base {
+    public Base(Foo... f) { System.out.println("foo"); }
+    public Base(Bar... b) { System.out.println("bar"); }
+}
+EOF
+    jfile isc/Sub.java <<'EOF'
+package isc;
+public class Sub extends isb.Base { }
+EOF
+    jfile isc/Sub2.java <<'EOF'
+package isc;
+public class Sub2 extends isb.Base {
+    public Sub2(int x) { System.out.println(x); }
+}
+EOF
+}
+case_of "暗黙の super() の候補の引数の型の親を変える（曖昧になる）" \
+    "sed -i 's/ extends Bar//' work/src/isb/Foo.java" yes setup_isuper_ambiguous
+
+# 継承したメソッドどうしの突き合わせ（JLS 8.4.8.3・8.4.8.4・9.4.1.3）。R が継承する GP.get()（Bar を返す）が
+# I1.get()（Foo を返す）を実装できるかは Bar が Foo の部分型かで決まるが、R は Bar も Foo も書いていない。
+# 継承するメソッドの戻り値と throws の型を I 行に数える（BindingNames#noteInheritedSignatures）
+setup_inherit_return() {
+    jfile ihr/Foo.java <<'EOF'
+package ihr;
+public class Foo { }
+EOF
+    jfile ihr/Bar.java <<'EOF'
+package ihr;
+public class Bar extends Foo { }
+EOF
+    jfile ihr/I1.java <<'EOF'
+package ihr;
+public interface I1 { Foo get(); }
+EOF
+    jfile ihr/GP.java <<'EOF'
+package ihr;
+public class GP { public Bar get() { return null; } }
+EOF
+    jfile ihs/R.java <<'EOF'
+package ihs;
+public class R extends ihr.GP implements ihr.I1 { }
+EOF
+}
+case_of "継承したメソッドの戻り値の型の親を変える（親クラスのメソッドがインターフェースのメソッドを実装できなくなる）" \
+    "sed -i 's/ extends Foo//' work/src/ihr/Bar.java" yes setup_inherit_return
+setup_inherit_throws() {
+    jfile iht/E1.java <<'EOF'
+package iht;
+public class E1 extends Exception { }
+EOF
+    jfile iht/E2.java <<'EOF'
+package iht;
+public class E2 extends E1 { }
+EOF
+    jfile iht/I1.java <<'EOF'
+package iht;
+public interface I1 { void run() throws E1; }
+EOF
+    jfile iht/GP.java <<'EOF'
+package iht;
+public class GP { public void run() throws E2 { } }
+EOF
+    jfile ihu/R.java <<'EOF'
+package ihu;
+public class R extends iht.GP implements iht.I1 { }
+EOF
+}
+case_of "継承したメソッドの throws の型の親を変える" \
+    "sed -i 's/ extends E1/ extends Exception/' work/src/iht/E2.java" yes setup_inherit_throws
+# 関数型インターフェースの関数型（JLS 9.9）も継承したメソッドで決まる。R extends A, B は、Bar が Foo の部分型に
+# なると関数型を持ち、x.k(() -> null) は k(Supplier<Foo>) から k(R) に変わる（呼び出しが変わる）。U は R を候補の
+# 引数の型として数えているが、R の関数型は R の宣言の指紋に入れて、変われば R を変わった型にする
+setup_inherit_function() {
+    jfile ihf/Foo.java <<'EOF'
+package ihf;
+public class Foo { }
+EOF
+    jfile ihf/Bar.java <<'EOF'
+package ihf;
+public class Bar { }
+EOF
+    jfile ihf/A.java <<'EOF'
+package ihf;
+public interface A { Bar get(); }
+EOF
+    jfile ihf/B.java <<'EOF'
+package ihf;
+public interface B { Foo get(); }
+EOF
+    jfile ihf/R.java <<'EOF'
+package ihf;
+public interface R extends A, B { }
+EOF
+    jfile ihg/X.java <<'EOF'
+package ihg;
+public class X {
+    public void k(ihf.R r) { System.out.println("r"); }
+    public void k(java.util.function.Supplier<ihf.Foo> s) { System.out.println("s"); }
+}
+EOF
+    jfile ihg/U.java <<'EOF'
+package ihg;
+public class U {
+    void m(X x) { x.k(() -> null); }
+}
+EOF
+}
+case_of "継承したメソッドの戻り値の型の親を変える（関数型インターフェースになり、選ばれる候補が変わる）" \
+    "sed -i 's/public class Bar /public class Bar extends Foo /' work/src/ihf/Bar.java" yes setup_inherit_function
+
+# sealed な型を使うファイルの事実（switch の網羅性・キャストと instanceof が成り立つか。JLS 14.11.1.1・5.1.6.1）は、
+# 許した部分型の宣言に依るが、使う側（V・U）はそれらを書いていない。書いているのは sealed な型のファイル（permits）
+# なので、sealed な型を宣言するファイルは解析し直したら連鎖させる（FileAnalysis#cascadesWhenReanalysed）
+setup_sealed_generic() {
+    jfile sgs/S.java <<'EOF'
+package sgs;
+public sealed interface S<T> permits A, B { }
+EOF
+    jfile sgs/A.java <<'EOF'
+package sgs;
+public final class A implements S<String> { }
+EOF
+    jfile sgs/B.java <<'EOF'
+package sgs;
+public final class B<T> implements S<T> { public void run() { System.out.println(); } }
+EOF
+    jfile sgr/V.java <<'EOF'
+package sgr;
+public class V {
+    int go(sgs.S<Integer> x) {
+        return switch (x) { case sgs.B<Integer> b -> { b.run(); yield 1; } };
+    }
+}
+EOF
+}
+case_of "sealed の許した部分型の親の型引数を変える（switch が網羅的でなくなる）" \
+    "sed -i 's/public final class A implements S<String>/public final class A<T> implements S<T>/' work/src/sgs/A.java" \
+    yes setup_sealed_generic
+setup_sealed_cast() {
+    jfile scs/S.java <<'EOF'
+package scs;
+public sealed interface S permits A { }
+EOF
+    jfile scs/A.java <<'EOF'
+package scs;
+public final class A implements S { }
+EOF
+    jfile scs/K.java <<'EOF'
+package scs;
+public interface K { void run(); }
+EOF
+    jfile scr/V.java <<'EOF'
+package scr;
+public class V {
+    void go(scs.S x) { if (x instanceof scs.K k) k.run(); }
+}
+EOF
+}
+case_of "sealed の許した部分型にインターフェースを足す（instanceof が成り立つようになる）" \
+    "sed -i 's/public final class A implements S { }/public final class A implements S, K { public void run() { } }/' work/src/scs/A.java" \
+    yes setup_sealed_cast
+setup_sealed_nested() {
+    jfile sns/S.java <<'EOF'
+package sns;
+public sealed interface S permits A, B { }
+EOF
+    jfile sns/X.java <<'EOF'
+package sns;
+public interface X { }
+EOF
+    jfile sns/A.java <<'EOF'
+package sns;
+public final class A implements S, X { }
+EOF
+    jfile sns/B.java <<'EOF'
+package sns;
+public sealed interface B extends S permits B1, B2 { }
+EOF
+    jfile sns/B1.java <<'EOF'
+package sns;
+public final class B1 implements B, X { }
+EOF
+    jfile sns/B2.java <<'EOF'
+package sns;
+public final class B2 implements B, X { }
+EOF
+    jfile snu/U.java <<'EOF'
+package snu;
+public class U {
+    int go(sns.S s) {
+        return switch (s) { case sns.X x -> { System.out.println(); yield 1; } };
+    }
+}
+EOF
+}
+case_of "入れ子の sealed の許した部分型から親を外す（switch が網羅的でなくなる）" \
+    "sed -i 's/implements B, X/implements B/' work/src/sns/B2.java" yes setup_sealed_nested
+
+# アノテーションを使うファイルの事実（付けられる場所・繰り返せるか。JLS 9.6.4.1・9.6.3・9.7.5）は、注釈型の
+# メタ注釈の解決先と @Repeatable の入れ物の型に依るが、使う側（V）はそれらを書いていない。アノテーション型を
+# 宣言するファイルは解析し直したら連鎖させる（FileAnalysis#cascadesWhenReanalysed）
+setup_repeatable() {
+    jfile rpq/Cont.java <<'EOF'
+package rpq;
+import java.lang.annotation.*;
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Cont { A[] value(); }
+EOF
+    jfile rpq/A.java <<'EOF'
+package rpq;
+import java.lang.annotation.*;
+@Retention(RetentionPolicy.RUNTIME)
+@Repeatable(Cont.class)
+public @interface A { String value(); }
+EOF
+    jfile rpr/V.java <<'EOF'
+package rpr;
+import rpq.A;
+@A("x") @A("y")
+public class V { public void m() { System.out.println(); } }
+EOF
+}
+case_of "@Repeatable の入れ物の型の value の型を変える" \
+    "sed -i 's/A\\[\\] value();/String[] value();/' work/src/rpq/Cont.java" yes setup_repeatable
+setup_repeatable_shadow() {
+    jfile rsq/Cont.java <<'EOF'
+package rsq;
+public @interface Cont { rsp.A[] value(); }
+EOF
+    jfile rsp/A.java <<'EOF'
+package rsp;
+import java.lang.annotation.Repeatable;
+import rsq.*;
+@Repeatable(Cont.class)
+public @interface A { String value(); }
+EOF
+    jfile rsr/V.java <<'EOF'
+package rsr;
+@rsp.A("x") @rsp.A("y")
+public class V { public void m() { System.out.println(); } }
+EOF
+}
+case_of "@Repeatable の入れ物の型を同じパッケージの型が隠す" \
+    "printf 'package rsp;\npublic @interface Cont { String[] value(); }\n' | jfile rsp/Cont.java" yes setup_repeatable_shadow
+setup_target_shadow() {
+    jfile tsp/An.java <<'EOF'
+package tsp;
+import java.lang.annotation.*;
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+public @interface An { }
+EOF
+    jfile tsu/Use.java <<'EOF'
+package tsu;
+@tsp.An
+public class Use { }
+EOF
+}
+case_of "@Target の ElementType を同じパッケージの型が隠す" \
+    "printf 'package tsp;\npublic enum ElementType { RUNTIME, TYPE }\n' | jfile tsp/ElementType.java" yes setup_target_shadow
+# java.* のアノテーションの型（@Target・@Override）を同じパッケージの型が隠す（JLS 6.4.1）。アノテーションの型は
+# java.* のものも I 行に数える。Bean の @Target(TYPE_USE) が効かなくなると、@Bean はメソッドに付き（D 行）、
+# Svc.run の dao.find() の結論が変わる（DaoB に絞っていたものが DaoA・DaoB の両方になる）
+setup_java_ann_shadow() {
+    jfile jap/Bean.java <<'EOF'
+package jap;
+import java.lang.annotation.*;
+@Target(ElementType.TYPE_USE)
+public @interface Bean { }
+EOF
+    jfile jap/Service.java <<'EOF'
+package jap;
+public @interface Service { }
+EOF
+    jfile jap/Autowired.java <<'EOF'
+package jap;
+public @interface Autowired { }
+EOF
+    jfile jap/A.java <<'EOF'
+package jap;
+public class A {
+    @Override public String toString() { return ""; }
+}
+EOF
+    jfile jad/Dao.java <<'EOF'
+package jad;
+public interface Dao { void find(); }
+EOF
+    jfile jad/DaoA.java <<'EOF'
+package jad;
+public class DaoA implements Dao { public void find() { } }
+EOF
+    jfile jad/DaoB.java <<'EOF'
+package jad;
+@jap.Service
+public class DaoB implements Dao { public void find() { } }
+EOF
+    jfile jac/Cfg.java <<'EOF'
+package jac;
+import jap.Bean;
+import jad.*;
+public class Cfg {
+    @Bean public Dao dao() { return new DaoA(); }
+}
+EOF
+    jfile jas/Svc.java <<'EOF'
+package jas;
+import jad.Dao;
+@jap.Service
+public class Svc {
+    @jap.Autowired Dao dao;
+    public void run() { dao.find(); }
+}
+EOF
+}
+edit_java_ann_shadow() {
+    printf 'package jap;\npublic @interface Target { java.lang.annotation.ElementType[] value(); }\n' | jfile jap/Target.java
+    printf 'package jap;\npublic @interface Override { }\n' | jfile jap/Override.java
+}
+case_of "java.* のアノテーションの型（@Target・@Override）を同じパッケージの型が隠す" \
+    edit_java_ann_shadow yes setup_java_ann_shadow
+
+# 対になっていないサロゲートだけが違う定数。自分の宣言の指紋（K 行の指紋のハッシュ）と、64 文字を超える値の K 行の
+# ハッシュが UTF-8 を経ると、対になっていないサロゲートが '?' になって同じハッシュになり、連鎖が止まっていた
+# （短い値は C の a() と b() のどちらを [UNREACHABLE] にするかが入れ替わる）
+setup_surrogate_constant() {   # $1 = 値の前に付ける文字列（長い値のとき）
+    printf 'package sgc;\npublic class P { public static final String S = "%s\\uD800"; }\n' "$1" | jfile sgc/P.java
+    printf 'package sgc;\npublic class X { public static final String S = P.S; }\n' | jfile sgc/X.java
+    jfile sgc/C.java <<EOF
+package sgc;
+public class C {
+    void a() { System.out.println("a"); }
+    void b() { System.out.println("b"); }
+    void go() { if (X.S.equals("$1\\uD801")) a(); else b(); }
+    String v() { return X.S; }
+}
+EOF
+}
+case_of "対になっていないサロゲートだけが違う定数に変える（2 段の定数）" \
+    "sed -i 's/uD800/uD801/' work/src/sgc/P.java" yes "setup_surrogate_constant ''"
+case_of "対になっていないサロゲートだけが違う定数に変える（64 文字を超える値）" \
+    "sed -i 's/uD800/uD801/' work/src/sgc/P.java" yes \
+    "setup_surrogate_constant aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に

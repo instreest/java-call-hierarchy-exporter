@@ -113,6 +113,7 @@ final class TypeContextTracker {
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
                 names.annotationsOf(erased)));
         recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
+        names.noteInheritedSignatures(tb);
     }
 
     /**
@@ -124,7 +125,16 @@ final class TypeContextTracker {
      * 依る。ファイルの中身が同じでも、宣言に書いた名前の解決先が変わる（同じパッケージに足した型がオンデマンド import を
      * 隠す）と宣言が変わるので、差分更新はこれを前回と比べて、違えば宣言する型を「変わった型」にする
      * （docs/cache-unification-qa.md の Q83）。継承したものは入れない（親の変化は、部分型を「変わった型」にする
-     * 決まりで届く）。何を入れるかを JLS から選ばず、JDT が宣言として返すものをそのまま入れる
+     * 決まりで届く）。何を入れるかを JLS から選ばず、JDT が宣言として返すものをそのまま入れる。
+     *
+     * <p>インターフェースは、その関数型（JLS 9.9。JDT の {@code getFunctionalInterfaceMethod}。関数型インターフェースで
+     * なければ {@code -}）も入れる。関数型は継承した抽象メソッドから決まり（{@code interface R extends A, B} の
+     * {@code A.get()} と {@code B.get()} の戻り値の型が合うか）、この型を目標にするラムダ・どのオーバーロードが選ばれるか
+     * （{@code k(R)} と {@code k(Supplier<Foo>)} に {@code () -> null}）が変わる。継承したものを並べるのではなく、JDT が
+     * この型について求める値を 1 つだけ入れる。親が変わってこのファイルを解析し直したとき、関数型が変われば使う側へ連鎖する
+     *
+     * <p>sealed な型とアノテーション型を宣言するファイルは、解析し直したら指紋に依らず連鎖させる
+     * （{@link FileAnalysis#cascadesWhenReanalysed}）
      */
     private void recordDeclarations(ITypeBinding type) {
         StringBuilder sb = new StringBuilder("T ").append(type.getKey()).append(' ').append(type.getModifiers());
@@ -133,20 +143,23 @@ final class TypeContextTracker {
             appendKey(sb, i);
         }
         appendTypeParameters(sb, type.getTypeParameters());
+        if (type.isInterface()) {
+            IMethodBinding sam = type.getFunctionalInterfaceMethod();
+            sb.append(" function");
+            if (sam == null) {
+                sb.append(" -");
+            } else {
+                appendMethod(sb, sam);
+            }
+        }
         out.declarationKeys.add(sb.toString());
+        if (Modifier.isSealed(type.getModifiers()) || type.isAnnotation()) {
+            out.cascadesWhenReanalysed = true;
+        }
         for (IMethodBinding m : type.getDeclaredMethods()) {
             sb.setLength(0);
-            sb.append("M ").append(m.getKey()).append(' ').append(m.getModifiers())
-                    .append(m.isVarargs() ? " varargs" : "");
-            appendKey(sb, m.getReturnType());
-            for (ITypeBinding p : m.getParameterTypes()) {
-                appendKey(sb, p);
-            }
-            sb.append(" throws");
-            for (ITypeBinding e : m.getExceptionTypes()) {
-                appendKey(sb, e);
-            }
-            appendTypeParameters(sb, m.getTypeParameters());
+            sb.append('M');
+            appendMethod(sb, m);
             out.declarationKeys.add(sb.toString());
         }
         for (IVariableBinding f : type.getDeclaredFields()) {
@@ -155,6 +168,21 @@ final class TypeContextTracker {
             appendKey(sb, f.getType());
             out.declarationKeys.add(sb.toString());
         }
+    }
+
+    /** メソッドの鍵・修飾子・可変長引数か・戻り値・引数・throws・型引数（先頭に空白を置いて足す） */
+    private static void appendMethod(StringBuilder sb, IMethodBinding m) {
+        sb.append(' ').append(m.getKey()).append(' ').append(m.getModifiers())
+                .append(m.isVarargs() ? " varargs" : "");
+        appendKey(sb, m.getReturnType());
+        for (ITypeBinding p : m.getParameterTypes()) {
+            appendKey(sb, p);
+        }
+        sb.append(" throws");
+        for (ITypeBinding e : m.getExceptionTypes()) {
+            appendKey(sb, e);
+        }
+        appendTypeParameters(sb, m.getTypeParameters());
     }
 
     private static void appendTypeParameters(StringBuilder sb, ITypeBinding[] parameters) {
@@ -292,7 +320,7 @@ final class TypeContextTracker {
     }
 
     /**
-     * 暗黙の {@code super(...)} の辺を1本張る（JLS 8.8.7 / 8.8.9）。
+     * 暗黙の {@code super(...)} の辺を張る（JLS 8.8.7 / 8.8.9）。
      *
      * 明示的コンストラクタ呼び出しで始まらないコンストラクタの本体は、暗黙に
      * {@code super();} で始まる。ソースに文が無いので AST には現れないが、
@@ -300,65 +328,132 @@ final class TypeContextTracker {
      * {@code super()} を書いていないサブクラスからは親コンストラクタの中の処理
      * （初期化・テンプレートメソッド）が到達不能になり、影響調査から丸ごと抜ける。
      *
+     * <h4>書いた {@code super(...)} と同じものを I 行に数える</h4>
+     * 書いた呼び出しは {@link CallSiteRecorder#record} と {@link FactVisitor} の候補の決まりで、呼び出し先の throws の型と、
+     * 候補（親のコンストラクタすべて）の引数の型を I 行に数える。暗黙の {@code super()} は AST の節が無いのでどちらの
+     * 決まりも通らない。数えないと、throws の例外を検査例外にした・候補の引数の型の親を変えて {@code super()} が曖昧に
+     * なったとき、差分更新がこのファイルを解析し直さず、コンパイルエラーが古いまま残る。ここで同じものを数える
+     *
      * @param paramSig 呼び出し元コンストラクタの引数シグネチャ。匿名クラスの合成
      *                 コンストラクタは、選ばれた親コンストラクタと同じ引数を取り、
-     *                 それをそのまま渡す（JLS 15.9.5.1）ので、まず同じ並びのものを探す
+     *                 それをそのまま渡す（JLS 15.9.5.1）ので、同じ並びのものを探す
      */
     void recordImplicitSuper(List<MethodRef> callers, ITypeBinding type, String paramSig,
                              int line) {
-        IMethodBinding target = implicitSuperTargetOf(type, paramSig);
-        MethodRef ref = names.toRef(target);
-        if (ref != null) {
-            calls.recordSyntheticAt(callers, ref, line,
-                    CallSiteRecorder.targetModsOf(target), RecvKind.TYPE, 0, List.of());
-        }
-    }
-
-    /**
-     * 暗黙の {@code super(...)} の呼び出し先。見つからなければ null。
-     *
-     * 探す順は (1) 呼び出し元と同じ引数の並び（匿名クラスの合成コンストラクタ用）、
-     * (2) 引数なし（通常の暗黙 {@code super()}）、(3) 可変長引数1つだけのもの
-     * （{@code Base(String... a)} しか無い親は {@code super()} がそれに解決される）。
-     * 見つからないときは辺を張らない。合成した呼び出しなので、ソースに対応する文が無く、
-     * 未解決として報告しても利用者が調べようがないためである。
-     */
-    private IMethodBinding implicitSuperTargetOf(ITypeBinding type, String paramSig) {
         if (type == null) {
-            return null;
+            return;
         }
         ITypeBinding superclass = type.getSuperclass();
         if (superclass == null
                 || IMPLICIT_SUPER_SKIP.contains(BindingNames.erasureOf(superclass).getQualifiedName())) {
-            return null;
+            return;
         }
-        IMethodBinding[] declared = superclass.getDeclaredMethods();
-        if (declared == null) {
-            return null;
-        }
-        IMethodBinding noArg = null;
-        IMethodBinding varargs = null;
-        for (IMethodBinding m : declared) {
-            if (!m.isConstructor()) {
-                continue;
-            }
-            int count = m.getParameterTypes().length;
-            if (count == 0) {
-                noArg = m;
-            } else if (count == 1 && m.isVarargs()) {
-                varargs = m;
-            }
-            if (!paramSig.isEmpty() && paramSig.equals(paramSigOf(m))) {
-                return m;
+        names.noteCandidates(superclass, null);
+        for (IMethodBinding target : implicitSuperTargetsOf(type, superclass, paramSig)) {
+            names.noteThrownTypes(target);
+            MethodRef ref = names.toRef(target);
+            if (ref != null) {
+                calls.recordSyntheticAt(callers, ref, line,
+                        CallSiteRecorder.targetModsOf(target), RecvKind.TYPE, 0, List.of());
             }
         }
-        return (noArg != null) ? noArg : varargs;
     }
 
-    /** バインディングの引数シグネチャ（消去済み）。{@link MethodRef} と同じ並びにする */
-    private String paramSigOf(IMethodBinding m) {
-        MethodRef ref = names.toRef(m);
-        return (ref == null) ? null : ref.paramSig();
+    /**
+     * 暗黙の {@code super(...)} の呼び出し先の候補。見つからなければ空。
+     *
+     * JDT は暗黙の {@code super()} にバインディングを返さないので、呼び出し先はここで決める。
+     * 1 つに決めきれないときは、候補の<b>すべて</b>に辺を張る（呼び出しを落とさない側に倒す）。
+     *
+     * <ul>
+     *   <li><b>匿名クラス</b>: 合成コンストラクタは、JDT が選んだ親コンストラクタと同じ引数の並びを持つ（JLS 15.9.5.1）。
+     *       親のコンストラクタを、型引数を置き換えた親の型（{@code Base<Foo>}）のメンバーとして引数を比べる
+     *       （{@code Base(T)} は {@code Base(Foo)}）。宣言の形（{@link BindingNames#toRef} は型変数を上限に消去する）で
+     *       比べると一致せず、辺が落ちるか引数なしのものに向く。ジェネリックなコンストラクタ（{@code <X> G(X)}）は
+     *       置き換えても型変数のままなので比べられず、引数の数が同じなら候補に入れる。1 つも当たらなければ、
+     *       引数の数が同じものすべて</li>
+     *   <li><b>それ以外</b>（既定のコンストラクタと、{@code this(...)} も {@code super(...)} も書いていないコンストラクタ）:
+     *       実引数は 0 個なので、候補は引数なしのものと、可変長引数 1 つだけのもの（JLS 15.12.2）。引数なしのものが
+     *       public か protected なら、部分型の {@code super()} からいつでも見え（JLS 6.6.2.2）、第 1 段で選ばれるので、
+     *       それだけ。そうでなければ（private・パッケージ private は見えないことがある）、引数なしのものと可変長引数 1 つの
+     *       ものすべて。どれが最も特殊か（JLS 15.12.2.5）・見えるかは求めない。求めると、可変長引数の要素の型どうしの
+     *       親子関係にこのファイルの事実が依り、その型を I 行に数える決まりまで要る。候補が親の宣言だけで決まれば、
+     *       親の宣言の指紋で届く</li>
+     * </ul>
+     * 見つからないときは辺を張らない（コンパイルエラーの形で、呼ばれるコンストラクタが無い）。
+     */
+    private static List<IMethodBinding> implicitSuperTargetsOf(ITypeBinding type, ITypeBinding superclass,
+                                                              String paramSig) {
+        IMethodBinding[] declared = superclass.getDeclaredMethods();
+        if (declared == null) {
+            return List.of();
+        }
+        List<IMethodBinding> constructors = new ArrayList<>();
+        for (IMethodBinding m : declared) {
+            if (m.isConstructor()) {
+                constructors.add(m);
+            }
+        }
+        List<IMethodBinding> targets = new ArrayList<>();
+        if (type.isAnonymous()) {
+            int arity = paramSig.isEmpty() ? 0 : paramSig.split(",", -1).length;
+            for (IMethodBinding m : constructors) {
+                if (m.getParameterTypes().length == arity
+                        && (isGeneric(m) || paramSig.equals(memberParamSigOf(m)))) {
+                    targets.add(m);
+                }
+            }
+            if (targets.isEmpty()) {
+                for (IMethodBinding m : constructors) {
+                    if (m.getParameterTypes().length == arity) {
+                        targets.add(m);
+                    }
+                }
+            }
+            return targets;
+        }
+        IMethodBinding noArg = null;
+        for (IMethodBinding m : constructors) {
+            if (m.getParameterTypes().length == 0) {
+                noArg = m;
+            }
+        }
+        if (noArg != null) {
+            int mods = noArg.getModifiers();
+            if (Modifier.isPublic(mods) || Modifier.isProtected(mods)) {
+                return List.of(noArg);
+            }
+            targets.add(noArg);
+        }
+        for (IMethodBinding m : constructors) {
+            if (m.getParameterTypes().length == 1 && m.isVarargs()) {
+                targets.add(m);
+            }
+        }
+        return targets;
+    }
+
+    /** 型引数を持つ（ジェネリックな）コンストラクタか */
+    private static boolean isGeneric(IMethodBinding m) {
+        IMethodBinding decl = m.getMethodDeclaration();
+        return m.getTypeParameters().length > 0 || (decl != null && decl.getTypeParameters().length > 0);
+    }
+
+    /**
+     * 親の型のメンバーとしての引数シグネチャ（型引数を置き換えてから消去する）。{@link MethodRef#paramSig} と同じ並び・
+     * 綴り（消去した型の {@code getQualifiedName}）にして、匿名クラスの合成コンストラクタの引数シグネチャと比べる
+     */
+    private static String memberParamSigOf(IMethodBinding m) {
+        StringBuilder sb = new StringBuilder();
+        ITypeBinding[] params = m.getParameterTypes();
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            ITypeBinding erased = params[i].getErasure();
+            sb.append(erased != null ? erased.getQualifiedName() : params[i].getQualifiedName());
+        }
+        return sb.toString();
     }
 
     /** コンストラクタが this(...) で他のコンストラクタへ委譲しているか */
