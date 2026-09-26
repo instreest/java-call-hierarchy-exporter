@@ -959,7 +959,8 @@ public final class JlsCheck {
         }
 
         /**
-         * 呼び出し先の宣言を引き直す（JVMS 5.4.3.3 / 5.4.3.4: 所有型、その親クラスを順に、次に親インターフェース）。
+         * 呼び出し先の宣言を引き直す（JVMS 5.4.3.3 / 5.4.3.4: 所有型、その親クラスを順に、次に親インターフェース。
+         * 親インターフェースの private・static メソッドは飛ばす）。
          * このソースの型で見つからなければ null（JDK のメソッド）
          */
         Method resolve(String owner, String name, String desc) {
@@ -980,7 +981,9 @@ public final class JlsCheck {
                     Cls i = classes.get(ie.asInternalName());
                     if (i != null && seen.add(i.internal)) {
                         Method m = find(i, name, desc);
-                        if (m != null) {
+                        // 親インターフェースの private・static メソッドは解決の対象にならない（JVMS 5.4.3.3 の手順 3・4）
+                        if (m != null && !m.model.flags().has(AccessFlag.PRIVATE)
+                                && !m.model.flags().has(AccessFlag.STATIC)) {
                             return m;
                         }
                         queue.add(i);

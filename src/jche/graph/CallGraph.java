@@ -555,14 +555,34 @@ public final class CallGraph {
     }
 
     /**
-     * その型から親へ幅優先で辿り、最初に見つかった本体を持つ実装を返す。無ければ -1。
+     * その型で実際に動く実装を、JVM がメソッドを選ぶのと同じ順（JVMS 5.4.6。JLS 8.4.8 の継承の決まり）で探す。無ければ -1。
      *
-     * <h4>2 つの軸を同じ探索の中で見る</h4>
+     * <ol>
+     *   <li><b>親クラスの連鎖</b>（{@link TypeHierarchy#classChain}）… その型から親クラスへ根まで順に見て、最初に
+     *       本体を持つ宣言を採る。クラスのメソッドは、親インターフェースの default メソッドより常に勝つ
+     *       （{@code class Impl extends Mid implements Api} で {@code Mid} の親 {@code Base} の {@code m()} が
+     *       {@code Api} の default の {@code m()} より先）。その型より上の private メソッドは上書きも継承もされないので
+     *       飛ばす（JLS 8.4.8。その型自身の宣言は、private の呼び出し先を引くときのために飛ばさない）。
+     *       親クラスの static メソッドは飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承する
+     *       クラスはコンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション
+     *       （{@code Class.getMethod} は親クラスの public な static メソッドも返す）でだけ</li>
+     *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 連鎖に無ければ、連鎖の型が実装する
+     *       インターフェースすべての宣言（private と static は継承されないので除く。JLS 9.4.1）のうち、ほかの宣言の型の
+     *       真の親型で宣言したものを除いた「最も特定的な」宣言（JVMS 5.4.3.3）から、本体を持つものを採る。
+     *       {@code interface I2 extends I1} の両方に default があれば、I1 が先に並んでいても I2 のもの。
+     *       最も特定的な宣言が複数残る（JLS ではコンパイルエラーになる形か、jar の型の親が分からず関係が見えない形）
+     *       ときは、ソースに本体のある宣言を jar の宣言（本体の有無が分からず、抽象のこともある）より先にし、
+     *       その中は近い順（同じ深さは名前順）の先頭。抽象の宣言も「最も特定的」の判定には加える（本体の無い宣言で
+     *       default を宣言し直した形は、実行時にもその default を選ばない）</li>
+     * </ol>
+     * 親型を名前順の幅優先で混ぜて辿ると、名前や深さの違いで親インターフェースの default や jar のインターフェースの
+     * メソッド（ソースが無い）がクラスのメソッドより先に当たり、実際に動く実装が呼び出しの先から消える。
+     *
+     * <h4>2 つの軸を各段で見る</h4>
      * キーの照合を先に通して駄目なら上書きを見る、では正しくない。
      * {@code class OrderStore extends AbstractStore<Order>} が {@code put} を具体化して
      * 上書きしている場合、キーの照合だけで辿ると<b>親の実装</b>に先に当たってしまい、
-     * 「上書きは無い」と結論してしまう。実際に動くのは、その型から親へ辿って
-     * <b>最初に見つかる実装</b>なので、各段で両方の軸を見る。
+     * 「上書きは無い」と結論してしまう。各段（型）で両方の軸を見る。
      *
      * @param overriders その呼び出し先を上書きしているメソッド。無ければ null
      *                   （その場合はキーの照合だけになる＝ジェネリクスを使わない大多数）
@@ -574,32 +594,60 @@ public final class CallGraph {
         if (typeFqn == null || typeFqn.isEmpty()) {
             return -1;
         }
-        ArrayDeque<String> queue = new ArrayDeque<>();
-        Set<String> seen = new HashSet<>();
-        queue.add(typeFqn);
-        seen.add(typeFqn);
-        while (!queue.isEmpty()) {
-            String t = queue.poll();
-            // 上書きを先に見る。シグネチャが同じ上書きは O行に書かないので、ここで当たるのは
-            // 「型引数を具体化した上書き」だけであり、親から継承した同シグネチャの宣言より
-            // こちらが優先される（実際に動くのは、より近い型の上書きのほう）
-            if (overriders != null) {
-                int overriding = declaredAmong(overriders, t);
-                if (overriding >= 0) {
-                    return overriding;
-                }
-            }
-            int id = methods.idOf(t + "#" + sig);
+        List<String> chain = hierarchy.classChain(typeFqn);
+        for (int i = 0; i < chain.size(); i++) {
+            int id = declarationIn(chain.get(i), sig, overriders, packageAccess);
             if (id >= 0 && methods.hasBody(id)
-                    && (packageAccess == null || packageAccess.equals(methods.pkg(id))
-                        || overridesAcrossPackage(id, sig, packageAccess))) {
+                    && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
                 return id;
             }
-            for (String sup : hierarchy.directSupertypes(t)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
-                }
+        }
+        List<String> declaring = new ArrayList<>();
+        IntArray found = new IntArray(2);
+        for (String t : hierarchy.superinterfaces(typeFqn)) {
+            int id = declarationIn(t, sig, overriders, packageAccess);
+            if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
+                    && !ModifierTokens.has(methods.mods(id), "static")) {
+                declaring.add(t);
+                found.add(id);
             }
+        }
+        if (found.size() == 0) {
+            return -1;
+        }
+        List<String> specific = hierarchy.mostSpecific(declaring);
+        int fallback = -1;
+        for (int i = 0; i < found.size(); i++) {
+            int id = found.get(i);
+            if (!specific.contains(declaring.get(i)) || !methods.hasBody(id)) {
+                continue;
+            }
+            if (methods.hasSource(id)) {
+                return id;
+            }
+            if (fallback < 0) {
+                fallback = id;
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * 型 {@code t} が宣言する、呼び出し先の実装になりうる宣言（本体の有無は問わない）。無ければ -1。
+     * 上書き（型引数を具体化したもの。O 行）を先に見る。シグネチャが同じ上書きは O 行に書かないので、ここで
+     * 当たるのは「型引数を具体化した上書き」だけ
+     */
+    private int declarationIn(String t, String sig, IntArray overriders, String packageAccess) {
+        if (overriders != null) {
+            int overriding = declaredAmong(overriders, t);
+            if (overriding >= 0) {
+                return overriding;
+            }
+        }
+        int id = methods.idOf(t + "#" + sig);
+        if (id >= 0 && (packageAccess == null || packageAccess.equals(methods.pkg(id))
+                || overridesAcrossPackage(id, sig, packageAccess))) {
+            return id;
         }
         return -1;
     }

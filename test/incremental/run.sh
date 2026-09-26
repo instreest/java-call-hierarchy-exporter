@@ -1733,6 +1733,73 @@ case_of "別のファイルの子クラスが private でないフィールド�
     "rm work/src/ow/Sub.java" yes "setup_other_writer; write_other_writer"
 other_writer_outcome di "書き手のファイルを消した"
 
+# --- 親クラスの連鎖（H 行の 7 列目）を変える --------------------------------------
+# 実装は親クラスの連鎖を根まで見てから親インターフェースを見て探す（JLS 8.4.8・JVMS 5.4.6。CallGraph#implementationOf）。
+# 連鎖は H 行が「ソース上の型に当たるまで」だけ持ち、その先はその型自身の H 行から続けるので、中間のクラス（Mid）が
+# 親をやめても、変わらない子（Impl）の H 行は書き直さなくてよい。差分更新と全件解析で同じ実装に行くことを見る
+setup_class_chain() {
+    sed -i 's/new Awkward().separators();/new Awkward().separators();\n        cc.Use.go();/' work/src/inc/Main.java
+    jfile cc/Base.java <<'EOF'
+package cc;
+
+public class Base {
+    public void m() {
+    }
+}
+EOF
+    jfile cc/Mid.java <<'EOF'
+package cc;
+
+public class Mid extends Base {
+}
+EOF
+    jfile cc/Api.java <<'EOF'
+package cc;
+
+public interface Api {
+    default void m() {
+    }
+}
+EOF
+    jfile cc/Impl.java <<'EOF'
+package cc;
+
+public class Impl extends Mid implements Api {
+}
+EOF
+    jfile cc/Use.java <<'EOF'
+package cc;
+
+public class Use {
+    public static void go() {
+        new Impl().m();
+        viaApi(new Impl());
+    }
+
+    public static void viaApi(Api a) {
+        a.m();
+    }
+}
+EOF
+}
+# $1=期待する実装（Base.m / Api.m）  $2=ラベル
+class_chain_outcome() {
+    local rows
+    rows=$(grep -a '^at cc\.Use\.viaApi(' "$OUT/call-hierarchy.csv")
+    if grep -q ",$1," <<< "$rows"; then
+        echo "  OK   $2: Api の型で呼んだ m() は Impl で動く $1 に届く"
+    else
+        echo "  NG   $2: Api の型で呼んだ m() が $1 に届きません"; echo "$rows" | head -3; fail=1
+    fi
+}
+case_of "親クラスの連鎖を変える（中間のクラスが親をやめる）" \
+    "sed -i 's/public class Mid extends Base {/public class Mid {/' work/src/cc/Mid.java" yes setup_class_chain
+class_chain_outcome Api.m "中間のクラスが親をやめた"
+case_of "親クラスの連鎖を変える（中間のクラスが親を持つ）" \
+    "sed -i 's/public class Mid {/public class Mid extends Base {/' work/src/cc/Mid.java" yes \
+    "setup_class_chain; sed -i 's/public class Mid extends Base {/public class Mid {/' work/src/cc/Mid.java"
+class_chain_outcome Base.m "中間のクラスが親を持った"
+
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
 # なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。

@@ -41,8 +41,12 @@ final class ImplicitCalls {
     /**
      * 型のメンバのうち、名前が一致する引数なしのインスタンスメソッド。無ければ null。
      *
-     * 型そのもの、親クラス、親インターフェースの順に幅優先で探す。最初に見つかるのが、
-     * その型から見て最も特定的な宣言である（上書きした宣言は親より先に当たる）。
+     * 型そのものと親クラスの連鎖を根まで先に見て、無ければそれらの親インターフェースを幅優先で見る。
+     * クラスから継承したメソッドは、親インターフェースの同じシグネチャのメソッドより勝つ（JLS 8.4.8。
+     * {@code class MyRes extends BaseRes implements AutoCloseable} の {@code close()} は BaseRes のもので、
+     * javac も {@code MyRes.close} を呼んで BaseRes の本体が動く）。親クラスとインターフェースを同じ深さで
+     * 混ぜて探すと、1 段上のインターフェースの宣言が 2 段上の親クラスの宣言より先に当たる。
+     * 親型の private メソッドはメンバではない（継承されない。JLS 8.2）ので飛ばす。
      * パラメータ化された型は、型引数を置換したメソッドのバインディングが返るので、
      * {@code iterator()} の戻り値（{@code Iterator<Integer>} など）もそのまま使える。
      * 型変数・交差型は、境界（{@code getSuperclass} / {@code getInterfaces}）から探す。
@@ -51,25 +55,43 @@ final class ImplicitCalls {
         if (type == null || type.isPrimitive() || type.isArray() || type.isNullType()) {
             return null;
         }
-        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
         Set<String> seen = new HashSet<>();
-        queue.add(type);
-        while (!queue.isEmpty()) {
-            ITypeBinding t = queue.poll();
-            if (!seen.add(t.getKey() == null ? t.getQualifiedName() : t.getKey())) {
+        ArrayDeque<ITypeBinding> interfaces = new ArrayDeque<>();
+        for (ITypeBinding t = type; t != null; t = t.getSuperclass()) {
+            if (!seen.add(keyOf(t))) {
+                break;
+            }
+            IMethodBinding m = declaredNoArg(t, name, t == type);
+            if (m != null) {
+                return m;
+            }
+            interfaces.addAll(java.util.Arrays.asList(t.getInterfaces()));
+        }
+        while (!interfaces.isEmpty()) {
+            ITypeBinding t = interfaces.poll();
+            if (!seen.add(keyOf(t))) {
                 continue;
             }
-            for (IMethodBinding m : t.getDeclaredMethods()) {
-                if (m.getName().equals(name) && m.getParameterTypes().length == 0
-                        && !Modifier.isStatic(m.getModifiers()) && !m.isConstructor()) {
-                    return m;
-                }
+            IMethodBinding m = declaredNoArg(t, name, false);
+            if (m != null) {
+                return m;
             }
-            if (t.getSuperclass() != null) {
-                queue.add(t.getSuperclass());
-            }
-            for (ITypeBinding i : t.getInterfaces()) {
-                queue.add(i);
+            interfaces.addAll(java.util.Arrays.asList(t.getInterfaces()));
+        }
+        return null;
+    }
+
+    private static String keyOf(ITypeBinding t) {
+        return t.getKey() == null ? t.getQualifiedName() : t.getKey();
+    }
+
+    /** 型 {@code t} が宣言する、名前が一致する引数なしのインスタンスメソッド。親型のもの（{@code own} が偽）は private を除く */
+    private static IMethodBinding declaredNoArg(ITypeBinding t, String name, boolean own) {
+        for (IMethodBinding m : t.getDeclaredMethods()) {
+            if (m.getName().equals(name) && m.getParameterTypes().length == 0
+                    && !Modifier.isStatic(m.getModifiers()) && !m.isConstructor()
+                    && (own || !Modifier.isPrivate(m.getModifiers()))) {
+                return m;
             }
         }
         return null;
