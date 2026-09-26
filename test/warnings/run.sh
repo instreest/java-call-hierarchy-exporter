@@ -139,6 +139,9 @@ analyze config
 check_invariant config
 expect_in_warnings config "A folder or file given in the config file was not found"
 expect_in_warnings config "src/missing"
+# 対処の案内の相対パスの起点が、Config の読み方と合っていること。library.jars は設定ファイルのフォルダから読む
+# （Config#resolveFromConfigDir）のに、以前の案内は project.root からと書いていた
+expect_in_warnings config "source.folders / library.folders / external.library.folders from project.root, and the other items (project.root / library.jars /"
 
 # 5. コンパイルエラー（型が無い）と構文エラー
 make_project build ""
@@ -369,5 +372,83 @@ cp work/deps/pom.xml work/deps_ja/pom.xml
 JCHE_LANG=ja analyze deps_ja
 check_invariant deps_ja
 expect_in_warnings deps_ja "依存 jar が解決できていません"
+
+# 8. 1 つの JVM で設定を続けて処理する（引数に設定を複数渡す。対話モードで解析を繰り返すのも同じ経路）。
+# どの設定の warnings.txt も、その設定だけを動かしたときと同じ中身になること。
+#   - 拡張の置き場所の警告（plugin.folders のフォルダが無い）が 2 つ目の設定にも載る
+#     （以前は拡張のクラスローダを JVM の中で使い回していて、最初の設定にしか載らなかった）
+#   - message.language を書いていない設定は、前の設定の言語（ここでは ja）を引き継がず OS の言語（en）で書く
+#     （拡張の警告に関わらず warnings.txt ができるよう、どちらの設定にも無い jar を指定しておく）
+# 言語の引き継ぎを見るので JCHE_LANG を外し、OS の言語は user.language で英語に固定する
+make_project multi "library.jars=no-such.jar"
+sed -i '/^output.folder=/d' work/multi/config.properties
+{ cat work/multi/config.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
+  echo "message.language=ja"; } > work/multi/c1.properties
+{ cat work/multi/config.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
+    > work/multi/c2.properties
+( cd work/multi && env -u JCHE_LANG "$JAVA_BIN" -Duser.language=en -cp "$CLASSES:$CP" \
+    jche.CallHierarchyExporter c1.properties c2.properties ) > work/multi.console.log 2>&1
+for n in 1 2; do
+    OUT=$(ls -d work/multi/out$n/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    check_invariant "multi(c$n)"
+    if [ "$n" = 1 ]; then
+        expect_in_warnings "multi(c1)" "plugin.folders のフォルダがありません"
+    else
+        expect_in_warnings "multi(c2)" "The folder in plugin.folders does not exist"
+        # 見出しの「What to do:」（日本語なら「対処:」）で何語で書いたかを見る
+        if [ -n "$OUT" ] && grep -q -F "What to do:" "$OUT/warnings.txt" 2>/dev/null \
+                && ! grep -q -F "対処:" "$OUT/warnings.txt"; then
+            ok "multi(c2): message.language を書いていない設定は前の設定の言語を引き継がない"
+        else
+            ng "multi(c2): 前の設定の言語（ja）を引き継いでいる（または warnings.txt が無い）"
+        fi
+    fi
+done
+
+# 9. 行にならないノードだけでできた部分木も max.rows で打ち切って知らせる。
+# 出力の探索（StreamingTreeWalker）は経路ごとに辿り、コンストラクタ呼び出しと除外パッケージのメソッドは行にしない。
+# 以前は行数だけを上限に数えたので、それだけでつながる枝分かれ（C_i のフィールド初期化子が C_{i+1} と C_{i+2} を
+# new する）は経路の数（フィボナッチ数）だけ辿られ、0 行・警告なしのまま終わらなくなった（N=40 で 30 秒超）。
+# 行にしないノードの数にも max.rows と同じ上限を掛け、越えたら「途中で止まった」の項目に載せる
+make_dag() {   # $1=フォルダ名  $2=ctor（コンストラクタの連鎖）/ excluded（除外パッケージのメソッドの連鎖）
+    local dir=work/$1 n=30 i
+    mkdir -p "$dir/src/p" "$dir/src/q"
+    for i in $(seq 0 $((n - 1))); do
+        if [ "$2" = ctor ]; then
+            if [ "$i" -lt $((n - 2)) ]; then
+                echo "package p; public class C$i { private final Object a = new C$((i + 1))(); private final Object b = new C$((i + 2))(); }"
+            else
+                echo "package p; public class C$i { }"
+            fi > "$dir/src/p/C$i.java"
+        else
+            if [ "$i" -lt $((n - 2)) ]; then
+                echo "package q; public class M$i { public static void m() { M$((i + 1)).m(); M$((i + 2)).m(); } }"
+            else
+                echo "package q; public class M$i { public static void m() { } }"
+            fi > "$dir/src/q/M$i.java"
+        fi
+    done
+    if [ "$2" = ctor ]; then
+        echo 'package p; public class Main { public static void main(String[] a) { new C0(); } }'
+    else
+        echo 'package p; public class Main { public static void main(String[] a) { q.M0.m(); } }'
+    fi > "$dir/src/p/Main.java"
+    cat > "$dir/config.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+exclude.packages=java.**,javax.**,q.**
+max.rows=1000
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+for kind in ctor excluded; do
+    make_dag "dag_$kind" "$kind"
+    analyze "dag_$kind"
+    [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
+    check_invariant "dag_$kind"
+    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods"
+done
 
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

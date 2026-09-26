@@ -23,7 +23,6 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import jche.AnalysisSnapshot;
 import jche.Exporter;
@@ -64,9 +63,30 @@ public final class Server {
     private AnalysisSnapshot snapshot;
     /** 解析結果に宣言があるファイル（AT で「解析対象に無いファイル」を言い分けるため）。最初の AT で作る */
     private Set<String> analyzedFiles;
-    /** 中止の要求。読み取りスレッドが立て、解析中のスレッドが見る */
-    private final AtomicBoolean cancelled = new AtomicBoolean();
-    private final BlockingQueue<String> commands = new ArrayBlockingQueue<>(64);
+    /**
+     * 読み取りスレッドが読んだ ANALYZE の数（読み取りスレッドだけが書く）。ANALYZE には読んだ順に番号を振る
+     */
+    private long analyzesRead;
+    /**
+     * この番号までの ANALYZE は中止する（CANCEL を読んだ時点の {@link #analyzesRead}）。
+     * 読み取りスレッドが書き、解析中のスレッドが見る。
+     *
+     * <p>「中止したか」を 1 つの旗で持ち、ANALYZE を始めるときに下ろしていた頃は、ANALYZE を読んだ後・解析を
+     * 始める前（前の要求を処理している間や、ANALYZE と CANCEL がまとめて届いたとき）に届いた CANCEL を、
+     * 解析の始まりで消してしまい、解析が最後まで走っていた。番号で持てば、CANCEL はそれより前に読んだ
+     * ANALYZE（実行中のものと待ち行列にあるもの）にだけ効き、後から届く ANALYZE には効かない
+     */
+    private volatile long cancelledUpTo;
+    private final BlockingQueue<Queued> commands = new ArrayBlockingQueue<>(64);
+
+    /**
+     * 待ち行列に積んだ要求。
+     *
+     * @param line        要求の行
+     * @param analyzeSeq  ANALYZE なら読んだ順の番号（1 から）。それ以外は 0
+     */
+    private record Queued(String line, long analyzeSeq) {
+    }
     private volatile boolean stopped;
 
     private Server(InputStream input, OutputStream output, Path cacheRoot) {
@@ -97,7 +117,7 @@ public final class Server {
         Log.attachSink(line -> emit(Protocol.LOG, line));
         try {
             while (!stopped) {
-                String command = commands.poll(200, TimeUnit.MILLISECONDS);
+                Queued command = commands.poll(200, TimeUnit.MILLISECONDS);
                 if (command == null) {
                     continue;
                 }
@@ -129,7 +149,8 @@ public final class Server {
                 }
                 String name = trimmed.split("\t| ", 2)[0].toUpperCase(java.util.Locale.ROOT);
                 if ("CANCEL".equals(name)) {
-                    cancelled.set(true);     // 解析中のスレッドがすぐ見る
+                    // ここまでに読んだ ANALYZE をすべて中止する。解析中のスレッドがすぐ見る
+                    cancelledUpTo = analyzesRead;
                     continue;
                 }
                 // SHUTDOWN も待ち行列に積むだけで、実行中の解析は止めない。
@@ -138,24 +159,32 @@ public final class Server {
                 // 先に積んだ ANALYZE がタイミング次第で中止されてしまう。
                 // 実行中の解析を止めたい呼び出し側は、SHUTDOWN の前に CANCEL を送る
                 // （Eclipse プラグインの ServerConnection#close がそうしている）
-                commands.put(trimmed);
+                // 番号は handle と同じ読み方で ANALYZE と分かるものにだけ振る
+                long seq = "ANALYZE".equals(commandName(trimmed)) ? ++analyzesRead : 0;
+                commands.put(new Queued(trimmed, seq));
             }
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
             // 標準入力が閉じたら終わる（親プロセスが消えた場合）。
             // 積んである要求を処理し終えてから止まるよう、ここも待ち行列を通す
-            commands.offer("SHUTDOWN");
+            commands.offer(new Queued("SHUTDOWN", 0));
         }
     }
 
-    private void handle(String line) {
+    /** 要求の名前（最初の TAB までを大文字にしたもの） */
+    private static String commandName(String line) {
+        return line.split(Protocol.SEP, -1)[0].toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private void handle(Queued queued) {
+        String line = queued.line();
         String[] parts = line.split(Protocol.SEP, -1);
-        String name = parts[0].toUpperCase(java.util.Locale.ROOT);
+        String name = commandName(line);
         try {
             switch (name) {
                 case "HELLO" -> hello();
-                case "ANALYZE" -> analyze(arg(parts, 1));
+                case "ANALYZE" -> analyze(arg(parts, 1), queued.analyzeSeq());
                 case "STATUS" -> status();
                 case "FIND" -> find(arg(parts, 1));
                 case "AT" -> at(arg(parts, 1), arg(parts, 2));
@@ -192,7 +221,10 @@ public final class Server {
                 + Protocol.SEP + "maxJava=" + org.eclipse.jdt.core.JavaCore.latestSupportedJavaVersion());
     }
 
-    private void analyze(String configPath) throws Exception {
+    /**
+     * @param seq この ANALYZE を読んだ順の番号。これより後に読んだ CANCEL だけが中止する（{@link #cancelledUpTo}）
+     */
+    private void analyze(String configPath, long seq) throws Exception {
         if (configPath.isEmpty()) {
             respondNg("missing-config");
             return;
@@ -202,7 +234,6 @@ public final class Server {
             respondNg("config-not-found " + Protocol.escape(configPath));
             return;
         }
-        cancelled.set(false);
         RunControl.attach(new RunControl.Listener() {
             @Override
             public void progress(String label, long done, long total) {
@@ -213,7 +244,7 @@ public final class Server {
 
             @Override
             public boolean isCancelled() {
-                return cancelled.get();
+                return seq <= cancelledUpTo;
             }
         });
         try {

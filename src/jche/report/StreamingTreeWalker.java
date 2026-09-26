@@ -34,7 +34,10 @@ import jche.util.Warnings;
  * 安全策:
  * <ul>
  *   <li>max.depth … 深さ制限（0以下で無制限だが、循環検出があるため止まる）</li>
- *   <li>max.rows … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）</li>
+ *   <li>max.rows … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）。
+ *       行にならずに通るノード（コンストラクタ呼び出し・除外パッケージの読み飛ばし）の数にも同じ上限を掛ける
+ *       （{@code silentNodes}）。そうしないと、行を出さない部分木（フィールド初期化子の {@code new} だけで
+ *       つながるコンストラクタの連鎖など）が経路の数だけ辿られ、行数の上限に当たらないまま終わらなくなる</li>
  *   <li>循環検出 … 「現在の経路（rootからそのノードまでの祖先）」に同じメソッドが
  *       既にあれば、その辺を1行だけ出力してそこから先へは降りない。
  *       判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
@@ -149,6 +152,14 @@ public final class StreamingTreeWalker {
 
     private int rootId;
     private long totalRows;
+    /**
+     * 行にせずに通ったノードの数（コンストラクタ呼び出し・除外パッケージの読み飛ばし）。
+     * 探索は経路ごとで訪問済みの集合を持たないので、行を出さない部分木も経路の数だけ辿る。
+     * 行数だけを数えると、そういう部分木（{@code new} だけでつながるコンストラクタの連鎖など）は
+     * max.rows に当たらず、深さの上限（既定 50）まで指数的に辿り続ける。max.rows と同じ値を上限にして、
+     * 越えたら行数の上限と同じく打ち切って知らせる（上限に届かない探索の結果は変わらない）
+     */
+    private long silentNodes;
     private boolean limitWarned;
     private boolean candidateLimitWarned;
 
@@ -395,6 +406,8 @@ public final class StreamingTreeWalker {
                 // call-hierarchy 列に <init> を含んだ形で出力される
                 if (!methods.isConstructor(target)) {
                     emit(depth + 1);
+                } else {
+                    silentNodes++;   // 行にならないノードも上限に数える（isRowLimitReached）
                 }
 
                 // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
@@ -619,6 +632,7 @@ public final class StreamingTreeWalker {
             }
             return;
         }
+        silentNodes++;   // 読み飛ばした除外メソッドは行にならないが、上限には数える（isRowLimitReached）
         PathFrame saved = path[parentDepth];
         PathFrame replacement = new PathFrame();
         replacement.set(skippedId, saved.callLine, saved.note, saved.resolvedBy,
@@ -793,13 +807,16 @@ public final class StreamingTreeWalker {
         return hiddenAncestors.contains(methodId);
     }
 
+    /** 出力行数か、行にせずに通ったノードの数（{@code silentNodes}）が max.rows に達したか */
     private boolean isRowLimitReached() {
-        if (config.maxRows <= 0 || totalRows < config.maxRows) {
+        if (config.maxRows <= 0 || (totalRows < config.maxRows && silentNodes < config.maxRows)) {
             return false;
         }
         if (!limitWarned) {
             limitWarned = true;
-            Warnings.warn(Warnings.Topic.INCOMPLETE, Messages.format("report.walker.maxRows", config.maxRows));
+            Warnings.warn(Warnings.Topic.INCOMPLETE, (totalRows >= config.maxRows)
+                    ? Messages.format("report.walker.maxRows", config.maxRows)
+                    : Messages.format("report.walker.maxSilentNodes", config.maxRows));
         }
         return true;
     }
