@@ -3079,6 +3079,39 @@ setup_swap_cls() {
 classpath_swap_case "jar を差し替える" setup_swap_jar p/lib/l.jar temp.jar src "library.folders=lib"
 classpath_swap_case "クラスフォルダのクラスを消す" setup_swap_cls p/a/target/classes/gen/G.class - \
     "$REACTOR_FOLDERS" "$REACTOR_CFG"
+# パス0 で読めなかった jar（書きかけ・zip でない）が、解析のあいだに読める中身になり、JDT がそれを読む。読めなかった jar は
+# L 行にパッケージが無いので、あとで元の読めない中身に戻っても（消えても）、それを使うファイルを解析し直す手がかりが無い。
+# 以前は読めなかったものの見かけを覚えず、書き終えたときに見比べていなかったので、読めた中身で解析したブロックが残り続けた
+setup_swap_unreadable() {
+    mkdir -p ja/la p/lib
+    printf 'package la;\npublic class L { public void m(Object o) { } public void m(String s) { } }\n' > ja/la/L.java
+    shape_javac ca ja/la/L.java && ( cd ca && "$JAR_BIN" cf ../temp.jar la )
+    printf 'this is not a zip file (still being written)\n' > p/lib/l.jar
+    printf 'package app;\npublic class C1 {\n    void go() {\n        new la.L().m("x");\n    }\n}\n' | shape_src src
+    printf 'package app;\npublic class C2 {\n    void go() {\n        new la.L().m("y");\n    }\n}\n' | shape_src src
+}
+classpath_swap_case "パス0 で読めなかった jar が読める中身になる" setup_swap_unreadable p/lib/l.jar temp.jar src \
+    "library.folders=lib"
+
+# 同じプロセスの中で JDK が jar の前の目次を見せ続け、ガベージコレクションでも解き放てない（何かが開いたまま持っている）
+# とき、次の解析でも気づいて警告すること（jche.analysis.StaleSharedViewCheck）。以前は 1 回目で覚える指紋を今の中身の
+# ものに置き換えていたので、2 回目は確かめずに前の目次で解析し直していた
+echo "== 解き放てない前の目次（同じプロセスで 2 回走査する） =="
+rm -rf $SHAPE && mkdir -p $SHAPE/j1/q $SHAPE/j2/q
+printf 'package q;\npublic class L { public void m(Object o) { } }\n' > $SHAPE/j1/q/L.java
+printf 'package q;\npublic class L { public void m(Object o) { } public void m(String s) { } }\n' > $SHAPE/j2/q/L.java
+if shape_javac $SHAPE/c1 $SHAPE/j1/q/L.java && shape_javac $SHAPE/c2 $SHAPE/j2/q/L.java \
+        && ( cd $SHAPE/c1 && "$JAR_BIN" cf ../l.jar q ) && ( cd $SHAPE/c2 && "$JAR_BIN" cf ../l2.jar q ); then
+    if "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.StaleSharedViewCheck $SHAPE/l.jar $SHAPE/l2.jar \
+            > $SHAPE/stale.log 2>&1; then
+        grep -a '^OK' $SHAPE/stale.log | sed 's/^/  /'
+    else
+        echo "  NG   解き放てない前の目次の扱いが期待と違います"; grep -a -E '^(OK|NG)|Exception' $SHAPE/stale.log | sed 's/^/  /'
+        fail=1
+    fi
+else
+    echo "  NG   題材の jar を作れませんでした"; fail=1
+fi
 
 # アノテーションの付いた package-info.java が 2 つのソースフォルダにある。JDT はアノテーションの付いたパッケージ宣言に
 # package-info という型を作るので、同じバッチの 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。

@@ -271,9 +271,11 @@ public final class ProjectLayout {
                     expanded.add(jar.toString());
                 }
             } else {
-                if (!e.jarFolder() && Files.isDirectory(p) && !listJarsIn(p).isEmpty()) {
+                if (!e.jarFolder() && Files.isDirectory(p) && !listJarsIn(p).isEmpty() && !holdsClasses(p)) {
                     // jar を集めたフォルダを 1 件ずつの指定に書いたのかもしれない。クラスフォルダとしては渡すが、
-                    // 中の jar は使わないことを知らせる
+                    // 中の jar は使わないことを知らせる。.class / .java が 1 つでもあれば本当のクラスフォルダ
+                    // （Eclipse の出力フォルダにソースフォルダの jar が写されたものなど。Eclipse も中の jar は使わない）
+                    // なので、対処の要らないことを警告しない
                     Log.warn(Messages.format("config.layout.jarsInClassFolder", p));
                 }
                 expanded.add(p.toString());
@@ -284,6 +286,26 @@ public final class ProjectLayout {
         }
         classpath = expanded.toArray(new String[0]);
         return classpath.clone();
+    }
+
+    /**
+     * フォルダの中（下のフォルダも。リンクはたどる）に {@code .class} か {@code .java} があるか。
+     * JDT がクラスフォルダから読むのはこの 2 つなので、どちらも無ければクラスフォルダとしては空である。
+     * 読めなければ「ある」とみなす（警告を出さない側。読めないことは依存 jar の走査が警告する）
+     */
+    private static boolean holdsClasses(Path dir) {
+        boolean[] found = {false};
+        try {
+            FileTree.forEachFile(dir, (f, attrs) -> {
+                String name = f.getFileName().toString();
+                if (name.endsWith(".class") || name.endsWith(".java")) {
+                    found[0] = true;
+                }
+            });
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
+        return found[0];
     }
 
     /** ディレクトリ直下（サブフォルダは見ない）の *.jar を、ファイル名順で列挙する */

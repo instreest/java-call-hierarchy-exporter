@@ -121,6 +121,8 @@ final class LibraryDiff {
     /** JDK の目次が今の中身と同じになるのを待つ回数と間隔（{@link #releaseStaleView}） */
     private static final int RELEASE_TRIES = 50;
     private static final long RELEASE_WAIT_MILLIS = 100;
+    /** 見かけを取れなかったもの（消えていた・読めなかった）の見かけ（{@link #stamps}） */
+    private static final String UNREADABLE = "-";
     /** jmod の中でクラスを置くところ（JDT はこの下をクラスパスの根として読む） */
     private static final String JMOD_CLASSES = "classes/";
 
@@ -174,7 +176,8 @@ final class LibraryDiff {
 
     /**
      * 走査したときから見かけの変わった jar・クラスフォルダ（パス。クラスパス順）。空なら変わっていない。
-     * 読めなくなったもの（消えた）も変わったものに数える。クラスの説明「解析のあいだの書き換え」
+     * 読めなくなったもの（消えた）も、走査したときに読めなかったのに読めるようになったものも、変わったものに数える。
+     * クラスの説明「解析のあいだの書き換え」
      */
     List<Path> changedSinceScan() {
         List<Path> changed = new ArrayList<>();
@@ -183,7 +186,7 @@ final class LibraryDiff {
             try {
                 now = stampOf(en.getKey());
             } catch (IOException | RuntimeException e) {
-                now = null;
+                now = UNREADABLE;
             }
             if (!en.getValue().equals(now)) {
                 changed.add(en.getKey());
@@ -300,21 +303,28 @@ final class LibraryDiff {
 
     /**
      * クラスパスの1件を1回走査して、指紋とパッケージ一覧を作る。読めなければ指紋は空文字。
-     * あわせて見かけを {@code stamps} に入れ（読めなければ入れない。読めないものは毎回「変わった」になる）、
-     * JDK が前の中身の目次を見せ続けていて解き放てなければ {@code stale[0]} を真にする
+     * あわせて見かけを {@code stamps} に入れ、JDK が前の中身の目次を見せ続けていて解き放てなければ
+     * {@code stale[0]} を真にする。
+     *
+     * <p>読めなかったもの（zip でない・書きかけ・パス0 の時点で消えていた）の見かけも入れる（取れなければ
+     * {@link #UNREADABLE}）。読めなかったものは L 行にパッケージが無いので、あとで消えても変わっても、それを
+     * 使うファイルを解析し直す手がかりが無い。解析のあいだに読める中身になって JDT がそれを読んだときに、書き終えたときの
+     * 見比べ（{@link #changedSinceScan}）で気づけるようにする
      */
     private static LibraryFact scan(Path entry, String key, Map<Path, String> stamps, boolean[] stale) {
+        String stamp = null;
         try {
             if (Files.isDirectory(entry)) {
                 return scanClassFolder(entry, key, stamps);
             }
             // 見かけは中を読む前に取る（読んでいるあいだの書き換えも、書き終えたときに見比べて気づけるように）
-            String stamp = stampOfFile(entry);
+            stamp = stampOfFile(entry);
             LibraryFact fact = scanJar(entry, key, stale);
             stamps.put(entry, stamp);
             return fact;
         } catch (IOException | RuntimeException e) {
             Log.warn(Messages.format("analysis.libraryUnreadable", entry, e));
+            stamps.put(entry, (stamp != null) ? stamp : UNREADABLE);
             return new LibraryFact(key, "", List.of());
         }
     }
@@ -344,20 +354,24 @@ final class LibraryDiff {
     /**
      * このプロセスで前に走査したときと JDK の鍵（更新時刻と fileKey）が同じなのに指紋が違えば、JDK が前の目次を
      * 共有し続けているかもしれない。今の中身と同じになるまで解き放つ。解き放てなければ警告し、{@code stale[0]} を真にする
-     * （クラスの説明「同じプロセスでの解析の繰り返し」）
+     * （クラスの説明「同じプロセスでの解析の繰り返し」）。
+     *
+     * <p>{@link #seenInProcess} は「JDK が見せている（と考える）目次の指紋」を持つ。解き放てなかったときは前の指紋を
+     * 残す。今の指紋に置き換えると、次の解析では指紋が一致して確かめず、JDK が前の目次を見せたままなのに、
+     * この実行で内容ハッシュを空にしたファイルを前の目次で解析し直して、正しいものとして書いてしまう
      */
     private static void checkSharedView(Path jar, String fingerprint, boolean[] stale) throws IOException {
         BasicFileAttributes attrs = Files.readAttributes(jar, BasicFileAttributes.class);
         String jdkKey = attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS) + "\t" + attrs.fileKey();
         Path abs = jar.toAbsolutePath().normalize();
-        String[] before = seenInProcess.put(abs, new String[] {jdkKey, fingerprint});
-        if (before == null || !before[0].equals(jdkKey) || before[1].equals(fingerprint)) {
-            return;
-        }
-        if (!releaseStaleView(jar, fingerprint)) {
+        String[] before = seenInProcess.get(abs);
+        if (before != null && before[0].equals(jdkKey) && !before[1].equals(fingerprint)
+                && !releaseStaleView(jar, fingerprint)) {
             stale[0] = true;
             Log.warn(Messages.format("analysis.libraryStaleInProcess", jar));
+            return;   // 前の指紋を残す（次の解析でもまた確かめる）
         }
+        seenInProcess.put(abs, new String[] {jdkKey, fingerprint});
     }
 
     /**

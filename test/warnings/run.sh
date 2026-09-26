@@ -356,6 +356,40 @@ else
     diff <(echo "$full_twins") <(echo "$inc_twins") | head -6
 fi
 
+# 5c. 1 件ずつの指定（library.jars）に書いたフォルダはクラスフォルダとして渡し、中の jar は使わない（Eclipse と同じ）。
+#     jar しか無いフォルダなら jar を集めたフォルダの書き間違いなので警告する。.class もあるフォルダ（Eclipse の出力
+#     フォルダにソースフォルダの jar が写されたものなど）は本当のクラスフォルダで、対処が要らないので警告しない
+make_cls_folder() {   # $1=フォルダ名  $2=library.jars
+    local d=work/$1
+    mkdir -p "$d/src/app" "$d/lsrc/l" "$d/cls" "$d/jars"
+    printf 'package l;\npublic class A { public void m(String s) { } }\n' > "$d/lsrc/l/A.java"
+    "$JAVAC_BIN" -nowarn -d "$d/cls" "$d/lsrc/l/A.java" \
+        && ( cd "$d/cls" && "$(dirname "$JAVAC_BIN")/jar" cf ../jars/l.jar l ) && cp "$d/jars/l.jar" "$d/cls/copied.jar"
+    printf 'package app;\npublic class U {\n    public void go() {\n        new l.A().m("x");\n    }\n}\n' \
+        > "$d/src/app/U.java"
+    cat > "$d/config.properties" <<EOF
+project.root=.
+source.folders=src
+library.jars=$2
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+make_cls_folder clsjar cls
+analyze clsjar
+check_invariant clsjar
+if [ -n "$OUT" ] && [ ! -f "$OUT/warnings.txt" ] && grep -q -F 'A.m,RESOLVED' "$OUT/call-hierarchy.csv"; then
+    ok "clsjar: jar も入ったクラスフォルダは、クラスを使い、警告しない"
+else
+    ng "clsjar: jar も入ったクラスフォルダの扱いが期待と違う（warnings.txt がある、またはクラスを解決できない）"
+fi
+make_cls_folder jaronly jars
+analyze jaronly
+check_invariant jaronly
+expect_in_warnings jaronly "is given as a single classpath entry"
+
 # 6. 実行の失敗（出力フォルダを作った後で失敗する: ソースフォルダが 1 つも無い）
 make_project failed "source.folders=src/missing"
 analyze failed
