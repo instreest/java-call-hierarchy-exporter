@@ -18,6 +18,11 @@ public class XmlOrderExporter implements OrderExporter {
     private static final XMLOutputFactory FACTORY = XMLOutputFactory.newInstance();
 
     @Override
+    public String format() {
+        return "xml";
+    }
+
+    @Override
     public String export(List<Order> orders) {
         StringWriter out = new StringWriter();
         try {

@@ -19,6 +19,11 @@ public class JsonOrderExporter implements OrderExporter {
     }
 
     @Override
+    public String format() {
+        return "json";
+    }
+
+    @Override
     public String export(List<Order> orders) {
         return jsonMapper.writeValueAsString(orders);
     }
