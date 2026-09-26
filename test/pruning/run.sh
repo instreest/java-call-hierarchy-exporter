@@ -3166,6 +3166,85 @@ EOF
 expect_ listed RnnElse.use DaoB.find "同上（渡した DaoB も残す）"
 
 # ---------------------------------------------------------------------------
+# 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
+# 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。
+# 値は JDT が評価した定数（32）を使う
+# ---------------------------------------------------------------------------
+case_ reachable SpaceEsc SpaceEsc.run SpaceEsc.hit "ch == '\\s' に ' ' を渡した経路を打ち切らない（'\\s' のファイルを解析できる）" <<'EOF'
+package pr;
+
+public class SpaceEsc {
+    public static void main(String[] args) { run(' '); local(); pick('\s'); }
+    static void run(char ch) { if (ch == '\s') { hit(); } }
+    static void local() { char c = '\s'; if (c == ' ') { same(); } }
+    static void pick(char c) {
+        switch (c) {
+            case '\s' -> blank();
+            default -> other();
+        }
+    }
+    static void hit() { System.out.println("h"); }
+    static void same() { System.out.println("s"); }
+    static void blank() { System.out.println("b"); }
+    static void other() { System.out.println("o"); }
+}
+EOF
+expect_ reachable SpaceEsc.local SpaceEsc.same "char c = '\\s'; の c は ' ' と同じ値（32）"
+expect_ reachable SpaceEsc.pick SpaceEsc.blank "case '\\s' の枝を打ち切らない"
+
+case_ pruned=120 SpaceEscX SpaceEscX.run SpaceEscX.hit "対照: ch == '\\s' に 'x'（120）を渡した経路は打ち切る（'\\s' の値 32 と比べる）" <<'EOF'
+package pr;
+
+public class SpaceEscX {
+    public static void main(String[] args) { run('x'); }
+    static void run(char ch) { if (ch == '\s') { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# 型変数の資源・式の暗黙の呼び出し（try-with-resources の close()・拡張 for 文の iterator()）。境界のクラスの private な
+# メソッドは継承されず型変数のメンバではない（JLS 8.4.8）ので、呼ばれるのは境界のインターフェースの既定のメソッド。
+# 以前は型そのもの・親クラス・インターフェースを近い順に探し、型そのもの以外の private なメソッドも拾っていたので、
+# 呼び出し先が private な PrivTwBase.close()（STATIC_BOUND:PRIVATE）になり、実際に動く PubTwApi.close() への行が無かった
+# （javac は型変数の資源を AutoCloseable に変換して呼ぶので、test/jls の javac との突き合わせには置けない）
+# ---------------------------------------------------------------------------
+case_ listed MemberTv MemberTv.viaClose PubTwApi.close "型変数 T extends PrivTwBase & PubTwApi の資源の close() は PubTwApi の既定のメソッド（境界のクラスの private な close() ではない）" <<'EOF'
+package pr;
+
+import java.util.Iterator;
+import java.util.List;
+
+class PrivTwBase {
+    private void close() { System.out.println("private"); }
+    private Iterator<String> iterator() { return List.of("p").iterator(); }
+    void usePrivate() { close(); iterator(); }
+}
+
+interface PubTwApi extends AutoCloseable {
+    @Override
+    default void close() { System.out.println("api"); }
+}
+
+interface PubItApi extends Iterable<String> {
+    @Override
+    default Iterator<String> iterator() { return List.of("a").iterator(); }
+}
+
+public class MemberTv {
+    static <T extends PrivTwBase & PubTwApi> void viaClose(T t) throws Exception {
+        try (T r = t) { System.out.println("body"); }
+    }
+    static <T extends PrivTwBase & PubItApi> void viaFor(T t) {
+        for (String s : t) { System.out.println(s); }
+    }
+}
+EOF
+expect_ absent MemberTv.viaClose PrivTwBase.close "同上（private な PrivTwBase.close() の行が無い）"
+expect_ listed MemberTv.viaFor PubItApi.iterator "型変数の式の拡張 for 文の iterator() は PubItApi の既定のメソッド"
+expect_ absent MemberTv.viaFor PrivTwBase.iterator "同上（private な PrivTwBase.iterator() の行が無い）"
+
+# ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
 ( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > work/run.log 2>&1

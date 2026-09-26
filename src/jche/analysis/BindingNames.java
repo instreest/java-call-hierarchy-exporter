@@ -9,6 +9,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
@@ -59,8 +60,63 @@ final class BindingNames {
         return (erased != null) ? erased : t;
     }
 
+    /** 型のパッケージ。単純名から作られた無い型（{@link #qualifiedNameOf}）はパッケージを持たないとみなして空 */
     static String packageOf(ITypeBinding t) {
+        if (missingSimpleNameOf(t) != null) {
+            return "";
+        }
         return (t.getPackage() != null) ? t.getPackage().getName() : "";
+    }
+
+    /**
+     * キャッシュに書く型の完全修飾名（{@code getQualifiedName}）。配列は要素型に {@code []} を付ける。
+     *
+     * <p>ただし、JDT が<b>単純名から作った無い型</b>（依存 jar が無いときの {@code Template x}。鍵が {@code LTemplate;} の
+     * ようにパッケージを持たない）は、単純名（鍵の名前）にする。JDT はこの型を、同じバッチ（1 回の {@code createASTs}）で
+     * 最初にその名前の解決に失敗したファイルのパッケージに作って登録し、あとのファイルがオンデマンド import
+     * （{@code import app.other.*;}）で同じ名前を引くと、その型が当たる。そのため {@code getQualifiedName} は、同じソースでも
+     * 同じバッチに先に何が並んだかで {@code app.other.Template} にも {@code app.web.Template} にもなり、メソッドの鍵
+     * （{@code B.go(app.other.Template)}）がバッチの組み方で変わっていた。鍵は {@code LTemplate;} のまま変わらないので
+     * 宣言の指紋（{@link TypeContextTracker}）も変わらず、呼び出す側のキャッシュが古い鍵のまま残って呼び出しが切れた
+     * （docs/cache-unification-qa.md の「単純名から作られた無い型の名前」）。名前を鍵から作れば、名前はバッチに依らず、
+     * 鍵の変化と一緒にしか変わらない。
+     *
+     * <p>鍵がパッケージを持つ無い型（{@code import org.missing.Lib;} の {@code Lib}。鍵は {@code Lorg/missing/Lib;}）は
+     * そのまま完全修飾名にする（依存 jar が後から来たときに解析し直すための I 行の名前。docs/cache-unification-qa.md の Q79）
+     */
+    static String qualifiedNameOf(ITypeBinding t) {
+        if (t.isArray()) {
+            ITypeBinding element = t.getElementType();
+            return qualifiedNameOf(element) + "[]".repeat(t.getDimensions());
+        }
+        String simple = missingSimpleNameOf(t);
+        return (simple != null) ? simple : t.getQualifiedName();
+    }
+
+    /**
+     * JDT が単純名から作った無い型なら、その単純名。そうでなければ null。回復した型（{@code isRecovered}）のうち、鍵が
+     * {@code L<識別子>;} の形（パッケージ・入れ子の型・型引数を持たない）のもの。無名パッケージの本物の型も同じ形の鍵を
+     * 持つが、その型の完全修飾名は単純名そのものなので、どちらで名付けても同じになる
+     */
+    private static String missingSimpleNameOf(ITypeBinding t) {
+        if (t == null || !t.isRecovered() || t.isArray()) {
+            return null;
+        }
+        String key = t.getKey();
+        if (key == null || key.length() < 3 || key.charAt(0) != 'L' || key.charAt(key.length() - 1) != ';') {
+            return null;
+        }
+        String name = key.substring(1, key.length() - 1);
+        if (!Character.isJavaIdentifierStart(name.charAt(0))) {
+            return null;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '$' || !Character.isJavaIdentifierPart(c)) {
+                return null;
+            }
+        }
+        return name;
     }
 
     /**
@@ -150,7 +206,7 @@ final class BindingNames {
             if (type == null) {
                 continue;
             }
-            String fqn = type.getQualifiedName();
+            String fqn = qualifiedNameOf(type);
             if (fqn == null || fqn.isEmpty() || fqn.startsWith("java.lang.")) {
                 continue;
             }
@@ -159,22 +215,46 @@ final class BindingNames {
         return AnnotationTokens.join(tokens);
     }
 
-    /** アノテーションの値。単一メンバ、または value / name が文字列のもの。無ければ null */
+    /**
+     * アノテーションの値。単一メンバ、または value / name が文字列のもの。無ければ null。
+     *
+     * <p>書かれていないメンバーは注釈の型の既定値で埋める。既定値はメンバーごとに読み、読めないもの（例外）は飛ばす。
+     * {@code getAllMemberValuePairs} でまとめて読むと、既定値の式が jar の型の参照している無いクラスに当たったとき
+     * （{@code String k() default q.Api.probs();} で q.Api の親や引数の型のクラスが無い）JDT の打ち切り
+     * （{@code AbortCompilation}）がそのまま抜け、このファイルの解析ごと失敗していた。ほかのメンバーの読める既定値まで
+     * 失わないよう、1 つずつ読む（docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）。
+     * メンバーは名前の順に見る（JDT が注釈の型のメソッドを並べる順と同じ）
+     */
     private static String stringMemberOf(IAnnotationBinding a) {
-        IMemberValuePairBinding[] pairs = a.getAllMemberValuePairs();
-        if (pairs == null || pairs.length == 0) {
-            return null;
+        Map<String, Object> values = new TreeMap<>();
+        for (IMemberValuePairBinding pair : a.getDeclaredMemberValuePairs()) {
+            values.put(pair.getName(), pair.getValue());
         }
-        String single = null;
-        for (IMemberValuePairBinding pair : pairs) {
-            if (!(pair.getValue() instanceof String value) || value.isEmpty()) {
+        ITypeBinding type = a.getAnnotationType();
+        IMethodBinding[] members = (type == null) ? new IMethodBinding[0] : type.getDeclaredMethods();
+        for (IMethodBinding m : members) {
+            if (values.containsKey(m.getName())) {
                 continue;
             }
-            String name = pair.getName();
+            Object value;
+            try {
+                value = m.getDefaultValue();
+            } catch (RuntimeException e) {
+                continue;   // 既定値を読めない（上のとおり）。そのメンバーは無いものとして扱う
+            }
+            values.put(m.getName(), value);
+        }
+        int count = Math.max(members.length, values.size());
+        String single = null;
+        for (Map.Entry<String, Object> e : values.entrySet()) {
+            if (!(e.getValue() instanceof String value) || value.isEmpty()) {
+                continue;
+            }
+            String name = e.getKey();
             if ("value".equals(name) || "name".equals(name)) {
                 return value;
             }
-            if (pairs.length == 1) {
+            if (count == 1) {
                 single = value;
             }
         }
@@ -261,7 +341,7 @@ final class BindingNames {
 
     /** {@link #typeNameOf} の本体（覚えていない型のときだけ通る） */
     private String resolveTypeName(ITypeBinding t) {
-        String n = t.getQualifiedName();
+        String n = qualifiedNameOf(t);
         if (n == null || n.isEmpty()) {
             n = t.getBinaryName();               // 例: jp.co.xxx.Outer$1
         }
@@ -519,8 +599,7 @@ final class BindingNames {
                     params.append(",");
                 }
                 ITypeBinding erasedParam = paramTypes[i].getErasure();
-                params.append(erasedParam != null
-                        ? erasedParam.getQualifiedName() : paramTypes[i].getQualifiedName());
+                params.append(qualifiedNameOf(erasedParam != null ? erasedParam : paramTypes[i]));
                 // 引数型はメソッドキーの一部。改名されるとキーが変わるので依存に数える
                 noteDependency(erasedParam != null ? erasedParam : paramTypes[i]);
             }

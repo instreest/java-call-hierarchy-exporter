@@ -99,8 +99,12 @@
 14.14.2	foreach-next-impl	csv	jls.s14_14_02.EnhancedFor.run	CountIterator.next	-	Iterator.next() の実装として CountIterator の next() に届く（§15.12.4.4）
 14.14.2	foreach-once	callcount	jls.s14_14_02.EnhancedFor#run(jls.s14_14_02.Countdown,int[])	jls.s14_14_02.Countdown#iterator()	1	配列に対する拡張 for 文はメソッドを呼ばない（iterator() は Iterable の 1 つだけ）
 14.14.2	foreach-output	csv	jls.s14_14_02.EnhancedFor.run	Countdown.iterator	-	拡張 for 文の iterator() が call-hierarchy.csv の行として出る（Countdown.iterator() が「呼び出し元なし」にならない）
+14.14.2	foreach-member-class-first	call	jls.s14_14_02.MemberIterator#viaClassChain(jls.s14_14_02.ChainColl)	jls.s14_14_02.ChainIterBase#iterator()	-	親の親のクラスのメソッドが、直接のインターフェースの既定のメソッドより先に選ばれる（§8.4.8）
+14.14.2	foreach-member-class-first-api	nocall	jls.s14_14_02.MemberIterator#viaClassChain(jls.s14_14_02.ChainColl)	jls.s14_14_02.ChainIterApi#iterator()	-	同上（インターフェースの既定のメソッドを呼び出し先にしない）
 14.20.3.1	twr-close-each	callcount	jls.s14_20_03.TryWithResources#run(jls.s14_20_03.Resource)	jls.s14_20_03.Resource#close()	2	資源ごとに close() が呼ばれる（宣言した資源と、既存の変数を指定した資源）
 14.20.3.1	twr-close-body	path	TryWithResources.run > Resource.close > Sink.closed	-	-	close() の本体まで辿れる
+14.20.3.1	twr-member-class-first	call	jls.s14_20_03.MemberClose#viaClassChain(jls.s14_20_03.ChainRes)	jls.s14_20_03.ChainBase#close()	-	親の親のクラスのメソッドが、直接のインターフェースの既定のメソッドより先に選ばれる（§8.4.8）
+14.20.3.1	twr-member-class-first-api	nocall	jls.s14_20_03.MemberClose#viaClassChain(jls.s14_20_03.ChainRes)	jls.s14_20_03.ChainApi#close()	-	同上（インターフェースの既定のメソッドを呼び出し先にしない）
 14.30.2	record-pattern-accessors	call	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Point#y()	-	レコードパターンは成分の値をアクセサを呼んで取り出す
 14.30.2	record-pattern-explicit-accessor	path	Patterns.run > Point.x > Sink.readX	-	-	明示的に宣言したアクセサなら、その本体が実行される
 14.30.1	nested-record-pattern	callcount	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Point#x()	2	入れ子のレコードパターンの内側でもアクセサを呼ぶ（instanceof Point(...) と Line(Point(...), ...) の 2 か所）

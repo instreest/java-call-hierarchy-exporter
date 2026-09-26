@@ -827,7 +827,11 @@ final class OriginTracker {
             return constantValueText(n.resolveConstantExpressionValue());
         }
         if (e instanceof CharacterLiteral c) {
-            return charConst(c.charValue());
+            // 値は JDT が評価したものを使う（数値と同じ）。{@code CharacterLiteral.charValue()} は表記を自分で読み直し、
+            // Java 15 のエスケープ {@code '\s'}（空白。JLS 3.10.7）を知らずに例外を投げる。以前はそれがファイルの解析ごと
+            // 失敗させていた（ローカル変数の初期化子・比較・case に書いたときだけ。docs/cache-unification-qa.md の
+            // 「'\s' の文字リテラル」）。評価できなければ値は分からないとする
+            return constantValueText(c.resolveConstantExpressionValue());
         }
         if (e instanceof StringLiteral s) {
             return valueConst(s.getLiteralValue());
@@ -887,11 +891,6 @@ final class OriginTracker {
             return String.valueOf((int) c.charValue());
         }
         return String.valueOf(constant);
-    }
-
-    /** char の定数値。整数系と突き合わせられるよう数値にする（{@link #constantText} 参照） */
-    private static String charConst(char value) {
-        return Origin.of(Origin.CONST, String.valueOf((int) value));
     }
 
     private static IVariableBinding variableBindingOf(Expression e) {

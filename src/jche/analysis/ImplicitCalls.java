@@ -39,40 +39,103 @@ final class ImplicitCalls {
     }
 
     /**
-     * 型のメンバのうち、名前が一致する引数なしのインスタンスメソッド。無ければ null。
+     * 型のメンバのうち、名前が一致する引数なしのインスタンスメソッド（JLS 15.12.1〜15.12.2 で {@code #r.close()} や
+     * {@code Expression.iterator()} が呼ぶ宣言）。無ければ null。
      *
-     * 型そのもの、親クラス、親インターフェースの順に幅優先で探す。最初に見つかるのが、
-     * その型から見て最も特定的な宣言である（上書きした宣言は親より先に当たる）。
+     * <ol>
+     *   <li>型そのものと、親クラスの連なり（型変数・交差型は境界のクラス。{@code getSuperclass}）を近い順に見る。
+     *       クラスのメソッドは、インターフェースの既定のメソッドより先に選ばれる（JLS 8.4.8。親クラスの {@code close()} は
+     *       インターフェースの {@code default close()} を実装・上書きする）</li>
+     *   <li>クラスの連なりに無ければ、それらのインターフェース（推移的に）が宣言するもののうち、最も特定的なもの
+     *       （宣言した型が、ほかの候補の宣言した型の親でないもの。JLS 9.4.1）。同じ特定さのものが複数なら、近い順で先のもの</li>
+     * </ol>
+     * 型そのもの以外の型の {@code private} なメソッドは飛ばす。private なメンバーは継承されず（JLS 8.4.8・9.4.1）、
+     * 呼び出しの候補にならない。飛ばさないと、{@code <T extends PBase & PApi>} の {@code try (T r = t)} で、PBase の
+     * private な {@code close()} を呼び出し先にしてしまい、実際に動く {@code PApi.close()} への呼び出しが無くなっていた。
+     * static なメソッドも飛ばす（インスタンスメソッドの呼び出しにならない）。
      * パラメータ化された型は、型引数を置換したメソッドのバインディングが返るので、
      * {@code iterator()} の戻り値（{@code Iterator<Integer>} など）もそのまま使える。
-     * 型変数・交差型は、境界（{@code getSuperclass} / {@code getInterfaces}）から探す。
      */
     static IMethodBinding findNoArgMethod(ITypeBinding type, String name) {
         if (type == null || type.isPrimitive() || type.isArray() || type.isNullType()) {
             return null;
         }
-        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
         Set<String> seen = new HashSet<>();
-        queue.add(type);
-        while (!queue.isEmpty()) {
-            ITypeBinding t = queue.poll();
-            if (!seen.add(t.getKey() == null ? t.getQualifiedName() : t.getKey())) {
+        ArrayDeque<ITypeBinding> interfaces = new ArrayDeque<>();
+        // 1. 型そのものと親クラスの連なり
+        for (ITypeBinding c = type; c != null && seen.add(keyOf(c)); c = c.getSuperclass()) {
+            IMethodBinding m = declaredNoArgMethod(c, name, c == type);
+            if (m != null) {
+                return m;
+            }
+            interfaces.addAll(List.of(c.getInterfaces()));
+        }
+        // 2. インターフェース（近い順）。候補を全部集めてから、最も特定的なものを選ぶ
+        List<IMethodBinding> candidates = new ArrayList<>();
+        while (!interfaces.isEmpty()) {
+            ITypeBinding i = interfaces.poll();
+            if (!seen.add(keyOf(i))) {
                 continue;
             }
-            for (IMethodBinding m : t.getDeclaredMethods()) {
-                if (m.getName().equals(name) && m.getParameterTypes().length == 0
-                        && !Modifier.isStatic(m.getModifiers()) && !m.isConstructor()) {
-                    return m;
-                }
+            IMethodBinding m = declaredNoArgMethod(i, name, i == type);
+            if (m != null) {
+                candidates.add(m);
             }
-            if (t.getSuperclass() != null) {
-                queue.add(t.getSuperclass());
-            }
-            for (ITypeBinding i : t.getInterfaces()) {
-                queue.add(i);
+            interfaces.addAll(List.of(i.getInterfaces()));
+        }
+        for (IMethodBinding m : candidates) {
+            if (!overriddenByOther(m, candidates)) {
+                return m;
             }
         }
         return null;
+    }
+
+    /** 型が宣言する、名前が一致する引数なしのインスタンスメソッド。{@code ownType} でなければ private は飛ばす */
+    private static IMethodBinding declaredNoArgMethod(ITypeBinding t, String name, boolean ownType) {
+        for (IMethodBinding m : t.getDeclaredMethods()) {
+            int mods = m.getModifiers();
+            if (m.getName().equals(name) && m.getParameterTypes().length == 0 && !m.isConstructor()
+                    && !Modifier.isStatic(mods) && (ownType || !Modifier.isPrivate(mods))) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /** {@code m} を宣言した型が、ほかの候補を宣言した型の（推移的な）親か（そのほかの候補のほうが特定的） */
+    private static boolean overriddenByOther(IMethodBinding m, List<IMethodBinding> candidates) {
+        String declaring = keyOf(m.getDeclaringClass().getErasure());
+        for (IMethodBinding other : candidates) {
+            if (other != m && superKeysOf(other.getDeclaringClass()).contains(declaring)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 型の推移的な親型（消去した型の鍵） */
+    private static Set<String> superKeysOf(ITypeBinding type) {
+        Set<String> keys = new HashSet<>();
+        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
+        queue.add(type);
+        while (!queue.isEmpty()) {
+            ITypeBinding t = queue.poll();
+            if (t.getSuperclass() != null && keys.add(keyOf(t.getSuperclass().getErasure()))) {
+                queue.add(t.getSuperclass());
+            }
+            for (ITypeBinding i : t.getInterfaces()) {
+                if (keys.add(keyOf(i.getErasure()))) {
+                    queue.add(i);
+                }
+            }
+        }
+        return keys;
+    }
+
+    /** 訪問済みの判定用の鍵。取れない型は名前で見る */
+    private static String keyOf(ITypeBinding t) {
+        return (t.getKey() == null) ? t.getQualifiedName() : t.getKey();
     }
 
     /**
@@ -93,7 +156,7 @@ final class ImplicitCalls {
         queue.add(type);
         while (!queue.isEmpty()) {
             ITypeBinding t = queue.poll();
-            if (!seen.add(t.getKey() == null ? t.getQualifiedName() : t.getKey())) {
+            if (!seen.add(keyOf(t))) {
                 continue;
             }
             ITypeBinding erased = t.getErasure();

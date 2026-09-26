@@ -2510,6 +2510,156 @@ EOF
 case_of "候補の throws の例外の親を変える（継承した抽象メソッドの throws の共通部分・親の親のクラスの close()）" \
     "sed -i 's/ extends E3/ extends E1/' work/src/hdt/E2.java" yes setup_candidate_throws
 
+# 依存 jar が無いとき、単純名から作られた無い型の名前（Template）。JDT はこの型を、同じバッチで最初にその名前の解決に
+# 失敗したファイルのパッケージに作り、オンデマンド import で同じ名前を引いたあとのファイルもその型に当てる。
+# 全件解析では rcv/other/A.java が先に並ぶので B.go の引数は rcv.other.Template、差分更新で B だけを解析し直すと
+# rcv.web.Template になり、U に残った古い鍵 go(rcv.other.Template) が B の宣言に当たらず、U.run -> B.go -> C.helper が
+# 切れていた。鍵（LTemplate;）は変わらないので、宣言の指紋では連鎖しない。今は鍵から単純名 Template にする。
+# rcb/d/Node.java は同じことを、失敗したファイル（rcb/b/Base.java）のパッケージの側から見る
+# （docs/cache-unification-qa.md の「単純名から作られた無い型の名前」）
+setup_missing_simple_names() {
+    jfile rcv/other/A.java <<'EOF'
+package rcv.other;
+import org.lib.*;
+public class A { private final Object t = new Template(); }
+EOF
+    jfile rcv/web/B.java <<'EOF'
+package rcv.web;
+import org.lib.*;
+import rcv.other.*;
+public class B { public void go(Template x) { C.helper(); } }
+EOF
+    jfile rcv/web/C.java <<'EOF'
+package rcv.web;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+    jfile rcv/x/U.java <<'EOF'
+package rcv.x;
+public class U { void run(rcv.web.B b) { b.go(null); } }
+EOF
+    jfile rcb/b/Base.java <<'EOF'
+package rcb.b;
+public class Base { public void loc(Box s) { } }
+EOF
+    jfile rcb/d/Node.java <<'EOF'
+package rcb.d;
+import rcb.b.*;
+public class Node { public void loc(Box s) { rcb.e.Leaf.hit(); } }
+EOF
+    jfile rcb/e/Leaf.java <<'EOF'
+package rcb.e;
+public class Leaf { public static void hit() { } }
+EOF
+    jfile rcb/c/U.java <<'EOF'
+package rcb.c;
+public class U { void go(rcb.d.Node n) { n.loc(null); } }
+EOF
+}
+case_of "依存 jar が無いとき、単純名から作られた無い型の名前がバッチの組み方に依らない（オンデマンド import）" \
+    "printf '\n// c\n' >> work/src/rcv/other/A.java && printf '\n// c\n' >> work/src/rcb/b/Base.java" \
+    no setup_missing_simple_names
+
+# jar のクラス（qm.Api）が参照しているクラス（qm.Missing）が無いとき。事実を集めるときのバインディングへの問い合わせ
+# （拡張 for 文・try-with-resources の暗黙の呼び出しの宣言・呼び出しの候補）が、同じバッチの後ろのファイル（ear/B.java）の
+# メソッドを先に解決させると、JDT はそのメソッドを引数の無いまま残し、B の番で例外になった。全件解析だけバッチの残りを
+# 1 ファイルずつ解析し、別のファイル（ear/D.java）の入れ子でない型 Helper が見えない C の呼び出しが
+# UNRESOLVED:BINDING_FAILED になっていた（差分更新は C と D を同じバッチで解析するので解決できる）。
+# 今は事実をバッチの全ファイルを JDT が解決し終えてから集める（docs/cache-unification-qa.md の「後ろのファイルの型を
+# 先に解決させない」）
+make_missing_class_jar() {
+    rm -rf mcjar && mkdir -p mcjar/src/qm mcjar/c work/lib
+    printf 'package qm;\npublic interface Missing { int X = 1; }\n' > mcjar/src/qm/Missing.java
+    printf 'package qm;\npublic class Api {\n    public static final String NAME = "n";\n    public Missing[] probs() { return null; }\n    public static Missing[] all() { return null; }\n}\n' \
+        > mcjar/src/qm/Api.java
+    "$JAVAC_BIN" -d mcjar/c mcjar/src/qm/*.java && rm mcjar/c/qm/Missing.class \
+        && ( cd mcjar/c && "$JAR_BIN" cf ../../work/lib/qm.jar qm ) \
+        || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf mcjar
+}
+setup_early_resolution() {
+    make_missing_class_jar
+    jfile ear/A.java <<'EOF'
+package ear;
+public class A {
+    public void a(B b) throws Exception {
+        for (Object o : b) { System.out.println(o); }
+        try (B r = b) { r.run(); }
+    }
+}
+EOF
+    jfile ear/B.java <<'EOF'
+package ear;
+import qm.Missing;
+public class B implements Iterable<Object>, AutoCloseable {
+    public java.util.Iterator<Object> iterator() { return null; }
+    public void close() { }
+    public void run() { }
+    static void w(qm.Api a, Missing m) { }
+}
+EOF
+    jfile ear/C.java <<'EOF'
+package ear;
+public class C { public void c() { new Helper().go(); } }
+EOF
+    jfile ear/D.java <<'EOF'
+package ear;
+public class D { }
+record Helper() { public void go() { } }
+EOF
+}
+case_of "jar のクラスが参照するクラスが無いとき、後ろのファイルの型を先に解決させない（バッチが落ちない）" \
+    "printf '\n// c\n' >> work/src/ear/C.java && printf '\n// c\n' >> work/src/ear/D.java" \
+    no setup_early_resolution
+
+# 注釈の既定値を読むと、JDT は注釈の型のメンバーを先に解決する。同じバッチの後ろに注釈の型のファイルがあると、その番で
+# もう一度解決され、同じエラーが 2 回（引数を持つメンバーでは「Duplicate parameter」も）数えられていた。全件解析では
+# 使う側（ann/a/A.java・ann/p/A0.java）が先に並び、差分更新では注釈の型だけを解析し直すので、F 行のエラーの数と
+# I 行の解決できなかった名前が違った
+setup_annotation_errors() {
+    jfile ann/a/A.java <<'EOF'
+package ann.a;
+public class A { @ann.z.Ann public void m() { } }
+EOF
+    jfile ann/z/Ann.java <<'EOF'
+package ann.z;
+public @interface Ann { String value(int x) default "v"; }
+EOF
+    jfile ann/p/A0.java <<'EOF'
+package ann.p;
+@Ann2 public interface A0 { void f(); }
+EOF
+    jfile ann/p/Ann2.java <<'EOF'
+package ann.p;
+public @interface Ann2 { Foo[] value() default {}; }
+EOF
+    jfile ann/p/Foo.java <<'EOF'
+package ann.p;
+public class Foo { }
+EOF
+}
+case_of "注釈の型のエラーを、使う側が同じバッチの前に並ぶかどうかに依らず 1 回だけ数える" \
+    "printf '\n// c\n' >> work/src/ann/z/Ann.java && printf '\n// c\n' >> work/src/ann/p/Ann2.java" \
+    no setup_annotation_errors
+
+# 注釈の既定値の式（qm.Api.NAME）が、jar のクラスの参照する無いクラス（qm.Missing。注釈の型のファイルの import が
+# 解決に失敗している）に当たる。以前は既定値をまとめて読み（getAllMemberValuePairs）、JDT の打ち切りが抜けて、
+# 使う側 Z のファイルの解析ごと失敗していた。全件解析では注釈の型 B が先に解決されるので失敗せず、差分更新で Z だけを
+# 解析し直すと失敗し、Z の呼び出し（Z.z -> Z.h）が消えていた。今は既定値をメンバーごとに読み、読めないものは飛ばす
+setup_annotation_default_abort() {
+    make_missing_class_jar
+    jfile anb/B.java <<'EOF'
+package anb;
+import qm.Missing;
+public @interface B { String value() default "svc"; String k() default qm.Api.NAME; }
+EOF
+    jfile anb/Z.java <<'EOF'
+package anb;
+@B class Z { void z() { h(); } void h() { } }
+EOF
+}
+case_of "注釈の既定値が jar の無いクラスに当たっても、使う側のファイルの解析を失敗させない" \
+    "printf '\n// c\n' >> work/src/anb/Z.java" no setup_annotation_default_abort
+
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
 # なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。
@@ -3829,12 +3979,17 @@ sink_overflow_case() {
         src/p/B.java deep/p/Deep.java > $d/c2.log 2>&1
     rc=$?
     grep -a -E '^  (OK|NG)' $d/c2.log
-    [ "$rc" = 0 ] || { echo "  NG   1 ファイルずつの解析の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c2.log）"; fail=1; }
-    if grep -q -F "analyzed one at a time" $d/c2.log; then
-        echo "  OK   深い式のファイルで一括パースが溢れ、残りを 1 ファイルずつ解析する経路を通った"
+    [ "$rc" = 0 ] || { echo "  NG   一括パースが溢れたあとの受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c2.log）"; fail=1; }
+    if grep -q -F "is analyzed on its own" $d/c2.log; then
+        echo "  OK   深い式のファイルで一括パースが溢れ、そのファイルを単独で、残りをもう一度まとめて解析する経路を通った"
     else
-        echo "  NG   一括パースが溢れず、1 ファイルずつの解析の経路を通っていません（題材が効いていない）"; fail=1
+        echo "  NG   一括パースが溢れず、溢れたあとの経路を通っていません（題材が効いていない）"; fail=1
     fi
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.SinkOverflowCheck $d/c1.properties \
+        src/p/B.java --alone > $d/c3.log 2>&1
+    rc=$?
+    grep -a -E '^  (OK|NG)' $d/c3.log
+    [ "$rc" = 0 ] || { echo "  NG   1 ファイルずつの解析の受け手で溢れたファイルの扱いが期待と違います（test/incremental/$d/c3.log）"; fail=1; }
 }
 sink_overflow_case
 

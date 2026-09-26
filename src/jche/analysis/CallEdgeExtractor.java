@@ -111,16 +111,53 @@ public final class CallEdgeExtractor {
     /**
      * 複数のファイルをまとめてパースし、1ファイル分ずつ sink へ渡す。
      *
-     * JDT が受け付けなかったファイルや、一括パース自体が失敗したときの残りは、
-     * 1ファイルずつ {@link #analyze} で解析する。1ファイルの失敗で他を巻き込まないため。
+     * JDT が受け付けなかったファイルや、一括パース自体が失敗したときに JDT が解析していたファイルは、
+     * 1ファイルずつ {@link #analyze} で解析する。1ファイルの失敗で他を巻き込まないため。残りはもう一度まとめて解析する
+     * （事実はバッチの全ファイルを JDT が解決し終えてから集める。下の {@code parseTogether}）。
      *
      * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
-     * 深くなりすぎるファイル）も、そのファイルの失敗として扱う。一括パースの途中で溢れたら残りを 1 ファイルずつ
-     * 解析し、溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）。
-     * 以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（{@code docs/cache-unification-qa.md} の Q62）。
-     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
+     * 深くなりすぎるファイル）も、そのファイルの失敗として扱う。一括パースの途中で溢れたら、そのとき JDT が解析していた
+     * ファイルを 1 ファイルで解析し直し、溢れたファイルだけを失敗として数える（{@link Sink#failed}。warnings.txt の
+     * 「打ち切られた」に載る）。以前は捕まえておらず、設定 1 つ分の解析がまるごと失敗していた
+     * （{@code docs/cache-unification-qa.md} の Q62）。溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
+        List<SourceFile> rest = files;
+        while (!rest.isEmpty()) {
+            rest = parseTogether(rest, sink);
+        }
+    }
+
+    /**
+     * {@code files} をまとめてパースし、事実を集めて sink へ渡す。まとめて解析し直すファイルを返す（全部済めば空）。
+     *
+     * <h4>事実は、バッチの全ファイルを JDT が解決し終えてから集める</h4>
+     * JDT は {@code createASTs} のファイルを順に 1 つずつ解決し（本体まで）、そのたびに AST を {@code acceptAST} で渡す。
+     * 以前は受け取ったその場で事実を集めていたが、事実を集めるときのバインディングへの問い合わせ（型の全メソッド・
+     * 注釈の既定値など）は、同じバッチで<b>まだ解決していない後ろのファイル</b>の型にも及ぶ。JDT はそれを、どのファイルの
+     * コンパイルの中でもない状態で先に解決するので、次のことが起きていた（docs/cache-unification-qa.md の「後ろのファイルの型を
+     * 先に解決させない」）。
+     * <ul>
+     *   <li>後ろのファイルのメソッドの引数に、jar の型が参照している無いクラスが現れると、JDT は解決を打ち切り（エラーを
+     *       届ける先のファイルが無いため）、そのメソッドを引数の無いまま残す。そのファイルの番が来ると JDT の中で
+     *       例外になり（{@code ArrayIndexOutOfBoundsException}・{@code NullPointerException}）、バッチの残りが 1 ファイルずつの
+     *       解析になる。前に並ぶファイルが無い差分更新では起きないので、warnings.txt が全件解析とだけ違った</li>
+     *   <li>注釈の型のメンバーの既定値を先に解決すると、その注釈の型のファイルの番でもう一度解決され、同じエラーが 2 回
+     *       数えられる（F 行のエラーの数・I 行の解決できなかった名前が、前に使う側が並ぶかどうかで変わった）</li>
+     * </ul>
+     * そこで {@code acceptAST} では AST を預かるだけにし、バッチの最後のファイルを受け取ったとき（JDT がバッチの全ファイルを
+     * 解決し終えたとき）に、預かった分の事実をまとめて集める。バッチのファイルの型はどれも解決済みなので、問い合わせが
+     * 先に解決させることはない。預かっても、JDT は同じバッチのバインディングの表から前のファイルの AST を最後まで
+     * 辿れる形で持ち続けているので、ヒープはほとんど増えない（100 ファイルのバッチで測って同じ）。
+     * {@code createASTs} から戻ったあとでは、ソースパスから読んだ型への問い合わせが働かないので、最後のファイルの
+     * {@code acceptAST} の中で集める。
+     *
+     * <p>一括パースが途中で失敗したら（JDT の例外・スタックの溢れ）、そのとき JDT が解析していたファイル（まだ受け取って
+     * いない最初のファイル）を 1 ファイルで解析し、預かった分と残りはまとめて解析し直す（戻り値）。JDT が一部のファイルを
+     * 渡さずに戻ったときも、渡さなかったファイルは 1 ファイルずつ、預かった分はまとめて解析し直す。どちらも 1 回ごとに
+     * 少なくとも 1 ファイル減るので、繰り返しは終わる。
+     */
+    private List<SourceFile> parseTogether(List<SourceFile> files, Sink sink) throws IOException {
         Map<String, SourceFile> pending = new LinkedHashMap<>();
         for (SourceFile file : files) {
             pending.put(file.path().toString(), file);
@@ -128,6 +165,9 @@ public final class CallEdgeExtractor {
         String[] paths = pending.keySet().toArray(new String[0]);
         String[] fileEncodings = new String[paths.length];
         Arrays.fill(fileEncodings, encodingName);
+        List<SourceFile> acceptedFiles = new ArrayList<>();
+        List<CompilationUnit> acceptedUnits = new ArrayList<>();
+        boolean[] collected = { false };
 
         try {
             newParser().createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
@@ -137,62 +177,112 @@ public final class CallEdgeExtractor {
                     if (file == null) {
                         return;
                     }
-                    FileAnalysis facts;
-                    try {
-                        facts = collectFacts(file, cu);
-                    } catch (RuntimeException e) {
-                        sink.failed(file, e);
-                        return;
-                    } catch (StackOverflowError e) {
-                        sink.failed(file, tooDeep(e));
-                        return;
-                    }
-                    try {
-                        sink.accept(file, facts);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);   // 下の catch で IOException に戻す
-                    } catch (RuntimeException e) {
-                        // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
-                        // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
-                        // 1 ファイルずつの解析にも回らず、失敗とも数えられずに黙って消える
-                        sink.failed(file, e);
-                    } catch (StackOverflowError e) {
-                        // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
-                        // 外してあるので 1 ファイルずつの解析にも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
-                        sink.failed(file, tooDeep(e));
+                    acceptedFiles.add(file);
+                    acceptedUnits.add(cu);
+                    if (pending.isEmpty()) {
+                        // バッチの最後のファイル。JDT はバッチの全ファイルを解決し終えている
+                        collected[0] = true;
+                        try {
+                            for (int i = 0; i < acceptedFiles.size(); i++) {
+                                collectAndAccept(acceptedFiles.get(i), acceptedUnits.get(i), sink);
+                                acceptedUnits.set(i, null);   // 集め終えた AST は手放す
+                            }
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);   // 下の catch で IOException に戻す
+                        }
                     }
                 }
             }, null);
         } catch (UncheckedIOException e) {
             throw e.getCause();
         } catch (RuntimeException e) {
-            Log.warn(Messages.format("analysis.batchFailed", pending.size(), e));
-        } catch (StackOverflowError e) {
-            // どのファイルで溢れたかは分からない。残りを 1 ファイルずつ解析して、溢れたファイルだけを失敗にする
-            Log.info(Messages.format("analysis.batchTooDeep", pending.size()));
-        }
-
-        if (!pending.isEmpty()) {
-            for (SourceFile file : new ArrayList<>(pending.values())) {
-                FileAnalysis facts;
-                try {
-                    facts = analyze(file);
-                } catch (IOException | RuntimeException e) {
-                    sink.failed(file, e);
-                    continue;
-                } catch (StackOverflowError e) {
-                    sink.failed(file, tooDeep(e));
-                    continue;
-                }
-                try {
-                    sink.accept(file, facts);
-                } catch (RuntimeException e) {
-                    // 一括パースの側と同じく、受け手の失敗はこのファイルの失敗として数えて続ける
-                    sink.failed(file, e);
-                } catch (StackOverflowError e) {
-                    sink.failed(file, tooDeep(e));
-                }
+            if (!collected[0] && !pending.isEmpty()) {
+                return retryWithout(files, pending, sink, "analysis.batchFailed", e);
             }
+        } catch (StackOverflowError e) {
+            if (!collected[0] && !pending.isEmpty()) {
+                return retryWithout(files, pending, sink, "analysis.batchTooDeep", e);
+            }
+        }
+        if (collected[0]) {
+            return List.of();
+        }
+        // JDT が一部のファイルを渡さずに戻った。渡さなかったファイルは 1 ファイルずつ、預かった分はまとめて解析し直す
+        for (SourceFile file : new ArrayList<>(pending.values())) {
+            analyzeAlone(file, sink);
+        }
+        return acceptedFiles;
+    }
+
+    /**
+     * 一括パースが失敗したときの続き。そのとき JDT が解析していたファイル（まだ受け取っていない最初のファイル。JDT は
+     * 渡した順に解決し、1 つ解決するたびに渡してくる）を 1 ファイルで解析し、それ以外（預かった分と残り）を元の並びで返す。
+     * 1 ファイルで解析したファイルが失敗の元でなかったとしても、返したファイルをまとめて解析し直すときに元のファイルで
+     * また失敗し、そこで同じように外れる
+     */
+    private List<SourceFile> retryWithout(List<SourceFile> files, Map<String, SourceFile> pending, Sink sink,
+            String messageKey, Throwable error) throws IOException {
+        SourceFile at = pending.values().iterator().next();
+        List<SourceFile> rest = new ArrayList<>(files.size());
+        for (SourceFile file : files) {
+            if (file != at) {
+                rest.add(file);
+            }
+        }
+        if (error instanceof StackOverflowError) {
+            // どのファイルで溢れたかは、そのファイルを 1 ファイルで解析したときの失敗として warnings.txt に載る
+            Log.info(Messages.format(messageKey, at.relativePath(), rest.size()));
+        } else {
+            Log.warn(Messages.format(messageKey, at.relativePath(), rest.size(), error));
+        }
+        analyzeAlone(at, sink);
+        return rest;
+    }
+
+    /** 1 ファイルだけを解析して sink へ渡す（一括パースの補完。test/incremental の SinkOverflowCheck も直接呼ぶ） */
+    void analyzeAlone(SourceFile file, Sink sink) throws IOException {
+        FileAnalysis facts;
+        try {
+            facts = analyze(file);
+        } catch (IOException | RuntimeException e) {
+            sink.failed(file, e);
+            return;
+        } catch (StackOverflowError e) {
+            sink.failed(file, tooDeep(e));
+            return;
+        }
+        try {
+            sink.accept(file, facts);
+        } catch (RuntimeException e) {
+            // 一括パースの側と同じく、受け手の失敗はこのファイルの失敗として数えて続ける
+            sink.failed(file, e);
+        } catch (StackOverflowError e) {
+            sink.failed(file, tooDeep(e));
+        }
+    }
+
+    /** 一括パースで受け取った 1 ファイルの事実を集めて sink へ渡す。失敗はそのファイルの失敗として数える */
+    private void collectAndAccept(SourceFile file, CompilationUnit cu, Sink sink) throws IOException {
+        FileAnalysis facts;
+        try {
+            facts = collectFacts(file, cu);
+        } catch (RuntimeException e) {
+            sink.failed(file, e);
+            return;
+        } catch (StackOverflowError e) {
+            sink.failed(file, tooDeep(e));
+            return;
+        }
+        try {
+            sink.accept(file, facts);
+        } catch (RuntimeException e) {
+            // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
+            // ここで逃がすと一括パースごと止まり、このファイルは 1 ファイルずつの解析にも回らず、失敗とも数えられずに
+            // 黙って消える
+            sink.failed(file, e);
+        } catch (StackOverflowError e) {
+            // 受け手の中で溢れた場合も同じ（docs/cache-unification-qa.md の Q69）
+            sink.failed(file, tooDeep(e));
         }
     }
 

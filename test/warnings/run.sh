@@ -370,4 +370,67 @@ JCHE_LANG=ja analyze deps_ja
 check_invariant deps_ja
 expect_in_warnings deps_ja "依存 jar が解決できていません"
 
+# 8. jar のクラス（q.Api）が参照するクラス（q.Missing）が無いとき、事実を集めるときの問い合わせが同じバッチの後ろの
+#    ファイル（app/B.java）のメソッドを先に解決させ、B の番で JDT が例外を投げて一括解析が落ちていた（「The batch analysis
+#    failed」が全件解析の warnings.txt にだけ載った）。今は事実をバッチの全ファイルを JDT が解決し終えてから集める
+#    （docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）。A は B の呼び出し（呼び出しの候補）・
+#    拡張 for 文・try-with-resources（暗黙の呼び出しの宣言）で B のメソッドを問い合わせる
+mkdir -p work/early/src/app work/early/lib work/early/jsrc/q work/early/jcls
+printf 'package q;\npublic interface Missing { int X = 1; }\n' > work/early/jsrc/q/Missing.java
+printf 'package q;\npublic class Api { public Missing[] probs() { return null; } }\n' > work/early/jsrc/q/Api.java
+"$JAVAC_BIN" -d work/early/jcls work/early/jsrc/q/*.java && rm work/early/jcls/q/Missing.class \
+    && "$(dirname "$JAVAC_BIN")/jar" cf work/early/lib/q.jar -C work/early/jcls q \
+    || ng "early: jar を作れませんでした"
+cat > work/early/src/app/A.java <<'EOF'
+package app;
+
+public class A {
+    public void a(B b) throws Exception {
+        b.run();
+        for (Object o : b) {
+            System.out.println(o);
+        }
+        try (B r = b) {
+            r.run();
+        }
+    }
+}
+EOF
+cat > work/early/src/app/B.java <<'EOF'
+package app;
+
+import q.Missing;
+
+public class B implements Iterable<Object>, AutoCloseable {
+    public java.util.Iterator<Object> iterator() {
+        return null;
+    }
+
+    public void close() {
+    }
+
+    public void run() {
+    }
+
+    static void w(q.Api a, Missing m) {
+    }
+}
+EOF
+cat > work/early/config.properties <<'EOF'
+project.root=.
+source.folders=src
+library.folders=lib
+source.encoding=UTF-8
+output.folder=./out
+cache.folder=./.cache
+EOF
+analyze early
+check_invariant early
+if [ -n "$OUT" ] && ! grep -q -F "batch analysis failed" "$OUT/run.log" 2>/dev/null; then
+    ok "early: 後ろのファイルの型を先に解決させず、一括解析が落ちない"
+else
+    ng "early: 一括解析が落ちた（work/early.console.log）"
+    grep -a -F "batch analysis failed" "$OUT/run.log" 2>/dev/null | head -2
+fi
+
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

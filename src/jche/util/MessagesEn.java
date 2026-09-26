@@ -479,8 +479,8 @@ final class MessagesEn {
             "analysis.cache.changedWhileReading", "Internal error while updating the cache: {0} changed while it was being read (something that does not take the cache folder lock, such as an older version of this tool, may be writing to the same cache folder). Run again",
             "analysis.cache.changedDuringRun", "[cache] {0} source file(s) changed while the analysis was running (for example {1}). This run may mix their old and new contents; they and the files that use them are analyzed again next time",
             "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
-            "analysis.batchFailed", "The batch analysis failed, so the remaining {0} file(s) are analyzed one at a time ({1})",
-            "analysis.batchTooDeep", "The Java parser ran out of stack in a batch, so the remaining {0} file(s) are analyzed one at a time (only the file that is too deep fails)",
+            "analysis.batchFailed", "The batch analysis failed while reading {0}, so that file is analyzed on its own and the other {1} file(s) are analyzed again as a batch ({2})",
+            "analysis.batchTooDeep", "The Java parser ran out of stack in a batch while reading {0}, so that file is analyzed on its own and the other {1} file(s) are analyzed again as a batch (only the file that is too deep fails)",
             "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
             "analysis.libraryUnreadable", "Cannot read a dependency jar (it counts as changed every time): {0} ({1})",
         };

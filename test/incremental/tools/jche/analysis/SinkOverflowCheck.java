@@ -21,12 +21,14 @@ import jche.config.ProjectLayout;
  * docs/cache-unification-qa.md の Q69）。
  *
  * <pre>
- *   java jche.analysis.SinkOverflowCheck &lt;設定ファイル&gt; &lt;溢れさせるファイルの相対パス&gt; [&lt;深い式のファイルの相対パス&gt;]
+ *   java jche.analysis.SinkOverflowCheck &lt;設定ファイル&gt; &lt;溢れさせるファイルの相対パス&gt; [&lt;深い式のファイルの相対パス&gt; | --alone]
  * </pre>
  * 設定のソースをすべて（ソースフォルダの並びのまま）1 つのバッチで {@link CallEdgeExtractor#analyzeBatch} に渡し、
  * 受け手は 2 つ目の引数のファイルを受け取ったときに {@link StackOverflowError} を投げる。3 つ目の引数は JDT 自身が
- * 溢れる深い式のファイルで、先に並ぶソースフォルダに置くと、一括パースが途中で溢れて残りを 1 ファイルずつ解析する
- * 経路の受け手でも同じことを見る（そのファイル自身は失敗になる）。
+ * 溢れる深い式のファイルで、先に並ぶソースフォルダに置くと、一括パースが途中で溢れ、そのファイルを単独で、残りを
+ * もう一度まとめて解析する経路の受け手でも同じことを見る（深い式のファイル自身は失敗になる）。3 つ目の引数が
+ * {@code --alone} なら、どのファイルも 1 ファイルずつの解析（{@code CallEdgeExtractor#analyzeAlone}。一括パースが
+ * 渡さなかったファイル・失敗したときに JDT が解析していたファイルの経路）で解析し、その受け手でも同じことを見る。
  * どのファイルも「受け取った」か「失敗した」のちょうど 1 回だけ数えられ、溢れさせたファイルは失敗で、
  * 例外が外へ抜けないこと。終了コードは NG の数。
  */
@@ -38,7 +40,8 @@ public final class SinkOverflowCheck {
     public static void main(String[] args) throws Exception {
         Config config = new Config(Paths.get(args[0]), Paths.get("").toAbsolutePath(), LocalDateTime.now());
         String overflowAt = args[1];
-        String deep = (args.length > 2) ? args[2] : null;
+        boolean alone = args.length > 2 && args[2].equals("--alone");
+        String deep = (args.length > 2 && !alone) ? args[2] : null;
         ProjectLayout layout = new ProjectLayout(config);
         List<SourceFile> files = new ArrayList<>();
         for (Path p : layout.listJavaFiles()) {
@@ -60,9 +63,17 @@ public final class SinkOverflowCheck {
                 outcome.merge(file.relativePath(), "failed", (a, b) -> a + "+" + b);
             }
         };
-        String label = (deep == null) ? "一括パースの受け手" : "1 ファイルずつの解析の受け手";
+        String label = alone ? "1 ファイルずつの解析の受け手"
+                : (deep == null) ? "一括パースの受け手" : "一括パースが溢れたあとの受け手";
         try {
-            new CallEdgeExtractor(layout, config).analyzeBatch(files, sink);
+            CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config);
+            if (alone) {
+                for (SourceFile f : files) {
+                    extractor.analyzeAlone(f, sink);
+                }
+            } else {
+                extractor.analyzeBatch(files, sink);
+            }
         } catch (Throwable t) {
             System.out.println("  NG   " + label + "で溢れたら、例外が外へ抜けました: " + t);
             ng++;

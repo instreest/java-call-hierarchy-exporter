@@ -441,7 +441,7 @@ final class TypeContextTracker {
 
     /**
      * 親の型のメンバーとしての引数シグネチャ（型引数を置き換えてから消去する）。{@link MethodRef#paramSig} と同じ並び・
-     * 綴り（消去した型の {@code getQualifiedName}）にして、匿名クラスの合成コンストラクタの引数シグネチャと比べる
+     * 綴り（消去した型の {@link BindingNames#qualifiedNameOf}）にして、匿名クラスの合成コンストラクタの引数シグネチャと比べる
      */
     private static String memberParamSigOf(IMethodBinding m) {
         StringBuilder sb = new StringBuilder();
@@ -451,7 +451,7 @@ final class TypeContextTracker {
                 sb.append(',');
             }
             ITypeBinding erased = params[i].getErasure();
-            sb.append(erased != null ? erased.getQualifiedName() : params[i].getQualifiedName());
+            sb.append(BindingNames.qualifiedNameOf(erased != null ? erased : params[i]));
         }
         return sb.toString();
     }
