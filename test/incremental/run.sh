@@ -1357,6 +1357,62 @@ case_of "解析に失敗するファイルのメソッドの戻り値の型を�
     "deep_base 'public B get() { return new B(); }'" yes setup_failing
 case_of "解析に失敗するファイルを消す" "rm -f work/src/fl/Base.java" yes setup_failing
 
+# レビューでの追加。解析に失敗するファイルに 2 つ目のトップレベルの型を足すと、同じパッケージのファイルが解決できなかった
+# 点のある名前（Base2.Inner。頭の区切りが同じパッケージの型の単純名）が解ける。以前は点の無い名前だけを同じパッケージの型の
+# 候補として見ていた（StaleTypes#namesUnderOpaque）
+deep_base_after() {   # $1=Base の後ろに足すトップレベルの型
+    mkdir -p work/src/fl
+    {
+        printf 'package fl;\npublic class Base {\n    String chain() {\n        return new StringBuilder()'
+        for ((i = 0; i < 10000; i++)); do printf '.append(1)'; done
+        printf '.toString();\n    }\n}\n%s\n' "$1"
+    } > work/src/fl/Base.java
+}
+setup_failing_nested() {
+    printf 'package fl;\npublic interface I { Base2.Inner get(); }\n' | jfile fl/I.java
+    printf 'package fl;\npublic class Impl { void go(I i) { i.get().run(); } }\n' | jfile fl/Impl.java
+    deep_base_after ''
+}
+case_of "解析に失敗するファイルに足した型の入れ子の型を、同じパッケージのファイルが点のある名前で使う" \
+    "deep_base_after 'class Base2 { static class Inner { void run() { } } }'" yes setup_failing_nested
+
+# レビューでの追加。自分のパッケージにできた型 a は、完全修飾名 a.b.C の頭の a を隠す（JLS 6.5.2 で型が先）。自分の
+# パッケージが変わった jar・中身の分からないパッケージにあるとき、以前はオンデマンド import と java.lang の型だけを見ていて、
+# I 行がそれらを持たないインターフェースを解析し直さなかった（StaleTypes#touchesPackages）。jar の側は Q54 の続き
+setup_qualified_head() {   # $1=U を置くパッケージ（空なら無名パッケージ）
+    printf 'package a.b;\npublic class C { public static void k() { } }\n' | jfile a/b/C.java
+    if [ -n "$1" ]; then
+        printf 'package %s;\npublic interface U { default void go() { a.b.C.k(); } }\n' "$1" | jfile "$1/U.java"
+    else
+        printf 'public interface U { default void go() { a.b.C.k(); } }\n' | jfile U.java
+    fi
+}
+setup_qualified_head_jar() {   # $1=U を置くパッケージ（空なら無名パッケージ）
+    rm -rf jarsrc
+    printf 'package z;\npublic class Z { }\n' | jsrc qh/z/Z.java
+    lib_jar qh
+    setup_qualified_head "$1"
+}
+edit_qualified_head_jar() {   # $1=jar に型 a を足すパッケージ（空なら無名パッケージ）
+    if [ -n "$1" ]; then
+        printf 'package %s;\npublic class a { }\n' "$1" | jsrc "qh/$1/a.java"
+    else
+        printf 'public class a { }\n' | jsrc qh/a.java
+    fi
+    lib_jar qh
+}
+case_of "jar が自分のパッケージに足した型が完全修飾名の頭を隠す" "edit_qualified_head_jar qp" yes \
+    "setup_qualified_head_jar qp"
+case_of "jar が無名パッケージに足した型が完全修飾名の頭を隠す" "edit_qualified_head_jar ''" yes \
+    "setup_qualified_head_jar ''"
+rm -rf jarsrc
+setup_qualified_head_failing() {
+    setup_qualified_head fl
+    deep_base_after ''
+}
+case_of "解析に失敗するファイルに足した型が完全修飾名の頭を隠す" "deep_base_after 'class a { }'" yes \
+    setup_qualified_head_failing
+
 # --- 3 回目のレビューで見つかった、I 行と型の形に載っていなかった依存 ---------------------
 # どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）。
 # 型の形はやめた（Q77）が、同じ書き換えで差分更新が全件解析と同じであることを見続ける

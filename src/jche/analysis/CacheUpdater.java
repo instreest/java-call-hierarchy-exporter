@@ -1295,9 +1295,12 @@ public final class CacheUpdater {
          *       頭の部分がそのパッケージ（{@code import static org.lib.K.*}・{@code import org.lib.Outer.*} の型
          *       {@code org.lib.K} のパッケージ {@code org.lib}。型のメンバーを持ち込む import も {@code 名前.*} の形で I 行に
          *       載るので、名前そのものではなく頭の部分で当てる）</li>
-         *   <li>自分のパッケージがそこにあり（同じパッケージを jar とソースに分けて置く。自分のパッケージが分からなければ
-         *       あるとみなす）、I 行にオンデマンド import か {@code java.lang} の型がある。そのパッケージの型が、同じパッケージの
-         *       型として名前を隠しうる（JLS 6.4.1。docs/cache-unification-qa.md の Q54）</li>
+         *   <li>自分のパッケージがそこにある（同じパッケージを jar とソースに分けて置く・無名パッケージ。自分のパッケージが
+         *       分からなければあるとみなす）。I 行に何かあれば当たる。そのパッケージの型が同じパッケージの型として、
+         *       オンデマンド import・{@code java.lang} の型（JLS 6.4.1。docs/cache-unification-qa.md の Q54）だけでなく、
+         *       完全修飾名の頭の区切り（{@code a.b.C} の {@code a}。JLS 6.5.2 で型が先に選ばれる）も隠しうる。以前は
+         *       オンデマンド import と {@code java.lang} の型だけを見ていて、I 行にそれらの無いファイル（インターフェース）が
+         *       {@code a.b.C.k()} を書いていると、同じパッケージにできた型 {@code a} による隠蔽を見落とした</li>
          * </ul>
          */
         private static boolean touchesPackages(String depsCsv, String ownPackage, Set<String> pkgs,
@@ -1305,20 +1308,20 @@ public final class CacheUpdater {
             if (depsCsv.isEmpty() || pkgs.isEmpty()) {
                 return false;
             }
-            boolean ownPackageIn = (ownPackage == null)
-                    || pkgs.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage);
+            if (ownPackage == null || pkgs.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage)) {
+                return true;
+            }
             for (String d : depsCsv.split(",")) {
                 if (d.isEmpty()) {
                     continue;
                 }
                 if (d.endsWith(".*")) {
                     String p = d.substring(0, d.length() - 2);
-                    if (ownPackageIn || prefixes.contains(p) || underPackages(p, pkgs)) {
+                    if (prefixes.contains(p) || underPackages(p, pkgs)) {
                         return true;
                     }
                 } else if (underPackages(d, pkgs) || prefixes.contains(d)
-                        || (d.indexOf('.') < 0 && pkgs.contains(LibraryFact.UNNAMED_PACKAGE))
-                        || (ownPackageIn && d.startsWith("java.lang."))) {
+                        || (d.indexOf('.') < 0 && pkgs.contains(LibraryFact.UNNAMED_PACKAGE))) {
                     return true;
                 }
             }
@@ -1348,10 +1351,12 @@ public final class CacheUpdater {
 
         /**
          * 型解決に失敗していたブロックの、解決できなかった名前（I 行の 2 列目）が、中身の分からないパッケージの型に
-         * なりうるか。名前の頭の部分がそのパッケージ（とその頭の部分）か、点の無い名前（単純名。どのパッケージの型かは
-         * 分からない）で自分のパッケージがそこにある（分からなければあるとみなす）とき。名前を拾えなかった
-         * （空・{@link CacheFormat#ANY_NAME}）ときは当たるとみなす。オンデマンド import で単純名を持ち込むブロックは、
-         * I 行の {@code p.*} で当たる（{@link #touchesOpaque}）
+         * なりうるか。自分のパッケージがそこにある（分からなければあるとみなす）ときは、名前に依らず当たる。名前の頭の
+         * 区切り（{@code Base2}・{@code Base2.Inner} の {@code Base2}）が同じパッケージの型の単純名でありうるため
+         * （点の有無では分けない。以前は点の無い名前だけを見ていて、同じパッケージの失敗するファイルに足した型の入れ子の型
+         * {@code Base2.Inner} を落とした）。そうでなければ、名前の頭の部分がそのパッケージ（とその頭の部分）のとき。
+         * 名前を拾えなかった（空・{@link CacheFormat#ANY_NAME}）ときは当たるとみなす。オンデマンド import で単純名を
+         * 持ち込むブロックは、I 行の {@code p.*} で当たる（{@link #touchesOpaque}）
          */
         boolean namesUnderOpaque(String namesCsv, String ownPackage) {
             if (opaquePackages.isEmpty()) {
@@ -1360,10 +1365,12 @@ public final class CacheUpdater {
             if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
                 return true;
             }
-            boolean ownPackageIn = (ownPackage == null)
-                    || opaquePackages.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage);
+            if (ownPackage == null
+                    || opaquePackages.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage)) {
+                return true;
+            }
             for (String name : namesCsv.split(",")) {
-                if (name.indexOf('.') < 0 ? ownPackageIn : underPackages(name, opaquePrefixes)) {
+                if (underPackages(name, opaquePrefixes)) {
                     return true;
                 }
             }
@@ -1546,9 +1553,12 @@ public final class CacheUpdater {
         if (blank.isEmpty() && changedDuringRun.isEmpty()) {
             return;
         }
+        // 解析したファイルを空にするときは、中身が変わったファイル（changedDuringRun）と重なりうる。同じファイルを 2 回数えない
         List<String> all = new ArrayList<>(new TreeSet<>(changedDuringRun));
         for (String rel : new TreeSet<>(blank)) {
-            all.add(rel);
+            if (!changedDuringRun.contains(rel)) {
+                all.add(rel);
+            }
         }
         Log.info(Messages.format("analysis.cache.changedDuringRun", all.size(),
                 String.join(", ", all.subList(0, Math.min(all.size(), 5)))));
