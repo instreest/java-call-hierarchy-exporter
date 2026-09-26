@@ -197,11 +197,18 @@ public final class CallEdgeExtractor {
             throw e.getCause();
         } catch (RuntimeException e) {
             if (!collected[0] && !pending.isEmpty()) {
-                return retryWithout(files, pending, sink, "analysis.batchFailed", e);
+                List<SourceFile> rest = othersThan(files, first(pending));
+                Log.warn(Messages.format("analysis.batchFailed", first(pending).relativePath(), rest.size(), e));
+                analyzeAlone(first(pending), sink);
+                return rest;
             }
         } catch (StackOverflowError e) {
             if (!collected[0] && !pending.isEmpty()) {
-                return retryWithout(files, pending, sink, "analysis.batchTooDeep", e);
+                // どのファイルで溢れたかは、そのファイルを 1 ファイルで解析したときの失敗として warnings.txt に載る
+                List<SourceFile> rest = othersThan(files, first(pending));
+                Log.info(Messages.format("analysis.batchTooDeep", first(pending).relativePath(), rest.size()));
+                analyzeAlone(first(pending), sink);
+                return rest;
             }
         }
         if (collected[0]) {
@@ -215,27 +222,23 @@ public final class CallEdgeExtractor {
     }
 
     /**
-     * 一括パースが失敗したときの続き。そのとき JDT が解析していたファイル（まだ受け取っていない最初のファイル。JDT は
-     * 渡した順に解決し、1 つ解決するたびに渡してくる）を 1 ファイルで解析し、それ以外（預かった分と残り）を元の並びで返す。
-     * 1 ファイルで解析したファイルが失敗の元でなかったとしても、返したファイルをまとめて解析し直すときに元のファイルで
-     * また失敗し、そこで同じように外れる
+     * 一括パースが失敗したときに JDT が解析していたファイル（まだ受け取っていない最初のファイル。JDT は渡した順に解決し、
+     * 1 つ解決するたびに渡してくる）。このファイルを 1 ファイルで解析し、それ以外（預かった分と残り）はまとめて解析し直す。
+     * 1 ファイルで解析したファイルが失敗の元でなかったとしても、残りをまとめて解析し直すときに元のファイルでまた失敗し、
+     * そこで同じように外れる
      */
-    private List<SourceFile> retryWithout(List<SourceFile> files, Map<String, SourceFile> pending, Sink sink,
-            String messageKey, Throwable error) throws IOException {
-        SourceFile at = pending.values().iterator().next();
+    private static SourceFile first(Map<String, SourceFile> pending) {
+        return pending.values().iterator().next();
+    }
+
+    /** {@code files} のうち {@code at} 以外（元の並び） */
+    private static List<SourceFile> othersThan(List<SourceFile> files, SourceFile at) {
         List<SourceFile> rest = new ArrayList<>(files.size());
         for (SourceFile file : files) {
             if (file != at) {
                 rest.add(file);
             }
         }
-        if (error instanceof StackOverflowError) {
-            // どのファイルで溢れたかは、そのファイルを 1 ファイルで解析したときの失敗として warnings.txt に載る
-            Log.info(Messages.format(messageKey, at.relativePath(), rest.size()));
-        } else {
-            Log.warn(Messages.format(messageKey, at.relativePath(), rest.size(), error));
-        }
-        analyzeAlone(at, sink);
         return rest;
     }
 
