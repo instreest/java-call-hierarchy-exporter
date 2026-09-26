@@ -873,10 +873,22 @@ final class FactVisitor extends ASTVisitor {
     /**
      * ソースに呼び出し式が無い呼び出しを 1 件記録する（import からの推定はしない）。
      *
+     * <p>依存する型（I 行）は、書いた呼び出しと同じに数える。呼び出しの結果の型（拡張 for 文の {@code next()} の要素の型、
+     * レコードパターンのアクセサの成分の型）は、書いた呼び出しなら式の型として数える（{@link #preVisit2}）ものだが、
+     * AST に式が無い。{@code for (Base b : mid)} の要素の型 Elem・{@code o instanceof Rec(Base b)} の成分の型 Elem は
+     * ソースに名前が無いことがあり、Elem の親を変えると代入できなくなる。呼び出しの候補（同じ名前のメソッド）の
+     * シグネチャの型も、修飾する型で数える（{@link BindingNames#noteCandidates}）。try-with-resources の {@code close()} が
+     * 投げうる例外は、親クラスから継承した {@code close()} や、複数のインターフェースの {@code close()} の throws の
+     * 共通部分で決まり（JLS 8.4.8・15.12.2.5）、ここで選んだ 1 つのバインディングの throws だけでは決まらない
+     *
      * @param qualifying 呼び出しを修飾する型（JLS 13.1。変換後の式の静的な型）。無ければ null
      */
     private void recordImplicit(IMethodBinding b, ASTNode node, String recvKey, char recvKind,
                                 CallValues values, ITypeBinding qualifying) {
+        names.noteReachedType(b.getReturnType());
+        if (qualifying != null) {
+            names.noteCandidates(qualifying, b.getName());
+        }
         calls.record(currentCallers(), lambdaDepth, b, node, b.getName(),
                 CallSiteRecorder.targetModsOf(b), recvKey, recvKind, null, values,
                 calls.qualifierOf(b, qualifying));
@@ -1043,7 +1055,10 @@ final class FactVisitor extends ASTVisitor {
      * 拡張 for 文・switch・throw・アノテーション・型の名前の節）に拾っていたが、拾い漏らしが見つかるたびに場面を
      * 足すことになったので、「すべての式と型の節」の 1 つの決まりにした（docs/cache-unification-qa.md の Q78）。
      * 親型の変化は、型を数えておけば差分更新が部分型の側で拾う（{@link CacheUpdater} の「親型の連鎖」）。
-     * 呼び出しの節では、選ばれなかった候補の引数の型も数える（{@link #noteCandidates(ASTNode)}）。
+     * 呼び出しの節では、選ばれなかった候補のシグネチャ（引数・戻り値・throws）の型も数える（{@link #noteCandidates(ASTNode)}）。
+     * 型を数えると、その型引数（内部クラスは囲む型の型引数も）と、名前にした型の頭（親型の型引数・型引数の上限・
+     * 関数型インターフェースの関数型）も数える（{@link BindingNames#noteReachedType}）。AST に式の無い暗黙の呼び出しは、
+     * 結果の型と候補を書いた呼び出しと同じに数える（{@link #recordImplicit}）。
      * このファイルに名前の現れない型のうち、sealed な型の許した部分型（網羅性・キャストが成り立つか）と、アノテーション型の
      * メタ注釈・{@code @Repeatable} の入れ物の型は、ここでは数えず、それを宣言したファイルの側で連鎖させる
      * （{@link jche.cache.FileAnalysis#cascadesWhenReanalysed}）。継承したメソッドの戻り値と throws の型は、型の宣言の側で
@@ -1083,7 +1098,7 @@ final class FactVisitor extends ASTVisitor {
     }
 
     /**
-     * 呼び出し・メソッド参照・new・super(...) の節では、呼び出しの候補（同じ名前のメソッド・コンストラクタ）の引数の型も
+     * 呼び出し・メソッド参照・new・super(...) の節では、呼び出しの候補（同じ名前のメソッド・コンストラクタ）のシグネチャの型も
      * 数える（{@link BindingNames#noteCandidates}。選ばれなかった候補の型も、どの候補が選ばれるかに効く）。探す型は、
      * 修飾する式・型があればその型、単純名・{@code super.m()} なら囲む型すべて（とその親）、new・コンストラクタ参照なら
      * 作る型、{@code super(...)} なら親のクラス。{@code this(...)} の候補は自分のコンストラクタで、引数の型はこのファイルに

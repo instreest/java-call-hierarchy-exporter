@@ -2140,6 +2140,376 @@ case_of "対になっていないサロゲートだけが違う定数に変え�
     "sed -i 's/uD800/uD801/' work/src/sgc/P.java" yes \
     "setup_surrogate_constant aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+# --- 型の頭・暗黙の呼び出しの結果・内部クラスの囲む型・深い入れ子・関数型・候補の throws -----------------
+# どれも、使う側（U など）のソースに名前が無い型の親を変える。書き手は、名前にした型の頭（親型の型引数・型引数の
+# 上限・関数型）と、型引数（非 static の入れ子の型は囲む型の型引数も）と、暗黙の呼び出しの結果の型と候補の
+# シグネチャ（引数・戻り値・throws）の型を I 行に数える（BindingNames#noteHeaderTypes・#noteReachedType・
+# #noteCandidates、FactVisitor#recordImplicit）。Foo の親から Bar を外すと、U1 の x.m(bag) は m(Object) に変わり
+# （X.m(Collection) の先の Z.coll() への辺が Z.obj() に変わる）、U2〜U4 は代入できなくなってコンパイルエラーになる
+setup_header_args() {
+    jfile hda/Bar.java <<'EOF'
+package hda;
+public class Bar { public void run() { } }
+EOF
+    jfile hda/Foo.java <<'EOF'
+package hda;
+public class Foo extends Bar { }
+EOF
+    jfile hda/Z.java <<'EOF'
+package hda;
+public class Z { public static void coll() { } public static void obj() { } }
+EOF
+    jfile hda/X.java <<'EOF'
+package hda;
+public class X {
+    public void m(java.util.Collection<? extends Bar> c) { Z.coll(); }
+    public void m(Object o) { Z.obj(); }
+}
+EOF
+    jfile hda/Bag.java <<'EOF'
+package hda;
+public class Bag extends java.util.ArrayList<Foo> { }
+EOF
+    jfile hda/Iter.java <<'EOF'
+package hda;
+public class Iter implements java.util.Iterator<Foo> {
+    public boolean hasNext() { return false; }
+    public Foo next() { return null; }
+}
+EOF
+    jfile hda/Coll.java <<'EOF'
+package hda;
+public class Coll implements Iterable<Foo> { public Iter iterator() { return new Iter(); } }
+EOF
+    jfile hda/Rec.java <<'EOF'
+package hda;
+public record Rec(Foo f) { }
+EOF
+    jfile hdu/U1.java <<'EOF'
+package hdu;
+public class U1 { void go(hda.X x, hda.Bag bag) { x.m(bag); } }
+EOF
+    jfile hdu/U2.java <<'EOF'
+package hdu;
+import hda.Bar;
+public class U2 { void go(hda.Bag bag) { for (Bar b : bag) { b.run(); } } }
+EOF
+    jfile hdu/U3.java <<'EOF'
+package hdu;
+import hda.Bar;
+public class U3 { void go(hda.Coll c) { for (Bar b : c) { b.run(); } } }
+EOF
+    jfile hdu/U4.java <<'EOF'
+package hdu;
+import hda.Bar;
+public class U4 { void go(Object o) { if (o instanceof hda.Rec(Bar b)) { b.run(); } } }
+EOF
+}
+case_of "親型の型引数・拡張 for の要素・レコードの成分にだけ現れる型の親を変える" \
+    "sed -i 's/ extends Bar//' work/src/hda/Foo.java" yes setup_header_args
+
+# 型引数の上限（Box<T extends Foo>。Box<? extends Bar> の捕捉の上限は glb(Bar, Foo)）と、内部クラスの囲む型の
+# 型引数（Outer<Foo>.Mid.Deep。JDT は Foo を Deep ではなく囲む型 Outer<Foo> に置く。直近の Mid も型引数を持たない）
+setup_header_bound_inner() {
+    jfile hdb/Bar.java <<'EOF'
+package hdb;
+public class Bar { public void run() { } }
+EOF
+    jfile hdb/Foo.java <<'EOF'
+package hdb;
+public class Foo extends Bar { }
+EOF
+    jfile hdb/Z.java <<'EOF'
+package hdb;
+public class Z { public static void box() { } public static void deep() { } public static void obj() { } }
+EOF
+    jfile hdb/Box.java <<'EOF'
+package hdb;
+public class Box<T extends Foo> { }
+EOF
+    jfile hdb/Outer.java <<'EOF'
+package hdb;
+public class Outer<T> {
+    public class Mid {
+        public class Deep implements Iterable<T> {
+            public java.util.Iterator<T> iterator() { return null; }
+        }
+    }
+}
+EOF
+    jfile hdb/A.java <<'EOF'
+package hdb;
+public class A { public static Outer<Foo>.Mid.Deep deep() { return null; } }
+EOF
+    jfile hdb/X.java <<'EOF'
+package hdb;
+public class X {
+    public void m(Box<? extends Bar> c) { Z.box(); }
+    public void m(Outer<? extends Bar>.Mid.Deep c) { Z.deep(); }
+    public void m(Object o) { Z.obj(); }
+}
+EOF
+    jfile hdv/U1.java <<'EOF'
+package hdv;
+public class U1 { void go(hdb.X x, hdb.Box<?> b) { x.m(b); } }
+EOF
+    jfile hdv/U2.java <<'EOF'
+package hdv;
+public class U2 { void go(hdb.X x) { x.m(hdb.A.deep()); } }
+EOF
+    jfile hdv/U3.java <<'EOF'
+package hdv;
+public class U3 { void go() { for (hdb.Bar b : hdb.A.deep()) { b.run(); } } }
+EOF
+}
+case_of "型引数の上限・内部クラスの囲む型の型引数にだけ現れる型の親を変える" \
+    "sed -i 's/ extends Bar//' work/src/hdb/Foo.java" yes setup_header_bound_inner
+
+# 深い入れ子の型引数。以前は 8 段で打ち切っていたので、? extends を 5 段重ねた奥の Foo が抜けた（U1）。さらに
+# 深いところで先に出会った List<Foo> の型引数を「辿り終えた」と覚えてしまい、同じファイルの浅い a.foos() の
+# List<Foo> の Foo まで抜けていた（U2。2 つの文を入れ替えると抜けない）
+setup_deep_args() {
+    jfile hdd/Bar.java <<'EOF'
+package hdd;
+public class Bar { }
+EOF
+    jfile hdd/Foo.java <<'EOF'
+package hdd;
+public class Foo extends Bar { }
+EOF
+    jfile hdd/Z.java <<'EOF'
+package hdd;
+public class Z { public static void deep() { } public static void coll() { } public static void obj() { } }
+EOF
+    jfile hdd/A.java <<'EOF'
+package hdd;
+import java.util.List;
+public class A {
+    public List<? extends List<? extends List<? extends List<? extends List<? extends Foo>>>>> deep() { return null; }
+    public List<? extends List<? extends List<? extends List<? extends List<Foo>>>>> deep2() { return null; }
+    public List<Foo> foos() { return null; }
+}
+EOF
+    jfile hdd/X.java <<'EOF'
+package hdd;
+import java.util.List;
+public class X {
+    public void m(List<? extends List<? extends List<? extends List<? extends List<? extends Bar>>>>> c) { Z.deep(); }
+    public void m(java.util.Collection<? extends Bar> c) { Z.coll(); }
+    public void m(Object o) { Z.obj(); }
+}
+EOF
+    jfile hde/U1.java <<'EOF'
+package hde;
+public class U1 { void go(hdd.X x, hdd.A a) { x.m(a.deep()); } }
+EOF
+    jfile hde/U2.java <<'EOF'
+package hde;
+public class U2 { void go(hdd.X x, hdd.A a) { Object o = a.deep2(); x.m(a.foos()); } }
+EOF
+}
+case_of "深く入れ子になった型引数にだけ現れる型の親を変える" \
+    "sed -i 's/ extends Bar//' work/src/hdd/Foo.java" yes setup_deep_args
+
+# 候補の関数型インターフェースの関数型（JLS 9.9）。U1 の Ex.exec((Foo f) -> null) は、FnA の戻り値 Bar が FnB の
+# 戻り値 Baz の部分型なら exec(FnA)、逆なら exec(FnB)（JLS 15.12.2.5）。U2 の Ex.exec(Util::take) は、Baz が Foo の
+# 部分型になると Fn4・Fn5 のどちらにも合って曖昧になる。U1・U2 は Bar・Baz を書いていない
+setup_function_types() {
+    jfile hdf/Foo.java <<'EOF'
+package hdf;
+public class Foo { }
+EOF
+    jfile hdf/Baz.java <<'EOF'
+package hdf;
+public interface Baz { }
+EOF
+    jfile hdf/Bar.java <<'EOF'
+package hdf;
+public interface Bar extends Baz { }
+EOF
+    jfile hdf/Qux.java <<'EOF'
+package hdf;
+public class Qux { }
+EOF
+    jfile hdf/FnA.java <<'EOF'
+package hdf;
+public interface FnA { Bar run(Foo f); }
+EOF
+    jfile hdf/FnB.java <<'EOF'
+package hdf;
+public interface FnB { Baz run(Foo f); }
+EOF
+    jfile hdf/Fn4.java <<'EOF'
+package hdf;
+public interface Fn4 { void run(Foo f); }
+EOF
+    jfile hdf/Fn5.java <<'EOF'
+package hdf;
+public interface Fn5 { void run(Qux q); }
+EOF
+    jfile hdf/Log.java <<'EOF'
+package hdf;
+public class Log { public static void a() { } public static void b() { } public static void four() { } public static void five() { } }
+EOF
+    jfile hdf/Ex.java <<'EOF'
+package hdf;
+public class Ex {
+    public static void exec(FnA f) { Log.a(); }
+    public static void exec(FnB f) { Log.b(); }
+    public static void exec(Fn4 f) { Log.four(); }
+    public static void exec(Fn5 f) { Log.five(); }
+}
+EOF
+    jfile hdf/Util.java <<'EOF'
+package hdf;
+public class Util { public static void take(Foo f) { } }
+EOF
+    jfile hdg/U1.java <<'EOF'
+package hdg;
+import hdf.Foo;
+public class U1 { void go() { hdf.Ex.exec((Foo f) -> null); } }
+EOF
+    jfile hdg/U2.java <<'EOF'
+package hdg;
+public class U2 { void go() { hdf.Ex.exec(hdf.Util::take); } }
+EOF
+}
+edit_function_types() {
+    sed -i 's/ extends Baz//' work/src/hdf/Bar.java
+    sed -i 's/public interface Baz /public interface Baz extends Bar /' work/src/hdf/Baz.java
+    sed -i 's/public class Qux /public class Qux extends Foo /' work/src/hdf/Qux.java
+}
+case_of "候補の関数型インターフェースの関数型の型の親を変える（選ばれる候補が変わる・曖昧になる）" \
+    edit_function_types yes setup_function_types
+
+# 同じことを jar で。親型の型引数（hj1.Mid extends ArrayList<hj2.Elem>）と関数型（hj1.FnA の戻り値 hj2.Bar）の
+# 型が別の jar（hj2.jar）にあり、hj2.jar だけが変わる。U の I 行に hj2 の型が無ければ、hj2.jar の変化で解析し直さない
+make_header_jars() {   # $1 = hj2 の版（old・new）。hj3.jar と hj1.jar は最初の 1 回だけ作る（変わるのは hj2.jar だけ）
+    rm -rf jarhdr && mkdir -p jarhdr/src/hj1 jarhdr/src/hj2 jarhdr/src/hj3 jarhdr/c1 jarhdr/c2 jarhdr/c3 work/lib
+    printf 'package hj3;\npublic class Base { public void foo() { } }\n' > jarhdr/src/hj3/Base.java
+    if [ "$1" = old ]; then
+        printf 'package hj2;\npublic class Elem extends hj3.Base { }\n' > jarhdr/src/hj2/Elem.java
+        printf 'package hj2;\npublic interface Baz { }\n' > jarhdr/src/hj2/Baz.java
+        printf 'package hj2;\npublic interface Bar extends Baz { }\n' > jarhdr/src/hj2/Bar.java
+    else
+        printf 'package hj2;\npublic class Elem { }\n' > jarhdr/src/hj2/Elem.java
+        printf 'package hj2;\npublic interface Baz extends Bar { }\n' > jarhdr/src/hj2/Baz.java
+        printf 'package hj2;\npublic interface Bar { }\n' > jarhdr/src/hj2/Bar.java
+    fi
+    printf 'package hj1;\npublic class Mid extends java.util.ArrayList<hj2.Elem> { }\n' > jarhdr/src/hj1/Mid.java
+    printf 'package hj1;\npublic interface FnA { hj2.Bar run(String s); }\n' > jarhdr/src/hj1/FnA.java
+    printf 'package hj1;\npublic interface FnB { hj2.Baz run(String s); }\n' > jarhdr/src/hj1/FnB.java
+    if [ ! -f work/lib/hj3.jar ]; then
+        "$JAVAC_BIN" -d jarhdr/c3 jarhdr/src/hj3/*.java \
+            && ( cd jarhdr/c3 && "$JAR_BIN" cf ../../work/lib/hj3.jar hj3 ) \
+            || { echo "  NG   jar を作れませんでした"; fail=1; }
+    fi
+    "$JAVAC_BIN" -cp work/lib/hj3.jar -d jarhdr/c2 jarhdr/src/hj2/*.java \
+        && ( cd jarhdr/c2 && "$JAR_BIN" cf ../../work/lib/hj2.jar hj2 ) \
+        || { echo "  NG   jar を作れませんでした"; fail=1; }
+    if [ ! -f work/lib/hj1.jar ]; then
+        "$JAVAC_BIN" -cp work/lib/hj2.jar:work/lib/hj3.jar -d jarhdr/c1 jarhdr/src/hj1/*.java \
+            && ( cd jarhdr/c1 && "$JAR_BIN" cf ../../work/lib/hj1.jar hj1 ) \
+            || { echo "  NG   jar を作れませんでした"; fail=1; }
+    fi
+    rm -rf jarhdr
+}
+setup_header_jars() {
+    make_header_jars old
+    jfile hdj/U1.java <<'EOF'
+package hdj;
+public class U1 { void go(hj1.Mid mid) { for (hj3.Base b : mid) { b.foo(); } } }
+EOF
+    jfile hdj/Log.java <<'EOF'
+package hdj;
+public class Log { public static void a() { } public static void b() { } }
+EOF
+    jfile hdj/Ex.java <<'EOF'
+package hdj;
+public class Ex {
+    public static void exec(hj1.FnA f) { Log.a(); }
+    public static void exec(hj1.FnB f) { Log.b(); }
+}
+EOF
+    jfile hdj/U2.java <<'EOF'
+package hdj;
+public class U2 { void go() { Ex.exec((String s) -> null); } }
+EOF
+}
+case_of "jar の型の親型の型引数・関数型の型（別の jar）の親を変える" \
+    "make_header_jars new" yes setup_header_jars
+
+# 候補の throws。U1 の r.close() は、R が I1・I2 から継承した close() の throws の共通部分（JLS 15.12.2.5）を投げる。
+# JDT の選んだバインディングの throws はその共通部分（E1・E2 が無関係なら空）なので、E1・E2 は載らなかった。E2 の親を
+# E1 にすると共通部分が E2 になり、例外を処理していないエラーになる。U2 は try-with-resources の暗黙の close() で同じ。
+# U3 の暗黙の close() は、親の親のクラスから継承した GGP.close()（throws E2。JLS 8.4.8）だが、ツールは先に見つかる
+# I3.close()（throws Exception）を選んでいた。E2 の親を E3 から外すと、U3 の catch (E3) は E2 を捕まえなくなる。
+# R・R3 は close() のほかに抽象メソッドを持つ（関数型インターフェースでない）ので、宣言の指紋に入れた関数型では届かない
+setup_candidate_throws() {
+    jfile hdt/E1.java <<'EOF'
+package hdt;
+public class E1 extends Exception { }
+EOF
+    jfile hdt/E3.java <<'EOF'
+package hdt;
+public class E3 extends Exception { }
+EOF
+    jfile hdt/E2.java <<'EOF'
+package hdt;
+public class E2 extends E3 { }
+EOF
+    jfile hdt/I1.java <<'EOF'
+package hdt;
+public interface I1 extends AutoCloseable { void close() throws E1; }
+EOF
+    jfile hdt/I2.java <<'EOF'
+package hdt;
+public interface I2 extends AutoCloseable { void close() throws E2; }
+EOF
+    jfile hdt/R.java <<'EOF'
+package hdt;
+public interface R extends I1, I2 { void other(); }
+EOF
+    jfile hdt/I3.java <<'EOF'
+package hdt;
+public interface I3 extends AutoCloseable { void close() throws Exception; }
+EOF
+    jfile hdt/GGP.java <<'EOF'
+package hdt;
+public class GGP { public void close() throws E2 { } }
+EOF
+    jfile hdt/GP.java <<'EOF'
+package hdt;
+public class GP extends GGP { }
+EOF
+    jfile hdt/R3.java <<'EOF'
+package hdt;
+public class R3 extends GP implements I3 { }
+EOF
+    jfile hdw/U1.java <<'EOF'
+package hdw;
+public class U1 { void go(hdt.R r) { r.close(); } }
+EOF
+    jfile hdw/U2.java <<'EOF'
+package hdw;
+public class U2 { void go(hdt.R r0) { try (hdt.R r = r0) { r.other(); } } }
+EOF
+    jfile hdw/U3.java <<'EOF'
+package hdw;
+public class U3 {
+    void go() {
+        try (hdt.R3 r = new hdt.R3()) {
+            System.out.println(r);
+        } catch (hdt.E3 e) {
+            System.out.println(e);
+        }
+    }
+}
+EOF
+}
+case_of "候補の throws の例外の親を変える（継承した抽象メソッドの throws の共通部分・親の親のクラスの close()）" \
+    "sed -i 's/ extends E3/ extends E1/' work/src/hdt/E2.java" yes setup_candidate_throws
+
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
 # なるので旧キャッシュをそのまま残す（ファイルを作り直さない＝inode も更新時刻も変わらない）。

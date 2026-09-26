@@ -208,31 +208,54 @@ final class BindingNames {
         }
         String name = resolveTypeName(t);
         typeNames.put(t, (name == null) ? NO_NAME : name);
-        if (name != null && !t.isFromSource() && !t.isPrimitive() && !t.isArray() && !t.isTypeVariable()
-                && !isJdk(t)) {
-            noteBinarySupertypes(t);
+        if (name != null && !t.isPrimitive() && !t.isArray() && !t.isTypeVariable() && !t.isCapture()
+                && !t.isWildcardType() && !t.isIntersectionType() && !isJdk(t)) {
+            noteHeaderTypes(t);
         }
         return name;
     }
 
     /**
-     * jar の型（ソースの無い、{@code java.*} でない型）の親型を、推移的に I 行に数える（{@code java.*} の型で止める）。
+     * 型の頭（宣言の見出し）に現れる型を、{@code java.*} でないものだけ I 行に数える（型引数・上限は辿る）。
+     * {@link #typeNameOf} が {@code java.*} でない型を初めて名前にしたとき（ソースの型も jar の型も）に呼ぶ。
+     * <ul>
+     *   <li>親型（型引数ごと。{@code Keys extends ArrayList<Key>} の Key）。親型が {@code java.*} の型なら、その型は数えず
+     *       型引数だけを数える。{@code java.*} でない親型は名前にするので、その頭も推移的に辿る</li>
+     *   <li>型引数の上限（{@code class Box<T extends Foo>} の Foo）</li>
+     *   <li>関数型インターフェースなら関数型（JLS 9.9。抽象メソッドの引数・戻り値・throws の型）</li>
+     * </ul>
      *
-     * <p>jar の型のメンバーは、その親型（別の jar の型のこともある）から継承したものを含む。親型の jar が変わると、
-     * この型を使うファイルの事実（どのオーバーロードが選ばれるか）も変わるが、ソースに書かれているのはこの型だけで、
-     * 差分更新は変わった jar のパッケージに当たる型を I 行に持つファイルしか解析し直さない。ソースの型の親の変化は
-     * 部分型の索引（H 行）で届くが、jar の型には H 行が無い（docs/cache-unification-qa.md の Q86）。
-     * 名前にした型は {@link #typeNames} に先に入れてあるので、親をたどっても同じ型を 2 度見ない
+     * <p>この型を使うファイルの事実は、頭に現れる型にも依る。{@code for (Base b : keys)}・{@code x.m(keys)}（候補
+     * {@code m(Collection<? extends Base>)}）・{@code Collections.sort(keys)} は Key の親に、{@code Box<? extends Bar>} は
+     * Foo の親に（上限が合うか）、{@code Ex.exec((Foo f) -> null)}（候補 {@code exec(FnA)} と {@code exec(FnB)}）は関数型の
+     * 戻り値の型の親に依る。どれもこの型を使うファイルのソースには名前が無い。この型の宣言のファイルは頭に名前を書いているが、
+     * その型の親が変わっても自分の宣言の指紋（型の鍵 {@code Ljava/util/ArrayList<Lg/Key;>;}）は変わらないので、宣言の側から
+     * 連鎖しない。jar の型の親（別の jar の型）は部分型の索引（H 行）に無いので、jar の型では親型そのものも要る
+     * （docs/cache-unification-qa.md の Q86）。
+     * 名前にした型は {@link #typeNames} に先に入れてあり、辿った型は {@link #reachedAll} などに覚えるので、同じ型を 2 度見ない
      */
-    private void noteBinarySupertypes(ITypeBinding t) {
-        ITypeBinding superclass = t.getSuperclass();
-        if (superclass != null && !isJdk(superclass)) {
-            typeNameOf(erasureOf(superclass));
-        }
+    private void noteHeaderTypes(ITypeBinding t) {
+        noteReachedType(t.getSuperclass(), false);
         for (ITypeBinding i : t.getInterfaces()) {
-            if (!isJdk(i)) {
-                typeNameOf(erasureOf(i));
-            }
+            noteReachedType(i, false);
+        }
+        for (ITypeBinding p : t.getTypeParameters()) {
+            noteReachedType(p, false);
+        }
+        noteSignatureTypes(t.getFunctionalInterfaceMethod(), false);
+    }
+
+    /** メソッドのシグネチャ（引数・戻り値・throws）の型を数える（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    private void noteSignatureTypes(IMethodBinding m, boolean jdkToo) {
+        if (m == null) {
+            return;
+        }
+        for (ITypeBinding p : m.getParameterTypes()) {
+            noteReachedType(p, jdkToo);
+        }
+        noteReachedType(m.getReturnType(), jdkToo);
+        for (ITypeBinding e : m.getExceptionTypes()) {
+            noteReachedType(e, false);
         }
     }
 
@@ -289,11 +312,12 @@ final class BindingNames {
      * 捕捉された型変数（{@code Box<?>} の {@code b.get()} の型）・ワイルドカード・交差型は飛ばさず、上限の消去で
      * 数える（上限が複数なら全部）。その型の名前はソースに無いことがあり（{@code a.getB().x()} の B、
      * {@code D extends E<Foo>} の {@code d.get()} の Foo）、数えないと、その型にメンバーを足す・親を変えても差分更新が
-     * このファイルを解析し直さない（docs/cache-unification-qa.md の Q50）。型引数も数える（{@code List<Foo>} の Foo。
-     * 上限と同じく {@link #MAX_BOUND_DEPTH} 段まで。Q85）。
+     * このファイルを解析し直さない（docs/cache-unification-qa.md の Q50）。型引数も数える（{@code List<Foo>} の Foo。Q85。
+     * 非 static の入れ子の型は、囲む型の型引数も。{@code Outer<Foo>.Inner}）。名前にした型の頭（親型の型引数・型引数の上限・
+     * 関数型）も数える（{@link #noteHeaderTypes}）。
      */
     void noteReachedType(ITypeBinding t) {
-        noteReachedType(t, 0, true);
+        noteReachedType(t, true);
     }
 
     /**
@@ -311,7 +335,7 @@ final class BindingNames {
         }
         for (ITypeBinding e : b.getExceptionTypes()) {
             if (e.isTypeVariable() || !isJdk(e)) {
-                noteReachedType(e, 0, true);
+                noteReachedType(e, true);
             }
         }
     }
@@ -320,10 +344,11 @@ final class BindingNames {
     private final Set<String> candidatesSeen = new HashSet<>();
 
     /**
-     * 呼び出しの候補（JLS 15.12.2）の引数の型を I 行に数える。{@code searched}（探す型）とその推移的な親型が宣言する、
-     * 名前が {@code name} のメソッド（{@code name} が null ならコンストラクタ。探す型が宣言するものだけ）すべての
-     * 引数の型（型変数は上限の消去。型引数も数える）。探す型は型引数を付けたまま辿り（{@code Box<Foo>} の
-     * {@code put(T)} は {@code put(Foo)}）、{@code java.*} の型が宣言するものは、型引数を置き換えた引数の型のうち
+     * 呼び出しの候補（JLS 15.12.2）のシグネチャ（引数・戻り値・throws）の型を I 行に数える。{@code searched}（探す型）と
+     * その推移的な親型が宣言する、名前が {@code name} のメソッド（{@code name} が null ならコンストラクタ。探す型が宣言する
+     * ものだけ）すべての、引数・戻り値・throws の型（型変数は上限の消去。型引数も数える。throws は {@code java.*} でない型
+     * だけ。{@link #noteThrownTypes} と同じ）。探す型は型引数を付けたまま辿り（{@code Box<Foo>} の
+     * {@code put(T)} は {@code put(Foo)}）、{@code java.*} の型が宣言するものは、型引数を置き換えた型のうち
      * {@code java.*} でない型だけを数える（{@code S extends ArrayList<Foo>} の {@code s.add(0, null)} の
      * {@code add(int, Foo)}。JDK の版は鍵に入っているので、JDK の型そのものは数えない。docs/cache-unification-qa.md の Q85）。
      *
@@ -331,7 +356,11 @@ final class BindingNames {
      * {@code n(Y)} と {@code n(Z)} で曖昧だが、Z を消すと {@code n(Y)} に決まる。ラムダを渡す {@code x.k(() -> {})} は、
      * 候補の関数型インターフェース（{@code k(Fn)} の Fn）の形が変わると選ばれる候補が変わる。選ばれた候補の引数の型は
      * 呼び出し先の鍵として数える（{@link #toRef}）が、選ばれなかった候補の型はこのファイルのどこにも現れない
-     * （docs/cache-unification-qa.md の Q78）
+     * （docs/cache-unification-qa.md の Q78）。throws も同じで、複数のインターフェースから継承した抽象メソッド
+     * （{@code interface R extends I1, I2} の {@code close()}）を呼ぶと、投げうる例外は全候補の throws の共通部分になる
+     * （JLS 15.12.2.5）。JDT の選んだバインディングの throws（{@link #noteThrownTypes}）はその共通部分で、E1・E2 そのものは
+     * 載らない（共通部分が空なら何も載らない）。E2 の親を E1 にすると共通部分が変わり、例外を処理していないエラーになる。
+     * どの候補が選ばれるか・どれとどれの共通部分をとるかを JLS から選ばず、シグネチャの型を全部数える
      */
     void noteCandidates(ITypeBinding searched, String name) {
         if (searched == null) {
@@ -360,9 +389,7 @@ final class BindingNames {
             }
             for (IMethodBinding m : t.getDeclaredMethods()) {
                 if (name == null ? m.isConstructor() : (!m.isConstructor() && name.equals(m.getName()))) {
-                    for (ITypeBinding p : m.getParameterTypes()) {
-                        noteReachedType(p, 0, !jdk);
-                    }
+                    noteSignatureTypes(m, !jdk);
                 }
             }
         }
@@ -393,9 +420,9 @@ final class BindingNames {
                 if (m.isConstructor()) {
                     continue;
                 }
-                noteReachedType(m.getReturnType(), 0, false);
+                noteReachedType(m.getReturnType(), false);
                 for (ITypeBinding e : m.getExceptionTypes()) {
-                    noteReachedType(e, 0, false);
+                    noteReachedType(e, false);
                 }
             }
         }
@@ -407,52 +434,59 @@ final class BindingNames {
         return p.equals("java") || p.startsWith("java.");
     }
 
-    /** 上限を辿る深さの上限（{@code T extends Comparable<T>} のような自己参照でも止まるように） */
-    private static final int MAX_BOUND_DEPTH = 8;
-
     /**
      * @param jdkToo {@code java.*} の型も数えるか。false なら {@code java.*} でない型だけを数える（型引数と上限は辿る）
      */
-    private void noteReachedType(ITypeBinding t, int depth, boolean jdkToo) {
+    private void noteReachedType(ITypeBinding t, boolean jdkToo) {
         while (t != null && t.isArray()) {
             t = t.getComponentType();
         }
-        if (t == null || t.isPrimitive() || t.isNullType() || depth > MAX_BOUND_DEPTH) {
+        if (t == null || t.isPrimitive() || t.isNullType()) {
+            return;
+        }
+        // 辿った型は覚えておき 2 度目は辿らない（T extends Comparable<T> のような自己参照でも止まる）。深さでは打ち切らない。
+        // 打ち切ると、深い入れ子の奥の型が黙って抜けるうえ、先に深いところで出会った型の型引数を「辿り終えた」と
+        // 覚えてしまい、同じ型の浅い式の型引数まで抜けていた（結果が式の並びに依る）。java.* の型も数えて辿った型は、
+        // java.* でない型だけを数える辿り方の分も済んでいる
+        if (jdkToo ? !reachedAll.add(t) : (reachedAll.contains(t) || !reachedNonJdk.add(t))) {
             return;
         }
         if (t.isWildcardType()) {
-            noteReachedType(t.getBound(), depth + 1, jdkToo);
+            noteReachedType(t.getBound(), jdkToo);
             return;
         }
         if (t.isTypeVariable() || t.isCapture() || t.isIntersectionType()) {
             ITypeBinding[] bounds = t.getTypeBounds();
             if (bounds != null) {
                 for (ITypeBinding b : bounds) {
-                    noteReachedType(b, depth + 1, jdkToo);
+                    noteReachedType(b, jdkToo);
                 }
             }
             if (t.isCapture()) {
-                noteReachedType(t.getWildcard(), depth + 1, jdkToo);
+                noteReachedType(t.getWildcard(), jdkToo);
             }
             return;
         }
         if (jdkToo || !isJdk(t)) {
             typeNameOf(erasureOf(t));
         }
-        if (t.isParameterizedType() && (!jdkToo || argumentsSeen.add(t))) {
-            // 型引数も数える（List<Foo> の Foo）。a.foos() の型 List<Foo> の Foo は、ソースに名前が無いことがあり、
-            // Foo の親を変えると for (Bar b : a.foos()) や m(Collection<? extends Bar>) の解決が変わる（Q85）
-            for (ITypeBinding a : t.getTypeArguments()) {
-                noteReachedType(a, depth + 1, jdkToo);
-            }
+        // 型引数も数える（List<Foo> の Foo）。a.foos() の型 List<Foo> の Foo は、ソースに名前が無いことがあり、
+        // Foo の親を変えると for (Bar b : a.foos()) や m(Collection<? extends Bar>) の解決が変わる（Q85）
+        for (ITypeBinding a : t.getTypeArguments()) {
+            noteReachedType(a, jdkToo);
+        }
+        // 非 static の入れ子の型（内部クラス）は、囲む型の型引数も持つ。JDT は Outer<Foo>.Inner の Foo を Inner の
+        // 型引数ではなく囲む型（getDeclaringClass() が Outer<Foo>）に置く。2 段（Outer<Foo>.Mid.Inner）でも辿れるよう、
+        // 囲む型が型引数を持つかは見ずに辿る
+        if (!Modifier.isStatic(t.getModifiers())) {
+            noteReachedType(t.getDeclaringClass(), jdkToo);
         }
     }
 
-    /**
-     * {@code java.*} の型も数えて型引数を辿り終えた型（{@link #noteReachedType}）。同じ型の式は何度も現れるので、
-     * 2 度目からは辿らない
-     */
-    private final Set<ITypeBinding> argumentsSeen = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** {@code java.*} の型も数えて辿った型（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    private final Set<ITypeBinding> reachedAll = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** {@code java.*} でない型だけを数えて辿った型（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    private final Set<ITypeBinding> reachedNonJdk = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** メソッドの4つ組。宣言型か引数型の名前が取れなければ null */
     MethodRef toRef(IMethodBinding binding) {

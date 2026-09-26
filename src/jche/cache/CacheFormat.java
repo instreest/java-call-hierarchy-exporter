@@ -80,15 +80,20 @@ import java.util.Set;
  *                                                          (b) すべての式（名前・呼び出し・ラムダ・アノテーションを含む）の
  *                                                              型と、すべての型の節の型。型変数・捕捉された型変数・
  *                                                              ワイルドカード・交差型は上限の消去で数え、型引数
- *                                                              （{@code List<Foo>} の Foo）も数える。ただし JDT が
+ *                                                              （{@code List<Foo>} の Foo。非 static の入れ子の型は
+ *                                                              囲む型の型引数も。深さでは打ち切らない）も数える。
+ *                                                              暗黙の呼び出し（拡張 for 文・try-with-resources・
+ *                                                              レコードパターン）の結果の型も式の型とみなす。ただし JDT が
  *                                                              解決できなかった名前（バインディングが無いか回復したもの）は
  *                                                              数えない。アノテーションの型は {@code java.*} のものも数える
  *                                                              （jche.analysis.FactVisitor#preVisit2）。呼び出し・メソッド
  *                                                              参照・new・super(...)（書いていない暗黙の super() も。
- *                                                              jche.analysis.TypeContextTracker#recordImplicitSuper）
+ *                                                              jche.analysis.TypeContextTracker#recordImplicitSuper）・
+ *                                                              暗黙の呼び出し（jche.analysis.FactVisitor#recordImplicit）
  *                                                              では、呼び出しの候補（探す型とその親が
  *                                                              宣言する同じ名前のメソッド・コンストラクタ。探す型は型引数を
- *                                                              付けたまま辿る）の引数の型も数える。{@code java.*} の型の
+ *                                                              付けたまま辿る）のシグネチャ（引数・戻り値・throws。throws は
+ *                                                              {@code java.*} でない型だけ）の型も数える。{@code java.*} の型の
  *                                                              候補は、型引数を置き換えた {@code java.*} でない型だけ
  *                                                              （jche.analysis.BindingNames#noteCandidates）
  *                                                          (c) 呼び出したメソッド・コンストラクタ（暗黙の super() を
@@ -99,9 +104,12 @@ import java.util.Set;
  *                                                              親型が宣言するもの）の戻り値と throws の型のうち
  *                                                              {@code java.*} でないもの（継承したメソッドどうしの
  *                                                              突き合わせ。jche.analysis.BindingNames#noteInheritedSignatures）
- *                                                          (e) (a)〜(c)・(f) で数えた jar の型（ソースの無い、{@code java.*} で
- *                                                              ない型）の推移的な親型（{@code java.*} の型で止める。
- *                                                              jar の型には H 行が無いので、親の jar の変化をここで拾う）
+ *                                                          (e) (a)〜(c)・(f) で数えた {@code java.*} でない型（ソースの型も
+ *                                                              jar の型も）の頭に現れる型のうち {@code java.*} でないもの。
+ *                                                              推移的な親型（型引数ごと。{@code java.*} の親型は型引数だけ）・
+ *                                                              型引数の上限・関数型インターフェースの関数型（引数・戻り値・
+ *                                                              throws）。jar の型には H 行が無いので、親の jar の変化も
+ *                                                              ここで拾う（jche.analysis.BindingNames#noteHeaderTypes）
  *                                                          親型の変化は、差分更新が H 行から作る部分型の索引で拾う
  *                                                          （親が変わった型の部分型も変わった型にする）ので、親型は
  *                                                          (a)(b) で名前にしたもの以外を数えない。
