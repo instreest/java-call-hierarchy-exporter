@@ -1164,7 +1164,7 @@ final class FactVisitor extends ASTVisitor {
      * import 文の中の名前は参照箇所ではない（import に書いた名前は CallEdgeExtractor が依存として別に数える）。
      *
      * <p>ただし、メンバーを持ち込む import（{@code import static T.*}・{@code import static T.m}・入れ子の型の
-     * {@code import T.*}）が名指す型 T は、JDT のバインディングで I 行に数える（{@link BindingNames#noteDependencyUnlessJdk}。
+     * {@code import T.*}）が名指す型 T は、JDT のバインディングで I 行に数える（{@link BindingNames#noteDependency}。
      * jar の型なら、その推移的な親型も数える。Q86）。T から持ち込まれるメンバーには T の親型（別の jar の型のことも）から
      * 継承したものも入るが、import に書いた名前（{@code org.lib.K.*}）からは T の親型も、T の jar のパッケージも分からない。
      * T の jar（か親型の jar）がメンバーを足すと、単純名で呼んだメソッドの選び方や入れ子の型の名前の解決が変わるのに、
@@ -1180,7 +1180,7 @@ final class FactVisitor extends ASTVisitor {
             imported = qn.getQualifier().resolveBinding();
         }
         if (imported instanceof ITypeBinding t && !t.isRecovered()) {
-            names.noteDependencyUnlessJdk(t);
+            names.noteDependency(t);
         }
         return false;
     }

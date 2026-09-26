@@ -151,6 +151,13 @@ import jche.util.Warnings;
  * 次の実行はそれらを解析し直し、宣言する型を「変わった型」にして、依存するファイルも解析し直す。
  * 更新時刻は実行のあいだの見張りにだけ使い、キャッシュには書かない（下の「同一性」は変えない）。
  *
+ * <p>依存 jar・クラスフォルダも同じで、指紋（L 行）はパス0 で取り、JDT はそのあとバッチごとに読む。書き終えたら、
+ * どれもパス0 で見たときの見かけ（大きさ・更新時刻など）のままかを見て、変わっていれば<b>この実行で解析したファイル</b>の
+ * ブロックの内容ハッシュを空にする（{@link #invalidateClasspathChangedDuringRun}。どのファイルが書き換えた中身を
+ * 読んだかは分からないので、解析したものすべて。再利用したブロックは前の実行でパス0 の指紋と同じ中身から作ったもの
+ * なので残す）。兄弟モジュールの clean ビルドのように、解析のあいだに書き換えて同じ中身に戻すと、指紋は一致するのに
+ * 書き換えた中身の事実が残り続けていた。
+ *
  * <h2>何も変わっていないとき</h2>
  * 解析するファイルが 1 つも無く（変更・追加・削除・壊れたブロック・jar の変化が無い）、先頭の行
  * （ヘッダ・L 行・T 行）も同じなら、書き直しても旧キャッシュとまったく同じバイト列になる。
@@ -321,6 +328,8 @@ public final class CacheUpdater {
      * 読んだかもしれないのは、この実行で解析したファイルだけ）。文字列は {@code live} のものを共有する
      */
     private final Set<String> parsedThisRun = new HashSet<>();
+    /** パス0 で今回のクラスパスを走査した結果。書き終えたときに見かけを見比べる（{@link #invalidateClasspathChangedDuringRun}） */
+    private LibraryDiff libraries;
     /** 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）。run の最初に作る */
     private SameUnitFiles units = SameUnitFiles.NONE;
     /**
@@ -399,6 +408,7 @@ public final class CacheUpdater {
         progress.finish();
 
         invalidateChangedDuringRun(tmpCache, live, startTimes);
+        invalidateClasspathChangedDuringRun(tmpCache);
         Files.move(tmpCache, config.cacheFile, StandardCopyOption.REPLACE_EXISTING);
         return result;
     }
@@ -414,6 +424,7 @@ public final class CacheUpdater {
         List<LibraryFact> oldLibraries = (oldChannel != null) ? readOldLibraries() : null;
         LibraryDiff libraries = LibraryDiff.compute(layout.classpathArray(),
                 (oldLibraries != null) ? oldLibraries : List.of(), layout.projectRoot);
+        this.libraries = libraries;
         boolean oldCacheUsable = (oldLibraries != null) && environmentStillAccepted(extractor, libraries);
         if (oldCacheUsable && libraries.any()) {
             Log.info(Messages.format("analysis.libraryChanged", libraries));
@@ -1592,6 +1603,36 @@ public final class CacheUpdater {
         } catch (IOException | RuntimeException e) {
             return true;
         }
+    }
+
+    /**
+     * 解析のあいだに依存 jar・クラスフォルダが書き換えられていた（パス0 で走査したときと見かけが違う）か、JDK が
+     * このプロセスの中で前の中身の目次を見せ続けていた（{@link LibraryDiff#staleInProcess}）なら、この実行で解析した
+     * ファイルのブロックの内容ハッシュを空にする。次の実行はそれらを解析し直し、宣言する型を「変わった型」にして
+     * 依存するファイルも解析し直す（クラスの説明「実行中に書き換えられたソース」）。
+     *
+     * <p>どのファイルが書き換えた中身を読んだかは分からない（JDT はどのバッチでもクラスパスを読みうる）ので、解析した
+     * ものすべてを空にする。再利用したブロック（と引き継いだブロック）は、パス0 の指紋と同じ中身に対して前の実行が
+     * 作ったものなので残す。書き換えたまま戻さなかったときは、次の実行で指紋が変わるので、ふつうの jar の変化としても
+     * 解析し直す
+     */
+    private void invalidateClasspathChangedDuringRun(Path tmpCache) throws IOException {
+        if (libraries == null || parsedThisRun.isEmpty()) {
+            return;
+        }
+        List<Path> changed = libraries.changedSinceScan();
+        if (changed.isEmpty() && !libraries.staleInProcess) {
+            return;
+        }
+        if (!changed.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (Path p : changed.subList(0, Math.min(changed.size(), 5))) {
+                names.add(p.toString());
+            }
+            Log.info(Messages.format("analysis.cache.classpathChangedDuringRun", changed.size(),
+                    String.join(", ", names), parsedThisRun.size()));
+        }
+        blankHashes(tmpCache, parsedThisRun);
     }
 
     /**

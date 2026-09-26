@@ -441,6 +441,7 @@ final class MessagesJa {
             "config.layout.classpathLibMissing", ".classpath のlibが見つかりません: {0}",
             "config.layout.classpathUnreadable", ".classpath の解析に失敗しました: {0}",
             "config.layout.noJarInDir", "クラスパスのディレクトリにjarが見つかりません: {0}",
+            "config.layout.jarsInClassFolder", "{0} はクラスパスの 1 件（library.jars か .classpath の kind=\"lib\"）として指定されているので、クラスフォルダとして使い、直下の jar は使いません。それらの jar を使うなら、このフォルダを library.folders に指定してください",
             "config.layout.dirUnreadable", "クラスパスのディレクトリを読み取れません: {0} ({1})",
         };
     }
@@ -478,6 +479,7 @@ final class MessagesJa {
             "analysis.cache.depsIndexMismatch", "キャッシュの更新で内部エラー: 依存の索引（一時ファイル）{0} の行が、書いた {1} 行ではなく {2} 行です",
             "analysis.cache.changedWhileReading", "キャッシュの更新で内部エラー: 読んでいる途中で {0} が書き換えられました（キャッシュのフォルダの錠を取らないもの＝このツールの古い版などが、同じキャッシュのフォルダに書いているかもしれません）。もう一度実行してください",
             "analysis.cache.changedDuringRun", "[cache] 解析のあいだに {0} 件のソースが書き換えられました（{1} など）。この実行の結果は書き換えの前後の中身が混ざっているかもしれません。それらと、それらを使うファイルは次の実行で解析し直します",
+            "analysis.cache.classpathChangedDuringRun", "[cache] 解析のあいだに依存 jar・クラスフォルダが {0} 件書き換えられました（{1} など）。この実行の結果は書き換えの前後の中身が混ざっているかもしれません。この実行で解析した {2} 件と、それらを使うファイルは次の実行で解析し直します",
             "analysis.conditionsFileFailed", "解析に失敗しました: {0} ({1})",
             "analysis.batchFailed", "一括解析が {0} を読んでいるときに失敗したため、そのファイルは単独で、ほかの {1} 件はもう一度まとめて解析します ({2})",
             "analysis.batchTooDeep", "一括解析で {0} を読んでいるときに Java のパーサのスタックが溢れたため、そのファイルは単独で、ほかの {1} 件はもう一度まとめて解析します（入れ子の深すぎるファイルだけが失敗になります）",
@@ -485,6 +487,7 @@ final class MessagesJa {
             "analysis.batchTooDeepEarly", "{0} 件の一括解析で、どのファイルも解析し終わらないうちに Java のパーサのスタックが溢れたため、半分ずつに分けてまとめて解析し直します（入れ子の深すぎるファイルだけが失敗になります）",
             "analysis.libraryDiff", "追加={0} 変更={1} 削除={2} 並び替え={3}（影響するパッケージ {4} 件）",
             "analysis.libraryUnreadable", "依存jarを読み取れません（毎回「変わった」とみなします）: {0} ({1})",
+            "analysis.libraryStaleInProcess", "依存jar {0} が、このプロセスが前の中身を開いたまま、同じ更新時刻で上書きされました。Java のパーサが前の中身を読み続けるかもしれません。解析サーバー（または IDE）を起動し直してから解析し直してください（この実行で解析したファイルは次の実行で解析し直します）",
         };
     }
 
