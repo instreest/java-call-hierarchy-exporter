@@ -359,6 +359,65 @@ grep -qE "^NG${T}cancelled" <<<"$RESPONSE" && ok "CANCEL で中止される" \
 [ -z "$LEFT" ] && ok "グラフの構築中に中止しても一時ファイルが残らない（サーバーは動いたまま）" \
     || fail "グラフの構築中に中止したあとに一時ファイルが残っている: $LEFT"
 
+# 同じ更新時刻のまま上書きした jar を、同じサーバーの次の ANALYZE が読むこと。JDT は開いた jar を閉じず（GC まで開いたまま）、
+# 開いているあいだ JDK は同じ jar（inode と更新時刻が同じもの）の目次をプロセスの中で共有するので、依存 jar の指紋も
+# JDT も前の目次を読み、「何も変わっていない」として古い事実を使い続けていた（新しいプロセスなら今の中身を読む）。
+# jar は同じ inode のまま上書きし（cat で中身だけ書き換える）、更新時刻を元に戻す（unzip -o や cp -p で起きる）
+echo "== 同じ更新時刻のまま上書きした jar を、同じサーバーの次の ANALYZE が読む =="
+SJ=$WORK/stalejar
+mkdir -p "$SJ/src/p" "$SJ/v1/q" "$SJ/v2/q" "$SJ/lib"
+printf 'package p;\npublic class Main {\n    void go(q.L l) {\n        l.m("x");\n    }\n}\n' > "$SJ/src/p/Main.java"
+printf 'package q;\npublic class L { public void m(Object o) { } }\n' > "$SJ/v1/q/L.java"
+printf 'package q;\npublic class L { public void m(Object o) { } public void m(String s) { } }\n' > "$SJ/v2/q/L.java"
+( javac -nowarn -d "$SJ/c1" "$SJ/v1/q/L.java" && javac -nowarn -d "$SJ/c2" "$SJ/v2/q/L.java" \
+    && jar cf "$SJ/lib/lib.jar" -C "$SJ/c1" q && jar cf "$SJ/v2.jar" -C "$SJ/c2" q ) 2> /dev/null \
+    || fail "検査用の jar を作れませんでした"
+cat > "$SJ/c.properties" <<EOF
+project.root=$SJ
+source.folders=src
+library.jars=$SJ/lib/lib.jar
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=$SJ/out
+cache.folder=$SJ/cache
+EOF
+coproc SJSRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache4" 2>/dev/null; }
+SJ_OUT=${SJSRV[0]}
+SJ_IN=${SJSRV[1]}
+SJ_PROC=$SJSRV_PID
+sj_request() {   # $1=要求。OK / NG の行までの応答（#L・#P を除く）を SJ_RESPONSE に入れる
+    printf '%s\n' "$1" >&"$SJ_IN"
+    SJ_RESPONSE=""
+    local line
+    while IFS= read -r -t 300 line <&"$SJ_OUT"; do
+        case "$line" in
+            '#'*) ;;
+            OK*|NG*) SJ_RESPONSE+="$line"$'\n'; return ;;
+            *) SJ_RESPONSE+="$line"$'\n' ;;
+        esac
+    done
+}
+sj_request "ANALYZE${T}$SJ/c.properties"
+grep -qE "^OK${T}analyzed=1" <<<"$SJ_RESPONSE" || fail "1 回目の ANALYZE に失敗しました: ${SJ_RESPONSE:0:80}"
+sj_request "TREE${T}p.Main#go(q.L)${T}callees${T}depth=2"
+grep -q 'q.L#m(java.lang.Object)' <<<"$SJ_RESPONSE" \
+    && ok "1 回目は q.L#m(Object) に解決する" || fail "1 回目の解決先が期待と違います: $SJ_RESPONSE"
+touch -r "$SJ/lib/lib.jar" "$SJ/stamp"
+INODE_BEFORE=$(ls -i "$SJ/lib/lib.jar" | cut -d' ' -f1)
+cat "$SJ/v2.jar" > "$SJ/lib/lib.jar"
+touch -r "$SJ/stamp" "$SJ/lib/lib.jar"
+INODE_AFTER=$(ls -i "$SJ/lib/lib.jar" | cut -d' ' -f1)
+[ "$INODE_BEFORE" = "$INODE_AFTER" ] || fail "jar を同じ inode のまま上書きできていません（この検査の前提が崩れている）"
+sj_request "ANALYZE${T}$SJ/c.properties"
+grep -qE "^OK${T}analyzed=1" <<<"$SJ_RESPONSE" || fail "2 回目の ANALYZE に失敗しました: ${SJ_RESPONSE:0:80}"
+sj_request "TREE${T}p.Main#go(q.L)${T}callees${T}depth=2"
+grep -q 'q.L#m(java.lang.String)' <<<"$SJ_RESPONSE" \
+    && ok "2 回目の ANALYZE は上書きした jar の q.L#m(String) に解決する（新しいプロセスと同じ）" \
+    || fail "2 回目の ANALYZE が上書きする前の jar のまま: $(grep -o 'q.L#m([^)]*)' <<<"$SJ_RESPONSE")"
+printf 'SHUTDOWN\n' >&"$SJ_IN" 2>/dev/null
+cat <&"$SJ_OUT" > /dev/null 2>&1
+wait "$SJ_PROC" 2>/dev/null
+
 echo "== 知らない要求 =="
 OUT=$(session 'NOSUCHCOMMAND\tx\nSHUTDOWN\n')
 grep -qE "^NG${T}unknown-command" <<<"$OUT" && ok "知らない要求は NG を返して落ちない" || fail "知らない要求の扱いが違う"

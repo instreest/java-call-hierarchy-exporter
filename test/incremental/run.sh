@@ -2647,6 +2647,316 @@ edit_during_run_case "解析するファイル" Worker.java "$(printf 'package e
 # 解析するファイルが参照するファイル（再利用するブロック）を書き換える。JDT はソースパスから書き換え後の中身を読む
 edit_during_run_case "参照されるファイル" Helper.java "$(printf 'package e;\n\npublic class Helper {\n    static void oneRenamed() {\n    }\n}')"
 
+# --- クラスパスとソースの形（シンボリックリンク・クラスフォルダの .java・jmod・同じ名前のエントリ・1 件ずつ指定した
+#     クラスフォルダ・解析のあいだの依存 jar の書き換え）---------------------------------------------------------
+# JDT はソースパスとクラスパスのフォルダをリンクをたどって読み、クラスフォルダの .java もソースとして読み、jmod は
+# classes/ の下をパッケージとして読み、同じ名前の jar のエントリは目次の後ろのものを使う。一覧と指紋（L 行）がこれと
+# 食い違うと、変化を検知できずに差分更新だけが古い事実を再利用していた（docs/cache-unification-qa.md）。
+# 題材は $IW/shape/p に作り、設定の source.folders と足す行はケースごとに渡す
+SHAPE=$IW/shape
+shape_cfg() {   # $1=設定ファイル  $2=source.folders  $3=キャッシュのフォルダ  $4=足す行（改行区切り。省略可）
+    local d
+    d=$(cd "$(dirname "$1")" && pwd)
+    cat > "$1" <<EOF
+project.root=$d/p
+source.folders=$2
+library.build.tool=none
+source.encoding=UTF-8
+source.level=17
+exclude.packages=java.**,javax.**
+cache.enabled=true
+cache.folder=$3
+dataflow.enabled=true
+output.encoding=UTF-8
+output.folder=$d/out-$(basename "$1" .properties)
+${4:-}
+EOF
+}
+# 1 ケース: 題材を作る -> 解析 -> 書き換え -> 差分更新 -> キャッシュなしの全件解析 -> 一致と、書き換えが効いていることを見る。
+# 用意と書き換えの関数は $SHAPE の中で動く。最初の解析の結果は SHAPE_BASE_OUT・SHAPE_BASE_PARSED に残す
+shape_case() {   # $1=ラベル  $2=用意する関数  $3=書き換える関数  $4=source.folders  $5=足す設定の行
+    echo "== $1 =="
+    local d=$SHAPE inc_out
+    SHAPE_BASE_OUT="" SHAPE_BASE_PARSED=""
+    rm -rf $d && mkdir -p $d/p
+    ( cd $d && $2 ) > $d/setup.log 2>&1 || { echo "  NG   $1 題材を作れませんでした"; tail -5 $d/setup.log; fail=1; return; }
+    shape_cfg $d/c.properties "$4" "$PWD/$d/cache" "${5:-}"
+    shape_cfg $d/full.properties "$4" "$PWD/$d/fullcache" "${5:-}"
+    integrity_run $d/c.properties $d/c0.log
+    [ "$IRC" = 0 ] || { echo "  NG   $1 最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
+    SHAPE_BASE_OUT=$IOUT SHAPE_BASE_PARSED=$IPARSED
+    cp $d/cache/*/analysis-cache.tsv $d/base.tsv
+    ( cd $d && $3 ) >> $d/setup.log 2>&1 || { echo "  NG   $1 書き換えに失敗しました"; tail -5 $d/setup.log; fail=1; return; }
+    integrity_run $d/c.properties $d/c1.log
+    [ "$IRC" = 0 ] || { echo "  NG   $1 差分更新に失敗しました"; tail -5 $d/c1.log; fail=1; return; }
+    inc_out=$IOUT
+    integrity_run $d/full.properties $d/full.log
+    [ "$IRC" = 0 ] || { echo "  NG   $1 全件解析に失敗しました"; tail -5 $d/full.log; fail=1; return; }
+    same_all "$1" "$inc_out" "$IOUT" $d/cache $d/fullcache
+    if diff -q <(normalized_facts $d/base.tsv) <(normalized_facts "$(ls $d/fullcache/*/analysis-cache.tsv)") \
+            > /dev/null; then
+        echo "  NG   $1 書き換えが事実に効いていません（検査が素通りします）"; fail=1
+    else
+        echo "  OK   $1 書き換えが事実に効いている"
+    fi
+}
+# シンボリックリンクを作れる環境か（Windows の Git Bash は権限が無いと複製になる）
+can_symlink() {
+    local t=$IW/symlink-probe
+    rm -rf $t && mkdir -p $t/a && ln -s a $t/b 2> /dev/null && [ -L $t/b ]
+    local rc=$?
+    rm -rf $t
+    return $rc
+}
+shape_src() {   # $1=ソースフォルダ（p からの相対）  標準入力=クラス（1 行目の package から置き場所を決める）
+    local body pkg name
+    body=$(cat)
+    pkg=$(sed -n 's/^package \([a-z.]*\);.*/\1/p' <<< "$body" | head -1)
+    name=$(sed -n 's/.*public class \([A-Za-z0-9]*\).*/\1/p' <<< "$body" | head -1)
+    mkdir -p "p/$1/${pkg//.//}"
+    printf '%s\n' "$body" > "p/$1/${pkg//.//}/$name.java"
+}
+shape_javac() {   # $1=コンパイル先  $2...=ソース
+    local out=$1
+    shift
+    mkdir -p "$out" && "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$out" "$@"
+}
+# Maven のリアクター。b が a に依存し、b の bp.U が解析対象でない gen.G を使う（a/target/classes に置く）
+shape_reactor() {
+    local parent='<parent><groupId>g</groupId><artifactId>root</artifactId><version>1</version></parent>'
+    mkdir -p p/a/target p/b
+    printf '<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>root</artifactId><version>1</version><packaging>pom</packaging><modules><module>a</module><module>b</module></modules></project>\n' > p/pom.xml
+    printf '<project><modelVersion>4.0.0</modelVersion>%s<artifactId>a</artifactId></project>\n' "$parent" > p/a/pom.xml
+    printf '<project><modelVersion>4.0.0</modelVersion>%s<artifactId>b</artifactId><dependencies><dependency><groupId>g</groupId><artifactId>a</artifactId><version>1</version></dependency></dependencies></project>\n' "$parent" > p/b/pom.xml
+    printf 'package ap;\npublic class A { }\n' | shape_src a/src/main/java
+    printf 'package bp;\npublic class U {\n    public void go() {\n        new gen.G().m("x");\n    }\n}\n' | shape_src b/src/main/java
+}
+shape_gen() {   # $1=gen.G の本体  $2=コンパイル先
+    mkdir -p gsrc/gen && printf 'package gen;\npublic class G { %s }\n' "$1" > gsrc/gen/G.java && shape_javac "$2" gsrc/gen/G.java
+}
+REACTOR_FOLDERS=a/src/main/java,b/src/main/java
+REACTOR_CFG=library.build.tool=maven
+
+# ソースフォルダそのものがリンク（src -> real）。以前は 1 件も一覧に入らず、何も解析しなかった
+setup_src_link() {
+    mkdir -p p/real
+    printf 'package app;\npublic class U {\n    public void go(V v) {\n        v.m("x");\n    }\n}\n' | shape_src real
+    printf 'package app;\npublic class V {\n    public void m(Object o) {\n        w();\n    }\n    void w() {\n    }\n}\n' | shape_src real
+    ln -s real p/src
+}
+edit_src_link() {
+    printf 'package app;\npublic class V {\n    public void m(Object o) {\n        w();\n    }\n    public void m(String s) {\n    }\n    void w() {\n    }\n}\n' | shape_src real
+}
+# ソースフォルダの中のパッケージのフォルダがリンク（src/shared -> ../shared-src/shared）
+setup_pkg_link() {
+    printf 'package shared;\npublic class S {\n    public void m(Object o) {\n    }\n}\n' | shape_src shared-src
+    printf 'package app;\npublic class U {\n    public void go(shared.S s) {\n        s.m("x");\n    }\n}\n' | shape_src src
+    ln -s ../shared-src/shared p/src/shared
+}
+edit_pkg_link() {
+    printf 'package shared;\npublic class S {\n    public void n(Object o) {\n    }\n}\n' | shape_src shared-src
+}
+# 祖先を指すリンク（src/app/loop -> ..）。輪の先へは入らない（同じファイルを 2 度数えない・止まらない）
+setup_loop_link() {
+    setup_src_link_plain
+    ln -s .. p/src/app/loop
+}
+setup_src_link_plain() {
+    printf 'package app;\npublic class U {\n    public void go(V v) {\n        v.m("x");\n    }\n}\n' | shape_src src
+    printf 'package app;\npublic class V {\n    public void m(Object o) {\n    }\n}\n' | shape_src src
+}
+edit_loop_link() {
+    printf 'package app;\npublic class V {\n    public void m(Object o) {\n    }\n    public void m(String s) {\n    }\n}\n' | shape_src src
+}
+# クラスフォルダ（兄弟モジュールの target/classes）そのものがリンク
+setup_cls_link() {
+    shape_reactor
+    shape_gen 'public void m(Object o) { }' elsewhere/cls
+    ln -s "$PWD/elsewhere/cls" p/a/target/classes
+}
+edit_cls_link() {
+    shape_gen 'public void n(Object o) { }' elsewhere/cls
+}
+# クラスフォルダの中のパッケージのフォルダがリンク
+setup_cls_pkg_link() {
+    shape_reactor
+    mkdir -p p/a/target/classes
+    shape_gen 'public void m(Object o) { }' elsewhere/cls
+    ln -s "$PWD/elsewhere/cls/gen" p/a/target/classes/gen
+}
+edit_cls_pkg_link() {
+    shape_gen 'public void m(Object o) { } public void m(String s) { }' elsewhere/cls
+}
+# クラスフォルダの .java だけのクラス（JDT はソースとして読む）
+setup_cls_source() {
+    shape_reactor
+    mkdir -p p/a/target/classes/gen
+    printf 'package gen;\npublic class G { public void m(Object o) { } }\n' > p/a/target/classes/gen/G.java
+}
+edit_cls_source() {
+    printf 'package gen;\npublic class G { public void n(Object o) { } }\n' > p/a/target/classes/gen/G.java
+}
+# 同じ名前の .class と .java があり、JDT は更新時刻の新しい方を読む。中身を変えずに .java を新しくする
+setup_cls_newer() {
+    shape_reactor
+    shape_gen 'public void n(Object o) { }' p/a/target/classes
+    printf 'package gen;\npublic class G { public void m(Object o) { } }\n' > p/a/target/classes/gen/G.java
+    touch -t 202001010000 p/a/target/classes/gen/G.java
+}
+edit_cls_newer() {
+    touch p/a/target/classes/gen/G.java
+}
+# jmod（library.jars）。クラスは classes/ の下にある
+shape_jmod() {   # $1=l.D の本体
+    rm -rf msrc mcls p/lib/l.jmod && mkdir -p msrc/l p/lib
+    printf 'module lmod { exports l; }\n' > msrc/module-info.java
+    printf 'package l;\npublic class D { %s }\n' "$1" > msrc/l/D.java
+    shape_javac mcls msrc/module-info.java msrc/l/D.java && "$JMOD_BIN" create --class-path mcls p/lib/l.jmod
+}
+setup_jmod() {
+    shape_jmod 'public void m(Object o) { }'
+    printf 'package app;\npublic class U {\n    public void go(l.D d) {\n        d.m("x");\n    }\n}\n' | shape_src src
+}
+edit_jmod() {
+    shape_jmod 'public void n(Object o) { }'
+}
+# 同じ名前のエントリが 2 つある jar。JDK と JDT は目次の後ろのものを使う。書き換えは 2 つの順を入れ替えるだけ
+shape_dup_jar() {   # $1=先に置くクラスのフォルダ  $2=後に置くクラスのフォルダ
+    python3 - "$1/l/A.class" "$2/l/A.class" p/lib/l.jar <<'PY'
+import sys, warnings, zipfile
+warnings.simplefilter('ignore')
+first, second, jar = sys.argv[1:4]
+with zipfile.ZipFile(jar, 'w') as z:
+    z.write(first, 'l/A.class')
+    z.write(second, 'l/A.class')
+PY
+}
+setup_dup_entry() {
+    mkdir -p jm/l jn/l p/lib
+    printf 'package l;\npublic class A { public void m(Object o) { } }\n' > jm/l/A.java
+    printf 'package l;\npublic class A { public void n(Object o) { } }\n' > jn/l/A.java
+    shape_javac cm jm/l/A.java && shape_javac cn jn/l/A.java && shape_dup_jar cm cn
+    printf 'package app;\npublic class U {\n    public void go(l.A a) {\n        a.m("x");\n    }\n}\n' | shape_src src
+}
+edit_dup_entry() {
+    shape_dup_jar cn cm
+}
+# library.jars に書いたクラスフォルダ・.classpath の kind="lib" のクラスフォルダ。以前は jar を集めたフォルダとして
+# 展開し、中に jar が無いので何も渡していなかった（呼び出しがどれも型解決に失敗した）
+setup_cls_entry() {
+    mkdir -p jb/l
+    printf 'package l;\npublic class A { public void m(String s) { } }\n' > jb/l/A.java
+    shape_javac p/cls jb/l/A.java
+    printf 'package app;\npublic class U {\n    public void go() {\n        new l.A().m("x");\n    }\n}\n' | shape_src src
+}
+setup_cls_dotclasspath() {
+    setup_cls_entry
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<classpath>\n\t<classpathentry kind="src" path="src"/>\n\t<classpathentry kind="lib" path="cls"/>\n</classpath>\n' > p/.classpath
+}
+edit_cls_entry() {
+    printf 'package l;\npublic class A { public void m(Object o) { } }\n' > jb/l/A.java
+    shape_javac p/cls jb/l/A.java
+}
+cls_entry_resolved() {   # $1=ラベル。最初の解析で、クラスフォルダの型の呼び出しが解決できていて、警告が無いこと
+    if grep -q -F 'A.m,RESOLVED' "$SHAPE_BASE_OUT/call-hierarchy.csv" 2> /dev/null \
+            && [ ! -f "$SHAPE_BASE_OUT/warnings.txt" ]; then
+        echo "  OK   $1 クラスフォルダの型を解決できる（warnings.txt も無い）"
+    else
+        echo "  NG   $1 クラスフォルダの型を解決できていない（または warnings.txt がある）"
+        head -3 "$SHAPE_BASE_OUT/call-hierarchy.csv" 2> /dev/null; head -12 "$SHAPE_BASE_OUT/warnings.txt" 2> /dev/null
+        fail=1
+    fi
+}
+
+if can_symlink; then
+    shape_case "ソースフォルダそのものがシンボリックリンク" setup_src_link edit_src_link src
+    if [ "${SHAPE_BASE_PARSED:-0}" = 2 ]; then
+        echo "  OK   リンクの先のソースを一覧に入れて解析した（新規解析=2）"
+    else
+        echo "  NG   リンクの先のソースを解析していません（新規解析=${SHAPE_BASE_PARSED:-?}）"; fail=1
+    fi
+    shape_case "ソースフォルダの中のパッケージのフォルダがシンボリックリンク" setup_pkg_link edit_pkg_link src
+    shape_case "ソースフォルダの中に祖先を指すシンボリックリンク" setup_loop_link edit_loop_link src
+    if [ "${SHAPE_BASE_PARSED:-0}" = 2 ]; then
+        echo "  OK   輪になったリンクの先を 2 度数えない（新規解析=2）"
+    else
+        echo "  NG   輪になったリンクの扱いが期待と違います（新規解析=${SHAPE_BASE_PARSED:-?}）"; fail=1
+    fi
+    shape_case "クラスフォルダそのものがシンボリックリンク" setup_cls_link edit_cls_link "$REACTOR_FOLDERS" "$REACTOR_CFG"
+    shape_case "クラスフォルダの中のパッケージのフォルダがシンボリックリンク" setup_cls_pkg_link edit_cls_pkg_link \
+        "$REACTOR_FOLDERS" "$REACTOR_CFG"
+else
+    echo "== シンボリックリンクのケース（シンボリックリンクを作れない環境なので見ない） =="
+fi
+shape_case "クラスフォルダの .java だけのクラスを書き換える" setup_cls_source edit_cls_source \
+    "$REACTOR_FOLDERS" "$REACTOR_CFG"
+shape_case "クラスフォルダの同じ名前の .class と .java の新しさが入れ替わる" setup_cls_newer edit_cls_newer \
+    "$REACTOR_FOLDERS" "$REACTOR_CFG"
+JMOD_BIN="$(dirname "$(command -v "$JAVAC_BIN")")/jmod"
+if [ -x "$JMOD_BIN" ]; then
+    shape_case "library.jars の jmod の中身を変える" setup_jmod edit_jmod src "library.jars=$PWD/$SHAPE/p/lib/l.jmod"
+else
+    echo "== library.jars の jmod（jmod コマンドが無いので見ない） =="
+fi
+shape_case "jar の同じ名前の 2 つのエントリの順を入れ替える" setup_dup_entry edit_dup_entry src "library.folders=lib"
+shape_case "library.jars のクラスフォルダ" setup_cls_entry edit_cls_entry src "library.jars=$PWD/$SHAPE/p/cls"
+cls_entry_resolved "library.jars のクラスフォルダ"
+shape_case ".classpath の kind=\"lib\" のクラスフォルダ" setup_cls_dotclasspath edit_cls_entry ""
+cls_entry_resolved ".classpath の kind=\"lib\" のクラスフォルダ"
+
+# 解析のあいだに依存 jar・クラスフォルダを書き換え、終わったあとで同じ中身に戻す（兄弟モジュールの clean ビルドなど）。
+# 指紋（L 行）はパス0 で取るので戻した中身と一致し、書き換えた中身で解析したブロックを再利用し続けていた。
+# 書き換えは jche.analysis.ClasspathSwapDuringRunCheck が最初のバッチを JDT に渡す直前に行う（最初の実行・キャッシュ無し）
+classpath_swap_case() {   # $1=ラベル  $2=用意する関数  $3=書き換えるファイル（$SHAPE からの相対）  $4=書き換えた後の中身（- なら消す）
+                          # $5=source.folders  $6=足す設定の行
+    echo "== 解析のあいだに書き換えて戻した依存 jar・クラスフォルダ（$1） =="
+    local d=$SHAPE inc_out rc
+    rm -rf $d && mkdir -p $d/p
+    ( cd $d && $2 ) > $d/setup.log 2>&1 || { echo "  NG   題材を作れませんでした"; tail -5 $d/setup.log; fail=1; return; }
+    shape_cfg $d/c.properties "$5" "$PWD/$d/cache" "${6:-}"
+    shape_cfg $d/full.properties "$5" "$PWD/$d/fullcache" "${6:-}"
+    cp "$d/$3" $d/original.bin
+    local replacement=-
+    [ "$4" = - ] || replacement=$PWD/$d/$4
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$TOOLS_CP" jche.analysis.ClasspathSwapDuringRunCheck $d/c.properties \
+        "$PWD/$d/$3" "$replacement" > $d/c0.log 2>&1
+    rc=$?
+    cp $d/original.bin "$d/$3"
+    if [ "$rc" != 0 ]; then
+        echo "  NG   書き換えを挟んだ解析が失敗しました（終了コード $rc）"; grep -a -E 'NG|ERROR' $d/c0.log | head -5; fail=1; return
+    fi
+    if grep -q -F "changed while the analysis was running" $d/c0.log; then
+        echo "  OK   $1 解析のあいだに書き換えられたことをログに出す"
+    else
+        echo "  NG   $1 解析のあいだに書き換えられたことがログに出ていません"; fail=1
+    fi
+    integrity_run $d/c.properties $d/c1.log
+    inc_out=$IOUT
+    if [ "$IRC" = 0 ] && [ "${IPARSED:-0}" -ge 1 ]; then
+        echo "  OK   $1 次の実行で解析し直した（新規解析=$IPARSED）"
+    else
+        echo "  NG   $1 次の実行で解析し直していません（新規解析=${IPARSED:-?}）"; fail=1
+    fi
+    integrity_run $d/full.properties $d/full.log
+    same_all "解析のあいだに書き換えて戻した依存 jar・クラスフォルダ（$1）" "$inc_out" "$IOUT" $d/cache $d/fullcache
+}
+setup_swap_jar() {
+    mkdir -p ja/la jb/la p/lib
+    printf 'package la;\npublic class L { public void m(Object o) { } public void m(String s) { } }\n' > ja/la/L.java
+    printf 'package la;\npublic class Other { }\n' > jb/la/Other.java
+    shape_javac ca ja/la/L.java && shape_javac cb jb/la/Other.java \
+        && ( cd ca && "$JAR_BIN" cf ../p/lib/l.jar la ) && ( cd cb && "$JAR_BIN" cf ../temp.jar la )
+    printf 'package app;\npublic class C1 {\n    void go() {\n        new la.L().m("x");\n    }\n}\n' | shape_src src
+    printf 'package app;\npublic class C2 {\n    void go() {\n        new la.L().m("y");\n    }\n}\n' | shape_src src
+}
+setup_swap_cls() {
+    shape_reactor
+    shape_gen 'public void m(Object o) { } public void m(String s) { }' p/a/target/classes
+}
+classpath_swap_case "jar を差し替える" setup_swap_jar p/lib/l.jar temp.jar src "library.folders=lib"
+classpath_swap_case "クラスフォルダのクラスを消す" setup_swap_cls p/a/target/classes/gen/G.class - \
+    "$REACTOR_FOLDERS" "$REACTOR_CFG"
+
 # 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
 # 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q61）。
 # ソースフォルダの並びを入れ替えると、どちらのファイルがエラーになるかも変わる（Q58）

@@ -441,6 +441,7 @@ final class MessagesEn {
             "config.layout.classpathLibMissing", "The lib in .classpath was not found: {0}",
             "config.layout.classpathUnreadable", "Parsing .classpath failed: {0}",
             "config.layout.noJarInDir", "No jar was found in the classpath directory: {0}",
+            "config.layout.jarsInClassFolder", "{0} is given as a single classpath entry (library.jars or kind=\"lib\" in .classpath), so it is used as a class folder and the jars directly inside it are not used. To use those jars, put the folder in library.folders instead",
             "config.layout.dirUnreadable", "Cannot read the classpath directory: {0} ({1})",
         };
     }
@@ -478,11 +479,13 @@ final class MessagesEn {
             "analysis.cache.depsIndexMismatch", "Internal error while updating the cache: the temporary dependency index {0} holds {2} line(s) instead of the {1} written",
             "analysis.cache.changedWhileReading", "Internal error while updating the cache: {0} changed while it was being read (something that does not take the cache folder lock, such as an older version of this tool, may be writing to the same cache folder). Run again",
             "analysis.cache.changedDuringRun", "[cache] {0} source file(s) changed while the analysis was running (for example {1}). This run may mix their old and new contents; they and the files that use them are analyzed again next time",
+            "analysis.cache.classpathChangedDuringRun", "[cache] {0} dependency jar(s) or class folder(s) changed while the analysis was running (for example {1}). This run may mix their old and new contents; the {2} file(s) analyzed in this run, and the files that use them, are analyzed again next time",
             "analysis.conditionsFileFailed", "Analysis failed: {0} ({1})",
             "analysis.batchFailed", "The batch analysis failed, so the remaining {0} file(s) are analyzed one at a time ({1})",
             "analysis.batchTooDeep", "The Java parser ran out of stack in a batch, so the remaining {0} file(s) are analyzed one at a time (only the file that is too deep fails)",
             "analysis.libraryDiff", "added={0} changed={1} removed={2} reordered={3} ({4} affected package(s))",
             "analysis.libraryUnreadable", "Cannot read a dependency jar (it counts as changed every time): {0} ({1})",
+            "analysis.libraryStaleInProcess", "The dependency jar {0} was rewritten in place (same modification time) while this process still had its old contents open, so the Java parser may keep reading the old contents. Restart the analysis server (or the IDE) and analyze again; the files analyzed in this run are analyzed again next time",
         };
     }
 
