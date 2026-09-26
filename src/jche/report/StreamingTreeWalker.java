@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 
+import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.cache.RecvKind;
 import jche.config.Config;
@@ -13,12 +14,12 @@ import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
 import jche.graph.CallbackContracts;
 import jche.graph.CallResolver;
-import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.IntArray;
 import jche.graph.GuardEvaluator;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
+import jche.graph.ValueStore;
 import jche.util.Log;
 import jche.util.Messages;
 import jche.util.Warnings;
@@ -33,7 +34,11 @@ import jche.util.Warnings;
  * 安全策:
  * <ul>
  *   <li>max.depth … 深さ制限（0以下で無制限だが、循環検出があるため止まる）</li>
- *   <li>max.rows … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）</li>
+ *   <li>max.rows … 出力行数の上限（組合せ爆発への最後の砦。0以下で無制限）。
+ *       行を 1 行も書かずに続けて通ったノード（コンストラクタ呼び出し・除外パッケージの読み飛ばし）の数にも
+ *       同じ上限を掛ける（{@code silentRun}）。そうしないと、行を出さない部分木（フィールド初期化子の
+ *       {@code new} だけでつながるコンストラクタの連鎖など）が経路の数だけ辿られ、行数の上限に当たらないまま
+ *       終わらなくなる。行を書くたびに数え直すので、行を書き進めている探索は行数の上限までしか止まらない</li>
  *   <li>循環検出 … 「現在の経路（rootからそのノードまでの祖先）」に同じメソッドが
  *       既にあれば、その辺を1行だけ出力してそこから先へは降りない。
  *       判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
@@ -122,7 +127,7 @@ public final class StreamingTreeWalker {
     /** 現在の経路（深さぶんだけ確保） */
     private final PathFrame[] path;
     /**
-     * 除外パッケージの読み飛ばし（{@link #skipThrough}）で path[] から外れているが、
+     * 除外パッケージの読み飛ばし（{@code skipThrough}）で path[] から外れているが、
      * 呼び出しの連鎖としては祖先にあたるメソッド。差し替えられた親と、読み飛ばし中の
      * 除外メソッドが入る。{@link #onCurrentPath} はこれも経路上とみなす。
      * これが無いと、除外メソッド A → B → A の相互再帰を検出できず、深さも行数も
@@ -148,6 +153,19 @@ public final class StreamingTreeWalker {
 
     private int rootId;
     private long totalRows;
+    /**
+     * 最後に行を書いてから、行にせずに続けて通ったノードの数（コンストラクタ呼び出し・除外パッケージの読み飛ばし）。
+     * 探索は経路ごとで訪問済みの集合を持たないので、行を出さない部分木も経路の数だけ辿る。
+     * 行数だけを数えると、そういう部分木（{@code new} だけでつながるコンストラクタの連鎖など）は
+     * max.rows に当たらず、深さの上限（既定 50）まで指数的に辿り続ける。これが max.rows に達したら、
+     * 行数の上限と同じく打ち切って知らせる。
+     *
+     * <p>通した数の合計ではなく「行を書かずに続けて」の数にするのは、既定の exclude.packages（java.**）に
+     * 当たる JDK の呼び出しも読み飛ばし（{@code skipThrough}）で、普通のコードでも行より多く通るため。
+     * 合計を max.rows で打ち切ると、行数の上限に届かない探索まで途中で止まり、以前は出ていた行が落ちる。
+     * 行を書くたびに 0 に戻せば、行を書き進めている探索の結果は変わらない
+     */
+    private long silentRun;
     private boolean limitWarned;
     private boolean candidateLimitWarned;
 
@@ -169,7 +187,7 @@ public final class StreamingTreeWalker {
         this.methods = graph.methods();
         this.resolver = resolver;
         this.dataflow = resolver.dataflow();
-        this.guards = new GuardEvaluator(config.branchPruningEnabled);
+        this.guards = new GuardEvaluator(config.branchPruningEnabled, graph);
         this.config = config;
         this.writer = writer;
         this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
@@ -324,7 +342,7 @@ public final class StreamingTreeWalker {
 
             // この呼び出しを囲む条件が、この経路では成立しないと言い切れるか。
             // 言い切れるなら、呼び出し自体は理由付きで1行出すが、その先へは降りない
-            String unreachable = guards.unreachableReason(graph.guard(e), path[depth].context());
+            String unreachable = guards.unreachableReason(graph.guardOf(e), path[depth].context());
             if (unreachable != null) {
                 prunedCalls++;
             }
@@ -348,8 +366,8 @@ public final class StreamingTreeWalker {
                     return;
                 }
                 int target = targets[ti];
-                String[] targetParams = bindArguments(e, depth, target);
-                String[] targetCtorArgs = bindConstructorArguments(e, depth, target);
+                long[] targetParams = bindArguments(e, depth, target, declaredCallee, res);
+                long[] targetCtorArgs = bindConstructorArguments(e, depth, target);
 
                 if (unreachable != null) {
                     // 打ち切った呼び出し自体は行になるが、その先の階層は消える。
@@ -394,6 +412,8 @@ public final class StreamingTreeWalker {
                 // call-hierarchy 列に <init> を含んだ形で出力される
                 if (!methods.isConstructor(target)) {
                     emit(depth + 1);
+                } else {
+                    silentRun++;   // 行にならないノードも上限に数える（isRowLimitReached）
                 }
 
                 // 循環（この経路上で既に呼んでいるメソッドへ戻る辺）はここで打ち切る
@@ -474,11 +494,11 @@ public final class StreamingTreeWalker {
      * ラムダの合成メソッド {@code target} へ降りるときに渡す「捕捉した値」。
      * 今の段がそのラムダを生成したメソッドでなければ null（捕捉した引数は解決しない）
      */
-    private String[] capturedTypesFor(int depth, int target) {
+    private long[] capturedTypesFor(int depth, int target) {
         if (!methods.isLambdaBody(target) || !graph.createsLambda(path[depth].methodId, target)) {
             return null;
         }
-        return path[depth].paramTypes;
+        return path[depth].params;
     }
 
     /**
@@ -489,12 +509,60 @@ public final class StreamingTreeWalker {
      *
      * 何も分からない場合や、呼び出し先が引数を使い回さない場合は null を返す。
      * null を返せば以降の深さでは何もしないので、解析コストが必要な箇所だけに絞れる。
+     *
+     * 実引数の位置と呼び出し先の引数の位置は、いつも揃うとは限らない（{@link #argumentShift}）。
+     * 揃え方が分からなければ環境を渡さない（引数の値で条件を判定しない＝落とさない側）。
      */
-    private String[] bindArguments(int edgeIndex, int depth, int target) {
+    private long[] bindArguments(int edgeIndex, int depth, int target, int declaredCallee, Resolution res) {
         if (!dataflow.enabled() || !dataflow.usesContext(target)) {
             return null;
         }
-        return resolveArgs(graph.argOrigins(edgeIndex), depth);
+        int shift = argumentShift(declaredCallee, target, res);
+        if (shift < 0) {
+            return null;
+        }
+        long[] bound = dataflow.bindArgs(graph.argsNode(edgeIndex), path[depth].context());
+        if (shift == 0 || bound == null) {
+            return bound;
+        }
+        return (bound.length <= shift) ? null : Arrays.copyOfRange(bound, shift, bound.length);
+    }
+
+    /**
+     * 呼び出し箇所の実引数の位置から、呼び出し先の引数の位置を引く数。揃え方が分からなければ -1。
+     *
+     * <ul>
+     *   <li>宣言どおりの呼び出し先か、その上書き（引数の数が同じ）… 0</li>
+     *   <li>{@code Method.invoke(obj, a, b)} から呼ばれるメソッド … 1（第 1 実引数はレシーバ）</li>
+     *   <li>型名で書いたメソッド参照（{@code Mode::chk}）の参照先 … 1。関数型インターフェースのメソッドの
+     *       第 1 実引数がレシーバになり、2 番目からが参照先の引数になる（JLS 15.13.3）。
+     *       {@code c.accept(Mode.B, Mode.A)} の {@code Mode.A} が {@code chk(Mode other)} の {@code other}</li>
+     *   <li>それ以外で引数の数が違う（可変長引数が絡むなど）… -1</li>
+     * </ul>
+     * 参照先の最後の引数が配列なら、可変長引数にまとめられているかもしれず、数からは揃え方を決められない
+     * ので -1 にする（docs/value-safety-qa.md の Q21）
+     */
+    private int argumentShift(int declaredCallee, int target, Resolution res) {
+        if (target == declaredCallee || declaredCallee < 0) {
+            return 0;
+        }
+        if (res.isReflection()) {
+            return (dataflow.reflectiveKindOf(declaredCallee) == DataflowResolver.REFLECT_INVOKE) ? 1 : 0;
+        }
+        if (methods.isLambdaBody(target)) {
+            return 0;   // ラムダの本体の引数は、関数型インターフェースのメソッドの引数と同じ並び
+        }
+        if (methods.lastParamIsArray(target)) {
+            return -1;
+        }
+        int declared = methods.paramCount(declaredCallee);
+        int actual = methods.paramCount(target);
+        if (declared == actual) {
+            return 0;
+        }
+        boolean instance = !methods.isConstructor(target)
+                && !ModifierTokens.has(methods.mods(target), "static");
+        return (instance && declared == actual + 1) ? 1 : -1;
     }
 
     /**
@@ -505,7 +573,7 @@ public final class StreamingTreeWalker {
      * レシーバが無い（this への呼び出し）場合は、同じオブジェクトの
      * 別のメソッドを呼んでいるので、今の環境をそのまま引き継ぐ。
      */
-    private String[] bindConstructorArguments(int edgeIndex, int depth, int target) {
+    private long[] bindConstructorArguments(int edgeIndex, int depth, int target) {
         if (!dataflow.enabled()) {
             return null;
         }
@@ -513,56 +581,24 @@ public final class StreamingTreeWalker {
         if (!graph.hasInjectedFields(targetType)) {
             return null;   // 注入されたフィールドを持たない型には渡す意味が無い
         }
-        String recvOrigin = graph.recvOrigin(edgeIndex);
-        if (recvOrigin == null) {
-            // レシーバなし = this。同じ型のメソッドを呼んでいる間だけ引き継ぐ
-            return targetType.equals(path[depth].ctorOwner) ? path[depth].ctorArgs : null;
+        int recv = graph.recvNode(edgeIndex);
+        if (recv == ValueStore.NONE) {
+            // レシーバの値が無いのは、this への呼び出し（m() / this.m()）だけではない。拡張 for の変数・
+            // パターンの変数・配列の要素・条件式など、値を追えなかったレシーバも無しになる。
+            // それを this とみなすと、別のインスタンスに今のオブジェクトのコンストラクタ実引数を当てて、
+            // 誤った具象型に確定する（docs/value-safety-qa.md の Q19）。レシーバが this と分かる呼び出しで、
+            // 同じ型のメソッドを呼んでいる間だけ引き継ぐ
+            return (graph.recvKindOf(edgeIndex) == RecvKind.THIS && targetType.equals(path[depth].ctorOwner))
+                    ? path[depth].ctorArgs : null;
         }
-        if (Origin.kindOf(recvOrigin) != Origin.NEW || !targetType.equals(Origin.valueOf(recvOrigin))) {
+        ValueStore values = graph.values();
+        if (values.kind(recv) != Origin.NEW || !targetType.equals(values.value(recv))) {
             // new 以外（引数・フィールド・戻り値）から来たオブジェクトは、
             // どのコンストラクタ実引数で作られたかがこの経路では分からない
             return null;
         }
-        return resolveArgs(Origin.argsOf(recvOrigin), depth);
-    }
-
-    /** "位置=出所;..." を、この経路で分かっている具象型の配列に変換する */
-    private String[] resolveArgs(String spec, int depth) {
-        if (spec == null || spec.isEmpty()) {
-            return null;
-        }
-        DataflowContext ctx = path[depth].context();
-        String[] bound = null;
-        // 入れ子（{} の中）の ';' で切らないよう、必ず Origin 側の分け方を通す
-        for (String entry : Origin.entriesOf(spec)) {
-            int eq = entry.indexOf('=');
-            if (eq <= 0) {
-                continue;
-            }
-            int index;
-            try {
-                index = Integer.parseInt(entry.substring(0, eq));
-            } catch (NumberFormatException ignore) {
-                continue;
-            }
-            String origin = Origin.unnest(entry.substring(eq + 1));
-            String fqn = dataflow.concreteTypeOf(origin, ctx);
-            if (fqn == null) {
-                // 具象型は決まらないが、リテラルやクラスリテラルなら「値」として渡す
-                // （リフレクションのメソッド名・クラスが引数で渡ってくる形のため）
-                fqn = dataflow.valueOriginOf(origin, ctx);
-            }
-            if (fqn == null) {
-                continue;
-            }
-            if (bound == null) {
-                bound = new String[index + 1];
-            } else if (index >= bound.length) {
-                bound = Arrays.copyOf(bound, index + 1);
-            }
-            bound[index] = fqn;
-        }
-        return bound;
+        // new のノードは実引数を持つので、呼び出し箇所の実引数と同じ読み方で枠にする
+        return dataflow.bindArgs(recv, path[depth].context());
     }
 
     /**
@@ -592,7 +628,7 @@ public final class StreamingTreeWalker {
      * 除外されたメソッドの中の呼び出しに、その呼び出し元の引数を当ててしまう。
      */
     private void skipThrough(int parentDepth, int skippedId,
-                             String[] skippedParams, String[] skippedCtorArgs) throws IOException {
+                             long[] skippedParams, long[] skippedCtorArgs) throws IOException {
         // 読み飛ばしは path[] の深さを増やさずに再帰する。相異なる除外メソッドの連鎖が
         // 長くても Java のスタックを使い切らないよう、経路の深さと合わせて上限を掛ける
         if (parentDepth + skipNesting >= DEPTH_HARD_CAP) {
@@ -602,6 +638,7 @@ public final class StreamingTreeWalker {
             }
             return;
         }
+        silentRun++;   // 読み飛ばした除外メソッドは行にならないが、上限には数える（isRowLimitReached）
         PathFrame saved = path[parentDepth];
         PathFrame replacement = new PathFrame();
         replacement.set(skippedId, saved.callLine, saved.note, saved.resolvedBy,
@@ -776,13 +813,16 @@ public final class StreamingTreeWalker {
         return hiddenAncestors.contains(methodId);
     }
 
+    /** 出力行数か、行を書かずに続けて通ったノードの数（{@link #silentRun}）が max.rows に達したか */
     private boolean isRowLimitReached() {
-        if (config.maxRows <= 0 || totalRows < config.maxRows) {
+        if (config.maxRows <= 0 || (totalRows < config.maxRows && silentRun < config.maxRows)) {
             return false;
         }
         if (!limitWarned) {
             limitWarned = true;
-            Warnings.warn(Warnings.Topic.INCOMPLETE, Messages.format("report.walker.maxRows", config.maxRows));
+            Warnings.warn(Warnings.Topic.INCOMPLETE, (totalRows >= config.maxRows)
+                    ? Messages.format("report.walker.maxRows", config.maxRows)
+                    : Messages.format("report.walker.maxSilentNodes", config.maxRows));
         }
         return true;
     }
@@ -795,5 +835,6 @@ public final class StreamingTreeWalker {
             inHierarchy[id] = true;
         }
         totalRows++;
+        silentRun = 0;   // 行を書いた。行にならないノードは、ここから数え直す
     }
 }

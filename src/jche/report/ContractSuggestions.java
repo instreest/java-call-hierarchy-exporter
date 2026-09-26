@@ -4,7 +4,6 @@ package jche.report;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -123,7 +122,7 @@ public final class ContractSuggestions {
                                     int edgeIndex, MethodTable methods, int declaredCallee) {
         if (dataflow.enabled()) {
             List<String> factories =
-                    TypeContracts.factoryLeftSidesOf(graph.recvOrigin(edgeIndex), dataflow, ctx);
+                    TypeContracts.factoryLeftSidesOf(graph.recvNode(edgeIndex), dataflow, ctx);
             if (!factories.isEmpty()) {
                 return new Left(factories.get(0), true);
             }
@@ -159,8 +158,9 @@ public final class ContractSuggestions {
         // 件数の多い順。同数なら左辺の綴り順にして、環境によらない並びにする
         rows.sort(Comparator.<Map.Entry<String, Entry>>comparingInt(e -> -e.getValue().sites)
                 .thenComparing(Map.Entry::getKey));
-        Files.createDirectories(file.toAbsolutePath().getParent());
-        try (BufferedWriter out = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+        // キーの値はキャッシュから戻したソースの文字列で、対になっていないサロゲートを含みうる。
+        // Files.newBufferedWriter はそこで例外にするので、CSV と同じ置換する書き手を使う
+        try (BufferedWriter out = Csv.writer(file, StandardCharsets.UTF_8, false)) {
             writeHeader(out, rows.size());
             for (Map.Entry<String, Entry> row : rows) {
                 Entry e = row.getValue();

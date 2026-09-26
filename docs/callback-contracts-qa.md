@@ -246,6 +246,8 @@ M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER
 組み直したもので、入れ子の上限が無い（cache-split-qa.md の Q21）。種別が `M`（戻り値）なら
 `Origin.valueOf` でファクトリのメソッドキー、`Origin.argsOf` で実引数が取れる。
 **フェーズAの証拠採取（`CallSiteHintCollector`）は要らない。**
+（後に stage B で、読み手は文字列ではなく値の表 `CallGraph.recvNode` / `jche.graph.ValueStore` を読むようになった。
+取れる情報は同じ。`docs/cache-unification-qa.md` の「読み手が値の表を読む」）
 
 これは設計上いちばん大きな分かれ目だった。フェーズAが要るなら、契約表をフェーズ1より前に読み、
 キャッシュの指紋にも入れる必要がある（表を 1 行足すたびに全件解析し直しになる）。要らないので、

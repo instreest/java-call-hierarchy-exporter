@@ -15,7 +15,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 |---|---|
 | `src/jche/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
 | `src/jche/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
-| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担）、`graph`（呼び出しグラフ・具象クラス解決。`OriginRenderer` が dataflow キャッシュの値グラフを出所の文字列へ組み直す）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
+| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担）、`graph`（呼び出しグラフ・具象クラス解決。キャッシュの値グラフは `ValueStoreBuilder` が値の表 `ValueStore`（＋条件の表 `GuardTable`・文字列の置き場 `StringPool`）に取り込み、読み手はそれを番号で引く。経路の値は型付きの枠 `Slot`）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util` |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
@@ -48,17 +48,18 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 
 | コマンド | 内容 |
 |---|---|
-| `bash test/regression/run.sh` | 回帰テスト。`test/demo` 等を解析して `expected*/` の CSV と比較。キャッシュ再利用・jar 増減・Maven / Gradle・プラグイン・複数設定の各ケース |
-| `bash test/dataflow/run.sh` | 解決の決定性の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること |
+| `bash test/regression/run.sh` | 回帰テスト。`test/demo` 等を解析して `expected*/` の CSV と比較。キャッシュ再利用・値を読まない指定（`novalues`。`dataflow.enabled=false`）・jar 増減・Maven / Gradle・プラグイン・キャッシュのブロックの整合（`cacheblocks`。1 ブロックの中身・F 行の件数（未解決数）の書き換えでは、全件ではなく、そのファイルとその型を使うファイルだけを解析し直す（3 回目は 1 件、8 回目は 2 件）。最終行のブロック数の書き換え・最終行の削除・先頭 8 KB より後ろの文字化け・先頭の行（T 行）の書き換えでは丸ごと作り直し、解析は失敗させない。どの実行のあとも検査値とブロック数が合う。型解決できなかった件数が再利用・一部の解析し直しでも変わらない）・複数設定の各ケース |
+| `bash test/dataflow/run.sh` | 解決の決定性と値の表の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること（ResolveOrderCheck）。値の表を組む側を手で書き換えた行でたたく（StoreUnitCheck）。回帰テストの題材を解析して、組み上がった値の表が読み手の前提にしている決まり（子 < 親・項目の並び・葉と文字列の一意・頭は葉・型名が `:` を含まない など）を守ること（ValueStoreCheck） |
 | `bash test/conditions/run.sh` | `conditions.target` を書いたときに追加で出る `call-conditions.csv` の検査。判定可・判定不可の出し分けと、通常の出力が変わらないこと |
-| `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること。文字コードの変更・形式の版が古い・壊れたキャッシュでは再利用せず捨てること。中断した実行から引き継ぐこと。期待値ファイルは持たない |
+| `bash test/incremental/run.sh` | キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの全件解析の結果（CSV とキャッシュ）と一致すること（I 行に載らない依存: 無かった型を後から足す・祖父母の型の変更（部分型のパスが親より前に並ぶ場合も）・ラムダの目標の型の親・同じパッケージの型による import の隠蔽・宣言にだけ書いた型を消す・式の型にだけ現れる型のメンバーや親の変更・祖父母の型のメソッドを可変長引数にする・拡張 for 文の式の型を Iterable にする・switch のセレクタの列挙型に定数を足す・例外の型を検査例外にする・引数やローカル変数のアノテーションの型を消す・見えなかった型を public にする・同じパッケージの型を jar に足す・sealed の permits に部分型を足す・親に親の親のメンバーを隠す私的メンバーを足す・型解決に失敗している利用者の参照した型の親に私的メンバーを足す・`java.*` の親型の上のメンバー（`Map.Entry`・`AbstractMap.SimpleEntry`）を隠す私的な入れ子の型を足す／消す・親のメソッドの本体だけを変える・名前の当たらない私的メンバーを親に足す、も含む。親が変われば部分型をすべて変わった型にするので、これらは件数ではなく全件解析との一致だけを見る。無名クラスを足す・無かった型を足すときに余計に解析し直さないことは件数まで見る。選ばれなかったオーバーロードの引数の型を消す（new・継承・単純名・static import・super）・ラムダを渡す呼び出しの候補の関数型インターフェースの形を変える。依存 jar が無いとき、式に書いた完全修飾名の事実がバッチの組み方に依らないこと・完全修飾名の途中のパッケージに型を足す／消すと解析し直すこと。同じパッケージに足した型が中身の変わっていないファイルの宣言の型（引数・フィールド・戻り値）を隠す・jar の型の親や親の親（別の jar）にメソッドを足す・型引数にだけ現れる型の親を変える・jar のパッケージと同じ名前の型をソースに足す、も全件解析と同じこと。`docs/cache-unification-qa.md` の Q42〜Q47・Q50〜Q55・Q65・Q77〜Q80・Q83〜Q87）。別のファイルから private でないフィールドへ書く側のファイルを足す・書き換える・消しても全件解析と同じで、DI の結論が書き手に合わせて変わること（`docs/spring-di-qa.md` の Q15）。文字コードの変更・形式の版や JDT の版が違う・途中で切れた・読めないキャッシュでは再利用せず捨てること。1 ブロックの中身だけが壊れていれば（検査値が合わない）全件ではなくそのファイル（と依存するファイル）だけを解析し直すこと。中断した実行から引き継ぐこと（検査値の合わないブロックは引き継がない）。以前の形式が残した `dataflow-cache.tsv` を消すこと。キャッシュの行の並びと記号・値グラフの番号の検査。同じキャッシュのフォルダを使う実行が錠で 1 つずつになること（待つ・待ちきれずに失敗する・2 つを同時に始めても両方が全件解析と同じ）と、書き終えていないキャッシュからグラフを組まないこと（`tools/`）。解析のあいだに書き換えて戻したソースを次の実行で解析し直すこと。同じクラスが 2 つのソースフォルダにあっても差分更新が全件解析と同じで、重複した型のファイルの解決できなかった名前（I 行の 3 列目）に置き場所のフォルダ名が入らないこと、アノテーションの付いた `package-info.java` が 2 つのソースフォルダにあっても同じこと、ソースフォルダの並びを入れ替えたら再利用しないこと、並びを変えずにフォルダを足す・外すなら再利用して全件解析と同じになること（入れ子のフォルダを足したら再利用しない）、同じ名前のファイルの組の片方を消す・そのフォルダを外すと残ったほうを解析し直すこと、ソースフォルダを足して JDT がクラスパスを受け付けなくなったら旧キャッシュを使わないこと、名前に `\` を含むフォルダを入れ子のフォルダと取り違えず、旧キャッシュも中断した実行の一時ファイルも使わないこと（Linux でだけ見る）、受け手の中でスタックが溢れたファイルも失敗として数えること（`docs/cache-unification-qa.md` の Q56〜Q58・Q61・Q64・Q66・Q67・Q69・Q71・Q73・Q75）。期待値ファイルは持たない |
+| `bash test/cacheversion/run.sh` | キャッシュの形式の版の上げ忘れの検査。決まった題材（`test/demo`・`test/demo` を依存 jar ありで・`test/incremental`・`test/jls/project`）を全件解析したキャッシュの事実（ブロックと L 行）の指紋を `test/cacheversion/facts.txt` と比べ、版・題材・環境が同じなのに事実が変わっていれば落とす。版を上げたら・題材を変えたら `--update` で記録を更新する |
 | `bash test/cli/run.sh` | 起動コマンドと対話モードの検査。メニューへの答えをパイプで流し込む |
 | `bash test/ctorbody/run.sh` | コンストラクタ本体の読み取り（JLS 8.8.7）の検査。柔軟なコンストラクタ本体（JEP 513。`this(...)` の前に文を書ける）を「委譲していない」と取り違えないこと。インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。Q25）。この構文は Java 25 でしか書けないので `test/demo` には置かず、使い捨てのプロジェクトをその場で作る（`docs/jls-conformance-qa.md` の Q17） |
 | `bash test/jls/run.sh` | Java 言語仕様（JLS SE 26）への適合と javac との整合の検査。`test/jls/project/src/` の各ソースが JLS の 1 つの節に対応し（パッケージ名が節番号。`jls.s14_14_02` = §14.14.2）、節ごとの期待値（`test/jls/expect.tsv`。1 行 1 テストで節番号と説明を持つ）を出力とキャッシュに当てる。あわせて同じソースを JDK 26 の javac（`--release 26`）でコンパイルし、型・宣言・呼び出し・ラムダ・ブリッジをキャッシュの事実と突き合わせる（`test/jls/JlsCheck.java`。JDK 26 は jbang が取得）。新しい構文の読み取りを直したら節を足す（`docs/jls-conformance-test-qa.md`） |
-| `bash test/warnings/run.sh` | 確認してほしいことの案内（出力フォルダの `warnings.txt`）の検査。正常な状態では作らないこと、依存 jar の不足・ローカルリポジトリの欠け・設定の指定先の欠け・コンパイルエラー・実行の失敗で作り該当の項目が載ること、`warnings.txt` の有無が `run.log` の `[WARN]` / `[ERROR]` の有無と一致すること。使い捨てのプロジェクトをその場で作る |
-| `bash test/cachevalue/run.sh` | dataflow キャッシュの値の符号化（`escape` / `unescape`）が往復し、行を壊さないこと |
+| `bash test/pruning/run.sh` | 値の読み違いで呼び出しを黙って落とさないことの検査。値を変えうるキャスト・浮動小数・16 進のリテラル・複合代入と `++`・ループの中で写した変数・型の揃わない `equals`・引数やフィールドへの `new`（`LOCAL_NEW`。`new` した型とそれ以外の型の両方が出ること）・匿名／ローカルクラスのフィールド初期化子・返す具象型の決まらない `@Bean` メソッド（ファクトリ・引数・フィールド・条件演算子。値を読まない指定でも）・フィールドへの書き込み（内部クラス・static な入れ子のクラス・`++` と複合代入・初期化ブロック・初期化子のラムダ・条件の中や `return` の後ろのコンストラクタの書き込み・書き換えた引数）・別のインスタンスのフィールド（`other.dao`。コンストラクタ実引数から来た値や、捕捉した引数を使うラムダ）や値を追えないレシーバ（拡張 for・パターンの変数・配列の要素）・拡張 for の要素（コンストラクタの実引数・`addAll`・渡した先で詰める・別名・再代入・引数のコレクション・`listIterator().add`・`list::add`）・型名で書いたメソッド参照の実引数の位置・リフレクションの `invoke`（親から継承した多重定義・private・static）・DI の段 5（Bean でないクラスの引数とフィールド・利用者が渡した値・ソースが引数でない値を入れるフィールド（別の型（子クラス・内部クラス・ほかのパッケージの型）が private でないフィールドに書くものも）。値を読まない指定でも）・`super.f` への書き込み・フレームワークが書くフィールド（`@Autowired(required = false)` などの注釈の付いたフィールドの初期化子・`@ConfigurationProperties` の型のフィールド）で、`[UNREACHABLE]` や絞り込みが誤って付かないこと（`docs/value-safety-qa.md` の Q17〜Q23・Q25〜Q28、`docs/spring-di-qa.md` の Q15・Q16）。対になっていないサロゲートの文字列と、絵文字で切れる条件式を解析できること。仕組みごと（真偽値・int・文字列 / ボックス型 / 列挙型の `equals`・enum の `switch`・書き換えない別名・`new` だけのローカル変数・コンストラクタで受け取るフィールド・`this.m()` からの引き継ぎ・new した空のリストに `add` した要素・static メソッドの参照・Bean のコンストラクタで受け取るフィールドと `@Autowired` のメソッドの引数・別のインスタンスのフィールドでもどのインスタンスでも同じ値（初期化子の `new`・コンストラクタで入れるラムダ）・フレームワークが書かないフィールドの初期化子（`java.lang` の注釈だけのフィールド・ステレオタイプの Bean の注釈の無いフィールド）・よその型が別のフィールドにだけ書く Bean のフィールド・`Objects.requireNonNull` で包んだコンストラクタ注入・値を読まない指定で型の当たらないフィールドにだけ `new` を入れる Bean）の対照は打ち切られる・絞られること。ケースは `case_` を 1 回呼べば足せる（同じクラスの別の行は `expect_`）。使い捨てのプロジェクトをその場で作る（`docs/value-safety-qa.md`） |
+| `bash test/warnings/run.sh` | 確認してほしいことの案内（出力フォルダの `warnings.txt`）の検査。正常な状態では作らないこと、依存 jar の不足・ローカルリポジトリの欠け・設定の指定先の欠け・コンパイルエラー・実行の失敗で作り該当の項目が載ること、コンパイルエラー・構文エラーのファイルの一覧（上限 20 件）がパスの順で、差分更新でも全件解析と同じこと、`warnings.txt` の有無が `run.log` の `[WARN]` / `[ERROR]` の有無と一致すること。網羅していない switch 式を構文エラーに数えないこと、入れ子の深すぎる式で JDT のスタックが溢れてもそのファイルだけの失敗にすること、名前の違う 2 つのファイルで同じ型を宣言していれば警告すること（2 つの宣言に同じメソッドが無くても。直し方の文言が同じフォルダの 2 つのファイルにも通じること。3 つのファイルでも挙げる組が差分更新と全件解析で同じこと）。使い捨てのプロジェクトをその場で作る |
+| `bash test/cachevalue/run.sh` | キャッシュの列の符号化（`joinRow` の `escape` / `CacheReader` の `unescape`。全列に同じ 1 つの規則）が往復し、行を壊さず、UTF-8 に書けること（対になっていないサロゲートも `\uXXXX` にする）。ヘッダ行のソースフォルダの一覧（`folders=`。`CacheFormat#foldersOf`）も往復すること |
 | `bash test/contracts/run.sh` | 同梱の契約表（`JdkCallbacks` / `BundledFrameworkEntries`）の検査。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが実在すること（実行中の JDK と照合） |
-| `bash test/cachetail/run.sh` | キャッシュの最終行（`Z` 行）を末尾から読む部分の境界（改行の有無・CRLF・読む量の境目・多バイト文字） |
 | `bash test/pom/run.sh` | `//DEPS` 行と `pom.xml` の依存が一致すること |
 | `bash test/action/run.sh` | GitHub Actions の複合アクション（`.github/action/run.sh`）が、`run.log` の依存 jar の警告を表示言語（英語・日本語）に関わらず warning アノテーションとジョブサマリに出すこと。jbang はスタブに差し替えて解析は動かさない |
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |
@@ -85,6 +86,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - テストをスキップ・無効化して通すことはしない
 - `test/profile/` は合否の検査ではなく**性能を測るための道具**（CI では動かさない）。
   測り方と結果の読み方は `docs/ast-analysis-performance-qa.md` の「計測のしかた」
+  （解析結果が持ち続けるヒープは `RetainedHeap.java`。`docs/cache-unification-qa.md` の Q17）
 
 ## コードの決まり
 
@@ -107,9 +109,13 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   （セルが引用符で囲まれ、行末の grep が効かなくなる）。`docs/nls-qa.md` の Q6。
   同じ出力フォルダでも `contracts-suggested.txt` は**人が読んで選ぶ案内文**なので表示言語に合わせる
   （`docs/nls-qa.md` の Q16）
-- キャッシュに焼き込まれる文字列（`Guard` の `text` のように**書き手が作る**もの）を変えるときは、
-  文言の変更でもキャッシュの版を上げる。上げないと、再利用したファイルだけ古い言語の注記が出て
-  同じ CSV に 2 つの言語が混ざる（`docs/nls-qa.md` の Q7）
+- **キャッシュの形式の版（`CacheFormat.VERSION`）は迷ったら上げる。上げ忘れは `test/cacheversion/run.sh` が捕まえる。**
+  書き手（`src/jche/analysis`・`src/jche/cache`）の変更でキャッシュに入る事実が変わりうるなら、列や意味の変更で
+  なくても上げる（収集範囲・値の正規化・`Guard` の `text` のように**書き手が作る文字列**の文言も含む）。
+  上げ忘れると、再利用したファイルだけが古い事実のまま残り、壊れ方が「エラー」ではなく「静かに違う結果」になる
+  （`docs/cache-split-qa.md` の Q22、`docs/nls-qa.md` の Q7）。上げると利用者は 1 回だけ全件解析になるが、
+  それは安全側の費用として受け入れる。上げたら `bash test/cacheversion/run.sh --update` で記録（`facts.txt`）を更新する。
+  読み手だけの変更（解決の方針・CSV の列・フィルタ・注記の文言）では事実が変わらないので上げなくてよい
 - Eclipse プラグイン（`eclipse-plugin/src-ui`）は **Java 11** の言語機能で書く（`--release 11`）。
   下限は Eclipse 4.17（2020-09）／Java 11 で、`test/plugin-api/run.sh` がその版の jar だけで
   コンパイルして検査する（`docs/eclipse-plugin-java-floor-qa.md`）
@@ -124,7 +130,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   `"%キー%"` と書き、`package.nls.json` / `package.nls.ja.json` に足す。
   検査は `test/vscode/run.sh`（`test/messages.test.ts`）（`docs/nls-qa.md` の Q15）
 - JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
-  （`test/pom/run.sh` が検出する）
+  （`test/pom/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
+  入っていて、変われば古いキャッシュは自動で捨てられるので、形式の版は上げなくてよい
+  （`bash test/cacheversion/run.sh --update` で記録だけ合わせる）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
   `**` は区切り文字をまたぐが 0 階層は含まないため、`**/*.java` だけでは同じフォルダ直下のファイルに当たらない
   （`cannot find symbol` になる）。直下ぶんの `*.java` を必ず併記する（`docs/entrypoint-package-qa.md`）
@@ -134,9 +142,24 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   `resolved-by` は注記と同じ判定から作り、`level` は「`call-hierarchy` 列のノード数」と一致させる
   （`docs/call-hierarchy-columns-qa.md`）
 - キャッシュの形式や鍵を変えるときは、古いキャッシュを安全に捨てる経路を用意する（`docs/cache-dependency-jars-qa.md`）
-- キャッシュは 2 ファイル（`analysis-cache.tsv` = 呼び出し階層用 / `dataflow-cache.tsv` = サイドカー用）で、
-  **常に対で書き、対でしか再利用しない**。行を足すときは「呼び出し階層の出力に使うか」でどちらに置くかを決める
-  （`docs/cache-split-qa.md`）。片方だけを書く・片方だけを再利用する作りにしない
+- **キャッシュは 1 系統（1 ファイル `analysis-cache.tsv`）で、ファイルを分けない。** ソースファイル 1 つにつき
+  1 ブロックで、ブロックの中に構造（型・宣言・呼び出し）と値（値グラフ・戻り値・代入・定数）の両方を持つ
+  （`jche.cache.CacheFormat`）。以前は「呼び出し階層の出力に使うか」で 2 ファイルに分けていたが、値も具象クラスの
+  解決と打ち切りを通じて出力に効くので基準として成り立たず、対の整合（世代の印・ブロックの突き合わせ・表示名での
+  結びつけ）の仕組みだけが増えた（`docs/cache-unification-qa.md`、経緯は `docs/cache-split-qa.md`）。
+  値を読まない指定（`dataflow.enabled=false`）は「値の行・列を読まない」で表し、ファイルは分けない。
+  ブロックの中の行の並び・記号表（S 行）の番号の振り方・F 行の検査値（crc）は読み手が依存しているので、
+  行を足すときは `CacheFormat` の並びに合わせて書き手と読み手の両方を直す。
+  メソッドを指す列は S 行の番号で、目で追うときは `jche.cache.CacheDump` で 4 列に戻した形を見る。
+  値（戻り値・代入・条件・呼び出し箇所の値）はどれも値グラフ（N 行）のノードを番号で指し、読み手は値の表
+  （`jche.graph.ValueStore`）を番号で引く。出所の文字列（`Origin` の文法）に組み直して読む形に戻さない
+  （値が `| ; { }` を含むと読み違える。`docs/cache-unification-qa.md` の Q11）
+- 同じキャッシュのフォルダを使う実行は、フォルダの錠（`jche.cache.CacheLock`。`analysis-cache.tsv.lock`）で 1 つずつにしてある。
+  錠は `jche.Exporter` がフェーズ1 からフェーズ2 のグラフの構築まで持つ。キャッシュを読む・書く処理を足すときは、
+  この錠の内側に置く（外で読むと、書きかけのキャッシュを読みうる。`docs/cache-unification-qa.md` の Q56）
+- キャッシュを読み直さないための索引や中間データは、ヒープではなくキャッシュのフォルダの一時ファイルに置き
+  （利用者の優先順位はヒープが先）、`jche.cache.TempFiles` で作る（一意の名前・終了フック・次の実行の掃除。
+  GitHub Actions はフォルダを丸ごと保存するので残さない。`docs/cache-unification-qa.md` の Q32・Q36）
 - **解析器が何を読み取るかは、外から差し替えさせない。** 利用者が Java を書ける差し込み口は
   `jche.extension.TypeCandidateProvider`（読み取った材料の解釈）だけで、AST 走査中に割り込む口は置かない
   （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは

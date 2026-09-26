@@ -32,7 +32,8 @@ import jche.util.UserHome;
  *
  * 相対パスの起点は項目ごとに異なる。
  * <ul>
- *   <li>project.root / output.folder / cache.folder … この設定ファイルが置かれているディレクトリ</li>
+ *   <li>project.root / library.jars / library.repositories / output.folder / cache.folder / contracts.files /
+ *       plugin.folders … この設定ファイルが置かれているディレクトリ（下の 3 項目以外はすべてこちら）</li>
  *   <li>source.folders / library.folders / external.library.folders … project.root</li>
  * </ul>
  * 設定ファイルと関連ファイルをひとまとめに配置でき、どこから実行しても同じ結果になる。
@@ -52,14 +53,17 @@ public final class Config {
 
     /** CHA候補を呼び出し階層で展開する際の候補数の上限 */
     public static final int CHA_MAX_CANDIDATES = 20;
-    /** キャッシュフォルダ内に置く、呼び出し階層のためのキャッシュの名前（構造とバインディングの事実） */
+    /**
+     * キャッシュフォルダ内に置く、解析結果のキャッシュの名前（構造とバインディングと値の事実。
+     * ソースファイルごとのブロックに全部入る。{@code jche.cache.CacheFormat}）
+     */
     public static final String CACHE_FILE_NAME = "analysis-cache.tsv";
     /**
-     * キャッシュフォルダ内に置く、データフローのためのキャッシュの名前。
-     * 呼び出し階層の出力には要らない事実（サイドカーの解析が使うもの）をこちらに分ける。
-     * 2 つは常に同じ実行で一緒に書かれ、片方だけを使うことはない（{@code docs/cache-split-qa.md}）
+     * 以前の形式（キャッシュが 2 ファイルだった版）が値の事実を置いていたファイルの名前。
+     * 今は読みも書きもしない。残っていれば {@code jche.analysis.CacheUpdater} が一時ファイルごと消す
+     * （{@code docs/cache-unification-qa.md}）
      */
-    public static final String DATAFLOW_CACHE_FILE_NAME = "dataflow-cache.tsv";
+    public static final String LEGACY_DATAFLOW_CACHE_FILE_NAME = "dataflow-cache.tsv";
     /** cache.folder が空欄のときの置き場所（このツールのプロジェクトフォルダからの相対） */
     public static final String DEFAULT_CACHE_DIR_NAME = ".cache";
     /** 出力フォルダ内のファイル名（固定） */
@@ -87,12 +91,16 @@ public final class Config {
     public final LocalDateTime startedAt;
     /** ソースフォルダ（project.root からの相対）。空欄なら .classpath の kind="src" を使う */
     public final List<Path> sourceFolders;
-    /** 依存jarを集めたフォルダ（project.root からの相対）。.classpath の kind="lib" があれば合算する */
+    /**
+     * 依存jarを集めたフォルダ（project.root からの相対）。直下の *.jar に展開する。
+     * .classpath の kind="lib"（jar かクラスフォルダの 1 件ずつ。展開しない）があれば合算する
+     */
     public final List<Path> libraryFolders;
     /**
-     * 依存 jar を1件ずつ指定するもの（library.jars）。フォルダ単位で書けない構成のための逃げ道で、
-     * Eclipse プラグインが IJavaProject の解決済みクラスパスを渡すのに使う。
-     * 置き場所はどこでもよい（~/.m2 の下など、プロジェクトの外が普通）
+     * 依存 jar（またはクラスフォルダ）を1件ずつ指定するもの（library.jars）。フォルダ単位で書けない構成のための
+     * 逃げ道で、Eclipse プラグインが IJavaProject の解決済みクラスパス（依存プロジェクトの出力フォルダを含む）を
+     * 渡すのに使う。フォルダはクラスフォルダとしてそのまま JDT に渡し、中の jar には展開しない
+     * （{@link ProjectLayout#classpathArray}）。置き場所はどこでもよい（~/.m2 の下など、プロジェクトの外が普通）
      */
     public final List<Path> libraryJars;
     /**
@@ -158,8 +166,9 @@ public final class Config {
      * 条件分岐の静的解析で「その経路では呼ばれない」呼び出しの先を辿らないか。
      *
      * 打ち切った呼び出し自体は理由付きで1行出力する（呼び出しが書かれている事実は消さない）。
-     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶため、
-     * dataflow.enabled=false のときはコンパイル時定数の条件だけが判定できる。
+     * 経路ごとの引数の値は dataflow.enabled の仕組みで運ぶ。dataflow.enabled=false のときは
+     * 条件の表（G 行）と呼び出し箇所の条件の列を読まないので、コンパイル時定数の条件も含めて
+     * どの条件も判定せず、この設定は効かない（打ち切りは起きない）。
      */
     public final boolean branchPruningEnabled;
     /**
@@ -174,10 +183,8 @@ public final class Config {
     public final String conditionsTarget;
     /** この解析対象プロジェクトのキャッシュフォルダ（プロジェクト別のサイドカー） */
     public final Path cacheDir;
-    /** 呼び出し階層のためのキャッシュ（{@link #CACHE_FILE_NAME}） */
+    /** 解析結果のキャッシュ（{@link #CACHE_FILE_NAME}） */
     public final Path cacheFile;
-    /** データフローのためのキャッシュ（{@link #DATAFLOW_CACHE_FILE_NAME}）。cacheFile と対で作られる */
-    public final Path dataflowCacheFile;
 
     /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
     public final List<Path> externalLibraryFolders;
@@ -259,7 +266,8 @@ public final class Config {
 
         // 表示言語は、以降の検証が出すエラーの言語も決めるので真っ先に反映する。
         // 環境変数 JCHE_LANG / システムプロパティ jche.lang があればそちらが優先される
-        // （Messages.applyConfigured は、その場合は何もしない）
+        // （Messages.applyConfigured は、その場合は何もしない）。空欄なら OS の言語に戻す。
+        // 同じ JVM で前に読んだ設定（引数の前の設定・対話モードの前の実行・サーバーの前の ANALYZE）の言語を引き継がない
         this.messageLanguage = p.getProperty("message.language", "").trim();
         Messages.applyConfigured(this.messageLanguage);
 
@@ -323,7 +331,6 @@ public final class Config {
         this.conditionsTarget = p.getProperty("conditions.target", "").trim();
         this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
-        this.dataflowCacheFile = this.cacheDir.resolve(DATAFLOW_CACHE_FILE_NAME);
 
         // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
         // ソースや依存jarと同じく project.root からの相対で書けるようにする

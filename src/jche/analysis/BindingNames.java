@@ -3,11 +3,13 @@ package jche.analysis;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
@@ -58,8 +60,75 @@ final class BindingNames {
         return (erased != null) ? erased : t;
     }
 
+    /**
+     * JDT が単純名から作った無い型（{@link #qualifiedNameOf}）の名前に付ける頭。{@code ?.Template} のように書く。
+     * {@code ?} は Java の名前に使えない文字なので、本物の型の名前（特に無名パッケージの型 {@code Template}）とは重ならない
+     */
+    static final String MISSING_PREFIX = "?.";
+
+    /** 型のパッケージ。単純名から作られた無い型（{@link #qualifiedNameOf}）はパッケージが分からないので空 */
     static String packageOf(ITypeBinding t) {
+        if (missingSimpleNameOf(t) != null) {
+            return "";
+        }
         return (t.getPackage() != null) ? t.getPackage().getName() : "";
+    }
+
+    /**
+     * キャッシュに書く型の完全修飾名（{@code getQualifiedName}）。配列は要素型に {@code []} を付ける。
+     *
+     * <p>ただし、JDT が<b>単純名から作った無い型</b>（依存 jar が無いときの {@code Template x}。鍵が {@code LTemplate;} の
+     * ようにパッケージを持たない）は、鍵の名前に {@link #MISSING_PREFIX} を付けて {@code ?.Template} にする。JDT はこの型を、
+     * 同じバッチ（1 回の {@code createASTs}）で最初にその名前の解決に失敗したファイルのパッケージに作って登録し、あとの
+     * ファイルがオンデマンド import（{@code import app.other.*;}）で同じ名前を引くと、その型が当たる。そのため
+     * {@code getQualifiedName} は、同じソースでも同じバッチに先に何が並んだかで {@code app.other.Template} にも
+     * {@code app.web.Template} にもなり、メソッドの鍵（{@code B.go(app.other.Template)}）がバッチの組み方で変わっていた。
+     * 鍵は {@code LTemplate;} のまま変わらないので宣言の指紋（{@link TypeContextTracker}）も変わらず、呼び出す側のキャッシュが
+     * 古い鍵のまま残って呼び出しが切れた（docs/cache-unification-qa.md の「単純名から作られた無い型の名前」）。名前を鍵から
+     * 作れば、名前はバッチに依らず、鍵の変化と一緒にしか変わらない。
+     *
+     * <p>頭を付けずに単純名 {@code Template} にすると、無名パッケージにある本物の型 {@code Template} と同じ名前になる。
+     * 名前付きのパッケージのコードは無名パッケージの型を参照できない（JLS 7.5）ので別の型だが、読み手は名前で型を
+     * 引くので、{@code class B extends Template}（無い型）を本物の {@code Template} の部分型とみなし、本物の
+     * {@code Template.run()} の呼び出しの候補に {@code B.run()} を足して展開をやめ（{@code UNEXPANDED:CHA}）、
+     * {@code B.run()} から先の呼び出しが出力から消えた。
+     *
+     * <p>鍵がパッケージを持つ無い型（{@code import org.missing.Lib;} の {@code Lib}。鍵は {@code Lorg/missing/Lib;}）は
+     * そのまま完全修飾名にする（依存 jar が後から来たときに解析し直すための I 行の名前。docs/cache-unification-qa.md の Q79）
+     */
+    static String qualifiedNameOf(ITypeBinding t) {
+        if (t.isArray()) {
+            ITypeBinding element = t.getElementType();
+            return qualifiedNameOf(element) + "[]".repeat(t.getDimensions());
+        }
+        String simple = missingSimpleNameOf(t);
+        return (simple != null) ? MISSING_PREFIX + simple : t.getQualifiedName();
+    }
+
+    /**
+     * JDT が単純名から作った無い型なら、その単純名。そうでなければ null。回復した型（{@code isRecovered}）のうち、鍵が
+     * {@code L<識別子>;} の形（パッケージ・入れ子の型・型引数を持たない）のもの。無名パッケージの本物の型も同じ形の鍵を
+     * 持つが、回復した型ではないので当たらない
+     */
+    private static String missingSimpleNameOf(ITypeBinding t) {
+        if (t == null || !t.isRecovered() || t.isArray()) {
+            return null;
+        }
+        String key = t.getKey();
+        if (key == null || key.length() < 3 || key.charAt(0) != 'L' || key.charAt(key.length() - 1) != ';') {
+            return null;
+        }
+        String name = key.substring(1, key.length() - 1);
+        if (!Character.isJavaIdentifierStart(name.charAt(0))) {
+            return null;
+        }
+        for (int i = 1; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '$' || !Character.isJavaIdentifierPart(c)) {
+                return null;
+            }
+        }
+        return name;
     }
 
     /**
@@ -131,10 +200,9 @@ final class BindingNames {
      * 値は単一メンバか value / name が文字列のものだけ残す。DIコンテナが Bean を
      * 見分けるのに使うのは名前の文字列だけのため。
      *
-     * <p>拾った注釈の型は「このファイルの解決結果が依存する型」（I行）に数える。
-     * 値には注釈のメンバの<b>既定値</b>も含まれる（{@code @Ann} だけ書いても
-     * {@code String value() default "svc"} の "svc" が入る）ので、注釈の宣言を変えると
-     * ここの結果も変わるため。
+     * <p>値には注釈のメンバの<b>既定値</b>も含まれる（{@code @Ann} だけ書いても
+     * {@code String value() default "svc"} の "svc" が入る）ので、注釈の宣言を変えるとここの結果も変わる。
+     * 注釈の型は、このファイルに書かれたアノテーションの節として I 行に載る（{@link FactVisitor#preVisit2}）。
      */
     String annotationsOf(IBinding binding) {
         if (binding == null) {
@@ -150,32 +218,55 @@ final class BindingNames {
             if (type == null) {
                 continue;
             }
-            String fqn = type.getQualifiedName();
+            String fqn = qualifiedNameOf(type);
             if (fqn == null || fqn.isEmpty() || fqn.startsWith("java.lang.")) {
                 continue;
             }
-            noteDependency(type);
             tokens.add(AnnotationTokens.token(fqn, stringMemberOf(a)));
         }
         return AnnotationTokens.join(tokens);
     }
 
-    /** アノテーションの値。単一メンバ、または value / name が文字列のもの。無ければ null */
+    /**
+     * アノテーションの値。単一メンバ、または value / name が文字列のもの。無ければ null。
+     *
+     * <p>書かれていないメンバーは注釈の型の既定値で埋める。既定値はメンバーごとに読み、読めないもの（例外）は飛ばす。
+     * {@code getAllMemberValuePairs} でまとめて読むと、既定値の式が jar の型の参照している無いクラスに当たったとき
+     * （{@code String k() default q.Api.probs();} で q.Api の親や引数の型のクラスが無い）JDT の打ち切り
+     * （{@code AbortCompilation}）がそのまま抜け、このファイルの解析ごと失敗していた。ほかのメンバーの読める既定値まで
+     * 失わないよう、1 つずつ読む（docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）。
+     * メンバーは名前の順に見る（JDT が注釈の型のメソッドを並べる順と同じ）
+     */
     private static String stringMemberOf(IAnnotationBinding a) {
-        IMemberValuePairBinding[] pairs = a.getAllMemberValuePairs();
-        if (pairs == null || pairs.length == 0) {
-            return null;
+        Map<String, Object> values = new TreeMap<>();
+        for (IMemberValuePairBinding pair : a.getDeclaredMemberValuePairs()) {
+            values.put(pair.getName(), pair.getValue());
         }
-        String single = null;
-        for (IMemberValuePairBinding pair : pairs) {
-            if (!(pair.getValue() instanceof String value) || value.isEmpty()) {
+        ITypeBinding type = a.getAnnotationType();
+        IMethodBinding[] members = (type == null) ? new IMethodBinding[0] : type.getDeclaredMethods();
+        for (IMethodBinding m : members) {
+            if (values.containsKey(m.getName())) {
                 continue;
             }
-            String name = pair.getName();
+            Object value;
+            try {
+                value = m.getDefaultValue();
+            } catch (RuntimeException e) {
+                continue;   // 既定値を読めない（上のとおり）。そのメンバーは無いものとして扱う
+            }
+            values.put(m.getName(), value);
+        }
+        int count = Math.max(members.length, values.size());
+        String single = null;
+        for (Map.Entry<String, Object> e : values.entrySet()) {
+            if (!(e.getValue() instanceof String value) || value.isEmpty()) {
+                continue;
+            }
+            String name = e.getKey();
             if ("value".equals(name) || "name".equals(name)) {
                 return value;
             }
-            if (pairs.length == 1) {
+            if (count == 1) {
                 single = value;
             }
         }
@@ -209,12 +300,60 @@ final class BindingNames {
         }
         String name = resolveTypeName(t);
         typeNames.put(t, (name == null) ? NO_NAME : name);
+        if (name != null && !t.isPrimitive() && !t.isArray() && !t.isTypeVariable() && !t.isCapture()
+                && !t.isWildcardType() && !t.isIntersectionType() && !isJdk(t)) {
+            noteHeaderTypes(t);
+        }
         return name;
+    }
+
+    /**
+     * 型の頭（宣言の見出し）に現れる型を、{@code java.*} でないものだけ I 行に数える（型引数・上限は辿る）。
+     * {@link #typeNameOf} が {@code java.*} でない型を初めて名前にしたとき（ソースの型も jar の型も）に呼ぶ。
+     * <ul>
+     *   <li>親型（型引数ごと。{@code Keys extends ArrayList<Key>} の Key）。親型が {@code java.*} の型なら、その型は数えず
+     *       型引数だけを数える。{@code java.*} でない親型は名前にするので、その頭も推移的に辿る</li>
+     *   <li>型引数の上限（{@code class Box<T extends Foo>} の Foo）</li>
+     *   <li>関数型インターフェースなら関数型（JLS 9.9。抽象メソッドの引数・戻り値・throws の型）</li>
+     * </ul>
+     *
+     * <p>この型を使うファイルの事実は、頭に現れる型にも依る。{@code for (Base b : keys)}・{@code x.m(keys)}（候補
+     * {@code m(Collection<? extends Base>)}）・{@code Collections.sort(keys)} は Key の親に、{@code Box<? extends Bar>} は
+     * Foo の親に（上限が合うか）、{@code Ex.exec((Foo f) -> null)}（候補 {@code exec(FnA)} と {@code exec(FnB)}）は関数型の
+     * 戻り値の型の親に依る。どれもこの型を使うファイルのソースには名前が無い。この型の宣言のファイルは頭に名前を書いているが、
+     * その型の親が変わっても自分の宣言の指紋（型の鍵 {@code Ljava/util/ArrayList<Lg/Key;>;}）は変わらないので、宣言の側から
+     * 連鎖しない。jar の型の親（別の jar の型）は部分型の索引（H 行）に無いので、jar の型では親型そのものも要る
+     * （docs/cache-unification-qa.md の Q86）。
+     * 名前にした型は {@link #typeNames} に先に入れてあり、辿った型は {@link #reachedAll} などに覚えるので、同じ型を 2 度見ない
+     */
+    private void noteHeaderTypes(ITypeBinding t) {
+        noteReachedType(t.getSuperclass(), false);
+        for (ITypeBinding i : t.getInterfaces()) {
+            noteReachedType(i, false);
+        }
+        for (ITypeBinding p : t.getTypeParameters()) {
+            noteReachedType(p, false);
+        }
+        noteSignatureTypes(t.getFunctionalInterfaceMethod(), false);
+    }
+
+    /** メソッドのシグネチャ（引数・戻り値・throws）の型を数える（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    private void noteSignatureTypes(IMethodBinding m, boolean jdkToo) {
+        if (m == null) {
+            return;
+        }
+        for (ITypeBinding p : m.getParameterTypes()) {
+            noteReachedType(p, jdkToo);
+        }
+        noteReachedType(m.getReturnType(), jdkToo);
+        for (ITypeBinding e : m.getExceptionTypes()) {
+            noteReachedType(e, false);
+        }
     }
 
     /** {@link #typeNameOf} の本体（覚えていない型のときだけ通る） */
     private String resolveTypeName(ITypeBinding t) {
-        String n = t.getQualifiedName();
+        String n = qualifiedNameOf(t);
         if (n == null || n.isEmpty()) {
             n = t.getBinaryName();               // 例: jp.co.xxx.Outer$1
         }
@@ -260,6 +399,187 @@ final class BindingNames {
         typeNameOf(erasureOf(t));
     }
 
+    /**
+     * 式・型の節の型を I 行に数える（{@link FactVisitor#preVisit2}）。{@link #noteDependency} と違い、型変数・
+     * 捕捉された型変数（{@code Box<?>} の {@code b.get()} の型）・ワイルドカード・交差型は飛ばさず、上限の消去で
+     * 数える（上限が複数なら全部）。その型の名前はソースに無いことがあり（{@code a.getB().x()} の B、
+     * {@code D extends E<Foo>} の {@code d.get()} の Foo）、数えないと、その型にメンバーを足す・親を変えても差分更新が
+     * このファイルを解析し直さない（docs/cache-unification-qa.md の Q50）。型引数も数える（{@code List<Foo>} の Foo。Q85。
+     * 非 static の入れ子の型は、囲む型の型引数も。{@code Outer<Foo>.Inner}）。名前にした型の頭（親型の型引数・型引数の上限・
+     * 関数型）も数える（{@link #noteHeaderTypes}）。
+     */
+    void noteReachedType(ITypeBinding t) {
+        noteReachedType(t, true);
+    }
+
+    /**
+     * 呼び出したメソッド・コンストラクタの throws の型を I 行に数える（型変数は上限の消去）。
+     *
+     * <p>その例外が検査例外かどうか（JLS 11.1.1。親を {@code RuntimeException} から {@code Exception} に変えた）で、
+     * 呼び出し側が「例外を処理していない」エラーになるかが変わる（11.2.3）。throws の型は呼び出し側のソースに
+     * 書かれていないことが多く、ほかの経路では I 行に載らない（docs/cache-unification-qa.md の Q52）。
+     * {@code java.*} の例外（{@code IOException} など）は数えない（JDK の版はキャッシュの鍵に入っていて、変われば
+     * 全件解析になる）
+     */
+    void noteThrownTypes(IMethodBinding b) {
+        if (b == null) {
+            return;
+        }
+        for (ITypeBinding e : b.getExceptionTypes()) {
+            if (e.isTypeVariable() || !isJdk(e)) {
+                noteReachedType(e, true);
+            }
+        }
+    }
+
+    /** {@link #noteCandidates} で見終えた「型のキー#名前」（同じファイルで同じ型・同じ名前を 2 度辿らない） */
+    private final Set<String> candidatesSeen = new HashSet<>();
+
+    /**
+     * 呼び出しの候補（JLS 15.12.2）のシグネチャ（引数・戻り値・throws）の型を I 行に数える。{@code searched}（探す型）と
+     * その推移的な親型が宣言する、名前が {@code name} のメソッド（{@code name} が null ならコンストラクタ。探す型が宣言する
+     * ものだけ）すべての、引数・戻り値・throws の型（型変数は上限の消去。型引数も数える。throws は {@code java.*} でない型
+     * だけ。{@link #noteThrownTypes} と同じ）。探す型は型引数を付けたまま辿り（{@code Box<Foo>} の
+     * {@code put(T)} は {@code put(Foo)}）、{@code java.*} の型が宣言するものは、型引数を置き換えた型のうち
+     * {@code java.*} でない型だけを数える（{@code S extends ArrayList<Foo>} の {@code s.add(0, null)} の
+     * {@code add(int, Foo)}。JDK の版は鍵に入っているので、JDK の型そのものは数えない。docs/cache-unification-qa.md の Q85）。
+     *
+     * <p>どのオーバーロードが選ばれるか（選べないか）は、選ばれなかった候補の引数の型にも依る。{@code x.n(null)} は
+     * {@code n(Y)} と {@code n(Z)} で曖昧だが、Z を消すと {@code n(Y)} に決まる。ラムダを渡す {@code x.k(() -> {})} は、
+     * 候補の関数型インターフェース（{@code k(Fn)} の Fn）の形が変わると選ばれる候補が変わる。選ばれた候補の引数の型は
+     * 呼び出し先の鍵として数える（{@link #toRef}）が、選ばれなかった候補の型はこのファイルのどこにも現れない
+     * （docs/cache-unification-qa.md の Q78）。throws も同じで、複数のインターフェースから継承した抽象メソッド
+     * （{@code interface R extends I1, I2} の {@code close()}）を呼ぶと、投げうる例外は全候補の throws の共通部分になる
+     * （JLS 15.12.2.5）。JDT の選んだバインディングの throws（{@link #noteThrownTypes}）はその共通部分で、E1・E2 そのものは
+     * 載らない（共通部分が空なら何も載らない）。E2 の親を E1 にすると共通部分が変わり、例外を処理していないエラーになる。
+     * どの候補が選ばれるか・どれとどれの共通部分をとるかを JLS から選ばず、シグネチャの型を全部数える
+     */
+    void noteCandidates(ITypeBinding searched, String name) {
+        if (searched == null) {
+            return;
+        }
+        if (searched.isIntersectionType() || searched.isTypeVariable() || searched.isCapture()) {
+            for (ITypeBinding b : searched.getTypeBounds()) {
+                noteCandidates(b, name);
+            }
+            return;
+        }
+        ITypeBinding type = searched;
+        if (type.isArray() || type.isPrimitive() || !candidatesSeen.add(keyOf(type) + '#' + name)) {
+            return;
+        }
+        List<ITypeBinding> types = new ArrayList<>();
+        types.add(type);
+        if (name != null) {
+            types.addAll(supertypesOf(type));
+        }
+        for (ITypeBinding t : types) {
+            // java.* の型が宣言する候補は、型引数を置き換えた引数の型（ArrayList<Foo> の add(int, E) の Foo）だけを見る
+            boolean jdk = isJdk(t);
+            if (jdk && !t.isParameterizedType()) {
+                continue;
+            }
+            for (IMethodBinding m : t.getDeclaredMethods()) {
+                if (name == null ? m.isConstructor() : (!m.isConstructor() && name.equals(m.getName()))) {
+                    noteSignatureTypes(m, !jdk);
+                }
+            }
+        }
+    }
+
+    /**
+     * 型が継承するメソッドの戻り値と throws の型を I 行に数える（{@link TypeContextTracker} が型の宣言ごとに呼ぶ）。
+     * 推移的な親型（型引数を具体化したまま）が宣言するメソッド（コンストラクタを除く）すべての、戻り値の型と throws の
+     * 型のうち {@code java.*} でないもの（型引数・上限は辿る）。{@code java.*} の型が宣言するものは、型引数を置き換えた
+     * 型だけを見る（{@link #noteCandidates} と同じ。JDK の版はキャッシュの鍵に入っている）。
+     *
+     * <p>JDT は型の宣言を解決するとき、継承したメソッドどうしが合うか（JLS 8.4.8.3・8.4.8.4・9.4.1.3。親クラスの
+     * {@code Bar get()} がインターフェースの {@code Foo get()} を実装できるか＝Bar が Foo の部分型か、throws が
+     * 収まるか）を確かめ、合わなければこのファイルのエラーにする。比べる型（Bar・Foo）は親型のメンバーの宣言にしか
+     * 現れず、このファイルのどこにも書かれていない。部分型の決まり（親が変われば部分型も変わった型）は親型の側からしか
+     * 届かないので、Bar の親を変えても、ここで数えておかなければ差分更新はこのファイルを解析し直さない
+     * （docs/cache-unification-qa.md の「継承したメソッドどうしの突き合わせ」）。どのメソッドどうしが比べられるかを JLS から選ばず、全部数える
+     */
+    void noteInheritedSignatures(ITypeBinding type) {
+        if (type == null) {
+            return;
+        }
+        for (ITypeBinding t : supertypesOf(type)) {
+            if (isJdk(t) && !t.isParameterizedType()) {
+                continue;
+            }
+            for (IMethodBinding m : t.getDeclaredMethods()) {
+                if (m.isConstructor()) {
+                    continue;
+                }
+                noteReachedType(m.getReturnType(), false);
+                for (ITypeBinding e : m.getExceptionTypes()) {
+                    noteReachedType(e, false);
+                }
+            }
+        }
+    }
+
+    /** {@code java.*} の型か（消去で見る） */
+    private static boolean isJdk(ITypeBinding t) {
+        String p = packageOf(erasureOf(t));
+        return p.equals("java") || p.startsWith("java.");
+    }
+
+    /**
+     * @param jdkToo {@code java.*} の型も数えるか。false なら {@code java.*} でない型だけを数える（型引数と上限は辿る）
+     */
+    private void noteReachedType(ITypeBinding t, boolean jdkToo) {
+        while (t != null && t.isArray()) {
+            t = t.getComponentType();
+        }
+        if (t == null || t.isPrimitive() || t.isNullType()) {
+            return;
+        }
+        // 辿った型は覚えておき 2 度目は辿らない（T extends Comparable<T> のような自己参照でも止まる）。深さでは打ち切らない。
+        // 打ち切ると、深い入れ子の奥の型が黙って抜けるうえ、先に深いところで出会った型の型引数を「辿り終えた」と
+        // 覚えてしまい、同じ型の浅い式の型引数まで抜けていた（結果が式の並びに依る）。java.* の型も数えて辿った型は、
+        // java.* でない型だけを数える辿り方の分も済んでいる
+        if (jdkToo ? !reachedAll.add(t) : (reachedAll.contains(t) || !reachedNonJdk.add(t))) {
+            return;
+        }
+        if (t.isWildcardType()) {
+            noteReachedType(t.getBound(), jdkToo);
+            return;
+        }
+        if (t.isTypeVariable() || t.isCapture() || t.isIntersectionType()) {
+            ITypeBinding[] bounds = t.getTypeBounds();
+            if (bounds != null) {
+                for (ITypeBinding b : bounds) {
+                    noteReachedType(b, jdkToo);
+                }
+            }
+            if (t.isCapture()) {
+                noteReachedType(t.getWildcard(), jdkToo);
+            }
+            return;
+        }
+        if (jdkToo || !isJdk(t)) {
+            typeNameOf(erasureOf(t));
+        }
+        // 型引数も数える（List<Foo> の Foo）。a.foos() の型 List<Foo> の Foo は、ソースに名前が無いことがあり、
+        // Foo の親を変えると for (Bar b : a.foos()) や m(Collection<? extends Bar>) の解決が変わる（Q85）
+        for (ITypeBinding a : t.getTypeArguments()) {
+            noteReachedType(a, jdkToo);
+        }
+        // 非 static の入れ子の型（内部クラス）は、囲む型の型引数も持つ。JDT は Outer<Foo>.Inner の Foo を Inner の
+        // 型引数ではなく囲む型（getDeclaringClass() が Outer<Foo>）に置く。2 段（Outer<Foo>.Mid.Inner）でも辿れるよう、
+        // 囲む型が型引数を持つかは見ずに辿る
+        if (!Modifier.isStatic(t.getModifiers())) {
+            noteReachedType(t.getDeclaringClass(), jdkToo);
+        }
+    }
+
+    /** {@code java.*} の型も数えて辿った型（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    private final Set<ITypeBinding> reachedAll = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** {@code java.*} でない型だけを数えて辿った型（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    private final Set<ITypeBinding> reachedNonJdk = Collections.newSetFromMap(new IdentityHashMap<>());
+
     /** メソッドの4つ組。宣言型か引数型の名前が取れなければ null */
     MethodRef toRef(IMethodBinding binding) {
         if (binding == null) {
@@ -291,8 +611,7 @@ final class BindingNames {
                     params.append(",");
                 }
                 ITypeBinding erasedParam = paramTypes[i].getErasure();
-                params.append(erasedParam != null
-                        ? erasedParam.getQualifiedName() : paramTypes[i].getQualifiedName());
+                params.append(qualifiedNameOf(erasedParam != null ? erasedParam : paramTypes[i]));
                 // 引数型はメソッドキーの一部。改名されるとキーが変わるので依存に数える
                 noteDependency(erasedParam != null ? erasedParam : paramTypes[i]);
             }
@@ -312,7 +631,7 @@ final class BindingNames {
      * 型引数を具体化した実装（{@code class UserRepo implements Repo<User>} の
      * {@code save(User)}）は親（{@code Repo#save(java.lang.Object)}）とキーが一致しない。
      * 一致しないまま候補を引くと「実装が無い」や「別の実装1件に確定」になる
-     * （{@code docs/generic-override-qa.md}）。
+     * （{@code docs/jls-conformance-qa.md} の Q1。ジェネリックなメソッドの上書き、Issue #154）。
      *
      * <h4>判定は JDT に任せる</h4>
      * {@code IMethodBinding.overrides} は JLS 8.4.8.1 の実装なので、アクセス修飾子・
@@ -364,6 +683,124 @@ final class BindingNames {
     }
 
     /**
+     * クラス {@code type} で、親クラスから継承したメソッドが親インターフェースのメソッドを実装していて、
+     * 両者のキー（消去した引数型）が食い違うものの組（{@code 実装される側のキー>実装する側のキー}。名前順）。
+     * {@link jche.cache.TypeFact#inheritedImpls()} に書く。
+     *
+     * <pre>
+     *   interface Repo&lt;T&gt; { void save(T t); }                      Repo#save(java.lang.Object)
+     *   class BaseRepo { public void save(User u) {...} }              BaseRepo#save(p.User)
+     *   class UserRepo extends BaseRepo implements Repo&lt;User&gt; { }   ← BaseRepo.save が Repo.save を実装する
+     * </pre>
+     * BaseRepo は Repo を実装していないので、BaseRepo.save の O 行（{@link #overriddenKeysOf}）には現れない。
+     * 実装の関係は UserRepo から見たときにだけ成り立ち（JLS 8.4.8.1。javac は UserRepo にブリッジを作る）、
+     * {@code class Other extends BaseRepo implements Repo<Order>} では成り立たないので、型ごとの事実にする。
+     * 無いと読み手は UserRepo の {@code save(Object)} の実装を見つけられず、{@code Repo<User> r; r.save(u)} を
+     * 「実装なし」にして BaseRepo.save を落とす（default があれば default に決めてしまう）。
+     *
+     * <p>判定は JDT に任せる: 親インターフェースのメソッド（型引数を置き換えたもの。private・static は除く）ごとに、
+     * {@code type} 自身が同じシグネチャ（{@code isSubsignature}）を宣言していなければ、親クラスを近い順に見て
+     * 最初に {@code isSubsignature} の当たる宣言（static・private を除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
+     * キーが同じなら読み手はキーの照合で引けるので書かない。実装する側の型が実装される側のインターフェースを
+     * 実装していれば、その宣言の O 行が同じことを言うので書かない
+     */
+    List<String> inheritedImplementationsOf(ITypeBinding type) {
+        if (type == null || type.isInterface() || type.getSuperclass() == null) {
+            return List.of();
+        }
+        List<IMethodBinding> interfaceMethods = new ArrayList<>();
+        ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        for (ITypeBinding c = type; c != null && seen.add(keyOf(c)); c = c.getSuperclass()) {
+            queue.addAll(java.util.Arrays.asList(c.getInterfaces()));
+        }
+        while (!queue.isEmpty()) {
+            ITypeBinding i = queue.poll();
+            if (!seen.add(keyOf(i))) {
+                continue;
+            }
+            for (IMethodBinding m : i.getDeclaredMethods()) {
+                if (!m.isConstructor() && !Modifier.isStatic(m.getModifiers())
+                        && !Modifier.isPrivate(m.getModifiers())) {
+                    interfaceMethods.add(m);
+                }
+            }
+            queue.addAll(java.util.Arrays.asList(i.getInterfaces()));
+        }
+        java.util.TreeSet<String> out = new java.util.TreeSet<>();
+        for (IMethodBinding mi : interfaceMethods) {
+            if (subsignatureIn(type, mi) != null) {
+                continue;   // その型自身の宣言が実装する（キーか O 行で引ける）
+            }
+            Set<String> classes = new HashSet<>();
+            for (ITypeBinding sc = type.getSuperclass(); sc != null && classes.add(keyOf(sc));
+                    sc = sc.getSuperclass()) {
+                IMethodBinding mc = subsignatureIn(sc, mi);
+                if (mc == null) {
+                    continue;
+                }
+                MethodRef implemented = toRef(mi);
+                MethodRef implementing = toRef(mc);
+                if (implemented != null && implementing != null
+                        && !implemented.signature().equals(implementing.signature())
+                        && !isSupertypeOf(mi.getDeclaringClass(), mc.getDeclaringClass())) {
+                    out.add(implemented.key() + ">" + implementing.key());
+                }
+                break;
+            }
+        }
+        return out.isEmpty() ? List.of() : new ArrayList<>(out);
+    }
+
+    /** 型 {@code t} が宣言する、{@code mi} の subsignature（JLS 8.4.2）のインスタンスメソッド（private を除く）。無ければ null */
+    private static IMethodBinding subsignatureIn(ITypeBinding t, IMethodBinding mi) {
+        for (IMethodBinding m : t.getDeclaredMethods()) {
+            if (!m.isConstructor() && m.getName().equals(mi.getName())
+                    && m.getParameterTypes().length == mi.getParameterTypes().length
+                    && !Modifier.isStatic(m.getModifiers()) && !Modifier.isPrivate(m.getModifiers())
+                    && isSubsignature(m, mi)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@code m} が {@code mi} の subsignature か（JLS 8.4.2）。JDT の {@code isSubsignature} は、{@code m} を宣言した型が
+     * パラメータ化された型（{@code GenBase<String>} の {@code save(String)}）だと型引数を置き換える前の宣言
+     * （{@code save(T)}）に戻して比べるので、置き換えた引数の型がそろう（同じシグネチャ）ことは先に自分で見る。
+     * 型引数を持つメソッドは JDT の判定だけにする
+     */
+    private static boolean isSubsignature(IMethodBinding m, IMethodBinding mi) {
+        if (m.getTypeParameters().length == 0 && mi.getTypeParameters().length == 0) {
+            ITypeBinding[] a = m.getParameterTypes();
+            ITypeBinding[] b = mi.getParameterTypes();
+            boolean same = true;
+            for (int k = 0; k < a.length && same; k++) {
+                same = a[k].isEqualTo(b[k]);
+            }
+            if (same) {
+                return true;
+            }
+        }
+        return m.isSubsignature(mi);
+    }
+
+    /** {@code sup} が {@code sub} の親型（消去して比べる）か */
+    private static boolean isSupertypeOf(ITypeBinding sup, ITypeBinding sub) {
+        if (sup == null || sub == null) {
+            return false;
+        }
+        String want = keyOf(sup.getErasure());
+        for (ITypeBinding t : supertypesOf(sub)) {
+            if (keyOf(t.getErasure()).equals(want)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 関数型インターフェース {@code fnType} のラムダ／メソッド参照が実装するメソッドの鍵すべて。
      *
      * JLS 9.8 では、関数型インターフェースの抽象メソッドは1つとは限らない。親から継承した
@@ -381,6 +818,10 @@ final class BindingNames {
      * 呼び出しでラムダが見えず、別の実装1件に誤って確定する（docs/lambda-expansion-qa.md の Q11・Q15）。
      * 親型は型引数を具体化したまま辿り、上書き同等かの判定は
      * {@code IMethodBinding.isSubsignature}（JLS 8.4.2）に任せる。
+     *
+     * <p>目標の型は、ラムダ・メソッド参照の式の型として I 行に載る（{@link FactVisitor#preVisit2}）。その親
+     * （{@code interface Door extends Opener} の Opener）を変えると返す鍵が変わるが、それは差分更新が部分型の側で
+     * 拾う（Door は Opener の部分型なので、Opener が変われば Door も変わった型になる。docs/cache-unification-qa.md の Q77）。
      *
      * @return 先頭は SAM 自身の鍵。SAM の鍵を作れなければ空
      */

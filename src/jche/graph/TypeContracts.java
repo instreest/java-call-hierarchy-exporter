@@ -37,9 +37,10 @@ import jche.util.Messages;
  *
  * <h2>C-3 のキーはどこから来るか</h2>
  * 呼び出し箇所を走査し直す必要は無い。
- * {@code Dao dao = DaoFactory.get("USER"); dao.find();} の {@code dao} の出所は、値グラフから
- * 組み直した {@code M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER} の形で既に手元にあり、
- * ここからファクトリのメソッドキーと実引数の値の両方が読める（{@link OriginRenderer}）。
+ * {@code Dao dao = DaoFactory.get("USER"); dao.find();} の {@code dao} の値は、値の表（{@link ValueStore}）の
+ * メソッドの戻り値のノード（値がファクトリのメソッドキー、実引数 0 が文字列の葉 {@code USER}）として
+ * 既に手元にあり、ここからファクトリのメソッドキーと実引数の値の両方が読める（{@link FactoryCalls}）。
+ * 値は切り詰めずに読むので、キーが {@code | ;} を含む行（{@code get("A;B")}）も書いたとおりに引ける。
  * 変数に受けずに続けて呼ぶ形（{@code DaoFactory.get("USER").find()}）でも同じ。
  *
  * <p>キーの値は {@link DataflowResolver#literalValueOf} で引くので、文字列リテラルのほか
@@ -252,16 +253,15 @@ public final class TypeContracts {
     /**
      * C-3: レシーバがファクトリの戻り値なら、渡されたキーで契約を引く。無ければ null。
      *
-     * @param recvOrigin レシーバの出所（{@link CallGraph#recvOrigin}）
-     * @param dataflow   キーの値を引くのに使う
-     * @param ctx        この経路で分かっていること。無ければ null
+     * @param recv     レシーバの値（値の表の参照。{@link CallGraph#recvNode}）。無ければ {@link ValueStore#NONE}
+     * @param dataflow キーの値を引くのに使う
+     * @param ctx      この経路で分かっていること。無ければ null
      */
-    Contract matchFactory(String recvOrigin, DataflowResolver dataflow, DataflowContext ctx) {
-        if (byFactoryKey.isEmpty() || recvOrigin == null
-                || Origin.kindOf(recvOrigin) != Origin.RETURN) {
+    Contract matchFactory(int recv, DataflowResolver dataflow, DataflowContext ctx) {
+        if (byFactoryKey.isEmpty() || dataflow.values().kind(recv) != Origin.RETURN) {
             return null;
         }
-        for (String left : factoryLeftSidesOf(recvOrigin, dataflow, ctx)) {
+        for (String left : factoryLeftSidesOf(recv, dataflow, ctx)) {
             Contract hit = byFactoryKey.get(left);
             if (hit != null) {
                 usage.markReached(hit.row());
@@ -279,10 +279,11 @@ public final class TypeContracts {
      * <p>読み取りそのものは {@link FactoryCalls} が持つ。ここはそれを契約表の綴りに直すだけ。
      * 絞れなかった呼び出しからひな形を作る側（{@code jche.report.ContractSuggestions}）も
      * これを使うので、ひな形が出す行と実際に引ける行が食い違わない。
+     *
+     * @param recv レシーバの値（値の表の参照。{@link CallGraph#recvNode}）。無ければ {@link ValueStore#NONE}
      */
-    public static List<String> factoryLeftSidesOf(String recvOrigin, DataflowResolver dataflow,
-                                                  DataflowContext ctx) {
-        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(recvOrigin, dataflow, ctx);
+    public static List<String> factoryLeftSidesOf(int recv, DataflowResolver dataflow, DataflowContext ctx) {
+        List<FactoryCalls.Key> keys = FactoryCalls.keysOf(recv, dataflow, ctx);
         if (keys.isEmpty()) {
             return List.of();
         }

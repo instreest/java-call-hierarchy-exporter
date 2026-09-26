@@ -58,7 +58,7 @@ Eclipse のプラグインが自前のファイルを置く場所は `Platform.g
 
 | フォルダ | 中身 | 設定で移せるか |
 |---|---|---|
-| `cache/` | 解析キャッシュ。実体は `cache/.cache/<プロジェクト名>_<識別子>/analysis-cache.tsv`（＋ `dataflow-cache.tsv`） | ○ |
+| `cache/` | 解析キャッシュ。実体は `cache/.cache/<プロジェクト名>_<識別子>/analysis-cache.tsv`（1 ファイル。以前の版は `dataflow-cache.tsv` も作っていた） | ○ |
 | `log/` | `analysis-<日時>.log`（新しいものから 10 世代） | ○ |
 | `output/` | ［CSV出力］の初期フォルダ。自動生成した設定の `output.folder` にもこれを書く | ○ |
 | `config/<プロジェクト名>/` | 自動生成した設定（`generated-config.properties`）。解析のたびに書き直す内部の作業ファイル | ×（触る想定のものではない） |

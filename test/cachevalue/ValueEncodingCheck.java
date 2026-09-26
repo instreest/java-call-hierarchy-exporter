@@ -1,52 +1,140 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 
+import java.io.IOException;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 import jche.cache.CacheFormat;
+import jche.cache.CacheReader;
+import jche.util.FileHash;
 
 /**
- * dataflow-cache.tsv の値の符号化（{@link CacheFormat#escape} / {@link CacheFormat#unescape}）を検査する。
+ * キャッシュの列の符号化（{@link CacheFormat#escape} / {@link CacheFormat#unescape}）を検査する。
  *
- * 見る性質は 2 つ。
+ * 見る性質は 3 つ。
  * <pre>
- *   往復   unescape(escape(s)) が s に戻る（どんな文字列でも）
+ *   往復   unescape(escape(s)) が s に戻る（どんな文字列でも。対になっていないサロゲートを含む）
  *   無害化 escape(s) にタブ・改行・制御文字が残らない（行が割れない）
+ *   UTF-8  escape(s) を UTF-8 に書ける（対になっていないサロゲートが残らない。キャッシュの書き手は
+ *          書けない文字で例外にするので、残ると解析ごと失敗する）
  * </pre>
  * ソースに実際に現れる文字列（SQL・書式・Windows のパス・正規表現）と、
  * そこには出てこないが形式を壊しうる文字（全制御文字、バックスラッシュの連なり、
  * 途中で切れた符号）を両方かける。実データでは踏まない形をここで潰しておくため。
  *
- * <p>行そのものへの組み込み（{@link CacheFormat#joinRow} を通しても値が変わらないこと）も見る。
- * joinRow は analysis 側の規則で {@code clean} を通すので、escape 済みの値が
- * そこで削られないことを確かめる意味がある。
+ * <p>行そのものへの組み込みも見る。キャッシュのどの列も {@link CacheFormat#joinRow} が符号化して書き、
+ * {@link CacheReader#columns} が戻して読む（1 つの規則）。生の値を joinRow に渡して 1 行にし、
+ * それをファイルに書いて CacheReader で読み戻したとき、列の数が変わらず、値が元に戻ること。
+ *
+ * <p>文字列のハッシュ（{@link FileHash#ofText}）も見る。対になっていないサロゲートだけが違う文字列が、違うハッシュに
+ * なること（長い定数の値と自分の宣言の指紋はハッシュで比べるので、同じになると変化を見落とす）。
  */
 public final class ValueEncodingCheck {
 
     private static int checked;
     private static int failed;
+    /** 行に組み込んだ値と、その行（あとでファイルに書いて CacheReader で読み戻す） */
+    private static final List<String> originals = new ArrayList<>();
+    private static final List<String> rows = new ArrayList<>();
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         for (String s : corpus()) {
             check(s);
         }
-        // 全 BMP を機械的に。1文字ずつと、前後に文字を足した形で
+        // 全 BMP を機械的に。1文字ずつと、前後に文字を足した形で。単独のサロゲートも含める
+        // （Java の文字列としては作れ、ソースの "\uD800" や途中で切った絵文字として実際に現れる）
         for (int c = 0; c <= 0xFFFF; c++) {
-            if (Character.isSurrogate((char) c)) {
-                continue;   // 単独のサロゲートは文字列として不正なので除く
-            }
             String one = String.valueOf((char) c);
             check(one);
             check("a" + one + "b");
         }
-        // サロゲートペア（絵文字など）が壊れないこと
+        // サロゲートペア（絵文字など）が壊れないこと。対になっていれば符号化せずにそのまま書く
         check("値 \uD83D\uDE00 と \uD83D\uDE00\uD83D\uDE00");
+        if (!CacheFormat.escape("\uD83D\uDE00").equals("\uD83D\uDE00")) {
+            failed++;
+            System.out.println("  NG   対になったサロゲートを符号化しています");
+        }
+        // 対になっていないサロゲートの並び（上位だけ・下位だけ・逆順・上位の連続・ペアの前後に単独）
+        check("\uD83D");
+        check("\uDE00");
+        check("\uDE00\uD83D");
+        check("\uD83D\uD83D\uDE00");
+        check("\uD83D\uDE00\uDE00");
+        check("x\uD800");
+        check("AAAA\uD83D");                // 60 文字で切った条件式の末尾に残る形
+        check("\\uD800\uD800");           // 符号化の形をした文字と、本物の単独サロゲート
+        if (!CacheFormat.escape("a\uD800b").equals("a\\ud800b")) {
+            failed++;
+            System.out.println("  NG   単独のサロゲートの符号化が \\uXXXX（小文字の 16 進 4 桁）ではありません: "
+                    + visible(CacheFormat.escape("a\uD800b")));
+        }
+        readBack();
+        // ヘッダ行のソースフォルダの一覧（folders=）が往復すること（CacheFormat#foldersOf。消えたファイルの
+        // コンパイル単位の名前を旧キャッシュの一覧で求めるのに使う。docs/cache-unification-qa.md の Q71）。
+        // 名前の中のカンマ・空白・バックスラッシュ・タブ・符号化の形をした文字も元に戻ること。project.root そのものは空文字
+        checkFolders(List.of());
+        checkFolders(List.of(""));
+        checkFolders(List.of("src"));
+        checkFolders(List.of("src/main/java", "a, b", "\u00fc\\x", " lead ", "t\tab", "c,d", "\\u002c", "", "x\uD800"));
+        // 文字列のハッシュ（FileHash.ofText。64 文字を超える定数の K 行と、自分の宣言の指紋）が、対になっていない
+        // サロゲートだけが違う文字列を区別すること。UTF-8 を経ると '?' に置き換わって同じハッシュになり、定数の値が
+        // 変わっても差分更新が使う側へ連鎖しなかった。正しい UTF-16 の文字列は、これまでどおり UTF-8 のハッシュと同じ
+        checkHashes();
 
         System.out.println(failed == 0
                 ? "OK   " + checked + " 通りの値が往復し、行を壊さない"
                 : "NG   " + failed + " / " + checked + " 件で失敗");
         if (failed != 0) {
             System.exit(1);
+        }
+    }
+
+    /** 違う文字列が違うハッシュになるか（対になっていないサロゲート）。正しい文字列は UTF-8 の SHA-256 の先頭 16 桁か */
+    private static void checkHashes() {
+        List<String> distinct = List.of("\uD800", "\uD801", "?", "\uFFFD", "\uDC00", "\uD800\uDC00", "\uDC00\uD800",
+                "x\uD800", "x?", "x\uDBFF", "\uD83D\uDE00", "\uD83D", "\uDE00", "\uD83D?");
+        java.util.Map<String, String> seen = new java.util.HashMap<>();
+        for (String s : distinct) {
+            checked++;
+            String h = FileHash.ofText(s);
+            String other = seen.put(h, s);
+            if (other != null) {
+                failed++;
+                System.out.println("  NG   違う文字列が同じハッシュになります: " + visible(s) + " と " + visible(other));
+            }
+        }
+        for (String s : List.of("", "abc", "値 \uD83D\uDE00 と", "SELECT *\n\tFROM t")) {
+            checked++;
+            String expected;
+            try {
+                byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 8; i++) {
+                    sb.append(String.format("%02x", d[i]));
+                }
+                expected = sb.toString();
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
+            if (!FileHash.ofText(s).equals(expected)) {
+                failed++;
+                System.out.println("  NG   正しい文字列のハッシュが UTF-8 の SHA-256 と違います: " + visible(s));
+            }
+        }
+    }
+
+    /** ソースフォルダの一覧をヘッダ行に書いて読み戻すと、同じ一覧に戻るか */
+    private static void checkFolders(List<String> folders) {
+        checked++;
+        List<String> back = CacheFormat.foldersOf(CacheFormat.headerFor("17", "UTF-8", "x", folders));
+        if (!back.equals(folders)) {
+            failed++;
+            System.out.println("  NG   ヘッダ行のソースフォルダの一覧が往復しません: " + visible(folders.toString())
+                    + " -> " + visible(back.toString()));
         }
     }
 
@@ -89,15 +177,58 @@ public final class ValueEncodingCheck {
             report("符号化しても制御文字が残ります", original, escaped, back);
             return;
         }
-        // 行に組み込んでも値が変わらないこと（joinRow は clean を通す）
-        String row = CacheFormat.joinRow("N", "0", "L", escaped);
-        String[] cols = CacheFormat.columnsOf(row);
-        if (cols.length != 4 || !escaped.equals(cols[3])) {
-            report("行に組み込むと値が変わります（列数 " + cols.length + "）", original, escaped, back);
+        CharsetEncoder utf8 = StandardCharsets.UTF_8.newEncoder();   // 書けない文字で例外にする（キャッシュの書き手と同じ）
+        if (!utf8.canEncode(escaped)) {
+            report("符号化しても UTF-8 に書けない文字（対になっていないサロゲート）が残ります", original, escaped, back);
             return;
         }
-        if (!original.equals(CacheFormat.unescape(cols[3]))) {
-            report("行から読み戻せません", original, escaped, back);
+        // 行に組み込む。joinRow が符号化するので、生の値を渡す
+        String row = CacheFormat.joinRow("N", "0", "L", original);
+        if (!row.equals("N\t0\tL\t" + escaped)) {
+            report("joinRow の符号化が escape と違います", original, escaped, back);
+            return;
+        }
+        if (CacheFormat.hasControlChar(row.replace('\t', ' '))) {
+            report("行に区切り以外の制御文字が残ります", original, escaped, back);
+            return;
+        }
+        String[] cols = CacheFormat.columnsOf(row);
+        if (cols.length != 4 || !original.equals(cols[3])) {
+            report("行から読み戻すと値が変わります（列数 " + cols.length + "）", original, escaped, back);
+            return;
+        }
+        originals.add(original);
+        rows.add(row);
+    }
+
+    /** 組み込んだ行をファイルに書き、CacheReader で読み戻して列が元に戻ることを見る */
+    private static void readBack() throws IOException {
+        Path file = Files.createTempFile("value-encoding", ".tsv");
+        try {
+            StringBuilder sb = new StringBuilder("header\n");
+            for (String row : rows) {
+                sb.append(row).append('\n');
+            }
+            Files.writeString(file, sb.toString(), StandardCharsets.UTF_8);
+            int i = 0;
+            try (CacheReader in = CacheReader.open(file)) {
+                while (in.next()) {
+                    checked++;
+                    String original = (i < originals.size()) ? originals.get(i) : "";
+                    String[] cols = in.columns();
+                    if (i >= originals.size() || cols.length != 4 || !original.equals(cols[3])) {
+                        report("ファイルから CacheReader で読み戻すと値が変わります（" + (i + 1) + " 行目、列数 "
+                                + cols.length + "）", original, CacheFormat.escape(original), in.column(3));
+                    }
+                    i++;
+                }
+            }
+            if (i != rows.size()) {
+                failed++;
+                System.out.println("  NG   ファイルの行数が変わります（書いた " + rows.size() + " 行、読んだ " + i + " 行）");
+            }
+        } finally {
+            Files.deleteIfExists(file);
         }
     }
 
@@ -116,7 +247,7 @@ public final class ValueEncodingCheck {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < s.length() && i < 120; i++) {
             char c = s.charAt(i);
-            if (c < ' ' || c == '\u007f') {
+            if (c < ' ' || c == '\u007f' || Character.isSurrogate(c)) {
                 sb.append("<").append(String.format("%02x", (int) c)).append(">");
             } else {
                 sb.append(c);

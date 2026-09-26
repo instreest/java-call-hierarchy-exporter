@@ -150,8 +150,9 @@ JRE で動いている場合に null になる。JBang は JDK を取ってく�
 （「結び付かなかった手がかり」は、単に別の呼び出し用の手がかりかもしれないので、警告にはできない）。
 
 拡張の作者が一番はまりやすいのはここだと考え、キーの計算を
-[HintKeys](../src/jche/extension/HintKeys.java) に一本化した。本体の `FactVisitor` も同じものを使うので、
-実装が 2 つに分かれて食い違うことがない。
+`HintKeys` に一本化した。本体の `FactVisitor` も同じものを使うので、
+実装が 2 つに分かれて食い違うことがない。（当時は `jche.extension` にあった。aad1a34 でフェーズAの外部拡張を
+廃止したときに本体の内部へ移し、今は [HintKeys](../src/jche/analysis/HintKeys.java) にある。）
 
 ### Q14. `HintKeys` を作ったとき、本体側の挙動は変わったか
 

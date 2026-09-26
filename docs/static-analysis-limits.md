@@ -65,7 +65,9 @@ public final class ServiceFactory {
 
 ## 3. 何をどう追っているか
 
-式の「出所」を記号で持つ（`src/jche/cache/Origin.java`）。
+式の「出所」を、1 つの式を 1 ノードとする値グラフ（キャッシュの N 行。`src/jche/cache/ValueNode.java`）で持つ。
+ノードは種別の 1 文字（`src/jche/cache/Origin.java`）と値を持ち、呼び出しなら実引数とレシーバのノードも指す。
+下は人が読むときの表記（`jche.cache.CacheDump` の出力と同じ）。
 
 ```
 T:jp.co.UserDaoImpl        new された具象型（その場で確定）
@@ -122,7 +124,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 | `get(request.getParameter("type"))` | 同上（実行時入力） |
 | `POOL.get(fqn)` の戻り値 | コレクションの要素を追う仕組みが無い。Map / List に入れた時点で出所が `U` になる |
 | `if (flag) A else B` で `flag` が実行時値 | 候補は複数のまま（2節の39行目） |
-| 文字列が64文字を超える | 出所に載せる値の長さの上限（`OriginTracker.MAX_VALUE_LENGTH`） |
+| `b.mode()` の `mode` を部分型が上書きしている | メソッドが返す値（`return` の値）は、呼び出しがその宣言の本体でしか動かないとき（static・private・final、または部分型が上書きしていない）だけ使う。上書きがあれば、レシーバの具象型が分かっていても使わない（CHA のまま。[cache-unification-qa.md](cache-unification-qa.md) の Q10） |
 | `list.forEach(Runnable::run)` | `forEach` の中は jar なのでソースが無い。生成の辺があるので本体の呼び出しは階層に出るが、実行箇所からは繋がらない（`[UNEXPANDED:LAMBDA]`） |
 | `Dao::describe`（型名で書いたメソッド参照） | レシーバは呼び出し時の第1引数で、追っていない。上書き候補（CHA）を全部出す |
 | ラムダが捕捉した引数を、渡した先で呼ぶ | 捕捉した値はラムダを作った時点で決まるが、生成箇所の引数を実行箇所の経路へ持ち運んでいない。生成したメソッドの段でだけ当てる（[lambda-expansion-qa.md](lambda-expansion-qa.md) の Q10） |
@@ -164,7 +166,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 
 - `[UNEXPANDED:CHA] N candidates: <reason>` … 絞れなかったことと、その理由（`grep '\[UNEXPANDED'` で一括で拾える）
 - `(unresolved)` の行と件数のログ … クラスパス不足を「呼び出しが無い」と誤読させない
-- `Origin.UNKNOWN` … 「分からない」を型として明示的に持つ
+- 種別 `U`（キャッシュでは `-1`）… 「分からない」を値として明示的に持つ
 
 `feature-difficulty.md` でも、どこまで機能を削っても
 **1-9（型解決失敗を行として残す）と 2-2（絞れなかった理由の注記）だけは残す**ことにしている。
@@ -188,7 +190,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 | 構文が呼ぶメソッド | 呼び出し式が無くても JLS が「呼ぶ」と定めるものは辺にする。拡張 for 文の `iterator()` / `hasNext()` / `next()`（JLS 14.14.2。後の 2 つは `java.util.Iterator` のメソッド）、try-with-resources の `close()`（JLS 14.20.3）、レコードパターンのアクセサ（JLS 14.30.2）。**文字列変換の `toString()`（JLS 5.1.11。`"x" + obj`）は辺にしない**（`Object.toString` の全実装が候補になるだけで絞れず、javac も呼び出し命令を書かない） |
 | パッケージアクセスの上書き | パッケージアクセスのメソッドは同じパッケージの宣言からしか上書きされない（JLS 8.4.8.1）ので、別パッケージのサブクラスの同じシグネチャのメソッドは CHA の候補に入れない。同じパッケージで public / protected に広げた中間の宣言があれば、推移的な上書きとして候補に入れる |
 | 呼び出しを修飾する型 | CHA の候補は、メソッドを宣言した型ではなく**呼び出しを修飾する型**（JLS 13.1。受け手の式の静的な型、単純名なら囲む型）の部分型から引く。`Plain p; p.greet()`（`greet` は親インターフェース `Greeter` のデフォルトメソッド）の候補に、`Plain` の部分型でない `Greeter` の実装は入らない。修飾する型が jar の型のときは、jar の中の中間の型を経由した部分型を数え漏らしうるので、宣言した型から引く（多すぎる側） |
-| 条件の値 | 値を変えうるキャスト（JLS 5.1.2 / 5.1.3 / 5.1.7 / 5.1.8）が挟まった式は**判定しない**。`char` は数値昇格（JLS 5.6）に合わせて数値で持つ。浮動小数は表記が揺れるので拾わない |
+| 条件の値 | 値を変えうるキャスト（JLS 5.1.3 の縮小、5.1.2 のうち精度を失う拡大、5.1.7 / 5.1.8）が挟まった式は**判定しない**。条件の両辺だけでなく、実引数・ローカル変数・戻り値の値も同じ規則で読む（コンパイル時定数は変換後の値）。`char` は数値昇格（JLS 5.6）に合わせて数値で持つ。浮動小数は表記が揺れるので拾わず、比べる両辺の片方でも `float` / `double` なら判定しない（整数の実引数は浮動小数の引数へ暗黙に拡大され、`int` → `float` などは精度を失うので、`f(16777217)` の `x == 16777216` は真になる。JLS 5.1.2・5.3）。数値リテラルの値は JDT の評価から取る（16 進の `0x80000000` は `-2147483648`。JLS 3.10.1）。`equals` は、比べる相手の静的な型が `String`・定数と同じ列挙型・定数を箱詰めした型（浮動小数を除く）のときだけ判定する（実行時の型が違えば表記が同じでも偽になるため）（`docs/value-safety-qa.md`） |
 | record・enum の暗黙メンバ | 正準コンストラクタは合成するが、**アクセサ（JLS 8.10.3）・`equals` / `hashCode` / `toString` と、enum の `values()` / `valueOf(String)`（JLS 8.9.3）は合成しない**。呼び出しは `[EXTERNAL] no source to follow` と出る。本体がソースに無いので辿る先は無いが、「ソースにある型なのに EXTERNAL」と見えるのは正確ではない |
 | 起動の入口 | 名前が `main` で引数が `String[]` か無し、private でないメソッドを入口（`FRAMEWORK_ENTRY`）にする（JLS 12.1.4。インスタンスメソッドの `void main()` を含む）。JLS は戻り値が void であることも求めるが、D 行に戻り値の型が無いので見ない（多すぎる側） |
 | 準拠レベル | `source.level` を指定しなければ JDT が対応する最大版で読む。**プレビュー機能は有効にしない**ので、プレビュー段階の構文は構文エラーになる（`syntax errors` として件数が出る） |

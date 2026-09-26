@@ -31,6 +31,12 @@
   JEP 513 は `test/ctorbody/run.sh`（使い捨てのプロジェクトをその場で作る）で見る
 - **その後**: インターフェース（アノテーション型を含む）に暗黙のコンストラクタを合成していたのを
   やめた（Q25。キャッシュの版を `jche-cache-v27` に上げた）
+- **その後**: Q12 の「出所の追跡はキャストを全部剥がす」は、出所が R 行・J 行・ローカル変数の表・値グラフを
+  通じて条件の判定にも使われるため誤りだった。値として使う経路はすべて `unwrapValue` を通し、
+  値を保つ拡大は剥がす側に入れた（`docs/value-safety-qa.md` の Q2。`jche-cache-v32`）
+- **その後**: Q14 の数値リテラルは、表記から読むのをやめて JDT の評価した値を使う
+  （16 進・8 進の `int` は最上位ビットが立つと負。`docs/value-safety-qa.md` の Q12）。
+  Q13 の `equals` は、比べる相手の静的な型と定数の型が揃うときだけ判定する（同 Q15。`jche-cache-v32`）
 
 ---
 
@@ -342,6 +348,8 @@ jar を作る**（`extjars/demo-app.jar`）。Java 25 でしか書けない構�
 
 `jche-cache-v22` → `v23`。dataflow 側の版（`DATAFLOW_VERSION`）は、
 2 つが常に対で書かれ対でしか再利用されない（`docs/cache-split-qa.md`）ので据え置いた。
+（その後キャッシュを 1 ファイルにまとめ、版は `CacheFormat.VERSION` の 1 つだけになった。
+`docs/cache-unification-qa.md` の Q22）
 
 ## Q20. 性能への影響は
 

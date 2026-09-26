@@ -9,6 +9,8 @@
 #   - 典型の状態（依存 jar が無い・ローカルリポジトリが無い・設定の指定先が無い・コンパイルエラー・
 #     実行の失敗）で作り、該当の項目と明細が載ること
 #   - どの実行でも「warnings.txt がある」⇔「run.log に [WARN] / [ERROR] の行がある」こと
+#   - コンパイルエラー・構文エラーのファイルの一覧（上限まで）が、差分更新でも全件解析と同じこと
+#   - パッケージの宣言がフォルダと合わないファイルを、全件解析でも差分更新でも警告すること
 #   - 表示言語を日本語にすると日本語で書かれること
 # を確かめる。
 #
@@ -66,6 +68,21 @@ analyze() {   # $1=フォルダ名 -> 出力フォルダを OUT に、終了コ�
         jche.CallHierarchyExporter config.properties ) > "work/$1.console.log" 2>&1
     STATUS=$?
     OUT=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    check_no_temp_files "$1"
+}
+
+# 実行のあとに、キャッシュのフォルダに一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行。
+# jche.cache.TempFiles）が残らないこと。型解決に失敗した呼び出しの行は、そういう呼び出しがある実行でだけ作るので、
+# ここ（依存 jar の不足・コンパイルエラーのケースがある）で見る。キャッシュ本体の一時ファイル
+# （analysis-cache.tsv.tmp）は中断からの引き継ぎに使うので、失敗した実行では残ってよい
+check_no_temp_files() {   # $1=フォルダ名
+    local left
+    left=$(find "work/$1/.cache" -name '*.tmp' ! -name 'analysis-cache.tsv.tmp' 2>/dev/null)
+    if [ -z "$left" ]; then
+        ok "$1: キャッシュのフォルダに一時ファイルが残らない"
+    else
+        ng "$1: キャッシュのフォルダに一時ファイルが残っている: $left"
+    fi
 }
 
 # warnings.txt がある ⇔ run.log に [WARN] / [ERROR] がある
@@ -123,6 +140,9 @@ analyze config
 check_invariant config
 expect_in_warnings config "A folder or file given in the config file was not found"
 expect_in_warnings config "src/missing"
+# 対処の案内の相対パスの起点が、Config の読み方と合っていること。library.jars は設定ファイルのフォルダから読む
+# （Config#resolveFromConfigDir）のに、以前の案内は project.root からと書いていた
+expect_in_warnings config "source.folders / library.folders / external.library.folders from project.root, and the other items (project.root / library.jars /"
 
 # 5. コンパイルエラー（型が無い）と構文エラー
 make_project build ""
@@ -153,6 +173,49 @@ analyze build
 check_invariant "build(2回目)"
 expect_in_warnings "build(2回目)" "src/main/java/sample/app/Broken.java"
 
+# 5a. コンパイルエラー・構文エラーのファイルが多いとき（上限の 20 件を超える）、並べるファイルは
+#     キャッシュの状態によらず同じであること。数える順は差分更新では「解析し直したファイル → 書き写したブロック」で、
+#     全件解析と違う。先に来た順で残すと、同じソースでも載るファイルと並びが変わる（パスの順で小さいものを残す）
+make_project sample ""
+SAMPLE_SRC=work/sample/src/main/java/sample/app
+for n in Aa Bb Cc Dd Ee Ff Gg Hh Ii Jj Kk Ll Mm Nn Oo Pp Qq Rr Ss Tt Uu Vv Ww Xx Yy; do
+    printf 'package sample.app;\n\npublic class Err%s {\n    void run() { new NoSuchType().go(); }\n}\n' "$n" \
+        > "$SAMPLE_SRC/Err$n.java"
+done
+sample_lines() {   # $1=ファイル。ファイルの一覧（「- パス」）と「ほか N 件」の行
+    grep -E -e '- src/' -e '- and [0-9]+ more' "$1" 2>/dev/null | sed 's/^\[[^]]*\] //'
+}
+same_sample() {   # $1=ラベル  $2=全件解析の一覧  $3=差分更新の一覧  $4=先頭に来るはずのファイル  $5=載らないはずのファイル
+    if [ -n "$2" ] && grep -q -F "$4" <<< "$2" && ! grep -q -F "$5" <<< "$2" && [ "$2" = "$3" ]; then
+        ok "sample: $1 はパスの順で選び、差分更新でも全件解析と同じ"
+    else
+        ng "sample: $1 が差分更新と全件解析で違う（またはパスの順で選んでいない）"
+        diff <(echo "$2") <(echo "$3") | head -6
+    fi
+}
+# コンパイルエラーだけ。warnings.txt の一覧そのものを比べる
+analyze sample
+check_invariant sample
+full_sample=$(sample_lines "$OUT/warnings.txt")
+# 並びの最後のファイルだけを書き換える。差分更新ではこれが最初に数えられる
+printf '\n// changed\n' >> "$SAMPLE_SRC/ErrYy.java"
+analyze sample
+same_sample "warnings.txt のコンパイルエラーのファイル" "$full_sample" "$(sample_lines "$OUT/warnings.txt")" \
+    "src/main/java/sample/app/ErrAa.java" "src/main/java/sample/app/ErrYy.java"
+# 構文エラーも上限を超える。warnings.txt は明細の上限（50 行）で切れるので、同じ一覧を出す run.log で比べる
+# （構文エラーのファイルごとの行は解析したファイルにだけ出るので、明細の上限までに載る行は差分更新で変わりうる）
+for n in Aa Bb Cc Dd Ee Ff Gg Hh Ii Jj Kk Ll Mm Nn Oo Pp Qq Rr Ss Tt Uu Vv; do
+    printf 'package sample.app;\n\npublic class Syn%s {\n    void run( {\n    }\n}\n' "$n" > "$SAMPLE_SRC/Syn$n.java"
+done
+rm -rf work/sample/.cache
+analyze sample
+full_sample=$(sample_lines "$OUT/run.log")
+printf '\n// changed\n' >> "$SAMPLE_SRC/SynVv.java"
+printf '\n// changed again\n' >> "$SAMPLE_SRC/ErrYy.java"
+analyze sample
+same_sample "run.log のコンパイルエラー・構文エラーのファイル" "$full_sample" "$(sample_lines "$OUT/run.log")" \
+    "src/main/java/sample/app/SynAa.java" "src/main/java/sample/app/SynVv.java"
+
 # 5b. var の使い方の誤り（Java 10 より前のコードの class var を、source.level を指定せずに読む）。
 #     JDT は構文エラーの印を付けるが、本体は読めている。コンパイルエラーとしては案内し、
 #     「本体を読めなかった」とは言わない。呼び出しも出力に出る（docs/syntax-error-report-qa.md の Q7）
@@ -178,6 +241,175 @@ grep -q "^at sample.app.var.run(var.java:5),Util.count," "$OUT/call-hierarchy.cs
     && ok "varname: そのファイルの本体の呼び出しが出力に出る" \
     || ng "varname: そのファイルの本体の呼び出しが出力に無い"
 
+# 5c. 網羅していない switch 式（sealed の許可リストに型を足したのに switch を直していない、など）。JDT は構文エラーの印を
+#     付けるが、フロー解析で出るもので本体は読めている。コンパイルエラーとしては案内し、「本体を読めなかった」とは
+#     言わない。呼び出しも出力に出る（docs/cache-unification-qa.md の Q63）
+make_project switches "source.level=21"
+cat > work/switches/src/main/java/sample/app/Shapes.java <<'EOF'
+package sample.app;
+
+public class Shapes {
+    sealed interface Shape permits Circle, Square, Triangle {}
+    record Circle(int r) implements Shape {}
+    record Square(int s) implements Shape {}
+    record Triangle(int b) implements Shape {}
+    enum Color { RED, GREEN }
+
+    int area(Shape shape) {
+        return switch (shape) {
+            case Circle c -> { Util.count("circle"); yield 1; }
+            case Square q -> { Util.count("square"); yield 2; }
+        };
+    }
+
+    int code(Color color) {
+        return switch (color) {
+            case RED -> { Util.count("red"); yield 3; }
+        };
+    }
+}
+EOF
+analyze switches
+check_invariant switches
+expect_in_warnings switches "src/main/java/sample/app/Shapes.java"
+if [ -n "$OUT" ] && ! grep -q -F "syntax errors" "$OUT/run.log"; then
+    ok "switches: 網羅していない switch 式を構文エラー（本体を読めなかった）として数えない"
+else
+    ng "switches: 網羅していない switch 式が構文エラーとして報告された"
+fi
+grep -q "^at sample.app.Shapes.area(Shapes.java:12),Util.count," "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && grep -q "^at sample.app.Shapes.code(Shapes.java:19),Util.count," "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && ok "switches: そのファイルの本体の呼び出しが出力に出る" \
+    || ng "switches: そのファイルの本体の呼び出しが出力に無い"
+
+# 5d. 式の入れ子が深すぎて JDT のスタックが溢れるファイル（メソッド呼び出しを 1 万段つないだ式）。そのファイルだけを
+#     失敗として案内し（warnings.txt の「打ち切られた」）、ほかのファイルは最後まで解析して出力する。以前は
+#     StackOverflowError を捕まえておらず、設定 1 つ分の解析がまるごと失敗していた（docs/cache-unification-qa.md の Q62）
+make_project deep ""
+{
+    printf 'package sample.app;\n\npublic class Deep {\n    String chain() {\n        return new StringBuilder()'
+    for ((i = 0; i < 10000; i++)); do printf '.append(%d)' "$i"; done
+    printf '.toString();\n    }\n}\n'
+} > work/deep/src/main/java/sample/app/Deep.java
+analyze deep
+check_invariant deep
+[ "$STATUS" = 0 ] && ok "deep: 1 ファイルのスタックが溢れても、実行は成功する" \
+    || ng "deep: 1 ファイルのスタックが溢れて、実行ごと失敗した（終了コード $STATUS）"
+expect_in_warnings deep "The analysis or the output stopped partway"
+expect_in_warnings deep "src/main/java/sample/app/Deep.java"
+expect_in_warnings deep "stack overflow"
+grep -q -F "Util.count" "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && ok "deep: ほかのファイルの呼び出しは出力に出る" || ng "deep: ほかのファイルの呼び出しが出力に無い"
+
+# 5e. 名前の違う 2 つのファイルで同じ型を宣言している（public でないトップレベルの型）。間に 100 を超えるファイルが
+#     あると別々のバッチで解析され、JDT はどちらにもエラーを出さない。片方の呼び出しは出力に出ないので、グラフを
+#     組むときに警告する（warnings.txt の「ソースにコンパイルエラーがある」。docs/cache-unification-qa.md の Q61）
+make_project twins ""
+TWINS=work/twins/src/main/java/sample/app
+printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    void t() {\n        Util.count("a");\n    }\n}\n' > $TWINS/Aaa.java
+printf 'package sample.app;\n\npublic class Zzz {\n}\n\nclass Twin {\n    void t() {\n        Util.count("z");\n    }\n}\n' > $TWINS/Zzz.java
+for ((i = 100; i < 220; i++)); do
+    printf 'package sample.app;\n\npublic class Fill%d {\n}\n' "$i" > "$TWINS/Fill$i.java"
+done
+analyze twins
+check_invariant twins
+expect_in_warnings twins "The type sample.app.Twin is declared in both src/main/java/sample/app/Aaa.java and src/main/java/sample/app/Zzz.java"
+# 直し方は、2 つのファイルが同じフォルダにあっても通じる（「どちらかのフォルダだけを書く」だけでは直せない）
+expect_in_warnings twins "Remove or rename one of the two declarations"
+
+# 5f. 同じ型の 2 つの宣言に、同じシグネチャのメソッドが 1 つも無い（Twin(int) と a()、暗黙の Twin() と z()）。
+#     メソッドの宣言の重なりだけを見ていた f491e2e は警告しなかった。型の宣言（H 行）の重なりで警告する
+#     （docs/cache-unification-qa.md の Q72）
+make_project twins2 ""
+TWINS2=work/twins2/src/main/java/sample/app
+printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    Twin(int v) {\n    }\n\n    void a() {\n        Util.count("a");\n    }\n}\n' > $TWINS2/Aaa.java
+printf 'package sample.app;\n\npublic class Zzz {\n}\n\nclass Twin {\n    void z() {\n        Util.count("z");\n    }\n}\n' > $TWINS2/Zzz.java
+for ((i = 100; i < 220; i++)); do
+    printf 'package sample.app;\n\npublic class Fill%d {\n}\n' "$i" > "$TWINS2/Fill$i.java"
+done
+analyze twins2
+check_invariant twins2
+expect_in_warnings twins2 "The type sample.app.Twin is declared in both src/main/java/sample/app/Aaa.java and src/main/java/sample/app/Zzz.java"
+
+# 5g. 3 つのファイルが同じ型を宣言している（どれも別々のバッチ）。組と文言をキャッシュのブロックの並びに依らせない。
+#     最後のファイルだけを書き換えた差分更新では、そのブロックがキャッシュの先頭に移る。出会った順に組を作ると、
+#     全件解析と挙げる組が変わる（docs/cache-unification-qa.md の Q72）
+make_project twins3 ""
+TWINS3=work/twins3/src/main/java/sample/app
+printf 'package sample.app;\n\npublic class Aaa {\n}\n\nclass Twin {\n    Twin(int v) {\n    }\n\n    void a() {\n        Util.count("a");\n    }\n}\n' > $TWINS3/Aaa.java
+printf 'package sample.app;\n\npublic class Mmm {\n}\n\nclass Twin {\n    void m() {\n        Util.count("m");\n    }\n}\n' > $TWINS3/Mmm.java
+printf 'package sample.app;\n\npublic class Zzz {\n}\n\nclass Twin {\n    void z() {\n        Util.count("z");\n    }\n}\n' > $TWINS3/Zzz.java
+for ((i = 100; i < 220; i++)); do
+    printf 'package sample.app;\n\npublic class Fill%d {\n}\n' "$i" > "$TWINS3/Fill$i.java"
+    printf 'package sample.app;\n\npublic class Nfill%d {\n}\n' "$i" > "$TWINS3/Nfill$i.java"
+done
+twin_lines() {   # $1=warnings.txt。同じ型を宣言するファイルの組の行
+    grep -o -E 'The type sample\.app\.Twin is declared in both [^ ]+ and [^ ]+\.java' "$1" 2>/dev/null
+}
+analyze twins3
+check_invariant twins3
+full_twins=$(twin_lines "$OUT/warnings.txt")
+printf '\n// changed\n' >> "$TWINS3/Zzz.java"
+analyze twins3
+inc_twins=$(twin_lines "$OUT/warnings.txt")
+if [ "$(wc -l <<< "$full_twins")" = 2 ] && grep -q -F "Aaa.java and src/main/java/sample/app/Mmm.java" <<< "$full_twins" \
+        && grep -q -F "Aaa.java and src/main/java/sample/app/Zzz.java" <<< "$full_twins" && [ "$full_twins" = "$inc_twins" ]; then
+    ok "twins3: 3 つのファイルが同じ型を宣言していても、組（パスの順で最初のファイルとほかのファイル）は差分更新でも全件解析と同じ"
+else
+    ng "twins3: 同じ型を宣言するファイルの組が期待と違うか、差分更新と全件解析で違います"
+    diff <(echo "$full_twins") <(echo "$inc_twins") | head -6
+fi
+
+# 5c. 1 件ずつの指定（library.jars）に書いたフォルダはクラスフォルダとして渡し、中の jar は使わない（Eclipse と同じ）。
+#     jar しか無いフォルダなら jar を集めたフォルダの書き間違いなので警告する。.class もあるフォルダ（Eclipse の出力
+#     フォルダにソースフォルダの jar が写されたものなど）は本当のクラスフォルダで、対処が要らないので警告しない
+make_cls_folder() {   # $1=フォルダ名  $2=library.jars
+    local d=work/$1
+    mkdir -p "$d/src/app" "$d/lsrc/l" "$d/cls" "$d/jars"
+    printf 'package l;\npublic class A { public void m(String s) { } }\n' > "$d/lsrc/l/A.java"
+    "$JAVAC_BIN" -nowarn -d "$d/cls" "$d/lsrc/l/A.java" \
+        && ( cd "$d/cls" && "$(dirname "$JAVAC_BIN")/jar" cf ../jars/l.jar l ) && cp "$d/jars/l.jar" "$d/cls/copied.jar"
+    printf 'package app;\npublic class U {\n    public void go() {\n        new l.A().m("x");\n    }\n}\n' \
+        > "$d/src/app/U.java"
+    cat > "$d/config.properties" <<EOF
+project.root=.
+source.folders=src
+library.jars=$2
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+make_cls_folder clsjar cls
+analyze clsjar
+check_invariant clsjar
+if [ -n "$OUT" ] && [ ! -f "$OUT/warnings.txt" ] && grep -q -F 'A.m,RESOLVED' "$OUT/call-hierarchy.csv"; then
+    ok "clsjar: jar も入ったクラスフォルダは、クラスを使い、警告しない"
+else
+    ng "clsjar: jar も入ったクラスフォルダの扱いが期待と違う（warnings.txt がある、またはクラスを解決できない）"
+fi
+make_cls_folder jaronly jars
+analyze jaronly
+check_invariant jaronly
+expect_in_warnings jaronly "is given as a single classpath entry"
+
+# 5h. パッケージの宣言がフォルダと合わない（sample/app/Moved.java が package sample.other を宣言する）。JDT はソースパスから
+#     sample/other/Moved.java を探すので、この型はほかのファイルと一緒に解析したときにしか見つからず、結果がバッチの組み方で
+#     変わる。全件解析では何の手がかりも出なかった。構文だけで読んだパッケージの宣言をフォルダと比べて、実行のたびに警告する
+#     （Moved.java を再利用する差分更新でも同じ行が出る）
+make_project pkgdir ""
+PKGDIR=work/pkgdir/src/main/java/sample/app
+printf 'package sample.other;\n\npublic class Moved {\n    public static void m() {\n    }\n}\n' > $PKGDIR/Moved.java
+PKGDIR_LINE="src/main/java/sample/app/Moved.java declares package sample.other, but its folder corresponds to package sample.app"
+analyze pkgdir
+check_invariant pkgdir
+expect_in_warnings pkgdir "$PKGDIR_LINE"
+printf 'package sample.app;\n\npublic class Touched {\n}\n' > $PKGDIR/Touched.java
+analyze pkgdir
+check_invariant "pkgdir(差分更新)"
+expect_in_warnings "pkgdir(差分更新)" "$PKGDIR_LINE"
+
 # 6. 実行の失敗（出力フォルダを作った後で失敗する: ソースフォルダが 1 つも無い）
 make_project failed "source.folders=src/missing"
 analyze failed
@@ -191,5 +423,199 @@ cp work/deps/pom.xml work/deps_ja/pom.xml
 JCHE_LANG=ja analyze deps_ja
 check_invariant deps_ja
 expect_in_warnings deps_ja "依存 jar が解決できていません"
+
+# 8. 1 つの JVM で設定を続けて処理する（引数に設定を複数渡す。対話モードで解析を繰り返すのも同じ経路）。
+# どの設定の warnings.txt も、その設定だけを動かしたときと同じ中身になること。
+#   - 拡張の置き場所の警告（plugin.folders のフォルダが無い）が 2 つ目の設定にも載る
+#     （以前は拡張のクラスローダを JVM の中で使い回していて、最初の設定にしか載らなかった）
+#   - message.language を書いていない設定は、前の設定の言語（ここでは ja）を引き継がず OS の言語（en）で書く
+#     （拡張の警告に関わらず warnings.txt ができるよう、どちらの設定にも無い jar を指定しておく）
+# 言語の引き継ぎを見るので JCHE_LANG を外し、OS の言語は user.language で英語に固定する
+make_project multi "library.jars=no-such.jar"
+sed -i '/^output.folder=/d' work/multi/config.properties
+{ cat work/multi/config.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
+  echo "message.language=ja"; } > work/multi/c1.properties
+{ cat work/multi/config.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
+    > work/multi/c2.properties
+( cd work/multi && env -u JCHE_LANG "$JAVA_BIN" -Duser.language=en -cp "$CLASSES:$CP" \
+    jche.CallHierarchyExporter c1.properties c2.properties ) > work/multi.console.log 2>&1
+for n in 1 2; do
+    OUT=$(ls -d work/multi/out$n/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    check_invariant "multi(c$n)"
+    if [ "$n" = 1 ]; then
+        expect_in_warnings "multi(c1)" "plugin.folders のフォルダがありません"
+    else
+        expect_in_warnings "multi(c2)" "The folder in plugin.folders does not exist"
+        # 見出しの「What to do:」（日本語なら「対処:」）で何語で書いたかを見る
+        if [ -n "$OUT" ] && grep -q -F "What to do:" "$OUT/warnings.txt" 2>/dev/null \
+                && ! grep -q -F "対処:" "$OUT/warnings.txt"; then
+            ok "multi(c2): message.language を書いていない設定は前の設定の言語を引き継がない"
+        else
+            ng "multi(c2): 前の設定の言語（ja）を引き継いでいる（または warnings.txt が無い）"
+        fi
+    fi
+done
+
+# 9. 行にならないノードだけでできた部分木も max.rows で打ち切って知らせる。
+# 出力の探索（StreamingTreeWalker）は経路ごとに辿り、コンストラクタ呼び出しと除外パッケージのメソッドは行にしない。
+# 以前は行数だけを上限に数えたので、それだけでつながる枝分かれ（C_i のフィールド初期化子が C_{i+1} と C_{i+2} を
+# new する）は経路の数（フィボナッチ数）だけ辿られ、0 行・警告なしのまま終わらなくなった（N=40 で 30 秒超）。
+# 行にしないノードの数にも max.rows と同じ上限を掛け、越えたら「途中で止まった」の項目に載せる
+make_dag() {   # $1=フォルダ名  $2=ctor（コンストラクタの連鎖）/ excluded（除外パッケージのメソッドの連鎖）
+    local dir=work/$1 n=30 i
+    mkdir -p "$dir/src/p" "$dir/src/q"
+    for i in $(seq 0 $((n - 1))); do
+        if [ "$2" = ctor ]; then
+            if [ "$i" -lt $((n - 2)) ]; then
+                echo "package p; public class C$i { private final Object a = new C$((i + 1))(); private final Object b = new C$((i + 2))(); }"
+            else
+                echo "package p; public class C$i { }"
+            fi > "$dir/src/p/C$i.java"
+        else
+            if [ "$i" -lt $((n - 2)) ]; then
+                echo "package q; public class M$i { public static void m() { M$((i + 1)).m(); M$((i + 2)).m(); } }"
+            else
+                echo "package q; public class M$i { public static void m() { } }"
+            fi > "$dir/src/q/M$i.java"
+        fi
+    done
+    if [ "$2" = ctor ]; then
+        echo 'package p; public class Main { public static void main(String[] a) { new C0(); } }'
+    else
+        echo 'package p; public class Main { public static void main(String[] a) { q.M0.m(); } }'
+    fi > "$dir/src/p/Main.java"
+    cat > "$dir/config.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+exclude.packages=java.**,javax.**,q.**
+max.rows=1000
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+for kind in ctor excluded; do
+    make_dag "dag_$kind" "$kind"
+    analyze "dag_$kind"
+    [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
+    check_invariant "dag_$kind"
+    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) in a row"
+done
+
+# 行を書き進めている探索は、行にならないノードが行より多くても行数の上限まで止めない。
+# 既定の exclude.packages（java.**）に当たる JDK の呼び出しも読み飛ばし（行にならないノード）なので、
+# 普通のコードでも行にならないノードは行より多く通る。通った数の合計を max.rows で打ち切ると
+# （この上限を入れた当初の形）、行数が max.rows に届かない探索でも途中で止まり、以前は出ていた行が落ちる。
+# 各メソッドが行にならない呼び出し（JDK の呼び出し 3 つ・除外パッケージの中の 11 の呼び出し・5 段の継承の
+# new 3 つ）と Leaf.x() を持つ形を 40 個並べ、max.rows=100 で Leaf.x の 40 行がすべて出て、打ち切りの警告が無いこと
+make_busy() {   # $1=フォルダ名  $2=jdk / excluded / ctor
+    local dir=work/$1 i
+    mkdir -p "$dir/src/p" "$dir/src/q"
+    echo 'package p; public class Leaf { public static void x() { } }' > "$dir/src/p/Leaf.java"
+    {
+        echo 'package p; public class Main {'
+        for i in $(seq 1 40); do
+            case "$2" in
+                jdk) echo "public void m$i(StringBuilder sb) { sb.append(1); sb.append(\"a\"); System.out.println(sb); Leaf.x(); }" ;;
+                excluded) echo "public void m$i() { q.U.m(); }" ;;
+                ctor) echo "public void m$i() { new D4(); new D4(); new D4(); Leaf.x(); }" ;;
+            esac
+        done
+        echo '}'
+    } > "$dir/src/p/Main.java"
+    {
+        echo 'package q; public class U { public static void m() {'
+        for i in $(seq 1 10); do echo "h$i();"; done
+        echo 'p.Leaf.x(); }'
+        for i in $(seq 1 10); do echo "static void h$i() { }"; done
+        echo '}'
+    } > "$dir/src/q/U.java"
+    echo 'package p; public class D0 { }' > "$dir/src/p/D0.java"
+    for i in 1 2 3 4; do echo "package p; public class D$i extends D$((i - 1)) { }" > "$dir/src/p/D$i.java"; done
+    cat > "$dir/config.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+exclude.packages=java.**,javax.**,q.**
+max.rows=100
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+for kind in jdk excluded ctor; do
+    make_busy "busy_$kind" "$kind"
+    analyze "busy_$kind"
+    check_invariant "busy_$kind"
+    # 起点が Main.m1〜m40 で、Leaf.x へ届いた行（q.U.m を起点にした行は数えない）
+    ROWS=$(grep -c -E ',Main\.m[0-9]+,Leaf\.x' "$OUT/call-hierarchy.csv" 2>/dev/null)
+    if [ "$ROWS" = 40 ] && [ ! -f "$OUT/warnings.txt" ]; then
+        ok "busy_$kind: 行数の上限に届かない探索は打ち切らない（Leaf.x の 40 行）"
+    else
+        ng "busy_$kind: Leaf.x の行が ${ROWS:-0} 行（40 のはず）、または warnings.txt がある"
+    fi
+done
+
+# 8. jar のクラス（q.Api）が参照するクラス（q.Missing）が無いとき、事実を集めるときの問い合わせが同じバッチの後ろの
+#    ファイル（app/B.java）のメソッドを先に解決させ、B の番で JDT が例外を投げて一括解析が落ちていた（「The batch analysis
+#    failed」が全件解析の warnings.txt にだけ載った）。今は事実をバッチの全ファイルを JDT が解決し終えてから集める
+#    （docs/cache-unification-qa.md の「後ろのファイルの型を先に解決させない」）。A は B の呼び出し（呼び出しの候補）・
+#    拡張 for 文・try-with-resources（暗黙の呼び出しの宣言）で B のメソッドを問い合わせる
+mkdir -p work/early/src/app work/early/lib work/early/jsrc/q work/early/jcls
+printf 'package q;\npublic interface Missing { int X = 1; }\n' > work/early/jsrc/q/Missing.java
+printf 'package q;\npublic class Api { public Missing[] probs() { return null; } }\n' > work/early/jsrc/q/Api.java
+"$JAVAC_BIN" -d work/early/jcls work/early/jsrc/q/*.java && rm work/early/jcls/q/Missing.class \
+    && "$(dirname "$JAVAC_BIN")/jar" cf work/early/lib/q.jar -C work/early/jcls q \
+    || ng "early: jar を作れませんでした"
+cat > work/early/src/app/A.java <<'EOF'
+package app;
+
+public class A {
+    public void a(B b) throws Exception {
+        b.run();
+        for (Object o : b) {
+            System.out.println(o);
+        }
+        try (B r = b) {
+            r.run();
+        }
+    }
+}
+EOF
+cat > work/early/src/app/B.java <<'EOF'
+package app;
+
+import q.Missing;
+
+public class B implements Iterable<Object>, AutoCloseable {
+    public java.util.Iterator<Object> iterator() {
+        return null;
+    }
+
+    public void close() {
+    }
+
+    public void run() {
+    }
+
+    static void w(q.Api a, Missing m) {
+    }
+}
+EOF
+cat > work/early/config.properties <<'EOF'
+project.root=.
+source.folders=src
+library.folders=lib
+source.encoding=UTF-8
+output.folder=./out
+cache.folder=./.cache
+EOF
+analyze early
+check_invariant early
+if [ -n "$OUT" ] && ! grep -q -E "(failed|stopped|ran out of stack) in a batch" "$OUT/run.log" 2>/dev/null; then
+    ok "early: 後ろのファイルの型を先に解決させず、一括解析が落ちない"
+else
+    ng "early: 一括解析が落ちた（work/early.console.log）"
+    grep -a -E "(failed|stopped|ran out of stack) in a batch" "$OUT/run.log" 2>/dev/null | head -2
+fi
 
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

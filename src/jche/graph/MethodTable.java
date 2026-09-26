@@ -13,8 +13,13 @@ import jche.cache.MethodRef;
  * メソッドを int の ID に内部化する表。
  *
  * 保持するのはメソッドごとに文字列2本（キーとパッケージ名）と、
- * 宣言ファイル・宣言行だけ。型名・メソッド名はキーから切り出せるので持たない。
+ * 宣言ファイル・宣言行・ファイルの中の宣言の順番など。型名・メソッド名はキーから切り出せるので持たない。
  * キー形式: typeFqn#methodName(paramSig)
+ *
+ * <p>ID は初めて ID 化した順に振られる。その順はキャッシュ上のブロックの並び（差分更新で解析し直した
+ * ファイルが先頭へ移る）と、どの行が先にそのメソッドを指したかで変わるので、<b>出力の並びや
+ * 「どれを採るか」の決め手に ID を使わない</b>。同じ宣言行に並ぶものの前後は
+ * {@link #compareDeclarationOrder} で決める（{@code docs/deterministic-row-order-qa.md} の Q14）。
  */
 public final class MethodTable {
 
@@ -27,6 +32,12 @@ public final class MethodTable {
     private final IntArray declLines = new IntArray(1 << 16);
     /** 宣言の終了行。分からなければ declLine と同じ値（＝その行だけの範囲） */
     private final IntArray declEndLines = new IntArray(1 << 16);
+    /**
+     * ファイルの中での宣言の順番（ブロックの D 行の並びの位置。0 始まり）。ソースが無ければ -1。
+     * D 行は AST を訪ねた順に並ぶので、同じソースからは必ず同じ値になる。同じ行に書かれた
+     * メソッドどうしはソースの並び、入れ子（メソッドとその中のラムダ・匿名クラス）は外側が先
+     */
+    private final IntArray declOrdinals = new IntArray(1 << 16);
     /**
      * 本体を持つか。既定はtrue（＝候補になりうる）。
      * D行が無いメソッド（jar内のメソッド等）はソースが無く展開もできないため、
@@ -65,6 +76,7 @@ public final class MethodTable {
         declFiles.add(null);
         declLines.add(-1);
         declEndLines.add(-1);
+        declOrdinals.add(-1);
         hasBody.add(Boolean.TRUE);
         annotations.add("");
         mods.add("");
@@ -77,14 +89,17 @@ public final class MethodTable {
         return (id == null) ? -1 : id;
     }
 
-    public void setDeclaration(int id, String file, int line, boolean body) {
-        setDeclaration(id, file, line, line, body);
-    }
-
-    public void setDeclaration(int id, String file, int line, int endLine, boolean body) {
+    /**
+     * 宣言を記録する（D 行から）。同じキーの宣言が複数のファイルにあれば後から記録したものが勝つ。
+     * 宣言の順番も同じ呼び出しで記録するので、ファイル・行・順番は必ず同じ宣言のものになる
+     *
+     * @param ordinal ファイルの中での宣言の順番（ブロックの D 行の並びの位置）
+     */
+    public void setDeclaration(int id, String file, int line, int endLine, boolean body, int ordinal) {
         declFiles.set(id, file);
         declLines.set(id, line);
         declEndLines.set(id, Math.max(line, endLine));
+        declOrdinals.set(id, ordinal);
         hasBody.set(id, body);
     }
 
@@ -178,6 +193,24 @@ public final class MethodTable {
     private String rawParams(int id) {
         String k = keys.get(id);
         return k.substring(k.indexOf('(', k.indexOf('#')) + 1, k.lastIndexOf(')'));
+    }
+
+    /** 引数の数（引数型は消去済みでカンマを含まないので、カンマで数えられる。{@link #shortParams}） */
+    public int paramCount(int id) {
+        String raw = rawParams(id);
+        if (raw.isEmpty()) {
+            return 0;
+        }
+        int count = 1;
+        for (int i = raw.indexOf(','); i >= 0; i = raw.indexOf(',', i + 1)) {
+            count++;
+        }
+        return count;
+    }
+
+    /** 最後の引数が配列型か（可変長引数はここに入る。可変長かどうかはキーからは分からない） */
+    public boolean lastParamIsArray(int id) {
+        return rawParams(id).endsWith("[]");
     }
 
     public String pkg(int id) {
@@ -349,6 +382,34 @@ public final class MethodTable {
     }
 
     /**
+     * ファイルの中での宣言の順番（ブロックの D 行の並びの位置。0 始まり）。ソースが無ければ -1。
+     * 同じ行に宣言が並ぶとき（1 行に書いたメソッド、同じ行のラムダ、暗黙のコンストラクタと
+     * {@code <clinit>}）の前後を決める
+     */
+    public int declOrdinal(int id) {
+        return declOrdinals.get(id);
+    }
+
+    /**
+     * 宣言の位置の前後。宣言行 → ファイルの中の宣言の順番 → キーの文字列の順に比べる。
+     *
+     * <p>同じ行に並ぶ宣言の前後を ID で決めない。ID の振られ方はキャッシュ上のブロックの並びで変わり
+     * （戻り値の R 行を持つメソッドは D 行より先に ID 化される。別のファイルから先に呼ばれていれば、
+     * そのファイルのブロックで ID 化される）、全件解析と差分更新とで前後が入れ替わる。
+     * 宣言の順番はブロックの中で閉じているので、どちらの実行でも同じ値になる。
+     * キーは、宣言の順番まで同じとき（別々のファイルの宣言を比べたとき）の最後の決め手
+     *
+     * @return a が前なら負、後なら正、同じメソッドなら 0
+     */
+    public int compareDeclarationOrder(int a, int b) {
+        int c = Integer.compare(declLines.get(a), declLines.get(b));
+        if (c == 0) {
+            c = Integer.compare(declOrdinals.get(a), declOrdinals.get(b));
+        }
+        return (c != 0) ? c : keys.get(a).compareTo(keys.get(b));
+    }
+
+    /**
      * 宣言の終了行（本体の閉じ括弧の行）。ソースが無ければ -1。
      * 暗黙のコンストラクタや {@code <clinit>} のように本体が書かれていないものは宣言行と同じ値。
      */
@@ -362,6 +423,8 @@ public final class MethodTable {
      * 入れ子（内部クラス・匿名クラスのメソッド）では、範囲が最も狭いものを採る。
      * 終了行を持っているので、メソッドの外（フィールド宣言や空行）にある行では
      * 直前のメソッドではなく「見つからない」を返す。
+     * 範囲の広さが同じもの（1 行に書いたメソッドとその中のラムダ等）は、宣言の位置が先のもの
+     * （{@link #compareDeclarationOrder}。同じ行なら先に宣言したもの。入れ子なら外側）を採る。ID では決めない
      *
      * @param file プロジェクトルートからの相対パス（{@link #declFile}と同じ綴り）
      * @param line 1 始まりの行番号
@@ -380,7 +443,8 @@ public final class MethodTable {
                 continue;
             }
             int width = end - start;
-            if (width < bestWidth) {
+            if (width < bestWidth
+                    || (width == bestWidth && best >= 0 && compareDeclarationOrder(id, best) < 0)) {
                 bestWidth = width;
                 best = id;
             }

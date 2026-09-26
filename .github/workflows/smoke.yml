@@ -46,7 +46,8 @@ jobs:
         run: bash test/regression/run.sh
 
       # CallResolver.resolve が呼ぶ順・回数によらず同じ結果を返すこと（Issue #80）。
-      # test/demo の全エッジを「昇順 → もう一度昇順 → 新しい resolver で降順」の 3 通りで解決して突き合わせる
+      # test/demo の全エッジを「昇順 → もう一度昇順 → 新しい resolver で降順」の 3 通りで解決して突き合わせる。
+      # 値の表（jche.graph.ValueStore）が読み手の前提の決まりを守ることも見る（StoreUnitCheck・ValueStoreCheck）
       - name: Resolve order-independence test (test/dataflow)
         run: bash test/dataflow/run.sh
 
@@ -61,6 +62,13 @@ jobs:
       - name: Constructor body test (JEP 513 flexible constructor bodies)
         run: bash test/ctorbody/run.sh
 
+      # 値の読み違いで呼び出しを黙って落とさないこと（値を変えうるキャスト・浮動小数・16 進のリテラル・
+      # 複合代入と ++・ループの中で写した変数・型の揃わない equals・引数やフィールドへの new・
+      # 匿名クラスのフィールド初期化子）。仕組みごとの対照は打ち切られること。
+      # 使い捨てのプロジェクトをその場で作る
+      - name: Value safety test (no false pruning or narrowing)
+        run: bash test/pruning/run.sh
+
       # Java 言語仕様（JLS SE 26）への適合と javac との整合。test/jls/project/src の各ソースが JLS の
       # 1 つの節に対応し（パッケージ名が節番号）、節ごとの期待値（test/jls/expect.tsv）と、同じソースを
       # javac 26（--release 26）でコンパイルしたバイトコードとの突き合わせで見る。
@@ -73,15 +81,11 @@ jobs:
       - name: Warnings file test (warnings.txt)
         run: bash test/warnings/run.sh
 
-      # dataflow キャッシュの値の符号化。SQL やログ文言のような長さも中身も選べない文字列を
-      # そのまま持つための土台なので、全制御文字・バックスラッシュの連なりまで機械的にかける
+      # キャッシュの列の符号化（joinRow が書き、CacheReader が戻す 1 つの規則）。SQL やログ文言のような
+      # 長さも中身も選べない文字列をそのまま持つための土台なので、全制御文字・バックスラッシュの連なりまで
+      # 機械的にかける
       - name: Cache value encoding test (escape round-trip)
         run: bash test/cachevalue/run.sh
-
-      # キャッシュの最終行（Z 行）を末尾から読む部分。改行の有無・CRLF・読む量の境目・
-      # 多バイト文字が窓の先頭で切れる形まで、バイト単位の境界を機械的にかける
-      - name: Cache trailer read test (tail read boundaries)
-        run: bash test/cachetail/run.sh
 
       # 同梱の契約表（JDK のコールバック・フレームワークの入口）。全行が parse でき、JDK の型は
       # 宣言元と呼び戻すメソッドが実在すること。継承しているだけの型で書いた行は永久に当たらない
@@ -91,10 +95,17 @@ jobs:
       # キャッシュの健全性の検査。ソースを書き換えたあとの差分更新の結果が、キャッシュを消してからの
       # 全件解析の結果と一致すること（CSV とキャッシュの両方）。2 段のコンパイル時定数・
       # 注釈の既定値・列挙定数の改名・行形式を壊しかねない値を対象にする。
-      # あわせて、文字コードを変えたときと壊れたキャッシュのときに再利用せず捨てること、
-      # 中断した実行が残した一時ファイルから解析済みのぶんを引き継ぐことも見る
+      # あわせて、文字コードを変えたときと壊れたキャッシュのときに再利用せず捨てること
+      # （1 ブロックだけ壊れていればそのファイルだけ解析し直すこと）、中断した実行が残した一時ファイルから
+      # 解析済みのぶんを引き継ぐこと、以前の形式が残した dataflow-cache.tsv を消すことも見る
       - name: Cache integrity test (differential update equals full analysis)
         run: bash test/incremental/run.sh
+
+      # キャッシュの形式の版（CacheFormat.VERSION）の上げ忘れを捕まえる。決まった題材を全件解析した
+      # キャッシュの事実の指紋を test/cacheversion/facts.txt に記録しておき、版・題材・環境が同じなのに
+      # 事実が変わったら落とす（迷ったら上げる。上げ忘れは検査で捕まえる）
+      - name: Cache format version guard (facts changed without a version bump)
+        run: bash test/cacheversion/run.sh
 
       # 起動コマンド（java-call-hierarchy-exporter.sh）と対話モード（src/jche/Jche.java）。メニューへの答えをパイプで流し込んで動かす。
       # 標準入力が端末でないので、初回の「置き場所を選ぶ」問いは出ず、~/.jbang（上のキャッシュ）をそのまま使う。

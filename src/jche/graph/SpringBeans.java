@@ -1,8 +1,11 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -13,6 +16,7 @@ import java.util.Set;
 import jche.cache.AnnotationTokens;
 import jche.cache.FieldDeclFact;
 import jche.cache.MethodDeclFact;
+import jche.cache.ModifierTokens;
 import jche.cache.Origin;
 import jche.cache.TypeFact;
 
@@ -37,12 +41,26 @@ import jche.cache.TypeFact;
  *       付いた具象型。単純名で照合するので、それらを合成した独自注釈は
  *       {@code spring.di.bean.annotations} に足せば同じ扱いになる</li>
  *   <li>&#64;Bean を付けたメソッドが {@code return new Impl();} の形で返す具象型
- *       （R行の出所が全て同じ {@code T:FQN}）。&#64;Configuration クラスの定義を拾うため</li>
+ *       （R行の値が全て同じ型の new）。&#64;Configuration クラスの定義を拾うため</li>
  * </ul>
+ *
+ * <h2>返す具象型が決まらない &#64;Bean メソッド</h2>
+ * {@code return Impl.builder().build();}（ファクトリ・ビルダー）、{@code return p;}（引数）、
+ * {@code return field;}、{@code return c ? new A() : new A();}、return が 2 通りの型、そして値を読まない指定
+ * （{@code dataflow.enabled=false}。R 行を読まない）のときは、どの具象型が Bean になるか分からない。
+ * 以前はそのメソッドを数えずに済ませていたので、ステレオタイプ注釈の Bean が 1 つだけ残り、段 5 がそれに
+ * 絞って &#64;Bean の実装への呼び出しを黙って落としていた。今は、宣言した戻り値の型（D 行。
+ * {@link MethodDeclFact#returnType}）とその部分型を「分からない Bean がなりうる型」として覚え、呼び出しの
+ * 候補の型がそこに触れれば段 5 で絞らない（{@link #mayBeUndeterminedBean}。docs/value-safety-qa.md の Q17）。
+ * 戻り値の型が分からない・{@code Object} なら、どの呼び出しでも絞らない。
  * Bean名は注釈の値（{@code @Service("userDao")}）、無ければ単純名の先頭を小文字にしたもの
  * （Springの既定の命名）。&#64;Bean メソッドはメソッド名。
  *
  * <h2>絞り込みに使う注入点の情報</h2>
+ * 絞るのは、レシーバがコンテナの値を入れうる注入点のときだけ（{@link #isInjectedField} /
+ * {@link #injectsParameters}。&#64;Autowired 等を付けたフィールド・メソッド、ステレオタイプ注釈の Bean の
+ * フィールドとコンストラクタの引数、&#64;Bean メソッドの引数）。それ以外のフィールド・引数には利用者のコードが
+ * 何を入れてもよい（docs/spring-di-qa.md の Q5・Q6）。
  * フィールドに &#64;Qualifier / &#64;Resource(name) が付いていれば、そのBean名の型に絞る。
  * 付いていなければ型で絞る（候補のうちBeanが1つだけなら確定）。
  *
@@ -58,8 +76,11 @@ import jche.cache.TypeFact;
  */
 public final class SpringBeans {
 
-    /** Bean登録の印とみなす注釈の単純名（既定） */
-    private static final List<String> DEFAULT_STEREOTYPES = List.of(
+    /**
+     * Bean登録の印とみなす注釈の単純名（既定）。コンテナがインスタンスを作るだけで、注釈の無いフィールドには
+     * 書かない注釈でもある（{@link FieldFacts} が「フレームワークが書きうるフィールド」から外すのに使う）
+     */
+    static final List<String> DEFAULT_STEREOTYPES = List.of(
             "Component", "Service", "Repository", "Controller", "RestController",
             "Configuration", "ControllerAdvice", "RestControllerAdvice",
             "Named", "ManagedBean", "Singleton");
@@ -87,8 +108,30 @@ public final class SpringBeans {
     private final Map<String, Set<String>> beanNames = new LinkedHashMap<>();
     /** "typeFqn#fieldName" -> 注入時に指定されたBean名。指定が無ければ空文字 */
     private final Map<String, String> injectionPoints = new HashMap<>();
-    /** &#64;Bean メソッドのID -> Bean名。R行が読み終わってから型を確定する */
-    private final Map<Integer, String> beanMethods = new LinkedHashMap<>();
+    /** &#64;Bean メソッドのID -> Bean名と宣言した戻り値の型。R行が読み終わってから型を確定する */
+    private final Map<Integer, BeanMethod> beanMethods = new LinkedHashMap<>();
+    /**
+     * 返す具象型が決まらなかった &#64;Bean メソッドの Bean がなりうる型（宣言した戻り値の型とその部分型すべて。
+     * クラスの説明「返す具象型が決まらない &#64;Bean メソッド」）
+     */
+    private final Set<String> undeterminedTypes = new HashSet<>();
+    /** 返す具象型も宣言した戻り値の型も分からない（または {@code Object} の）&#64;Bean メソッドがあった */
+    private boolean undeterminedAnyType;
+    /**
+     * ステレオタイプ注釈で登録された型。コンテナがインスタンスを作るので、コンストラクタの引数と
+     * フィールドが注入点になりうる（&#64;Bean メソッドが返す型は、利用者のコードが {@code new} するので含めない）
+     */
+    private final Set<String> stereotypeBeans = new HashSet<>();
+    /** 引数が注入点になるメソッドの ID（&#64;Autowired / &#64;Inject / &#64;Resource を付けたメソッド・コンストラクタと &#64;Bean メソッド） */
+    private final Set<Integer> injectingMethods = new HashSet<>();
+    /** 参照型の static フィールド（"typeFqn#fieldName"）。コンテナは static フィールドに注入しない */
+    private final Set<String> staticFields = new HashSet<>();
+    /** &#64;Autowired 等を付けたフィールドを宣言している型（値を読まない指定のときの判定。{@link #hasInjectedFields}） */
+    private final Set<String> injectedOwners = new HashSet<>();
+
+    /** &#64;Bean メソッドの Bean 名と、宣言した戻り値の型（分からなければ空） */
+    private record BeanMethod(String name, String returnType) {
+    }
 
     private SpringBeans(boolean enabled, List<String> extraStereotypes) {
         this.enabled = enabled;
@@ -119,7 +162,7 @@ public final class SpringBeans {
     }
 
     // ------------------------------------------------------------
-    // 事実の取り込み（CallGraphBuilder の1回目のスキャンから）
+    // 事実の取り込み（CallGraphBuilder のスキャンから）
     // ------------------------------------------------------------
 
     void type(TypeFact t) {
@@ -130,13 +173,20 @@ public final class SpringBeans {
             if (AnnotationTokens.has(t.annotations(), stereotype)) {
                 String name = AnnotationTokens.valueOf(t.annotations(), stereotype);
                 register(t.typeFqn(), (name == null || name.isEmpty()) ? defaultBeanName(t.typeFqn()) : name);
+                stereotypeBeans.add(t.typeFqn());
                 return;
             }
         }
     }
 
     void field(FieldDeclFact v) {
-        if (!enabled || v.annotations().isEmpty()) {
+        if (!enabled) {
+            return;
+        }
+        if (ModifierTokens.has(v.mods(), "static") && !isPrimitiveOrString(v.declType())) {
+            staticFields.add(v.typeFqn() + "#" + v.fieldName());
+        }
+        if (v.annotations().isEmpty()) {
             return;
         }
         boolean injected = false;
@@ -151,45 +201,99 @@ public final class SpringBeans {
             name = AnnotationTokens.valueOf(v.annotations(), RESOURCE);
         }
         injectionPoints.put(v.typeFqn() + "#" + v.fieldName(), (name == null) ? "" : name);
+        injectedOwners.add(v.typeFqn());
     }
 
     /** &#64;Bean メソッドを覚えておく（返す具象型は R行が揃ってから {@link #resolveBeanMethods} で決める） */
     void method(int methodId, MethodDeclFact d) {
-        if (enabled && AnnotationTokens.has(d.annotations(), BEAN)) {
+        if (!enabled) {
+            return;
+        }
+        boolean injecting = AnnotationTokens.has(d.annotations(), BEAN);
+        for (String inject : INJECT_ANNOTATIONS) {
+            injecting |= AnnotationTokens.has(d.annotations(), inject);
+        }
+        if (injecting) {
+            injectingMethods.add(methodId);
+        }
+        if (AnnotationTokens.has(d.annotations(), BEAN)) {
             String name = AnnotationTokens.valueOf(d.annotations(), BEAN);
-            beanMethods.put(methodId, (name == null || name.isEmpty()) ? d.ref().name() : name);
+            beanMethods.put(methodId, new BeanMethod((name == null || name.isEmpty()) ? d.ref().name() : name,
+                    d.returnType()));
         }
     }
 
     /**
-     * &#64;Bean メソッドの戻り値の出所から、そのメソッドが登録する具象型を決める。
-     * 返しうる出所が全て同じ {@code new 具象型} のときだけ採る（分岐して複数の型を
-     * 返しうるメソッドは、どれが登録されるか静的には決まらない）
+     * &#64;Bean メソッドの戻り値（値の表の参照。{@link CallGraph#returnAt}）から、そのメソッドが登録する
+     * 具象型を決める。返しうる値が全て同じ {@code new 具象型} のときだけ採る（分岐して複数の型を
+     * 返しうるメソッドは、どれが登録されるか静的には決まらない）。型が同じかは値の番号で比べる
+     * （同じ中身の文字列は同じ番号）。
+     *
+     * <p>コンテナは設定クラスのインスタンスで &#64;Bean メソッドを呼ぶので、部分型の設定クラスがその
+     * メソッドを上書きしていれば（&#64;Bean を付け直していなくても）、動くのは上書きした本体で、登録されるのは
+     * その本体が返す型になる。宣言の本体が返す型だけを登録すると、上書きした本体の型が Bean に数えられず、
+     * 段 5 がもう一方の Bean へ誤って絞る。そこで上書きした本体（{@link CallGraph#overridingImplementations}）
+     * が返す型も同じ名前で登録する。Bean を多く数える側は絞り込みを減らすだけで、呼び出しを落とさない。
+     *
+     * <p>返す具象型が決まらない本体（値を読まないときは全部）は、宣言した戻り値の型の「分からない Bean」として
+     * 数える（{@link #undetermined}）。上書きした本体の戻り値の型は D 行に無いこと（&#64;Bean を付け直して
+     * いなければアノテーションが無い）があるので、上書きされた宣言の型を使う（上書きした本体の型はその部分型で、
+     * 広い側に倒す）
      */
     void resolveBeanMethods(CallGraph graph) {
-        for (Map.Entry<Integer, String> e : beanMethods.entrySet()) {
-            String[] origins = graph.returnOriginsOf(e.getKey());
-            if (origins == null || origins.length == 0) {
-                continue;
+        for (Map.Entry<Integer, BeanMethod> e : beanMethods.entrySet()) {
+            int methodId = e.getKey();
+            BeanMethod bean = e.getValue();
+            if (!registerReturnedType(graph, methodId, bean.name())) {
+                undetermined(graph, bean.returnType());
             }
-            String type = null;
-            for (String origin : origins) {
-                if (Origin.kindOf(origin) != Origin.NEW) {
-                    type = null;
-                    break;
+            if (graph.hasOverriders(methodId)) {
+                IntArray overriding = graph.overridingImplementations(methodId);
+                for (int i = 0; i < overriding.size(); i++) {
+                    if (!registerReturnedType(graph, overriding.get(i), bean.name())) {
+                        undetermined(graph, bean.returnType());
+                    }
                 }
-                String fqn = Origin.valueOf(Origin.head(origin));
-                if (type != null && !type.equals(fqn)) {
-                    type = null;
-                    break;
-                }
-                type = fqn;
-            }
-            if (type != null && !type.isEmpty()) {
-                register(type, e.getValue());
             }
         }
         beanMethods.clear();
+    }
+
+    /** 返す具象型が決まらない &#64;Bean メソッドの Bean を、宣言した戻り値の型とその部分型の「どれか」として覚える */
+    private void undetermined(CallGraph graph, String returnType) {
+        if (returnType.isEmpty() || "java.lang.Object".equals(returnType)) {
+            // H 行の親型は java.lang.Object を含まないので、部分型を引けない。どの型にもなりうる
+            undeterminedAnyType = true;
+        } else if (undeterminedTypes.add(returnType)) {
+            undeterminedTypes.addAll(graph.hierarchy.transitiveSubtypes(returnType));
+        }
+    }
+
+    /**
+     * メソッドの return がどれも同じ {@code new 具象型} なら、その型を Bean として登録する。
+     *
+     * @return 登録した（返す具象型が決まった）か。return が無い（値を読まない指定を含む）・new 以外の値がある・
+     *         型が 2 通り以上なら false
+     */
+    private boolean registerReturnedType(CallGraph graph, int methodId, String beanName) {
+        ValueStore values = graph.values();
+        int count = graph.returnCount(methodId);
+        int type = -1;
+        for (int k = 0; k < count; k++) {
+            int ref = graph.returnAt(methodId, k);
+            if (values.kind(ref) != Origin.NEW
+                    || (type >= 0 && type != values.valueId(ref))) {
+                type = -1;
+                break;
+            }
+            type = values.valueId(ref);
+        }
+        String fqn = (type < 0) ? "" : values.strings().get(type);
+        if (fqn.isEmpty()) {
+            return false;
+        }
+        register(fqn, beanName);
+        return true;
     }
 
     private void register(String typeFqn, String beanName) {
@@ -202,6 +306,110 @@ public final class SpringBeans {
 
     public boolean isBean(String typeFqn) {
         return beanNames.containsKey(typeFqn);
+    }
+
+    /**
+     * 候補の型（呼び出しを修飾する型とその部分型）のどれかが、返す具象型の決まらなかった &#64;Bean メソッドの
+     * Bean でありうるか。ありうるなら、コンテナはその Bean を注入しうるので段 5 で絞ってはいけない。
+     * 候補の型が「分からない Bean」の宣言した戻り値の型そのものかその部分型なら、実際の Bean はその型か
+     * 部分型で、候補の型に代入できる場合がある
+     */
+    public boolean mayBeUndeterminedBean(Collection<String> candidateTypes) {
+        if (undeterminedAnyType) {
+            return true;
+        }
+        if (undeterminedTypes.isEmpty()) {
+            return false;
+        }
+        for (String type : candidateTypes) {
+            if (undeterminedTypes.contains(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * そのフィールドが、コンテナが値を入れうる注入点か（段 5 で絞ってよいレシーバか）。
+     *
+     * &#64;Autowired / &#64;Inject / &#64;Resource を付けたフィールドか、ステレオタイプ注釈の Bean（またはその部分型が
+     * そうである型。抽象基底クラスのフィールドを部分型のコンストラクタ注入で埋める形）の static でない
+     * フィールド。それ以外（Bean でない型のフィールド・static フィールド）には、利用者のコードが何を入れても
+     * よいので、Bean だけに絞ると入れた実装への呼び出しを落とす（docs/spring-di-qa.md の Q5・Q6）
+     */
+    public boolean isInjectedField(String fieldKey, TypeHierarchy hierarchy) {
+        if (injectionPoints.containsKey(fieldKey)) {
+            return true;
+        }
+        int hash = fieldKey.indexOf('#');
+        if (hash <= 0 || staticFields.contains(fieldKey)) {
+            return false;
+        }
+        return isStereotypeOrBase(fieldKey.substring(0, hash), hierarchy);
+    }
+
+    /**
+     * そのメソッドの引数が、コンテナが値を入れうる注入点か（段 5 で絞ってよいレシーバか）。
+     *
+     * &#64;Autowired / &#64;Inject / &#64;Resource を付けたメソッド・コンストラクタ、&#64;Bean メソッド、
+     * ステレオタイプ注釈の Bean（またはその部分型がそうである型）のコンストラクタ。
+     * 普通のメソッドの引数には呼び出し元が何を渡してもよい（docs/spring-di-qa.md の Q5・Q6）
+     */
+    public boolean injectsParameters(int methodId, boolean constructor, String typeFqn, TypeHierarchy hierarchy) {
+        if (injectingMethods.contains(methodId)) {
+            return true;
+        }
+        return constructor && isStereotypeOrBase(typeFqn, hierarchy);
+    }
+
+    /**
+     * その型のメソッドが読むフィールドに、注入点がありうるか（値を読まない指定のときの粗い判定）。
+     *
+     * 値を読まないと、レシーバがどのフィールドかが分からない。そこで、その型がステレオタイプ注釈の Bean
+     * （またはその基底）か、その型か親の型に &#64;Autowired 等を付けたフィールドがあるときだけ、フィールドの
+     * レシーバを注入点とみなす。Bean でもなく注入点も持たない型のフィールドは、利用者のコードが入れたもの
+     */
+    public boolean hasInjectedFields(String typeFqn, TypeHierarchy hierarchy) {
+        if (isStereotypeOrBase(typeFqn, hierarchy)) {
+            return true;
+        }
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        queue.add(typeFqn);
+        seen.add(typeFqn);
+        while (!queue.isEmpty()) {
+            String t = queue.poll();
+            if (injectedOwners.contains(t)) {
+                return true;
+            }
+            for (String s : hierarchy.directSupertypes(t)) {
+                if (seen.add(s)) {
+                    queue.add(s);
+                }
+            }
+        }
+        return false;
+    }
+
+    /** ステレオタイプ注釈の Bean か、部分型にそれがある型か */
+    private boolean isStereotypeOrBase(String typeFqn, TypeHierarchy hierarchy) {
+        if (stereotypeBeans.contains(typeFqn)) {
+            return true;
+        }
+        for (String sub : hierarchy.transitiveSubtypes(typeFqn)) {
+            if (stereotypeBeans.contains(sub)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 基本型か String か（コンテナが Bean を注入しない型。static フィールドの控えを太らせないために除く） */
+    static boolean isPrimitiveOrString(String declType) {
+        return switch (declType) {
+            case "boolean", "byte", "char", "short", "int", "long", "float", "double", "java.lang.String" -> true;
+            default -> false;
+        };
     }
 
     /**

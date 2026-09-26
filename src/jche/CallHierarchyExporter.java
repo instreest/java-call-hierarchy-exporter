@@ -52,6 +52,7 @@ import jche.external.ExternalUsageScanner;
 import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.EntryPoints;
+import jche.graph.UnresolvedCalls;
 import jche.server.Server;
 import jche.report.CallConditionsReport;
 import jche.report.CallHierarchyCsvWriter;
@@ -305,9 +306,13 @@ public class CallHierarchyExporter {
         // ここが解除の責任を持ち、フェーズ3（CSV 出力）まで見張りが続く
         HeapWatch heapWatch = HeapWatch.start();
         try {
-            AnalysisSnapshot snapshot = Exporter.analyze(config);
-
-            long rows = writeReports(config, snapshot.graph(), snapshot.resolver());
+            // 型解決に失敗した呼び出しの一覧に出す行も、グラフを組むときに拾っておく（一時ファイル）。
+            // CSV を書き終えたら（失敗しても）閉じて消す
+            AnalysisSnapshot snapshot = Exporter.analyze(config, true);
+            long rows;
+            try (UnresolvedCalls unresolved = snapshot.unresolvedCalls()) {
+                rows = writeReports(config, snapshot.graph(), snapshot.resolver(), unresolved);
+            }
 
             if (!config.conditionsTarget.isEmpty()) {
                 runConditions(config);
@@ -327,9 +332,11 @@ public class CallHierarchyExporter {
      * フェーズ3: methods.csv と call-hierarchy.csv を書く。
      * 呼び出し階層・型解決に失敗した呼び出し・外部jarからの被参照は、同じ call-hierarchy.csv に出す。
      *
+     * @param unresolved 型解決に失敗した呼び出しの一覧に出す行（グラフを組むときに拾ったもの）
      * @return call-hierarchy.csv に書いた行数
      */
-    private static long writeReports(Config config, CallGraph graph, CallResolver resolver)
+    private static long writeReports(Config config, CallGraph graph, CallResolver resolver,
+                                     UnresolvedCalls unresolved)
             throws Exception {
         Log.blank();
         Log.info(Messages.get("exporter.phase3"));
@@ -369,7 +376,7 @@ public class CallHierarchyExporter {
             }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
-            rows += UnresolvedReport.write(graph, config, writer);
+            rows += UnresolvedReport.write(graph, unresolved, writer);
 
             if (!config.externalLibraryFolders.isEmpty()) {
                 Log.blank();

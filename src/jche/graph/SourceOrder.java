@@ -12,6 +12,9 @@ import java.util.Comparator;
  * 別ファイルの位置に混ざったりして、実行のたびに並びが変わりうる。
  * ソースの並びに揃えれば、出力は実行のたびに変わらず、同じ型の中では
  * ソースコードの記載順になる。
+ *
+ * 同じ行に宣言が並ぶ場合の前後も ID では決めない（{@link MethodTable#compareDeclarationOrder}）。
+ * ID の振られ方もキャッシュ上の並びで変わるので、ID で決めると全件解析と差分更新とで前後が入れ替わる。
  */
 public final class SourceOrder {
 
@@ -25,8 +28,9 @@ public final class SourceOrder {
      *   2) ファイルの相対パス順（＝パッケージ順。同じファイルの内部クラス・匿名クラスも
      *      そのファイルの位置に並ぶ）
      *   3) 宣言行順
+     *   4) 同じ行に複数ある場合（1 行に書いたメソッド、暗黙コンストラクタと {@code <clinit>} 等）は、
+     *      ファイルの中の宣言の順番 → キーの文字列順（{@link MethodTable#compareDeclarationOrder}）
      * </pre>
-     * 同じ行に複数ある場合（暗黙コンストラクタと {@code <clinit>} 等）はID順で安定させる。
      */
     public static int[] declaredMethodsInSourceOrder(CallGraph g) {
         MethodTable methods = g.methods;
@@ -39,8 +43,7 @@ public final class SourceOrder {
         return sorted(hits, Comparator
                 .<Integer>comparingInt(id -> g.sourceFolderIndexOf(methods.declFile(id)))
                 .thenComparing(methods::declFile)
-                .thenComparingInt(methods::declLine)
-                .thenComparingInt(id -> id));
+                .thenComparing(methods::compareDeclarationOrder));
     }
 
     /**
@@ -49,8 +52,9 @@ public final class SourceOrder {
      *   1) ソースフォルダの宣言順
      *   2) 型FQN順（'.'は英数字よりコード上小さいため、文字列比較だけで
      *      「パッケージ自身 -> そのサブパッケージ -> 次のパッケージ」の順になる）
-     *   3) 同じ型内では、ソースファイル上の宣言順
-     *   4) ID順（同じ行にある場合の安定化）
+     *   3) 同じ型内では、ソースファイル上の宣言行順
+     *   4) 同じ行にある場合（1 行に書いたメソッド、同じ行のラムダ等）は、ファイルの中の宣言の順番 →
+     *      キーの文字列順（{@link MethodTable#compareDeclarationOrder}）
      * </pre>
      */
     public static int[] sortedBySource(CallGraph g, IntArray hits) {
@@ -58,8 +62,7 @@ public final class SourceOrder {
         return sorted(hits, Comparator
                 .<Integer>comparingInt(id -> g.sourceFolderIndexOf(methods.declFile(id)))
                 .thenComparing(methods::typeFqn)
-                .thenComparingInt(methods::declLine)
-                .thenComparingInt(id -> id));
+                .thenComparing(methods::compareDeclarationOrder));
     }
 
     private static int[] sorted(IntArray hits, Comparator<Integer> order) {

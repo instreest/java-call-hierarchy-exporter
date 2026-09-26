@@ -1,6 +1,7 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -74,6 +75,27 @@ public final class AnnotationTokens {
         String entry = entryAt(annotations, i);
         int eq = entry.indexOf(VALUE_SEP);
         return (eq < 0) ? null : entry.substring(eq + 1);
+    }
+
+    /**
+     * 付いているアノテーションがどれも {@code simpleNames}（単純名）のどれかか。何も付いていなければ true。
+     * 「この一覧に無いアノテーションが 1 つでも付いているか」を見るのに使う（{@code jche.graph.FieldFacts}）
+     */
+    public static boolean onlyAmong(String annotations, Collection<String> simpleNames) {
+        if (annotations == null || annotations.isEmpty()) {
+            return true;
+        }
+        int start = 0;
+        while (start < annotations.length()) {
+            String entry = entryAt(annotations, start);
+            int eq = entry.indexOf(VALUE_SEP);
+            String fqn = (eq < 0) ? entry : entry.substring(0, eq);
+            if (!simpleNames.contains(simpleNameOf(fqn))) {
+                return false;
+            }
+            start += entry.length() + 1;
+        }
+        return true;
     }
 
     /** FQNの最後のドットより後ろ（入れ子のアノテーションは '$' より後ろ） */

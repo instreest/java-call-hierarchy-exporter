@@ -58,10 +58,12 @@ target/
 # test/cli/run.sh の実行ログ
 /test/cli/run-*.log
 
-# test/dataflow/run.sh（解決の決定性の検査）のコンパイル結果・キャッシュ・出力
+# test/dataflow/run.sh（解決の決定性・値の表の検査）のコンパイル結果・キャッシュ・出力。
+# work/ は ValueStoreCheck が解析するプロジェクトごとのキャッシュ・出力とログ
 /test/dataflow/build/
 /test/dataflow/.cache/
 /test/dataflow/output/
+/test/dataflow/work/
 
 # test/incremental/run.sh（差分更新の検査）が作るもの。
 # 解析対象は src/ を複製した work/ で、書き換えるのはそちらだけ（src/ は汚さない）。
@@ -76,9 +78,23 @@ target/
 /test/incremental/cut.tmp
 /test/incremental/jarorder.properties
 /test/incremental/jarwork/
+# 強制終了（SIGTERM）で一時ファイルが残らないことを見るケースの作業フォルダ
+/test/incremental/killwork/
+# 同じキャッシュのフォルダを使う実行・解析のあいだの書き換え・同じクラスが 2 つの検査の作業フォルダと、検査用のプログラム（tools/）のコンパイル結果
+/test/incremental/integrity/
+
+# test/cacheversion/run.sh（キャッシュの形式の版の上げ忘れの検査）のコンパイル結果・キャッシュ・出力
+/test/cacheversion/build/
+/test/cacheversion/.cache/
+/test/cacheversion/out/
+/test/cacheversion/out.log
 
 # test/ctorbody/run.sh（コンストラクタ本体の読み取りの検査）が作る使い捨てのプロジェクト
 /test/ctorbody/work/
+
+# test/pruning/run.sh（値の読み違いで呼び出しを落とさないことの検査）のコンパイル結果と使い捨てのプロジェクト
+/test/pruning/build/
+/test/pruning/work/
 
 # test/jls/run.sh（JLS SE 26 への適合と javac との整合の検査）のコンパイル結果（ツールと javac 26）・
 # 実行ログと、解析のキャッシュ（出力の project/out/ は上の out/ で除外済み）
@@ -89,13 +105,9 @@ target/
 /test/warnings/build/
 /test/warnings/work/
 
-# test/cachevalue/run.sh（dataflow キャッシュの値の符号化の検査）のコンパイル結果
+# test/cachevalue/run.sh（キャッシュの列の符号化の検査）のコンパイル結果
 /test/cachevalue/build/
 /test/cachevalue/check/
-
-# test/cachetail/run.sh（キャッシュの最終行の読み取りの検査）のコンパイル結果
-/test/cachetail/build/
-/test/cachetail/check/
 
 # test/contracts/run.sh（同梱の契約表の検査）のコンパイル結果
 /test/contracts/build/

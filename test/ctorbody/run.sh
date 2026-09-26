@@ -13,7 +13,17 @@
 #      同じ呼び出し階層になること
 #   3. インターフェースとアノテーション型に暗黙のコンストラクタを合成しないこと（JLS 8.8.9。
 #      デフォルトコンストラクタはクラスにだけある）。クラスには従来どおり合成すること。
-#      CSV には <init> が出ないので、キャッシュの D 行で見る（docs/jls-conformance-qa.md の Q25）
+#      CSV には <init> が出ないので、キャッシュの D 行で見る（docs/jls-conformance-qa.md の Q25）。
+#      キャッシュの D 行はメソッドを記号（S 行の番号）で指すので、名前で引けるよう
+#      jche.cache.CacheDump で 4 列に戻した形（work/<ケース>/cache-dump.tsv）を見る
+#   4. 暗黙の super()（JLS 8.8.7・8.8.9）と匿名コンストラクタ（15.9.5.1）の呼び出し先に、javac が選ぶ
+#      コンストラクタが入ること。JDT は暗黙の super() にバインディングを返さないので、ツールが候補を決める。
+#      引数なしのものが public・protected でない（見えないことがある）とき・可変長引数 1 つのものが複数あるときは、
+#      候補すべてに辺を張る（最も特殊なもの（15.12.2.5）を選ばない）。javac の選ぶものが入っていることと、
+#      引数なしのものが public なら可変長引数のほうへ余計な辺を張らないことを見る。匿名クラスは、JDT が選んだ
+#      コンストラクタの引数の並びを匿名コンストラクタが持つので、型引数を置き換えた親のメンバーと比べて 1 つに
+#      決まる（ジェネリックなコンストラクタ・ジェネリックな外側のクラスの内部クラスも）。期待値はどれも javac で
+#      確かめた呼び出し先（javap の invokespecial）
 #
 # この構文は Java 25 でないと書けないので、test/demo には置かない。
 # test/demo は多くの検査が共有するうえ、README.md の手順で javac でコンパイルして
@@ -128,10 +138,22 @@ make_project classic '        this(Helper.check(1));'
 make_project prologue '        int v = Helper.check(1);
         this(v);'
 
-analyze() {   # $1=フォルダ名 -> 出力 CSV のパスを ANALYZED に入れる
+analyze() {   # $1=フォルダ名 -> 出力 CSV のパスを ANALYZED に入れる。キャッシュの読める形を work/$1/cache-dump.tsv に
     ( cd "work/$1" && "$JAVA_BIN" -cp "$CLASSES:$CP" \
         jche.CallHierarchyExporter config.properties ) > "work/$1/run.log" 2>&1
     ANALYZED=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
+    local cache
+    cache=$(ls "work/$1"/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)
+    rm -f "work/$1/cache-dump.tsv"
+    if [ -z "$cache" ]; then
+        ng "$1: キャッシュができていません（work/$1/run.log）"
+    elif ! "$JAVA_BIN" -cp "$CLASSES:$CP" jche.cache.CacheDump "$cache" > "work/$1/cache-dump.tsv" \
+            2> "work/$1/cache-dump.log"; then
+        # 読める形にできなかった。途中までの出力が残ると、下の「無いこと」の検査が素通りするので消す
+        ng "$1: キャッシュを読める形にできませんでした（work/$1/cache-dump.log）"
+        grep -v JAVA_TOOL_OPTIONS "work/$1/cache-dump.log" | tail -5
+        rm -f "work/$1/cache-dump.tsv"
+    fi
 }
 
 for case in classic prologue; do
@@ -166,15 +188,15 @@ if [ -f work/classic.csv ] && [ -f work/prologue.csv ]; then
 fi
 
 # D 行の delegating（FieldFacts の安全弁がこれを見る）
-DELEG=$(grep -P "^D\tg\tg.Box\t<init>\t\t" work/prologue/.cache/*/analysis-cache.tsv 2>/dev/null \
+DELEG=$(grep -P "^D\tg\tg.Box\t<init>\t\t" work/prologue/cache-dump.tsv 2>/dev/null \
     | grep -c "delegating")
 [ "$DELEG" = "1" ] && ok "プロローグ付きでも D 行に delegating が付く" \
     || ng "D 行に delegating が付いていない（FieldFacts の安全弁が効かなくなる）"
 
 # 暗黙のコンストラクタ（JLS 8.8.9）。インターフェースとアノテーション型には無く、クラスには有る
-DCACHE=$(ls work/classic/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)
-if [ -z "$DCACHE" ]; then
-    ng "キャッシュが見つかりません（work/classic/.cache）"
+DCACHE=$(ls work/classic/cache-dump.tsv 2>/dev/null | head -1)
+if [ -z "$DCACHE" ] || [ ! -s "$DCACHE" ]; then
+    ng "キャッシュ（の読める形）が見つかりません（work/classic/.cache・work/classic/cache-dump.tsv）"
 else
     for t in Shape Tag; do
         grep -qP "^D\tg\tg.$t\t<init>\t" "$DCACHE" \
@@ -184,6 +206,192 @@ else
     grep -qP "^D\tg\tg.Square\t<init>\t\t.*implicit" "$DCACHE" \
         && ok "クラス（Square）には暗黙のコンストラクタを合成している" \
         || ng "クラス（Square）の暗黙のコンストラクタの D 行が無い"
+fi
+
+# --- 4. 暗黙の super() と匿名コンストラクタの呼び出し先 ---
+mkdir -p work/isuper/src/q work/isuper/src/u
+cat > work/isuper/src/q/Log.java <<'EOF'
+package q;
+
+public class Log {
+    public static void foo() { }
+    public static void bar() { }
+    public static void hidden() { }
+    public static void varargs() { }
+    public static void priv() { }
+    public static void strings() { }
+    public static void ints() { }
+    public static void longs() { }
+    public static void pub() { }
+    public static void pubVarargs() { }
+    public static void gen() { }
+    public static void genNoArg() { }
+    public static void in() { }
+}
+EOF
+cat > work/isuper/src/q/Bar.java <<'EOF'
+package q;
+
+public class Bar { }
+EOF
+cat > work/isuper/src/q/Foo.java <<'EOF'
+package q;
+
+public class Foo extends Bar { }
+EOF
+# Foo... が Bar... より特殊（javac は Base(Foo[]) を呼ぶ）。宣言の順に依らない
+cat > work/isuper/src/q/Base.java <<'EOF'
+package q;
+
+public class Base {
+    public Base(Foo... f) { Log.foo(); }
+    public Base(Bar... b) { Log.bar(); }
+}
+EOF
+# 引数なしのものはパッケージ private で、別のパッケージの部分型からは見えない（javac は Base2(Object[]) を呼ぶ）
+cat > work/isuper/src/q/Base2.java <<'EOF'
+package q;
+
+public class Base2 {
+    Base2() { Log.hidden(); }
+    public Base2(Object... o) { Log.varargs(); }
+}
+EOF
+# 引数なしのものは private で、別のトップレベルのクラスからは見えない（javac は Base3(String[]) を呼ぶ）
+cat > work/isuper/src/q/Base3.java <<'EOF'
+package q;
+
+public class Base3 {
+    private Base3() { Log.priv(); }
+    protected Base3(String... s) { Log.strings(); }
+}
+EOF
+cat > work/isuper/src/q/S3.java <<'EOF'
+package q;
+
+public class S3 extends Base3 {
+    S3(int x) { }
+    public static void make() { new S3(1); }
+}
+EOF
+# int... が long... より特殊（JLS 4.10.1。javac は Base4(int[]) を呼ぶ）
+cat > work/isuper/src/q/Base4.java <<'EOF'
+package q;
+
+public class Base4 {
+    public Base4(int... a) { Log.ints(); }
+    public Base4(long... a) { Log.longs(); }
+}
+EOF
+# 引数なしのものが public なら第 1 段で決まる。可変長引数のほうへは辺を張らない
+cat > work/isuper/src/q/Base5.java <<'EOF'
+package q;
+
+public class Base5 {
+    public Base5() { Log.pub(); }
+    public Base5(String... s) { Log.pubVarargs(); }
+}
+EOF
+# ジェネリックなコンストラクタと、ジェネリックな外側のクラスの内部クラス（匿名クラスの親）
+cat > work/isuper/src/q/G.java <<'EOF'
+package q;
+
+public abstract class G {
+    protected G() { Log.genNoArg(); }
+    protected <X> G(X x) { Log.gen(); }
+}
+EOF
+cat > work/isuper/src/q/Outer.java <<'EOF'
+package q;
+
+public class Outer<T> {
+    public abstract class In {
+        protected In(T t) { Log.in(); }
+    }
+}
+EOF
+cat > work/isuper/src/u/S.java <<'EOF'
+package u;
+
+public class S extends q.Base { }
+EOF
+cat > work/isuper/src/u/S2.java <<'EOF'
+package u;
+
+public class S2 extends q.Base2 {
+    public S2() { System.out.println(); }
+}
+EOF
+cat > work/isuper/src/u/S4.java <<'EOF'
+package u;
+
+public class S4 extends q.Base4 { }
+EOF
+cat > work/isuper/src/u/S5.java <<'EOF'
+package u;
+
+public class S5 extends q.Base5 { }
+EOF
+cat > work/isuper/src/u/Main.java <<'EOF'
+package u;
+
+import q.Foo;
+import q.G;
+import q.Outer;
+
+public class Main {
+    public static void main(String[] args) {
+        new S();
+        new S2();
+        new S4();
+        new S5();
+    }
+
+    static Object gen(Foo f) {
+        return new G(f) { };
+    }
+
+    static Object inner(Outer<Foo> o, Foo f) {
+        return o.new In(f) { };
+    }
+}
+EOF
+cat > work/isuper/config.properties <<'EOF'
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+entry.packages=
+output.folder=./out
+cache.folder=./.cache
+EOF
+analyze isuper
+if [ -z "$ANALYZED" ] || [ ! -f "$ANALYZED/call-hierarchy.csv" ]; then
+    ng "isuper: 解析できませんでした（work/isuper/run.log）"
+else
+    ISCSV="$ANALYZED/call-hierarchy.csv"
+    # 行に ",<階層>" が、行末か次の "," の前で終わる形で現れるか（Log.gen が Log.genNoArg に当たらないように）
+    path_in_csv() {
+        awk -v p=",$1" 'index($0 ",", p ",") > 0 { found = 1 } END { exit !found }' "$ISCSV"
+    }
+    has_path() {   # $1=root 列から続く呼び出し階層（カンマ区切り）  $2=説明
+        if path_in_csv "$1"; then ok "$2"; else ng "$2（$1 が call-hierarchy.csv に無い）"; fi
+    }
+    no_path() {
+        if path_in_csv "$1"; then ng "$2（$1 が call-hierarchy.csv にある）"; else ok "$2"; fi
+    }
+    has_path 'Main.main,S.S,Base.Base,Log.foo' '暗黙の super() が最も特殊な可変長引数のコンストラクタ Base(Foo...) に届く'
+    has_path 'Main.main,S2.S2,Base2.Base2,Log.varargs' \
+        '引数なしのものが見えない（パッケージ private）とき、暗黙の super() が可変長引数のコンストラクタに届く'
+    has_path 'S3.make,S3.S3,Base3.Base3,Log.strings' \
+        '引数なしのものが見えない（private）とき、暗黙の super() が可変長引数のコンストラクタに届く'
+    has_path 'Main.main,S4.S4,Base4.Base4,Log.ints' '暗黙の super() が Base4(int...) に届く（long... より特殊）'
+    has_path 'Main.main,S5.S5,Base5.Base5,Log.pub' '引数なしのものが public なら、暗黙の super() はそれを呼ぶ'
+    no_path 'Main.main,S5.S5,Base5.Base5,Log.pubVarargs' \
+        '引数なしのものが public なら、可変長引数のコンストラクタへは辺を張らない'
+    has_path 'Main.gen,Main$1.Main$1,G.G,Log.gen' '匿名クラスがジェネリックなコンストラクタ <X> G(X) に届く'
+    no_path 'Main$1.Main$1,G.G,Log.genNoArg' '匿名クラスは引数の数の違う G() へは辺を張らない'
+    has_path 'Main.inner,Main$2.Main$2,Outer.In.In,Log.in' \
+        '匿名クラスがジェネリックな外側のクラスの内部クラスのコンストラクタ In(T) に届く'
 fi
 
 [ $fail = 0 ] && echo "PASS" || echo "FAIL"

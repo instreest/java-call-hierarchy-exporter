@@ -27,9 +27,36 @@ public final class TypeHierarchy {
     /** 型 -> その型に付いていたアノテーション（{@link jche.cache.AnnotationTokens}）。無い型は入れない */
     private final HashMap<String, String> typeAnnotations = new HashMap<>();
     private final HashMap<String, List<String>> transitiveCache = new HashMap<>();
+    /**
+     * 型 -> 親クラスの連鎖（H 行の {@link TypeFact#superclasses()}。ソース上の型に当たるまで）。空の型は入れない。
+     * {@link #directSupertypes} は名前順に並べ替えるので、どれが親クラスかはここでしか分からない
+     */
+    private final HashMap<String, List<String>> superclasses = new HashMap<>();
+    /**
+     * 型 -> 親クラスから継承したメソッドが親インターフェースのメソッドを実装する組（H 行の
+     * {@link TypeFact#inheritedImpls()}。{@code 実装される側のキー>実装する側のキー}）。空の型は入れない
+     */
+    private final HashMap<String, List<String>> inheritedImpls = new HashMap<>();
+    /** {@link #classChain} の結果 */
+    private final HashMap<String, List<String>> classChainCache = new HashMap<>();
+    /** {@link #superinterfaces} の結果 */
+    private final HashMap<String, List<String>> superinterfaceCache = new HashMap<>();
 
     void add(TypeFact t) {
         typeKind.put(t.typeFqn(), t.kind());
+        if (!t.superclasses().isEmpty()) {
+            // 同じ型を 2 つのファイルが宣言していれば、読んだ順に依らないよう綴りの小さいほうを採る
+            List<String> known = superclasses.get(t.typeFqn());
+            if (known == null || String.join(",", t.superclasses()).compareTo(String.join(",", known)) < 0) {
+                superclasses.put(t.typeFqn(), List.copyOf(t.superclasses()));
+            }
+        }
+        if (!t.inheritedImpls().isEmpty()) {
+            List<String> known = inheritedImpls.get(t.typeFqn());
+            if (known == null || String.join(";", t.inheritedImpls()).compareTo(String.join(";", known)) < 0) {
+                inheritedImpls.put(t.typeFqn(), List.copyOf(t.inheritedImpls()));
+            }
+        }
         if (!t.annotations().isEmpty()) {
             typeAnnotations.put(t.typeFqn(), t.annotations());
         }
@@ -58,6 +85,10 @@ public final class TypeHierarchy {
         for (List<String> l : directSupertypes.values()) {
             Collections.sort(l);
         }
+        // 並べ替える前に引いた結果を残さない
+        transitiveCache.clear();
+        classChainCache.clear();
+        superinterfaceCache.clear();
     }
 
     /** ソース上に宣言のある型か */
@@ -84,10 +115,115 @@ public final class TypeHierarchy {
         return new HashSet<>(typeKind.keySet());
     }
 
-    /** 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空 */
+    /**
+     * 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空。
+     * 親クラスとインターフェースの区別は無い。実際に動く実装を探す順は {@link #classChain}
+     */
     public List<String> directSupertypes(String type) {
         List<String> sups = directSupertypes.get(type);
         return (sups == null) ? List.of() : sups;
+    }
+
+    /**
+     * その型で、親クラスから継承したメソッドが親インターフェースのメソッドを実装する組
+     * （{@code 実装される側のキー>実装する側のキー}。{@link TypeFact#inheritedImpls()}）。無ければ空
+     */
+    public List<String> inheritedImplementations(String type) {
+        List<String> l = inheritedImpls.get(type);
+        return (l == null) ? List.of() : l;
+    }
+
+    /**
+     * その型と、その親クラスの連鎖（直接の親クラスから親へ順に。java.lang.Object は含まない）。
+     * 途中の jar のクラスも並ぶ（H 行が並べたもの）。インターフェースなら、その型だけ。
+     *
+     * <p>実際に動く実装は、親クラスの連鎖を根まで見てから親インターフェースを見て探す（JLS 8.4.8・JVMS 5.4.6）。
+     * {@link #directSupertypes} は親クラスとインターフェースを名前順に混ぜて並べるので、その順に辿ると
+     * {@code class Impl extends Base implements Api} で Api の default メソッドが Base のメソッドより先に当たる
+     */
+    public List<String> classChain(String type) {
+        List<String> cached = classChainCache.get(type);
+        if (cached != null) {
+            return cached;
+        }
+        List<String> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        String cur = type;
+        while (cur != null && seen.add(cur)) {
+            out.add(cur);
+            List<String> sups = superclasses.get(cur);
+            if (sups == null) {
+                break;
+            }
+            // 最後の型だけがソース上の型でありうる。その先はその型自身の H 行から続ける
+            for (int i = 0; i < sups.size() - 1; i++) {
+                if (seen.add(sups.get(i))) {
+                    out.add(sups.get(i));
+                }
+            }
+            cur = sups.get(sups.size() - 1);
+        }
+        List<String> result = List.copyOf(out);
+        classChainCache.put(type, result);
+        return result;
+    }
+
+    /**
+     * その型の親クラスの連鎖（{@link #classChain}）の型が実装するインターフェースを、近いものから幅優先で
+     * （同じ深さは名前順で）。連鎖の型は含まない。jar の型を経由して到達するソース上の型も入る
+     * （{@link #directSupertypes} と同じ）
+     */
+    public List<String> superinterfaces(String type) {
+        List<String> cached = superinterfaceCache.get(type);
+        if (cached != null) {
+            return cached;
+        }
+        List<String> chain = classChain(type);
+        Set<String> seen = new HashSet<>(chain);
+        List<String> out = new ArrayList<>();
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        for (String c : chain) {
+            for (String sup : directSupertypes(c)) {
+                if (seen.add(sup)) {
+                    queue.add(sup);
+                }
+            }
+        }
+        while (!queue.isEmpty()) {
+            String t = queue.poll();
+            out.add(t);
+            for (String sup : directSupertypes(t)) {
+                if (seen.add(sup)) {
+                    queue.add(sup);
+                }
+            }
+        }
+        List<String> result = List.copyOf(out);
+        superinterfaceCache.put(type, result);
+        return result;
+    }
+
+    /**
+     * 型の並びから、ほかの型の真の親型であるものを除いたもの（並びは保つ）。
+     * 親インターフェースのメソッドから最も特定的なもの（JLS 9.4.1・JVMS 5.4.3.3 の maximally-specific）を選ぶのに使う。
+     * {@code interface I2 extends I1} の両方が宣言していれば I2 のものが残る
+     */
+    public List<String> mostSpecific(List<String> types) {
+        List<String> out = new ArrayList<>(types.size());
+        for (String t : types) {
+            boolean overridden = false;
+            for (String other : types) {
+                if (!other.equals(t) && isSubtypeOf(other, t)) {
+                    overridden = true;
+                    break;
+                }
+            }
+            if (!overridden) {
+                out.add(t);
+            }
+        }
+        // 循環した型階層（壊れたソース）では全部が消えうる。そのときは絞らない
+        return out.isEmpty() ? new ArrayList<>(types) : out;
     }
 
     /** 推移的なサブタイプ。循環があっても止まるように訪問済みを持つ */

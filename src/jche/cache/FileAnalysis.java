@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * ソース1ファイルから抽出した解析結果（キャッシュの1ブロック分）。
@@ -38,6 +39,18 @@ public final class FileAnalysis {
     public String hash = "";
 
     public final List<TypeFact> types = new ArrayList<>();
+    /**
+     * エラー（{@link #errors}）の引数に現れた名前（{@code Foo}・{@code org.missing.Lib}・{@code q.Bar} のような
+     * 点区切りの識別子。エラーの位置に書かれた名前の頭の部分なら、書かれた名前全体。
+     * {@code jche.analysis.CallEdgeExtractor#namesOf}）。I 行に書き、差分更新で新しい型ができたとき、その名前に
+     * 当たるブロックだけを解析し直すのに使う
+     */
+    public final Set<String> unresolvedNames = new TreeSet<>();
+    /**
+     * 同じメソッドの中で new された型の証拠（キャッシュの行にはしない）。書き手がブロックを書くときに、
+     * 呼び出し元とレシーバの変数のキー（{@link CallSiteValues#recvKey}）でこのファイルの呼び出し箇所に
+     * 結びつけ、C 行・U 行の hints 列に書く
+     */
     public final List<HintFact> hints = new ArrayList<>();
     public final List<MethodDeclFact> declarations = new ArrayList<>();
     /**
@@ -48,6 +61,29 @@ public final class FileAnalysis {
     public final List<FieldDeclFact> fieldDecls = new ArrayList<>();
     /** このファイルが宣言するコンパイル時定数（K行。{@link ConstantFact} 参照） */
     public final List<ConstantFact> constants = new ArrayList<>();
+    /**
+     * このファイルが宣言する型と、その型が宣言するメソッド・フィールドの、JDT のバインディングの鍵と修飾子
+     * （継承したものは含めない。{@code jche.analysis.TypeContextTracker#recordDeclarations}）。行にはせず、
+     * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の 3 列目）にする。
+     * 差分更新は、中身の変わっていないファイルを解析し直したとき、この指紋が前回と違えば宣言する型を
+     * 「変わった型」にする（docs/cache-unification-qa.md の Q83）
+     */
+    public final List<String> declarationKeys = new ArrayList<>();
+    /**
+     * このファイルが sealed な型かアノテーション型を宣言しているか（行にはしない）。差分更新は、中身の変わっていない
+     * このファイルを解析し直したら、自分の宣言の指紋が前回と同じでも、宣言する型を「変わった型」にする
+     * （{@code jche.analysis.CacheUpdater} の連鎖の判定）。
+     *
+     * <p>sealed な型を使うファイルの事実（switch の網羅性・キャストと instanceof が成り立つか。JLS 14.11.1.1・5.1.6.1）は、
+     * 許した部分型（入れ子の sealed の許した部分型まで）の宣言に依るが、使う側はそれらの名前を書いていないことがある。
+     * アノテーションを使うファイルの事実（付けられる場所・繰り返せるか。JLS 9.6.4.1・9.6.3）は、注釈型のメタ注釈の
+     * 解決先と、{@code @Repeatable} の入れ物の型の中身に依るが、使う側はそれらの名前を書いていない。どちらも、
+     * それらの名前を書いているのは宣言したファイルの側（permits・メタ注釈）なので、そのファイルは変化のたびに
+     * 解析し直される。そこで連鎖させれば、部分型の決まりと同じ経路で使う側まで届く。何が変わったかを JLS から
+     * 選んで指紋に入れる代わりに、「解析し直したら連鎖」の 1 つの決まりにしてある
+     */
+    public boolean cascadesWhenReanalysed;
+    /** フィールドへの代入（J 行）。値は {@link #valueNodes} のノード番号 */
     public final List<FieldAssignFact> fieldAssigns = new ArrayList<>();
     public final List<FieldAccessFact> fieldAccesses = new ArrayList<>();
     /** バインディング解決で参照した型のFQN（I行の元。自分が宣言する型は書き出し時に除く） */
@@ -56,16 +92,18 @@ public final class FileAnalysis {
     public final Set<String> imports = new LinkedHashSet<>();
     /** 呼び出し箇所（{@link CallEdgeFact} と {@link UnresolvedCallFact}）をソース上の順で */
     public final List<CallSite> callSites = new ArrayList<>();
+    /** return の値（R 行）。値は {@link #valueNodes} のノード番号 */
     public final List<ReturnFact> returns = new ArrayList<>();
     /**
-     * 値グラフのノード（dataflow 側の N 行）。上限の無い形で値の流れを持つ。
-     * {@link CallSite} の出所（上限付き）と同じ式から作られ、両方が書き出される
-     * （読み手が移るまでの並走。{@code docs/cache-split-qa.md}）
+     * 値グラフのノード（N 行）。上限の無い形で値の流れを持つ。番号は並びの位置。
+     * 戻り値・フィールドへの代入・条件の subject・呼び出し箇所のレシーバと実引数は、どれもここを指す
      */
     public final List<ValueNode> valueNodes = new ArrayList<>();
     /**
-     * 呼び出し箇所ごとの値（dataflow 側の P 行）。{@link #callSites} と同じ数・同じ順で並ぶ
-     * （1 対 1 で結びつけられるようにするため）
+     * 呼び出し箇所ごとの値。{@link #callSites} と<b>同じ数・同じ順</b>で並び、同じ位置どうしが組になる。
+     * キャッシュでは組にした 2 つを 1 行（C 行・U 行）に書く（条件のアトムは G 行の表にまとめ、番号で指す）。
+     * 条件の調査（{@code jche.analysis.CallConditionScanner}）もキャッシュを通さず、同じ位置で組にして
+     * アトムをそのまま読む（subject は {@link #valueNodes} で引く）
      */
     public final List<CallSiteValues> callSiteValues = new ArrayList<>();
     public final List<FunctionalImplFact> functionalImpls = new ArrayList<>();
@@ -75,14 +113,34 @@ public final class FileAnalysis {
         this.size = size;
     }
 
-    /** 型解決できなかった呼び出しの数（import から推定した候補があるものは除く） */
+    /**
+     * 型解決できなかった呼び出しの数。読み手がエッジにできる U 行（import から推定した候補があり、
+     * 呼び出し元も分かるもの。{@link UnresolvedCallFact#hasUsableCandidate}）は除く。
+     * F 行の未解決数（{@link CacheFormat#unresolvedOf}）もこの数
+     */
     public int unresolvedCount() {
         int n = 0;
         for (CallSite site : callSites) {
-            if (site instanceof UnresolvedCallFact u && u.candidate().isEmpty()) {
+            if (site instanceof UnresolvedCallFact u && !u.hasUsableCandidate()) {
                 n++;
             }
         }
         return n;
+    }
+
+    /**
+     * 型解決に失敗したか（エラーがある、または理由が BINDING_FAILED の U 行がある）。失敗したファイルは、I 行の
+     * 2 列目に解決できなかった名前を書く（docs/cache-unification-qa.md の Q42）
+     */
+    public boolean resolutionFailed() {
+        if (errors > 0) {
+            return true;
+        }
+        for (CallSite site : callSites) {
+            if (site instanceof UnresolvedCallFact u && UnresolvedCallFact.BINDING_FAILED.equals(u.reason())) {
+                return true;
+            }
+        }
+        return false;
     }
 }
