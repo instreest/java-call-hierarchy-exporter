@@ -1133,32 +1133,42 @@ public final class CacheUpdater {
          * {@code a.b.C} と書いたファイルの解決が変わる（JLS 6.5.2・7.1。docs/cache-unification-qa.md の Q87）。
          * 入れ子の型（{@code p.Outer.Inner} と変わった {@code p.Outer}）も当たる。入れ子の型はたいてい外側の型と
          * 一緒に変わった型になっている（同じファイル）ので、これで増えるのは外側の型だけが部分型の索引で変わった型に
-         * なったときだけである（多すぎても解析し直すファイルが増えるだけ）
+         * なったときだけである（多すぎても解析し直すファイルが増えるだけ）。
+         *
+         * <p>{@code $} も区切りとみなす（{@link #isSeparator}）。jar のクラスが参照していたソースの入れ子の型を JDT が
+         * 見つけられないと、クラスファイルの名前のまま（{@code app.Outer$Inner}）I 行に残る。あとで {@code app/Outer.java}
+         * に {@code Inner} を足したら、そのファイルを解析し直さないと、全件解析では解決できる呼び出しが解決できないまま残る
          */
         private boolean underChangedType(String name) {
-            for (int dot = name.indexOf('.'); dot > 0; dot = name.indexOf('.', dot + 1)) {
-                if (types.contains(name.substring(0, dot))) {
+            for (int i = 1; i < name.length(); i++) {
+                if (isSeparator(name.charAt(i)) && types.contains(name.substring(0, i))) {
                     return true;
                 }
             }
             return false;
         }
 
-        /** 型名を "." で区切ったどれかが、names に含まれるか */
+        /** 型名を "." か "$" で区切ったどれかが、names に含まれるか（{@code $} は {@link #underChangedType} と同じ理由） */
         private static boolean hasSegment(String typeFqn, Set<String> names) {
             int from = 0;
-            while (from <= typeFqn.length()) {
-                int dot = typeFqn.indexOf('.', from);
-                int end = (dot < 0) ? typeFqn.length() : dot;
-                if (names.contains(typeFqn.substring(from, end))) {
-                    return true;
+            for (int i = 0; i <= typeFqn.length(); i++) {
+                if (i == typeFqn.length() || isSeparator(typeFqn.charAt(i))) {
+                    if (names.contains(typeFqn.substring(from, i))) {
+                        return true;
+                    }
+                    from = i + 1;
                 }
-                if (dot < 0) {
-                    return false;
-                }
-                from = dot + 1;
             }
             return false;
+        }
+
+        /**
+         * 型名の区切り。{@code .} のほか、見つからなかった入れ子の型をクラスファイルの名前のまま書いた {@code $}
+         * （{@code app.Outer$Inner}）。ソースの型の名前に {@code $} を書いていれば余分に区切るが、解析し直すファイルが
+         * 増えるだけ
+         */
+        private static boolean isSeparator(char c) {
+            return c == '.' || c == '$';
         }
 
         /**

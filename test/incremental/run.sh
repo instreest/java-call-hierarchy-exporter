@@ -3275,15 +3275,68 @@ bc_edit_module_rename() { printf 'module app2 { }\n' > $1/src/module-info.java; 
 batch_case "ソースのモジュールの import（使う側を書き換える）" bc_setup_module bc_edit_module_user src 25
 batch_case "ソースのモジュールの import（モジュールの名前を変える）" bc_setup_module bc_edit_module_rename src 25
 
-# 打ち切りの原因の型（other.O）を完全修飾名で書いていて、同じフォルダにも import にも無いときは、解析し直しても JDT が
-# 打ち切る。そのファイルは型の解決の無い事実として黙って書かず、失敗として数えて、warnings.txt に理由とともに載せる
-# （全件解析で E と O が同じバッチにいれば打ち切らないので、ここは全件解析と違いうる。受け入れた限界）
+# jar のクラスが参照するソースの入れ子の型を、あとから足す（レビューでの追加）。はじめ app/Outer.java に Inner が無いので、
+# U の事実には見つからなかった名前が app.Outer$Inner のまま残る（Outer.java を添えても同じ）。Outer.java に Inner を足したら
+# U を解析し直さないと、全件解析では解決できる呼び出しが BINDING_FAILED のまま残る。I 行の名前の「$」の前の部分
+# （app.Outer）も変わった型として当てる（CacheUpdater の underChangedType・hasSegment）
+bc_setup_member_later() {
+    bc_setup_member $1
+    printf 'package app;\npublic class Outer { }\n' > $1/src/app/Outer.java
+}
+bc_edit_member_later() {
+    printf 'package app;\npublic class Outer { public static class Inner { public void hi() { } } }\n' > $1/src/app/Outer.java
+}
+batch_case "jar のクラスが参照するソースの入れ子の型（入れ子の型を後から足す）" bc_setup_member_later bc_edit_member_later
+
+# 打ち切りの原因の型を完全修飾名で書いた（other.O・other.B。同じフォルダにも import にも無い）（レビューでの追加）。
+# JDT が止まったファイルに名前を書いた型のファイルは、import に無くても添えて解析し直すので、全件解析と同じになる
+bc_setup_abort_fqn() {
+    bc_setup_abort $1
+    printf 'package app;\npublic class E { Object o = new other.O() { }; void e() { other.O.w(null, null); } }\n' \
+        > $1/src/app/E.java
+}
+bc_edit_abort_fqn() { printf '\n// changed\n' >> $1/src/app/E.java; }
+batch_case "依存 jar に無いクラスで JDT が打ち切る（原因の型を完全修飾名で書いた）" bc_setup_abort_fqn bc_edit_abort_fqn src 17 \
+    "stopped in a batch without an error"
+
+# 同じ原因で多くのファイルが止まるとき（レビューでの追加）。30 のファイルがどれも、依存 jar に無いクラスを参照する other.B の
+# static メソッドを呼ぶ。30 のファイルだけを書き換えた差分更新では B が同じバッチにいないので、添えなければファイルごとに
+# JDT が止まり、残りを 30 回解析し直していた（1000 ファイルの題材で全件解析が 4 倍遅くなった）。止まったファイルに関わる
+# ファイル（B）はバッチの残りにも添えるので、止まるのは 1 回だけで、結果は全件解析と同じ
+bc_setup_abort_many() {
+    bc_setup_abort $1
+    rm -f $1/src/app/*.java
+    local i
+    for ((i = 10; i < 40; i++)); do
+        printf 'package app;\nimport other.O;\npublic class F%d { void f() { O.w(null, null); } }\n' $i | bfile $1/src/app/F$i.java
+    done
+}
+bc_edit_abort_many() {
+    local f
+    for f in $1/src/app/F*.java; do printf '\n// changed\n' >> $f; done
+}
+batch_case "依存 jar に無いクラスで多くのファイルが止まる" bc_setup_abort_many bc_edit_abort_many src 17 \
+    "stopped in a batch without an error"
+stops=$(grep -c -F "stopped in a batch without an error" $IW/batch/c1.log)
+if [ "$stops" = 1 ]; then
+    echo "  OK   止まったのは 1 回だけ（止まったファイルに関わるファイルをバッチの残りにも添える）"
+else
+    echo "  NG   JDT が $stops 回止まりました（1 回のはず。止まったファイルに関わるファイルをバッチの残りに添えていない）"; fail=1
+fi
+
+# 打ち切りの原因の型（third.B）を、止まったファイル（E）が書いた名前の型（other.Q）のシグネチャを通してしか使っていない
+# ときは、関わるファイル（同じフォルダ・名前を書いた型のファイル）を添えても JDT が打ち切る。そのファイルは型の解決の
+# 無い事実として黙って書かず、失敗として数えて、warnings.txt に理由とともに載せる（全件解析で E と B が同じバッチに
+# いれば打ち切らないので、ここは全件解析と違いうる。受け入れた限界）
 abort_limit_case() {
-    echo "== JDT の打ち切りの原因の型が同じフォルダにも import にも無い（受け入れた限界） =="
+    echo "== JDT の打ち切りの原因の型を、名前を書いた型のシグネチャを通してしか使っていない（受け入れた限界） =="
     local d=$IW/batch
     rm -rf $d && mkdir -p $d/p
     bc_setup_abort $d/p
-    printf 'package app;\npublic class E { Object o = new other.O() { }; }\n' > $d/p/src/app/E.java
+    printf 'package app;\npublic class E { void e() { other.Q.b().w(null, null); } }\n' > $d/p/src/app/E.java
+    printf 'package other;\npublic class Q { public static third.B b() { return null; } }\n' | bfile $d/p/src/other/Q.java
+    printf 'package third;\nimport q.Missing;\npublic class B { public static void w(q.Api a, Missing m) { } }\n' \
+        | bfile $d/p/src/third/B.java
     batch_config $d/c.properties "$PWD/$d/p" src "$PWD/$d/cache" 17
     integrity_run $d/c.properties $d/c0.log
     [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
