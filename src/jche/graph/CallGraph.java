@@ -416,7 +416,10 @@ public final class CallGraph {
      *       ラムダの本体。static と private は、部分型が同じシグネチャを宣言しても上書きではない
      *       （隠蔽か別のメソッド。JLS 8.4.8）ので、部分型を調べる前に決める</li>
      *   <li>宣言した型のソース上の部分型のどれから引いても、実際に動く実装がこの宣言のまま
-     *       （部分型が上書きしていない。final クラスは部分型を持たないのでここに入る）</li>
+     *       （部分型が上書きしていない。final クラスは部分型を持たないのでここに入る）で、
+     *       部分型からこの宣言までの間に jar のクラスが挟まらない（{@link #passesBinaryClass}。
+     *       {@code class Impl extends lib.Holder<Dao> implements Fac} では、Fac の default より Holder の
+     *       見えない宣言が勝ちうる）</li>
      * </ul>
      * ソースに宣言の無いメソッド（jar の中）は、部分型を漏れなく数えられないので「振り分けられうる」とする
      * （分からないものは使わない側に倒す）。{@code super.m()} の形も区別できないので仮想の呼び出しとして扱う
@@ -454,7 +457,36 @@ public final class CallGraph {
         // 上書きの判定を別に書くと、継承と型引数の置換のどちらかの形を取りこぼす。
         // 部分型から引けない（-1）ことは型階層が揃っていれば起きないが、起きたら別の本体があるとみなす
         for (String sub : hierarchy.transitiveSubtypes(methods.typeFqn(methodId))) {
-            if (implementationOf(sub, methodId) != methodId) {
+            if (implementationOf(sub, methodId) != methodId || passesBinaryClass(sub, methodId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 型 {@code type} から実装 {@code implId} を探す道のり（{@link #search} の順）に、ソースの無いクラス（jar・JDK の
+     * クラス。{@link TypeHierarchy#classChain} に並ぶ H 行の無い型）が挟まるか。
+     *
+     * <p>挟まれば、実際に動く実装はそのクラスの宣言かもしれない。jar のクラスのメソッドは、ソースのどこかが
+     * それを呼び出し先にしていない限りメソッドの表に無く、{@link #search} は見えないまま通り過ぎる。
+     * {@code class Impl extends lib.Holder<Dao> implements Fac} で {@code Holder} の {@code create()} が動くのに、
+     * 見えるのは {@code Fac} の default の {@code create()} だけ、という形である（クラスのメソッドが勝つ。JLS 8.4.8）。
+     * 見つけた実装を「その型で動く本体」として、その return の値で呼び出しを絞ってはいけない（{@link #hasOverriders}・
+     * {@code DataflowResolver} のメソッド参照の束縛したレシーバ）。候補に並べるのは構わない（多すぎる側）。
+     * 見つけた実装の型より上にある jar のクラスは、その型の宣言を上書きできないので数えない。
+     * 親インターフェースの default（連鎖に無い型の宣言）なら、連鎖の jar のクラスをすべて数える
+     */
+    public boolean passesBinaryClass(String type, int implId) {
+        if (type == null || implId < 0 || implId >= methods.size()) {
+            return false;
+        }
+        String declaring = methods.typeFqn(implId);
+        for (String t : hierarchy.classChain(type)) {
+            if (t.equals(declaring)) {
+                return false;
+            }
+            if (!hierarchy.contains(t)) {
                 return true;
             }
         }

@@ -3243,6 +3243,39 @@ public class DrRet {
 EOF
 expect_ listed DrRet.use DrBase.create "戻り値: 動く実装は親クラスの DrBase.create（名前が先に並ぶ DrFac の default ではない）"
 
+# 親クラスが jar のクラスなら、その（表に無い）create() が default より勝ちうる。default の戻り値（DaoA）に絞らない。
+# jar（work/lib/prlib.jar。lib の *.jar は依存 jar として読まれる）は解析の前に作る
+mkdir -p work/libsrc/prlib work/libcls work/lib
+cat > work/libsrc/prlib/Holder.java <<'EOF'
+package prlib;
+
+public class Holder<T> {
+    private final T v;
+    public Holder(T v) { this.v = v; }
+    public T create() { return v; }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls . \
+    || ng "jar（work/lib/prlib.jar）を作れませんでした"
+case_ listed JarHold JarHold.use DaoB.find "戻り値: 親クラスが jar のクラス（prlib.Holder）なら、その create() が default より勝ちうる。default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+interface JhFac { default Dao create() { return new DaoA(); } }
+class JhImpl extends prlib.Holder<Dao> implements JhFac { JhImpl() { super(new DaoB()); } }
+
+public class JarHold {
+    public static void main(String[] args) { use(new JhImpl()); ref(); }
+    static void use(JhFac f) { f.create().find(); }
+    static void ref() {
+        JhFac f = new JhImpl();
+        java.util.function.Supplier<Dao> s = f::create;
+        s.get().find();
+    }
+}
+EOF
+expect_ listed JarHold.ref DaoB.find "戻り値: メソッド参照の束縛したレシーバ（JhImpl）から引いた default も、jar のクラスが挟まるので本体の戻り値に使わない"
+
 # ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
