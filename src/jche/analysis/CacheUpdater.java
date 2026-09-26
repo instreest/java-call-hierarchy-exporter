@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
@@ -143,6 +144,9 @@ import jche.util.Warnings;
  *   <li>書き終えたら、どのソースも一覧を作ったときの大きさと更新時刻のままかを見て、変わったファイルのブロックの
  *       内容ハッシュも空にする（{@link #invalidateChangedDuringRun}。JDT はほかのファイルを解析するときにも
  *       ソースパスから読むので、再利用したブロックのファイルでも、その中身を読んだファイルがある）</li>
+ *   <li>解析のあいだにソースが消えた（読めない）・一覧に無かったソースが増えたら、そのブロックと、この実行で解析した
+ *       ファイルのブロックの内容ハッシュも空にする（消したファイルを同じ中身で戻す・足したファイルを消すと、どのブロックにも
+ *       痕跡が残らないため）</li>
  * </ul>
  * 次の実行はそれらを解析し直し、宣言する型を「変わった型」にして、依存するファイルも解析し直す。
  * 更新時刻は実行のあいだの見張りにだけ使い、キャッシュには書かない（下の「同一性」は変えない）。
@@ -237,15 +241,21 @@ import jche.util.Warnings;
  *       周回ごとに解析し直す。無名・ローカルの型は名前で参照できないので当たらない（docs/cache-unification-qa.md の
  *       Q42）。新しい型に限らないのは、見えなかった型を public にしたとき（{@code The type p.Hidden is not visible}）も
  *       同じ形で失敗が解けるため（Q53）。名前の頭の部分（{@code org.missing.pkg.Type} の {@code org.missing}）が、できた・
- *       無くなったパッケージ（前回と今回の H 行のパッケージを比べる）か変わった jar のパッケージ（とその頭の部分）に当たる
+ *       無くなったパッケージ（前回と今回の H 行のパッケージと、ファイルの置き場所のフォルダのパッケージを比べる。JDT は
+ *       パッケージがあるかをフォルダで決める）か変わった jar のパッケージ（とその頭の部分）に当たる
  *       ものも解析し直す。パッケージができる・無くなると、JDT がどこまでをパッケージとして読むか（エラーと回復した型の
- *       名前）が変わるため（Q80）</li>
+ *       名前）が変わるため（Q80）。オンデマンド import（{@code import a.*}）のパッケージができた・無くなったときも、
+ *       その import を持つブロックを解析し直す（{@code a} が下のパッケージだけでできていると、最後の下のパッケージが
+ *       無くなったときに import のエラーになる）</li>
  *   <li>同じパッケージに足したトップレベルの型は、オンデマンド import（{@code import q.*}）と {@code java.lang} の型を
  *       隠す（JLS 6.4.1）。自分のパッケージは I 行に無いので、新しい型のパッケージと同じパッケージの
  *       ブロックのうち、I 行に同じ単純名の型があるものを解析し直す（Q43）</li>
  *   <li>パッケージと同じ名前の型（パッケージ {@code a.b} があるのに足したパッケージ {@code a} のクラス {@code b}）は、
  *       {@code a.b.C} の解決を変える（JLS 6.5.2・7.1）。I 行の型の名前の頭の部分が変わった型に当たるブロックも
- *       解析し直す（{@link StaleTypes#touches}。Q87）</li>
+ *       解析し直す（{@link StaleTypes#touches}。Q87）。逆に、型 {@code a.b} があるところにパッケージ {@code a.b} が
+ *       できた・無くなった（jar のパッケージが変わった）ときは、型のファイルの「パッケージと衝突する」エラーが出る・消える。
+ *       このエラーはバッチに依らない（JDT はフォルダと jar でパッケージがあるかを決める）ので、親のパッケージ {@code a}
+ *       のブロックを解析し直す（{@link StaleTypes#collidesWithChangedPackage}）</li>
  * </ul>
  * 「前回は無かった」は、パス1 を読み終えたときの「変わった型」（無効になったブロックが宣言していた型と、
  * その部分型）に無いことで見る。有効なブロックの型でも部分型でなければそこに無いので、別のファイルに同じ名前の型が
@@ -260,7 +270,17 @@ import jche.util.Warnings;
  * jar が追加・変更されたときだけは、型解決に失敗していたファイル（F 行のエラー数、U 行の BINDING_FAILED）も
  * 解析し直す（パス1。無い型の名前は I 行に残らないので、パッケージでは当たらない）。削除と並び替えだけなら
  * 解決できる型は増えず、失敗していた型解決が成功に変わる理由にならないので、失敗していたファイルは解析し直さない
- * （{@link LibraryDiff#anyAddedOrChanged}）。
+ * （{@link LibraryDiff#anyAddedOrChanged}）。型のメンバーを持ち込む import（{@code import static org.lib.K.*}・
+ * {@code import org.lib.Outer.*}）は I 行に {@code org.lib.K.*} と載るので、頭の部分が変わった jar のパッケージかでも当てる。
+ * jar の無名パッケージのクラスは {@link LibraryFact#UNNAMED_PACKAGE} というパッケージとして扱い、点の無い型の名前が当たる。
+ *
+ * <h2>解析に失敗したファイル（中身の分からないパッケージ）</h2>
+ * 解析に失敗したファイル（JDT のスタックが溢れた。Q62）は事実を書けないが、その型は JDT がソースパスから読むので、
+ * ほかのファイルの解決には効いている。どの型を宣言しているかも分からないので、そのファイルの置き場所のパッケージを
+ * 「中身の分からないパッケージ」にして、変わった jar のパッケージと同じ決まりで、そのパッケージの型を使うファイルを
+ * 解析し直す（{@link StaleTypes#addOpaque}）。そのファイルには印のブロック（F 行と空の I 行。内容ハッシュは空）を書き、
+ * 次の実行も必ず解析し直す（失敗が続くあいだは、実行のたびにそのパッケージの型を使うファイルも解析し直す）。消したときは、
+ * 型を宣言していなかった無効なブロックとして、パス1 で同じくそのパッケージを中身の分からないパッケージにする。
  */
 public final class CacheUpdater {
 
@@ -289,6 +309,12 @@ public final class CacheUpdater {
      * F 行の内容ハッシュを空にして書いてある（次の実行で必ず解析し直す）。クラスの説明「実行中に書き換えられたソース」
      */
     private final Set<String> changedDuringRun = new HashSet<>();
+    /**
+     * この実行で解析したファイル（ブロックを書いたものも、解析に失敗したものも）。解析のあいだにソースが消えた・増えた
+     * ときは、これらのブロックの内容ハッシュを空にする（{@link #invalidateChangedDuringRun}。JDT がその一時的な状態を
+     * 読んだかもしれないのは、この実行で解析したファイルだけ）。文字列は {@code live} のものを共有する
+     */
+    private final Set<String> parsedThisRun = new HashSet<>();
     /** 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）。run の最初に作る */
     private SameUnitFiles units = SameUnitFiles.NONE;
     /**
@@ -392,6 +418,11 @@ public final class CacheUpdater {
             // --- パス1: 有効なブロックと「変わった型」を集める ---
             Set<String> valid = new HashSet<>();
             StaleTypes stale = new StaleTypes(libraries.changedPackages);
+            // 今のソースの置き場所のフォルダのパッケージ（前回のぶんはパス1 で旧キャッシュの F 行のパスから数える）。
+            // JDT はパッケージがあるかをフォルダで決めるので、型の無いファイルだけのパッケージも数える（StaleTypes#endOfSources）
+            for (SourceFile f : live.values()) {
+                stale.packageNow(StaleTypes.packageOfUnit(layout.unitNameOf(f.path())));
+            }
             Set<String> libraryAffected = new HashSet<>();   // 型解決に失敗していて、jar の追加で変わりうるファイル
             OldCache old = oldCacheUsable
                     ? scanOldCache(live, valid, stale, libraries.anyAddedOrChanged(), libraryAffected, deps)
@@ -449,7 +480,8 @@ public final class CacheUpdater {
                     writeLine(cacheOut, line);
                 }
                 BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldDeclarations,
-                        changedDuringRun);
+                        changedDuringRun, parsedThisRun,
+                        f -> StaleTypes.packageOfUnit(layout.unitNameOf(f.path())));
 
                 // --- パス2: 変更・追加されたファイルを解析 ---
                 writer.stale = stale;
@@ -479,8 +511,10 @@ public final class CacheUpdater {
                     writer.skipped(result.reused);
                 }
 
-                // 最終行。次回、ここまで書き終えたキャッシュかどうか（とブロックの数）を見分けるための印
-                writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged));
+                // 最終行。次回、ここまで書き終えたキャッシュかどうか（とブロックの数）を見分けるための印。
+                // 解析に失敗したファイルの印のブロック（BlockWriter#failed）も数える
+                writeLine(cacheOut, CacheFormat.trailerFor(result.parsed + result.reused + result.salvaged
+                        + writer.failedBlocks()));
             }
         }
         return true;
@@ -695,6 +729,14 @@ public final class CacheUpdater {
         private final Map<String, String> oldDeclarations;
         /** 解析のあいだに中身が変わったファイル（{@link CacheUpdater#changedDuringRun}）を積む先 */
         private final Set<String> changedDuringRun;
+        /** この実行で解析したファイル（{@link CacheUpdater#parsedThisRun}）を積む先 */
+        private final Set<String> parsedThisRun;
+        /** ファイルの置き場所のフォルダのパッケージ（{@link StaleTypes#packageOfUnit}。解析に失敗したファイルに使う） */
+        private final Function<SourceFile, String> packageOfFile;
+        /** 最後にブロックを書いたファイル（受け手の途中で失敗したときに、印のブロックを重ねて書かないため） */
+        private String lastWritten;
+        /** 書いた印のブロックの数（{@link #failed}。Z 行のブロック数に足す） */
+        private long failedBlocks;
         /** 「変わった型」の集合。非nullのときだけ {@link #cascade} に従って型を加える（連鎖の判定にも使う） */
         StaleTypes stale;
         /** 解析したファイルが宣言する型を「変わった型」に加える条件 */
@@ -702,7 +744,8 @@ public final class CacheUpdater {
         /** 解析した理由。集計の内訳にだけ使う（UNTOUCHED は「自分が変わった・新規」。連鎖の判定には使わない） */
         Reason countAs = Reason.UNTOUCHED;
         /**
-         * 旧キャッシュの I 行か解決できなかった名前が、変わった jar のパッケージに触れていたファイル（相対パス）。
+         * 旧キャッシュの I 行か解決できなかった名前が、変わった jar のパッケージか中身の分からないパッケージ
+         * （{@link StaleTypes#addOpaque}。解析に失敗したファイルの）に触れていたファイル（相対パス）。
          * どの理由で選ばれたか（{@link #countAs}）に依らず、解析し直したら宣言する型を「変わった型」に加える（Q84）。
          * 理由で決めると、同じファイルがソースの変化にも触れていたときに連鎖を落とす（Q89）
          */
@@ -711,13 +754,21 @@ public final class CacheUpdater {
 
         BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
                     Function<SourceFile, String> hasher, Map<String, String> oldDeclarations,
-                    Set<String> changedDuringRun) {
+                    Set<String> changedDuringRun, Set<String> parsedThisRun,
+                    Function<SourceFile, String> packageOfFile) {
             this.cacheOut = cacheOut;
             this.result = result;
             this.progress = progress;
             this.hasher = hasher;
             this.oldDeclarations = oldDeclarations;
             this.changedDuringRun = changedDuringRun;
+            this.parsedThisRun = parsedThisRun;
+            this.packageOfFile = packageOfFile;
+        }
+
+        /** 書いた印のブロックの数 */
+        long failedBlocks() {
+            return failedBlocks;
         }
 
         /**
@@ -734,10 +785,12 @@ public final class CacheUpdater {
 
         @Override
         public void accept(SourceFile file, FileAnalysis fa) throws IOException {
+            parsedThisRun.add(file.relativePath());
             fa.hash = hashAfterParse(file);
             // writeBlock はブロックをメモリ上で組み終えてから書くので、途中で例外が出ても書きかけは残らない
             // （例外は呼び出し元がこのファイルの失敗として数える）。書けたら直後に数え、Z 行の数と揃える
             writeBlock(fa, cacheOut);
+            lastWritten = file.relativePath();
             result.parsed++;
             result.unresolved += fa.unresolvedCount();
             result.countErrors(file.relativePath(), fa.errors, fa.syntaxErrors);
@@ -791,12 +844,45 @@ public final class CacheUpdater {
             return "";
         }
 
+        /**
+         * 解析に失敗したファイル（JDT のスタックが溢れた・受け手の失敗。docs/cache-unification-qa.md の Q62・Q69）。
+         *
+         * <p>事実は書けないが、そのファイルの型は JDT がソースパスから読むので、ほかのファイルの解決には効いている。
+         * 以前は何も残さなかったので、そのファイルを書き換えても・消しても、その型を使うファイルを解析し直さなかった。
+         * <ul>
+         *   <li>印のブロック（F 行と空の I 行だけ。内容ハッシュは空で、次の実行でも必ず解析し直す）を書く。消したときに、旧キャッシュに
+         *       ファイルがあったことが分かる（パス1 は型を宣言しないブロックの置き場所のパッケージを中身の分からない
+         *       パッケージにする。{@link CacheUpdater#finishOldBlock}）。ブロックを書いたあとの受け手の失敗なら書かない</li>
+         *   <li>置き場所のパッケージを中身の分からないパッケージにする（{@link StaleTypes#addOpaque}）。宣言する型は
+         *       分からないので、変わった jar のパッケージと同じ決まりで、そのパッケージの型を使うファイルを解析し直す。
+         *       失敗が続くあいだは実行のたびに解析し直す（安全側の費用）</li>
+         * </ul>
+         */
         @Override
         public void failed(SourceFile file, Exception error) {
             result.failed++;
             countReason();
             Warnings.warn(Warnings.Topic.INCOMPLETE,
                     Messages.format("analysis.fileFailed", file.relativePath(), error.getMessage()));
+            String rel = file.relativePath();
+            parsedThisRun.add(rel);
+            if (!rel.equals(lastWritten)) {
+                // F 行と空の I 行（F 行の直後は必ず I 行。CacheFormat）。検査値は writeBlock と同じ求め方
+                String deps = CacheFormat.joinRow("I", "", "", "");
+                BlockChecksum checksum = new BlockChecksum();
+                checksum.addWithoutLastColumn(CacheFormat.fileRow(rel, file.size(), 0, "", 0, 0, ""));
+                checksum.add(deps);
+                try {
+                    writeLine(cacheOut, CacheFormat.fileRow(rel, file.size(), 0, "", 0, 0, checksum.hex()));
+                    writeLine(cacheOut, deps);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);   // 書けなければ実行ごと失敗させる（解析の呼び出し元が戻す）
+                }
+                failedBlocks++;
+            }
+            if (stale != null && !declaresNoType(rel)) {
+                stale.addOpaque(packageOfFile.apply(file));
+            }
             progress.step(++done);
         }
 
@@ -861,11 +947,66 @@ public final class CacheUpdater {
         private final Set<String> packagesBefore = new HashSet<>();
         private final Set<String> packagesNow = new HashSet<>();
         private final Set<String> libraryPrefixes = new HashSet<>();
+        /**
+         * 中身（宣言する型）の分からないソースのパッケージ。解析に失敗したファイル（{@link BlockWriter#failed}）と、
+         * 無効になった・消えたブロックのうち型を 1 つも宣言していなかったもの（解析に失敗したファイルの印のブロックを含む）の
+         * パッケージ（置き場所のフォルダから求める。{@link #packageOfUnit}）。どの型が増えた・減った・変わったか分からないので、
+         * 変わった jar のパッケージと同じ決まりで扱う（{@link #touchesPackages}）。無名パッケージは
+         * {@link LibraryFact#UNNAMED_PACKAGE}
+         */
+        private final Set<String> opaquePackages = new HashSet<>();
+        private final Set<String> opaquePrefixes = new HashSet<>();
+        /** {@link #newTopLevel} の単純名をパッケージを問わず集めたもの（自分のパッケージの分からないブロックに使う） */
+        private final Set<String> newTopLevelNames = new HashSet<>();
+        /**
+         * できた・無くなったパッケージ（{@link #packagesBefore} と {@link #packagesNow} の片方にだけあるもの）。
+         * 今のパッケージがそろうパス3 の最初に {@link #endOfSources} で決める。それまでは空
+         */
+        private final Set<String> changedSourcePackages = new HashSet<>();
+        /**
+         * {@link #changedSourcePackages} と {@link #libraryPrefixes} の親のパッケージ（{@link #collidesWithChangedPackage}）。
+         * 前者は {@link #endOfSources} で、後者は作るときに決める
+         */
+        private final Set<String> parentsOfChangedSource = new HashSet<>();
+        private final Set<String> parentsOfChangedLibrary = new HashSet<>();
 
         StaleTypes(Set<String> libraryPackages) {
-            this.libraryPackages = libraryPackages;
+            this.libraryPackages = new HashSet<>(libraryPackages);
             for (String p : libraryPackages) {
                 addPrefixes(p, libraryPrefixes);
+            }
+            addParents(libraryPrefixes, parentsOfChangedLibrary);
+        }
+
+        /**
+         * パス2 を終えた（今のソースのパッケージがそろった）。できた・無くなったパッケージを決める。
+         * パス3・パス4 で解析し直すファイルは中身が変わっていないので、パッケージも変わらない
+         */
+        void endOfSources() {
+            changedSourcePackages.clear();
+            for (String p : packagesBefore) {
+                if (!packagesNow.contains(p)) {
+                    changedSourcePackages.add(p);
+                }
+            }
+            for (String p : packagesNow) {
+                if (!packagesBefore.contains(p)) {
+                    changedSourcePackages.add(p);
+                }
+            }
+            parentsOfChangedSource.clear();
+            addParents(changedSourcePackages, parentsOfChangedSource);
+        }
+
+        /**
+         * 中身の分からないパッケージを加える（{@link #opaquePackages}）。{@code pkg} は空文字なら無名パッケージ。
+         * {@code null}（パッケージを求められない）なら無名パッケージとみなす（無名パッケージの型の名前には点が無いので、
+         * 当たるのは点の無い名前だけ。多すぎても解析し直すファイルが増えるだけ）
+         */
+        void addOpaque(String pkg) {
+            String p = (pkg == null || pkg.isEmpty()) ? LibraryFact.UNNAMED_PACKAGE : pkg;
+            if (opaquePackages.add(p)) {
+                addPrefixes(p, opaquePrefixes);
             }
         }
 
@@ -970,6 +1111,7 @@ public final class CacheUpdater {
             if (rest != null && !rest.isEmpty() && rest.indexOf('.') < 0) {
                 // トップレベルの型だけ。入れ子の型（Main.Inner）は外側の型（前回もあった）を通してしか名前にならない
                 newTopLevel.computeIfAbsent(p, k -> new HashSet<>()).add(rest);
+                newTopLevelNames.add(rest);
             }
         }
 
@@ -984,7 +1126,7 @@ public final class CacheUpdater {
          * @param namesCsv 名前のカンマ区切り
          */
         boolean matchesChangedType(String namesCsv) {
-            if (changedSimpleNames.isEmpty() && libraryPackages.isEmpty()) {
+            if (changedSimpleNames.isEmpty() && libraryPackages.isEmpty() && changedSourcePackages.isEmpty()) {
                 return false;   // どのファイルも変わっていない（パッケージもできていない・無くなっていない）
             }
             if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
@@ -1014,17 +1156,54 @@ public final class CacheUpdater {
             return false;
         }
 
-        /** 「変わった型」も「変わった jar のパッケージ」も無い（＝どのブロックも再解析に回らない） */
+        /**
+         * 「変わった型」も「変わった jar のパッケージ」も「中身の分からないパッケージ」も「できた・無くなったパッケージ」も
+         * 無い（＝どのブロックも再解析に回らない）。できた・無くなったパッケージは {@link #endOfSources} のあとで数える
+         */
         boolean isEmpty() {
-            return types.isEmpty() && libraryPackages.isEmpty();
+            return types.isEmpty() && libraryPackages.isEmpty() && opaquePackages.isEmpty()
+                    && changedSourcePackages.isEmpty();
         }
 
         /**
-         * これまでに加えた型の数。連鎖の打ち切りに使う。
-         * 1周しても増えていなければ、もう一周しても同じ結果になる（型は増える一方で減らない）
+         * これまでに加えた型と中身の分からないパッケージの数。連鎖の打ち切りに使う。
+         * 1周しても増えていなければ、もう一周しても同じ結果になる（どちらも増える一方で減らない）
          */
         int mark() {
-            return types.size();
+            return types.size() + opaquePackages.size();
+        }
+
+        /**
+         * 自分のパッケージ（{@code ownPackage}）の中に、できた・無くなったパッケージ（とその頭の部分）か、変わった jar の
+         * パッケージ（とその頭の部分）があるか。パッケージ {@code a} のトップレベルの型 {@code b} は、パッケージ
+         * {@code a.b} と衝突する（JLS 7.1。JDT は型のファイルに「collides with a package」のエラーを出す）。JDT がパッケージが
+         * あるかをソースフォルダのフォルダと jar から決めるので、このエラーは型のファイルをどのバッチで解析しても同じで、
+         * 型のファイルを解析し直せば全件解析と同じになる（docs/cache-unification-qa.md の Q87 の逆向き）。
+         * どの型が衝突するかは見ず、親のパッケージのファイルをすべて解析し直す（多すぎても解析し直すファイルが増えるだけ）。
+         * 無名パッケージ（{@code ownPackage} が空文字）は見ない。JDT は無名パッケージの型とトップレベルのパッケージの衝突を
+         * 報告しない
+         *
+         * @return 当たらなければ {@link Reason#UNTOUCHED}。ソースのパッケージに当たれば {@link Reason#BY_SOURCE}、
+         *         jar のパッケージだけに当たれば {@link Reason#BY_LIBRARY}
+         */
+        Reason collidesWithChangedPackage(String ownPackage) {
+            if (ownPackage == null || ownPackage.isEmpty()) {
+                return Reason.UNTOUCHED;
+            }
+            if (parentsOfChangedSource.contains(ownPackage)) {
+                return Reason.BY_SOURCE;
+            }
+            return parentsOfChangedLibrary.contains(ownPackage) ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
+        }
+
+        /** パッケージの親（最後の点より前）を集める。点の無いもの（親が無名パッケージ）は入れない */
+        private static void addParents(Set<String> packages, Set<String> out) {
+            for (String p : packages) {
+                int dot = p.lastIndexOf('.');
+                if (dot > 0) {
+                    out.add(p.substring(0, dot));
+                }
+            }
         }
 
         /**
@@ -1044,13 +1223,21 @@ public final class CacheUpdater {
          * <p>I 行の型の名前の頭の部分が変わった型なら（パッケージ {@code a.b} と同じ名前の型 {@code a.b} を足した）、
          * {@code a.b.C} の解決が変わるので触れているとみなす（{@link #underChangedType}）
          *
-         * @param ownPackage そのブロックが宣言する型のパッケージ。分からなければ null
+         * <p>オンデマンド import（{@code p.*}）は、パッケージ {@code p} ができた・無くなったときも触れているとみなす。
+         * JDT はパッケージ {@code a} がその下のパッケージ（{@code a.b}）だけでできていても {@code import a.*} を解決するので、
+         * 最後の下のパッケージが無くなると import のエラーが出る（{@link #endOfSources}）
+         *
+         * <p>中身の分からないパッケージ（{@link #opaquePackages}。解析に失敗したファイルのパッケージ）には、変わった jar の
+         * パッケージと同じ決まりで触れる（{@link #touchesPackages}）。理由はソースの変化にする
+         *
+         * @param ownPackage そのブロックが宣言する型のパッケージ。型を 1 つも宣言していない（{@code package-info.java}）
+         *                   なら null で、そのときはどのパッケージのブロックでもありうるとみなす
          */
         Reason touches(String depsCsv, String ownPackage) {
             if (depsCsv.isEmpty() || isEmpty()) {
                 return Reason.UNTOUCHED;
             }
-            if (touchesSource(depsCsv, ownPackage)) {
+            if (touchesSource(depsCsv, ownPackage) || touchesOpaque(depsCsv, ownPackage)) {
                 return Reason.BY_SOURCE;
             }
             return touchesLibrary(depsCsv, ownPackage) ? Reason.BY_LIBRARY : Reason.UNTOUCHED;
@@ -1058,7 +1245,10 @@ public final class CacheUpdater {
 
         /** I 行がソースの変化（変わった型・パッケージ・名前を隠す新しい型）に触れるか。{@link #touches} のソースの側 */
         private boolean touchesSource(String depsCsv, String ownPackage) {
-            Set<String> shadowing = (ownPackage == null) ? null : newTopLevel.get(ownPackage);
+            // 自分のパッケージが分からない（型を宣言していない）ブロックは、どのパッケージの新しい型にも隠されうるとみなす
+            Set<String> shadowing = (ownPackage == null)
+                    ? (newTopLevelNames.isEmpty() ? null : newTopLevelNames)
+                    : newTopLevel.get(ownPackage);
             for (String d : depsCsv.split(",")) {
                 if (d.isEmpty()) {
                     continue;
@@ -1066,8 +1256,12 @@ public final class CacheUpdater {
                 if (shadowing != null && !d.endsWith(".*") && hasSegment(d, shadowing)) {
                     return true;
                 }
-                String p = d.endsWith(".*") ? d.substring(0, d.length() - 2) : d;
-                if (types.contains(p) || underChangedType(p) || (d.endsWith(".*") && packages.contains(p))) {
+                boolean onDemand = d.endsWith(".*");
+                String p = onDemand ? d.substring(0, d.length() - 2) : d;
+                // 型の名前（か頭の部分）ができた・無くなったパッケージと同じなら、型とパッケージの衝突（JLS 7.1）で
+                // 解決が変わりうる（collidesWithChangedPackage の、使う側）
+                if (types.contains(p) || underChangedType(p) || changedSourcePackages.contains(p)
+                        || underPackages(p, changedSourcePackages) || (onDemand && packages.contains(p))) {
                     return true;
                 }
             }
@@ -1079,19 +1273,52 @@ public final class CacheUpdater {
          * 別に見る（解析し直したときに連鎖させるか。{@link BlockWriter#jarDriven}）
          */
         boolean touchesLibrary(String depsCsv, String ownPackage) {
-            if (depsCsv.isEmpty() || libraryPackages.isEmpty()) {
+            return touchesPackages(depsCsv, ownPackage, libraryPackages, libraryPrefixes);
+        }
+
+        /**
+         * I 行が中身の分からないパッケージ（{@link #opaquePackages}）に触れるか。触れていたブロックは、変わった jar に
+         * 触れていたブロックと同じく、解析し直したら宣言する型を変わった型にする（{@link BlockWriter#jarDriven}）
+         */
+        boolean touchesOpaque(String depsCsv, String ownPackage) {
+            return touchesPackages(depsCsv, ownPackage, opaquePackages, opaquePrefixes);
+        }
+
+        /**
+         * I 行が、中身の分からない変化のあったパッケージ（{@code pkgs}。変わった jar のパッケージか、解析に失敗したファイルの
+         * パッケージ）に触れるか。どの型が増えた・減った・変わったか分からないので、次のどれかなら触れているとみなす。
+         * <ul>
+         *   <li>型（{@code a.b.C}・{@code a.b.C.Inner}）の頭の部分がそのパッケージ。点の無い型（無名パッケージの型）は、
+         *       無名パッケージ（{@link LibraryFact#UNNAMED_PACKAGE}）がそこにあるとき。型の名前そのものがそのパッケージか
+         *       その頭の部分（{@code prefixes}）のときも（型とパッケージの衝突。JLS 7.1）</li>
+         *   <li>オンデマンド import（{@code p.*}）の {@code p} が、そのパッケージかその頭の部分（{@code prefixes}）か、
+         *       頭の部分がそのパッケージ（{@code import static org.lib.K.*}・{@code import org.lib.Outer.*} の型
+         *       {@code org.lib.K} のパッケージ {@code org.lib}。型のメンバーを持ち込む import も {@code 名前.*} の形で I 行に
+         *       載るので、名前そのものではなく頭の部分で当てる）</li>
+         *   <li>自分のパッケージがそこにあり（同じパッケージを jar とソースに分けて置く。自分のパッケージが分からなければ
+         *       あるとみなす）、I 行にオンデマンド import か {@code java.lang} の型がある。そのパッケージの型が、同じパッケージの
+         *       型として名前を隠しうる（JLS 6.4.1。docs/cache-unification-qa.md の Q54）</li>
+         * </ul>
+         */
+        private static boolean touchesPackages(String depsCsv, String ownPackage, Set<String> pkgs,
+                                               Set<String> prefixes) {
+            if (depsCsv.isEmpty() || pkgs.isEmpty()) {
                 return false;
             }
-            boolean ownPackageInJar = ownPackage != null && libraryPackages.contains(ownPackage);
+            boolean ownPackageIn = (ownPackage == null)
+                    || pkgs.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage);
             for (String d : depsCsv.split(",")) {
                 if (d.isEmpty()) {
                     continue;
                 }
                 if (d.endsWith(".*")) {
-                    if (ownPackageInJar || libraryPackages.contains(d.substring(0, d.length() - 2))) {
+                    String p = d.substring(0, d.length() - 2);
+                    if (ownPackageIn || prefixes.contains(p) || underPackages(p, pkgs)) {
                         return true;
                     }
-                } else if (inLibraryPackage(d) || (ownPackageInJar && d.startsWith("java.lang."))) {
+                } else if (underPackages(d, pkgs) || prefixes.contains(d)
+                        || (d.indexOf('.') < 0 && pkgs.contains(LibraryFact.UNNAMED_PACKAGE))
+                        || (ownPackageIn && d.startsWith("java.lang."))) {
                     return true;
                 }
             }
@@ -1114,6 +1341,30 @@ public final class CacheUpdater {
                     if (libraryPrefixes.contains(name.substring(0, dot))) {
                         return true;
                     }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * 型解決に失敗していたブロックの、解決できなかった名前（I 行の 2 列目）が、中身の分からないパッケージの型に
+         * なりうるか。名前の頭の部分がそのパッケージ（とその頭の部分）か、点の無い名前（単純名。どのパッケージの型かは
+         * 分からない）で自分のパッケージがそこにある（分からなければあるとみなす）とき。名前を拾えなかった
+         * （空・{@link CacheFormat#ANY_NAME}）ときは当たるとみなす。オンデマンド import で単純名を持ち込むブロックは、
+         * I 行の {@code p.*} で当たる（{@link #touchesOpaque}）
+         */
+        boolean namesUnderOpaque(String namesCsv, String ownPackage) {
+            if (opaquePackages.isEmpty()) {
+                return false;
+            }
+            if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
+                return true;
+            }
+            boolean ownPackageIn = (ownPackage == null)
+                    || opaquePackages.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage);
+            for (String name : namesCsv.split(",")) {
+                if (name.indexOf('.') < 0 ? ownPackageIn : underPackages(name, opaquePrefixes)) {
+                    return true;
                 }
             }
             return false;
@@ -1154,20 +1405,29 @@ public final class CacheUpdater {
         }
 
         /**
-         * 型名が、変わった jar のパッケージのものか。
-         * 名前だけではどこまでがパッケージか（内部クラスかどうか）分からないので、
-         * "." で区切った前方部分を全部試す
+         * 名前の頭の部分（名前そのものは除く）のどれかが {@code pkgs} にあるか。型名なら、そのパッケージが
+         * {@code pkgs} にあるか（名前だけではどこまでがパッケージか（内部クラスかどうか）分からないので、
+         * "." で区切った前方部分を全部試す）
          */
-        private boolean inLibraryPackage(String typeFqn) {
-            if (libraryPackages.isEmpty()) {
+        private static boolean underPackages(String name, Set<String> pkgs) {
+            if (pkgs.isEmpty()) {
                 return false;
             }
-            for (int i = typeFqn.indexOf('.'); i > 0; i = typeFqn.indexOf('.', i + 1)) {
-                if (libraryPackages.contains(typeFqn.substring(0, i))) {
+            for (int i = name.indexOf('.'); i > 0; i = name.indexOf('.', i + 1)) {
+                if (pkgs.contains(name.substring(0, i))) {
                     return true;
                 }
             }
             return false;
+        }
+
+        /**
+         * ソースフォルダから見たコンパイル単位の名前（{@code a/b/C.java}。{@link ProjectLayout#unitNameOf}）から、
+         * 置き場所のフォルダのパッケージ（{@code a.b}）を求める。フォルダの直下なら空文字（無名パッケージ）
+         */
+        static String packageOfUnit(String unitName) {
+            int slash = unitName.lastIndexOf('/');
+            return (slash <= 0) ? "" : unitName.substring(0, slash).replace('/', '.');
         }
     }
 
@@ -1246,11 +1506,20 @@ public final class CacheUpdater {
      * （同一性は内容ハッシュで見る。クラスの説明「同一性」）。解析したファイルは JDT が読んだ直後のハッシュでも
      * 確かめてある（{@link BlockWriter#hashAfterParse}）
      *
+     * <p>ソースが消えた・増えたときも同じ。解析のあいだに消えた（読めない）ファイルは、そのブロックの内容ハッシュを
+     * 空にする（あとで同じ中身のまま戻されると、空にしなければ「変わっていない」と読んでしまう）。一覧を作ったときに
+     * 無かったファイルが今ある（解析のあいだに足された）かも、ソースフォルダを歩き直して見る。どちらかがあれば、
+     * この実行で解析したファイル（{@link #parsedThisRun}）のブロックの内容ハッシュもすべて空にする。JDT はそれらを
+     * 解析するときに、消えていた・一時的にあったファイルをソースパスから読んだ（読めなかった）かもしれず、そのファイルが
+     * 戻された・消されたあとは、どのブロックにもその痕跡が残らないため。再利用したブロックは前の実行で作ったもので、
+     * この実行の一時的な状態を読んでいない
+     *
      * @param startTimes 解析を始めたときの更新時刻（{@code live} の並びの順）
      */
     private void invalidateChangedDuringRun(Path tmpCache, Map<String, SourceFile> live, long[] startTimes)
             throws IOException {
         Set<String> blank = new HashSet<>();
+        boolean sourceSetChanged = false;
         int i = 0;
         for (SourceFile f : live.values()) {
             long started = startTimes[i++];
@@ -1263,10 +1532,16 @@ public final class CacheUpdater {
                     continue;
                 }
             } catch (IOException e) {
-                // 消された。次の実行ではブロックのファイルがソースに無いので、何もしなくても解析し直される
-                continue;
+                // 消された（あとで戻されるかもしれない）。消えたままなら、次の実行でブロックごと落ちる
+                sourceSetChanged = true;
             }
             blank.add(f.relativePath());
+        }
+        if (!sourceSetChanged) {
+            sourceSetChanged = sourcesAdded(live);
+        }
+        if (sourceSetChanged) {
+            blank.addAll(parsedThisRun);
         }
         if (blank.isEmpty() && changedDuringRun.isEmpty()) {
             return;
@@ -1279,6 +1554,23 @@ public final class CacheUpdater {
                 String.join(", ", all.subList(0, Math.min(all.size(), 5)))));
         if (!blank.isEmpty()) {
             blankHashes(tmpCache, blank);
+        }
+    }
+
+    /**
+     * 解析を始めたときのソースの一覧（{@code live}）に無いファイルが、今のソースフォルダにあるか（解析のあいだに
+     * 足された）。歩けなければ、あるとみなす（安全側。この実行で解析したファイルを次の実行で解析し直すだけ）
+     */
+    private boolean sourcesAdded(Map<String, SourceFile> live) {
+        try {
+            for (Path p : layout.listJavaFiles()) {
+                if (!live.containsKey(layout.relativeOf(p))) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IOException | RuntimeException e) {
+            return true;
         }
     }
 
@@ -1969,6 +2261,12 @@ public final class CacheUpdater {
                                Set<String> valid, StaleTypes stale, boolean librariesAddedOrChanged,
                                Set<String> libraryAffected, OldCache old, DepsIndex deps) {
         boolean intact = block.checksum.hex().equals(block.expectedCrc);
+        // 置き場所のフォルダのパッケージも前回のパッケージに数える（JDT はパッケージがあるかをフォルダで決める。
+        // 型を宣言しないファイル・解析に失敗したファイルだけのパッケージも、できた・無くなったと分かる）。
+        // 今回のぶんは run の最初に今のソースの一覧から数える
+        String unitPackage = (block.rel == null) ? null
+                : StaleTypes.packageOfUnit(SameUnitFiles.unitNameOf(block.rel, oldFolders));
+        stale.packageBefore(unitPackage);
         // 親型の関係はどのブロックのものも部分型の索引に足す（有効なブロックの型が、無効になったブロックや
         // 今回解析するファイルの型の部分型かもしれない。壊れたブロックの関係を足しても、解析し直すファイルが増えるだけ）
         List<TypeFact> declared = new ArrayList<>(block.typeRows.size());
@@ -2007,8 +2305,19 @@ public final class CacheUpdater {
         for (TypeFact t : declared) {
             stale.add(t.typeFqn(), t.pkg());
         }
+        if (declared.isEmpty() && unitPackage != null && !declaresNoType(block.rel)) {
+            // 型を 1 つも宣言していなかったブロック（解析に失敗したファイルの印のブロック。BlockWriter#failed。
+            // エラーで JDT が型を落としたファイル・壊れて H 行を読めないブロックも）。前回そのファイルが宣言していた型が
+            // 分からないので、置き場所のパッケージを中身の分からないパッケージにする（変わった jar のパッケージと同じ扱い）
+            stale.addOpaque(unitPackage);
+        }
         // 今のソースに無いファイルのブロックは、壊れていても解析し直さないので数えない
         return (!intact && block.inSources) ? 1 : 0;
+    }
+
+    /** 型を宣言しないコンパイル単位（{@code package-info.java}・{@code module-info.java}）か。相対パスで見る */
+    private static boolean declaresNoType(String relativePath) {
+        return relativePath.endsWith("package-info.java") || relativePath.endsWith("module-info.java");
     }
 
     /**
@@ -2156,31 +2465,51 @@ public final class CacheUpdater {
                                      Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
                                      DepsIndex deps, OldCache old)
             throws IOException {
+        // 今のソースのパッケージはパス2 でそろった。できた・無くなったパッケージを決める
+        stale.endOfSources();
         if (stale.isEmpty()) {
             return;   // 触れる先が無いので、読み直すだけ無駄
         }
         int mark;
+        boolean first = true;
         do {
             mark = stale.mark();
             List<String> dependents = new ArrayList<>();
-            // 型解決に失敗していたブロックのうち、解決できなかった名前が変わった型（新しい型を含む）に当たるもの。
-            // 無い型・見えない型の名前は依存（I 行の型）に残らないので、依存では見つけられない（クラスの説明
-            // 「新しい型」、docs/cache-unification-qa.md の Q53）。連鎖で変わった型が増えるので、周回ごとに見直す
-            for (int i = old.unresolvedTypes.nextSetBit(0); i >= 0; i = old.unresolvedTypes.nextSetBit(i + 1)) {
-                if (valid.contains(old.paths[i]) && stale.matchesChangedType(old.unresolvedNames[i])) {
-                    valid.remove(old.paths[i]);
-                    dependents.add(old.paths[i]);
-                    if (stale.namesUnderLibrary(old.unresolvedNames[i])) {
-                        writer.jarDriven.add(old.paths[i]);
+            List<String> libraryDependents = new ArrayList<>();
+            if (first) {
+                // 型とパッケージの衝突（JLS 7.1）。自分のパッケージの下にパッケージができた・無くなった・変わった jar の
+                // パッケージがあるブロック。I 行に載らない（自分の型の名前が衝突する）ので依存では見つけられない。
+                // パッケージは周回で変わらないので、最初の周回だけ見る（StaleTypes#collidesWithChangedPackage）
+                for (int i = 0; i < old.size; i++) {
+                    Reason collides = stale.collidesWithChangedPackage(old.packages[i]);
+                    if (collides != Reason.UNTOUCHED && valid.remove(old.paths[i])) {
+                        (collides == Reason.BY_SOURCE ? dependents : libraryDependents).add(old.paths[i]);
                     }
                 }
+                first = false;
             }
-            List<String> libraryDependents = new ArrayList<>();
+            // 型解決に失敗していたブロックのうち、解決できなかった名前が変わった型（新しい型を含む）に当たるもの。
+            // 無い型・見えない型の名前は依存（I 行の型）に残らないので、依存では見つけられない（クラスの説明
+            // 「新しい型」、docs/cache-unification-qa.md の Q53）。連鎖で変わった型が増えるので、周回ごとに見直す。
+            // 中身の分からないパッケージ（解析に失敗したファイルの）の型になりうる名前も当たる（StaleTypes#namesUnderOpaque）
+            for (int i = old.unresolvedTypes.nextSetBit(0); i >= 0; i = old.unresolvedTypes.nextSetBit(i + 1)) {
+                String names = old.unresolvedNames[i];
+                boolean opaque = stale.namesUnderOpaque(names, old.packages[i]);
+                if (opaque || stale.namesUnderLibrary(names)) {
+                    // 連鎖させるかは、どの理由で選ばれたか（型とパッケージの衝突で先に選ばれた場合も）に依らない（Q89）
+                    writer.jarDriven.add(old.paths[i]);
+                }
+                if (valid.contains(old.paths[i]) && (opaque || stale.matchesChangedType(names))) {
+                    valid.remove(old.paths[i]);
+                    dependents.add(old.paths[i]);
+                }
+            }
             DepsConsumer select = (index, depsCsv) -> {
                 String rel = old.paths[index];
-                // jar に触れていたかは、ほかの理由で選ばれた（名前が当たった・ソースの変化にも触れた・同じ名前の
-                // ファイルの組として引き込まれた）ファイルでも見る。連鎖は選ばれた理由ではなくこれで決める（Q89）
-                if (stale.touchesLibrary(depsCsv, old.packages[index])) {
+                // jar（か中身の分からないパッケージ）に触れていたかは、ほかの理由で選ばれた（名前が当たった・ソースの変化にも
+                // 触れた・同じ名前のファイルの組として引き込まれた）ファイルでも見る。連鎖は選ばれた理由ではなくこれで決める（Q89）
+                if (stale.touchesLibrary(depsCsv, old.packages[index])
+                        || stale.touchesOpaque(depsCsv, old.packages[index])) {
                     writer.jarDriven.add(rel);
                 }
                 if (!valid.contains(rel)) {

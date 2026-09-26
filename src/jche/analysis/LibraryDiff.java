@@ -297,8 +297,12 @@ final class LibraryDiff {
 
     /**
      * "a/b/C.class" のようなエントリ名からパッケージ "a.b" を集める（jar とクラスフォルダで共通）。
-     * META-INF 配下（マルチリリース jar の版別クラス等）と、デフォルトパッケージのクラス
-     * （他パッケージのソースから参照できない）は含めない。
+     * META-INF 配下（マルチリリース jar の版別クラス等）は含めない。
+     *
+     * <p>根にあるクラス（デフォルトパッケージのクラス {@code Base.class}）は {@link LibraryFact#UNNAMED_PACKAGE} にする。
+     * ほかのパッケージのソースからは参照できないが、無名パッケージのソースからは参照できる（JLS 7.4.2）。以前は除いて
+     * いたので、そのクラスを変えた・足した・消した・並びを変えた jar でも、それを使う無名パッケージのソースを解析し直さな
+     * かった。{@code module-info.class} は型ではない（モジュールの jar の根に必ずある）ので除く
      */
     private static void addPackageOf(Set<String> packages, String entryName) {
         if (!entryName.endsWith(".class") || entryName.startsWith("META-INF/")) {
@@ -307,6 +311,8 @@ final class LibraryDiff {
         int slash = entryName.lastIndexOf('/');
         if (slash > 0) {
             packages.add(entryName.substring(0, slash).replace('/', '.'));
+        } else if (slash < 0 && !entryName.equals("module-info.class")) {
+            packages.add(LibraryFact.UNNAMED_PACKAGE);
         }
     }
 }
