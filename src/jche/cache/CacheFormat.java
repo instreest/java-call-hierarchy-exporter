@@ -436,9 +436,16 @@ public final class CacheFormat {
      *       型引数（{@code List<Foo>} の Foo）、呼び出しの候補を型引数を付けたまま辿った引数の型（{@code java.*} の型が
      *       宣言する候補の、型引数を置き換えた {@code java.*} でない型も）、jar の型の推移的な親型（{@code java.*} で
      *       止める）を足した（{@code docs/cache-unification-qa.md} の Q83〜Q88）</li>
+     *   <li>v43 H 行に親クラスの連鎖（7 列目）と、親クラスから継承したメソッドによるインターフェースの実装（8 列目）を
+     *       足した。I 行の依存する型に、暗黙の super() の呼び出し先の throws と候補の引数の型、継承したメソッドの戻り値と
+     *       throws の型、{@code java.*} のアノテーションの型、import が名指す型、型の頭（親型の型引数・型引数の上限）、
+     *       内部クラスの囲む型の型引数、関数型インターフェースの候補の関数型の型、候補の throws を足した。自分の宣言の
+     *       指紋に関数型を足し、文字列の指紋を対になっていないサロゲートでも衝突しない形で求める。無い型の名前を
+     *       バッチに依らない綴りにし、暗黙の close()/iterator() の宣言を親クラスの連鎖から先に選ぶ
+     *       （{@code docs/cache-unification-qa.md} の「v42 の穴探し（形式 v43）」）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v42";
+    public static final String VERSION = "jche-cache-v43";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
