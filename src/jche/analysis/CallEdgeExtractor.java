@@ -297,7 +297,8 @@ public final class CallEdgeExtractor {
                 }
                 int added = 0;
                 for (SourceFile f : unit) {
-                    for (SourceFile r : relatedFiles(f)) {
+                    // module-info.java だけのバッチには何も添えない（analyzeBatch。ほかのファイルと同じ呼び出しに入れない）
+                    for (SourceFile r : withContext ? relatedFiles(f) : List.<SourceFile>of()) {
                         if (!unit.contains(r) && !stopContext.contains(r)) {
                             stopContext.add(r);
                             // まだ解析していないファイル（pending）は、もともと同じ createASTs に渡している
