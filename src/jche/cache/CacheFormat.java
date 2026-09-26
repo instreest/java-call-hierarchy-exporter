@@ -146,8 +146,16 @@ import java.util.Set;
  *   R  記号  node                                            {@link ReturnFact}。戻り値のノード（-1 は「追跡できない」）。
  *                                                          D 行より前に置く（読み手はここでメソッドを ID 化するので、
  *                                                          以前の形式と同じ ID の順になる。jche.graph.CallGraphBuilder 参照）
- *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション
- *                                                          {@link TypeFact}
+ *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション  親クラスの連鎖(カンマ区切り)
+ *      継承した実装(;区切り)
+ *                                                          {@link TypeFact}。親型は親クラスとインターフェースを区別しない
+ *                                                          （読み手は名前順に並べ替える）ので、実装を親クラスの連鎖から先に
+ *                                                          探す（JLS 8.4.8・JVMS 5.4.6）ための親クラスを 7 列目に持つ。
+ *                                                          直接の親クラスから親へ、ソース上の型に当たるまで（途中の jar の
+ *                                                          クラスも並べる。java.lang.Object は含まない）。
+ *                                                          8 列目は、親クラスから継承したメソッドが親インターフェースの
+ *                                                          メソッドをキーの食い違う形で実装する組（{@code 実装される側>実装する側}。
+ *                                                          その型から見たときだけの関係なので O 行に書けない）
  *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine  [returnType]
  *                                                          returnType はアノテーションの付いたメソッドにだけ書く
  *                                                          （宣言した戻り値の消去型。DI の &#64;Bean が使う）。

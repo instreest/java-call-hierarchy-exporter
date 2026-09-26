@@ -311,7 +311,10 @@ public final class DataflowResolver {
             int target = (functional == ValueStore.NONE) ? -1 : values.methodId(functional);
             if (target >= 0) {
                 int viaReceiver = functionalReceiverImpl(functional, target);
-                if (viaReceiver >= 0) {
+                // 束縛したレシーバの型から実装までの間に jar のクラスが挟まれば、そのクラスの（見えない）宣言が
+                // 動くかもしれないので、見つけた本体の return を使わない（CallGraph#passesBinaryClass）
+                if (viaReceiver >= 0 && !graph.passesBinaryClass(
+                        concreteTypeOf(values.receiver(functional), null), viaReceiver)) {
                     return viaReceiver;
                 }
                 callee = target;   // ラムダの本体か、メソッド参照の参照先（仮想なら下で上書きを調べる）

@@ -397,7 +397,7 @@ public final class CallGraph {
      * {@link #implementationOfSignature} を使う。
      */
     public int implementationOf(String typeFqn, int calleeId) {
-        return search(typeFqn, methods.signature(calleeId),
+        return search(typeFqn, methods.key(calleeId), methods.signature(calleeId),
                 overrides.overridersOf(methods.key(calleeId)), packageAccessOf(calleeId));
     }
 
@@ -416,7 +416,10 @@ public final class CallGraph {
      *       ラムダの本体。static と private は、部分型が同じシグネチャを宣言しても上書きではない
      *       （隠蔽か別のメソッド。JLS 8.4.8）ので、部分型を調べる前に決める</li>
      *   <li>宣言した型のソース上の部分型のどれから引いても、実際に動く実装がこの宣言のまま
-     *       （部分型が上書きしていない。final クラスは部分型を持たないのでここに入る）</li>
+     *       （部分型が上書きしていない。final クラスは部分型を持たないのでここに入る）で、
+     *       部分型からこの宣言までの間に jar のクラスが挟まらない（{@link #passesBinaryClass}。
+     *       {@code class Impl extends lib.Holder<Dao> implements Fac} では、Fac の default より Holder の
+     *       見えない宣言が勝ちうる）</li>
      * </ul>
      * ソースに宣言の無いメソッド（jar の中）は、部分型を漏れなく数えられないので「振り分けられうる」とする
      * （分からないものは使わない側に倒す）。{@code super.m()} の形も区別できないので仮想の呼び出しとして扱う
@@ -454,7 +457,36 @@ public final class CallGraph {
         // 上書きの判定を別に書くと、継承と型引数の置換のどちらかの形を取りこぼす。
         // 部分型から引けない（-1）ことは型階層が揃っていれば起きないが、起きたら別の本体があるとみなす
         for (String sub : hierarchy.transitiveSubtypes(methods.typeFqn(methodId))) {
-            if (implementationOf(sub, methodId) != methodId) {
+            if (implementationOf(sub, methodId) != methodId || passesBinaryClass(sub, methodId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 型 {@code type} から実装 {@code implId} を探す道のり（{@link #search} の順）に、ソースの無いクラス（jar・JDK の
+     * クラス。{@link TypeHierarchy#classChain} に並ぶ H 行の無い型）が挟まるか。
+     *
+     * <p>挟まれば、実際に動く実装はそのクラスの宣言かもしれない。jar のクラスのメソッドは、ソースのどこかが
+     * それを呼び出し先にしていない限りメソッドの表に無く、{@link #search} は見えないまま通り過ぎる。
+     * {@code class Impl extends lib.Holder<Dao> implements Fac} で {@code Holder} の {@code create()} が動くのに、
+     * 見えるのは {@code Fac} の default の {@code create()} だけ、という形である（クラスのメソッドが勝つ。JLS 8.4.8）。
+     * 見つけた実装を「その型で動く本体」として、その return の値で呼び出しを絞ってはいけない（{@link #hasOverriders}・
+     * {@code DataflowResolver} のメソッド参照の束縛したレシーバ）。候補に並べるのは構わない（多すぎる側）。
+     * 見つけた実装の型より上にある jar のクラスは、その型の宣言を上書きできないので数えない。
+     * 親インターフェースの default（連鎖に無い型の宣言）なら、連鎖の jar のクラスをすべて数える
+     */
+    public boolean passesBinaryClass(String type, int implId) {
+        if (type == null || implId < 0 || implId >= methods.size()) {
+            return false;
+        }
+        String declaring = methods.typeFqn(implId);
+        for (String t : hierarchy.classChain(type)) {
+            if (t.equals(declaring)) {
+                return false;
+            }
+            if (!hierarchy.contains(t)) {
                 return true;
             }
         }
@@ -551,55 +583,136 @@ public final class CallGraph {
      * 契約表の仕組みがシグネチャで名指しする以上、ここで新たに生じるものではない。
      */
     public int implementationOfSignature(String typeFqn, String sig) {
-        return search(typeFqn, sig, overrides.overridersOfSignature(sig), null);
+        return search(typeFqn, null, sig, overrides.overridersOfSignature(sig), null);
     }
 
     /**
-     * その型から親へ幅優先で辿り、最初に見つかった本体を持つ実装を返す。無ければ -1。
+     * その型で実際に動く実装を、JVM がメソッドを選ぶのと同じ順（JVMS 5.4.6。JLS 8.4.8 の継承の決まり）で探す。無ければ -1。
      *
-     * <h4>2 つの軸を同じ探索の中で見る</h4>
+     * <ol>
+     *   <li><b>親クラスの連鎖</b>（{@link TypeHierarchy#classChain}）… その型から親クラスへ根まで順に見て、最初に
+     *       本体を持つ宣言を採る。クラスのメソッドは、親インターフェースの default メソッドより常に勝つ
+     *       （{@code class Impl extends Mid implements Api} で {@code Mid} の親 {@code Base} の {@code m()} が
+     *       {@code Api} の default の {@code m()} より先）。その型より上の private メソッドは上書きも継承もされないので
+     *       飛ばす（JLS 8.4.8。その型自身の宣言は、private の呼び出し先を引くときのために飛ばさない）。
+     *       親クラスの static メソッドは飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承する
+     *       クラスはコンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション
+     *       （{@code Class.getMethod} は親クラスの public な static メソッドも返す）でだけ</li>
+     *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 連鎖に無ければ、連鎖の型が実装する
+     *       インターフェースすべての宣言（private と static は継承されないので除く。JLS 9.4.1）のうち、ほかの宣言の型の
+     *       真の親型で宣言したものを除いた「最も特定的な」宣言（JVMS 5.4.3.3）から、本体を持つものを採る。
+     *       {@code interface I2 extends I1} の両方に default があれば、I1 が先に並んでいても I2 のもの。
+     *       最も特定的な宣言が複数残る（JLS ではコンパイルエラーになる形か、jar の型の親が分からず関係が見えない形）
+     *       ときは、ソースに本体のある宣言を jar の宣言（本体の有無が分からず、抽象のこともある）より先にし、
+     *       その中は近い順（同じ深さは名前順）の先頭。抽象の宣言も「最も特定的」の判定には加える（本体の無い宣言で
+     *       default を宣言し直した形は、実行時にもその default を選ばない）</li>
+     * </ol>
+     * 親型を名前順の幅優先で混ぜて辿ると、名前や深さの違いで親インターフェースの default や jar のインターフェースの
+     * メソッド（ソースが無い）がクラスのメソッドより先に当たり、実際に動く実装が呼び出しの先から消える。
+     *
+     * <h4>2 つの軸を各段で見る</h4>
      * キーの照合を先に通して駄目なら上書きを見る、では正しくない。
      * {@code class OrderStore extends AbstractStore<Order>} が {@code put} を具体化して
      * 上書きしている場合、キーの照合だけで辿ると<b>親の実装</b>に先に当たってしまい、
-     * 「上書きは無い」と結論してしまう。実際に動くのは、その型から親へ辿って
-     * <b>最初に見つかる実装</b>なので、各段で両方の軸を見る。
+     * 「上書きは無い」と結論してしまう。各段（型）で両方の軸を見る。
      *
+     * <h4>継承した実装</h4>
+     * 各段では、その型の H 行の「継承した実装」（{@link TypeHierarchy#inheritedImplementations}）も見る。
+     * {@code class UserRepo extends BaseRepo implements Repo<User>} で {@code BaseRepo.save(User)} が
+     * {@code Repo#save(java.lang.Object)} を実装する形は、キーも O 行も当たらない（その型から見たときだけの関係）。
+     *
+     * @param calleeKey 呼び出し先のキー（継承した実装を引く）。null ならシグネチャで引く
      * @param overriders その呼び出し先を上書きしているメソッド。無ければ null
      *                   （その場合はキーの照合だけになる＝ジェネリクスを使わない大多数）
      * @param packageAccess 呼び出し先がパッケージアクセスなら、その宣言のパッケージ。別パッケージの
      *                   同じシグネチャの宣言は上書きではないので飛ばして親へ進む（JLS 8.4.8.1）。
      *                   O 行の上書きは JDT の判定（{@code IMethodBinding.overrides}）なので、ここでは見ない
      */
-    private int search(String typeFqn, String sig, IntArray overriders, String packageAccess) {
+    private int search(String typeFqn, String calleeKey, String sig, IntArray overriders, String packageAccess) {
         if (typeFqn == null || typeFqn.isEmpty()) {
             return -1;
         }
-        ArrayDeque<String> queue = new ArrayDeque<>();
-        Set<String> seen = new HashSet<>();
-        queue.add(typeFqn);
-        seen.add(typeFqn);
-        while (!queue.isEmpty()) {
-            String t = queue.poll();
-            // 上書きを先に見る。シグネチャが同じ上書きは O行に書かないので、ここで当たるのは
-            // 「型引数を具体化した上書き」だけであり、親から継承した同シグネチャの宣言より
-            // こちらが優先される（実際に動くのは、より近い型の上書きのほう）
-            if (overriders != null) {
-                int overriding = declaredAmong(overriders, t);
-                if (overriding >= 0) {
-                    return overriding;
-                }
-            }
-            int id = methods.idOf(t + "#" + sig);
+        List<String> chain = hierarchy.classChain(typeFqn);
+        for (int i = 0; i < chain.size(); i++) {
+            int id = declarationIn(chain.get(i), sig, overriders, packageAccess);
             if (id >= 0 && methods.hasBody(id)
-                    && (packageAccess == null || packageAccess.equals(methods.pkg(id))
-                        || overridesAcrossPackage(id, sig, packageAccess))) {
+                    && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
                 return id;
             }
-            for (String sup : hierarchy.directSupertypes(t)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
+            int inherited = inheritedImplementationIn(chain.get(i), calleeKey, sig);
+            if (inherited >= 0 && methods.hasBody(inherited)) {
+                return inherited;
+            }
+        }
+        List<String> declaring = new ArrayList<>();
+        IntArray found = new IntArray(2);
+        for (String t : hierarchy.superinterfaces(typeFqn)) {
+            int id = declarationIn(t, sig, overriders, packageAccess);
+            if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
+                    && !ModifierTokens.has(methods.mods(id), "static")) {
+                declaring.add(t);
+                found.add(id);
+            }
+        }
+        if (found.size() == 0) {
+            return -1;
+        }
+        List<String> specific = hierarchy.mostSpecific(declaring);
+        int fallback = -1;
+        for (int i = 0; i < found.size(); i++) {
+            int id = found.get(i);
+            if (!specific.contains(declaring.get(i)) || !methods.hasBody(id)) {
+                continue;
+            }
+            if (methods.hasSource(id)) {
+                return id;
+            }
+            if (fallback < 0) {
+                fallback = id;
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * 型 {@code t} の H 行が持つ「継承した実装」のうち、呼び出し先（キー。null ならシグネチャ {@code sig}）を
+     * 実装するもの。無ければ -1
+     */
+    private int inheritedImplementationIn(String t, String calleeKey, String sig) {
+        for (String pair : hierarchy.inheritedImplementations(t)) {
+            int gt = pair.indexOf('>');
+            if (gt < 0) {
+                continue;
+            }
+            String implemented = pair.substring(0, gt);
+            boolean hit = (calleeKey != null) ? implemented.equals(calleeKey)
+                    : implemented.substring(implemented.indexOf('#') + 1).equals(sig);
+            if (hit) {
+                int id = methods.idOf(pair.substring(gt + 1));
+                if (id >= 0) {
+                    return id;
                 }
             }
+        }
+        return -1;
+    }
+
+    /**
+     * 型 {@code t} が宣言する、呼び出し先の実装になりうる宣言（本体の有無は問わない）。無ければ -1。
+     * 上書き（型引数を具体化したもの。O 行）を先に見る。シグネチャが同じ上書きは O 行に書かないので、ここで
+     * 当たるのは「型引数を具体化した上書き」だけ
+     */
+    private int declarationIn(String t, String sig, IntArray overriders, String packageAccess) {
+        if (overriders != null) {
+            int overriding = declaredAmong(overriders, t);
+            if (overriding >= 0) {
+                return overriding;
+            }
+        }
+        int id = methods.idOf(t + "#" + sig);
+        if (id >= 0 && (packageAccess == null || packageAccess.equals(methods.pkg(id))
+                || overridesAcrossPackage(id, sig, packageAccess))) {
+            return id;
         }
         return -1;
     }

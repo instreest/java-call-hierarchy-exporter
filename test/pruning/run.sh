@@ -3168,6 +3168,131 @@ EOF
 expect_ listed RnnElse.use DaoB.find "同上（渡した DaoB も残す）"
 
 # ---------------------------------------------------------------------------
+# 実際に動く実装の探し方（JLS 8.4.8・9.4.1、JVMS 5.4.6）。親クラスの連鎖を根まで見てから親インターフェースを見る。
+# 42 版までの読み手は親型を名前順の幅優先で混ぜて辿り、1 段上のインターフェース（JDK の AutoCloseable・Iterable・
+# Runnable や、名前が先に並ぶ default）の宣言を 2 段上の親クラスの実装より先に採って、動く実装を落としていた。
+# 親クラスの private メソッドは継承されないので、実装にも、try-with-resources・拡張 for の呼び出し先にもしない
+# ---------------------------------------------------------------------------
+case_ listed Dtwr Dtwr.run DtwrBase.close "try-with-resources の close() は親クラスの連鎖から継承した実装（AutoCloseable.close ではない）" <<'EOF'
+package pr;
+
+class DtwrBase { public void close() { System.out.println("c"); } }
+class DtwrMid extends DtwrBase { }
+class DtwrRes extends DtwrMid implements AutoCloseable { }
+
+public class Dtwr {
+    public static void main(String[] args) throws Exception { run(); }
+    static void run() throws Exception { try (DtwrRes r = new DtwrRes()) { System.out.println("t"); } }
+}
+EOF
+
+case_ listed Dfe Dfe.run DfeBase.iterator "拡張 for の iterator() は親クラスの連鎖から継承した実装（Iterable.iterator ではない）" <<'EOF'
+package pr;
+
+class DfeBase {
+    public java.util.Iterator<String> iterator() { return java.util.List.of("x").iterator(); }
+}
+class DfeMid extends DfeBase { }
+class DfeColl extends DfeMid implements Iterable<String> { }
+
+public class Dfe {
+    public static void main(String[] args) { run(); }
+    static void run() { for (String s : new DfeColl()) { System.out.println(s); } }
+}
+EOF
+
+case_ listed DRun DRun.run DRunBase.flush "JDK のインターフェース（Flushable）の型で呼んでも、実装は親クラスの DRunBase.flush（ソースの無い Flushable.flush ではない。Runnable と同じ形で、Runnable にすると他のケースのラムダの候補が変わる）" <<'EOF'
+package pr;
+
+class DRunBase { public void flush() { System.out.println("f"); } }
+class DRunTask extends DRunBase implements java.io.Flushable { }
+
+public class DRun {
+    public static void main(String[] args) throws Exception { run(); }
+    static void run() throws Exception { java.io.Flushable f = new DRunTask(); f.flush(); }
+}
+EOF
+
+case_ listed DtwrP DtwrP.run DtwrPApi.close "親クラスの private の close() は継承されないので、資源の close() は親インターフェースの default" <<'EOF'
+package pr;
+
+class DtwrPBase {
+    private void close() { System.out.println("p"); }
+    void use() { close(); }
+}
+interface DtwrPApi extends AutoCloseable { default void close() { System.out.println("d"); } }
+class DtwrPRes extends DtwrPBase implements DtwrPApi { }
+
+public class DtwrP {
+    public static void main(String[] args) throws Exception { run(); }
+    static void run() throws Exception { try (DtwrPRes r = new DtwrPRes()) { System.out.println("t"); } }
+}
+EOF
+expect_ absent DtwrP.run DtwrPBase.close "対照: 親クラスの private の close() は try-with-resources から呼ばれない"
+
+case_ listed DrRet DrRet.use DaoB.find "戻り値: 親クラスの実装（DaoB を返す）が動くので、default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+interface DrFac { default Dao create() { return new DaoA(); } }
+class DrBase { public Dao create() { return new DaoB(); } }
+class DrMid extends DrBase { }
+class DrImpl extends DrMid implements DrFac { }
+
+public class DrRet {
+    public static void main(String[] args) { use(new DrImpl()); }
+    static void use(DrFac f) { f.create().find(); }
+}
+EOF
+expect_ listed DrRet.use DrBase.create "戻り値: 動く実装は親クラスの DrBase.create（名前が先に並ぶ DrFac の default ではない）"
+
+# 親クラスが jar のクラスなら、その（表に無い）create() が default より勝ちうる。default の戻り値（DaoA）に絞らない。
+# jar（work/lib/prlib.jar。lib の *.jar は依存 jar として読まれる）は解析の前に作る
+mkdir -p work/libsrc/prlib work/libcls work/lib
+cat > work/libsrc/prlib/Holder.java <<'EOF'
+package prlib;
+
+public class Holder<T> {
+    private final T v;
+    public Holder(T v) { this.v = v; }
+    public T create() { return v; }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls . \
+    || ng "jar（work/lib/prlib.jar）を作れませんでした"
+case_ listed JarHold JarHold.use DaoB.find "戻り値: 親クラスが jar のクラス（prlib.Holder）なら、その create() が default より勝ちうる。default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+interface JhFac { default Dao create() { return new DaoA(); } }
+class JhImpl extends prlib.Holder<Dao> implements JhFac { JhImpl() { super(new DaoB()); } }
+
+public class JarHold {
+    public static void main(String[] args) { use(new JhImpl()); ref(); }
+    static void use(JhFac f) { f.create().find(); }
+    static void ref() {
+        JhFac f = new JhImpl();
+        java.util.function.Supplier<Dao> s = f::create;
+        s.get().find();
+    }
+}
+EOF
+expect_ listed JarHold.ref DaoB.find "戻り値: メソッド参照の束縛したレシーバ（JhImpl）から引いた default も、jar のクラスが挟まるので本体の戻り値に使わない"
+
+case_ listed GiRet GiRet.use DaoB.find "戻り値: 親クラスから継承した create(String) が GiFac<String>.create(T) を実装する（キーが食い違う）ので、default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+interface GiFac<T> { default Dao create(T t) { return new DaoA(); } }
+class GiBase { public Dao create(String s) { return new DaoB(); } }
+class GiImpl extends GiBase implements GiFac<String> { }
+
+public class GiRet {
+    public static void main(String[] args) { use(new GiImpl()); }
+    static void use(GiFac<String> f) { f.create("x").find(); }
+}
+EOF
+expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラスの GiBase.create(String)（GiFac の default ではない。GiImpl から見たときだけの実装の関係）"
+
+# ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
 # 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。
 # 値は JDT が評価した定数（32）を使う
@@ -3575,6 +3700,86 @@ else
     else
         ng "値を読まない指定: 対照 NdMixed.run -> MailA.send が段 5 で絞られていません（$got）"
     fi
+fi
+
+# ---------------------------------------------------------------------------
+# 外部の jar からの被参照（external.library.folders）を、JVM が解決する宣言へ結びつける（JVMS 5.4.3.3）。
+# 親インターフェースの宣言は、ほかの宣言の型の親型で宣言したものを除いた「最も特定的な」もので、private と static は
+# 対象にならない。42 版までは親インターフェースを名前順の幅優先で辿った最初の宣言にしていたので、jar の
+# new C().m() を上書きされた I1.m や static の ASI.m に結びつけ、実際に動く I2.m・Api.m の被参照を落としていた
+# ---------------------------------------------------------------------------
+EXTU=work/extu
+mkdir -p "$EXTU/src/eu" "$EXTU/extsrc/ext" "$EXTU/extcls" "$EXTU/extjars"
+cat > "$EXTU/config.properties" <<'EOF'
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+entry.packages=
+external.library.folders=extjars
+output.folder=./out
+cache.folder=./.cache
+EOF
+cat > "$EXTU/src/eu/Types.java" <<'EOF'
+package eu;
+
+public class Types { }
+interface I1 { default void m() { System.out.println("I1"); } }
+interface I2 extends I1 { default void m() { System.out.println("I2"); } }
+interface ASI { static void s() { System.out.println("static"); } }
+interface Api { default void s() { System.out.println("Api"); } }
+EOF
+cat > "$EXTU/src/eu/C.java" <<'EOF'
+package eu;
+
+public class C implements I1, I2 { }
+EOF
+cat > "$EXTU/src/eu/B2.java" <<'EOF'
+package eu;
+
+public class B2 implements I2 { }
+EOF
+cat > "$EXTU/src/eu/C2.java" <<'EOF'
+package eu;
+
+public class C2 extends B2 implements I1 { }
+EOF
+cat > "$EXTU/src/eu/C3.java" <<'EOF'
+package eu;
+
+public class C3 implements ASI, Api { }
+EOF
+cat > "$EXTU/extsrc/ext/Client.java" <<'EOF'
+package ext;
+
+public class Client {
+    public static void callC() { new eu.C().m(); }
+    public static void callC2() { new eu.C2().m(); }
+    public static void callC3() { new eu.C3().s(); }
+}
+EOF
+if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" $(find "$EXTU/src" "$EXTU/extsrc" -name '*.java') \
+        > "$EXTU/javac.log" 2>&1 \
+        && rm -rf "$EXTU/extcls/eu" \
+        && "$(dirname "$JAVAC_BIN")/jar" --create --file "$EXTU/extjars/client.jar" -C "$EXTU/extcls" . ; then
+    ( cd "$EXTU" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > "$EXTU/run.log" 2>&1
+fi
+ECSV=$(ls -d "$EXTU"/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
+ext_rows() {   # $1=呼び出し元 Client.method  $2=呼び出し先 Class.method
+    awk -F, -v c="at ext.$1(" -v d="$2" 'index($1, c) == 1 && $2 == d' "$ECSV" 2>/dev/null
+}
+if [ ! -f "$ECSV" ]; then
+    ng "外部の jar からの被参照: 解析できませんでした（test/pruning/$EXTU/run.log・javac.log）"
+else
+    for c in "Client.callC I2.m I1.m C implements I1, I2" "Client.callC2 I2.m I1.m C2 extends B2(implements I2) implements I1" \
+             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)"; do
+        read -r caller want wrong why <<< "$c"
+        if [ -n "$(ext_rows "$caller" "$want")" ] && [ -z "$(ext_rows "$caller" "$wrong")" ]; then
+            ok "外部の jar からの被参照: $caller -> $want（$why。$wrong ではない）"
+        else
+            ng "外部の jar からの被参照: $caller -> $want の行がありません（$why）"
+            grep "^at ext.$caller(" "$ECSV" | head -3
+        fi
+    done
 fi
 
 [ $fail = 0 ] && echo "PASS" || echo "FAIL"

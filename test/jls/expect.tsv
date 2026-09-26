@@ -55,6 +55,18 @@
 8.4.8.2	static-hiding-not-override	nocsv	jls.s08_04_08.Overriding.run	Derived.describe	-	サブクラスの同じシグネチャの static メソッドは隠蔽であって上書きではない
 8.4.8	private-not-inherited	csv	jls.s08_04_08.Base.template	Base.secret	RESOLVED:STATIC_BOUND:PRIVATE	private メソッドの呼び出しは静的に束縛される
 8.4.8	private-not-overridden	nocsv	jls.s08_04_08.Base.template	Derived.secret	-	サブクラスの同じシグネチャの private メソッドは上書きではない
+8.4.8	class-wins-deeper	csv	jls.s08_04_08.ClassWins.viaClass	CwBase.m	-	親クラスから継承した実装（2 段上の CwBase.m）は、親インターフェース（1 段上・名前が先の CwApi）の default より勝つ（JVMS 5.4.6）
+8.4.8	class-wins-no-default	nocsv	jls.s08_04_08.ClassWins.viaClass	CwApi.m	-	親クラスの実装があるので、親インターフェースの default は動かない
+8.4.8	class-wins-via-interface	csv	jls.s08_04_08.ClassWins.viaInterface	CwBase.m	-	インターフェースの型（CwApi）で呼んでも、実装クラス CwImpl で動くのは親クラスの CwBase.m
+8.4.8	class-wins-same-level	csv	jls.s08_04_08.ClassWins.viaAuditable	CwService.audit	-	同じ深さでも（CwOrder extends CwService implements CwAuditable）親クラスの実装が勝つ
+8.4.8	private-super-not-member	csv	jls.s08_04_08.ClassWins.viaPrivate	CwApi.m	-	親クラスの private メソッドは継承されないので、動くのは親インターフェースの default（§8.2）
+8.4.8	private-super-not-selected	nocsv	jls.s08_04_08.ClassWins.viaPrivate	CwHidden.m	-	親クラスの private メソッドは仮想呼び出しで選ばれない（JVMS 5.4.6）
+8.4.8.1	inherited-impl-generic	csv	jls.s08_04_08.InheritedImpl.viaRepo	IiBase.save	-	親クラスから継承した save(IiUser) が、型引数を置き換えた IiRepo<IiUser>.save(T) を実装する（IiBase 自身は IiRepo を実装しない。javac は IiUserRepo にブリッジを作る）
+8.4.8.1	inherited-impl-generic-super	csv	jls.s08_04_08.InheritedImpl.viaStr	IiGen.put	-	型引数を持つ親クラス IiGen<String> から継承した put(T) が IiStr.put(String) を実装する
+8.4.8.1	inherited-impl-beats-default	csv	jls.s08_04_08.InheritedImpl.mk	IiMaker.make	-	継承した実装はクラスのメソッドなので、キーが食い違っても親インターフェースの default より勝つ（§8.4.8）
+8.4.8.1	inherited-impl-no-default	nocsv	jls.s08_04_08.InheritedImpl.mk	IiFac.make	-	同上。default の IiFac.make は動かない
+8.4.8.1	inherited-impl-per-type	csv	jls.s08_04_08.InheritedImpl.other	IiFac.make	-	同じ IiMaker を継承しても IiFac<Integer> の make(Integer) は実装しない（型ごとの関係）ので default が動く
+8.4.8.1	inherited-impl-per-type-not-class	nocsv	jls.s08_04_08.InheritedImpl.other	IiMaker.make	-	同上。IiMaker.make(String) は動かない
 8.8.7	implicit-super	call	jls.s08_08.ImplicitSuper#<init>()	jls.s08_08.Parent#<init>()	-	明示的コンストラクタ呼び出しで始まらない本体は暗黙に super() を呼ぶ
 8.8.7	implicit-super-path	path	Constructors.run > ImplicitSuper.ImplicitSuper > Parent.Parent > Sink.parentNoArg	-	-	暗黙の super() を経由して親のコンストラクタ本体まで辿れる
 8.8.7	prologue-call	call	jls.s08_08.Prologue#<init>(int)	jls.s08_08.Sink#check(int)	-	柔軟なコンストラクタ本体: super(...) の前（プロローグ）の呼び出し
@@ -84,6 +96,16 @@
 15.12.1	interface-super	csv	jls.s09_04.Polite.greet	Greeter.greet	RESOLVED:STATIC_BOUND:SUPER	TypeName.super.m() は親インターフェースのデフォルトメソッドを名指しで呼ぶ（仮想呼び出しではない）
 9.4	interface-private	csv	jls.s09_04.Greeter.greet	Greeter.helper	RESOLVED:STATIC_BOUND:PRIVATE	インターフェースの private メソッドは上書きされない
 9.4	interface-static	csv	jls.s09_04.Interfaces.run	Greeter.util	RESOLVED:STATIC_BOUND:STATIC	インターフェースの static メソッドは型名で呼ぶ
+9.4.1	most-specific-sub	csv	jls.s09_04_01.MostSpecific.viaSub	MsI2.m	-	子インターフェースの default（MsI2.m）が親インターフェースの default（MsI1.m）を上書きする（§9.4.1.1）
+9.4.1	most-specific-sub-not-super	nocsv	jls.s09_04_01.MostSpecific.viaSub	MsI1.m	-	呼び出し先が上書きした宣言（MsI1.m）へは行かない
+9.4.1	most-specific-super	csv	jls.s09_04_01.MostSpecific.viaSuper	MsI2.m	-	親インターフェースの型で呼んでも、実装クラスで動くのは最も特定的な MsI2.m
+9.4.1	most-specific-diamond	csv	jls.s09_04_01.MostSpecific.viaNewC	MsI2.m	-	C implements I1, I2 で動くのは MsI2.m（呼び出し先のバインディングが MsI1.m でも）
+9.4.1	most-specific-diamond-not-i1	nocsv	jls.s09_04_01.MostSpecific.viaNewC	MsI1.m	-	上書きされた MsI1.m は動かない
+9.4.1	most-specific-deeper	csv	jls.s09_04_01.MostSpecific.viaNewC2	MsI2.m	-	MsI1 のほうが近くても（C2 extends B2 implements I1、B2 implements I2）最も特定的な MsI2.m
+9.4.1	most-specific-deeper-not-i1	nocsv	jls.s09_04_01.MostSpecific.viaNewC2	MsI1.m	-	近いだけの MsI1.m は動かない
+9.4.1	static-not-inherited	csv	jls.s09_04_01.MostSpecific.viaNewC3	MsApi.m	-	インターフェースの static メソッドは継承されないので、動くのは MsApi の default
+9.4.1	static-not-selected	nocsv	jls.s09_04_01.MostSpecific.viaNewC3	MsAaStatic.m	-	名前が先に並ぶ static の MsAaStatic.m は選ばれない
+9.4.1	static-not-selected-param	nocsv	jls.s09_04_01.MostSpecific.viaStatic	MsAaStatic.m	-	インターフェースの型で呼んでも static の MsAaStatic.m は選ばれない
 12.4.2	class-var-init	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#first()	-	クラス変数の初期化子はクラスの初期化で実行される
 12.4.2	static-block	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#staticBlock()	-	static 初期化子（§8.7）はクラスの初期化で実行される
 12.4.2	class-var-init-after-block	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#last()	-	static 初期化子より後に書いたクラス変数の初期化子もクラスの初期化に含まれる
@@ -105,6 +127,10 @@
 14.20.3.1	twr-close-body	path	TryWithResources.run > Resource.close > Sink.closed	-	-	close() の本体まで辿れる
 14.20.3.1	twr-member-class-first	call	jls.s14_20_03.MemberClose#viaClassChain(jls.s14_20_03.ChainRes)	jls.s14_20_03.ChainBase#close()	-	親の親のクラスのメソッドが、直接のインターフェースの既定のメソッドより先に選ばれる（§8.4.8）
 14.20.3.1	twr-member-class-first-api	nocall	jls.s14_20_03.MemberClose#viaClassChain(jls.s14_20_03.ChainRes)	jls.s14_20_03.ChainApi#close()	-	同上（インターフェースの既定のメソッドを呼び出し先にしない）
+14.14.2	foreach-inherited-iterator	call	jls.s14_14_02.EnhancedFor#inherited(jls.s14_14_02.ItColl)	jls.s14_14_02.ItBase#iterator()	-	iterator() は式の型のメンバで、親クラスから継承した ItBase.iterator()（Iterable.iterator() ではない。§8.4.8）
+14.14.2	foreach-inherited-output	csv	jls.s14_14_02.EnhancedFor.inherited	ItBase.iterator	-	親クラスから継承した iterator() の本体に届く
+14.20.3.1	twr-inherited-close	call	jls.s14_20_03.TryWithResources#inherited()	jls.s14_20_03.TwrBase#close()	-	close() は資源の型のメンバで、親クラスから継承した TwrBase.close()（AutoCloseable.close() ではない。§8.4.8）
+14.20.3.1	twr-inherited-body	path	TryWithResources.inherited > TwrBase.close > Sink.baseClosed	-	-	親クラスから継承した close() の本体まで辿れる
 14.30.2	record-pattern-accessors	call	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Point#y()	-	レコードパターンは成分の値をアクセサを呼んで取り出す
 14.30.2	record-pattern-explicit-accessor	path	Patterns.run > Point.x > Sink.readX	-	-	明示的に宣言したアクセサなら、その本体が実行される
 14.30.1	nested-record-pattern	callcount	jls.s14_30.Patterns#run(java.lang.Object)	jls.s14_30.Point#x()	2	入れ子のレコードパターンの内側でもアクセサを呼ぶ（instanceof Point(...) と Line(Point(...), ...) の 2 か所）
@@ -132,6 +158,9 @@
 15.12.4.4	virtual-dispatch-dog	csv	jls.s15_12.Invocation.run	Dog.sound	-	仮想呼び出しは実行時のクラスの上書きを呼びうる（Dog）
 15.12.4.4	virtual-dispatch-cat	csv	jls.s15_12.Invocation.run	Cat.sound	-	仮想呼び出しは実行時のクラスの上書きを呼びうる（Cat）
 15.12.4.4	virtual-dispatch-base	csv	jls.s15_12.Invocation.run	Animal.sound	-	実行時のクラスが Animal そのものなら宣言が呼ばれる
+15.12.4.4	jdk-interface-local	csv	jls.s15_12_04_04.Dispatch.viaRunnable	DTaskBase.run	-	JDK のインターフェース（Runnable）の型で呼んでも、実装は親クラスの DTaskBase.run（ソースの無い Runnable.run ではない）
+15.12.4.4	jdk-interface-class	csv	jls.s15_12_04_04.Dispatch.viaClass	DTaskBase.run	-	実装クラスの型で呼ぶと親クラスの DTaskBase.run
+15.12.4.4	jdk-interface-callback	csv	jls.s15_12_04_04.Dispatch.viaThread	DTaskBase.run	RESOLVED:CALLBACK	Thread から呼び戻される run() も親クラスの DTaskBase.run
 15.13.3	ref-static	csv	jls.s15_13.MethodRefs.run	Helper.parse	RESOLVED:STATIC_BOUND:STATIC	ClassName::staticMethod
 15.11.2	super-field-parse	noerror	src/jls/s15_11_02/SuperAccess.java	-	-	super で修飾したフィールドへの代入を含むソースを誤りなく読める
 15.11.2	super-field-write	csv	jls.s15_11_02.SuperAccess.run	FastWorker.work	-	super.worker = new FastWorker() も worker への書き込み（§15.26.1）。初期化子の SlowWorker だけに絞らない

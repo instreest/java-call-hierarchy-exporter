@@ -110,8 +110,21 @@ final class TypeContextTracker {
 
         List<String> supers = new ArrayList<>();
         collectSupertypes(erased, supers, new HashSet<>(), true, 0);
+        // 親クラスの連鎖（TypeFact#superclasses）。ソース上の型に当たるまで。jar の親は collectSupertypes も辿る型
+        List<String> superclasses = new ArrayList<>();
+        ITypeBinding sc = erased.getSuperclass();
+        while (sc != null && superclasses.size() < MAX_BINARY_SUPERTYPE_DEPTH) {
+            ITypeBinding e = BindingNames.erasureOf(sc);
+            String n = names.typeNameOf(e);
+            if (n == null || "java.lang.Object".equals(n)) {
+                break;
+            }
+            superclasses.add(n);
+            sc = e.isFromSource() ? null : e.getSuperclass();
+        }
+        ITypeBinding declared = tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb;
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
-                names.annotationsOf(erased)));
+                names.annotationsOf(erased), superclasses, names.inheritedImplementationsOf(declared)));
         recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
         names.noteInheritedSignatures(tb);
     }

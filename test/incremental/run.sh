@@ -1982,6 +1982,212 @@ case_of "別のファイルの子クラスが private でないフィールド�
     "rm work/src/ow/Sub.java" yes "setup_other_writer; write_other_writer"
 other_writer_outcome di "書き手のファイルを消した"
 
+# --- 親クラスの連鎖（H 行の 7 列目）を変える --------------------------------------
+# 実装は親クラスの連鎖を根まで見てから親インターフェースを見て探す（JLS 8.4.8・JVMS 5.4.6。CallGraph#implementationOf）。
+# 連鎖は H 行が「ソース上の型に当たるまで」だけ持ち、その先はその型自身の H 行から続けるので、中間のクラス（Mid）が
+# 親をやめても、変わらない子（Impl）の H 行は書き直さなくてよい。差分更新と全件解析で同じ実装に行くことを見る
+setup_class_chain() {
+    sed -i 's/new Awkward().separators();/new Awkward().separators();\n        cc.Use.go();/' work/src/inc/Main.java
+    jfile cc/Base.java <<'EOF'
+package cc;
+
+public class Base {
+    public void m() {
+    }
+}
+EOF
+    jfile cc/Mid.java <<'EOF'
+package cc;
+
+public class Mid extends Base {
+}
+EOF
+    jfile cc/Api.java <<'EOF'
+package cc;
+
+public interface Api {
+    default void m() {
+    }
+}
+EOF
+    jfile cc/Impl.java <<'EOF'
+package cc;
+
+public class Impl extends Mid implements Api {
+}
+EOF
+    jfile cc/Use.java <<'EOF'
+package cc;
+
+public class Use {
+    public static void go() {
+        new Impl().m();
+        viaApi(new Impl());
+    }
+
+    public static void viaApi(Api a) {
+        a.m();
+    }
+}
+EOF
+}
+# $1=期待する実装（Base.m / Api.m）  $2=ラベル
+class_chain_outcome() {
+    local rows
+    rows=$(grep -a '^at cc\.Use\.viaApi(' "$OUT/call-hierarchy.csv")
+    if grep -q ",$1," <<< "$rows"; then
+        echo "  OK   $2: Api の型で呼んだ m() は Impl で動く $1 に届く"
+    else
+        echo "  NG   $2: Api の型で呼んだ m() が $1 に届きません"; echo "$rows" | head -3; fail=1
+    fi
+}
+case_of "親クラスの連鎖を変える（中間のクラスが親をやめる）" \
+    "sed -i 's/public class Mid extends Base {/public class Mid {/' work/src/cc/Mid.java" yes setup_class_chain
+class_chain_outcome Api.m "中間のクラスが親をやめた"
+case_of "親クラスの連鎖を変える（中間のクラスが親を持つ）" \
+    "sed -i 's/public class Mid {/public class Mid extends Base {/' work/src/cc/Mid.java" yes \
+    "setup_class_chain; sed -i 's/public class Mid extends Base {/public class Mid {/' work/src/cc/Mid.java"
+class_chain_outcome Base.m "中間のクラスが親を持った"
+
+# --- 継承した実装（H 行の 8 列目）を変える ------------------------------------------
+# class UserRepo extends Mid implements Repo<User> で、親クラスから継承した save(User) が Repo<User>.save(T) を
+# 実装する関係は UserRepo の H 行が持つ（BindingNames#inheritedImplementationsOf）。UserRepo.java が変わらなくても、
+# 親の親（Base）や親インターフェースの親（Saver）だけを書き換えれば関係が変わる。変わった型の部分型が変わった型に
+# なる決まりで UserRepo.java を解析し直し、差分更新と全件解析で同じ実装に行くことを見る
+setup_inherited_impl() {
+    sed -i 's/new Awkward().separators();/new Awkward().separators();\n        ii.Use.go();/' work/src/inc/Main.java
+    jfile ii/User.java <<'EOF'
+package ii;
+
+public class User {
+}
+EOF
+    jfile ii/Saver.java <<'EOF'
+package ii;
+
+public interface Saver<T> {
+    void save(T t);
+}
+EOF
+    jfile ii/Repo.java <<'EOF'
+package ii;
+
+public interface Repo<T> extends Saver<T> {
+}
+EOF
+    jfile ii/Root.java <<'EOF'
+package ii;
+
+public class Root {
+    public void save(User u) {
+    }
+
+    public void flush(User u) {
+    }
+}
+EOF
+    jfile ii/Base.java <<'EOF'
+package ii;
+
+public class Base extends Root {
+    public void save(User u) {
+    }
+}
+EOF
+    jfile ii/Mid.java <<'EOF'
+package ii;
+
+public class Mid extends Base {
+}
+EOF
+    jfile ii/UserRepo.java <<'EOF'
+package ii;
+
+public class UserRepo extends Mid implements Repo<User> {
+}
+EOF
+    jfile ii/Use.java <<'EOF'
+package ii;
+
+public class Use {
+    public static void go() {
+        viaRepo(new UserRepo());
+    }
+
+    public static void viaRepo(Repo<User> r) {
+        r.save(new User());
+        r.flush(new User());
+    }
+}
+EOF
+    # Use.java は Saver に flush を足すまでコンパイルできないので、足す前は r.flush の行を外す
+    sed -i '/r.flush/d' work/src/ii/Use.java
+}
+# $1=呼び出し先（Root.save など）  $2=ラベル
+inherited_impl_outcome() {
+    if grep -a '^at ii\.Use\.viaRepo(' "$OUT/call-hierarchy.csv" | grep -q ",$1,"; then
+        echo "  OK   $2: Repo<User> の型で呼んだメソッドが UserRepo で動く $1 に届く"
+    else
+        echo "  NG   $2: Repo<User> の型で呼んだメソッドが $1 に届きません"
+        grep -a '^at ii\.Use\.viaRepo(' "$OUT/call-hierarchy.csv" | head -3; fail=1
+    fi
+}
+case_of "継承した実装を変える（親の親が上書きをやめる）" \
+    "sed -i '/public void save(User u) {/,/^    }/d' work/src/ii/Base.java" yes setup_inherited_impl
+inherited_impl_outcome Root.save "親の親（Base）が save をやめた"
+case_of "継承した実装を変える（親インターフェースの親にメソッドを足す）" \
+    "sed -i 's/void save(T t);/void save(T t);\n\n    void flush(T t);/' work/src/ii/Saver.java; sed -i 's/r.save(new User());/r.save(new User());\n        r.flush(new User());/' work/src/ii/Use.java" \
+    yes setup_inherited_impl
+inherited_impl_outcome Root.flush "親インターフェースの親（Saver）に flush を足した"
+
+# --- try-with-resources の close() の呼び出し先（C 行）が親クラスの宣言に依る ---------------
+# 資源の型 Res のメンバの close() は親クラスの連鎖から先に引く（ImplicitCalls#findNoArgMethod。JLS 8.4.8）。
+# 中間のクラス Mid に close() を足すと、Use.java は変わらなくても C 行の呼び出し先が Base#close から Mid#close に
+# 変わる。Res が変わった型の部分型になるので Use.java を解析し直し、差分更新と全件解析で同じになることを見る
+setup_twr_chain() {
+    sed -i 's/new Awkward().separators();/new Awkward().separators();\n        tw.Use.go();/' work/src/inc/Main.java
+    jfile tw/Base.java <<'EOF'
+package tw;
+
+public class Base {
+    public void close() {
+    }
+}
+EOF
+    jfile tw/Mid.java <<'EOF'
+package tw;
+
+public class Mid extends Base {
+}
+EOF
+    jfile tw/Res.java <<'EOF'
+package tw;
+
+public class Res extends Mid implements AutoCloseable {
+}
+EOF
+    jfile tw/Use.java <<'EOF'
+package tw;
+
+public class Use {
+    public static void go() {
+        try (Res r = new Res()) {
+            r.hashCode();
+        }
+    }
+}
+EOF
+}
+case_of "try-with-resources の close() の宣言を中間のクラスに足す" \
+    "sed -i 's/public class Mid extends Base {/public class Mid extends Base {\n    public void close() {\n    }/' work/src/tw/Mid.java" \
+    yes setup_twr_chain
+if grep -a '^at tw\.Use\.go(' "$OUT/call-hierarchy.csv" | grep -q ',Mid\.close,'; then
+    echo "  OK   中間のクラスに足した close() に try-with-resources から届く"
+else
+    echo "  NG   中間のクラスに足した close() に try-with-resources から届きません"
+    grep -a '^at tw\.Use\.go(' "$OUT/call-hierarchy.csv" | head -3; fail=1
+fi
+
 # --- 暗黙の super()・継承したメソッドの突き合わせ・sealed の家族・アノテーション型・サロゲートの定数 ---------
 # 暗黙の super()（既定のコンストラクタと、this(...) も super(...) も書かないコンストラクタ）は AST に節が無い。
 # 書いた super() と同じく、呼び出し先の throws の型と、候補（親のコンストラクタすべて）の引数の型を I 行に数える
