@@ -287,7 +287,7 @@ printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo
 
 要求と応答は TAB 区切りの1行で、`ANALYZE`（解析）・`FIND`（メソッドの確認）・
 `AT`（ファイルと行から、その位置を囲むメソッドを引く）・`TREE`（木の切り出し。向きに `field` を指定すると
-`型FQN#フィールド名` を根にした「フィールドの呼び出し元」）・
+`型FQN#フィールド名` を根にした「フィールドの呼び出し元」）・`FIELDAT`（ファイル・行・名前から、その位置のフィールドを引く。VSCode 版が使う）・
 `EXPORT`（CSV 出力）・`CANCEL`（解析の中止）・`SHUTDOWN`（積んだ要求を処理し終えてから終わる）がある。
 上の例のようにまとめて流し込んでよく、**末尾の `SHUTDOWN` が先に読まれても `ANALYZE` は完走する**。
 実行中の解析を打ち切りたいときは `CANCEL` を送る（それまでに送った `ANALYZE` は、待ち行列にあってまだ始まっていない

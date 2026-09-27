@@ -55,6 +55,11 @@
         "icon": "$(references)"
       },
       {
+        "command": "jche.showFieldCallers",
+        "title": "%command.jche.showFieldCallers.title%",
+        "icon": "$(symbol-field)"
+      },
+      {
         "command": "jche.analyze",
         "category": "%command.category%",
         "title": "%command.jche.analyze.title%",
@@ -71,6 +76,12 @@
         "category": "%command.category%",
         "title": "%command.jche.toggleDirection.title%",
         "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "jche.fieldAccess",
+        "category": "%command.category%",
+        "title": "%command.jche.fieldAccess.title%",
+        "icon": "$(filter-filled)"
       },
       {
         "command": "jche.setRoot",
@@ -123,6 +134,11 @@
           "command": "jche.showCallers",
           "when": "resourceLangId == java",
           "group": "navigation@9"
+        },
+        {
+          "command": "jche.showFieldCallers",
+          "when": "resourceLangId == java",
+          "group": "navigation@9"
         }
       ],
       "view/title": [
@@ -133,7 +149,12 @@
         },
         {
           "command": "jche.toggleDirection",
-          "when": "view == jche.callers",
+          "when": "view == jche.callers && !jche.fieldRoot",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jche.fieldAccess",
+          "when": "view == jche.callers && jche.fieldRoot",
           "group": "navigation@1"
         },
         {
@@ -200,6 +221,10 @@
         {
           "command": "jche.export",
           "when": "jche.hasTree"
+        },
+        {
+          "command": "jche.fieldAccess",
+          "when": "jche.fieldRoot"
         }
       ]
     },

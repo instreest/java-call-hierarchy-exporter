@@ -5,6 +5,7 @@ import { Session } from './session';
 import { StatusItem } from './status';
 import { CallersView, openAt } from './view';
 import type { TreeNode } from './server/tree';
+import { toFieldAccess } from './filters';
 import { setLanguage, t } from './messages';
 
 /**
@@ -171,8 +172,105 @@ export function activate(context: vscode.ExtensionContext): void {
         });
     };
 
+    /**
+     * エディタのカーソル位置のフィールドを起点に木を出す（フィールドの呼び出し元。docs/field-callers-qa.md）。
+     *
+     * こちらには JDT が無いので、カーソルの下の単語と行をサーバーに送ってフィールドを引かせる（`FIELDAT`）。
+     * フィールドの宣言の上でも、使っている箇所（`this.status` の `status`）の上でもよい
+     */
+    const showFieldCallers = async (): Promise<void> => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document.languageId !== 'java') {
+            vscode.window.showInformationMessage(t('command.putCursorOnField'));
+            return;
+        }
+        const folder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+        if (!folder) {
+            vscode.window.showInformationMessage(t('command.outsideWorkspace'));
+            return;
+        }
+        const position = editor.selection.active;
+        const wordRange = editor.document.getWordRangeAtPosition(position, /[A-Za-z_$][\w$]*/);
+        if (!wordRange) {
+            vscode.window.showInformationMessage(t('command.putCursorOnField'));
+            return;
+        }
+        const name = editor.document.getText(wordRange);
+        const session = sessionOf(folder);
+        if (!session.isAnalyzed) {
+            const answer = await vscode.window.showInformationMessage(
+                t('command.analyzeNow', folder.name),
+                t('command.action.analyze'));
+            if (answer !== t('command.action.analyze') || !(await analyze(session))) {
+                return;
+            }
+        }
+        if (editor.document.isDirty) {
+            log.warn(t('command.unsaved', editor.document.fileName));
+        }
+        const relative = path.relative(folder.uri.fsPath, editor.document.uri.fsPath).split(path.sep).join('/');
+        const found = await session.fieldAt(relative, position.line + 1, name);    // サーバーは 1 始まり
+        if (!found.ok) {
+            switch (found.reason) {
+                case 'file-not-analyzed':
+                    vscode.window.showWarningMessage(t('command.fileNotAnalyzed', relative));
+                    return;
+                case 'not-found':
+                    vscode.window.showInformationMessage(t('command.fieldNotFound', name));
+                    return;
+                case 'not-analyzed':
+                    vscode.window.showInformationMessage(t('command.notAnalyzed'));
+                    return;
+                case 'stale-cache': {
+                    const answer = await vscode.window.showWarningMessage(
+                        t('command.staleCache'), t('command.action.analyze'));
+                    if (answer === t('command.action.analyze')) {
+                        await analyze(session);
+                    }
+                    return;
+                }
+                default:
+                    vscode.window.showErrorMessage(t('command.fieldAtFailed', found.reason));
+                    return;
+            }
+        }
+        // 候補が複数（入れ子のクラスに同じ名前のフィールドがある、など）なら選んでもらう。黙って 1 つを選ばない
+        const keys = found.field('keys').split(',').filter((k) => k !== '');
+        let key = keys.length > 0 ? keys[0] : found.field('key');
+        if (keys.length > 1) {
+            const picked = await vscode.window.showQuickPick(
+                keys.map((k) => ({ label: fieldLabelOf(k), description: k, key: k })),
+                { placeHolder: t('command.pickField', name) });
+            if (!picked) {
+                return;
+            }
+            key = picked.key;
+        }
+        await view.show({ session, key, label: fieldLabelOf(key), file: '', line: 0, kind: 'field' });
+    };
+
     context.subscriptions.push(
         vscode.commands.registerCommand('jche.showCallers', showCallers),
+        vscode.commands.registerCommand('jche.showFieldCallers', showFieldCallers),
+        vscode.commands.registerCommand('jche.fieldAccess', async () => {
+            if (!view.isFieldRoot) {
+                vscode.window.showInformationMessage(t('command.fieldAccess.noField'));
+                return;
+            }
+            const current = view.access;
+            type Item = vscode.QuickPickItem & { value: string };
+            const items: Item[] = [
+                { value: 'all', label: t('command.fieldAccess.all'), picked: current === 'all' },
+                { value: 'write', label: t('command.fieldAccess.write'),
+                    description: t('command.fieldAccess.writeDescription'), picked: current === 'write' },
+                { value: 'read', label: t('command.fieldAccess.read'),
+                    description: t('command.fieldAccess.readDescription'), picked: current === 'read' },
+            ];
+            const picked = await vscode.window.showQuickPick(items, { title: t('command.fieldAccess.title') });
+            if (picked) {
+                await view.setAccess(toFieldAccess(picked.value));
+            }
+        }),
         vscode.commands.registerCommand('jche.analyze', async () => {
             const session = await pickSession();
             if (session) {
@@ -285,6 +383,12 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
     );
     status.render(currentSession());
+}
+
+/** フィールドのキー（`型FQN#フィールド名`）を、木の根の見出し（`型FQN.フィールド名`）にする。サーバーの根の行と同じ綴り */
+function fieldLabelOf(key: string): string {
+    const hash = key.lastIndexOf('#');
+    return hash < 0 ? key : `${key.substring(0, hash)}.${key.substring(hash + 1)}`;
 }
 
 export function deactivate(): void {

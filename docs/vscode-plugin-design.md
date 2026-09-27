@@ -34,6 +34,8 @@ VSCode の拡張ホストは Node.js なので、そもそも Java を動かす�
 使うプロトコルは**既存のものそのまま**（`HELLO` / `ANALYZE` / `STATUS` / `FIND` / `TREE` / `EXPORT` / `CANCEL` / `SHUTDOWN`）。
 足すのは §4 の `AT` 1つだけで、既存の行の意味は変えないのでプロトコル版は 1 のまま据え置く
 （**実装済み**。`jche.server.Server#at`）。
+後から、フィールドの呼び出し元のために `TREE … field` と `FIELDAT` を足した。考え方は `AT` と同じで、
+プロトコル版も 1 のまま（[field-callers-qa.md](field-callers-qa.md) の Q12・Q13）。
 
 ### 置き場所
 

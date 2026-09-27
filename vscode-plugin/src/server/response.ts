@@ -7,6 +7,19 @@ export const FLAG_TRUNCATED = 'truncated';
 export const FLAG_GUESSED = 'guessed';
 export const FLAG_MATCH = 'match';
 export const FLAG_NO_SOURCE = 'nosource';
+/** フィールドの木の根（フィールドそのもの）。サーバーの `jche.server.FieldTree` と同じ綴り */
+export const FLAG_FIELD = 'field';
+/** フィールドの木の深さ 1（そのフィールドを参照しているメソッド）。理由の列が read / write / read/write */
+export const FLAG_ACCESS = 'access';
+/** 参照を囲むメソッドが特定できない行（キーが空） */
+export const FLAG_NO_METHOD = 'nomethod';
+/** 宣言の初期化子の行（キーが空） */
+export const FLAG_INITIALIZER = 'initializer';
+
+/** フィールドの木の理由の列（サーバーの `FieldTree` と同じ綴り。表示のときに訳す） */
+export const ACCESS_READ = 'read';
+export const ACCESS_WRITE = 'write';
+export const ACCESS_READ_WRITE = 'read/write';
 
 /**
  * サーバーが返す木の1行（`R` 行）。
@@ -16,14 +29,20 @@ export const FLAG_NO_SOURCE = 'nosource';
 export interface ServerRow {
     /** 根からの深さ。行は深さ優先の順で来るので、これだけで木に組み直せる */
     readonly depth: number;
-    /** メソッドのキー（型FQN#名前(引数)）。次の問い合わせの起点に使える */
+    /**
+     * メソッドのキー（型FQN#名前(引数)）。次の問い合わせの起点に使える。
+     * フィールドの木の根ではフィールドのキー（型FQN#フィールド名）、初期化子・囲むメソッドの無い行では空
+     */
     readonly key: string;
     readonly label: string;
     /** 呼び出している場所のファイル（プロジェクトルートからの相対）。無ければ空 */
     readonly file: string;
     /** 呼び出している行。分からなければ宣言の行 */
     readonly line: number;
-    /** 解決の理由（DATAFLOW_FACTORY 等）。ふつうの呼び出しでは空 */
+    /**
+     * 解決の理由（DATAFLOW_FACTORY 等）。ふつうの呼び出しでは空。
+     * フィールドの木の深さ 1 では参照の種類（`ACCESS_READ` / `ACCESS_WRITE` / `ACCESS_READ_WRITE`）
+     */
     readonly reason: string;
     readonly flags: readonly string[];
 }
