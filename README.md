@@ -3,33 +3,92 @@ A tool that recursively extracts Java method call hierarchies across an entire p
 
 **日本語** | [English](#english)
 
-## Overview
-Javaプロジェクト全体のメソッド呼び出し階層を一括で抽出してCSVファイルに出力するツールです。
+## 何ができるか
 
-Eclipseの「呼び出し階層」ビューが一括で再帰的に取得できないため、このツールで一括でCSVファイルを出力します。
-Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用してソースコードを解析するコマンドラインツールです。
-解析結果のCSVファイルをExcelで開いて呼び出し先メソッドでフィルタすることで対象機能の影響範囲を抽出できます。
+Java プロジェクト全体のメソッド呼び出し階層を一度に解析し、CSV ファイルに書き出すツールです。
+**「このメソッドを直したら、どの画面・バッチ・API に影響するか」を漏れなく洗い出す**ために使います。
 
-## ドキュメント
+たとえば `OrderDaoImpl.selectById` を改修するとき、出力された `call-hierarchy.csv` を Excel で開いて
+`callee`（呼び出し先）列をそのメソッドで絞り込むと、`root`（起点）列に影響を受ける入口が並びます。
 
-| 知りたいこと | 場所 |
+```csv
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+```
+
+2 行目は「`OrderAction.execute` から始まる処理が、`OrderService.findOrder` を経由して `OrderDaoImpl.selectById` を呼ぶ。
+呼んでいるのは `OrderService.java` の 25 行目。インターフェース越しの呼び出しだが、Spring の Bean 定義から実装が
+`OrderDaoImpl` だと決まった」という意味です（読み方は[結果の読み方](#結果の読み方)）。
+
+- **インターフェース・DI・ラムダの先まで辿ります。** 実際に動く実装クラスを、`new` した型・引数やフィールドの値の流れ・
+  Spring の Bean 定義などから決めます
+- **決めきれない呼び出しは落としません。** 実装の候補が複数残ったときは候補をすべて行に出し、
+  「絞れなかった」と `resolved-by` 列に書きます。影響調査で呼び出しを見落とさないことを優先しています
+- **Eclipse を起動しません。** 解析エンジンに Eclipse JDT（Eclipse の Java コンパイラ）を使うコマンドラインツールで、
+  Java を事前に入れておく必要もありません（[動作条件](#動作条件)）
+- **2 回目からは速くなります。** 解析結果をキャッシュし、変わったファイルとその影響を受けるファイルだけを解析し直します
+
+### ほかの手段との違い
+
+| 手段 | 向いていること | このツールとの違い |
+|---|---|---|
+| IDE の呼び出し階層（Eclipse の Ctrl+Alt+H など） | 書きながら、1 つのメソッドの呼び出し元をその場で確かめる | 1 メソッドずつ画面で展開するので、プロジェクト全体の一覧として保存・絞り込み・共有ができない。インターフェース越しの呼び出しの実装を決める根拠も残らない |
+| `grep` による文字列検索 | 手早く名前の出現箇所を探す | 同じ名前の別メソッドや、インターフェース・継承越しの呼び出しを区別できない |
+| `jdeps` | jar・パッケージ・クラスの間の依存を調べる | メソッドの単位の呼び出しや、呼び出しの経路は分からない |
+
+IDE の中で呼び出し元を辿りたいときは、同じ解析を画面から使える [Eclipse プラグイン](docs/eclipse-plugin-usage.md)・
+[VSCode プラグイン](docs/vscode-plugin-usage.md)もあります。
+
+## 動作条件と制約
+
+### 動作条件
+
+| 項目 | 条件 |
 |---|---|
-| 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
-| 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
-| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
-| 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
+| OS | Windows（コマンドプロンプト・PowerShell）、Linux、macOS、Git Bash |
+| 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う jar は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
+| 解析できるソース | Java のソース（`.java`）。既定では同梱の JDT が対応する最新の言語の版として読みます（設定の `source.level` で変えられます） |
+| ビルドの構成 | Maven（`pom.xml`）、Gradle（`build.gradle`。宣言的な書き方の範囲）、Eclipse の `.classpath`、jar を集めた `lib` フォルダ。ソースフォルダと依存 jar は自動で見つけます |
+| 依存 jar | **手元に取得済みであること。** このツールはビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、IDE でプロジェクトを開いておいてください |
+
+### 分からないこと（制約）
+
+静的解析なので、実行してみないと決まらないことは分かりません。分からないときは呼び出しを消すのではなく、
+候補を並べるか「辿れなかった」と書きます。
+
+- **ソースの無いところ（jar の中）は辿りません。** JDK やフレームワークの中を経由して呼び戻される呼び出し
+  （`new Thread(task).start()` → `task.run()` など）は、[契約表](docs/callback-contracts.md)に書かれたもの（同梱の分と、自分で足した分）だけを繋ぎます
+- **実行時に決まる値は分かりません。** 設定ファイルや入力から作ったクラス名でのリフレクション、
+  実行時の条件で変わる実装などは、候補を並べるに留まります（[docs/static-analysis-limits.md](docs/static-analysis-limits.md)）
+- **コンパイルが通らない・依存 jar が足りないと、結果に抜けが出ます。** そのときは出力フォルダに
+  `warnings.txt` ができ、何が足りないかを知らせます
+- コンストラクタの呼び出しそのものは行になりません（コンストラクタの中からのメソッド呼び出しは行になります）
 
 ---
 
 ## Quick start
 
-起動スクリプトと設定ファイルを使用します。
+1. **ツールを取得する** … このリポジトリを clone します（GitHub の「Code → Download ZIP」で展開しても構いません）。
 
-起動スクリプトが JDK 25 と依存モジュールが環境上にあるかチェックし、無ければ確認メッセージのうえ自動でダウンロードします。（通信量 約 165MB → 展開後 約 500MB）。
+     ```bash
+     git clone https://github.com/instreest/java-call-hierarchy-exporter.git
+     cd java-call-hierarchy-exporter
+     ```
 
-1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
+2. **設定ファイルに解析対象を書く** … [`config/config.properties`](config/config.properties) の `project.root` に、
+   解析したいプロジェクトのフォルダを書きます。**必須なのはこの 1 行だけ**で、ソースフォルダ・依存 jar・
+   文字コードは空欄のままなら `pom.xml` や `build.gradle` から自動で決まります。
 
-2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。
+     ```properties
+     # Windows でも区切りは / で書く（\ で書くなら \\ と 2 つ重ねる）
+     project.root=C:/work/myapp
+     ```
+
+   相対パスで書くときは、この設定ファイルのあるフォルダ（`config/`）が起点です。
+   解析するプロジェクトごとに設定ファイルをコピーして増やす（`config/myapp.properties` など）と管理しやすくなります。
+
+3. **実行する** … リポジトリ直下の起動コマンドに、設定ファイルを渡します。
 
      ```bat
      rem Windows
@@ -41,80 +100,101 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
      ./java-call-hierarchy-exporter.sh config/config.properties
      ```
 
-　3. 結果を見る … 出力されたCSVファイルを参照します。（[出力ファイル](#出力ファイル)）
+   初回は JDK などの取得の確認が出るので、`y` で答えます（取得するものとサイズが表示されます）。
+   初回は取得と全件の解析のぶん時間がかかりますが、2 回目からは変わったファイルだけを解析します。
+   ZIP で取得して `.sh` に実行権限が無いときは、`bash java-call-hierarchy-exporter.sh …` で動かします。
 
-### Pleiades/Eclipse環境（閉域ネットワーク等の場合）
+4. **`warnings.txt` があれば先に開く** … 実行ごとに `config/<解析開始日時>_<プロジェクト名>/` のフォルダができます。
+   その中に `warnings.txt` があれば、依存 jar の不足やコンパイルエラーなどで**結果に抜けがある**ということです。
+   何が起きたかと直し方が書いてあるので、直してからもう一度実行してください。
 
-Pleiades/Eclipseがインストールされていれば、そこに含まれるJDT Core一式から、実行に必要なjarを `lib` フォルダに集めて使います。
-バージョン部分はEclipseのバージョンによって変わるためワイルドカードでコピーします。
+5. **CSV を開く** … 同じフォルダの `call-hierarchy.csv` を Excel で開きます（UTF-8 の BOM 付きなので文字化けしません）。
+   読み方は次の[結果の読み方](#結果の読み方)にあります。
 
-```bat
-rem java-call-hierarchy-exporterをカレントディレクトリとしてください
-rem 環境に合わせて次の2行を書き換えてください
-set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
-set JAVA_HOME=C:\pleiades\2026-06\java\17
+設定ファイルを書かずに始めたいときは、**引数を付けずに**起動コマンドを実行すると対話モードになります。
+メニューの「2) 設定ファイルを新しく作る」で解析対象のフォルダを入力すると、設定ファイルを作ってそのまま解析できます
+（[docs/cli.md](docs/cli.md)）。
 
-rem　実行に必要なjarの収集
-mkdir lib
-for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
-do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
+---
 
-rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
-"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\jche\CallHierarchyExporter.java -encoding UTF-8
+## 結果の読み方
 
-rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\config.properties
-```
+### 影響範囲を調べる（基本の手順）
 
-### GitHub Actions Workflow
+1. `call-hierarchy.csv` を Excel で開き、フィルタを付けます（データ → フィルター）
+2. **`callee` 列**で、改修するメソッドを `クラス名.メソッド名` で選びます（引数は付きません。オーバーロードは同じ名前になります）
+3. 残った行の **`root` 列**が、そのメソッドに届く入口（画面のアクション・バッチの `main`・API のハンドラなど）です。
+   **`caller` 列**が直接の呼び出し箇所（ファイルと行）、**`call-hierarchy` 列**が入口からそこまでの経路です
 
-リポジトリ直下の [`action.yml`](action.yml) を利用者のワークフローから `uses:` で呼ぶと、
-解析対象の指定をするとリポジトリのソースコードを解析してCSVファイルをアーティファクトにアップロードします。
-詳細な機能仕様は[docs/github-actions.md](docs/github-actions.md) にあります。
+インターフェース越しの呼び出しで実装を 1 つに決められなかったときも、候補の実装ごとに行が出るので、
+`callee` を実装クラスの名前で絞れば見つかります。
 
-ワークフローはそのまま写せる次の形を推奨します（手動実行のみ、読み取り権限だけで動きます）。
+### 1 行の読み方
 
-```yaml
-name: call hierarchy
+| 列 | 例（上の 2 行目） | 意味 |
+|---|---|---|
+| `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | 呼び出している場所。Java のスタックトレースと同じ形なので、Eclipse でソースに飛べます（[下記](#eclipse-でソースコードへジャンプする)） |
+| `callee` | `OrderDaoImpl.selectById` | 呼ばれるメソッド |
+| `resolved-by` | `RESOLVED:SPRING_DI` | 呼び出し先をどう決めたか。`RESOLVED:` なら 1 つに決まった、`UNEXPANDED:` なら決めきれず候補を並べた |
+| `level` | `2` | 入口から何段目の呼び出しか |
+| `root` | `OrderAction.execute` | 入口のメソッド |
+| `call-hierarchy` | `OrderService.findOrder,OrderDaoImpl.selectById` | 入口の次から `callee` までの経路（1 段が 1 列）。最後の列に補足（注記）が付くことがあります |
 
-on:
-  workflow_dispatch:
+### 辿り切れなかった呼び出しを確かめる
 
-permissions:
-  contents: read
+どの行も `resolved-by` 列の接頭辞で確かさが分かります。影響調査で目で確かめるべきなのは次の行です。
 
-jobs:
-  export:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+| `resolved-by` | 意味 | どうするか |
+|---|---|---|
+| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | その候補より先の経路は、`caller` のメソッド名を `callee` 列でもう一度絞って上へ辿ります。絞り方を教えれば次から 1 つに決まります（出力フォルダの `contracts-suggested.txt`、[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| `UNRESOLVED:…` | 呼び出し先の型が分からなかった（多くは依存 jar の不足） | `warnings.txt` に従って依存 jar を揃えて実行し直します |
 
-      # 依存 jar を先にローカルリポジトリへ取得しておく
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
-      - run: mvn -B --no-transfer-progress dependency:go-offline
+`call-hierarchy` 列の最後に付く注記（`[EXTERNAL] no source to follow` など）は、そこで辿るのをやめた理由です。
+注記の一覧は[注記](#注記)にあります。
 
-      - uses: instreest/java-call-hierarchy-exporter@main
-        with:
-          source-folders: src/main/java
-          source-encoding: UTF-8
-```
+### Eclipse でソースコードへジャンプする
+`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
 
-初めて使うときの注意:
+1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
+2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
+   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
+   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
 
-- 依存の取得を省くと解析結果が欠けます（ジョブに警告が出ます）
-- 依存の取得はランナーの設定（`settings.xml`、プロキシ等）で外部に問い合わせるので、
-  `pull_request_target` では使わず、self-hosted ランナーでは設定の扱いを確認してください
-- プライベートリポジトリではアーティファクトの容量が利用者のストレージの無料枠から引かれます。
-  繰り返し動かす場合は `artifact-retention-days: 7` 程度に（[保存量と保持期間](docs/github-actions.md#保存量と保持期間)）
-- 詳細と、依存の取得を省く方法は [docs/github-actions.md](docs/github-actions.md) にあります
+### 用語
+
+| 用語 | 意味 |
+|---|---|
+| 起点（`root`） | 呼び出しを辿り始めるメソッド。設定の `entry.packages` で指定します。空欄なら、ソースの中で呼び出し元の無いメソッドと、フレームワークが呼ぶと分かっているメソッド（`main`・`@GetMapping`・Servlet の `doGet` など）がすべて起点になります（全体モード） |
+| 具象クラスの解決 | インターフェースや親クラスの型に対する呼び出しで、実際に動く実装クラスを決めること（[具象クラスの解決](#具象クラスの解決)） |
+| CHA | Class Hierarchy Analysis。型の継承関係だけから実装の候補をすべて挙げる方法。ほかの方法で決めきれなかったときに使い、`UNEXPANDED:CHA` と書きます |
+| レシーバ | `dao.find()` の `dao` のように、メソッドを呼ばれる側の値 |
+| 契約表 | ソースの外（JDK・フレームワーク）の振る舞いや、実装クラスの対応を書いた表（[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| 注記 | `call-hierarchy` 列の最後に付く補足。大文字のタグで始まります（[注記](#注記)） |
+
+---
+
+## ほかの使い方
+
+| やりたいこと | 方法 |
+|---|---|
+| 設定ファイルをメニューで作る・複数の設定をまとめて処理する | 起動コマンドを引数なしで実行する対話モード、または設定ファイルを複数渡す（[docs/cli.md](docs/cli.md)） |
+| Eclipse の中で呼び出し元を辿る | [Eclipse プラグイン](docs/eclipse-plugin-usage.md) |
+| VSCode の中で呼び出し元を辿る | [VSCode プラグイン](docs/vscode-plugin-usage.md) |
+| GitHub Actions で解析して CSV をアーティファクトにする | リポジトリ直下の [`action.yml`](action.yml) を `uses:` で呼ぶ（[docs/github-actions.md](docs/github-actions.md)。そのまま写せるワークフローの例と、依存の取得・セキュリティ・保存量の注意） |
+| 閉域ネットワークで使う（ネットワークから取得しない） | Pleiades / Eclipse に入っている JDK と JDT の jar で動かす（[docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)） |
+| 自分のコードを呼んでいる、ほかのチームの jar を調べる | 設定の `external.library.folders`（[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
+| 決めきれなかった実装を 1 つに絞る | 契約表を書く（[docs/callback-contracts.md](docs/callback-contracts.md)）。条件が複雑なら拡張を書く（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
+| 呼び出しに効いている `if` の条件も出す | 設定の `conditions.target`（[docs/call-conditions.md](docs/call-conditions.md)） |
+
+設定項目の全体は [config/config.properties](config/config.properties) のコメントにあります。
 
 ---
 
 ## 出力ファイル
+
+ここから下は、出力の各列と記号の詳しい説明です。
 
 実行のたびに設定ファイルと同じフォルダに**`<解析開始日時>_<project.rootフォルダ名>`** のフォルダを作ってまとめます。
 
@@ -130,39 +210,31 @@ config/
     └── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
 ```
 
-出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。
+出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。CSV の中身は、画面の表示言語に関わらず英語です。
 
-**`warnings.txt` があったら、先に開いてください。** このツールは、ビルドが通り、依存jarがすべて解決できている状態で解析することを前提にしています。
-設定の誤り・依存jarの不足・コンパイルエラーなどでそうなっていないときも解析は最後まで動きますが、CSVに抜けが出ます。
-そのときだけ `warnings.txt` ができ、何が起きたか・影響・対処のしかたが書かれます。
+`warnings.txt` は、ビルドが通り依存jarがすべて解決できている、というこのツールの前提が崩れているときだけできます。
 載るのは、依存jarの不足・設定の指定先の欠け・コンパイルエラーのほか、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存jar などです。
 `run.log` は実行ごとに必ずできる経過の記録（どの設定で何が動いたか、どこに何を保存したか）です。
 
 
 ### `call-hierarchy.csv` — 呼び出し階層
 
-```csv
-caller,callee,resolved-by,level,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
-```
-
 | 列 | 内容 |
 |---|---|
 | `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excelのフィルタに使える |
-| `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。`caller` → `callee` という1本の呼び出しの性質なので `callee` の隣に置いています |
+| `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。**どの行にも必ず入る** |
 | `level` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
-| `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
+| `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**）。注記が付く場合は最後の要素になる（[注記](#注記)） |
 
-`resolved-by` は「接頭辞（確度）＋ 解決の段のラベル（手法）」の形で、**どの行にも必ず入ります**。
+`resolved-by` は「接頭辞（確度）＋ 解決の段のラベル（手法）」の形です。
 
 | 接頭辞 | 意味 |
 |---|---|
 | `RESOLVED:` | 呼び出し先を1件に確定した。後半が[どの段で決めたか](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
 | `UNEXPANDED:` | 1件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
-| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`root` 列は `(型解決失敗)` |
+| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`root` 列は `(unresolved)` |
 | `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
 後半は解決の段のラベルそのものですが、1つだけ例外があります。ラムダ式・メソッド参照が実装している
@@ -172,15 +244,9 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿り切れなかった呼び出し**、
 `level` で「3 以下」＝**起点の近く**、のように絞り込めます。
 
-コンストラクタの呼び出し自体は行になりません。
-コンストラクタ内からのメソッド呼び出しは行として出力されます。
-
-行順は、rootメソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、rootメソッドからの呼び出し順（深さ優先）です。
-具象クラスの候補が複数ある呼び出しは候補ごとに 1 行で、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
+行の並びは毎回同じです。rootメソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、rootメソッドからの呼び出し順（深さ優先）で、
+具象クラスの候補が複数ある呼び出しは候補ごとに 1 行、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
 末尾の `type resolution failed …` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
-注記が付く場合は `call-hierarchy` の**最後の要素**として出ます。 （[注記](#注記)）
-解決方法そのものは `resolved-by` 列に出るので、注記には**列に無いこと**（打ち切りの理由、候補の件数と
-レシーバの由来、繋いだ契約）だけが載ります。
 
 
 ### `methods.csv` — ソース上の全メソッドとその呼び出し状況
@@ -222,10 +288,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `LEAF` | 呼び出し先が無い。末端処理 |
 | `NORMAL` | 上記以外 |
 
-`unresolvedCause` は、絞れなかった呼び出しのレシーバ（呼び出しの受け手）がどこから来たかで決まります。
-次に何を調べればよいかの手がかりになります。
-タグは `call-hierarchy.csv` の[注記](#注記)と同じものを使っているので、
-一覧で見つけた呼び出しをそのまま階層側で `grep` して追えます。
+`unresolvedCause` は、絞れなかった呼び出しのレシーバがどこから来たかで決まり、次に何を調べればよいかの手がかりになります。
+タグは `call-hierarchy.csv` の[注記](#注記)と同じなので、一覧で見つけた呼び出しをそのまま階層側で `grep` して追えます。
 
 | unresolvedCause | 意味 |
 |---|---|
@@ -252,46 +316,32 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
 「よく呼ばれている共通処理」を探したいときは、`inDegree` 列でソート・フィルタしてください。
 
-- **他から呼び出せる定義**だけを並べます。ラムダ式の合成メソッド（`lambda$…`）、static 初期化子
-  （`<clinit>`）、無名クラス（`Outer$1`）のメソッドは出力しません。ラムダと `<clinit>` は呼び出せる
-  メソッドではなく、無名クラスのメソッドはその場で親の定義を上書きした処理内容なので、
-  呼び出し階層で読みます（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)）。
-  内部クラス・static なネストクラス・ローカルクラスのメソッドは名前を持つ定義なので出力します
-- コンストラクタ（`<init>`）は出力しません（`call-hierarchy.csv` でも行にしていないため揃えています）
-- jar の中のメソッドなど、ソースに宣言が無いものは出力しません。呼ばれている事実は `call-hierarchy.csv` に残ります
-- `reachable` の起点は `call-hierarchy.csv` と同じで、`entry.packages` で指定したメソッドです。
-  空欄のとき（全体モード）は「呼び出し元が無く、ソース上に本体を持つメソッド」と `FRAMEWORK_ENTRY` が起点になります
-
-### Eclipse でソースコードへジャンプする
-`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
-`(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
-
-1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
-2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
-   （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
-   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
+- **他から呼び出せる定義**だけを並べます。ラムダ式の本体（`lambda$…`）、static 初期化子（`<clinit>`）、
+  無名クラス（`Outer$1`）のメソッドは出さず、呼び出し階層の側で読みます（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)）。
+  内部クラス・static なネストクラス・ローカルクラスのメソッドは出します
+- コンストラクタ（`<init>`）は出しません（`call-hierarchy.csv` でも行にしていないため）
+- jar の中のメソッドなど、ソースに宣言が無いものは出しません。呼ばれている事実は `call-hierarchy.csv` に残ります
+- `reachable` の起点は `call-hierarchy.csv` と同じです（[用語](#用語)の「起点」）
 
 
 ### 注記
 
-注記は先頭に大文字のタグが付きます。日本語の説明はその後ろに続くので、
-タグで grep すれば種類ごとに拾えます。
-解決方法そのものは `resolved-by` 列に出るため、注記に載るのは**その列に無いこと**
-（打ち切りの理由、候補の件数とレシーバの由来、繋いだ契約）だけです。
+`call-hierarchy` 列の最後に付く補足です。どう解決したかは `resolved-by` 列にあるので、注記に載るのは
+**その列に無いこと**（打ち切りの理由、候補の件数とレシーバの由来、繋いだ契約）だけです。
+先頭に大文字のタグが付くので、タグで grep すれば種類ごとに拾えます。
 
 | タグ | 意味 |
 |---|---|
 | `[UNEXPANDED:*]` | ここから先へ降りなかった。`grep '\[UNEXPANDED'` で辿り切れなかった箇所を一括で拾える |
 | `[EXTERNAL]` | 呼び出し先が自プロジェクトの外。打ち切りではあるが性質が違うので `UNEXPANDED` には入れない |
 | `[UNREACHABLE]` | この経路では実行されないと分かった呼び出し |
-| `[RESOLVED:CALLBACK]` | 契約で繋いだ呼び出し。後ろに繋いだ契約が続く。どう特定したかは `resolved-by` 列で分かるので、注記に出る `[RESOLVED:*]` はこれだけ |
+| `[RESOLVED:CALLBACK]` | 契約で繋いだ呼び出し。後ろに繋いだ契約が続く。注記に出る `[RESOLVED:*]` はこれだけ |
 
 | 注記 | 意味 |
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達した |
-| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は下表。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に1つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名): FQN is…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
@@ -301,8 +351,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: …` | 同じく契約で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を1つに決められなかった。候補を1件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
-| `type resolution failed …` | 呼び出し先の型を特定できなかった行（後述）。注記ではなく専用の行 |
-| `external-ref:EXACT` 等 | 被参照スキャンの行（後述）。同じく専用の行 |
+| `type resolution failed …` | 呼び出し先の型を特定できなかった行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
+| `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
 1つの注記は最大2つのパーツからなり、両方付くときは ` / ` で繋がります。
 前半が打ち切りの理由（`[UNEXPANDED:CYCLE]`・`[UNEXPANDED:DEPTH]`・`[EXTERNAL]`・`[UNREACHABLE]`）、
@@ -394,13 +444,9 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 ## ラムダ式・メソッド参照
 
 ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
-**合成メソッド**として1つのノードにします（`methods.csv` には出しません。
-インスタンスを通じて呼び出せるメソッドではないため）。通し番号は javac 21 と同じく型ごとに本体を読み終えた順
-（入れ子は内側が先）で、static 初期化子・static フィールド（インターフェースのフィールドを含む）・
-enum 定数の引数の中は `lambda$static$N` です。番号の振り方は javac の版で変わる（JDK 25 の javac は
-囲みメソッド名ごと・外側が先）ほか、直列化可能なラムダや、javac がメソッド参照の一部（配列の `Type[]::new` など）を
-内部でラムダに変換した場合もずれるので、番号まで一致するとは限りません
-（[docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md) の Q13）。
+**合成メソッド**として1つのノードにします（`methods.csv` には出しません）。
+static 初期化子・static フィールド・enum 定数の引数の中のラムダは `lambda$static$N` です。
+通し番号はスタックトレースに出る javac の番号と一致するとは限りません（[docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md) の Q13）。
 
 ```csv
 at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
@@ -449,34 +495,29 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 
 ## キャッシュ
 
-解析結果のキャッシュは出力フォルダには置かず、**このツールのプロジェクトフォルダ**の
+解析結果のキャッシュは出力フォルダには置かず、**このツールのフォルダ**の
 `.cache/<project.root のフォルダ名>_<絶対パスのハッシュ 8 桁>/` に作ります。
-同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクト
-（ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、
-どこから実行しても、キャッシュの場所は変わりません。
+2 回目からは、変わったファイルと、その変更で結果が変わりうるファイル（変わったファイルの型を使っているファイルなど）だけを
+解析し直します。依存 jar やクラスフォルダ（兄弟モジュールの `target/classes` など）の変化も見ます。
 
-キャッシュは `analysis-cache.tsv` の 1 ファイルです。解析で分かった事実（呼び出し階層の構造と、
-値の追跡に使う値）をソースファイル 1 つにつき 1 ブロックで持ち、ブロックごとに壊れていないかを確かめます。
-壊れたブロックがあれば、全件ではなく、そのファイルと、そのファイルの型を使っているファイルだけを解析し直します。
-何も変わっていなければキャッシュは書き直しません。
-実行中は同じフォルダに一時ファイル（`*.tmp`）を作り、終わると消します。以前の版が作った `dataflow-cache.tsv` が
-残っていれば、次の実行で消します。
-同じキャッシュのフォルダを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うときは、
-あとの実行が先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）。
-そのための錠のファイル `analysis-cache.tsv.lock`（中身は空）がフォルダに残ります。
+- 同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクトは混ざりません
+- 実行していないときなら消しても構いません（次の実行が全件の解析になるだけです）。
+  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
+- 同じキャッシュを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うと、
+  あとの実行は先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）
+- どのファイルを解析し直すかの決まりは [config/config.properties](config/config.properties) の `cache.enabled` のコメントに、
+  作りは [docs/cache-design.md](docs/cache-design.md) にあります
 
-- 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
-- 2 回目以降は、変更されたファイルと、その変更で解析結果が変わりうるファイル（変更されたファイルの型を使っている
-  ファイルなど）だけを解析し直します。依存 jar を足した・差し替えたときは、その jar の型を使っているファイルと、
-  前回型解決に失敗していたファイルが対象で、それらのファイルの型を使うファイルも解析し直します（外したときは、
-  その jar の型を使っていたファイルと、そのファイルの型を使うファイル。型解決に失敗していたファイルは含みません）
-- 依存 jar のほか、クラスフォルダ（兄弟モジュールの `target/classes`、依存プロジェクトの出力フォルダなど）の変化も見ます。
-  `library.jars` と `.classpath` の `kind="lib"` に書いたフォルダは、クラスフォルダとしてそのまま使います（中の jar は
-  使いません。jar を集めたフォルダは `library.folders` に書きます）。ソースフォルダやクラスフォルダがシンボリックリンクでも、
-  リンクの先をたどります。解析のあいだにソースや依存 jar を書き換えた（兄弟モジュールをビルドし直した）ときは、
-  次の実行で、その実行が解析したファイルを解析し直します
-- 大規模なコードベースで `OutOfMemoryError` にならないための作りと、差分更新が
-  何を見て判断しているかは [docs/cache-design.md](docs/cache-design.md) にあります
+---
+
+## ドキュメント
+
+| 知りたいこと | 場所 |
+|---|---|
+| 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル）、起動コマンドの全仕様は [docs/cli.md](docs/cli.md) |
+| 出力CSVファイルの読み方 | [結果の読み方](#結果の読み方)・[出力ファイル](#出力ファイル)（このファイル） |
+| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
+| 機能別の詳しい使い方・設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
 
@@ -490,37 +531,100 @@ Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest)). SPDX
 
 [日本語](#java-call-hierarchy-exporter) | **English**
 
-## What this tool does
+## What it does
 
-It extracts the method call hierarchy of a whole Java project in one pass and writes it to CSV files.
+This tool analyzes the method call hierarchy of a whole Java project in one pass and writes it to CSV files.
+You use it to find, without missing any, **which screens, batch jobs and APIs are affected when you change a method**.
 
-Eclipse's "Call Hierarchy" view cannot expand everything recursively in one go, so this tool writes the
-whole thing out as CSV instead. It is a command line tool: Eclipse is never started, and Eclipse JDT is
-used only as the analysis engine. Open the resulting CSV in Excel and filter by the callee method to get
-the impact surface of the feature you are about to change.
+Say you are about to change `OrderDaoImpl.selectById`. Open the `call-hierarchy.csv` it wrote in Excel and
+filter the `callee` column by that method: the `root` column then lists the entry points that reach it.
 
-## Documentation
+```csv
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+```
 
-| What you want | Where |
+The second row reads: "the processing that starts at `OrderAction.execute` goes through `OrderService.findOrder`
+and calls `OrderDaoImpl.selectById`. The call is on line 25 of `OrderService.java`. It goes through an interface,
+but the Spring bean definitions showed that the implementation is `OrderDaoImpl`" (see
+[Reading the results](#reading-the-results)).
+
+- **It follows calls through interfaces, DI and lambdas.** It decides which implementation class actually runs
+  from the type that was `new`-ed, from how values flow through arguments and fields, from Spring bean
+  definitions and so on
+- **It never drops a call it cannot decide.** When several candidate implementations remain, every candidate
+  becomes a row and the `resolved-by` column says it could not be narrowed. Not missing a call during an
+  impact analysis comes first
+- **It does not start Eclipse.** It is a command line tool that uses Eclipse JDT (Eclipse's Java compiler) as
+  its analysis engine, and you do not need to install Java beforehand ([Requirements](#requirements))
+- **It gets faster from the second run on.** It caches the analysis and only analyzes again the files that
+  changed and the files the change can affect
+
+### How it compares with other tools
+
+| Tool | Good for | How this tool differs |
+|---|---|---|
+| The IDE call hierarchy (Ctrl+Alt+H in Eclipse and the like) | Checking the callers of one method on the spot while you write code | It expands one method at a time on screen, so you cannot save, filter or share the whole project as a list. It also leaves no record of why a call through an interface went to a given implementation |
+| Text search with `grep` | Quickly finding where a name appears | It cannot tell apart different methods with the same name, or calls through an interface or inheritance |
+| `jdeps` | Dependencies between jars, packages and classes | It does not show calls between methods or the paths they take |
+
+If you want to follow callers inside your IDE, the same analysis is also available from the
+[Eclipse plugin](docs/eclipse-plugin-usage.md) and the [VSCode plugin](docs/vscode-plugin-usage.md)
+(their documentation is in Japanese).
+
+## Requirements and limitations
+
+### Requirements
+
+| Item | Requirement |
 |---|---|
-| How to use it, how to start the tool | [Getting started](#getting-started) (this file) |
-| How to read the output CSV | [Output files](#output-files) (this file) |
-| What each config item means | the comments in [config/config.properties](config/config.properties) |
-| Design notes (what was hard and what was decided, per feature), and the spec for reimplementation | [docs/README.md](docs/README.md) |
+| OS | Windows (Command Prompt, PowerShell), Linux, macOS, Git Bash |
+| What to install first | Nothing. The JDK 25 that runs the tool and the jars used for the analysis are downloaded on the first run, after asking you (about 165MB over the network, about 500MB on disk). For machines that cannot reach the network, see [Other ways to use it](#other-ways-to-use-it) |
+| Sources it can analyze | Java sources (`.java`). By default they are read as the newest language version the bundled JDT supports (change it with `source.level` in the config) |
+| Build setups | Maven (`pom.xml`), Gradle (`build.gradle`, as far as it is written declaratively), Eclipse's `.classpath`, or a `lib` folder of jars. Source folders and dependency jars are found automatically |
+| Dependency jars | **They must already be on your machine.** The tool does not run your build tool and does not download them. It uses the jars in a local repository such as `~/.m2/repository`, so build the project once first (`mvn dependency:go-offline` or similar) or open it in your IDE |
+
+### What it cannot see
+
+It is a static analysis, so anything that is only decided at run time is out of reach. In that case it does
+not remove the call: it lists the candidates or says it could not follow the call.
+
+- **It does not follow code with no source (the inside of jars).** Calls that come back to you through the JDK or a
+  framework (`new Thread(task).start()` → `task.run()` and the like) are connected only when the
+  [contract table](docs/callback-contracts.md) lists them (the bundled rows plus any you add)
+- **It does not know values decided at run time.** Reflection with class names built from configuration or
+  input, or an implementation chosen by a run-time condition, stay as lists of candidates
+  ([docs/static-analysis-limits.md](docs/static-analysis-limits.md))
+- **If the sources do not compile or dependency jars are missing, the result has gaps.** Then a
+  `warnings.txt` appears in the output folder and says what is missing
+- A constructor call itself never becomes a row (method calls made from inside a constructor do)
 
 ---
 
 ## Getting started
 
-You use a launcher script and a config file.
+1. **Get the tool** — clone this repository (or use "Code → Download ZIP" on GitHub and unpack it).
 
-The launcher checks whether JDK 25 and the dependencies are present, and downloads them automatically
-after asking you first (about 165MB over the network, about 500MB once unpacked).
+     ```bash
+     git clone https://github.com/instreest/java-call-hierarchy-exporter.git
+     cd java-call-hierarchy-exporter
+     ```
 
-1. Edit the config file — set `project.root` (the folder of the project to analyze) in
-   [`config/config.properties`](config/config.properties).
+2. **Write the project to analyze in the config file** — set `project.root` in
+   [`config/config.properties`](config/config.properties) to the folder of the project you want to analyze.
+   **This one line is all that is required.** Left empty, the source folders, dependency jars and encoding are
+   worked out from `pom.xml`, `build.gradle` and the like.
 
-2. Run it — pass the config file to the launcher in the repository root.
+     ```properties
+     # Use / as the separator, even on Windows (or write \ twice, as \\)
+     project.root=C:/work/myapp
+     ```
+
+   A relative path starts from the folder of the config file (`config/`).
+   Copying the config file per analyzed project (`config/myapp.properties` and so on) keeps things tidy.
+
+3. **Run it** — pass the config file to the launcher in the repository root.
 
      ```bat
      rem Windows
@@ -532,83 +636,108 @@ after asking you first (about 165MB over the network, about 500MB once unpacked)
      ./java-call-hierarchy-exporter.sh config/config.properties
      ```
 
-3. Look at the result — open the CSV files it wrote ([Output files](#output-files)).
+   On the first run it asks before downloading the JDK and the rest; answer `y` (it shows what it will
+   download and how large it is). The first run takes longer because of the download and the full analysis;
+   from the second run on, only the changed files are analyzed.
+   If you got the ZIP and the `.sh` is not executable, run it as `bash java-call-hierarchy-exporter.sh …`.
 
-### Pleiades / Eclipse environment (for isolated networks and the like)
+4. **If there is a `warnings.txt`, open it first** — every run creates a folder
+   `config/<analysis start time>_<project name>/`. A `warnings.txt` in it means **the result has gaps**, because of
+   missing dependency jars, compile errors and the like. It says what happened and how to fix it; fix that and
+   run again.
 
-If Pleiades or Eclipse is installed, collect the jars you need from its JDT Core into a `lib` folder and
-use those. The version part of each file name depends on the Eclipse version, so copy with a wildcard.
+5. **Open the CSV** — open `call-hierarchy.csv` in the same folder with Excel (it is UTF-8 with a BOM, so the
+   characters come out right). How to read it is in [Reading the results](#reading-the-results) below.
 
-```bat
-rem Make java-call-hierarchy-exporter your current directory
-rem Rewrite the next two lines for your environment
-set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
-set JAVA_HOME=C:\pleiades\2026-06\java\17
+To start without writing a config file, run the launcher **with no arguments** to get the interactive mode.
+Choose "2) Create a new config file" from the menu and enter the folder to analyze: it writes the config file and
+can go straight on to the analysis ([docs/cli.md](docs/cli.md), in Japanese).
 
-rem Collect the jars needed to run
-mkdir lib
-for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
-do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
+---
 
-rem Compile (the classes under src\jche are compiled along with it)
-"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\jche\CallHierarchyExporter.java -encoding UTF-8
+## Reading the results
 
-rem Run
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\config.properties
-```
+### Tracing the impact of a change
 
-### Running it from GitHub Actions
+1. Open `call-hierarchy.csv` in Excel and turn on the filter (Data → Filter)
+2. In the **`callee` column**, pick the method you are changing, as `ClassName.methodName` (there are no
+   arguments, so overloads share one name)
+3. The **`root` column** of the remaining rows lists the entry points that reach it (screen actions, a batch
+   job's `main`, API handlers and so on). The **`caller` column** is the call site itself (file and line), and
+   the **`call-hierarchy` column** is the path from the entry point
 
-Calling [`action.yml`](action.yml) in the repository root from your own workflow with `uses:` analyzes the
-source in the repository and uploads the CSV files as an artifact, once you tell it what to analyze.
-The full specification is in [docs/github-actions.md](docs/github-actions.md).
+Even when a call through an interface could not be narrowed to one implementation, each candidate
+implementation gets its own row, so filtering `callee` by the implementation class name finds it.
 
-The following shape is recommended and can be copied as is (manual runs only, and it works with read
-permission alone).
+### Reading one row
 
-```yaml
-name: call hierarchy
+| Column | Example (the second row above) | Meaning |
+|---|---|---|
+| `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | Where the call is made. It has the same shape as a Java stack trace, so Eclipse can jump to the source ([below](#jumping-to-the-source-in-eclipse)) |
+| `callee` | `OrderDaoImpl.selectById` | The method being called |
+| `resolved-by` | `RESOLVED:SPRING_DI` | How the callee was decided. `RESOLVED:` means it was pinned down to one; `UNEXPANDED:` means it could not be, and the candidates are listed |
+| `level` | `2` | How many calls away from the entry point it is |
+| `root` | `OrderAction.execute` | The entry point method |
+| `call-hierarchy` | `OrderService.findOrder,OrderDaoImpl.selectById` | The path from the step after the entry point to `callee` (one step per column). A note may follow in the last column |
 
-on:
-  workflow_dispatch:
+### Checking the calls it could not follow
 
-permissions:
-  contents: read
+The prefix of the `resolved-by` column tells you how certain every row is. These are the rows to check by
+eye during an impact analysis.
 
-jobs:
-  export:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+| `resolved-by` | Meaning | What to do |
+|---|---|---|
+| `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | To go further up that path, filter the `callee` column again by the method in `caller` and keep climbing. Once you tell the tool how to narrow it, the next run pins it down to one (`contracts-suggested.txt` in the output folder; [docs/callback-contracts.md](docs/callback-contracts.md)) |
+| `UNRESOLVED:…` | The type of the callee could not be determined (usually missing dependency jars) | Follow `warnings.txt` to supply the jars, and run again |
 
-      # Fetch the dependency jars into the local repository first
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: maven
-      - run: mvn -B --no-transfer-progress dependency:go-offline
+A note at the end of the `call-hierarchy` column (such as `[EXTERNAL] no source to follow`) says why the walk
+stopped there. All the notes are listed in [Notes](#notes).
 
-      - uses: instreest/java-call-hierarchy-exporter@main
-        with:
-          source-folders: src/main/java
-          source-encoding: UTF-8
-```
+### Jumping to the source in Eclipse
 
-Things to know the first time you use it:
+Copy a row of `call-hierarchy.csv` and paste it into Eclipse's "Java Stack Trace Console": the
+`(file:line)` part becomes a hyperlink to the source.
 
-- Skipping the dependency fetch leaves gaps in the result (the job prints a warning)
-- The dependency fetch queries the outside world through the runner's configuration (`settings.xml`,
-  proxies and so on), so do not use it with `pull_request_target`, and check how that configuration is
-  handled on self-hosted runners
-- On a private repository, the artifact counts against your storage allowance. For repeated runs, set
-  something like `artifact-retention-days: 7`
-  ([storage and retention](docs/github-actions.md#保存量と保持期間))
-- The details, and how to skip the dependency fetch, are in [docs/github-actions.md](docs/github-actions.md)
+1. Choose Window > Show View > Console from the menu
+2. Click the `▼` next to the "Open Console" button (the monitor icon with a plus) in the top right of the
+   Console view toolbar, and choose "Java Stack Trace Console"
+3. Paste the text of `call-hierarchy.csv` into that console
+
+### Glossary
+
+| Term | Meaning |
+|---|---|
+| Entry point (`root`) | The method the walk starts from. Set it with `entry.packages` in the config. When that is empty, every method in the source with no caller, plus every method a framework is known to call (`main`, `@GetMapping`, a servlet's `doGet` and so on), is an entry point (whole-project mode) |
+| Resolving concrete classes | For a call through an interface or parent class type, deciding which implementation class actually runs ([Resolving concrete classes](#resolving-concrete-classes)) |
+| CHA | Class Hierarchy Analysis: listing every candidate implementation from the type hierarchy alone. Used when nothing else could decide, and written as `UNEXPANDED:CHA` |
+| Receiver | The value a method is called on, such as `dao` in `dao.find()` |
+| Contract table | A table describing what happens outside your source (the JDK, frameworks), or which implementation class to use ([docs/callback-contracts.md](docs/callback-contracts.md)) |
+| Note | The remark at the end of the `call-hierarchy` column. It starts with an upper case tag ([Notes](#notes)) |
+
+---
+
+## Other ways to use it
+
+The linked documents are in Japanese.
+
+| What you want | How |
+|---|---|
+| Create a config file from a menu, or process several configs at once | The interactive mode (run the launcher with no arguments), or pass several config files ([docs/cli.md](docs/cli.md)) |
+| Follow callers inside Eclipse | The [Eclipse plugin](docs/eclipse-plugin-usage.md) |
+| Follow callers inside VSCode | The [VSCode plugin](docs/vscode-plugin-usage.md) |
+| Analyze in GitHub Actions and get the CSV as an artifact | Call [`action.yml`](action.yml) in the repository root with `uses:` ([docs/github-actions.md](docs/github-actions.md): a workflow you can copy as is, and notes on fetching dependencies, security and storage) |
+| Use it on an isolated network (no downloads) | Run it with the JDK and JDT jars that come with Pleiades / Eclipse ([docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)) |
+| Find the jars of other teams that call your code | `external.library.folders` in the config ([Methods referenced from external jars](#methods-referenced-from-external-jars)) |
+| Narrow an implementation it could not decide down to one | Write a contract table ([docs/callback-contracts.md](docs/callback-contracts.md)), or an extension for complex conditions ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |
+| Also output the `if` conditions that guard each call | `conditions.target` in the config ([docs/call-conditions.md](docs/call-conditions.md)) |
+
+Every config item is described in the comments of [config/config.properties](config/config.properties).
 
 ---
 
 ## Output files
+
+From here on is the detailed description of every column and symbol in the output.
 
 Every run creates a folder named **`<analysis start time>_<name of the project.root folder>`** next to the
 config file and puts everything in it.
@@ -625,33 +754,26 @@ config/
     └── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
 ```
 
-The CSV files are UTF-8 with a BOM, so Excel opens them directly.
+The CSV files are UTF-8 with a BOM, so Excel opens them directly. The content of the CSV is in English
+whatever the display language.
 
-**If there is a `warnings.txt`, open it first.** This tool expects to analyze sources that build and whose dependency jars are all resolved.
-When that is not the case (a wrong setting, missing dependency jars, compile errors, etc.), the analysis still finishes, but the CSV files have gaps.
-Only then is `warnings.txt` created, saying what happened, what it affects and what to do.
+`warnings.txt` is created only when the tool's assumption — the sources build and all dependency jars are
+resolved — does not hold.
 Besides missing dependency jars, a path in the config file that does not exist and compile errors, it lists files whose package declaration does not match their folder (common when `source.folders` is one level off), files that the Java parser stopped on and could not analyze, output that stopped partway, and a dependency jar that was rewritten in place with the same modification time while the analysis server (the Eclipse or VS Code plugin) kept it open.
 `run.log` is created on every run as the record of what happened (what ran with which settings and where things were saved).
 
 ### `call-hierarchy.csv` — the call hierarchy
 
-```csv
-caller,callee,resolved-by,level,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
-```
-
 | Column | Content |
 |---|---|
 | `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line |
 | `callee` | The callee, as **ClassName.methodName** (no arguments). Usable as an Excel filter |
-| `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). It describes one `caller` -> `callee` call, so it sits next to `callee` |
+| `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). **Every row has one** |
 | `level` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
 | `root` | The entry method, as ClassName.methodName. Usable as an Excel filter |
-| `call-hierarchy` | The path from the entry point, one node per column (**variable length**) |
+| `call-hierarchy` | The path from the entry point, one node per column (**variable length**). When a note applies, it is the last element ([Notes](#notes)) |
 
-`resolved-by` is "a prefix (how certain it is) plus the label of the resolution step (how it was done)",
-and **every row has one**.
+`resolved-by` is "a prefix (how certain it is) plus the label of the resolution step (how it was done)".
 
 | Prefix | Meaning |
 |---|---|
@@ -668,19 +790,12 @@ single implementation in the source (that is, even when the label is a definite 
 In Excel you can filter on `resolved-by` for "rows starting with `UNEXPANDED:`" = **the calls that could
 not be followed to the end**, or on `level` for "3 or less" = **near the entry point**.
 
-A constructor call itself never becomes a row.
-Method calls made from inside a constructor are written as rows.
-
-Rows are ordered by the class of the root method (source folder order, then fully qualified class name,
-then declaration line), and within that by the call order from the root method (depth first).
-A call with several candidate concrete classes gets one row per candidate, ordered as the implementation
-of the declared type itself first, then subtypes (direct subtypes in fully qualified class name order).
-The `type resolution failed ...` rows at the end come in source order (source folder order, then relative
-file path, then call order).
-When a note applies, it appears as the **last element** of `call-hierarchy` ([Notes](#notes)).
-How it was resolved is already in the `resolved-by` column, so a note only carries **what that column
-cannot say**: why the walk stopped, the number of candidates and where the receiver came from, and the
-contract that connected the call.
+The row order is the same on every run. Rows are ordered by the class of the root method (source folder order,
+then fully qualified class name, then declaration line), and within that by the call order from the root method
+(depth first). A call with several candidate concrete classes gets one row per candidate, ordered as the
+implementation of the declared type itself first, then subtypes (direct subtypes in fully qualified class name
+order). The `type resolution failed ...` rows at the end come in source order (source folder order, then
+relative file path, then call order).
 
 ### `methods.csv` — every method in the source and how it is called
 
@@ -722,10 +837,9 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `LEAF` | It has no callees. A leaf |
 | `NORMAL` | Anything else |
 
-`unresolvedCause` is decided by where the receiver of the unresolved call came from.
-It tells you what to look at next.
-The tags are the same as the [notes](#notes) in `call-hierarchy.csv`, so you can take a call you found in
-the list and `grep` for it on the hierarchy side.
+`unresolvedCause` is decided by where the receiver of the unresolved call came from, and it tells you what
+to look at next. The tags are the same as the [notes](#notes) in `call-hierarchy.csv`, so you can take a call
+you found in the list and `grep` for it on the hierarchy side.
 
 | unresolvedCause | Meaning |
 |---|---|
@@ -752,47 +866,35 @@ A subtree that disappeared from the hierarchy because of pruning is visible only
 Rows come in source order (source folder order, then relative file path, then declaration line).
 To look for "shared methods that are called a lot", sort or filter on the `inDegree` column.
 
-- Only definitions **that something else can call** are listed. The synthetic methods of lambdas
-  (`lambda$...`), static initializers (`<clinit>`) and the methods of anonymous classes (`Outer$1`) are
-  not written. Lambdas and `<clinit>` are not callable methods, and a method of an anonymous class is a
-  body that overrides its parent's definition on the spot, so you read them in the call hierarchy
-  ([Lambdas and method references](#lambdas-and-method-references)). The methods of inner classes, static
-  nested classes and local classes are named definitions, so they are written
-- Constructors (`<init>`) are not written (they are not rows in `call-hierarchy.csv` either, so the two
-  stay aligned)
+- Only definitions **that something else can call** are listed. Lambda bodies (`lambda$...`), static
+  initializers (`<clinit>`) and the methods of anonymous classes (`Outer$1`) are not written; you read them in
+  the call hierarchy ([Lambdas and method references](#lambdas-and-method-references)). The methods of inner
+  classes, static nested classes and local classes are written
+- Constructors (`<init>`) are not written (they are not rows in `call-hierarchy.csv` either)
 - Anything without a declaration in the source, such as a method inside a jar, is not written. The fact
   that it is called remains in `call-hierarchy.csv`
-- The entry points for `reachable` are the same as for `call-hierarchy.csv`: the methods named by
-  `entry.packages`. When that is empty (whole-project mode), the entry points are "methods with no caller
-  that have a body in the source" plus everything marked `FRAMEWORK_ENTRY`
-
-### Jumping to the source in Eclipse
-
-Copy a row of `call-hierarchy.csv` and paste it into Eclipse's "Java Stack Trace Console": the
-`(file:line)` part becomes a hyperlink to the source.
-
-1. Choose Window > Show View > Console from the menu
-2. Click the `▼` next to the "Open Console" button (the monitor icon with a plus) in the top right of the
-   Console view toolbar, and choose "Java Stack Trace Console"
-3. Paste the text of `call-hierarchy.csv` into that console
+- The entry points for `reachable` are the same as for `call-hierarchy.csv` (see "Entry point" in the
+  [Glossary](#glossary))
 
 ### Notes
 
-A note starts with an upper case tag. The explanation follows it, so you can pick out a kind of note by
-grepping for its tag.
+The remark at the end of the `call-hierarchy` column. How a call was resolved is already in the
+`resolved-by` column, so a note only carries **what that column cannot say**: why the walk stopped, the number
+of candidates and where the receiver came from, and the contract that connected the call.
+A note starts with an upper case tag, so you can pick out a kind of note by grepping for its tag.
 
 | Tag | Meaning |
 |---|---|
 | `[UNEXPANDED:*]` | Nothing below this was followed. `grep '\[UNEXPANDED'` finds every place the walk stopped |
 | `[EXTERNAL]` | The callee is outside your own project. It is a stop too, but a different kind, so it is not under `UNEXPANDED` |
 | `[UNREACHABLE]` | A call that was shown not to run on this path |
-| `[RESOLVED:CALLBACK]` | A call connected by a contract; the contract itself follows it. How a call was resolved is in the `resolved-by` column, so this is the only `[RESOLVED:*]` that still appears as a note |
+| `[RESOLVED:CALLBACK]` | A call connected by a contract; the contract itself follows it. This is the only `[RESOLVED:*]` that appears as a note |
 
 | Note | Meaning |
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | A call back to a method already on this path. It stops here |
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` was reached |
-| `[UNEXPANDED:CHA] N candidates: {reason}` | The implementation could not be narrowed to one. Each candidate becomes a row, but nothing below them is followed (it would explode as candidates^depth). The reason is in the table below. Candidates excluded by `exclude.packages` are not written as rows, and their number is written as `(K excluded by exclude.packages and not written as rows)` (the declaration in a jar interface counts as a candidate because the jar may also implement it, so this often appears with the default `java.**` exclusion) |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | The implementation could not be narrowed to one. Each candidate becomes a row, but nothing below them is followed (it would explode as candidates^depth). The reason is the same as in the `unresolvedCause` table above. Candidates excluded by `exclude.packages` are not written as rows, and their number is written as `(K excluded by exclude.packages and not written as rows)` (the declaration in a jar interface counts as a candidate because the jar may also implement it, so this often appears with the default `java.**` exclusion) |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | The argument types of `getMethod` (class literals) were not all available, so methods with the same name were taken as candidates |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | There is an interface or abstract method declaration, but no class in the source writes the body. Unlike `[EXTERNAL]` (where the source simply cannot be read), the source was read and nothing was found, so suspect a missing `source.folders` entry or dead code |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (framework): FQN is...` | A call into a type whose implementation is generated at build time by annotation processing (see [docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md)) |
@@ -802,8 +904,8 @@ grepping for its tag.
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)). The inside of the jar was not read |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: ...` | Also connected by a contract, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
-| `type resolution failed ...` | A row for a call whose callee type could not be determined (see below). Not a note but a row of its own |
-| `external-ref:EXACT` and the like | A row of the external reference scan (see below). Also a row of its own |
+| `type resolution failed ...` | A row for a call whose callee type could not be determined (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
+| `external-ref:EXACT` and the like | A row of the external reference scan ([below](#methods-referenced-from-external-jars)). Also a row of its own |
 
 A note has at most two parts, joined with ` / ` when both apply.
 The first is why the walk stopped (`[UNEXPANDED:CYCLE]`, `[UNEXPANDED:DEPTH]`, `[EXTERNAL]`,
@@ -898,13 +1000,9 @@ What static analysis can and cannot narrow down is written up in
 ## Lambdas and method references
 
 The body of a lambda becomes one node, a **synthetic method** with a name modeled on javac's
-(`lambda$enclosingMethod$serial`). It is not listed in `methods.csv`, because it is not a method you can
-call through an instance. The serial is assigned the way javac 21 does it, per type and in the order the
-bodies are finished (an inner lambda comes before its outer one), and a lambda inside a static initializer,
-a static field (including an interface field) or an enum constant's arguments is `lambda$static$N`.
-The serials do not always match javac: the numbering scheme changes between javac versions (the JDK 25
-javac counts per enclosing method name and numbers the outer lambda first), and serializable lambdas or
-method references that javac turns into lambdas internally (such as an array `Type[]::new`) also shift them
+(`lambda$enclosingMethod$serial`). It is not listed in `methods.csv`.
+A lambda inside a static initializer, a static field or an enum constant's arguments is `lambda$static$N`.
+The serial does not always match the javac number you see in a stack trace
 ([docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md), Q13).
 
 ```csv
@@ -960,36 +1058,33 @@ Add your own frameworks by writing a table in `contracts.files`.
 
 ## Cache
 
-The analysis cache does not live in the output folder. It is created under **the tool's own project
-folder**, at `.cache/<name of the project.root folder>_<8 hex digits of the absolute path>/`.
-Config files pointing at the same project share the same cache, and projects with the same name in
-different places (checkouts per branch, for instance) do not get mixed up. Wherever you put the config
-file and wherever you run from, the cache location does not change.
+The analysis cache does not live in the output folder. It is created under **the tool's own folder**, at
+`.cache/<name of the project.root folder>_<8 hex digits of the absolute path>/`.
+From the second run on, only the changed files and the files whose results the change can affect (such as the
+files that use the changed files' types) are analyzed again. Changes in dependency jars and class folders (a
+sibling module's `target/classes` and the like) are tracked too.
 
-The cache is a single file, `analysis-cache.tsv`. It holds the facts the analysis found (the structure of
-the call hierarchy and the values used for value tracking), one block per source file, and each block is
-checked for damage. If a block is damaged, the whole project is not analyzed again: only that file and the files
-that use its types are. When nothing has changed, the cache is not rewritten. While running, the tool creates
-temporary files (`*.tmp`) in the same folder and deletes them when it finishes. A `dataflow-cache.tsv` left by an older version is deleted on the next run.
-When two runs use the same cache folder at the same time (the CLI and the Eclipse or VS Code plugin, CI jobs, and so on),
-the later run waits until the earlier one finishes (at most 30 minutes; set the environment variable
-`JCHE_CACHE_LOCK_WAIT_SECONDS` to change the number of seconds). The lock file used for this,
-`analysis-cache.tsv.lock` (empty), stays in the folder.
+- Config files pointing at the same project share the same cache, and projects with the same name in different
+  places do not get mixed up
+- You may delete it while nothing is running (the next run just analyzes everything).
+  Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
+- When two runs use the same cache at the same time (the CLI and the Eclipse or VS Code plugin, CI jobs, and so
+  on), the later run waits until the earlier one finishes (at most 30 minutes; set the environment variable
+  `JCHE_CACHE_LOCK_WAIT_SECONDS` to change the number of seconds)
+- The rules for which files are analyzed again are in the comment on `cache.enabled` in
+  [config/config.properties](config/config.properties), and the design is in
+  [docs/cache-design.md](docs/cache-design.md) (in Japanese)
 
-- Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
-- From the second run on, only the changed files and the files whose results the change can affect (such as
-  the files that use the changed files' types) are analyzed again. When you add or replace a dependency jar, the
-  files that use types from that jar and the files whose type resolution failed last time are affected, and so are
-  the files that use their types (when you remove a jar, the files that used its types and the files that use
-  theirs; the files whose type resolution failed are not included)
-- Besides dependency jars, changes in class folders (a sibling module's `target/classes`, the output folder of a
-  dependent project, and so on) are tracked too. A folder listed in `library.jars` or as `kind="lib"` in `.classpath`
-  is used as a class folder as it is (the jars inside it are not used; list a folder that collects jars in
-  `library.folders`). Source folders and class folders that are symbolic links are followed. When sources or
-  dependency jars change while an analysis is running (a sibling module is rebuilt, for example), the next run
-  analyzes the files of that run again
-- How it is built so that a large code base does not hit `OutOfMemoryError`, and what the differential
-  update looks at, are in [docs/cache-design.md](docs/cache-design.md)
+---
+
+## Documentation
+
+| What you want | Where |
+|---|---|
+| How to use it, how to start the tool | [Getting started](#getting-started) (this file); the full launcher reference is [docs/cli.md](docs/cli.md) |
+| How to read the output CSV | [Reading the results](#reading-the-results) and [Output files](#output-files) (this file) |
+| What each config item means | the comments in [config/config.properties](config/config.properties) |
+| Detailed guides per feature, design notes (what was hard and what was decided, per feature), and the spec for reimplementation | [docs/README.md](docs/README.md) (in Japanese) |
 
 ---
 

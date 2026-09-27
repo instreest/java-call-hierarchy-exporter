@@ -26,7 +26,7 @@
 #      確かめた呼び出し先（javap の invokespecial）
 #
 # この構文は Java 25 でないと書けないので、test/demo には置かない。
-# test/demo は多くの検査が共有するうえ、README.md の手順で javac でコンパイルして
+# test/demo は多くの検査が共有するうえ、docs/cli.md の閉域ネットワークの手順で javac でコンパイルして
 # jar を作る（そのとき古い JDK だと落ちる）ためである。ここだけ使い捨ての
 # プロジェクトをその場で作って解析する。
 #
