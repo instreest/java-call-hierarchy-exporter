@@ -9,13 +9,17 @@ Java プロジェクト全体のメソッド呼び出し階層を、Eclipse JDT 
 CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse は起動せず、JBang で単体で動く。
 目的は「改修時の影響調査で呼び出しを漏らさない」こと。迷ったら **呼び出しを静かに落とさない（安全側に倒す）** を優先する。
 
+本体は **解決（`analysis`。JLS の判定を JDT に任せて事実を書く）→ キャッシュ（`cache`）→ 選択（`graph`。JVMS 5.4.6 の順で
+実際に動く本体を選ぶ）** の 3 層で、各パッケージの `package-info.java` が層の責務と読む順を持つ。規則ごとの対応表と
+健全性の点検表は `docs/resolution-selection-design.md`。
+
 ## 構成
 
 | 場所 | 役割 |
 |---|---|
 | `src/jche/CallHierarchyExporter.java` | 解析のエントリポイント（`//DEPS` と `//JAVA` の JBang ヘッダを持つ） |
 | `src/jche/Jche.java` | 起動コマンドのエントリポイント。引数があれば対話なしで解析し、無ければ対話モードに入る |
-| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（AST 訪問・キャッシュ更新。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担。JDT に一緒に渡すファイルの組み方は `CallEdgeExtractor`（＋ソースの全体を構文だけで読み、どのバッチにも添えるファイルを決める `ProjectScan`）、依存 jar の指紋は `LibraryDiff`（＋jar の目次を読む `ZipDirectory`））、`graph`（呼び出しグラフ・具象クラス解決。キャッシュの値グラフは `ValueStoreBuilder` が値の表 `ValueStore`（＋条件の表 `GuardTable`・文字列の置き場 `StringPool`）に取り込み、読み手はそれを番号で引く。経路の値は型付きの枠 `Slot`）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util`（シンボリックリンクをたどってフォルダを歩く `FileTree` など） |
+| `src/jche/` | 本体。`config`（設定・ビルドファイル読み取り。Gradle は `GradleBuild` / `GradleSettings` / `GradleLockfile` / `GradleScripts`）、`analysis`（**解決**の層: AST 訪問・キャッシュ更新。上書き・実装の関係の事実は `OverrideFacts`（JDT の `overrides` / `isSubsignature` に任せる）。差分更新は `CacheUpdater` がパスの順序を持ち、どのファイルを解析し直すかは `StaleTypes`、ブロックの書き出しは `BlockWriter`、旧キャッシュの読みは `OldBlock` / `OldCache` / `DepsIndex`。`FactVisitor` が `TypeContextTracker` / `CallSiteRecorder` / `FieldAccessRecorder` / `OriginTracker`（＋上限の無い値グラフを作る `ValueGraph`） / `FieldFactCollector` / `LambdaNames`（ラムダの合成メソッドの名前を先に配る） / `ImplicitCalls`（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッドを引く）に分担。JDT に一緒に渡すファイルの組み方は `CallEdgeExtractor`（＋ソースの全体を構文だけで読み、どのバッチにも添えるファイルを決める `ProjectScan`）、依存 jar の指紋は `LibraryDiff`（＋jar の目次を読む `ZipDirectory`））、`graph`（**選択**の層: 呼び出しグラフ・具象クラス解決。具象型で動く本体を JVMS 5.4.6 の順で選ぶのは `MethodSelection`、受け手の型の候補を求める段は `CallResolver`、静的束縛の判定は `BindKind`。キャッシュの値グラフは `ValueStoreBuilder` が値の表 `ValueStore`（＋条件の表 `GuardTable`・文字列の置き場 `StringPool`）に取り込み、読み手はそれを番号で引く。経路の値は型付きの枠 `Slot`）、`dataflow`（データフローの事実をグラフ全体から一括で確定）、`report`（CSV 出力）、`cli`（対話モード。画面は `App` / `ConfigWizard` / `EnvironmentSettingsScreen` / `StatusScreen`）、`extension` / `builtin`（プラグイン）、`external`（jar からの被参照）、`cache`（行形式の record と `CacheReader`）、`framework`、`util`（シンボリックリンクをたどってフォルダを歩く `FileTree` など） |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
@@ -165,7 +169,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは
   `jche.graph.FactoryCalls#readsOf` に足し、対になる 3 か所（契約表の読み書き `TypeContracts`、
   証拠の種別 `jche.extension.Hint`、ひな形 `ContractSuggestions`）も揃える
-- 具象型からの実装探索は `jche.graph.CallGraph` の 2 つの入口だけを通す。
+- 具象型からの実装探索（選択。JVMS 5.4.6）は `jche.graph.MethodSelection`（`graph.selection()`）の 2 つの入口だけを通す。
   呼び出し先のキーが分かるなら `implementationOf(型FQN, 呼び出し先ID)`、
   シグネチャしか分からないなら（契約表・リフレクション）`implementationOfSignature(型FQN, シグネチャ)`。
   どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、

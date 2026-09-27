@@ -19,12 +19,12 @@ import java.util.List;
  *                   java.lang.Object は含まない。インターフェースと、親クラスが Object のクラスは空。
  *                   {@code superTypes} は読み手が名前順に並べ替えるので、どれが親クラスかはここからしか分からない。
  *                   実際に動く実装を探すとき、親クラスの連鎖を親インターフェースより先に見る
- *                   （JLS 8.4.8・JVMS 5.4.6。jche.graph.CallGraph#implementationOf）ために持つ
+ *                   （JLS 8.4.8・JVMS 5.4.6。jche.graph.MethodSelection#implementationOf）ために持つ
  * @param inheritedImpls 親クラスから継承したメソッドが親インターフェースのメソッドを実装し、キーが食い違うものの組
  *                   （v43 で追加。{@code 実装される側のキー>実装する側のキー}、名前順）。
  *                   {@code class UserRepo extends BaseRepo implements Repo<User>} の
  *                   {@code p.Repo#save(java.lang.Object)>p.BaseRepo#save(p.User)}。この型から見たときにだけ成り立つ
- *                   関係なので O 行（宣言ごとの上書き）には書けない（jche.analysis.BindingNames#inheritedImplementationsOf）
+ *                   関係なので O 行（宣言ごとの上書き）には書けない（jche.analysis.OverrideFacts#inheritedImplementationsOf）
  */
 public record TypeFact(String typeFqn, char kind, List<String> superTypes, String pkg,
                        String annotations, List<String> superclasses, List<String> inheritedImpls) {
