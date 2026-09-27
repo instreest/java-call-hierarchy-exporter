@@ -97,6 +97,7 @@
 | [method-decl-range-qa.md](method-decl-range-qa.md) | #115 | メソッドの宣言範囲（終了行）をキャッシュと `MethodTable` に持つ。カーソル位置から囲むメソッドを引く `AT`（近似をやめる判断、`methods.csv` に出さない判断） |
 | [callee-label-qa.md](callee-label-qa.md) | — | `call-hierarchy.csv` の `callee` 列を「クラス名.メソッド名」だけにし、`NO_IMPL` の注記を出さなくした |
 | [entrypoint-package-qa.md](entrypoint-package-qa.md) | — | 入口 2 つを既定パッケージから `jche` パッケージへ移した。`//SOURCES` の glob が直下に当たらない理由 |
+| [single-file-qa.md](single-file-qa.md) | — | `single-file/` を本体の全ソースから生成する 1 ファイル版（完全版）にした。入れ子のクラスにする理由、`jche` パッケージにする理由（入れ子の型の import）、同梱の拡張の名前の読み替え、本体との違い（利用者の Java の拡張は使えない）、生成し直し忘れの検査 |
 
 ## 再実装用の仕様
 

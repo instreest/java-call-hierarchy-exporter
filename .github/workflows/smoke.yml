@@ -87,6 +87,11 @@ jobs:
       - name: Cache value encoding test (escape round-trip)
         run: bash test/cachevalue/run.sh
 
+      # 1 ファイル版（single-file/）。src/jche から生成し直した結果がコミットと一致すること（生成し直し忘れ）、
+      # 本体と同じ lint で通ること、回帰テストの whole・entry と同梱の拡張の読み込みが本体と同じ出力になること
+      - name: Single-file build test
+        run: bash test/single-file/run.sh
+
       # 同梱の契約表（JDK のコールバック・フレームワークの入口）。全行が parse でき、JDK の型は
       # 宣言元と呼び戻すメソッドが実在すること。継承しているだけの型で書いた行は永久に当たらない
       - name: Bundled contracts test (parse and JDK declaring types)
