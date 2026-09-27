@@ -1073,9 +1073,9 @@ final class FactVisitor extends ASTVisitor {
      *       依存 jar が無いときの式の中の {@code org.missing.pkg.Type.run()} の {@code org.missing} には、同じバッチで
      *       先に別のファイルが {@code org.missing.pkg.Type.class} のような型の文脈で同じ名前を解決しようとしたかどうかで、
      *       JDT が回復した型（{@code org.missing}）を返したり返さなかったりする。数えると I 行がバッチの組み方で変わる
-     *       （Q79）。解決できなかった名前は、エラーの側（I 行の 2 列目）で拾う。型の節（{@link Type}）は回復した型でも
-     *       数える（型の文脈の回復はバッチに依らない。途中のパッケージができる・無くなると変わるが、それは差分更新が
-     *       解決できなかった名前の側で拾う。Q80）</li>
+     *       （Q79）。解決できなかった名前は数えず、型解決に失敗したブロックは何かが変わった実行で必ず解析し直す
+     *       （{@link CacheUpdater} の「型解決に失敗していたファイル」）。型の節（{@link Type}）は回復した型でも
+     *       数える（型の文脈の回復はバッチに依らない）</li>
      * </ul>
      * アノテーションの型は、アノテーションの節の側で数える（型の名前の節は数えない）。{@code java.*} のもの
      * （{@code @Override}・{@code @Target}）も数える。同じパッケージに {@code Override} や {@code Target} という型を

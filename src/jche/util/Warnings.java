@@ -276,7 +276,8 @@ public final class Warnings {
                     Messages.get("exporter.warnings.build.remedy3"),
                     Messages.get("exporter.warnings.build.remedy4"),
                     Messages.get("exporter.warnings.build.remedy5"),
-                    Messages.get("exporter.warnings.build.remedy6"));
+                    Messages.get("exporter.warnings.build.remedy6"),
+                    Messages.get("exporter.warnings.build.remedy7"));
             case INCOMPLETE -> List.of(Messages.get("exporter.warnings.incomplete.remedy1"),
                     Messages.get("exporter.warnings.incomplete.remedy2"));
         };

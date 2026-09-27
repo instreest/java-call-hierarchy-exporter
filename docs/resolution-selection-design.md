@@ -113,9 +113,11 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 |---|---|---|---|
 | 親の親（祖父母）の型のメソッドを足す・消す | H 7 列目の先の宣言、O 行 | 「親型の連鎖」（変わった型の部分型をすべて変わった型にする。`StaleTypes#register` の部分型の索引） | `test/incremental`（祖父母の型の変更） |
 | jar の親クラス・親インターフェースのメソッドを足す | `passesBinaryClass`・`superinterfaces` の jar の宣言 | I 行 (e)（jar の型の頭に現れる型）と L 行の jar の指紋 | `test/incremental`（jar の型の親にメソッドを足す） |
-| 親型の型引数を変える（`Repo<User>` → `Repo<Order>`） | O 行・H 8 列目 | I 行 (e)（親型の型引数）と、自分の宣言の指紋（I 行の 3 列目。宣言の連鎖） | `test/incremental`（型引数にだけ現れる型の親） |
+| 親型の型引数を変える（`Repo<User>` → `Repo<Order>`） | O 行・H 8 列目 | I 行 (e)（親型の型引数）と、自分の宣言の指紋（I 行の 2 列目。宣言の連鎖） | `test/incremental`（型引数にだけ現れる型の親） |
 | 中間のクラスが親をやめる・持つ | H 7 列目・8 列目 | 親型の連鎖 | `test/incremental`（継承した実装が変わる） |
-| 同じパッケージに型を足して import を隠す | C 行の呼び出し先そのもの | 「新しい型」（`StaleTypes#matchesChangedType` など） | `test/incremental` |
+| 同じパッケージに型を足して import を隠す | C 行の呼び出し先そのもの | 「新しい型」（同じパッケージ・そのパッケージのオンデマンド import のブロックを解析し直す。`StaleTypes#touches`。名前は照合しない） | `test/incremental` |
+| 型解決に失敗していたファイル（無い型の名前は I 行に残らない） | C 行・U 行 | 何かが変わった実行では名前を照合せず必ず解析し直す（`CacheUpdater#reanalyzeDependents`） | `test/incremental`（無かった型を足す） |
+| 型階層そのものが変わる（親の付け替え・入れ子の型の追加） | H 行すべて | 安全網: 解析し直したファイルの H 行が旧キャッシュと違えば残りを全件解析（`BlockWriter#hierarchyDigestOf`・`CacheUpdater#analyzeAllIfHierarchyChanged`） | `test/incremental`（親を付け替える） |
 
 書き手の変更で H・O・D・C 行の内容が変わりうるなら、`CacheFormat.VERSION` を上げる（上げ忘れは `test/cacheversion` が捕まえる）。
 

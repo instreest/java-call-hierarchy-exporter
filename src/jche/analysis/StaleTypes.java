@@ -9,22 +9,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import jche.cache.CacheFormat;
-import jche.cache.FileAnalysis;
 import jche.cache.LibraryFact;
 import jche.cache.TypeFact;
 import jche.config.ProjectLayout;
 
 /**
  * 差分更新の<b>「どのファイルを解析し直すか」を決める材料</b>: 変更・削除されたファイルが宣言していた型
- * （「変わった型」）とそのパッケージ、追加・変更・削除された jar のパッケージ、新しい型、できた・無くなった
- * パッケージ、中身の分からないパッケージ、部分型の索引（親型の連鎖）。
+ * （「変わった型」）とそのパッケージ、追加・変更・削除された jar のパッケージ、新しい型ができたパッケージ、
+ * できた・無くなったパッケージ、中身の分からないパッケージ、部分型の索引（親型の連鎖）。
  *
  * <p>キャッシュの再解析の健全性（差分更新の結果が全件解析と一致すること。{@code test/incremental}）は、
- * 有効なブロックの I 行（依存する型・解決できなかった名前・自分の宣言の指紋）を、ここが持つ集合と突き合わせる
- * {@link #touches}・{@link #matchesChangedType}・{@link #collidesWithChangedPackage} の判定にかかっている。「I 行に載らない依存」を見落とすと、そのファイルは
+ * 有効なブロックの I 行（依存する型・自分の宣言の指紋）を、ここが持つ集合と突き合わせる
+ * {@link #touches}・{@link #collidesWithChangedPackage} の判定にかかっている。「I 行に載らない依存」を見落とすと、そのファイルは
  * 古い事実のまま再利用され、出力が静かに食い違う。載らない依存の一覧と、それをどの集合で拾うかは
  * {@link jche.cache.CacheFormat} の I 行の説明と docs/cache-design.md の「差分更新」にある。
+ *
+ * <p>判定は<b>型かパッケージの単位</b>で、名前の一部（単純名・エラーの引数に現れた名前）は照合しない。
+ * 型解決に失敗していたブロックは、名前を照合せず、何かが変わった実行では必ず解析し直す
+ * （{@link CacheUpdater#reanalyzeDependents}）。新しい型による名前の隠蔽（JLS 6.4.1）は、その型ができたパッケージ
+ * （自分のパッケージ・オンデマンド import のパッケージ）で当てる（{@link #hidesNamesIn}）。名前を切って照合する規則は、
+ * 何を区切りにするか・何を拾うかの入れ忘れがそのまま静かな取りこぼしになったので、やめた
+ * （docs/cache-unification-qa.md の Q131）。
  *
  * <p>{@link CacheUpdater} がパス1〜4 で順に育てる（{@link #register}・{@link #endOfOldCache}・{@link #endOfSources}）。
  * 判定の結果は {@link ReanalysisReason}（集計の内訳）で返す。
@@ -39,21 +44,12 @@ final class StaleTypes {
      * これに無ければ新しい型。{@link #endOfOldCache} を呼ぶまでは null（新しい型を数えない）
      */
     private Set<String> declaredBefore;
-    /** パッケージ -> そこに新しく宣言されたトップレベルの型の単純名（同じパッケージの名前の隠蔽を見る） */
-    private final Map<String, Set<String>> newTopLevel = new HashMap<>();
     /**
-     * 変わった型（{@link #types}。新しい型を含む）の単純名（FQN の最後の点より後。無名・ローカルの型は
-     * {@code Main$1} の形なので、エラーの引数の名前には当たらない）。型解決に失敗していたブロックのうち、
-     * 解決できなかった名前（I 行）のどれかの区切りがこれに当たるものを解析し直す（{@link #matchesChangedType}）。
-     * 新しい型に限らないのは、見えなかった型を public にした（{@code The type vp.Hidden is not visible}）ときの
-     * ように、前からあった型の変更でも失敗が解けるため（docs/cache-unification-qa.md の Q53）
+     * 新しいトップレベルの型ができたパッケージ（無名パッケージは空文字）。同じパッケージの型は、そのパッケージの
+     * ファイルのオンデマンド import と {@code java.lang} の型を隠す（JLS 6.4.1）ので、そのパッケージのブロックと、
+     * そのパッケージをオンデマンド import するブロックを解析し直す（{@link #hidesNamesIn}）
      */
-    private final Set<String> changedSimpleNames = new HashSet<>();
-    /**
-     * 変わった型の FQN の、点で区切った頭の部分（{@code org}・{@code org.acme}・{@code org.acme.New}）。
-     * 解決できなかった名前がこれに当たるブロック（{@code import org cannot be resolved}）も解析し直す
-     */
-    private final Set<String> changedPrefixes = new HashSet<>();
+    private final Set<String> newTopLevelPackages = new HashSet<>();
     /**
      * 部分型の索引（親型の連鎖）。親型 -> それを親に持つ型（H 行の親型の列。子が 1 つなら {@code String}、
      * 2 つ以上なら {@code List<String>}）。旧キャッシュのすべてのブロックと、今回解析した・引き継いだブロックの
@@ -80,8 +76,6 @@ final class StaleTypes {
      */
     private final Set<String> opaquePackages = new HashSet<>();
     private final Set<String> opaquePrefixes = new HashSet<>();
-    /** {@link #newTopLevel} の単純名をパッケージを問わず集めたもの（自分のパッケージの分からないブロックに使う） */
-    private final Set<String> newTopLevelNames = new HashSet<>();
     /**
      * できた・無くなったパッケージ（{@link #packagesBefore} と {@link #packagesNow} の片方にだけあるもの）。
      * 今のパッケージがそろうパス3 の最初に {@link #endOfSources} で決める。それまでは空
@@ -165,8 +159,6 @@ final class StaleTypes {
             if (!types.add(t)) {
                 continue;
             }
-            changedSimpleNames.add(t.substring(t.lastIndexOf('.') + 1));
-            addPrefixes(t, changedPrefixes);
             Object children = subtypes.get(t);
             if (children instanceof String child) {
                 work.add(child);
@@ -221,8 +213,9 @@ final class StaleTypes {
     }
 
     /**
-     * 変わった（または新しい）ファイルが宣言する型を加える。前回宣言されていなかった型なら、
-     * 新しい型としても覚える（クラスの説明「新しい型」）
+     * 変わった（または新しい）ファイルが宣言する型を加える。前回宣言されていなかったトップレベルの型なら、
+     * そのパッケージを「新しい型ができたパッケージ」として覚える（クラスの説明「新しい型」）。
+     * 入れ子の型（{@code Main.Inner}）は外側の型（前回もあった）を通してしか名前にならないので数えない
      */
     void addDeclared(String typeFqn, String pkg) {
         add(typeFqn, pkg);
@@ -233,51 +226,8 @@ final class StaleTypes {
         String rest = p.isEmpty() ? typeFqn
                 : typeFqn.startsWith(p + ".") ? typeFqn.substring(p.length() + 1) : null;
         if (rest != null && !rest.isEmpty() && rest.indexOf('.') < 0) {
-            // トップレベルの型だけ。入れ子の型（Main.Inner）は外側の型（前回もあった）を通してしか名前にならない
-            newTopLevel.computeIfAbsent(p, k -> new HashSet<>()).add(rest);
-            newTopLevelNames.add(rest);
+            newTopLevelPackages.add(p);
         }
-    }
-
-    /**
-     * 型解決に失敗していたブロックの、解決できなかった名前（I 行。{@link FileAnalysis#unresolvedNames}）が
-     * 変わった型（新しい型を含む）に当たるか。名前の区切りのどれかが変わった型の単純名か（{@code Foo}・
-     * {@code q.Foo}・{@code Foo.Inner}）、名前が変わった型の FQN の頭の部分か（{@code org}・{@code org.acme}）、
-     * 名前の頭の部分（名前そのものは除く）が、できた・無くなったパッケージか（{@link #packagesBefore}。
-     * {@code org.missing.pkg.Type} と、前回は無かったパッケージの {@code org.missing.Foo}）。
-     * {@link CacheFormat#ANY_NAME}（名前を拾えなかった）は何にでも当たる
-     *
-     * @param namesCsv 名前のカンマ区切り
-     */
-    boolean matchesChangedType(String namesCsv) {
-        if (changedSimpleNames.isEmpty() && libraryPackages.isEmpty() && changedSourcePackages.isEmpty()) {
-            return false;   // どのファイルも変わっていない（パッケージもできていない・無くなっていない）
-        }
-        if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
-            return true;
-        }
-        for (String name : namesCsv.split(",")) {
-            if (changedPrefixes.contains(name) || hasSegment(name, changedSimpleNames)
-                    || underChangedPackage(name)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 名前の頭の部分（{@code org}・{@code org.missing}。名前そのものは除く）のどれかが、できた・無くなったパッケージか
-     * （前回と今回の片方にだけある。変わった jar のパッケージとその頭の部分も）。今回のパッケージはパス2 を終えれば
-     * そろう（有効なブロックはパス1、変わったファイルはパス2 で足す）ので、パス3 から使う
-     */
-    private boolean underChangedPackage(String name) {
-        for (int dot = name.indexOf('.'); dot > 0; dot = name.indexOf('.', dot + 1)) {
-            String p = name.substring(0, dot);
-            if (libraryPrefixes.contains(p) || packagesBefore.contains(p) != packagesNow.contains(p)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -287,6 +237,11 @@ final class StaleTypes {
     boolean isEmpty() {
         return types.isEmpty() && libraryPackages.isEmpty() && opaquePackages.isEmpty()
                 && changedSourcePackages.isEmpty();
+    }
+
+    /** ソースの側の変化（変わった型・中身の分からないパッケージ・できた・無くなったパッケージ）があるか */
+    boolean hasSourceChanges() {
+        return !types.isEmpty() || !opaquePackages.isEmpty() || !changedSourcePackages.isEmpty();
     }
 
     /**
@@ -335,14 +290,13 @@ final class StaleTypes {
      * "pkg.*"（オンデマンド import）は、そのパッケージの型が1つでも変わっていれば触れているとみなす。
      * ソースの変更に触れていればそちらを理由として返す（集計の内訳のため）。
      *
-     * <p>自分のパッケージ（{@code ownPackage}）に新しいトップレベルの型ができていて、I 行のどれかの型名に
-     * その単純名が含まれていれば（{@code q.Helper} と新しい {@code p.Helper}、{@code java.lang.Math} と
-     * 新しい {@code p.Math}）、名前が隠されて別の型に解決されうるので触れているとみなす（JLS 6.4.1）
+     * <p>自分のパッケージ（{@code ownPackage}）か、オンデマンド import したパッケージに新しいトップレベルの型ができて
+     * いれば、I 行に何かあるブロックは触れているとみなす（{@link #hidesNamesIn}。同じパッケージの型はオンデマンド import と
+     * {@code java.lang} の型を隠す。JLS 6.4.1）。どの名前が隠されるかは照合しない
      *
      * <p>自分のパッケージに変わった jar の型があれば（同じパッケージを jar とソースに分けて置く）、jar の型も
      * 同じパッケージの型として、オンデマンド import と {@code java.lang} の型を隠しうる（JLS 6.4.1）。jar のどの
-     * 型が増えたかは分からないので、I 行にオンデマンド import か {@code java.lang} の型があれば触れているとみなす
-     * （docs/cache-unification-qa.md の Q54）
+     * 型が増えたかは分からないので、I 行に何かあれば触れているとみなす（docs/cache-unification-qa.md の Q54）
      *
      * <p>I 行の型の名前の頭の部分が変わった型なら（パッケージ {@code a.b} と同じ名前の型 {@code a.b} を足した）、
      * {@code a.b.C} の解決が変わるので触れているとみなす（{@link #underChangedType}）
@@ -369,27 +323,36 @@ final class StaleTypes {
 
     /** I 行がソースの変化（変わった型・パッケージ・名前を隠す新しい型）に触れるか。{@link #touches} のソースの側 */
     private boolean touchesSource(String depsCsv, String ownPackage) {
-        // 自分のパッケージが分からない（型を宣言していない）ブロックは、どのパッケージの新しい型にも隠されうるとみなす
-        Set<String> shadowing = (ownPackage == null)
-                ? (newTopLevelNames.isEmpty() ? null : newTopLevelNames)
-                : newTopLevel.get(ownPackage);
+        if (hidesNamesIn(ownPackage)) {
+            return true;
+        }
         for (String d : depsCsv.split(",")) {
             if (d.isEmpty()) {
                 continue;
-            }
-            if (shadowing != null && !d.endsWith(".*") && hasSegment(d, shadowing)) {
-                return true;
             }
             boolean onDemand = d.endsWith(".*");
             String p = onDemand ? d.substring(0, d.length() - 2) : d;
             // 型の名前（か頭の部分）ができた・無くなったパッケージと同じなら、型とパッケージの衝突（JLS 7.1）で
             // 解決が変わりうる（collidesWithChangedPackage の、使う側）
             if (types.contains(p) || underChangedType(p) || changedSourcePackages.contains(p)
-                    || underPackages(p, changedSourcePackages) || (onDemand && packages.contains(p))) {
+                    || underPackages(p, changedSourcePackages)
+                    || (onDemand && (packages.contains(p) || newTopLevelPackages.contains(p)))) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * 自分のパッケージに新しいトップレベルの型ができたか（JLS 6.4.1 の隠蔽で、このブロックのどの名前の解決先も
+     * 変わりうる）。自分のパッケージが分からない（型を宣言していない）ブロックは、どのパッケージの新しい型にも
+     * 隠されうるとみなす
+     */
+    private boolean hidesNamesIn(String ownPackage) {
+        if (newTopLevelPackages.isEmpty()) {
+            return false;
+        }
+        return ownPackage == null || newTopLevelPackages.contains(ownPackage);
     }
 
     /**
@@ -422,9 +385,7 @@ final class StaleTypes {
      *   <li>自分のパッケージがそこにある（同じパッケージを jar とソースに分けて置く・無名パッケージ。自分のパッケージが
      *       分からなければあるとみなす）。I 行に何かあれば当たる。そのパッケージの型が同じパッケージの型として、
      *       オンデマンド import・{@code java.lang} の型（JLS 6.4.1。docs/cache-unification-qa.md の Q54）だけでなく、
-     *       完全修飾名の頭の区切り（{@code a.b.C} の {@code a}。JLS 6.5.2 で型が先に選ばれる）も隠しうる。以前は
-     *       オンデマンド import と {@code java.lang} の型だけを見ていて、I 行にそれらの無いファイル（インターフェース）が
-     *       {@code a.b.C.k()} を書いていると、同じパッケージにできた型 {@code a} による隠蔽を見落とした</li>
+     *       完全修飾名の頭の区切り（{@code a.b.C} の {@code a}。JLS 6.5.2 で型が先に選ばれる）も隠しうる</li>
      * </ul>
      */
     private static boolean touchesPackages(String depsCsv, String ownPackage, Set<String> pkgs,
@@ -453,55 +414,6 @@ final class StaleTypes {
     }
 
     /**
-     * 解決できなかった名前（I 行の 2 列目）が、変わった jar のパッケージ（とその頭の部分）に当たりうるか。
-     * 名前を拾えなかった（空・{@link CacheFormat#ANY_NAME}）ときは、jar が変わっていれば当たるとみなす
-     */
-    boolean namesUnderLibrary(String namesCsv) {
-        if (libraryPackages.isEmpty()) {
-            return false;
-        }
-        if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
-            return true;
-        }
-        for (String name : namesCsv.split(",")) {
-            for (int dot = name.indexOf('.'); dot > 0; dot = name.indexOf('.', dot + 1)) {
-                if (libraryPrefixes.contains(name.substring(0, dot))) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 型解決に失敗していたブロックの、解決できなかった名前（I 行の 2 列目）が、中身の分からないパッケージの型に
-     * なりうるか。自分のパッケージがそこにある（分からなければあるとみなす）ときは、名前に依らず当たる。名前の頭の
-     * 区切り（{@code Base2}・{@code Base2.Inner} の {@code Base2}）が同じパッケージの型の単純名でありうるため
-     * （点の有無では分けない。以前は点の無い名前だけを見ていて、同じパッケージの失敗するファイルに足した型の入れ子の型
-     * {@code Base2.Inner} を落とした）。そうでなければ、名前の頭の部分がそのパッケージ（とその頭の部分）のとき。
-     * 名前を拾えなかった（空・{@link CacheFormat#ANY_NAME}）ときは当たるとみなす。オンデマンド import で単純名を
-     * 持ち込むブロックは、I 行の {@code p.*} で当たる（{@link #touchesOpaque}）
-     */
-    boolean namesUnderOpaque(String namesCsv, String ownPackage) {
-        if (opaquePackages.isEmpty()) {
-            return false;
-        }
-        if (namesCsv == null || namesCsv.isEmpty() || namesCsv.equals(CacheFormat.ANY_NAME)) {
-            return true;
-        }
-        if (ownPackage == null
-                || opaquePackages.contains(ownPackage.isEmpty() ? LibraryFact.UNNAMED_PACKAGE : ownPackage)) {
-            return true;
-        }
-        for (String name : namesCsv.split(",")) {
-            if (underPackages(name, opaquePrefixes)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
      * 名前の頭の部分（{@code a.b.C} の {@code a}・{@code a.b}。名前そのものは除く）のどれかが変わった型か。
      * パッケージ {@code a.b} と同じ名前の型 {@code a.b}（パッケージ {@code a} のクラス {@code b}）を足す・消すと、
      * {@code a.b.C} と書いたファイルの解決が変わる（JLS 6.5.2・7.1。docs/cache-unification-qa.md の Q87）。
@@ -509,40 +421,18 @@ final class StaleTypes {
      * 一緒に変わった型になっている（同じファイル）ので、これで増えるのは外側の型だけが部分型の索引で変わった型に
      * なったときだけである（多すぎても解析し直すファイルが増えるだけ）。
      *
-     * <p>{@code $} も区切りとみなす（{@link #isSeparator}）。jar のクラスが参照していたソースの入れ子の型を JDT が
+     * <p>{@code $} も区切りとみなす。jar のクラスが参照していたソースの入れ子の型を JDT が
      * 見つけられないと、クラスファイルの名前のまま（{@code app.Outer$Inner}）I 行に残る。あとで {@code app/Outer.java}
      * に {@code Inner} を足したら、そのファイルを解析し直さないと、全件解析では解決できる呼び出しが解決できないまま残る
      */
     private boolean underChangedType(String name) {
         for (int i = 1; i < name.length(); i++) {
-            if (isSeparator(name.charAt(i)) && types.contains(name.substring(0, i))) {
+            char c = name.charAt(i);
+            if ((c == '.' || c == '$') && types.contains(name.substring(0, i))) {
                 return true;
             }
         }
         return false;
-    }
-
-    /** 型名を "." か "$" で区切ったどれかが、names に含まれるか（{@code $} は {@link #underChangedType} と同じ理由） */
-    private static boolean hasSegment(String typeFqn, Set<String> names) {
-        int from = 0;
-        for (int i = 0; i <= typeFqn.length(); i++) {
-            if (i == typeFqn.length() || isSeparator(typeFqn.charAt(i))) {
-                if (names.contains(typeFqn.substring(from, i))) {
-                    return true;
-                }
-                from = i + 1;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 型名の区切り。{@code .} のほか、見つからなかった入れ子の型をクラスファイルの名前のまま書いた {@code $}
-     * （{@code app.Outer$Inner}）。ソースの型の名前に {@code $} を書いていれば余分に区切るが、解析し直すファイルが
-     * 増えるだけ
-     */
-    private static boolean isSeparator(char c) {
-        return c == '.' || c == '$';
     }
 
     /**

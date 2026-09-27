@@ -105,9 +105,8 @@ import jche.util.Warnings;
  *   パス1 … 旧キャッシュを順に読み、サイズと内容ハッシュが一致し、検査値も合うファイル（有効）を覚える。
  *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
  *           どのブロックの H 行の親型も部分型の索引に足す（下記「親型の連鎖」）。
- *           jar が追加・変更されていれば、型解決に失敗していたファイル（F行のエラー数、
- *           U行の BINDING_FAILED）も有効から外す。追加された jar で解決できるようになりうるため。
- *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 3 列目）もここで覚える。
+ *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 2 列目）と、今のソースにあるファイルの
+ *           ブロックの型階層の指紋（下記「型階層が変わったとき」）もここで覚える。
  *           今のソースに無いファイルと同じコンパイル単位の名前のファイルも有効から外す
  *           （{@link SameUnitFiles#pairedWithDeleted}）。
  *           旧キャッシュを行として読むのはこの 1 回だけ。有効なブロックの依存（I 行）は一時ファイル
@@ -115,20 +114,22 @@ import jche.util.Warnings;
  *   （何も変わっていなければ、ここで終わる。下記「何も変わっていないとき」）
  *   パス2 … 変更・追加されたファイルを解析して新キャッシュへ書く。
  *           そのファイルが宣言する型も「変わった型」に加える（改名・追加に備える）。H 行の親型は部分型の索引に足す。
- *           前回どのブロックも宣言していなかった型は「新しい型」としても覚える（下記「新しい型」）。
+ *           前回どのブロックも宣言していなかったトップレベルの型のパッケージは「新しい型ができたパッケージ」としても
+ *           覚える（下記「新しい型」）。解析したファイルの型階層が旧キャッシュと違えば、残りをすべて解析して
+ *           パス3〜5 を飛ばす（下記「型階層が変わったとき」）。
  *   パス3 … 依存の索引を読み、有効なブロックのうち、I行（依存する型）が
  *           「変わった型」または「変わったパッケージ」（変わった jar のパッケージと、解析に失敗したファイルの
  *           中身の分からないパッケージ）に触れるものを再解析に回す。
  *           触れるものは、バインディング解決の結果が変わっている可能性があるため。
- *           あわせて、型解決に失敗していたブロックのうち解決できなかった名前が変わった型（新しい型を含む）か
- *           できた・無くなったパッケージに当たるものと、新しい型に名前を隠されうるブロックと、I 行の型の名前の頭の部分が
+ *           あわせて、型解決に失敗していたブロックすべて（下記「型解決に失敗していたファイル」）と、新しい型に名前を
+ *           隠されうるブロック（同じパッケージ・そのパッケージのオンデマンド import）と、I 行の型の名前の頭の部分が
  *           変わった型に当たるブロック（と、型と同じ名前のパッケージができた・無くなった親のパッケージのブロック）も回す
  *           （下記「新しい型」）。
  *   パス4 … パス3で再解析に回したファイルを解析し、追記する。そのファイルの自分の宣言の指紋（宣言と定数の値）が
  *           旧キャッシュと違っていたら、または旧キャッシュで変わった jar か中身の分からないパッケージに触れていたなら、
  *           または sealed な型かアノテーション型を宣言しているなら、宣言する型を「変わった型」に加えて
  *           パス3へ戻る（下記「宣言の連鎖」）。「変わった型」は、どの時点でも部分型で閉じている（下記「親型の連鎖」）。
- *           「変わった型」が増えなくなるまで繰り返す。
+ *           「変わった型」が増えなくなるまで繰り返す。型階層が違ったファイルがあれば、残りをすべて解析して止める。
  *   パス5 … 最後まで有効だったブロックを、F 行ごとそのまま書き写す（行に戻さず、バイトの範囲のまま）。
  * </pre>
  *
@@ -200,7 +201,7 @@ import jche.util.Warnings;
  *
  * <p>宣言に書いた型の名前の解決先は、Aのソースが同じでも変わる。{@code import q.*} の {@code Foo} は、同じパッケージに
  * {@code p.Foo} ができると {@code p.Foo} になる（JLS 6.4.1）。すると A のメソッドの引数・戻り値の型、フィールドの型が変わり、
- * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の 3 列目に自分の宣言の指紋（宣言する型・
+ * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の 2 列目に自分の宣言の指紋（宣言する型・
  * メソッド・フィールドの JDT のバインディングの鍵と修飾子など（親型・型引数の上限・関数型も）と、K 行の指紋。中身は
  * {@link jche.cache.FileAnalysis#declarationKeys} と TypeContextTracker#recordDeclarations）を
  * 書き、パス4 で解析し直した結果がこれと違えば、そのファイルが宣言する型も「変わった型」に加えてパス3からやり直す
@@ -254,31 +255,28 @@ import jche.util.Warnings;
  *
  * <h2>新しい型（前回は無かった型は、参照していた側の I 行に載らない。依存を 1 段で済ませられない場合の 3 つ目）</h2>
  * 前回どのブロックも宣言していなかった型（ソースを足した・消したファイルを戻した・既存のファイルに型を
- * 足した）は、次の 3 通りで、I 行に触れずに他のファイルの解決結果を変える。
+ * 足した）は、次の 3 通りで、I 行に触れずに他のファイルの解決結果を変える。どれも<b>型かパッケージの単位</b>で当て、
+ * 名前の一部（エラーの引数に現れた名前・単純名）は照合しない（docs/cache-unification-qa.md の Q131。以前は解決できなかった
+ * 名前を I 行に書いて新しい型の名前と照合していたが、何を区切りにするか・何を拾うか（Q42・Q53・Q64・Q79・Q80・Q87・
+ * Q91〜Q96）の入れ忘れがそのまま静かな取りこぼしになった）。
  * <ul>
  *   <li>無い型の名前（{@code Foo.run()}）には JDT がバインディングを返さないので、参照した側の依存には
- *       何も残らない。そのファイルは F 行のエラー数か U 行の BINDING_FAILED として型解決に失敗していて、
- *       I 行の 2 列目にエラーの引数に現れた名前（{@code Foo}・{@code org.missing.Lib}）を持つ。型解決に失敗していた
- *       ブロックのうち、その名前が変わった型（新しい型を含む）に当たるもの（{@link StaleTypes#matchesChangedType}）を
- *       周回ごとに解析し直す。無名・ローカルの型は名前で参照できないので当たらない（docs/cache-unification-qa.md の
- *       Q42）。新しい型に限らないのは、見えなかった型を public にしたとき（{@code The type p.Hidden is not visible}）も
- *       同じ形で失敗が解けるため（Q53）。名前の頭の部分（{@code org.missing.pkg.Type} の {@code org.missing}）が、できた・
- *       無くなったパッケージ（前回と今回の H 行のパッケージと、ファイルの置き場所のフォルダのパッケージを比べる。JDT は
- *       パッケージがあるかをフォルダで決める）か変わった jar のパッケージ（とその頭の部分）に当たる
- *       ものも解析し直す。パッケージができる・無くなると、JDT がどこまでをパッケージとして読むか（エラーと回復した型の
- *       名前）が変わるため（Q80）。オンデマンド import（{@code import a.*}）のパッケージができた・無くなったときも、
- *       その import を持つブロックを解析し直す（{@code a} が下のパッケージだけでできていると、最後の下のパッケージが
- *       無くなったときに import のエラーになる）</li>
+ *       何も残らない。そのファイルは F 行のエラー数か U 行の BINDING_FAILED として型解決に失敗している。
+ *       <b>型解決に失敗していたブロックは、何かが変わった実行では必ず解析し直す</b>（下の「型解決に失敗していたファイル」）</li>
  *   <li>同じパッケージに足したトップレベルの型は、オンデマンド import（{@code import q.*}）と {@code java.lang} の型を
- *       隠す（JLS 6.4.1）。自分のパッケージは I 行に無いので、新しい型のパッケージと同じパッケージの
- *       ブロックのうち、I 行に同じ単純名の型があるものを解析し直す（Q43）。型を 1 つも宣言しないブロック
+ *       隠す（JLS 6.4.1）。自分のパッケージは I 行に無いので、新しい型のパッケージと同じパッケージのブロックと、
+ *       そのパッケージをオンデマンド import するブロックのうち、I 行に何かあるものを解析し直す
+ *       （{@link StaleTypes#touches}。どの名前が隠されるかは見ない）。型を 1 つも宣言しないブロック
  *       （{@code package-info.java}）は自分のパッケージが分からないので、どのパッケージの新しい型にも当てる</li>
  *   <li>パッケージと同じ名前の型（パッケージ {@code a.b} があるのに足したパッケージ {@code a} のクラス {@code b}）は、
  *       {@code a.b.C} の解決を変える（JLS 6.5.2・7.1）。I 行の型の名前の頭の部分が変わった型に当たるブロックも
- *       解析し直す（{@link StaleTypes#touches}。Q87）。逆に、型 {@code a.b} があるところにパッケージ {@code a.b} が
+ *       解析し直す（{@code StaleTypes#underChangedType}。Q87）。逆に、型 {@code a.b} があるところにパッケージ {@code a.b} が
  *       できた・無くなった（jar のパッケージが変わった）ときは、型のファイルの「パッケージと衝突する」エラーが出る・消える。
  *       このエラーはバッチに依らない（JDT はフォルダと jar でパッケージがあるかを決める）ので、親のパッケージ {@code a}
- *       のブロックを解析し直す（{@link StaleTypes#collidesWithChangedPackage}）</li>
+ *       のブロックを解析し直す（{@link StaleTypes#collidesWithChangedPackage}）。オンデマンド import（{@code import a.*}）の
+ *       パッケージができた・無くなったときも、その import を持つブロックを解析し直す（{@code a} が下のパッケージだけで
+ *       できていると、最後の下のパッケージが無くなったときに import のエラーになる）。パッケージがあるかは、H 行の
+ *       パッケージとファイルの置き場所のフォルダで数える（JDT はフォルダで決める）</li>
  * </ul>
  * 「前回は無かった」は、パス1 を読み終えたときの「変わった型」（無効になったブロックが宣言していた型と、
  * その部分型）に無いことで見る。有効なブロックの型でも部分型でなければそこに無いので、別のファイルに同じ名前の型が
@@ -290,13 +288,35 @@ import jche.util.Warnings;
  * 新しい jar からは知れないためで、L 行にパッケージ一覧を残すのは jar が削除された後にも
  * 影響範囲を知るため（{@link LibraryDiff}）。jar の型が自分と同じパッケージにできたときは、新しい型と同じく
  * オンデマンド import・{@code java.lang} の型・完全修飾名の頭（{@code a.b.C} の {@code a}）を隠しうるので、自分の
- * パッケージが変わった jar のパッケージにあるブロックは、I 行に何かあれば解析し直す（Q54。{@link StaleTypes#touchesPackages}）。
- * jar が追加・変更されたときだけは、型解決に失敗していたファイル（F 行のエラー数、U 行の BINDING_FAILED）も
- * 解析し直す（パス1。無い型の名前は I 行に残らないので、パッケージでは当たらない）。削除と並び替えだけなら
- * 解決できる型は増えず、失敗していた型解決が成功に変わる理由にならないので、失敗していたファイルは解析し直さない
- * （{@link LibraryDiff#anyAddedOrChanged}）。型のメンバーを持ち込む import（{@code import static org.lib.K.*}・
+ * パッケージが変わった jar のパッケージにあるブロックは、I 行に何かあれば解析し直す（Q54。{@link StaleTypes#touchesLibrary}）。
+ * 型のメンバーを持ち込む import（{@code import static org.lib.K.*}・
  * {@code import org.lib.Outer.*}）は I 行に {@code org.lib.K.*} と載るので、頭の部分が変わった jar のパッケージかでも当てる。
  * jar の無名パッケージのクラスは {@link LibraryFact#UNNAMED_PACKAGE} というパッケージとして扱い、点の無い型の名前が当たる。
+ *
+ * <h2>型解決に失敗していたファイル</h2>
+ * 型解決に失敗していたブロック（F 行のエラー数が 0 でない、または U 行に BINDING_FAILED がある）は、無い型・見えない型の
+ * 名前を依存に残せないので、何が変われば解けるかを I 行からは決められない。そこで、何かが変わった実行（変わったファイル・
+ * jar・できた／無くなったパッケージ・中身の分からないパッケージのどれかがある。{@link StaleTypes#isEmpty}）では、
+ * <b>名前を照合せず必ず解析し直す</b>（パス3 の最初）。連鎖させるか（解析し直した型を変わった型にするか）は、ほかの
+ * 解析し直したファイルと同じ決まり（宣言の指紋・jar に触れていた・sealed かアノテーション型）で決める。
+ * 何も変わっていない実行では解析し直さない（旧キャッシュをそのまま残す）。
+ * 費用は失敗しているファイルの数に比例する。コンパイルエラーが常態のプロジェクト（生成ソースを置かずに解析する・Lombok）では
+ * 毎回それらのファイルを解析し直すことになるので、warnings.txt の「コンパイルエラーがある」の項目で、ビルドしてから
+ * 解析するよう案内する。Doma のように生成物をソースが名指さないフレームワークでは、生成物が無くてもエラーにならない
+ * （{@code test/incremental} の Doma のケース）。
+ *
+ * <h2>型階層が変わったとき（全件解析に切り替える）</h2>
+ * 解析し直したファイル（パス2 の変わったファイル・パス4 の依存するファイル）の型階層（H 行の、名前で参照できる型の集合・
+ * 親型・親クラスの連鎖・継承した実装。{@link BlockWriter#hierarchyDigestOf}）が旧キャッシュのブロックと違えば、
+ * 依存で選ぶのをやめて、まだ有効なブロックのファイルをすべて解析し直す（{@link #analyzeAllIfHierarchyChanged}）。
+ * 型階層は選択（jche.graph.MethodSelection。どの本体が動くか）の材料で、階層の変化がどのファイルの事実に効くかを
+ * I 行と部分型の索引から漏れなく決められる保証は無い（親型の連鎖と型の頭の規則がそれを担っているが、入れ忘れは静かな
+ * 食い違いになる）。階層を変える編集（親の付け替え・インターフェースの抽出・入れ子の型の追加）は本体の編集より少ないので、
+ * その実行だけ全件になる費用を、安全網として受け入れる。無名クラス・ローカルクラス（{@code Main$1}）はほかのファイルから
+ * 名前で参照できないので階層に数えない（本体にラムダや無名クラスを足しただけで全件にならない）。新しいファイルには
+ * 比べる相手が無いので、足しただけでは切り替わらない（新しい型の決まりで届く）。型解決に失敗していたブロック・
+ * 失敗したファイルも比べない（エラーのあるファイルの型は JDT の回復で揺れる。同じ名前の型の組の 2 つ目は「型が重複している」
+ * エラーになり、組の相手の有無で H 行が変わる。それらは名前に依らず解析し直し、宣言の指紋で連鎖する）。
  *
  * <h2>解析に失敗したファイル（中身の分からないパッケージ）</h2>
  * 解析に失敗したファイル（JDT のスタックが溢れた・JDT が止まり、脇に置いて 1 つだけで解析し直しても止まった。
@@ -332,11 +352,17 @@ public final class CacheUpdater {
      */
     private final Map<String, String> hashes = new HashMap<>();
     /**
-     * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の 3 列目。有効なブロックのぶん）。
+     * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の 2 列目。有効なブロックのぶん）。
      * パス4で解析し直した結果と突き合わせて、宣言と定数の値が変わったかだけを見る（「宣言の連鎖」）。
      * ファイルごとに 16 文字のハッシュ1つなので、ヒープに載せても軽い
      */
     private final Map<String, String> oldDeclarations = new HashMap<>();
+    /**
+     * 相対パス -> 旧キャッシュの型階層の指紋（{@link BlockWriter#hierarchyDigestOf}。今のソースにあるファイルの
+     * ブロックすべて。有効でないものも、変わったファイルを解析した結果と比べるために持つ）。
+     * 解析し直した結果と違えば、差分更新をやめて残りを全件解析する（クラスの説明「型階層が変わったとき」）
+     */
+    private final Map<String, String> oldHierarchy = new HashMap<>();
     /**
      * 検査値が合わなかったブロックのうち、そのファイルを今回解析し直すものの数
      * （旧キャッシュと引き継ぎの一時ファイルの合計。ログに 1 回だけ出す）。
@@ -475,16 +501,13 @@ public final class CacheUpdater {
             for (SourceFile f : live.values()) {
                 stale.packageNow(StaleTypes.packageOfUnit(layout.unitNameOf(f.path())));
             }
-            Set<String> libraryAffected = new HashSet<>();   // 型解決に失敗していて、jar の追加で変わりうるファイル
-            OldCache old = oldCacheUsable
-                    ? scanOldCache(live, valid, stale, libraries.anyAddedOrChanged(), libraryAffected, deps)
-                    : null;
+            OldCache old = oldCacheUsable ? scanOldCache(live, valid, stale, deps) : null;
             if (old == null) {
                 // 途中で切れている・読めないキャッシュ。中途半端に再利用すると呼び出しが静かに欠けるので、
                 // 丸ごと捨てて全件解析し直す（ヘッダが違ったときと同じ扱い）
                 valid.clear();
-                libraryAffected.clear();
                 oldDeclarations.clear();
+                oldHierarchy.clear();
             } else {
                 // 同じ名前のファイルの組の片方が消えた（フォルダを外した場合も）。残ったほうのブロックには、組が同じ
                 // バッチにいたときの「型が重複している」エラーが残っているので、再利用せずに解析し直す（SameUnitFiles）
@@ -500,18 +523,15 @@ public final class CacheUpdater {
 
             // --- パス2 で解析するファイル ---
             List<SourceFile> changed = new ArrayList<>();
-            List<SourceFile> unresolvedBefore = new ArrayList<>();
             for (Map.Entry<String, SourceFile> en : live.entrySet()) {
-                if (libraryAffected.contains(en.getKey())) {
-                    unresolvedBefore.add(en.getValue());
-                } else if (!valid.contains(en.getKey())) {
+                if (!valid.contains(en.getKey())) {
                     changed.add(en.getValue());
                 }
             }
             // 同じクラスが 2 つのソースフォルダにあるとき、その組は必ず一緒に解析する（SameUnitFiles）
-            units.pullInto(changed, unresolvedBefore, valid, live);
+            units.pullInto(changed, new ArrayList<>(), valid, live);
 
-            if (canKeepAsIs(old, changed, unresolvedBefore, stale, head)) {
+            if (canKeepAsIs(old, changed, stale, head)) {
                 // 何も変わっていない。書き直しても同じバイト列になるので、旧キャッシュをそのまま残す
                 if (partialCache != null) {
                     salvageFrom(partialCache, changed, live, sources, libraries.current, null, stale, result);
@@ -532,7 +552,7 @@ public final class CacheUpdater {
                     writeLine(cacheOut, line);
                 }
                 BlockWriter writer = new BlockWriter(cacheOut, result, progress, this::hashOf, oldDeclarations,
-                        changedDuringRun, parsedThisRun,
+                        oldHierarchy, changedDuringRun, parsedThisRun,
                         f -> StaleTypes.packageOfUnit(layout.unitNameOf(f.path())));
 
                 // --- パス2: 変更・追加されたファイルを解析 ---
@@ -550,13 +570,13 @@ public final class CacheUpdater {
                     Log.info(Messages.format("analysis.cache.damagedBlocks", damagedBlocks));
                 }
                 analyzeInBatches(extractor, changed, writer);
-                writer.countAs = ReanalysisReason.BY_LIBRARY;
-                analyzeInBatches(extractor, unresolvedBefore, writer);
 
                 // --- パス3・パス4: 依存で無効になったファイルを解析し直す（宣言が変わると連鎖するので不動点まで） ---
                 writer.cascade = ReanalysisCascade.WHEN_DECLARATIONS_CHANGED;
                 if (old != null && !valid.isEmpty()) {
-                    reanalyzeDependents(extractor, writer, live, valid, stale, deps, old);
+                    if (!analyzeAllIfHierarchyChanged(extractor, writer, live, valid)) {
+                        reanalyzeDependents(extractor, writer, live, valid, stale, deps, old);
+                    }
 
                     // --- パス5: 最後まで有効だったブロックを書き写す ---
                     copyValidBlocks(old, valid, outChannel, cacheOut, result);
@@ -641,10 +661,9 @@ public final class CacheUpdater {
      * </ul>
      * 中断した前回の実行から引き継ぐものも無い（解析するファイルが無ければ引き継ぎもしない）。
      */
-    private boolean canKeepAsIs(OldCache old, List<SourceFile> changed, List<SourceFile> unresolvedBefore,
-                                StaleTypes stale, List<String> head) throws IOException {
-        if (old == null || !old.allKept || !old.writtenAsIs || !changed.isEmpty() || !unresolvedBefore.isEmpty()
-                || !stale.isEmpty()) {
+    private boolean canKeepAsIs(OldCache old, List<SourceFile> changed, StaleTypes stale, List<String> head)
+            throws IOException {
+        if (old == null || !old.allKept || !old.writtenAsIs || !changed.isEmpty() || !stale.isEmpty()) {
             return false;
         }
         StringBuilder sb = new StringBuilder();
@@ -728,6 +747,33 @@ public final class CacheUpdater {
             extractor.analyzeBatch(batch, writer);
             done += batch.size();
         }
+    }
+
+    /**
+     * 型階層が変わったら、差分更新をやめて残りをすべて解析し直す（クラスの説明「型階層が変わったとき」）。
+     * 解析し直したファイル（パス2・パス4）のどれかの型階層（H 行の型の集合・親型・親クラスの連鎖・継承した実装）が
+     * 旧キャッシュと違えば（{@link BlockWriter#hierarchyChanged}）、まだ有効なブロックのファイルをすべて
+     * ソースの一覧の順に解析し、有効なブロックを無くす（パス5 は何も書き写さない）。
+     *
+     * @return 全件解析に切り替えたか
+     */
+    private boolean analyzeAllIfHierarchyChanged(CallEdgeExtractor extractor, BlockWriter writer,
+                                                 Map<String, SourceFile> live, Set<String> valid) throws IOException {
+        String changedFile = writer.hierarchyChanged();
+        if (changedFile == null || valid.isEmpty()) {
+            return changedFile != null;
+        }
+        Log.info(Messages.format("analysis.cache.hierarchyChanged", changedFile, valid.size()));
+        List<SourceFile> rest = new ArrayList<>();
+        for (SourceFile f : live.values()) {
+            if (valid.contains(f.relativePath())) {
+                rest.add(f);
+            }
+        }
+        valid.clear();
+        writer.countAs = ReanalysisReason.BY_SOURCE;
+        analyzeInBatches(extractor, rest, writer);
+        return true;
     }
 
     /**
@@ -1352,7 +1398,7 @@ public final class CacheUpdater {
      * 見えるため、そのまま再利用すると呼び出しが静かに欠ける。印が無い・ブロック数が合わなければ
      * null を返して丸ごと捨てさせる。読めない（文字が壊れている）ときも同じ。
      *
-     * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 3 列目）もここで覚える
+     * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 2 列目）もここで覚える
      * （{@link #oldDeclarations}）。
      *
      * <p>旧キャッシュを行として読むのは実行ごとにこの 1 回だけにする。あとで要るものはここで取っておく。
@@ -1363,14 +1409,10 @@ public final class CacheUpdater {
      *   <li>パス5 が書き写すブロックの範囲と F 行の件数 … {@link OldCache} に持つ</li>
      * </ul>
      *
-     * @param librariesAddedOrChanged jar が追加・変更されたか。そのときは型解決に失敗していたブロック
-     *                                （F行のエラー数が 0 でない、または U 行に BINDING_FAILED がある）を
-     *                                有効から外し、libraryAffected に積む
-     * @param deps                    有効なブロックの依存を書く索引（依存の無いブロックは書かない）
+     * @param deps 有効なブロックの依存を書く索引（依存の無いブロックは書かない）
      * @return 旧キャッシュをそのまま使ってよければ、書き写す候補。途中で切れている・読めないなら null
      */
-    private OldCache scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale,
-                                  boolean librariesAddedOrChanged, Set<String> libraryAffected, DepsIndex deps) {
+    private OldCache scanOldCache(Map<String, SourceFile> live, Set<String> valid, StaleTypes stale, DepsIndex deps) {
         OldCache old = new OldCache();
         int damaged = 0;   // 丸ごと捨てるときは数えないので、読み終えるまで damagedBlocks に足さない
         int trailers = 0;
@@ -1389,7 +1431,7 @@ public final class CacheUpdater {
                     }
                     if (block != null) {
                         damaged += finishOldBlock(block, in.lineStart(), in.irregularities(), live, valid, stale,
-                                librariesAddedOrChanged, libraryAffected, old, deps);
+                                old, deps);
                         block = null;
                     }
                     if (rowType == CacheFormat.ROW_FILE) {
@@ -1417,8 +1459,7 @@ public final class CacheUpdater {
                     if (rowType == CacheFormat.ROW_DEPENDENCIES) {
                         String[] cols = in.columns();
                         block.deps = CacheFormat.columnAt(cols, 1);
-                        block.names = CacheFormat.columnAt(cols, 2);
-                        block.declarations = CacheFormat.columnAt(cols, 3);
+                        block.declarations = CacheFormat.columnAt(cols, 2);
                     }
                 }
                 in.addTo(block.checksum);
@@ -1427,13 +1468,13 @@ public final class CacheUpdater {
                 } else if (!block.bindingFailed && rowType == CacheFormat.ROW_UNRESOLVED
                         && UnresolvedCallFact.BINDING_FAILED.equals(
                                 UnresolvedCallFact.reasonColumn(in.columns()))) {
-                    // エラーとしては報告されなかったが呼び出し先が解決できなかった。jar の追加や新しい型で変わりうる
+                    // エラーとしては報告されなかったが呼び出し先が解決できなかった。何かが変われば解析し直す
                     block.bindingFailed = true;
                 }
             }
             if (block != null) {
                 damaged += finishOldBlock(block, in.nextLineStart(), in.irregularities(), live, valid, stale,
-                        librariesAddedOrChanged, libraryAffected, old, deps);
+                        old, deps);
             }
             old.writtenAsIs = (in.irregularities() == 0 && trailers == 1);
             // 読んでいるあいだに書き換えられていれば、読んだものを信用しない（丸ごと捨てて全件解析し直す）
@@ -1455,20 +1496,20 @@ public final class CacheUpdater {
      * パス1 で 1 ブロックを読み終えたときの判定。
      *
      * <ul>
-     *   <li>検査値が合い、サイズと内容ハッシュも一致する … 有効（jar が追加・変更されていて、
-     *       型解決に失敗していたブロックなら libraryAffected）。有効なら書き写す候補（{@code old}）に積み、
-     *       依存（I 行）を索引（{@code deps}）に書く</li>
+     *   <li>検査値が合い、サイズと内容ハッシュも一致する … 有効。書き写す候補（{@code old}）に積み、
+     *       依存（I 行）を索引（{@code deps}）に書く。型解決に失敗していたブロックもここに入る
+     *       （何かが変わった実行ではパス3 で必ず解析し直す。{@link #reanalyzeDependents}）</li>
      *   <li>それ以外 … 無効。宣言していた型（H 行）を「変わった型」に加える
      *       （改名・削除された型を参照していたファイルを解析し直すため）</li>
      * </ul>
+     * どちらでも、今のソースにあるファイルのブロックなら型階層の指紋を覚える（{@link #oldHierarchy}）。
      *
      * @param end              ブロックの終わり（次の F 行・Z 行の先頭）のファイル上の位置
      * @param irregularAtEnd   そのときの {@link CacheReader#irregularities}
      * @return 検査値が合わず、そのファイルを解析し直すブロックなら 1（ログの件数に数える）。それ以外は 0
      */
     private int finishOldBlock(OldBlock block, long end, long irregularAtEnd, Map<String, SourceFile> live,
-                               Set<String> valid, StaleTypes stale, boolean librariesAddedOrChanged,
-                               Set<String> libraryAffected, OldCache old, DepsIndex deps) {
+                               Set<String> valid, StaleTypes stale, OldCache old, DepsIndex deps) {
         boolean intact = block.checksum.hex().equals(block.expectedCrc);
         // 置き場所のフォルダのパッケージも前回のパッケージに数える（JDT はパッケージがあるかをフォルダで決める。
         // 型を宣言しないファイル・解析に失敗したファイルだけのパッケージも、できた・無くなったと分かる）。
@@ -1487,26 +1528,27 @@ public final class CacheUpdater {
                 declared.add(t);
             }
         }
+        if (block.inSources && intact && block.errors == 0 && !block.bindingFailed) {
+            // 変わったファイルも解析し直すファイルも、解析した結果の型階層をこれと比べる（BlockWriter#hierarchyChanged）。
+            // 壊れたブロックと型解決に失敗していたブロックの H 行は比べない（エラーのあるファイルの型は JDT の回復で揺れる。
+            // 同じ名前の型の組の 2 つ目など。失敗していたブロックは名前に依らず解析し直し、宣言の指紋で連鎖する）
+            oldHierarchy.put(live.get(block.rel).relativePath(), BlockWriter.hierarchyDigestOf(declared));
+        }
         if (intact && block.identical) {
             // 有効なブロックは今のソースにある（isValidBlock）。パスは今のソース一覧の文字列を使い回す
             String rel = live.get(block.rel).relativePath();
-            if (librariesAddedOrChanged && (block.errors > 0 || block.bindingFailed)) {
-                libraryAffected.add(rel);   // 宣言する型はパス2の解析時に「変わった型」へ入る
-                old.allKept = false;
-            } else {
-                valid.add(rel);
-                if (!block.declarations.isEmpty()) {
-                    oldDeclarations.put(rel, block.declarations);
-                }
-                for (TypeFact t : declared) {
-                    stale.packageNow(t.pkg());
-                }
-                old.add(rel, block.start, end, block.errors, block.syntaxErrors, block.unresolved,
-                        irregularAtEnd != block.irregularAtStart, block.errors > 0 || block.bindingFailed,
-                        block.names, declared.isEmpty() ? null : declared.get(0).pkg());
-                if (!block.deps.isEmpty()) {
-                    deps.add(old.size - 1, block.deps);
-                }
+            valid.add(rel);
+            if (!block.declarations.isEmpty()) {
+                oldDeclarations.put(rel, block.declarations);
+            }
+            for (TypeFact t : declared) {
+                stale.packageNow(t.pkg());
+            }
+            old.add(rel, block.start, end, block.errors, block.syntaxErrors, block.unresolved,
+                    irregularAtEnd != block.irregularAtStart, block.errors > 0 || block.bindingFailed,
+                    declared.isEmpty() ? null : declared.get(0).pkg());
+            if (!block.deps.isEmpty()) {
+                deps.add(old.size - 1, block.deps);
             }
             return 0;
         }
@@ -1572,20 +1614,12 @@ public final class CacheUpdater {
                 }
                 first = false;
             }
-            // 型解決に失敗していたブロックのうち、解決できなかった名前が変わった型（新しい型を含む）に当たるもの。
-            // 無い型・見えない型の名前は依存（I 行の型）に残らないので、依存では見つけられない（クラスの説明
-            // 「新しい型」、docs/cache-unification-qa.md の Q53）。連鎖で変わった型が増えるので、周回ごとに見直す。
-            // 中身の分からないパッケージ（解析に失敗したファイルの）の型になりうる名前も当たる（StaleTypes#namesUnderOpaque）
+            // 型解決に失敗していたブロックは、名前を照合せず必ず解析し直す（クラスの説明「型解決に失敗していたファイル」）。
+            // 無い型・見えない型の名前は依存（I 行の型）に残らないので、依存では見つけられない。ここに来るのは何かが
+            // 変わった実行だけ（isEmpty なら上で返している）。連鎖させるか（jarDriven）は I 行から決める（下の select）
             for (int i = old.unresolvedTypes.nextSetBit(0); i >= 0; i = old.unresolvedTypes.nextSetBit(i + 1)) {
-                String names = old.unresolvedNames[i];
-                boolean opaque = stale.namesUnderOpaque(names, old.packages[i]);
-                if (opaque || stale.namesUnderLibrary(names)) {
-                    // 連鎖させるかは、どの理由で選ばれたか（型とパッケージの衝突で先に選ばれた場合も）に依らない（Q89）
-                    writer.jarDriven.add(old.paths[i]);
-                }
-                if (valid.contains(old.paths[i]) && (opaque || stale.matchesChangedType(names))) {
-                    valid.remove(old.paths[i]);
-                    dependents.add(old.paths[i]);
+                if (valid.remove(old.paths[i])) {
+                    (stale.hasSourceChanges() ? dependents : libraryDependents).add(old.paths[i]);
                 }
             }
             DepsIndex.Consumer select = (index, depsCsv) -> {
@@ -1619,6 +1653,9 @@ public final class CacheUpdater {
             analyzeInBatches(extractor, filesOf(dependents, live), writer);
             writer.countAs = ReanalysisReason.BY_LIBRARY;
             analyzeInBatches(extractor, filesOf(libraryDependents, live), writer);
+            if (analyzeAllIfHierarchyChanged(extractor, writer, live, valid)) {
+                return;   // 解析し直したファイルの型階層が変わった。残りは全件解析した
+            }
         } while (stale.mark() != mark && !valid.isEmpty());
     }
 

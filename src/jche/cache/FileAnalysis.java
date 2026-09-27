@@ -42,8 +42,9 @@ public final class FileAnalysis {
     /**
      * エラー（{@link #errors}）の引数に現れた名前（{@code Foo}・{@code org.missing.Lib}・{@code q.Bar} のような
      * 点区切りの識別子。エラーの位置に書かれた名前の頭の部分なら、書かれた名前全体。
-     * {@code jche.analysis.CallEdgeExtractor#namesOf}）。I 行に書き、差分更新で新しい型ができたとき、その名前に
-     * 当たるブロックだけを解析し直すのに使う
+     * {@code jche.analysis.CallEdgeExtractor#namesOf}）。キャッシュには書かない。JDT が止まったあとに関わるファイルを
+     * 添えて解析し直すとき、jar のクラスが参照するソースの入れ子の型（{@code app.Outer$Inner}）のファイルを探すのに使う
+     * （{@code jche.analysis.CallEdgeExtractor#memberTypeFilesOf}）
      */
     public final Set<String> unresolvedNames = new TreeSet<>();
     /**
@@ -65,7 +66,7 @@ public final class FileAnalysis {
      * このファイルが宣言する型（親型・型引数とその上限・関数型も）と、その型が宣言するメソッド・フィールドの、
      * JDT のバインディングの鍵と修飾子など（継承したものは含めない。何を入れるかは
      * {@code jche.analysis.TypeContextTracker#recordDeclarations} が決める）。行にはせず、
-     * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の 3 列目）にする。
+     * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の 2 列目）にする。
      * 差分更新は、中身の変わっていないファイルを解析し直したとき、この指紋が前回と違えば宣言する型を
      * 「変わった型」にする（docs/cache-unification-qa.md の Q83）
      */
@@ -130,8 +131,8 @@ public final class FileAnalysis {
     }
 
     /**
-     * 型解決に失敗したか（エラーがある、または理由が BINDING_FAILED の U 行がある）。失敗したファイルは、I 行の
-     * 2 列目に解決できなかった名前を書く（docs/cache-unification-qa.md の Q42）
+     * 型解決に失敗したか（エラーがある、または理由が BINDING_FAILED の U 行がある）。失敗したブロックは、差分更新が
+     * 何かが変わった実行で必ず解析し直す（{@code jche.analysis.CacheUpdater} の「型解決に失敗していたファイル」）
      */
     public boolean resolutionFailed() {
         if (errors > 0) {
