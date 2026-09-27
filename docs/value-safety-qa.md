@@ -541,7 +541,7 @@ class RepoB implements Repo { … }
 却下した案: **受け手の具象型を使わない**。上書きされたメソッドへの invoke（対照 ReflRecv）で、宣言の本体に繋いで
 実際に動く部分型の実装を落とす。
 
-> **その後（形式 v43）**: 実行時のクラスから実装を引き直す探索（`CallGraph#implementationOfSignature`）そのものが、
+> **その後（形式 v43）**: 実行時のクラスから実装を引き直す探索（`MethodSelection#implementationOfSignature`）そのものが、
 > 親型を名前順の幅優先で辿り、親クラスの private も拾っていた。`class Impl extends PBase implements Api2`（`PBase` の
 > `private void m()`、`Api` の `default void m()`）で `Impl.class.getMethod("m").invoke(new Impl())` を `PBase.m` に
 > 決め、それが private なので上の決まりで選び直さずに確定していた（動くのは `Api.m`）。今は探索が親クラスの連鎖を先に、

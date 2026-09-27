@@ -17,7 +17,7 @@
 
 - **#154**: メソッド宣言が上書きしている宣言のキーを **O 行**（`jche.cache.OverrideFact`）として残し、
   読み手（`jche.graph.OverrideIndex`）が逆引きを作る。候補引きは
-  `CallGraph.implementationOf(型FQN, 呼び出し先ID)` に一本化し、
+  `MethodSelection.implementationOf(型FQN, 呼び出し先ID)` に一本化し、
   「継承」と「型引数の置換」の 2 つの軸を同じ探索の中で見る
 - **#155**: 明示的コンストラクタ呼び出しで始まらないコンストラクタから、親クラスのコンストラクタへ
   辺を合成する。合成した暗黙のデフォルトコンストラクタからも張る
@@ -144,7 +144,7 @@ class OrderStore extends AbstractStore<Order> { public void put(Order item) { ke
 先にキーの照合で親へ辿ると **`AbstractStore.put` に当たってしまい**、
 「`OrderStore` は上書きしていない」と結論してしまう。
 
-`CallGraph.implementationOf` は探索の**各段（型）で両方の軸を見る**。
+`MethodSelection.implementationOf` は探索の**各段（型）で両方の軸を見る**。
 探す順は、親クラスの連鎖を根まで先に、次に親インターフェースの最も特定的な宣言である（Q26・Q27。
 以前は親型を名前順の幅優先で混ぜて辿り、最初に見つかった実装を採っていたが、それは JVM の選び方と違った）。
 同じ段では上書きを先に見る。キーが同じ上書きは O 行に書かないので、
@@ -419,7 +419,7 @@ java.lang.Thread#start() -> c* : run()
 リフレクション（`Method.invoke` の実引数から名前と引数型を組み立てる）も同じである。
 
 そこで `OverrideIndex` にシグネチャ引きの索引を足し、
-`CallGraph#implementationOfSignature` から使うことにした。
+`MethodSelection#implementationOfSignature` から使うことにした。
 
 ## Q23. シグネチャで引くと、別のジェネリック型の上書きに当たらないか
 
@@ -480,7 +480,7 @@ v42 の穴探し（`docs/cache-unification-qa.md` の「v42 の穴探し（形�
 
 ## Q26. 親インターフェースの default や JDK のインターフェースの宣言が、親クラスの実装より先に選ばれていた
 
-直した。`CallGraph#search`（`implementationOf` / `implementationOfSignature` の中身）は、具象型から親型を
+直した。`MethodSelection#search`（`implementationOf` / `implementationOfSignature` の中身）は、具象型から親型を
 **名前順の幅優先**で混ぜて辿り、最初に見つかった本体を採っていた。
 
 ```java
@@ -737,12 +737,12 @@ static void use(Fac f) { f.create().find(); }   // use(new Impl())。実行さ�
 
 出力は `Fac.create,RESOLVED:NO_OVERRIDE` と `DaoA.find,RESOLVED:DATAFLOW_FACTORY` だけで、実際に動く `DaoB.find` が
 消えていた。jar のクラスのメソッドは、ソースのどこかがそれを呼び出し先にしていない限りメソッドの表に無い。実装の探索
-（`CallGraph#search`）は親クラスの連鎖の `lib.Holder` で何も見つけられずに通り過ぎ、`Fac` の default に行く。
+（`MethodSelection#search`）は親クラスの連鎖の `lib.Holder` で何も見つけられずに通り過ぎ、`Fac` の default に行く。
 `hasOverriders(Fac.create)` は「部分型 Impl から引いても Fac.create」なので false を返し、default の return の値
 （`new DaoA()`）がそのまま `f.create()` の値になった。
 
 **今の決まり: 部分型から見つけた実装までの親クラスの連鎖に、H 行の無いクラス（jar・JDK のクラス）が挟まれば、
-その実装を「その型で動く本体」として戻り値に使わない**（`CallGraph#passesBinaryClass`）。
+その実装を「その型で動く本体」として戻り値に使わない**（`MethodSelection#passesBinaryClass`）。
 
 - `hasOverriders` は、部分型ごとに「実装が別」か「間に jar のクラスが挟まる」なら「振り分けられうる」とする
 - メソッド参照の束縛したレシーバの具象型から引いた実装（`DataflowResolver#bodyOf`）も、間に jar のクラスが挟まれば
@@ -793,7 +793,7 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
 見たときにだけ**成り立つ（JLS 8.4.8.1。`class Other extends BaseRepo implements Repo<Order>` では成り立たない）。
 
 **今の決まり: H 行の 8 列目に、その型から見た「継承した実装」を `実装される側のキー>実装する側のキー` で書く**
-（`;` 区切り、名前順。`BindingNames#inheritedImplementationsOf`）。
+（`;` 区切り、名前順。`OverrideFacts#inheritedImplementationsOf`）。
 
 - 書き手: クラスの親インターフェース（親クラスが実装するものも含む。型引数を置き換えたもの）のメソッド
   （private・static を除く）ごとに、その型自身が subsignature を宣言していなければ、親クラスを近い順に見て最初に
@@ -803,7 +803,7 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
   （`GenBase<String>` の `save(String)`）だと置き換える前の宣言（`save(T)`）に戻して比べるので false になる
   （`SRepo.save(String)` から見た逆向きは true）。引数の型が置き換えたあとでそろう（同じシグネチャ）ことを
   `ITypeBinding#isEqualTo` で先に見て、そろわなければ JDT の判定に任せる。型引数を持つメソッドは JDT の判定だけ
-- 読み手: `CallGraph#search` は親クラスの連鎖の各段で、宣言（キー・O 行）を見たあと、その型の H 行の継承した実装を
+- 読み手: `MethodSelection#search` は親クラスの連鎖の各段で、宣言（キー・O 行）を見たあと、その型の H 行の継承した実装を
   見る（呼び出し先のキーで。シグネチャで引く入口では実装される側のシグネチャで）。書き手が「その型から近い順の最初」を
   選んでいるので、連鎖の順と食い違わない
 - 型ごとの事実なので、同じ親クラスを継承した別の型（`IiOther extends IiMaker implements IiFac<Integer>`）には効かない

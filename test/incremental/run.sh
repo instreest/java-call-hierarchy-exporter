@@ -1985,7 +1985,7 @@ case_of "別のファイルの子クラスが private でないフィールド�
 other_writer_outcome di "書き手のファイルを消した"
 
 # --- 親クラスの連鎖（H 行の 7 列目）を変える --------------------------------------
-# 実装は親クラスの連鎖を根まで見てから親インターフェースを見て探す（JLS 8.4.8・JVMS 5.4.6。CallGraph#implementationOf）。
+# 実装は親クラスの連鎖を根まで見てから親インターフェースを見て探す（JLS 8.4.8・JVMS 5.4.6。MethodSelection#implementationOf）。
 # 連鎖は H 行が「ソース上の型に当たるまで」だけ持ち、その先はその型自身の H 行から続けるので、中間のクラス（Mid）が
 # 親をやめても、変わらない子（Impl）の H 行は書き直さなくてよい。差分更新と全件解析で同じ実装に行くことを見る
 setup_class_chain() {
@@ -2053,7 +2053,7 @@ class_chain_outcome Base.m "中間のクラスが親を持った"
 
 # --- 継承した実装（H 行の 8 列目）を変える ------------------------------------------
 # class UserRepo extends Mid implements Repo<User> で、親クラスから継承した save(User) が Repo<User>.save(T) を
-# 実装する関係は UserRepo の H 行が持つ（BindingNames#inheritedImplementationsOf）。UserRepo.java が変わらなくても、
+# 実装する関係は UserRepo の H 行が持つ（OverrideFacts#inheritedImplementationsOf）。UserRepo.java が変わらなくても、
 # 親の親（Base）や親インターフェースの親（Saver）だけを書き換えれば関係が変わる。変わった型の部分型が変わった型に
 # なる決まりで UserRepo.java を解析し直し、差分更新と全件解析で同じ実装に行くことを見る
 setup_inherited_impl() {

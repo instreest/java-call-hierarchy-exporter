@@ -207,7 +207,7 @@ private void dispatch(Handler<String> h) { h.handle("x"); }
 同じ鍵の M 行が別のラムダから出ている場合だけである。
 
 直し方は書き手の側で、SAM が上書きしている親の宣言すべての鍵でも M 行を書く
-（当初は `BindingNames.overriddenKeysOf(sam, true)`。Q15 で `BindingNames.functionalKeysOf` に置き換えた）。
+（当初は `OverrideFacts.overriddenKeysOf(sam, true)`。Q15 で `OverrideFacts.functionalKeysOf` に置き換えた）。
 O 行と違ってシグネチャが同じ再宣言
 （`interface MyRunnable extends Runnable { void run(); }`）も含める。読み手は型を辿らず鍵の
 完全一致で引く作りのままなので、親の鍵が無ければ当たらないためである。
@@ -306,7 +306,7 @@ JDT の `getFunctionalInterfaceMethod` はこのうち 1 つ（ここでは `Clo
 `Opener#act()` の鍵は出てこない。その結果 `o.act()` は `PlainOpener.act` に `RESOLVED:SINGLE_IMPL` で
 **誤って確定**していた（実際に動くのはラムダ）。
 
-直し方は Q11 と同じく書き手の側で、`BindingNames.functionalKeysOf(ラムダの型, SAM)` が
+直し方は Q11 と同じく書き手の側で、`OverrideFacts.functionalKeysOf(ラムダの型, SAM)` が
 ラムダの型とその親インターフェース（型引数を具体化したまま）を辿り、SAM と上書き同等な抽象メソッド
 すべての鍵を返す。判定は `IMethodBinding.isSubsignature`（JLS 8.4.2）に任せる。Q11 の
 再宣言（`StringHandler extends Handler<String>`）もこの判定に含まれるので、`overriddenKeysOf` の

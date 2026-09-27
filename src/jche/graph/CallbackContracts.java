@@ -263,7 +263,7 @@ public final class CallbackContracts {
         // 上書きの引きもシグネチャで行う。キーの照合だけで引くと、型引数を具体化した実装
         // （class OrderPrinter implements Consumer<Order> の accept(Order)）が
         // 消去済みの契約（accept(java.lang.Object)）と一致せず、辺が静かに落ちる
-        int id = (fqn == null) ? -1 : graph.implementationOfSignature(fqn, callbackSig);
+        int id = (fqn == null) ? -1 : graph.selection().implementationOfSignature(fqn, callbackSig);
         return (id < 0) ? new int[0] : new int[] {id};
     }
 

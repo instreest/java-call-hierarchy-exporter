@@ -35,7 +35,7 @@ public final class OverrideIndex {
      * 上書きされた側の<b>シグネチャ</b>（{@code name(paramSig)}） -> 上書きしている側のメソッドID。
      *
      * 呼び戻しの契約表とリフレクションは、宣言している型を知らないままシグネチャだけで
-     * 実装を引く（{@link CallGraph#implementationOfSignature} 参照）。そちらのための索引
+     * 実装を引く（{@link MethodSelection#implementationOfSignature} 参照）。そちらのための索引
      */
     private final Map<String, IntArray> bySignature = new HashMap<>();
 
@@ -55,7 +55,7 @@ public final class OverrideIndex {
      * そのキーの宣言を上書きしているメソッドの一覧。無ければ null。
      *
      * 並びは O行の出現順（＝キャッシュ上の並び）だが、呼び出し側は
-     * {@link CallGraph#implementationOf} で型を辿って1件に決めるので、
+     * {@link MethodSelection#implementationOf} で型を辿って1件に決めるので、
      * 差分更新でブロックが動いても結果は変わらない。
      */
     public IntArray overridersOf(String overriddenKey) {

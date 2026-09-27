@@ -300,12 +300,12 @@ R 行はメソッドの**本体**が返す値で、呼び出し箇所に書い�
 stage B で R 行の文字列リテラルをそのまま読むようになって（Q9）、当たる形が増えた。
 
 そこで、R 行（と、それを畳んだ `DataflowFacts` の `factoryKind`）を呼び出しの戻り値として使うのは、
-呼び出しがその宣言の本体でしか動かないときに限る（`CallGraph#hasOverriders` が false）。
+呼び出しがその宣言の本体でしか動かないときに限る（`MethodSelection#hasOverriders` が false）。
 
 - static・private・final のメソッド、コンストラクタ、static 初期化子、ラムダの本体は静的に束縛される。
   static と private は、部分型が同じシグネチャを宣言しても隠蔽か別のメソッドで上書きではない（JLS 8.4.8）ので、
   部分型を調べる前に決める（`OvrStatic`・`OvrPriv` が対照）
-- それ以外は、宣言した型のソース上の部分型それぞれで実際に動く実装を `CallGraph#implementationOf` で引き、
+- それ以外は、宣言した型のソース上の部分型それぞれで実際に動く実装を `MethodSelection#implementationOf` で引き、
   どれもその宣言のままなら使う（部分型が継承しているだけ＝`OvrInh`、final＝`OvrFinal`、final クラス）。
   CHA と同じ引き方なので、匿名クラス・列挙定数の本体・インターフェースの default メソッドの上書き・
   型引数を具体化した上書きも拾い、別パッケージの同じシグネチャ（パッケージアクセスは上書きしない）は拾わない
@@ -318,7 +318,7 @@ stage B で R 行の文字列リテラルをそのまま読むようになって
 `@Bean` メソッド（`SpringBeans`）だけは向きが逆になる。コンテナは設定クラスのインスタンスで `@Bean` メソッドを
 呼ぶので、部分型の設定クラスが上書きしていれば（`@Bean` を付け直していなくても）登録されるのは上書きした本体が
 返す型になる。Bean の登録を「分からない」にして減らすと、段 5 がもう一方の Bean へ誤って絞る。
-そこで宣言の本体が返す型に加えて、上書きした本体（`CallGraph#overridingImplementations`）が返す型も
+そこで宣言の本体が返す型に加えて、上書きした本体（`MethodSelection#overridingImplementations`）が返す型も
 同じ名前で登録する（Bean を多く数える側は絞り込みを減らすだけ。`test/pruning` の `SbOver`、対照は `SbKeep`）。
 
 却下した案:
@@ -439,7 +439,7 @@ stage B で R 行の文字列リテラルをそのまま読むようになって
 R 行の文字列リテラルをそのまま読むようになって（Q9）、「呼び出し先の宣言の本体が返す値」を「その呼び出しの
 戻り値」として使っていた穴に当たる形が増えた。部分型が上書きしていれば、実際に動くのは上書きした本体かもしれない。
 戻り値の値（R 行と、それを畳んだファクトリの事実）を使うのは、呼び出しがその宣言の本体でしか動かないとき
-（`CallGraph#hasOverriders` が false）に限った。判定は CHA と同じ `implementationOf` で部分型ごとに引き、
+（`MethodSelection#hasOverriders` が false）に限った。判定は CHA と同じ `implementationOf` で部分型ごとに引き、
 `@Bean` メソッドだけは上書きした本体が返す型も登録する。詳しくは Q10。
 
 ### Q16. 切り替えが振る舞いを変えないことを、どう確かめたか。その検査をなぜ消したのか
@@ -1218,7 +1218,7 @@ I 行は 1 ブロックあたり 17 文字ほど長くなる。
 > 広げ（Q77）で届くので、`functionalKeysOf` が辿った型を数えるのはやめた。
 
 `Door d = () -> …;` の M 行（ラムダが実装するメソッドの鍵）は、目標の型 Door とその親を辿り、SAM と上書き同等な
-抽象メソッドを集めて作る（`BindingNames.functionalKeysOf`）。名前にしていたのはメソッドを宣言した型（Opener）だけで、
+抽象メソッドを集めて作る（`OverrideFacts.functionalKeysOf`）。名前にしていたのはメソッドを宣言した型（Opener）だけで、
 何も宣言していない Door は I 行に載らなかった。Door を `extends Opener, Closer` に変えると、全件解析では M 行に
 `Closer#act()` が増え、`Closer` で受けた呼び出しがラムダに繋がるのに、差分更新ではラムダを使うファイルが再利用され、
 `Closer.act` は「実装が無い」のままだった。
@@ -3984,10 +3984,10 @@ JDK は同じ jar の目次をプロセスの中で共有し、共有の鍵は�
 
 ### Q127. 読み手の実装の探し方（レーン R）は、どこに書いたか
 
-指摘 60・65・66・67・69。読み手の実装の探し方（`CallGraph#search`。`implementationOf` / `implementationOfSignature` の中身）を JVM の選び方
+指摘 60・65・66・67・69。読み手の実装の探し方（`MethodSelection#search`。`implementationOf` / `implementationOfSignature` の中身）を JVM の選び方
 （JVMS 5.4.6）に合わせた: 親クラスの連鎖を根まで先に見て、無ければ連鎖の型が実装するインターフェースの宣言から最も特定的な本体を採り、
 親型の private・インターフェースの static は採らない。外部 jar からの被参照（`ExternalUsageScanner#inheritedFrom`）もそろえた。レビューで、
-親クラスが jar のクラスだと default の戻り値で呼び出しを絞っていた形（`CallGraph#passesBinaryClass`）と、親クラスから継承したメソッドが型引数を
+親クラスが jar のクラスだと default の戻り値で呼び出しを絞っていた形（`MethodSelection#passesBinaryClass`）と、親クラスから継承したメソッドが型引数を
 置き換えたインターフェースのメソッドを実装する形（`class UserRepo extends BaseRepo implements Repo<User>`）を直した。JLS への適合の話なので、
 [jls-conformance-qa.md](jls-conformance-qa.md) の「実装の探し方を JVM の選び方に合わせる（形式 v43）」に書いた（探す順は Q26〜Q28、H 行の
 7 列目は Q29、外部 jar からの被参照は Q30、形式の版は Q31、レビューで直した jar のクラスが挟まる戻り値・継承した実装・close() の差分更新は

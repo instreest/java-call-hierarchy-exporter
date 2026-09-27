@@ -30,7 +30,7 @@ import jche.util.Messages;
  * ここでは全メソッドをID順に確定させ、結果の配列だけを {@link DataflowFacts} として渡す。
  *
  * 畳んだ結果はそのメソッドの本体が返す値で、呼び出し箇所で使ってよいのは、呼び出しがその本体でしか
- * 動かないとき（{@link CallGraph#hasOverriders} が false）だけ。委譲先を部分型が上書きしていれば畳まない。
+ * 動かないとき（{@link jche.graph.MethodSelection#hasOverriders} が false）だけ。委譲先を部分型が上書きしていれば畳まない。
  *
  * 循環と、再帰の安全策としての段数の上限（{@link #HARD_CAP}。設定では変えられない）に当たった結果は
  * 起点によって変わりうるのでメモに載せず、再利用するときも使った段数を現在の深さに足して
@@ -236,9 +236,9 @@ public final class DataflowBuilder {
         // 別のファクトリへの委譲。委譲先の値を、この return が書いている
         // 実引数で解決する（return create("jp.co.X"); のような形を畳むため）。
         // 委譲先を部分型が上書きしていれば、実際に動く本体は委譲先の宣言とは限らないので畳まない
-        // （CallGraph#hasOverriders。宣言の return で決めると、上書きした本体が返す型を落とす）
+        // （MethodSelection#hasOverriders。宣言の return で決めると、上書きした本体が返す型を落とす）
         int delegate = values.methodId(ref);
-        if (delegate < 0 || graph.hasOverriders(delegate)) {
+        if (delegate < 0 || graph.selection().hasOverriders(delegate)) {
             return Folded.UNDECIDED;
         }
         Folded inner = fold(delegate, depth + 1);
@@ -300,7 +300,7 @@ public final class DataflowBuilder {
         if (kind == Origin.RETURN) {
             // 部分型が上書きしているメソッドは、実際に動く本体が宣言とは限らないので使わない（reduce と同じ）
             int factory = values.methodId(ref);
-            if (factory < 0 || graph.hasOverriders(factory)) {
+            if (factory < 0 || graph.selection().hasOverriders(factory)) {
                 return -1;
             }
             // 実引数のファクトリは「その戻り値」という独立した事実なので、深さ0から畳む。

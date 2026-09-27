@@ -51,14 +51,17 @@ final class TypeContextTracker {
 
     private final FileAnalysis out;
     private final BindingNames names;
+    /** 上書き・実装の関係の事実（H 行の 8 列目の継承した実装） */
+    private final OverrideFacts overrideFacts;
     /** 合成した辺（暗黙の {@code super()}）を記録する係 */
     private final CallSiteRecorder calls;
     /** 現在囲まれている型ごとの状態（{@link TypeContext} 参照） */
     private final ArrayDeque<TypeContext> typeContextStack = new ArrayDeque<>();
 
-    TypeContextTracker(FileAnalysis out, BindingNames names, CallSiteRecorder calls) {
+    TypeContextTracker(FileAnalysis out, BindingNames names, OverrideFacts overrideFacts, CallSiteRecorder calls) {
         this.out = out;
         this.names = names;
+        this.overrideFacts = overrideFacts;
         this.calls = calls;
     }
 
@@ -124,7 +127,7 @@ final class TypeContextTracker {
         }
         ITypeBinding declared = tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb;
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
-                names.annotationsOf(erased), superclasses, names.inheritedImplementationsOf(declared)));
+                names.annotationsOf(erased), superclasses, overrideFacts.inheritedImplementationsOf(declared)));
         recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
         names.noteInheritedSignatures(tb);
     }
