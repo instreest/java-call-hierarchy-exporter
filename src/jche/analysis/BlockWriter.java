@@ -62,6 +62,19 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
     private final Function<SourceFile, String> hasher;
     /** 相対パス -> 旧キャッシュの自分の宣言の指紋（{@link ReanalysisCascade#WHEN_DECLARATIONS_CHANGED} の判定用） */
     private final Map<String, String> oldDeclarations;
+    /**
+     * 相対パス -> 旧キャッシュの型階層の指紋（{@link #hierarchyDigestOf}。今のソースにあるファイルの、型解決に失敗して
+     * いなかったブロックすべて。有効でないブロックも）。解析し直した結果と違えば、差分更新をやめて残りを全件解析する
+     * （{@link #hierarchyChanged}）
+     */
+    private final Map<String, String> oldHierarchy;
+    /**
+     * 解析したファイルの型階層（H 行の型の集合・親型・親クラスの連鎖・継承した実装）が旧キャッシュと違った、最初の
+     * ファイル。null なら違っていない。型階層が変われば、選択（jche.graph.MethodSelection）の材料が変わり、
+     * どのファイルの事実が影響を受けるかを I 行と部分型の索引から漏れなく決められる保証が無いので、
+     * 差分更新をやめて残りのファイルをすべて解析し直す（docs/cache-unification-qa.md の Q131）
+     */
+    private String hierarchyChanged;
     /** 解析のあいだに中身が変わったファイル（{@link CacheUpdater#changedDuringRun}）を積む先 */
     private final Set<String> changedDuringRun;
     /** この実行で解析したファイル（{@link CacheUpdater#parsedThisRun}）を積む先 */
@@ -79,7 +92,7 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
     /** 解析した理由。集計の内訳にだけ使う（UNTOUCHED は「自分が変わった・新規」。連鎖の判定には使わない） */
     ReanalysisReason countAs = ReanalysisReason.UNTOUCHED;
     /**
-     * 旧キャッシュの I 行か解決できなかった名前が、変わった jar のパッケージか中身の分からないパッケージ
+     * 旧キャッシュの I 行が、変わった jar のパッケージか中身の分からないパッケージ
      * （{@link StaleTypes#addOpaque}。解析に失敗したファイルの）に触れていたファイル（相対パス）。
      * どの理由で選ばれたか（{@link #countAs}）に依らず、解析し直したら宣言する型を「変わった型」に加える（Q84）。
      * 理由で決めると、同じファイルがソースの変化にも触れていたときに連鎖を落とす（Q89）
@@ -89,13 +102,14 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
 
     BlockWriter(BufferedWriter cacheOut, CachePhaseResult result, Progress progress,
                 Function<SourceFile, String> hasher, Map<String, String> oldDeclarations,
-                Set<String> changedDuringRun, Set<String> parsedThisRun,
+                Map<String, String> oldHierarchy, Set<String> changedDuringRun, Set<String> parsedThisRun,
                 Function<SourceFile, String> packageOfFile) {
         this.cacheOut = cacheOut;
         this.result = result;
         this.progress = progress;
         this.hasher = hasher;
         this.oldDeclarations = oldDeclarations;
+        this.oldHierarchy = oldHierarchy;
         this.changedDuringRun = changedDuringRun;
         this.parsedThisRun = parsedThisRun;
         this.packageOfFile = packageOfFile;
@@ -104,6 +118,42 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
     /** 書いた印のブロックの数 */
     long failedBlocks() {
         return failedBlocks;
+    }
+
+    /**
+     * 解析したファイルの型階層が旧キャッシュと違ったか（違った最初のファイルの相対パス。違っていなければ null）。
+     * 立ったら、{@link CacheUpdater} は依存で選ぶのをやめて、残りの有効なブロックのファイルをすべて解析し直す
+     */
+    String hierarchyChanged() {
+        return hierarchyChanged;
+    }
+
+    /**
+     * 型階層の指紋。ブロックの H 行のうち、ほかのファイルから名前で参照できる型（無名・ローカルの型
+     * {@code Main$1}・{@code Main$1Local} を除く）の、型・種別・親型・パッケージ・親クラスの連鎖・継承した実装を
+     * 並べたハッシュ。アノテーションは入れない（階層ではない）。型が 1 つも無ければ空文字。
+     * 旧キャッシュの H 行からも同じ関数で求める（{@link CacheUpdater#finishOldBlock}）
+     */
+    static String hierarchyDigestOf(List<TypeFact> types) {
+        List<String> lines = new ArrayList<>(types.size());
+        for (TypeFact t : types) {
+            if (isLocalOrAnonymous(t.typeFqn())) {
+                continue;
+            }
+            lines.add(new TypeFact(t.typeFqn(), t.kind(), t.superTypes(), t.pkg(), "", t.superclasses(),
+                    t.inheritedImpls()).toRow());
+        }
+        return digestOf(lines);
+    }
+
+    /** 無名クラス・ローカルクラスの名前か（{@code $} の直後が数字。JDT の 2 進の名前の決まり） */
+    private static boolean isLocalOrAnonymous(String typeFqn) {
+        for (int i = typeFqn.indexOf('$'); i >= 0; i = typeFqn.indexOf('$', i + 1)) {
+            if (i + 1 < typeFqn.length() && Character.isDigit(typeFqn.charAt(i + 1))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -142,6 +192,13 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
             for (TypeFact t : fa.types) {
                 stale.register(t);
                 stale.packageNow(t.pkg());
+            }
+            // 型階層が旧キャッシュと違えば、差分更新をやめる印（旧キャッシュに無いファイル＝新しいファイルと、型解決に
+            // 失敗していた・しているファイルは比べない。CacheUpdater の「型階層が変わったとき」）
+            String before = oldHierarchy.get(file.relativePath());
+            if (hierarchyChanged == null && before != null && !fa.resolutionFailed()
+                    && !before.equals(hierarchyDigestOf(fa.types))) {
+                hierarchyChanged = file.relativePath();
             }
         }
         if (stale != null && shouldCascade(file, fa)) {
@@ -205,7 +262,7 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
         parsedThisRun.add(rel);
         if (!rel.equals(lastWritten)) {
             // F 行と空の I 行（F 行の直後は必ず I 行。CacheFormat）。検査値は writeBlock と同じ求め方
-            String deps = CacheFormat.joinRow("I", "", "", "");
+            String deps = CacheFormat.joinRow("I", "", "");
             BlockChecksum checksum = new BlockChecksum();
             checksum.addWithoutLastColumn(CacheFormat.fileRow(rel, file.size(), 0, "", 0, 0, ""));
             checksum.add(deps);
@@ -298,9 +355,8 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
 
         List<String> body = new ArrayList<>();
         // I行はF行の直後に置く（差分更新で、ブロックを読み進める前に依存を判定するため）。
-        // 依存・解決できなかった名前・自分の宣言の指紋の 3 列
-        body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa)), unresolvedNamesOf(fa),
-                declarationsDigestOf(fa)));
+        // 依存・自分の宣言の指紋の 2 列
+        body.add(CacheFormat.joinRow("I", String.join(",", dependenciesOf(fa)), declarationsDigestOf(fa)));
         body.addAll(symbols.rows());
         // 値グラフ（N行）は番号順。参照する行（G・R・C/U・J 行）より前にあれば、読み手は 1 回で取り込める
         for (ValueNode n : fa.valueNodes) {
@@ -409,7 +465,7 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
     }
 
     /**
-     * 自分の宣言の指紋（I 行の 3 列目）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
+     * 自分の宣言の指紋（I 行の 2 列目）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
      * 定数の値（K 行の指紋）を並べてハッシュにしたもの。どちらも無ければ空文字。
      *
      * 旧キャッシュの同じ列（{@link #oldDeclarations}）と突き合わせて、「宣言か定数の値が変わったか」だけを見る
@@ -435,18 +491,6 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
             sb.append(f).append('\n');
         }
         return FileHash.ofText(sb.toString());
-    }
-
-    /**
-     * I 行の 2 列目。型解決に失敗したブロック（エラーがある、または理由が BINDING_FAILED の U 行がある）なら、
-     * エラーの引数に現れた名前のカンマ区切り（{@link FileAnalysis#unresolvedNames}）。名前を 1 つも拾えなければ
-     * {@link CacheFormat#ANY_NAME}（どの新しい型でも解析し直す）。失敗していないブロックは空文字
-     */
-    private static String unresolvedNamesOf(FileAnalysis fa) {
-        if (!fa.resolutionFailed()) {
-            return "";
-        }
-        return fa.unresolvedNames.isEmpty() ? CacheFormat.ANY_NAME : String.join(",", fa.unresolvedNames);
     }
 
     /**

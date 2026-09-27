@@ -32,14 +32,15 @@ final class OldBlock {
     final BlockChecksum checksum = new BlockChecksum();
     /** H 行（ファイルに書かれたまま）。部分型の索引に足し、無効なブロックなら「変わった型」に加える */
     final List<String> typeRows = new ArrayList<>();
-    /** 理由が BINDING_FAILED の U 行があったか（jar の追加・変更と、新しい型で解析し直すかを見る） */
+    /**
+     * 理由が BINDING_FAILED の U 行があったか。エラー数が 0 でなくても同じで、型解決に失敗していたブロックは、
+     * 何かが変わった実行では必ず解析し直す（{@link CacheUpdater#reanalyzeDependents}）
+     */
     boolean bindingFailed;
     /** F 行の直後の行をまだ読んでいないか */
     boolean firstRow = true;
     /** I 行（F 行の直後）の依存。I 行が無ければ空 */
     String deps = "";
-    /** I 行の解決できなかった名前（新しい型で解析し直すか）。I 行が無ければ空（何にでも当たる） */
-    String names = "";
     /** I 行の自分の宣言の指紋（宣言の連鎖。{@link CacheUpdater#oldDeclarations}）。I 行が無ければ空 */
     String declarations = "";
 

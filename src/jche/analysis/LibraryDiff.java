@@ -133,17 +133,6 @@ final class LibraryDiff {
         return added + changed + removed + reordered > 0;
     }
 
-    /**
-     * jar が増えた、または中身が変わった（型解決に失敗していた箇所が解決できるようになりうる）。
-     *
-     * <p>並び替えは入れない。jar の集合が同じなら「解決できる型の集合」も同じで、
-     * 前回失敗した型解決が成功するようになる理由にはならないため（変わるのは、
-     * 複数の jar にある同名クラスのうちどれが勝つかだけ）。
-     */
-    boolean anyAddedOrChanged() {
-        return added + changed > 0;
-    }
-
     @Override
     public String toString() {
         return Messages.format("analysis.libraryDiff", added, changed, removed, reordered,

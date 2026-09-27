@@ -230,6 +230,15 @@ blocks_sorted() {   # $1=キャッシュ  $2=外す行種別（grep -E の文字
 }
 normalized() { blocks_sorted "$1" ""; }
 
+# F 行のエラー数（と、それを含む検査値）を伏せたもの。依存 jar に無いクラスで JDT が打ち切る題材では、見つからない
+# クラスのエラーが 1 回の JDT の呼び出しで最初に出会ったファイルにだけ付くので、エラー数はバッチの組み方で移る
+# （docs/cache-unification-qa.md の Q129 の (b)）。型解決に失敗していたブロックは差分更新で必ず解析し直す（Q131）ので、
+# 全件解析と別の組で解析したそれらのブロックのエラー数は一致しない。事実（ほかの行）は一致しなければならない
+normalized_noerr() {
+    awk -F'\t' -v OFS='\t' 'substr($0, 1, 1) == "F" { $4 = "?"; $8 = "?" } { print }' "$1" > "$1.noerr"
+    blocks_sorted "$1.noerr" ""
+}
+
 # F 行（サイズ・エラー数・内容ハッシュ・検査値）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
 # どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
 # 「事実が変わったか」を見るときはこちらで比べる（ブロックの区切りと並べ替えには F 行のパスを使う）
@@ -269,7 +278,7 @@ check_rows() {   # $1=キャッシュ  $2=ラベル
 # $4（省略可）は最初の解析の前に行う用意（題材に無いファイルを work/ に足す）
 case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行以外）が変わるべきか(yes/no)  $4=用意するコマンド
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     if [ -n "${4:-}" ]; then eval "$4"; fi
     run base.tsv || return
@@ -279,6 +288,7 @@ case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行�
     run inc.tsv || return
     local inc_csv=$OUT
     INC_PARSED=$PARSED
+    cp out.log inc.log   # 差分更新のログ（全件解析の run が out.log を上書きするので、ケースの後で見るために残す）
     check_rows inc.tsv "$1 差分更新"
 
     rm -rf .cache
@@ -838,9 +848,10 @@ edit_field_hide() {
 }
 case_of "式の型に親のフィールドを隠すフィールドを足す" edit_field_hide yes setup_field_hide
 
-# 新しい型で解析し直すのは、解決できなかった名前（コンパイルエラーの引数。I 行）が新しい型の名前に当たる
-# ブロックだけ。無名クラス・入れ子の型を足しても、名前の違う型で失敗しているブロック（Fail）は解析し直さない
-# （docs/cache-unification-qa.md の Q42）。名前の当たるブロック（Caller2）は解析し直す
+# 型解決に失敗しているブロック（Fail・Caller2）は、何かが変わった実行では名前を照合せず必ず解析し直す。
+# 新しいトップレベルの型（Foo2）ができたパッケージ（ntn）のブロックは、I 行に何かあれば解析し直す（名前の隠蔽。
+# どの名前が隠されるかは見ない）。入れ子の型を足すと型階層（H 行）が変わるので、残りをすべて解析し直す（安全網）。
+# 無名クラスは階層に数えない（docs/cache-unification-qa.md の Q131）
 setup_new_type_names() {
     jfile ntn/Fail.java <<'EOF'
 package ntn;
@@ -874,12 +885,31 @@ public class Main {
 }
 EOF
 }
-case_of "無名クラス・入れ子の型を足す（名前の違う型で失敗しているブロックは解析し直さない）" \
+case_of "無名クラス・入れ子の型を足す（型階層が変わったので残りをすべて解析し直す）" \
     edit_new_type_anon yes setup_new_type_names
-if [ "$INC_PARSED" = 1 ]; then
-    echo "  OK   解析し直したのは書き換えた 1 件だけ（新規解析=$INC_PARSED）"
+ntn_total=$(find work/src -name '*.java' | wc -l)
+if [ "$INC_PARSED" = "$ntn_total" ] && grep -q -F "type hierarchy" inc.log; then
+    echo "  OK   入れ子の型を足したので全件（$ntn_total 件）を解析し直した（新規解析=$INC_PARSED）"
 else
-    echo "  NG   無名クラス・入れ子の型を足しただけで、ほかのブロックも解析し直しています（新規解析=$INC_PARSED）"; fail=1
+    echo "  NG   入れ子の型を足したのに全件になっていません（新規解析=$INC_PARSED。期待は $ntn_total）"; fail=1
+fi
+edit_new_type_anon_only() {
+    jfile ntn/Main.java <<'EOF'
+package ntn;
+public class Main {
+    void run() {
+        Runnable r = new Runnable() { public void run() { System.out.println(2); } };
+        r.run();
+    }
+}
+EOF
+}
+case_of "無名クラスだけを足す（階層に数えないので、書き換えたファイルと失敗しているブロックだけ）" \
+    edit_new_type_anon_only yes setup_new_type_names
+if [ "$INC_PARSED" = 3 ]; then
+    echo "  OK   解析し直したのは書き換えた Main と、失敗している Fail・Caller2 の 3 件（新規解析=$INC_PARSED）"
+else
+    echo "  NG   無名クラスを足しただけで、ほかのブロックも解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
 fi
 edit_new_type_named() {
     jfile ntn/Foo2.java <<'EOF'
@@ -889,11 +919,96 @@ public class Foo2 {
 }
 EOF
 }
-case_of "無かった型を足す（名前の当たるブロックだけを解析し直す）" edit_new_type_named yes setup_new_type_names
-if [ "$INC_PARSED" = 2 ]; then
-    echo "  OK   解析し直したのは足した Foo2 と名前の当たる Caller2 の 2 件（新規解析=$INC_PARSED）"
+case_of "無かった型を足す（同じパッケージのブロックと失敗しているブロックを解析し直す）" \
+    edit_new_type_named yes setup_new_type_names
+if [ "$INC_PARSED" = 4 ]; then
+    echo "  OK   解析し直したのは足した Foo2 と、同じパッケージの Main と、失敗している Fail・Caller2 の 4 件（新規解析=$INC_PARSED）"
 else
-    echo "  NG   新しい型の名前に当たらないブロックも解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
+    echo "  NG   新しい型のパッケージの外のブロックも解析し直しています（新規解析=$INC_PARSED。期待は 4）"; fail=1
+fi
+if grep -q -F "type hierarchy" inc.log; then
+    echo "  NG   新しいファイルを足しただけで、型階層が変わったとして全件解析に切り替わっています"; fail=1
+fi
+
+# Doma のように、生成される実装（UserDaoImpl）をソースが名指さないフレームワークでは、生成物が無くても
+# コンパイルエラーにならない。@Dao のインターフェースだけのプロジェクトで、エラー数が 0 で、差分更新が
+# 全件にならず、呼び出しは「実装は生成される（Doma）」の注記で出ること（docs/cache-unification-qa.md の Q131）
+setup_doma() {
+    jfile org/seasar/doma/Dao.java <<'EOF'
+package org.seasar.doma;
+public @interface Dao { }
+EOF
+    jfile dm/UserDao.java <<'EOF'
+package dm;
+@org.seasar.doma.Dao
+public interface UserDao {
+    Object select(long id);
+}
+EOF
+    jfile dm/UserService.java <<'EOF'
+package dm;
+public class UserService {
+    private final UserDao dao;
+    public UserService(UserDao dao) { this.dao = dao; }
+    public Object find(long id) { return dao.select(id); }
+}
+EOF
+}
+edit_doma() {
+    jfile dm/UserService.java <<'EOF'
+package dm;
+public class UserService {
+    private final UserDao dao;
+    public UserService(UserDao dao) { this.dao = dao; }
+    public Object find(long id) { return dao.select(id); }
+    public Object first() { return dao.select(1L); }
+}
+EOF
+}
+case_of "Doma の @Dao だけ（実装が無くてもエラー 0。差分更新は全件にならない）" edit_doma yes setup_doma
+doma_errors=$(awk -F'\t' '$1 == "F" && ($2 == "src/dm/UserDao.java" || $2 == "src/dm/UserService.java") { s += $4 } END { print s + 0 }' inc.tsv)
+if [ "$doma_errors" = 0 ]; then
+    echo "  OK   @Dao のインターフェースと利用者にコンパイルエラーが無い（実装が無くてもエラーにならない）"
+else
+    echo "  NG   @Dao のプロジェクトにコンパイルエラーがあります（$doma_errors 件）"; fail=1
+fi
+if [ "$INC_PARSED" = 1 ]; then
+    echo "  OK   解析し直したのは書き換えた UserService の 1 件だけ（全件にならない。新規解析=$INC_PARSED）"
+else
+    echo "  NG   @Dao のプロジェクトで書き換えた 1 件以外も解析し直しています（新規解析=$INC_PARSED）"; fail=1
+fi
+# 起点（entry.packages）ではないので call-hierarchy.csv には出ない。methods.csv の unresolvedCause 列で見る
+if grep -q "^UserService.first(),dm.UserService,.*implementation is generated at compile time (Doma)" \
+        "$(ls -d out/*/ | sort | tail -1)methods.csv"; then
+    echo "  OK   @Dao の呼び出しは「実装は生成される（Doma）」の注記で出る"
+else
+    echo "  NG   @Dao の呼び出しに「実装は生成される（Doma）」の注記がありません"; fail=1
+fi
+
+# 親を付け替える（型階層が変わる）と、差分更新をやめて残りをすべて解析し直す（安全網。docs/cache-unification-qa.md の Q131）
+setup_hierarchy_net() {
+    jfile hn/P.java <<'EOF'
+package hn;
+public class P { public void m() { } }
+EOF
+    jfile hn/Q.java <<'EOF'
+package hn;
+public class Q { public void m() { } }
+EOF
+    jfile hn/C.java <<'EOF'
+package hn;
+public class C extends P { }
+EOF
+}
+edit_hierarchy_net() {
+    sed -i 's/public class C extends P/public class C extends Q/' work/src/hn/C.java
+}
+case_of "親を付け替える（型階層が変わったので残りをすべて解析し直す）" edit_hierarchy_net yes setup_hierarchy_net
+hn_total=$(find work/src -name '*.java' | wc -l)
+if [ "$INC_PARSED" = "$hn_total" ] && grep -q -F "type hierarchy" inc.log; then
+    echo "  OK   親を付け替えたので全件（$hn_total 件）を解析し直した（新規解析=$INC_PARSED）"
+else
+    echo "  NG   親を付け替えたのに全件になっていません（新規解析=$INC_PARSED。期待は $hn_total）"; fail=1
 fi
 
 # 依存 jar が無いときの事実がバッチの組み方に依らない（docs/cache-unification-qa.md の Q79）。JDT は、無いパッケージの
@@ -3107,8 +3222,7 @@ case_of "jar のクラスが参照するクラスが無いとき、後ろのフ�
 
 # 注釈の既定値を読むと、JDT は注釈の型のメンバーを先に解決する。同じバッチの後ろに注釈の型のファイルがあると、その番で
 # もう一度解決され、同じエラーが 2 回（引数を持つメンバーでは「Duplicate parameter」も）数えられていた。全件解析では
-# 使う側（ann/a/A.java・ann/p/A0.java）が先に並び、差分更新では注釈の型だけを解析し直すので、F 行のエラーの数と
-# I 行の解決できなかった名前が違った
+# 使う側（ann/a/A.java・ann/p/A0.java）が先に並び、差分更新では注釈の型だけを解析し直すので、F 行のエラーの数が違った
 setup_annotation_errors() {
     jfile ann/a/A.java <<'EOF'
 package ann.a;
@@ -3161,7 +3275,7 @@ case_of "注釈の既定値が jar の無いクラスに当たっても、使う
 # （ブロックをバイトのまま写さず、行に戻して '\n' で書き直す経路）
 unchanged_case() {
     echo "== 何も変わっていなければキャッシュを書き直さない =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     run base.tsv || return
     local before after
@@ -3254,7 +3368,7 @@ unchanged_case() {
 # 呼び出しが静かに欠ける。丸ごと捨てて全件解析し直すこと
 discard_case() {   # $1=ラベル  $2=壊す・変えるコマンド  $3=ログに出るはずの文字列  $4=出力が基準と一致すべきか(yes/no)
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
     cp config.properties case.properties
     CONFIG=case.properties
@@ -3354,7 +3468,7 @@ PY
 
 damaged_block_case() {
     echo "== ブロックの中身が壊れていたら、そのファイル（と依存するファイル）だけ解析し直す =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     run base.tsv || return
     local damaged
@@ -3455,7 +3569,7 @@ make_partial() {
 salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空なら何もしない）  $3=引き継げるはずか(yes/no)
                    # $4=引き継ぎありの実行のログに出るはずの文字列（省略可）
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
     run base.tsv || return          # まず完成したキャッシュを作る
     make_partial
@@ -4202,22 +4316,6 @@ dup_case() {
     else
         echo "  NG   重複した型のファイルが warnings.txt に載っていません"; fail=1
     fi
-    # 型が重複しているエラーの引数には、ソースファイルの絶対パスが入る。解決できなかった名前（I 行の 2 列目）に
-    # パスの途中のフォルダ名（home・incremental など）を拾うと、同じソースでも置き場所でキャッシュの事実が変わる
-    # （docs/cache-unification-qa.md の Q64）
-    local names part leaked=""
-    names=$(awk -F'\t' '$1 == "F" { f = $2 } $1 == "I" && f == "s2/p/Dup.java" { print $3 }' \
-        "$(ls $d/cache/*/analysis-cache.tsv)")
-    for part in $(printf '%s' "$PWD/$d" | tr -c 'A-Za-z0-9_$' ' '); do
-        case ",$names," in *",$part,"*) leaked="$leaked $part" ;; esac
-    done
-    if [ -n "$names" ] && [ -z "$leaked" ]; then
-        echo "  OK   重複した型のファイルの解決できなかった名前（$names）に、置き場所のフォルダ名が入らない"
-    else
-        echo "  NG   重複した型のファイルの解決できなかった名前が空か、置き場所のフォルダ名を含みます（${names:-空}。${leaked# }）"
-        fail=1
-    fi
-
     echo "== ソースフォルダの並びを入れ替える =="
     integrity_cfg $d/c.properties "$PWD/$d" s2,s1
     integrity_cfg $d/full.properties "$PWD/$d" s2,s1 "$PWD/$d/fullcache2"
@@ -4241,6 +4339,9 @@ dup_case
 
 # 差分更新と全件解析で、CSV・warnings.txt・キャッシュ（ブロックの並べ替え後）が同じこと
 same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件解析の出力フォルダ  $4=差分更新のキャッシュのフォルダ  $5=全件解析のキャッシュのフォルダ
+               # $6=errors-move なら F 行のエラー数を伏せて比べる（normalized_noerr）
+    local norm=normalized
+    [ "${6:-}" = errors-move ] && norm=normalized_noerr
     same_csv "$1" "$2" "$3"
     if diff -q <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) > /dev/null; then
         echo "  OK   $1 warnings.txt（全件解析と同じ）"
@@ -4248,11 +4349,11 @@ same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件�
         echo "  NG   $1 warnings.txt が全件解析と違います"
         diff <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) | head -10; fail=1
     fi
-    if diff -q <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
+    if diff -q <($norm "$(ls $4/*/analysis-cache.tsv)") <($norm "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
         echo "  OK   $1 キャッシュ（差分更新 == 全件解析）"
     else
         echo "  NG   $1 キャッシュが全件解析と違います"
-        diff <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") | head -10
+        diff <($norm "$(ls $4/*/analysis-cache.tsv)") <($norm "$(ls $5/*/analysis-cache.tsv)") | head -10
         fail=1
     fi
 }
@@ -4985,6 +5086,7 @@ deep_file() {   # $1=ファイル  $2=パッケージ（空なら既定のパッ
 }
 # $1=ラベル  $2=用意する関数  $3=書き換える関数（どちらも題材のフォルダを受け取る）  $4=source.folders  $5=source.level
 # $6=差分更新のログに出るはずの文字列（題材が効いていることの確かめ。空なら見ない）
+# $7=errors-move なら、キャッシュの比較で F 行のエラー数を伏せる（normalized_noerr。Q129 の (b)）
 batch_case() {
     echo "== $1 =="
     local d=$IW/batch
@@ -5007,7 +5109,7 @@ batch_case() {
     fi
     integrity_run $d/full.properties $d/full.log
     [ "$IRC" = 0 ] || { echo "  NG   全件解析に失敗しました"; tail -5 $d/full.log; fail=1; return; }
-    same_all "$1" "$inc_out" "$IOUT" $d/cache $d/fullcache
+    same_all "$1" "$inc_out" "$IOUT" $d/cache $d/fullcache "${7:-}"
 }
 
 # 依存 jar に無いクラス（q.Missing）を、ソースパスから読んだ型（B・other.O）のシグネチャが参照している。JDT は A の
@@ -5041,7 +5143,7 @@ bc_edit_abort() {
     for f in A C D E; do printf '\n// changed\n' >> $1/src/app/$f.java; done
 }
 batch_case "依存 jar に無いクラスで JDT が打ち切る（例外なし）" bc_setup_abort bc_edit_abort src 17 \
-    "stopped in a batch without an error"
+    "stopped in a batch without an error" errors-move
 
 # JDT が例外で止まったとき（深い式でスタックが溢れる。Q62）に残りのファイルを読む経路が、バッチと同じ読み方であること。
 # 以前は残りを 1 ファイルずつ Files.readString で読み直していて、source.encoding で読めないバイトがあるとファイルごと
@@ -5174,7 +5276,7 @@ bc_setup_abort_fqn() {
 }
 bc_edit_abort_fqn() { printf '\n// changed\n' >> $1/src/app/E.java; }
 batch_case "依存 jar に無いクラスで JDT が打ち切る（原因の型を完全修飾名で書いた）" bc_setup_abort_fqn bc_edit_abort_fqn src 17 \
-    "stopped in a batch without an error"
+    "stopped in a batch without an error" errors-move
 
 # 同じ原因で多くのファイルが止まるとき（レビューでの追加）。30 のファイルがどれも、依存 jar に無いクラスを参照する other.B の
 # static メソッドを呼ぶ。30 のファイルだけを書き換えた差分更新では B が同じバッチにいないので、添えなければファイルごとに
@@ -5193,7 +5295,7 @@ bc_edit_abort_many() {
     for f in $1/src/app/F*.java; do printf '\n// changed\n' >> $f; done
 }
 batch_case "依存 jar に無いクラスで多くのファイルが止まる" bc_setup_abort_many bc_edit_abort_many src 17 \
-    "stopped in a batch without an error"
+    "stopped in a batch without an error" errors-move
 stops=$(grep -c -F "stopped in a batch without an error" $IW/batch/c1.log)
 if [ "$stops" = 1 ]; then
     echo "  OK   止まったのは 1 回だけ（止まったファイルに関わるファイルをバッチの残りにも添える）"
