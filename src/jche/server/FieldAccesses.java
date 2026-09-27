@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.cache.CacheFormat;
+import jche.cache.CacheLock;
 import jche.cache.CacheReader;
 import jche.cache.FieldAccessFact;
 import jche.cache.FieldAssignFact;
@@ -28,8 +29,14 @@ import jche.cache.SymbolTable;
  * <h2>キャッシュがグラフと同じ時点のものか</h2>
  * 拾った呼び出し元は、メモリにあるグラフ（{@link jche.AnalysisSnapshot}）のメソッドで引き直す。
  * 解析のやり直しが途中で失敗すると、キャッシュだけが新しくなってグラフは前のまま残ることがあるので、
- * グラフを組んだときのキャッシュの印（{@link jche.AnalysisSnapshot#cacheStamp}）と、読む前と読んだ後の
- * 印を突き合わせる。食い違えば {@link StaleCacheException} にする（古い結果と新しい行を混ぜて見せない）。
+ * グラフを組んだときのキャッシュの印（{@link jche.AnalysisSnapshot#cacheStamp}）と今の印を突き合わせる。
+ * 食い違えば {@link StaleCacheException} にする（古い結果と新しい行を混ぜて見せない）。
+ *
+ * <h2>錠の内側で読む</h2>
+ * キャッシュを読む処理はどれも、同じキャッシュのフォルダを使うほかの実行と重ならないよう、フォルダの錠
+ * （{@link CacheLock}）の内側に置く（外で読むと書きかけのキャッシュを読みうる。{@code docs/cache-unification-qa.md}
+ * の Q56）。ここもそれに従い、錠を取ってから印を突き合わせ、放すまでに読み終える。錠を持っている間は誰も
+ * キャッシュを書き換えないので、印の突き合わせは 1 回で足りる。
  */
 final class FieldAccesses {
 
@@ -84,7 +91,18 @@ final class FieldAccesses {
      */
     static Result scan(Path cacheFile, String expected, String ownerFqn, String fieldName)
             throws IOException, StaleCacheException {
-        checkStamp(cacheFile, expected);
+        // try-with-resources にしないのは、錠を本体で使わないため（-Xlint:try が警告する。jche.Exporter と同じ）
+        CacheLock lock = CacheLock.acquire(cacheFile);
+        try {
+            checkStamp(cacheFile, expected);
+            return read(cacheFile, ownerFqn, fieldName);
+        } finally {
+            lock.close();
+        }
+    }
+
+    /** 錠の内側で、キャッシュを先頭から読んでそのフィールドの行を拾う */
+    private static Result read(Path cacheFile, String ownerFqn, String fieldName) throws IOException {
         String declFile = null;
         boolean initialized = false;
         List<Access> accesses = new ArrayList<>();
@@ -141,8 +159,6 @@ final class FieldAccesses {
                 }
             }
         }
-        // 読んでいる間に差し替えられていないか（読み始めと同じ印か）
-        checkStamp(cacheFile, expected);
         return new Result(declFile, initialized, accesses);
     }
 

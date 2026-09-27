@@ -584,7 +584,8 @@ else
 fi
 
 # 解析の後にキャッシュが書き換わった（解析し直しが途中で終わった、など）なら、古い結果と新しい行を混ぜない
-coproc FSRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache5" 2>/dev/null; }
+# 錠を待たない（下で「ほかの実行が錠を持っている間は読まない」ことを見るため。待つと検査が止まる）
+coproc FSRV { JCHE_CACHE_LOCK_WAIT_SECONDS=0 java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache5" 2>/dev/null; }
 FS_OUT=${FSRV[0]}
 FS_IN=${FSRV[1]}
 FS_PROC=$FSRV_PID
@@ -607,6 +608,41 @@ fs_request "ANALYZE${T}$FP/c.properties"
 fs_request "TREE${T}$F${T}field"
 [[ "$FS_RESPONSE" == "OK${T}rows="* ]] \
     && ok "解析し直せば引ける" || fail "解析し直しても引けない: $FS_RESPONSE"
+# キャッシュを読むのはフォルダの錠の内側（AGENTS.md。書きかけのキャッシュを読まない）。
+# ほかのプロセスが錠を持っている間は読まず（待つ上限 0 秒なので断る）、放されれば引ける
+cat > "$WORK/HoldLock.java" <<'EOF'
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+public class HoldLock {
+    public static void main(String[] args) throws Exception {
+        try (FileChannel ch = FileChannel.open(Path.of(args[0]), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             var lock = ch.lock()) {
+            System.out.println("locked");
+            System.in.read();   // 標準入力が閉じるまで持つ
+        }
+    }
+}
+EOF
+LOCK_FILE="$(find "$FP/cache" -name 'analysis-cache.tsv' | head -1).lock"
+coproc HOLD { java "$WORK/HoldLock.java" "$LOCK_FILE" 2>/dev/null; }
+HOLD_OUT=${HOLD[0]}
+HOLD_IN=${HOLD[1]}
+HOLD_PROC=$HOLD_PID
+IFS= read -r -t 120 HOLD_LINE <&"$HOLD_OUT"
+if [ "$HOLD_LINE" = locked ]; then
+    fs_request "TREE${T}$F${T}field"
+    [[ "$FS_RESPONSE" == "NG${T}error "*"Another run kept using the cache folder"* ]] \
+        && ok "ほかのプロセスが錠を持っている間はキャッシュを読まない" \
+        || fail "錠を持たれていてもキャッシュを読んでいる: ${FS_RESPONSE:0:120}"
+else
+    fail "錠を持つ補助のプロセスが起動しない: $HOLD_LINE"
+fi
+exec {HOLD_IN}>&-
+wait "$HOLD_PROC" 2>/dev/null
+fs_request "TREE${T}$F${T}field"
+[[ "$FS_RESPONSE" == "OK${T}rows="* ]] \
+    && ok "錠が放されれば引ける" || fail "錠が放された後も引けない: $FS_RESPONSE"
 printf 'SHUTDOWN\n' >&"$FS_IN" 2>/dev/null
 cat <&"$FS_OUT" > /dev/null 2>&1
 wait "$FS_PROC" 2>/dev/null
