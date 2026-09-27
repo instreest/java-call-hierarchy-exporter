@@ -52,8 +52,8 @@ public final class ResolveOrderCheck {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
         }
         SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
-        CallGraph graph = CallGraphBuilder.build(config.cacheFile,
-                config.dataflowEnabled ? config.dataflowCacheFile : null, sourceFolderOrder, beans);
+        CallGraph graph = CallGraphBuilder.build(config.cacheFile, config.dataflowEnabled,
+                sourceFolderOrder, beans);
         int edges = graph.edgeCount();
         Log.info("エッジ数=" + edges + " を 3 通りの順で解決して比較します");
 

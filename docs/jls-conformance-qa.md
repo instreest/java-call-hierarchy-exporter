@@ -31,6 +31,21 @@
   JEP 513 は `test/ctorbody/run.sh`（使い捨てのプロジェクトをその場で作る）で見る
 - **その後**: インターフェース（アノテーション型を含む）に暗黙のコンストラクタを合成していたのを
   やめた（Q25。キャッシュの版を `jche-cache-v27` に上げた）
+- **その後**: Q12 の「出所の追跡はキャストを全部剥がす」は、出所が R 行・J 行・ローカル変数の表・値グラフを
+  通じて条件の判定にも使われるため誤りだった。値として使う経路はすべて `unwrapValue` を通し、
+  値を保つ拡大は剥がす側に入れた（`docs/value-safety-qa.md` の Q2。`jche-cache-v32`）
+- **その後**: Q14 の数値リテラルは、表記から読むのをやめて JDT の評価した値を使う
+  （16 進・8 進の `int` は最上位ビットが立つと負。`docs/value-safety-qa.md` の Q12）。
+  Q13 の `equals` は、比べる相手の静的な型と定数の型が揃うときだけ判定する（同 Q15。`jche-cache-v32`）
+- **その後**: 具象型からの実装の探し方を JVM の選び方（JLS 8.4.8・9.4.1、JVMS 5.4.6）に合わせた。
+  親クラスの連鎖を根まで先に見て、無ければ親インターフェースの最も特定的な宣言を採る。親型の private と
+  親インターフェースの static は採らない。H 行に親クラスの連鎖（7 列目）を書き、try-with-resources の `close()`・
+  拡張 for の `iterator()` の呼び出し先と、jar からの被参照（`ExternalUsageScanner`）も同じ順で引く（Q26〜Q31）
+- **その後**: 親クラスから継承したメソッドが型引数を置き換えたインターフェースのメソッドを実装する形を、
+  H 行の 8 列目（継承した実装）に持つ（Q33）。親クラスの連鎖に jar のクラスが挟まる実装の戻り値は使わない（Q32）
+- **その後**: 暗黙の `super()` の呼び出し先を、匿名クラスは型引数を置き換えた親のメンバーで比べ、それ以外は
+  決めきれなければ候補すべてに辺を張るようにした（Q35。Q10 の探す順を置き換えた）。
+  この 3 項目は形式 `jche-cache-v43` で入った（Q31）。この段で直さなかったものは Q36
 
 ---
 
@@ -61,6 +76,10 @@ class UserRepo implements Repo<User> {
 
 3 つ目が最も悪い。`docs/static-analysis-limits.md` の
 「絞れないことより誤って絞ることの方が害が大きい」に真っ向から反する。
+
+（その後）親クラスから継承したメソッドが、型引数を置き換えたインターフェースのメソッドを実装する形
+（`class UserRepo extends BaseRepo implements Repo<User>` で `BaseRepo.save(User)` が実装する）は、
+O 行ではなく H 行の 8 列目（継承した実装）に持つ（Q33）。
 
 ## Q2. `docs/inherited-impl-candidates-qa.md` で直したのと同じ話ではないのか
 
@@ -125,8 +144,9 @@ class OrderStore extends AbstractStore<Order> { public void put(Order item) { ke
 先にキーの照合で親へ辿ると **`AbstractStore.put` に当たってしまい**、
 「`OrderStore` は上書きしていない」と結論してしまう。
 
-実際に動くのは「その型から親へ辿って**最初に見つかる実装**」なので、
-`CallGraph.implementationOf` は 1 つの幅優先探索の**各段で両方の軸を見る**。
+`CallGraph.implementationOf` は探索の**各段（型）で両方の軸を見る**。
+探す順は、親クラスの連鎖を根まで先に、次に親インターフェースの最も特定的な宣言である（Q26・Q27。
+以前は親型を名前順の幅優先で混ぜて辿り、最初に見つかった実装を採っていたが、それは JVM の選び方と違った）。
 同じ段では上書きを先に見る。キーが同じ上書きは O 行に書かないので、
 そこで当たるのは必ず「型引数を具体化した上書き」であり、
 親から継承した同キーの宣言よりそちらが優先されるべきだからである。
@@ -190,6 +210,11 @@ Runnable r = new Base(1) { … };   // 合成コンストラクタは (int) を�
 
 そこで探す順を (1) 呼び出し元コンストラクタと同じ引数の並び、(2) 引数なし、
 (3) 可変長引数 1 つだけ（`Base(String... a)` しか無い親は `super()` がそれに解決される）とした。
+
+> **その後（Q35）**: この探す順は 3 つの場面で javac と違うコンストラクタに辺を張っていた（親がジェネリックな
+> 匿名クラス、最も特殊な可変長引数、見えない引数なしのコンストラクタ）。今は、匿名クラスは型引数を置き換えた
+> 親のメンバーとして比べ、それ以外は「引数なしのものが public・protected ならそれだけ、そうでなければ引数なしの
+> ものと可変長引数 1 つのものすべて」に辺を張る。
 
 この形は実際に `test/demo` にあった。`enum Color { RED("r") { … }, BLUE("b"); Color(String code) { … Registry.register(code); } }` の
 `RED` は定数ごとのボディを持つので匿名サブクラス `Color$1` になり、
@@ -342,6 +367,8 @@ jar を作る**（`extjars/demo-app.jar`）。Java 25 でしか書けない構�
 
 `jche-cache-v22` → `v23`。dataflow 側の版（`DATAFLOW_VERSION`）は、
 2 つが常に対で書かれ対でしか再利用されない（`docs/cache-split-qa.md`）ので据え置いた。
+（その後キャッシュを 1 ファイルにまとめ、版は `CacheFormat.VERSION` の 1 つだけになった。
+`docs/cache-unification-qa.md` の Q22）
 
 ## Q20. 性能への影響は
 
@@ -443,3 +470,451 @@ JLS 8.8.9 でデフォルトコンストラクタが暗黙に宣言されるの�
 D 行の中身が変わるので、キャッシュの版を `jche-cache-v27` に上げた。
 上げないと、再利用したファイルのインターフェースにだけ `<init>` が残る。
 
+---
+
+## 実装の探し方を JVM の選び方に合わせる（形式 v43）
+
+v42 の穴探し（`docs/cache-unification-qa.md` の「v42 の穴探し（形式 v43）」。読み手の実装の探し方は同じ文書の Q127、
+暗黙の `super()` は Q98・Q99）で見つかった、実行時に動くメソッドの選び方の食い違いと、その直し。
+どれも「実際に動く実装が呼び出しの先から消える」形で、全件解析でも起きていた（差分更新の問題ではない）。
+
+## Q26. 親インターフェースの default や JDK のインターフェースの宣言が、親クラスの実装より先に選ばれていた
+
+直した。`CallGraph#search`（`implementationOf` / `implementationOfSignature` の中身）は、具象型から親型を
+**名前順の幅優先**で混ぜて辿り、最初に見つかった本体を採っていた。
+
+```java
+public class Base { public void m() { ... } }
+public class Mid extends Base { }
+public interface Api { default void m() { ... } }
+public class Impl extends Mid implements Api { }
+
+Api a = new Impl(); a.m();   // 実行されるのは Base.m
+```
+
+`Impl` の親型は `[Api, Mid]`（名前順）。1 段目で `Api.m`（本体あり）に当たり、2 段上の `Base.m` まで行かない。
+出力は `Api.m,RESOLVED:LOCAL_NEW` で、`Base.m` は呼び出し元の無い `ENTRY_CANDIDATE` になった。
+同じ深さでも、インターフェースの名前が親クラスより先に並べば同じことが起きる
+（`class OrderService extends BaseService implements Auditable`。`Auditable` < `BaseService`）。
+
+JDK や jar のインターフェースでも同じだった。呼び出し先にしか現れないメソッド（ソースの無いもの）は、
+`MethodTable` が「本体あり」として登録する（落とさない側に倒すため）。
+
+```java
+public class BaseRes { public void close() { Log.closed(); } }
+public class MidRes extends BaseRes { }
+public class MyRes extends MidRes implements AutoCloseable { }
+
+try (MyRes r = new MyRes()) { }   // javac は invokevirtual MyRes.close。BaseRes.close が動く
+```
+
+`MyRes` の親型は `[java.lang.AutoCloseable, q.MidRes]`。`java.` は `jp.`・`org.`・`net.` などより先に並ぶので、
+ソースの無い `AutoCloseable.close` に当たり、`Main -> BaseRes.close` の行が消えた。拡張 for の `iterator()`、
+`Runnable` の `run()`（`new Thread(task).start()` の呼び戻しを含む）も同じ形で、**無関係なファイルが
+`AutoCloseable#close()` を呼ぶ行を 1 本足すだけで**、別のファイルの呼び出しが消えた（そのキーが表に載るため）。
+
+JLS 8.4.8 では、クラスは親クラスから継承した具象メソッドと同じシグネチャの default メソッドを親インターフェースから
+継承しない（クラスが勝つ）。JVMS 5.4.6 の選び方も、手順 2（親クラスの連鎖）が手順 3（親インターフェース）より先である。
+
+**今の決まり**: `search` は 2 段で探す。
+
+1. **親クラスの連鎖**（`TypeHierarchy#classChain`）: その型から親クラスへ根まで順に、各型で上書き（O 行）と
+   キーの両方を見て（Q6）、最初の本体を採る。その型より上の private は飛ばす（Q28）。各型では、その型の H 行の
+   「継承した実装」も見る（Q33）
+2. **親インターフェース**（`TypeHierarchy#superinterfaces`）: 連鎖に無ければ、連鎖の型が実装するインターフェース
+   すべての宣言から、最も特定的な本体を採る（Q27）
+
+これを通る段はすべて直る（段 1 の CHA・`NO_OVERRIDE`・`SINGLE_IMPL`、段 2 の `LOCAL_NEW`、段 3 の呼び戻しの契約、
+段 4 の `DATAFLOW_PARAM` / `DATAFLOW_FIELD` / リフレクション、段 5 の Spring DI）。`hasOverriders` も同じ探索を
+使うので、`Api.m` を部分型が上書きしている（実際には `Base.m` が動く）と分かり、`Api.m` の return の値を当てて
+具象クラスを絞ることもなくなった（`default Svc create() { return new SvcA(); }` に絞って、実際に動く
+`BaseF.create` と `SvcB.run` を落としていた）。
+
+**却下した案**:
+
+- *ソースに本体のある宣言を、経路のどこかにあれば jar の宣言より先にする*。
+  `AutoCloseable` の形は直るが、`Api` の default が `Base.m` に勝つ形（どちらもソース）は直らない。
+  JLS の決まりではなく近似なので採らない
+- *呼び出し先の C 行の修飾子に `abstract` があれば、ソースの無いキーを「本体なし」にする*。jar の宣言を実装から
+  外せるが、上と同じく default とクラスの順は直らない。また「本体あり」は CHA の候補を落とさない側の既定値として
+  ほかでも使っているので、意味を変える範囲が広い
+- *読み手が種別（H 行の I/A/C）から親クラスを推す*。親型がソースの型なら種別で分かるが、jar の型は種別が
+  分からない。`class X implements Runnable, p.DefRun` のように jar のインターフェースが先に書かれると、それを
+  親クラスと取り違えて同じ穴が開く。推すのをやめて、書き手に親クラスを書かせた（Q29）
+
+**費用**: 連鎖に無いときは親インターフェースを最後まで辿る（以前は最初の本体で止まった）。連鎖と親インターフェースの
+並びは型ごとに 1 回だけ作って覚える。
+
+**検査**: `test/jls` の §8.4.8（`s08_04_08/ClassWins.java`。`class-wins-*`：2 段上の親クラス・同じ深さ・名前が先の
+インターフェース）、§15.12.4.4（`s15_12_04_04/Dispatch.java`。`jdk-interface-*`：`Runnable` の型・実装クラスの型・
+`Thread` からの呼び戻し）、§14.14.2・§14.20.3.1（`foreach-inherited-*`・`twr-inherited-*`。親クラスから継承した
+`iterator()` / `close()`）。`test/pruning` の `Dtwr`・`Dfe`・`DRun`（JDK のインターフェース `Flushable`。`Runnable` に
+すると他のケースのラムダの候補が変わる）・`DrRet`（戻り値）。どれも直す前の版で落ちることを確かめた。
+
+## Q27. 子インターフェースの default が上書きした、親インターフェースの default へ行っていた
+
+直した。
+
+```java
+interface I1 { default void m() { ... } }
+interface I2 extends I1 { default void m() { ... } }
+class C implements I1, I2 { }
+class B2 implements I2 { }
+class C2 extends B2 implements I1 { }   // I1 のほうが近い（1 段目）
+
+I2 x = new C(); x.m();      // 実行されるのは I2.m
+new C2().m();               // 同じく I2.m
+```
+
+幅優先で最初の本体を採ると、`C` は名前順で、`C2` は深さで `I1.m` に当たる。`I2 x` の呼び出し（呼び出し先そのものが
+`I2#m()`）まで、それが上書きした `I1.m` へ送っていた。JDT は `new C().m()` を `I1#m()` に束縛するので、書き手の
+呼び出し先をそのまま信じても直らない。
+
+JLS 9.4.1.1 で `I2.m` は `I1.m` を上書きする。JVMS 5.4.6 の手順 3 は、親インターフェースの「最も特定的な」
+（maximally-specific。JVMS 5.4.3.3）宣言のうち本体を持つものが 1 つならそれを選ぶ。
+
+**今の決まり**: 親インターフェースの段では、連鎖の型が実装するインターフェースすべての宣言（上書きとキー。private・
+static は除く）を集め、**ほかの宣言の型の真の親型で宣言したもの**を除き（`TypeHierarchy#mostSpecific`。部分型の
+関係は H 行の親型で見る）、残りから本体を持つものを採る。抽象の宣言も「最も特定的」の判定には入れる
+（子インターフェースが抽象で宣言し直した default は、実行時にも選ばれない）。
+
+複数残ることがある。JLS ではコンパイルエラーになる形（関係の無い 2 つの default）か、親が jar の型で部分型の関係が
+見えない形である。そのときは**ソースに本体のある宣言を jar の宣言より先**にし、その中は近い順（同じ深さは名前順）の
+先頭にする。jar の宣言は本体の有無が分からず（抽象でも「本体あり」で登録される）、関係の見えない jar の宣言と
+ソースの default が並ぶとき、コンパイルできるソースならソースの default が動くほうだからである
+（jar のインターフェースがソースのインターフェースを継承して default を宣言し直している形だけは外れるが、そのとき
+動くのはソースの無い宣言で、外れても余計な行が 1 本出るだけ）。
+
+**却下した案**: *呼び出し先（C 行）のキーをそのまま実装にする*。JDT が上書きされた `I1#m()` に束縛するので直らない。
+*書き手が呼び出し先を最も特定的な宣言に直す*。JDT のバインディングに任せる決まり（JLS を自前で近似しない）に反する。
+
+**検査**: `test/jls` の §9.4.1（`s09_04_01/MostSpecific.java`。`most-specific-*`：菱形・近いだけの I1・
+子インターフェースの型・親インターフェースの型）。
+
+## Q28. 親クラスの private メソッドや、親インターフェースの static・private メソッドを実装にしていた
+
+直した。
+
+```java
+class PBase { private void m() { ... } }
+interface Api { default void m() { ... } }
+interface Api2 extends Api { }
+class Impl extends PBase implements Api2 { }
+
+Api x = new Impl(); x.m();                           // 実行されるのは Api.m
+Impl.class.getMethod("m").invoke(new Impl());       // 同じく Api.m
+
+interface SI { static void m() { ... } }
+class ImplS extends Mid implements SI { }           // Mid extends Base（Base.m を持つ）
+```
+
+private メソッドは継承されず（JLS 8.2・8.4.8）、上書きもしない。インターフェースの static メソッドは継承されない
+（JLS 8.4.8・9.4.1）。JVMS 5.4.6 もどちらも選ばない。以前は `PBase.m` を `DATAFLOW_PARAM` や `REFLECTION` の
+実装にし（リフレクションの経路は、見つかったのが private だと「実行時のクラスで選び直さない」として確定していた。
+`docs/value-safety-qa.md` の Q22）、`SI.m` を `SINGLE_IMPL` にしていた。
+
+**今の決まり**: 親クラスの連鎖では、**その型より上の** private を飛ばす（その型自身の宣言は飛ばさない。private の
+呼び出し先そのものを引くときに要る）。親インターフェースの段では private と static を除く。
+
+親クラスの static は飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承するクラスはコンパイル
+できない（JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション（`Class.getMethod` は親クラスの
+public な static メソッドも返す）でだけで、そこでは static を返すのが正しい。
+
+書き手の側にも同じ穴があった。try-with-resources の `close()` と拡張 for の `iterator()` の呼び出し先を引く
+`ImplicitCalls#findNoArgMethod` は、親型の private を飛ばさず、親クラスとインターフェースを混ぜた幅優先だった。
+
+```java
+class PBase { private void close() { ... } }
+interface PApi extends AutoCloseable { default void close() { ... } }
+class PRes extends PBase implements PApi { }
+
+try (PRes r = new PRes()) { }    // JLS では PApi.close（PBase.close は PRes のメンバではない）
+```
+
+以前は呼び出し先を `PBase#close()`（private）にして `STATIC_BOUND:PRIVATE` で確定し、`PApi.close` を落としていた。
+同じ穴は、一括解析のレーン（W3）のレビューでも別の形（型変数の資源、別のパッケージの親クラスのパッケージアクセスの
+`close()`、交差型のキャスト）で見つかり、統合したあとの決まりは「型と親クラスの連なりを近い順に先に見て、
+無ければインターフェースの宣言のうち最も特定的なもの。**public な宣言だけ**を見る」になった
+（呼ぶのは `AutoCloseable.close()`・`Iterable.iterator()` でどちらも public なので、それを実装・継承するメンバーの
+宣言も必ず public。`docs/cache-unification-qa.md` の Q110）。javac が `TwrRes.close` を呼んで親クラスの
+`TwrBase.close` が動く形（Q26）でも、呼び出し先が `AutoCloseable#close()` ではなく `TwrBase#close()` になり、
+javac のバイトコードとの突き合わせ（JVMS 5.4.3.3 で引き直した宣言）とも一致する。
+
+なお、この `PRes` の形を javac でコンパイルして動かすと `IllegalAccessError` になる（JVM の解決が private の
+`PBase.close` に当たる。JVMS 5.4.3.3 の手順 2 は private を除かない）。JLS の上では `PApi.close` が呼ばれる式なので、
+ツールは JLS に合わせる。`test/jls` の突き合わせはこの JVM の解決をそのまま真似るので、この形は `test/jls` に置けず、
+`test/pruning` の `DtwrP` に置いた。
+
+**検査**: `test/jls` の §8.4.8（`private-super-not-member` / `-not-selected`）・§9.4.1（`static-not-inherited` /
+`static-not-selected` / `static-not-selected-param`）。`test/pruning` の `DtwrP`（書き手の private の飛ばし）。
+`JlsCheck` の解決も、親インターフェースの private・static を飛ばすようにした（JVMS 5.4.3.3 の手順 3・4。飛ばさないと
+`new MsC3().m()` を static の `MsAaStatic.m` と取り違え、javac との突き合わせが食い違う。
+[jls-conformance-test-qa.md](jls-conformance-test-qa.md) の Q20）。
+
+## Q29. どれが親クラスかを、なぜ書き手が H 行に書くのか。何を書くのか
+
+H 行の親型（4 列目）は、親クラスとインターフェースを区別しない並びで、読み手は並びを実行ごとに変えないよう
+名前順に並べ替える（`TypeHierarchy#sortForDeterminism`）。並べ替えた後では親クラスが分からない。書き手は
+並べ替える前の並び（親クラスが先頭）を書いているが、親クラスが `Object` なら先頭はインターフェースで、先頭が
+jar の型なら種別も分からないので、並びから取り戻す決まりは作れない（Q26 の却下した案）。
+
+**今の決まり**: H 行の 7 列目に**親クラスの連鎖**を書く（`TypeFact#superclasses`）。直接の親クラスから親へ、
+**ソース上の型に当たるまで**（当たった型を含む）。途中の jar のクラスも並べ、`java.lang.Object` は含めない。
+インターフェースと、親クラスが `Object` のクラスは空。
+
+- ソース上の型で止めるのは、その先はその型自身の H 行が持つから。親クラスの親が変わっても子の H 行は変わらず、
+  差分更新で子の H 行を書き直さなくてよい（子は変わった型の部分型として解析し直す。`test/incremental` の
+  「親クラスの連鎖を変える」2 件で、差分更新 == 全件解析）
+- jar のクラスを並べるのは、`class Foo extends LibBase`（jar）で `LibBase` が親に `SrcBase`（ソース）を持つ形の
+  ために、`SrcBase` が親クラスの連鎖にあると分かるようにするため。並べる型は、親型を集める
+  `collectSupertypes` が名前にしている型と同じ（jar の親型を辿る深さの上限も同じ 32）なので、I 行の依存は増えない
+- 同じ型を 2 つのファイルが宣言していれば、綴りの小さいほうの連鎖を採る（読んだ順に依らない）
+
+読み手は `TypeHierarchy#classChain` で、7 列目を順に並べ、最後の型がソース上の型ならその型の H 行から続ける。
+
+**却下した案**: *親型の列（4 列目）の親クラスに印を付ける*。親型の列を読むところ（部分型の索引・CHA・差分更新の
+部分型の索引）がすべて印を剥がす必要があり、変更が広い。*読み手が並べ替えをやめる*。並びは差分更新でブロックが
+動くと変わるので、決定的な出力の前提（`docs/deterministic-row-order-qa.md`）が崩れる。
+
+**費用**: H 行が 1 列増える（親クラスの無い型は空の列）。事実が変わるので形式の版を上げた（Q31）。
+
+## Q30. 外部の jar からの被参照を、上書きされた宣言や static の宣言に結びつけていた
+
+直した。`ExternalUsageScanner#inheritedFrom`（jar の `new C().m()` を、継承したソースの宣言に結びつける）は、
+親クラスの連鎖を先に見るところまでは JVM の解決（JVMS 5.4.3.3）と同じだったが、インターフェースの段で
+幅優先の最初の宣言を採り、static も採っていた。
+
+```java
+interface I1 { default void m() { ... } }
+interface I2 extends I1 { default void m() { ... } }
+class C implements I1, I2 { }
+
+interface ASI { static void m() { ... } }
+interface Api { default void m() { ... } }
+class C3 implements ASI, Api { }
+
+// jar の中: new C().m();  new C3().m();   実行されるのは I2.m と Api.m
+```
+
+出力は `I1.m,EXTERNAL_USAGE:INHERITED` と `ASI.m,EXTERNAL_USAGE:INHERITED` で、`I2.m`・`Api.m` を変えても
+jar からの呼び出しが影響調査に出なかった。Javadoc は「JVM のメソッド解決と同じ順」と書いていた。
+
+**今の決まり**: 親クラスの連鎖は H 行の 7 列目から組む（`TypeHierarchy#classChain`。以前は種別 C/A の親型を
+親クラスとみなしていたので、jar のクラスを経由した親クラスを見落としていた）。インターフェースの段は、private・
+static を除いた宣言から最も特定的なもの（`TypeHierarchy#mostSpecific`）を残し、本体を持つものを先に採る
+（JVMS 5.4.3.3 の手順 3。本体を持つものが無ければ手順 4 の通りどれか 1 つを、近い順の先頭で決める）。
+
+**検査**: `test/pruning` の「外部の jar からの被参照」（その場で jar を作る。`C`・`C2`・`C3` の 3 件）。直す前の版で
+3 件とも落ちることを確かめた。
+
+## Q31. 形式の版と、変わる出力
+
+Q26〜Q35 のうち、H 行に列を足したもの（Q29・Q33）、try-with-resources・拡張 for の呼び出し先（C 行）を変えたもの
+（Q28）、暗黙の `super()` の辺（C 行）を変えたもの（Q35）は、書き手が作る事実を変えるので、形式の版を上げた
+（`jche-cache-v43`。ほかのレーンの変更と合わせて 1 回だけ上げた。`docs/cache-unification-qa.md` の Q130）。
+読み手だけの変更（Q26・Q27 の探す順、Q30 の jar からの被参照、Q32 の戻り値を使う条件）は事実を変えない。
+`test/cacheversion` の記録は、題材（`test/jls/project`）も変えたので `--update` した。
+
+回帰テストの期待値（`test/demo` の各設定）は変わらなかった。`test/demo` に「親クラスとインターフェースが同じ
+シグネチャを持ち、名前順で取り違える」形や、候補を決めきれない暗黙の `super()` が無いため。`test/jls` では、
+`jls.s15_27.Lambdas.run` の `Runnable.run()` の CHA の候補に、新しく足した `DTask`（`Runnable` を実装）の
+`DTaskBase.run` が加わる（ほかの節の期待値は変わらない）。
+
+## Q32. 親クラスが jar のクラスだと、default の戻り値で呼び出しを絞っていた
+
+直した（Q26〜Q30 を壊しにいったレビューで見つかった。直す前の版からあったもの）。
+
+```java
+// jar（依存 jar）
+public class Holder<T> { private final T v; public Holder(T v) { this.v = v; } public T create() { return v; } }
+
+// ソース
+interface Fac { default Dao create() { return new DaoA(); } }
+class Impl extends lib.Holder<Dao> implements Fac { Impl() { super(new DaoB()); } }
+
+static void use(Fac f) { f.create().find(); }   // use(new Impl())。実行されるのは Holder.create → DaoB.find
+```
+
+出力は `Fac.create,RESOLVED:NO_OVERRIDE` と `DaoA.find,RESOLVED:DATAFLOW_FACTORY` だけで、実際に動く `DaoB.find` が
+消えていた。jar のクラスのメソッドは、ソースのどこかがそれを呼び出し先にしていない限りメソッドの表に無い。実装の探索
+（`CallGraph#search`）は親クラスの連鎖の `lib.Holder` で何も見つけられずに通り過ぎ、`Fac` の default に行く。
+`hasOverriders(Fac.create)` は「部分型 Impl から引いても Fac.create」なので false を返し、default の return の値
+（`new DaoA()`）がそのまま `f.create()` の値になった。
+
+**今の決まり: 部分型から見つけた実装までの親クラスの連鎖に、H 行の無いクラス（jar・JDK のクラス）が挟まれば、
+その実装を「その型で動く本体」として戻り値に使わない**（`CallGraph#passesBinaryClass`）。
+
+- `hasOverriders` は、部分型ごとに「実装が別」か「間に jar のクラスが挟まる」なら「振り分けられうる」とする
+- メソッド参照の束縛したレシーバの具象型から引いた実装（`DataflowResolver#bodyOf`）も、間に jar のクラスが挟まれば
+  本体の戻り値に使わない（参照先の宣言に戻して `hasOverriders` を見る）
+- 候補に並べる側（CHA・`LOCAL_NEW`・`DATAFLOW_*`・DI）は変えない。見つけた宣言は動くかもしれない（jar のクラスが
+  宣言していなければ動く）ので、並べるのは多すぎる側。jar のクラスの宣言（ソースが無い）は元から出力の先が無い
+- 見つけた実装の型より上にある jar のクラス（`class Base extends lib.X` の `Base.m` を `Sub` から引く）は数えない。
+  上の型は下の型の宣言を上書きできない
+- 親インターフェースの default（連鎖に無い型の宣言）なら、連鎖の jar のクラスをすべて数える。`enum E implements Fac`
+  （連鎖に `java.lang.Enum`）や `record` も数える。`Enum`・`Record` が default と同じシグネチャのメソッドを持ちえない
+  （`Object` のメソッドは default にできない。JLS 9.4.1.2）ことを JDK の型ごとに覚えるのは、規則を増やすだけなので
+  やめた（戻り値を使わない側に倒れるだけ）
+
+**却下した案**:
+
+- *jar のクラスの宣言を H 行に書く*（書き手は JDT のバインディングで jar のクラスのメソッドを知っている）: 型の形の
+  指紋と同じく「継承したものの一覧」を書くことになり、「型の形を持ち直さない」（`docs/cache-unification-qa.md` の
+  Q77）に反する。jar の型のメソッドの一覧は大きい（`HttpServlet`・Spring の抽象クラス）
+- *`search` が -1 を返す*（分からないので実装なし）: 候補から見つけた宣言が消える。`class Impl extends lib.JarMid`
+  （`JarMid extends SrcBase`、`JarMid` は `m` を上書きしない）の `SrcBase.m` は実際に動くので、CHA から落とすと
+  呼び出しを落とす
+
+**費用**: jar のクラスを親に持つソースのクラスが default を継承する形（と enum・record が default を持つ
+インターフェースを実装する形）で、default の戻り値を使った絞り込みが効かなくなる。呼び出しは落ちず、候補が増えるだけ。
+
+**検査**: `test/pruning` の `JarHold`（jar をその場で作る。`use` の引数経由と `ref` のメソッド参照経由の両方）。
+
+## Q33. 親クラスから継承したメソッドが、型引数を置き換えたインターフェースのメソッドを実装する形が見えなかった
+
+直した（Q32 と同じレビューで見つかった。直す前の版からあったもの）。
+
+```java
+interface Repo<T> { void save(T t); }                    // キー Repo#save(java.lang.Object)
+class BaseRepo { public void save(User u) { ... } }      // キー BaseRepo#save(p.User)。Repo を実装しない
+class UserRepo extends BaseRepo implements Repo<User> { } // javac は UserRepo に save(Object) のブリッジを作る
+
+static void use(Repo<User> r) { r.save(new User()); }    // 実行されるのは BaseRepo.save
+```
+
+出力は `Repo.save,UNEXPANDED:NO_IMPL` で、`BaseRepo.save` は呼び出し元の無いメソッドになっていた。
+`Repo` に default があれば（`interface Fac<T> { default Dao create(T t) {...} }`・`class Base { public Dao create(String s) }`・
+`class Impl extends Base implements Fac<String>`）、`Fac.create` に `NO_OVERRIDE` で決め、その戻り値で次の呼び出しまで
+絞っていた（クラスのメソッドが勝つのに）。親クラスの側が型引数を持つ形（`class StrRepo extends GenBase<String> implements SRepo`
+の `GenBase.save(T)` が `SRepo.save(String)` を実装する）も同じ。
+
+キーの照合（`型#シグネチャ`）は消去した引数型が違うので当たらない。O 行（Q1〜Q5）は宣言ごとの「上書きしている」で、
+`BaseRepo.save` は `BaseRepo` から見て何も上書きしていない（`Repo` を実装しないので）。実装の関係は **`UserRepo` から
+見たときにだけ**成り立つ（JLS 8.4.8.1。`class Other extends BaseRepo implements Repo<Order>` では成り立たない）。
+
+**今の決まり: H 行の 8 列目に、その型から見た「継承した実装」を `実装される側のキー>実装する側のキー` で書く**
+（`;` 区切り、名前順。`BindingNames#inheritedImplementationsOf`）。
+
+- 書き手: クラスの親インターフェース（親クラスが実装するものも含む。型引数を置き換えたもの）のメソッド
+  （private・static を除く）ごとに、その型自身が subsignature を宣言していなければ、親クラスを近い順に見て最初に
+  subsignature の当たる宣言（static・private を除く）を採る。キーが同じなら読み手はキーの照合で引けるので書かない。
+  実装する側の型が実装される側のインターフェースを実装していれば、その宣言の O 行が同じことを言うので書かない
+- subsignature の判定: JDT の `IMethodBinding.isSubsignature` は、自分を宣言した型がパラメータ化された型
+  （`GenBase<String>` の `save(String)`）だと置き換える前の宣言（`save(T)`）に戻して比べるので false になる
+  （`SRepo.save(String)` から見た逆向きは true）。引数の型が置き換えたあとでそろう（同じシグネチャ）ことを
+  `ITypeBinding#isEqualTo` で先に見て、そろわなければ JDT の判定に任せる。型引数を持つメソッドは JDT の判定だけ
+- 読み手: `CallGraph#search` は親クラスの連鎖の各段で、宣言（キー・O 行）を見たあと、その型の H 行の継承した実装を
+  見る（呼び出し先のキーで。シグネチャで引く入口では実装される側のシグネチャで）。書き手が「その型から近い順の最初」を
+  選んでいるので、連鎖の順と食い違わない
+- 型ごとの事実なので、同じ親クラスを継承した別の型（`IiOther extends IiMaker implements IiFac<Integer>`）には効かない
+
+**却下した案**:
+
+- *O 行に書く*（`BaseRepo.save(User)` が `Repo#save(Object)` を上書きする、と）: O 行の索引は宣言ごとなので、同じ
+  `BaseRepo` を継承して `Repo<Order>` を実装する別の型でも `BaseRepo.save` を実装に選び、その型で実際に動く default を落とす
+- *読み手で名前と引数の数だけで当てる*: JLS の subsignature を名前で近似することになり、上の型ごとの違いも見えない
+- *行を分ける（新しい行の種類）*: 型ごとの事実で H 行と同じ単位なので、列で足りる。行の種類を増やすと
+  `CacheFormat` の並び・読み手・`CacheDump` をそろえる手間が増える
+
+**差分更新**: 事実は `UserRepo` のブロックにあり、`BaseRepo`・`Repo`（とその親）の宣言に依る。親の親だけ・親インターフェースの
+親だけを書き換えても、変わった型の部分型が変わった型になる決まり（`docs/cache-unification-qa.md` の Q77）で
+`UserRepo.java` を解析し直す。
+
+**費用**: H 行の列が 1 つ増える。ほとんどの型では空（親クラスが実装していないインターフェースのメソッドを、キーの違う形で
+継承したときだけ書く）。書き手は親インターフェースのメソッドの数×親クラスの連鎖の宣言の数を見る。
+
+**検査**:
+
+- `test/jls` の §8.4.8.1（`s08_04_08/InheritedImpl.java`。`inherited-impl-*` の 6 件）。あわせて `JlsCheck` の
+  「javac のブリッジに対応する O 行があること」を「O 行か、ブリッジを置いた型の H 行の継承した実装にあること」に広げた。
+  javac が作るブリッジ（`IiUserRepo.save(Object)` など）がそのまま書き手の事実の正解になる
+  （[jls-conformance-test-qa.md](jls-conformance-test-qa.md) の Q20）
+- `test/pruning` の `GiRet`（default の戻り値で絞らない）
+- `test/incremental` の「継承した実装を変える」2 件（親の親が上書きをやめる／親インターフェースの親にメソッドを足す）。
+  差分更新 == 全件解析と、呼び出しが動く実装に届くこと
+
+## Q34. try-with-resources の close() の呼び出し先が親クラスの宣言に依るようになった。差分更新は大丈夫か
+
+大丈夫。資源の型のメンバの `close()` を親クラスの連鎖から先に引く（Q28）ので、C 行の呼び出し先は
+`java.lang.AutoCloseable#close()` ではなく `tw.Base#close()` のような親クラスの宣言になる。中間のクラスに `close()` を
+足すと、資源を使うファイルが変わらなくても呼び出し先が `tw.Mid#close()` に変わる。資源の型（`Res`）が変わった型の
+部分型になるので、`Res` を使う `Use.java` は解析し直される。`test/incremental` の「try-with-resources の close() の
+宣言を中間のクラスに足す」で、差分更新 == 全件解析と、足した `Mid.close` に届くことを見る。
+
+## Q35. 暗黙の `super()` の呼び出し先を、なぜ取り違えていたのか。今はどう決めるのか
+
+直した（v40 より前から。全件解析でも起きる）。Q10 の決め方「(1) 呼び出し元と同じ引数の並び（匿名クラス）、
+(2) 引数なし、(3) 可変長引数 1 つだけのもの」は、3 つの場面で javac と違うコンストラクタに辺を張り、
+本当に呼ばれるコンストラクタの中の処理が呼び出し元の階層から落ちていた。
+
+1. **匿名クラスの親がジェネリック**:
+   ```java
+   abstract class Base<T> { protected Base() { Log.noarg(); } protected Base(T t) { Log.init(); } }
+   new Base<Foo>(f) { ... }
+   ```
+   JDT は匿名コンストラクタに、型引数を置き換えた引数（`Foo`）を与える（JLS 15.9.5.1）。(1) は親のコンストラクタを
+   宣言の形（`BindingNames#toRef` は型変数を上限に消去するので `Base(Object)`）で比べていたので一致せず、(2) の
+   `Base()` に辺を張っていた（`Base()` が無ければ辺そのものが無い）。`T[]`・ダイヤモンド・ジェネリックな
+   コンストラクタ `<X> G(X)`・ジェネリックな外側のクラスの内部クラス `Outer<Foo>.In(T)` も同じ
+2. **最も特殊な可変長引数**: `Base(Foo... f)` と `Base(Bar... b)`（`Foo extends Bar`）。javac は `Base(Foo[])` を呼ぶ
+   （JLS 15.12.2.5）。(3) は最後に宣言したものを採っていたので `Base(Bar[])` になった（宣言の順を入れ替えると合う）。
+   `Base(int...)` と `Base(long...)` も同じ（`int` が `long` の部分型。JLS 4.10.1）
+3. **見えない引数なしのコンストラクタ**: `Base2() { }`（パッケージ private）と `public Base2(Object... o)`。別の
+   パッケージの部分型からは `Base2()` が見えないので javac は `Base2(Object[])` を呼ぶ（JLS 6.6・15.12.2.1）。(2) は
+   見えるかを見ずに `Base2()` を採っていた。private の `Base3()` と `protected Base3(String...)` を、同じパッケージの
+   別のトップレベルのクラスが継承するときも同じ
+
+**今の決まり（`TypeContextTracker#implicitSuperTargetsOf`。候補のすべてに辺を張る）**:
+
+- **匿名クラス**: 親のコンストラクタを、型引数を置き換えた親の型（`Base<Foo>` の `getDeclaredMethods`）のメンバーとして、
+  引数の型を消去して比べる（`Base(T)` は `Base(Foo)`）。当たったものすべて。ジェネリックなコンストラクタは置き換えても
+  型変数のままで比べられないので、引数の数が同じなら候補に入れる。1 つも当たらなければ、引数の数が同じものすべて。
+  辺の行き先の鍵は、これまでどおり宣言の形（`toRef`）で作る
+- **それ以外**（既定のコンストラクタと、`this(...)` も `super(...)` も書かないコンストラクタ。実引数は 0 個）: 候補は
+  引数なしのものと、可変長引数 1 つだけのもの。引数なしのものが public か protected なら、部分型の `super()` から
+  いつでも見え（JLS 6.6.2.2）第 1 段で選ばれるので、それだけ。そうでなければ、引数なしのもの（あれば）と
+  可変長引数 1 つのものすべてに辺を張る
+
+どれが最も特殊か・見えるかは求めない。求めると、JLS 15.12.2.5 と 6.6（同じパッケージ・同じトップレベルの型）を
+自前で組み直すことになる（AGENTS.md の「自前で近似しない」）。候補すべてに辺を張れば、呼ばれるものは必ず入る
+（余計な辺は安全側）。候補は親の宣言（修飾子・引数の数・可変長引数か）だけで決まるので、親が変われば親の宣言の
+指紋で届き、可変長引数の要素の型どうしの親子関係には依らない。あわせて、暗黙の `super()` の候補の引数の型と
+呼び出し先の throws の型を、書いた `super(...)` と同じく I 行に数えるようにした（差分更新の話なので
+`docs/cache-unification-qa.md` の Q98）。
+
+余計な辺が増えるのは、引数なしのものが public・protected でなく可変長引数 1 つのものと並ぶとき、可変長引数 1 つの
+ものが複数あるときだけ。ふつうのクラス（引数なしのものだけ、または public の引数なしのもの）は 1 本のまま
+（Q8・Q9 の「1 本張る」は、この 2 つの形を除けば今もそのまま）。`test/demo` と `test/jls/project` の
+`call-hierarchy.csv` は変わらない。
+
+**却下した案**:
+
+- *最も特殊なものを `isSubTypeCompatible` で選び、見えるかをパッケージ・トップレベルの型で判定する*（1 本に決める）:
+  JLS を自前で近似する。javac との食い違いがあれば呼び出しを落とす側に倒れる
+- *匿名クラスで当たらなければ引数なし・可変長引数へ倒す*（Q10 の (2)(3)）: JDT は匿名コンストラクタに必ず選んだ
+  コンストラクタの並びを与えるので、引数の数の違うものに倒すと誤った辺にしかならない
+
+**検査**:
+
+- `test/jls` の §15.9.5.1（`s15_09_05/GenericSuper.java`。`anonymous-generic-*`：`T`・`T[]`・`T...`・ダイヤモンド）。
+  javac 26 のバイトコードとの突き合わせも通る（匿名クラスでは 1 本に決まるので余計な辺が無い）
+- `test/ctorbody` の 4（最も特殊な可変長引数・パッケージ private と private の引数なし・`int...` と `long...`・
+  public の引数なしなら可変長引数へ辺を張らない・ジェネリックなコンストラクタ・ジェネリックな外側のクラスの
+  内部クラス）。余計な辺を張るので javac との突き合わせ（`test/jls`）には載せられず、javac で確かめた呼び出し先が
+  入っていることを見る
+
+どちらも直す前の版で落ちることを確かめた。
+
+## Q36. この段で直さなかったもの
+
+- **別のパッケージの親クラスのパッケージアクセスのメソッド**: `class Impl extends a.Base implements Api`（`a.Base.m()` が
+  パッケージアクセス、`Api.m()` が default）で、読み手は今も `Base.m` を選ぶ。JLS では `Base.m` は `Impl` に継承されず
+  `Api.m` だが、JVMS 5.4.5 ではパッケージアクセスのメソッドが別の public なメソッドを上書きしうる。どちらにしても javac で
+  コンパイルした形は実行時に `IllegalAccessError` になり、指摘にも無かったので変えていない
+- **jar のクラスが private の親クラスのメソッドに対してコンパイルされた形**（Q28 の `PRes`）: 実行時は `IllegalAccessError`。
+  ツールは JLS に合わせる
+- **ジェネリックなコンストラクタ `<X> G(X)` と、ジェネリックな外側のクラスの内部クラスを親にする匿名クラス**（Q35）:
+  匿名コンストラクタ自身のキーが javac と違う（JDT は推論した型 `Item`、javac は消去した `Object`・外側のインスタンスを
+  含む並び）。呼び出しの辺はつながっているので出力には効かないが、`test/jls` の突き合わせに載せられない
+- **呼び出しを `UNEXPANDED:CHA` のまま残すとき**、呼び出し先を宣言したインターフェースの default も候補に並ぶ（以前と同じ）。
+  行が増えるだけで、呼び出しは落ちない

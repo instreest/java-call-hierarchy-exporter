@@ -12,6 +12,8 @@ import jche.util.Messages;
  * <pre>
  *   java NlsProbe                    … いまの言語と、いくつかのキーの値を出す
  *   java NlsProbe configured=ja      … 設定ファイルで ja を指定した場合
+ *   java NlsProbe configured=ja configured=
+ *                                    … 同じ JVM で ja の設定の後に空欄の設定を読んだ場合（書いた順に読む）
  * </pre>
  */
 public final class NlsProbe {

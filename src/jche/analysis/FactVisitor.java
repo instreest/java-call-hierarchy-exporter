@@ -2,10 +2,16 @@
 package jche.analysis;
 
 import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
+import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.Assignment;
@@ -20,6 +26,7 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.ImplicitTypeDeclaration;
@@ -28,7 +35,12 @@ import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.Modifier;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
+import org.eclipse.jdt.core.dom.PostfixExpression;
+import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
 import org.eclipse.jdt.core.dom.RecordPattern;
 import org.eclipse.jdt.core.dom.ReturnStatement;
@@ -37,9 +49,12 @@ import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodReference;
 import org.eclipse.jdt.core.dom.TryStatement;
+import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeMethodReference;
+import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
 import jche.cache.FileAnalysis;
 import jche.cache.FunctionalImplFact;
@@ -47,10 +62,10 @@ import jche.cache.HintFact;
 import jche.cache.MethodDeclFact;
 import jche.cache.MethodRef;
 import jche.cache.ModifierTokens;
-import jche.cache.Origin;
 import jche.cache.OverrideFact;
 import jche.cache.RecvKind;
 import jche.cache.ReturnFact;
+import jche.cache.ValueNode;
 
 /**
  * ASTを走査して、キャッシュに書く事実（型階層・宣言・呼び出し・フィールド・return・
@@ -379,9 +394,12 @@ final class FactVisitor extends ASTVisitor {
             if (node.isConstructor() && TypeContextTracker.delegatesToThis(node)) {
                 mods = ModifierTokens.with(mods, ModifierTokens.DELEGATING);
             }
+            String annotations = names.annotationsOf(binding);
+            // 戻り値の型はアノテーションの付いたメソッドにだけ書く（読むのは DI の @Bean だけ。MethodDeclFact）
+            String returnType = (annotations.isEmpty() || node.isConstructor())
+                    ? "" : names.declTypeName(binding.getReturnType());
             out.declarations.add(new MethodDeclFact(ref, lineOf(node.getName()),
-                    node.getBody() != null, mods,
-                    names.annotationsOf(binding), endLineOf(node)));
+                    node.getBody() != null, mods, annotations, endLineOf(node), returnType));
             recordOverrides(ref, binding);
             methodStack.push(List.of(ref));
             recordImplicitSuperCall(node, binding);
@@ -475,7 +493,7 @@ final class FactVisitor extends ASTVisitor {
         if (node.getBody() instanceof Expression bodyExpression) {
             // 式本体（() -> new X()）は「return 式;」と同じ（JLS 15.27.4。本体の式の値を返す）。
             // ブロック本体の return と同じく R 行にしないと、書き方で結果が変わる
-            recordReturn(bodyExpression);
+            recordReturn(node, bodyExpression);
         }
         return true;
     }
@@ -550,6 +568,8 @@ final class FactVisitor extends ASTVisitor {
         if (sam == null) {
             return;
         }
+        // 目標の型は式の型として I 行に載る（preVisit2）。その親が変わったときは、差分更新が部分型の側で拾う
+        // （docs/cache-unification-qa.md の Q45・Q77）
         List<String> keys = names.functionalKeysOf(fnType, sam);
         if (keys.isEmpty()) {
             return;
@@ -569,10 +589,10 @@ final class FactVisitor extends ASTVisitor {
     }
 
     /**
-     * このメソッドの return が返しうる値の出所を記録する（R行）。
+     * このメソッドの return が返しうる値を記録する（R行。値は値グラフのノード）。
      *
      * ファクトリメソッド（{@code Factory.create()}）の戻り値に対する呼び出しを
-     * 具象クラスまで辿るために使う。追跡できない return も U として
+     * 具象クラスまで辿るために使う。追跡できない return も {@link ValueNode#NONE}（読み手には U）として
      * 記録するのが重要で、そうしないと「実は複数の型を返しうるメソッド」を
      * 分かった分だけで1つに決め打ちしてしまう。
      */
@@ -583,15 +603,28 @@ final class FactVisitor extends ASTVisitor {
             // void の return、または合成できなかったラムダ式自身の戻り値
             return true;
         }
-        recordReturn(ex);
+        recordReturn(enclosingDeclarationOf(node), ex);
         return true;
     }
 
-    /** 今の呼び出し元（メソッドまたはラムダの合成メソッド）が返す値の出所を R 行にする */
-    private void recordReturn(Expression ex) {
-        ITypeBinding tb = ex.resolveTypeBinding();
-        if (tb != null && (tb.isPrimitive() || tb.isArray()
-                || "java.lang.String".equals(tb.getQualifiedName()))) {
+    /**
+     * 今の呼び出し元（メソッドまたはラムダの合成メソッド）が返す値を R 行にする。
+     *
+     * 値は呼び出し箇所の値と同じ値グラフのノードで持つ（上限なし。実引数・レシーバの入れ子も、
+     * ソースに書かれたレシーバの型も残る）。今のスコープ（先読みした変数の表）で求めるので、
+     * ローカル変数は代入元のノードに畳まれる。
+     *
+     * <p>記録するかどうかは、return の式の型ではなく<b>囲むメソッド・ラムダの宣言の戻り値の型</b>で決める
+     * （{@link #tracksReturnValue}）。式の型で決めると、
+     * {@code Object key(boolean b) { if (b) return "x"; Object v = "y z"; return v; }} の
+     * {@code return "x"} だけが記録されず、読み手は残った値（{@code "y z"}）を「必ずこれを返す」と読んで、
+     * {@code key()} を渡した経路の {@code s.equals("x")} を打ち切ってしまう。宣言で決めれば、
+     * 1 つのメソッドの return は全部記録するか、全部しないかのどちらかになる
+     *
+     * @param declaration return を囲むメソッド宣言かラムダ式（見つからなければ null。そのときは記録する）
+     */
+    private void recordReturn(ASTNode declaration, Expression ex) {
+        if (!tracksReturnValue(declaration)) {
             // 具象クラスの絞り込みに使えない戻り値。記録しても嵩むだけ
             return;
         }
@@ -599,13 +632,43 @@ final class FactVisitor extends ASTVisitor {
         if (callers == null) {
             return;
         }
-        String origin = origins.originOf(ex);
-        if (origin == null) {
-            origin = Origin.UNKNOWN_S;
-        }
+        int node = origins.nodeOf(ex);
         for (MethodRef caller : callers) {
-            out.returns.add(new ReturnFact(caller, origin));
+            out.returns.add(new ReturnFact(caller, node));
         }
+    }
+
+    /**
+     * 宣言の戻り値を R 行にするか。宣言の戻り値の型がプリミティブ（void を含む）・配列・String なら
+     * 記録しない（具象クラスの絞り込みに使えない）。ラムダは関数型インターフェースのメソッドの戻り値の型
+     * （{@link LambdaExpression#resolveMethodBinding}）で決める。
+     *
+     * 宣言の型が引けないときは記録する。同じメソッドの return はどれも同じ宣言から決まるので、
+     * 全部記録するか全部しないかは崩れない
+     */
+    private static boolean tracksReturnValue(ASTNode declaration) {
+        IMethodBinding b = null;
+        if (declaration instanceof MethodDeclaration md) {
+            b = md.resolveBinding();
+        } else if (declaration instanceof LambdaExpression lambda) {
+            b = lambda.resolveMethodBinding();
+        }
+        ITypeBinding tb = (b == null) ? null : b.getReturnType();
+        return tb == null || !(tb.isPrimitive() || tb.isArray()
+                || "java.lang.String".equals(tb.getQualifiedName()));
+    }
+
+    /**
+     * return 文を囲む、いちばん内側のメソッド宣言かラムダ式（その return が値を返す先）。
+     * 匿名クラス・ローカルクラスのメソッドの中なら、そのメソッド。見つからなければ null
+     */
+    private static ASTNode enclosingDeclarationOf(ASTNode node) {
+        for (ASTNode p = node.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof MethodDeclaration || p instanceof LambdaExpression) {
+                return p;
+            }
+        }
+        return null;
     }
 
     // ================================================================
@@ -810,72 +873,315 @@ final class FactVisitor extends ASTVisitor {
     /**
      * ソースに呼び出し式が無い呼び出しを 1 件記録する（import からの推定はしない）。
      *
+     * <p>依存する型（I 行）は、書いた呼び出しと同じに数える。呼び出しの結果の型（拡張 for 文の {@code next()} の要素の型、
+     * レコードパターンのアクセサの成分の型）は、書いた呼び出しなら式の型として数える（{@link #preVisit2}）ものだが、
+     * AST に式が無い。{@code for (Base b : mid)} の要素の型 Elem・{@code o instanceof Rec(Base b)} の成分の型 Elem は
+     * ソースに名前が無いことがあり、Elem の親を変えると代入できなくなる。呼び出しの候補（同じ名前のメソッド）の
+     * シグネチャの型も、修飾する型で数える（{@link BindingNames#noteCandidates}）。try-with-resources の {@code close()} が
+     * 投げうる例外は、親クラスから継承した {@code close()} や、複数のインターフェースの {@code close()} の throws の
+     * 共通部分で決まり（JLS 8.4.8・15.12.2.5）、ここで選んだ 1 つのバインディングの throws だけでは決まらない
+     *
      * @param qualifying 呼び出しを修飾する型（JLS 13.1。変換後の式の静的な型）。無ければ null
      */
     private void recordImplicit(IMethodBinding b, ASTNode node, String recvKey, char recvKind,
                                 CallValues values, ITypeBinding qualifying) {
+        names.noteReachedType(b.getReturnType());
+        if (qualifying != null) {
+            names.noteCandidates(qualifying, b.getName());
+        }
         calls.record(currentCallers(), lambdaDepth, b, node, b.getName(),
                 CallSiteRecorder.targetModsOf(b), recvKey, recvKind, null, values,
                 calls.qualifierOf(b, qualifying));
     }
 
     // ================================================================
-    // 同一メソッド内の new（X行の NEW）
+    // 同一メソッド内の new（証拠の NEW。C 行・U 行の hints 列）
     //
     // フロー依存解析（分岐やループを厳密に追う）はコストが高いので、
-    // 「そのメソッド内でその変数に代入される new を全部集める」という
-    // フロー非依存・安全側の方針を取る。
-    //   1件   -> LOCAL_NEW（確定）
-    //   複数件 -> LOCAL_NEW_MULTI（候補集合。CHAよりはるかに狭い）
+    // 「そのローカル変数への代入を全部集める」というフロー非依存・安全側の方針を取る。
+    //   代入がすべて new で、型が1種類  -> LOCAL_NEW（確定）
+    //   代入がすべて new で、型が複数種類 -> LOCAL_NEW_MULTI（候補集合。CHAよりはるかに狭い）
+    //   new 以外の代入が1つでもある     -> 何も残さない（段2を使わない）
     //
+    // 読み手（jche.graph.CallResolver の段2）は、この証拠があれば候補をその型だけに絞る。
+    // 「new 以外の値も入りうる変数」に証拠を残すと、入ってくるほかの実装が黙って落ちる。
+    //   void m(Dao d) { if (d == null) d = new DefaultDao(); d.find(); }   // 呼び出し元が渡す実装が落ちる
+    // そのため対象は、宣言文で宣言したローカル変数（for 文の初期化部・try の資源を含む）に限る。
+    // 引数（ラムダの引数を含む）・フィールド・catch の引数・拡張 for の変数・パターンの変数は、
+    // 宣言そのものが new 以外の値を受け取るので対象にしない。フィールドは別のメソッドからも
+    // 代入されるので、このメソッドの中の代入だけでは言い切れない。
+    //
+    // 全部の代入を見終えるまで判断できないので、ファイルの終わり（endVisit(CompilationUnit)）で集める。
+    // 呼び出し箇所への結びつけ（呼び出し元＋レシーバの変数のキー）は、ブロックを書くときに書き手が行う
+    // （jche.analysis.CacheUpdater の writeBlock）。
     // 変数の同定は名前ではなく IVariableBinding.getKey() で行う。
     // 名前で照合すると、同名変数がスコープ違いで複数ある場合に誤解決する。
     // ================================================================
 
+    /** 証拠の候補になるローカル変数ごとの、代入の集計（変数のキー -> 集計）。宣言した順に並ぶ */
+    private final Map<String, LocalAssignments> localAssignments = new LinkedHashMap<>();
+
+    /** 1つのローカル変数への代入の集計 */
+    private static final class LocalAssignments {
+        /** 宣言したときの呼び出し元（初期化ブロックの中なら根のコンストラクタそれぞれ）。無ければ null */
+        final List<MethodRef> callers;
+        /** new した型（最初に現れた順） */
+        final Set<String> newTypes = new LinkedHashSet<>();
+        /** new 以外の代入（複合代入・++/-- を含む）が1つでもあったか */
+        boolean other;
+
+        LocalAssignments(List<MethodRef> callers) {
+            this.callers = callers;
+        }
+    }
+
     @Override
     public boolean visit(VariableDeclarationFragment node) {
-        if (node.getInitializer() instanceof ClassInstanceCreation cic) {
-            IVariableBinding vb = node.resolveBinding();
-            if (vb != null) {
-                addNewHint(HintKeys.ofVariable(vb), cic);
-            }
+        IVariableBinding vb = node.resolveBinding();
+        if (vb == null || vb.isField() || vb.isParameter()
+                || !(node.getParent() instanceof VariableDeclarationStatement
+                        || node.getParent() instanceof VariableDeclarationExpression)) {
+            return true;
+        }
+        String key = HintKeys.ofVariable(vb);
+        if (key.isEmpty()) {
+            return true;
+        }
+        LocalAssignments assignments = localAssignments.computeIfAbsent(key,
+                k -> new LocalAssignments(currentCallers()));
+        if (node.getInitializer() != null) {
+            recordLocalAssignment(assignments, node.getInitializer());
         }
         return true;
     }
 
     @Override
     public boolean visit(Assignment node) {
-        if (node.getRightHandSide() instanceof ClassInstanceCreation cic
-                && node.getLeftHandSide() instanceof SimpleName lhs
-                && lhs.resolveBinding() instanceof IVariableBinding vb) {
-            addNewHint(HintKeys.ofVariable(vb), cic);
+        LocalAssignments assignments = localAssignmentsOf(node.getLeftHandSide());
+        if (assignments != null) {
+            if (node.getOperator() == Assignment.Operator.ASSIGN) {
+                recordLocalAssignment(assignments, node.getRightHandSide());
+            } else {
+                assignments.other = true;   // 複合代入（+= など）
+            }
         }
         return true;
     }
 
-    private void addNewHint(String varKey, ClassInstanceCreation cic) {
-        List<MethodRef> callers = currentCallers();
-        if (callers == null || varKey == null || varKey.isEmpty()) {
-            return;
+    /** {@code x++} / {@code x--}。参照型には付かないが、new 以外の代入であることに変わりはない */
+    @Override
+    public boolean visit(PostfixExpression node) {
+        LocalAssignments assignments = localAssignmentsOf(node.getOperand());
+        if (assignments != null) {
+            assignments.other = true;
         }
-        String type = names.createdTypeOf(cic);
+        return true;
+    }
+
+    /** {@code ++x} / {@code --x}（{@link #visit(PostfixExpression)} と同じ） */
+    @Override
+    public boolean visit(PrefixExpression node) {
+        PrefixExpression.Operator op = node.getOperator();
+        if (op == PrefixExpression.Operator.INCREMENT || op == PrefixExpression.Operator.DECREMENT) {
+            LocalAssignments assignments = localAssignmentsOf(node.getOperand());
+            if (assignments != null) {
+                assignments.other = true;
+            }
+        }
+        return true;
+    }
+
+    /** 代入先が証拠の候補のローカル変数なら、その集計。違えば null（引数・フィールドなど） */
+    private LocalAssignments localAssignmentsOf(Expression target) {
+        Expression e = target;
+        while (e instanceof ParenthesizedExpression p) {
+            e = p.getExpression();   // (x) = ... も x への代入（JLS 15.26）
+        }
+        if (e instanceof SimpleName name && name.resolveBinding() instanceof IVariableBinding vb) {
+            return localAssignments.get(HintKeys.ofVariable(vb));
+        }
+        return null;
+    }
+
+    /**
+     * 代入される値を1つ集計する。値を変えないキャストを挟んだ new（{@code (Dao) new DaoImpl()}）も new。
+     * 型が決められない new は、new 以外と同じに扱う（候補を狭められないので証拠を残さない）
+     */
+    private void recordLocalAssignment(LocalAssignments assignments, Expression value) {
+        String type = (OriginTracker.unwrapValue(value) instanceof ClassInstanceCreation cic)
+                ? names.createdTypeOf(cic) : null;
         if (type == null) {
-            return;
+            assignments.other = true;
+        } else {
+            assignments.newTypes.add(type);
         }
-        // 呼び出し元が複数（インスタンス初期化子等）でも全件に紐づける。
-        // 一部にしか付けないと、その呼び出し元経由の解決だけ証拠を見つけられなくなる。
-        for (MethodRef caller : callers) {
-            out.hints.add(new HintFact(caller.key(), varKey, HintFact.KIND_NEW, type));
+    }
+
+    /** 代入を全部見終えたので、代入がすべて new だったローカル変数の証拠を書く */
+    @Override
+    public void endVisit(CompilationUnit node) {
+        for (Map.Entry<String, LocalAssignments> e : localAssignments.entrySet()) {
+            LocalAssignments assignments = e.getValue();
+            if (assignments.other || assignments.callers == null) {
+                continue;
+            }
+            // 呼び出し元が複数（インスタンス初期化子等）でも全件に紐づける。
+            // 一部にしか付けないと、その呼び出し元経由の解決だけ証拠を見つけられなくなる。
+            for (MethodRef caller : assignments.callers) {
+                for (String type : assignments.newTypes) {
+                    out.hints.add(new HintFact(caller.key(), e.getKey(), HintFact.KIND_NEW, type));
+                }
+            }
         }
+        localAssignments.clear();
     }
 
     // ================================================================
     // フィールドの参照箇所（A行）
     // ================================================================
 
-    /** import 文の中の名前は参照箇所ではない（依存としては CallEdgeExtractor が別に数える） */
+    // ================================================================
+    // 依存する型（I 行）: 式と型の節の型をすべて数える
+    // ================================================================
+
+    /**
+     * どの節でも、式（{@link Expression}。名前・呼び出し・ラムダ・アノテーションを含む）の型と、型の節
+     * （{@link Type}）の型を、このファイルが依存する型（I 行）に数える。型変数・捕捉された型変数・ワイルドカード・
+     * 交差型は上限の消去で数える（{@link BindingNames#noteReachedType}）。
+     *
+     * <p>このファイルの事実（呼び出しの解決・エラー・暗黙の呼び出し・網羅性）は、ソースに名前が書かれていない型
+     * （{@code a.getB().x()} の B、{@code for (x : a.getRepo())} の Repo、{@code throw d.make()} の型、switch の
+     * セレクタの列挙型）のメンバーと親にも依存する。以前は場面ごと（呼び出しの受け手と実引数・修飾された名前の左側・
+     * 拡張 for 文・switch・throw・アノテーション・型の名前の節）に拾っていたが、拾い漏らしが見つかるたびに場面を
+     * 足すことになったので、「すべての式と型の節」の 1 つの決まりにした（docs/cache-unification-qa.md の Q78）。
+     * 親型の変化は、型を数えておけば差分更新が部分型の側で拾う（{@link CacheUpdater} の「親型の連鎖」）。
+     * 呼び出しの節では、選ばれなかった候補のシグネチャ（引数・戻り値・throws）の型も数える（{@link #noteCandidates(ASTNode)}）。
+     * 型を数えると、その型引数（内部クラスは囲む型の型引数も）と、名前にした型の頭（親型の型引数・型引数の上限・
+     * 関数型インターフェースの関数型）も数える（{@link BindingNames#noteReachedType}）。AST に式の無い暗黙の呼び出しは、
+     * 結果の型と候補を書いた呼び出しと同じに数える（{@link #recordImplicit}）。
+     * このファイルに名前の現れない型のうち、sealed な型の許した部分型（網羅性・キャストが成り立つか）と、アノテーション型の
+     * メタ注釈・{@code @Repeatable} の入れ物の型は、ここでは数えず、それを宣言したファイルの側で連鎖させる
+     * （{@link jche.cache.FileAnalysis#cascadesWhenReanalysed}）。継承したメソッドの戻り値と throws の型は、型の宣言の側で
+     * 数える（{@link BindingNames#noteInheritedSignatures}）。
+     *
+     * <p>例外は 1 つ。
+     * <ul>
+     *   <li>JDT が解決できなかった名前（{@link Name} の節で、バインディングが無いか、回復して作ったもの）は数えない。
+     *       依存 jar が無いときの式の中の {@code org.missing.pkg.Type.run()} の {@code org.missing} には、同じバッチで
+     *       先に別のファイルが {@code org.missing.pkg.Type.class} のような型の文脈で同じ名前を解決しようとしたかどうかで、
+     *       JDT が回復した型（{@code org.missing}）を返したり返さなかったりする。数えると I 行がバッチの組み方で変わる
+     *       （Q79）。解決できなかった名前は、エラーの側（I 行の 2 列目）で拾う。型の節（{@link Type}）は回復した型でも
+     *       数える（型の文脈の回復はバッチに依らない。途中のパッケージができる・無くなると変わるが、それは差分更新が
+     *       解決できなかった名前の側で拾う。Q80）</li>
+     * </ul>
+     * アノテーションの型は、アノテーションの節の側で数える（型の名前の節は数えない）。{@code java.*} のもの
+     * （{@code @Override}・{@code @Target}）も数える。同じパッケージに {@code Override} や {@code Target} という型を
+     * 足すと、書いた名前がそちらに解決される（JLS 6.4.1）。差分更新は I 行の単純名でそれを見つけるので、数えないと
+     * 解析し直さない。
+     */
+    @Override
+    public boolean preVisit2(ASTNode node) {
+        noteCandidates(node);
+        if (node instanceof Annotation a) {
+            names.noteDependency(a.resolveTypeBinding());
+        } else if (node instanceof Name n) {
+            if (!(n.getParent() instanceof Annotation a && n.getLocationInParent() == a.getTypeNameProperty())
+                    && resolved(n.resolveBinding())) {
+                names.noteReachedType(n.resolveTypeBinding());
+            }
+        } else if (node instanceof Expression e) {
+            names.noteReachedType(e.resolveTypeBinding());
+        } else if (node instanceof Type t) {
+            names.noteReachedType(t.resolveBinding());
+        }
+        return true;
+    }
+
+    /**
+     * 呼び出し・メソッド参照・new・super(...) の節では、呼び出しの候補（同じ名前のメソッド・コンストラクタ）のシグネチャの型も
+     * 数える（{@link BindingNames#noteCandidates}。選ばれなかった候補の型も、どの候補が選ばれるかに効く）。探す型は、
+     * 修飾する式・型があればその型、単純名・{@code super.m()} なら囲む型すべて（とその親）、new・コンストラクタ参照なら
+     * 作る型、{@code super(...)} なら親のクラス。{@code this(...)} の候補は自分のコンストラクタで、引数の型はこのファイルに
+     * 書いてあるので見ない
+     */
+    private void noteCandidates(ASTNode node) {
+        if (node instanceof MethodInvocation n) {
+            noteCandidates(n.getExpression() == null ? null : n.getExpression().resolveTypeBinding(), n,
+                    n.getName().getIdentifier());
+        } else if (node instanceof SuperMethodInvocation n) {
+            noteCandidates(null, n, n.getName().getIdentifier());
+        } else if (node instanceof SuperMethodReference n) {
+            noteCandidates(null, n, n.getName().getIdentifier());
+        } else if (node instanceof ExpressionMethodReference n) {
+            names.noteCandidates(n.getExpression().resolveTypeBinding(), n.getName().getIdentifier());
+        } else if (node instanceof TypeMethodReference n) {
+            names.noteCandidates(n.getType().resolveBinding(), n.getName().getIdentifier());
+        } else if (node instanceof ClassInstanceCreation n) {
+            names.noteCandidates(n.getType().resolveBinding(), null);
+        } else if (node instanceof CreationReference n) {
+            names.noteCandidates(n.getType().resolveBinding(), null);
+        } else if (node instanceof SuperConstructorInvocation n) {
+            IMethodBinding b = n.resolveConstructorBinding();
+            names.noteCandidates((b == null) ? null : b.getDeclaringClass(), null);
+        }
+    }
+
+    /**
+     * 修飾する型（{@code qualifying}）があればその型で、無ければ {@code node} を囲む型すべてと、static import した型
+     * （{@code import static p.X.name} と {@code import static p.X.*} の X）で候補を探す（JLS 15.12.1）
+     */
+    private void noteCandidates(ITypeBinding qualifying, ASTNode node, String name) {
+        if (qualifying != null) {
+            names.noteCandidates(qualifying, name);
+            return;
+        }
+        for (ASTNode p = node.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof AbstractTypeDeclaration td) {
+                names.noteCandidates(td.resolveBinding(), name);
+            } else if (p instanceof AnonymousClassDeclaration ac) {
+                names.noteCandidates(ac.resolveBinding(), name);
+            }
+        }
+        for (Object o : cu.imports()) {
+            ImportDeclaration imp = (ImportDeclaration) o;
+            if (!imp.isStatic()) {
+                continue;
+            }
+            if (imp.isOnDemand()) {
+                names.noteCandidates(imp.getName().resolveTypeBinding(), name);
+            } else if (imp.getName() instanceof QualifiedName qn && qn.getName().getIdentifier().equals(name)) {
+                names.noteCandidates(qn.getQualifier().resolveTypeBinding(), name);
+            }
+        }
+    }
+
+    /** JDT が解決できた（バインディングがあり、回復して作ったものでない）か */
+    private static boolean resolved(IBinding b) {
+        return b != null && !b.isRecovered();
+    }
+
+    /**
+     * import 文の中の名前は参照箇所ではない（import に書いた名前は CallEdgeExtractor が依存として別に数える）。
+     *
+     * <p>ただし、メンバーを持ち込む import（{@code import static T.*}・{@code import static T.m}・入れ子の型の
+     * {@code import T.*}）が名指す型 T は、JDT のバインディングで I 行に数える（{@link BindingNames#noteDependency}。
+     * jar の型なら、その推移的な親型も数える。Q86）。T から持ち込まれるメンバーには T の親型（別の jar の型のことも）から
+     * 継承したものも入るが、import に書いた名前（{@code org.lib.K.*}）からは T の親型も、T の jar のパッケージも分からない。
+     * T の jar（か親型の jar）がメンバーを足すと、単純名で呼んだメソッドの選び方や入れ子の型の名前の解決が変わるのに、
+     * 差分更新がこのファイルを解析し直さなかった
+     */
     @Override
     public boolean visit(ImportDeclaration node) {
+        Name name = node.getName();
+        IBinding imported = null;
+        if (node.isOnDemand()) {
+            imported = name.resolveBinding();   // パッケージならパッケージのバインディング（数えない）
+        } else if (node.isStatic() && name instanceof QualifiedName qn) {
+            imported = qn.getQualifier().resolveBinding();
+        }
+        if (imported instanceof ITypeBinding t && !t.isRecovered()) {
+            names.noteDependency(t);
+        }
         return false;
     }
 

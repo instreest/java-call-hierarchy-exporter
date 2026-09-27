@@ -8,6 +8,9 @@
 #   通常（whole / entry）… 同じ設定で3回実行する。1回目はキャッシュ無し、2回目はキャッシュを再利用する経路、
 #                          3回目は解析対象のソースと jar の更新時刻を全部変えてから（touch）実行し、中身が同じなら
 #                          内容ハッシュでキャッシュが再利用されること（GitHub Actions のチェックアウト後と同じ状況）を確認する
+#   novalues             … whole と同じ解析対象を dataflow.enabled=false（キャッシュの値の行を読まない）で。
+#                          実行の形は通常ケースと同じ。値が無いので具象クラスの解決は CHA まで、条件分岐の
+#                          打ち切りは起きない。キャッシュの形式を変えても、この指定の出力が変わらないことを見る
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
 #   maven / mavenmulti / gradle
@@ -24,12 +27,22 @@
 #                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
 #                          拡張・契約表ありでのみ具象クラスに絞れること、拡張も契約表も
 #                          キャッシュを捨てさせないことを確認する
-#   cachesplit           … 2 つに分かれたキャッシュ（analysis-cache.tsv / dataflow-cache.tsv）の整合。
-#                          両方そろっていれば再利用し、dataflow を消す・世代の印を書き換えると両方を
-#                          作り直し、dataflow から 1 ブロックだけ消すとそのファイルだけ解析し直して
-#                          対に戻ることを確認する。最終行（Z 行）のブロック数の書き換え・削除と、
-#                          最終行の直前の文字化け（末尾だけを読むパス0 では気づけない位置）も見る。
-#                          どの実行のあとも 2 つの F 行が完全に一致すること
+#   cacheblocks          … キャッシュ（analysis-cache.tsv。1 ファイル）のブロックの整合。そのまま再利用できること、
+#                          1 ブロックの中身を書き換える（検査値が合わなくなる）とそのファイル（ほかから参照されない
+#                          型だけを宣言する Deep.java を選んである）だけ解析し直してほかは再利用すること、
+#                          F 行の件数（未解決数）だけを書き換えると、そのファイルとその型を使う 1 ファイルだけを
+#                          解析し直し、警告の件数が変わらないこと、最終行（Z 行）のブロック数の書き換え・削除と、
+#                          先頭 8 KB より後ろの文字化け（ヘッダの読み取りでは気づけない位置）と、先頭の行（T 行）の
+#                          書き換えでは丸ごと作り直し、解析は失敗させないことを確認する。どの実行のあとも、キャッシュは 1 ファイルだけで、
+#                          各ブロックの検査値とブロック数が合っていること（最終行の Z 行があること）。
+#                          型解決できなかった呼び出しの件数（ログの警告）が、再利用・一部の解析し直しでも
+#                          変わらないこと
+#   values               … 値そのもの（文字列リテラル・定数）が出所の文字列の文法の文字（| ; { }）を含む題材
+#                          （values/project）。config.properties（expected/。契約表のひな形 contracts-suggested.txt
+#                          も比べる）→ 同じ設定でキャッシュを再利用 → config-nodataflow.properties
+#                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。以前の読み手は値を
+#                          その文字の手前で切って読み違えていた。expected/ は値を切り詰めずに読んだ正しい結果
+#                          （values/config.properties の冒頭の説明）
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
@@ -45,7 +58,7 @@ cd "$(dirname "$0")"
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry jarchange maven mavenmulti gradle plugin cachesplit multi"}
+CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -155,6 +168,13 @@ expect_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の最�
         echo "  DIFF $1 ログ: キャッシュが再利用されていません ($3): $(summary_line "$1/run-$2.log")"; fail=1
     fi
 }
+expect_parsed() {   # $1=case  $2=何回目  $3=件数  $4=ラベル   … 集計行の 2 つ目の「=N」（新規解析）が $3
+    if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E "^[^=]*=[0-9]+[^=]*=$3([^0-9]|\$)"; then
+        echo "  OK   $1 ログ ($4)"
+    else
+        echo "  DIFF $1 ログ: 新規解析が $3 件ではありません ($4): $(summary_line "$1/run-$2.log")"; fail=1
+    fi
+}
 expect_not_reused() {   # $1=case  $2=何回目  $3=ラベル   … 集計行の最初の「=N」（再利用）が 0
     if summary_line "$1/run-$2.log" | LC_ALL=C grep -q -E '^[^=]*=0([^0-9]|$)'; then
         echo "  OK   $1 ログ ($3)"
@@ -167,6 +187,21 @@ expect_log_missing() {   # $1=case  $2=何回目  $3=ASCII の文字列  $4=ラ�
         echo "  DIFF $1 ログに出てはいけない行があります ($4): $3"; fail=1
     else
         echo "  OK   $1 ログ ($4)"
+    fi
+}
+
+# 「N call(s) could not have their types resolved」（型解決できなかった呼び出しの件数）の N。無ければ空
+unresolved_count() {   # $1=case  $2=何回目
+    LC_ALL=C grep -a -o -E '[0-9]+ call\(s\) could not have their types resolved' "$1/run-$2.log" \
+        | head -1 | cut -d' ' -f1
+}
+expect_unresolved_count() {   # $1=case  $2=何回目  $3=件数  $4=ラベル
+    local n
+    n=$(unresolved_count "$1" "$2")
+    if [ "$n" = "$3" ]; then
+        echo "  OK   $1 ログ ($4)"
+    else
+        echo "  DIFF $1 ログ: 型解決できなかった呼び出しが ${n:-（行なし）} 件です。期待は $3 件 ($4)"; fail=1
     fi
 }
 
@@ -246,86 +281,127 @@ multi_case() {
     expect_run_files entry config.properties "multi: entry"
 }
 
-# 2 つに分かれたキャッシュの整合のケース。
-# 片方だけが新しい状態を作らないこと（世代の印とブロックの突き合わせ）を、壊し方を変えて確認する
-cachesplit_case() {
-    echo "== cachesplit =="
-    rm -rf cachesplit/.cache cachesplit/output cachesplit/run-*.log
-    local dir=cachesplit/.cache/demo_*
-    # 2 つのキャッシュの F 行（ブロックの区切り）が完全に一致すること。
-    # ここがずれると「呼び出し階層は再利用、データフローは欠けている」ブロックが生まれる
-    expect_blocks_paired() {   # $1=ラベル
-        local a f
-        a=$(ls $dir/analysis-cache.tsv 2>/dev/null)
-        f=$(ls $dir/dataflow-cache.tsv 2>/dev/null)
-        if [ -z "$a" ] || [ -z "$f" ]; then
-            echo "  DIFF cachesplit キャッシュが 2 つそろっていません ($1)"; fail=1; return
+# キャッシュ（1 ファイル）のブロックの整合のケース。
+# 壊れたブロックだけを解析し直すこと（検査値）と、切れた・読めないキャッシュを丸ごと作り直すことを、
+# 壊し方を変えて確認する
+cacheblocks_case() {
+    echo "== cacheblocks =="
+    rm -rf cacheblocks/.cache cacheblocks/output cacheblocks/run-*.log
+    local dir=cacheblocks/.cache/demo_*
+    # キャッシュが 1 ファイルだけで（以前の dataflow-cache.tsv が無い。同じフォルダを使う実行を 1 つずつにする
+    # 錠のファイル analysis-cache.tsv.lock は中身の無い印なので数えない）、各ブロックの検査値（F 行の最後の列。
+    # F 行の crc 列を空にした形とブロックの残りの行の CRC32）と、先頭の行の検査値（T 行の最後の列。ヘッダ行・L 行と
+    # 最後の列を空にした T 行の CRC32）と、最終行のブロック数が合っていること
+    expect_cache_intact() {   # $1=ラベル
+        local cache bad
+        cache=$(ls $dir/analysis-cache.tsv 2>/dev/null)
+        if [ -z "$cache" ] || [ "$(ls $dir | grep -v -x -F analysis-cache.tsv.lock | wc -l)" != 1 ]; then
+            echo "  DIFF cacheblocks キャッシュが analysis-cache.tsv の 1 ファイルではありません ($1): $(ls $dir 2>/dev/null)"
+            fail=1; return
         fi
-        if diff -q <(grep '^F' "$a") <(grep '^F' "$f") > /dev/null; then
-            echo "  OK   cachesplit ブロックが対（$1）"
+        bad=$(python3 - "$cache" <<'PY'
+import sys, zlib
+lines = open(sys.argv[1], 'rb').read().split(b'\n')
+blocks, crc, want, errors, trailer, heads = 0, 0, None, [], False, 0
+head = zlib.crc32(lines[0] + b'\n')
+def close():
+    if want is not None and '%08x' % crc != want:
+        errors.append('crc: ' + want)
+def column(line, i):   # 列が足りなければ空（どの検査値とも合わない）
+    cols = line.split(b'\t')
+    return cols[i].decode() if i < len(cols) else ''
+for line in lines[1:]:
+    if not line:
+        continue
+    if blocks == 0 and line[:1] == b'L':
+        head = zlib.crc32(line + b'\n', head)
+    elif blocks == 0 and line[:1] == b'T':
+        heads += 1
+        head = zlib.crc32(line[:line.rindex(b'\t') + 1] + b'\n', head)
+        if '%08x' % head != column(line, 2):
+            errors.append('T: ' + line.decode())
+    if line[:1] in (b'F', b'Z'):
+        close()
+        want = None
+        if line[:1] == b'Z':
+            trailer = True
+            if column(line, 1) != str(blocks):
+                errors.append('Z: ' + line.decode())
+            continue
+        blocks += 1
+        want = column(line, 7)
+        crc = zlib.crc32(line[:line.rindex(b'\t') + 1] + b'\n')
+    elif want is not None:
+        crc = zlib.crc32(line + b'\n', crc)
+close()
+if heads != 1:
+    errors.append('T 行（先頭の行の検査値）が 1 つではありません: %d' % heads)
+if not trailer:
+    errors.append('Z 行（最終行）がありません')
+print('\n'.join(errors))
+PY
+)
+        if [ -z "$bad" ]; then
+            echo "  OK   cacheblocks キャッシュは 1 ファイルで、検査値とブロック数が合う（$1）"
         else
-            echo "  DIFF cachesplit 2 つのキャッシュの F 行が一致しません ($1)"
-            diff <(grep '^F' "$a") <(grep '^F' "$f") | head -5; fail=1
+            echo "  DIFF cacheblocks キャッシュの検査値かブロック数が合いません ($1)"; echo "$bad" | head -5; fail=1
         fi
     }
 
-    run cachesplit config.properties 1 "1回目: キャッシュ無し" || return
-    compare cachesplit expected "1回目: キャッシュ無し"
-    expect_blocks_paired "1回目"
+    run cacheblocks config.properties 1 "1回目: キャッシュ無し" || return
+    compare cacheblocks expected "1回目: キャッシュ無し"
+    expect_cache_intact "1回目"
+    # 型解決できなかった呼び出しの件数（警告と warnings.txt に出る）。再利用・書き写したブロックの件数は
+    # U 行を読まずに F 行の未解決数の列から取るので、その列を読み違えると件数だけが黙って変わる
+    local unresolved
+    unresolved=$(unresolved_count cacheblocks 1)
+    if [ -n "$unresolved" ] && [ "$unresolved" -gt 0 ]; then
+        echo "  OK   cacheblocks ログ (1回目: 型解決できなかった呼び出しが $unresolved 件)"
+    else
+        echo "  DIFF cacheblocks ログ: 型解決できなかった呼び出しの件数の行がありません (1回目)"; fail=1
+    fi
 
-    run cachesplit config.properties 2 "2回目: 両方そろっている" || return
-    expect_reused cachesplit 2 "2回目: 両方そろっていれば再利用"
-    compare cachesplit expected "2回目: 両方そろっている"
-    expect_blocks_paired "2回目"
+    run cacheblocks config.properties 2 "2回目: そのまま" || return
+    expect_reused cacheblocks 2 "2回目: 再利用"
+    expect_parsed cacheblocks 2 0 "2回目: 解析し直したファイルは無い"
+    expect_unresolved_count cacheblocks 2 "$unresolved" "2回目: 再利用しても型解決できなかった呼び出しの件数は同じ"
+    compare cacheblocks expected "2回目: そのまま"
+    expect_cache_intact "2回目"
 
-    # dataflow を消すと、analysis だけを使い回さずに両方を作り直す
-    rm -f $dir/dataflow-cache.tsv
-    run cachesplit config.properties 3 "3回目: dataflow を消した" || return
-    expect_not_reused cachesplit 3 "3回目: dataflow が無ければ両方を作り直す"
-    compare cachesplit expected "3回目: dataflow を消した"
-    expect_blocks_paired "3回目"
-
-    # 世代の印を書き換える（前回の実行が dataflow を書く前に落ちた状況と同じ）
-    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+    # 1 ブロック（Deep.java。ほかのファイルから参照されない型だけを宣言する）の C 行の 1 文字だけを変える。
+    # 行の形は保つので、検査値が無ければ気づけない（古い行番号がそのまま出力に出る）
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
 import sys
 p = sys.argv[1]
 lines = open(p, encoding='utf-8').read().split('\n')
-lines[0] = lines[0].rsplit('gen=', 1)[0] + 'gen=0000000000000000'
+block = None
+for i, line in enumerate(lines):
+    if line.startswith('F\t'):
+        block = line.split('\t')[1]
+    elif block is not None and block.endswith('/Deep.java') and line.startswith('C\t'):
+        cols = line.split('\t')
+        cols[3] = str(int(cols[3]) + 1)   # 呼び出し箇所の行番号
+        lines[i] = '\t'.join(cols)
+        break
+else:
+    sys.exit('Deep.java の C 行が見つかりません')
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-    run cachesplit config.properties 4 "4回目: 世代の印が食い違う" || return
-    expect_not_reused cachesplit 4 "4回目: 世代が食い違えば両方を作り直す"
-    compare cachesplit expected "4回目: 世代の印が食い違う"
-    expect_blocks_paired "4回目"
+    run cacheblocks config.properties 3 "3回目: 1 ブロックの中身が壊れた" || return
+    expect_reused cacheblocks 3 "3回目: 壊れたブロック以外は再利用"
+    expect_parsed cacheblocks 3 1 "3回目: 壊れたブロックのファイルだけを解析し直す"
+    expect_log_contains cacheblocks 3 "failed the integrity check" "3回目: 検査値が合わないことをログに出す"
+    expect_unresolved_count cacheblocks 3 "$unresolved" "3回目: 型解決できなかった呼び出しの件数は同じ"
+    compare cacheblocks expected "3回目: 1 ブロックの中身が壊れた"
+    expect_cache_intact "3回目: 解析し直したブロックで置き換わる"
 
-    # dataflow から 1 ブロックだけ消す。そのファイルだけ解析し直し、他は再利用して対に戻る
-    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
-import sys
-p = sys.argv[1]
-out, skipping, removed = [], False, None
-for line in open(p, encoding='utf-8'):
-    if line.startswith('F\t'):
-        path = line.split('\t')[1]
-        if removed is None and path.endswith('Counter.java'):
-            removed, skipping = path, True
-        else:
-            skipping = False
-    if not skipping:
-        out.append(line)
-open(p, 'w', encoding='utf-8').write(''.join(out))
-PY
-    run cachesplit config.properties 5 "5回目: dataflow のブロックが 1 つ欠けた" || return
-    expect_reused cachesplit 5 "5回目: 欠けたファイル以外はキャッシュを再利用"
-    compare cachesplit expected "5回目: dataflow のブロックが 1 つ欠けた"
-    expect_blocks_paired "5回目: 欠けたブロックを解析し直して対に戻る"
+    run cacheblocks config.properties 4 "4回目: 直ったあと" || return
+    expect_parsed cacheblocks 4 0 "4回目: 全件再利用に戻る"
+    compare cacheblocks expected "4回目: 直ったあと"
+    expect_cache_intact "4回目"
 
-    run cachesplit config.properties 6 "6回目: 対に戻ったあと" || return
-    expect_reused cachesplit 6 "6回目: 全件再利用に戻る"
-    compare cachesplit expected "6回目: 対に戻ったあと"
-
-    # 最終行（Z 行）のブロック数だけを書き換える。世代の印は合っているので、
-    # ブロック数の突き合わせだけが「どちらかが途中で切れている」と気づける形
-    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+    # 最終行（Z 行）のブロック数だけを書き換える。途中のブロックが抜けた状況と同じ
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
 import sys
 p = sys.argv[1]
 lines = open(p, encoding='utf-8').read().split('\n')
@@ -335,38 +411,121 @@ for i in range(len(lines) - 1, -1, -1):
         break
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-    run cachesplit config.properties 7 "7回目: 最終行のブロック数が食い違う" || return
-    expect_not_reused cachesplit 7 "7回目: ブロック数が食い違えば両方を作り直す"
-    compare cachesplit expected "7回目: 最終行のブロック数が食い違う"
-    expect_blocks_paired "7回目"
+    run cacheblocks config.properties 5 "5回目: 最終行のブロック数が合わない" || return
+    expect_not_reused cacheblocks 5 "5回目: ブロック数が合わなければ作り直す"
+    compare cacheblocks expected "5回目: 最終行のブロック数が合わない"
+    expect_cache_intact "5回目"
 
-    # 最終行そのものを消す（書き終える前に落ちた形）。dataflow 側に Z 行が無ければ対とみなさない
-    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+    # 最終行そのものを消す（書き終える前に落ちた形）
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
 import sys
 p = sys.argv[1]
 lines = [l for l in open(p, encoding='utf-8') if not l.startswith('Z\t')]
 open(p, 'w', encoding='utf-8').write(''.join(lines))
 PY
-    run cachesplit config.properties 8 "8回目: dataflow に最終行が無い" || return
-    expect_not_reused cachesplit 8 "8回目: 最終行が無ければ両方を作り直す"
-    compare cachesplit expected "8回目: dataflow に最終行が無い"
-    expect_blocks_paired "8回目"
+    run cacheblocks config.properties 6 "6回目: 最終行が無い" || return
+    expect_not_reused cacheblocks 6 "6回目: 最終行が無ければ作り直す"
+    compare cacheblocks expected "6回目: 最終行が無い"
+    expect_cache_intact "6回目"
 
-    # dataflow の最終行の直前に不正なバイトを差し込む。ヘッダの読み取り（先頭のバッファ）と
-    # 最終行の読み取り（末尾だけ）はどちらもここを見ないので、丸ごと読むパス1b で初めて気づく。
-    # そこで例外を投げると、キャッシュ 1 つのせいで解析ごと失敗する（run が失敗を拾う）
-    python3 - "$(ls $dir/dataflow-cache.tsv)" <<'PY'
+    # 最終行の直前に不正なバイトを差し込む。先頭 8 KB より後ろなので、ヘッダの読み取り（パス0）では
+    # 気づけず、丸ごと読むパス1 で初めて気づく。そこで例外を投げると、キャッシュのせいで解析ごと失敗する
+    # （run が失敗を拾う）
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
 import sys
 p = sys.argv[1]
 b = bytearray(open(p, 'rb').read())
 z = b.rindex(b'\nZ\t')
+assert z > 8192, 'キャッシュが 8 KB より小さい'
 b[z:z] = b'\xff\xfe bad'
 open(p, 'wb').write(bytes(b))
 PY
-    run cachesplit config.properties 9 "9回目: dataflow の途中の文字が壊れた" || return
-    expect_not_reused cachesplit 9 "9回目: 読めなければ解析を失敗させず両方を作り直す"
-    compare cachesplit expected "9回目: dataflow の途中の文字が壊れた"
-    expect_blocks_paired "9回目"
+    run cacheblocks config.properties 7 "7回目: 途中の文字が壊れた" || return
+    expect_not_reused cacheblocks 7 "7回目: 読めなければ解析を失敗させず作り直す"
+    compare cacheblocks expected "7回目: 途中の文字が壊れた"
+    expect_cache_intact "7回目"
+
+    # F 行の件数（未解決数）だけを 0 にする。検査値の列はそのまま。書き写すブロックの件数は U 行を読まずに
+    # この列から数えるので、F 行が検査値に入っていないと、型解決できなかった呼び出しの警告の件数が黙って減る
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+for i, line in enumerate(lines):
+    cols = line.split('\t')
+    if cols[0] == 'F' and len(cols) > 7 and cols[6] not in ('', '0'):
+        cols[6] = '0'
+        lines[i] = '\t'.join(cols)
+        break
+else:
+    sys.exit('未解決数が 0 でない F 行が見つかりません')
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+PY
+    run cacheblocks config.properties 8 "8回目: F 行の件数が書き換えられた" || return
+    expect_parsed cacheblocks 8 2 "8回目: 件数を書き換えたブロックのファイルと、その型を使う 1 ファイルだけを解析し直す"
+    expect_log_contains cacheblocks 8 "failed the integrity check" "8回目: 検査値が合わないことをログに出す"
+    expect_unresolved_count cacheblocks 8 "$unresolved" "8回目: 型解決できなかった呼び出しの件数は変わらない（警告が残る）"
+    compare cacheblocks expected "8回目: F 行の件数が書き換えられた"
+    expect_cache_intact "8回目"
+
+    # T 行（ソース一覧の指紋）だけを書き換える。先頭の行（ヘッダ・L 行・T 行）は T 行の最後の列の検査値で守る。
+    # L 行（依存 jar）を信用できなければ jar の変化を見落とすので、合わなければ丸ごと作り直す
+    python3 - "$(ls $dir/analysis-cache.tsv)" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+for i, line in enumerate(lines):
+    cols = line.split('\t')
+    if cols[0] == 'T':
+        cols[1] = '0' * len(cols[1])
+        lines[i] = '\t'.join(cols)
+        break
+else:
+    sys.exit('T 行が見つかりません')
+open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+PY
+    run cacheblocks config.properties 9 "9回目: 先頭の行が書き換えられた" || return
+    expect_not_reused cacheblocks 9 "9回目: 先頭の行の検査値が合わなければ作り直す"
+    expect_log_contains cacheblocks 9 "first lines of the existing cache" "9回目: 先頭の行が合わないことをログに出す"
+    compare cacheblocks expected "9回目: 先頭の行が書き換えられた"
+    expect_cache_intact "9回目"
+}
+
+# 値が出所の文字列の文法の文字を含む題材のケース（values/config.properties の冒頭の説明）
+values_case() {
+    echo "== values =="
+    rm -rf values/.cache values/output values/run-*.log
+    run values config.properties 1 "1回目: キャッシュ無し" || return
+    compare values expected "1回目: キャッシュ無し"
+    compare_suggested values expected "1回目: 契約表のひな形"
+    run values config.properties 2 "2回目" || return
+    expect_reused values 2 "2回目: キャッシュを再利用"
+    compare values expected "2回目: キャッシュ再利用"
+    compare_suggested values expected "2回目: 契約表のひな形"
+    # 値を読まない指定。キャッシュは同じものを再利用し、値の行だけを読まない
+    run values config-nodataflow.properties 3 "3回目: dataflow.enabled=false" || return
+    expect_reused values 3 "3回目: キャッシュを再利用"
+    compare values expected-nodataflow "3回目: dataflow.enabled=false"
+    compare_suggested values expected-nodataflow "3回目: 契約表のひな形"
+}
+
+# 契約表のひな形（contracts-suggested.txt）が期待と同じこと（期待のフォルダに無ければ、出力にも無いこと）
+compare_suggested() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ ! -f "$1/$2/contracts-suggested.txt" ]; then
+        if [ -f "$out/contracts-suggested.txt" ]; then
+            echo "  DIFF $1/contracts-suggested.txt があります ($3)"; fail=1
+        else
+            echo "  OK   $1/contracts-suggested.txt は無い ($3)"
+        fi
+    elif diff --strip-trailing-cr -q "$1/$2/contracts-suggested.txt" "$out/contracts-suggested.txt" > /dev/null 2>&1; then
+        echo "  OK   $1/contracts-suggested.txt ($3)"
+    else
+        echo "  DIFF $1/contracts-suggested.txt ($3)"
+        diff --strip-trailing-cr "$1/$2/contracts-suggested.txt" "$out/contracts-suggested.txt" | head -20
+        fail=1
+    fi
 }
 
 # 拡張のケース。同じソースを 3 通りの設定で解析し、拡張の効き目とキャッシュの扱いを見る
@@ -469,8 +628,11 @@ for c in $CASES; do
     if [ "$c" = plugin ]; then
         plugin_case; continue
     fi
-    if [ "$c" = cachesplit ]; then
-        cachesplit_case; continue
+    if [ "$c" = cacheblocks ]; then
+        cacheblocks_case; continue
+    fi
+    if [ "$c" = values ]; then
+        values_case; continue
     fi
     echo "== $c =="
     rm -rf "$c/.cache" "$c/output" "$c"/run-*.log

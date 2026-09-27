@@ -136,8 +136,8 @@ Gradle の場合は `mvn` の行を `./gradlew dependencies` 等に読み替え�
 
 ### 設定ファイルの書き方（CI 向けの例）
 
-**相対パスの起点は「その設定ファイルが置かれているフォルダ」**です（`project.root` / `output.folder` /
-`cache.folder`）。`source.folders` などは `project.root` からの相対です。
+**相対パスの起点は「その設定ファイルが置かれているフォルダ」**です（`project.root` / `library.jars` / `output.folder` /
+`cache.folder` など）。`source.folders` / `library.folders` / `external.library.folders` は `project.root` からの相対です。
 リポジトリ直下に `ci/call-hierarchy.properties` を置くなら、`project.root` は 1 つ上（`..`）になります。
 
 ```properties

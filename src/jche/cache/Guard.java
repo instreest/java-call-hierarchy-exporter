@@ -2,7 +2,7 @@
 package jche.cache;
 
 /**
- * 呼び出し箇所を囲む条件分岐（ガード）。C行・U行の列として持つ「事実」。
+ * 呼び出し箇所を囲む条件分岐（ガード）。ブロックの G 行の表に置き、C行・U行が番号で指す「事実」。
  *
  * <h2>何のためにあるか</h2>
  * 呼び出しがソースに書かれていても、その経路では条件が成立せず実行されないことがある。
@@ -18,17 +18,31 @@ package jche.cache;
  * {@link CacheFormat} の原則どおりの分担。
  *
  * <h2>形式</h2>
- * 条件（アトム）を {@link #ATOM_SEP} で並べたもの。全て成立して初めて呼び出しに到達する
- * （論理積）。1つのアトムは {@link #FIELD_SEP} 区切りの4項目。
+ * 条件（アトム。{@link Atom}）を並べたもの。全て成立して初めて呼び出しに到達する（論理積）。
+ * 1つのアトムは 4 項目。
  * <pre>
- *   op    判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}。
- *         条件の調査（conditions.target）ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
- *   origin 判定される式の出所（{@link Origin}。A:引数位置 か V:定数 だけ）
- *   value  比較する値。IN / NOT_IN は {@link #VALUE_SEP} 区切りで複数
- *   text   ソースに書かれていた条件式（注記に出すためだけの文字列。判定には使わない）
+ *   op      判定の種別（{@link #EQ} / {@link #NE} / {@link #IN} / {@link #NOT_IN}。
+ *           条件の調査（conditions.target）ではこれに加えて {@link #UNKNOWN} / {@link #MORE}）
+ *   subject 判定される式の値グラフのノード（{@link ValueNode}。種別 A:引数位置 か V:定数 だけ）
+ *   values  比較する値。EQ / NE は 1 つ、IN / NOT_IN は 1 つ以上。定数の値そのもの（切り詰めない）
+ *   text    ソースに書かれていた条件式（注記に出すためだけの文字列。判定には使わない）
  * </pre>
- * 区切りに制御文字を使うのは、条件式のテキストに現れうる文字（{@code & | ~ ^ , ; =}）を
- * 避けるため。エスケープを持たずに済み、タブ区切りのキャッシュ形式とも衝突しない。
+ *
+ * <h3>キャッシュでは G 行の表（ブロックごと）</h3>
+ * ブロックの N 行の直後に、アトム 1 つにつき 1 行（{@link Atom#toRow}）を置く。
+ * <pre>
+ *   G  ガード番号  op  subject（ノード番号）  text  値1  値2 …
+ * </pre>
+ * ガード番号はブロック内の 0 始まりで、C 行・U 行が初めて使った順に振る（同じアトムの並びは同じ番号）。
+ * 1 つのガードのアトムは、番号が同じ行としてアトムの順に続けて並ぶ。C 行・U 行は番号で指す（無ければ -1）。
+ * 同じ分岐の中の呼び出しは同じガードを持つので、呼び出しごとに条件を書き並べずに済む。
+ * 値は後ろの列に 1 つずつ置くので、値の中の文字（{@code |} など）で区切りが崩れることはない。
+ *
+ * <h3>読み手（{@code jche.graph.GuardTable}）</h3>
+ * 読み手は G 行を条件の表（{@code jche.graph.GuardTable}）に写し、アトムの種別・判定される式（値の表の葉）・
+ * 値を列で引く（{@code jche.graph.CallGraphBuilder}）。値を 1 つの文字列につないで読み戻すことはしないので、
+ * 値が {@code |} などを含んでも切れない（以前は制御文字で区切った 1 つの文字列を読み手に渡していた。
+ * {@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
  *
  * <h2>安全側の方針</h2>
  * 判定できる形（引数・定数と、定数との比較）だけをアトムにする。分からない条件は
@@ -37,11 +51,11 @@ package jche.cache;
  */
 public final class Guard {
 
-    /** アトムの区切り（論理積） */
-    public static final char ATOM_SEP = '\u0001';
-    /** アトムの中の項目の区切り */
-    public static final char FIELD_SEP = '\u0002';
-    /** IN / NOT_IN の値の区切り */
+    /**
+     * 値を 1 つの項目に並べるときの区切り（{@link #values}）。値は {@link #clean} を通すので、区切りと
+     * 取り違えない。条件の一覧（{@code jche.analysis.CallConditionScanner}）の EQ / NE の表記と、手で書き換えた
+     * キャッシュの値の並びをそろえるとき（{@code jche.graph.GuardTableBuilder}）に使う
+     */
     public static final char VALUE_SEP = '\u0003';
 
     /** 値が一致すること */
@@ -55,7 +69,7 @@ public final class Guard {
     /**
      * 判定できない条件（条件があることだけが分かっている）。
      *
-     * 打ち切りの判定には使えないので、キャッシュの guard 列には入れない。
+     * 打ち切りの判定には使えないので、キャッシュ（G 行）には入れない。
      * 「この呼び出しに効いている条件を漏れなく見たい」条件の調査
      * （設定ファイルの conditions.target。jche.analysis.CallConditionScanner）だけがこの種別を作る。
      * 読み手は知らない種別として読み飛ばすので、混ざっても打ち切りの結論は変わらない。
@@ -71,16 +85,54 @@ public final class Guard {
     }
 
     /**
-     * アトム1件を文字列にする（value は {@link #clean} 済み。IN / NOT_IN は {@link #values} で並べる）。
+     * アトム 1 つ（書き手がメモリ上で持つ形。キャッシュでは G 行 1 行）。
      *
-     * origin は出所（{@link Origin}）で、定数の値（{@code V:}）を含みうる。値にこの形式の
-     * 区切り文字が混ざると読み戻せなくなるので、value / text と同じく必ず落とす。
+     * @param op      判定の種別（{@link #EQ} など）
+     * @param subject 判定される式の値グラフのノード番号（{@link ValueNode}。A か V の種別）。
+     *                条件の調査だけが作る {@link #UNKNOWN} / {@link #MORE} では {@link ValueNode#NONE}
+     * @param values  比較する値（定数の値そのもの）。{@link #UNKNOWN} / {@link #MORE} では空
+     * @param text    ソースに書かれていた条件式（注記用）
      */
-    public static String atom(String op, String origin, String value, String text) {
-        return op + FIELD_SEP + clean(origin) + FIELD_SEP + value + FIELD_SEP + clean(text);
+    public record Atom(String op, int subject, java.util.List<String> values, String text) {
+
+        public Atom {
+            values = java.util.List.copyOf(values);
+            text = (text == null) ? "" : text;
+        }
+
+        /** {@code G ガード番号 op subject text 値…}（符号化は {@link CacheFormat#joinRow} が行う） */
+        public String toRow(int guardId) {
+            String[] cols = new String[5 + values.size()];
+            cols[0] = String.valueOf(CacheFormat.ROW_GUARD);
+            cols[1] = String.valueOf(guardId);
+            cols[2] = op;
+            cols[3] = String.valueOf(subject);
+            cols[4] = text;
+            for (int i = 0; i < values.size(); i++) {
+                cols[5 + i] = values.get(i);
+            }
+            return CacheFormat.joinRow(cols);
+        }
+
+        /** G 行のガード番号。読めなければ -1 */
+        public static int guardIdOf(String[] cols) {
+            return (cols.length < 2) ? -1 : ValueNode.intOf(cols[1], -1);
+        }
+
+        /** G 行のアトム。列が足りなければ null。列は {@link CacheFormat#columnsOf} で符号化を戻したもの */
+        public static Atom fromRow(String[] cols) {
+            if (cols.length < 5) {
+                return null;
+            }
+            java.util.List<String> values = new java.util.ArrayList<>(cols.length - 5);
+            for (int i = 5; i < cols.length; i++) {
+                values.add(cols[i]);
+            }
+            return new Atom(cols[2], ValueNode.intOf(cols[3], ValueNode.NONE), values, cols[4]);
+        }
     }
 
-    /** IN / NOT_IN の値を並べる */
+    /** 値を {@link #VALUE_SEP} で並べて 1 つの項目にする（それぞれ {@link #clean} を通す） */
     public static String values(java.util.List<String> values) {
         StringBuilder sb = new StringBuilder();
         for (String v : values) {
@@ -92,27 +144,7 @@ public final class Guard {
         return sb.toString();
     }
 
-    /** アトムを並べてガード1件にする */
-    public static String join(java.util.List<String> atoms) {
-        return String.join(String.valueOf(ATOM_SEP), atoms);
-    }
-
-    /** ガードをアトムに分解する。空なら空配列 */
-    public static String[] atomsOf(String guard) {
-        return (guard == null || guard.isEmpty()) ? new String[0] : guard.split(String.valueOf(ATOM_SEP), -1);
-    }
-
-    /** アトムの項目。範囲外なら空文字 */
-    public static String fieldOf(String atom, int index) {
-        String[] f = atom.split(String.valueOf(FIELD_SEP), -1);
-        return (index < f.length) ? f[index] : "";
-    }
-
-    public static String[] valuesOf(String field) {
-        return field.split(String.valueOf(VALUE_SEP), -1);
-    }
-
-    /** 区切り文字とタブ・改行を落とす（エスケープを持たない形式のため） */
+    /** 制御文字（区切り文字とタブ・改行）を空白にする（注記・CSV の 1 セルに収め、{@link #VALUE_SEP} と取り違えないため） */
     public static String clean(String s) {
         if (s == null) {
             return "";

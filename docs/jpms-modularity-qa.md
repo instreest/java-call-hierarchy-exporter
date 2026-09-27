@@ -30,8 +30,9 @@
   計 19 jar が classpath に載る
 - 実行は常に **classpath**（無名モジュール）。JBang、`pom.xml`（Eclipse 用）、README の Pleiades 手順
   （`javac -classpath lib\*`）、`.github/workflows/smoke.yml` のいずれも module-path は使っていない
-- `plugin.folders` の拡張は `URLClassLoader`（親＝ツール自身のクラスローダ）で読む
-  （[PluginClassLoaders](../src/jche/config/PluginClassLoaders.java)）。拡張は `jche.extension.*` と
+- `plugin.folders` の拡張は `URLClassLoader` の派生（親＝ツール自身のクラスローダ。`.java` をコンパイルしたクラスは
+  メモリから定義し、plugin.folders 直下の `.class` と jar は URL から読む。1 回の解析ごとに作る）で読む
+  （[PluginClassLoaders](../src/jche/config/PluginClassLoaders.java)、[instance-analysis-plugin-qa.md](instance-analysis-plugin-qa.md) の Q30）。拡張は `jche.extension.*` と
   JDT の AST（`org.eclipse.jdt.core.dom`）を触る
 
 ### Q2. `src/jche` のパッケージ間の依存はどうなっているか

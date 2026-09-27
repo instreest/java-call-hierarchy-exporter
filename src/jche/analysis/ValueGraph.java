@@ -2,14 +2,19 @@
 package jche.analysis;
 
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.CastExpression;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.ExpressionMethodReference;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.MethodReference;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeLiteral;
 
@@ -23,10 +28,10 @@ import jche.cache.ValueNode;
  *
  * <h2>{@link OriginTracker} との関係</h2>
  * {@link OriginTracker} は同じ式から「上限付きの出所の文字列」を作る。
- * 呼び出し箇所の値（{@code P} 行）を持つのは<b>こちらだけ</b>で、読み手は
- * {@code jche.graph.OriginRenderer} が読む直前に出所の文字列へ組み直す
- * （{@code docs/cache-split-qa.md} の Q21・Q22）。
- * 前者が残るのは {@code R} 行・{@code J} 行・{@code X} 行と、この葉の判定のためだけ。
+ * キャッシュの値（呼び出し箇所のレシーバ・実引数、戻り値の {@code R} 行、フィールドへの代入の {@code J} 行、
+ * 条件の subject）を持つのは<b>こちらだけ</b>で、読み手はノードを値の表（{@code jche.graph.ValueStore}）に
+ * 取り込んで読む（{@code docs/cache-split-qa.md} の Q21・Q22、{@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
+ * 前者が残るのは、ローカル変数の表で代入の食い違いを見る判定と、この葉の判定のためだけ。
  *
  * <h2>外れた上限</h2>
  * <pre>
@@ -43,17 +48,33 @@ import jche.cache.ValueNode;
  * 出所の文字列に落とすと実引数リストが剥がれてしまい、
  * {@code Class.forName(NAME)} を受けたローカル変数からクラス名が辿れなくなるため。
  *
+ * <h2>値として使う式の剥がし方</h2>
+ * 括弧と値を変えないキャストだけを剥がす（{@link OriginTracker#unwrapValue}。条件の判定と同じ規則）。
+ * 値を変えうるキャスト（{@code (byte) p}）の先は、コンパイル時定数なら JDT が畳んだ値
+ * （{@code (byte)300} は 44）、そうでなければ「分からない」にする。浮動小数の定数も持たない
+ * （条件の期待値とは表記が揃わず、{@code 1.0} と {@code 1} を別の値と見てしまうため）。
+ *
  * <h2>大きさ</h2>
  * 同じ構造のノードは1つにまとめる（{@link ValueNode#dedupeKey}）。入れ子を展開しないので、
  * 大きさはソースの式の数に比例する。1ファイル分を組み立てたら、ブロックとして書き出して捨てる
  * （{@link FileAnalysis} の寿命と同じ）。
+ *
+ * 同じ式は、それを指す呼び出し箇所がいくつあっても 1 つのノードにする。そのために、
+ * 式ごとに作ったノードを控えておき（{@link #built}）、深さの上限（{@link #HARD_CAP}）は
+ * 辿り始めた位置からではなく<b>式の木の中での深さ</b>（{@link #depthInTree}）で判定する。
+ * 辿り始めた位置から数えると、300 段の連鎖（{@code sb.append(…).append(…)…}）で呼び出し箇所ごとに
+ * 違う段で打ち切られ、どれも別のノードになって 1 ファイルで 1 万行を超えていた。
  */
 final class ValueGraph {
 
     /**
      * 式を辿る深さの上限。再帰なのでスタックを守るためだけに置く安全策で、
      * 意味のある上限ではない（実在のコードの式の深さはこれよりはるかに浅い）。
-     * {@code jche.dataflow.DataflowBuilder.HARD_CAP} と同じ役割
+     * {@code jche.dataflow.DataflowBuilder.HARD_CAP} と同じ役割。
+     *
+     * 深さは式の木の中での深さ（{@link #depthInTree}）で数える。同じ式はどこから辿っても同じ段で
+     * 打ち切られるので、打ち切ったノードも 1 つにまとまる。上限より深い式は「分からない」
+     * （{@link ValueNode#NONE}）で、呼び出しを落とさない側に倒れる
      */
     private static final int HARD_CAP = 256;
 
@@ -62,6 +83,14 @@ final class ValueGraph {
     private final OriginTracker origins;
     /** 同じ構造のノードを1つにまとめる（{@link ValueNode#dedupeKey} -> 番号） */
     private final Map<String, Integer> dedupe = new HashMap<>();
+    /**
+     * 式（AST のノードそのもの）-> 作ったノードの番号。同じ式を呼び出し箇所ごとに辿り直さない。
+     *
+     * 式の値はローカル変数の表（{@link OriginTracker.Scope}）に依存するので、表が変わるとき
+     * （スコープの出入り）に捨てる（{@link #forgetExpressions}）。本体の先読み（表を作っている途中）と
+     * 本体の走査（表ができた後）で同じ控えを使うと、先読みの途中の値を後で使ってしまうため
+     */
+    private final Map<Expression, Integer> built = new IdentityHashMap<>();
 
     ValueGraph(FileAnalysis out, BindingNames names, OriginTracker origins) {
         this.out = out;
@@ -73,17 +102,65 @@ final class ValueGraph {
      * 式のノード番号。追跡できなければ {@link ValueNode#NONE}。
      *
      * 「分からない」を {@link Origin#UNKNOWN} のノードとして残すことはしない。
-     * 参照する側（P 行のレシーバ・実引数）が {@link ValueNode#NONE} を置くので、
+     * 参照する側（C 行・U 行のレシーバ・実引数）が {@link ValueNode#NONE} を置くので、
      * 同じことを2通りで表さない
      */
     int nodeOf(Expression ex) {
-        return nodeOf(ex, 0);
+        if (ex == null) {
+            return ValueNode.NONE;
+        }
+        Integer known = built.get(ex);
+        return (known != null) ? known : nodeOf(ex, depthInTree(ex));
+    }
+
+    /** 式ごとの控え（{@link #built}）を捨てる。スコープが変わるたびに {@link OriginTracker} が呼ぶ */
+    void forgetExpressions() {
+        built.clear();
+    }
+
+    /**
+     * 式の木の中での深さ。{@link #nodeOf} が辿る辺（レシーバ・実引数・束縛したレシーバ）だけを
+     * 1 段と数え、括弧とキャストは数えない。それ以外の親（演算子・代入・文など）で止まる
+     * （{@link #nodeOf} はそこから下へ辿らないので、そこが木の根になる）。
+     *
+     * 辿る辺で数え方が一致していればよく、辿らない辺（{@code outer.new Inner()} の outer など）を
+     * 数えても、その式は根からは辿られないので食い違わない。上限を超えたところで数えるのをやめる
+     */
+    private static int depthInTree(Expression ex) {
+        int depth = 0;
+        ASTNode parent = ex.getParent();
+        while (parent != null && depth <= HARD_CAP) {
+            if (parent instanceof MethodInvocation || parent instanceof ClassInstanceCreation
+                    || parent instanceof ExpressionMethodReference) {
+                depth++;
+            } else if (!(parent instanceof ParenthesizedExpression || parent instanceof CastExpression)) {
+                break;
+            }
+            parent = parent.getParent();
+        }
+        return depth;
     }
 
     private int nodeOf(Expression ex, int depth) {
-        Expression e = OriginTracker.unwrap(ex);
-        if (e == null || depth > HARD_CAP) {
+        if (ex == null || depth > HARD_CAP) {
             return ValueNode.NONE;
+        }
+        Integer known = built.get(ex);
+        if (known != null) {
+            return known;
+        }
+        int id = build(ex, depth);
+        built.put(ex, id);
+        return id;
+    }
+
+    /** 式 1 つぶんのノードを作る（{@link #nodeOf} が控えを引いた後で呼ぶ） */
+    private int build(Expression ex, int depth) {
+        Expression e = OriginTracker.unwrapValue(ex);
+        if (e == null) {
+            // 値を変えうるキャスト（(byte) p）。その先の値は、この式の値ではない。
+            // コンパイル時定数なら JDT が型変換まで済ませて畳んだ値（(byte)300 は 44）だけを持つ
+            return constantNode(ex.resolveConstantExpressionValue());
         }
         if (e instanceof ClassInstanceCreation cic) {
             String type = names.createdTypeOf(cic);
@@ -124,19 +201,11 @@ final class ValueGraph {
                     ? ValueNode.NONE : node(Origin.CLASS, n, ValueNode.NONE, "", -1);
         }
         // コンパイル時定数。JDT に評価させるので、リテラルの連結（SQL を "…\n" + "…" と
-        // 書く形）や static final の参照も 1 つの値として拾える。長さも制御文字も問わない
-        Object constant = e.resolveConstantExpressionValue();
-        if (constant instanceof String text) {
-            // 文字列に評価される定数は、リテラルと同じ種別にする（1 つの式に 1 つのノード）
-            return node(Origin.LITERAL, text, ValueNode.NONE, "", -1);
-        }
+        // 書く形）や static final の参照も 1 つの値として拾える。長さも制御文字も問わない。
+        // 評価するのは元の式（剥がしたのは値を変えないキャストだけなので、値は同じ）
+        Object constant = ex.resolveConstantExpressionValue();
         if (constant != null) {
-            // 真偽値・数値・文字。表記は analysis 側の出所と同じに揃える
-            // （2c で読み手を移すとき、ガードの判定値と突き合わせられるようにするため）
-            String normalized = Origin.valueOf(origins.constantOf(e));
-            return node(Origin.CONST,
-                    (normalized == null || normalized.isEmpty()) ? String.valueOf(constant) : normalized,
-                    ValueNode.NONE, "", -1);
+            return constantNode(constant);
         }
         String enumConstant = origins.enumConstantValueOf(e);
         if (enumConstant != null) {
@@ -166,8 +235,42 @@ final class ValueGraph {
         return node(Origin.kindOf(leaf), Origin.valueOf(leaf), ValueNode.NONE, "", -1);
     }
 
-    /** 実引数のノードを {@code 位置=番号} のカンマ区切りにする。追跡できない引数は載せない */
-    String argsOf(List<?> args, int depth) {
+    /**
+     * コンパイル時定数の値のノード。文字列はリテラルと同じ種別、真偽値・整数・文字は
+     * 出所の文字列と同じ表記（{@link OriginTracker#constantText}。文字は数値）。
+     * 浮動小数は持たない（{@link ValueNode#NONE}）。条件の期待値は書かれたとおりの表記
+     * （{@code x == 1} の {@code "1"}）なので、{@code 1.0} と突き合わせると別の値に見えて、
+     * 実際には通る経路を「呼ばれない」と判定してしまう（{@link OriginTracker#constantOf} と同じ方針）
+     */
+    private int constantNode(Object constant) {
+        if (constant instanceof String text) {
+            // 文字列に評価される定数は、リテラルと同じ種別にする（1 つの式に 1 つのノード）
+            return node(Origin.LITERAL, text, ValueNode.NONE, "", -1);
+        }
+        String text = OriginTracker.constantText(constant);
+        return (text == null) ? ValueNode.NONE : node(Origin.CONST, text, ValueNode.NONE, "", -1);
+    }
+
+    /** 定数の値（{@link Origin#CONST}）のノード。条件の subject（文字列の定数）に使う（{@link GuardCollector}） */
+    int constantValueNode(String value) {
+        return node(Origin.CONST, value, ValueNode.NONE, "", -1);
+    }
+
+    /** ノードの種別。番号が範囲外（{@link ValueNode#NONE} を含む）なら {@link Origin#UNKNOWN} */
+    char kindOf(int id) {
+        return (id >= 0 && id < out.valueNodes.size()) ? out.valueNodes.get(id).kind() : Origin.UNKNOWN;
+    }
+
+    /**
+     * 呼び出し箇所の実引数のノードを {@code 位置=番号} のカンマ区切りにする。追跡できない引数は載せない。
+     * 各実引数の深さは式の木から求める（{@link #nodeOf(Expression)}）
+     */
+    String argsOf(List<?> args) {
+        return argsOf(args, -1);
+    }
+
+    /** @param depth 実引数を持つ式の深さ。負なら実引数ごとに式の木から求める */
+    private String argsOf(List<?> args, int depth) {
         if (args == null || args.isEmpty() || depth > HARD_CAP) {
             return "";
         }
@@ -177,7 +280,7 @@ final class ValueGraph {
                 continue;
             }
             // 実引数も入れ子のまま辿る（analysis 側は1段で剥がしていた）
-            int id = nodeOf(arg, depth + 1);
+            int id = (depth < 0) ? nodeOf(arg) : nodeOf(arg, depth + 1);
             if (id == ValueNode.NONE) {
                 continue;
             }

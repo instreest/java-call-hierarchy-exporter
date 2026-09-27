@@ -37,7 +37,7 @@ import java.util.stream.Stream;
  * Java 言語仕様（JLS SE 26）への適合と、javac（JDK 26）との整合を見る検査（test/jls/run.sh から呼ぶ）。
  *
  * <pre>
- *   java JlsCheck.java expect.tsv 出力フォルダ analysis-cache.tsv javacのクラスフォルダ
+ *   java JlsCheck.java expect.tsv 出力フォルダ cache-dump.tsv javacのクラスフォルダ
  * </pre>
  *
  * 検査は 2 段ある。
@@ -46,6 +46,11 @@ import java.util.stream.Stream;
  * 1 行が 1 つのテストで、JLS の節番号・ID・検査の種類・引数・説明を持つ。節ごとの意味（何が呼ばれるはずか）を
  * 人が書いた期待値で、ツールの出力（call-hierarchy.csv / methods.csv）とキャッシュ（analysis-cache.tsv）に
  * 当てる。種類は {@link #check} の switch を参照。
+ *
+ * <p>キャッシュはメソッドをブロックの記号表（S 行）の番号で指すので、そのままでは名前で照合できない。
+ * run.sh がツールの {@code jche.cache.CacheDump} で記号を 4 列（pkg・typeFqn・名前・引数）に戻した形
+ * （{@code build/cache-dump.tsv}）を作って渡すので、ここではその列を位置で読む。この検査は JDK 26 で
+ * ソースのまま動かし、ツールのクラスを読み込まない（読み込めない）ため、戻すのはツールに任せている。
  *
  * <h2>2. javac のバイトコードとの突き合わせ</h2>
  * 同じソースを javac 26 でコンパイルしたクラスファイルを {@code java.lang.classfile} で読み、ツールの
@@ -67,7 +72,9 @@ import java.util.stream.Stream;
  *   <li>呼び出しを修飾する型（JLS 13.1）: invokevirtual / invokeinterface の所有型が、C 行の qualifier
  *       （空なら呼び出し先を宣言した型）と同じであること。CHA の候補はこの型の部分型から引く</li>
  *   <li>ブリッジメソッド: javac が消去後のシグネチャの違う上書きのために作ったブリッジ（JLS 15.12.4.5）には、
- *       対応する O 行があること</li>
+ *       対応する O 行があること。親クラスから継承したメソッドがインターフェースのメソッドを実装するためのブリッジ
+ *       （{@code class UserRepo extends BaseRepo implements Repo<User>}）なら、ブリッジを置いた型の H 行の
+ *       「継承した実装」に載っていること</li>
  * </ul>
  * javac がソースに無い呼び出しを足す翻訳のうち、呼び出し先が JDK のもの（文字列連結・ボックス化・
  * enum の switch の ordinal・null 検査など）は突き合わせの外にある。呼び出し先がこのソースで宣言された
@@ -79,7 +86,7 @@ public final class JlsCheck {
 
     public static void main(String[] args) throws IOException {
         if (args.length != 4) {
-            System.err.println("usage: java JlsCheck.java expect.tsv outDir analysis-cache.tsv javacClasses");
+            System.err.println("usage: java JlsCheck.java expect.tsv outDir cache-dump.tsv javacClasses");
             System.exit(2);
         }
         Tool tool = Tool.load(Path.of(args[2]), Path.of(args[1]));
@@ -400,9 +407,14 @@ public final class JlsCheck {
             String s = sectionOf(br.pkg());
             List<String> ov = tool.overrides.getOrDefault(br.target(), List.of());
             boolean found = ov.stream().anyMatch(k -> k.endsWith("#" + br.bridgeSignature()));
+            // 親クラスから継承したメソッドがインターフェースのメソッドを実装するときのブリッジは、ブリッジを置いた型の
+            // H 行の「継承した実装」に載る（その型から見たときだけの関係なので O 行には書かない）
+            List<String> inherited = tool.inheritedImpls.getOrDefault(br.owner(), List.of());
+            found = found || inherited.stream().anyMatch(
+                    p -> p.endsWith(">" + br.target()) && p.substring(0, p.indexOf('>')).endsWith("#" + br.bridgeSignature()));
             if (!found) {
-                problems.get(s).add("javac のブリッジ " + br.bridgeSignature() + " に対応する O 行が無い: "
-                        + br.target() + "（O 行: " + ov + "）");
+                problems.get(s).add("javac のブリッジ " + br.bridgeSignature() + " に対応する O 行も H 行の継承した実装も無い: "
+                        + br.owner() + " -> " + br.target() + "（O 行: " + ov + "・継承した実装: " + inherited + "）");
             }
         }
 
@@ -505,6 +517,8 @@ public final class JlsCheck {
         final Map<String, Integer> declLines = new HashMap<>();
         /** O 行: キー → 上書き先のキー */
         final Map<String, List<String>> overrides = new HashMap<>();
+        /** H 行の継承した実装: 型 → 「実装される側のキー&gt;実装する側のキー」 */
+        final Map<String, List<String>> inheritedImpls = new HashMap<>();
         /** C 行（呼び出し元, 呼び出し先, 行, 呼び出し先の修飾子, 修飾する型） */
         final List<String[]> calls = new ArrayList<>();
         /** M 行（呼び出し元, 行, 種別） */
@@ -523,7 +537,12 @@ public final class JlsCheck {
             for (String line : Files.readAllLines(cache, StandardCharsets.UTF_8)) {
                 String[] c = line.split("\t", -1);
                 switch (c[0]) {
-                    case "H" -> t.types.put(c[1], c[4]);
+                    case "H" -> {
+                        t.types.put(c[1], c[4]);
+                        if (c.length > 7 && !c[7].isEmpty()) {
+                            t.inheritedImpls.put(c[1], List.of(c[7].split(";")));
+                        }
+                    }
                     case "D" -> {
                         String key = key(c[2], c[3], c[4]);
                         t.decls.put(key, c[7]);
@@ -858,7 +877,7 @@ public final class JlsCheck {
             }
         }
 
-        record Bridge(String pkg, String bridgeSignature, String target) {
+        record Bridge(String pkg, String owner, String bridgeSignature, String target) {
         }
 
         static Javac load(Path dir) throws IOException {
@@ -954,7 +973,8 @@ public final class JlsCheck {
         }
 
         /**
-         * 呼び出し先の宣言を引き直す（JVMS 5.4.3.3 / 5.4.3.4: 所有型、その親クラスを順に、次に親インターフェース）。
+         * 呼び出し先の宣言を引き直す（JVMS 5.4.3.3 / 5.4.3.4: 所有型、その親クラスを順に、次に親インターフェース。
+         * 親インターフェースの private・static メソッドは飛ばす）。
          * このソースの型で見つからなければ null（JDK のメソッド）
          */
         Method resolve(String owner, String name, String desc) {
@@ -975,7 +995,9 @@ public final class JlsCheck {
                     Cls i = classes.get(ie.asInternalName());
                     if (i != null && seen.add(i.internal)) {
                         Method m = find(i, name, desc);
-                        if (m != null) {
+                        // 親インターフェースの private・static メソッドは解決の対象にならない（JVMS 5.4.3.3 の手順 3・4）
+                        if (m != null && !m.model.flags().has(AccessFlag.PRIVATE)
+                                && !m.model.flags().has(AccessFlag.STATIC)) {
                             return m;
                         }
                         queue.add(i);
@@ -1149,7 +1171,7 @@ public final class JlsCheck {
                             String bridgeKey = m.key();
                             String sig = bridgeKey.substring(bridgeKey.indexOf('#') + 1);
                             if (target != null && !target.key().endsWith("#" + sig)) {
-                                out.add(new Bridge(c.pkg, sig, target.key()));
+                                out.add(new Bridge(c.pkg, c.toolName(), sig, target.key()));
                             }
                         }
                     }

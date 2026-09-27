@@ -141,8 +141,10 @@ S1 の時点でも振る舞いを変えないためにそろえた。S3 では�
 ### Q14. 事実のダンプ（Issue の S4）は入れなかったのか
 
 入れていない。出力ファイルが増える変更は利用者に見える仕様なので、必要になってから
-（`dataflow-facts.csv` の形を決めてから）別に入れる。デバッグに使うなら `DataflowFacts.factoryOrigin(id)` を
-`MethodTable.key(id)` と並べて出せばよく、その足場は `test/dataflow/ResolveOrderCheck.java` にある。
+（`dataflow-facts.csv` の形を決めてから）別に入れる。デバッグに使うなら `DataflowFacts.factoryKind(id)` と
+`factoryValueId(id)`（値は `CallGraph.values().strings()` で文字列に戻す。以前は `factoryOrigin(id)` が
+`種別:値` の文字列を返していた）を `MethodTable.key(id)` と並べて出せばよく、その足場は
+`test/dataflow/ResolveOrderCheck.java` にある。
 
 ### Q15. main 側で先に入った同じ症状への対応（`code-review-fixes-qa.md` の Q2）とはどう違うか
 

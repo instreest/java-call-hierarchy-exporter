@@ -217,6 +217,20 @@ runs:
         JAVA_TOOL_OPTIONS: -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8
       run: bash "$GITHUB_ACTION_PATH/.github/action/run.sh"
 
+    # 保存の前に、実行の中だけで使う一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行・キャッシュの書き直し先。
+    # src/jche/cache/TempFiles.java）を消す。ツールは実行の終わりと強制終了（SIGINT / SIGTERM）のときに自分で
+    # 消すが、中止の猶予が切れた SIGKILL では残るので念のため（残っても次の実行が消すが、保存するキャッシュが無駄に
+    # 大きくなる）。中断からの引き継ぎに使う analysis-cache.tsv.tmp（と退避した .partial）は消さずに保存する
+    - name: Remove temporary files from analysis cache
+      if: always() && inputs.analysis-cache == 'true' && steps.restore-analysis.outcome == 'success'
+      shell: bash
+      env:
+        JCHE_ANALYSIS_CACHE_DIR: ${{ steps.prep.outputs.analysis-cache-dir }}
+      run: |
+        if [ -d "$JCHE_ANALYSIS_CACHE_DIR" ]; then
+          find "$JCHE_ANALYSIS_CACHE_DIR" -type f \( -name '*.deps-*.tmp' -o -name '*.edges-*.tmp' -o -name '*.unresolved-*.tmp' -o -name '*.rewrite-*.tmp' \) -print -delete
+        fi
+
     # 復元と同じキーで保存する。キーは実行ごとに違うので、前回の分を上書きすることはない
     # （同じ実行の再試行で既にあるときは actions/cache/save が警告を出して飛ばす）
     - name: Save analysis cache

@@ -2,8 +2,6 @@
 package jche.report;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -11,11 +9,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import jche.cache.CacheFormat;
-import jche.cache.CacheReader;
 import jche.cache.UnresolvedCallFact;
-import jche.config.Config;
 import jche.graph.CallGraph;
+import jche.graph.IntArray;
+import jche.graph.UnresolvedCalls;
 
 /**
  * 型解決に失敗した呼び出しを call-hierarchy.csv に書き出す。
@@ -24,89 +21,90 @@ import jche.graph.CallGraph;
  * しかし「解決できなかったせいで階層から抜け落ちている」こと自体が
  * 重要な情報（依存jarの不足を示す）なので、静かに消さずに行として残す。
  *
- * キャッシュのU行を読み直して出力する。件数ぶんをヒープに載せないための
- * ストリーミング処理。
+ * <p>出す行（使える候補の無い U 行）は、グラフを組むスキャン（{@code CallGraphBuilder}）が
+ * 一時ファイルに拾ってある（{@link UnresolvedCalls}）。ここではキャッシュを読み直さない。
+ * 件数ぶんをヒープに載せないよう、ブロック 1 つ分ずつ一時ファイルから読んで書く。
  *
  * 行の並びは「ソースフォルダの宣言順 → ファイルの相対パス順 → ファイル内の出現順」に固定する
  * （methods.csv と同じ基準）。キャッシュのブロック順のまま出すと、差分更新で解析し直した
  * ファイルのブロックが先頭へ移るため、ファイルを1つ直すたびにこの節の行順が入れ替わってしまう。
- * 並べ替えのためにU行を全件ためることはせず、ブロックの並びを先に読んでおき、
- * 「次に出すべきファイル」のブロックはそのまま流し、順番がまだ来ていないファイルの行だけを
- * 順番が来るまで保留する。キャッシュがすでにその順で並んでいれば（初回実行、全ファイル再利用）
- * 何も保留しない。
+ * 並べ方は、キャッシュをブロックの順に流しながら「次に出すべきファイル」のブロックはそのまま出し、
+ * 順番がまだ来ていないファイルのブロックは順番が来るまで保留する、という手順そのもの
+ * （同じパスのブロックが 2 つあるときの出る位置も、この手順で決まる）。保留するのはブロックの番号だけで、
+ * 行は出すときに一時ファイルから読む。
  */
 public final class UnresolvedReport {
 
     private UnresolvedReport() {
     }
 
-    /** @return 書き出した行数 */
-    public static long write(CallGraph g, Config config, CallHierarchyCsvWriter out) throws IOException {
-        if (!Files.isRegularFile(config.cacheFile)) {
+    /**
+     * @param calls グラフを組むときに拾った行。拾っていなければ null（何も書かない）
+     * @return 書き出した行数
+     */
+    public static long write(CallGraph g, UnresolvedCalls calls, CallHierarchyCsvWriter out) throws IOException {
+        if (calls == null || calls.rowCount() == 0) {
             return 0L;
         }
-        // パス1: ブロック（F行）の相対パスを集め、出力したい順に並べて順位を振る
-        String[] order = blockPathsInOutputOrder(g, config.cacheFile);
+        // ブロック（F行）の相対パスを、出力したい順に並べて順位を振る
+        String[] order = blockPathsInOutputOrder(g, calls);
         Map<String, Integer> rankOf = new HashMap<>();
         for (int i = 0; i < order.length; i++) {
             rankOf.put(order[i], i);
         }
 
-        // パス2: U行を読み、順位どおりに書き出す
         long rows = 0L;
-        boolean[] finished = new boolean[order.length];         // そのファイルのブロックを読み終えたか
-        Map<Integer, List<String>> pending = new HashMap<>();   // 順番待ちのファイルのU行（生の行）
+        boolean[] finished = new boolean[order.length];          // そのファイルのブロックを読み終えたか
+        Map<Integer, IntArray> pending = new HashMap<>();        // 順番待ちのファイルの、行のあるブロック
         int next = 0;            // 次に書き出すべきファイルの順位
-        int currentRank = -1;    // 読んでいる最中のブロックの順位
-        try (CacheReader in = CacheReader.open(config.cacheFile)) {
-            while (in.next()) {
-                String line = in.line();
-                char rowType = in.rowType();
-                if (rowType == CacheFormat.ROW_FILE) {
-                    if (currentRank >= 0) {
-                        finished[currentRank] = true;
-                        while (next < order.length && finished[next]) {
-                            rows += flush(g, out, order[next], pending.remove(next));
-                            next++;
-                        }
-                    }
-                    Integer rank = rankOf.get(in.filePath());
-                    currentRank = (rank == null) ? -1 : rank;
-                    continue;
+        int currentRank = -1;    // 流している最中のブロックの順位
+        int k = 0;               // 次に行のあるブロック（calls.blockOf(k)）
+        for (int block = 0; block < calls.blockCount(); block++) {
+            String path = calls.blockPath(block);
+            boolean hasRows = k < calls.blocksWithRows() && calls.blockOf(k) == block;
+            if (path == null) {
+                // 最初の F 行より前の行。ファイルが分からないので、流れてきたとおりにそのまま出す
+                if (hasRows) {
+                    rows += emitBlock(g, out, null, calls, k++);
                 }
-                if (rowType != CacheFormat.ROW_UNRESOLVED || !isReportable(line)) {
-                    continue;
-                }
-                if (currentRank < 0 || currentRank <= next) {
-                    // 順番が来ているブロック（順位が無い・重複したブロックも溜めずにそのまま出す）
-                    String file = (currentRank < 0) ? null : order[currentRank];
-                    rows += emit(g, out, file, line);
-                } else {
-                    pending.computeIfAbsent(currentRank, k -> new ArrayList<>()).add(line);
+                continue;
+            }
+            if (currentRank >= 0) {
+                finished[currentRank] = true;
+                while (next < order.length && finished[next]) {
+                    rows += flush(g, out, order[next], calls, pending.remove(next));
+                    next++;
                 }
             }
+            currentRank = rankOf.get(path);
+            if (!hasRows) {
+                continue;
+            }
+            if (currentRank <= next) {
+                // 順番が来ているブロック（重複したブロックも溜めずにそのまま出す）
+                rows += emitBlock(g, out, order[currentRank], calls, k);
+            } else {
+                pending.computeIfAbsent(currentRank, r -> new IntArray(2)).add(k);
+            }
+            k++;
         }
-        if (currentRank >= 0) {
-            finished[currentRank] = true;
-        }
-        // 読み終えた。残っている保留分を順位どおりに出す（順位の抜けはブロックが無かったファイル）
+        // 流し終えた。残っている保留分を順位どおりに出す（順位の抜けは行の無いファイル）
         for (int i = next; i < order.length; i++) {
-            rows += flush(g, out, order[i], pending.remove(i));
+            rows += flush(g, out, order[i], calls, pending.remove(i));
         }
         return rows;
     }
 
     /**
-     * キャッシュのF行の相対パスを、出力順（ソースフォルダの宣言順 → 相対パス順）に並べて返す。
+     * ブロックの相対パスを、出力順（ソースフォルダの宣言順 → 相対パス順）に並べて返す（重複は除く）。
      * 相対パスは常に '/' 区切りで書かれているので、String の比較で OS によらず同じ順になる
      */
-    private static String[] blockPathsInOutputOrder(CallGraph g, Path cacheFile) throws IOException {
-        List<String> paths = new ArrayList<>();
-        try (CacheReader in = CacheReader.open(cacheFile)) {
-            while (in.next()) {
-                if (in.is(CacheFormat.ROW_FILE)) {
-                    paths.add(in.filePath());
-                }
+    private static String[] blockPathsInOutputOrder(CallGraph g, UnresolvedCalls calls) {
+        List<String> paths = new ArrayList<>(calls.blockCount());
+        for (int block = 0; block < calls.blockCount(); block++) {
+            String path = calls.blockPath(block);
+            if (path != null) {
+                paths.add(path);
             }
         }
         String[] order = paths.stream().distinct().toArray(String[]::new);
@@ -116,44 +114,47 @@ public final class UnresolvedReport {
     }
 
     /**
-     * 保留していた行を書き出す。
+     * 保留していたブロックの行を書き出す。
      *
      * @return 書き出した行数
      */
-    private static long flush(CallGraph g, CallHierarchyCsvWriter out, String file, List<String> lines)
-            throws IOException {
-        if (lines == null) {
+    private static long flush(CallGraph g, CallHierarchyCsvWriter out, String file, UnresolvedCalls calls,
+                              IntArray blocks) throws IOException {
+        if (blocks == null) {
             return 0L;
         }
         long rows = 0L;
-        for (String line : lines) {
-            rows += emit(g, out, file, line);
+        for (int i = 0; i < blocks.size(); i++) {
+            rows += emitBlock(g, out, file, calls, blocks.get(i));
         }
         return rows;
     }
 
-    /** このU行を報告するか。import 推定でエッジになっているものは除く */
-    private static boolean isReportable(String line) {
-        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
-        // import 推定でエッジになっている行は、call-hierarchy.csv 側に
-        // 「[EXTERNAL] import から型名を推定（未検証）」の注記付きで出ているので、ここでは出さない
-        return u != null && !u.hasUsableCandidate();
+    /**
+     * 行のあるブロックのうち k 番目の行を書き出す
+     *
+     * @param file ブロックのファイル。分からなければ null
+     * @return 書き出した行数
+     */
+    private static long emitBlock(CallGraph g, CallHierarchyCsvWriter out, String file, UnresolvedCalls calls,
+                                  int k) throws IOException {
+        long rows = 0L;
+        for (UnresolvedCalls.Row u : calls.rowsOf(k)) {
+            rows += emit(g, out, file, u);
+        }
+        return rows;
     }
 
     /**
-     * U行を1行書き出す。
+     * 1行書き出す。
      *
-     * @return 書き出した行数（0 か 1）
+     * @return 書き出した行数（1）
      */
-    private static long emit(CallGraph g, CallHierarchyCsvWriter out, String currentFile, String line)
+    private static long emit(CallGraph g, CallHierarchyCsvWriter out, String currentFile, UnresolvedCalls.Row u)
             throws IOException {
-        UnresolvedCallFact u = UnresolvedCallFact.fromRow(CacheFormat.columnsOf(line));
-        if (u == null) {
-            return 0L;
-        }
-        // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける。
+        // 呼び出し元メソッドのキーはD行と同じ形式なので、そのままIDを引ける（ID 化はしない。メソッドの数を変えないため）。
         // 引ければ caller 列をスタックトレース形式にでき、Eclipseから飛べる
-        String callerKey = (u.caller() == null) ? "" : u.caller().key();
+        String callerKey = u.callerKey();
         int callerId = callerKey.isEmpty() ? -1 : g.methods().idOf(callerKey);
         String location = (currentFile == null)
                 ? (callerKey.isEmpty() ? "(unknown)" : callerKey)

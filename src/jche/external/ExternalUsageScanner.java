@@ -5,10 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -19,7 +17,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import jche.cache.MethodRef;
-import jche.cache.TypeFact;
+import jche.cache.ModifierTokens;
 import jche.config.Config;
 import jche.graph.CallGraph;
 import jche.graph.MethodTable;
@@ -298,57 +296,50 @@ public final class ExternalUsageScanner {
     }
 
     /**
-     * owner から親をたどり、最も近い宣言を返す。JVM のメソッド解決と同じく、
-     * 親クラスの連鎖を根まで先に見て、次にそれらが実装するインターフェースを幅優先で見る。
+     * owner から親をたどり、JVM のメソッド解決（JVMS 5.4.3.3）と同じ宣言を返す。
+     * <ol>
+     *   <li>親クラスの連鎖（{@link TypeHierarchy#classChain}。H 行が親クラスを持つ）を根まで見て、最初の宣言</li>
+     *   <li>無ければ、連鎖の型が実装するインターフェースの宣言（private と static は除く）のうち、ほかの宣言の型の
+     *       真の親型で宣言したものを除いた「最も特定的な」もの。本体を持つものを先にし、その中は近い順
+     *       （同じ深さは名前順）の先頭。{@code interface I2 extends I1} の両方に default があれば I2 のもの</li>
+     * </ol>
      * 「シグネチャが一致する宣言のうち owner を子孫に持つもの」を先着で選ぶと、
      * 親クラスとインターフェースの両方に宣言がある場合にメソッドIDの並び（＝解析順）で
      * 結果が変わるので、型階層だけで決まるこの順にしている。
      */
     private int inheritedFrom(String owner, String sig) {
         TypeHierarchy hierarchy = graph.hierarchy();
-        Set<String> seen = new HashSet<>();
-        List<String> classChain = new ArrayList<>();
-        String cur = owner;
-        while (cur != null && seen.add(cur)) {
-            classChain.add(cur);
-            String superclass = null;
-            for (String sup : hierarchy.directSupertypes(cur)) {
-                char kind = hierarchy.kindOf(sup);
-                if (kind == TypeFact.CONCRETE || kind == TypeFact.ABSTRACT) {
-                    superclass = sup;
-                    break;
-                }
-            }
-            if (superclass != null) {
-                int id = declaredWithSource(superclass, sig);
-                if (id >= 0) {
-                    return id;
-                }
-            }
-            cur = superclass;
-        }
-        // インターフェース（およびソース外で種別の分からない親）を、近いクラスのものから順に
-        ArrayDeque<String> queue = new ArrayDeque<>();
-        for (String c : classChain) {
-            for (String sup : hierarchy.directSupertypes(c)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
-                }
-            }
-        }
-        while (!queue.isEmpty()) {
-            String type = queue.poll();
-            int id = declaredWithSource(type, sig);
+        List<String> classChain = hierarchy.classChain(owner);
+        for (int i = 1; i < classChain.size(); i++) {
+            int id = declaredWithSource(classChain.get(i), sig);
             if (id >= 0) {
                 return id;
             }
-            for (String sup : hierarchy.directSupertypes(type)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
-                }
+        }
+        List<String> declaring = new ArrayList<>();
+        List<Integer> found = new ArrayList<>();
+        for (String type : hierarchy.superinterfaces(owner)) {
+            int id = declaredWithSource(type, sig);
+            if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
+                    && !ModifierTokens.has(methods.mods(id), "static")) {
+                declaring.add(type);
+                found.add(id);
             }
         }
-        return -1;
+        List<String> specific = hierarchy.mostSpecific(declaring);
+        int abstractOne = -1;
+        for (int i = 0; i < found.size(); i++) {
+            if (!specific.contains(declaring.get(i))) {
+                continue;
+            }
+            if (methods.hasBody(found.get(i))) {
+                return found.get(i);
+            }
+            if (abstractOne < 0) {
+                abstractOne = found.get(i);
+            }
+        }
+        return abstractOne;
     }
 
     /**

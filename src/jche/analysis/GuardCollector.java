@@ -11,13 +11,19 @@ import org.eclipse.jdt.core.dom.ConditionalExpression;
 import org.eclipse.jdt.core.dom.DoStatement;
 import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.IBinding;
+import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.IfStatement;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.LambdaExpression;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.SuperFieldAccess;
 import org.eclipse.jdt.core.dom.SwitchCase;
 import org.eclipse.jdt.core.dom.SwitchExpression;
 import org.eclipse.jdt.core.dom.SwitchStatement;
@@ -25,6 +31,7 @@ import org.eclipse.jdt.core.dom.WhileStatement;
 
 import jche.cache.Guard;
 import jche.cache.Origin;
+import jche.cache.ValueNode;
 
 /**
  * 呼び出し箇所を囲む条件分岐を、判定できる形（{@link Guard} のアトム）で集める。
@@ -32,6 +39,9 @@ import jche.cache.Origin;
  * 呼び出しのASTノードから外側へ親を辿り、通り道の {@code if} / {@code ?:} /
  * {@code &&} / {@code ||} / アロー形式の {@code switch} から
  * 「この呼び出しに到達するには何が成立していなければならないか」を取り出す。
+ *
+ * <p>判定される式（subject）は値グラフのノード（{@link ValueNode}）で持つ（{@link #evaluableSubjectOf}）。
+ * 比べる値（期待値）はコンパイル時定数の値そのもので、切り詰めない（{@link #constantValueOf}）。
  *
  * <h2>安全側の方針（分からない条件は落とす）</h2>
  * 取り出すのは「引数か定数」と「定数」の比較だけ。それ以外（メソッドの戻り値、
@@ -41,7 +51,8 @@ import jche.cache.Origin;
  *
  * <h2>2つのモード</h2>
  * <ul>
- *   <li><b>判定用</b>（既定）… 打ち切りに使える条件だけをアトムにする。キャッシュの guard 列はこちら</li>
+ *   <li><b>判定用</b>（既定）… 打ち切りに使える条件だけをアトムにする。キャッシュの G 行（C 行・U 行の
+ *       guard 列が番号で指す）はこちら</li>
  *   <li><b>記録用</b>（{@code recordAll}）… 判定できない条件も {@link Guard#UNKNOWN} として残し、
  *       ループ・{@code catch}・コロン形式の {@code switch} も足す。
  *       「この呼び出しに効いている条件を漏れなく見たい」条件の調査（conditions.target）
@@ -64,6 +75,7 @@ final class GuardCollector {
     private static final int MAX_ATOMS = 8;
     /** 記録用モードの上限。キャッシュに入らないので、判定用より多く残してよい */
     private static final int MAX_ATOMS_RECORD_ALL = 32;
+    private static final String STRING = "java.lang.String";
 
     private final OriginTracker origins;
     /** 判定できない条件も残すか（記録用モード） */
@@ -80,16 +92,21 @@ final class GuardCollector {
         this.maxAtoms = recordAll ? MAX_ATOMS_RECORD_ALL : MAX_ATOMS;
     }
 
-    /** 記録用モードのときだけ、判定できない条件をアトムにする */
-    private void addUnknown(List<String> atoms, String text) {
+    /** 記録用モードのときだけ、判定できない条件をアトムにする（subject は無し） */
+    private void addUnknown(List<Guard.Atom> atoms, String text) {
         if (recordAll && atoms.size() < maxAtoms) {
-            atoms.add(Guard.atom(Guard.UNKNOWN, Origin.UNKNOWN_S, "", trim(text)));
+            atoms.add(atom(Guard.UNKNOWN, ValueNode.NONE, List.of(), trim(text)));
         }
     }
 
-    /** 呼び出しノードを囲む条件。判定できる条件が無ければ空文字 */
-    String guardOf(ASTNode call) {
-        List<String> atoms = new ArrayList<>(2);
+    /** アトムを 1 つ作る。text は区切り文字を落として持つ（{@link Guard#clean}。読み手に渡す文字列の形を壊さない） */
+    private static Guard.Atom atom(String op, int subject, List<String> values, String text) {
+        return new Guard.Atom(op, subject, values, Guard.clean(text));
+    }
+
+    /** 呼び出しノードを囲む条件（アトムの論理積）。判定できる条件が無ければ空 */
+    List<Guard.Atom> guardOf(ASTNode call) {
+        List<Guard.Atom> atoms = new ArrayList<>(2);
         ASTNode child = call;
         ASTNode parent = call.getParent();
         while (parent != null && atoms.size() < maxAtoms) {
@@ -102,14 +119,14 @@ final class GuardCollector {
         }
         if (recordAll && atoms.size() >= maxAtoms) {
             // 「条件が無い」と「記録を諦めた」を読み手が区別できるようにする
-            atoms.add(Guard.atom(Guard.MORE, Origin.UNKNOWN_S, "",
+            atoms.add(atom(Guard.MORE, ValueNode.NONE, List.of(),
                     "no further conditions recorded (limit " + maxAtoms + ")"));
         }
-        return atoms.isEmpty() ? "" : Guard.join(atoms);
+        return atoms.isEmpty() ? List.of() : atoms;
     }
 
     /** 親ノード1つぶんの条件を足す（child は今いる枝） */
-    private void collectFrom(ASTNode parent, ASTNode child, List<String> atoms) {
+    private void collectFrom(ASTNode parent, ASTNode child, List<Guard.Atom> atoms) {
         if (parent instanceof IfStatement n) {
             if (child == n.getThenStatement()) {
                 addCondition(n.getExpression(), true, atoms);
@@ -147,7 +164,7 @@ final class GuardCollector {
      * {@code a && b} の b、{@code a || b} の b は、a の値が決まってはじめて評価される。
      * 左側（と、それより前の被演算子）が成立していることを条件にする。
      */
-    private void collectFromInfix(InfixExpression n, ASTNode child, List<String> atoms) {
+    private void collectFromInfix(InfixExpression n, ASTNode child, List<Guard.Atom> atoms) {
         boolean and = n.getOperator() == InfixExpression.Operator.CONDITIONAL_AND;
         if (!and && n.getOperator() != InfixExpression.Operator.CONDITIONAL_OR) {
             return;
@@ -173,9 +190,9 @@ final class GuardCollector {
      * 「どの case とも一致しない」。コロン形式は扱わない（フォールスルーのため）。
      */
     private void addSwitchCase(Expression selector, List<?> statements, ASTNode child,
-                               List<String> atoms) {
-        String origin = evaluableOriginOf(selector);
-        if (origin == null) {
+                               List<Guard.Atom> atoms) {
+        int subject = evaluableSubjectOf(selector);
+        if (subject == ValueNode.NONE) {
             addUnknown(atoms, "switch (" + selector + ") branch");
             return;
         }
@@ -204,16 +221,21 @@ final class GuardCollector {
         }
         String sel = trim(selector.toString());
         if (owner.isDefault()) {
-            atoms.add(Guard.atom(Guard.NOT_IN, origin, Guard.values(allValues),
-                    "switch (" + sel + ") default"));
+            if (allValues.isEmpty()) {
+                // case の無い switch の default は必ず通る（条件ではない）。値の無い NI を書くと、以前の文字列の形
+                // （値を区切り文字で並べる）では「値が 1 つも無い」と「空文字の値が 1 つ」を見分けられず、
+                // 空文字を渡した経路で default を「成立しない」と誤って判定していた
+                return;
+            }
+            atoms.add(atom(Guard.NOT_IN, subject, allValues, "switch (" + sel + ") default"));
             return;
         }
         List<String> values = new ArrayList<>();
         for (Object e : owner.expressions()) {
             values.add(constantValueOf((Expression) e));
         }
-        atoms.add(Guard.atom(values.size() == 1 ? Guard.EQ : Guard.IN, origin,
-                Guard.values(values), "switch (" + sel + ") case " + String.join(", ", values)));
+        atoms.add(atom(values.size() == 1 ? Guard.EQ : Guard.IN, subject,
+                values, "switch (" + sel + ") case " + String.join(", ", values)));
     }
 
     private static SwitchCase lastCaseBefore(List<?> statements, ASTNode child) {
@@ -234,7 +256,7 @@ final class GuardCollector {
      *
      * 判定できる形でなければ何も足さない（＝その条件は読み手から見えない）。
      */
-    private void addCondition(Expression cond, boolean expected, List<String> atoms) {
+    private void addCondition(Expression cond, boolean expected, List<Guard.Atom> atoms) {
         if (atoms.size() >= maxAtoms) {
             return;
         }
@@ -279,9 +301,9 @@ final class GuardCollector {
             return;
         }
         // boolean の変数・引数・定数そのもの
-        String origin = evaluableOriginOf(e);
-        if (origin != null && isBoolean(e)) {
-            atoms.add(Guard.atom(Guard.EQ, origin, String.valueOf(expected), trim(e.toString())));
+        int subject = isBoolean(e) ? evaluableSubjectOf(e) : ValueNode.NONE;
+        if (subject != ValueNode.NONE) {
+            atoms.add(atom(Guard.EQ, subject, List.of(String.valueOf(expected)), trim(e.toString())));
         } else {
             addUnknown(atoms, expectedText(e, expected));
         }
@@ -305,7 +327,7 @@ final class GuardCollector {
      * 列挙定数は定数ごとに唯一のインスタンスなので {@code ==} で比較してよい（JLS 8.9）。
      * {@code null} との比較は、変数が null でないと言い切れないため扱わない。
      */
-    private void addComparison(InfixExpression in, boolean expected, List<String> atoms) {
+    private void addComparison(InfixExpression in, boolean expected, List<Guard.Atom> atoms) {
         Expression left = OriginTracker.unwrapValue(in.getLeftOperand());
         Expression right = OriginTracker.unwrapValue(in.getRightOperand());
         if (left == null || right == null || !comparableByValue(left) || !comparableByValue(right)) {
@@ -320,18 +342,22 @@ final class GuardCollector {
         if (value == null) {
             return;
         }
-        String origin = evaluableOriginOf(subject);
-        if (origin == null) {
+        int node = evaluableSubjectOf(subject);
+        if (node == ValueNode.NONE) {
             return;
         }
         boolean eq = (in.getOperator() == InfixExpression.Operator.EQUALS) == expected;
-        atoms.add(Guard.atom(eq ? Guard.EQ : Guard.NE, origin, Guard.clean(value),
-                trim(in.toString())));
+        atoms.add(atom(eq ? Guard.EQ : Guard.NE, node, List.of(value), trim(in.toString())));
     }
 
-    /** {@code s.equals("x")}。equals は値の比較なので、参照型でも判定できる */
-    private void addEqualsCall(MethodInvocation mi, boolean expected, List<String> atoms) {
-        if (!"equals".equals(mi.getName().getIdentifier()) || mi.arguments().size() != 1) {
+    /**
+     * {@code s.equals("x")}。equals は値の比較なので、参照型でも判定できる。
+     *
+     * ただし、比べる相手（{@code subject}）と定数の型が揃うときだけ（{@link #equalsComparable}）
+     */
+    private void addEqualsCall(MethodInvocation mi, boolean expected, List<Guard.Atom> atoms) {
+        if (!"equals".equals(mi.getName().getIdentifier()) || mi.arguments().size() != 1
+                || !isObjectEquals(mi.resolveMethodBinding())) {
             return;
         }
         Expression recv = mi.getExpression();
@@ -341,29 +367,105 @@ final class GuardCollector {
         }
         String value = constantValueOf(arg);
         Expression subject = recv;
+        Expression constant = arg;
         if (value == null) {
             value = constantValueOf(recv);
             subject = arg;
+            constant = recv;
         }
-        if (value == null) {
+        if (value == null || !equalsComparable(subject, constant)) {
             return;
         }
-        String origin = evaluableOriginOf(subject);
-        if (origin == null) {
+        int node = evaluableSubjectOf(subject);
+        if (node == ValueNode.NONE) {
             return;
         }
-        atoms.add(Guard.atom(expected ? Guard.EQ : Guard.NE, origin, Guard.clean(value),
-                trim(mi.toString())));
+        atoms.add(atom(expected ? Guard.EQ : Guard.NE, node, List.of(value), trim(mi.toString())));
     }
 
     /**
-     * 値の一致で判定してよい型か（プリミティブ・列挙型・文字列）。
-     * 文字列を通してよい理由は {@link #addComparison} の説明にある（JLS 3.10.5 のインターン）
+     * 値の一致で判定してよい型か（浮動小数を除くプリミティブ・列挙型・文字列）。
+     * 文字列を通してよい理由は {@link #addComparison} の説明にある（JLS 3.10.5 のインターン）。
+     *
+     * <h4>浮動小数は判定しない</h4>
+     * 値の表記を文字列の一致で比べるので、{@code 1} と {@code 1.0} を同じ値と見られない。
+     * 浮動小数の定数は出所にも値グラフにも持たない（{@link OriginTracker#constantOf}・{@link ValueGraph}）が、
+     * 整数の実引数は {@code float} / {@code double} の引数へ暗黙に拡大される（JLS 5.3）。
+     * {@code int} → {@code float} と {@code long} → {@code float} / {@code double} は精度を失いうる
+     * （JLS 5.1.2）ので、{@code f(16777217)} の {@code f == 16777216} は真なのに、表記の比較では偽になる。
+     * 比べる片方が浮動小数なら判定しない（{@code docs/jls-conformance-qa.md} の Q14）
      */
     private static boolean comparableByValue(Expression e) {
         ITypeBinding tb = e.resolveTypeBinding();
-        return tb != null && (tb.isPrimitive() || tb.isEnum()
-                || "java.lang.String".equals(tb.getQualifiedName()));
+        if (tb == null || "float".equals(tb.getName()) || "double".equals(tb.getName())) {
+            return false;
+        }
+        return tb.isPrimitive() || tb.isEnum() || STRING.equals(tb.getQualifiedName());
+    }
+
+    /** {@code equals(Object)} か（{@code Object#equals} とその上書き）。同じ名前の別の多重定義は中身が分からない */
+    private static boolean isObjectEquals(IMethodBinding mb) {
+        if (mb == null) {
+            return false;
+        }
+        ITypeBinding[] params = mb.getParameterTypes();
+        return params.length == 1 && "java.lang.Object".equals(params[0].getQualifiedName());
+    }
+
+    /**
+     * {@code equals} の結果を、値の表記の一致で言い当てられる組み合わせか。
+     *
+     * 条件は値を<b>表記</b>（文字列）で比べるが、{@code equals} は実行時の型が違えば、表記が同じでも偽になる。
+     * <pre>
+     *     void check(Long id) { if (!id.equals(0)) hit(); }   // 0 は Integer に箱詰めされる
+     *     check(0L);                                        // Long.equals(Integer) は常に偽。hit は必ず呼ばれる
+     * </pre>
+     * 表記ではどちらも {@code 0} なので「{@code !id.equals(0)} は成立しない」と判定し、{@code hit} を落としてしまう。
+     * 同じことは {@code Object o} に {@code 5L} / {@code 'A'}（値は数値 65 で持つ）/ 拡大された {@code double} が
+     * 入ってくる場合、{@code "5".equals(o)} に {@code 5} が入ってくる場合にも起きる。
+     *
+     * そこで、比べる相手の<b>静的な型</b>から実行時の型が 1 つに決まり、それが定数と同じ型のときだけ判定する。
+     * <ul>
+     *   <li>{@code String} の相手と文字列の定数（{@code String} は final）</li>
+     *   <li>同じ列挙型の相手と列挙定数（{@code Enum#equals} は final で、同一性の比較）</li>
+     *   <li>ボックス型の相手と、それに箱詰めされるプリミティブの定数（{@code Integer} と {@code int}、{@code Long} と
+     *       {@code long} など。ボックス型はどれも final）。浮動小数（{@code Float} / {@code Double}）は除く
+     *       （{@link #comparableByValue} と同じ理由）</li>
+     * </ul>
+     * {@code Object}・インターフェース・型変数・型の食い違う組み合わせは判定しない（条件を作らない＝打ち切らない）。
+     * 型はキャストを剥がす前の式で見る（{@code (String) o} は {@code String}。実行時に違う型なら
+     * キャストで例外になり、その先には進まない）
+     */
+    private static boolean equalsComparable(Expression subject, Expression constant) {
+        ITypeBinding s = subject.resolveTypeBinding();
+        ITypeBinding c = constant.resolveTypeBinding();
+        if (s == null || c == null) {
+            return false;
+        }
+        if (STRING.equals(s.getQualifiedName())) {
+            return STRING.equals(c.getQualifiedName());
+        }
+        if (s.isEnum()) {
+            return c.isEnum() && s.getErasure().isEqualTo(c.getErasure());
+        }
+        String box = boxOf(c);
+        return box != null && box.equals(s.getQualifiedName());
+    }
+
+    /** プリミティブ型を箱詰めした型の名前。浮動小数とプリミティブ以外は null */
+    private static String boxOf(ITypeBinding type) {
+        if (!type.isPrimitive()) {
+            return null;
+        }
+        return switch (type.getName()) {
+            case "boolean" -> "java.lang.Boolean";
+            case "byte" -> "java.lang.Byte";
+            case "short" -> "java.lang.Short";
+            case "char" -> "java.lang.Character";
+            case "int" -> "java.lang.Integer";
+            case "long" -> "java.lang.Long";
+            default -> null;   // float / double は表記で比べない。void もここ
+        };
     }
 
     private static boolean isBoolean(Expression e) {
@@ -371,35 +473,86 @@ final class GuardCollector {
         return tb != null && ("boolean".equals(tb.getName()) || "java.lang.Boolean".equals(tb.getQualifiedName()));
     }
 
-    /** その式の定数値。定数でなければ null */
+    /**
+     * その式の定数値（期待値）。定数でなければ null。
+     *
+     * 値そのものを返し、切り詰めない。以前は出所の文字列から値を取り出す {@link Origin#valueOf} を通していたので、
+     * 最初の {@code |} で切れていた（{@code "a|b"} が {@code "a"}）。条件の値は G 行の列に 1 つずつ置くので、
+     * どんな文字を含んでも区切りは崩れない。拾う範囲（64 文字以内・制御文字を含まない・浮動小数を除く）は
+     * {@link OriginTracker#constantOf} のまま
+     */
     private String constantValueOf(Expression e) {
-        return Origin.constantValueOf(origins.constantOf(e));
+        String constant = origins.constantOf(e);   // 「V:値」
+        return (constant == null) ? null : constant.substring(constant.indexOf(':') + 1);
     }
 
     /**
-     * 読み手が経路ごとに値を求められる出所か。
-     * 囲みメソッドの引数（A:）と定数（V:）だけを通す。
-     * ローカル変数は出所の表を経由して A: / V: に畳まれる。
+     * 読み手が経路ごとに値を求められる式なら、その値グラフのノード。求められなければ {@link ValueNode#NONE}。
+     *
+     * 囲みメソッドの引数（A）と定数（V）のノードだけを通す。ローカル変数は値グラフを経由して
+     * 代入元のノード（A / V）に畳まれる。文字列のコンパイル時定数は、値グラフではリテラル（L）のノードに
+     * なるので、定数の値（{@link OriginTracker#constantOf}。64 文字以内で制御文字を含まないもの）を
+     * V のノードにする（以前の出所の文字列でも、ここは {@code V:} の定数として拾っていた）。
+     *
+     * <h4>A にも V にもなりえない式のノードは作らない</h4>
+     * 値グラフのノードは作ると消せない（番号で指される）。メソッド呼び出し・new・ラムダなどの式は
+     * A にも V にもならないので、ノードを作らずに {@link ValueNode#NONE} を返す（{@link #mayBeParamOrConstant}）
      */
-    private String evaluableOriginOf(Expression ex) {
-        // 値を変えうるキャストが挟まっていたら、その先の出所を値として使ってはいけない。
+    private int evaluableSubjectOf(Expression ex) {
+        // 値を変えうるキャストが挟まっていたら、その先の値を使ってはいけない。
         // 判定に使う式はすべてここを通るので、1 か所で止める（{@link OriginTracker#unwrapValue}）
         Expression e = OriginTracker.unwrapValue(ex);
         if (e == null) {
-            return null;
+            return ValueNode.NONE;
         }
-        String origin = Origin.head(origins.originOf(e));
-        char kind = Origin.kindOf(origin);
-        if (kind == Origin.PARAM || kind == Origin.CONST) {
-            return origin;
+        if (!(e.resolveConstantExpressionValue() instanceof String) && mayBeParamOrConstant(e)) {
+            int node = origins.nodeOf(e);
+            char kind = origins.kindOfNode(node);
+            if (kind == Origin.PARAM || kind == Origin.CONST) {
+                return node;
+            }
         }
-        String constant = origins.constantOf(e);
-        return (constant == null) ? null : Origin.head(constant);
+        String constant = origins.constantOf(e);   // 「V:値」
+        return (constant == null)
+                ? ValueNode.NONE : origins.constantNodeOf(constant.substring(constant.indexOf(':') + 1));
     }
 
-    /** 注記に出す条件式のテキスト。長い式は縮める */
+    /**
+     * 値グラフのノードが引数（A）か定数（V）になりうる形の式か。コンパイル時定数・列挙定数と、
+     * フィールドでない変数（引数・ローカル変数。値グラフで代入元に畳まれる）だけ。
+     * ほかの形（メソッド呼び出し・new・定数でないフィールド・文字列の連結など）はノードの種別が M・T・F や
+     * 「分からない」になるので、ノードを作るまでもない
+     */
+    private static boolean mayBeParamOrConstant(Expression e) {
+        if (e.resolveConstantExpressionValue() != null) {
+            return true;
+        }
+        IBinding b = null;
+        if (e instanceof Name name) {
+            b = name.resolveBinding();
+        } else if (e instanceof FieldAccess fa) {
+            b = fa.resolveFieldBinding();
+        } else if (e instanceof SuperFieldAccess sfa) {
+            b = sfa.resolveFieldBinding();
+        }
+        return b instanceof IVariableBinding vb && (!vb.isField() || vb.isEnumConstant());
+    }
+
+    /**
+     * 注記に出す条件式のテキスト。長い式は縮める。
+     *
+     * <p>サロゲートペア（絵文字など）の途中では切らない。上位サロゲートだけが残ると UTF-8 に書けない文字になり、
+     * 注記が化けるうえ、以前はキャッシュを書けずに解析ごと失敗していた（docs/cache-unification-qa.md の Q49）
+     */
     private static String trim(String text) {
         String t = Guard.clean(text).replaceAll("\\s+", " ").trim();
-        return (t.length() <= Guard.MAX_TEXT) ? t : t.substring(0, Guard.MAX_TEXT) + "…";
+        if (t.length() <= Guard.MAX_TEXT) {
+            return t;
+        }
+        int end = Guard.MAX_TEXT;
+        if (Character.isHighSurrogate(t.charAt(end - 1)) && Character.isLowSurrogate(t.charAt(end))) {
+            end--;
+        }
+        return t.substring(0, end) + "…";
     }
 }
