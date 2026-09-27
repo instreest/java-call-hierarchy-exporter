@@ -489,6 +489,164 @@ printf 'SHUTDOWN\n' >&"$SJ_IN" 2>/dev/null
 cat <&"$SJ_OUT" > /dev/null 2>&1
 wait "$SJ_PROC" 2>/dev/null
 
+# フィールドの呼び出し元（TREE <型#フィールド> field）。Eclipse プラグインの「フィールドの呼び出し元」がこれを使う。
+# 根がフィールド、深さ 1 がそれを参照しているメソッド（理由の列に read / write / read/write）、その下が呼び出し元。
+# 参照はキャッシュの A 行から拾う（グラフに持たない）ので、キャッシュが解析結果と食い違えば断ることも確かめる
+# （docs/field-callers-qa.md）
+echo "== フィールドの呼び出し元（TREE … field） =="
+FP=$WORK/fieldproj
+mkdir -p "$FP/src/app" "$FP/test/app"
+cat > "$FP/src/app/Order.java" <<'EOF'
+package app;
+public class Order {
+    private String status = "NEW";
+    int count;
+    public String getStatus() { return status; }
+    public void setStatus(String s) { this.status = s; }
+    public void bump() { count++; }
+    public void ship() {
+        if ("NEW".equals(status)) {
+            setStatus("SHIPPED");
+        }
+        Runnable r = () -> System.out.println(status);
+        r.run();
+    }
+    static class Inner { void touch(Order o) { o.status = "X"; } }
+}
+EOF
+cat > "$FP/src/app/Service.java" <<'EOF'
+package app;
+public class Service {
+    void handle(Order o) { o.ship(); o.bump(); }
+    void report(Order o) { System.out.println(o.getStatus()); }
+    void top(Order o) { handle(o); report(o); }
+}
+EOF
+cat > "$FP/test/app/OrderTest.java" <<'EOF'
+package app;
+public class OrderTest {
+    void t() { new Order().setStatus("T"); }
+}
+EOF
+cat > "$FP/c.properties" <<EOF
+project.root=$FP
+source.folders=src,test
+source.encoding=UTF-8
+output.folder=$FP/out
+cache.folder=$FP/cache
+EOF
+F='app.Order#status'
+OUT=$(session "ANALYZE\t$FP/c.properties\nTREE\t$F\tfield\tdepth=10\ttests=1\nSHUTDOWN\n")
+echo "$OUT" | grep -E "^(R|OK|NG)" | sed 's/^/       /'
+grep -qE "^R${T}0${T}app\.Order#status${T}app\.Order\.status${T}src/app/Order\.java${T}0${T}${T}field$" <<<"$OUT" \
+    && ok "根はフィールド（宣言のファイル、印 field）" || fail "根の行が期待と違う"
+grep -qE "^R${T}1${T}${T}${T}src/app/Order\.java${T}0${T}write${T}access,initializer$" <<<"$OUT" \
+    && ok "宣言の初期化子を書き込みの行として出す（A 行には無い）" || fail "初期化子の行が無い"
+grep -qE "^R${T}1${T}app\.Order#setStatus\(java\.lang\.String\)${T}[^$T]*${T}src/app/Order\.java${T}6${T}write${T}access$" <<<"$OUT" \
+    && ok "書き込むメソッドが深さ 1 に、参照の行と write で出る" || fail "setter の行が期待と違う"
+grep -qE "^R${T}1${T}app\.Order#getStatus\(\)${T}[^$T]*${T}src/app/Order\.java${T}5${T}read${T}access$" <<<"$OUT" \
+    && ok "読むメソッドが深さ 1 に、read で出る" || fail "getter の行が期待と違う"
+grep -qE "^R${T}1${T}app\.Order#lambda\\\$ship\\\$0\(\)${T}" <<<"$OUT" \
+    && ok "ラムダの本体の参照は、その合成メソッドの行になる" || fail "ラムダの中の参照が出ない"
+grep -qE "^R${T}1${T}app\.Order\.Inner#touch\(app\.Order\)${T}[^$T]*${T}[^$T]*${T}15${T}write${T}" <<<"$OUT" \
+    && ok "別の型（内部クラス）からの書き込みも出る" || fail "内部クラスからの書き込みが出ない"
+[ "$(grep -cE "^R${T}1${T}app\.Order#ship\(\)${T}" <<<"$OUT")" = 1 ] \
+    && ok "同じメソッドの参照は 1 行にまとめる（ship は 2 か所で読むが 1 行）" || fail "同じメソッドの参照がまとまっていない"
+grep -qE "^R${T}2${T}app\.OrderTest#t\(\)${T}" <<<"$OUT" \
+    && ok "参照しているメソッドの呼び出し元が深さ 2 に出る（tests=1）" || fail "呼び出し元が続いていない"
+grep -qE "^R${T}4${T}app\.Service#top\(app\.Order\)${T}" <<<"$OUT" \
+    && ok "呼び出し元を最後まで辿る（lambda → ship → handle → top）" || fail "呼び出し元が途中で切れている"
+grep -qE "^OK${T}rows=[0-9]+${T}accesses=6$" <<<"$OUT" \
+    && ok "応答が参照の数（初期化子を含めて 6）を返す" || fail "応答の accesses が期待と違う"
+
+# 応答ごとに見分けたいので、要求ごとにセッションを分ける（2 回目からはキャッシュを再利用するので速い）
+WRITE_OUT=$(session "ANALYZE\t$FP/c.properties\nTREE\t$F\tfield\taccess=write\nSHUTDOWN\n")
+READ_OUT=$(session "ANALYZE\t$FP/c.properties\nTREE\t$F\tfield\taccess=read\tdepth=1\nSHUTDOWN\n")
+OUT=$(session "ANALYZE\t$FP/c.properties\nTREE\tapp.Order#count\tfield\nTREE\tapp.Order#nope\tfield\nTREE\t$F(\tfield\nEXPORT\t$F\tfield\t$FP/field.csv\nSHUTDOWN\n")
+echo "$OUT" | grep -E "^(OK|NG)" | sed 's/^/       /'
+WRITE_ROWS=$(grep -cE "^R${T}1${T}" <<<"$WRITE_OUT")
+[ "$WRITE_ROWS" = 3 ] && ! grep -qE "${T}read${T}" <<<"$WRITE_OUT" \
+    && ok "access=write は書き込みだけ（初期化子・setter・内部クラスの 3 行）" || fail "access=write の絞り込みが違う（$WRITE_ROWS 行）"
+! grep -qE "${T}write${T}" <<<"$READ_OUT" && grep -qE "^R${T}1${T}app\.Order#getStatus\(\)${T}.*${T}access,truncated$" <<<"$READ_OUT" \
+    && ok "access=read は読み取りだけ。depth=1 なら先がある行に truncated が付く" || fail "access=read / depth=1 が期待と違う"
+! grep -qE "^R${T}2${T}app\.OrderTest#" <<<"$WRITE_OUT" \
+    && ok "tests=0（既定）ならテストからの呼び出し元は出ない" || fail "tests=0 でもテストが出ている"
+grep -qE "^R${T}1${T}app\.Order#bump\(\)${T}.*${T}7${T}read/write${T}access$" <<<"$OUT" \
+    && ok "count++ は read/write" || fail "複合の参照が read/write にならない"
+grep -qE "^NG${T}not-found$" <<<"$OUT" && ok "宣言も参照も無いフィールドは not-found" || fail "無いフィールドが not-found にならない"
+grep -qE "^NG${T}bad-field " <<<"$OUT" && ok "フィールドの形でないキーは bad-field" || fail "bad-field を返さない"
+if head -1 "$FP/field.csv" 2>/dev/null | grep -q 'depth,method,file,line,reason,note' \
+        && grep -q '^0,app.Order#status,src/app/Order.java,0,,$' "$FP/field.csv" \
+        && grep -q '^1,app.Order#setStatus(java.lang.String),src/app/Order.java,6,write,$' "$FP/field.csv"; then
+    ok "EXPORT … field がメソッドの木と同じ列で書く"
+else
+    fail "フィールドの木の CSV が期待と違う"
+fi
+
+# 解析の後にキャッシュが書き換わった（解析し直しが途中で終わった、など）なら、古い結果と新しい行を混ぜない
+# 錠を待たない（下で「ほかの実行が錠を持っている間は読まない」ことを見るため。待つと検査が止まる）
+coproc FSRV { JCHE_CACHE_LOCK_WAIT_SECONDS=0 java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache5" 2>/dev/null; }
+FS_OUT=${FSRV[0]}
+FS_IN=${FSRV[1]}
+FS_PROC=$FSRV_PID
+fs_request() {   # $1=要求。OK / NG の行を FS_RESPONSE に入れる
+    printf '%s\n' "$1" >&"$FS_IN"
+    FS_RESPONSE=""
+    local line
+    while IFS= read -r -t 300 line <&"$FS_OUT"; do
+        case "$line" in
+            OK*|NG*) FS_RESPONSE=$line; return ;;
+        esac
+    done
+}
+fs_request "ANALYZE${T}$FP/c.properties"
+touch -d '2001-01-01' "$(find "$FP/cache" -name 'analysis-cache.tsv' | head -1)"
+fs_request "TREE${T}$F${T}field"
+[[ "$FS_RESPONSE" == "NG${T}stale-cache" ]] \
+    && ok "キャッシュが解析結果と違えば stale-cache で断る" || fail "書き換わったキャッシュを読んでいる: $FS_RESPONSE"
+fs_request "ANALYZE${T}$FP/c.properties"
+fs_request "TREE${T}$F${T}field"
+[[ "$FS_RESPONSE" == "OK${T}rows="* ]] \
+    && ok "解析し直せば引ける" || fail "解析し直しても引けない: $FS_RESPONSE"
+# キャッシュを読むのはフォルダの錠の内側（AGENTS.md。書きかけのキャッシュを読まない）。
+# ほかのプロセスが錠を持っている間は読まず（待つ上限 0 秒なので断る）、放されれば引ける
+cat > "$WORK/HoldLock.java" <<'EOF'
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+public class HoldLock {
+    public static void main(String[] args) throws Exception {
+        try (FileChannel ch = FileChannel.open(Path.of(args[0]), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             var lock = ch.lock()) {
+            System.out.println("locked");
+            System.in.read();   // 標準入力が閉じるまで持つ
+        }
+    }
+}
+EOF
+LOCK_FILE="$(find "$FP/cache" -name 'analysis-cache.tsv' | head -1).lock"
+coproc HOLD { java "$WORK/HoldLock.java" "$LOCK_FILE" 2>/dev/null; }
+HOLD_OUT=${HOLD[0]}
+HOLD_IN=${HOLD[1]}
+HOLD_PROC=$HOLD_PID
+IFS= read -r -t 120 HOLD_LINE <&"$HOLD_OUT"
+if [ "$HOLD_LINE" = locked ]; then
+    fs_request "TREE${T}$F${T}field"
+    [[ "$FS_RESPONSE" == "NG${T}error "*"Another run kept using the cache folder"* ]] \
+        && ok "ほかのプロセスが錠を持っている間はキャッシュを読まない" \
+        || fail "錠を持たれていてもキャッシュを読んでいる: ${FS_RESPONSE:0:120}"
+else
+    fail "錠を持つ補助のプロセスが起動しない: $HOLD_LINE"
+fi
+exec {HOLD_IN}>&-
+wait "$HOLD_PROC" 2>/dev/null
+fs_request "TREE${T}$F${T}field"
+[[ "$FS_RESPONSE" == "OK${T}rows="* ]] \
+    && ok "錠が放されれば引ける" || fail "錠が放された後も引けない: $FS_RESPONSE"
+printf 'SHUTDOWN\n' >&"$FS_IN" 2>/dev/null
+cat <&"$FS_OUT" > /dev/null 2>&1
+wait "$FS_PROC" 2>/dev/null
+
 echo "== 知らない要求 =="
 OUT=$(session 'NOSUCHCOMMAND\tx\nSHUTDOWN\n')
 grep -qE "^NG${T}unknown-command" <<<"$OUT" && ok "知らない要求は NG を返して落ちない" || fail "知らない要求の扱いが違う"

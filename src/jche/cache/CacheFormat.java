@@ -200,7 +200,9 @@ import java.util.Set;
  *   M  line  呼び出し元の記号  ifaceTypeFqn#method(paramSig)  kind
  *                                                          {@link FunctionalImplFact}
  *   A  line  呼び出し元の記号  ownerTypeFqn  fieldName  access  mods  lambdaDepth
- *                                                          {@link FieldAccessFact}（今の読み手は使わない）
+ *                                                          {@link FieldAccessFact}（グラフには入れない。読むのは解析サーバーの
+ *                                                          フィールドの呼び出し元だけで、要求のたびに走査する。
+ *                                                          {@code jche.server.FieldAccesses}）
  *   K  typeFqn  name  種別(V=値/H=ハッシュ)  値                 {@link ConstantFact}
  *   J  typeFqn  fieldName  site  node  kind                   {@link FieldAssignFact}（node は代入された値。-1 は「追跡できない」。
  *                                                          kind はそのノードの種別（-1 なら U）。値を読まない指定の読み手は
@@ -518,7 +520,7 @@ public final class CacheFormat {
     public static final char ROW_CALL = 'C';
     public static final char ROW_UNRESOLVED = 'U';
     public static final char ROW_FUNCTIONAL_IMPL = 'M';
-    /** フィールドの参照箇所（今の読み手は使わない。{@link FieldAccessFact}） */
+    /** フィールドの参照箇所（{@link FieldAccessFact}。読むのは解析サーバーのフィールドの呼び出し元だけ） */
     public static final char ROW_FIELD_ACCESS = 'A';
     public static final char ROW_CONSTANT = 'K';
     public static final char ROW_FIELD_ASSIGN = 'J';

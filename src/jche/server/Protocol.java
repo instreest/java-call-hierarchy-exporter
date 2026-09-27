@@ -34,6 +34,14 @@ package jche.server;
  *   → EXPORT  &lt;メソッドキー&gt;  callers  /path/out.csv  depth=5 ...
  *   ← OK  rows=1832
  *
+ *   → TREE  com.example.Order#status  field  depth=5  access=write     （フィールドの呼び出し元）
+ *   ← R  0  com.example.Order#status  com.example.Order.status  &lt;宣言のファイル&gt;  0    field
+ *   ← R  1  &lt;参照しているメソッドのキー&gt;  &lt;表示名&gt;  &lt;ファイル&gt;  &lt;参照の行&gt;  write  access
+ *   ← R  2  &lt;その呼び出し元&gt;  ...
+ *   ← OK  rows=12  accesses=3
+ *        （access= は all / read / write。宣言も参照も無ければ NG not-found、解析し直しが
+ *          途中で終わってキャッシュがこの結果と違えば NG stale-cache。EXPORT も同じ向きを受け付ける）
+ *
  *   → CANCEL      それまでに送った ANALYZE（実行中のものと、まだ始まっていないもの）を止める
  *                 （読み取りスレッドが即座に拾う。後から送る ANALYZE には効かない）
  *   → SHUTDOWN
@@ -72,6 +80,11 @@ public final class Protocol {
     /** 木の向き */
     public static final String CALLERS = "callers";
     public static final String CALLEES = "callees";
+    /**
+     * フィールドの木（{@code TREE <型FQN#フィールド名> field}）。根がフィールド、深さ 1 がそれを参照している
+     * メソッド、その下が呼び出し元（{@link FieldTree}）
+     */
+    public static final String FIELD = "field";
 
     private Protocol() {
     }

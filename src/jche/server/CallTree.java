@@ -100,23 +100,44 @@ public final class CallTree {
      * @param rootId 根のメソッドID
      */
     public List<Row> walk(int rootId) {
+        return walk(rootId, 0, filters.maxRows);
+    }
+
+    /**
+     * {@link #walk(int)} の根を {@code rootDepth} の深さに置いたもの。深さの上限（{@link TreeFilters#maxDepth}）は
+     * 置いた深さを含めた木全体で数える。
+     *
+     * <p>フィールドの呼び出し元（{@link FieldTree}）が使う。フィールドを深さ 0 に置き、参照しているメソッドを
+     * 深さ 1 の根として、その下に呼び出し元を並べる。
+     *
+     * @param rowLimit 返す行数の上限（{@link TreeFilters#maxRows} のうち、この木に使ってよい残り）
+     */
+    public List<Row> walk(int rootId, int rootDepth, long rowLimit) {
         List<Row> rows = new ArrayList<>();
-        Row root = new Row(0, rootId, -1, false, truncatedAt(0, rootId));
+        Row root = new Row(rootDepth, rootId, -1, false, truncatedAt(rootDepth, rootId));
         rows.add(root);
-        walkInto(root, rows);
+        walkInto(root, rows, rowLimit);
         return rows;
     }
 
-    private void walkInto(Row parent, List<Row> rows) {
-        if (rows.size() >= filters.maxRows || parent.recursive() || parent.truncated()) {
+    /**
+     * そのメソッドを木に出してよいか（テストのソース・除外パッケージ・文字列の絞り込み）。
+     * 呼び出し元の行と同じ判定を、フィールドを参照しているメソッド（{@link FieldTree} の深さ 1 の行）にも使う
+     */
+    public boolean accepts(int methodId) {
+        return accept(methodId, -1);
+    }
+
+    private void walkInto(Row parent, List<Row> rows, long rowLimit) {
+        if (rows.size() >= rowLimit || parent.recursive() || parent.truncated()) {
             return;
         }
         for (Row child : childrenOf(parent, rows)) {
-            if (rows.size() >= filters.maxRows) {
+            if (rows.size() >= rowLimit) {
                 return;
             }
             rows.add(child);
-            walkInto(child, rows);
+            walkInto(child, rows, rowLimit);
         }
     }
 
@@ -150,7 +171,7 @@ public final class CallTree {
     }
 
     /** 深さの上限に達していて、かつまだ辿れる先があるか */
-    private boolean truncatedAt(int depth, int methodId) {
+    boolean truncatedAt(int depth, int methodId) {
         return depth >= filters.maxDepth && hasNeighbour(methodId);
     }
 

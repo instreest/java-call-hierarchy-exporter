@@ -29,10 +29,12 @@ public final class AnalysisSnapshot {
     private final LocalDateTime analyzedAt;
     private final int syntaxErrorFiles;
     private final UnresolvedCalls unresolvedCalls;
+    private final String cacheStamp;
     private volatile InboundIndex inbound;
 
     AnalysisSnapshot(Config config, ProjectLayout layout, CallGraph graph, CallResolver resolver,
-                     int syntaxErrorFiles, UnresolvedCalls unresolvedCalls) {
+                     int syntaxErrorFiles, UnresolvedCalls unresolvedCalls, String cacheStamp) {
+        this.cacheStamp = cacheStamp;
         this.config = config;
         this.layout = layout;
         this.graph = graph;
@@ -72,6 +74,17 @@ public final class AnalysisSnapshot {
 
     public CallResolver resolver() {
         return resolver;
+    }
+
+    /**
+     * グラフを組んだときのキャッシュファイルの印（{@link Exporter#cacheStampOf}。読めなければ空）。
+     *
+     * <p>グラフに入れていない行（A 行）を後からキャッシュで引く読み手（解析サーバーの
+     * {@code jche.server.FieldAccesses}）が、キャッシュがこの結果を作ったときのままかを確かめるのに使う。
+     * 解析のやり直しが途中で失敗すると、キャッシュだけが新しくなり、この結果は前のまま残ることがあるため
+     */
+    public String cacheStamp() {
+        return cacheStamp;
     }
 
     /** この結果を作り終えた時刻。画面に「いつ時点か」を出すために使う */
