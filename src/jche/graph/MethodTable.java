@@ -213,6 +213,27 @@ public final class MethodTable {
         return rawParams(id).endsWith("[]");
     }
 
+    /**
+     * {@code index} 番目（0 始まり）の引数の宣言の型（消去型の FQN。型変数は上限に消去されている）。
+     * 範囲の外なら null。引数として渡された値の実行時の型の上限（{@link Slot#BOUND}）に使う
+     */
+    public String paramTypeAt(int id, int index) {
+        String raw = rawParams(id);
+        if (raw.isEmpty() || index < 0) {
+            return null;
+        }
+        int start = 0;
+        for (int i = 0; i < index; i++) {
+            int comma = raw.indexOf(',', start);
+            if (comma < 0) {
+                return null;
+            }
+            start = comma + 1;
+        }
+        int end = raw.indexOf(',', start);
+        return (end < 0) ? raw.substring(start) : raw.substring(start, end);
+    }
+
     public String pkg(int id) {
         return pkgs.get(id);
     }

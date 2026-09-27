@@ -147,6 +147,8 @@ public final class StreamingTreeWalker {
     private long reflectionHits;
     private long fieldHits;
     private long newHits;
+    /** 経路で渡ってきた値の宣言の型（実行時の型の上限）で 1 つに絞れた件数（{@link Resolution#DATAFLOW_DECLARED_TYPE}） */
+    private long declaredTypeHits;
     /** 条件分岐の静的解析で「この経路では呼ばれない」と判定して打ち切った件数 */
     private long prunedCalls;
     /** 絞れなかった呼び出しから作る、契約表のひな形 */
@@ -220,6 +222,11 @@ public final class StreamingTreeWalker {
         return newHits;
     }
 
+    /** 経路で渡ってきた値の宣言の型（実行時の型の上限）で 1 つに絞れた件数 */
+    public long declaredTypeHits() {
+        return declaredTypeHits;
+    }
+
     /** 契約で呼び戻される側へ繋いだ件数 */
     public long callbackHits() {
         return callbackHits;
@@ -269,7 +276,7 @@ public final class StreamingTreeWalker {
 
     /** データフローで具象クラスを1件でも特定したか（ログを出すかの判定用） */
     public boolean anyDataflowHits() {
-        return factoryHits > 0 || paramHits > 0 || fieldHits > 0 || newHits > 0;
+        return factoryHits > 0 || paramHits > 0 || fieldHits > 0 || newHits > 0 || declaredTypeHits > 0;
     }
 
     /** 条件分岐の打ち切りが理由で階層CSVに出なかったことを表す文言 */
@@ -483,6 +490,7 @@ public final class StreamingTreeWalker {
                 case Resolution.DATAFLOW_FIELD -> fieldHits++;
                 case Resolution.DATAFLOW_PARAM -> paramHits++;
                 case Resolution.DATAFLOW_NEW -> newHits++;
+                case Resolution.DATAFLOW_DECLARED_TYPE -> declaredTypeHits++;
                 default -> factoryHits++;
             }
         }
@@ -522,7 +530,7 @@ public final class StreamingTreeWalker {
         if (shift < 0) {
             return null;
         }
-        long[] bound = dataflow.bindArgs(graph.argsNode(edgeIndex), path[depth].context());
+        long[] bound = dataflow.bindArgs(graph.argsNode(edgeIndex), path[depth].context(), path[depth].methodId);
         if (shift == 0 || bound == null) {
             return bound;
         }
@@ -599,7 +607,7 @@ public final class StreamingTreeWalker {
             return null;
         }
         // new のノードは実引数を持つので、呼び出し箇所の実引数と同じ読み方で枠にする
-        return dataflow.bindArgs(recv, path[depth].context());
+        return dataflow.bindArgs(recv, path[depth].context(), path[depth].methodId);
     }
 
     /**

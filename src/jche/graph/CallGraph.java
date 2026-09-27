@@ -73,6 +73,12 @@ public final class CallGraph {
     /** "typeFqn#fieldName" -> 代入される値の頭（葉の参照）。コンストラクタ注入されたフィールドだけが入る */
     final HashMap<String, Integer> fieldHeads = new HashMap<>();
     /**
+     * "typeFqn#fieldName" -> 宣言の型（V 行の消去型の FQN。文字列の置き場の番号）。参照型（基本型・String・配列でない）の
+     * フィールドだけで、値を読まない指定では作らない。そのフィールドの値を実引数として渡したとき、実行時の型の上限
+     * （{@link Slot#BOUND}）にする材料（{@link DataflowResolver#bindArgs}）
+     */
+    final HashMap<String, Integer> fieldDeclTypes = new HashMap<>();
+    /**
      * ソースが引数でない値を入れる、参照型の static でないフィールド（"typeFqn#fieldName"）。
      * DI（段 5）はこれを注入点にしない（{@link FieldFacts}。別のファイルからの書き込みも含む。
      * 値を読まない指定でも J 行の種別の列から作る）
@@ -299,6 +305,15 @@ public final class CallGraph {
     /** ソースがそのフィールドに引数でない値を入れるか（{@link #ownValuedFields}） */
     public boolean isOwnValued(String fieldKey) {
         return ownValuedFields.contains(fieldKey);
+    }
+
+    /**
+     * フィールド "typeFqn#fieldName" の宣言の型（消去型の FQN。{@link #fieldDeclTypes}）。
+     * 参照型でない・宣言が無い・値を読まない指定なら null
+     */
+    public String fieldDeclType(String fieldKey) {
+        Integer id = fieldDeclTypes.get(fieldKey);
+        return (id == null) ? null : values.strings().get(id);
     }
 
     /**

@@ -105,6 +105,11 @@ factory.get(key)                                // 呼び出し元が get("jp.co
 引数経由の解決（`DATAFLOW_PARAM`）は**経路ごと**に判定する。同じファクトリでも、
 呼び出し元Xからの経路では確定、Yからの経路では不明、という出方をする。
 
+具象型が決まらなくても、渡した値の**宣言の型**が具象クラスなら、その部分型に候補を絞る（`DATAFLOW_DECLARED_TYPE`。
+[declared-type-narrowing-qa.md](declared-type-narrowing-qa.md)）。Spring でコンストラクタ注入した `XmlOrderExporter` 型の
+フィールドを `export(OrderExporter e)` に渡した先の `e.export()` は、`XmlOrderExporter` の部分型の実装だけになる。
+宣言の型がインターフェース（`OrderExporter` 型のフィールド）なら絞れないので、これまでどおり CHA のまま。
+
 ラムダ式・メソッド参照は値として追う（`DATAFLOW_LAMBDA`）。追える形と追えない形の一覧は
 [lambda-expansion-qa.md](lambda-expansion-qa.md) の Q6。要点は次のとおり。
 

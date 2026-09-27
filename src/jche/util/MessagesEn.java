@@ -260,7 +260,7 @@ final class MessagesEn {
             "exporter.entryNote1", "  * Entry candidates are \"methods with no caller\". Besides real entry points,",
             "exporter.entryNote2", "    dead code, tests and reflection-only methods land here too, so",
             "exporter.entryNote3", "    sort them out with the inDegree / outDegree / role columns of methods.csv.",
-            "exporter.dataflowHits", "Concrete classes found by dataflow: {0} from a new-ed type / {1} from a factory return value / {2} from an argument passed by the caller / {3} from a constructor-injected field",
+            "exporter.dataflowHits", "Concrete classes found by dataflow: {0} from a new-ed type / {1} from a factory return value / {2} from an argument passed by the caller / {3} from a constructor-injected field / {4} from the declared type of a value passed along the path",
             "exporter.callbackHits", "Methods called back from inside a jar, connected through a contract: {0}",
             "exporter.prunedCalls", "Calls pruned because the static analysis of the conditions says they do not run on that path: {0}",
             "exporter.reflectionHits", "Reflection targets found (Class.forName / getMethod / Method.invoke / newInstance): {0}",

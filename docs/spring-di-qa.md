@@ -333,3 +333,28 @@ SnReq・SnReset の形（初期化子・`new` の代入のあるフィールド�
 検査: `test/pruning` の値を読まない指定の題材（`work/nodf`）に、NdInit（初期化子）・NdReset（`new` の代入）・NdBase
 （別のファイルの子クラスの `this.p = new PangA()`）を足した。どれも A・B の両方の実装が出る（67d7fd9 は B だけ）。
 対照の Notifier（注入のフィールドだけ）と NdMixed（型の当たらないフィールドにだけ `new` を入れる）は段 5 で絞る。
+
+### Q17. コンストラクタ注入した具象型のフィールドを、インターフェース型の引数で別のメソッドへ渡した先は絞れるか
+
+（[Issue #192](https://github.com/instreest/java-call-hierarchy-exporter/issues/192) で改めた。）絞れる。ただし段 5 ではなく、
+経路で渡った値の**宣言の型**で絞る（`DATAFLOW_DECLARED_TYPE`。[declared-type-narrowing-qa.md](declared-type-narrowing-qa.md)）。
+
+```java
+@Controller class PartnerOrderController {
+    private final XmlOrderExporter xmlOrderExporter;          // @Component の Bean をコンストラクタ注入
+    ...
+    orderExportService.export(from, to, xmlOrderExporter);
+}
+class OrderExportService {
+    String export(LocalDate from, LocalDate to, OrderExporter exporter) { return exporter.export(orders); }
+}
+```
+
+`exporter.export(orders)` は、`export` の引数が注入点でない（`export` は Bean のコンストラクタでも `@Autowired` のメソッドでも
+ない）ので段 5 は効かず、フィールドの値はコンテナが入れる（ソースに `new` が無い）ので値の追跡でも決まらない。
+以前は両方の経路で `UNEXPANDED:CHA`（2 候補）だった。今は、`XmlOrderExporter` 型のフィールドを渡した経路では実行時の型が
+その部分型に限られるので、`XmlOrderExporter.export` に絞る。
+
+`@Qualifier` 付きのフィールド・コンストラクタ引数の Bean 名は、引数として別のメソッドへ渡った先には運ばない（Q8 のとおり
+コンストラクタ引数の注釈を持っておらず、Bean 名の対応は型階層とは別の Spring の仕様なので、Issue の判断どおり対応しない）。
+インターフェース型（`OrderExporter`）のフィールドを渡す形は、上限が修飾する型と同じで絞れない。

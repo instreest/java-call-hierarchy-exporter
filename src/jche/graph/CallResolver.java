@@ -311,6 +311,13 @@ public final class CallResolver {
                 res = Resolution.single(viaPath, DataflowResolver.labelFor(graph.values().kind(recv)));
             }
         }
+        // 具象型までは決まらなくても、経路で渡ってきた値の宣言の型（実行時の型の上限）で候補を絞る
+        if ((res.isMultiple() || isSpringDi(res)) && dataflow.enabled()) {
+            Resolution narrowed = narrowByBound(edgeIndex, calleeId, res, ctx);
+            if (narrowed != null) {
+                res = narrowed;
+            }
+        }
         // ラムダ／メソッド参照が渡ってきた呼び出し。候補が複数かどうかに関係なく試す。
         // 関数型インターフェースのメソッドは、ソース上の実装が無い（Runnable#run 等）ことが
         // 多く、その場合は候補が1件（宣言のまま）になって上の条件に入らないため。
@@ -626,6 +633,86 @@ public final class CallResolver {
     /** 段 5（DI）で絞った結果か。経路で具象型が分かれば、そちらで置き換える（{@link #resolveOnPath}） */
     private static boolean isSpringDi(Resolution res) {
         return res.label().startsWith(Resolution.SPRING_DI);
+    }
+
+    /**
+     * 経路で渡ってきた値の宣言の型（実行時の型の上限。{@link DataflowResolver#boundTypeOf}）で候補を絞る。
+     *
+     * <p>具象クラスの型で宣言したフィールド・引数を渡しているなら、受け手の実行時の型はその部分型に限られる
+     * （JLS 4.10・5.2。消去型の代入互換性は実行時にも保たれる）。そこで、上限の型を修飾する型（JLS 13.1）と同じように
+     * 候補の起点にして（{@link #resolveVirtual(int, String)}）、段 1 の候補との交わりを採る。
+     * Spring のコンストラクタ注入した具象型のフィールドを、インターフェース型の引数で別のメソッドへ渡す形
+     * （Issue #192）がこれで経路ごとに 1 つに定まる。値を追った結果（{@code DATAFLOW_*}）より根拠は弱いので、
+     * ラベルは {@link Resolution#DATAFLOW_DECLARED_TYPE} で言い分ける。
+     *
+     * <p>絞るのは段 1 の候補が複数のまま（{@code CHA}）か、段 5（DI）で絞ったものだけ。契約表・拡張・{@code new} した型・
+     * リフレクションで集めた候補は、利用者が与えた条件や別の材料で決めたものなので、経路の宣言の型で覆さない
+     * （{@link #resolveOnPath} の契約表の扱いと同じ）。段 5 の結論が上限の部分型なら（矛盾しない）そのまま残し、
+     * 部分型でなければ（コンテナの Bean でない実装をその経路で渡している）経路の事実を採って上限の候補に置き換える
+     * （docs/spring-di-qa.md の Q5）。候補が複数残れば、上限の型を起点に段 5 をもう一度引く（修飾する型と同じ扱い）。
+     *
+     * <p>上限がソース上に無い型（jar の型）なら部分型を漏れなく数えられないので絞らない（{@link #usableQualifier} と
+     * 同じ理由）。上限の部分型に本体を持つ実装が 1 つも無いとき（{@code NO_IMPL}）や、交わりが空になるとき
+     * （型階層に載らない jar の型を経由した部分型など）も絞らない（候補を落とさない側）。
+     *
+     * @return 絞れたら新しい結果。絞れなければ null
+     */
+    private Resolution narrowByBound(int edgeIndex, int calleeId, Resolution res, DataflowContext ctx) {
+        boolean di = isSpringDi(res);
+        if (!di && !Resolution.CHA.equals(res.label())) {
+            return null;
+        }
+        String bound = dataflow.boundTypeOf(graph.recvNode(edgeIndex), ctx);
+        if (bound == null || !graph.hierarchy.contains(bound)) {
+            return null;
+        }
+        String qualifier = usableQualifier(edgeIndex, calleeId);
+        if (bound.equals((qualifier == null) ? methods.typeFqn(calleeId) : qualifier)) {
+            return null;   // 段 1 と同じ型から引くことになる。絞れない
+        }
+        Resolution viaBound = resolveVirtual(calleeId, bound);
+        if (Resolution.NO_IMPL.equals(viaBound.label()) || viaBound.isGeneratedImpl()) {
+            return null;
+        }
+        // 段 1 の候補（修飾する型の部分型の実装）との交わり。実行時の型は修飾する型と上限の両方の部分型なので、
+        // どちらの候補にも入っていないものは動かない。並びは段 1 のまま（出力の行順を変えない）
+        int[] kept = intersect(resolveVirtual(calleeId, qualifier).targets(), viaBound.targets());
+        if (kept.length == 0) {
+            return null;
+        }
+        if (di) {
+            if (contains(kept, res.targets()[0])) {
+                return null;   // 段 5 の結論は上限と矛盾しない。そのまま
+            }
+        } else if (kept.length == res.targets().length) {
+            return null;   // 上限で候補が減らない
+        }
+        if (kept.length == 1) {
+            return Resolution.single(kept[0], Resolution.DATAFLOW_DECLARED_TYPE);
+        }
+        Resolution narrowed = new Resolution(kept, Resolution.CHA);
+        Resolution viaDi = springResolution(edgeIndex, calleeId, narrowed, bound);
+        return (viaDi != null) ? viaDi : narrowed;
+    }
+
+    /** {@code a} の並びのまま、{@code b} にもあるものだけ */
+    private static int[] intersect(int[] a, int[] b) {
+        IntArray out = new IntArray(a.length);
+        for (int x : a) {
+            if (contains(b, x)) {
+                out.add(x);
+            }
+        }
+        return out.toArray();
+    }
+
+    private static boolean contains(int[] a, int x) {
+        for (int y : a) {
+            if (y == x) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

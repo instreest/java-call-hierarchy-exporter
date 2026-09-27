@@ -260,7 +260,7 @@ final class MessagesJa {
             "exporter.entryNote1", "  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに",
             "exporter.entryNote2", "     デッドコード・テスト・リフレクション経由が混ざるため、",
             "exporter.entryNote3", "     methods.csv の inDegree / outDegree / role 列で仕分けてください。",
-            "exporter.dataflowHits", "データフローで具象クラスを特定: new された型から {0} 件 / ファクトリの戻り値から {1} 件 / 呼び出し元から渡された引数から {2} 件 / コンストラクタ注入されたフィールドから {3} 件",
+            "exporter.dataflowHits", "データフローで具象クラスを特定: new された型から {0} 件 / ファクトリの戻り値から {1} 件 / 呼び出し元から渡された引数から {2} 件 / コンストラクタ注入されたフィールドから {3} 件 / 経路で渡された値の宣言の型から {4} 件",
             "exporter.callbackHits", "jar の中から呼び戻されるメソッドを契約で繋いだ: {0} 件",
             "exporter.prunedCalls", "条件分岐の静的解析で「その経路では呼ばれない」と判定して打ち切り: {0} 件",
             "exporter.reflectionHits", "リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の呼び出し先を特定: {0} 件",
