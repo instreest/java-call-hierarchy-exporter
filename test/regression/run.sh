@@ -389,7 +389,9 @@ open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
     run cacheblocks config.properties 3 "3回目: 1 ブロックの中身が壊れた" || return
     expect_reused cacheblocks 3 "3回目: 壊れたブロック以外は再利用"
-    expect_parsed cacheblocks 3 1 "3回目: 壊れたブロックのファイルだけを解析し直す"
+    # 壊れたブロックのファイル（Deep.java。ほかから参照されない）と、型解決に失敗している 2 ブロック（何かが変わった実行では
+    # 名前を照合せず必ず解析し直す。docs/cache-unification-qa.md の Q131）
+    expect_parsed cacheblocks 3 3 "3回目: 壊れたブロックのファイルと、型解決に失敗している 2 ファイルだけを解析し直す"
     expect_log_contains cacheblocks 3 "failed the integrity check" "3回目: 検査値が合わないことをログに出す"
     expect_unresolved_count cacheblocks 3 "$unresolved" "3回目: 型解決できなかった呼び出しの件数は同じ"
     compare cacheblocks expected "3回目: 1 ブロックの中身が壊れた"
@@ -462,7 +464,8 @@ else:
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
     run cacheblocks config.properties 8 "8回目: F 行の件数が書き換えられた" || return
-    expect_parsed cacheblocks 8 2 "8回目: 件数を書き換えたブロックのファイルと、その型を使う 1 ファイルだけを解析し直す"
+    # 件数を書き換えたブロックは型解決に失敗しているブロックの 1 つ。もう 1 つの失敗しているブロックも解析し直す（Q131）
+    expect_parsed cacheblocks 8 3 "8回目: 件数を書き換えたブロックのファイルと、その型を使う 1 ファイルと、型解決に失敗しているもう 1 ファイルだけを解析し直す"
     expect_log_contains cacheblocks 8 "failed the integrity check" "8回目: 検査値が合わないことをログに出す"
     expect_unresolved_count cacheblocks 8 "$unresolved" "8回目: 型解決できなかった呼び出しの件数は変わらない（警告が残る）"
     compare cacheblocks expected "8回目: F 行の件数が書き換えられた"
