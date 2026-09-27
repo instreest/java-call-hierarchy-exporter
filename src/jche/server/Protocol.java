@@ -34,6 +34,11 @@ package jche.server;
  *   → EXPORT  &lt;メソッドキー&gt;  callers  /path/out.csv  depth=5 ...
  *   ← OK  rows=1832
  *
+ *   → FIELDAT  src/main/java/com/example/Order.java  42  status     （カーソルの下の名前のフィールドを引く）
+ *   ← OK  how=access  key=com.example.Order#status  keys=com.example.Order#status
+ *        （how は access（その行の参照から）か declaration（そのファイルの宣言から）。候補が複数なら keys に
+ *          カンマで並ぶ。断り方は AT と同じに stale-cache を足したもの）
+ *
  *   → TREE  com.example.Order#status  field  depth=5  access=write     （フィールドの呼び出し元）
  *   ← R  0  com.example.Order#status  com.example.Order.status  &lt;宣言のファイル&gt;  0    field
  *   ← R  1  &lt;参照しているメソッドのキー&gt;  &lt;表示名&gt;  &lt;ファイル&gt;  &lt;参照の行&gt;  write  access

@@ -12,6 +12,18 @@ import { bundledClasspath, launchServer } from './server/launcher';
 import type { ServerResponse } from './server/response';
 import { currentLanguage, t } from './messages';
 
+/**
+ * 木を切り出す向き。`field` はキーがフィールド（`型FQN#フィールド名`）で、根がフィールド、深さ 1 がそれを読み書き
+ * しているメソッド、その下が呼び出し元（サーバーの `jche.server.FieldTree`。docs/field-callers-qa.md）
+ */
+export type TreeDirection = Direction | 'field';
+
+/**
+ * フィールドの木を待つ上限。フィールドの参照は解析結果のメモリに無く、サーバーが要求のたびにキャッシュを
+ * 読み直すので、メソッドの木より時間がかかりうる（Eclipse 版と同じ 300 秒）
+ */
+const FIELD_TREE_TIMEOUT_MS = 300_000;
+
 /** 解析の状態。画面（Language Status Item・ビュー）はこれを見て描く */
 export type SessionState =
     | { readonly kind: 'unanalyzed' }
@@ -407,13 +419,21 @@ export class Session implements vscode.Disposable {
         return this.request(DEFAULT_TIMEOUT_MS, 'FIND', key);
     }
 
+    /**
+     * カーソル位置（ファイル・1 始まりの行・カーソルの下の単語）にあるフィールド。
+     * こちらには JDT が無いので、フィールドのキーはサーバーに引かせる（`FIELDAT`）。候補が複数なら `keys` に並ぶ
+     */
+    fieldAt(file: string, line: number, name: string): Promise<ServerResponse> {
+        return this.request(FIELD_TREE_TIMEOUT_MS, 'FIELDAT', file, String(line), name);
+    }
+
     /** 木を切り出す。`filterWords` は `depth=5` のような語（`filters.ts#toWords`） */
-    tree(key: string, direction: Direction, filterWords: readonly string[]): Promise<ServerResponse> {
-        return this.request(120_000, 'TREE', key, direction, ...filterWords);
+    tree(key: string, direction: TreeDirection, filterWords: readonly string[]): Promise<ServerResponse> {
+        return this.request(direction === 'field' ? FIELD_TREE_TIMEOUT_MS : 120_000, 'TREE', key, direction, ...filterWords);
     }
 
     /** いま見えている木と同じ条件で CSV に書く */
-    export(key: string, direction: Direction, output: string, filterWords: readonly string[]): Promise<ServerResponse> {
+    export(key: string, direction: TreeDirection, output: string, filterWords: readonly string[]): Promise<ServerResponse> {
         return this.request(600_000, 'EXPORT', key, direction, output, ...filterWords);
     }
 

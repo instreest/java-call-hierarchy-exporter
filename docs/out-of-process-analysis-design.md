@@ -112,6 +112,9 @@ JSON は表現力が高いがパーサを自前で書くか依存を足すこと
 ← R 1 <key> ... write access                 （理由の列が read / write / read/write）、その下が呼び出し元
 ← OK rows=12 accesses=3                      （docs/field-callers-qa.md）
 
+→ FIELDAT src/main/java/com/example/Order.java 42 status   カーソルの下のフィールドを引く（VSCode 用。後から足した）
+← OK how=access key=com.example.Order#status keys=com.example.Order#status
+
 → CANCEL                      それまでに送った ANALYZE（実行中のものと、まだ始まっていないもの）を中止
                               （別スレッドで受ける。後から送る ANALYZE には効かない）
 → SHUTDOWN                    積んだ要求を処理し終えてから終わる（実行中の解析は中止しない）

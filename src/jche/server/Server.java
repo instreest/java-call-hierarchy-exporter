@@ -188,6 +188,7 @@ public final class Server {
                 case "STATUS" -> status();
                 case "FIND" -> find(arg(parts, 1));
                 case "AT" -> at(arg(parts, 1), arg(parts, 2));
+                case "FIELDAT" -> fieldAt(arg(parts, 1), arg(parts, 2), arg(parts, 3));
                 case "TREE" -> tree(parts);
                 case "EXPORT" -> export(parts);
                 case "PING" -> respondOk("pong");
@@ -355,6 +356,90 @@ public final class Server {
             return;
         }
         respondFound(methods, id, "how=enclosing");
+    }
+
+    /**
+     * エディタのカーソル位置（ファイル・行・カーソルの下の単語）にあるフィールドを引く（{@code FIELDAT ファイル 行 名前}）。
+     *
+     * <p>誰のためにあるか: VSCode プラグインである。あちらには JDT が無く、カーソルの下の名前がどの型のフィールドかを
+     * 決められない（Eclipse 版は {@code IField} から {@code 型FQN#フィールド名} を組み立てる）。{@code AT} と同じく、
+     * 位置だけ送ってもらい、こちらの解析結果（キャッシュ）で引く（{@code docs/field-callers-qa.md} の Q13）。
+     *
+     * <p>決め方は 2 段。
+     * <ol>
+     *   <li>その行にその名前のフィールドの参照（A 行）があれば、その所有型（{@code how=access}）。
+     *       {@code this.status} の {@code status} も、別の型の {@code o.count} もここで決まる</li>
+     *   <li>無ければ、そのファイルでその名前のフィールドを宣言している型（V 行。{@code how=declaration}）。
+     *       ただし行がメソッドの本体の中なら採らない。同じ名前のローカル変数の宣言を、フィールドの宣言と
+     *       取り違えないため（V 行は行番号を持たないので、「宣言の行か」は確かめられない）</li>
+     * </ol>
+     * 候補が複数（入れ子のクラスに同じ名前のフィールドがある、など）なら {@code keys=} にすべて並べ、
+     * どれにするかは呼び出し側（利用者）に任せる。黙って 1 つを選ばない。
+     *
+     * <p>断り方は {@code AT} と同じ（{@code not-analyzed} / {@code file-not-analyzed} / {@code not-found} /
+     * {@code bad-line} / {@code missing-position}）に、{@code stale-cache}（{@link #fieldTree} と同じ）を足したもの。
+     */
+    private void fieldAt(String file, String lineText, String name) throws IOException {
+        if (snapshot == null) {
+            respondNg("not-analyzed");
+            return;
+        }
+        if (file == null || file.isEmpty() || lineText == null || lineText.isEmpty()
+                || name == null || name.isBlank()) {
+            respondNg("missing-position");
+            return;
+        }
+        int line;
+        try {
+            line = Integer.parseInt(lineText.trim());
+        } catch (NumberFormatException ignore) {
+            respondNg("bad-line " + Protocol.escape(lineText));
+            return;
+        }
+        if (line < 1) {
+            respondNg("bad-line " + Protocol.escape(lineText));
+            return;
+        }
+        String normalized = normalizePath(file);
+        FieldAccesses.Located located;
+        try {
+            located = FieldAccesses.locate(snapshot.config().cacheFile, snapshot.cacheStamp(), normalized, line,
+                    name.trim());
+        } catch (FieldAccesses.StaleCacheException e) {
+            respondNg("stale-cache");
+            return;
+        }
+        if (!located.fileFound()) {
+            respondNg("file-not-analyzed");
+            return;
+        }
+        String how;
+        java.util.Set<String> owners;
+        if (!located.accessOwners().isEmpty()) {
+            how = "access";
+            owners = located.accessOwners();
+        } else if (!located.declaredOwners().isEmpty() && !insideMethodBody(normalized, line)) {
+            how = "declaration";
+            owners = located.declaredOwners();
+        } else {
+            respondNg("not-found");
+            return;
+        }
+        List<String> keys = new ArrayList<>();
+        for (String owner : owners) {
+            keys.add(owner + "#" + name.trim());
+        }
+        // 型の FQN とフィールド名はカンマを含まないので、カンマで並べる
+        respondOk("how=" + how
+                + Protocol.SEP + "key=" + Protocol.escape(keys.get(0))
+                + Protocol.SEP + "keys=" + Protocol.escape(String.join(",", keys)));
+    }
+
+    /** その行がメソッド（ラムダの本体は除く）の中か。フィールドの初期化子に書いたラムダは、宣言の行にかかりうるため除く */
+    private boolean insideMethodBody(String file, int line) {
+        MethodTable methods = snapshot.graph().methods();
+        int id = methods.enclosingMethod(file, line);
+        return id >= 0 && !methods.isLambdaBody(id);
     }
 
     /** 宣言があるファイルの集合。最初に引かれたときに作り、解析し直すまで使い回す */

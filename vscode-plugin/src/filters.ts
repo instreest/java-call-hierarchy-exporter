@@ -84,3 +84,21 @@ export function describeFilters(f: FilterSettings): string {
     }
     return parts.join(' / ');
 }
+
+/**
+ * フィールドの木で出す参照（サーバーの `access=`。`jche.server.TreeFilters#access`）。
+ * `write` は代入・`++` / `--`・複合代入・初期化子、`read` は読み取り（複合代入と `++` / `--` は両方に入る）。
+ * メソッドの木には付けない。フィールドを選び直したら `all` に戻す（前の絞り込みが残っていると、行が足りないことに
+ * 気づけない。docs/field-callers-qa.md の Q8）
+ */
+export type FieldAccess = 'all' | 'read' | 'write';
+
+/** サーバーへ渡す語 */
+export function accessWord(access: FieldAccess): string {
+    return `access=${access}`;
+}
+
+/** 保存していた値・選んだ値から復元する。知らない値は `all`（黙って参照を落とさない側） */
+export function toFieldAccess(value: unknown): FieldAccess {
+    return value === 'read' || value === 'write' ? value : 'all';
+}

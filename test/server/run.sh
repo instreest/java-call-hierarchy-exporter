@@ -522,6 +522,20 @@ public class Service {
     void top(Order o) { handle(o); report(o); }
 }
 EOF
+# 同じ名前のローカル変数と、入れ子のクラスの同じ名前のフィールド（FIELDAT の取り違えの検査に使う）
+cat > "$FP/src/app/Twin.java" <<'EOF'
+package app;
+public class Twin {
+    int value;
+    void set(int v) {
+        int value = v;
+        this.value = value;
+    }
+    static class Inner {
+        int value;
+    }
+}
+EOF
 cat > "$FP/test/app/OrderTest.java" <<'EOF'
 package app;
 public class OrderTest {
@@ -582,6 +596,30 @@ if head -1 "$FP/field.csv" 2>/dev/null | grep -q 'depth,method,file,line,reason,
 else
     fail "フィールドの木の CSV が期待と違う"
 fi
+
+# FIELDAT（カーソル位置からフィールドを引く。VSCode プラグインが使う）。
+# JDT の無いプラグインに代わり、ファイル・行・カーソルの下の単語から、参照（A 行）か宣言（V 行）で引く
+OUT=$(session "ANALYZE\t$FP/c.properties\nFIELDAT\tsrc/app/Order.java\t6\tstatus\nFIELDAT\t$FP/src/app/Order.java\t15\tstatus\nFIELDAT\tsrc/app/Order.java\t3\tstatus\nFIELDAT\tsrc/app/Order.java\t5\tgetStatus\nFIELDAT\tsrc/app/Twin.java\t5\tvalue\nFIELDAT\tsrc/app/Twin.java\t6\tvalue\nFIELDAT\tsrc/app/Twin.java\t3\tvalue\nFIELDAT\tno/such/File.java\t1\tx\nFIELDAT\tsrc/app/Order.java\txx\tstatus\nFIELDAT\tsrc/app/Order.java\t3\nSHUTDOWN\n")
+echo "$OUT" | grep -E "^(OK|NG)" | sed 's/^/       /'
+FA=$(grep -E "^(OK${T}how=|NG)" <<<"$OUT")
+fa_line() { sed -n "${1}p" <<<"$FA"; }
+[ "$(fa_line 1)" = "OK${T}how=access${T}key=app.Order#status${T}keys=app.Order#status" ] \
+    && ok "参照の行（this.status = s）からフィールドを引く" || fail "参照の行から引けない: $(fa_line 1)"
+[ "$(fa_line 2)" = "OK${T}how=access${T}key=app.Order#status${T}keys=app.Order#status" ] \
+    && ok "別の型からの参照（o.status）も、絶対パスでも引ける" || fail "別の型からの参照が引けない: $(fa_line 2)"
+[ "$(fa_line 3)" = "OK${T}how=declaration${T}key=app.Order#status${T}keys=app.Order#status" ] \
+    && ok "宣言の行から引く" || fail "宣言の行から引けない: $(fa_line 3)"
+[ "$(fa_line 4)" = "NG${T}not-found" ] \
+    && ok "フィールドでない名前（メソッド名）は not-found" || fail "メソッド名で not-found にならない: $(fa_line 4)"
+[ "$(fa_line 5)" = "NG${T}not-found" ] \
+    && ok "メソッドの中の同じ名前のローカル変数の宣言を、フィールドと取り違えない" || fail "ローカル変数をフィールドにした: $(fa_line 5)"
+[ "$(fa_line 6)" = "OK${T}how=access${T}key=app.Twin#value${T}keys=app.Twin#value" ] \
+    && ok "this.value = value は、フィールドの参照だけを拾う（ローカル変数の value は拾わない）" || fail "this.value の行が期待と違う: $(fa_line 6)"
+[ "$(fa_line 7)" = "OK${T}how=declaration${T}key=app.Twin#value${T}keys=app.Twin#value,app.Twin.Inner#value" ] \
+    && ok "宣言で候補が複数なら、黙って 1 つを選ばずすべて返す" || fail "候補が複数のときの応答が違う: $(fa_line 7)"
+[ "$(fa_line 8)" = "NG${T}file-not-analyzed" ] && ok "解析結果に無いファイルは file-not-analyzed" || fail "file-not-analyzed にならない: $(fa_line 8)"
+[[ "$(fa_line 9)" == "NG${T}bad-line "* ]] && ok "行番号でない引数は bad-line" || fail "bad-line にならない: $(fa_line 9)"
+[ "$(fa_line 10)" = "NG${T}missing-position" ] && ok "名前が無ければ missing-position" || fail "missing-position にならない: $(fa_line 10)"
 
 # 解析の後にキャッシュが書き換わった（解析し直しが途中で終わった、など）なら、古い結果と新しい行を混ぜない
 # 錠を待たない（下で「ほかの実行が錠を持っている間は読まない」ことを見るため。待つと検査が止まる）

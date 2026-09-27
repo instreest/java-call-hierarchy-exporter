@@ -19,6 +19,7 @@ import { buildTree, countNodes, firstTruncated } from '../src/server/tree';
  *   JCHE_CONFIG … 解析する設定ファイル（test/regression/whole/config.properties）
  *   JCHE_TARGET … 呼び出し元が多いメソッドのキー
  *   JCHE_AT     … 「<project.root からの相対パス>:<行>」（AT の検査に使う）
+ *   JCHE_FIELD_AT … 「<相対パス>:<行>:<フィールド名>」（FIELDAT とフィールドの木の検査に使う）
  */
 const env = process.env;
 const java = env.JCHE_JAVA ?? '';
@@ -26,10 +27,11 @@ const classpath = (env.JCHE_CP ?? '').split(path.delimiter).filter((p) => p !== 
 const config = env.JCHE_CONFIG ?? '';
 const target = env.JCHE_TARGET ?? '';
 const [atFile, atLine] = (env.JCHE_AT ?? ':').split(':');
+const [fieldFile, fieldLine, fieldName] = (env.JCHE_FIELD_AT ?? '::').split(':');
 
-test('子プロセスと一連のやりとり（HELLO → ANALYZE → FIND → AT → TREE → EXPORT）', async () => {
-    assert.ok(java && classpath.length > 0 && config && target && atFile,
-        'JCHE_JAVA / JCHE_CP / JCHE_CONFIG / JCHE_TARGET / JCHE_AT を環境変数で渡すこと');
+test('子プロセスと一連のやりとり（HELLO → ANALYZE → FIND → AT → TREE → EXPORT → FIELDAT → TREE field）', async () => {
+    assert.ok(java && classpath.length > 0 && config && target && atFile && fieldFile && fieldName,
+        'JCHE_JAVA / JCHE_CP / JCHE_CONFIG / JCHE_TARGET / JCHE_AT / JCHE_FIELD_AT を環境変数で渡すこと');
     const work = mkdtempSync(path.join(tmpdir(), 'jche-vscode-server-'));
     let progressCount = 0;
     let logCount = 0;
@@ -111,6 +113,28 @@ test('子プロセスと一連のやりとり（HELLO → ANALYZE → FIND → A
         const exported = await connection.request(60_000, 'EXPORT', target, 'callers', csv, 'depth=3');
         assert.ok(exported.ok, exported.raw);
         assert.ok(existsSync(csv) && statSync(csv).size > 0, 'CSV が書けている');
+
+        // フィールドの呼び出し元（docs/field-callers-qa.md）。こちらには JDT が無いので、カーソルの位置と単語で
+        // フィールドを引き（FIELDAT）、そのキーで木を取る。根がフィールド、深さ 1 がそれを読み書きしているメソッド
+        const fieldAt = await connection.request(60_000, 'FIELDAT', fieldFile, fieldLine, fieldName);
+        assert.ok(fieldAt.ok, `FIELDAT: ${fieldAt.raw}`);
+        const fieldKey = fieldAt.field('key');
+        assert.ok(fieldKey.endsWith(`#${fieldName}`), fieldKey);
+        assert.ok(fieldAt.field('keys').split(',').includes(fieldKey));
+        const notField = await connection.request(60_000, 'FIELDAT', fieldFile, fieldLine, 'noSuchName');
+        assert.equal(notField.reason, 'not-found');
+        const fieldTree = await connection.request(60_000, 'TREE', fieldKey, 'field', 'depth=3');
+        assert.ok(fieldTree.ok, fieldTree.raw);
+        const fieldRoot = buildTree(fieldTree.rows);
+        assert.ok(fieldRoot);
+        assert.equal(fieldRoot.row.key, fieldKey);
+        assert.ok(fieldRoot.row.flags.includes('field'), '根はフィールド');
+        assert.ok(fieldRoot.children.length > 0 && fieldRoot.children.every((c) => c.row.flags.includes('access')),
+            '深さ 1 はフィールドを読み書きしているメソッド');
+        assert.ok(fieldRoot.children.some((c) => c.row.reason === 'write'), 'コンストラクタでの代入は書き込み');
+        const fieldCsv = path.join(work, 'field.csv');
+        const fieldExport = await connection.request(60_000, 'EXPORT', fieldKey, 'field', fieldCsv, 'depth=3');
+        assert.ok(fieldExport.ok && existsSync(fieldCsv), fieldExport.raw);
 
         // TAB や改行を含む語を投げても、行が壊れずに応答が返ること
         const escaped = await connection.request(DEFAULT_TIMEOUT_MS, 'FIND', 'a\tb\nc#x()');

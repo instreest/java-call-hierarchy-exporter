@@ -4,7 +4,9 @@ package jche.server;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import jche.cache.CacheFormat;
 import jche.cache.CacheLock;
@@ -75,6 +77,16 @@ final class FieldAccesses {
         }
     }
 
+    /**
+     * カーソルの位置（ファイル・行・名前）にあるフィールドの候補（{@link #locate}）。
+     *
+     * @param fileFound     そのファイルがキャッシュにある（無ければ解析の対象外）
+     * @param accessOwners  その行でその名前のフィールドを参照している、フィールドの所有型（A 行。ファイル上の順）
+     * @param declaredOwners そのファイルでその名前のフィールドを宣言している型（V 行。ファイル上の順）
+     */
+    record Located(boolean fileFound, Set<String> accessOwners, Set<String> declaredOwners) {
+    }
+
     /** キャッシュがグラフを組んだときと違う（解析し直しが途中で終わった、など） */
     static final class StaleCacheException extends Exception {
         private static final long serialVersionUID = 1L;
@@ -99,6 +111,62 @@ final class FieldAccesses {
         } finally {
             lock.close();
         }
+    }
+
+    /**
+     * カーソルの位置にあるフィールドの候補を、そのファイルのブロックから拾う（{@code FIELDAT}。VSCode プラグインが
+     * 使う。あちらには JDT が無く、フィールドをキーにできないため。{@code docs/field-callers-qa.md} の Q13）。
+     * 錠と印の扱いは {@link #scan} と同じ。
+     *
+     * @param file 相対パス（F 行と同じ綴り）
+     * @param line 行（1 始まり）
+     * @param name カーソルの下の単語（フィールド名の候補）
+     */
+    static Located locate(Path cacheFile, String expected, String file, int line, String name)
+            throws IOException, StaleCacheException {
+        CacheLock lock = CacheLock.acquire(cacheFile);
+        try {
+            checkStamp(cacheFile, expected);
+            return readAt(cacheFile, file, line, name);
+        } finally {
+            lock.close();
+        }
+    }
+
+    /** 錠の内側で、そのファイルのブロックだけを見る（見つけたブロックが終われば読むのをやめる） */
+    private static Located readAt(Path cacheFile, String file, int line, String name) throws IOException {
+        boolean found = false;
+        Set<String> accessOwners = new LinkedHashSet<>();
+        Set<String> declaredOwners = new LinkedHashSet<>();
+        String lineText = String.valueOf(line);
+        try (CacheReader in = CacheReader.open(cacheFile)) {
+            boolean inBlock = false;
+            while (in.next()) {
+                char type = in.rowType();
+                if (type == CacheFormat.ROW_FILE || type == CacheFormat.ROW_END) {
+                    if (inBlock) {
+                        break;
+                    }
+                    inBlock = type == CacheFormat.ROW_FILE && file.equals(in.filePath());
+                    found |= inBlock;
+                    continue;
+                }
+                if (!inBlock || !in.line().contains(name)) {
+                    continue;
+                }
+                String[] cols = in.columns();
+                if (type == CacheFormat.ROW_FIELD_ACCESS && lineText.equals(CacheFormat.columnAt(cols, 1))
+                        && name.equals(CacheFormat.columnAt(cols, 4))) {
+                    accessOwners.add(CacheFormat.columnAt(cols, 3));
+                } else if (type == CacheFormat.ROW_FIELD_DECL) {
+                    FieldDeclFact v = FieldDeclFact.fromRow(cols);
+                    if (v != null && name.equals(v.fieldName())) {
+                        declaredOwners.add(v.typeFqn());
+                    }
+                }
+            }
+        }
+        return new Located(found, accessOwners, declaredOwners);
     }
 
     /** 錠の内側で、キャッシュを先頭から読んでそのフィールドの行を拾う */
