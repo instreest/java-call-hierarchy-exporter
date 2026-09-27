@@ -151,7 +151,7 @@ public final class DataflowResolver {
             return -1;
         }
         // 結果が宣言型のままでも、候補が1つに定まったこと自体が成果なので返す
-        return graph.implementationOf(fqn, calleeId);
+        return graph.selection().implementationOf(fqn, calleeId);
     }
 
     /**
@@ -194,7 +194,7 @@ public final class DataflowResolver {
             return -1;
         }
         String fqn = concreteTypeOf(receiver, null);
-        return (fqn == null) ? -1 : graph.implementationOf(fqn, target);
+        return (fqn == null) ? -1 : graph.selection().implementationOf(fqn, target);
     }
 
     /**
@@ -298,7 +298,7 @@ public final class DataflowResolver {
      * 束縛したレシーバの具象型から引いた実装（{@link #functionalReceiverImpl}）は、その型で実際に動く本体なのでそのまま使う。
      *
      * <p>それ以外は、呼び出し先の宣言の本体を使えるのは部分型に上書きされていないときだけ
-     * （{@link CallGraph#hasOverriders}）。上書きされていれば、実際に動くのは部分型の本体かもしれない
+     * （{@link MethodSelection#hasOverriders}）。上書きされていれば、実際に動くのは部分型の本体かもしれない
      */
     private int bodyOf(int ref, DataflowContext ctx) {
         int callee = values.methodId(ref);
@@ -312,15 +312,15 @@ public final class DataflowResolver {
             if (target >= 0) {
                 int viaReceiver = functionalReceiverImpl(functional, target);
                 // 束縛したレシーバの型から実装までの間に jar のクラスが挟まれば、そのクラスの（見えない）宣言が
-                // 動くかもしれないので、見つけた本体の return を使わない（CallGraph#passesBinaryClass）
-                if (viaReceiver >= 0 && !graph.passesBinaryClass(
+                // 動くかもしれないので、見つけた本体の return を使わない（MethodSelection#passesBinaryClass）
+                if (viaReceiver >= 0 && !graph.selection().passesBinaryClass(
                         concreteTypeOf(values.receiver(functional), null), viaReceiver)) {
                     return viaReceiver;
                 }
                 callee = target;   // ラムダの本体か、メソッド参照の参照先（仮想なら下で上書きを調べる）
             }
         }
-        return graph.hasOverriders(callee) ? -1 : callee;
+        return graph.selection().hasOverriders(callee) ? -1 : callee;
     }
 
     /** 経路から分かっている引数の並びから、その位置（値は引数位置）の具象型の枠を取る。分からなければ {@link Slot#NONE} */
@@ -558,11 +558,11 @@ public final class DataflowResolver {
             // リフレクションは実引数から名前と引数型を組み立てるので、宣言している型は
             // 分からない。上書きの引きもシグネチャで行う（implementationOfSignature）
             String sig = name + "(" + params + ")";
-            int found = declaredOnly ? declaredIn(owner, sig) : graph.implementationOfSignature(owner, sig);
+            int found = declaredOnly ? declaredIn(owner, sig) : graph.selection().implementationOfSignature(owner, sig);
             if (found >= 0 && !dispatchesVirtually(found)) {
                 return new int[] {found};   // private・static は実行時のクラスで選び直さない
             }
-            int id = (dispatch == null) ? -1 : graph.implementationOfSignature(dispatch, sig);
+            int id = (dispatch == null) ? -1 : graph.selection().implementationOfSignature(dispatch, sig);
             if (id < 0) {
                 id = found;
             }
@@ -575,7 +575,7 @@ public final class DataflowResolver {
             if (dispatchesVirtually(id)) {
                 // 実際に動くのは、受け手の実行時のクラス（分からなければ owner）から探した実装
                 String from = (dispatch == null) ? owner : dispatch;
-                int impl = graph.implementationOfSignature(from, methods.signature(id));
+                int impl = graph.selection().implementationOfSignature(from, methods.signature(id));
                 if (impl >= 0) {
                     id = impl;
                 }
@@ -656,10 +656,10 @@ public final class DataflowResolver {
                     return Slot.isType(type) ? Slot.payload(type) : -1;
                 }
                 // ソース上のメソッドが Class を返す形。全ての return が同じクラスなら決まる。
-                // 部分型が上書きしているメソッドは、実際に動く本体が違いうるので使わない（CallGraph#hasOverriders）
+                // 部分型が上書きしているメソッドは、実際に動く本体が違いうるので使わない（MethodSelection#hasOverriders）
                 int m = values.methodId(ref);
                 int count = graph.returnCount(m);
-                if (count == 0 || graph.hasOverriders(m)) {
+                if (count == 0 || graph.selection().hasOverriders(m)) {
                     return -1;
                 }
                 int found = -1;
@@ -721,10 +721,10 @@ public final class DataflowResolver {
             }
             case Origin.RETURN: {
                 // 全ての return が同じ文字列なら決まる。部分型が上書きしているメソッドは、
-                // 実際に動く本体が違いうるので使わない（CallGraph#hasOverriders）
+                // 実際に動く本体が違いうるので使わない（MethodSelection#hasOverriders）
                 int m = values.methodId(ref);
                 int count = graph.returnCount(m);
-                if (count == 0 || graph.hasOverriders(m)) {
+                if (count == 0 || graph.selection().hasOverriders(m)) {
                     return -1;
                 }
                 int found = -1;

@@ -232,7 +232,7 @@ public final class SpringBeans {
      * <p>コンテナは設定クラスのインスタンスで &#64;Bean メソッドを呼ぶので、部分型の設定クラスがその
      * メソッドを上書きしていれば（&#64;Bean を付け直していなくても）、動くのは上書きした本体で、登録されるのは
      * その本体が返す型になる。宣言の本体が返す型だけを登録すると、上書きした本体の型が Bean に数えられず、
-     * 段 5 がもう一方の Bean へ誤って絞る。そこで上書きした本体（{@link CallGraph#overridingImplementations}）
+     * 段 5 がもう一方の Bean へ誤って絞る。そこで上書きした本体（{@link MethodSelection#overridingImplementations}）
      * が返す型も同じ名前で登録する。Bean を多く数える側は絞り込みを減らすだけで、呼び出しを落とさない。
      *
      * <p>返す具象型が決まらない本体（値を読まないときは全部）は、宣言した戻り値の型の「分からない Bean」として
@@ -247,8 +247,8 @@ public final class SpringBeans {
             if (!registerReturnedType(graph, methodId, bean.name())) {
                 undetermined(graph, bean.returnType());
             }
-            if (graph.hasOverriders(methodId)) {
-                IntArray overriding = graph.overridingImplementations(methodId);
+            if (graph.selection().hasOverriders(methodId)) {
+                IntArray overriding = graph.selection().overridingImplementations(methodId);
                 for (int i = 0; i < overriding.size(); i++) {
                     if (!registerReturnedType(graph, overriding.get(i), bean.name())) {
                         undetermined(graph, bean.returnType());

@@ -102,6 +102,8 @@ final class FactVisitor extends ASTVisitor {
     private final CompilationUnit cu;
     private final FileAnalysis out;
     private final BindingNames names;
+    /** 上書き・実装の関係の事実（O 行・H 行の 8 列目・M 行の鍵）。判定は JDT に任せる */
+    private final OverrideFacts overrideFacts;
     private final OriginTracker origins;
     private final FieldFactCollector fieldFacts;
     private final TypeContextTracker types;
@@ -154,13 +156,14 @@ final class FactVisitor extends ASTVisitor {
         this.cu = cu;
         this.out = out;
         this.names = new BindingNames(out);
+        this.overrideFacts = new OverrideFacts(names);
         this.origins = new OriginTracker(names, out);
         this.fieldFacts = new FieldFactCollector(out, names, origins);
         // 型コンテキストは、合成した暗黙のコンストラクタから暗黙の super() の辺を張るので、
         // 呼び出しの記録係を先に作って渡す
         this.calls = new CallSiteRecorder(cu, out, names,
                 new GuardCollector(origins, recordAllConditions));
-        this.types = new TypeContextTracker(out, names, calls);
+        this.types = new TypeContextTracker(out, names, overrideFacts, calls);
         // ラムダの名前は、本体の先読み（OriginTracker）より先に決まっている必要がある
         this.lambdaNames = new LambdaNames(cu, names);
         this.origins.lambdaNames(lambdaNames);
@@ -435,7 +438,7 @@ final class FactVisitor extends ASTVisitor {
      * <b>上書きしているという事実</b>を残して読み手に渡す（{@link jche.cache.OverrideFact}）。
      */
     private void recordOverrides(MethodRef ref, IMethodBinding binding) {
-        List<String> overridden = names.overriddenKeysOf(binding);
+        List<String> overridden = overrideFacts.overriddenKeysOf(binding);
         if (!overridden.isEmpty()) {
             out.overrides.add(new OverrideFact(ref, overridden));
         }
@@ -557,7 +560,7 @@ final class FactVisitor extends ASTVisitor {
      * 鍵の完全一致で引くので、SAM と上書き同等な親の抽象メソッドすべての鍵でも M 行を書く。
      * 上書きの関係に無い2つの親から同じメソッドを継承した形
      * （{@code interface C extends A, B {}} で A・B とも {@code void go()}。JLS 9.8）も、
-     * ラムダは両方を実装するので含める。判定は {@link BindingNames#functionalKeysOf} に任せる
+     * ラムダは両方を実装するので含める。判定は {@link OverrideFacts#functionalKeysOf} に任せる
      * （docs/lambda-expansion-qa.md の Q11・Q15）。
      */
     private void recordFunctionalImpl(ITypeBinding fnType, ASTNode node, String kind) {
@@ -570,7 +573,7 @@ final class FactVisitor extends ASTVisitor {
         }
         // 目標の型は式の型として I 行に載る（preVisit2）。その親が変わったときは、差分更新が部分型の側で拾う
         // （docs/cache-unification-qa.md の Q45・Q77）
-        List<String> keys = names.functionalKeysOf(fnType, sam);
+        List<String> keys = overrideFacts.functionalKeysOf(fnType, sam);
         if (keys.isEmpty()) {
             return;
         }
