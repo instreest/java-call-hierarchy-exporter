@@ -1,33 +1,20 @@
 # java-call-hierarchy-exporter
 A tool that recursively extracts Java method call hierarchies across an entire project and exports them to CSV files. Powered by Eclipse JDT and runnable via JBang.
+**Under active development — features may change without notice.**
 
-**日本語** | [English](#english)
+**Japanese** | [English](#english)
 
-## 何ができるか
+## できること（ツール概要）
 
-Java プロジェクト全体のメソッド呼び出し階層を一度に解析し、CSV ファイルに書き出すツールです。
-**「このメソッドを直したら、どの画面・バッチ・API に影響するか」を漏れなく洗い出す**ために使います。
+Javaプロジェクト全体のメソッド呼び出し階層を一括で解析し、CSVファイルに書き出すツールです。
+解析結果をExcelで開いてフィルタすることで対象メソッドの影響範囲を洗い出すことができます。
+**開発中であるため機能が予告なく変更される場合があります。**
 
-たとえば `OrderDaoImpl.selectById` を改修するとき、出力された `call-hierarchy.csv` を Excel で開いて
-`callee`（呼び出し先）列をそのメソッドで絞り込むと、`root`（起点）列に影響を受ける入口が並びます。
-
-```csv
-caller,callee,resolved-by,level,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
-```
-
-2 行目は「`OrderAction.execute` から始まる処理が、`OrderService.findOrder` を経由して `OrderDaoImpl.selectById` を呼ぶ。
-呼んでいるのは `OrderService.java` の 25 行目。インターフェース越しの呼び出しだが、Spring の Bean 定義から実装が
-`OrderDaoImpl` だと決まった」という意味です（読み方は[結果の読み方](#結果の読み方)）。
-
-- **インターフェース・DI・ラムダの先まで辿ります。** 実際に動く実装クラスを、`new` した型・引数やフィールドの値の流れ・
-  Spring の Bean 定義などから決めます
-- **決めきれない呼び出しは落としません。** 実装の候補が複数残ったときは候補をすべて行に出し、
-  「絞れなかった」と `resolved-by` 列に書きます。影響調査で呼び出しを見落とさないことを優先しています
-- **Eclipse を起動しません。** 解析エンジンに Eclipse JDT（Eclipse の Java コンパイラ）を使うコマンドラインツールで、
-  Java を事前に入れておく必要もありません（[動作条件](#動作条件)）
-- **2 回目からは速くなります。** 解析結果をキャッシュし、変わったファイルとその影響を受けるファイルだけを解析し直します
+| 知りたいこと | 場所 |
+|---|---|
+| 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
+| 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
+| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
 
 ### ほかの手段との違い
 
@@ -46,11 +33,11 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 | 項目 | 条件 |
 |---|---|
-| OS | Windows（コマンドプロンプト・PowerShell）、Linux、macOS、Git Bash |
-| 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う jar は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
-| 解析できるソース | Java のソース（`.java`）。既定では同梱の JDT が対応する最新の言語の版として読みます（設定の `source.level` で変えられます） |
-| ビルドの構成 | Maven（`pom.xml`）、Gradle（`build.gradle`。宣言的な書き方の範囲）、Eclipse の `.classpath`、jar を集めた `lib` フォルダ。ソースフォルダと依存 jar は自動で見つけます |
-| 依存 jar | **手元に取得済みであること。** このツールはビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、IDE でプロジェクトを開いておいてください |
+| OS | Windows、Linux |
+| 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う Eclipse JDT（Eclipse の Java コンパイラ） は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
+| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応しているJavaバージョンに対応します。最新版3.46.0ではJava 8 ～ 26に対応します。 |
+| ビルドの構成 | Eclipse の `.classpath`、Maven（`pom.xml`）、Gradle（`build.gradle`）において宣言的に記載されたソースフォルダと依存 jar を自動で見つけて解析します |
+| 依存 jar | **手元に取得済みであること。** このツールは解析対象プロジェクトのビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、コンパイル時および実行時の依存 jar をlibフォルダに保存してコンフィグ指定が必要となります。|
 
 ### 分からないこと（制約）
 
@@ -63,7 +50,6 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
   実行時の条件で変わる実装などは、候補を並べるに留まります（[docs/static-analysis-limits.md](docs/static-analysis-limits.md)）
 - **コンパイルが通らない・依存 jar が足りないと、結果に抜けが出ます。** そのときは出力フォルダに
   `warnings.txt` ができ、何が足りないかを知らせます
-- コンストラクタの呼び出しそのものは行になりません（コンストラクタの中からのメソッド呼び出しは行になります）
 
 ---
 
@@ -78,10 +64,10 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 2. **設定ファイルに解析対象を書く** … [`config/config.properties`](config/config.properties) の `project.root` に、
    解析したいプロジェクトのフォルダを書きます。**必須なのはこの 1 行だけ**で、ソースフォルダ・依存 jar・
-   文字コードは空欄のままなら `pom.xml` や `build.gradle` から自動で決まります。
+   文字コードは空欄のままなら `.classpath` 、 `pom.xml` 、 `build.gradle` から自動で読み取ります。
 
      ```properties
-     # Windows でも区切りは / で書く（\ で書くなら \\ と 2 つ重ねる）
+     # Windows でも区切りは / で書く（\ で書くなら \\ のように 2 つ重ねる）
      project.root=C:/work/myapp
      ```
 
@@ -104,16 +90,12 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
    初回は取得と全件の解析のぶん時間がかかりますが、2 回目からは変わったファイルだけを解析します。
    ZIP で取得して `.sh` に実行権限が無いときは、`bash java-call-hierarchy-exporter.sh …` で動かします。
 
-4. **`warnings.txt` があれば先に開く** … 実行ごとに `config/<解析開始日時>_<プロジェクト名>/` のフォルダができます。
+4. **出力結果の `warnings.txt` を確認する** … 実行ごとに `config/<解析開始日時>_<プロジェクト名>/` のフォルダができます。
    その中に `warnings.txt` があれば、依存 jar の不足やコンパイルエラーなどで**結果に抜けがある**ということです。
    何が起きたかと直し方が書いてあるので、直してからもう一度実行してください。
 
-5. **CSV を開く** … 同じフォルダの `call-hierarchy.csv` を Excel で開きます（UTF-8 の BOM 付きなので文字化けしません）。
+5. **CSV を開く** … 同じフォルダの `call-hierarchy.csv` を Excel で開きます。
    読み方は次の[結果の読み方](#結果の読み方)にあります。
-
-設定ファイルを書かずに始めたいときは、**引数を付けずに**起動コマンドを実行すると対話モードになります。
-メニューの「2) 設定ファイルを新しく作る」で解析対象のフォルダを入力すると、設定ファイルを作ってそのまま解析できます
-（[docs/cli.md](docs/cli.md)）。
 
 ---
 
@@ -501,8 +483,8 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 解析し直します。依存 jar やクラスフォルダ（兄弟モジュールの `target/classes` など）の変化も見ます。
 
 - 同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクトは混ざりません
-- 実行していないときなら消しても構いません（次の実行が全件の解析になるだけです）。
-  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
+- 実行していないときなら消しても構いません（次の実行が全件の解析になります）。
+  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false` をコンフィグで指定します。
 - 同じキャッシュを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うと、
   あとの実行は先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）
 - どのファイルを解析し直すかの決まりは [config/config.properties](config/config.properties) の `cache.enabled` のコメントに、
