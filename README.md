@@ -373,6 +373,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定（同上） |
+| — | `DATAFLOW_DECLARED_TYPE` | 経路上で渡された値の**宣言の型**（具象クラスの型で宣言したフィールド・引数）の部分型に候補を絞ったら1つに定まった（同上）。具象型を追えたわけではなく、実行時の型の上限で絞った結果。Spring でコンストラクタ注入した具象型のフィールドをインターフェース型の引数で渡した先がこれで定まる（[docs/declared-type-narrowing-qa.md](docs/declared-type-narrowing-qa.md)） |
 | — | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（同上。下記） |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
@@ -876,6 +877,7 @@ The label here becomes the second half of the `resolved-by` column of `call-hier
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | Determined from a `new`-ed type or from the return value of a factory method |
 | — | `DATAFLOW_PARAM` | Determined by tracking an argument passed in by the caller along the path (outside the steps, because it is decided per path) |
 | — | `DATAFLOW_FIELD` | Determined by tracking a constructor-injected field along the path (same) |
+| — | `DATAFLOW_DECLARED_TYPE` | Narrowing the candidates to the subtypes of the **declared type** of a value passed along the path (a field or parameter declared with a concrete class type) left exactly one (same). The concrete type itself was not tracked; the upper bound of the runtime type did the narrowing. A concrete-typed field injected through a Spring constructor and passed on as an interface-typed argument is decided this way ([docs/declared-type-narrowing-qa.md](docs/declared-type-narrowing-qa.md)) |
 | — | `DATAFLOW_LAMBDA` | Determined from a lambda or method reference (same; see below) |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | The bean definitions of the DI container (Spring) narrowed it to one. `SPRING_DI_QUALIFIER` means the bean name from `@Qualifier` / `@Resource(name=...)` decided it ([docs/spring-di-qa.md](docs/spring-di-qa.md)) |
 | 6 | `CHA` | Several candidates remain (low confidence) |

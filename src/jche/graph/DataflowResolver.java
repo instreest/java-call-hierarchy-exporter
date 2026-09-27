@@ -33,6 +33,14 @@ import jche.util.Names;
  * 引数・フィールド由来は経路に依存するため、{@link DataflowContext}（経路から分かった
  * 引数の具象型・コンストラクタ実引数）を受け取って経路ごとに判定する。
  *
+ * <h2>実行時の型の上限（宣言の型）</h2>
+ * 具象型が決まらない値でも、渡したのが具象クラスの型で宣言したフィールド・引数なら、実行時の型はその宣言の型の
+ * 部分型に限られる（{@code XmlOrderExporter xml; service.export(xml)} の {@code export(OrderExporter e)} の中では
+ * {@code e} は {@code XmlOrderExporter} の部分型）。経路の環境にはこれを上限の枠（{@link Slot#BOUND}）として入れ
+ * （{@link #bindArgs}）、候補を絞る側（{@link CallResolver#resolveOnPath}）が {@link #boundTypeOf} で読む。
+ * 宣言の型はフィールドなら V 行（{@link CallGraph#fieldDeclType}）、引数ならメソッドのキー
+ * （{@link MethodTable#paramTypeAt}）にあるので、キャッシュに新しい事実は要らない（Issue #192）。
+ *
  * <h2>リフレクション</h2>
  * Class.forName / X.class / obj.getClass() → getMethod / getDeclaredMethod →
  * Method.invoke、および getConstructor → Constructor.newInstance / Class.newInstance
@@ -248,7 +256,8 @@ public final class DataflowResolver {
 
     /**
      * 値から具象型を求めた枠。ふつうは {@link Slot#TYPE} だが、コンストラクタで受け取るフィールドは
-     * 経路で分かっているコンストラクタ実引数の枠をそのまま返すので、値（{@link Slot#LITERAL} など）のこともある
+     * 経路で分かっているコンストラクタ実引数の枠をそのまま返すので、値（{@link Slot#LITERAL} など）や
+     * 実行時の型の上限（{@link Slot#BOUND}）のこともある
      * （コンストラクタで受け取った値を、フィールドを経て次の呼び出しへ渡すため。{@link #fieldSlotOf}）。
      * 決まらなければ {@link Slot#NONE}
      *
@@ -436,13 +445,16 @@ public final class DataflowResolver {
      *
      * 具象型が決まる実引数は型、決まらなくてもリテラルやクラス・定数・ラムダなら値として入れる
      * （リフレクションのメソッド名・クラスが引数で渡ってくる形や、条件分岐の判定のため）。
+     * どちらも決まらなくても、宣言の型（渡したフィールド・引数の型）から実行時の型の上限が分かれば
+     * 上限（{@link Slot#BOUND}）として入れる（{@link #boundSlotOf}）。
      * 並びは実引数の位置で引けるよう、最も大きい位置まで伸ばす（分からない位置は {@link Slot#NONE}）。
      * 何も分からなければ null
      *
-     * @param holder 実引数の並び（{@link CallGraph#argsNode}）か、{@code new} のノード。無ければ {@link ValueStore#NONE}
-     * @param ctx    呼び出し元の段で分かっていること（無ければ null）
+     * @param holder    実引数の並び（{@link CallGraph#argsNode}）か、{@code new} のノード。無ければ {@link ValueStore#NONE}
+     * @param ctx       呼び出し元の段で分かっていること（無ければ null）
+     * @param enclosing 呼び出しを書いたメソッド（実引数の {@code A:n} が指す引数の持ち主）。分からなければ -1
      */
-    public long[] bindArgs(int holder, DataflowContext ctx) {
+    public long[] bindArgs(int holder, DataflowContext ctx, int enclosing) {
         long[] bound = null;
         for (int k = values.argBegin(holder), end = values.argEnd(holder); k < end; k++) {
             int index = values.argPos(k);
@@ -452,6 +464,11 @@ public final class DataflowResolver {
                 // 具象型は決まらないが、リテラルやクラスリテラルなら「値」として渡す
                 // （リフレクションのメソッド名・クラスが引数で渡ってくる形のため）
                 slot = valueSlotOf(arg, ctx);
+            }
+            if (slot == Slot.NONE || Slot.isBound(slot)) {
+                // 具象型も値も決まらない。宣言の型から実行時の型の上限だけでも渡す（コンストラクタ実引数の上限が
+                // フィールドを経て来ていれば（fieldSlotOf）、宣言の型と狭いほうを採る）
+                slot = boundSlotOf(arg, ctx, enclosing, slot, 0);
             }
             if (slot == Slot.NONE) {
                 continue;
@@ -464,6 +481,123 @@ public final class DataflowResolver {
             bound[index] = slot;
         }
         return bound;
+    }
+
+    // ------------------------------------------------------------
+    // 実行時の型の上限（宣言の型）
+    // ------------------------------------------------------------
+
+    /**
+     * 経路で分かっている、レシーバの実行時の型の上限（宣言の型の FQN。ソース上の型だけ）。分からなければ null。
+     *
+     * <p>呼び出し元が渡した値の宣言の型（{@link #bindArgs} が経路の環境に入れた {@link Slot#BOUND}）と、
+     * コンストラクタ実引数の上限を受け取るフィールドから読む。レシーバ自身の宣言の型（呼び出しを書いたメソッドの
+     * 引数・フィールドの型）は、呼び出しを修飾する型として段 1 が既に候補の起点にしているので、ここでは足さない
+     * （{@link #boundSlotOf} に囲みメソッドを渡さない）。フィールドの宣言の型は修飾する型と同じになるのがふつうで、
+     * 読み手は同じ型なら絞らない（{@link CallResolver#resolveOnPath}）
+     */
+    public String boundTypeOf(int recv, DataflowContext ctx) {
+        if (!enabled || recv == ValueStore.NONE || ctx == null) {
+            return null;
+        }
+        long slot = boundSlotOf(recv, ctx, -1, Slot.NONE, 0);
+        return Slot.isBound(slot) ? graph.hierarchy.typeAt(Slot.payload(slot)) : null;
+    }
+
+    /**
+     * 値の実行時の型の上限の枠（{@link Slot#BOUND}）。分からなければ {@code known} のまま。
+     *
+     * <p>上限は 2 つの材料から決め、両方あれば狭いほう（もう片方の部分型のほう）を採る。
+     * <ul>
+     *   <li>経路の環境の上限 … 引数（{@code A:n}）・捕捉した引数（{@code E:n}）なら、呼び出し元が渡した値の上限。
+     *       コンストラクタで受け取るフィールドなら、コンストラクタ実引数の上限（{@link #fieldSlotOf} が返したもの。
+     *       {@code known} で受け取る）</li>
+     *   <li>宣言の型 … フィールド（{@code F:} / {@code O:}）なら V 行の型（{@link CallGraph#fieldDeclType}）、
+     *       引数なら囲みメソッドのキーの引数の型（{@link MethodTable#paramTypeAt}。{@code enclosing} が分かるときだけ）。
+     *       引数をそのまま返すメソッドの戻り値（{@code id(d)}）は、渡した実引数の上限</li>
+     * </ul>
+     * 宣言の型は消去型で、実行時の型はその部分型なので、上限としては常に健全（型引数の食い違いは消去に現れない）。
+     * ソース上に無い型（jar の型・配列・基本型）は部分型を漏れなく数えられないので上限にしない（読み手が候補を
+     * 絞れず、これまでどおり CHA のまま）。
+     *
+     * @param enclosing 値を書いたメソッド（{@code A:n} の持ち主）。分からなければ -1（引数の宣言の型は使わない）
+     * @param known     既に分かっている上限の枠（無ければ {@link Slot#NONE}）
+     * @param nest      値の入れ子を辿った段数（{@link #MAX_NEST} の安全策）
+     */
+    private long boundSlotOf(int ref, DataflowContext ctx, int enclosing, long known, int nest) {
+        if (nest > MAX_NEST || ref == ValueStore.NONE) {
+            return known;
+        }
+        String declared = null;
+        switch (values.kind(ref)) {
+            case Origin.FIELD: {
+                // コンストラクタで受け取るフィールドには、コンストラクタ実引数の上限がフィールドを経て来ていることがある
+                long v = fieldSlotOf(values.value(ref), ctx);
+                if (Slot.isBound(v)) {
+                    known = narrowerBound(known, v);
+                }
+                declared = graph.fieldDeclType(values.value(ref));
+                break;
+            }
+            case Origin.OTHER_FIELD:
+                // 別のインスタンスのフィールド。コンストラクタ実引数は当てない（経路を渡さない）ので宣言の型だけ
+                declared = graph.fieldDeclType(values.value(ref));
+                break;
+            case Origin.PARAM: {
+                long v = (ctx == null) ? Slot.NONE : slotAt(ctx.params(), ref);
+                if (Slot.isBound(v)) {
+                    known = narrowerBound(known, v);
+                }
+                if (enclosing >= 0) {
+                    declared = methods.paramTypeAt(enclosing, values.index(ref));
+                }
+                break;
+            }
+            case Origin.CAPTURED: {
+                long v = (ctx == null) ? Slot.NONE : slotAt(ctx.captured(), ref);
+                if (Slot.isBound(v)) {
+                    known = narrowerBound(known, v);
+                }
+                break;
+            }
+            case Origin.RETURN: {
+                // 引数をそのまま返すメソッド（id(d) { return d; }）の戻り値は、渡した実引数の上限。
+                // 戻り値の宣言の型はキャッシュに無い（D 行の returnType はアノテーションの付いたメソッドだけ）ので使わない
+                int factory = bodyOf(ref, ctx);
+                if (factory >= 0 && facts.factoryKind(factory) == Origin.PARAM) {
+                    int index = Names.parseIntOr(strings.get(facts.factoryValueId(factory)), -1);
+                    int arg = (index < 0) ? ValueStore.NONE : values.argAt(ref, index);
+                    return boundSlotOf(arg, ctx, enclosing, known, nest + 1);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return narrowerBound(known, boundSlotFor(declared));
+    }
+
+    /** 宣言の型を上限の枠にする。ソース上の型でなければ {@link Slot#NONE} */
+    private long boundSlotFor(String declared) {
+        int index = graph.hierarchy.indexOf(declared);
+        return (index < 0) ? Slot.NONE : Slot.of(Slot.BOUND, index);
+    }
+
+    /**
+     * 2 つの上限の枠の狭いほう（片方がもう片方の部分型ならそちら）。どちらか無ければある側。
+     * 部分型の関係が無ければ先に分かっていた側（{@code a}）。どちらも実行時の型の上限として健全なので、どちらを採っても
+     * 候補を落とすことはない
+     */
+    private long narrowerBound(long a, long b) {
+        if (a == Slot.NONE) {
+            return b;
+        }
+        if (b == Slot.NONE || a == b) {
+            return a;
+        }
+        String ta = graph.hierarchy.typeAt(Slot.payload(a));
+        String tb = graph.hierarchy.typeAt(Slot.payload(b));
+        return (ta != null && tb != null && graph.hierarchy.isSubtypeOf(tb, ta)) ? b : a;
     }
 
     // ------------------------------------------------------------

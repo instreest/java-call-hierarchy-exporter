@@ -3436,6 +3436,171 @@ expect_ listed PkgMember.inter PkgMember.CollImpl.iterator "交差型のキャ�
 expect_ listed PkgMember.inter Iterator.hasNext "同上（hasNext() も記録する）"
 
 # ---------------------------------------------------------------------------
+# 経路で渡ってきた値の宣言の型（実行時の型の上限）で候補を絞る（Issue #192）。具象クラスの型で宣言したフィールド・引数を
+# インターフェース型の引数で別のメソッドへ渡すと、渡った先では実行時の型がその宣言の型の部分型に限られる。
+# 具象型は決まらない（フィールドの値がファクトリの戻り値で、コンストラクタ実引数も無い）ので DATAFLOW_PARAM にはならず、
+# 上限で絞った DATAFLOW_DECLARED_TYPE になる。Dt・Ds で始まる型だけを使う（ほかのケースの Dao の部分型に左右されないため）
+# ---------------------------------------------------------------------------
+case_ resolved:RESOLVED:DATAFLOW_DECLARED_TYPE DtField DtField.use DtB.find "DtB 型のフィールドを use(DtI d) に渡した経路では、d.find() を DtB の部分型（DtB.find だけ）に絞る" <<'EOF'
+package pr;
+
+interface DtI { void find(); }
+class DtA implements DtI { public void find() { System.out.println("a"); } }
+class DtB implements DtI { public void find() { System.out.println("b"); } }
+
+public class DtField {
+    private final DtB dao = lookup();
+    static DtB lookup() { return null; }
+    public static void main(String[] args) { new DtField().go(); }
+    void go() { use(dao); }
+    static void use(DtI d) { d.find(); }
+}
+EOF
+expect_ absent DtField.use DtA.find "同上（DtA.find の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_DECLARED_TYPE DtParam DtParam.use DtB.find "DtB 型の引数をそのまま use(DtI d) に渡した経路でも、囲みメソッドの引数の宣言の型で DtB.find に絞る" <<'EOF'
+package pr;
+
+public class DtParam {
+    public static void main(String[] args) { go(lookup()); }
+    static DtB lookup() { return null; }
+    static void go(DtB d) { use(d); }
+    static void use(DtI d) { d.find(); }
+}
+EOF
+expect_ absent DtParam.use DtA.find "同上（DtA.find の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_DECLARED_TYPE DtIdent DtIdent.use DtB.find "引数をそのまま返すメソッド（id(dao)）に DtB 型のフィールドを渡した戻り値も、上限は DtB" <<'EOF'
+package pr;
+
+public class DtIdent {
+    private final DtB dao = lookup();
+    static DtB lookup() { return null; }
+    static DtI id(DtI d) { return d; }
+    public static void main(String[] args) { new DtIdent().go(); }
+    void go() { use(id(dao)); }
+    static void use(DtI d) { d.find(); }
+}
+EOF
+expect_ absent DtIdent.use DtA.find "同上（DtA.find の行が無い）"
+
+case_ listed DtWide DtWide.use DtA.find "対照: インターフェース型（DtI）のフィールドを渡した経路では上限が修飾する型と同じで、候補は減らない（DtA.find も残る）" <<'EOF'
+package pr;
+
+public class DtWide {
+    private final DtI dao = lookup();
+    static DtI lookup() { return null; }
+    public static void main(String[] args) { new DtWide().go(); }
+    void go() { use(dao); }
+    static void use(DtI d) { d.find(); }
+}
+EOF
+expect_ listed DtWide.use DtB.find "同上（DtB.find も残る）"
+
+case_ resolved:UNEXPANDED:CHA DtSub DtSub.use DsB.find "上限の型（DsB）に部分型（DsBSub）があれば、候補はその 2 つに減るが CHA のまま（DsB.find は UNEXPANDED:CHA）" <<'EOF'
+package pr;
+
+interface DsI { void find(); }
+class DsA implements DsI { public void find() { System.out.println("a"); } }
+class DsB implements DsI { public void find() { System.out.println("b"); } }
+class DsBSub extends DsB { @Override public void find() { System.out.println("bs"); } }
+
+public class DtSub {
+    private final DsB dao = lookup();
+    static DsB lookup() { return null; }
+    public static void main(String[] args) { new DtSub().go(); }
+    void go() { use(dao); }
+    static void use(DsI d) { d.find(); }
+}
+EOF
+expect_ listed DtSub.use DsBSub.find "同上（部分型の DsBSub.find も残る）"
+expect_ absent DtSub.use DsA.find "同上（上限の部分型でない DsA.find の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_DECLARED_TYPE DtCtor DtHolder.run DtB.find "DtB 型のフィールドをコンストラクタ実引数（new DtHolder(dao)）で渡した先の、コンストラクタで受け取るフィールド d の呼び出しも DtB.find に絞る" <<'EOF'
+package pr;
+
+class DtHolder {
+    private final DtI d;
+    DtHolder(DtI d) { this.d = d; }
+    void run() { d.find(); }
+}
+
+public class DtCtor {
+    private final DtB dao = lookup();
+    static DtB lookup() { return null; }
+    public static void main(String[] args) { new DtCtor().go(); }
+    void go() { new DtHolder(dao).run(); }
+}
+EOF
+expect_ absent DtHolder.run DtA.find "同上（DtA.find の行が無い）"
+
+case_ resolved:RESOLVED:DATAFLOW_DECLARED_TYPE DtCast DtCast.use DtB.find "上限を広げるキャスト（(DtI) dao）で渡しても、値の出所はフィールドのままなので上限は DtB" <<'EOF'
+package pr;
+
+public class DtCast {
+    private final DtB dao = lookup();
+    static DtB lookup() { return null; }
+    public static void main(String[] args) { new DtCast().go(); }
+    void go() { use((DtI) dao); }
+    static void use(DtI d) { d.find(); }
+}
+EOF
+expect_ absent DtCast.use DtA.find "同上（DtA.find の行が無い）"
+
+# 段 5（DI）との組み合わせ。Bean のコンストラクタの引数は注入点で、段 5 は唯一の Bean（SbDtA）に絞る。
+# 利用者のコードが Bean でない具象型（SbDtB）のフィールドを渡した経路では、段 5 の結論は上限と矛盾するので経路の事実を採る
+case_ resolved:RESOLVED:DATAFLOW_DECLARED_TYPE SbDeclared "SbDtSvc.<init>" SbDtB.find "Bean のコンストラクタに SbDtB 型（Bean でない）のフィールドを渡した経路では、段 5 の SbDtA ではなく上限の SbDtB.find を採る" <<'EOF'
+package pr;
+
+interface SbDtI { void find(); }
+@Repository class SbDtA implements SbDtI { public void find() { System.out.println("a"); } }
+class SbDtB implements SbDtI { public void find() { System.out.println("b"); } }
+@Component class SbDtSvc { SbDtSvc(SbDtI d) { d.find(); } }
+
+public class SbDeclared {
+    private final SbDtB b = lookup();
+    static SbDtB lookup() { return null; }
+    public static void main(String[] args) { new SbDeclared().make(); }
+    void make() { new SbDtSvc(b); }
+}
+EOF
+expect_ absent "SbDtSvc.<init>" SbDtA.find "同上（段 5 の SbDtA.find の行が無い）"
+
+case_ resolved:RESOLVED:SPRING_DI SbDeclKeep "SbDtKeepSvc.<init>" SbDtA.find "対照: 渡した値の上限（SbDtA）が段 5 の結論と矛盾しなければ、段 5 の結論（RESOLVED:SPRING_DI）のまま" <<'EOF'
+package pr;
+
+@Component class SbDtKeepSvc { SbDtKeepSvc(SbDtI d) { d.find(); } }
+
+public class SbDeclKeep {
+    private final SbDtA a = lookup();
+    static SbDtA lookup() { return null; }
+    public static void main(String[] args) { new SbDeclKeep().make(); }
+    void make() { new SbDtKeepSvc(a); }
+}
+EOF
+expect_ absent "SbDtKeepSvc.<init>" SbDtB.find "同上（SbDtB.find の行が無い）"
+
+case_ resolved:RESOLVED:SPRING_DI SbDeclDi "SbDdSvc.<init>" SbDdA.find "Bean が 2 つ（SbDdA・SbDdX）で段 5 が絞れない呼び出しも、上限（SbDdBase）の部分型に Bean が 1 つなら経路で段 5 が効く" <<'EOF'
+package pr;
+
+interface SbDdI { void find(); }
+abstract class SbDdBase implements SbDdI { }
+@Repository class SbDdA extends SbDdBase { public void find() { System.out.println("a"); } }
+class SbDdB extends SbDdBase { public void find() { System.out.println("b"); } }
+@Repository class SbDdX implements SbDdI { public void find() { System.out.println("x"); } }
+@Component class SbDdSvc { SbDdSvc(SbDdI d) { d.find(); } }
+
+public class SbDeclDi {
+    private final SbDdBase b = lookup();
+    static SbDdBase lookup() { return null; }
+    public static void main(String[] args) { new SbDeclDi().make(); }
+    void make() { new SbDdSvc(b); }
+}
+EOF
+expect_ absent "SbDdSvc.<init>" SbDdX.find "同上（上限の部分型でない SbDdX.find の行が無い）"
+expect_ absent "SbDdSvc.<init>" SbDdB.find "同上（Bean でない SbDdB.find の行が無い）"
+
+# ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
 ( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > work/run.log 2>&1

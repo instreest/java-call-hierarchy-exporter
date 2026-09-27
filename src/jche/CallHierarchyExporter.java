@@ -363,7 +363,7 @@ public class CallHierarchyExporter {
             rows = walker.walkAll(entries);
             if (config.dataflowEnabled && walker.anyDataflowHits()) {
                 Log.info(Messages.format("exporter.dataflowHits", walker.newHits(), walker.factoryHits(),
-                        walker.paramHits(), walker.fieldHits()));
+                        walker.paramHits(), walker.fieldHits(), walker.declaredTypeHits()));
             }
             if (walker.callbackHits() > 0) {
                 Log.info(Messages.format("exporter.callbackHits", walker.callbackHits()));

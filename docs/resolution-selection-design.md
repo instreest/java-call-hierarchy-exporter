@@ -98,6 +98,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 | 段 2 | 同じメソッドの中で `new` した型 | `LOCAL_NEW(_MULTI)` | C 行 hints |
 | 段 3 | 契約表（種類 C）・拡張 | `CONTRACT` / 拡張のラベル | 設定 |
 | 段 4 | 値の追跡（ファクトリの戻り値・引数・フィールド・new） | `DATAFLOW_*` | N・R・J 行 |
+| 経路の上限 | 経路で渡された値の宣言の型（具象クラスの型で宣言したフィールド・引数）の部分型に、段 1 の候補を絞る（`CallResolver#narrowByBound`。具象型が決まらないときだけ。段 5 の結論が上限と矛盾すれば経路の事実を採る） | `DATAFLOW_DECLARED_TYPE`（1 つに定まったとき。複数なら `CHA` のまま候補を減らす） | V 行の宣言の型・メソッドキーの引数の型（`Slot.BOUND`） |
 | 段 5 | DI の Bean 定義（注入点だけ） | `SPRING_DI(_QUALIFIER)` | H・V・D 行のアノテーション |
 | 段 6 | 絞れず候補が複数のまま | `CHA` | — |
 
@@ -150,6 +151,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 |---|---|---|---|---|
 | 「どの本体が動くか」の決め方（JVMS 5.4.6 の写し） | 選択 | `MethodSelection`（と `TypeHierarchy` の並び） | 不要 | `test/jls`・`test/pruning`・`test/regression` |
 | 受け手の型の候補の絞り方・並び | 選択 | `CallResolver`（段）・`SpringBeans`・`TypeContracts` | 不要 | `test/dataflow`（順序非依存）・`test/regression`・`test/pruning` |
+| 経路の環境に入れる枠（具象型・値・上限） | 選択 | `DataflowResolver#bindArgs`・`Slot`・`jche.report.StreamingTreeWalker` | 不要（宣言の型は V 行・メソッドキーに既にある） | `test/pruning`（`Dt*` / `SbDecl*`） |
 | 呼び出し先・修飾子・修飾する型の読み方（JLS の写し） | 解決 | `CallSiteRecorder`・`BindingNames`・`TypeContextTracker`・`ImplicitCalls` | 必要 | `test/jls`・`test/cacheversion --update` |
 | 上書き・実装の関係の事実 | 解決 | `OverrideFacts` | 必要 | `test/jls`（ブリッジとの突き合わせ）・`test/cacheversion --update` |
 | 差分更新が拾う依存 | 解決（キャッシュ更新） | `StaleTypes`・`BindingNames`（I 行）・`CacheUpdater` | I 行の中身が変わるなら必要 | `test/incremental` |

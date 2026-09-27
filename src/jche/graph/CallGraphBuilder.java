@@ -292,6 +292,7 @@ public final class CallGraphBuilder {
                         if (v != null) {
                             fields.field(v);
                             graph.beans.field(v);
+                            noteFieldDeclType(v);
                         }
                     }
                     case CacheFormat.ROW_FUNCTIONAL_IMPL -> {
@@ -446,6 +447,21 @@ public final class CallGraphBuilder {
             fields.assignment(a.fact(), a.head());
         }
         pendingAssigns.clear();
+    }
+
+    /**
+     * V 行の宣言の型を控える（{@link CallGraph#fieldDeclTypes}）。そのフィールドの値を実引数として渡したときの、実行時の型の
+     * 上限になる。参照型（基本型・String・配列でない）だけで、値を読まない指定では作らない（上限を使うのは値を読む
+     * 読み手だけ）。同じ型を 2 つのファイルが宣言していれば、読んだ順に依らないよう綴りの小さいほうを採る
+     */
+    private void noteFieldDeclType(FieldDeclFact v) {
+        String declType = v.declType();
+        if (!readValues || declType.isEmpty() || declType.endsWith("]") || SpringBeans.isPrimitiveOrString(declType)) {
+            return;
+        }
+        int id = strings.intern(declType);
+        graph.fieldDeclTypes.merge(v.typeFqn() + "#" + v.fieldName(), id,
+                (a, b) -> (strings.get(a).compareTo(strings.get(b)) <= 0) ? a : b);
     }
 
     /**

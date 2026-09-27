@@ -3,6 +3,7 @@ package jche.graph;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -41,8 +42,17 @@ public final class TypeHierarchy {
     private final HashMap<String, List<String>> classChainCache = new HashMap<>();
     /** {@link #superinterfaces} の結果 */
     private final HashMap<String, List<String>> superinterfaceCache = new HashMap<>();
+    /**
+     * 型の番号（{@link #indexOf} / {@link #typeAt}）。名前順に並べた型の名前と、名前 -> 番号の索引。
+     * 最初に要るときに作る（型を足したら捨てる）。経路の環境の枠（{@link Slot#BOUND}）が型を番号で指すためのもので、
+     * 番号は 1 回の実行の中でしか通じない
+     */
+    private String[] indexedNames;
+    private HashMap<String, Integer> indexByName;
 
     void add(TypeFact t) {
+        indexedNames = null;
+        indexByName = null;
         typeKind.put(t.typeFqn(), t.kind());
         if (!t.superclasses().isEmpty()) {
             // 同じ型を 2 つのファイルが宣言していれば、読んだ順に依らないよう綴りの小さいほうを採る
@@ -113,6 +123,39 @@ public final class TypeHierarchy {
     /** ソース上に宣言のある型の名前一覧（コピー） */
     public Set<String> typeNames() {
         return new HashSet<>(typeKind.keySet());
+    }
+
+    /**
+     * ソース上に宣言のある型の番号（名前順。{@link #typeAt} で名前に戻す）。ソース上に無い型（jar の型・配列）なら -1。
+     * 経路の環境の枠（{@link Slot#BOUND}）が実行時の型の上限をこの番号で持つ
+     */
+    public int indexOf(String typeFqn) {
+        if (typeFqn == null) {
+            return -1;
+        }
+        buildIndex();
+        Integer i = indexByName.get(typeFqn);
+        return (i == null) ? -1 : i;
+    }
+
+    /** {@link #indexOf} の番号の型の名前。範囲の外なら null */
+    public String typeAt(int index) {
+        buildIndex();
+        return (index < 0 || index >= indexedNames.length) ? null : indexedNames[index];
+    }
+
+    private void buildIndex() {
+        if (indexedNames != null) {
+            return;
+        }
+        String[] names = typeKind.keySet().toArray(new String[0]);
+        Arrays.sort(names);
+        HashMap<String, Integer> byName = new HashMap<>(names.length * 2);
+        for (int i = 0; i < names.length; i++) {
+            byName.put(names[i], i);
+        }
+        indexByName = byName;
+        indexedNames = names;
     }
 
     /**
