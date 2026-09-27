@@ -511,37 +511,19 @@ Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest)). SPDX
 
 # English
 
-[日本語](#java-call-hierarchy-exporter) | **English**
+[Japanese](#java-call-hierarchy-exporter) | **English**
 
-## What it does
+## What it does (overview)
 
 This tool analyzes the method call hierarchy of a whole Java project in one pass and writes it to CSV files.
-You use it to find, without missing any, **which screens, batch jobs and APIs are affected when you change a method**.
+Open the result in Excel and filter it to find the impact surface of the method you are about to change.
+**It is under development, so its features may change without notice.**
 
-Say you are about to change `OrderDaoImpl.selectById`. Open the `call-hierarchy.csv` it wrote in Excel and
-filter the `callee` column by that method: the `root` column then lists the entry points that reach it.
-
-```csv
-caller,callee,resolved-by,level,root,call-hierarchy
-at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
-at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
-```
-
-The second row reads: "the processing that starts at `OrderAction.execute` goes through `OrderService.findOrder`
-and calls `OrderDaoImpl.selectById`. The call is on line 25 of `OrderService.java`. It goes through an interface,
-but the Spring bean definitions showed that the implementation is `OrderDaoImpl`" (see
-[Reading the results](#reading-the-results)).
-
-- **It follows calls through interfaces, DI and lambdas.** It decides which implementation class actually runs
-  from the type that was `new`-ed, from how values flow through arguments and fields, from Spring bean
-  definitions and so on
-- **It never drops a call it cannot decide.** When several candidate implementations remain, every candidate
-  becomes a row and the `resolved-by` column says it could not be narrowed. Not missing a call during an
-  impact analysis comes first
-- **It does not start Eclipse.** It is a command line tool that uses Eclipse JDT (Eclipse's Java compiler) as
-  its analysis engine, and you do not need to install Java beforehand ([Requirements](#requirements))
-- **It gets faster from the second run on.** It caches the analysis and only analyzes again the files that
-  changed and the files the change can affect
+| What you want | Where |
+|---|---|
+| How to use it, how to start the tool | [Getting started](#getting-started) (this file) |
+| How to read the output CSV | [Output files](#output-files) (this file) |
+| What each config item means | the comments in [config/config.properties](config/config.properties) |
 
 ### How it compares with other tools
 
@@ -561,11 +543,11 @@ If you want to follow callers inside your IDE, the same analysis is also availab
 
 | Item | Requirement |
 |---|---|
-| OS | Windows (Command Prompt, PowerShell), Linux, macOS, Git Bash |
-| What to install first | Nothing. The JDK 25 that runs the tool and the jars used for the analysis are downloaded on the first run, after asking you (about 165MB over the network, about 500MB on disk). For machines that cannot reach the network, see [Other ways to use it](#other-ways-to-use-it) |
-| Sources it can analyze | Java sources (`.java`). By default they are read as the newest language version the bundled JDT supports (change it with `source.level` in the config) |
-| Build setups | Maven (`pom.xml`), Gradle (`build.gradle`, as far as it is written declaratively), Eclipse's `.classpath`, or a `lib` folder of jars. Source folders and dependency jars are found automatically |
-| Dependency jars | **They must already be on your machine.** The tool does not run your build tool and does not download them. It uses the jars in a local repository such as `~/.m2/repository`, so build the project once first (`mvn dependency:go-offline` or similar) or open it in your IDE |
+| OS | Windows, Linux |
+| What to install first | Nothing. The JDK 25 that runs the tool and Eclipse JDT (Eclipse's Java compiler), which does the analysis, are downloaded on the first run, after asking you (about 165MB over the network, about 500MB on disk). For machines that cannot reach the network, see [Other ways to use it](#other-ways-to-use-it) |
+| Sources it can analyze | Java sources (`.java`). The supported Java versions are those supported by Eclipse JDT, the analysis engine. The latest release, 3.46.0, supports Java 8 to 26 |
+| Build setups | The source folders and dependency jars declared in Eclipse's `.classpath`, Maven (`pom.xml`) or Gradle (`build.gradle`) are found automatically and analyzed |
+| Dependency jars | **They must already be on your machine.** The tool does not run the build tool of the project it analyzes and does not download them. It uses the jars in a local repository such as `~/.m2/repository`, so either build the project once first (`mvn dependency:go-offline` or similar), or save the compile-time and run-time dependency jars in a `lib` folder and point the config at it |
 
 ### What it cannot see
 
@@ -580,7 +562,6 @@ not remove the call: it lists the candidates or says it could not follow the cal
   ([docs/static-analysis-limits.md](docs/static-analysis-limits.md))
 - **If the sources do not compile or dependency jars are missing, the result has gaps.** Then a
   `warnings.txt` appears in the output folder and says what is missing
-- A constructor call itself never becomes a row (method calls made from inside a constructor do)
 
 ---
 
@@ -596,10 +577,10 @@ not remove the call: it lists the candidates or says it could not follow the cal
 2. **Write the project to analyze in the config file** — set `project.root` in
    [`config/config.properties`](config/config.properties) to the folder of the project you want to analyze.
    **This one line is all that is required.** Left empty, the source folders, dependency jars and encoding are
-   worked out from `pom.xml`, `build.gradle` and the like.
+   read from `.classpath`, `pom.xml` or `build.gradle`.
 
      ```properties
-     # Use / as the separator, even on Windows (or write \ twice, as \\)
+     # Use / as the separator, even on Windows (to use \, write it twice, like \\)
      project.root=C:/work/myapp
      ```
 
@@ -623,17 +604,13 @@ not remove the call: it lists the candidates or says it could not follow the cal
    from the second run on, only the changed files are analyzed.
    If you got the ZIP and the `.sh` is not executable, run it as `bash java-call-hierarchy-exporter.sh …`.
 
-4. **If there is a `warnings.txt`, open it first** — every run creates a folder
+4. **Check the output for a `warnings.txt`** — every run creates a folder
    `config/<analysis start time>_<project name>/`. A `warnings.txt` in it means **the result has gaps**, because of
    missing dependency jars, compile errors and the like. It says what happened and how to fix it; fix that and
    run again.
 
-5. **Open the CSV** — open `call-hierarchy.csv` in the same folder with Excel (it is UTF-8 with a BOM, so the
-   characters come out right). How to read it is in [Reading the results](#reading-the-results) below.
-
-To start without writing a config file, run the launcher **with no arguments** to get the interactive mode.
-Choose "2) Create a new config file" from the menu and enter the folder to analyze: it writes the config file and
-can go straight on to the analysis ([docs/cli.md](docs/cli.md), in Japanese).
+5. **Open the CSV** — open `call-hierarchy.csv` in the same folder with Excel.
+   How to read it is in [Reading the results](#reading-the-results) below.
 
 ---
 
@@ -1048,8 +1025,8 @@ sibling module's `target/classes` and the like) are tracked too.
 
 - Config files pointing at the same project share the same cache, and projects with the same name in different
   places do not get mixed up
-- You may delete it while nothing is running (the next run just analyzes everything).
-  Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
+- You may delete it while nothing is running (the next run then analyzes everything).
+  To move it, set `cache.folder` in the config; to stop reusing it, set `cache.enabled=false`
 - When two runs use the same cache at the same time (the CLI and the Eclipse or VS Code plugin, CI jobs, and so
   on), the later run waits until the earlier one finishes (at most 30 minutes; set the environment variable
   `JCHE_CACHE_LOCK_WAIT_SECONDS` to change the number of seconds)
