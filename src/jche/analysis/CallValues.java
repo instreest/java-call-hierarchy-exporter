@@ -4,10 +4,10 @@ package jche.analysis;
 import jche.cache.ValueNode;
 
 /**
- * 呼び出し箇所1件の値（dataflow 側の P 行に書く分）。
+ * 呼び出し箇所1件の値（キャッシュの C 行・U 行の末尾の recv・args 列に書く分）。
  *
  * 値グラフ（{@link ValueNode}）のどのノードかを指すだけで、値そのものは持たない。
- * 読み手は {@code jche.graph.OriginRenderer} でここから出所の文字列を組み直す。
+ * 読み手はノードを値の表（{@code jche.graph.ValueStore}）に取り込んで読む。
  *
  * <p>以前は同じ呼び出し箇所について「上限付きの出所の文字列」も並べて持っていたが、
  * 読み手が値グラフへ移ったので落とした（{@code docs/cache-split-qa.md} の Q22）。

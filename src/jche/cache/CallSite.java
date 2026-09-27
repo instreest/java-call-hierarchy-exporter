@@ -7,5 +7,15 @@ package jche.cache;
  */
 public sealed interface CallSite permits CallEdgeFact, UnresolvedCallFact {
 
-    String toRow();
+    /** 呼び出し元。特定できなければ null（{@link UnresolvedCallFact#OUTSIDE_METHOD}） */
+    MethodRef caller();
+
+    /**
+     * キャッシュの行にする。呼び出し箇所の値（レシーバ・実引数・ガードの番号・new の証拠）も同じ行の末尾に持つ。
+     *
+     * @param symbols ブロックの記号表。呼び出し元・呼び出し先の番号をここで振る
+     * @param values  この呼び出し箇所の値（{@link FileAnalysis#callSiteValues} の同じ位置のものを、
+     *                書き手がガードの番号と証拠に直したもの）
+     */
+    String toRow(SymbolTable symbols, CallSiteValues.Row values);
 }

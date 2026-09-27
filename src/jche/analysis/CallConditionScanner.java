@@ -14,6 +14,7 @@ import jche.cache.Guard;
 import jche.cache.MethodRef;
 import jche.cache.Origin;
 import jche.cache.UnresolvedCallFact;
+import jche.cache.ValueNode;
 import jche.config.Config;
 import jche.config.ProjectLayout;
 import jche.util.Log;
@@ -47,8 +48,21 @@ import jche.util.Messages;
  */
 public final class CallConditionScanner {
 
-    /** 呼び出し1件に効いている条件1つ */
-    public record Condition(String op, String subject, String values, String text) {
+    /**
+     * 呼び出し1件に効いている条件1つ（アトム {@link Guard.Atom} と、判定される式のノードの種別と値）
+     *
+     * @param op           判定の種別（{@link Guard#EQ} など）
+     * @param subjectType  判定される式の種別（{@link Origin#PARAM} / {@link Origin#CONST} など。
+     *                     分からなければ {@link Origin#UNKNOWN}）
+     * @param subjectValue 判定される式の値（引数なら引数位置。分からなければ空文字）
+     * @param values       比較する値（切り詰めない。書き手のアトムの値そのもの）
+     * @param text         ソースに書かれていた条件式
+     */
+    public record Condition(String op, char subjectType, String subjectValue, List<String> values, String text) {
+
+        public Condition {
+            values = List.copyOf(values);
+        }
 
         /** 経路ごとの値と突き合わせて判定できる条件か */
         public boolean decidable() {
@@ -62,7 +76,7 @@ public final class CallConditionScanner {
 
         /** 判定対象の由来（「引数1」「定数」「不明」） */
         public String subjectKind() {
-            return switch (Origin.kindOf(subject)) {
+            return switch (subjectType) {
                 case Origin.PARAM -> "param " + paramNumber();
                 case Origin.CONST, Origin.LITERAL, Origin.CLASS -> "constant";
                 default -> "unknown";
@@ -71,21 +85,36 @@ public final class CallConditionScanner {
 
         private String paramNumber() {
             try {
-                return String.valueOf(Integer.parseInt(Origin.valueOf(subject)) + 1);
+                return String.valueOf(Integer.parseInt(subjectValue) + 1);
             } catch (NumberFormatException ignore) {
                 return "?";
             }
         }
 
-        /** 成立する条件を人が読める形にする（「= false」「∈ {1, 2}」など） */
+        /**
+         * 成立する条件を人が読める形にする（「= false」「∈ {1, 2}」など）。値の中の制御文字は空白にする
+         * （{@link Guard#clean}。CSV の 1 セルに収めるため）
+         */
         public String expectation() {
             return switch (op) {
-                case Guard.EQ -> "= " + values;
-                case Guard.NE -> "≠ " + values;
-                case Guard.IN -> "∈ {" + String.join(", ", Guard.valuesOf(values)) + "}";
-                case Guard.NOT_IN -> "∉ {" + String.join(", ", Guard.valuesOf(values)) + "}";
+                case Guard.EQ -> "= " + Guard.values(values);
+                case Guard.NE -> "≠ " + Guard.values(values);
+                case Guard.IN -> "∈ {" + joinCleaned() + "}";
+                case Guard.NOT_IN -> "∉ {" + joinCleaned() + "}";
                 default -> "";
             };
+        }
+
+        /** 値を {@code ", "} でつなぐ（それぞれ {@link Guard#clean} を通す） */
+        private String joinCleaned() {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(Guard.clean(values.get(i)));
+            }
+            return sb.toString();
         }
     }
 
@@ -196,7 +225,8 @@ public final class CallConditionScanner {
     public static Result scan(Config config, ProjectLayout layout, String target) throws IOException {
         Target t = Target.parse(target);
         List<Path> matched = new ArrayList<>();
-        for (Path java : layout.listJavaFiles()) {
+        List<Path> all = layout.listJavaFiles();
+        for (Path java : all) {
             if (t.matchesFile(layout.relativeOf(java))) {
                 matched.add(java);
             }
@@ -216,6 +246,12 @@ public final class CallConditionScanner {
 
         // 判定できない条件も残すモードで解析する。結果はキャッシュへ書かず、ここで捨てる
         CallEdgeExtractor extractor = new CallEdgeExtractor(layout, config, true);
+        // キャッシュの解析と同じファイルを添える（CallEdgeExtractor#prepare。警告はキャッシュの解析が出す）
+        List<CallEdgeExtractor.SourceFile> everything = new ArrayList<>();
+        for (Path java : all) {
+            everything.add(new CallEdgeExtractor.SourceFile(java, layout.relativeOf(java), Files.size(java)));
+        }
+        extractor.prepare(everything);
         List<CallSiteConditions> sites = new ArrayList<>();
         int[] total = {0};
         extractor.analyzeBatch(files, new CallEdgeExtractor.Sink() {
@@ -236,15 +272,15 @@ public final class CallConditionScanner {
     /** 1ファイル分の呼び出しから、対象に合うものだけ取り出す */
     private static void collect(Target target, String file, FileAnalysis analysis,
                                 List<CallSiteConditions> out) {
-        // ガードは値なので dataflow 側（P 行）にある。callSiteValues は callSites と
-        // 同じ数・同じ順で並ぶので、同じ位置から取る（docs/cache-split-qa.md の Q20）
+        // ガードは呼び出し箇所の値（callSiteValues）が持つ。callSiteValues は callSites と
+        // 同じ数・同じ順で並ぶので、同じ位置から取る（キャッシュでも同じ位置どうしを 1 行にしている）
         for (int i = 0; i < analysis.callSites.size(); i++) {
             CallSite site = analysis.callSites.get(i);
             int line;
             MethodRef caller;
             String callee;
-            String guard = (i < analysis.callSiteValues.size())
-                    ? analysis.callSiteValues.get(i).guard() : "";
+            List<Guard.Atom> guard = (i < analysis.callSiteValues.size())
+                    ? analysis.callSiteValues.get(i).guard() : List.of();
             if (site instanceof CallEdgeFact c) {
                 line = c.callLine();
                 caller = c.caller();
@@ -260,15 +296,22 @@ public final class CallConditionScanner {
                 continue;
             }
             out.add(new CallSiteConditions(file, line, (caller == null) ? "(unknown)" : label(caller),
-                    callee, conditionsOf(guard)));
+                    callee, conditionsOf(guard, analysis.valueNodes)));
         }
     }
 
-    private static List<Condition> conditionsOf(String guard) {
-        List<Condition> conditions = new ArrayList<>();
-        for (String atom : Guard.atomsOf(guard)) {
-            conditions.add(new Condition(Guard.fieldOf(atom, 0), Guard.fieldOf(atom, 1),
-                    Guard.fieldOf(atom, 2), Guard.fieldOf(atom, 3)));
+    /**
+     * アトムを条件にする。判定される式は値グラフ（{@code nodes}）のノードの種別と値をそのまま持ち、
+     * ノードが無い（記録用モードの {@link Guard#UNKNOWN} / {@link Guard#MORE}）なら種別 {@link Origin#UNKNOWN}。
+     * 出所の文字列（{@code A:0}）には組み直さないので、定数の値が {@code |} を含んでも切れない
+     */
+    private static List<Condition> conditionsOf(List<Guard.Atom> guard, List<ValueNode> nodes) {
+        List<Condition> conditions = new ArrayList<>(guard.size());
+        for (Guard.Atom atom : guard) {
+            int id = atom.subject();
+            ValueNode node = (id >= 0 && id < nodes.size()) ? nodes.get(id) : null;
+            conditions.add(new Condition(atom.op(), (node == null) ? Origin.UNKNOWN : node.kind(),
+                    (node == null) ? "" : node.value(), atom.values(), atom.text()));
         }
         return conditions;
     }

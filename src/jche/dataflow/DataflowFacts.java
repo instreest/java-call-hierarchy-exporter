@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import jche.graph.IntArray;
+import jche.graph.StringPool;
 
 /**
  * データフローの事実（フェーズ2bの成果物）。グラフ全体から一括で確定した、経路に依存しない情報。
@@ -14,25 +15,37 @@ import jche.graph.IntArray;
  * 「同じグラフなら、何回呼んでも、どの順で呼んでも同じ結果」になる（Issue #80）。
  *
  * <ul>
- *   <li>{@link #factoryOrigin}: メソッドが必ず返す値の出所（委譲を畳んだ後）。決められなければ null</li>
+ *   <li>{@link #factoryKind} / {@link #factoryValueId}: メソッドが必ず返す値（委譲を畳んだ後）の種別と値。
+ *       決められなければ種別 0</li>
  *   <li>{@link #usesParameters}: 引数をレシーバに使う、または引数を次へ渡すメソッドか</li>
+ *   <li>{@link #usesCapturedValues}: 呼び出しのレシーバか実引数に、捕捉した引数（{@code E:}）を使うメソッド（ラムダの本体）か</li>
  *   <li>{@link #reflectKind}: リフレクションAPIの種別（{@code DataflowResolver.REFLECT_*}）</li>
  *   <li>{@link #methodsNamed}: "typeFqn#name" → 本体を持つメソッドID（引数型が分からないときの名前照合用）</li>
  * </ul>
+ *
+ * <p>戻り値はメソッドごとに種別 1 バイトと値の番号（{@link StringPool}）1 つで持つ。以前は {@code "T:型"} の
+ * 文字列を決まったメソッドの数だけ作っていた。
  */
 public final class DataflowFacts {
 
-    private final String[] factoryOrigin;
+    /** メソッドごとの戻り値の種別（0 = 決められない、{@code 'T'} / {@code 'C'} / {@code 'A'}） */
+    private final byte[] factoryKind;
+    /** メソッドごとの戻り値の値の番号（{@link StringPool}。決められなければ -1） */
+    private final int[] factoryValueId;
     private final boolean[] usesParameters;
+    private final boolean[] usesCaptured;
     private final byte[] reflectKinds;
     private final Map<String, IntArray> methodsByName;
     private final int factoriesDecided;
     private final int factoriesCutOff;
 
-    DataflowFacts(String[] factoryOrigin, boolean[] usesParameters, byte[] reflectKinds,
-                  Map<String, IntArray> methodsByName, int factoriesDecided, int factoriesCutOff) {
-        this.factoryOrigin = factoryOrigin;
+    DataflowFacts(byte[] factoryKind, int[] factoryValueId, boolean[] usesParameters, boolean[] usesCaptured,
+                  byte[] reflectKinds, Map<String, IntArray> methodsByName, int factoriesDecided,
+                  int factoriesCutOff) {
+        this.factoryKind = factoryKind;
+        this.factoryValueId = factoryValueId;
         this.usesParameters = usesParameters;
+        this.usesCaptured = usesCaptured;
         this.reflectKinds = reflectKinds;
         this.methodsByName = methodsByName;
         this.factoriesDecided = factoriesDecided;
@@ -41,24 +54,40 @@ public final class DataflowFacts {
 
     /** 事実を持たない（データフロー解析が無効なときの）空の事実。リフレクションの種別だけは持つ */
     static DataflowFacts empty(int methodCount, byte[] reflectKinds) {
-        return new DataflowFacts(new String[methodCount], new boolean[methodCount], reflectKinds,
-                new HashMap<>(), 0, 0);
+        return new DataflowFacts(new byte[methodCount], new int[0], new boolean[methodCount],
+                new boolean[methodCount], reflectKinds, new HashMap<>(), 0, 0);
     }
 
     /**
-     * そのメソッドが必ず返す値の出所。特定できなければ null。
+     * そのメソッドが必ず返す値の種別。特定できなければ 0。
      *
-     * 返すのは具象型（{@code T:}）とは限らない。クラス名の文字列を受け取るファクトリは
-     * {@code C:引数位置}、引数をそのまま返すメソッドは {@code A:引数位置} になる。
+     * 返すのは具象型（{@code 'T'}。値は型の FQN）とは限らない。クラス名の文字列を受け取るファクトリは
+     * {@code 'C'}（値は引数位置）、引数をそのまま返すメソッドは {@code 'A'}（値は引数位置）になる。
      * これらは<b>そのファクトリを呼んでいる箇所の実引数</b>を見て初めて確定する。
+     *
+     * <p>これはそのメソッドの<b>本体</b>が返す値。呼び出し箇所でこれを戻り値として使ってよいのは、
+     * 呼び出しがその本体でしか動かないとき（{@code CallGraph#hasOverriders} が false）だけ
      */
-    public String factoryOrigin(int methodId) {
-        return (methodId >= 0 && methodId < factoryOrigin.length) ? factoryOrigin[methodId] : null;
+    public byte factoryKind(int methodId) {
+        return (methodId >= 0 && methodId < factoryKind.length) ? factoryKind[methodId] : 0;
+    }
+
+    /** そのメソッドが必ず返す値の、値の番号（{@link StringPool}）。特定できなければ -1 */
+    public int factoryValueId(int methodId) {
+        return (factoryKind(methodId) == 0) ? -1 : factoryValueId[methodId];
     }
 
     /** そのメソッドに経路の情報（引数の具象型）を渡す意味があるか */
     public boolean usesParameters(int methodId) {
         return methodId >= 0 && methodId < usesParameters.length && usesParameters[methodId];
+    }
+
+    /**
+     * そのメソッド（ラムダの本体）が、呼び出しのレシーバか実引数に捕捉した引数（{@code E:}）を使うか。
+     * 使うなら、本体の呼び出しの解決は、ラムダを作ったときのフレームの引数（生成したメソッドの段で渡す捕捉した値）に依る
+     */
+    public boolean usesCapturedValues(int methodId) {
+        return methodId >= 0 && methodId < usesCaptured.length && usesCaptured[methodId];
     }
 
     /** リフレクションAPIの種別。該当しなければ 0（{@code DataflowResolver.REFLECT_NONE}） */

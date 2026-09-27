@@ -8,6 +8,7 @@ import jche.config.ProjectLayout;
 import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.InboundIndex;
+import jche.graph.UnresolvedCalls;
 
 /**
  * ある時点の解析結果ひとそろい。作ったあとは書き換えない。
@@ -27,16 +28,26 @@ public final class AnalysisSnapshot {
     private final CallResolver resolver;
     private final LocalDateTime analyzedAt;
     private final int syntaxErrorFiles;
+    private final UnresolvedCalls unresolvedCalls;
     private volatile InboundIndex inbound;
 
     AnalysisSnapshot(Config config, ProjectLayout layout, CallGraph graph, CallResolver resolver,
-                     int syntaxErrorFiles) {
+                     int syntaxErrorFiles, UnresolvedCalls unresolvedCalls) {
         this.config = config;
         this.layout = layout;
         this.graph = graph;
         this.resolver = resolver;
         this.syntaxErrorFiles = syntaxErrorFiles;
+        this.unresolvedCalls = unresolvedCalls;
         this.analyzedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 型解決に失敗した呼び出しの一覧に出す行（{@link Exporter#analyze(Config, boolean)} で拾ったとき）。
+     * 拾っていなければ null（解析サーバー）。行は一時ファイルにあり、閉じると消える。閉じるのは CSV を書く側
+     */
+    public UnresolvedCalls unresolvedCalls() {
+        return unresolvedCalls;
     }
 
     /**

@@ -135,6 +135,7 @@ config/
 **`warnings.txt` があったら、先に開いてください。** このツールは、ビルドが通り、依存jarがすべて解決できている状態で解析することを前提にしています。
 設定の誤り・依存jarの不足・コンパイルエラーなどでそうなっていないときも解析は最後まで動きますが、CSVに抜けが出ます。
 そのときだけ `warnings.txt` ができ、何が起きたか・影響・対処のしかたが書かれます。
+載るのは、依存jarの不足・設定の指定先の欠け・コンパイルエラーのほか、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存jar などです。
 `run.log` は実行ごとに必ずできる経過の記録（どの設定で何が動いたか、どこに何を保存したか）です。
 
 
@@ -344,7 +345,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | 注記 | 意味 |
 |---|---|
 | `external-ref:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
-| `external-ref:INHERITED` | 親から継承したメソッドへの参照。宣言している最も近い親（親クラスの連鎖を先に、次にインターフェース）のメソッドとして出る |
+| `external-ref:INHERITED` | 親から継承したメソッドへの参照。JVM がその参照を解決する宣言（親クラスの連鎖を先に、無ければインターフェースの宣言のうち最も特定的なもの。インターフェースの `static`・`private` は除く）のメソッドとして出る |
 | `external-ref:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
 
 自分の型を参照しているのに一致するメソッドが無いもの（引数付きのコンストラクタを含む）は、
@@ -454,16 +455,26 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 （ブランチごとのチェックアウト等）は混ざりません。設定ファイルをどこに置いても、
 どこから実行しても、キャッシュの場所は変わりません。
 
-ファイルは 2 つで、常に対で作られます。片方だけを消しても、次の実行で両方が作り直されます。
-
-| ファイル | 中身 |
-|---|---|
-| `analysis-cache.tsv` | 呼び出し階層を出すための事実（構造とバインディング） |
-| `dataflow-cache.tsv` | 呼び出し階層の出力には使わない、値の追跡のための事実 |
+キャッシュは `analysis-cache.tsv` の 1 ファイルです。解析で分かった事実（呼び出し階層の構造と、
+値の追跡に使う値）をソースファイル 1 つにつき 1 ブロックで持ち、ブロックごとに壊れていないかを確かめます。
+壊れたブロックがあれば、全件ではなく、そのファイルと、そのファイルの型を使っているファイルだけを解析し直します。
+何も変わっていなければキャッシュは書き直しません。
+実行中は同じフォルダに一時ファイル（`*.tmp`）を作り、終わると消します。以前の版が作った `dataflow-cache.tsv` が
+残っていれば、次の実行で消します。
+同じキャッシュのフォルダを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うときは、
+あとの実行が先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）。
+そのための錠のファイル `analysis-cache.tsv.lock`（中身は空）がフォルダに残ります。
 
 - 置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false`
-- 2 回目以降は変更されたファイルだけを解析し直します。依存 jar を足したときも、
-  その jar の型を使っているファイルだけが対象です
+- 2 回目以降は、変更されたファイルと、その変更で解析結果が変わりうるファイル（変更されたファイルの型を使っている
+  ファイルなど）だけを解析し直します。依存 jar を足した・差し替えたときは、その jar の型を使っているファイルと、
+  前回型解決に失敗していたファイルが対象で、それらのファイルの型を使うファイルも解析し直します（外したときは、
+  その jar の型を使っていたファイルと、そのファイルの型を使うファイル。型解決に失敗していたファイルは含みません）
+- 依存 jar のほか、クラスフォルダ（兄弟モジュールの `target/classes`、依存プロジェクトの出力フォルダなど）の変化も見ます。
+  `library.jars` と `.classpath` の `kind="lib"` に書いたフォルダは、クラスフォルダとしてそのまま使います（中の jar は
+  使いません。jar を集めたフォルダは `library.folders` に書きます）。ソースフォルダやクラスフォルダがシンボリックリンクでも、
+  リンクの先をたどります。解析のあいだにソースや依存 jar を書き換えた（兄弟モジュールをビルドし直した）ときは、
+  次の実行で、その実行が解析したファイルを解析し直します
 - 大規模なコードベースで `OutOfMemoryError` にならないための作りと、差分更新が
   何を見て判断しているかは [docs/cache-design.md](docs/cache-design.md) にあります
 
@@ -619,6 +630,7 @@ The CSV files are UTF-8 with a BOM, so Excel opens them directly.
 **If there is a `warnings.txt`, open it first.** This tool expects to analyze sources that build and whose dependency jars are all resolved.
 When that is not the case (a wrong setting, missing dependency jars, compile errors, etc.), the analysis still finishes, but the CSV files have gaps.
 Only then is `warnings.txt` created, saying what happened, what it affects and what to do.
+Besides missing dependency jars, a path in the config file that does not exist and compile errors, it lists files whose package declaration does not match their folder (common when `source.folders` is one level off), files that the Java parser stopped on and could not analyze, output that stopped partway, and a dependency jar that was rewritten in place with the same modification time while the analysis server (the Eclipse or VS Code plugin) kept it open.
 `run.log` is created on every run as the record of what happened (what ran with which settings and where things were saved).
 
 ### `call-hierarchy.csv` — the call hierarchy
@@ -836,7 +848,7 @@ Pointing at a whole `dist` folder never turns your own calls into external refer
 | Note | Meaning |
 |---|---|
 | `external-ref:EXACT` | A reference to a method declared by that class (including an implicit default constructor) |
-| `external-ref:INHERITED` | A reference to a method inherited from a parent. It appears as the method of the nearest declaring parent (the chain of superclasses first, then interfaces) |
+| `external-ref:INHERITED` | A reference to a method inherited from a parent. It appears as the method the JVM resolves the reference to (the chain of superclasses first; otherwise the most specific interface declaration, excluding `static` and `private` interface methods) |
 | `external-ref:IMPLICIT_CTOR` | A reference to a no-argument constructor with no matching declaration in the source. An implicit default constructor is synthesized as a declaration during the analysis and matches as `EXACT`, so what lands here is "it could be created with no arguments when the other jar was built, but today's source has no such constructor" — most likely a version mismatch. It is useful as a creation site, so it is kept as a row |
 
 References to your own types with no matching method (including constructors with arguments) suggest that
@@ -954,17 +966,28 @@ Config files pointing at the same project share the same cache, and projects wit
 different places (checkouts per branch, for instance) do not get mixed up. Wherever you put the config
 file and wherever you run from, the cache location does not change.
 
-There are two files, and they are always created as a pair. Deleting one of them makes the next run
-rebuild both.
-
-| File | Content |
-|---|---|
-| `analysis-cache.tsv` | The facts needed to write the call hierarchy (structure and bindings) |
-| `dataflow-cache.tsv` | Facts for tracking values, which the call hierarchy output does not use |
+The cache is a single file, `analysis-cache.tsv`. It holds the facts the analysis found (the structure of
+the call hierarchy and the values used for value tracking), one block per source file, and each block is
+checked for damage. If a block is damaged, the whole project is not analyzed again: only that file and the files
+that use its types are. When nothing has changed, the cache is not rewritten. While running, the tool creates
+temporary files (`*.tmp`) in the same folder and deletes them when it finishes. A `dataflow-cache.tsv` left by an older version is deleted on the next run.
+When two runs use the same cache folder at the same time (the CLI and the Eclipse or VS Code plugin, CI jobs, and so on),
+the later run waits until the earlier one finishes (at most 30 minutes; set the environment variable
+`JCHE_CACHE_LOCK_WAIT_SECONDS` to change the number of seconds). The lock file used for this,
+`analysis-cache.tsv.lock` (empty), stays in the folder.
 
 - Use `cache.folder` to move it, `cache.enabled=false` to stop reusing it
-- From the second run on, only the changed files are analyzed again. When you add a dependency jar, only
-  the files that use types from that jar are affected
+- From the second run on, only the changed files and the files whose results the change can affect (such as
+  the files that use the changed files' types) are analyzed again. When you add or replace a dependency jar, the
+  files that use types from that jar and the files whose type resolution failed last time are affected, and so are
+  the files that use their types (when you remove a jar, the files that used its types and the files that use
+  theirs; the files whose type resolution failed are not included)
+- Besides dependency jars, changes in class folders (a sibling module's `target/classes`, the output folder of a
+  dependent project, and so on) are tracked too. A folder listed in `library.jars` or as `kind="lib"` in `.classpath`
+  is used as a class folder as it is (the jars inside it are not used; list a folder that collects jars in
+  `library.folders`). Source folders and class folders that are symbolic links are followed. When sources or
+  dependency jars change while an analysis is running (a sibling module is rebuilt, for example), the next run
+  analyzes the files of that run again
 - How it is built so that a large code base does not hit `OutOfMemoryError`, and what the differential
   update looks at, are in [docs/cache-design.md](docs/cache-design.md)
 

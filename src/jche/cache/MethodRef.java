@@ -2,7 +2,8 @@
 package jche.cache;
 
 /**
- * メソッドを一意に指す4つ組。キャッシュの各行で「呼び出し元」「呼び出し先」「宣言」として現れる。
+ * メソッドを一意に指す4つ組。キャッシュではブロックの記号表（S 行。{@link SymbolTable}）に
+ * 4 列で書き、「呼び出し元」「呼び出し先」「宣言」の各行からはその番号で指す。
  *
  * @param pkg      パッケージ名（デフォルトパッケージなら空）
  * @param typeFqn  宣言型の完全修飾名（内部クラスは Outer.Inner、匿名クラスは Outer$1）
@@ -33,17 +34,17 @@ public record MethodRef(String pkg, String typeFqn, String name, String paramSig
         return CONSTRUCTOR.equals(name);
     }
 
-    /** キャッシュの4列 {pkg, typeFqn, name, paramSig} にする */
+    /** キャッシュの4列 {pkg, typeFqn, name, paramSig} にする（S 行と {@link CacheDump} が使う） */
     String[] toColumns() {
         return new String[] {pkg, typeFqn, name, paramSig};
     }
 
-    /** 呼び出し元を特定できなかった行のための空の4列 */
+    /** メソッドが無い（{@link SymbolTable#NO_SYMBOL}）ところを 4 列に戻すときの空の4列（{@link CacheDump}） */
     static String[] emptyColumns() {
         return new String[] {"", "", "", ""};
     }
 
-    /** キャッシュの列から復元する。typeFqn が空（呼び出し元不明）なら null */
+    /** キャッシュの列（S 行なら位置 2 から）から復元する。列が足りない・typeFqn が空なら null */
     static MethodRef fromColumns(String[] cols, int from) {
         if (cols.length < from + 4 || cols[from + 1].isEmpty()) {
             return null;

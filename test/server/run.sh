@@ -227,6 +227,39 @@ grep -qE "^NG${T}file-not-analyzed" <<<"$OUT" && ok "解析していないファ
 OUT=$(session "AT\t$AT_FILE\t7\nSHUTDOWN\n")
 grep -qE "^NG${T}not-analyzed" <<<"$OUT" && ok "解析前の AT は not-analyzed" || fail "解析前の AT が断られない"
 
+echo "== AT（同じ行に並ぶ宣言） =="
+# 1 行に書いた 2 つのメソッドや、1 行に書いたメソッドとその中のラムダは、範囲（宣言行〜終了行）の広さが同じになる。
+# 同着は宣言の位置が先のもの（同じ行なら先に宣言したもの。入れ子なら外側）を採る。以前は ID の小さいものを採っていて、
+# 戻り値の出所（R 行）を持つ側（b・2 つ目のラムダ）が先に ID 化されるため、そちらが返っていた
+# （docs/deterministic-row-order-qa.md の Q14）。使い捨てのプロジェクトをその場で作る
+mkdir -p "$WORK/oneline/src/p"
+cat > "$WORK/oneline/src/p/OneLine.java" <<'EOF'
+package p;
+public class OneLine {
+    int a() { return 1; } Object b() { return new Object(); }
+    void pair() { use(() -> ready(), () -> make()); }
+    static void use(java.util.function.BooleanSupplier c, java.util.function.Supplier<Object> m) { }
+    static boolean ready() { return true; }
+    static Object make() { return new Object(); }
+}
+EOF
+cat > "$WORK/oneline/config.properties" <<EOF
+project.root=$WORK/oneline
+source.folders=src
+library.jars=
+source.encoding=UTF-8
+source.level=
+output.folder=$WORK/oneline/output
+EOF
+OUT=$(session "ANALYZE\t$WORK/oneline/config.properties\nAT\tsrc/p/OneLine.java\t3\nAT\tsrc/p/OneLine.java\t4\nSHUTDOWN\n")
+echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
+grep -qE "^OK${T}how=enclosing${T}key=p\.OneLine#a\(\)${T}" <<<"$OUT" \
+    && ok "1 行に並ぶ 2 つのメソッドは、先に宣言した a() を返す" \
+    || fail "1 行に並ぶ 2 つのメソッドで、先に宣言した a() を返さない"
+grep -qE "^OK${T}how=enclosing${T}key=p\.OneLine#pair\(\)${T}" <<<"$OUT" \
+    && ok "1 行に書いたメソッドとその中のラムダは、外側の pair() を返す" \
+    || fail "1 行に書いたメソッドとその中のラムダで、外側の pair() を返さない"
+
 echo "== フィルタは解析をやり直さない =="
 OUT=$(session "ANALYZE\t$CONFIG\nTREE\t$TARGET\tcallers\tdepth=5\nTREE\t$TARGET\tcallers\tdepth=5\ttext=zzz-no-such-name\nSHUTDOWN\n")
 WIDE=$(grep -oE "^OK${T}rows=[0-9]+" <<<"$OUT" | head -1 | grep -oE '[0-9]+')
@@ -266,6 +299,195 @@ OUT=$( (printf 'ANALYZE\t%s\n' "$CONFIG"; sleep 0.3; printf 'CANCEL\nSHUTDOWN\n'
     | java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache2" 2>/dev/null | grep -v '^#L')
 grep -qE "^NG${T}cancelled" <<<"$OUT" && ok "CANCEL で中止される" \
     || fail "CANCEL が効いていない（$(grep -m1 -E '^(OK|NG)' <<<"$OUT" | head -c 40)）"
+
+# 中止しても一時ファイル（依存の索引・エッジの記録・型解決に失敗した呼び出しの行。jche.cache.TempFiles）を残さないこと
+# （サーバーは IDE が開いているあいだ動き続け、同じキャッシュのフォルダを何度も使う）。
+# ここはサーバーが終わってから見る。サーバーが動いたままでの確認は、次のグラフの構築中の CANCEL で行う
+temp_files_in() { find "$1" \( -name '*.deps-*.tmp' -o -name '*.edges-*.tmp' -o -name '*.unresolved-*.tmp' \) 2>/dev/null; }
+LEFT=$(temp_files_in "$WORK/cache2")
+[ -z "$LEFT" ] && ok "中止しても一時ファイルが残らない" || fail "中止したあとに一時ファイルが残っている: $LEFT"
+
+# 上の CANCEL は解析の最初（ソースの読み取り）に届き、一時ファイルはまだ無い。グラフの構築中（エッジの記録＝
+# 一時ファイルがあるあいだ）に届いた中止でも、その一時ファイルを消すこと。グラフの構築の進捗（#P）が 5% を
+# 過ぎたのを見て（エッジの記録ができていることも確かめて）から CANCEL を送る。
+# test/demo はグラフの構築が数十ミリ秒で終わり、CANCEL が構築の後に届いてしまうので、このツール自身のソースを
+# 依存 jar なしで解析する（エッジが 1 万本ほどあり、構築に 0.1 秒以上かかる）。
+# 応答は 1 行ずつ読む（まとめて読むと、構築を終えたしるしのログ行 Collected: を読み飛ばしうる）。
+# ソースの読み取りのあいだはログ行が少なく、読み手は遅れずについていけるので、進捗が届いてから CANCEL を送るまでは短い
+echo "== グラフの構築中の CANCEL も一時ファイルを残さない =="
+mkdir -p "$WORK/self"
+cat > "$WORK/self/c.properties" <<EOF
+project.root=$ROOT
+source.folders=src
+library.folders=
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=$WORK/self/out
+cache.folder=$WORK/self/cache
+EOF
+coproc SRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache3" 2>/dev/null; }
+# サーバーが終わると bash は SRV・SRV_PID を消すので、先に控えておく
+SRV_OUT=${SRV[0]}
+SRV_IN=${SRV[1]}
+SRV_PROC=$SRV_PID
+printf 'ANALYZE\t%s\n' "$WORK/self/c.properties" >&"$SRV_IN"
+SENT=0 SPILL_AT_SEND="" BUILT_BEFORE_NG=0 RESPONSE=""
+while IFS= read -r -t 300 line <&"$SRV_OUT"; do
+    if [ "$SENT" = 0 ] && [[ "$line" == "#P${T}Building the graph${T}"* ]]; then
+        IFS="$T" read -r _ _ DONE TOTAL <<<"$line"
+        [ $((DONE * 20)) -gt "$TOTAL" ] || continue
+        SPILL_AT_SEND=$(find "$WORK/self/cache" -name '*.edges-*.tmp' 2>/dev/null)
+        printf 'CANCEL\n' >&"$SRV_IN"
+        SENT=1
+        continue
+    fi
+    # グラフを組み終えたしるし（CallGraphBuilder の graph.collected）。これが先に来たら、中止は構築の後に届いた
+    [ "$SENT" = 1 ] && [[ "$line" == "#L${T}"*"Collected: "* ]] && BUILT_BEFORE_NG=1
+    case "$line" in OK*|NG*) RESPONSE=$line; break ;; esac
+done
+# サーバーが終わる前に見る（終われば JVM の終了フックも消すので、中止の経路で消したかが分からなくなる）
+LEFT=$(temp_files_in "$WORK/self/cache")
+printf 'SHUTDOWN\n' >&"$SRV_IN" 2>/dev/null
+cat <&"$SRV_OUT" > /dev/null 2>&1
+wait "$SRV_PROC" 2>/dev/null
+grep -qE "^NG${T}cancelled" <<<"$RESPONSE" && ok "CANCEL で中止される" \
+    || fail "CANCEL が効いていない（${RESPONSE:0:40}）"
+[ -n "$SPILL_AT_SEND" ] && ok "CANCEL を送った時点でエッジの記録（一時ファイル）があった" \
+    || fail "CANCEL を送った時点でエッジの記録が無い（グラフの構築中に送れていない）"
+[ "$BUILT_BEFORE_NG" = 0 ] && ok "中止はグラフの構築中に届いた" \
+    || fail "中止がグラフの構築の後に届いた（この検査の前提が崩れている）"
+[ -z "$LEFT" ] && ok "グラフの構築中に中止しても一時ファイルが残らない（サーバーは動いたまま）" \
+    || fail "グラフの構築中に中止したあとに一時ファイルが残っている: $LEFT"
+
+# CANCEL は、それまでに読んだ ANALYZE のうち、まだ始まっていないもの（前の要求の処理中に待ち行列にあるもの）も止める。
+# 後から送った ANALYZE には効かない。要求をまとめて流し込むので、CANCEL を読んだ時点では 1 つ目の ANALYZE が
+# 動いていて、2 つ目はまだ待ち行列にある（以前は ANALYZE の始まりで中止の旗を下ろしていたので、2 つ目は最後まで走った）
+echo "== 始まる前の ANALYZE にも CANCEL が効く =="
+OUT=$(session "ANALYZE\t$CONFIG\nANALYZE\t$CONFIG\nCANCEL\nANALYZE\t$CONFIG\nSHUTDOWN\n" | grep -E '^(OK|NG)')
+echo "$OUT" | sed 's/^/       /' | cut -c1-60
+RESULTS=$(cut -f1-2 <<<"$OUT" | head -3 | sed 's/analyzed=.*/analyzed/' | paste -sd' ')
+[ "$RESULTS" = "NG${T}cancelled NG${T}cancelled OK${T}analyzed" ] \
+    && ok "CANCEL より前に読んだ 2 つの ANALYZE は中止され、後の ANALYZE は動く" \
+    || fail "CANCEL の効き方が期待と違う（$RESULTS）"
+
+# 拡張（plugin.folders）は ANALYZE のたびに読み直す。IDE はサーバーを動かしたまま ANALYZE を繰り返すので、
+# 拡張を直したら次の ANALYZE から効くこと（以前は拡張のクラスローダを JVM の中で使い回していて、
+# 直した拡張が効かず、候補を狭めた古い拡張のせいで呼び出しが黙って落ちていた）
+echo "== 拡張を直したら次の ANALYZE から効く =="
+PL=$WORK/plug
+mkdir -p "$PL/proj/src/p" "$PL/plugins/demo"
+echo 'package p; public interface Svc { void run(); }' > "$PL/proj/src/p/Svc.java"
+echo 'package p; public class A implements Svc { public void run() { } }' > "$PL/proj/src/p/A.java"
+echo 'package p; public class B implements Svc { public void run() { } }' > "$PL/proj/src/p/B.java"
+echo 'package p; public class Main { void go(Svc s) { s.run(); } }' > "$PL/proj/src/p/Main.java"
+write_pick() {   # $1=p.Svc の候補として返す型
+    cat > "$PL/plugins/demo/Pick.java" <<EOF
+package demo;
+import java.util.List;
+import jche.extension.*;
+public class Pick implements TypeCandidateProvider {
+    public String[] candidates(String t, String sig, List<Hint> h) { return "p.Svc".equals(t) ? new String[] {"$1"} : null; }
+    public String label() { return "PICK"; }
+}
+EOF
+}
+write_pick p.A
+cat > "$PL/c.properties" <<EOF
+project.root=proj
+source.folders=src
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=out
+cache.folder=cache
+plugin.folders=plugins
+resolver.candidate.providers=demo.Pick
+EOF
+coproc PSRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$PL/scache" 2>/dev/null; }
+PSRV_OUT=${PSRV[0]}
+PSRV_IN=${PSRV[1]}
+PSRV_PROC=$PSRV_PID
+# 1 つの要求を送り、OK / NG までの R 行と応答をつないで返す
+psrv() {
+    printf '%s\n' "$1" >&"$PSRV_IN"
+    local line acc=""
+    while IFS= read -r -t 300 line <&"$PSRV_OUT"; do
+        case "$line" in
+            R*) acc+="$(cut -f3 <<<"$line") " ;;
+            OK*|NG*) printf '%s%s' "$acc" "$(cut -f1 <<<"$line")"; return ;;
+        esac
+    done
+}
+psrv "ANALYZE${T}$PL/c.properties" > /dev/null
+TREE1=$(psrv "TREE${T}p.Main#go(p.Svc)${T}callees${T}depth=3")
+write_pick p.B
+psrv "ANALYZE${T}$PL/c.properties" > /dev/null
+TREE2=$(psrv "TREE${T}p.Main#go(p.Svc)${T}callees${T}depth=3")
+printf 'SHUTDOWN\n' >&"$PSRV_IN" 2>/dev/null
+cat <&"$PSRV_OUT" > /dev/null 2>&1
+wait "$PSRV_PROC" 2>/dev/null
+[ "$TREE1" = "p.Main#go(p.Svc) p.A#run() OK" ] && ok "1 回目は拡張が返す p.A へ繋ぐ" \
+    || fail "1 回目の TREE が期待と違う（$TREE1）"
+[ "$TREE2" = "p.Main#go(p.Svc) p.B#run() OK" ] && ok "拡張を直した後の ANALYZE では p.B へ繋ぐ" \
+    || fail "拡張を直しても古い拡張が動いている（$TREE2）"
+
+# 同じ更新時刻のまま上書きした jar を、同じサーバーの次の ANALYZE が読むこと。JDT は開いた jar を閉じず（GC まで開いたまま）、
+# 開いているあいだ JDK は同じ jar（inode と更新時刻が同じもの）の目次をプロセスの中で共有するので、依存 jar の指紋も
+# JDT も前の目次を読み、「何も変わっていない」として古い事実を使い続けていた（新しいプロセスなら今の中身を読む）。
+# jar は同じ inode のまま上書きし（cat で中身だけ書き換える）、更新時刻を元に戻す（unzip -o や cp -p で起きる）
+echo "== 同じ更新時刻のまま上書きした jar を、同じサーバーの次の ANALYZE が読む =="
+SJ=$WORK/stalejar
+mkdir -p "$SJ/src/p" "$SJ/v1/q" "$SJ/v2/q" "$SJ/lib"
+printf 'package p;\npublic class Main {\n    void go(q.L l) {\n        l.m("x");\n    }\n}\n' > "$SJ/src/p/Main.java"
+printf 'package q;\npublic class L { public void m(Object o) { } }\n' > "$SJ/v1/q/L.java"
+printf 'package q;\npublic class L { public void m(Object o) { } public void m(String s) { } }\n' > "$SJ/v2/q/L.java"
+( javac -nowarn -d "$SJ/c1" "$SJ/v1/q/L.java" && javac -nowarn -d "$SJ/c2" "$SJ/v2/q/L.java" \
+    && jar cf "$SJ/lib/lib.jar" -C "$SJ/c1" q && jar cf "$SJ/v2.jar" -C "$SJ/c2" q ) 2> /dev/null \
+    || fail "検査用の jar を作れませんでした"
+cat > "$SJ/c.properties" <<EOF
+project.root=$SJ
+source.folders=src
+library.jars=$SJ/lib/lib.jar
+library.build.tool=none
+source.encoding=UTF-8
+output.folder=$SJ/out
+cache.folder=$SJ/cache
+EOF
+coproc SJSRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache4" 2>/dev/null; }
+SJ_OUT=${SJSRV[0]}
+SJ_IN=${SJSRV[1]}
+SJ_PROC=$SJSRV_PID
+sj_request() {   # $1=要求。OK / NG の行までの応答（#L・#P を除く）を SJ_RESPONSE に入れる
+    printf '%s\n' "$1" >&"$SJ_IN"
+    SJ_RESPONSE=""
+    local line
+    while IFS= read -r -t 300 line <&"$SJ_OUT"; do
+        case "$line" in
+            '#'*) ;;
+            OK*|NG*) SJ_RESPONSE+="$line"$'\n'; return ;;
+            *) SJ_RESPONSE+="$line"$'\n' ;;
+        esac
+    done
+}
+sj_request "ANALYZE${T}$SJ/c.properties"
+grep -qE "^OK${T}analyzed=1" <<<"$SJ_RESPONSE" || fail "1 回目の ANALYZE に失敗しました: ${SJ_RESPONSE:0:80}"
+sj_request "TREE${T}p.Main#go(q.L)${T}callees${T}depth=2"
+grep -q 'q.L#m(java.lang.Object)' <<<"$SJ_RESPONSE" \
+    && ok "1 回目は q.L#m(Object) に解決する" || fail "1 回目の解決先が期待と違います: $SJ_RESPONSE"
+touch -r "$SJ/lib/lib.jar" "$SJ/stamp"
+INODE_BEFORE=$(ls -i "$SJ/lib/lib.jar" | cut -d' ' -f1)
+cat "$SJ/v2.jar" > "$SJ/lib/lib.jar"
+touch -r "$SJ/stamp" "$SJ/lib/lib.jar"
+INODE_AFTER=$(ls -i "$SJ/lib/lib.jar" | cut -d' ' -f1)
+[ "$INODE_BEFORE" = "$INODE_AFTER" ] || fail "jar を同じ inode のまま上書きできていません（この検査の前提が崩れている）"
+sj_request "ANALYZE${T}$SJ/c.properties"
+grep -qE "^OK${T}analyzed=1" <<<"$SJ_RESPONSE" || fail "2 回目の ANALYZE に失敗しました: ${SJ_RESPONSE:0:80}"
+sj_request "TREE${T}p.Main#go(q.L)${T}callees${T}depth=2"
+grep -q 'q.L#m(java.lang.String)' <<<"$SJ_RESPONSE" \
+    && ok "2 回目の ANALYZE は上書きした jar の q.L#m(String) に解決する（新しいプロセスと同じ）" \
+    || fail "2 回目の ANALYZE が上書きする前の jar のまま: $(grep -o 'q.L#m([^)]*)' <<<"$SJ_RESPONSE")"
+printf 'SHUTDOWN\n' >&"$SJ_IN" 2>/dev/null
+cat <&"$SJ_OUT" > /dev/null 2>&1
+wait "$SJ_PROC" 2>/dev/null
 
 echo "== 知らない要求 =="
 OUT=$(session 'NOSUCHCOMMAND\tx\nSHUTDOWN\n')

@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
@@ -40,19 +41,37 @@ import jche.util.Messages;
  * このクラスのクラスローダを親にする。そうしないと拡張が実装する {@code TypeCandidateProvider} が
  * 別のクラスローダから読まれた同名の別クラスになり、{@code ClassCastException} になる。
  * 逆に、拡張が独自に持ち込んだ jar は親に無いのでこちらで読まれる（親優先の通常の委譲）。
+ *
+ * <h2>クラスローダは 1 回の解析ごとに作る</h2>
+ * 覚えておくのは同じ {@link Config}（＝1 回の解析。フェーズBで契約表の拡張と具象クラスの候補の拡張が
+ * 別々に読み込む）の中だけで、次の解析は plugin.folders をディスクから読み直してコンパイルし直す。
+ * 1 つの JVM で解析を続けて走らせる使い方（解析サーバーの ANALYZE・対話モードで解析を繰り返す・
+ * 引数に設定を複数渡す）でも、その時点の拡張が効き、拡張の置き場所の警告（フォルダが無い・コンパイルの失敗）が
+ * 設定ごとの run.log と warnings.txt に載る。以前は JVM の中で使い回していたので、拡張を直しても
+ * 解析サーバーを起動し直すまで古い拡張が動き続け（候補を狭めた古い拡張のせいで呼び出しが黙って落ちる）、
+ * 2 つ目以降の設定には警告が出なかった。
+ *
+ * <h2>コンパイルしたクラスはメモリに持つ</h2>
+ * {@code .java} は使い捨てのフォルダ（OS の一時フォルダ）へコンパイルし、できたクラスをメモリに読み込んでから
+ * フォルダを消す（{@link PluginLoader}）。解析サーバーは次の ANALYZE が失敗したら前の結果を使い続け、
+ * その結果の拡張はクラスを遅れて読み込みうる。決まったフォルダへコンパイルし直すと、前の結果の拡張が
+ * 新しいクラス（や、コンパイルに失敗して空になったフォルダ）を読んでしまう。メモリに持てば、
+ * どのクラスローダも作ったときのクラスだけを読む。
  */
 public final class PluginClassLoaders {
 
     /**
-     * 出力先（キャッシュフォルダ配下）の名前の前半。実行のたびに作り直す。
-     * 後半は plugin.folders のハッシュ。同じ project.root（＝同じキャッシュフォルダ）を指す設定が
-     * 別の plugin.folders を持つとき、同じ JVM で続けて動かすと先に作ったクラスローダの
-     * クラスフォルダを後の設定が消してしまい、遅延ロードで ClassNotFoundException になるため
+     * 以前の版がキャッシュフォルダに残したコンパイル結果のフォルダの名前の前半（後半は plugin.folders のハッシュ）。
+     * いまは使い捨てのフォルダへコンパイルするので、見つけたら消すだけ
      */
-    private static final String CLASSES_DIR_NAME = "plugin-classes";
+    private static final String LEGACY_CLASSES_DIR_NAME = "plugin-classes";
 
-    /** 同じ設定で2回作らないための覚え書き。フェーズAとフェーズBで別々に読み込まれるため */
-    private static final Map<String, ClassLoader> CACHE = new HashMap<>();
+    /**
+     * 同じ解析の中で 2 回作らないための覚え書き（契約表の拡張と具象クラスの候補の拡張が別々に読み込むため）。
+     * 鍵は {@link Config} のインスタンスそのもの（{@code Config} は {@code equals} を持たないので同一性で比べる）で、
+     * 解析ごとに作り直される。弱参照なので、解析結果を手放せば一緒に消える
+     */
+    private static final Map<Config, ClassLoader> CACHE = new WeakHashMap<>();
 
     private PluginClassLoaders() {
     }
@@ -60,18 +79,18 @@ public final class PluginClassLoaders {
     /**
      * plugin.folders から作ったクラスローダ。指定が無ければこのクラスのクラスローダ
      * （＝従来どおり、ツール自身のクラスパスだけを見る）。
+     * 同じ {@code config}（同じ解析）には同じものを返し、別の {@code config} には作り直したものを返す。
      */
     public static synchronized ClassLoader forConfig(Config config) {
         if (config.pluginFolders.isEmpty()) {
             return PluginClassLoaders.class.getClassLoader();
         }
-        String key = config.pluginFolders.toString() + "|" + config.cacheDir;
-        ClassLoader cached = CACHE.get(key);
+        ClassLoader cached = CACHE.get(config);
         if (cached != null) {
             return cached;
         }
         ClassLoader loader = build(config);
-        CACHE.put(key, loader);
+        CACHE.put(config, loader);
         return loader;
     }
 
@@ -87,13 +106,9 @@ public final class PluginClassLoaders {
             classDirs.add(folder);   // フォルダ直下に .class を置く使い方も許す
             collect(folder, jars, sources);
         }
+        deleteLegacyClassesDir(config);
+        Map<String, byte[]> compiled = sources.isEmpty() ? Map.of() : compile(sources, jars);
         List<URL> urls = new ArrayList<>();
-        if (!sources.isEmpty()) {
-            Path out = compile(config, sources, jars);
-            if (out != null) {
-                urls.add(toUrl(out));
-            }
-        }
         for (Path dir : classDirs) {
             urls.add(toUrl(dir));
         }
@@ -101,7 +116,36 @@ public final class PluginClassLoaders {
             urls.add(toUrl(jar));
         }
         urls.removeIf(u -> u == null);
-        return new URLClassLoader(urls.toArray(new URL[0]), PluginClassLoaders.class.getClassLoader());
+        return new PluginLoader(urls.toArray(new URL[0]), PluginClassLoaders.class.getClassLoader(), compiled);
+    }
+
+    /**
+     * plugin.folders の {@code .java} をコンパイルしたクラスを、メモリから定義するクラスローダ。
+     * それ以外（フォルダ直下の {@code .class}・jar）は {@link URLClassLoader} として読む。
+     * コンパイルしたクラスを先に探すのは、以前コンパイル結果のフォルダをクラスパスの先頭に置いていたのと同じ並び。
+     * コンパイルしたクラスは {@code getResource} では引けない（拡張が自分の {@code .class} をリソースとして
+     * 読むことは想定しない）
+     */
+    private static final class PluginLoader extends URLClassLoader {
+        /** 2 進名 → クラスファイルの中身。定義したものから外す */
+        private final Map<String, byte[]> compiled;
+
+        PluginLoader(URL[] urls, ClassLoader parent, Map<String, byte[]> compiled) {
+            super(urls, parent);
+            this.compiled = new HashMap<>(compiled);
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            byte[] bytes;
+            synchronized (compiled) {
+                bytes = compiled.remove(name);
+            }
+            if (bytes != null) {
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+            return super.findClass(name);
+        }
     }
 
     /** フォルダ配下（サブフォルダも見る）の *.jar と *.java を集める。順序は名前順で固定する */
@@ -129,25 +173,35 @@ public final class PluginClassLoaders {
     }
 
     /**
-     * 拡張の .java をコンパイルする。
+     * 拡張の .java をコンパイルし、できたクラスを読み込んで返す。
+     * 出力先は使い捨てのフォルダ（OS の一時フォルダ）で、読み込んだら消す。毎回空のフォルダへ
+     * コンパイルするので、消した .java のクラスが残って動き続けることも無い
      *
-     * @return クラスの出力フォルダ。コンパイラが使えない・失敗した場合は null
+     * @return 2 進名 → クラスファイルの中身。コンパイラが使えない・失敗した場合は空
      */
-    private static Path compile(Config config, List<Path> sources, List<Path> jars) {
+    private static Map<String, byte[]> compile(List<Path> sources, List<Path> jars) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             // JRE で動いている場合。JBang は JDK を取ってくるので通常は起きない
             Log.warn(Messages.get("config.plugin.noCompiler"));
-            return null;
+            return Map.of();
         }
-        Path out = config.cacheDir.resolve(CLASSES_DIR_NAME + "_" + Config.shortHash(config.pluginFolders.toString()));
+        Path out;
         try {
-            deleteRecursively(out);   // 消した .java のクラスが残らないよう、毎回作り直す
-            Files.createDirectories(out);
+            out = Files.createTempDirectory("jche-plugin-classes-");
         } catch (IOException e) {
-            Log.warn(Messages.format("config.plugin.noOutDir", out, e));
-            return null;
+            Log.warn(Messages.format("config.plugin.noOutDir", System.getProperty("java.io.tmpdir"), e));
+            return Map.of();
         }
+        try {
+            return compileInto(compiler, out, sources, jars);
+        } finally {
+            deleteQuietly(out);
+        }
+    }
+
+    private static Map<String, byte[]> compileInto(JavaCompiler compiler, Path out, List<Path> sources,
+                                                   List<Path> jars) {
         StringBuilder classpath = new StringBuilder(System.getProperty("java.class.path", ""));
         for (Path jar : jars) {
             classpath.append(java.io.File.pathSeparator).append(jar);
@@ -171,9 +225,47 @@ public final class PluginClassLoaders {
                     Log.warn("  " + line);
                 }
             }
-            return null;
+            return Map.of();
         }
-        return out;
+        try {
+            return readClasses(out);
+        } catch (IOException | UncheckedIOException e) {
+            // 読めなければ拡張なしで続ける。コンパイルの失敗と同じく、黙って進まない
+            Log.warn(Messages.format("config.plugin.readFailed", out, e));
+            return Map.of();
+        }
+    }
+
+    /** 出力フォルダの .class を 2 進名（{@code a.b.C$D}）ごとに読み込む */
+    private static Map<String, byte[]> readClasses(Path out) throws IOException {
+        Map<String, byte[]> classes = new HashMap<>();
+        try (var walk = Files.walk(out)) {
+            for (Path file : (Iterable<Path>) walk::iterator) {
+                String rel = out.relativize(file).toString();
+                if (!rel.endsWith(".class") || !Files.isRegularFile(file)) {
+                    continue;
+                }
+                String name = rel.substring(0, rel.length() - ".class".length())
+                        .replace(file.getFileSystem().getSeparator(), ".");
+                classes.put(name, Files.readAllBytes(file));
+            }
+        }
+        return classes;
+    }
+
+    /** 以前の版がキャッシュフォルダに残したコンパイル結果を消す（あれば。消せなくても解析には関わらない） */
+    private static void deleteLegacyClassesDir(Config config) {
+        deleteQuietly(config.cacheDir.resolve(
+                LEGACY_CLASSES_DIR_NAME + "_" + Config.shortHash(config.pluginFolders.toString())));
+    }
+
+    /** フォルダを消す。消せなくても解析の結果には関わらないので、{@code Log.info} で知らせるだけにする */
+    private static void deleteQuietly(Path dir) {
+        try {
+            deleteRecursively(dir);
+        } catch (IOException e) {
+            Log.info(Messages.format("config.plugin.notDeleted", dir, e));
+        }
     }
 
     private static void deleteRecursively(Path dir) throws IOException {

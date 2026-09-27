@@ -60,6 +60,10 @@ UTF-8 でないコンソールに日本語を出すと化ける。英語なら�
 （英語の同僚に渡すログだけ英語にする、など）のため。`launcher.properties` に
 `JCHE_LANG=ja` と書けば、起動コマンドの文言もまとめて決まる。
 
+3 の `message.language` は**その設定ファイルだけに効く**。空欄や知らない言語の設定を読んだら 4（OS の言語）に戻り、
+1 つの JVM で前に読んだ設定の言語を引き継がない（引数に設定を複数渡したとき・対話モードで解析を繰り返したとき・
+解析サーバーの ANALYZE。Q17）。
+
 地域（`ja_JP`）は言語（`ja`）だけ見る。地域まで分ける訳を持つ予定が無く、
 持つときになってから足せばよい。訳を持たない言語（`fr` 等）は英語に落ちる。
 
@@ -75,8 +79,10 @@ Eclipse プラグインは `messages.properties` を `ResourceBundle` で読ん�
 - `eclipse-plugin/pom.xml`（`jche/**` を取り込んでプラグインの jar に入れる）
 - VSCode プラグインの配布物（`.vsix`）
 - GitHub Actions の複合アクション
-- **`javac -d <出力先>` で直接コンパイルしている 7 本の検査スクリプト**
-  （`test/cachetail` / `cachevalue` / `conditions` / `contracts` / `dataflow` / `incremental` / `server`）
+- **`javac -d <出力先>` で直接コンパイルしている検査スクリプト**
+  （当時は `test/cachetail` / `cachevalue` / `conditions` / `contracts` / `dataflow` / `incremental` / `server` の 7 本。
+  `test/cachetail` はその後キャッシュを 1 ファイルにしたときに無くなり、今は `cachevalue` / `cacheversion` / `conditions` /
+  `contracts` / `ctorbody` / `dataflow` / `incremental` / `jls` / `pruning` / `server` / `vscode` / `warnings` の 12 本）
 
 properties にすると、このすべてに「リソースを一緒に配る」処理が要る。
 そして 1 か所でも漏れると、**例外も警告も出ずに画面にキー名（`!キー!`）が出るだけ**になる。
@@ -162,6 +168,12 @@ Eclipse プラグインと同じ理由である。`MessageFormat` は `'` を引
 そこで `DATAFLOW_VERSION` を v5 → v6 に上げた。上げる側は
 「呼び出し階層の出力には影響しない」ほう（`docs/cache-split-qa.md`）なので、
 全件再解析は起きるが出力とその期待値は動かない。
+
+（訂正）この「呼び出し階層の出力には影響しない」は誤りだった。条件の説明の文字列は、打ち切った呼び出しの注記
+（`[UNREACHABLE] not called on this path: condition 'verbose' does not hold …` の `verbose`）として
+`call-hierarchy.csv` に出る（`call-conditions.csv` にも出る）。版を上げる理由（再利用したファイルだけ古い文言が残る）は
+そのまま成り立ち、むしろ出力に出るので上げる必要が強い。キャッシュはその後 1 ファイルにまとめて版も 1 つになり、
+条件はブロックの G 行に持つ。版は「迷ったら上げる」にした（[cache-unification-qa.md](cache-unification-qa.md) の Q20・Q22）。
 
 判断の基準はこうなる。**その文字列を作っているのが書き手か読み手か**を見る。
 読み手（`StreamingTreeWalker` の注記、`UnresolvedReport` の理由）なら版は要らない。
@@ -336,3 +348,27 @@ VSCode の表示言語に合わせるので、利用者が言語パックを入�
 貼っても読み飛ばされるコメント行に収まっている。
 
 `test/regression/run.sh` は `JCHE_LANG=en` を輸出しているので、ひな形の照合も英語の文面で書く。
+
+### Q17. 1 つの JVM で設定を続けて読むと、前の設定の `message.language` が残ったのはなぜか
+
+v42 の穴探し（`docs/cache-unification-qa.md` の「v42 の穴探し（形式 v43）」の Q128）で見つかった。
+
+言語は JVM に 1 つの状態（`Messages` の static な値）で、`Config` を作るたびに `Messages.applyConfigured` が
+`message.language` を反映する。以前の `applyConfigured` は、空欄や知らない言語なら「それまでの言語のまま」にしていた。
+1 つ目の設定が `message.language=ja`、2 つ目が空欄だと、2 つ目の run.log と warnings.txt も日本語になった
+（2 つ目だけを動かせば OS の言語＝英語）。対話モードの繰り返しと解析サーバーの ANALYZE（プラグインが `-Djche.lang` を
+渡さないとき）でも同じ。`config.properties` の「空欄なら OS の言語に従う」と Q2 の順（3 の次は 4）に食い違っていた。
+
+**今の決まり: 空欄や知らない言語の設定を読んだら、起動時の言語（OS の言語）に戻す。** `Messages` が起動時の言語を
+覚えておき（`baseline`）、`applyConfigured` はそこへ戻す。環境変数・システムプロパティで決まっているとき（Q2 の 1・2）は
+今までどおり何もしない。`Messages.setLanguage`（プラグインが画面の言語に合わせるための口。いまは Java 側からは
+呼ばれていない）で決めた言語は、戻り先にもなる（プラグインが選んだ言語を、その JVM の「OS の言語」として扱う）。
+
+**却下した案**: 1 回の解析・サーバーの ANALYZE の始まりで言語を戻す。入口ごとに足す必要があり、`Config` を作る経路を
+足したときに忘れうる。`Config` が必ず通る `applyConfigured` で戻せば 1 か所で済む。
+
+**費用**: なし（CSV は言語に関わらず英語なので、出力は変わらない。Q6）。
+
+**検査**: `test/nls` の 5（`NlsProbe configured=ja configured=` が en、`-Duser.language=ja` で `configured=en configured=`
+が ja）。`test/warnings` の 8（1 つ目が ja、2 つ目が空欄の設定を 1 回で動かし、2 つ目の warnings.txt が英語）。どちらも
+直す前の版で落ちる。

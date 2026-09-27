@@ -1,19 +1,18 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.cache;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * 式の「出所」。データフロー解析で具象クラスを特定するための最小の表現。
  *
  * {@link RecvKind} が「絞れなかった理由の説明」なのに対し、こちらは
- * 「追跡するための材料」。1つの文字列に詰めてキャッシュへ書き出す。
+ * 「追跡するための材料」。書き手の中で1つの文字列に詰めて扱う（キャッシュへはこの形では書かず、
+ * 値グラフのノードとして書く。下の「書き手の中だけで使う」）。
  * <pre>
  *   T:jp.co.xxx.UserDaoImpl       new された具象型（その場で確定）
  *   A:2                           囲みメソッドの3番目の引数（呼び出し元まで遡って初めて分かる）
  *   M:jp.co.xxx.Factory#create()  メソッドの戻り値（その宣言のreturnを見れば分かる）
- *   F:jp.co.xxx.Service#dao       フィールド変数
+ *   F:jp.co.xxx.Service#dao       フィールド変数（this のもの）
+ *   O:jp.co.xxx.Service#dao       別のインスタンスのフィールド（other.dao。コンストラクタ実引数を当てない）
  *   L:jp.co.xxx.UserDaoImpl       文字列リテラル（またはコンパイル時定数）
  *   V:false                       コンパイル時定数の値（条件分岐の判定に使う）
  *   Z:jp.co.xxx.App#lambda$run$0()  ラムダ／メソッド参照が実装しているメソッド
@@ -45,18 +44,18 @@ import java.util.List;
  *   s=書かれた型     … 呼び出しをソースに書いたときのレシーバの型。宣言元と違うときだけ
  * </pre>
  *
- * <h2>入れ子に段数の上限は無い</h2>
- * この文法自体は、レシーバも実引数も何段でも入れ子にできる（{@code {}} で囲むため、
- * 境界は {@link #indexAtTop} で判定できる）。読み手が受け取る出所は
- * {@code jche.graph.OriginRenderer} が値グラフ（dataflow 側の N 行）から組み直すので、
- * 段数の上限は無い。要素を走るときは素の {@code split(";")} ではなく
- * {@link #entriesOf} と {@link #unnest} を通すこと。
+ * <h2>書き手の中だけで使う</h2>
+ * この文字列を作るのは書き手（{@code jche.analysis.OriginTracker}）だけで、形には上限がある
+ * （実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段。{@code {}} で囲んで入れ子にする）。
+ * キャッシュの値（呼び出し箇所・{@code R} 行・{@code J} 行・条件）はもうこの形では書かず、値グラフのノードを指す
+ * （{@code docs/cache-split-qa.md} の Q22、{@link CacheFormat} の「値はノードで持つ」）。
+ * 書き手に残っているのは、ローカル変数の表で代入の食い違いを見る判定と、値グラフの葉の判定のため。
  *
- * <p>一方、{@code jche.analysis.OriginTracker} が作る形には、まだ上限がある
- * （実引数は1段、レシーバは {@link #MAX_RECEIVER_DEPTH} 段）。呼び出し箇所については
- * この形はもう作っていない（{@code docs/cache-split-qa.md} の Q22）。
- * 残っているのは {@code R} 行（戻り値の出所）・{@code J} 行（フィールドへの代入）・
- * {@code X} 行（拡張の証拠）と、値グラフの葉の判定のため。
+ * <p>読み手はこの文字列を読まない。キャッシュの値グラフを値の表（{@code jche.graph.ValueStore}）に取り込み、
+ * 種別・値・実引数・レシーバを列で引く。だから値が文法の区切り（{@code | ; { }}）を含んでも読み違えない
+ * （以前は読み手も出所の文字列を組み直して解析していた。{@code docs/cache-unification-qa.md} の「読み手が値の表を読む」）。
+ * このクラスに残るのは、種別の文字（読み手もノードの種別として使う）と、書き手が文字列を作り・頭を取るための
+ * 道具だけ。人が読むための出力（{@link CacheDump}）も同じ文法で書く。
  */
 public final class Origin {
 
@@ -66,8 +65,18 @@ public final class Origin {
     public static final char PARAM = 'A';
     /** メソッドの戻り値。値はメソッドキー（typeFqn#method(params)） */
     public static final char RETURN = 'M';
-    /** フィールド変数。値は typeFqn#fieldName */
+    /** フィールド変数（今のオブジェクト＝this のインスタンスフィールドか、static フィールド）。値は typeFqn#fieldName */
     public static final char FIELD = 'F';
+    /**
+     * {@code this} 以外で修飾したインスタンスフィールド（{@code other.dao}・{@code getPeer().mode}・
+     * {@code Outer.this.dao}）。値は typeFqn#fieldName。
+     *
+     * <p>{@link #FIELD} は今のオブジェクトのフィールドで、読み手は経路で分かっている今のオブジェクトの
+     * コンストラクタ実引数を当てる。こちらはどのインスタンスか分からないので、コンストラクタ実引数は当てず、
+     * どのインスタンスでも同じになる値（初期化子やコンストラクタで入れる {@code new}・捕捉した引数を使わないラムダ）だけを使う
+     * （jche.graph.DataflowResolver。docs/value-safety-qa.md の Q19・Q25）
+     */
+    public static final char OTHER_FIELD = 'O';
     /** 文字列リテラル（またはコンパイル時定数）。値はその文字列 */
     public static final char LITERAL = 'L';
     /** Class.forName(引数) で名前指定された型。値は0始まりの引数位置 */
@@ -119,12 +128,61 @@ public final class Origin {
      */
     public static final String STATIC_RECV = "s";
     /**
-     * 書き出す側（{@code jche.analysis.OriginTracker}）がレシーバの出所を何段まで入れ子にするか
-     * （invoke ← getMethod ← forName/getClass で3段）。読み手が受け取る形には上限が無い
+     * 書き手（{@code jche.analysis.OriginTracker}）が出所の文字列の中でレシーバの出所を何段まで入れ子にするか
+     * （invoke ← getMethod ← forName/getClass で3段）。キャッシュへ書く値グラフ（{@code jche.analysis.ValueGraph}）
+     * はこの上限に掛からない
      */
     public static final int MAX_RECEIVER_DEPTH = 3;
 
+    /** {@link #isNameShaped} が名前の形とみなす文字列の長さの上限 */
+    public static final int MAX_NAME_LENGTH = 64;
+
     private Origin() {
+    }
+
+    /**
+     * 文字列が「完全修飾クラス名の形」か「識別子の形」か（{@link #MAX_NAME_LENGTH} 文字以内）。
+     *
+     * クラス名は「ドットを含み、各要素が識別子で、最後の要素が英大文字で始まる」、
+     * メソッド名・フィールド名は「識別子1つ」。書き手（{@code jche.analysis.OriginTracker}）が
+     * 文字列リテラルを出所（{@link #LITERAL}）として残すのはこの形のものだけで、
+     * この形の値は出所の文法の区切り（{@code | ; { } =}）を含まない
+     */
+    public static boolean isNameShaped(String value) {
+        if (value == null || value.isEmpty() || value.length() > MAX_NAME_LENGTH) {
+            return false;
+        }
+        if (value.indexOf('.') < 0) {
+            // 識別子の形。getMethod("run") のようにメソッド名として渡されるもの
+            if (!Character.isJavaIdentifierStart(value.charAt(0))) {
+                return false;
+            }
+            for (int i = 1; i < value.length(); i++) {
+                if (!Character.isJavaIdentifierPart(value.charAt(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        int last = 0;
+        for (int i = 0; i <= value.length(); i++) {
+            if (i < value.length() && value.charAt(i) != '.') {
+                char c = value.charAt(i);
+                if (!Character.isJavaIdentifierPart(c) && c != '$') {
+                    return false;
+                }
+                continue;
+            }
+            if (i == last) {
+                return false;   // 空の要素（先頭・末尾・連続するドット）
+            }
+            if (!Character.isJavaIdentifierStart(value.charAt(last))) {
+                return false;
+            }
+            last = i + 1;
+        }
+        int dot = value.lastIndexOf('.');
+        return Character.isUpperCase(value.charAt(dot + 1));
     }
 
     public static boolean isUnknown(String origin) {
@@ -163,12 +221,6 @@ public final class Origin {
         return (bar < 0) ? origin.substring(i + 1) : origin.substring(i + 1, bar);
     }
 
-    /** "T:jp.co.X|0=..." の "0=..." の部分。無ければ null */
-    public static String argsOf(String origin) {
-        int bar = (origin == null) ? -1 : indexAtTop(origin, ARGS, 0);
-        return (bar < 0) ? null : origin.substring(bar + 1);
-    }
-
     /** 実引数リストを落とした形。引数の出所を入れ子にしないために使う */
     public static String head(String origin) {
         int bar = (origin == null) ? -1 : indexAtTop(origin, ARGS, 0);
@@ -187,111 +239,5 @@ public final class Origin {
     /** リストの要素として入れ子にする形。自身が実引数リストを持つなら {} で囲む */
     public static String nest(String origin) {
         return (origin.indexOf(ARGS) < 0) ? origin : "{" + origin + "}";
-    }
-
-    /** "0=T:jp.co.X;2=A:1" から指定位置の出所を取り出す。無ければ null */
-    public static String argAt(String args, int index) {
-        return entryAt(args, String.valueOf(index));
-    }
-
-    /**
-     * メソッド呼び出しの出所から、ソースに書かれたレシーバの型（s=...）。
-     * 宣言元と同じか分からなければ null
-     */
-    public static String staticReceiverOf(String origin) {
-        return entryAt(argsOf(origin), STATIC_RECV);
-    }
-
-    /** メソッド呼び出しの出所から、そのレシーバの出所（r=...）。無ければ null */
-    public static String receiverOf(String origin) {
-        return entryAt(argsOf(origin), RECEIVER);
-    }
-
-    /** メソッド呼び出しの出所から、実引数の数（n=...）。無ければ -1 */
-    public static int argCountOf(String origin) {
-        String n = entryAt(argsOf(origin), ARG_COUNT);
-        if (n == null) {
-            return -1;
-        }
-        try {
-            return Integer.parseInt(n);
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    /**
-     * 実引数リストを、入れ子の外側の {@code ';'} で分けて返す。要素は {@code 位置=出所} の形。
-     *
-     * 素の {@code split(";")} を使うと、入れ子（{@code {}} の中）の区切りでも切れてしまう。
-     * 入れ子は無制限に深くなりうるので、要素を走るときは必ずこちらを通す
-     */
-    public static List<String> entriesOf(String args) {
-        if (args == null || args.isEmpty()) {
-            return List.of();
-        }
-        List<String> entries = new ArrayList<>(4);
-        int start = 0;
-        while (start <= args.length()) {
-            int end = indexAtTop(args, ';', start);
-            if (end < 0) {
-                end = args.length();
-            }
-            if (end > start) {
-                entries.add(args.substring(start, end));
-            }
-            if (end >= args.length()) {
-                break;
-            }
-            start = end + 1;
-        }
-        return entries;
-    }
-
-    /** 入れ子として {@code {}} で囲まれていれば外す（{@link #nest} の逆） */
-    public static String unnest(String value) {
-        return (value != null && value.length() >= 2
-                && value.charAt(0) == '{' && value.charAt(value.length() - 1) == '}')
-                ? value.substring(1, value.length() - 1) : value;
-    }
-
-    /** 実引数リストからキー（位置・r・n）の値を取り出す。{} で囲まれていれば外す。無ければ null */
-    public static String entryAt(String args, String key) {
-        if (args == null || args.isEmpty()) {
-            return null;
-        }
-        String prefix = key + "=";
-        int start = 0;
-        while (start <= args.length()) {
-            int end = indexAtTop(args, ';', start);
-            if (end < 0) {
-                end = args.length();
-            }
-            String entry = args.substring(start, end);
-            if (entry.startsWith(prefix)) {
-                String v = entry.substring(prefix.length());
-                if (v.length() >= 2 && v.charAt(0) == '{' && v.charAt(v.length() - 1) == '}') {
-                    v = v.substring(1, v.length() - 1);
-                }
-                return v;
-            }
-            if (end >= args.length()) {
-                break;
-            }
-            start = end + 1;
-        }
-        return null;
-    }
-
-    /**
-     * 経路上で「値」として突き合わせられる出所か、その値を返す。値でなければ null。
-     *
-     * {@link #CONST}（条件分岐用の定数）のほか、{@link #LITERAL}（識別子の形の文字列）と
-     * {@link #CLASS}（X.class）も値として扱う。同じ文字列リテラルが、どちらの種別で
-     * 記録されたかによって比較できなくなるのを避けるため。
-     */
-    public static String constantValueOf(String origin) {
-        char kind = kindOf(origin);
-        return (kind == CONST || kind == LITERAL || kind == CLASS) ? valueOf(origin) : null;
     }
 }

@@ -11,7 +11,8 @@
 # 2. 同じソースを JDK 26 の javac で --release 26 -parameters でコンパイルする
 # 3. JlsCheck.java（JDK 26 で直接実行）が次の 2 つを検査する
 #    - expect.tsv: 節ごとに人が書いた期待値（何が何を呼ぶはずか・何が宣言されるはずか）を、
-#      出力 CSV とキャッシュに当てる。1 行が 1 テストで、節番号と説明を持つ
+#      出力 CSV とキャッシュに当てる。1 行が 1 テストで、節番号と説明を持つ。キャッシュは
+#      jche.cache.CacheDump で記号を 4 列に戻した形（build/cache-dump.tsv）を渡す
 #    - javac のクラスファイル: 型・宣言・呼び出し（呼び出し先がこのソースのもの）・ラムダ・
 #      ブリッジメソッドを、ツールのキャッシュの事実と突き合わせる
 #
@@ -59,4 +60,10 @@ if [ -z "$OUT" ] || [ ! -f "$OUT/call-hierarchy.csv" ] || [ -z "$CACHE" ]; then
     echo "  NG   解析できませんでした（test/jls/build/run.log）"; tail -20 build/run.log; echo "FAIL"; exit 1
 fi
 
-"$JAVA26" -Dstdout.encoding=UTF-8 JlsCheck.java expect.tsv "$OUT" "$CACHE" build/javac
+# キャッシュはメソッドを記号（S 行の番号）で指すので、名前で照合できるよう 4 列に戻した形を渡す
+if ! "$JAVA_BIN" -cp "$CLASSES:$CP" jche.cache.CacheDump "$CACHE" > build/cache-dump.tsv 2> build/cache-dump.log; then
+    echo "  NG   キャッシュを読める形にできませんでした（test/jls/build/cache-dump.log）"
+    grep -v JAVA_TOOL_OPTIONS build/cache-dump.log | tail -5; echo "FAIL"; exit 1
+fi
+
+"$JAVA26" -Dstdout.encoding=UTF-8 JlsCheck.java expect.tsv "$OUT" build/cache-dump.tsv build/javac

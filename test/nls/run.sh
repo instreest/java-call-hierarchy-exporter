@@ -232,6 +232,12 @@ else
     probe "jche.lang=ja で日本語" "menu= q) 終了" "" -Djche.lang=ja
     # 設定ファイル（message.language）
     probe "設定ファイルの message.language=ja が効く" "language=ja" "" configured=ja
+    # 1 つの JVM で設定を続けて読む（引数に設定を複数渡す・対話モードで繰り返す・サーバーの ANALYZE）とき、
+    # 空欄の設定は前の設定の言語を引き継がず、OS の言語に戻る
+    probe "空欄の設定は前の設定の言語を引き継がない（OS が英語）" "language=en" "LC_ALL=C LANG=C" \
+        configured=ja configured=
+    probe "空欄の設定は前の設定の言語を引き継がない（OS が日本語）" "language=ja" "" -Duser.language=ja \
+        configured=en configured=
     # 優先順位: 環境変数・システムプロパティ > 設定ファイル
     probe "環境変数は設定ファイルより強い" "language=en" "JCHE_LANG=en" configured=ja
     probe "システムプロパティも設定ファイルより強い" "language=en" "" -Djche.lang=en configured=ja

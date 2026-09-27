@@ -50,18 +50,22 @@ public record OverrideFact(MethodRef ref, String overriddenKeys) {
         return overriddenKeys.isEmpty() ? List.of() : List.of(overriddenKeys.split(SEP));
     }
 
-    public String toRow() {
-        return CacheFormat.joinRow("O", ref.pkg(), ref.typeFqn(), ref.name(), ref.paramSig(),
-                overriddenKeys);
+    /** {@code O 記号 上書き先のキー}。記号はブロックの記号表（{@link SymbolTable}）の番号 */
+    public String toRow(SymbolTable symbols) {
+        return CacheFormat.joinRow("O", symbols.columnOf(ref), overriddenKeys);
     }
 
-    /** 列が足りない・上書き先が空なら null（持っていても意味の無い行は読み飛ばす） */
-    public static OverrideFact fromRow(String[] cols) {
-        if (cols.length < 6) {
+    /**
+     * 列が足りない・記号が引けない・上書き先が空なら null（持っていても意味の無い行は読み飛ばす）
+     *
+     * @param symbols ブロックの記号表（{@link SymbolTable.Reader#array}）
+     */
+    public static OverrideFact fromRow(String[] cols, MethodRef[] symbols) {
+        if (cols.length < 3) {
             return null;
         }
-        MethodRef ref = MethodRef.fromColumns(cols, 1);
-        String keys = CacheFormat.columnAt(cols, 5);
+        MethodRef ref = SymbolTable.resolve(symbols, cols[1]);
+        String keys = cols[2];
         if (ref == null || keys.isEmpty()) {
             return null;
         }

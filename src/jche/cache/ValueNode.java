@@ -2,9 +2,9 @@
 package jche.cache;
 
 /**
- * 値グラフのノード1件（dataflow-cache.tsv の N 行）。「この式の値はどこから来たか」を1つ表す。
+ * 値グラフのノード1件（キャッシュの N 行）。「この式の値はどこから来たか」を1つ表す。
  *
- * <h2>{@link Origin}（analysis 側の出所）との違い</h2>
+ * <h2>{@link Origin}（出所の文字列）との違い</h2>
  * {@link Origin} は入れ子を1本の文字列に展開する。読むのは簡単だが、深さ d・引数 k で
  * 文字列が k^d に膨らむため、「実引数は1段」「レシーバは3段」という上限が構造的に必要だった。
  * こちらは<b>1つの式を1ノードとして1回だけ書き、参照はノード番号で行う</b>ので、
@@ -12,12 +12,12 @@ package jche.cache;
  *
  * <h2>番号はブロック内ローカル</h2>
  * {@link #id} は 1 ファイル（キャッシュの1ブロック）の中だけで通じる 0 始まりの連番で、
- * AST を辿った順に振る。ブロックをまるごと書き写す差分更新（{@code CacheUpdater} のパス5b）で
+ * AST を辿った順に振る。ブロックをまるごと書き写す差分更新（{@code CacheUpdater} のパス5）で
  * 参照が壊れないよう、ブロックの外を指すことは無い。同じソースなら同じ番号になる（決定的）。
  *
  * <h2>値の長さに上限が無い</h2>
  * {@link #value} は SQL やログ文言のような長い文字列もそのまま持つ。
- * 行形式を壊す文字は {@link CacheFormat#escape} で符号化して書く。
+ * 行形式を壊す文字は、どの列とも同じく {@link CacheFormat#joinRow} が符号化して書く。
  *
  * @param id       ブロック内の番号（0 始まり）
  * @param kind     種別。{@link Origin} の種別と同じ文字を使う（{@link Origin#NEW} 等）
@@ -42,11 +42,10 @@ public record ValueNode(int id, char kind, String value, int recv, String args, 
 
     public String toRow() {
         return CacheFormat.joinRow("N", String.valueOf(id), String.valueOf(kind),
-                CacheFormat.escape(value), String.valueOf(recv), args, String.valueOf(argCount),
-                CacheFormat.escape(staticRecv));
+                value, String.valueOf(recv), args, String.valueOf(argCount), staticRecv);
     }
 
-    /** 列が足りなければ null */
+    /** 列が足りなければ null。列は {@link CacheFormat#columnsOf} で符号化を戻したもの */
     public static ValueNode fromRow(String[] cols) {
         if (cols.length < 6) {
             return null;
@@ -56,11 +55,11 @@ public record ValueNode(int id, char kind, String value, int recv, String args, 
             return null;
         }
         return new ValueNode(intOf(CacheFormat.columnAt(cols, 1), -1), kind.charAt(0),
-                CacheFormat.unescape(CacheFormat.columnAt(cols, 3)),
+                CacheFormat.columnAt(cols, 3),
                 intOf(CacheFormat.columnAt(cols, 4), NONE),
                 CacheFormat.columnAt(cols, 5),
                 intOf(CacheFormat.columnAt(cols, 6), -1),
-                CacheFormat.unescape(CacheFormat.columnAt(cols, 7)));
+                CacheFormat.columnAt(cols, 7));
     }
 
     /** 数字でなければ {@code fallback}。行から読む値はすべてここを通す */

@@ -34,7 +34,8 @@ package jche.server;
  *   → EXPORT  &lt;メソッドキー&gt;  callers  /path/out.csv  depth=5 ...
  *   ← OK  rows=1832
  *
- *   → CANCEL      実行中の ANALYZE を止める（読み取りスレッドが即座に拾う）
+ *   → CANCEL      それまでに送った ANALYZE（実行中のものと、まだ始まっていないもの）を止める
+ *                 （読み取りスレッドが即座に拾う。後から送る ANALYZE には効かない）
  *   → SHUTDOWN
  * </pre>
  *

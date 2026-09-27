@@ -22,6 +22,9 @@ Issue なし（依頼: 「AST 解析結果の出力が Java 言語仕様を満�
 - 節番号と各節の主張を JLS SE 26 の原文（docs.oracle.com）と照合し、誤りを直した（Q19）
 - キャッシュの版を `jche-cache-v29` に上げた（C 行・H 行・D 行が増え、C 行に修飾する型の列を足したため）
 - 回帰テストの期待値は `Holder.viaCollection()` の outDegree だけが変わった（Q15）
+- **その後**: 実行時に動く実装の選び方（§8.4.8・§9.4.1・§15.12.4.4）と、暗黙の `super()` の呼び出し先（§15.9.5.1）の
+  節を足した。`JlsCheck` の解決は親インターフェースの private・static を飛ばし、ブリッジの突き合わせは H 行の
+  継承した実装も見るようにした（Q20。形式 `jche-cache-v43`）
 
 ---
 
@@ -59,7 +62,7 @@ javac との突き合わせで見つかった。
 | invoke 命令のうち、呼び出し先がこのソースで宣言されたもの | C 行 | （呼び出し元・行・呼び出し先）の組 |
 | `LambdaMetafactory` の invokedynamic | D 行のラムダ・M 行 | ラムダを囲む本物のメソッドと行（Q4） |
 | invokevirtual / invokeinterface の所有型 | C 行の qualifier（空なら呼び出し先を宣言した型） | 呼び出しを修飾する型（§13.1。Q18） |
-| ブリッジメソッド | O 行 | ブリッジのシグネチャが O 行の上書き先にあること |
+| ブリッジメソッド | O 行、または H 行の「継承した実装」（8 列目） | ブリッジのシグネチャが O 行の上書き先にあること。親クラスから継承したメソッドがインターフェースのメソッドを実装するためのブリッジなら、ブリッジを置いた型の H 行の継承した実装にあること（Q20） |
 
 クラスファイルは JDK 24 で確定した `java.lang.classfile` で読む。外部のライブラリ（ASM など）を
 持ち込まずに済み、検査プログラム（`JlsCheck.java`）は JDK 26 でそのまま実行できる。
@@ -67,6 +70,7 @@ javac との突き合わせで見つかった。
 呼び出し先の宣言は、JVMS 5.4.3.3 の手順（所有型、その親クラス、親インターフェースの順）で引き直す。
 javac は JLS 13.1 の通り「呼び出しを修飾する型」（受け手の静的な型）を書くので、
 `sub.inherited()` の呼び出し先は宣言した型ではなく `Sub` になっているためである。
+親インターフェースの private・static メソッドは、手順 3・4 のとおり解決の対象にしない（Q20）。
 
 ## Q4. ラムダの合成メソッドの名前が javac と違う
 
@@ -306,3 +310,51 @@ C 行の qualifier の照合を足した。拡張 for 文の `iterator()`・try-
 
 `test/demo` のコメントの修正は行数を変えていないので、回帰テストの期待値は変わらない。
 
+
+## Q20. 実行時に動く実装の選び方と、暗黙の `super()` の呼び出し先の節を、どう足したか
+
+v42 の穴探しで、読み手の実装の探し方（`CallGraph#search`）と暗黙の `super()` の呼び出し先が javac・JVM の選び方と
+違っていたのを直した（直し方と理由は [jls-conformance-qa.md](jls-conformance-qa.md) の Q26〜Q36、キャッシュの側は
+[cache-unification-qa.md](cache-unification-qa.md) の「v42 の穴探し（形式 v43）」の Q99・Q110・Q127）。ここでは
+検査の側で決めたことを書く。
+
+足した節と題材:
+
+| 節 | 題材 | 見ること |
+|---|---|---|
+| §8.4.8 | `s08_04_08/ClassWins.java`（`class-wins-*`・`private-super-*`） | 親クラスの連鎖の実装が、名前や深さに関わらず親インターフェースの default に勝つ。親クラスの private は継承されない |
+| §8.4.8.1 | `s08_04_08/InheritedImpl.java`（`inherited-impl-*`） | 親クラスから継承したメソッドが、型引数を置き換えたインターフェースのメソッドを実装する（その型から見たときだけ） |
+| §9.4.1 | `s09_04_01/MostSpecific.java`（`most-specific-*`・`static-not-*`） | 最も特定的な default が選ばれる。インターフェースの static は継承されない |
+| §14.14.2・§14.20.3.1 | `EnhancedFor.java`・`TryWithResources.java`（`foreach-inherited-*`・`twr-inherited-*`） | 親クラスから継承した `iterator()` / `close()` が呼び出し先になり、その本体へ届く |
+| §15.9.5.1 | `s15_09_05/GenericSuper.java`（`anonymous-generic-*`） | 親がジェネリックな匿名クラスの合成コンストラクタが、型引数を置き換えた引数の親コンストラクタを呼ぶ（`T`・`T[]`・`T...`・ダイヤモンド） |
+| §15.12.4.4 | `s15_12_04_04/Dispatch.java`（`jdk-interface-*`） | JDK のインターフェース（`Runnable`）の型で呼んでも、`Thread` から呼び戻されても、動くのは親クラスの実装 |
+
+§15.12.4.4 の実行時の選び方はバイトコードに現れないので（Q2）、多くは期待値（`csv` / `nocsv`）で見る。
+`nocsv` の行（動かない default・static・上書きされた宣言が呼び出し先に出ないこと）を必ず対にして置いた。
+「動くものが出る」だけを見ると、動かないものも一緒に並べる読み違いを見逃すからである。
+
+**`JlsCheck` の解決を JVMS に合わせた。** 呼び出し先の宣言を引き直す `resolve` は、親インターフェースの private・static
+メソッドを飛ばす（JVMS 5.4.3.3 の手順 3・4）。飛ばさないと、`class MsC3 implements MsAaStatic, MsApi`（`MsAaStatic` の
+static な `m()` が名前で先に並ぶ）の `new MsC3().m()` を static の宣言に引き直し、ツールの（正しい）C 行と食い違う。
+検査の側が仕様からずれると、ツールを誤った方へ直させることになる（Q5 と同じ教訓）。
+
+**ブリッジの突き合わせを広げた。** `class UserRepo extends BaseRepo implements Repo<User>` で javac が `UserRepo` に置く
+ブリッジ `save(Object)` は、`BaseRepo.save(User)` を呼ぶ。この実装の関係は宣言ごとの O 行には書けない（`BaseRepo` は
+`Repo` を実装しない）ので、ツールは `UserRepo` の H 行の 8 列目（継承した実装）に持つ。突き合わせは「O 行か、
+ブリッジを置いた型の H 行の継承した実装にあること」を見る。javac が作るブリッジが、そのまま書き手の事実の正解になる。
+
+**`test/jls` に置けない形もある。** 次の 2 つは `test/pruning` / `test/ctorbody` で見る。
+
+- JLS と JVM の解決が食い違う形（`class PRes extends PBase implements PApi` で `PBase.close()` が private）。
+  javac でコンパイルしたものは実行時に `IllegalAccessError` になる（JVM の解決は private を除かない）が、JLS の上で
+  呼ばれるのは `PApi.close()` で、ツールは JLS に合わせる。突き合わせは JVM の解決を真似るので食い違う
+  （`test/pruning` の `DtwrP`）
+- 暗黙の `super()` の候補を決めきれない形（最も特殊な可変長引数・見えない引数なしのコンストラクタ）。ツールは候補
+  すべてに辺を張る（余計な辺は安全側）ので、javac の 1 本と数が合わない。javac で確かめた呼び出し先が入っていることを
+  `test/ctorbody` の 4 で見る。匿名クラスは 1 本に決まるので、§15.9.5.1 は javac との突き合わせにも載る
+
+**既存の節の期待値の変化**: `jls.s15_27.Lambdas.run` の `Runnable.run()` の CHA の候補に、§15.12.4.4 の題材 `DTask`
+（`Runnable` を実装）の `DTaskBase.run` が加わった。題材を足したことによるもので、ほかの節の期待値は変わらない。
+題材を変えたので、`test/cacheversion` の記録（`facts.txt`）も更新した。
+
+どの節も、直す前の版で落ちることを確かめた（`GenericSuper.java` は期待値 7 件と javac との突き合わせ 7 件が落ちる）。
