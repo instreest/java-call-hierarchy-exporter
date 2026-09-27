@@ -153,7 +153,7 @@ jobs:
           rem 出力はリダイレクトせず、そのまま CI のログへ流す。ログファイルに入れてしまうと、
           rem 起動コマンドがバッチとして致命的に失敗したとき（cmd がその場でバッチ処理ごと打ち切る）に
           rem 原因のメッセージがファイルの中に残ったまま type までたどり着けず、何も分からなくなる
-          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          call java-call-hierarchy-exporter.cmd test\regression\entry\jche.properties
           echo [launcher] exit=%ERRORLEVEL%
           rem 出力フォルダ名は <日時>_demo で実行のたびに変わる。cmd の if exist はワイルドカードを
           rem 「最後のファイル名」の位置でしか解釈しないので、途中のフォルダ名に * を書いた条件は常に偽になる。
@@ -190,7 +190,7 @@ jobs:
             echo JCHE_JBANG_OPTS=
             echo JCHE_ALLOW_DOWNLOAD=
           )
-          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          call java-call-hierarchy-exporter.cmd test\regression\entry\jche.properties
           set "CODE=%ERRORLEVEL%"
           echo [launcher] exit=%CODE%
           del launcher.properties
@@ -268,7 +268,7 @@ jobs:
           test -s "$METHODS_CSV"
           test -s "$RUN_LOG"
           # 生成した設定ファイルの複製が出力フォルダに入っていること
-          test -f "$OUTPUT_DIR/config.properties"
+          test -f "$OUTPUT_DIR/jche.properties"
           head -1 "$CSV"
 
       # AST 解析キャッシュの引き継ぎ。1 回目の解析でできた .cache/（uses: ./ なのでワークスペース直下）を
@@ -306,8 +306,8 @@ jobs:
         uses: ./
         with:
           config: |
-            test/regression/whole/config.properties
-            test/regression/entry/config.properties
+            test/regression/whole/jche.properties
+            test/regression/entry/jche.properties
           java-version: ''
           cache: 'false'
           artifact-name: call-hierarchy-regression-configs

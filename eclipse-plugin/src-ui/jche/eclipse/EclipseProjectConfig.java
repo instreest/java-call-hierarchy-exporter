@@ -20,11 +20,11 @@ import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
 
 /**
- * Eclipse のプロジェクト構成から、解析の設定（config.properties 相当）をその場で組み立てる。
+ * Eclipse のプロジェクト構成から、解析の設定（jche.properties 相当）をその場で組み立てる。
  *
- * <p>これがあるおかげで、利用者は config.properties を書かなくてもビューを使える。
+ * <p>これがあるおかげで、利用者は jche.properties を書かなくてもビューを使える。
  * Eclipse は必要な情報（ソースフォルダ・依存 jar・文字コード・コンパイラー準拠レベル）を
- * すでに持っているので、それを解析側の設定（{@code config.properties}）の語彙へ翻訳しているだけである。
+ * すでに持っているので、それを解析側の設定（{@code jche.properties}）の語彙へ翻訳しているだけである。
  * <b>ソースフォルダが標準的な配置（src/main/java 等）でなくても、Eclipse のクラスパスに
  * 載ってさえいれば解析できる</b>のは、これがあるからである。
  *
@@ -199,7 +199,7 @@ final class EclipseProjectConfig {
         "output.folder", "cache.folder",
     };
 
-    /** 自動生成した設定を config.properties の体裁で書き出す（保存用・子プロセスへ渡す用） */
+    /** 自動生成した設定を jche.properties の体裁で書き出す（保存用・子プロセスへ渡す用） */
     static String toFileText(Properties p) {
         StringBuilder sb = new StringBuilder();
         // 生成したファイルの見出しも、利用者が読むものなので訳す。行ごとに # を付けるのは
@@ -223,24 +223,21 @@ final class EclipseProjectConfig {
     }
 
     /**
-     * properties の値として書くときに、区切りと誤読される文字を逃がす（バックスラッシュと先頭の空白）。
+     * 設定ファイルの値として書く。そのまま書く。
      *
      * <p>Windows のパスは {@code C:\\Users\\taro\\.m2\\repository\\org\\unbescape\\...} のように
-     * バックスラッシュを含む。{@link java.util.Properties#load} はこれをエスケープとして読むため、
-     * 逃がさずに書くと「バックスラッシュ + u」が Unicode エスケープと解釈され、
-     * 「Malformed \\uxxxx encoding」で解析ごと失敗する（jar の名前が u で始まるだけで起きる。
-     * 実際 spring-petclinic は Thymeleaf 経由で unbescape に依存していて、これを踏む）。
-     * 例外にならない場合も {@code C:\\temp} が {@code C:temp} になるなど、パスが静かに壊れる。
+     * バックスラッシュを含む。解析側の読み手（{@code jche.config.ConfigFile}）はこれをエスケープとして
+     * 読まないので、逃がさずにそのまま書く（以前は {@link java.util.Properties#load} で読んでいたため
+     * {@code \\} と重ねていた。今それをすると 2 つのバックスラッシュのまま読まれる）。
+     * 往復できることは {@code test/plugin-config/run.sh} が、同じ読み手で読み戻して確かめる。
      *
-     * <p>VSCode 側の同じ処理（{@code vscode-plugin/src/config.ts} の {@code escapeProperty}）と
-     * 同じ規則にしてある。
+     * <p>VSCode 側（{@code vscode-plugin/src/config.ts} の {@code generatedConfigText}）も同じくそのまま書く。
      *
      * <p>このコメントでバックスラッシュを二重に書いているのは、javac が
      * <b>コメントの中まで</b> Unicode エスケープを先に処理するためで、1つだと
      * 「illegal unicode escape」でコンパイルできない。
      */
     private static String escapeValue(String value) {
-        String escaped = value.replace("\\", "\\\\");
-        return escaped.startsWith(" ") ? "\\" + escaped : escaped;
+        return value;
     }
 }

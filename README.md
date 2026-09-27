@@ -16,7 +16,7 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 |---|---|
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
-| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
+| 設定ファイルの項目内容 | [config/jche.properties](config/jche.properties) のコメント |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
 ---
@@ -27,18 +27,20 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 
 起動スクリプトが JDK 25 と依存モジュールが環境上にあるかチェックし、無ければ確認メッセージのうえ自動でダウンロードします。（通信量 約 165MB → 展開後 約 500MB）。
 
-1. 設定ファイルを編集する … [`config/config.properties`](config/config.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
+1. 設定ファイルを編集する … [`config/jche.properties`](config/jche.properties) の `project.root`（解析対象プロジェクトのフォルダ）をセットします。
+   Windows のパスは `C:\work\app` のようにそのまま書けます（`/` でもよい。バックスラッシュを重ねる必要はありません）。
+   以前の名前 `config/config.properties` も読めます。
 
 2. 実行する … リポジトリ直下の起動コマンドに設定ファイルを引数で渡して実行します。
 
      ```bat
      rem Windows
-     .\java-call-hierarchy-exporter.cmd config\config.properties
+     .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
      ```bash
      # Linux / macOS / Git Bash
-     ./java-call-hierarchy-exporter.sh config/config.properties
+     ./java-call-hierarchy-exporter.sh config/jche.properties
      ```
 
 　3. 結果を見る … 出力されたCSVファイルを参照します。（[出力ファイル](#出力ファイル)）
@@ -63,7 +65,7 @@ rem コンパイル（src\jche 配下のクラスも一緒にコンパイルさ�
 "%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\jche\CallHierarchyExporter.java -encoding UTF-8
 
 rem 実行
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\jche.properties
 ```
 
 ### GitHub Actions Workflow
@@ -120,11 +122,11 @@ jobs:
 
 ```
 config/
-├── config.properties             設定ファイル（既定。コピーして解析対象プロジェクトごとに増やすことを推奨）
+├── jche.properties               設定ファイル（既定。コピーして解析対象プロジェクトごとに増やすことを推奨）
 └── 20260907-163000_myapp/        実行ごとの出力フォルダ
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
-    ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
+    ├── jche.properties           この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8。ビルドファイルから集めた依存jarの一覧と要求元も含む）
     ├── warnings.txt              確認してほしいことと対処のしかた（UTF-8。警告やエラーがあったときだけ）
     └── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
@@ -506,7 +508,7 @@ the impact surface of the feature you are about to change.
 |---|---|
 | How to use it, how to start the tool | [Getting started](#getting-started) (this file) |
 | How to read the output CSV | [Output files](#output-files) (this file) |
-| What each config item means | the comments in [config/config.properties](config/config.properties) |
+| What each config item means | the comments in [config/jche.properties](config/jche.properties) |
 | Design notes (what was hard and what was decided, per feature), and the spec for reimplementation | [docs/README.md](docs/README.md) |
 
 ---
@@ -519,18 +521,20 @@ The launcher checks whether JDK 25 and the dependencies are present, and downloa
 after asking you first (about 165MB over the network, about 500MB once unpacked).
 
 1. Edit the config file — set `project.root` (the folder of the project to analyze) in
-   [`config/config.properties`](config/config.properties).
+   [`config/jche.properties`](config/jche.properties).
+   A Windows path can be written as is, like `C:\work\app` (`/` works too; there is no need to double the backslashes).
+   The former name `config/config.properties` is still read.
 
 2. Run it — pass the config file to the launcher in the repository root.
 
      ```bat
      rem Windows
-     .\java-call-hierarchy-exporter.cmd config\config.properties
+     .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
      ```bash
      # Linux / macOS / Git Bash
-     ./java-call-hierarchy-exporter.sh config/config.properties
+     ./java-call-hierarchy-exporter.sh config/jche.properties
      ```
 
 3. Look at the result — open the CSV files it wrote ([Output files](#output-files)).
@@ -555,7 +559,7 @@ rem Compile (the classes under src\jche are compiled along with it)
 "%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\jche\CallHierarchyExporter.java -encoding UTF-8
 
 rem Run
-"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\config.properties
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\jche.properties
 ```
 
 ### Running it from GitHub Actions
@@ -616,11 +620,11 @@ config file and puts everything in it.
 
 ```
 config/
-├── config.properties             the config file (the default; copy it per analyzed project)
+├── jche.properties               the config file (the default; copy it per analyzed project)
 └── 20260907-163000_myapp/        one output folder per run
     ├── call-hierarchy.csv        the call hierarchy
     ├── methods.csv               every method in the source
-    ├── config.properties         a copy of the config file used for this run (under the name you passed)
+    ├── jche.properties           a copy of the config file used for this run (under the name you passed)
     ├── run.log                   the run log, the same content as standard output (UTF-8; includes the dependency jars collected from the build files, and who asked for each)
     ├── warnings.txt              what to check and how to fix it (UTF-8; only when there were warnings or errors)
     └── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)

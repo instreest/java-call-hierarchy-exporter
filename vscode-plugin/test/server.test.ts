@@ -16,7 +16,7 @@ import { buildTree, countNodes, firstTruncated } from '../src/server/tree';
  * 環境変数:
  *   JCHE_JAVA   … 解析に使う java（17 以上）
  *   JCHE_CP     … 解析本体のクラスパス（path.delimiter 区切り）
- *   JCHE_CONFIG … 解析する設定ファイル（test/regression/whole/config.properties）
+ *   JCHE_CONFIG … 解析する設定ファイル（test/regression/whole/jche.properties）
  *   JCHE_TARGET … 呼び出し元が多いメソッドのキー
  *   JCHE_AT     … 「<project.root からの相対パス>:<行>」（AT の検査に使う）
  *   JCHE_FIELD_AT … 「<相対パス>:<行>:<フィールド名>」（FIELDAT とフィールドの木の検査に使う）

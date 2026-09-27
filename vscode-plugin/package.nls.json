@@ -15,7 +15,7 @@
   "command.jche.setRoot.title": "Use this as the root",
   "command.jche.openDeclaration.title": "Open the declaration",
   "command.jche.openLog.title": "Open the log",
-  "command.jche.saveConfig.title": "Save the settings to config.properties",
+  "command.jche.saveConfig.title": "Save the settings to jche.properties",
   "command.jche.selectConfig.title": "Choose a config file",
   "command.jche.filterText.title": "Filter text",
   "command.jche.filterOptions.title": "Filter settings (depth, tests, guesses, duplicates)",
@@ -24,7 +24,7 @@
   "configuration.jche.libFolder.description": "Folder holding the analysis engine (`jche-core.jar` and `jdt/*.jar`). Empty uses the `lib/` bundled with the extension. Set it to swap in a newer JDT on an isolated network, or to point at an `eclipse-plugin` build while developing",
   "configuration.jche.vmArguments.description": "Arguments passed to the JVM of the child process. Add things like `-Xmx4g` for large projects. Independent of the heap of VSCode itself.",
   "configuration.jche.idleMinutes.description": "Shut the child process down after this many minutes without a request (to give the memory back). `0` keeps it resident. The next request rebuilds it from the cache.",
-  "configuration.jche.configFile.description": "Config file used for the analysis (relative to the workspace folder). Empty uses `config.properties` in the folder root, and generates a config with only `project.root` if there is none",
+  "configuration.jche.configFile.description": "Config file used for the analysis (relative to the workspace folder). Empty uses `jche.properties` in the folder root, and generates a config with only `project.root` if there is none",
   "configuration.jche.depth.description": "Initial depth one expansion of the tree goes to. Changing it in the view's filter settings remembers the new value per workspace. A node cut off at the depth limit fetches the rest when you expand it.",
   "configuration.jche.autoAnalyze.description": "Re-analyze in the background three seconds after a Java file is saved, added or deleted. OFF by default: it only counts the changed files and shows that in the status at the bottom right (the circular arrow re-analyzes).",
   "configuration.jche.jdkDownload.description": "Offer to download JDK 25 from Adoptium (Eclipse Temurin) when no JDK for the analysis is found (about 200MB; it always asks first). Turn it OFF on an isolated network."

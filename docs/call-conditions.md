@@ -16,7 +16,7 @@
 
 ## 使い方
 
-設定ファイル（`config/config.properties` など）に、調べたい対象を 1 行足します。
+設定ファイル（`config/jche.properties` など）に、調べたい対象を 1 行足します。
 
 ```properties
 project.root=/path/to/project
@@ -29,7 +29,7 @@ conditions.target=foo.Bar#method
 あとは普段どおり実行するだけです。起動コマンドの対話モードから選んでもかまいません。
 
 ```bash
-./java-call-hierarchy-exporter.sh config/config.properties
+./java-call-hierarchy-exporter.sh config/jche.properties
 ```
 
 出力フォルダにできるもの:

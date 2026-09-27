@@ -22,9 +22,9 @@ import jche.util.UserHome;
  * 設定ファイルを対話で新しく作る。
  *
  * README の Quick start で「書き換える」とされている項目（project.root / source.folders / library.folders /
- * source.encoding）と entry.packages だけを尋ね、残りは {@code config/config.properties}（既定の設定
+ * source.encoding）と entry.packages だけを尋ね、残りは {@code config/jche.properties}（既定の設定
  * ファイル）をひな形にしてそのまま写す。ひな形の行を置き換える方式なので、全項目の説明コメントが
- * 新しいファイルにも残り、あとから他の項目を編集するときに config/config.properties を見に行かなくて済む。
+ * 新しいファイルにも残り、あとから他の項目を編集するときに config/jche.properties を見に行かなくて済む。
  *
  * 書き先は {@code config/<名前>.properties}（既定の設定ファイルと同じフォルダ）。相対パスの起点はその設定ファイルのフォルダなので、
  * project.root は config/ からの相対（近ければ）か絶対パスで書く（{@link #projectRootValue}）。
@@ -191,23 +191,23 @@ public final class ConfigWizard {
 
     /**
      * ひな形の各行のうち、置き換える項目の {@code key=} 行を新しい値にする。
-     * {@code \} で続く複数行の値（exclude.packages 等）は、置き換え対象なら続きの行ごと捨てる。
-     * ひな形に無い項目は末尾に足す。
+     * 字下げして次の行に続く複数行の値（exclude.packages 等。{@link jche.config.ConfigFile} の読み方）は、
+     * 置き換え対象なら続きの行ごと捨てる。ひな形に無い項目は末尾に足す。
      */
     static List<String> applyToTemplate(List<String> template, Map<String, String> values) {
         List<String> out = new ArrayList<>();
         Map<String, String> remaining = new LinkedHashMap<>(values);
         boolean skippingContinuation = false;
         for (String line : template) {
-            if (skippingContinuation) {
-                skippingContinuation = line.trim().endsWith("\\");
+            if (skippingContinuation && isContinuation(line)) {
                 continue;
             }
+            skippingContinuation = false;
             Matcher m = KEY_LINE.matcher(line);
             if (m.matches() && remaining.containsKey(m.group(1))) {
                 String key = m.group(1);
                 out.add(key + "=" + remaining.remove(key));
-                skippingContinuation = line.trim().endsWith("\\");
+                skippingContinuation = true;
                 continue;
             }
             out.add(line);
@@ -218,7 +218,15 @@ public final class ConfigWizard {
         return out;
     }
 
-    private static final Pattern KEY_LINE = Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9.]*)\\s*[=:].*$");
+    private static final Pattern KEY_LINE = Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9._-]*)\\s*=.*$");
+
+    /** 値の続きの行（空白で始まり、項目の行・注釈・空行でない）。読み手（ConfigFile）と同じ見分け方 */
+    private static boolean isContinuation(String line) {
+        String t = line.trim();
+        return !line.isEmpty() && Character.isWhitespace(line.charAt(0))
+                && !t.isEmpty() && !t.startsWith("#") && !t.startsWith("!")
+                && !KEY_LINE.matcher(line).matches();
+    }
 
     /**
      * project.root の書き方。設定ファイルのフォルダ（config/）から上位へ 2 段以内で書ける相対パスならそれ

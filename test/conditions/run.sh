@@ -8,7 +8,7 @@
 # ここでは test/demo を対象に、型・メソッド・ファイル・行の各指定で条件が出ること、
 # 判定できる条件と判定できない条件が見分けられること、通常の出力が揃っていることを見る。
 #
-# 対象は config.properties の conditions.target で指定するので、ケースごとに
+# 対象は jche.properties の conditions.target で指定するので、ケースごとに
 # base.properties へその1行を足した設定ファイルを作って渡す。
 #
 # 出力は日本語なので、文字コードを UTF-8 に固定して実行する（-Dstdout.encoding=UTF-8）。

@@ -72,7 +72,8 @@
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
 | [output-files-simplify-qa.md](output-files-simplify-qa.md) | — | 出力ファイルの役割の整理。`resolved-classpath.txt` を `run.log` にまとめる判断、依存 jar を取得しない（ネットワークに出ない）仕様の確認、想定どおりに動かなかった実行でだけ出す `warnings.txt`（何を出したら作るか、典型の項目、ビルドが通っていないことの判定）、案内の相対パスの起点を設定の読み方に合わせる |
 | [config-folder-qa.md](config-folder-qa.md) | #62 | 既定の設定ファイルを `config/` に置く。相対パスの起点 |
-| [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。本体は `config.properties` のまま、プラグインが利用者のプロジェクトに書くのは `jche.properties`（誤検出を中身で防ぐ） |
+| [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。同梱の既定を `config.properties` から `jche.properties` に改名した経緯（以前の名前も読む。プラグインの誤検出は中身で防ぐ） |
+| [config-file-format-qa.md](config-file-format-qa.md) | — | 設定ファイルの読み方。`Properties#load` をやめてバックスラッシュをそのまま読む（Windows のパスをそのまま書ける。値の続きは字下げ） |
 | [cli-app-qa.md](cli-app-qa.md) | #63 | 起動コマンドと対話モード。`.cmd` が MS932 でなければならない理由（Q15） |
 | [cli-noninteractive-qa.md](cli-noninteractive-qa.md) | #83 | 引数ありのときは何も尋ねずに解析だけを行う（起動コマンドの初回の質問・知らないオプション・終了コード） |
 | [network-download-confirm-qa.md](network-download-confirm-qa.md) | #86 | ネットワークからの取得（JBang 本体・JDK・依存 jar）の前に操作者の確認を必須にする（`--offline` での起動と目印ファイル、端末が無いときの扱い） |

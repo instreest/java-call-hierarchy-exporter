@@ -200,7 +200,7 @@ IResourceChangeListener ─► dirtyFiles ────────────�
 
 - `IResourceChangeListener`（`POST_CHANGE`）で `*.java` の追加・変更・削除を拾い、`dirtyFiles` に入れる。
   対象は設定ファイルの `source.folders` 配下だけ（それ以外は無視）。
-- `config.properties` 自身が変わったときは、差分ではなく**全体を作り直す**（除外パッケージ等が変わるため）。
+- `jche.properties` 自身が変わったときは、差分ではなく**全体を作り直す**（除外パッケージ等が変わるため）。
 - 依存 jar（`library.folders`）の変化も検知対象にする。既存のキャッシュ設計がそこまで見ている。
 - 見せ方は §2 のとおり 3 段階（バナー／⚠ ／ツールチップ）。加えて、
   **エディタのマーカーは付けない**。ソースに黄色い印を増やしても邪魔なだけで、
@@ -218,7 +218,7 @@ IResourceChangeListener ─► dirtyFiles ────────────�
 - 🔍 **絞り込み文字列** … 型名・メソッド名・パッケージの部分一致（`*`, `**` のワイルドカードは
   既存の `PackagePattern` と同じ書き方）。一致した部分は太字にし、
   「一致した子孫を持つ枝だけ残す」（親をたどれるようにするため、枝ごと隠さない）
-- **深さ** … 既定 5。木の展開の上限。`config.properties` の `max.depth` とは独立
+- **深さ** … 既定 5。木の展開の上限。`jche.properties` の `max.depth` とは独立
 - **除外チップ** … クリックで外せる。初期値は設定ファイルの `exclude.packages`
 
 フィルタ設定（▽ で開く）:

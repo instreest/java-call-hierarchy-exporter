@@ -51,10 +51,10 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   の1コマンドで、`-Xlint:all -Werror` で警告ゼロ
 - 依存は JDT Core とその推移的依存のjarのみ。テストフレームワーク・ロギング
   フレームワーク・バイトコード解析ライブラリ（ASM等）は使わない
-- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <config.propertiesのパス>...`。
+- 起動: `java -classpath "bin:lib/*" CallHierarchyExporter <jche.propertiesのパス>...`。
   設定ファイルは複数渡せ、渡した順に独立して処理する（1つが失敗しても残りは処理し、最後に設定ごとの
   OK / FAIL と出力フォルダの一覧を出す。1つでも失敗すれば終了コード 1）。
-  引数省略時は作業ディレクトリの `config/config.properties` を使い、その旨を標準エラーに出す
+  引数省略時は作業ディレクトリの `config/jche.properties` を使い、その旨を標準エラーに出す
 - 出力は設定ファイルごとに `output.folder` の下の `<解析開始日時 yyyyMMdd-HHmmss>_<project.root のフォルダ名>/`
   に書く（同じ秒に同名ができれば `_2`, `_3` …）。中身は `call-hierarchy.csv`、`methods.csv`、渡した設定ファイルの
   複製（同じファイル名）、`run.log`（標準出力と同じ内容、UTF-8。設定ごとに経過時間を 0 から数え直す）。
@@ -70,7 +70,15 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
   `org.eclipse.jdt:org.eclipse.jdt.core:3.46.0` の推移的依存をコピーすると 19 個の jar になる
 - ツールを動かすJDKは、解析対象のソースが使うJDK APIの版以上にする（2.3）
 
-## 3. 入力: 設定ファイル（`config.properties`、UTF-8。同梱の既定は `config/config.properties`）
+## 3. 入力: 設定ファイル（`jche.properties`、UTF-8。同梱の既定は `config/jche.properties`）
+
+ファイルの読み方は Java の `Properties#load` ではなく自前で、次のとおり（見た目は properties と同じ `項目=値`）。
+1 行に `項目=値`（区切りは `=` だけ）。先頭（空白を除く）が `#` か `!` の行は注釈、空行は読み飛ばす。先頭の BOM は読み飛ばす。
+**バックスラッシュはそのまま読む**（`C:\work\app` をそのまま書ける。`\\`・`\uXXXX`・`\n` のエスケープは無い）。
+空白で始まる行のうち `項目=` の形でないものは直前の項目の値の続き（前後の空白を除いて連結。間に注釈・空行を挟むと
+続きにならない）。行末の `\` は続きの印として取り除く（続きの行があるかに関わらず。パスの末尾の区切りとしては要らない）。同じ項目は後の行が勝つ。`=` の無い行・項目名が
+英字で始まらない／英数字と `. _ -` 以外を含む行は、行番号つきのエラーにして黙って読み飛ばさない。
+引数を省略したときは `config/jche.properties`、無ければ以前の名前の `config/config.properties` を読む。
 
 相対パスの起点は項目ごとに違う。**設定ファイルの置き場所**を起点にするものと、
 **解析対象プロジェクト（`project.root`）**を起点にするものを区別すること。
@@ -2205,7 +2213,7 @@ public class App {
 }
 ```
 
-`fixture/config/config.properties`（出力は `fixture/config/output/<日時>_fixture/` にできる。以下「出力」はその最新フォルダの CSV を指す）
+`fixture/config/jche.properties`（出力は `fixture/config/output/<日時>_fixture/` にできる。以下「出力」はその最新フォルダの CSV を指す）
 ```properties
 project.root=..
 source.folders=src
@@ -2225,7 +2233,7 @@ output.encoding=UTF-8-BOM
 output.folder=./output
 ```
 
-実行: `cd fixture && java -cp "<bin>:<lib>/*" CallHierarchyExporter config/config.properties`
+実行: `cd fixture && java -cp "<bin>:<lib>/*" CallHierarchyExporter config/jche.properties`
 
 ### 被参照スキャンと依存 jar 用の jar（T42・T43 で使う）
 
@@ -2263,7 +2271,7 @@ mkdir -p /tmp/boot/BOOT-INF/lib && cp extjars/ext-caller.jar /tmp/fixture-app.ja
 jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring Boot 形式の FatJar
 ```
 
-`fixture/config/ext.properties` は `config.properties` の `external.library.folders=extjars` 版、
+`fixture/config/ext.properties` は `jche.properties` の `external.library.folders=extjars` 版、
 `fixture/config/ext-deps.properties` はさらに `library.folders=deps` にした版。
 
 ## 3.2 全体の期待値（既定設定）
@@ -2550,7 +2558,7 @@ Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 | | `max.depth=abc` | 起動時に `IllegalArgumentException`。メッセージに項目名 `max.depth` と値 `abc` を含む |
 | | `max.depth=`（空欄） | 既定値 50 で動き、出力は既定設定と一致 |
 | | `output.csv=./x.csv`（旧項目） | 起動時に `IllegalArgumentException`。メッセージに `output.csv` と、`output.folder` で指定しファイル名は固定になった旨を含む |
-| T45 複数の設定ファイル | `config/config.properties no-such.properties config/ext.properties` を 1 回で渡す | 1つ目と3つ目はそれぞれの出力フォルダに CSV・設定の複製・`run.log` ができ、内容は個別に実行したときと一致。2つ目は `FAIL` として一覧に出て、終了コードは 1。ログの末尾に `OK` / `FAIL` / `OK` の 3 行の一覧 |
+| T45 複数の設定ファイル | `config/jche.properties no-such.properties config/ext.properties` を 1 回で渡す | 1つ目と3つ目はそれぞれの出力フォルダに CSV・設定の複製・`run.log` ができ、内容は個別に実行したときと一致。2つ目は `FAIL` として一覧に出て、終了コードは 1。ログの末尾に `OK` / `FAIL` / `OK` の 3 行の一覧 |
 
 ## 3.4b 被参照スキャン（`ext.properties`）
 

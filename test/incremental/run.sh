@@ -70,7 +70,7 @@ fi
 
 CACHE=.cache/*/analysis-cache.tsv
 
-CONFIG=config.properties
+CONFIG=jche.properties
 
 run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し直した件数を PARSED に、キャッシュの複製を $1 に置く
     "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter "$CONFIG" \
@@ -3370,14 +3370,14 @@ discard_case() {   # $1=ラベル  $2=壊す・変えるコマンド  $3=ログ�
     echo "== $1 =="
     rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
-    cp config.properties case.properties
+    cp jche.properties case.properties
     CONFIG=case.properties
-    run base.tsv || { CONFIG=config.properties; return; }
+    run base.tsv || { CONFIG=jche.properties; return; }
     local base_csv=$OUT
 
     eval "$2"
-    run inc.tsv || { CONFIG=config.properties; return; }
-    CONFIG=config.properties
+    run inc.tsv || { CONFIG=jche.properties; return; }
+    CONFIG=jche.properties
 
     if grep -q -F -- "$3" out.log; then
         echo "  OK   $1 破棄したことをログに出す"
@@ -3903,10 +3903,10 @@ EOF
     }
 
     order_config "liba,libb"
-    run base.tsv || { CONFIG=config.properties; return; }
+    run base.tsv || { CONFIG=jche.properties; return; }
 
     order_config "libb,liba"            # 並びだけを入れ替える（jar の中身は同じ）
-    run inc.tsv || { CONFIG=config.properties; return; }
+    run inc.tsv || { CONFIG=jche.properties; return; }
     local inc_csv=$OUT
     check_rows inc.tsv "$label 差分更新"
     if [ "$PARSED" -ge 1 ]; then
@@ -3916,7 +3916,7 @@ EOF
     fi
 
     rm -rf .cache
-    run full.tsv || { CONFIG=config.properties; return; }
+    run full.tsv || { CONFIG=jche.properties; return; }
     for f in call-hierarchy.csv methods.csv; do
         if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
             echo "  OK   $label $f（差分更新 == 全件解析）"
@@ -3933,8 +3933,8 @@ EOF
     fi
 
     # 並びを変えずにもう一度。並び順の判定が効きすぎて毎回解析し直していないこと
-    run again.tsv || { CONFIG=config.properties; return; }
-    CONFIG=config.properties
+    run again.tsv || { CONFIG=jche.properties; return; }
+    CONFIG=jche.properties
     if [ "$PARSED" = 0 ]; then
         echo "  OK   $label 変えなければ解析し直さない"
     else

@@ -32,10 +32,10 @@ Java のファイルを開いただけでは何も始まりません。
 
 ## 設定ファイル
 
-ワークスペースフォルダ直下に `config.properties` があればそれを使います。無ければ `project.root` だけの設定を
+ワークスペースフォルダ直下に `jche.properties`（以前の名前の `config.properties` でも可）があればそれを使います。無ければ `project.root` だけの設定を
 自動生成し、ソースフォルダ・依存 jar・文字コードはプロジェクトの中身（`pom.xml` / `build.gradle` / フォルダ構成）から決めます。
-細かく効かせたいときは「設定を config.properties に保存」で書き出して直してください。
-項目の意味はツール同梱の [config/config.properties](https://github.com/instreest/java-call-hierarchy-exporter/blob/main/config/config.properties) のコメントにあります。
+細かく効かせたいときは「設定を jche.properties に保存」で書き出して直してください。
+項目の意味はツール同梱の [config/jche.properties](https://github.com/instreest/java-call-hierarchy-exporter/blob/main/config/jche.properties) のコメントにあります。
 
 ## 要件
 

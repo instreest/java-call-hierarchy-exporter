@@ -2,8 +2,6 @@
 package jche.config;
 
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,9 +23,10 @@ import jche.util.Messages;
 import jche.util.UserHome;
 
 /**
- * 設定ファイル（config.properties）の読み込み。
+ * 設定ファイル（jche.properties）の読み込み。
  *
- * 設定できる項目とその意味は config/config.properties（同梱の既定の設定ファイル）にコメント付きでまとめてある。
+ * 設定できる項目とその意味は config/jche.properties（同梱の既定の設定ファイル）にコメント付きでまとめてある。
+ * ファイルの読み方（項目=値。バックスラッシュはそのまま）は {@link ConfigFile}。
  * あちらを唯一の一覧として扱い、ここには複製しない（二重管理で片方が古くなるのを避けるため）。
  *
  * 相対パスの起点は項目ごとに異なる。
@@ -229,10 +228,10 @@ public final class Config {
      *
      * <p>Eclipse プラグインが、開いているプロジェクトの構成（ソースフォルダ・クラスパス・文字コード・
      * コンパイラー準拠レベル）から設定を組み立てて渡すために使う。利用者に
-     * config.properties を書かせずに解析できるようにするのが目的で、項目の意味は
+     * jche.properties を書かせずに解析できるようにするのが目的で、項目の意味は
      * 設定ファイルで書いたときとまったく同じ。
      *
-     * @param properties 設定。キーと値は config.properties と同じ
+     * @param properties 設定。キーと値は jche.properties と同じ
      * @param configDir  相対パスの起点（設定ファイルを置いたフォルダに相当。ふつうはプロジェクトの場所）
      * @param toolRoot   cache.folder が空欄のときのキャッシュの置き場所の親
      * @param startedAt  解析開始日時（出力フォルダ名に使う）
@@ -244,16 +243,18 @@ public final class Config {
 
     private static Properties load(Path configPath) throws IOException {
         Path abs = configPath.toAbsolutePath().normalize();
-        Properties p = new Properties();
-        try (Reader r = new InputStreamReader(Files.newInputStream(abs), StandardCharsets.UTF_8)) {
-            p.load(r);
-        } catch (IllegalArgumentException e) {
-            // properties ではバックスラッシュがエスケープなので、Windows のパスをそのまま書くと
-            // 「バックスラッシュ + u」が Unicode エスケープと解釈されて読めない。
-            // 何が悪いのか分からない例外文言（Malformed uxxxx encoding）のままにしない
+        try {
+            // Properties#load ではなく自前の読み方（バックスラッシュをそのまま読む。ConfigFile）
+            return ConfigFile.read(abs);
+        } catch (ConfigFile.SyntaxException e) {
+            // 何行目の何が悪いのかを、表示言語で言う
+            String message = (e.problem() == ConfigFile.Problem.BAD_KEY)
+                    ? Messages.format("config.line.badKey", abs, e.lineNumber(), e.lineText())
+                    : Messages.format("config.line.noSeparator", abs, e.lineNumber(), e.lineText());
+            throw new IOException(message, e);
+        } catch (IOException e) {
             throw new IOException(Messages.format("config.read.failed", abs, e.getMessage()), e);
         }
-        return p;
     }
 
     private Config(Properties p, Path configPathOrNull, Path configDirHint, Path toolRoot,
