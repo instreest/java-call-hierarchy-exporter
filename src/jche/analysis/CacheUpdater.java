@@ -279,8 +279,10 @@ import jche.util.Warnings;
  *       パッケージとファイルの置き場所のフォルダで数える（JDT はフォルダで決める）</li>
  * </ul>
  * 「前回は無かった」は、パス1 を読み終えたときの「変わった型」（無効になったブロックが宣言していた型と、
- * その部分型）に無いことで見る。有効なブロックの型でも部分型でなければそこに無いので、別のファイルに同じ名前の型が
- * 重複しているときも新しい型とみなす（解析し直すファイルが増えるだけで、結果は変わらない）。
+ * その部分型）と、有効なブロックが宣言していた型のどちらにも無いことで見る（{@link StaleTypes#declaredInValidBlock}。
+ * 同じ名前のファイルの組として有効なブロックのファイルが後からパス2 に回っても、その型は新しい型ではない。以前は
+ * 無効なブロックの型だけで見ていたので、隠蔽の規則をパッケージ単位に粗くしたときに、ソースフォルダを足すだけで
+ * そのパッケージのブロックをすべて解析し直していた）。
  *
  * 依存 jar の変更も同じ仕組みで扱う。jar の中の型は解析し直せない（ソースが無い）ので、
  * 「その jar のパッケージの型を参照しているファイル」を再解析の対象にする。
@@ -1543,6 +1545,7 @@ public final class CacheUpdater {
             }
             for (TypeFact t : declared) {
                 stale.packageNow(t.pkg());
+                stale.declaredInValidBlock(t.typeFqn());
             }
             old.add(rel, block.start, end, block.errors, block.syntaxErrors, block.unresolved,
                     irregularAtEnd != block.irregularAtStart, block.errors > 0 || block.bindingFailed,

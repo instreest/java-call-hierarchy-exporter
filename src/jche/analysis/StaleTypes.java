@@ -40,10 +40,13 @@ final class StaleTypes {
     private final Set<String> packages = new HashSet<>();
     private final Set<String> libraryPackages;
     /**
-     * パス1 の終わりの {@link #types}（無効になったブロックが宣言していた型）。パス2 で宣言された型が
-     * これに無ければ新しい型。{@link #endOfOldCache} を呼ぶまでは null（新しい型を数えない）
+     * 前回宣言されていた型: パス1 の終わりの {@link #types}（無効になったブロックが宣言していた型）と、有効なブロックが
+     * 宣言していた型（{@link #declaredInValidBlock}）。パス2 で宣言された型がこれに無ければ新しい型。
+     * {@link #endOfOldCache} を呼ぶまでは null（新しい型を数えない）
      */
     private Set<String> declaredBefore;
+    /** 有効なブロックが宣言していた型（パス1）。同じ名前のファイルの組として後からパス2 に回るファイルの型も、新しい型ではない */
+    private final Set<String> validTypes = new HashSet<>();
     /**
      * 新しいトップレベルの型ができたパッケージ（無名パッケージは空文字）。同じパッケージの型は、そのパッケージの
      * ファイルのオンデマンド import と {@code java.lang} の型を隠す（JLS 6.4.1）ので、そのパッケージのブロックと、
@@ -207,9 +210,15 @@ final class StaleTypes {
         out.add(typeFqn);
     }
 
+    /** 有効なブロックが宣言していた型（パス1。{@link #declaredBefore} に数える） */
+    void declaredInValidBlock(String typeFqn) {
+        validTypes.add(typeFqn);
+    }
+
     /** パス1 を読み終えた。ここまでの型を「前回宣言されていた型」として固定する */
     void endOfOldCache() {
         declaredBefore = new HashSet<>(types);
+        declaredBefore.addAll(validTypes);
     }
 
     /**
