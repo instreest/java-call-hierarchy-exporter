@@ -314,7 +314,8 @@ public final class CallGraphBuilder {
                         }
                     }
                     default -> {
-                        // I行は差分更新のためだけの行、A行・K行は今の読み手は使わない
+                        // I行は差分更新のためだけの行、K行はグラフの読み手は使わない。
+                        // A行はグラフに入れない（解析サーバーがフィールドを引くときにだけ読む。jche.server.FieldAccesses）
                     }
                 }
             }

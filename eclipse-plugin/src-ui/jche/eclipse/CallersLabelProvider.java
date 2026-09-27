@@ -18,6 +18,10 @@ import jche.eclipse.server.ServerTree;
  *
  * <p>解析後に変わったファイルのメソッドには警告アイコンを付け、内容が古いかもしれないことを
  * 行単位で示す（全体の状態はバナーが出す。docs/eclipse-plugin-ui-design.md §2）。
+ *
+ * <p>フィールドの木（docs/field-callers-qa.md）の深さ 1 の行は、理由の列に参照の種類
+ * （read / write / read/write）が英語のまま来る。サーバーの行は CSV にも使うデータなので、
+ * 表示するときにここで訳す。キーの無い行（宣言の初期化子・囲むメソッドの無い参照）も、ここで名前を付ける。
  */
 final class CallersLabelProvider extends ColumnLabelProvider {
 
@@ -37,7 +41,7 @@ final class CallersLabelProvider extends ColumnLabelProvider {
         if (row == null) {
             return String.valueOf(element);
         }
-        StringBuilder sb = new StringBuilder(row.label());
+        StringBuilder sb = new StringBuilder(labelOf(row));
         if (!row.file().isEmpty()) {
             sb.append("   ").append(fileNameOf(row.file()));
             if (row.line() > 0) {
@@ -45,7 +49,7 @@ final class CallersLabelProvider extends ColumnLabelProvider {
             }
         }
         if (!row.reason().isEmpty()) {
-            sb.append("  \u00ab").append(row.reason()).append('\u00bb');
+            sb.append("  \u00ab").append(reasonOf(row)).append('\u00bb');
         }
         if (row.hasFlag(ServerRow.FLAG_RECURSIVE)) {
             sb.append("  ").append(Messages.get("row.recursive"));
@@ -59,7 +63,7 @@ final class CallersLabelProvider extends ColumnLabelProvider {
         if (row == null) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(row.key());
+        StringBuilder sb = new StringBuilder(row.key().isEmpty() ? labelOf(row) : row.key());
         if (row.file().isEmpty()) {
             sb.append('\n').append(Messages.get("row.noSourceTip"));
         } else {
@@ -95,6 +99,34 @@ final class CallersLabelProvider extends ColumnLabelProvider {
             return Display.getDefault().getSystemColor(SWT.COLOR_DARK_GRAY);
         }
         return null;
+    }
+
+    /** 行の名前。キーの無い行（初期化子・囲むメソッドの無い参照）は、サーバーが名前を付けないのでここで付ける */
+    private static String labelOf(ServerRow row) {
+        if (row.hasFlag(ServerRow.FLAG_INITIALIZER)) {
+            return Messages.get("row.fieldInitializer");
+        }
+        if (row.hasFlag(ServerRow.FLAG_NO_METHOD)) {
+            return Messages.get("row.noMethod");
+        }
+        return row.label();
+    }
+
+    /** 理由の列。フィールドの参照の種類だけ訳す（ほかの理由は DATAFLOW_FACTORY のような符号のまま） */
+    private static String reasonOf(ServerRow row) {
+        if (!row.hasFlag(ServerRow.FLAG_ACCESS)) {
+            return row.reason();
+        }
+        switch (row.reason()) {
+            case ServerRow.ACCESS_READ:
+                return Messages.get("row.access.read");
+            case ServerRow.ACCESS_WRITE:
+                return Messages.get("row.access.write");
+            case ServerRow.ACCESS_READ_WRITE:
+                return Messages.get("row.access.readWrite");
+            default:
+                return row.reason();
+        }
     }
 
     private static String fileNameOf(String path) {

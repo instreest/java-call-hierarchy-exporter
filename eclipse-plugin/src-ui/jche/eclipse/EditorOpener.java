@@ -6,6 +6,9 @@ import java.nio.file.Path;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.jdt.core.IMember;
+import org.eclipse.jdt.core.ISourceRange;
+import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.ui.IEditorPart;
@@ -57,6 +60,30 @@ final class EditorOpener {
             return true;
         } catch (PartInitException | BadLocationException e) {
             JchePlugin.log(IStatus.WARNING, Messages.format("editor.openFailed", relativePath), e);
+            return false;
+        }
+    }
+
+    /**
+     * Java の要素（フィールドの宣言など）を開いて、その名前を選ぶ。解析結果に行番号が無いもの
+     * （フィールドの宣言の行。キャッシュが持たない）を開くのに使う。
+     *
+     * @return 開けたら true（ワークスペースのファイルでない要素は開けない）
+     */
+    static boolean open(IWorkbenchPage page, IMember member) {
+        if (page == null || member == null || !(member.getResource() instanceof IFile)) {
+            return false;
+        }
+        IFile file = (IFile) member.getResource();
+        try {
+            IEditorPart editor = IDE.openEditor(page, file, true);
+            ISourceRange range = member.getNameRange();
+            if (editor instanceof ITextEditor && range != null && range.getOffset() >= 0) {
+                ((ITextEditor) editor).selectAndReveal(range.getOffset(), range.getLength());
+            }
+            return true;
+        } catch (PartInitException | JavaModelException e) {
+            JchePlugin.log(IStatus.WARNING, Messages.format("editor.openFailed", file.getFullPath()), e);
             return false;
         }
     }

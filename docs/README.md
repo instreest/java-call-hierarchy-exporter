@@ -79,6 +79,7 @@
 | [eclipse-plugin-ui-simplify-qa.md](eclipse-plugin-ui-simplify-qa.md) | — | 解析結果を「捨てるまで持つ」形にする（自動再解析・アイドル終了・設定画面の巻き添えをやめる）、画面を対象バーと木だけに削ぎ落とす、ボタンをアイコンにする、深さとフィルタの廃止、［リセット］とキャッシュの物理削除の分け方、JDT 差し替えと CSV 一括出力の廃止 |
 | [eclipse-plugin-folders-qa.md](eclipse-plugin-folders-qa.md) | — | ビューを開いただけでは解析を始められない問題、自動生成した設定の project.root が作業フォルダを指していた不具合、キャッシュ・ログ・出力の置き場所、向きのボタン分け、字下げ付きのコピー |
 | [eclipse-plugin-nls-qa.md](eclipse-plugin-nls-qa.md) | — | プラグインの文言を英語（既定）と日本語で出し分ける。Pleiades が訳してくれない理由、NLS を使わない理由、OS の言語へ落ちないようにする理由、訳し忘れの検査 |
+| [field-callers-qa.md](field-callers-qa.md) | — | フィールドの呼び出し元（フィールドを読み書きしているメソッドと、その呼び出し元）を Eclipse プラグインに足す。キャッシュの A 行を要求のたびに読む判断、キャッシュとグラフの食い違いの断り方、初期化子の扱い、今のキャッシュではできないこと |
 | [nls-qa.md](nls-qa.md) | — | ツール全体（解析ログ・対話モード・起動コマンド）を英語（既定）と日本語で出し分ける。文言を properties ではなく Java の表に置いた理由、言語の優先順位、**出力 CSV を訳さない**判断、文言なのにキャッシュの版を上げた 1 件、プラグインと解析ログの言語をそろえる仕組み、検査が何も見ていなかった件、1 つの JVM で設定を続けて読むときに空欄の言語を引き継がない |
 | [eclipse-plugin-java-floor-qa.md](eclipse-plugin-java-floor-qa.md) | — | プラグインの下限を Java 8 / Eclipse 4.6 から Java 11 / Eclipse 4.17 へ上げる。「解析対象の Java の版」と「Eclipse を動かす Java の版」を取り違えていた話、Java 8 対応が何を買って何を払っていたか |
 | [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため）、`var` の使い方の誤りを構文エラーに数えない理由（switch 式の検査（網羅していない・default が無い・switch 式の外への break など）も同じ。形式 v36。cache-unification-qa.md の Q63） |

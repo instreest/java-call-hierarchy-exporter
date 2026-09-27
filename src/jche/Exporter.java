@@ -1,6 +1,8 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.nio.file.Path;
@@ -89,10 +91,13 @@ public final class Exporter {
             // try-with-resources にしないのは、錠を本体で使わないため（-Xlint:try が警告する）
             int syntaxErrorFiles;
             CallGraph graph;
+            String cacheStamp;
             CacheLock lock = CacheLock.acquire(config.cacheFile);
             try {
                 syntaxErrorFiles = analyzeSources(config, layout);
                 graph = buildGraph(config, layout, unresolved);
+                // 錠を持っているうちに、グラフを組んだキャッシュの印を取る（ほかの実行に書き換えられる前）
+                cacheStamp = cacheStampOf(config.cacheFile);
             } finally {
                 lock.close();
             }
@@ -108,13 +113,30 @@ public final class Exporter {
                     contracts.callbacks(), contracts.entries(), contracts.types());
             RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
             Log.heap(Messages.get("exporter.heap.phase2"));
-            return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles, unresolved);
+            return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles, unresolved,
+                    cacheStamp);
         } catch (Exception | Error e) {
             // 結果を返せなかった。拾った行の一時ファイルは受け取る側がいないので、ここで消す
             if (unresolved != null) {
                 unresolved.close();
             }
             throw e;
+        }
+    }
+
+    /**
+     * キャッシュファイルの印（サイズと更新時刻）。読めなければ空文字。
+     *
+     * <p>ソースの同一性には更新時刻を使わない（{@code docs/cache-identity-qa.md}）が、これはソースではなく
+     * <b>このツール自身が書いたファイル</b>が、あるときから書き換えられていないかを見るためのもの。
+     * キャッシュは一時ファイルに書いてから差し替えるので、書き換えれば更新時刻もサイズも変わる
+     * （{@link AnalysisSnapshot#cacheStamp}）
+     */
+    public static String cacheStampOf(Path cacheFile) {
+        try {
+            return Files.size(cacheFile) + "@" + Files.getLastModifiedTime(cacheFile).toMillis();
+        } catch (IOException e) {
+            return "";
         }
     }
 

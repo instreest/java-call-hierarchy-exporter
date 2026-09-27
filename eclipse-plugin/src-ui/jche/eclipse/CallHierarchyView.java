@@ -8,6 +8,7 @@ import java.util.Set;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.jdt.core.IField;
 import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IMenuListener;
@@ -50,6 +51,8 @@ import jche.eclipse.server.ServerTree;
 
 /**
  * 呼び出し階層ビュー。主ユースケースは「メソッドを選んで、その呼び出し元を階層で辿る」。
+ * フィールドを選んだときは、根をフィールドにして、そのフィールドを読み書きしているメソッドと、
+ * その呼び出し元を同じ木で出す（{@link #showField}。docs/field-callers-qa.md）。
  *
  * <p>画面は<b>木のための場所をできるだけ広く取る</b>。常に出ているのは
  * 対象バー（どのプロジェクトを、どの設定で解析するか）と木の 2 段だけで、
@@ -93,6 +96,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
      */
     private static final int MAX_DEPTH = 1000;
 
+    /** {@link #accessFilter} の値（サーバーの {@code access=} と同じ綴り） */
+    private static final String ACCESS_ALL = "all";
+    private static final String ACCESS_READ = "read";
+    private static final String ACCESS_WRITE = "write";
+
     private Combo projectCombo;
     private Label configLabel;
     private Button analyzeButton;
@@ -107,8 +115,19 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     private boolean callers = true;
 
     private ProjectAnalysis analysis;
-    /** 表示しているメソッド。ID ではなくキーで持つ（解析し直しても指すものが変わらない） */
+    /** 表示しているメソッド（またはフィールド）。ID ではなくキーで持つ（解析し直しても指すものが変わらない） */
     private String targetKey;
+    /** {@link #targetKey} がフィールドのキー（型FQN#フィールド名）か */
+    private boolean fieldTarget;
+    /** 表示しているフィールド。根の行から宣言を開くのに使う。フィールドを表示していなければ null */
+    private IField targetField;
+    /** フィールドの木で出す参照（サーバーの {@code access=}。{@link #ACCESS_ALL} / read / write） */
+    private String accessFilter = ACCESS_ALL;
+    /**
+     * 木の問い合わせの通し番号。返事を待つ間に条件（対象・向き・絞り込み）が変わったら、
+     * 古い返事で描き直さないために使う
+     */
+    private int treeRequestSeq;
 
     /** いま画面に反映してある状態。これが変わらない知らせでは、木を取り寄せ直さない */
     private ProjectAnalysis.State shownState;
@@ -125,6 +144,9 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     private Action copyAction;
     private Action copySubtreeAction;
     private Action exportAction;
+    private Action accessAllAction;
+    private Action accessWritesAction;
+    private Action accessReadsAction;
 
     @Override
     public void createPartControl(Composite parent) {
@@ -339,7 +361,17 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         collapseAction.setToolTipText(Messages.get("action.collapseAll"));
         collapseAction.setImageDescriptor(ViewIcons.of(ViewIcons.COLLAPSE_ALL));
 
+        // 絞り込みは行のアクションより先に作る（createRowActions の最後の updateRowActions が有効・無効を決める）
+        createAccessActions();
         createRowActions();
+
+        Action fieldAtCursorAction = new Action(Messages.get("action.fieldAtCursor")) {
+            @Override
+            public void run() {
+                showFieldAtCursor();
+            }
+        };
+        fieldAtCursorAction.setToolTipText(Messages.get("action.fieldAtCursorTip"));
 
         Action configAction = new Action(Messages.get("view.configButton")) {
             @Override
@@ -363,6 +395,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         };
 
         IMenuManager menu = getViewSite().getActionBars().getMenuManager();
+        menu.add(fieldAtCursorAction);
+        menu.add(accessAllAction);
+        menu.add(accessWritesAction);
+        menu.add(accessReadsAction);
+        menu.add(new Separator());
         menu.add(configAction);
         menu.add(new Separator());
         menu.add(preferencesAction);
@@ -378,6 +415,36 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         toolbar.add(new Separator());
         toolbar.add(expandAction);
         toolbar.add(collapseAction);
+    }
+
+    /**
+     * フィールドの木で「どの参照を出すか」（すべて・書き込みだけ・読み取りだけ）。［▽］メニューに置き、
+     * フィールドを表示しているときだけ押せる。「このフィールドはどこで設定されるのか」を見たいときに、
+     * 読み取りの行で木が埋まらないようにするため（docs/field-callers-qa.md）
+     */
+    private void createAccessActions() {
+        // 文言のキーは組み立てずに書く（test/plugin-nls がソースのキーを文字列で照合する）
+        accessAllAction = accessAction(Messages.get("action.accessAll"), Messages.get("action.accessAllTip"),
+                ACCESS_ALL);
+        accessWritesAction = accessAction(Messages.get("action.accessWrites"),
+                Messages.get("action.accessWritesTip"), ACCESS_WRITE);
+        accessReadsAction = accessAction(Messages.get("action.accessReads"), Messages.get("action.accessReadsTip"),
+                ACCESS_READ);
+        accessAllAction.setChecked(true);
+    }
+
+    private Action accessAction(String label, String tip, final String value) {
+        Action action = new Action(label, Action.AS_RADIO_BUTTON) {
+            @Override
+            public void run() {
+                if (isChecked() && !value.equals(accessFilter)) {
+                    accessFilter = value;
+                    reload();
+                }
+            }
+        };
+        action.setToolTipText(tip);
+        return action;
     }
 
     /**
@@ -452,6 +519,12 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         copyAction.setEnabled(any);
         copySubtreeAction.setEnabled(any);
         exportAction.setEnabled(targetKey != null && analysis != null && analysis.isAnalyzed());
+        // フィールドの木は呼び出し元の向きしか無い。向きのボタンは押せなくし、読み書きの絞り込みを押せるようにする
+        callersAction.setEnabled(!fieldTarget);
+        calleesAction.setEnabled(!fieldTarget);
+        accessAllAction.setEnabled(fieldTarget);
+        accessWritesAction.setEnabled(fieldTarget);
+        accessReadsAction.setEnabled(fieldTarget);
     }
 
     // ------------------------------------------------------------
@@ -538,7 +611,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             return;
         }
         analysis = picked;
-        targetKey = null;
+        clearTarget();
         syncProjectSelection();
         refresh();
     }
@@ -547,9 +620,61 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
     public void showMethod(ProjectAnalysis target, IMethod method) {
         this.analysis = target;
         this.targetKey = MethodKeys.keyOf(method);
+        this.fieldTarget = false;
+        this.targetField = null;
         reloadProjects();
         syncProjectSelection();
         refresh();
+    }
+
+    /**
+     * このフィールドを読み書きしているメソッドと、その呼び出し元を出す（{@link ShowFieldCallersHandler}）。
+     * 解析がまだでも受け付けるのはメソッドと同じ。読み書きの絞り込みは「すべて」に戻す
+     * （前のフィールドで選んだ絞り込みが残っていると、行が足りないことに気づけない）
+     */
+    public void showField(ProjectAnalysis target, IField field) {
+        this.analysis = target;
+        this.targetKey = FieldPicker.keyOf(field);
+        this.fieldTarget = targetKey != null;
+        this.targetField = fieldTarget ? field : null;
+        setAccessFilter(ACCESS_ALL);
+        reloadProjects();
+        syncProjectSelection();
+        refresh();
+    }
+
+    /** 表示している対象を捨てる（別のプロジェクトを選んだ・解析結果をクリアした） */
+    private void clearTarget() {
+        targetKey = null;
+        fieldTarget = false;
+        targetField = null;
+    }
+
+    private void setAccessFilter(String value) {
+        accessFilter = value;
+        if (accessAllAction != null) {
+            accessAllAction.setChecked(ACCESS_ALL.equals(value));
+            accessWritesAction.setChecked(ACCESS_WRITE.equals(value));
+            accessReadsAction.setChecked(ACCESS_READ.equals(value));
+        }
+    }
+
+    /** ［▽］メニューの［カーソル位置のフィールド］。コマンドと同じ道（{@link FieldPicker}）を通る */
+    private void showFieldAtCursor() {
+        IField field = FieldPicker.pick(getSite().getPage(),
+                getSite().getWorkbenchWindow().getSelectionService().getSelection());
+        if (field == null) {
+            MessageDialog.openInformation(getSite().getShell(), Messages.get("dialog.title"),
+                    Messages.get("field.notIdentifiedInView"));
+            return;
+        }
+        IProject project = (field.getResource() != null)
+                ? field.getResource().getProject() : field.getJavaProject().getProject();
+        AnalysisService service = JchePlugin.service();
+        if (service == null || project == null) {
+            return;
+        }
+        showField(service.analysisFor(project), field);
     }
 
     /** ツールバーの［カーソル位置のメソッド］。コマンドと同じ道（{@link MethodPicker}）を通る */
@@ -655,13 +780,21 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             // 1 件ずつ（ServerConnection）なので、ここで聞いても解析が終わるまで返らない
             return;
         }
-        final String requestedKey = targetKey;
-        analysis.requestTree(targetKey, callers, treeWords(true), (response, error) -> runOnUi(() -> {
-            if (!requestedKey.equals(targetKey)) {
-                return;   // 待っている間に別のメソッドへ切り替わった
+        final int seq = ++treeRequestSeq;
+        analysis.requestTree(targetKey, direction(), treeWords(true), (response, error) -> runOnUi(() -> {
+            if (seq != treeRequestSeq) {
+                return;   // 待っている間に別のメソッドへ切り替わった（または向き・絞り込みが変わった）
             }
             applyTree(response, error);
         }));
+    }
+
+    /** 問い合わせの向き（{@code callers} / {@code callees} / フィールドなら {@code field}） */
+    private String direction() {
+        if (fieldTarget) {
+            return "field";
+        }
+        return callers ? "callers" : "callees";
     }
 
     /**
@@ -671,9 +804,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
      * 推測で特定した呼び出しも出す。画面に切り替えが無い以上、<b>黙って落とさない</b>ほうを選ぶ
      * （docs/eclipse-plugin-ui-simplify-qa.md の Q5）。
      *
+     * <p>フィールドの木では、［▽］メニューで選んだ読み書きの絞り込み（{@code access=}）を足す。
+     *
      * @param limited 画面に出すための行数の上限を付けるか（CSV 出力では付けない）
      */
-    private static String[] treeWords(boolean limited) {
+    private String[] treeWords(boolean limited) {
         List<String> words = new ArrayList<String>();
         words.add("depth=" + MAX_DEPTH);
         words.add("tests=1");
@@ -682,6 +817,9 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         words.add("dedupe=1");
         if (limited) {
             words.add("max=" + MAX_ROWS);
+        }
+        if (fieldTarget) {
+            words.add("access=" + accessFilter);
         }
         return words.toArray(new String[0]);
     }
@@ -696,7 +834,12 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         if (!response.isOk()) {
             viewer.setInput(null);
             if ("not-found".equals(response.reason())) {
-                setBanner(Messages.get("banner.methodNotFound"),
+                setBanner(Messages.get(fieldTarget ? "banner.fieldNotFound" : "banner.methodNotFound"),
+                        Messages.get("banner.reanalyze"), this::reanalyze, false);
+            } else if ("stale-cache".equals(response.reason())) {
+                // 解析し直しが途中で終わり、キャッシュだけが新しい。フィールドの参照はキャッシュから読むので、
+                // 古い結果と混ぜずに断ってくる（サーバーの FieldAccesses）
+                setBanner(Messages.get("banner.staleCache"),
                         Messages.get("banner.reanalyze"), this::reanalyze, false);
             } else if ("not-analyzed".equals(response.reason())) {
                 setBanner(Messages.get("state.notAnalyzed"),
@@ -715,6 +858,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             // 打ち切りは黙らない。出ていない呼び出しがあることは、必ず画面で言う
             setBanner(Messages.format("banner.rowLimit", Integer.valueOf(MAX_ROWS)),
                     null, null, false);
+        } else if (fieldTarget && response.rows().size() <= 1) {
+            // 根（フィールド）だけ。「どこからも使われていない」とは言い切れない（リフレクションやフレームワークの
+            // 書き込みはソースに現れない）ので、何を見て「無い」と言っているのかを添える
+            setBanner(Messages.get(ACCESS_ALL.equals(accessFilter)
+                    ? "banner.fieldNoAccesses" : "banner.fieldNoAccessesFiltered"), null, null, false);
         }
     }
 
@@ -816,7 +964,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
                 Messages.format("dialog.resetConfirm", analysis.project().getName()))) {
             return;
         }
-        targetKey = null;
+        clearTarget();
         analysis.clearAnalysis();
     }
 
@@ -889,6 +1037,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             return;
         }
         ServerRow row = ((ServerTree.Node) selection.getFirstElement()).row();
+        if ((row.hasFlag(ServerRow.FLAG_FIELD) || row.hasFlag(ServerRow.FLAG_INITIALIZER))
+                && targetField != null && EditorOpener.open(getSite().getPage(), targetField)) {
+            // フィールドの宣言の行は解析結果に無い（キャッシュが持たない）ので、Eclipse のフィールドから開く
+            return;
+        }
         if (row.file().isEmpty()) {
             setBanner(Messages.get("banner.rowNoSource"), null, null, false);
             return;
@@ -996,7 +1149,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         FileDialog dialog = new FileDialog(getSite().getShell(), SWT.SAVE);
         dialog.setFilterExtensions(new String[] {"*.csv"});
-        dialog.setFileName("call-hierarchy-view.csv");
+        dialog.setFileName(fieldTarget ? "field-callers-view.csv" : "call-hierarchy-view.csv");
         dialog.setFilterPath(PluginFolders.outputRoot().getAbsolutePath());
         dialog.setOverwrite(true);
         final String path = dialog.open();
@@ -1006,7 +1159,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         List<String> words = new ArrayList<String>();
         words.add("EXPORT");
         words.add(targetKey);
-        words.add(callers ? "callers" : "callees");
+        words.add(direction());
         words.add(path);
         for (String word : treeWords(false)) {
             words.add(word);
