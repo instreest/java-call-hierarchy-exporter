@@ -329,7 +329,12 @@ Q10 の 2 点はどちらも満たす。
 
 | 場所 | 変更 |
 |---|---|
-| `jche.cache.Origin` | 「計算の形」を表す種別を足す。**dataflow キャッシュの版を上げる** |
+| `jche.cache.Origin` / `ValueNode` | 値グラフ（キャッシュの N 行）のノードに「計算の形」を表す種別を足す。子のノードは番号で指す |
 | `jche.analysis.OriginTracker` / `ValueGraph` | 連結や既知の操作の呼び出しを式として記録する。式の大きさに上限を設ける |
+| `jche.graph.ValueStoreBuilder` / `ValueStore` | 新しい種別を値の表に取り込み、読み手が番号で引けるようにする。出所の文字列に組み直して読む形には戻さない（AGENTS.md） |
 | `jche.graph.DataflowResolver` | 呼び出し元のキーを当てはめて計算する（`literalOf` の拡張） |
+| `jche.cache.CacheFormat` と `test/cacheversion` | 書き手の事実が変わるので**キャッシュの形式の版（`CacheFormat.VERSION`）を上げ**、`--update` で記録を合わせる |
 | `test/demo` と期待値 | 名前を組み立てるファクトリの例を足し、1 件に確定することを確かめる |
+
+キャッシュは 1 ファイル（`analysis-cache.tsv`）にまとめられ、値は値グラフのノードを番号で指す形になっている
+（[cache-unification-qa.md](cache-unification-qa.md)）。上の表はその作りに合わせてある。
