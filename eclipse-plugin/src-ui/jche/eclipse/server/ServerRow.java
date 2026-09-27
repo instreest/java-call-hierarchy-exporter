@@ -18,6 +18,19 @@ public final class ServerRow {
     public static final String FLAG_GUESSED = "guessed";
     public static final String FLAG_MATCH = "match";
     public static final String FLAG_NO_SOURCE = "nosource";
+    /** フィールドの木の根（フィールドそのもの）。サーバーの {@code FieldTree} と同じ綴り */
+    public static final String FLAG_FIELD = "field";
+    /** フィールドの木の深さ 1（そのフィールドを参照しているメソッド）。理由の列が read / write / read/write */
+    public static final String FLAG_ACCESS = "access";
+    /** 参照を囲むメソッドが特定できない行（キーが空） */
+    public static final String FLAG_NO_METHOD = "nomethod";
+    /** 宣言の初期化子の行（キーが空） */
+    public static final String FLAG_INITIALIZER = "initializer";
+
+    /** フィールドの木の理由の列（サーバーの {@code FieldTree} と同じ綴り。表示のときに訳す） */
+    public static final String ACCESS_READ = "read";
+    public static final String ACCESS_WRITE = "write";
+    public static final String ACCESS_READ_WRITE = "read/write";
 
     private final int depth;
     private final String key;
@@ -57,7 +70,10 @@ public final class ServerRow {
         return depth;
     }
 
-    /** メソッドのキー（型FQN#名前(引数)）。次の問い合わせの起点に使える */
+    /**
+     * メソッドのキー（型FQN#名前(引数)）。次の問い合わせの起点に使える。
+     * フィールドの木の根ではフィールドのキー（型FQN#フィールド名）、初期化子・囲むメソッドの無い行では空
+     */
     public String key() {
         return key;
     }
@@ -76,7 +92,10 @@ public final class ServerRow {
         return line;
     }
 
-    /** 解決の理由（DATAFLOW_FACTORY 等）。ふつうの呼び出しでは空 */
+    /**
+     * 解決の理由（DATAFLOW_FACTORY 等）。ふつうの呼び出しでは空。
+     * フィールドの木の深さ 1 では参照の種類（{@link #ACCESS_READ} / {@link #ACCESS_WRITE} / {@link #ACCESS_READ_WRITE}）
+     */
     public String reason() {
         return reason;
     }

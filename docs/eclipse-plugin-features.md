@@ -70,6 +70,7 @@
 | 26 | 解析後に変わったファイルに ⚠ | （自動） | `AnalysisService` `CallersLabelProvider` | 「この行は解析より新しい」と行単位で分かる | 変更の購読を抱える。**残す**（自動再解析をやめた以上、これが唯一の合図） |
 | 27 | 呼び出している行をエディタで開く | ダブルクリック／右クリック | `EditorOpener` | 見つけた先へ飛べる。影響調査の出口 | **残す** |
 | 28 | メソッドの特定（カーソル位置・選択） | 右クリック／`Ctrl+Alt+Shift+H`／ツールバー ◎ | `MethodPicker` `ShowCallersHandler` | 芯の入口。3 通りあるが中身は 1 つ | **残す** |
+| 28b | フィールドの呼び出し元（フィールドを読み書きしているメソッドと、その呼び出し元） | 右クリック「フィールドの呼び出し元を表示」／［▽］→カーソル位置のフィールド | `FieldPicker` `ShowFieldCallersHandler`・`FieldTree` `FieldAccesses`（子プロセス） | 「このフィールドを変えたらどこまで影響するか」をメソッドと同じ木で辿れる。［▽］で書き込みだけ・読み取りだけに絞れる | 要求のたびにキャッシュを読み直す（常駐のメモリは増やさない）。**足した**（[field-callers-qa.md](field-callers-qa.md)） |
 | 29 | 構文エラーで読めなかったファイルの断り | バナー | `CallHierarchyView` | 木に出ていない理由を言い分ける唯一の場所 | **残す**（[syntax-error-report-qa.md](syntax-error-report-qa.md)） |
 
 ## 5. 結果を持ち出す

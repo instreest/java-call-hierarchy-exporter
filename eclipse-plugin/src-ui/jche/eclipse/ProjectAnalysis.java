@@ -413,12 +413,25 @@ public final class ProjectAnalysis {
 
     /** 木を1つ取り寄せる */
     public void requestTree(String methodKey, boolean callers, String[] filters, TreeCallback callback) {
+        requestTree(methodKey, callers ? "callers" : "callees", filters, callback);
+    }
+
+    /**
+     * 木を1つ取り寄せる（向きを語で指定する）。
+     *
+     * @param direction {@code callers} / {@code callees} / {@code field}（キーはフィールド。根がフィールド、
+     *                  その下が参照しているメソッドと呼び出し元。docs/field-callers-qa.md）
+     */
+    public void requestTree(String key, String direction, String[] filters, TreeCallback callback) {
         List<String> words = new ArrayList<>();
         words.add("TREE");
-        words.add(methodKey);
-        words.add(callers ? "callers" : "callees");
+        words.add(key);
+        words.add(direction);
         words.addAll(Arrays.asList(filters));
-        request(Messages.get("job.fetchTree"), callback, 120_000L, words.toArray(new String[0]));
+        // フィールドの木はキャッシュを先頭から読み直す（サーバーの FieldAccesses）ので、大きなプロジェクトでは
+        // メソッドの木より時間がかかる。待つ上限を長めに取る
+        long timeout = "field".equals(direction) ? 300_000L : 120_000L;
+        request(Messages.get("job.fetchTree"), callback, timeout, words.toArray(new String[0]));
     }
 
     // ------------------------------------------------------------

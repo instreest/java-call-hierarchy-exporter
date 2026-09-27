@@ -10,6 +10,13 @@ package jche.server;
  */
 public final class TreeFilters {
 
+    /** {@link #access} の値。フィールドの読み書きを問わない */
+    public static final String ACCESS_ALL = "all";
+    /** {@link #access} の値。読み取り（複合代入・{@code ++} も含む）だけ */
+    public static final String ACCESS_READ = "read";
+    /** {@link #access} の値。書き込み（複合代入・{@code ++} も含む）だけ */
+    public static final String ACCESS_WRITE = "write";
+
     /** 木の深さの上限 */
     public int maxDepth = 5;
     /** 型名・メソッド名・パッケージの部分一致（空なら絞り込まない） */
@@ -24,6 +31,11 @@ public final class TreeFilters {
     public boolean dedupe = true;
     /** 返す行数の上限。木が大きいときに通信量と時間を抑える */
     public long maxRows = 20_000L;
+    /**
+     * フィールドの木（{@link FieldTree}）で、どの参照を出すか（{@link #ACCESS_ALL} / {@link #ACCESS_READ} /
+     * {@link #ACCESS_WRITE}）。メソッドの木では使わない
+     */
+    public String access = ACCESS_ALL;
 
     /**
      * {@code depth=5} のような語を1つ取り込む。知らないキーは黙って無視する
@@ -44,8 +56,15 @@ public final class TreeFilters {
             case "exclude" -> applyExcludePackages = boolOf(value);
             case "dedupe" -> dedupe = boolOf(value);
             case "max" -> maxRows = Math.max(1L, longOf(value, maxRows));
+            case "access" -> access = accessOf(value);
             default -> { /* 知らない条件は無視する */ }
         }
+    }
+
+    /** 知らない値は「すべて」にする（黙って参照を落とさない側） */
+    private static String accessOf(String value) {
+        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
+        return (ACCESS_READ.equals(v) || ACCESS_WRITE.equals(v)) ? v : ACCESS_ALL;
     }
 
     private static boolean boolOf(String value) {

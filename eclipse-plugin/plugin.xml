@@ -9,6 +9,8 @@
   画面への追加は1つだけ。呼び出し元階層ビュー「影響調査 (Call Hierarchy Exporter)」である。
   メソッドを選んで「影響調査: 呼び出し元階層を表示」で開き、解析結果はプラグインが常駐で持つ
   （docs/eclipse-plugin-ui-design.md）。CSV はビューの右クリックから書き出す。
+  フィールドを選んで「影響調査: フィールドの呼び出し元を表示」でも同じビューが開き、そのフィールドを
+  読み書きしているメソッドと、その呼び出し元を出す（docs/field-callers-qa.md）。
 
   設定ファイル（*.properties）の右クリックからの CSV 一括出力は廃止した。同じことは
   コマンドライン版でできて、こちらは経路（別プロセスをもう1つ起こす作り）を二重に抱えていた
@@ -24,6 +26,12 @@
             defaultHandler="jche.eclipse.ShowCallersHandler"
             id="io.github.instreest.jche.eclipse.showCallers"
             name="%command.showCallers.name"/>
+      <!-- フィールドを読み書きしているメソッドと、その呼び出し元（docs/field-callers-qa.md） -->
+      <command
+            categoryId="io.github.instreest.jche.eclipse.category"
+            defaultHandler="jche.eclipse.ShowFieldCallersHandler"
+            id="io.github.instreest.jche.eclipse.showFieldCallers"
+            name="%command.showFieldCallers.name"/>
    </extension>
 
    <extension point="org.eclipse.ui.views">
@@ -45,6 +53,11 @@
          <command
                commandId="io.github.instreest.jche.eclipse.showCallers"
                label="%menu.showCallers.label"
+               style="push"/>
+         <!-- フィールドの宣言・参照の上での右クリック。フィールドが特定できなければハンドラ側が断る -->
+         <command
+               commandId="io.github.instreest.jche.eclipse.showFieldCallers"
+               label="%menu.showFieldCallers.label"
                style="push"/>
       </menuContribution>
    </extension>

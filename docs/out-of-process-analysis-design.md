@@ -107,6 +107,11 @@ JSON は表現力が高いがパーサを自前で書くか依存を足すこと
 → EXPORT 1234 callers /path/out.csv ...同じフィルタ
 ← OK rows=1832
 
+→ TREE com.example.Order#status field depth=5 access=write   フィールドの呼び出し元（後から足した）
+← R 0 com.example.Order#status ...  field       根がフィールド、深さ 1 がそれを読み書きしているメソッド
+← R 1 <key> ... write access                 （理由の列が read / write / read/write）、その下が呼び出し元
+← OK rows=12 accesses=3                      （docs/field-callers-qa.md）
+
 → CANCEL                      それまでに送った ANALYZE（実行中のものと、まだ始まっていないもの）を中止
                               （別スレッドで受ける。後から送る ANALYZE には効かない）
 → SHUTDOWN                    積んだ要求を処理し終えてから終わる（実行中の解析は中止しない）

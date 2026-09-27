@@ -232,7 +232,7 @@ public final class CallResolver {
             }
             // new された型が自分で宣言していない（親から継承した）実装も拾う。
             // 宣言だけを引くと、継承しているだけの型は候補が 0 件になって次の段へ落ちる
-            int id = graph.implementationOf(h.value(), calleeId);
+            int id = graph.selection().implementationOf(h.value(), calleeId);
             if (id >= 0) {
                 fromNew.addIfAbsent(id);
             }
@@ -439,12 +439,12 @@ public final class CallResolver {
             return known;
         }
         IntArray cands = new IntArray(4);
-        int own = graph.implementationOf(qualifier, calleeId);
+        int own = graph.selection().implementationOf(qualifier, calleeId);
         if (own >= 0) {
             cands.add(own);
         }
         for (String sub : graph.hierarchy.transitiveSubtypes(qualifier)) {
-            int id = graph.implementationOf(sub, calleeId);
+            int id = graph.selection().implementationOf(sub, calleeId);
             if (id >= 0) {
                 cands.addIfAbsent(id);
             }
@@ -479,7 +479,7 @@ public final class CallResolver {
             //   (2) サブインターフェースでの抽象な再宣言: interface B extends A { m(); } は
             //       本体を持たないのに候補に数えられ、実装が 1 件でも CHA（未展開）のままになっていた
             // implementationOf は本体を持つ宣言まで親を辿るので、どちらも正しく扱える
-            int id = graph.implementationOf(sub, calleeId);
+            int id = graph.selection().implementationOf(sub, calleeId);
             if (id >= 0) {
                 cands.addIfAbsent(id);
             }
@@ -558,7 +558,7 @@ public final class CallResolver {
             if (!beans.isBean(type) || (qualifier != null && !beans.hasBeanName(type, qualifier))) {
                 continue;
             }
-            int id = graph.implementationOf(type, calleeId);
+            int id = graph.selection().implementationOf(type, calleeId);
             if (id >= 0) {
                 hits.addIfAbsent(id);
             }
@@ -660,7 +660,7 @@ public final class CallResolver {
         IntArray ids = new IntArray(contract.candidates().length);
         for (String fqn : contract.candidates()) {
             // 契約が指す型が自分で宣言していない（親から継承した）実装も拾う。拡張と同じ扱い
-            int id = graph.implementationOf(fqn, calleeId);
+            int id = graph.selection().implementationOf(fqn, calleeId);
             if (id >= 0) {
                 ids.addIfAbsent(id);
             }
@@ -706,7 +706,7 @@ public final class CallResolver {
                 // 拡張が返した型が自分で宣言していない（親から継承した）実装も拾う。
                 // 宣言だけを引くと、継承しているだけの型を返した拡張が黙って効かなくなる。
                 // 単純名で返されたものは FQN に直す（1 件に定まるときだけ。TypeNames）
-                int id = graph.implementationOf(graph.typeNames().toFqn(c), calleeId);
+                int id = graph.selection().implementationOf(graph.typeNames().toFqn(c), calleeId);
                 if (id >= 0) {
                     ids.addIfAbsent(id);
                 } else {

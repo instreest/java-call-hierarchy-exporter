@@ -104,6 +104,16 @@ public final class ClientProbe {
             check("EXPORT", export.isOk() && csv.isFile() && csv.length() > 0,
                     "rows=" + export.field("rows") + " " + csv.length() + " バイト");
 
+            // フィールドの木（根がフィールド、深さ 1 が参照しているメソッド）。画面の「フィールドの呼び出し元」
+            ServerResponse field = connection.request(60_000L,
+                    "TREE", "fx.service.OrderService#dao", "field", "depth=3");
+            ServerTree fieldTree = ServerTree.of(field.rows());
+            check("TREE … field", field.isOk() && fieldTree.root() != null
+                            && fieldTree.root().row().hasFlag(ServerRow.FLAG_FIELD)
+                            && !fieldTree.root().children().isEmpty()
+                            && fieldTree.root().children().get(0).row().hasFlag(ServerRow.FLAG_ACCESS),
+                    "rows=" + field.rows().size() + " accesses=" + field.field("accesses"));
+
             // TAB や改行を含む語を投げても、行が壊れずに応答が返ること
             ServerResponse escaped = connection.request(ServerConnection.DEFAULT_TIMEOUT_MS,
                     "FIND", "a\tb\nc#x()");

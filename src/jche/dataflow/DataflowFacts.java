@@ -66,7 +66,7 @@ public final class DataflowFacts {
      * これらは<b>そのファクトリを呼んでいる箇所の実引数</b>を見て初めて確定する。
      *
      * <p>これはそのメソッドの<b>本体</b>が返す値。呼び出し箇所でこれを戻り値として使ってよいのは、
-     * 呼び出しがその本体でしか動かないとき（{@code CallGraph#hasOverriders} が false）だけ
+     * 呼び出しがその本体でしか動かないとき（{@code MethodSelection#hasOverriders} が false）だけ
      */
     public byte factoryKind(int methodId) {
         return (methodId >= 0 && methodId < factoryKind.length) ? factoryKind[methodId] : 0;

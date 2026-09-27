@@ -1379,7 +1379,7 @@ public class HolderSemi {
 EOF
 
 # ---------------------------------------------------------------------------
-# 戻り値の値（R 行）は、呼び出しがその宣言の本体でしか動かないときだけ使う（CallGraph#hasOverriders）。
+# 戻り値の値（R 行）は、呼び出しがその宣言の本体でしか動かないときだけ使う（MethodSelection#hasOverriders）。
 # 部分型が上書きしていれば、実際に動くのは部分型の本体かもしれない。宣言の return の値を当てると、
 # 呼ばれる呼び出しを [UNREACHABLE] にしたり、宣言の本体が返す型へ絞ったりして、上書きした本体の側を落とす。
 # 条件分岐の値（literalOf）・契約表のキー（literalOf）・ファクトリの畳み込み（DataflowBuilder の reduce と

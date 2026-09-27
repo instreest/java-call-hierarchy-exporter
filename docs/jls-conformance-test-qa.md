@@ -189,7 +189,7 @@ package b; public class OtherPackageSub extends a.PackageBase { public void hook
 `run()` の `hook()` からは動かない。CHA はシグネチャの一致だけで候補を引いていたので、候補に入っていた。
 
 多すぎる側の近似ではあるが、**動かないことが言語仕様で決まっている**メソッドを「呼ばれうる」と出すのは
-影響調査の範囲を不当に広げる。`CallGraph.search` で、呼び出し先がパッケージアクセスのときは別パッケージの
+影響調査の範囲を不当に広げる。`MethodSelection.search` で、呼び出し先がパッケージアクセスのときは別パッケージの
 宣言を飛ばして親へ進むようにした。
 
 ただし推移的な上書きがある。同じパッケージのサブクラスが public に広げて宣言し直せば（§8.4.8.3）、
@@ -313,7 +313,7 @@ C 行の qualifier の照合を足した。拡張 for 文の `iterator()`・try-
 
 ## Q20. 実行時に動く実装の選び方と、暗黙の `super()` の呼び出し先の節を、どう足したか
 
-v42 の穴探しで、読み手の実装の探し方（`CallGraph#search`）と暗黙の `super()` の呼び出し先が javac・JVM の選び方と
+v42 の穴探しで、読み手の実装の探し方（`MethodSelection#search`）と暗黙の `super()` の呼び出し先が javac・JVM の選び方と
 違っていたのを直した（直し方と理由は [jls-conformance-qa.md](jls-conformance-qa.md) の Q26〜Q36、キャッシュの側は
 [cache-unification-qa.md](cache-unification-qa.md) の「v42 の穴探し（形式 v43）」の Q99・Q110・Q127）。ここでは
 検査の側で決めたことを書く。

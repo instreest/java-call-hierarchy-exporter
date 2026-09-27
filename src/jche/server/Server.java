@@ -463,10 +463,14 @@ public final class Server {
         return count;
     }
 
-    private void tree(String[] parts) {
+    private void tree(String[] parts) throws IOException {
         Request request = Request.of(parts);
         if (snapshot == null) {
             respondNg("not-analyzed");
+            return;
+        }
+        if (request.field) {
+            fieldTree(request, null);
             return;
         }
         MethodTable methods = snapshot.graph().methods();
@@ -508,7 +512,7 @@ public final class Server {
     }
 
     /** 行に付ける印。画面はこれを見てアイコンや色を決める */
-    private static String flagsOf(CallTree tree, CallTree.Row row, MethodTable methods) {
+    static String flagsOf(CallTree tree, CallTree.Row row, MethodTable methods) {
         List<String> flags = new ArrayList<>();
         if (row.recursive()) {
             flags.add("recursive");
@@ -537,6 +541,10 @@ public final class Server {
         }
         if (request.output.isEmpty()) {
             respondNg("missing-output");
+            return;
+        }
+        if (request.field) {
+            fieldTree(request, Paths.get(request.output));
             return;
         }
         MethodTable methods = snapshot.graph().methods();
@@ -572,6 +580,79 @@ public final class Server {
         respondOk("rows=" + rows.size() + Protocol.SEP + "file=" + Protocol.escape(output.toString()));
     }
 
+    /**
+     * フィールドの木（{@code TREE / EXPORT <型FQN#フィールド名> field}）。行の形はメソッドの木と同じで、
+     * 根がフィールド、深さ 1 がそれを参照しているメソッド、その下が呼び出し元になる（{@link FieldTree}）。
+     *
+     * <p>フィールドの参照（A 行）はグラフに持っていないので、ここでキャッシュを読む（{@link FieldAccesses}）。
+     * 断り方は 3 つ。
+     * <ul>
+     *   <li>{@code bad-field} … キーが {@code 型FQN#フィールド名} の形でない（呼び出し側の不具合）</li>
+     *   <li>{@code not-found} … ソースに宣言も参照も無い（解析の後に足した・綴りが違う）</li>
+     *   <li>{@code stale-cache} … キャッシュがこの結果を作ったときと違う（解析し直しが途中で終わった）。
+     *       解析し直せば直る</li>
+     * </ul>
+     *
+     * @param output CSV の出力先。null なら {@code R} 行で返す（TREE）
+     */
+    private void fieldTree(Request request, Path output) throws IOException {
+        int hash = request.key.lastIndexOf('#');
+        if (hash <= 0 || hash == request.key.length() - 1 || request.key.indexOf('(') >= 0) {
+            respondNg("bad-field " + Protocol.escape(request.key));
+            return;
+        }
+        String ownerFqn = request.key.substring(0, hash);
+        String fieldName = request.key.substring(hash + 1);
+        FieldAccesses.Result scanned;
+        try {
+            scanned = FieldAccesses.scan(snapshot.config().cacheFile, snapshot.cacheStamp(), ownerFqn, fieldName);
+        } catch (FieldAccesses.StaleCacheException e) {
+            respondNg("stale-cache");
+            return;
+        }
+        if (scanned.isUnknown()) {
+            respondNg("not-found");
+            return;
+        }
+        FieldTree tree = new FieldTree(snapshot, request.filters);
+        List<FieldTree.Line> lines = tree.walk(ownerFqn, fieldName, scanned);
+        String counts = "rows=" + lines.size() + Protocol.SEP + "accesses=" + tree.countMatching(scanned);
+        if (output == null) {
+            for (FieldTree.Line line : lines) {
+                emitLine(Protocol.ROW
+                        + Protocol.SEP + line.depth()
+                        + Protocol.SEP + Protocol.escape(line.key())
+                        + Protocol.SEP + Protocol.escape(line.label())
+                        + Protocol.SEP + Protocol.escape(line.file())
+                        + Protocol.SEP + line.line()
+                        + Protocol.SEP + Protocol.escape(line.reason())
+                        + Protocol.SEP + line.flags());
+            }
+            respondOk(counts);
+            return;
+        }
+        try (BufferedWriter writer = Csv.writer(output, StandardCharsets.UTF_8, true)) {
+            writer.write("depth,method,file,line,reason,note");
+            writer.newLine();
+            for (FieldTree.Line line : lines) {
+                writer.write(String.valueOf(line.depth()));
+                writer.write(Csv.DELIM);
+                writer.write(Csv.esc(line.key()));
+                writer.write(Csv.DELIM);
+                writer.write(Csv.esc(line.file()));
+                writer.write(Csv.DELIM);
+                writer.write(String.valueOf(line.line()));
+                writer.write(Csv.DELIM);
+                writer.write(Csv.esc(line.reason()));
+                writer.write(Csv.DELIM);
+                // メソッドの木と同じ注記。CSV のセルは表示言語に関わらず英語（docs/nls-qa.md の Q6）
+                writer.write(line.recursive() ? "recursive" : (line.truncated() ? "depth-limit" : ""));
+                writer.newLine();
+            }
+        }
+        respondOk(counts + Protocol.SEP + "file=" + Protocol.escape(output.toString()));
+    }
+
     /** キーで引き、だめならゆるい照合も試す */
     private static int rootIdOf(MethodTable methods, String key) {
         int id = methods.idOf(key);
@@ -582,6 +663,8 @@ public final class Server {
     private static final class Request {
         private String key = "";
         private CallTree.Direction direction = CallTree.Direction.CALLERS;
+        /** 向きが {@link Protocol#FIELD}（キーはフィールド）か */
+        private boolean field;
         private String output = "";
         private final TreeFilters filters = new TreeFilters();
 
@@ -592,6 +675,7 @@ public final class Server {
             String dir = arg(parts, 2);
             request.direction = Protocol.CALLEES.equalsIgnoreCase(dir)
                     ? CallTree.Direction.CALLEES : CallTree.Direction.CALLERS;
+            request.field = Protocol.FIELD.equalsIgnoreCase(dir);
             int from = 3;
             if (isExport) {
                 request.output = arg(parts, 3);
