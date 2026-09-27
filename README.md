@@ -82,7 +82,7 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
      ```
 
      ```bash
-     # Linux / macOS / Git Bash
+     # Linux
      ./java-call-hierarchy-exporter.sh config/config.properties
      ```
 
@@ -601,7 +601,7 @@ not remove the call: it lists the candidates or says it could not follow the cal
      ```
 
      ```bash
-     # Linux / macOS / Git Bash
+     # Linux
      ./java-call-hierarchy-exporter.sh config/config.properties
      ```
 
