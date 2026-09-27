@@ -113,6 +113,12 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 ### 1 行の読み方
 
+```csv
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+```
+
 | 列 | 例（上の 2 行目） | 意味 |
 |---|---|---|
 | `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | 呼び出している場所。Java のスタックトレースと同じ形なので、Eclipse でソースに飛べます（[下記](#eclipse-でソースコードへジャンプする)） |
@@ -629,6 +635,12 @@ Even when a call through an interface could not be narrowed to one implementatio
 implementation gets its own row, so filtering `callee` by the implementation class name finds it.
 
 ### Reading one row
+
+```csv
+caller,callee,resolved-by,level,root,call-hierarchy
+at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
+at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
+```
 
 | Column | Example (the second row above) | Meaning |
 |---|---|---|
