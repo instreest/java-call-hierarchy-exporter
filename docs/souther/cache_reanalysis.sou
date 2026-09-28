@@ -89,18 +89,10 @@ data Dropped
 // ブロックを書き写す（パス5）
 data Reused
 // 解析し直す理由（パス2 は自分の変化、パス3・4 は依存の変化、安全網は型階層の変化）
-data ContentChanged
-data BlockDamaged
-data PairDeleted
-data BindingFailed
-data PackageCollision
-data BySource
-data ByLibrary
-data HierarchyChanged
+data Reanalyze = ContentChanged | BlockDamaged | PairDeleted | BindingFailed
+               | PackageCollision | BySource | ByLibrary | HierarchyChanged
 
-behavior decideBlock : (block: Block, run: Run)
-    -> Dropped | Reused | ContentChanged | BlockDamaged | PairDeleted | BindingFailed
-     | PackageCollision | BySource | ByLibrary | HierarchyChanged
+behavior decideBlock : (block: Block, run: Run) -> Dropped | Reused | Reanalyze
 
 let decideBlock (block, run) = {
     guard block.inSources else Dropped
@@ -176,3 +168,134 @@ example decideBlock
     | "何にも触れなければ再利用": (untouched, busyRun) -> Reused
     | "依存に触れても何も変わらない実行なら再利用"
         : (Block { ...untouched, depsTouchSource = true }, quietRun) -> Reused
+
+// ---------------------------------------------------------------------------
+// 3. 判定の健全性（soundness）: 判定が「見えたもの」で決めた結果を、「本当はどうだったか」と比べる。
+//    文書にある限界（docs/cache-design.md・docs/cache-unification-qa.md）を、ここに例として固定する。
+//    ここに無い形で Unsound になる例を書けたら、それは文書に無い穴である。
+// ---------------------------------------------------------------------------
+
+// 判定の入力に現れない（見えない）事情。限界ごとに 1 つ
+data Hazard = NoHazard
+    // --- 見えずに古い事実を再利用する（KnownMiss） ---
+    // 同じバッチの解析中に書き換えて戻し、大きさも更新時刻も変わらない（Q57）
+    | EditedAndRestoredInOneTick
+    // 中断した実行の一時ファイルから、中断中に書き換えて戻したソースを読んだブロックを引き継ぐ（Q57）
+    | ResumedEditedBlock
+    // .java の無いフォルダを作る・消すだけ（JDT はフォルダでパッケージの有無を決めるが、キャッシュに痕跡が無い。Q80・Q91）
+    | EmptyFolderToggled
+    // --- 解析し直しても事実がバッチの組み方で変わる（KnownDivergence） ---
+    // パッケージの宣言がフォルダと合わないファイルの型を使う（Q117）
+    | PackageDeclMismatch
+    // 名前の違うファイルで同じ型を宣言している（Q68）
+    | DuplicateTypeInOtherFile
+    // 依存 jar に無いクラス（JDT の打ち切り・エラーを最初に出会ったファイルにだけ付ける。Q129）
+    | MissingJarClass
+    // 循環した継承（JDT がバッチの処理の順で循環を断つ。Q129）
+    | CyclicInheritance
+    // 解決できない型が絡み、宣言する側と呼ぶ側が同じ createASTs に入るかで結果が変わる（Q137・Q129）
+    | BatchSplitWithMissingType
+    // パッケージと同じ名前の型があり、パッケージのファイル自身のエラーが順に依る（Q87）
+    | OwnPackageTypeCollision
+
+data Truth = {
+    // 全件解析と同じ事実にするには、このファイルを解析し直す必要があった
+    mustReanalyze: Bool,
+    hazard: Hazard
+}
+
+// 判定が本当と合う
+data Sound
+// 解析し直したが、本当は要らなかった（安全側の費用）
+data Overcautious = { because: Reanalyze }
+// 文書にある限界: 見えずに古い事実を再利用した
+data KnownMiss = { cause: Hazard }
+// 文書にある限界: 解析し直しても、全件解析とバッチの組み方で違いうる
+data KnownDivergence = { cause: Hazard }
+// 文書に無い穴（本体の不具合か、モデルの写し間違い）
+data Unsound
+
+behavior soundness : (block: Block, run: Run, truth: Truth)
+    -> Sound | Overcautious | KnownMiss | KnownDivergence | Unsound
+
+let soundness (block, run, truth) = {
+    let decision = decideBlock(block, run)
+    match truth.hazard with
+        | PackageDeclMismatch | DuplicateTypeInOtherFile | MissingJarClass | CyclicInheritance
+        | BatchSplitWithMissingType | OwnPackageTypeCollision
+            -> KnownDivergence { cause = truth.hazard }
+        | EditedAndRestoredInOneTick | ResumedEditedBlock | EmptyFolderToggled ->
+            match decision with
+                | Dropped | Reused -> KnownMiss { cause = truth.hazard }
+                | ContentChanged | BlockDamaged | PairDeleted | BindingFailed
+                | PackageCollision | BySource | ByLibrary | HierarchyChanged -> Sound
+        | NoHazard ->
+            match decision with
+                | Dropped -> Sound
+                | Reused -> if truth.mustReanalyze then Unsound else Sound
+                | Reanalyze as r ->
+                    if truth.mustReanalyze then Sound else Overcautious { because = r }
+}
+
+let needed = Truth { mustReanalyze = true, hazard = NoHazard }
+let notNeeded = Truth { mustReanalyze = false, hazard = NoHazard }
+let hierarchyRun = Run { anythingStale = true, hierarchyChanged = true }
+
+example soundness
+    // --- 本当と合う ---
+    | "変わったファイルを解析し直す": (Block { ...untouched, sameContent = false }, quietRun, needed) -> Sound
+    | "何も変わらないファイルを再利用する": (untouched, busyRun, notNeeded) -> Sound
+    | "変わった型に触れるファイルを解析し直す": (Block { ...untouched, depsTouchSource = true }, busyRun, needed) -> Sound
+    | "消えたファイルのブロックを捨てる": (Block { ...untouched, inSources = false }, busyRun, notNeeded) -> Sound
+    | "組の片方が消えたら残ったほうを解析し直す"
+        : (Block { ...untouched, pairedWithDeleted = true }, quietRun, needed) -> Sound
+    | "パッケージと衝突するファイルを解析し直す"
+        : (Block { ...untouched, collidesWithChangedPackage = true }, busyRun, needed) -> Sound
+    // --- 2. 安全側の費用（解析し直すが、本当は要らない） ---
+    | "型階層が変わると、関係の無いファイルまで解析し直す"
+        : (untouched, hierarchyRun, notNeeded) -> Overcautious { because = HierarchyChanged }
+    | "型解決に失敗していたファイルは、関係の無い変化でも解析し直す"
+        : (Block { ...untouched, bindingFailed = true }, busyRun, notNeeded) -> Overcautious { because = BindingFailed }
+    | "jar はパッケージの粒度で見るので、使っていないクラスの変化でも解析し直す"
+        : (Block { ...untouched, depsTouchLibrary = true }, busyRun, notNeeded) -> Overcautious { because = ByLibrary }
+    // 親の型にコメントを足しただけでも部分型をすべて変わった型にする（Q77）、壊れたブロックのパッケージを
+    // 中身の分からないパッケージにする（Q138）は、どちらも見える入力ではこの形になる
+    | "変わった型に触れたが、本当は結果が変わらない"
+        : (Block { ...untouched, depsTouchSource = true }, busyRun, notNeeded) -> Overcautious { because = BySource }
+    | "検査値だけが壊れたブロックは、中身が同じでも解析し直す"
+        : (Block { ...untouched, intact = false }, quietRun, notNeeded) -> Overcautious { because = BlockDamaged }
+    // --- 1. 見えずに古い事実を再利用する ---
+    | "同じ刻みの中で書き換えて戻したファイルを再利用する"
+        : (untouched, quietRun, Truth { mustReanalyze = true, hazard = EditedAndRestoredInOneTick })
+        -> KnownMiss { cause = EditedAndRestoredInOneTick }
+    | "中断中に書き換えて戻したソースを読んだブロックを引き継ぐ"
+        : (untouched, quietRun, Truth { mustReanalyze = true, hazard = ResumedEditedBlock })
+        -> KnownMiss { cause = ResumedEditedBlock }
+    | "java の無いフォルダを作っただけでは解析し直さない"
+        : (untouched, quietRun, Truth { mustReanalyze = true, hazard = EmptyFolderToggled })
+        -> KnownMiss { cause = EmptyFolderToggled }
+    | "見えない変化も、ほかの理由で解析し直せば塞がる"
+        : (Block { ...untouched, depsTouchSource = true }, busyRun,
+           Truth { mustReanalyze = true, hazard = EditedAndRestoredInOneTick }) -> Sound
+    // --- 1. 解析し直しても全件解析と違いうる ---
+    | "パッケージの宣言がフォルダと合わない"
+        : (Block { ...untouched, depsTouchSource = true }, busyRun, Truth { mustReanalyze = true, hazard = PackageDeclMismatch })
+        -> KnownDivergence { cause = PackageDeclMismatch }
+    | "名前の違うファイルで同じ型を宣言している"
+        : (untouched, busyRun, Truth { mustReanalyze = false, hazard = DuplicateTypeInOtherFile })
+        -> KnownDivergence { cause = DuplicateTypeInOtherFile }
+    | "依存 jar に無いクラスでエラーの付く先が移る"
+        : (Block { ...untouched, bindingFailed = true }, busyRun, Truth { mustReanalyze = true, hazard = MissingJarClass })
+        -> KnownDivergence { cause = MissingJarClass }
+    | "循環した継承"
+        : (Block { ...untouched, sameContent = false }, quietRun, Truth { mustReanalyze = true, hazard = CyclicInheritance })
+        -> KnownDivergence { cause = CyclicInheritance }
+    | "解決できない型の宣言側と呼ぶ側が別の createASTs に入る"
+        : (Block { ...untouched, sameContent = false }, busyRun, Truth { mustReanalyze = true, hazard = BatchSplitWithMissingType })
+        -> KnownDivergence { cause = BatchSplitWithMissingType }
+    | "パッケージと同じ名前の型"
+        : (untouched, busyRun, Truth { mustReanalyze = true, hazard = OwnPackageTypeCollision })
+        -> KnownDivergence { cause = OwnPackageTypeCollision }
+    // --- 文書に無い穴の形（この形の本当の例が見つかったら、本体の不具合） ---
+    | "見える入力がすべて静かなのに、解析し直す必要があった"
+        : (untouched, busyRun, needed) -> Unsound
