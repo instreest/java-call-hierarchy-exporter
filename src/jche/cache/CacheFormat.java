@@ -496,7 +496,7 @@ public final class CacheFormat {
      *       型階層（H 行）が旧キャッシュと違えば、残りを全件解析する（{@code docs/cache-unification-qa.md} の Q131）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v44";
+    public static final String VERSION = "jche-cache-v45";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

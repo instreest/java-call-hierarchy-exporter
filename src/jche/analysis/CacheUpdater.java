@@ -1576,19 +1576,28 @@ public final class CacheUpdater {
         for (TypeFact t : declared) {
             stale.add(t.typeFqn(), t.pkg());
         }
-        if (declared.isEmpty() && unitPackage != null && !declaresNoType(block.rel)) {
+        if (unitPackage != null && (!intact || (declared.isEmpty() && !declaresNoType(block.rel)))) {
             // 型を 1 つも宣言していなかったブロック（解析に失敗したファイルの印のブロック。BlockWriter#failed。
-            // エラーで JDT が型を落としたファイル・壊れて H 行を読めないブロックも）。前回そのファイルが宣言していた型が
-            // 分からないので、置き場所のパッケージを中身の分からないパッケージにする（変わった jar のパッケージと同じ扱い）
+            // エラーで JDT が型を落としたファイル・型を宣言しない package-info.java（宣言することもある）も）と、
+            // 壊れたブロック（検査値が合わない。H 行が読めても、その H 行が本当の型かは分からない。docs/cache-unification-qa.md の
+            // Q137）。前回そのファイルが宣言していた型が分からないので、置き場所のパッケージを中身の分からないパッケージにする
+            // （変わった jar のパッケージと同じ扱い）
             stale.addOpaque(unitPackage);
         }
         // 今のソースに無いファイルのブロックは、壊れていても解析し直さないので数えない
         return (!intact && block.inSources) ? 1 : 0;
     }
 
-    /** 型を宣言しないコンパイル単位（{@code package-info.java}・{@code module-info.java}）か。相対パスで見る */
+    /**
+     * 型を宣言できないコンパイル単位（{@code module-info.java}）か。相対パスのファイル名で見る（{@code endsWith} だと
+     * {@code Xmodule-info.java} にも当たる）。{@code package-info.java} はふつう型を宣言しないが宣言できる（JLS 7.4.1 は
+     * 推奨しないだけ）ので除かない。除いていたときは、そこに宣言したクラスの解析が失敗しても・そのファイルを消しても
+     * パッケージが中身の分からないパッケージにならず、そのクラスを使うファイルを解析し直さなかった
+     * （docs/cache-unification-qa.md の Q137）
+     */
     static boolean declaresNoType(String relativePath) {
-        return relativePath.endsWith("package-info.java") || relativePath.endsWith("module-info.java");
+        int slash = relativePath.lastIndexOf('/');
+        return relativePath.substring(slash + 1).equals("module-info.java");
     }
 
     /**

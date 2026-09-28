@@ -337,13 +337,21 @@ final class BindingNames {
         noteSignatureTypes(t.getFunctionalInterfaceMethod(), false);
     }
 
-    /** メソッドのシグネチャ（引数・戻り値・throws）の型を数える（{@link #noteReachedType(ITypeBinding, boolean)}） */
+    /**
+     * メソッドのシグネチャ（引数・戻り値・throws・型変数）の型を数える（{@link #noteReachedType(ITypeBinding, boolean)}）。
+     * 型変数は、引数・戻り値・throws に現れなくても数える（{@code <T extends Comparable<? super Foo>> void m()} を
+     * {@code x.<Bar>m()} と呼ぶと、上限が合うかは Foo の親に依る。型の宣言の {@link #noteHeaderTypes} と同じ。
+     * ジェネリックなコンストラクタ {@code new <Bar>Box()} も同じ。docs/cache-unification-qa.md の Q137）
+     */
     private void noteSignatureTypes(IMethodBinding m, boolean jdkToo) {
         if (m == null) {
             return;
         }
         for (ITypeBinding p : m.getParameterTypes()) {
             noteReachedType(p, jdkToo);
+        }
+        for (ITypeBinding v : m.getTypeParameters()) {
+            noteReachedType(v, jdkToo);
         }
         noteReachedType(m.getReturnType(), jdkToo);
         for (ITypeBinding e : m.getExceptionTypes()) {
