@@ -221,7 +221,7 @@ public final class CallHierarchyExporterSingle {
         /**
          * 設定ファイルを読む（本体の jche.config.ConfigFile と同じ決まり）。1 行に「項目=値」（区切りは = だけ）、
          * 先頭が # か ! の行は注釈。バックスラッシュはそのまま（Windows のパスをそのまま書ける）。空白で始まる行のうち
-         * 「項目=」の形でないものは直前の項目の値の続き（間に注釈・空行を挟まない）。行末の \ は続きの印として除く。
+         * 「項目=」の形でないものは直前の項目の値の続き。行末の \ も続きの印（次の内容行が「項目=」の形なら続けず捨てる）。続きの途中の注釈は読み飛ばす。
          * = の無い行・項目名のおかしい行は行番号つきのエラーにして、黙って読み飛ばさない
          */
         static Properties readConfig(List<String> lines) throws IOException {
@@ -229,22 +229,27 @@ public final class CallHierarchyExporterSingle {
             Properties out = new Properties();
             String key = null;
             StringBuilder value = null;
+            boolean pending = false;
             for (int i = 0; i < lines.size(); i++) {
                 String line = lines.get(i);
                 if (i == 0 && line.startsWith("\uFEFF")) {
                     line = line.substring(1);
                 }
                 String t = line.trim();
-                if (t.isEmpty() || t.startsWith("#") || t.startsWith("!")) {
-                    if (key != null) {
+                if (t.startsWith("#") || t.startsWith("!")) {
+                    continue;
+                }
+                if (t.isEmpty()) {
+                    if (!pending && key != null) {
                         out.setProperty(key, value.toString());
+                        key = null;
                     }
-                    key = null;
                     continue;
                 }
                 boolean indented = Character.isWhitespace(line.charAt(0));
-                if (indented && key != null && !keyLine.matcher(line).matches()) {
-                    value.append(t.endsWith("\\") ? t.substring(0, t.length() - 1) : t);
+                if (key != null && !keyLine.matcher(line).matches() && (pending || indented)) {
+                    pending = t.endsWith("\\");
+                    value.append(pending ? t.substring(0, t.length() - 1).trim() : t);
                     continue;
                 }
                 if (key != null) {
@@ -252,14 +257,15 @@ public final class CallHierarchyExporterSingle {
                 }
                 int eq = t.indexOf('=');
                 if (eq < 0) {
-                    throw new IOException("設定ファイルの " + (i + 1) + " 行目を読めません（項目=値 の形で書く。値の続きは項目のすぐ下に字下げする）: " + t);
+                    throw new IOException("設定ファイルの " + (i + 1) + " 行目を読めません（項目=値 の形で書く。値を続けるときは行末に \\ を書くか、項目のすぐ下に字下げする）: " + t);
                 }
                 key = t.substring(0, eq).trim();
                 if (!key.matches("[A-Za-z][A-Za-z0-9._-]*")) {
                     throw new IOException("設定ファイルの " + (i + 1) + " 行目の項目名を読めません: " + t);
                 }
                 String v = t.substring(eq + 1).trim();
-                value = new StringBuilder(v.endsWith("\\") ? v.substring(0, v.length() - 1) : v);
+                pending = v.endsWith("\\");
+                value = new StringBuilder(pending ? v.substring(0, v.length() - 1).trim() : v);
             }
             if (key != null) {
                 out.setProperty(key, value.toString());

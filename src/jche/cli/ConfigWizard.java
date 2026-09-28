@@ -191,23 +191,37 @@ public final class ConfigWizard {
 
     /**
      * ひな形の各行のうち、置き換える項目の {@code key=} 行を新しい値にする。
-     * 字下げして次の行に続く複数行の値（exclude.packages 等。{@link jche.config.ConfigFile} の読み方）は、
+     * 複数行の値（行末の {@code \} か字下げで続く。exclude.packages 等。{@link jche.config.ConfigFile} と同じ見分け方）は、
      * 置き換え対象なら続きの行ごと捨てる。ひな形に無い項目は末尾に足す。
      */
     static List<String> applyToTemplate(List<String> template, Map<String, String> values) {
         List<String> out = new ArrayList<>();
         Map<String, String> remaining = new LinkedHashMap<>(values);
-        boolean skippingContinuation = false;
+        boolean skipping = false;   // 置き換えた項目の続きの行を捨てている
+        boolean pending = false;    // 捨てている値の直前の行が \ で終わっている
         for (String line : template) {
-            if (skippingContinuation && isContinuation(line)) {
-                continue;
+            String t = line.trim();
+            if (skipping) {
+                if (t.startsWith("#") || t.startsWith("!")) {
+                    out.add(line);          // 注釈は続きの途中でも残す
+                    continue;
+                }
+                if (t.isEmpty() && pending) {
+                    continue;
+                }
+                if (!t.isEmpty() && !KEY_LINE.matcher(line).matches()
+                        && (pending || Character.isWhitespace(line.charAt(0)))) {
+                    pending = t.endsWith("\\");
+                    continue;
+                }
+                skipping = false;
             }
-            skippingContinuation = false;
             Matcher m = KEY_LINE.matcher(line);
             if (m.matches() && remaining.containsKey(m.group(1))) {
                 String key = m.group(1);
                 out.add(key + "=" + remaining.remove(key));
-                skippingContinuation = true;
+                skipping = true;
+                pending = t.endsWith("\\");
                 continue;
             }
             out.add(line);
@@ -219,14 +233,6 @@ public final class ConfigWizard {
     }
 
     private static final Pattern KEY_LINE = Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9._-]*)\\s*=.*$");
-
-    /** 値の続きの行（空白で始まり、項目の行・注釈・空行でない）。読み手（ConfigFile）と同じ見分け方 */
-    private static boolean isContinuation(String line) {
-        String t = line.trim();
-        return !line.isEmpty() && Character.isWhitespace(line.charAt(0))
-                && !t.isEmpty() && !t.startsWith("#") && !t.startsWith("!")
-                && !KEY_LINE.matcher(line).matches();
-    }
 
     /**
      * project.root の書き方。設定ファイルのフォルダ（config/）から上位へ 2 段以内で書ける相対パスならそれ

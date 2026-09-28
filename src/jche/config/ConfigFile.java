@@ -24,10 +24,11 @@ import java.util.regex.Pattern;
  *   <li>先頭（空白を除く）が {@code #} か {@code !} の行は注釈。空行は読み飛ばす</li>
  *   <li>{@code 項目=値}。区切りは {@code =} だけ（{@code :} は使えない。Windows のパスの {@code C:} と区別できないため）。
  *       項目名は英字で始まり英数字と {@code . _ -}。値は前後の空白を除いたそのままで、{@code \} もそのまま</li>
- *   <li>空白で始まる行のうち {@code 項目=} の形でないものは、直前の項目の値の続き（前の行との間に注釈・空行を挟まない）。
- *       前後の空白を除いて値につなぐ</li>
- *   <li>行末の {@code \} は除く（properties の続きの印。以前のひな形をコピーした設定がそのまま読める。
- *       パスの末尾の区切りとして書いてあっても、無くて同じ場所を指す）</li>
+ *   <li>行末の {@code \} は次の行に続く印（properties と同じ）。ただし次の内容行が {@code 項目=} の形か
+ *       ファイルの末尾なら続けず、末尾の {@code \} を捨てる（パスの末尾の区切り {@code C:\work\app\} は
+ *       無くても同じ場所を指す）。続きの途中の注釈行・空行は読み飛ばす（一覧の 1 要素を {@code #} で外せる）</li>
+ *   <li>空白で始まる行のうち {@code 項目=} の形でないものも、直前の項目の値の続き（{@code \} が無くてもよい。
+ *       ただし空行を挟むと続きではない）。続きは前後の空白を除いて値につなぐ</li>
  *   <li>同じ項目が 2 回あれば後の行が勝つ</li>
  * </ul>
  * 読めない行は行番号つきの {@link SyntaxException} にして、黙って読み飛ばさない。
@@ -97,21 +98,31 @@ public final class ConfigFile {
         Properties out = new Properties();
         String currentKey = null;
         StringBuilder currentValue = null;
+        boolean pending = false;  // 直前の内容行が \ で終わっている（次の内容行に続く）
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
             if (i == 0 && line.startsWith("\uFEFF")) {
                 line = line.substring(1);
             }
             String trimmed = line.trim();
-            if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!")) {
-                // 注釈・空行は値の続きを切る。離れた字下げの行を前の項目につながない
-                flush(out, currentKey, currentValue);
-                currentKey = null;
-                currentValue = null;
+            if (trimmed.startsWith("#") || trimmed.startsWith("!")) {
+                // 注釈は続きの途中でも読み飛ばす（一覧の 1 要素を # で外せる）
                 continue;
             }
-            boolean indented = line.length() > 0 && Character.isWhitespace(line.charAt(0));
-            if (indented && currentKey != null && !KEY_LINE.matcher(line).matches()) {
+            if (trimmed.isEmpty()) {
+                // 空行は字下げによる続きを切る。\ で続けている途中なら読み飛ばす
+                if (!pending) {
+                    flush(out, currentKey, currentValue);
+                    currentKey = null;
+                    currentValue = null;
+                }
+                continue;
+            }
+            boolean indented = Character.isWhitespace(line.charAt(0));
+            boolean keyLike = KEY_LINE.matcher(line).matches();
+            if (currentKey != null && !keyLike && (pending || indented)) {
+                // 値の続き。項目=の形の行は、\ の後ろでも新しい項目（末尾が \ のパスの次の行）
+                pending = trimmed.endsWith("\\");
                 currentValue.append(withoutTrailingBackslash(trimmed));
                 continue;
             }
@@ -126,16 +137,18 @@ public final class ConfigFile {
             if (!KEY.matcher(key).matches()) {
                 throw new SyntaxException(Problem.BAD_KEY, i + 1, trimmed);
             }
+            String value = trimmed.substring(eq + 1).trim();
+            pending = value.endsWith("\\");
             currentKey = key;
-            currentValue = new StringBuilder(withoutTrailingBackslash(trimmed.substring(eq + 1).trim()));
+            currentValue = new StringBuilder(withoutTrailingBackslash(value));
         }
         flush(out, currentKey, currentValue);
         return out;
     }
 
-    /** 行末の {@code \}（properties の続きの印）を除く */
+    /** 行末の {@code \}（続きの印）を除き、その前の空白も落とす */
     private static String withoutTrailingBackslash(String s) {
-        return s.endsWith("\\") ? s.substring(0, s.length() - 1) : s;
+        return s.endsWith("\\") ? s.substring(0, s.length() - 1).trim() : s;
     }
 
     private static void flush(Properties out, String key, StringBuilder value) {

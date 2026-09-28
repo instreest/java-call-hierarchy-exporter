@@ -378,7 +378,7 @@ final class MessagesEn {
             "config.buildTool.maven", "pom.xml is present",
             "config.buildTool.gradle", "build.gradle / settings.gradle is present",
             "config.read.failed", "Cannot read the config file: {0} ({1})",
-            "config.line.noSeparator", "Cannot read line {1} of the config file {0}: \"{2}\". Write each item as key=value. A value continued on the next line is indented (starts with whitespace) right under its item, with no blank or comment line between",
+            "config.line.noSeparator", "Cannot read line {1} of the config file {0}: \"{2}\". Write each item as key=value. To continue a value on the next line, end the line with \\ or indent the next line (start it with whitespace)",
             "config.line.badKey", "Cannot read line {1} of the config file {0}: \"{2}\". An item name starts with a letter and contains only letters, digits, . _ -",
             "config.pomEncodingLabel", "project.build.sourceEncoding in pom.xml",
             "config.badCharset", "The charset name of setting {0} is not valid: '{1}' (for example: UTF-8, MS932, Shift_JIS)",
