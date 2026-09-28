@@ -5,11 +5,11 @@ import * as path from 'node:path';
 import { t } from './messages';
 
 /**
- * 解析に使う設定（`config.properties`）をどう用意するか。
+ * 解析に使う設定（`jche.properties`）をどう用意するか。
  *
  * 優先順位は次のとおりで、上から順に当てはまった1つを使う（docs/vscode-plugin-design.md §3）。
  * 1. 利用者が設定（`jche.configFile`）で明示したファイル
- * 2. ワークスペースフォルダ直下の `config.properties`（複数あれば呼び出し側が選ばせる）
+ * 2. ワークスペースフォルダ直下の `jche.properties`（以前の名前の `config.properties` も。複数あれば呼び出し側が選ばせる）
  * 3. どれも無ければ自動生成 … **`project.root` だけ**書いた最小の設定
  *
  * 自動生成で `source.folders` や `library.folders` を書かないのは意図的である。
@@ -33,10 +33,16 @@ export function labelOf(source: ConfigSource, workspaceRoot: string): string {
 }
 
 /**
- * フォルダ直下にある設定ファイルの候補。`config.properties` を先頭に、
+ * フォルダ直下にある設定ファイルの候補。`jche.properties` を先頭に、次に以前の名前の `config.properties`、
  * ほかの `*.properties` は名前順（設定ファイルをプロジェクトごとに増やす使い方があるため）。
  * `launcher.properties` は起動コマンドの設定なので除く。
  */
+const PREFERRED_NAMES = ['jche.properties', 'config.properties'];
+function nameRank(name: string): number {
+    const i = PREFERRED_NAMES.indexOf(name);
+    return i < 0 ? PREFERRED_NAMES.length : i;
+}
+
 export function findConfigFiles(folder: string): string[] {
     if (!existsSync(folder) || !statSync(folder).isDirectory()) {
         return [];
@@ -44,11 +50,7 @@ export function findConfigFiles(folder: string): string[] {
     const names = readdirSync(folder)
         .filter((name) => name.endsWith('.properties') && name !== 'launcher.properties')
         .filter((name) => statSync(path.join(folder, name)).isFile())
-        .sort((a, b) => {
-            if (a === 'config.properties') return -1;
-            if (b === 'config.properties') return 1;
-            return a.localeCompare(b);
-        });
+        .sort((a, b) => nameRank(a) - nameRank(b) || a.localeCompare(b));
     return names.map((name) => path.join(folder, name));
 }
 
@@ -88,6 +90,8 @@ export function resolveConfigSource(
 /**
  * 自動生成する設定の中身。`project.root` は絶対パスで書く（生成ファイルは拡張のストレージに
  * 置くので、相対にするとそこが起点になってしまう）。
+ * 値はそのまま書く。読み手（本体の `jche.config.ConfigFile`）はバックスラッシュをエスケープとして
+ * 読まないので、Windows のパスを逃がす必要は無い（`\\` と重ねると、そのまま 2 つのバックスラッシュとして読まれる）。
  */
 export function generatedConfigText(projectRoot: string): string {
     return [
@@ -95,7 +99,7 @@ export function generatedConfigText(projectRoot: string): string {
         t('config.header.generated2'),
         t('config.header.generated3'),
         t('config.header.generated4'),
-        `project.root=${escapeProperty(path.resolve(projectRoot))}`,
+        `project.root=${path.resolve(projectRoot)}`,
         '',
     ].join('\n');
 }
@@ -134,9 +138,4 @@ export async function materialize(source: ConfigSource, scratchDir: string): Pro
     // Config は UTF-8 で読むので、パスに日本語が入っても壊れない
     await writeFile(generated, generatedConfigText(source.projectRoot), 'utf8');
     return generated;
-}
-
-/** properties の値として書くときに、区切りと誤読される文字を逃がす（バックスラッシュと先頭の空白） */
-function escapeProperty(value: string): string {
-    return value.replace(/\\/g, '\\\\').replace(/^ /, '\\ ');
 }

@@ -61,7 +61,7 @@ fi
 
 SRC=work/src/pr
 mkdir -p "$SRC"
-cat > work/config.properties <<'EOF'
+cat > work/jche.properties <<'EOF'
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -4003,7 +4003,7 @@ EOF
 # ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
-( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > work/run.log 2>&1
+( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter jche.properties ) > work/run.log 2>&1
 CSV=$(ls -d work/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
 if [ ! -f "$CSV" ]; then
     ng "解析できませんでした（test/pruning/work/run.log）"
@@ -4127,7 +4127,7 @@ done
 # ---------------------------------------------------------------------------
 NODF=work/nodf
 mkdir -p "$NODF/src/nd"
-cat > "$NODF/config.properties" <<'EOF'
+cat > "$NODF/jche.properties" <<'EOF'
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -4234,7 +4234,7 @@ public class NdMixed {
     void run() { mail.send(); log.append("x"); }
 }
 EOF
-( cd "$NODF" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > "$NODF/run.log" 2>&1
+( cd "$NODF" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter jche.properties ) > "$NODF/run.log" 2>&1
 NCSV=$(ls -d "$NODF"/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
 nd_rows() {   # $1=呼び出し元 Class.method  $2=呼び出し先 Class.method
     awk -F, -v c="at nd.$1(" -v d="$2" 'index($1, c) == 1 && $2 == d' "$NCSV" 2>/dev/null
@@ -4295,7 +4295,7 @@ fi
 # ---------------------------------------------------------------------------
 EXTU=work/extu
 mkdir -p "$EXTU/src/eu" "$EXTU/extsrc/ext" "$EXTU/extcls" "$EXTU/extjars"
-cat > "$EXTU/config.properties" <<'EOF'
+cat > "$EXTU/jche.properties" <<'EOF'
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -4398,7 +4398,7 @@ if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" \
         > "$EXTU/javac.log" 2>&1 \
         && rm -rf "$EXTU/extcls/eu" \
         && "$(dirname "$JAVAC_BIN")/jar" --create --file "$EXTU/extjars/client.jar" -C "$EXTU/extcls" . ; then
-    ( cd "$EXTU" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) > "$EXTU/run.log" 2>&1
+    ( cd "$EXTU" && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter jche.properties ) > "$EXTU/run.log" 2>&1
 fi
 ECSV=$(ls -d "$EXTU"/out/*/ 2>/dev/null | sort | tail -1)call-hierarchy.csv
 ext_rows() {   # $1=呼び出し元 Client.method  $2=呼び出し先 Class.method

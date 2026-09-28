@@ -84,7 +84,7 @@ Gradle の場合は `mvn` の行を `./gradlew dependencies` 等に読み替え�
 ## 入力
 
 設定ファイルを自分で用意しない場合は、次の入力から設定ファイルを 1 つ生成します。
-意味は同名の設定項目（[config/config.properties](../config/config.properties) のコメント）と同じです。
+意味は同名の設定項目（[config/jche.properties](../config/jche.properties) のコメント）と同じです。
 
 | 入力 | 既定値 | 対応する設定項目 |
 | --- | --- | --- |
@@ -169,7 +169,7 @@ max.rows=5000000
 cache.folder=
 ```
 
-設定できる項目の一覧と意味は [config/config.properties](../config/config.properties) のコメントにあります。
+設定できる項目の一覧と意味は [config/jche.properties](../config/jche.properties) のコメントにあります。
 手元で `./java-call-hierarchy-exporter.sh ci/call-hierarchy.properties` と実行したときと同じ設定なので、CI で出た結果を手元で再現できます。
 
 **出力先だけは注意**してください。`output.folder` の既定は「設定ファイルと同じフォルダ」なので、
@@ -365,7 +365,7 @@ GitHub がホストするランナーは実行ごとに空の環境ですが、s
 （`<解析開始日時>_<プロジェクト名>`）を、ログを読まずに受け取れます（`action.yml` もこれを使っています）。
 
 ```bash
-JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties
+JCHE_OUTPUT_DIR_FILE=out-dirs.txt ./jbangw/jbang src/jche/CallHierarchyExporter.java config/jche.properties
 cat out-dirs.txt   # /path/to/config/20260907-163000_myapp
 ```
 

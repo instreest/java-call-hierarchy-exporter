@@ -4,7 +4,7 @@
 `branch.pruning.enabled=true`（既定）のとき、呼び出し箇所を囲む条件を経路ごとに突き合わせ、
 **成立しないと言い切れる場合はその先の階層を出力しません**。
 
-設定は [config/config.properties](../config/config.properties) の `branch.pruning.enabled` にあります
+設定は [config/jche.properties](../config/jche.properties) の `branch.pruning.enabled` にあります
 （コメントに既定値と注意点を書いてあります）。実装で迷った点は
 [branch-pruning-qa.md](branch-pruning-qa.md) にまとめています。
 

@@ -410,10 +410,10 @@ public final class MergeSources {
                 "//",
                 "// ビルドと実行（引数があれば対話なしで解析、無ければ対話モード。src/jche/Jche.java と同じ）:",
                 "//   javac -encoding UTF-8 -cp \"lib/*\" -d bin single-file/" + OUTER + ".java single-file/jche/extension/*.java",
-                "//   java  -cp \"bin:lib/*\" " + PACKAGE + "." + OUTER + " config/config.properties   (Windows は ; 区切り)",
+                "//   java  -cp \"bin:lib/*\" " + PACKAGE + "." + OUTER + " config/jche.properties   (Windows は ; 区切り)",
                 "//",
                 "// JBang なら jar を自分で集めずに直接（初回は JDK 25 と JDT を取得する）:",
-                "//   jbang single-file/" + OUTER + ".java config/config.properties",
+                "//   jbang single-file/" + OUTER + ".java config/jche.properties",
                 "// ---------------------------------------------------------------------------",
                 "");
     }

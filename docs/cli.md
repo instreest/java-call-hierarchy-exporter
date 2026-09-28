@@ -7,8 +7,10 @@
 
 ## 設定ファイル
 
-既定の設定ファイル [`config/config.properties`](../config/config.properties) で必須なのは **`project.root`** だけです
-（引数を省略したときは `config/config.properties`、無ければ `config/jche.properties` を読みます）。
+既定の設定ファイル [`config/jche.properties`](../config/jche.properties) で必須なのは **`project.root`** だけです
+（引数を省略したときは `config/jche.properties`、無ければ以前の名前の `config/config.properties` を読みます）。
+設定ファイルの書き方は「1 行に `項目=値`」で、バックスラッシュはそのまま読みます（Windows のパスをそのまま書けます。
+`\\` と重ねたり `/` に直したりしなくてよい。値を次の行に続けるときは properties と同じく行末に `\` を書きます。次の行が別の項目なら末尾の `\` は捨てるので、パスの末尾に `\` があっても次の行を飲み込みません）。
 次の項目は空欄のままなら `project.root` の中身から決めます（明示したいときだけ書き換えます）。
 
 | 項目 | 空欄のときの決め方 |
@@ -75,7 +77,7 @@ jche>
 | メニュー | 内容 |
 |---|---|
 | 1) 解析を実行する | `config/` にある設定ファイルの一覧から選んで解析する（番号をカンマ区切りで複数可。`v 番号` で内容を確認、`p` で一覧に無いパスを指定）。前回使った設定が既定で選ばれるので、2 回目からは Enter を 2 回で実行できる |
-| 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`config/<名前>.properties` を作る。ひな形は `config/config.properties` なので全項目の説明コメントも写る。続けて解析もできる |
+| 2) 設定ファイルを新しく作る | 解析対象のフォルダを入力すると、ソースフォルダや `pom.xml` の有無、文字コードを検出して既定値を埋め、`config/<名前>.properties` を作る。ひな形は `config/jche.properties` なので全項目の説明コメントも写る。続けて解析もできる |
 | 3) 環境設定 | JDK / JBang の置き場所、依存 jar の置き場所、ヒープ上限（`-Xmx`）、`jbang run` の追加オプション（`--offline` 等）。`launcher.properties` に保存し、その場で再起動して反映できる |
 | 4) 実行環境の状態 | 実際に使っている JDK・JDT の jar・置き場所とその大きさ・解析キャッシュの一覧 |
 
@@ -103,7 +105,7 @@ jche>
 4. OS の言語
 
 ```bash
-JCHE_LANG=ja ./java-call-hierarchy-exporter.sh config/config.properties   # 日本語で出す
+JCHE_LANG=ja ./java-call-hierarchy-exporter.sh config/jche.properties   # 日本語で出す
 ```
 
 **出力 CSV の中身は言語で変わりません**（注記も含めて常に英語）。
@@ -171,12 +173,12 @@ JBang のラッパースクリプトを `jbangw/` に同梱しているので、
 
 ```bat
 rem Windows（コマンドプロンプト）
-.\jbangw\jbang.cmd src\jche\CallHierarchyExporter.java config\config.properties
+.\jbangw\jbang.cmd src\jche\CallHierarchyExporter.java config\jche.properties
 ```
 
 ```bash
 # Linux / macOS / Git Bash
-./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties
+./jbangw/jbang src/jche/CallHierarchyExporter.java config/jche.properties
 ```
 
 このツールが必要とするJDK・依存jarは、実行環境になければ初回実行時に**確認なしで**自動で取得されます（`%userprofile%/.jbang/`配下に保存。
@@ -197,7 +199,7 @@ rem Windows（コマンドプロンプト）
 1. 「ファイル > インポート > Maven > 既存の Maven プロジェクト」で、このリポジトリのフォルダを選ぶ
 2. 取り込み後、JDT Core 一式が Maven Central から `%userprofile%\.m2\repository` に取得され、ビルドパスに載る
 3. `CallHierarchyExporter` を「Java アプリケーション」として実行するときは、実行構成の引数に
-   `config/config.properties` を指定する（複数指定可）
+   `config/jche.properties` を指定する（複数指定可）
 
 `pom.xml` は Eclipse で開くためだけのもので、jbang での実行には使われません。依存の版は
 `src/jche/CallHierarchyExporter.java` の `//DEPS` 行と同じにしてあります（`test/pom/run.sh` が食い違いを検出）。

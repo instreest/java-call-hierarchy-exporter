@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // java-call-hierarchy-exporter の 1 ファイル版（完全版）。
 //
-// このファイルは single-file/generate.sh が src/jche 配下の全ソース（165 ファイル）から
+// このファイルは single-file/generate.sh が src/jche 配下の全ソース（166 ファイル）から
 // 機械的に生成したもの。手で編集しない。本体（src/jche）を直したら生成し直す
 // （test/single-file/run.sh が、生成し直していないことと、ビルド・実行できないことを検出する）。
 //
@@ -18,10 +18,10 @@
 //
 // ビルドと実行（引数があれば対話なしで解析、無ければ対話モード。src/jche/Jche.java と同じ）:
 //   javac -encoding UTF-8 -cp "lib/*" -d bin single-file/CallHierarchyExporterSingle.java single-file/jche/extension/*.java
-//   java  -cp "bin:lib/*" jche.CallHierarchyExporterSingle config/config.properties   (Windows は ; 区切り)
+//   java  -cp "bin:lib/*" jche.CallHierarchyExporterSingle config/jche.properties   (Windows は ; 区切り)
 //
 // JBang なら jar を自分で集めずに直接（初回は JDK 25 と JDT を取得する）:
-//   jbang single-file/CallHierarchyExporterSingle.java config/config.properties
+//   jbang single-file/CallHierarchyExporterSingle.java config/jche.properties
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
@@ -373,7 +373,7 @@ public final class CallHierarchyExporterSingle {
     //       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
     //         3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
     //         3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
-    //       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/config.properties）の
+    //       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/jche.properties）の
     //       source.level で指定する（未指定なら、この版が対応する最大値）。
     // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
     //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
@@ -398,11 +398,11 @@ public final class CallHierarchyExporterSingle {
      * Javaプロジェクトを対象に、メソッド呼び出し階層を一括抽出してCSV出力する。
      * Eclipse IDE の起動は不要で、通常のJavaアプリとして動作する。
      *
-     * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/config.properties）:
+     * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/jche.properties）:
      * <pre>
-     *   jbang src/jche/CallHierarchyExporter.java config/config.properties
+     *   jbang src/jche/CallHierarchyExporter.java config/jche.properties
      *   jbang src/jche/CallHierarchyExporter.java config/projA.properties config/projB.properties
-     *   java -cp "bin;lib/*" CallHierarchyExporter config/config.properties
+     *   java -cp "bin;lib/*" CallHierarchyExporter config/jche.properties
      * </pre>
      * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から
      * 起動する（{@code src/jche/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
@@ -441,8 +441,8 @@ public final class CallHierarchyExporterSingle {
         /**
          * 引数を省略したときの設定ファイル（作業ディレクトリからの相対）。
          *
-         * 実際に使うのは {@link ConfigCatalog#defaultConfig}（{@code config/config.properties} が無ければ
-         * {@code config/jche.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
+         * 実際に使うのは {@link ConfigCatalog#defaultConfig}（{@code config/jche.properties} が無ければ
+         * 以前の名前の {@code config/jche.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
          */
         private static final String DEFAULT_CONFIG =
                 ConfigCatalog.CONFIGS_DIR_NAME + "/" + ConfigCatalog.DEFAULT_CONFIG_NAME;
@@ -13422,7 +13422,7 @@ public final class CallHierarchyExporterSingle {
      * {@link TypeCandidateProvider} を自分で実装すればよい。
      *
      * <pre>
-     *   # config.properties
+     *   # jche.properties
      *   resolver.candidate.providers=TypeMappingProvider
      *   plugin.mapping.files=di-mapping.properties
      * </pre>
@@ -17830,9 +17830,9 @@ public final class CallHierarchyExporterSingle {
     // src/jche/cli/ConfigCatalog.java
     // ================================================================================================
     /**
-     * 対話モードで選べる設定ファイル（config.properties 形式）の一覧。
+     * 対話モードで選べる設定ファイル（jche.properties 形式）の一覧。
      *
-     * 探す場所は {@code config/} の下（サブフォルダも含む）。既定の設定ファイル {@code config/config.properties} が
+     * 探す場所は {@code config/} の下（サブフォルダも含む）。既定の設定ファイル {@code config/jche.properties} が
      * ここにあり、対話モードの「設定ファイルを新しく作る」もここに書く。実行ごとの出力フォルダ
      * （{@code config/<解析開始日時>_<プロジェクト名>/}。output.folder の既定）もこの下にできるが、
      * その中の設定ファイルの複製は一覧に出さない（出力フォルダ名の形で見分ける）。
@@ -17845,15 +17845,16 @@ public final class CallHierarchyExporterSingle {
 
         public static final String CONFIGS_DIR_NAME = "config";
         /** 既定の設定ファイル（config/ の下）。一覧の先頭に出し、作成ウィザードのひな形にする */
-        public static final String DEFAULT_CONFIG_NAME = "config.properties";
+        public static final String DEFAULT_CONFIG_NAME = "jche.properties";
         /**
          * 既定の設定ファイルとして扱う名前（前にあるものほど優先）。
          *
-         * 同梱しているのは {@link #DEFAULT_CONFIG_NAME} だが、{@code config.properties} はどのプロジェクトにも
-         * ありがちな名前なので、このツールの設定だと分かる {@code jche.properties} でも置けるようにしてある
-         * （Eclipse プラグインが利用者のプロジェクトに書き出すのはこちら）。読む側は両方を既定として扱う。
+         * 同梱しているのは {@link #DEFAULT_CONFIG_NAME}（このツールの設定だと分かる名前）。以前の名前
+         * {@code config.properties} はどのプロジェクトにもありがちで用途が分からないので改名したが、
+         * その名前で置いている既存の利用者のために、読む側では今までどおり既定として受け付ける
+         * （{@code docs/config-file-name-qa.md}）。
          */
-        public static final List<String> DEFAULT_CONFIG_NAMES = List.of(DEFAULT_CONFIG_NAME, "jche.properties");
+        public static final List<String> DEFAULT_CONFIG_NAMES = List.of(DEFAULT_CONFIG_NAME, "config.properties");
         private static final String RECENT_FILE = ".cache/recent-configs.txt";
 
         /** 一覧の 1 件。{@code display} はプロジェクトフォルダからの相対パス（表示用） */
@@ -18013,9 +18014,9 @@ public final class CallHierarchyExporterSingle {
      * 設定ファイルを対話で新しく作る。
      *
      * README の Quick start で「書き換える」とされている項目（project.root / source.folders / library.folders /
-     * source.encoding）と entry.packages だけを尋ね、残りは {@code config/config.properties}（既定の設定
+     * source.encoding）と entry.packages だけを尋ね、残りは {@code config/jche.properties}（既定の設定
      * ファイル）をひな形にしてそのまま写す。ひな形の行を置き換える方式なので、全項目の説明コメントが
-     * 新しいファイルにも残り、あとから他の項目を編集するときに config/config.properties を見に行かなくて済む。
+     * 新しいファイルにも残り、あとから他の項目を編集するときに config/jche.properties を見に行かなくて済む。
      *
      * 書き先は {@code config/<名前>.properties}（既定の設定ファイルと同じフォルダ）。相対パスの起点はその設定ファイルのフォルダなので、
      * project.root は config/ からの相対（近ければ）か絶対パスで書く（{@link #projectRootValue}）。
@@ -18182,23 +18183,37 @@ public final class CallHierarchyExporterSingle {
 
         /**
          * ひな形の各行のうち、置き換える項目の {@code key=} 行を新しい値にする。
-         * {@code \} で続く複数行の値（exclude.packages 等）は、置き換え対象なら続きの行ごと捨てる。
-         * ひな形に無い項目は末尾に足す。
+         * 複数行の値（行末の {@code \} か字下げで続く。exclude.packages 等。{@link ConfigFile} と同じ見分け方）は、
+         * 置き換え対象なら続きの行ごと捨てる。ひな形に無い項目は末尾に足す。
          */
         static List<String> applyToTemplate(List<String> template, Map<String, String> values) {
             List<String> out = new ArrayList<>();
             Map<String, String> remaining = new LinkedHashMap<>(values);
-            boolean skippingContinuation = false;
+            boolean skipping = false;   // 置き換えた項目の続きの行を捨てている
+            boolean pending = false;    // 捨てている値の直前の行が \ で終わっている
             for (String line : template) {
-                if (skippingContinuation) {
-                    skippingContinuation = line.trim().endsWith("\\");
-                    continue;
+                String t = line.trim();
+                if (skipping) {
+                    if (t.startsWith("#") || t.startsWith("!")) {
+                        out.add(line);          // 注釈は続きの途中でも残す
+                        continue;
+                    }
+                    if (t.isEmpty() && pending) {
+                        continue;
+                    }
+                    if (!t.isEmpty() && !KEY_LINE.matcher(line).matches()
+                            && (pending || Character.isWhitespace(line.charAt(0)))) {
+                        pending = t.endsWith("\\");
+                        continue;
+                    }
+                    skipping = false;
                 }
                 Matcher m = KEY_LINE.matcher(line);
                 if (m.matches() && remaining.containsKey(m.group(1))) {
                     String key = m.group(1);
                     out.add(key + "=" + remaining.remove(key));
-                    skippingContinuation = line.trim().endsWith("\\");
+                    skipping = true;
+                    pending = t.endsWith("\\");
                     continue;
                 }
                 out.add(line);
@@ -18209,7 +18224,7 @@ public final class CallHierarchyExporterSingle {
             return out;
         }
 
-        private static final Pattern KEY_LINE = Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9.]*)\\s*[=:].*$");
+        private static final Pattern KEY_LINE = Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9._-]*)\\s*=.*$");
 
         /**
          * project.root の書き方。設定ファイルのフォルダ（config/）から上位へ 2 段以内で書ける相対パスならそれ
@@ -19416,9 +19431,10 @@ public final class CallHierarchyExporterSingle {
     // src/jche/config/Config.java
     // ================================================================================================
     /**
-     * 設定ファイル（config.properties）の読み込み。
+     * 設定ファイル（jche.properties）の読み込み。
      *
-     * 設定できる項目とその意味は config/config.properties（同梱の既定の設定ファイル）にコメント付きでまとめてある。
+     * 設定できる項目とその意味は config/jche.properties（同梱の既定の設定ファイル）にコメント付きでまとめてある。
+     * ファイルの読み方（項目=値。バックスラッシュはそのまま）は {@link ConfigFile}。
      * あちらを唯一の一覧として扱い、ここには複製しない（二重管理で片方が古くなるのを避けるため）。
      *
      * 相対パスの起点は項目ごとに異なる。
@@ -19620,10 +19636,10 @@ public final class CallHierarchyExporterSingle {
          *
          * <p>Eclipse プラグインが、開いているプロジェクトの構成（ソースフォルダ・クラスパス・文字コード・
          * コンパイラー準拠レベル）から設定を組み立てて渡すために使う。利用者に
-         * config.properties を書かせずに解析できるようにするのが目的で、項目の意味は
+         * jche.properties を書かせずに解析できるようにするのが目的で、項目の意味は
          * 設定ファイルで書いたときとまったく同じ。
          *
-         * @param properties 設定。キーと値は config.properties と同じ
+         * @param properties 設定。キーと値は jche.properties と同じ
          * @param configDir  相対パスの起点（設定ファイルを置いたフォルダに相当。ふつうはプロジェクトの場所）
          * @param toolRoot   cache.folder が空欄のときのキャッシュの置き場所の親
          * @param startedAt  解析開始日時（出力フォルダ名に使う）
@@ -19635,16 +19651,18 @@ public final class CallHierarchyExporterSingle {
 
         private static Properties load(Path configPath) throws IOException {
             Path abs = configPath.toAbsolutePath().normalize();
-            Properties p = new Properties();
-            try (Reader r = new InputStreamReader(Files.newInputStream(abs), StandardCharsets.UTF_8)) {
-                p.load(r);
-            } catch (IllegalArgumentException e) {
-                // properties ではバックスラッシュがエスケープなので、Windows のパスをそのまま書くと
-                // 「バックスラッシュ + u」が Unicode エスケープと解釈されて読めない。
-                // 何が悪いのか分からない例外文言（Malformed uxxxx encoding）のままにしない
+            try {
+                // Properties#load ではなく自前の読み方（バックスラッシュをそのまま読む。ConfigFile）
+                return ConfigFile.read(abs);
+            } catch (ConfigFile.SyntaxException e) {
+                // 何行目の何が悪いのかを、表示言語で言う
+                String message = (e.problem() == ConfigFile.Problem.BAD_KEY)
+                        ? Messages.format("config.line.badKey", abs, e.lineNumber(), e.lineText())
+                        : Messages.format("config.line.noSeparator", abs, e.lineNumber(), e.lineText());
+                throw new IOException(message, e);
+            } catch (IOException e) {
                 throw new IOException(Messages.format("config.read.failed", abs, e.getMessage()), e);
             }
-            return p;
         }
 
         private Config(Properties p, Path configPathOrNull, Path configDirHint, Path toolRoot,
@@ -19987,6 +20005,158 @@ public final class CallHierarchyExporterSingle {
                 throw new IllegalArgumentException(Messages.format("config.missingRequired", key));
             }
             return v.trim();
+        }
+    }
+
+    // ================================================================================================
+    // src/jche/config/ConfigFile.java
+    // ================================================================================================
+    /**
+     * 設定ファイル（{@code jche.properties}）の読み手。
+     *
+     * <p>見た目は Java の properties と同じ {@code 項目=値} だが、{@link Properties#load} は使わない。
+     * properties ではバックスラッシュがエスケープなので、Windows のパスをそのまま書くと
+     * {@code C:\temp} が {@code C:temp}（タブ + emp）に、{@code C:\\users} が「Malformed \\uxxxx encoding」になり、
+     * 利用者は区切りを {@code /} にするかバックスラッシュを 2 つ重ねる必要があった。設定に書く値はほぼパスなので、
+     * <b>バックスラッシュをそのまま読む</b>自前の読み方にしてある（{@code docs/config-file-format-qa.md}）。
+     *
+     * <p>読み方の決まり:
+     * <ul>
+     *   <li>UTF-8。先頭の BOM は読み飛ばす</li>
+     *   <li>先頭（空白を除く）が {@code #} か {@code !} の行は注釈。空行は読み飛ばす</li>
+     *   <li>{@code 項目=値}。区切りは {@code =} だけ（{@code :} は使えない。Windows のパスの {@code C:} と区別できないため）。
+     *       項目名は英字で始まり英数字と {@code . _ -}。値は前後の空白を除いたそのままで、{@code \} もそのまま</li>
+     *   <li>行末の {@code \} は次の行に続く印（properties と同じ）。ただし次の内容行が {@code 項目=} の形か
+     *       ファイルの末尾なら続けず、末尾の {@code \} を捨てる（パスの末尾の区切り {@code C:\work\app\} は
+     *       無くても同じ場所を指す）。続きの途中の注釈行・空行は読み飛ばす（一覧の 1 要素を {@code #} で外せる）</li>
+     *   <li>空白で始まる行のうち {@code 項目=} の形でないものも、直前の項目の値の続き（{@code \} が無くてもよい。
+     *       ただし空行を挟むと続きではない）。続きは前後の空白を除いて値につなぐ</li>
+     *   <li>同じ項目が 2 回あれば後の行が勝つ</li>
+     * </ul>
+     * 読めない行は行番号つきの {@link SyntaxException} にして、黙って読み飛ばさない。
+     *
+     * <p>このクラスは {@code java.*} だけに依存し Java 11 の文法で書く。Eclipse プラグインの検査
+     * （{@code test/plugin-config}）が、プラグインの書き出し（{@code EclipseProjectConfig#toFileText}）を
+     * このクラスで読み戻して往復を確かめるので、{@code --release 11} でも単独でコンパイルできる必要がある。
+     */
+    public final static class ConfigFile {
+
+        /** 項目名の形。{@code 項目=} で始まる行は、字下げされていても値の続きではなく項目の行 */
+        private static final Pattern KEY = Pattern.compile("[A-Za-z][A-Za-z0-9._-]*");
+        private static final Pattern KEY_LINE = Pattern.compile("^\\s*[A-Za-z][A-Za-z0-9._-]*\\s*=.*$");
+
+        /** 読めない行の種類 */
+        public enum Problem {
+            /** {@code =} が無い（値の続きの行が、項目の行のすぐ下に無い場合も） */
+            NO_SEPARATOR,
+            /** 項目名が空か、使えない文字を含む */
+            BAD_KEY,
+        }
+
+        /** 読めない行。どの行の何が悪いかを持つ（文言は呼び出し側が表示言語に合わせて組む） */
+        public static final class SyntaxException extends IOException {
+            private static final long serialVersionUID = 1L;
+            private final Problem problem;
+            private final int lineNumber;
+            private final String lineText;
+
+            SyntaxException(Problem problem, int lineNumber, String lineText) {
+                super(problem + " at line " + lineNumber + ": " + lineText);
+                this.problem = problem;
+                this.lineNumber = lineNumber;
+                this.lineText = lineText;
+            }
+
+            public Problem problem() {
+                return problem;
+            }
+
+            /** 1 から数えた行番号 */
+            public int lineNumber() {
+                return lineNumber;
+            }
+
+            /** その行の中身（前後の空白を除いたもの） */
+            public String lineText() {
+                return lineText;
+            }
+        }
+
+        private ConfigFile() {
+        }
+
+        /** ファイルを UTF-8 で読む */
+        public static Properties read(Path file) throws IOException {
+            return parse(Files.readAllLines(file, StandardCharsets.UTF_8));
+        }
+
+        /** 文字列（ファイルの中身）を読む */
+        public static Properties parse(String text) throws SyntaxException {
+            return parse(List.of(text.split("\r\n|\r|\n", -1)));
+        }
+
+        /** 行の一覧を読む。{@link Properties} にしているのは、拡張（{@code init(Properties, Path)}）に渡す形だから */
+        public static Properties parse(List<String> lines) throws SyntaxException {
+            Properties out = new Properties();
+            String currentKey = null;
+            StringBuilder currentValue = null;
+            boolean pending = false;  // 直前の内容行が \ で終わっている（次の内容行に続く）
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (i == 0 && line.startsWith("\uFEFF")) {
+                    line = line.substring(1);
+                }
+                String trimmed = line.trim();
+                if (trimmed.startsWith("#") || trimmed.startsWith("!")) {
+                    // 注釈は続きの途中でも読み飛ばす（一覧の 1 要素を # で外せる）
+                    continue;
+                }
+                if (trimmed.isEmpty()) {
+                    // 空行は字下げによる続きを切る。\ で続けている途中なら読み飛ばす
+                    if (!pending) {
+                        flush(out, currentKey, currentValue);
+                        currentKey = null;
+                        currentValue = null;
+                    }
+                    continue;
+                }
+                boolean indented = Character.isWhitespace(line.charAt(0));
+                boolean keyLike = KEY_LINE.matcher(line).matches();
+                if (currentKey != null && !keyLike && (pending || indented)) {
+                    // 値の続き。項目=の形の行は、\ の後ろでも新しい項目（末尾が \ のパスの次の行）
+                    pending = trimmed.endsWith("\\");
+                    currentValue.append(withoutTrailingBackslash(trimmed));
+                    continue;
+                }
+                flush(out, currentKey, currentValue);
+                currentKey = null;
+                currentValue = null;
+                int eq = trimmed.indexOf('=');
+                if (eq < 0) {
+                    throw new SyntaxException(Problem.NO_SEPARATOR, i + 1, trimmed);
+                }
+                String key = trimmed.substring(0, eq).trim();
+                if (!KEY.matcher(key).matches()) {
+                    throw new SyntaxException(Problem.BAD_KEY, i + 1, trimmed);
+                }
+                String value = trimmed.substring(eq + 1).trim();
+                pending = value.endsWith("\\");
+                currentKey = key;
+                currentValue = new StringBuilder(withoutTrailingBackslash(value));
+            }
+            flush(out, currentKey, currentValue);
+            return out;
+        }
+
+        /** 行末の {@code \}（続きの印）を除き、その前の空白も落とす */
+        private static String withoutTrailingBackslash(String s) {
+            return s.endsWith("\\") ? s.substring(0, s.length() - 1).trim() : s;
+        }
+
+        private static void flush(Properties out, String key, StringBuilder value) {
+            if (key != null) {
+                out.setProperty(key, value.toString());
+            }
         }
     }
 
@@ -38880,7 +39050,9 @@ public final class CallHierarchyExporterSingle {
                 "config.buildTool.bothPreferMaven", "both pom.xml and build.gradle are present, so Maven wins (set library.build.tool=gradle for Gradle)",
                 "config.buildTool.maven", "pom.xml is present",
                 "config.buildTool.gradle", "build.gradle / settings.gradle is present",
-                "config.read.failed", "Cannot read the config file: {0} ({1}). When writing a Windows path, use / as the separator or double every backslash",
+                "config.read.failed", "Cannot read the config file: {0} ({1})",
+                "config.line.noSeparator", "Cannot read line {1} of the config file {0}: \"{2}\". Write each item as key=value. To continue a value on the next line, end the line with \\ or indent the next line (start it with whitespace)",
+                "config.line.badKey", "Cannot read line {1} of the config file {0}: \"{2}\". An item name starts with a letter and contains only letters, digits, . _ -",
                 "config.pomEncodingLabel", "project.build.sourceEncoding in pom.xml",
                 "config.badCharset", "The charset name of setting {0} is not valid: '{1}' (for example: UTF-8, MS932, Shift_JIS)",
                 "config.badSourceLevel", "source.level={0} is not supported by this JDT. Allowed values: {1} (leave it empty to use the highest, {2})",
@@ -39522,7 +39694,9 @@ public final class CallHierarchyExporterSingle {
                 "config.buildTool.bothPreferMaven", "pom.xml と build.gradle の両方があるため Maven を優先（Gradle にするには library.build.tool=gradle）",
                 "config.buildTool.maven", "pom.xml があるため",
                 "config.buildTool.gradle", "build.gradle / settings.gradle があるため",
-                "config.read.failed", "設定ファイルを読めません: {0}（{1}）。Windows のパスを書くときは区切りを / にするか、バックスラッシュを2つ重ねてください",
+                "config.read.failed", "設定ファイルを読めません: {0}（{1}）",
+                "config.line.noSeparator", "設定ファイル {0} の {1} 行目を読めません: \"{2}\"。各項目は 項目=値 の形で書いてください。値を次の行に続けるときは、行末に \\ を書くか、次の行を字下げして（空白で始めて）書いてください",
+                "config.line.badKey", "設定ファイル {0} の {1} 行目を読めません: \"{2}\"。項目名は英字で始め、英数字と . _ - だけで書いてください",
                 "config.pomEncodingLabel", "pom.xml の project.build.sourceEncoding",
                 "config.badCharset", "設定 {0} の文字コード名が不正です: '{1}'（例: UTF-8、MS932、Shift_JIS）",
                 "config.badSourceLevel", "source.level={0} は、このJDTでは対応していません。指定できる値: {1}（未指定なら最大の {2} で動作します）",

@@ -1,7 +1,7 @@
 # AGENTS.md
 
 AI コーディングエージェント（Claude Code、Codex、Copilot 等）と、初めてこのリポジトリを触る人向けの案内。
-利用者向けの説明は [README.md](README.md)、設定項目は [config/config.properties](config/config.properties) のコメントにある。
+利用者向けの説明は [README.md](README.md)、設定項目は [config/jche.properties](config/jche.properties) のコメントにある。
 
 ## このリポジトリは何か
 
@@ -23,7 +23,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
 | `single-file/` | 本体の全ソースを 1 ファイル `CallHierarchyExporterSingle.java`（パッケージ `jche`。各型を外側のクラスの入れ子にした完全版）にしたもの。利用者の拡張が import する `jche.extension` だけは本物のパッケージのまま `jche/extension/` に写す。**手で編集せず**、`bash single-file/generate.sh`（生成器 `generator/MergeSources.java`）で `src/jche` から生成する。`src/jche` を直したら生成し直してコミットする（`docs/single-file-qa.md`） |
-| `config/` | 設定ファイル置き場。`config.properties` がひな形兼既定 |
+| `config/` | 設定ファイル置き場。`jche.properties` がひな形兼既定（以前の名前 `config.properties` も読む）。読み方は `src/jche/config/ConfigFile.java`（`Properties#load` ではない。バックスラッシュはそのまま、値の続きは行末の `\`（次の行が `項目=` なら捨てる）か字下げ。`docs/config-file-format-qa.md`） |
 | `src/jche/util/Messages*.java` | 利用者に見せる文言。英語が既定で、日本語（`MessagesJa`）を重ねる。CSV のセルはここを通さず英語で固定（`docs/nls-qa.md`） |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
 | `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`）。画面の文言は英語が既定で、日本語は `messages_ja.properties` に置く（`docs/eclipse-plugin-nls-qa.md`） |
@@ -37,8 +37,8 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 
 ```bash
 ./java-call-hierarchy-exporter.sh                            # 対話モード
-./java-call-hierarchy-exporter.sh config/config.properties   # 対話なし（引数あり）
-./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties   # 起動コマンドを通さない場合
+./java-call-hierarchy-exporter.sh config/jche.properties   # 対話なし（引数あり）
+./jbangw/jbang src/jche/CallHierarchyExporter.java config/jche.properties   # 起動コマンドを通さない場合
 ```
 
 初回は JDK 25 と JDT の jar を取得する（数百 MB）。起動コマンドは取得の前に確認を出す（`n` か端末なしなら取得せず終了コード 3。
@@ -69,7 +69,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/pom/run.sh` | `//DEPS` 行と `pom.xml` の依存が一致すること |
 | `bash test/action/run.sh` | GitHub Actions の複合アクション（`.github/action/run.sh`）が、`run.log` の依存 jar の警告を表示言語（英語・日本語）に関わらず warning アノテーションとジョブサマリに出すこと。jbang はスタブに差し替えて解析は動かさない |
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |
-| `bash test/plugin-config/run.sh` | Eclipse プラグインが自動生成した設定（`EclipseProjectConfig#toFileText`）が、解析側と同じ読み方（`Properties#load`）でそのまま読み戻せること。Windows のパスのバックスラッシュを逃がし忘れると解析ごと失敗する |
+| `bash test/plugin-config/run.sh` | Eclipse プラグインが自動生成した設定（`EclipseProjectConfig#toFileText`）が、解析側と同じ読み方（`jche.config.ConfigFile`。バックスラッシュはそのまま）でそのまま読み戻せること。書く側が逃がす・逃がさないで読み手と食い違うと、Windows のパスが壊れる |
 | `bash test/plugin-api/run.sh` | Eclipse プラグインが下限の Eclipse（4.17 / 2020-09）の jar と `--release 11` でコンパイルできること。本番のビルドは新しい jar を使うので、この検査だけが下限を守る |
 | `bash test/nls/run.sh` | ツール全体の文言（英語が既定、日本語は重ねる）の検査。`src/` に日本語のリテラルが残っていないこと、英語と日本語でキーと差し込みがそろうこと、起動コマンドの表がそろうこと、言語の決まり方（`JCHE_LANG` > `jche.lang` > `message.language` > OS。1 つの JVM で設定を続けて読んでも、空欄の設定は前の設定の言語を引き継がない）、そして**出力 CSV が言語で変わらないこと**（`docs/nls-qa.md`） |
 | `bash test/plugin-nls/run.sh` | Eclipse プラグインの文言（英語が既定、日本語は重ねる）の検査。ソースに日本語のリテラルが残っていないこと、キーがそろうこと、`plugin.xml` の `%キー` があること、配布物に入ること、`osgi.nl` で切り替わり UTF-8 として読めること（`docs/eclipse-plugin-nls-qa.md`） |
@@ -208,7 +208,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   クラスフォルダの `.java`、jar の目次はファイルのバイトから読む `ZipDirectory`）。ずれると差分更新が変化を見落とす
 - 解決の結果はエッジの処理順に依存させない。`CallResolver.resolve` はメモ化されるので、最初の評価と後の評価で答えが変わる
   作りにすると出力が食い違う（`docs/code-review-fixes-qa.md` の Q2）
-- 相対パスの起点は項目ごとに決まっている（`config/config.properties` 冒頭のコメント）。起点の外へ出る相対パスはエラーにする
+- 相対パスの起点は項目ごとに決まっている（`config/jche.properties` 冒頭のコメント）。起点の外へ出る相対パスはエラーにする
 
 ## ドキュメントの決まり
 

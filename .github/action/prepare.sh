@@ -23,9 +23,9 @@ config_list="$work/configs.txt"
 output_dir_file="$work/output-dirs.txt"
 : > "$config_list"
 
-# properties ファイルに書く値。Windows のパス区切り \ は properties のエスケープ文字で、
-# そのまま書くと java.util.Properties に食われる（D:\a\repo は D:arepo になる）ので / に直す。
-# Java は Windows でも / を区切りとして扱うので、これで通る
+# 設定ファイルに書くパス。読み手（jche.config.ConfigFile）はバックスラッシュをそのまま読むので
+# 逃がす必要は無いが、Windows のランナーでも生成したファイルが読みやすいよう区切りは / にそろえる
+# （Java は Windows でも / を区切りとして扱う）
 prop() {
     printf '%s' "$1" | tr '\\' '/'
 }
@@ -62,10 +62,10 @@ else
         exit 1
     fi
     mkdir -p "$output_folder"
-    cfg="$work/config.properties"
+    cfg="$work/jche.properties"
     cat > "$cfg" <<EOF
 # java-call-hierarchy-exporter の GitHub Action が入力から生成した設定ファイル。
-# 各項目の意味は、ツールに同梱の config/config.properties のコメントを参照。
+# 各項目の意味は、ツールに同梱の config/jche.properties のコメントを参照。
 # 相対パスの起点になるのはこのファイルのフォルダなので、パスは絶対パスで書いてある。
 project.root=$(prop "$project_root")
 source.folders=$(prop "${JCHE_SOURCE_FOLDERS:-}")

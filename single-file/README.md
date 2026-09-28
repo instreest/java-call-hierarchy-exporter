@@ -34,13 +34,13 @@
 ```bash
 # 依存 jar を lib/ に集めてある場合（README の Pleiades/Eclipse 環境の手順と同じ jar）
 javac -encoding UTF-8 -cp "lib/*" -d bin single-file/CallHierarchyExporterSingle.java single-file/jche/extension/*.java
-java  -cp "bin:lib/*" jche.CallHierarchyExporterSingle config/config.properties   # Windows は ; 区切り
+java  -cp "bin:lib/*" jche.CallHierarchyExporterSingle config/jche.properties   # Windows は ; 区切り
 ```
 
 JBang なら jar を集めずに直接実行できます（初回は JDK 25 と JDT の jar を取得します）。
 
 ```bash
-jbang single-file/CallHierarchyExporterSingle.java config/config.properties
+jbang single-file/CallHierarchyExporterSingle.java config/jche.properties
 ```
 
 ## 生成し直す

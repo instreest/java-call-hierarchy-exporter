@@ -17,7 +17,7 @@ ROOT=$(cd ../.. && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-CONFIG=$ROOT/test/regression/whole/config.properties
+CONFIG=$ROOT/test/regression/whole/jche.properties
 # test/demo の中で呼び出し元が多いメソッド。存在しなくなったらこの検査も直すこと
 TARGET='fx.dao.UserDaoImpl#<init>()'
 # 応答は TAB 区切り。grep の正規表現に \t は使えないので本物の TAB を変数で持つ
@@ -243,7 +243,7 @@ public class OneLine {
     static Object make() { return new Object(); }
 }
 EOF
-cat > "$WORK/oneline/config.properties" <<EOF
+cat > "$WORK/oneline/jche.properties" <<EOF
 project.root=$WORK/oneline
 source.folders=src
 library.jars=
@@ -251,7 +251,7 @@ source.encoding=UTF-8
 source.level=
 output.folder=$WORK/oneline/output
 EOF
-OUT=$(session "ANALYZE\t$WORK/oneline/config.properties\nAT\tsrc/p/OneLine.java\t3\nAT\tsrc/p/OneLine.java\t4\nSHUTDOWN\n")
+OUT=$(session "ANALYZE\t$WORK/oneline/jche.properties\nAT\tsrc/p/OneLine.java\t3\nAT\tsrc/p/OneLine.java\t4\nSHUTDOWN\n")
 echo "$OUT" | grep -E '^(OK|NG)' | sed 's/^/       /'
 grep -qE "^OK${T}how=enclosing${T}key=p\.OneLine#a\(\)${T}" <<<"$OUT" \
     && ok "1 行に並ぶ 2 つのメソッドは、先に宣言した a() を返す" \

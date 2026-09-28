@@ -263,7 +263,7 @@ else
         latest() { ls -d output/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##'; }
         run_in() {   # $1=言語 -> 出力フォルダを $OUT に入れる
             JCHE_LANG=$1 "$JAVA_HOME_25/bin/java" -Dstdout.encoding=UTF-8 -cp "build:$CP" \
-                jche.CallHierarchyExporter config.properties > "$WORK/run-$1.log" 2>&1
+                jche.CallHierarchyExporter jche.properties > "$WORK/run-$1.log" 2>&1
             OUT=$(latest)
         }
         run_in en; EN_OUT=$OUT

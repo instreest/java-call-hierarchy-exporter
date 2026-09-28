@@ -12,6 +12,11 @@ import { bundledClasspath, launchServer } from './server/launcher';
 import type { ServerResponse } from './server/response';
 import { currentLanguage, t } from './messages';
 
+/** 設定ファイルとして扱う名前（変わったら差分ではなく全体を作り直す）。以前の名前も見る */
+function isConfigName(name: string): boolean {
+    return name === 'jche.properties' || name === 'config.properties';
+}
+
 /**
  * 木を切り出す向き。`field` はキーがフィールド（`型FQN#フィールド名`）で、根がフィールド、深さ 1 がそれを読み書き
  * しているメソッド、その下が呼び出し元（サーバーの `jche.server.FieldTree`。docs/field-callers-qa.md）
@@ -108,7 +113,7 @@ export class Session implements vscode.Disposable {
 
     /** 自動生成の内容をワークスペースへ書き出す（細かく直したい人のため） */
     async saveConfig(): Promise<void> {
-        const target = path.join(this.folder.uri.fsPath, 'config.properties');
+        const target = path.join(this.folder.uri.fsPath, 'jche.properties');
         if (existsSync(target)) {
             const answer = await vscode.window.showWarningMessage(
                 t('session.overwrite', target), { modal: true }, t('session.action.overwrite'));
@@ -363,7 +368,7 @@ export class Session implements vscode.Disposable {
             new vscode.RelativePattern(this.folder, '**/*.{java,properties}'));
         const mark = (uri: vscode.Uri) => {
             const relative = path.relative(this.folder.uri.fsPath, uri.fsPath).split(path.sep).join('/');
-            if (relative.startsWith('..') || (relative.endsWith('.properties') && relative !== 'config.properties' && !relative.endsWith('/config.properties'))) {
+            if (relative.startsWith('..') || (relative.endsWith('.properties') && !isConfigName(path.basename(relative)))) {
                 return;
             }
             this.dirty.add(relative);

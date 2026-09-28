@@ -90,7 +90,7 @@ app.Order.status   Order.java                            ← フィールド（�
 
 ### ソースを変えたあと
 
-解析後に `*.java` か `config.properties` を保存・追加・削除すると、右下の状態が
+解析後に `*.java` か `jche.properties` を保存・追加・削除すると、右下の状態が
 「10:31:04 時点（12 ファイル変更）」と ⚠ になり、木の中でそのファイルに当たる節点にも ⚠ が付く
 （ツールチップに「解析後に変更されています」）。古いことを理由に木をグレーアウトはしない。
 再解析はクリックか ⟳。
@@ -147,12 +147,12 @@ app.Order.status   Order.java                            ← フィールド（�
 
 ## 設定ファイル
 
-ワークスペースフォルダ直下に `config.properties` があればそれを使う（複数の `*.properties` があれば選ばせ、覚える）。
+ワークスペースフォルダ直下に `jche.properties` があればそれを使う（以前の名前の `config.properties` も。複数の `*.properties` があれば選ばせ、覚える）。
 無ければ **`project.root` だけの設定を自動生成**し、ソースフォルダ・依存 jar・文字コードはプロジェクトの中身
 （`pom.xml` / `build.gradle` / フォルダ構成）から決める（[build-tool-classpath.md](build-tool-classpath.md)）。
 
 細かく効かせたいとき（`entry.packages` を絞る、外部 jar の被参照を見る等）は、ツールバーの `…` →
-「設定を config.properties に保存」で書き出して直す。項目の意味は [config/config.properties](../config/config.properties) のコメント。
+「設定を jche.properties に保存」で書き出して直す。項目の意味は [config/jche.properties](../config/jche.properties) のコメント。
 
 解析キャッシュは VSCode のワークスペースストレージに置く（ワークスペースを消せば一緒に消える）。
 2回目以降の解析は差分だけなので速い。
