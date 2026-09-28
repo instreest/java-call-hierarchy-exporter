@@ -118,6 +118,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntPredicate;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -1218,7 +1219,13 @@ public final class CallHierarchyExporterSingle {
         /**
          * JDT が単純名から作った無い型なら、その単純名。そうでなければ null。回復した型（{@code isRecovered}）のうち、鍵が
          * {@code L<識別子>;} の形（パッケージ・入れ子の型・型引数を持たない）のもの。無名パッケージの本物の型も同じ形の鍵を
-         * 持つが、回復した型ではないので当たらない
+         * 持つが、回復した型ではないので当たらない。
+         *
+         * <p>識別子はコードポイントで調べる（JLS 3.8。補助文字を含む名前 {@code Tem𝒳plate} は UTF-16 の 1 文字ずつでは
+         * サロゲートの半分で弾かれる）。{@code $} も識別子の文字なので弾かない。JDT は無い入れ子の型を {@code LOuter/Inner;} と
+         * 鍵にする（2 進の名前の {@code $} ではない）ので、パッケージの無い回復した鍵の {@code $} は単純名から来たものに限られる。
+         * 弾いた型は {@code getQualifiedName()} に戻り、バッチで最初に解決に失敗したファイルのパッケージが付く
+         * （docs/cache-unification-qa.md の Q107 の名前がバッチで変わる形に戻る）
          */
         private static String missingSimpleNameOf(ITypeBinding t) {
             if (t == null || !t.isRecovered() || t.isArray()) {
@@ -1229,14 +1236,16 @@ public final class CallHierarchyExporterSingle {
                 return null;
             }
             String name = key.substring(1, key.length() - 1);
-            if (!Character.isJavaIdentifierStart(name.charAt(0))) {
+            int first = name.codePointAt(0);
+            if (!Character.isJavaIdentifierStart(first)) {
                 return null;
             }
-            for (int i = 1; i < name.length(); i++) {
-                char c = name.charAt(i);
-                if (c == '$' || !Character.isJavaIdentifierPart(c)) {
+            for (int i = Character.charCount(first); i < name.length(); ) {
+                int c = name.codePointAt(i);
+                if (!Character.isJavaIdentifierPart(c)) {
                     return null;
                 }
+                i += Character.charCount(c);
             }
             return name;
         }
@@ -1447,13 +1456,21 @@ public final class CallHierarchyExporterSingle {
             noteSignatureTypes(t.getFunctionalInterfaceMethod(), false);
         }
 
-        /** メソッドのシグネチャ（引数・戻り値・throws）の型を数える（{@link #noteReachedType(ITypeBinding, boolean)}） */
+        /**
+         * メソッドのシグネチャ（引数・戻り値・throws・型変数）の型を数える（{@link #noteReachedType(ITypeBinding, boolean)}）。
+         * 型変数は、引数・戻り値・throws に現れなくても数える（{@code <T extends Comparable<? super Foo>> void m()} を
+         * {@code x.<Bar>m()} と呼ぶと、上限が合うかは Foo の親に依る。型の宣言の {@link #noteHeaderTypes} と同じ。
+         * ジェネリックなコンストラクタ {@code new <Bar>Box()} も同じ。docs/cache-unification-qa.md の Q138）
+         */
         private void noteSignatureTypes(IMethodBinding m, boolean jdkToo) {
             if (m == null) {
                 return;
             }
             for (ITypeBinding p : m.getParameterTypes()) {
                 noteReachedType(p, jdkToo);
+            }
+            for (ITypeBinding v : m.getTypeParameters()) {
+                noteReachedType(v, jdkToo);
             }
             noteReachedType(m.getReturnType(), jdkToo);
             for (ITypeBinding e : m.getExceptionTypes()) {
@@ -1882,7 +1899,7 @@ public final class CallHierarchyExporterSingle {
                     continue;
                 }
                 lines.add(new TypeFact(t.typeFqn(), t.kind(), t.superTypes(), t.pkg(), "", t.superclasses(),
-                        t.inheritedImpls()).toRow());
+                        t.inheritedImpls(), t.binarySupertypes()).toRow());
             }
             return digestOf(lines);
         }
@@ -2206,7 +2223,7 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
-         * 自分の宣言の指紋（I 行の 2 列目）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
+         * 自分の宣言の指紋（I 行の指紋の列）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
          * 定数の値（K 行の指紋）を並べてハッシュにしたもの。どちらも無ければ空文字。
          *
          * 旧キャッシュの同じ列（{@link #oldDeclarations}）と突き合わせて、「宣言か定数の値が変わったか」だけを見る
@@ -2373,7 +2390,7 @@ public final class CallHierarchyExporterSingle {
      *   パス1 … 旧キャッシュを順に読み、サイズと内容ハッシュが一致し、検査値も合うファイル（有効）を覚える。
      *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
      *           どのブロックの H 行の親型も部分型の索引に足す（下記「親型の連鎖」）。
-     *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 2 列目）と、今のソースにあるファイルの
+     *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の指紋の列）と、今のソースにあるファイルの
      *           ブロックの型階層の指紋（下記「型階層が変わったとき」）もここで覚える。
      *           今のソースに無いファイルと同じコンパイル単位の名前のファイルも有効から外す
      *           （{@link SameUnitFiles#pairedWithDeleted}）。
@@ -2469,7 +2486,7 @@ public final class CallHierarchyExporterSingle {
      *
      * <p>宣言に書いた型の名前の解決先は、Aのソースが同じでも変わる。{@code import q.*} の {@code Foo} は、同じパッケージに
      * {@code p.Foo} ができると {@code p.Foo} になる（JLS 6.4.1）。すると A のメソッドの引数・戻り値の型、フィールドの型が変わり、
-     * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の 2 列目に自分の宣言の指紋（宣言する型・
+     * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の最後の列に自分の宣言の指紋（宣言する型・
      * メソッド・フィールドの JDT のバインディングの鍵と修飾子など（親型・型引数の上限・関数型も）と、K 行の指紋。中身は
      * {@link FileAnalysis#declarationKeys} と TypeContextTracker#recordDeclarations）を
      * 書き、パス4 で解析し直した結果がこれと違えば、そのファイルが宣言する型も「変わった型」に加えてパス3からやり直す
@@ -2622,7 +2639,7 @@ public final class CallHierarchyExporterSingle {
          */
         private final Map<String, String> hashes = new HashMap<>();
         /**
-         * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の 2 列目。有効なブロックのぶん）。
+         * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の指紋の列。有効なブロックのぶん）。
          * パス4で解析し直した結果と突き合わせて、宣言と定数の値が変わったかだけを見る（「宣言の連鎖」）。
          * ファイルごとに 16 文字のハッシュ1つなので、ヒープに載せても軽い
          */
@@ -2655,6 +2672,11 @@ public final class CallHierarchyExporterSingle {
         private LibraryDiff libraries;
         /** 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）。run の最初に作る */
         private SameUnitFiles units = SameUnitFiles.NONE;
+        /**
+         * ソースの一覧の順（相対パス -> 位置）。run の最初に作る。解析し直す一覧はどのパスのものも、JDT に渡す前にこの順に
+         * 並べる（{@link #analyzeInBatches}。全件解析はソースの一覧の順に 100 件ずつ渡すので、同じ順で渡す）
+         */
+        private Map<String, Integer> sourceOrder = Map.of();
         /**
          * 旧キャッシュのヘッダ行のソースフォルダ（{@link CacheFormat#foldersOf}）。パス0 で読む。
          * 消えたファイルのコンパイル単位の名前を求めるのに使う（{@link SameUnitFiles#pairedWithDeleted}）
@@ -2700,6 +2722,10 @@ public final class CallHierarchyExporterSingle {
                 live.put(rel, new SourceFile(f, rel, attrs.size()));
             }
             units = SameUnitFiles.of(live, layout);
+            sourceOrder = new HashMap<>();
+            for (String rel : live.keySet()) {
+                sourceOrder.put(rel, sourceOrder.size());
+            }
 
             Path parent = config.cacheFile.toAbsolutePath().getParent();
             if (parent != null) {
@@ -3001,10 +3027,18 @@ public final class CallHierarchyExporterSingle {
         /**
          * BATCH_SIZE 件ずつまとめてパースし、1ファイル分ずつ writer に渡す。
          * 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）は、同じバッチに並べる
-         * （{@link SameUnitFiles#batches}。全件解析でも差分更新でも同じ組で JDT に渡すため）
+         * （{@link SameUnitFiles#batches}。全件解析でも差分更新でも同じ組で JDT に渡すため）。
+         *
+         * <p>渡す前に、一覧をソースの一覧の順（{@link #sourceOrder}）に並べる。JDT は {@code createASTs} の中でファイルを
+         * 渡した順に解決し、解決できない型が絡む結果はその順で変わる（戻り値の型が無いパッケージを参照するメソッドの
+         * バインディングを、そのファイルを先に解決すると捨てる・無い型を引数に持つ候補と継承した候補のどちらを選ぶか）。
+         * 全件解析はソースの一覧の順に渡すが、パス3・4 の一覧は旧キャッシュのブロックの順（差分更新のたびに動く）だったので、
+         * 差分更新だけが全件解析と食い違った（docs/cache-unification-qa.md の Q137）
          */
-        private void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> files,
+        private void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> unordered,
                                       BlockWriter writer) throws IOException {
+            List<SourceFile> files = new ArrayList<>(unordered);
+            files.sort(Comparator.comparingInt(f -> sourceOrder.getOrDefault(f.relativePath(), Integer.MAX_VALUE)));
             int done = 0;
             for (List<SourceFile> batch : units.batches(files, CallEdgeExtractor.BATCH_SIZE)) {
                 // 中止の確認はバッチの切れ目で行う。ここで抜けてもキャッシュはテンポラリのままなので壊れない
@@ -3668,7 +3702,7 @@ public final class CallHierarchyExporterSingle {
          * 見えるため、そのまま再利用すると呼び出しが静かに欠ける。印が無い・ブロック数が合わなければ
          * null を返して丸ごと捨てさせる。読めない（文字が壊れている）ときも同じ。
          *
-         * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 2 列目）もここで覚える
+         * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の指紋の列）もここで覚える
          * （{@link #oldDeclarations}）。
          *
          * <p>旧キャッシュを行として読むのは実行ごとにこの 1 回だけにする。あとで要るものはここで取っておく。
@@ -3827,19 +3861,28 @@ public final class CallHierarchyExporterSingle {
             for (TypeFact t : declared) {
                 stale.add(t.typeFqn(), t.pkg());
             }
-            if (declared.isEmpty() && unitPackage != null && !declaresNoType(block.rel)) {
+            if (unitPackage != null && (!intact || (declared.isEmpty() && !declaresNoType(block.rel)))) {
                 // 型を 1 つも宣言していなかったブロック（解析に失敗したファイルの印のブロック。BlockWriter#failed。
-                // エラーで JDT が型を落としたファイル・壊れて H 行を読めないブロックも）。前回そのファイルが宣言していた型が
-                // 分からないので、置き場所のパッケージを中身の分からないパッケージにする（変わった jar のパッケージと同じ扱い）
+                // エラーで JDT が型を落としたファイル・型を宣言しない package-info.java（宣言することもある）も）と、
+                // 壊れたブロック（検査値が合わない。H 行が読めても、その H 行が本当の型かは分からない。docs/cache-unification-qa.md の
+                // Q138）。前回そのファイルが宣言していた型が分からないので、置き場所のパッケージを中身の分からないパッケージにする
+                // （変わった jar のパッケージと同じ扱い）
                 stale.addOpaque(unitPackage);
             }
             // 今のソースに無いファイルのブロックは、壊れていても解析し直さないので数えない
             return (!intact && block.inSources) ? 1 : 0;
         }
 
-        /** 型を宣言しないコンパイル単位（{@code package-info.java}・{@code module-info.java}）か。相対パスで見る */
+        /**
+         * 型を宣言できないコンパイル単位（{@code module-info.java}）か。相対パスのファイル名で見る（{@code endsWith} だと
+         * {@code Xmodule-info.java} にも当たる）。{@code package-info.java} はふつう型を宣言しないが宣言できる（JLS 7.4.1 は
+         * 推奨しないだけ）ので除かない。除いていたときは、そこに宣言したクラスの解析が失敗しても・そのファイルを消しても
+         * パッケージが中身の分からないパッケージにならず、そのクラスを使うファイルを解析し直さなかった
+         * （docs/cache-unification-qa.md の Q138）
+         */
         static boolean declaresNoType(String relativePath) {
-            return relativePath.endsWith("package-info.java") || relativePath.endsWith("module-info.java");
+            int slash = relativePath.lastIndexOf('/');
+            return relativePath.substring(slash + 1).equals("module-info.java");
         }
 
         /**
@@ -4436,6 +4479,14 @@ public final class CallHierarchyExporterSingle {
         /** どのバッチにも添えるファイルなどの材料（{@link #prepare}）。呼ばれていなければ空（何も添えない） */
         private ProjectScan project = ProjectScan.EMPTY;
 
+        /**
+         * 添えると JDT が止まるので、この実行の残りでは添えないファイル（JDT に渡す絶対パス。{@link Batch#dropBrokenContext}）。
+         * 型の宣言を数千段つないだファイル（生成コード）のように、JDT が最初のファイルを返す前の型の束縛で溢れるものは、
+         * 添えるだけでバッチの全ファイルを失敗させる。添えるのをやめれば、そのファイル自身が 1 つだけの解析で失敗するだけで済む
+         * （docs/cache-unification-qa.md の Q141）
+         */
+        private final Set<String> brokenContext = new HashSet<>();
+
         public CallEdgeExtractor(ProjectLayout layout, Config config) {
             this(layout, config, false);
         }
@@ -4459,8 +4510,10 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
-         * 解析するソースの全体を構文だけで読み（型は解決しない。メソッドの本体も読まない）、どのバッチにも添えるファイルと、
-         * パッケージの宣言がフォルダと合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。
+         * 解析するソースの全体を構文だけで読み（型は解決しない）、バッチに添えるファイルと、それぞれのファイルに書いた名前
+         * （添えるファイルをバッチから名前で届くものに絞る材料。{@link ProjectScan#reach}）と、パッケージの宣言がフォルダと
+         * 合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。メソッドの本体も読む
+         * （本体に書いた名前も、解析するファイルから届く先に数えるため。本体を読まない読み取りと時間はほとんど変わらない。Q142）。
          *
          * <p>全件解析でも差分更新でも、解析するファイルだけでなくソースの全体を渡す。添えるファイルがソースの中身だけで
          * 決まり、どの実行でも同じになるようにするため。読めなかったファイル（JDT の例外・スタックの溢れ）は材料にしない
@@ -4482,7 +4535,6 @@ public final class CallHierarchyExporterSingle {
                 parser.setKind(ASTParser.K_COMPILATION_UNIT);
                 parser.setCompilerOptions(options);
                 parser.setResolveBindings(false);
-                parser.setIgnoreMethodBodies(true);
                 try {
                     parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
                         @Override
@@ -4493,7 +4545,7 @@ public final class CallHierarchyExporterSingle {
                             }
                         }
                     }, null);
-                } catch (RuntimeException | StackOverflowError e) {
+                } catch (RuntimeException | StackOverflowError | AssertionError e) {
                     // 読めなかったファイルは材料にしない（下で外して続ける）
                 }
                 if (!pending.isEmpty()) {
@@ -4505,14 +4557,74 @@ public final class CallHierarchyExporterSingle {
             return project;
         }
 
-        /** 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前 */
+        /**
+         * 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前と、書いた名前（{@link ProjectScan.Info}）。
+         * 名前は、単純名（{@code SimpleName}）と点でつないだ名前（{@code QualifiedName}・import）を、メソッド・コンストラクタ・
+         * 初期化ブロックの本体の中と外とに分けて集める（本体の外はソースパスから読んだ型を JDT が組むときにも解決する名前）
+         */
         private static ProjectScan.Info infoOf(CompilationUnit cu) {
             String pkg = (cu.getPackage() == null) ? "" : cu.getPackage().getName().getFullyQualifiedName();
             List<String> types = new ArrayList<>();
             for (Object t : cu.types()) {
                 types.add(((AbstractTypeDeclaration) t).getName().getIdentifier());
             }
-            return new ProjectScan.Info(pkg, List.copyOf(types));
+            Set<String> onDemand = new HashSet<>();
+            Set<String> signature = new HashSet<>();
+            Set<String> body = new HashSet<>();
+            for (Object o : cu.imports()) {
+                ImportDeclaration imp = (ImportDeclaration) o;
+                if (Modifier.isModule(imp.getModifiers())) {
+                    continue;
+                }
+                String name = imp.getName().getFullyQualifiedName();
+                signature.add(name);
+                if (imp.isOnDemand()) {
+                    onDemand.add(name);
+                }
+            }
+            cu.accept(new ASTVisitor() {
+                /** 本体の入れ子の深さ（0 なら本体の外） */
+                private int depth;
+
+                @Override
+                public boolean visit(ImportDeclaration node) {
+                    return false;   // 上で読んだ
+                }
+
+                @Override
+                public boolean visit(Block node) {
+                    if (isBody(node)) {
+                        depth++;
+                    }
+                    return true;
+                }
+
+                @Override
+                public void endVisit(Block node) {
+                    if (isBody(node)) {
+                        depth--;
+                    }
+                }
+
+                private boolean isBody(Block node) {
+                    return node.getParent() instanceof MethodDeclaration || node.getParent() instanceof Initializer;
+                }
+
+                @Override
+                public boolean visit(QualifiedName node) {
+                    (depth == 0 ? signature : body).add(node.getFullyQualifiedName());
+                    return false;   // 頭の部分は ProjectScan が見る
+                }
+
+                @Override
+                public boolean visit(SimpleName node) {
+                    (depth == 0 ? signature : body).add(node.getIdentifier());
+                    return false;
+                }
+            });
+            body.removeAll(signature);
+            return new ProjectScan.Info(pkg, List.copyOf(types), Set.copyOf(onDemand), Set.copyOf(signature),
+                    Set.copyOf(body));
         }
 
         /**
@@ -4522,7 +4634,9 @@ public final class CallHierarchyExporterSingle {
          * 事実がバッチの組み方（全件解析は {@link #BATCH_SIZE} 件ずつ、差分更新は変わったファイルだけ）に依らないよう、
          * 次のファイルを「添えるファイル」として解析するファイルの後ろに並べて渡す（事実は書かない）。
          * <ul>
-         *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）</li>
+         *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）のうち、
+         *       バッチのファイルから名前でたどって届くもの（{@link ProjectScan#reach}。届かないものは
+         *       添えても効かないので、事実はバッチの組み方に依らない）</li>
          *   <li>jar の型が参照していた、ソースの入れ子の型（{@code app.Outer$Inner}）を宣言するファイル。JDT は jar の
          *       クラスファイルから {@code app/Outer$Inner} という名前で型を探し、ソースパスからは見つけられない
          *       （{@code app.Outer} をすでに読んでいれば、その入れ子の型として見つかる）。見つからないと、その型の名前が
@@ -4568,7 +4682,10 @@ public final class CallHierarchyExporterSingle {
          *
          * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
          * 深くなりすぎるファイル）も、そのファイルの失敗として扱う（{@code docs/cache-unification-qa.md} の Q62）。
-         * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
+         * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。JDT が明示的に投げる
+         * {@link AssertionError}（レコードパターンのコード生成の {@code Unexpected operand at stack top} など。{@code -ea} に
+         * 依らない）も同じくそのファイルの失敗にする（Q139）。捕まえるのは {@code RuntimeException}・{@code StackOverflowError}・
+         * {@code AssertionError} だけで、それ以外の {@code Error}（メモリ不足など）は設定の失敗として外へ抜けさせる。
          */
         public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
             List<SourceFile> modules = new ArrayList<>();
@@ -4624,7 +4741,7 @@ public final class CallHierarchyExporterSingle {
                     Map<SourceFile, List<SourceFile>> deferred = new LinkedHashMap<>();
                     if (aloneOnly) {
                         for (SourceFile f : todo) {
-                            alone(f, null, deferred);
+                            alone(f, deferred);
                         }
                     } else {
                         analyzeAll(todo, deferred);
@@ -4638,7 +4755,8 @@ public final class CallHierarchyExporterSingle {
                             }
                         }
                     }
-                    todo = new ArrayList<>(deferred.keySet());
+                    // 組（SameUnitFiles）はソース一覧の並びで並べ直す（組の相手が後回しになった順で入っているため）
+                    todo = project.sorted(deferred.keySet(), Set.of());
                 }
             }
 
@@ -4668,11 +4786,16 @@ public final class CallHierarchyExporterSingle {
              *       （見つからないクラスのエラーが最初に出会ったファイルにだけ付く。docs/cache-unification-qa.md の
              *       「打ち切ったファイルの失敗の理由」の Q の残るもの）が、ふつうの形（最初のファイルが原因）でまで
              *       全件解析と差分更新とで食い違うため</li>
+             *   <li><b>添えるファイルが止めていないかを確かめる</b>（1 つも受け取らないうちに止まり、最初の組だけでも止まった
+             *       とき。{@link #dropBrokenContext}）。添えるファイルだけを JDT に渡してみて、それだけでも例外で止まれば、
+             *       半分ずつに分けて原因のファイルを見つけ、この実行の残りでは添えない（{@link CallEdgeExtractor#brokenContext}）。
+             *       型の宣言を数千段つないだファイルは、添えるだけでバッチの全ファイルを止める（JDT は最初のファイルを返す前に
+             *       全ユニットの親型をつなぐ）。確かめるのは止まったときだけなので、ふつうは費用がかからない</li>
              *   <li><b>止まったファイルを脇に置く</b>（1 つでも受け取ったあと、組が 1 つだけのとき、または最初の組だけでも
              *       止まったとき）。JDT は準備を済ませて渡した順に解決しているので、受け取れなかった最初のファイルで止まって
-             *       いる。その組を脇に置き、
-             *       最後に 1 つずつ（添えるファイル {@link #stopContext} は付けずに）解析する（{@link #alone}）。
-             *       それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）</li>
+             *       いる。その組を脇に置き、最後に 1 つずつ、そのファイルに関わるファイル（{@link #relatedFiles}）を添えて
+             *       解析する（{@link #alone}）。それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の
+             *       「打ち切られた」に載る）</li>
              * </ol>
              * どの場合も、止まる前に受け取ったファイル（事実はまだ集めていない）は、止まったファイルからあとに同じ名前の組の
              * もう片方がいるものを除いて、それだけで 1 つのバッチとして解析し直し、止まったファイルからあとは別のバッチにする。
@@ -4687,7 +4810,7 @@ public final class CallHierarchyExporterSingle {
                     throws IOException {
                 Deque<List<SourceFile>> work = new ArrayDeque<>();
                 work.add(files);
-                Map<SourceFile, Throwable> aside = new LinkedHashMap<>();
+                Set<SourceFile> aside = new LinkedHashSet<>();
                 while (!work.isEmpty()) {
                     List<SourceFile> todo = work.poll();
                     Map<String, SourceFile> pending = byPath(todo);
@@ -4716,15 +4839,100 @@ public final class CallHierarchyExporterSingle {
                         work.push(halves.get(0));
                         continue;
                     }
-                    // 3. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
-                    for (SourceFile f : unit) {
-                        aside.put(f, stop);
+                    // 3. 1 つも受け取らないうちに止まり、最初の組だけでも止まるなら、添えるファイルが止めていないかを確かめる
+                    if (finished.isEmpty() && stop != null && dropBrokenContext(unit)) {
+                        work.push(todo);
+                        continue;
                     }
+                    // 4. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
+                    aside.addAll(unit);
                     Log.info(Messages.format("analysis.batchSetAside", at, todo.size() - unit.size()));
                     splitAt(todo, finished, pending, unit, at, work);
                 }
-                for (Map.Entry<SourceFile, Throwable> e : aside.entrySet()) {
-                    alone(e.getKey(), e.getValue(), deferred);
+                for (SourceFile f : aside) {
+                    alone(f, deferred);
+                }
+            }
+
+            /**
+             * 添えるファイル（{@code unit} を解析するときに添えるもの）だけを JDT に渡してみて、それだけでも例外で止まれば、
+             * 原因のファイル（組）を半分ずつに分けて見つけ、{@link CallEdgeExtractor#brokenContext} に入れる（この実行の残りでは
+             * 添えない）。本体は読まない（{@code setIgnoreMethodBodies}。添えたファイルはふつうの解析でも本体を解決する前に
+             * 止めるので、本体の深さは添えるときの止まり方に関係ない）。例外なしに止まる（依存 jar に無いクラスでの打ち切り）
+             * のは、添えるファイルが原因ではない（添えたファイルのエラーはそのファイルに付くだけ）ので、原因にしない。
+             *
+             * @return 添えないファイルを増やしたか（増やしたなら同じバッチを解析し直す）
+             */
+            private boolean dropBrokenContext(List<SourceFile> unit) throws IOException {
+                // 最初の組だけで試したとき（stopsAlone）と同じ添えるファイル。脇に置いて 1 つだけで解析するとき（alone）は
+                // その一部（stopContext を除く）なので、ここで外したものはそこでも添えない
+                List<SourceFile> context = contextOf(byPath(unit).keySet(), unitExtra(unit), new BitSet());
+                if (context.isEmpty()) {
+                    return false;
+                }
+                Log.info(Messages.format("analysis.contextProbe", context.size()));
+                if (contextStops(context) == null) {
+                    return false;
+                }
+                for (SourceFile f : brokenUnits(context)) {
+                    brokenContext.add(f.path().toString());
+                    Log.info(Messages.format("analysis.contextDropped", f.relativePath()));
+                }
+                return true;
+            }
+
+            /**
+             * {@code files} のうち、JDT を止める組。半分ずつに分けて、止まる半分の中を探す。どちらの半分も単独では止まらない
+             * （2 つのファイルにまたがって深い）なら、両方を原因にする。組が 1 つなら、それが原因
+             */
+            private List<SourceFile> brokenUnits(List<SourceFile> files) throws IOException {
+                List<List<SourceFile>> halves = halves(files);
+                if (halves.size() < 2) {
+                    return files;
+                }
+                List<SourceFile> broken = new ArrayList<>();
+                for (List<SourceFile> half : halves) {
+                    if (contextStops(half) != null) {
+                        broken.addAll(brokenUnits(half));
+                    }
+                }
+                return broken.isEmpty() ? files : broken;
+            }
+
+            /**
+             * {@code files} だけを 1 回の createASTs に渡し（本体は読まない。最初のファイルを受け取ったら止める）、
+             * JDT が投げた例外を返す。例外なしに戻れば（受け取ったかどうかによらず）null
+             */
+            private Throwable contextStops(List<SourceFile> files) throws IOException {
+                String[] paths = new String[files.size()];
+                for (int i = 0; i < paths.length; i++) {
+                    paths[i] = files.get(i).path().toString();
+                }
+                String[] fileEncodings = new String[paths.length];
+                Arrays.fill(fileEncodings, encodingName);
+                boolean[] done = { false };
+                IProgressMonitor stopAtFirst = new NullProgressMonitor() {
+                    @Override
+                    public boolean isCanceled() {
+                        return done[0];
+                    }
+                };
+                ASTParser parser = newParser();
+                parser.setIgnoreMethodBodies(true);
+                try {
+                    parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
+                        @Override
+                        public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+                            done[0] = true;
+                        }
+                    }, stopAtFirst);
+                    return null;
+                } catch (UncheckedIOException e) {
+                    throw e.getCause();
+                } catch (OperationCanceledException e) {
+                    return null;
+                } catch (RuntimeException | StackOverflowError | AssertionError e) {
+                    return e;
                 }
             }
 
@@ -4835,31 +5043,47 @@ public final class CallHierarchyExporterSingle {
             }
 
             /**
-             * 脇に置いたファイルを、1 つだけで（組でも分ける。組のもう片方で止まっていることがあるため。{@link #stopContext}
-             * も付けない）解析し直す。それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の
-             * 「打ち切られた」に理由とともに載る）
-             *
-             * @param stop 脇に置いたときに JDT が投げた例外。無ければ null
+             * 脇に置いたファイルを、1 つだけで（組でも分ける。組のもう片方で止まっていることがあるため）解析し直す。
+             * そのファイルに関わるファイル（{@link #relatedFiles}。組の相手は除く）は添える（例外なしの打ち切りは、原因の型を
+             * 同じバッチに入れれば起きない。Q112）。{@link #stopContext} は付けない（バッチで止まったほかのファイルによって
+             * 増えるので、付けると 1 つだけの解析の結果がバッチの組み方に依る）。それでも受け取れなければ失敗として数える
+             * （{@link Sink#failed}。warnings.txt の「打ち切られた」に理由とともに載る）。理由は 1 つだけの解析で JDT が投げた
+             * 例外から決め、例外なしに止まったなら「理由を示さずに打ち切った」（{@code analysis.stopped}）。脇に置いたときの
+             * バッチの例外は使わない（1 つも受け取らないうちに溢れたバッチでは、別のファイルの例外かもしれない。Q140）
              */
-            private void alone(SourceFile file, Throwable stop, Map<SourceFile, List<SourceFile>> deferred)
-                    throws IOException {
+            private void alone(SourceFile file, Map<SourceFile, List<SourceFile>> deferred) throws IOException {
                 Map<String, SourceFile> one = byPath(List.of(file));
-                Throwable again = parse(one, List.of(), deferred, new ArrayList<>());
+                List<SourceFile> extra = withContext ? relatedFiles(file) : List.of();
+                extra.removeAll(project.unit(layout.unitNameOf(file.path())));
+                Throwable again = parse(one, extra, deferred, new ArrayList<>());
                 if (!one.isEmpty()) {
-                    sink.failed(file, reasonOf(file, (again != null) ? again : stop));
+                    sink.failed(file, reasonOf(file, again));
                 }
             }
 
             /**
              * 止まったファイルの組（{@code unit}）だけを 1 回の createASTs に渡して、JDT がまた止まるか（受け取れないファイルが
              * 残るか）を確かめる。事実は集めない（止まらなければ、組はバッチを分けたあとでふつうに解析する）。添えるファイルは
-             * 止まったときのバッチと同じにする。どのファイルで止まったか分からないときに、最初の組が原因かを見分けるのに使う
+             * 止まったときのバッチのもの（{@link #stopContext}）に、組に関わるファイル（{@link #relatedFiles}。1 つだけで解析する
+             * ときと同じ）を足す。どのファイルで止まったか分からないときに、最初の組が原因かを見分けるのに使う
              * （{@link #analyzeAll}）
              */
             private boolean stopsAlone(List<SourceFile> unit) throws IOException {
                 Map<String, SourceFile> pending = byPath(unit);
-                parse(pending, stopContext, null, new ArrayList<>());
+                parse(pending, unitExtra(unit), null, new ArrayList<>());
                 return !pending.isEmpty();
+            }
+
+            /** 最初の組だけで試すとき（{@link #stopsAlone}）の添えるファイル: {@link #stopContext} と組に関わるファイル（組は除く） */
+            private List<SourceFile> unitExtra(List<SourceFile> unit) {
+                List<SourceFile> extra = new ArrayList<>(stopContext);
+                if (withContext) {
+                    for (SourceFile f : unit) {
+                        extra.addAll(relatedFiles(f));
+                    }
+                }
+                extra.removeAll(unit);
+                return extra;
             }
 
             /**
@@ -4876,14 +5100,8 @@ public final class CallHierarchyExporterSingle {
             private Throwable parse(Map<String, SourceFile> pending, List<SourceFile> extra,
                                     Map<SourceFile, List<SourceFile>> deferred, List<SourceFile> finished)
                     throws IOException {
-                List<SourceFile> candidates = new ArrayList<>();
-                if (withContext) {
-                    candidates.addAll(project.context);
-                }
-                candidates.addAll(memberTypeFiles);
-                candidates.addAll(extra);
-                List<SourceFile> context = project.sorted(candidates, pending.keySet());
-                context.removeIf(ProjectScan::isModuleInfo);
+                BitSet reached = new BitSet();
+                List<SourceFile> context = contextOf(pending.keySet(), extra, reached);
 
                 List<String> all = new ArrayList<>(pending.keySet());
                 for (SourceFile f : context) {
@@ -4921,10 +5139,7 @@ public final class CallHierarchyExporterSingle {
                             }
                             // 解析するファイルの最後。JDT は解析するファイルをすべて解決し終えている
                             if (deferred != null) {   // null なら止まるかどうかだけを見る（stopsAlone）
-                                for (int i = 0; i < finished.size(); i++) {
-                                    collectAndDeliver(finished.get(i), units.get(i), present, deferred);
-                                    units.set(i, null);   // 集め終えた AST は手放す
-                                }
+                                collectAndDeliverAll(finished, units, present, reached, deferred);
                             }
                             done[0] = true;
                         }
@@ -4934,32 +5149,122 @@ public final class CallHierarchyExporterSingle {
                     throw e.getCause();
                 } catch (OperationCanceledException e) {
                     return pending.isEmpty() ? null : e;
-                } catch (RuntimeException | StackOverflowError e) {
+                } catch (RuntimeException | StackOverflowError | AssertionError e) {
                     return e;
                 }
             }
 
-            /** 受け取った 1 ファイルの事実を集めて sink へ渡す。失敗はそのファイルの失敗として数える */
-            private void collectAndDeliver(SourceFile file, CompilationUnit cu, Set<String> present,
-                                           Map<SourceFile, List<SourceFile>> deferred) {
-                FileAnalysis facts;
+            /**
+             * 1 回の createASTs に添えるファイル（ソース一覧の並び。解析するファイル {@code pending} と module-info.java、
+             * 添えると JDT が止まるファイル {@link CallEdgeExtractor#brokenContext} は除く）。
+             * 解析するファイルと、ほかに添えるファイル（{@link #memberTypeFiles}・{@code extra}）から名前でたどって届く
+             * 名前の違うファイルで宣言した型のファイル（{@link ProjectScan#reach}・{@link ProjectScan#contextIn}）・
+             * {@link #memberTypeFiles}・{@code extra}。
+             *
+             * @param reached 届いたファイル（{@link ProjectScan#reach}）を入れて返す。事実に現れた型がこの外にあれば
+             *                添えて解析し直す（{@link #contextMissing}）
+             */
+            private List<SourceFile> contextOf(Set<String> pending, List<SourceFile> extra, BitSet reached) {
+                List<SourceFile> candidates = new ArrayList<>(memberTypeFiles);
+                candidates.addAll(extra);
+                if (withContext) {
+                    List<SourceFile> analyzed = new ArrayList<>();
+                    for (String path : pending) {
+                        analyzed.addAll(project.unit(layout.unitNameOf(Path.of(path))));
+                    }
+                    reached.or(project.reach(analyzed));
+                    // 添えるファイルも JDT が組むので、その名前から届くものも添える
+                    project.extend(reached, candidates);
+                    candidates.addAll(project.contextIn(reached));
+                }
+                List<SourceFile> context = project.sorted(candidates, pending);
+                context.removeIf(f -> ProjectScan.isModuleInfo(f) || brokenContext.contains(f.path().toString()));
+                return context;
+            }
+
+            /**
+             * 事実に現れた型（{@link FileAnalysis#referencedTypes}）を宣言するソースのファイルが、名前でたどって届いた
+             * ファイル（{@code reached}）の外にあれば、そこから届く名前の違うファイルで宣言した型のファイルのうち、今回
+             * JDT に渡していないもの。名前でたどれない経路（jar のクラスのシグネチャがソースの型を指す）で JDT がソースの
+             * 型を読んだとき、その型のパッケージの名前の違うファイルの型を見落とさないよう、添えて解析し直す
+             * （{@link #memberTypeFilesOf} と同じ扱い。docs/cache-unification-qa.md の Q142）
+             */
+            private List<SourceFile> contextMissing(FileAnalysis facts, Set<String> present, BitSet reached) {
+                if (!withContext || project.context.isEmpty()) {
+                    return List.of();
+                }
+                List<SourceFile> roots = new ArrayList<>();
+                for (String name : facts.referencedTypes) {
+                    roots.addAll(project.declaringFiles(name));
+                }
+                BitSet more = (BitSet) reached.clone();
+                if (!project.extend(more, roots)) {
+                    return List.of();
+                }
+                List<SourceFile> missing = new ArrayList<>();
+                for (SourceFile f : project.contextIn(more)) {
+                    String path = f.path().toString();
+                    if (!present.contains(path) && !brokenContext.contains(path) && !ProjectScan.isModuleInfo(f)) {
+                        missing.add(f);
+                    }
+                }
+                return missing;
+            }
+
+            /**
+             * 受け取ったファイルの事実を 1 つずつ集めて sink へ渡す。入れ子の型を宣言するファイルを添えて解析し直すファイル
+             * （{@link #memberTypeFilesOf}）は渡さずに {@code deferred} に置く。同じ名前の組（{@link SameUnitFiles}）の片方を
+             * 後回しにするなら、組のもう片方も渡さずに後回しにする（組はいつもソースフォルダの順で一緒に JDT に渡す約束。
+             * 片方だけを渡してもう片方だけを解析し直すと、解析し直しではもう片方が添えるファイルとして後ろに付き、重複した
+             * 型の勝ち負けが入れ替わる。Q140）。組のファイルの事実は、組のすべてを集め終えるまで手元に置く
+             */
+            private void collectAndDeliverAll(List<SourceFile> finished, List<CompilationUnit> units, Set<String> present,
+                                              BitSet reached, Map<SourceFile, List<SourceFile>> deferred) {
+                Map<SourceFile, FileAnalysis> held = new LinkedHashMap<>();   // 組のファイル（渡すかどうかは最後に決める）
+                for (int i = 0; i < finished.size(); i++) {
+                    SourceFile file = finished.get(i);
+                    FileAnalysis facts = collect(file, units.get(i));
+                    units.set(i, null);   // 集め終えた AST は手放す
+                    if (facts == null) {
+                        continue;   // 失敗として数えた
+                    }
+                    List<SourceFile> needs = memberTypeFilesOf(facts, present);
+                    for (SourceFile f : contextMissing(facts, present, reached)) {
+                        if (!needs.contains(f)) {
+                            needs.add(f);
+                        }
+                    }
+                    if (!needs.isEmpty()) {
+                        deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
+                    } else if (project.unit(layout.unitNameOf(file.path())).size() > 1) {
+                        held.put(file, facts);
+                    } else {
+                        deliver(file, facts);
+                    }
+                }
+                for (Map.Entry<SourceFile, FileAnalysis> e : held.entrySet()) {
+                    boolean paired = false;
+                    for (SourceFile d : deferred.keySet()) {
+                        paired |= layout.unitNameOf(d.path()).equals(layout.unitNameOf(e.getKey().path()));
+                    }
+                    if (paired) {
+                        deferred.put(e.getKey(), List.of());
+                    } else {
+                        deliver(e.getKey(), e.getValue());
+                    }
+                }
+            }
+
+            /** 受け取った 1 ファイルの事実を集める。失敗はそのファイルの失敗として数え、null を返す */
+            private FileAnalysis collect(SourceFile file, CompilationUnit cu) {
                 try {
-                    facts = collectFacts(file, cu);
-                } catch (RuntimeException e) {
+                    return collectFacts(file, cu);
+                } catch (RuntimeException | StackOverflowError | AssertionError e) {
                     // 型の解決は遅れて行われるので、事実を集めるあいだに JDT が文言の無い例外（見つからない
-                    // クラスでの打ち切り）を投げることがある
+                    // クラスでの打ち切り）を投げることがある。スタックの溢れ・JDT の AssertionError も同じ
                     sink.failed(file, explained(e));
-                    return;
-                } catch (StackOverflowError e) {
-                    sink.failed(file, tooDeep(e));
-                    return;
+                    return null;
                 }
-                List<SourceFile> needs = memberTypeFilesOf(facts, present);
-                if (!needs.isEmpty()) {
-                    deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
-                    return;
-                }
-                deliver(file, facts);
             }
 
             private void deliver(SourceFile file, FileAnalysis facts) {
@@ -4967,15 +5272,13 @@ public final class CallHierarchyExporterSingle {
                     sink.accept(file, facts);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);   // parse の catch で IOException に戻す
-                } catch (RuntimeException e) {
+                } catch (RuntimeException | StackOverflowError | AssertionError e) {
                     // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
                     // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
-                    // 解析し直しにも回らず、失敗とも数えられずに黙って消える
+                    // 解析し直しにも回らず、失敗とも数えられずに黙って消える。受け手の中で溢れた場合も同じ
+                    // （docs/cache-unification-qa.md の Q69）。parse の catch に AssertionError を足した今、ここで
+                    // 捕まえないと、pending から外したファイルがそこに呑まれて黙って消える
                     sink.failed(file, explained(e));
-                } catch (StackOverflowError e) {
-                    // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
-                    // 外してあるので解析し直しにも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
-                    sink.failed(file, tooDeep(e));
                 }
             }
         }
@@ -4999,7 +5302,9 @@ public final class CallHierarchyExporterSingle {
                     List<SourceFile> declaring = project.unit(name.substring(0, dollar).replace('.', '/') + ".java");
                     boolean given = false;
                     for (SourceFile f : declaring) {
-                        given |= present.contains(f.path().toString());
+                        // 添えると JDT が止まるファイル（brokenContext）は添えられないので、渡したものとみなす
+                        // （添えて解析し直しても同じ事実になり、繰り返しが終わらない）
+                        given |= present.contains(f.path().toString()) || brokenContext.contains(f.path().toString());
                     }
                     if (!given) {
                         for (SourceFile f : declaring) {
@@ -5058,7 +5363,7 @@ public final class CallHierarchyExporterSingle {
                                 });
                             }
                         }, null);
-            } catch (RuntimeException | StackOverflowError e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 読めなければ名前を書いた型のファイルは添えない（同じフォルダのファイルだけで解析し直す）
             }
             return project.sorted(files, Set.of());
@@ -5071,13 +5376,14 @@ public final class CallHierarchyExporterSingle {
             }
         }
 
-        /** 解析し直しても受け取れなかったファイルの、失敗の理由 */
+        /**
+         * 解析し直しても受け取れなかったファイルの、失敗の理由。
+         *
+         * @param stop 1 つだけの解析で JDT が投げた例外。例外なしに止まったなら null
+         */
         private static Exception reasonOf(SourceFile file, Throwable stop) {
-            if (stop instanceof StackOverflowError e) {
-                return tooDeep(e);
-            }
-            if (stop instanceof Exception e) {
-                return explained(e);
+            if (stop != null) {
+                return explained(stop);
             }
             try (InputStream in = Files.newInputStream(file.path())) {
                 // 読める（1 バイト読んでみる）。JDT が理由を言わずに打ち切った
@@ -5110,13 +5416,18 @@ public final class CallHierarchyExporterSingle {
         /**
          * 失敗の理由として伝える例外。JDT の例外には文言の無いもの（見つからないクラスでの打ち切り {@code AbortCompilation}
          * など）があり、そのままでは warnings.txt の行が「()」だけになって何が起きたか分からないので、例外の名前を添えた
-         * 文言にする
+         * 文言にする。スタックの溢れは利用者が対処を選べる文言に、それ以外の {@code Error}（JDT が明示的に投げる
+         * {@link AssertionError}）は例外の名前と文言を添えた文言にする（{@code Sink#failed} は {@code Exception} を受け取る）
          */
-        private static Exception explained(Exception e) {
-            if (e.getMessage() == null || e.getMessage().isBlank()) {
-                return new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e);
+        private static Exception explained(Throwable e) {
+            if (e instanceof StackOverflowError so) {
+                return tooDeep(so);
             }
-            return e;
+            boolean blank = e.getMessage() == null || e.getMessage().isBlank();
+            if (e instanceof Exception ex) {
+                return blank ? new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e) : ex;
+            }
+            return new IllegalStateException(Messages.format("analysis.failedBy", blank ? e.getClass().getName() : e.toString()), e);
         }
 
         /** スタックが溢れたことを、そのファイルの失敗の理由として伝える例外（利用者が対処を選べる文言にする） */
@@ -5452,6 +5763,34 @@ public final class CallHierarchyExporterSingle {
                 }
                 if (t != null && isSubtype(t, declaring.getErasure())) {
                     return t;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * {@code super.m()} / {@code X.super.m()} / {@code super::m} を修飾する型（JLS 13.1）。
+         * {@code X} がインターフェースなら X。{@code X} がクラス（{@code Outer.super.m()}）なら X の親クラス。
+         * 修飾が無ければ、その式を囲む最も内側の型（匿名クラスを含む）の親クラス。求められなければ null。
+         * 読み手はこの型から実際に動く実装を選び直す（JVMS 6.5 の invokespecial。{@code C = 直接の親クラス}
+         * か名指しのインターフェース）
+         */
+        static ITypeBinding superQualifierOf(ASTNode node, org.eclipse.jdt.core.dom.Name qualifier) {
+            if (qualifier != null) {
+                IBinding qb = qualifier.resolveBinding();
+                if (!(qb instanceof ITypeBinding qt)) {
+                    return null;
+                }
+                return qt.isInterface() ? qt : qt.getSuperclass();
+            }
+            for (ASTNode n = node.getParent(); n != null; n = n.getParent()) {
+                if (n instanceof org.eclipse.jdt.core.dom.AbstractTypeDeclaration td) {
+                    ITypeBinding t = td.resolveBinding();
+                    return (t == null) ? null : t.getSuperclass();
+                }
+                if (n instanceof org.eclipse.jdt.core.dom.AnonymousClassDeclaration ac) {
+                    ITypeBinding t = ac.resolveBinding();
+                    return (t == null) ? null : t.getSuperclass();
                 }
             }
             return null;
@@ -6422,12 +6761,18 @@ public final class CallHierarchyExporterSingle {
             return true;
         }
 
+        /**
+         * {@code super.m()} / {@code X.super.m()}。静的束縛（部分型の上書きの影響を受けない）だが、読み手は修飾する型
+         * （JLS 13.1: {@code super.m()} なら囲む型の親クラス、{@code X.super.m()} なら X がインターフェースならその X、
+         * クラスなら X の親クラス）から実際に動く実装を選び直す（JVMS 6.5 の invokespecial。インターフェースのダイヤモンドで
+         * JDT の束縛が特定性の低い default を指すことがある。Issue #177）ので、修飾する型を C 行に書く
+         */
         @Override
         public boolean visit(SuperMethodInvocation n) {
-            // super.m() は静的束縛（オーバーライドの影響を受けない）
             IMethodBinding b = n.resolveMethodBinding();
             calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                    RecvKind.THIS, null, origins.valuesOf(null, n.arguments()));
+                    RecvKind.THIS, null, origins.valuesOf(null, n.arguments()),
+                    calls.qualifierOf(b, CallSiteRecorder.superQualifierOf(n, n.getQualifier())));
             return true;
         }
 
@@ -6494,13 +6839,14 @@ public final class CallHierarchyExporterSingle {
             return true;
         }
 
-        /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
+        /** メソッド参照 super::m。super 呼び出しと同じく静的束縛で、修飾する型も同じに書く */
         @Override
         public boolean visit(SuperMethodReference n) {
             IMethodBinding b = n.resolveMethodBinding();
             recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
             calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                    RecvKind.THIS, null, CallValues.NONE);
+                    RecvKind.THIS, null, CallValues.NONE,
+                    calls.qualifierOf(b, CallSiteRecorder.superQualifierOf(n, n.getQualifier())));
             return true;
         }
 
@@ -7834,7 +8180,7 @@ public final class CallHierarchyExporterSingle {
          */
         private void addEqualsCall(MethodInvocation mi, boolean expected, List<Guard.Atom> atoms) {
             if (!"equals".equals(mi.getName().getIdentifier()) || mi.arguments().size() != 1
-                    || !isObjectEquals(mi.resolveMethodBinding())) {
+                    || !isObjectEquals(mi)) {
                 return;
             }
             Expression recv = mi.getExpression();
@@ -7880,13 +8226,27 @@ public final class CallHierarchyExporterSingle {
             return tb.isPrimitive() || tb.isEnum() || STRING.equals(tb.getQualifiedName());
         }
 
-        /** {@code equals(Object)} か（{@code Object#equals} とその上書き）。同じ名前の別の多重定義は中身が分からない */
-        private static boolean isObjectEquals(IMethodBinding mb) {
-            if (mb == null) {
+        /**
+         * 呼んでいるのが {@code Object#equals(Object)} かその上書き（JLS 8.4.8.1）か。同じ名前の別の多重定義
+         * （{@code equals(String)}）は中身が分からないので判定しない（条件を作らない＝打ち切らない）。
+         *
+         * <p>上書きの判定は JDT の {@code IMethodBinding.overrides} に任せる（名前・引数の数・引数の型 {@code java.lang.Object}
+         * を自分で比べない。Issue #189）。呼び出し先が {@code Object} 自身の宣言なら {@code isEqualTo}、
+         * バインディングが取れない・{@code Object} が引けないときは判定しない
+         */
+        private static boolean isObjectEquals(MethodInvocation mi) {
+            IMethodBinding mb = mi.resolveMethodBinding();
+            ITypeBinding object = mi.getAST().resolveWellKnownType("java.lang.Object");
+            if (mb == null || object == null) {
                 return false;
             }
-            ITypeBinding[] params = mb.getParameterTypes();
-            return params.length == 1 && "java.lang.Object".equals(params[0].getQualifiedName());
+            IMethodBinding declaration = mb.getMethodDeclaration();
+            for (IMethodBinding m : object.getDeclaredMethods()) {
+                if ("equals".equals(m.getName()) && m.getParameterTypes().length == 1) {
+                    return declaration.isEqualTo(m) || declaration.overrides(m);
+                }
+            }
+            return false;
         }
 
         /**
@@ -8101,6 +8461,10 @@ public final class CallHierarchyExporterSingle {
      * {@code java.util.Iterator<X>}（式の型が {@code Iterable<X>} の部分型でなければ生の {@code Iterator}）と定めているので、
      * {@code iterator()} が利用者の Iterator の型を返しても、呼び出し先は {@code java.util.Iterator} のメソッドになる
      * （javac のバイトコードも同じ）。実際に動く実装は、読み手が {@code Iterator} の実装から探す（JLS 15.12.4.4）。
+     *
+     * <p>{@link #findNoArgMethod} の「クラスの連鎖 → 最も特定的な親インターフェース」の順は、選択の正本
+     * MethodSelection#search（docs/resolution-selection-design.md の 4 節）の写しで、材料が JDT のバインディング
+     * （こちらは解決の層）なので寄せられない。順を変えるときは ExternalUsageScanner と合わせて 3 か所を同時に直す（Issue #189）。
      */
     final static class ImplicitCalls {
 
@@ -8638,10 +9002,15 @@ public final class CallHierarchyExporterSingle {
         boolean staleInProcess;
 
         /**
-         * このプロセスで前に走査した jar の、JDK が目次を共有する鍵（更新時刻と fileKey）と指紋（絶対パス -> {鍵, 指紋}）。
-         * 解析サーバーは同じプロセスで解析を繰り返すので、プロセスの中で持ち越す
+         * このプロセスで前に走査した jar の、JDK が目次を共有する鍵（{@link #sharedViewKeyOf}）-> そのとき JDK が見せて
+         * いる（と考える）目次の指紋。解析サーバーは同じプロセスで解析を繰り返すので、プロセスの中で持ち越す。
+         *
+         * <p>鍵はパスではなく JDK の鍵で持ち、見た鍵はすべて残す。JDK は閉じられていない {@link ZipFile} が持つすべての鍵で
+         * 目次を共有する（パスには依らない）ので、パスごとに最後の 1 組だけを覚えると、鍵 K1 → K2（K1 を上書きして忘れる）→ K1
+         * に戻す上書きと、同じ inode を別のパス（シンボリックリンク・ハードリンク）で読む形が素通りした
+         * （docs/cache-unification-qa.md の Q136）
          */
-        private static final Map<Path, String[]> seenInProcess = new ConcurrentHashMap<>();
+        private static final Map<String, String> seenInProcess = new ConcurrentHashMap<>();
         /** JDK の目次が今の中身と同じになるのを待つ回数と間隔（{@link #releaseStaleView}） */
         private static final int RELEASE_TRIES = 50;
         private static final long RELEASE_WAIT_MILLIS = 100;
@@ -8845,8 +9214,17 @@ public final class CallHierarchyExporterSingle {
         /**
          * jar の目次（セントラルディレクトリ）だけを読んで、指紋とパッケージを作る。
          * 中身の展開も読み込みもしないので、大きな jar でも件数に比例するだけで済む。
+         *
+         * <p>指紋はディスクのバイト（{@link ZipDirectory}）から作るが、その前に JDT と同じ読み手（{@link ZipFile}。同じ JDK）で
+         * 開けるかも確かめる。{@code ZipFile} が受け付けない壊れ方（圧縮方式が stored・deflate 以外・暗号化の印・終わりの記録の
+         * コメント長がファイルの終わりを越える・コメントが UTF-8 でない など）を {@link ZipDirectory} は見ないので、JDT が
+         * 「読めない」としてクラスパスから外した jar に普通の指紋を作り、「依存 jar を読めません」の警告が出ず、同じ目次の正しい
+         * jar に直しても指紋が変わらず解析し直さなかった。{@code ZipFile} の検査を移植すると JDK の版ごとの違いで食い違って
+         * いくので、移植せずに開いて閉じる。開けなければ {@link IOException} で、読めない jar の道（警告・空の指紋）に乗る
+         * （docs/cache-dependency-jars-qa.md の Q22）
          */
         private static LibraryFact scanJar(Path jar, String key, boolean[] stale) throws IOException {
+            new ZipFile(jar.toFile()).close();   // 開けるかだけを見る（目次は下でファイルのバイトから読む）
             // JDT と同じ見分け方（拡張子。org.eclipse.jdt.internal.compiler.util.Util#archiveFormat）
             boolean jmod = jar.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jmod");
             TreeSet<String> packages = new TreeSet<>();
@@ -8865,26 +9243,36 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
-         * このプロセスで前に走査したときと JDK の鍵（更新時刻と fileKey）が同じなのに指紋が違えば、JDK が前の目次を
+         * このプロセスで前に JDK の鍵（{@link #sharedViewKeyOf}）が同じ jar を走査していて指紋が違えば、JDK が前の目次を
          * 共有し続けているかもしれない。今の中身と同じになるまで解き放つ。解き放てなければ警告し、{@code stale[0]} を真にする
          * （クラスの説明「同じプロセスでの解析の繰り返し」）。
          *
-         * <p>{@link #seenInProcess} は「JDK が見せている（と考える）目次の指紋」を持つ。解き放てなかったときは前の指紋を
+         * <p>{@link #seenInProcess} は鍵ごとに「JDK が見せている（と考える）目次の指紋」を持つ。解き放てなかったときは前の指紋を
          * 残す。今の指紋に置き換えると、次の解析では指紋が一致して確かめず、JDK が前の目次を見せたままなのに、
-         * この実行で内容ハッシュを空にしたファイルを前の目次で解析し直して、正しいものとして書いてしまう
+         * この実行で内容ハッシュを空にしたファイルを前の目次で解析し直して、正しいものとして書いてしまう。
+         * 一致したとき・解き放てたときだけ、その鍵の記録を置き換える（ほかの鍵の記録は消さない。鍵を戻す上書きに備える）
          */
         private static void checkSharedView(Path jar, String fingerprint, boolean[] stale) throws IOException {
-            BasicFileAttributes attrs = Files.readAttributes(jar, BasicFileAttributes.class);
-            String jdkKey = attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS) + "\t" + attrs.fileKey();
-            Path abs = jar.toAbsolutePath().normalize();
-            String[] before = seenInProcess.get(abs);
-            if (before != null && before[0].equals(jdkKey) && !before[1].equals(fingerprint)
-                    && !releaseStaleView(jar, fingerprint)) {
+            String jdkKey = sharedViewKeyOf(jar);
+            String before = seenInProcess.get(jdkKey);
+            if (before != null && !before.equals(fingerprint) && !releaseStaleView(jar, fingerprint)) {
                 stale[0] = true;
                 Log.warn(Messages.format("analysis.libraryStaleInProcess", jar));
                 return;   // 前の指紋を残す（次の解析でもまた確かめる）
             }
-            seenInProcess.put(abs, new String[] {jdkKey, fingerprint});
+            seenInProcess.put(jdkKey, fingerprint);
+        }
+
+        /**
+         * JDK が {@link ZipFile} の目次を共有する鍵（{@code ZipFile.Source.Key} と同じ見方）。更新時刻と fileKey（inode）で、
+         * fileKey が取れない環境（Windows）では絶対パス。パス無しだと、同じ更新時刻の別の jar と衝突する。
+         * シンボリックリンクはたどる（{@link Files#readAttributes} の既定。JDK も同じ）ので、別のパスから読む同じ inode は同じ鍵になる
+         */
+        private static String sharedViewKeyOf(Path jar) throws IOException {
+            BasicFileAttributes attrs = Files.readAttributes(jar, BasicFileAttributes.class);
+            Object fileKey = attrs.fileKey();
+            return attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS) + "\t"
+                    + ((fileKey != null) ? fileKey.toString() : jar.toAbsolutePath().normalize().toString());
         }
 
         /**
@@ -10472,7 +10860,8 @@ public final class CallHierarchyExporterSingle {
      *   {@link #inheritedImplementationsOf} H 行の 8 列目   親クラスから継承したメソッドが、型引数を置き換えた
      *                                             親インターフェースのメソッドを実装する組（isSubsignature）
      *                                             → 選択の 2 段目で、その型から見たときだけ成り立つ実装として引く
-     *   {@link #functionalKeysOf}           M 行の鍵   ラムダ・メソッド参照が実装する抽象メソッドすべて（isSubsignature）
+     *   {@link #functionalKeysOf}           M 行の鍵   ラムダ・メソッド参照が実装する抽象メソッドすべてと、SAM が抽象として
+     *                                             宣言し直した親の default（isSubsignature）
      *                                             → invokedynamic に当たる呼び出しの本体を、親の型で受けた呼び出しからも引く
      * </pre>
      * キーが同じ（消去した引数型が同じ＝ JVM のディスクリプタが同じ）上書きは、読み手がキーの照合で引けるので書かない。
@@ -10569,9 +10958,21 @@ public final class CallHierarchyExporterSingle {
          *
          * <p>判定は JDT に任せる: 親インターフェースのメソッド（型引数を置き換えたもの。private・static は除く）ごとに、
          * {@code type} 自身が同じシグネチャ（{@code isSubsignature}）を宣言していなければ、親クラスを近い順に見て
-         * 最初に {@code isSubsignature} の当たる宣言（static・private を除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
+         * 最初に {@code isSubsignature} の当たる public の宣言（static と public でないものを除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
          * キーが同じなら読み手はキーの照合で引けるので書かない。実装する側の型が実装される側のインターフェースを
-         * 実装していれば、その宣言の O 行が同じことを言うので書かない
+         * 実装していれば、その宣言の O 行が同じことを言うので書かない。
+         *
+         * <h4>実装する側は public の宣言だけ</h4>
+         * JLS 8.4.8 では、パッケージアクセスのメソッドは同じパッケージのサブクラスにしか継承されない。
+         * {@code class UserRepo extends a.BaseRepo implements Repo<a.User>}（{@code a.BaseRepo.save(User)} が
+         * パッケージアクセス、{@code UserRepo} は別のパッケージ）では {@code BaseRepo.save} は {@code UserRepo} のメンバーでなく、
+         * 何も実装しない（javac はブリッジを作らず、{@code Repo.save} の default が動く。Issue #168）。
+         * 一方、同じパッケージで継承されても、public でないメソッドが public なインターフェースのメソッドを実装することは
+         * JLS 8.4.8.3（弱いアクセス権限）でコンパイルできない。つまりコンパイルできるコードでは、インターフェースのメソッドを
+         * 実装する継承したメソッドは public のものに限る。そこで public でない宣言（static・private と同じく）は飛ばして
+         * 親へ進む（同じシグネチャの public な宣言がさらに上にあれば、それが実装する。無ければ書かない）。
+         * 「パッケージアクセスなら型からそのクラスまでの連鎖が同じパッケージにあるときだけ採る」と書き分ける必要は無い
+         * （違いが出るのはコンパイルできないコードだけ）
          */
         List<String> inheritedImplementationsOf(ITypeBinding type) {
             if (type == null || type.isInterface() || type.getSuperclass() == null) {
@@ -10607,6 +11008,9 @@ public final class CallHierarchyExporterSingle {
                     IMethodBinding mc = subsignatureIn(sc, mi);
                     if (mc == null) {
                         continue;
+                    }
+                    if (!Modifier.isPublic(mc.getModifiers())) {
+                        continue;   // public でない宣言はインターフェースのメソッドを実装できない（JLS 8.4.8・8.4.8.3。Issue #168）
                     }
                     MethodRef implemented = names.toRef(mi);
                     MethodRef implementing = names.toRef(mc);
@@ -10685,6 +11089,10 @@ public final class CallHierarchyExporterSingle {
          * </pre>
          * 読み手（M 行）は鍵の完全一致で引くので、親の宣言の鍵が無いと、親の型で受けた変数への
          * 呼び出しでラムダが見えず、別の実装1件に誤って確定する（docs/lambda-expansion-qa.md の Q11・Q15）。
+         * 親の宣言は抽象メソッドとは限らない。SAM が親の default を抽象として宣言し直した形
+         * （{@code interface Task { default void exec() {} }  interface Job extends Task { void exec(); }}）
+         * では、{@code Task} の型で受けた呼び出しの先は default の鍵で、そこで動くのはラムダなので、
+         * その default の鍵でも書く（static・private は継承されないので除く。docs/lambda-expansion-qa.md の Q19）。
          * 親型は型引数を具体化したまま辿り、上書き同等かの判定は
          * {@code IMethodBinding.isSubsignature}（JLS 8.4.2）に任せる。
          *
@@ -10718,7 +11126,11 @@ public final class CallHierarchyExporterSingle {
                     }
                     for (IMethodBinding candidate : type.getDeclaredMethods()) {
                         int mods = candidate.getModifiers();
-                        if (!Modifier.isAbstract(mods) || Modifier.isStatic(mods)
+                        // 抽象メソッドのほか、SAM が抽象として宣言し直した親の default も含める
+                        // （interface Job extends Task { void exec(); } の Task#exec。Issue #176）。
+                        // 親の型で受けた呼び出し（Task t; t.exec()）の先はその default の鍵で、ラムダが動く。
+                        // static・private は継承されないので上書き同等にならない（JLS 9.4.1）
+                        if (Modifier.isStatic(mods) || Modifier.isPrivate(mods)
                                 || !candidate.getName().equals(sam.getName())
                                 || candidate.getParameterTypes().length != sam.getParameterTypes().length
                                 || !(sam.isSubsignature(candidate) || candidate.isSubsignature(sam))) {
@@ -10752,7 +11164,11 @@ public final class CallHierarchyExporterSingle {
      *       どのバッチにも添える（{@link #context}）。JDT はこの型をパッケージのファイルを読み直して探すが、その読み直しを
      *       Java 8 の文法で行う（{@code ASTParser} がソースパスに渡す設定を引き継がない）ため、{@code record}・
      *       {@code sealed} の宣言と、同じファイルでそれより後ろの型を見落とす。どの型を見落とすかを JDT の作りに合わせて
-     *       絞ることはせず、名前の違う型を宣言するファイルはすべて添える（docs/cache-unification-qa.md の「名前の違うファイルで宣言した型」の Q）</li>
+     *       絞ることはせず、名前の違う型を宣言するファイルはすべて添える（docs/cache-unification-qa.md の「名前の違うファイルで宣言した型」の Q）。
+     *       ただし、どのバッチにもすべてを添えるのではなく、バッチのファイルから<b>名前でたどって届くファイル</b>のうちの
+     *       添えるファイルだけを添える（{@link #reach}・{@link #contextIn}）。各ファイルが同じファイルに補助クラスを持つ
+     *       書き方では、添えるファイルの数もバッチの数もプロジェクトの大きさに比例し、すべてを添えると費用が二乗で
+     *       増えていた（docs/cache-unification-qa.md の Q142）</li>
      *   <li>パッケージの宣言がフォルダと合わないファイルは警告する（{@link #warnPackageMismatches}）。ソースパスからは
      *       見つからないので、ほかのファイルがその型を解決できるかはバッチの組み方で変わる。フォルダを直すのが本筋で、
      *       どのバッチにも添えることはしない（source.folders が 1 段ずれていると、すべてのファイルが当たる）</li>
@@ -10763,8 +11179,18 @@ public final class CallHierarchyExporterSingle {
      */
     final static class ProjectScan {
 
-        /** 1 ファイルを構文だけで読んだ結果 */
-        record Info(String packageName, List<String> topLevelTypes) {
+        /**
+         * 1 ファイルを構文だけで読んだ結果（{@link CallEdgeExtractor#prepare}）。
+         *
+         * @param packageName    宣言したパッケージ（既定のパッケージは空）
+         * @param topLevelTypes  トップレベルの型の名前
+         * @param onDemand       オンデマンド import（{@code import a.b.*;} の {@code a.b}。static も型の import も）
+         * @param signatureNames メソッド・コンストラクタ・初期化ブロックの本体の外（import・宣言・フィールドの初期化子・注釈）に
+         *                       書いた名前。単純名と、点でつないだ名前（{@code a.b.C.m}）
+         * @param bodyNames      本体の中に書いた名前（同じ形）
+         */
+        record Info(String packageName, List<String> topLevelTypes, Set<String> onDemand, Set<String> signatureNames,
+                    Set<String> bodyNames) {
         }
 
         /** パッケージの宣言がフォルダと合わないファイル */
@@ -10772,7 +11198,8 @@ public final class CallHierarchyExporterSingle {
         }
 
         /** 何も読んでいない（{@link CallEdgeExtractor#prepare} を呼んでいない使い方） */
-        static final ProjectScan EMPTY = new ProjectScan(Map.of(), Map.of(), Map.of(), List.of(), List.of());
+        static final ProjectScan EMPTY = new ProjectScan(Map.of(), Map.of(), Map.of(), List.of(), List.of(),
+                List.of(), new String[0], new int[0][], new int[0][], new BitSet(), new BitSet());
 
         /** 読んだファイルでいちばん多く挙げる、パッケージの合わないファイルの数 */
         static final int MISMATCH_LIMIT = 20;
@@ -10787,15 +11214,34 @@ public final class CallHierarchyExporterSingle {
         final List<SourceFile> context;
         /** パッケージの宣言がフォルダと合わないファイル（ソース一覧の並び） */
         final List<Mismatch> mismatches;
+        /** ソース一覧（位置 = {@link #order} の値） */
+        private final List<SourceFile> files;
+        /** 位置 -> コンパイル単位の名前（{@link #byUnit} の鍵） */
+        private final String[] unitNames;
+        /** 位置 -> 本体も含めてそのファイルが名前で届くファイルの位置（バッチで解析するファイルから出るとき） */
+        private final int[][] bodyEdges;
+        /** 位置 -> 本体の外の名前で届くファイルの位置（名前でたどって届いたファイルから出るとき） */
+        private final int[][] signatureEdges;
+        /** 添えるファイル（{@link #context}）の位置 */
+        private final BitSet contextBits;
+        /** 構文だけでは読めなかったファイルの位置（名前が分からないので、届いたらすべての添えるファイルに届くとみなす） */
+        private final BitSet unreadable;
 
         private ProjectScan(Map<String, Integer> order, Map<String, List<SourceFile>> byUnit,
                             Map<String, List<SourceFile>> byFolder, List<SourceFile> context,
-                            List<Mismatch> mismatches) {
+                            List<Mismatch> mismatches, List<SourceFile> files, String[] unitNames, int[][] bodyEdges,
+                            int[][] signatureEdges, BitSet contextBits, BitSet unreadable) {
             this.order = order;
             this.byUnit = byUnit;
             this.byFolder = byFolder;
             this.context = context;
             this.mismatches = mismatches;
+            this.files = files;
+            this.unitNames = unitNames;
+            this.bodyEdges = bodyEdges;
+            this.signatureEdges = signatureEdges;
+            this.contextBits = contextBits;
+            this.unreadable = unreadable;
         }
 
         /**
@@ -10838,7 +11284,196 @@ public final class CallHierarchyExporterSingle {
             }
             List<SourceFile> sorted = new ArrayList<>(context);
             sorted.sort(Comparator.comparingInt(f -> order.get(f.relativePath())));
-            return new ProjectScan(order, byUnit, byFolder, List.copyOf(sorted), List.copyOf(mismatches));
+
+            // 名前で届くファイルの辺。どのパッケージにどの名前の型があるか（名前の違うファイルの型も）を先に引けるようにする
+            List<SourceFile> files = new ArrayList<>(all);
+            Map<String, Map<String, List<Integer>>> declared = new HashMap<>();
+            BitSet unreadable = new BitSet();
+            BitSet contextBits = new BitSet();
+            String[] unitNames = new String[files.size()];
+            for (int i = 0; i < files.size(); i++) {
+                SourceFile f = files.get(i);
+                unitNames[i] = layout.unitNameOf(f.path());
+                Info info = infos.get(f.relativePath());
+                if (context.contains(f)) {
+                    contextBits.set(i);
+                }
+                if (info == null) {
+                    unreadable.set(i);
+                    String unit = unitNames[i];
+                    String base = f.path().getFileName().toString().replaceFirst("\\.java$", "");
+                    declared.computeIfAbsent(folderOf(unit).replace('/', '.'), k -> new HashMap<>())
+                            .computeIfAbsent(base, k -> new ArrayList<>()).add(i);
+                    continue;
+                }
+                for (String type : info.topLevelTypes()) {
+                    declared.computeIfAbsent(info.packageName(), k -> new HashMap<>())
+                            .computeIfAbsent(type, k -> new ArrayList<>()).add(i);
+                }
+            }
+            int[][] bodyEdges = new int[files.size()][];
+            int[][] signatureEdges = new int[files.size()][];
+            for (int i = 0; i < files.size(); i++) {
+                Info info = infos.get(files.get(i).relativePath());
+                if (info == null) {
+                    bodyEdges[i] = new int[0];
+                    signatureEdges[i] = bodyEdges[i];
+                    continue;
+                }
+                Set<Integer> sig = new LinkedHashSet<>();
+                for (String name : info.signatureNames()) {
+                    addDeclaring(name, info, declared, sig);
+                }
+                Set<Integer> body = new LinkedHashSet<>(sig);
+                for (String name : info.bodyNames()) {
+                    addDeclaring(name, info, declared, body);
+                }
+                signatureEdges[i] = toArray(sig);
+                bodyEdges[i] = toArray(body);
+            }
+            return new ProjectScan(order, byUnit, byFolder, List.copyOf(sorted), List.copyOf(mismatches),
+                    List.copyOf(files), unitNames, bodyEdges, signatureEdges, contextBits, unreadable);
+        }
+
+        /**
+         * {@code name}（単純名か、点でつないだ名前）が指しうる型を宣言するファイルの位置を {@code out} に足す。
+         * 単純名は、自分のパッケージとオンデマンド import したパッケージの型。点でつないだ名前は、頭の部分のどれか
+         * （{@code a.b.C.m} の {@code a.b.C}・{@code a.b}…）を「パッケージ.型」と読んだ型と、最初の部分を単純名と読んだ型。
+         * 名前だけでは型か変数か・パッケージかを決めないので余分に当たるが、添えるファイルが増えるだけ
+         */
+        private static void addDeclaring(String name, Info info, Map<String, Map<String, List<Integer>>> declared,
+                                         Set<Integer> out) {
+            int dot = name.indexOf('.');
+            String first = (dot < 0) ? name : name.substring(0, dot);
+            addType(declared, info.packageName(), first, out);
+            for (String pkg : info.onDemand()) {
+                addType(declared, pkg, first, out);
+            }
+            for (String p = name; p.indexOf('.') > 0; p = p.substring(0, p.lastIndexOf('.'))) {
+                int last = p.lastIndexOf('.');
+                addType(declared, p.substring(0, last), p.substring(last + 1), out);
+            }
+        }
+
+        private static void addType(Map<String, Map<String, List<Integer>>> declared, String pkg, String type,
+                                    Set<Integer> out) {
+            Map<String, List<Integer>> types = declared.get(pkg);
+            if (types != null) {
+                out.addAll(types.getOrDefault(type, List.of()));
+            }
+        }
+
+        private static int[] toArray(Set<Integer> set) {
+            int[] a = new int[set.size()];
+            int i = 0;
+            for (int v : set) {
+                a[i++] = v;
+            }
+            return a;
+        }
+
+        /**
+         * 解析するファイル（{@code analyzed}）から名前でたどって届くファイル（位置の集合。解析するファイル自身も含む）。
+         *
+         * <p>JDT は、解析するファイルの本体まで解決し、そこで名指した型をソースパスから読むと、その型のファイルの
+         * 本体の外（import・宣言のシグネチャ・親型）の名前を解決する。その名前の型をまた読み、…と、本体の外の名前で
+         * 届くファイルを読む（本体は読まない）。名前の違うファイルで宣言した型を JDT が探すのは、この届く範囲の
+         * ファイルが、その型のパッケージでその名前を探すときだけなので、届かないファイルの添えるファイルを添えても
+         * 事実は変わらない（docs/cache-unification-qa.md の Q142）。そこで、解析するファイルからは本体も含めた名前で、
+         * 届いたファイルからは本体の外の名前で、閉包までたどる。構文だけでは読めなかったファイルは、名前が分からない
+         * ので、届いたらすべての添えるファイルに届くとみなす（{@link #contextIn}）。
+         *
+         * <p>ソース一覧に無いファイル（{@link CallEdgeExtractor#prepare} を呼んでいない使い方）は何にも届かない
+         */
+        BitSet reach(Collection<SourceFile> analyzed) {
+            BitSet reached = new BitSet(files.size());
+            Deque<Integer> todo = new ArrayDeque<>();
+            for (SourceFile f : analyzed) {
+                Integer i = order.get(f.relativePath());
+                if (i == null) {
+                    continue;
+                }
+                reached.set(i);
+                for (int next : bodyEdges[i]) {
+                    if (!reached.get(next)) {
+                        reached.set(next);
+                        todo.add(next);
+                    }
+                }
+            }
+            follow(reached, todo);
+            return reached;
+        }
+
+        /**
+         * {@code reached} に、{@code roots}（事実に現れた型を宣言するファイルなど）とそこから本体の外の名前でたどって届く
+         * ファイルを足す。新しく届いたファイルがあれば true
+         */
+        boolean extend(BitSet reached, Collection<SourceFile> roots) {
+            Deque<Integer> todo = new ArrayDeque<>();
+            for (SourceFile f : roots) {
+                Integer i = order.get(f.relativePath());
+                if (i != null && !reached.get(i)) {
+                    reached.set(i);
+                    todo.add(i);
+                }
+            }
+            if (todo.isEmpty()) {
+                return false;
+            }
+            follow(reached, todo);
+            return true;
+        }
+
+        private void follow(BitSet reached, Deque<Integer> todo) {
+            while (!todo.isEmpty()) {
+                for (int next : signatureEdges[todo.poll()]) {
+                    if (!reached.get(next)) {
+                        reached.set(next);
+                        todo.add(next);
+                    }
+                }
+            }
+        }
+
+        /**
+         * 届くファイル（{@link #reach}）のうちの添えるファイル（ソース一覧の並び）。組（{@link SameUnitFiles}）は組ごと
+         * 添えるファイルになっているので、片方だけが届いても組ごと返す。読めなかったファイルに届いていれば、すべての
+         * 添えるファイル
+         */
+        List<SourceFile> contextIn(BitSet reached) {
+            if (contextBits.isEmpty()) {
+                return List.of();
+            }
+            if (reached.intersects(unreadable)) {
+                return context;
+            }
+            BitSet hit = (BitSet) contextBits.clone();
+            hit.and(reached);
+            List<SourceFile> out = new ArrayList<>();
+            Set<SourceFile> seen = new HashSet<>();
+            for (int i = hit.nextSetBit(0); i >= 0; i = hit.nextSetBit(i + 1)) {
+                for (SourceFile m : byUnit.get(unitNames[i])) {
+                    if (seen.add(m)) {
+                        out.add(m);
+                    }
+                }
+            }
+            out.sort(Comparator.comparingInt(this::orderOf));
+            return out;
+        }
+
+        /**
+         * 完全修飾名（{@code a.b.C}・{@code a.b.C.Inner}・{@code a.b.C$Inner}）の型を宣言しうるソースのファイル
+         * （頭の部分のどれかを「フォルダ／型の名前.java」と読んだファイル。組ごと）
+         */
+        List<SourceFile> declaringFiles(String typeName) {
+            List<SourceFile> out = new ArrayList<>();
+            String path = typeName.replace('$', '.').replace('.', '/');
+            for (String p = path; !p.isEmpty(); p = p.substring(0, Math.max(0, p.lastIndexOf('/')))) {
+                out.addAll(unit(p + ".java"));
+            }
+            return out;
         }
 
         /**
@@ -10935,7 +11570,7 @@ public final class CallHierarchyExporterSingle {
         /** 常に加える（パス2。ファイル自身が変わっているので、型の改名・追加がありうる） */
         ALWAYS,
         /**
-         * 自分の宣言の指紋（宣言の鍵と修飾子・定数の値。I 行の 2 列目）が旧キャッシュと違うときと、
+         * 自分の宣言の指紋（宣言の鍵と修飾子・定数の値。I 行の最後の列）が旧キャッシュと違うときと、
          * 旧キャッシュでそのファイルが変わった jar のパッケージに触れていたとき（選ばれた理由に依らない）に加える（パス4）。
          *
          * ほかのファイルの事実は、このファイルの宣言（メソッドの引数と戻り値の型・フィールドの型・親型・修飾子）と
@@ -11740,13 +12375,14 @@ public final class CallHierarchyExporterSingle {
                     : (Modifier.isAbstract(erased.getModifiers()) ? TypeFact.ABSTRACT : TypeFact.CONCRETE);
 
             List<String> supers = new ArrayList<>();
-            collectSupertypes(erased, supers, new HashSet<>(), true, 0);
+            Set<String> binarySupertypes = new TreeSet<>();
+            collectSupertypes(erased, null, supers, binarySupertypes, new HashSet<>(), 0);
             // 親クラスの連鎖（TypeFact#superclasses）。ソース上の型に当たるまで。jar の親は collectSupertypes も辿る型
             List<String> superclasses = new ArrayList<>();
             ITypeBinding sc = erased.getSuperclass();
             while (sc != null && superclasses.size() < MAX_BINARY_SUPERTYPE_DEPTH) {
                 ITypeBinding e = BindingNames.erasureOf(sc);
-                String n = names.typeNameOf(e);
+                String n = supertypeNameOf(e);
                 if (n == null || "java.lang.Object".equals(n)) {
                     break;
                 }
@@ -11755,7 +12391,8 @@ public final class CallHierarchyExporterSingle {
             }
             ITypeBinding declared = tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb;
             out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
-                    names.annotationsOf(erased), superclasses, overrideFacts.inheritedImplementationsOf(declared)));
+                    names.annotationsOf(erased), superclasses, overrideFacts.inheritedImplementationsOf(declared),
+                    new ArrayList<>(binarySupertypes)));
             recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
             names.noteInheritedSignatures(tb);
         }
@@ -11848,6 +12485,27 @@ public final class CallHierarchyExporterSingle {
         private static final int MAX_BINARY_SUPERTYPE_DEPTH = 32;
 
         /**
+         * H 行に書く親型の名前。取れなければ null。
+         *
+         * <p>解決できなかった（回復した）型は {@link BindingNames#MISSING_PREFIX} を付けて {@code ?.Template.Inner} と書く。
+         * 依存 jar が無いとき、{@code class B extends Template.Inner}（Template は解決できない）の親を JDT は鍵
+         * {@code LTemplate/Inner;}・名前 {@code Template.Inner} の回復した型にする。鍵だけでは、無い完全修飾名
+         * （{@code Lorg/missing/Lib;}）と区別できないので、単純名から作られた無い型（{@link BindingNames#qualifiedNameOf}）
+         * のように鍵の形では判定できない。そのまま書くと、読み手は B を無名パッケージにある本物の {@code Template.Inner} の
+         * 部分型とみなし（名前で型を引く）、本物の {@code Template.Inner.run()} の呼び出しの候補に {@code B.run()} を足して
+         * 展開をやめ、本物の先の呼び出しが出力から消えた。無い型はどの本物の型の親子にもなれないので、H 行では回復した型を
+         * すべて {@code ?.} 付きにする（I 行の依存する型・メソッドの鍵の名前は変えない。{@code ?} は Java の名前に使えないので
+         * 本物の型と重ならない）
+         */
+        private String supertypeNameOf(ITypeBinding erased) {
+            String n = names.typeNameOf(erased);
+            if (n != null && erased.isRecovered() && !n.startsWith(BindingNames.MISSING_PREFIX)) {
+                return BindingNames.MISSING_PREFIX + n;
+            }
+            return n;
+        }
+
+        /**
          * 親型の名前を集める。直接の親型（親クラスとインターフェース）に加えて、
          * ソースの無い親型（jar の型）を経由して到達するソース上の親型も入れる。
          *
@@ -11857,9 +12515,19 @@ public final class CallHierarchyExporterSingle {
          * Handler のメソッド呼び出しの候補から Foo が抜ける。
          * ソース上の親型の先は、その型自身の H 行が持つので辿らない。
          * java.lang.Object は候補計算に寄与しないので除外する（無駄に巨大化させない）。
+         *
+         * <p>あわせて、辿った jar の型の親型の組（{@code jar の型>親型}。{@link TypeFact#binarySupertypes()}）も集める。
+         * {@code class MyList extends ArrayList<String>} の {@code java.util.ArrayList>java.util.List} など。jar の親の親
+         * （{@code List} / {@code Collection}）は親型の並びには入れないが、読み手はこの組から jar の型の親子関係を知り、
+         * {@code java.util.List#size()} の呼び出しの候補に MyList を入れ（jar の型を経由した部分型）、jar のインターフェースを
+         * 経由した親子関係を「最も特定的な」親インターフェースの判定に使う。組は親型の並びの {@code seen} とは別に、
+         * 辿った jar の型ごとに親型すべてを書く（別の経路で先に見た親でも、その jar の型の親であることは変わらない）。
+         * 回復した型（無い型）の先は辿らない
+         *
+         * @param binaryType {@code type} が jar の型なら H 行に書くその名前。直接の親型を集める段（ソースの型自身）なら null
          */
-        private void collectSupertypes(ITypeBinding type, List<String> out, Set<String> seen,
-                                       boolean direct, int depth) {
+        private void collectSupertypes(ITypeBinding type, String binaryType, List<String> out, Set<String> binaryEdges,
+                                       Set<String> seen, int depth) {
             List<ITypeBinding> parents = new ArrayList<>();
             if (type.getSuperclass() != null) {
                 parents.add(type.getSuperclass());
@@ -11870,16 +12538,22 @@ public final class CallHierarchyExporterSingle {
             }
             for (ITypeBinding parent : parents) {
                 ITypeBinding erasedParent = BindingNames.erasureOf(parent);
-                String n = names.typeNameOf(erasedParent);
-                if (n == null || "java.lang.Object".equals(n) || !seen.add(n)) {
+                String n = supertypeNameOf(erasedParent);
+                if (n == null || "java.lang.Object".equals(n)) {
+                    continue;
+                }
+                if (binaryType != null) {
+                    binaryEdges.add(binaryType + ">" + n);
+                }
+                if (!seen.add(n)) {
                     continue;
                 }
                 boolean fromSource = erasedParent.isFromSource();
-                if (direct || fromSource) {
+                if (binaryType == null || fromSource) {
                     out.add(n);
                 }
-                if (!fromSource && depth < MAX_BINARY_SUPERTYPE_DEPTH) {
-                    collectSupertypes(erasedParent, out, seen, false, depth + 1);
+                if (!fromSource && !erasedParent.isRecovered() && depth < MAX_BINARY_SUPERTYPE_DEPTH) {
+                    collectSupertypes(erasedParent, n, out, binaryEdges, seen, depth + 1);
                 }
             }
         }
@@ -11921,7 +12595,33 @@ public final class CallHierarchyExporterSingle {
             if (!anyConstructor && (tb == null || !tb.isInterface())) {
                 synthesizeImplicitConstructor(tb, declLine, roots);
             }
+            synthesizeImplicitAccessors(tb, declLine);
             return new TypeContext(tb, roots, declLine);
+        }
+
+        /**
+         * record の暗黙に宣言されたアクセサ（JLS 8.10.3。書かれなかった成分のアクセサ）の D 行を合成する。
+         * D 行が無いと読み手の実装探索（{@code MethodSelection#search}）はその型の段で何も見つけず、
+         * 親インターフェースの同じシグネチャの default（{@code interface Named { default String name() }} を
+         * {@code record R(String name) implements Named} で）に進んでしまう。動くのはアクセサ（クラスのメソッドが
+         * default に勝つ。JLS 8.4.8）。Issue #177。修飾子は public（JLS 8.10.3）に implicit を添える。
+         * 明示的に書いたアクセサは {@code FactVisitor} が通常の D 行にするので、JDT が合成したもの
+         * （{@code isSyntheticRecordMethod}）だけ
+         */
+        private void synthesizeImplicitAccessors(ITypeBinding tb, int declLine) {
+            if (tb == null || !tb.isRecord()) {
+                return;
+            }
+            for (IMethodBinding m : ImplicitCalls.accessorsOf(tb)) {
+                if (!m.isSyntheticRecordMethod()) {
+                    continue;
+                }
+                MethodRef ref = names.toRef(m);
+                if (ref != null) {
+                    out.declarations.add(new MethodDeclFact(ref, declLine, true,
+                            ModifierTokens.with(BindingNames.modifiersOf(m.getModifiers()), ModifierTokens.IMPLICIT)));
+                }
+            }
         }
 
         /**
@@ -13306,6 +14006,9 @@ public final class CallHierarchyExporterSingle {
      * <h2>行の種別と列</h2>
      * 各行の列の並びは、その行を表す record の {@code toRow()} / {@code fromRow()} が定義する。
      * ブロックの中の行は<b>この順に並ぶ</b>（読み手がこの並びに依存している。理由は各行の説明）。
+     * コメント・文書で「n 列目」と書くときは、<b>行種別の文字を 1 列目に数える</b>（ファイルを開いて見たままの列。
+     * H 行の 7 列目＝親クラスの連鎖、L 行の 4 列目＝パッケージの一覧）。I 行だけは下の版の履歴で行種別を数えずに
+     * 書いてきたので、本文では番号ではなく列の名前（依存する型・自分の宣言の指紋＝最後の列）で呼ぶ。
      * <pre>
      *   T  ソース一覧の指紋  先頭の行の検査値                     解析対象のソースファイル一覧（パス・サイズ・
      *                                                          内容ハッシュ）のハッシュ。L 行の直後に1行。
@@ -13431,7 +14134,7 @@ public final class CallHierarchyExporterSingle {
      *                                                          D 行より前に置く（読み手はここでメソッドを ID 化するので、
      *                                                          以前の形式と同じ ID の順になる。CallGraphBuilder 参照）
      *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション  親クラスの連鎖(カンマ区切り)
-     *      継承した実装(;区切り)
+     *      継承した実装(;区切り)  jar の型の親型(;区切り)
      *                                                          {@link TypeFact}。親型は親クラスとインターフェースを区別しない
      *                                                          （読み手は名前順に並べ替える）ので、実装を親クラスの連鎖から先に
      *                                                          探す（JLS 8.4.8・JVMS 5.4.6）ための親クラスを 7 列目に持つ。
@@ -13439,7 +14142,15 @@ public final class CallHierarchyExporterSingle {
      *                                                          クラスも並べる。java.lang.Object は含まない）。
      *                                                          8 列目は、親クラスから継承したメソッドが親インターフェースの
      *                                                          メソッドをキーの食い違う形で実装する組（{@code 実装される側>実装する側}。
-     *                                                          その型から見たときだけの関係なので O 行に書けない）
+     *                                                          その型から見たときだけの関係なので O 行に書けない）。
+     *                                                          9 列目は、この型から親型を辿って到達した jar の型の推移的な
+     *                                                          親型の組（{@code jar の型>親型}。java.lang.Object は含まない）。
+     *                                                          jar の型には H 行が無いので、読み手はこれで jar の型を経由した
+     *                                                          部分型（{@code class MyList extends ArrayList} は List の部分型）と、
+     *                                                          jar のインターフェースを経由した親子を知る
+     *                                                          （TypeHierarchy）。親型（3 列目）と親クラスの連鎖
+     *                                                          （7 列目）の解決できなかった型は {@code ?.} 付きで書く
+     *                                                          （{@code ?.Template.Inner}。無名パッケージの本物の型と重ねない）
      *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine  [returnType]
      *                                                          returnType はアノテーションの付いたメソッドにだけ書く
      *                                                          （宣言した戻り値の消去型。DI の &#64;Bean が使う）。
@@ -13545,7 +14256,7 @@ public final class CallHierarchyExporterSingle {
      * <ul>
      *   <li>中身の変わっていないファイルでも、宣言に書いた型の解決先（同じパッケージに足した型によるオンデマンド import の
      *       隠蔽）や参照したコンパイル時定数の値（{@code static final} の値と注釈のメンバの既定値。使う側のファイルに値
-     *       そのものが焼き込まれる）が変わると、宣言と定数の値が変わり、使う側の事実が変わる。書き手は I 行の 2 列目に
+     *       そのものが焼き込まれる）が変わると、宣言と定数の値が変わり、使う側の事実が変わる。書き手は I 行の最後の列に
      *       自分の宣言の指紋（K 行の指紋を含む）を持ち、解析し直して指紋が前回と違えば、宣言する型を変わった型にして
      *       参照するファイルも解析し直す（「宣言の連鎖」。docs/cache-unification-qa.md の Q83）。K 行そのものは差分更新では
      *       読み直さない（指紋の材料と、人が見るため）。旧キャッシュの I 行が変わった jar のパッケージ
@@ -13754,9 +14465,19 @@ public final class CallHierarchyExporterSingle {
          *       いたブロックは、名前を照合せず、何かが変わった実行では必ず解析し直す。同じパッケージに足した新しい型による隠蔽は、
          *       単純名を照合せず、そのパッケージ（とそれをオンデマンド import するブロック）で当てる。解析し直したファイルの
          *       型階層（H 行）が旧キャッシュと違えば、残りを全件解析する（{@code docs/cache-unification-qa.md} の Q131）</li>
+         *   <li>v45 H 行の継承した実装（8 列目）を public の宣言だけにした（別のパッケージのパッケージアクセスのメソッドは継承されない。
+         *       Issue #168）。G 行の {@code equals} の条件を、JDT の {@code overrides} で {@code Object#equals} の上書きと
+         *       判定したものだけにした（Issue #189）（{@code docs/jls-conformance-qa.md} の Q37、{@code docs/value-safety-qa.md} の Q29）</li>
+         *   <li>v45（続き）H 行に jar の型の親型の組（9 列目。ソースの型から辿って到達した jar の型の推移的な親型）を足した。読み手は
+         *       jar の型を経由した部分型（{@code class MyList extends ArrayList} を {@code List#size()} の候補に）と、jar の
+         *       インターフェースを経由した親子（最も特定的な default の判定）を知る。H 行の親型・親クラスの連鎖の解決できなかった
+         *       型を {@code ?.} 付きにし、単純名から作られた無い型の名前を {@code $} や補助文字を含む名前でも鍵から作る
+         *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
+         *   <li>v45（続き）{@code super.m()} / {@code X.super.m()} / {@code super::m} の C 行に修飾する型（囲む型の親クラスか、名指しの
+         *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
          * </ul>
          */
-        public static final String VERSION = "jche-cache-v44";
+        public static final String VERSION = "jche-cache-v45";
 
         // 行の種別（各行の先頭1文字）
         public static final char ROW_SOURCES = 'T';
@@ -15031,7 +15752,7 @@ public final class CallHierarchyExporterSingle {
      * </pre>
      * C.java が参照している型は X だけなので、P.java を変えても C.java は再解析されない。
      * K行は「このファイルが宣言する定数の値」を残しておくためにある。書き手は各行の {@link #fingerprint} を
-     * 自分の宣言の指紋（I 行の 2 列目。{@link FileAnalysis#declarationKeys}）に入れ、差分更新は解析し直した結果
+     * 自分の宣言の指紋（I 行の指紋の列。{@link FileAnalysis#declarationKeys}）に入れ、差分更新は解析し直した結果
      * その指紋が変わったとき（値か宣言が変わったとき）に使っている側も解析し直す（{@link CacheUpdater} の
      * 「宣言の連鎖」。docs/cache-unification-qa.md の Q83）。差分更新は K 行そのものを読み直さない（指紋の材料と、
      * {@link CacheDump} で人が見るため）。
@@ -15289,7 +16010,7 @@ public final class CallHierarchyExporterSingle {
          * このファイルが宣言する型（親型・型引数とその上限・関数型も）と、その型が宣言するメソッド・フィールドの、
          * JDT のバインディングの鍵と修飾子など（継承したものは含めない。何を入れるかは
          * {@code TypeContextTracker#recordDeclarations} が決める）。行にはせず、
-         * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の 2 列目）にする。
+         * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の最後の列）にする。
          * 差分更新は、中身の変わっていないファイルを解析し直したとき、この指紋が前回と違えば宣言する型を
          * 「変わった型」にする（docs/cache-unification-qa.md の Q83）
          */
@@ -16613,9 +17334,17 @@ public final class CallHierarchyExporterSingle {
      *                   {@code class UserRepo extends BaseRepo implements Repo<User>} の
      *                   {@code p.Repo#save(java.lang.Object)>p.BaseRepo#save(p.User)}。この型から見たときにだけ成り立つ
      *                   関係なので O 行（宣言ごとの上書き）には書けない（OverrideFacts#inheritedImplementationsOf）
+     * @param binarySupertypes この型から親型を辿って到達する jar の型（ソースの無い型）の親型の組（v45 で追加。
+     *                   {@code jar の型>親型}、名前順）。{@code class MyList extends ArrayList<String>} の
+     *                   {@code java.util.ArrayList>java.util.List} など、jar の型の推移的な親型すべて（java.lang.Object は含まない）。
+     *                   jar の型には H 行が無いので、読み手はこれで jar の型の親子関係を知る。宣言した型が jar の型
+     *                   （{@code java.util.List#size()}）の呼び出しの候補に、jar の型を経由した部分型（MyList）を入れ、
+     *                   jar のインターフェースを経由した親子関係を「最も特定的な」親インターフェースの判定に使うために持つ
+     *                   （TypeHierarchy）
      */
     public static record TypeFact(String typeFqn, char kind, List<String> superTypes, String pkg,
-                           String annotations, List<String> superclasses, List<String> inheritedImpls) {
+                           String annotations, List<String> superclasses, List<String> inheritedImpls,
+                           List<String> binarySupertypes) {
 
         public static final char INTERFACE = 'I';
         public static final char ABSTRACT = 'A';
@@ -16626,11 +17355,13 @@ public final class CallHierarchyExporterSingle {
             annotations = (annotations == null) ? "" : annotations;
             superclasses = (superclasses == null) ? List.of() : superclasses;
             inheritedImpls = (inheritedImpls == null) ? List.of() : inheritedImpls;
+            binarySupertypes = (binarySupertypes == null) ? List.of() : binarySupertypes;
         }
 
         public String toRow() {
             return CacheFormat.joinRow("H", typeFqn, String.valueOf(kind), String.join(",", superTypes), pkg,
-                    annotations, String.join(",", superclasses), String.join(";", inheritedImpls));
+                    annotations, String.join(",", superclasses), String.join(";", inheritedImpls),
+                    String.join(";", binarySupertypes));
         }
 
         /** 列が足りなければ null */
@@ -16641,7 +17372,7 @@ public final class CallHierarchyExporterSingle {
             char kind = cols[2].isEmpty() ? CONCRETE : cols[2].charAt(0);
             return new TypeFact(cols[1], kind, namesOf(CacheFormat.columnAt(cols, 3), ","), CacheFormat.columnAt(cols, 4),
                     CacheFormat.columnAt(cols, 5), namesOf(CacheFormat.columnAt(cols, 6), ","),
-                    namesOf(CacheFormat.columnAt(cols, 7), ";"));
+                    namesOf(CacheFormat.columnAt(cols, 7), ";"), namesOf(CacheFormat.columnAt(cols, 8), ";"));
         }
 
         /** 区切り文字 {@code sep} で区切った並び（空の要素は捨てる） */
@@ -23763,6 +24494,10 @@ public final class CallHierarchyExporterSingle {
      * 「.class で終わるエントリ」として最初から読めている。
      * 出力の jar 名は、中の jar なら {@code 外側.jar!/BOOT-INF/lib/中.jar} のように
      * jar URL と同じ {@code !/} 区切りでどこに入っていたかまで書く。
+     *
+     * <p>被参照の結び先を探す「クラスの連鎖 → 最も特定的な親インターフェース」の順は、選択の正本
+     * MethodSelection（docs/resolution-selection-design.md の 4 節）の写し。順を変えるときは
+     * ImplicitCalls と合わせて 3 か所を同時に直す（Issue #189）。
      */
     public final static class ExternalUsageScanner {
 
@@ -23997,68 +24732,24 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
-         * 完全一致で見つからない場合、継承したメソッドの呼び出し
-         * （呼び出し側は子クラスを owner として記録する）を考慮して親を探す。
+         * 参照（受け手の静的型 {@code owner} とディスクリプタ {@code sig}）を、JVM のメソッド解決（JVMS 5.4.3.3）が
+         * 結び付けるソースの宣言に引く。完全一致で見つからなければ継承したメソッド（呼び出し側は子クラスを owner として
+         * 記録する）を親から探す。
+         *
+         * <p>探す順（親クラスの連鎖 → 最も特定的な親インターフェース）と、javac がブリッジメソッドでディスクリプタをそろえる形
+         * （型引数を具体化した上書き＝ O 行、親クラスから継承した実装＝ H 行の 8 列目）の照合は、選択と同じ
+         * {@link MethodSelection#resolvedDeclaration} に任せる。以前はここに同じ順の別実装を持っていて、O 行と H 行の
+         * 8 列目を見なかった（Issue #186。docs/external-usage-callsite-qa.md の Q9）
          */
         private int lookupRef(String owner, String sig) {
-            int id = declaredWithSource(owner, sig);
+            int id = graph.selection().resolvedDeclaration(owner, sig);
             if (id < 0) {
-                id = declaredWithSource(normalize(owner), sig);
-            }
-            return (id >= 0) ? id : inheritedFrom(normalize(owner), sig);
-        }
-
-        /** その型自身がソース上で宣言しているメソッドの ID。無ければ -1 */
-        private int declaredWithSource(String typeFqn, String sig) {
-            int id = methods.idOf(typeFqn + "#" + sig);
-            return (id >= 0 && methods.hasSource(id)) ? id : -1;
-        }
-
-        /**
-         * owner から親をたどり、JVM のメソッド解決（JVMS 5.4.3.3）と同じ宣言を返す。
-         * <ol>
-         *   <li>親クラスの連鎖（{@link TypeHierarchy#classChain}。H 行が親クラスを持つ）を根まで見て、最初の宣言</li>
-         *   <li>無ければ、連鎖の型が実装するインターフェースの宣言（private と static は除く）のうち、ほかの宣言の型の
-         *       真の親型で宣言したものを除いた「最も特定的な」もの。本体を持つものを先にし、その中は近い順
-         *       （同じ深さは名前順）の先頭。{@code interface I2 extends I1} の両方に default があれば I2 のもの</li>
-         * </ol>
-         * 「シグネチャが一致する宣言のうち owner を子孫に持つもの」を先着で選ぶと、
-         * 親クラスとインターフェースの両方に宣言がある場合にメソッドIDの並び（＝解析順）で
-         * 結果が変わるので、型階層だけで決まるこの順にしている。
-         */
-        private int inheritedFrom(String owner, String sig) {
-            TypeHierarchy hierarchy = graph.hierarchy();
-            List<String> classChain = hierarchy.classChain(owner);
-            for (int i = 1; i < classChain.size(); i++) {
-                int id = declaredWithSource(classChain.get(i), sig);
-                if (id >= 0) {
-                    return id;
+                String norm = normalize(owner);
+                if (!norm.equals(owner)) {
+                    id = graph.selection().resolvedDeclaration(norm, sig);
                 }
             }
-            List<String> declaring = new ArrayList<>();
-            List<Integer> found = new ArrayList<>();
-            for (String type : hierarchy.superinterfaces(owner)) {
-                int id = declaredWithSource(type, sig);
-                if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
-                        && !ModifierTokens.has(methods.mods(id), "static")) {
-                    declaring.add(type);
-                    found.add(id);
-                }
-            }
-            List<String> specific = hierarchy.mostSpecific(declaring);
-            int abstractOne = -1;
-            for (int i = 0; i < found.size(); i++) {
-                if (!specific.contains(declaring.get(i))) {
-                    continue;
-                }
-                if (methods.hasBody(found.get(i))) {
-                    return found.get(i);
-                }
-                if (abstractOne < 0) {
-                    abstractOne = found.get(i);
-                }
-            }
-            return abstractOne;
+            return id;
         }
 
         /**
@@ -24422,6 +25113,9 @@ public final class CallHierarchyExporterSingle {
         List<String> sourceFolderOrder = List.of();
 
         CallGraph() {
+            // ラムダ・メソッド参照が実装し直しているメソッド（M 行）は、部分型の宣言を見るだけでは「別の本体へ振り分けられうる」
+            // と分からないので、選択に M 行の判定を渡す（Issue #176）
+            selection.functionalImpls(this::hasFunctionalImpl);
         }
 
         public MethodTable methods() {
@@ -25856,7 +26550,7 @@ public final class CallHierarchyExporterSingle {
                 if (custom != null) {
                     return custom;
                 }
-                return Resolution.single(calleeId,
+                return Resolution.single(bindKind == BindKind.SUPER ? superTarget(edgeIndex, calleeId) : calleeId,
                         Resolution.STATIC_BOUND_PREFIX + BindKind.staticBoundReason(bindKind));
             }
 
@@ -26060,6 +26754,21 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
+         * {@code super.m()} / {@code X.super.m()} / {@code super::m} で実際に動く本体（JVMS 6.5 の invokespecial:
+         * 修飾する型（C 行。{@code super.m()} なら囲む型の親クラス、{@code X.super.m()} なら X）から JVMS 5.4.6 の順で選ぶ）。
+         * 書き手が記録した呼び出し先は JDT の束縛で、インターフェースのダイヤモンド（{@code Both extends Top, Mid} で
+         * {@code Both.super.hi()}、{@code Y0 implements Top, Mid} の子の {@code super.hi()}）では特定性の低い {@code Top.hi} を
+         * 指すことがある（実際に動くのは {@code Mid.hi}。Issue #177）。修飾する型が無ければ（宣言した型と同じ・jar の型）
+         * 宣言した型から引き、選べなければ呼び出し先のまま
+         */
+        private int superTarget(int edgeIndex, int calleeId) {
+            String q = graph.qualifierOf(edgeIndex);
+            String from = (q == null || q.isEmpty()) ? methods.typeFqn(calleeId) : q;
+            int impl = graph.selection().implementationOf(from, calleeId);
+            return (impl >= 0) ? impl : calleeId;
+        }
+
+        /**
          * そのエッジの、呼び出しを修飾する型（JLS 13.1）。CHA の候補をそこから引いてよいときだけ返し、
          * 宣言した型から引くべきときは null。
          *
@@ -26067,9 +26776,11 @@ public final class CallHierarchyExporterSingle {
          * クラスは修飾する型の部分型である。{@code Plain p; p.greet()} で {@code greet} を宣言した
          * {@code Greeter} の実装のうち、{@code Plain} の部分型でないものは動かない。
          *
-         * ただし修飾する型の部分型を<b>漏れなく</b>数えられるときに限る。ソースに宣言の無い型（jar の型）は、
-         * jar の中の中間の型を経由した部分型が型階層に載らないことがあるので使わない（宣言した型から引く＝
-         * 多すぎる側に倒す）。型階層の上で宣言した型の部分型になっていないときも同じ。
+         * ただし修飾する型がソースの型のときに限る。ソースに宣言の無い型（jar の型）が修飾する型なら、受け手は
+         * その jar の型そのものでもあり、その実装（jar の宣言）は修飾する型から {@code implementationOf} で引いても
+         * 見つからない。宣言した型から引けば宣言そのものが候補に入る（多すぎる側に倒す。jar の型を経由した部分型は
+         * H 行の 9 列目から数えられるので、数え漏らしが理由ではない。docs/jls-conformance-qa.md の Q38）。
+         * 型階層の上で宣言した型の部分型になっていないときも同じ。
          */
         private String usableQualifier(int edgeIndex, int calleeId) {
             String q = graph.qualifierOf(edgeIndex);
@@ -28666,6 +29377,8 @@ public final class CallHierarchyExporterSingle {
      * 求めるが、D 行は戻り値の型を持たないので見ない（void でない main も入口にする。多すぎる側）。
      * インスタンスの main のために起動器が使う引数なしのコンストラクタがあるかまでは見ない。
      * {@code super} の型は jar の中でよい（H 行の親型に jar の型の名前も入っている）。
+     * {@code super} の「同じシグネチャ」は、型引数を具体化してシグネチャの食い違う上書き（O 行）と、親クラスから継承した
+     * メソッドによる実装（H 行の 8 列目）も含む（{@link #overridesWithBridge}。Issue #188）。
      */
     public final static class FrameworkEntries {
 
@@ -28804,13 +29517,16 @@ public final class CallHierarchyExporterSingle {
                         }
                     }
                     case Contract.SUPER -> {
-                        if (!sig.equals(c.sig())) {
-                            continue;
+                        boolean hit;
+                        if (sig.equals(c.sig())) {
+                            if (supers == null) {
+                                supers = transitiveSupertypes(methods.typeFqn(id));
+                            }
+                            hit = supers.contains(c.value());
+                        } else {
+                            hit = overridesWithBridge(id, c.value() + "#" + c.sig());
                         }
-                        if (supers == null) {
-                            supers = transitiveSupertypes(methods.typeFqn(id));
-                        }
-                        if (supers.contains(c.value())) {
+                        if (hit) {
                             usage.markApplied(c.row());
                             return simpleName(c.value()) + "#" + c.sig();
                         }
@@ -28820,6 +29536,42 @@ public final class CallHierarchyExporterSingle {
                 }
             }
             return "";
+        }
+
+        /**
+         * シグネチャの違うメソッド {@code id} が、契約の宣言 {@code contractKey}（{@code 型FQN#name(paramSig)}）を
+         * 型引数を具体化して上書き・実装しているか（javac がブリッジメソッドでディスクリプタをそろえる形）。
+         *
+         * <p>{@code class MyHandler implements Handler<Req> { void handle(Req r) }} の {@code handle(Req)} は、契約
+         * {@code super Handler#handle(java.lang.Object)} のシグネチャと文字列では一致しないが、フレームワークが
+         * {@code Handler#handle(Object)} を呼べば（ブリッジを経て）動く入口である（Issue #188）。判定は選択と同じ 2 つの材料
+         * （{@link MethodSelection} の「上書きできる宣言」）で、自前で名前や引数型を比べない:
+         * <ul>
+         *   <li>O 行（{@link OverrideIndex#overridersOf}。書き手が {@code IMethodBinding.overrides} で判定した、型引数を具体化した
+         *       上書き。親型が jar の型でも書かれている）</li>
+         *   <li>H 行の 8 列目（{@link TypeHierarchy#inheritedImplementations}。親クラスから継承したメソッドが、型引数を置き換えた
+         *       親インターフェースのメソッドを実装する組。{@code class MyHandler extends BaseHandler implements Handler<Req>} で
+         *       {@code BaseHandler#handle(Req)} が入口になる形。その部分型から見たときだけの関係なので、宣言した型の部分型を見る）</li>
+         * </ul>
+         * 契約の宣言のメソッド ID から {@link MethodSelection#overridingImplementations} で引く案は、jar の型の宣言
+         * （{@code HttpServlet#doGet}）はソースのどこかが呼び出し先にしていない限り表に無いので使えない
+         */
+        private boolean overridesWithBridge(int id, String contractKey) {
+            IntArray overriders = graph.overrides.overridersOf(contractKey);
+            if (overriders != null) {
+                for (int i = 0; i < overriders.size(); i++) {
+                    if (overriders.get(i) == id) {
+                        return true;
+                    }
+                }
+            }
+            String pair = contractKey + ">" + methods.key(id);
+            for (String sub : graph.hierarchy.transitiveSubtypes(methods.typeFqn(id))) {
+                if (graph.hierarchy.inheritedImplementations(sub).contains(pair)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /** 親型を全部集める。jar の型の名前も含む（H 行に入っている） */
@@ -29620,8 +30372,21 @@ public final class CallHierarchyExporterSingle {
      *   <li>解決（コンパイル時宣言）… 書き手（BindingNames#toRef が JDT の getMethodDeclaration を使う）</li>
      *   <li>ラムダ・メソッド参照（invokedynamic）の本体 … {@link CallResolver} の functionalResolution と M 行</li>
      * </ul>
+     *
+     * <p>「クラスの連鎖 → 最も特定的な親インターフェース」の順は docs/resolution-selection-design.md の 4 節が正本で、
+     * 同じ順の写しが ImplicitCalls#findNoArgMethod（JDT のバインディングを材料にする解決の層）と
+     * ExternalUsageScanner#inheritedFrom（被参照）にもある。順を変えるときは 3 か所を同時に直す（Issue #189）。
      */
     public final static class MethodSelection {
+
+        private static final String ENUM_CLASS = "java.lang.Enum";
+        /**
+         * {@code java.lang.Enum} の final なインスタンスメソッド（JLS 8.9）。列挙型はこれらを上書きできず、親インターフェースの
+         * 同じシグネチャの default も動かない。{@code equals} / {@code hashCode} は Object のメソッドで、インターフェースは
+         * default にできない（JLS 9.4.1.2）ので入れない
+         */
+        private static final java.util.Set<String> ENUM_FINAL_SIGNATURES = java.util.Set.of(
+                "name()", "ordinal()", "compareTo(java.lang.Enum)", "getDeclaringClass()", "describeConstable()");
 
         private final MethodTable methods;
         private final TypeHierarchy hierarchy;
@@ -29631,6 +30396,8 @@ public final class CallHierarchyExporterSingle {
          * （0 = まだ調べていない、1 = 振り分けられない、2 = 振り分けられうる）。{@link #hasOverriders} が遅延して埋める
          */
         private byte[] overriddenMemo;
+        /** ラムダ・メソッド参照が実装しているメソッドか（M 行。{@link CallGraph#hasFunctionalImpl}）。{@link #functionalImpls} が設定する */
+        private IntPredicate functionalImpls;
 
         MethodSelection(MethodTable methods, TypeHierarchy hierarchy, OverrideIndex overrides) {
             this.methods = methods;
@@ -29713,6 +30480,10 @@ public final class CallHierarchyExporterSingle {
                     || ModifierTokens.has(mods, "final")) {
                 return false;
             }
+            if (functionalImpls != null && functionalImpls.test(methodId)) {
+                // ラムダ・メソッド参照が実装し直している（M 行がある）。部分型の宣言には現れないので、上の探索では見えない
+                return true;
+            }
             // CHA（CallResolver の段 1）と同じく、部分型ごとに実際に動く実装を implementationOf で引く。
             // 上書きの判定を別に書くと、継承と型引数の置換のどちらかの形を取りこぼす。
             // 部分型から引けない（-1）ことは型階層が揃っていれば起きないが、起きたら別の本体があるとみなす
@@ -29748,6 +30519,16 @@ public final class CallHierarchyExporterSingle {
                 }
                 if (!hierarchy.contains(t)) {
                     return true;
+                }
+            }
+            if (hierarchy.kindOf(declaring) == TypeFact.INTERFACE) {
+                // 実装がインターフェースの default なら、その型の親インターフェースに H 行の無い（jar の）インターフェースが
+                // あれば、それがソースの default を宣言し直しているかもしれない（interface JApi extends s.Api の default。
+                // Issue #177）。java.* / javax.* は利用者のインターフェースを継承できないので数えない
+                for (String t : hierarchy.superinterfaces(type)) {
+                    if (!hierarchy.contains(t) && !t.startsWith("java.") && !t.startsWith("javax.")) {
+                        return true;
+                    }
                 }
             }
             return false;
@@ -29794,19 +30575,32 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
-         * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッドを
-         * 上書きしているか（JLS 8.4.8.1）。
+         * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッド（{@code declaringType} が
+         * 宣言。null なら不明）を上書きしているか（JLS 8.4.8.1 / JVMS 5.4.5 の推移）。
          *
-         * 直接は上書きできないが、推移的には上書きしうる。{@code pkg} の中の中間の型が同じシグネチャを
-         * public か protected で宣言し直していれば、その宣言は元のメソッドを上書きしていて
-         * （同じパッケージなので）、別パッケージの宣言はその中間の宣言を上書きできる。
-         * 親型をすべて見て、そういう中間の宣言が 1 つでもあれば上書きとみなす（取りこぼさない側に倒す）。
+         * 直接は上書きできないが、推移的には上書きしうる。{@code id} の型から呼び出し先の型までの<b>親クラスの連鎖</b>
+         * （{@link TypeHierarchy#classChain}）の途中に、{@code pkg} のクラスが同じシグネチャを public か protected で
+         * 宣言し直していれば、その宣言は元のメソッドを上書きしていて（同じパッケージなので）、別パッケージの宣言は
+         * その中間の宣言を上書きできる。見るのは連鎖の上（親クラス）だけで、親インターフェースは見ない
+         * （インターフェースはクラスの間に挟まらないので、その宣言を経由した上書きにはならない。
+         * {@code class Sub extends p.Base implements p.Worker} の {@code Sub.work()} は {@code Base.work()} を上書きしない）。
+         * 連鎖の途中に H 行の無い（jar の）クラスがあって {@code pkg} に属すなら、その宣言はメソッドの表に無い（ソースから
+         * 呼ばれていない限り載らない）ので public に宣言し直しているかもしれないとみなし、上書きとみなす（候補を多めに残す側）。
+         * 呼び出し先の型に着いたら止める（その上の宣言は、呼び出し先が隠す・上書きする側なので、経由にならない）。
          */
-        private boolean overridesAcrossPackage(int id, String sig, String pkg) {
-            ArrayDeque<String> queue = new ArrayDeque<>(hierarchy.directSupertypes(methods.typeFqn(id)));
-            Set<String> seen = new HashSet<>(queue);
-            while (!queue.isEmpty()) {
-                String t = queue.poll();
+        private boolean overridesAcrossPackage(int id, String sig, String pkg, String declaringType) {
+            List<String> chain = hierarchy.classChain(methods.typeFqn(id));
+            for (int i = 1; i < chain.size(); i++) {
+                String t = chain.get(i);
+                if (t.equals(declaringType)) {
+                    return false;
+                }
+                if (!hierarchy.contains(t)) {
+                    if (inPackage(t, pkg)) {
+                        return true;
+                    }
+                    continue;
+                }
                 int mid = methods.idOf(t + "#" + sig);
                 if (mid >= 0 && pkg.equals(methods.pkg(mid))) {
                     String mods = methods.mods(mid);
@@ -29814,13 +30608,23 @@ public final class CallHierarchyExporterSingle {
                         return true;
                     }
                 }
-                for (String sup : hierarchy.directSupertypes(t)) {
-                    if (seen.add(sup)) {
-                        queue.add(sup);
-                    }
-                }
             }
             return false;
+        }
+
+        /**
+         * H 行の無い型（jar の型。名前しか分からない）がパッケージ {@code pkg} に属すか。入れ子の型（{@code a.Outer.Inner}）は
+         * 最後のドットで切るとパッケージが {@code a.Outer} になるので、{@code pkg} の直後の名前が大文字で始まれば属すとみなす
+         */
+        private static boolean inPackage(String typeFqn, String pkg) {
+            if (pkg.isEmpty()) {
+                return !typeFqn.isEmpty() && Character.isUpperCase(typeFqn.charAt(0));
+            }
+            if (!typeFqn.startsWith(pkg + ".") || typeFqn.length() == pkg.length() + 1) {
+                return false;
+            }
+            String rest = typeFqn.substring(pkg.length() + 1);
+            return rest.indexOf('.') < 0 || Character.isUpperCase(rest.charAt(0));
         }
 
         /**
@@ -29855,9 +30659,13 @@ public final class CallHierarchyExporterSingle {
          *       （{@code class Impl extends Mid implements Api} で {@code Mid} の親 {@code Base} の {@code m()} が
          *       {@code Api} の default の {@code m()} より先）。その型より上の private メソッドは上書きも継承もされないので
          *       飛ばす（JLS 8.4.8。その型自身の宣言は、private の呼び出し先を引くときのために飛ばさない）。
-         *       親クラスの static メソッドは飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承する
-         *       クラスはコンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション
-         *       （{@code Class.getMethod} は親クラスの public な static メソッドも返す）でだけ</li>
+         *       親クラスの static メソッドのうち継承されるもの（public・protected か、その型と同じパッケージ。{@link #inheritedBy}）は
+         *       飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承するクラスはコンパイルできない
+         *       （JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション（{@code Class.getMethod} は親クラスの
+         *       public な static メソッドも返す）でだけ。継承されない static（別パッケージのパッケージアクセス）は飛ばす
+         *       （同じシグネチャの default を持つクラスはコンパイルでき、動くのはその default）。
+         *       見つけた実装が呼び出し先とシグネチャの違う上書き（O 行・H 行の 8 列目）なら、それより下の段でその実装を
+         *       さらに上書きしている宣言を採る（{@link #lowestOverriderOf}。JLS 8.4.8.1 の推移で、JDT の O 行に載らない形）</li>
          *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 連鎖に無ければ、連鎖の型が実装する
          *       インターフェースすべての宣言（private と static は継承されないので除く。JLS 9.4.1）のうち、ほかの宣言の型の
          *       真の親型で宣言したものを除いた「最も特定的な」宣言（JVMS 5.4.3.3）から、本体を持つものを採る。
@@ -29894,20 +30702,25 @@ public final class CallHierarchyExporterSingle {
             }
             List<String> chain = hierarchy.classChain(typeFqn);
             for (int i = 0; i < chain.size(); i++) {
-                int id = declarationIn(chain.get(i), sig, overriders, packageAccess);
-                if (id >= 0 && methods.hasBody(id)
-                        && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
-                    return id;
+                if (i > 0 && ENUM_CLASS.equals(chain.get(i)) && ENUM_FINAL_SIGNATURES.contains(sig)) {
+                    // 列挙型の final メソッド（java.lang.Enum#ordinal() など）は、ソースから呼ばれていない限り表に無く、
+                    // 親インターフェースの同じシグネチャの default に負けていた（Issue #177）。表にあればそれ、無ければ
+                    // 「分からない」（-1）にして default へ進まない
+                    return methods.idOf(ENUM_CLASS + "#" + sig);
+                }
+                int id = declarationIn(chain.get(i), calleeKey, sig, overriders, packageAccess);
+                if (id >= 0 && methods.hasBody(id) && (i == 0 || inheritedBy(typeFqn, id))) {
+                    return lowestOverriderOf(chain, i, id, sig);
                 }
                 int inherited = inheritedImplementationIn(chain.get(i), calleeKey, sig);
                 if (inherited >= 0 && methods.hasBody(inherited)) {
-                    return inherited;
+                    return lowestOverriderOf(chain, i, inherited, sig);
                 }
             }
             List<String> declaring = new ArrayList<>();
             IntArray found = new IntArray(2);
             for (String t : hierarchy.superinterfaces(typeFqn)) {
-                int id = declarationIn(t, sig, overriders, packageAccess);
+                int id = declarationIn(t, calleeKey, sig, overriders, packageAccess);
                 if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
                         && !ModifierTokens.has(methods.mods(id), "static")) {
                     declaring.add(t);
@@ -29932,6 +30745,61 @@ public final class CallHierarchyExporterSingle {
                 }
             }
             return fallback;
+        }
+
+        /**
+         * 親クラスの連鎖の途中（その型より上）の宣言 {@code id} が、型 {@code typeFqn} に継承されるか（JLS 8.4.8）。
+         * private は継承されない。static も、public・protected か同じパッケージのものしか継承されない
+         * （別パッケージのパッケージアクセスの static は、同じシグネチャの default を持つクラスでもコンパイルできる。
+         * それを実装に選ぶと、実際に動く default を落とす）。インスタンスメソッドのパッケージアクセスは、呼び出し先が
+         * パッケージアクセスなら {@link #declarationIn} が同じパッケージに限り、public な呼び出し先に対しては JVMS 5.4.5 の
+         * 「上書きしうる」形なので残す（docs/jls-conformance-qa.md の Q36）
+         */
+        private boolean inheritedBy(String typeFqn, int id) {
+            String mods = methods.mods(id);
+            if (ModifierTokens.has(mods, "private")) {
+                return false;
+            }
+            if (!ModifierTokens.has(mods, "static") || ModifierTokens.has(mods, "public")
+                    || ModifierTokens.has(mods, "protected")) {
+                return true;
+            }
+            return methods.hasSource(id) && methods.pkg(id).equals(hierarchy.packageOf(typeFqn));
+        }
+
+        /**
+         * 連鎖の {@code found} 段目で見つけた実装 {@code implId} が、呼び出し先とシグネチャの違う宣言（O 行の上書き・
+         * H 行の 8 列目の継承した実装。型引数を置換した形）なら、それより下の段でその実装をさらに上書きしている宣言のうち
+         * いちばん下のもの。無ければ {@code implId} そのもの。
+         *
+         * <p>{@code class GA<T> { void g(T) }}（パッケージアクセス）を {@code class GM extends GA<String> { public void g(String) }}
+         * が上書きし、別パッケージの {@code class GB2 extends GM { public void g(String) }} がそれを上書きしている形。
+         * {@code GB2.g} は {@code GA#g(Object)} を（JLS 8.4.8.1 の推移で）上書きするが、JDT の {@code overrides} は別パッケージの
+         * パッケージアクセスのメソッドに対して偽を返すので O 行には無い。GM の段で O 行から {@code GM.g} を見つけたら、
+         * 下の段（GB2）に {@code GM.g} と同じシグネチャの宣言があるかを見る。上書きとみなす条件は JLS 8.4.8.1:
+         * 下の宣言が private でも static でもなく本体を持ち、上の宣言が public か protected か、同じパッケージ
+         */
+        private int lowestOverriderOf(List<String> chain, int found, int implId, String sig) {
+            String implSig = methods.signature(implId);
+            if (found == 0 || implSig.equals(sig)) {
+                return implId;
+            }
+            String implMods = methods.mods(implId);
+            boolean visible = ModifierTokens.has(implMods, "public") || ModifierTokens.has(implMods, "protected");
+            for (int k = 0; k < found; k++) {
+                int id = methods.idOf(chain.get(k) + "#" + implSig);
+                if (id < 0 || !methods.hasBody(id)) {
+                    continue;
+                }
+                String mods = methods.mods(id);
+                if (ModifierTokens.has(mods, "private") || ModifierTokens.has(mods, "static")) {
+                    continue;
+                }
+                if (visible || (methods.hasSource(id) && methods.pkg(id).equals(methods.pkg(implId)))) {
+                    return id;
+                }
+            }
+            return implId;
         }
 
         /**
@@ -29962,7 +30830,7 @@ public final class CallHierarchyExporterSingle {
          * 上書き（型引数を具体化したもの。O 行）を先に見る。シグネチャが同じ上書きは O 行に書かないので、ここで
          * 当たるのは「型引数を具体化した上書き」だけ
          */
-        private int declarationIn(String t, String sig, IntArray overriders, String packageAccess) {
+        private int declarationIn(String t, String calleeKey, String sig, IntArray overriders, String packageAccess) {
             if (overriders != null) {
                 int overriding = declaredAmong(overriders, t);
                 if (overriding >= 0) {
@@ -29971,10 +30839,19 @@ public final class CallHierarchyExporterSingle {
             }
             int id = methods.idOf(t + "#" + sig);
             if (id >= 0 && (packageAccess == null || packageAccess.equals(methods.pkg(id))
-                    || overridesAcrossPackage(id, sig, packageAccess))) {
+                    || overridesAcrossPackage(id, sig, packageAccess, declaringTypeOf(calleeKey)))) {
                 return id;
             }
             return -1;
+        }
+
+        /** キー（{@code 型#名前(引数)}）の型の部分。null なら null */
+        private static String declaringTypeOf(String calleeKey) {
+            if (calleeKey == null) {
+                return null;
+            }
+            int hash = calleeKey.indexOf('#');
+            return (hash < 0) ? calleeKey : calleeKey.substring(0, hash);
         }
 
         /** その型が宣言している上書きメソッド。無ければ -1 */
@@ -29986,6 +30863,102 @@ public final class CallHierarchyExporterSingle {
                 }
             }
             return -1;
+        }
+
+        /**
+         * ラムダ・メソッド参照が実装しているメソッド（M 行）の判定を受け取る。
+         *
+         * <p>{@link #hasOverriders} は部分型の宣言から「別の本体へ振り分けられうるか」を見るが、ラムダの本体は
+         * どの部分型の宣言にも現れない。default メソッドを抽象として宣言し直した関数型インターフェース
+         * （{@code interface Maker { default Dao make() {…} }  interface Maker2 extends Maker { Dao make(); }}）に
+         * ラムダを渡すと、{@code Maker} の型で受けた {@code make()} で動くのはラムダなのに、部分型 {@code Maker2} から引いた
+         * 実装は default のままなので「振り分けられない」になり、default の戻り値で呼び出しを絞ってしまう
+         * （Issue #176）。M 行のあるメソッドは、ラムダが実装し直しているので「振り分けられうる」とする
+         */
+        void functionalImpls(IntPredicate functionalImpls) {
+            this.functionalImpls = functionalImpls;
+            overriddenMemo = null;
+        }
+
+        /**
+         * 解決（JVMS 5.4.3.3 / 5.4.3.4）: 型 {@code typeFqn} を受け手の静的型とするシンボリック参照
+         * （名前とディスクリプタ＝ {@code sig}）を JVM が結び付ける、<b>ソースにある宣言</b>。無ければ -1。
+         * jar からの被参照（{@code external-ref:INHERITED}。{@code ExternalUsageScanner}）の結び先で、
+         * 「実際に動く本体」（{@link #implementationOf}。選択）ではなく「参照が指す宣言」を返す。動く本体はその宣言を
+         * 呼び出し先とする通常の解決（CHA）が数えるので、ここで部分型へ降りない。
+         *
+         * <ol>
+         *   <li><b>クラスの連鎖</b>（{@link TypeHierarchy#classChain}）… その型から親クラスへ根まで順に見て、最初の宣言。
+         *       抽象の宣言でも止まる（5.4.3.3 は本体の有無を見ない）。private も飛ばさない（アクセスの検査は解決の後）</li>
+         *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 無ければ、最も特定的な宣言
+         *       （{@link TypeHierarchy#mostSpecific}。private・static は除く）のうち本体を持つものを先に、無ければ抽象の宣言。
+         *       複数残れば近い順（同じ深さは名前順）の先頭</li>
+         * </ol>
+         * 各段で、ディスクリプタと同じキーの宣言のほかに、javac がブリッジメソッドでディスクリプタをそろえる形も見る
+         * （{@link #search} と同じ 3 つの材料）: 型引数を具体化した上書き（O 行。{@code class UserRepo implements Repo<User>} の
+         * {@code save(User)} は、{@code UserRepo.save(java.lang.Object)} のブリッジがその型にある）と、親クラスから継承した
+         * メソッドが型引数を置き換えたインターフェースのメソッドを実装する組（H 行の 8 列目。ブリッジはその型にある）。
+         * 参照の側の型が別の版に対してコンパイルされていると、ブリッジのディスクリプタで参照してくる（Issue #186）。
+         * パッケージアクセスは見ない（解決はディスクリプタの一致だけで、上書きの可否は選択の話）
+         */
+        public int resolvedDeclaration(String typeFqn, String sig) {
+            if (typeFqn == null || typeFqn.isEmpty() || sig == null) {
+                return -1;
+            }
+            IntArray overriders = overrides.overridersOfSignature(sig);
+            for (String t : hierarchy.classChain(typeFqn)) {
+                int id = resolvedIn(t, sig, overriders);
+                if (id >= 0) {
+                    return id;
+                }
+            }
+            List<String> declaring = new ArrayList<>();
+            IntArray found = new IntArray(2);
+            for (String t : hierarchy.superinterfaces(typeFqn)) {
+                int id = resolvedIn(t, sig, overriders);
+                if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
+                        && !ModifierTokens.has(methods.mods(id), "static")) {
+                    declaring.add(t);
+                    found.add(id);
+                }
+            }
+            if (found.size() == 0) {
+                return -1;
+            }
+            List<String> specific = hierarchy.mostSpecific(declaring);
+            int abstractOne = -1;
+            for (int i = 0; i < found.size(); i++) {
+                int id = found.get(i);
+                if (!specific.contains(declaring.get(i))) {
+                    continue;
+                }
+                if (methods.hasBody(id)) {
+                    return id;
+                }
+                if (abstractOne < 0) {
+                    abstractOne = id;
+                }
+            }
+            return abstractOne;
+        }
+
+        /**
+         * 型 {@code t} で、ディスクリプタ {@code sig} の参照が結び付くソースの宣言（{@link #resolvedDeclaration} の 1 段）。
+         * 無ければ -1。ブリッジのある形（O 行・H 行の 8 列目。どちらも本体のある宣言）を先に、次にキーが同じ宣言
+         */
+        private int resolvedIn(String t, String sig, IntArray overriders) {
+            if (overriders != null) {
+                int overriding = declaredAmong(overriders, t);
+                if (overriding >= 0 && methods.hasSource(overriding)) {
+                    return overriding;
+                }
+            }
+            int inherited = inheritedImplementationIn(t, null, sig);
+            if (inherited >= 0 && methods.hasBody(inherited) && methods.hasSource(inherited)) {
+                return inherited;
+            }
+            int id = methods.idOf(t + "#" + sig);
+            return (id >= 0 && methods.hasSource(id)) ? id : -1;
         }
 
     }
@@ -31737,18 +32710,34 @@ public final class CallHierarchyExporterSingle {
     // ================================================================================================
     // src/jche/graph/TypeHierarchy.java
     // ================================================================================================
-    /** 型階層（H行から構築）。親子関係の問い合わせと、種別（I/A/C）の参照 */
+    /**
+     * 型階層（H行から構築）。親子関係の問い合わせと、種別（I/A/C）の参照。
+     * jar の型の親型（H 行の 9 列目）も持ち、部分型の列挙（{@link #transitiveSubtypes}）と親子の判定（{@link #isSubtypeOf}）は
+     * jar の型を経由した関係も見る。実装を探す並び（{@link #classChain} / {@link #superinterfaces}）は H 行の親型の並び
+     * （ソースの型の直接の親と、jar を経由して届くソースの親）のまま
+     */
     public final static class TypeHierarchy {
 
         /**
          * 親型 -> 子型。H 行の親型の並びなので、「直接の親」のほかに
-         * 「jar の型を経由して到達するソース上の親」も 1 段の親子として入る（{@link TypeFact#superTypes()}）
+         * 「jar の型を経由して到達するソース上の親」も 1 段の親子として入る（{@link TypeFact#superTypes()}）。
+         * jar の型の親子（{@link #binarySupertypes}）も入るので、子型には jar の型も並ぶ（{@link #transitiveSubtypes} は
+         * ソース上の型だけを返す）
          */
         private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
-        /** 子型 -> 親型（同上）。具象型からメソッド実装を探すのに使う */
+        /** 子型 -> 親型（同上。ソース上の型だけ）。具象型からメソッド実装を探すのに使う */
         private final HashMap<String, List<String>> directSupertypes = new HashMap<>();
+        /**
+         * jar の型（ソースの無い型）-> その親型。H 行の 9 列目（{@link TypeFact#binarySupertypes()}。ソースの型から親型を辿って
+         * 到達した jar の型の推移的な親型）から。jar の型には H 行が無いので、部分型（{@link #transitiveSubtypes}）と親子の
+         * 判定（{@link #isSubtypeOf}・{@link #mostSpecific}）にだけ使い、{@link #directSupertypes} には混ぜない
+         * （実装を探す並び {@link #classChain} / {@link #superinterfaces} は H 行の親型の並びのまま）
+         */
+        private final HashMap<String, List<String>> binarySupertypes = new HashMap<>();
         /** 型 -> 種別（I/A/C） */
         private final HashMap<String, Character> typeKind = new HashMap<>();
+        /** 型 -> パッケージ（H 行の 4 列目）。ソース上の型だけ */
+        private final HashMap<String, String> typePackage = new HashMap<>();
         /** 型 -> その型に付いていたアノテーション（{@link AnnotationTokens}）。無い型は入れない */
         private final HashMap<String, String> typeAnnotations = new HashMap<>();
         private final HashMap<String, List<String>> transitiveCache = new HashMap<>();
@@ -31778,6 +32767,7 @@ public final class CallHierarchyExporterSingle {
             indexedNames = null;
             indexByName = null;
             typeKind.put(t.typeFqn(), t.kind());
+            typePackage.put(t.typeFqn(), t.pkg() == null ? "" : t.pkg());
             if (!t.superclasses().isEmpty()) {
                 // 同じ型を 2 つのファイルが宣言していれば、読んだ順に依らないよう綴りの小さいほうを採る
                 List<String> known = superclasses.get(t.typeFqn());
@@ -31797,6 +32787,16 @@ public final class CallHierarchyExporterSingle {
             for (String sup : t.superTypes()) {
                 link(directSubtypes, sup, t.typeFqn());
                 link(directSupertypes, t.typeFqn(), sup);
+            }
+            for (String edge : t.binarySupertypes()) {
+                int gt = edge.indexOf('>');
+                if (gt <= 0 || gt == edge.length() - 1) {
+                    continue;
+                }
+                String child = edge.substring(0, gt);
+                String parent = edge.substring(gt + 1);
+                link(directSubtypes, parent, child);
+                link(binarySupertypes, child, parent);
             }
         }
 
@@ -31819,6 +32819,9 @@ public final class CallHierarchyExporterSingle {
             for (List<String> l : directSupertypes.values()) {
                 Collections.sort(l);
             }
+            for (List<String> l : binarySupertypes.values()) {
+                Collections.sort(l);
+            }
             // 並べ替える前に引いた結果を残さない
             transitiveCache.clear();
             classChainCache.clear();
@@ -31833,6 +32836,19 @@ public final class CallHierarchyExporterSingle {
         /** その型に付いていたアノテーション（{@link AnnotationTokens}）。無ければ空文字列 */
         public String annotationsOf(String typeFqn) {
             return typeAnnotations.getOrDefault(typeFqn, "");
+        }
+
+        /**
+         * その型のパッケージ（H 行）。ソース上に無い型（jar の型）なら、名前の最後のドットより前
+         * （入れ子の型では外側の型まで含む名前になる。呼ぶ側はそのつもりで使う）
+         */
+        public String packageOf(String typeFqn) {
+            String pkg = typePackage.get(typeFqn);
+            if (pkg != null) {
+                return pkg;
+            }
+            int dot = typeFqn.lastIndexOf('.');
+            return (dot < 0) ? "" : typeFqn.substring(0, dot);
         }
 
         public char kindOf(String typeFqn) {
@@ -31883,11 +32899,21 @@ public final class CallHierarchyExporterSingle {
         }
 
         /**
-         * 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空。
+         * 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空（jar の型も空。
+         * jar の型の親型は {@link #binarySupertypesOf}）。
          * 親クラスとインターフェースの区別は無い。実際に動く実装を探す順は {@link #classChain}
          */
         public List<String> directSupertypes(String type) {
             List<String> sups = directSupertypes.get(type);
+            return (sups == null) ? List.of() : sups;
+        }
+
+        /**
+         * jar の型（ソースに宣言の無い型）の親型（名前順。H 行の 9 列目から）。無ければ空。
+         * ソースの型から親型を辿って到達した jar の型についてだけ分かる（それ以外の jar の型は空）
+         */
+        public List<String> binarySupertypesOf(String type) {
+            List<String> sups = binarySupertypes.get(type);
             return (sups == null) ? List.of() : sups;
         }
 
@@ -31973,7 +32999,9 @@ public final class CallHierarchyExporterSingle {
         /**
          * 型の並びから、ほかの型の真の親型であるものを除いたもの（並びは保つ）。
          * 親インターフェースのメソッドから最も特定的なもの（JLS 9.4.1・JVMS 5.4.3.3 の maximally-specific）を選ぶのに使う。
-         * {@code interface I2 extends I1} の両方が宣言していれば I2 のものが残る
+         * {@code interface I2 extends I1} の両方が宣言していれば I2 のものが残る。
+         * jar のインターフェースを経由した親子（{@code interface lib.LibMid extends s.Top} の LibMid と Top）も
+         * {@link #isSubtypeOf} が jar の型の親型（H 行の 9 列目）を辿るので見える
          */
         public List<String> mostSpecific(List<String> types) {
             List<String> out = new ArrayList<>(types.size());
@@ -31993,7 +33021,12 @@ public final class CallHierarchyExporterSingle {
             return out.isEmpty() ? new ArrayList<>(types) : out;
         }
 
-        /** 推移的なサブタイプ。循環があっても止まるように訪問済みを持つ */
+        /**
+         * 推移的なサブタイプ（ソース上の型だけ）。循環があっても止まるように訪問済みを持つ。
+         * jar の型を経由した部分型（{@code class MyList extends ArrayList<String>} は {@code java.util.List} の部分型）も、
+         * jar の型の親子（H 行の 9 列目）を通って辿る。途中の jar の型は結果に入れない（ソースの無い型は実装を探せず、
+         * 呼び出しの候補にも Bean にもならない）
+         */
         public List<String> transitiveSubtypes(String type) {
             List<String> cached = transitiveCache.get(type);
             if (cached != null) {
@@ -32011,7 +33044,9 @@ public final class CallHierarchyExporterSingle {
                 }
                 for (String sub : subs) {
                     if (seen.add(sub)) {
-                        out.add(sub);
+                        if (typeKind.containsKey(sub)) {
+                            out.add(sub);
+                        }
                         stack.push(sub);
                     }
                 }
@@ -32029,12 +33064,16 @@ public final class CallHierarchyExporterSingle {
             queue.add(type);
             seen.add(type);
             while (!queue.isEmpty()) {
-                for (String s : directSupertypes(queue.poll())) {
-                    if (s.equals(ancestor)) {
-                        return true;
-                    }
-                    if (seen.add(s)) {
-                        queue.add(s);
+                String cur = queue.poll();
+                // ソースの型の親型（H 行の 3 列目）と、jar の型の親型（9 列目）の両方を辿る
+                for (List<String> sups : List.of(directSupertypes(cur), binarySupertypesOf(cur))) {
+                    for (String s : sups) {
+                        if (s.equals(ancestor)) {
+                            return true;
+                        }
+                        if (seen.add(s)) {
+                            queue.add(s);
+                        }
                     }
                 }
             }
@@ -37957,11 +38996,14 @@ public final class CallHierarchyExporterSingle {
                 "analysis.batchStoppedEarly", "The Java parser stopped in a batch without an error before any file was finished ({0} file(s))",
                 "analysis.batchRetry", "The {0} file(s) of the batch, {1} included, are analyzed again with the other files of the folder of {1} and the files whose names it contains (imports and qualified names) added (they stay added for the rest of the batch)",
                 "analysis.batchSplit", "The {0} file(s) are analyzed again as two smaller batches, to find the file that stops the Java parser",
-                "analysis.batchSetAside", "{0} is set aside and analyzed on its own at the end, because the Java parser stopped there and adding related files cannot help (they are added already, or the stack ran out); the other {1} file(s) of the batch are analyzed again",
+                "analysis.batchSetAside", "{0} is set aside and analyzed on its own at the end (with the files related to it), because the Java parser stopped there and adding related files to the batch cannot help (they are added already, or the stack ran out); the other {1} file(s) of the batch are analyzed again",
+                "analysis.contextProbe", "The Java parser stopped before any file was finished, so the {0} file(s) given with the batch so that their types are found (files that declare a type whose name differs from the file name, and related files) are checked on their own for stopping the Java parser",
+                "analysis.contextDropped", "{0} is no longer given to the Java parser with the batches, because the Java parser fails as soon as it is given (its declarations are nested or chained too deeply). The types it declares are found through the source path only, and the file itself is analyzed on its own",
                 "analysis.batchRedoFinished", "The {0} file(s) that the Java parser finished before {1} are analyzed again as a batch of their own (their facts are collected only after the Java parser has finished every file of a batch)",
                 "analysis.stopped", "the Java parser stopped analyzing this file without saying why. This usually means that a class which a dependency jar refers to is missing (a jar, or a newer version of a jar, is missing from library.folders / library.jars). The calls in this file are not in the output. Add the missing jar",
                 "analysis.stoppedBy", "the Java parser failed on this file with {0} and gave no reason. The calls in this file are not in the output. If a dependency jar is missing (the \"Dependency jars are not resolved\" item), add it and run again",
-                "analysis.contextFiles", "{0} file(s) declare a top-level type whose name differs from the file name. They are given to the Java parser with every batch, so that their types are found whichever files are analyzed together",
+                "analysis.failedBy", "the Java parser failed on this file with {0}. The calls in this file are not in the output. This is usually caused by a compile error in this file (for example a record accessor whose type differs from the component); fix the error and run again. If the file builds, it is a defect of the Java parser",
+                "analysis.contextFiles", "{0} file(s) declare a top-level type whose name differs from the file name. They are given to the Java parser with every batch whose files can reach their package by name, so that their types are found whichever files are analyzed together",
                 "analysis.packageMismatch", "{0} declares package {1}, but its folder corresponds to package {2}. The Java parser finds the types of such a file from other files only when it analyzes those files together with it, so calls to them can be missing or resolved to another type of the same name, and the result can differ between runs (for example between a full and an incremental analysis). Move the file to the folder of its package. If many files are listed, source.folders probably points one level too high or too low (for example src instead of src/main/java); fix source.folders",
                 "analysis.packageMismatch.more", "More files declare a package that does not match their folder ({1} in total; only the first {0} are listed)",
                 "analysis.packageMismatch.default", "(the default package)",
@@ -38596,11 +39638,14 @@ public final class CallHierarchyExporterSingle {
                 "analysis.batchStoppedEarly", "{0} 件の一括解析で、Java のパーサがどのファイルも解析し終わらないうちにエラーなしで止まりました",
                 "analysis.batchRetry", "{1} を含むバッチの {0} 件を、{1} と同じフォルダのファイル・{1} が名前を書いた型（import と完全修飾名）のファイルを添えて解析し直します（バッチの残りにも添え続けます）",
                 "analysis.batchSplit", "Java のパーサを止めるファイルを探すため、{0} 件を半分ずつの 2 つのバッチに分けて解析し直します",
-                "analysis.batchSetAside", "Java のパーサが {0} で止まり、関わるファイルを添えても変わらない（添え済みか、スタックの溢れ）ため、このファイルは脇に置いて最後に 1 つだけで解析し直し、バッチのほかの {1} 件は解析し直します",
+                "analysis.batchSetAside", "Java のパーサが {0} で止まり、バッチに関わるファイルを添えても変わらない（添え済みか、スタックの溢れ）ため、このファイルは脇に置いて最後に 1 つだけで（そのファイルに関わるファイルを添えて）解析し直し、バッチのほかの {1} 件は解析し直します",
+                "analysis.contextProbe", "Java のパーサがどのファイルも解析し終わらないうちに止まったため、バッチに添えたファイル（ファイル名と違う名前の型を宣言するファイル・関わるファイル）{0} 件だけで Java のパーサが止まらないかを確かめます",
+                "analysis.contextDropped", "{0} は、添えるだけで Java のパーサが失敗する（宣言の入れ子・連なりが深すぎる）ため、以後のバッチには添えません。このファイルの宣言する型はソースパスからだけ探され、このファイル自身は 1 つだけで解析します",
                 "analysis.batchRedoFinished", "Java のパーサが {1} より前に解析し終えた {0} 件は、それだけで 1 つのバッチとして解析し直します（事実はバッチのファイルをすべて解析し終えてから集めるため）",
                 "analysis.stopped", "Java のパーサが理由を示さずにこのファイルの解析を打ち切りました。多くは、依存 jar が参照しているクラスが見つからないときです（jar か、新しい版の jar が library.folders / library.jars に無い）。このファイルの呼び出しは出力に出ません。足りない jar を足してください",
                 "analysis.stoppedBy", "Java のパーサがこのファイルの解析で {0} を出し、理由を示しませんでした。このファイルの呼び出しは出力に出ません。依存 jar が足りない（「依存 jar が解決できていません」の項目）なら、足してから解析し直してください",
-                "analysis.contextFiles", "{0} 件のファイルが、ファイル名と違う名前のトップレベルの型を宣言しています。どのファイルと一緒に解析してもその型が見つかるよう、どのバッチにも添えて Java のパーサに渡します",
+                "analysis.failedBy", "Java のパーサがこのファイルの解析で {0} を出しました。このファイルの呼び出しは出力に出ません。多くはこのファイルのコンパイルエラー（レコードのアクセサの型が成分の型と違う、など）が原因です。直してから解析し直してください。ビルドが通るなら Java のパーサの不具合です",
+                "analysis.contextFiles", "{0} 件のファイルが、ファイル名と違う名前のトップレベルの型を宣言しています。どのファイルと一緒に解析してもその型が見つかるよう、そのパッケージに名前で届くファイルのバッチに添えて Java のパーサに渡します",
                 "analysis.packageMismatch", "{0} はパッケージ {1} を宣言していますが、フォルダから決まるパッケージは {2} です。このようなファイルの型は、ほかのファイルと一緒に解析したときにしか Java のパーサに見つけられないので、その型の呼び出しが出力に出ないことも、同じ名前の別の型に解決されることもあり、実行によって（たとえば全件解析と差分更新とで）結果が変わりえます。ファイルをパッケージのフォルダへ移してください。多くのファイルが挙がるなら、source.folders が 1 段ずれています（src/main/java のつもりで src を書いた、など）。source.folders を直してください",
                 "analysis.packageMismatch.more", "ほかにもパッケージの宣言がフォルダと合わないファイルがあります（全 {1} 件のうち、先頭の {0} 件だけを挙げました）",
                 "analysis.packageMismatch.default", "（既定のパッケージ）",
