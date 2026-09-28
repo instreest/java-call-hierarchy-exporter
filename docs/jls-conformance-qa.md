@@ -955,7 +955,7 @@ jar の型の親型として持ち（`binarySupertypesOf`）、部分型の列�
 - **実装を探す並び（`classChain` / `superinterfaces`）は H 行の親型の並びのまま。** `superinterfaces` に jar の親の親
   （`List` / `Collection`）まで並べると、`MethodSelection#search` が表にある jar の宣言を「最も特定的な宣言」に選び、
   `class Plain extends ArrayList<String>` の `Collection.size()` の呼び出しに `List.size` の行が増える。候補は落ちないが
-  出力が表の中身で変わるので、並びは変えない（`test/regression` の期待出力は変わらない）
+  出力が表の中身で変わるので、並びは変えない
 - **`usableQualifier` の「修飾する型が jar の型なら宣言した型に倒す」も変えない。** 9 列目があれば jar の型の部分型も
   漏れなく数えられるが、修飾する型が jar の型（`ArrayList<String> a; a.size()`）のとき受け手は jar の型そのものでもあり、
   その実装（jar の宣言）は `implementationOf(修飾する型, …)` では見つからない（メソッドの表に無いか、本体が分からない）。
@@ -967,6 +967,15 @@ jar の型の親型として持ち（`binarySupertypesOf`）、部分型の列�
 安全網（`docs/cache-unification-qa.md` の Q132）で全件解析になること。どちらも安全側の費用として受け入れる。
 書き手の変更なので形式の版を v45 に上げた。検査は `test/pruning` の `JarList`（`List<String>` / `ArrayList<String>` 型の変数で
 呼んだ `size()` の候補に `JlList.size` が入り、その先の呼び出しが階層に残る）。
+
+`test/regression` の期待出力は 2 か所で変わった。どちらもこの形の候補が増えたもので、直す前は落ちていた呼び出しである。
+
+- `test/demo` の `Starter.Worker extends Thread`（`run()` を上書き）。`Runnable::run`（`Main.lambdas`・`Holder.viaForEach`）の
+  候補が `Starter.Job.run` と jar の `Runnable.run` の 2 つから、`Worker.run` を足した 3 つになった（`Thread` が `Runnable` を
+  実装していることが 9 列目で分かる）。`Worker.run` の入次数が 1 から 6 に増え、`entry` の設定では `[NOT_REACHED]` でなくなった
+- `test/maven-demo` / `test/gradle-demo` の `LogHandler extends sample.deps.AbstractHandler`（jar のクラス。jar の
+  `Handler` を実装）。`Service.run` の `handler.handle(text)`（フィールドの `new LogHandler()`）が jar の `Handler.handle`
+  （`[EXTERNAL]`）から `LogHandler.handle`（`RESOLVED:DATAFLOW_FIELD`）になり、その先の `Util.count` が階層に載った
 
 ## Q38. jar のインターフェースを経由した親子が見えず、なぜ別の default を選んだのか
 
