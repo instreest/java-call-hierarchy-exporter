@@ -44,6 +44,10 @@ import jche.util.Warnings;
  * 「.class で終わるエントリ」として最初から読めている。
  * 出力の jar 名は、中の jar なら {@code 外側.jar!/BOOT-INF/lib/中.jar} のように
  * jar URL と同じ {@code !/} 区切りでどこに入っていたかまで書く。
+ *
+ * <p>被参照の結び先を探す「クラスの連鎖 → 最も特定的な親インターフェース」の順は、選択の正本
+ * jche.graph.MethodSelection（docs/resolution-selection-design.md の 4 節）の写し。順を変えるときは
+ * jche.analysis.ImplicitCalls と合わせて 3 か所を同時に直す（Issue #189）。
  */
 public final class ExternalUsageScanner {
 
