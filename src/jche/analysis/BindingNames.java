@@ -108,7 +108,13 @@ final class BindingNames {
     /**
      * JDT が単純名から作った無い型なら、その単純名。そうでなければ null。回復した型（{@code isRecovered}）のうち、鍵が
      * {@code L<識別子>;} の形（パッケージ・入れ子の型・型引数を持たない）のもの。無名パッケージの本物の型も同じ形の鍵を
-     * 持つが、回復した型ではないので当たらない
+     * 持つが、回復した型ではないので当たらない。
+     *
+     * <p>識別子はコードポイントで調べる（JLS 3.8。補助文字を含む名前 {@code Tem𝒳plate} は UTF-16 の 1 文字ずつでは
+     * サロゲートの半分で弾かれる）。{@code $} も識別子の文字なので弾かない。JDT は無い入れ子の型を {@code LOuter/Inner;} と
+     * 鍵にする（2 進の名前の {@code $} ではない）ので、パッケージの無い回復した鍵の {@code $} は単純名から来たものに限られる。
+     * 弾いた型は {@code getQualifiedName()} に戻り、バッチで最初に解決に失敗したファイルのパッケージが付く
+     * （docs/cache-unification-qa.md の Q107 の名前がバッチで変わる形に戻る）
      */
     private static String missingSimpleNameOf(ITypeBinding t) {
         if (t == null || !t.isRecovered() || t.isArray()) {
@@ -119,14 +125,16 @@ final class BindingNames {
             return null;
         }
         String name = key.substring(1, key.length() - 1);
-        if (!Character.isJavaIdentifierStart(name.charAt(0))) {
+        int first = name.codePointAt(0);
+        if (!Character.isJavaIdentifierStart(first)) {
             return null;
         }
-        for (int i = 1; i < name.length(); i++) {
-            char c = name.charAt(i);
-            if (c == '$' || !Character.isJavaIdentifierPart(c)) {
+        for (int i = Character.charCount(first); i < name.length(); ) {
+            int c = name.codePointAt(i);
+            if (!Character.isJavaIdentifierPart(c)) {
                 return null;
             }
+            i += Character.charCount(c);
         }
         return name;
     }

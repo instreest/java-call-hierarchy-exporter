@@ -3168,6 +3168,102 @@ else
     grep -a -E '^(DefUser\.use|B\.run)' "$OUT/methods.csv" | head -5; fail=1
 fi
 
+# 同じく、単純名に $ や補助文字（U+1D4B3）を含む無い型（Tem$plate・Tem𝒳plate）。単純名の判定が $ を弾き（入れ子の型の
+# 2 進の名前を除くつもり）、UTF-16 の 1 文字ずつ調べてサロゲートの半分で弾いていたので、これらの名前だけは
+# getQualifiedName()（バッチで最初に解決に失敗したファイルのパッケージが付く）に戻り、差分更新で B の鍵が変わって
+# U.run -> B.go -> C.helper が切れた。全件解析だけでも、別パッケージの Api.go(Tem$plate) と Impl.go(Tem$plate) の引数が
+# rcd.api.Tem$plate と rcd.impl.Tem$plate に分かれ、Impl.go が Api.go の実装にならなかった（Issue #178）。
+# 今は $ を弾かず、識別子をコードポイントで調べる（JDT は無い入れ子の型を LOuter/Inner; と鍵にするので、パッケージの無い
+# 回復した鍵の $ は単純名から来たものに限られる）
+setup_missing_dollar_names() {
+    jfile rcd/other/A.java <<'EOF'
+package rcd.other;
+import org.lib.*;
+public class A { private final Object t = new Tem$plate(); private final Object u = new Tem𝒳plate(); }
+EOF
+    jfile rcd/web/B.java <<'EOF'
+package rcd.web;
+import org.lib.*;
+import rcd.other.*;
+public class B { public void go(Tem$plate x) { C.helper(); } public void go2(Tem𝒳plate x) { C.helper(); } }
+EOF
+    jfile rcd/web/C.java <<'EOF'
+package rcd.web;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+    jfile rcd/x/U.java <<'EOF'
+package rcd.x;
+public class U { void run(rcd.web.B b) { b.go(null); b.go2(null); } }
+EOF
+    jfile rcd/api/Api.java <<'EOF'
+package rcd.api;
+import org.lib.*;
+public interface Api { void go(Tem$plate t); }
+EOF
+    jfile rcd/impl/Impl.java <<'EOF'
+package rcd.impl;
+import org.lib.*;
+public class Impl implements rcd.api.Api { public void go(Tem$plate t) { Hit.hit(); } }
+EOF
+    jfile rcd/impl/Hit.java <<'EOF'
+package rcd.impl;
+public class Hit { public static void hit() { } }
+EOF
+    jfile rcd/use/U2.java <<'EOF'
+package rcd.use;
+public class U2 { void run(rcd.api.Api a) { a.go(null); } }
+EOF
+}
+case_of "依存 jar が無いとき、\$ や補助文字を含む単純名から作られた無い型の名前がバッチの組み方に依らない" \
+    "printf '\n// c\n' >> work/src/rcd/other/A.java" no setup_missing_dollar_names
+# 全件解析でも、別パッケージの Api.go(Tem$plate) と Impl.go(Tem$plate) の引数の型が同じ名前（?.Tem$plate）になり、
+# Impl.go が Api.go の実装として U2.run から呼ばれる（inDegree は 7 列目）
+if grep -q -a -E '^Impl\.go\([^)]*\),rcd\.impl\.Impl,C,src/rcd/impl/Impl\.java,3,1,1,1,' "$OUT/methods.csv"; then
+    echo "  OK   \$ を含む無い型（Tem\$plate）の引数の型が別パッケージの宣言と実装で同じ名前になる（Impl.go が呼ばれる）"
+else
+    echo "  NG   \$ を含む無い型（Tem\$plate）の引数の型が別パッケージの宣言と実装で食い違っています"
+    grep -a -E '^(Api|Impl)\.go' "$OUT/methods.csv" | head -5; fail=1
+fi
+
+# 同じく、無い入れ子の型（Template.Inner。Template は解決できない）が、無名パッケージにある本物の Template.Inner と重ならない
+# こと。JDT は鍵を LTemplate/Inner; にし名前を Template.Inner にするので、単純名の判定（鍵が L<識別子>; の形）には当たらず、
+# 無い完全修飾名（Lorg/missing/Lib;）とも鍵では区別できない。H 行に書く親の型（親型・親クラスの連鎖）が回復した型なら ?. を
+# 付けて書く（Issue #178）。付けないと、rdn/B は本物の Template.Inner の部分型とみなされ、DefUser2.use の t.run() の候補に B.run が
+# 混ざって展開をやめ（UNEXPANDED:CHA）、本物の Template.Inner.run の先（Real.x）が階層から落ちる
+setup_missing_nested_default_package() {
+    jfile Template.java <<'EOF'
+public class Template { public static class Inner { public void run() { Real.x(); } } }
+EOF
+    jfile Real.java <<'EOF'
+public class Real { public static void x() { } }
+EOF
+    jfile DefUser2.java <<'EOF'
+public class DefUser2 { void use(Template.Inner t) { t.run(); } }
+EOF
+    jfile rdn/B.java <<'EOF'
+package rdn;
+import org.lib.*;
+public class B extends Template.Inner {
+    public void run() { C.helper(); }
+}
+EOF
+    jfile rdn/C.java <<'EOF'
+package rdn;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+}
+case_of "依存 jar が無いとき、無い入れ子の型（Template.Inner）が無名パッケージの本物の入れ子の型と重ならない" \
+    "printf '\n// c\n' >> work/src/rdn/C.java" no setup_missing_nested_default_package
+if grep -q -a '^B\.run(),rdn\.B,C,src/rdn/B\.java,4,1,0,1,' "$OUT/methods.csv" \
+        && grep -q -a '^Template\.Inner\.run(),Template\.Inner,C,src/Template\.java,1,1,1,1,' "$OUT/methods.csv" \
+        && grep -q -a -P '^H\trdn\.B\tC\t\?\.Template\.Inner\t' full.tsv; then
+    echo "  OK   無い入れ子の型 Template.Inner を無名パッケージの本物の Template.Inner の部分型とみなさない（H 行は ?.Template.Inner）"
+else
+    echo "  NG   無い入れ子の型 Template.Inner を無名パッケージの本物の Template.Inner と取り違えています"
+    grep -a -E '^(DefUser2\.use|B\.run|Template\.Inner\.run)' "$OUT/methods.csv" | head -5
+    grep -a -P '^H\trdn\.B\t' full.tsv | head -2; fail=1
+fi
+
 # jar のクラス（qm.Api）が参照しているクラス（qm.Missing）が無いとき。事実を集めるときのバインディングへの問い合わせ
 # （拡張 for 文・try-with-resources の暗黙の呼び出しの宣言・呼び出しの候補）が、同じバッチの後ろのファイル（ear/B.java）の
 # メソッドを先に解決させると、JDT はそのメソッドを引数の無いまま残し、B の番で例外になった。全件解析だけバッチの残りを
