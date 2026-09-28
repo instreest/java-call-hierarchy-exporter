@@ -277,9 +277,12 @@ JLS 13.1 は、javac がメソッドを参照するときの型を「修飾す�
 | 書き手（`CallSiteRecorder#qualifierOf`） | 修飾する型を求め、宣言した型と違うときだけ C 行の末尾（qualifier）に書く。static・private・コンストラクタ・`super` の呼び出しと、宣言した型が `Object` のもの（§13.1 の通り Object）は書かない |
 | 読み手（`CallResolver#usableQualifier`） | 段 1（CHA）の候補を修飾する型から引く（その型から見た実装と、部分型それぞれの実装）。段 5（Spring の Bean）も同じ型から引く。段 1 で外した型の Bean に確定しないため |
 
-**修飾する型がソースに宣言の無い型（jar の型）のときは使わない。** 型階層（H 行）は「ソースの型の、直接の親と
-jar を経由して届くソースの親」しか持たないので、jar の中の中間の型（`List` に対する `AbstractList` など）を
-経由した部分型を数え漏らしうる。漏れると候補が落ちるので、そのときは従来どおり宣言した型から引く
+**修飾する型がソースに宣言の無い型（jar の型）のときは使わない。** 当初の理由は、型階層（H 行）が「ソースの型の、直接の親と
+jar を経由して届くソースの親」しか持たず、jar の中の中間の型（`List` に対する `AbstractList` など）を
+経由した部分型を数え漏らしうることだった。v45 で H 行に jar の型の親型の組（9 列目）を足し、jar の型を経由した部分型も
+数えられるようになった（`docs/jls-conformance-qa.md` の Q38）が、それでも宣言した型から引く。修飾する型が jar の型なら
+受け手は jar の型そのものでもあり、その実装（jar の宣言）は修飾する型から `implementationOf` で引いても見つからない。
+宣言した型から引けば宣言そのものが候補に入り、`[EXTERNAL]` の行で jar の実装が動きうると分かる
 （多すぎる側に倒す）。型階層の上で宣言した型の部分型になっていないときも同じ。
 
 javac のバイトコードとの突き合わせにも、invokevirtual / invokeinterface の所有型（＝修飾する型）と
@@ -358,3 +361,44 @@ static な `m()` が名前で先に並ぶ）の `new MsC3().m()` を static の�
 題材を変えたので、`test/cacheversion` の記録（`facts.txt`）も更新した。
 
 どの節も、直す前の版で落ちることを確かめた（`GenericSuper.java` は期待値 7 件と javac との突き合わせ 7 件が落ちる）。
+
+## Q21. 検査の側の甘さ（Issue #187）: `resolve` の maximally-specific・題材のコメント・`nooverride`
+
+[Issue #187](https://github.com/instreest/java-call-hierarchy-exporter/issues/187)。3 つとも検査の側の話で、ツール本体は変えていない。
+
+**`JlsCheck#resolve` がインターフェースの段で maximally-specific を計算していなかった。** javac の invoke 命令の呼び出し先を
+JVMS 5.4.3.3 / 5.4.3.4 の順で引き直すとき、親インターフェースの段では private・static でない最初の一致を幅優先で採っていた。
+`interface I2 extends I1` が同じ `m()` を再宣言し、`class C implements I1, I2` で I1 が先に並ぶと、上書きされた `I1.m` に
+引き直す。ツール本体（`TypeHierarchy#mostSpecific`）は最も特定的な宣言を選ぶので、検査の側だけがずれる。
+今は、連鎖の型が実装するインターフェースを推移的に集めて一致する宣言をすべて拾い、宣言した型がほかの宣言の型の真の
+親インターフェースであるものを除く（maximally-specific）。非 abstract がちょうど 1 つならそれ、そうでなければ絞った中の
+幅優先で最初のもの（JVM なら任意に選ぶ形。JLS ではコンパイルエラー）。
+
+題材は `s09_04_01/MostSpecific.java` に足した（`most-specific-abstract*`）: `MsAdI2 extends MsAdI1` が抽象のまま `m()` を
+再宣言し、`abstract class MsAdC implements MsAdI1, MsAdI2`（MsAdI1 が先）の型で呼ぶ。動くのは部分型 `MsAdD.m`。
+既存の `viaNewC`（`MsC implements MsI1, MsI2`）・`viaNewC2` も同じ形で、直す前の `resolve` はどちらも `MsI1.m` に引き直していた。
+
+**直したら見つかったこと: JDT のコンパイル時宣言が、この形では上書きされた親インターフェースの宣言になる。** `new MsC().m()` の
+`IMethodBinding` は `MsI1.m` で、`MsI2.m` ではない（キャッシュの C 行の呼び出し先も `MsI1.m`。`expect.tsv` の
+`most-specific-diamond` の説明「呼び出し先のバインディングが MsI1.m でも」はこれを指していた）。JLS 8.4.8 では `MsC` は
+`MsI1.m` を継承しない（`MsI2.m` がそれを上書きする）ので、コンパイル時宣言は `MsI2.m`。javac もそう選ぶ（invoke 命令の
+所有型は `MsC` なのでバイトコードには現れず、`resolve` が JVMS の maximally-specific で同じ答えに引き直す）。直す前は、
+検査の側も JDT も同じ向きに間違えていて一致していた。
+
+書き手は解決を JDT に任せる決まり（`docs/resolution-selection-design.md` の 3 節）なので、C 行はそのまま。読み手の選択は
+`MsI1.m` からでも `mostSpecific` で `MsI2.m` を本体に決めるので、`call-hierarchy.csv` の行（`csv` / `nocsv` の期待値）は
+正しい。効くのは、候補を絞れず `UNEXPANDED:CHA` のまま残したときに並ぶ候補の名前（呼び出し先を宣言した型の側）だけ。
+突き合わせでは、この形（同じ呼び出し元・行・シグネチャで、ツールの呼び出し先を宣言した型が javac の呼び出し先の型の
+真の親インターフェース）だけを INFO にして記録し、それ以外は今までどおり食い違いに数える（`JlsCheck#overriddenParentDeclaration`）。
+INFO は §9.4.1 の 3 件（`viaNewC`・`viaNewC2`・`viaAbstractDiamond`）だけで、ほかの節には出ない。
+JDT の側に合わせて C 行を書き換える案（書き手で `mostSpecific` を計算し直す）は、解決を自前で近似しない決まりに反するので採らない。
+
+**題材のコメントが存在しない `test/pruning` のケース名を指していた。** `s14_14_02/MemberIterator.java` の「MemberIter」と
+`s14_20_03/MemberClose.java` の「MemberClose」は、どちらも `test/pruning/run.sh` の `MemberTv`（型変数の資源・式で境界の
+クラスの private を拾わない）のこと。名前を直した。
+
+**`expect.tsv` のヘッダに `nooverride` が無かった。** `JlsCheck.check` は受け付けるが、ヘッダの一覧に無く、使う行も無かった。
+使い道はある: O 行は「型引数の置換でキーの食い違う上書き」だけに書き、キーの同じ上書きは書かない（読み手はキーの一致で
+見つける。`docs/resolution-selection-design.md` の 3 節）。この決まりを `override`（O 行がある）だけでは見られないので、
+`same-key-no-override-fact`（`MsI2#m()` の O 行が無い）を足し、ヘッダにも載せた。書き手が O 行を「上書きすべて」に
+広げると（キャッシュが膨らむ。`jls-conformance-qa.md` の Q4）ここで落ちる。

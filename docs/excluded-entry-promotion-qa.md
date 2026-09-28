@@ -111,3 +111,14 @@ at ex.MyTask.run(MyTask.java:6),MyTask.helper,Main.main,MyTask.run,MyTask.helper
 落としどころが決まらない。数えるなら今回の昇格は消えるがデッドコード検出が鈍り、数えないなら昇格は消えない。
 併せて `Config.CHA_MAX_CANDIDATES` で切った候補を入次数に数えるかも揃える必要がある
 （出力と入次数で扱いが違うと、CSV とログの件数が食い違う）。
+
+## Q8. jar の型の親子を型階層に載せた（v45）が、`Object` の判断は変わるか
+
+変わらない。[Issue #184](https://github.com/instreest/java-call-hierarchy-exporter/issues/184) で、H 行の 9 列目に「ソースの型から
+親型を辿って到達した jar の型の推移的な親型の組」（`java.util.ArrayList>java.util.List` など）を書き、読み手が jar の型を
+経由した部分型（`class MyList extends ArrayList` は `List` の部分型）を数えられるようにした（`docs/jls-conformance-qa.md` の
+Q38）。これは「jar の型の親子」であって、`java.lang.Object` は今も除いている（書き手 `TypeContextTracker#collectSupertypes` が
+親型の並びからも組からも外す）。Q5 の 4 つの代償はそのままで、`toString` / `equals` / `hashCode` の候補は数えない。
+載せた jar の型は、ソースの型が実際に継承しているものに限られる（辿り着かない jar の型は載らない）ので、Q5 の 2（候補の爆発）
+には当たらない。
+

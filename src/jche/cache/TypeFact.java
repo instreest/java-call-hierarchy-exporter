@@ -25,9 +25,17 @@ import java.util.List;
  *                   {@code class UserRepo extends BaseRepo implements Repo<User>} の
  *                   {@code p.Repo#save(java.lang.Object)>p.BaseRepo#save(p.User)}。この型から見たときにだけ成り立つ
  *                   関係なので O 行（宣言ごとの上書き）には書けない（jche.analysis.OverrideFacts#inheritedImplementationsOf）
+ * @param binarySupertypes この型から親型を辿って到達する jar の型（ソースの無い型）の親型の組（v45 で追加。
+ *                   {@code jar の型>親型}、名前順）。{@code class MyList extends ArrayList<String>} の
+ *                   {@code java.util.ArrayList>java.util.List} など、jar の型の推移的な親型すべて（java.lang.Object は含まない）。
+ *                   jar の型には H 行が無いので、読み手はこれで jar の型の親子関係を知る。宣言した型が jar の型
+ *                   （{@code java.util.List#size()}）の呼び出しの候補に、jar の型を経由した部分型（MyList）を入れ、
+ *                   jar のインターフェースを経由した親子関係を「最も特定的な」親インターフェースの判定に使うために持つ
+ *                   （jche.graph.TypeHierarchy）
  */
 public record TypeFact(String typeFqn, char kind, List<String> superTypes, String pkg,
-                       String annotations, List<String> superclasses, List<String> inheritedImpls) {
+                       String annotations, List<String> superclasses, List<String> inheritedImpls,
+                       List<String> binarySupertypes) {
 
     public static final char INTERFACE = 'I';
     public static final char ABSTRACT = 'A';
@@ -38,11 +46,13 @@ public record TypeFact(String typeFqn, char kind, List<String> superTypes, Strin
         annotations = (annotations == null) ? "" : annotations;
         superclasses = (superclasses == null) ? List.of() : superclasses;
         inheritedImpls = (inheritedImpls == null) ? List.of() : inheritedImpls;
+        binarySupertypes = (binarySupertypes == null) ? List.of() : binarySupertypes;
     }
 
     public String toRow() {
         return CacheFormat.joinRow("H", typeFqn, String.valueOf(kind), String.join(",", superTypes), pkg,
-                annotations, String.join(",", superclasses), String.join(";", inheritedImpls));
+                annotations, String.join(",", superclasses), String.join(";", inheritedImpls),
+                String.join(";", binarySupertypes));
     }
 
     /** 列が足りなければ null */
@@ -53,7 +63,7 @@ public record TypeFact(String typeFqn, char kind, List<String> superTypes, Strin
         char kind = cols[2].isEmpty() ? CONCRETE : cols[2].charAt(0);
         return new TypeFact(cols[1], kind, namesOf(CacheFormat.columnAt(cols, 3), ","), CacheFormat.columnAt(cols, 4),
                 CacheFormat.columnAt(cols, 5), namesOf(CacheFormat.columnAt(cols, 6), ","),
-                namesOf(CacheFormat.columnAt(cols, 7), ";"));
+                namesOf(CacheFormat.columnAt(cols, 7), ";"), namesOf(CacheFormat.columnAt(cols, 8), ";"));
     }
 
     /** 区切り文字 {@code sep} で区切った並び（空の要素は捨てる） */

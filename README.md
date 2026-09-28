@@ -474,8 +474,9 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 - 依存 jar のほか、クラスフォルダ（兄弟モジュールの `target/classes`、依存プロジェクトの出力フォルダなど）の変化も見ます。
   `library.jars` と `.classpath` の `kind="lib"` に書いたフォルダは、クラスフォルダとしてそのまま使います（中の jar は
   使いません。jar を集めたフォルダは `library.folders` に書きます）。ソースフォルダやクラスフォルダがシンボリックリンクでも、
-  リンクの先をたどります。解析のあいだにソースや依存 jar を書き換えた（兄弟モジュールをビルドし直した）ときは、
-  次の実行で、その実行が解析したファイルを解析し直します
+  リンクの先をたどります。解析のあいだにソースを書き換えたときは、次の実行でそのファイル（と、その型を使うファイル）を
+  解析し直します。解析のあいだにソースを足した・消した、依存 jar やクラスフォルダを書き換えた（兄弟モジュールをビルドし直した）
+  ときは、次の実行で、その実行が解析したファイルをすべて解析し直します
 - 大規模なコードベースで `OutOfMemoryError` にならないための作りと、差分更新が
   何を見て判断しているかは [docs/cache-design.md](docs/cache-design.md) にあります
 
@@ -987,9 +988,10 @@ the later run waits until the earlier one finishes (at most 30 minutes; set the 
 - Besides dependency jars, changes in class folders (a sibling module's `target/classes`, the output folder of a
   dependent project, and so on) are tracked too. A folder listed in `library.jars` or as `kind="lib"` in `.classpath`
   is used as a class folder as it is (the jars inside it are not used; list a folder that collects jars in
-  `library.folders`). Source folders and class folders that are symbolic links are followed. When sources or
-  dependency jars change while an analysis is running (a sibling module is rebuilt, for example), the next run
-  analyzes the files of that run again
+  `library.folders`). Source folders and class folders that are symbolic links are followed. When a source file is
+  edited while an analysis is running, the next run analyzes that file (and the files that use its types) again. When
+  a source file is added or removed, or a dependency jar or class folder changes while an analysis is running (a
+  sibling module is rebuilt, for example), the next run analyzes all the files of that run again
 - How it is built so that a large code base does not hit `OutOfMemoryError`, and what the differential
   update looks at, are in [docs/cache-design.md](docs/cache-design.md)
 

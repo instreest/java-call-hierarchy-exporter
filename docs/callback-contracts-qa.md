@@ -399,3 +399,26 @@ void helper(String k) { Factory.get(k).find(); }   // ← ここは helper だ�
 ひな形は「書式を覚えずに選んでコメントを外すだけ」を狙ったものなので、**選んではいけない行が
 混ざっているなら、そうと書く**のが筋である。キーが決まらなかったこと、広い行であること、
 実装が違うなら拡張で条件を書くことを、その行の上に添える。
+
+### Q25. `super` の入口が、型引数を具体化した上書きに当たっていなかった
+
+Issue [#188](https://github.com/instreest/java-call-hierarchy-exporter/issues/188)。
+
+- **何が起きていたか**。`FrameworkEntries#judge` は `super 型#シグネチャ` の契約を、メソッドのシグネチャ
+  `name(paramSig)` の**文字列一致**と推移的な親型の名前で判定していた。
+  `class MyHandler implements Handler<Req> { void handle(Req r) }` の `handle(Req)` は契約
+  `super Handler#handle(java.lang.Object)` とシグネチャが食い違うので、フレームワークが `Handler#handle(Object)` を
+  呼べば（javac のブリッジを経て）動く入口なのに `FRAMEWORK_ENTRY` にならなかった
+- **直し方**。シグネチャが違うときは、選択（`MethodSelection`）が「上書きできる宣言」に使うのと同じ 2 つの材料で
+  「契約の宣言を型引数を具体化して上書き・実装しているか」を見る（`FrameworkEntries#overridesWithBridge`）。
+  O 行（`OverrideIndex#overridersOf(契約の型#シグネチャ)` にそのメソッドがある。書き手が `IMethodBinding.overrides` で
+  判定した結果で、契約の型が jar の型でも書かれている）と、H 行の 8 列目（宣言した型の部分型の「継承した実装」に
+  `契約の型#シグネチャ>自分のキー` の組がある。`class MyHandler extends BaseHandler implements Handler<Req>` で
+  `BaseHandler#handle(Req)` が入口になる形）。自前で名前や引数型を比べない
+- **却下した案**。契約の宣言のメソッド ID から `MethodSelection#overridingImplementations` で引く案は、jar の型の宣言
+  （`HttpServlet#doGet`）はソースのどこかが呼び出し先にしていない限りメソッドの表に無いので使えない。
+  シグネチャが同じ上書きは従来どおり親型の名前で判定する（O 行はキーの食い違う上書きしか持たない）
+- **検査**。`test/pruning` の `FwEntry`（契約表に `super pr.FwHandler#handle(java.lang.Object)` と jar の型の
+  `super prlib.Handler#handle(java.lang.Object)` を足し、`methods.csv` の `role` で見る）。O 行の上書き・jar の親型の上書き・
+  H 行の 8 列目の継承した実装が `FRAMEWORK_ENTRY` になり、シグネチャの同じ上書きは従来どおり、契約の型を継承しない
+  同名のメソッドは入口にならないこと

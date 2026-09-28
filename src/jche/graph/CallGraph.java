@@ -115,6 +115,9 @@ public final class CallGraph {
     List<String> sourceFolderOrder = List.of();
 
     CallGraph() {
+        // ラムダ・メソッド参照が実装し直しているメソッド（M 行）は、部分型の宣言を見るだけでは「別の本体へ振り分けられうる」
+        // と分からないので、選択に M 行の判定を渡す（Issue #176）
+        selection.functionalImpls(this::hasFunctionalImpl);
     }
 
     public MethodTable methods() {

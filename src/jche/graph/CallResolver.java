@@ -201,7 +201,7 @@ public final class CallResolver {
             if (custom != null) {
                 return custom;
             }
-            return Resolution.single(calleeId,
+            return Resolution.single(bindKind == BindKind.SUPER ? superTarget(edgeIndex, calleeId) : calleeId,
                     Resolution.STATIC_BOUND_PREFIX + BindKind.staticBoundReason(bindKind));
         }
 
@@ -405,6 +405,21 @@ public final class CallResolver {
     }
 
     /**
+     * {@code super.m()} / {@code X.super.m()} / {@code super::m} で実際に動く本体（JVMS 6.5 の invokespecial:
+     * 修飾する型（C 行。{@code super.m()} なら囲む型の親クラス、{@code X.super.m()} なら X）から JVMS 5.4.6 の順で選ぶ）。
+     * 書き手が記録した呼び出し先は JDT の束縛で、インターフェースのダイヤモンド（{@code Both extends Top, Mid} で
+     * {@code Both.super.hi()}、{@code Y0 implements Top, Mid} の子の {@code super.hi()}）では特定性の低い {@code Top.hi} を
+     * 指すことがある（実際に動くのは {@code Mid.hi}。Issue #177）。修飾する型が無ければ（宣言した型と同じ・jar の型）
+     * 宣言した型から引き、選べなければ呼び出し先のまま
+     */
+    private int superTarget(int edgeIndex, int calleeId) {
+        String q = graph.qualifierOf(edgeIndex);
+        String from = (q == null || q.isEmpty()) ? methods.typeFqn(calleeId) : q;
+        int impl = graph.selection().implementationOf(from, calleeId);
+        return (impl >= 0) ? impl : calleeId;
+    }
+
+    /**
      * そのエッジの、呼び出しを修飾する型（JLS 13.1）。CHA の候補をそこから引いてよいときだけ返し、
      * 宣言した型から引くべきときは null。
      *
@@ -412,9 +427,11 @@ public final class CallResolver {
      * クラスは修飾する型の部分型である。{@code Plain p; p.greet()} で {@code greet} を宣言した
      * {@code Greeter} の実装のうち、{@code Plain} の部分型でないものは動かない。
      *
-     * ただし修飾する型の部分型を<b>漏れなく</b>数えられるときに限る。ソースに宣言の無い型（jar の型）は、
-     * jar の中の中間の型を経由した部分型が型階層に載らないことがあるので使わない（宣言した型から引く＝
-     * 多すぎる側に倒す）。型階層の上で宣言した型の部分型になっていないときも同じ。
+     * ただし修飾する型がソースの型のときに限る。ソースに宣言の無い型（jar の型）が修飾する型なら、受け手は
+     * その jar の型そのものでもあり、その実装（jar の宣言）は修飾する型から {@code implementationOf} で引いても
+     * 見つからない。宣言した型から引けば宣言そのものが候補に入る（多すぎる側に倒す。jar の型を経由した部分型は
+     * H 行の 9 列目から数えられるので、数え漏らしが理由ではない。docs/jls-conformance-qa.md の Q38）。
+     * 型階層の上で宣言した型の部分型になっていないときも同じ。
      */
     private String usableQualifier(int edgeIndex, int calleeId) {
         String q = graph.qualifierOf(edgeIndex);

@@ -4,6 +4,6 @@ at sample.app.Service.run(Service.java:17),Greeter.of,RESOLVED:STATIC_BOUND:STAT
 at sample.app.Service.run(Service.java:18),Formatter.wrap,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Formatter.wrap,[EXTERNAL] no source to follow
 at sample.app.Service.run(Service.java:18),Greeter.formatter,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Greeter.formatter,[EXTERNAL] no source to follow
 at sample.app.Service.run(Service.java:18),Greeter.greet,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Greeter.greet,[EXTERNAL] no source to follow
-at sample.app.Service.run(Service.java:19),Handler.handle,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Handler.handle,[EXTERNAL] no source to follow
+at sample.app.Service.run(Service.java:19),LogHandler.handle,RESOLVED:DATAFLOW_FIELD,2,App.main,Service.run,LogHandler.handle
+at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,RESOLVED:STATIC_BOUND:STATIC,3,App.main,Service.run,LogHandler.handle,Util.count
 at sample.app.Service.run(Service.java:20),Util.count,RESOLVED:STATIC_BOUND:STATIC,2,App.main,Service.run,Util.count
-at sample.app.LogHandler.handle(LogHandler.java:9),Util.count,RESOLVED:STATIC_BOUND:STATIC,1,LogHandler.handle,Util.count
