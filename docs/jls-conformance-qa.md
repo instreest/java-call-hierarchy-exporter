@@ -1178,3 +1178,9 @@ default へ進まない（-1 なら `hasOverriders` が「別の本体へ振り�
 **検査**: `test/pruning` の `Diamond`（`X.hi` / `Y.hi` / `Z.r` → `Mid.hi`。`Top.hi` が無いこと）、`JarIface`（jar `work/lib/xalib2.jar` の
 `xj.XaJApi extends xa.XaApi`。`DaoB.find` が残ること）、`RecAcc`（`R2.name`）、`EnumOrd`（表にある `Enum.ordinal`）、
 `EnumName`（表に無い `name()` の default の戻り値で打ち切らない）。
+
+**`methods.csv` への影響**: 合成したアクセサの D 行は、明示的に書いたメソッドと同じく `methods.csv` の行になる（宣言行は
+record の見出しの行）。`methods.csv` は「他から呼び出せる定義」を並べる一覧で、暗黙のアクセサは `p.x()` と呼び出せるので、
+除く理由が無い（除いているのはコンストラクタ・ラムダの合成メソッド・static 初期化子・匿名クラスのメソッド）。
+そのため `test/regression` の期待出力に `test/demo` の `record Point(int x, int y)` の `Point.x()` / `Point.y()` の 2 行が
+増えた（whole / entry / novalues / jarchange / cacheblocks）。
