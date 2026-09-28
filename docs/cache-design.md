@@ -51,7 +51,12 @@ Z 行       ブロック数（最後まで書き終えた印）
   消去した引数型の違う形で実装する組（`class UserRepo extends BaseRepo implements Repo<User>` の `BaseRepo.save(User)` が
   `Repo.save(T)` を実装する）です。同じ `BaseRepo` を継承して `Repo<Order>` を実装する型では成り立たない、その型から
   見たときだけの関係なので、メソッドの上書きの行（`O` 行）ではなく型の行に持ちます
-  （[jls-conformance-qa.md](jls-conformance-qa.md)）
+  （[jls-conformance-qa.md](jls-conformance-qa.md)）。9 列目は、その型から親型を辿って到達した jar の型の推移的な親型の組
+  （`jar の型>親型`。`class MyList extends ArrayList<String>` なら `java.util.ArrayList>java.util.List` など。
+  `java.lang.Object` は含めない）です。jar の型には `H` 行が無いので、読み手はこれで jar の型を経由した部分型
+  （`MyList` は `List` の部分型）と、jar のインターフェースを経由した親子（最も特定的な `default` の判定）を知ります
+  （[jls-conformance-qa.md](jls-conformance-qa.md) の Q39・Q40）。親型（3 列目）と親クラスの連鎖（7 列目）の解決できなかった型は
+  `?.` を付けて書きます（`?.Template.Inner`。無名パッケージの本物の型と重ねない。[cache-unification-qa.md](cache-unification-qa.md) の Q135）
 - 型の名前は完全修飾名で書きます。例外は、依存 jar が無いときに JDT が単純名から作った無い型（`Template x` の
   `Template`）で、`?.Template` と書きます。JDT はこの型を、同じバッチで最初にその名前の解決に失敗したファイルの
   パッケージに作るので、完全修飾名にすると一緒に解析したファイルで名前が変わるためです（`?` は Java の名前に

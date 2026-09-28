@@ -174,7 +174,7 @@ import java.util.Set;
  *                                                          D 行より前に置く（読み手はここでメソッドを ID 化するので、
  *                                                          以前の形式と同じ ID の順になる。jche.graph.CallGraphBuilder 参照）
  *   H  typeFqn  kind(I=IF/A=抽象/C=具象)  親型(カンマ区切り)  pkg  アノテーション  親クラスの連鎖(カンマ区切り)
- *      継承した実装(;区切り)
+ *      継承した実装(;区切り)  jar の型の親型(;区切り)
  *                                                          {@link TypeFact}。親型は親クラスとインターフェースを区別しない
  *                                                          （読み手は名前順に並べ替える）ので、実装を親クラスの連鎖から先に
  *                                                          探す（JLS 8.4.8・JVMS 5.4.6）ための親クラスを 7 列目に持つ。
@@ -182,7 +182,15 @@ import java.util.Set;
  *                                                          クラスも並べる。java.lang.Object は含まない）。
  *                                                          8 列目は、親クラスから継承したメソッドが親インターフェースの
  *                                                          メソッドをキーの食い違う形で実装する組（{@code 実装される側>実装する側}。
- *                                                          その型から見たときだけの関係なので O 行に書けない）
+ *                                                          その型から見たときだけの関係なので O 行に書けない）。
+ *                                                          9 列目は、この型から親型を辿って到達した jar の型の推移的な
+ *                                                          親型の組（{@code jar の型>親型}。java.lang.Object は含まない）。
+ *                                                          jar の型には H 行が無いので、読み手はこれで jar の型を経由した
+ *                                                          部分型（{@code class MyList extends ArrayList} は List の部分型）と、
+ *                                                          jar のインターフェースを経由した親子を知る
+ *                                                          （jche.graph.TypeHierarchy）。親型（3 列目）と親クラスの連鎖
+ *                                                          （7 列目）の解決できなかった型は {@code ?.} 付きで書く
+ *                                                          （{@code ?.Template.Inner}。無名パッケージの本物の型と重ねない）
  *   D  記号  declLine  hasBody(1/0)  mods  アノテーション  endLine  [returnType]
  *                                                          returnType はアノテーションの付いたメソッドにだけ書く
  *                                                          （宣言した戻り値の消去型。DI の &#64;Bean が使う）。
@@ -500,6 +508,11 @@ public final class CacheFormat {
      *   <li>v45 H 行の継承した実装（8 列目）を public の宣言だけにした（別のパッケージのパッケージアクセスのメソッドは継承されない。
      *       Issue #168）。G 行の {@code equals} の条件を、JDT の {@code overrides} で {@code Object#equals} の上書きと
      *       判定したものだけにした（Issue #189）（{@code docs/jls-conformance-qa.md} の Q37、{@code docs/value-safety-qa.md} の Q29）</li>
+     *   <li>v45（続き）H 行に jar の型の親型の組（9 列目。ソースの型から辿って到達した jar の型の推移的な親型）を足した。読み手は
+     *       jar の型を経由した部分型（{@code class MyList extends ArrayList} を {@code List#size()} の候補に）と、jar の
+     *       インターフェースを経由した親子（最も特定的な default の判定）を知る。H 行の親型・親クラスの連鎖の解決できなかった
+     *       型を {@code ?.} 付きにし、単純名から作られた無い型の名前を {@code $} や補助文字を含む名前でも鍵から作る
+     *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
      * </ul>
      */
     public static final String VERSION = "jche-cache-v45";

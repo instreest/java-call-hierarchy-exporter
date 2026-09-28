@@ -412,9 +412,11 @@ public final class CallResolver {
      * クラスは修飾する型の部分型である。{@code Plain p; p.greet()} で {@code greet} を宣言した
      * {@code Greeter} の実装のうち、{@code Plain} の部分型でないものは動かない。
      *
-     * ただし修飾する型の部分型を<b>漏れなく</b>数えられるときに限る。ソースに宣言の無い型（jar の型）は、
-     * jar の中の中間の型を経由した部分型が型階層に載らないことがあるので使わない（宣言した型から引く＝
-     * 多すぎる側に倒す）。型階層の上で宣言した型の部分型になっていないときも同じ。
+     * ただし修飾する型がソースの型のときに限る。ソースに宣言の無い型（jar の型）が修飾する型なら、受け手は
+     * その jar の型そのものでもあり、その実装（jar の宣言）は修飾する型から {@code implementationOf} で引いても
+     * 見つからない。宣言した型から引けば宣言そのものが候補に入る（多すぎる側に倒す。jar の型を経由した部分型は
+     * H 行の 9 列目から数えられるので、数え漏らしが理由ではない。docs/jls-conformance-qa.md の Q39）。
+     * 型階層の上で宣言した型の部分型になっていないときも同じ。
      */
     private String usableQualifier(int edgeIndex, int calleeId) {
         String q = graph.qualifierOf(edgeIndex);
