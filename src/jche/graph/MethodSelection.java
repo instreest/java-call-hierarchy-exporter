@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jche.cache.ModifierTokens;
+import jche.cache.TypeFact;
 
 /**
  * 選択（selection）: 受け手の実行時のクラスが分かったとして、その呼び出しで<b>実際に動く本体</b>を選ぶ
@@ -72,6 +73,15 @@ import jche.cache.ModifierTokens;
  * </ul>
  */
 public final class MethodSelection {
+
+    private static final String ENUM_CLASS = "java.lang.Enum";
+    /**
+     * {@code java.lang.Enum} の final なインスタンスメソッド（JLS 8.9）。列挙型はこれらを上書きできず、親インターフェースの
+     * 同じシグネチャの default も動かない。{@code equals} / {@code hashCode} は Object のメソッドで、インターフェースは
+     * default にできない（JLS 9.4.1.2）ので入れない
+     */
+    private static final java.util.Set<String> ENUM_FINAL_SIGNATURES = java.util.Set.of(
+            "name()", "ordinal()", "compareTo(java.lang.Enum)", "getDeclaringClass()", "describeConstable()");
 
     private final MethodTable methods;
     private final TypeHierarchy hierarchy;
@@ -198,6 +208,16 @@ public final class MethodSelection {
             }
             if (!hierarchy.contains(t)) {
                 return true;
+            }
+        }
+        if (hierarchy.kindOf(declaring) == TypeFact.INTERFACE) {
+            // 実装がインターフェースの default なら、その型の親インターフェースに H 行の無い（jar の）インターフェースが
+            // あれば、それがソースの default を宣言し直しているかもしれない（interface JApi extends s.Api の default。
+            // Issue #177）。java.* / javax.* は利用者のインターフェースを継承できないので数えない
+            for (String t : hierarchy.superinterfaces(type)) {
+                if (!hierarchy.contains(t) && !t.startsWith("java.") && !t.startsWith("javax.")) {
+                    return true;
+                }
             }
         }
         return false;
@@ -371,6 +391,12 @@ public final class MethodSelection {
         }
         List<String> chain = hierarchy.classChain(typeFqn);
         for (int i = 0; i < chain.size(); i++) {
+            if (i > 0 && ENUM_CLASS.equals(chain.get(i)) && ENUM_FINAL_SIGNATURES.contains(sig)) {
+                // 列挙型の final メソッド（java.lang.Enum#ordinal() など）は、ソースから呼ばれていない限り表に無く、
+                // 親インターフェースの同じシグネチャの default に負けていた（Issue #177）。表にあればそれ、無ければ
+                // 「分からない」（-1）にして default へ進まない
+                return methods.idOf(ENUM_CLASS + "#" + sig);
+            }
             int id = declarationIn(chain.get(i), calleeKey, sig, overriders, packageAccess);
             if (id >= 0 && methods.hasBody(id) && (i == 0 || inheritedBy(typeFqn, id))) {
                 return lowestOverriderOf(chain, i, id, sig);

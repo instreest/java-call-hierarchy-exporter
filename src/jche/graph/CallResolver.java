@@ -201,7 +201,7 @@ public final class CallResolver {
             if (custom != null) {
                 return custom;
             }
-            return Resolution.single(calleeId,
+            return Resolution.single(bindKind == BindKind.SUPER ? superTarget(edgeIndex, calleeId) : calleeId,
                     Resolution.STATIC_BOUND_PREFIX + BindKind.staticBoundReason(bindKind));
         }
 
@@ -402,6 +402,21 @@ public final class CallResolver {
      */
     private Resolution resolveVirtual(int calleeId) {
         return resolveVirtual(calleeId, null);
+    }
+
+    /**
+     * {@code super.m()} / {@code X.super.m()} / {@code super::m} で実際に動く本体（JVMS 6.5 の invokespecial:
+     * 修飾する型（C 行。{@code super.m()} なら囲む型の親クラス、{@code X.super.m()} なら X）から JVMS 5.4.6 の順で選ぶ）。
+     * 書き手が記録した呼び出し先は JDT の束縛で、インターフェースのダイヤモンド（{@code Both extends Top, Mid} で
+     * {@code Both.super.hi()}、{@code Y0 implements Top, Mid} の子の {@code super.hi()}）では特定性の低い {@code Top.hi} を
+     * 指すことがある（実際に動くのは {@code Mid.hi}。Issue #177）。修飾する型が無ければ（宣言した型と同じ・jar の型）
+     * 宣言した型から引き、選べなければ呼び出し先のまま
+     */
+    private int superTarget(int edgeIndex, int calleeId) {
+        String q = graph.qualifierOf(edgeIndex);
+        String from = (q == null || q.isEmpty()) ? methods.typeFqn(calleeId) : q;
+        int impl = graph.selection().implementationOf(from, calleeId);
+        return (impl >= 0) ? impl : calleeId;
     }
 
     /**

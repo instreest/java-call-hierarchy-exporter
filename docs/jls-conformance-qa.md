@@ -986,3 +986,43 @@ O 行の書き手（`OverrideFacts`）には推移の場合を足さない（JDT
 
 **検査**: `test/pruning` の `XaImpl5.run -> XaI5.s5`（`XaSBase.s5` が無いこと）と `XaGUse.run -> XaGB2.g`（`XaGM.g` が無いこと）。
 直す前の版で落ちることを確かめた。
+
+## Q39. インターフェースのダイヤモンドの super 呼び出し・jar のインターフェースの宣言し直し・record と Enum の暗黙のメソッド
+
+[Issue #177](https://github.com/instreest/java-call-hierarchy-exporter/issues/177)。3 つとも「動かない default に確定する」形。
+形式の版を `jche-cache-v45` に上げた（1 と 3 が書き手の変更）。
+
+**1. `X.super.m()` / `super.m()` が特定性の低い default に向く。** `interface Both extends Top, Mid`（両方に `hi()` の default、
+`Mid extends Top`）で `Both.super.hi()` は `Mid.hi` を呼ぶが、JDT の束縛は `Top#hi` を返すことがあり、辺は `STATIC_BOUND:SUPER` なので
+`search` で選び直されず `Mid.hi` が落ちていた。`class Y extends Y0`（`Y0 implements Top, Mid`）の `super.hi()` も同じ。
+直し: 書き手が `super.m()` / `X.super.m()` / `super::m` の C 行に修飾する型（JLS 13.1: `super.m()` なら囲む型の親クラス、
+`X.super.m()` なら X がインターフェースならその X、クラスなら X の親クラス。`CallSiteRecorder#superQualifierOf`）を書き、
+読み手（`CallResolver#superTarget`）が段 0 で `implementationOf(修飾する型, 呼び出し先)` で選び直す（JVMS 6.5 の invokespecial:
+C は直接の親クラスか名指しのインターフェースで、そこから JVMS 5.4.6 の順）。修飾する型が空（宣言した型と同じ・jar の型）なら
+宣言した型から引き、選べなければ呼び出し先のまま。ラベルは `STATIC_BOUND:SUPER` のまま。
+`super.m()` の修飾する型は H 行の 7 列目からも分かるが、`X.super.m()` は書き手にしか分からないので、両方とも書き手が書く
+（1 つの決まりにする）。
+
+**2. jar のインターフェースがソースの default を宣言し直す。** `interface JApi extends s.Api`（jar）が `dao()` の default を
+宣言し直し、`class Impl implements lib.JApi` を `Api` 型で使う形。Q32 の守り（`passesBinaryClass`）は親クラスの連鎖の H 行の無い
+クラスしか数えないので、`Api.dao` の戻り値（`DaoA`）で `DaoB.find` を落としていた。直し: 実装がインターフェースの宣言なら、
+その型の親インターフェース（`TypeHierarchy#superinterfaces`）に H 行の無い型があれば真にする。`java.*` / `javax.*` は利用者の
+インターフェースを継承できないので除く（Spring などの jar のインターフェースを併せて implements する型は「絞らない」側に
+倒れる。多すぎる側なので受け入れる）。読み手だけの変更。
+
+**3. record の暗黙のアクセサと Enum の final メソッド。** `record R2(String name) implements Named`（`Named` に `name()` の default）
+で `n.name()` が default に確定していた。暗黙のアクセサには D 行が無く、`search` がその型の段で何も見つけず default へ進むため。
+直し: 書き手（`TypeContextTracker#synthesizeImplicitAccessors`）が JDT の合成したアクセサ（`isSyntheticRecordMethod`）の D 行を
+`public implicit` で書く（`test/jls` の javac との突き合わせは、javac にあるメソッドの D 行があれば一致として数える）。
+`enum E3 implements HasOrd` の `h.ordinal()` は `Enum.ordinal`（final）が動くが、`java.lang.Enum` のメソッドは呼ばれない限り表に無い。
+読み手の `search` で、連鎖に `java.lang.Enum` があってシグネチャが `Enum` の final メソッド（`name()` / `ordinal()` /
+`compareTo(java.lang.Enum)` / `getDeclaringClass()` / `describeConstable()`）なら、表にあればそれ、無ければ「分からない」（-1）を返して
+default へ進まない（-1 なら `hasOverriders` が「別の本体へ振り分けられうる」になり、default の戻り値で絞らない）。
+`equals` / `hashCode` はインターフェースが default にできない（JLS 9.4.1.2）ので入れない。
+
+**却下した案**: Enum も書き手で D 行を合成する（`E3#ordinal()` のような宣言は無いので、jar の `Enum` のメソッドを D 行にすることになり、
+「D 行はソースの宣言」という約束が崩れる）。record を読み手で見る（成分の名前が読み手に無い）。
+
+**検査**: `test/pruning` の `Diamond`（`X.hi` / `Y.hi` / `Z.r` → `Mid.hi`。`Top.hi` が無いこと）、`JarIface`（jar `work/lib/xalib2.jar` の
+`xj.XaJApi extends xa.XaApi`。`DaoB.find` が残ること）、`RecAcc`（`R2.name`）、`EnumOrd`（表にある `Enum.ordinal`）、
+`EnumName`（表に無い `name()` の default の戻り値で打ち切らない）。

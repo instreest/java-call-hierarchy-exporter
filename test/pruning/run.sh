@@ -3436,6 +3436,105 @@ EOF
 expect_ absent /xa.XaGUse.run XaGM.g "対照: GM.g は GB2.g に上書きされているので動かない（行が無い）"
 
 # ---------------------------------------------------------------------------
+# 実装の選び方の残り（Issue #177）。
+# (1) インターフェースのダイヤモンド（Both extends Top, Mid・Y0 implements Top, Mid）で、X.super.m() / super.m() の呼び出し先を
+#     JDT の束縛（特定性の低い Top.hi）のまま STATIC_BOUND:SUPER に確定し、実際に動く Mid.hi を落としていた。
+#     書き手が修飾する型（囲む型の親クラス・名指しのインターフェース）を C 行に書き、読み手がそこから選び直す
+# (2) jar のインターフェースがソースの default を宣言し直す（interface JApi extends s.Api）形で、ソースの default の戻り値
+#     （DaoA）で絞っていた。親インターフェースに H 行の無い型があれば、default の戻り値で絞らない
+# (3) record の暗黙のアクセサと Enum の final メソッドが、親インターフェースの同じシグネチャの default に負けていた
+# ---------------------------------------------------------------------------
+case_ listed Diamond Diamond\$X.hi Diamond.Mid.hi "Both.super.hi()（Both extends Top, Mid）で動くのは最も特定的な Mid.hi（JDT の束縛は Top.hi）" <<'EOF'
+package pr;
+
+public class Diamond {
+    interface Top { default void hi() { System.out.println("Top.hi"); } }
+    interface Mid extends Top { default void hi() { System.out.println("Mid.hi"); } }
+    interface Both extends Top, Mid { }
+    static class X implements Both { public void hi() { Both.super.hi(); } }
+    static class Y0 implements Top, Mid { }
+    static class Y extends Y0 { public void hi() { super.hi(); } }
+    static class Z0 implements Top, Mid { }
+    static class Z extends Z0 { Runnable r() { return super::hi; } }
+    public static void main(String[] args) { new X().hi(); new Y().hi(); new Z().r().run(); }
+}
+EOF
+expect_ absent Diamond\$X.hi Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+expect_ listed Diamond\$Y.hi Diamond.Mid.hi "super.hi()（親クラス Y0 implements Top, Mid）で動くのは Mid.hi"
+expect_ absent Diamond\$Y.hi Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+expect_ listed Diamond\$Z.r Diamond.Mid.hi "super::hi も同じ"
+expect_ absent Diamond\$Z.r Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+
+# jar のインターフェース xj.XaJApi（work/lib/xalib2.jar）はソースの xa.XaApi に対してコンパイルし、ソースの型のクラスは入れない
+mkdir -p work/src/xa
+cat > work/src/xa/XaApi.java <<'EOF'
+package xa;
+
+public interface XaApi { default pr.Dao dao() { return new pr.DaoA(); } }
+EOF
+mkdir -p work/libsrc/xj work/libcls-xj work/lib
+cat > work/libsrc/xj/XaJApi.java <<'EOF'
+package xj;
+
+public interface XaJApi extends xa.XaApi {
+    @Override
+    default pr.Dao dao() { return new pr.DaoB(); }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -cp work/src -d work/libcls-xj work/libsrc/xj/XaJApi.java \
+    && rm -rf work/libcls-xj/xa work/libcls-xj/pr \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/xalib2.jar -C work/libcls-xj . \
+    || ng "jar（work/lib/xalib2.jar）を作れませんでした"
+case_ listed JarIface JarIface.use DaoB.find "戻り値: jar のインターフェース（xj.XaJApi extends xa.XaApi）が default の dao() を宣言し直しうるので、ソースの default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+class JiImpl implements xj.XaJApi { }
+
+public class JarIface {
+    public static void main(String[] args) { use(new JiImpl()); }
+    static void use(xa.XaApi a) { a.dao().find(); }
+}
+EOF
+expect_ listed JarIface.use DaoA.find "同上（DaoA も候補に残る）"
+
+case_ listed RecAcc RecAcc.run RecAcc.R2.name "record の暗黙のアクセサ R2.name() は、親インターフェースの default より勝つ（クラスのメソッド。JLS 8.4.8）" <<'EOF'
+package pr;
+
+public class RecAcc {
+    interface Named { default String name() { return "d"; } }
+    record R2(String name) implements Named { }
+    public static void main(String[] args) { run(); }
+    static void run() { Named n = new R2("x"); n.name(); }
+}
+EOF
+expect_ absent RecAcc.run RecAcc.Named.name "対照: default の Named.name は動かない（行が無い）"
+
+case_ listed EnumOrd EnumOrd.run Enum.ordinal "Enum の final な ordinal()（ソースから呼ばれていて表にある）は、親インターフェースの default より勝つ" <<'EOF'
+package pr;
+
+public class EnumOrd {
+    interface HasOrd { default int ordinal() { return -1; } }
+    enum E3 implements HasOrd { A }
+    public static void main(String[] args) { run(); direct(); }
+    static void run() { HasOrd h = E3.A; h.ordinal(); }
+    static int direct() { return E3.A.ordinal(); }
+}
+EOF
+# 呼び出し先を宣言したインターフェースの default も候補に並ぶ（宣言した型自身の本体。Q36）ので、HasOrd.ordinal の行は残る
+
+case_ reachable EnumName EnumName.run EnumName.hit "Enum の final な name()（表に無い）: default の戻り値（\"d\"）で \"A\".equals(h.name()) を打ち切らない（動くのは Enum.name で A）" <<'EOF'
+package pr;
+
+public class EnumName {
+    interface HasName { default String name() { return "d"; } }
+    enum E4 implements HasName { A }
+    public static void main(String[] args) { run(); }
+    static void run() { HasName h = E4.A; if ("A".equals(h.name())) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
 # 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。
 # 値は JDT が評価した定数（32）を使う
