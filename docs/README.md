@@ -70,6 +70,7 @@
 | [cache-identity-qa.md](cache-identity-qa.md) | #102 #103 #104 | キャッシュの「同じファイルか」の判定をパス・サイズ・内容の指紋に統一する（更新時刻をやめる）。クラスパスの並び順の変化を検知する。jar の目次をファイルのバイトから読む・クラスフォルダの `.java` とシンボリックリンク（Q4）。サーバーモードの `SHUTDOWN` が実行中の解析を中止していた件、`CANCEL` がまだ始まっていない `ANALYZE` も止める（Q16） |
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
+| [readme-structure-qa.md](readme-structure-qa.md) | — | README の構成（前半を初めて使う人の道、後半を出力のリファレンス）。docs/ へ移したものと移し先、1 ファイルのまま残す判断、見出しを変えずに深さを下げる理由、日本語と英語の食い違いの点検（`test/readme/run.sh`）、用語と表記の決まり |
 | [output-files-simplify-qa.md](output-files-simplify-qa.md) | — | 出力ファイルの役割の整理。`resolved-classpath.txt` を `run.log` にまとめる判断、依存 jar を取得しない（ネットワークに出ない）仕様の確認、想定どおりに動かなかった実行でだけ出す `warnings.txt`（何を出したら作るか、典型の項目、ビルドが通っていないことの判定）、案内の相対パスの起点を設定の読み方に合わせる |
 | [config-folder-qa.md](config-folder-qa.md) | #62 | 既定の設定ファイルを `config/` に置く。相対パスの起点 |
 | [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。本体は `config.properties` のまま、プラグインが利用者のプロジェクトに書くのは `jche.properties`（誤検出を中身で防ぐ） |

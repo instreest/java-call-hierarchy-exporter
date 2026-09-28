@@ -339,6 +339,10 @@ jobs:
       - name: Action dependency-jar warning test
         run: bash test/action/run.sh
 
+      # README の日本語側と英語側の食い違い・リンク切れ（ファイルを読むだけ、数秒）
+      - name: README consistency check
+        run: bash test/readme/run.sh
+
   # Eclipse（Pleiades）用の pom.xml の検査。
   # 1) //DEPS 行と pom.xml の依存が同じ版であること（ファイルを読むだけ、数秒）
   # 2) その pom.xml で実際に依存が解決でき、ソースがコンパイルできること
