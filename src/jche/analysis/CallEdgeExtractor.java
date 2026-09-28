@@ -101,6 +101,14 @@ public final class CallEdgeExtractor {
     /** どのバッチにも添えるファイルなどの材料（{@link #prepare}）。呼ばれていなければ空（何も添えない） */
     private ProjectScan project = ProjectScan.EMPTY;
 
+    /**
+     * 添えると JDT が止まるので、この実行の残りでは添えないファイル（JDT に渡す絶対パス。{@link Batch#dropBrokenContext}）。
+     * 型の宣言を数千段つないだファイル（生成コード）のように、JDT が最初のファイルを返す前の型の束縛で溢れるものは、
+     * 添えるだけでバッチの全ファイルを失敗させる。添えるのをやめれば、そのファイル自身が 1 つだけの解析で失敗するだけで済む
+     * （docs/cache-unification-qa.md の Q137）
+     */
+    private final Set<String> brokenContext = new HashSet<>();
+
     public CallEdgeExtractor(ProjectLayout layout, Config config) {
         this(layout, config, false);
     }
@@ -337,6 +345,11 @@ public final class CallEdgeExtractor {
          *       （見つからないクラスのエラーが最初に出会ったファイルにだけ付く。docs/cache-unification-qa.md の
          *       「打ち切ったファイルの失敗の理由」の Q の残るもの）が、ふつうの形（最初のファイルが原因）でまで
          *       全件解析と差分更新とで食い違うため</li>
+         *   <li><b>添えるファイルが止めていないかを確かめる</b>（1 つも受け取らないうちに止まり、最初の組だけでも止まった
+         *       とき。{@link #dropBrokenContext}）。添えるファイルだけを JDT に渡してみて、それだけでも例外で止まれば、
+         *       半分ずつに分けて原因のファイルを見つけ、この実行の残りでは添えない（{@link CallEdgeExtractor#brokenContext}）。
+         *       型の宣言を数千段つないだファイルは、添えるだけでバッチの全ファイルを止める（JDT は最初のファイルを返す前に
+         *       全ユニットの親型をつなぐ）。確かめるのは止まったときだけなので、ふつうは費用がかからない</li>
          *   <li><b>止まったファイルを脇に置く</b>（1 つでも受け取ったあと、組が 1 つだけのとき、または最初の組だけでも
          *       止まったとき）。JDT は準備を済ませて渡した順に解決しているので、受け取れなかった最初のファイルで止まって
          *       いる。その組を脇に置き、最後に 1 つずつ、そのファイルに関わるファイル（{@link #relatedFiles}）を添えて
@@ -385,13 +398,100 @@ public final class CallEdgeExtractor {
                     work.push(halves.get(0));
                     continue;
                 }
-                // 3. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
+                // 3. 1 つも受け取らないうちに止まり、最初の組だけでも止まるなら、添えるファイルが止めていないかを確かめる
+                if (finished.isEmpty() && stop != null && dropBrokenContext(unit)) {
+                    work.push(todo);
+                    continue;
+                }
+                // 4. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
                 aside.addAll(unit);
                 Log.info(Messages.format("analysis.batchSetAside", at, todo.size() - unit.size()));
                 splitAt(todo, finished, pending, unit, at, work);
             }
             for (SourceFile f : aside) {
                 alone(f, deferred);
+            }
+        }
+
+        /**
+         * 添えるファイル（{@code unit} を解析するときに添えるもの）だけを JDT に渡してみて、それだけでも例外で止まれば、
+         * 原因のファイル（組）を半分ずつに分けて見つけ、{@link CallEdgeExtractor#brokenContext} に入れる（この実行の残りでは
+         * 添えない）。本体は読まない（{@code setIgnoreMethodBodies}。添えたファイルはふつうの解析でも本体を解決する前に
+         * 止めるので、本体の深さは添えるときの止まり方に関係ない）。例外なしに止まる（依存 jar に無いクラスでの打ち切り）
+         * のは、添えるファイルが原因ではない（添えたファイルのエラーはそのファイルに付くだけ）ので、原因にしない。
+         *
+         * @return 添えないファイルを増やしたか（増やしたなら同じバッチを解析し直す）
+         */
+        private boolean dropBrokenContext(List<SourceFile> unit) throws IOException {
+            // 最初の組だけで試したとき（stopsAlone）と同じ添えるファイル。脇に置いて 1 つだけで解析するとき（alone）は
+            // その一部（stopContext を除く）なので、ここで外したものはそこでも添えない
+            List<SourceFile> context = contextOf(byPath(unit).keySet(), unitExtra(unit));
+            if (context.isEmpty()) {
+                return false;
+            }
+            Log.info(Messages.format("analysis.contextProbe", context.size()));
+            if (contextStops(context) == null) {
+                return false;
+            }
+            for (SourceFile f : brokenUnits(context)) {
+                brokenContext.add(f.path().toString());
+                Log.info(Messages.format("analysis.contextDropped", f.relativePath()));
+            }
+            return true;
+        }
+
+        /**
+         * {@code files} のうち、JDT を止める組。半分ずつに分けて、止まる半分の中を探す。どちらの半分も単独では止まらない
+         * （2 つのファイルにまたがって深い）なら、両方を原因にする。組が 1 つなら、それが原因
+         */
+        private List<SourceFile> brokenUnits(List<SourceFile> files) throws IOException {
+            List<List<SourceFile>> halves = halves(files);
+            if (halves.size() < 2) {
+                return files;
+            }
+            List<SourceFile> broken = new ArrayList<>();
+            for (List<SourceFile> half : halves) {
+                if (contextStops(half) != null) {
+                    broken.addAll(brokenUnits(half));
+                }
+            }
+            return broken.isEmpty() ? files : broken;
+        }
+
+        /**
+         * {@code files} だけを 1 回の createASTs に渡し（本体は読まない。最初のファイルを受け取ったら止める）、
+         * JDT が投げた例外を返す。例外なしに戻れば（受け取ったかどうかによらず）null
+         */
+        private Throwable contextStops(List<SourceFile> files) throws IOException {
+            String[] paths = new String[files.size()];
+            for (int i = 0; i < paths.length; i++) {
+                paths[i] = files.get(i).path().toString();
+            }
+            String[] fileEncodings = new String[paths.length];
+            Arrays.fill(fileEncodings, encodingName);
+            boolean[] done = { false };
+            IProgressMonitor stopAtFirst = new NullProgressMonitor() {
+                @Override
+                public boolean isCanceled() {
+                    return done[0];
+                }
+            };
+            ASTParser parser = newParser();
+            parser.setIgnoreMethodBodies(true);
+            try {
+                parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
+                    @Override
+                    public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+                        done[0] = true;
+                    }
+                }, stopAtFirst);
+                return null;
+            } catch (UncheckedIOException e) {
+                throw e.getCause();
+            } catch (OperationCanceledException e) {
+                return null;
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
+                return e;
             }
         }
 
@@ -613,7 +713,8 @@ public final class CallEdgeExtractor {
         }
 
         /**
-         * 1 回の createASTs に添えるファイル（ソース一覧の並び。解析するファイル {@code pending} と module-info.java は除く）。
+         * 1 回の createASTs に添えるファイル（ソース一覧の並び。解析するファイル {@code pending} と module-info.java、
+         * 添えると JDT が止まるファイル {@link CallEdgeExtractor#brokenContext} は除く）。
          * 名前の違うファイルで宣言した型のファイル（{@link ProjectScan#context}）・{@link #memberTypeFiles}・{@code extra}
          */
         private List<SourceFile> contextOf(Set<String> pending, List<SourceFile> extra) {
@@ -624,7 +725,7 @@ public final class CallEdgeExtractor {
             candidates.addAll(memberTypeFiles);
             candidates.addAll(extra);
             List<SourceFile> context = project.sorted(candidates, pending);
-            context.removeIf(ProjectScan::isModuleInfo);
+            context.removeIf(f -> ProjectScan.isModuleInfo(f) || brokenContext.contains(f.path().toString()));
             return context;
         }
 
@@ -714,7 +815,9 @@ public final class CallEdgeExtractor {
                 List<SourceFile> declaring = project.unit(name.substring(0, dollar).replace('.', '/') + ".java");
                 boolean given = false;
                 for (SourceFile f : declaring) {
-                    given |= present.contains(f.path().toString());
+                    // 添えると JDT が止まるファイル（brokenContext）は添えられないので、渡したものとみなす
+                    // （添えて解析し直しても同じ事実になり、繰り返しが終わらない）
+                    given |= present.contains(f.path().toString()) || brokenContext.contains(f.path().toString());
                 }
                 if (!given) {
                     for (SourceFile f : declaring) {

@@ -643,6 +643,26 @@ check_jdt_fail() {   # $1=フォルダ名  $2=失敗するファイル  $3=理�
         && ok "$1 ($4): A.a -> B.b -> C.c が出力に出る" || ng "$1 ($4): A.a -> B.b -> C.c が出力に無い"
 }
 
+# 5x-1. 名前の違う副次クラスを数千段つないだファイル（生成コードなど）。JDT は最初のファイルを返す前に全ユニットの親型を
+#       つなぐので、このファイルを「添えるファイル」にすると、どのバッチも 1 件も返さずに溢れ、プロジェクトの全ファイルが
+#       失敗していた（v43〜v44。Issue #169）。添えるだけで JDT が止まるファイルを見つけて添えなくし、そのファイルだけを
+#       失敗にする（docs/cache-unification-qa.md の Q137）
+jdt_fail_project deepctx 17
+{
+    printf 'package p;\npublic class Deep { }\n'
+    for ((i = 0; i < 5000; i++)); do printf 'class S%d extends S%d { }\n' "$i" $((i + 1)); done
+    printf 'class S5000 { }\n'
+} > work/deepctx/src/p/Deep.java
+analyze deepctx
+check_invariant deepctx
+check_jdt_fail deepctx src/p/Deep.java "stack overflow" 全件解析
+grep -q -F "is no longer given to the Java parser with the batches" "$OUT/run.log" 2>/dev/null \
+    && ok "deepctx: 添えると JDT が止まるファイルを添えるファイルから外した" \
+    || ng "deepctx: 添えるファイルから外していない（題材が効いていない）"
+printf '\n// changed\n' >> work/deepctx/src/p/A.java
+analyze deepctx
+check_jdt_fail deepctx src/p/Deep.java "stack overflow" 差分更新
+
 # 5x-2. JDT のコード生成が AssertionError（Error）を投げるファイル（レコードパターンで、アクセサの型が成分の型と違う
 #       コンパイルエラー）。RuntimeException と StackOverflowError しか捕まえていなかったので、設定まるごとの解析が失敗し、
 #       CSV が 1 つも出なかった（Issue #173）。そのファイルだけを、例外の名前と文言を添えた理由で失敗にする（Q135）
