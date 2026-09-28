@@ -17,11 +17,10 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import jche.cache.MethodRef;
-import jche.cache.ModifierTokens;
 import jche.config.Config;
 import jche.graph.CallGraph;
+import jche.graph.MethodSelection;
 import jche.graph.MethodTable;
-import jche.graph.TypeHierarchy;
 import jche.report.CallHierarchyCsvWriter;
 import jche.util.Log;
 import jche.util.Names;
@@ -278,68 +277,24 @@ public final class ExternalUsageScanner {
     }
 
     /**
-     * 完全一致で見つからない場合、継承したメソッドの呼び出し
-     * （呼び出し側は子クラスを owner として記録する）を考慮して親を探す。
+     * 参照（受け手の静的型 {@code owner} とディスクリプタ {@code sig}）を、JVM のメソッド解決（JVMS 5.4.3.3）が
+     * 結び付けるソースの宣言に引く。完全一致で見つからなければ継承したメソッド（呼び出し側は子クラスを owner として
+     * 記録する）を親から探す。
+     *
+     * <p>探す順（親クラスの連鎖 → 最も特定的な親インターフェース）と、javac がブリッジメソッドでディスクリプタをそろえる形
+     * （型引数を具体化した上書き＝ O 行、親クラスから継承した実装＝ H 行の 8 列目）の照合は、選択と同じ
+     * {@link MethodSelection#resolvedDeclaration} に任せる。以前はここに同じ順の別実装を持っていて、O 行と H 行の
+     * 8 列目を見なかった（Issue #186。docs/external-usage-callsite-qa.md の Q9）
      */
     private int lookupRef(String owner, String sig) {
-        int id = declaredWithSource(owner, sig);
+        int id = graph.selection().resolvedDeclaration(owner, sig);
         if (id < 0) {
-            id = declaredWithSource(normalize(owner), sig);
-        }
-        return (id >= 0) ? id : inheritedFrom(normalize(owner), sig);
-    }
-
-    /** その型自身がソース上で宣言しているメソッドの ID。無ければ -1 */
-    private int declaredWithSource(String typeFqn, String sig) {
-        int id = methods.idOf(typeFqn + "#" + sig);
-        return (id >= 0 && methods.hasSource(id)) ? id : -1;
-    }
-
-    /**
-     * owner から親をたどり、JVM のメソッド解決（JVMS 5.4.3.3）と同じ宣言を返す。
-     * <ol>
-     *   <li>親クラスの連鎖（{@link TypeHierarchy#classChain}。H 行が親クラスを持つ）を根まで見て、最初の宣言</li>
-     *   <li>無ければ、連鎖の型が実装するインターフェースの宣言（private と static は除く）のうち、ほかの宣言の型の
-     *       真の親型で宣言したものを除いた「最も特定的な」もの。本体を持つものを先にし、その中は近い順
-     *       （同じ深さは名前順）の先頭。{@code interface I2 extends I1} の両方に default があれば I2 のもの</li>
-     * </ol>
-     * 「シグネチャが一致する宣言のうち owner を子孫に持つもの」を先着で選ぶと、
-     * 親クラスとインターフェースの両方に宣言がある場合にメソッドIDの並び（＝解析順）で
-     * 結果が変わるので、型階層だけで決まるこの順にしている。
-     */
-    private int inheritedFrom(String owner, String sig) {
-        TypeHierarchy hierarchy = graph.hierarchy();
-        List<String> classChain = hierarchy.classChain(owner);
-        for (int i = 1; i < classChain.size(); i++) {
-            int id = declaredWithSource(classChain.get(i), sig);
-            if (id >= 0) {
-                return id;
+            String norm = normalize(owner);
+            if (!norm.equals(owner)) {
+                id = graph.selection().resolvedDeclaration(norm, sig);
             }
         }
-        List<String> declaring = new ArrayList<>();
-        List<Integer> found = new ArrayList<>();
-        for (String type : hierarchy.superinterfaces(owner)) {
-            int id = declaredWithSource(type, sig);
-            if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
-                    && !ModifierTokens.has(methods.mods(id), "static")) {
-                declaring.add(type);
-                found.add(id);
-            }
-        }
-        List<String> specific = hierarchy.mostSpecific(declaring);
-        int abstractOne = -1;
-        for (int i = 0; i < found.size(); i++) {
-            if (!specific.contains(declaring.get(i))) {
-                continue;
-            }
-            if (methods.hasBody(found.get(i))) {
-                return found.get(i);
-            }
-            if (abstractOne < 0) {
-                abstractOne = found.get(i);
-            }
-        }
-        return abstractOne;
+        return id;
     }
 
     /**

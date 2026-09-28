@@ -463,4 +463,85 @@ public final class MethodSelection {
         overriddenMemo = null;
     }
 
+    /**
+     * 解決（JVMS 5.4.3.3 / 5.4.3.4）: 型 {@code typeFqn} を受け手の静的型とするシンボリック参照
+     * （名前とディスクリプタ＝ {@code sig}）を JVM が結び付ける、<b>ソースにある宣言</b>。無ければ -1。
+     * jar からの被参照（{@code external-ref:INHERITED}。{@code jche.external.ExternalUsageScanner}）の結び先で、
+     * 「実際に動く本体」（{@link #implementationOf}。選択）ではなく「参照が指す宣言」を返す。動く本体はその宣言を
+     * 呼び出し先とする通常の解決（CHA）が数えるので、ここで部分型へ降りない。
+     *
+     * <ol>
+     *   <li><b>クラスの連鎖</b>（{@link TypeHierarchy#classChain}）… その型から親クラスへ根まで順に見て、最初の宣言。
+     *       抽象の宣言でも止まる（5.4.3.3 は本体の有無を見ない）。private も飛ばさない（アクセスの検査は解決の後）</li>
+     *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 無ければ、最も特定的な宣言
+     *       （{@link TypeHierarchy#mostSpecific}。private・static は除く）のうち本体を持つものを先に、無ければ抽象の宣言。
+     *       複数残れば近い順（同じ深さは名前順）の先頭</li>
+     * </ol>
+     * 各段で、ディスクリプタと同じキーの宣言のほかに、javac がブリッジメソッドでディスクリプタをそろえる形も見る
+     * （{@link #search} と同じ 3 つの材料）: 型引数を具体化した上書き（O 行。{@code class UserRepo implements Repo<User>} の
+     * {@code save(User)} は、{@code UserRepo.save(java.lang.Object)} のブリッジがその型にある）と、親クラスから継承した
+     * メソッドが型引数を置き換えたインターフェースのメソッドを実装する組（H 行の 8 列目。ブリッジはその型にある）。
+     * 参照の側の型が別の版に対してコンパイルされていると、ブリッジのディスクリプタで参照してくる（Issue #186）。
+     * パッケージアクセスは見ない（解決はディスクリプタの一致だけで、上書きの可否は選択の話）
+     */
+    public int resolvedDeclaration(String typeFqn, String sig) {
+        if (typeFqn == null || typeFqn.isEmpty() || sig == null) {
+            return -1;
+        }
+        IntArray overriders = overrides.overridersOfSignature(sig);
+        for (String t : hierarchy.classChain(typeFqn)) {
+            int id = resolvedIn(t, sig, overriders);
+            if (id >= 0) {
+                return id;
+            }
+        }
+        List<String> declaring = new ArrayList<>();
+        IntArray found = new IntArray(2);
+        for (String t : hierarchy.superinterfaces(typeFqn)) {
+            int id = resolvedIn(t, sig, overriders);
+            if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
+                    && !ModifierTokens.has(methods.mods(id), "static")) {
+                declaring.add(t);
+                found.add(id);
+            }
+        }
+        if (found.size() == 0) {
+            return -1;
+        }
+        List<String> specific = hierarchy.mostSpecific(declaring);
+        int abstractOne = -1;
+        for (int i = 0; i < found.size(); i++) {
+            int id = found.get(i);
+            if (!specific.contains(declaring.get(i))) {
+                continue;
+            }
+            if (methods.hasBody(id)) {
+                return id;
+            }
+            if (abstractOne < 0) {
+                abstractOne = id;
+            }
+        }
+        return abstractOne;
+    }
+
+    /**
+     * 型 {@code t} で、ディスクリプタ {@code sig} の参照が結び付くソースの宣言（{@link #resolvedDeclaration} の 1 段）。
+     * 無ければ -1。ブリッジのある形（O 行・H 行の 8 列目。どちらも本体のある宣言）を先に、次にキーが同じ宣言
+     */
+    private int resolvedIn(String t, String sig, IntArray overriders) {
+        if (overriders != null) {
+            int overriding = declaredAmong(overriders, t);
+            if (overriding >= 0 && methods.hasSource(overriding)) {
+                return overriding;
+            }
+        }
+        int inherited = inheritedImplementationIn(t, null, sig);
+        if (inherited >= 0 && methods.hasBody(inherited) && methods.hasSource(inherited)) {
+            return inherited;
+        }
+        int id = methods.idOf(t + "#" + sig);
+        return (id >= 0 && methods.hasSource(id)) ? id : -1;
+    }
+
 }

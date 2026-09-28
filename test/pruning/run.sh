@@ -3942,6 +3942,53 @@ package eu;
 
 public class C3 implements ASI, Api { }
 EOF
+# javac がブリッジメソッドでディスクリプタをそろえる形（Issue #186）。UserRepo は AbsRepo<User> の save(T) を save(User) で
+# 上書き（O 行）し、UserRepo2 は親クラス BaseRepo の save(User) で Repo<User> の save(T) を実装する（H 行の 8 列目）。
+# どちらもブリッジ save(java.lang.Object) がその型にできる。参照の側（Client）は、上書き・実装の無い版の UserRepo・UserRepo2
+# （extstub）に対してコンパイルするので、参照のディスクリプタは save(java.lang.Object) になる。JVM はブリッジのある型で
+# 解決するので、結び先は UserRepo.save(User)・BaseRepo.save(User)（AbsRepo.save・Repo.save ではない）
+cat > "$EXTU/src/eu/Repos.java" <<'EOF'
+package eu;
+
+public class Repos { }
+interface Repo<T> { void save(T t); }
+EOF
+cat > "$EXTU/src/eu/User.java" <<'EOF'
+package eu;
+
+public class User { }
+EOF
+cat > "$EXTU/src/eu/AbsRepo.java" <<'EOF'
+package eu;
+
+public class AbsRepo<T> implements Repo<T> { public void save(T t) { System.out.println("abs"); } }
+EOF
+cat > "$EXTU/src/eu/UserRepo.java" <<'EOF'
+package eu;
+
+public class UserRepo extends AbsRepo<User> { public void save(User u) { System.out.println("user"); } }
+EOF
+cat > "$EXTU/src/eu/BaseRepo.java" <<'EOF'
+package eu;
+
+public class BaseRepo { public void save(User u) { System.out.println("base"); } }
+EOF
+cat > "$EXTU/src/eu/UserRepo2.java" <<'EOF'
+package eu;
+
+public class UserRepo2 extends BaseRepo implements Repo<User> { }
+EOF
+mkdir -p "$EXTU/extstub/eu"
+cat > "$EXTU/extstub/eu/UserRepo.java" <<'EOF'
+package eu;
+
+public class UserRepo extends AbsRepo<User> { }
+EOF
+cat > "$EXTU/extstub/eu/UserRepo2.java" <<'EOF'
+package eu;
+
+public class UserRepo2 extends AbsRepo<User> { }
+EOF
 cat > "$EXTU/extsrc/ext/Client.java" <<'EOF'
 package ext;
 
@@ -3949,9 +3996,14 @@ public class Client {
     public static void callC() { new eu.C().m(); }
     public static void callC2() { new eu.C2().m(); }
     public static void callC3() { new eu.C3().s(); }
+    public static void callRepo() { new eu.UserRepo().save(new eu.User()); }
+    public static void callRepo2() { new eu.UserRepo2().save(new eu.User()); }
 }
 EOF
-if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" $(find "$EXTU/src" "$EXTU/extsrc" -name '*.java') \
+# src の UserRepo・UserRepo2 の代わりに extstub のものを渡す（ファイル名と違う名前の型は -sourcepath では見つからない）
+if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" \
+        $(find "$EXTU/src" -name '*.java' ! -name UserRepo.java ! -name UserRepo2.java) \
+        $(find "$EXTU/extstub" "$EXTU/extsrc" -name '*.java') \
         > "$EXTU/javac.log" 2>&1 \
         && rm -rf "$EXTU/extcls/eu" \
         && "$(dirname "$JAVAC_BIN")/jar" --create --file "$EXTU/extjars/client.jar" -C "$EXTU/extcls" . ; then
@@ -3965,7 +4017,9 @@ if [ ! -f "$ECSV" ]; then
     ng "外部の jar からの被参照: 解析できませんでした（test/pruning/$EXTU/run.log・javac.log）"
 else
     for c in "Client.callC I2.m I1.m C implements I1, I2" "Client.callC2 I2.m I1.m C2 extends B2(implements I2) implements I1" \
-             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)"; do
+             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)" \
+             "Client.callRepo UserRepo.save AbsRepo.save 参照 UserRepo.save(Object) は、型引数を具体化した上書き save(User) のブリッジ（O 行）" \
+             "Client.callRepo2 BaseRepo.save Repo.save 参照 UserRepo2.save(Object) は、親クラスから継承した save(User) が Repo<User> を実装するブリッジ（H 行の 8 列目）"; do
         read -r caller want wrong why <<< "$c"
         if [ -n "$(ext_rows "$caller" "$want")" ] && [ -z "$(ext_rows "$caller" "$wrong")" ]; then
             ok "外部の jar からの被参照: $caller -> $want（$why。$wrong ではない）"
