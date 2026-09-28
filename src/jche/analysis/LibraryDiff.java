@@ -326,8 +326,17 @@ final class LibraryDiff {
     /**
      * jar の目次（セントラルディレクトリ）だけを読んで、指紋とパッケージを作る。
      * 中身の展開も読み込みもしないので、大きな jar でも件数に比例するだけで済む。
+     *
+     * <p>指紋はディスクのバイト（{@link ZipDirectory}）から作るが、その前に JDT と同じ読み手（{@link ZipFile}。同じ JDK）で
+     * 開けるかも確かめる。{@code ZipFile} が受け付けない壊れ方（圧縮方式が stored・deflate 以外・暗号化の印・終わりの記録の
+     * コメント長がファイルの終わりを越える・コメントが UTF-8 でない など）を {@link ZipDirectory} は見ないので、JDT が
+     * 「読めない」としてクラスパスから外した jar に普通の指紋を作り、「依存 jar を読めません」の警告が出ず、同じ目次の正しい
+     * jar に直しても指紋が変わらず解析し直さなかった。{@code ZipFile} の検査を移植すると JDK の版ごとの違いで食い違って
+     * いくので、移植せずに開いて閉じる。開けなければ {@link IOException} で、読めない jar の道（警告・空の指紋）に乗る
+     * （docs/cache-dependency-jars-qa.md の Q22）
      */
     private static LibraryFact scanJar(Path jar, String key, boolean[] stale) throws IOException {
+        new ZipFile(jar.toFile()).close();   // 開けるかだけを見る（目次は下でファイルのバイトから読む）
         // JDT と同じ見分け方（拡張子。org.eclipse.jdt.internal.compiler.util.Util#archiveFormat）
         boolean jmod = jar.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".jmod");
         TreeSet<String> packages = new TreeSet<>();
