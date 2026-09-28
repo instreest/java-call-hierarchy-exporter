@@ -27,7 +27,8 @@ import jche.cache.MethodRef;
  *   {@link #inheritedImplementationsOf} H 行の 8 列目   親クラスから継承したメソッドが、型引数を置き換えた
  *                                             親インターフェースのメソッドを実装する組（isSubsignature）
  *                                             → 選択の 2 段目で、その型から見たときだけ成り立つ実装として引く
- *   {@link #functionalKeysOf}           M 行の鍵   ラムダ・メソッド参照が実装する抽象メソッドすべて（isSubsignature）
+ *   {@link #functionalKeysOf}           M 行の鍵   ラムダ・メソッド参照が実装する抽象メソッドすべてと、SAM が抽象として
+ *                                             宣言し直した親の default（isSubsignature）
  *                                             → invokedynamic に当たる呼び出しの本体を、親の型で受けた呼び出しからも引く
  * </pre>
  * キーが同じ（消去した引数型が同じ＝ JVM のディスクリプタが同じ）上書きは、読み手がキーの照合で引けるので書かない。
@@ -240,6 +241,10 @@ final class OverrideFacts {
      * </pre>
      * 読み手（M 行）は鍵の完全一致で引くので、親の宣言の鍵が無いと、親の型で受けた変数への
      * 呼び出しでラムダが見えず、別の実装1件に誤って確定する（docs/lambda-expansion-qa.md の Q11・Q15）。
+     * 親の宣言は抽象メソッドとは限らない。SAM が親の default を抽象として宣言し直した形
+     * （{@code interface Task { default void exec() {} }  interface Job extends Task { void exec(); }}）
+     * では、{@code Task} の型で受けた呼び出しの先は default の鍵で、そこで動くのはラムダなので、
+     * その default の鍵でも書く（static・private は継承されないので除く。docs/lambda-expansion-qa.md の Q19）。
      * 親型は型引数を具体化したまま辿り、上書き同等かの判定は
      * {@code IMethodBinding.isSubsignature}（JLS 8.4.2）に任せる。
      *
@@ -273,7 +278,11 @@ final class OverrideFacts {
                 }
                 for (IMethodBinding candidate : type.getDeclaredMethods()) {
                     int mods = candidate.getModifiers();
-                    if (!Modifier.isAbstract(mods) || Modifier.isStatic(mods)
+                    // 抽象メソッドのほか、SAM が抽象として宣言し直した親の default も含める
+                    // （interface Job extends Task { void exec(); } の Task#exec。Issue #176）。
+                    // 親の型で受けた呼び出し（Task t; t.exec()）の先はその default の鍵で、ラムダが動く。
+                    // static・private は継承されないので上書き同等にならない（JLS 9.4.1）
+                    if (Modifier.isStatic(mods) || Modifier.isPrivate(mods)
                             || !candidate.getName().equals(sam.getName())
                             || candidate.getParameterTypes().length != sam.getParameterTypes().length
                             || !(sam.isSubsignature(candidate) || candidate.isSubsignature(sam))) {

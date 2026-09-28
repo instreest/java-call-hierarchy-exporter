@@ -3292,6 +3292,35 @@ public class GiRet {
 EOF
 expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラスの GiBase.create(String)（GiFac の default ではない。GiImpl から見たときだけの実装の関係）"
 
+# default を抽象として宣言し直した子インターフェース（@FunctionalInterface）にラムダを渡す形（Issue #176）。
+# 親の型で受けた呼び出し（t.exec()・m.make()）の先は default の鍵で、そこで動くのはラムダ。書き手が M 行を default の鍵でも
+# 書かないと、ラムダの本体への辺が無く、default の戻り値（DaoA）で絞られて動く DaoB.find が落ちる
+case_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl LamRedecl.run 'LamRedecl.lambda$main$0' "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体へ繋ぐ" <<'EOF'
+package pr;
+
+interface LrTask { default void exec() { System.out.println("default"); } }
+@FunctionalInterface interface LrJob extends LrTask { void exec(); }
+interface LrMaker { default Dao make() { return new DaoA(); } }
+interface LrMaker2 extends LrMaker { Dao make(); }
+
+public class LamRedecl {
+    public static void main(String[] args) {
+        run((LrJob) () -> hit());
+        useMaker((LrMaker2) () -> new DaoB());
+        useUntraced(java.util.List.of((LrMaker2) () -> new DaoB()));
+    }
+    static void hit() { System.out.println("lambda"); }
+    static void run(LrTask t) { t.exec(); }
+    static void useMaker(LrMaker m) { m.make().find(); }
+    static void useUntraced(java.util.List<LrMaker> ms) { ms.get(0).make().find(); }
+}
+EOF
+expect_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl.useMaker 'LamRedecl.lambda$main$1' "同上（LrMaker の型で呼んだ make() もラムダの本体へ繋ぐ）"
+expect_ listed LamRedecl.useMaker DaoB.find "同上（動く実装はラムダの返す DaoB。default の戻り値の DaoA に絞らない）"
+expect_ absent LamRedecl.useMaker DaoA.find "同上（動かない default の戻り値 DaoA.find は出ない）"
+expect_ listed LamRedecl.useUntraced DaoB.find "戻り値: ラムダを追えない受け手（List の要素）でも、ラムダが実装し直している default の戻り値（DaoA）で絞らない"
+expect_ listed LamRedecl.useUntraced DaoA.find "同上（追えないので CHA の候補のまま。DaoA も残る）"
+
 # ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
 # 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。

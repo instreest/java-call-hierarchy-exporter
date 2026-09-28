@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
 import jche.cache.ModifierTokens;
 
@@ -84,6 +85,8 @@ public final class MethodSelection {
      * （0 = まだ調べていない、1 = 振り分けられない、2 = 振り分けられうる）。{@link #hasOverriders} が遅延して埋める
      */
     private byte[] overriddenMemo;
+    /** ラムダ・メソッド参照が実装しているメソッドか（M 行。{@link CallGraph#hasFunctionalImpl}）。{@link #functionalImpls} が設定する */
+    private IntPredicate functionalImpls;
 
     MethodSelection(MethodTable methods, TypeHierarchy hierarchy, OverrideIndex overrides) {
         this.methods = methods;
@@ -165,6 +168,10 @@ public final class MethodSelection {
         if (ModifierTokens.has(mods, "static") || ModifierTokens.has(mods, "private")
                 || ModifierTokens.has(mods, "final")) {
             return false;
+        }
+        if (functionalImpls != null && functionalImpls.test(methodId)) {
+            // ラムダ・メソッド参照が実装し直している（M 行がある）。部分型の宣言には現れないので、上の探索では見えない
+            return true;
         }
         // CHA（CallResolver の段 1）と同じく、部分型ごとに実際に動く実装を implementationOf で引く。
         // 上書きの判定を別に書くと、継承と型引数の置換のどちらかの形を取りこぼす。
@@ -439,6 +446,21 @@ public final class MethodSelection {
             }
         }
         return -1;
+    }
+
+    /**
+     * ラムダ・メソッド参照が実装しているメソッド（M 行）の判定を受け取る。
+     *
+     * <p>{@link #hasOverriders} は部分型の宣言から「別の本体へ振り分けられうるか」を見るが、ラムダの本体は
+     * どの部分型の宣言にも現れない。default メソッドを抽象として宣言し直した関数型インターフェース
+     * （{@code interface Maker { default Dao make() {…} }  interface Maker2 extends Maker { Dao make(); }}）に
+     * ラムダを渡すと、{@code Maker} の型で受けた {@code make()} で動くのはラムダなのに、部分型 {@code Maker2} から引いた
+     * 実装は default のままなので「振り分けられない」になり、default の戻り値で呼び出しを絞ってしまう
+     * （Issue #176）。M 行のあるメソッドは、ラムダが実装し直しているので「振り分けられうる」とする
+     */
+    void functionalImpls(IntPredicate functionalImpls) {
+        this.functionalImpls = functionalImpls;
+        overriddenMemo = null;
     }
 
 }
