@@ -918,3 +918,80 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
   含む並び）。呼び出しの辺はつながっているので出力には効かないが、`test/jls` の突き合わせに載せられない
 - **呼び出しを `UNEXPANDED:CHA` のまま残すとき**、呼び出し先を宣言したインターフェースの default も候補に並ぶ（以前と同じ）。
   行が増えるだけで、呼び出しは落ちない
+
+## Q37. jar のクラスを経由した部分型（`class MyList extends ArrayList<String>`）が、なぜ CHA の候補に入らなかったのか
+
+[Issue #184](https://github.com/instreest/java-call-hierarchy-exporter/issues/184)。呼び出しを落とす側の不具合。
+
+```java
+public class MyList extends java.util.ArrayList<String> { @Override public int size() { return helper(); } }
+java.util.List<String> l = pick(args);   // MyList か ArrayList
+l.size();                                // 実際に動きうるのは MyList.size
+```
+
+`l.size()` が `List.size RESOLVED:NO_OVERRIDE [EXTERNAL]` になり、`MyList.size()` は起点の候補（`ENTRY_CANDIDATE` /
+`[NOT_REACHED]`）に昇格していた。H 行の親型（3 列目）は「直接の親」と「jar の型を経由して到達するソースの親」だけで、
+jar の親の親（`ArrayList` の先の `List` / `Collection`）は載らない。読み手の段 1 は宣言した型 `java.util.List` の
+`transitiveSubtypes` から候補を引くので、`MyList` は部分型に数えられず、候補は jar の宣言だけになって `NO_OVERRIDE` で確定した。
+同じ形で jar のインターフェースを**直接** implements した型は 3 列目に載るので候補に入る（`UNEXPANDED:CHA`）。
+
+**今の決まり: 書き手は、親型を辿って到達した jar の型の推移的な親型の組（`jar の型>親型`。`java.lang.Object` を除く）を
+H 行の 9 列目に書く**（`TypeContextTracker#collectSupertypes`・`TypeFact#binarySupertypes`）。`MyList` の H 行なら
+`java.util.ArrayList>java.util.List;java.util.ArrayList>java.util.AbstractList;…` である。読み手の `TypeHierarchy` はこれを
+jar の型の親型として持ち（`binarySupertypesOf`）、部分型の列挙（`transitiveSubtypes`）と親子の判定（`isSubtypeOf`）で jar の型を
+通って辿る。`transitiveSubtypes("java.util.List")` が `MyList` を返し、候補は `List.size`（jar）と `MyList.size` の 2 つ
+（`UNEXPANDED:CHA`）になる。`MyList m; m.size()` のように修飾する型がソースの型なら、`isSubtypeOf(MyList, java.util.List)` が
+真になるので修飾する型から引き（`usableQualifier`）、`MyList.size` に確定する。
+
+3 列目に jar の親の親を平らに足す（Issue の案）のではなく組にしたのは、Q38（jar のインターフェースどうしの親子）にも同じ
+材料が要るからである。平らに足すと `LibMid` と `Top` が並ぶだけで、どちらが親かは分からない。
+
+変えなかったもの:
+
+- **`transitiveSubtypes` はソース上の型だけを返す。** jar の型（`ArrayList`）を候補の型に並べると、`implementationOf` が
+  メソッドの表にたまたまある jar の宣言（`ArrayList#size()`。ソースのどこかが呼び出し先にしていれば載る）を候補に足し、
+  同じソースでも表の中身で行が増減する。読み手の呼び出し側（`CallResolver`・`SpringBeans`・`MethodSelection#hasOverriders`）は
+  もともとソースの型しか受け取っていない
+- **実装を探す並び（`classChain` / `superinterfaces`）は H 行の親型の並びのまま。** `superinterfaces` に jar の親の親
+  （`List` / `Collection`）まで並べると、`MethodSelection#search` が表にある jar の宣言を「最も特定的な宣言」に選び、
+  `class Plain extends ArrayList<String>` の `Collection.size()` の呼び出しに `List.size` の行が増える。候補は落ちないが
+  出力が表の中身で変わるので、並びは変えない（`test/regression` の期待出力は変わらない）
+- **`usableQualifier` の「修飾する型が jar の型なら宣言した型に倒す」も変えない。** 9 列目があれば jar の型の部分型も
+  漏れなく数えられるが、修飾する型が jar の型（`ArrayList<String> a; a.size()`）のとき受け手は jar の型そのものでもあり、
+  その実装（jar の宣言）は `implementationOf(修飾する型, …)` では見つからない（メソッドの表に無いか、本体が分からない）。
+  宣言した型から引けば宣言そのものが候補に入り、`[EXTERNAL]` の行で「jar の実装が動きうる」と分かる
+  （`docs/jls-conformance-test-qa.md` の Q18）
+- `java.lang.Object` は載せない（`docs/excluded-entry-promotion-qa.md` の Q5・Q8）
+
+費用は H 行が長くなること（JDK の GUI クラスを継承した型で数十組）と、jar の型の親型が変わる（jar の差し替え）と型階層の
+安全網（`docs/cache-unification-qa.md` の Q132）で全件解析になること。どちらも安全側の費用として受け入れる。
+書き手の変更なので形式の版を v45 に上げた。検査は `test/pruning` の `JarList`（`List<String>` / `ArrayList<String>` 型の変数で
+呼んだ `size()` の候補に `JlList.size` が入り、その先の呼び出しが階層に残る）。
+
+## Q38. jar のインターフェースを経由した親子が見えず、なぜ別の default を選んだのか
+
+[Issue #185](https://github.com/instreest/java-call-hierarchy-exporter/issues/185)。
+
+```java
+interface Top { default void m() { } }                          // ソース
+public interface LibMid extends s.Top { default void m() { } }  // jar。Top.m を上書き
+class Impl implements lib.LibMid, s.Top { }                     // ソース。Top も直接書く
+Top t = new Impl(); t.m();                                      // 実際に動くのは LibMid.m
+```
+
+`Impl` の `superinterfaces` には `LibMid`（jar。H 行なし）と `Top` が並ぶ。`MethodSelection#search` の後半は
+`TypeHierarchy#mostSpecific` で「ほかの型の真の親型」を除くが、その判定（`isSubtypeOf`）は H 行の親型（3 列目）しか見ず、
+`LibMid` の親が `Top` であることは知りようがなかった。両方が残り、「ソースに本体のある宣言を jar の宣言より先」の近似で
+`Top.m` を選んでいた（JVM は `LibMid.m`）。`Top.m` の本体の呼び出しが「呼ばれる」と出て、`Top.m` の戻り値で候補を絞る
+（`test/pruning` の `DefMid`: `DmTop.create` の戻り値 `DaoA` に絞って `DaoB.find` が消える）と、呼び出しが落ちる。
+
+**今の決まり: Q37 の 9 列目（`lib.LibMid>s.Top`）を `isSubtypeOf` が辿るので、`mostSpecific([LibMid, Top])` は `Top` を除く。**
+`MethodSelection#search` は変えていない（同じ段で別の直しが入る）。jar の宣言 `LibMid.m` は、ソースのどこかがそれを
+呼び出し先にしていればメソッドの表にあり、`implementationOf(Impl, Top.m)` はそれを返す（`[EXTERNAL]`）。表に無ければ
+`declaring` に `LibMid` が入らず、これまでどおり `Top.m` を返す（jar のインターフェースが `m` を宣言しているかは、jar の
+事実を持たない読み手には分からない）。「最も特定的な宣言が複数残ったら 1 つに決めない」（Issue の代案）は、jar の型の親子が
+見えるようになれば残るのは JLS でコンパイルエラーになる形だけなので採らなかった。
+
+検査は `test/pruning` の `DefMid`（jar の `prlib.Mid extends pr.DmTop` を挟む。`t.create()` の実装が `Mid.create` で、
+`DmTop.create` を選ばず、`DaoB.find` を落とさない）。`test/jls` の javac との突き合わせは jar を使わないので、そこには置かない。
+

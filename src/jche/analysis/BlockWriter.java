@@ -141,7 +141,7 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
                 continue;
             }
             lines.add(new TypeFact(t.typeFqn(), t.kind(), t.superTypes(), t.pkg(), "", t.superclasses(),
-                    t.inheritedImpls()).toRow());
+                    t.inheritedImpls(), t.binarySupertypes()).toRow());
         }
         return digestOf(lines);
     }

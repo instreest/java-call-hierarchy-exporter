@@ -3257,8 +3257,21 @@ public class Holder<T> {
     public T create() { return v; }
 }
 EOF
-"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java \
-    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls . \
+# jar のインターフェース prlib.Mid は、ソースのインターフェース pr.DmTop を継承して default を上書きする（Issue #185 の形）。
+# jar を作るときにソースの型も一緒にコンパイルし、jar にはソースの型（pr/）を入れない（jar の中身は prlib/ だけ）
+cat > "$SRC/DmTop.java" <<'EOF'
+package pr;
+
+public interface DmTop { default Dao create() { return new DaoA(); } }
+EOF
+cat > work/libsrc/prlib/Mid.java <<'EOF'
+package prlib;
+
+public interface Mid extends pr.DmTop { default pr.Dao create() { return new pr.DaoB(); } }
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java work/libsrc/prlib/Mid.java \
+        "$SRC/Dao.java" "$SRC/DaoA.java" "$SRC/DaoB.java" "$SRC/DmTop.java" \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls prlib \
     || ng "jar（work/lib/prlib.jar）を作れませんでした"
 case_ listed JarHold JarHold.use DaoB.find "戻り値: 親クラスが jar のクラス（prlib.Holder）なら、その create() が default より勝ちうる。default の戻り値（DaoA）に絞らない" <<'EOF'
 package pr;
@@ -3277,6 +3290,45 @@ public class JarHold {
 }
 EOF
 expect_ listed JarHold.ref DaoB.find "戻り値: メソッド参照の束縛したレシーバ（JhImpl）から引いた default も、jar のクラスが挟まるので本体の戻り値に使わない"
+
+# jar のクラスを経由した部分型（class JlList extends ArrayList<String>）。呼び出し先を宣言した型（java.util.List#size()）も
+# 修飾する型（List / ArrayList）も jar の型で、H 行の親型には jar の親の親（List）が載らないので、CHA の候補に JlList.size が
+# 入らず NO_OVERRIDE（[EXTERNAL]）で確定し、ソースの上書きが呼び出し階層から消えて起点の候補に昇格していた（Issue #184）。
+# 今は H 行の 9 列目（jar の型の親型の組）から jar の型を経由した部分型を辿る
+case_ listed JarList JarList.viaList JlList.size "jar の型を経由した部分型: List<String> 型の変数で呼んだ size() の候補に、ArrayList を継承したソースの上書き（JlList.size）が入る" <<'EOF'
+package pr;
+
+class JlList extends java.util.ArrayList<String> { @Override public int size() { return JlHit.hit(); } }
+class JlHit { static int hit() { return 1; } }
+
+public class JarList {
+    public static void main(String[] args) { viaList(pick(args)); viaArrayList(new JlList()); viaArrayList(new java.util.ArrayList<>()); }
+    static void viaList(java.util.List<String> l) { l.size(); }
+    static void viaArrayList(java.util.ArrayList<String> a) { a.size(); }
+    static java.util.List<String> pick(String[] a) { return a.length > 0 ? new JlList() : new java.util.ArrayList<>(); }
+}
+EOF
+expect_ listed JarList.viaArrayList JlList.size "jar の型を経由した部分型: ArrayList<String> 型の変数（修飾する型が jar の型）で呼んだ size() の候補にも JlList.size が入る"
+expect_ listed JlList.size JlHit.hit "jar の型を経由した部分型: JlList.size の先の呼び出しが階層に残る（起点の候補に昇格しない）"
+
+# jar のインターフェース（prlib.Mid extends pr.DmTop）を経由した親子。DmImpl の親インターフェースは Mid と DmTop の 2 つで、
+# Mid が DmTop の部分型であることは H 行の親型からは分からず、「最も特定的な」判定が両方を残して、ソースの default
+# （DmTop.create）を選んでいた。JVM が選ぶのは Mid.create（jar）。DmTop.create の戻り値（DaoA）に絞ると DaoB.find が消える
+# （Issue #185）。今は H 行の 9 列目の jar の型の親子で Mid が DmTop の部分型と分かる。jar の宣言（Mid.create）はソースの
+# どこかが呼び出し先にしていないとメソッドの表に無いので、direct() で直接呼ぶ
+case_ listed DefMid DefMid.use DaoB.find "jar のインターフェースを経由した親子: 動く default は jar の Mid.create（DmTop の部分型）なので、DmTop.create の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+class DmImpl implements prlib.Mid, DmTop { }
+
+public class DefMid {
+    public static void main(String[] args) { use(new DmImpl()); direct(new DmImpl()); }
+    static void use(DmTop t) { t.create().find(); }
+    static void direct(prlib.Mid m) { m.create(); }
+}
+EOF
+expect_ listed DefMid.use Mid.create "jar のインターフェースを経由した親子: t.create() の実装は jar の Mid.create"
+expect_ absent DefMid.use DmTop.create "jar のインターフェースを経由した親子: 親の DmTop.create は選ばない（Mid が上書きしている）"
 
 case_ listed GiRet GiRet.use DaoB.find "戻り値: 親クラスから継承した create(String) が GiFac<String>.create(T) を実装する（キーが食い違う）ので、default の戻り値（DaoA）に絞らない" <<'EOF'
 package pr;

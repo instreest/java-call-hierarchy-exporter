@@ -13,16 +13,30 @@ import java.util.Set;
 
 import jche.cache.TypeFact;
 
-/** 型階層（H行から構築）。親子関係の問い合わせと、種別（I/A/C）の参照 */
+/**
+ * 型階層（H行から構築）。親子関係の問い合わせと、種別（I/A/C）の参照。
+ * jar の型の親型（H 行の 9 列目）も持ち、部分型の列挙（{@link #transitiveSubtypes}）と親子の判定（{@link #isSubtypeOf}）は
+ * jar の型を経由した関係も見る。実装を探す並び（{@link #classChain} / {@link #superinterfaces}）は H 行の親型の並び
+ * （ソースの型の直接の親と、jar を経由して届くソースの親）のまま
+ */
 public final class TypeHierarchy {
 
     /**
      * 親型 -> 子型。H 行の親型の並びなので、「直接の親」のほかに
-     * 「jar の型を経由して到達するソース上の親」も 1 段の親子として入る（{@link TypeFact#superTypes()}）
+     * 「jar の型を経由して到達するソース上の親」も 1 段の親子として入る（{@link TypeFact#superTypes()}）。
+     * jar の型の親子（{@link #binarySupertypes}）も入るので、子型には jar の型も並ぶ（{@link #transitiveSubtypes} は
+     * ソース上の型だけを返す）
      */
     private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
-    /** 子型 -> 親型（同上）。具象型からメソッド実装を探すのに使う */
+    /** 子型 -> 親型（同上。ソース上の型だけ）。具象型からメソッド実装を探すのに使う */
     private final HashMap<String, List<String>> directSupertypes = new HashMap<>();
+    /**
+     * jar の型（ソースの無い型）-> その親型。H 行の 9 列目（{@link TypeFact#binarySupertypes()}。ソースの型から親型を辿って
+     * 到達した jar の型の推移的な親型）から。jar の型には H 行が無いので、部分型（{@link #transitiveSubtypes}）と親子の
+     * 判定（{@link #isSubtypeOf}・{@link #mostSpecific}）にだけ使い、{@link #directSupertypes} には混ぜない
+     * （実装を探す並び {@link #classChain} / {@link #superinterfaces} は H 行の親型の並びのまま）
+     */
+    private final HashMap<String, List<String>> binarySupertypes = new HashMap<>();
     /** 型 -> 種別（I/A/C） */
     private final HashMap<String, Character> typeKind = new HashMap<>();
     /** 型 -> その型に付いていたアノテーション（{@link jche.cache.AnnotationTokens}）。無い型は入れない */
@@ -74,6 +88,16 @@ public final class TypeHierarchy {
             link(directSubtypes, sup, t.typeFqn());
             link(directSupertypes, t.typeFqn(), sup);
         }
+        for (String edge : t.binarySupertypes()) {
+            int gt = edge.indexOf('>');
+            if (gt <= 0 || gt == edge.length() - 1) {
+                continue;
+            }
+            String child = edge.substring(0, gt);
+            String parent = edge.substring(gt + 1);
+            link(directSubtypes, parent, child);
+            link(binarySupertypes, child, parent);
+        }
     }
 
     private static void link(HashMap<String, List<String>> map, String from, String to) {
@@ -93,6 +117,9 @@ public final class TypeHierarchy {
             Collections.sort(l);
         }
         for (List<String> l : directSupertypes.values()) {
+            Collections.sort(l);
+        }
+        for (List<String> l : binarySupertypes.values()) {
             Collections.sort(l);
         }
         // 並べ替える前に引いた結果を残さない
@@ -159,11 +186,21 @@ public final class TypeHierarchy {
     }
 
     /**
-     * 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空。
+     * 親型（名前順）。直接の親と、jar の型を経由して到達するソース上の親。無ければ空（jar の型も空。
+     * jar の型の親型は {@link #binarySupertypesOf}）。
      * 親クラスとインターフェースの区別は無い。実際に動く実装を探す順は {@link #classChain}
      */
     public List<String> directSupertypes(String type) {
         List<String> sups = directSupertypes.get(type);
+        return (sups == null) ? List.of() : sups;
+    }
+
+    /**
+     * jar の型（ソースに宣言の無い型）の親型（名前順。H 行の 9 列目から）。無ければ空。
+     * ソースの型から親型を辿って到達した jar の型についてだけ分かる（それ以外の jar の型は空）
+     */
+    public List<String> binarySupertypesOf(String type) {
+        List<String> sups = binarySupertypes.get(type);
         return (sups == null) ? List.of() : sups;
     }
 
@@ -249,7 +286,9 @@ public final class TypeHierarchy {
     /**
      * 型の並びから、ほかの型の真の親型であるものを除いたもの（並びは保つ）。
      * 親インターフェースのメソッドから最も特定的なもの（JLS 9.4.1・JVMS 5.4.3.3 の maximally-specific）を選ぶのに使う。
-     * {@code interface I2 extends I1} の両方が宣言していれば I2 のものが残る
+     * {@code interface I2 extends I1} の両方が宣言していれば I2 のものが残る。
+     * jar のインターフェースを経由した親子（{@code interface lib.LibMid extends s.Top} の LibMid と Top）も
+     * {@link #isSubtypeOf} が jar の型の親型（H 行の 9 列目）を辿るので見える
      */
     public List<String> mostSpecific(List<String> types) {
         List<String> out = new ArrayList<>(types.size());
@@ -269,7 +308,12 @@ public final class TypeHierarchy {
         return out.isEmpty() ? new ArrayList<>(types) : out;
     }
 
-    /** 推移的なサブタイプ。循環があっても止まるように訪問済みを持つ */
+    /**
+     * 推移的なサブタイプ（ソース上の型だけ）。循環があっても止まるように訪問済みを持つ。
+     * jar の型を経由した部分型（{@code class MyList extends ArrayList<String>} は {@code java.util.List} の部分型）も、
+     * jar の型の親子（H 行の 9 列目）を通って辿る。途中の jar の型は結果に入れない（ソースの無い型は実装を探せず、
+     * 呼び出しの候補にも Bean にもならない）
+     */
     public List<String> transitiveSubtypes(String type) {
         List<String> cached = transitiveCache.get(type);
         if (cached != null) {
@@ -287,7 +331,9 @@ public final class TypeHierarchy {
             }
             for (String sub : subs) {
                 if (seen.add(sub)) {
-                    out.add(sub);
+                    if (typeKind.containsKey(sub)) {
+                        out.add(sub);
+                    }
                     stack.push(sub);
                 }
             }
@@ -305,12 +351,16 @@ public final class TypeHierarchy {
         queue.add(type);
         seen.add(type);
         while (!queue.isEmpty()) {
-            for (String s : directSupertypes(queue.poll())) {
-                if (s.equals(ancestor)) {
-                    return true;
-                }
-                if (seen.add(s)) {
-                    queue.add(s);
+            String cur = queue.poll();
+            // ソースの型の親型（H 行の 3 列目）と、jar の型の親型（9 列目）の両方を辿る
+            for (List<String> sups : List.of(directSupertypes(cur), binarySupertypesOf(cur))) {
+                for (String s : sups) {
+                    if (s.equals(ancestor)) {
+                        return true;
+                    }
+                    if (seen.add(s)) {
+                        queue.add(s);
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
@@ -112,13 +113,14 @@ final class TypeContextTracker {
                 : (Modifier.isAbstract(erased.getModifiers()) ? TypeFact.ABSTRACT : TypeFact.CONCRETE);
 
         List<String> supers = new ArrayList<>();
-        collectSupertypes(erased, supers, new HashSet<>(), true, 0);
+        Set<String> binarySupertypes = new TreeSet<>();
+        collectSupertypes(erased, null, supers, binarySupertypes, new HashSet<>(), 0);
         // 親クラスの連鎖（TypeFact#superclasses）。ソース上の型に当たるまで。jar の親は collectSupertypes も辿る型
         List<String> superclasses = new ArrayList<>();
         ITypeBinding sc = erased.getSuperclass();
         while (sc != null && superclasses.size() < MAX_BINARY_SUPERTYPE_DEPTH) {
             ITypeBinding e = BindingNames.erasureOf(sc);
-            String n = names.typeNameOf(e);
+            String n = supertypeNameOf(e);
             if (n == null || "java.lang.Object".equals(n)) {
                 break;
             }
@@ -127,7 +129,8 @@ final class TypeContextTracker {
         }
         ITypeBinding declared = tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb;
         out.types.add(new TypeFact(fqn, kind, supers, BindingNames.packageOf(erased),
-                names.annotationsOf(erased), superclasses, overrideFacts.inheritedImplementationsOf(declared)));
+                names.annotationsOf(erased), superclasses, overrideFacts.inheritedImplementationsOf(declared),
+                new ArrayList<>(binarySupertypes)));
         recordDeclarations(tb.getTypeDeclaration() != null ? tb.getTypeDeclaration() : tb);
         names.noteInheritedSignatures(tb);
     }
@@ -220,6 +223,27 @@ final class TypeContextTracker {
     private static final int MAX_BINARY_SUPERTYPE_DEPTH = 32;
 
     /**
+     * H 行に書く親型の名前。取れなければ null。
+     *
+     * <p>解決できなかった（回復した）型は {@link BindingNames#MISSING_PREFIX} を付けて {@code ?.Template.Inner} と書く。
+     * 依存 jar が無いとき、{@code class B extends Template.Inner}（Template は解決できない）の親を JDT は鍵
+     * {@code LTemplate/Inner;}・名前 {@code Template.Inner} の回復した型にする。鍵だけでは、無い完全修飾名
+     * （{@code Lorg/missing/Lib;}）と区別できないので、単純名から作られた無い型（{@link BindingNames#qualifiedNameOf}）
+     * のように鍵の形では判定できない。そのまま書くと、読み手は B を無名パッケージにある本物の {@code Template.Inner} の
+     * 部分型とみなし（名前で型を引く）、本物の {@code Template.Inner.run()} の呼び出しの候補に {@code B.run()} を足して
+     * 展開をやめ、本物の先の呼び出しが出力から消えた。無い型はどの本物の型の親子にもなれないので、H 行では回復した型を
+     * すべて {@code ?.} 付きにする（I 行の依存する型・メソッドの鍵の名前は変えない。{@code ?} は Java の名前に使えないので
+     * 本物の型と重ならない）
+     */
+    private String supertypeNameOf(ITypeBinding erased) {
+        String n = names.typeNameOf(erased);
+        if (n != null && erased.isRecovered() && !n.startsWith(BindingNames.MISSING_PREFIX)) {
+            return BindingNames.MISSING_PREFIX + n;
+        }
+        return n;
+    }
+
+    /**
      * 親型の名前を集める。直接の親型（親クラスとインターフェース）に加えて、
      * ソースの無い親型（jar の型）を経由して到達するソース上の親型も入れる。
      *
@@ -229,9 +253,19 @@ final class TypeContextTracker {
      * Handler のメソッド呼び出しの候補から Foo が抜ける。
      * ソース上の親型の先は、その型自身の H 行が持つので辿らない。
      * java.lang.Object は候補計算に寄与しないので除外する（無駄に巨大化させない）。
+     *
+     * <p>あわせて、辿った jar の型の親型の組（{@code jar の型>親型}。{@link TypeFact#binarySupertypes()}）も集める。
+     * {@code class MyList extends ArrayList<String>} の {@code java.util.ArrayList>java.util.List} など。jar の親の親
+     * （{@code List} / {@code Collection}）は親型の並びには入れないが、読み手はこの組から jar の型の親子関係を知り、
+     * {@code java.util.List#size()} の呼び出しの候補に MyList を入れ（jar の型を経由した部分型）、jar のインターフェースを
+     * 経由した親子関係を「最も特定的な」親インターフェースの判定に使う。組は親型の並びの {@code seen} とは別に、
+     * 辿った jar の型ごとに親型すべてを書く（別の経路で先に見た親でも、その jar の型の親であることは変わらない）。
+     * 回復した型（無い型）の先は辿らない
+     *
+     * @param binaryType {@code type} が jar の型なら H 行に書くその名前。直接の親型を集める段（ソースの型自身）なら null
      */
-    private void collectSupertypes(ITypeBinding type, List<String> out, Set<String> seen,
-                                   boolean direct, int depth) {
+    private void collectSupertypes(ITypeBinding type, String binaryType, List<String> out, Set<String> binaryEdges,
+                                   Set<String> seen, int depth) {
         List<ITypeBinding> parents = new ArrayList<>();
         if (type.getSuperclass() != null) {
             parents.add(type.getSuperclass());
@@ -242,16 +276,22 @@ final class TypeContextTracker {
         }
         for (ITypeBinding parent : parents) {
             ITypeBinding erasedParent = BindingNames.erasureOf(parent);
-            String n = names.typeNameOf(erasedParent);
-            if (n == null || "java.lang.Object".equals(n) || !seen.add(n)) {
+            String n = supertypeNameOf(erasedParent);
+            if (n == null || "java.lang.Object".equals(n)) {
+                continue;
+            }
+            if (binaryType != null) {
+                binaryEdges.add(binaryType + ">" + n);
+            }
+            if (!seen.add(n)) {
                 continue;
             }
             boolean fromSource = erasedParent.isFromSource();
-            if (direct || fromSource) {
+            if (binaryType == null || fromSource) {
                 out.add(n);
             }
-            if (!fromSource && depth < MAX_BINARY_SUPERTYPE_DEPTH) {
-                collectSupertypes(erasedParent, out, seen, false, depth + 1);
+            if (!fromSource && !erasedParent.isRecovered() && depth < MAX_BINARY_SUPERTYPE_DEPTH) {
+                collectSupertypes(erasedParent, n, out, binaryEdges, seen, depth + 1);
             }
         }
     }
