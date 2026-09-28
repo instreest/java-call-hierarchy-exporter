@@ -74,7 +74,7 @@ expect_log "$LOGDIR/run-badopt.log" "--no-such-option" "知らないオプショ
 
 echo "== 対話なしの解析（引数に設定ファイル）=="
 rm -rf "$ROOT/test/regression/entry/output" "$ROOT/test/regression/entry/.cache"
-if "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-batch.log" 2>&1; then
+if "$JCHE" "$ROOT/test/regression/entry/jche.properties" > "$LOGDIR/run-batch.log" 2>&1; then
     ok "終了コード 0"
 else
     ng "終了コードが 0 ではない"; tail -5 "$LOGDIR/run-batch.log"
@@ -114,7 +114,7 @@ expect_refused() {   # $1=ログ  $2=終了コード  $3=ラベル
 }
 mkdir -p "$NET_WORK/repo"
 write_net_settings "$NET_WORK/jbang-missing" "" ""
-"$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-bootstrap.log" 2>&1
+"$JCHE" "$ROOT/test/regression/entry/jche.properties" > "$LOGDIR/run-net-bootstrap.log" 2>&1
 expect_refused "$LOGDIR/run-net-bootstrap.log" $? "JBang 本体が無い"
 expect_log "$LOGDIR/run-net-bootstrap.log" "JBang itself" "JBang 本体が無い: 取得するものに JBang 本体が挙がった"
 # 取得予定のサイズ（Issue #86 の追加）。まっさらな置き場所なので JBang 本体 15 + JDK 135 + 依存 jar 15 = 165MB
@@ -126,12 +126,12 @@ expect_log "$LOGDIR/run-net-bootstrap.log" "JCHE_ALLOW_DOWNLOAD=yes" "JBang 本�
 if [ ! -e "$NET_WORK/jbang-missing" ]; then ok "JBang 本体が無い: 置き場所は作られていない"; else ng "JBang 本体が無い: 置き場所に何かできた"; fi
 # b) JCHE_ALLOW_DOWNLOAD=no → 端末の有無によらず取得しない
 write_net_settings "$NET_WORK/jbang-missing" "" "no"
-"$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-no.log" 2>&1
+"$JCHE" "$ROOT/test/regression/entry/jche.properties" > "$LOGDIR/run-net-no.log" 2>&1
 expect_refused "$LOGDIR/run-net-no.log" $? "JCHE_ALLOW_DOWNLOAD=no"
 expect_log "$LOGDIR/run-net-no.log" "JCHE_ALLOW_DOWNLOAD=no, so nothing is downloaded" "JCHE_ALLOW_DOWNLOAD=no: 理由を知らせた"
 # c) JCHE_JBANG_OPTS の --offline → 利用者が「ネットワークに出ない」と決めているので取得しない
 write_net_settings "$NET_WORK/jbang-missing" "--offline" ""
-"$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-offline.log" 2>&1
+"$JCHE" "$ROOT/test/regression/entry/jche.properties" > "$LOGDIR/run-net-offline.log" 2>&1
 expect_refused "$LOGDIR/run-net-offline.log" $? "--offline 指定"
 expect_log "$LOGDIR/run-net-offline.log" "JCHE_JBANG_OPTS contains --offline, so nothing is downloaded" "--offline 指定: 理由を知らせた"
 # d) JBang 本体はあるが依存 jar が無い（JBang をコピーした新しい置き場所と、空のリポジトリ）
@@ -142,7 +142,7 @@ if [ -f "$jbang_home/bin/jbang.jar" ]; then
     cp "$jbang_home"/bin/* "$NET_WORK/jbang-nodeps/bin/"
     write_net_settings "$NET_WORK/jbang-nodeps" "" ""
     rm -f "$ROOT/.cache/launcher.started"
-    "$JCHE" "$ROOT/test/regression/entry/config.properties" > "$LOGDIR/run-net-deps.log" 2>&1
+    "$JCHE" "$ROOT/test/regression/entry/jche.properties" > "$LOGDIR/run-net-deps.log" 2>&1
     expect_refused "$LOGDIR/run-net-deps.log" $? "依存 jar が無い"
     expect_log "$LOGDIR/run-net-deps.log" "Could not start with only the JDK and dependency jars already present" "依存 jar が無い: --offline での起動に失敗したと知らせた"
     # JBang 本体はあるので、その分（15MB）は合計に入らない（JDK 135 + 依存 jar 15 = 150MB）
@@ -177,7 +177,7 @@ if [ -f "$CONFIG" ]; then ok "config/cli-test.properties ができた"; else ng 
 if grep -q '^project.root=../test/demo$' "$CONFIG" 2>/dev/null; then ok "project.root が config/ からの相対で書かれた"; else ng "project.root の値: $(grep '^project.root=' "$CONFIG" 2>/dev/null)"; fi
 if grep -q '^source.folders=src$' "$CONFIG" 2>/dev/null; then ok "source.folders が候補（src）で埋まった"; else ng "source.folders の値: $(grep '^source.folders=' "$CONFIG" 2>/dev/null)"; fi
 if grep -q '^library.folders=$' "$CONFIG" 2>/dev/null; then ok "library.folders が空欄"; else ng "library.folders の値: $(grep '^library.folders=' "$CONFIG" 2>/dev/null)"; fi
-# ひな形（config/config.properties）のコメントが残っていること。max.depth のような尋ねない項目も既定値のまま写る
+# ひな形（config/jche.properties）のコメントが残っていること。max.depth のような尋ねない項目も既定値のまま写る
 if [ "$(grep -c '^#' "$CONFIG" 2>/dev/null)" -gt 40 ] && grep -q '^max.depth=50$' "$CONFIG" 2>/dev/null; then
     ok "ひな形のコメントと他の項目が写っている"
 else
@@ -189,7 +189,7 @@ printf '1\np\n%s\ny\n\nq\n' "$CONFIG" | "$JCHE" > "$LOGDIR/run-analyze.log" 2>&1
 expect_log "$LOGDIR/run-analyze.log" "call-hierarchy.csv" "解析が完了した"
 if ls "$ROOT"/config/*_demo/call-hierarchy.csv > /dev/null 2>&1; then ok "出力が config/<日時>_demo/ にできた（output.folder の既定）"; else ng "出力が無い"; fi
 if grep -q 'config/cli-test.properties' "$ROOT/.cache/recent-configs.txt" 2>/dev/null; then ok "前回の設定として記録された"; else ng "recent-configs.txt に記録が無い"; fi
-# 記録された設定は一覧で既定になる（空 Enter で選ばれる）。一覧は config/config.properties、config/cli-test.properties の順
+# 記録された設定は一覧で既定になる（空 Enter で選ばれる）。一覧は config/jche.properties、config/cli-test.properties の順
 # なので v 2 で内容を出してから、空 Enter → 実行しない。出力フォルダの中の設定ファイルの複製は一覧に出ない
 printf '1\nv 2\n\nn\nq\n' | "$JCHE" > "$LOGDIR/run-recent.log" 2>&1
 expect_log "$LOGDIR/run-recent.log" "project.root=../test/demo" "v 番号 で設定の内容が出る"

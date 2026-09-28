@@ -56,7 +56,7 @@ run_check() {   # $1=クラス名  $2..=引数
     fi
 }
 
-run_check ResolveOrderCheck config.properties
+run_check ResolveOrderCheck jche.properties
 run_check jche.graph.StoreUnitCheck
 run_check ValueStoreCheck
 

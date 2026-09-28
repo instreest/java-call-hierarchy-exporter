@@ -13,10 +13,10 @@
 //
 // ビルドと実行:
 //   javac -encoding UTF-8 -cp "lib/*" -d bin single-file/CallHierarchyExporterSingle.java
-//   java  -cp "bin:lib/*" CallHierarchyExporterSingle config/config.properties   (Windows は ; 区切り)
+//   java  -cp "bin:lib/*" CallHierarchyExporterSingle config/jche.properties   (Windows は ; 区切り)
 //
 // JBang なら jar を自分で集めずに直接:
-//   jbang single-file/CallHierarchyExporterSingle.java config/config.properties
+//   jbang single-file/CallHierarchyExporterSingle.java config/jche.properties
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
@@ -123,7 +123,7 @@ public final class CallHierarchyExporterSingle {
     // =======================================================================
 
     public static void main(String[] args) throws Exception {
-        Path configPath = Paths.get(args.length > 0 ? args[0] : "config/config.properties");
+        Path configPath = Paths.get(args.length > 0 ? args[0] : "config/jche.properties");
         if (!Files.isRegularFile(configPath)) {
             System.err.println("設定ファイルが見つかりません: " + configPath.toAbsolutePath());
             System.err.println("使い方: java CallHierarchyExporterSingle <設定ファイル>");
@@ -162,11 +162,9 @@ public final class CallHierarchyExporterSingle {
             Path dir = this.configPath.getParent();
             this.configDir = (dir != null) ? dir : Paths.get("").toAbsolutePath();
 
-            Properties p = new Properties();
-            // 設定ファイルは UTF-8（日本語のコメントとパスを書けるようにするため）
-            try (var in = Files.newBufferedReader(this.configPath, StandardCharsets.UTF_8)) {
-                p.load(in);
-            }
+            // 設定ファイルは UTF-8（日本語のコメントとパスを書けるようにするため）。
+            // 本体（jche.config.ConfigFile）と同じ読み方で、Properties#load は使わない
+            Properties p = readConfig(Files.readAllLines(this.configPath, StandardCharsets.UTF_8));
 
             String root = value(p, "project.root", "");
             if (root.isEmpty()) {
@@ -218,6 +216,61 @@ public final class CallHierarchyExporterSingle {
             for (String s : list(value(p, "entry.points", ""))) {
                 entryPatterns.add(new Pattern(s));
             }
+        }
+
+        /**
+         * 設定ファイルを読む（本体の jche.config.ConfigFile と同じ決まり）。1 行に「項目=値」（区切りは = だけ）、
+         * 先頭が # か ! の行は注釈。バックスラッシュはそのまま（Windows のパスをそのまま書ける）。空白で始まる行のうち
+         * 「項目=」の形でないものは直前の項目の値の続き。行末の \ も続きの印（次の内容行が「項目=」の形なら続けず捨てる）。続きの途中の注釈は読み飛ばす。
+         * = の無い行・項目名のおかしい行は行番号つきのエラーにして、黙って読み飛ばさない
+         */
+        static Properties readConfig(List<String> lines) throws IOException {
+            java.util.regex.Pattern keyLine = java.util.regex.Pattern.compile("^\\s*[A-Za-z][A-Za-z0-9._-]*\\s*=.*$");
+            Properties out = new Properties();
+            String key = null;
+            StringBuilder value = null;
+            boolean pending = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (i == 0 && line.startsWith("\uFEFF")) {
+                    line = line.substring(1);
+                }
+                String t = line.trim();
+                if (t.startsWith("#") || t.startsWith("!")) {
+                    continue;
+                }
+                if (t.isEmpty()) {
+                    if (!pending && key != null) {
+                        out.setProperty(key, value.toString());
+                        key = null;
+                    }
+                    continue;
+                }
+                boolean indented = Character.isWhitespace(line.charAt(0));
+                if (key != null && !keyLine.matcher(line).matches() && (pending || indented)) {
+                    pending = t.endsWith("\\");
+                    value.append(pending ? t.substring(0, t.length() - 1).trim() : t);
+                    continue;
+                }
+                if (key != null) {
+                    out.setProperty(key, value.toString());
+                }
+                int eq = t.indexOf('=');
+                if (eq < 0) {
+                    throw new IOException("設定ファイルの " + (i + 1) + " 行目を読めません（項目=値 の形で書く。値を続けるときは行末に \\ を書くか、項目のすぐ下に字下げする）: " + t);
+                }
+                key = t.substring(0, eq).trim();
+                if (!key.matches("[A-Za-z][A-Za-z0-9._-]*")) {
+                    throw new IOException("設定ファイルの " + (i + 1) + " 行目の項目名を読めません: " + t);
+                }
+                String v = t.substring(eq + 1).trim();
+                pending = v.endsWith("\\");
+                value = new StringBuilder(pending ? v.substring(0, v.length() - 1).trim() : v);
+            }
+            if (key != null) {
+                out.setProperty(key, value.toString());
+            }
+            return out;
         }
 
         private static String value(Properties p, String key, String fallback) {

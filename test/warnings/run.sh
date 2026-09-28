@@ -52,7 +52,7 @@ fi
 make_project() {   # $1=フォルダ名  $2=設定ファイルに足す行（改行区切り）
     mkdir -p "work/$1"
     cp -R "$ROOT/test/maven-demo/src" "$ROOT/test/maven-demo/pom.xml" "work/$1/"
-    cat > "work/$1/config.properties" <<EOF
+    cat > "work/$1/jche.properties" <<EOF
 project.root=.
 source.folders=src/main/java
 library.repositories=$ROOT/test/localrepo
@@ -65,7 +65,7 @@ EOF
 
 analyze() {   # $1=フォルダ名 -> 出力フォルダを OUT に、終了コードを STATUS に入れる
     ( cd "work/$1" && "$JAVA_BIN" -cp "$CLASSES:$CP" \
-        jche.CallHierarchyExporter config.properties ) > "work/$1.console.log" 2>&1
+        jche.CallHierarchyExporter jche.properties ) > "work/$1.console.log" 2>&1
     STATUS=$?
     OUT=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
     check_no_temp_files "$1"
@@ -371,7 +371,7 @@ make_cls_folder() {   # $1=フォルダ名  $2=library.jars
         && ( cd "$d/cls" && "$(dirname "$JAVAC_BIN")/jar" cf ../jars/l.jar l ) && cp "$d/jars/l.jar" "$d/cls/copied.jar"
     printf 'package app;\npublic class U {\n    public void go() {\n        new l.A().m("x");\n    }\n}\n' \
         > "$d/src/app/U.java"
-    cat > "$d/config.properties" <<EOF
+    cat > "$d/jche.properties" <<EOF
 project.root=.
 source.folders=src
 library.jars=$2
@@ -432,10 +432,10 @@ expect_in_warnings deps_ja "依存 jar が解決できていません"
 #     （拡張の警告に関わらず warnings.txt ができるよう、どちらの設定にも無い jar を指定しておく）
 # 言語の引き継ぎを見るので JCHE_LANG を外し、OS の言語は user.language で英語に固定する
 make_project multi "library.jars=no-such.jar"
-sed -i '/^output.folder=/d' work/multi/config.properties
-{ cat work/multi/config.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
+sed -i '/^output.folder=/d' work/multi/jche.properties
+{ cat work/multi/jche.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
   echo "message.language=ja"; } > work/multi/c1.properties
-{ cat work/multi/config.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
+{ cat work/multi/jche.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
     > work/multi/c2.properties
 ( cd work/multi && env -u JCHE_LANG "$JAVA_BIN" -Duser.language=en -cp "$CLASSES:$CP" \
     jche.CallHierarchyExporter c1.properties c2.properties ) > work/multi.console.log 2>&1
@@ -485,7 +485,7 @@ make_dag() {   # $1=フォルダ名  $2=ctor（コンストラクタの連鎖）
     else
         echo 'package p; public class Main { public static void main(String[] a) { q.M0.m(); } }'
     fi > "$dir/src/p/Main.java"
-    cat > "$dir/config.properties" <<EOF
+    cat > "$dir/jche.properties" <<EOF
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -533,7 +533,7 @@ make_busy() {   # $1=フォルダ名  $2=jdk / excluded / ctor
     } > "$dir/src/q/U.java"
     echo 'package p; public class D0 { }' > "$dir/src/p/D0.java"
     for i in 1 2 3 4; do echo "package p; public class D$i extends D$((i - 1)) { }" > "$dir/src/p/D$i.java"; done
-    cat > "$dir/config.properties" <<EOF
+    cat > "$dir/jche.properties" <<EOF
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -602,7 +602,7 @@ public class B implements Iterable<Object>, AutoCloseable {
     }
 }
 EOF
-cat > work/early/config.properties <<'EOF'
+cat > work/early/jche.properties <<'EOF'
 project.root=.
 source.folders=src
 library.folders=lib
@@ -627,7 +627,7 @@ jdt_fail_project() {   # $1=フォルダ名  $2=source.level
     printf 'package p;\npublic class B { void b() { new C().c(); } }\n' > "work/$1/src/p/B.java"
     printf 'package p;\npublic class C { void c() { } }\n' > "work/$1/src/p/C.java"
     printf 'project.root=.\nsource.folders=src\nlibrary.folders=\nlibrary.build.tool=none\nsource.encoding=UTF-8\nsource.level=%s\noutput.folder=./out\ncache.folder=./.cache\n' \
-        "$2" > "work/$1/config.properties"
+        "$2" > "work/$1/jche.properties"
 }
 check_jdt_fail() {   # $1=フォルダ名  $2=失敗するファイル  $3=理由に含む文字列  $4=ラベル
     [ "$STATUS" = 0 ] && ok "$1 ($4): 1 ファイルで JDT が失敗しても、実行は成功する" \

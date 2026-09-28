@@ -38,10 +38,10 @@ final class CheckProjects {
      * （{@code | ; { }}）をわざと含むプロジェクト（test/regression/values）
      */
     static final List<Project> ALL = List.of(
-            new Project("demo", "test/dataflow/config.properties"),
-            new Project("jls", "test/jls/project/config.properties"),
+            new Project("demo", "test/dataflow/jche.properties"),
+            new Project("jls", "test/jls/project/jche.properties"),
             new Project("plugin", "test/regression/plugin/config-contracts.properties"),
-            new Project("values", "test/regression/values/config.properties"));
+            new Project("values", "test/regression/values/jche.properties"));
 
     private CheckProjects() {
     }

@@ -44,11 +44,11 @@ echo == plugin ==
 call :reset plugin
 call :run plugin config-before.properties 1 "1回目: 拡張なし"
 call :compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
-call :run plugin config.properties 2 "2回目: 同梱の拡張"
+call :run plugin jche.properties 2 "2回目: 同梱の拡張"
 call :expectlog plugin 2 "TypeMappingProvider" "2回目: 拡張を読み込んだ"
 call :expectlog plugin 2 "^[^=]*=[1-9]" "2回目: 拡張を足してもキャッシュは捨てない"
 call :compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
-call :run plugin config.properties 3 "3回目: 同じ拡張"
+call :run plugin jche.properties 3 "3回目: 同じ拡張"
 call :expectlog plugin 3 "^[^=]*=[1-9]" "3回目: 拡張が同じならキャッシュを再利用"
 call :compare plugin expected "3回目: 同じ拡張"
 call :run plugin config-custom.properties 4 "4回目: 自前の拡張"
@@ -65,21 +65,21 @@ del /q "output-dirs.txt" 2>nul
 rem 出力フォルダの場所を機械的に受け取る経路（環境変数 JCHE_OUTPUT_DIR_FILE。GitHub Actions の
 rem action.yml がこれで結果の場所を知る）も、ここで一緒に検査する
 set "JCHE_OUTPUT_DIR_FILE=%CD%\output-dirs.txt"
-%JCHE% "whole\config.properties" "no-such-config.properties" "entry\config.properties" > "run-multi.log" 2>&1
+%JCHE% "whole\jche.properties" "no-such-config.properties" "entry\jche.properties" > "run-multi.log" 2>&1
 set "JCHE_OUTPUT_DIR_FILE="
 rem 終了コードは、現在の jbangw\jbang.cmd（本家そのまま）が jbang 本体の終了コードを呼び出し元へ返さないため
 rem 検査できない（.github\workflows\smoke.yml の「known to fail」の項と jbangw\README.md）。ここでは結果を表示するだけで
 rem 失敗扱いにはしない。ツール自身が 1 を返すことは run.sh 側（Linux）で検査している
 if errorlevel 1 (echo   OK   multi 終了コード=1（存在しない設定ファイルが失敗）) else (echo   WARN multi 終了コードが 1 ではありません（jbang.cmd の終了コード伝播の既知の問題。失敗扱いにしない）)
-call :expectlog_any multi "run-multi.log" "\] *OK .*whole.config.properties" "multi: whole が処理された"
+call :expectlog_any multi "run-multi.log" "\] *OK .*whole.jche.properties" "multi: whole が処理された"
 call :expectlog_any multi "run-multi.log" "\] *FAIL .*no-such-config.properties" "multi: 存在しない設定が失敗と報告された"
-call :expectlog_any multi "run-multi.log" "\] *OK .*entry.config.properties" "multi: entry が処理された"
+call :expectlog_any multi "run-multi.log" "\] *OK .*entry.jche.properties" "multi: entry が処理された"
 powershell -NoProfile -Command "$d=@(Get-Content 'output-dirs.txt' -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -ne '' }); if ($d.Count -eq 2 -and (Test-Path (Join-Path $d[0] 'call-hierarchy.csv'))) { Write-Host '  OK   multi JCHE_OUTPUT_DIR_FILE' } else { Write-Host ('  DIFF multi JCHE_OUTPUT_DIR_FILE の内容が期待どおりではありません: ' + $d.Count + ' 行'); exit 1 }"
 if errorlevel 1 set "FAIL=1"
 call :compare whole expected "multi: whole"
-call :expectrunfiles whole config.properties "multi: whole"
+call :expectrunfiles whole jche.properties "multi: whole"
 call :compare entry expected "multi: entry"
-call :expectrunfiles entry config.properties "multi: entry"
+call :expectrunfiles entry jche.properties "multi: entry"
 
 if "%FAIL%"=="0" (echo PASS & exit /b 0) else (echo FAIL & exit /b 1)
 
@@ -87,16 +87,16 @@ if "%FAIL%"=="0" (echo PASS & exit /b 0) else (echo FAIL & exit /b 1)
 rem %1=case。同じ設定で 2 回実行する（1 回目はキャッシュ無し、2 回目はキャッシュを再利用する経路）
 echo == %~1 ==
 call :reset "%~1"
-call :run "%~1" config.properties 1 "1回目"
+call :run "%~1" jche.properties 1 "1回目"
 call :compare "%~1" expected "1回目: キャッシュ無し"
-call :expectrunfiles "%~1" config.properties "1回目"
-call :run "%~1" config.properties 2 "2回目"
+call :expectrunfiles "%~1" jche.properties "1回目"
+call :run "%~1" jche.properties 2 "2回目"
 call :expectlog "%~1" 2 "^[^=]*=[1-9]" "2回目: キャッシュを再利用"
 call :compare "%~1" expected "2回目: キャッシュ再利用"
 rem 3回目: 解析対象のソースと jar の更新時刻だけを変えて（中身は同じ）実行する。GitHub Actions の
 rem actions/checkout 後と同じ状況。サイズと内容ハッシュが同じならキャッシュは再利用され、jar も変更とみなさない
 call :touchall
-call :run "%~1" config.properties 3 "3回目: 更新時刻だけ変更"
+call :run "%~1" jche.properties 3 "3回目: 更新時刻だけ変更"
 call :expectlog "%~1" 3 "^[^=]*=[1-9]" "3回目: 更新時刻だけ変わったソースはキャッシュを再利用"
 call :expectlog "%~1" 3 "^[^=]*=[0-9]+[^=]*=0([^0-9]|$)" "3回目: 更新時刻だけ変わった jar も変更とみなさず、新規解析は 0"
 call :compare "%~1" expected "3回目: 更新時刻だけ変更"

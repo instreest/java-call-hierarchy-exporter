@@ -2,16 +2,37 @@
 
 「`config.properties` というファイル名を変えたほうが良いか」の検討と、その結論を残す。
 関連: [config-folder-qa.md](config-folder-qa.md)（`config/` に置く判断）、
+[config-file-format-qa.md](config-file-format-qa.md)（同時に行った、読み方の変更）、
 [eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) Q14（プラグインが設定ファイルを必須にしない仕組み）。
 
-## 結論
+## 結論（2 回目の検討で改名した）
+
+- 同梱する既定の設定ファイルは **`config/jche.properties`** に改名した（ひな形・引数省略時の既定・一覧の先頭）
+- 読む側では以前の名前 `config/config.properties` も既定として受け付ける（`jche.properties` が無ければそちら。
+  `ConfigCatalog.DEFAULT_CONFIG_NAMES`）。既存の利用者の設定はそのまま動く
+- `test/` の題材の設定ファイルもすべて `jche.properties` にそろえた
+- Eclipse / VSCode プラグインが利用者のプロジェクトに書き出す名前は、以前から `jche.properties`
+- プラグインが設定ファイルを自動で拾うときは、このツールの項目を持つファイルだけを使う（変わらず）
+
+### Q0. 1 回目（下の Q1）で「改名しない」としたのに、なぜ改名したか
+
+1 回目の判断は「改名のコストが見合わない」だった。今回、設定ファイルの読み方そのものを変える（バックスラッシュを
+そのまま読む。[config-file-format-qa.md](config-file-format-qa.md)）機会に、利用者からも「`config.properties` は
+一般的すぎてこのツール用か分からない」と改めて要望があった。読み方が properties と違うものになった以上、
+「Java の properties ファイル」を思わせる一般的な名前より、このツールの設定だと分かる名前のほうが実態に合う。
+
+コストは、1 回目に見積もったとおり参照箇所の書き換えが主で、`config.properties` を読む経路を残せば壊れるものは無い。
+`test/regression/*/config.properties` は回帰テストの実行パスそのものだが、スクリプトと一緒に改名すれば済んだ。
+過去の QA ドキュメントの `config/config.properties` という記述は書き換えない（Q5 と同じ判断）。
+
+## 1 回目の検討（改名しないとした当時の記録）
 
 - 本体に同梱する既定の設定ファイルは `config/config.properties` のまま。改名しない
 - 読む側では `jche.properties` も既定の名前として受け付ける（`config/config.properties` が無ければ `config/jche.properties`）
 - Eclipse プラグインが**利用者のプロジェクトに書き出す**ファイルだけ `config/jche.properties` に変えた
 - プラグインが設定ファイルを自動で拾うときは、このツールの項目を持つファイルだけを使う
 
-### Q1. なぜ本体の `config.properties` は改名しないのか
+### Q1. なぜ本体の `config.properties` は改名しないのか（当時。Q0 で覆した）
 
 `config/` フォルダの下に置く前提（`CallHierarchyExporter.DEFAULT_CONFIG`、`ConfigCatalog.CONFIGS_DIR_NAME`）なので、
 フォルダ名で用途が分かる。`ConfigCatalog.scan` は `config/` 配下の `*.properties` をすべて拾う設計で、

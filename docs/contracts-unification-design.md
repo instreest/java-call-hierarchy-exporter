@@ -39,7 +39,7 @@
 いまは 3 ファイル・5 か所を揃える必要がある。
 
 ```properties
-# config.properties
+# jche.properties
 resolver.hint.collectors=jche.builtin.FactoryKeyCollector        # ①内部クラスの FQN（フェーズA）
 plugin.factory.methods=jp.co.app.ServiceFactory#get              # ②①への引数
 resolver.candidate.providers=jche.builtin.TypeMappingProvider    # ③内部クラスの FQN（フェーズB）

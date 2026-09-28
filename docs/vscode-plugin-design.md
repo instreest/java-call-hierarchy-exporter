@@ -51,7 +51,7 @@ vscode-plugin/
 │   │   ├── launcher.ts   … 子プロセスの起動・アイドル終了・異常終了からの作り直し
 │   │   ├── javaLocator.ts… 解析に使う JDK を探す
 │   │   └── jdkDownload.ts… 無ければ Adoptium から取得（確認のうえ）
-│   ├── config.ts         … config.properties の探索と自動生成（§3）
+│   ├── config.ts         … jche.properties の探索と自動生成（§3）
 │   ├── tree.ts           … TreeDataProvider（行の組み直し）
 │   └── view.ts           … ビュー本体・フィルタ・状態表示
 └── lib/                  … ビルド時に集める。jche-core.jar と jdt/*.jar（§9）
@@ -158,9 +158,9 @@ Eclipse 版は `EclipseProjectConfig` が `IJavaProject#getResolvedClasspath` �
 
 | 案 | 中身 | 判定 |
 |---|---|---|
-| **A（採用）** | `config.properties` を探し、無ければ **`project.root` だけ書いた最小の設定を生成**して、残りは本体の `ProjectDetector` に決めさせる | vscode-java に依存しない。閉域でも動く。`pom.xml` / `build.gradle` を読む仕組み（[build-tool-classpath.md](build-tool-classpath.md)）が既にあるので、Maven / Gradle プロジェクトはこれで足りる |
+| **A（採用）** | `jche.properties` を探し、無ければ **`project.root` だけ書いた最小の設定を生成**して、残りは本体の `ProjectDetector` に決めさせる | vscode-java に依存しない。閉域でも動く。`pom.xml` / `build.gradle` を読む仕組み（[build-tool-classpath.md](build-tool-classpath.md)）が既にあるので、Maven / Gradle プロジェクトはこれで足りる |
 | B | vscode-java の内部コマンド（`java.project.getClasspaths` 等）でクラスパスを取る | 精度は上がるが、vscode-java 必須になり、公開 API でないコマンドに寄りかかることになる。版が上がると黙って壊れる |
-| C | 利用者に必ず `config.properties` を書かせる | 最初の1回の敷居が高い。Eclipse 版が自動生成を持っているのに VSCode 版だけ手書きを求めるのは筋が通らない |
+| C | 利用者に必ず `jche.properties` を書かせる | 最初の1回の敷居が高い。Eclipse 版が自動生成を持っているのに VSCode 版だけ手書きを求めるのは筋が通らない |
 
 **A を既定にし、B は「あれば使う」任意の上乗せ**にする（vscode-java が有効で、かつ設定
 `jche.useJavaExtensionClasspath` が true のときだけ問い合わせ、失敗したら黙って A に戻る）。
@@ -168,10 +168,10 @@ Eclipse 版は `EclipseProjectConfig` が `IJavaProject#getResolvedClasspath` �
 設定ファイルの探索順は Eclipse 版の `ConfigSource` に合わせる。
 
 1. 設定 `jche.configFile` で明示されたファイル
-2. ワークスペースフォルダ直下の `config.properties`（複数あれば QuickPick で選ばせ、選択をフォルダごとに覚える）
+2. ワークスペースフォルダ直下の `jche.properties`（複数あれば QuickPick で選ばせ、選択をフォルダごとに覚える）
 3. どれも無ければ自動生成（`project.root=.` だけ。書き出し先は拡張のストレージ）
 
-自動生成した内容は「設定を `config.properties` に保存」コマンドでワークスペースへ書き出せる。
+自動生成した内容は「設定を `jche.properties` に保存」コマンドでワークスペースへ書き出せる。
 `entry.packages` を絞る、外部 jar の被参照を見る、といった細かい調整はそこから手で直す、という流れも Eclipse 版と同じ。
 
 ---
@@ -287,7 +287,7 @@ onDidSaveTextDocument                （足すだけ）          debounce
 
 - Eclipse の `POST_BUILD` に当たるものが VSCode には無いので、**保存とファイル変更**を起点にする。
   タイピング中は走らせない（`onDidChangeTextDocument` は見ない）
-- 監視対象は設定ファイルの `source.folders` 配下だけ。`config.properties` 自身が変わったら差分ではなく**全部作り直す**
+- 監視対象は設定ファイルの `source.folders` 配下だけ。`jche.properties` 自身が変わったら差分ではなく**全部作り直す**
 - 自動再解析は既定 **OFF**（`jche.autoAnalyze`。決定。§11）。Eclipse 版は ON だが、VSCode は軽い編集に使われることが多く、
   裏で数十秒の解析が始まるのは驚きが大きい。まず ⚠ で知らせて、⟳ を押してもらう
 - 中止は `CANCEL` → 応答しなければ `kill()`。Eclipse 版と同じ

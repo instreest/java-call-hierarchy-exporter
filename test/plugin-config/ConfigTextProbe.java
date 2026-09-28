@@ -1,17 +1,19 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
-import java.io.StringReader;
 import java.util.Properties;
+
+import jche.config.ConfigFile;
 
 /**
  * 自動生成した設定（{@link EclipseProjectConfig#toFileText}）が、解析側と同じ読み方
- * （{@link Properties#load}）でそのまま読み戻せることを確かめる。
+ * （{@link ConfigFile}。バックスラッシュをそのまま読む）でそのまま読み戻せることを確かめる。
  *
- * <p>Eclipse のプロジェクト構成から作る値には Windows のパスがそのまま入る。properties では
- * バックスラッシュがエスケープなので、逃がさずに書くと「バックスラッシュ + u」が Unicode
- * エスケープと解釈されて解析ごと失敗し（Malformed uxxxx encoding）、そうならない場合も
- * パスが静かに壊れる。書く側と読む側で往復することが、この検査の見ている点である。
+ * <p>Eclipse のプロジェクト構成から作る値には Windows のパスがそのまま入る。以前の読み手
+ * （{@code Properties#load}）ではバックスラッシュがエスケープで、逃がさずに書くと「バックスラッシュ + u」が
+ * Unicode エスケープと解釈されて解析ごと失敗し（Malformed uxxxx encoding）、そうならない場合も
+ * パスが静かに壊れた。今の読み手は逃がさない前提なので、逆に {@code \\} と重ねて書くと壊れる。
+ * 書く側と読む側で往復することが、この検査の見ている点である。
  *
  * <p>見ているのは {@code library.jars} だけではない。自動生成した設定は
  * <b>project.root も絶対パス</b>で書く（プラグインの作業フォルダに置くので、相対だと
@@ -31,7 +33,8 @@ public final class ConfigTextProbe {
         check("Windows のパス（t で始まるフォルダ）", "C:\\temp\\lib\\a.jar");
         check("カンマ区切りで複数", "C:\\a\\unbescape.jar,C:\\b\\util.jar");
         check("空白を含むパス", "C:\\Program Files\\java\\lib\\rt.jar");
-        check("先頭が空白", " C:\\a.jar");
+        // 読み手は値の前後の空白を除く（Config も trim して使う）ので、先頭の空白は消えてよい
+        check("先頭が空白", " C:\\a.jar", "C:\\a.jar");
         check("日本語を含むパス", "C:\\ユーザー\\taro\\src");
         check("POSIX のパス", "/home/taro/.m2/repository/org/unbescape/unbescape.jar");
         checkOptionalKeys();
@@ -84,9 +87,9 @@ public final class ConfigTextProbe {
 
     /** 書き出して読み戻す。読めなければ NG を出して null */
     private static Properties reload(String label, Properties p) {
-        Properties read = new Properties();
+        Properties read;
         try {
-            read.load(new StringReader(EclipseProjectConfig.toFileText(p)));
+            read = ConfigFile.parse(EclipseProjectConfig.toFileText(p));
         } catch (Exception e) {
             System.out.println("NG   " + label + ": 読み戻せない: " + e);
             failures++;
@@ -95,8 +98,12 @@ public final class ConfigTextProbe {
         return read;
     }
 
-    /** project.root と library.jars に value を入れて書き出し、読み戻して一致するか */
     private static void check(String label, String value) {
+        check(label, value, value);
+    }
+
+    /** project.root と library.jars に value を入れて書き出し、読み戻して expected になるか */
+    private static void check(String label, String value, String expected) {
         Properties p = new Properties();
         // 自動生成の設定では project.root も絶対パス。Windows ではここにも区切りが入る
         p.setProperty("project.root", "C:\\workspace\\unbescape-sample");
@@ -106,18 +113,17 @@ public final class ConfigTextProbe {
         p.setProperty("source.level", "17");
 
         String text = EclipseProjectConfig.toFileText(p);
-        Properties read = new Properties();
+        Properties read;
         try {
-            read.load(new StringReader(text));
+            read = ConfigFile.parse(text);
         } catch (Exception e) {
             System.out.println("NG   " + label + ": 読み戻せない: " + e);
             failures++;
             return;
         }
         String actual = read.getProperty("library.jars");
-        // load は値の前後の空白を落とすので、先頭の空白は逃がしたうえで残ること
-        if (!value.equals(actual)) {
-            System.out.println("NG   " + label + ": 期待 [" + value + "] / 実際 [" + actual + "]");
+        if (!expected.equals(actual)) {
+            System.out.println("NG   " + label + ": 期待 [" + expected + "] / 実際 [" + actual + "]");
             failures++;
             return;
         }

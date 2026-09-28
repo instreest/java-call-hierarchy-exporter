@@ -19,7 +19,7 @@
 #                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
 #   plugin               … 拡張（インスタンス解析条件のプラグイン）と契約表（種類 C）。拡張なし
-#                          （config-before）→ 同梱の拡張（config.properties。ファクトリのキーと対応表）→
+#                          （config-before）→ 同梱の拡張（jche.properties。ファクトリのキーと対応表）→
 #                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
 #                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
 #                          ファクトリ＋キーの契約表（config-contracts-factory。拡張と同じ結果になる）→
@@ -39,11 +39,11 @@
 #                          型解決できなかった呼び出しの件数（ログの警告）が、再利用・一部の解析し直しでも
 #                          変わらないこと
 #   values               … 値そのもの（文字列リテラル・定数）が出所の文字列の文法の文字（| ; { }）を含む題材
-#                          （values/project）。config.properties（expected/。契約表のひな形 contracts-suggested.txt
+#                          （values/project）。jche.properties（expected/。契約表のひな形 contracts-suggested.txt
 #                          も比べる）→ 同じ設定でキャッシュを再利用 → config-nodataflow.properties
 #                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。以前の読み手は値を
 #                          その文字の手前で切って読み違えていた。expected/ は値を切り詰めずに読んだ正しい結果
-#                          （values/config.properties の冒頭の説明）
+#                          （values/jche.properties の冒頭の説明）
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
@@ -253,16 +253,16 @@ multi_case() {
     # action.yml がこれで結果の場所を知る）も、ここで一緒に検査する。成功した設定の数だけ、
     # その出力フォルダの絶対パスが 1 行ずつ入る（失敗した設定の行は入らない）
     JCHE_OUTPUT_DIR_FILE="$PWD/output-dirs.txt" \
-        $JCHE_CMD whole/config.properties no-such-config.properties entry/config.properties > run-multi.log 2>&1
+        $JCHE_CMD whole/jche.properties no-such-config.properties entry/jche.properties > run-multi.log 2>&1
     local code=$?
     if [ $code = 1 ]; then
         echo "  OK   multi 終了コード=1（存在しない設定ファイルが失敗）"
     else
         echo "  DIFF multi 終了コードが 1 ではありません: $code"; tail -5 run-multi.log; fail=1
     fi
-    if LC_ALL=C grep -a -q -E '^.*\] *OK .*whole/config.properties' run-multi.log \
+    if LC_ALL=C grep -a -q -E '^.*\] *OK .*whole/jche.properties' run-multi.log \
         && LC_ALL=C grep -a -q -E '^.*\] *FAIL .*no-such-config.properties' run-multi.log \
-        && LC_ALL=C grep -a -q -E '^.*\] *OK .*entry/config.properties' run-multi.log; then
+        && LC_ALL=C grep -a -q -E '^.*\] *OK .*entry/jche.properties' run-multi.log; then
         echo "  OK   multi 実行結果の一覧（OK / FAIL / OK）"
     else
         echo "  DIFF multi 実行結果の一覧が期待どおりではありません"; LC_ALL=C grep -a -E '\] *(OK|FAIL) ' run-multi.log; fail=1
@@ -277,9 +277,9 @@ multi_case() {
         fail=1
     fi
     compare whole expected "multi: whole"
-    expect_run_files whole config.properties "multi: whole"
+    expect_run_files whole jche.properties "multi: whole"
     compare entry expected "multi: entry"
-    expect_run_files entry config.properties "multi: entry"
+    expect_run_files entry jche.properties "multi: entry"
 }
 
 # キャッシュ（1 ファイル）のブロックの整合のケース。
@@ -349,7 +349,7 @@ PY
         fi
     }
 
-    run cacheblocks config.properties 1 "1回目: キャッシュ無し" || return
+    run cacheblocks jche.properties 1 "1回目: キャッシュ無し" || return
     compare cacheblocks expected "1回目: キャッシュ無し"
     expect_cache_intact "1回目"
     # 型解決できなかった呼び出しの件数（警告と warnings.txt に出る）。再利用・書き写したブロックの件数は
@@ -362,7 +362,7 @@ PY
         echo "  DIFF cacheblocks ログ: 型解決できなかった呼び出しの件数の行がありません (1回目)"; fail=1
     fi
 
-    run cacheblocks config.properties 2 "2回目: そのまま" || return
+    run cacheblocks jche.properties 2 "2回目: そのまま" || return
     expect_reused cacheblocks 2 "2回目: 再利用"
     expect_parsed cacheblocks 2 0 "2回目: 解析し直したファイルは無い"
     expect_unresolved_count cacheblocks 2 "$unresolved" "2回目: 再利用しても型解決できなかった呼び出しの件数は同じ"
@@ -388,7 +388,7 @@ else:
     sys.exit('Deep.java の C 行が見つかりません')
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-    run cacheblocks config.properties 3 "3回目: 1 ブロックの中身が壊れた" || return
+    run cacheblocks jche.properties 3 "3回目: 1 ブロックの中身が壊れた" || return
     expect_reused cacheblocks 3 "3回目: 壊れたブロック以外は再利用"
     # 壊れたブロックのファイル（Deep.java。ほかから参照されない）と、型解決に失敗している 2 ブロック（何かが変わった実行では
     # 名前を照合せず必ず解析し直す。docs/cache-unification-qa.md の Q131）と、同じパッケージの Holder.java（壊れたブロックの
@@ -399,7 +399,7 @@ PY
     compare cacheblocks expected "3回目: 1 ブロックの中身が壊れた"
     expect_cache_intact "3回目: 解析し直したブロックで置き換わる"
 
-    run cacheblocks config.properties 4 "4回目: 直ったあと" || return
+    run cacheblocks jche.properties 4 "4回目: 直ったあと" || return
     expect_parsed cacheblocks 4 0 "4回目: 全件再利用に戻る"
     compare cacheblocks expected "4回目: 直ったあと"
     expect_cache_intact "4回目"
@@ -415,7 +415,7 @@ for i in range(len(lines) - 1, -1, -1):
         break
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-    run cacheblocks config.properties 5 "5回目: 最終行のブロック数が合わない" || return
+    run cacheblocks jche.properties 5 "5回目: 最終行のブロック数が合わない" || return
     expect_not_reused cacheblocks 5 "5回目: ブロック数が合わなければ作り直す"
     compare cacheblocks expected "5回目: 最終行のブロック数が合わない"
     expect_cache_intact "5回目"
@@ -427,7 +427,7 @@ p = sys.argv[1]
 lines = [l for l in open(p, encoding='utf-8') if not l.startswith('Z\t')]
 open(p, 'w', encoding='utf-8').write(''.join(lines))
 PY
-    run cacheblocks config.properties 6 "6回目: 最終行が無い" || return
+    run cacheblocks jche.properties 6 "6回目: 最終行が無い" || return
     expect_not_reused cacheblocks 6 "6回目: 最終行が無ければ作り直す"
     compare cacheblocks expected "6回目: 最終行が無い"
     expect_cache_intact "6回目"
@@ -444,7 +444,7 @@ assert z > 8192, 'キャッシュが 8 KB より小さい'
 b[z:z] = b'\xff\xfe bad'
 open(p, 'wb').write(bytes(b))
 PY
-    run cacheblocks config.properties 7 "7回目: 途中の文字が壊れた" || return
+    run cacheblocks jche.properties 7 "7回目: 途中の文字が壊れた" || return
     expect_not_reused cacheblocks 7 "7回目: 読めなければ解析を失敗させず作り直す"
     compare cacheblocks expected "7回目: 途中の文字が壊れた"
     expect_cache_intact "7回目"
@@ -465,7 +465,7 @@ else:
     sys.exit('未解決数が 0 でない F 行が見つかりません')
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-    run cacheblocks config.properties 8 "8回目: F 行の件数が書き換えられた" || return
+    run cacheblocks jche.properties 8 "8回目: F 行の件数が書き換えられた" || return
     # 件数を書き換えたブロックは型解決に失敗しているブロックの 1 つ。もう 1 つの失敗しているブロックも解析し直す（Q131）
     expect_parsed cacheblocks 8 3 "8回目: 件数を書き換えたブロックのファイルと、その型を使う 1 ファイルと、型解決に失敗しているもう 1 ファイルだけを解析し直す"
     expect_log_contains cacheblocks 8 "failed the integrity check" "8回目: 検査値が合わないことをログに出す"
@@ -489,21 +489,21 @@ else:
     sys.exit('T 行が見つかりません')
 open(p, 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-    run cacheblocks config.properties 9 "9回目: 先頭の行が書き換えられた" || return
+    run cacheblocks jche.properties 9 "9回目: 先頭の行が書き換えられた" || return
     expect_not_reused cacheblocks 9 "9回目: 先頭の行の検査値が合わなければ作り直す"
     expect_log_contains cacheblocks 9 "first lines of the existing cache" "9回目: 先頭の行が合わないことをログに出す"
     compare cacheblocks expected "9回目: 先頭の行が書き換えられた"
     expect_cache_intact "9回目"
 }
 
-# 値が出所の文字列の文法の文字を含む題材のケース（values/config.properties の冒頭の説明）
+# 値が出所の文字列の文法の文字を含む題材のケース（values/jche.properties の冒頭の説明）
 values_case() {
     echo "== values =="
     rm -rf values/.cache values/output values/run-*.log
-    run values config.properties 1 "1回目: キャッシュ無し" || return
+    run values jche.properties 1 "1回目: キャッシュ無し" || return
     compare values expected "1回目: キャッシュ無し"
     compare_suggested values expected "1回目: 契約表のひな形"
-    run values config.properties 2 "2回目" || return
+    run values jche.properties 2 "2回目" || return
     expect_reused values 2 "2回目: キャッシュを再利用"
     compare values expected "2回目: キャッシュ再利用"
     compare_suggested values expected "2回目: 契約表のひな形"
@@ -553,7 +553,7 @@ plugin_case() {
     expect_suggested plugin "fixes every call of that method on the type to one implementation" \
         "1回目: 広い行だと分かる注記が付く"
 
-    run plugin config.properties 2 "2回目: 同梱の拡張" || return
+    run plugin jche.properties 2 "2回目: 同梱の拡張" || return
     expect_log_contains plugin 2 "TypeMappingProvider" "2回目: 拡張を読み込んだ"
     # 対応表が「効いたか」の知らせ。わざと引かれない行だけが挙がり、効いている行は挙がらない
     expect_log_contains plugin 2 "FACTORY_KEY@NO_SUCH_KEY" "2回目: 引かれなかった対応表の行を挙げる"
@@ -566,7 +566,7 @@ plugin_case() {
     expect_reused plugin 2 "2回目: 拡張を足してもキャッシュは捨てない"
     compare plugin expected "2回目: 同梱の拡張（具象クラス1件に絞れる）"
 
-    run plugin config.properties 3 "3回目: 同じ拡張" || return
+    run plugin jche.properties 3 "3回目: 同じ拡張" || return
     expect_reused plugin 3 "3回目: 拡張が同じならキャッシュを再利用"
     compare plugin expected "3回目: 同じ拡張"
 
@@ -655,7 +655,7 @@ for c in $CASES; do
         expect_library_reanalysis "$c" 3 "3回目: jar 削除で影響ファイルを再解析"
         compare "$c" expected-before "3回目: jar 削除"
     else
-        run "$c" config.properties 1 "1回目" || continue
+        run "$c" jche.properties 1 "1回目" || continue
         # ビルドファイルのケースは、直接の依存 greeter と、その POM から辿った推移的な依存 core の jar が
         # 依存 jar の一覧（ログの ASCII 部分）に出ることを確かめる。jar が JDT に渡ったこと自体は
         # 期待出力（jar の型への呼び出し）との比較が保証する
@@ -677,17 +677,17 @@ for c in $CASES; do
                     "1回目: 呼び出し先には一致したが繋げなかった契約を挙げる" ;;
         esac
         compare "$c" expected "1回目: キャッシュ無し"
-        expect_run_files "$c" config.properties "1回目"
+        expect_run_files "$c" jche.properties "1回目"
         if [ "$c" = whole ]; then
             expect_sidecar_cache "$c" "1回目"
         fi
-        run "$c" config.properties 2 "2回目" || continue
+        run "$c" jche.properties 2 "2回目" || continue
         expect_reused "$c" 2 "2回目: キャッシュを再利用"
         compare "$c" expected "2回目: キャッシュ再利用"
         # 更新時刻だけが変わったソース・jar は再利用される（同一性に更新時刻を入れていない）
         # （依存 jar の「変更」としても検知されない）
         touch_sources_and_jars
-        run "$c" config.properties 3 "3回目: 更新時刻だけ変更" || continue
+        run "$c" jche.properties 3 "3回目: 更新時刻だけ変更" || continue
         expect_reused "$c" 3 "3回目: 更新時刻だけ変わったソースはキャッシュを再利用"
         expect_nothing_parsed "$c" 3 "3回目: 更新時刻だけ変わった jar も変更とみなさず、新規解析は 0"
         compare "$c" expected "3回目: 更新時刻だけ変更"

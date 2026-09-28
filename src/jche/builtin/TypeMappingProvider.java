@@ -31,7 +31,7 @@ import jche.util.Messages;
  * {@link TypeCandidateProvider} を自分で実装すればよい。
  *
  * <pre>
- *   # config.properties
+ *   # jche.properties
  *   resolver.candidate.providers=jche.builtin.TypeMappingProvider
  *   plugin.mapping.files=di-mapping.properties
  * </pre>

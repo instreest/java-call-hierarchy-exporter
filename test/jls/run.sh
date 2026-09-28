@@ -52,7 +52,7 @@ fi
     $(find project/src -name '*.java') \
     || { echo "  NG   javac 26 でのコンパイルに失敗しました（fixture が Java 26 として正しくない）"; echo "FAIL"; exit 1; }
 
-( cd project && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter config.properties ) \
+( cd project && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter jche.properties ) \
     > build/run.log 2>&1
 OUT=$(ls -d project/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
 CACHE=$(ls project/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)

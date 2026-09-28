@@ -5,9 +5,10 @@
 #
 # Eclipse プラグインは、設定ファイルが無いときプロジェクトの構成から設定を組み立て、
 # 一時ファイルに書いて子プロセスへ渡す（EclipseProjectConfig#toFileText → Config）。
-# 値には Windows のパスがそのまま入るが、properties ではバックスラッシュがエスケープなので、
-# 逃がさずに書くと「バックスラッシュ + u」が Unicode エスケープと解釈されて
-# 解析ごと失敗する（Malformed uxxxx encoding）。逃がし忘れを往復で検出する。
+# 値には Windows のパスがそのまま入る。解析側の読み手（jche.config.ConfigFile）はバックスラッシュを
+# そのまま読むので、書く側も逃がさない。書く側と読む側の食い違い（逃がす／逃がさない）を往復で検出する。
+# 読み手は本体のソース（src/jche/config/ConfigFile.java。java.* だけに依存し --release 11 でコンパイルできる）を
+# そのまま一緒にコンパイルして使う。
 #
 # 依存（Eclipse の jar）は test/plugin-api/pom.xml のものを使う。Maven と JDK（9 以上）が要る。
 set -uo pipefail
@@ -26,7 +27,8 @@ CP=$(cat "$WORK/cp.txt")
 
 echo "== プラグインと検査プログラムをコンパイルする"
 if ! javac --release 11 -nowarn -cp "$CP" -d "$WORK/classes" -encoding UTF-8 \
-        $(find "$ROOT/eclipse-plugin/src-ui" -name '*.java') ConfigTextProbe.java 2>"$WORK/javac.log"; then
+        $(find "$ROOT/eclipse-plugin/src-ui" -name '*.java') "$ROOT/src/jche/config/ConfigFile.java" \
+        ConfigTextProbe.java 2>"$WORK/javac.log"; then
     echo "NG   コンパイルできない"; sed 's/^/       /' "$WORK/javac.log" | head -20
     echo "FAIL"; exit 1
 fi
