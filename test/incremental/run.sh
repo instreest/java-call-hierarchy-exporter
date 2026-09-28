@@ -5129,9 +5129,9 @@ env_rejected_case() {
     integrity_cfg $d/c.properties "$PWD/$d" s1
     integrity_run $d/c.properties $d/c0.log
     [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
-    # properties の値では \ を \\ と書く
-    integrity_cfg $d/c.properties "$PWD/$d" 's1,b\\x'
-    integrity_cfg $d/full.properties "$PWD/$d" 's1,b\\x' "$PWD/$d/fullcache"
+    # 設定ファイルの値の \ はそのまま読む（jche.config.ConfigFile。properties のように \\ と重ねない）
+    integrity_cfg $d/c.properties "$PWD/$d" 's1,b\x'
+    integrity_cfg $d/full.properties "$PWD/$d" 's1,b\x' "$PWD/$d/fullcache"
     integrity_run $d/c.properties $d/c1.log
     inc_out=$IOUT
     if [ "${IREUSED:-1}" = 0 ] && grep -q -F "does not accept the class path" $d/c1.log; then
@@ -5178,9 +5178,9 @@ backslash_folder_case() {
         fi
         mv $d/x/y "$d/x\\y"
         rmdir $d/x
-        # properties の値では \ を \\ と書く
-        integrity_cfg $d/c.properties "$PWD/$d" 's1,x\\y'
-        integrity_cfg $d/full.properties "$PWD/$d" 's1,x\\y' "$PWD/$d/fullcache"
+        # 設定ファイルの値の \ はそのまま読む（jche.config.ConfigFile。properties のように \\ と重ねない）
+        integrity_cfg $d/c.properties "$PWD/$d" 's1,x\y'
+        integrity_cfg $d/full.properties "$PWD/$d" 's1,x\y' "$PWD/$d/fullcache"
         integrity_run $d/c.properties $d/c1.log
         inc_out=$IOUT
         if [ $mode = cache ]; then
