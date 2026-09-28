@@ -109,7 +109,7 @@ msg_en() {
     net.ask)          printf 'Go to the network and download? [y/N]: ' ;;
     net.noTty)        echo "  There is no terminal to ask on. Nothing is downloaded." ;;
     net.noTtyYes)     echo "  To download without asking, set JCHE_ALLOW_DOWNLOAD=yes in $2 (or as an environment variable)." ;;
-    net.noTtyOffline) echo "  To run without downloading, prepare a local JDK and the jars first (see the Pleiades/Eclipse environment section in the README)." ;;
+    net.noTtyOffline) echo "  To run without downloading, prepare a local JDK and the jars first (see "Running on an isolated network" in docs/cli.md)." ;;
     offline.failed)   echo "Could not start with only the JDK and dependency jars already present (the reason is in the message above)." ;;
     first.defaultDir) echo "java-call-hierarchy-exporter: the JDK and JBang go into $2 (change it in $3)." ;;
     restart)          echo "Restarting to apply the settings..." ;;
@@ -159,7 +159,7 @@ msg_ja() {
     net.ask)          printf 'ネットワークにアクセスして取得しますか？ [y/N]: ' ;;
     net.noTty)        echo "  端末が無いため確認できません。取得しません。" ;;
     net.noTtyYes)     echo "  尋ねずに取得するには $2（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。" ;;
-    net.noTtyOffline) echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。" ;;
+    net.noTtyOffline) echo "  取得せずに動かすには、先に手元の JDK と jar を用意してください（docs/cli.md の「閉域ネットワークで動かす」）。" ;;
     offline.failed)   echo "取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。" ;;
     first.defaultDir) echo "java-call-hierarchy-exporter: JDK と JBang は $2 に置きます（変えるときは $3）。" ;;
     restart)          echo "設定を反映するため再起動します..." ;;

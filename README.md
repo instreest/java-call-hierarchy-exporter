@@ -1,5 +1,6 @@
 # java-call-hierarchy-exporter
 A tool that recursively extracts Java method call hierarchies across an entire project and exports them to CSV files. Powered by Eclipse JDT and runnable via JBang.
+
 **Under active development — features may change without notice.**
 
 **Japanese** | [English](#english)
@@ -64,7 +65,8 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 2. **設定ファイルに解析対象を書く** … [`config/config.properties`](config/config.properties) の `project.root` に、
    解析したいプロジェクトのフォルダを書きます。**必須なのはこの 1 行だけ**で、ソースフォルダ・依存 jar・
-   文字コードは空欄のままなら `.classpath` 、 `pom.xml` 、 `build.gradle` から自動で読み取ります。
+   文字コードは空欄のままなら自動で読み取ります（ソースフォルダと依存 jar は `.classpath` 、 `pom.xml` 、 `build.gradle` から、
+   文字コードは `pom.xml` の `project.build.sourceEncoding` から。無ければ UTF-8）。
 
      ```properties
      # Windows でも区切りは / で書く（\ で書くなら \\ のように 2 つ重ねる）
@@ -134,7 +136,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | `resolved-by` | 意味 | どうするか |
 |---|---|---|
-| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | その候補より先の経路は、`caller` のメソッド名を `callee` 列でもう一度絞って上へ辿ります。絞り方を教えれば次から 1 つに決まります（出力フォルダの `contracts-suggested.txt`、[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | 候補の先は辿っていないので、改修するメソッドがその先にあると、この起点からの行は出ません。改修するメソッドを呼んでいるメソッド（`caller` のメソッド）を `callee` 列で絞り直し、呼び出し元へ上に辿って起点を探します。絞り方を教えれば次から 1 つに決まります（出力フォルダの `contracts-suggested.txt`、[docs/callback-contracts.md](docs/callback-contracts.md)） |
 | `UNRESOLVED:…` | 呼び出し先の型が分からなかった（多くは依存 jar の不足） | `warnings.txt` に従って依存 jar を揃えて実行し直します |
 
 `call-hierarchy` 列の最後に付く注記（`[EXTERNAL] no source to follow` など）は、そこで辿るのをやめた理由です。
@@ -246,7 +248,7 @@ Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿�
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
 OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,0,,1,
 OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,
 ```
@@ -380,7 +382,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 `dist` を丸ごと指定しても、自分から自分への呼び出しが被参照として出ることはありません。
 
 
-| 注記 | 意味 |
+| 種別（`call-hierarchy` 列の末尾） | 意味 |
 |---|---|
 | `external-ref:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
 | `external-ref:INHERITED` | 親から継承したメソッドへの参照。JVM がその参照を解決する宣言（親クラスの連鎖を先に、無ければインターフェースの宣言のうち最も特定的なもの。インターフェースの `static`・`private` は除く）のメソッドとして出る |
@@ -582,8 +584,9 @@ not remove the call: it lists the candidates or says it could not follow the cal
 
 2. **Write the project to analyze in the config file** — set `project.root` in
    [`config/config.properties`](config/config.properties) to the folder of the project you want to analyze.
-   **This one line is all that is required.** Left empty, the source folders, dependency jars and encoding are
-   read from `.classpath`, `pom.xml` or `build.gradle`.
+   **This one line is all that is required.** Left empty, the source folders and dependency jars are read from
+   `.classpath`, `pom.xml` or `build.gradle`, and the encoding from `project.build.sourceEncoding` in `pom.xml`
+   (UTF-8 if there is none).
 
      ```properties
      # Use / as the separator, even on Windows (to use \, write it twice, like \\)
@@ -658,7 +661,7 @@ eye during an impact analysis.
 
 | `resolved-by` | Meaning | What to do |
 |---|---|---|
-| `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | To go further up that path, filter the `callee` column again by the method in `caller` and keep climbing. Once you tell the tool how to narrow it, the next run pins it down to one (`contracts-suggested.txt` in the output folder; [docs/callback-contracts.md](docs/callback-contracts.md)) |
+| `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | Nothing below a candidate is followed, so if the method you are changing lies below it, no row from this entry point reaches it. Filter the `callee` column again by the method that calls yours (the method in `caller`) and climb up through its callers to find the entry points. Once you tell the tool how to narrow it, the next run pins it down to one (`contracts-suggested.txt` in the output folder; [docs/callback-contracts.md](docs/callback-contracts.md)) |
 | `UNRESOLVED:…` | The type of the callee could not be determined (usually missing dependency jars) | Follow `warnings.txt` to supply the jars, and run again |
 
 A note at the end of the `call-hierarchy` column (such as `[EXTERNAL] no source to follow`) says why the walk
@@ -778,7 +781,7 @@ called a lot".
 ```csv
 method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
 OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,0,,1,
 OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
 OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,
 ```
@@ -918,7 +921,7 @@ because that is not "a reference from another repository".
 How many were skipped appears in the run log.
 Pointing at a whole `dist` folder never turns your own calls into external references.
 
-| Note | Meaning |
+| Kind (end of the `call-hierarchy` column) | Meaning |
 |---|---|
 | `external-ref:EXACT` | A reference to a method declared by that class (including an implicit default constructor) |
 | `external-ref:INHERITED` | A reference to a method inherited from a parent. It appears as the method the JVM resolves the reference to (the chain of superclasses first; otherwise the most specific interface declaration, excluding `static` and `private` interface methods) |
