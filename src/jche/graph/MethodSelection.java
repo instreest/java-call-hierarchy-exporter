@@ -73,6 +73,10 @@ import jche.cache.ModifierTokens;
  *   <li>解決（コンパイル時宣言）… 書き手（jche.analysis.BindingNames#toRef が JDT の getMethodDeclaration を使う）</li>
  *   <li>ラムダ・メソッド参照（invokedynamic）の本体 … {@link CallResolver} の functionalResolution と M 行</li>
  * </ul>
+ *
+ * <p>「クラスの連鎖 → 最も特定的な親インターフェース」の順は docs/resolution-selection-design.md の 4 節が正本で、
+ * 同じ順の写しが jche.analysis.ImplicitCalls#findNoArgMethod（JDT のバインディングを材料にする解決の層）と
+ * jche.external.ExternalUsageScanner#inheritedFrom（被参照）にもある。順を変えるときは 3 か所を同時に直す（Issue #189）。
  */
 public final class MethodSelection {
 

@@ -181,6 +181,11 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   親型の一覧（`TypeHierarchy#directSupertypes`）は名前順で親クラスとインターフェースを区別しないので、その順に辿って実装を
   探さない（`TypeHierarchy#classChain`・`superinterfaces` を使う。親クラスの連鎖は H 行の 7 列目、親クラスから継承した
   メソッドによるインターフェースの実装は 8 列目。`docs/jls-conformance-qa.md`）
+- **実装を探す順の写しは 3 か所にあり、順を変えるときは同時に直す。** 正本は `docs/resolution-selection-design.md` の 4 節で、
+  `jche.graph.MethodSelection#search`（選択）のほかに、`jche.analysis.ImplicitCalls#findNoArgMethod`（拡張 for の `iterator()`・
+  try-with-resources の `close()`。JDT のバインディングを材料にする解決の層なので `MethodSelection` に寄せられない）と
+  `jche.external.ExternalUsageScanner#inheritedFrom`（jar からの被参照）が同じ順を持つ。3 つのクラス javadoc が互いを指す
+  （`docs/resolution-selection-qa.md` の Q10。Issue #189）
 - AST の読み取りは Java 言語仕様に合わせる。オーバーライドの判定・暗黙のコンストラクタ呼び出し・
   定数の畳み込みは、自前で近似せず JDT のバインディング（`IMethodBinding.overrides` など）に任せ、
   分からないものは「判定しない」に倒す（`docs/jls-conformance-qa.md`、

@@ -434,6 +434,17 @@ java.lang.Thread#start() -> c* : run()
 そのうえで、直す前は**確実に落ちていた**。落ちるのと、極めて稀な同名衝突で
 どちらかに決まるのとでは、前者のほうが害が大きい。
 
+> **その後（[#189](https://github.com/instreest/java-call-hierarchy-exporter/issues/189)）**: 文字列（シグネチャ・修飾子の語）で
+> 判定している残りの 2 か所を、多すぎる側として受け入れた。
+> - `implementationOfSignature`（契約表・リフレクション）のこの曖昧さ。契約表がシグネチャで名指しする以上避けられず、
+>   選ばれるのはどちらかの上書き（落ちはしない）
+> - `DataflowResolver#dispatchesVirtually`（リフレクションの `invoke` の再選択）は private・static だけを見て、パッケージアクセスを
+>   見ない。別のパッケージの同じシグネチャのメソッドを上書きとみなしうるが、候補が増えるだけで落ちない。`getMethod(name)` の
+>   引数の型が分からないときは名前だけで多重定義すべてを候補にするのも同じ側
+>
+> どちらも「呼び出しを静かに落とさない」に反しないので直さない。`docs/resolution-selection-design.md` の点検表 #10。
+> `GuardCollector` の `equals` の判定（点検表 #12。打ち切りに効く）は別の Issue で直す。
+
 ## Q24. この穴はどう固定したか
 
 `test/demo/src/fx/generic/` に `OrderPrinter implements Consumer<Order>` と
