@@ -5303,6 +5303,52 @@ else
     echo "  NG   JDT が $stops 回止まりました（1 回のはず。止まったファイルに関わるファイルをバッチの残りに添えていない）"; fail=1
 fi
 
+# jar のクラスが参照するソースの入れ子の型の解析し直しが、同じ名前のファイルの組を分けない（Issue #181 の 1）。
+# src1/p/X.java と src2/p/X.java は組（src1 が勝つ）。src2 の X の副次の型 Y が jar の lib.L.make()（戻り値 app.Outer.Inner）を
+# 呼ぶので、Y のファイルは Outer.java を添えて解析し直す。以前はそのファイルだけを解析し直し、組のもう片方（src1/p/X.java）は
+# 添えるファイルとして後ろに付いたので、src2 の X が勝ち、CSV・warnings.txt・キャッシュが全件解析と違った
+bc_setup_member_pair() {
+    bc_setup_member $1
+    rm -f $1/src/u/U.java
+    printf 'package p;\npublic class X { public void a() { } }\n' | bfile $1/src1/p/X.java
+    printf 'package p;\npublic class X { public void b() { } }\nclass Y { void y() { new lib.L().make().hi(); } }\n' \
+        | bfile $1/src2/p/X.java
+    printf 'package q;\npublic class User { void u() { new p.X().a(); new p.X().b(); } }\n' | bfile $1/src/q/User.java
+}
+bc_edit_member_pair() { printf '\n// changed\n' >> $1/src2/p/X.java; }
+batch_case "jar のクラスが参照するソースの入れ子の型の解析し直しでも、同じ名前のファイルの組を分けない" \
+    bc_setup_member_pair bc_edit_member_pair src1,src2,src
+
+# どのファイルも返さないうちに溢れたバッチ（Issue #181 の 2）。zz/Z.java は入れ子のメンバークラスを 2 万持ち、JDT が型を組む
+# ところで溢れる。app/A.java は、同じバッチに app/B.java が無いと依存 jar に無いクラスで JDT が打ち切る形（Q112）。A だけを
+# 書き換えた差分更新は、以前は A を関わるファイル無しで 1 つだけで試して打ち切らせ、Z のスタックの溢れを理由に A を失敗にし、
+# A.a -> C.c が出力から消えた。今は 1 つだけで試すときも解析するときも A に関わるファイル（B）を添え、例外なしに止まったなら
+# バッチの例外（Z のもの）を理由にしない
+bc_setup_overflow_blame() {
+    bc_setup_abort $1
+    rm -f $1/src/app/*.java $1/src/other/*.java
+    printf 'package app;\npublic class A { Object o = new B() { }; void a() { new C().c(); } }\n' | bfile $1/src/app/A.java
+    printf 'package app;\nimport q.Missing;\npublic class B { public B() { } static void w(q.Api a, Missing m) { } }\n' \
+        | bfile $1/src/app/B.java
+    printf 'package app;\npublic class C { public void c() { } }\n' | bfile $1/src/app/C.java
+    mkdir -p $1/src/zz
+    {
+        printf 'package zz;\npublic class Z {'
+        for ((i = 0; i < 20000; i++)); do printf ' static class N%d {' "$i"; done
+        for ((i = 0; i < 20000; i++)); do printf ' }'; done
+        printf ' }\n'
+    } > $1/src/zz/Z.java
+}
+bc_edit_overflow_blame() { printf '\n// changed\n' >> $1/src/app/A.java; }
+batch_case "どのファイルも返さないうちに溢れたバッチで、別のファイルのスタックの溢れを理由に失敗にしない" \
+    bc_setup_overflow_blame bc_edit_overflow_blame src 17 "ran out of stack in a batch" errors-move
+if grep -q "^at app.A.a(A.java:2),C.c," "$IOUT/call-hierarchy.csv" 2>/dev/null \
+        && ! grep -q -F "Analysis failed (skipped): src/app/A.java" "$IOUT/warnings.txt" 2>/dev/null; then
+    echo "  OK   A は解析され、A.a -> C.c が出力に出る（全件解析）"
+else
+    echo "  NG   A が失敗になったか、A.a -> C.c が出力に無い（全件解析）"; fail=1
+fi
+
 # 打ち切りの原因の型（third.B）を、止まったファイル（E）が書いた名前の型（other.Q）のシグネチャを通してしか使っていない
 # ときは、関わるファイル（同じフォルダ・名前を書いた型のファイル）を添えても JDT が打ち切る。そのファイルは型の解決の
 # 無い事実として黙って書かず、失敗として数えて、warnings.txt に理由とともに載せる（全件解析で E と B が同じバッチに

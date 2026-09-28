@@ -292,7 +292,7 @@ public final class CallEdgeExtractor {
                 Map<SourceFile, List<SourceFile>> deferred = new LinkedHashMap<>();
                 if (aloneOnly) {
                     for (SourceFile f : todo) {
-                        alone(f, null, deferred);
+                        alone(f, deferred);
                     }
                 } else {
                     analyzeAll(todo, deferred);
@@ -306,7 +306,8 @@ public final class CallEdgeExtractor {
                         }
                     }
                 }
-                todo = new ArrayList<>(deferred.keySet());
+                // 組（SameUnitFiles）はソース一覧の並びで並べ直す（組の相手が後回しになった順で入っているため）
+                todo = project.sorted(deferred.keySet(), Set.of());
             }
         }
 
@@ -338,9 +339,9 @@ public final class CallEdgeExtractor {
          *       全件解析と差分更新とで食い違うため</li>
          *   <li><b>止まったファイルを脇に置く</b>（1 つでも受け取ったあと、組が 1 つだけのとき、または最初の組だけでも
          *       止まったとき）。JDT は準備を済ませて渡した順に解決しているので、受け取れなかった最初のファイルで止まって
-         *       いる。その組を脇に置き、
-         *       最後に 1 つずつ（添えるファイル {@link #stopContext} は付けずに）解析する（{@link #alone}）。
-         *       それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）</li>
+         *       いる。その組を脇に置き、最後に 1 つずつ、そのファイルに関わるファイル（{@link #relatedFiles}）を添えて
+         *       解析する（{@link #alone}）。それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の
+         *       「打ち切られた」に載る）</li>
          * </ol>
          * どの場合も、止まる前に受け取ったファイル（事実はまだ集めていない）は、止まったファイルからあとに同じ名前の組の
          * もう片方がいるものを除いて、それだけで 1 つのバッチとして解析し直し、止まったファイルからあとは別のバッチにする。
@@ -355,7 +356,7 @@ public final class CallEdgeExtractor {
                 throws IOException {
             Deque<List<SourceFile>> work = new ArrayDeque<>();
             work.add(files);
-            Map<SourceFile, Throwable> aside = new LinkedHashMap<>();
+            Set<SourceFile> aside = new LinkedHashSet<>();
             while (!work.isEmpty()) {
                 List<SourceFile> todo = work.poll();
                 Map<String, SourceFile> pending = byPath(todo);
@@ -385,14 +386,12 @@ public final class CallEdgeExtractor {
                     continue;
                 }
                 // 3. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
-                for (SourceFile f : unit) {
-                    aside.put(f, stop);
-                }
+                aside.addAll(unit);
                 Log.info(Messages.format("analysis.batchSetAside", at, todo.size() - unit.size()));
                 splitAt(todo, finished, pending, unit, at, work);
             }
-            for (Map.Entry<SourceFile, Throwable> e : aside.entrySet()) {
-                alone(e.getKey(), e.getValue(), deferred);
+            for (SourceFile f : aside) {
+                alone(f, deferred);
             }
         }
 
@@ -503,31 +502,47 @@ public final class CallEdgeExtractor {
         }
 
         /**
-         * 脇に置いたファイルを、1 つだけで（組でも分ける。組のもう片方で止まっていることがあるため。{@link #stopContext}
-         * も付けない）解析し直す。それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の
-         * 「打ち切られた」に理由とともに載る）
-         *
-         * @param stop 脇に置いたときに JDT が投げた例外。無ければ null
+         * 脇に置いたファイルを、1 つだけで（組でも分ける。組のもう片方で止まっていることがあるため）解析し直す。
+         * そのファイルに関わるファイル（{@link #relatedFiles}。組の相手は除く）は添える（例外なしの打ち切りは、原因の型を
+         * 同じバッチに入れれば起きない。Q112）。{@link #stopContext} は付けない（バッチで止まったほかのファイルによって
+         * 増えるので、付けると 1 つだけの解析の結果がバッチの組み方に依る）。それでも受け取れなければ失敗として数える
+         * （{@link Sink#failed}。warnings.txt の「打ち切られた」に理由とともに載る）。理由は 1 つだけの解析で JDT が投げた
+         * 例外から決め、例外なしに止まったなら「理由を示さずに打ち切った」（{@code analysis.stopped}）。脇に置いたときの
+         * バッチの例外は使わない（1 つも受け取らないうちに溢れたバッチでは、別のファイルの例外かもしれない。Q136）
          */
-        private void alone(SourceFile file, Throwable stop, Map<SourceFile, List<SourceFile>> deferred)
-                throws IOException {
+        private void alone(SourceFile file, Map<SourceFile, List<SourceFile>> deferred) throws IOException {
             Map<String, SourceFile> one = byPath(List.of(file));
-            Throwable again = parse(one, List.of(), deferred, new ArrayList<>());
+            List<SourceFile> extra = withContext ? relatedFiles(file) : List.of();
+            extra.removeAll(project.unit(layout.unitNameOf(file.path())));
+            Throwable again = parse(one, extra, deferred, new ArrayList<>());
             if (!one.isEmpty()) {
-                sink.failed(file, reasonOf(file, (again != null) ? again : stop));
+                sink.failed(file, reasonOf(file, again));
             }
         }
 
         /**
          * 止まったファイルの組（{@code unit}）だけを 1 回の createASTs に渡して、JDT がまた止まるか（受け取れないファイルが
          * 残るか）を確かめる。事実は集めない（止まらなければ、組はバッチを分けたあとでふつうに解析する）。添えるファイルは
-         * 止まったときのバッチと同じにする。どのファイルで止まったか分からないときに、最初の組が原因かを見分けるのに使う
+         * 止まったときのバッチのもの（{@link #stopContext}）に、組に関わるファイル（{@link #relatedFiles}。1 つだけで解析する
+         * ときと同じ）を足す。どのファイルで止まったか分からないときに、最初の組が原因かを見分けるのに使う
          * （{@link #analyzeAll}）
          */
         private boolean stopsAlone(List<SourceFile> unit) throws IOException {
             Map<String, SourceFile> pending = byPath(unit);
-            parse(pending, stopContext, null, new ArrayList<>());
+            parse(pending, unitExtra(unit), null, new ArrayList<>());
             return !pending.isEmpty();
+        }
+
+        /** 最初の組だけで試すとき（{@link #stopsAlone}）の添えるファイル: {@link #stopContext} と組に関わるファイル（組は除く） */
+        private List<SourceFile> unitExtra(List<SourceFile> unit) {
+            List<SourceFile> extra = new ArrayList<>(stopContext);
+            if (withContext) {
+                for (SourceFile f : unit) {
+                    extra.addAll(relatedFiles(f));
+                }
+            }
+            extra.removeAll(unit);
+            return extra;
         }
 
         /**
@@ -615,10 +630,14 @@ public final class CallEdgeExtractor {
 
         /**
          * 受け取ったファイルの事実を 1 つずつ集めて sink へ渡す。入れ子の型を宣言するファイルを添えて解析し直すファイル
-         * （{@link #memberTypeFilesOf}）は渡さずに {@code deferred} に置く
+         * （{@link #memberTypeFilesOf}）は渡さずに {@code deferred} に置く。同じ名前の組（{@link SameUnitFiles}）の片方を
+         * 後回しにするなら、組のもう片方も渡さずに後回しにする（組はいつもソースフォルダの順で一緒に JDT に渡す約束。
+         * 片方だけを渡してもう片方だけを解析し直すと、解析し直しではもう片方が添えるファイルとして後ろに付き、重複した
+         * 型の勝ち負けが入れ替わる。Q136）。組のファイルの事実は、組のすべてを集め終えるまで手元に置く
          */
         private void collectAndDeliverAll(List<SourceFile> finished, List<CompilationUnit> units, Set<String> present,
                                           Map<SourceFile, List<SourceFile>> deferred) {
+            Map<SourceFile, FileAnalysis> held = new LinkedHashMap<>();   // 組のファイル（渡すかどうかは最後に決める）
             for (int i = 0; i < finished.size(); i++) {
                 SourceFile file = finished.get(i);
                 FileAnalysis facts = collect(file, units.get(i));
@@ -629,8 +648,21 @@ public final class CallEdgeExtractor {
                 List<SourceFile> needs = memberTypeFilesOf(facts, present);
                 if (!needs.isEmpty()) {
                     deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
+                } else if (project.unit(layout.unitNameOf(file.path())).size() > 1) {
+                    held.put(file, facts);
                 } else {
                     deliver(file, facts);
+                }
+            }
+            for (Map.Entry<SourceFile, FileAnalysis> e : held.entrySet()) {
+                boolean paired = false;
+                for (SourceFile d : deferred.keySet()) {
+                    paired |= layout.unitNameOf(d.path()).equals(layout.unitNameOf(e.getKey().path()));
+                }
+                if (paired) {
+                    deferred.put(e.getKey(), List.of());
+                } else {
+                    deliver(e.getKey(), e.getValue());
                 }
             }
         }
@@ -757,7 +789,7 @@ public final class CallEdgeExtractor {
     /**
      * 解析し直しても受け取れなかったファイルの、失敗の理由。
      *
-     * @param stop JDT が投げた例外（1 つだけの解析か、脇に置いたときのバッチ）。どちらも例外なしに止まったなら null
+     * @param stop 1 つだけの解析で JDT が投げた例外。例外なしに止まったなら null
      */
     private static Exception reasonOf(SourceFile file, Throwable stop) {
         if (stop != null) {
