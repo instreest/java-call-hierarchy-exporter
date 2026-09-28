@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,13 +29,17 @@ import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FileASTRequestor;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.eclipse.jdt.core.dom.Initializer;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.QualifiedName;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SimpleType;
 
 import jche.cache.FileAnalysis;
@@ -132,8 +137,10 @@ public final class CallEdgeExtractor {
     }
 
     /**
-     * 解析するソースの全体を構文だけで読み（型は解決しない。メソッドの本体も読まない）、どのバッチにも添えるファイルと、
-     * パッケージの宣言がフォルダと合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。
+     * 解析するソースの全体を構文だけで読み（型は解決しない）、バッチに添えるファイルと、それぞれのファイルに書いた名前
+     * （添えるファイルをバッチから名前で届くものに絞る材料。{@link ProjectScan#reach}）と、パッケージの宣言がフォルダと
+     * 合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。メソッドの本体も読む
+     * （本体に書いた名前も、解析するファイルから届く先に数えるため。本体を読まない読み取りと時間はほとんど変わらない。Q138）。
      *
      * <p>全件解析でも差分更新でも、解析するファイルだけでなくソースの全体を渡す。添えるファイルがソースの中身だけで
      * 決まり、どの実行でも同じになるようにするため。読めなかったファイル（JDT の例外・スタックの溢れ）は材料にしない
@@ -155,7 +162,6 @@ public final class CallEdgeExtractor {
             parser.setKind(ASTParser.K_COMPILATION_UNIT);
             parser.setCompilerOptions(options);
             parser.setResolveBindings(false);
-            parser.setIgnoreMethodBodies(true);
             try {
                 parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
                     @Override
@@ -178,14 +184,74 @@ public final class CallEdgeExtractor {
         return project;
     }
 
-    /** 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前 */
+    /**
+     * 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前と、書いた名前（{@link ProjectScan.Info}）。
+     * 名前は、単純名（{@code SimpleName}）と点でつないだ名前（{@code QualifiedName}・import）を、メソッド・コンストラクタ・
+     * 初期化ブロックの本体の中と外とに分けて集める（本体の外はソースパスから読んだ型を JDT が組むときにも解決する名前）
+     */
     private static ProjectScan.Info infoOf(CompilationUnit cu) {
         String pkg = (cu.getPackage() == null) ? "" : cu.getPackage().getName().getFullyQualifiedName();
         List<String> types = new ArrayList<>();
         for (Object t : cu.types()) {
             types.add(((AbstractTypeDeclaration) t).getName().getIdentifier());
         }
-        return new ProjectScan.Info(pkg, List.copyOf(types));
+        Set<String> onDemand = new HashSet<>();
+        Set<String> signature = new HashSet<>();
+        Set<String> body = new HashSet<>();
+        for (Object o : cu.imports()) {
+            ImportDeclaration imp = (ImportDeclaration) o;
+            if (Modifier.isModule(imp.getModifiers())) {
+                continue;
+            }
+            String name = imp.getName().getFullyQualifiedName();
+            signature.add(name);
+            if (imp.isOnDemand()) {
+                onDemand.add(name);
+            }
+        }
+        cu.accept(new ASTVisitor() {
+            /** 本体の入れ子の深さ（0 なら本体の外） */
+            private int depth;
+
+            @Override
+            public boolean visit(ImportDeclaration node) {
+                return false;   // 上で読んだ
+            }
+
+            @Override
+            public boolean visit(Block node) {
+                if (isBody(node)) {
+                    depth++;
+                }
+                return true;
+            }
+
+            @Override
+            public void endVisit(Block node) {
+                if (isBody(node)) {
+                    depth--;
+                }
+            }
+
+            private boolean isBody(Block node) {
+                return node.getParent() instanceof MethodDeclaration || node.getParent() instanceof Initializer;
+            }
+
+            @Override
+            public boolean visit(QualifiedName node) {
+                (depth == 0 ? signature : body).add(node.getFullyQualifiedName());
+                return false;   // 頭の部分は ProjectScan が見る
+            }
+
+            @Override
+            public boolean visit(SimpleName node) {
+                (depth == 0 ? signature : body).add(node.getIdentifier());
+                return false;
+            }
+        });
+        body.removeAll(signature);
+        return new ProjectScan.Info(pkg, List.copyOf(types), Set.copyOf(onDemand), Set.copyOf(signature),
+                Set.copyOf(body));
     }
 
     /**
@@ -195,7 +261,9 @@ public final class CallEdgeExtractor {
      * 事実がバッチの組み方（全件解析は {@link #BATCH_SIZE} 件ずつ、差分更新は変わったファイルだけ）に依らないよう、
      * 次のファイルを「添えるファイル」として解析するファイルの後ろに並べて渡す（事実は書かない）。
      * <ul>
-     *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）</li>
+     *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）のうち、
+     *       バッチのファイルから名前でたどって届くもの（{@link ProjectScan#reach}。届かないものは
+     *       添えても効かないので、事実はバッチの組み方に依らない）</li>
      *   <li>jar の型が参照していた、ソースの入れ子の型（{@code app.Outer$Inner}）を宣言するファイル。JDT は jar の
      *       クラスファイルから {@code app/Outer$Inner} という名前で型を探し、ソースパスからは見つけられない
      *       （{@code app.Outer} をすでに読んでいれば、その入れ子の型として見つかる）。見つからないと、その型の名前が
@@ -425,7 +493,7 @@ public final class CallEdgeExtractor {
         private boolean dropBrokenContext(List<SourceFile> unit) throws IOException {
             // 最初の組だけで試したとき（stopsAlone）と同じ添えるファイル。脇に置いて 1 つだけで解析するとき（alone）は
             // その一部（stopContext を除く）なので、ここで外したものはそこでも添えない
-            List<SourceFile> context = contextOf(byPath(unit).keySet(), unitExtra(unit));
+            List<SourceFile> context = contextOf(byPath(unit).keySet(), unitExtra(unit), new BitSet());
             if (context.isEmpty()) {
                 return false;
             }
@@ -659,7 +727,8 @@ public final class CallEdgeExtractor {
         private Throwable parse(Map<String, SourceFile> pending, List<SourceFile> extra,
                                 Map<SourceFile, List<SourceFile>> deferred, List<SourceFile> finished)
                 throws IOException {
-            List<SourceFile> context = contextOf(pending.keySet(), extra);
+            BitSet reached = new BitSet();
+            List<SourceFile> context = contextOf(pending.keySet(), extra, reached);
 
             List<String> all = new ArrayList<>(pending.keySet());
             for (SourceFile f : context) {
@@ -697,7 +766,7 @@ public final class CallEdgeExtractor {
                         }
                         // 解析するファイルの最後。JDT は解析するファイルをすべて解決し終えている
                         if (deferred != null) {   // null なら止まるかどうかだけを見る（stopsAlone）
-                            collectAndDeliverAll(finished, units, present, deferred);
+                            collectAndDeliverAll(finished, units, present, reached, deferred);
                         }
                         done[0] = true;
                     }
@@ -715,18 +784,58 @@ public final class CallEdgeExtractor {
         /**
          * 1 回の createASTs に添えるファイル（ソース一覧の並び。解析するファイル {@code pending} と module-info.java、
          * 添えると JDT が止まるファイル {@link CallEdgeExtractor#brokenContext} は除く）。
-         * 名前の違うファイルで宣言した型のファイル（{@link ProjectScan#context}）・{@link #memberTypeFiles}・{@code extra}
+         * 解析するファイルと、ほかに添えるファイル（{@link #memberTypeFiles}・{@code extra}）から名前でたどって届く
+         * 名前の違うファイルで宣言した型のファイル（{@link ProjectScan#reach}・{@link ProjectScan#contextIn}）・
+         * {@link #memberTypeFiles}・{@code extra}。
+         *
+         * @param reached 届いたファイル（{@link ProjectScan#reach}）を入れて返す。事実に現れた型がこの外にあれば
+         *                添えて解析し直す（{@link #contextMissing}）
          */
-        private List<SourceFile> contextOf(Set<String> pending, List<SourceFile> extra) {
-            List<SourceFile> candidates = new ArrayList<>();
-            if (withContext) {
-                candidates.addAll(project.context);
-            }
-            candidates.addAll(memberTypeFiles);
+        private List<SourceFile> contextOf(Set<String> pending, List<SourceFile> extra, BitSet reached) {
+            List<SourceFile> candidates = new ArrayList<>(memberTypeFiles);
             candidates.addAll(extra);
+            if (withContext) {
+                List<SourceFile> analyzed = new ArrayList<>();
+                for (String path : pending) {
+                    analyzed.addAll(project.unit(layout.unitNameOf(Path.of(path))));
+                }
+                reached.or(project.reach(analyzed));
+                // 添えるファイルも JDT が組むので、その名前から届くものも添える
+                project.extend(reached, candidates);
+                candidates.addAll(project.contextIn(reached));
+            }
             List<SourceFile> context = project.sorted(candidates, pending);
             context.removeIf(f -> ProjectScan.isModuleInfo(f) || brokenContext.contains(f.path().toString()));
             return context;
+        }
+
+        /**
+         * 事実に現れた型（{@link FileAnalysis#referencedTypes}）を宣言するソースのファイルが、名前でたどって届いた
+         * ファイル（{@code reached}）の外にあれば、そこから届く名前の違うファイルで宣言した型のファイルのうち、今回
+         * JDT に渡していないもの。名前でたどれない経路（jar のクラスのシグネチャがソースの型を指す）で JDT がソースの
+         * 型を読んだとき、その型のパッケージの名前の違うファイルの型を見落とさないよう、添えて解析し直す
+         * （{@link #memberTypeFilesOf} と同じ扱い。docs/cache-unification-qa.md の Q138）
+         */
+        private List<SourceFile> contextMissing(FileAnalysis facts, Set<String> present, BitSet reached) {
+            if (!withContext || project.context.isEmpty()) {
+                return List.of();
+            }
+            List<SourceFile> roots = new ArrayList<>();
+            for (String name : facts.referencedTypes) {
+                roots.addAll(project.declaringFiles(name));
+            }
+            BitSet more = (BitSet) reached.clone();
+            if (!project.extend(more, roots)) {
+                return List.of();
+            }
+            List<SourceFile> missing = new ArrayList<>();
+            for (SourceFile f : project.contextIn(more)) {
+                String path = f.path().toString();
+                if (!present.contains(path) && !brokenContext.contains(path) && !ProjectScan.isModuleInfo(f)) {
+                    missing.add(f);
+                }
+            }
+            return missing;
         }
 
         /**
@@ -737,7 +846,7 @@ public final class CallEdgeExtractor {
          * 型の勝ち負けが入れ替わる。Q136）。組のファイルの事実は、組のすべてを集め終えるまで手元に置く
          */
         private void collectAndDeliverAll(List<SourceFile> finished, List<CompilationUnit> units, Set<String> present,
-                                          Map<SourceFile, List<SourceFile>> deferred) {
+                                          BitSet reached, Map<SourceFile, List<SourceFile>> deferred) {
             Map<SourceFile, FileAnalysis> held = new LinkedHashMap<>();   // 組のファイル（渡すかどうかは最後に決める）
             for (int i = 0; i < finished.size(); i++) {
                 SourceFile file = finished.get(i);
@@ -747,6 +856,11 @@ public final class CallEdgeExtractor {
                     continue;   // 失敗として数えた
                 }
                 List<SourceFile> needs = memberTypeFilesOf(facts, present);
+                for (SourceFile f : contextMissing(facts, present, reached)) {
+                    if (!needs.contains(f)) {
+                        needs.add(f);
+                    }
+                }
                 if (!needs.isEmpty()) {
                     deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
                 } else if (project.unit(layout.unitNameOf(file.path())).size() > 1) {

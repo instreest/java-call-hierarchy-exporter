@@ -5349,6 +5349,30 @@ else
     echo "  NG   A が失敗になったか、A.a -> C.c が出力に無い（全件解析）"; fail=1
 fi
 
+# 添えるファイル（名前の違うファイルで宣言した型のファイル）は、バッチのファイルから名前でたどって届くものだけを添える
+# （Issue #172。docs/cache-unification-qa.md の Q138）。名前でたどれない経路（jar の lib.M.make() の戻り値がソースの app.T で、
+# T のメソッドの戻り値が Other.java の record S）で届くものは、事実に現れた型（app.T）から届く先を広げて添え直す。
+# U だけを書き換えた差分更新でも S.go() を解決し、全件解析と同じになること
+bc_setup_context_via_jar() {
+    mkdir -p $1/jsrc/app $1/jsrc/lib $1/jcls $1/lib
+    printf 'package app;\npublic class T { }\n' > $1/jsrc/app/T.java
+    printf 'package lib;\npublic class M { public app.T make() { return null; } }\n' > $1/jsrc/lib/M.java
+    "$JAVAC_BIN" -d $1/jcls $1/jsrc/app/T.java $1/jsrc/lib/M.java && rm -r $1/jcls/app \
+        && ( cd $1/jcls && "$JAR_BIN" cf ../lib/m.jar lib ) || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf $1/jsrc $1/jcls
+    printf 'package app;\npublic class T { public S s() { return null; } }\n' | bfile $1/src/app/T.java
+    printf 'package app;\npublic class Other { }\nrecord S() { public void go() { } }\n' | bfile $1/src/app/Other.java
+    printf 'package app;\npublic class U { void u() { new lib.M().make().s().go(); } }\n' | bfile $1/src/app/U.java
+}
+bc_edit_context_via_jar() { printf '\n// changed\n' >> $1/src/app/U.java; }
+batch_case "名前でたどれない経路（jar のシグネチャ）で届く、名前の違うファイルで宣言した型" \
+    bc_setup_context_via_jar bc_edit_context_via_jar
+if grep -q -F "U.u(U.java:2),S.go" "$IOUT/call-hierarchy.csv" 2>/dev/null; then
+    echo "  OK   U.u -> S.go を解決した（全件解析）"
+else
+    echo "  NG   U.u -> S.go を解決していません（題材が効いていない）"; fail=1
+fi
+
 # 打ち切りの原因の型（third.B）を、止まったファイル（E）が書いた名前の型（other.Q）のシグネチャを通してしか使っていない
 # ときは、関わるファイル（同じフォルダ・名前を書いた型のファイル）を添えても JDT が打ち切る。そのファイルは型の解決の
 # 無い事実として黙って書かず、失敗として数えて、warnings.txt に理由とともに載せる（全件解析で E と B が同じバッチに
