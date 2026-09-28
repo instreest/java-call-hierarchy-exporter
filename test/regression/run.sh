@@ -29,7 +29,8 @@
 #                          キャッシュを捨てさせないことを確認する
 #   cacheblocks          … キャッシュ（analysis-cache.tsv。1 ファイル）のブロックの整合。そのまま再利用できること、
 #                          1 ブロックの中身を書き換える（検査値が合わなくなる）とそのファイル（ほかから参照されない
-#                          型だけを宣言する Deep.java を選んである）だけ解析し直してほかは再利用すること、
+#                          型だけを宣言する Deep.java を選んである）と同じパッケージのファイル（壊れたブロックのパッケージは中身の分からない
+#                          パッケージにする）だけ解析し直してほかは再利用すること、
 #                          F 行の件数（未解決数）だけを書き換えると、そのファイルとその型を使う 1 ファイルだけを
 #                          解析し直し、警告の件数が変わらないこと、最終行（Z 行）のブロック数の書き換え・削除と、
 #                          先頭 8 KB より後ろの文字化け（ヘッダの読み取りでは気づけない位置）と、先頭の行（T 行）の
@@ -390,8 +391,9 @@ PY
     run cacheblocks config.properties 3 "3回目: 1 ブロックの中身が壊れた" || return
     expect_reused cacheblocks 3 "3回目: 壊れたブロック以外は再利用"
     # 壊れたブロックのファイル（Deep.java。ほかから参照されない）と、型解決に失敗している 2 ブロック（何かが変わった実行では
-    # 名前を照合せず必ず解析し直す。docs/cache-unification-qa.md の Q131）
-    expect_parsed cacheblocks 3 3 "3回目: 壊れたブロックのファイルと、型解決に失敗している 2 ファイルだけを解析し直す"
+    # 名前を照合せず必ず解析し直す。docs/cache-unification-qa.md の Q131）と、同じパッケージの Holder.java（壊れたブロックの
+    # H 行は本当の型か分からないので、置き場所のパッケージ fx.deep を中身の分からないパッケージにする。Issue #180・Q137）
+    expect_parsed cacheblocks 3 4 "3回目: 壊れたブロックのファイルと、同じパッケージの 1 ファイルと、型解決に失敗している 2 ファイルだけを解析し直す"
     expect_log_contains cacheblocks 3 "failed the integrity check" "3回目: 検査値が合わないことをログに出す"
     expect_unresolved_count cacheblocks 3 "$unresolved" "3回目: 型解決できなかった呼び出しの件数は同じ"
     compare cacheblocks expected "3回目: 1 ブロックの中身が壊れた"
