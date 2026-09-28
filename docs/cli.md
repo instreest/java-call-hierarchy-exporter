@@ -1,6 +1,6 @@
 # 起動コマンドと実行方法
 
-リポジトリ直下の起動コマンドの全仕様、複数の設定ファイルの扱い、JBang を直接使う方法、閉域ネットワークで動かす方法。
+リポジトリ直下の起動コマンドの全仕様、複数の設定ファイルの扱い、JBang を直接使う方法、キャッシュ、うまくいかないときの対処、閉域ネットワークで動かす方法。
 最小の手順は [README の Quick start](../README.md#quick-start) にある。
 実装時に迷った点は [cli-app-qa.md](cli-app-qa.md) と [cli-noninteractive-qa.md](cli-noninteractive-qa.md) にある。
 
@@ -38,7 +38,7 @@ java-call-hierarchy-exporter.cmd
 ```
 
 ```bash
-# Linux / macOS / Git Bash
+# Linux
 ./java-call-hierarchy-exporter.sh config/app-a.properties config/app-b.properties
 ./java-call-hierarchy-exporter.sh
 ```
@@ -175,7 +175,7 @@ rem Windows（コマンドプロンプト）
 ```
 
 ```bash
-# Linux / macOS / Git Bash
+# Linux
 ./jbangw/jbang src/jche/CallHierarchyExporter.java config/config.properties
 ```
 
@@ -189,6 +189,31 @@ rem Windows（コマンドプロンプト）
 ```bash
 ./jbangw/jbang src/jche/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
 ```
+
+## キャッシュ
+
+解析結果のキャッシュは出力フォルダには置かず、**このツールのフォルダ**の
+`.cache/<project.root のフォルダ名>_<絶対パスのハッシュ 8 桁>/` に作ります。
+2 回目からは、変わったファイルと、その変更で結果が変わりうるファイル（変わったファイルの型を使っているファイルなど）だけを
+解析し直します。依存 jar やクラスフォルダ（兄弟モジュールの `target/classes` など）の変化も見ます。
+
+- 同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクトは混ざりません
+- 実行していないときなら消しても構いません（次の実行が全件の解析になります）。
+  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false` を設定ファイルで指定します
+- 同じキャッシュを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うと、
+  あとの実行は先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）
+- どのファイルを解析し直すかの決まりは [config/config.properties](../config/config.properties) の `cache.enabled` のコメントに、
+  作りは [cache-design.md](cache-design.md) にあります
+
+## うまくいかないとき
+
+| 症状 | 原因と対処 |
+|---|---|
+| 何も解析せずに終了コード 3 で終わる | ネットワークからの取得を断った、または端末が無くて確認できなかった（[ネットワークからの取得の確認](#ネットワークからの取得の確認)）。取得してよければ `y` と答えるか `JCHE_ALLOW_DOWNLOAD=yes`。取得できない環境は[閉域ネットワークで動かす](#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う) |
+| `Cannot read the config file`（日本語表示なら「設定ファイルを読めません」）と出る | 設定ファイルに Windows のパスを `\` のまま書いた。区切りを `/` にするか、`\\` と 2 つ重ねる |
+| `OutOfMemoryError` で止まる | 大きなプロジェクトでヒープが足りない。`launcher.properties` の `JCHE_JAVA_OPTS` に `-Xmx4g` などを書く（対話モードの「環境設定」でも変えられる） |
+| `./java-call-hierarchy-exporter.sh` が「許可がありません」で動かない | ZIP で取得して実行権限が落ちた。`bash java-call-hierarchy-exporter.sh …` で動かす |
+| 出力フォルダに `warnings.txt` がある | 依存 jar の不足・コンパイルエラーなどで結果に抜けがある。`warnings.txt` に項目ごとの原因と直し方が書いてある |
 
 ## 閉域ネットワークで動かす（Pleiades・Eclipse の jar を使う）
 

@@ -12,14 +12,15 @@
 
 | ファイル | 内容 |
 |---|---|
-| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、複数の設定ファイルの扱い、ネットワークからの取得の確認、JBang の直接実行、閉域ネットワークで動かす（Pleiades・Eclipse の jar）、Eclipse でソースを開く |
+| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、複数の設定ファイルの扱い、ネットワークからの取得の確認、JBang の直接実行、キャッシュ、うまくいかないときの対処、閉域ネットワークで動かす（Pleiades・Eclipse の jar）、Eclipse でソースを開く |
 | [build-tool-classpath.md](build-tool-classpath.md) | `library.folders` を空欄にしたときに `pom.xml` / `build.gradle` を読んで依存 jar を集める仕組みと、読める宣言の範囲。依存 jar やクラスフォルダを自分で指定するとき（`library.folders` と `library.jars` の違い、相対パスの起点、シンボリックリンク、解析のあいだの jar の書き換え） |
 | [instance-analysis-plugin.md](instance-analysis-plugin.md) | 具象クラスの解決条件を外から与える（対応表を書く / 拡張を自分で書く）。拡張に渡る証拠、ファクトリごとの場合分け、書いた対応表が効いているかの確かめ方 |
 | [eclipse-plugin-usage.md](eclipse-plugin-usage.md) | Eclipse プラグインとしての使い方（入れ方・呼び出し元階層ビューの操作・設定・サーバーモード）。解析は Eclipse とは別プロセス・別 JDK で走る |
 | [vscode-plugin-usage.md](vscode-plugin-usage.md) | VSCode プラグインとしての使い方（入れ方・標準の呼び出し階層との違い・状態の見方・設定・ビルド）。解析は Eclipse 版と同じ子プロセスで走る |
 | [callback-contracts.md](callback-contracts.md) | ソースの外（JDK・フレームワーク）との契約表。jar の中から呼び戻される呼び出しを繋ぐ（`Thread#start()` → `run()` 等）ことと、フレームワークが呼ぶ入口を `FRAMEWORK_ENTRY` に仕分けること。具象クラスを 1 件に絞ること（`=>`。ファクトリのキーでの絞り込みを含む）と、絞れなかった呼び出しから出るひな形。自前のフレームワーク分を `contracts.files` / 拡張で足す方法と、書いた契約が効いているかの確かめ方 |
+| [external-usage.md](external-usage.md) | 自分のコードを呼んでいるほかのリポジトリの jar からの被参照を `call-hierarchy.csv` に足す（`external.library.folders`）。指定のしかたと行の種別 |
 | [call-conditions.md](call-conditions.md) | 呼び出しに効いている条件を通常の出力に追加で出す（設定ファイルの `conditions.target` → `call-conditions.csv`）。判定できない条件も含める |
-| [static-analysis-limits.md](static-analysis-limits.md) | 静的解析で具象クラスが決まる条件と決まらない条件（しきい値）。文字列からクラス名を算出するファクトリを例に、追える出所・追えない出所と、健全側に倒す方針 |
+| [static-analysis-limits.md](static-analysis-limits.md) | 静的解析で具象クラスが決まる条件と決まらない条件（しきい値）。文字列からクラス名を算出するファクトリを例に、追える出所・追えない出所と、健全側に倒す方針。解決の段（具象クラスを決める順）とラムダ式・メソッド参照の追い方（9・10 節） |
 | [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、セキュリティ上の注意（`pull_request_target`、self-hosted ランナー、依存取得の省略）、Actions 以外の CI |
 
 ## 設計の説明

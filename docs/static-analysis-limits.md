@@ -229,6 +229,84 @@ return switch (key) {
 
 ---
 
+## 9. 解決の段（具象クラスをどの順に決めるか）
+
+インターフェースや親クラスの型に対する呼び出しで、どの実装に解決したかを次の段の順に判定し、先に確定した段で打ち切る。
+ラベルは `call-hierarchy.csv` の `resolved-by` 列の後半になる（1 件に確定したら `RESOLVED:`、候補のままなら
+`UNEXPANDED:` が頭に付く）。各ラベルの意味は [README の「具象クラスの解決」](../README.md#具象クラスの解決)にある。
+
+| 段 | ラベル | 判定 |
+|---|---|---|
+| 0 | `STATIC_BOUND:*` | private / static / final メソッド、final クラス、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
+| 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
+| 1 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
+| 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
+| 3 | `CONTRACT` | 契約表に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/callback-contracts.md](callback-contracts.md)） |
+| 3 | （拡張が返すラベル） | ファクトリ・DI 設定・外部リスト等（[docs/instance-analysis-plugin.md](instance-analysis-plugin.md)）。契約表の次に尋ねる |
+| 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
+| — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定（経路ごとに判定するため段の外） |
+| — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定（同上） |
+| — | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（同上。下記） |
+| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](spring-di-qa.md)） |
+| 6 | `CHA` | 候補が複数のまま（低確度） |
+| — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
+| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](callback-contracts.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
+| — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
+| — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
+| — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
+
+`DATAFLOW_PARAM` / `DATAFLOW_FIELD` / `DATAFLOW_LAMBDA` は経路ごとに判定するので段の外に置いている。
+契約表（段 3 の `CONTRACT`）は拡張より先、データフロー（段 4）や Spring の判定（段 5）より先に効く。
+
+---
+
+## 10. ラムダ式・メソッド参照の追い方
+
+ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
+**合成メソッド**として 1 つのノードにします（`methods.csv` には出しません）。
+static 初期化子・static フィールド・enum 定数の引数の中のラムダは `lambda$static$N` です。
+通し番号はスタックトレースに出る javac の番号と一致するとは限りません（[docs/lambda-expansion-qa.md](lambda-expansion-qa.md) の Q13）。
+
+```csv
+at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
+at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+```
+
+ラムダを作った箇所からは、必ず「生成した」1 本の辺が出ます。
+どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
+実行箇所を特定できたときは、そちらからも同じノードに繋がります（`resolved-by` が `RESOLVED:DATAFLOW_LAMBDA`）。
+
+実行箇所を特定できる形:
+
+| 形 | 例 |
+|---|---|
+| ローカル変数に入れて呼ぶ | `Runnable r = () -> ...; r.run();` |
+| 引数で渡した先で呼ぶ | `runIt(() -> ...)` の中の `r.run()` |
+| フィールドに保持して呼ぶ | `private final Runnable task = () -> ...;` の `task.run()` |
+| メソッド参照 | `Runnable r = this::helper; r.run();` → `helper` に繋がる |
+| レシーバを束縛したメソッド参照 | `Runnable r = dao::describe; r.run();` → `dao` の具象型が分かればその実装（`OrderDaoImpl.describe`）に繋がる。分からなければ上書き候補（`UNEXPANDED:CHA`） |
+| ラムダの戻り値に対する呼び出し | `Supplier<Dao> s = () -> new X(); s.get().describe();` → ラムダの `return` から `X.describe` に繋がる |
+| ローカルのコレクションに詰めて拡張 for 文で回す | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
+
+型名で書いたメソッド参照（`Consumer<Dao> c = Dao::describe;`）は、レシーバが呼び出し時の第 1 引数なので追わず、
+上書き候補を全部出します（`UNEXPANDED:CHA`）。
+
+特定できない形（`resolved-by` が `UNEXPANDED:LAMBDA` になります）:
+
+- `list.forEach(Runnable::run)` のように、**jar の中**から呼ばれる形。`forEach` の中はソースが無いので辿れません
+- フィールドのコレクションに詰める形、詰める場所と回す場所が別メソッドの形
+- 同じ変数に複数のラムダが入りうる形（どれが実行されるか決められないので、絞りません）
+
+特定できない場合でも、生成の辺があるので本体の中の呼び出しは階層に出ます。
+
+ラムダが捕捉した囲みメソッドの引数（`(Dao dao) -> … () -> dao.describe()` の `dao`）の具象型は、
+ラムダを作ったメソッドの段でだけ当てます。引数で渡した先から本体へ降りたときは、その先の引数は
+捕捉した値ではないので絞りません（捕捉した値はラムダを作った時点で決まります）。
+
+`new Thread(task).start()` や `executor.submit(task)` のように、**jar の中から呼び戻される**形は、
+
+---
+
 ## まとめ
 
 | 問い | 答え |
