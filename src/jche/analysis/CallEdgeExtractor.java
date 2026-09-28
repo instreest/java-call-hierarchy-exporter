@@ -158,7 +158,7 @@ public final class CallEdgeExtractor {
                         }
                     }
                 }, null);
-            } catch (RuntimeException | StackOverflowError e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 読めなかったファイルは材料にしない（下で外して続ける）
             }
             if (!pending.isEmpty()) {
@@ -233,7 +233,10 @@ public final class CallEdgeExtractor {
      *
      * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
      * 深くなりすぎるファイル）も、そのファイルの失敗として扱う（{@code docs/cache-unification-qa.md} の Q62）。
-     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
+     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。JDT が明示的に投げる
+     * {@link AssertionError}（レコードパターンのコード生成の {@code Unexpected operand at stack top} など。{@code -ea} に
+     * 依らない）も同じくそのファイルの失敗にする（Q135）。捕まえるのは {@code RuntimeException}・{@code StackOverflowError}・
+     * {@code AssertionError} だけで、それ以外の {@code Error}（メモリ不足など）は設定の失敗として外へ抜けさせる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
         List<SourceFile> modules = new ArrayList<>();
@@ -541,14 +544,7 @@ public final class CallEdgeExtractor {
         private Throwable parse(Map<String, SourceFile> pending, List<SourceFile> extra,
                                 Map<SourceFile, List<SourceFile>> deferred, List<SourceFile> finished)
                 throws IOException {
-            List<SourceFile> candidates = new ArrayList<>();
-            if (withContext) {
-                candidates.addAll(project.context);
-            }
-            candidates.addAll(memberTypeFiles);
-            candidates.addAll(extra);
-            List<SourceFile> context = project.sorted(candidates, pending.keySet());
-            context.removeIf(ProjectScan::isModuleInfo);
+            List<SourceFile> context = contextOf(pending.keySet(), extra);
 
             List<String> all = new ArrayList<>(pending.keySet());
             for (SourceFile f : context) {
@@ -586,10 +582,7 @@ public final class CallEdgeExtractor {
                         }
                         // 解析するファイルの最後。JDT は解析するファイルをすべて解決し終えている
                         if (deferred != null) {   // null なら止まるかどうかだけを見る（stopsAlone）
-                            for (int i = 0; i < finished.size(); i++) {
-                                collectAndDeliver(finished.get(i), units.get(i), present, deferred);
-                                units.set(i, null);   // 集め終えた AST は手放す
-                            }
+                            collectAndDeliverAll(finished, units, present, deferred);
                         }
                         done[0] = true;
                     }
@@ -599,32 +592,59 @@ public final class CallEdgeExtractor {
                 throw e.getCause();
             } catch (OperationCanceledException e) {
                 return pending.isEmpty() ? null : e;
-            } catch (RuntimeException | StackOverflowError e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 return e;
             }
         }
 
-        /** 受け取った 1 ファイルの事実を集めて sink へ渡す。失敗はそのファイルの失敗として数える */
-        private void collectAndDeliver(SourceFile file, CompilationUnit cu, Set<String> present,
-                                       Map<SourceFile, List<SourceFile>> deferred) {
-            FileAnalysis facts;
+        /**
+         * 1 回の createASTs に添えるファイル（ソース一覧の並び。解析するファイル {@code pending} と module-info.java は除く）。
+         * 名前の違うファイルで宣言した型のファイル（{@link ProjectScan#context}）・{@link #memberTypeFiles}・{@code extra}
+         */
+        private List<SourceFile> contextOf(Set<String> pending, List<SourceFile> extra) {
+            List<SourceFile> candidates = new ArrayList<>();
+            if (withContext) {
+                candidates.addAll(project.context);
+            }
+            candidates.addAll(memberTypeFiles);
+            candidates.addAll(extra);
+            List<SourceFile> context = project.sorted(candidates, pending);
+            context.removeIf(ProjectScan::isModuleInfo);
+            return context;
+        }
+
+        /**
+         * 受け取ったファイルの事実を 1 つずつ集めて sink へ渡す。入れ子の型を宣言するファイルを添えて解析し直すファイル
+         * （{@link #memberTypeFilesOf}）は渡さずに {@code deferred} に置く
+         */
+        private void collectAndDeliverAll(List<SourceFile> finished, List<CompilationUnit> units, Set<String> present,
+                                          Map<SourceFile, List<SourceFile>> deferred) {
+            for (int i = 0; i < finished.size(); i++) {
+                SourceFile file = finished.get(i);
+                FileAnalysis facts = collect(file, units.get(i));
+                units.set(i, null);   // 集め終えた AST は手放す
+                if (facts == null) {
+                    continue;   // 失敗として数えた
+                }
+                List<SourceFile> needs = memberTypeFilesOf(facts, present);
+                if (!needs.isEmpty()) {
+                    deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
+                } else {
+                    deliver(file, facts);
+                }
+            }
+        }
+
+        /** 受け取った 1 ファイルの事実を集める。失敗はそのファイルの失敗として数え、null を返す */
+        private FileAnalysis collect(SourceFile file, CompilationUnit cu) {
             try {
-                facts = collectFacts(file, cu);
-            } catch (RuntimeException e) {
+                return collectFacts(file, cu);
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 型の解決は遅れて行われるので、事実を集めるあいだに JDT が文言の無い例外（見つからない
-                // クラスでの打ち切り）を投げることがある
+                // クラスでの打ち切り）を投げることがある。スタックの溢れ・JDT の AssertionError も同じ
                 sink.failed(file, explained(e));
-                return;
-            } catch (StackOverflowError e) {
-                sink.failed(file, tooDeep(e));
-                return;
+                return null;
             }
-            List<SourceFile> needs = memberTypeFilesOf(facts, present);
-            if (!needs.isEmpty()) {
-                deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
-                return;
-            }
-            deliver(file, facts);
         }
 
         private void deliver(SourceFile file, FileAnalysis facts) {
@@ -632,15 +652,13 @@ public final class CallEdgeExtractor {
                 sink.accept(file, facts);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);   // parse の catch で IOException に戻す
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
                 // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
-                // 解析し直しにも回らず、失敗とも数えられずに黙って消える
+                // 解析し直しにも回らず、失敗とも数えられずに黙って消える。受け手の中で溢れた場合も同じ
+                // （docs/cache-unification-qa.md の Q69）。parse の catch に AssertionError を足した今、ここで
+                // 捕まえないと、pending から外したファイルがそこに呑まれて黙って消える
                 sink.failed(file, explained(e));
-            } catch (StackOverflowError e) {
-                // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
-                // 外してあるので解析し直しにも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
-                sink.failed(file, tooDeep(e));
             }
         }
     }
@@ -723,7 +741,7 @@ public final class CallEdgeExtractor {
                             });
                         }
                     }, null);
-        } catch (RuntimeException | StackOverflowError e) {
+        } catch (RuntimeException | StackOverflowError | AssertionError e) {
             // 読めなければ名前を書いた型のファイルは添えない（同じフォルダのファイルだけで解析し直す）
         }
         return project.sorted(files, Set.of());
@@ -736,13 +754,14 @@ public final class CallEdgeExtractor {
         }
     }
 
-    /** 解析し直しても受け取れなかったファイルの、失敗の理由 */
+    /**
+     * 解析し直しても受け取れなかったファイルの、失敗の理由。
+     *
+     * @param stop JDT が投げた例外（1 つだけの解析か、脇に置いたときのバッチ）。どちらも例外なしに止まったなら null
+     */
     private static Exception reasonOf(SourceFile file, Throwable stop) {
-        if (stop instanceof StackOverflowError e) {
-            return tooDeep(e);
-        }
-        if (stop instanceof Exception e) {
-            return explained(e);
+        if (stop != null) {
+            return explained(stop);
         }
         try (InputStream in = Files.newInputStream(file.path())) {
             // 読める（1 バイト読んでみる）。JDT が理由を言わずに打ち切った
@@ -775,13 +794,18 @@ public final class CallEdgeExtractor {
     /**
      * 失敗の理由として伝える例外。JDT の例外には文言の無いもの（見つからないクラスでの打ち切り {@code AbortCompilation}
      * など）があり、そのままでは warnings.txt の行が「()」だけになって何が起きたか分からないので、例外の名前を添えた
-     * 文言にする
+     * 文言にする。スタックの溢れは利用者が対処を選べる文言に、それ以外の {@code Error}（JDT が明示的に投げる
+     * {@link AssertionError}）は例外の名前と文言を添えた文言にする（{@code Sink#failed} は {@code Exception} を受け取る）
      */
-    private static Exception explained(Exception e) {
-        if (e.getMessage() == null || e.getMessage().isBlank()) {
-            return new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e);
+    private static Exception explained(Throwable e) {
+        if (e instanceof StackOverflowError so) {
+            return tooDeep(so);
         }
-        return e;
+        boolean blank = e.getMessage() == null || e.getMessage().isBlank();
+        if (e instanceof Exception ex) {
+            return blank ? new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e) : ex;
+        }
+        return new IllegalStateException(Messages.format("analysis.failedBy", blank ? e.getClass().getName() : e.toString()), e);
     }
 
     /** スタックが溢れたことを、そのファイルの失敗の理由として伝える例外（利用者が対処を選べる文言にする） */
