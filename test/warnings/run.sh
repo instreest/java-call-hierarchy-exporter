@@ -627,7 +627,7 @@ jdt_fail_project() {   # $1=フォルダ名  $2=source.level
     printf 'package p;\npublic class B { void b() { new C().c(); } }\n' > "work/$1/src/p/B.java"
     printf 'package p;\npublic class C { void c() { } }\n' > "work/$1/src/p/C.java"
     printf 'project.root=.\nsource.folders=src\nlibrary.folders=\nlibrary.build.tool=none\nsource.encoding=UTF-8\nsource.level=%s\noutput.folder=./out\ncache.folder=./.cache\n' \
-        "$2" > "work/$1/config.properties"
+        "$2" > "work/$1/jche.properties"
 }
 check_jdt_fail() {   # $1=フォルダ名  $2=失敗するファイル  $3=理由に含む文字列  $4=ラベル
     [ "$STATUS" = 0 ] && ok "$1 ($4): 1 ファイルで JDT が失敗しても、実行は成功する" \
