@@ -83,6 +83,8 @@ pr.SepFactory#get("S;T") => pr.DaoB
 pr.EnumKeyFac#get("pr.EkMode.X") => pr.DaoA
 pr.TwoKeyFactory#get("A") => pr.DaoA
 pr.TwoKeyFactory#get("B") => pr.DaoB
+super pr.FwHandler#handle(java.lang.Object)
+super prlib.Handler#handle(java.lang.Object)
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -3257,7 +3259,16 @@ public class Holder<T> {
     public T create() { return v; }
 }
 EOF
-"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java \
+# フレームワークの入口の契約（contracts.txt の super prlib.Handler#handle(java.lang.Object)）の親型。jar の型で、型引数を具体化した
+# 上書き（O 行）が入口になることを見る（下の FwEntry）
+cat > work/libsrc/prlib/Handler.java <<'EOF'
+package prlib;
+
+public interface Handler<T> {
+    void handle(T t);
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java work/libsrc/prlib/Handler.java \
     && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls . \
     || ng "jar（work/lib/prlib.jar）を作れませんでした"
 case_ listed JarHold JarHold.use DaoB.find "戻り値: 親クラスが jar のクラス（prlib.Holder）なら、その create() が default より勝ちうる。default の戻り値（DaoA）に絞らない" <<'EOF'
@@ -3629,6 +3640,27 @@ EOF
 expect_ absent "SbDdSvc.<init>" SbDdX.find "同上（上限の部分型でない SbDdX.find の行が無い）"
 expect_ absent "SbDdSvc.<init>" SbDdB.find "同上（Bean でない SbDdB.find の行が無い）"
 
+# フレームワークの入口の契約（super 型#シグネチャ）を、型引数を具体化してシグネチャの食い違う上書きにも当てる（Issue #188）。
+# 契約は contracts.txt の super pr.FwHandler#handle(java.lang.Object)・super prlib.Handler#handle(java.lang.Object)。
+# 入口かどうかは methods.csv の role（FRAMEWORK_ENTRY）で見る（下の fw_role）
+case_ reachable FwEntry FwEntry.main FwEntry.touch "フレームワークの入口の契約の題材（入口の判定は methods.csv の role で見る）" <<'EOF'
+package pr;
+
+interface FwHandler<T> { void handle(T t); }
+class FwReq { }
+class FwSrcHandler implements FwHandler<FwReq> { public void handle(FwReq r) { System.out.println("src"); } }
+class FwJarHandler implements prlib.Handler<FwReq> { public void handle(FwReq r) { System.out.println("jar"); } }
+class FwBaseHandler { public void handle(FwReq r) { System.out.println("base"); } }
+class FwInhHandler extends FwBaseHandler implements FwHandler<FwReq> { }
+class FwObjHandler implements FwHandler<Object> { public void handle(Object o) { System.out.println("obj"); } }
+class FwOtherHandler { public void handle(FwReq r) { System.out.println("other"); } }
+
+public class FwEntry {
+    public static void main(String[] args) { touch(); }
+    static void touch() { new FwSrcHandler(); new FwJarHandler(); new FwInhHandler(); new FwObjHandler(); new FwOtherHandler(); }
+}
+EOF
+
 # ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
@@ -3728,6 +3760,26 @@ else
     ng "EmojiCut.run -> EmojiCut.target: 注記の条件式の切れ目が期待と違います"
     echo "       $(head -1 <<< "$emoji")"
 fi
+
+# フレームワークの入口の契約（super）が、型引数を具体化してシグネチャの食い違う上書きにも当たること（Issue #188）。
+# methods.csv の role（9 列目）で見る。列は method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,…
+MCSV=$(dirname "$CSV")/methods.csv
+fw_role() {   # $1=method 列（Class.method(引数)）
+    awk -F, -v m="$1" '$1 == m { print $9 }' "$MCSV"
+}
+for c in "FwSrcHandler.handle(FwReq) FRAMEWORK_ENTRY 契約 pr.FwHandler#handle(java.lang.Object) を型引数を具体化して上書きした handle(FwReq)（O 行）は入口" \
+         "FwJarHandler.handle(FwReq) FRAMEWORK_ENTRY 親型が jar の型（prlib.Handler）でも同じ（O 行は jar の親型にも書かれる）" \
+         "FwBaseHandler.handle(FwReq) FRAMEWORK_ENTRY 親クラスから継承した handle(FwReq) が FwHandler<FwReq> を実装する（H 行の 8 列目）ので入口" \
+         "FwObjHandler.handle(Object) FRAMEWORK_ENTRY 対照: シグネチャが同じ上書きは従来どおり入口" \
+         "FwOtherHandler.handle(FwReq) ENTRY_CANDIDATE 対照: 契約の型を継承していない同名のメソッドは入口ではない（呼び出し元が無いだけ）"; do
+    read -r method want why <<< "$c"
+    got=$(fw_role "$method")
+    if [ "$got" = "$want" ]; then
+        ok "契約 super の入口: $method は $want（$why）"
+    else
+        ng "契約 super の入口: $method の role が $want ではありません（$got。$why）"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # 値を読まない指定（dataflow.enabled=false）の @Bean。R 行を読まないので、@Bean メソッドが返す具象型は
