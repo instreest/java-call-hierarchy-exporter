@@ -124,9 +124,21 @@ final class OverrideFacts {
      *
      * <p>判定は JDT に任せる: 親インターフェースのメソッド（型引数を置き換えたもの。private・static は除く）ごとに、
      * {@code type} 自身が同じシグネチャ（{@code isSubsignature}）を宣言していなければ、親クラスを近い順に見て
-     * 最初に {@code isSubsignature} の当たる宣言（static・private を除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
+     * 最初に {@code isSubsignature} の当たる public の宣言（static と public でないものを除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
      * キーが同じなら読み手はキーの照合で引けるので書かない。実装する側の型が実装される側のインターフェースを
-     * 実装していれば、その宣言の O 行が同じことを言うので書かない
+     * 実装していれば、その宣言の O 行が同じことを言うので書かない。
+     *
+     * <h4>実装する側は public の宣言だけ</h4>
+     * JLS 8.4.8 では、パッケージアクセスのメソッドは同じパッケージのサブクラスにしか継承されない。
+     * {@code class UserRepo extends a.BaseRepo implements Repo<a.User>}（{@code a.BaseRepo.save(User)} が
+     * パッケージアクセス、{@code UserRepo} は別のパッケージ）では {@code BaseRepo.save} は {@code UserRepo} のメンバーでなく、
+     * 何も実装しない（javac はブリッジを作らず、{@code Repo.save} の default が動く。Issue #168）。
+     * 一方、同じパッケージで継承されても、public でないメソッドが public なインターフェースのメソッドを実装することは
+     * JLS 8.4.8.3（弱いアクセス権限）でコンパイルできない。つまりコンパイルできるコードでは、インターフェースのメソッドを
+     * 実装する継承したメソッドは public のものに限る。そこで public でない宣言（static・private と同じく）は飛ばして
+     * 親へ進む（同じシグネチャの public な宣言がさらに上にあれば、それが実装する。無ければ書かない）。
+     * 「パッケージアクセスなら型からそのクラスまでの連鎖が同じパッケージにあるときだけ採る」と書き分ける必要は無い
+     * （違いが出るのはコンパイルできないコードだけ）
      */
     List<String> inheritedImplementationsOf(ITypeBinding type) {
         if (type == null || type.isInterface() || type.getSuperclass() == null) {
@@ -162,6 +174,9 @@ final class OverrideFacts {
                 IMethodBinding mc = subsignatureIn(sc, mi);
                 if (mc == null) {
                     continue;
+                }
+                if (!Modifier.isPublic(mc.getModifiers())) {
+                    continue;   // public でない宣言はインターフェースのメソッドを実装できない（JLS 8.4.8・8.4.8.3。Issue #168）
                 }
                 MethodRef implemented = names.toRef(mi);
                 MethodRef implementing = names.toRef(mc);

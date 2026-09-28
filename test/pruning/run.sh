@@ -550,6 +550,51 @@ public class EqEnum {
 }
 EOF
 
+# equals の「Object#equals(Object) かその上書きか」は JDT の overrides に任せる（Issue #189。名前・引数の数・引数の型
+# java.lang.Object を自分で比べない）。同じ名前の別の多重定義（equals(String)）・2 引数の static な equals は上書きでないので
+# 判定しない。インターフェースが宣言し直した equals(Object) は上書きだが、受け手の型がインターフェースなので実行時の型が決まらず、
+# 判定しない。どれも中身が常に真なので hit は動く（判定していれば "full" と違う値で打ち切ってしまう）
+case_ reachable EqOvl EqOvl.check EqOvl.hit "利用者の型の equals(String) の多重定義（常に真）は Object#equals の上書きでないので判定しない" <<'EOF'
+package pr;
+
+public class EqOvl {
+    static class Key {
+        boolean equals(String s) { return true; }
+    }
+    public static void main(String[] args) { check(new Key()); }
+    static void check(Key k) { if (k.equals("full")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable EqIfc EqIfc.check EqIfc.hit "インターフェースが宣言し直した equals(Object)（実装は常に真）は、受け手の型で実行時の型が決まらないので判定しない" <<'EOF'
+package pr;
+
+public class EqIfc {
+    interface Key {
+        boolean equals(Object o);
+    }
+    static class AnyKey implements Key {
+        @Override public boolean equals(Object o) { return true; }
+        @Override public int hashCode() { return 0; }
+    }
+    public static void main(String[] args) { check(new AnyKey()); }
+    static void check(Key k) { if (k.equals("full")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable EqStatic EqStatic.check EqStatic.hit "2 引数の static な equals(Object, Object)（常に真）は Object#equals の上書きでないので判定しない" <<'EOF'
+package pr;
+
+public class EqStatic {
+    static boolean equals(Object a, Object b) { return true; }
+    public static void main(String[] args) { check("light"); }
+    static void check(String s) { if (equals(s, "full")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
 # ---------------------------------------------------------------------------
 # ループの中で、後ろの代入が前の行に届く（先読みは表が変わらなくなるまで読み直す）
 # ---------------------------------------------------------------------------

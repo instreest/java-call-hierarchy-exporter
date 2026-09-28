@@ -68,6 +68,12 @@
 8.4.8.1	inherited-impl-no-default	nocsv	jls.s08_04_08.InheritedImpl.mk	IiFac.make	-	同上。default の IiFac.make は動かない
 8.4.8.1	inherited-impl-per-type	csv	jls.s08_04_08.InheritedImpl.other	IiFac.make	-	同じ IiMaker を継承しても IiFac<Integer> の make(Integer) は実装しない（型ごとの関係）ので default が動く
 8.4.8.1	inherited-impl-per-type-not-class	nocsv	jls.s08_04_08.InheritedImpl.other	IiMaker.make	-	同上。IiMaker.make(String) は動かない
+8.4.8	pkg-inherited-impl-default	csv	jls.s08_04_08.b.PkgInherited.viaRepo	PkgRepo.save	-	別パッケージの親クラスのパッケージアクセスの save(PkgUser) は継承されず PkgRepo<PkgUser>.save(T) を実装しないので、default の PkgRepo.save が動く（javac はブリッジを作らない。Issue #168）
+8.4.8	pkg-inherited-impl-not-class	nocsv	jls.s08_04_08.b.PkgInherited.viaRepo	PkgRepoBase.save	-	同上。継承されない PkgRepoBase.save は動かない（H 行の継承した実装に書かない）
+8.4.8	pkg-inherited-impl-local-new-default	csv	jls.s08_04_08.b.PkgInherited.direct	PkgRepo.save	-	同上。new PkgUserRepo() のローカル変数で絞っても default の PkgRepo.save
+8.4.8	pkg-inherited-impl-local-new-not-class	nocsv	jls.s08_04_08.b.PkgInherited.direct	PkgRepoBase.save	-	同上。PkgRepoBase.save に確定しない
+8.4.8	pkg-inherited-impl-via-mid-default	csv	jls.s08_04_08.b.PkgInherited.viaMid	PkgMidApi.save	-	自分は PkgRepoBase と同じパッケージでも、間に別パッケージの PkgMid が挟まれば save(PkgUser) は継承されず、default の PkgMidApi.save が動く
+8.4.8	pkg-inherited-impl-via-mid-not-class	nocsv	jls.s08_04_08.b.PkgInherited.viaMid	PkgRepoBase.save	-	同上。PkgRepoBase.save は動かない
 8.8.7	implicit-super	call	jls.s08_08.ImplicitSuper#<init>()	jls.s08_08.Parent#<init>()	-	明示的コンストラクタ呼び出しで始まらない本体は暗黙に super() を呼ぶ
 8.8.7	implicit-super-path	path	Constructors.run > ImplicitSuper.ImplicitSuper > Parent.Parent > Sink.parentNoArg	-	-	暗黙の super() を経由して親のコンストラクタ本体まで辿れる
 8.8.7	prologue-call	call	jls.s08_08.Prologue#<init>(int)	jls.s08_08.Sink#check(int)	-	柔軟なコンストラクタ本体: super(...) の前（プロローグ）の呼び出し
