@@ -83,6 +83,8 @@ pr.SepFactory#get("S;T") => pr.DaoB
 pr.EnumKeyFac#get("pr.EkMode.X") => pr.DaoA
 pr.TwoKeyFactory#get("A") => pr.DaoA
 pr.TwoKeyFactory#get("B") => pr.DaoB
+super pr.FwHandler#handle(java.lang.Object)
+super prlib.Handler#handle(java.lang.Object)
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -3302,7 +3304,16 @@ public class Holder<T> {
     public T create() { return v; }
 }
 EOF
-"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java \
+# フレームワークの入口の契約（contracts.txt の super prlib.Handler#handle(java.lang.Object)）の親型。jar の型で、型引数を具体化した
+# 上書き（O 行）が入口になることを見る（下の FwEntry）
+cat > work/libsrc/prlib/Handler.java <<'EOF'
+package prlib;
+
+public interface Handler<T> {
+    void handle(T t);
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java work/libsrc/prlib/Handler.java \
     && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls . \
     || ng "jar（work/lib/prlib.jar）を作れませんでした"
 case_ listed JarHold JarHold.use DaoB.find "戻り値: 親クラスが jar のクラス（prlib.Holder）なら、その create() が default より勝ちうる。default の戻り値（DaoA）に絞らない" <<'EOF'
@@ -3336,6 +3347,35 @@ public class GiRet {
 }
 EOF
 expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラスの GiBase.create(String)（GiFac の default ではない。GiImpl から見たときだけの実装の関係）"
+
+# default を抽象として宣言し直した子インターフェース（@FunctionalInterface）にラムダを渡す形（Issue #176）。
+# 親の型で受けた呼び出し（t.exec()・m.make()）の先は default の鍵で、そこで動くのはラムダ。書き手が M 行を default の鍵でも
+# 書かないと、ラムダの本体への辺が無く、default の戻り値（DaoA）で絞られて動く DaoB.find が落ちる
+case_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl LamRedecl.run 'LamRedecl.lambda$main$0' "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体へ繋ぐ" <<'EOF'
+package pr;
+
+interface LrTask { default void exec() { System.out.println("default"); } }
+@FunctionalInterface interface LrJob extends LrTask { void exec(); }
+interface LrMaker { default Dao make() { return new DaoA(); } }
+interface LrMaker2 extends LrMaker { Dao make(); }
+
+public class LamRedecl {
+    public static void main(String[] args) {
+        run((LrJob) () -> hit());
+        useMaker((LrMaker2) () -> new DaoB());
+        useUntraced(java.util.List.of((LrMaker2) () -> new DaoB()));
+    }
+    static void hit() { System.out.println("lambda"); }
+    static void run(LrTask t) { t.exec(); }
+    static void useMaker(LrMaker m) { m.make().find(); }
+    static void useUntraced(java.util.List<LrMaker> ms) { ms.get(0).make().find(); }
+}
+EOF
+expect_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl.useMaker 'LamRedecl.lambda$main$1' "同上（LrMaker の型で呼んだ make() もラムダの本体へ繋ぐ）"
+expect_ listed LamRedecl.useMaker DaoB.find "同上（動く実装はラムダの返す DaoB。default の戻り値の DaoA に絞らない）"
+expect_ absent LamRedecl.useMaker DaoA.find "同上（動かない default の戻り値 DaoA.find は出ない）"
+expect_ listed LamRedecl.useUntraced DaoB.find "戻り値: ラムダを追えない受け手（List の要素）でも、ラムダが実装し直している default の戻り値（DaoA）で絞らない"
+expect_ listed LamRedecl.useUntraced DaoA.find "同上（追えないので CHA の候補のまま。DaoA も残る）"
 
 # ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
@@ -3645,6 +3685,27 @@ EOF
 expect_ absent "SbDdSvc.<init>" SbDdX.find "同上（上限の部分型でない SbDdX.find の行が無い）"
 expect_ absent "SbDdSvc.<init>" SbDdB.find "同上（Bean でない SbDdB.find の行が無い）"
 
+# フレームワークの入口の契約（super 型#シグネチャ）を、型引数を具体化してシグネチャの食い違う上書きにも当てる（Issue #188）。
+# 契約は contracts.txt の super pr.FwHandler#handle(java.lang.Object)・super prlib.Handler#handle(java.lang.Object)。
+# 入口かどうかは methods.csv の role（FRAMEWORK_ENTRY）で見る（下の fw_role）
+case_ reachable FwEntry FwEntry.main FwEntry.touch "フレームワークの入口の契約の題材（入口の判定は methods.csv の role で見る）" <<'EOF'
+package pr;
+
+interface FwHandler<T> { void handle(T t); }
+class FwReq { }
+class FwSrcHandler implements FwHandler<FwReq> { public void handle(FwReq r) { System.out.println("src"); } }
+class FwJarHandler implements prlib.Handler<FwReq> { public void handle(FwReq r) { System.out.println("jar"); } }
+class FwBaseHandler { public void handle(FwReq r) { System.out.println("base"); } }
+class FwInhHandler extends FwBaseHandler implements FwHandler<FwReq> { }
+class FwObjHandler implements FwHandler<Object> { public void handle(Object o) { System.out.println("obj"); } }
+class FwOtherHandler { public void handle(FwReq r) { System.out.println("other"); } }
+
+public class FwEntry {
+    public static void main(String[] args) { touch(); }
+    static void touch() { new FwSrcHandler(); new FwJarHandler(); new FwInhHandler(); new FwObjHandler(); new FwOtherHandler(); }
+}
+EOF
+
 # ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
@@ -3744,6 +3805,26 @@ else
     ng "EmojiCut.run -> EmojiCut.target: 注記の条件式の切れ目が期待と違います"
     echo "       $(head -1 <<< "$emoji")"
 fi
+
+# フレームワークの入口の契約（super）が、型引数を具体化してシグネチャの食い違う上書きにも当たること（Issue #188）。
+# methods.csv の role（9 列目）で見る。列は method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,…
+MCSV=$(dirname "$CSV")/methods.csv
+fw_role() {   # $1=method 列（Class.method(引数)）
+    awk -F, -v m="$1" '$1 == m { print $9 }' "$MCSV"
+}
+for c in "FwSrcHandler.handle(FwReq) FRAMEWORK_ENTRY 契約 pr.FwHandler#handle(java.lang.Object) を型引数を具体化して上書きした handle(FwReq)（O 行）は入口" \
+         "FwJarHandler.handle(FwReq) FRAMEWORK_ENTRY 親型が jar の型（prlib.Handler）でも同じ（O 行は jar の親型にも書かれる）" \
+         "FwBaseHandler.handle(FwReq) FRAMEWORK_ENTRY 親クラスから継承した handle(FwReq) が FwHandler<FwReq> を実装する（H 行の 8 列目）ので入口" \
+         "FwObjHandler.handle(Object) FRAMEWORK_ENTRY 対照: シグネチャが同じ上書きは従来どおり入口" \
+         "FwOtherHandler.handle(FwReq) ENTRY_CANDIDATE 対照: 契約の型を継承していない同名のメソッドは入口ではない（呼び出し元が無いだけ）"; do
+    read -r method want why <<< "$c"
+    got=$(fw_role "$method")
+    if [ "$got" = "$want" ]; then
+        ok "契約 super の入口: $method は $want（$why）"
+    else
+        ng "契約 super の入口: $method の role が $want ではありません（$got。$why）"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # 値を読まない指定（dataflow.enabled=false）の @Bean。R 行を読まないので、@Bean メソッドが返す具象型は
@@ -3958,6 +4039,53 @@ package eu;
 
 public class C3 implements ASI, Api { }
 EOF
+# javac がブリッジメソッドでディスクリプタをそろえる形（Issue #186）。UserRepo は AbsRepo<User> の save(T) を save(User) で
+# 上書き（O 行）し、UserRepo2 は親クラス BaseRepo の save(User) で Repo<User> の save(T) を実装する（H 行の 8 列目）。
+# どちらもブリッジ save(java.lang.Object) がその型にできる。参照の側（Client）は、上書き・実装の無い版の UserRepo・UserRepo2
+# （extstub）に対してコンパイルするので、参照のディスクリプタは save(java.lang.Object) になる。JVM はブリッジのある型で
+# 解決するので、結び先は UserRepo.save(User)・BaseRepo.save(User)（AbsRepo.save・Repo.save ではない）
+cat > "$EXTU/src/eu/Repos.java" <<'EOF'
+package eu;
+
+public class Repos { }
+interface Repo<T> { void save(T t); }
+EOF
+cat > "$EXTU/src/eu/User.java" <<'EOF'
+package eu;
+
+public class User { }
+EOF
+cat > "$EXTU/src/eu/AbsRepo.java" <<'EOF'
+package eu;
+
+public class AbsRepo<T> implements Repo<T> { public void save(T t) { System.out.println("abs"); } }
+EOF
+cat > "$EXTU/src/eu/UserRepo.java" <<'EOF'
+package eu;
+
+public class UserRepo extends AbsRepo<User> { public void save(User u) { System.out.println("user"); } }
+EOF
+cat > "$EXTU/src/eu/BaseRepo.java" <<'EOF'
+package eu;
+
+public class BaseRepo { public void save(User u) { System.out.println("base"); } }
+EOF
+cat > "$EXTU/src/eu/UserRepo2.java" <<'EOF'
+package eu;
+
+public class UserRepo2 extends BaseRepo implements Repo<User> { }
+EOF
+mkdir -p "$EXTU/extstub/eu"
+cat > "$EXTU/extstub/eu/UserRepo.java" <<'EOF'
+package eu;
+
+public class UserRepo extends AbsRepo<User> { }
+EOF
+cat > "$EXTU/extstub/eu/UserRepo2.java" <<'EOF'
+package eu;
+
+public class UserRepo2 extends AbsRepo<User> { }
+EOF
 cat > "$EXTU/extsrc/ext/Client.java" <<'EOF'
 package ext;
 
@@ -3965,9 +4093,14 @@ public class Client {
     public static void callC() { new eu.C().m(); }
     public static void callC2() { new eu.C2().m(); }
     public static void callC3() { new eu.C3().s(); }
+    public static void callRepo() { new eu.UserRepo().save(new eu.User()); }
+    public static void callRepo2() { new eu.UserRepo2().save(new eu.User()); }
 }
 EOF
-if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" $(find "$EXTU/src" "$EXTU/extsrc" -name '*.java') \
+# src の UserRepo・UserRepo2 の代わりに extstub のものを渡す（ファイル名と違う名前の型は -sourcepath では見つからない）
+if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" \
+        $(find "$EXTU/src" -name '*.java' ! -name UserRepo.java ! -name UserRepo2.java) \
+        $(find "$EXTU/extstub" "$EXTU/extsrc" -name '*.java') \
         > "$EXTU/javac.log" 2>&1 \
         && rm -rf "$EXTU/extcls/eu" \
         && "$(dirname "$JAVAC_BIN")/jar" --create --file "$EXTU/extjars/client.jar" -C "$EXTU/extcls" . ; then
@@ -3981,7 +4114,9 @@ if [ ! -f "$ECSV" ]; then
     ng "外部の jar からの被参照: 解析できませんでした（test/pruning/$EXTU/run.log・javac.log）"
 else
     for c in "Client.callC I2.m I1.m C implements I1, I2" "Client.callC2 I2.m I1.m C2 extends B2(implements I2) implements I1" \
-             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)"; do
+             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)" \
+             "Client.callRepo UserRepo.save AbsRepo.save 参照 UserRepo.save(Object) は、型引数を具体化した上書き save(User) のブリッジ（O 行）" \
+             "Client.callRepo2 BaseRepo.save Repo.save 参照 UserRepo2.save(Object) は、親クラスから継承した save(User) が Repo<User> を実装するブリッジ（H 行の 8 列目）"; do
         read -r caller want wrong why <<< "$c"
         if [ -n "$(ext_rows "$caller" "$want")" ] && [ -z "$(ext_rows "$caller" "$wrong")" ]; then
             ok "外部の jar からの被参照: $caller -> $want（$why。$wrong ではない）"

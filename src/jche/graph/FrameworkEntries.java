@@ -34,6 +34,8 @@ import jche.cache.ModifierTokens;
  * 求めるが、D 行は戻り値の型を持たないので見ない（void でない main も入口にする。多すぎる側）。
  * インスタンスの main のために起動器が使う引数なしのコンストラクタがあるかまでは見ない。
  * {@code super} の型は jar の中でよい（H 行の親型に jar の型の名前も入っている）。
+ * {@code super} の「同じシグネチャ」は、型引数を具体化してシグネチャの食い違う上書き（O 行）と、親クラスから継承した
+ * メソッドによる実装（H 行の 8 列目）も含む（{@link #overridesWithBridge}。Issue #188）。
  */
 public final class FrameworkEntries {
 
@@ -172,13 +174,16 @@ public final class FrameworkEntries {
                     }
                 }
                 case Contract.SUPER -> {
-                    if (!sig.equals(c.sig())) {
-                        continue;
+                    boolean hit;
+                    if (sig.equals(c.sig())) {
+                        if (supers == null) {
+                            supers = transitiveSupertypes(methods.typeFqn(id));
+                        }
+                        hit = supers.contains(c.value());
+                    } else {
+                        hit = overridesWithBridge(id, c.value() + "#" + c.sig());
                     }
-                    if (supers == null) {
-                        supers = transitiveSupertypes(methods.typeFqn(id));
-                    }
-                    if (supers.contains(c.value())) {
+                    if (hit) {
                         usage.markApplied(c.row());
                         return simpleName(c.value()) + "#" + c.sig();
                     }
@@ -188,6 +193,42 @@ public final class FrameworkEntries {
             }
         }
         return "";
+    }
+
+    /**
+     * シグネチャの違うメソッド {@code id} が、契約の宣言 {@code contractKey}（{@code 型FQN#name(paramSig)}）を
+     * 型引数を具体化して上書き・実装しているか（javac がブリッジメソッドでディスクリプタをそろえる形）。
+     *
+     * <p>{@code class MyHandler implements Handler<Req> { void handle(Req r) }} の {@code handle(Req)} は、契約
+     * {@code super Handler#handle(java.lang.Object)} のシグネチャと文字列では一致しないが、フレームワークが
+     * {@code Handler#handle(Object)} を呼べば（ブリッジを経て）動く入口である（Issue #188）。判定は選択と同じ 2 つの材料
+     * （{@link MethodSelection} の「上書きできる宣言」）で、自前で名前や引数型を比べない:
+     * <ul>
+     *   <li>O 行（{@link OverrideIndex#overridersOf}。書き手が {@code IMethodBinding.overrides} で判定した、型引数を具体化した
+     *       上書き。親型が jar の型でも書かれている）</li>
+     *   <li>H 行の 8 列目（{@link TypeHierarchy#inheritedImplementations}。親クラスから継承したメソッドが、型引数を置き換えた
+     *       親インターフェースのメソッドを実装する組。{@code class MyHandler extends BaseHandler implements Handler<Req>} で
+     *       {@code BaseHandler#handle(Req)} が入口になる形。その部分型から見たときだけの関係なので、宣言した型の部分型を見る）</li>
+     * </ul>
+     * 契約の宣言のメソッド ID から {@link MethodSelection#overridingImplementations} で引く案は、jar の型の宣言
+     * （{@code HttpServlet#doGet}）はソースのどこかが呼び出し先にしていない限り表に無いので使えない
+     */
+    private boolean overridesWithBridge(int id, String contractKey) {
+        IntArray overriders = graph.overrides.overridersOf(contractKey);
+        if (overriders != null) {
+            for (int i = 0; i < overriders.size(); i++) {
+                if (overriders.get(i) == id) {
+                    return true;
+                }
+            }
+        }
+        String pair = contractKey + ">" + methods.key(id);
+        for (String sub : graph.hierarchy.transitiveSubtypes(methods.typeFqn(id))) {
+            if (graph.hierarchy.inheritedImplementations(sub).contains(pair)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 親型を全部集める。jar の型の名前も含む（H 行に入っている） */
