@@ -7,14 +7,14 @@ A tool that recursively extracts Java method call hierarchies across an entire p
 
 ## できること（ツール概要）
 
-Javaプロジェクト全体のメソッド呼び出し階層を一括で解析し、CSVファイルに書き出すツールです。
-解析結果をExcelで開いてフィルタすることで対象メソッドの影響範囲を洗い出すことができます。
+Java プロジェクト全体のメソッド呼び出し階層を一括で解析し、CSV ファイルに書き出すツールです。
+解析結果を Excel で開いてフィルタすることで対象メソッドの影響範囲を洗い出すことができます。
 **開発中であるため機能が予告なく変更される場合があります。**
 
 | 知りたいこと | 場所 |
 |---|---|
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
-| 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
+| 出力 CSV ファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
 
 ### ほかの手段との違い
@@ -36,9 +36,9 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 |---|---|
 | OS | Windows、Linux |
 | 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う Eclipse JDT（Eclipse の Java コンパイラ） は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
-| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応しているJavaバージョンに対応します。最新版3.46.0ではJava 8 ～ 26に対応します。 |
+| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応している Java バージョンに対応します。最新版 3.46.0 では Java 8 ～ 26 に対応します。 |
 | ビルドの構成 | Eclipse の `.classpath`、Maven（`pom.xml`）、Gradle（`build.gradle`）において宣言的に記載されたソースフォルダと依存 jar を自動で見つけて解析します |
-| 依存 jar | **手元に取得済みであること。** このツールは解析対象プロジェクトのビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、コンパイル時および実行時の依存 jar をlibフォルダに保存してコンフィグ指定が必要となります。|
+| 依存 jar | **手元に取得済みであること。** このツールは解析対象プロジェクトのビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、コンパイル時および実行時の依存 jar を lib フォルダに保存して設定ファイルで指定する必要があります。|
 
 ### 分からないこと（制約）
 
@@ -65,7 +65,7 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 2. **設定ファイルに解析対象を書く** … [`config/config.properties`](config/config.properties) の `project.root` に、
    解析したいプロジェクトのフォルダを書きます。**必須なのはこの 1 行だけ**で、ソースフォルダ・依存 jar・
-   文字コードは空欄のままなら自動で読み取ります（ソースフォルダと依存 jar は `.classpath` 、 `pom.xml` 、 `build.gradle` から、
+   文字コードは空欄のままなら自動で読み取ります（ソースフォルダと依存 jar は `.classpath`、`pom.xml`、`build.gradle` から、
    文字コードは `pom.xml` の `project.build.sourceEncoding` から。無ければ UTF-8）。
 
      ```properties
@@ -143,14 +143,14 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 注記の一覧は[注記](#注記)にあります。
 
 ### Eclipse でソースコードへジャンプする
-`call-hierarchy.csv` の行をコピーし、Eclipseの「Javaスタック・トレース・コンソール」に貼り付けると、
+`call-hierarchy.csv` の行をコピーし、Eclipse の「Java スタック・トレース・コンソール」に貼り付けると、
 `(ファイル:行数)` の部分がハイパーリンクになり、ソースコードへ飛べます。
 
 1. メニューから ウィンドウ(Window) ＞ ビューの表示(Show View) ＞ コンソール(Console) を選択
 2. コンソールビュー右上（ツールバー）の「コンソールのオープン(Open Console)」ボタン
    （プラスの付いたモニターのアイコン）の横の「▼」をクリックし、
-   「Javaスタック・トレース・コンソール(Java Stack Trace Console)」を選択
-3. `call-hierarchy.csv`のテキストをそのコンソールに貼り付ける
+   「Java スタック・トレース・コンソール(Java Stack Trace Console)」を選択
+3. `call-hierarchy.csv` のテキストをそのコンソールに貼り付ける
 
 ### 用語
 
@@ -195,15 +195,15 @@ config/
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
     ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
-    ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8。ビルドファイルから集めた依存jarの一覧と要求元も含む）
+    ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8。ビルドファイルから集めた依存 jar の一覧と要求元も含む）
     ├── warnings.txt              確認してほしいことと対処のしかた（UTF-8。警告やエラーがあったときだけ）
     └── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
 ```
 
-出力CSVファイルはUTF-8（BOM付き）なのでExcelで開けます。CSV の中身は、画面の表示言語に関わらず英語です。
+出力 CSV ファイルは UTF-8（BOM 付き）なので Excel で開けます。CSV の中身は、画面の表示言語に関わらず英語です。
 
-`warnings.txt` は、ビルドが通り依存jarがすべて解決できている、というこのツールの前提が崩れているときだけできます。
-載るのは、依存jarの不足・設定の指定先の欠け・コンパイルエラーのほか、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存jar などです。
+`warnings.txt` は、ビルドが通り依存 jar がすべて解決できている、というこのツールの前提が崩れているときだけできます。
+載るのは、依存 jar の不足・設定の指定先の欠け・コンパイルエラーのほか、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存 jar などです。
 `run.log` は実行ごとに必ずできる経過の記録（どの設定で何が動いたか、どこに何を保存したか）です。
 
 
@@ -211,30 +211,30 @@ config/
 
 | 列 | 内容 |
 |---|---|
-| `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
-| `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excelのフィルタに使える |
+| `caller` | 呼び出し元。Java のスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
+| `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excel のフィルタに使える |
 | `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。**どの行にも必ず入る** |
 | `level` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
-| `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
-| `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**）。注記が付く場合は最後の要素になる（[注記](#注記)） |
+| `root` | 起点メソッド。クラス名.メソッド名の形式で Excel のフィルタに使える |
+| `call-hierarchy` | 起点からの呼び出し先を 1 ノード 1 列で展開（**可変長**）。注記が付く場合は最後の要素になる（[注記](#注記)） |
 
 `resolved-by` は「接頭辞（確度）＋ 解決の段のラベル（手法）」の形です。
 
 | 接頭辞 | 意味 |
 |---|---|
-| `RESOLVED:` | 呼び出し先を1件に確定した。後半が[どの段で決めたか](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
-| `UNEXPANDED:` | 1件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
+| `RESOLVED:` | 呼び出し先を 1 件に確定した。後半が[どの段で決めたか](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
+| `UNEXPANDED:` | 1 件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
 | `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`root` 列は `(unresolved)` |
 | `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
-後半は解決の段のラベルそのものですが、1つだけ例外があります。ラムダ式・メソッド参照が実装している
-関数型インターフェースの呼び出しは、ソース上の実装が1件でも（ラベルは `SINGLE_IMPL` 等の確定系でも）
+後半は解決の段のラベルそのものですが、1 つだけ例外があります。ラムダ式・メソッド参照が実装している
+関数型インターフェースの呼び出しは、ソース上の実装が 1 件でも（ラベルは `SINGLE_IMPL` 等の確定系でも）
 どれが実行されるかは未特定なので `UNEXPANDED:LAMBDA` になります。
 
 Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿り切れなかった呼び出し**、
 `level` で「3 以下」＝**起点の近く**、のように絞り込めます。
 
-行の並びは毎回同じです。rootメソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、rootメソッドからの呼び出し順（深さ優先）で、
+行の並びは毎回同じです。root メソッドのクラス順（ソースフォルダ順 → 完全修飾クラス名順 → 宣言行順）、root メソッドからの呼び出し順（深さ優先）で、
 具象クラスの候補が複数ある呼び出しは候補ごとに 1 行、宣言型自身の実装 → 下位型（直接の下位型は完全修飾クラス名順）の順に出ます。
 末尾の `type resolution failed …` の行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 呼び出し順）で出ます。
 
@@ -256,7 +256,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | 列 | 内容 |
 |---|---|
 | `method` | **単純クラス名.メソッド名(引数型略名)**。引数を付けてオーバーロードを見分けられるようにしています。略名が衝突する場合だけ完全修飾の引数に戻ります |
-| `declaringType` | 宣言しているクラスの完全修飾名。Excelのフィルタに使える |
+| `declaringType` | 宣言しているクラスの完全修飾名。Excel のフィルタに使える |
 | `typeKind` | `C`=具象クラス / `A`=抽象クラス / `I`=インターフェース |
 | `file` | 宣言されているファイル。`project.root` からの相対パス |
 | `line` | 宣言行 |
@@ -265,9 +265,9 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `outDegree` | このメソッドが出している呼び出しの数 |
 | `role` | 呼び出し元・呼び出し先の有無による分類（下表） |
 | `reachable` | 起点からの呼び出しを辿って到達できるなら `1`、できないなら `0` |
-| `unresolvedCalls` | このメソッドの中で、具象クラスを1つに絞れなかった呼び出しの件数 |
+| `unresolvedCalls` | このメソッドの中で、具象クラスを 1 つに絞れなかった呼び出しの件数 |
 | `unresolvedCause` | その理由（下表）。複数ある場合は `;` 区切り |
-| `inHierarchy` | `call-hierarchy.csv` に1行でも出たなら `1`、出なかったなら `0` |
+| `inHierarchy` | `call-hierarchy.csv` に 1 行でも出たなら `1`、出なかったなら `0` |
 | `absentCause` | 出なかった理由（下表）。`inHierarchy` が `1` なら空欄 |
 
 | role | 意味 |
@@ -287,17 +287,17 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:CHA] parameter (passed in from outside the method)` | レシーバが呼び出し元から渡された引数 |
 | `[UNEXPANDED:CHA] field` | レシーバがフィールド。DI で注入される形なら[プラグイン](docs/instance-analysis-plugin.md)で絞れる |
 | `[UNEXPANDED:CHA] local variable` | レシーバがローカル変数（同一メソッド内の `new` は追跡済みで、それでも絞れなかったもの） |
-| `[UNEXPANDED:CHA] own class (this)` / `type name (unbound method reference)` / `receiver unknown` | それぞれ `this`・暗黙のレシーバ、型名で書いたメソッド参照（`Dao::describe`。レシーバは呼び出し時の第1引数）、配列要素やキャスト式など |
-| `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | 中身を書いたクラスがソース上に1つも無い |
+| `[UNEXPANDED:CHA] own class (this)` / `type name (unbound method reference)` / `receiver unknown` | それぞれ `this`・暗黙のレシーバ、型名で書いたメソッド参照（`Dao::describe`。レシーバは呼び出し時の第 1 引数）、配列要素やキャスト式など |
+| `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | 中身を書いたクラスがソース上に 1 つも無い |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名)` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` | その関数型インターフェースをラムダかメソッド参照が実装している |
 
-`absentCause` は、そのメソッドが `call-hierarchy.csv` に1行も出なかった理由です。
+`absentCause` は、そのメソッドが `call-hierarchy.csv` に 1 行も出なかった理由です。
 打ち切りで階層から消えた部分木は、ここでしか見えません。
 
 | absentCause | 意味 |
 |---|---|
-| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
+| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を 1 つに絞れず、候補として行にはなるがその先へ降りなかった |
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
 | `[UNREACHABLE] below a call pruned by a condition` | 条件分岐の静的解析で打ち切った呼び出しから先にしかない（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[EXCLUDED] excluded by exclude.packages` | `exclude.packages` で除外された |
@@ -331,20 +331,20 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達した |
-| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を1つに絞れなかった。候補は1件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を 1 つに絞れなかった。候補は 1 件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
-| `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に1つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
+| `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に 1 つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名): FQN is…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` | その関数型インターフェースをラムダかメソッド参照が実装しているが、この呼び出し箇所にどれが渡ってくるかは特定できなかった（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
-| `[EXTERNAL] no source to follow` | 呼び出し先がjar内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
+| `[EXTERNAL] no source to follow` | 呼び出し先が jar 内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
 | `[EXTERNAL] type guessed from an import (unverified)` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
-| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: …` | 同じく契約で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を1つに決められなかった。候補を1件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: …` | 同じく契約で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
 | `type resolution failed …` | 呼び出し先の型を特定できなかった行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
-1つの注記は最大2つのパーツからなり、両方付くときは ` / ` で繋がります。
+1 つの注記は最大 2 つのパーツからなり、両方付くときは ` / ` で繋がります。
 前半が打ち切りの理由（`[UNEXPANDED:CYCLE]`・`[UNEXPANDED:DEPTH]`・`[EXTERNAL]`・`[UNREACHABLE]`）、
 後半が絞り込みの結果（`[UNEXPANDED:CHA]` 等）です。
 
@@ -354,14 +354,14 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 ### jar からの被参照メソッド
 
-自分のコードを呼んでいる側のjarを config の `external.library.folders` に指定すると、
+自分のコードを呼んでいる側の jar を設定ファイルの `external.library.folders` に指定すると、
 `call-hierarchy.csv` に追記されます。
 
 ```properties
 external.library.folders=./lib
 ```
 
-classファイルの命令列を読むため、「どのjar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
+class ファイルの命令列を読むため、「どの jar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
 `caller` 列は呼び出し階層の行と同じスタックトレース形式なので、Eclipse の Java スタック・トレース・コンソールに貼れば
 （相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`level` は `1` です。
 ラムダ式やメソッド参照（`Counter::bump`）からの参照も、それを書いた行として出ます。
@@ -376,7 +376,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 行番号は相手の jar が行番号情報付きでビルドされている（`javac` の既定）ときだけ出ます。
 `-g:none` でビルドされた jar は、JVM のスタックトレースと同じく `(Unknown Source)` になります（メソッド名までは出ます）。
 
-`external.library.folders` に指定したフォルダに自プロジェクトのjarが混ざっていても、
+`external.library.folders` に指定したフォルダに自プロジェクトの jar が混ざっていても、
 それは「他リポジトリからの被参照」ではないので読み飛ばします。
 除外した件数は実行ログに出ます。
 `dist` を丸ごと指定しても、自分から自分への呼び出しが被参照として出ることはありません。
@@ -389,7 +389,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | `external-ref:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
 
 自分の型を参照しているのに一致するメソッドが無いもの（引数付きのコンストラクタを含む）は、
-相手のjarが古い版に対してビルドされている可能性があります。件数のみ実行ログに出力されます。
+相手の jar が古い版に対してビルドされている可能性があります。件数のみ実行ログに出力されます。
 非 static な内部クラスのコンストラクタは、バイトコード上は外側インスタンスが引数に付くため
 ソースの宣言と一致せず、この件数に入ります。
 
@@ -400,29 +400,29 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 インターフェース型で宣言された呼び出しを、どの実装に解決したかを段階的に判定します。
 先に確定した段で打ち切ります。
 ここのラベルが、そのまま `call-hierarchy.csv` の `resolved-by` 列の後半になります
-（1件に確定したら `RESOLVED:`、候補のままなら `UNEXPANDED:` が頭に付く）。
+（1 件に確定したら `RESOLVED:`、候補のままなら `UNEXPANDED:` が頭に付く）。
 
 | 段 | ラベル | 判定 |
 |---|---|---|
-| 0 | `STATIC_BOUND:*` | private / static / final メソッド、finalクラス、コンストラクタ、super呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
-| 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が1つに定まる |
-| 1 | `NO_IMPL` | 本体を持つ実装がソース上に1つも無い（宣言のまま扱う） |
+| 0 | `STATIC_BOUND:*` | private / static / final メソッド、final クラス、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
+| 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
+| 1 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
 | 3 | `CONTRACT` | 契約表に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/callback-contracts.md](docs/callback-contracts.md)） |
-| 3 | （拡張が返すラベル） | ファクトリ・DI設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。契約表の次に尋ねる |
+| 3 | （拡張が返すラベル） | ファクトリ・DI 設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。契約表の次に尋ねる |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定（同上） |
 | — | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（同上。下記） |
-| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が1つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
+| 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。渡したメソッド参照の実装を1つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
+| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
 | — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
 | — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
-`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると1件に絞れます。
+`CHA` のまま絞れない呼び出しは、解決の条件を外から与えると 1 件に絞れます。
 出力フォルダの `contracts-suggested.txt` に、そのまま貼れる契約表のひな形が出ます
 （[docs/callback-contracts.md](docs/callback-contracts.md)。条件が複雑なら
 [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) の拡張）。
@@ -434,7 +434,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 ## ラムダ式・メソッド参照
 
 ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
-**合成メソッド**として1つのノードにします（`methods.csv` には出しません）。
+**合成メソッド**として 1 つのノードにします（`methods.csv` には出しません）。
 static 初期化子・static フィールド・enum 定数の引数の中のラムダは `lambda$static$N` です。
 通し番号はスタックトレースに出る javac の番号と一致するとは限りません（[docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md) の Q13）。
 
@@ -443,7 +443,7 @@ at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFL
 at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
 ```
 
-ラムダを作った箇所からは、必ず「生成した」1本の辺が出ます。
+ラムダを作った箇所からは、必ず「生成した」1 本の辺が出ます。
 どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
 実行箇所を特定できたときは、そちらからも同じノードに繋がります（`resolved-by` が `RESOLVED:DATAFLOW_LAMBDA`）。
 
@@ -457,9 +457,9 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 | メソッド参照 | `Runnable r = this::helper; r.run();` → `helper` に繋がる |
 | レシーバを束縛したメソッド参照 | `Runnable r = dao::describe; r.run();` → `dao` の具象型が分かればその実装（`OrderDaoImpl.describe`）に繋がる。分からなければ上書き候補（`UNEXPANDED:CHA`） |
 | ラムダの戻り値に対する呼び出し | `Supplier<Dao> s = () -> new X(); s.get().describe();` → ラムダの `return` から `X.describe` に繋がる |
-| ローカルのコレクションに詰めて拡張for文で回す | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
+| ローカルのコレクションに詰めて拡張 for 文で回す | `jobs.add(() -> ...); for (Runnable j : jobs) j.run();` |
 
-型名で書いたメソッド参照（`Consumer<Dao> c = Dao::describe;`）は、レシーバが呼び出し時の第1引数なので追わず、
+型名で書いたメソッド参照（`Consumer<Dao> c = Dao::describe;`）は、レシーバが呼び出し時の第 1 引数なので追わず、
 上書き候補を全部出します（`UNEXPANDED:CHA`）。
 
 特定できない形（`resolved-by` が `UNEXPANDED:LAMBDA` になります）:
@@ -478,7 +478,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 「`Thread#start()` は渡した `Runnable` の `run()` を呼ぶ」という契約表で繋ぎます
 （`RESOLVED:CALLBACK`。[docs/callback-contracts.md](docs/callback-contracts.md)）。
 渡したのが上書きされうるメソッドへのメソッド参照（`new Thread(this::hook).start()`）で、動く実装を
-1つに決められないときは、上書き候補を全部出します（`UNEXPANDED:CALLBACK`）。
+1 つに決められないときは、上書き候補を全部出します（`UNEXPANDED:CALLBACK`）。
 自前のフレームワーク分は `contracts.files` に表を書いて足せます。
 
 ---
@@ -492,7 +492,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 
 - 同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクトは混ざりません
 - 実行していないときなら消しても構いません（次の実行が全件の解析になります）。
-  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false` をコンフィグで指定します。
+  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false` を設定ファイルで指定します。
 - 同じキャッシュを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うと、
   あとの実行は先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）
 - どのファイルを解析し直すかの決まりは [config/config.properties](config/config.properties) の `cache.enabled` のコメントに、
@@ -505,7 +505,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 | 知りたいこと | 場所 |
 |---|---|
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル）、起動コマンドの全仕様は [docs/cli.md](docs/cli.md) |
-| 出力CSVファイルの読み方 | [結果の読み方](#結果の読み方)・[出力ファイル](#出力ファイル)（このファイル） |
+| 出力 CSV ファイルの読み方 | [結果の読み方](#結果の読み方)・[出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
 | 機能別の詳しい使い方・設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
 
