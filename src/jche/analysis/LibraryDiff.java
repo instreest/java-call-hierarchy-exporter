@@ -114,10 +114,15 @@ final class LibraryDiff {
     boolean staleInProcess;
 
     /**
-     * このプロセスで前に走査した jar の、JDK が目次を共有する鍵（更新時刻と fileKey）と指紋（絶対パス -> {鍵, 指紋}）。
-     * 解析サーバーは同じプロセスで解析を繰り返すので、プロセスの中で持ち越す
+     * このプロセスで前に走査した jar の、JDK が目次を共有する鍵（{@link #sharedViewKeyOf}）-> そのとき JDK が見せて
+     * いる（と考える）目次の指紋。解析サーバーは同じプロセスで解析を繰り返すので、プロセスの中で持ち越す。
+     *
+     * <p>鍵はパスではなく JDK の鍵で持ち、見た鍵はすべて残す。JDK は閉じられていない {@link ZipFile} が持つすべての鍵で
+     * 目次を共有する（パスには依らない）ので、パスごとに最後の 1 組だけを覚えると、鍵 K1 → K2（K1 を上書きして忘れる）→ K1
+     * に戻す上書きと、同じ inode を別のパス（シンボリックリンク・ハードリンク）で読む形が素通りした
+     * （docs/cache-unification-qa.md の Q135）
      */
-    private static final Map<Path, String[]> seenInProcess = new ConcurrentHashMap<>();
+    private static final Map<String, String> seenInProcess = new ConcurrentHashMap<>();
     /** JDK の目次が今の中身と同じになるのを待つ回数と間隔（{@link #releaseStaleView}） */
     private static final int RELEASE_TRIES = 50;
     private static final long RELEASE_WAIT_MILLIS = 100;
@@ -341,26 +346,36 @@ final class LibraryDiff {
     }
 
     /**
-     * このプロセスで前に走査したときと JDK の鍵（更新時刻と fileKey）が同じなのに指紋が違えば、JDK が前の目次を
+     * このプロセスで前に JDK の鍵（{@link #sharedViewKeyOf}）が同じ jar を走査していて指紋が違えば、JDK が前の目次を
      * 共有し続けているかもしれない。今の中身と同じになるまで解き放つ。解き放てなければ警告し、{@code stale[0]} を真にする
      * （クラスの説明「同じプロセスでの解析の繰り返し」）。
      *
-     * <p>{@link #seenInProcess} は「JDK が見せている（と考える）目次の指紋」を持つ。解き放てなかったときは前の指紋を
+     * <p>{@link #seenInProcess} は鍵ごとに「JDK が見せている（と考える）目次の指紋」を持つ。解き放てなかったときは前の指紋を
      * 残す。今の指紋に置き換えると、次の解析では指紋が一致して確かめず、JDK が前の目次を見せたままなのに、
-     * この実行で内容ハッシュを空にしたファイルを前の目次で解析し直して、正しいものとして書いてしまう
+     * この実行で内容ハッシュを空にしたファイルを前の目次で解析し直して、正しいものとして書いてしまう。
+     * 一致したとき・解き放てたときだけ、その鍵の記録を置き換える（ほかの鍵の記録は消さない。鍵を戻す上書きに備える）
      */
     private static void checkSharedView(Path jar, String fingerprint, boolean[] stale) throws IOException {
-        BasicFileAttributes attrs = Files.readAttributes(jar, BasicFileAttributes.class);
-        String jdkKey = attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS) + "\t" + attrs.fileKey();
-        Path abs = jar.toAbsolutePath().normalize();
-        String[] before = seenInProcess.get(abs);
-        if (before != null && before[0].equals(jdkKey) && !before[1].equals(fingerprint)
-                && !releaseStaleView(jar, fingerprint)) {
+        String jdkKey = sharedViewKeyOf(jar);
+        String before = seenInProcess.get(jdkKey);
+        if (before != null && !before.equals(fingerprint) && !releaseStaleView(jar, fingerprint)) {
             stale[0] = true;
             Log.warn(Messages.format("analysis.libraryStaleInProcess", jar));
             return;   // 前の指紋を残す（次の解析でもまた確かめる）
         }
-        seenInProcess.put(abs, new String[] {jdkKey, fingerprint});
+        seenInProcess.put(jdkKey, fingerprint);
+    }
+
+    /**
+     * JDK が {@link ZipFile} の目次を共有する鍵（{@code ZipFile.Source.Key} と同じ見方）。更新時刻と fileKey（inode）で、
+     * fileKey が取れない環境（Windows）では絶対パス。パス無しだと、同じ更新時刻の別の jar と衝突する。
+     * シンボリックリンクはたどる（{@link Files#readAttributes} の既定。JDK も同じ）ので、別のパスから読む同じ inode は同じ鍵になる
+     */
+    private static String sharedViewKeyOf(Path jar) throws IOException {
+        BasicFileAttributes attrs = Files.readAttributes(jar, BasicFileAttributes.class);
+        Object fileKey = attrs.fileKey();
+        return attrs.lastModifiedTime().to(TimeUnit.NANOSECONDS) + "\t"
+                + ((fileKey != null) ? fileKey.toString() : jar.toAbsolutePath().normalize().toString());
     }
 
     /**
