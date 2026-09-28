@@ -333,7 +333,33 @@ final class TypeContextTracker {
         if (!anyConstructor && (tb == null || !tb.isInterface())) {
             synthesizeImplicitConstructor(tb, declLine, roots);
         }
+        synthesizeImplicitAccessors(tb, declLine);
         return new TypeContext(tb, roots, declLine);
+    }
+
+    /**
+     * record の暗黙に宣言されたアクセサ（JLS 8.10.3。書かれなかった成分のアクセサ）の D 行を合成する。
+     * D 行が無いと読み手の実装探索（{@code MethodSelection#search}）はその型の段で何も見つけず、
+     * 親インターフェースの同じシグネチャの default（{@code interface Named { default String name() }} を
+     * {@code record R(String name) implements Named} で）に進んでしまう。動くのはアクセサ（クラスのメソッドが
+     * default に勝つ。JLS 8.4.8）。Issue #177。修飾子は public（JLS 8.10.3）に implicit を添える。
+     * 明示的に書いたアクセサは {@code FactVisitor} が通常の D 行にするので、JDT が合成したもの
+     * （{@code isSyntheticRecordMethod}）だけ
+     */
+    private void synthesizeImplicitAccessors(ITypeBinding tb, int declLine) {
+        if (tb == null || !tb.isRecord()) {
+            return;
+        }
+        for (IMethodBinding m : ImplicitCalls.accessorsOf(tb)) {
+            if (!m.isSyntheticRecordMethod()) {
+                continue;
+            }
+            MethodRef ref = names.toRef(m);
+            if (ref != null) {
+                out.declarations.add(new MethodDeclFact(ref, declLine, true,
+                        ModifierTokens.with(BindingNames.modifiersOf(m.getModifiers()), ModifierTokens.IMPLICIT)));
+            }
+        }
     }
 
     /**

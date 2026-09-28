@@ -513,6 +513,8 @@ public final class CacheFormat {
      *       インターフェースを経由した親子（最も特定的な default の判定）を知る。H 行の親型・親クラスの連鎖の解決できなかった
      *       型を {@code ?.} 付きにし、単純名から作られた無い型の名前を {@code $} や補助文字を含む名前でも鍵から作る
      *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
+     *   <li>v45（続き）{@code super.m()} / {@code X.super.m()} / {@code super::m} の C 行に修飾する型（囲む型の親クラスか、名指しの
+     *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
      * </ul>
      */
     public static final String VERSION = "jche-cache-v45";

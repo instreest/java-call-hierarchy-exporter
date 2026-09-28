@@ -39,6 +39,8 @@ public final class TypeHierarchy {
     private final HashMap<String, List<String>> binarySupertypes = new HashMap<>();
     /** 型 -> 種別（I/A/C） */
     private final HashMap<String, Character> typeKind = new HashMap<>();
+    /** 型 -> パッケージ（H 行の 4 列目）。ソース上の型だけ */
+    private final HashMap<String, String> typePackage = new HashMap<>();
     /** 型 -> その型に付いていたアノテーション（{@link jche.cache.AnnotationTokens}）。無い型は入れない */
     private final HashMap<String, String> typeAnnotations = new HashMap<>();
     private final HashMap<String, List<String>> transitiveCache = new HashMap<>();
@@ -68,6 +70,7 @@ public final class TypeHierarchy {
         indexedNames = null;
         indexByName = null;
         typeKind.put(t.typeFqn(), t.kind());
+        typePackage.put(t.typeFqn(), t.pkg() == null ? "" : t.pkg());
         if (!t.superclasses().isEmpty()) {
             // 同じ型を 2 つのファイルが宣言していれば、読んだ順に依らないよう綴りの小さいほうを採る
             List<String> known = superclasses.get(t.typeFqn());
@@ -136,6 +139,19 @@ public final class TypeHierarchy {
     /** その型に付いていたアノテーション（{@link jche.cache.AnnotationTokens}）。無ければ空文字列 */
     public String annotationsOf(String typeFqn) {
         return typeAnnotations.getOrDefault(typeFqn, "");
+    }
+
+    /**
+     * その型のパッケージ（H 行）。ソース上に無い型（jar の型）なら、名前の最後のドットより前
+     * （入れ子の型では外側の型まで含む名前になる。呼ぶ側はそのつもりで使う）
+     */
+    public String packageOf(String typeFqn) {
+        String pkg = typePackage.get(typeFqn);
+        if (pkg != null) {
+            return pkg;
+        }
+        int dot = typeFqn.lastIndexOf('.');
+        return (dot < 0) ? "" : typeFqn.substring(0, dot);
     }
 
     public char kindOf(String typeFqn) {

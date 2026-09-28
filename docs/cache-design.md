@@ -55,7 +55,7 @@ Z 行       ブロック数（最後まで書き終えた印）
   （`jar の型>親型`。`class MyList extends ArrayList<String>` なら `java.util.ArrayList>java.util.List` など。
   `java.lang.Object` は含めない）です。jar の型には `H` 行が無いので、読み手はこれで jar の型を経由した部分型
   （`MyList` は `List` の部分型）と、jar のインターフェースを経由した親子（最も特定的な `default` の判定）を知ります
-  （[jls-conformance-qa.md](jls-conformance-qa.md) の Q39・Q40）。親型（3 列目）と親クラスの連鎖（7 列目）の解決できなかった型は
+  （[jls-conformance-qa.md](jls-conformance-qa.md) の Q38・Q39）。親型（3 列目）と親クラスの連鎖（7 列目）の解決できなかった型は
   `?.` を付けて書きます（`?.Template.Inner`。無名パッケージの本物の型と重ねない。[cache-unification-qa.md](cache-unification-qa.md) の Q135）
 - 型の名前は完全修飾名で書きます。例外は、依存 jar が無いときに JDT が単純名から作った無い型（`Template x` の
   `Template`）で、`?.Template` と書きます。JDT はこの型を、同じバッチで最初にその名前の解決に失敗したファイルの

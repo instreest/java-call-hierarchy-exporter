@@ -3430,6 +3430,248 @@ expect_ listed LamRedecl.useUntraced DaoB.find "戻り値: ラムダを追えな
 expect_ listed LamRedecl.useUntraced DaoA.find "同上（追えないので CHA の候補のまま。DaoA も残る）"
 
 # ---------------------------------------------------------------------------
+# 別パッケージの上書きの判定（JLS 8.4.8.1 / JVMS 5.4.5）は、親クラスの連鎖だけを辿る（Issue #174）。
+# 以前は親型を名前順の幅優先で混ぜて辿り、同じパッケージのインターフェースの宣言（public）も「途中の上書き」に数えたので、
+# class Sub extends p.Base implements p.Worker の Sub.work() が Base.work()（パッケージアクセス）を上書きするとみなし、
+# 実際に動く Base.work を落としていた。また、途中の宣言をメソッドの表で探すので、jar のクラス（ソースから呼ばれていないと
+# 表に無い）が同じパッケージで public に宣言し直している形（PA ← jar の JMid ← PB）が見えず、PB.m を落としていた
+# ---------------------------------------------------------------------------
+case_ listed /xa/XaBase /xa.XaBase.run XaBase.work "同じパッケージのインターフェース（XaWorker）は連鎖の途中の上書きではない。Base b = new q.Sub(); b.work() で動くのは Base.work" <<'EOF'
+package xa;
+
+public class XaBase {
+    void work() { System.out.println("Base.work"); }
+    public static void main(String[] args) { run(); }
+    public static void run() { XaBase b = new xb.XaSub(); b.work(); }
+}
+EOF
+expect_ absent /xa.XaBase.run XaSub.work "対照: 別パッケージの XaSub.work はパッケージアクセスの XaBase.work を上書きしない（行が無い）"
+mkdir -p work/src/xa
+cat > work/src/xa/XaWorker.java <<'EOF'
+package xa;
+
+public interface XaWorker { void work(); }
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaSub.java <<'EOF'
+package xb;
+
+public class XaSub extends xa.XaBase implements xa.XaWorker {
+    public void work() { System.out.println("Sub.work"); }
+}
+EOF
+# 同じパッケージの jar のクラスが途中で public に宣言し直す形。jar（work/lib/xalib.jar）はソースの xa.XaPA に対してコンパイルし、
+# XaPA.class は入れない
+mkdir -p work/src/xa
+cat > work/src/xa/XaPA.java <<'EOF'
+package xa;
+
+public class XaPA {
+    void m() { System.out.println("PA.m"); }
+}
+EOF
+mkdir -p work/libsrc/xa work/libcls-xa work/lib
+cat > work/libsrc/xa/XaJMid.java <<'EOF'
+package xa;
+
+public class XaJMid extends XaPA {
+    @Override
+    public void m() { System.out.println("JMid.m"); }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -cp work/src -d work/libcls-xa work/libsrc/xa/XaJMid.java \
+    && rm -f work/libcls-xa/xa/XaPA.class \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/xalib.jar -C work/libcls-xa . \
+    || ng "jar（work/lib/xalib.jar）を作れませんでした"
+case_ listed /xa/XaPUse /xa.XaPUse.run XaPB.m "jar のクラス xa.XaJMid（同じパッケージ。表に無い）が m() を public に宣言し直しているので、別パッケージの XaPB.m が推移的に上書きしうる。PA x = new b.PB(); x.m() で動くのは PB.m" <<'EOF'
+package xa;
+
+public class XaPUse {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaPA x = new xb.XaPB(); x.m(); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaPB.java <<'EOF'
+package xb;
+
+public class XaPB extends xa.XaJMid {
+    @Override
+    public void m() { System.out.println("PB.m"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# 実装の探索（MethodSelection#search）の親クラスの連鎖の段（Issue #175）。
+# (1) 継承されない static（別パッケージのパッケージアクセス）を default より先に選んでいた。
+#     class Impl5 extends a.SBase implements I5 で、a.SBase の static void s5()（パッケージアクセス）は Impl5 に継承されず
+#     （JLS 8.4.8）、動くのは I5.s5 の default。以前は SBase.s5 に確定し I5.s5 を落としていた
+# (2) 型引数の置換を挟んだ別パッケージの推移的な上書きを見落としていた。
+#     class GA<T> { void g(T) }（パッケージアクセス）← class GM extends GA<String> { public void g(String) }
+#     ← 別パッケージの class GB2 extends GM { public void g(String) }。GA<String> x = new b.GB2(); x.g("s") で動くのは GB2.g
+#     （GM のブリッジ g(Object) が仮想で g(String) を呼ぶ）。GB2.g の O 行には GA#g(Object) が無い（JDT の overrides は
+#     別パッケージのパッケージアクセスのメソッドに対して偽）ので、GM の段で O 行から GM.g を見つけたら、
+#     それより下の段で GM.g と同じシグネチャの宣言（GB2.g）を採る
+# ---------------------------------------------------------------------------
+mkdir -p work/src/xa
+cat > work/src/xa/XaSBase.java <<'EOF'
+package xa;
+
+public class XaSBase {
+    static void s5() { System.out.println("SBase.s5"); }
+    static void useS5() { s5(); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaI5.java <<'EOF'
+package xb;
+
+public interface XaI5 { default void s5() { System.out.println("I5.s5"); } }
+EOF
+case_ listed /xb/XaImpl5 /xb.XaImpl5.run XaI5.s5 "別パッケージのパッケージアクセスの static（xa.XaSBase.s5）は継承されないので、動くのは default の XaI5.s5" <<'EOF'
+package xb;
+
+public class XaImpl5 extends xa.XaSBase implements XaI5 {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaI5 x = new XaImpl5(); x.s5(); }
+}
+EOF
+expect_ absent /xb.XaImpl5.run XaSBase.s5 "対照: 継承されない static の XaSBase.s5 は仮想呼び出しの先にならない（行が無い）"
+mkdir -p work/src/xa
+cat > work/src/xa/XaGA.java <<'EOF'
+package xa;
+
+class XaGA<T> {
+    void g(T t) { System.out.println("GA.g"); }
+}
+EOF
+cat > work/src/xa/XaGM.java <<'EOF'
+package xa;
+
+public class XaGM extends XaGA<String> {
+    @Override
+    public void g(String s) { System.out.println("GM.g"); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaGB2.java <<'EOF'
+package xb;
+
+public class XaGB2 extends xa.XaGM {
+    @Override
+    public void g(String s) { System.out.println("GB2.g"); }
+}
+EOF
+case_ listed /xa/XaGUse /xa.XaGUse.run XaGB2.g "型引数の置換を挟んだ別パッケージの推移的な上書き: GA<String> x = new b.GB2(); x.g(\"s\") で動くのは GB2.g" <<'EOF'
+package xa;
+
+public class XaGUse {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaGA<String> x = new xb.XaGB2(); x.g("s"); }
+}
+EOF
+expect_ absent /xa.XaGUse.run XaGM.g "対照: GM.g は GB2.g に上書きされているので動かない（行が無い）"
+
+# ---------------------------------------------------------------------------
+# 実装の選び方の残り（Issue #177）。
+# (1) インターフェースのダイヤモンド（Both extends Top, Mid・Y0 implements Top, Mid）で、X.super.m() / super.m() の呼び出し先を
+#     JDT の束縛（特定性の低い Top.hi）のまま STATIC_BOUND:SUPER に確定し、実際に動く Mid.hi を落としていた。
+#     書き手が修飾する型（囲む型の親クラス・名指しのインターフェース）を C 行に書き、読み手がそこから選び直す
+# (2) jar のインターフェースがソースの default を宣言し直す（interface JApi extends s.Api）形で、ソースの default の戻り値
+#     （DaoA）で絞っていた。親インターフェースに H 行の無い型があれば、default の戻り値で絞らない
+# (3) record の暗黙のアクセサと Enum の final メソッドが、親インターフェースの同じシグネチャの default に負けていた
+# ---------------------------------------------------------------------------
+case_ listed Diamond Diamond\$X.hi Diamond.Mid.hi "Both.super.hi()（Both extends Top, Mid）で動くのは最も特定的な Mid.hi（JDT の束縛は Top.hi）" <<'EOF'
+package pr;
+
+public class Diamond {
+    interface Top { default void hi() { System.out.println("Top.hi"); } }
+    interface Mid extends Top { default void hi() { System.out.println("Mid.hi"); } }
+    interface Both extends Top, Mid { }
+    static class X implements Both { public void hi() { Both.super.hi(); } }
+    static class Y0 implements Top, Mid { }
+    static class Y extends Y0 { public void hi() { super.hi(); } }
+    static class Z0 implements Top, Mid { }
+    static class Z extends Z0 { Runnable r() { return super::hi; } }
+    public static void main(String[] args) { new X().hi(); new Y().hi(); new Z().r().run(); }
+}
+EOF
+expect_ absent Diamond\$X.hi Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+expect_ listed Diamond\$Y.hi Diamond.Mid.hi "super.hi()（親クラス Y0 implements Top, Mid）で動くのは Mid.hi"
+expect_ absent Diamond\$Y.hi Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+expect_ listed Diamond\$Z.r Diamond.Mid.hi "super::hi も同じ"
+expect_ absent Diamond\$Z.r Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+
+# jar のインターフェース xj.XaJApi（work/lib/xalib2.jar）はソースの xa.XaApi に対してコンパイルし、ソースの型のクラスは入れない
+mkdir -p work/src/xa
+cat > work/src/xa/XaApi.java <<'EOF'
+package xa;
+
+public interface XaApi { default pr.Dao dao() { return new pr.DaoA(); } }
+EOF
+mkdir -p work/libsrc/xj work/libcls-xj work/lib
+cat > work/libsrc/xj/XaJApi.java <<'EOF'
+package xj;
+
+public interface XaJApi extends xa.XaApi {
+    @Override
+    default pr.Dao dao() { return new pr.DaoB(); }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -cp work/src -d work/libcls-xj work/libsrc/xj/XaJApi.java \
+    && rm -rf work/libcls-xj/xa work/libcls-xj/pr \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/xalib2.jar -C work/libcls-xj . \
+    || ng "jar（work/lib/xalib2.jar）を作れませんでした"
+case_ listed JarIface JarIface.use DaoB.find "戻り値: jar のインターフェース（xj.XaJApi extends xa.XaApi）が default の dao() を宣言し直しうるので、ソースの default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+class JiImpl implements xj.XaJApi { }
+
+public class JarIface {
+    public static void main(String[] args) { use(new JiImpl()); }
+    static void use(xa.XaApi a) { a.dao().find(); }
+}
+EOF
+expect_ listed JarIface.use DaoA.find "同上（DaoA も候補に残る）"
+
+case_ listed RecAcc RecAcc.run RecAcc.R2.name "record の暗黙のアクセサ R2.name() は、親インターフェースの default より勝つ（クラスのメソッド。JLS 8.4.8）" <<'EOF'
+package pr;
+
+public class RecAcc {
+    interface Named { default String name() { return "d"; } }
+    record R2(String name) implements Named { }
+    public static void main(String[] args) { run(); }
+    static void run() { Named n = new R2("x"); n.name(); }
+}
+EOF
+expect_ absent RecAcc.run RecAcc.Named.name "対照: default の Named.name は動かない（行が無い）"
+
+case_ listed EnumOrd EnumOrd.run Enum.ordinal "Enum の final な ordinal()（ソースから呼ばれていて表にある）は、親インターフェースの default より勝つ" <<'EOF'
+package pr;
+
+public class EnumOrd {
+    interface HasOrd { default int ordinal() { return -1; } }
+    enum E3 implements HasOrd { A }
+    public static void main(String[] args) { run(); direct(); }
+    static void run() { HasOrd h = E3.A; h.ordinal(); }
+    static int direct() { return E3.A.ordinal(); }
+}
+EOF
+# 呼び出し先を宣言したインターフェースの default も候補に並ぶ（宣言した型自身の本体。Q36）ので、HasOrd.ordinal の行は残る
+
+case_ reachable EnumName EnumName.run EnumName.hit "Enum の final な name()（表に無い）: default の戻り値（\"d\"）で \"A\".equals(h.name()) を打ち切らない（動くのは Enum.name で A）" <<'EOF'
+package pr;
+
+public class EnumName {
+    interface HasName { default String name() { return "d"; } }
+    enum E4 implements HasName { A }
+    public static void main(String[] args) { run(); }
+    static void run() { HasName h = E4.A; if ("A".equals(h.name())) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
 # 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。
 # 値は JDT が評価した定数（32）を使う

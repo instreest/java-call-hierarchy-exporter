@@ -4321,7 +4321,7 @@ v44 で廃止されている（Q131）ので、「I 行の名前は変えない�
 名前も持つ。
 
 どちらも書き手の変更なので形式の版を v45 に上げた（同じ版で Issue #184・#185 の H 行の 9 列目も足した。
-`docs/jls-conformance-qa.md` の Q39・Q40）。検査は `test/incremental` の「`$` や補助文字を含む単純名から作られた無い型の名前が
+`docs/jls-conformance-qa.md` の Q38・Q39）。検査は `test/incremental` の「`$` や補助文字を含む単純名から作られた無い型の名前が
 バッチの組み方に依らない」（差分更新 == 全件解析と、`Impl.go` が `U2.run` から呼ばれること）と「無い入れ子の型
 （`Template.Inner`）が無名パッケージの本物の入れ子の型と重ならない」（`B.run` の入次数が 0・本物の `Template.Inner.run` の
 入次数が 1・H 行の親が `?.Template.Inner`）。
