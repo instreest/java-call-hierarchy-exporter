@@ -64,7 +64,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 | JLS 8.4.3 / 8.4.8 修飾子 | 静的束縛の材料 | `CallSiteRecorder#targetModsOf`（宣言の修飾子 + 宣言した型が final なら `finalclass`）、`superMods`（`super` の印） | C 行の calleeMods、D 行の mods | `test/pruning` の `OvrStatic` / `OvrPriv` / `OvrFinal` |
 | JLS 8.4.8.1 上書き（型引数の置換でキーが食い違うもの） | 上書きの事実 | `OverrideFacts#overriddenKeysOf`（推移的な親型を型引数を具体化したまま辿り、`IMethodBinding.overrides` に尋ねる。名前と引数の数は尋ねる前の絞り込みだけ。キーが同じ上書きは書かない） | O 行 | `test/jls` の `override` 行と javac のブリッジメソッドとの突き合わせ、`test/demo` の `fx.generic` |
 | JLS 8.4.8.1 継承したメソッドが親インターフェースを実装する形 | その型から見た実装の組 | `OverrideFacts#inheritedImplementationsOf`（`isSubsignature`。クラスの連鎖を近い順に。キーが同じ組は書かない） | H 行の 8 列目 | `test/jls` の `InheritedImpl`（ブリッジ）、`test/pruning` の `GiRet` |
-| JLS 8.1.4 / 8.1.5 親型 | 型階層 | `TypeContextTracker#collectSupertypes`（直接の親と、jar の型を経由して到達するソースの親。`java.lang.Object` は入れない） | H 行の 3 列目 | `test/incremental`（親型の連鎖）、`test/regression` |
+| JLS 8.1.4 / 8.1.5 親型 | 型階層 | `TypeContextTracker#collectSupertypes`（直接の親と、jar の型を経由して到達するソースの親。`java.lang.Object` は入れない） | H 行の親型 | `test/incremental`（親型の連鎖）、`test/regression` |
 | JLS 8.4.8 の順（クラスの連鎖が先） | 選択の 2 段目の順 | `TypeContextTracker#recordType`（親クラスの連鎖をソースの型に当たるまで。途中の jar のクラスも並べる） | H 行の 7 列目 | `test/jls` の `ClassWins` / `Dispatch`、`test/pruning` の `Dtwr` / `Dfe` / `DRun` / `DrRet` / `JarHold` |
 | JLS 9.8 関数型インターフェースの上書き同等な抽象メソッド | ラムダが実装する鍵 | `OverrideFacts#functionalKeysOf`（`isSubsignature`） | M 行 | `test/jls` の `s15_27` / `s15_13`、`docs/lambda-expansion-qa.md` |
 | JLS 14.14.2 / 14.20.3 / 14.30.2 構文が呼ぶメソッド | 式の無い呼び出しの呼び出し先 | `ImplicitCalls#findNoArgMethod`（式の型のメンバーを、クラスの連鎖 → 最も特定的なインターフェースの順で、public の宣言から自前で引く。JDT に式が無いので尋ねられない） | C 行 | `test/jls` の `s14_14_02` / `s14_20_03`、`test/pruning` の `MemberTv` / `PkgMember` |
@@ -82,7 +82,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 |---|---|---|---|---|---|
 | 1. mR が private なら mR そのもの | ディスパッチしない | ここには来ない。`BindKind.PRIVATE` が段 0 で確定する。`implementationOf` を private の宣言に対して引いたときは、連鎖の先頭（その型自身）だけ private を飛ばさない | C 行 calleeMods | 同じ | `test/pruning` の `OvrPriv` / `ReflPriv` |
 | 2. C とその親クラスの連鎖に、mR を上書きできる宣言（5.4.5）があればそれ | 名前とディスクリプタが同じ・mC が private でない・mA が public / protected、またはパッケージアクセスで同じ実行時パッケージ（推移も可） | `search` の前半。`TypeHierarchy#classChain`（H 行の 7 列目）を根まで順に、各段で `declarationIn`（キーの一致 → パッケージアクセスなら同じパッケージか `overridesAcrossPackage`）と O 行（`declaredAmong`）と H 行の 8 列目（`inheritedImplementationIn`）を見る。本体を持つ最初の宣言を採る。その型より上の private は飛ばす | H 7 列目・D 行 mods / hasBody・O 行・H 8 列目 | ディスクリプタの一致は「消去したキーの一致」で写す（同じ意味）。ジェネリクスの上書き（javac ならブリッジ）は O 行・H 8 列目で補う。static は飛ばさない（JLS 8.4.8.2 でコンパイルできないので仮想呼び出しでは当たらない）。本体の無い宣言（抽象）では止まらず親へ進む。連鎖に jar のクラスが挟まる（`passesBinaryClass`）と、その宣言は見えないまま通り過ぎる（候補は落とさないが、戻り値で絞ることはしない） | `test/jls` の `ClassWins` / `Overriding` / `PackageBase` / `Widened`、`test/pruning` の `Dtwr` / `Dfe` / `DRun` / `DrRet` / `JarHold` / `GiRet` |
-| 3. 無ければ、C の最も特定的な親インターフェースのメソッドのうち、非 abstract がちょうど 1 つならそれ | 0 個なら AbstractMethodError、複数なら IncompatibleClassChangeError | `search` の後半。`TypeHierarchy#superinterfaces`（連鎖の型が実装するインターフェースを近い順に）の宣言から private・static を除き、`mostSpecific` で絞り、本体を持つものを採る | H 3 列目・D 行 | 複数残るときは、ソースに本体のある宣言を jar の宣言より先にし、その中は近い順の先頭（JVM ならエラーになる形。候補を落とさない側の近似）。抽象の再宣言も「最も特定的」の判定に入れる（子インターフェースが default を抽象で消した形で、親の default を選ばない） | `test/jls` の `MostSpecific`（§9.4.1.1）、`Interfaces`、`test/pruning` の `DtwrP`（親クラスの private を飛ばして default へ） |
+| 3. 無ければ、C の最も特定的な親インターフェースのメソッドのうち、非 abstract がちょうど 1 つならそれ | 0 個なら AbstractMethodError、複数なら IncompatibleClassChangeError | `search` の後半。`TypeHierarchy#superinterfaces`（連鎖の型が実装するインターフェースを近い順に）の宣言から private・static を除き、`mostSpecific` で絞り、本体を持つものを採る | H 行の親型・D 行 | 複数残るときは、ソースに本体のある宣言を jar の宣言より先にし、その中は近い順の先頭（JVM ならエラーになる形。候補を落とさない側の近似）。抽象の再宣言も「最も特定的」の判定に入れる（子インターフェースが default を抽象で消した形で、親の default を選ばない） | `test/jls` の `MostSpecific`（§9.4.1.1）、`Interfaces`、`test/pruning` の `DtwrP`（親クラスの private を飛ばして default へ） |
 
 `implementationOfSignature`（契約表・リフレクション）は同じ手順を、宣言した型を知らないままシグネチャで引く。
 同じシグネチャに消去される別々のジェネリック型を 1 つの型が両方とも上書きしていると、どちらが選ばれるかは決まらない
@@ -114,7 +114,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 |---|---|---|---|
 | 親の親（祖父母）の型のメソッドを足す・消す | H 7 列目の先の宣言、O 行 | 「親型の連鎖」（変わった型の部分型をすべて変わった型にする。`StaleTypes#register` の部分型の索引） | `test/incremental`（祖父母の型の変更） |
 | jar の親クラス・親インターフェースのメソッドを足す | `passesBinaryClass`・`superinterfaces` の jar の宣言 | I 行 (e)（jar の型の頭に現れる型）と L 行の jar の指紋 | `test/incremental`（jar の型の親にメソッドを足す） |
-| 親型の型引数を変える（`Repo<User>` → `Repo<Order>`） | O 行・H 8 列目 | I 行 (e)（親型の型引数）と、自分の宣言の指紋（I 行の 2 列目。宣言の連鎖） | `test/incremental`（型引数にだけ現れる型の親） |
+| 親型の型引数を変える（`Repo<User>` → `Repo<Order>`） | O 行・H 8 列目 | I 行 (e)（親型の型引数）と、自分の宣言の指紋（I 行の指紋の列。宣言の連鎖） | `test/incremental`（型引数にだけ現れる型の親） |
 | 中間のクラスが親をやめる・持つ | H 7 列目・8 列目 | 親型の連鎖 | `test/incremental`（継承した実装が変わる） |
 | 同じパッケージに型を足して import を隠す | C 行の呼び出し先そのもの | 「新しい型」（同じパッケージ・そのパッケージのオンデマンド import のブロックを解析し直す。`StaleTypes#touches`。名前は照合しない） | `test/incremental` |
 | 型解決に失敗していたファイル（無い型の名前は I 行に残らない） | C 行・U 行 | 何かが変わった実行では名前を照合せず必ず解析し直す（`CacheUpdater#reanalyzeDependents`） | `test/incremental`（無かった型を足す） |
