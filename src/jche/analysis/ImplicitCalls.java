@@ -32,6 +32,10 @@ import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
  * {@code java.util.Iterator<X>}（式の型が {@code Iterable<X>} の部分型でなければ生の {@code Iterator}）と定めているので、
  * {@code iterator()} が利用者の Iterator の型を返しても、呼び出し先は {@code java.util.Iterator} のメソッドになる
  * （javac のバイトコードも同じ）。実際に動く実装は、読み手が {@code Iterator} の実装から探す（JLS 15.12.4.4）。
+ *
+ * <p>{@link #findNoArgMethod} の「クラスの連鎖 → 最も特定的な親インターフェース」の順は、選択の正本
+ * jche.graph.MethodSelection#search（docs/resolution-selection-design.md の 4 節）の写しで、材料が JDT のバインディング
+ * （こちらは解決の層）なので寄せられない。順を変えるときは jche.external.ExternalUsageScanner と合わせて 3 か所を同時に直す（Issue #189）。
  */
 final class ImplicitCalls {
 

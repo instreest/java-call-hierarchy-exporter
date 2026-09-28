@@ -170,3 +170,26 @@ CHA のままで、候補は落ちない。
 `test/pruning` は 1 つのプロジェクトに全ケースを置くので、共通の `DaoB` に別のケースが部分型を足すと、上限 `DaoB` の
 候補が増えて「1 つに定まる」期待が崩れる。新しいケースは `Dt*` / `Ds*` / `SbDt*` / `SbDd*` の型だけを使い、
 `use` メソッドもケースごとのクラスに置く（呼び出し元の行が混ざらない）。
+
+---
+
+## 確認
+
+### Q13. Issue #192 の検証結果の表は、今どうなるか（#192 の確認）
+
+[Issue #192](https://github.com/instreest/java-call-hierarchy-exporter/issues/192) の表の各行を、Issue の形（`OrderExportService.export(from, to,
+OrderExporter exporter)` の中の `exporter.export(orders)`。実装は `@Component` の `XmlOrderExporter` と `CsvOrderExporter`。
+呼び出し元は `@Component` のコントローラ 4 つ）で使い捨てのプロジェクトを作って動かした（Spring の注釈は単純名で照合するので、同じ名前の
+注釈型を置き、jar は使わない。`test/pruning` と同じ）。`OrderExportService.java:10` の `exporter.export(orders)` の行:
+
+| 呼び出し元の書き方 | Issue 起票時 | 今（`477d851` 以降） |
+|---|---|---|
+| 具象型のフィールド（`XmlOrderExporter`）にコンストラクタ注入 | 両経路とも `UNEXPANDED:CHA`（2 候補） | **`RESOLVED:DATAFLOW_DECLARED_TYPE` で `XmlOrderExporter.export` の 1 件**（`CsvOrderExporter.export` の行は無い） |
+| インターフェース型のフィールドにコンストラクタ注入し、引数に `@Qualifier("xml")` | 同上 | `UNEXPANDED:CHA`（2 候補）のまま |
+| インターフェース型のフィールドに `@Autowired @Qualifier("xml")` でフィールド注入 | 同上 | `UNEXPANDED:CHA`（2 候補）のまま |
+| 呼び出し元で `new XmlOrderExporter()` して渡す | `RESOLVED:DATAFLOW_PARAM` で確定 | `RESOLVED:DATAFLOW_PARAM`（変わらない） |
+
+Issue の改善案（実引数の静的な型で絞る）は 1 行目で効いている。2・3 行目は Issue が「型階層とは別の Spring DI の仕様になるため対応しない」と
+した `@Qualifier` の Bean 名の対応で、宣言の型が `OrderExporter`（インターフェース）なので上限が修飾する型と同じになり絞れない（Q5）。
+これは Issue の結論どおりで、コードは変えていない。`test/pruning` の `DtField`（1 行目の形）・`DtWide`（インターフェース型のフィールドは
+絞らない）が同じことを見ている。

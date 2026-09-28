@@ -83,6 +83,8 @@ pr.SepFactory#get("S;T") => pr.DaoB
 pr.EnumKeyFac#get("pr.EkMode.X") => pr.DaoA
 pr.TwoKeyFactory#get("A") => pr.DaoA
 pr.TwoKeyFactory#get("B") => pr.DaoB
+super pr.FwHandler#handle(java.lang.Object)
+super prlib.Handler#handle(java.lang.Object)
 EOF
 
 # 共通の型。Dao の実装が 2 つあり、どちらが動くかを絞り込みが決める
@@ -547,6 +549,51 @@ public class EqEnum {
     public static void main(String[] args) { sel(Mode.B); }
     static void sel(Mode m) { if (m.equals(Mode.A)) { ea(); } }
     static void ea() { System.out.println("a"); }
+}
+EOF
+
+# equals の「Object#equals(Object) かその上書きか」は JDT の overrides に任せる（Issue #189。名前・引数の数・引数の型
+# java.lang.Object を自分で比べない）。同じ名前の別の多重定義（equals(String)）・2 引数の static な equals は上書きでないので
+# 判定しない。インターフェースが宣言し直した equals(Object) は上書きだが、受け手の型がインターフェースなので実行時の型が決まらず、
+# 判定しない。どれも中身が常に真なので hit は動く（判定していれば "full" と違う値で打ち切ってしまう）
+case_ reachable EqOvl EqOvl.check EqOvl.hit "利用者の型の equals(String) の多重定義（常に真）は Object#equals の上書きでないので判定しない" <<'EOF'
+package pr;
+
+public class EqOvl {
+    static class Key {
+        boolean equals(String s) { return true; }
+    }
+    public static void main(String[] args) { check(new Key()); }
+    static void check(Key k) { if (k.equals("full")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable EqIfc EqIfc.check EqIfc.hit "インターフェースが宣言し直した equals(Object)（実装は常に真）は、受け手の型で実行時の型が決まらないので判定しない" <<'EOF'
+package pr;
+
+public class EqIfc {
+    interface Key {
+        boolean equals(Object o);
+    }
+    static class AnyKey implements Key {
+        @Override public boolean equals(Object o) { return true; }
+        @Override public int hashCode() { return 0; }
+    }
+    public static void main(String[] args) { check(new AnyKey()); }
+    static void check(Key k) { if (k.equals("full")) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ reachable EqStatic EqStatic.check EqStatic.hit "2 引数の static な equals(Object, Object)（常に真）は Object#equals の上書きでないので判定しない" <<'EOF'
+package pr;
+
+public class EqStatic {
+    static boolean equals(Object a, Object b) { return true; }
+    public static void main(String[] args) { check("light"); }
+    static void check(String s) { if (equals(s, "full")) { hit(); } }
+    static void hit() { System.out.println("h"); }
 }
 EOF
 
@@ -3257,8 +3304,30 @@ public class Holder<T> {
     public T create() { return v; }
 }
 EOF
-"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java \
-    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls . \
+# フレームワークの入口の契約（contracts.txt の super prlib.Handler#handle(java.lang.Object)）の親型。jar の型で、型引数を具体化した
+# 上書き（O 行）が入口になることを見る（下の FwEntry）
+cat > work/libsrc/prlib/Handler.java <<'EOF'
+package prlib;
+
+public interface Handler<T> {
+    void handle(T t);
+}
+EOF
+# jar のインターフェース prlib.Mid は、ソースのインターフェース pr.DmTop を継承して default を上書きする（Issue #185 の形）。
+# jar を作るときにソースの型も一緒にコンパイルし、jar にはソースの型（pr/）を入れない（jar の中身は prlib/ だけ）
+cat > "$SRC/DmTop.java" <<'EOF'
+package pr;
+
+public interface DmTop { default Dao create() { return new DaoA(); } }
+EOF
+cat > work/libsrc/prlib/Mid.java <<'EOF'
+package prlib;
+
+public interface Mid extends pr.DmTop { default pr.Dao create() { return new pr.DaoB(); } }
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -d work/libcls work/libsrc/prlib/Holder.java work/libsrc/prlib/Handler.java work/libsrc/prlib/Mid.java \
+        "$SRC/Dao.java" "$SRC/DaoA.java" "$SRC/DaoB.java" "$SRC/DmTop.java" \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/prlib.jar -C work/libcls prlib \
     || ng "jar（work/lib/prlib.jar）を作れませんでした"
 case_ listed JarHold JarHold.use DaoB.find "戻り値: 親クラスが jar のクラス（prlib.Holder）なら、その create() が default より勝ちうる。default の戻り値（DaoA）に絞らない" <<'EOF'
 package pr;
@@ -3278,6 +3347,45 @@ public class JarHold {
 EOF
 expect_ listed JarHold.ref DaoB.find "戻り値: メソッド参照の束縛したレシーバ（JhImpl）から引いた default も、jar のクラスが挟まるので本体の戻り値に使わない"
 
+# jar のクラスを経由した部分型（class JlList extends ArrayList<String>）。呼び出し先を宣言した型（java.util.List#size()）も
+# 修飾する型（List / ArrayList）も jar の型で、H 行の親型には jar の親の親（List）が載らないので、CHA の候補に JlList.size が
+# 入らず NO_OVERRIDE（[EXTERNAL]）で確定し、ソースの上書きが呼び出し階層から消えて起点の候補に昇格していた（Issue #184）。
+# 今は H 行の 9 列目（jar の型の親型の組）から jar の型を経由した部分型を辿る
+case_ listed JarList JarList.viaList JlList.size "jar の型を経由した部分型: List<String> 型の変数で呼んだ size() の候補に、ArrayList を継承したソースの上書き（JlList.size）が入る" <<'EOF'
+package pr;
+
+class JlList extends java.util.ArrayList<String> { @Override public int size() { return JlHit.hit(); } }
+class JlHit { static int hit() { return 1; } }
+
+public class JarList {
+    public static void main(String[] args) { viaList(pick(args)); viaArrayList(new JlList()); viaArrayList(new java.util.ArrayList<>()); }
+    static void viaList(java.util.List<String> l) { l.size(); }
+    static void viaArrayList(java.util.ArrayList<String> a) { a.size(); }
+    static java.util.List<String> pick(String[] a) { return a.length > 0 ? new JlList() : new java.util.ArrayList<>(); }
+}
+EOF
+expect_ listed JarList.viaArrayList JlList.size "jar の型を経由した部分型: ArrayList<String> 型の変数（修飾する型が jar の型）で呼んだ size() の候補にも JlList.size が入る"
+expect_ listed JlList.size JlHit.hit "jar の型を経由した部分型: JlList.size の先の呼び出しが階層に残る（起点の候補に昇格しない）"
+
+# jar のインターフェース（prlib.Mid extends pr.DmTop）を経由した親子。DmImpl の親インターフェースは Mid と DmTop の 2 つで、
+# Mid が DmTop の部分型であることは H 行の親型からは分からず、「最も特定的な」判定が両方を残して、ソースの default
+# （DmTop.create）を選んでいた。JVM が選ぶのは Mid.create（jar）。DmTop.create の戻り値（DaoA）に絞ると DaoB.find が消える
+# （Issue #185）。今は H 行の 9 列目の jar の型の親子で Mid が DmTop の部分型と分かる。jar の宣言（Mid.create）はソースの
+# どこかが呼び出し先にしていないとメソッドの表に無いので、direct() で直接呼ぶ
+case_ listed DefMid DefMid.use DaoB.find "jar のインターフェースを経由した親子: 動く default は jar の Mid.create（DmTop の部分型）なので、DmTop.create の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+class DmImpl implements prlib.Mid, DmTop { }
+
+public class DefMid {
+    public static void main(String[] args) { use(new DmImpl()); direct(new DmImpl()); }
+    static void use(DmTop t) { t.create().find(); }
+    static void direct(prlib.Mid m) { m.create(); }
+}
+EOF
+expect_ listed DefMid.use Mid.create "jar のインターフェースを経由した親子: t.create() の実装は jar の Mid.create"
+expect_ absent DefMid.use DmTop.create "jar のインターフェースを経由した親子: 親の DmTop.create は選ばない（Mid が上書きしている）"
+
 case_ listed GiRet GiRet.use DaoB.find "戻り値: 親クラスから継承した create(String) が GiFac<String>.create(T) を実装する（キーが食い違う）ので、default の戻り値（DaoA）に絞らない" <<'EOF'
 package pr;
 
@@ -3291,6 +3399,277 @@ public class GiRet {
 }
 EOF
 expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラスの GiBase.create(String)（GiFac の default ではない。GiImpl から見たときだけの実装の関係）"
+
+# default を抽象として宣言し直した子インターフェース（@FunctionalInterface）にラムダを渡す形（Issue #176）。
+# 親の型で受けた呼び出し（t.exec()・m.make()）の先は default の鍵で、そこで動くのはラムダ。書き手が M 行を default の鍵でも
+# 書かないと、ラムダの本体への辺が無く、default の戻り値（DaoA）で絞られて動く DaoB.find が落ちる
+case_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl LamRedecl.run 'LamRedecl.lambda$main$0' "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体へ繋ぐ" <<'EOF'
+package pr;
+
+interface LrTask { default void exec() { System.out.println("default"); } }
+@FunctionalInterface interface LrJob extends LrTask { void exec(); }
+interface LrMaker { default Dao make() { return new DaoA(); } }
+interface LrMaker2 extends LrMaker { Dao make(); }
+
+public class LamRedecl {
+    public static void main(String[] args) {
+        run((LrJob) () -> hit());
+        useMaker((LrMaker2) () -> new DaoB());
+        useUntraced(java.util.List.of((LrMaker2) () -> new DaoB()));
+    }
+    static void hit() { System.out.println("lambda"); }
+    static void run(LrTask t) { t.exec(); }
+    static void useMaker(LrMaker m) { m.make().find(); }
+    static void useUntraced(java.util.List<LrMaker> ms) { ms.get(0).make().find(); }
+}
+EOF
+expect_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl.useMaker 'LamRedecl.lambda$main$1' "同上（LrMaker の型で呼んだ make() もラムダの本体へ繋ぐ）"
+expect_ listed LamRedecl.useMaker DaoB.find "同上（動く実装はラムダの返す DaoB。default の戻り値の DaoA に絞らない）"
+expect_ absent LamRedecl.useMaker DaoA.find "同上（動かない default の戻り値 DaoA.find は出ない）"
+expect_ listed LamRedecl.useUntraced DaoB.find "戻り値: ラムダを追えない受け手（List の要素）でも、ラムダが実装し直している default の戻り値（DaoA）で絞らない"
+expect_ listed LamRedecl.useUntraced DaoA.find "同上（追えないので CHA の候補のまま。DaoA も残る）"
+
+# ---------------------------------------------------------------------------
+# 別パッケージの上書きの判定（JLS 8.4.8.1 / JVMS 5.4.5）は、親クラスの連鎖だけを辿る（Issue #174）。
+# 以前は親型を名前順の幅優先で混ぜて辿り、同じパッケージのインターフェースの宣言（public）も「途中の上書き」に数えたので、
+# class Sub extends p.Base implements p.Worker の Sub.work() が Base.work()（パッケージアクセス）を上書きするとみなし、
+# 実際に動く Base.work を落としていた。また、途中の宣言をメソッドの表で探すので、jar のクラス（ソースから呼ばれていないと
+# 表に無い）が同じパッケージで public に宣言し直している形（PA ← jar の JMid ← PB）が見えず、PB.m を落としていた
+# ---------------------------------------------------------------------------
+case_ listed /xa/XaBase /xa.XaBase.run XaBase.work "同じパッケージのインターフェース（XaWorker）は連鎖の途中の上書きではない。Base b = new q.Sub(); b.work() で動くのは Base.work" <<'EOF'
+package xa;
+
+public class XaBase {
+    void work() { System.out.println("Base.work"); }
+    public static void main(String[] args) { run(); }
+    public static void run() { XaBase b = new xb.XaSub(); b.work(); }
+}
+EOF
+expect_ absent /xa.XaBase.run XaSub.work "対照: 別パッケージの XaSub.work はパッケージアクセスの XaBase.work を上書きしない（行が無い）"
+mkdir -p work/src/xa
+cat > work/src/xa/XaWorker.java <<'EOF'
+package xa;
+
+public interface XaWorker { void work(); }
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaSub.java <<'EOF'
+package xb;
+
+public class XaSub extends xa.XaBase implements xa.XaWorker {
+    public void work() { System.out.println("Sub.work"); }
+}
+EOF
+# 同じパッケージの jar のクラスが途中で public に宣言し直す形。jar（work/lib/xalib.jar）はソースの xa.XaPA に対してコンパイルし、
+# XaPA.class は入れない
+mkdir -p work/src/xa
+cat > work/src/xa/XaPA.java <<'EOF'
+package xa;
+
+public class XaPA {
+    void m() { System.out.println("PA.m"); }
+}
+EOF
+mkdir -p work/libsrc/xa work/libcls-xa work/lib
+cat > work/libsrc/xa/XaJMid.java <<'EOF'
+package xa;
+
+public class XaJMid extends XaPA {
+    @Override
+    public void m() { System.out.println("JMid.m"); }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -cp work/src -d work/libcls-xa work/libsrc/xa/XaJMid.java \
+    && rm -f work/libcls-xa/xa/XaPA.class \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/xalib.jar -C work/libcls-xa . \
+    || ng "jar（work/lib/xalib.jar）を作れませんでした"
+case_ listed /xa/XaPUse /xa.XaPUse.run XaPB.m "jar のクラス xa.XaJMid（同じパッケージ。表に無い）が m() を public に宣言し直しているので、別パッケージの XaPB.m が推移的に上書きしうる。PA x = new b.PB(); x.m() で動くのは PB.m" <<'EOF'
+package xa;
+
+public class XaPUse {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaPA x = new xb.XaPB(); x.m(); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaPB.java <<'EOF'
+package xb;
+
+public class XaPB extends xa.XaJMid {
+    @Override
+    public void m() { System.out.println("PB.m"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
+# 実装の探索（MethodSelection#search）の親クラスの連鎖の段（Issue #175）。
+# (1) 継承されない static（別パッケージのパッケージアクセス）を default より先に選んでいた。
+#     class Impl5 extends a.SBase implements I5 で、a.SBase の static void s5()（パッケージアクセス）は Impl5 に継承されず
+#     （JLS 8.4.8）、動くのは I5.s5 の default。以前は SBase.s5 に確定し I5.s5 を落としていた
+# (2) 型引数の置換を挟んだ別パッケージの推移的な上書きを見落としていた。
+#     class GA<T> { void g(T) }（パッケージアクセス）← class GM extends GA<String> { public void g(String) }
+#     ← 別パッケージの class GB2 extends GM { public void g(String) }。GA<String> x = new b.GB2(); x.g("s") で動くのは GB2.g
+#     （GM のブリッジ g(Object) が仮想で g(String) を呼ぶ）。GB2.g の O 行には GA#g(Object) が無い（JDT の overrides は
+#     別パッケージのパッケージアクセスのメソッドに対して偽）ので、GM の段で O 行から GM.g を見つけたら、
+#     それより下の段で GM.g と同じシグネチャの宣言（GB2.g）を採る
+# ---------------------------------------------------------------------------
+mkdir -p work/src/xa
+cat > work/src/xa/XaSBase.java <<'EOF'
+package xa;
+
+public class XaSBase {
+    static void s5() { System.out.println("SBase.s5"); }
+    static void useS5() { s5(); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaI5.java <<'EOF'
+package xb;
+
+public interface XaI5 { default void s5() { System.out.println("I5.s5"); } }
+EOF
+case_ listed /xb/XaImpl5 /xb.XaImpl5.run XaI5.s5 "別パッケージのパッケージアクセスの static（xa.XaSBase.s5）は継承されないので、動くのは default の XaI5.s5" <<'EOF'
+package xb;
+
+public class XaImpl5 extends xa.XaSBase implements XaI5 {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaI5 x = new XaImpl5(); x.s5(); }
+}
+EOF
+expect_ absent /xb.XaImpl5.run XaSBase.s5 "対照: 継承されない static の XaSBase.s5 は仮想呼び出しの先にならない（行が無い）"
+mkdir -p work/src/xa
+cat > work/src/xa/XaGA.java <<'EOF'
+package xa;
+
+class XaGA<T> {
+    void g(T t) { System.out.println("GA.g"); }
+}
+EOF
+cat > work/src/xa/XaGM.java <<'EOF'
+package xa;
+
+public class XaGM extends XaGA<String> {
+    @Override
+    public void g(String s) { System.out.println("GM.g"); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaGB2.java <<'EOF'
+package xb;
+
+public class XaGB2 extends xa.XaGM {
+    @Override
+    public void g(String s) { System.out.println("GB2.g"); }
+}
+EOF
+case_ listed /xa/XaGUse /xa.XaGUse.run XaGB2.g "型引数の置換を挟んだ別パッケージの推移的な上書き: GA<String> x = new b.GB2(); x.g(\"s\") で動くのは GB2.g" <<'EOF'
+package xa;
+
+public class XaGUse {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaGA<String> x = new xb.XaGB2(); x.g("s"); }
+}
+EOF
+expect_ absent /xa.XaGUse.run XaGM.g "対照: GM.g は GB2.g に上書きされているので動かない（行が無い）"
+
+# ---------------------------------------------------------------------------
+# 実装の選び方の残り（Issue #177）。
+# (1) インターフェースのダイヤモンド（Both extends Top, Mid・Y0 implements Top, Mid）で、X.super.m() / super.m() の呼び出し先を
+#     JDT の束縛（特定性の低い Top.hi）のまま STATIC_BOUND:SUPER に確定し、実際に動く Mid.hi を落としていた。
+#     書き手が修飾する型（囲む型の親クラス・名指しのインターフェース）を C 行に書き、読み手がそこから選び直す
+# (2) jar のインターフェースがソースの default を宣言し直す（interface JApi extends s.Api）形で、ソースの default の戻り値
+#     （DaoA）で絞っていた。親インターフェースに H 行の無い型があれば、default の戻り値で絞らない
+# (3) record の暗黙のアクセサと Enum の final メソッドが、親インターフェースの同じシグネチャの default に負けていた
+# ---------------------------------------------------------------------------
+case_ listed Diamond Diamond\$X.hi Diamond.Mid.hi "Both.super.hi()（Both extends Top, Mid）で動くのは最も特定的な Mid.hi（JDT の束縛は Top.hi）" <<'EOF'
+package pr;
+
+public class Diamond {
+    interface Top { default void hi() { System.out.println("Top.hi"); } }
+    interface Mid extends Top { default void hi() { System.out.println("Mid.hi"); } }
+    interface Both extends Top, Mid { }
+    static class X implements Both { public void hi() { Both.super.hi(); } }
+    static class Y0 implements Top, Mid { }
+    static class Y extends Y0 { public void hi() { super.hi(); } }
+    static class Z0 implements Top, Mid { }
+    static class Z extends Z0 { Runnable r() { return super::hi; } }
+    public static void main(String[] args) { new X().hi(); new Y().hi(); new Z().r().run(); }
+}
+EOF
+expect_ absent Diamond\$X.hi Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+expect_ listed Diamond\$Y.hi Diamond.Mid.hi "super.hi()（親クラス Y0 implements Top, Mid）で動くのは Mid.hi"
+expect_ absent Diamond\$Y.hi Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+expect_ listed Diamond\$Z.r Diamond.Mid.hi "super::hi も同じ"
+expect_ absent Diamond\$Z.r Diamond.Top.hi "対照: Top.hi は動かない（行が無い）"
+
+# jar のインターフェース xj.XaJApi（work/lib/xalib2.jar）はソースの xa.XaApi に対してコンパイルし、ソースの型のクラスは入れない
+mkdir -p work/src/xa
+cat > work/src/xa/XaApi.java <<'EOF'
+package xa;
+
+public interface XaApi { default pr.Dao dao() { return new pr.DaoA(); } }
+EOF
+mkdir -p work/libsrc/xj work/libcls-xj work/lib
+cat > work/libsrc/xj/XaJApi.java <<'EOF'
+package xj;
+
+public interface XaJApi extends xa.XaApi {
+    @Override
+    default pr.Dao dao() { return new pr.DaoB(); }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -cp work/src -d work/libcls-xj work/libsrc/xj/XaJApi.java \
+    && rm -rf work/libcls-xj/xa work/libcls-xj/pr \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/xalib2.jar -C work/libcls-xj . \
+    || ng "jar（work/lib/xalib2.jar）を作れませんでした"
+case_ listed JarIface JarIface.use DaoB.find "戻り値: jar のインターフェース（xj.XaJApi extends xa.XaApi）が default の dao() を宣言し直しうるので、ソースの default の戻り値（DaoA）に絞らない" <<'EOF'
+package pr;
+
+class JiImpl implements xj.XaJApi { }
+
+public class JarIface {
+    public static void main(String[] args) { use(new JiImpl()); }
+    static void use(xa.XaApi a) { a.dao().find(); }
+}
+EOF
+expect_ listed JarIface.use DaoA.find "同上（DaoA も候補に残る）"
+
+case_ listed RecAcc RecAcc.run RecAcc.R2.name "record の暗黙のアクセサ R2.name() は、親インターフェースの default より勝つ（クラスのメソッド。JLS 8.4.8）" <<'EOF'
+package pr;
+
+public class RecAcc {
+    interface Named { default String name() { return "d"; } }
+    record R2(String name) implements Named { }
+    public static void main(String[] args) { run(); }
+    static void run() { Named n = new R2("x"); n.name(); }
+}
+EOF
+expect_ absent RecAcc.run RecAcc.Named.name "対照: default の Named.name は動かない（行が無い）"
+
+case_ listed EnumOrd EnumOrd.run Enum.ordinal "Enum の final な ordinal()（ソースから呼ばれていて表にある）は、親インターフェースの default より勝つ" <<'EOF'
+package pr;
+
+public class EnumOrd {
+    interface HasOrd { default int ordinal() { return -1; } }
+    enum E3 implements HasOrd { A }
+    public static void main(String[] args) { run(); direct(); }
+    static void run() { HasOrd h = E3.A; h.ordinal(); }
+    static int direct() { return E3.A.ordinal(); }
+}
+EOF
+# 呼び出し先を宣言したインターフェースの default も候補に並ぶ（宣言した型自身の本体。Q36）ので、HasOrd.ordinal の行は残る
+
+case_ reachable EnumName EnumName.run EnumName.hit "Enum の final な name()（表に無い）: default の戻り値（\"d\"）で \"A\".equals(h.name()) を打ち切らない（動くのは Enum.name で A）" <<'EOF'
+package pr;
+
+public class EnumName {
+    interface HasName { default String name() { return "d"; } }
+    enum E4 implements HasName { A }
+    public static void main(String[] args) { run(); }
+    static void run() { HasName h = E4.A; if ("A".equals(h.name())) { hit(); } }
+    static void hit() { System.out.println("h"); }
+}
+EOF
 
 # ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
@@ -3600,6 +3979,27 @@ EOF
 expect_ absent "SbDdSvc.<init>" SbDdX.find "同上（上限の部分型でない SbDdX.find の行が無い）"
 expect_ absent "SbDdSvc.<init>" SbDdB.find "同上（Bean でない SbDdB.find の行が無い）"
 
+# フレームワークの入口の契約（super 型#シグネチャ）を、型引数を具体化してシグネチャの食い違う上書きにも当てる（Issue #188）。
+# 契約は contracts.txt の super pr.FwHandler#handle(java.lang.Object)・super prlib.Handler#handle(java.lang.Object)。
+# 入口かどうかは methods.csv の role（FRAMEWORK_ENTRY）で見る（下の fw_role）
+case_ reachable FwEntry FwEntry.main FwEntry.touch "フレームワークの入口の契約の題材（入口の判定は methods.csv の role で見る）" <<'EOF'
+package pr;
+
+interface FwHandler<T> { void handle(T t); }
+class FwReq { }
+class FwSrcHandler implements FwHandler<FwReq> { public void handle(FwReq r) { System.out.println("src"); } }
+class FwJarHandler implements prlib.Handler<FwReq> { public void handle(FwReq r) { System.out.println("jar"); } }
+class FwBaseHandler { public void handle(FwReq r) { System.out.println("base"); } }
+class FwInhHandler extends FwBaseHandler implements FwHandler<FwReq> { }
+class FwObjHandler implements FwHandler<Object> { public void handle(Object o) { System.out.println("obj"); } }
+class FwOtherHandler { public void handle(FwReq r) { System.out.println("other"); } }
+
+public class FwEntry {
+    public static void main(String[] args) { touch(); }
+    static void touch() { new FwSrcHandler(); new FwJarHandler(); new FwInhHandler(); new FwObjHandler(); new FwOtherHandler(); }
+}
+EOF
+
 # ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
@@ -3699,6 +4099,26 @@ else
     ng "EmojiCut.run -> EmojiCut.target: 注記の条件式の切れ目が期待と違います"
     echo "       $(head -1 <<< "$emoji")"
 fi
+
+# フレームワークの入口の契約（super）が、型引数を具体化してシグネチャの食い違う上書きにも当たること（Issue #188）。
+# methods.csv の role（9 列目）で見る。列は method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,…
+MCSV=$(dirname "$CSV")/methods.csv
+fw_role() {   # $1=method 列（Class.method(引数)）
+    awk -F, -v m="$1" '$1 == m { print $9 }' "$MCSV"
+}
+for c in "FwSrcHandler.handle(FwReq) FRAMEWORK_ENTRY 契約 pr.FwHandler#handle(java.lang.Object) を型引数を具体化して上書きした handle(FwReq)（O 行）は入口" \
+         "FwJarHandler.handle(FwReq) FRAMEWORK_ENTRY 親型が jar の型（prlib.Handler）でも同じ（O 行は jar の親型にも書かれる）" \
+         "FwBaseHandler.handle(FwReq) FRAMEWORK_ENTRY 親クラスから継承した handle(FwReq) が FwHandler<FwReq> を実装する（H 行の 8 列目）ので入口" \
+         "FwObjHandler.handle(Object) FRAMEWORK_ENTRY 対照: シグネチャが同じ上書きは従来どおり入口" \
+         "FwOtherHandler.handle(FwReq) ENTRY_CANDIDATE 対照: 契約の型を継承していない同名のメソッドは入口ではない（呼び出し元が無いだけ）"; do
+    read -r method want why <<< "$c"
+    got=$(fw_role "$method")
+    if [ "$got" = "$want" ]; then
+        ok "契約 super の入口: $method は $want（$why）"
+    else
+        ng "契約 super の入口: $method の role が $want ではありません（$got。$why）"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # 値を読まない指定（dataflow.enabled=false）の @Bean。R 行を読まないので、@Bean メソッドが返す具象型は
@@ -3913,6 +4333,53 @@ package eu;
 
 public class C3 implements ASI, Api { }
 EOF
+# javac がブリッジメソッドでディスクリプタをそろえる形（Issue #186）。UserRepo は AbsRepo<User> の save(T) を save(User) で
+# 上書き（O 行）し、UserRepo2 は親クラス BaseRepo の save(User) で Repo<User> の save(T) を実装する（H 行の 8 列目）。
+# どちらもブリッジ save(java.lang.Object) がその型にできる。参照の側（Client）は、上書き・実装の無い版の UserRepo・UserRepo2
+# （extstub）に対してコンパイルするので、参照のディスクリプタは save(java.lang.Object) になる。JVM はブリッジのある型で
+# 解決するので、結び先は UserRepo.save(User)・BaseRepo.save(User)（AbsRepo.save・Repo.save ではない）
+cat > "$EXTU/src/eu/Repos.java" <<'EOF'
+package eu;
+
+public class Repos { }
+interface Repo<T> { void save(T t); }
+EOF
+cat > "$EXTU/src/eu/User.java" <<'EOF'
+package eu;
+
+public class User { }
+EOF
+cat > "$EXTU/src/eu/AbsRepo.java" <<'EOF'
+package eu;
+
+public class AbsRepo<T> implements Repo<T> { public void save(T t) { System.out.println("abs"); } }
+EOF
+cat > "$EXTU/src/eu/UserRepo.java" <<'EOF'
+package eu;
+
+public class UserRepo extends AbsRepo<User> { public void save(User u) { System.out.println("user"); } }
+EOF
+cat > "$EXTU/src/eu/BaseRepo.java" <<'EOF'
+package eu;
+
+public class BaseRepo { public void save(User u) { System.out.println("base"); } }
+EOF
+cat > "$EXTU/src/eu/UserRepo2.java" <<'EOF'
+package eu;
+
+public class UserRepo2 extends BaseRepo implements Repo<User> { }
+EOF
+mkdir -p "$EXTU/extstub/eu"
+cat > "$EXTU/extstub/eu/UserRepo.java" <<'EOF'
+package eu;
+
+public class UserRepo extends AbsRepo<User> { }
+EOF
+cat > "$EXTU/extstub/eu/UserRepo2.java" <<'EOF'
+package eu;
+
+public class UserRepo2 extends AbsRepo<User> { }
+EOF
 cat > "$EXTU/extsrc/ext/Client.java" <<'EOF'
 package ext;
 
@@ -3920,9 +4387,14 @@ public class Client {
     public static void callC() { new eu.C().m(); }
     public static void callC2() { new eu.C2().m(); }
     public static void callC3() { new eu.C3().s(); }
+    public static void callRepo() { new eu.UserRepo().save(new eu.User()); }
+    public static void callRepo2() { new eu.UserRepo2().save(new eu.User()); }
 }
 EOF
-if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" $(find "$EXTU/src" "$EXTU/extsrc" -name '*.java') \
+# src の UserRepo・UserRepo2 の代わりに extstub のものを渡す（ファイル名と違う名前の型は -sourcepath では見つからない）
+if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" \
+        $(find "$EXTU/src" -name '*.java' ! -name UserRepo.java ! -name UserRepo2.java) \
+        $(find "$EXTU/extstub" "$EXTU/extsrc" -name '*.java') \
         > "$EXTU/javac.log" 2>&1 \
         && rm -rf "$EXTU/extcls/eu" \
         && "$(dirname "$JAVAC_BIN")/jar" --create --file "$EXTU/extjars/client.jar" -C "$EXTU/extcls" . ; then
@@ -3936,7 +4408,9 @@ if [ ! -f "$ECSV" ]; then
     ng "外部の jar からの被参照: 解析できませんでした（test/pruning/$EXTU/run.log・javac.log）"
 else
     for c in "Client.callC I2.m I1.m C implements I1, I2" "Client.callC2 I2.m I1.m C2 extends B2(implements I2) implements I1" \
-             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)"; do
+             "Client.callC3 Api.s ASI.s C3 implements ASI(static s), Api(default s)" \
+             "Client.callRepo UserRepo.save AbsRepo.save 参照 UserRepo.save(Object) は、型引数を具体化した上書き save(User) のブリッジ（O 行）" \
+             "Client.callRepo2 BaseRepo.save Repo.save 参照 UserRepo2.save(Object) は、親クラスから継承した save(User) が Repo<User> を実装するブリッジ（H 行の 8 列目）"; do
         read -r caller want wrong why <<< "$c"
         if [ -n "$(ext_rows "$caller" "$want")" ] && [ -z "$(ext_rows "$caller" "$wrong")" ]; then
             ok "外部の jar からの被参照: $caller -> $want（$why。$wrong ではない）"

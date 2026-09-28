@@ -372,6 +372,32 @@ JDT は `setEnvironment(..., includeRunningVMBootclasspath=true)` で、**実行
 日本語部分が `?` に化けていても（この作業環境は POSIX ロケールで実際に化ける）、MS932 でも、
 `=` と数字と `jar` は変わらないので判定できる。実行ログは 1 回ごとに `run-<回数>.log` に分けて残す。
 
+### Q22. JDT の読めない壊れた jar を、なぜ「読める」と扱っていたのか。どう直したか
+
+[Issue #171](https://github.com/instreest/java-call-hierarchy-exporter/issues/171)（v43 で入った）。jar の目次は
+`ZipDirectory` でファイルのバイトから読む（同じプロセスで上書きされた jar の前の目次を `ZipFile` が返すため。
+[cache-unification-qa.md](cache-unification-qa.md) の Q125）。`ZipDirectory` は `ZipFile.Source` が行う検査の一部
+（圧縮方式が stored・deflate 以外・暗号化の印・終わりの記録のコメント長がファイルの終わりを越える・項目のコメントが UTF-8 で
+ない・項目数・目次の余り・zip64 と追加フィールド）をしないので、JDT が「Failed to init Classpath」と出してクラスパスから
+外した jar に普通の指紋を作っていた。warnings.txt に「依存 jar を読めません」が出ず（コンパイルエラーだけになる）、利用者が
+同じ項目（名前・大きさ・CRC）の正しい jar に直しても指紋が変わらないので何も解析し直さず、差分更新だけが BINDING_FAILED と
+コンパイルエラーのまま残った。
+
+**結論:** 指紋は今どおり `ZipDirectory` で作り、その前に `LibraryDiff#scanJar` で `new ZipFile(jar)` を開いて閉じる。
+JDT がこのプロセスで使うのと同じ読み手・同じ JDK なので、開けなければ JDT も読めない。例外なら今ある「読めない jar」の道
+（`analysis.libraryUnreadable` の警告・空の指紋。空の指紋は毎回変わったものとして扱う）に乗せる。
+
+却下した案: `ZipFile.Source` の検査を `ZipDirectory` に移植する（JDK の版ごとに検査が変わり、黙って食い違っていく）。
+`ZipFile` で目次まで読む（同じプロセスの前の目次を返しうるので、Q125 に戻る）。
+
+開いて閉じるだけでも、目次は JDK がプロセスの中で共有する（閉じれば片付く）ので、前の目次を見せる問題は増やさない。
+費用は jar ごとに目次を 2 回読むことだけで、ふつうの規模では目立たない。
+
+検査: test/incremental の「JDT の読めない jar（method / encrypted / comment / entcomment）を、同じ目次の正しい jar に直す」
+（圧縮方式を bzip2 にする・暗号化の印を立てる・終わりの記録のコメント長を越えさせる・項目のコメントを UTF-8 でなくする。
+どれも目次の名前・大きさ・CRC は変えない）。壊れた jar で解析した実行に警告が出ること、正しい jar に直した差分更新が全件解析と
+同じことを見る。直す前はどれも落ちる。
+
 ---
 
 ## 限界（対応しないと決めたこと）

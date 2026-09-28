@@ -66,7 +66,7 @@ public final class FileAnalysis {
      * このファイルが宣言する型（親型・型引数とその上限・関数型も）と、その型が宣言するメソッド・フィールドの、
      * JDT のバインディングの鍵と修飾子など（継承したものは含めない。何を入れるかは
      * {@code jche.analysis.TypeContextTracker#recordDeclarations} が決める）。行にはせず、
-     * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の 2 列目）にする。
+     * 書き手が {@link #constants} の指紋と合わせて 1 つの指紋（自分の宣言の指紋。I 行の最後の列）にする。
      * 差分更新は、中身の変わっていないファイルを解析し直したとき、この指紋が前回と違えば宣言する型を
      * 「変わった型」にする（docs/cache-unification-qa.md の Q83）
      */

@@ -72,6 +72,7 @@ target/
 /test/incremental/work/
 /test/incremental/.cache/
 /test/incremental/out/
+/test/incremental/inc.log
 /test/incremental/out.log
 /test/incremental/*.tsv
 /test/incremental/case.properties

@@ -357,7 +357,7 @@ final class GuardCollector {
      */
     private void addEqualsCall(MethodInvocation mi, boolean expected, List<Guard.Atom> atoms) {
         if (!"equals".equals(mi.getName().getIdentifier()) || mi.arguments().size() != 1
-                || !isObjectEquals(mi.resolveMethodBinding())) {
+                || !isObjectEquals(mi)) {
             return;
         }
         Expression recv = mi.getExpression();
@@ -403,13 +403,27 @@ final class GuardCollector {
         return tb.isPrimitive() || tb.isEnum() || STRING.equals(tb.getQualifiedName());
     }
 
-    /** {@code equals(Object)} か（{@code Object#equals} とその上書き）。同じ名前の別の多重定義は中身が分からない */
-    private static boolean isObjectEquals(IMethodBinding mb) {
-        if (mb == null) {
+    /**
+     * 呼んでいるのが {@code Object#equals(Object)} かその上書き（JLS 8.4.8.1）か。同じ名前の別の多重定義
+     * （{@code equals(String)}）は中身が分からないので判定しない（条件を作らない＝打ち切らない）。
+     *
+     * <p>上書きの判定は JDT の {@code IMethodBinding.overrides} に任せる（名前・引数の数・引数の型 {@code java.lang.Object}
+     * を自分で比べない。Issue #189）。呼び出し先が {@code Object} 自身の宣言なら {@code isEqualTo}、
+     * バインディングが取れない・{@code Object} が引けないときは判定しない
+     */
+    private static boolean isObjectEquals(MethodInvocation mi) {
+        IMethodBinding mb = mi.resolveMethodBinding();
+        ITypeBinding object = mi.getAST().resolveWellKnownType("java.lang.Object");
+        if (mb == null || object == null) {
             return false;
         }
-        ITypeBinding[] params = mb.getParameterTypes();
-        return params.length == 1 && "java.lang.Object".equals(params[0].getQualifiedName());
+        IMethodBinding declaration = mb.getMethodDeclaration();
+        for (IMethodBinding m : object.getDeclaredMethods()) {
+            if ("equals".equals(m.getName()) && m.getParameterTypes().length == 1) {
+                return declaration.isEqualTo(m) || declaration.overrides(m);
+            }
+        }
+        return false;
     }
 
     /**
