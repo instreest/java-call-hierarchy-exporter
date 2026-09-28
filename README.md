@@ -24,7 +24,7 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
 
 | 手段 | 向いていること | このツールとの違い |
 |---|---|---|
-| IDE の呼び出し階層（Eclipse の Ctrl+Alt+H など） | 書きながら、1 つのメソッドの呼び出し元をその場で確かめる | 1 メソッドずつ画面で展開するので、プロジェクト全体の一覧として保存・絞り込み・共有ができない。インターフェース越しの呼び出しの実装を決める根拠も残らない |
+| IDE の呼び出し階層（Eclipse の Ctrl+Alt+H など） | 書きながら、1 つのメソッドの呼び出し元をその場で確かめる | 1 メソッドずつ画面で展開するので、プロジェクト全体の一覧として保存・絞り込み・共有ができない。インターフェース越しの呼び出しの実装を決める根拠も残らない。このツールはインターフェースや Spring の DI（注釈）越しの呼び出しも、実装の候補まで辿る |
 | `grep` による文字列検索 | 手早く名前の出現箇所を探す | 同じ名前の別メソッドや、インターフェース・継承越しの呼び出しを区別できない |
 | `jdeps` | jar・パッケージ・クラスの間の依存を調べる | メソッドの単位の呼び出しや、呼び出しの経路は分からない |
 
@@ -57,6 +57,10 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
   実行時の条件で変わる実装などは、候補を並べるに留まります（[docs/static-analysis-limits.md](docs/static-analysis-limits.md)）
 - **コンパイルが通らない・依存 jar が足りないと、結果に抜けが出ます。** そのときは出力フォルダに
   `warnings.txt` ができ、何が足りないかを知らせます
+- **Java のソース以外は読みません。** JSP・XML の Bean 定義・SQL のマッピングなどからの呼び出しは出ません。
+  Spring の DI は注釈（`@Autowired`・`@Component` など）だけを読みます
+- **ビルド時に生成されるソース（Lombok・アノテーション処理）は、`source.folders` に入っていなければ読めません。**
+  そのときはコンパイルエラーとして `warnings.txt` に出ます
 
 ---
 
@@ -118,9 +122,13 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 2. **`callee` 列**で、改修するメソッドを `クラス名.メソッド名` で選びます（引数は付きません。オーバーロードは同じ名前になります）
 3. 残った行の **`root` 列**が、そのメソッドに届く入口（画面のアクション・バッチの `main`・API のハンドラなど）です。
    **`caller` 列**が直接の呼び出し箇所（ファイルと行）、**`call-hierarchy` 列**が入口からそこまでの経路です
+4. 改修するメソッドが `callee` に出ない、または入口が思ったより少ないときは、`methods.csv` の同じメソッドの `inHierarchy` を見ます。
+   `0` なら出力に出ていないだけで、**影響が無いとは限りません**。理由は `absentCause` 列にあります（[methods.csv](#methodscsv--ソース上の全メソッドとその呼び出し状況)）
 
 インターフェース越しの呼び出しで実装を 1 つに決められなかったときも、候補の実装ごとに行が出るので、
 `callee` を実装クラスの名前で絞れば見つかります。
+`callee` には引数が付かないので、同じ名前のメソッド（オーバーロード）の行も混ざります。
+行が Excel の上限（1,048,576 行）を超えるときは、設定ファイルの `entry.packages` で起点を絞ります。
 
 <!-- sec:reading-one-row -->
 ### 1 行の読み方
@@ -149,9 +157,12 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 |---|---|---|
 | `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | 候補の先は辿っていないので、改修するメソッドがその先にあると、この起点からの行は出ません。改修するメソッドを呼んでいるメソッド（`caller` のメソッド）を `callee` 列で絞り直し、呼び出し元へ上に辿って起点を探します。絞り方を教えれば次から 1 つに決まります（出力フォルダの `contracts-suggested.txt`、[docs/callback-contracts.md](docs/callback-contracts.md)） |
 | `UNRESOLVED:…` | 呼び出し先の型が分からなかった（多くは依存 jar の不足） | `warnings.txt` に従って依存 jar を揃えて実行し直します |
+| `RESOLVED:EXTERNAL_GUESS` | 型が分からず、`import` から型名を推定した。**推定が外れていることがある** | 呼び出し先をソースで確かめます。依存 jar を揃えれば推定は要らなくなります |
 
 `call-hierarchy` 列の最後に付く注記（`[EXTERNAL] no source to follow` など）は、そこで辿るのをやめた理由です。
 注記の一覧は[注記](#注記)にあります。
+
+候補の先を見たいときは、候補のクラスを設定ファイルの `entry.packages` に足して実行し直すと、その候補を起点にした行が出ます。
 
 <!-- sec:jumping-to-the-source-in-eclipse -->
 ### Eclipse でソースコードへジャンプする
@@ -493,7 +504,7 @@ Open the result in Excel and filter it to find the impact surface of the method 
 
 | Tool | Good for | How this tool differs |
 |---|---|---|
-| The IDE call hierarchy (Ctrl+Alt+H in Eclipse and the like) | Checking the callers of one method on the spot while you write code | It expands one method at a time on screen, so you cannot save, filter or share the whole project as a list. It also leaves no record of why a call through an interface went to a given implementation |
+| The IDE call hierarchy (Ctrl+Alt+H in Eclipse and the like) | Checking the callers of one method on the spot while you write code | It expands one method at a time on screen, so you cannot save, filter or share the whole project as a list. It also leaves no record of why a call through an interface went to a given implementation. This tool follows calls through interfaces and Spring DI (annotations) down to the candidate implementations |
 | Text search with `grep` | Quickly finding where a name appears | It cannot tell apart different methods with the same name, or calls through an interface or inheritance |
 | `jdeps` | Dependencies between jars, packages and classes | It does not show calls between methods or the paths they take |
 
@@ -529,6 +540,10 @@ not remove the call: it lists the candidates or says it could not follow the cal
   ([docs/static-analysis-limits.md](docs/static-analysis-limits.md))
 - **If the sources do not compile or dependency jars are missing, the result has gaps.** Then a
   `warnings.txt` appears in the output folder and says what is missing
+- **It reads nothing but Java sources.** Calls from JSPs, XML bean definitions, SQL mappings and the like do not
+  appear. For Spring DI, only the annotations (`@Autowired`, `@Component` and so on) are read
+- **Sources generated at build time (Lombok, annotation processing) cannot be read unless they are in `source.folders`.**
+  They then show up as compile errors in `warnings.txt`
 
 ---
 
@@ -595,9 +610,14 @@ not remove the call: it lists the candidates or says it could not follow the cal
 3. The **`root` column** of the remaining rows lists the entry points that reach it (screen actions, a batch
    job's `main`, API handlers and so on). The **`caller` column** is the call site itself (file and line), and
    the **`call-hierarchy` column** is the path from the entry point
+4. If the method you are changing does not appear in `callee`, or there are fewer entry points than you expected, look at
+   `inHierarchy` for that method in `methods.csv`. `0` only means it is not in the output; **it does not mean nothing is
+   affected**. The reason is in the `absentCause` column ([methods.csv](#methodscsv--every-method-in-the-source-and-how-it-is-called))
 
 Even when a call through an interface could not be narrowed to one implementation, each candidate
 implementation gets its own row, so filtering `callee` by the implementation class name finds it.
+`callee` has no arguments, so rows for other methods of the same name (overloads) are mixed in.
+If there are more rows than Excel can hold (1,048,576), narrow the entry points with `entry.packages` in the config file.
 
 <!-- sec:reading-one-row -->
 ### Reading one row
@@ -627,9 +647,13 @@ eye during an impact analysis.
 |---|---|---|
 | `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | Nothing below a candidate is followed, so if the method you are changing lies below it, no row from this entry point reaches it. Filter the `callee` column again by the method that calls yours (the method in `caller`) and climb up through its callers to find the entry points. Once you tell the tool how to narrow it, the next run pins it down to one (`contracts-suggested.txt` in the output folder; [docs/callback-contracts.md](docs/callback-contracts.md)) |
 | `UNRESOLVED:…` | The type of the callee could not be determined (usually missing dependency jars) | Follow `warnings.txt` to supply the jars, and run again |
+| `RESOLVED:EXTERNAL_GUESS` | The type could not be determined, so its name was guessed from an `import`. **The guess may be wrong** | Check the callee in the source. Supplying the dependency jars makes the guess unnecessary |
 
 A note at the end of the `call-hierarchy` column (such as `[EXTERNAL] no source to follow`) says why the walk
 stopped there. All the notes are listed in [Notes](#notes).
+
+To see what lies below a candidate, add the candidate class to `entry.packages` in the config file and run again: rows
+starting from that candidate appear.
 
 <!-- sec:jumping-to-the-source-in-eclipse -->
 ### Jumping to the source in Eclipse
