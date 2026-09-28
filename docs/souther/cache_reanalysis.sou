@@ -1,0 +1,178 @@
+// キャッシュを再利用するか・どのファイルを解析し直すかの判定を Souther で書いた仕様モデル。
+// 本体（src/jche/analysis/CacheUpdater.java）の実装ではなく、判定の規則だけを取り出した写し。
+// 説明と対応表は docs/cache-reanalysis-model-qa.md。網羅の測り方: souther examples docs/souther/cache_reanalysis.sou
+module jche.cachemodel
+import Bool ( not )
+
+// ---------------------------------------------------------------------------
+// 1. キャッシュ全体を使えるか（パス0・パス1。CacheUpdater#readOldLibraries・#update・#scanOldCache・#canKeepAsIs）
+// ---------------------------------------------------------------------------
+
+data OldCache = {
+    // analysis-cache.tsv がある
+    exists: Bool,
+    // 読める（I/O の失敗・文字化け・読んでいるあいだの書き換えが無い）
+    readable: Bool,
+    // ヘッダの形式（版・ソースレベル・文字コード・JDK・JDT・ソースフォルダの並び）が今回と合う
+    headerCompatible: Bool,
+    // L 行・T 行が書き換えられていない
+    headIntact: Bool,
+    // 今回のクラスパスを JDT が受け付ける（CacheUpdater#environmentStillAccepted）
+    environmentAccepted: Bool,
+    // 最終行（Z 行）のブロック数が合う（途中で切れていない）
+    complete: Bool
+}
+
+data Change = {
+    // 解析するファイル（変わった・足した・壊れたブロックのファイル）がある
+    filesToAnalyze: Bool,
+    // 変わった型・変わった jar のパッケージ・中身の分からないパッケージがある（StaleTypes#isEmpty の否定）
+    staleFacts: Bool,
+    // 旧キャッシュの先頭（ヘッダ・L 行・T 行）が今回書くものとバイト列で同じ
+    headUnchanged: Bool
+}
+
+// 丸ごと捨てて全件解析する理由（どれも Log.info / Log.warn の文言に 1 つずつ対応する）
+data FullRebuild = NoCache | Incompatible | Unreadable | HeadDamaged | EnvironmentRejected | Truncated
+
+// 旧キャッシュをそのまま残す（書き直しても同じバイト列になる）
+data KeepAsIs
+
+// 差分更新（ブロックごとの判定へ進む）
+data Incremental
+
+behavior decideCache : (old: OldCache, change: Change)
+    -> NoCache | Incompatible | Unreadable | HeadDamaged | EnvironmentRejected | Truncated | KeepAsIs | Incremental
+
+let decideCache (old, change) = {
+    guard old.exists else NoCache
+    guard old.readable else Unreadable
+    guard old.headerCompatible else Incompatible
+    guard old.headIntact else HeadDamaged
+    guard old.environmentAccepted else EnvironmentRejected
+    guard old.complete else Truncated
+    if change.filesToAnalyze || change.staleFacts || not(change.headUnchanged) then Incremental else KeepAsIs
+}
+
+// ---------------------------------------------------------------------------
+// 2. 旧キャッシュの 1 ブロック（1 ソースファイル）をどうするか（パス1〜パス4）
+// ---------------------------------------------------------------------------
+
+data Block = {
+    // そのファイルが今のソースにある
+    inSources: Bool,
+    // サイズとハッシュが前回と同じ（CacheUpdater#isValidBlock）
+    sameContent: Bool,
+    // 検査値（F 行の crc）が合う
+    intact: Bool,
+    // 同じ名前のファイルの組の片方が消えた（SameUnitFiles#pairedWithDeleted）
+    pairedWithDeleted: Bool,
+    // 型解決に失敗していた（U 行がある。Q131）
+    bindingFailed: Bool,
+    // 自分のパッケージの型・パッケージの衝突（JLS 7.1。StaleTypes#collidesWithChangedPackage）
+    collidesWithChangedPackage: Bool,
+    // I 行が変わった型・パッケージ・中身の分からないパッケージに触れる（StaleTypes#touches の BY_SOURCE）
+    depsTouchSource: Bool,
+    // I 行が変わった jar のパッケージに触れる（StaleTypes#touches の BY_LIBRARY）
+    depsTouchLibrary: Bool
+}
+
+data Run = {
+    // この実行で何かが変わった（変わった型・jar・パッケージがある）
+    anythingStale: Bool,
+    // 解析し直したファイルの型階層が前回と違った（CacheUpdater#analyzeAllIfHierarchyChanged）
+    hierarchyChanged: Bool
+}
+
+// ブロックを捨てる（ファイルが消えた。解析もしない）
+data Dropped
+// ブロックを書き写す（パス5）
+data Reused
+// 解析し直す理由（パス2 は自分の変化、パス3・4 は依存の変化、安全網は型階層の変化）
+data ContentChanged
+data BlockDamaged
+data PairDeleted
+data BindingFailed
+data PackageCollision
+data BySource
+data ByLibrary
+data HierarchyChanged
+
+behavior decideBlock : (block: Block, run: Run)
+    -> Dropped | Reused | ContentChanged | BlockDamaged | PairDeleted | BindingFailed
+     | PackageCollision | BySource | ByLibrary | HierarchyChanged
+
+let decideBlock (block, run) = {
+    guard block.inSources else Dropped
+    // パス2: ファイル自身が変わった・ブロックが壊れた
+    guard block.sameContent else ContentChanged
+    guard block.intact else BlockDamaged
+    guard not(block.pairedWithDeleted) else PairDeleted
+    // 何も変わっていなければ、依存を見るまでもなく再利用する（reanalyzeDependents の isEmpty）
+    guard run.anythingStale else Reused
+    // 安全網: 型階層が変わったら残りをすべて解析し直す
+    guard not(run.hierarchyChanged) else HierarchyChanged
+    // パス3: 最初の周回の衝突・型解決の失敗・依存
+    guard not(block.collidesWithChangedPackage) else PackageCollision
+    guard not(block.bindingFailed) else BindingFailed
+    guard not(block.depsTouchSource) else BySource
+    guard not(block.depsTouchLibrary) else ByLibrary
+    Reused
+}
+
+// ---------------------------------------------------------------------------
+// 例（コンパイル時に評価される。合わなければコンパイルエラー）
+// ---------------------------------------------------------------------------
+
+let goodCache = OldCache {
+    exists = true, readable = true, headerCompatible = true,
+    headIntact = true, environmentAccepted = true, complete = true
+}
+let nothingChanged = Change { filesToAnalyze = false, staleFacts = false, headUnchanged = true }
+
+example decideCache
+    | "キャッシュが無ければ全件": (OldCache { ...goodCache, exists = false }, nothingChanged) -> NoCache
+    | "読めなければ全件": (OldCache { ...goodCache, readable = false }, nothingChanged) -> Unreadable
+    | "版や JDK が違えば全件": (OldCache { ...goodCache, headerCompatible = false }, nothingChanged) -> Incompatible
+    | "L 行・T 行が化けていれば全件": (OldCache { ...goodCache, headIntact = false }, nothingChanged) -> HeadDamaged
+    | "JDT がクラスパスを受け付けなければ全件"
+        : (OldCache { ...goodCache, environmentAccepted = false }, nothingChanged) -> EnvironmentRejected
+    | "途中で切れていれば全件": (OldCache { ...goodCache, complete = false }, nothingChanged) -> Truncated
+    | "何も変わらなければそのまま残す": (goodCache, nothingChanged) -> KeepAsIs
+    | "変わったファイルがあれば差分更新"
+        : (goodCache, Change { ...nothingChanged, filesToAnalyze = true }) -> Incremental
+    | "jar だけが変わっても差分更新"
+        : (goodCache, Change { ...nothingChanged, staleFacts = true }) -> Incremental
+    | "先頭だけが違っても書き直す"
+        : (goodCache, Change { ...nothingChanged, headUnchanged = false }) -> Incremental
+    | "無いキャッシュは読めるかを問わない"
+        : (OldCache { ...goodCache, exists = false, readable = false }, nothingChanged) -> NoCache
+
+let untouched = Block {
+    inSources = true, sameContent = true, intact = true, pairedWithDeleted = false,
+    bindingFailed = false, collidesWithChangedPackage = false,
+    depsTouchSource = false, depsTouchLibrary = false
+}
+let quietRun = Run { anythingStale = false, hierarchyChanged = false }
+let busyRun = Run { anythingStale = true, hierarchyChanged = false }
+
+example decideBlock
+    | "消えたファイルのブロックは捨てる": (Block { ...untouched, inSources = false }, busyRun) -> Dropped
+    | "中身が変わったファイルは解析し直す": (Block { ...untouched, sameContent = false }, quietRun) -> ContentChanged
+    | "検査値の合わないブロックは解析し直す": (Block { ...untouched, intact = false }, quietRun) -> BlockDamaged
+    | "組の片方が消えたら残ったほうを解析し直す"
+        : (Block { ...untouched, pairedWithDeleted = true }, quietRun) -> PairDeleted
+    | "何も変わらない実行では型解決の失敗も再利用"
+        : (Block { ...untouched, bindingFailed = true }, quietRun) -> Reused
+    | "何かが変わった実行では型解決に失敗したブロックを必ず解析し直す"
+        : (Block { ...untouched, bindingFailed = true }, busyRun) -> BindingFailed
+    | "型階層が変わったら残りはすべて解析し直す"
+        : (untouched, Run { anythingStale = true, hierarchyChanged = true }) -> HierarchyChanged
+    | "パッケージの衝突": (Block { ...untouched, collidesWithChangedPackage = true }, busyRun) -> PackageCollision
+    | "変わった型に触れる": (Block { ...untouched, depsTouchSource = true }, busyRun) -> BySource
+    | "変わった jar に触れる": (Block { ...untouched, depsTouchLibrary = true }, busyRun) -> ByLibrary
+    | "ソースと jar の両方に触れればソースを理由にする"
+        : (Block { ...untouched, depsTouchSource = true, depsTouchLibrary = true }, busyRun) -> BySource
+    | "何にも触れなければ再利用": (untouched, busyRun) -> Reused
+    | "依存に触れても何も変わらない実行なら再利用"
+        : (Block { ...untouched, depsTouchSource = true }, quietRun) -> Reused

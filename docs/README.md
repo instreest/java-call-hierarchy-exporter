@@ -97,6 +97,7 @@
 | [method-decl-range-qa.md](method-decl-range-qa.md) | #115 | メソッドの宣言範囲（終了行）をキャッシュと `MethodTable` に持つ。カーソル位置から囲むメソッドを引く `AT`（近似をやめる判断、`methods.csv` に出さない判断） |
 | [callee-label-qa.md](callee-label-qa.md) | — | `call-hierarchy.csv` の `callee` 列を「クラス名.メソッド名」だけにし、`NO_IMPL` の注記を出さなくした |
 | [entrypoint-package-qa.md](entrypoint-package-qa.md) | — | 入口 2 つを既定パッケージから `jche` パッケージへ移した。`//SOURCES` の glob が直下に当たらない理由 |
+| [cache-reanalysis-model-qa.md](cache-reanalysis-model-qa.md) | — | キャッシュの再解析の判定を Souther（`docs/souther/cache_reanalysis.sou`）で仕様モデルにし、例の網羅を測った試作 |
 
 ## 再実装用の仕様
 
