@@ -88,7 +88,7 @@ jobs:
         run: bash test/cachevalue/run.sh
 
       # 1 ファイル版（single-file/）。src/jche から生成し直した結果がコミットと一致すること（生成し直し忘れ）、
-      # 本体と同じ lint で通ること、回帰テストの whole・entry と同梱の拡張の読み込みが本体と同じ出力になること
+      # 本体と同じ lint で通ること、回帰テストの whole・entry・plugin（同梱の拡張と利用者の拡張）が本体と同じ出力になること
       - name: Single-file build test
         run: bash test/single-file/run.sh
 

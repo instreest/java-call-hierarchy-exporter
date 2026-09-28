@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // java-call-hierarchy-exporter の 1 ファイル版（完全版）。
 //
-// このファイルは single-file/generate.sh が src/jche 配下の全ソース（169 ファイル）から
+// このファイルは single-file/generate.sh が src/jche 配下の全ソース（165 ファイル）から
 // 機械的に生成したもの。手で編集しない。本体（src/jche）を直したら生成し直す
 // （test/single-file/run.sh が、生成し直していないことと、ビルド・実行できないことを検出する）。
 //
@@ -11,12 +11,13 @@
 // 入れ子（static）にしてある。機能は本体と同じ（キャッシュ・差分更新・データフロー解析・被参照スキャン・
 // ビルドファイルからの依存解決・対話モード・サーバーモード）。違うのはクラス名だけで、
 //   - 同梱の拡張は設定に本体と同じ名前（jche.builtin.TypeMappingProvider）で書けば読み替える
-//   - 利用者が Java で書く拡張（plugin.folders）は jche.extension.* を import できないので使えない
+//   - 利用者が Java で書く拡張（plugin.folders）が import する jche.extension.* だけは入れ子にせず、
+//     本物のパッケージのまま隣の jche/extension/ に置く（//SOURCES）。ビルドのときは一緒に渡す
 //   - ツールのプロジェクトフォルダ（キャッシュの置き場所 .cache/）は、リポジトリの中で動かすか
 //     JCHE_ROOT で示す。分からなければ作業ディレクトリを使い、その旨を警告する（本体と同じ）
 //
 // ビルドと実行（引数があれば対話なしで解析、無ければ対話モード。src/jche/Jche.java と同じ）:
-//   javac -encoding UTF-8 -cp "lib/*" -d bin single-file/CallHierarchyExporterSingle.java
+//   javac -encoding UTF-8 -cp "lib/*" -d bin single-file/CallHierarchyExporterSingle.java single-file/jche/extension/*.java
 //   java  -cp "bin:lib/*" jche.CallHierarchyExporterSingle config/config.properties   (Windows は ; 区切り)
 //
 // JBang なら jar を自分で集めずに直接（初回は JDK 25 と JDT を取得する）:
@@ -24,6 +25,7 @@
 // ---------------------------------------------------------------------------
 //DEPS org.eclipse.jdt:org.eclipse.jdt.core:3.46.0
 //JAVA 25
+//SOURCES jche/extension/*.java
 package jche;
 
 import com.sun.management.GarbageCollectionNotificationInfo;
@@ -138,6 +140,10 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 import jche.CallHierarchyExporterSingle.CallEdgeExtractor.SourceFile;
 import jche.CallHierarchyExporterSingle.FieldAccesses.Access;
+import jche.extension.ContractProvider;
+import jche.extension.Hint;
+import jche.extension.TypeCandidateProvider;
+import jche.extension.UsageReporter;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -23183,157 +23189,6 @@ public final class CallHierarchyExporterSingle {
     }
 
     // ================================================================================================
-    // src/jche/extension/ContractProvider.java
-    // ================================================================================================
-    /**
-     * 拡張ポイント: ソースの外（JDK・フレームワーク）との契約を、表では書けない条件で返す。
-     *
-     * 返す行の形は設定ファイルの {@code contracts.files} と同じ（docs/callback-contracts.md）。
-     * <pre>
-     *   jp.co.xxx.Dispatcher#submit(java.lang.Runnable) -> a0 : run()   … 呼び戻し（種類 A）
-     *   &#64;jp.co.xxx.Endpoint                                             … 入口（種類 B）
-     *   super jp.co.xxx.BaseAction#execute()
-     *   static main(java.lang.String[])
-     *   main                                                          … 起動の入口（JLS 12.1.4）
-     * </pre>
-     * 対応表を書けば済むなら、この拡張を書かずに {@code contracts.files} にファイルを置けばよい。
-     * 読み込み方は {@link TypeCandidateProvider} と同じ（{@code plugin.folders} に置き、
-     * {@code contracts.providers} に FQN を書く）。
-     */
-    public static interface ContractProvider {
-
-        /** 設定ファイルの内容と、その置き場所（相対パス解決の起点）を受け取る */
-        default void init(Properties config, Path configDir) {
-        }
-
-        /** 契約の行。空行と {@code #} で始まる行は無視される */
-        List<String> lines();
-    }
-
-    // ================================================================================================
-    // src/jche/extension/Hint.java
-    // ================================================================================================
-    /**
-     * 拡張に渡す証拠。キーと値だけの汎用の箱にしてある。
-     *
-     * 例: ファクトリメソッド {@code DaoFactory.get("USER_DAO")} の文字列リテラルを
-     * {@code kind="FACTORY_KEY", value="USER_DAO"} として渡す。
-     *
-     * <h2>出どころ</h2>
-     * すべて<b>ツールがデータフローから読んで渡す</b>。ファクトリに渡されたキーは値グラフに
-     * 載っているので、拡張側で呼び出し箇所を走査する必要は無い（{@code FactoryCalls}）。
-     * 同一メソッド内で {@code new} された型（{@code NEW}）だけは本体が解決に使う組み込みの証拠で、
-     * こちらも同じ形で並ぶ。
-     *
-     * <p>扱えるキーの種類を増やすときは {@code FactoryCalls#readsOf} に足す。
-     * 契約表・この証拠・ひな形の 3 つが同じ読み口を通るので、1 か所で揃う。
-     */
-    public static record Hint(String kind, String value) {
-
-        /**
-         * ファクトリのメソッド。値は {@code 型FQN#メソッド名}。
-         *
-         * 同じ型を返すファクトリが複数あって規則が違うとき、これで場合分けできる。
-         * 実装が親クラスにあるときは、ソースに書いた型と宣言元の型の両方が並ぶ
-         */
-        public static final String KIND_FACTORY = "FACTORY";
-
-        /** ファクトリに渡された文字列のキー。値はその文字列（コンパイル時定数は評価済みの値） */
-        public static final String KIND_FACTORY_KEY = "FACTORY_KEY";
-
-        /** ファクトリに渡された列挙定数。値は {@code 型FQN.定数名} */
-        public static final String KIND_FACTORY_CONST = "FACTORY_CONST";
-
-        /**
-         * ファクトリに渡された {@code Class} リテラル。値は型の FQN。
-         *
-         * {@code DaoBase.getDao(UserDao.class)} のように、インターフェースそのものを
-         * キーにするファクトリ向け。{@code "UserDao"} のような文字列と違い、型名は
-         * そのまま具象クラス名の材料になる（{@code …UserDao} → {@code …impl.UserDaoImpl}）
-         */
-        public static final String KIND_FACTORY_CLASS = "FACTORY_CLASS";
-
-        @Override
-        public String toString() {
-            return kind + "=" + value;
-        }
-    }
-
-    // ================================================================================================
-    // src/jche/extension/TypeCandidateProvider.java
-    // ================================================================================================
-    /**
-     * 拡張ポイント: 宣言型と証拠（{@link Hint}）から具象型の候補を返す。
-     *
-     * <p>これがこのツールで唯一、解決の条件を Java で書ける差し込み口。グラフを組むときに動き、
-     * キャッシュには何も書かないので、足しても外してもキャッシュは捨てられない。
-     *
-     * <p>実装例（ファクトリの対応表）:
-     *   hints に FACTORY_KEY があれば、対応表を引いて具象クラスFQNを返す。
-     *   これは同梱の {@link TypeMappingProvider} がそのまま行うので、
-     *   対応表を書けば済む場合は自分で実装しなくてよい。
-     *
-     * <p>読み込み方は {@code plugin.folders} に {@code .java} / {@code .class} / {@code .jar} を置き、
-     * {@code resolver.candidate.providers} に FQN を書く（docs/instance-analysis-plugin.md）。
-     */
-    public static interface TypeCandidateProvider {
-
-        /** 設定ファイルの内容と、その置き場所（相対パス解決の起点）を受け取る */
-        default void init(Properties config, Path configDir) {
-        }
-
-        /**
-         * 静的束縛（段0）と判定された呼び出しにも、この拡張を適用するか。
-         *
-         * Javaの言語仕様上は、private/static/final・finalクラス・コンストラクタ・
-         * super呼び出しは仮想ディスパッチされないため、DIコンテナのプロキシ
-         * （CGLIBはサブクラス生成、JDK動的プロキシはインターフェース実装）でも
-         * 実行される本体は変わらない。よって既定では段0を確定として扱う。
-         *
-         * ただし、バイトコード織り込み（AspectJのCTW等）や独自フレームワークの
-         * 仕掛けによって、この前提が崩れる可能性は残る。そうした環境では
-         * true を返すことで、段0の呼び出しにも解決を差し込める。
-         *
-         * 段0で打ち切ってしまうと拡張に到達せず、呼び出し階層がそこで
-         * 切れてしまうため、この逃げ道を用意している。
-         */
-        default boolean appliesToStaticBound() {
-            return false;
-        }
-
-        /**
-         * @return 具象型のFQN配列。解決できない場合は null または空配列
-         */
-        String[] candidates(String declaredType, String signature, List<Hint> hints);
-
-        /** CSVの由来ラベルに出る名前。例: "CUSTOM_FACTORY" */
-        String label();
-    }
-
-    // ================================================================================================
-    // src/jche/extension/UsageReporter.java
-    // ================================================================================================
-    /**
-     * 拡張が任意で実装する報告口: 解析の最後に「効いたか」を利用者へ知らせる。
-     *
-     * <p>対応表や条件を外から与える仕組みは、書き間違えても実行時は「当たらない」だけで何も言わない。
-     * 設定したのに効いていないことに気づけるよう、拡張自身が使われた件数を知らせられるようにしてある
-     * （同梱の {@link TypeMappingProvider} がこれを実装している）。
-     *
-     * <p>{@link TypeCandidateProvider} と {@link ContractProvider} のどちらと一緒に実装してもよい。
-     * 拡張ポイントそのものではないので、実装しなくても何も起きない。
-     */
-    public static interface UsageReporter {
-
-        /**
-         * 利用状況を {@link Log} に出す。CSV を書き終えたあとに 1 回だけ呼ばれる。
-         *
-         * <p>例外を投げても解析は止まらない（警告を出して飛ばす）。
-         */
-        void reportUsage();
-    }
-
-    // ================================================================================================
     // src/jche/external/ClassFileRefs.java
     // ================================================================================================
     /**
@@ -28476,7 +28331,7 @@ public final class CallHierarchyExporterSingle {
          * 契約表・拡張へ渡す証拠・ひな形の 3 つはすべてここを通る（{@link #keysOf} の説明）。
          * 解析対象の書き方に合わせて種類を足すときは、ここに 1 行足したうえで、
          * 対になる 3 か所（契約表の読み書き {@code TypeContracts}、証拠の種別
-         * {@code Hint}、ひな形の見出し）も揃える。
+         * {@code jche.extension.Hint}、ひな形の見出し）も揃える。
          *
          * <pre>
          *   get("USER")            L  Origin.LITERAL  文字列。コンパイル時定数は値まで評価される
@@ -31016,7 +30871,7 @@ public final class CallHierarchyExporterSingle {
      *   <li>コンストラクタ・setter の引数に付いた &#64;Qualifier。引数のアノテーションは
      *       事実として持っていない（フィールド単位の注入点だけを見る）</li>
      *   <li>XML（applicationContext.xml）のBean定義。ソースの事実ではないため、
-     *       必要なら拡張（{@link TypeCandidateProvider}）で差し込む</li>
+     *       必要なら拡張（{@link jche.extension.TypeCandidateProvider}）で差し込む</li>
      * </ul>
      */
     public final static class SpringBeans {

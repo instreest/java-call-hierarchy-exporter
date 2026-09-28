@@ -30,6 +30,9 @@ import java.util.stream.Stream;
  *   <li>コードに書かれた完全修飾名 {@code jche.パッケージ.型} を単純名にする（文字列リテラルのある行は触らない）</li>
  *   <li>JBang の指示行（{@code //DEPS} / {@code //JAVA}）は {@code src/jche/CallHierarchyExporter.java} のものを
  *       先頭に 1 組だけ置き、本体の中のものは捨てる（{@code //SOURCES} は要らない）</li>
+ *   <li>利用者の拡張が import する API（{@code jche.extension}）は入れ子にせず、本物のパッケージのまま
+ *       {@code single-file/jche/extension/} に写す（{@code //SOURCES} で一緒にコンパイルする）。Javadoc の
+ *       {@code {@link jche.…}} だけは入れ子の型を指せないので {@code {@code}} にする</li>
  *   <li>同梱の拡張の読み込み（{@code jche.config.Plugins}）だけは、設定に書く名前 {@code jche.builtin.X} を
  *       入れ子のクラス名に読み替える 1 行を差し込む（差し込み先が無くなっていれば失敗させる）</li>
  * </ol>
@@ -46,6 +49,13 @@ public final class MergeSources {
      * 既定パッケージの型は import できない（JLS 7.5）。
      */
     static final String PACKAGE = "jche";
+    /**
+     * 入れ子にせず、本物のパッケージのまま別ファイルに写す API（{@code src/jche/} からの相対のフォルダ）。
+     * 利用者が Java で書く拡張（{@code plugin.folders}）は {@code import jche.extension.TypeCandidateProvider;} と
+     * 書くので、この型だけは 1 ファイル版でも同じ名前で存在しなければならない。{@code java.*} にしか依存しないことは
+     * 生成のときに検査する（依存すると入れ子の型を指すことになり、別ファイルにできない）。
+     */
+    static final String API_DIR = "extension";
     /** 本体の各ファイルの 1 行目 */
     static final String COPYRIGHT = "// Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0";
     /** JBang の指示行と //DEPS の出典 */
@@ -59,8 +69,8 @@ public final class MergeSources {
     private static final Pattern JBANG_DIRECTIVE = Pattern.compile(
             "^//(DEPS|JAVA|SOURCES|FILES|JAVA_OPTIONS|RUNTIME_OPTIONS|COMPILE_OPTIONS|NATIVE_OPTIONS|MAIN|MODULE|"
             + "MANIFEST|REPOS|GAV|DESCRIPTION|PREVIEW|CDS|KOTLIN|GROOVY|JAVAAGENT|DOCS)\\b.*");
-    /** コードの中の完全修飾名 jche[.pkg].Type */
-    private static final Pattern JCHE_FQN = Pattern.compile("\\bjche\\.(?:[a-z][\\w]*\\.)*([A-Z][\\w]*)");
+    /** コードの中の完全修飾名 jche[.pkg].Type（別ファイルに写す API のパッケージは除く） */
+    private static final Pattern JCHE_FQN = Pattern.compile("\\bjche\\.(?!" + API_DIR + "\\.)(?:[a-z][\\w]*\\.)*([A-Z][\\w]*)");
 
     private MergeSources() {
     }
@@ -76,6 +86,23 @@ public final class MergeSources {
         Files.createDirectories(out.getParent());
         Files.writeString(out, text, StandardCharsets.UTF_8);
         System.out.println("wrote " + out + " (" + text.lines().count() + " lines)");
+        // 拡張 API はそのまま写す（出力先の隣の jche/extension/。古いものが残らないよう先に空にする）
+        Path apiOut = out.getParent().resolve(PACKAGE).resolve(API_DIR);
+        if (Files.isDirectory(apiOut)) {
+            try (Stream<Path> s = Files.list(apiOut)) {
+                for (Path old : s.filter(q -> q.toString().endsWith(".java")).toList()) {
+                    Files.delete(old);
+                }
+            }
+        }
+        Files.createDirectories(apiOut);
+        for (Path api : apiFiles(srcDir)) {
+            // Javadoc の {@link jche.…} は 1 ファイル版では入れ子の型を指して解決できない（doclint が落とす）ので {@code} にする
+            String apiText = Files.readString(api, StandardCharsets.UTF_8)
+                    .replaceAll("\\{@link(plain)? (" + PACKAGE + "\\.(?!" + API_DIR + "\\.)[^}]*)\\}", "{@code $2}");
+            Files.writeString(apiOut.resolve(api.getFileName().toString()), apiText, StandardCharsets.UTF_8);
+        }
+        System.out.println("copied " + apiFiles(srcDir).size() + " API files to " + apiOut);
     }
 
     /** 1 つのソースファイルを読み替えた結果 */
@@ -96,12 +123,15 @@ public final class MergeSources {
         try (Stream<Path> s = Files.walk(srcDir)) {
             files = s.filter(p -> p.toString().endsWith(".java"))
                     .filter(p -> !p.getFileName().toString().equals("package-info.java"))
+                    .filter(p -> !rel(srcDir, p).startsWith(API_DIR + "/"))
                     .sorted((a, b) -> rel(srcDir, a).compareTo(rel(srcDir, b)))
                     .toList();
         }
         if (files.isEmpty()) {
             throw new IllegalStateException("no sources under " + srcDir);
         }
+
+        checkApiFiles(srcDir);
 
         List<Unit> units = new ArrayList<>();
         Map<String, String> typeOwner = new TreeMap<>();   // 単純名 → ファイル（衝突の検査）
@@ -121,7 +151,9 @@ public final class MergeSources {
         for (Unit u : units) {
             for (String imp : u.imports) {
                 String fqn = imp.replaceAll("^import\\s+(static\\s+)?", "").replaceAll("\\s*;\\s*$", "");
-                if (fqn.startsWith(PACKAGE + ".")) {
+                if (fqn.startsWith(PACKAGE + "." + API_DIR + ".")) {
+                    // 別ファイルに写す API。そのまま import する
+                } else if (fqn.startsWith(PACKAGE + ".")) {
                     // 本体の型。トップレベル型は同じクラスの入れ子になるので import は要らない。
                     // 入れ子の型（jche.pkg.Outer.Inner）だけは外側のクラス経由の import に書き直す
                     String nested = nestedPath(fqn, typeOwner);
@@ -160,6 +192,7 @@ public final class MergeSources {
         for (String d : directives) {
             sb.append(d).append('\n');
         }
+        sb.append("//SOURCES ").append(PACKAGE).append('/').append(API_DIR).append("/*.java\n");
         sb.append("package ").append(PACKAGE).append(";\n\n");
         String group = null;
         for (String imp : imports) {
@@ -201,6 +234,28 @@ public final class MergeSources {
             }
         }
         throw new IllegalStateException("import of unknown type: " + fqn);
+    }
+
+    /** 別ファイルに写す API のソース（名前順） */
+    private static List<Path> apiFiles(Path srcDir) throws IOException {
+        try (Stream<Path> s = Files.list(srcDir.resolve(API_DIR))) {
+            return s.filter(p -> p.toString().endsWith(".java"))
+                    .filter(p -> !p.getFileName().toString().equals("package-info.java"))
+                    .sorted().toList();
+        }
+    }
+
+    /** API のソースが java.* と自分のパッケージにしか依存しないこと（入れ子の型を指していれば別ファイルにできない） */
+    private static void checkApiFiles(Path srcDir) throws IOException {
+        for (Path api : apiFiles(srcDir)) {
+            for (String line : Files.readAllLines(api, StandardCharsets.UTF_8)) {
+                String t = line.strip();
+                if (t.startsWith("import ") && !t.matches("import (static )?(java\\.|" + PACKAGE + "\\." + API_DIR + "\\.).*")) {
+                    throw new IllegalStateException("API file " + api.getFileName() + " imports " + t
+                            + " which is nested in the single file; cannot keep it as a separate file");
+                }
+            }
+        }
     }
 
     private static String rel(Path base, Path p) {
@@ -348,12 +403,13 @@ public final class MergeSources {
                 "// 入れ子（static）にしてある。機能は本体と同じ（キャッシュ・差分更新・データフロー解析・被参照スキャン・",
                 "// ビルドファイルからの依存解決・対話モード・サーバーモード）。違うのはクラス名だけで、",
                 "//   - 同梱の拡張は設定に本体と同じ名前（jche.builtin.TypeMappingProvider）で書けば読み替える",
-                "//   - 利用者が Java で書く拡張（plugin.folders）は jche.extension.* を import できないので使えない",
+                "//   - 利用者が Java で書く拡張（plugin.folders）が import する jche.extension.* だけは入れ子にせず、",
+                "//     本物のパッケージのまま隣の jche/extension/ に置く（//SOURCES）。ビルドのときは一緒に渡す",
                 "//   - ツールのプロジェクトフォルダ（キャッシュの置き場所 .cache/）は、リポジトリの中で動かすか",
                 "//     JCHE_ROOT で示す。分からなければ作業ディレクトリを使い、その旨を警告する（本体と同じ）",
                 "//",
                 "// ビルドと実行（引数があれば対話なしで解析、無ければ対話モード。src/jche/Jche.java と同じ）:",
-                "//   javac -encoding UTF-8 -cp \"lib/*\" -d bin single-file/" + OUTER + ".java",
+                "//   javac -encoding UTF-8 -cp \"lib/*\" -d bin single-file/" + OUTER + ".java single-file/jche/extension/*.java",
                 "//   java  -cp \"bin:lib/*\" " + PACKAGE + "." + OUTER + " config/config.properties   (Windows は ; 区切り)",
                 "//",
                 "// JBang なら jar を自分で集めずに直接（初回は JDK 25 と JDT を取得する）:",

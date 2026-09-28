@@ -10,10 +10,12 @@
 - 1 ファイル版は**手で書かず、本体から生成する**。生成器は `single-file/generator/MergeSources.java`
   （JDK 17 以上の `java` で直接動く。JDT は要らない）、入口は `bash single-file/generate.sh`
 - 本体の各ファイルのトップレベル型を、パッケージ `jche` の外側のクラス `CallHierarchyExporterSingle` の
-  入れ子（`static`）にする。本体のコードは 1 行も書き換えない（機械的な読み替えだけ）
+  入れ子（`static`）にする。本体のコードは 1 行も書き換えない（機械的な読み替えだけ）。
+  利用者の拡張が import する `jche.extension` の 4 ファイルだけは入れ子にせず、`single-file/jche/extension/` に
+  本物のパッケージのまま写す（Q5）
 - `bash test/single-file/run.sh` が、生成し直し忘れ（生成し直した結果とコミットの一致）・ビルド（本体と同じ lint）・
-  起動（`--help`）・本体と同じ出力（回帰テストの whole / entry と、同梱の拡張の読み込み）を検査する。CI（`smoke.yml`）にも入れた
-- `single-file/README.md` を「完全版」の説明に書き換えた（本体との違いは、利用者が Java で書く拡張が使えないことだけ）
+  起動（`--help`）・本体と同じ出力（回帰テストの whole / entry / plugin）を検査する。CI（`smoke.yml`）にも入れた
+- `single-file/README.md` を「完全版」の説明に書き換えた
 
 ---
 
@@ -74,9 +76,15 @@ Java は 1 ファイルに public なトップレベル型を 1 つしか置け�
 
 ### Q5. 何が本体と違うのか
 
-- **利用者が Java で書く拡張（`plugin.folders`）は使えない。** 拡張は `import jche.extension.TypeCandidateProvider;` するが、
-  1 ファイル版にその型は無い（`jche.CallHierarchyExporterSingle.TypeCandidateProvider`）。拡張を書く人は本体を使う。
-  対応表（`plugin.mapping.files`）と契約表（`contracts.files`）は Java を書かないので、そのまま使える
+- **利用者が Java で書く拡張（`plugin.folders`）は本体と同じに使える。** 最初は使えなかった。拡張は
+  `import jche.extension.TypeCandidateProvider;` するが、入れ子にすると `jche.CallHierarchyExporterSingle.TypeCandidateProvider`
+  になって当たらない。そこで `jche.extension` の 4 ファイル（`TypeCandidateProvider` / `ContractProvider` / `Hint` / `UsageReporter`）
+  だけは入れ子にせず、本物のパッケージのまま `single-file/jche/extension/` に写し、1 ファイル側は本体と同じ `import jche.extension.X;`
+  で使う。JBang は `//SOURCES jche/extension/*.java` で拾い、javac には一緒に渡す。実行時に拡張の `.java` をコンパイルする
+  経路（`PluginClassLoaders`）は `java.class.path` を渡すので、そこに `jche/extension/*.class` があれば本体と同じに動く。
+  写せるのは、この 4 ファイルが `java.*` にしか依存しないからで、依存し始めたら生成器が失敗する。Javadoc の `{@link jche.…}`
+  だけは入れ子の型を指せない（doclint が落とす）ので `{@code}` に読み替える。
+  「1 ファイル」からは 4 ファイルはみ出るが、import される型を別ファイルにするのは利用者の了解を得た
 - ツールのプロジェクトフォルダの探し方（`ToolRoot`）は本体と同じで、目印は `src/jche/CallHierarchyExporter.java`。
   リポジトリの外で 1 ファイル版だけを動かすと見つからず、作業ディレクトリを使う旨を警告する（`cache.folder` を書けば関係ない）。
   1 ファイル版のために目印を増やす案は、キャッシュの置き場所が版によって変わる原因になるので採らなかった
@@ -91,12 +99,11 @@ Java は 1 ファイルに public なトップレベル型を 1 つしか置け�
 2. **ビルド** … 本体の lint と同じ引数（`--release 17 -Xlint:all -Werror -Xdoclint:all,-missing`。JDK 25 の javac）で通ること。
    入れ子にしたことで Javadoc の `{@link}` が解決できなくなっていないかも、doclint がここで見る
 3. **起動** … `--help` が 0 で使い方を出し、知らないオプションは 2 で終わること（`jche.Jche` と同じ）
-4. **本体と同じ出力** … 回帰テスト（`test/regression/run.sh`）の whole・entry を `JCHE_CMD` で 1 ファイル版に差し替えて通すこと。
-   加えて、plugin ケースの 1・2 回目に当たる実行（拡張なし → 同梱の拡張 `jche.builtin.TypeMappingProvider`）で、
-   拡張を読み込んだログが出て、出力が expected と一致すること（Q4 の読み替えの検査）。
-   plugin ケースの残り（自前の拡張を実行時にコンパイルする）は 1 ファイル版では通らない（Q5）ので回さない
+4. **本体と同じ出力** … 回帰テスト（`test/regression/run.sh`）の whole・entry・plugin を `JCHE_CMD` で 1 ファイル版に
+   差し替えて通すこと。plugin ケースは、同梱の拡張 `jche.builtin.TypeMappingProvider` を本体と同じ名前で読み込めること
+   （Q4 の読み替え）と、自前の拡張（`plugins/*.java` を実行時にコンパイルする）が動くこと（Q5）を見る
 
-手元では whole・entry のほかに novalues・values も 1 ファイル版で通ることを確かめた（CI では時間を優先して 2 ケース）。
+手元では whole・entry・plugin のほかに novalues・values も 1 ファイル版で通ることを確かめた（CI では時間を優先して 3 ケース）。
 
 ### Q7. 1 ファイル版のソースを直接編集してよいか
 
