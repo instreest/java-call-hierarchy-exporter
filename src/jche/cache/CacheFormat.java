@@ -494,9 +494,11 @@ public final class CacheFormat {
      *       いたブロックは、名前を照合せず、何かが変わった実行では必ず解析し直す。同じパッケージに足した新しい型による隠蔽は、
      *       単純名を照合せず、そのパッケージ（とそれをオンデマンド import するブロック）で当てる。解析し直したファイルの
      *       型階層（H 行）が旧キャッシュと違えば、残りを全件解析する（{@code docs/cache-unification-qa.md} の Q131）</li>
+     *   <li>v45 H 行の継承した実装（8 列目）を public の宣言だけにした（別のパッケージのパッケージアクセスのメソッドは継承されない。
+     *       Issue #168。{@code docs/jls-conformance-qa.md} の Q37）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v44";
+    public static final String VERSION = "jche-cache-v45";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

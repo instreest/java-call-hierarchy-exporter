@@ -46,6 +46,8 @@
 - **その後**: 暗黙の `super()` の呼び出し先を、匿名クラスは型引数を置き換えた親のメンバーで比べ、それ以外は
   決めきれなければ候補すべてに辺を張るようにした（Q35。Q10 の探す順を置き換えた）。
   この 3 項目は形式 `jche-cache-v43` で入った（Q31）。この段で直さなかったものは Q36
+- **その後**: H 行の継承した実装（Q33）に、別パッケージのパッケージアクセスのメソッドを書いていたのを直した。
+  実装する側に採るのは public の宣言だけ（Q37。Issue #168。形式 `jche-cache-v45`）
 
 ---
 
@@ -911,6 +913,8 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
   パッケージアクセス、`Api.m()` が default）で、読み手は今も `Base.m` を選ぶ。JLS では `Base.m` は `Impl` に継承されず
   `Api.m` だが、JVMS 5.4.5 ではパッケージアクセスのメソッドが別の public なメソッドを上書きしうる。どちらにしても javac で
   コンパイルした形は実行時に `IllegalAccessError` になり、指摘にも無かったので変えていない
+  （[#175](https://github.com/instreest/java-call-hierarchy-exporter/issues/175)）。シグネチャが違う形（型引数の置換で
+  H 行の 8 列目に書かれるもの）は実行時に default が動くので別で、書き手を直した（Q37。Issue #168）
 - **jar のクラスが private の親クラスのメソッドに対してコンパイルされた形**（Q28 の `PRes`）: 実行時は `IllegalAccessError`。
   ツールは JLS に合わせる
 - **ジェネリックなコンストラクタ `<X> G(X)` と、ジェネリックな外側のクラスの内部クラスを親にする匿名クラス**（Q35）:
@@ -918,3 +922,55 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
   含む並び）。呼び出しの辺はつながっているので出力には効かないが、`test/jls` の突き合わせに載せられない
 - **呼び出しを `UNEXPANDED:CHA` のまま残すとき**、呼び出し先を宣言したインターフェースの default も候補に並ぶ（以前と同じ）。
   行が増えるだけで、呼び出しは落ちない
+
+## Q37. H 行の継承した実装（8 列目）に、別パッケージのパッケージアクセスのメソッドを入れていた
+
+[Issue #168](https://github.com/instreest/java-call-hierarchy-exporter/issues/168)。Q36 の 1 つ目（「別のパッケージの
+親クラスのパッケージアクセスのメソッド」）のうち、**シグネチャが違う**形。v43（Q33）で入った書き手の穴で、直した（形式 v45）。
+
+```java
+// package a
+public class BaseRepo { void save(User u) { } }          // パッケージアクセス
+// package b
+public interface Repo<T> { default void save(T t) { System.out.println("Repo.save"); } }
+public class UserRepo extends a.BaseRepo implements Repo<a.User> { }
+
+Repo<a.User> r = new UserRepo();
+r.save(u);          // 動くのは Repo.save（javac + java で確認。ブリッジは作られず IllegalAccessError も出ない）
+```
+
+v43 は `UserRepo` の H 行 8 列目に `b.Repo#save(java.lang.Object)>a.BaseRepo#save(a.User)` を書き、`MethodSelection#search` は
+8 列目の組を親インターフェースより先に返すので、呼び出しは `BaseRepo.save` に確定（`RESOLVED:LOCAL_NEW` / `DATAFLOW_PARAM` /
+`SINGLE_IMPL`）していた。実際に動く `Repo.save` は出力から消え、動かない `BaseRepo.save` が確定として出る（呼び出しを落とす側）。
+v42 は `Repo.save NO_OVERRIDE` で正しかった。
+
+**原因**: `OverrideFacts#inheritedImplementationsOf` → `subsignatureIn` が static と private は除いていたが、パッケージアクセスの
+メソッドを除いていなかった。JLS 8.4.8 では、パッケージアクセスのメソッドは同じパッケージのサブクラスにしか継承されない。
+`BaseRepo.save` は `UserRepo` のメンバーでないので、何も実装しない。
+
+**今の決まり: 実装する側に採るのは public の宣言だけ**（`subsignatureIn` の当たった宣言が public でなければ飛ばして親へ進む）。
+
+- Issue の案は「パッケージアクセスのメソッドは、その型から宣言したクラスまでの連鎖がすべて同じパッケージにあるときだけ採る」
+  だったが、題材を javac に通して分かったのは、**同じパッケージで継承されても、public でないメソッドが public な
+  インターフェースのメソッドを実装することは JLS 8.4.8.3（弱いアクセス権限）でコンパイルできない**ということ
+  （`save(PkgUser) in PkgRepoBase cannot implement save(T) in PkgSameApi; attempting to assign weaker access privileges`）。
+  protected でも同じ。つまりコンパイルできるコードでは、インターフェースのメソッドを実装する継承したメソッドは public に限る。
+  連鎖のパッケージを見る書き分けと public だけの規則の違いが出るのはコンパイルできないコードだけなので、簡単なほうにした
+- コンパイルできないコードでは「実装なし」に倒れる（default があれば default、無ければ `NO_IMPL`）。実行時の正解が無い形なので、
+  クラスのメソッドに確定させるよりは候補を残す側
+
+**間に別パッケージのクラスが挟まる形**（`a.PkgViaMid extends b.PkgMid extends a.PkgRepoBase`）も同じ。自分が `PkgRepoBase` と
+同じパッケージでも、`save(PkgUser)` は `b.PkgMid` のメンバーにならないので継承されない（JLS 8.4.8 は直接の親クラスのメンバーから
+継承する）。javac もブリッジを作らず、default が動く。public だけの規則ならこの形も自然に外れる。
+
+**読み手（`MethodSelection#search`）は変えていない**（8 列目に書かれた組をそのまま採る）。キーの同じ形（Q36 の `class Impl extends
+a.Base implements Api` で `a.Base.m()` がパッケージアクセス、`Api.m()` が default）は `declarationIn` のパッケージアクセスの判定の
+話で、[#175](https://github.com/instreest/java-call-hierarchy-exporter/issues/175) として別に扱う。
+
+**検査**: `test/jls` の §8.4.8（`s08_04_08/a/PkgRepoBase.java`・`PkgViaMid.java`、`s08_04_08/b/PkgRepo.java`・`PkgUserRepo.java`・
+`PkgMid.java`・`PkgMidApi.java`・`PkgInherited.java`。`pkg-inherited-impl-*` の 6 件。`csv` で default が出て `nocsv` で
+`PkgRepoBase.save` が出ないこと。引数で受けた形・`new` のローカル変数で絞る形・中間のクラスを挟む形）。javac 26 との突き合わせ
+（`JlsCheck`）は「javac のブリッジに対応する H 行の継承した実装があること」を見るので、ブリッジが無いこの形に H 行の組を書いても
+落ちないが、`nocsv` が捕まえる。
+
+**形式の版**: 書き手の事実（H 行 8 列目）が変わるので `jche-cache-v45`。
