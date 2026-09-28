@@ -340,13 +340,26 @@ public final class JlsCheck {
         // --- 呼び出し ---
         Set<Edge> javacEdges = javac.edges();
         Set<Edge> toolEdges = tool.edges(javacTypes);
+        // JDT のコンパイル時宣言が、最も特定的な宣言ではなくそれに上書きされた親インターフェースの宣言になった呼び出し
+        // （ツールの側の辺）。下の逆向きの突き合わせで「javac は呼ばない」に数えない
+        Set<Edge> overriddenDecl = new TreeSet<>();
         for (Edge e : javacEdges) {
             String s = sectionOf(javac.packageOfKey(e.caller));
             counts.get(s)[2]++;
             if (toolEdges.contains(e)) {
                 continue;
             }
-            if (emittedTwice(e, javacEdges, toolEdges)) {
+            Edge parent = overriddenParentDeclaration(e, toolEdges, javac);
+            if (parent != null) {
+                // class C implements I1, I2（I2 extends I1 が同じ m() を再宣言）の c.m() で、JDT は上書きされた I1.m を
+                // 呼び出し先にする（JLS 8.4.8 では C は I1.m を継承しない。JVMS の解決も maximally-specific の I2.m）。
+                // 書き手は解決を JDT に任せるのでそのまま C 行になる。読み手の選択（TypeHierarchy#mostSpecific）は
+                // I1.m からでも動く本体を I2.m に決めるので、call-hierarchy.csv の行（csv の期待値）は正しい。
+                // 突き合わせでは、この形だけを INFO にして記録する（docs/jls-conformance-test-qa.md の Q21）
+                overriddenDecl.add(parent);
+                infos.get(s).add("JDT のコンパイル時宣言が、最も特定的な宣言ではなく、それに上書きされた親インターフェースの宣言"
+                        + "（JLS 8.4.8 では継承されない）: " + e + "（C 行の呼び出し先は " + parent.callee + "）");
+            } else if (emittedTwice(e, javacEdges, toolEdges)) {
                 // try-with-resources の close() や finally の中の呼び出しは、javac が正常終了の経路と
                 // 例外の経路に 1 つずつ書く。ソースの 1 か所がバイトコードの 2 か所（別の行）になる
                 infos.get(s).add("javac が同じ呼び出しを別の行にも書いている（finally・try-with-resources の翻訳）: "
@@ -359,7 +372,7 @@ public final class JlsCheck {
             }
         }
         for (Edge e : toolEdges) {
-            if (javacEdges.contains(e) || lineOnly(e, javacEdges)) {
+            if (javacEdges.contains(e) || lineOnly(e, javacEdges) || overriddenDecl.contains(e)) {
                 continue;
             }
             String s = sectionOf(javac.packageOfKey(e.caller));
@@ -450,6 +463,27 @@ public final class JlsCheck {
     private static boolean emittedTwice(Edge e, Set<Edge> javacEdges, Set<Edge> toolEdges) {
         return toolEdges.stream().anyMatch(t -> t.caller.equals(e.caller) && t.callee.equals(e.callee)
                 && t.line != e.line && javacEdges.contains(t));
+    }
+
+    /**
+     * javac の呼び出し {@code e}（呼び出し先は maximally-specific の宣言）と同じ呼び出し元・行で、ツールの呼び出し先が
+     * 同じシグネチャで、それを宣言した型が javac の呼び出し先の型の真の親インターフェースであるもの（JDT が上書きされた
+     * 親インターフェースの宣言をコンパイル時宣言にした形）。無ければ null
+     */
+    private static Edge overriddenParentDeclaration(Edge e, Set<Edge> toolEdges, Javac javac) {
+        int hash = e.callee.indexOf('#');
+        String type = e.callee.substring(0, hash);
+        String sig = e.callee.substring(hash);
+        for (Edge t : toolEdges) {
+            if (!t.caller.equals(e.caller) || t.line != e.line || !t.callee.endsWith(sig)) {
+                continue;
+            }
+            String toolType = t.callee.substring(0, t.callee.length() - sig.length());
+            if (!toolType.equals(type) && javac.isProperSuperinterfaceByToolName(toolType, type)) {
+                return t;
+            }
+        }
+        return null;
     }
 
     private static boolean lineOnly(Edge e, Set<Edge> others) {
@@ -973,8 +1007,14 @@ public final class JlsCheck {
         }
 
         /**
-         * 呼び出し先の宣言を引き直す（JVMS 5.4.3.3 / 5.4.3.4: 所有型、その親クラスを順に、次に親インターフェース。
-         * 親インターフェースの private・static メソッドは飛ばす）。
+         * 呼び出し先の宣言を引き直す（JVMS 5.4.3.3 / 5.4.3.4: 所有型、その親クラスを順に、次に親インターフェース）。
+         * 親インターフェースの段は、連鎖の型が実装するインターフェースを推移的に集め、名前とディスクリプタの一致する
+         * private・static でない宣言（JVMS 5.4.3.3 の手順 3・4）をすべて拾ってから、<b>maximally-specific</b>
+         * （宣言した型が、ほかの宣言した型の真の親インターフェースでないもの）に絞る。非 abstract がちょうど 1 つならそれ、
+         * そうでなければ絞った中の幅優先で最初のもの（JVM なら任意に選ぶ形。JLS ではコンパイルエラーになる）。
+         * 幅優先の最初の一致を採ると、{@code interface I2 extends I1} が同じ {@code m()} を宣言し
+         * {@code class C implements I1, I2} で I1 が先に並ぶ形で、上書きされた I1.m に引き直してしまい、
+         * ツール本体（{@code TypeHierarchy#mostSpecific}）とずれる（Issue #187）。
          * このソースの型で見つからなければ null（JDK のメソッド）
          */
         Method resolve(String owner, String name, String desc) {
@@ -987,6 +1027,7 @@ public final class JlsCheck {
                     return m;
                 }
             }
+            List<Method> found = new ArrayList<>();
             ArrayList<Cls> queue = new ArrayList<>(chain);
             Set<String> seen = new java.util.HashSet<>();
             while (!queue.isEmpty()) {
@@ -995,16 +1036,70 @@ public final class JlsCheck {
                     Cls i = classes.get(ie.asInternalName());
                     if (i != null && seen.add(i.internal)) {
                         Method m = find(i, name, desc);
-                        // 親インターフェースの private・static メソッドは解決の対象にならない（JVMS 5.4.3.3 の手順 3・4）
                         if (m != null && !m.model.flags().has(AccessFlag.PRIVATE)
                                 && !m.model.flags().has(AccessFlag.STATIC)) {
-                            return m;
+                            found.add(m);
                         }
                         queue.add(i);
                     }
                 }
             }
-            return null;
+            List<Method> specific = new ArrayList<>();
+            for (Method m : found) {
+                boolean overridden = false;
+                for (Method other : found) {
+                    if (other != m && isProperSuperinterface(m.owner, other.owner)) {
+                        overridden = true;
+                        break;
+                    }
+                }
+                if (!overridden) {
+                    specific.add(m);
+                }
+            }
+            List<Method> concrete = specific.stream().filter(m -> !m.model.flags().has(AccessFlag.ABSTRACT)).toList();
+            if (concrete.size() == 1) {
+                return concrete.get(0);
+            }
+            return specific.isEmpty() ? null : specific.get(0);
+        }
+
+        /** {@code sup} が {@code sub} の真の親インターフェースか（このソースの型の範囲で推移的に辿る） */
+        private boolean isProperSuperinterface(Cls sup, Cls sub) {
+            ArrayList<Cls> queue = new ArrayList<>(List.of(sub));
+            Set<String> seen = new java.util.HashSet<>();
+            while (!queue.isEmpty()) {
+                Cls c = queue.remove(0);
+                for (ClassEntry ie : c.model.interfaces()) {
+                    Cls i = classes.get(ie.asInternalName());
+                    if (i == null || !seen.add(i.internal)) {
+                        continue;
+                    }
+                    if (i == sup) {
+                        return true;
+                    }
+                    queue.add(i);
+                }
+            }
+            return false;
+        }
+
+        /**
+         * ツールの型名 {@code toolSup} が {@code toolSub} の真の親インターフェースか。
+         * 突き合わせで、JDT のコンパイル時宣言が上書きされた親インターフェースの宣言になる形を見分けるのに使う
+         */
+        boolean isProperSuperinterfaceByToolName(String toolSup, String toolSub) {
+            Cls sup = null;
+            Cls sub = null;
+            for (Cls c : classes.values()) {
+                if (c.toolName().equals(toolSup)) {
+                    sup = c;
+                } else if (c.toolName().equals(toolSub)) {
+                    sub = c;
+                }
+            }
+            return sup != null && sub != null && sup.model.flags().has(AccessFlag.INTERFACE)
+                    && isProperSuperinterface(sup, sub);
         }
 
         private static Method find(Cls c, String name, String desc) {

@@ -691,12 +691,18 @@ final class FactVisitor extends ASTVisitor {
         return true;
     }
 
+    /**
+     * {@code super.m()} / {@code X.super.m()}。静的束縛（部分型の上書きの影響を受けない）だが、読み手は修飾する型
+     * （JLS 13.1: {@code super.m()} なら囲む型の親クラス、{@code X.super.m()} なら X がインターフェースならその X、
+     * クラスなら X の親クラス）から実際に動く実装を選び直す（JVMS 6.5 の invokespecial。インターフェースのダイヤモンドで
+     * JDT の束縛が特定性の低い default を指すことがある。Issue #177）ので、修飾する型を C 行に書く
+     */
     @Override
     public boolean visit(SuperMethodInvocation n) {
-        // super.m() は静的束縛（オーバーライドの影響を受けない）
         IMethodBinding b = n.resolveMethodBinding();
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                RecvKind.THIS, null, origins.valuesOf(null, n.arguments()));
+                RecvKind.THIS, null, origins.valuesOf(null, n.arguments()),
+                calls.qualifierOf(b, CallSiteRecorder.superQualifierOf(n, n.getQualifier())));
         return true;
     }
 
@@ -763,13 +769,14 @@ final class FactVisitor extends ASTVisitor {
         return true;
     }
 
-    /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
+    /** メソッド参照 super::m。super 呼び出しと同じく静的束縛で、修飾する型も同じに書く */
     @Override
     public boolean visit(SuperMethodReference n) {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                RecvKind.THIS, null, CallValues.NONE);
+                RecvKind.THIS, null, CallValues.NONE,
+                calls.qualifierOf(b, CallSiteRecorder.superQualifierOf(n, n.getQualifier())));
         return true;
     }
 

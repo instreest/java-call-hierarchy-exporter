@@ -440,8 +440,12 @@ mkdir -p "$SJ/src/p" "$SJ/v1/q" "$SJ/v2/q" "$SJ/lib"
 printf 'package p;\npublic class Main {\n    void go(q.L l) {\n        l.m("x");\n    }\n}\n' > "$SJ/src/p/Main.java"
 printf 'package q;\npublic class L { public void m(Object o) { } }\n' > "$SJ/v1/q/L.java"
 printf 'package q;\npublic class L { public void m(Object o) { } public void m(String s) { } }\n' > "$SJ/v2/q/L.java"
+mkdir -p "$SJ/v3/q"
+printf 'package q;\npublic class L { public void m(Object o) { } public void m(CharSequence s) { } }\n' > "$SJ/v3/q/L.java"
 ( javac -nowarn -d "$SJ/c1" "$SJ/v1/q/L.java" && javac -nowarn -d "$SJ/c2" "$SJ/v2/q/L.java" \
-    && jar cf "$SJ/lib/lib.jar" -C "$SJ/c1" q && jar cf "$SJ/v2.jar" -C "$SJ/c2" q ) 2> /dev/null \
+    && javac -nowarn -d "$SJ/c3" "$SJ/v3/q/L.java" \
+    && jar cf "$SJ/lib/lib.jar" -C "$SJ/c1" q && jar cf "$SJ/v2.jar" -C "$SJ/c2" q \
+    && jar cf "$SJ/v1.jar" -C "$SJ/c1" q && jar cf "$SJ/v3.jar" -C "$SJ/c3" q ) 2> /dev/null \
     || fail "検査用の jar を作れませんでした"
 cat > "$SJ/c.properties" <<EOF
 project.root=$SJ
@@ -488,6 +492,62 @@ grep -q 'q.L#m(java.lang.String)' <<<"$SJ_RESPONSE" \
 printf 'SHUTDOWN\n' >&"$SJ_IN" 2>/dev/null
 cat <&"$SJ_OUT" > /dev/null 2>&1
 wait "$SJ_PROC" 2>/dev/null
+
+# 鍵を戻す上書き（Issue #170。docs/cache-unification-qa.md の Q136）。JDK は閉じられていない ZipFile が持つすべての鍵
+# （fileKey・更新時刻）で目次を共有する（パスには依らない）。以前はパスごとに最後に見た鍵を 1 組だけ覚えていたので、
+# v1（更新時刻 M）→ v2（M+100。M の記録を上書きして忘れる）→ v3（M に戻す）の 3 回目は「前に見た鍵と違う」として
+# 確かめず、JDT は 1 回目に開いたままの v1 の目次で読んだ（警告も出ない）。同じ inode を別のパス（シンボリックリンク）で
+# 読む形も、新しいパスは「初めて見た」として確かめなかった。どちらも前の検査の GC に紛れないよう、新しいサーバーで見る
+sj_start() {   # 新しいサーバーを立てる
+    coproc SJSRV { java -cp "$JCHE_CP" jche.CallHierarchyExporter --server "$WORK/cache4" 2>/dev/null; }
+    SJ_OUT=${SJSRV[0]}
+    SJ_IN=${SJSRV[1]}
+    SJ_PROC=$SJSRV_PID
+}
+sj_stop() {
+    printf 'SHUTDOWN\n' >&"$SJ_IN" 2>/dev/null
+    cat <&"$SJ_OUT" > /dev/null 2>&1
+    wait "$SJ_PROC" 2>/dev/null
+}
+sj_put() {   # $1=中身の jar  $2=更新時刻を写すファイル。lib.jar を同じ inode のまま上書きする
+    cat "$1" > "$SJ/lib/lib.jar"
+    touch -r "$2" "$SJ/lib/lib.jar"
+}
+sj_resolves() {   # $1=設定  $2=何回目か  → 解決先（q.L#m(...)）を SJ_TARGETS に入れる
+    sj_request "ANALYZE${T}$1"
+    grep -qE "^OK${T}analyzed=1" <<<"$SJ_RESPONSE" || fail "$2 回目の ANALYZE に失敗しました: ${SJ_RESPONSE:0:80}"
+    sj_request "TREE${T}p.Main#go(q.L)${T}callees${T}depth=2"
+    SJ_TARGETS=$(grep -o 'q.L#m([^)]*)' <<<"$SJ_RESPONSE" | sort -u | paste -sd' ')
+}
+touch -d '@'$(( $(stat -c %Y "$SJ/stamp") + 100 )) "$SJ/stamp100"
+sed -e "s#cache.folder=.*#cache.folder=$SJ/cache3#" "$SJ/c.properties" > "$SJ/c3.properties"
+sj_start
+sj_put "$SJ/v1.jar" "$SJ/stamp"
+sj_resolves "$SJ/c3.properties" 1
+sj_put "$SJ/v2.jar" "$SJ/stamp100"
+sj_resolves "$SJ/c3.properties" 2
+[ "$SJ_TARGETS" = "q.L#m(java.lang.String)" ] || fail "鍵を戻す上書きの 2 回目の解決先が期待と違います: $SJ_TARGETS"
+sj_put "$SJ/v3.jar" "$SJ/stamp"
+sj_resolves "$SJ/c3.properties" 3
+[ "$SJ_TARGETS" = "q.L#m(java.lang.CharSequence)" ] \
+    && ok "更新時刻を M → M+100 → M と戻して上書きした jar も、今の中身の q.L#m(CharSequence) に解決する" \
+    || fail "更新時刻を前の鍵に戻して上書きした jar を、その鍵で開いたままの目次で読んでいます: $SJ_TARGETS"
+sj_stop
+# シンボリックリンク。1 回目は lib.jar、2 回目は同じ inode をリンクの別のパスから読む（キャッシュは別。更新時刻は同じ）
+mkdir -p "$SJ/lib2"
+ln -sf "$SJ/lib/lib.jar" "$SJ/lib2/link.jar"
+sed -e "s#library.jars=.*#library.jars=$SJ/lib2/link.jar#" -e "s#cache.folder=.*#cache.folder=$SJ/cache5#" \
+    "$SJ/c.properties" > "$SJ/c5.properties"
+sed -e "s#cache.folder=.*#cache.folder=$SJ/cache6#" "$SJ/c.properties" > "$SJ/c6.properties"
+sj_start
+sj_put "$SJ/v1.jar" "$SJ/stamp"
+sj_resolves "$SJ/c6.properties" 1
+sj_put "$SJ/v3.jar" "$SJ/stamp"
+sj_resolves "$SJ/c5.properties" 2
+[ "$SJ_TARGETS" = "q.L#m(java.lang.CharSequence)" ] \
+    && ok "同じ inode をシンボリックリンクの別のパスで読んでも、上書きした jar の q.L#m(CharSequence) に解決する" \
+    || fail "シンボリックリンクで読んだ jar が、別のパスで開いたままの目次のまま: $SJ_TARGETS"
+sj_stop
 
 # フィールドの呼び出し元（TREE <型#フィールド> field）。Eclipse プラグインの「フィールドの呼び出し元」がこれを使う。
 # 根がフィールド、深さ 1 がそれを参照しているメソッド（理由の列に read / write / read/write）、その下が呼び出し元。

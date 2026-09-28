@@ -105,7 +105,7 @@ import jche.util.Warnings;
  *   パス1 … 旧キャッシュを順に読み、サイズと内容ハッシュが一致し、検査値も合うファイル（有効）を覚える。
  *           無効・消滅したファイルのブロックが宣言していた型（H行）を「変わった型」として集める。
  *           どのブロックの H 行の親型も部分型の索引に足す（下記「親型の連鎖」）。
- *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 2 列目）と、今のソースにあるファイルの
+ *           宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の指紋の列）と、今のソースにあるファイルの
  *           ブロックの型階層の指紋（下記「型階層が変わったとき」）もここで覚える。
  *           今のソースに無いファイルと同じコンパイル単位の名前のファイルも有効から外す
  *           （{@link SameUnitFiles#pairedWithDeleted}）。
@@ -201,7 +201,7 @@ import jche.util.Warnings;
  *
  * <p>宣言に書いた型の名前の解決先は、Aのソースが同じでも変わる。{@code import q.*} の {@code Foo} は、同じパッケージに
  * {@code p.Foo} ができると {@code p.Foo} になる（JLS 6.4.1）。すると A のメソッドの引数・戻り値の型、フィールドの型が変わり、
- * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の 2 列目に自分の宣言の指紋（宣言する型・
+ * A を呼ぶ側のオーバーロードの選び方・式の型が変わる。そこで、書き手は I 行の最後の列に自分の宣言の指紋（宣言する型・
  * メソッド・フィールドの JDT のバインディングの鍵と修飾子など（親型・型引数の上限・関数型も）と、K 行の指紋。中身は
  * {@link jche.cache.FileAnalysis#declarationKeys} と TypeContextTracker#recordDeclarations）を
  * 書き、パス4 で解析し直した結果がこれと違えば、そのファイルが宣言する型も「変わった型」に加えてパス3からやり直す
@@ -354,7 +354,7 @@ public final class CacheUpdater {
      */
     private final Map<String, String> hashes = new HashMap<>();
     /**
-     * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の 2 列目。有効なブロックのぶん）。
+     * 相対パス -> 旧キャッシュの自分の宣言の指紋（I 行の指紋の列。有効なブロックのぶん）。
      * パス4で解析し直した結果と突き合わせて、宣言と定数の値が変わったかだけを見る（「宣言の連鎖」）。
      * ファイルごとに 16 文字のハッシュ1つなので、ヒープに載せても軽い
      */
@@ -387,6 +387,11 @@ public final class CacheUpdater {
     private LibraryDiff libraries;
     /** 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）。run の最初に作る */
     private SameUnitFiles units = SameUnitFiles.NONE;
+    /**
+     * ソースの一覧の順（相対パス -> 位置）。run の最初に作る。解析し直す一覧はどのパスのものも、JDT に渡す前にこの順に
+     * 並べる（{@link #analyzeInBatches}。全件解析はソースの一覧の順に 100 件ずつ渡すので、同じ順で渡す）
+     */
+    private Map<String, Integer> sourceOrder = Map.of();
     /**
      * 旧キャッシュのヘッダ行のソースフォルダ（{@link CacheFormat#foldersOf}）。パス0 で読む。
      * 消えたファイルのコンパイル単位の名前を求めるのに使う（{@link SameUnitFiles#pairedWithDeleted}）
@@ -432,6 +437,10 @@ public final class CacheUpdater {
             live.put(rel, new SourceFile(f, rel, attrs.size()));
         }
         units = SameUnitFiles.of(live, layout);
+        sourceOrder = new HashMap<>();
+        for (String rel : live.keySet()) {
+            sourceOrder.put(rel, sourceOrder.size());
+        }
 
         Path parent = config.cacheFile.toAbsolutePath().getParent();
         if (parent != null) {
@@ -733,10 +742,18 @@ public final class CacheUpdater {
     /**
      * BATCH_SIZE 件ずつまとめてパースし、1ファイル分ずつ writer に渡す。
      * 同じコンパイル単位の名前のファイル（同じクラスが 2 つのソースフォルダにある）は、同じバッチに並べる
-     * （{@link SameUnitFiles#batches}。全件解析でも差分更新でも同じ組で JDT に渡すため）
+     * （{@link SameUnitFiles#batches}。全件解析でも差分更新でも同じ組で JDT に渡すため）。
+     *
+     * <p>渡す前に、一覧をソースの一覧の順（{@link #sourceOrder}）に並べる。JDT は {@code createASTs} の中でファイルを
+     * 渡した順に解決し、解決できない型が絡む結果はその順で変わる（戻り値の型が無いパッケージを参照するメソッドの
+     * バインディングを、そのファイルを先に解決すると捨てる・無い型を引数に持つ候補と継承した候補のどちらを選ぶか）。
+     * 全件解析はソースの一覧の順に渡すが、パス3・4 の一覧は旧キャッシュのブロックの順（差分更新のたびに動く）だったので、
+     * 差分更新だけが全件解析と食い違った（docs/cache-unification-qa.md の Q137）
      */
-    private void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> files,
+    private void analyzeInBatches(CallEdgeExtractor extractor, List<SourceFile> unordered,
                                   BlockWriter writer) throws IOException {
+        List<SourceFile> files = new ArrayList<>(unordered);
+        files.sort(Comparator.comparingInt(f -> sourceOrder.getOrDefault(f.relativePath(), Integer.MAX_VALUE)));
         int done = 0;
         for (List<SourceFile> batch : units.batches(files, CallEdgeExtractor.BATCH_SIZE)) {
             // 中止の確認はバッチの切れ目で行う。ここで抜けてもキャッシュはテンポラリのままなので壊れない
@@ -1400,7 +1417,7 @@ public final class CacheUpdater {
      * 見えるため、そのまま再利用すると呼び出しが静かに欠ける。印が無い・ブロック数が合わなければ
      * null を返して丸ごと捨てさせる。読めない（文字が壊れている）ときも同じ。
      *
-     * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の 2 列目）もここで覚える
+     * <p>宣言の連鎖のために、有効なブロックの自分の宣言の指紋（I 行の指紋の列）もここで覚える
      * （{@link #oldDeclarations}）。
      *
      * <p>旧キャッシュを行として読むのは実行ごとにこの 1 回だけにする。あとで要るものはここで取っておく。
@@ -1559,19 +1576,28 @@ public final class CacheUpdater {
         for (TypeFact t : declared) {
             stale.add(t.typeFqn(), t.pkg());
         }
-        if (declared.isEmpty() && unitPackage != null && !declaresNoType(block.rel)) {
+        if (unitPackage != null && (!intact || (declared.isEmpty() && !declaresNoType(block.rel)))) {
             // 型を 1 つも宣言していなかったブロック（解析に失敗したファイルの印のブロック。BlockWriter#failed。
-            // エラーで JDT が型を落としたファイル・壊れて H 行を読めないブロックも）。前回そのファイルが宣言していた型が
-            // 分からないので、置き場所のパッケージを中身の分からないパッケージにする（変わった jar のパッケージと同じ扱い）
+            // エラーで JDT が型を落としたファイル・型を宣言しない package-info.java（宣言することもある）も）と、
+            // 壊れたブロック（検査値が合わない。H 行が読めても、その H 行が本当の型かは分からない。docs/cache-unification-qa.md の
+            // Q138）。前回そのファイルが宣言していた型が分からないので、置き場所のパッケージを中身の分からないパッケージにする
+            // （変わった jar のパッケージと同じ扱い）
             stale.addOpaque(unitPackage);
         }
         // 今のソースに無いファイルのブロックは、壊れていても解析し直さないので数えない
         return (!intact && block.inSources) ? 1 : 0;
     }
 
-    /** 型を宣言しないコンパイル単位（{@code package-info.java}・{@code module-info.java}）か。相対パスで見る */
+    /**
+     * 型を宣言できないコンパイル単位（{@code module-info.java}）か。相対パスのファイル名で見る（{@code endsWith} だと
+     * {@code Xmodule-info.java} にも当たる）。{@code package-info.java} はふつう型を宣言しないが宣言できる（JLS 7.4.1 は
+     * 推奨しないだけ）ので除かない。除いていたときは、そこに宣言したクラスの解析が失敗しても・そのファイルを消しても
+     * パッケージが中身の分からないパッケージにならず、そのクラスを使うファイルを解析し直さなかった
+     * （docs/cache-unification-qa.md の Q138）
+     */
     static boolean declaresNoType(String relativePath) {
-        return relativePath.endsWith("package-info.java") || relativePath.endsWith("module-info.java");
+        int slash = relativePath.lastIndexOf('/');
+        return relativePath.substring(slash + 1).equals("module-info.java");
     }
 
     /**

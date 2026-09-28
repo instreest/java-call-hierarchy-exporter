@@ -27,7 +27,8 @@ import jche.cache.MethodRef;
  *   {@link #inheritedImplementationsOf} H 行の 8 列目   親クラスから継承したメソッドが、型引数を置き換えた
  *                                             親インターフェースのメソッドを実装する組（isSubsignature）
  *                                             → 選択の 2 段目で、その型から見たときだけ成り立つ実装として引く
- *   {@link #functionalKeysOf}           M 行の鍵   ラムダ・メソッド参照が実装する抽象メソッドすべて（isSubsignature）
+ *   {@link #functionalKeysOf}           M 行の鍵   ラムダ・メソッド参照が実装する抽象メソッドすべてと、SAM が抽象として
+ *                                             宣言し直した親の default（isSubsignature）
  *                                             → invokedynamic に当たる呼び出しの本体を、親の型で受けた呼び出しからも引く
  * </pre>
  * キーが同じ（消去した引数型が同じ＝ JVM のディスクリプタが同じ）上書きは、読み手がキーの照合で引けるので書かない。
@@ -124,9 +125,21 @@ final class OverrideFacts {
      *
      * <p>判定は JDT に任せる: 親インターフェースのメソッド（型引数を置き換えたもの。private・static は除く）ごとに、
      * {@code type} 自身が同じシグネチャ（{@code isSubsignature}）を宣言していなければ、親クラスを近い順に見て
-     * 最初に {@code isSubsignature} の当たる宣言（static・private を除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
+     * 最初に {@code isSubsignature} の当たる public の宣言（static と public でないものを除く）を採る（クラスのメソッドが勝つ。JLS 8.4.8）。
      * キーが同じなら読み手はキーの照合で引けるので書かない。実装する側の型が実装される側のインターフェースを
-     * 実装していれば、その宣言の O 行が同じことを言うので書かない
+     * 実装していれば、その宣言の O 行が同じことを言うので書かない。
+     *
+     * <h4>実装する側は public の宣言だけ</h4>
+     * JLS 8.4.8 では、パッケージアクセスのメソッドは同じパッケージのサブクラスにしか継承されない。
+     * {@code class UserRepo extends a.BaseRepo implements Repo<a.User>}（{@code a.BaseRepo.save(User)} が
+     * パッケージアクセス、{@code UserRepo} は別のパッケージ）では {@code BaseRepo.save} は {@code UserRepo} のメンバーでなく、
+     * 何も実装しない（javac はブリッジを作らず、{@code Repo.save} の default が動く。Issue #168）。
+     * 一方、同じパッケージで継承されても、public でないメソッドが public なインターフェースのメソッドを実装することは
+     * JLS 8.4.8.3（弱いアクセス権限）でコンパイルできない。つまりコンパイルできるコードでは、インターフェースのメソッドを
+     * 実装する継承したメソッドは public のものに限る。そこで public でない宣言（static・private と同じく）は飛ばして
+     * 親へ進む（同じシグネチャの public な宣言がさらに上にあれば、それが実装する。無ければ書かない）。
+     * 「パッケージアクセスなら型からそのクラスまでの連鎖が同じパッケージにあるときだけ採る」と書き分ける必要は無い
+     * （違いが出るのはコンパイルできないコードだけ）
      */
     List<String> inheritedImplementationsOf(ITypeBinding type) {
         if (type == null || type.isInterface() || type.getSuperclass() == null) {
@@ -162,6 +175,9 @@ final class OverrideFacts {
                 IMethodBinding mc = subsignatureIn(sc, mi);
                 if (mc == null) {
                     continue;
+                }
+                if (!Modifier.isPublic(mc.getModifiers())) {
+                    continue;   // public でない宣言はインターフェースのメソッドを実装できない（JLS 8.4.8・8.4.8.3。Issue #168）
                 }
                 MethodRef implemented = names.toRef(mi);
                 MethodRef implementing = names.toRef(mc);
@@ -240,6 +256,10 @@ final class OverrideFacts {
      * </pre>
      * 読み手（M 行）は鍵の完全一致で引くので、親の宣言の鍵が無いと、親の型で受けた変数への
      * 呼び出しでラムダが見えず、別の実装1件に誤って確定する（docs/lambda-expansion-qa.md の Q11・Q15）。
+     * 親の宣言は抽象メソッドとは限らない。SAM が親の default を抽象として宣言し直した形
+     * （{@code interface Task { default void exec() {} }  interface Job extends Task { void exec(); }}）
+     * では、{@code Task} の型で受けた呼び出しの先は default の鍵で、そこで動くのはラムダなので、
+     * その default の鍵でも書く（static・private は継承されないので除く。docs/lambda-expansion-qa.md の Q19）。
      * 親型は型引数を具体化したまま辿り、上書き同等かの判定は
      * {@code IMethodBinding.isSubsignature}（JLS 8.4.2）に任せる。
      *
@@ -273,7 +293,11 @@ final class OverrideFacts {
                 }
                 for (IMethodBinding candidate : type.getDeclaredMethods()) {
                     int mods = candidate.getModifiers();
-                    if (!Modifier.isAbstract(mods) || Modifier.isStatic(mods)
+                    // 抽象メソッドのほか、SAM が抽象として宣言し直した親の default も含める
+                    // （interface Job extends Task { void exec(); } の Task#exec。Issue #176）。
+                    // 親の型で受けた呼び出し（Task t; t.exec()）の先はその default の鍵で、ラムダが動く。
+                    // static・private は継承されないので上書き同等にならない（JLS 9.4.1）
+                    if (Modifier.isStatic(mods) || Modifier.isPrivate(mods)
                             || !candidate.getName().equals(sam.getName())
                             || candidate.getParameterTypes().length != sam.getParameterTypes().length
                             || !(sam.isSubsignature(candidate) || candidate.isSubsignature(sam))) {

@@ -113,3 +113,35 @@ at teame.NoDebugJob.run(Unknown Source),fx.util.Counter.initialCount(),...
 既存の jar から出る行は、caller が `teamb.NightJob` → `at teamb.NightJob.run(NightJob.java:14)` のように
 変わるだけで、参照先・jar 名・注記は同じ（Q6 の 3 行が増える）。被参照以外の行に差分が無いことを
 確認したうえで期待値を更新した。
+
+## 結び先の探し方
+
+### Q9. `INHERITED` の結び先は「解決の宣言」か「選択の本体」か。探索を `MethodSelection` に寄せた
+
+Issue [#186](https://github.com/instreest/java-call-hierarchy-exporter/issues/186)。
+
+- **何が問題だったか**。jar からの被参照を継承したメソッドに結び付ける `ExternalUsageScanner#inheritedFrom` は、
+  `MethodSelection#search` と同じ順（親クラスの連鎖 → 最も特定的な親インターフェース）を**自前で**持っていた。
+  AGENTS.md は「実装探索は `MethodSelection` の入口だけを通す」と決めているのに 2 つ目の実装があり、
+  O 行（型引数を具体化した上書き）と H 行の 8 列目（親クラスから継承した実装）を見なかった。
+  `class UserRepo extends AbsRepo<User> { void save(User) }` への参照 `UserRepo.save(java.lang.Object)` は
+  `AbsRepo.save` に、`class UserRepo2 extends BaseRepo implements Repo<User>`（`BaseRepo` が `save(User)` を持つ）への
+  参照 `UserRepo2.save(java.lang.Object)` は `Repo.save` に結び付いていた
+- **どちらを出すか**。README（`external-ref:INHERITED` は「JVM がその参照を解決する宣言」）と `test/jls` の突き合わせ
+  （抽象の `I1.m` に結び付く）のとおり、**解決（JVMS 5.4.3.3）の宣言**を出す約束を保つ。被参照の行は「jar のこの命令が
+  ソースのどの宣言を指すか」であり、そこから実際に動く本体（部分型の上書き）へ降りるのは、その宣言を呼び出し先とする
+  通常の解決（CHA）の仕事。`implementationOfSignature`（選択。本体を持つ宣言まで降りる）に置き換えると、抽象の宣言への
+  参照が別の型の default に結び付き、出力の意味が変わる
+- **ブリッジは解決の側の話**。O 行と H 行の 8 列目はどちらも javac がその型にブリッジメソッド（`save(java.lang.Object)`）を
+  作る形なので、JVM の解決はその型で止まる。ソースにはブリッジが見えないので、「その型の O 行の上書き」「その型の
+  H 行の継承した実装」として引くのが解決の写しになる。参照の側は、上書きの無い版の型に対してコンパイルされていると
+  ブリッジのディスクリプタで参照してくる（javac は宣言が見えれば `save(User)` を書く）ので、実際に出るのは
+  jar どうしの版がずれた形が主だが、結び先が違えば行の意味（どの宣言が使われているか）が変わる
+- **直し方**。`MethodSelection` に解決の入口 `resolvedDeclaration(型FQN, シグネチャ)` を 1 つ足し、`inheritedFrom` を消して
+  `lookupRef` をそれに置き換えた。各段でブリッジの形（O 行・H 行の 8 列目。`search` と同じ材料と同じ補助メソッド）を先に、
+  次にキーの同じ宣言を見る。選択と違う点は解決の規定どおり: 連鎖では抽象の宣言でも止まる（本体の有無を見ない）、
+  private も飛ばさない（アクセスの検査は解決の後）、パッケージアクセスも見ない（ディスクリプタの一致だけ。
+  上書きの可否は選択の話）。インターフェースの段は従来どおり最も特定的な宣言のうち本体のあるものを先に、無ければ抽象の宣言
+- **検査**。`test/pruning` の外部 jar の題材に `Client.callRepo`（O 行）と `Client.callRepo2`（H 行の 8 列目）を足した。
+  参照の側は `extstub` の版（上書き・実装の無い `UserRepo` / `UserRepo2`）に対してコンパイルし、ディスクリプタを
+  `save(java.lang.Object)` にする

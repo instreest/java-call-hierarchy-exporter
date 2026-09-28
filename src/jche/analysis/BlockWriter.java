@@ -141,7 +141,7 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
                 continue;
             }
             lines.add(new TypeFact(t.typeFqn(), t.kind(), t.superTypes(), t.pkg(), "", t.superclasses(),
-                    t.inheritedImpls()).toRow());
+                    t.inheritedImpls(), t.binarySupertypes()).toRow());
         }
         return digestOf(lines);
     }
@@ -465,7 +465,7 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
     }
 
     /**
-     * 自分の宣言の指紋（I 行の 2 列目）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
+     * 自分の宣言の指紋（I 行の指紋の列）。宣言の鍵と修飾子（{@link FileAnalysis#declarationKeys}）と、宣言している
      * 定数の値（K 行の指紋）を並べてハッシュにしたもの。どちらも無ければ空文字。
      *
      * 旧キャッシュの同じ列（{@link #oldDeclarations}）と突き合わせて、「宣言か定数の値が変わったか」だけを見る

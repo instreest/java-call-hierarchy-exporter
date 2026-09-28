@@ -364,3 +364,35 @@ analysis の版は Q15 と同じ v26（`test/demo` の `fx.lambda.Defaults`）�
   呼び出しが、methods.csv では `[UNEXPANDED:NO_IMPL]`、call-hierarchy.csv では `LAMBDA` 系と食い違っていた。
   注記（`StreamingTreeWalker.noteFor`）と同じく `LAMBDA` を先に見る
 
+
+### Q19. default を抽象として宣言し直した子インターフェースのラムダが、親の型で受けた呼び出しから落ちていた
+
+Issue [#176](https://github.com/instreest/java-call-hierarchy-exporter/issues/176)。
+
+```java
+interface Task { default void exec() { } }
+@FunctionalInterface interface Job extends Task { void exec(); }   // default を抽象として宣言し直す
+static void run(Task t) { t.exec(); }
+run((Job) () -> System.out.println("lambda"));                     // 動くのはラムダ
+```
+
+- **何が起きていたか**。`run` の `t.exec()` は `Task.exec RESOLVED:NO_OVERRIDE` だけで、ラムダの本体への辺が無かった。
+  戻り値のある形（`interface Maker { default Dao make() {…} }  interface Maker2 extends Maker { Dao make(); }`）では、
+  動かない default の戻り値（`DaoX`）で `m.make().load()` を `DaoX.load` に絞り、ラムダの返す `DaoY.load` を落としていた。
+  宣言し直しの無い形（`Job` が `Task` を継承しない・`Task#exec` が抽象）では正しく解決していた
+- **原因は 2 つ**。(1) `OverrideFacts#functionalKeysOf`（M 行の鍵）は抽象メソッドだけを集めていたので、ラムダが実装し直す
+  `Task#exec`（default）の鍵が M 行に無く、`hasFunctionalImpl(Task#exec)` が偽になった。読み手は M 行を鍵の完全一致で引く
+  （Q11・Q15）ので、`Task` の型で受けた呼び出しからはラムダが見えない。(2) `MethodSelection#hasOverriders` は部分型の宣言から
+  「別の本体へ振り分けられうるか」を見るが、ラムダの本体はどの部分型の宣言にも現れない。部分型 `Maker2` から
+  `implementationOf` で引いた実装は default のままなので「振り分けられない」になり、`DataflowResolver#bodyOf` が default の
+  return の値を信じた
+- **直し方**。(1) `functionalKeysOf` で、SAM と上書き同等な親の宣言のうち static・private でないものは、抽象でなくても（default でも）
+  鍵に書く。書き手が作る事実が変わるので形式の版を上げた（`jche-cache-v45`）。(2) `MethodSelection` に M 行の判定
+  （`CallGraph#hasFunctionalImpl`）を渡し、M 行のあるメソッドは `hasOverriders` を真にする。ラムダが実装し直している
+  default の戻り値は、レシーバがそのラムダと分かるとき（`bodyOf` の関数型の枝）以外は使わない
+- **却下した案**。`MethodSelection#search` が抽象の宣言し直し（`Maker2#make`）で -1 を返す案は、`implementationOf` の
+  呼び手すべて（CHA・LOCAL_NEW・契約表・DI）に効き、「抽象の宣言で止まらず親へ進む」という JVMS 5.4.6 の写しを崩すので広すぎる。
+  M 行を読み手で補う（SAM の鍵から親の default を辿る）案は、上書きの判定を読み手にもう 1 つ持つことになるので採らない
+  （判定は JDT の `isSubsignature` に任せる）
+- **検査**。`test/pruning` の `LamRedecl`（ラムダの本体へ `RESOLVED:DATAFLOW_LAMBDA` で繋ぐこと・default の戻り値で絞らないこと・
+  ラムダを追えない受け手（`List` の要素）でも default の戻り値で絞らず CHA の候補が両方残ること）
