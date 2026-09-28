@@ -3365,6 +3365,77 @@ public class XaPB extends xa.XaJMid {
 EOF
 
 # ---------------------------------------------------------------------------
+# 実装の探索（MethodSelection#search）の親クラスの連鎖の段（Issue #175）。
+# (1) 継承されない static（別パッケージのパッケージアクセス）を default より先に選んでいた。
+#     class Impl5 extends a.SBase implements I5 で、a.SBase の static void s5()（パッケージアクセス）は Impl5 に継承されず
+#     （JLS 8.4.8）、動くのは I5.s5 の default。以前は SBase.s5 に確定し I5.s5 を落としていた
+# (2) 型引数の置換を挟んだ別パッケージの推移的な上書きを見落としていた。
+#     class GA<T> { void g(T) }（パッケージアクセス）← class GM extends GA<String> { public void g(String) }
+#     ← 別パッケージの class GB2 extends GM { public void g(String) }。GA<String> x = new b.GB2(); x.g("s") で動くのは GB2.g
+#     （GM のブリッジ g(Object) が仮想で g(String) を呼ぶ）。GB2.g の O 行には GA#g(Object) が無い（JDT の overrides は
+#     別パッケージのパッケージアクセスのメソッドに対して偽）ので、GM の段で O 行から GM.g を見つけたら、
+#     それより下の段で GM.g と同じシグネチャの宣言（GB2.g）を採る
+# ---------------------------------------------------------------------------
+mkdir -p work/src/xa
+cat > work/src/xa/XaSBase.java <<'EOF'
+package xa;
+
+public class XaSBase {
+    static void s5() { System.out.println("SBase.s5"); }
+    static void useS5() { s5(); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaI5.java <<'EOF'
+package xb;
+
+public interface XaI5 { default void s5() { System.out.println("I5.s5"); } }
+EOF
+case_ listed /xb/XaImpl5 /xb.XaImpl5.run XaI5.s5 "別パッケージのパッケージアクセスの static（xa.XaSBase.s5）は継承されないので、動くのは default の XaI5.s5" <<'EOF'
+package xb;
+
+public class XaImpl5 extends xa.XaSBase implements XaI5 {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaI5 x = new XaImpl5(); x.s5(); }
+}
+EOF
+expect_ absent /xb.XaImpl5.run XaSBase.s5 "対照: 継承されない static の XaSBase.s5 は仮想呼び出しの先にならない（行が無い）"
+mkdir -p work/src/xa
+cat > work/src/xa/XaGA.java <<'EOF'
+package xa;
+
+class XaGA<T> {
+    void g(T t) { System.out.println("GA.g"); }
+}
+EOF
+cat > work/src/xa/XaGM.java <<'EOF'
+package xa;
+
+public class XaGM extends XaGA<String> {
+    @Override
+    public void g(String s) { System.out.println("GM.g"); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaGB2.java <<'EOF'
+package xb;
+
+public class XaGB2 extends xa.XaGM {
+    @Override
+    public void g(String s) { System.out.println("GB2.g"); }
+}
+EOF
+case_ listed /xa/XaGUse /xa.XaGUse.run XaGB2.g "型引数の置換を挟んだ別パッケージの推移的な上書き: GA<String> x = new b.GB2(); x.g(\"s\") で動くのは GB2.g" <<'EOF'
+package xa;
+
+public class XaGUse {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaGA<String> x = new xb.XaGB2(); x.g("s"); }
+}
+EOF
+expect_ absent /xa.XaGUse.run XaGM.g "対照: GM.g は GB2.g に上書きされているので動かない（行が無い）"
+
+# ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
 # 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。
 # 値は JDT が評価した定数（32）を使う

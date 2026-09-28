@@ -328,9 +328,13 @@ public final class MethodSelection {
      *       （{@code class Impl extends Mid implements Api} で {@code Mid} の親 {@code Base} の {@code m()} が
      *       {@code Api} の default の {@code m()} より先）。その型より上の private メソッドは上書きも継承もされないので
      *       飛ばす（JLS 8.4.8。その型自身の宣言は、private の呼び出し先を引くときのために飛ばさない）。
-     *       親クラスの static メソッドは飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承する
-     *       クラスはコンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション
-     *       （{@code Class.getMethod} は親クラスの public な static メソッドも返す）でだけ</li>
+     *       親クラスの static メソッドのうち継承されるもの（public・protected か、その型と同じパッケージ。{@link #inheritedBy}）は
+     *       飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承するクラスはコンパイルできない
+     *       （JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション（{@code Class.getMethod} は親クラスの
+     *       public な static メソッドも返す）でだけ。継承されない static（別パッケージのパッケージアクセス）は飛ばす
+     *       （同じシグネチャの default を持つクラスはコンパイルでき、動くのはその default）。
+     *       見つけた実装が呼び出し先とシグネチャの違う上書き（O 行・H 行の 8 列目）なら、それより下の段でその実装を
+     *       さらに上書きしている宣言を採る（{@link #lowestOverriderOf}。JLS 8.4.8.1 の推移で、JDT の O 行に載らない形）</li>
      *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 連鎖に無ければ、連鎖の型が実装する
      *       インターフェースすべての宣言（private と static は継承されないので除く。JLS 9.4.1）のうち、ほかの宣言の型の
      *       真の親型で宣言したものを除いた「最も特定的な」宣言（JVMS 5.4.3.3）から、本体を持つものを採る。
@@ -368,13 +372,12 @@ public final class MethodSelection {
         List<String> chain = hierarchy.classChain(typeFqn);
         for (int i = 0; i < chain.size(); i++) {
             int id = declarationIn(chain.get(i), calleeKey, sig, overriders, packageAccess);
-            if (id >= 0 && methods.hasBody(id)
-                    && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
-                return id;
+            if (id >= 0 && methods.hasBody(id) && (i == 0 || inheritedBy(typeFqn, id))) {
+                return lowestOverriderOf(chain, i, id, sig);
             }
             int inherited = inheritedImplementationIn(chain.get(i), calleeKey, sig);
             if (inherited >= 0 && methods.hasBody(inherited)) {
-                return inherited;
+                return lowestOverriderOf(chain, i, inherited, sig);
             }
         }
         List<String> declaring = new ArrayList<>();
@@ -405,6 +408,61 @@ public final class MethodSelection {
             }
         }
         return fallback;
+    }
+
+    /**
+     * 親クラスの連鎖の途中（その型より上）の宣言 {@code id} が、型 {@code typeFqn} に継承されるか（JLS 8.4.8）。
+     * private は継承されない。static も、public・protected か同じパッケージのものしか継承されない
+     * （別パッケージのパッケージアクセスの static は、同じシグネチャの default を持つクラスでもコンパイルできる。
+     * それを実装に選ぶと、実際に動く default を落とす）。インスタンスメソッドのパッケージアクセスは、呼び出し先が
+     * パッケージアクセスなら {@link #declarationIn} が同じパッケージに限り、public な呼び出し先に対しては JVMS 5.4.5 の
+     * 「上書きしうる」形なので残す（docs/jls-conformance-qa.md の Q36）
+     */
+    private boolean inheritedBy(String typeFqn, int id) {
+        String mods = methods.mods(id);
+        if (ModifierTokens.has(mods, "private")) {
+            return false;
+        }
+        if (!ModifierTokens.has(mods, "static") || ModifierTokens.has(mods, "public")
+                || ModifierTokens.has(mods, "protected")) {
+            return true;
+        }
+        return methods.hasSource(id) && methods.pkg(id).equals(hierarchy.packageOf(typeFqn));
+    }
+
+    /**
+     * 連鎖の {@code found} 段目で見つけた実装 {@code implId} が、呼び出し先とシグネチャの違う宣言（O 行の上書き・
+     * H 行の 8 列目の継承した実装。型引数を置換した形）なら、それより下の段でその実装をさらに上書きしている宣言のうち
+     * いちばん下のもの。無ければ {@code implId} そのもの。
+     *
+     * <p>{@code class GA<T> { void g(T) }}（パッケージアクセス）を {@code class GM extends GA<String> { public void g(String) }}
+     * が上書きし、別パッケージの {@code class GB2 extends GM { public void g(String) }} がそれを上書きしている形。
+     * {@code GB2.g} は {@code GA#g(Object)} を（JLS 8.4.8.1 の推移で）上書きするが、JDT の {@code overrides} は別パッケージの
+     * パッケージアクセスのメソッドに対して偽を返すので O 行には無い。GM の段で O 行から {@code GM.g} を見つけたら、
+     * 下の段（GB2）に {@code GM.g} と同じシグネチャの宣言があるかを見る。上書きとみなす条件は JLS 8.4.8.1:
+     * 下の宣言が private でも static でもなく本体を持ち、上の宣言が public か protected か、同じパッケージ
+     */
+    private int lowestOverriderOf(List<String> chain, int found, int implId, String sig) {
+        String implSig = methods.signature(implId);
+        if (found == 0 || implSig.equals(sig)) {
+            return implId;
+        }
+        String implMods = methods.mods(implId);
+        boolean visible = ModifierTokens.has(implMods, "public") || ModifierTokens.has(implMods, "protected");
+        for (int k = 0; k < found; k++) {
+            int id = methods.idOf(chain.get(k) + "#" + implSig);
+            if (id < 0 || !methods.hasBody(id)) {
+                continue;
+            }
+            String mods = methods.mods(id);
+            if (ModifierTokens.has(mods, "private") || ModifierTokens.has(mods, "static")) {
+                continue;
+            }
+            if (visible || (methods.hasSource(id) && methods.pkg(id).equals(methods.pkg(implId)))) {
+                return id;
+            }
+        }
+        return implId;
     }
 
     /**

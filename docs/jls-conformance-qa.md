@@ -951,3 +951,38 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
 **検査**: `test/pruning` の `XaBase.run -> XaBase.work`（`XaSub.work` が無いこと）と `XaPUse.run -> XaPB.m`
 （jar `work/lib/xalib.jar` はソースの `xa.XaPA` に対してコンパイルし、`XaPA.class` は入れない）。
 直す前の版で落ちることを確かめた。
+
+## Q38. 継承されない static を default より先に選び、型引数の置換を挟んだ別パッケージの上書きを見落としていた
+
+[Issue #175](https://github.com/instreest/java-call-hierarchy-exporter/issues/175)。どちらも `MethodSelection#search` の
+親クラスの連鎖の段。
+
+**症状 1**: `class Impl5 extends a.SBase implements I5` で、`a.SBase` の `static void s5()`（パッケージアクセス）と
+`I5` の `default void s5()`。`I5 x = new Impl5(); x.s5()` で動くのは `I5.s5` なのに、`SBase.s5` に確定していた。
+連鎖の段では、その型より上の private は飛ばすが static は残していた（「同じシグネチャの static を継承するクラスは
+コンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらない」）。この理屈は static が<b>継承される</b>ときのもので、
+別パッケージのパッケージアクセスの static は継承されない（JLS 8.4.8）ので、クラスはコンパイルできる。
+
+**直し 1**: 連鎖の段 i>0 では、継承されない宣言を飛ばす（`inheritedBy`）: private と、public でも protected でもなく
+その型と同じパッケージでもない static。public・protected の static は残す（リフレクションの `getMethod` が返す）。
+型のパッケージは H 行の 4 列目を `TypeHierarchy#packageOf` で引く。インスタンスメソッドのパッケージアクセスは
+変えない（呼び出し先がパッケージアクセスなら `declarationIn` が同じパッケージに限り、public な呼び出し先に対しては
+JVMS 5.4.5 の「上書きしうる」形なので残す。Q36）。
+
+**症状 2**: `class GA<T> { void g(T) }`（パッケージアクセス）を同じパッケージの `class GM extends GA<String> { public void g(String) }`
+が上書きし、別パッケージの `class GB2 extends GM { public void g(String) }` がそれを上書きしている形。
+`GA<String> x = new b.GB2(); x.g("s")` で動くのは `GB2.g`（GM のブリッジ `g(Object)` が仮想で `g(String)` を呼ぶ）なのに、
+`GM.g` に確定していた。`GB2.g` の O 行には `GA#g(Object)` が無い。JDT の `overrides()` は、別パッケージのパッケージアクセスの
+メソッドに対して偽を返す（JLS 8.4.8.1 の推移を見ない）ためで、`search` は GM の段で O 行から `GM.g` を見つけるが、
+それより下の段で「見つけた上書きと同じシグネチャを宣言しているか」を見ていなかった。
+
+**直し 2**: 答えが連鎖の j 段目の、呼び出し先とシグネチャの違う宣言（O 行の上書き・H 行の 8 列目の継承した実装）から
+来たときは、それより下の段でその宣言を上書きしうる宣言（private でも static でもなく本体を持ち、上の宣言が public か
+protected か同じパッケージ）を探し、いちばん下のものを採る（`lowestOverriderOf`）。読み手で直すほうを採り、
+O 行の書き手（`OverrideFacts`）には推移の場合を足さない（JDT の判定に任せる作りを保つ。形式の版も上げない）。
+
+**却下した案**: O 行の書き手に JLS 8.4.8.1 の推移を足す。JDT の `overrides` の結果をそのまま事実にする作りが崩れ、
+形式の版を上げる（全件解析）ことになる。読み手の 1 段の探索で足りる。
+
+**検査**: `test/pruning` の `XaImpl5.run -> XaI5.s5`（`XaSBase.s5` が無いこと）と `XaGUse.run -> XaGB2.g`（`XaGM.g` が無いこと）。
+直す前の版で落ちることを確かめた。
