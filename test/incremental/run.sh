@@ -1395,6 +1395,164 @@ edit_package_info_jar() {
 case_of "package-info.java のオンデマンド import を jar が同じパッケージに足した型が隠す" \
     edit_package_info_jar yes setup_package_info_jar
 
+# --- Issue #171: JDT（java.util.zip.ZipFile）が受け付けない壊れ方の jar ---------------------------------------
+# ZipDirectory（ファイルのバイトから読む目次）は ZipFile の検査の一部（圧縮方式・暗号化の印・終わりの記録のコメント長・
+# 項目のコメントの UTF-8）をしないので、JDT が「読めない」としてクラスパスから外した jar に普通の指紋を作っていた。
+# 「依存 jar を読めません」の警告が出ず、同じ目次（名前・大きさ・CRC）の正しい jar に直しても指紋が変わらず、差分更新は
+# BINDING_FAILED とコンパイルエラーのまま残った。今は指紋を作る前に ZipFile で開いて閉じ、開けなければ読めない jar の
+# 道（警告・空の指紋＝毎回変わった扱い）に乗せる（docs/cache-dependency-jars-qa.md の Q22）
+break_jar() {   # $1=元の jar  $2=書き出す jar  $3=壊し方（method / encrypted / comment / entcomment）。目次の名前・大きさ・CRC は変えない
+    python3 - "$1" "$2" "$3" <<'PY'
+import struct, sys
+src, dst, kind = sys.argv[1], sys.argv[2], sys.argv[3]
+b = bytearray(open(src, 'rb').read())
+end = b.rfind(b'PK\x05\x06')
+cenlen = struct.unpack_from('<I', b, end + 12)[0]
+cenpos = end - cenlen
+def each_entry():
+    pos = cenpos
+    while pos < end:
+        assert b[pos:pos + 4] == b'PK\x01\x02'
+        n, e, c = struct.unpack_from('<HHH', b, pos + 28)
+        yield pos, struct.unpack_from('<I', b, pos + 42)[0], n, e, c
+        pos += 46 + n + e + c
+if kind == 'method':        # 圧縮方式を bzip2（12）にする（目次と各項目の頭の両方）
+    for pos, loc, n, e, c in each_entry():
+        struct.pack_into('<H', b, pos + 10, 12)
+        struct.pack_into('<H', b, loc + 8, 12)
+elif kind == 'encrypted':   # 暗号化の印（汎用フラグの bit 0）を立てる
+    for pos, loc, n, e, c in each_entry():
+        struct.pack_into('<H', b, pos + 8, struct.unpack_from('<H', b, pos + 8)[0] | 1)
+        struct.pack_into('<H', b, loc + 6, struct.unpack_from('<H', b, loc + 6)[0] | 1)
+elif kind == 'comment':     # 終わりの記録のコメント長を、ファイルの終わりを越える値にする
+    struct.pack_into('<H', b, end + 20, 0xFFFF)
+elif kind == 'entcomment':  # 最初の項目のコメントを UTF-8 でないバイトにする（目次に 1 バイト挿す）
+    pos, loc, n, e, c = next(each_entry())
+    struct.pack_into('<H', b, pos + 32, c + 1)
+    b[pos + 46 + n + e + c: pos + 46 + n + e + c] = b'\xff'
+    struct.pack_into('<I', b, b.rfind(b'PK\x05\x06') + 12, cenlen + 1)
+else:
+    raise SystemExit('unknown kind ' + kind)
+open(dst, 'wb').write(b)
+PY
+}
+setup_broken_jar() {   # $1=壊し方
+    rm -rf jarsrc
+    printf 'package org.lib;\npublic class K { public static void bar() { } }\n' | jsrc bj/org/lib/K.java
+    lib_jar bj
+    cp work/lib/bj.jar good-bj.jar
+    break_jar good-bj.jar work/lib/bj.jar "$1"
+    printf 'package p;\npublic class X { void go() { org.lib.K.bar(); } }\n' | jfile p/X.java
+}
+edit_broken_jar() {   # 壊れた jar で解析した実行（out.log）に「依存 jar を読めません」の警告が出ていること。そのうえで正しい jar に直す
+    if grep -q "Cannot read a dependency jar" out.log; then
+        echo "  OK   JDT の読めない jar を「依存 jar を読めません」と警告する"
+    else
+        echo "  NG   JDT の読めない jar に警告が出ていません（ZipDirectory が読めるものとして扱っている）"; fail=1
+    fi
+    cp good-bj.jar work/lib/bj.jar
+}
+for kind in method encrypted comment entcomment; do
+    case_of "JDT の読めない jar（$kind）を、同じ目次の正しい jar に直す" edit_broken_jar yes "setup_broken_jar $kind"
+done
+rm -f good-bj.jar
+
+# --- Issue #179: 解決できない型が絡む結果は JDT の処理順（createASTs に渡した順）で変わる -------------------------
+# 全件解析はソースの一覧の順に渡すが、パス3・4 の一覧は旧キャッシュのブロックの順（差分更新のたびに動く）だったので、
+# 差分更新だけが全件解析と食い違った。今はどのパスの一覧も渡す前にソースの一覧の順に並べる（CacheUpdater#analyzeInBatches。
+# docs/cache-unification-qa.md の Q137）
+# 症状 1: 戻り値の型が無いパッケージを参照するメソッドの有無。JDT は Helper を先に解決すると run の宣言のバインディングを
+# 捨て（BINDING_FAILED）、User を先に解決すると残す（RESOLVED）。User を先に書き換えてブロックを先頭に動かしてから l1 を消す
+setup_order_return() {
+    printf 'package l1.q;\npublic class Base2<T> { }\n' | jfile l1/q/Base2.java
+    printf 'package b;\npublic interface Helper { default l1.q.Base2<String> run(Object p0) { return null; } }\n' \
+        | jfile b/Helper.java
+    printf 'package d;\npublic class User { void c4(b.Helper r) { r.run(null); } }\n' | jfile d/User.java
+}
+edit_order_return() {
+    printf '// touched\n' >> work/src/d/User.java
+    run mid.tsv || return
+    rm -rf work/src/l1
+}
+case_of "戻り値の型が無いパッケージを参照するメソッドの有無が、解析し直す順に依らない" edit_order_return yes setup_order_return
+# 症状 2: 無い型を引数に持つ候補（Base.run(Util2)）と、適用できる継承した候補（Helper3.run(int)）のどちらを選ぶか。
+# Base か Shape を先に解決すると Base.run（Task2 はコンパイルエラー）、Task2 を先に解決すると Helper3.run。
+# Task2 を先に書き換えてブロックを先頭に動かしてから Base を書き換える
+setup_order_overload() {
+    printf 'package l1.q;\npublic class Helper3 { public int run(int p0) { return 0; } }\n' | jfile l1/q/Helper3.java
+    printf 'package a;\npublic class Base extends l1.q.Helper3 { public int run(a.Util2 p0) { return 0; } }\n' | jfile a/Base.java
+    printf 'package a.x;\npublic class Shape extends a.Base { }\n' | jfile a/x/Shape.java
+    printf 'package d;\npublic class Task2 { void c1(a.x.Shape r) { r.run(0); } }\n' | jfile d/Task2.java
+}
+edit_order_overload() {
+    printf '// touched\n' >> work/src/d/Task2.java
+    run mid.tsv || return
+    printf '// touched\n' >> work/src/a/Base.java
+}
+case_of "無い型を引数に持つ候補と継承した候補のどちらを選ぶかが、解析し直す順に依らない" edit_order_overload no setup_order_overload
+
+# --- Issue #180: 差分更新の取りこぼし（軽いもの） ---------------------------------------------------------------
+# 1. package-info.java に宣言したクラス（JLS 7.4.1 は推奨しないだけで、書ける）の解析が失敗しても（1 万段の呼び出しで JDT が
+#    溢れる）、そのパッケージが中身の分からないパッケージにならなかった（CacheUpdater#declaresNoType がファイル名だけで
+#    「型を宣言しない」と決めていた）。get() の戻り値を変えても・ファイルを消しても、U を再利用して U.go → A.run のままだった
+setup_pkginfo_class() {
+    {
+        printf 'package p;\nclass Helper {\n    static A get() { return new A(); }\n    String chain() {\n        return new StringBuilder()'
+        for ((i = 0; i < 10000; i++)); do printf '.append(%d)' "$i"; done
+        printf '.toString();\n    }\n}\n'
+    } | jfile p/package-info.java
+    printf 'package p;\npublic class A { public void run() { } }\n' | jfile p/A.java
+    printf 'package p;\npublic class B { public void run() { } }\n' | jfile p/B.java
+    printf 'package p;\npublic class U { public void go() { Helper.get().run(); } }\n' | jfile p/U.java
+}
+check_pkginfo_failed() {   # 題材が効いていること: package-info.java の解析が失敗している（印のブロック）
+    if grep -q "Analysis failed (skipped): src/p/package-info.java" out.log; then
+        echo "  OK   package-info.java の解析が失敗している（題材が効いている）"
+    else
+        echo "  NG   package-info.java の解析が失敗していません（題材が効いていない）"; fail=1
+    fi
+}
+edit_pkginfo_class() {
+    check_pkginfo_failed
+    sed -i 's/static A get() { return new A(); }/static B get() { return new B(); }/' work/src/p/package-info.java
+}
+case_of "package-info.java に宣言した、解析に失敗するクラスの戻り値を変える" edit_pkginfo_class yes setup_pkginfo_class
+edit_pkginfo_delete() {
+    check_pkginfo_failed
+    rm work/src/p/package-info.java
+}
+case_of "package-info.java に宣言した、解析に失敗するクラスを消す" edit_pkginfo_delete yes setup_pkginfo_class
+
+# 2. 同じ実行で消したファイルの、壊れたブロック（検査値が合わない）の H 行を信じていた。H 行が p.Base → p.Basx と化けていると
+#    本当の型 p.Base が変わった型にならず、U を再利用して Base.run を解決済みのまま残した（全件解析は U のコンパイルエラー）。
+#    今は壊れたブロックのパッケージを常に中身の分からないパッケージにする
+setup_corrupt_deleted() {
+    printf 'package p;\npublic class Base { public void run() { } }\n' | jfile p/Base.java
+    # パッケージ p が無くならないように（無くなったパッケージに触れるファイルは別の規則で解析し直す）
+    printf 'package p;\npublic class Other { }\n' | jfile p/Other.java
+    printf 'package q;\npublic class U { public void go() { new p.Base().run(); } }\n' | jfile q/U.java
+}
+edit_corrupt_deleted() {
+    sed -i 's/^H\tp\.Base\t/H\tp.Basx\t/' $(ls .cache/*/analysis-cache.tsv)
+    rm work/src/p/Base.java
+}
+case_of "同じ実行で消したファイルの壊れたブロックの H 行を信じない" edit_corrupt_deleted yes setup_corrupt_deleted
+
+# 3. 引数・戻り値・throws に現れないメソッドの型引数の上限（<T extends Comparable<? super Foo>> void m()）が I 行に載らなかった。
+#    x.<Bar>m() の上限が合うかは Foo の親（型引数まで）に依る。Foo の親の型引数を変えると全件解析では U に上限の不一致の
+#    エラーが出るが、差分更新は U を再利用した。ジェネリックなコンストラクタ（new <Bar>X()）も同じ
+setup_method_type_param() {
+    printf 'package p;\npublic class Base<T> { }\n' | jfile p/Base.java
+    printf 'package p;\npublic class Foo extends Base<String> { }\n' | jfile p/Foo.java
+    printf 'package p;\npublic class Bar implements Comparable<Base<String>> { public int compareTo(Base<String> o) { return 0; } }\n' \
+        | jfile p/Bar.java
+    printf 'package p;\npublic class X {\n    public <T extends Comparable<? super Foo>> void m() { }\n    public <T extends Comparable<? super Foo>> X() { }\n}\n' \
+        | jfile p/X.java
+    printf 'package q;\npublic class U { void go(p.X x) { x.<p.Bar>m(); }\n    void make() { new <p.Bar>p.X(); } }\n' | jfile q/U.java
+}
+case_of "メソッドの型引数の上限にだけ現れる型の親の型引数を変える" \
+    "sed -i 's/Base<String>/Base<Integer>/' work/src/p/Foo.java" yes setup_method_type_param
+
 # 型 a.b と衝突していたパッケージ a.b が無くなる（Q87 の逆向き）。型のファイル a/b.java の「パッケージと衝突する」エラーは
 # JDT がフォルダを見て出すのでバッチに依らないのに、a/b.java は I 行が何にも当たらず、エラーのまま残った。
 # 衝突していたパッケージのファイル（a/b/C.java）は JDT が型を落とすので H 行が無い。パッケージがあるかは置き場所の
@@ -3166,6 +3324,102 @@ if grep -q -a '^B\.run(),rdp\.B,C,src/rdp/B\.java,5,1,0,1,' "$OUT/methods.csv" \
 else
     echo "  NG   無い型 Template を無名パッケージの Template と取り違えています"
     grep -a -E '^(DefUser\.use|B\.run)' "$OUT/methods.csv" | head -5; fail=1
+fi
+
+# 同じく、単純名に $ や補助文字（U+1D4B3）を含む無い型（Tem$plate・Tem𝒳plate）。単純名の判定が $ を弾き（入れ子の型の
+# 2 進の名前を除くつもり）、UTF-16 の 1 文字ずつ調べてサロゲートの半分で弾いていたので、これらの名前だけは
+# getQualifiedName()（バッチで最初に解決に失敗したファイルのパッケージが付く）に戻り、差分更新で B の鍵が変わって
+# U.run -> B.go -> C.helper が切れた。全件解析だけでも、別パッケージの Api.go(Tem$plate) と Impl.go(Tem$plate) の引数が
+# rcd.api.Tem$plate と rcd.impl.Tem$plate に分かれ、Impl.go が Api.go の実装にならなかった（Issue #178）。
+# 今は $ を弾かず、識別子をコードポイントで調べる（JDT は無い入れ子の型を LOuter/Inner; と鍵にするので、パッケージの無い
+# 回復した鍵の $ は単純名から来たものに限られる）
+setup_missing_dollar_names() {
+    jfile rcd/other/A.java <<'EOF'
+package rcd.other;
+import org.lib.*;
+public class A { private final Object t = new Tem$plate(); private final Object u = new Tem𝒳plate(); }
+EOF
+    jfile rcd/web/B.java <<'EOF'
+package rcd.web;
+import org.lib.*;
+import rcd.other.*;
+public class B { public void go(Tem$plate x) { C.helper(); } public void go2(Tem𝒳plate x) { C.helper(); } }
+EOF
+    jfile rcd/web/C.java <<'EOF'
+package rcd.web;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+    jfile rcd/x/U.java <<'EOF'
+package rcd.x;
+public class U { void run(rcd.web.B b) { b.go(null); b.go2(null); } }
+EOF
+    jfile rcd/api/Api.java <<'EOF'
+package rcd.api;
+import org.lib.*;
+public interface Api { void go(Tem$plate t); }
+EOF
+    jfile rcd/impl/Impl.java <<'EOF'
+package rcd.impl;
+import org.lib.*;
+public class Impl implements rcd.api.Api { public void go(Tem$plate t) { Hit.hit(); } }
+EOF
+    jfile rcd/impl/Hit.java <<'EOF'
+package rcd.impl;
+public class Hit { public static void hit() { } }
+EOF
+    jfile rcd/use/U2.java <<'EOF'
+package rcd.use;
+public class U2 { void run(rcd.api.Api a) { a.go(null); } }
+EOF
+}
+case_of "依存 jar が無いとき、\$ や補助文字を含む単純名から作られた無い型の名前がバッチの組み方に依らない" \
+    "printf '\n// c\n' >> work/src/rcd/other/A.java" no setup_missing_dollar_names
+# 全件解析でも、別パッケージの Api.go(Tem$plate) と Impl.go(Tem$plate) の引数の型が同じ名前（?.Tem$plate）になり、
+# Impl.go が Api.go の実装として U2.run から呼ばれる（inDegree は 7 列目）
+if grep -q -a -E '^Impl\.go\([^)]*\),rcd\.impl\.Impl,C,src/rcd/impl/Impl\.java,3,1,1,1,' "$OUT/methods.csv"; then
+    echo "  OK   \$ を含む無い型（Tem\$plate）の引数の型が別パッケージの宣言と実装で同じ名前になる（Impl.go が呼ばれる）"
+else
+    echo "  NG   \$ を含む無い型（Tem\$plate）の引数の型が別パッケージの宣言と実装で食い違っています"
+    grep -a -E '^(Api|Impl)\.go' "$OUT/methods.csv" | head -5; fail=1
+fi
+
+# 同じく、無い入れ子の型（Template.Inner。Template は解決できない）が、無名パッケージにある本物の Template.Inner と重ならない
+# こと。JDT は鍵を LTemplate/Inner; にし名前を Template.Inner にするので、単純名の判定（鍵が L<識別子>; の形）には当たらず、
+# 無い完全修飾名（Lorg/missing/Lib;）とも鍵では区別できない。H 行に書く親の型（親型・親クラスの連鎖）が回復した型なら ?. を
+# 付けて書く（Issue #178）。付けないと、rdn/B は本物の Template.Inner の部分型とみなされ、DefUser2.use の t.run() の候補に B.run が
+# 混ざって展開をやめ（UNEXPANDED:CHA）、本物の Template.Inner.run の先（Real.x）が階層から落ちる
+setup_missing_nested_default_package() {
+    jfile Template.java <<'EOF'
+public class Template { public static class Inner { public void run() { Real.x(); } } }
+EOF
+    jfile Real.java <<'EOF'
+public class Real { public static void x() { } }
+EOF
+    jfile DefUser2.java <<'EOF'
+public class DefUser2 { void use(Template.Inner t) { t.run(); } }
+EOF
+    jfile rdn/B.java <<'EOF'
+package rdn;
+import org.lib.*;
+public class B extends Template.Inner {
+    public void run() { C.helper(); }
+}
+EOF
+    jfile rdn/C.java <<'EOF'
+package rdn;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+}
+case_of "依存 jar が無いとき、無い入れ子の型（Template.Inner）が無名パッケージの本物の入れ子の型と重ならない" \
+    "printf '\n// c\n' >> work/src/rdn/C.java" no setup_missing_nested_default_package
+if grep -q -a '^B\.run(),rdn\.B,C,src/rdn/B\.java,4,1,0,1,' "$OUT/methods.csv" \
+        && grep -q -a '^Template\.Inner\.run(),Template\.Inner,C,src/Template\.java,1,1,1,1,' "$OUT/methods.csv" \
+        && grep -q -a -P '^H\trdn\.B\tC\t\?\.Template\.Inner\t' full.tsv; then
+    echo "  OK   無い入れ子の型 Template.Inner を無名パッケージの本物の Template.Inner の部分型とみなさない（H 行は ?.Template.Inner）"
+else
+    echo "  NG   無い入れ子の型 Template.Inner を無名パッケージの本物の Template.Inner と取り違えています"
+    grep -a -E '^(DefUser2\.use|B\.run|Template\.Inner\.run)' "$OUT/methods.csv" | head -5
+    grep -a -P '^H\trdn\.B\t' full.tsv | head -2; fail=1
 fi
 
 # jar のクラス（qm.Api）が参照しているクラス（qm.Missing）が無いとき。事実を集めるときのバインディングへの問い合わせ
@@ -5350,7 +5604,7 @@ else
 fi
 
 # 添えるファイル（名前の違うファイルで宣言した型のファイル）は、バッチのファイルから名前でたどって届くものだけを添える
-# （Issue #172。docs/cache-unification-qa.md の Q138）。名前でたどれない経路（jar の lib.M.make() の戻り値がソースの app.T で、
+# （Issue #172。docs/cache-unification-qa.md の Q142）。名前でたどれない経路（jar の lib.M.make() の戻り値がソースの app.T で、
 # T のメソッドの戻り値が Other.java の record S）で届くものは、事実に現れた型（app.T）から届く先を広げて添え直す。
 # U だけを書き換えた差分更新でも S.go() を解決し、全件解析と同じになること
 bc_setup_context_via_jar() {

@@ -110,7 +110,7 @@ public final class CallEdgeExtractor {
      * 添えると JDT が止まるので、この実行の残りでは添えないファイル（JDT に渡す絶対パス。{@link Batch#dropBrokenContext}）。
      * 型の宣言を数千段つないだファイル（生成コード）のように、JDT が最初のファイルを返す前の型の束縛で溢れるものは、
      * 添えるだけでバッチの全ファイルを失敗させる。添えるのをやめれば、そのファイル自身が 1 つだけの解析で失敗するだけで済む
-     * （docs/cache-unification-qa.md の Q137）
+     * （docs/cache-unification-qa.md の Q141）
      */
     private final Set<String> brokenContext = new HashSet<>();
 
@@ -140,7 +140,7 @@ public final class CallEdgeExtractor {
      * 解析するソースの全体を構文だけで読み（型は解決しない）、バッチに添えるファイルと、それぞれのファイルに書いた名前
      * （添えるファイルをバッチから名前で届くものに絞る材料。{@link ProjectScan#reach}）と、パッケージの宣言がフォルダと
      * 合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。メソッドの本体も読む
-     * （本体に書いた名前も、解析するファイルから届く先に数えるため。本体を読まない読み取りと時間はほとんど変わらない。Q138）。
+     * （本体に書いた名前も、解析するファイルから届く先に数えるため。本体を読まない読み取りと時間はほとんど変わらない。Q142）。
      *
      * <p>全件解析でも差分更新でも、解析するファイルだけでなくソースの全体を渡す。添えるファイルがソースの中身だけで
      * 決まり、どの実行でも同じになるようにするため。読めなかったファイル（JDT の例外・スタックの溢れ）は材料にしない
@@ -311,7 +311,7 @@ public final class CallEdgeExtractor {
      * 深くなりすぎるファイル）も、そのファイルの失敗として扱う（{@code docs/cache-unification-qa.md} の Q62）。
      * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。JDT が明示的に投げる
      * {@link AssertionError}（レコードパターンのコード生成の {@code Unexpected operand at stack top} など。{@code -ea} に
-     * 依らない）も同じくそのファイルの失敗にする（Q135）。捕まえるのは {@code RuntimeException}・{@code StackOverflowError}・
+     * 依らない）も同じくそのファイルの失敗にする（Q139）。捕まえるのは {@code RuntimeException}・{@code StackOverflowError}・
      * {@code AssertionError} だけで、それ以外の {@code Error}（メモリ不足など）は設定の失敗として外へ抜けさせる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
@@ -676,7 +676,7 @@ public final class CallEdgeExtractor {
          * 増えるので、付けると 1 つだけの解析の結果がバッチの組み方に依る）。それでも受け取れなければ失敗として数える
          * （{@link Sink#failed}。warnings.txt の「打ち切られた」に理由とともに載る）。理由は 1 つだけの解析で JDT が投げた
          * 例外から決め、例外なしに止まったなら「理由を示さずに打ち切った」（{@code analysis.stopped}）。脇に置いたときの
-         * バッチの例外は使わない（1 つも受け取らないうちに溢れたバッチでは、別のファイルの例外かもしれない。Q136）
+         * バッチの例外は使わない（1 つも受け取らないうちに溢れたバッチでは、別のファイルの例外かもしれない。Q140）
          */
         private void alone(SourceFile file, Map<SourceFile, List<SourceFile>> deferred) throws IOException {
             Map<String, SourceFile> one = byPath(List.of(file));
@@ -814,7 +814,7 @@ public final class CallEdgeExtractor {
          * ファイル（{@code reached}）の外にあれば、そこから届く名前の違うファイルで宣言した型のファイルのうち、今回
          * JDT に渡していないもの。名前でたどれない経路（jar のクラスのシグネチャがソースの型を指す）で JDT がソースの
          * 型を読んだとき、その型のパッケージの名前の違うファイルの型を見落とさないよう、添えて解析し直す
-         * （{@link #memberTypeFilesOf} と同じ扱い。docs/cache-unification-qa.md の Q138）
+         * （{@link #memberTypeFilesOf} と同じ扱い。docs/cache-unification-qa.md の Q142）
          */
         private List<SourceFile> contextMissing(FileAnalysis facts, Set<String> present, BitSet reached) {
             if (!withContext || project.context.isEmpty()) {
@@ -843,7 +843,7 @@ public final class CallEdgeExtractor {
          * （{@link #memberTypeFilesOf}）は渡さずに {@code deferred} に置く。同じ名前の組（{@link SameUnitFiles}）の片方を
          * 後回しにするなら、組のもう片方も渡さずに後回しにする（組はいつもソースフォルダの順で一緒に JDT に渡す約束。
          * 片方だけを渡してもう片方だけを解析し直すと、解析し直しではもう片方が添えるファイルとして後ろに付き、重複した
-         * 型の勝ち負けが入れ替わる。Q136）。組のファイルの事実は、組のすべてを集め終えるまで手元に置く
+         * 型の勝ち負けが入れ替わる。Q140）。組のファイルの事実は、組のすべてを集め終えるまで手元に置く
          */
         private void collectAndDeliverAll(List<SourceFile> finished, List<CompilationUnit> units, Set<String> present,
                                           BitSet reached, Map<SourceFile, List<SourceFile>> deferred) {

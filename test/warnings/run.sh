@@ -646,7 +646,7 @@ check_jdt_fail() {   # $1=フォルダ名  $2=失敗するファイル  $3=理�
 # 5x-1. 名前の違う副次クラスを数千段つないだファイル（生成コードなど）。JDT は最初のファイルを返す前に全ユニットの親型を
 #       つなぐので、このファイルを「添えるファイル」にすると、どのバッチも 1 件も返さずに溢れ、プロジェクトの全ファイルが
 #       失敗していた（v43〜v44。Issue #169）。添えるだけで JDT が止まるファイルを見つけて添えなくし、そのファイルだけを
-#       失敗にする（docs/cache-unification-qa.md の Q137）
+#       失敗にする（docs/cache-unification-qa.md の Q141）
 jdt_fail_project deepctx 17
 {
     printf 'package p;\npublic class Deep { }\n'
@@ -665,7 +665,7 @@ check_jdt_fail deepctx src/p/Deep.java "stack overflow" 差分更新
 
 # 5x-2. JDT のコード生成が AssertionError（Error）を投げるファイル（レコードパターンで、アクセサの型が成分の型と違う
 #       コンパイルエラー）。RuntimeException と StackOverflowError しか捕まえていなかったので、設定まるごとの解析が失敗し、
-#       CSV が 1 つも出なかった（Issue #173）。そのファイルだけを、例外の名前と文言を添えた理由で失敗にする（Q135）
+#       CSV が 1 つも出なかった（Issue #173）。そのファイルだけを、例外の名前と文言を添えた理由で失敗にする（Q139）
 jdt_fail_project assertion 21
 printf '%s\n' 'package p;' 'public class Patterns {' '    int run(Object o) {' \
     '        if (o instanceof Point(int x, int y)) { return x + y; }' '        return 0;' '    }' '}' \

@@ -1,14 +1,13 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntPredicate;
 
 import jche.cache.ModifierTokens;
+import jche.cache.TypeFact;
 
 /**
  * 選択（selection）: 受け手の実行時のクラスが分かったとして、その呼び出しで<b>実際に動く本体</b>を選ぶ
@@ -80,6 +79,15 @@ import jche.cache.ModifierTokens;
  * jche.external.ExternalUsageScanner#inheritedFrom（被参照）にもある。順を変えるときは 3 か所を同時に直す（Issue #189）。
  */
 public final class MethodSelection {
+
+    private static final String ENUM_CLASS = "java.lang.Enum";
+    /**
+     * {@code java.lang.Enum} の final なインスタンスメソッド（JLS 8.9）。列挙型はこれらを上書きできず、親インターフェースの
+     * 同じシグネチャの default も動かない。{@code equals} / {@code hashCode} は Object のメソッドで、インターフェースは
+     * default にできない（JLS 9.4.1.2）ので入れない
+     */
+    private static final java.util.Set<String> ENUM_FINAL_SIGNATURES = java.util.Set.of(
+            "name()", "ordinal()", "compareTo(java.lang.Enum)", "getDeclaringClass()", "describeConstable()");
 
     private final MethodTable methods;
     private final TypeHierarchy hierarchy;
@@ -214,6 +222,16 @@ public final class MethodSelection {
                 return true;
             }
         }
+        if (hierarchy.kindOf(declaring) == TypeFact.INTERFACE) {
+            // 実装がインターフェースの default なら、その型の親インターフェースに H 行の無い（jar の）インターフェースが
+            // あれば、それがソースの default を宣言し直しているかもしれない（interface JApi extends s.Api の default。
+            // Issue #177）。java.* / javax.* は利用者のインターフェースを継承できないので数えない
+            for (String t : hierarchy.superinterfaces(type)) {
+                if (!hierarchy.contains(t) && !t.startsWith("java.") && !t.startsWith("javax.")) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
@@ -258,19 +276,32 @@ public final class MethodSelection {
     }
 
     /**
-     * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッドを
-     * 上書きしているか（JLS 8.4.8.1）。
+     * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッド（{@code declaringType} が
+     * 宣言。null なら不明）を上書きしているか（JLS 8.4.8.1 / JVMS 5.4.5 の推移）。
      *
-     * 直接は上書きできないが、推移的には上書きしうる。{@code pkg} の中の中間の型が同じシグネチャを
-     * public か protected で宣言し直していれば、その宣言は元のメソッドを上書きしていて
-     * （同じパッケージなので）、別パッケージの宣言はその中間の宣言を上書きできる。
-     * 親型をすべて見て、そういう中間の宣言が 1 つでもあれば上書きとみなす（取りこぼさない側に倒す）。
+     * 直接は上書きできないが、推移的には上書きしうる。{@code id} の型から呼び出し先の型までの<b>親クラスの連鎖</b>
+     * （{@link TypeHierarchy#classChain}）の途中に、{@code pkg} のクラスが同じシグネチャを public か protected で
+     * 宣言し直していれば、その宣言は元のメソッドを上書きしていて（同じパッケージなので）、別パッケージの宣言は
+     * その中間の宣言を上書きできる。見るのは連鎖の上（親クラス）だけで、親インターフェースは見ない
+     * （インターフェースはクラスの間に挟まらないので、その宣言を経由した上書きにはならない。
+     * {@code class Sub extends p.Base implements p.Worker} の {@code Sub.work()} は {@code Base.work()} を上書きしない）。
+     * 連鎖の途中に H 行の無い（jar の）クラスがあって {@code pkg} に属すなら、その宣言はメソッドの表に無い（ソースから
+     * 呼ばれていない限り載らない）ので public に宣言し直しているかもしれないとみなし、上書きとみなす（候補を多めに残す側）。
+     * 呼び出し先の型に着いたら止める（その上の宣言は、呼び出し先が隠す・上書きする側なので、経由にならない）。
      */
-    private boolean overridesAcrossPackage(int id, String sig, String pkg) {
-        ArrayDeque<String> queue = new ArrayDeque<>(hierarchy.directSupertypes(methods.typeFqn(id)));
-        Set<String> seen = new HashSet<>(queue);
-        while (!queue.isEmpty()) {
-            String t = queue.poll();
+    private boolean overridesAcrossPackage(int id, String sig, String pkg, String declaringType) {
+        List<String> chain = hierarchy.classChain(methods.typeFqn(id));
+        for (int i = 1; i < chain.size(); i++) {
+            String t = chain.get(i);
+            if (t.equals(declaringType)) {
+                return false;
+            }
+            if (!hierarchy.contains(t)) {
+                if (inPackage(t, pkg)) {
+                    return true;
+                }
+                continue;
+            }
             int mid = methods.idOf(t + "#" + sig);
             if (mid >= 0 && pkg.equals(methods.pkg(mid))) {
                 String mods = methods.mods(mid);
@@ -278,13 +309,23 @@ public final class MethodSelection {
                     return true;
                 }
             }
-            for (String sup : hierarchy.directSupertypes(t)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
-                }
-            }
         }
         return false;
+    }
+
+    /**
+     * H 行の無い型（jar の型。名前しか分からない）がパッケージ {@code pkg} に属すか。入れ子の型（{@code a.Outer.Inner}）は
+     * 最後のドットで切るとパッケージが {@code a.Outer} になるので、{@code pkg} の直後の名前が大文字で始まれば属すとみなす
+     */
+    private static boolean inPackage(String typeFqn, String pkg) {
+        if (pkg.isEmpty()) {
+            return !typeFqn.isEmpty() && Character.isUpperCase(typeFqn.charAt(0));
+        }
+        if (!typeFqn.startsWith(pkg + ".") || typeFqn.length() == pkg.length() + 1) {
+            return false;
+        }
+        String rest = typeFqn.substring(pkg.length() + 1);
+        return rest.indexOf('.') < 0 || Character.isUpperCase(rest.charAt(0));
     }
 
     /**
@@ -319,9 +360,13 @@ public final class MethodSelection {
      *       （{@code class Impl extends Mid implements Api} で {@code Mid} の親 {@code Base} の {@code m()} が
      *       {@code Api} の default の {@code m()} より先）。その型より上の private メソッドは上書きも継承もされないので
      *       飛ばす（JLS 8.4.8。その型自身の宣言は、private の呼び出し先を引くときのために飛ばさない）。
-     *       親クラスの static メソッドは飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承する
-     *       クラスはコンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション
-     *       （{@code Class.getMethod} は親クラスの public な static メソッドも返す）でだけ</li>
+     *       親クラスの static メソッドのうち継承されるもの（public・protected か、その型と同じパッケージ。{@link #inheritedBy}）は
+     *       飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承するクラスはコンパイルできない
+     *       （JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション（{@code Class.getMethod} は親クラスの
+     *       public な static メソッドも返す）でだけ。継承されない static（別パッケージのパッケージアクセス）は飛ばす
+     *       （同じシグネチャの default を持つクラスはコンパイルでき、動くのはその default）。
+     *       見つけた実装が呼び出し先とシグネチャの違う上書き（O 行・H 行の 8 列目）なら、それより下の段でその実装を
+     *       さらに上書きしている宣言を採る（{@link #lowestOverriderOf}。JLS 8.4.8.1 の推移で、JDT の O 行に載らない形）</li>
      *   <li><b>親インターフェース</b>（{@link TypeHierarchy#superinterfaces}）… 連鎖に無ければ、連鎖の型が実装する
      *       インターフェースすべての宣言（private と static は継承されないので除く。JLS 9.4.1）のうち、ほかの宣言の型の
      *       真の親型で宣言したものを除いた「最も特定的な」宣言（JVMS 5.4.3.3）から、本体を持つものを採る。
@@ -358,20 +403,25 @@ public final class MethodSelection {
         }
         List<String> chain = hierarchy.classChain(typeFqn);
         for (int i = 0; i < chain.size(); i++) {
-            int id = declarationIn(chain.get(i), sig, overriders, packageAccess);
-            if (id >= 0 && methods.hasBody(id)
-                    && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
-                return id;
+            if (i > 0 && ENUM_CLASS.equals(chain.get(i)) && ENUM_FINAL_SIGNATURES.contains(sig)) {
+                // 列挙型の final メソッド（java.lang.Enum#ordinal() など）は、ソースから呼ばれていない限り表に無く、
+                // 親インターフェースの同じシグネチャの default に負けていた（Issue #177）。表にあればそれ、無ければ
+                // 「分からない」（-1）にして default へ進まない
+                return methods.idOf(ENUM_CLASS + "#" + sig);
+            }
+            int id = declarationIn(chain.get(i), calleeKey, sig, overriders, packageAccess);
+            if (id >= 0 && methods.hasBody(id) && (i == 0 || inheritedBy(typeFqn, id))) {
+                return lowestOverriderOf(chain, i, id, sig);
             }
             int inherited = inheritedImplementationIn(chain.get(i), calleeKey, sig);
             if (inherited >= 0 && methods.hasBody(inherited)) {
-                return inherited;
+                return lowestOverriderOf(chain, i, inherited, sig);
             }
         }
         List<String> declaring = new ArrayList<>();
         IntArray found = new IntArray(2);
         for (String t : hierarchy.superinterfaces(typeFqn)) {
-            int id = declarationIn(t, sig, overriders, packageAccess);
+            int id = declarationIn(t, calleeKey, sig, overriders, packageAccess);
             if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
                     && !ModifierTokens.has(methods.mods(id), "static")) {
                 declaring.add(t);
@@ -396,6 +446,61 @@ public final class MethodSelection {
             }
         }
         return fallback;
+    }
+
+    /**
+     * 親クラスの連鎖の途中（その型より上）の宣言 {@code id} が、型 {@code typeFqn} に継承されるか（JLS 8.4.8）。
+     * private は継承されない。static も、public・protected か同じパッケージのものしか継承されない
+     * （別パッケージのパッケージアクセスの static は、同じシグネチャの default を持つクラスでもコンパイルできる。
+     * それを実装に選ぶと、実際に動く default を落とす）。インスタンスメソッドのパッケージアクセスは、呼び出し先が
+     * パッケージアクセスなら {@link #declarationIn} が同じパッケージに限り、public な呼び出し先に対しては JVMS 5.4.5 の
+     * 「上書きしうる」形なので残す（docs/jls-conformance-qa.md の Q36）
+     */
+    private boolean inheritedBy(String typeFqn, int id) {
+        String mods = methods.mods(id);
+        if (ModifierTokens.has(mods, "private")) {
+            return false;
+        }
+        if (!ModifierTokens.has(mods, "static") || ModifierTokens.has(mods, "public")
+                || ModifierTokens.has(mods, "protected")) {
+            return true;
+        }
+        return methods.hasSource(id) && methods.pkg(id).equals(hierarchy.packageOf(typeFqn));
+    }
+
+    /**
+     * 連鎖の {@code found} 段目で見つけた実装 {@code implId} が、呼び出し先とシグネチャの違う宣言（O 行の上書き・
+     * H 行の 8 列目の継承した実装。型引数を置換した形）なら、それより下の段でその実装をさらに上書きしている宣言のうち
+     * いちばん下のもの。無ければ {@code implId} そのもの。
+     *
+     * <p>{@code class GA<T> { void g(T) }}（パッケージアクセス）を {@code class GM extends GA<String> { public void g(String) }}
+     * が上書きし、別パッケージの {@code class GB2 extends GM { public void g(String) }} がそれを上書きしている形。
+     * {@code GB2.g} は {@code GA#g(Object)} を（JLS 8.4.8.1 の推移で）上書きするが、JDT の {@code overrides} は別パッケージの
+     * パッケージアクセスのメソッドに対して偽を返すので O 行には無い。GM の段で O 行から {@code GM.g} を見つけたら、
+     * 下の段（GB2）に {@code GM.g} と同じシグネチャの宣言があるかを見る。上書きとみなす条件は JLS 8.4.8.1:
+     * 下の宣言が private でも static でもなく本体を持ち、上の宣言が public か protected か、同じパッケージ
+     */
+    private int lowestOverriderOf(List<String> chain, int found, int implId, String sig) {
+        String implSig = methods.signature(implId);
+        if (found == 0 || implSig.equals(sig)) {
+            return implId;
+        }
+        String implMods = methods.mods(implId);
+        boolean visible = ModifierTokens.has(implMods, "public") || ModifierTokens.has(implMods, "protected");
+        for (int k = 0; k < found; k++) {
+            int id = methods.idOf(chain.get(k) + "#" + implSig);
+            if (id < 0 || !methods.hasBody(id)) {
+                continue;
+            }
+            String mods = methods.mods(id);
+            if (ModifierTokens.has(mods, "private") || ModifierTokens.has(mods, "static")) {
+                continue;
+            }
+            if (visible || (methods.hasSource(id) && methods.pkg(id).equals(methods.pkg(implId)))) {
+                return id;
+            }
+        }
+        return implId;
     }
 
     /**
@@ -426,7 +531,7 @@ public final class MethodSelection {
      * 上書き（型引数を具体化したもの。O 行）を先に見る。シグネチャが同じ上書きは O 行に書かないので、ここで
      * 当たるのは「型引数を具体化した上書き」だけ
      */
-    private int declarationIn(String t, String sig, IntArray overriders, String packageAccess) {
+    private int declarationIn(String t, String calleeKey, String sig, IntArray overriders, String packageAccess) {
         if (overriders != null) {
             int overriding = declaredAmong(overriders, t);
             if (overriding >= 0) {
@@ -435,10 +540,19 @@ public final class MethodSelection {
         }
         int id = methods.idOf(t + "#" + sig);
         if (id >= 0 && (packageAccess == null || packageAccess.equals(methods.pkg(id))
-                || overridesAcrossPackage(id, sig, packageAccess))) {
+                || overridesAcrossPackage(id, sig, packageAccess, declaringTypeOf(calleeKey)))) {
             return id;
         }
         return -1;
+    }
+
+    /** キー（{@code 型#名前(引数)}）の型の部分。null なら null */
+    private static String declaringTypeOf(String calleeKey) {
+        if (calleeKey == null) {
+            return null;
+        }
+        int hash = calleeKey.indexOf('#');
+        return (hash < 0) ? calleeKey : calleeKey.substring(0, hash);
     }
 
     /** その型が宣言している上書きメソッド。無ければ -1 */

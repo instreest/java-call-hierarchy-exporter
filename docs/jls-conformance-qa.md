@@ -985,3 +985,202 @@ a.Base implements Api` で `a.Base.m()` がパッケージアクセス、`Api.m(
 落ちないが、`nocsv` が捕まえる。
 
 **形式の版**: 書き手の事実（H 行 8 列目）が変わるので `jche-cache-v45`。
+
+## Q38. jar のクラスを経由した部分型（`class MyList extends ArrayList<String>`）が、なぜ CHA の候補に入らなかったのか
+
+[Issue #184](https://github.com/instreest/java-call-hierarchy-exporter/issues/184)。呼び出しを落とす側の不具合。
+
+```java
+public class MyList extends java.util.ArrayList<String> { @Override public int size() { return helper(); } }
+java.util.List<String> l = pick(args);   // MyList か ArrayList
+l.size();                                // 実際に動きうるのは MyList.size
+```
+
+`l.size()` が `List.size RESOLVED:NO_OVERRIDE [EXTERNAL]` になり、`MyList.size()` は起点の候補（`ENTRY_CANDIDATE` /
+`[NOT_REACHED]`）に昇格していた。H 行の親型（3 列目）は「直接の親」と「jar の型を経由して到達するソースの親」だけで、
+jar の親の親（`ArrayList` の先の `List` / `Collection`）は載らない。読み手の段 1 は宣言した型 `java.util.List` の
+`transitiveSubtypes` から候補を引くので、`MyList` は部分型に数えられず、候補は jar の宣言だけになって `NO_OVERRIDE` で確定した。
+同じ形で jar のインターフェースを**直接** implements した型は 3 列目に載るので候補に入る（`UNEXPANDED:CHA`）。
+
+**今の決まり: 書き手は、親型を辿って到達した jar の型の推移的な親型の組（`jar の型>親型`。`java.lang.Object` を除く）を
+H 行の 9 列目に書く**（`TypeContextTracker#collectSupertypes`・`TypeFact#binarySupertypes`）。`MyList` の H 行なら
+`java.util.ArrayList>java.util.List;java.util.ArrayList>java.util.AbstractList;…` である。読み手の `TypeHierarchy` はこれを
+jar の型の親型として持ち（`binarySupertypesOf`）、部分型の列挙（`transitiveSubtypes`）と親子の判定（`isSubtypeOf`）で jar の型を
+通って辿る。`transitiveSubtypes("java.util.List")` が `MyList` を返し、候補は `List.size`（jar）と `MyList.size` の 2 つ
+（`UNEXPANDED:CHA`）になる。`MyList m; m.size()` のように修飾する型がソースの型なら、`isSubtypeOf(MyList, java.util.List)` が
+真になるので修飾する型から引き（`usableQualifier`）、`MyList.size` に確定する。
+
+3 列目に jar の親の親を平らに足す（Issue の案）のではなく組にしたのは、Q39（jar のインターフェースどうしの親子）にも同じ
+材料が要るからである。平らに足すと `LibMid` と `Top` が並ぶだけで、どちらが親かは分からない。
+
+変えなかったもの:
+
+- **`transitiveSubtypes` はソース上の型だけを返す。** jar の型（`ArrayList`）を候補の型に並べると、`implementationOf` が
+  メソッドの表にたまたまある jar の宣言（`ArrayList#size()`。ソースのどこかが呼び出し先にしていれば載る）を候補に足し、
+  同じソースでも表の中身で行が増減する。読み手の呼び出し側（`CallResolver`・`SpringBeans`・`MethodSelection#hasOverriders`）は
+  もともとソースの型しか受け取っていない
+- **実装を探す並び（`classChain` / `superinterfaces`）は H 行の親型の並びのまま。** `superinterfaces` に jar の親の親
+  （`List` / `Collection`）まで並べると、`MethodSelection#search` が表にある jar の宣言を「最も特定的な宣言」に選び、
+  `class Plain extends ArrayList<String>` の `Collection.size()` の呼び出しに `List.size` の行が増える。候補は落ちないが
+  出力が表の中身で変わるので、並びは変えない
+- **`usableQualifier` の「修飾する型が jar の型なら宣言した型に倒す」も変えない。** 9 列目があれば jar の型の部分型も
+  漏れなく数えられるが、修飾する型が jar の型（`ArrayList<String> a; a.size()`）のとき受け手は jar の型そのものでもあり、
+  その実装（jar の宣言）は `implementationOf(修飾する型, …)` では見つからない（メソッドの表に無いか、本体が分からない）。
+  宣言した型から引けば宣言そのものが候補に入り、`[EXTERNAL]` の行で「jar の実装が動きうる」と分かる
+  （`docs/jls-conformance-test-qa.md` の Q18）
+- `java.lang.Object` は載せない（`docs/excluded-entry-promotion-qa.md` の Q5・Q8）
+
+費用は H 行が長くなること（JDK の GUI クラスを継承した型で数十組）と、jar の型の親型が変わる（jar の差し替え）と型階層の
+安全網（`docs/cache-unification-qa.md` の Q132）で全件解析になること。どちらも安全側の費用として受け入れる。
+書き手の変更なので形式の版を v45 に上げた。検査は `test/pruning` の `JarList`（`List<String>` / `ArrayList<String>` 型の変数で
+呼んだ `size()` の候補に `JlList.size` が入り、その先の呼び出しが階層に残る）。
+
+`test/regression` の期待出力は 2 か所で変わった。どちらもこの形の候補が増えたもので、直す前は落ちていた呼び出しである。
+
+- `test/demo` の `Starter.Worker extends Thread`（`run()` を上書き）。`Runnable::run`（`Main.lambdas`・`Holder.viaForEach`）の
+  候補が `Starter.Job.run` と jar の `Runnable.run` の 2 つから、`Worker.run` を足した 3 つになった（`Thread` が `Runnable` を
+  実装していることが 9 列目で分かる）。`Worker.run` の入次数が 1 から 6 に増え、`entry` の設定では `[NOT_REACHED]` でなくなった
+- `test/maven-demo` / `test/gradle-demo` の `LogHandler extends sample.deps.AbstractHandler`（jar のクラス。jar の
+  `Handler` を実装）。`Service.run` の `handler.handle(text)`（フィールドの `new LogHandler()`）が jar の `Handler.handle`
+  （`[EXTERNAL]`）から `LogHandler.handle`（`RESOLVED:DATAFLOW_FIELD`）になり、その先の `Util.count` が階層に載った
+
+## Q39. jar のインターフェースを経由した親子が見えず、なぜ別の default を選んだのか
+
+[Issue #185](https://github.com/instreest/java-call-hierarchy-exporter/issues/185)。
+
+```java
+interface Top { default void m() { } }                          // ソース
+public interface LibMid extends s.Top { default void m() { } }  // jar。Top.m を上書き
+class Impl implements lib.LibMid, s.Top { }                     // ソース。Top も直接書く
+Top t = new Impl(); t.m();                                      // 実際に動くのは LibMid.m
+```
+
+`Impl` の `superinterfaces` には `LibMid`（jar。H 行なし）と `Top` が並ぶ。`MethodSelection#search` の後半は
+`TypeHierarchy#mostSpecific` で「ほかの型の真の親型」を除くが、その判定（`isSubtypeOf`）は H 行の親型（3 列目）しか見ず、
+`LibMid` の親が `Top` であることは知りようがなかった。両方が残り、「ソースに本体のある宣言を jar の宣言より先」の近似で
+`Top.m` を選んでいた（JVM は `LibMid.m`）。`Top.m` の本体の呼び出しが「呼ばれる」と出て、`Top.m` の戻り値で候補を絞る
+（`test/pruning` の `DefMid`: `DmTop.create` の戻り値 `DaoA` に絞って `DaoB.find` が消える）と、呼び出しが落ちる。
+
+**今の決まり: Q38 の 9 列目（`lib.LibMid>s.Top`）を `isSubtypeOf` が辿るので、`mostSpecific([LibMid, Top])` は `Top` を除く。**
+`MethodSelection#search` は変えていない（同じ段で別の直しが入る）。jar の宣言 `LibMid.m` は、ソースのどこかがそれを
+呼び出し先にしていればメソッドの表にあり、`implementationOf(Impl, Top.m)` はそれを返す（`[EXTERNAL]`）。表に無ければ
+`declaring` に `LibMid` が入らず、これまでどおり `Top.m` を返す（jar のインターフェースが `m` を宣言しているかは、jar の
+事実を持たない読み手には分からない）。「最も特定的な宣言が複数残ったら 1 つに決めない」（Issue の代案）は、jar の型の親子が
+見えるようになれば残るのは JLS でコンパイルエラーになる形だけなので採らなかった。
+
+検査は `test/pruning` の `DefMid`（jar の `prlib.Mid extends pr.DmTop` を挟む。`t.create()` の実装が `Mid.create` で、
+`DmTop.create` を選ばず、`DaoB.find` を落とさない）。`test/jls` の javac との突き合わせは jar を使わないので、そこには置かない。
+
+## 選択の層の穴を塞ぐ（Issue #174・#175・#177）
+
+`docs/resolution-selection-design.md` の点検表（6 節）で位置を挙げていた、`MethodSelection#search` とその周辺の食い違いの直し。
+どれも「実際に動く実装が呼び出しの先から消える」形で、全件解析でも起きる。
+
+## Q40. 別パッケージの上書きの判定が、同じパッケージのインターフェースや jar のクラスを取り違えていた
+
+[Issue #174](https://github.com/instreest/java-call-hierarchy-exporter/issues/174)。
+
+**症状**: パッケージアクセスの `p.Base.work()` を、別パッケージの `q.Sub extends p.Base implements p.Worker` が
+`public void work()` で宣言し直した形。`Base b = new q.Sub(); b.work()` で動くのは `Base.work`（`Sub.work` は
+別のメソッド。JLS 8.4.8.1）なのに、ツールは `Sub.work` に確定して `Base.work` を落としていた。
+逆に、同じパッケージの jar のクラス `a.JMid extends a.PA` が `m()` を public に宣言し直し、別パッケージの
+`b.PB extends a.JMid` がそれを上書きしている形では、`PA x = new b.PB(); x.m()` で動く `PB.m` を落として
+`PA.m` に確定していた。
+
+**原因**: `overridesAcrossPackage` は「別パッケージの宣言が、そのパッケージの public / protected の中間の宣言を経由して
+推移的に上書きしているか」を、親型（`directSupertypes`。クラスとインターフェースが混ざり、名前順）を幅優先で辿って
+「1 つでもあれば真」で見ていた。`Worker.work()`（インターフェース。public）も数えてしまうが、インターフェースは
+`Sub` と `Base` の間のクラスではない。また、途中の宣言をメソッドの表（`methods.idOf`）で探すので、ソースから呼ばれて
+いない jar のメソッドは見えなかった。
+
+**直し**: 見るのは親クラスの連鎖（`TypeHierarchy#classChain`。H 行の 7 列目）だけにし（JVMS 5.4.5 の「上書きしうる」の
+推移は親クラスの連鎖の上でしか成り立たない）、呼び出し先を宣言した型に着いたら止める。連鎖の途中に H 行の無い
+（jar の）クラスがあって呼び出し先のパッケージに属すなら、public に宣言し直しているかもしれないとみなして真にする
+（Q32 と同じ「候補を多めに残す」側。jar の型の名前しか無いので、パッケージは「呼び出し先のパッケージの直後の名前が
+大文字で始まる」で決める。入れ子の型 `a.Outer.Inner` を `a.Outer` パッケージと取り違えないため）。
+読み手だけの変更なので形式の版は上げない。
+
+**検査**: `test/pruning` の `XaBase.run -> XaBase.work`（`XaSub.work` が無いこと）と `XaPUse.run -> XaPB.m`
+（jar `work/lib/xalib.jar` はソースの `xa.XaPA` に対してコンパイルし、`XaPA.class` は入れない）。
+直す前の版で落ちることを確かめた。
+
+## Q41. 継承されない static を default より先に選び、型引数の置換を挟んだ別パッケージの上書きを見落としていた
+
+[Issue #175](https://github.com/instreest/java-call-hierarchy-exporter/issues/175)。どちらも `MethodSelection#search` の
+親クラスの連鎖の段。
+
+**症状 1**: `class Impl5 extends a.SBase implements I5` で、`a.SBase` の `static void s5()`（パッケージアクセス）と
+`I5` の `default void s5()`。`I5 x = new Impl5(); x.s5()` で動くのは `I5.s5` なのに、`SBase.s5` に確定していた。
+連鎖の段では、その型より上の private は飛ばすが static は残していた（「同じシグネチャの static を継承するクラスは
+コンパイルできない（JLS 8.4.8.2）ので仮想呼び出しでは当たらない」）。この理屈は static が<b>継承される</b>ときのもので、
+別パッケージのパッケージアクセスの static は継承されない（JLS 8.4.8）ので、クラスはコンパイルできる。
+
+**直し 1**: 連鎖の段 i>0 では、継承されない宣言を飛ばす（`inheritedBy`）: private と、public でも protected でもなく
+その型と同じパッケージでもない static。public・protected の static は残す（リフレクションの `getMethod` が返す）。
+型のパッケージは H 行の 4 列目を `TypeHierarchy#packageOf` で引く。インスタンスメソッドのパッケージアクセスは
+変えない（呼び出し先がパッケージアクセスなら `declarationIn` が同じパッケージに限り、public な呼び出し先に対しては
+JVMS 5.4.5 の「上書きしうる」形なので残す。Q36）。
+
+**症状 2**: `class GA<T> { void g(T) }`（パッケージアクセス）を同じパッケージの `class GM extends GA<String> { public void g(String) }`
+が上書きし、別パッケージの `class GB2 extends GM { public void g(String) }` がそれを上書きしている形。
+`GA<String> x = new b.GB2(); x.g("s")` で動くのは `GB2.g`（GM のブリッジ `g(Object)` が仮想で `g(String)` を呼ぶ）なのに、
+`GM.g` に確定していた。`GB2.g` の O 行には `GA#g(Object)` が無い。JDT の `overrides()` は、別パッケージのパッケージアクセスの
+メソッドに対して偽を返す（JLS 8.4.8.1 の推移を見ない）ためで、`search` は GM の段で O 行から `GM.g` を見つけるが、
+それより下の段で「見つけた上書きと同じシグネチャを宣言しているか」を見ていなかった。
+
+**直し 2**: 答えが連鎖の j 段目の、呼び出し先とシグネチャの違う宣言（O 行の上書き・H 行の 8 列目の継承した実装）から
+来たときは、それより下の段でその宣言を上書きしうる宣言（private でも static でもなく本体を持ち、上の宣言が public か
+protected か同じパッケージ）を探し、いちばん下のものを採る（`lowestOverriderOf`）。読み手で直すほうを採り、
+O 行の書き手（`OverrideFacts`）には推移の場合を足さない（JDT の判定に任せる作りを保つ。形式の版も上げない）。
+
+**却下した案**: O 行の書き手に JLS 8.4.8.1 の推移を足す。JDT の `overrides` の結果をそのまま事実にする作りが崩れ、
+形式の版を上げる（全件解析）ことになる。読み手の 1 段の探索で足りる。
+
+**検査**: `test/pruning` の `XaImpl5.run -> XaI5.s5`（`XaSBase.s5` が無いこと）と `XaGUse.run -> XaGB2.g`（`XaGM.g` が無いこと）。
+直す前の版で落ちることを確かめた。
+
+## Q42. インターフェースのダイヤモンドの super 呼び出し・jar のインターフェースの宣言し直し・record と Enum の暗黙のメソッド
+
+[Issue #177](https://github.com/instreest/java-call-hierarchy-exporter/issues/177)。3 つとも「動かない default に確定する」形。
+形式の版を `jche-cache-v45` に上げた（1 と 3 が書き手の変更）。
+
+**1. `X.super.m()` / `super.m()` が特定性の低い default に向く。** `interface Both extends Top, Mid`（両方に `hi()` の default、
+`Mid extends Top`）で `Both.super.hi()` は `Mid.hi` を呼ぶが、JDT の束縛は `Top#hi` を返すことがあり、辺は `STATIC_BOUND:SUPER` なので
+`search` で選び直されず `Mid.hi` が落ちていた。`class Y extends Y0`（`Y0 implements Top, Mid`）の `super.hi()` も同じ。
+直し: 書き手が `super.m()` / `X.super.m()` / `super::m` の C 行に修飾する型（JLS 13.1: `super.m()` なら囲む型の親クラス、
+`X.super.m()` なら X がインターフェースならその X、クラスなら X の親クラス。`CallSiteRecorder#superQualifierOf`）を書き、
+読み手（`CallResolver#superTarget`）が段 0 で `implementationOf(修飾する型, 呼び出し先)` で選び直す（JVMS 6.5 の invokespecial:
+C は直接の親クラスか名指しのインターフェースで、そこから JVMS 5.4.6 の順）。修飾する型が空（宣言した型と同じ・jar の型）なら
+宣言した型から引き、選べなければ呼び出し先のまま。ラベルは `STATIC_BOUND:SUPER` のまま。
+`super.m()` の修飾する型は H 行の 7 列目からも分かるが、`X.super.m()` は書き手にしか分からないので、両方とも書き手が書く
+（1 つの決まりにする）。
+
+**2. jar のインターフェースがソースの default を宣言し直す。** `interface JApi extends s.Api`（jar）が `dao()` の default を
+宣言し直し、`class Impl implements lib.JApi` を `Api` 型で使う形。Q32 の守り（`passesBinaryClass`）は親クラスの連鎖の H 行の無い
+クラスしか数えないので、`Api.dao` の戻り値（`DaoA`）で `DaoB.find` を落としていた。直し: 実装がインターフェースの宣言なら、
+その型の親インターフェース（`TypeHierarchy#superinterfaces`）に H 行の無い型があれば真にする。`java.*` / `javax.*` は利用者の
+インターフェースを継承できないので除く（Spring などの jar のインターフェースを併せて implements する型は「絞らない」側に
+倒れる。多すぎる側なので受け入れる）。読み手だけの変更。
+
+**3. record の暗黙のアクセサと Enum の final メソッド。** `record R2(String name) implements Named`（`Named` に `name()` の default）
+で `n.name()` が default に確定していた。暗黙のアクセサには D 行が無く、`search` がその型の段で何も見つけず default へ進むため。
+直し: 書き手（`TypeContextTracker#synthesizeImplicitAccessors`）が JDT の合成したアクセサ（`isSyntheticRecordMethod`）の D 行を
+`public implicit` で書く（`test/jls` の javac との突き合わせは、javac にあるメソッドの D 行があれば一致として数える）。
+`enum E3 implements HasOrd` の `h.ordinal()` は `Enum.ordinal`（final）が動くが、`java.lang.Enum` のメソッドは呼ばれない限り表に無い。
+読み手の `search` で、連鎖に `java.lang.Enum` があってシグネチャが `Enum` の final メソッド（`name()` / `ordinal()` /
+`compareTo(java.lang.Enum)` / `getDeclaringClass()` / `describeConstable()`）なら、表にあればそれ、無ければ「分からない」（-1）を返して
+default へ進まない（-1 なら `hasOverriders` が「別の本体へ振り分けられうる」になり、default の戻り値で絞らない）。
+`equals` / `hashCode` はインターフェースが default にできない（JLS 9.4.1.2）ので入れない。
+
+**却下した案**: Enum も書き手で D 行を合成する（`E3#ordinal()` のような宣言は無いので、jar の `Enum` のメソッドを D 行にすることになり、
+「D 行はソースの宣言」という約束が崩れる）。record を読み手で見る（成分の名前が読み手に無い）。
+
+**検査**: `test/pruning` の `Diamond`（`X.hi` / `Y.hi` / `Z.r` → `Mid.hi`。`Top.hi` が無いこと）、`JarIface`（jar `work/lib/xalib2.jar` の
+`xj.XaJApi extends xa.XaApi`。`DaoB.find` が残ること）、`RecAcc`（`R2.name`）、`EnumOrd`（表にある `Enum.ordinal`）、
+`EnumName`（表に無い `name()` の default の戻り値で打ち切らない）。
+
+**`methods.csv` への影響**: 合成したアクセサの D 行は、明示的に書いたメソッドと同じく `methods.csv` の行になる（宣言行は
+record の見出しの行）。`methods.csv` は「他から呼び出せる定義」を並べる一覧で、暗黙のアクセサは `p.x()` と呼び出せるので、
+除く理由が無い（除いているのはコンストラクタ・ラムダの合成メソッド・static 初期化子・匿名クラスのメソッド）。
+そのため `test/regression` の期待出力に `test/demo` の `record Point(int x, int y)` の `Point.x()` / `Point.y()` の 2 行が
+増えた（whole / entry / novalues / jarchange / cacheblocks）。
