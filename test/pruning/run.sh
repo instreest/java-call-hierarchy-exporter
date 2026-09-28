@@ -3293,6 +3293,78 @@ EOF
 expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラスの GiBase.create(String)（GiFac の default ではない。GiImpl から見たときだけの実装の関係）"
 
 # ---------------------------------------------------------------------------
+# 別パッケージの上書きの判定（JLS 8.4.8.1 / JVMS 5.4.5）は、親クラスの連鎖だけを辿る（Issue #174）。
+# 以前は親型を名前順の幅優先で混ぜて辿り、同じパッケージのインターフェースの宣言（public）も「途中の上書き」に数えたので、
+# class Sub extends p.Base implements p.Worker の Sub.work() が Base.work()（パッケージアクセス）を上書きするとみなし、
+# 実際に動く Base.work を落としていた。また、途中の宣言をメソッドの表で探すので、jar のクラス（ソースから呼ばれていないと
+# 表に無い）が同じパッケージで public に宣言し直している形（PA ← jar の JMid ← PB）が見えず、PB.m を落としていた
+# ---------------------------------------------------------------------------
+case_ listed /xa/XaBase /xa.XaBase.run XaBase.work "同じパッケージのインターフェース（XaWorker）は連鎖の途中の上書きではない。Base b = new q.Sub(); b.work() で動くのは Base.work" <<'EOF'
+package xa;
+
+public class XaBase {
+    void work() { System.out.println("Base.work"); }
+    public static void main(String[] args) { run(); }
+    public static void run() { XaBase b = new xb.XaSub(); b.work(); }
+}
+EOF
+expect_ absent /xa.XaBase.run XaSub.work "対照: 別パッケージの XaSub.work はパッケージアクセスの XaBase.work を上書きしない（行が無い）"
+mkdir -p work/src/xa
+cat > work/src/xa/XaWorker.java <<'EOF'
+package xa;
+
+public interface XaWorker { void work(); }
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaSub.java <<'EOF'
+package xb;
+
+public class XaSub extends xa.XaBase implements xa.XaWorker {
+    public void work() { System.out.println("Sub.work"); }
+}
+EOF
+# 同じパッケージの jar のクラスが途中で public に宣言し直す形。jar（work/lib/xalib.jar）はソースの xa.XaPA に対してコンパイルし、
+# XaPA.class は入れない
+mkdir -p work/src/xa
+cat > work/src/xa/XaPA.java <<'EOF'
+package xa;
+
+public class XaPA {
+    void m() { System.out.println("PA.m"); }
+}
+EOF
+mkdir -p work/libsrc/xa work/libcls-xa work/lib
+cat > work/libsrc/xa/XaJMid.java <<'EOF'
+package xa;
+
+public class XaJMid extends XaPA {
+    @Override
+    public void m() { System.out.println("JMid.m"); }
+}
+EOF
+"$JAVAC_BIN" -nowarn -encoding UTF-8 -cp work/src -d work/libcls-xa work/libsrc/xa/XaJMid.java \
+    && rm -f work/libcls-xa/xa/XaPA.class \
+    && "$(dirname "$JAVAC_BIN")/jar" --create --file work/lib/xalib.jar -C work/libcls-xa . \
+    || ng "jar（work/lib/xalib.jar）を作れませんでした"
+case_ listed /xa/XaPUse /xa.XaPUse.run XaPB.m "jar のクラス xa.XaJMid（同じパッケージ。表に無い）が m() を public に宣言し直しているので、別パッケージの XaPB.m が推移的に上書きしうる。PA x = new b.PB(); x.m() で動くのは PB.m" <<'EOF'
+package xa;
+
+public class XaPUse {
+    public static void main(String[] args) { run(); }
+    public static void run() { XaPA x = new xb.XaPB(); x.m(); }
+}
+EOF
+mkdir -p work/src/xb
+cat > work/src/xb/XaPB.java <<'EOF'
+package xb;
+
+public class XaPB extends xa.XaJMid {
+    @Override
+    public void m() { System.out.println("PB.m"); }
+}
+EOF
+
+# ---------------------------------------------------------------------------
 # 文字リテラル '\s'（Java 15 の空白のエスケープ。JLS 3.10.7）。JDT の CharacterLiteral.charValue() はこのエスケープを
 # 知らずに例外を投げ、ローカル変数の初期化子・比較・case に書いたファイルは解析ごと失敗していた（呼び出しが全部消えた）。
 # 値は JDT が評価した定数（32）を使う

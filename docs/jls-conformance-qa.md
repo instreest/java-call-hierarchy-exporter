@@ -918,3 +918,36 @@ static void use(Repo<User> r) { r.save(new User()); }    // 実行されるの�
   含む並び）。呼び出しの辺はつながっているので出力には効かないが、`test/jls` の突き合わせに載せられない
 - **呼び出しを `UNEXPANDED:CHA` のまま残すとき**、呼び出し先を宣言したインターフェースの default も候補に並ぶ（以前と同じ）。
   行が増えるだけで、呼び出しは落ちない
+
+## 選択の層の穴を塞ぐ（Issue #174・#175・#177）
+
+`docs/resolution-selection-design.md` の点検表（6 節）で位置を挙げていた、`MethodSelection#search` とその周辺の食い違いの直し。
+どれも「実際に動く実装が呼び出しの先から消える」形で、全件解析でも起きる。
+
+## Q37. 別パッケージの上書きの判定が、同じパッケージのインターフェースや jar のクラスを取り違えていた
+
+[Issue #174](https://github.com/instreest/java-call-hierarchy-exporter/issues/174)。
+
+**症状**: パッケージアクセスの `p.Base.work()` を、別パッケージの `q.Sub extends p.Base implements p.Worker` が
+`public void work()` で宣言し直した形。`Base b = new q.Sub(); b.work()` で動くのは `Base.work`（`Sub.work` は
+別のメソッド。JLS 8.4.8.1）なのに、ツールは `Sub.work` に確定して `Base.work` を落としていた。
+逆に、同じパッケージの jar のクラス `a.JMid extends a.PA` が `m()` を public に宣言し直し、別パッケージの
+`b.PB extends a.JMid` がそれを上書きしている形では、`PA x = new b.PB(); x.m()` で動く `PB.m` を落として
+`PA.m` に確定していた。
+
+**原因**: `overridesAcrossPackage` は「別パッケージの宣言が、そのパッケージの public / protected の中間の宣言を経由して
+推移的に上書きしているか」を、親型（`directSupertypes`。クラスとインターフェースが混ざり、名前順）を幅優先で辿って
+「1 つでもあれば真」で見ていた。`Worker.work()`（インターフェース。public）も数えてしまうが、インターフェースは
+`Sub` と `Base` の間のクラスではない。また、途中の宣言をメソッドの表（`methods.idOf`）で探すので、ソースから呼ばれて
+いない jar のメソッドは見えなかった。
+
+**直し**: 見るのは親クラスの連鎖（`TypeHierarchy#classChain`。H 行の 7 列目）だけにし（JVMS 5.4.5 の「上書きしうる」の
+推移は親クラスの連鎖の上でしか成り立たない）、呼び出し先を宣言した型に着いたら止める。連鎖の途中に H 行の無い
+（jar の）クラスがあって呼び出し先のパッケージに属すなら、public に宣言し直しているかもしれないとみなして真にする
+（Q32 と同じ「候補を多めに残す」側。jar の型の名前しか無いので、パッケージは「呼び出し先のパッケージの直後の名前が
+大文字で始まる」で決める。入れ子の型 `a.Outer.Inner` を `a.Outer` パッケージと取り違えないため）。
+読み手だけの変更なので形式の版は上げない。
+
+**検査**: `test/pruning` の `XaBase.run -> XaBase.work`（`XaSub.work` が無いこと）と `XaPUse.run -> XaPB.m`
+（jar `work/lib/xalib.jar` はソースの `xa.XaPA` に対してコンパイルし、`XaPA.class` は入れない）。
+直す前の版で落ちることを確かめた。

@@ -1,11 +1,8 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.graph;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import jche.cache.ModifierTokens;
 
@@ -247,19 +244,32 @@ public final class MethodSelection {
     }
 
     /**
-     * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッドを
-     * 上書きしているか（JLS 8.4.8.1）。
+     * 別パッケージの宣言 {@code id} が、パッケージ {@code pkg} のパッケージアクセスのメソッド（{@code declaringType} が
+     * 宣言。null なら不明）を上書きしているか（JLS 8.4.8.1 / JVMS 5.4.5 の推移）。
      *
-     * 直接は上書きできないが、推移的には上書きしうる。{@code pkg} の中の中間の型が同じシグネチャを
-     * public か protected で宣言し直していれば、その宣言は元のメソッドを上書きしていて
-     * （同じパッケージなので）、別パッケージの宣言はその中間の宣言を上書きできる。
-     * 親型をすべて見て、そういう中間の宣言が 1 つでもあれば上書きとみなす（取りこぼさない側に倒す）。
+     * 直接は上書きできないが、推移的には上書きしうる。{@code id} の型から呼び出し先の型までの<b>親クラスの連鎖</b>
+     * （{@link TypeHierarchy#classChain}）の途中に、{@code pkg} のクラスが同じシグネチャを public か protected で
+     * 宣言し直していれば、その宣言は元のメソッドを上書きしていて（同じパッケージなので）、別パッケージの宣言は
+     * その中間の宣言を上書きできる。見るのは連鎖の上（親クラス）だけで、親インターフェースは見ない
+     * （インターフェースはクラスの間に挟まらないので、その宣言を経由した上書きにはならない。
+     * {@code class Sub extends p.Base implements p.Worker} の {@code Sub.work()} は {@code Base.work()} を上書きしない）。
+     * 連鎖の途中に H 行の無い（jar の）クラスがあって {@code pkg} に属すなら、その宣言はメソッドの表に無い（ソースから
+     * 呼ばれていない限り載らない）ので public に宣言し直しているかもしれないとみなし、上書きとみなす（候補を多めに残す側）。
+     * 呼び出し先の型に着いたら止める（その上の宣言は、呼び出し先が隠す・上書きする側なので、経由にならない）。
      */
-    private boolean overridesAcrossPackage(int id, String sig, String pkg) {
-        ArrayDeque<String> queue = new ArrayDeque<>(hierarchy.directSupertypes(methods.typeFqn(id)));
-        Set<String> seen = new HashSet<>(queue);
-        while (!queue.isEmpty()) {
-            String t = queue.poll();
+    private boolean overridesAcrossPackage(int id, String sig, String pkg, String declaringType) {
+        List<String> chain = hierarchy.classChain(methods.typeFqn(id));
+        for (int i = 1; i < chain.size(); i++) {
+            String t = chain.get(i);
+            if (t.equals(declaringType)) {
+                return false;
+            }
+            if (!hierarchy.contains(t)) {
+                if (inPackage(t, pkg)) {
+                    return true;
+                }
+                continue;
+            }
             int mid = methods.idOf(t + "#" + sig);
             if (mid >= 0 && pkg.equals(methods.pkg(mid))) {
                 String mods = methods.mods(mid);
@@ -267,13 +277,23 @@ public final class MethodSelection {
                     return true;
                 }
             }
-            for (String sup : hierarchy.directSupertypes(t)) {
-                if (seen.add(sup)) {
-                    queue.add(sup);
-                }
-            }
         }
         return false;
+    }
+
+    /**
+     * H 行の無い型（jar の型。名前しか分からない）がパッケージ {@code pkg} に属すか。入れ子の型（{@code a.Outer.Inner}）は
+     * 最後のドットで切るとパッケージが {@code a.Outer} になるので、{@code pkg} の直後の名前が大文字で始まれば属すとみなす
+     */
+    private static boolean inPackage(String typeFqn, String pkg) {
+        if (pkg.isEmpty()) {
+            return !typeFqn.isEmpty() && Character.isUpperCase(typeFqn.charAt(0));
+        }
+        if (!typeFqn.startsWith(pkg + ".") || typeFqn.length() == pkg.length() + 1) {
+            return false;
+        }
+        String rest = typeFqn.substring(pkg.length() + 1);
+        return rest.indexOf('.') < 0 || Character.isUpperCase(rest.charAt(0));
     }
 
     /**
@@ -347,7 +367,7 @@ public final class MethodSelection {
         }
         List<String> chain = hierarchy.classChain(typeFqn);
         for (int i = 0; i < chain.size(); i++) {
-            int id = declarationIn(chain.get(i), sig, overriders, packageAccess);
+            int id = declarationIn(chain.get(i), calleeKey, sig, overriders, packageAccess);
             if (id >= 0 && methods.hasBody(id)
                     && (i == 0 || !ModifierTokens.has(methods.mods(id), "private"))) {
                 return id;
@@ -360,7 +380,7 @@ public final class MethodSelection {
         List<String> declaring = new ArrayList<>();
         IntArray found = new IntArray(2);
         for (String t : hierarchy.superinterfaces(typeFqn)) {
-            int id = declarationIn(t, sig, overriders, packageAccess);
+            int id = declarationIn(t, calleeKey, sig, overriders, packageAccess);
             if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
                     && !ModifierTokens.has(methods.mods(id), "static")) {
                 declaring.add(t);
@@ -415,7 +435,7 @@ public final class MethodSelection {
      * 上書き（型引数を具体化したもの。O 行）を先に見る。シグネチャが同じ上書きは O 行に書かないので、ここで
      * 当たるのは「型引数を具体化した上書き」だけ
      */
-    private int declarationIn(String t, String sig, IntArray overriders, String packageAccess) {
+    private int declarationIn(String t, String calleeKey, String sig, IntArray overriders, String packageAccess) {
         if (overriders != null) {
             int overriding = declaredAmong(overriders, t);
             if (overriding >= 0) {
@@ -424,10 +444,19 @@ public final class MethodSelection {
         }
         int id = methods.idOf(t + "#" + sig);
         if (id >= 0 && (packageAccess == null || packageAccess.equals(methods.pkg(id))
-                || overridesAcrossPackage(id, sig, packageAccess))) {
+                || overridesAcrossPackage(id, sig, packageAccess, declaringTypeOf(calleeKey)))) {
             return id;
         }
         return -1;
+    }
+
+    /** キー（{@code 型#名前(引数)}）の型の部分。null なら null */
+    private static String declaringTypeOf(String calleeKey) {
+        if (calleeKey == null) {
+            return null;
+        }
+        int hash = calleeKey.indexOf('#');
+        return (hash < 0) ? calleeKey : calleeKey.substring(0, hash);
     }
 
     /** その型が宣言している上書きメソッド。無ければ -1 */
