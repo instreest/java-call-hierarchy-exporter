@@ -13,6 +13,7 @@
 #   decl       D 行がある（引数2 は修飾子の語。- なら問わない）                        nodecl D 行が無い
 #   type       H 行がある
 #   override   O 行で 引数1 が 引数2 を上書きしている
+#   nooverride 引数1 の O 行が無い（キーの同じ上書きは O 行に書かない、を見る）
 #   role       methods.csv の method 列が 引数1 の行の role が 引数2
 #   noerror    F 行のエラー数が 0（JDT が構文・型の誤りを報告していない。引数1 は project からの相対パス）
 #
@@ -106,6 +107,9 @@
 9.4.1	static-not-inherited	csv	jls.s09_04_01.MostSpecific.viaNewC3	MsApi.m	-	インターフェースの static メソッドは継承されないので、動くのは MsApi の default
 9.4.1	static-not-selected	nocsv	jls.s09_04_01.MostSpecific.viaNewC3	MsAaStatic.m	-	名前が先に並ぶ static の MsAaStatic.m は選ばれない
 9.4.1	static-not-selected-param	nocsv	jls.s09_04_01.MostSpecific.viaStatic	MsAaStatic.m	-	インターフェースの型で呼んでも static の MsAaStatic.m は選ばれない
+9.4.1	most-specific-abstract	csv	jls.s09_04_01.MostSpecific.viaAbstractDiamond	MsAdD.m	RESOLVED	抽象の再宣言（MsAdI2.m が MsAdI1.m を上書き）で abstract class MsAdC implements MsAdI1, MsAdI2（MsAdI1 が先）の型で呼んでも、動くのは部分型 MsAdD.m（javac との突き合わせは maximally-specific の MsAdI2.m に引き直す。Issue #187）
+9.4.1	most-specific-abstract-not-i1	nocsv	jls.s09_04_01.MostSpecific.viaAbstractDiamond	MsAdI1.m	-	上書きされた抽象の MsAdI1.m は候補に出ない
+9.4.1	same-key-no-override-fact	nooverride	jls.s09_04_01.MsI2#m()	-	-	キーの同じ上書き（MsI2.m が MsI1.m を上書き）は O 行に書かない（O 行は型引数の置換でキーの食い違う上書きだけ。読み手はキーの一致で見つける）
 12.4.2	class-var-init	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#first()	-	クラス変数の初期化子はクラスの初期化で実行される
 12.4.2	static-block	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#staticBlock()	-	static 初期化子（§8.7）はクラスの初期化で実行される
 12.4.2	class-var-init-after-block	call	jls.s12_04.ClassInit#<clinit>()	jls.s12_04.Sink#last()	-	static 初期化子より後に書いたクラス変数の初期化子もクラスの初期化に含まれる

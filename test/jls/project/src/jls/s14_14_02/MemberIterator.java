@@ -9,7 +9,7 @@ import java.util.List;
  * 式の型 ChainColl は、親の親 ChainIterBase のクラスのメソッド {@code iterator()} と、直接のインターフェース
  * ChainIterApi の既定のメソッド {@code iterator()} を持つ。クラスのメソッドが選ばれる（§8.4.8）ので、呼び出し先は
  * ChainIterBase.iterator()（javac の所有型 ChainColl から引く宣言も同じ）。
- * （型変数の式で親クラスの private な iterator() を拾わないことは test/pruning の MemberIter で見る）
+ * （型変数の式で親クラスの private な iterator() を拾わないことは test/pruning の MemberTv で見る）
  */
 public class MemberIterator {
     static int viaClassChain(ChainColl c) {
