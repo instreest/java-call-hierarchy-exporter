@@ -49,7 +49,7 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
      .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
-   初回は JDK 25 や 解析エンジンの Eclipse JDT などの取得の確認が出ます（取得するものと想定サイズが表示されます）。
+   初回は JDK 25 や解析エンジンの Eclipse JDT などの取得の確認が出ます（取得するものと想定サイズが表示されます）。
    初回は取得と全件解析で時間がかかりますが、2 回目からは変更されたファイルだけを差分解析します。
 
 4. **出力結果の `warnings.txt` を確認する** … 実行ごとに `config/<解析開始日時>_<プロジェクト名>/` のフォルダができます。
@@ -71,7 +71,7 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
 4. 改修するメソッドが `callee` に出ない、または入口が思ったより少ないときは、`methods.csv` の同じメソッドの `inHierarchy` を見ます。
    `0` なら出力に出ていないだけで、**影響が無いとは限りません**。理由は `absentCause` 列にあります（[methods.csv](#methodscsv--ソース上の全メソッドとその呼び出し状況)）
 
-インターフェース越しの呼び出しで実装を 1 つに決められなかったときは、候補の実装ごとに行が出します。
+インターフェース越しの呼び出しで実装を 1 つに決められなかったときは、候補の実装ごとに行が出ます。
 `callee` を実装クラスの名前で絞れば見つかります。複数候補がある場合は以降の呼び出し階層は展開しません。
 
 <!-- sec:reading-one-row -->
@@ -474,71 +474,26 @@ Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest)). SPDX
 [Japanese](#java-call-hierarchy-exporter) | **English**
 
 <!-- sec:what-it-does -->
-## What it does (overview)
+## Overview
 
 This tool analyzes the method call hierarchy of a whole Java project in one pass and writes it to CSV files.
 Open the result in Excel and filter it to find the impact surface of the method you are about to change.
+
 **It is under development, so its features may change without notice.**
 
-| What you want | Where |
+| Topic | Where |
 |---|---|
 | How to use it, how to start the tool | [Getting started](#getting-started) (this file) |
 | How to read the output CSV | [Reading the results](#reading-the-results) (this file) |
 | The definition of everything in the output | [Output reference](#output-reference) (this file) |
 | What each config item means | the comments in [config/jche.properties](config/jche.properties) |
 
-<!-- sec:how-it-compares-with-other-tools -->
-### How it compares with other tools
-
-| Tool | Good for | How this tool differs |
-|---|---|---|
-| The IDE call hierarchy (Ctrl+Alt+H in Eclipse and the like) | Checking the callers of one method on the spot while you write code | It expands one method at a time on screen, so you cannot save, filter or share the whole project as a list. It also leaves no record of why a call through an interface went to a given implementation. This tool follows calls through interfaces and Spring DI (annotations) down to the candidate implementations |
-| Text search with `grep` | Quickly finding where a name appears | It cannot tell apart different methods with the same name, or calls through an interface or inheritance |
-| `jdeps` | Dependencies between jars, packages and classes | It does not show calls between methods or the paths they take |
-
-If you want to follow callers inside your IDE, the same analysis is also available from the
-[Eclipse plugin](docs/eclipse-plugin-usage.md) and the [VSCode plugin](docs/vscode-plugin-usage.md)
-(their documentation is in Japanese).
-
-<!-- sec:requirements-and-limitations -->
-## Requirements and limitations
-
-<!-- sec:requirements -->
-### Requirements
-
-| Item | Requirement |
-|---|---|
-| OS | Windows, Linux |
-| What to install first | Nothing. The JDK 25 that runs the tool and Eclipse JDT (Eclipse's Java compiler), which does the analysis, are downloaded on the first run, after asking you (about 165MB over the network, about 500MB on disk). For machines that cannot reach the network, see [Other ways to use it](#other-ways-to-use-it) |
-| Sources it can analyze | Java sources (`.java`). The supported Java versions are those supported by Eclipse JDT, the analysis engine. The latest release, 3.46.0, supports Java 8 to 26 |
-| Build setups | The source folders and dependency jars declared in Eclipse's `.classpath`, Maven (`pom.xml`) or Gradle (`build.gradle`) are found automatically and analyzed |
-| Dependency jars | **They must already be on your machine.** The tool does not run the build tool of the project it analyzes and does not download them. It uses the jars in a local repository such as `~/.m2/repository`, so either build the project once first (`mvn dependency:go-offline` or similar), or save the compile-time and run-time dependency jars in a `lib` folder and point the config at it |
-
-<!-- sec:what-it-cannot-see -->
-### What it cannot see
-
-It is a static analysis, so anything that is only decided at run time is out of reach. In that case it does
-not remove the call: it lists the candidates or says it could not follow the call.
-
-- **It does not follow code with no source (the inside of jars).** Calls that come back to you through the JDK or a
-  framework (`new Thread(task).start()` → `task.run()` and the like) are connected only when the
-  [contract table](docs/callback-contracts.md) lists them (the bundled rows plus any you add)
-- **It does not know values decided at run time.** Reflection with class names built from configuration or
-  input, or an implementation chosen by a run-time condition, stay as lists of candidates
-  ([docs/static-analysis-limits.md](docs/static-analysis-limits.md))
-- **If the sources do not compile or dependency jars are missing, the result has gaps.** Then a
-  `warnings.txt` appears in the output folder and says what is missing
-- **It reads nothing but Java sources.** Calls from JSPs, XML bean definitions, SQL mappings and the like do not
-  appear. For Spring DI, only the annotations (`@Autowired`, `@Component` and so on) are read
-- **Sources generated at build time (Lombok, annotation processing) cannot be read unless they are in `source.folders`.**
-  They then show up as compile errors in `warnings.txt`
-
 ---
 
 <!-- sec:getting-started -->
 ## Getting started
 
-1. **Get the tool** — clone this repository (or use "Code → Download ZIP" on GitHub and unpack it).
+1. **Get the tool** — clone this repository. You can also get it with "Code → Download ZIP" on GitHub.
 
      ```bash
      git clone https://github.com/instreest/java-call-hierarchy-exporter.git
@@ -546,14 +501,10 @@ not remove the call: it lists the candidates or says it could not follow the cal
      ```
 
 2. **Write the project to analyze in the config file** — set `project.root` in
-   [`config/jche.properties`](config/jche.properties) to the folder of the project you want to analyze.
-   **This one line is all that is required.** Left empty, the source folders and dependency jars are read from
-   `.classpath`, `pom.xml` or `build.gradle`, and the encoding from `project.build.sourceEncoding` in `pom.xml`
-   (UTF-8 if there is none).
+   [`config/jche.properties`](config/jche.properties) to the path of the folder of the project you want to analyze.
 
      ```properties
-     # Use / as the separator, even on Windows (to use \, write it twice, like \\)
-     project.root=C:/work/myapp
+     project.root=C:\workspace\myapp
      ```
 
    A relative path starts from the folder of the config file (`config/`).
@@ -566,15 +517,9 @@ not remove the call: it lists the candidates or says it could not follow the cal
      .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
-     ```bash
-     # Linux
-     ./java-call-hierarchy-exporter.sh config/jche.properties
-     ```
-
-   On the first run it asks before downloading the JDK and the rest; answer `y` (it shows what it will
-   download and how large it is). The first run takes longer because of the download and the full analysis;
-   from the second run on, only the changed files are analyzed ([cache](docs/cli.md#キャッシュ), in Japanese).
-   If you got the ZIP and the `.sh` is not executable, run it as `bash java-call-hierarchy-exporter.sh …`.
+   On the first run it asks before downloading JDK 25, Eclipse JDT (the analysis engine) and the rest (it shows what
+   it will download and the expected size). The first run takes time because of the download and the full analysis;
+   from the second run on, only the changed files are analyzed again.
 
 4. **Check the output for a `warnings.txt`** — every run creates a folder
    `config/<analysis start time>_<project name>/`. A `warnings.txt` in it means **the result has gaps**, because of
@@ -582,9 +527,6 @@ not remove the call: it lists the candidates or says it could not follow the cal
    run again.
 
 5. **Open the CSV** — open `call-hierarchy.csv` in the same folder with Excel.
-   How to read it is in [Reading the results](#reading-the-results) below.
-
----
 
 <!-- sec:reading-the-results -->
 ## Reading the results
@@ -602,10 +544,9 @@ not remove the call: it lists the candidates or says it could not follow the cal
    `inHierarchy` for that method in `methods.csv`. `0` only means it is not in the output; **it does not mean nothing is
    affected**. The reason is in the `absentCause` column ([methods.csv](#methodscsv--every-method-in-the-source-and-how-it-is-called))
 
-Even when a call through an interface could not be narrowed to one implementation, each candidate
-implementation gets its own row, so filtering `callee` by the implementation class name finds it.
-`callee` has no arguments, so rows for other methods of the same name (overloads) are mixed in.
-If there are more rows than Excel can hold (1,048,576), narrow the entry points with `entry.packages` in the config file.
+When a call through an interface could not be narrowed to one implementation, each candidate implementation gets
+its own row, so filtering `callee` by the implementation class name finds it. When there are several candidates,
+nothing below them is expanded.
 
 <!-- sec:reading-one-row -->
 ### Reading one row
@@ -683,6 +624,53 @@ The linked documents are in Japanese.
 | Also output the `if` conditions that guard each call | `conditions.target` in the config ([docs/call-conditions.md](docs/call-conditions.md)) |
 
 Every config item is described in the comments of [config/jche.properties](config/jche.properties).
+
+<!-- sec:how-it-compares-with-other-tools -->
+### How it compares with other tools
+
+| Tool | Good for | How this tool differs |
+|---|---|---|
+| The IDE call hierarchy (Ctrl+Alt+H in Eclipse and the like) | Checking the callers of one method on the spot while you write code | It expands one method at a time on screen, so you cannot save, filter or share the whole project as a list. It also leaves no record of why a call through an interface went to a given implementation. This tool follows calls through interfaces and Spring DI (annotations) down to the candidate implementations |
+| Text search with `grep` | Quickly finding where a name appears | It cannot tell apart different methods with the same name, or calls through an interface or inheritance |
+| `jdeps` | Dependencies between jars, packages and classes | It does not show calls between methods or the paths they take |
+
+If you want to follow callers inside your IDE, the same analysis is also available from the
+[Eclipse plugin](docs/eclipse-plugin-usage.md) and the [VSCode plugin](docs/vscode-plugin-usage.md)
+(their documentation is in Japanese).
+
+<!-- sec:requirements-and-limitations -->
+## Requirements and limitations
+
+<!-- sec:requirements -->
+### Requirements
+
+| Item | Requirement |
+|---|---|
+| OS | Windows, Linux |
+| What to install first | Nothing. The JDK 25 that runs the tool and Eclipse JDT (Eclipse's Java compiler), which does the analysis, are downloaded on the first run, after asking you (about 165MB over the network, about 500MB on disk). For machines that cannot reach the network, see [Other ways to use it](#other-ways-to-use-it) |
+| Sources it can analyze | Java sources (`.java`). The supported Java versions are those supported by Eclipse JDT, the analysis engine. The latest release, 3.46.0, supports Java 8 to 26 |
+| Build setups | The source folders and dependency jars declared in Eclipse's `.classpath`, Maven (`pom.xml`) or Gradle (`build.gradle`) are found automatically and analyzed |
+| Dependency jars | **They must already be on your machine.** The tool does not run the build tool of the project it analyzes and does not download them. It uses the jars in a local repository such as `~/.m2/repository`, so either build the project once first (`mvn dependency:go-offline` or similar), or save the compile-time and run-time dependency jars in a `lib` folder and point the config at it |
+
+<!-- sec:what-it-cannot-see -->
+### What it cannot see
+
+It is a static analysis, so anything that is only decided at run time is out of reach. In that case it does
+not remove the call: it lists the candidates or says it could not follow the call.
+
+- **It does not follow code with no source (the inside of jars).** Calls that come back to you through the JDK or a
+  framework (`new Thread(task).start()` → `task.run()` and the like) are connected only when the
+  [contract table](docs/callback-contracts.md) lists them (the bundled rows plus any you add)
+- **It does not know values decided at run time.** Reflection with class names built from configuration or
+  input, or an implementation chosen by a run-time condition, stay as lists of candidates
+  ([docs/static-analysis-limits.md](docs/static-analysis-limits.md))
+- **If the sources do not compile or dependency jars are missing, the result has gaps.** Then a
+  `warnings.txt` appears in the output folder and says what is missing
+- **It reads nothing but Java sources.** Calls from JSPs, XML bean definitions, SQL mappings and the like do not
+  appear. For Spring DI, only the annotations (`@Autowired`, `@Component` and so on) are read
+- **Sources generated at build time (Lombok, annotation processing) cannot be read unless they are in `source.folders`.**
+  They then show up as compile errors in `warnings.txt`
+
 
 ---
 
