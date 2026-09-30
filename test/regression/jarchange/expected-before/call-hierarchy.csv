@@ -1,4 +1,4 @@
-﻿caller,callee,resolved-by,level,root,call-hierarchy
+﻿caller,callee,resolved-by,depth,root,call-hierarchy
 at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,1,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Legacy.unusedDead(Legacy.java:14),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,1,Legacy.unusedDead,Legacy.callRemote
 at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,2,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)

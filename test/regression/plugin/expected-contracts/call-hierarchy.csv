@@ -1,4 +1,4 @@
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at fxp.App.factoryCall(App.java:21),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,App.factoryCall,DaoFactory.get
 at fxp.App.factoryCall(App.java:22),UserDaoImpl.find,RESOLVED:CONTRACT,1,App.factoryCall,UserDaoImpl.find
 at fxp.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.loadUser,RESOLVED:NO_OVERRIDE,2,App.factoryCall,UserDaoImpl.find,UserDaoImpl.loadUser

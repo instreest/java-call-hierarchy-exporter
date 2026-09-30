@@ -78,7 +78,7 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
 ### 1 行の読み方
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -88,7 +88,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | 呼び出している場所。Java のスタックトレースと同じ形なので、Eclipse でソースに飛べます（[下記](#eclipse-でソースコードへジャンプする)） |
 | `callee` | `OrderDaoImpl.selectById` | 呼ばれるメソッド |
 | `resolved-by` | `RESOLVED:SPRING_DI` | 呼び出し先をどう決めたか。`RESOLVED:` なら 1 つに決まった、`UNEXPANDED:` なら決めきれず候補を並べた |
-| `level` | `2` | 入口から何段目の呼び出しか |
+| `depth` | `2` | 入口から何段目の呼び出しか |
 | `root` | `OrderAction.execute` | 入口のメソッド |
 | `call-hierarchy` | `OrderService.findOrder,OrderDaoImpl.selectById` | 入口の次から `callee` までの経路（1 段が 1 列）。最後の列に補足（注記）が付くことがあります |
 
@@ -234,7 +234,7 @@ config/
 | `caller` | 呼び出し元。Java のスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excel のフィルタに使える |
 | `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。**どの行にも必ず入る** |
-| `level` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
+| `depth` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
 | `root` | 起点メソッド。クラス名.メソッド名の形式で Excel のフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を 1 ノード 1 列で展開（**可変長**）。注記が付く場合は最後の要素になる（[注記](#注記)） |
 
@@ -252,7 +252,7 @@ config/
 どれが実行されるかは未特定なので `UNEXPANDED:LAMBDA` になります。
 
 Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿り切れなかった呼び出し**、
-`level` で「3 以下」＝**起点の近く**、のように絞り込めます。
+`depth` で「3 以下」＝**起点の近く**、のように絞り込めます。
 
 行の並びは毎回同じです（並べ方の決まりは [docs/deterministic-row-order-qa.md](docs/deterministic-row-order-qa.md)）。
 
@@ -377,11 +377,11 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 自分のコードを呼んでいるほかのリポジトリの jar を設定ファイルの `external.library.folders` に指定すると、
 その jar からの参照が `call-hierarchy.csv` に追記されます（指定のしかたは [docs/external-usage.md](docs/external-usage.md)）。
-`caller` 列は参照している jar の中のメソッドと行、`root` 列は参照元の jar 名、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`level` は `1` です。
+`caller` 列は参照している jar の中のメソッドと行、`root` 列は参照元の jar 名、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`depth` は `1` です。
 行番号は、相手の jar が行番号情報付きでビルドされていないと `(Unknown Source)` になります。
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```
@@ -552,7 +552,7 @@ nothing below them is expanded.
 ### Reading one row
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -562,7 +562,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | Where the call is made. It has the same shape as a Java stack trace, so Eclipse can jump to the source ([below](#jumping-to-the-source-in-eclipse)) |
 | `callee` | `OrderDaoImpl.selectById` | The method being called |
 | `resolved-by` | `RESOLVED:SPRING_DI` | How the callee was decided. `RESOLVED:` means it was pinned down to one; `UNEXPANDED:` means it could not be, and the candidates are listed |
-| `level` | `2` | How many calls away from the entry point it is |
+| `depth` | `2` | How many calls away from the entry point it is |
 | `root` | `OrderAction.execute` | The entry point method |
 | `call-hierarchy` | `OrderService.findOrder,OrderDaoImpl.selectById` | The path from the step after the entry point to `callee` (one step per column). A note may follow in the last column |
 
@@ -718,7 +718,7 @@ Besides missing dependency jars, a path in the config file that does not exist a
 | `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line |
 | `callee` | The callee, as **ClassName.methodName** (no arguments). Usable as an Excel filter |
 | `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). **Every row has one** |
-| `level` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
+| `depth` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
 | `root` | The entry method, as ClassName.methodName. Usable as an Excel filter |
 | `call-hierarchy` | The path from the entry point, one node per column (**variable length**). When a note applies, it is the last element ([Notes](#notes)) |
 
@@ -737,7 +737,7 @@ single implementation in the source (that is, even when the label is a definite 
 `SINGLE_IMPL`), because which one runs is still undetermined.
 
 In Excel you can filter on `resolved-by` for "rows starting with `UNEXPANDED:`" = **the calls that could
-not be followed to the end**, or on `level` for "3 or less" = **near the entry point**.
+not be followed to the end**, or on `depth` for "3 or less" = **near the entry point**.
 
 The row order is the same on every run (the ordering rules are in [docs/deterministic-row-order-qa.md](docs/deterministic-row-order-qa.md), in Japanese).
 
@@ -868,11 +868,11 @@ Point `external.library.folders` in the config file at the jars of other reposit
 the references from those jars are appended to `call-hierarchy.csv` (how to set it up:
 [docs/external-usage.md](docs/external-usage.md), in Japanese).
 The `caller` column is the method and line inside the referencing jar, the `root` column is the name of that jar,
-`resolved-by` starts with `EXTERNAL_USAGE:`, and `level` is `1`.
+`resolved-by` starts with `EXTERNAL_USAGE:`, and `depth` is `1`.
 The line number is `(Unknown Source)` when the other jar was built without line number information.
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```
