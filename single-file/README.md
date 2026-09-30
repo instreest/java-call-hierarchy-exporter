@@ -32,7 +32,7 @@
 `--help` で使い方、`--server` でサーバーモード）。
 
 ```bash
-# 依存 jar を lib/ に集めてある場合（README の Pleiades/Eclipse 環境の手順と同じ jar）
+# 依存 jar を lib/ に集めてある場合（docs/cli.md の「閉域ネットワークで動かす」と同じ jar）
 javac -encoding UTF-8 -cp "lib/*" -d bin single-file/CallHierarchyExporterSingle.java single-file/jche/extension/*.java
 java  -cp "bin:lib/*" jche.CallHierarchyExporterSingle config/jche.properties   # Windows は ; 区切り
 ```

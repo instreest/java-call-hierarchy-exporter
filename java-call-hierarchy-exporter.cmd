@@ -492,7 +492,7 @@ if "%~1"=="net.allowNo" set "MSG=  JCHE_ALLOW_DOWNLOAD=no, so nothing is downloa
 if "%~1"=="net.askTimeout" set "MSG=Go to the network and download? [y/N] (cancelled after %~2 seconds): "
 if "%~1"=="net.noTty" set "MSG=  There is no terminal to ask on. Nothing is downloaded."
 if "%~1"=="net.noTtyYes" set "MSG=  To download without asking, set JCHE_ALLOW_DOWNLOAD=yes in %~2 (or as an environment variable)."
-if "%~1"=="net.noTtyOffline" set "MSG=  To run without downloading, prepare a local JDK and the jars first (see the Pleiades/Eclipse environment section in the README)."
+if "%~1"=="net.noTtyOffline" set "MSG=  To run without downloading, prepare a local JDK and the jars first (see "Running on an isolated network" in docs/cli.md)."
 if "%~1"=="offline.failed" set "MSG=Could not start with only the JDK and dependency jars already present (the reason is in the message above)."
 if "%~1"=="restart" set "MSG=Restarting to apply the settings..."
 exit /b 0
@@ -539,7 +539,7 @@ if "%~1"=="net.allowNo" set "MSG=  JCHE_ALLOW_DOWNLOAD=no なので取得しません。取
 if "%~1"=="net.askTimeout" set "MSG=ネットワークにアクセスして取得しますか？ [y/N]（%~2 秒で取りやめ）: "
 if "%~1"=="net.noTty" set "MSG=  端末が無いため確認できません。取得しません。"
 if "%~1"=="net.noTtyYes" set "MSG=  尋ねずに取得するには %~2（または環境変数）で JCHE_ALLOW_DOWNLOAD=yes にしてください。"
-if "%~1"=="net.noTtyOffline" set "MSG=  取得せずに動かすには、先に手元の JDK と jar を用意してください（README の「Pleiades/Eclipse環境（閉域ネットワーク等）」）。"
+if "%~1"=="net.noTtyOffline" set "MSG=  取得せずに動かすには、先に手元の JDK と jar を用意してください（docs/cli.md の「閉域ネットワークで動かす」）。"
 if "%~1"=="offline.failed" set "MSG=取得済みの JDK と依存 jar だけでは起動できませんでした（原因は上のメッセージ）。"
 if "%~1"=="restart" set "MSG=設定を反映するため再起動します..."
 exit /b 0

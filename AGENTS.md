@@ -67,6 +67,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 | `bash test/single-file/run.sh` | 1 ファイル版（`single-file/`）の検査。生成し直した結果がコミットと一致すること（生成し直し忘れ）、本体と同じ lint の引数で警告ゼロでコンパイルできること、`--help` が 0・知らないオプションが 2 で終わること、回帰テストの whole・entry・plugin を 1 ファイル版で回して期待値と一致すること（同梱の拡張を本体と同じ名前 `jche.builtin.TypeMappingProvider` で読み込めること、利用者が Java で書く拡張が実行時のコンパイル込みで動くこと） |
 | `bash test/contracts/run.sh` | 同梱の契約表（`JdkCallbacks` / `BundledFrameworkEntries`）の検査。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが実在すること（実行中の JDK と照合） |
 | `bash test/pom/run.sh` | `//DEPS` 行と `pom.xml` の依存が一致すること |
+| `bash test/readme/run.sh` | README の日本語側と英語側の節の並び・節ごとの形（表の行・コード・箇条・リンク先）がそろうこと、README の中と docs/ から README へのアンカーが解決すること、README の JDT の版が `//DEPS` と同じこと |
 | `bash test/action/run.sh` | GitHub Actions の複合アクション（`.github/action/run.sh`）が、`run.log` の依存 jar の警告を表示言語（英語・日本語）に関わらず warning アノテーションとジョブサマリに出すこと。jbang はスタブに差し替えて解析は動かさない |
 | `bash test/jbangw/run.sh` | `jbangw/` が本家から黙って変わっていないこと |
 | `bash test/plugin-config/run.sh` | Eclipse プラグインが自動生成した設定（`EclipseProjectConfig#toFileText`）が、解析側と同じ読み方（`jche.config.ConfigFile`。バックスラッシュはそのまま）でそのまま読み戻せること。書く側が逃がす・逃がさないで読み手と食い違うと、Windows のパスが壊れる |
@@ -135,8 +136,8 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   `package.json` の寄与（ビュー名・コマンドの見出し・設定の説明）だけは VSCode 本体が読むので
   `"%キー%"` と書き、`package.nls.json` / `package.nls.ja.json` に足す。
   検査は `test/vscode/run.sh`（`test/messages.test.ts`）（`docs/nls-qa.md` の Q15）
-- JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
-  （`test/pom/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
+- JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃え、README の動作条件の JDT の版も直す
+  （`test/pom/run.sh` と `test/readme/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
   入っていて、変われば古いキャッシュは自動で捨てられるので、形式の版は上げなくてよい
   （`bash test/cacheversion/run.sh --update` で記録だけ合わせる）
 - **`src/jche` を直したら `bash single-file/generate.sh` で 1 ファイル版を生成し直してコミットする。** `single-file/CallHierarchyExporterSingle.java` は
@@ -222,6 +223,10 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   片方だけ直すと黙って食い違うので、**必ず両方を直す**。見出しは英語側でも重複しない語にする
   （GitHub のアンカーに `-1` が付いて、リンクが並べ替えで静かに壊れるのを避けるため）。
   `docs/` は日本語のままで、英語にするのは README だけ（`docs/nls-qa.md` の Q12）
+- README の前半は初めて使う人の道（概要・Quick start・結果の読み方・ほかの使い方・ほかの手段との違い・動作条件と制約）、
+  区切り線の下の「出力のリファレンス」に出力の全項目の定義を置く。見出しの直前に `<!-- sec:ID -->` を置き、
+  日本語側と英語側で同じ ID を同じ順に並べる。食い違いとリンク切れは `bash test/readme/run.sh` が検出する。
+  CSV の列・注記の文言を変えたら、出力のリファレンスも両方の言語で直す（`docs/readme-structure-qa.md`）
 - 起動コマンドの名前を参照する箇所は多い（src、docs、test、workflows、`.gitattributes`、`.gitignore`）。
   改名したら `grep -rn` で旧名が残っていないことを確認する
 
