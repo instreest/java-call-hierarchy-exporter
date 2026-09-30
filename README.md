@@ -3,85 +3,40 @@ A tool that recursively extracts Java method call hierarchies across an entire p
 
 **Under active development — features may change without notice.**
 
-**Japanese** | [English](#english)
+**日本語** | [English](#english)
 
 <!-- sec:what-it-does -->
-## できること（ツール概要）
+## ツール概要
 
 Java プロジェクト全体のメソッド呼び出し階層を一括で解析し、CSV ファイルに書き出すツールです。
 解析結果を Excel で開いてフィルタすることで対象メソッドの影響範囲を洗い出すことができます。
+
 **開発中であるため機能が予告なく変更される場合があります。**
 
-| 知りたいこと | 場所 |
+| 説明内容 | リンク先 |
 |---|---|
 | 使い方・ツールの起動方法 | [Quick start](#quick-start)（このファイル） |
 | 出力 CSV ファイルの読み方 | [結果の読み方](#結果の読み方)（このファイル） |
 | 出力の全項目の定義 | [出力のリファレンス](#出力のリファレンス)（このファイル） |
-| 設定ファイルの項目内容 | [config/config.properties](config/config.properties) のコメント |
-
-<!-- sec:how-it-compares-with-other-tools -->
-### ほかの手段との違い
-
-| 手段 | 向いていること | このツールとの違い |
-|---|---|---|
-| IDE の呼び出し階層（Eclipse の Ctrl+Alt+H など） | 書きながら、1 つのメソッドの呼び出し元をその場で確かめる | 1 メソッドずつ画面で展開するので、プロジェクト全体の一覧として保存・絞り込み・共有ができない。インターフェース越しの呼び出しの実装を決める根拠も残らない。このツールはインターフェースや Spring の DI（注釈）越しの呼び出しも、実装の候補まで辿る |
-| `grep` による文字列検索 | 手早く名前の出現箇所を探す | 同じ名前の別メソッドや、インターフェース・継承越しの呼び出しを区別できない |
-| `jdeps` | jar・パッケージ・クラスの間の依存を調べる | メソッドの単位の呼び出しや、呼び出しの経路は分からない |
-
-IDE の中で呼び出し元を辿りたいときは、同じ解析を画面から使える [Eclipse プラグイン](docs/eclipse-plugin-usage.md)・
-[VSCode プラグイン](docs/vscode-plugin-usage.md)もあります。
-
-<!-- sec:requirements-and-limitations -->
-## 動作条件と制約
-
-<!-- sec:requirements -->
-### 動作条件
-
-| 項目 | 条件 |
-|---|---|
-| OS | Windows、Linux |
-| 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う Eclipse JDT（Eclipse の Java コンパイラ） は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
-| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応している Java バージョンに対応します。最新版 3.46.0 では Java 8 ～ 26 に対応します。 |
-| ビルドの構成 | Eclipse の `.classpath`、Maven（`pom.xml`）、Gradle（`build.gradle`）において宣言的に記載されたソースフォルダと依存 jar を自動で見つけて解析します |
-| 依存 jar | **手元に取得済みであること。** このツールは解析対象プロジェクトのビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、コンパイル時および実行時の依存 jar を lib フォルダに保存して設定ファイルで指定する必要があります。|
-
-<!-- sec:what-it-cannot-see -->
-### 分からないこと（制約）
-
-静的解析なので、実行してみないと決まらないことは分かりません。分からないときは呼び出しを消すのではなく、
-候補を並べるか「辿れなかった」と書きます。
-
-- **ソースの無いところ（jar の中）は辿りません。** JDK やフレームワークの中を経由して呼び戻される呼び出し
-  （`new Thread(task).start()` → `task.run()` など）は、[契約表](docs/callback-contracts.md)に書かれたもの（同梱の分と、自分で足した分）だけを繋ぎます
-- **実行時に決まる値は分かりません。** 設定ファイルや入力から作ったクラス名でのリフレクション、
-  実行時の条件で変わる実装などは、候補を並べるに留まります（[docs/static-analysis-limits.md](docs/static-analysis-limits.md)）
-- **コンパイルが通らない・依存 jar が足りないと、結果に抜けが出ます。** そのときは出力フォルダに
-  `warnings.txt` ができ、何が足りないかを知らせます
-- **Java のソース以外は読みません。** JSP・XML の Bean 定義・SQL のマッピングなどからの呼び出しは出ません。
-  Spring の DI は注釈（`@Autowired`・`@Component` など）だけを読みます
-- **ビルド時に生成されるソース（Lombok・アノテーション処理）は、`source.folders` に入っていなければ読めません。**
-  そのときはコンパイルエラーとして `warnings.txt` に出ます
+| 設定ファイルの項目内容 | [config/jche.properties](config/jche.properties) のコメント |
 
 ---
 
 <!-- sec:getting-started -->
 ## Quick start
 
-1. **ツールを取得する** … このリポジトリを clone します（GitHub の「Code → Download ZIP」で展開しても構いません）。
+1. **ツールを取得する** … このリポジトリを clone します。GitHub の「Code → Download ZIP」から取得しても構いません。
 
      ```bash
      git clone https://github.com/instreest/java-call-hierarchy-exporter.git
      cd java-call-hierarchy-exporter
      ```
 
-2. **設定ファイルに解析対象を書く** … [`config/config.properties`](config/config.properties) の `project.root` に、
-   解析したいプロジェクトのフォルダを書きます。**必須なのはこの 1 行だけ**で、ソースフォルダ・依存 jar・
-   文字コードは空欄のままなら自動で読み取ります（ソースフォルダと依存 jar は `.classpath`、`pom.xml`、`build.gradle` から、
-   文字コードは `pom.xml` の `project.build.sourceEncoding` から。無ければ UTF-8）。
+2. **設定ファイルに解析対象を書く** … [`config/jche.properties`](config/jche.properties) の `project.root` に、
+   解析したいプロジェクトのフォルダパスを記載します。
 
      ```properties
-     # Windows でも区切りは / で書く（\ で書くなら \\ のように 2 つ重ねる）
-     project.root=C:/work/myapp
+     project.root=C:\workspace\myapp
      ```
 
    相対パスで書くときは、この設定ファイルのあるフォルダ（`config/`）が起点です。
@@ -91,26 +46,17 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
      ```bat
      rem Windows
-     .\java-call-hierarchy-exporter.cmd config\config.properties
+     .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
-     ```bash
-     # Linux
-     ./java-call-hierarchy-exporter.sh config/config.properties
-     ```
-
-   初回は JDK などの取得の確認が出るので、`y` で答えます（取得するものとサイズが表示されます）。
-   初回は取得と全件の解析のぶん時間がかかりますが、2 回目からは変わったファイルだけを解析します（[キャッシュ](docs/cli.md#キャッシュ)）。
-   ZIP で取得して `.sh` に実行権限が無いときは、`bash java-call-hierarchy-exporter.sh …` で動かします。
+   初回は JDK 25 や 解析エンジンの Eclipse JDT などの取得の確認が出ます（取得するものと想定サイズが表示されます）。
+   初回は取得と全件解析で時間がかかりますが、2 回目からは変更されたファイルだけを差分解析します。
 
 4. **出力結果の `warnings.txt` を確認する** … 実行ごとに `config/<解析開始日時>_<プロジェクト名>/` のフォルダができます。
    その中に `warnings.txt` があれば、依存 jar の不足やコンパイルエラーなどで**結果に抜けがある**ということです。
    何が起きたかと直し方が書いてあるので、直してからもう一度実行してください。
 
 5. **CSV を開く** … 同じフォルダの `call-hierarchy.csv` を Excel で開きます。
-   読み方は次の[結果の読み方](#結果の読み方)にあります。
-
----
 
 <!-- sec:reading-the-results -->
 ## 結果の読み方
@@ -125,10 +71,8 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 4. 改修するメソッドが `callee` に出ない、または入口が思ったより少ないときは、`methods.csv` の同じメソッドの `inHierarchy` を見ます。
    `0` なら出力に出ていないだけで、**影響が無いとは限りません**。理由は `absentCause` 列にあります（[methods.csv](#methodscsv--ソース上の全メソッドとその呼び出し状況)）
 
-インターフェース越しの呼び出しで実装を 1 つに決められなかったときも、候補の実装ごとに行が出るので、
-`callee` を実装クラスの名前で絞れば見つかります。
-`callee` には引数が付かないので、同じ名前のメソッド（オーバーロード）の行も混ざります。
-行が Excel の上限（1,048,576 行）を超えるときは、設定ファイルの `entry.packages` で起点を絞ります。
+インターフェース越しの呼び出しで実装を 1 つに決められなかったときは、候補の実装ごとに行が出します。
+`callee` を実装クラスの名前で絞れば見つかります。複数候補がある場合は以降の呼び出し階層は展開しません。
 
 <!-- sec:reading-one-row -->
 ### 1 行の読み方
@@ -202,6 +146,49 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 呼び出しに効いている `if` の条件も出す | 設定の `conditions.target`（[docs/call-conditions.md](docs/call-conditions.md)） |
 
 設定項目の全体は [config/config.properties](config/config.properties) のコメントにあります。
+
+<!-- sec:how-it-compares-with-other-tools -->
+### ほかの手段との違い
+
+| 手段 | 向いていること | このツールとの違い |
+|---|---|---|
+| IDE の呼び出し階層（Eclipse の Ctrl+Alt+H など） | 書きながら、1 つのメソッドの呼び出し元をその場で確かめる | 1 メソッドずつ画面で展開するので、プロジェクト全体の一覧として保存・絞り込み・共有ができない。インターフェース越しの呼び出しの実装を決める根拠も残らない。このツールはインターフェースや Spring の DI（注釈）越しの呼び出しも、実装の候補まで辿る |
+| `grep` による文字列検索 | 手早く名前の出現箇所を探す | 同じ名前の別メソッドや、インターフェース・継承越しの呼び出しを区別できない |
+| `jdeps` | jar・パッケージ・クラスの間の依存を調べる | メソッドの単位の呼び出しや、呼び出しの経路は分からない |
+
+IDE の中で呼び出し元を辿りたいときは、同じ解析を画面から使える [Eclipse プラグイン](docs/eclipse-plugin-usage.md)・
+[VSCode プラグイン](docs/vscode-plugin-usage.md)もあります。
+
+<!-- sec:requirements-and-limitations -->
+## 動作条件と制約
+
+<!-- sec:requirements -->
+### 動作条件
+
+| 項目 | 条件 |
+|---|---|
+| OS | Windows、Linux |
+| 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う Eclipse JDT（Eclipse の Java コンパイラ） は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
+| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応している Java バージョンに対応します。最新版 3.46.0 では Java 8 ～ 26 に対応します。 |
+| ビルドの構成 | Eclipse の `.classpath`、Maven（`pom.xml`）、Gradle（`build.gradle`）において宣言的に記載されたソースフォルダと依存 jar を自動で見つけて解析します |
+| 依存 jar | **手元に取得済みであること。** このツールは解析対象プロジェクトのビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、コンパイル時および実行時の依存 jar を lib フォルダに保存して設定ファイルで指定する必要があります。|
+
+<!-- sec:what-it-cannot-see -->
+### 分からないこと（制約）
+
+静的解析なので、実行してみないと決まらないことは分かりません。分からないときは呼び出しを消すのではなく、
+候補を並べるか「辿れなかった」と書きます。
+
+- **ソースの無いところ（jar の中）は辿りません。** JDK やフレームワークの中を経由して呼び戻される呼び出し
+  （`new Thread(task).start()` → `task.run()` など）は、[契約表](docs/callback-contracts.md)に書かれたもの（同梱の分と、自分で足した分）だけを繋ぎます
+- **実行時に決まる値は分かりません。** 設定ファイルや入力から作ったクラス名でのリフレクション、
+  実行時の条件で変わる実装などは、候補を並べるに留まります（[docs/static-analysis-limits.md](docs/static-analysis-limits.md)）
+- **コンパイルが通らない・依存 jar が足りないと、結果に抜けが出ます。** そのときは出力フォルダに
+  `warnings.txt` ができ、何が足りないかを知らせます
+- **Java のソース以外は読みません。** JSP・XML の Bean 定義・SQL のマッピングなどからの呼び出しは出ません。
+  Spring の DI は注釈（`@Autowired`・`@Component` など）だけを読みます
+- **ビルド時に生成されるソース（Lombok・アノテーション処理）は、`source.folders` に入っていなければ読めません。**
+  そのときはコンパイルエラーとして `warnings.txt` に出ます
 
 ---
 
