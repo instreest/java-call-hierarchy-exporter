@@ -18,6 +18,8 @@ Eclipseは起動せず、解析エンジンとして Eclipse JDT を使用して
 | 出力CSVファイルの読み方 | [出力ファイル](#出力ファイル)（このファイル） |
 | 設定ファイルの項目内容 | [config/jche.properties](config/jche.properties) のコメント |
 | 設計の記録（機能ごとに迷った点と結論）・再実装用の仕様 | [docs/README.md](docs/README.md) |
+| 内部の作り（3 フェーズと 3 層、どのクラスを通るか）・用語 | [docs/architecture.md](docs/architecture.md) / [docs/glossary.md](docs/glossary.md) |
+| 開発に参加する（動かす・テスト・コードと文書の決まり） | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ---
 
@@ -511,6 +513,8 @@ the impact surface of the feature you are about to change.
 | How to read the output CSV | [Output files](#output-files) (this file) |
 | What each config item means | the comments in [config/jche.properties](config/jche.properties) |
 | Design notes (what was hard and what was decided, per feature), and the spec for reimplementation | [docs/README.md](docs/README.md) |
+| How it is built inside (3 phases and 3 layers, which classes a run goes through), and the vocabulary | [docs/architecture.md](docs/architecture.md) / [docs/glossary.md](docs/glossary.md) (Japanese) |
+| Contributing (running it, tests, code and documentation rules) | [CONTRIBUTING.md](CONTRIBUTING.md) (Japanese) |
 
 ---
 
