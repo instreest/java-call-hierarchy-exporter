@@ -144,7 +144,7 @@ config/
 ### `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -154,7 +154,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `caller` | 呼び出し元。Javaのスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excelのフィルタに使える |
 | `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。`caller` → `callee` という1本の呼び出しの性質なので `callee` の隣に置いています |
-| `level` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
+| `depth` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
 | `root` | 起点メソッド。クラス名.メソッド名の形式でExcelのフィルタに使える |
 | `call-hierarchy` | 起点からの呼び出し先を1ノード1列で展開（**可変長**） |
 
@@ -172,7 +172,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 どれが実行されるかは未特定なので `UNEXPANDED:LAMBDA` になります。
 
 Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿り切れなかった呼び出し**、
-`level` で「3 以下」＝**起点の近く**、のように絞り込めます。
+`depth` で「3 以下」＝**起点の近く**、のように絞り込めます。
 
 コンストラクタの呼び出し自体は行になりません。
 コンストラクタ内からのメソッド呼び出しは行として出力されます。
@@ -325,11 +325,11 @@ external.library.folders=./lib
 
 classファイルの命令列を読むため、「どのjar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
 `caller` 列は呼び出し階層の行と同じスタックトレース形式なので、Eclipse の Java スタック・トレース・コンソールに貼れば
-（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`level` は `1` です。
+（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`depth` は `1` です。
 ラムダ式やメソッド参照（`Counter::bump`）からの参照も、それを書いた行として出ます。
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
@@ -642,7 +642,7 @@ Besides missing dependency jars, a path in the config file that does not exist a
 ### `call-hierarchy.csv` — the call hierarchy
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -652,7 +652,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line |
 | `callee` | The callee, as **ClassName.methodName** (no arguments). Usable as an Excel filter |
 | `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). It describes one `caller` -> `callee` call, so it sits next to `callee` |
-| `level` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
+| `depth` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
 | `root` | The entry method, as ClassName.methodName. Usable as an Excel filter |
 | `call-hierarchy` | The path from the entry point, one node per column (**variable length**) |
 
@@ -672,7 +672,7 @@ single implementation in the source (that is, even when the label is a definite 
 `SINGLE_IMPL`), because which one runs is still undetermined.
 
 In Excel you can filter on `resolved-by` for "rows starting with `UNEXPANDED:`" = **the calls that could
-not be followed to the end**, or on `level` for "3 or less" = **near the entry point**.
+not be followed to the end**, or on `depth` for "3 or less" = **near the entry point**.
 
 A constructor call itself never becomes a row.
 Method calls made from inside a constructor are written as rows.
@@ -832,11 +832,11 @@ Because the instruction stream of the class files is read, you learn **which jar
 method and which line** the reference comes from. The `caller` column uses the same stack trace format as
 the hierarchy rows, so pasting it into Eclipse's Java Stack Trace Console jumps to that line (if the other
 side's source is in the workspace). There is no entry point and no hierarchy here, so the `root` column
-holds the name of the referencing jar, `resolved-by` starts with `EXTERNAL_USAGE:`, and `level` is `1`. References from a lambda or a method reference (`Counter::bump`)
+holds the name of the referencing jar, `resolved-by` starts with `EXTERNAL_USAGE:`, and `depth` is `1`. References from a lambda or a method reference (`Counter::bump`)
 appear as the line that wrote them.
 
 ```csv
-caller,callee,resolved-by,level,root,call-hierarchy
+caller,callee,resolved-by,depth,root,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
