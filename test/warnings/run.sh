@@ -52,7 +52,7 @@ fi
 make_project() {   # $1=フォルダ名  $2=設定ファイルに足す行（改行区切り）
     mkdir -p "work/$1"
     cp -R "$ROOT/test/maven-demo/src" "$ROOT/test/maven-demo/pom.xml" "work/$1/"
-    cat > "work/$1/config.properties" <<EOF
+    cat > "work/$1/jche.properties" <<EOF
 project.root=.
 source.folders=src/main/java
 library.repositories=$ROOT/test/localrepo
@@ -65,7 +65,7 @@ EOF
 
 analyze() {   # $1=フォルダ名 -> 出力フォルダを OUT に、終了コードを STATUS に入れる
     ( cd "work/$1" && "$JAVA_BIN" -cp "$CLASSES:$CP" \
-        jche.CallHierarchyExporter config.properties ) > "work/$1.console.log" 2>&1
+        jche.CallHierarchyExporter jche.properties ) > "work/$1.console.log" 2>&1
     STATUS=$?
     OUT=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
     check_no_temp_files "$1"
@@ -371,7 +371,7 @@ make_cls_folder() {   # $1=フォルダ名  $2=library.jars
         && ( cd "$d/cls" && "$(dirname "$JAVAC_BIN")/jar" cf ../jars/l.jar l ) && cp "$d/jars/l.jar" "$d/cls/copied.jar"
     printf 'package app;\npublic class U {\n    public void go() {\n        new l.A().m("x");\n    }\n}\n' \
         > "$d/src/app/U.java"
-    cat > "$d/config.properties" <<EOF
+    cat > "$d/jche.properties" <<EOF
 project.root=.
 source.folders=src
 library.jars=$2
@@ -432,10 +432,10 @@ expect_in_warnings deps_ja "依存 jar が解決できていません"
 #     （拡張の警告に関わらず warnings.txt ができるよう、どちらの設定にも無い jar を指定しておく）
 # 言語の引き継ぎを見るので JCHE_LANG を外し、OS の言語は user.language で英語に固定する
 make_project multi "library.jars=no-such.jar"
-sed -i '/^output.folder=/d' work/multi/config.properties
-{ cat work/multi/config.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
+sed -i '/^output.folder=/d' work/multi/jche.properties
+{ cat work/multi/jche.properties; echo "output.folder=./out1"; echo "plugin.folders=no-plugins"
   echo "message.language=ja"; } > work/multi/c1.properties
-{ cat work/multi/config.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
+{ cat work/multi/jche.properties; echo "output.folder=./out2"; echo "plugin.folders=no-plugins"; } \
     > work/multi/c2.properties
 ( cd work/multi && env -u JCHE_LANG "$JAVA_BIN" -Duser.language=en -cp "$CLASSES:$CP" \
     jche.CallHierarchyExporter c1.properties c2.properties ) > work/multi.console.log 2>&1
@@ -485,7 +485,7 @@ make_dag() {   # $1=フォルダ名  $2=ctor（コンストラクタの連鎖）
     else
         echo 'package p; public class Main { public static void main(String[] a) { q.M0.m(); } }'
     fi > "$dir/src/p/Main.java"
-    cat > "$dir/config.properties" <<EOF
+    cat > "$dir/jche.properties" <<EOF
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -533,7 +533,7 @@ make_busy() {   # $1=フォルダ名  $2=jdk / excluded / ctor
     } > "$dir/src/q/U.java"
     echo 'package p; public class D0 { }' > "$dir/src/p/D0.java"
     for i in 1 2 3 4; do echo "package p; public class D$i extends D$((i - 1)) { }" > "$dir/src/p/D$i.java"; done
-    cat > "$dir/config.properties" <<EOF
+    cat > "$dir/jche.properties" <<EOF
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -602,7 +602,7 @@ public class B implements Iterable<Object>, AutoCloseable {
     }
 }
 EOF
-cat > work/early/config.properties <<'EOF'
+cat > work/early/jche.properties <<'EOF'
 project.root=.
 source.folders=src
 library.folders=lib
@@ -618,5 +618,63 @@ else
     ng "early: 一括解析が落ちた（work/early.console.log）"
     grep -a -E "(failed|stopped|ran out of stack) in a batch" "$OUT/run.log" 2>/dev/null | head -2
 fi
+
+# 5x. 1 つの悪いファイルで、ほかのファイルを失敗させない（一括解析の失敗の閉じ込め）。どれも全件解析と、ほかのファイルに
+#     コメントを足した差分更新の両方で見る
+jdt_fail_project() {   # $1=フォルダ名  $2=source.level
+    mkdir -p "work/$1/src/p"
+    printf 'package p;\npublic class A { void a() { new B().b(); } }\n' > "work/$1/src/p/A.java"
+    printf 'package p;\npublic class B { void b() { new C().c(); } }\n' > "work/$1/src/p/B.java"
+    printf 'package p;\npublic class C { void c() { } }\n' > "work/$1/src/p/C.java"
+    printf 'project.root=.\nsource.folders=src\nlibrary.folders=\nlibrary.build.tool=none\nsource.encoding=UTF-8\nsource.level=%s\noutput.folder=./out\ncache.folder=./.cache\n' \
+        "$2" > "work/$1/jche.properties"
+}
+check_jdt_fail() {   # $1=フォルダ名  $2=失敗するファイル  $3=理由に含む文字列  $4=ラベル
+    [ "$STATUS" = 0 ] && ok "$1 ($4): 1 ファイルで JDT が失敗しても、実行は成功する" \
+        || ng "$1 ($4): 実行ごと失敗した（終了コード $STATUS。work/$1.console.log）"
+    expect_in_warnings "$1 ($4)" "Analysis failed (skipped): $2"
+    expect_in_warnings "$1 ($4)" "$3"
+    local others
+    others=$(grep -c -E "Analysis failed \(skipped\): src/p/[ABC]\.java" "$OUT/warnings.txt" 2>/dev/null)
+    [ "${others:-0}" = 0 ] && ok "$1 ($4): ほかのファイル（A・B・C）は失敗にしない" \
+        || ng "$1 ($4): 罪の無いファイルまで失敗にした（$others 件）"
+    grep -q "^at p.A.a(A.java:2),B.b," "$OUT/call-hierarchy.csv" 2>/dev/null \
+        && grep -q ",A.a,B.b,C.c$" "$OUT/call-hierarchy.csv" 2>/dev/null \
+        && ok "$1 ($4): A.a -> B.b -> C.c が出力に出る" || ng "$1 ($4): A.a -> B.b -> C.c が出力に無い"
+}
+
+# 5x-1. 名前の違う副次クラスを数千段つないだファイル（生成コードなど）。JDT は最初のファイルを返す前に全ユニットの親型を
+#       つなぐので、このファイルを「添えるファイル」にすると、どのバッチも 1 件も返さずに溢れ、プロジェクトの全ファイルが
+#       失敗していた（v43〜v44。Issue #169）。添えるだけで JDT が止まるファイルを見つけて添えなくし、そのファイルだけを
+#       失敗にする（docs/cache-unification-qa.md の Q141）
+jdt_fail_project deepctx 17
+{
+    printf 'package p;\npublic class Deep { }\n'
+    for ((i = 0; i < 5000; i++)); do printf 'class S%d extends S%d { }\n' "$i" $((i + 1)); done
+    printf 'class S5000 { }\n'
+} > work/deepctx/src/p/Deep.java
+analyze deepctx
+check_invariant deepctx
+check_jdt_fail deepctx src/p/Deep.java "stack overflow" 全件解析
+grep -q -F "is no longer given to the Java parser with the batches" "$OUT/run.log" 2>/dev/null \
+    && ok "deepctx: 添えると JDT が止まるファイルを添えるファイルから外した" \
+    || ng "deepctx: 添えるファイルから外していない（題材が効いていない）"
+printf '\n// changed\n' >> work/deepctx/src/p/A.java
+analyze deepctx
+check_jdt_fail deepctx src/p/Deep.java "stack overflow" 差分更新
+
+# 5x-2. JDT のコード生成が AssertionError（Error）を投げるファイル（レコードパターンで、アクセサの型が成分の型と違う
+#       コンパイルエラー）。RuntimeException と StackOverflowError しか捕まえていなかったので、設定まるごとの解析が失敗し、
+#       CSV が 1 つも出なかった（Issue #173）。そのファイルだけを、例外の名前と文言を添えた理由で失敗にする（Q139）
+jdt_fail_project assertion 21
+printf '%s\n' 'package p;' 'public class Patterns {' '    int run(Object o) {' \
+    '        if (o instanceof Point(int x, int y)) { return x + y; }' '        return 0;' '    }' '}' \
+    'record Point(int x, int y) {' '    public java.util.List<?> x() { return null; }' '}' > work/assertion/src/p/Patterns.java
+analyze assertion
+check_invariant assertion
+check_jdt_fail assertion src/p/Patterns.java "java.lang.AssertionError: Unexpected operand at stack top" 全件解析
+printf '\n// changed\n' >> work/assertion/src/p/A.java
+analyze assertion
+check_jdt_fail assertion src/p/Patterns.java "java.lang.AssertionError: Unexpected operand at stack top" 差分更新
 
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

@@ -45,7 +45,7 @@ Spring の `@Autowired` などは注釈から自動で解決するので、設�
 その形なら Java を書く必要はありません。
 
 ```properties
-# config/config.properties
+# config/jche.properties
 resolver.candidate.providers=jche.builtin.TypeMappingProvider
 plugin.mapping.files=mapping.properties
 ```
@@ -146,7 +146,7 @@ at jp.co.app.Main.run(Main.java:8),UserService.execute,Main.run,UserService.exec
 キーが列挙できるなら、Java は要りません。
 
 ```properties
-# config.properties
+# jche.properties
 resolver.candidate.providers=jche.builtin.TypeMappingProvider
 plugin.mapping.files=mapping.properties
 ```
@@ -200,7 +200,7 @@ void helper(String k) { Factory.get(k).find(); }     // ← run から辿った�
 実行時にコンパイルされます（Maven / Gradle でのビルドも jar 作りも不要）。
 
 ```properties
-# config.properties — 書くのはこの 2 行と、拡張が自分で読む設定だけ
+# jche.properties — 書くのはこの 2 行と、拡張が自分で読む設定だけ
 plugin.folders=plugins
 resolver.candidate.providers=demo.NamingConventionProvider
 demo.naming.prefix=jp.co.app.impl.

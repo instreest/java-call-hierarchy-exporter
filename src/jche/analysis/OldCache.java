@@ -29,14 +29,9 @@ final class OldCache {
     final BitSet irregular = new BitSet();
     /**
      * 型解決に失敗していたブロック（F 行のエラー数が 0 でない、または U 行に BINDING_FAILED がある）。
-     * 新しい型があれば解析し直す（クラスの説明「新しい型」）
+     * 何かが変わった実行では、名前を照合せず必ず解析し直す（クラスの説明「型解決に失敗していたファイル」）
      */
     final BitSet unresolvedTypes = new BitSet();
-    /**
-     * 型解決に失敗していたブロックの、解決できなかった名前（I 行。カンマ区切り）。
-     * 失敗していないブロックは null。変わった型に当たるものだけを解析し直す（{@link StaleTypes#matchesChangedType}）
-     */
-    String[] unresolvedNames = new String[64];
     /** {@link #packages} の文字列を共有するための表 */
     private final Map<String, String> packageNames = new HashMap<>();
     int size;
@@ -53,12 +48,11 @@ final class OldCache {
     boolean writtenAsIs;
 
     void add(String path, long start, long end, int errorCount, int syntaxErrorCount, int unresolvedCount,
-             boolean irregularBlock, boolean failedTypes, String names, String pkg) {
+             boolean irregularBlock, boolean failedTypes, String pkg) {
         if (size == paths.length) {
             int grown = size + (size >> 1) + 16;
             paths = Arrays.copyOf(paths, grown);
             packages = Arrays.copyOf(packages, grown);
-            unresolvedNames = Arrays.copyOf(unresolvedNames, grown);
             starts = Arrays.copyOf(starts, grown);
             ends = Arrays.copyOf(ends, grown);
             errors = Arrays.copyOf(errors, grown);
@@ -76,7 +70,6 @@ final class OldCache {
         }
         if (failedTypes) {
             unresolvedTypes.set(size);
-            unresolvedNames[size] = names;
         }
         packages[size] = (pkg == null) ? null : packageNames.computeIfAbsent(pkg, k -> k);
         size++;

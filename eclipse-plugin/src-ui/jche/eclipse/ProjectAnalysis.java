@@ -1,9 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 package jche.eclipse;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -211,16 +210,29 @@ public final class ProjectAnalysis {
      * 読めないときは false（誤って別物を掴むより、自動生成の設定で動くほうが害が小さい）。
      */
     private static boolean looksLikeJcheConfig(IFile file) {
-        Properties p = new Properties();
-        try (InputStream in = file.getContents(true)) {
-            p.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+        // 解析側の読み手（jche.config.ConfigFile。1 行に「項目=値」、バックスラッシュはそのまま）と同じ
+        // 見方で項目の行だけを拾う。Properties#load は使わない（Windows のパスをそのまま書いたファイルを
+        // 読めずに「らしくない」と誤判定する）
+        try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(file.getContents(true), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                int eq = line.indexOf('=');
+                if (eq < 0) {
+                    continue;
+                }
+                String key = line.substring(0, eq).trim();
+                if (key.startsWith("\uFEFF")) {
+                    key = key.substring(1);
+                }
+                for (String marker : CONFIG_MARKER_KEYS) {
+                    if (marker.equals(key)) {
+                        return true;
+                    }
+                }
+            }
         } catch (CoreException | IOException | RuntimeException e) {
             return false;
-        }
-        for (String key : CONFIG_MARKER_KEYS) {
-            if (p.getProperty(key) != null) {
-                return true;
-            }
         }
         return false;
     }

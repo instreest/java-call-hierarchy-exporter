@@ -759,3 +759,45 @@ static メソッドと確かめて同じに扱う。
 RnnPath（static import の `requireNonNull(d)`。経路のコンストラクタ実引数 DaoB で `DATAFLOW_FIELD` に絞る）は対照で、
 67d7fd9 ではどちらも CHA になる。RnnElse（`requireNonNullElse(d, new DaoA())`）は読み替えないことの確かめで、DaoA と DaoB の
 両方が残る。
+
+## Q29. `equals` の条件の「`Object#equals` かその上書きか」を、なぜ名前と引数の型で決めていたのか。どう置き換えたか
+
+[Issue #189](https://github.com/instreest/java-call-hierarchy-exporter/issues/189) の 2（残っている文字列での判定）のうち、
+`GuardCollector` の `equals` の部分。`docs/resolution-selection-design.md` の点検表の 12 行目。
+
+`if (s.equals("full"))` を打ち切りの条件（G 行の `EQ` / `NE`）にするには、呼んでいるのが `Object#equals(Object)` かその上書き
+（値の比較）でなければならない。同じ名前の別の多重定義（`equals(String)`）は中身が分からない。`GuardCollector#isObjectEquals` は
+これを「名前が `equals`・引数が 1 つ・引数の型が `java.lang.Object`」で決めていて、JDT の `IMethodBinding.overrides` を使って
+いなかった（上書きの判定は JDT に任せる、という `docs/jls-conformance-qa.md` の決まりに反する）。
+
+**今の決まり**: `Object` の `equals(Object)` のバインディング（`AST#resolveWellKnownType("java.lang.Object")` の宣言から引く）
+に対して、呼び出し先の宣言（`getMethodDeclaration()`）が `isEqualTo`（`Object` 自身の宣言）か `overrides`（JLS 8.4.8.1 の上書き）なら
+判定する。バインディングが取れない・`Object` が引けないときは判定しない（条件を作らない＝打ち切らない）。
+
+**置き換えで結果が変わる形は無い**ことを、JDT に直接尋ねて確かめた（置き換え前の判定と `overrides` の答えを並べた）:
+
+| 呼び出し | 置き換え前（引数の型が `Object`） | `isEqualTo` / `overrides` |
+|---|---|---|
+| `String s; s.equals("x")` | 判定する | 上書き（`String#equals`） |
+| `Integer i; i.equals(5)`・`enum E; e.equals(E.A)` | 判定する | 上書き（`Integer#equals`・`Enum#equals`） |
+| `Object o; o.equals(o)` | 判定する | `Object` 自身（`isEqualTo`） |
+| `interface K { boolean equals(Object o); } k.equals(x)`・`Comparator#equals` | 判定する | 上書き（インターフェースが宣言し直したもの） |
+| `class V { boolean equals(String s) } v.equals("x")` | 判定しない | 上書きでない |
+| `Objects.equals(a, b)`・`static boolean equals(Object, Object)` | 判定しない（引数が 2 つ） | 上書きでない |
+
+同じ名前の別の多重定義は引数の型が `Object` でないので置き換え前も判定せず、`equals(Object)` の名前と引数を持つ static な
+メソッドは、クラスでもインターフェースでも `Object#equals` を隠せないのでコンパイルできない（JLS 8.4.8.2 / 9.4.1.3）。
+インターフェースが宣言し直した `equals(Object)` は上書きだが、判定するかは受け手の静的な型でも決めている
+（`equalsComparable`。`String`・同じ列挙型・ボックス型だけ。Q15）ので、インターフェース型の受け手では判定しない。
+つまり判定が変わるのは「引数の型が `Object` なのに `Object#equals` の上書きでない」宣言だけで、コンパイルできるコードには無い。
+打ち切りが増える（呼び出しを落とす）方向にも減る方向にも変わらないが、判定の根拠が JDT の上書きの判定になり、
+点検表の行を消せる。
+
+**却下した案**: `isSubsignature` で比べる … `Object#equals` に対する `isSubsignature` は、上書きでない `equals(Object)`
+（もし書けたとして）も真にする。`overrides` は static・private・アクセスの条件も見るので、こちらにそろえた。
+
+**検査**: `test/pruning` の `EqOvl`（利用者の型の `equals(String)` の多重定義。常に真）・`EqIfc`（インターフェースが宣言し直した
+`equals(Object)`。実装は常に真）・`EqStatic`（2 引数の static な `equals(Object, Object)`。常に真）が `reachable`（判定して
+いれば `"full"` と違う値で打ち切ってしまう）。判定する側の対照は既存の `EqStrRecv`・`EqBoxed`・`EqLongL`・`EqEnum`（`pruned`）。
+
+**形式の版**: 書き手（G 行の条件）の変更なので `jche-cache-v45`（事実は変わらないが、迷ったら上げる）。

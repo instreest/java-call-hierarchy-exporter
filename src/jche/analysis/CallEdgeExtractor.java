@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,13 +29,17 @@ import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.FileASTRequestor;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
+import org.eclipse.jdt.core.dom.Initializer;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.QualifiedName;
+import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SimpleType;
 
 import jche.cache.FileAnalysis;
@@ -101,6 +106,14 @@ public final class CallEdgeExtractor {
     /** どのバッチにも添えるファイルなどの材料（{@link #prepare}）。呼ばれていなければ空（何も添えない） */
     private ProjectScan project = ProjectScan.EMPTY;
 
+    /**
+     * 添えると JDT が止まるので、この実行の残りでは添えないファイル（JDT に渡す絶対パス。{@link Batch#dropBrokenContext}）。
+     * 型の宣言を数千段つないだファイル（生成コード）のように、JDT が最初のファイルを返す前の型の束縛で溢れるものは、
+     * 添えるだけでバッチの全ファイルを失敗させる。添えるのをやめれば、そのファイル自身が 1 つだけの解析で失敗するだけで済む
+     * （docs/cache-unification-qa.md の Q141）
+     */
+    private final Set<String> brokenContext = new HashSet<>();
+
     public CallEdgeExtractor(ProjectLayout layout, Config config) {
         this(layout, config, false);
     }
@@ -124,8 +137,10 @@ public final class CallEdgeExtractor {
     }
 
     /**
-     * 解析するソースの全体を構文だけで読み（型は解決しない。メソッドの本体も読まない）、どのバッチにも添えるファイルと、
-     * パッケージの宣言がフォルダと合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。
+     * 解析するソースの全体を構文だけで読み（型は解決しない）、バッチに添えるファイルと、それぞれのファイルに書いた名前
+     * （添えるファイルをバッチから名前で届くものに絞る材料。{@link ProjectScan#reach}）と、パッケージの宣言がフォルダと
+     * 合わないファイルを決める（{@link ProjectScan}）。{@link #analyzeBatch} より前に 1 回呼ぶ。メソッドの本体も読む
+     * （本体に書いた名前も、解析するファイルから届く先に数えるため。本体を読まない読み取りと時間はほとんど変わらない。Q142）。
      *
      * <p>全件解析でも差分更新でも、解析するファイルだけでなくソースの全体を渡す。添えるファイルがソースの中身だけで
      * 決まり、どの実行でも同じになるようにするため。読めなかったファイル（JDT の例外・スタックの溢れ）は材料にしない
@@ -147,7 +162,6 @@ public final class CallEdgeExtractor {
             parser.setKind(ASTParser.K_COMPILATION_UNIT);
             parser.setCompilerOptions(options);
             parser.setResolveBindings(false);
-            parser.setIgnoreMethodBodies(true);
             try {
                 parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
                     @Override
@@ -158,7 +172,7 @@ public final class CallEdgeExtractor {
                         }
                     }
                 }, null);
-            } catch (RuntimeException | StackOverflowError e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 読めなかったファイルは材料にしない（下で外して続ける）
             }
             if (!pending.isEmpty()) {
@@ -170,14 +184,74 @@ public final class CallEdgeExtractor {
         return project;
     }
 
-    /** 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前 */
+    /**
+     * 構文だけで読んだ 1 ファイルの、パッケージとトップレベルの型の名前と、書いた名前（{@link ProjectScan.Info}）。
+     * 名前は、単純名（{@code SimpleName}）と点でつないだ名前（{@code QualifiedName}・import）を、メソッド・コンストラクタ・
+     * 初期化ブロックの本体の中と外とに分けて集める（本体の外はソースパスから読んだ型を JDT が組むときにも解決する名前）
+     */
     private static ProjectScan.Info infoOf(CompilationUnit cu) {
         String pkg = (cu.getPackage() == null) ? "" : cu.getPackage().getName().getFullyQualifiedName();
         List<String> types = new ArrayList<>();
         for (Object t : cu.types()) {
             types.add(((AbstractTypeDeclaration) t).getName().getIdentifier());
         }
-        return new ProjectScan.Info(pkg, List.copyOf(types));
+        Set<String> onDemand = new HashSet<>();
+        Set<String> signature = new HashSet<>();
+        Set<String> body = new HashSet<>();
+        for (Object o : cu.imports()) {
+            ImportDeclaration imp = (ImportDeclaration) o;
+            if (Modifier.isModule(imp.getModifiers())) {
+                continue;
+            }
+            String name = imp.getName().getFullyQualifiedName();
+            signature.add(name);
+            if (imp.isOnDemand()) {
+                onDemand.add(name);
+            }
+        }
+        cu.accept(new ASTVisitor() {
+            /** 本体の入れ子の深さ（0 なら本体の外） */
+            private int depth;
+
+            @Override
+            public boolean visit(ImportDeclaration node) {
+                return false;   // 上で読んだ
+            }
+
+            @Override
+            public boolean visit(Block node) {
+                if (isBody(node)) {
+                    depth++;
+                }
+                return true;
+            }
+
+            @Override
+            public void endVisit(Block node) {
+                if (isBody(node)) {
+                    depth--;
+                }
+            }
+
+            private boolean isBody(Block node) {
+                return node.getParent() instanceof MethodDeclaration || node.getParent() instanceof Initializer;
+            }
+
+            @Override
+            public boolean visit(QualifiedName node) {
+                (depth == 0 ? signature : body).add(node.getFullyQualifiedName());
+                return false;   // 頭の部分は ProjectScan が見る
+            }
+
+            @Override
+            public boolean visit(SimpleName node) {
+                (depth == 0 ? signature : body).add(node.getIdentifier());
+                return false;
+            }
+        });
+        body.removeAll(signature);
+        return new ProjectScan.Info(pkg, List.copyOf(types), Set.copyOf(onDemand), Set.copyOf(signature),
+                Set.copyOf(body));
     }
 
     /**
@@ -187,7 +261,9 @@ public final class CallEdgeExtractor {
      * 事実がバッチの組み方（全件解析は {@link #BATCH_SIZE} 件ずつ、差分更新は変わったファイルだけ）に依らないよう、
      * 次のファイルを「添えるファイル」として解析するファイルの後ろに並べて渡す（事実は書かない）。
      * <ul>
-     *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）</li>
+     *   <li>名前の違うファイルで宣言したトップレベルの型を持つファイル（{@link ProjectScan#context}。{@link #prepare}）のうち、
+     *       バッチのファイルから名前でたどって届くもの（{@link ProjectScan#reach}。届かないものは
+     *       添えても効かないので、事実はバッチの組み方に依らない）</li>
      *   <li>jar の型が参照していた、ソースの入れ子の型（{@code app.Outer$Inner}）を宣言するファイル。JDT は jar の
      *       クラスファイルから {@code app/Outer$Inner} という名前で型を探し、ソースパスからは見つけられない
      *       （{@code app.Outer} をすでに読んでいれば、その入れ子の型として見つかる）。見つからないと、その型の名前が
@@ -233,7 +309,10 @@ public final class CallEdgeExtractor {
      *
      * <p>スタックの溢れ（{@link StackOverflowError}。メソッド呼び出しを数千段つないだ式のように、JDT の再帰が
      * 深くなりすぎるファイル）も、そのファイルの失敗として扱う（{@code docs/cache-unification-qa.md} の Q62）。
-     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。
+     * 溢れたスタックは例外が外へ抜けるあいだに戻るので、捕まえたあとは続けられる。JDT が明示的に投げる
+     * {@link AssertionError}（レコードパターンのコード生成の {@code Unexpected operand at stack top} など。{@code -ea} に
+     * 依らない）も同じくそのファイルの失敗にする（Q139）。捕まえるのは {@code RuntimeException}・{@code StackOverflowError}・
+     * {@code AssertionError} だけで、それ以外の {@code Error}（メモリ不足など）は設定の失敗として外へ抜けさせる。
      */
     public void analyzeBatch(List<SourceFile> files, Sink sink) throws IOException {
         List<SourceFile> modules = new ArrayList<>();
@@ -289,7 +368,7 @@ public final class CallEdgeExtractor {
                 Map<SourceFile, List<SourceFile>> deferred = new LinkedHashMap<>();
                 if (aloneOnly) {
                     for (SourceFile f : todo) {
-                        alone(f, null, deferred);
+                        alone(f, deferred);
                     }
                 } else {
                     analyzeAll(todo, deferred);
@@ -303,7 +382,8 @@ public final class CallEdgeExtractor {
                         }
                     }
                 }
-                todo = new ArrayList<>(deferred.keySet());
+                // 組（SameUnitFiles）はソース一覧の並びで並べ直す（組の相手が後回しになった順で入っているため）
+                todo = project.sorted(deferred.keySet(), Set.of());
             }
         }
 
@@ -333,11 +413,16 @@ public final class CallEdgeExtractor {
          *       （見つからないクラスのエラーが最初に出会ったファイルにだけ付く。docs/cache-unification-qa.md の
          *       「打ち切ったファイルの失敗の理由」の Q の残るもの）が、ふつうの形（最初のファイルが原因）でまで
          *       全件解析と差分更新とで食い違うため</li>
+         *   <li><b>添えるファイルが止めていないかを確かめる</b>（1 つも受け取らないうちに止まり、最初の組だけでも止まった
+         *       とき。{@link #dropBrokenContext}）。添えるファイルだけを JDT に渡してみて、それだけでも例外で止まれば、
+         *       半分ずつに分けて原因のファイルを見つけ、この実行の残りでは添えない（{@link CallEdgeExtractor#brokenContext}）。
+         *       型の宣言を数千段つないだファイルは、添えるだけでバッチの全ファイルを止める（JDT は最初のファイルを返す前に
+         *       全ユニットの親型をつなぐ）。確かめるのは止まったときだけなので、ふつうは費用がかからない</li>
          *   <li><b>止まったファイルを脇に置く</b>（1 つでも受け取ったあと、組が 1 つだけのとき、または最初の組だけでも
          *       止まったとき）。JDT は準備を済ませて渡した順に解決しているので、受け取れなかった最初のファイルで止まって
-         *       いる。その組を脇に置き、
-         *       最後に 1 つずつ（添えるファイル {@link #stopContext} は付けずに）解析する（{@link #alone}）。
-         *       それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の「打ち切られた」に載る）</li>
+         *       いる。その組を脇に置き、最後に 1 つずつ、そのファイルに関わるファイル（{@link #relatedFiles}）を添えて
+         *       解析する（{@link #alone}）。それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の
+         *       「打ち切られた」に載る）</li>
          * </ol>
          * どの場合も、止まる前に受け取ったファイル（事実はまだ集めていない）は、止まったファイルからあとに同じ名前の組の
          * もう片方がいるものを除いて、それだけで 1 つのバッチとして解析し直し、止まったファイルからあとは別のバッチにする。
@@ -352,7 +437,7 @@ public final class CallEdgeExtractor {
                 throws IOException {
             Deque<List<SourceFile>> work = new ArrayDeque<>();
             work.add(files);
-            Map<SourceFile, Throwable> aside = new LinkedHashMap<>();
+            Set<SourceFile> aside = new LinkedHashSet<>();
             while (!work.isEmpty()) {
                 List<SourceFile> todo = work.poll();
                 Map<String, SourceFile> pending = byPath(todo);
@@ -381,15 +466,100 @@ public final class CallEdgeExtractor {
                     work.push(halves.get(0));
                     continue;
                 }
-                // 3. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
-                for (SourceFile f : unit) {
-                    aside.put(f, stop);
+                // 3. 1 つも受け取らないうちに止まり、最初の組だけでも止まるなら、添えるファイルが止めていないかを確かめる
+                if (finished.isEmpty() && stop != null && dropBrokenContext(unit)) {
+                    work.push(todo);
+                    continue;
                 }
+                // 4. 止まったファイル（の組）を脇に置き、最後に 1 つだけで解析する
+                aside.addAll(unit);
                 Log.info(Messages.format("analysis.batchSetAside", at, todo.size() - unit.size()));
                 splitAt(todo, finished, pending, unit, at, work);
             }
-            for (Map.Entry<SourceFile, Throwable> e : aside.entrySet()) {
-                alone(e.getKey(), e.getValue(), deferred);
+            for (SourceFile f : aside) {
+                alone(f, deferred);
+            }
+        }
+
+        /**
+         * 添えるファイル（{@code unit} を解析するときに添えるもの）だけを JDT に渡してみて、それだけでも例外で止まれば、
+         * 原因のファイル（組）を半分ずつに分けて見つけ、{@link CallEdgeExtractor#brokenContext} に入れる（この実行の残りでは
+         * 添えない）。本体は読まない（{@code setIgnoreMethodBodies}。添えたファイルはふつうの解析でも本体を解決する前に
+         * 止めるので、本体の深さは添えるときの止まり方に関係ない）。例外なしに止まる（依存 jar に無いクラスでの打ち切り）
+         * のは、添えるファイルが原因ではない（添えたファイルのエラーはそのファイルに付くだけ）ので、原因にしない。
+         *
+         * @return 添えないファイルを増やしたか（増やしたなら同じバッチを解析し直す）
+         */
+        private boolean dropBrokenContext(List<SourceFile> unit) throws IOException {
+            // 最初の組だけで試したとき（stopsAlone）と同じ添えるファイル。脇に置いて 1 つだけで解析するとき（alone）は
+            // その一部（stopContext を除く）なので、ここで外したものはそこでも添えない
+            List<SourceFile> context = contextOf(byPath(unit).keySet(), unitExtra(unit), new BitSet());
+            if (context.isEmpty()) {
+                return false;
+            }
+            Log.info(Messages.format("analysis.contextProbe", context.size()));
+            if (contextStops(context) == null) {
+                return false;
+            }
+            for (SourceFile f : brokenUnits(context)) {
+                brokenContext.add(f.path().toString());
+                Log.info(Messages.format("analysis.contextDropped", f.relativePath()));
+            }
+            return true;
+        }
+
+        /**
+         * {@code files} のうち、JDT を止める組。半分ずつに分けて、止まる半分の中を探す。どちらの半分も単独では止まらない
+         * （2 つのファイルにまたがって深い）なら、両方を原因にする。組が 1 つなら、それが原因
+         */
+        private List<SourceFile> brokenUnits(List<SourceFile> files) throws IOException {
+            List<List<SourceFile>> halves = halves(files);
+            if (halves.size() < 2) {
+                return files;
+            }
+            List<SourceFile> broken = new ArrayList<>();
+            for (List<SourceFile> half : halves) {
+                if (contextStops(half) != null) {
+                    broken.addAll(brokenUnits(half));
+                }
+            }
+            return broken.isEmpty() ? files : broken;
+        }
+
+        /**
+         * {@code files} だけを 1 回の createASTs に渡し（本体は読まない。最初のファイルを受け取ったら止める）、
+         * JDT が投げた例外を返す。例外なしに戻れば（受け取ったかどうかによらず）null
+         */
+        private Throwable contextStops(List<SourceFile> files) throws IOException {
+            String[] paths = new String[files.size()];
+            for (int i = 0; i < paths.length; i++) {
+                paths[i] = files.get(i).path().toString();
+            }
+            String[] fileEncodings = new String[paths.length];
+            Arrays.fill(fileEncodings, encodingName);
+            boolean[] done = { false };
+            IProgressMonitor stopAtFirst = new NullProgressMonitor() {
+                @Override
+                public boolean isCanceled() {
+                    return done[0];
+                }
+            };
+            ASTParser parser = newParser();
+            parser.setIgnoreMethodBodies(true);
+            try {
+                parser.createASTs(paths, fileEncodings, new String[0], new FileASTRequestor() {
+                    @Override
+                    public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+                        done[0] = true;
+                    }
+                }, stopAtFirst);
+                return null;
+            } catch (UncheckedIOException e) {
+                throw e.getCause();
+            } catch (OperationCanceledException e) {
+                return null;
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
+                return e;
             }
         }
 
@@ -500,31 +670,47 @@ public final class CallEdgeExtractor {
         }
 
         /**
-         * 脇に置いたファイルを、1 つだけで（組でも分ける。組のもう片方で止まっていることがあるため。{@link #stopContext}
-         * も付けない）解析し直す。それでも受け取れなければ失敗として数える（{@link Sink#failed}。warnings.txt の
-         * 「打ち切られた」に理由とともに載る）
-         *
-         * @param stop 脇に置いたときに JDT が投げた例外。無ければ null
+         * 脇に置いたファイルを、1 つだけで（組でも分ける。組のもう片方で止まっていることがあるため）解析し直す。
+         * そのファイルに関わるファイル（{@link #relatedFiles}。組の相手は除く）は添える（例外なしの打ち切りは、原因の型を
+         * 同じバッチに入れれば起きない。Q112）。{@link #stopContext} は付けない（バッチで止まったほかのファイルによって
+         * 増えるので、付けると 1 つだけの解析の結果がバッチの組み方に依る）。それでも受け取れなければ失敗として数える
+         * （{@link Sink#failed}。warnings.txt の「打ち切られた」に理由とともに載る）。理由は 1 つだけの解析で JDT が投げた
+         * 例外から決め、例外なしに止まったなら「理由を示さずに打ち切った」（{@code analysis.stopped}）。脇に置いたときの
+         * バッチの例外は使わない（1 つも受け取らないうちに溢れたバッチでは、別のファイルの例外かもしれない。Q140）
          */
-        private void alone(SourceFile file, Throwable stop, Map<SourceFile, List<SourceFile>> deferred)
-                throws IOException {
+        private void alone(SourceFile file, Map<SourceFile, List<SourceFile>> deferred) throws IOException {
             Map<String, SourceFile> one = byPath(List.of(file));
-            Throwable again = parse(one, List.of(), deferred, new ArrayList<>());
+            List<SourceFile> extra = withContext ? relatedFiles(file) : List.of();
+            extra.removeAll(project.unit(layout.unitNameOf(file.path())));
+            Throwable again = parse(one, extra, deferred, new ArrayList<>());
             if (!one.isEmpty()) {
-                sink.failed(file, reasonOf(file, (again != null) ? again : stop));
+                sink.failed(file, reasonOf(file, again));
             }
         }
 
         /**
          * 止まったファイルの組（{@code unit}）だけを 1 回の createASTs に渡して、JDT がまた止まるか（受け取れないファイルが
          * 残るか）を確かめる。事実は集めない（止まらなければ、組はバッチを分けたあとでふつうに解析する）。添えるファイルは
-         * 止まったときのバッチと同じにする。どのファイルで止まったか分からないときに、最初の組が原因かを見分けるのに使う
+         * 止まったときのバッチのもの（{@link #stopContext}）に、組に関わるファイル（{@link #relatedFiles}。1 つだけで解析する
+         * ときと同じ）を足す。どのファイルで止まったか分からないときに、最初の組が原因かを見分けるのに使う
          * （{@link #analyzeAll}）
          */
         private boolean stopsAlone(List<SourceFile> unit) throws IOException {
             Map<String, SourceFile> pending = byPath(unit);
-            parse(pending, stopContext, null, new ArrayList<>());
+            parse(pending, unitExtra(unit), null, new ArrayList<>());
             return !pending.isEmpty();
+        }
+
+        /** 最初の組だけで試すとき（{@link #stopsAlone}）の添えるファイル: {@link #stopContext} と組に関わるファイル（組は除く） */
+        private List<SourceFile> unitExtra(List<SourceFile> unit) {
+            List<SourceFile> extra = new ArrayList<>(stopContext);
+            if (withContext) {
+                for (SourceFile f : unit) {
+                    extra.addAll(relatedFiles(f));
+                }
+            }
+            extra.removeAll(unit);
+            return extra;
         }
 
         /**
@@ -541,14 +727,8 @@ public final class CallEdgeExtractor {
         private Throwable parse(Map<String, SourceFile> pending, List<SourceFile> extra,
                                 Map<SourceFile, List<SourceFile>> deferred, List<SourceFile> finished)
                 throws IOException {
-            List<SourceFile> candidates = new ArrayList<>();
-            if (withContext) {
-                candidates.addAll(project.context);
-            }
-            candidates.addAll(memberTypeFiles);
-            candidates.addAll(extra);
-            List<SourceFile> context = project.sorted(candidates, pending.keySet());
-            context.removeIf(ProjectScan::isModuleInfo);
+            BitSet reached = new BitSet();
+            List<SourceFile> context = contextOf(pending.keySet(), extra, reached);
 
             List<String> all = new ArrayList<>(pending.keySet());
             for (SourceFile f : context) {
@@ -586,10 +766,7 @@ public final class CallEdgeExtractor {
                         }
                         // 解析するファイルの最後。JDT は解析するファイルをすべて解決し終えている
                         if (deferred != null) {   // null なら止まるかどうかだけを見る（stopsAlone）
-                            for (int i = 0; i < finished.size(); i++) {
-                                collectAndDeliver(finished.get(i), units.get(i), present, deferred);
-                                units.set(i, null);   // 集め終えた AST は手放す
-                            }
+                            collectAndDeliverAll(finished, units, present, reached, deferred);
                         }
                         done[0] = true;
                     }
@@ -599,32 +776,122 @@ public final class CallEdgeExtractor {
                 throw e.getCause();
             } catch (OperationCanceledException e) {
                 return pending.isEmpty() ? null : e;
-            } catch (RuntimeException | StackOverflowError e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 return e;
             }
         }
 
-        /** 受け取った 1 ファイルの事実を集めて sink へ渡す。失敗はそのファイルの失敗として数える */
-        private void collectAndDeliver(SourceFile file, CompilationUnit cu, Set<String> present,
-                                       Map<SourceFile, List<SourceFile>> deferred) {
-            FileAnalysis facts;
+        /**
+         * 1 回の createASTs に添えるファイル（ソース一覧の並び。解析するファイル {@code pending} と module-info.java、
+         * 添えると JDT が止まるファイル {@link CallEdgeExtractor#brokenContext} は除く）。
+         * 解析するファイルと、ほかに添えるファイル（{@link #memberTypeFiles}・{@code extra}）から名前でたどって届く
+         * 名前の違うファイルで宣言した型のファイル（{@link ProjectScan#reach}・{@link ProjectScan#contextIn}）・
+         * {@link #memberTypeFiles}・{@code extra}。
+         *
+         * @param reached 届いたファイル（{@link ProjectScan#reach}）を入れて返す。事実に現れた型がこの外にあれば
+         *                添えて解析し直す（{@link #contextMissing}）
+         */
+        private List<SourceFile> contextOf(Set<String> pending, List<SourceFile> extra, BitSet reached) {
+            List<SourceFile> candidates = new ArrayList<>(memberTypeFiles);
+            candidates.addAll(extra);
+            if (withContext) {
+                List<SourceFile> analyzed = new ArrayList<>();
+                for (String path : pending) {
+                    analyzed.addAll(project.unit(layout.unitNameOf(Path.of(path))));
+                }
+                reached.or(project.reach(analyzed));
+                // 添えるファイルも JDT が組むので、その名前から届くものも添える
+                project.extend(reached, candidates);
+                candidates.addAll(project.contextIn(reached));
+            }
+            List<SourceFile> context = project.sorted(candidates, pending);
+            context.removeIf(f -> ProjectScan.isModuleInfo(f) || brokenContext.contains(f.path().toString()));
+            return context;
+        }
+
+        /**
+         * 事実に現れた型（{@link FileAnalysis#referencedTypes}）を宣言するソースのファイルが、名前でたどって届いた
+         * ファイル（{@code reached}）の外にあれば、そこから届く名前の違うファイルで宣言した型のファイルのうち、今回
+         * JDT に渡していないもの。名前でたどれない経路（jar のクラスのシグネチャがソースの型を指す）で JDT がソースの
+         * 型を読んだとき、その型のパッケージの名前の違うファイルの型を見落とさないよう、添えて解析し直す
+         * （{@link #memberTypeFilesOf} と同じ扱い。docs/cache-unification-qa.md の Q142）
+         */
+        private List<SourceFile> contextMissing(FileAnalysis facts, Set<String> present, BitSet reached) {
+            if (!withContext || project.context.isEmpty()) {
+                return List.of();
+            }
+            List<SourceFile> roots = new ArrayList<>();
+            for (String name : facts.referencedTypes) {
+                roots.addAll(project.declaringFiles(name));
+            }
+            BitSet more = (BitSet) reached.clone();
+            if (!project.extend(more, roots)) {
+                return List.of();
+            }
+            List<SourceFile> missing = new ArrayList<>();
+            for (SourceFile f : project.contextIn(more)) {
+                String path = f.path().toString();
+                if (!present.contains(path) && !brokenContext.contains(path) && !ProjectScan.isModuleInfo(f)) {
+                    missing.add(f);
+                }
+            }
+            return missing;
+        }
+
+        /**
+         * 受け取ったファイルの事実を 1 つずつ集めて sink へ渡す。入れ子の型を宣言するファイルを添えて解析し直すファイル
+         * （{@link #memberTypeFilesOf}）は渡さずに {@code deferred} に置く。同じ名前の組（{@link SameUnitFiles}）の片方を
+         * 後回しにするなら、組のもう片方も渡さずに後回しにする（組はいつもソースフォルダの順で一緒に JDT に渡す約束。
+         * 片方だけを渡してもう片方だけを解析し直すと、解析し直しではもう片方が添えるファイルとして後ろに付き、重複した
+         * 型の勝ち負けが入れ替わる。Q140）。組のファイルの事実は、組のすべてを集め終えるまで手元に置く
+         */
+        private void collectAndDeliverAll(List<SourceFile> finished, List<CompilationUnit> units, Set<String> present,
+                                          BitSet reached, Map<SourceFile, List<SourceFile>> deferred) {
+            Map<SourceFile, FileAnalysis> held = new LinkedHashMap<>();   // 組のファイル（渡すかどうかは最後に決める）
+            for (int i = 0; i < finished.size(); i++) {
+                SourceFile file = finished.get(i);
+                FileAnalysis facts = collect(file, units.get(i));
+                units.set(i, null);   // 集め終えた AST は手放す
+                if (facts == null) {
+                    continue;   // 失敗として数えた
+                }
+                List<SourceFile> needs = memberTypeFilesOf(facts, present);
+                for (SourceFile f : contextMissing(facts, present, reached)) {
+                    if (!needs.contains(f)) {
+                        needs.add(f);
+                    }
+                }
+                if (!needs.isEmpty()) {
+                    deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
+                } else if (project.unit(layout.unitNameOf(file.path())).size() > 1) {
+                    held.put(file, facts);
+                } else {
+                    deliver(file, facts);
+                }
+            }
+            for (Map.Entry<SourceFile, FileAnalysis> e : held.entrySet()) {
+                boolean paired = false;
+                for (SourceFile d : deferred.keySet()) {
+                    paired |= layout.unitNameOf(d.path()).equals(layout.unitNameOf(e.getKey().path()));
+                }
+                if (paired) {
+                    deferred.put(e.getKey(), List.of());
+                } else {
+                    deliver(e.getKey(), e.getValue());
+                }
+            }
+        }
+
+        /** 受け取った 1 ファイルの事実を集める。失敗はそのファイルの失敗として数え、null を返す */
+        private FileAnalysis collect(SourceFile file, CompilationUnit cu) {
             try {
-                facts = collectFacts(file, cu);
-            } catch (RuntimeException e) {
+                return collectFacts(file, cu);
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 型の解決は遅れて行われるので、事実を集めるあいだに JDT が文言の無い例外（見つからない
-                // クラスでの打ち切り）を投げることがある
+                // クラスでの打ち切り）を投げることがある。スタックの溢れ・JDT の AssertionError も同じ
                 sink.failed(file, explained(e));
-                return;
-            } catch (StackOverflowError e) {
-                sink.failed(file, tooDeep(e));
-                return;
+                return null;
             }
-            List<SourceFile> needs = memberTypeFilesOf(facts, present);
-            if (!needs.isEmpty()) {
-                deferred.put(file, needs);   // 宣言するファイルを添えて解析し直す（run）
-                return;
-            }
-            deliver(file, facts);
         }
 
         private void deliver(SourceFile file, FileAnalysis facts) {
@@ -632,15 +899,13 @@ public final class CallEdgeExtractor {
                 sink.accept(file, facts);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);   // parse の catch で IOException に戻す
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | StackOverflowError | AssertionError e) {
                 // 受け手の失敗（書き手の誤りなど）もこのファイルの失敗として数える。
                 // ここで逃がすと一括パースごと止まり、pending から外したこのファイルは
-                // 解析し直しにも回らず、失敗とも数えられずに黙って消える
+                // 解析し直しにも回らず、失敗とも数えられずに黙って消える。受け手の中で溢れた場合も同じ
+                // （docs/cache-unification-qa.md の Q69）。parse の catch に AssertionError を足した今、ここで
+                // 捕まえないと、pending から外したファイルがそこに呑まれて黙って消える
                 sink.failed(file, explained(e));
-            } catch (StackOverflowError e) {
-                // 受け手の中で溢れた場合も同じ。外の catch まで抜けると、このファイルは pending から
-                // 外してあるので解析し直しにも回らず、黙って消える（docs/cache-unification-qa.md の Q69）
-                sink.failed(file, tooDeep(e));
             }
         }
     }
@@ -664,7 +929,9 @@ public final class CallEdgeExtractor {
                 List<SourceFile> declaring = project.unit(name.substring(0, dollar).replace('.', '/') + ".java");
                 boolean given = false;
                 for (SourceFile f : declaring) {
-                    given |= present.contains(f.path().toString());
+                    // 添えると JDT が止まるファイル（brokenContext）は添えられないので、渡したものとみなす
+                    // （添えて解析し直しても同じ事実になり、繰り返しが終わらない）
+                    given |= present.contains(f.path().toString()) || brokenContext.contains(f.path().toString());
                 }
                 if (!given) {
                     for (SourceFile f : declaring) {
@@ -723,7 +990,7 @@ public final class CallEdgeExtractor {
                             });
                         }
                     }, null);
-        } catch (RuntimeException | StackOverflowError e) {
+        } catch (RuntimeException | StackOverflowError | AssertionError e) {
             // 読めなければ名前を書いた型のファイルは添えない（同じフォルダのファイルだけで解析し直す）
         }
         return project.sorted(files, Set.of());
@@ -736,13 +1003,14 @@ public final class CallEdgeExtractor {
         }
     }
 
-    /** 解析し直しても受け取れなかったファイルの、失敗の理由 */
+    /**
+     * 解析し直しても受け取れなかったファイルの、失敗の理由。
+     *
+     * @param stop 1 つだけの解析で JDT が投げた例外。例外なしに止まったなら null
+     */
     private static Exception reasonOf(SourceFile file, Throwable stop) {
-        if (stop instanceof StackOverflowError e) {
-            return tooDeep(e);
-        }
-        if (stop instanceof Exception e) {
-            return explained(e);
+        if (stop != null) {
+            return explained(stop);
         }
         try (InputStream in = Files.newInputStream(file.path())) {
             // 読める（1 バイト読んでみる）。JDT が理由を言わずに打ち切った
@@ -775,13 +1043,18 @@ public final class CallEdgeExtractor {
     /**
      * 失敗の理由として伝える例外。JDT の例外には文言の無いもの（見つからないクラスでの打ち切り {@code AbortCompilation}
      * など）があり、そのままでは warnings.txt の行が「()」だけになって何が起きたか分からないので、例外の名前を添えた
-     * 文言にする
+     * 文言にする。スタックの溢れは利用者が対処を選べる文言に、それ以外の {@code Error}（JDT が明示的に投げる
+     * {@link AssertionError}）は例外の名前と文言を添えた文言にする（{@code Sink#failed} は {@code Exception} を受け取る）
      */
-    private static Exception explained(Exception e) {
-        if (e.getMessage() == null || e.getMessage().isBlank()) {
-            return new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e);
+    private static Exception explained(Throwable e) {
+        if (e instanceof StackOverflowError so) {
+            return tooDeep(so);
         }
-        return e;
+        boolean blank = e.getMessage() == null || e.getMessage().isBlank();
+        if (e instanceof Exception ex) {
+            return blank ? new IllegalStateException(Messages.format("analysis.stoppedBy", e.getClass().getName()), e) : ex;
+        }
+        return new IllegalStateException(Messages.format("analysis.failedBy", blank ? e.getClass().getName() : e.toString()), e);
     }
 
     /** スタックが溢れたことを、そのファイルの失敗の理由として伝える例外（利用者が対処を選べる文言にする） */
@@ -824,17 +1097,17 @@ public final class CallEdgeExtractor {
      * エラーの引数から、点区切りの識別子（{@code Foo}・{@code org.missing}・{@code p.Outer.Inner}）を取り出す。
      *
      * <p>無い型・import・名前のエラー（「Foo cannot be resolved」「The import org.missing cannot be resolved」）の
-     * 引数には、解決できなかった名前が書いたとおりに入る。差分更新は新しい型ができたとき、この名前に当たる
-     * ブロックだけを解析し直す（{@link CacheUpdater} の「新しい型」）。エラーの種類では絞らず、どのエラーの
-     * 引数も拾う（型の名前が入りうるものを取りこぼさないため。余分に拾っても解析し直すファイルが増えるだけ）
+     * 引数には、解決できなかった名前が書いたとおりに入る。使うのは、JDT が止まったあとに添えるファイルを探すとき
+     * （{@link #memberTypeFilesOf}。{@code app.Outer$Inner} の形の名前）だけで、キャッシュには書かない（v44 までは I 行に
+     * 書いて新しい型の名前と照合していた。今は失敗していたブロックを名前に依らず解析し直す。{@link CacheUpdater} の
+     * 「型解決に失敗していたファイル」）。エラーの種類では絞らず、どのエラーの
+     * 引数も拾う（型の名前が入りうるものを取りこぼさないため。余分に拾っても添えるファイルが増えるだけ）
      *
      * <p>ただし、パスの区切り（{@code /} か {@code \}）を含む引数は拾わない。型が重複しているエラー
-     * （{@code The type Dup is already defined}）などは、引数にソースファイルのパスを入れる。一括で解析するときの
-     * パスは絶対パスなので、そのまま拾うと {@code home}・{@code user} のようなチェックアウトの場所のフォルダ名が
-     * キャッシュ（I 行の 2 列目）に入り、同じソースでも置き場所によってキャッシュの事実が変わる。パスの中の名前は
+     * （{@code The type Dup is already defined}）などは、引数にソースファイルのパスを入れる。パスの中の名前は
      * フォルダとファイルの名前で、型の名前は同じエラーの別の引数に入る。型の名前・パッケージの名前の引数は点で
      * 区切るのでパスの区切りを含まない。演算子の引数（{@code /}）は識別子を含まないので、落としても何も失わない
-     * （docs/cache-unification-qa.md の Q64）
+     * （docs/cache-unification-qa.md の Q64。I 行に書いていたときはチェックアウトの場所のフォルダ名がキャッシュに入る問題だった）
      *
      * <p>拾った名前が、エラーの位置に書かれた名前（{@code written}）の頭の部分なら、書かれた名前全体に置き換える。
      * 依存 jar が無いとき、式の中の {@code org.missing.pkg.Type.run()} のエラーは、同じバッチで先に別のファイルが

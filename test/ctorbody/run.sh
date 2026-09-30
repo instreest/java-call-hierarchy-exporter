@@ -122,7 +122,7 @@ public class Main {
     }
 }
 EOF
-    cat > "work/$1/config.properties" <<EOF
+    cat > "work/$1/jche.properties" <<EOF
 project.root=.
 source.folders=src
 source.encoding=UTF-8
@@ -140,7 +140,7 @@ make_project prologue '        int v = Helper.check(1);
 
 analyze() {   # $1=フォルダ名 -> 出力 CSV のパスを ANALYZED に入れる。キャッシュの読める形を work/$1/cache-dump.tsv に
     ( cd "work/$1" && "$JAVA_BIN" -cp "$CLASSES:$CP" \
-        jche.CallHierarchyExporter config.properties ) > "work/$1/run.log" 2>&1
+        jche.CallHierarchyExporter jche.properties ) > "work/$1/run.log" 2>&1
     ANALYZED=$(ls -d "work/$1"/out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##')
     local cache
     cache=$(ls "work/$1"/.cache/*/analysis-cache.tsv 2>/dev/null | head -1)
@@ -356,7 +356,7 @@ public class Main {
     }
 }
 EOF
-cat > work/isuper/config.properties <<'EOF'
+cat > work/isuper/jche.properties <<'EOF'
 project.root=.
 source.folders=src
 source.encoding=UTF-8

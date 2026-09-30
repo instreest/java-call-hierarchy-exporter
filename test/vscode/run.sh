@@ -49,7 +49,7 @@ echo "== 型検査・束ね・検査（java=$JAVA）"
 # test/demo の中で呼び出し元が多いメソッドと、AT の検査に使うファイル:行、FIELDAT の検査に使うファイル:行:フィールド名。
 # 存在しなくなったらこの検査も直すこと（test/server/run.sh と同じ値）
 JCHE_JAVA="$JAVA" JCHE_CP="$JCHE_CP" \
-JCHE_CONFIG="$ROOT/test/regression/whole/config.properties" \
+JCHE_CONFIG="$ROOT/test/regression/whole/jche.properties" \
 JCHE_TARGET='fx.dao.UserDaoImpl#<init>()' \
 JCHE_AT='src/fx/dao/DaoFactory.java:7' \
 JCHE_FIELD_AT='src/fx/service/OrderService.java:15:dao' \

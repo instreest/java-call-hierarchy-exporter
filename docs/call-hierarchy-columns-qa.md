@@ -125,3 +125,6 @@ prompt-B の 3.3 にあるケース別の期待行は、`resolved-by` / `level` 
 段のラベルを持たない作りで、列を足すには解決の戻り値を変える改修が要る。
 「中心機能だけの 1 ファイル」という位置づけを優先し、
 [single-file/README.md](../single-file/README.md) に「この列は入っていない」と明記した。
+
+> その後、`single-file/` は本体の全ソースから生成する完全版になり、この 2 列も本体と同じに出る
+> （[single-file-qa.md](single-file-qa.md)）。

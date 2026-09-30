@@ -8,7 +8,7 @@ package jche;
 //       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
 //         3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
 //         3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
-//       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/config.properties）の
+//       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/jche.properties）の
 //       source.level で指定する（未指定なら、この版が対応する最大値）。
 // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている
 //       JVMのブートクラスパス」を解析対象のクラスパスに含めるため、実行JDKが
@@ -71,11 +71,11 @@ import jche.util.Warnings;
  * Javaプロジェクトを対象に、メソッド呼び出し階層を一括抽出してCSV出力する。
  * Eclipse IDE の起動は不要で、通常のJavaアプリとして動作する。
  *
- * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/config.properties）:
+ * 使い方（設定ファイルのパスを引数で渡す。複数渡せば順に処理する。省略時は config/jche.properties）:
  * <pre>
- *   jbang src/jche/CallHierarchyExporter.java config/config.properties
+ *   jbang src/jche/CallHierarchyExporter.java config/jche.properties
  *   jbang src/jche/CallHierarchyExporter.java config/projA.properties config/projB.properties
- *   java -cp "bin;lib/*" jche.CallHierarchyExporter config/config.properties
+ *   java -cp "bin;lib/*" jche.CallHierarchyExporter config/jche.properties
  * </pre>
  * 対話モード（メニューで設定ファイルを選んで実行する）はプロジェクト直下の {@code java-call-hierarchy-exporter.sh} / {@code java-call-hierarchy-exporter.cmd} から
  * 起動する（{@code src/jche/Jche.java}）。解析の処理そのものは同じで、{@link #runAll} を共有する。
@@ -114,8 +114,8 @@ public class CallHierarchyExporter {
     /**
      * 引数を省略したときの設定ファイル（作業ディレクトリからの相対）。
      *
-     * 実際に使うのは {@link ConfigCatalog#defaultConfig}（{@code config/config.properties} が無ければ
-     * {@code config/jche.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
+     * 実際に使うのは {@link ConfigCatalog#defaultConfig}（{@code config/jche.properties} が無ければ
+     * 以前の名前の {@code config/jche.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
      */
     private static final String DEFAULT_CONFIG =
             ConfigCatalog.CONFIGS_DIR_NAME + "/" + ConfigCatalog.DEFAULT_CONFIG_NAME;
@@ -363,7 +363,7 @@ public class CallHierarchyExporter {
             rows = walker.walkAll(entries);
             if (config.dataflowEnabled && walker.anyDataflowHits()) {
                 Log.info(Messages.format("exporter.dataflowHits", walker.newHits(), walker.factoryHits(),
-                        walker.paramHits(), walker.fieldHits()));
+                        walker.paramHits(), walker.fieldHits(), walker.declaredTypeHits()));
             }
             if (walker.callbackHits() > 0) {
                 Log.info(Messages.format("exporter.callbackHits", walker.callbackHits()));

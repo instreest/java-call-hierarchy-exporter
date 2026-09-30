@@ -145,7 +145,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 決めきれなかった実装を 1 つに絞る | 契約表を書く（[docs/callback-contracts.md](docs/callback-contracts.md)）。条件が複雑なら拡張を書く（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
 | 呼び出しに効いている `if` の条件も出す | 設定の `conditions.target`（[docs/call-conditions.md](docs/call-conditions.md)） |
 
-設定項目の全体は [config/config.properties](config/config.properties) のコメントにあります。
+設定項目の全体は [config/jche.properties](config/jche.properties) のコメントにあります。
 
 <!-- sec:how-it-compares-with-other-tools -->
 ### ほかの手段との違い
@@ -209,11 +209,11 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 ```
 config/
-├── config.properties             設定ファイル（既定。コピーして解析対象プロジェクトごとに増やすことを推奨）
+├── jche.properties               設定ファイル（既定。コピーして解析対象プロジェクトごとに増やすことを推奨）
 └── 20260907-163000_myapp/        実行ごとの出力フォルダ
     ├── call-hierarchy.csv        呼び出し階層リスト
     ├── methods.csv               メソッド全体リスト
-    ├── config.properties         この実行に使った設定ファイルの複製（渡したファイル名のまま）
+    ├── jche.properties           この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8。ビルドファイルから集めた依存 jar の一覧と要求元も含む）
     ├── warnings.txt              確認してほしいことと対処のしかた（UTF-8。警告やエラーがあったときだけ）
     └── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
@@ -410,6 +410,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
 | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定 |
 | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定 |
+| `DATAFLOW_DECLARED_TYPE` | 経路上で渡された値の**宣言の型**（具象クラスの型で宣言したフィールド・引数）の部分型に候補を絞ったら 1 つに定まった。具象型を追えたわけではなく、実行時の型の上限で絞った結果（[docs/declared-type-narrowing-qa.md](docs/declared-type-narrowing-qa.md)） |
 | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)） |
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | `CHA` | 候補が複数のまま（低確度） |
@@ -484,7 +485,7 @@ Open the result in Excel and filter it to find the impact surface of the method 
 | How to use it, how to start the tool | [Getting started](#getting-started) (this file) |
 | How to read the output CSV | [Reading the results](#reading-the-results) (this file) |
 | The definition of everything in the output | [Output reference](#output-reference) (this file) |
-| What each config item means | the comments in [config/config.properties](config/config.properties) |
+| What each config item means | the comments in [config/jche.properties](config/jche.properties) |
 
 <!-- sec:how-it-compares-with-other-tools -->
 ### How it compares with other tools
@@ -545,7 +546,7 @@ not remove the call: it lists the candidates or says it could not follow the cal
      ```
 
 2. **Write the project to analyze in the config file** — set `project.root` in
-   [`config/config.properties`](config/config.properties) to the folder of the project you want to analyze.
+   [`config/jche.properties`](config/jche.properties) to the folder of the project you want to analyze.
    **This one line is all that is required.** Left empty, the source folders and dependency jars are read from
    `.classpath`, `pom.xml` or `build.gradle`, and the encoding from `project.build.sourceEncoding` in `pom.xml`
    (UTF-8 if there is none).
@@ -562,12 +563,12 @@ not remove the call: it lists the candidates or says it could not follow the cal
 
      ```bat
      rem Windows
-     .\java-call-hierarchy-exporter.cmd config\config.properties
+     .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
      ```bash
      # Linux
-     ./java-call-hierarchy-exporter.sh config/config.properties
+     ./java-call-hierarchy-exporter.sh config/jche.properties
      ```
 
    On the first run it asks before downloading the JDK and the rest; answer `y` (it shows what it will
@@ -681,7 +682,7 @@ The linked documents are in Japanese.
 | Narrow an implementation it could not decide down to one | Write a contract table ([docs/callback-contracts.md](docs/callback-contracts.md)), or an extension for complex conditions ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |
 | Also output the `if` conditions that guard each call | `conditions.target` in the config ([docs/call-conditions.md](docs/call-conditions.md)) |
 
-Every config item is described in the comments of [config/config.properties](config/config.properties).
+Every config item is described in the comments of [config/jche.properties](config/jche.properties).
 
 ---
 
@@ -703,11 +704,11 @@ config file and puts everything in it.
 
 ```
 config/
-├── config.properties             the config file (the default; copy it per analyzed project)
+├── jche.properties               the config file (the default; copy it per analyzed project)
 └── 20260907-163000_myapp/        one output folder per run
     ├── call-hierarchy.csv        the call hierarchy
     ├── methods.csv               every method in the source
-    ├── config.properties         a copy of the config file used for this run (under the name you passed)
+    ├── jche.properties           a copy of the config file used for this run (under the name you passed)
     ├── run.log                   the run log, the same content as standard output (UTF-8; includes the dependency jars collected from the build files, and who asked for each)
     ├── warnings.txt              what to check and how to fix it (UTF-8; only when there were warnings or errors)
     └── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
@@ -913,6 +914,7 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | Determined from a `new`-ed type or from the return value of a factory method |
 | `DATAFLOW_PARAM` | Determined by tracking an argument passed in by the caller along the path |
 | `DATAFLOW_FIELD` | Determined by tracking a constructor-injected field along the path |
+| `DATAFLOW_DECLARED_TYPE` | Narrowing the candidates to the subtypes of the **declared type** of a value passed along the path (a field or parameter declared with a concrete class type) left exactly one. The concrete type itself was not tracked; the upper bound of the runtime type did the narrowing ([docs/declared-type-narrowing-qa.md](docs/declared-type-narrowing-qa.md)) |
 | `DATAFLOW_LAMBDA` | Determined from a lambda or method reference ([Lambdas and method references](#lambdas-and-method-references)) |
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | The bean definitions of the DI container (Spring) narrowed it to one. `SPRING_DI_QUALIFIER` means the bean name from `@Qualifier` / `@Resource(name=...)` decided it ([docs/spring-di-qa.md](docs/spring-di-qa.md)) |
 | `CHA` | Several candidates remain (low confidence) |

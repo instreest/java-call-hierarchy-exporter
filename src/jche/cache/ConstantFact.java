@@ -19,7 +19,7 @@ import jche.util.FileHash;
  * </pre>
  * C.java が参照している型は X だけなので、P.java を変えても C.java は再解析されない。
  * K行は「このファイルが宣言する定数の値」を残しておくためにある。書き手は各行の {@link #fingerprint} を
- * 自分の宣言の指紋（I 行の 3 列目。{@link FileAnalysis#declarationKeys}）に入れ、差分更新は解析し直した結果
+ * 自分の宣言の指紋（I 行の指紋の列。{@link FileAnalysis#declarationKeys}）に入れ、差分更新は解析し直した結果
  * その指紋が変わったとき（値か宣言が変わったとき）に使っている側も解析し直す（{@link jche.analysis.CacheUpdater} の
  * 「宣言の連鎖」。docs/cache-unification-qa.md の Q83）。差分更新は K 行そのものを読み直さない（指紋の材料と、
  * {@link CacheDump} で人が見るため）。

@@ -105,6 +105,11 @@ factory.get(key)                                // 呼び出し元が get("jp.co
 引数経由の解決（`DATAFLOW_PARAM`）は**経路ごと**に判定する。同じファクトリでも、
 呼び出し元Xからの経路では確定、Yからの経路では不明、という出方をする。
 
+具象型が決まらなくても、渡した値の**宣言の型**が具象クラスなら、その部分型に候補を絞る（`DATAFLOW_DECLARED_TYPE`。
+[declared-type-narrowing-qa.md](declared-type-narrowing-qa.md)）。Spring でコンストラクタ注入した `XmlOrderExporter` 型の
+フィールドを `export(OrderExporter e)` に渡した先の `e.export()` は、`XmlOrderExporter` の部分型の実装だけになる。
+宣言の型がインターフェース（`OrderExporter` 型のフィールド）なら絞れないので、これまでどおり CHA のまま。
+
 ラムダ式・メソッド参照は値として追う（`DATAFLOW_LAMBDA`）。追える形と追えない形の一覧は
 [lambda-expansion-qa.md](lambda-expansion-qa.md) の Q6。要点は次のとおり。
 
@@ -246,6 +251,7 @@ return switch (key) {
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定（同上） |
+| — | `DATAFLOW_DECLARED_TYPE` | 経路上で渡された値の**宣言の型**（具象クラスの型で宣言したフィールド・引数）の部分型に候補を絞ったら 1 つに定まった（同上。[declared-type-narrowing-qa.md](declared-type-narrowing-qa.md)） |
 | — | `DATAFLOW_LAMBDA` | ラムダ式・メソッド参照から特定（同上。下記） |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
@@ -255,7 +261,7 @@ return switch (key) {
 | — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
-`DATAFLOW_PARAM` / `DATAFLOW_FIELD` / `DATAFLOW_LAMBDA` は経路ごとに判定するので段の外に置いている。
+`DATAFLOW_PARAM` / `DATAFLOW_FIELD` / `DATAFLOW_DECLARED_TYPE` / `DATAFLOW_LAMBDA` は経路ごとに判定するので段の外に置いている。
 契約表（段 3 の `CONTRACT`）は拡張より先、データフロー（段 4）や Spring の判定（段 5）より先に効く。
 
 ---

@@ -15,9 +15,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * 対話モードで選べる設定ファイル（config.properties 形式）の一覧。
+ * 対話モードで選べる設定ファイル（jche.properties 形式）の一覧。
  *
- * 探す場所は {@code config/} の下（サブフォルダも含む）。既定の設定ファイル {@code config/config.properties} が
+ * 探す場所は {@code config/} の下（サブフォルダも含む）。既定の設定ファイル {@code config/jche.properties} が
  * ここにあり、対話モードの「設定ファイルを新しく作る」もここに書く。実行ごとの出力フォルダ
  * （{@code config/<解析開始日時>_<プロジェクト名>/}。output.folder の既定）もこの下にできるが、
  * その中の設定ファイルの複製は一覧に出さない（出力フォルダ名の形で見分ける）。
@@ -30,15 +30,16 @@ public final class ConfigCatalog {
 
     public static final String CONFIGS_DIR_NAME = "config";
     /** 既定の設定ファイル（config/ の下）。一覧の先頭に出し、作成ウィザードのひな形にする */
-    public static final String DEFAULT_CONFIG_NAME = "config.properties";
+    public static final String DEFAULT_CONFIG_NAME = "jche.properties";
     /**
      * 既定の設定ファイルとして扱う名前（前にあるものほど優先）。
      *
-     * 同梱しているのは {@link #DEFAULT_CONFIG_NAME} だが、{@code config.properties} はどのプロジェクトにも
-     * ありがちな名前なので、このツールの設定だと分かる {@code jche.properties} でも置けるようにしてある
-     * （Eclipse プラグインが利用者のプロジェクトに書き出すのはこちら）。読む側は両方を既定として扱う。
+     * 同梱しているのは {@link #DEFAULT_CONFIG_NAME}（このツールの設定だと分かる名前）。以前の名前
+     * {@code config.properties} はどのプロジェクトにもありがちで用途が分からないので改名したが、
+     * その名前で置いている既存の利用者のために、読む側では今までどおり既定として受け付ける
+     * （{@code docs/config-file-name-qa.md}）。
      */
-    public static final List<String> DEFAULT_CONFIG_NAMES = List.of(DEFAULT_CONFIG_NAME, "jche.properties");
+    public static final List<String> DEFAULT_CONFIG_NAMES = List.of(DEFAULT_CONFIG_NAME, "config.properties");
     private static final String RECENT_FILE = ".cache/recent-configs.txt";
 
     /** 一覧の 1 件。{@code display} はプロジェクトフォルダからの相対パス（表示用） */

@@ -691,12 +691,18 @@ final class FactVisitor extends ASTVisitor {
         return true;
     }
 
+    /**
+     * {@code super.m()} / {@code X.super.m()}。静的束縛（部分型の上書きの影響を受けない）だが、読み手は修飾する型
+     * （JLS 13.1: {@code super.m()} なら囲む型の親クラス、{@code X.super.m()} なら X がインターフェースならその X、
+     * クラスなら X の親クラス）から実際に動く実装を選び直す（JVMS 6.5 の invokespecial。インターフェースのダイヤモンドで
+     * JDT の束縛が特定性の低い default を指すことがある。Issue #177）ので、修飾する型を C 行に書く
+     */
     @Override
     public boolean visit(SuperMethodInvocation n) {
-        // super.m() は静的束縛（オーバーライドの影響を受けない）
         IMethodBinding b = n.resolveMethodBinding();
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                RecvKind.THIS, null, origins.valuesOf(null, n.arguments()));
+                RecvKind.THIS, null, origins.valuesOf(null, n.arguments()),
+                calls.qualifierOf(b, CallSiteRecorder.superQualifierOf(n, n.getQualifier())));
         return true;
     }
 
@@ -763,13 +769,14 @@ final class FactVisitor extends ASTVisitor {
         return true;
     }
 
-    /** メソッド参照 super::m。super 呼び出しと同じく静的束縛 */
+    /** メソッド参照 super::m。super 呼び出しと同じく静的束縛で、修飾する型も同じに書く */
     @Override
     public boolean visit(SuperMethodReference n) {
         IMethodBinding b = n.resolveMethodBinding();
         recordFunctionalImpl(n.resolveTypeBinding(), n, FunctionalImplFact.METHOD_REF);
         calls.record(currentCallers(), lambdaDepth, b, n, n.getName().getIdentifier(), CallSiteRecorder.superMods(b), "",
-                RecvKind.THIS, null, CallValues.NONE);
+                RecvKind.THIS, null, CallValues.NONE,
+                calls.qualifierOf(b, CallSiteRecorder.superQualifierOf(n, n.getQualifier())));
         return true;
     }
 
@@ -1073,9 +1080,9 @@ final class FactVisitor extends ASTVisitor {
      *       依存 jar が無いときの式の中の {@code org.missing.pkg.Type.run()} の {@code org.missing} には、同じバッチで
      *       先に別のファイルが {@code org.missing.pkg.Type.class} のような型の文脈で同じ名前を解決しようとしたかどうかで、
      *       JDT が回復した型（{@code org.missing}）を返したり返さなかったりする。数えると I 行がバッチの組み方で変わる
-     *       （Q79）。解決できなかった名前は、エラーの側（I 行の 2 列目）で拾う。型の節（{@link Type}）は回復した型でも
-     *       数える（型の文脈の回復はバッチに依らない。途中のパッケージができる・無くなると変わるが、それは差分更新が
-     *       解決できなかった名前の側で拾う。Q80）</li>
+     *       （Q79）。解決できなかった名前は数えず、型解決に失敗したブロックは何かが変わった実行で必ず解析し直す
+     *       （{@link CacheUpdater} の「型解決に失敗していたファイル」）。型の節（{@link Type}）は回復した型でも
+     *       数える（型の文脈の回復はバッチに依らない）</li>
      * </ul>
      * アノテーションの型は、アノテーションの節の側で数える（型の名前の節は数えない）。{@code java.*} のもの
      * （{@code @Override}・{@code @Target}）も数える。同じパッケージに {@code Override} や {@code Target} という型を

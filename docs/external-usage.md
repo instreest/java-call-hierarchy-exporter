@@ -47,4 +47,4 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 非 static な内部クラスのコンストラクタは、バイトコード上は外側インスタンスが引数に付くため
 
 設定の詳しい書き方（FatJar・war・ear の中の jar も開くこと、サブフォルダも見ること）は
-[config/config.properties](../config/config.properties) の `external.library.folders` のコメントにある。
+[config/jche.properties](../config/jche.properties) の `external.library.folders` のコメントにある。

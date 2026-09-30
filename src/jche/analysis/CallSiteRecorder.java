@@ -187,6 +187,34 @@ final class CallSiteRecorder {
         return null;
     }
 
+    /**
+     * {@code super.m()} / {@code X.super.m()} / {@code super::m} を修飾する型（JLS 13.1）。
+     * {@code X} がインターフェースなら X。{@code X} がクラス（{@code Outer.super.m()}）なら X の親クラス。
+     * 修飾が無ければ、その式を囲む最も内側の型（匿名クラスを含む）の親クラス。求められなければ null。
+     * 読み手はこの型から実際に動く実装を選び直す（JVMS 6.5 の invokespecial。{@code C = 直接の親クラス}
+     * か名指しのインターフェース）
+     */
+    static ITypeBinding superQualifierOf(ASTNode node, org.eclipse.jdt.core.dom.Name qualifier) {
+        if (qualifier != null) {
+            IBinding qb = qualifier.resolveBinding();
+            if (!(qb instanceof ITypeBinding qt)) {
+                return null;
+            }
+            return qt.isInterface() ? qt : qt.getSuperclass();
+        }
+        for (ASTNode n = node.getParent(); n != null; n = n.getParent()) {
+            if (n instanceof org.eclipse.jdt.core.dom.AbstractTypeDeclaration td) {
+                ITypeBinding t = td.resolveBinding();
+                return (t == null) ? null : t.getSuperclass();
+            }
+            if (n instanceof org.eclipse.jdt.core.dom.AnonymousClassDeclaration ac) {
+                ITypeBinding t = ac.resolveBinding();
+                return (t == null) ? null : t.getSuperclass();
+            }
+        }
+        return null;
+    }
+
     /** {@code type}（の消去）が {@code ancestor}（消去した型）かその部分型か。バインディングの親型をたどる */
     private static boolean isSubtype(ITypeBinding type, ITypeBinding ancestor) {
         java.util.ArrayDeque<ITypeBinding> queue = new java.util.ArrayDeque<>();

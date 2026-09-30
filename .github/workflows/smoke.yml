@@ -87,6 +87,11 @@ jobs:
       - name: Cache value encoding test (escape round-trip)
         run: bash test/cachevalue/run.sh
 
+      # 1 ファイル版（single-file/）。src/jche から生成し直した結果がコミットと一致すること（生成し直し忘れ）、
+      # 本体と同じ lint で通ること、回帰テストの whole・entry・plugin（同梱の拡張と利用者の拡張）が本体と同じ出力になること
+      - name: Single-file build test
+        run: bash test/single-file/run.sh
+
       # 同梱の契約表（JDK のコールバック・フレームワークの入口）。全行が parse でき、JDK の型は
       # 宣言元と呼び戻すメソッドが実在すること。継承しているだけの型で書いた行は永久に当たらない
       - name: Bundled contracts test (parse and JDK declaring types)
@@ -153,7 +158,7 @@ jobs:
           rem 出力はリダイレクトせず、そのまま CI のログへ流す。ログファイルに入れてしまうと、
           rem 起動コマンドがバッチとして致命的に失敗したとき（cmd がその場でバッチ処理ごと打ち切る）に
           rem 原因のメッセージがファイルの中に残ったまま type までたどり着けず、何も分からなくなる
-          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          call java-call-hierarchy-exporter.cmd test\regression\entry\jche.properties
           echo [launcher] exit=%ERRORLEVEL%
           rem 出力フォルダ名は <日時>_demo で実行のたびに変わる。cmd の if exist はワイルドカードを
           rem 「最後のファイル名」の位置でしか解釈しないので、途中のフォルダ名に * を書いた条件は常に偽になる。
@@ -190,7 +195,7 @@ jobs:
             echo JCHE_JBANG_OPTS=
             echo JCHE_ALLOW_DOWNLOAD=
           )
-          call java-call-hierarchy-exporter.cmd test\regression\entry\config.properties
+          call java-call-hierarchy-exporter.cmd test\regression\entry\jche.properties
           set "CODE=%ERRORLEVEL%"
           echo [launcher] exit=%CODE%
           del launcher.properties
@@ -268,7 +273,7 @@ jobs:
           test -s "$METHODS_CSV"
           test -s "$RUN_LOG"
           # 生成した設定ファイルの複製が出力フォルダに入っていること
-          test -f "$OUTPUT_DIR/config.properties"
+          test -f "$OUTPUT_DIR/jche.properties"
           head -1 "$CSV"
 
       # AST 解析キャッシュの引き継ぎ。1 回目の解析でできた .cache/（uses: ./ なのでワークスペース直下）を
@@ -306,8 +311,8 @@ jobs:
         uses: ./
         with:
           config: |
-            test/regression/whole/config.properties
-            test/regression/entry/config.properties
+            test/regression/whole/jche.properties
+            test/regression/entry/jche.properties
           java-version: ''
           cache: 'false'
           artifact-name: call-hierarchy-regression-configs

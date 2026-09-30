@@ -109,3 +109,22 @@ static メソッド群（`writeBlock` と補助）も移した。ブロックを
 動きを変えないリファクタリングなので、既存の検査をすべて通した: `test/regression`・`test/cacheversion`（事実の指紋が同じ）・
 `test/dataflow`・`test/jls`・`test/pruning`・`test/incremental`・`test/ctorbody`・`test/conditions`・`test/warnings`・
 `test/cachevalue`・`test/contracts`・`test/pom`・`test/nls`・`test/server` と、JDK 25 の javac の lint（`-Xlint:all -Werror -Xdoclint:all,-missing`）。
+
+## Q10. 「クラスの連鎖 → 最も特定的な親インターフェース」の写しが 3 か所にある（#189）
+
+[Issue #189](https://github.com/instreest/java-call-hierarchy-exporter/issues/189)。同じ順が `jche.graph.MethodSelection#search`（選択。
+正本）・`jche.analysis.ImplicitCalls#findNoArgMethod`（解決。拡張 for の `iterator()`・try-with-resources の `close()`）・
+`jche.external.ExternalUsageScanner#inheritedFrom`（被参照）にある。順の決まりを変えるとき、片方を忘れると暗黙の呼び出しの宣言や
+被参照の結び先だけが古い順のまま残り、エラーにならない。
+
+**結論: 1 つにはまとめず、正本を `docs/resolution-selection-design.md` の 4 節に置き、「同時に直す」の決まりを AGENTS.md の
+コードの決まりに 1 項目足し、3 つのクラス javadoc が互いを指すようにした。** `ExternalUsageScanner` は別途 `MethodSelection` の
+入口（`implementationOfSignature`）に置き換える（点検表 #6・#186）ので、写しはいずれ 2 つになる。
+
+却下した案: **型階層を抽象化して 1 つの探索に寄せる**（`TypeHierarchy` と JDT の `ITypeBinding` の両方を同じインターフェースで
+包み、`MethodSelection#search` を両方の上で動かす）。層が違い材料が違う。`ImplicitCalls` はフェーズ1 の解決の層で、材料は JDT の
+バインディング（型引数を置換したメソッド・public の宣言だけ・jar の型のメンバーも見える）、`MethodSelection` はフェーズ2 の選択の
+層で、材料はキャッシュの行（O 行・継承した実装・パッケージアクセス・本体の有無。jar の型のメンバーは見えない）。同じ順でも
+「見るもの」が違うので、共通のインターフェースは両方の材料の和になり、片方でしか意味の無い口（O 行・`hasBody`）をもう片方が
+空で返す形になる。解決の層から選択の層のクラスを呼ぶ（フェーズ1 が `jche.graph` に依る）のも、3 層の向きを崩す。抽象化で得る
+のは順の一致だけで、それは「同時に直す」の決まりと相互参照で足りる。

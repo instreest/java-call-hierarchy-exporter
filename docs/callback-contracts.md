@@ -203,7 +203,7 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,RESOLVED:
 （`=>` を含む行が C、`->` を含む行が A、`@` / `super` / `static` で始まる行が B）。
 
 ```properties
-# config.properties
+# jche.properties
 contracts.files=contracts.txt
 ```
 

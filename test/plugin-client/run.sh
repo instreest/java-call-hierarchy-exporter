@@ -49,7 +49,7 @@ JAVA=${JAVA_HOME:+$JAVA_HOME/bin/java}
 JAVA=${JAVA:-$(command -v java)}
 echo "== 子プロセスを起動して一連のやりとりを確認する（java=$JAVA）"
 OUT=$(java -cp "$WORK/client:$WORK/probe" ClientProbe "$JAVA" "$CP" "$WORK" \
-    "$ROOT/test/regression/whole/config.properties" 'fx.dao.UserDaoImpl#<init>()' 2>&1)
+    "$ROOT/test/regression/whole/jche.properties" 'fx.dao.UserDaoImpl#<init>()' 2>&1)
 echo "$OUT" | sed 's/^/  /'
 
 if grep -q '^NG' <<<"$OUT" || ! grep -q '^DONE' <<<"$OUT"; then

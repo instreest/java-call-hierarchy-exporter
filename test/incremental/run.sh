@@ -70,7 +70,7 @@ fi
 
 CACHE=.cache/*/analysis-cache.tsv
 
-CONFIG=config.properties
+CONFIG=jche.properties
 
 run() {   # 解析を1回走らせ、出力フォルダを OUT に、解析し直した件数を PARSED に、キャッシュの複製を $1 に置く
     "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CP" jche.CallHierarchyExporter "$CONFIG" \
@@ -230,6 +230,15 @@ blocks_sorted() {   # $1=キャッシュ  $2=外す行種別（grep -E の文字
 }
 normalized() { blocks_sorted "$1" ""; }
 
+# F 行のエラー数（と、それを含む検査値）を伏せたもの。依存 jar に無いクラスで JDT が打ち切る題材では、見つからない
+# クラスのエラーが 1 回の JDT の呼び出しで最初に出会ったファイルにだけ付くので、エラー数はバッチの組み方で移る
+# （docs/cache-unification-qa.md の Q129 の (b)）。型解決に失敗していたブロックは差分更新で必ず解析し直す（Q131）ので、
+# 全件解析と別の組で解析したそれらのブロックのエラー数は一致しない。事実（ほかの行）は一致しなければならない
+normalized_noerr() {
+    awk -F'\t' -v OFS='\t' 'substr($0, 1, 1) == "F" { $4 = "?"; $8 = "?" } { print }' "$1" > "$1.noerr"
+    blocks_sorted "$1.noerr" ""
+}
+
 # F 行（サイズ・エラー数・内容ハッシュ・検査値）と T 行（ソース一覧の指紋）を除いた「事実」だけ。
 # どちらもファイルを書き換えれば中身に関わらず必ず変わるので、
 # 「事実が変わったか」を見るときはこちらで比べる（ブロックの区切りと並べ替えには F 行のパスを使う）
@@ -269,7 +278,7 @@ check_rows() {   # $1=キャッシュ  $2=ラベル
 # $4（省略可）は最初の解析の前に行う用意（題材に無いファイルを work/ に足す）
 case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行以外）が変わるべきか(yes/no)  $4=用意するコマンド
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     if [ -n "${4:-}" ]; then eval "$4"; fi
     run base.tsv || return
@@ -279,6 +288,7 @@ case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行�
     run inc.tsv || return
     local inc_csv=$OUT
     INC_PARSED=$PARSED
+    cp out.log inc.log   # 差分更新のログ（全件解析の run が out.log を上書きするので、ケースの後で見るために残す）
     check_rows inc.tsv "$1 差分更新"
 
     rm -rf .cache
@@ -838,9 +848,10 @@ edit_field_hide() {
 }
 case_of "式の型に親のフィールドを隠すフィールドを足す" edit_field_hide yes setup_field_hide
 
-# 新しい型で解析し直すのは、解決できなかった名前（コンパイルエラーの引数。I 行）が新しい型の名前に当たる
-# ブロックだけ。無名クラス・入れ子の型を足しても、名前の違う型で失敗しているブロック（Fail）は解析し直さない
-# （docs/cache-unification-qa.md の Q42）。名前の当たるブロック（Caller2）は解析し直す
+# 型解決に失敗しているブロック（Fail・Caller2）は、何かが変わった実行では名前を照合せず必ず解析し直す。
+# 新しいトップレベルの型（Foo2）ができたパッケージ（ntn）のブロックは、I 行に何かあれば解析し直す（名前の隠蔽。
+# どの名前が隠されるかは見ない）。入れ子の型を足すと型階層（H 行）が変わるので、残りをすべて解析し直す（安全網）。
+# 無名クラスは階層に数えない（docs/cache-unification-qa.md の Q131）
 setup_new_type_names() {
     jfile ntn/Fail.java <<'EOF'
 package ntn;
@@ -874,12 +885,31 @@ public class Main {
 }
 EOF
 }
-case_of "無名クラス・入れ子の型を足す（名前の違う型で失敗しているブロックは解析し直さない）" \
+case_of "無名クラス・入れ子の型を足す（型階層が変わったので残りをすべて解析し直す）" \
     edit_new_type_anon yes setup_new_type_names
-if [ "$INC_PARSED" = 1 ]; then
-    echo "  OK   解析し直したのは書き換えた 1 件だけ（新規解析=$INC_PARSED）"
+ntn_total=$(find work/src -name '*.java' | wc -l)
+if [ "$INC_PARSED" = "$ntn_total" ] && grep -q -F "type hierarchy" inc.log; then
+    echo "  OK   入れ子の型を足したので全件（$ntn_total 件）を解析し直した（新規解析=$INC_PARSED）"
 else
-    echo "  NG   無名クラス・入れ子の型を足しただけで、ほかのブロックも解析し直しています（新規解析=$INC_PARSED）"; fail=1
+    echo "  NG   入れ子の型を足したのに全件になっていません（新規解析=$INC_PARSED。期待は $ntn_total）"; fail=1
+fi
+edit_new_type_anon_only() {
+    jfile ntn/Main.java <<'EOF'
+package ntn;
+public class Main {
+    void run() {
+        Runnable r = new Runnable() { public void run() { System.out.println(2); } };
+        r.run();
+    }
+}
+EOF
+}
+case_of "無名クラスだけを足す（階層に数えないので、書き換えたファイルと失敗しているブロックだけ）" \
+    edit_new_type_anon_only yes setup_new_type_names
+if [ "$INC_PARSED" = 3 ]; then
+    echo "  OK   解析し直したのは書き換えた Main と、失敗している Fail・Caller2 の 3 件（新規解析=$INC_PARSED）"
+else
+    echo "  NG   無名クラスを足しただけで、ほかのブロックも解析し直しています（新規解析=$INC_PARSED。期待は 3）"; fail=1
 fi
 edit_new_type_named() {
     jfile ntn/Foo2.java <<'EOF'
@@ -889,11 +919,96 @@ public class Foo2 {
 }
 EOF
 }
-case_of "無かった型を足す（名前の当たるブロックだけを解析し直す）" edit_new_type_named yes setup_new_type_names
-if [ "$INC_PARSED" = 2 ]; then
-    echo "  OK   解析し直したのは足した Foo2 と名前の当たる Caller2 の 2 件（新規解析=$INC_PARSED）"
+case_of "無かった型を足す（同じパッケージのブロックと失敗しているブロックを解析し直す）" \
+    edit_new_type_named yes setup_new_type_names
+if [ "$INC_PARSED" = 4 ]; then
+    echo "  OK   解析し直したのは足した Foo2 と、同じパッケージの Main と、失敗している Fail・Caller2 の 4 件（新規解析=$INC_PARSED）"
 else
-    echo "  NG   新しい型の名前に当たらないブロックも解析し直しています（新規解析=$INC_PARSED。期待は 2）"; fail=1
+    echo "  NG   新しい型のパッケージの外のブロックも解析し直しています（新規解析=$INC_PARSED。期待は 4）"; fail=1
+fi
+if grep -q -F "type hierarchy" inc.log; then
+    echo "  NG   新しいファイルを足しただけで、型階層が変わったとして全件解析に切り替わっています"; fail=1
+fi
+
+# Doma のように、生成される実装（UserDaoImpl）をソースが名指さないフレームワークでは、生成物が無くても
+# コンパイルエラーにならない。@Dao のインターフェースだけのプロジェクトで、エラー数が 0 で、差分更新が
+# 全件にならず、呼び出しは「実装は生成される（Doma）」の注記で出ること（docs/cache-unification-qa.md の Q131）
+setup_doma() {
+    jfile org/seasar/doma/Dao.java <<'EOF'
+package org.seasar.doma;
+public @interface Dao { }
+EOF
+    jfile dm/UserDao.java <<'EOF'
+package dm;
+@org.seasar.doma.Dao
+public interface UserDao {
+    Object select(long id);
+}
+EOF
+    jfile dm/UserService.java <<'EOF'
+package dm;
+public class UserService {
+    private final UserDao dao;
+    public UserService(UserDao dao) { this.dao = dao; }
+    public Object find(long id) { return dao.select(id); }
+}
+EOF
+}
+edit_doma() {
+    jfile dm/UserService.java <<'EOF'
+package dm;
+public class UserService {
+    private final UserDao dao;
+    public UserService(UserDao dao) { this.dao = dao; }
+    public Object find(long id) { return dao.select(id); }
+    public Object first() { return dao.select(1L); }
+}
+EOF
+}
+case_of "Doma の @Dao だけ（実装が無くてもエラー 0。差分更新は全件にならない）" edit_doma yes setup_doma
+doma_errors=$(awk -F'\t' '$1 == "F" && ($2 == "src/dm/UserDao.java" || $2 == "src/dm/UserService.java") { s += $4 } END { print s + 0 }' inc.tsv)
+if [ "$doma_errors" = 0 ]; then
+    echo "  OK   @Dao のインターフェースと利用者にコンパイルエラーが無い（実装が無くてもエラーにならない）"
+else
+    echo "  NG   @Dao のプロジェクトにコンパイルエラーがあります（$doma_errors 件）"; fail=1
+fi
+if [ "$INC_PARSED" = 1 ]; then
+    echo "  OK   解析し直したのは書き換えた UserService の 1 件だけ（全件にならない。新規解析=$INC_PARSED）"
+else
+    echo "  NG   @Dao のプロジェクトで書き換えた 1 件以外も解析し直しています（新規解析=$INC_PARSED）"; fail=1
+fi
+# 起点（entry.packages）ではないので call-hierarchy.csv には出ない。methods.csv の unresolvedCause 列で見る
+if grep -q "^UserService.first(),dm.UserService,.*implementation is generated at compile time (Doma)" \
+        "$(ls -d out/*/ | sort | tail -1)methods.csv"; then
+    echo "  OK   @Dao の呼び出しは「実装は生成される（Doma）」の注記で出る"
+else
+    echo "  NG   @Dao の呼び出しに「実装は生成される（Doma）」の注記がありません"; fail=1
+fi
+
+# 親を付け替える（型階層が変わる）と、差分更新をやめて残りをすべて解析し直す（安全網。docs/cache-unification-qa.md の Q131）
+setup_hierarchy_net() {
+    jfile hn/P.java <<'EOF'
+package hn;
+public class P { public void m() { } }
+EOF
+    jfile hn/Q.java <<'EOF'
+package hn;
+public class Q { public void m() { } }
+EOF
+    jfile hn/C.java <<'EOF'
+package hn;
+public class C extends P { }
+EOF
+}
+edit_hierarchy_net() {
+    sed -i 's/public class C extends P/public class C extends Q/' work/src/hn/C.java
+}
+case_of "親を付け替える（型階層が変わったので残りをすべて解析し直す）" edit_hierarchy_net yes setup_hierarchy_net
+hn_total=$(find work/src -name '*.java' | wc -l)
+if [ "$INC_PARSED" = "$hn_total" ] && grep -q -F "type hierarchy" inc.log; then
+    echo "  OK   親を付け替えたので全件（$hn_total 件）を解析し直した（新規解析=$INC_PARSED）"
+else
+    echo "  NG   親を付け替えたのに全件になっていません（新規解析=$INC_PARSED。期待は $hn_total）"; fail=1
 fi
 
 # 依存 jar が無いときの事実がバッチの組み方に依らない（docs/cache-unification-qa.md の Q79）。JDT は、無いパッケージの
@@ -1279,6 +1394,164 @@ edit_package_info_jar() {
 }
 case_of "package-info.java のオンデマンド import を jar が同じパッケージに足した型が隠す" \
     edit_package_info_jar yes setup_package_info_jar
+
+# --- Issue #171: JDT（java.util.zip.ZipFile）が受け付けない壊れ方の jar ---------------------------------------
+# ZipDirectory（ファイルのバイトから読む目次）は ZipFile の検査の一部（圧縮方式・暗号化の印・終わりの記録のコメント長・
+# 項目のコメントの UTF-8）をしないので、JDT が「読めない」としてクラスパスから外した jar に普通の指紋を作っていた。
+# 「依存 jar を読めません」の警告が出ず、同じ目次（名前・大きさ・CRC）の正しい jar に直しても指紋が変わらず、差分更新は
+# BINDING_FAILED とコンパイルエラーのまま残った。今は指紋を作る前に ZipFile で開いて閉じ、開けなければ読めない jar の
+# 道（警告・空の指紋＝毎回変わった扱い）に乗せる（docs/cache-dependency-jars-qa.md の Q22）
+break_jar() {   # $1=元の jar  $2=書き出す jar  $3=壊し方（method / encrypted / comment / entcomment）。目次の名前・大きさ・CRC は変えない
+    python3 - "$1" "$2" "$3" <<'PY'
+import struct, sys
+src, dst, kind = sys.argv[1], sys.argv[2], sys.argv[3]
+b = bytearray(open(src, 'rb').read())
+end = b.rfind(b'PK\x05\x06')
+cenlen = struct.unpack_from('<I', b, end + 12)[0]
+cenpos = end - cenlen
+def each_entry():
+    pos = cenpos
+    while pos < end:
+        assert b[pos:pos + 4] == b'PK\x01\x02'
+        n, e, c = struct.unpack_from('<HHH', b, pos + 28)
+        yield pos, struct.unpack_from('<I', b, pos + 42)[0], n, e, c
+        pos += 46 + n + e + c
+if kind == 'method':        # 圧縮方式を bzip2（12）にする（目次と各項目の頭の両方）
+    for pos, loc, n, e, c in each_entry():
+        struct.pack_into('<H', b, pos + 10, 12)
+        struct.pack_into('<H', b, loc + 8, 12)
+elif kind == 'encrypted':   # 暗号化の印（汎用フラグの bit 0）を立てる
+    for pos, loc, n, e, c in each_entry():
+        struct.pack_into('<H', b, pos + 8, struct.unpack_from('<H', b, pos + 8)[0] | 1)
+        struct.pack_into('<H', b, loc + 6, struct.unpack_from('<H', b, loc + 6)[0] | 1)
+elif kind == 'comment':     # 終わりの記録のコメント長を、ファイルの終わりを越える値にする
+    struct.pack_into('<H', b, end + 20, 0xFFFF)
+elif kind == 'entcomment':  # 最初の項目のコメントを UTF-8 でないバイトにする（目次に 1 バイト挿す）
+    pos, loc, n, e, c = next(each_entry())
+    struct.pack_into('<H', b, pos + 32, c + 1)
+    b[pos + 46 + n + e + c: pos + 46 + n + e + c] = b'\xff'
+    struct.pack_into('<I', b, b.rfind(b'PK\x05\x06') + 12, cenlen + 1)
+else:
+    raise SystemExit('unknown kind ' + kind)
+open(dst, 'wb').write(b)
+PY
+}
+setup_broken_jar() {   # $1=壊し方
+    rm -rf jarsrc
+    printf 'package org.lib;\npublic class K { public static void bar() { } }\n' | jsrc bj/org/lib/K.java
+    lib_jar bj
+    cp work/lib/bj.jar good-bj.jar
+    break_jar good-bj.jar work/lib/bj.jar "$1"
+    printf 'package p;\npublic class X { void go() { org.lib.K.bar(); } }\n' | jfile p/X.java
+}
+edit_broken_jar() {   # 壊れた jar で解析した実行（out.log）に「依存 jar を読めません」の警告が出ていること。そのうえで正しい jar に直す
+    if grep -q "Cannot read a dependency jar" out.log; then
+        echo "  OK   JDT の読めない jar を「依存 jar を読めません」と警告する"
+    else
+        echo "  NG   JDT の読めない jar に警告が出ていません（ZipDirectory が読めるものとして扱っている）"; fail=1
+    fi
+    cp good-bj.jar work/lib/bj.jar
+}
+for kind in method encrypted comment entcomment; do
+    case_of "JDT の読めない jar（$kind）を、同じ目次の正しい jar に直す" edit_broken_jar yes "setup_broken_jar $kind"
+done
+rm -f good-bj.jar
+
+# --- Issue #179: 解決できない型が絡む結果は JDT の処理順（createASTs に渡した順）で変わる -------------------------
+# 全件解析はソースの一覧の順に渡すが、パス3・4 の一覧は旧キャッシュのブロックの順（差分更新のたびに動く）だったので、
+# 差分更新だけが全件解析と食い違った。今はどのパスの一覧も渡す前にソースの一覧の順に並べる（CacheUpdater#analyzeInBatches。
+# docs/cache-unification-qa.md の Q137）
+# 症状 1: 戻り値の型が無いパッケージを参照するメソッドの有無。JDT は Helper を先に解決すると run の宣言のバインディングを
+# 捨て（BINDING_FAILED）、User を先に解決すると残す（RESOLVED）。User を先に書き換えてブロックを先頭に動かしてから l1 を消す
+setup_order_return() {
+    printf 'package l1.q;\npublic class Base2<T> { }\n' | jfile l1/q/Base2.java
+    printf 'package b;\npublic interface Helper { default l1.q.Base2<String> run(Object p0) { return null; } }\n' \
+        | jfile b/Helper.java
+    printf 'package d;\npublic class User { void c4(b.Helper r) { r.run(null); } }\n' | jfile d/User.java
+}
+edit_order_return() {
+    printf '// touched\n' >> work/src/d/User.java
+    run mid.tsv || return
+    rm -rf work/src/l1
+}
+case_of "戻り値の型が無いパッケージを参照するメソッドの有無が、解析し直す順に依らない" edit_order_return yes setup_order_return
+# 症状 2: 無い型を引数に持つ候補（Base.run(Util2)）と、適用できる継承した候補（Helper3.run(int)）のどちらを選ぶか。
+# Base か Shape を先に解決すると Base.run（Task2 はコンパイルエラー）、Task2 を先に解決すると Helper3.run。
+# Task2 を先に書き換えてブロックを先頭に動かしてから Base を書き換える
+setup_order_overload() {
+    printf 'package l1.q;\npublic class Helper3 { public int run(int p0) { return 0; } }\n' | jfile l1/q/Helper3.java
+    printf 'package a;\npublic class Base extends l1.q.Helper3 { public int run(a.Util2 p0) { return 0; } }\n' | jfile a/Base.java
+    printf 'package a.x;\npublic class Shape extends a.Base { }\n' | jfile a/x/Shape.java
+    printf 'package d;\npublic class Task2 { void c1(a.x.Shape r) { r.run(0); } }\n' | jfile d/Task2.java
+}
+edit_order_overload() {
+    printf '// touched\n' >> work/src/d/Task2.java
+    run mid.tsv || return
+    printf '// touched\n' >> work/src/a/Base.java
+}
+case_of "無い型を引数に持つ候補と継承した候補のどちらを選ぶかが、解析し直す順に依らない" edit_order_overload no setup_order_overload
+
+# --- Issue #180: 差分更新の取りこぼし（軽いもの） ---------------------------------------------------------------
+# 1. package-info.java に宣言したクラス（JLS 7.4.1 は推奨しないだけで、書ける）の解析が失敗しても（1 万段の呼び出しで JDT が
+#    溢れる）、そのパッケージが中身の分からないパッケージにならなかった（CacheUpdater#declaresNoType がファイル名だけで
+#    「型を宣言しない」と決めていた）。get() の戻り値を変えても・ファイルを消しても、U を再利用して U.go → A.run のままだった
+setup_pkginfo_class() {
+    {
+        printf 'package p;\nclass Helper {\n    static A get() { return new A(); }\n    String chain() {\n        return new StringBuilder()'
+        for ((i = 0; i < 10000; i++)); do printf '.append(%d)' "$i"; done
+        printf '.toString();\n    }\n}\n'
+    } | jfile p/package-info.java
+    printf 'package p;\npublic class A { public void run() { } }\n' | jfile p/A.java
+    printf 'package p;\npublic class B { public void run() { } }\n' | jfile p/B.java
+    printf 'package p;\npublic class U { public void go() { Helper.get().run(); } }\n' | jfile p/U.java
+}
+check_pkginfo_failed() {   # 題材が効いていること: package-info.java の解析が失敗している（印のブロック）
+    if grep -q "Analysis failed (skipped): src/p/package-info.java" out.log; then
+        echo "  OK   package-info.java の解析が失敗している（題材が効いている）"
+    else
+        echo "  NG   package-info.java の解析が失敗していません（題材が効いていない）"; fail=1
+    fi
+}
+edit_pkginfo_class() {
+    check_pkginfo_failed
+    sed -i 's/static A get() { return new A(); }/static B get() { return new B(); }/' work/src/p/package-info.java
+}
+case_of "package-info.java に宣言した、解析に失敗するクラスの戻り値を変える" edit_pkginfo_class yes setup_pkginfo_class
+edit_pkginfo_delete() {
+    check_pkginfo_failed
+    rm work/src/p/package-info.java
+}
+case_of "package-info.java に宣言した、解析に失敗するクラスを消す" edit_pkginfo_delete yes setup_pkginfo_class
+
+# 2. 同じ実行で消したファイルの、壊れたブロック（検査値が合わない）の H 行を信じていた。H 行が p.Base → p.Basx と化けていると
+#    本当の型 p.Base が変わった型にならず、U を再利用して Base.run を解決済みのまま残した（全件解析は U のコンパイルエラー）。
+#    今は壊れたブロックのパッケージを常に中身の分からないパッケージにする
+setup_corrupt_deleted() {
+    printf 'package p;\npublic class Base { public void run() { } }\n' | jfile p/Base.java
+    # パッケージ p が無くならないように（無くなったパッケージに触れるファイルは別の規則で解析し直す）
+    printf 'package p;\npublic class Other { }\n' | jfile p/Other.java
+    printf 'package q;\npublic class U { public void go() { new p.Base().run(); } }\n' | jfile q/U.java
+}
+edit_corrupt_deleted() {
+    sed -i 's/^H\tp\.Base\t/H\tp.Basx\t/' $(ls .cache/*/analysis-cache.tsv)
+    rm work/src/p/Base.java
+}
+case_of "同じ実行で消したファイルの壊れたブロックの H 行を信じない" edit_corrupt_deleted yes setup_corrupt_deleted
+
+# 3. 引数・戻り値・throws に現れないメソッドの型引数の上限（<T extends Comparable<? super Foo>> void m()）が I 行に載らなかった。
+#    x.<Bar>m() の上限が合うかは Foo の親（型引数まで）に依る。Foo の親の型引数を変えると全件解析では U に上限の不一致の
+#    エラーが出るが、差分更新は U を再利用した。ジェネリックなコンストラクタ（new <Bar>X()）も同じ
+setup_method_type_param() {
+    printf 'package p;\npublic class Base<T> { }\n' | jfile p/Base.java
+    printf 'package p;\npublic class Foo extends Base<String> { }\n' | jfile p/Foo.java
+    printf 'package p;\npublic class Bar implements Comparable<Base<String>> { public int compareTo(Base<String> o) { return 0; } }\n' \
+        | jfile p/Bar.java
+    printf 'package p;\npublic class X {\n    public <T extends Comparable<? super Foo>> void m() { }\n    public <T extends Comparable<? super Foo>> X() { }\n}\n' \
+        | jfile p/X.java
+    printf 'package q;\npublic class U { void go(p.X x) { x.<p.Bar>m(); }\n    void make() { new <p.Bar>p.X(); } }\n' | jfile q/U.java
+}
+case_of "メソッドの型引数の上限にだけ現れる型の親の型引数を変える" \
+    "sed -i 's/Base<String>/Base<Integer>/' work/src/p/Foo.java" yes setup_method_type_param
 
 # 型 a.b と衝突していたパッケージ a.b が無くなる（Q87 の逆向き）。型のファイル a/b.java の「パッケージと衝突する」エラーは
 # JDT がフォルダを見て出すのでバッチに依らないのに、a/b.java は I 行が何にも当たらず、エラーのまま残った。
@@ -3053,6 +3326,102 @@ else
     grep -a -E '^(DefUser\.use|B\.run)' "$OUT/methods.csv" | head -5; fail=1
 fi
 
+# 同じく、単純名に $ や補助文字（U+1D4B3）を含む無い型（Tem$plate・Tem𝒳plate）。単純名の判定が $ を弾き（入れ子の型の
+# 2 進の名前を除くつもり）、UTF-16 の 1 文字ずつ調べてサロゲートの半分で弾いていたので、これらの名前だけは
+# getQualifiedName()（バッチで最初に解決に失敗したファイルのパッケージが付く）に戻り、差分更新で B の鍵が変わって
+# U.run -> B.go -> C.helper が切れた。全件解析だけでも、別パッケージの Api.go(Tem$plate) と Impl.go(Tem$plate) の引数が
+# rcd.api.Tem$plate と rcd.impl.Tem$plate に分かれ、Impl.go が Api.go の実装にならなかった（Issue #178）。
+# 今は $ を弾かず、識別子をコードポイントで調べる（JDT は無い入れ子の型を LOuter/Inner; と鍵にするので、パッケージの無い
+# 回復した鍵の $ は単純名から来たものに限られる）
+setup_missing_dollar_names() {
+    jfile rcd/other/A.java <<'EOF'
+package rcd.other;
+import org.lib.*;
+public class A { private final Object t = new Tem$plate(); private final Object u = new Tem𝒳plate(); }
+EOF
+    jfile rcd/web/B.java <<'EOF'
+package rcd.web;
+import org.lib.*;
+import rcd.other.*;
+public class B { public void go(Tem$plate x) { C.helper(); } public void go2(Tem𝒳plate x) { C.helper(); } }
+EOF
+    jfile rcd/web/C.java <<'EOF'
+package rcd.web;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+    jfile rcd/x/U.java <<'EOF'
+package rcd.x;
+public class U { void run(rcd.web.B b) { b.go(null); b.go2(null); } }
+EOF
+    jfile rcd/api/Api.java <<'EOF'
+package rcd.api;
+import org.lib.*;
+public interface Api { void go(Tem$plate t); }
+EOF
+    jfile rcd/impl/Impl.java <<'EOF'
+package rcd.impl;
+import org.lib.*;
+public class Impl implements rcd.api.Api { public void go(Tem$plate t) { Hit.hit(); } }
+EOF
+    jfile rcd/impl/Hit.java <<'EOF'
+package rcd.impl;
+public class Hit { public static void hit() { } }
+EOF
+    jfile rcd/use/U2.java <<'EOF'
+package rcd.use;
+public class U2 { void run(rcd.api.Api a) { a.go(null); } }
+EOF
+}
+case_of "依存 jar が無いとき、\$ や補助文字を含む単純名から作られた無い型の名前がバッチの組み方に依らない" \
+    "printf '\n// c\n' >> work/src/rcd/other/A.java" no setup_missing_dollar_names
+# 全件解析でも、別パッケージの Api.go(Tem$plate) と Impl.go(Tem$plate) の引数の型が同じ名前（?.Tem$plate）になり、
+# Impl.go が Api.go の実装として U2.run から呼ばれる（inDegree は 7 列目）
+if grep -q -a -E '^Impl\.go\([^)]*\),rcd\.impl\.Impl,C,src/rcd/impl/Impl\.java,3,1,1,1,' "$OUT/methods.csv"; then
+    echo "  OK   \$ を含む無い型（Tem\$plate）の引数の型が別パッケージの宣言と実装で同じ名前になる（Impl.go が呼ばれる）"
+else
+    echo "  NG   \$ を含む無い型（Tem\$plate）の引数の型が別パッケージの宣言と実装で食い違っています"
+    grep -a -E '^(Api|Impl)\.go' "$OUT/methods.csv" | head -5; fail=1
+fi
+
+# 同じく、無い入れ子の型（Template.Inner。Template は解決できない）が、無名パッケージにある本物の Template.Inner と重ならない
+# こと。JDT は鍵を LTemplate/Inner; にし名前を Template.Inner にするので、単純名の判定（鍵が L<識別子>; の形）には当たらず、
+# 無い完全修飾名（Lorg/missing/Lib;）とも鍵では区別できない。H 行に書く親の型（親型・親クラスの連鎖）が回復した型なら ?. を
+# 付けて書く（Issue #178）。付けないと、rdn/B は本物の Template.Inner の部分型とみなされ、DefUser2.use の t.run() の候補に B.run が
+# 混ざって展開をやめ（UNEXPANDED:CHA）、本物の Template.Inner.run の先（Real.x）が階層から落ちる
+setup_missing_nested_default_package() {
+    jfile Template.java <<'EOF'
+public class Template { public static class Inner { public void run() { Real.x(); } } }
+EOF
+    jfile Real.java <<'EOF'
+public class Real { public static void x() { } }
+EOF
+    jfile DefUser2.java <<'EOF'
+public class DefUser2 { void use(Template.Inner t) { t.run(); } }
+EOF
+    jfile rdn/B.java <<'EOF'
+package rdn;
+import org.lib.*;
+public class B extends Template.Inner {
+    public void run() { C.helper(); }
+}
+EOF
+    jfile rdn/C.java <<'EOF'
+package rdn;
+public class C { static void helper() { System.out.println("h"); } }
+EOF
+}
+case_of "依存 jar が無いとき、無い入れ子の型（Template.Inner）が無名パッケージの本物の入れ子の型と重ならない" \
+    "printf '\n// c\n' >> work/src/rdn/C.java" no setup_missing_nested_default_package
+if grep -q -a '^B\.run(),rdn\.B,C,src/rdn/B\.java,4,1,0,1,' "$OUT/methods.csv" \
+        && grep -q -a '^Template\.Inner\.run(),Template\.Inner,C,src/Template\.java,1,1,1,1,' "$OUT/methods.csv" \
+        && grep -q -a -P '^H\trdn\.B\tC\t\?\.Template\.Inner\t' full.tsv; then
+    echo "  OK   無い入れ子の型 Template.Inner を無名パッケージの本物の Template.Inner の部分型とみなさない（H 行は ?.Template.Inner）"
+else
+    echo "  NG   無い入れ子の型 Template.Inner を無名パッケージの本物の Template.Inner と取り違えています"
+    grep -a -E '^(DefUser2\.use|B\.run|Template\.Inner\.run)' "$OUT/methods.csv" | head -5
+    grep -a -P '^H\trdn\.B\t' full.tsv | head -2; fail=1
+fi
+
 # jar のクラス（qm.Api）が参照しているクラス（qm.Missing）が無いとき。事実を集めるときのバインディングへの問い合わせ
 # （拡張 for 文・try-with-resources の暗黙の呼び出しの宣言・呼び出しの候補）が、同じバッチの後ろのファイル（ear/B.java）の
 # メソッドを先に解決させると、JDT はそのメソッドを引数の無いまま残し、B の番で例外になった。全件解析だけバッチの残りを
@@ -3107,8 +3476,7 @@ case_of "jar のクラスが参照するクラスが無いとき、後ろのフ�
 
 # 注釈の既定値を読むと、JDT は注釈の型のメンバーを先に解決する。同じバッチの後ろに注釈の型のファイルがあると、その番で
 # もう一度解決され、同じエラーが 2 回（引数を持つメンバーでは「Duplicate parameter」も）数えられていた。全件解析では
-# 使う側（ann/a/A.java・ann/p/A0.java）が先に並び、差分更新では注釈の型だけを解析し直すので、F 行のエラーの数と
-# I 行の解決できなかった名前が違った
+# 使う側（ann/a/A.java・ann/p/A0.java）が先に並び、差分更新では注釈の型だけを解析し直すので、F 行のエラーの数が違った
 setup_annotation_errors() {
     jfile ann/a/A.java <<'EOF'
 package ann.a;
@@ -3161,7 +3529,7 @@ case_of "注釈の既定値が jar の無いクラスに当たっても、使う
 # （ブロックをバイトのまま写さず、行に戻して '\n' で書き直す経路）
 unchanged_case() {
     echo "== 何も変わっていなければキャッシュを書き直さない =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     run base.tsv || return
     local before after
@@ -3254,16 +3622,16 @@ unchanged_case() {
 # 呼び出しが静かに欠ける。丸ごと捨てて全件解析し直すこと
 discard_case() {   # $1=ラベル  $2=壊す・変えるコマンド  $3=ログに出るはずの文字列  $4=出力が基準と一致すべきか(yes/no)
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
-    cp config.properties case.properties
+    cp jche.properties case.properties
     CONFIG=case.properties
-    run base.tsv || { CONFIG=config.properties; return; }
+    run base.tsv || { CONFIG=jche.properties; return; }
     local base_csv=$OUT
 
     eval "$2"
-    run inc.tsv || { CONFIG=config.properties; return; }
-    CONFIG=config.properties
+    run inc.tsv || { CONFIG=jche.properties; return; }
+    CONFIG=jche.properties
 
     if grep -q -F -- "$3" out.log; then
         echo "  OK   $1 破棄したことをログに出す"
@@ -3354,7 +3722,7 @@ PY
 
 damaged_block_case() {
     echo "== ブロックの中身が壊れていたら、そのファイル（と依存するファイル）だけ解析し直す =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv
     mkdir -p work && cp -r src work/src
     run base.tsv || return
     local damaged
@@ -3455,7 +3823,7 @@ make_partial() {
 salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空なら何もしない）  $3=引き継げるはずか(yes/no)
                    # $4=引き継ぎありの実行のログに出るはずの文字列（省略可）
     echo "== $1 =="
-    rm -rf work .cache out out.log base.tsv inc.tsv full.tsv case.properties
+    rm -rf work .cache out out.log inc.log base.tsv inc.tsv full.tsv case.properties
     mkdir -p work && cp -r src work/src
     run base.tsv || return          # まず完成したキャッシュを作る
     make_partial
@@ -3789,10 +4157,10 @@ EOF
     }
 
     order_config "liba,libb"
-    run base.tsv || { CONFIG=config.properties; return; }
+    run base.tsv || { CONFIG=jche.properties; return; }
 
     order_config "libb,liba"            # 並びだけを入れ替える（jar の中身は同じ）
-    run inc.tsv || { CONFIG=config.properties; return; }
+    run inc.tsv || { CONFIG=jche.properties; return; }
     local inc_csv=$OUT
     check_rows inc.tsv "$label 差分更新"
     if [ "$PARSED" -ge 1 ]; then
@@ -3802,7 +4170,7 @@ EOF
     fi
 
     rm -rf .cache
-    run full.tsv || { CONFIG=config.properties; return; }
+    run full.tsv || { CONFIG=jche.properties; return; }
     for f in call-hierarchy.csv methods.csv; do
         if diff --strip-trailing-cr -q "$inc_csv/$f" "$OUT/$f" > /dev/null; then
             echo "  OK   $label $f（差分更新 == 全件解析）"
@@ -3819,8 +4187,8 @@ EOF
     fi
 
     # 並びを変えずにもう一度。並び順の判定が効きすぎて毎回解析し直していないこと
-    run again.tsv || { CONFIG=config.properties; return; }
-    CONFIG=config.properties
+    run again.tsv || { CONFIG=jche.properties; return; }
+    CONFIG=jche.properties
     if [ "$PARSED" = 0 ]; then
         echo "  OK   $label 変えなければ解析し直さない"
     else
@@ -4202,22 +4570,6 @@ dup_case() {
     else
         echo "  NG   重複した型のファイルが warnings.txt に載っていません"; fail=1
     fi
-    # 型が重複しているエラーの引数には、ソースファイルの絶対パスが入る。解決できなかった名前（I 行の 2 列目）に
-    # パスの途中のフォルダ名（home・incremental など）を拾うと、同じソースでも置き場所でキャッシュの事実が変わる
-    # （docs/cache-unification-qa.md の Q64）
-    local names part leaked=""
-    names=$(awk -F'\t' '$1 == "F" { f = $2 } $1 == "I" && f == "s2/p/Dup.java" { print $3 }' \
-        "$(ls $d/cache/*/analysis-cache.tsv)")
-    for part in $(printf '%s' "$PWD/$d" | tr -c 'A-Za-z0-9_$' ' '); do
-        case ",$names," in *",$part,"*) leaked="$leaked $part" ;; esac
-    done
-    if [ -n "$names" ] && [ -z "$leaked" ]; then
-        echo "  OK   重複した型のファイルの解決できなかった名前（$names）に、置き場所のフォルダ名が入らない"
-    else
-        echo "  NG   重複した型のファイルの解決できなかった名前が空か、置き場所のフォルダ名を含みます（${names:-空}。${leaked# }）"
-        fail=1
-    fi
-
     echo "== ソースフォルダの並びを入れ替える =="
     integrity_cfg $d/c.properties "$PWD/$d" s2,s1
     integrity_cfg $d/full.properties "$PWD/$d" s2,s1 "$PWD/$d/fullcache2"
@@ -4241,6 +4593,9 @@ dup_case
 
 # 差分更新と全件解析で、CSV・warnings.txt・キャッシュ（ブロックの並べ替え後）が同じこと
 same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件解析の出力フォルダ  $4=差分更新のキャッシュのフォルダ  $5=全件解析のキャッシュのフォルダ
+               # $6=errors-move なら F 行のエラー数を伏せて比べる（normalized_noerr）
+    local norm=normalized
+    [ "${6:-}" = errors-move ] && norm=normalized_noerr
     same_csv "$1" "$2" "$3"
     if diff -q <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) > /dev/null; then
         echo "  OK   $1 warnings.txt（全件解析と同じ）"
@@ -4248,11 +4603,11 @@ same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件�
         echo "  NG   $1 warnings.txt が全件解析と違います"
         diff <(cat "$2/warnings.txt" 2>/dev/null) <(cat "$3/warnings.txt" 2>/dev/null) | head -10; fail=1
     fi
-    if diff -q <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
+    if diff -q <($norm "$(ls $4/*/analysis-cache.tsv)") <($norm "$(ls $5/*/analysis-cache.tsv)") > /dev/null; then
         echo "  OK   $1 キャッシュ（差分更新 == 全件解析）"
     else
         echo "  NG   $1 キャッシュが全件解析と違います"
-        diff <(normalized "$(ls $4/*/analysis-cache.tsv)") <(normalized "$(ls $5/*/analysis-cache.tsv)") | head -10
+        diff <($norm "$(ls $4/*/analysis-cache.tsv)") <($norm "$(ls $5/*/analysis-cache.tsv)") | head -10
         fail=1
     fi
 }
@@ -4774,9 +5129,9 @@ env_rejected_case() {
     integrity_cfg $d/c.properties "$PWD/$d" s1
     integrity_run $d/c.properties $d/c0.log
     [ "$IRC" = 0 ] || { echo "  NG   最初の解析に失敗しました"; tail -5 $d/c0.log; fail=1; return; }
-    # properties の値では \ を \\ と書く
-    integrity_cfg $d/c.properties "$PWD/$d" 's1,b\\x'
-    integrity_cfg $d/full.properties "$PWD/$d" 's1,b\\x' "$PWD/$d/fullcache"
+    # 設定ファイルの値の \ はそのまま読む（jche.config.ConfigFile。properties のように \\ と重ねない）
+    integrity_cfg $d/c.properties "$PWD/$d" 's1,b\x'
+    integrity_cfg $d/full.properties "$PWD/$d" 's1,b\x' "$PWD/$d/fullcache"
     integrity_run $d/c.properties $d/c1.log
     inc_out=$IOUT
     if [ "${IREUSED:-1}" = 0 ] && grep -q -F "does not accept the class path" $d/c1.log; then
@@ -4823,9 +5178,9 @@ backslash_folder_case() {
         fi
         mv $d/x/y "$d/x\\y"
         rmdir $d/x
-        # properties の値では \ を \\ と書く
-        integrity_cfg $d/c.properties "$PWD/$d" 's1,x\\y'
-        integrity_cfg $d/full.properties "$PWD/$d" 's1,x\\y' "$PWD/$d/fullcache"
+        # 設定ファイルの値の \ はそのまま読む（jche.config.ConfigFile。properties のように \\ と重ねない）
+        integrity_cfg $d/c.properties "$PWD/$d" 's1,x\y'
+        integrity_cfg $d/full.properties "$PWD/$d" 's1,x\y' "$PWD/$d/fullcache"
         integrity_run $d/c.properties $d/c1.log
         inc_out=$IOUT
         if [ $mode = cache ]; then
@@ -4985,6 +5340,7 @@ deep_file() {   # $1=ファイル  $2=パッケージ（空なら既定のパッ
 }
 # $1=ラベル  $2=用意する関数  $3=書き換える関数（どちらも題材のフォルダを受け取る）  $4=source.folders  $5=source.level
 # $6=差分更新のログに出るはずの文字列（題材が効いていることの確かめ。空なら見ない）
+# $7=errors-move なら、キャッシュの比較で F 行のエラー数を伏せる（normalized_noerr。Q129 の (b)）
 batch_case() {
     echo "== $1 =="
     local d=$IW/batch
@@ -5007,7 +5363,7 @@ batch_case() {
     fi
     integrity_run $d/full.properties $d/full.log
     [ "$IRC" = 0 ] || { echo "  NG   全件解析に失敗しました"; tail -5 $d/full.log; fail=1; return; }
-    same_all "$1" "$inc_out" "$IOUT" $d/cache $d/fullcache
+    same_all "$1" "$inc_out" "$IOUT" $d/cache $d/fullcache "${7:-}"
 }
 
 # 依存 jar に無いクラス（q.Missing）を、ソースパスから読んだ型（B・other.O）のシグネチャが参照している。JDT は A の
@@ -5041,7 +5397,7 @@ bc_edit_abort() {
     for f in A C D E; do printf '\n// changed\n' >> $1/src/app/$f.java; done
 }
 batch_case "依存 jar に無いクラスで JDT が打ち切る（例外なし）" bc_setup_abort bc_edit_abort src 17 \
-    "stopped in a batch without an error"
+    "stopped in a batch without an error" errors-move
 
 # JDT が例外で止まったとき（深い式でスタックが溢れる。Q62）に残りのファイルを読む経路が、バッチと同じ読み方であること。
 # 以前は残りを 1 ファイルずつ Files.readString で読み直していて、source.encoding で読めないバイトがあるとファイルごと
@@ -5174,7 +5530,7 @@ bc_setup_abort_fqn() {
 }
 bc_edit_abort_fqn() { printf '\n// changed\n' >> $1/src/app/E.java; }
 batch_case "依存 jar に無いクラスで JDT が打ち切る（原因の型を完全修飾名で書いた）" bc_setup_abort_fqn bc_edit_abort_fqn src 17 \
-    "stopped in a batch without an error"
+    "stopped in a batch without an error" errors-move
 
 # 同じ原因で多くのファイルが止まるとき（レビューでの追加）。30 のファイルがどれも、依存 jar に無いクラスを参照する other.B の
 # static メソッドを呼ぶ。30 のファイルだけを書き換えた差分更新では B が同じバッチにいないので、添えなければファイルごとに
@@ -5193,12 +5549,82 @@ bc_edit_abort_many() {
     for f in $1/src/app/F*.java; do printf '\n// changed\n' >> $f; done
 }
 batch_case "依存 jar に無いクラスで多くのファイルが止まる" bc_setup_abort_many bc_edit_abort_many src 17 \
-    "stopped in a batch without an error"
+    "stopped in a batch without an error" errors-move
 stops=$(grep -c -F "stopped in a batch without an error" $IW/batch/c1.log)
 if [ "$stops" = 1 ]; then
     echo "  OK   止まったのは 1 回だけ（止まったファイルに関わるファイルをバッチの残りにも添える）"
 else
     echo "  NG   JDT が $stops 回止まりました（1 回のはず。止まったファイルに関わるファイルをバッチの残りに添えていない）"; fail=1
+fi
+
+# jar のクラスが参照するソースの入れ子の型の解析し直しが、同じ名前のファイルの組を分けない（Issue #181 の 1）。
+# src1/p/X.java と src2/p/X.java は組（src1 が勝つ）。src2 の X の副次の型 Y が jar の lib.L.make()（戻り値 app.Outer.Inner）を
+# 呼ぶので、Y のファイルは Outer.java を添えて解析し直す。以前はそのファイルだけを解析し直し、組のもう片方（src1/p/X.java）は
+# 添えるファイルとして後ろに付いたので、src2 の X が勝ち、CSV・warnings.txt・キャッシュが全件解析と違った
+bc_setup_member_pair() {
+    bc_setup_member $1
+    rm -f $1/src/u/U.java
+    printf 'package p;\npublic class X { public void a() { } }\n' | bfile $1/src1/p/X.java
+    printf 'package p;\npublic class X { public void b() { } }\nclass Y { void y() { new lib.L().make().hi(); } }\n' \
+        | bfile $1/src2/p/X.java
+    printf 'package q;\npublic class User { void u() { new p.X().a(); new p.X().b(); } }\n' | bfile $1/src/q/User.java
+}
+bc_edit_member_pair() { printf '\n// changed\n' >> $1/src2/p/X.java; }
+batch_case "jar のクラスが参照するソースの入れ子の型の解析し直しでも、同じ名前のファイルの組を分けない" \
+    bc_setup_member_pair bc_edit_member_pair src1,src2,src
+
+# どのファイルも返さないうちに溢れたバッチ（Issue #181 の 2）。zz/Z.java は入れ子のメンバークラスを 2 万持ち、JDT が型を組む
+# ところで溢れる。app/A.java は、同じバッチに app/B.java が無いと依存 jar に無いクラスで JDT が打ち切る形（Q112）。A だけを
+# 書き換えた差分更新は、以前は A を関わるファイル無しで 1 つだけで試して打ち切らせ、Z のスタックの溢れを理由に A を失敗にし、
+# A.a -> C.c が出力から消えた。今は 1 つだけで試すときも解析するときも A に関わるファイル（B）を添え、例外なしに止まったなら
+# バッチの例外（Z のもの）を理由にしない
+bc_setup_overflow_blame() {
+    bc_setup_abort $1
+    rm -f $1/src/app/*.java $1/src/other/*.java
+    printf 'package app;\npublic class A { Object o = new B() { }; void a() { new C().c(); } }\n' | bfile $1/src/app/A.java
+    printf 'package app;\nimport q.Missing;\npublic class B { public B() { } static void w(q.Api a, Missing m) { } }\n' \
+        | bfile $1/src/app/B.java
+    printf 'package app;\npublic class C { public void c() { } }\n' | bfile $1/src/app/C.java
+    mkdir -p $1/src/zz
+    {
+        printf 'package zz;\npublic class Z {'
+        for ((i = 0; i < 20000; i++)); do printf ' static class N%d {' "$i"; done
+        for ((i = 0; i < 20000; i++)); do printf ' }'; done
+        printf ' }\n'
+    } > $1/src/zz/Z.java
+}
+bc_edit_overflow_blame() { printf '\n// changed\n' >> $1/src/app/A.java; }
+batch_case "どのファイルも返さないうちに溢れたバッチで、別のファイルのスタックの溢れを理由に失敗にしない" \
+    bc_setup_overflow_blame bc_edit_overflow_blame src 17 "ran out of stack in a batch" errors-move
+if grep -q "^at app.A.a(A.java:2),C.c," "$IOUT/call-hierarchy.csv" 2>/dev/null \
+        && ! grep -q -F "Analysis failed (skipped): src/app/A.java" "$IOUT/warnings.txt" 2>/dev/null; then
+    echo "  OK   A は解析され、A.a -> C.c が出力に出る（全件解析）"
+else
+    echo "  NG   A が失敗になったか、A.a -> C.c が出力に無い（全件解析）"; fail=1
+fi
+
+# 添えるファイル（名前の違うファイルで宣言した型のファイル）は、バッチのファイルから名前でたどって届くものだけを添える
+# （Issue #172。docs/cache-unification-qa.md の Q142）。名前でたどれない経路（jar の lib.M.make() の戻り値がソースの app.T で、
+# T のメソッドの戻り値が Other.java の record S）で届くものは、事実に現れた型（app.T）から届く先を広げて添え直す。
+# U だけを書き換えた差分更新でも S.go() を解決し、全件解析と同じになること
+bc_setup_context_via_jar() {
+    mkdir -p $1/jsrc/app $1/jsrc/lib $1/jcls $1/lib
+    printf 'package app;\npublic class T { }\n' > $1/jsrc/app/T.java
+    printf 'package lib;\npublic class M { public app.T make() { return null; } }\n' > $1/jsrc/lib/M.java
+    "$JAVAC_BIN" -d $1/jcls $1/jsrc/app/T.java $1/jsrc/lib/M.java && rm -r $1/jcls/app \
+        && ( cd $1/jcls && "$JAR_BIN" cf ../lib/m.jar lib ) || { echo "  NG   jar を作れませんでした"; fail=1; }
+    rm -rf $1/jsrc $1/jcls
+    printf 'package app;\npublic class T { public S s() { return null; } }\n' | bfile $1/src/app/T.java
+    printf 'package app;\npublic class Other { }\nrecord S() { public void go() { } }\n' | bfile $1/src/app/Other.java
+    printf 'package app;\npublic class U { void u() { new lib.M().make().s().go(); } }\n' | bfile $1/src/app/U.java
+}
+bc_edit_context_via_jar() { printf '\n// changed\n' >> $1/src/app/U.java; }
+batch_case "名前でたどれない経路（jar のシグネチャ）で届く、名前の違うファイルで宣言した型" \
+    bc_setup_context_via_jar bc_edit_context_via_jar
+if grep -q -F "U.u(U.java:2),S.go" "$IOUT/call-hierarchy.csv" 2>/dev/null; then
+    echo "  OK   U.u -> S.go を解決した（全件解析）"
+else
+    echo "  NG   U.u -> S.go を解決していません（題材が効いていない）"; fail=1
 fi
 
 # 打ち切りの原因の型（third.B）を、止まったファイル（E）が書いた名前の型（other.Q）のシグネチャを通してしか使っていない

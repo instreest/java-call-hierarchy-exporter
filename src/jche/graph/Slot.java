@@ -14,11 +14,17 @@ import jche.cache.Origin;
  *   CLASS       クラスの FQN（{@link StringPool} の番号）    K:jp.co.X
  *   CONST       定数の値（{@link StringPool} の番号）        V:定数
  *   FUNCTIONAL  ラムダ／メソッド参照（{@link ValueStore} の参照。束縛したレシーバ r= を持ったまま）  Z:…
+ *   BOUND       実行時の型の上限（{@link TypeHierarchy#indexOf} の番号）。具象型は決まらないが、渡された値の
+ *               宣言の型（フィールド・引数の型）から「この型の部分型のどれか」までは分かる（{@link DataflowResolver#boundTypeOf}）
  * </pre>
  * {@link #NONE}（0）は「この経路では分からない」。以前は、具象型（{@code ':'} を含まない）と値（{@code ':'} を含む）を
  * 同じ文字列の枠に入れ、{@code ':'} の有無で見分けていた。札で見分けるので、値を文字列に組み直すことも、
  * 経路を歩くたびに {@code "K:" + クラス名} のような文字列を作ることも無い。中身はどれも値の表を作ったときに
- * 置き場に入っている文字列か、値の表の参照である。
+ * 置き場に入っている文字列か、値の表の参照か、型階層の番号である。
+ *
+ * <p>上限（{@link #BOUND}）は具象型（{@link #isType}）でも値（{@link #isValue}）でもない。具象型を求める読み手
+ * （{@code concreteTypeOf}）と値を求める読み手（条件の判定・リフレクション）はどちらも「分からない」として扱い、
+ * 候補を絞る読み手（{@link CallResolver#resolveOnPath}）だけが使う。
  */
 public final class Slot {
 
@@ -34,6 +40,8 @@ public final class Slot {
     public static final int CONST = 4;
     /** ラムダ／メソッド参照（中身は値の表の参照） */
     public static final int FUNCTIONAL = 5;
+    /** 実行時の型の上限（中身は {@link TypeHierarchy#indexOf} の番号）。{@link #isType} でも {@link #isValue} でもない */
+    public static final int BOUND = 6;
 
     private Slot() {
     }
@@ -58,10 +66,15 @@ public final class Slot {
         return tag(s) == TYPE;
     }
 
-    /** 値か（以前の「{@code ':'} を含む」。{@link #LITERAL} から {@link #FUNCTIONAL} まで） */
+    /** 値か（以前の「{@code ':'} を含む」。{@link #LITERAL} から {@link #FUNCTIONAL} まで。{@link #BOUND} は含まない） */
     public static boolean isValue(long s) {
         int t = tag(s);
         return t >= LITERAL && t <= FUNCTIONAL;
+    }
+
+    /** 実行時の型の上限か */
+    public static boolean isBound(long s) {
+        return tag(s) == BOUND;
     }
 
     /**

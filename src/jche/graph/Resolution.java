@@ -40,6 +40,12 @@ public record Resolution(int[] targets, String label) {
     public static final String DATAFLOW_PARAM = DATAFLOW_PREFIX + "PARAM";
     public static final String DATAFLOW_FIELD = DATAFLOW_PREFIX + "FIELD";
     /**
+     * 経路で渡ってきた値の宣言の型（具象クラスの型で宣言したフィールド・引数）の部分型に候補を絞ったら
+     * 1 つに定まった。具象型を追えたわけではなく、実行時の型の上限で絞った結果
+     * （{@link CallResolver#resolveOnPath}。Issue #192）
+     */
+    public static final String DATAFLOW_DECLARED_TYPE = DATAFLOW_PREFIX + "DECLARED_TYPE";
+    /**
      * ラムダ式かメソッド参照が、その関数型インターフェースの実装として
      * この呼び出し箇所まで渡ってきたと特定できた
      */
