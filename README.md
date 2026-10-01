@@ -443,6 +443,13 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 ラムダを作った箇所からは、必ず「生成した」1 本の辺が出ます。
 どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
 実行箇所を特定できたときは、そちらからも同じノードに繋がります（`resolved-by` が `RESOLVED:DATAFLOW_LAMBDA`）。
+ただし、ラムダを書いた行そのものから実行まで繋がるとき（`executor.submit(() -> …)` のように、契約表の呼び戻しで繋がる形）は、
+同じ行から同じ本体への辺を 1 本にまとめて出します。
+
+`lambda$…` の段を挟まず、本体の中の呼び出しを「ラムダを書いたメソッドの呼び出し」として読みたいときは、
+設定に `hierarchy.collapse.lambda=true` を書きます（Eclipse の呼び出し階層と同じ見え方。辿る範囲は変わらず、
+`depth` 列と `call-hierarchy` 列からラムダの段が消えます。別のメソッドが実行するラムダの段は残ります。
+[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md)）。
 
 実行箇所を特定できない形（`list.forEach(Runnable::run)` のように jar の中から呼ばれる形、フィールドのコレクションに詰める形、
 同じ変数に複数のラムダが入りうる形）では `resolved-by` が `UNEXPANDED:LAMBDA` になりますが、生成の辺があるので本体の中の呼び出しは階層に出ます。
@@ -938,6 +945,14 @@ There is always one "created it" edge out of the place that wrote the lambda. Th
 the body never drop out of the hierarchy, even for a lambda whose execution site is unknown.
 When the execution site is determined, that site connects to the same node as well
 (`resolved-by` is `RESOLVED:DATAFLOW_LAMBDA`).
+When the lambda is connected through to execution from the very line that wrote it (a callback contract, as in
+`executor.submit(() -> ...)`), the edge from that line to the same body is written once.
+
+To read the calls inside a body as calls of the method that wrote the lambda, without a `lambda$...` level,
+set `hierarchy.collapse.lambda=true` in the configuration (the same view as Eclipse's call hierarchy. What is
+followed does not change; the lambda level disappears from the `depth` and `call-hierarchy` columns, and the
+level of a lambda executed by a different method stays.
+[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md), in Japanese).
 
 Where the execution site cannot be determined (called from inside a jar, such as `list.forEach(Runnable::run)`;
 put in a field collection; several lambdas that can end up in the same variable), `resolved-by` becomes

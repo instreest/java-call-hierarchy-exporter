@@ -171,6 +171,14 @@ public final class Config {
      */
     public final boolean branchPruningEnabled;
     /**
+     * call-hierarchy.csv で、ラムダの合成メソッド（{@code lambda$…}）の段を出さず、本体の呼び出しを
+     * そのラムダを作ったメソッドの直下に出すか（{@code hierarchy.collapse.lambda}。既定は false）。
+     *
+     * Eclipse の呼び出し階層と同じく「メソッドの中に書いてある呼び出しは、そのメソッドの呼び出し」という
+     * 見え方になる。辿る範囲は変わらず、出し方だけが変わる（{@code docs/lambda-collapse-qa.md}）。
+     */
+    public final boolean collapseLambda;
+    /**
      * 呼び出しに効いている条件を調べる対象（{@code conditions.target}）。空欄なら調べない。
      *
      * 指定しても通常の解析（キャッシュの更新と CSV の出力）はそのまま行い、
@@ -329,6 +337,8 @@ public final class Config {
         this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
         this.branchPruningEnabled =
                 Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
+        this.collapseLambda =
+                Boolean.parseBoolean(p.getProperty("hierarchy.collapse.lambda", "false").trim());
         this.conditionsTarget = p.getProperty("conditions.target", "").trim();
         this.cacheDir = cacheDirOf(p, toolRoot);
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);

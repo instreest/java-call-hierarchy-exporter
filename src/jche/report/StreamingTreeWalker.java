@@ -3,7 +3,11 @@ package jche.report;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import jche.cache.ModifierTokens;
 import jche.cache.Origin;
@@ -14,6 +18,7 @@ import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
 import jche.graph.CallbackContracts;
 import jche.graph.CallResolver;
+import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.IntArray;
 import jche.graph.GuardEvaluator;
@@ -124,6 +129,14 @@ public final class StreamingTreeWalker {
     private final Config config;
     private final CallHierarchyCsvWriter writer;
     private final int maxDepth;
+    /** ラムダの合成メソッドを段にせず、本体の呼び出しを囲みメソッドの直下に出すか（{@code hierarchy.collapse.lambda}） */
+    private final boolean collapseLambda;
+
+    /**
+     * 畳んだラムダの本体を降りている間の、書いた行の覚え（{@link CollapseSeen#rowsOf}）。
+     * 同じ本体を違う環境で降り直すと、同じ行が出ることがある。書く前にここと照らし、同じ行は 1 度しか書かない
+     */
+    private final List<Set<String>> activeRowSets = new ArrayList<>(2);
 
     /** 現在の経路（深さぶんだけ確保） */
     private final PathFrame[] path;
@@ -194,6 +207,7 @@ public final class StreamingTreeWalker {
         this.config = config;
         this.writer = writer;
         this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
+        this.collapseLambda = config.collapseLambda;
         this.inHierarchy = new boolean[methods.size()];
         this.absentCause = new byte[methods.size()];
         this.path = new PathFrame[Math.max(2, this.maxDepth + 2)];
@@ -340,6 +354,12 @@ public final class StreamingTreeWalker {
             return;
         }
         int callerId = path[depth].methodId;
+        // このメソッドが作ったラムダの本体へ降りる辺（作った辺と、契約の呼び戻し・実行箇所を特定できた呼び出し）
+        List<LambdaEntry> entries = lambdaEntries(depth, callerId);
+        // 作った辺と同じ行で、別の辺が同じ本体を行にして降りるもの（畳まない設定。作った辺は出さない）
+        Set<Long> merged = collapseLambda ? null : mergedGenerations(entries);
+        // 畳む設定の覚え。2 本以上の辺から降りる本体だけは、同じ行を 2 度書かないよう書いた行も覚える
+        CollapseSeen collapsed = (collapseLambda && entries != null) ? new CollapseSeen(repeatedLambdas(entries)) : null;
         for (int e = graph.edgeStart(callerId); e < graph.edgeEnd(callerId); e++) {
             if (isRowLimitReached()) {
                 return;
@@ -381,6 +401,18 @@ public final class StreamingTreeWalker {
                     // 打ち切った呼び出し自体は行になるが、その先の階層は消える。
                     // 消えた範囲は探索の後にまとめて求める（markPrunedSubtrees）
                     prunedTargets.add(target);
+                }
+                // ラムダを作った辺は、同じ行の別の辺が同じ本体を行にして降りるなら、そちらに任せる
+                // （同じ枝が 2 回出ない。docs/lambda-collapse-qa.md の Q4）
+                if (merged != null && unreachable == null && methods.isLambdaBody(declaredCallee)
+                        && merged.contains(lambdaLineKey(target, graph.callLineOf(e)))) {
+                    continue;
+                }
+                // 畳む設定では、このメソッドが作ったラムダの本体は段にせず、呼び出しを直下に出す
+                if (collapsed != null && expand && unreachable == null
+                        && collapsible(depth, target) && !onCurrentPath(target, depth)) {
+                    collapseInto(depth, target, targetParams, targetCtorArgs, collapsed);
+                    continue;
                 }
                 if (isExcluded(target)) {
                     markAbsent(target, ABSENT_EXCLUDED);
@@ -434,7 +466,7 @@ public final class StreamingTreeWalker {
             // その先へ繋ぐ（Thread#start → Runnable#run 等。docs/callback-contracts-qa.md）。
             // 呼び出し先自身の行はそのまま残し、その次に呼び戻される側を並べる
             if (unreachable == null) {
-                descendCallbacks(depth, e, declaredCallee);
+                descendCallbacks(depth, e, declaredCallee, collapsed);
             }
         }
     }
@@ -443,13 +475,19 @@ public final class StreamingTreeWalker {
      * 契約で呼び戻されるメソッドを、その辺の追加の候補として出力し、降りる。
      * 通常の候補と同じく、除外・循環の扱いを通す
      */
-    private void descendCallbacks(int depth, int e, int declaredCallee) throws IOException {
+    private void descendCallbacks(int depth, int e, int declaredCallee, CollapseSeen collapsed)
+            throws IOException {
         for (CallbackContracts.Match match : resolver.callbackTargets(e, path[depth].context())) {
             if (isRowLimitReached()) {
                 return;
             }
             int target = match.target();
             callbackHits++;
+            if (collapsed != null && !match.isMultiple() && collapsible(depth, target)
+                    && !onCurrentPath(target, depth)) {
+                collapseInto(depth, target, null, null, collapsed);
+                continue;
+            }
             if (isExcluded(target)) {
                 markAbsent(target, ABSENT_EXCLUDED);
                 if (!onCurrentPath(target, depth)) {
@@ -475,12 +513,185 @@ public final class StreamingTreeWalker {
             }
             path[depth + 1].set(target, graph.callLineOf(e),
                     note + " contract: " + match.contract(), resolvedBy,
-                    null, null, null, null);
+                    null, null, null, capturedTypesFor(depth, target));
             emit(depth + 1);
+            // （ラムダを作ったメソッドの中で呼び戻すなら、捕捉した引数も渡す。同じ行の生成の辺を
+            // この行にまとめるので、本体の中の絞り込みを減らさないため）
             // 候補を並べただけの行は、通常の CHA と同じくその先へ降りない（候補数^深さ で爆発するため）
             if (!cycle && !match.isMultiple()) {
                 descend(depth + 1);
             }
+        }
+    }
+
+    /** ラムダの本体 {@code target} の段を畳める呼び出しか。今のメソッドがそのラムダを作っているときだけ */
+    private boolean collapsible(int depth, int target) {
+        return methods.isLambdaBody(target) && graph.createsLambda(path[depth].methodId, target);
+    }
+
+    /**
+     * ラムダの合成メソッド {@code target} を段にせず、その呼び出しを今の段（囲みメソッド）の直下に出す。
+     *
+     * 段の差し替えは除外パッケージの読み飛ばし（{@link #skipThrough}）と同じ作りだが、
+     * 隠すのは合成メソッドの側で、囲みメソッドが表示に残る（{@link PathFrame#shownId}）。
+     * 辺は合成メソッドから引き、引数の環境と捕捉した値も本体の段のものを使う。
+     * 同じ段で同じ本体を同じ環境で降り直す（生成の辺と、同じメソッドの中での実行箇所）ときは 1 回だけ降りる。
+     */
+    private void collapseInto(int depth, int target, long[] targetParams, long[] targetCtorArgs,
+                              CollapseSeen seen) throws IOException {
+        long[] captured = capturedTypesFor(depth, target);
+        if (!seen.firstTime(target, targetParams, captured)) {
+            return;
+        }
+        if (depth + skipNesting >= DEPTH_HARD_CAP) {
+            if (!skipLimitWarned) {
+                skipLimitWarned = true;
+                Log.warn(Messages.format("report.walker.excludeDepthCap", DEPTH_HARD_CAP));
+            }
+            return;
+        }
+        silentRun++;   // 行にならないノードも上限に数える（isRowLimitReached）
+        PathFrame saved = path[depth];
+        PathFrame replacement = new PathFrame();
+        replacement.set(target, saved.callLine, saved.note, saved.resolvedBy,
+                targetParams, targetCtorArgs,
+                (targetCtorArgs == null) ? null : methods.typeFqn(target), captured);
+        replacement.shownId = saved.shownId;
+        path[depth] = replacement;
+        // 差し替えた囲みメソッドは path[] から見えなくなるが祖先のまま（循環の検出に要る）
+        hiddenAncestors.push(saved.methodId);
+        skipNesting++;
+        Set<String> rows = seen.rowsOf(target);
+        if (rows != null) {
+            activeRowSets.add(rows);
+        }
+        try {
+            descend(depth);
+        } finally {
+            if (rows != null) {
+                activeRowSets.remove(activeRowSets.size() - 1);
+            }
+            skipNesting--;
+            hiddenAncestors.pop();
+            path[depth] = saved;
+        }
+    }
+
+    /**
+     * 今のメソッドが作ったラムダの本体へ降りる辺。作ったメソッドが無い（ほとんどのメソッド）なら null。
+     *
+     * 辺は 2 種類ある。作った辺（宣言どおりの呼び出し先がラムダの本体。{@link LambdaEntry#generation}）と、
+     * それ以外の辺で本体に降りるもの。後者は、契約の呼び戻し（{@code executor.submit(() -> …)} の
+     * {@code submit}）と、実行箇所を特定できた呼び出し（{@code DATAFLOW_LAMBDA}）で、どちらも
+     * 1 件に決まるものだけを数える（候補を並べるだけの行や、条件で打ち切る行は降りない）。
+     */
+    private List<LambdaEntry> lambdaEntries(int depth, int callerId) {
+        List<LambdaEntry> entries = null;
+        for (int e = graph.edgeStart(callerId); e < graph.edgeEnd(callerId); e++) {
+            int callee = graph.calleeOf(e);
+            if (methods.isLambdaBody(callee) && graph.createsLambda(callerId, callee)) {
+                if (entries == null) {
+                    entries = new ArrayList<>(4);
+                }
+                entries.add(new LambdaEntry(true, callee, graph.callLineOf(e)));
+            }
+        }
+        if (entries == null) {
+            return null;
+        }
+        Set<Integer> created = new HashSet<>();
+        for (LambdaEntry en : entries) {
+            created.add(en.lambdaId);
+        }
+        DataflowContext ctx = path[depth].context();
+        for (int e = graph.edgeStart(callerId); e < graph.edgeEnd(callerId); e++) {
+            if (methods.isLambdaBody(graph.calleeOf(e))
+                    || guards.unreachableReason(graph.guardOf(e), ctx) != null) {
+                continue;
+            }
+            int line = graph.callLineOf(e);
+            int[] targets = resolver.resolveOnPath(e, ctx).targets();
+            if (targets.length == 1 && created.contains(targets[0])) {
+                entries.add(new LambdaEntry(false, targets[0], line));
+            }
+            for (CallbackContracts.Match match : resolver.callbackTargets(e, ctx)) {
+                if (!match.isMultiple() && created.contains(match.target())) {
+                    entries.add(new LambdaEntry(false, match.target(), line));
+                }
+            }
+        }
+        return entries;
+    }
+
+    /** 作った辺と同じ行で、別の辺が同じ本体へ降りるもの（キーは {@link #lambdaLineKey}）。無ければ null */
+    private static Set<Long> mergedGenerations(List<LambdaEntry> entries) {
+        if (entries == null) {
+            return null;
+        }
+        Set<Long> generated = new HashSet<>();
+        for (LambdaEntry en : entries) {
+            if (en.generation) {
+                generated.add(lambdaLineKey(en.lambdaId, en.line));
+            }
+        }
+        Set<Long> merged = new HashSet<>();
+        for (LambdaEntry en : entries) {
+            if (!en.generation && generated.contains(lambdaLineKey(en.lambdaId, en.line))) {
+                merged.add(lambdaLineKey(en.lambdaId, en.line));
+            }
+        }
+        return merged.isEmpty() ? null : merged;
+    }
+
+    /** 2 本以上の辺から降りる本体 */
+    private static Set<Integer> repeatedLambdas(List<LambdaEntry> entries) {
+        Set<Integer> once = new HashSet<>();
+        Set<Integer> repeated = new HashSet<>();
+        for (LambdaEntry en : entries) {
+            if (!once.add(en.lambdaId)) {
+                repeated.add(en.lambdaId);
+            }
+        }
+        return repeated;
+    }
+
+    /** ラムダの本体へ降りる辺 1 本（{@link #lambdaEntries}） */
+    private record LambdaEntry(boolean generation, int lambdaId, int line) {
+    }
+
+    private static long lambdaLineKey(int lambdaId, int line) {
+        return ((long) lambdaId << 32) | (line & 0xffffffffL);
+    }
+
+    /**
+     * 畳んだラムダの本体について、同じ段での覚え。
+     * 同じ環境のまま降り直さないための環境と、2 本以上の辺から降りる本体が書いた行（同じ行を 2 度書かないため）
+     */
+    private static final class CollapseSeen {
+        private final List<int[]> ids = new ArrayList<>(2);
+        private final List<long[][]> envs = new ArrayList<>(2);
+        private final Set<Integer> repeated;
+        private final java.util.Map<Integer, Set<String>> rows = new java.util.HashMap<>();
+
+        CollapseSeen(Set<Integer> repeated) {
+            this.repeated = repeated;
+        }
+
+        boolean firstTime(int target, long[] params, long[] captured) {
+            for (int i = 0; i < ids.size(); i++) {
+                if (ids.get(i)[0] == target && Arrays.equals(envs.get(i)[0], params)
+                        && Arrays.equals(envs.get(i)[1], captured)) {
+                    return false;
+                }
+            }
+            ids.add(new int[] {target});
+            envs.add(new long[][] {params, captured});
+            return true;
+        }
+
+        /** その本体が書いた行の覚え。1 回しか降りない本体は覚えない（null） */
+        Set<String> rowsOf(int target) {
+            return repeated.contains(target) ? rows.computeIfAbsent(target, k -> new HashSet<>()) : null;
         }
     }
 
@@ -838,10 +1049,26 @@ public final class StreamingTreeWalker {
 
     /** 1行を即座に書き出す（溜め込まない） */
     private void emit(int depth) throws IOException {
-        writer.writeRow(methods, rootId, path, depth);
         int id = path[depth].methodId;
         if (id >= 0 && id < inHierarchy.length) {
             inHierarchy[id] = true;
+        }
+        if (activeRowSets.isEmpty()) {
+            writer.writeRow(methods, rootId, path, depth);
+        } else {
+            String line = writer.formatRow(methods, rootId, path, depth);
+            boolean written = false;
+            for (Set<String> rows : activeRowSets) {
+                written |= rows.contains(line);
+            }
+            for (Set<String> rows : activeRowSets) {
+                rows.add(line);
+            }
+            if (written) {
+                silentRun++;   // 同じ行が既にある。行にならないノードとして上限に数える
+                return;
+            }
+            writer.writeLine(line);
         }
         totalRows++;
         silentRun = 0;   // 行を書いた。行にならないノードは、ここから数え直す
