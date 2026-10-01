@@ -33,6 +33,7 @@
 | [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作）。いまの画面との差は冒頭の追補を見る |
 | [eclipse-plugin-features.md](eclipse-plugin-features.md) | Eclipse プラグインの機能一覧（入口・実装・値打ち・費用）。何を残し何をやめるかを決めるための棚卸し |
 | [vscode-plugin-design.md](vscode-plugin-design.md) | VSCode プラグインの設計案（未実装）。既存のサーバープロトコルの再利用、設定の自動生成、カーソル位置からメソッドを引く `AT` の追加 |
+| [workspace-callers-design.md](workspace-callers-design.md) | ワークスペースの他のプロジェクトからの被参照の設計案（未実装）。jar の被参照（1 段）と解析の単位（`project.root` 1 つ）の現状、コードを変えずにできる回避策（共通の親フォルダを `project.root` にする）、参照元のプロジェクトのソースを同じ解析に入れて呼び出し階層を他プロジェクトの起点まで伸ばす仕様（`workspace.projects` / `workspace.scope`）、クラスフォルダの被参照、プラグインの自動生成、影響範囲と段階 |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
 | [branch-pruning.md](branch-pruning.md) | 条件分岐による打ち切り（`branch.pruning.enabled`）。判定できる条件、打ち切りで階層から消えたメソッドを `methods.csv` で探す方法 |
 | [contracts-unification-design.md](contracts-unification-design.md) | 解決条件の指定を契約表に一本化する設計（実装済み）。具象クラスの対応を契約表の 1 行で書く「種類 C」、証拠をキャッシュの値グラフから引けること、旧来の `resolver.*` / `plugin.*` との互換 |
