@@ -30,14 +30,15 @@
 
 | ファイル | 内容 |
 |---|---|
-| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、複数の設定ファイルの扱い、ネットワークからの取得の確認、JBang の直接実行、Eclipse でソースを開く |
+| [cli.md](cli.md) | 起動コマンドの全仕様（引数・終了コード・`launcher.properties`・対話モードのメニュー）、複数の設定ファイルの扱い、ネットワークからの取得の確認、JBang の直接実行、キャッシュ、うまくいかないときの対処、閉域ネットワークで動かす（Pleiades・Eclipse の jar）、Eclipse でソースを開く |
 | [build-tool-classpath.md](build-tool-classpath.md) | `library.folders` を空欄にしたときに `pom.xml` / `build.gradle` を読んで依存 jar を集める仕組みと、読める宣言の範囲。依存 jar やクラスフォルダを自分で指定するとき（`library.folders` と `library.jars` の違い、相対パスの起点、シンボリックリンク、解析のあいだの jar の書き換え） |
 | [instance-analysis-plugin.md](instance-analysis-plugin.md) | 具象クラスの解決条件を外から与える（対応表を書く / 拡張を自分で書く）。拡張に渡る証拠、ファクトリごとの場合分け、書いた対応表が効いているかの確かめ方 |
 | [eclipse-plugin-usage.md](eclipse-plugin-usage.md) | Eclipse プラグインとしての使い方（入れ方・呼び出し元階層ビューの操作・設定・サーバーモード）。解析は Eclipse とは別プロセス・別 JDK で走る |
 | [vscode-plugin-usage.md](vscode-plugin-usage.md) | VSCode プラグインとしての使い方（入れ方・標準の呼び出し階層との違い・状態の見方・設定・ビルド）。解析は Eclipse 版と同じ子プロセスで走る |
 | [callback-contracts.md](callback-contracts.md) | ソースの外（JDK・フレームワーク）との契約表。jar の中から呼び戻される呼び出しを繋ぐ（`Thread#start()` → `run()` 等）ことと、フレームワークが呼ぶ入口を `FRAMEWORK_ENTRY` に仕分けること。具象クラスを 1 件に絞ること（`=>`。ファクトリのキーでの絞り込みを含む）と、絞れなかった呼び出しから出るひな形。自前のフレームワーク分を `contracts.files` / 拡張で足す方法と、書いた契約が効いているかの確かめ方 |
+| [external-usage.md](external-usage.md) | 自分のコードを呼んでいるほかのリポジトリの jar からの被参照を `call-hierarchy.csv` に足す（`external.library.folders`）。指定のしかたと行の種別 |
 | [call-conditions.md](call-conditions.md) | 呼び出しに効いている条件を通常の出力に追加で出す（設定ファイルの `conditions.target` → `call-conditions.csv`）。判定できない条件も含める |
-| [static-analysis-limits.md](static-analysis-limits.md) | 静的解析で具象クラスが決まる条件と決まらない条件（しきい値）。文字列からクラス名を算出するファクトリを例に、追える出所・追えない出所と、健全側に倒す方針 |
+| [static-analysis-limits.md](static-analysis-limits.md) | 静的解析で具象クラスが決まる条件と決まらない条件（しきい値）。文字列からクラス名を算出するファクトリを例に、追える出所・追えない出所と、健全側に倒す方針。解決の段（具象クラスを決める順）とラムダ式・メソッド参照の追い方（9・10 節） |
 | [github-actions.md](github-actions.md) | GitHub Actions からの使い方。参照する版、入力と出力、設定ファイルの渡し方、キャッシュの注意、セキュリティ上の注意（`pull_request_target`、self-hosted ランナー、依存取得の省略）、Actions 以外の CI |
 
 ## 設計の説明
@@ -60,7 +61,7 @@
 
 | ファイル | Issue | 内容 |
 |---|---|---|
-| [onboarding-qa.md](onboarding-qa.md) | — | 初見の Java 開発者の視点でリポジトリを見直し、入口を整えた件。`CONTRIBUTING.md`（`AGENTS.md` の本文を移した）・`architecture.md`・`glossary.md`・`test/README.md` の新設、qa を仕様の正本にしない明記、生成物の `linguist-generated`。つまずいた点の一覧と、見送った案（JUnit・`src/main/java`・`docs/` の英訳・入口クラスの改名） |
+| [onboarding-qa.md](onboarding-qa.md) | — | 初見の Java 開発者の視点でリポジトリを見直し、入口を整えた件。`CONTRIBUTING.md`（`AGENTS.md` の本文を移した）・`architecture.md`・`glossary.md`・`test/README.md` の新設、qa を仕様の正本にしない明記。つまずいた点の一覧と、見送った案（JUnit・`src/main/java`・`docs/` の英訳・入口クラスの改名） |
 | [build-tool-classpath-qa.md](build-tool-classpath-qa.md) | #44 | `pom.xml` / `build.gradle` を読んでローカルリポジトリから依存 jar を集める。`library.jars` と `.classpath` の `kind="lib"` のフォルダはクラスフォルダとして渡す（Q13） |
 | [cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) | #36 | 依存 jar を変えたときのキャッシュの差分更新。実行 JDK が変わると何が変わるか（Q20） |
 | [deterministic-row-order-qa.md](deterministic-row-order-qa.md) | #43 | 出力の行順を環境に依存しない並びに固定する。同じ行に並ぶ宣言の前後を ID でなく宣言の順番で決める（Q14〜） |
@@ -82,7 +83,7 @@
 | [jls-conformance-test-qa.md](jls-conformance-test-qa.md) | — | Java 言語仕様（SE 26）の節ごとの検査と javac 26 のバイトコードとの突き合わせ（`test/jls`）。見つかった食い違いの修正（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッド、コンパクトなソースファイルのクラス、インスタンスの main、パッケージアクセスの上書き、呼び出しを修飾する型から引く CHA）と、引用した節番号の原文との照合。実行時に動く実装の選び方と暗黙の `super()` の呼び出し先の節（`nocsv` を対に置く・ブリッジを H 行の継承した実装と突き合わせる。Q20）。検査の側の甘さ（#187。`resolve` の maximally-specific、JDT のコンパイル時宣言が上書きされた親インターフェースの宣言になる形を INFO に、`nooverride`。Q21） |
 | [inherited-impl-candidates-qa.md](inherited-impl-candidates-qa.md) | #131 | 段2（`LOCAL_NEW`）と段3（拡張）が、親から継承した実装を候補にできていなかった件。`implementationIn` への統一と、採用できなかった候補の警告 |
 | [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの契約に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
-| [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `level`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
+| [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
@@ -91,6 +92,7 @@
 | [cache-identity-qa.md](cache-identity-qa.md) | #102 #103 #104 | キャッシュの「同じファイルか」の判定をパス・サイズ・内容の指紋に統一する（更新時刻をやめる）。クラスパスの並び順の変化を検知する。jar の目次をファイルのバイトから読む・クラスフォルダの `.java` とシンボリックリンク（Q4）。サーバーモードの `SHUTDOWN` が実行中の解析を中止していた件、`CANCEL` がまだ始まっていない `ANALYZE` も止める（Q16） |
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |
 | [multi-config-output-folder-qa.md](multi-config-output-folder-qa.md) | #60 | 複数の設定ファイルと実行ごとの出力フォルダ |
+| [readme-structure-qa.md](readme-structure-qa.md) | — | README の構成（前半を初めて使う人の道、後半を出力のリファレンス）。docs/ へ移したものと移し先、1 ファイルのまま残す判断、見出しを変えずに深さを下げる理由、日本語と英語の食い違いの点検（`test/readme/run.sh`）、用語と表記の決まり |
 | [output-files-simplify-qa.md](output-files-simplify-qa.md) | — | 出力ファイルの役割の整理。`resolved-classpath.txt` を `run.log` にまとめる判断、依存 jar を取得しない（ネットワークに出ない）仕様の確認、想定どおりに動かなかった実行でだけ出す `warnings.txt`（何を出したら作るか、典型の項目、ビルドが通っていないことの判定）、案内の相対パスの起点を設定の読み方に合わせる |
 | [config-folder-qa.md](config-folder-qa.md) | #62 | 既定の設定ファイルを `config/` に置く。相対パスの起点 |
 | [config-file-name-qa.md](config-file-name-qa.md) | — | 設定ファイルの名前。同梱の既定を `config.properties` から `jche.properties` に改名した経緯（以前の名前も読む。プラグインの誤検出は中身で防ぐ） |
@@ -119,7 +121,7 @@
 | [method-decl-range-qa.md](method-decl-range-qa.md) | #115 | メソッドの宣言範囲（終了行）をキャッシュと `MethodTable` に持つ。カーソル位置から囲むメソッドを引く `AT`（近似をやめる判断、`methods.csv` に出さない判断） |
 | [callee-label-qa.md](callee-label-qa.md) | — | `call-hierarchy.csv` の `callee` 列を「クラス名.メソッド名」だけにし、`NO_IMPL` の注記を出さなくした |
 | [entrypoint-package-qa.md](entrypoint-package-qa.md) | — | 入口 2 つを既定パッケージから `jche` パッケージへ移した。`//SOURCES` の glob が直下に当たらない理由 |
-| [single-file-qa.md](single-file-qa.md) | — | `single-file/` を本体の全ソースから生成する 1 ファイル版（完全版）にした。入れ子のクラスにする理由、`jche` パッケージにする理由（入れ子の型の import）、同梱の拡張の名前の読み替え、本体との違い（利用者の Java の拡張は使えない）、生成し直し忘れの検査 |
+| [single-file-qa.md](single-file-qa.md) | — | `single-file/` を本体の全ソースから生成する 1 ファイル版（完全版）にした。入れ子のクラスにする理由、`jche` パッケージにする理由（入れ子の型の import）、同梱の拡張の名前の読み替え、本体との違い（利用者の Java の拡張は使えない）、生成し直し忘れの検査。のちに生成の仕組みを廃止し、本体と同期を取らない場合があるものにした（Q8） |
 
 ## 再実装用の仕様
 

@@ -3,8 +3,3 @@ test/regression/*/expected*/*.csv text eol=lf
 
 # java-call-hierarchy-exporter.cmd は MS932（Shift_JIS）・CRLF で保存してある（cmd が画面のコードページで読むため）。Git は中身を触らない
 /java-call-hierarchy-exporter.cmd -text
-
-# single-file/ は src/jche から生成した 1 ファイル版（bash single-file/generate.sh）。手で編集しないので、
-# GitHub の diff では折りたたみ、言語統計にも数えない（生成し直し忘れは test/single-file/run.sh が見る）
-/single-file/CallHierarchyExporterSingle.java linguist-generated=true
-/single-file/jche/extension/*.java linguist-generated=true

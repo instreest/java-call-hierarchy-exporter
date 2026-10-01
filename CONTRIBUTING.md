@@ -51,7 +51,7 @@ bash test/regression/run.sh
 | `jche.config.Config` は 47 個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
 | コメント・文書は日本語、利用者に見せる文言は英語が既定 | 読む相手（このリポジトリを触る人）と、使う相手（画面・ログ・CSV を読む人）が違う。文言の置き場所は下の「コードの決まり」 |
 | `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF | cmd が画面のコードページで読むため（`docs/cli-app-qa.md` の Q15）。編集するときも MS932 のまま保存する |
-| `single-file/CallHierarchyExporterSingle.java`（4 万行）がコミットされている | 本体の全ソースから生成した 1 ファイル版で、jar を集めて `javac` 1 回で動かす環境のためにある。手で編集せず、`src/jche` を直したら `bash single-file/generate.sh` で生成し直す（`docs/single-file-qa.md`） |
+| `single-file/CallHierarchyExporterSingle.java`（4 万行）がコミットされている | 本体の全ソースを 1 ファイルにした版で、jar を集めて `javac` 1 回で動かす環境のためにある。**本体と同期を取らない場合がある**（その目的に合わせて個別に更新する）ので、`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8） |
 | パッケージ名が `jche`（逆 DNS でない） | JBang の単体ツールとして短い名前を選んだ。利用者の拡張が import する `jche.extension` の互換のため変えない |
 
 ## 3. どこに何があるか
@@ -65,7 +65,7 @@ bash test/regression/run.sh
 | `src/jche/util/Messages*.java` | 利用者に見せる文言。英語が既定で、日本語（`MessagesJa`）を重ねる。CSV のセルはここを通さず英語で固定（`docs/nls-qa.md`） |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
-| `single-file/` | 本体の全ソースを 1 ファイル `CallHierarchyExporterSingle.java`（パッケージ `jche`。各型を外側のクラスの入れ子にした完全版）にしたもの。利用者の拡張が import する `jche.extension` だけは本物のパッケージのまま `jche/extension/` に写す。**手で編集せず**、`bash single-file/generate.sh`（生成器 `generator/MergeSources.java`）で `src/jche` から生成する（`docs/single-file-qa.md`） |
+| `single-file/` | 本体の全ソースを 1 ファイル `CallHierarchyExporterSingle.java`（パッケージ `jche`。各型を外側のクラスの入れ子にした完全版）にしたもの。利用者の拡張が import する `jche.extension` だけは本物のパッケージのまま `jche/extension/` に写す。**本体と同期を取らない場合がある**（その目的に合わせて個別に更新する）。`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8） |
 | `config/` | 設定ファイル置き場。`jche.properties` がひな形兼既定（以前の名前 `config.properties` も読む）。読み方は `src/jche/config/ConfigFile.java`（`Properties#load` ではない。バックスラッシュはそのまま、値の続きは行末の `\`（次の行が `項目=` なら捨てる）か字下げ。`docs/config-file-format-qa.md`） |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
 | `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`）。画面の文言は英語が既定で、日本語は `messages_ja.properties` に置く（`docs/eclipse-plugin-nls-qa.md`） |
@@ -83,14 +83,14 @@ bash test/regression/run.sh
 
 | 触ったもの | 忘れずにすること |
 |---|---|
-| `src/jche` のどこでも | `bash single-file/generate.sh` で 1 ファイル版を生成し直してコミットする（忘れは `test/single-file/run.sh` が捕まえる）。lint（JDK 25）・`test/regression` |
+| `src/jche` のどこでも | lint（JDK 25）・`test/regression`。1 ファイル版（`single-file/`）は直さなくてよい（本体と同期を取らない場合がある） |
 | 書き手（`analysis` / `cache`）でキャッシュに入る事実が変わりうる | `CacheFormat.VERSION` を上げる（迷ったら上げる）→ `bash test/cacheversion/run.sh --update` で `facts.txt` を更新。`test/incremental` を回す |
 | 差分更新が見る依存を足した | `test/incremental` に全件解析との一致の検査を足す |
 | 利用者に見せる文言を足した | `MessagesEn.java` と `MessagesJa.java` の同じ分野・同じ並び・同じキーに足す（`test/nls`）。起動コマンドは `msg <キー>`。Eclipse / VSCode プラグインは置き場所が別（下記） |
 | 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を変えた | 3 か所を同時に直す: `MethodSelection#search`・`ImplicitCalls#findNoArgMethod`・`ExternalUsageScanner#inheritedFrom`。正本は `docs/resolution-selection-design.md` の 4 節 |
-| JDT の版を上げた | `CallHierarchyExporter.java` と `Jche.java` の `//DEPS`、`pom.xml` の 3 か所（`test/pom`）。`bash test/cacheversion/run.sh --update` で記録だけ合わせる |
+| JDT の版を上げた | `CallHierarchyExporter.java` と `Jche.java` の `//DEPS`、`pom.xml` の 3 か所と README（`test/pom`・`test/readme` が見る）。`bash test/cacheversion/run.sh --update` で記録だけ合わせる |
 | 機能を足した・設計判断をした | `docs/<機能>-qa.md` に Q&A を残し、`docs/README.md` の索引に 1 行足す |
-| README を直した | 日本語と英語（`# English` 以降）の両方を直す |
+| README を直した | 日本語と英語（`# English` 以降）の両方を直す。節の印 `<!-- sec:ID -->` を両側で同じ並びに保つ。`bash test/readme/run.sh` で食い違いとリンク切れを見る |
 | 起動コマンドを改名した | `grep -rn` で旧名が残っていないことを確認する（src、docs、test、workflows、`.gitattributes`、`.gitignore`） |
 
 ## 5. テスト（変更したら必ず通す）
@@ -153,18 +153,18 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   `"%キー%"` と書き、`package.nls.json` / `package.nls.ja.json` に足す。
   検査は `test/vscode/run.sh`（`test/messages.test.ts`）（`docs/nls-qa.md` の Q15）
 - JDT の版を上げるときは `src/jche/CallHierarchyExporter.java` と `src/jche/Jche.java` の `//DEPS` 行、`pom.xml` の 3 か所を揃える
-  （`test/pom/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
+  （`test/pom/run.sh` と `test/readme/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
   入っていて、変われば古いキャッシュは自動で捨てられるので、形式の版は上げなくてよい
   （`bash test/cacheversion/run.sh --update` で記録だけ合わせる）
-- **`src/jche` を直したら `bash single-file/generate.sh` で 1 ファイル版を生成し直してコミットする。** `single-file/CallHierarchyExporterSingle.java` は
-  生成物で、手で編集しない（生成し直すと消える）。生成し直し忘れは `test/single-file/run.sh` が検出する（`docs/single-file-qa.md`）
+- 1 ファイル版（`single-file/`）は**本体と同期を取らない場合がある**。その目的に合わせて個別に更新するので、`src/jche` を直しても
+  1 ファイル版を直す必要はない。ビルドできること・起動できることだけを `test/single-file/run.sh` が見る（`docs/single-file-qa.md` の Q8）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
   `**` は区切り文字をまたぐが 0 階層は含まないため、`**/*.java` だけでは同じフォルダ直下のファイルに当たらない
   （`cannot find symbol` になる）。直下ぶんの `*.java` を必ず併記する（`docs/entrypoint-package-qa.md`）
 - 出力の行順は環境に依存しない決定的な並びを保つ（`docs/deterministic-row-order-qa.md`）。ソート順を変えると期待値が全部変わる
 - `call-hierarchy.csv` に固定列を足すときは `root` の左に入れる。最終列の `call-hierarchy` は可変長なので、
-  後ろに足すと階層が途中で切れる。順は `caller,callee,resolved-by,level,root,call-hierarchy` で、
-  `resolved-by` は注記と同じ判定から作り、`level` は「`call-hierarchy` 列のノード数」と一致させる
+  後ろに足すと階層が途中で切れる。順は `caller,callee,resolved-by,depth,root,call-hierarchy` で、
+  `resolved-by` は注記と同じ判定から作り、`depth` は「`call-hierarchy` 列のノード数」と一致させる
   （`docs/call-hierarchy-columns-qa.md`）
 - キャッシュの形式や鍵を変えるときは、古いキャッシュを安全に捨てる経路を用意する（`docs/cache-dependency-jars-qa.md`）
 - **キャッシュは 1 系統（1 ファイル `analysis-cache.tsv`）で、ファイルを分けない。** ソースファイル 1 つにつき
@@ -242,6 +242,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - README は日本語が先、その下に同じ内容の英語（`# English` 以降）を置く**対訳**である。
   片方だけ直すと黙って食い違うので、**必ず両方を直す**。見出しは英語側でも重複しない語にする
   （GitHub のアンカーに `-1` が付いて、リンクが並べ替えで静かに壊れるのを避けるため）。
+  前半は初めて使う人の道（Quick start・結果の読み方）、区切り線の下の「出力のリファレンス」に出力の全項目の定義を置く。
+  見出しの直前に `<!-- sec:ID -->` を置き、日本語側と英語側で同じ ID を同じ順に並べる。食い違いとリンク切れは
+  `bash test/readme/run.sh` が検出する。CSV の列・注記の文言を変えたら、出力のリファレンスも両方の言語で直す（`docs/readme-structure-qa.md`）
   `docs/` は日本語のままで、英語にするのは README だけ（`docs/nls-qa.md` の Q12）
 - 起動コマンドの名前を参照する箇所は多い（src、docs、test、workflows、`.gitattributes`、`.gitignore`）。
   改名したら `grep -rn` で旧名が残っていないことを確認する

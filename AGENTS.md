@@ -17,15 +17,15 @@ Java プロジェクト全体のメソッド呼び出し階層を、Eclipse JDT 
 
 CONTRIBUTING.md に全部書いてあるが、静かに壊れる（テストが赤くならない・後で気づく）ものだけをここに再掲する。
 
-- `src/jche` を直したのに `bash single-file/generate.sh` で 1 ファイル版を生成し直していない（`test/single-file` が落ちる）。
-  `single-file/CallHierarchyExporterSingle.java` は生成物で、手で編集しない
+- 1 ファイル版（`single-file/`）を本体（`src/jche`）に合わせて書き換えた。1 ファイル版は本体と同期を取らない場合があるもので、
+  その目的に合わせて個別に更新する。`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8）
 - 書き手（`analysis` / `cache`）を直してキャッシュに入る事実が変わりうるのに `CacheFormat.VERSION` を上げていない
   （迷ったら上げる。上げたら `bash test/cacheversion/run.sh --update`）
 - 利用者に見せる文言をソースに直接書いた。英語を `MessagesEn.java`、日本語を `MessagesJa.java` の同じキーに足す。
   出力 CSV のセルは言語に関わらず英語
 - 期待値（`test/regression/*/expected*/`）を理由なく書き換えて通した。テストをスキップ・無効化して通した
 - lint を JDK 25 より古い javac で回して「通った」と判断した（`dangling-doc-comments` は JDK 22 以降でしか出ない）
-- README の日本語側だけ・英語側だけを直した（対訳。必ず両方）
+- README の日本語側だけ・英語側だけを直した（対訳。必ず両方。食い違いは `bash test/readme/run.sh` が検出する）
 - `java-call-hierarchy-exporter.cmd` を UTF-8 で保存した（MS932・CRLF のまま保存する）
 - コメントに `Q番号` や `Issue #番号` だけを書いて結論を書かなかった（結論を 1 文で書き、参照は補助にする）
 - 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を 3 か所のうち 1 か所だけ直した

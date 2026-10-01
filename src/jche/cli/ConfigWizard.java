@@ -21,7 +21,7 @@ import jche.util.UserHome;
 /**
  * 設定ファイルを対話で新しく作る。
  *
- * README の Quick start で「書き換える」とされている項目（project.root / source.folders / library.folders /
+ * 設定ファイルの「解析対象」の項目（project.root / source.folders / library.folders /
  * source.encoding）と entry.packages だけを尋ね、残りは {@code config/jche.properties}（既定の設定
  * ファイル）をひな形にしてそのまま写す。ひな形の行を置き換える方式なので、全項目の説明コメントが
  * 新しいファイルにも残り、あとから他の項目を編集するときに config/jche.properties を見に行かなくて済む。

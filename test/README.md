@@ -34,7 +34,8 @@
 | `jls/` | JLS SE 26 の節ごとの期待値と javac 26 のバイトコードとの突き合わせ | `analysis` / `graph` | JDK 26（jbang が取得） | regression |
 | `warnings/` | `warnings.txt` の有無と中身（正常時は作らない・対処が載る） | `Warnings` / `Log.warn` を出す場所 | — | regression |
 | `contracts/` | 同梱の契約表（`JdkCallbacks` / `BundledFrameworkEntries`）が parse でき JDK に実在すること | 契約表 | — | regression |
-| `single-file/` | 1 ファイル版の生成し直し忘れ・ビルド・回帰 | `src/jche` のどこでも | — | regression |
+| `single-file/` | 1 ファイル版がビルドでき（本体と同じ lint）、起動できること。本体との一致は見ない | `single-file/` | — | regression |
+| `readme/` | README の日本語側と英語側の節の並び・形がそろい、アンカーが解決し、JDT の版が `//DEPS` と同じこと | `README.md`・docs から README へのリンク | — | jbangw |
 | `cli/` | 起動コマンドと対話モード（メニューへの答えをパイプで流す） | `cli` / `.sh` | — | regression |
 | `nls/` | 文言（英語が既定・日本語を重ねる）のキーの一致と、CSV が言語で変わらないこと | `Messages*` / 文言を足した場所 | — | regression |
 | `server/` | サーバーモード（`--server`）のプロトコル | `server` | — | regression |
@@ -133,7 +134,11 @@ Java 言語仕様（JLS SE 26）への適合と javac との整合の検査。`t
 
 ### `bash test/single-file/run.sh`
 
-1 ファイル版（`single-file/`）の検査。生成し直した結果がコミットと一致すること（生成し直し忘れ）、本体と同じ lint の引数で警告ゼロでコンパイルできること、`--help` が 0・知らないオプションが 2 で終わること、回帰テストの whole・entry・plugin を 1 ファイル版で回して期待値と一致すること（同梱の拡張を本体と同じ名前 `jche.builtin.TypeMappingProvider` で読み込めること、利用者が Java で書く拡張が実行時のコンパイル込みで動くこと）
+1 ファイル版（`single-file/`）の検査。本体と同じ lint の引数で警告ゼロでコンパイルできること、`--help` が 0・知らないオプションが 2 で終わること。本体と同期を取らない場合があるので、本体との一致は見ない（`docs/single-file-qa.md` の Q8）
+
+### `bash test/readme/run.sh`
+
+README の日本語側と英語側の節の並び・節ごとの形（表の行・コード・箇条・リンク先）がそろうこと、README の中と docs/ から README へのアンカーが解決すること、README の JDT の版が `//DEPS` と同じこと。ファイルの中身を読むだけなので JDK もネットワークも要らない
 
 ### `bash test/contracts/run.sh`
 

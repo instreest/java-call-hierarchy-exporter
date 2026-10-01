@@ -1,6 +1,6 @@
 # 起動コマンドと実行方法
 
-リポジトリ直下の起動コマンドの全仕様、複数の設定ファイルの扱い、JBang を直接使う方法。
+リポジトリ直下の起動コマンドの全仕様、複数の設定ファイルの扱い、JBang を直接使う方法、キャッシュ、うまくいかないときの対処、閉域ネットワークで動かす方法。
 最小の手順は [README の Quick start](../README.md#quick-start) にある。
 実装時に迷った点は [cli-app-qa.md](cli-app-qa.md) と [cli-noninteractive-qa.md](cli-noninteractive-qa.md) にある。
 
@@ -40,7 +40,7 @@ java-call-hierarchy-exporter.cmd
 ```
 
 ```bash
-# Linux / macOS / Git Bash
+# Linux
 ./java-call-hierarchy-exporter.sh config/app-a.properties config/app-b.properties
 ./java-call-hierarchy-exporter.sh
 ```
@@ -161,7 +161,7 @@ java-call-hierarchy-exporter: ネットワークからの取得が必要です
   無人で動かす環境で取得してよいと決めてあるなら、`launcher.properties`（または環境変数）で
   `JCHE_ALLOW_DOWNLOAD=yes` にすると尋ねずに取得します。`no` にすると端末があっても取得しません（閉域ネットワーク向け。
   `JCHE_JBANG_OPTS` に `--offline` を書いた場合も同じ）。対話モードの「環境設定」の 5) でも切り替えられます
-- 取得せずに動かすには、先に JDK と jar を用意します（[README の「Pleiades/Eclipse環境（閉域ネットワーク等の場合）」](../README.md#pleiadeseclipse環境閉域ネットワーク等の場合)）
+- 取得せずに動かすには、先に JDK と jar を用意します（[閉域ネットワークで動かす](#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)）
 - 起動コマンドを通さず `jbangw/jbang` を直接使う場合（[JBangによる実行](#jbangによる実行対話なし)）と
   [GitHub Actions](github-actions.md) では、この確認は出ず、自動で取得します。
   実装時に迷った点は [network-download-confirm-qa.md](network-download-confirm-qa.md) にあります
@@ -177,7 +177,7 @@ rem Windows（コマンドプロンプト）
 ```
 
 ```bash
-# Linux / macOS / Git Bash
+# Linux
 ./jbangw/jbang src/jche/CallHierarchyExporter.java config/jche.properties
 ```
 
@@ -191,6 +191,58 @@ rem Windows（コマンドプロンプト）
 ```bash
 ./jbangw/jbang src/jche/CallHierarchyExporter.java config/app-a.properties config/app-b.properties
 ```
+
+## キャッシュ
+
+解析結果のキャッシュは出力フォルダには置かず、**このツールのフォルダ**の
+`.cache/<project.root のフォルダ名>_<絶対パスのハッシュ 8 桁>/` に作ります。
+2 回目からは、変わったファイルと、その変更で結果が変わりうるファイル（変わったファイルの型を使っているファイルなど）だけを
+解析し直します。依存 jar やクラスフォルダ（兄弟モジュールの `target/classes` など）の変化も見ます。
+
+- 同じプロジェクトを指す設定ファイルは同じキャッシュを共有し、名前が同じでも場所が違うプロジェクトは混ざりません
+- 実行していないときなら消しても構いません（次の実行が全件の解析になります）。
+  置き場所を変えるときは `cache.folder`、再利用しないときは `cache.enabled=false` を設定ファイルで指定します
+- 同じキャッシュを 2 つの実行（CLI と Eclipse・VS Code のプラグイン、CI のジョブなど）が同時に使うと、
+  あとの実行は先の実行の終わりを待ちます（最長 30 分。環境変数 `JCHE_CACHE_LOCK_WAIT_SECONDS` で秒数を変えられます）
+- どのファイルを解析し直すかの決まりは [config/jche.properties](../config/jche.properties) の `cache.enabled` のコメントに、
+  作りは [cache-design.md](cache-design.md) にあります
+
+## うまくいかないとき
+
+| 症状 | 原因と対処 |
+|---|---|
+| 何も解析せずに終了コード 3 で終わる | ネットワークからの取得を断った、または端末が無くて確認できなかった（[ネットワークからの取得の確認](#ネットワークからの取得の確認)）。取得してよければ `y` と答えるか `JCHE_ALLOW_DOWNLOAD=yes`。取得できない環境は[閉域ネットワークで動かす](#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う) |
+| `Cannot read the config file`（日本語表示なら「設定ファイルを読めません」）と出る | 設定ファイルに Windows のパスを `\` のまま書いた。区切りを `/` にするか、`\\` と 2 つ重ねる |
+| `OutOfMemoryError` で止まる | 大きなプロジェクトでヒープが足りない。`launcher.properties` の `JCHE_JAVA_OPTS` に `-Xmx4g` などを書く（対話モードの「環境設定」でも変えられる） |
+| `./java-call-hierarchy-exporter.sh` が「許可がありません」で動かない | ZIP で取得して実行権限が落ちた。`bash java-call-hierarchy-exporter.sh …` で動かす |
+| 出力フォルダに `warnings.txt` がある | 依存 jar の不足・コンパイルエラーなどで結果に抜けがある。`warnings.txt` に項目ごとの原因と直し方が書いてある |
+
+## 閉域ネットワークで動かす（Pleiades・Eclipse の jar を使う）
+
+ネットワークから JDK や jar を取得できない環境でも、Pleiades / Eclipse がインストールされていれば、
+そこに含まれる JDK と JDT Core 一式で動かせます。実行に必要な jar を `lib` フォルダに集め、`javac` でコンパイルして
+`java` で起動します（起動コマンドも JBang も使いません）。
+jar のファイル名の版の部分は Eclipse の版によって変わるので、ワイルドカードでコピーします。
+
+```bat
+rem java-call-hierarchy-exporterをカレントディレクトリとしてください
+rem 環境に合わせて次の2行を書き換えてください
+set ECLIPSE_HOME=C:\pleiades\2026-06\eclipse
+set JAVA_HOME=C:\pleiades\2026-06\java\17
+
+rem 実行に必要なjarの収集
+mkdir lib
+for %P in (org.apache.xerces org.eclipse.core.contenttype org.eclipse.core.jobs org.eclipse.core.resources org.eclipse.core.runtime org.eclipse.equinox.common org.eclipse.equinox.preferences org.eclipse.jdt.core.compiler.batch org.eclipse.jdt.core org.eclipse.osgi org.osgi.service.prefs) ^
+do copy "%ECLIPSE_HOME%\plugins\%P_*.jar" lib\
+
+rem コンパイル（src\jche 配下のクラスも一緒にコンパイルされる）
+"%JAVA_HOME%\bin\javac" -classpath lib\* -sourcepath src -d bin src\jche\CallHierarchyExporter.java -encoding UTF-8
+
+rem 実行
+"%JAVA_HOME%\bin\java" -classpath bin;lib\* jche.CallHierarchyExporter config\jche.properties
+```
+
+Eclipse の版と、同梱の JDT Core・Java の版の対応は [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) にあります。
 
 ## Eclipse（Pleiades）でソースを開く
 

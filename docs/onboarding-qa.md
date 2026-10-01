@@ -15,7 +15,6 @@
   `AGENTS.md` の表からここへ移した
 - `docs/README.md` に「最初に読む順」を置き、`*-qa.md` が経緯の記録であって仕様の正本ではないことを明記した
 - README の「ドキュメント」の表に、開発に参加する人と内部の作りを知りたい人の行を足した（日本語・英語の両方）
-- `.gitattributes` で 1 ファイル版の生成物に `linguist-generated` を付け、PR の diff で折りたたまれるようにした
 
 ## Q1. 初見の人がつまずく点は何だったか
 
@@ -31,7 +30,6 @@
 | `test/` に検査・題材・道具が同列 | 34 フォルダ。`test/README.md` が無い |
 | 入口クラスが 3 つで名前が似ている | `Jche` / `CallHierarchyExporter` / `Exporter`。CSV を書かない側が `Exporter` |
 | Java の標準と違う点に理由の説明が無い | `src/jche` 直下・JUnit でなく bash・`mvn test` が何もしない・`Config` の public final フィールド |
-| 4 万行の生成物がコミットされる | `single-file/CallHierarchyExporterSingle.java` に `linguist-generated` が無い |
 
 ## Q2. AGENTS.md の本文を CONTRIBUTING.md に移したのはなぜか。AGENTS.md に残す案は
 
@@ -47,7 +45,7 @@
   入口として残し、「CONTRIBUTING.md を読む」と書く
 
 残した AGENTS.md には、決まりの再掲を「静かに壊れるものだけ」に絞って置いた。全部を再掲すると二重管理になる。
-再掲するものの基準は「テストが赤くならない・後で気づく失敗」（1 ファイル版の生成し直し、キャッシュの版、対訳、MS932）。
+再掲するものの基準は「テストが赤くならない・後で気づく失敗」（キャッシュの版、対訳、MS932、1 ファイル版を本体に合わせて書き換えてしまうこと）。
 
 ## Q3. 全体図（architecture.md）を `package-info.java` や `resolution-selection-design.md` と別に置いたのはなぜか
 
@@ -76,20 +74,29 @@ AGENTS.md のテスト表は 1 セルに 3,000 字の行があり、「まずど
 
 ## Q6. README の縮小と `package-info.java` の追加を今回に含めなかったのはなぜか
 
-README を宣言どおり（目的・Quick start・CSV の読み方）に絞るには、出力ファイル・解決の段・ラムダ・キャッシュの節を
-`docs/output-format.md` などへ移し、日本語と英語の両方を書き直す必要がある。文書だけで直せるが量が多く、
-今回の「入口を作る」とは別の変更なので分けた。残り 10 パッケージの `package-info.java` は `src/jche` に触るので
-1 ファイル版の生成し直しが伴い、これも分けた。どちらも次の段で行う。
+README を宣言どおり（目的・Quick start・CSV の読み方）に絞るには日本語と英語の両方を書き直す必要があり、
+今回の「入口を作る」とは別の変更なので分けた。README の組み直しは並行して別の作業で行われ
+（[readme-structure-qa.md](readme-structure-qa.md)。前半を初めて使う人の道、後半を出力のリファレンスにし、`test/readme/run.sh` で
+対訳の食い違いを検出する）、この作業は main を取り込んでそれに合わせた。残り 10 パッケージの `package-info.java` は
+`src/jche` に触るので、文書だけの今回とは分け、次の段で行う。
+
+## Q6a. 1 ファイル版の扱いを途中で変えた
+
+見直しの時点では 1 ファイル版は `src/jche` から生成するもので、「`src/jche` を直したら生成し直す」が決まりだった。
+そのため当初は生成物に `.gitattributes` の `linguist-generated` を付け、エージェント向けの再掲にも「生成し直し忘れ」を入れていた。
+並行して main 側で生成の仕組みが廃止され、1 ファイル版は**本体と同期を取らない場合がある**ものになった
+（[single-file-qa.md](single-file-qa.md) の Q8）。手で個別に更新するものに `linguist-generated` を付けると本当の変更まで
+折りたたまれるので外し、CONTRIBUTING.md・AGENTS.md・test/README.md の記述を「本体に合わせて書き換えない」に改めた。
 
 ## Q7. 見送った案
 
 - **JUnit への移行**: 主な検査が「題材プロジェクトを解析して、期待値の CSV や全件解析の結果と比べる」形で、
   JUnit にしても速くも読みやすくもならない。依存ゼロ・実行 JDK 固定の利点も失う。理由を CONTRIBUTING.md に書くことで足りる
-- **`src/main/java` への移動**: JBang の `//SOURCES`・`ToolRoot.locate` の目印・1 ファイル版の生成器・Eclipse 用 `pom.xml` の
+- **`src/main/java` への移動**: JBang の `//SOURCES`・`ToolRoot.locate` の目印・Eclipse 用 `pom.xml` の
   `sourceDirectory` に波及する。得るものは「見慣れた形」だけ
 - **`docs/` の英訳**: 方針（[nls-qa.md](nls-qa.md) の Q12）どおり日本語のまま。索引の冒頭に英語の 1 行で「docs は日本語。使い方は
   README の英語側」とだけ書いた
-- **`jche` パッケージ名の変更**: 拡張 API `jche.extension` の互換と 1 ファイル版の生成名に波及する
+- **`jche` パッケージ名の変更**: 拡張 API `jche.extension` の互換と 1 ファイル版のクラス名に波及する
 - **`Exporter` の改名（`Analysis` など）と `test/plugin*` の改名**: 効果はあるが `src/jche`・`smoke.yml`・文書に波及するので、
   文書だけの今回とは分けて判断する
 - **`test/run-all.sh`**: 各検査の前提（Node・Maven・JDK 26）が違い、全部を 1 回で回す形は CI の分け方と合わない。

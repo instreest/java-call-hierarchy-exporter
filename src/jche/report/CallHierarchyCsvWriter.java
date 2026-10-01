@@ -13,7 +13,7 @@ import jche.graph.MethodTable;
  *
  * ヘッダー:
  * <pre>
- *   caller,callee,resolved-by,level,root,call-hierarchy...
+ *   caller,callee,resolved-by,depth,root,call-hierarchy...
  * </pre>
  * callee は「クラス名.メソッド名」。Excel のフィルタで呼び出し先を選びやすくする
  * ため、引数型は付けない（オーバーロードは同じ表記にまとまる）。
@@ -25,7 +25,7 @@ import jche.graph.MethodTable;
  *   <li>resolved-by は解決方法（{@link ResolvedBy}）。この1本の辺（caller から callee）の
  *       性質なので callee の隣に置く。注記と違って必ず値が入るので、
  *       Excel のフィルタで確度・手法ごとに行を選べる</li>
- *   <li>level は起点からの階層の深さ（起点が0、その呼び出し先が1）。
+ *   <li>depth は起点からの階層の深さ（起点が0、その呼び出し先が1）。
  *       call-hierarchy 列に並ぶノード数と必ず一致する。root・call-hierarchy と同じく
  *       「この行が木のどこにあるか」を表す列なので、その2つと並べる</li>
  *   <li>call-hierarchy 以降は起点の次のノードから現ノードまでを1ノード1列で
@@ -47,14 +47,14 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
     public CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom) throws IOException {
         this.writer = Csv.writer(outputCsv, encoding, bom);
         writer.write(String.join(Csv.DELIM,
-                "caller", "callee", "resolved-by", "level", "root", "call-hierarchy"));
+                "caller", "callee", "resolved-by", "depth", "root", "call-hierarchy"));
         writer.newLine();
     }
 
     /**
      * 呼び出し階層の1行。path[depth] のノードを、path[depth-1] が呼んでいる。
      *
-     * @param depth 1以上（起点自身は出力しない）。そのまま level 列になる
+     * @param depth 1以上（起点自身は出力しない）。そのまま depth 列になる
      */
     void writeRow(MethodTable mt, int rootId, PathFrame[] path, int depth) throws IOException {
         buf.setLength(0);
@@ -71,7 +71,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         // resolved-by: 解決方法。注記と違い、確定した呼び出しでも必ず値が入る
         buf.append(Csv.esc(path[depth].resolvedBy)).append(Csv.DELIM);
 
-        // level: 起点からの深さ。call-hierarchy 列のノード数と一致する
+        // depth: 起点からの深さ。call-hierarchy 列のノード数と一致する
         buf.append(depth).append(Csv.DELIM);
 
         // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
@@ -114,8 +114,8 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.append(Csv.esc(caller)).append(Csv.DELIM);
         buf.append(Csv.esc(expression)).append(Csv.DELIM);
         buf.append(Csv.esc(resolvedBy)).append(Csv.DELIM);
-        // 階層は無いが、階層列には式を1つ置くので level は1。
-        // 「level = call-hierarchy 列のノード数」をどの種類の行でも保つ
+        // 階層は無いが、階層列には式を1つ置くので depth は1。
+        // 「depth = call-hierarchy 列のノード数」をどの種類の行でも保つ
         buf.append(1).append(Csv.DELIM);
         buf.append(Csv.esc(UNRESOLVED_ROOT));
         buf.append(Csv.DELIM).append(Csv.esc(expression));

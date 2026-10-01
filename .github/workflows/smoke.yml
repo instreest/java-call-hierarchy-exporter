@@ -87,8 +87,8 @@ jobs:
       - name: Cache value encoding test (escape round-trip)
         run: bash test/cachevalue/run.sh
 
-      # 1 ファイル版（single-file/）。src/jche から生成し直した結果がコミットと一致すること（生成し直し忘れ）、
-      # 本体と同じ lint で通ること、回帰テストの whole・entry・plugin（同梱の拡張と利用者の拡張）が本体と同じ出力になること
+      # 1 ファイル版（single-file/）。本体と同じ lint で通ること、起動できること
+      # （本体と同期を取らない場合があるので、本体との一致は見ない）
       - name: Single-file build test
         run: bash test/single-file/run.sh
 
@@ -343,6 +343,10 @@ jobs:
       # jbang はスタブに差し替えて解析は動かさないので、これも数秒で終わる
       - name: Action dependency-jar warning test
         run: bash test/action/run.sh
+
+      # README の日本語側と英語側の食い違い・リンク切れ（ファイルを読むだけ、数秒）
+      - name: README consistency check
+        run: bash test/readme/run.sh
 
   # Eclipse（Pleiades）用の pom.xml の検査。
   # 1) //DEPS 行と pom.xml の依存が同じ版であること（ファイルを読むだけ、数秒）

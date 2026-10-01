@@ -110,7 +110,7 @@ target/
 /test/cachevalue/build/
 /test/cachevalue/check/
 
-# test/single-file/run.sh（1 ファイル版の検査）の生成し直した結果・コンパイル結果・ログ
+# test/single-file/run.sh（1 ファイル版の検査）のコンパイル結果・ログ
 /test/single-file/build/
 
 # test/contracts/run.sh（同梱の契約表の検査）のコンパイル結果

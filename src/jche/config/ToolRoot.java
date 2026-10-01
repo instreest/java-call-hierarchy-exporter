@@ -15,7 +15,7 @@ import java.security.CodeSource;
  *
  * 目印は {@code src/jche/CallHierarchyExporter.java}。次の順に探し、最初に見つかった場所を採る。
  * <ol>
- *   <li>作業ディレクトリと、その上位。README の手順（jbang でも java 直接でも）はプロジェクト直下を
+ *   <li>作業ディレクトリと、その上位。README・docs/cli.md の手順（jbang でも java 直接でも）はプロジェクト直下を
  *       作業ディレクトリにして実行するので、ほとんどはここで決まる</li>
  *   <li>実行中のクラスの置き場所と、その上位。{@code java -cp bin} で動かしたときの {@code bin/} の親。
  *       jbang 経由では {@code ~/.jbang/cache/jars/} の下なので、ここでは見つからない</li>
