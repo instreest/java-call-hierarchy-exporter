@@ -4,15 +4,10 @@
 #   bash test/single-file/run.sh
 #   JCHE_CP="依存jar..." bash test/single-file/run.sh   # jbang を使わず、PATH の javac / java（JDK 25）と与えた JDT の classpath で
 #
-# 見るのは 4 つ。
-#   1. 生成し直し忘れが無いこと … single-file/generate.sh で作り直した結果が、コミットされているファイルと一致する。
-#      本体（src/jche）を直したのに 1 ファイル版が古いまま、を検出する
-#   2. ビルドできること … 本体と同じ引数（--release 17 -Xlint:all -Werror -Xdoclint:all,-missing）で警告ゼロでコンパイルできる
-#   3. 起動できること … --help が終了コード 0 で使い方を出す。知らないオプションは 2
-#   4. 本体と同じ出力になること … 回帰テスト（test/regression/run.sh）の whole・entry・plugin を 1 ファイル版で回して期待値と一致する。
-#      plugin ケースは、同梱の拡張を本体と同じ名前（jche.builtin.TypeMappingProvider）で読み込めること
-#      （1 ファイル版では入れ子のクラス名に読み替える）と、利用者が Java で書く拡張（plugins/*.java を実行時に
-#      コンパイルする。jche.extension.* を import する）が動くことを見る
+# 見るのは 2 つ。1 ファイル版は本体（src/jche）と同期を取らない場合があるので、本体との一致
+# （生成し直した結果との一致・回帰テストの期待値との一致）は見ない（docs/single-file-qa.md の Q8）。
+#   1. ビルドできること … 本体と同じ引数（--release 17 -Xlint:all -Werror -Xdoclint:all,-missing）で警告ゼロでコンパイルできる
+#   2. 起動できること … --help が終了コード 0 で使い方を出す。知らないオプションは 2
 set -uo pipefail
 cd "$(dirname "$0")"
 # 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
@@ -39,20 +34,7 @@ fi
 rm -rf build
 mkdir -p build
 
-# --- 1. 生成し直し忘れ ---
-if ! "$JAVA_BIN" "$ROOT/single-file/generator/MergeSources.java" "$ROOT/src/jche" build/regenerated.java > build/generate.log 2>&1; then
-    echo "  NG   1 ファイル版を生成できませんでした（single-file/generator/MergeSources.java）"; cat build/generate.log; echo "FAIL"; exit 1
-fi
-if diff -q build/regenerated.java "$SINGLE" > /dev/null && diff -r -q build/jche/extension "$ROOT/single-file/jche/extension" > /dev/null; then
-    echo "  OK   single-file/CallHierarchyExporterSingle.java と jche/extension/ は src/jche から生成し直した結果と一致する"
-else
-    echo "  NG   single-file/CallHierarchyExporterSingle.java が古い。bash single-file/generate.sh で生成し直してコミットすること"
-    diff build/regenerated.java "$SINGLE" | head -20
-    diff -r -q build/jche/extension "$ROOT/single-file/jche/extension"
-    fail=1
-fi
-
-# --- 2. ビルド（本体の lint と同じ引数） ---
+# --- 1. ビルド（本体の lint と同じ引数） ---
 if "$JAVAC_BIN" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
         -cp "$CP" -d build/classes "$SINGLE" "$ROOT"/single-file/jche/extension/*.java > build/javac.log 2>&1; then
     echo "  OK   1 ファイル版を警告ゼロでコンパイルできる"
@@ -61,7 +43,7 @@ else
 fi
 CMD="$JAVA_BIN -cp $PWD/build/classes:$CP jche.CallHierarchyExporterSingle"
 
-# --- 3. 起動 ---
+# --- 2. 起動 ---
 if $CMD --help > build/help.log 2>&1 && grep -q 'java-call-hierarchy-exporter' build/help.log; then
     echo "  OK   --help が使い方を出して 0 で終わる"
 else
@@ -72,14 +54,6 @@ if [ $? = 2 ]; then
     echo "  OK   知らないオプションは 2 で終わる"
 else
     echo "  NG   知らないオプションの終了コードが 2 でない"; head -5 build/badopt.log; fail=1
-fi
-
-# --- 4. 本体と同じ出力 ---
-if CASES="whole entry plugin" JCHE_CMD="$CMD" bash "$ROOT/test/regression/run.sh" > build/regression.log 2>&1; then
-    echo "  OK   回帰テスト（whole・entry・plugin）が 1 ファイル版でも通る"
-else
-    echo "  NG   回帰テスト（whole・entry・plugin）が 1 ファイル版で通らない（build/regression.log）"
-    grep -E 'DIFF|NG|失敗' build/regression.log | head -10; fail=1
 fi
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi
