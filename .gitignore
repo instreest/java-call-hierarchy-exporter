@@ -113,9 +113,9 @@ target/
 # test/single-file/run.sh（1 ファイル版の検査）のコンパイル結果・ログ
 /test/single-file/build/
 
-# test/contracts/run.sh（同梱の契約表の検査）のコンパイル結果
-/test/contracts/build/
-/test/contracts/check/
+# test/rules/run.sh（同梱のライブラリ呼び出し規則の検査）のコンパイル結果
+/test/rules/build/
+/test/rules/check/
 
 # test/nls/run.sh（文言の検査）のコンパイル結果・キャッシュ・出力。
 # 英語と日本語で 2 回解析して、CSV が同じになることを見るためのもの

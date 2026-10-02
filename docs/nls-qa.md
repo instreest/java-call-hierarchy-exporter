@@ -80,9 +80,9 @@ Eclipse プラグインは `messages.properties` を `ResourceBundle` で読ん�
 - VSCode プラグインの配布物（`.vsix`）
 - GitHub Actions の複合アクション
 - **`javac -d <出力先>` で直接コンパイルしている検査スクリプト**
-  （当時は `test/cachetail` / `cachevalue` / `conditions` / `contracts` / `dataflow` / `incremental` / `server` の 7 本。
+  （当時は `test/cachetail` / `cachevalue` / `conditions` / `rules` / `dataflow` / `incremental` / `server` の 7 本。
   `test/cachetail` はその後キャッシュを 1 ファイルにしたときに無くなり、今は `cachevalue` / `cacheversion` / `conditions` /
-  `contracts` / `ctorbody` / `dataflow` / `incremental` / `jls` / `pruning` / `server` / `vscode` / `warnings` の 12 本）
+  `rules` / `ctorbody` / `dataflow` / `incremental` / `jls` / `pruning` / `server` / `vscode` / `warnings` の 12 本）
 
 properties にすると、このすべてに「リソースを一緒に配る」処理が要る。
 そして 1 か所でも漏れると、**例外も警告も出ずに画面にキー名（`!キー!`）が出るだけ**になる。
@@ -332,7 +332,7 @@ VSCode の表示言語に合わせるので、利用者が言語パックを入�
 表示言語に合わせて `ja-JP` / `en-GB` を選ぶ（どちらも 24 時間表記）。
 件数の桁区切り（`toLocaleString()`）は数の表記なので、動かしている環境の書式のままにしてある。
 
-### Q16. `contracts-suggested.txt` は英語で固定するのか、表示言語に合わせるのか
+### Q16. `call-rules-suggested.txt` は英語で固定するのか、表示言語に合わせるのか
 
 **表示言語に合わせる**（CSV のように英語で固定しない）。
 
@@ -341,9 +341,9 @@ VSCode の表示言語に合わせるので、利用者が言語パックを入�
 | 出力 | 何のために読むか | 言語 |
 |---|---|---|
 | `call-hierarchy.csv` / `methods.csv` / `call-conditions.csv` | 期待値との比較・Excel のフィルタ・他のツールへの受け渡し。**機械が読むデータ** | 英語で固定（Q6） |
-| `contracts-suggested.txt` | 「どの行を契約表に貼れば絞れるか」を人が選ぶための**案内文** | 表示言語 |
+| `call-rules-suggested.txt` | 「どの行をライブラリ呼び出し規則に貼れば絞れるか」を人が選ぶための**案内文** | 表示言語 |
 
-ひな形の中身のうち、貼る対象である契約の行（`fxp.Dao#find => ??`）は型名とシグネチャなので
+ひな形の中身のうち、貼る対象である規則の行（`fxp.Dao#find => ??`）は型名とシグネチャなので
 どの言語でも同じである。言語で変わるのは、その上下に付く `#` で始まる説明だけで、
 貼っても読み飛ばされるコメント行に収まっている。
 

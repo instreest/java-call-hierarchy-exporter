@@ -28,7 +28,7 @@ package jche.cache;
  * @param staticRecv メソッド呼び出しを<b>ソースに書いたときのレシーバの型</b>（FQN）。
  *                   宣言元と同じか、分からなければ空文字。
  *                   {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で
- *                   宣言されていると、{@link #value} のメソッドキーは親になる。契約表や拡張で
+ *                   宣言されていると、{@link #value} のメソッドキーは親になる。ライブラリ呼び出し規則や拡張で
  *                   「ソースに書いてある型」を指定できるように、書かれた型も持っておく
  */
 public record ValueNode(int id, char kind, String value, int recv, String args, int argCount,

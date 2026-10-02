@@ -138,7 +138,7 @@ public final class CallGraph {
 
     /**
      * 単純名で書かれた型名を FQN に直す道具。最初に要るときだけ作る
-     * （契約表と拡張を使わない実行では作らない）
+     * （ライブラリ呼び出し規則と拡張を使わない実行では作らない）
      */
     public TypeNames typeNames() {
         TypeNames local = typeNames;

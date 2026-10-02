@@ -190,7 +190,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 
 | 何を読むか | どこまで読むか |
 |---|---|
-| オーバーライド | JLS 8.4.2 のサブシグネチャまで見る。型引数を具体化した実装（`class UserRepo implements Repo<User>`）は、消去したキーが食い違うので**上書き関係を事実として残して**照合する（O 行）。呼び戻しの契約表とリフレクションは所有型を知らないので、同じ照合をシグネチャで行う |
+| オーバーライド | JLS 8.4.2 のサブシグネチャまで見る。型引数を具体化した実装（`class UserRepo implements Repo<User>`）は、消去したキーが食い違うので**上書き関係を事実として残して**照合する（O 行）。呼び戻しのライブラリ呼び出し規則とリフレクションは所有型を知らないので、同じ照合をシグネチャで行う |
 | 暗黙のコンストラクタ呼び出し | 書かれていない `super()`（JLS 8.8.7 / 8.8.9）も辺にする。ただし親が `java.lang.Object` / `Enum` / `Record` のときは張らない（辿る先が無い）。匿名クラスの合成コンストラクタ（JLS 15.9.5.1）は、型引数を置き換えた親のコンストラクタと引数の型で比べる。それ以外で呼ばれるコンストラクタを 1 つに決めきれないとき（引数なしのものが public・protected でなく可変長引数 1 つのものと並ぶ、可変長引数 1 つのものが複数ある）は、最も特殊なもの（JLS 15.12.2.5）・見えるもの（JLS 6.6）を自前で選ばず、**候補すべてに辺を張る**。javac が選ぶもの以外の辺も出る（多すぎる側。[jls-conformance-qa.md](jls-conformance-qa.md) の Q35） |
 | 実行時に動く実装の選び方 | 具象型から実装を探す順は JVM の選び方（JLS 8.4.8・9.4.1、JVMS 5.4.6）に合わせる。親クラスの連鎖を根まで先に見て、無ければ親インターフェースの宣言のうち最も特定的なもの。クラスのメソッドは親インターフェースの default に常に勝ち、親型の private と親インターフェースの static は実装にしない。jar からの被参照（`external-ref:INHERITED`）も同じ順で結びつける。親クラスから継承したメソッドが型引数を置き換えたインターフェースのメソッドを実装する形（`class UserRepo extends BaseRepo implements Repo<User>`）も、その型から見た関係として引く。別のパッケージの親クラスのパッケージアクセスのメソッドは、JLS では継承されないが、今も実装に選ぶ（コンパイルした形は実行時に `IllegalAccessError` になる形。[jls-conformance-qa.md](jls-conformance-qa.md) の Q26〜Q36） |
 | 構文が呼ぶメソッド | 呼び出し式が無くても JLS が「呼ぶ」と定めるものは辺にする。拡張 for 文の `iterator()` / `hasNext()` / `next()`（JLS 14.14.2。後の 2 つは `java.util.Iterator` のメソッド）、try-with-resources の `close()`（JLS 14.20.3）、レコードパターンのアクセサ（JLS 14.30.2）。`iterator()` / `close()` の呼び出し先は式の型のメンバー（JLS 8.4.8）で、型と親クラスの連なりを先に、無ければインターフェースの最も特定的な宣言を、public な宣言だけから引く（private・別のパッケージのパッケージアクセスは継承されない）。**文字列変換の `toString()`（JLS 5.1.11。`"x" + obj`）は辺にしない**（`Object.toString` の全実装が候補になるだけで絞れず、javac も呼び出し命令を書かない） |
@@ -246,8 +246,8 @@ return switch (key) {
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
 | 1 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
-| 3 | `CONTRACT` | 契約表に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/callback-contracts.md](callback-contracts.md)） |
-| 3 | （拡張が返すラベル） | ファクトリ・DI 設定・外部リスト等（[docs/instance-analysis-plugin.md](instance-analysis-plugin.md)）。契約表の次に尋ねる |
+| 3 | `CALL_RULE` | ライブラリ呼び出し規則に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/library-call-rules.md](library-call-rules.md)） |
+| 3 | （拡張が返すラベル） | ファクトリ・DI 設定・外部リスト等（[docs/instance-analysis-plugin.md](instance-analysis-plugin.md)）。ライブラリ呼び出し規則の次に尋ねる |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
 | — | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定（経路ごとに判定するため段の外） |
 | — | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定（同上） |
@@ -256,13 +256,13 @@ return switch (key) {
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](callback-contracts.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
+| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
 | — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
 | — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
 `DATAFLOW_PARAM` / `DATAFLOW_FIELD` / `DATAFLOW_DECLARED_TYPE` / `DATAFLOW_LAMBDA` は経路ごとに判定するので段の外に置いている。
-契約表（段 3 の `CONTRACT`）は拡張より先、データフロー（段 4）や Spring の判定（段 5）より先に効く。
+ライブラリ呼び出し規則（段 3 の `CALL_RULE`）は拡張より先、データフロー（段 4）や Spring の判定（段 5）より先に効く。
 
 ---
 

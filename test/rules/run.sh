@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 同梱の契約表（JdkCallbacks / BundledFrameworkEntries）の検査。
+# 同梱のライブラリ呼び出し規則（JdkCallbacks / BundledFrameworkEntries）の検査。
 #
-#   bash test/contracts/run.sh
-#   JCHE_CP="build/classes:依存jar..." bash test/contracts/run.sh   # コンパイル済みの classpath を使う
+#   bash test/rules/run.sh
+#   JCHE_CP="build/classes:依存jar..." bash test/rules/run.sh   # コンパイル済みの classpath を使う
 #
-# 契約表は文字列なので、形を崩しても・JDK 側でメソッドの宣言元が動いても、コンパイルは通り
+# ライブラリ呼び出し規則は文字列なので、形を崩しても・JDK 側でメソッドの宣言元が動いても、コンパイルは通り
 # 実行時は「当たらない」だけで何も言わない。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが
 # 実在すること（実行中の JDK のリフレクションで照合）、形の違う行は parse で弾かれることを見る。
 # 検査プログラムは package-private の parse を呼ぶため jche.graph パッケージに置く。
@@ -39,11 +39,11 @@ fi
 
 rm -rf check
 "$JAVAC_BIN" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
-    -cp "$CP" -d check BundledContractsCheck.java \
+    -cp "$CP" -d check BundledRulesCheck.java \
     || { echo "  NG   検査プログラムのコンパイルに失敗しました"; echo "FAIL"; exit 1; }
 
 # 日本語のメッセージを出すので文字コードを固定する
-if "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "check:$CP" jche.graph.BundledContractsCheck; then
+if "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "check:$CP" jche.graph.BundledRulesCheck; then
     echo "PASS"
 else
     echo "FAIL"; exit 1

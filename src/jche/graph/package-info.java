@@ -10,7 +10,7 @@
  *   選択（この層）      受け手の実行時のクラス C と解決済みの宣言 mR から、動く本体を決める（JVMS 5.4.6。JLS 15.12.4.4）。
  *                       ソース解析では C が 1 つに決まらないので、この層は 2 つの問いに分けて答える:
  *                         (1) C としてありうる型はどれか … {@link jche.graph.CallResolver} の段（CHA・LOCAL_NEW・値の追跡・
- *                             契約表・DI）。静的束縛（invokestatic / invokespecial に当たる呼び出し）は
+ *                             ライブラリ呼び出し規則・DI）。静的束縛（invokestatic / invokespecial に当たる呼び出し）は
  *                             {@link jche.graph.BindKind} が先に決める
  *                         (2) その C で動く本体はどれか … {@link jche.graph.MethodSelection}（JVMS 5.4.6 の手順。実装探索の
  *                             入口はここだけ）
@@ -43,7 +43,7 @@
  *   CallResolver       受け手の型の候補を求める段（Resolution のラベルが call-hierarchy.csv の resolved-by になる）
  *     DataflowResolver / DataflowContext / Slot   値の表（ValueStore）と経路の値から具象型を追う
  *     SpringBeans / FieldFacts                    DI の注入点と Bean
- *     TypeContracts / CallbackContracts / FrameworkEntries / FactoryCalls   契約表
+ *     TypeRules / CallbackRules / FrameworkEntries / FactoryCalls   ライブラリ呼び出し規則
  *     UnresolvedCalls / InboundIndex / EntryPoints   未解決の一覧・被参照・起点
  * </pre>
  */

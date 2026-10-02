@@ -99,7 +99,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | `resolved-by` | 意味 | どうするか |
 |---|---|---|
-| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | 候補の先は辿っていないので、改修するメソッドがその先にあると、この起点からの行は出ません。改修するメソッドを呼んでいるメソッド（`caller` のメソッド）を `callee` 列で絞り直し、呼び出し元へ上に辿って起点を探します。絞り方を教えれば次から 1 つに決まります（出力フォルダの `contracts-suggested.txt`、[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | 候補の先は辿っていないので、改修するメソッドがその先にあると、この起点からの行は出ません。改修するメソッドを呼んでいるメソッド（`caller` のメソッド）を `callee` 列で絞り直し、呼び出し元へ上に辿って起点を探します。絞り方を教えれば次から 1 つに決まります（出力フォルダの `call-rules-suggested.txt`、[docs/library-call-rules.md](docs/library-call-rules.md)） |
 | `UNRESOLVED:…` | 呼び出し先の型が分からなかった（多くは依存 jar の不足） | `warnings.txt` に従って依存 jar を揃えて実行し直します |
 | `RESOLVED:EXTERNAL_GUESS` | 型が分からず、`import` から型名を推定した。**推定が外れていることがある** | 呼び出し先をソースで確かめます。依存 jar を揃えれば推定は要らなくなります |
 
@@ -126,7 +126,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 |---|---|
 | 起点（`root`） | 呼び出しを辿り始めるメソッド。設定の `entry.packages` で指定します。空欄なら、ソースの中で呼び出し元の無いメソッドと、フレームワークが呼ぶと分かっているメソッド（`main`・`@GetMapping`・Servlet の `doGet` など）がすべて起点になります（全体モード） |
 | 具象クラスの解決 | インターフェースや親クラスの型に対する呼び出しで、実際に動く実装クラスを決めること（[具象クラスの解決](#具象クラスの解決)） |
-| 契約表 | ソースの外（JDK・フレームワーク）の振る舞いや、実装クラスの対応を書いた表（[docs/callback-contracts.md](docs/callback-contracts.md)） |
+| ライブラリ呼び出し規則 | ソースの外（JDK・フレームワーク）の振る舞いや、実装クラスの対応を書いた表（[docs/library-call-rules.md](docs/library-call-rules.md)） |
 | 注記 | `call-hierarchy` 列の最後に付く補足。大文字のタグで始まります（[注記](#注記)） |
 
 ---
@@ -142,7 +142,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | GitHub Actions で解析して CSV をアーティファクトにする | リポジトリ直下の [`action.yml`](action.yml) を `uses:` で呼ぶ（[docs/github-actions.md](docs/github-actions.md)。そのまま写せるワークフローの例と、依存の取得・セキュリティ・保存量の注意） |
 | 閉域ネットワークで使う（ネットワークから取得しない） | Pleiades / Eclipse に入っている JDK と JDT の jar で動かす（[docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)） |
 | 自分のコードを呼んでいる、ほかのチームの jar を調べる | 設定の `external.library.folders`（[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
-| 決めきれなかった実装を 1 つに絞る | 契約表を書く（[docs/callback-contracts.md](docs/callback-contracts.md)）。条件が複雑なら拡張を書く（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
+| 決めきれなかった実装を 1 つに絞る | ライブラリ呼び出し規則を書く（[docs/library-call-rules.md](docs/library-call-rules.md)）。条件が複雑なら拡張を書く（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
 | 呼び出しに効いている `if` の条件も出す | 設定の `conditions.target`（[docs/call-conditions.md](docs/call-conditions.md)） |
 
 設定項目の全体は [config/jche.properties](config/jche.properties) のコメントにあります。
@@ -180,7 +180,7 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 候補を並べるか「辿れなかった」と書きます。
 
 - **ソースの無いところ（jar の中）は辿りません。** JDK やフレームワークの中を経由して呼び戻される呼び出し
-  （`new Thread(task).start()` → `task.run()` など）は、[契約表](docs/callback-contracts.md)に書かれたもの（同梱の分と、自分で足した分）だけを繋ぎます
+  （`new Thread(task).start()` → `task.run()` など）は、[ライブラリ呼び出し規則](docs/library-call-rules.md)に書かれたもの（同梱の分と、自分で足した分）だけを繋ぎます
 - **実行時に決まる値は分かりません。** 設定ファイルや入力から作ったクラス名でのリフレクション、
   実行時の条件で変わる実装などは、候補を並べるに留まります（[docs/static-analysis-limits.md](docs/static-analysis-limits.md)）
 - **コンパイルが通らない・依存 jar が足りないと、結果に抜けが出ます。** そのときは出力フォルダに
@@ -216,7 +216,7 @@ config/
     ├── jche.properties           この実行に使った設定ファイルの複製（渡したファイル名のまま）
     ├── run.log                   標準出力と同じ内容の実行ログ（UTF-8。ビルドファイルから集めた依存 jar の一覧と要求元も含む）
     ├── warnings.txt              確認してほしいことと対処のしかた（UTF-8。警告やエラーがあったときだけ）
-    └── contracts-suggested.txt   絞れなかった呼び出しを1件に絞るための契約表のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
+    └── call-rules-suggested.txt   絞れなかった呼び出しを1件に絞るためのライブラリ呼び出し規則のひな形（UTF-8。絞れなかった呼び出しがあるときだけ）
 ```
 
 出力 CSV ファイルは UTF-8（BOM 付き）なので Excel で開けます。CSV の中身は、画面の表示言語に関わらず英語です。
@@ -291,8 +291,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 | role | 意味 |
 |---|---|
-| `FRAMEWORK_ENTRY` | 契約でフレームワークが呼ぶと分かる入口（`main`、Servlet の `doGet`、`@Scheduled`、`@GetMapping`、`@Test` 等。[docs/callback-contracts.md](docs/callback-contracts.md)）。全体モードでは、ソースから呼ばれていても起点になる |
-| `ENTRY_CANDIDATE` | 呼び出し元が無く、上の契約にも当たらない。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
+| `FRAMEWORK_ENTRY` | 規則でフレームワークが呼ぶと分かる入口（`main`、Servlet の `doGet`、`@Scheduled`、`@GetMapping`、`@Test` 等。[docs/library-call-rules.md](docs/library-call-rules.md)）。全体モードでは、ソースから呼ばれていても起点になる |
+| `ENTRY_CANDIDATE` | 呼び出し元が無く、上の規則にも当たらない。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
 | `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
 | `LEAF` | 呼び出し先が無い。末端処理 |
 | `NORMAL` | 上記以外 |
@@ -337,7 +337,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 ### 注記
 
 `call-hierarchy` 列の最後に付く補足です。どう解決したかは `resolved-by` 列にあるので、注記に載るのは
-**その列に無いこと**（打ち切りの理由、候補の件数とレシーバの由来、繋いだ契約）だけです。
+**その列に無いこと**（打ち切りの理由、候補の件数とレシーバの由来、繋いだ規則）だけです。
 先頭に大文字のタグが付くので、タグで grep すれば種類ごとに拾えます。
 
 | タグ | 意味 |
@@ -345,7 +345,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:*]` | ここから先へ降りなかった。`grep '\[UNEXPANDED'` で辿り切れなかった箇所を一括で拾える |
 | `[EXTERNAL]` | 呼び出し先が自プロジェクトの外。打ち切りではあるが性質が違うので `UNEXPANDED` には入れない |
 | `[UNREACHABLE]` | この経路では実行されないと分かった呼び出し |
-| `[RESOLVED:CALLBACK]` | 契約で繋いだ呼び出し。後ろに繋いだ契約が続く。注記に出る `[RESOLVED:*]` はこれだけ |
+| `[RESOLVED:CALLBACK]` | 規則で繋いだ呼び出し。後ろに繋いだ規則が続く。注記に出る `[RESOLVED:*]` はこれだけ |
 
 | 注記 | 意味 |
 |---|---|
@@ -359,8 +359,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[EXTERNAL] no source to follow` | 呼び出し先が jar 内などでソースが無く、そこから先を辿れない。型解決自体は成功しているので、呼び先が実在することは確か |
 | `[EXTERNAL] type guessed from an import (unverified)` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
-| `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
-| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: …` | 同じく契約で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
+| `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という規則で繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。jar の中を読んだわけではない |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: …` | 同じく規則で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
 | `type resolution failed …` | 呼び出し先の型を特定できなかった行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
@@ -405,8 +405,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
-| `CONTRACT` | 契約表に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/callback-contracts.md](docs/callback-contracts.md)） |
-| （拡張が返すラベル） | ファクトリ・DI 設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。契約表の次に尋ねる |
+| `CALL_RULE` | ライブラリ呼び出し規則に書いた「この宣言型（メソッド）はこの具象型」で決めた（[docs/library-call-rules.md](docs/library-call-rules.md)） |
+| （拡張が返すラベル） | ファクトリ・DI 設定・外部リスト等（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)）。ライブラリ呼び出し規則の次に尋ねる |
 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | `new` された型、またはファクトリメソッドの戻り値から特定 |
 | `DATAFLOW_PARAM` | 呼び出し元から渡された引数を経路上で追跡して特定 |
 | `DATAFLOW_FIELD` | コンストラクタ注入されたフィールドを経路上で追跡して特定 |
@@ -415,14 +415,14 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | `CHA` | 候補が複数のまま（低確度） |
 | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という契約で jar の中を跨いで繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
+| `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
 | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
 | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
 `CHA` のまま絞れない呼び出しは、解決の条件を外から与えると 1 件に絞れます。
-出力フォルダの `contracts-suggested.txt` に、そのまま貼れる契約表のひな形が出ます
-（[docs/callback-contracts.md](docs/callback-contracts.md)。条件が複雑なら
+出力フォルダの `call-rules-suggested.txt` に、そのまま貼れるライブラリ呼び出し規則のひな形が出ます
+（[docs/library-call-rules.md](docs/library-call-rules.md)。条件が複雑なら
 [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md) の拡張）。
 
 静的解析で絞れる条件・絞れない条件は [docs/static-analysis-limits.md](docs/static-analysis-limits.md) にまとめてあります。
@@ -443,7 +443,7 @@ at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATA
 CSV にはラムダの合成メソッド（`lambda$…`）の行を出しません。ソースに書いていない、コンパイラが作る暗黙のメソッドだからです。
 本体の中の呼び出しは、ラムダを実行するメソッド（ラムダを作ったメソッド、または引数で渡した先で `r.run()` するメソッド）の直下に出ます。
 `depth` 列と `call-hierarchy` 列にもラムダの段は入りません（Eclipse の呼び出し階層と同じ見え方）。
-同じ本体へ降りる辺（作った辺・契約の呼び戻し・`DATAFLOW_LAMBDA`）は、1 本の枝にまとめます
+同じ本体へ降りる辺（作った辺・規則の呼び戻し・`DATAFLOW_LAMBDA`）は、1 本の枝にまとめます
 （[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md)）。
 
 実行箇所を特定できない形（`list.forEach(Runnable::run)` のように jar の中から呼ばれる形、フィールドのコレクションに詰める形、
@@ -576,7 +576,7 @@ eye during an impact analysis.
 
 | `resolved-by` | Meaning | What to do |
 |---|---|---|
-| `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | Nothing below a candidate is followed, so if the method you are changing lies below it, no row from this entry point reaches it. Filter the `callee` column again by the method that calls yours (the method in `caller`) and climb up through its callers to find the entry points. Once you tell the tool how to narrow it, the next run pins it down to one (`contracts-suggested.txt` in the output folder; [docs/callback-contracts.md](docs/callback-contracts.md)) |
+| `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | Nothing below a candidate is followed, so if the method you are changing lies below it, no row from this entry point reaches it. Filter the `callee` column again by the method that calls yours (the method in `caller`) and climb up through its callers to find the entry points. Once you tell the tool how to narrow it, the next run pins it down to one (`call-rules-suggested.txt` in the output folder; [docs/library-call-rules.md](docs/library-call-rules.md)) |
 | `UNRESOLVED:…` | The type of the callee could not be determined (usually missing dependency jars) | Follow `warnings.txt` to supply the jars, and run again |
 | `RESOLVED:EXTERNAL_GUESS` | The type could not be determined, so its name was guessed from an `import`. **The guess may be wrong** | Check the callee in the source. Supplying the dependency jars makes the guess unnecessary |
 
@@ -604,7 +604,7 @@ Copy a row of `call-hierarchy.csv` and paste it into Eclipse's "Java Stack Trace
 |---|---|
 | Entry point (`root`) | The method the walk starts from. Set it with `entry.packages` in the config. When that is empty, every method in the source with no caller, plus every method a framework is known to call (`main`, `@GetMapping`, a servlet's `doGet` and so on), is an entry point (whole-project mode) |
 | Resolving concrete classes | For a call through an interface or parent class type, deciding which implementation class actually runs ([Resolving concrete classes](#resolving-concrete-classes)) |
-| Contract table | A table describing what happens outside your source (the JDK, frameworks), or which implementation class to use ([docs/callback-contracts.md](docs/callback-contracts.md)) |
+| library call rules | A table describing what happens outside your source (the JDK, frameworks), or which implementation class to use ([docs/library-call-rules.md](docs/library-call-rules.md)) |
 | Note | The remark at the end of the `call-hierarchy` column. It starts with an upper case tag ([Notes](#notes)) |
 
 ---
@@ -622,7 +622,7 @@ The linked documents are in Japanese.
 | Analyze in GitHub Actions and get the CSV as an artifact | Call [`action.yml`](action.yml) in the repository root with `uses:` ([docs/github-actions.md](docs/github-actions.md): a workflow you can copy as is, and notes on fetching dependencies, security and storage) |
 | Use it on an isolated network (no downloads) | Run it with the JDK and JDT jars that come with Pleiades / Eclipse ([docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)) |
 | Find the jars of other teams that call your code | `external.library.folders` in the config ([Methods referenced from external jars](#methods-referenced-from-external-jars)) |
-| Narrow an implementation it could not decide down to one | Write a contract table ([docs/callback-contracts.md](docs/callback-contracts.md)), or an extension for complex conditions ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |
+| Narrow an implementation it could not decide down to one | Write library call rules ([docs/library-call-rules.md](docs/library-call-rules.md)), or an extension for complex conditions ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |
 | Also output the `if` conditions that guard each call | `conditions.target` in the config ([docs/call-conditions.md](docs/call-conditions.md)) |
 
 Every config item is described in the comments of [config/jche.properties](config/jche.properties).
@@ -662,7 +662,7 @@ not remove the call: it lists the candidates or says it could not follow the cal
 
 - **It does not follow code with no source (the inside of jars).** Calls that come back to you through the JDK or a
   framework (`new Thread(task).start()` → `task.run()` and the like) are connected only when the
-  [contract table](docs/callback-contracts.md) lists them (the bundled rows plus any you add)
+  [library call rules](docs/library-call-rules.md) lists them (the bundled rows plus any you add)
 - **It does not know values decided at run time.** Reflection with class names built from configuration or
   input, or an implementation chosen by a run-time condition, stay as lists of candidates
   ([docs/static-analysis-limits.md](docs/static-analysis-limits.md))
@@ -701,7 +701,7 @@ config/
     ├── jche.properties           a copy of the config file used for this run (under the name you passed)
     ├── run.log                   the run log, the same content as standard output (UTF-8; includes the dependency jars collected from the build files, and who asked for each)
     ├── warnings.txt              what to check and how to fix it (UTF-8; only when there were warnings or errors)
-    └── contracts-suggested.txt   a contract table template for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
+    └── call-rules-suggested.txt   a template of library call rules for narrowing the unresolved calls to one (UTF-8; only when some call could not be narrowed)
 ```
 
 The CSV files are UTF-8 with a BOM, so Excel opens them directly. The content of the CSV is in English
@@ -778,8 +778,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 | role | Meaning |
 |---|---|
-| `FRAMEWORK_ENTRY` | An entry point a framework is known to call, by contract (`main`, a servlet's `doGet`, `@Scheduled`, `@GetMapping`, `@Test` and so on; [docs/callback-contracts.md](docs/callback-contracts.md)). In whole-project mode it is an entry point even when the source also calls it |
-| `ENTRY_CANDIDATE` | It has no caller and does not match a contract above. Screen entry points, batch jobs, dead code, tests and reflection-only methods are all mixed in here, so it needs sorting out |
+| `FRAMEWORK_ENTRY` | An entry point a framework is known to call, by rule (`main`, a servlet's `doGet`, `@Scheduled`, `@GetMapping`, `@Test` and so on; [docs/library-call-rules.md](docs/library-call-rules.md)). In whole-project mode it is an entry point even when the source also calls it |
+| `ENTRY_CANDIDATE` | It has no caller and does not match a rule above. Screen entry points, batch jobs, dead code, tests and reflection-only methods are all mixed in here, so it needs sorting out |
 | `ISOLATED` | It has neither callers nor callees. A strong suspect for dead code |
 | `LEAF` | It has no callees. A leaf |
 | `NORMAL` | Anything else |
@@ -828,7 +828,7 @@ To look for "shared methods that are called a lot", sort or filter on the `inDeg
 
 The remark at the end of the `call-hierarchy` column. How a call was resolved is already in the
 `resolved-by` column, so a note only carries **what that column cannot say**: why the walk stopped, the number
-of candidates and where the receiver came from, and the contract that connected the call.
+of candidates and where the receiver came from, and the rule that connected the call.
 A note starts with an upper case tag, so you can pick out a kind of note by grepping for its tag.
 
 | Tag | Meaning |
@@ -836,7 +836,7 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[UNEXPANDED:*]` | Nothing below this was followed. `grep '\[UNEXPANDED'` finds every place the walk stopped |
 | `[EXTERNAL]` | The callee is outside your own project. It is a stop too, but a different kind, so it is not under `UNEXPANDED` |
 | `[UNREACHABLE]` | A call that was shown not to run on this path |
-| `[RESOLVED:CALLBACK]` | A call connected by a contract; the contract itself follows it. This is the only `[RESOLVED:*]` that appears as a note |
+| `[RESOLVED:CALLBACK]` | A call connected by a rule; the rule itself follows it. This is the only `[RESOLVED:*]` that appears as a note |
 
 | Note | Meaning |
 |---|---|
@@ -850,8 +850,8 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[EXTERNAL] no source to follow` | The callee is inside a jar or similar, with no source, so nothing below it can be followed. Type resolution itself succeeded, so the callee certainly exists |
 | `[EXTERNAL] type guessed from an import (unverified)` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import`. Neither the method's existence nor the overload was checked, so **the guess may be wrong** |
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
-| `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)). The inside of the jar was not read |
-| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: ...` | Also connected by a contract, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
+| `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). The inside of the jar was not read |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: ...` | Also connected by a rule, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
 | `type resolution failed ...` | A row for a call whose callee type could not be determined (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
 | `external-ref:EXACT` and the like | A row of the external reference scan ([below](#methods-referenced-from-external-jars)). Also a row of its own |
 
@@ -899,8 +899,8 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 | `NO_OVERRIDE` / `SINGLE_IMPL` | The override candidates narrow to one |
 | `NO_IMPL` | No implementation with a body exists in the source (it is left as the declaration) |
 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | A type `new`-ed inside the same method |
-| `CONTRACT` | Decided by a contract table row saying "this declared type (method) is this concrete type" ([docs/callback-contracts.md](docs/callback-contracts.md)) |
-| (the label the extension returns) | A factory, a DI configuration, an external list and so on ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)). Asked after the contract table |
+| `CALL_RULE` | Decided by a library call rule row saying "this declared type (method) is this concrete type" ([docs/library-call-rules.md](docs/library-call-rules.md)) |
+| (the label the extension returns) | A factory, a DI configuration, an external list and so on ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)). Asked after the library call rules |
 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | Determined from a `new`-ed type or from the return value of a factory method |
 | `DATAFLOW_PARAM` | Determined by tracking an argument passed in by the caller along the path |
 | `DATAFLOW_FIELD` | Determined by tracking a constructor-injected field along the path |
@@ -909,14 +909,14 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | The bean definitions of the DI container (Spring) narrowed it to one. `SPRING_DI_QUALIFIER` means the bean name from `@Qualifier` / `@Resource(name=...)` decided it ([docs/spring-di-qa.md](docs/spring-di-qa.md)) |
 | `CHA` | Several candidates remain (low confidence) |
 | `GENERATED_IMPL:name` | A type whose implementation is generated at compile time by annotation processing (a special case of `NO_IMPL`) |
-| `CALLBACK` | Connected across the inside of a jar by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, it is `UNEXPANDED:CALLBACK` |
+| `CALLBACK` | Connected across the inside of a jar by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, it is `UNEXPANDED:CALLBACK` |
 | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` resolved to the method or constructor named through reflection / class initialization through `Class.forName` (connected to `<clinit>`) |
 | `EXTERNAL_GUESS` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import` (**unverified**) |
 | `LAMBDA` | A lambda or method reference implements it and which one runs is undetermined. This is a rewording used only in the `resolved-by` column, and it always appears as `UNEXPANDED:LAMBDA` |
 
 Calls that stay at `CHA` can be narrowed to one by supplying the resolution conditions from outside.
-The output folder holds a `contracts-suggested.txt` with a contract table template you can paste as is
-([docs/callback-contracts.md](docs/callback-contracts.md); for complex conditions, the extensions in
+The output folder holds a `call-rules-suggested.txt` with a template of library call rules you can paste as is
+([docs/library-call-rules.md](docs/library-call-rules.md); for complex conditions, the extensions in
 [docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)).
 
 What static analysis can and cannot narrow down is written up in
@@ -940,7 +940,7 @@ The CSV has no row for the synthetic lambda method (`lambda$...`): it is an impl
 creates, not something written in the source. The calls inside the body appear directly under the method that
 executes the lambda (the one that created it, or the one that calls `r.run()` after it is passed in as an argument).
 The `depth` and `call-hierarchy` columns have no lambda level either (the same view as Eclipse's call hierarchy).
-Edges that reach the same body (the "created it" edge, a callback contract, `DATAFLOW_LAMBDA`) are written as one
+Edges that reach the same body (the "created it" edge, a callback rule, `DATAFLOW_LAMBDA`) are written as one
 branch ([docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md), in Japanese).
 
 Where the execution site cannot be determined (called from inside a jar, such as `list.forEach(Runnable::run)`;

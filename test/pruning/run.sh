@@ -12,7 +12,7 @@
 #   - 打ち切られなければならない（pruned / resolved）… 対照。仕組みごと効かなくして通すことを防ぐ
 #     （真偽値の定数・int の定数・16 進の定数・文字列 / ボックス型 / 列挙型の equals・enum の switch・
 #       書き換えない変数の別名・定数フィールドを写した変数・| を含む文字列の定数・new だけのローカル変数・
-#       コンストラクタで受け取るフィールド・識別子の形の文字列を返すメソッド・契約表のキーになる戻り値・
+#       コンストラクタで受け取るフィールド・識別子の形の文字列を返すメソッド・ライブラリ呼び出し規則のキーになる戻り値・
 #       上書きされないメソッド（static・private・final・継承だけ）の戻り値・上書きされない @Bean メソッド・
 #       入れ子のクラスが別のフィールドにだけ書くフィールド・this.m() と this.f・空の new に add しただけのリスト・
 #       static メソッドの参照の実引数・private / static のメソッドへの invoke・Bean のコンストラクタと @Autowired の
@@ -24,7 +24,7 @@
 # ケースを足すときは case_ を 1 回呼ぶ（ソースは標準入力。クラス 1 つで、main を起点にする）。
 # 同じクラスの別の行も見るときは、続けて expect_ を呼ぶ。
 # 起点は「呼び出し元が無いメソッド」（entry.packages が空）なので、ケースどうしは混ざらない。
-# 契約表（work/contracts.txt）は KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory の行だけで、それを使うケースにしか効かない。
+# ライブラリ呼び出し規則（work/call-rules.txt）は KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory の行だけで、それを使うケースにしか効かない。
 # DI（Spring）の Bean 登録（@Bean・@Repository）は Sb・Sk・Sn で始まる型だけに付ける（Dao の実装を Bean にすると、引数やフィールドで
 # 受け取った Dao の呼び出しがすべて段 5 で絞られ、他のケースが変わってしまうため）。
 #
@@ -68,13 +68,13 @@ source.encoding=UTF-8
 entry.packages=
 output.folder=./out
 cache.folder=./.cache
-contracts.files=contracts.txt
+call.rules.files=call-rules.txt
 EOF
-# ファクトリに渡したキーで絞る契約（KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory を使うケースだけに効く）。
+# ファクトリに渡したキーで絞る規則（KeyFactory・SepFactory・EnumKeyFac・TwoKeyFactory を使うケースだけに効く）。
 # SepFactory の行はキーが出所の文法の文字（| と ;）を含む。どちらの行に当たったかで、キーを切って読んだかが分かる。
 # TwoKeyFactory は 2 つのキーを受け取り、表には 1 つのキーの行しか無い。どの行に当たったかで、実引数を
 # どの位置から読んだかが分かる
-cat > work/contracts.txt <<'EOF'
+cat > work/call-rules.txt <<'EOF'
 pr.KeyFactory#get("A") => pr.DaoA
 pr.SepFactory#get("USER") => pr.DaoA
 pr.SepFactory#get("USER|X") => pr.DaoB
@@ -123,7 +123,7 @@ public class Factory {
     }
 }
 EOF
-# 契約表だけが実装を決めるファクトリ（戻り値が 2 通り）。キーが | ; を含むケースで使う
+# ライブラリ呼び出し規則だけが実装を決めるファクトリ（戻り値が 2 通り）。キーが | ; を含むケースで使う
 cat > "$SRC/SepFactory.java" <<'EOF'
 package pr;
 
@@ -179,7 +179,7 @@ package pr;
 
 @interface Repository { }
 EOF
-# キーの文字列で具象クラスを返すファクトリ。契約表の 1 行（"A" => DaoA）で絞れる
+# キーの文字列で具象クラスを返すファクトリ。ライブラリ呼び出し規則の 1 行（"A" => DaoA）で絞れる
 cat > "$SRC/KeyFactory.java" <<'EOF'
 package pr;
 
@@ -190,7 +190,7 @@ public class KeyFactory {
     }
 }
 EOF
-# 2 つのキーを受け取るファクトリ（戻り値が 2 通り。契約表の TwoKeyFactory の行だけが実装を決める）
+# 2 つのキーを受け取るファクトリ（戻り値が 2 通り。ライブラリ呼び出し規則の TwoKeyFactory の行だけが実装を決める）
 cat > "$SRC/TwoKeyFactory.java" <<'EOF'
 package pr;
 
@@ -1210,7 +1210,7 @@ public class PipeRetLocal {
 }
 EOF
 
-case_ listed FacPipeRet FacPipeRet.run DaoB.find "| を含むキー（\"A|B\"）を返すメソッドの値で、契約表の KeyFactory#get(\"A\") に当てない" <<'EOF'
+case_ listed FacPipeRet FacPipeRet.run DaoB.find "| を含むキー（\"A|B\"）を返すメソッドの値で、ライブラリ呼び出し規則の KeyFactory#get(\"A\") に当てない" <<'EOF'
 package pr;
 
 public class FacPipeRet {
@@ -1247,7 +1247,7 @@ public class LitRetLocal {
 }
 EOF
 
-case_ resolved:RESOLVED:CONTRACT FacKeyRet FacKeyRet.run DaoA.find "対照: 識別子の形のキー（\"A\"）を返すメソッドの値は、契約表の KeyFactory#get(\"A\") で絞る" <<'EOF'
+case_ resolved:RESOLVED:CALL_RULE FacKeyRet FacKeyRet.run DaoA.find "対照: 識別子の形のキー（\"A\"）を返すメソッドの値は、ライブラリ呼び出し規則の KeyFactory#get(\"A\") で絞る" <<'EOF'
 package pr;
 
 public class FacKeyRet {
@@ -1297,7 +1297,7 @@ EOF
 expect_ pruned PipeRetSwitch.sel PipeRetSwitch.order "対照: case \"ORDER\" は打ち切る（| の手前で切って \"ORDER\" と読まない）"
 expect_ pruned PipeRetSwitch.sel PipeRetSwitch.other "対照: default は打ち切る（値が case の 1 つと一致する）"
 
-case_ resolved:RESOLVED:CONTRACT SemiRetKey SemiRetKey.run DaoB.find "; を含むキー（\"S;T\"）を返すメソッドの値で、契約表の SepFactory#get(\"S;T\") に当てる" <<'EOF'
+case_ resolved:RESOLVED:CALL_RULE SemiRetKey SemiRetKey.run DaoB.find "; を含むキー（\"S;T\"）を返すメソッドの値で、ライブラリ呼び出し規則の SepFactory#get(\"S;T\") に当てる" <<'EOF'
 package pr;
 
 public class SemiRetKey {
@@ -1392,7 +1392,7 @@ public class BraceArg {
 EOF
 expect_ pruned BraceArg.brace BraceArg.braceMiss "対照: 2 つ目の実引数（\"k\"）も読めるので \"x\".equals(second) は打ち切る（以前は飲み込まれて見えなかった）"
 
-case_ resolved:RESOLVED:CONTRACT SepPipeKey SepPipeKey.run DaoB.find "ファクトリのキー \"USER|X\" は契約表の get(\"USER|X\") に当てる（| で切って get(\"USER\") に当てない）" <<'EOF'
+case_ resolved:RESOLVED:CALL_RULE SepPipeKey SepPipeKey.run DaoB.find "ファクトリのキー \"USER|X\" はライブラリ呼び出し規則の get(\"USER|X\") に当てる（| で切って get(\"USER\") に当てない）" <<'EOF'
 package pr;
 
 public class SepPipeKey {
@@ -1402,7 +1402,7 @@ public class SepPipeKey {
 EOF
 expect_ absent SepPipeKey.run DaoA.find "同上（get(\"USER\") の DaoA の行が無い）"
 
-case_ resolved:RESOLVED:CONTRACT SepSemiKey SepSemiKey.run DaoB.find "ファクトリのキー \"S;T\" は契約表の get(\"S;T\") に当てる（; で切って get(\"S\") に当てない）" <<'EOF'
+case_ resolved:RESOLVED:CALL_RULE SepSemiKey SepSemiKey.run DaoB.find "ファクトリのキー \"S;T\" はライブラリ呼び出し規則の get(\"S;T\") に当てる（; で切って get(\"S\") に当てない）" <<'EOF'
 package pr;
 
 public class SepSemiKey {
@@ -1429,7 +1429,7 @@ EOF
 # 戻り値の値（R 行）は、呼び出しがその宣言の本体でしか動かないときだけ使う（MethodSelection#hasOverriders）。
 # 部分型が上書きしていれば、実際に動くのは部分型の本体かもしれない。宣言の return の値を当てると、
 # 呼ばれる呼び出しを [UNREACHABLE] にしたり、宣言の本体が返す型へ絞ったりして、上書きした本体の側を落とす。
-# 条件分岐の値（literalOf）・契約表のキー（literalOf）・ファクトリの畳み込み（DataflowBuilder の reduce と
+# 条件分岐の値（literalOf）・ライブラリ呼び出し規則のキー（literalOf）・ファクトリの畳み込み（DataflowBuilder の reduce と
 # 実引数の畳み込み、DataflowResolver の concreteSlotOf）・Class を返すメソッド（classOf）・@Bean の登録の
 # どれで使っても同じ
 # ---------------------------------------------------------------------------
@@ -1452,7 +1452,7 @@ public class OvrLit {
 EOF
 expect_ reachable OvrLit.chk OvrLit.isX "同上（上書きした本体が返す \"x\" の側の s.equals(\"x\") も打ち切らない）"
 
-case_ listed OvrKey OvrKey.run DaoA.find "上書きされうるメソッド c.key() の値（宣言は \"USER|X\"）を契約表のキーにして、get(\"USER|X\") の DaoB に絞らない" <<'EOF'
+case_ listed OvrKey OvrKey.run DaoA.find "上書きされうるメソッド c.key() の値（宣言は \"USER|X\"）をライブラリ呼び出し規則のキーにして、get(\"USER|X\") の DaoB に絞らない" <<'EOF'
 package pr;
 
 class OvrKeyCfg { public Object key() { return "USER|X"; } }
@@ -1765,7 +1765,7 @@ public class MultiAtom {
 }
 EOF
 
-case_ listed EnumKey EnumKey.run DaoB.find "引数で渡った列挙定数（EkMode.X）を文字列のキー \"pr.EkMode.X\" と取り違えて、契約表の get(\"pr.EkMode.X\") の DaoA に絞らない" <<'EOF'
+case_ listed EnumKey EnumKey.run DaoB.find "引数で渡った列挙定数（EkMode.X）を文字列のキー \"pr.EkMode.X\" と取り違えて、ライブラリ呼び出し規則の get(\"pr.EkMode.X\") の DaoA に絞らない" <<'EOF'
 package pr;
 
 enum EkMode { X, Y }
@@ -1799,9 +1799,9 @@ expect_ listed SbName.run SnDaoB.find "同上（SnDaoB も残す）"
 
 # ---------------------------------------------------------------------------
 # 経路の記録（TraceCheck）を消すときに、読み手の分かれ道を 1 行ずつ壊す変異で洗い出した穴
-# （DataflowResolver・DataflowBuilder・GuardEvaluator・StreamingTreeWalker・FactoryCalls・CallbackContracts・
+# （DataflowResolver・DataflowBuilder・GuardEvaluator・StreamingTreeWalker・FactoryCalls・CallbackRules・
 # FieldFacts・SpringBeans）。TraceCheck だけが検出していた取り違え（リフレクションの受け手の具象型・引数で渡った
-# Class・契約表の実引数の位置・呼び戻しの 2 番目以降の実引数・this の呼び出しと継承したメソッドへのコンストラクタ
+# Class・ライブラリ呼び出し規則の実引数の位置・呼び戻しの 2 番目以降の実引数・this の呼び出しと継承したメソッドへのコンストラクタ
 # 実引数・親のフィールドの持ち主・static や値の食い違うフィールドをコンストラクタ注入とみなさないこと・
 # フィールドを実引数にしたファクトリ・複数の値の case）と、どの検査も検出していなかった取り違え（引数で渡った
 # メソッド参照・return が 2 通りの @Bean・private でも final でもないフィールド・setter でも代入するフィールド）を
@@ -1857,7 +1857,7 @@ public class InSwitch {
 EOF
 expect_ reachable InSwitch.check InSwitch.other "同上（default は打ち切らない）"
 
-case_ resolved:RESOLVED:CONTRACT TwoKeyFirst TwoKeyFirst.run DaoA.find "2 つのキー get(\"A\", \"B\") は実引数の先頭から引き、get(\"A\") の DaoA に絞る（位置の順を逆にしない）" <<'EOF'
+case_ resolved:RESOLVED:CALL_RULE TwoKeyFirst TwoKeyFirst.run DaoA.find "2 つのキー get(\"A\", \"B\") は実引数の先頭から引き、get(\"A\") の DaoA に絞る（位置の順を逆にしない）" <<'EOF'
 package pr;
 
 public class TwoKeyFirst {
@@ -1866,7 +1866,7 @@ public class TwoKeyFirst {
 EOF
 expect_ absent TwoKeyFirst.run DaoB.find "同上（get(\"B\") の DaoB に当てない）"
 
-case_ resolved:RESOLVED:CONTRACT TwoKeySecond TwoKeySecond.run DaoB.find "2 番目の実引数だけが表に載るキー get(\"X\", \"B\") も、その位置の実引数を読んで DaoB に絞る" <<'EOF'
+case_ resolved:RESOLVED:CALL_RULE TwoKeySecond TwoKeySecond.run DaoB.find "2 番目の実引数だけが表に載るキー get(\"X\", \"B\") も、その位置の実引数を読んで DaoB に絞る" <<'EOF'
 package pr;
 
 public class TwoKeySecond {
@@ -3303,7 +3303,7 @@ public class Holder<T> {
     public T create() { return v; }
 }
 EOF
-# フレームワークの入口の契約（contracts.txt の super prlib.Handler#handle(java.lang.Object)）の親型。jar の型で、型引数を具体化した
+# フレームワークの入口の規則（call-rules.txt の super prlib.Handler#handle(java.lang.Object)）の親型。jar の型で、型引数を具体化した
 # 上書き（O 行）が入口になることを見る（下の FwEntry）
 cat > work/libsrc/prlib/Handler.java <<'EOF'
 package prlib;
@@ -3977,10 +3977,10 @@ EOF
 expect_ absent "SbDdSvc.<init>" SbDdX.find "同上（上限の部分型でない SbDdX.find の行が無い）"
 expect_ absent "SbDdSvc.<init>" SbDdB.find "同上（Bean でない SbDdB.find の行が無い）"
 
-# フレームワークの入口の契約（super 型#シグネチャ）を、型引数を具体化してシグネチャの食い違う上書きにも当てる（Issue #188）。
-# 契約は contracts.txt の super pr.FwHandler#handle(java.lang.Object)・super prlib.Handler#handle(java.lang.Object)。
+# フレームワークの入口の規則（super 型#シグネチャ）を、型引数を具体化してシグネチャの食い違う上書きにも当てる（Issue #188）。
+# 規則は call-rules.txt の super pr.FwHandler#handle(java.lang.Object)・super prlib.Handler#handle(java.lang.Object)。
 # 入口かどうかは methods.csv の role（FRAMEWORK_ENTRY）で見る（下の fw_role）
-case_ reachable FwEntry FwEntry.main FwEntry.touch "フレームワークの入口の契約の題材（入口の判定は methods.csv の role で見る）" <<'EOF'
+case_ reachable FwEntry FwEntry.main FwEntry.touch "フレームワークの入口の規則の題材（入口の判定は methods.csv の role で見る）" <<'EOF'
 package pr;
 
 interface FwHandler<T> { void handle(T t); }
@@ -4098,23 +4098,23 @@ else
     echo "       $(head -1 <<< "$emoji")"
 fi
 
-# フレームワークの入口の契約（super）が、型引数を具体化してシグネチャの食い違う上書きにも当たること（Issue #188）。
+# フレームワークの入口の規則（super）が、型引数を具体化してシグネチャの食い違う上書きにも当たること（Issue #188）。
 # methods.csv の role（9 列目）で見る。列は method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,…
 MCSV=$(dirname "$CSV")/methods.csv
 fw_role() {   # $1=method 列（Class.method(引数)）
     awk -F, -v m="$1" '$1 == m { print $9 }' "$MCSV"
 }
-for c in "FwSrcHandler.handle(FwReq) FRAMEWORK_ENTRY 契約 pr.FwHandler#handle(java.lang.Object) を型引数を具体化して上書きした handle(FwReq)（O 行）は入口" \
+for c in "FwSrcHandler.handle(FwReq) FRAMEWORK_ENTRY 規則 pr.FwHandler#handle(java.lang.Object) を型引数を具体化して上書きした handle(FwReq)（O 行）は入口" \
          "FwJarHandler.handle(FwReq) FRAMEWORK_ENTRY 親型が jar の型（prlib.Handler）でも同じ（O 行は jar の親型にも書かれる）" \
          "FwBaseHandler.handle(FwReq) FRAMEWORK_ENTRY 親クラスから継承した handle(FwReq) が FwHandler<FwReq> を実装する（H 行の 8 列目）ので入口" \
          "FwObjHandler.handle(Object) FRAMEWORK_ENTRY 対照: シグネチャが同じ上書きは従来どおり入口" \
-         "FwOtherHandler.handle(FwReq) ENTRY_CANDIDATE 対照: 契約の型を継承していない同名のメソッドは入口ではない（呼び出し元が無いだけ）"; do
+         "FwOtherHandler.handle(FwReq) ENTRY_CANDIDATE 対照: 規則の型を継承していない同名のメソッドは入口ではない（呼び出し元が無いだけ）"; do
     read -r method want why <<< "$c"
     got=$(fw_role "$method")
     if [ "$got" = "$want" ]; then
-        ok "契約 super の入口: $method は $want（$why）"
+        ok "規則 super の入口: $method は $want（$why）"
     else
-        ng "契約 super の入口: $method の role が $want ではありません（$got。$why）"
+        ng "規則 super の入口: $method の role が $want ではありません（$got。$why）"
     fi
 done
 

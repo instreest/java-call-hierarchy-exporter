@@ -1,40 +1,40 @@
-# jar の中から呼び戻される呼び出しの契約 — Q&A
+# jar の中から呼び戻される呼び出しの規則 — Q&A
 
 Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/136)。
 `Thread#start()` → `run()` のように、ソースの外（JDK）を経由して自分のコードへ戻ってくる呼び出しを、
-契約表で繋いだ判断を残す。使い方は [callback-contracts.md](callback-contracts.md)。
+ライブラリ呼び出し規則で繋いだ判断を残す。使い方は [library-call-rules.md](library-call-rules.md)。
 関連: [lambda-expansion-qa.md](lambda-expansion-qa.md)（渡した値の具象型を決める仕組み）。
 
 ## 結論
 
-- 契約表（`呼び出し先 -> 位置 : 呼び戻されるシグネチャ`）を持ち、呼び出し先が jar の中でも
+- ライブラリ呼び出し規則（`呼び出し先 -> 位置 : 呼び戻されるシグネチャ`）を持ち、呼び出し先が jar の中でも
   「渡した値のこのメソッドを呼ぶ」と分かるものは辺を足す（`[RESOLVED:CALLBACK]`）
 - 呼び出し先自身の行（`[EXTERNAL]`）はそのまま残し、その**次**に呼び戻される側を並べる
 - 呼び戻される側は `inDegree` に数え、到達判定にも入れる。`Thread` で起動する `Runnable` の
   `run` が `ENTRY_CANDIDATE` に混ざらないようにするため
 - 渡した値の具象型が分からなければ辺を張らない。jar の型（`Runnable` そのもの）の全実装を
   候補に並べることはしない
-- 段階 2（種類 B）: フレームワークが起点として呼ぶメソッドの契約表（`FrameworkEntries`）。
+- 段階 2（種類 B）: フレームワークが起点として呼ぶメソッドのライブラリ呼び出し規則（`FrameworkEntries`）。
   当たったメソッドは `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える
-- 段階 3: 設定ファイル（`contracts.files`）と拡張（`ContractProvider` / `contracts.providers`）で
+- 段階 3: 設定ファイル（`call.rules.files`）と拡張（`RuleProvider` / `call.rules.providers`）で
   自前のフレームワーク分を足せる。A と B は 1 つのファイルに混ぜて書き、行の形で振り分ける
-- 効いたかを解析の最後に知らせる（`ContractUsage`）。自前の表の行だけを「一度も当たらなかった」
+- 効いたかを解析の最後に知らせる（`RuleUsage`）。自前の表の行だけを「一度も当たらなかった」
   「呼び出し先には一致したが繋げなかった」に分けて挙げる。同梱の表は件数だけ
 - 種類 C（具象型）: `宣言型 => 具象型` と `ファクトリ#メソッド("キー") => 具象型`（キーは
-  文字列か列挙定数の FQN）の行で CHA を 1 件に絞る（`TypeContracts`）。
-  絞れなかった呼び出しからは、そのまま貼れるひな形を `contracts-suggested.txt` に出す
-  （`ContractSuggestions`）。指定の一本化の設計は contracts-unification-design.md
+  文字列か列挙定数の FQN）の行で CHA を 1 件に絞る（`TypeRules`）。
+  絞れなかった呼び出しからは、そのまま貼れるひな形を `call-rules-suggested.txt` に出す
+  （`RuleSuggestions`）。指定の一本化の設計は call-rules-unification-design.md
 
 ### Q1. 呼び出し先の行を消して、呼び戻される側に置き換えないのはなぜか
 
-`start()` を呼んでいる事実は事実として残すため。契約は「jar の中でこう動くはず」という
-人の記述であって、解析で確かめたものではない。呼び出し先の行を残しておけば、契約が
+`start()` を呼んでいる事実は事実として残すため。規則は「jar の中でこう動くはず」という
+人の記述であって、解析で確かめたものではない。呼び出し先の行を残しておけば、規則が
 間違っていた（版で挙動が変わった等）ときにも、何を元に繋いだかが読める。
 
 ### Q2. なぜ通常の解決（`resolve`）の候補に混ぜず、別の候補として扱うのか
 
 通常の解決は「呼び出し先の宣言に対してどの実装が動くか」を決めるもので、
-候補はすべて呼び出し先と同じシグネチャを持つ。契約で繋ぐ先は**別のメソッド**
+候補はすべて呼び出し先と同じシグネチャを持つ。規則で繋ぐ先は**別のメソッド**
 （`start()` に対して `run()`）なので、同じ配列に混ぜると `[UNEXPANDED:CHA] N candidates` の
 件数や `methods.csv` の `unresolvedCause` が意味を失う。`CallResolver.callbackTargets` として
 分け、読み手（`StreamingTreeWalker` / `inDegrees` / `reachableFrom`）がそれぞれ足す。
@@ -42,7 +42,7 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 ### Q3. `inDegree` と到達判定に入れるのはなぜか
 
 入れないと `Job.run` が「誰からも呼ばれていない」に見える。`methods.csv` の役割は
-デッドコードの疑いを絞ることで、契約で呼ばれると分かっているものを候補に残すのは
+デッドコードの疑いを絞ることで、規則で呼ばれると分かっているものを候補に残すのは
 役割に反する。経路に依らず決まる分（`new` した型・ラムダ）だけを数え、引数で渡ってきた
 ものは経路ごとにしか決まらないので階層側でだけ繋ぐ（`DATAFLOW_PARAM` と同じ扱い）。
 
@@ -56,15 +56,15 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 
 ### Q5. `list.forEach(Runnable::run)` は繋がるのか
 
-繋がらない。契約 `Iterable#forEach -> a0 : accept` で引数を見ると `Runnable::run` の
+繋がらない。規則 `Iterable#forEach -> a0 : accept` で引数を見ると `Runnable::run` の
 メソッド参照（`Z:java.lang.Runnable#run()`）だが、これは「要素の `run` を呼ぶ」であって
 要素が何かは分からない。`Runnable#run` は jar のメソッドでソースが無いので辺にしない。
 要素の具象型まで追うには、コレクションの要素の出所（#127 で足した `elements`）と
-契約を組み合わせる必要があり、段階 1 では扱わない。
+規則を組み合わせる必要があり、段階 1 では扱わない。
 
 ### Q6. 同梱の表を「呼び戻す」と言い切れるものに絞ったのはなぜか
 
-契約は解析で確かめないので、間違いがそのまま出力に載る。「引数に関数型インターフェースを
+規則は解析で確かめないので、間違いがそのまま出力に載る。「引数に関数型インターフェースを
 取るメソッドは全部呼び戻す」という一般則にすると、保存するだけで呼ばない
 （`addListener` 系でも実際は登録だけのもの、`Map#put` に渡した `Runnable` 等）ものまで
 繋いでしまう。JDK の中で、仕様として呼ぶことが決まっているものに限る。
@@ -75,7 +75,7 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 `test/demo` に `Job implements Runnable` を足したことで、`Runnable#run()` の CHA 候補が
 0 件（`NO_IMPL`）から複数になった。その結果、`tasks.forEach(Runnable::run)` の
 メソッド参照の行（`Runnable::run` そのものへの呼び出しとして記録している）に
-`Job.run` が候補として並ぶ。これは CHA の従来どおりの振る舞いで、契約とは無関係。
+`Job.run` が候補として並ぶ。これは CHA の従来どおりの振る舞いで、規則とは無関係。
 あわせて、ラムダ／メソッド参照の解決（`DATAFLOW_LAMBDA`）を経路に依らない分だけ
 `resolve` の段 1 より前に移した。候補数が 0 件でも複数でも、渡された値がラムダなら
 実行されるのはその本体で、段 1 の候補数で結果が変わるのは筋が通らないため。
@@ -110,32 +110,32 @@ Issue [#136](https://github.com/instreest/java-call-hierarchy-exporter/issues/13
 ### Q11. `super` の判定に jar の型を使えるのはなぜか
 
 H 行（型階層）の親型には、jar の型の名前もそのまま入っている（`Worker extends Thread` なら
-`java.lang.Thread`）。契約の型名と文字列で突き合わせるだけなので、jar を読む必要が無い。
+`java.lang.Thread`）。規則の型名と文字列で突き合わせるだけなので、jar を読む必要が無い。
 `test/demo` では `HttpServlet` をスタブとしてソースに置いているが、jar にあっても同じ結果になる。
 
 ### Q12. 設定ファイルの表を A と B で分けず、1 つのファイルにしたのはなぜか
 
-利用者にとっては「うちのフレームワークの契約」が 1 単位で、A か B かはツール側の都合だから。
+利用者にとっては「うちのフレームワークの規則」が 1 単位で、A か B かはツール側の都合だから。
 行の形（`->` を含むか、`@` / `super` / `static` で始まるか）で機械的に振り分けられるので、
 分けさせる理由が無い。どちらでも読めない行は警告に出し、黙って捨てない
 （「設定したのに効いていない」に気づけるように）。
 
-### Q13. 契約の変更でキャッシュの版を上げないのはなぜか
+### Q13. 規則の変更でキャッシュの版を上げないのはなぜか
 
-契約は読み手（フェーズ2以降）だけが使い、キャッシュに書く事実には影響しないため。
+規則は読み手（フェーズ2以降）だけが使い、キャッシュに書く事実には影響しないため。
 同梱の表を足しても、設定ファイルの表を変えても、再解析は起きず読み直しだけで反映される。
 `resolver.candidate.providers` の拡張がキャッシュに影響しないのと同じ扱い。
 
-### Q14. `ContractProvider` を既存の拡張ポイントに相乗りさせなかったのはなぜか
+### Q14. `RuleProvider` を既存の拡張ポイントに相乗りさせなかったのはなぜか
 
 既存の 2 つ（`CallSiteHintCollector` / `TypeCandidateProvider`）は「呼び出し箇所ごとに問い合わせる」
-形で、契約は「起動時に表を返す」形。役割が違うものを同じインターフェースに載せると、
+形で、規則は「起動時に表を返す」形。役割が違うものを同じインターフェースに載せると、
 どちらの意味で呼ばれるかを実装側が気にすることになる。読み込みの仕組み（`plugin.folders` と
 クラス名の指定、`init(Properties, Path)`）だけを揃えた。
 
-### Q15. 同梱表の検査（`test/contracts/run.sh`）で何を見るのか。なぜ要るのか
+### Q15. 同梱表の検査（`test/rules/run.sh`）で何を見るのか。なぜ要るのか
 
-契約表は文字列なので、形を崩しても、JDK 側でメソッドの宣言元が動いても、コンパイルは通り、
+ライブラリ呼び出し規則は文字列なので、形を崩しても、JDK 側でメソッドの宣言元が動いても、コンパイルは通り、
 実行時は「当たらない」だけで何も言わない。検査は 4 点を見る。
 
 | 見るもの | 落ちる例 |
@@ -143,7 +143,7 @@ H 行（型階層）の親型には、jar の型の名前もそのまま入っ�
 | 全行が parse できる | `-> a : run()`（位置の番号が無い） |
 | 重複が無い | 同じ行を 2 回書いた |
 | JDK の型は、その型が本当にそのメソッドを**宣言**している | `java.util.List#forEach(...)`（`List` は `Iterable` から継承しているだけ） |
-| 契約の位置にある値の型が、呼び戻すメソッドを持っている | `Executor#execute(Runnable) -> a0 : call()`（`Runnable` に `call` は無い） |
+| 規則の位置にある値の型が、呼び戻すメソッドを持っている | `Executor#execute(Runnable) -> a0 : call()`（`Runnable` に `call` は無い） |
 
 照合は実行中の JDK のリフレクションで行う。リフレクションの `getDeclaredMethod` が返す宣言クラスと
 型消去後の引数型は `.class` の記述子そのもので、JDT の `getMethodDeclaration()` と `getErasure()`
@@ -158,11 +158,11 @@ JDK に無い型（Servlet・Spring 等）は jar が無いので形だけを見
 アノテーションが改名されても検出できない。実プロジェクトで `FRAMEWORK_ENTRY` が出なくなったら
 同梱表を疑う。
 
-### Q16. 書いた契約が効いているかを、どう確かめられるようにしたか
+### Q16. 書いた規則が効いているかを、どう確かめられるようにしたか
 
-**自前の表の行のうち、一度も当たらなかったものを解析の最後に挙げる**（`jche.graph.ContractUsage`）。
+**自前の表の行のうち、一度も当たらなかったものを解析の最後に挙げる**（`jche.graph.RuleUsage`）。
 
-契約表は文字列で、綴りを間違えても実行時は「当たらない」だけで何も言わない。同梱の表ですら、
+ライブラリ呼び出し規則は文字列で、綴りを間違えても実行時は「当たらない」だけで何も言わない。同梱の表ですら、
 当たらない 4 行があることに Q15 の検査を書くまで気づけなかった。利用者が足す表にはその検査が
 無いので、実行のたびに知らせるほうを選んだ。
 
@@ -178,35 +178,35 @@ JDK に無い型（Servlet・Spring 等）は jar が無いので形だけを見
 
 **同梱の表は挙げない。** `Timer` を使っていないプロジェクトで `Timer` の行が当たらないのは異常ではなく、
 109 行のうち大半が当たらないのが普通だからである。毎回それを並べると、本当に見てほしい自前の行が
-埋もれる。同梱の表は `test/contracts/run.sh` が実行中の JDK と照合するので、そちらで守る。
+埋もれる。同梱の表は `test/rules/run.sh` が実行中の JDK と照合するので、そちらで守る。
 
 **数えるのは「行が効いたか」であって、当たった件数ではない。** `matchesOf` は出力の探索だけでなく
 `inDegrees()` と `reachableFrom()` からも呼ばれるので、回数を数えると「呼び出し箇所の数」と
 受け取られる数字にならない。出力に出た件数は従来どおり
-「jar の中から呼び戻されるメソッドを契約で繋いだ: N 件」が持つ。
+「jar の中から呼び戻されるメソッドを規則で繋いだ: N 件」が持つ。
 
-**報告は CSV を書き終えたあと**（`CallResolver.reportUsage`）。呼び戻しの契約は `inDegrees()` が
-全エッジについて、入口の契約は methods.csv の出力が全メソッドについて問い合わせるので、
+**報告は CSV を書き終えたあと**（`CallResolver.reportUsage`）。呼び戻しの規則は `inDegrees()` が
+全エッジについて、入口の規則は methods.csv の出力が全メソッドについて問い合わせるので、
 その両方が済んで初めて「一度も当たらなかった」と言える。逆に、グラフを部分的にしか辿らない
 解析サーバー（`--server`）からは呼ばない。途中の状態で「当たらなかった」と言うと嘘になる。
 
-検査は `test/regression/entry`（わざと当たらない行だけを書いた `contracts.txt` を置き、
+検査は `test/regression/entry`（わざと当たらない行だけを書いた `call-rules.txt` を置き、
 3 行が知らせに挙がること）と `test/regression/whole`（当たる行が知らせに挙がらないこと）で見る。
 どちらも当たらない行しか足していないので、期待出力の CSV は変わらない。
 
 ### Q17. 種類 C（具象型）を足すとき、書式と効かせ方で何を決めたか
 
-[contracts-unification-design.md](contracts-unification-design.md) の段1（`=>` の振り分けと
+[call-rules-unification-design.md](call-rules-unification-design.md) の段1（`=>` の振り分けと
 C-1・C-2）を入れたときの判断。
 
 **矢印を `=>` にした。** 既存の A は `->` なので、`"=>"` が `"->"` を含まないことが振り分けの前提になる
-（`Contracts.sort` は `=>` を先に見る）。`:` や `=` は properties の区切りと紛らわしく、
+（`LibraryCallRules.sort` は `=>` を先に見る）。`:` や `=` は properties の区切りと紛らわしく、
 `⇒` のような記号は入力しにくい。`=>` なら「左を右に読み替える」意味が字面で伝わる。
 
 **ファクトリとキーを書く形（C-3）は、専用の警告にした。** `Factory#get("user") => 型` は
-まだ実装していないが、`parse` が null を返して「契約の行を読めません」で片付けると、書き手は
+まだ実装していないが、`parse` が null を返して「規則の行を読めません」で片付けると、書き手は
 型名の綴りを疑って時間を使う。左辺に `(` があれば「まだ使えません」と言い切る
-（`TypeContracts.isFactoryKeyForm`）。**無い機能を、書き間違いのように見せない。**
+（`TypeRules.isFactoryKeyForm`）。**無い機能を、書き間違いのように見せない。**
 
 **C-2 が当たって採用できなくても、C-1 に落とさない。** 引く順番は C-2 → C-1 で、
 最初に当たった 1 行だけを使う。`UserDao#find` の右辺が使えないときに `UserDao` の行へ
@@ -214,17 +214,17 @@ C-1・C-2）を入れたときの判断。
 同梱の `TypeMappingProvider` も最初に引けた行を返すので、そろえてある
 （instance-analysis-plugin-qa.md の Q18）。
 
-**段3 では契約表を拡張より先に引く。** どちらも利用者が与えた条件だが、表は読み手がそのまま
+**段3 ではライブラリ呼び出し規則を拡張より先に引く。** どちらも利用者が与えた条件だが、表は読み手がそのまま
 中身を見られる。食い違ったときに追いやすいほうを勝たせる。段4（データフロー）・段5（Spring）より
 先なのは従来どおりで、人が書いた条件をツールの推測より優先する（instance-analysis-plugin-qa.md の Q24）。
 
 **段0（静的束縛）には効かせない。** 拡張には `appliesToStaticBound()` という逃げ道があるが、
-契約表に同じ選択肢を持ち込むと、行ごとか表ごとかを決める話になり、書式が増える。
+ライブラリ呼び出し規則に同じ選択肢を持ち込むと、行ごとか表ごとかを決める話になり、書式が増える。
 バイトコード織り込みのような特殊な事情は拡張で扱えるので、表はいちばん素直な意味だけを持たせた。
 
 **採用できない候補の警告は、その場で出さない。** 拡張の場合（`warnUnusableCandidate`）は
-エッジごとに警告して同じものを繰り返さないよう記録しているが、契約表は行が特定できるので、
-解析の最後に `ContractUsage` が「左辺には一致したが右辺を採用できなかった行」としてまとめて挙げる。
+エッジごとに警告して同じものを繰り返さないよう記録しているが、ライブラリ呼び出し規則は行が特定できるので、
+解析の最後に `RuleUsage` が「左辺には一致したが右辺を採用できなかった行」としてまとめて挙げる。
 行の原文と出所（ファイル名）まで出せるぶん、その場の警告より直しやすい。
 
 **同梱の C 行は持たない。** よくあるフレームワークの DI の既定（`@Service` の付いた実装が 1 つ、など）は
@@ -249,9 +249,9 @@ M:jp.co.xxx.DaoFactory#get(java.lang.String)|n=1;0=L:USER
 （後に stage B で、読み手は文字列ではなく値の表 `CallGraph.recvNode` / `jche.graph.ValueStore` を読むようになった。
 取れる情報は同じ。`docs/cache-unification-qa.md` の「読み手が値の表を読む」）
 
-これは設計上いちばん大きな分かれ目だった。フェーズAが要るなら、契約表をフェーズ1より前に読み、
+これは設計上いちばん大きな分かれ目だった。フェーズAが要るなら、ライブラリ呼び出し規則をフェーズ1より前に読み、
 キャッシュの指紋にも入れる必要がある（表を 1 行足すたびに全件解析し直しになる）。要らないので、
-契約表は「読み手だけが使う」ままで済み、Q13 の性質が保てた。
+ライブラリ呼び出し規則は「読み手だけが使う」ままで済み、Q13 の性質が保てた。
 
 同じ形の判定が既に動いていることも確かめた。`DataflowResolver.applyInvocationArgs` は
 `Class.forName(引数)` について「戻り値の出所 → その呼び出しの実引数がリテラルならその文字列を型とみなす」
@@ -291,7 +291,7 @@ get("USER")        →  #get("USER")
 get(Kind.USER)     →  #get(jp.co.app.Kind.USER)
 ```
 
-ソース上でも引用符の有無で「文字列か定数か」を書き分けているので、契約表でだけ別の約束を
+ソース上でも引用符の有無で「文字列か定数か」を書き分けているので、ライブラリ呼び出し規則でだけ別の約束を
 覚える必要が無い。修飾名（ドットを含む識別子の並び）に限っているので、`#get(USER)` のような
 修飾されていない名前は「読めない行」として弾き、「文字列なら "…"、列挙定数なら FQN」と助言する。
 数値や真偽値（`V:1` / `V:false`）は修飾名にならないので、同じ規則で自然に弾かれる。
@@ -302,8 +302,8 @@ get(Kind.USER)     →  #get(jp.co.app.Kind.USER)
 
 ### Q20. 「何を書けばよいか分からない」への導線をどう作ったか
 
-**絞れなかった呼び出しから、そのまま貼れる契約表のひな形を出力フォルダに出す**
-（`contracts-suggested.txt`。`jche.report.ContractSuggestions`）。
+**絞れなかった呼び出しから、そのまま貼れるライブラリ呼び出し規則のひな形を出力フォルダに出す**
+（`call-rules-suggested.txt`。`jche.report.RuleSuggestions`）。
 
 この一連の作業の出発点は「指定の仕方に難がある」だった。書式を整えても、
 **機能があることに気づけない**なら意味が無い。`[UNEXPANDED:CHA] 2 candidates: local variable` を見て
@@ -313,12 +313,12 @@ docs を調べ始められる人は多くない。ひな形があれば「選ん
 絞れていなくても、書く行は 1 行である。件数の多い順に並べ、同数なら綴り順にして、
 環境によらない並びにする（`deterministic-row-order-qa.md` と同じ方針）。
 
-**左辺の組み立ては `TypeContracts.factoryLeftSidesOf` を共用する。** ひな形が出す形と、
+**左辺の組み立ては `TypeRules.factoryLeftSidesOf` を共用する。** ひな形が出す形と、
 実際に引ける形が食い違うと、貼っても効かない行を配ることになる。書ける形が増えたときに
-2 か所を直し忘れないよう、契約を引く側とひな形を作る側で同じ関数を通す。
+2 か所を直し忘れないよう、規則を引く側とひな形を作る側で同じ関数を通す。
 
 **文字コードは UTF-8（BOM 無し）で固定する。** `output.encoding` に合わせない。
-このファイルの中身を貼る先（`contracts.files` の表）が UTF-8 固定で読まれるため、
+このファイルの中身を貼る先（`call.rules.files` の表）が UTF-8 固定で読まれるため、
 そちらに合わせるのが筋で、BOM 付きで書くと貼った先で先頭行が壊れる。
 
 **設定で有効にする形にはしなかった。** 気づいていない人に届けるための機能なので、
@@ -364,7 +364,7 @@ FQN か単純名かを綴りで判定しない（内部クラスは `Outer.Inner
 キャッシュの形式が変わるので、**この版に上げた最初の 1 回だけ全件解析し直し**になる。
 出力とその期待値は変わらない（`docs/cache-split-qa.md` の版の上げ方に従った）。
 
-ひな形（`contracts-suggested.txt`）も**ソースに書いた型**で出す。ひな形からコピーすれば、
+ひな形（`call-rules-suggested.txt`）も**ソースに書いた型**で出す。ひな形からコピーすれば、
 どちらを書くべきか迷わずに済む。
 
 ### Q23. 呼び出し元から渡ってくるキーを、どう扱うことにしたか
@@ -377,10 +377,10 @@ void helper(String k) { Factory.get(k).find(); }   // ← ここは helper だ�
 ```
 
 キーの値は `DataflowContext`（この経路で分かっている引数）から引ける。リフレクション・ラムダ・
-データフローは以前から経路ごとにやり直していて、契約表（種類 C）と拡張だけが
+データフローは以前から経路ごとにやり直していて、ライブラリ呼び出し規則（種類 C）と拡張だけが
 「経路に依存しない分」しか見ていなかった。同じ仕組みに乗せただけである。
 
-**契約表と拡張の両方をやり直す。** 片方だけにすると、改善A（ファクトリのキーをツールが拡張にも
+**ライブラリ呼び出し規則と拡張の両方をやり直す。** 片方だけにすると、改善A（ファクトリのキーをツールが拡張にも
 渡す）で揃えた対称性が崩れる。「表では引けるのに拡張には届かない」という食い違いを作らない。
 
 **既に 1 件に絞れているものはやり直さない。** 型単位の広い行（`Dao#find => …`）が先に決めていれば、
@@ -404,21 +404,39 @@ void helper(String k) { Factory.get(k).find(); }   // ← ここは helper だ�
 
 Issue [#188](https://github.com/instreest/java-call-hierarchy-exporter/issues/188)。
 
-- **何が起きていたか**。`FrameworkEntries#judge` は `super 型#シグネチャ` の契約を、メソッドのシグネチャ
+- **何が起きていたか**。`FrameworkEntries#judge` は `super 型#シグネチャ` の規則を、メソッドのシグネチャ
   `name(paramSig)` の**文字列一致**と推移的な親型の名前で判定していた。
-  `class MyHandler implements Handler<Req> { void handle(Req r) }` の `handle(Req)` は契約
+  `class MyHandler implements Handler<Req> { void handle(Req r) }` の `handle(Req)` は規則
   `super Handler#handle(java.lang.Object)` とシグネチャが食い違うので、フレームワークが `Handler#handle(Object)` を
   呼べば（javac のブリッジを経て）動く入口なのに `FRAMEWORK_ENTRY` にならなかった
 - **直し方**。シグネチャが違うときは、選択（`MethodSelection`）が「上書きできる宣言」に使うのと同じ 2 つの材料で
-  「契約の宣言を型引数を具体化して上書き・実装しているか」を見る（`FrameworkEntries#overridesWithBridge`）。
-  O 行（`OverrideIndex#overridersOf(契約の型#シグネチャ)` にそのメソッドがある。書き手が `IMethodBinding.overrides` で
-  判定した結果で、契約の型が jar の型でも書かれている）と、H 行の 8 列目（宣言した型の部分型の「継承した実装」に
-  `契約の型#シグネチャ>自分のキー` の組がある。`class MyHandler extends BaseHandler implements Handler<Req>` で
+  「規則の宣言を型引数を具体化して上書き・実装しているか」を見る（`FrameworkEntries#overridesWithBridge`）。
+  O 行（`OverrideIndex#overridersOf(規則の型#シグネチャ)` にそのメソッドがある。書き手が `IMethodBinding.overrides` で
+  判定した結果で、規則の型が jar の型でも書かれている）と、H 行の 8 列目（宣言した型の部分型の「継承した実装」に
+  `規則の型#シグネチャ>自分のキー` の組がある。`class MyHandler extends BaseHandler implements Handler<Req>` で
   `BaseHandler#handle(Req)` が入口になる形）。自前で名前や引数型を比べない
-- **却下した案**。契約の宣言のメソッド ID から `MethodSelection#overridingImplementations` で引く案は、jar の型の宣言
+- **却下した案**。規則の宣言のメソッド ID から `MethodSelection#overridingImplementations` で引く案は、jar の型の宣言
   （`HttpServlet#doGet`）はソースのどこかが呼び出し先にしていない限りメソッドの表に無いので使えない。
   シグネチャが同じ上書きは従来どおり親型の名前で判定する（O 行はキーの食い違う上書きしか持たない）
-- **検査**。`test/pruning` の `FwEntry`（契約表に `super pr.FwHandler#handle(java.lang.Object)` と jar の型の
+- **検査**。`test/pruning` の `FwEntry`（ライブラリ呼び出し規則に `super pr.FwHandler#handle(java.lang.Object)` と jar の型の
   `super prlib.Handler#handle(java.lang.Object)` を足し、`methods.csv` の `role` で見る）。O 行の上書き・jar の親型の上書き・
-  H 行の 8 列目の継承した実装が `FRAMEWORK_ENTRY` になり、シグネチャの同じ上書きは従来どおり、契約の型を継承しない
+  H 行の 8 列目の継承した実装が `FRAMEWORK_ENTRY` になり、シグネチャの同じ上書きは従来どおり、規則の型を継承しない
   同名のメソッドは入口にならないこと
+
+## 用語を「契約表」から「ライブラリ呼び出し規則」に改めた
+
+以前は「契約表」と呼んでいた。「契約」は設計書の語で、コードを読む人には何の表か想像しにくく、
+しかも 1 つの語で別々の 3 種類（A 呼び戻し・B 入口・C 実装クラスの対応）を指していた。
+**総称を「ライブラリ呼び出し規則」（JDK・フレームワークなど、ソースの外の呼び出しについての規則）に、
+1 行 1 件を「規則」に**改めた。利用者にはほとんど意識させない前提なので、短さより説明の分かりやすさを選んだ。
+
+- 設定キー: `contracts.files` / `contracts.providers` / `contracts.builtin` → `call.rules.files` / `call.rules.providers` / `call.rules.builtin`。
+  旧名は読まない（残すと、同じ設定が 2 通りの名前で書けてしまう）。旧名を書いていると設定が効かないので、書き換えが要る
+- 出力ファイル: `contracts-suggested.txt` → `call-rules-suggested.txt`
+- 出力 CSV: resolved-by のラベル `CONTRACT` → `CALL_RULE`、注記の `contract: …` → `rule: …`
+- 拡張のインターフェース: `jche.extension.ContractProvider` → `jche.extension.RuleProvider`（設定の `call.rules.providers` で指す名前も変わる）
+- 内部の型: `Contracts` → `LibraryCallRules`、`CallbackContracts` → `CallbackRules`、`TypeContracts` → `TypeRules`、
+  `ContractUsage` → `RuleUsage`、`ContractSuggestions` → `RuleSuggestions`
+- 文書: `callback-contracts*.md` → `library-call-rules*.md`、`contracts-unification-design.md` → `call-rules-unification-design.md`。
+  過去の Q&A の本文の「契約」も「規則」に読み替えた
+- `single-file/`（本体と同期を取らない）は変えていない。キャッシュの形式は変えていない（コメントの文言だけ）

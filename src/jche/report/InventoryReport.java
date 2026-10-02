@@ -27,7 +27,7 @@ public final class InventoryReport {
     public static final class Stats {
         long methods;
         long entryCandidates;
-        /** 契約でフレームワークが呼ぶと分かった入口 */
+        /** 規則でフレームワークが呼ぶと分かった入口 */
         long frameworkEntries;
         long isolated;
         long leaves;
@@ -64,7 +64,7 @@ public final class InventoryReport {
      *
      * role の意味:
      * <pre>
-     *   FRAMEWORK_ENTRY 契約でフレームワークが呼ぶと分かる入口（main、Servlet、
+     *   FRAMEWORK_ENTRY 規則でフレームワークが呼ぶと分かる入口（main、Servlet、
      *                   &#64;Scheduled 等。jche.graph.FrameworkEntries）
      *   ENTRY_CANDIDATE 呼び出し元が無い。画面入口・バッチ・デッドコード・
      *                   テスト・リフレクション経由が混ざる（要仕分け）
@@ -118,7 +118,7 @@ public final class InventoryReport {
                 int out = g.outDegree(id);
                 String role;
                 if (resolver.frameworkEntries().isEntry(id)) {
-                    // 契約でフレームワークが呼ぶと分かる入口。呼び出し元の有無より
+                    // 規則でフレームワークが呼ぶと分かる入口。呼び出し元の有無より
                     // 「フレームワークが呼ぶ」事実の方が仕分けに効くので優先する
                     role = "FRAMEWORK_ENTRY";
                     st.frameworkEntries++;

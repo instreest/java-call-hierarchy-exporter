@@ -78,7 +78,7 @@ Java は 1 ファイルに public なトップレベル型を 1 つしか置け�
 
 - **利用者が Java で書く拡張（`plugin.folders`）は本体と同じに使える。** 最初は使えなかった。拡張は
   `import jche.extension.TypeCandidateProvider;` するが、入れ子にすると `jche.CallHierarchyExporterSingle.TypeCandidateProvider`
-  になって当たらない。そこで `jche.extension` の 4 ファイル（`TypeCandidateProvider` / `ContractProvider` / `Hint` / `UsageReporter`）
+  になって当たらない。そこで `jche.extension` の 4 ファイル（`TypeCandidateProvider` / `RuleProvider` / `Hint` / `UsageReporter`）
   だけは入れ子にせず、本物のパッケージのまま `single-file/jche/extension/` に写し、1 ファイル側は本体と同じ `import jche.extension.X;`
   で使う。JBang は `//SOURCES jche/extension/*.java` で拾い、javac には一緒に渡す。実行時に拡張の `.java` をコンパイルする
   経路（`PluginClassLoaders`）は `java.class.path` を渡すので、そこに `jche/extension/*.class` があれば本体と同じに動く。

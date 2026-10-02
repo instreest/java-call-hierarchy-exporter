@@ -21,7 +21,7 @@ import jche.extension.TypeCandidateProvider;
 import jche.graph.CallGraph;
 import jche.graph.CallGraphBuilder;
 import jche.graph.CallResolver;
-import jche.graph.Contracts;
+import jche.graph.LibraryCallRules;
 import jche.graph.DataflowResolver;
 import jche.graph.SpringBeans;
 import jche.graph.UnresolvedCalls;
@@ -106,11 +106,11 @@ public final class Exporter {
             DataflowFacts facts = buildDataflowFacts(config, graph);
             DataflowResolver dataflow =
                     new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
-            // 契約表の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
+            // ライブラリ呼び出し規則の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
             RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 0, 1);
-            Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
+            LibraryCallRules.Loaded rules = LibraryCallRules.load(config, graph, dataflow);
             CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
-                    contracts.callbacks(), contracts.entries(), contracts.types());
+                    rules.callbacks(), rules.entries(), rules.types());
             RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
             Log.heap(Messages.get("exporter.heap.phase2"));
             return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles, unresolved,

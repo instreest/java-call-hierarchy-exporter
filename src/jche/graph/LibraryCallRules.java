@@ -10,14 +10,14 @@ import java.util.List;
 
 import jche.config.Config;
 import jche.config.Plugins;
-import jche.extension.ContractProvider;
+import jche.extension.RuleProvider;
 import jche.util.Log;
 import jche.util.Messages;
 
 /**
- * 契約表の読み込み。同梱の表・設定ファイルで足した表・拡張が返す表を1つにまとめ、
- * 呼び戻し（{@link CallbackContracts}）・入口（{@link FrameworkEntries}）・
- * 具象型（{@link TypeContracts}）に振り分ける。
+ * ライブラリ呼び出し規則の読み込み。同梱の表・設定ファイルで足した表・拡張が返す表を1つにまとめ、
+ * 呼び戻し（{@link CallbackRules}）・入口（{@link FrameworkEntries}）・
+ * 具象型（{@link TypeRules}）に振り分ける。
  *
  * 行の形で振り分ける。{@code =>} を含む行は具象型、{@code ->} を含む行は呼び戻し、
  * {@code @} / {@code super} / {@code static} で始まる行は入口。どれでも読めない行は、
@@ -27,65 +27,65 @@ import jche.util.Messages;
  * 順に見るとき {@code =>} を先に判定するのは、将来どちらも含む行を許したくなったときに
  * 迷わないようにするため。
  */
-public final class Contracts {
+public final class LibraryCallRules {
 
     /** 読み込んだ3つの表 */
-    public record Loaded(CallbackContracts callbacks, FrameworkEntries entries, TypeContracts types) {
+    public record Loaded(CallbackRules callbacks, FrameworkEntries entries, TypeRules types) {
     }
 
-    private Contracts() {
+    private LibraryCallRules() {
     }
 
     public static Loaded load(Config config, CallGraph graph, DataflowResolver dataflow) {
-        List<ContractUsage.Line> callbackLines = new ArrayList<>();
-        List<ContractUsage.Line> entryLines = new ArrayList<>();
+        List<RuleUsage.Line> callbackLines = new ArrayList<>();
+        List<RuleUsage.Line> entryLines = new ArrayList<>();
         // 具象型（種類 C）に同梱の行は無い。フレームワークごとの DI の既定を同梱するかは
-        // まだ決めていない（docs/contracts-unification-design.md の §10）
-        List<ContractUsage.Line> typeLines = new ArrayList<>();
-        if (config.builtinContracts) {
+        // まだ決めていない（docs/call-rules-unification-design.md の §10）
+        List<RuleUsage.Line> typeLines = new ArrayList<>();
+        if (config.builtinRules) {
             for (String line : JdkCallbacks.LINES) {
-                callbackLines.add(new ContractUsage.Line(line, ContractUsage.bundledOrigin(), true));
+                callbackLines.add(new RuleUsage.Line(line, RuleUsage.bundledOrigin(), true));
             }
             for (String line : BundledFrameworkEntries.LINES) {
-                entryLines.add(new ContractUsage.Line(line, ContractUsage.bundledOrigin(), true));
+                entryLines.add(new RuleUsage.Line(line, RuleUsage.bundledOrigin(), true));
             }
         }
-        for (Path file : config.contractFiles) {
+        for (Path file : config.ruleFiles) {
             List<String> lines;
             try {
                 lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             } catch (IOException e) {
                 // 表が読めないと「設定したのに効いていない」状態になる。黙らず知らせる
-                Log.warn(Messages.format("graph.contracts.unreadable", file, e));
+                Log.warn(Messages.format("graph.rules.unreadable", file, e));
                 continue;
             }
             int n = sort(lines, callbackLines, entryLines, typeLines, file.toString());
-            Log.info(Messages.format("graph.contracts.loaded", file, n));
+            Log.info(Messages.format("graph.rules.loaded", file, n));
         }
-        for (ContractProvider provider : Plugins.load(config, config.contractProviderClasses,
-                ContractProvider.class)) {
+        for (RuleProvider provider : Plugins.load(config, config.ruleProviderClasses,
+                RuleProvider.class)) {
             List<String> lines = provider.lines();
             int n = sort((lines == null) ? List.of() : lines, callbackLines, entryLines, typeLines,
                     provider.getClass().getName());
-            Log.info(Messages.format("graph.contracts.fromExtension", provider.getClass().getName(), n));
+            Log.info(Messages.format("graph.rules.fromExtension", provider.getClass().getName(), n));
         }
-        TypeContracts types = new TypeContracts(new ContractUsage(typeLines), graph.typeNames());
+        TypeRules types = new TypeRules(new RuleUsage(typeLines), graph.typeNames());
         if (types.hasFactoryRows() && !dataflow.enabled()) {
             // キーはデータフローの値グラフから引くので、切られていると永久に当たらない
-            Log.warn(Messages.get("graph.contracts.factoryNeedsDataflow"));
+            Log.warn(Messages.get("graph.rules.factoryNeedsDataflow"));
         }
-        return new Loaded(new CallbackContracts(graph, dataflow, new ContractUsage(callbackLines)),
-                new FrameworkEntries(graph, new ContractUsage(entryLines)), types);
+        return new Loaded(new CallbackRules(graph, dataflow, new RuleUsage(callbackLines)),
+                new FrameworkEntries(graph, new RuleUsage(entryLines)), types);
     }
 
     /**
      * 行を種類ごとに振り分ける。読めた行数を返す。
      *
-     * @param from この行の出所（契約表のパス、または拡張のクラス名）。読めない行の警告と、
-     *             一度も当たらなかった行の報告（{@link ContractUsage}）に使う
+     * @param from この行の出所（ライブラリ呼び出し規則のパス、または拡張のクラス名）。読めない行の警告と、
+     *             一度も当たらなかった行の報告（{@link RuleUsage}）に使う
      */
-    private static int sort(List<String> lines, List<ContractUsage.Line> callbacks,
-                            List<ContractUsage.Line> entries, List<ContractUsage.Line> types,
+    private static int sort(List<String> lines, List<RuleUsage.Line> callbacks,
+                            List<RuleUsage.Line> entries, List<RuleUsage.Line> types,
                             String from) {
         int count = 0;
         for (String raw : lines) {
@@ -94,26 +94,26 @@ public final class Contracts {
                 continue;
             }
             if (line.contains("=>")) {
-                if (TypeContracts.parse(line) == null) {
+                if (TypeRules.parse(line) == null) {
                     // よくある書き間違いには助言を添える。綴りを疑って時間を使わせないため
-                    Log.warn(Messages.format("graph.contracts.badRow", from, line)
-                            + (TypeContracts.hasArguments(line)
-                                    ? Messages.get("graph.contracts.badRowHint") : ""));
+                    Log.warn(Messages.format("graph.rules.badRow", from, line)
+                            + (TypeRules.hasArguments(line)
+                                    ? Messages.get("graph.rules.badRowHint") : ""));
                     continue;
                 }
-                types.add(new ContractUsage.Line(line, from, false));
+                types.add(new RuleUsage.Line(line, from, false));
             } else if (line.contains("->")) {
-                if (CallbackContracts.parse(line) == null) {
-                    Log.warn(Messages.format("graph.contracts.badRow", from, line));
+                if (CallbackRules.parse(line) == null) {
+                    Log.warn(Messages.format("graph.rules.badRow", from, line));
                     continue;
                 }
-                callbacks.add(new ContractUsage.Line(line, from, false));
+                callbacks.add(new RuleUsage.Line(line, from, false));
             } else {
                 if (FrameworkEntries.parse(line) == null) {
-                    Log.warn(Messages.format("graph.contracts.badRow", from, line));
+                    Log.warn(Messages.format("graph.rules.badRow", from, line));
                     continue;
                 }
-                entries.add(new ContractUsage.Line(line, from, false));
+                entries.add(new RuleUsage.Line(line, from, false));
             }
             count++;
         }

@@ -41,7 +41,7 @@ jar の被参照の指定、キャッシュ）だけにした。英語の読者�
 
 `#出力ファイル`・`#具象クラスの解決`・`#ラムダ式メソッド参照` などへ docs/ からリンクが張られている。
 GitHub のスラッグは見出しの深さに依らないので、文字を変えなければリンクは切れない。
-段の番号を指していた docs のリンク（callback-contracts.md・contracts-unification-design.md・instance-analysis-plugin.md）は、
+段の番号を指していた docs のリンク（library-call-rules.md・call-rules-unification-design.md・instance-analysis-plugin.md）は、
 段の表の移った static-analysis-limits.md の 9 節へ張り直した。
 
 ### Q4. 概要を短いままにしたのはなぜか

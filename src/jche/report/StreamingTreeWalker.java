@@ -16,7 +16,7 @@ import jche.config.Config;
 import jche.config.PackagePattern;
 import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
-import jche.graph.CallbackContracts;
+import jche.graph.CallbackRules;
 import jche.graph.CallResolver;
 import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
@@ -94,7 +94,7 @@ public final class StreamingTreeWalker {
     /** ラムダ／メソッド参照が同じインターフェースを実装している */
     static final String CAUSE_LAMBDA = UNEXPANDED + "LAMBDA] implemented by a lambda/method reference";
     /**
-     * 契約で呼び戻す値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかったときの
+     * 規則で呼び戻す値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかったときの
      * 候補の由来（{@code [UNEXPANDED:CHA] N candidates: } に続ける）
      */
     static final String CALLBACK_METHOD_REF = "method reference to an overridable method";
@@ -153,7 +153,7 @@ public final class StreamingTreeWalker {
     /** データフロー・リフレクションで具象クラスを特定した件数（ログ用） */
     private long paramHits;
     private long factoryHits;
-    /** 契約（jar の中のメソッドが渡した値を呼び戻す）で繋いだ件数 */
+    /** 規則（jar の中のメソッドが渡した値を呼び戻す）で繋いだ件数 */
     private long callbackHits;
     private long reflectionHits;
     private long fieldHits;
@@ -162,8 +162,8 @@ public final class StreamingTreeWalker {
     private long declaredTypeHits;
     /** 条件分岐の静的解析で「この経路では呼ばれない」と判定して打ち切った件数 */
     private long prunedCalls;
-    /** 絞れなかった呼び出しから作る、契約表のひな形 */
-    private final ContractSuggestions suggestions = new ContractSuggestions();
+    /** 絞れなかった呼び出しから作る、ライブラリ呼び出し規則のひな形 */
+    private final RuleSuggestions suggestions = new RuleSuggestions();
 
     private int rootId;
     private long totalRows;
@@ -238,13 +238,13 @@ public final class StreamingTreeWalker {
         return declaredTypeHits;
     }
 
-    /** 契約で呼び戻される側へ繋いだ件数 */
+    /** 規則で呼び戻される側へ繋いだ件数 */
     public long callbackHits() {
         return callbackHits;
     }
 
-    /** 絞れなかった呼び出しから作った、契約表のひな形 */
-    public ContractSuggestions suggestions() {
+    /** 絞れなかった呼び出しから作った、ライブラリ呼び出し規則のひな形 */
+    public RuleSuggestions suggestions() {
         return suggestions;
     }
 
@@ -373,8 +373,8 @@ public final class StreamingTreeWalker {
             // そこから先へは降りない（候補数^深さ で爆発するため）。
             // 並べる候補数にも上限を設ける
             int[] targets = res.targets();
-            // 絞れなかった呼び出しは、それを直す契約表の行のひな形にしておく。
-            // リフレクション（名前で照合）は契約表では直せないので除く
+            // 絞れなかった呼び出しは、それを直すライブラリ呼び出し規則の行のひな形にしておく。
+            // リフレクション（名前で照合）はライブラリ呼び出し規則では直せないので除く
             if (res.isMultiple() && unreachable == null
                     && !Resolution.REFLECTION.equals(res.label())) {
                 suggestions.add(graph, dataflow, path[depth].context(), e, callerId,
@@ -451,8 +451,8 @@ public final class StreamingTreeWalker {
                 }
             }
 
-            // 呼び出し先が jar の中でも、契約で「渡した値を呼び戻す」と分かるものは
-            // その先へ繋ぐ（Thread#start → Runnable#run 等。docs/callback-contracts-qa.md）。
+            // 呼び出し先が jar の中でも、規則で「渡した値を呼び戻す」と分かるものは
+            // その先へ繋ぐ（Thread#start → Runnable#run 等。docs/library-call-rules-qa.md）。
             // 呼び出し先自身の行はそのまま残し、その次に呼び戻される側を並べる
             if (unreachable == null) {
                 descendCallbacks(depth, e, declaredCallee, collapsed);
@@ -461,12 +461,12 @@ public final class StreamingTreeWalker {
     }
 
     /**
-     * 契約で呼び戻されるメソッドを、その辺の追加の候補として出力し、降りる。
+     * 規則で呼び戻されるメソッドを、その辺の追加の候補として出力し、降りる。
      * 通常の候補と同じく、除外・循環の扱いを通す
      */
     private void descendCallbacks(int depth, int e, int declaredCallee, CollapseSeen collapsed)
             throws IOException {
-        for (CallbackContracts.Match match : resolver.callbackTargets(e, path[depth].context())) {
+        for (CallbackRules.Match match : resolver.callbackTargets(e, path[depth].context())) {
             if (isRowLimitReached()) {
                 return;
             }
@@ -500,7 +500,7 @@ public final class StreamingTreeWalker {
                 resolvedBy = ResolvedBy.UNEXPANDED + Resolution.CALLBACK;
             }
             path[depth + 1].set(target, graph.callLineOf(e),
-                    note + " contract: " + match.contract(), resolvedBy,
+                    note + " rule: " + match.rule(), resolvedBy,
                     null, null, null, null);
             emit(depth + 1);
             // 候補を並べただけの行は、通常の CHA と同じくその先へ降りない（候補数^深さ で爆発するため）
@@ -563,7 +563,7 @@ public final class StreamingTreeWalker {
      * 今のメソッドが作ったラムダの本体へ降りる辺。作ったメソッドが無い（ほとんどのメソッド）なら null。
      *
      * 辺は 2 種類ある。作った辺（宣言どおりの呼び出し先がラムダの本体。{@link LambdaEntry#generation}）と、
-     * それ以外の辺で本体に降りるもの。後者は、契約の呼び戻し（{@code executor.submit(() -> …)} の
+     * それ以外の辺で本体に降りるもの。後者は、規則の呼び戻し（{@code executor.submit(() -> …)} の
      * {@code submit}）と、実行箇所を特定できた呼び出し（{@code DATAFLOW_LAMBDA}）で、どちらも
      * 1 件に決まるものだけを数える（候補を並べるだけの行や、条件で打ち切る行は降りない）。
      */
@@ -595,7 +595,7 @@ public final class StreamingTreeWalker {
             if (targets.length == 1 && created.contains(targets[0])) {
                 entries.add(new LambdaEntry(false, targets[0]));
             }
-            for (CallbackContracts.Match match : resolver.callbackTargets(e, ctx)) {
+            for (CallbackRules.Match match : resolver.callbackTargets(e, ctx)) {
                 if (!match.isMultiple() && created.contains(match.target())) {
                     entries.add(new LambdaEntry(false, match.target()));
                 }
@@ -851,7 +851,7 @@ public final class StreamingTreeWalker {
     private String resolvedBy(int declaredCallee, Resolution res) {
         if (res.isMultiple()) {
             // 1件に絞れなかった。ラベルは「候補をどう集めたか」を表す
-            // （CHA / LOCAL_NEW_MULTI / CONTRACT / REFLECTION / 拡張のラベル）
+            // （CHA / LOCAL_NEW_MULTI / CALL_RULE / REFLECTION / 拡張のラベル）
             return ResolvedBy.UNEXPANDED + res.label();
         }
         if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
@@ -879,7 +879,7 @@ public final class StreamingTreeWalker {
      *
      * 解決方法そのものは resolved-by 列に出るので、注記には
      * <b>列に無い情報がある場合だけ</b>後半を付ける（候補の件数とレシーバの由来、
-     * 生成される実装のFQN、繋いだ契約）。
+     * 生成される実装のFQN、繋いだ規則）。
      */
     private String noteFor(int target, int declaredCallee, Resolution res, int depth,
                            boolean cycle, char recvKind, String unreachable) {
@@ -960,8 +960,8 @@ public final class StreamingTreeWalker {
             // 階層側にも出す
             detail = CAUSE_NO_IMPL;
         } else if (Resolution.CALLBACK.equals(res.label())) {
-            // 「どの契約で繋いだか」は列に無い情報なので注記に残す。
-            // 契約の本文は descendCallbacks がこの後ろに足す
+            // 「どの規則で繋いだか」は列に無い情報なので注記に残す。
+            // 規則の本文は descendCallbacks がこの後ろに足す
             detail = "[RESOLVED:" + Resolution.CALLBACK + "]";
         } else {
             // 1件に確定した呼び出しは resolved-by 列だけで足りる。
