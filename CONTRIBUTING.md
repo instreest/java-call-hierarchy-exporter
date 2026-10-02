@@ -45,7 +45,7 @@ bash test/regression/run.sh
 | こうなっている | 理由 |
 |---|---|
 | ビルドは JBang（`src/jche/CallHierarchyExporter.java` の `//DEPS` / `//JAVA` / `//SOURCES` 行）。Maven / Gradle でビルドしない | 利用者が JDK も JBang も入れずに起動コマンド 1 つで動かせるようにするため。`pom.xml` は Eclipse（m2e）でこのリポジトリを開いて依存をビルドパスに載せるためだけにある（`docs/eclipse-maven-qa.md`）。`mvn test` は何もしない |
-| ソースは `src/jche` 直下（`src/main/java` ではない） | JBang の `//SOURCES` がスクリプトのあるフォルダからの相対で、`jche.config.ToolRoot` と 1 ファイル版の生成器もこの置き場所を目印にしている（`docs/entrypoint-package-qa.md`） |
+| ソースは `src/jche` 直下（`src/main/java` ではない） | JBang の `//SOURCES` がスクリプトのあるフォルダからの相対で、`jche.config.ToolRoot` もこの置き場所（`src/jche/CallHierarchyExporter.java`）を目印にしている（`docs/entrypoint-package-qa.md`） |
 | テストは JUnit ではなく bash の `run.sh` と自前の `*Check.java` | 主な検査が「題材プロジェクトを解析して、期待値の CSV や全件解析の結果と比べる」形で、JUnit にしても速くも読みやすくもならない。依存ゼロ・実行 JDK 固定（JDK 25。JDT が実行 JVM のブートクラスパスを解析に使うので、版が違うと結果が変わる）の利点も保てる。一覧は [test/README.md](test/README.md) |
 | 実行 JDK は 25 に固定、言語機能は Java 17（`--release 17`） | 上と同じ理由で実行 JDK を固定する。言語レベルは古い環境（Pleiades 同梱の JDK 17）でもコンパイルできる下限 |
 | `jche.config.Config` は 47 個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
