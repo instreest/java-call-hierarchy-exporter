@@ -6,7 +6,7 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 関連: [note-tags-qa.md](note-tags-qa.md)（`[UNEXPANDED:LAMBDA]` の注記と、当時できなかった理由）、
 [dataflow-facts-qa.md](dataflow-facts-qa.md)（値の追跡の枠組み）。
 
-関連: [lambda-collapse-qa.md](lambda-collapse-qa.md)（段を畳む設定と、同じ行から降りる辺のまとめ）。
+関連: [lambda-collapse-qa.md](lambda-collapse-qa.md)（ラムダの合成メソッドを CSV に出さない判断）。
 
 ## 結論
 

@@ -19,7 +19,7 @@ final class PathFrame {
     int methodId;
     /**
      * CSV の caller 列・call-hierarchy 列に出すメソッド。ふつうは {@link #methodId} と同じ。
-     * ラムダを畳む設定（{@code hierarchy.collapse.lambda}）では、畳んだラムダの本体の段の
+     * ラムダの本体は段にしない（{@code StreamingTreeWalker#collapseInto}）ので、畳んだラムダの本体の段の
      * {@link #methodId} は合成メソッドのまま（辺を引くのに要る）で、これだけを囲みメソッドにする
      */
     int shownId;

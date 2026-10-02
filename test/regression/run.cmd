@@ -15,8 +15,7 @@ set "FAIL=0"
 rem whole は cache.folder が空欄なので、キャッシュはツールのプロジェクトフォルダの .cache\demo_<ハッシュ>\ にできる
 for /d %%D in ("%ROOT%\.cache\demo_*") do rmdir /s /q "%%D"
 rem novalues は whole と同じ解析対象を dataflow.enabled=false（キャッシュの値の行を読まない）で解析する
-rem collapse は whole と同じ解析対象を hierarchy.collapse.lambda=true（ラムダの合成メソッドを段にしない）で解析する
-for %%C in (whole entry novalues collapse) do call :normalcase "%%C"
+for %%C in (whole entry novalues) do call :normalcase "%%C"
 call :expectsidecar whole
 
 rem ビルドファイル（pom.xml / build.gradle）とローカルリポジトリ（test\localrepo）から依存 jar を集めるケース。

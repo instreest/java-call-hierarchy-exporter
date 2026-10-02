@@ -11,8 +11,6 @@
 #   novalues             … whole と同じ解析対象を dataflow.enabled=false（キャッシュの値の行を読まない）で。
 #                          実行の形は通常ケースと同じ。値が無いので具象クラスの解決は CHA まで、条件分岐の
 #                          打ち切りは起きない。キャッシュの形式を変えても、この指定の出力が変わらないことを見る
-#   collapse             … whole と同じ解析対象を hierarchy.collapse.lambda=true（ラムダの合成メソッドを段にしない）で。
-#                          実行の形は通常ケースと同じ。解析と辿る範囲は whole と同じで、出し方だけが違う
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
 #   maven / mavenmulti / gradle
@@ -61,7 +59,7 @@ cd "$(dirname "$0")"
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry novalues collapse jarchange maven mavenmulti gradle plugin cacheblocks values multi"}
+CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）

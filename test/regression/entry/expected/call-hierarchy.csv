@@ -35,12 +35,8 @@ at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UN
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse
 at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
-at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.helper
 at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
@@ -126,16 +122,10 @@ at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:S
 at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
 at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:111),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
-at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
+at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.lambdas,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.lambdas,UserDaoImpl.describe
 at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
@@ -219,12 +209,8 @@ at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UN
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse
 at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
-at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,RESOLVED:DATAFLOW_LAMBDA,2,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,2,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,2,Main.run,OrderService.execute,OrderService.helper
 at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
@@ -310,16 +296,10 @@ at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:S
 at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,2,Main.run,Main.shapes,Point.area
 at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,2,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,1,Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:111),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,3,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,2,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,3,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,2,Main.run,Main.lambdas,Main.lambda$lambdas$1
-at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
+at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,2,Main.run,Main.lambdas,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,2,Main.run,Main.lambdas,UserDaoImpl.describe
 at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,2,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,2,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,1,Main.run,Counter.bump
@@ -412,21 +392,12 @@ at fx.app.Main.shapes(Main.java:105),Point.origin,RESOLVED:STATIC_BOUND:STATIC,1
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,3,Main.shapes,Point.origin,Point.Point,Registry.register
 at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,1,Main.shapes,Point.area
 at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,1,Main.shapes,Color.code
-at fx.app.Main.lambdas(Main.java:111),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,UNEXPANDED:CHA,2,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambda$lambdas$0(Main.java:111),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.lambdas,Main.lambda$lambdas$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,1,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,UNEXPANDED:CHA,2,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambda$lambdas$0(Main.java:111),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.lambdas,Main.lambda$lambdas$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Main.lambdas,Main.lambda$lambdas$1
-at fx.app.Main.lambda$lambdas$1(Main.java:114),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Main.lambdas,Main.lambda$lambdas$1,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,UNEXPANDED:CHA,2,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,UNEXPANDED:CHA,1,Main.lambdas,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.lambdas(Main.java:111),OrderDaoImpl.findById,UNEXPANDED:CHA,1,Main.lambdas,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.lambdas(Main.java:114),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Main.lambdas,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,UNEXPANDED:CHA,1,Main.lambdas,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,1,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,1,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,UNEXPANDED:CHA,1,Main.lambda$lambdas$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambda$lambdas$0(Main.java:111),OrderDaoImpl.findById,UNEXPANDED:CHA,1,Main.lambda$lambdas$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambda$lambdas$1(Main.java:114),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Main.lambda$lambdas$1,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,UNEXPANDED:CHA,1,Main.lambda$lambdas$1,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main.anonymous(Main.java:133),Main$1.execute,RESOLVED:LOCAL_NEW,1,Main.anonymous,Main$1.execute
 at fx.app.Main$1.execute(Main.java:128),AbstractDao.findById,UNEXPANDED:CHA,2,Main.anonymous,Main$1.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main$1.execute(Main.java:128),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.anonymous,Main$1.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
@@ -482,12 +453,8 @@ at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UN
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,2,OrderService.execute,OrderService.helper,OrderService.recurse
 at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,3,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
-at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,RESOLVED:STATIC_BOUND:PRIVATE,1,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,RESOLVED:DATAFLOW_LAMBDA,1,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,2,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,1,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,1,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,1,OrderService.execute,OrderService.helper
 at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,2,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field

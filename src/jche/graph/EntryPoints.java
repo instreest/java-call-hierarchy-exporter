@@ -25,6 +25,9 @@ public final class EntryPoints {
             if (!methods.hasSource(id)) {
                 continue;   // ソースが無いメソッドは起点にしない
             }
+            if (methods.isLambdaBody(id)) {
+                continue;   // ラムダの本体は暗黙の合成メソッド。作ったメソッドの下に畳んで出るので起点にしない
+            }
             if (PackagePattern.matchesAny(config.entryPatterns,
                     methods.pkg(id), methods.typeFqn(id), methods.methodName(id))) {
                 hits.add(id);

@@ -430,29 +430,24 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 <!-- sec:lambdas-and-method-references -->
 ### ラムダ式・メソッド参照
 
-ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
-**合成メソッド**として 1 つのノードにします（`methods.csv` には出しません）。
-static 初期化子・static フィールド・enum 定数の引数の中のラムダは `lambda$static$N` です。
+ラムダ式の本体は、解析の内部では javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
+**合成メソッド**として扱います。CSV には出ません（`methods.csv` にも `call-hierarchy.csv` にも）。
 通し番号はスタックトレースに出る javac の番号と一致するとは限りません（[docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md) の Q13）。
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
 ```
 
-ラムダを作った箇所からは、必ず「生成した」1 本の辺が出ます。
+ラムダを作った箇所からは、内部では必ず「生成した」1 本の辺を張ります。
 どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
-実行箇所を特定できたときは、そちらからも同じノードに繋がります（`resolved-by` が `RESOLVED:DATAFLOW_LAMBDA`）。
-ただし、ラムダを書いた行そのものから実行まで繋がるとき（`executor.submit(() -> …)` のように、契約表の呼び戻しで繋がる形）は、
-同じ行から同じ本体への辺を 1 本にまとめて出します。
-
-`lambda$…` の段を挟まず、本体の中の呼び出しを「ラムダを書いたメソッドの呼び出し」として読みたいときは、
-設定に `hierarchy.collapse.lambda=true` を書きます（Eclipse の呼び出し階層と同じ見え方。辿る範囲は変わらず、
-`depth` 列と `call-hierarchy` 列からラムダの段が消えます。別のメソッドが実行するラムダの段は残ります。
-[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md)）。
+CSV にはラムダの合成メソッド（`lambda$…`）の行を出しません。ソースに書いていない、コンパイラが作る暗黙のメソッドだからです。
+本体の中の呼び出しは、ラムダを実行するメソッド（ラムダを作ったメソッド、または引数で渡した先で `r.run()` するメソッド）の直下に出ます。
+`depth` 列と `call-hierarchy` 列にもラムダの段は入りません（Eclipse の呼び出し階層と同じ見え方）。
+同じ本体へ降りる辺（作った辺・契約の呼び戻し・`DATAFLOW_LAMBDA`）は、1 本の枝にまとめます
+（[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md)）。
 
 実行箇所を特定できない形（`list.forEach(Runnable::run)` のように jar の中から呼ばれる形、フィールドのコレクションに詰める形、
-同じ変数に複数のラムダが入りうる形）では `resolved-by` が `UNEXPANDED:LAMBDA` になりますが、生成の辺があるので本体の中の呼び出しは階層に出ます。
+同じ変数に複数のラムダが入りうる形）でも、ラムダを作ったメソッドの直下に本体の呼び出しが出ます。
 追える形・追えない形の一覧は [docs/static-analysis-limits.md の 10 節](docs/static-analysis-limits.md#10-ラムダ式メソッド参照の追い方)にあります。
 
 ---
@@ -930,33 +925,27 @@ What static analysis can and cannot narrow down is written up in
 <!-- sec:lambdas-and-method-references -->
 ### Lambdas and method references
 
-The body of a lambda becomes one node, a **synthetic method** with a name modeled on javac's
-(`lambda$enclosingMethod$serial`). It is not listed in `methods.csv`.
-A lambda inside a static initializer, a static field or an enum constant's arguments is `lambda$static$N`.
-The serial does not always match the javac number you see in a stack trace
+The body of a lambda is handled internally as a **synthetic method** with a name modeled on javac's
+(`lambda$enclosingMethod$serial`). It does not appear in the CSVs (neither `methods.csv` nor `call-hierarchy.csv`).
+The serial numbers do not always match the ones in stack traces
 ([docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md), Q13).
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
 ```
 
-There is always one "created it" edge out of the place that wrote the lambda. That is so the calls inside
-the body never drop out of the hierarchy, even for a lambda whose execution site is unknown.
-When the execution site is determined, that site connects to the same node as well
-(`resolved-by` is `RESOLVED:DATAFLOW_LAMBDA`).
-When the lambda is connected through to execution from the very line that wrote it (a callback contract, as in
-`executor.submit(() -> ...)`), the edge from that line to the same body is written once.
-
-To read the calls inside a body as calls of the method that wrote the lambda, without a `lambda$...` level,
-set `hierarchy.collapse.lambda=true` in the configuration (the same view as Eclipse's call hierarchy. What is
-followed does not change; the lambda level disappears from the `depth` and `call-hierarchy` columns, and the
-level of a lambda executed by a different method stays.
-[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md), in Japanese).
+Internally there is always one "created it" edge out of the place that wrote the lambda. That is so the calls
+inside the body never drop out of the hierarchy, even for a lambda whose execution site is unknown.
+The CSV has no row for the synthetic lambda method (`lambda$...`): it is an implicit method the compiler
+creates, not something written in the source. The calls inside the body appear directly under the method that
+executes the lambda (the one that created it, or the one that calls `r.run()` after it is passed in as an argument).
+The `depth` and `call-hierarchy` columns have no lambda level either (the same view as Eclipse's call hierarchy).
+Edges that reach the same body (the "created it" edge, a callback contract, `DATAFLOW_LAMBDA`) are written as one
+branch ([docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md), in Japanese).
 
 Where the execution site cannot be determined (called from inside a jar, such as `list.forEach(Runnable::run)`;
-put in a field collection; several lambdas that can end up in the same variable), `resolved-by` becomes
-`UNEXPANDED:LAMBDA`, but the "created it" edge still puts the calls inside the body in the hierarchy.
+put in a field collection; several lambdas that can end up in the same variable), the calls inside the body
+still appear directly under the method that created the lambda.
 The full list of shapes that can and cannot be followed is in section 10 of
 [docs/static-analysis-limits.md](docs/static-analysis-limits.md#10-ラムダ式メソッド参照の追い方) (in Japanese).
 
