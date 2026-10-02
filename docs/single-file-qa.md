@@ -108,7 +108,7 @@ Java は 1 ファイルに public なトップレベル型を 1 つしか置け�
 ### Q7. 1 ファイル版のソースを直接編集してよいか
 
 だめ。生成し直すと消える。直すのは本体（`src/jche`）で、直したら `bash single-file/generate.sh` を走らせてコミットする
-（[AGENTS.md](../AGENTS.md) の「コードの決まり」）。ファイル冒頭にもその旨を書いてある。
+（[CONTRIBUTING.md](../CONTRIBUTING.md) の「コードの決まり」）。ファイル冒頭にもその旨を書いてある。
 
 ---
 

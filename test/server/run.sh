@@ -706,7 +706,7 @@ fs_request "ANALYZE${T}$FP/c.properties"
 fs_request "TREE${T}$F${T}field"
 [[ "$FS_RESPONSE" == "OK${T}rows="* ]] \
     && ok "解析し直せば引ける" || fail "解析し直しても引けない: $FS_RESPONSE"
-# キャッシュを読むのはフォルダの錠の内側（AGENTS.md。書きかけのキャッシュを読まない）。
+# キャッシュを読むのはフォルダの錠の内側（CONTRIBUTING.md。書きかけのキャッシュを読まない）。
 # ほかのプロセスが錠を持っている間は読まず（待つ上限 0 秒なので断る）、放されれば引ける
 cat > "$WORK/HoldLock.java" <<'EOF'
 import java.nio.channels.FileChannel;

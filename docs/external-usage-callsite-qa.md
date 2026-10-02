@@ -122,7 +122,7 @@ Issue [#186](https://github.com/instreest/java-call-hierarchy-exporter/issues/18
 
 - **何が問題だったか**。jar からの被参照を継承したメソッドに結び付ける `ExternalUsageScanner#inheritedFrom` は、
   `MethodSelection#search` と同じ順（親クラスの連鎖 → 最も特定的な親インターフェース）を**自前で**持っていた。
-  AGENTS.md は「実装探索は `MethodSelection` の入口だけを通す」と決めているのに 2 つ目の実装があり、
+  CONTRIBUTING.md は「実装探索は `MethodSelection` の入口だけを通す」と決めているのに 2 つ目の実装があり、
   O 行（型引数を具体化した上書き）と H 行の 8 列目（親クラスから継承した実装）を見なかった。
   `class UserRepo extends AbsRepo<User> { void save(User) }` への参照 `UserRepo.save(java.lang.Object)` は
   `AbsRepo.save` に、`class UserRepo2 extends BaseRepo implements Repo<User>`（`BaseRepo` が `save(User)` を持つ）への

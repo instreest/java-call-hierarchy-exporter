@@ -576,7 +576,7 @@ ValueStoreCheck の突き合わせ）と、記録のためだけの題材 `test/
   サーバーモードの `HELLO` も同じ値を返す
 - 版が読めなければ `?` と書き、`?` を含む鍵は一致しないとみなす（`CacheReader.headerMatches`）
 - 形式の版（`CacheFormat.VERSION`）の方針を「事実の意味・列・収集範囲が変わったときだけ上げる」から
-  「迷ったら上げる。上げ忘れは検査で捕まえる」に改めた（AGENTS.md・`CacheFormat`・cache-design.md）
+  「迷ったら上げる。上げ忘れは検査で捕まえる」に改めた（CONTRIBUTING.md・`CacheFormat`・cache-design.md）
 - `test/cacheversion/run.sh` を足した（CI にも足した）
 
 ### Q19. JDT の版をなぜ鍵に入れたのか。`?` はなぜ一致しないとみなすのか
@@ -2302,7 +2302,7 @@ test/demo のキャッシュは 93,359 バイトから 93,441 バイト（J 行 
 - v38（Q65）: 名前の当たりを `java.*` の親型の上まで見ていなかった（`Map.Entry`・`AbstractMap.SimpleEntry`）ので直した
 
 どれも「何を形に入れれば外から見える違いを漏らさないか」を JLS の継承・隠蔽・アクセスの規則から自前で組み直すもので、
-入れ忘れは例外にならず、差分更新の結果が静かに古いまま残る。AGENTS.md の方針（JLS の判定を自前で近似しない、迷ったら
+入れ忘れは例外にならず、差分更新の結果が静かに古いまま残る。CONTRIBUTING.md の方針（JLS の判定を自前で近似しない、迷ったら
 安全側）にも合わない。`TypeShape.java` だけで 246 行あり、`BindingNames`・`FactVisitor`・`CacheUpdater` にも関わる規則が
 散っていた。
 
@@ -4121,7 +4121,7 @@ v43 に上げた（3ed4e79）。書き手が作る事実が変わる:
 読み手だけの変更（Q89 の jarDriven、Q90〜Q97 の選び方、Q115 の `$` の区切り、Q121〜Q125 の一覧と L 行の見張り、R の実装の探し方、M）は、
 それだけなら版に関わらないが、同じ版で入った。S1 のレーン（Q90〜Q97）の書き手の変更は、`test/cacheversion` の題材にその形が無いので記録の指紋を
 変えなかったが、古いキャッシュを再利用すると静かに違う結果になる（例: 旧版の I 行には `import static org.lib.K.*` の K が無い）ので、版を上げる
-理由になる（AGENTS.md の「迷ったら上げる」）。`bash test/cacheversion/run.sh --update` で記録（`test/cacheversion/facts.txt`）を更新した（題材の
+理由になる（CONTRIBUTING.md の「迷ったら上げる」）。`bash test/cacheversion/run.sh --update` で記録（`test/cacheversion/facts.txt`）を更新した（題材の
 `test/jls/project` に節を足したので、題材の指紋も変わった）。回帰テストの期待出力（`expected*/`）は変わっていない。`test/jls/expect.tsv`
 には行を足しただけで、既存の行は変えていない。
 

@@ -457,6 +457,8 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 |---|---|
 | 起動コマンドの全仕様・キャッシュ・うまくいかないとき | [docs/cli.md](docs/cli.md) |
 | 機能別の詳しい使い方・設計の記録・再実装用の仕様 | [docs/README.md](docs/README.md) |
+| 内部の作り（3 フェーズと 3 層、どのクラスを通るか）・用語 | [docs/architecture.md](docs/architecture.md) / [docs/glossary.md](docs/glossary.md) |
+| 開発に参加する（動かす・テスト・コードと文書の決まり） | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ---
 
@@ -954,6 +956,8 @@ The full list of shapes that can and cannot be followed is in section 10 of
 |---|---|
 | The full launcher reference, the cache, troubleshooting | [docs/cli.md](docs/cli.md) (in Japanese) |
 | Detailed guides per feature, design notes, and the spec for reimplementation | [docs/README.md](docs/README.md) (in Japanese) |
+| How it is built inside (3 phases and 3 layers, which classes a run goes through), and the vocabulary | [docs/architecture.md](docs/architecture.md) / [docs/glossary.md](docs/glossary.md) (in Japanese) |
+| Contributing (running it, tests, code and documentation rules) | [CONTRIBUTING.md](CONTRIBUTING.md) (in Japanese) |
 
 ---
 
