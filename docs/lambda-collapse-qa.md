@@ -80,4 +80,4 @@ Eclipse は「メソッド本体の範囲に書いてある呼び出しは、そ
 - 匿名クラスのメソッド（`Outer$1`）は、ソースに書いた型のメソッドなので今までどおり出す
 - Eclipse プラグインと VSCode プラグインの木（`--server` の `TREE`）は別の作りで、まだこの出し方になっていない
 - 実装: `StreamingTreeWalker`（`collapseInto` / `lambdaEntries` / `CollapseSeen`）、`PathFrame#shownId`、
-  `CallHierarchyCsvWriter#formatRow`、`EntryPoints#select`。検査は `bash test/regression/run.sh`（期待値に `lambda$` が無いこと）
+  `CallHierarchyCsvWriter#formatRow`、`EntryPoints#select`。検査は `bash test/regression/run.sh`（期待値に `lambda$` が無いこと）。`test/pruning` と `test/jls` の「ラムダの合成メソッドの行がある」期待は、ラムダの本体の呼び出しが作った（実行する）メソッドの下にあることを見る形に直した

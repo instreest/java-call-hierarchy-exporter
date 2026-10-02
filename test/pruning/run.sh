@@ -2148,7 +2148,7 @@ public class OwnField {
 }
 EOF
 
-case_ resolved:RESOLVED:CALLBACK ThreadArg2 ThreadArg2.main 'ThreadArg2.lambda$main$0' "Thread の 2 番目のコンストラクタ実引数のラムダ（new Thread(group, () -> hit())）も start() の呼び戻し先にする" <<'EOF'
+case_ listed ThreadArg2 ThreadArg2.main ThreadArg2.hit "Thread の 2 番目のコンストラクタ実引数のラムダ（new Thread(group, () -> hit())）の本体の呼び出しが、ラムダを作ったメソッドの下に出る（ラムダの合成メソッドは CSV に出さない）" <<'EOF'
 package pr;
 
 public class ThreadArg2 {
@@ -2489,7 +2489,7 @@ public class OtherInit {
 EOF
 expect_ absent OtherInit.cmp DaoB.find "同上（DaoB の行が無い）"
 
-case_ resolved:RESOLVED:DATAFLOW_LAMBDA OtherLambda OtherLambda.main 'OtherLambda.lambda$new$0' "対照: どのコンストラクタでも同じラムダを入れる final なフィールドは、f.setter.accept でもそのラムダに繋ぐ" <<'EOF'
+case_ listed OtherLambda OtherLambda.go DaoB.find "対照: どのコンストラクタでも同じラムダを入れる final なフィールドは、ラムダが dao を書き換えるので、go の dao.find は DaoB も残す" <<'EOF'
 package pr;
 
 import java.util.function.Consumer;
@@ -2506,7 +2506,6 @@ public class OtherLambda {
     }
 }
 EOF
-expect_ listed OtherLambda.go DaoB.find "同上（ラムダが dao を書き換えるので、go の dao.find は DaoB も残す）"
 
 case_ listed OtherNewArg OtherNewArg.cmp DaoB.find "コンストラクタ実引数を new の実引数に渡しても、new の型（Holder）が決まるだけ。o.h.dao は絞らない" <<'EOF'
 package pr;
@@ -3403,7 +3402,7 @@ expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラス�
 # default を抽象として宣言し直した子インターフェース（@FunctionalInterface）にラムダを渡す形（Issue #176）。
 # 親の型で受けた呼び出し（t.exec()・m.make()）の先は default の鍵で、そこで動くのはラムダ。書き手が M 行を default の鍵でも
 # 書かないと、ラムダの本体への辺が無く、default の戻り値（DaoA）で絞られて動く DaoB.find が落ちる
-case_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl LamRedecl.run 'LamRedecl.lambda$main$0' "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体へ繋ぐ" <<'EOF'
+case_ listed LamRedecl LamRedecl.run LamRedecl.hit "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体（hit()）が、ラムダを実行するメソッドの下に出る" <<'EOF'
 package pr;
 
 interface LrTask { default void exec() { System.out.println("default"); } }
@@ -3423,7 +3422,6 @@ public class LamRedecl {
     static void useUntraced(java.util.List<LrMaker> ms) { ms.get(0).make().find(); }
 }
 EOF
-expect_ resolved:RESOLVED:DATAFLOW_LAMBDA LamRedecl.useMaker 'LamRedecl.lambda$main$1' "同上（LrMaker の型で呼んだ make() もラムダの本体へ繋ぐ）"
 expect_ listed LamRedecl.useMaker DaoB.find "同上（動く実装はラムダの返す DaoB。default の戻り値の DaoA に絞らない）"
 expect_ absent LamRedecl.useMaker DaoA.find "同上（動かない default の戻り値 DaoA.find は出ない）"
 expect_ listed LamRedecl.useUntraced DaoB.find "戻り値: ラムダを追えない受け手（List の要素）でも、ラムダが実装し直している default の戻り値（DaoA）で絞らない"
