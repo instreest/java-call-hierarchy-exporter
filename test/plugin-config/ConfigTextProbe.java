@@ -38,9 +38,62 @@ public final class ConfigTextProbe {
         check("日本語を含むパス", "C:\\ユーザー\\taro\\src");
         check("POSIX のパス", "/home/taro/.m2/repository/org/unbescape/unbescape.jar");
         checkOptionalKeys();
+        checkWorkspaceProjects();
         System.out.println(failures == 0 ? "DONE" : "NG   " + failures + " 件");
         if (failures != 0) {
             System.exit(1);
+        }
+    }
+
+    /**
+     * プラグインが設定ファイルの workspace.projects を読む・書き換える読み方（{@link WorkspaceProjectsConfig}）が、
+     * 解析側の読み手（{@link ConfigFile}。行末の {@code \} と字下げの続き、続きの途中の注釈、次の行が「項目=」なら
+     * 末尾の {@code \} を捨てる）と同じ値を読み、書き換えた結果をそのまま読み戻せること
+     */
+    private static void checkWorkspaceProjects() {
+        String[][] cases = {
+            {"1 行", "project.root=.\nworkspace.projects=../a,../b\nentry.packages=x\n"},
+            {"行末の円記号の続き", "workspace.projects=../a,\\\n    ../b,\\\n../c\nentry.packages=x\n"},
+            {"字下げの続き", "workspace.projects=../a,\n    ../b\nentry.packages=x\n"},
+            {"続きの途中の注釈", "workspace.projects=../a,\\\n# ../x は外した\n    ../b\nentry.packages=x\n"},
+            {"末尾の円記号の次が項目", "workspace.projects=C:\\ws\\a\\\nentry.packages=x\n"},
+            {"無い", "project.root=.\nentry.packages=x\n"},
+        };
+        for (String[] c : cases) {
+            try {
+                java.nio.file.Path file = java.nio.file.Files.createTempFile("jche-ws", ".properties");
+                try {
+                    java.nio.file.Files.writeString(file, c[1], java.nio.charset.StandardCharsets.UTF_8);
+                    java.util.List<String> lines = java.nio.file.Files.readAllLines(file,
+                            java.nio.charset.StandardCharsets.UTF_8);
+                    String expected = ConfigFile.read(file).getProperty("workspace.projects");
+                    String actual = WorkspaceProjectsConfig.valueOf(lines, "workspace.projects");
+                    if (expected == null ? actual != null : !expected.trim().equals(actual.trim())) {
+                        System.out.println("NG   workspace.projects の読み方が解析側と違う（" + c[0] + "）: "
+                                + expected + " / " + actual);
+                        failures++;
+                        continue;
+                    }
+                    // 書き換えて読み戻す。ほかの項目は変わらない
+                    java.util.List<String> replaced = WorkspaceProjectsConfig.replaced(lines, "workspace.projects",
+                            "../p,../q");
+                    java.nio.file.Files.write(file, replaced, java.nio.charset.StandardCharsets.UTF_8);
+                    Properties after = ConfigFile.read(file);
+                    if (!"../p,../q".equals(after.getProperty("workspace.projects"))
+                            || !"x".equals(after.getProperty("entry.packages", "x"))) {
+                        System.out.println("NG   workspace.projects の書き換えを読み戻せない（" + c[0] + "）: "
+                                + after.getProperty("workspace.projects") + " / " + after.getProperty("entry.packages"));
+                        failures++;
+                        continue;
+                    }
+                    System.out.println("OK   workspace.projects " + c[0]);
+                } finally {
+                    java.nio.file.Files.deleteIfExists(file);
+                }
+            } catch (java.io.IOException e) {
+                System.out.println("NG   workspace.projects " + c[0] + ": " + e);
+                failures++;
+            }
         }
     }
 

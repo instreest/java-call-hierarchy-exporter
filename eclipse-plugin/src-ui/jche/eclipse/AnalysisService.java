@@ -141,8 +141,19 @@ public final class AnalysisService {
             return;
         }
         for (ProjectAnalysis analysis : known) {
-            List<IResource> files = changed.get(analysis.project());
-            if (files != null && !files.isEmpty()) {
+            // 設定ファイルの workspace.projects が指すプロジェクト（一緒に解析した相手）の変更も、この解析の ⚠ にする
+            List<IResource> files = new ArrayList<>();
+            List<IResource> own = changed.get(analysis.project());
+            if (own != null) {
+                files.addAll(own);
+            }
+            for (IProject other : analysis.workspaceProjects()) {
+                List<IResource> theirs = changed.get(other);
+                if (theirs != null) {
+                    files.addAll(theirs);
+                }
+            }
+            if (!files.isEmpty()) {
                 analysis.markChanged(files);
             }
         }

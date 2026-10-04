@@ -4,10 +4,14 @@ package jche.eclipse;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.dialogs.TitleAreaDialog;
@@ -32,11 +36,13 @@ import org.eclipse.swt.widgets.Text;
  * 「設定ファイルの source.folders に指定してください」と言われても、そもそも設定ファイルを
  * 書いたことのない利用者には手の出しようがなかった（docs/eclipse-plugin-folders-qa.md の Q5）。
  *
- * <p>そこでここでは 3 つだけできるようにした。
+ * <p>そこでここでは 4 つだけできるようにした。
  * <ol>
  *   <li>いま使っている設定の<b>中身をそのまま見る</b>（自動生成でもファイルでも同じ見え方）</li>
  *   <li>プロジェクトの中にある設定ファイルへ<b>切り替える</b>（自動判定に戻すのも同じ場所）</li>
  *   <li>自動生成の内容を<b>ファイルとして保存して、手で直せるようにする</b></li>
+ *   <li>ワークスペースの参照元・依存先のプロジェクトを<b>設定ファイルの {@code workspace.projects} に書き足す</b>
+ *       （{@link WorkspaceProjectsDialog}）。解析はファイルだけを読むので、画面の状態で解析の範囲は変わらない</li>
  * </ol>
  *
  * <p>ここで値を直接編集させることはしない。項目は解析側の jche.properties と同じで数が多く、
@@ -54,6 +60,7 @@ final class ConfigDialog extends TitleAreaDialog {
     private Combo fileCombo;
     private Text preview;
     private Button saveButton;
+    private Button workspaceButton;
 
     /** OK されたときに適用する選択。null なら自動判定 */
     private IFile chosen;
@@ -156,6 +163,18 @@ final class ConfigDialog extends TitleAreaDialog {
             }
         });
 
+        workspaceButton = new Button(area, SWT.PUSH);
+        workspaceButton.setText(Messages.get("configDialog.workspace"));
+        workspaceButton.setToolTipText(Messages.get("configDialog.workspaceTip"));
+        workspaceButton.setEnabled(EclipseProjectConfig.javaProjectOf(analysis.project()) != null);
+        span(workspaceButton);
+        workspaceButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                addWorkspaceProjects();
+            }
+        });
+
         int index = (chosen == null) ? -1 : candidates.indexOf(chosen);
         autoButton.setSelection(index < 0);
         fileButton.setSelection(index >= 0);
@@ -198,15 +217,25 @@ final class ConfigDialog extends TitleAreaDialog {
 
     /** 自動生成の内容を config/jche.properties として保存し、以降そちらを使う */
     private void saveGenerated() {
+        if (saveGeneratedFile() != null) {
+            setMessage(Messages.get("configDialog.saved"));
+        }
+    }
+
+    /**
+     * 自動生成の内容を config/jche.properties として書き出し、その場で選択済みにする（保存したのに使われない、を避ける）。
+     * 既にあれば案内して null。書けなければエラーを出して null
+     */
+    private IFile saveGeneratedFile() {
         ConfigSource source = ProjectAnalysis.autoConfigSourceOf(analysis.project());
         if (source == null || source.kind() != ConfigSource.Kind.GENERATED) {
-            return;
+            return null;
         }
         IFile target = analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
         if (target.exists()) {
             MessageDialog.openInformation(getShell(), Messages.get("dialog.title"),
                     Messages.format("configDialog.alreadyExists", ProjectAnalysis.PREFERRED_CONFIG_PATH));
-            return;
+            return null;
         }
         try {
             byte[] bytes = EclipseProjectConfig.toFileText(source.generatedProperties())
@@ -219,19 +248,92 @@ final class ConfigDialog extends TitleAreaDialog {
         } catch (CoreException | IOException e) {
             MessageDialog.openError(getShell(), Messages.get("dialog.title"),
                     Messages.format("configDialog.saveFailed", e.getMessage()));
-            return;
+            return null;
         }
-        // 保存したファイルを、この場で選択済みにする（保存したのに使われない、を避ける）
-        candidates.add(target);
-        fileCombo.add(target.getProjectRelativePath().toString());
-        fileCombo.select(fileCombo.getItemCount() - 1);
+        selectFile(target);
+        return target;
+    }
+
+    /** そのファイルを一覧に足して（無ければ）選択済みにし、中身を出す */
+    private void selectFile(IFile target) {
+        if (!candidates.contains(target)) {
+            candidates.add(target);
+            fileCombo.add(target.getProjectRelativePath().toString());
+        }
+        fileCombo.select(candidates.indexOf(target));
         fileCombo.setEnabled(true);
         fileButton.setEnabled(true);
         fileButton.setSelection(true);
         autoButton.setSelection(false);
         chosen = target;
         updatePreview();
-        setMessage(Messages.get("configDialog.saved"));
+    }
+
+    /**
+     * ワークスペースの参照元・依存先を集めて選ばせ、設定ファイルの {@code workspace.projects} に書き足す。
+     *
+     * <p>書く先は、いま選んでいる設定ファイル。自動生成を使っているときは config/jche.properties で、無ければ
+     * ［保存して編集］と同じ手順で先に作る。解析はファイルだけを読むので、ここで書いたものが次の解析から効く
+     * （自動生成の設定には workspace.projects を入れない。ワークスペースを開いただけで全体の解析が走る経路を
+     * 作らないため。docs/workspace-callers-design.md の Q11）。設定ファイルに既にある指定のうち、ワークスペースの
+     * プロジェクトに結び付かないもの（手で書いた外のパス）はそのまま残す
+     */
+    private void addWorkspaceProjects() {
+        List<WorkspaceReferences.Candidate> found = WorkspaceReferences.collect(analysis.project());
+        if (found.isEmpty()) {
+            MessageDialog.openInformation(getShell(), Messages.get("dialog.title"),
+                    Messages.format("workspaceDialog.none", analysis.project().getName()));
+            return;
+        }
+        IFile target = (chosen != null) ? chosen : analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
+        List<WorkspaceProjectsConfig.Entry> existing = new ArrayList<>();
+        Set<IProject> already = new HashSet<>();
+        if (target.exists()) {
+            try {
+                existing = WorkspaceProjectsConfig.resolve(target);
+            } catch (CoreException | IOException e) {
+                MessageDialog.openError(getShell(), Messages.get("dialog.title"),
+                        Messages.format("workspaceDialog.readFailed", target.getProjectRelativePath(), e.getMessage()));
+                return;
+            }
+            for (WorkspaceProjectsConfig.Entry entry : existing) {
+                if (entry.project != null) {
+                    already.add(entry.project);
+                }
+            }
+        }
+        WorkspaceProjectsDialog dialog = new WorkspaceProjectsDialog(getShell(), analysis.project(), found, already);
+        if (dialog.open() != OK) {
+            return;
+        }
+        if (!target.exists()) {
+            target = saveGeneratedFile();
+            if (target == null) {
+                return;
+            }
+        }
+        List<IProject> picked = new ArrayList<>(dialog.selected());
+        List<String> entries = new ArrayList<>();
+        for (WorkspaceProjectsConfig.Entry entry : existing) {
+            if (entry.project == null) {
+                entries.add(entry.raw);              // ワークスペースの外を指す指定。触らない
+            } else if (picked.remove(entry.project)) {
+                entries.add(entry.raw);              // 既にあって、まだ選ばれている
+            }
+        }
+        for (IProject project : picked) {
+            entries.add(WorkspaceProjectsConfig.entryFor(target, project));
+        }
+        try {
+            WorkspaceProjectsConfig.write(target, entries);
+        } catch (CoreException | IOException e) {
+            MessageDialog.openError(getShell(), Messages.get("dialog.title"),
+                    Messages.format("workspaceDialog.writeFailed", target.getProjectRelativePath(), e.getMessage()));
+            return;
+        }
+        selectFile(target);
+        setMessage(Messages.format("workspaceDialog.written", Integer.valueOf(entries.size()),
+                target.getProjectRelativePath()));
     }
 
     @Override

@@ -114,6 +114,11 @@ public final class ProjectAnalysis {
     /** サーバーの素性（JDT の版・JVM の版・解析できる Java の上限） */
     private volatile ServerResponse serverInfo;
 
+    /** 設定ファイルの workspace.projects の読み取りの手元（ファイルと更新の印が同じなら読み直さない） */
+    private volatile List<WorkspaceProjectsConfig.Entry> workspaceEntries = new ArrayList<>();
+    private volatile IFile workspaceEntriesFile;
+    private volatile long workspaceEntriesStamp = -1;
+
     /** 解析後に変わったソースの、プロジェクトからの相対パス */
     private final Set<String> changedFiles = new TreeSet<>();
 
@@ -232,6 +237,44 @@ public final class ProjectAnalysis {
             return false;
         }
         return false;
+    }
+
+    /**
+     * いまの設定ファイルの {@code workspace.projects}（一緒に解析するワークスペースの他のプロジェクト）。
+     * 自動生成の設定を使っているときは空（自動生成には入れない）。ファイルの更新の印が同じあいだは読み直さない
+     * （資源の変更のたびに呼ばれるため）。読めなければ空
+     */
+    public List<WorkspaceProjectsConfig.Entry> workspaceEntries() {
+        ConfigSource source = configSource();
+        if (source == null || source.kind() != ConfigSource.Kind.FILE) {
+            return new ArrayList<>();
+        }
+        IFile file = source.file();
+        long stamp = file.getModificationStamp();
+        if (file.equals(workspaceEntriesFile) && stamp == workspaceEntriesStamp) {
+            return workspaceEntries;
+        }
+        List<WorkspaceProjectsConfig.Entry> entries;
+        try {
+            entries = WorkspaceProjectsConfig.resolve(file);
+        } catch (CoreException | IOException | RuntimeException e) {
+            entries = new ArrayList<>();
+        }
+        workspaceEntries = entries;
+        workspaceEntriesFile = file;
+        workspaceEntriesStamp = stamp;
+        return entries;
+    }
+
+    /** {@link #workspaceEntries} のうち、ワークスペースのプロジェクトに結び付いたもの */
+    public List<IProject> workspaceProjects() {
+        List<IProject> out = new ArrayList<>();
+        for (WorkspaceProjectsConfig.Entry entry : workspaceEntries()) {
+            if (entry.project != null && !out.contains(entry.project)) {
+                out.add(entry.project);
+            }
+        }
+        return out;
     }
 
     /** 利用者が明示的に選んだ設定ファイル。null に戻すと自動判定に戻る */
