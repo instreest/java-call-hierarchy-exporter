@@ -33,11 +33,11 @@ test('複数あれば候補を返し、覚えていればそれを使う', () =>
     const root = scratch();
     writeFileSync(path.join(root, 'b.properties'), '');
     writeFileSync(path.join(root, 'jche.properties'), '');
-    writeFileSync(path.join(root, 'config.properties'), '');   // 以前の名前。jche.properties の次に出す
+    writeFileSync(path.join(root, 'config.properties'), '');   // 以前の名前。特別扱いせず名前順に並ぶ
     writeFileSync(path.join(root, 'a.properties'), '');
     mkdirSync(path.join(root, 'dir.properties'));   // フォルダは候補に入れない
     assert.deepEqual(findConfigFiles(root).map((f) => path.basename(f)),
-        ['jche.properties', 'config.properties', 'a.properties', 'b.properties']);
+        ['jche.properties', 'a.properties', 'b.properties', 'config.properties']);
     const undecided = resolveConfigSource(root, undefined, undefined);
     assert.equal(undecided.source, undefined);
     assert.equal(undecided.choices?.length, 4);

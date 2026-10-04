@@ -39,7 +39,7 @@ import org.eclipse.swt.widgets.Text;
  *   <li>自動生成の内容を<b>ファイルとして保存して、手で直せるようにする</b></li>
  * </ol>
  *
- * <p>ここで値を直接編集させることはしない。項目は解析側の config.properties と同じで数が多く、
+ * <p>ここで値を直接編集させることはしない。項目は解析側の jche.properties と同じで数が多く、
  * 中途半端な編集欄を作るよりは「保存してエディタで開く」ほうが分かりやすい。
  */
 final class ConfigDialog extends TitleAreaDialog {

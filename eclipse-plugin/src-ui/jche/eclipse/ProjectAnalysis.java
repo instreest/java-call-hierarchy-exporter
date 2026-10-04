@@ -91,16 +91,13 @@ public final class ProjectAnalysis {
     /**
      * 自動的に使う設定ファイル。前にあるものほど優先する。
      *
-     * 本体が設定を config/ に置くようになったので、そちらを先に見る。名前は jche.properties を
-     * 優先する。config.properties は解析対象のプロジェクトが自前の設定に使っていることがあり、
-     * それをこのツールの設定と取り違えないようにするため（既にこの名前で置いている人のために、
-     * 読む側では今までどおり候補に残す）。
+     * 本体が設定を config/ に置くようになったので、そちらを先に見る。名前は jche.properties だけで、以前の名前の
+     * config.properties は自動では見ない（解析対象のプロジェクトが自前の設定に使っていることがあり、それを
+     * このツールの設定と取り違えないようにするため。その名前で置いている人は［解析に使う設定…］で選べば使える）。
      */
     private static final String[] DEFAULT_CONFIG_PATHS = {
         PREFERRED_CONFIG_PATH,
-        "config/config.properties",
         "jche.properties",
-        "config.properties",
     };
 
     private final AnalysisService service;
@@ -205,8 +202,8 @@ public final class ProjectAnalysis {
     /**
      * このツールの設定ファイルらしいか。
      *
-     * {@code config.properties} は解析対象のプロジェクトが自前の設定に使っていることがあるので、
-     * 名前だけで自動採用はしない（利用者が「使う設定ファイルを選ぶ…」で明示したものは、この判定を通さない）。
+     * 名前が {@code jche.properties} でも中身が別物（空のひな形・他のツールの設定）なら自動採用しない
+     * （利用者が「使う設定ファイルを選ぶ…」で明示したものは、この判定を通さない）。
      * 読めないときは false（誤って別物を掴むより、自動生成の設定で動くほうが害が小さい）。
      */
     private static boolean looksLikeJcheConfig(IFile file) {

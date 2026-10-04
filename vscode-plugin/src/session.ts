@@ -12,9 +12,9 @@ import { bundledClasspath, launchServer } from './server/launcher';
 import type { ServerResponse } from './server/response';
 import { currentLanguage, t } from './messages';
 
-/** 設定ファイルとして扱う名前（変わったら差分ではなく全体を作り直す）。以前の名前も見る */
+/** 設定ファイルとして扱う名前（変わったら差分ではなく全体を作り直す）。以前の名前の config.properties は見ない */
 function isConfigName(name: string): boolean {
-    return name === 'jche.properties' || name === 'config.properties';
+    return name === 'jche.properties';
 }
 
 /**

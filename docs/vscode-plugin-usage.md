@@ -147,7 +147,7 @@ app.Order.status   Order.java                            ← フィールド（�
 
 ## 設定ファイル
 
-ワークスペースフォルダ直下に `jche.properties` があればそれを使う（以前の名前の `config.properties` も。複数の `*.properties` があれば選ばせ、覚える）。
+ワークスペースフォルダ直下に `jche.properties` があればそれを使う（複数の `*.properties` があれば選ばせ、覚える。以前の名前の `config.properties` に特別な扱いは無い）。
 無ければ **`project.root` だけの設定を自動生成**し、ソースフォルダ・依存 jar・文字コードはプロジェクトの中身
 （`pom.xml` / `build.gradle` / フォルダ構成）から決める（[build-tool-classpath.md](build-tool-classpath.md)）。
 
