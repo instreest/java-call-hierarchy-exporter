@@ -4,6 +4,7 @@
 #
 #   bash test/incremental/run.sh
 #   JCHE_CP="build/classes:依存jar..." bash test/incremental/run.sh   # コンパイル済みの classpath を使う
+#   bash test/incremental/run.sh --shard 2/4                        # 節を 4 つに割った 2 つ目だけ（CI が並列に回す。下記）
 #
 # 期待出力（expected*/）は持たない。同じソースに対する 2 通りの解析が一致するかだけを見るので、
 # 期待値の更新が要らず、「差分更新だけ結果が違う」という取りこぼしをそのまま検出できる。
@@ -39,12 +40,45 @@
 # 解析対象は src/ を work/ に複製したもので、書き換えるのは複製だけ（作業ツリーは汚さない）。
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
 # （test/dataflow/run.sh・test/conditions/run.sh と同じ経路）。
+#
+# 節と分割実行（--shard K/N）:
+#   ケースは節に分かれている（`if section "見出し"; then … fi` で囲んだ範囲。見出しは下の # --- の区切りに合わせてあり、
+#   長い区切りは途中で割っている）。節の中のケースは前のケースの結果を使うことがある（解析し直した件数を比べる、
+#   同じ題材の jar を使う）が、節どうしは独立で、どの節も work/・.cache・out を作り直してから始める。
+#   --shard K/N を付けると、節を現れる順に 1 から数えて (番号 - 1) % N == K - 1 の節だけを動かす。1 ケースが本体の
+#   起動 3 回（全件解析 → 差分更新 → 全件解析）で 100 件を超えるので、直列だと 9 分近くかかる。CI はこれで 4 つの
+#   ジョブに分けて並列に回す（.github/workflows/smoke.yml の incremental ジョブ）。節の中の順・比較は 1 本で回すときと
+#   同じで、変わるのは「どの節を動かすか」だけ。どの節を動かし、どの節を飛ばしたかは「-- 節 n:」の行に出すので、
+#   全シャードの出力を合わせれば全部の節が 1 回ずつ動いたことを追える。
+#   節をまたいで使う関数（jfile・jsrc・lib_jar・integrity_run など）と、節のあとでも参照する変数は囲みの外に置く
+#   （囲みの中で定義すると、その節を飛ばしたシャードで未定義になる）。節を足すときはこの決まりに従う。
 set -uo pipefail
 cd "$(dirname "$0")"
 # 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 fail=0
+
+SHARD_K=1; SHARD_N=1
+if [ "${1:-}" = "--shard" ]; then
+    if [[ ! "${2:-}" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] || [ "${BASH_REMATCH[1]}" -gt "${BASH_REMATCH[2]}" ]; then
+        echo "使い方: bash test/incremental/run.sh [--shard K/N]（1 <= K <= N）"; exit 2
+    fi
+    SHARD_K=${BASH_REMATCH[1]}; SHARD_N=${BASH_REMATCH[2]}
+elif [ -n "${1:-}" ]; then
+    echo "使い方: bash test/incremental/run.sh [--shard K/N]"; exit 2
+fi
+SECTION_NO=0; SECTIONS_RUN=0
+section() {   # $1=見出し。この節をこのシャードで動かすなら 0 を返す（if section "見出し"; then … fi で囲む）
+    SECTION_NO=$((SECTION_NO + 1))
+    if [ $(( (SECTION_NO - 1) % SHARD_N )) = $((SHARD_K - 1)) ]; then
+        SECTIONS_RUN=$((SECTIONS_RUN + 1))
+        echo "-- 節 $SECTION_NO: $1"
+        return 0
+    fi
+    echo "-- 節 $SECTION_NO: $1（シャード $SHARD_K/$SHARD_N では飛ばす）"
+    return 1
+}
 
 if [ -n "${JCHE_CP:-}" ]; then
     CP="$JCHE_CP"
@@ -336,6 +370,7 @@ case_of() {   # $1=ラベル  $2=書き換えるコマンド  $3=事実（F行�
     fi
 }
 
+if section "2 段の定数・注釈の既定値・列挙定数・同じ行に並ぶ宣言"; then
 # 2 段の定数。Base だけを書き換える。Client / Branch は Base を参照する型として持っていないが、
 # Names / Switches 経由で値が焼き込まれているので、連鎖して解析し直されなければ古い結果が残る
 case_of "2段の定数（具象クラスと条件分岐）" \
@@ -399,6 +434,7 @@ if [ -n "${OUT:-}" ] && [ -f "$OUT/methods.csv" ]; then
         echo "  NG   同じ行のメソッドとラムダの起点の並びが期待と違います（$same_line_roots）"; fail=1
     fi
 fi
+fi   # -- 2 段の定数・注釈の既定値・列挙定数・同じ行に並ぶ宣言
 
 # --- 別のファイルの変化が I 行に載らない依存 ---------------------------------
 # 次のケースは、書き換えたファイルを I 行に持たないファイルの事実が、全件解析では変わるもの。
@@ -411,6 +447,7 @@ jfile() {   # $1=work/src からの相対パス。本文は標準入力
     cat > "work/src/$1"
 }
 
+if section "I 行に載らない依存（無かった型・祖父母の型・ラムダの目標・隠蔽・宣言にだけ書いた型）"; then
 # 無かった型のソースを後から足す。JDT は無い型の名前にバインディングを返さないので、参照していた側の
 # I 行には載らない（コンパイルエラーか BINDING_FAILED として残る）。git stash / checkout で消えて戻る場合も同じ
 setup_missing_type() {
@@ -607,7 +644,9 @@ edit_decl_only() {
     rm -f work/src/dec/Dao.java work/src/dec/DecEx.java
 }
 case_of "宣言にだけ書いた型を消す" edit_decl_only yes setup_decl_only
+fi   # -- I 行に載らない依存（無かった型・祖父母の型・ラムダの目標・隠蔽・宣言にだけ書いた型）
 
+if section "I 行に載らない依存（部分型のパスの並び・式の型や型引数にだけ現れる型・フィールドの隠蔽）"; then
 # 親型の連鎖は処理の順に依らない。部分型（D・A）のパスが親（E・I2）より前に並ぶので、同じ周回で親より先に
 # 解析し直される。そのときに「親が変わった型か」を見ると、まだ親が変わった型に入っていないので連鎖せず、
 # 部分型の利用者（U）が古いまま残る（docs/cache-unification-qa.md の Q44）。今は、変わった型の部分型を H 行から作る
@@ -847,7 +886,9 @@ edit_field_hide() {
     sed -i 's/public class B extends P { }/public class B extends P { public int count; }/' work/src/fhd/B.java
 }
 case_of "式の型に親のフィールドを隠すフィールドを足す" edit_field_hide yes setup_field_hide
+fi   # -- I 行に載らない依存（部分型のパスの並び・式の型や型引数にだけ現れる型・フィールドの隠蔽）
 
+if section "I 行に載らない依存（新しい型と型階層・Doma・親の付け替え）"; then
 # 型解決に失敗しているブロック（Fail・Caller2）は、何かが変わった実行では名前を照合せず必ず解析し直す。
 # 新しいトップレベルの型（Foo2）ができたパッケージ（ntn）のブロックは、I 行に何かあれば解析し直す（名前の隠蔽。
 # どの名前が隠されるかは見ない）。入れ子の型を足すと型階層（H 行）が変わるので、残りをすべて解析し直す（安全網）。
@@ -1010,7 +1051,9 @@ if [ "$INC_PARSED" = "$hn_total" ] && grep -q -F "type hierarchy" inc.log; then
 else
     echo "  NG   親を付け替えたのに全件になっていません（新規解析=$INC_PARSED。期待は $hn_total）"; fail=1
 fi
+fi   # -- I 行に載らない依存（新しい型と型階層・Doma・親の付け替え）
 
+if section "I 行に載らない依存（依存 jar が無いときのバッチ・選ばれなかったオーバーロード・親型の本体）"; then
 # 依存 jar が無いときの事実がバッチの組み方に依らない（docs/cache-unification-qa.md の Q79）。JDT は、無いパッケージの
 # 名前を回復するために作った型を、同じバッチの中で使い回す。型の文脈で org.missing.pkg.Type と書いた A1Type が同じ
 # バッチで先に解析されると、式の中の org.missing.pkg.Type.staticCall()（B2Expr）は「org.missing.pkg.Type cannot be
@@ -1125,10 +1168,12 @@ edit_body_only() {
     sed -i 's/println(1)/println(2)/' work/src/bod/Base.java
 }
 case_of "親型のメソッドの本体だけを変える" edit_body_only yes setup_body_only
+fi   # -- I 行に載らない依存（依存 jar が無いときのバッチ・選ばれなかったオーバーロード・親型の本体）
 
 # --- 型の形をやめたあとのレビューで見つかった取りこぼし（docs/cache-unification-qa.md の Q83〜Q87）--------
 # どれも 1cba882 では「差分更新と全件解析が違う」で落ちる
 
+if section "型の形をやめたあとの取りこぼし（宣言の型の隠蔽・jar の親の親・jar とソースの変化の重なり）"; then
 # 中身の変わっていないファイルの宣言が変わる。p.X は import q.* の Foo を宣言に使っていたが、同じパッケージに足した
 # p.Foo に隠される（JLS 6.4.1）。X は新しい p.Foo の単純名を I 行に持つので解析し直すが、中身は変わっていないので、
 # 以前は定数の値が変わったときにしか X の型を変わった型にせず、X だけを使う r.U（q.Foo を渡す x.m(f)・x.f.run()・
@@ -1223,7 +1268,9 @@ case_of "jar の親の親の変化と、同じファイルのオンデマンド 
     yes setup_jar_chain_and_star
 case_of "jar の親の親の変化だけ（同じファイルがコンパイルエラーのあるファイルを使う）" \
     "make_chain_jars 'public void m(String s) { }'" yes setup_jar_chain_and_error
+fi   # -- 型の形をやめたあとの取りこぼし（宣言の型の隠蔽・jar の親の親・jar とソースの変化の重なり）
 
+if section "型の形をやめたあとの取りこぼし（型引数にだけ現れる型・jar のパッケージと同じ名前の型）"; then
 # 型引数にだけ現れる型の親を変える。Foo extends Bar をやめると、U1〜U4 の解決が変わる。どのファイルのソースにも
 # Foo は無い（式の型の型引数 List<Foo>・Box<Foo> と、ArrayList<Foo> の add(int, E) の E）。以前は式の型を消去で
 # 数えていたので List・Box しか I 行に無く、java.* の型が宣言する候補（ArrayList の add）は見ていなかった。
@@ -1280,6 +1327,7 @@ setup_pkg_type() {
 }
 case_of "jar のパッケージ a.b と同じ名前の型 a.b をソースに足す" \
     "printf 'package a;\npublic class b { }\n' > work/src/a/b.java" yes setup_pkg_type
+fi   # -- 型の形をやめたあとの取りこぼし（型引数にだけ現れる型・jar のパッケージと同じ名前の型）
 
 # --- 8 回目のレビューで見つかった、パッケージ・jar・解析の失敗の取りこぼし ----------------------------
 # どれも 40b235e では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q90〜）
@@ -1297,6 +1345,7 @@ jsrc() {   # $1=jarsrc からの相対パス。本文は標準入力
     cat > "jarsrc/$1"
 }
 
+if section "パッケージ・jar・解析の失敗の取りこぼし（static import・入れ子の型・唯一の下のパッケージ・package-info）"; then
 # jar の型のメンバーを持ち込む import（import static org.lib.K.*）。I 行には org.lib.K.* と載るが、変わった jar の
 # パッケージ org.lib とは名前が一致しないので、K が foo(String) を足しても X を解析し直さず、a.A.foo(Object) の
 # 呼び出しのまま残った（全件解析は K.foo(String) を選ぶ）
@@ -1394,6 +1443,7 @@ edit_package_info_jar() {
 }
 case_of "package-info.java のオンデマンド import を jar が同じパッケージに足した型が隠す" \
     edit_package_info_jar yes setup_package_info_jar
+fi   # -- パッケージ・jar・解析の失敗の取りこぼし（static import・入れ子の型・唯一の下のパッケージ・package-info）
 
 # --- Issue #171: JDT（java.util.zip.ZipFile）が受け付けない壊れ方の jar ---------------------------------------
 # ZipDirectory（ファイルのバイトから読む目次）は ZipFile の検査の一部（圧縮方式・暗号化の印・終わりの記録のコメント長・
@@ -1401,6 +1451,7 @@ case_of "package-info.java のオンデマンド import を jar が同じパッ�
 # 「依存 jar を読めません」の警告が出ず、同じ目次（名前・大きさ・CRC）の正しい jar に直しても指紋が変わらず、差分更新は
 # BINDING_FAILED とコンパイルエラーのまま残った。今は指紋を作る前に ZipFile で開いて閉じ、開けなければ読めない jar の
 # 道（警告・空の指紋＝毎回変わった扱い）に乗せる（docs/cache-dependency-jars-qa.md の Q22）
+if section "Issue #171: JDT が受け付けない壊れ方の jar"; then
 break_jar() {   # $1=元の jar  $2=書き出す jar  $3=壊し方（method / encrypted / comment / entcomment）。目次の名前・大きさ・CRC は変えない
     python3 - "$1" "$2" "$3" <<'PY'
 import struct, sys
@@ -1456,6 +1507,7 @@ for kind in method encrypted comment entcomment; do
     case_of "JDT の読めない jar（$kind）を、同じ目次の正しい jar に直す" edit_broken_jar yes "setup_broken_jar $kind"
 done
 rm -f good-bj.jar
+fi   # -- Issue #171: JDT が受け付けない壊れ方の jar
 
 # --- Issue #179: 解決できない型が絡む結果は JDT の処理順（createASTs に渡した順）で変わる -------------------------
 # 全件解析はソースの一覧の順に渡すが、パス3・4 の一覧は旧キャッシュのブロックの順（差分更新のたびに動く）だったので、
@@ -1463,6 +1515,7 @@ rm -f good-bj.jar
 # docs/cache-unification-qa.md の Q137）
 # 症状 1: 戻り値の型が無いパッケージを参照するメソッドの有無。JDT は Helper を先に解決すると run の宣言のバインディングを
 # 捨て（BINDING_FAILED）、User を先に解決すると残す（RESOLVED）。User を先に書き換えてブロックを先頭に動かしてから l1 を消す
+if section "Issue #179: 解析し直す順に依らない"; then
 setup_order_return() {
     printf 'package l1.q;\npublic class Base2<T> { }\n' | jfile l1/q/Base2.java
     printf 'package b;\npublic interface Helper { default l1.q.Base2<String> run(Object p0) { return null; } }\n' \
@@ -1490,11 +1543,13 @@ edit_order_overload() {
     printf '// touched\n' >> work/src/a/Base.java
 }
 case_of "無い型を引数に持つ候補と継承した候補のどちらを選ぶかが、解析し直す順に依らない" edit_order_overload no setup_order_overload
+fi   # -- Issue #179: 解析し直す順に依らない
 
 # --- Issue #180: 差分更新の取りこぼし（軽いもの） ---------------------------------------------------------------
 # 1. package-info.java に宣言したクラス（JLS 7.4.1 は推奨しないだけで、書ける）の解析が失敗しても（1 万段の呼び出しで JDT が
 #    溢れる）、そのパッケージが中身の分からないパッケージにならなかった（CacheUpdater#declaresNoType がファイル名だけで
 #    「型を宣言しない」と決めていた）。get() の戻り値を変えても・ファイルを消しても、U を再利用して U.go → A.run のままだった
+if section "Issue #180: 差分更新の取りこぼし（package-info のクラス・壊れたブロックの H 行・型引数の上限・型と衝突するパッケージ）"; then
 setup_pkginfo_class() {
     {
         printf 'package p;\nclass Helper {\n    static A get() { return new A(); }\n    String chain() {\n        return new StringBuilder()'
@@ -1563,7 +1618,9 @@ setup_collision_vanish() {
     printf 'package a.b;\npublic class C { public static void k() { } }\n' | jfile a/b/C.java
 }
 case_of "型と衝突していたパッケージを消す" "rm -rf work/src/a/b" yes setup_collision_vanish
+fi   # -- Issue #180: 差分更新の取りこぼし（package-info のクラス・壊れたブロックの H 行・型引数の上限・型と衝突するパッケージ）
 
+if section "Issue #180: 差分更新の取りこぼし（型と同じ名前のパッケージの jar・jar の無名パッケージ）"; then
 # jar がパッケージ a.b を足す・消す。ソースの型 a.b のファイルの衝突のエラーが出る・消える
 setup_collision_jar() {
     rm -rf jarsrc
@@ -1610,7 +1667,9 @@ edit_unnamed_shadow() {
 }
 case_of "jar が無名パッケージに java.lang の型を隠すクラスを足す" edit_unnamed_shadow yes setup_unnamed_shadow
 rm -rf jarsrc
+fi   # -- Issue #180: 差分更新の取りこぼし（型と同じ名前のパッケージの jar・jar の無名パッケージ）
 
+if section "Issue #180: 差分更新の取りこぼし（解析に失敗するファイルの型・完全修飾名の頭の隠蔽）"; then
 # 解析に失敗するファイル（JDT のスタックが溢れる深い式。Q62）の型。ブロックを書かないので H 行が無く、書き換えても・
 # 消しても、その型を使うファイルを解析し直さなかった。今は印のブロックを書き、そのパッケージを中身の分からない
 # パッケージ（変わった jar のパッケージと同じ扱い）にする
@@ -1687,11 +1746,13 @@ setup_qualified_head_failing() {
 }
 case_of "解析に失敗するファイルに足した型が完全修飾名の頭を隠す" "deep_base_after 'class a { }'" yes \
     setup_qualified_head_failing
+fi   # -- Issue #180: 差分更新の取りこぼし（解析に失敗するファイルの型・完全修飾名の頭の隠蔽）
 
 # --- 3 回目のレビューで見つかった、I 行と型の形に載っていなかった依存 ---------------------
 # どれも 52453ae では「差分更新と全件解析が違う」で落ちる（docs/cache-unification-qa.md の Q51〜Q54）。
 # 型の形はやめた（Q77）が、同じ書き換えで差分更新が全件解析と同じであることを見続ける
 
+if section "I 行と型の形に載っていなかった依存（可変長引数・拡張 for・switch・検査例外・アノテーション・可視性・jar・sealed）"; then
 # 祖父母の型のメソッドを可変長引数にする。m(int[]) と m(int...) はキーが同じなので、型の形にも入っていなかった。
 # U の d.m(1, 2) は D#m(long) の BINDING_FAILED から F#m(int[]) への呼び出しに変わる（JLS 15.12.2.4）
 setup_varargs() {
@@ -1922,12 +1983,14 @@ public record A3() implements A { }
 EOF
 }
 case_of "sealed の permits に部分型を足す（switch の網羅性）" edit_sealed yes setup_sealed
+fi   # -- I 行と型の形に載っていなかった依存（可変長引数・拡張 for・switch・検査例外・アノテーション・可視性・jar・sealed）
 
 # --- 親型の私的メンバー（docs/cache-unification-qa.md の Q51・Q77）--------------------------------
 # 親型に足した私的メンバーのうち、親の親のメンバーと名前の当たるものは、部分型から親のメンバーを隠す・継承を止めるので、
 # 部分型 C だけを参照する X の解決が変わる（X は P を参照していない）。以前は型の形にこれらの私的メンバーだけを入れて
 # 連鎖させていた。今は P が変われば部分型 C も変わった型になるので、何を足しても X を解析し直す。
 # 題材: G <- P <- C（別ファイル）、X は別のパッケージ
+if section "親型の私的メンバー（親の親のメンバーを隠す）"; then
 setup_private_base() {
     jfile prv/G.java <<'EOF'
 package prv;
@@ -2083,7 +2146,9 @@ case_of "親インターフェースの default メソッドと同じ名前の�
     "edit_private_iface m" yes setup_private_iface
 # 名前の当たらない私的メソッド。以前は実装する型の利用者（X）へは連鎖しないこと（I2・K・E の 3 件）も見ていた（Q77）
 case_of "名前の当たらない私的なインターフェースのメソッドを足す" "edit_private_iface helper" yes setup_private_iface
+fi   # -- 親型の私的メンバー（親の親のメンバーを隠す）
 
+if section "親型の私的メンバー（java.* の親型の上を隠す）"; then
 # 私的メンバーが隠すのは、java.* の親型のさらに上のメンバーでもよい（docs/cache-unification-qa.md の Q65）。
 # Registry extends HashMap の私的な入れ子の型 Entry は、HashMap ではなく Map が宣言する Map.Entry を隠す（JLS 8.5）。
 # 部分型 Client の単純名 Entry は、継承した Map.Entry から同じパッケージの pjd.Entry に変わる。Client は Registry を
@@ -2154,6 +2219,7 @@ EOF
 }
 case_of "java.* の親型の上（AbstractMap.SimpleEntry）を隠す私的な入れ子の型を足す" \
     "sed -i 's/^}$/    private static class SimpleEntry { }\n}/' work/src/pjs/Base.java" yes setup_jdk_hide_simple
+fi   # -- 親型の私的メンバー（java.* の親型の上を隠す）
 
 # --- 別のファイルからのフィールドへの書き込み（J 行は書いた側のブロックに載る） ------------------------
 # private でないフィールドには、別のファイルの型（子クラスのコンストラクタなど）からも書ける。その J 行は書いた側の
@@ -2161,6 +2227,7 @@ case_of "java.* の親型の上（AbstractMap.SimpleEntry）を隠す私的な�
 # ソースが引数でない値を入れるフィールドを DI の段 5 で唯一の Bean に絞らない（docs/spring-di-qa.md の Q15）。
 # 書き手のファイルを足す・書き換える・消すと、宣言した側のブロックは再利用のまま結論だけが変わる。全件解析と同じになること。
 # inc.Main から ow.Svc.go を呼んで、call-hierarchy.csv にも結論（SPRING_DI か CHA か）が出るようにする
+if section "別のファイルからのフィールドへの書き込み"; then
 setup_other_writer() {
     sed -i 's/new Awkward().separators();/new Awkward().separators();\n        ow.Svc.entry();/' work/src/inc/Main.java
     jfile ow/Service.java <<'EOF'
@@ -2256,11 +2323,13 @@ other_writer_outcome di "書き込みを消した"
 case_of "別のファイルの子クラスが private でないフィールドに new を書く（書き手のファイルを消す）" \
     "rm work/src/ow/Sub.java" yes "setup_other_writer; write_other_writer"
 other_writer_outcome di "書き手のファイルを消した"
+fi   # -- 別のファイルからのフィールドへの書き込み
 
 # --- 親クラスの連鎖（H 行の 7 列目）を変える --------------------------------------
 # 実装は親クラスの連鎖を根まで見てから親インターフェースを見て探す（JLS 8.4.8・JVMS 5.4.6。MethodSelection#implementationOf）。
 # 連鎖は H 行が「ソース上の型に当たるまで」だけ持ち、その先はその型自身の H 行から続けるので、中間のクラス（Mid）が
 # 親をやめても、変わらない子（Impl）の H 行は書き直さなくてよい。差分更新と全件解析で同じ実装に行くことを見る
+if section "親クラスの連鎖（H 行の 7 列目）"; then
 setup_class_chain() {
     sed -i 's/new Awkward().separators();/new Awkward().separators();\n        cc.Use.go();/' work/src/inc/Main.java
     jfile cc/Base.java <<'EOF'
@@ -2323,12 +2392,14 @@ case_of "親クラスの連鎖を変える（中間のクラスが親を持つ�
     "sed -i 's/public class Mid {/public class Mid extends Base {/' work/src/cc/Mid.java" yes \
     "setup_class_chain; sed -i 's/public class Mid extends Base {/public class Mid {/' work/src/cc/Mid.java"
 class_chain_outcome Base.m "中間のクラスが親を持った"
+fi   # -- 親クラスの連鎖（H 行の 7 列目）
 
 # --- 継承した実装（H 行の 8 列目）を変える ------------------------------------------
 # class UserRepo extends Mid implements Repo<User> で、親クラスから継承した save(User) が Repo<User>.save(T) を
 # 実装する関係は UserRepo の H 行が持つ（OverrideFacts#inheritedImplementationsOf）。UserRepo.java が変わらなくても、
 # 親の親（Base）や親インターフェースの親（Saver）だけを書き換えれば関係が変わる。変わった型の部分型が変わった型に
 # なる決まりで UserRepo.java を解析し直し、差分更新と全件解析で同じ実装に行くことを見る
+if section "継承した実装（H 行の 8 列目）"; then
 setup_inherited_impl() {
     sed -i 's/new Awkward().separators();/new Awkward().separators();\n        ii.Use.go();/' work/src/inc/Main.java
     jfile ii/User.java <<'EOF'
@@ -2414,11 +2485,13 @@ case_of "継承した実装を変える（親インターフェースの親に�
     "sed -i 's/void save(T t);/void save(T t);\n\n    void flush(T t);/' work/src/ii/Saver.java; sed -i 's/r.save(new User());/r.save(new User());\n        r.flush(new User());/' work/src/ii/Use.java" \
     yes setup_inherited_impl
 inherited_impl_outcome Root.flush "親インターフェースの親（Saver）に flush を足した"
+fi   # -- 継承した実装（H 行の 8 列目）
 
 # --- try-with-resources の close() の呼び出し先（C 行）が親クラスの宣言に依る ---------------
 # 資源の型 Res のメンバの close() は親クラスの連鎖から先に引く（ImplicitCalls#findNoArgMethod。JLS 8.4.8）。
 # 中間のクラス Mid に close() を足すと、Use.java は変わらなくても C 行の呼び出し先が Base#close から Mid#close に
 # 変わる。Res が変わった型の部分型になるので Use.java を解析し直し、差分更新と全件解析で同じになることを見る
+if section "try-with-resources の close() の呼び出し先"; then
 setup_twr_chain() {
     sed -i 's/new Awkward().separators();/new Awkward().separators();\n        tw.Use.go();/' work/src/inc/Main.java
     jfile tw/Base.java <<'EOF'
@@ -2462,11 +2535,13 @@ else
     echo "  NG   中間のクラスに足した close() に try-with-resources から届きません"
     grep -a '^at tw\.Use\.go(' "$OUT/call-hierarchy.csv" | head -3; fail=1
 fi
+fi   # -- try-with-resources の close() の呼び出し先
 
 # --- 暗黙の super()・継承したメソッドの突き合わせ・sealed の家族・アノテーション型・サロゲートの定数 ---------
 # 暗黙の super()（既定のコンストラクタと、this(...) も super(...) も書かないコンストラクタ）は AST に節が無い。
 # 書いた super() と同じく、呼び出し先の throws の型と、候補（親のコンストラクタすべて）の引数の型を I 行に数える
 # （TypeContextTracker#recordImplicitSuper）。S1 は既定のコンストラクタ、S2 は super() を書かないコンストラクタ
+if section "暗黙の super()・継承したメソッドの突き合わせ"; then
 setup_isuper_throws() {
     jfile isl/MyEx.java <<'EOF'
 package isl;
@@ -2635,7 +2710,9 @@ EOF
 }
 case_of "継承したメソッドの戻り値の型の親を変える（関数型インターフェースになり、選ばれる候補が変わる）" \
     "sed -i 's/public class Bar /public class Bar extends Foo /' work/src/ihf/Bar.java" yes setup_inherit_function
+fi   # -- 暗黙の super()・継承したメソッドの突き合わせ
 
+if section "sealed の家族・アノテーション型・サロゲートの定数"; then
 # sealed な型を使うファイルの事実（switch の網羅性・キャストと instanceof が成り立つか。JLS 14.11.1.1・5.1.6.1）は、
 # 許した部分型の宣言に依るが、使う側（V・U）はそれらを書いていない。書いているのは sealed な型のファイル（permits）
 # なので、sealed な型を宣言するファイルは解析し直したら連鎖させる（FileAnalysis#cascadesWhenReanalysed）
@@ -2869,6 +2946,7 @@ case_of "対になっていないサロゲートだけが違う定数に変え�
 case_of "対になっていないサロゲートだけが違う定数に変える（64 文字を超える値）" \
     "sed -i 's/uD800/uD801/' work/src/sgc/P.java" yes \
     "setup_surrogate_constant aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+fi   # -- sealed の家族・アノテーション型・サロゲートの定数
 
 # --- 型の頭・暗黙の呼び出しの結果・内部クラスの囲む型・深い入れ子・関数型・候補の throws -----------------
 # どれも、使う側（U など）のソースに名前が無い型の親を変える。書き手は、名前にした型の頭（親型の型引数・型引数の
@@ -2876,6 +2954,7 @@ case_of "対になっていないサロゲートだけが違う定数に変え�
 # シグネチャ（引数・戻り値・throws）の型を I 行に数える（BindingNames#noteHeaderTypes・#noteReachedType・
 # #noteCandidates、FactVisitor#recordImplicit）。Foo の親から Bar を外すと、U1 の x.m(bag) は m(Object) に変わり
 # （X.m(Collection) の先の Z.coll() への辺が Z.obj() に変わる）、U2〜U4 は代入できなくなってコンパイルエラーになる
+if section "型の頭・暗黙の呼び出しの結果・囲む型・深い入れ子・関数型（jar も）"; then
 setup_header_args() {
     jfile hda/Bar.java <<'EOF'
 package hda;
@@ -3168,7 +3247,9 @@ EOF
 }
 case_of "jar の型の親型の型引数・関数型の型（別の jar）の親を変える" \
     "make_header_jars new" yes setup_header_jars
+fi   # -- 型の頭・暗黙の呼び出しの結果・囲む型・深い入れ子・関数型（jar も）
 
+if section "候補の throws・単純名から作られた無い型・後ろのファイルの型・注釈の型のエラー"; then
 # 候補の throws。U1 の r.close() は、R が I1・I2 から継承した close() の throws の共通部分（JLS 15.12.2.5）を投げる。
 # JDT の選んだバインディングの throws はその共通部分（E1・E2 が無関係なら空）なので、E1・E2 は載らなかった。E2 の親を
 # E1 にすると共通部分が E2 になり、例外を処理していないエラーになる。U2 は try-with-resources の暗黙の close() で同じ。
@@ -3521,6 +3602,7 @@ EOF
 }
 case_of "注釈の既定値が jar の無いクラスに当たっても、使う側のファイルの解析を失敗させない" \
     "printf '\n// c\n' >> work/src/anb/Z.java" no setup_annotation_default_abort
+fi   # -- 候補の throws・単純名から作られた無い型・後ろのファイルの型・注釈の型のエラー
 
 # --- 何も変わっていなければ書き直さない -----------------------------------
 # 解析するファイルが無く、依存 jar・ソース一覧も同じで、どのブロックも有効なら、書き直しても同じバイト列に
@@ -3653,6 +3735,7 @@ discard_case() {   # $1=ラベル  $2=壊す・変えるコマンド  $3=ログ�
     fi
 }
 
+if section "キャッシュを捨てる条件"; then
 # ソースの文字コードはキャッシュの鍵に入っている。source.encoding が空欄なら pom.xml から
 # 決まるので、.java を1行も触らずに解釈が変わることがある
 discard_case "文字コードの変更" \
@@ -3682,6 +3765,7 @@ discard_case "形式の版が古いキャッシュ" \
 discard_case "JDT の版が違うキャッシュ" \
     "sed -i -E '1s/\tjdt=[^\t]*/\tjdt=0.0.0/' \$(ls .cache/*/analysis-cache.tsv)" \
     "[cache]" yes
+fi   # -- キャッシュを捨てる条件
 
 # --- 1 ブロックだけが壊れたキャッシュ ------------------------------------
 # 各ブロックは F 行に検査値（crc）を持つ。行の形を保ったまま中身だけが変わった（書き換え・化け）ブロックは、
@@ -3767,8 +3851,10 @@ damaged_block_case() {
         diff <(normalized inc.tsv) <(normalized full.tsv) | head -10; fail=1
     fi
 }
+if section "1 ブロックだけが壊れたキャッシュ・何も変わっていなければ書き直さない"; then
 damaged_block_case
 unchanged_case
+fi   # -- 1 ブロックだけが壊れたキャッシュ・何も変わっていなければ書き直さない
 
 # --- 以前の形式が残したファイル ------------------------------------------
 # キャッシュが 2 ファイルだった版の dataflow-cache.tsv（と一時ファイル）は、もう読まないので消す。
@@ -3806,7 +3892,9 @@ legacy_files_case() {
         echo "  NG   以前の形式のファイルがあるだけで解析し直しています（新規解析=$PARSED 再利用=$REUSED）"; fail=1
     fi
 }
+if section "以前の形式が残したファイル"; then
 legacy_files_case
+fi   # -- 以前の形式が残したファイル
 
 # --- 中断した実行からの引き継ぎ -----------------------------------------
 # フェーズ1の途中で実行が終わると一時ファイル（.tmp）だけが残る。次の実行は、これから解析する
@@ -3880,6 +3968,7 @@ salvage_case() {   # $1=ラベル  $2=引き継ぐ前に行う書き換え（空
     fi
 }
 
+if section "中断した実行からの引き継ぎ"; then
 salvage_case "中断した実行からの引き継ぎ" "" yes
 plain_salvage_parsed=$SALVAGE_PARSED
 
@@ -3912,6 +4001,7 @@ salvage_case "中断後にソースが変わったら引き継がない" \
 # 旧形式の行を新しいキャッシュへそのまま書き写してしまう
 salvage_case "一時ファイルの版が古ければ引き継がない" \
     "sed -i '1s/^jche-cache-v[0-9]*/jche-cache-v1/' \$(ls .cache/*/analysis-cache.tsv.tmp)" no
+fi   # -- 中断した実行からの引き継ぎ
 
 # --- 前の実行が残した一時ファイル ----------------------------------------
 # 終了フックも動かない終わり方（SIGKILL・停電）では、依存の索引・エッジの記録・型解決に失敗した呼び出しの行が
@@ -3972,7 +4062,9 @@ leftover_temp_case() {
         echo "  NG   何も変わっていない実行 一時ファイルがあるだけでキャッシュを書き直しています"; fail=1
     fi
 }
+if section "前の実行が残した一時ファイル"; then
 leftover_temp_case
+fi   # -- 前の実行が残した一時ファイル
 
 # --- 強制終了（SIGTERM）でも一時ファイルが残らない ---------------------------
 # Ctrl+C・kill・GitHub Actions の中止や時間切れ・IDE が解析サーバーを止めたとき（SIGINT / SIGTERM）は
@@ -4108,7 +4200,9 @@ kill_case() {
     fi
     rm -rf $KW
 }
+if section "強制終了（SIGTERM）でも一時ファイルが残らない"; then
 kill_case
+fi   # -- 強制終了（SIGTERM）でも一時ファイルが残らない
 
 # --- 依存 jar の並び順 -------------------------------------------------
 # jar の集合が同じでも、クラスパス上の並びが変われば同名クラスの解決先が変わる（先勝ち）。
@@ -4197,6 +4291,7 @@ EOF
     rm -f again.tsv
 }
 
+if section "依存 jar の並び順"; then
 jar_order_case jarorder
 
 # jar の無名パッケージ（デフォルトパッケージ）のクラスの並び。以前は L 行のパッケージに無名パッケージが入らず、
@@ -4209,6 +4304,7 @@ printf 'public class Base {\n    public void m(Object o) {\n    }\n\n    public 
     > jarorder-unnamed/libsrc/b/Base.java
 ORDER_ENTRY= jar_order_case jarorder-unnamed "無名パッケージ"
 rm -rf jarorder-unnamed
+fi   # -- 依存 jar の並び順
 
 # --- キャッシュの健全性（同じフォルダを使う実行・解析のあいだの書き換え・ソースフォルダの並び・同じクラスが 2 つ） ---
 # 作業フォルダは integrity/。検査用の小さなプログラム（tools/）もここにコンパイルする
@@ -4362,7 +4458,9 @@ lock_case() {
         echo "  NG   グラフの構築が、書き終えていないキャッシュを受け付けました（test/incremental/$d/graph.log）"; fail=1
     fi
 }
+if section "同じキャッシュのフォルダを使う実行は 1 つずつ（錠）"; then
 lock_case
+fi   # -- 同じキャッシュのフォルダを使う実行は 1 つずつ（錠）
 
 # 解析のあいだに書き換えたソース。F 行の内容ハッシュは解析の前（パス1）に取るので、JDT が読む前に書き換えられると、
 # 前の中身のハッシュと後の中身の事実が組になって残る。そのあとで元に戻すと、ハッシュが一致して古い事実を
@@ -4443,6 +4541,7 @@ edit_during_run_case() {   # $1=ラベル  $2=書き換えるファイル（src/
              <(normalized "$(ls $d/fullcache/*/analysis-cache.tsv)") | head -10; fail=1
     fi
 }
+if section "解析のあいだに書き換えたソース・消して戻す・足して消す"; then
 # 解析するファイルそのものを、JDT が読む前に書き換える（呼び出し先を Helper.two に）
 edit_during_run_case "解析するファイル" Worker.java "$(printf 'package e;\n\npublic class Worker {\n    void work() {\n        Helper.two();\n    }\n}')"
 # 解析するファイルが参照するファイル（再利用するブロック）を書き換える。JDT はソースパスから書き換え後の中身を読む
@@ -4501,6 +4600,7 @@ edit_during_run_set_case() {   # $1=ラベル  $2=delete|add
 }
 edit_during_run_set_case "消して戻す" delete
 edit_during_run_set_case "足して消す" add
+fi   # -- 解析のあいだに書き換えたソース・消して戻す・足して消す
 
 # 同じクラスが 2 つのソースフォルダにある。JDT は同じバッチの 2 つ目に「型が重複している」エラーを出してその型を
 # 捨て、別々のバッチならどちらも読む。差分更新が片方だけを解析すると全件解析と事実が違っていた（Q61）。
@@ -4589,7 +4689,9 @@ dup_case() {
         echo "  OK   並びを入れ替えると出力が変わる"
     fi
 }
+if section "同じクラスが 2 つのソースフォルダにある"; then
 dup_case
+fi   # -- 同じクラスが 2 つのソースフォルダにある
 
 # 差分更新と全件解析で、CSV・warnings.txt・キャッシュ（ブロックの並べ替え後）が同じこと
 same_all() {   # $1=ラベル  $2=差分更新の出力フォルダ  $3=全件解析の出力フォルダ  $4=差分更新のキャッシュのフォルダ  $5=全件解析のキャッシュのフォルダ
@@ -4833,6 +4935,7 @@ cls_entry_resolved() {   # $1=ラベル。最初の解析で、クラスフォ�
     fi
 }
 
+if section "クラスパスとソースの形（シンボリックリンク）"; then
 if can_symlink; then
     shape_case "ソースフォルダそのものがシンボリックリンク" setup_src_link edit_src_link src
     if [ "${SHAPE_BASE_PARSED:-0}" = 2 ]; then
@@ -4853,6 +4956,8 @@ if can_symlink; then
 else
     echo "== シンボリックリンクのケース（シンボリックリンクを作れない環境なので見ない） =="
 fi
+fi   # -- クラスパスとソースの形（シンボリックリンク）
+if section "クラスパスとソースの形（クラスフォルダの .java・jmod・同じ名前のエントリ・1 件ずつ指定したクラスフォルダ）"; then
 shape_case "クラスフォルダの .java だけのクラスを書き換える" setup_cls_source edit_cls_source \
     "$REACTOR_FOLDERS" "$REACTOR_CFG"
 shape_case "クラスフォルダの同じ名前の .class と .java の新しさが入れ替わる" setup_cls_newer edit_cls_newer \
@@ -4868,6 +4973,7 @@ shape_case "library.jars のクラスフォルダ" setup_cls_entry edit_cls_entr
 cls_entry_resolved "library.jars のクラスフォルダ"
 shape_case ".classpath の kind=\"lib\" のクラスフォルダ" setup_cls_dotclasspath edit_cls_entry ""
 cls_entry_resolved ".classpath の kind=\"lib\" のクラスフォルダ"
+fi   # -- クラスパスとソースの形（クラスフォルダの .java・jmod・同じ名前のエントリ・1 件ずつ指定したクラスフォルダ）
 
 # 解析のあいだに依存 jar・クラスフォルダを書き換え、終わったあとで同じ中身に戻す（兄弟モジュールの clean ビルドなど）。
 # 指紋（L 行）はパス0 で取るので戻した中身と一致し、書き換えた中身で解析したブロックを再利用し続けていた。
@@ -4918,6 +5024,7 @@ setup_swap_cls() {
     shape_reactor
     shape_gen 'public void m(Object o) { } public void m(String s) { }' p/a/target/classes
 }
+if section "解析のあいだの依存 jar・クラスフォルダの書き換え"; then
 classpath_swap_case "jar を差し替える" setup_swap_jar p/lib/l.jar temp.jar src "library.folders=lib"
 classpath_swap_case "クラスフォルダのクラスを消す" setup_swap_cls p/a/target/classes/gen/G.class - \
     "$REACTOR_FOLDERS" "$REACTOR_CFG"
@@ -4934,10 +5041,12 @@ setup_swap_unreadable() {
 }
 classpath_swap_case "パス0 で読めなかった jar が読める中身になる" setup_swap_unreadable p/lib/l.jar temp.jar src \
     "library.folders=lib"
+fi   # -- 解析のあいだの依存 jar・クラスフォルダの書き換え
 
 # 同じプロセスの中で JDK が jar の前の目次を見せ続け、ガベージコレクションでも解き放てない（何かが開いたまま持っている）
 # とき、次の解析でも気づいて警告すること（jche.analysis.StaleSharedViewCheck）。以前は 1 回目で覚える指紋を今の中身の
 # ものに置き換えていたので、2 回目は確かめずに前の目次で解析し直していた
+if section "解き放てない前の目次"; then
 echo "== 解き放てない前の目次（同じプロセスで 2 回走査する） =="
 rm -rf $SHAPE && mkdir -p $SHAPE/j1/q $SHAPE/j2/q
 printf 'package q;\npublic class L { public void m(Object o) { } }\n' > $SHAPE/j1/q/L.java
@@ -4954,6 +5063,7 @@ if shape_javac $SHAPE/c1 $SHAPE/j1/q/L.java && shape_javac $SHAPE/c2 $SHAPE/j2/q
 else
     echo "  NG   題材の jar を作れませんでした"; fail=1
 fi
+fi   # -- 解き放てない前の目次
 
 # アノテーションの付いた package-info.java が 2 つのソースフォルダにある。JDT はアノテーションの付いたパッケージ宣言に
 # package-info という型を作るので、同じバッチの 2 つ目は「型が重複している」エラーになり、別々のバッチならエラーにならない。
@@ -4984,7 +5094,9 @@ pkginfo_case() {
         fi
     done
 }
+if section "アノテーションの付いた package-info.java が 2 つのソースフォルダにある"; then
 pkginfo_case
+fi   # -- アノテーションの付いた package-info.java が 2 つのソースフォルダにある
 
 # 同じ名前のファイルの組の片方を消す・そのフォルダを source.folders から外す。組が同じバッチにいたあいだ、後ろのほうには
 # 「型が重複している」エラーが付いている。f491e2e は組を今のソースの一覧からしか作らず、消えたほうと組にならないので、
@@ -5032,7 +5144,9 @@ pair_delete_case() {
         done
     done
 }
+if section "同じ名前のファイルの組の片方を消す・外す"; then
 pair_delete_case
+fi   # -- 同じ名前のファイルの組の片方を消す・外す
 
 # ソースフォルダを足す・外す。ヘッダ行のソースフォルダの一覧は、両方にあるフォルダの並びが同じで入れ子が無ければ
 # 旧キャッシュを使い続けてよい（足したフォルダのファイルは足したファイル、外したフォルダのファイルは消したファイル）。
@@ -5110,7 +5224,9 @@ EOF
     integrity_run $d/full.properties $d/full9.log
     same_all "入れ子のソースフォルダを足した実行" "$inc_out" "$IOUT" $d/cache $d/fullcache
 }
+if section "ソースフォルダを足す・外す"; then
 folders_case
+fi   # -- ソースフォルダを足す・外す
 
 # ソースフォルダを足したら、JDT がその実行のクラスパス・ソースパスを受け付けなくなった（Linux で名前に \ を含むフォルダ。
 # JDT は \ もパスの区切りとして読むので、そのフォルダが見つからない）。全件解析ではどのファイルも解析できない。
@@ -5148,6 +5264,7 @@ env_rejected_case() {
     fi
     same_all "JDT が受け付けない設定の差分更新" "$inc_out" "$IOUT" $d/cache $d/fullcache
 }
+if section "JDT が受け付けない設定・名前に \\ を含むフォルダ"; then
 env_rejected_case
 
 # 名前に \ を含むフォルダ（Linux・macOS では \ は名前の中のただの文字）を、入れ子のフォルダ x/y と同じキーにしない。
@@ -5208,6 +5325,7 @@ backslash_folder_case() {
     done
 }
 backslash_folder_case
+fi   # -- JDT が受け付けない設定・名前に \\ を含むフォルダ
 
 # 受け手（キャッシュへ書く側）の中でスタックが溢れたファイルも、そのファイルの失敗として数え、ほかのファイルの
 # 解析を続ける。01eb510 は受け手の StackOverflowError を一括パースのファイルごとには捕まえず、そのファイルは
@@ -5300,7 +5418,9 @@ sink_overflow_case() {
         grep -a -F "Java parser" $d/c5.log | head -5; fail=1
     fi
 }
+if section "受け手の中でスタックが溢れたファイル"; then
 sink_overflow_case
+fi   # -- 受け手の中でスタックが溢れたファイル
 
 # ---- JDT に一緒に渡すファイル（バッチ）の組み方に事実を依らせない ----
 # JDT は、同じ createASTs に渡したファイルの型はどれも見つけるが、渡していない型はソースパスから
@@ -5396,6 +5516,7 @@ bc_edit_abort() {
     local f
     for f in A C D E; do printf '\n// changed\n' >> $1/src/app/$f.java; done
 }
+if section "バッチの組み方（打ち切り・スタックの溢れ・名前の違うファイルで宣言した型）"; then
 batch_case "依存 jar に無いクラスで JDT が打ち切る（例外なし）" bc_setup_abort bc_edit_abort src 17 \
     "stopped in a batch without an error" errors-move
 
@@ -5471,7 +5592,9 @@ bc_edit_secondary_far() {
     printf '\n// changed\n' >> $1/src/a/ZUser.java
 }
 batch_case "名前の違うファイルで宣言した型（全件解析のバッチの切れ目）" bc_setup_secondary_far bc_edit_secondary_far src 17
+fi   # -- バッチの組み方（打ち切り・スタックの溢れ・名前の違うファイルで宣言した型）
 
+if section "バッチの組み方（jar が参照する入れ子の型・モジュールの import・打ち切りの原因と件数）"; then
 # jar のクラスがソースの入れ子の型（app.Outer.Inner）を参照している。JDT はクラスファイルの名前（app/Outer$Inner）で
 # 型を探し、ソースパスからは見つけられない（app.Outer を読んでいれば、その入れ子の型として見つかる）。以前は Outer.java が
 # 同じバッチにいるときだけ見つかり、U の呼び出しが BINDING_FAILED になり、ビルドの通るソースがコンパイルエラーと
@@ -5572,7 +5695,9 @@ bc_setup_member_pair() {
 bc_edit_member_pair() { printf '\n// changed\n' >> $1/src2/p/X.java; }
 batch_case "jar のクラスが参照するソースの入れ子の型の解析し直しでも、同じ名前のファイルの組を分けない" \
     bc_setup_member_pair bc_edit_member_pair src1,src2,src
+fi   # -- バッチの組み方（jar が参照する入れ子の型・モジュールの import・打ち切りの原因と件数）
 
+if section "バッチの組み方（溢れの責めの所在・名前でたどれない経路）"; then
 # どのファイルも返さないうちに溢れたバッチ（Issue #181 の 2）。zz/Z.java は入れ子のメンバークラスを 2 万持ち、JDT が型を組む
 # ところで溢れる。app/A.java は、同じバッチに app/B.java が無いと依存 jar に無いクラスで JDT が打ち切る形（Q112）。A だけを
 # 書き換えた差分更新は、以前は A を関わるファイル無しで 1 つだけで試して打ち切らせ、Z のスタックの溢れを理由に A を失敗にし、
@@ -5626,6 +5751,7 @@ if grep -q -F "U.u(U.java:2),S.go" "$IOUT/call-hierarchy.csv" 2>/dev/null; then
 else
     echo "  NG   U.u -> S.go を解決していません（題材が効いていない）"; fail=1
 fi
+fi   # -- バッチの組み方（溢れの責めの所在・名前でたどれない経路）
 
 # 打ち切りの原因の型（third.B）を、止まったファイル（E）が書いた名前の型（other.Q）のシグネチャを通してしか使っていない
 # ときは、関わるファイル（同じフォルダ・名前を書いた型のファイル）を添えても JDT が打ち切る。そのファイルは型の解決の
@@ -5660,6 +5786,9 @@ abort_limit_case() {
         echo "  OK   打ち切ったファイルには失敗の印のブロックだけを書く（次の実行で解析し直す）"
     fi
 }
+if section "打ち切りのあとの印のブロック"; then
 abort_limit_case
+fi   # -- 打ち切りのあとの印のブロック
 
+echo "-- 節 $SECTION_NO 個のうち $SECTIONS_RUN 個を動かした（シャード $SHARD_K/$SHARD_N）"
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi
