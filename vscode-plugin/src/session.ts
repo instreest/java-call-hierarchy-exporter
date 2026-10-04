@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { labelOf, materialize, resolveConfigSource, savedConfigText, type ConfigSource } from './config';
+import { readWorkspaceProjects, rootOfEntry } from './workspaceProjects';
 import type { Direction } from './labels';
 import { DEFAULT_TIMEOUT_MS, type ServerConnection } from './server/connection';
 import { chooseJava, findJavaIn, PREFERRED, type FoundJava } from './server/javaLocator';
@@ -34,6 +35,8 @@ export type SessionState =
     | { readonly kind: 'unanalyzed' }
     | { readonly kind: 'analyzing'; readonly label: string; readonly done: number; readonly total: number }
     | { readonly kind: 'analyzed'; readonly at: Date; readonly methods: number; readonly edges: number; readonly configLabel: string;
+        /** 一緒に解析したワークスペースの他のプロジェクト（設定ファイルの workspace.projects）の数 */
+        readonly workspaceCount: number;
         /** 解析後に変更されたファイル（project.root からの相対パス）。空なら最新 */
         readonly dirty: ReadonlySet<string> }
     | { readonly kind: 'failed'; readonly reason: string };
@@ -49,6 +52,9 @@ export class Session implements vscode.Disposable {
     /** 解析後に変わった *.java（相対パス）。最初の解析が終わってから数え始める */
     private readonly dirty = new Set<string>();
     private watcher: vscode.FileSystemWatcher | undefined;
+    /** 一緒に解析した相手のフォルダ（設定ファイルの workspace.projects。絶対パス）と、その変更の見張り */
+    private workspaceRoots: string[] = [];
+    private workspaceWatchers: vscode.FileSystemWatcher[] = [];
     private autoTimer: NodeJS.Timeout | undefined;
 
     constructor(
@@ -109,6 +115,59 @@ export class Session implements vscode.Disposable {
         }
         await this.context.workspaceState.update(this.rememberedKey(), picked.file);
         return { kind: 'file', file: picked.file };
+    }
+
+    /**
+     * いまの設定ファイルの `workspace.projects` が指すフォルダ（絶対パス）。設定ファイルを使っていなければ空。
+     * 候補が複数あっても尋ねない（画面の状態の判定に使うため）。読めなければ空
+     */
+    async workspaceProjectRoots(): Promise<string[]> {
+        const explicit = vscode.workspace.getConfiguration('jche', this.folder.uri).get<string>('configFile', '');
+        const remembered = this.context.workspaceState.get<string>(this.rememberedKey());
+        const decided = resolveConfigSource(this.folder.uri.fsPath, explicit, remembered);
+        if (!decided.source || decided.source.kind !== 'file') {
+            return [];
+        }
+        try {
+            const entries = await readWorkspaceProjects(decided.source.file);
+            const roots: string[] = [];
+            for (const entry of entries) {
+                const root = rootOfEntry(decided.source.file, entry);
+                if (root !== undefined && !roots.includes(root)) {
+                    roots.push(root);
+                }
+            }
+            return roots;
+        } catch {
+            return [];
+        }
+    }
+
+    /** そのフォルダが、この解析の相手（workspace.projects）に入っているか。解析済みならその解析の設定で、まだなら今の設定で見る */
+    async includesWorkspaceFolder(folder: string): Promise<boolean> {
+        const target = path.resolve(folder);
+        const roots = this._state.kind === 'analyzed' ? this.workspaceRoots : await this.workspaceProjectRoots();
+        return roots.some((root) => path.resolve(root) === target);
+    }
+
+    /**
+     * `workspace.projects` を書く先の設定ファイル。設定ファイルを使っていればそれ。自動生成なら、ワークスペースに
+     * `jche.properties` を書き出してそれにする（以降はそのファイルが使われる。自動生成には workspace.projects を入れない）。
+     * 候補が複数あって決まらなければ選ばせる。決まらなければ undefined
+     */
+    async configFileForWorkspaceProjects(): Promise<string | undefined> {
+        const source = await this.configSource();
+        if (!source) {
+            return undefined;
+        }
+        if (source.kind === 'file') {
+            return source.file;
+        }
+        const target = path.join(this.folder.uri.fsPath, 'jche.properties');
+        if (!existsSync(target)) {
+            await writeFile(target, savedConfigText(), 'utf8');
+        }
+        return target;
     }
 
     /** 自動生成の内容をワークスペースへ書き出す（細かく直したい人のため） */
@@ -320,6 +379,7 @@ export class Session implements vscode.Disposable {
             const storage = this.context.storageUri?.fsPath ?? path.join(this.context.globalStorageUri.fsPath, 'ws');
             const configPath = await materialize(source, path.join(storage, 'config'));
             this.log.info(t('session.analyzing', this.folder.name, labelOf(source, this.folder.uri.fsPath)));
+            const workspaceRoots = source.kind === 'file' ? await this.workspaceProjectRoots() : [];
             const response = await this.request(24 * 60 * 60_000, 'ANALYZE', configPath);
             if (!response.ok) {
                 const reason = response.reason === 'cancelled' ? t('session.cancelled') : response.reason;
@@ -328,15 +388,18 @@ export class Session implements vscode.Disposable {
                 return false;
             }
             this.dirty.clear();
+            this.workspaceRoots = workspaceRoots;
             this.setState({
                 kind: 'analyzed',
                 at: new Date(),
                 methods: response.numberField('methods', 0),
                 edges: response.numberField('edges', 0),
                 configLabel: labelOf(source, this.folder.uri.fsPath),
+                workspaceCount: workspaceRoots.length,
                 dirty: new Set(),
             });
             this.watch();
+            this.watchWorkspaceRoots();
             this.log.info(t('session.analyzed', response.field('methods'), response.field('edges')));
             return true;
         } catch (e) {
@@ -380,6 +443,33 @@ export class Session implements vscode.Disposable {
         this.watcher.onDidChange(mark);
         this.watcher.onDidCreate(mark);
         this.watcher.onDidDelete(mark);
+    }
+
+    /**
+     * 一緒に解析した相手のフォルダ（workspace.projects）の *.java の変更も、この解析の ⚠ にする。
+     * 相対パスはこのフォルダからの形（`../app-batch/src/...`）で、木の行の file 列と同じ綴りになる
+     */
+    private watchWorkspaceRoots(): void {
+        for (const watcher of this.workspaceWatchers) {
+            watcher.dispose();
+        }
+        this.workspaceWatchers = [];
+        for (const root of this.workspaceRoots) {
+            const watcher = vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(vscode.Uri.file(root), '**/*.java'));
+            const mark = (uri: vscode.Uri) => {
+                const relative = path.relative(this.folder.uri.fsPath, uri.fsPath).split(path.sep).join('/');
+                this.dirty.add(relative);
+                if (this._state.kind === 'analyzed') {
+                    this.setState({ ...this._state, dirty: new Set(this.dirty) });
+                }
+                this.scheduleAutoAnalyze();
+            };
+            watcher.onDidChange(mark);
+            watcher.onDidCreate(mark);
+            watcher.onDidDelete(mark);
+            this.workspaceWatchers.push(watcher);
+        }
     }
 
     /** 自動再解析（既定 OFF）。3 秒静止したら裏で走らせる */
@@ -447,6 +537,9 @@ export class Session implements vscode.Disposable {
             clearTimeout(this.autoTimer);
         }
         this.watcher?.dispose();
+        for (const watcher of this.workspaceWatchers) {
+            watcher.dispose();
+        }
         void this.shutdown(t('session.reason.shutdown'));
         this.stateEmitter.dispose();
     }
