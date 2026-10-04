@@ -57,6 +57,10 @@ public final class ConfigTextProbe {
             {"字下げの続き", "workspace.projects=../a,\n    ../b\nentry.packages=x\n"},
             {"続きの途中の注釈", "workspace.projects=../a,\\\n# ../x は外した\n    ../b\nentry.packages=x\n"},
             {"末尾の円記号の次が項目", "workspace.projects=C:\\ws\\a\\\nentry.packages=x\n"},
+            {"円記号の後ろの空白", "workspace.projects=../a,\\ \n    ../b\nentry.packages=x\n"},
+            {"字下げした項目の行は新しい項目", "workspace.projects=../a\n    entry.packages=x\n"},
+            {"円記号の続きの途中の空行", "workspace.projects=../a,\\\n\n    ../b\nentry.packages=x\n"},
+            {"値の後ろの注釈は残る", "workspace.projects=../a\n# note\nentry.packages=x\n"},
             {"無い", "project.root=.\nentry.packages=x\n"},
         };
         for (String[] c : cases) {
@@ -79,8 +83,9 @@ public final class ConfigTextProbe {
                             "../p,../q");
                     java.nio.file.Files.write(file, replaced, java.nio.charset.StandardCharsets.UTF_8);
                     Properties after = ConfigFile.read(file);
+                    boolean noteKept = !c[1].contains("# note") || java.nio.file.Files.readString(file).contains("# note");
                     if (!"../p,../q".equals(after.getProperty("workspace.projects"))
-                            || !"x".equals(after.getProperty("entry.packages", "x"))) {
+                            || !"x".equals(after.getProperty("entry.packages", "x")) || !noteKept) {
                         System.out.println("NG   workspace.projects の書き換えを読み戻せない（" + c[0] + "）: "
                                 + after.getProperty("workspace.projects") + " / " + after.getProperty("entry.packages"));
                         failures++;

@@ -189,13 +189,15 @@ OrderService.setMutable(Dao),fx.service.OrderService,C,src/fx/service/OrderServi
 OrderService.recurse(int),fx.service.OrderService,C,src/fx/service/OrderService.java,51,1,2,1,NORMAL,1,0,,1,
 Repo.execute(),fx.service.Repo,C,src/fx/service/Repo.java,22,1,2,2,NORMAL,1,1,[UNEXPANDED:CHA] field,1,
 Service.execute(),fx.service.Service,I,src/fx/service/Service.java,4,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
-Counter.bump(),fx.util.Counter,C,src/fx/util/Counter.java,18,1,4,1,NORMAL,1,0,,1,
+Counter.bump(),fx.util.Counter,C,src/fx/util/Counter.java,18,1,5,1,NORMAL,1,0,,1,
 Counter.initial(),fx.util.Counter,C,src/fx/util/Counter.java,26,1,1,0,LEAF,1,0,,1,
 Counter.initialCount(),fx.util.Counter,C,src/fx/util/Counter.java,28,1,1,0,LEAF,1,0,,1,
 Counter.Inner.touch(),fx.util.Counter.Inner,C,src/fx/util/Counter.java,31,1,1,1,NORMAL,1,0,,1,
 Counter.Nested.touch(Counter),fx.util.Counter.Nested,C,src/fx/util/Counter.java,35,1,1,1,NORMAL,1,0,,1,
 "HttpServlet.doGet(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,11,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] no caller row was emitted
 "HttpServlet.doPost(HttpServletRequest,HttpServletResponse)",javax.servlet.http.HttpServlet,A,src/javax/servlet/http/HttpServlet.java,14,1,0,0,ISOLATED,1,0,,0,[NOT_REACHED] no caller row was emitted
+AsyncJob.run(),teamw.AsyncJob,C,../workspace-demo/src/teamw/AsyncJob.java,8,1,6,2,NORMAL,1,0,,1,
+AsyncMain.main(String[]),teamw.AsyncMain,C,../workspace-demo/src/teamw/AsyncMain.java,5,1,0,3,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
 BatchJob.run(),teamw.BatchJob,C,../workspace-demo/src/teamw/BatchJob.java,14,1,1,12,NORMAL,1,0,,1,
 BatchMain.main(String[]),teamw.BatchMain,C,../workspace-demo/src/teamw/BatchMain.java,5,1,0,3,FRAMEWORK_ENTRY,1,0,,0,[NOT_REACHED] no caller row was emitted
 RemoteDao.findById(long),teamw.RemoteDao,C,../workspace-demo/src/teamw/RemoteDao.java,8,1,9,1,NORMAL,1,0,,1,

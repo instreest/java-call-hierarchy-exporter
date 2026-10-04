@@ -82,6 +82,12 @@ public final class WorkspaceProject {
      */
     public static List<WorkspaceProject> load(Config main) throws IOException {
         List<WorkspaceProject> out = new ArrayList<>();
+        // 同じプロジェクト（同じキャッシュ）を 2 度は読まない。2 度読むと、同じ錠を同じ JVM の中で 2 度取ろうとして
+        // 「ほかの実行が持っている」と待ち続け、グラフにも同じブロックが 2 度入る
+        java.util.Set<Path> seenRoots = new java.util.HashSet<>();
+        java.util.Set<Path> seenCaches = new java.util.HashSet<>();
+        seenRoots.add(main.projectRoot.toAbsolutePath().normalize());
+        seenCaches.add(main.cacheFile.toAbsolutePath().normalize());
         for (Path entry : main.workspaceProjects) {
             if (!Files.exists(entry)) {
                 Warnings.warn(Warnings.Topic.CONFIG, Messages.format("config.workspace.missing", entry));
@@ -90,6 +96,12 @@ public final class WorkspaceProject {
             Config config = main.forWorkspaceProject(entry);
             if (config.projectRoot.equals(main.projectRoot)) {
                 Log.info(Messages.format("config.workspace.self", entry));
+                continue;
+            }
+            Path root = config.projectRoot.toAbsolutePath().normalize();
+            Path cache = config.cacheFile.toAbsolutePath().normalize();
+            if (!seenRoots.add(root) || !seenCaches.add(cache)) {
+                Log.info(Messages.format("config.workspace.duplicate", entry, root));
                 continue;
             }
             out.add(new WorkspaceProject(config, new ProjectLayout(config), prefixOf(main.projectRoot, config.projectRoot)));

@@ -2,6 +2,8 @@
 package jche.graph;
 
 import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * ワークスペースの他のプロジェクトのメソッドを CSV に出す範囲（設定の {@code workspace.scope}）。
@@ -37,13 +39,26 @@ public final class WorkspaceScope {
 
     /**
      * {@code callers} の範囲を作る。project.root の全メソッド（ソースのあるもの）から、解決後の呼び出し元の向きに
-     * 辿れるメソッドを集める。
+     * 辿れるメソッドを集める。辺は転置索引（解決した呼び出し先）に加えて、ライブラリ呼び出し規則で呼び戻される側
+     * （{@code Thread#start()} → {@code run()}、{@code forEach} に渡したラムダの本体）も数える。入次数・到達の判定
+     * （{@link CallResolver#inDegrees}・{@link CallResolver#reachableFrom}）と同じ辺の集合で、ここだけ規則を落とすと、
+     * 規則でしか project.root に届かない相手の起点が静かに消える
      *
-     * @param inbound 解決後の辺の転置索引（呼び出し先 → 呼び出し元）
+     * @param inbound  解決後の辺の転置索引（呼び出し先 → 呼び出し元）
+     * @param resolver 規則で呼び戻される側を引くのに使う
      */
-    public static WorkspaceScope callers(CallGraph graph, InboundIndex inbound) {
+    public static WorkspaceScope callers(CallGraph graph, InboundIndex inbound, CallResolver resolver) {
         MethodTable methods = graph.methods();
         int n = methods.size();
+        // 規則で呼び戻される側 → それを渡した呼び出し元（転置索引には無い辺）
+        Map<Integer, IntArray> callbackCallers = new HashMap<>();
+        for (int caller = 0; caller < n; caller++) {
+            for (int e = graph.edgeStart(caller); e < graph.edgeEnd(caller); e++) {
+                for (CallbackRules.Match m : resolver.callbackTargets(e, null)) {
+                    callbackCallers.computeIfAbsent(m.target(), k -> new IntArray(4)).add(caller);
+                }
+            }
+        }
         boolean[] reaches = new boolean[n];
         ArrayDeque<Integer> queue = new ArrayDeque<>();
         for (int id = 0; id < n; id++) {
@@ -55,10 +70,12 @@ public final class WorkspaceScope {
         while (!queue.isEmpty()) {
             int id = queue.poll();
             for (int i = inbound.start(id); i < inbound.end(id); i++) {
-                int caller = inbound.callerAt(i);
-                if (caller >= 0 && caller < n && !reaches[caller]) {
-                    reaches[caller] = true;
-                    queue.add(caller);
+                mark(reaches, queue, inbound.callerAt(i));
+            }
+            IntArray viaRule = callbackCallers.get(id);
+            if (viaRule != null) {
+                for (int i = 0; i < viaRule.size(); i++) {
+                    mark(reaches, queue, viaRule.get(i));
                 }
             }
         }
@@ -69,6 +86,13 @@ public final class WorkspaceScope {
             }
         }
         return scope;
+    }
+
+    private static void mark(boolean[] reaches, ArrayDeque<Integer> queue, int caller) {
+        if (caller >= 0 && caller < reaches.length && !reaches[caller]) {
+            reaches[caller] = true;
+            queue.add(caller);
+        }
     }
 
     /** 絞っているか（{@code callers} で、ワークスペースの他のプロジェクトがある） */

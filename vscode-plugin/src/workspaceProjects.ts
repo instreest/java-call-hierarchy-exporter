@@ -20,17 +20,17 @@ import * as path from 'node:path';
 
 export const WORKSPACE_PROJECTS_KEY = 'workspace.projects';
 
-/** 「項目=値」の行の項目。それ以外（注釈・空行・字下げの続き）なら undefined */
-function keyOf(line: string): string | undefined {
-    if (line === '' || /^\s/.test(line) || line.trim().startsWith('#')) {
+/** 「項目=値」の行か（本体の読み手と同じ。先頭の空白は許す。字下げしていても項目の行は新しい項目） */
+const KEY_LINE = /^\s*[A-Za-z][A-Za-z0-9._-]*\s*=.*$/;
+
+/** 「項目=値」の行の項目。それ以外（注釈・空行・続きの行）なら undefined。先頭の行の BOM は外す */
+function keyOf(line: string, first: boolean): string | undefined {
+    const s = first ? line.replace(/^\uFEFF/, '') : line;
+    if (!KEY_LINE.test(s)) {
         return undefined;
     }
-    const eq = line.indexOf('=');
-    if (eq <= 0) {
-        return undefined;
-    }
-    const key = line.substring(0, eq).trim().replace(/^﻿/, '');
-    return key === '' ? undefined : key;
+    const trimmed = s.trim();
+    return trimmed.substring(0, trimmed.indexOf('=')).trim();
 }
 
 function endsWithBackslash(line: string): boolean {
@@ -39,25 +39,33 @@ function endsWithBackslash(line: string): boolean {
 
 /**
  * その項目の論理行（先頭の行の位置と、終わりの次の行の位置）。無ければ undefined。
- * 論理行は「項目=」の行から始まり、行末の `\`（次の行が「項目=」でなければ）か字下げで次の行に続く
+ * 本体の読み手（`jche.config.ConfigFile`）と同じ規則: 論理行は「項目=」の行から始まり、「項目=」の形でない行が
+ * 行末の `\`（の後）か字下げで続く。途中の注釈（`#` / `!`）は読み飛ばし、空行は `\` の続きの途中なら読み飛ばし、
+ * そうでなければ終わり。終わりの位置は最後の続きの行の次（後ろの注釈・空行は含めない。書き換えで消さないため）
  */
 function logicalLineOf(lines: readonly string[], key: string): [number, number] | undefined {
     for (let i = 0; i < lines.length; i++) {
-        if (keyOf(lines[i]) !== key) {
+        if (keyOf(lines[i], i === 0) !== key) {
             continue;
         }
         let end = i + 1;
         let continued = endsWithBackslash(lines[i]);
-        while (end < lines.length) {
-            const next = lines[end];
-            if (next.trim().startsWith('#')) {
-                end++;
+        for (let probe = i + 1; probe < lines.length; probe++) {
+            const next = lines[probe];
+            const trimmed = next.trim();
+            if (trimmed.startsWith('#') || trimmed.startsWith('!')) {
                 continue;
             }
-            const indented = /^\s/.test(next) && next.trim() !== '';
-            if ((continued && keyOf(next) === undefined) || indented) {
+            if (trimmed === '') {
+                if (continued) {
+                    continue;
+                }
+                break;
+            }
+            const indented = /^\s/.test(next);
+            if (!KEY_LINE.test(next) && (continued || indented)) {
                 continued = endsWithBackslash(next);
-                end++;
+                end = probe + 1;
                 continue;
             }
             break;
@@ -67,7 +75,7 @@ function logicalLineOf(lines: readonly string[], key: string): [number, number] 
     return undefined;
 }
 
-/** 行の列から、その項目の値（続きの行をつないだもの）。無ければ undefined */
+/** 行の列から、その項目の値（続きの行をつないだもの。注釈は飛ばし、行末の `\` とその前後の空白は外す）。無ければ undefined */
 export function valueOf(lines: readonly string[], key: string): string | undefined {
     const range = logicalLineOf(lines, key);
     if (!range) {
@@ -75,16 +83,15 @@ export function valueOf(lines: readonly string[], key: string): string | undefin
     }
     let value = '';
     for (let i = range[0]; i < range[1]; i++) {
-        const line = lines[i];
-        if (i > range[0] && line.trim().startsWith('#')) {
+        const trimmed = lines[i].trim();
+        if (trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith('!')) {
             continue;
         }
-        let part = i === range[0] ? line.substring(line.indexOf('=') + 1) : line.trim();
-        if (endsWithBackslash(part)) {
-            part = part.trim();
-            part = part.substring(0, part.length - 1);
+        let part = i === range[0] ? trimmed.substring(trimmed.indexOf('=') + 1).trim() : trimmed;
+        if (part.endsWith('\\')) {
+            part = part.substring(0, part.length - 1).trim();
         }
-        value += part.trim();
+        value += part;
     }
     return value;
 }

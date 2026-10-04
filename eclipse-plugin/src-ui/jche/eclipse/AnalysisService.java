@@ -140,17 +140,23 @@ public final class AnalysisService {
             JchePlugin.log(IStatus.WARNING, Messages.get("service.deltaFailed"), e);
             return;
         }
+        if (changed.isEmpty()) {
+            return;   // 設定ファイルを読み直す（workspaceProjects）前に、見るものが無ければ抜ける
+        }
         for (ProjectAnalysis analysis : known) {
-            // 設定ファイルの workspace.projects が指すプロジェクト（一緒に解析した相手）の変更も、この解析の ⚠ にする
+            // 設定ファイルの workspace.projects が指すプロジェクト（一緒に解析した相手）の変更も、この解析の ⚠ にする。
+            // 相手のプロジェクトの変更が無ければ設定ファイルは読み直さない
             List<IResource> files = new ArrayList<>();
             List<IResource> own = changed.get(analysis.project());
             if (own != null) {
                 files.addAll(own);
             }
-            for (IProject other : analysis.workspaceProjects()) {
-                List<IResource> theirs = changed.get(other);
-                if (theirs != null) {
-                    files.addAll(theirs);
+            if (changed.size() > ((own == null) ? 0 : 1)) {
+                for (IProject other : analysis.workspaceProjects()) {
+                    List<IResource> theirs = changed.get(other);
+                    if (theirs != null) {
+                        files.addAll(theirs);
+                    }
                 }
             }
             if (!files.isEmpty()) {

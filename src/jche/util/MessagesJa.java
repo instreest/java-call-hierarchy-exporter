@@ -443,6 +443,7 @@ final class MessagesJa {
             "config.layout.libraryFolderMissing", "library.folders のフォルダが見つかりません: {0}",
             "config.workspace.missing", "workspace.projects の指定先が見つかりません: {0}",
             "config.workspace.self", "workspace.projects の指定が project.root 自身なので読み飛ばします: {0}",
+            "config.workspace.duplicate", "workspace.projects の指定が既に挙げたプロジェクトを指しているので読み飛ばします: {0}（{1}）",
             "config.workspace.badScope", "workspace.scope は callers か all です: {0}",
             "config.layout.libraryJarMissing", "library.jars のファイルが見つかりません: {0}",
             "config.layout.noSourceFolder", "ソースフォルダを特定できませんでした: {0}（src/main/java、src、<モジュール>/src/main/java、.classpath のいずれも無いので、設定ファイルの source.folders に指定してください）",

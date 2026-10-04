@@ -137,8 +137,9 @@ at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PAR
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.lambdas,UserDaoImpl.describe
-at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 4 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.app.Main.lambdas(Main.java:119),AsyncJob.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,AsyncJob.run,[UNEXPANDED:CHA] 4 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 4 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -284,8 +285,9 @@ at fx.lambda.Holder.viaForEach(Holder.java:51),OrderDaoImpl.findById,RESOLVED:DA
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 4 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Holder.viaForEach(Holder.java:52),AsyncJob.run,UNEXPANDED:CHA,1,Holder.viaForEach,AsyncJob.run,[UNEXPANDED:CHA] 4 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Worker.run,[UNEXPANDED:CHA] 4 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.lambda.Nested.viaNested(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Nested.viaNested,OrderDaoImpl.describe
 at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Redeclared.viaSuperInterface,OrderDaoImpl.describe
 at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:18),Redeclared.dispatch,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.dispatch
@@ -342,6 +344,9 @@ at fx.reflect.Invoker.create(Invoker.java:43),Target.<clinit>,RESOLVED:REFLECTIO
 at fx.reflect.Invoker.viaParam(Invoker.java:35),Invoker.classOf,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.classOf
 at fx.service.OrderService.<clinit>(OrderService.java:12),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,1,OrderService.<clinit>,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,2,OrderService.<clinit>,DaoFactory.create,DaoFactory.newUserDao
+at teamw.AsyncMain.main(AsyncMain.java:6),AsyncJob.run,RESOLVED:CALLBACK,1,AsyncMain.main,AsyncJob.run,[RESOLVED:CALLBACK] rule: Thread#start() calls run()
+at teamw.AsyncJob.run(AsyncJob.java:9),Counter.bump,RESOLVED:NO_OVERRIDE,2,AsyncMain.main,AsyncJob.run,Counter.bump
+at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,AsyncMain.main,AsyncJob.run,Counter.Counter,Counter.Counter,Counter.initial
 at teamw.BatchMain.main(BatchMain.java:6),BatchJob.run,RESOLVED:NO_OVERRIDE,1,BatchMain.main,BatchJob.run
 at teamw.BatchJob.run(BatchJob.java:16),AbstractDao.findById,RESOLVED:NO_OVERRIDE,2,BatchMain.main,BatchJob.run,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,BatchMain.main,BatchJob.run,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)

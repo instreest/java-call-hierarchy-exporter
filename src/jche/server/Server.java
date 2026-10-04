@@ -405,10 +405,8 @@ public final class Server {
         FieldAccesses.Located located;
         try {
             // 相手のプロジェクトのファイルなら相手のキャッシュから引く（A 行はグラフに入れていない。パスは相手の綴りに戻す）
-            String[] stamp = new String[1];
-            Path[] cache = cacheOf(normalized, stamp);
-            located = FieldAccesses.locate(cache[0], stamp[0], cache[1].toString().replace('\\', '/'), line,
-                    name.trim());
+            CacheLocation cache = cacheOf(normalized);
+            located = FieldAccesses.locate(cache.cacheFile(), cache.stamp(), cache.file(), line, name.trim());
         } catch (FieldAccesses.StaleCacheException e) {
             respondNg("stale-cache");
             return;
@@ -511,18 +509,27 @@ public final class Server {
     }
 
     /**
+     * フィールドの参照を引くキャッシュの場所。
+     *
+     * @param cacheFile 読むキャッシュ
+     * @param file      そのキャッシュの中でのファイルのパス（相手のキャッシュなら、前置きを外した相手の綴り）
+     * @param stamp     グラフを組んだときのそのキャッシュの印
+     */
+    private record CacheLocation(Path cacheFile, String file, String stamp) {
+    }
+
+    /**
      * そのファイル（グラフの綴り）のフィールドの参照を引くキャッシュ。ワークスペースの他のプロジェクトのファイルなら
      * 相手のキャッシュと、相手のキャッシュの印。それ以外はこの実行自身のもの
      */
-    private Path[] cacheOf(String normalized, String[] stamp) {
+    private CacheLocation cacheOf(String normalized) {
         for (WorkspaceProject ws : snapshot.workspace()) {
             if (normalized.startsWith(ws.prefix)) {
-                stamp[0] = ws.cacheStamp();
-                return new Path[] {ws.config.cacheFile, Path.of(normalized.substring(ws.prefix.length()))};
+                return new CacheLocation(ws.config.cacheFile, normalized.substring(ws.prefix.length()),
+                        ws.cacheStamp());
             }
         }
-        stamp[0] = snapshot.cacheStamp();
-        return new Path[] {snapshot.config().cacheFile, Path.of(normalized)};
+        return new CacheLocation(snapshot.config().cacheFile, normalized, snapshot.cacheStamp());
     }
 
     /**

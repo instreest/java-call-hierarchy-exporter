@@ -183,30 +183,41 @@ final class WorkspaceProjectsConfig {
         configFile.setContents(new ByteArrayInputStream(bytes), IFile.KEEP_HISTORY, null);
     }
 
+    /** 「項目=値」の行か（解析側の読み手と同じ。先頭の空白は許す。字下げしていても項目の行は新しい項目） */
+    private static final java.util.regex.Pattern KEY_LINE =
+            java.util.regex.Pattern.compile("^\\s*[A-Za-z][A-Za-z0-9._-]*\\s*=.*$");
+
     /**
      * その項目の論理行（先頭の行の位置と、終わりの次の行の位置）。無ければ null。
-     * 論理行は「項目=」の行から始まり、行末の {@code \}（次の行が「項目=」でなければ）か字下げで次の行に続く。
-     * 続きの途中の {@code #} の行は読み飛ばす
+     * 解析側の読み手（{@code jche.config.ConfigFile}）と同じ規則: 論理行は「項目=」の行から始まり、「項目=」の形でない行が
+     * 行末の {@code \}（の後）か字下げで続く。途中の注釈（{@code #} / {@code !}）は読み飛ばし、空行は {@code \} の
+     * 続きの途中なら読み飛ばし、そうでなければ終わり。終わりの位置は最後の続きの行の次（後ろの注釈・空行は含めない。
+     * 書き換えで消さないため）
      */
     private static int[] logicalLineOf(List<String> lines, String key) {
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
-            if (!key.equals(keyOf(line))) {
+            if (!key.equals(keyOf(line, i == 0))) {
                 continue;
             }
             int end = i + 1;
             boolean continued = endsWithBackslash(line);
-            while (end < lines.size()) {
-                String next = lines.get(end);
-                if (next.trim().startsWith("#")) {
-                    end++;
+            for (int probe = i + 1; probe < lines.size(); probe++) {
+                String next = lines.get(probe);
+                String trimmed = next.trim();
+                if (trimmed.startsWith("#") || trimmed.startsWith("!")) {
                     continue;
                 }
-                boolean indented = !next.isEmpty() && Character.isWhitespace(next.charAt(0))
-                        && !next.trim().isEmpty();
-                if ((continued && keyOf(next) == null) || indented) {
+                if (trimmed.isEmpty()) {
+                    if (continued) {
+                        continue;
+                    }
+                    break;
+                }
+                boolean indented = Character.isWhitespace(next.charAt(0));
+                if (!KEY_LINE.matcher(next).matches() && (continued || indented)) {
                     continued = endsWithBackslash(next);
-                    end++;
+                    end = probe + 1;
                     continue;
                 }
                 break;
@@ -216,42 +227,35 @@ final class WorkspaceProjectsConfig {
         return null;
     }
 
-    /** 論理行の値（続きの行をつないだもの。行末の {@code \} と字下げは外す） */
+    /** 論理行の値（続きの行をつないだもの。注釈は飛ばし、行末の {@code \} とその前後の空白は外す） */
     private static String valueOf(List<String> lines, int start, int end) {
         StringBuilder value = new StringBuilder();
         for (int i = start; i < end; i++) {
-            String line = lines.get(i);
-            if (i > start && line.trim().startsWith("#")) {
+            String trimmed = lines.get(i).trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!")) {
                 continue;
             }
-            String part = (i == start) ? line.substring(line.indexOf('=') + 1) : line.trim();
-            if (endsWithBackslash(part)) {
-                part = part.substring(0, part.length() - 1);
+            String part = (i == start) ? trimmed.substring(trimmed.indexOf('=') + 1).trim() : trimmed;
+            if (part.endsWith("\\")) {
+                part = part.substring(0, part.length() - 1).trim();
             }
-            value.append(part.trim());
+            value.append(part);
         }
         return value.toString();
     }
 
-    /** 「項目=値」の行の項目。それ以外（注釈・空行・字下げの続き）なら null */
-    private static String keyOf(String line) {
-        if (line.isEmpty() || Character.isWhitespace(line.charAt(0)) || line.trim().startsWith("#")) {
+    /** 「項目=値」の行の項目。それ以外（注釈・空行・続きの行）なら null。先頭の行の BOM は外す */
+    private static String keyOf(String line, boolean first) {
+        String s = (first && line.startsWith("\uFEFF")) ? line.substring(1) : line;
+        if (!KEY_LINE.matcher(s).matches()) {
             return null;
         }
-        int eq = line.indexOf('=');
-        if (eq <= 0) {
-            return null;
-        }
-        String key = line.substring(0, eq).trim();
-        if (key.startsWith("﻿")) {
-            key = key.substring(1);
-        }
-        return key.isEmpty() ? null : key;
+        String trimmed = s.trim();
+        return trimmed.substring(0, trimmed.indexOf('=')).trim();
     }
 
     private static boolean endsWithBackslash(String line) {
-        String t = line.trim();
-        return t.endsWith("\\");
+        return line.trim().endsWith("\\");
     }
 
     static List<String> splitList(String raw) {

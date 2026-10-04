@@ -285,7 +285,13 @@ final class ConfigDialog extends TitleAreaDialog {
                     Messages.format("workspaceDialog.none", analysis.project().getName()));
             return;
         }
-        IFile target = (chosen != null) ? chosen : analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
+        // 書く先は、解析が実際に読むファイル: 選んだファイル → 自動判定で見つかるファイル → config/jche.properties（作る）
+        IFile target = chosen;
+        if (target == null) {
+            ConfigSource auto = ProjectAnalysis.autoConfigSourceOf(analysis.project());
+            target = (auto != null && auto.kind() == ConfigSource.Kind.FILE)
+                    ? auto.file() : analysis.project().getFile(ProjectAnalysis.PREFERRED_CONFIG_PATH);
+        }
         List<WorkspaceProjectsConfig.Entry> existing = new ArrayList<>();
         Set<IProject> already = new HashSet<>();
         if (target.exists()) {

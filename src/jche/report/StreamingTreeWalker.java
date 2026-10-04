@@ -848,6 +848,8 @@ public final class StreamingTreeWalker {
         replacement.set(skippedId, saved.callLine, saved.note, saved.resolvedBy,
                 skippedParams, skippedCtorArgs,
                 (skippedCtorArgs == null) ? null : methods.typeFqn(skippedId));
+        // 除外メソッドを通っても「経路が project.root に届いたか」は引き継ぐ（届いた後の呼び出し先は絞らない）
+        replacement.mainSeen = saved.mainSeen || scope.isMain(skippedId);
         path[parentDepth] = replacement;
         // 差し替えた親と読み飛ばす除外メソッドは、path[] からは見えなくなるが祖先のまま
         hiddenAncestors.push(saved.methodId);

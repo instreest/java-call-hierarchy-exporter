@@ -21,6 +21,10 @@ test('workspace.projects の読み方は本体の設定ファイルの読み方�
         ['字下げの続き', 'workspace.projects=../a,\n    ../b\nentry.packages=x\n', '../a,../b'],
         ['続きの途中の注釈', 'workspace.projects=../a,\\\n# ../x は外した\n    ../b\nentry.packages=x\n', '../a,../b'],
         ['末尾の円記号の次が項目', 'workspace.projects=C:\\ws\\a\\\nentry.packages=x\n', 'C:\\ws\\a'],
+        ['円記号の後ろの空白', 'workspace.projects=../a,\\ \n    ../b\nentry.packages=x\n', '../a,../b'],
+        ['字下げした項目の行は新しい項目', 'workspace.projects=../a\n    entry.packages=x\n', '../a'],
+        ['円記号の続きの途中の空行', 'workspace.projects=../a,\\\n\n    ../b\nentry.packages=x\n', '../a,../b'],
+        ['字下げの続きは空行で終わる', 'workspace.projects=../a\n\n    ../b\n', '../a'],
         ['空の値', 'workspace.projects=\nentry.packages=x\n', ''],
         ['無い', 'project.root=.\nentry.packages=x\n', undefined],
         ['注釈の中の同じ名前は項目ではない', '# workspace.projects=../z\nentry.packages=x\n', undefined],
@@ -37,6 +41,9 @@ test('書き換えは論理行ごと 1 行に差し替え、無ければ末尾�
     assert.deepEqual(replaced(['project.root=.', 'entry.packages=x'], 'workspace.projects', '../p'),
         ['project.root=.', 'entry.packages=x', '', 'workspace.projects=../p']);
     assert.deepEqual(replaced([], 'workspace.projects', ''), ['workspace.projects=']);
+    // 値の後ろの注釈と空行、字下げした次の項目は消さない
+    assert.deepEqual(replaced(['workspace.projects=../a', '# note', '', '    entry.packages=x'], 'workspace.projects', '../p'),
+        ['workspace.projects=../p', '# note', '', '    entry.packages=x']);
 });
 
 test('ファイルの読み書きの往復', async () => {

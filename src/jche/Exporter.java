@@ -145,7 +145,7 @@ public final class Exporter {
             InboundIndex inbound = null;
             if (config.workspaceScopeCallers && !workspace.isEmpty()) {
                 inbound = InboundIndex.build(graph, resolver);
-                WorkspaceScope scope = WorkspaceScope.callers(graph, inbound);
+                WorkspaceScope scope = WorkspaceScope.callers(graph, inbound, resolver);
                 resolver.setWorkspaceScope(scope);
                 Log.info(Messages.format("exporter.workspaceHidden", scope.hiddenCount()));
             }
