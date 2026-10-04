@@ -32,7 +32,7 @@ JVM は呼び出し命令を 2 段で処理する（JVMS 5.4.3.3 / 5.4.3.4 と 5
         ↓ 読む
   選択（jche.graph。フェーズ2・読み手）
      ソースでは受け手の実行時のクラス C が 1 つに決まらないので、2 つの問いに分ける。
-       (1) C としてありうる型はどれか … CallResolver の段（CHA・LOCAL_NEW・値の追跡・契約表・DI）。
+       (1) C としてありうる型はどれか … CallResolver の段（CHA・LOCAL_NEW・値の追跡・ライブラリ呼び出し規則・DI）。
            これは JVMS には無い、静的解析ならではの近似（多すぎる側に倒す）。
        (2) その C で動く本体はどれか … MethodSelection（JVMS 5.4.6 の手順。実装探索の入口はここだけ）。
      静的束縛（invokestatic / invokespecial に当たる呼び出し）は BindKind が先に決め、(1)(2) を通さない。
@@ -94,9 +94,9 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 | 2. C とその親クラスの連鎖に、mR を上書きできる宣言（5.4.5）があればそれ | 名前とディスクリプタが同じ・mC が private でない・mA が public / protected、またはパッケージアクセスで同じ実行時パッケージ（推移も可） | `search` の前半。`TypeHierarchy#classChain`（H 行の 7 列目）を根まで順に、各段で `declarationIn`（キーの一致 → パッケージアクセスなら同じパッケージか `overridesAcrossPackage`）と O 行（`declaredAmong`）と H 行の 8 列目（`inheritedImplementationIn`）を見る。本体を持つ最初の宣言を採る。その型より上の private は飛ばす | H 7 列目・D 行 mods / hasBody・O 行・H 8 列目 | ディスクリプタの一致は「消去したキーの一致」で写す（同じ意味）。ジェネリクスの上書き（javac ならブリッジ）は O 行・H 8 列目で補う。継承される static（public・protected か同じパッケージ）は飛ばさない（JLS 8.4.8.2 でコンパイルできないので仮想呼び出しでは当たらない）。継承されない static は飛ばす（#175）。O 行・H 8 列目から見つけた上書きより下の段の、同じシグネチャの宣言による推移的な上書き（JLS 8.4.8.1）は `lowestOverriderOf` が拾う（#175）。本体の無い宣言（抽象）では止まらず親へ進む。連鎖に jar のクラスが挟まる（`passesBinaryClass`）と、その宣言は見えないまま通り過ぎる（候補は落とさないが、戻り値で絞ることはしない） | `test/jls` の `ClassWins` / `Overriding` / `PackageBase` / `Widened`、`test/pruning` の `Dtwr` / `Dfe` / `DRun` / `DrRet` / `JarHold` / `GiRet` |
 | 3. 無ければ、C の最も特定的な親インターフェースのメソッドのうち、非 abstract がちょうど 1 つならそれ | 0 個なら AbstractMethodError、複数なら IncompatibleClassChangeError | `search` の後半。`TypeHierarchy#superinterfaces`（連鎖の型が実装するインターフェースを近い順に）の宣言から private・static を除き、`mostSpecific`（親子の判定は H 行の親型と 9 列目の jar の型の親子を辿る）で絞り、本体を持つものを採る | H 行の親型と 9 列目・D 行 | 複数残るときは、ソースに本体のある宣言を jar の宣言より先にし、その中は近い順の先頭（JVM ならエラーになる形。候補を落とさない側の近似）。抽象の再宣言も「最も特定的」の判定に入れる（子インターフェースが default を抽象で消した形で、親の default を選ばない） | `test/jls` の `MostSpecific`（§9.4.1.1）、`Interfaces`、`test/pruning` の `DtwrP`（親クラスの private を飛ばして default へ） |
 
-`implementationOfSignature`（契約表・リフレクション）は同じ手順を、宣言した型を知らないままシグネチャで引く。
+`implementationOfSignature`（ライブラリ呼び出し規則・リフレクション）は同じ手順を、宣言した型を知らないままシグネチャで引く。
 同じシグネチャに消去される別々のジェネリック型を 1 つの型が両方とも上書きしていると、どちらが選ばれるかは決まらない
-（`docs/jls-conformance-qa.md` の Q23。契約表がシグネチャで名指しする以上、避けられない曖昧さ）。
+（`docs/jls-conformance-qa.md` の Q23。ライブラリ呼び出し規則がシグネチャで名指しする以上、避けられない曖昧さ）。
 
 ### 4.1 受け手の型の候補（C を静的に近似する段。JVMS の外）
 
@@ -106,7 +106,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 | ラムダ | 受け手の値がラムダ・メソッド参照 | `DATAFLOW_LAMBDA` | M 行・N 行（`Z`） |
 | 段 1 | 修飾する型（JLS 13.1）の部分型すべて（jar の型なら宣言した型の部分型。jar の型を経由した部分型（`class MyList extends ArrayList` は `List` の部分型）も H 行の 9 列目から辿る）。部分型ごとに `implementationOf` | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` / `GENERATED_IMPL:*` / `CHA` | H 行・C 行 qualifier |
 | 段 2 | 同じメソッドの中で `new` した型 | `LOCAL_NEW(_MULTI)` | C 行 hints |
-| 段 3 | 契約表（種類 C）・拡張 | `CONTRACT` / 拡張のラベル | 設定 |
+| 段 3 | ライブラリ呼び出し規則（種類 C）・拡張 | `CALL_RULE` / 拡張のラベル | 設定 |
 | 段 4 | 値の追跡（ファクトリの戻り値・引数・フィールド・new） | `DATAFLOW_*` | N・R・J 行 |
 | 経路の上限 | 経路で渡された値の宣言の型（具象クラスの型で宣言したフィールド・引数）の部分型に、段 1 の候補を絞る（`CallResolver#narrowByBound`。具象型が決まらないときだけ。段 5 の結論が上限と矛盾すれば経路の事実を採る） | `DATAFLOW_DECLARED_TYPE`（1 つに定まったとき。複数なら `CHA` のまま候補を減らす） | V 行の宣言の型・メソッドキーの引数の型（`Slot.BOUND`） |
 | 段 5 | DI の Bean 定義（注入点だけ） | `SPRING_DI(_QUALIFIER)` | H・V・D 行のアノテーション |
@@ -151,7 +151,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 | 8 ([#189](https://github.com/instreest/java-call-hierarchy-exporter/issues/189)) | 解決（暗黙の呼び出し） | `ImplicitCalls#findNoArgMethod` | JLS 15.12.1 / 8.4.8 | 拡張 for の `iterator()`・try-with-resources の `close()` のメンバー探索を、JDT に尋ねず自前で行う（式が無い）。public の宣言だけから引く（`Iterable` / `AutoCloseable` の実装は public でなければならない、という理由）。クラスの連鎖 → 最も特定的なインターフェースの順は `MethodSelection` と同じだが、実装が 2 つある。**記録済み（#189）**: 層が違い材料が違うので寄せず、4 節を正本にして「同時に直す」決まりを CONTRIBUTING.md に置き、3 つのクラス javadoc が互いを指す（`docs/resolution-selection-qa.md` の Q10） | 一致（ただし別実装。同時に直す） | `test/jls` の `s14_14_02` / `s14_20_03`、`test/pruning` の `MemberTv` / `PkgMember` |
 | 9 | 解決（暗黙の `super()`） | `TypeContextTracker#recordImplicitSuper` | JLS 8.8.7 / 15.9.5.1 / 15.12.2.5 | 匿名クラスの合成コンストラクタは、型引数を置き換えた親のコンストラクタの引数の型を消去した名前の文字列で比べる。ジェネリックなコンストラクタは引数の数だけ。決めきれなければ候補すべてに辺 | 多すぎる側（判断済み） | `test/ctorbody`、`test/jls` の `GenericSuper` |
 | 10 ([#189](https://github.com/instreest/java-call-hierarchy-exporter/issues/189)) | 選択（リフレクション） | `DataflowResolver#invokeTargets` / `dispatchesVirtually` | JVMS 5.4.6 | `getMethod(name)` の引数の型が分からないときは名前だけで多重定義すべてを候補にする。`dispatchesVirtually` は private・static だけを見てパッケージアクセスを見ない。`implementationOfSignature` に通すので上書きの照合はそちらと同じ。**受け入れた（#189）**: どちらも多すぎる側（パッケージアクセスのメソッドを仮想と扱っても、候補が増えるだけで落ちない。`implementationOfSignature` の同じシグネチャに消去される別々のジェネリック型の曖昧さも Q23 のまま）。`docs/jls-conformance-qa.md` の Q23 の「その後」 | 多すぎる側（判断済み） | `test/pruning` の `ReflOverload` / `ReflPriv` / `ReflRecv` |
-| 11 ([#188](https://github.com/instreest/java-call-hierarchy-exporter/issues/188)) | 選択（契約表） | `FrameworkEntries`（`super` の入口。`overridesWithBridge`） | — | **直した**（#188）。シグネチャが違うときは O 行（`OverrideIndex#overridersOf`）と H 行の 8 列目（部分型の継承した実装）で、契約の宣言を型引数を具体化して上書き・実装しているかを見る（`docs/callback-contracts-qa.md` の Q25） | 一致 | `test/pruning` の `FwEntry` |
+| 11 ([#188](https://github.com/instreest/java-call-hierarchy-exporter/issues/188)) | 選択（ライブラリ呼び出し規則） | `FrameworkEntries`（`super` の入口。`overridesWithBridge`） | — | **直した**（#188）。シグネチャが違うときは O 行（`OverrideIndex#overridersOf`）と H 行の 8 列目（部分型の継承した実装）で、規則の宣言を型引数を具体化して上書き・実装しているかを見る（`docs/library-call-rules-qa.md` の Q25） | 一致 | `test/pruning` の `FwEntry` |
 | 12 ([#189](https://github.com/instreest/java-call-hierarchy-exporter/issues/189)) | 値（選択ではない） | `GuardCollector`（`equals` の判定） | JLS 15.12 | **直した**: 「`Object.equals` かその上書きか」を JDT の `overrides`（と `Object` 自身の宣言との `isEqualTo`）で決める（`docs/value-safety-qa.md` の Q29。形式 v45）。判定が変わる形はコンパイルできるコードに無い | 一致 | `test/pruning` の `EqOvl` / `EqIfc` / `EqStatic`（判定しない）と `EqStrRecv` などの対照 |
 | 13 ([#187](https://github.com/instreest/java-call-hierarchy-exporter/issues/187)) | 検査の側 | `test/jls/JlsCheck#resolve` | JVMS 5.4.3.3 | **直した（#187）**: インターフェースの段で一致する宣言をすべて集め、maximally-specific（ほかの宣言の型の真の親インターフェースでないもの）に絞る。題材は `test/jls` の `s09_04_01` の `most-specific-abstract*`。直したら、JDT のコンパイル時宣言（C 行の呼び出し先）が `class C implements I1, I2`（`I2 extends I1` が同じ `m()` を再宣言）で上書きされた `I1.m` になる（JLS 8.4.8 では継承されない）ことが見えた。読み手の選択は `I1.m` からでも `mostSpecific` で `I2.m` に着くので出力の行は正しく、突き合わせはこの形だけを INFO に記録する（`docs/jls-conformance-test-qa.md` の Q21） | 一致（C 行の宣言した型の側だけ JDT に依る） | `test/jls` の `MostSpecific`（`viaNewC` / `viaNewC2` / `viaAbstractDiamond`） |
 | 14 | 解決 | `OverrideFacts#overriddenKeysOf`（O 行はソースの `MethodDeclaration` にだけ） | JLS 8.4.8.1 | jar のメソッド・合成したメソッド（ラムダ・暗黙のコンストラクタ・`<clinit>`）・record の暗黙のアクセサには O 行が無い。record のアクセサがインターフェースのメソッドを型引数の置換つきで実装する形（`record R(String name) implements Named<String>`。`Named<T>` の `T name()` の戻り値だけが違う）はキーが同じなので落ちないが、引数の型が置換される形は無い（アクセサは引数を持たない） | 一致（構造上の限界の確認） | — |
@@ -163,7 +163,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 | 変えたいこと | 触る層 | 触るクラス | 版上げ | 検査 |
 |---|---|---|---|---|
 | 「どの本体が動くか」の決め方（JVMS 5.4.6 の写し） | 選択 | `MethodSelection`（と `TypeHierarchy` の並び） | 不要 | `test/jls`・`test/pruning`・`test/regression` |
-| 受け手の型の候補の絞り方・並び | 選択 | `CallResolver`（段）・`SpringBeans`・`TypeContracts` | 不要 | `test/dataflow`（順序非依存）・`test/regression`・`test/pruning` |
+| 受け手の型の候補の絞り方・並び | 選択 | `CallResolver`（段）・`SpringBeans`・`TypeRules` | 不要 | `test/dataflow`（順序非依存）・`test/regression`・`test/pruning` |
 | 経路の環境に入れる枠（具象型・値・上限） | 選択 | `DataflowResolver#bindArgs`・`Slot`・`jche.report.StreamingTreeWalker` | 不要（宣言の型は V 行・メソッドキーに既にある） | `test/pruning`（`Dt*` / `SbDecl*`） |
 | 呼び出し先・修飾子・修飾する型の読み方（JLS の写し） | 解決 | `CallSiteRecorder`・`BindingNames`・`TypeContextTracker`・`ImplicitCalls` | 必要 | `test/jls`・`test/cacheversion --update` |
 | 上書き・実装の関係の事実 | 解決 | `OverrideFacts` | 必要 | `test/jls`（ブリッジとの突き合わせ）・`test/cacheversion --update` |

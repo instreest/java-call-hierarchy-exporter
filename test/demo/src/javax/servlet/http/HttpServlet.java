@@ -3,7 +3,7 @@ package javax.servlet.http;
 
 /**
  * 解析の確認用に置いた Servlet API のスタブ（本物には依存しない）。
- * 実際のプロジェクトでは jar の中にあるが、契約の判定は H 行の親型の名前で行うので、
+ * 実際のプロジェクトでは jar の中にあるが、規則の判定は H 行の親型の名前で行うので、
  * ソースにあっても jar にあっても同じ結果になる。
  */
 public abstract class HttpServlet {

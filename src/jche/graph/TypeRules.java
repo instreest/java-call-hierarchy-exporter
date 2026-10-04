@@ -11,10 +11,10 @@ import jche.util.Log;
 import jche.util.Messages;
 
 /**
- * 具象型の契約表（種類 C）。「この宣言型（またはこの型のこのメソッド、このファクトリのこのキー）は、
- * この具象型」を契約表の 1 行で書く（docs/contracts-unification-design.md）。
+ * 具象型のライブラリ呼び出し規則（種類 C）。「この宣言型（またはこの型のこのメソッド、このファクトリのこのキー）は、
+ * この具象型」をライブラリ呼び出し規則の 1 行で書く（docs/call-rules-unification-design.md）。
  *
- * <h2>契約の1行</h2>
+ * <h2>規則の1行</h2>
  * <pre>
  *   jp.co.xxx.dao.UserDao            =&gt; jp.co.xxx.dao.UserDaoImpl     … C-1 宣言型
  *   jp.co.xxx.dao.UserDao#find       =&gt; jp.co.xxx.dao.CachedUserDao    … C-2 宣言型#メソッド名
@@ -59,13 +59,13 @@ import jche.util.Messages;
  * ツールの推測（段4 データフロー・段5 Spring DI）より先に効かせるという既存の判断
  * （docs/instance-analysis-plugin-qa.md の Q24）を引き継ぐ。段0（静的束縛）には効かせない。
  */
-public final class TypeContracts {
+public final class TypeRules {
 
     /** Class リテラルのキーの書き方（{@code jp.co.app.UserDao.class}） */
     private static final String CLASS_SUFFIX = ".class";
 
     /**
-     * 契約の1行。
+     * 規則の1行。
      *
      * @param declaredType 左辺の型。C-1 / C-2 は呼び出し先を宣言している型、C-3 はファクトリの型
      * @param methodName   左辺のメソッド名。C-1（型だけ）なら空文字
@@ -75,27 +75,27 @@ public final class TypeContracts {
      *                     C-1 / C-2 なら {@code 0}
      * @param candidates   右辺の具象型の FQN
      * @param text         元の行（報告用）
-     * @param row          契約表の何行目か（{@link ContractUsage} の添字）
+     * @param row          ライブラリ呼び出し規則の何行目か（{@link RuleUsage} の添字）
      */
-    record Contract(String declaredType, String methodName, String key, char keyKind,
+    record Rule(String declaredType, String methodName, String key, char keyKind,
                     String[] candidates, String text, int row) {
     }
 
-    /** C-1 / C-2: 左辺の型ごとの契約。同じ型に C-1 と C-2 が並ぶことがある */
-    private final Map<String, List<Contract>> byType = new LinkedHashMap<>();
-    /** C-3: "型FQN#メソッド名(キー)" ごとの契約 */
-    private final Map<String, Contract> byFactoryKey = new LinkedHashMap<>();
-    private final ContractUsage usage;
+    /** C-1 / C-2: 左辺の型ごとの規則。同じ型に C-1 と C-2 が並ぶことがある */
+    private final Map<String, List<Rule>> byType = new LinkedHashMap<>();
+    /** C-3: "型FQN#メソッド名(キー)" ごとの規則 */
+    private final Map<String, Rule> byFactoryKey = new LinkedHashMap<>();
+    private final RuleUsage usage;
 
     /**
      * @param usage     読み込んだ行
      * @param typeNames 単純名で書かれた型名を FQN に直す道具。null なら直さない
      */
-    public TypeContracts(ContractUsage usage, TypeNames typeNames) {
+    public TypeRules(RuleUsage usage, TypeNames typeNames) {
         this.usage = usage;
-        List<ContractUsage.Line> lines = usage.lines();
+        List<RuleUsage.Line> lines = usage.lines();
         for (int row = 0; row < lines.size(); row++) {
-            Contract c = parse(lines.get(row).text(), row);
+            Rule c = parse(lines.get(row).text(), row);
             if (c == null) {
                 continue;
             }
@@ -109,18 +109,18 @@ public final class TypeContracts {
         }
     }
 
-    /** 契約を 1 行も持たない表（同梱の行は無いので、設定を読まない経路はこれになる） */
-    public static TypeContracts empty() {
-        return new TypeContracts(new ContractUsage(List.of()), null);
+    /** 規則を 1 行も持たない表（同梱の行は無いので、設定を読まない経路はこれになる） */
+    public static TypeRules empty() {
+        return new TypeRules(new RuleUsage(List.of()), null);
     }
 
     /**
-     * 単純名で書かれた型名を FQN に直した契約。
+     * 単純名で書かれた型名を FQN に直した規則。
      *
      * <p>読み込みのときに 1 回だけ直す。引くたびに直すと、同じ判断を呼び出しの数だけ繰り返すうえ、
      * 「曖昧なので使わなかった」という知らせも呼び出しの数だけ出てしまう。
      */
-    private static Contract withFqn(Contract c, TypeNames typeNames) {
+    private static Rule withFqn(Rule c, TypeNames typeNames) {
         if (typeNames == null) {
             return c;
         }
@@ -132,7 +132,7 @@ public final class TypeContracts {
             changed |= !candidates[i].equals(c.candidates()[i]);
         }
         return changed
-                ? new Contract(type, c.methodName(), c.key(), c.keyKind(), candidates, c.text(), c.row())
+                ? new Rule(type, c.methodName(), c.key(), c.keyKind(), candidates, c.text(), c.row())
                 : c;
     }
 
@@ -140,15 +140,15 @@ public final class TypeContracts {
     private static String resolve(TypeNames typeNames, String name, String text) {
         List<String> conflicts = typeNames.ambiguousCandidates(name);
         if (!conflicts.isEmpty()) {
-            Log.warn(Messages.format("graph.contracts.ambiguousType", name, conflicts.size(),
+            Log.warn(Messages.format("graph.rules.ambiguousType", name, conflicts.size(),
                     String.join(" / ", conflicts), text));
             return name;
         }
         return typeNames.toFqn(name);
     }
 
-    /** 行ごとの利用状況（どの契約が効いたか） */
-    public ContractUsage usage() {
+    /** 行ごとの利用状況（どの規則が効いたか） */
+    public RuleUsage usage() {
         return usage;
     }
 
@@ -162,8 +162,8 @@ public final class TypeContracts {
     }
 
     /** 1行を読む。形が違えば null（黙って捨てず、呼び出し側がログに出せるよう null を返す） */
-    static Contract parse(String line) {
-        return parse(line, ContractUsage.NO_ROW);
+    static Rule parse(String line) {
+        return parse(line, RuleUsage.NO_ROW);
     }
 
     /**
@@ -176,8 +176,8 @@ public final class TypeContracts {
         return arrow > 0 && s.substring(0, arrow).indexOf('(') >= 0;
     }
 
-    /** @param row 契約表の何行目か（利用状況の記録用） */
-    private static Contract parse(String line, int row) {
+    /** @param row ライブラリ呼び出し規則の何行目か（利用状況の記録用） */
+    private static Rule parse(String line, int row) {
         String s = (line == null) ? "" : line.trim();
         if (s.isEmpty() || s.startsWith("#")) {
             return null;
@@ -235,7 +235,7 @@ public final class TypeContracts {
         if (!key.isEmpty() && methodName.isEmpty()) {
             return null;   // C-3 はメソッド名が要る
         }
-        return new Contract(type, methodName, key, keyKind, candidates, s, row);
+        return new Rule(type, methodName, key, keyKind, candidates, s, row);
     }
 
     /** 右辺（カンマ区切りの具象型） */
@@ -251,18 +251,18 @@ public final class TypeContracts {
     }
 
     /**
-     * C-3: レシーバがファクトリの戻り値なら、渡されたキーで契約を引く。無ければ null。
+     * C-3: レシーバがファクトリの戻り値なら、渡されたキーで規則を引く。無ければ null。
      *
      * @param recv     レシーバの値（値の表の参照。{@link CallGraph#recvNode}）。無ければ {@link ValueStore#NONE}
      * @param dataflow キーの値を引くのに使う
      * @param ctx      この経路で分かっていること。無ければ null
      */
-    Contract matchFactory(int recv, DataflowResolver dataflow, DataflowContext ctx) {
+    Rule matchFactory(int recv, DataflowResolver dataflow, DataflowContext ctx) {
         if (byFactoryKey.isEmpty() || dataflow.values().kind(recv) != Origin.RETURN) {
             return null;
         }
         for (String left : factoryLeftSidesOf(recv, dataflow, ctx)) {
-            Contract hit = byFactoryKey.get(left);
+            Rule hit = byFactoryKey.get(left);
             if (hit != null) {
                 usage.markReached(hit.row());
                 return hit;   // 実引数の先頭から見て、最初に表に載っているキーを使う
@@ -272,12 +272,12 @@ public final class TypeContracts {
     }
 
     /**
-     * 呼び出し箇所のレシーバが「ファクトリの戻り値」なら、契約表に書ける左辺
+     * 呼び出し箇所のレシーバが「ファクトリの戻り値」なら、ライブラリ呼び出し規則に書ける左辺
      * （{@code 型#メソッド("キー")} / {@code 型#メソッド(列挙定数のFQN)}）の候補を、
      * 実引数の位置の順に返す。ファクトリの戻り値でなければ空。
      *
-     * <p>読み取りそのものは {@link FactoryCalls} が持つ。ここはそれを契約表の綴りに直すだけ。
-     * 絞れなかった呼び出しからひな形を作る側（{@code jche.report.ContractSuggestions}）も
+     * <p>読み取りそのものは {@link FactoryCalls} が持つ。ここはそれをライブラリ呼び出し規則の綴りに直すだけ。
+     * 絞れなかった呼び出しからひな形を作る側（{@code jche.report.RuleSuggestions}）も
      * これを使うので、ひな形が出す行と実際に引ける行が食い違わない。
      *
      * @param recv レシーバの値（値の表の参照。{@link CallGraph#recvNode}）。無ければ {@link ValueStore#NONE}
@@ -295,25 +295,25 @@ public final class TypeContracts {
     }
 
     /**
-     * C-2 / C-1: その呼び出しの宣言型（とメソッド名）で契約を引く。無ければ null。
+     * C-2 / C-1: その呼び出しの宣言型（とメソッド名）で規則を引く。無ければ null。
      *
      * <p>当たった行には「左辺が一致した」印を付ける。実際に具象型を決められたかは
-     * 呼び出し側（{@link CallResolver}）が {@link ContractUsage#markApplied} で付ける。
+     * 呼び出し側（{@link CallResolver}）が {@link RuleUsage#markApplied} で付ける。
      * 分けてあるのは、「左辺が一度も一致しない（綴り違い）」と「一致したが右辺を採用できない」を
      * 報告で区別するため。
      *
      * @param declaredType 呼び出し先を宣言している型の FQN
      * @param signature    呼び出し先のシグネチャ（{@code find(java.lang.String)}）
      */
-    Contract matchFor(String declaredType, String signature) {
-        List<Contract> rows = byType.get(declaredType);
+    Rule matchFor(String declaredType, String signature) {
+        List<Rule> rows = byType.get(declaredType);
         if (rows == null) {
             return null;
         }
         String methodName = methodNameOf(signature);
-        Contract byMethod = null;
-        Contract byTypeOnly = null;
-        for (Contract c : rows) {
+        Rule byMethod = null;
+        Rule byTypeOnly = null;
+        for (Rule c : rows) {
             if (c.methodName().isEmpty()) {
                 if (byTypeOnly == null) {
                     byTypeOnly = c;
@@ -322,7 +322,7 @@ public final class TypeContracts {
                 byMethod = c;
             }
         }
-        Contract hit = (byMethod != null) ? byMethod : byTypeOnly;
+        Rule hit = (byMethod != null) ? byMethod : byTypeOnly;
         if (hit != null) {
             usage.markReached(hit.row());
         }
@@ -330,10 +330,10 @@ public final class TypeContracts {
     }
 
     /**
-     * C-3 の索引の鍵＝契約表に書く左辺の正規形。
+     * C-3 の索引の鍵＝ライブラリ呼び出し規則に書く左辺の正規形。
      * {@link #factoryLeftSidesOf} が呼び出し箇所から組み立てる形と一致させる
      */
-    private static String leftSideOf(Contract c) {
+    private static String leftSideOf(Rule c) {
         return leftSideOf(c.declaredType() + "#" + c.methodName(), c.key(), c.keyKind());
     }
 

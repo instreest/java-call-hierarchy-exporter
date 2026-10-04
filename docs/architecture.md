@@ -45,7 +45,7 @@ java-call-hierarchy-exporter.sh / .cmd            起動コマンド。JDK・JBa
           │   │             jche.dataflow.DataflowBuilder   フェーズ2b。ファクトリの戻り値など経路に依らない値をグラフ全体から一括で確定
           │   │             jche.graph.CallResolver         呼び出しごとに受け手の型の候補を絞る段（BindKind → 段 0〜6）。
           │   │               ├ DataflowResolver            値の表（ValueStore）と経路の値（Slot）から具象型を追う
-          │   │               ├ SpringBeans / Contracts     DI の Bean 定義・契約表・拡張（jche.extension.TypeCandidateProvider）
+          │   │               ├ SpringBeans / LibraryCallRules     DI の Bean 定義・ライブラリ呼び出し規則・拡張（jche.extension.TypeCandidateProvider）
           │   │               └ MethodSelection             候補の型ごとに実際に動く本体を選ぶ（JVMS 5.4.6。実装探索の入口はここだけ）
           │   └ jche.AnalysisSnapshot              グラフ・解決器・設定をひとそろいにした結果
           └ [フェーズ3] jche.report.StreamingTreeWalker      起点（jche.graph.EntryPoints）から深さ優先で辿り、
@@ -53,7 +53,7 @@ java-call-hierarchy-exporter.sh / .cmd            起動コマンド。JDK・JBa
                         jche.report.UnresolvedReport        型解決に失敗した呼び出しを同じ CSV の末尾に
                         jche.external.ExternalUsageScanner  外部 jar のクラスファイルを読み、被参照を同じ CSV に追記
                         jche.report.InventoryReport         methods.csv（メソッドの一覧と呼ばれ方）
-                        jche.report.ContractSuggestions     絞れなかった呼び出しから契約表のひな形（contracts-suggested.txt）
+                        jche.report.RuleSuggestions     絞れなかった呼び出しからライブラリ呼び出し規則のひな形（call-rules-suggested.txt）
 ```
 
 Eclipse / VSCode のプラグインは `jche.server.Server`（`--server`）を子プロセスとして起動し、`Exporter.analyze` の結果を
@@ -95,11 +95,11 @@ Eclipse / VSCode のプラグインは `jche.server.Server`（`--server`）を�
 | `jche.config` | 設定ファイルの読み取り、`project.root` からの自動判定、ビルドファイル（Maven / Gradle）から依存 jar を集める | `Config`、`ConfigFile`、`ProjectDetector`、`ProjectLayout`、`BuildFileClasspath`（→ `MavenBuild` / `GradleBuild`）、`ToolRoot`、`Plugins` |
 | `jche.analysis` | **解決**。JDT で AST を訪問し事実を集め、差分更新でキャッシュを書き直す | `CacheUpdater`、`StaleTypes`、`CallEdgeExtractor`、`FactVisitor`、`BindingNames`、`OverrideFacts`、`CallSiteRecorder`、`OriginTracker`、`ImplicitCalls`、`LibraryDiff`、`BlockWriter` |
 | `jche.cache` | **キャッシュ**。`analysis-cache.tsv` の形式と、行 1 つ 1 つの record。錠と一時ファイル | `CacheFormat`（形式の正本）、`FileAnalysis`、`CacheReader`、`CacheLock`、`TempFiles`、`CacheDump`（目で読める形に戻す道具） |
-| `jche.graph` | **選択**。キャッシュからグラフを組み、受け手の型の候補を絞り、動く本体を選ぶ | `CallGraphBuilder`、`CallGraph`、`MethodTable`、`TypeHierarchy`、`BindKind`、`CallResolver`、`Resolution`（ラベルの語彙）、`MethodSelection`、`DataflowResolver`、`ValueStore`、`SpringBeans`、`Contracts`、`EntryPoints` |
+| `jche.graph` | **選択**。キャッシュからグラフを組み、受け手の型の候補を絞り、動く本体を選ぶ | `CallGraphBuilder`、`CallGraph`、`MethodTable`、`TypeHierarchy`、`BindKind`、`CallResolver`、`Resolution`（ラベルの語彙）、`MethodSelection`、`DataflowResolver`、`ValueStore`、`SpringBeans`、`LibraryCallRules`、`EntryPoints` |
 | `jche.dataflow` | フェーズ 2b。経路に依らない値（ファクトリの戻り値の畳み込みなど）をグラフ全体から一括で確定する | `DataflowBuilder`、`DataflowFacts` |
-| `jche.report` | **出力**。CSV を 1 行ずつ書く | `StreamingTreeWalker`、`CallHierarchyCsvWriter`、`ResolvedBy`、`InventoryReport`、`UnresolvedReport`、`ContractSuggestions`、`CallConditionsReport` |
+| `jche.report` | **出力**。CSV を 1 行ずつ書く | `StreamingTreeWalker`、`CallHierarchyCsvWriter`、`ResolvedBy`、`InventoryReport`、`UnresolvedReport`、`RuleSuggestions`、`CallConditionsReport` |
 | `jche.external` | 外部 jar のクラスファイルを読んで、自分のメソッドの被参照を出す | `ExternalUsageScanner`、`ClassFileRefs` |
-| `jche.extension` | 利用者が Java で書く拡張の API（公開 API。互換を保つ） | `TypeCandidateProvider`、`Hint`、`ContractProvider`、`UsageReporter` |
+| `jche.extension` | 利用者が Java で書く拡張の API（公開 API。互換を保つ） | `TypeCandidateProvider`、`Hint`、`RuleProvider`、`UsageReporter` |
 | `jche.builtin` | 同梱の拡張（対応表ファイルで具象型を返す） | `TypeMappingProvider` |
 | `jche.framework` | アノテーション処理で実装が生成される型（Doma の `@Dao` など）の定義 | `GeneratedImpl` |
 | `jche.cli` | 対話モードの画面と、起動コマンドの設定（`launcher.properties`） | `App`、`ConfigCatalog`、`ConfigWizard`、`LauncherSettings`、`Terminal` |

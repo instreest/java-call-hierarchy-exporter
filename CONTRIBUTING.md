@@ -130,7 +130,7 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   被参照の行・プラグインの `EXPORT`）。人向けの文章ではなく、期待値との比較・Excel のフィルタ・
   他のツールへの受け渡しに使う出力のデータだからである。注記にカンマを入れない
   （セルが引用符で囲まれ、行末の grep が効かなくなる）。`docs/nls-qa.md` の Q6。
-  同じ出力フォルダでも `contracts-suggested.txt` は**人が読んで選ぶ案内文**なので表示言語に合わせる
+  同じ出力フォルダでも `call-rules-suggested.txt` は**人が読んで選ぶ案内文**なので表示言語に合わせる
   （`docs/nls-qa.md` の Q16）
 - **キャッシュの形式の版（`CacheFormat.VERSION`）は迷ったら上げる。上げ忘れは `test/cacheversion/run.sh` が捕まえる。**
   書き手（`src/jche/analysis`・`src/jche/cache`）の変更でキャッシュに入る事実が変わりうるなら、列や意味の変更で
@@ -188,11 +188,11 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - **解析器が何を読み取るかは、外から差し替えさせない。** 利用者が Java を書ける差し込み口は
   `jche.extension.TypeCandidateProvider`（読み取った材料の解釈）だけで、AST 走査中に割り込む口は置かない
   （`docs/instance-analysis-plugin-qa.md` の Q28）。ファクトリの実引数の何をキーとして読むかを増やすときは
-  `jche.graph.FactoryCalls#readsOf` に足し、対になる 3 か所（契約表の読み書き `TypeContracts`、
-  証拠の種別 `jche.extension.Hint`、ひな形 `ContractSuggestions`）も揃える
+  `jche.graph.FactoryCalls#readsOf` に足し、対になる 3 か所（ライブラリ呼び出し規則の読み書き `TypeRules`、
+  証拠の種別 `jche.extension.Hint`、ひな形 `RuleSuggestions`）も揃える
 - 具象型からの実装探索（選択。JVMS 5.4.6）は `jche.graph.MethodSelection`（`graph.selection()`）の 2 つの入口だけを通す。
   呼び出し先のキーが分かるなら `implementationOf(型FQN, 呼び出し先ID)`、
-  シグネチャしか分からないなら（契約表・リフレクション）`implementationOfSignature(型FQN, シグネチャ)`。
+  シグネチャしか分からないなら（ライブラリ呼び出し規則・リフレクション）`implementationOfSignature(型FQN, シグネチャ)`。
   jar からの被参照（`ExternalUsageScanner`）が出す「JVM の解決（JVMS 5.4.3.3）が結び付ける宣言」は、選択ではなく解決なので
   `resolvedDeclaration(型FQN, シグネチャ)`（同じクラスの 3 つ目の入口。ブリッジの形＝ O 行・H 行の 8 列目も見る）を通す。
   どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見る作りなので、

@@ -391,12 +391,17 @@ if [ -n "${OUT:-}" ] && [ -f "$OUT/methods.csv" ]; then
     else
         echo "  NG   同じ行のメソッドの並びが期待と違います（$same_line_methods）"; fail=1
     fi
-    same_line_roots=$(sed -nE 's/^[^,]*,[^,]*,[^,]*,[0-9]+,(OneLineLambdas\.(pair|lambda\$pair\$[0-9]+)),.*/\1/p' \
+    # ラムダの合成メソッドは CSV に出さず、起点にもしない。同じ行の 2 つのラムダの本体の呼び出しは、
+    # 作ったメソッド pair の直下に、ソースの並び（ready → make）で出る
+    same_line_roots=$(sed -nE 's/^[^,]*,[^,]*,[^,]*,[0-9]+,(OneLineLambdas\.[A-Za-z$0-9]+),.*/\1/p' \
         "$OUT/call-hierarchy.csv" | uniq | paste -sd' ')
-    if [ "$same_line_roots" = 'OneLineLambdas.pair OneLineLambdas.lambda$pair$0 OneLineLambdas.lambda$pair$1' ]; then
-        echo "  OK   同じ行のメソッドとラムダは起点の並びで外側が先・ソースの並び（$same_line_roots）"
+    same_line_callees=$(sed -nE 's/^[^,]*,(OneLineLambdas\.(ready|make)),[^,]*,1,OneLineLambdas\.pair,.*/\1/p' \
+        "$OUT/call-hierarchy.csv" | paste -sd' ')
+    if [ "$same_line_roots" = 'OneLineLambdas.pair' ] \
+            && [ "$same_line_callees" = 'OneLineLambdas.ready OneLineLambdas.make' ]; then
+        echo "  OK   同じ行のラムダは起点にならず、本体の呼び出しは作ったメソッドの直下にソースの並びで出る（$same_line_callees）"
     else
-        echo "  NG   同じ行のメソッドとラムダの起点の並びが期待と違います（$same_line_roots）"; fail=1
+        echo "  NG   同じ行のラムダの起点・呼び出しの並びが期待と違います（起点: $same_line_roots / 呼び出し: $same_line_callees）"; fail=1
     fi
 fi
 

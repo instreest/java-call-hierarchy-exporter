@@ -18,11 +18,11 @@ import jche.graph.CallGraph;
 import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.MethodTable;
-import jche.graph.TypeContracts;
+import jche.graph.TypeRules;
 import jche.util.Messages;
 
 /**
- * 絞れなかった呼び出し（{@code [UNEXPANDED:CHA]}）から、契約表の種類 C のひな形を作る。
+ * 絞れなかった呼び出し（{@code [UNEXPANDED:CHA]}）から、ライブラリ呼び出し規則の種類 C のひな形を作る。
  *
  * <h2>なぜ要るか</h2>
  * 「候補2件: ローカル変数」と言われても、<b>何をどこに書けば絞れるのか</b>は出力からは分からない。
@@ -31,7 +31,7 @@ import jche.util.Messages;
  * そのまま貼れる行を出力フォルダに置けば、書式を覚えずに「選んでコメントを外す」だけで済む。
  *
  * <h2>何を出すか</h2>
- * 呼び出し箇所ごとではなく、<b>それを直す契約の行ごと</b>にまとめる。同じ
+ * 呼び出し箇所ごとではなく、<b>それを直す規則の行ごと</b>にまとめる。同じ
  * {@code Dao#find} が 100 か所で絞れていないなら、必要な行は 1 行だからである。
  * レシーバがファクトリの戻り値なら、ファクトリとキーを書いた形（C-3）を出す。
  *
@@ -41,10 +41,10 @@ import jche.util.Messages;
  *   # fxp.Dao#find =&gt; ??
  * </pre>
  *
- * <p>左辺の組み立ては {@link TypeContracts#factoryLeftSidesOf} と同じものを使う。
+ * <p>左辺の組み立ては {@link TypeRules#factoryLeftSidesOf} と同じものを使う。
  * 書ける形が増えたときに、ひな形と実際に引ける形が食い違わないようにするため。
  */
-public final class ContractSuggestions {
+public final class RuleSuggestions {
 
     /** ひな形として出す行数の上限。多すぎると「選ぶ」作業にならない */
     static final int MAX_LINES = 200;
@@ -52,7 +52,7 @@ public final class ContractSuggestions {
     /** 右辺に入れる目印。利用者はここを具象型の FQN に置き換える */
     private static final String PLACEHOLDER = "??";
 
-    /** 1 つの契約行に対して集めたもの */
+    /** 1 つの規則行に対して集めたもの */
     private static final class Entry {
         /** その呼び出しで CHA が並べた候補（具象型の FQN） */
         private final Set<String> candidates = new TreeSet<>();
@@ -106,12 +106,12 @@ public final class ContractSuggestions {
         }
     }
 
-    /** 契約の左辺と、それがファクトリとキーの形（C-3）かどうか */
+    /** 規則の左辺と、それがファクトリとキーの形（C-3）かどうか */
     private record Left(String text, boolean fromFactory) {
     }
 
     /**
-     * その呼び出しを直す契約の左辺。
+     * その呼び出しを直す規則の左辺。
      *
      * <p>レシーバがファクトリの戻り値なら、ファクトリとキーの形（C-3）を優先する。そちらのほうが
      * 狭く、同じ型を返す他の呼び出しを巻き込まないため。キーが決まらなければ宣言型とメソッド名
@@ -122,7 +122,7 @@ public final class ContractSuggestions {
                                     int edgeIndex, MethodTable methods, int declaredCallee) {
         if (dataflow.enabled()) {
             List<String> factories =
-                    TypeContracts.factoryLeftSidesOf(graph.recvNode(edgeIndex), dataflow, ctx);
+                    TypeRules.factoryLeftSidesOf(graph.recvNode(edgeIndex), dataflow, ctx);
             if (!factories.isEmpty()) {
                 return new Left(factories.get(0), true);
             }
@@ -146,7 +146,7 @@ public final class ContractSuggestions {
      * ひな形を書き出す。
      *
      * <p>文字コードは <b>UTF-8（BOM 無し）で固定</b>する。{@code output.encoding} に合わせないのは、
-     * このファイルの中身をそのまま貼る先（{@code contracts.files} の表）が UTF-8 固定で読まれるため。
+     * このファイルの中身をそのまま貼る先（{@code call.rules.files} の表）が UTF-8 固定で読まれるため。
      *
      * @return 書いたひな形の行数
      */

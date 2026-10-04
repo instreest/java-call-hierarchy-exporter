@@ -65,7 +65,7 @@
 | 2-10 | 拡張ポイント（`TypeCandidateProvider`、証拠の `Hint`、リフレクション読み込み。`plugin.folders` の `.java` をその場でコンパイルする読み込みと、同梱の対応表の拡張） | 低 | 690行 | プロジェクト固有のファクトリ・DI設定を外から与えられない。独自フレームワークが無ければ**省いてよい** | B 5.3 拡張ポイント |
 | 2-11 | 除外パッケージの繋ぎ直し（除外ノードを飛ばして先を親に繋ぐ、環境の差し替え、除外内の相互再帰の保護） | 中 | 1-6 に含む | `java.**` を除外すると、その先の自分のコード（コールバック等）が出なくなる。再帰の保護を忘れると**スタックオーバーフロー** | B 5.4, 2.13a |
 | 2-12 | 段5 DI（Spring）の Bean 定義（H・V・D・R 行のアノテーションから注入点と Bean を求め、レシーバが注入点のときだけ候補を Bean に絞る。`@Qualifier` / `@Primary`、`@Bean` メソッドの戻り値。Bean でないクラスの引数とフィールド・利用者が渡した値・別の型が書くフィールドでは絞らない） | 高 | 570行 | Spring のインターフェース注入が CHA 候補のまま。絞る条件を緩めると**別の生成経路を取りこぼす**（Bean でない `new` の経路・テストや利用者が渡す値。参照実装で実際に起きた）。Spring を使わないなら**省いてよい** | B 5.3 段5、`docs/spring-di-qa.md` |
-| 2-13 | 契約表（ソースの外との契約を文字列の表で持つ。種類 A 呼び戻し（`Thread#start() -> c* : run()`）・種類 B フレームワークが起点として呼ぶ入口（`@Scheduled`・`HttpServlet#doGet`。`methods.csv` の role）・種類 C 具象型（宣言型・ファクトリのキー → 具象型）。同梱の表（JDK・javax / jakarta）と設定で足す表と拡張が返す表を 1 つにまとめ、当たらなかった行を知らせ、絞れなかった呼び出しからひな形を作る。アノテーション処理で生成される実装（Doma・MapStruct）の定義もここ） | 中 | 1,790行 | `new Thread(task).start()` の先の `run()`、`executor.submit(...)` の先、フレームワークが呼ぶ入口、独自ファクトリの戻り値が辿れない。表は文字列で、書き間違えても「当たらない」だけで何も言わないので、効いた件数を数えて知らせる仕組みまで一緒に要る | B 4.1 注記表、B 5.3 段3、`docs/callback-contracts.md` |
+| 2-13 | ライブラリ呼び出し規則（ソースの外の呼び出しを文字列の表で持つ。種類 A 呼び戻し（`Thread#start() -> c* : run()`）・種類 B フレームワークが起点として呼ぶ入口（`@Scheduled`・`HttpServlet#doGet`。`methods.csv` の role）・種類 C 具象型（宣言型・ファクトリのキー → 具象型）。同梱の表（JDK・javax / jakarta）と設定で足す表と拡張が返す表を 1 つにまとめ、当たらなかった行を知らせ、絞れなかった呼び出しからひな形を作る。アノテーション処理で生成される実装（Doma・MapStruct）の定義もここ） | 中 | 1,790行 | `new Thread(task).start()` の先の `run()`、`executor.submit(...)` の先、フレームワークが呼ぶ入口、独自ファクトリの戻り値が辿れない。表は文字列で、書き間違えても「当たらない」だけで何も言わないので、効いた件数を数えて知らせる仕組みまで一緒に要る | B 4.1 注記表、B 5.3 段3、`docs/library-call-rules.md` |
 
 ## 3. 出力の付加情報
 
@@ -184,7 +184,7 @@
 | 2-7 | `graph/FieldFacts`(257)・`analysis/FieldFactCollector`(537)・`cache/FieldAssignFact`(49)・`cache/FieldDeclFact`(33) | 876 |
 | 2-10 | `extension/Hint`(48)・`extension/TypeCandidateProvider`(54)・`extension/UsageReporter`(22)・`builtin/TypeMappingProvider`(204)・`config/PluginClassLoaders`(296)・`config/Plugins`(61) | 685 |
 | 2-12 | `graph/SpringBeans`(442)・`cache/AnnotationTokens`(130) | 572 |
-| 2-13 | `graph/TypeContracts`(375)・`graph/CallbackContracts`(276)・`graph/FrameworkEntries`(212)・`graph/Contracts`(122)・`graph/ContractUsage`(196)・`graph/JdkCallbacks`(99)・`graph/BundledFrameworkEntries`(96)・`graph/TypeNames`(100)・`report/ContractSuggestions`(212)・`extension/ContractProvider`(31)・`framework/GeneratedImpl`(68) | 1787 |
+| 2-13 | `graph/TypeRules`(375)・`graph/CallbackRules`(276)・`graph/FrameworkEntries`(212)・`graph/LibraryCallRules`(122)・`graph/RuleUsage`(196)・`graph/JdkCallbacks`(99)・`graph/BundledFrameworkEntries`(96)・`graph/TypeNames`(100)・`report/RuleSuggestions`(212)・`extension/RuleProvider`(31)・`framework/GeneratedImpl`(68) | 1787 |
 | 3-1 | `report/InventoryReport`(218)・`graph/EntryPoints`(66) | 284 |
 | 3-4 | `graph/SourceOrder`(80) | 80 |
 | 3-6 | `analysis/GuardCollector`(558)・`cache/Guard`(159)・`graph/GuardEvaluator`(145)・`graph/GuardTable`(135)・`graph/GuardTableBuilder`(157) | 1154 |

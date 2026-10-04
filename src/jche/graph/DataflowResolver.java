@@ -833,7 +833,7 @@ public final class DataflowResolver {
     /**
      * 値が表す文字列の値（リテラル・コンパイル時定数と、委譲を畳んだ戻り値）。分からなければ null。
      *
-     * <p>種類 C の契約表（{@link TypeContracts}）が、ファクトリに渡されたキーを引くのに使う。
+     * <p>種類 C のライブラリ呼び出し規則（{@link TypeRules}）が、ファクトリに渡されたキーを引くのに使う。
      * 辿る段数は {@code dataflow.max.depth} で頭打ちになり、それを超えるものは「分からない」に倒す。
      */
     String literalValueOf(int ref, DataflowContext ctx) {

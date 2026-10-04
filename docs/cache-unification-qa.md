@@ -217,7 +217,7 @@ stage B で読み手が値の表を読むようになって無くなった。値
 - R 行を組み直した文字列は、呼び出し箇所と同じく上限が無くなる（実引数の入れ子・レシーバ・`s=`）。ローカル変数は
   代入元のノードに畳まれる。`static final int` のフィールドは `F:` ではなく `V:` になる。
   `L:` も `V:` も戻り値の型は決めないが、読み手は「メソッドが返す値が 1 つに決まる」とき、その値を経路の値として
-  使う（`DataflowResolver` の戻り値の文字列。条件の打ち切りと契約表のキー）。値そのものが識別子の形でない
+  使う（`DataflowResolver` の戻り値の文字列。条件の打ち切りとライブラリ呼び出し規則のキー）。値そのものが識別子の形でない
   文字列は、今の読み手が出所の文法の文字で切ってしまうので、以前と同じく U として渡す（Q9）
 - R 行を宣言の戻り値の型で書くようになったので（Q8）、`Object` を返すメソッドの `return "x";` も R 行になる。
   どの return も同じ識別子の形の文字列を返すメソッドでは、その値で条件を打ち切る（`test/pruning` の `LitRet`。
@@ -257,7 +257,7 @@ return はどれも同じ宣言から決まるので、全部記録するか、�
 **stage B で外した。** 読み手（`DataflowResolver`・`GuardEvaluator`・`FactoryCalls` など）が出所の文字列ではなく
 値の表（`jche.graph.ValueStore`）を読み、値を切り詰めずに比べるようになったので、R 行の文字列リテラルも
 そのまま読む。下の 3 つの検査はそのまま通り、`test/pruning` の `PipeRetEq`・`PipeRetSwitch`・`SemiRetKey`
-（`|` `;` を含む戻り値で、正しく打ち切る・契約表の書いたとおりの行に当てる）を足した。以下は外す前の記録。
+（`|` `;` を含む戻り値で、正しく打ち切る・ライブラリ呼び出し規則の書いたとおりの行に当てる）を足した。以下は外す前の記録。
 
 今の読み手は、組み直した出所の文字列から値を `Origin.valueOf` で取り出すので、値が出所の文法の文字
 （`|` `;` `{` `}`）を含むと途中で切れる。R 行の値が `"a|b"` のメソッドは `"a"` を返すように見え、
@@ -266,10 +266,10 @@ return はどれも同じ宣言から決まるので、全部記録するか、�
 - `if (!s.equals("a")) hit();` を `[UNREACHABLE]` にする（`test/pruning` の `NePipeRet`）
 - `switch (s) { case "ORDER" -> …; default -> other(); }` に `"ORDER|DESC"` が渡る経路で、`default` を
   `[UNREACHABLE]` にする（`PipeRetLocal`）
-- 契約表の `KeyFactory#get("A") => DaoA` に `"A|B"` を当て、`DaoB` の実装を落とす（`FacPipeRet`）
+- ライブラリ呼び出し規則の `KeyFactory#get("A") => DaoA` に `"A|B"` を当て、`DaoB` の実装を落とす（`FacPipeRet`）
 
 条件の期待値に当てている以前の切り方（Q4 の `legacyCut`）は、`EQ` / `IN` を以前と同じ答えにするだけで、
-切れた値が期待値と一致してしまう `NE` / `NI`・契約表のキーは救えない。
+切れた値が期待値と一致してしまう `NE` / `NI`・ライブラリ呼び出し規則のキーは救えない。
 
 以前の書き手（形式 v32 まで）は、クラス名・識別子の形（64 文字以内）でない文字列リテラルを R 行に `U` として
 書いていた。そこで `CallGraphBuilder.readReturn` が、R 行の値そのもの（木の頂点）が文字列リテラルで
@@ -289,7 +289,7 @@ R 行はメソッドの**本体**が返す値で、呼び出し箇所に書い�
 
 - `Base.mode()` が `"a|b"`、`Sub.mode()` が `"x"` を返すとき、`chk((String) b.mode())` の先の
   `if (s.equals("x")) isX();` を `[UNREACHABLE]` にする（`test/pruning` の `OvrLit`）
-- `c.key()` の値を契約表のキーにして、宣言の値の行（`get("USER|X") => DaoB`）だけに絞り、上書きした本体の値の
+- `c.key()` の値をライブラリ呼び出し規則のキーにして、宣言の値の行（`get("USER|X") => DaoB`）だけに絞り、上書きした本体の値の
   行（`get("S") => DaoA`）の実装を落とす（`OvrKey`）
 - `f.make()` を宣言の `return new DaoA();` と畳んで `DATAFLOW_FACTORY` で `DaoA` に絞り、`Sub.make` が返す
   `DaoB` を落とす。委譲 `return f.make();`・実引数 `id(f.make())`・型の分からないレシーバを束縛した
@@ -336,7 +336,7 @@ stage B で R 行の文字列リテラルをそのまま読むようになって
 
 対応の要点:
 
-- 読み手（`DataflowResolver`・`GuardEvaluator`・`FactoryCalls`・`TypeContracts`・`CallbackContracts`・`CallResolver`・
+- 読み手（`DataflowResolver`・`GuardEvaluator`・`FactoryCalls`・`TypeRules`・`CallbackRules`・`CallResolver`・
   `SpringBeans`・`DataflowBuilder`・`StreamingTreeWalker`・`CallConditionScanner`）は、値グラフを出所の文字列に
   組み直したもの（`OriginRenderer`）を読むのをやめた。`CallGraphBuilder` が N・G・R・J 行と C・U 行の値を
   値の表（`jche.graph.ValueStore`）・条件の表（`GuardTable`）・文字列の置き場（`StringPool`）に取り込み、読み手は
@@ -366,7 +366,7 @@ stage B で R 行の文字列リテラルをそのまま読むようになって
 
 - `parse("x", ";")` の先の `if (";".equals(delim)) semicolon();` を `[UNREACHABLE] … = )` にする（実引数が空文字に見える）
 - `"a|c"` を渡した経路で `if (!mode.equals("a|b")) notAb();` を `a` どうしと見て打ち切る
-- 契約表のキー `get("USER|X")` を `get("USER")` の行に当てる
+- ライブラリ呼び出し規則のキー `get("USER|X")` を `get("USER")` の行に当てる
 - `new Holder("a;r=K:x.Y")` のコンストラクタ注入の値を `a` と読み、残りをレシーバと取り違える
 
 表はノードの構造（種別・値・実引数・レシーバ・書かれた型）を列で持ち、値は文字列の置き場の番号で指すので、
@@ -460,7 +460,7 @@ R 行の文字列リテラルをそのまま読むようになって（Q9）、�
 
 TraceCheck を消す前に、それが守っていた範囲を残す検査が守れているかを変異で測った。型付きの読み手の分かれ道
 （`DataflowResolver`・`DataflowBuilder`・`GuardEvaluator`・`StreamingTreeWalker`・`FactoryCalls`・
-`CallbackContracts`・`FieldFacts`・`SpringBeans`・`CallGraph` の上書きの判定・`CallGraphBuilder` の値の取り込み）を
+`CallbackRules`・`FieldFacts`・`SpringBeans`・`CallGraph` の上書きの判定・`CallGraphBuilder` の値の取り込み）を
 1 行ずつ壊す変異 96 個を、1 つずつ植えて検査を流した（`test/pruning` → `test/regression` → `test/dataflow` の順に流し、
 最初に落ちた検査に数える）。
 
@@ -471,7 +471,7 @@ TraceCheck を消す前に、それが守っていた範囲を残す検査が守
 | 洗い出した穴の 18 ケースを `test/pruning` に足した後（今の形） | **82/96**（`test/pruning` で 66、残りを `test/regression` で 16。今の `test/dataflow` だけでは 0） |
 
 TraceCheck を消しただけでは、TraceCheck だけが検出していた 14 個が素通りになり、うち 8 個は呼び出しを
-黙って落とす取り違えだった（親のフィールドの持ち主・リフレクションの受け手の具象型・引数で渡った Class・契約表の実引数の位置・
+黙って落とす取り違えだった（親のフィールドの持ち主・リフレクションの受け手の具象型・引数で渡った Class・ライブラリ呼び出し規則の実引数の位置・
 呼び戻しの 2 番目以降の実引数・継承したメソッドへのコンストラクタ実引数・static や値の食い違うフィールド）。
 TraceCheck も含めてどの検査も検出していなかった 4 個（引数で渡ったメソッド参照・return が 2 通りの `@Bean`・
 private でも final でもないフィールド・setter でも代入するフィールド）もあわせて、`test/pruning` の
@@ -1304,7 +1304,7 @@ test/incremental に足した 17 ケースの、差分更新で解析し直し�
 
 今は、対になっていないサロゲートを `\uXXXX`（小文字の 16 進 4 桁。制御文字と同じ形）に符号化する。`unescape` は
 同じ char に戻すので値は変わらない。対になったサロゲートはそのまま書く（UTF-8 に書ける）。条件式の文字列は、
-切れ目が上位サロゲートなら 1 文字手前で切る。契約表のひな形（`contracts-suggested.txt`）は、キャッシュから戻した
+切れ目が上位サロゲートなら 1 文字手前で切る。ライブラリ呼び出し規則のひな形（`call-rules-suggested.txt`）は、キャッシュから戻した
 キーを含みうるので、CSV と同じ置換する書き手で書く。
 
 却下した案: キャッシュの書き手を置換する設定にする。`"\uD800x"` と `"\uDBFFx"` がどちらも置換文字になって等しく
@@ -3445,7 +3445,7 @@ class U1 { void go(R r) { r.close(); } }                           // E2 を ext
 
 - 宣言の指紋に `getQualifiedName()` を足す（指紋そのものがバッチに依り、全件解析がバッチの切れ目で切れることも直らない）
 - 「自分のパッケージ + 単純名」にする（メソッドのバインディングから引いた型は、宣言したファイルのパッケージが要るが書き手は知らない）
-- 回復した型をすべて単純名にする（jar のシグネチャに現れる無い型や jar の型の無い親まで名前が変わり、契約表の突き合わせと、jar が
+- 回復した型をすべて単純名にする（jar のシグネチャに現れる無い型や jar の型の無い親まで名前が変わり、ライブラリ呼び出し規則の突き合わせと、jar が
   来たときの解析し直しが当たらなくなる）
 - ファイルの import から判断する（宣言した側と呼ぶ側で名前が食い違う）
 - 読み手で「名前付きのパッケージから無名パッケージへの参照は無い型」と読む（名前で型を引く読み手の場所すべてに同じ判定が要る）
@@ -4173,7 +4173,7 @@ src（依存 jar なし）で 213 件、test/demo で 2 件）。
 確かめたこと:
 
 - **レーンごとの通しの検査。** どのレーンも、最後のコミットで lint（`javac --release 17 -Xlint:all -Werror`）と 14 の検査（regression・incremental・
-  dataflow・conditions・warnings・cachevalue・contracts・ctorbody・jls・nls・cli・cacheversion・pruning・server）を流した。事実の変わるレーン（W1〜W3・R）
+  dataflow・conditions・warnings・cachevalue・rules・ctorbody・jls・nls・cli・cacheversion・pruning・server）を流した。事実の変わるレーン（W1〜W3・R）
   では、版を統合で上げる決まりなので test/cacheversion だけが落ち、ほかは通った。S1・S2・B・M のレーンとそのレビューは test/cacheversion も通った
   （記録の題材の事実が変わらないため）
 - **足した検査が直す前の版で落ちること。** どのレーンも、足した検査を直す前の版（40b235e か、レビューならレーンの直しのコミット）のクラスで流して
@@ -4331,7 +4331,7 @@ Q129 の限界（jar の欠けやコンパイルエラーのもとでの JDT の
 今は **H 行に書く親の型（親型の 3 列目と、親クラスの連鎖の 7 列目）が回復した型なら、名前に `?.` を付けて書く**
 （`TypeContextTracker#supertypeNameOf`）。無い型はどの本物の型の親子にもなれないので、H 行では回復した型をすべて `?.` 付きに
 する（`?.org.missing.Lib` も）。I 行の依存する型・メソッドの鍵・N 行の型の名前は変えない（回復した型をすべて `?.` にする案は
-Q107 で却下したとおり、jar が来たときの解析し直しと契約表の突き合わせに効く）。H 行の親が `?.` 付きになるファイルは型解決に
+Q107 で却下したとおり、jar が来たときの解析し直しとライブラリ呼び出し規則の突き合わせに効く）。H 行の親が `?.` 付きになるファイルは型解決に
 失敗しているファイルなので、型階層の安全網（Q132。型解決に失敗していなかったブロックだけを比べる）にも部分型の索引
 （Q131。失敗したブロックは名前を照合せず必ず解析し直す）にも効かない。Issue の補足のとおり、I 行の「解決できなかった名前」は
 v44 で廃止されている（Q131）ので、「I 行の名前は変えない」の注記は対象が無く、今の I 行（依存する型）はもともと `?.` 付きの

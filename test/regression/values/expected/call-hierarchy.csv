@@ -15,9 +15,9 @@ at vals.Holder.helper(Holder.java:20),Holder.hitHolder,RESOLVED:STATIC_BOUND:STA
 at vals.Keys.v5s(Keys.java:10),OrderDaoImpl.find,UNEXPANDED:CHA,1,Keys.v5s,OrderDaoImpl.find,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 at vals.Keys.v5s(Keys.java:10),UserDaoImpl.find,UNEXPANDED:CHA,1,Keys.v5s,UserDaoImpl.find,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
 at vals.Keys.v5s(Keys.java:10),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v5s,DaoFactory.get
-at vals.Keys.v5(Keys.java:14),OrderDaoImpl.find,RESOLVED:CONTRACT,1,Keys.v5,OrderDaoImpl.find
+at vals.Keys.v5(Keys.java:14),OrderDaoImpl.find,RESOLVED:CALL_RULE,1,Keys.v5,OrderDaoImpl.find
 at vals.Keys.v5(Keys.java:14),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v5,DaoFactory.get
-at vals.Keys.v6(Keys.java:18),OrderDaoImpl.find,RESOLVED:CONTRACT,1,Keys.v6,OrderDaoImpl.find
+at vals.Keys.v6(Keys.java:18),OrderDaoImpl.find,RESOLVED:CALL_RULE,1,Keys.v6,OrderDaoImpl.find
 at vals.Keys.v6(Keys.java:18),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v6,DaoFactory.get
 at vals.Pipe.main(Pipe.java:16),Pipe.parse2,RESOLVED:STATIC_BOUND:STATIC,1,Pipe.main,Pipe.parse2
 at vals.Pipe.parse2(Pipe.java:33),Pipe.notAb,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.main,Pipe.parse2,Pipe.notAb
