@@ -3999,6 +3999,67 @@ public class FwEntry {
 EOF
 
 # ---------------------------------------------------------------------------
+# ラムダの合成メソッド（lambda$…）は CSV に出さない。ラムダの中の呼び出しは、そのラムダを実行する
+# メソッドの直下に出る（docs/lambda-collapse-qa.md）。本体の呼び出しが落ちないことを形ごとに見る
+# ---------------------------------------------------------------------------
+case_ listed LamNest LamNest.run LamNest.hit "入れ子のラムダ（外側のラムダの中で作った内側のラムダ）の本体の呼び出しも、作ったメソッドの下に出る" <<'EOF'
+package pr;
+
+public class LamNest {
+    public static void main(String[] args) { run(); }
+    static void run() {
+        Runnable outer = () -> {
+            Runnable inner = () -> hit();
+            inner.run();
+        };
+        outer.run();
+    }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+
+case_ listed LamOther LamOther.viaOther LamOther.hit "別のメソッド（other）が実行するラムダでも、作ったメソッド（viaOther）の下に本体の呼び出しが出る" <<'EOF'
+package pr;
+
+public class LamOther {
+    public static void main(String[] args) { viaOther(); }
+    static void viaOther() { other(() -> hit()); }
+    static void other(Runnable r) { r.run(); }
+    static void hit() { System.out.println("h"); }
+}
+EOF
+expect_ listed LamOther.other LamOther.hit "同上（実際に実行するメソッド other の下にも出る。経路を落とさない）"
+
+case_ listed LamCycle LamCycle.rec LamCycle.rec "ラムダの中から囲みメソッドへ戻る再帰も行に出て、無限に辿らない（[UNEXPANDED:CYCLE]）" <<'EOF'
+package pr;
+
+public class LamCycle {
+    public static void main(String[] args) { rec(3); }
+    static void rec(int n) {
+        Runnable r = () -> rec(n - 1);
+        r.run();
+    }
+}
+EOF
+
+case_ listed LamStream LamStream.run LamStream.hit "forEach・stream().map に書いたラムダの本体の呼び出しが、作ったメソッドの下に出る" <<'EOF'
+package pr;
+
+import java.util.List;
+
+public class LamStream {
+    public static void main(String[] args) { run(List.of(1, 2)); }
+    static void run(List<Integer> xs) {
+        xs.forEach(x -> hit());
+        xs.stream().map(x -> conv(x)).forEach(x -> {});
+    }
+    static void hit() { System.out.println("h"); }
+    static Integer conv(Integer x) { return x; }
+}
+EOF
+expect_ listed LamStream.run LamStream.conv "同上（stream().map のラムダの本体の呼び出し）"
+
+# ---------------------------------------------------------------------------
 # 解析して確かめる
 # ---------------------------------------------------------------------------
 ( cd work && "$JAVA_BIN" -cp "$CLASSES:$CP" jche.CallHierarchyExporter jche.properties ) > work/run.log 2>&1
@@ -4011,6 +4072,13 @@ fi
 grep -q "compile errors\|syntax errors" work/run.log \
     && ng "題材にコンパイルエラーがあります（test/pruning/work/run.log）" \
     || ok "題材をエラーなしで解析できた"
+
+# ラムダの合成メソッド（lambda$…）は、どの行にも出ない（caller・callee・起点・階層のどの列にも）
+if grep -q 'lambda\$' "$CSV"; then
+    ng "call-hierarchy.csv にラムダの合成メソッド（lambda\$…）が出ています"; grep -m3 'lambda\$' "$CSV" | cut -c1-200
+else
+    ok "call-hierarchy.csv にラムダの合成メソッド（lambda\$…）が出ない"
+fi
 
 # 呼び出し元（Class.method）から呼び出し先（Class.method）への行。列は caller,callee,resolved-by,…
 # 呼び出し元・呼び出し先が / で始まれば無名パッケージのクラス
