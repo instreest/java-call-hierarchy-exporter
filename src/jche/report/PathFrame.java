@@ -17,6 +17,12 @@ import jche.graph.DataflowContext;
 final class PathFrame {
 
     int methodId;
+    /**
+     * CSV の caller 列・call-hierarchy 列に出すメソッド。ふつうは {@link #methodId} と同じ。
+     * ラムダの本体は段にしない（{@code StreamingTreeWalker#collapseInto}）ので、畳んだラムダの本体の段の
+     * {@link #methodId} は合成メソッドのまま（辺を引くのに要る）で、これだけを囲みメソッドにする
+     */
+    int shownId;
     /** 1つ上の段がこのメソッドを呼んでいる行 */
     int callLine;
     /** 注記（[UNEXPANDED:*]・[EXTERNAL]・[UNREACHABLE]・[RESOLVED:CALLBACK]）。無ければ null */
@@ -51,6 +57,7 @@ final class PathFrame {
     void set(int methodId, int callLine, String note, String resolvedBy,
              long[] params, long[] ctorArgs, String ctorOwner, long[] captured) {
         this.methodId = methodId;
+        this.shownId = methodId;
         this.callLine = callLine;
         this.note = note;
         this.resolvedBy = resolvedBy;

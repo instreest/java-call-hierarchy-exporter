@@ -21,7 +21,7 @@
 6.1	unnamed-parse	noerror	src/jls/s06_01/Unnamed.java	-	-	無名の変数 _（局所変数・catch の仮引数・ラムダの仮引数・パターンの成分）を含むソースを誤りなく読める
 6.1	unnamed-local-init	call	jls.s06_01.Unnamed#run(java.lang.Object)	jls.s06_01.Sink#sideEffect()	-	無名の局所変数でも初期化子の呼び出しは実行される
 6.1	unnamed-catch-body	call	jls.s06_01.Unnamed#run(java.lang.Object)	jls.s06_01.Sink#handled()	-	無名の例外の仮引数を持つ catch 節の本体の呼び出し
-6.1	unnamed-lambda-param	csv	jls.s06_01.Unnamed.lambda$run$0	Sink.pickFirst	RESOLVED:STATIC_BOUND:STATIC	無名の仮引数を持つラムダの本体の呼び出し
+6.1	unnamed-lambda-param	csv	jls.s06_01.Unnamed.run	Sink.pickFirst	RESOLVED:STATIC_BOUND:STATIC	無名の仮引数を持つラムダの本体の呼び出し
 6.1	unnamed-pattern-accessor	call	jls.s06_01.Unnamed#run(java.lang.Object)	jls.s06_01.Pair#right()	-	成分が _ でもレコードパターンはアクセサで値を取り出す（§14.30.2）
 7.3	compact-type	type	CompactMain	-	-	コンパクトなコンパイル単位はトップレベルのクラスを暗黙に宣言する（名前はファイル名。§8.1.8）
 7.3	compact-parse	noerror	src/CompactMain.java	-	-	コンパクトなコンパイル単位を誤りなく読める
@@ -181,6 +181,6 @@
 15.13.3	ref-super	csv	jls.s15_13.MethodRefs.run	Base.baseWork	RESOLVED:STATIC_BOUND:SUPER	super::m は仮想呼び出しではない
 15.13.3	ref-super-not-own	nocsv	jls.s15_13.MethodRefs.run	MethodRefs.baseWork	-	super::m は自分の上書きを呼ばない
 15.13.3	ref-ctor	call	jls.s15_13.MethodRefs#run(jls.s15_13.Helper)	jls.s15_13.Helper#<init>()	-	ClassName::new はコンストラクタを呼ぶ
-15.27.4	lambda-static-field	path	Lambdas.<clinit> > Lambdas.lambda$static$0 > Sink.staticJob	-	-	クラス変数の初期化子の中のラムダはクラスの初期化で生成される（§12.4.2）
+15.27.4	lambda-static-field	path	Lambdas.<clinit> > Sink.staticJob	-	-	クラス変数の初期化子の中のラムダはクラスの初期化で生成される（§12.4.2）
 15.27.4	lambda-field-each-ctor	call	jls.s15_27.Lambdas#<init>(int)	jls.s15_27.Lambdas#lambda$new$1()	-	インスタンス変数の初期化子の中のラムダは委譲しない各コンストラクタで生成される（§12.5）
-15.27.2	lambda-nested	path	Lambdas.run > Lambdas.lambda$run$3 > Lambdas.lambda$run$2 > Sink.inner	-	-	入れ子のラムダの本体まで辿れる
+15.27.2	lambda-nested	path	Lambdas.run > Sink.inner	-	-	入れ子のラムダの本体まで辿れる

@@ -11,15 +11,15 @@ import jche.cache.AnnotationTokens;
 import jche.cache.ModifierTokens;
 
 /**
- * フレームワークが起点として呼ぶメソッドの契約表（Issue #136 の種類 B）。
+ * フレームワークが起点として呼ぶメソッドのライブラリ呼び出し規則（Issue #136 の種類 B）。
  *
  * {@code @Scheduled} のメソッドや {@code HttpServlet#doGet} の上書きは、ソースのどこからも
  * 呼ばれていないが、フレームワークが呼ぶ入口である。呼び出し箇所が無いので辺は張れないが、
- * 「これは入口だ」という契約は書ける。契約に当たるメソッドは methods.csv の role を
+ * 「これは入口だ」という規則は書ける。規則に当たるメソッドは methods.csv の role を
  * {@code FRAMEWORK_ENTRY} にし、全体モードの起点に加える。
- * 呼び出し箇所から戻ってくる形（種類 A）は {@link CallbackContracts}。
+ * 呼び出し箇所から戻ってくる形（種類 A）は {@link CallbackRules}。
  *
- * <h2>契約の1行</h2>
+ * <h2>規則の1行</h2>
  * <pre>
  *   &#64;org.springframework.scheduling.annotation.Scheduled      … そのアノテーションが付いたメソッド
  *   super javax.servlet.http.HttpServlet#doGet(...)                … その型を継承（実装）した型の、同じシグネチャのメソッド
@@ -39,8 +39,8 @@ import jche.cache.ModifierTokens;
  */
 public final class FrameworkEntries {
 
-    /** 契約の1行。{@code row} は契約表の何行目か（{@link ContractUsage} の添字） */
-    record Contract(char kind, String value, String sig, String text, int row) {
+    /** 規則の1行。{@code row} はライブラリ呼び出し規則の何行目か（{@link RuleUsage} の添字） */
+    record Rule(char kind, String value, String sig, String text, int row) {
         static final char ANNOTATION = '@';
         static final char SUPER = 's';
         static final char STATIC = 'm';
@@ -50,53 +50,53 @@ public final class FrameworkEntries {
     /** JLS 12.1.4 の起動メソッドのシグネチャ（引数が String[] か、無し） */
     private static final List<String> LAUNCH_SIGNATURES = List.of("main(java.lang.String[])", "main()");
 
-    private final List<Contract> contracts = new ArrayList<>();
+    private final List<Rule> rules = new ArrayList<>();
     private final CallGraph graph;
     private final MethodTable methods;
-    private final ContractUsage usage;
+    private final RuleUsage usage;
     /** メソッドIDごとの判定のメモ（null = 未判定、"" = 入口でない） */
     private String[] memo;
 
-    public FrameworkEntries(CallGraph graph, ContractUsage usage) {
+    public FrameworkEntries(CallGraph graph, RuleUsage usage) {
         this.graph = graph;
         this.methods = graph.methods;
         this.usage = usage;
-        List<ContractUsage.Line> lines = usage.lines();
+        List<RuleUsage.Line> lines = usage.lines();
         for (int row = 0; row < lines.size(); row++) {
-            Contract c = parse(lines.get(row).text(), row);
+            Rule c = parse(lines.get(row).text(), row);
             if (c != null) {
-                contracts.add(c);
+                rules.add(c);
             }
         }
     }
 
-    /** 同梱の契約だけを持つ表 */
+    /** 同梱の規則だけを持つ表 */
     public static FrameworkEntries bundled(CallGraph graph) {
-        return new FrameworkEntries(graph, ContractUsage.ofBundled(BundledFrameworkEntries.LINES));
+        return new FrameworkEntries(graph, RuleUsage.ofBundled(BundledFrameworkEntries.LINES));
     }
 
-    /** 行ごとの利用状況（どの契約が効いたか） */
-    public ContractUsage usage() {
+    /** 行ごとの利用状況（どの規則が効いたか） */
+    public RuleUsage usage() {
         return usage;
     }
 
     /** 1行を読む。空行と {@code #} で始まる行は無視。形が違えば null */
-    static Contract parse(String line) {
-        return parse(line, ContractUsage.NO_ROW);
+    static Rule parse(String line) {
+        return parse(line, RuleUsage.NO_ROW);
     }
 
-    /** @param row 契約表の何行目か（利用状況の記録用） */
-    private static Contract parse(String line, int row) {
+    /** @param row ライブラリ呼び出し規則の何行目か（利用状況の記録用） */
+    private static Rule parse(String line, int row) {
         String s = (line == null) ? "" : line.trim();
         if (s.isEmpty() || s.startsWith("#")) {
             return null;
         }
         if (s.startsWith("@")) {
             String fqn = s.substring(1).trim();
-            return fqn.isEmpty() ? null : new Contract(Contract.ANNOTATION, fqn, "", s, row);
+            return fqn.isEmpty() ? null : new Rule(Rule.ANNOTATION, fqn, "", s, row);
         }
         if ("main".equals(s)) {
-            return new Contract(Contract.MAIN, "", "", s, row);
+            return new Rule(Rule.MAIN, "", "", s, row);
         }
         int sp = s.indexOf(' ');
         if (sp < 0) {
@@ -109,17 +109,17 @@ public final class FrameworkEntries {
             if (hash <= 0 || hash == rest.length() - 1) {
                 return null;
             }
-            return new Contract(Contract.SUPER, rest.substring(0, hash), rest.substring(hash + 1),
+            return new Rule(Rule.SUPER, rest.substring(0, hash), rest.substring(hash + 1),
                     s, row);
         }
         if ("static".equals(head)) {
-            return rest.isEmpty() ? null : new Contract(Contract.STATIC, "", rest, s, row);
+            return rest.isEmpty() ? null : new Rule(Rule.STATIC, "", rest, s, row);
         }
         return null;
     }
 
     public boolean isEmpty() {
-        return contracts.isEmpty();
+        return rules.isEmpty();
     }
 
     /** そのメソッドがフレームワークの入口か */
@@ -127,7 +127,7 @@ public final class FrameworkEntries {
         return !describe(methodId).isEmpty();
     }
 
-    /** 当たった契約の文言（ログ・注記用）。入口でなければ空文字列 */
+    /** 当たった規則の文言（ログ・注記用）。入口でなければ空文字列 */
     public String describe(int methodId) {
         if (memo == null) {
             memo = new String[methods.size()];
@@ -144,36 +144,36 @@ public final class FrameworkEntries {
     }
 
     private String judge(int id) {
-        if (contracts.isEmpty() || !methods.hasSource(id) || !methods.hasBody(id)) {
+        if (rules.isEmpty() || !methods.hasSource(id) || !methods.hasBody(id)) {
             return "";
         }
         String sig = methods.signature(id);
         String annotations = methods.annotations(id);
         String mods = methods.mods(id);
         Set<String> supers = null;
-        for (Contract c : contracts) {
+        for (Rule c : rules) {
             switch (c.kind()) {
-                case Contract.ANNOTATION -> {
+                case Rule.ANNOTATION -> {
                     if (AnnotationTokens.has(annotations, c.value())) {
                         usage.markApplied(c.row());
                         return "@" + simpleName(c.value());
                     }
                 }
-                case Contract.STATIC -> {
+                case Rule.STATIC -> {
                     if (sig.equals(c.sig()) && ModifierTokens.has(mods, "static")
                             && ModifierTokens.has(mods, "public")) {
                         usage.markApplied(c.row());
                         return "static " + c.sig();
                     }
                 }
-                case Contract.MAIN -> {
+                case Rule.MAIN -> {
                     if (LAUNCH_SIGNATURES.contains(sig) && !ModifierTokens.has(mods, "private")) {
                         usage.markApplied(c.row());
                         // 従来の public static main(String[]) と同じ文言になるよう static を前に付ける
                         return ModifierTokens.has(mods, "static") ? "static " + sig : sig;
                     }
                 }
-                case Contract.SUPER -> {
+                case Rule.SUPER -> {
                     boolean hit;
                     if (sig.equals(c.sig())) {
                         if (supers == null) {
@@ -196,10 +196,10 @@ public final class FrameworkEntries {
     }
 
     /**
-     * シグネチャの違うメソッド {@code id} が、契約の宣言 {@code contractKey}（{@code 型FQN#name(paramSig)}）を
+     * シグネチャの違うメソッド {@code id} が、規則の宣言 {@code ruleKey}（{@code 型FQN#name(paramSig)}）を
      * 型引数を具体化して上書き・実装しているか（javac がブリッジメソッドでディスクリプタをそろえる形）。
      *
-     * <p>{@code class MyHandler implements Handler<Req> { void handle(Req r) }} の {@code handle(Req)} は、契約
+     * <p>{@code class MyHandler implements Handler<Req> { void handle(Req r) }} の {@code handle(Req)} は、規則
      * {@code super Handler#handle(java.lang.Object)} のシグネチャと文字列では一致しないが、フレームワークが
      * {@code Handler#handle(Object)} を呼べば（ブリッジを経て）動く入口である（Issue #188）。判定は選択と同じ 2 つの材料
      * （{@link MethodSelection} の「上書きできる宣言」）で、自前で名前や引数型を比べない:
@@ -210,11 +210,11 @@ public final class FrameworkEntries {
      *       親インターフェースのメソッドを実装する組。{@code class MyHandler extends BaseHandler implements Handler<Req>} で
      *       {@code BaseHandler#handle(Req)} が入口になる形。その部分型から見たときだけの関係なので、宣言した型の部分型を見る）</li>
      * </ul>
-     * 契約の宣言のメソッド ID から {@link MethodSelection#overridingImplementations} で引く案は、jar の型の宣言
+     * 規則の宣言のメソッド ID から {@link MethodSelection#overridingImplementations} で引く案は、jar の型の宣言
      * （{@code HttpServlet#doGet}）はソースのどこかが呼び出し先にしていない限り表に無いので使えない
      */
-    private boolean overridesWithBridge(int id, String contractKey) {
-        IntArray overriders = graph.overrides.overridersOf(contractKey);
+    private boolean overridesWithBridge(int id, String ruleKey) {
+        IntArray overriders = graph.overrides.overridersOf(ruleKey);
         if (overriders != null) {
             for (int i = 0; i < overriders.size(); i++) {
                 if (overriders.get(i) == id) {
@@ -222,7 +222,7 @@ public final class FrameworkEntries {
                 }
             }
         }
-        String pair = contractKey + ">" + methods.key(id);
+        String pair = ruleKey + ">" + methods.key(id);
         for (String sub : graph.hierarchy.transitiveSubtypes(methods.typeFqn(id))) {
             if (graph.hierarchy.inheritedImplementations(sub).contains(pair)) {
                 return true;

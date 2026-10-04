@@ -8,7 +8,7 @@ package jche.extension;
  * 設定したのに効いていないことに気づけるよう、拡張自身が使われた件数を知らせられるようにしてある
  * （同梱の {@link jche.builtin.TypeMappingProvider} がこれを実装している）。
  *
- * <p>{@link TypeCandidateProvider} と {@link ContractProvider} のどちらと一緒に実装してもよい。
+ * <p>{@link TypeCandidateProvider} と {@link RuleProvider} のどちらと一緒に実装してもよい。
  * 拡張ポイントそのものではないので、実装しなくても何も起きない。
  */
 public interface UsageReporter {

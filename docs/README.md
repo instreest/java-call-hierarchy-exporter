@@ -1,11 +1,29 @@
 # docs/ の索引
 
+（The documents in this folder are written in Japanese. Usage is covered by the English half of the top-level
+[README](../README.md); the architecture overview is [architecture.md](architecture.md).）
+
+## 最初に読む順
+
+初めてコードを読む人は、この順で 5 本読めば全体がつかめる。
+
+1. [architecture.md](architecture.md) … 3 フェーズと 3 層、1 回の実行が通る道、入口 3 つ、パッケージと主要クラス
+2. [glossary.md](glossary.md) … 用語 → コード上の名前 → 意味。キャッシュの行種別の表
+3. [cli.md](cli.md) … 起動コマンドの全仕様（利用者としての動かし方）
+4. [cache-design.md](cache-design.md) … キャッシュと差分更新の設計
+5. [resolution-selection-design.md](resolution-selection-design.md) … 規則ごとの「どのコードが・どの事実から・どう決め・どの検査が見ているか」
+
+開発の作法（動かす・テスト・決まり）は [CONTRIBUTING.md](../CONTRIBUTING.md)、検査の一覧は [test/README.md](../test/README.md)。
+
+## 4 種類の文書
+
 このフォルダには 4 種類の文書がある。
 
 - **使い方の詳細** … README に書くと長くなる、機能別の利用者向け説明
 - **設計の説明** … 出力や性能の理由が分かるように、内部の作りを説明したもの
 - **設計の記録（`*-qa.md`）** … 機能を足したり設計判断をしたときに「迷ったこと・結論・却下した案」を Q&A の形で残したもの。
-  書き出しは Issue へのリンク → 対応の要点 → Q&A（[AGENTS.md](../AGENTS.md) の「ドキュメントの決まり」）
+  書き出しは Issue へのリンク → 対応の要点 → Q&A（[CONTRIBUTING.md](../CONTRIBUTING.md) の「ドキュメントの決まり」）。
+  **経緯の記録であって、現状の仕様の正本ではない**（後の Q&A で改めた結論もある）。仕様は「使い方の詳細」「設計の説明」の文書とコードにある
 - **再実装用の仕様** … このツールを別環境で作り直すためのプロンプトと難易度表
 
 ## 使い方の詳細
@@ -17,7 +35,7 @@
 | [instance-analysis-plugin.md](instance-analysis-plugin.md) | 具象クラスの解決条件を外から与える（対応表を書く / 拡張を自分で書く）。拡張に渡る証拠、ファクトリごとの場合分け、書いた対応表が効いているかの確かめ方 |
 | [eclipse-plugin-usage.md](eclipse-plugin-usage.md) | Eclipse プラグインとしての使い方（入れ方・呼び出し元階層ビューの操作・設定・サーバーモード）。解析は Eclipse とは別プロセス・別 JDK で走る |
 | [vscode-plugin-usage.md](vscode-plugin-usage.md) | VSCode プラグインとしての使い方（入れ方・標準の呼び出し階層との違い・状態の見方・設定・ビルド）。解析は Eclipse 版と同じ子プロセスで走る |
-| [callback-contracts.md](callback-contracts.md) | ソースの外（JDK・フレームワーク）との契約表。jar の中から呼び戻される呼び出しを繋ぐ（`Thread#start()` → `run()` 等）ことと、フレームワークが呼ぶ入口を `FRAMEWORK_ENTRY` に仕分けること。具象クラスを 1 件に絞ること（`=>`。ファクトリのキーでの絞り込みを含む）と、絞れなかった呼び出しから出るひな形。自前のフレームワーク分を `contracts.files` / 拡張で足す方法と、書いた契約が効いているかの確かめ方 |
+| [library-call-rules.md](library-call-rules.md) | ライブラリ呼び出し規則（JDK・フレームワークなど、ソースの外の呼び出し）。jar の中から呼び戻される呼び出しを繋ぐ（`Thread#start()` → `run()` 等）ことと、フレームワークが呼ぶ入口を `FRAMEWORK_ENTRY` に仕分けること。具象クラスを 1 件に絞ること（`=>`。ファクトリのキーでの絞り込みを含む）と、絞れなかった呼び出しから出るひな形。自前のフレームワーク分を `call.rules.files` / 拡張で足す方法と、書いた規則が効いているかの確かめ方 |
 | [external-usage.md](external-usage.md) | 自分のコードを呼んでいるほかのリポジトリの jar からの被参照を `call-hierarchy.csv` に足す（`external.library.folders`）。指定のしかたと行の種別 |
 | [call-conditions.md](call-conditions.md) | 呼び出しに効いている条件を通常の出力に追加で出す（設定ファイルの `conditions.target` → `call-conditions.csv`）。判定できない条件も含める |
 | [static-analysis-limits.md](static-analysis-limits.md) | 静的解析で具象クラスが決まる条件と決まらない条件（しきい値）。文字列からクラス名を算出するファクトリを例に、追える出所・追えない出所と、健全側に倒す方針。解決の段（具象クラスを決める順）とラムダ式・メソッド参照の追い方（9・10 節） |
@@ -27,6 +45,8 @@
 
 | ファイル | 内容 |
 |---|---|
+| [architecture.md](architecture.md) | 内部の作りの全体図。3 フェーズと 3 層、起動コマンドから CSV までに通るクラス、入口 3 つ（`Jche` / `CallHierarchyExporter` / `Exporter`）の関係、パッケージの依存の向き、パッケージと主要クラスの表、デバッグの最初の一手 |
+| [glossary.md](glossary.md) | 用語集。解決・選択・書き手・読み手・事実・段 0〜6・ライブラリ呼び出し規則・拡張・指紋・検査値・バッチ・添えるファイルなどを「用語 → コード上の名前 → 意味」で。キャッシュの行種別（F・I・S・N・G・R・H・D・O・V・C・U・M・A・K・J・L・T・Z）と record の対応表 |
 | [resolution-selection-design.md](resolution-selection-design.md) | 解決（JLS。JDT に任せる書き手）・キャッシュ・選択（JVMS 5.4.6 の写し。`jche.graph.MethodSelection`）の 3 層の構図。命令ごとの対応、規則ごとの「どのコードが・どの行から・どう決め・どの検査が見るか」の対応表、差分更新との関係、健全性の点検表（要確認の箇所）、変更の影響範囲の判断のしかた |
 | [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。1 ファイルの形（ブロック・記号表・値グラフ・条件の表・ブロックの検査値・型の行の親クラスの連鎖）、事実だけを持つこと、差分更新（依存する型・宣言の指紋・解析に失敗したファイル）、何も変わらないときに書き直さないこと、読む回数と一時ファイル、解析のあいだの書き換え、JDT に一緒に渡すファイル（バッチ）に事実を依らせないこと、依存 jar・クラスフォルダ（jmod・シンボリックリンク）と JDK / JDT の変更への追従 |
 | [out-of-process-analysis-design.md](out-of-process-analysis-design.md) | Eclipse プラグインが解析を別プロセス（別 JDK・同梱の JDT）で行う仕組み。プロトコルと配布物の構成 |
@@ -36,12 +56,13 @@
 | [workspace-callers-design.md](workspace-callers-design.md) | ワークスペースの他のプロジェクトからの被参照の設計案（未実装）。jar の被参照（1 段）と解析の単位（`project.root` 1 つ）の現状、コードを変えずにできる回避策（共通の親フォルダを `project.root` にする）、参照元のプロジェクトのソースを同じ解析に入れて呼び出し階層を他プロジェクトの起点まで伸ばす仕様（`workspace.projects` / `workspace.scope`）、クラスフォルダの被参照、プラグインの自動生成、影響範囲と段階 |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
 | [branch-pruning.md](branch-pruning.md) | 条件分岐による打ち切り（`branch.pruning.enabled`）。判定できる条件、打ち切りで階層から消えたメソッドを `methods.csv` で探す方法 |
-| [contracts-unification-design.md](contracts-unification-design.md) | 解決条件の指定を契約表に一本化する設計（実装済み）。具象クラスの対応を契約表の 1 行で書く「種類 C」、証拠をキャッシュの値グラフから引けること、旧来の `resolver.*` / `plugin.*` との互換 |
+| [call-rules-unification-design.md](call-rules-unification-design.md) | 解決条件の指定をライブラリ呼び出し規則に一本化する設計（実装済み）。具象クラスの対応をライブラリ呼び出し規則の 1 行で書く「種類 C」、証拠をキャッシュの値グラフから引けること、旧来の `resolver.*` / `plugin.*` との互換 |
 
 ## 設計の記録（Q&A）
 
 | ファイル | Issue | 内容 |
 |---|---|---|
+| [onboarding-qa.md](onboarding-qa.md) | — | 初見の Java 開発者の視点でリポジトリを見直し、入口を整えた件。`CONTRIBUTING.md`（`AGENTS.md` の本文を移した）・`architecture.md`・`glossary.md`・`test/README.md` の新設、qa を仕様の正本にしない明記。つまずいた点の一覧と、見送った案（JUnit・`src/main/java`・`docs/` の英訳・入口クラスの改名） |
 | [build-tool-classpath-qa.md](build-tool-classpath-qa.md) | #44 | `pom.xml` / `build.gradle` を読んでローカルリポジトリから依存 jar を集める。`library.jars` と `.classpath` の `kind="lib"` のフォルダはクラスフォルダとして渡す（Q13） |
 | [cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) | #36 | 依存 jar を変えたときのキャッシュの差分更新。実行 JDK が変わると何が変わるか（Q20） |
 | [deterministic-row-order-qa.md](deterministic-row-order-qa.md) | #43 | 出力の行順を環境に依存しない並びに固定する。同じ行に並ぶ宣言の前後を ID でなく宣言の順番で決める（Q14〜） |
@@ -56,13 +77,14 @@
 | [branch-pruning-qa.md](branch-pruning-qa.md) | #67 | 変数値と条件分岐の静的解析で、その経路では呼ばれない呼び出しを区別する |
 | [call-conditions-qa.md](call-conditions-qa.md) | #67 | 呼び出しに効いている条件を `call-conditions.csv` に出す（モードにせず出力を1つ足す判断、キャッシュに載せない判断） |
 | [dataflow-facts-qa.md](dataflow-facts-qa.md) | #80 | データフローの事実（ファクトリの戻り値）をフェーズ2bで一括確定し、`CallResolver.resolve` を処理順に依存しない純粋な関数にする |
-| [callback-contracts-qa.md](callback-contracts-qa.md) | #136 | ソースの外との契約表（呼び戻しの辺、フレームワークの入口、設定ファイル・拡張で足す形）。辺の足し方、`inDegree` への効かせ方、広い候補を出さない判断、`role` に優先させる判断、当たらなかった行の知らせ方、列挙定数のキーの書き方、ひな形の出し方と注記、単純名の扱い、ファクトリが親クラスにある場合の指定、経路ごとに決まるキーの扱い |
+| [library-call-rules-qa.md](library-call-rules-qa.md) | #136 | ライブラリ呼び出し規則（呼び戻しの辺、フレームワークの入口、設定ファイル・拡張で足す形）。辺の足し方、`inDegree` への効かせ方、広い候補を出さない判断、`role` に優先させる判断、当たらなかった行の知らせ方、列挙定数のキーの書き方、ひな形の出し方と注記、単純名の扱い、ファクトリが親クラスにある場合の指定、経路ごとに決まるキーの扱い |
 | [resolution-selection-qa.md](resolution-selection-qa.md) | — | 解決・キャッシュ・選択の 3 層に沿ってコードを組み直した件。`MethodSelection`（選択）と `OverrideFacts`（上書きの事実）の切り出し、`CacheUpdater` の入れ子クラスの分割、`package-info` の置き方、却下した案。実装を探す順の写しが 3 か所（`MethodSelection` / `ImplicitCalls` / `ExternalUsageScanner`）にある件は、寄せずに正本と「同時に直す」の決まりで持つ（#189。Q10） |
 | [jls-conformance-qa.md](jls-conformance-qa.md) | #154-#157 | AST の読み取りが Java 言語仕様と食い違って呼び出しが静かに落ちていた 4 件。ジェネリックなオーバーライドの照合（O 行と `implementationOf`）、暗黙の `super()`（呼び出し先を候補すべてにする）、値を変えうるキャストと char の定数、柔軟なコンストラクタ本体（JEP 513）、インターフェースに暗黙のコンストラクタを合成しない（JLS 8.8.9）、実装の探し方（親クラスの連鎖を先に・最も特定的な default。H 行の親クラスの連鎖と継承した実装（別パッケージのパッケージアクセスのメソッドは入れない。#168、Q37）、親クラスの連鎖に jar のクラスが挟まる実装の戻り値を使わない） |
 | [value-safety-qa.md](value-safety-qa.md) | — | 書き手が値を読み違えて呼び出しが静かに落ちていた件（形式 v32。値を変えうるキャスト、浮動小数、複合代入と `++`、引数・フィールドへの `new` と `LOCAL_NEW`、匿名クラスのフィールド初期化子、16 進のリテラル、ループの中で写した変数（先読みを表が変わらなくなるまで繰り返す）、型の揃わない `equals`）。値グラフの同じ式を 1 つのノードにする（300 段の連鎖で N 行 12,079 → 513）。まだ残っているもの。返す具象型の決まらない `@Bean` メソッドで DI の絞り込みが呼び出しを落としていた件（値を読まない指定を含む）。3 回目のレビュー（形式 v35）で見つかった残り: フィールドへの書き込みの取りこぼし（入れ子・外側のクラス、`++`、初期化ブロック、条件の中の書き込みは site を `?` に）、別のインスタンスのフィールドへのコンストラクタ実引数、拡張 for の要素、型名で書いたメソッド参照の実引数の位置、リフレクションの `invoke` の引き先、DI の段 5 を注入点だけに。別のインスタンスのフィールドを別の種別（`O:`）にして、どのインスタンスでも同じ値（初期化子やコンストラクタの `new`・捕捉した引数を使わないラムダ）では再び絞る（形式 v38）。4 回目のレビュー（形式 v39）: `super.f` への書き込みを拾う、注釈の付いたフィールド・ステレオタイプ以外の注釈の付いた型のフィールド（フレームワークが書く）は値を決めない。5 回目のレビュー（形式 v40）: `Objects.requireNonNull(d)` の書き込みを d として読む。`equals` の条件の判定を JDT の `overrides` に任せる（形式 v45。Q29）。検査は `test/pruning` |
 | [jls-conformance-test-qa.md](jls-conformance-test-qa.md) | — | Java 言語仕様（SE 26）の節ごとの検査と javac 26 のバイトコードとの突き合わせ（`test/jls`）。見つかった食い違いの修正（拡張 for 文・try-with-resources・レコードパターンが呼ぶメソッド、コンパクトなソースファイルのクラス、インスタンスの main、パッケージアクセスの上書き、呼び出しを修飾する型から引く CHA）と、引用した節番号の原文との照合。実行時に動く実装の選び方と暗黙の `super()` の呼び出し先の節（`nocsv` を対に置く・ブリッジを H 行の継承した実装と突き合わせる。Q20）。検査の側の甘さ（#187。`resolve` の maximally-specific、JDT のコンパイル時宣言が上書きされた親インターフェースの宣言になる形を INFO に、`nooverride`。Q21） |
 | [inherited-impl-candidates-qa.md](inherited-impl-candidates-qa.md) | #131 | 段2（`LOCAL_NEW`）と段3（拡張）が、親から継承した実装を候補にできていなかった件。`implementationIn` への統一と、採用できなかった候補の警告 |
-| [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの契約に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
+| [lambda-collapse-qa.md](lambda-collapse-qa.md) | — | ラムダの合成メソッド（`lambda$…`）を CSV に出さず、本体の呼び出しを実行するメソッドの直下に出す判断。Eclipse の呼び出し階層との違い、段の差し替えの作り、同じ本体へ降りる辺のまとめ方、畳めない形、`entry.packages` で起点にしない理由、却下した案 |
+| [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの規則に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
 | [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
@@ -101,7 +123,7 @@
 | [method-decl-range-qa.md](method-decl-range-qa.md) | #115 | メソッドの宣言範囲（終了行）をキャッシュと `MethodTable` に持つ。カーソル位置から囲むメソッドを引く `AT`（近似をやめる判断、`methods.csv` に出さない判断） |
 | [callee-label-qa.md](callee-label-qa.md) | — | `call-hierarchy.csv` の `callee` 列を「クラス名.メソッド名」だけにし、`NO_IMPL` の注記を出さなくした |
 | [entrypoint-package-qa.md](entrypoint-package-qa.md) | — | 入口 2 つを既定パッケージから `jche` パッケージへ移した。`//SOURCES` の glob が直下に当たらない理由 |
-| [single-file-qa.md](single-file-qa.md) | — | `single-file/` を本体の全ソースから生成する 1 ファイル版（完全版）にした。入れ子のクラスにする理由、`jche` パッケージにする理由（入れ子の型の import）、同梱の拡張の名前の読み替え、本体との違い（利用者の Java の拡張は使えない）、生成し直し忘れの検査 |
+| [single-file-qa.md](single-file-qa.md) | — | `single-file/` を本体の全ソースから生成する 1 ファイル版（完全版）にした。入れ子のクラスにする理由、`jche` パッケージにする理由（入れ子の型の import）、同梱の拡張の名前の読み替え、本体との違い（利用者の Java の拡張は使えない）、生成し直し忘れの検査。のちに生成の仕組みを廃止し、本体と同期を取らない場合があるものにした（Q8） |
 
 ## 再実装用の仕様
 

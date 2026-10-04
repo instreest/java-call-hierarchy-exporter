@@ -4,10 +4,10 @@ package jche.graph;
 import java.util.List;
 
 /**
- * 同梱の契約表: フレームワークが起点として呼ぶメソッド（{@link FrameworkEntries}）。
+ * 同梱のライブラリ呼び出し規則: フレームワークが起点として呼ぶメソッド（{@link FrameworkEntries}）。
  *
  * 「フレームワークが呼ぶ」と仕様で決まっているものに絞る。足りなければ行を足す
- * （docs/callback-contracts.md）。javax と jakarta は両方を持つ。
+ * （docs/library-call-rules.md）。javax と jakarta は両方を持つ。
  */
 final class BundledFrameworkEntries {
 

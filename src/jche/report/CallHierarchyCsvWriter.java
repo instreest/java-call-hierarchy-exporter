@@ -57,16 +57,27 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      * @param depth 1以上（起点自身は出力しない）。そのまま depth 列になる
      */
     void writeRow(MethodTable mt, int rootId, PathFrame[] path, int depth) throws IOException {
+        writeLine(formatRow(mt, rootId, path, depth));
+    }
+
+    /** 1 行を書いて改行する */
+    void writeLine(String line) throws IOException {
+        writer.write(line);
+        writer.newLine();
+    }
+
+    /** {@link #writeRow} が書く 1 行（改行なし）。書かずに文字列だけ欲しいとき（同じ行を重ねて書かないための照合）に使う */
+    String formatRow(MethodTable mt, int rootId, PathFrame[] path, int depth) {
         buf.setLength(0);
 
         // caller: 呼び出し元が「このノードを呼んでいる行」を指すスタックトレース形式。
-        buf.append(Csv.esc(stackTrace(mt, path[depth - 1].methodId, path[depth].callLine)))
+        buf.append(Csv.esc(stackTrace(mt, path[depth - 1].shownId, path[depth].callLine)))
                 .append(Csv.DELIM);
 
         // callee: クラス名 + メソッド名（引数は付けない）。
         // Excelのフィルタで選べるよう、行番号は含めない安定した表記にする
         // （行番号を混ぜるとフィルタの選択肢が呼び出し箇所ごとに散らばる）。
-        buf.append(Csv.esc(mt.shortLabel(path[depth].methodId))).append(Csv.DELIM);
+        buf.append(Csv.esc(mt.shortLabel(path[depth].shownId))).append(Csv.DELIM);
 
         // resolved-by: 解決方法。注記と違い、確定した呼び出しでも必ず値が入る
         buf.append(Csv.esc(path[depth].resolvedBy)).append(Csv.DELIM);
@@ -80,14 +91,13 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         // call-hierarchy: 起点の次のノードから現ノードまでを1ノード1列で展開。
         // 必ず最終列に置く（後ろに固定列を足すと可変長の階層が途中で切れるため）。
         for (int i = 1; i <= depth; i++) {
-            buf.append(Csv.DELIM).append(Csv.esc(mt.shortLabel(path[i].methodId)));
+            buf.append(Csv.DELIM).append(Csv.esc(mt.shortLabel(path[i].shownId)));
         }
         // 注記（[UNEXPANDED:*]・[EXTERNAL]・[UNREACHABLE]・[RESOLVED:*]）は階層の最後に付ける
         if (path[depth].note != null) {
             buf.append(Csv.DELIM).append(Csv.esc(path[depth].note));
         }
-        writer.write(buf.toString());
-        writer.newLine();
+        return buf.toString();
     }
 
     /**

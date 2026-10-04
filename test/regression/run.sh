@@ -18,14 +18,14 @@
 #                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
 #                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
-#   plugin               … 拡張（インスタンス解析条件のプラグイン）と契約表（種類 C）。拡張なし
+#   plugin               … 拡張（インスタンス解析条件のプラグイン）とライブラリ呼び出し規則（種類 C）。拡張なし
 #                          （config-before）→ 同梱の拡張（jche.properties。ファクトリのキーと対応表）→
 #                          自前の拡張（config-custom。plugins/*.java を実行時にコンパイル）→
-#                          種類 C の契約表（config-contracts。拡張を使わず表だけで絞る）→
-#                          ファクトリ＋キーの契約表（config-contracts-factory。拡張と同じ結果になる）→
+#                          種類 C のライブラリ呼び出し規則（config-call-rules。拡張を使わず表だけで絞る）→
+#                          ファクトリ＋キーのライブラリ呼び出し規則（config-call-rules-factory。拡張と同じ結果になる）→
 #                          算出規則の拡張（config-naming）→
-#                          右辺を採用できない契約（config-contracts-miss）の順に実行し、
-#                          拡張・契約表ありでのみ具象クラスに絞れること、拡張も契約表も
+#                          右辺を採用できない規則（config-call-rules-miss）の順に実行し、
+#                          拡張・ライブラリ呼び出し規則ありでのみ具象クラスに絞れること、拡張もライブラリ呼び出し規則も
 #                          キャッシュを捨てさせないことを確認する
 #   cacheblocks          … キャッシュ（analysis-cache.tsv。1 ファイル）のブロックの整合。そのまま再利用できること、
 #                          1 ブロックの中身を書き換える（検査値が合わなくなる）とそのファイル（ほかから参照されない
@@ -39,7 +39,7 @@
 #                          型解決できなかった呼び出しの件数（ログの警告）が、再利用・一部の解析し直しでも
 #                          変わらないこと
 #   values               … 値そのもの（文字列リテラル・定数）が出所の文字列の文法の文字（| ; { }）を含む題材
-#                          （values/project）。jche.properties（expected/。契約表のひな形 contracts-suggested.txt
+#                          （values/project）。jche.properties（expected/。ライブラリ呼び出し規則のひな形 call-rules-suggested.txt
 #                          も比べる）→ 同じ設定でキャッシュを再利用 → config-nodataflow.properties
 #                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。以前の読み手は値を
 #                          その文字の手前で切って読み違えていた。expected/ は値を切り詰めずに読んだ正しい結果
@@ -95,18 +95,18 @@ expect_csv_contains() {   # $1=case  $2=ASCII の文字列  $3=ラベル
     fi
 }
 
-# 絞れなかった呼び出しから作るひな形（contracts-suggested.txt）に、その行があること
+# 絞れなかった呼び出しから作るひな形（call-rules-suggested.txt）に、その行があること
 expect_suggested() {   # $1=case  $2=ASCII の文字列  $3=ラベル
     local out
     out=$(latest_output "$1")
-    if [ -n "$out" ] && LC_ALL=C grep -a -q -F -- "$2" "$out/contracts-suggested.txt" 2> /dev/null; then
+    if [ -n "$out" ] && LC_ALL=C grep -a -q -F -- "$2" "$out/call-rules-suggested.txt" 2> /dev/null; then
         echo "  OK   $1 ひな形 ($3)"
     else
         echo "  DIFF $1 ひな形に「$2」がありません ($3)"; fail=1
     fi
 }
 
-# 拡張（TypeMappingProvider）と種類 C の契約表が、由来ラベル以外は
+# 拡張（TypeMappingProvider）と種類 C のライブラリ呼び出し規則が、由来ラベル以外は
 # まったく同じ出力になること。指定の仕方を変えても結果は変わらない、がこの比較の眼目。
 # 期待出力をもう 1 組持つ代わりに、resolved-by 列のラベルを同じ綴りに読み替えて expected と突き合わせる
 expect_same_as_mapping() {   # $1=ラベル
@@ -118,13 +118,13 @@ expect_same_as_mapping() {   # $1=ラベル
     for f in call-hierarchy.csv methods.csv; do
         if diff --strip-trailing-cr -q \
                 <(sed 's/RESOLVED:MAPPING/RESOLVED:=/' "plugin/expected/$f") \
-                <(sed 's/RESOLVED:CONTRACT/RESOLVED:=/' "$out/$f") > /dev/null; then
+                <(sed 's/RESOLVED:CALL_RULE/RESOLVED:=/' "$out/$f") > /dev/null; then
             echo "  OK   plugin/$f ($1)"
         else
             echo "  DIFF plugin/$f ($1)"
             diff --strip-trailing-cr \
                 <(sed 's/RESOLVED:MAPPING/RESOLVED:=/' "plugin/expected/$f") \
-                <(sed 's/RESOLVED:CONTRACT/RESOLVED:=/' "$out/$f") | head -10
+                <(sed 's/RESOLVED:CALL_RULE/RESOLVED:=/' "$out/$f") | head -10
             ok=0
         fi
     done
@@ -502,33 +502,33 @@ values_case() {
     rm -rf values/.cache values/output values/run-*.log
     run values jche.properties 1 "1回目: キャッシュ無し" || return
     compare values expected "1回目: キャッシュ無し"
-    compare_suggested values expected "1回目: 契約表のひな形"
+    compare_suggested values expected "1回目: ライブラリ呼び出し規則のひな形"
     run values jche.properties 2 "2回目" || return
     expect_reused values 2 "2回目: キャッシュを再利用"
     compare values expected "2回目: キャッシュ再利用"
-    compare_suggested values expected "2回目: 契約表のひな形"
+    compare_suggested values expected "2回目: ライブラリ呼び出し規則のひな形"
     # 値を読まない指定。キャッシュは同じものを再利用し、値の行だけを読まない
     run values config-nodataflow.properties 3 "3回目: dataflow.enabled=false" || return
     expect_reused values 3 "3回目: キャッシュを再利用"
     compare values expected-nodataflow "3回目: dataflow.enabled=false"
-    compare_suggested values expected-nodataflow "3回目: 契約表のひな形"
+    compare_suggested values expected-nodataflow "3回目: ライブラリ呼び出し規則のひな形"
 }
 
-# 契約表のひな形（contracts-suggested.txt）が期待と同じこと（期待のフォルダに無ければ、出力にも無いこと）
+# ライブラリ呼び出し規則のひな形（call-rules-suggested.txt）が期待と同じこと（期待のフォルダに無ければ、出力にも無いこと）
 compare_suggested() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
     local out
     out=$(latest_output "$1")
-    if [ ! -f "$1/$2/contracts-suggested.txt" ]; then
-        if [ -f "$out/contracts-suggested.txt" ]; then
-            echo "  DIFF $1/contracts-suggested.txt があります ($3)"; fail=1
+    if [ ! -f "$1/$2/call-rules-suggested.txt" ]; then
+        if [ -f "$out/call-rules-suggested.txt" ]; then
+            echo "  DIFF $1/call-rules-suggested.txt があります ($3)"; fail=1
         else
-            echo "  OK   $1/contracts-suggested.txt は無い ($3)"
+            echo "  OK   $1/call-rules-suggested.txt は無い ($3)"
         fi
-    elif diff --strip-trailing-cr -q "$1/$2/contracts-suggested.txt" "$out/contracts-suggested.txt" > /dev/null 2>&1; then
-        echo "  OK   $1/contracts-suggested.txt ($3)"
+    elif diff --strip-trailing-cr -q "$1/$2/call-rules-suggested.txt" "$out/call-rules-suggested.txt" > /dev/null 2>&1; then
+        echo "  OK   $1/call-rules-suggested.txt ($3)"
     else
-        echo "  DIFF $1/contracts-suggested.txt ($3)"
-        diff --strip-trailing-cr "$1/$2/contracts-suggested.txt" "$out/contracts-suggested.txt" | head -20
+        echo "  DIFF $1/call-rules-suggested.txt ($3)"
+        diff --strip-trailing-cr "$1/$2/call-rules-suggested.txt" "$out/call-rules-suggested.txt" | head -20
         fail=1
     fi
 }
@@ -539,7 +539,7 @@ plugin_case() {
     rm -rf plugin/.cache plugin/output plugin/run-*.log
     run plugin config-before.properties 1 "1回目: 拡張なし" || return
     compare plugin expected-before "1回目: 拡張なし（CHA で実装2件に広がる）"
-    # 絞れなかった呼び出しから、そのまま貼れる契約表のひな形が出ること。
+    # 絞れなかった呼び出しから、そのまま貼れるライブラリ呼び出し規則のひな形が出ること。
     # 「候補N件」と言われても何を書けばよいか分からない、への導線
     expect_suggested plugin 'fxp.DaoFactory#get("USER_DAO") => ??' "1回目: ファクトリとキーのひな形"
     expect_suggested plugin "fxp.DaoFactory#get(fxp.DaoKind.ORDER) => ??" "1回目: 列挙定数のキーのひな形"
@@ -574,14 +574,14 @@ plugin_case() {
     expect_log_contains plugin 4 "DiXmlProvider" "4回目: plugins/*.java をコンパイルして読み込んだ"
     compare plugin expected-custom "4回目: 自前の拡張（DI 設定ファイルから絞れる）"
 
-    # 種類 C の契約表。拡張をいっさい使わず、契約表の行だけで同じように絞れる
-    run plugin config-contracts.properties 5 "5回目: 種類Cの契約表" || return
-    # 契約表はキャッシュの指紋に入らないので、表を足しても作り直さない
-    expect_reused plugin 5 "5回目: 契約表を足してもキャッシュを作り直さない"
+    # 種類 C のライブラリ呼び出し規則。拡張をいっさい使わず、ライブラリ呼び出し規則の行だけで同じように絞れる
+    run plugin config-call-rules.properties 5 "5回目: 種類Cのライブラリ呼び出し規則" || return
+    # ライブラリ呼び出し規則はキャッシュの指紋に入らないので、表を足しても作り直さない
+    expect_reused plugin 5 "5回目: ライブラリ呼び出し規則を足してもキャッシュを作り直さない"
     expect_log_contains plugin 5 "fxp.DaoFactory#get(ORDER_DAO)" \
         "5回目: キーを引用符で囲んでいない行は助言つきの警告で知らせる"
     expect_log_contains plugin 5 "fxp.NoSuchType => fxp.UserDaoImpl" \
-        "5回目: 一度も当たらなかった契約を挙げる"
+        "5回目: 一度も当たらなかった規則を挙げる"
     # 列挙定数のキー（引用符なしの FQN）。C-2 より先に当たるので enumKey だけ OrderDaoImpl になる
     expect_csv_contains plugin "App.enumKey,OrderDaoImpl.find" \
         "5回目: 列挙定数のキーで絞れる"
@@ -595,19 +595,19 @@ plugin_case() {
     # 既に 1 件に決まったものを経路ごとに覆さない、という規則の検査
     expect_csv_contains plugin "App.viaParam,App.byKey,UserDaoImpl.find" \
         "5回目: 先に絞れていれば経路でやり直さない"
-    compare plugin expected-contracts "5回目: 種類Cの契約表（C-1 と C-2 で絞れる）"
+    compare plugin expected-call-rules "5回目: 種類Cのライブラリ呼び出し規則（C-1 と C-2 で絞れる）"
 
     # ファクトリ＋キー（C-3）。データフローの値グラフに載っている実引数からキーを引く。
     # 2 回目（同梱の拡張）と由来ラベル以外は同じ出力になる
-    run plugin config-contracts-factory.properties 6 "6回目: ファクトリ＋キーの契約表" || return
-    expect_reused plugin 6 "6回目: 契約表はキャッシュを作り直さない"
+    run plugin config-call-rules-factory.properties 6 "6回目: ファクトリ＋キーのライブラリ呼び出し規則" || return
+    expect_reused plugin 6 "6回目: ライブラリ呼び出し規則はキャッシュを作り直さない"
     # この表は型名を単純名で書いてある。FQN で書いた場合と同じ結果になることを下の比較が見る
-    expect_log_missing plugin 6 "Cannot use the contract type name" "6回目: 単純名が曖昧になっていない"
+    expect_log_missing plugin 6 "Cannot use the rule type name" "6回目: 単純名が曖昧になっていない"
     # キーが呼び出し元から引数で渡ってくる形。経路が分かってから絞れる
     # （byKey を単独の起点として辿る経路では、キーが分からないので絞れないまま）
     expect_csv_contains plugin "App.viaParam,App.byKey,OrderDaoImpl.find" \
         "6回目: 経路で決まるキーでも絞れる"
-    # Class リテラルのキー。契約表では FQN に .class を付けて書く
+    # Class リテラルのキー。ライブラリ呼び出し規則では FQN に .class を付けて書く
     expect_csv_contains plugin "App.classKey,AbstractDao.find" \
         "6回目: Class リテラルのキーで絞れる"
     expect_same_as_mapping "6回目: 拡張と同じ結果（由来ラベルだけが違う）"
@@ -619,11 +619,11 @@ plugin_case() {
     expect_csv_contains plugin "App.chainedCall,OrderDaoImpl.find" "7回目: 変数に受けない呼び出しも絞る"
     expect_csv_contains plugin "RESOLVED:NAMING" "7回目: 拡張のラベルが出る"
 
-    # 右辺を採用できない契約は、候補を落として CHA に戻す（呼び出しを落とさない）
-    run plugin config-contracts-miss.properties 8 "8回目: 右辺を採用できない契約" || return
+    # 右辺を採用できない規則は、候補を落として CHA に戻す（呼び出しを落とさない）
+    run plugin config-call-rules-miss.properties 8 "8回目: 右辺を採用できない規則" || return
     expect_log_contains plugin 8 "fxp.Dao#find => fxp.Service" \
-        "8回目: 当たったが採用できなかった契約を挙げる"
-    compare plugin expected-before "8回目: 採用できない契約は CHA に戻す（拡張なしと同じ出力）"
+        "8回目: 当たったが採用できなかった規則を挙げる"
+    compare plugin expected-before "8回目: 採用できない規則は CHA に戻す（拡張なしと同じ出力）"
 }
 
 for c in $CASES; do
@@ -663,18 +663,18 @@ for c in $CASES; do
             maven|mavenmulti|gradle)
                 expect_log_contains "$c" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
                 expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた" ;;
-            # 契約表が「効いたか」の知らせ。whole の 2 行はどちらも当たるので挙がってはならず、
-            # entry の contracts.txt はわざと当たらない行だけなので、そのまま挙がる
+            # ライブラリ呼び出し規則が「効いたか」の知らせ。whole の 2 行はどちらも当たるので挙がってはならず、
+            # entry の call-rules.txt はわざと当たらない行だけなので、そのまま挙がる
             whole)
                 expect_log_missing whole 1 "fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()" \
-                    "1回目: 効いている契約は当たらなかった行として挙げない" ;;
+                    "1回目: 効いている規則は当たらなかった行として挙げない" ;;
             entry)
                 expect_log_contains entry 1 "fx.entry.NoSuchDispatcher#submit" \
-                    "1回目: 当たらなかった契約を挙げる（呼び戻し）"
+                    "1回目: 当たらなかった規則を挙げる（呼び戻し）"
                 expect_log_contains entry 1 "fx.entry.NoSuchEndpoint" \
-                    "1回目: 当たらなかった契約を挙げる（入口）"
+                    "1回目: 当たらなかった規則を挙げる（入口）"
                 expect_log_contains entry 1 "fx.entry.Dispatcher#submit(java.lang.Runnable) -> r : run()" \
-                    "1回目: 呼び出し先には一致したが繋げなかった契約を挙げる" ;;
+                    "1回目: 呼び出し先には一致したが繋げなかった規則を挙げる" ;;
         esac
         compare "$c" expected "1回目: キャッシュ無し"
         expect_run_files "$c" jche.properties "1回目"

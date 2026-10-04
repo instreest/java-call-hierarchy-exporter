@@ -18,8 +18,8 @@ import jche.cache.Origin;
  * </pre>
  *
  * <h2>なぜ 1 か所に寄せるか</h2>
- * 同じ読み取りを 3 か所が使う。契約表の種類 C（{@link TypeContracts}）、拡張に渡す証拠
- * （{@link CallResolver}）、絞れなかった呼び出しのひな形（{@code jche.report.ContractSuggestions}）。
+ * 同じ読み取りを 3 か所が使う。ライブラリ呼び出し規則の種類 C（{@link TypeRules}）、拡張に渡す証拠
+ * （{@link CallResolver}）、絞れなかった呼び出しのひな形（{@code jche.report.RuleSuggestions}）。
  * 読める形が増えたときに 3 か所が食い違うと、「ひな形が出した行が効かない」「表では引けるのに
  * 拡張には届かない」といった食い違いになるので、読み口はここだけにする。
  *
@@ -27,7 +27,7 @@ import jche.cache.Origin;
  * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
  * 出所に載るメソッドキーは<b>宣言元</b>（{@code BaseFactory#get}）になる。利用者がソースを見て
  * 書くのは {@code DaoFactory} のほうなので、書かれた型（{@code s=} で持つ）を先に、
- * 宣言元を次に返す。契約表も拡張もどちらの型でも指定でき、
+ * 宣言元を次に返す。ライブラリ呼び出し規則も拡張もどちらの型でも指定でき、
  * <b>書かれた型で指定すれば、その型で呼んでいる箇所だけに効く</b>（他の子クラス経由は含まれない）。
  *
  * <h2>フェーズAの証拠採取は要らない</h2>
@@ -113,9 +113,9 @@ public final class FactoryCalls {
      *
      * <h4>ここが唯一の追加口</h4>
      * 「ファクトリの何をキーとして扱うか」を決めているのはこのメソッドだけで、
-     * 契約表・拡張へ渡す証拠・ひな形の 3 つはすべてここを通る（{@link #keysOf} の説明）。
+     * ライブラリ呼び出し規則・拡張へ渡す証拠・ひな形の 3 つはすべてここを通る（{@link #keysOf} の説明）。
      * 解析対象の書き方に合わせて種類を足すときは、ここに 1 行足したうえで、
-     * 対になる 3 か所（契約表の読み書き {@code TypeContracts}、証拠の種別
+     * 対になる 3 か所（ライブラリ呼び出し規則の読み書き {@code TypeRules}、証拠の種別
      * {@code jche.extension.Hint}、ひな形の見出し）も揃える。
      *
      * <pre>

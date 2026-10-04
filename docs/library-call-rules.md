@@ -1,33 +1,33 @@
-# ソースの外（JDK・フレームワーク）との契約
+# ライブラリ呼び出し規則
 
 ツールは jar の中を読みません。けれど「jar の中のこのメソッドは、渡した値のこれを呼び戻す」
-「フレームワークはこのメソッドを入口として呼ぶ」「この型はこの実装で動く」という**契約**は文章で書けます。
-契約表を持つことで、jar の中を読まずに階層を繋ぎ、入口を仕分け、実装を 1 件に絞ります。
+「フレームワークはこのメソッドを入口として呼ぶ」「この型はこの実装で動く」という**規則**は文章で書けます。
+ライブラリ呼び出し規則を持つことで、jar の中を読まずに階層を繋ぎ、入口を仕分け、実装を 1 件に絞ります。
 
 | 種類 | 何を決めるか | 出力 |
 |---|---|---|
 | **A. 呼び戻し** | 呼び出し箇所で渡した値のどれが、どのメソッドで呼び戻されるか | `call-hierarchy.csv` に `RESOLVED:CALLBACK` の行を足す |
 | **B. 起点** | どのメソッドをフレームワークが入口として呼ぶか | `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える |
-| **C. 具象型** | 宣言型（またはその型のメソッド）を、どの実装に解決するか | `call-hierarchy.csv` の `resolved-by` が `RESOLVED:CONTRACT` になり、その先へ降りる |
+| **C. 具象型** | 宣言型（またはその型のメソッド）を、どの実装に解決するか | `call-hierarchy.csv` の `resolved-by` が `RESOLVED:CALL_RULE` になり、その先へ降りる |
 
 > 種類 C は、[インスタンス解析条件の拡張](instance-analysis-plugin.md)と同じことを、Java を書かず
-> 契約表の 1 行で指定するものです。設計の経緯は
-> [contracts-unification-design.md](contracts-unification-design.md) にあります。
+> ライブラリ呼び出し規則の 1 行で指定するものです。設計の経緯は
+> [call-rules-unification-design.md](call-rules-unification-design.md) にあります。
 
 ## A. jar の中から呼び戻される呼び出しを繋ぐ
 
 `new Thread(task).start()` の `start` は JDK の中なので、ツールはその先を読めません。
-けれど「`Thread#start()` はコンストラクタに渡した `Runnable` の `run()` を呼ぶ」という**契約**は
-文章で書けます。ツールはこの契約表を持ち、jar の中を読まずに `start` の先へ辺を張ります。
+けれど「`Thread#start()` はコンストラクタに渡した `Runnable` の `run()` を呼ぶ」という**規則**は
+文章で書けます。ツールはこのライブラリ呼び出し規則を持ち、jar の中を読まずに `start` の先へ辺を張ります。
 
 ```csv
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] rule: Thread#start() calls run()
 at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 ```
 
 `caller` 列は `start()` を呼んでいる行、`callee` 列は呼び戻される側です。呼び出し先（`Thread.start`）自身の行が
 出ている（`java.**` を除外していない）場合は、その次に並びます。`exclude.packages` で `java.**` を
-除外していても、契約で繋いだ先は辿ります。
+除外していても、規則で繋いだ先は辿ります。
 
 ### 追える条件
 
@@ -49,7 +49,7 @@ at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:C
 分からないときは辺を張りません。`Runnable` の全実装を候補に並べるような広い候補は出しません
 （誤って絞るより、絞れないと分かる方が害が少ないため）。
 
-### 同梱の契約表（A）
+### 同梱のライブラリ呼び出し規則（A）
 
 JDK のうち、「呼び戻す」と言い切れて、実務で経路が切れて困るものに絞っています
 （`src/jche/graph/JdkCallbacks.java`）。
@@ -69,12 +69,12 @@ JDK のうち、「呼び戻す」と言い切れて、実務で経路が切れ�
 呼び出し先のキーは JDT のバインディングが返す**宣言型**です。`list.forEach(...)` は `List` が
 `forEach` を上書きしていないので `Iterable#forEach` に、`executor.submit(...)` は `ExecutorService#submit` に
 解決されます。上書きしていない型で書いた行（`List#forEach`、`ExecutorService#execute`）は永久に当たりません。
-同梱表の行は `bash test/contracts/run.sh` が実行中の JDK と照合します
-（[callback-contracts-qa.md](callback-contracts-qa.md) の Q15）。
+同梱表の行は `bash test/rules/run.sh` が実行中の JDK と照合します
+（[library-call-rules-qa.md](library-call-rules-qa.md) の Q15）。
 
-### 契約の書き方（A）
+### 規則の書き方（A）
 
-1 行が 1 契約です。
+1 行が 1 規則です。
 
 ```
 呼び出し先のメソッドキー -> 位置 : 呼ばれるメソッドのシグネチャ
@@ -93,7 +93,7 @@ java.lang.Iterable#forEach(java.util.function.Consumer) -> a0 : accept(java.lang
 ## B. フレームワークが起点として呼ぶメソッドを仕分ける
 
 `@Scheduled` のメソッドや `HttpServlet#doGet` の上書きは、ソースのどこからも呼ばれていませんが、
-フレームワークが呼ぶ入口です。契約に当たるメソッドは `methods.csv` の `role` が `FRAMEWORK_ENTRY` になり、
+フレームワークが呼ぶ入口です。規則に当たるメソッドは `methods.csv` の `role` が `FRAMEWORK_ENTRY` になり、
 残った `ENTRY_CANDIDATE` が「本当に誰からも呼ばれていないもの（デッドコードの疑い）」に近づきます。
 
 ```csv
@@ -106,11 +106,11 @@ Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,29,1,1,1,FRAMEWORK_ENTRY,1,0,
 `role` は呼び出し元の有無より「フレームワークが呼ぶ」事実を優先するので、内部から呼ばれていても
 `NORMAL` ではなく `FRAMEWORK_ENTRY` です。
 
-### 同梱の契約表（B）
+### 同梱のライブラリ呼び出し規則（B）
 
 `src/jche/graph/BundledFrameworkEntries.java`。javax と jakarta は両方あります。
 
-| 区分 | 契約 |
+| 区分 | 規則 |
 |---|---|
 | JDK | 起動の入口になる `main`（JLS 12.1.4。`static void main(String[])` のほか、引数なしのもの・インスタンスメソッドのものも） |
 | Servlet | `HttpServlet#doGet/doPost/doPut/doDelete/service`、`GenericServlet#service/init`、`Filter#doFilter`、`ServletContextListener` の上書き |
@@ -121,7 +121,7 @@ Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,29,1,1,1,FRAMEWORK_ENTRY,1,0,
 | Struts | `Action#execute` |
 | テスト | JUnit 5 `@Test` / `@BeforeEach` / `@AfterEach` / `@BeforeAll` / `@AfterAll` / `@ParameterizedTest`、JUnit 4 `@Test` / `@Before` / `@After`、TestNG `@Test` |
 
-### 契約の書き方（B）
+### 規則の書き方（B）
 
 ```
 @org.springframework.scheduling.annotation.Scheduled      … そのアノテーションが付いたメソッド
@@ -143,7 +143,7 @@ main                                                         … 起動の入口
 
 インターフェース型で宣言された呼び出しは、実装が複数あると `[UNEXPANDED:CHA] N candidates` で止まり、
 その先へ降りません。DI コンテナで注入されるフィールドのように、**どの実装で動くかが設定ファイル側に
-書いてある**ものは、その対応を契約表に書けば 1 件に絞れます。
+書いてある**ものは、その対応をライブラリ呼び出し規則に書けば 1 件に絞れます。
 
 ```
 宣言型のFQN => 具象型のFQN
@@ -164,7 +164,7 @@ DaoFactory.get("USER").find();     // ← 変数に受けない形でも同じ
 ```
 
 ```csv
-at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,RESOLVED:CONTRACT,1,Main.run,UserDaoImpl.find
+at jp.co.app.Main.run(Main.java:25),UserDaoImpl.find,RESOLVED:CALL_RULE,1,Main.run,UserDaoImpl.find
 at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,RESOLVED:NO_OVERRIDE,2,Main.run,UserDaoImpl.find,UserDaoImpl.load
 ```
 
@@ -204,11 +204,11 @@ at jp.co.xxx.dao.UserDaoImpl.find(UserDaoImpl.java:6),UserDaoImpl.load,RESOLVED:
 
 ```properties
 # jche.properties
-contracts.files=contracts.txt
+call.rules.files=call-rules.txt
 ```
 
 ```
-# contracts.txt（UTF-8、1 行 1 契約。# はコメント）
+# call-rules.txt（UTF-8、1 行 1 規則。# はコメント）
 fx.entry.Dispatcher#submit(java.lang.Runnable) -> a0 : run()
 @fx.entry.Endpoint
 super jp.co.xxx.BaseAction#execute()
@@ -217,15 +217,15 @@ jp.co.xxx.dao.UserDao => jp.co.xxx.dao.UserDaoImpl
 
 - パスは設定ファイルのフォルダからの相対（`plugin.folders` と同じ起点）。複数ならカンマ区切り
 - 読み込んだ行数は実行ログに出ます。形が違う行は警告に出して読み飛ばします
-- `contracts.builtin=false` にすると同梱の表を使わず、自前の表と拡張だけになります
+- `call.rules.builtin=false` にすると同梱の表を使わず、自前の表と拡張だけになります
 
 表では書けない条件（設定ファイルから機械的に作る、型の一覧を見て決める等）は、
-`jche.extension.ContractProvider` を実装した拡張で返します。読み込み方は
+`jche.extension.RuleProvider` を実装した拡張で返します。読み込み方は
 [インスタンス解析条件のプラグイン](instance-analysis-plugin.md)と同じで、`plugin.folders` に
-`.java` を置き、クラス名を `contracts.providers` に書きます。
+`.java` を置き、クラス名を `call.rules.providers` に書きます。
 
 ```java
-public class MyContracts implements jche.extension.ContractProvider {
+public class MyRules implements jche.extension.RuleProvider {
     @Override
     public List<String> lines() {
         return List.of("jp.co.xxx.EventBus#on(jp.co.xxx.Handler) -> a0 : handle(jp.co.xxx.Event)",
@@ -234,7 +234,7 @@ public class MyContracts implements jche.extension.ContractProvider {
 }
 ```
 
-`test/regression/whole/contracts.txt` に、`test/demo` の自前フレームワーク分（`Dispatcher#submit` と
+`test/regression/whole/call-rules.txt` に、`test/demo` の自前フレームワーク分（`Dispatcher#submit` と
 `@Endpoint`）を足した例があります。
 
 ### ファクトリの実装が親クラスにある場合
@@ -254,14 +254,14 @@ Dao dao = ChildDaoFactory.pick("ORDER_DAO");   // ソースに書いてあるの
 | `fxp.ChildDaoFactory#pick("ORDER_DAO")`（ソースに書いた型） | `ChildDaoFactory.pick(...)` と書いてある箇所だけ。`OtherDaoFactory` 経由は含みません |
 | `fxp.BaseDaoFactory#pick("ORDER_DAO")`（宣言元の型） | どの子クラス経由でも。「この親のファクトリなら全部」と言いたいとき |
 
-ふつうは**ソースに書いてある型**で書けば足ります。`contracts-suggested.txt` のひな形も
+ふつうは**ソースに書いてある型**で書けば足ります。`call-rules-suggested.txt` のひな形も
 そちらの形で出ます。「どの子クラス経由でも同じ実装」と言いたいときだけ、宣言元の型に広げます。
 
 ### キーが変数で渡る場合
 
 キーは「その呼び出し箇所で 1 つの値に定まる」ときだけ引けます。
 
-| 書き方 | 引けるか | 契約表に書く形 |
+| 書き方 | 引けるか | ライブラリ呼び出し規則に書く形 |
 |---|---|---|
 | `get("USER_DAO")` | ○ | `#get("USER_DAO")` |
 | `get(Keys.USER)`（`static final String`） | ○ | **定数の値**で書く（`#get("USER_DAO")`） |
@@ -286,8 +286,8 @@ void helper(String k) { Factory.get(k).find(); }     // ← run から辿った�
 
 ## 何を書けばよいか分からないとき
 
-絞れなかった呼び出しがあると、出力フォルダに **`contracts-suggested.txt`** が出ます。
-そのまま貼れる契約表のひな形なので、書式を覚えなくても「選んでコメントを外す」だけで済みます。
+絞れなかった呼び出しがあると、出力フォルダに **`call-rules-suggested.txt`** が出ます。
+そのまま貼れるライブラリ呼び出し規則のひな形なので、書式を覚えなくても「選んでコメントを外す」だけで済みます。
 
 ```
 # 3 か所  例) at fxp.App.factoryCall(App.java:17)
@@ -297,7 +297,7 @@ void helper(String k) { Factory.get(k).find(); }     // ← run から辿った�
 
 1. 当てはまる行の行頭の `#` を外す
 2. `??` を具象型の FQN に置き換える（候補はその行の上にあります）
-3. `contracts.files` が指す表に貼る
+3. `call.rules.files` が指す表に貼る
 
 - まとめ方は**呼び出し箇所ごとではなく、それを直す 1 行ごと**です。同じ呼び出しが 100 か所で
   絞れていなくても、書く行は 1 行だからです。件数の多い順に並びます
@@ -311,13 +311,13 @@ void helper(String k) { Factory.get(k).find(); }     // ← run から辿った�
 
 ## 効いているかを確かめる
 
-契約表はただの文字列なので、型名やシグネチャを間違えても実行時は「当たらない」だけで、
+ライブラリ呼び出し規則はただの文字列なので、型名やシグネチャを間違えても実行時は「当たらない」だけで、
 出力は黙って元のままになります。そこで解析の最後に、**自前の表の行が効いたか**を実行ログに出します。
 
 ```
-契約表の適用: 自前 2/3 行（呼び戻し 1/2、入口 1/1） ／ 同梱 9 行
-[WARN] 自前の契約表で一度も当たらなかった行が 1 件あります。型名・シグネチャの綴り違いか、そのプロジェクトでは使っていない機能の行です:
-    /path/to/contracts.txt: jp.co.xxx.EventBus#on(jp.co.xxx.Handler) -> a0 : handle(jp.co.xxx.Event)
+ライブラリ呼び出し規則の適用: 自前 2/3 行（呼び戻し 1/2、入口 1/1） ／ 同梱 9 行
+[WARN] 自前のライブラリ呼び出し規則で一度も当たらなかった行が 1 件あります。型名・シグネチャの綴り違いか、そのプロジェクトでは使っていない機能の行です:
+    /path/to/call-rules.txt: jp.co.xxx.EventBus#on(jp.co.xxx.Handler) -> a0 : handle(jp.co.xxx.Event)
     ※ 呼び戻しの行の呼び出し先は、JDT が返す「宣言型」で書きます（List#forEach ではなく Iterable#forEach）。
 ```
 
@@ -325,13 +325,13 @@ void helper(String k) { Factory.get(k).find(); }     // ← run から辿った�
 
 | 知らせ | 意味 | 見るところ |
 |---|---|---|
-| `[WARN] 一度も当たらなかった行` | 契約の**呼び出し先そのものが 1 件も見つからなかった** | 型名・シグネチャの綴り。とくに呼び出し先のキーは[宣言型](#同梱の契約表a)で書く。そのプロジェクトで本当に使っていない API なら、そのままで構いません |
+| `[WARN] 一度も当たらなかった行` | 規則の**呼び出し先そのものが 1 件も見つからなかった** | 型名・シグネチャの綴り。とくに呼び出し先のキーは[宣言型](#同梱のライブラリ呼び出し規則a)で書く。そのプロジェクトで本当に使っていない API なら、そのままで構いません |
 | `※ 呼び出し先には一致したが…繋げなかった行` | 呼び出し先は見つかったが、**渡した値の具象型が決まらなかった**（種類 A） | 表は合っています。[追える条件](#追える条件)のどれにも当てはまらない渡し方をしている箇所です |
 | `※ 左辺の型には一致したが…採用できなかった行` | 左辺は見つかったが、**右辺の型にその呼び出しの本体が無かった**（種類 C） | 右辺の FQN の綴りと、その型（か親）がそのメソッドを持つか |
 
-- 出すのは**自前の表（`contracts.files` と `contracts.providers`）の行だけ**です。同梱の表は
+- 出すのは**自前の表（`call.rules.files` と `call.rules.providers`）の行だけ**です。同梱の表は
   「そのプロジェクトで使っていない機能の行」が当たらないのが普通なので、効いた行数だけを数えます
-  （同梱の表の検査は `bash test/contracts/run.sh`）
+  （同梱の表の検査は `bash test/rules/run.sh`）
 - 自前の表を 1 行も書いていなければ、この知らせは出ません
 - 解析サーバー（`--server`）では出しません。グラフ全体を辿らないので「一度も当たらなかった」と
   言い切れないためです

@@ -31,7 +31,7 @@ import jche.util.UserHome;
  *
  * 相対パスの起点は項目ごとに異なる。
  * <ul>
- *   <li>project.root / library.jars / library.repositories / output.folder / cache.folder / contracts.files /
+ *   <li>project.root / library.jars / library.repositories / output.folder / cache.folder / call.rules.files /
  *       plugin.folders … この設定ファイルが置かれているディレクトリ（下の 3 項目以外はすべてこちら）</li>
  *   <li>source.folders / library.folders / external.library.folders … project.root</li>
  * </ul>
@@ -70,8 +70,8 @@ public final class Config {
     public static final String METHODS_CSV_NAME = "methods.csv";
     /** conditions.target を指定したときだけ追加で出す、条件の一覧 */
     public static final String CALL_CONDITIONS_CSV_NAME = "call-conditions.csv";
-    /** 絞れなかった呼び出しから作る契約表のひな形。貼る先が UTF-8 固定なので、これも UTF-8 で書く */
-    public static final String CONTRACTS_SUGGESTED_NAME = "contracts-suggested.txt";
+    /** 絞れなかった呼び出しから作るライブラリ呼び出し規則のひな形。貼る先が UTF-8 固定なので、これも UTF-8 で書く */
+    public static final String RULES_SUGGESTED_NAME = "call-rules-suggested.txt";
     /** 出力フォルダに残す実行ログ（標準出力と同じ内容、UTF-8） */
     public static final String LOG_FILE_NAME = "run.log";
     /** 出力フォルダ名の日時の書式 */
@@ -137,18 +137,18 @@ public final class Config {
     /** 拡張の init() に渡す。プロジェクト固有のキーを自由に読ませるため */
     public final Properties raw;
     public final List<String> candidateProviderClasses;
-    /** 契約表のファイル（contracts.files。設定ファイルのフォルダからの相対） */
-    public final List<Path> contractFiles;
-    /** 契約を返す拡張のクラス（contracts.providers） */
-    public final List<String> contractProviderClasses;
-    /** 同梱の契約表を使うか（contracts.builtin。既定 true） */
-    public final boolean builtinContracts;
+    /** ライブラリ呼び出し規則のファイル（call.rules.files。設定ファイルのフォルダからの相対） */
+    public final List<Path> ruleFiles;
+    /** 規則を返す拡張のクラス（call.rules.providers） */
+    public final List<String> ruleProviderClasses;
+    /** 同梱のライブラリ呼び出し規則を使うか（call.rules.builtin。既定 true） */
+    public final boolean builtinRules;
     /**
      * 拡張クラスの置き場所（設定ファイルのフォルダからの相対）。.java / .class / .jar を置く。
      *
      * <p>ここに置く拡張はグラフを組むときにだけ動き、キャッシュには何も書かない。
      * そのため<b>拡張を足しても外してもキャッシュは捨てられない</b>
-     * （契約表と同じ性質。docs/instance-analysis-plugin-qa.md の Q28）
+     * （ライブラリ呼び出し規則と同じ性質。docs/instance-analysis-plugin-qa.md の Q28）
      */
     public final List<Path> pluginFolders;
 
@@ -196,8 +196,8 @@ public final class Config {
     public final Path methodsCsv;
     /** conditions.target を指定したときだけ書く、条件の一覧（通常の出力に追加する） */
     public final Path conditionsCsv;
-    /** 絞れなかった呼び出しから作る契約表のひな形（{@link #CONTRACTS_SUGGESTED_NAME}） */
-    public final Path contractsSuggestedFile;
+    /** 絞れなかった呼び出しから作るライブラリ呼び出し規則のひな形（{@link #RULES_SUGGESTED_NAME}） */
+    public final Path rulesSuggestedFile;
     public final Path logFile;
 
     /** CSVの出力文字コード。既定はUTF-8-BOM（Excelでそのまま開ける） */
@@ -317,9 +317,9 @@ public final class Config {
         // 拡張は設定ファイルのひな形には載せていない。使う場合はこのキーを足せば読み込まれる
         this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
         this.pluginFolders = pluginFoldersOf(p);
-        this.contractFiles = contractFilesOf(p);
-        this.contractProviderClasses = splitList(p.getProperty("contracts.providers", ""));
-        this.builtinContracts = Boolean.parseBoolean(p.getProperty("contracts.builtin", "true").trim());
+        this.ruleFiles = ruleFilesOf(p);
+        this.ruleProviderClasses = splitList(p.getProperty("call.rules.providers", ""));
+        this.builtinRules = Boolean.parseBoolean(p.getProperty("call.rules.builtin", "true").trim());
         this.raw = p;
 
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
@@ -347,7 +347,7 @@ public final class Config {
         this.outputCsv = this.outputDir.resolve(CALL_HIERARCHY_CSV_NAME);
         this.methodsCsv = this.outputDir.resolve(METHODS_CSV_NAME);
         this.conditionsCsv = this.outputDir.resolve(CALL_CONDITIONS_CSV_NAME);
-        this.contractsSuggestedFile = this.outputDir.resolve(CONTRACTS_SUGGESTED_NAME);
+        this.rulesSuggestedFile = this.outputDir.resolve(RULES_SUGGESTED_NAME);
         this.logFile = this.outputDir.resolve(LOG_FILE_NAME);
 
         String encRaw = p.getProperty("output.encoding", "UTF-8-BOM").trim();
@@ -364,11 +364,11 @@ public final class Config {
         return out;
     }
 
-    /** 契約表のファイル。設定ファイルのフォルダからの相対パス（plugin.folders と同じ起点） */
-    private List<Path> contractFilesOf(Properties p) {
+    /** ライブラリ呼び出し規則のファイル。設定ファイルのフォルダからの相対パス（plugin.folders と同じ起点） */
+    private List<Path> ruleFilesOf(Properties p) {
         List<Path> files = new ArrayList<>();
-        for (String raw : splitList(p.getProperty("contracts.files", ""))) {
-            files.add(resolveUnderConfigDir("contracts.files", raw));
+        for (String raw : splitList(p.getProperty("call.rules.files", ""))) {
+            files.add(resolveUnderConfigDir("call.rules.files", raw));
         }
         return List.copyOf(files);
     }

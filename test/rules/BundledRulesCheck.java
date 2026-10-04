@@ -10,29 +10,29 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 同梱の契約表（{@link JdkCallbacks} / {@link BundledFrameworkEntries}）の検査。
+ * 同梱のライブラリ呼び出し規則（{@link JdkCallbacks} / {@link BundledFrameworkEntries}）の検査。
  *
- * 契約表は文字列なので、形を崩しても・JDK 側でメソッドの宣言元が動いても、
+ * ライブラリ呼び出し規則は文字列なので、形を崩しても・JDK 側でメソッドの宣言元が動いても、
  * コンパイルは通り、実行時は「当たらない」だけで何も言わない。ここで機械的に見る。
  * <pre>
  *   形      すべての行が parse できる（形が違えば読み込み時に捨てられて黙って効かなくなる）
  *   重複    同じ行が 2 回無い
  *   宣言元  JDK の型は、その型が本当にそのメソッドを「宣言」していること（継承しているだけでは
  *           JDT の getMethodDeclaration がその型を返さず、行は永久に当たらない）
- *   呼び戻し 契約の位置にある値の型が、呼び戻すメソッドを持っていること
+ *   呼び戻し 規則の位置にある値の型が、呼び戻すメソッドを持っていること
  *   具象型  種類 C（{@code 型 => 具象型}、{@code 型#メソッド("キー") => 具象型}、
  *           {@code 型#メソッド(列挙定数のFQN) => 具象型}）の読み書き。同梱の行は無いので形だけを見る
  * </pre>
  * 型の照合は実行中の JDK のリフレクションで行う。リフレクションが返す宣言クラスと型消去後の
  * 引数型は .class の記述子そのもので、JDT の {@code getMethodDeclaration().getErasure()} と同じ形になる
- * （docs/callback-contracts-qa.md）。JDK に無い型（Servlet・Spring 等）は形だけを見る。
+ * （docs/library-call-rules-qa.md）。JDK に無い型（Servlet・Spring 等）は形だけを見る。
  */
-public final class BundledContractsCheck {
+public final class BundledRulesCheck {
 
     private static int failures;
     private static int checked;
 
-    private BundledContractsCheck() {
+    private BundledRulesCheck() {
     }
 
     public static void main(String[] args) {
@@ -52,7 +52,7 @@ public final class BundledContractsCheck {
         Set<String> seen = new HashSet<>();
         for (String line : JdkCallbacks.LINES) {
             checked++;
-            CallbackContracts.Contract c = CallbackContracts.parse(line);
+            CallbackRules.Rule c = CallbackRules.parse(line);
             if (c == null) {
                 ng(line, "形が違う（parse が null）");
                 continue;
@@ -85,7 +85,7 @@ public final class BundledContractsCheck {
             }
             Class<?> value = valueTypeOf(c, m);
             if (value == null) {
-                ng(line, "契約の位置（" + c.where() + c.index() + "）に当たる引数が無い");
+                ng(line, "規則の位置（" + c.where() + c.index() + "）に当たる引数が無い");
                 continue;
             }
             MethodSig cb = MethodSig.of("x#" + c.callbackSig());
@@ -95,13 +95,13 @@ public final class BundledContractsCheck {
         }
     }
 
-    /** 契約の位置にある値の型。r / c* はレシーバの型、aN は N 番目の引数の型 */
-    private static Class<?> valueTypeOf(CallbackContracts.Contract c, Method callee) {
-        if (c.where() != CallbackContracts.Contract.ARGUMENT) {
+    /** 規則の位置にある値の型。r / c* はレシーバの型、aN は N 番目の引数の型 */
+    private static Class<?> valueTypeOf(CallbackRules.Rule c, Method callee) {
+        if (c.where() != CallbackRules.Rule.ARGUMENT) {
             return callee.getDeclaringClass();
         }
         Class<?>[] params = callee.getParameterTypes();
-        if (c.index() == CallbackContracts.Contract.ANY) {
+        if (c.index() == CallbackRules.Rule.ANY) {
             return params.length == 0 ? null : params[0];
         }
         return (c.index() < params.length) ? params[c.index()] : null;
@@ -113,7 +113,7 @@ public final class BundledContractsCheck {
         Set<String> seen = new HashSet<>();
         for (String line : BundledFrameworkEntries.LINES) {
             checked++;
-            FrameworkEntries.Contract c = FrameworkEntries.parse(line);
+            FrameworkEntries.Rule c = FrameworkEntries.parse(line);
             if (c == null) {
                 ng(line, "形が違う（parse が null）");
                 continue;
@@ -122,12 +122,12 @@ public final class BundledContractsCheck {
                 ng(line, "重複している");
             }
             switch (c.kind()) {
-                case FrameworkEntries.Contract.ANNOTATION -> {
+                case FrameworkEntries.Rule.ANNOTATION -> {
                     if (!looksLikeFqn(c.value())) {
                         ng(line, "アノテーションの完全修飾名でない: " + c.value());
                     }
                 }
-                case FrameworkEntries.Contract.SUPER -> {
+                case FrameworkEntries.Rule.SUPER -> {
                     MethodSig sig = MethodSig.of(c.value() + "#" + c.sig());
                     if (!looksLikeFqn(c.value()) || sig == null) {
                         ng(line, "super 型#名前(引数,...) の形でない");
@@ -140,12 +140,12 @@ public final class BundledContractsCheck {
                         ng(line, "型が JDK に無い: " + c.value());
                     }
                 }
-                case FrameworkEntries.Contract.STATIC -> {
+                case FrameworkEntries.Rule.STATIC -> {
                     if (MethodSig.of("x#" + c.sig()) == null) {
                         ng(line, "static 名前(引数,...) の形でない");
                     }
                 }
-                case FrameworkEntries.Contract.MAIN -> {
+                case FrameworkEntries.Rule.MAIN -> {
                     // 引数の無い 1 語の行。起動の入口（JLS 12.1.4）の条件は FrameworkEntries が持つ
                 }
                 default -> ng(line, "知らない種類: " + c.kind());
@@ -169,7 +169,7 @@ public final class BundledContractsCheck {
         };
         for (Case c : good) {
             checked++;
-            TypeContracts.Contract parsed = TypeContracts.parse(c.line());
+            TypeRules.Rule parsed = TypeRules.parse(c.line());
             if (parsed == null) {
                 ng(c.line(), "読めるべき形が parse できない");
                 continue;
@@ -185,7 +185,7 @@ public final class BundledContractsCheck {
         // C-3（ファクトリ＋キー）。左辺の型・メソッド名とキーが取り出せること
         checked++;
         String factoryLine = "jp.co.xxx.Factory#get(\"USER\") => jp.co.xxx.UserImpl";
-        TypeContracts.Contract factory = TypeContracts.parse(factoryLine);
+        TypeRules.Rule factory = TypeRules.parse(factoryLine);
         if (factory == null) {
             ng(factoryLine, "C-3 の行が parse できない");
         } else if (!"jp.co.xxx.Factory".equals(factory.declaredType())
@@ -196,13 +196,13 @@ public final class BundledContractsCheck {
         // 列挙定数のキーは引用符なしの FQN。Java のソースに書く形と同じ
         checked++;
         String enumLine = "jp.co.xxx.Factory#get(jp.co.xxx.Kind.USER) => jp.co.xxx.UserImpl";
-        TypeContracts.Contract enumKey = TypeContracts.parse(enumLine);
+        TypeRules.Rule enumKey = TypeRules.parse(enumLine);
         if (enumKey == null || !"jp.co.xxx.Kind.USER".equals(enumKey.key())) {
             ng(enumLine, "列挙定数のキーを読めていない");
         }
         // 文字列のキーと列挙定数のキーは、同じ綴りでも別の行として区別されること
         checked++;
-        TypeContracts.Contract quoted = TypeContracts.parse(
+        TypeRules.Rule quoted = TypeRules.parse(
                 "jp.co.xxx.Factory#get(\"jp.co.xxx.Kind.USER\") => jp.co.xxx.UserImpl");
         if (quoted == null || enumKey == null || quoted.keyKind() == enumKey.keyKind()) {
             ng(enumLine, "引用符の有無でキーの種別が分かれていない");
@@ -210,16 +210,16 @@ public final class BundledContractsCheck {
         // 修飾されていない名前は、書き間違いとして弾く（助言を添えられるよう実引数の有無は見分ける）
         checked++;
         String unqualified = "jp.co.xxx.Factory#get(USER) => jp.co.xxx.UserImpl";
-        if (TypeContracts.parse(unqualified) != null || !TypeContracts.hasArguments(unqualified)) {
+        if (TypeRules.parse(unqualified) != null || !TypeRules.hasArguments(unqualified)) {
             ng(unqualified, "修飾されていないキーを読んでしまう、または実引数の形と見分けられていない");
         }
         checked++;
-        if (TypeContracts.hasArguments("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl")) {
+        if (TypeRules.hasArguments("jp.co.xxx.UserDao => jp.co.xxx.UserDaoImpl")) {
             ng("C-1 の行", "実引数を書いた形ではないのにそう判定された");
         }
         // C-1 / C-2 の行にキーは入らない
         checked++;
-        TypeContracts.Contract plain = TypeContracts.parse("jp.co.xxx.UserDao#find => jp.co.xxx.Impl");
+        TypeRules.Rule plain = TypeRules.parse("jp.co.xxx.UserDao#find => jp.co.xxx.Impl");
         if (plain == null || !plain.key().isEmpty()) {
             ng("C-2 の行", "キーの無い行にキーが入っている");
         }
@@ -242,7 +242,7 @@ public final class BundledContractsCheck {
         };
         for (String s : badCallbacks) {
             checked++;
-            if (CallbackContracts.parse(s) != null) {
+            if (CallbackRules.parse(s) != null) {
                 ng(s, "形が違うのに parse が通った");
             }
         }
@@ -275,14 +275,14 @@ public final class BundledContractsCheck {
         };
         for (String s : badTypes) {
             checked++;
-            if (TypeContracts.parse(s) != null) {
+            if (TypeRules.parse(s) != null) {
                 ng(s, "形が違うのに parse が通った");
             }
         }
         checked++;
-        if (CallbackContracts.parse("# comment") != null || CallbackContracts.parse("  ") != null
+        if (CallbackRules.parse("# comment") != null || CallbackRules.parse("  ") != null
                 || FrameworkEntries.parse("# comment") != null || FrameworkEntries.parse("") != null
-                || TypeContracts.parse("# comment") != null || TypeContracts.parse("") != null) {
+                || TypeRules.parse("# comment") != null || TypeRules.parse("") != null) {
             ng("# / 空行", "コメント・空行は無視されるべき");
         }
     }
@@ -389,7 +389,7 @@ public final class BundledContractsCheck {
         String n = name;
         while (true) {
             try {
-                return Class.forName(n, false, BundledContractsCheck.class.getClassLoader());
+                return Class.forName(n, false, BundledRulesCheck.class.getClassLoader());
             } catch (ClassNotFoundException e) {
                 int dot = n.lastIndexOf('.');
                 if (dot < 0) {

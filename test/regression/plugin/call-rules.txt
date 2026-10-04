@@ -1,4 +1,4 @@
-# 種類 C（具象型）の契約表。拡張を使わず、この表だけで具象クラスに絞れることを検査する
+# 種類 C（具象型）のライブラリ呼び出し規則。拡張を使わず、この表だけで具象クラスに絞れることを検査する
 
 # C-1 宣言型 -> 具象型（DI 設定から機械的に書き出せる形）
 fxp.Service => fxp.BillingService
@@ -7,7 +7,7 @@ fxp.Service => fxp.BillingService
 fxp.Dao#find => fxp.UserDaoImpl
 
 # キーを引用符で囲んでいない形。読めない行として、助言つきの警告が出ることを検査する
-# （正しく書いた C-3 は config-contracts-factory.properties の側で検査する）
+# （正しく書いた C-3 は config-call-rules-factory.properties の側で検査する）
 fxp.DaoFactory#get(ORDER_DAO) => fxp.OrderDaoImpl
 
 # C-3（ファクトリ＋キー）で、キーが列挙定数の形。引用符を付けず定数の FQN で書く。

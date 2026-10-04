@@ -14,7 +14,7 @@ package jche.extension;
  * こちらも同じ形で並ぶ。
  *
  * <p>扱えるキーの種類を増やすときは {@code jche.graph.FactoryCalls#readsOf} に足す。
- * 契約表・この証拠・ひな形の 3 つが同じ読み口を通るので、1 か所で揃う。
+ * ライブラリ呼び出し規則・この証拠・ひな形の 3 つが同じ読み口を通るので、1 か所で揃う。
  */
 public record Hint(String kind, String value) {
 
