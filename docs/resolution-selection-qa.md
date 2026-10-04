@@ -44,7 +44,7 @@ JVMS は呼び出しを、シンボリック参照を宣言に結び付ける**�
 ## Q3. 入口を `CallGraph` に残して委譲すれば、呼び出し元を書き換えずに済んだのでは
 
 残すと入口が 2 つ（`graph.implementationOf(...)` と `graph.selection().implementationOf(...)`）になり、
-「実装探索は 2 つの入口だけを通す」という決まり（AGENTS.md）が「どちらの 2 つか」で揺れる。呼び出し元は 5 ファイル 21 か所で、
+「実装探索は 2 つの入口だけを通す」という決まり（CONTRIBUTING.md）が「どちらの 2 つか」で揺れる。呼び出し元は 5 ファイル 21 か所で、
 `graph.selection().` を挟むだけの機械的な書き換えなので、書き換えて入口を 1 か所にした。
 ドキュメントとテストのコメントの `CallGraph#implementationOf` も `MethodSelection#...` に直した（`grep` で残りが無いことを確認）。
 
@@ -117,7 +117,7 @@ static メソッド群（`writeBlock` と補助）も移した。ブロックを
 `jche.external.ExternalUsageScanner#inheritedFrom`（被参照）にある。順の決まりを変えるとき、片方を忘れると暗黙の呼び出しの宣言や
 被参照の結び先だけが古い順のまま残り、エラーにならない。
 
-**結論: 1 つにはまとめず、正本を `docs/resolution-selection-design.md` の 4 節に置き、「同時に直す」の決まりを AGENTS.md の
+**結論: 1 つにはまとめず、正本を `docs/resolution-selection-design.md` の 4 節に置き、「同時に直す」の決まりを CONTRIBUTING.md の
 コードの決まりに 1 項目足し、3 つのクラス javadoc が互いを指すようにした。** `ExternalUsageScanner` は別途 `MethodSelection` の
 入口（`implementationOfSignature`）に置き換える（点検表 #6・#186）ので、写しはいずれ 2 つになる。
 

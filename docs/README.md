@@ -1,11 +1,29 @@
 # docs/ の索引
 
+（The documents in this folder are written in Japanese. Usage is covered by the English half of the top-level
+[README](../README.md); the architecture overview is [architecture.md](architecture.md).）
+
+## 最初に読む順
+
+初めてコードを読む人は、この順で 5 本読めば全体がつかめる。
+
+1. [architecture.md](architecture.md) … 3 フェーズと 3 層、1 回の実行が通る道、入口 3 つ、パッケージと主要クラス
+2. [glossary.md](glossary.md) … 用語 → コード上の名前 → 意味。キャッシュの行種別の表
+3. [cli.md](cli.md) … 起動コマンドの全仕様（利用者としての動かし方）
+4. [cache-design.md](cache-design.md) … キャッシュと差分更新の設計
+5. [resolution-selection-design.md](resolution-selection-design.md) … 規則ごとの「どのコードが・どの事実から・どう決め・どの検査が見ているか」
+
+開発の作法（動かす・テスト・決まり）は [CONTRIBUTING.md](../CONTRIBUTING.md)、検査の一覧は [test/README.md](../test/README.md)。
+
+## 4 種類の文書
+
 このフォルダには 4 種類の文書がある。
 
 - **使い方の詳細** … README に書くと長くなる、機能別の利用者向け説明
 - **設計の説明** … 出力や性能の理由が分かるように、内部の作りを説明したもの
 - **設計の記録（`*-qa.md`）** … 機能を足したり設計判断をしたときに「迷ったこと・結論・却下した案」を Q&A の形で残したもの。
-  書き出しは Issue へのリンク → 対応の要点 → Q&A（[AGENTS.md](../AGENTS.md) の「ドキュメントの決まり」）
+  書き出しは Issue へのリンク → 対応の要点 → Q&A（[CONTRIBUTING.md](../CONTRIBUTING.md) の「ドキュメントの決まり」）。
+  **経緯の記録であって、現状の仕様の正本ではない**（後の Q&A で改めた結論もある）。仕様は「使い方の詳細」「設計の説明」の文書とコードにある
 - **再実装用の仕様** … このツールを別環境で作り直すためのプロンプトと難易度表
 
 ## 使い方の詳細
@@ -27,6 +45,8 @@
 
 | ファイル | 内容 |
 |---|---|
+| [architecture.md](architecture.md) | 内部の作りの全体図。3 フェーズと 3 層、起動コマンドから CSV までに通るクラス、入口 3 つ（`Jche` / `CallHierarchyExporter` / `Exporter`）の関係、パッケージの依存の向き、パッケージと主要クラスの表、デバッグの最初の一手 |
+| [glossary.md](glossary.md) | 用語集。解決・選択・書き手・読み手・事実・段 0〜6・ライブラリ呼び出し規則・拡張・指紋・検査値・バッチ・添えるファイルなどを「用語 → コード上の名前 → 意味」で。キャッシュの行種別（F・I・S・N・G・R・H・D・O・V・C・U・M・A・K・J・L・T・Z）と record の対応表 |
 | [resolution-selection-design.md](resolution-selection-design.md) | 解決（JLS。JDT に任せる書き手）・キャッシュ・選択（JVMS 5.4.6 の写し。`jche.graph.MethodSelection`）の 3 層の構図。命令ごとの対応、規則ごとの「どのコードが・どの行から・どう決め・どの検査が見るか」の対応表、差分更新との関係、健全性の点検表（要確認の箇所）、変更の影響範囲の判断のしかた |
 | [cache-design.md](cache-design.md) | 解析結果キャッシュの設計方針。1 ファイルの形（ブロック・記号表・値グラフ・条件の表・ブロックの検査値・型の行の親クラスの連鎖）、事実だけを持つこと、差分更新（依存する型・宣言の指紋・解析に失敗したファイル）、何も変わらないときに書き直さないこと、読む回数と一時ファイル、解析のあいだの書き換え、JDT に一緒に渡すファイル（バッチ）に事実を依らせないこと、依存 jar・クラスフォルダ（jmod・シンボリックリンク）と JDK / JDT の変更への追従 |
 | [out-of-process-analysis-design.md](out-of-process-analysis-design.md) | Eclipse プラグインが解析を別プロセス（別 JDK・同梱の JDT）で行う仕組み。プロトコルと配布物の構成 |
@@ -41,6 +61,7 @@
 
 | ファイル | Issue | 内容 |
 |---|---|---|
+| [onboarding-qa.md](onboarding-qa.md) | — | 初見の Java 開発者の視点でリポジトリを見直し、入口を整えた件。`CONTRIBUTING.md`（`AGENTS.md` の本文を移した）・`architecture.md`・`glossary.md`・`test/README.md` の新設、qa を仕様の正本にしない明記。つまずいた点の一覧と、見送った案（JUnit・`src/main/java`・`docs/` の英訳・入口クラスの改名） |
 | [build-tool-classpath-qa.md](build-tool-classpath-qa.md) | #44 | `pom.xml` / `build.gradle` を読んでローカルリポジトリから依存 jar を集める。`library.jars` と `.classpath` の `kind="lib"` のフォルダはクラスフォルダとして渡す（Q13） |
 | [cache-dependency-jars-qa.md](cache-dependency-jars-qa.md) | #36 | 依存 jar を変えたときのキャッシュの差分更新。実行 JDK が変わると何が変わるか（Q20） |
 | [deterministic-row-order-qa.md](deterministic-row-order-qa.md) | #43 | 出力の行順を環境に依存しない並びに固定する。同じ行に並ぶ宣言の前後を ID でなく宣言の順番で決める（Q14〜） |

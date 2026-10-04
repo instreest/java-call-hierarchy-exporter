@@ -78,7 +78,7 @@ jbang のオプションは `launcher.properties` の `JCHE_JBANG_OPTS` で渡�
 
 Quick start の直後に 1 段落だけ「引数なしで起動すると対話モードになる」ことと、初回の置き場所の扱いを書き、
 詳細は「起動コマンド」のセクションへリンクした。README の Quick start は「動かして CSV を見るまでの最小手順」だけに
-する決まり（[AGENTS.md](../AGENTS.md)）なので、分岐や選択肢を Quick start 側に持ち込まない。
+する決まり（[CONTRIBUTING.md](../CONTRIBUTING.md)）なので、分岐や選択肢を Quick start 側に持ち込まない。
 
 ### Q8. 「起動コマンド（対話モード）」という見出しはどうしたか
 
