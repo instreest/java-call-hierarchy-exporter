@@ -158,26 +158,32 @@ final class FieldTree {
             if (!matchesAccess(a)) {
                 continue;
             }
-            String key = (a.caller() == null) ? "" : a.caller().key();
-            int id = key.isEmpty() ? -1 : methods.idOf(key);
-            if (id >= 0 && !tree.accepts(id)) {
-                continue;
+            String callerKey = (a.caller() == null) ? "" : a.caller().key();
+            int callerId = callerKey.isEmpty() ? -1 : methods.idOf(callerKey);
+            // ラムダの中の参照は、そのラムダを作った（実行する）メソッドの参照にする（合成メソッドは木に出さない）
+            List<Integer> ids = (callerId >= 0 && methods.isLambdaBody(callerId))
+                    ? tree.declaredCallersOf(callerId) : List.of(callerId);
+            for (int id : ids) {
+                String key = (id < 0) ? callerKey : methods.key(id);
+                if (id >= 0 && !tree.accepts(id)) {
+                    continue;
+                }
+                if (id < 0 && !filters.includeTests && CallTree.isTestSource(a.file())) {
+                    continue;
+                }
+                // 囲むメソッドが無い参照は、場所ごとに別の行にする（まとめる相手が無い）
+                String group = (id < 0 || !filters.dedupe)
+                        ? key + "\u0000" + a.file() + "\u0000" + a.line() : key;
+                Accessor accessor = grouped.get(group);
+                if (accessor == null) {
+                    accessor = new Accessor(id, key, a.file(), a.line());
+                    grouped.put(group, accessor);
+                } else if (a.line() < accessor.line && a.file().equals(accessor.file)) {
+                    accessor.line = a.line();
+                }
+                accessor.reads |= a.reads();
+                accessor.writes |= a.writes();
             }
-            if (id < 0 && !filters.includeTests && CallTree.isTestSource(a.file())) {
-                continue;
-            }
-            // 囲むメソッドが無い参照は、場所ごとに別の行にする（まとめる相手が無い）
-            String group = (id < 0 || !filters.dedupe)
-                    ? key + "\u0000" + a.file() + "\u0000" + a.line() : key;
-            Accessor accessor = grouped.get(group);
-            if (accessor == null) {
-                accessor = new Accessor(id, key, a.file(), a.line());
-                grouped.put(group, accessor);
-            } else if (a.line() < accessor.line && a.file().equals(accessor.file)) {
-                accessor.line = a.line();
-            }
-            accessor.reads |= a.reads();
-            accessor.writes |= a.writes();
         }
         List<Accessor> sorted = new ArrayList<>(grouped.values());
         // メソッドの木の子と同じくキーの順。囲むメソッドの無い行（キーが空）は、ファイルと行の順で最後に置く

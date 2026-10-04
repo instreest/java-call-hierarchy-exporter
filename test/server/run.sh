@@ -580,6 +580,12 @@ public class Service {
     void handle(Order o) { o.ship(); o.bump(); }
     void report(Order o) { System.out.println(o.getStatus()); }
     void top(Order o) { handle(o); report(o); }
+    void viaLambda(Order o) {
+        Runnable r = () -> {
+            o.bump();
+        };
+        r.run();
+    }
 }
 EOF
 # 同じ名前のローカル変数と、入れ子のクラスの同じ名前のフィールド（FIELDAT の取り違えの検査に使う）
@@ -620,18 +626,34 @@ grep -qE "^R${T}1${T}app\.Order#setStatus\(java\.lang\.String\)${T}[^$T]*${T}src
     && ok "書き込むメソッドが深さ 1 に、参照の行と write で出る" || fail "setter の行が期待と違う"
 grep -qE "^R${T}1${T}app\.Order#getStatus\(\)${T}[^$T]*${T}src/app/Order\.java${T}5${T}read${T}access$" <<<"$OUT" \
     && ok "読むメソッドが深さ 1 に、read で出る" || fail "getter の行が期待と違う"
-grep -qE "^R${T}1${T}app\.Order#lambda\\\$ship\\\$0\(\)${T}" <<<"$OUT" \
-    && ok "ラムダの本体の参照は、その合成メソッドの行になる" || fail "ラムダの中の参照が出ない"
+! grep -q 'lambda\$' <<<"$OUT" \
+    && ok "ラムダの合成メソッド（lambda\$…）は木に出ない（ラムダの中の参照は、ラムダを書いたメソッドの行にまとまる）" \
+    || fail "ラムダの合成メソッドが木に出ている"
 grep -qE "^R${T}1${T}app\.Order\.Inner#touch\(app\.Order\)${T}[^$T]*${T}[^$T]*${T}15${T}write${T}" <<<"$OUT" \
     && ok "別の型（内部クラス）からの書き込みも出る" || fail "内部クラスからの書き込みが出ない"
 [ "$(grep -cE "^R${T}1${T}app\.Order#ship\(\)${T}" <<<"$OUT")" = 1 ] \
     && ok "同じメソッドの参照は 1 行にまとめる（ship は 2 か所で読むが 1 行）" || fail "同じメソッドの参照がまとまっていない"
 grep -qE "^R${T}2${T}app\.OrderTest#t\(\)${T}" <<<"$OUT" \
     && ok "参照しているメソッドの呼び出し元が深さ 2 に出る（tests=1）" || fail "呼び出し元が続いていない"
-grep -qE "^R${T}4${T}app\.Service#top\(app\.Order\)${T}" <<<"$OUT" \
-    && ok "呼び出し元を最後まで辿る（lambda → ship → handle → top）" || fail "呼び出し元が途中で切れている"
+grep -qE "^R${T}3${T}app\.Service#top\(app\.Order\)${T}" <<<"$OUT" \
+    && ok "呼び出し元を最後まで辿る（ship → handle → top。ラムダの段は無い）" || fail "呼び出し元が途中で切れている"
 grep -qE "^OK${T}rows=[0-9]+${T}accesses=6$" <<<"$OUT" \
     && ok "応答が参照の数（初期化子を含めて 6）を返す" || fail "応答の accesses が期待と違う"
+
+# ラムダの合成メソッド（lambda$…）は、メソッドの木にも出さない。Eclipse・VSCode プラグインの木はこの応答を描くだけ。
+# ラムダの中の行（AT）は、ラムダを書いたメソッド。呼び出し先の向きではラムダの本体の呼び出しがそのメソッドの子に、
+# 呼び出し元の向きではラムダの中から呼んでいるなら、そのラムダを書いたメソッドが呼び出し元になる
+echo "== ラムダの合成メソッドを木に出さない（AT・TREE callers / callees） =="
+OUT=$(session "ANALYZE\t$FP/c.properties\nAT\tsrc/app/Service.java\t8\nTREE\tapp.Service#viaLambda(app.Order)\tcallees\tdepth=2\nTREE\tapp.Order#bump()\tcallers\tdepth=2\nSHUTDOWN\n")
+echo "$OUT" | grep -E "^(R|OK|NG)" | sed 's/^/       /'
+grep -qE "^OK${T}how=enclosing${T}key=app\.Service#viaLambda\(app\.Order\)${T}" <<<"$OUT" \
+    && ok "ラムダの中の行（AT）は、ラムダを書いたメソッド viaLambda を返す" || fail "ラムダの中の行が viaLambda にならない"
+grep -qE "^R${T}1${T}app\.Order#bump\(\)${T}" <<<"$OUT" \
+    && ok "呼び出し先の向き: ラムダの本体の呼び出し（bump）が、ラムダを書いたメソッドの子（深さ 1）に出る" || fail "ラムダの本体の呼び出しが出ない"
+grep -qE "^R${T}1${T}app\.Service#viaLambda\(app\.Order\)${T}" <<<"$OUT" \
+    && ok "呼び出し元の向き: ラムダの中から呼ぶ bump の呼び出し元に、ラムダを書いたメソッド viaLambda が出る" || fail "ラムダを書いたメソッドが呼び出し元に出ない"
+! grep -q 'lambda\$' <<<"$OUT" \
+    && ok "どの向きでも lambda\$… の行が出ない" || fail "ラムダの合成メソッドが木に出ている"
 
 # 応答ごとに見分けたいので、要求ごとにセッションを分ける（2 回目からはキャッシュを再利用するので速い）
 WRITE_OUT=$(session "ANALYZE\t$FP/c.properties\nTREE\t$F\tfield\taccess=write\nSHUTDOWN\n")

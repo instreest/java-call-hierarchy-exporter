@@ -350,7 +350,8 @@ public final class Server {
             return;
         }
         MethodTable methods = snapshot.graph().methods();
-        int id = methods.enclosingMethod(normalized, line);
+        // ラムダの中の行は、ラムダを書いたメソッド（合成メソッドは木に出さない）
+        int id = methods.enclosingDeclaredMethod(normalized, line);
         if (id < 0) {
             respondNg("not-found");
             return;

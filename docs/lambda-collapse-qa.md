@@ -75,9 +75,26 @@ Eclipse は「メソッド本体の範囲に書いてある呼び出しは、そ
 作ったメソッドが同じ型にあるので、型・パッケージのパターンならそちらが起点になり、本体の呼び出しは落ちない。
 全体モード（`entry.packages` 空欄）では、ラムダは生成の辺で呼ばれているので元から起点にならない。
 
+### Q6. プラグインの木（`--server`）もどうやって同じ出し方にしたのか
+
+プラグインは `--server` の応答（`TREE` の行）を描くだけで、ラムダの扱いは持っていない。直すのはサーバー側（`CallTree`・
+`FieldTree`・`Server#at`）だけで、`eclipse-plugin/` と `vscode-plugin/` は変えていない。
+
+- **呼び出し先の向き（callees）**: 行が合成メソッドなら、その本体の呼び出し先に置き換える（入れ子のラムダは再帰して置き換える）。
+  辺は本体の中の呼び出しのままなので、呼び出している行（`callSiteLine`）は本体の中の行になる。
+  実行するメソッドの子として並ぶのは `call-hierarchy.csv` と同じ
+- **呼び出し元の向き（callers）**: 呼び出し元が合成メソッドなら、そのラムダを作った（実行する）メソッドに置き換える。
+  合成メソッドの呼び出し元（生成の辺・実行箇所の辺）をたどり、入れ子のラムダは再帰してたどる。辺は元の呼び出しのまま
+- **フィールドの呼び出し元（`TREE … field`）**: ラムダの中のフィールド参照は、ラムダを書いたメソッドの行にまとまる
+  （`CallTree#declaredCallersOf`）。同じメソッドが 2 か所で参照していても 1 行（`dedupe` の既定）
+- **`AT`（カーソルの位置から引く）**: ラムダの中の行は、ラムダを書いたメソッドを返す（`MethodTable#enclosingDeclaredMethod`）。
+  フィールドの初期化子のラムダのように囲む宣言が無いときだけ、合成メソッドを返す
+- 循環はラムダごとに「通ったラムダ」を覚えて止める
+- 検査は `bash test/server/run.sh`（ラムダを含む 3 つの向きで `lambda$` が出ないことと、本体の呼び出しが落ちないこと）
+
 ### 補足
 
 - 匿名クラスのメソッド（`Outer$1`）は、ソースに書いた型のメソッドなので今までどおり出す
-- Eclipse プラグインと VSCode プラグインの木（`--server` の `TREE`）は別の作りで、まだこの出し方になっていない
+- Eclipse プラグインと VSCode プラグインの木（`--server` の `TREE`・`EXPORT`・`AT`）も同じ出し方にした（Q6）
 - 実装: `StreamingTreeWalker`（`collapseInto` / `lambdaEntries` / `CollapseSeen`）、`PathFrame#shownId`、
   `CallHierarchyCsvWriter#formatRow`、`EntryPoints#select`。検査は `bash test/regression/run.sh`（期待値に `lambda$` が無いこと）。`test/pruning` と `test/jls` の「ラムダの合成メソッドの行がある」期待は、ラムダの本体の呼び出しが作った（実行する）メソッドの下にあることを見る形に直した。`test/pruning` には、入れ子・別のメソッドが実行する・再帰・forEach / stream の各形で本体の呼び出しが出ることと、`lambda$` がどの行にも出ないことの検査を足した

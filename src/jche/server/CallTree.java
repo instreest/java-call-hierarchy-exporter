@@ -197,22 +197,81 @@ public final class CallTree {
         return false;
     }
 
+    /**
+     * 隣のノード（{@code {メソッド, 辺}}）。ラムダの合成メソッド（{@code lambda$…}）は木に出さない。
+     * 呼び出し先の向きでは、ラムダを実行するメソッドの子として、ラムダの本体の呼び出しを並べる。
+     * 呼び出し元の向きでは、ラムダの中から呼んでいるなら、そのラムダを作った（実行する）メソッドを並べる。
+     * どちらも call-hierarchy.csv と同じ見え方（辺は本体の中の呼び出しのまま）
+     */
     private List<int[]> neighbours(int methodId) {
         List<int[]> result = new ArrayList<>();
+        MethodTable methods = methods();
         if (direction == Direction.CALLERS) {
             InboundIndex inbound = snapshot.inbound();
             for (int i = inbound.start(methodId); i < inbound.end(methodId); i++) {
-                result.add(new int[] {inbound.callerAt(i), inbound.edgeAt(i)});
+                addCaller(inbound.callerAt(i), inbound.edgeAt(i), methods, result, new HashSet<>());
             }
         } else {
             CallGraph g = graph();
             for (int e = g.edgeStart(methodId); e < g.edgeEnd(methodId); e++) {
                 for (int t : snapshot.resolver().resolve(e).targets()) {
-                    result.add(new int[] {t, e});
+                    addCallee(t, e, methods, result, new HashSet<>());
                 }
             }
         }
         return result;
+    }
+
+    /** 呼び出し元 {@code caller} を足す。ラムダの本体なら、それを作った（実行する）メソッドに置き換える */
+    private void addCaller(int caller, int edge, MethodTable methods, List<int[]> result, Set<Integer> visited) {
+        if (!methods.isLambdaBody(caller)) {
+            result.add(new int[] {caller, edge});
+            return;
+        }
+        if (!visited.add(caller)) {
+            return;
+        }
+        InboundIndex inbound = snapshot.inbound();
+        for (int i = inbound.start(caller); i < inbound.end(caller); i++) {
+            addCaller(inbound.callerAt(i), edge, methods, result, visited);
+        }
+    }
+
+    /** 呼び出し先 {@code target} を足す。ラムダの本体なら、その本体の呼び出し先に置き換える */
+    private void addCallee(int target, int edge, MethodTable methods, List<int[]> result, Set<Integer> visited) {
+        if (!methods.isLambdaBody(target)) {
+            result.add(new int[] {target, edge});
+            return;
+        }
+        if (!visited.add(target)) {
+            return;
+        }
+        CallGraph g = graph();
+        for (int e = g.edgeStart(target); e < g.edgeEnd(target); e++) {
+            for (int t : snapshot.resolver().resolve(e).targets()) {
+                addCallee(t, e, methods, result, visited);
+            }
+        }
+    }
+
+    /**
+     * そのメソッドを呼ぶ（ラムダの本体でない）メソッド。ラムダの本体なら、それを作った（実行する）メソッドを返す。
+     * フィールドを参照するラムダを、木に出せるメソッドに置き換えるのに使う（{@link FieldTree}）
+     */
+    List<Integer> declaredCallersOf(int methodId) {
+        MethodTable methods = methods();
+        if (!methods.isLambdaBody(methodId)) {
+            return List.of(methodId);
+        }
+        List<int[]> found = new ArrayList<>();
+        addCaller(methodId, -1, methods, found, new HashSet<>());
+        List<Integer> ids = new ArrayList<>();
+        for (int[] pair : found) {
+            if (!ids.contains(pair[0])) {
+                ids.add(pair[0]);
+            }
+        }
+        return ids;
     }
 
     private boolean hasNeighbour(int methodId) {

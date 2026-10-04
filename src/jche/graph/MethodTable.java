@@ -451,6 +451,20 @@ public final class MethodTable {
      * @param line 1 始まりの行番号
      */
     public int enclosingMethod(String file, int line) {
+        return enclosingMethod(file, line, true);
+    }
+
+    /**
+     * {@link #enclosingMethod(String, int)} の、ラムダの本体（合成メソッド）を飛ばす版。
+     * ラムダの中の行は、ラムダを書いたメソッドを返す（CSV に合成メソッドを出さないのと同じ見え方）。
+     * そのラムダを囲む宣言が無い（フィールドの初期化子など）ときは、ラムダの本体を返す
+     */
+    public int enclosingDeclaredMethod(String file, int line) {
+        int id = enclosingMethod(file, line, false);
+        return (id >= 0) ? id : enclosingMethod(file, line, true);
+    }
+
+    private int enclosingMethod(String file, int line, boolean includeLambda) {
         int best = -1;
         int bestWidth = Integer.MAX_VALUE;
         for (int id = 0; id < keys.size(); id++) {
@@ -460,7 +474,7 @@ public final class MethodTable {
             }
             int start = declLines.get(id);
             int end = declEndLines.get(id);
-            if (start < 0 || line < start || line > end) {
+            if (start < 0 || line < start || line > end || (!includeLambda && lambdaBodies.get(id))) {
                 continue;
             }
             int width = end - start;
