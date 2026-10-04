@@ -136,3 +136,4 @@ target/
 # package-lock.json は追跡する（CI の npm ci が同じ版を入れるため）
 /vscode-plugin/node_modules/
 /vscode-plugin/*.vsix
+/test/workspace-demo/config/.cache/

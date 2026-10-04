@@ -25,6 +25,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import jche.AnalysisSnapshot;
+import jche.WorkspaceProject;
 import jche.Exporter;
 import jche.analysis.JdtVersion;
 import jche.config.Config;
@@ -403,7 +404,10 @@ public final class Server {
         String normalized = normalizePath(file);
         FieldAccesses.Located located;
         try {
-            located = FieldAccesses.locate(snapshot.config().cacheFile, snapshot.cacheStamp(), normalized, line,
+            // 相手のプロジェクトのファイルなら相手のキャッシュから引く（A 行はグラフに入れていない。パスは相手の綴りに戻す）
+            String[] stamp = new String[1];
+            Path[] cache = cacheOf(normalized, stamp);
+            located = FieldAccesses.locate(cache[0], stamp[0], cache[1].toString().replace('\\', '/'), line,
                     name.trim());
         } catch (FieldAccesses.StaleCacheException e) {
             respondNg("stale-cache");
@@ -479,18 +483,46 @@ public final class Server {
     private String normalizePath(String path) {
         String normalized = path.replace('\\', '/').trim();
         if (snapshot != null) {
-            String root = snapshot.config().projectRoot.toString().replace('\\', '/');
-            if (!root.endsWith("/")) {
-                root = root + "/";
-            }
+            String root = rootKeyOf(snapshot.config().projectRoot);
             if (normalized.startsWith(root)) {
                 normalized = normalized.substring(root.length());
+            } else {
+                // ワークスペースの他のプロジェクトの配下の絶対パスは、グラフが持つ綴り（相手の project.root への
+                // 相対パスを前に付けた形。jche.WorkspaceProject#prefix）にする
+                for (WorkspaceProject ws : snapshot.workspace()) {
+                    String wsRoot = rootKeyOf(ws.config.projectRoot);
+                    if (normalized.startsWith(wsRoot)) {
+                        normalized = ws.prefix + normalized.substring(wsRoot.length());
+                        break;
+                    }
+                }
             }
         }
         while (normalized.startsWith("./")) {
             normalized = normalized.substring(2);
         }
         return normalized;
+    }
+
+    /** プロジェクトルートの絶対パス（区切りは {@code /}、末尾に {@code /}）。配下の絶対パスの前置きを切るのに使う */
+    private static String rootKeyOf(Path root) {
+        String key = root.toString().replace('\\', '/');
+        return key.endsWith("/") ? key : key + "/";
+    }
+
+    /**
+     * そのファイル（グラフの綴り）のフィールドの参照を引くキャッシュ。ワークスペースの他のプロジェクトのファイルなら
+     * 相手のキャッシュと、相手のキャッシュの印。それ以外はこの実行自身のもの
+     */
+    private Path[] cacheOf(String normalized, String[] stamp) {
+        for (WorkspaceProject ws : snapshot.workspace()) {
+            if (normalized.startsWith(ws.prefix)) {
+                stamp[0] = ws.cacheStamp();
+                return new Path[] {ws.config.cacheFile, Path.of(normalized.substring(ws.prefix.length()))};
+            }
+        }
+        stamp[0] = snapshot.cacheStamp();
+        return new Path[] {snapshot.config().cacheFile, Path.of(normalized)};
     }
 
     /**

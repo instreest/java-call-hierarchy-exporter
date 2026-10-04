@@ -18,6 +18,7 @@ import jche.framework.GeneratedImpl;
 import jche.graph.CallGraph;
 import jche.graph.CallbackRules;
 import jche.graph.CallResolver;
+import jche.graph.WorkspaceScope;
 import jche.graph.DataflowContext;
 import jche.graph.DataflowResolver;
 import jche.graph.IntArray;
@@ -165,6 +166,9 @@ public final class StreamingTreeWalker {
     /** 絞れなかった呼び出しから作る、ライブラリ呼び出し規則のひな形 */
     private final RuleSuggestions suggestions = new RuleSuggestions();
 
+    /** ワークスペースの他のプロジェクトのメソッドを出す範囲（絞らなければ {@link WorkspaceScope#ALL}） */
+    private final WorkspaceScope scope;
+
     private int rootId;
     private long totalRows;
     /**
@@ -198,6 +202,7 @@ public final class StreamingTreeWalker {
     public StreamingTreeWalker(CallGraph graph, CallResolver resolver, Config config,
                                CallHierarchyCsvWriter writer) {
         this.graph = graph;
+        this.scope = resolver.workspaceScope();
         this.methods = graph.methods();
         this.resolver = resolver;
         this.dataflow = resolver.dataflow();
@@ -330,12 +335,22 @@ public final class StreamingTreeWalker {
         }
     }
 
+    /**
+     * ワークスペースの他のプロジェクトのメソッド {@code target} へ、この経路では降りないか（{@code workspace.scope=callers}）。
+     * 絞るのは経路が project.root のメソッドに届くまでの間だけ（{@link PathFrame#mainSeen}）。届いた後の呼び出し先
+     * （依存先のプロジェクトの中への展開）は絞らない。project.root のメソッドと jar のメソッドは常に降りる
+     */
+    private boolean outOfWorkspaceScope(int target, int depth) {
+        return scope.restricts() && !path[depth].mainSeen && !scope.allows(target);
+    }
+
     /** 全ての起点から辿り、出力した行数を返す */
     public long walkAll(int[] entries) throws IOException {
         for (int entry : entries) {
             rootId = entry;
             // 起点メソッドの引数も、そのオブジェクトの生成箇所も、経路の中に無いので分からない
             path[0].set(rootId, -1, null, null, null, null, null);
+            path[0].mainSeen = scope.isMain(rootId);
             descend(0);
             if (isRowLimitReached()) {
                 break;
@@ -388,6 +403,9 @@ public final class StreamingTreeWalker {
                     return;
                 }
                 int target = targets[ti];
+                if (outOfWorkspaceScope(target, depth)) {
+                    continue;
+                }
                 long[] targetParams = bindArguments(e, depth, target, declaredCallee, res);
                 long[] targetCtorArgs = bindConstructorArguments(e, depth, target);
 
@@ -434,6 +452,7 @@ public final class StreamingTreeWalker {
                         // （JLS 15.27.4）ので、実行した側の引数を当てると別の値を指してしまう
                         // （docs/lambda-expansion-qa.md の Q10）
                         capturedTypesFor(depth, target));
+                path[depth + 1].mainSeen = path[depth].mainSeen || scope.isMain(target);
 
                 // コンストラクタ呼び出しそのものは行にしない。
                 // 「new したこと」自体より「その先で何を呼んでいるか」が知りたいため。
@@ -471,6 +490,9 @@ public final class StreamingTreeWalker {
                 return;
             }
             int target = match.target();
+            if (outOfWorkspaceScope(target, depth)) {
+                continue;
+            }
             callbackHits++;
             if (!match.isMultiple() && methods.isLambdaBody(target) && !onCurrentPath(target, depth)) {
                 collapseInto(depth, target, null, null, collapsed);
@@ -502,6 +524,7 @@ public final class StreamingTreeWalker {
             path[depth + 1].set(target, graph.callLineOf(e),
                     note + " rule: " + match.rule(), resolvedBy,
                     null, null, null, null);
+            path[depth + 1].mainSeen = path[depth].mainSeen || scope.isMain(target);
             emit(depth + 1);
             // 候補を並べただけの行は、通常の CHA と同じくその先へ降りない（候補数^深さ で爆発するため）
             if (!cycle && !match.isMultiple()) {
@@ -539,6 +562,7 @@ public final class StreamingTreeWalker {
                 targetParams, targetCtorArgs,
                 (targetCtorArgs == null) ? null : methods.typeFqn(target), captured);
         replacement.shownId = saved.shownId;
+        replacement.mainSeen = saved.mainSeen || scope.isMain(target);
         path[depth] = replacement;
         // 差し替えた囲みメソッドは path[] から見えなくなるが祖先のまま（循環の検出に要る）
         hiddenAncestors.push(saved.methodId);
