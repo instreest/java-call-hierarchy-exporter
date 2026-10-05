@@ -58,7 +58,7 @@ public final class ExternalUsageScanner {
         long classes;
         long selfClasses;
         public long hits;
-        public long implicitCtors;
+        public long missingNoArgCtors;
         public long unmatched;
         long usedMethods;
 
@@ -66,7 +66,7 @@ public final class ExternalUsageScanner {
         public String toString() {
             return Messages.format("external.summary", jars,
                     (nestedJars > 0) ? Messages.format("external.summary.nested", nestedJars) : "",
-                    classes, hits, usedMethods, implicitCtors, unmatched, selfClasses);
+                    classes, hits, usedMethods, missingNoArgCtors, unmatched, selfClasses);
         }
     }
 
@@ -236,14 +236,16 @@ public final class ExternalUsageScanner {
             // 照合される。ここに来るのは「相手jarのビルド時には引数なしで生成できたが、
             // 今のソースにはそのコンストラクタが無い」形で、版違いの可能性が高い。
             // 「誰がこのクラスを生成しているか」は影響調査で有用なので、行として残し注記で区別する。
+            // 以前の名前は IMPLICIT_CTOR で、JLS 8.8.9 の暗黙の（デフォルト）コンストラクタと読めて
+            // 逆の意味になっていた（そちらは EXACT。docs/resolved-by-naming-qa.md の Q2）。
             // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
             // 版違いであり、生成箇所として表記できないので未照合に数える
             String typeFqn = normalize(owner);
             String simple = Names.simpleOf(typeFqn);
             out.writeExternalUsageRow(caller,
                     typeFqn + "." + simple + "()", simple + "." + simple,
-                    jarName, "IMPLICIT_CTOR");
-            stats.implicitCtors++;
+                    jarName, "MISSING_NOARG_CTOR");
+            stats.missingNoArgCtors++;
         } else {
             // 自分の型への参照なのに一致するメソッドが無い。
             // 相手が古い版のjarに対してビルドされている可能性がある。

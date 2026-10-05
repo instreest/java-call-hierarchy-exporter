@@ -48,7 +48,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 |---|---|---|---|
 | `invokestatic` | `T.m()`・static import | 選択なし。解決結果がそのまま呼ばれる | C 行の calleeMods に `static` → `BindKind.STATIC` → 段 0 で `STATIC_BOUND:STATIC`（宣言のまま確定） |
 | `invokespecial` | `new T()`・`this(...)`・`super(...)`・暗黙の `super()`・`super.m()`・`I.super.m()`・private の呼び出し（Java 11 以降は nestmate で `invokevirtual` にもなるが、選択は無い） | 受け手の実行時のクラスを使わない | コンストラクタ → `BindKind.CONSTRUCTOR`、`super` の印（`ModifierTokens.SUPER`）→ `SUPER`、`private` → `PRIVATE`。どれも段 0 で確定。暗黙の `super()` の呼び出し先は書き手が候補すべてに辺を張る（JLS 15.12.2.5 の最も特殊なものを自前で選ばない。`docs/jls-conformance-qa.md` の Q35） |
-| `invokevirtual` | クラス型の受け手の `o.m()`・`m()` | 5.4.6 の選択 | `BindKind.VIRTUAL`（final のメソッド・final のクラスは `FINAL_METHOD` / `FINAL_CLASS` で静的束縛。JVM も上書きされない）→ 段 1〜6 で C の候補 → 候補ごとに `MethodSelection.implementationOf` |
+| `invokevirtual` | クラス型の受け手の `o.m()`・`m()` | 5.4.6 の選択 | `BindKind.VIRTUAL`（final のメソッド・final のクラスは `FINAL_METHOD` / `FINAL_CLASS` で段 0 に確定し、ラベルは `NOT_OVERRIDABLE:*`。命令は invokevirtual のままだが上書きできないので、5.4.6 の選択が呼び出し先の宣言そのものになる）→ 段 1〜6 で C の候補 → 候補ごとに `MethodSelection.implementationOf` |
 | `invokeinterface` | インターフェース型の受け手の `o.m()` | 5.4.6 の選択（解決は 5.4.3.4） | 同上。宣言した型がインターフェースでも扱いは同じ。CHA の起点は修飾する型（JLS 13.1。C 行の qualifier） |
 | `invokedynamic` | ラムダ・メソッド参照 | ブートストラップメソッドが呼び出し先を決める。実体は実装メソッドのハンドル | ラムダは合成メソッド `lambda$…`（D 行。`private lambda`）。関数型インターフェースのメソッドの呼び出しは、M 行（`hasFunctionalImpl`）と値の追跡（`Z` のノード）で本体へ繋ぐ（`CallResolver#functionalResolution`）。メソッド参照の参照先が仮想メソッドなら、束縛したレシーバの型で改めて選択する（JLS 15.13.3） |
 
@@ -102,7 +102,7 @@ JDT の `IMethodBinding` が解決、`MethodSelection` が選択に当たる。`
 
 | 段 | 何から C を決めるか | ラベル（`resolved-by`） | 材料 |
 |---|---|---|---|
-| 段 0 | 静的束縛（上の表の命令ごとの対応） | `STATIC_BOUND:*` | C 行 calleeMods |
+| 段 0 | 静的束縛（上の表の命令ごとの対応）・上書きできないメソッド | `STATIC_BOUND:*` / `NOT_OVERRIDABLE:*` | C 行 calleeMods |
 | ラムダ | 受け手の値がラムダ・メソッド参照 | `DATAFLOW_LAMBDA` | M 行・N 行（`Z`） |
 | 段 1 | 修飾する型（JLS 13.1）の部分型すべて（jar の型なら宣言した型の部分型。jar の型を経由した部分型（`class MyList extends ArrayList` は `List` の部分型）も H 行の 9 列目から辿る）。部分型ごとに `implementationOf` | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` / `GENERATED_IMPL:*` / `CHA` | H 行・C 行 qualifier |
 | 段 2 | 同じメソッドの中で `new` した型 | `LOCAL_NEW(_MULTI)` | C 行 hints |

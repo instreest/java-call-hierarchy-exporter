@@ -220,7 +220,7 @@ import java.util.Set;
  *                                                          （{@link #trailerFor}）。これが無い・数が合わない
  *                                                          キャッシュは途中で切れているとみなして捨てる
  * </pre>
- * 呼び出し元が特定できない U 行（{@link UnresolvedCallFact#OUTSIDE_METHOD}）の記号は {@code -1}。
+ * 呼び出し元が特定できない U 行（{@link UnresolvedCallFact#CALLER_UNRESOLVED}）の記号は {@code -1}。
  * recv はノード番号（無ければ {@code -1}）、args は {@code 位置=ノード番号} のカンマ区切り、
  * guard は G 行のガード番号（無ければ {@code -1}）、hints はレシーバの変数に new だけが代入されている
  * ときの、その型の FQN のカンマ区切り（無ければ空。{@link CallSiteValues.Row#hints}）。
@@ -515,9 +515,11 @@ public final class CacheFormat {
      *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
      *   <li>v45（続き）{@code super.m()} / {@code X.super.m()} / {@code super::m} の C 行に修飾する型（囲む型の親クラスか、名指しの
      *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
+     *   <li>v46 呼び出し元を特定できない U 行の理由コードを {@code OUTSIDE_METHOD} から
+     *       {@link UnresolvedCallFact#CALLER_UNRESOLVED} に改めた（{@code docs/resolved-by-naming-qa.md} の Q1）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v45";
+    public static final String VERSION = "jche-cache-v46";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

@@ -244,8 +244,8 @@ config/
 |---|---|
 | `RESOLVED:` | 呼び出し先を 1 件に確定した。後半が[どの決め方か](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
 | `UNEXPANDED:` | 1 件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
-| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`root` 列は `(unresolved)` |
-| `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
+| `UNRESOLVED:` | 型解決に失敗した呼び出しの行。`UNRESOLVED:BINDING_FAILED`（呼び出し先の型を特定できなかった。クラスパス不足・動的呼び出し等）と `UNRESOLVED:CALLER_UNRESOLVED`（呼び出しを囲むメソッド・型の型解決に失敗し、呼び出し元を特定できなかった。フィールドの初期化子・初期化ブロックの呼び出しは `<init>` / `<clinit>` からの呼び出しになるので、ここには来ない）。`root` 列は `(unresolved)` |
+| `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
 後半は解決の段のラベルそのものですが、1 つだけ例外があります。ラムダ式・メソッド参照が実装している
 関数型インターフェースの呼び出しは、ソース上の実装が 1 件でも（ラベルは `SINGLE_IMPL` 等の確定系でも）
@@ -361,7 +361,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という契約で繋いだ（[docs/callback-contracts.md](docs/callback-contracts.md)）。jar の中を読んだわけではない |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: …` | 同じく契約で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
-| `type resolution failed …` | 呼び出し先の型を特定できなかった行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
+| `type resolution failed …` / `caller unresolved …` | 型解決に失敗した呼び出しの行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
 1 つの注記は最大 2 つのパーツからなり、両方付くときは ` / ` で繋がります。
@@ -390,7 +390,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 |---|---|
 | `external-ref:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
 | `external-ref:INHERITED` | 親から継承したメソッドへの参照。JVM がその参照を解決する宣言のメソッドとして出る |
-| `external-ref:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、今のソースに一致する宣言が無いもの。相手の jar が古い版に対してビルドされている可能性が高い |
+| `external-ref:MISSING_NOARG_CTOR` | 引数なしコンストラクタへの参照で、今のソースに一致する宣言が無いもの。相手の jar が古い版に対してビルドされている可能性が高い（暗黙のデフォルトコンストラクタへの参照は `EXACT`） |
 
 <!-- sec:resolving-concrete-classes -->
 ### 具象クラスの解決
@@ -401,7 +401,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 
 | ラベル | 決め方 |
 |---|---|
-| `STATIC_BOUND:*` | private / static / final メソッド、final クラス、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
+| `STATIC_BOUND:*` | 仮想呼び出しでない呼び出し（Java 言語仕様 15.12.3 の呼び出し方式 static / nonvirtual / super）。private・static メソッド、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` / `STATIC` / `CTOR` / `SUPER`） |
+| `NOT_OVERRIDABLE:*` | 仮想呼び出しだが上書きできないので、動く実装が呼び出し先の 1 つに決まる。final メソッドと final クラス（暗黙に final な record を含む）のメソッド（`NOT_OVERRIDABLE:FINAL_METHOD` / `FINAL_CLASS`） |
 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
@@ -728,8 +729,8 @@ Besides missing dependency jars, a path in the config file that does not exist a
 |---|---|
 | `RESOLVED:` | The callee was pinned down to one. The second half says [how it was decided](#resolving-concrete-classes) (`RESOLVED:DATAFLOW_FIELD` and the like) |
 | `UNEXPANDED:` | It could not be narrowed to one, so candidates remain. The second half says how they were collected (`UNEXPANDED:CHA` and the like). There is a row per candidate, but nothing below them is followed |
-| `UNRESOLVED:` | A row for a call whose callee type could not be determined: `UNRESOLVED:BINDING_FAILED` (incomplete classpath, a dynamic call and so on) and `UNRESOLVED:OUTSIDE_METHOD` (a call from outside a method body). The `root` column is `(unresolved)` |
-| `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
+| `UNRESOLVED:` | A row for a call whose types could not be resolved: `UNRESOLVED:BINDING_FAILED` (the callee type could not be determined: incomplete classpath, a dynamic call and so on) and `UNRESOLVED:CALLER_UNRESOLVED` (type resolution of the enclosing method or type failed, so the caller could not be determined; calls in field initializers and initializer blocks are calls from `<init>` / `<clinit>` and never land here). The `root` column is `(unresolved)` |
+| `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 
 The second half is the label of the resolution step itself, with one exception. A call to a functional
 interface that a lambda or method reference implements becomes `UNEXPANDED:LAMBDA` even when there is a
@@ -850,7 +851,7 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[RESOLVED:CALLBACK] contract: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the contract "it calls this method on the value you passed" ([docs/callback-contracts.md](docs/callback-contracts.md)). The inside of the jar was not read |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: ...` | Also connected by a contract, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
-| `type resolution failed ...` | A row for a call whose callee type could not be determined (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
+| `type resolution failed ...` / `caller unresolved ...` | A row for a call whose types could not be resolved (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
 | `external-ref:EXACT` and the like | A row of the external reference scan ([below](#methods-referenced-from-external-jars)). Also a row of its own |
 
 A note has at most two parts, joined with ` / ` when both apply.
@@ -881,7 +882,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 |---|---|
 | `external-ref:EXACT` | A reference to a method declared by that class (including an implicit default constructor) |
 | `external-ref:INHERITED` | A reference to a method inherited from a parent. It appears as the method the JVM resolves the reference to |
-| `external-ref:IMPLICIT_CTOR` | A reference to a no-argument constructor with no matching declaration in today's source. The other jar was most likely built against an older version |
+| `external-ref:MISSING_NOARG_CTOR` | A reference to a no-argument constructor with no matching declaration in today's source. The other jar was most likely built against an older version (a reference to an implicit default constructor is `EXACT`) |
 
 <!-- sec:resolving-concrete-classes -->
 ### Resolving concrete classes
@@ -893,7 +894,8 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 
 | Label | How it was decided |
 |---|---|
-| `STATIC_BOUND:*` | private / static / final methods, final classes, constructors, super calls. The reason follows it (`STATIC_BOUND:PRIVATE` and the like) |
+| `STATIC_BOUND:*` | A call that is not a virtual call (invocation mode static / nonvirtual / super in section 15.12.3 of the Java Language Specification): private and static methods, constructors, super calls. The reason follows it (`STATIC_BOUND:PRIVATE` / `STATIC` / `CTOR` / `SUPER`) |
+| `NOT_OVERRIDABLE:*` | A virtual call that cannot be overridden, so the implementation that runs is the callee itself: final methods and methods of final classes (including records, which are implicitly final) (`NOT_OVERRIDABLE:FINAL_METHOD` / `FINAL_CLASS`) |
 | `NO_OVERRIDE` / `SINGLE_IMPL` | The override candidates narrow to one |
 | `NO_IMPL` | No implementation with a body exists in the source (it is left as the declaration) |
 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | A type `new`-ed inside the same method |

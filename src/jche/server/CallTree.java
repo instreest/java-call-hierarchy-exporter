@@ -254,6 +254,7 @@ public final class CallTree {
     public String reasonOf(int edgeIndex) {
         String label = labelOf(edgeIndex);
         if (label == null || label.isEmpty() || label.startsWith(Resolution.STATIC_BOUND_PREFIX)
+                || label.startsWith(Resolution.NOT_OVERRIDABLE_PREFIX)
                 || Resolution.NO_OVERRIDE.equals(label)) {
             return "";
         }

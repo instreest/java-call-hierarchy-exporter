@@ -20,7 +20,8 @@ import jche.util.Messages;
 /**
  * エッジ単位の解決パイプライン。呼び出し先の具象候補を求める。
  * <pre>
- *   段0 STATIC_BOUND               仮想ディスパッチされない呼び出し
+ *   段0 STATIC_BOUND               仮想ディスパッチされない呼び出し（JLS 15.12.3 の static / nonvirtual / super）
+ *       NOT_OVERRIDABLE            仮想呼び出しだが上書きできない（final メソッド・final クラス）
  *   段1 NO_OVERRIDE / SINGLE_IMPL  オーバーライド候補が1つに定まる
  *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
  *   段3 CONTRACT / CUSTOM_*        利用者が与えた条件（契約表の種類 C → 拡張の順に尋ねる）
@@ -193,7 +194,7 @@ public final class CallResolver {
             return Resolution.single(calleeId, Resolution.EXTERNAL_GUESS);
         }
 
-        // --- 段0: 静的束縛 ---
+        // --- 段0: 静的束縛・上書きできないメソッド ---
         if (bindKind != BindKind.VIRTUAL) {
             // 既定では確定として扱うが、ここで打ち切ると拡張に到達せず
             // 呼び出し階層が切れてしまう。opt-inした拡張には必ず声をかける。
@@ -202,7 +203,7 @@ public final class CallResolver {
                 return custom;
             }
             return Resolution.single(bindKind == BindKind.SUPER ? superTarget(edgeIndex, calleeId) : calleeId,
-                    Resolution.STATIC_BOUND_PREFIX + BindKind.staticBoundReason(bindKind));
+                    BindKind.label(bindKind));
         }
 
         // --- ラムダ／メソッド参照が渡ってきた呼び出し（経路に依らず決まる分） ---

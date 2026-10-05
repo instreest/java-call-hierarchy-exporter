@@ -94,7 +94,7 @@ at fx.app.Main.noImpl(Main.java:94),Exporter.export,UNEXPANDED:NO_IMPL,3,Main.ma
 at fx.app.Main.noImpl(Main.java:94),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
 at fx.excluded.Helper.assist(Helper.java:8),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,2,Main.main,Helper.assist,UserDaoImpl.describe
-at fx.excluded.Helper.assist(Helper.java:9),AbstractDao.flush,RESOLVED:STATIC_BOUND:FINAL_METHOD,2,Main.main,Helper.assist,AbstractDao.flush
+at fx.excluded.Helper.assist(Helper.java:9),AbstractDao.flush,RESOLVED:NOT_OVERRIDABLE:FINAL_METHOD,2,Main.main,Helper.assist,AbstractDao.flush
 at fx.app.Main.run(Main.java:61),UserDaoImpl.describe,RESOLVED:DATAFLOW_FACTORY,2,Main.main,Main.run,UserDaoImpl.describe
 at fx.app.Main.run(Main.java:61),Chain.c1,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Chain.c1
 at fx.dao.Chain.c1(Chain.java:7),Chain.c2,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Chain.c1,Chain.c2
@@ -122,7 +122,7 @@ at fx.app.Main.shapes(Main.java:104),Point.area,UNEXPANDED:CHA,3,Main.main,Main.
 at fx.app.Main.shapes(Main.java:104),Color$1.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[UNEXPANDED:CHA] 3 candidates: local variable
 at fx.app.Main.shapes(Main.java:105),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.shapes,Point.origin,Point.Point,Registry.register
-at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
+at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:NOT_OVERRIDABLE:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
 at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.lambdas
 at fx.app.Main.lambdas(Main.java:111),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0

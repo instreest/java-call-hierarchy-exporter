@@ -63,6 +63,7 @@
 | [inherited-impl-candidates-qa.md](inherited-impl-candidates-qa.md) | #131 | 段2（`LOCAL_NEW`）と段3（拡張）が、親から継承した実装を候補にできていなかった件。`implementationIn` への統一と、採用できなかった候補の警告 |
 | [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの契約に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
 | [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
+| [resolved-by-naming-qa.md](resolved-by-naming-qa.md) | — | `resolved-by` の値のうち JLS / JVMS の用語と食い違っていた名前を改めた件（`OUTSIDE_METHOD` → `CALLER_UNRESOLVED`、`IMPLICIT_CTOR` → `MISSING_NOARG_CTOR`、final を `STATIC_BOUND` から `NOT_OVERRIDABLE` へ分ける） |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |

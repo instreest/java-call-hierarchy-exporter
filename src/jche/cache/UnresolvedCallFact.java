@@ -18,7 +18,7 @@ import jche.util.Names;
  * @param line        呼び出し箇所の行
  * @param caller      呼び出し元。特定できなければ null
  * @param expression  ソースに書かれていた式（メソッド名）
- * @param reason      理由コード（{@link #BINDING_FAILED} / {@link #OUTSIDE_METHOD}）
+ * @param reason      理由コード（{@link #BINDING_FAILED} / {@link #CALLER_UNRESOLVED}）
  * @param candidate   レシーバの単純名と一致する単一型 import のFQN（テキストからの推定）。無ければ空
  * @param recvKind    {@link CallEdgeFact#recvKind()} と同じ
  * @param lambdaDepth {@link CallEdgeFact#lambdaDepth()} と同じ
@@ -32,8 +32,13 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
 
     /** 呼び出し先の型解決に失敗した */
     public static final String BINDING_FAILED = "BINDING_FAILED";
-    /** 呼び出し元（囲みメソッド・型）を特定できない */
-    public static final String OUTSIDE_METHOD = "OUTSIDE_METHOD";
+    /**
+     * 呼び出し元（囲むメソッド・コンストラクタ・型）のバインディングを解決できず、呼び出し元を特定できない。
+     * フィールドの初期化子や初期化ブロックの呼び出しは &lt;init&gt; / &lt;clinit&gt; を呼び出し元にするので
+     * （JLS 12.4.2・12.5）、ここには来ない。以前の名前は OUTSIDE_METHOD で、「メソッドの外」と読めて
+     * 実態と合わなかった（docs/resolved-by-naming-qa.md の Q1）
+     */
+    public static final String CALLER_UNRESOLVED = "CALLER_UNRESOLVED";
 
     public UnresolvedCallFact {
         candidate = (candidate == null) ? "" : candidate;
@@ -76,7 +81,7 @@ public record UnresolvedCallFact(int line, MethodRef caller, String expression, 
      *
      * <p>型解決できなかった呼び出しの一覧（{@code UnresolvedReport}）に出す行を拾うとき
      * （{@code CallGraphBuilder} のスキャン）に使う。呼び出し元が
-     * 分からなくても、ファイル・行・式・理由は出せるので、呼び出し元の外の U 行（{@link #OUTSIDE_METHOD}）と
+     * 分からなくても、ファイル・行・式・理由は出せるので、呼び出し元を特定できない U 行（{@link #CALLER_UNRESOLVED}）と
      * 同じく「呼び出し元不明」として出す（黙って消さない）。呼び出し元 null の行は
      * {@link #hasUsableCandidate()} が false なので、エッジにはならない
      *
