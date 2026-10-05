@@ -561,7 +561,7 @@ public final class JlsCheck {
         final Map<String, Integer> fileErrors = new HashMap<>();
         /** call-hierarchy.csv（caller, callee, resolved-by） */
         final List<String[]> csv = new ArrayList<>();
-        /** call-hierarchy.csv の root 列と call-hierarchy 列（起点から先のノード。注記は除く） */
+        /** call-hierarchy.csv の call-hierarchy 列（先頭が起点で、その先のノードが続く。注記は除く） */
         final List<List<String>> paths = new ArrayList<>();
         /** methods.csv: method → role */
         final Map<String, String> roles = new HashMap<>();

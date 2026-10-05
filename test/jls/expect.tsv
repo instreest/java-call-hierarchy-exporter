@@ -9,7 +9,7 @@
 #   callcount  C 行の数が 引数3（ソース上の呼び出し箇所の数）
 #   csv        call-hierarchy.csv に行がある。引数1 は caller 列の「at」と「(」の間、引数2 は callee 列、
 #              引数3 は resolved-by 列の前方一致（- なら問わない）                    nocsv  その行が無い
-#   path       root 列から call-hierarchy 列にかけて、「 > 」区切りのノードがこの順で連続して現れる  nopath その並びが無い
+#   path       call-hierarchy 列（先頭が起点）で、「 > 」区切りのノードがこの順で連続して現れる  nopath その並びが無い
 #   decl       D 行がある（引数2 は修飾子の語。- なら問わない）                        nodecl D 行が無い
 #   type       H 行がある
 #   override   O 行で 引数1 が 引数2 を上書きしている

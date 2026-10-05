@@ -215,7 +215,7 @@ CASES=()
 #     pruned=<値>    pruned に加えて、打ち切りの注記の値が <値>（注記の「= <値>)」。値を切らずに読んだことを見る）
 #     from:<起点>    その呼び出しの行のうち、起点（root 列）が <起点> の行がある（呼び出し先がどこからも呼ばれず
 #                    それ自身が起点になった行と区別する。リフレクションで繋ぐ先を取り違えると、正しい先は起点に回る）
-#     via:<Class.method>:<期待>  経路（root 列と call-hierarchy 列）に <Class.method> を通る行だけで <期待> を見る
+#     via:<Class.method>:<期待>  経路（call-hierarchy 列。先頭が起点）に <Class.method> を通る行だけで <期待> を見る
 #                    （メソッド参照は、参照を書いたメソッドから参照先への辺も持つ。関数型インターフェースを
 #                    呼んだ側（run の c.accept）から降りた経路だけを見たいときに使う）
 #   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける。
@@ -4094,7 +4094,7 @@ for c in "${CASES[@]}"; do
     rows=$(rows_of "$caller" "$callee")
     label="$caller -> $callee: $desc"
     if [ "${expect#via:}" != "$expect" ]; then
-        # via:<Class.method>:<期待> … 経路（root 列と call-hierarchy 列）に <Class.method> を通る行だけで <期待> を見る
+        # via:<Class.method>:<期待> … 経路（call-hierarchy 列。先頭が起点）に <Class.method> を通る行だけで <期待> を見る
         rest=${expect#via:}
         through=${rest%%:*}
         expect=${rest#*:}

@@ -113,7 +113,7 @@
 
 | 用語 | 場所 | 意味 |
 |---|---|---|
-| `call-hierarchy.csv` | `CallHierarchyCsvWriter` | 起点からの経路を 1 行ずつ。列は `caller,callee,resolved-by,depth,root,call-hierarchy`（最後は可変長） |
+| `call-hierarchy.csv` | `CallHierarchyCsvWriter` | 起点からの経路を 1 行ずつ。列は `caller,callee,resolved-by,depth,call-hierarchy`（最後は可変長。先頭のノードが起点） |
 | `methods.csv` | `InventoryReport` | ソース上の全メソッドの一覧と呼ばれ方（`inDegree`・`role`・`reachable`・`absentCause`…） |
 | 注記 | `call-hierarchy` 列の最後の要素、`[UNEXPANDED:*]` などのタグ | 列に無いこと（打ち切りの理由・候補の件数・繋いだ規則）だけを載せる。英語で固定 |
 | `warnings.txt` | `jche.util.Warnings` | 確認してほしいことと対処。`Log.warn` / `Log.error` が 1 行でも出た実行でだけできる |
