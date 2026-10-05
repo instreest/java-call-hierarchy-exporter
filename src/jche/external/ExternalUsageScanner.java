@@ -7,7 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarEntry;
@@ -44,9 +46,15 @@ import jche.util.Warnings;
  * 出力の jar 名は、中の jar なら {@code 外側.jar!/BOOT-INF/lib/中.jar} のように
  * jar URL と同じ {@code !/} 区切りでどこに入っていたかまで書く。
  *
- * <p>被参照の結び先を探す「クラスの連鎖 → 最も特定的な親インターフェース」の順は、選択の正本
- * jche.graph.MethodSelection（docs/resolution-selection-design.md の 4 節）の写し。順を変えるときは
- * jche.analysis.ImplicitCalls と合わせて 3 か所を同時に直す（Issue #189）。
+ * <p>被参照の結び先（JVM の解決が結び付ける宣言）を探す「クラスの連鎖 → 最も特定的な親インターフェース」の順は
+ * ここには無く、{@link MethodSelection#resolvedDeclaration}（{@link #lookupRef} が使う）が持つ。以前ここにあった
+ * 別実装 inheritedFrom は Issue #186 で消した。順の正本は docs/resolution-selection-design.md の 4 節で、写しは
+ * jche.graph.MethodSelection#search・同 #resolvedDeclaration・jche.analysis.ImplicitCalls#findNoArgMethod の 3 か所（Issue #189）。
+ *
+ * <p>「自分の型か」の判定は、ソースの型（H 行）のバイナリ名（{@code p.Outer$Inner$1}）→ FQN の索引（{@link #ourTypeOf}）で引く。
+ * {@code $} を {@code .} に置き換えるだけでは、入れ子のクラスの中の匿名クラス（{@code p.Outer$Inner$1}。H 行の名前は
+ * {@code p.Outer.Inner$1}）がどちらの綴りでも当たらず、混在した jar の中の自分の匿名クラスを「相手のクラス」として
+ * 走査し、自分自身からの呼び出しを被参照に数えていた
  */
 public final class ExternalUsageScanner {
 
@@ -74,8 +82,12 @@ public final class ExternalUsageScanner {
     private final MethodTable methods;
     private final CallHierarchyCsvWriter out;
     private final Stats stats = new Stats();
-    /** 自分の型かどうかの判定に使う（H行から得た、ソース上に宣言のある型） */
-    private final Set<String> ourTypes;
+    /**
+     * 自分の型かどうかの判定に使う: ソース上に宣言のある型（H 行）のバイナリ名（class ファイルが名乗る形。
+     * {@code p.Outer$Inner}・{@code p.Outer$Inner$1}）→ その型の FQN（H 行の名前。{@code p.Outer.Inner}・{@code p.Outer.Inner$1}）。
+     * バイナリ名の組み立ては CallHierarchyCsvWriter#stackTrace と同じ（パッケージ + 単純名の {@code .} を {@code $} に）
+     */
+    private final Map<String, String> ourTypesByBinaryName;
     /** メソッドごとの被参照回数（「自分のメソッド N 個」の集計用） */
     private final int[] refCount;
 
@@ -90,8 +102,24 @@ public final class ExternalUsageScanner {
         this.graph = graph;
         this.methods = graph.methods();
         this.out = out;
-        this.ourTypes = graph.hierarchy().typeNames();
+        this.ourTypesByBinaryName = binaryNameIndex(graph.hierarchy());
         this.refCount = new int[methods.size()];
+    }
+
+    /**
+     * ソース上の型のバイナリ名 → FQN の索引（{@link #ourTypesByBinaryName}）。同じバイナリ名になる型が 2 つあれば
+     * （トップレベルの {@code p.Outer$Inner} と入れ子の {@code p.Outer.Inner}。javac も同じ class ファイル名で衝突する形）、
+     * 読んだ順に依らないよう綴りの小さい FQN を採る
+     */
+    private static Map<String, String> binaryNameIndex(jche.graph.TypeHierarchy hierarchy) {
+        Map<String, String> index = new HashMap<>();
+        for (String fqn : hierarchy.typeNames()) {
+            String pkg = hierarchy.packageOf(fqn);
+            String simple = (!pkg.isEmpty() && fqn.startsWith(pkg + ".")) ? fqn.substring(pkg.length() + 1) : fqn;
+            String binary = (pkg.isEmpty() ? "" : pkg + ".") + simple.replace('.', '$');
+            index.merge(binary, fqn, (a, b) -> (a.compareTo(b) <= 0) ? a : b);
+        }
+        return index;
     }
 
     public static Stats scan(CallGraph graph, Config config, CallHierarchyCsvWriter out)
@@ -167,23 +195,30 @@ public final class ExternalUsageScanner {
      * {@link JarFile} はファイルにしか開けないため、中の jar は {@link ZipInputStream} で
      * 先頭から順に読む。Spring Boot の入れ子 jar は無圧縮（STORED）で格納されているが、
      * 圧縮されていても {@link ZipInputStream} はそのまま読める。
-     * 中の jar が zip として壊れている場合は、その jar だけ警告して読み飛ばす
+     * 中の jar が zip として壊れている・途中で切れている場合は、その jar だけ警告して読み飛ばす
      * （外側の jar の他のエントリには影響しない）。
      */
     private void scanNestedJar(String nestedLabel, InputStream is, int depth) throws IOException {
         // ZipInputStream を閉じると外側のストリームまで閉じるため、閉じない
         ZipInputStream zip = new ZipInputStream(is);
-        try {
+        while (true) {
             ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                if (!entry.isDirectory()) {
-                    scanEntry(nestedLabel, entry.getName(), zip, depth);
-                }
-                zip.closeEntry();
+            try {
+                // 次のエントリへ進む（前のエントリの残りは getNextEntry が読み飛ばす）。zip の側の失敗だけをここで受ける:
+                // 壊れた zip は ZipException、途中で切れた jar は EOFException（どちらも IOException）。
+                // エントリの中身の処理（scanEntry）の IOException は CSV の書き込みの失敗なので受けずに伝える
+                entry = zip.getNextEntry();
+            } catch (IOException ex) {
+                Log.warn(Messages.format("external.nestedJarUnreadable", nestedLabel,
+                        (ex.getMessage() != null) ? ex.getMessage() : ex.getClass().getSimpleName()));
+                return;
             }
-        } catch (java.util.zip.ZipException ex) {
-            Log.warn(Messages.format("external.nestedJarUnreadable", nestedLabel, ex.getMessage()));
-            return;
+            if (entry == null) {
+                break;
+            }
+            if (!entry.isDirectory()) {
+                scanEntry(nestedLabel, entry.getName(), zip, depth);
+            }
         }
         stats.nestedJars++;
     }
@@ -223,7 +258,7 @@ public final class ExternalUsageScanner {
         String sig = r.name() + "(" + r.paramSig() + ")";
         int id = resolveRef(owner, sig);
         if (id >= 0) {
-            String kind = methods.typeFqn(id).equals(normalize(owner)) ? "EXACT" : "INHERITED";
+            String kind = methods.typeFqn(id).equals(ourTypeOf(owner)) ? "EXACT" : "INHERITED";
             out.writeExternalUsageRow(caller, methods.shortLabel(id),
                     methods.shortLabel(id), jarName, kind);
             if (refCount[id]++ == 0) {
@@ -238,7 +273,7 @@ public final class ExternalUsageScanner {
             // 「誰がこのクラスを生成しているか」は影響調査で有用なので、行として残し注記で区別する。
             // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
             // 版違いであり、生成箇所として表記できないので未照合に数える
-            String typeFqn = normalize(owner);
+            String typeFqn = ourTypeOf(owner);
             String simple = Names.simpleOf(typeFqn);
             out.writeExternalUsageRow(caller,
                     typeFqn + "." + simple + "()", simple + "." + simple,
@@ -253,13 +288,21 @@ public final class ExternalUsageScanner {
     }
 
 
-    /** 内部クラスは bytecode が Outer$Inner、JDT側が Outer.Inner なので両方で照合する */
-    private static String normalize(String owner) {
-        return owner.replace('$', '.');
+    /**
+     * シグネチャの引数型の内部クラスは bytecode が Outer$Inner、JDT 側が Outer.Inner なので、{@code $} を {@code .} に
+     * 直した形でも照合する（{@link #resolveRef}）。受け手の型（owner）には使わず、索引（{@link #ourTypeOf}）で引く
+     */
+    private static String normalize(String sig) {
+        return sig.replace('$', '.');
+    }
+
+    /** バイナリ名 {@code owner}（class ファイルの this_class・参照の owner）がソース上の型なら、その FQN。そうでなければ null */
+    private String ourTypeOf(String owner) {
+        return ourTypesByBinaryName.get(owner);
     }
 
     private boolean isOurType(String owner) {
-        return ourTypes.contains(owner) || ourTypes.contains(normalize(owner));
+        return ourTypesByBinaryName.containsKey(owner);
     }
 
     /**
@@ -288,17 +331,13 @@ public final class ExternalUsageScanner {
      * <p>探す順（親クラスの連鎖 → 最も特定的な親インターフェース）と、javac がブリッジメソッドでディスクリプタをそろえる形
      * （型引数を具体化した上書き＝ O 行、親クラスから継承した実装＝ H 行の 8 列目）の照合は、選択と同じ
      * {@link MethodSelection#resolvedDeclaration} に任せる。以前はここに同じ順の別実装を持っていて、O 行と H 行の
-     * 8 列目を見なかった（Issue #186。docs/external-usage-callsite-qa.md の Q9）
+     * 8 列目を見なかった（Issue #186。docs/external-usage-callsite-qa.md の Q9）。
+     * コンストラクタ（{@code <init>}）は継承されないので、そちらが親へ辿らずその型自身の宣言だけを見る
+     * （無ければ -1 で、呼び出し側が IMPLICIT_CTOR の注記で残す）。
+     * 受け手の型はバイナリ名なので、索引（{@link #ourTypeOf}）で H 行の名前に直してから引く
      */
     private int lookupRef(String owner, String sig) {
-        int id = graph.selection().resolvedDeclaration(owner, sig);
-        if (id < 0) {
-            String norm = normalize(owner);
-            if (!norm.equals(owner)) {
-                id = graph.selection().resolvedDeclaration(norm, sig);
-            }
-        }
-        return id;
+        return graph.selection().resolvedDeclaration(ourTypeOf(owner), sig);
     }
 
     /**

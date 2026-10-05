@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import jche.cache.MethodRef;
 import jche.util.Messages;
 
 /**
@@ -217,6 +219,11 @@ final class ClassFileRefs {
         in.readUnsignedShort();                 // max_stack
         in.readUnsignedShort();                 // max_locals
         int codeLength = in.readInt();
+        if (codeLength <= 0 || codeLength >= 65536) {
+            // JVMS 4.7.3: 0 < code_length < 65536。壊れた class の値で巨大な配列を確保しない
+            // （IOException にすれば、呼び出し側が「読めない class → 警告して読み飛ばす」で受ける）
+            throw new IOException(Messages.format("external.invalidLength", "code_length", codeLength));
+        }
         byte[] code = new byte[codeLength];
         in.readFully(code);
         int exceptions = in.readUnsignedShort();
@@ -338,6 +345,9 @@ final class ClassFileRefs {
 
     /**
      * ラムダ本体の合成メソッド {@code lambda$run$0} を囲みメソッド名 {@code run} に読み替える。
+     * javac はコンストラクタの中のラムダを {@code lambda$new$0}、static 初期化子の中のラムダを {@code lambda$static$0} と
+     * 名付けるので、{@code new} は {@code <init>}、{@code static} は {@code <clinit>} に戻す（ソースの側
+     * jche.analysis.LambdaNames#baseNameOf の逆。caller の列をソースの側の呼び出し元と同じ綴りにする）。
      * それ以外はそのまま。名前が null（壊れた class）なら "?"
      */
     static String enclosingMethodName(String name) {
@@ -347,7 +357,14 @@ final class ClassFileRefs {
         if (name.startsWith("lambda$")) {
             int end = name.lastIndexOf('$');
             if (end > "lambda$".length()) {
-                return name.substring("lambda$".length(), end);
+                String enclosing = name.substring("lambda$".length(), end);
+                if ("new".equals(enclosing)) {
+                    return MethodRef.CONSTRUCTOR;
+                }
+                if ("static".equals(enclosing)) {
+                    return MethodRef.STATIC_INITIALIZER;
+                }
+                return enclosing;
             }
         }
         return name;
@@ -374,11 +391,15 @@ final class ClassFileRefs {
         }
 
         int lineAt(int pc) {
-            int line = -1;
-            for (int i = 0; i < startPc.length && startPc[i] <= pc; i++) {
-                line = lines[i];
+            // start_pc <= pc の項目のうち最後のもの（同じ start_pc が並べば後ろのもの）。無ければ -1
+            int i = Arrays.binarySearch(startPc, pc);
+            if (i < 0) {
+                i = -i - 2;   // 挿入位置の 1 つ手前
             }
-            return line;
+            while (i >= 0 && i + 1 < startPc.length && startPc[i + 1] <= pc) {
+                i++;
+            }
+            return (i < 0) ? -1 : lines[i];
         }
     }
 
@@ -488,8 +509,14 @@ final class ClassFileRefs {
         }
     }
 
-    /** {@link DataInputStream#skipBytes} は要求より少なく飛ばすことがあるので、足りるまで繰り返す */
+    /**
+     * {@link DataInputStream#skipBytes} は要求より少なく飛ばすことがあるので、足りるまで繰り返す。
+     * 負の長さ（attribute_length は u4 なので、int に読むと壊れた class で負になりうる）は読めない class として退ける
+     */
     private static void skipFully(DataInputStream in, int n) throws IOException {
+        if (n < 0) {
+            throw new IOException(Messages.format("external.invalidLength", "attribute_length", n));
+        }
         while (n > 0) {
             int skipped = in.skipBytes(n);
             if (skipped <= 0) {

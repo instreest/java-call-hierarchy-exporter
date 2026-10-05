@@ -611,6 +611,7 @@ final class MessagesJa {
         return new String[] {
             "external.notAClassFile", "classファイルではありません",
             "external.unknownConstantTag", "未知の定数プールタグ: {0}",
+            "external.invalidLength", "class ファイルの長さの指定が不正です（{0}）: {1}",
             "external.summary", "jar={0}{1} クラス={2} 被参照={3}件（自分のメソッド {4} 個） 暗黙コンストラクタ={5} 未照合={6} 自プロジェクトクラスを除外={7}",
             "external.summary.nested", " jar内のjar={0}",
             "external.jarCount", "外部jar: {0} 件",
