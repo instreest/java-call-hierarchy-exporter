@@ -44,7 +44,7 @@
 | 親クラスの連鎖（H 行の 7 列目） | `TypeHierarchy#classChain` | 直接の親クラスから根まで。実装探索の 1 段目の順 |
 | 継承した実装（H 行の 8 列目） | `MethodSelection#inheritedImplementationIn` | 親クラスから継承したメソッドが、型引数を置き換えた親インターフェースのメソッドを実装する組 |
 | 最も特定的（maximally-specific） | `TypeHierarchy#mostSpecific` | 親インターフェースの宣言のうち、より下位のもの。`default` の選び方（JLS 9.4.1） |
-| ライブラリ呼び出し規則 | `LibraryCallRules`、`TypeRules`（種類 C）、`CallbackRules`（種類 A）、`FrameworkEntries`（種類 B） | ソースの外（JDK・フレームワーク）との約束を書いた表。呼び戻し・入口・具象型の対応（[callback-contracts.md](callback-contracts.md)） |
+| ライブラリ呼び出し規則 | `LibraryCallRules`、`TypeRules`（種類 C）、`CallbackRules`（種類 A）、`FrameworkEntries`（種類 B） | ソースの外（JDK・フレームワーク）との約束を書いた表。呼び戻し・入口・具象型の対応（[library-call-rules.md](library-call-rules.md)） |
 | 拡張（extension） | `jche.extension.TypeCandidateProvider`、設定の `plugin.folders`、`jche.config.Plugins` | 利用者が Java で書く差し込み口。**IDE のプラグイン（`eclipse-plugin/`・`vscode-plugin/`）とは別物** |
 | 証拠（hint） | `jche.extension.Hint`、`HintFact` | 拡張に渡す、呼び出し箇所の局所的な材料（ファクトリのキーなど） |
 | 起点（エントリ） | `EntryPoints`、設定の `entry.packages` | 呼び出し階層を辿り始めるメソッド。全体モードでは誰からも呼ばれていないメソッド |

@@ -4,6 +4,7 @@ Bundle-Name: %bundleName
 Bundle-SymbolicName: io.github.instreest.jche.eclipse;singleton:=true
 Bundle-Version: 1.0.0
 Bundle-Vendor: %bundleVendor
+Bundle-License: Apache-2.0
 Bundle-Activator: jche.eclipse.JchePlugin
 Bundle-Localization: plugin
 Bundle-ActivationPolicy: lazy

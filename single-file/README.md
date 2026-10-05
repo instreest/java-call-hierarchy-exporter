@@ -7,9 +7,16 @@
 これらと Eclipse JDT Core の jar だけでビルドして動きます。設定ファイルの書き方・出力 CSV の読み方は
 [README](../README.md) のとおりです。
 
-**本体と同期を取らない場合があります。** 1 ファイル版はその目的に合わせて個別に更新するので、本体（`src/jche`）の
-最新の変更が入っていないことや、本体と出力が違うことがあります。ビルドできること・起動できることは
-`bash test/single-file/run.sh` が検査します（設計の記録は [docs/single-file-qa.md](../docs/single-file-qa.md)）。
+**本体と同期を取っていません。** 1 ファイル版はその目的に合わせて個別に更新するもので、いまの中身は本体のコミット
+`ec7727d`（2026-09-30）時点の `src/jche` を基にしています。それ以降の本体の変更は入っていません。主なもの:
+
+- ライブラリ呼び出し規則への改称。設定キーは `contracts.*` のままで、`call.rules.*` は読みません
+- `workspace.projects` / `workspace.scope`（ワークスペースの他プロジェクトからの被参照）
+
+キャッシュの形式の版には `-single` を付けてあり（`jche-cache-v45-single`）、本体と同じキャッシュのフォルダを使っても
+互換とは判定しません（1 回目は全件解析になります）。ビルドできること・起動できることは `bash test/single-file/run.sh` が
+検査し、本体との差（`ec7727d` 以降の `src/jche` のコミット数）を参考として表示します
+（設計の記録は [docs/single-file-qa.md](../docs/single-file-qa.md)）。
 
 ## 本体との違い
 

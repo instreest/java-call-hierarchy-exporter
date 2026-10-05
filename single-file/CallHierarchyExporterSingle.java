@@ -14477,7 +14477,8 @@ public final class CallHierarchyExporterSingle {
          *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
          * </ul>
          */
-        public static final String VERSION = "jche-cache-v45";
+        // 1 ファイル版の書き手は本体（src/jche）と同期を取らないので、同じキャッシュのフォルダを共有しても互換とは判定させない（-single を付ける）
+        public static final String VERSION = "jche-cache-v45-single";
 
         // 行の種別（各行の先頭1文字）
         public static final char ROW_SOURCES = 'T';

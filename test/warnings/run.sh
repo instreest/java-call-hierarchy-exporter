@@ -525,7 +525,7 @@ for kind in ctor excluded; do
     analyze "dag_$kind"
     [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
     check_invariant "dag_$kind"
-    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) in a row"
+    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) one after another"
     # CSV しか見ない読み手にも打ち切りが分かるよう、階層の行の最後に印の行を 1 行だけ書く
     # （caller / callee は (stopped)、resolved-by は UNEXPANDED:MAX_ROWS、depth は 0）
     if [ "$(grep -c -F '[UNEXPANDED:MAX_ROWS] output stopped: max.rows reached' "$OUT/call-hierarchy.csv" 2>/dev/null)" = 1 ] \

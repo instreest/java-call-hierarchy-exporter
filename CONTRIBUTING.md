@@ -11,7 +11,7 @@ CSV（`call-hierarchy.csv` / `methods.csv`）に書き出すツール。Eclipse 
 目的は「改修時の影響調査で呼び出しを漏らさない」こと。迷ったら **呼び出しを静かに落とさない（安全側に倒す）** を優先する。
 
 本体は **解決（`analysis`。JLS の判定を JDT に任せて事実を書く）→ キャッシュ（`cache`）→ 選択（`graph`。JVMS 5.4.6 の順で
-実際に動く本体を選ぶ）** の 3 層で、各パッケージの `package-info.java` が層の責務と読む順を持つ。規則ごとの対応表と
+実際に動く本体を選ぶ）** の 3 層で、この 3 つのパッケージの `package-info.java` が層の責務と読む順を持つ（ほかのパッケージには無い）。規則ごとの対応表と
 健全性の点検表は `docs/resolution-selection-design.md`。
 
 ## 1. 5 分で回す
@@ -48,7 +48,7 @@ bash test/regression/run.sh
 | ソースは `src/jche` 直下（`src/main/java` ではない） | JBang の `//SOURCES` がスクリプトのあるフォルダからの相対で、`jche.config.ToolRoot` もこの置き場所（`src/jche/CallHierarchyExporter.java`）を目印にしている（`docs/entrypoint-package-qa.md`） |
 | テストは JUnit ではなく bash の `run.sh` と自前の `*Check.java` | 主な検査が「題材プロジェクトを解析して、期待値の CSV や全件解析の結果と比べる」形で、JUnit にしても速くも読みやすくもならない。依存ゼロ・実行 JDK 固定（JDK 25。JDT が実行 JVM のブートクラスパスを解析に使うので、版が違うと結果が変わる）の利点も保てる。一覧は [test/README.md](test/README.md) |
 | 実行 JDK は 25 に固定、言語機能は Java 17（`--release 17`） | 上と同じ理由で実行 JDK を固定する。言語レベルは古い環境（Pleiades 同梱の JDK 17）でもコンパイルできる下限 |
-| `jche.config.Config` は 47 個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
+| `jche.config.Config` は数十個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
 | コメント・文書は日本語、利用者に見せる文言は英語が既定 | 読む相手（このリポジトリを触る人）と、使う相手（画面・ログ・CSV を読む人）が違う。文言の置き場所は下の「コードの決まり」 |
 | `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF | cmd が画面のコードページで読むため（`docs/cli-app-qa.md` の Q15）。編集するときも MS932 のまま保存する |
 | `single-file/CallHierarchyExporterSingle.java`（4 万行）がコミットされている | 本体の全ソースを 1 ファイルにした版で、jar を集めて `javac` 1 回で動かす環境のためにある。**本体と同期を取らない場合がある**（その目的に合わせて個別に更新する）ので、`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8） |
@@ -87,7 +87,7 @@ bash test/regression/run.sh
 | 書き手（`analysis` / `cache`）でキャッシュに入る事実が変わりうる | `CacheFormat.VERSION` を上げる（迷ったら上げる）→ `bash test/cacheversion/run.sh --update` で `facts.txt` を更新。`test/incremental` を回す |
 | 差分更新が見る依存を足した | `test/incremental` に全件解析との一致の検査を足す |
 | 利用者に見せる文言を足した | `MessagesEn.java` と `MessagesJa.java` の同じ分野・同じ並び・同じキーに足す（`test/nls`）。起動コマンドは `msg <キー>`。Eclipse / VSCode プラグインは置き場所が別（下記） |
-| 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を変えた | 3 か所を同時に直す: `MethodSelection#search`・`ImplicitCalls#findNoArgMethod`・`ExternalUsageScanner#inheritedFrom`。正本は `docs/resolution-selection-design.md` の 4 節 |
+| 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を変えた | 3 か所を同時に直す: `MethodSelection#search`（選択）・`MethodSelection#resolvedDeclaration`（解決。抽象でも止まる・private を飛ばさない・パッケージアクセスは見ない）・`ImplicitCalls#findNoArgMethod`。jar からの被参照（`ExternalUsageScanner`）は自前の写しを持たず `resolvedDeclaration` に任せる。正本は `docs/resolution-selection-design.md` の 4 節 |
 | JDT の版を上げた | `CallHierarchyExporter.java` と `Jche.java` の `//DEPS`、`pom.xml` の 3 か所と README（`test/pom`・`test/readme` が見る）。`bash test/cacheversion/run.sh --update` で記録だけ合わせる |
 | 機能を足した・設計判断をした | `docs/<機能>-qa.md` に Q&A を残し、`docs/README.md` の索引に 1 行足す |
 | README を直した | 日本語と英語（`# English` 以降）の両方を直す。節の印 `<!-- sec:ID -->` を両側で同じ並びに保つ。`bash test/readme/run.sh` で食い違いとリンク切れを見る |
@@ -210,10 +210,12 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   探さない（`TypeHierarchy#classChain`・`superinterfaces` を使う。親クラスの連鎖は H 行の 7 列目、親クラスから継承した
   メソッドによるインターフェースの実装は 8 列目。`docs/jls-conformance-qa.md`）
 - **実装を探す順の写しは 3 か所にあり、順を変えるときは同時に直す。** 正本は `docs/resolution-selection-design.md` の 4 節で、
-  `jche.graph.MethodSelection#search`（選択）のほかに、`jche.analysis.ImplicitCalls#findNoArgMethod`（拡張 for の `iterator()`・
-  try-with-resources の `close()`。JDT のバインディングを材料にする解決の層なので `MethodSelection` に寄せられない）と
-  `jche.external.ExternalUsageScanner#inheritedFrom`（jar からの被参照）が同じ順を持つ。3 つのクラス javadoc が互いを指す
-  （`docs/resolution-selection-qa.md` の Q10。Issue #189）
+  `jche.graph.MethodSelection#search`（選択）のほかに、同じクラスの `resolvedDeclaration`（解決。JVMS 5.4.3.3 の規定どおり
+  抽象の宣言でも止まり、private を飛ばさず、パッケージアクセスは見ない）と、`jche.analysis.ImplicitCalls#findNoArgMethod`
+  （拡張 for の `iterator()`・try-with-resources の `close()`。JDT のバインディングを材料にする解決の層なので `MethodSelection` に
+  寄せられない）が同じ順を持つ。jar からの被参照（`jche.external.ExternalUsageScanner`）は自前の写しを持たず、
+  `resolvedDeclaration` に任せる（以前あった `inheritedFrom` は Issue #186 で消した）。`MethodSelection` と `ImplicitCalls` の
+  クラス javadoc が互いを指す（`docs/resolution-selection-qa.md` の Q10。Issue #189）
 - AST の読み取りは Java 言語仕様に合わせる。オーバーライドの判定・暗黙のコンストラクタ呼び出し・
   定数の畳み込みは、自前で近似せず JDT のバインディング（`IMethodBinding.overrides` など）に任せ、
   分からないものは「判定しない」に倒す（`docs/jls-conformance-qa.md`、
@@ -230,7 +232,11 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   クラスフォルダの `.java`、jar の目次はファイルのバイトから読む `ZipDirectory`）。ずれると差分更新が変化を見落とす
 - 解決の結果はエッジの処理順に依存させない。`CallResolver.resolve` はメモ化されるので、最初の評価と後の評価で答えが変わる
   作りにすると出力が食い違う（`docs/code-review-fixes-qa.md` の Q2）
-- 相対パスの起点は項目ごとに決まっている（`config/jche.properties` 冒頭のコメント）。起点の外へ出る相対パスはエラーにする
+- 相対パスの起点は項目ごとに決まっている（`config/jche.properties` 冒頭のコメント）。起点の外へ出る相対パス（`..`）は
+  エラーにする（`Config#resolveUnder`。対象は `source.folders` / `library.folders` / `external.library.folders` / `output.folder` /
+  `cache.folder` / `call.rules.files` / `plugin.folders`）。`project.root` / `library.jars` / `library.repositories` /
+  `workspace.projects` にはこの制限が無く、外を指してよい（起点そのもの、またはプロジェクトの外を指すのが普通なので。
+  項目ごとの説明は `config/jche.properties`）
 
 ## 7. ドキュメントの決まり
 
