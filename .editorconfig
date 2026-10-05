@@ -1,0 +1,27 @@
+# EditorConfig（https://editorconfig.org）。エディタ（Eclipse・VSCode・IntelliJ 等）が共通に読む、文字コード・改行・字下げの決まり。
+# 内容は CONTRIBUTING.md の 6 節（コードの決まり）の写しで、エディタに同じ設定を自動で入れさせるためのもの。
+# 決まりを変えるときは CONTRIBUTING.md を先に直す。
+root = true
+
+# 全ファイル共通。文字コードは UTF-8、改行は LF、末尾に改行を 1 つ
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+# Java（本体 src/jche、Eclipse プラグイン、題材）と TypeScript（VSCode プラグイン）は空白 4 つ
+[*.{java,ts}]
+indent_style = space
+indent_size = 4
+
+# YAML（GitHub Actions のワークフロー・action.yml）と JSON（package.json・tsconfig.json 等）は空白 2 つ
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+# Windows 用の起動コマンドだけは MS932（Shift_JIS）・CRLF で保存してある（cmd.exe が画面のコードページで読むため。
+# docs/cli-app-qa.md の Q15）。charset は EditorConfig に MS932 の指定が無いので「指定しない」にして、
+# エディタが UTF-8 に変換しないようにする。Git 側も .gitattributes の -text で中身を触らない
+[java-call-hierarchy-exporter.cmd]
+end_of_line = crlf
+charset = unset

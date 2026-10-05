@@ -11,7 +11,11 @@
 #   パス指定での解析 / 環境設定の変更（ヒープ上限・取得の確認）→ launcher.properties の書き換え → 再起動 → 反映
 # の一連。解析結果の中身は見ない（それは test/regression/ の役目）。
 #
-# launcher.properties はこのテストが書き換えるので、あれば退避して最後に戻す。config/cli-test.properties と
+# launcher.properties はこのテストが書き換えるので、あれば退避して最後に戻す。起動コマンドは自分のあるフォルダ直下の
+# launcher.properties しか読まず（環境変数 JCHE_ROOT は起動コマンドが Java 側へ渡すもので、逆には効かない）、別の置き場所を
+# 指定する手段が無いので、リポジトリのファイルを入れ替えるしかない。前回の実行が強制終了（SIGKILL。trap は動かない）されて
+# 退避したまま終わっていたら、退避した方が開発者の本物なのでそれを残し、入れ替わって残っている方（テストが書いたもの）は捨てる。
+# config/cli-test.properties と
 # その出力（config/<日時>_demo/）、.cache/recent-configs.txt、.cache/launcher.started もテストが作るものなので消す。
 # ログの検査は ASCII の部分だけで行う（標準出力の文字コードは端末に依るため。test/regression/run.sh と同じ方針）。
 # ただし起動コマンド自身（bash）が出す行はスクリプトの文字コード（UTF-8）で出るので、そこは日本語で照合できる。
@@ -45,7 +49,13 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
-[ -f "$SETTINGS" ] && mv -f "$SETTINGS" "$BACKUP"
+if [ -f "$BACKUP" ]; then
+    # 前回の実行が強制終了されて退避したまま。残っている launcher.properties はテストが書いたものなので退避で上書きしない
+    echo "  （前回の退避 $BACKUP が残っています。そちらを本物として最後に戻します）"
+    rm -f "$SETTINGS"
+else
+    [ -f "$SETTINGS" ] && mv -f "$SETTINGS" "$BACKUP"
+fi
 
 write_settings() {   # $1=JCHE_JAVA_OPTS
     printf 'JBANG_DIR=\nJBANG_REPO=\nJCHE_JAVA_OPTS=%s\nJCHE_JBANG_OPTS=%s\n' "$1" "${JCHE_TEST_JBANG_OPTS:-}" > "$SETTINGS"

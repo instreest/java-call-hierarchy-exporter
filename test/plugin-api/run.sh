@@ -42,7 +42,8 @@ else
 fi
 
 echo "== クラスファイルの版を確かめる"
-# Java 11 のクラスファイルはメジャー版 55。ここが上がっていると、下限の JVM で読めない
+# Java 11 のクラスファイルはメジャー版 55。ここが上がっていると、下限の JVM で読めない。
+# 内部クラスも含めて全部見る（先頭の数十個だけを見ると、後ろのクラスの版の違いを見逃す）
 bad=0
 while read -r class; do
     major=$(od -An -t u1 -j 7 -N 1 "$class" | tr -d ' ')
@@ -50,7 +51,7 @@ while read -r class; do
         echo "  NG   $(basename "$class") のメジャー版が $major（55 であるべき）"
         bad=$((bad + 1))
     fi
-done < <(find "$WORK/classes" -name '*.class' | head -50)
+done < <(find "$WORK/classes" -name '*.class')
 [ "$bad" -eq 0 ] && echo "  OK   すべて Java 11（メジャー版 55）のクラスファイル"
 
 [ "$bad" -eq 0 ] && echo "PASS" || { echo "FAIL"; exit 1; }
