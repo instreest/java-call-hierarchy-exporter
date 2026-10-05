@@ -194,7 +194,7 @@ public final class JlsCheck {
                 why.add("C 行が " + n + " 件（期待は " + c + " 件）: " + a + " -> " + b);
                 return false;
             }
-            case "path" -> {                    // root 列から先に、「 > 」区切りのノードがこの順で連続して現れる
+            case "path" -> {                    // call-hierarchy 列（先頭が起点）に、「 > 」区切りのノードがこの順で連続して現れる
                 if (t.hasPath(a)) {
                     return true;
                 }
