@@ -3,6 +3,7 @@ package jche.analysis;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
@@ -552,6 +553,9 @@ final class GuardCollector {
         return b instanceof IVariableBinding vb && (!vb.isField() || vb.isEnumConstant());
     }
 
+    /** 条件式のテキストで 1 つの空白に潰す空白類の並び（{@link #trim}。呼び出しごとに正規表現を組み立てない） */
+    private static final Pattern WHITESPACE_RUN = Pattern.compile("\\s+");
+
     /**
      * 注記に出す条件式のテキスト。長い式は縮める。
      *
@@ -559,7 +563,7 @@ final class GuardCollector {
      * 注記が化けるうえ、以前はキャッシュを書けずに解析ごと失敗していた（docs/cache-unification-qa.md の Q49）
      */
     private static String trim(String text) {
-        String t = Guard.clean(text).replaceAll("\\s+", " ").trim();
+        String t = WHITESPACE_RUN.matcher(Guard.clean(text)).replaceAll(" ").trim();
         if (t.length() <= Guard.MAX_TEXT) {
             return t;
         }

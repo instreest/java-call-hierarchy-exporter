@@ -96,6 +96,10 @@
 8.10.4.2	compact-canonical-key	decl	jls.s08_10.Range#<init>(int,int)	-	-	コンパクトな正準コンストラクタの引数は record の成分と同じ
 8.10.4.2	compact-canonical-body	path	Records.run > Range.Range > Sink.validate	-	-	コンパクトな正準コンストラクタの本体まで辿れる
 8.10.4	implicit-canonical	decl	jls.s08_10.Pair#<init>(java.lang.String,int)	implicit	-	正準コンストラクタを書かない record には成分と同じ引数の正準コンストラクタが暗黙に宣言される
+8.10.4	implicit-canonical-noncanonical-written	decl	jls.s08_10.Only#<init>(int)	implicit	-	正準でないコンストラクタだけを書いた record にも、成分と同じ引数の正準コンストラクタが暗黙に宣言される
+8.10.4	noncanonical-delegates	call	jls.s08_10.Only#<init>()	jls.s08_10.Only#<init>(int)	-	正準でないコンストラクタは this(...) で暗黙の正準コンストラクタに委譲する（§8.10.4.1）
+8.10.4.1	noncanonical-delegating-mark	decl	jls.s08_10.Only#<init>()	delegating	-	正準でないコンストラクタは this(...) で委譲する
+8.10.4	noncanonical-path	path	Records.run > Only.Only > Sink.defaultX	-	-	正準でないコンストラクタの本体（this(...) の実引数）まで辿れる
 8.10.3	explicit-accessor	path	Records.run > Range.low > Sink.accessLow	-	-	明示的に宣言したアクセサの本体まで辿れる
 8.10	record-final	csv	jls.s08_10.Records.run	Range.low	RESOLVED:STATIC_BOUND:FINAL_CLASS	record は暗黙に final なのでアクセサは上書きされない
 9.1.5	no-interface-ctor	nodecl	jls.s09_04.Greeter#<init>()	-	-	インターフェースの本体にコンストラクタは宣言できず、デフォルトコンストラクタもクラスだけ（§8.8.9）

@@ -82,7 +82,7 @@ final class OverrideFacts {
         String selfSignature = self.signature();
         List<String> keys = new ArrayList<>(1);
         Set<String> seen = new HashSet<>();
-        for (ITypeBinding sup : BindingNames.supertypesOf(declaring)) {
+        for (ITypeBinding sup : names.supertypesOf(declaring)) {
             for (IMethodBinding candidate : sup.getDeclaredMethods()) {
                 if (candidate.isConstructor()
                         || !candidate.getName().equals(binding.getName())
@@ -227,12 +227,12 @@ final class OverrideFacts {
     }
 
     /** {@code sup} が {@code sub} の親型（消去して比べる）か */
-    private static boolean isSupertypeOf(ITypeBinding sup, ITypeBinding sub) {
+    private boolean isSupertypeOf(ITypeBinding sup, ITypeBinding sub) {
         if (sup == null || sub == null) {
             return false;
         }
         String want = BindingNames.keyOf(sup.getErasure());
-        for (ITypeBinding t : BindingNames.supertypesOf(sub)) {
+        for (ITypeBinding t : names.supertypesOf(sub)) {
             if (BindingNames.keyOf(t.getErasure()).equals(want)) {
                 return true;
             }
@@ -286,7 +286,7 @@ final class OverrideFacts {
         for (ITypeBinding root : roots) {
             List<ITypeBinding> types = new ArrayList<>();
             types.add(root);
-            types.addAll(BindingNames.supertypesOf(root));
+            types.addAll(names.supertypesOf(root));
             for (ITypeBinding type : types) {
                 if (!type.isInterface() || !seenTypes.add(BindingNames.keyOf(type))) {
                     continue;

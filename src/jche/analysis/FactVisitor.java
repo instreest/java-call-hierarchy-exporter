@@ -1080,7 +1080,8 @@ final class FactVisitor extends ASTVisitor {
      *       依存 jar が無いときの式の中の {@code org.missing.pkg.Type.run()} の {@code org.missing} には、同じバッチで
      *       先に別のファイルが {@code org.missing.pkg.Type.class} のような型の文脈で同じ名前を解決しようとしたかどうかで、
      *       JDT が回復した型（{@code org.missing}）を返したり返さなかったりする。数えると I 行がバッチの組み方で変わる
-     *       （Q79）。解決できなかった名前は数えず、型解決に失敗したブロックは何かが変わった実行で必ず解析し直す
+     *       （docs/cache-unification-qa.md の Q79（依存 jar が無いときの I 行））。解決できなかった名前は数えず、
+     *       型解決に失敗したブロックは何かが変わった実行で必ず解析し直す
      *       （{@link CacheUpdater} の「型解決に失敗していたファイル」）。型の節（{@link Type}）は回復した型でも
      *       数える（型の文脈の回復はバッチに依らない）</li>
      * </ul>
@@ -1175,7 +1176,8 @@ final class FactVisitor extends ASTVisitor {
      *
      * <p>ただし、メンバーを持ち込む import（{@code import static T.*}・{@code import static T.m}・入れ子の型の
      * {@code import T.*}）が名指す型 T は、JDT のバインディングで I 行に数える（{@link BindingNames#noteDependency}。
-     * jar の型なら、その推移的な親型も数える。Q86）。T から持ち込まれるメンバーには T の親型（別の jar の型のことも）から
+     * jar の型なら、その推移的な親型も数える。docs/cache-unification-qa.md の Q86（jar の型の親が変わると））。
+     * T から持ち込まれるメンバーには T の親型（別の jar の型のことも）から
      * 継承したものも入るが、import に書いた名前（{@code org.lib.K.*}）からは T の親型も、T の jar のパッケージも分からない。
      * T の jar（か親型の jar）がメンバーを足すと、単純名で呼んだメソッドの選び方や入れ子の型の名前の解決が変わるのに、
      * 差分更新がこのファイルを解析し直さなかった

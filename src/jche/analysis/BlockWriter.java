@@ -94,8 +94,10 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
     /**
      * 旧キャッシュの I 行が、変わった jar のパッケージか中身の分からないパッケージ
      * （{@link StaleTypes#addOpaque}。解析に失敗したファイルの）に触れていたファイル（相対パス）。
-     * どの理由で選ばれたか（{@link #countAs}）に依らず、解析し直したら宣言する型を「変わった型」に加える（Q84）。
-     * 理由で決めると、同じファイルがソースの変化にも触れていたときに連鎖を落とす（Q89）
+     * どの理由で選ばれたか（{@link #countAs}）に依らず、解析し直したら宣言する型を「変わった型」に加える
+     * （jar の親の親から継承したものは指紋にも H 行にも現れない。docs/cache-unification-qa.md の Q84（jar の変化で
+     * 解析し直したファイルの型））。理由で決めると、同じファイルがソースの変化にも触れていたときに連鎖を落とす
+     * （docs/cache-unification-qa.md の Q89（jar の変化による連鎖をファイルごとに決める））
      */
     final Set<String> jarDriven = new HashSet<>();
     private long done;
@@ -172,19 +174,30 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
 
     @Override
     public void accept(SourceFile file, FileAnalysis fa) throws IOException {
-        parsedThisRun.add(file.relativePath());
+        String rel = file.relativePath();
+        parsedThisRun.add(rel);
         fa.hash = hashAfterParse(file);
+        // 例外を投げうる計算（指紋・未解決の数・文言）はブロックを書く前に済ませる。書いたあとで投げると、呼び出し元が
+        // このファイルを失敗として数え直し（failed）、parsed と failed の両方に数えられた
+        int unresolved = fa.unresolvedCount();
+        String syntaxWarning = (fa.syntaxErrors > 0)
+                ? Messages.format("analysis.syntaxError", rel, fa.syntaxErrors) : null;
+        // 型階層が旧キャッシュと違えば、差分更新をやめる印（旧キャッシュに無いファイル＝新しいファイルと、型解決に
+        // 失敗していた・しているファイルは比べない。CacheUpdater の「型階層が変わったとき」）
+        String before = (stale != null) ? oldHierarchy.get(rel) : null;
+        boolean hierarchyDiffers = hierarchyChanged == null && before != null && !fa.resolutionFailed()
+                && !before.equals(hierarchyDigestOf(fa.types));
+        boolean cascades = stale != null && shouldCascade(file, fa);
         // writeBlock はブロックをメモリ上で組み終えてから書くので、途中で例外が出ても書きかけは残らない
         // （例外は呼び出し元がこのファイルの失敗として数える）。書けたら直後に数え、Z 行の数と揃える
         writeBlock(fa, cacheOut);
-        lastWritten = file.relativePath();
+        lastWritten = rel;
         result.parsed++;
-        result.unresolved += fa.unresolvedCount();
-        result.countErrors(file.relativePath(), fa.errors, fa.syntaxErrors);
-        if (fa.syntaxErrors > 0) {
+        result.unresolved += unresolved;
+        result.countErrors(rel, fa.errors, fa.syntaxErrors);
+        if (syntaxWarning != null) {
             // 本体を読めていないので、このファイルの呼び出しは出力に出ない。黙って落とさない
-            Warnings.warn(Warnings.Topic.BUILD,
-                    Messages.format("analysis.syntaxError", file.relativePath(), fa.syntaxErrors));
+            Warnings.warn(Warnings.Topic.BUILD, syntaxWarning);
         }
         countReason();
         if (stale != null) {
@@ -193,15 +206,11 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
                 stale.register(t);
                 stale.packageNow(t.pkg());
             }
-            // 型階層が旧キャッシュと違えば、差分更新をやめる印（旧キャッシュに無いファイル＝新しいファイルと、型解決に
-            // 失敗していた・しているファイルは比べない。CacheUpdater の「型階層が変わったとき」）
-            String before = oldHierarchy.get(file.relativePath());
-            if (hierarchyChanged == null && before != null && !fa.resolutionFailed()
-                    && !before.equals(hierarchyDigestOf(fa.types))) {
-                hierarchyChanged = file.relativePath();
+            if (hierarchyDiffers) {
+                hierarchyChanged = rel;
             }
         }
-        if (stale != null && shouldCascade(file, fa)) {
+        if (cascades) {
             for (TypeFact t : fa.types) {
                 if (cascade == ReanalysisCascade.ALWAYS && countAs == ReanalysisReason.UNTOUCHED) {
                     // ファイル自身が変わった・増えた。新しい型かも見る（jar の追加で解析し直すファイルは
@@ -246,7 +255,11 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
      * <ul>
      *   <li>印のブロック（F 行と空の I 行だけ。内容ハッシュは空で、次の実行でも必ず解析し直す）を書く。消したときに、旧キャッシュに
      *       ファイルがあったことが分かる（パス1 は型を宣言しないブロックの置き場所のパッケージを中身の分からない
-     *       パッケージにする。{@link CacheUpdater#finishOldBlock}）。ブロックを書いたあとの受け手の失敗なら書かない</li>
+     *       パッケージにする。{@link CacheUpdater#finishOldBlock}）。ブロックを書いたあとの受け手の失敗（{@link #accept} が
+     *       書いたあとで投げた）なら、ブロックも数（parsed）もそろっているので、印のブロックを書かず失敗にも数えない
+     *       （数えると parsed と failed の両方に数えられ、Z 行のブロック数とも合わない）。警告と、置き場所のパッケージを
+     *       中身の分からないパッケージにすること（下）は、そのままする（「変わった型」に加える前に投げたかもしれないので、
+     *       解析し直す側に倒す）</li>
      *   <li>置き場所のパッケージを中身の分からないパッケージにする（{@link StaleTypes#addOpaque}）。宣言する型は
      *       分からないので、変わった jar のパッケージと同じ決まりで、そのパッケージの型を使うファイルを解析し直す。
      *       失敗が続くあいだは実行のたびに解析し直す（安全側の費用）</li>
@@ -254,13 +267,16 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
      */
     @Override
     public void failed(SourceFile file, Exception error) {
-        result.failed++;
-        countReason();
-        Warnings.warn(Warnings.Topic.INCOMPLETE,
-                Messages.format("analysis.fileFailed", file.relativePath(), error.getMessage()));
         String rel = file.relativePath();
+        boolean afterWrite = rel.equals(lastWritten);
+        if (!afterWrite) {
+            result.failed++;
+            countReason();
+        }
+        Warnings.warn(Warnings.Topic.INCOMPLETE,
+                Messages.format("analysis.fileFailed", rel, error.getMessage()));
         parsedThisRun.add(rel);
-        if (!rel.equals(lastWritten)) {
+        if (!afterWrite) {
             // F 行と空の I 行（F 行の直後は必ず I 行。CacheFormat）。検査値は writeBlock と同じ求め方
             String deps = CacheFormat.joinRow("I", "", "");
             BlockChecksum checksum = new BlockChecksum();
@@ -277,7 +293,9 @@ final class BlockWriter implements CallEdgeExtractor.Sink {
         if (stale != null && !CacheUpdater.declaresNoType(rel)) {
             stale.addOpaque(packageOfFile.apply(file));
         }
-        progress.step(++done);
+        if (!afterWrite) {
+            progress.step(++done);
+        }
     }
 
     private void countReason() {

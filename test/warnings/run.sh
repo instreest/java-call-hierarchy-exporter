@@ -301,6 +301,28 @@ expect_in_warnings deep "stack overflow"
 grep -q -F "Util.count" "$OUT/call-hierarchy.csv" 2>/dev/null \
     && ok "deep: ほかのファイルの呼び出しは出力に出る" || ng "deep: ほかのファイルの呼び出しが出力に無い"
 
+# 5d'. module-info.java で JDT のスタックが溢れる（注釈の配列の値を 2 万段入れ子にしたもの）。module-info.java はほかの
+#      ファイルと別のバッチ（関わるファイルを添えないバッチ）で解析するので、脇に置いて 1 つだけで解析し直す道が
+#      添えるファイルの無い形で通る。以前はそこで変更できない空の一覧に removeAll して UnsupportedOperationException
+#      になり、1 ファイルの失敗で済むはずが設定ごと失敗していた。5d と同じく、そのファイルだけを失敗として案内する
+make_project deepmod ""
+{
+    printf '@SuppressWarnings('
+    for ((i = 0; i < 20000; i++)); do printf '{'; done
+    printf '"x"'
+    for ((i = 0; i < 20000; i++)); do printf '}'; done
+    printf ')\nmodule app {\n}\n'
+} > work/deepmod/src/main/java/module-info.java
+analyze deepmod
+check_invariant deepmod
+[ "$STATUS" = 0 ] && ok "deepmod: module-info.java のスタックが溢れても、実行は成功する" \
+    || ng "deepmod: module-info.java のスタックが溢れて、実行ごと失敗した（終了コード $STATUS）"
+expect_in_warnings deepmod "The analysis or the output stopped partway"
+expect_in_warnings deepmod "src/main/java/module-info.java"
+expect_in_warnings deepmod "stack overflow"
+grep -q -F "Util.count" "$OUT/call-hierarchy.csv" 2>/dev/null \
+    && ok "deepmod: ほかのファイルの呼び出しは出力に出る" || ng "deepmod: ほかのファイルの呼び出しが出力に無い"
+
 # 5e. 名前の違う 2 つのファイルで同じ型を宣言している（public でないトップレベルの型）。間に 100 を超えるファイルが
 #     あると別々のバッチで解析され、JDT はどちらにもエラーを出さない。片方の呼び出しは出力に出ないので、グラフを
 #     組むときに警告する（warnings.txt の「ソースにコンパイルエラーがある」。docs/cache-unification-qa.md の Q61）
