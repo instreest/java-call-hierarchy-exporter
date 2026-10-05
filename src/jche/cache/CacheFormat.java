@@ -515,9 +515,12 @@ public final class CacheFormat {
      *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
      *   <li>v45（続き）{@code super.m()} / {@code X.super.m()} / {@code super::m} の C 行に修飾する型（囲む型の親クラスか、名指しの
      *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
+     *   <li>v46 C 行・U 行の呼び出し箇所の行番号（callLine）を、メソッド呼び出し（{@code a.b()} / {@code super.b()}）では式の先頭の
+     *       行ではなく、メソッド名の末尾の行（javac が行番号表に書く {@code (} の行）にした。複数行にまたがる連鎖
+     *       {@code a\n.b()\n.c()} の各呼び出しが、スタックトレースと同じ行になる（{@code docs/call-hierarchy-columns-qa.md}）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v45";
+    public static final String VERSION = "jche-cache-v46";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';

@@ -3402,7 +3402,7 @@ expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラス�
 # default を抽象として宣言し直した子インターフェース（@FunctionalInterface）にラムダを渡す形（Issue #176）。
 # 親の型で受けた呼び出し（t.exec()・m.make()）の先は default の鍵で、そこで動くのはラムダ。書き手が M 行を default の鍵でも
 # 書かないと、ラムダの本体への辺が無く、default の戻り値（DaoA）で絞られて動く DaoB.find が落ちる
-case_ listed LamRedecl LamRedecl.run LamRedecl.hit "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体（hit()）が、ラムダを実行するメソッドの下に出る" <<'EOF'
+case_ via:LamRedecl.run:listed LamRedecl LamRedecl.main LamRedecl.hit "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体（hit()）が、ラムダを実行するメソッド（run）の下に出る（caller 列はラムダを書いた main の行）" <<'EOF'
 package pr;
 
 interface LrTask { default void exec() { System.out.println("default"); } }
@@ -4028,7 +4028,7 @@ public class LamOther {
     static void hit() { System.out.println("h"); }
 }
 EOF
-expect_ listed LamOther.other LamOther.hit "同上（実際に実行するメソッド other の下にも出る。経路を落とさない）"
+expect_ via:LamOther.other:listed LamOther.viaOther LamOther.hit "同上（実際に実行するメソッド other の下にも出る。経路を落とさない。caller 列は other ではなく、ラムダを書いた viaOther の行）"
 
 case_ listed LamCycle LamCycle.rec LamCycle.rec "ラムダの中から囲みメソッドへ戻る再帰も行に出て、無限に辿らない（[UNEXPANDED:CYCLE]）" <<'EOF'
 package pr;

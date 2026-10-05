@@ -68,6 +68,7 @@
 | `jls/project/` | JLS の 1 節につき 1 ソース（パッケージ名が節番号） | `jls`・`dataflow`・`cacheversion` |
 | `incremental/src/` | 差分更新の検査が書き換える題材 | `incremental`・`cacheversion` |
 | `regression/values/project/` | 値が `\| ; { }` を含む題材 | `regression/values`・`dataflow` |
+| `regression/stacktrace/project/` | `caller` 列（スタックトレース形式）の題材（複数行の連鎖・別のファイルが実行するラムダ・内部／匿名／ローカルクラス） | `regression/stacktrace` |
 
 `ctorbody` / `pruning` / `warnings` は題材をその場で作って捨てる（`ctorbody` は Java 25 でしか書けない構文を含むため、`demo/` には置かない）。`conditions` と `cli` は `demo/` を対象にする。
 

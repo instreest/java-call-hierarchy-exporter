@@ -1,7 +1,7 @@
-version jche-cache-v45
+version jche-cache-v46
 env jdk=25 jdt=3.46.0.v20260520-1003+3.46.0.v20260528-0407
 fixture 5eabfda76701bc2f
-facts demo d084b257fad70b71
-facts demojar f59e4f2df2f41244
+facts demo 6fc26ca6199a8036
+facts demojar ba63a3f46c9c7b59
 facts incremental 96b605c5175414d2
 facts jls 70cfcba703cbe44b

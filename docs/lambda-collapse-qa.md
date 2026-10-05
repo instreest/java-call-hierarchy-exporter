@@ -30,8 +30,10 @@ Eclipse は「メソッド本体の範囲に書いてある呼び出しは、そ
 `StreamingTreeWalker` が、ラムダの本体へ降りるところで、段（`path[]`）に本体を積まず、今の段を本体の段に差し替えて辺を辿る
 （`collapseInto`。除外パッケージの読み飛ばし `skipThrough` と同じ作りで、隠すのが合成メソッドの側）。
 
-- 辺は合成メソッドから引くので `PathFrame#methodId` は合成メソッドのまま。CSV の caller 列・call-hierarchy 列に出すのは
-  `PathFrame#shownId`（畳んだ段では今の段のメソッド）
+- 辺は合成メソッドから引くので `PathFrame#methodId` は合成メソッドのまま。CSV の callee 列・call-hierarchy 列に出すのは
+  `PathFrame#shownId`（畳んだ段では今の段のメソッド）。caller 列だけは例外で、畳んだ段では shownId を使わず、
+  ラムダを書いたメソッド（合成名 `lambda$囲み$N` の囲み。`MethodRef#lambdaEnclosingName`）と本体のファイルから作る
+  （下の「別のメソッドが実行するラムダ」）
 - 引数の環境と捕捉した値（`E:`）は本体の段のものを使うので、`DATAFLOW_PARAM` などの絞り込みは減らない。
   捕捉した値は、今の段がそのラムダを作ったメソッドのときだけ渡す（lambda-expansion-qa の Q10）
 - 囲みメソッドは `path[]` から見えなくなるので `hiddenAncestors` に積む。ラムダの中から囲みメソッドへ戻る再帰は
@@ -45,8 +47,11 @@ Eclipse は「メソッド本体の範囲に書いてある呼び出しは、そ
 ラムダを渡す呼び出し自体（`executor.submit(...)` の行）は残る。メソッド参照の呼び戻しは、参照先が実在するメソッドなので今までどおり出る。
 
 別のメソッドが実行するラムダ（`runIt(Runnable r)` の `r.run()`）は、実行するメソッドの直下に本体の呼び出しが出る。
-その行の caller 列の行番号はラムダを書いた場所を指す（実行するメソッドの範囲外のことがある）。それでも、
-実際に実行時に流れる経路を落とさないことを優先した。
+その行の caller 列は、実行するメソッドではなく**ラムダを書いたメソッドとそのファイル・本体の行**を指す
+（`at p.Main.viaRunner(Main.java:25)`）。以前は実行するメソッド（別のファイルの `Retry.run`）の名前とファイルに、本体の
+行番号を組み合わせていたので、`Retry.java:25` のような存在しない行や別のメソッドの行を指し、Eclipse の Java Stack Trace Console で
+ジャンプできなかった（除外パッケージに入れた実行側の名前も caller 列に出ていた）。callee 列・call-hierarchy 列は今までどおり
+実行するメソッドを経路に含める。`test/regression/stacktrace`（`Lambdas.java`）が見る。
 
 ### Q3. 畳めない形は
 

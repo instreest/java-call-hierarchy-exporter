@@ -1,0 +1,23 @@
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
+Chain.first(),st.Chain,C,src/st/Chain.java,9,1,2,1,NORMAL,1,0,,1,
+Chain.second(),st.Chain,C,src/st/Chain.java,14,1,2,0,LEAF,1,0,,1,
+Chain.third(),st.Chain,C,src/st/Chain.java,18,1,1,0,LEAF,1,0,,1,
+Chain.make(),st.Chain,C,src/st/Chain.java,22,1,3,1,NORMAL,1,0,,1,
+Chain.run(),st.Chain,C,src/st/Chain.java,26,1,0,8,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Lambdas.work(),st.Lambdas,C,src/st/Lambdas.java,11,1,4,0,LEAF,1,0,,1,
+Lambdas.name(),st.Lambdas,C,src/st/Lambdas.java,14,1,3,0,LEAF,1,0,,1,
+Lambdas.viaOtherFile(),st.Lambdas,C,src/st/Lambdas.java,19,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Lambdas.nested(),st.Lambdas,C,src/st/Lambdas.java,26,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Lambdas.runHere(Runnable),st.Lambdas,C,src/st/Lambdas.java,36,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),1,
+Lambdas.viaSameFile(),st.Lambdas,C,src/st/Lambdas.java,40,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Lambdas.viaSupplier(),st.Lambdas,C,src/st/Lambdas.java,45,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Lambdas.useFields(),st.Lambdas,C,src/st/Lambdas.java,54,1,0,3,ENTRY_CANDIDATE,1,2,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Shapes.leaf(),st.Shapes,C,src/st/Shapes.java,7,1,5,0,LEAF,1,0,,1,
+Shapes.Nested.deep(),st.Shapes.Nested,C,src/st/Shapes.java,11,1,1,2,NORMAL,1,0,,1,
+Shapes.Nested.Deeper.x(),st.Shapes.Nested.Deeper,C,src/st/Shapes.java,16,1,1,1,NORMAL,1,0,,1,
+Shapes.Kind.go(),st.Shapes.Kind,A,src/st/Shapes.java,29,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+Shapes.shapes(),st.Shapes,C,src/st/Shapes.java,32,1,0,9,ENTRY_CANDIDATE,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
+Shapes$1Local.go(),st.Shapes$1Local,C,src/st/Shapes.java,40,1,1,1,NORMAL,1,0,,1,
+Aux.secret(),st.Aux,C,src/st/Shapes.java,53,1,1,1,NORMAL,1,0,,1,
+Retry.run(Runnable),st.util.Retry,C,src/st/util/Retry.java,11,1,3,1,NORMAL,1,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),1,
+Retry.call(Supplier),st.util.Retry,C,src/st/util/Retry.java,17,1,1,1,NORMAL,1,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,1,
