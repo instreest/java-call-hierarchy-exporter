@@ -6,8 +6,8 @@ package jche.server;
  *
  * <h2>形式</h2>
  * 行指向のテキスト（UTF-8、TAB 区切り）。外部ライブラリを増やさないための選択で、
- * 木の行を流すだけの用途には JSON より軽い。値に含まれる TAB・改行・円記号は
- * {@link #escape} で {@code \\t} {@code \\n} {@code \\\\} に置き換える。
+ * 木の行を流すだけの用途には JSON より軽い。値に含まれる TAB・改行（LF・CR）・円記号は
+ * {@link #escape} で {@code \\t} {@code \\n} {@code \\r} {@code \\\\} に置き換える。
  *
  * <h2>やりとり</h2>
  * <pre>

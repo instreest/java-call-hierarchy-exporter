@@ -12,6 +12,7 @@ import java.io.PrintStream;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
@@ -20,14 +21,15 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import jche.AnalysisSnapshot;
 import jche.Exporter;
 import jche.analysis.JdtVersion;
 import jche.config.Config;
+import jche.config.PluginClassLoaders;
 import jche.graph.MethodTable;
 import jche.report.Csv;
 import jche.util.CancelledException;
@@ -77,7 +79,12 @@ public final class Server {
      * ANALYZE（実行中のものと待ち行列にあるもの）にだけ効き、後から届く ANALYZE には効かない
      */
     private volatile long cancelledUpTo;
-    private final BlockingQueue<Queued> commands = new ArrayBlockingQueue<>(64);
+    /**
+     * 待ち行列。上限を付けない。上限付き（以前は 64 件）だと、解析中に要求がそれだけ溜まったとき読み取りスレッドが
+     * {@code put} で止まり、その後ろの CANCEL を読めなくなって解析を止められなかった。要求は 1 行の文字列で、
+     * 相手は 1 つのプラグインなので、溜まっても大きさは問題にならない
+     */
+    private final BlockingQueue<Queued> commands = new LinkedBlockingQueue<>();
 
     /**
      * 待ち行列に積んだ要求。
@@ -126,6 +133,9 @@ public final class Server {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
+            if (snapshot != null) {
+                snapshot.close();   // 拡張の jar のハンドルを JVM の終了より前に手放す
+            }
             Log.detachSink();
             flush();
         }
@@ -248,19 +258,30 @@ public final class Server {
                 return seq <= cancelledUpTo;
             }
         });
+        Config config = null;
+        AnalysisSnapshot result = null;
         try {
             Log.resetClock();
-            Config config = new Config(path, cacheRoot, LocalDateTime.now());
-            AnalysisSnapshot result = Exporter.analyze(config);
+            config = new Config(path, cacheRoot, LocalDateTime.now());
+            config.warnUnknownKeys();   // 読まれない項目（綴りの誤りの疑い）。#L 行でプラグインのコンソールに出る
+            result = Exporter.analyze(config);
             // 呼び出し元の索引もここで作る（TREE を待たせない）。
             // 解析の最後に必ず通る重い処理なので、始まりと終わりをログに残す
             Log.info(Messages.format("server.inbound.building", result.graph().methodCount()));
             Log.info(Messages.format("server.inbound.done", result.inbound().size()));
+            AnalysisSnapshot previous = snapshot;
             snapshot = result;
             analyzedFiles = null;       // 解析し直したので AT の索引は作り直す
+            if (previous != null) {
+                previous.close();       // 前の結果の拡張の jar を手放す（差し替えたあとなので、もう引かれない）
+            }
             status();
         } finally {
             RunControl.detach();
+            if (result == null && config != null) {
+                // 結果を作れなかった。作りかけの拡張のクラスローダが jar を開いたままにならないようにする
+                PluginClassLoaders.close(config);
+            }
         }
     }
 
@@ -479,12 +500,16 @@ public final class Server {
     private String normalizePath(String path) {
         String normalized = path.replace('\\', '/').trim();
         if (snapshot != null) {
-            String root = snapshot.config().projectRoot.toString().replace('\\', '/');
-            if (!root.endsWith("/")) {
-                root = root + "/";
-            }
-            if (normalized.startsWith(root)) {
-                normalized = normalized.substring(root.length());
+            // 文字列ではなく Path で比べる。Windows の Path は大文字小文字を区別しないので、エディタが
+            // 小文字のドライブ文字（c:\…）で送ってきても project.root（C:\…）の配下と分かる
+            try {
+                Path p = Paths.get(path.trim());
+                Path root = snapshot.config().projectRoot;
+                if (p.isAbsolute() && p.normalize().startsWith(root)) {
+                    normalized = root.relativize(p.normalize()).toString().replace('\\', '/');
+                }
+            } catch (InvalidPathException e) {
+                // Path にできない綴りは文字列のまま（下で相対パスとして引く）
             }
         }
         while (normalized.startsWith("./")) {

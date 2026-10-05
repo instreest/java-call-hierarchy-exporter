@@ -4,6 +4,7 @@ package jche;
 import java.time.LocalDateTime;
 
 import jche.config.Config;
+import jche.config.PluginClassLoaders;
 import jche.config.ProjectLayout;
 import jche.graph.CallGraph;
 import jche.graph.CallResolver;
@@ -90,6 +91,16 @@ public final class AnalysisSnapshot {
     /** この結果を作り終えた時刻。画面に「いつ時点か」を出すために使う */
     public LocalDateTime analyzedAt() {
         return analyzedAt;
+    }
+
+    /**
+     * この結果を使い終えた。拡張（plugin.folders）のクラスローダを閉じて jar のハンドルを手放す
+     * （{@link PluginClassLoaders#close}）。閉じたあとは {@link #resolver()} の拡張が jar から新しいクラスを
+     * 引けないので、解析サーバーは次の結果に差し替えてから前の結果を閉じ、CLI は CSV を書き終えてから閉じる。
+     * {@link #unresolvedCalls()} の一時ファイルは別に閉じる（持ち主が CSV を書く側のため）
+     */
+    public void close() {
+        PluginClassLoaders.close(config);
     }
 
     /**
