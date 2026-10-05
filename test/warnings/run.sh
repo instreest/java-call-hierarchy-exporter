@@ -500,7 +500,7 @@ for kind in ctor excluded; do
     analyze "dag_$kind"
     [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
     check_invariant "dag_$kind"
-    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) in a row"
+    expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) one after another"
 done
 
 # 行を書き進めている探索は、行にならないノードが行より多くても行数の上限まで止めない。
