@@ -2,17 +2,17 @@
 package jche.cli;
 
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
+import jche.config.ConfigFile;
 
 /**
  * 対話モードで選べる設定ファイル（jche.properties 形式）の一覧。
@@ -106,47 +106,28 @@ public final class ConfigCatalog {
 
     private static final Pattern OUTPUT_DIR_NAME = Pattern.compile("\\d{8}-\\d{6}_.*");
 
-    /** project.root の値（表示用。読めなければ空文字） */
+    /**
+     * project.root の値（表示用。読めなければ空文字）。
+     * 解析と同じ読み手（{@link ConfigFile}）で読む。{@code Properties#load} で読むとバックスラッシュが
+     * エスケープとして消え、Windows のパスが実際に使われる値と違って見える
+     */
     public static String projectRootOf(Path config) {
-        try (Reader r = new InputStreamReader(Files.newInputStream(config), StandardCharsets.UTF_8)) {
-            Properties p = new Properties();
-            p.load(r);
-            return p.getProperty("project.root", "").trim();
+        try {
+            return ConfigFile.read(config).getProperty("project.root", "").trim();
         } catch (IOException | RuntimeException e) {
             return "";
         }
     }
 
     /**
-     * 設定ファイルの中身のうち、設定行だけ（コメントと空行を除く。{@code \} で続く行は繋げる）。
-     * 実行前に「この設定で合っているか」を確かめるための表示用
+     * 設定ファイルの中身のうち、設定行だけ（{@code 項目=値}。コメントと空行を除き、続きの行は繋げる）。
+     * 実行前に「この設定で合っているか」を確かめるための表示用なので、解析と同じ読み手
+     * （{@link ConfigFile#readOrdered}）で読み、<b>実際に使われる値</b>を書かれた順に出す
      */
     public static List<String> settingLines(Path config) throws IOException {
         List<String> out = new ArrayList<>();
-        StringBuilder pending = null;
-        for (String raw : Files.readAllLines(config, StandardCharsets.UTF_8)) {
-            String line = raw.trim();
-            if (pending != null) {
-                if (line.endsWith("\\")) {
-                    pending.append(line, 0, line.length() - 1);
-                    continue;
-                }
-                pending.append(line);
-                out.add(pending.toString());
-                pending = null;
-                continue;
-            }
-            if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
-                continue;
-            }
-            if (line.endsWith("\\")) {
-                pending = new StringBuilder(line.substring(0, line.length() - 1));
-                continue;
-            }
-            out.add(line);
-        }
-        if (pending != null) {
-            out.add(pending.toString());
+        for (Map.Entry<String, String> e : ConfigFile.readOrdered(config).entrySet()) {
+            out.add(e.getKey() + "=" + e.getValue());
         }
         return out;
     }

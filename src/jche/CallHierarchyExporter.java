@@ -45,6 +45,7 @@ import jche.analysis.CallConditionScanner;
 import jche.analysis.CacheUpdater;
 import jche.cli.ConfigCatalog;
 import jche.config.Config;
+import jche.config.PluginClassLoaders;
 import jche.config.Plugins;
 import jche.config.ProjectLayout;
 import jche.config.ToolRoot;
@@ -294,6 +295,8 @@ public class CallHierarchyExporter {
         Files.createDirectories(config.outputDir);
         Log.attachFile(config.logFile);
         Warnings.begin(config.outputDir.resolve(Warnings.FILE_NAME));
+        // 読まれない項目（綴りの誤りの疑い）は、warnings.txt を集め始めてから知らせる（設定の読み取りの中では載らない）
+        config.warnUnknownKeys();
         Log.info(Messages.format("exporter.config", config.configPath));
         Log.info(Messages.format("exporter.projectRoot", config.projectRoot));
         Log.info(Messages.format("exporter.outputDir", config.outputDir));
@@ -324,6 +327,8 @@ public class CallHierarchyExporter {
             Log.info(Messages.format("exporter.done", System.currentTimeMillis() - start));
         } finally {
             heapWatch.close();
+            // 拡張（plugin.folders）の jar を開いたままにしない。CSV は書き終えている（失敗していても拡張は用済み）
+            PluginClassLoaders.close(config);
         }
         return config.outputDir;
     }

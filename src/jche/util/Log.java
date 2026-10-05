@@ -29,6 +29,8 @@ public final class Log {
 
     /** 標準出力と同じ内容を書く先。無ければ null */
     private static PrintWriter file;
+    /** {@link #file} のパス（書けなくなったときの案内に使う） */
+    private static Path filePath;
 
     /** 標準出力と同じ内容を渡す先（Eclipse プラグインのコンソール等）。無ければ null */
     private static Consumer<String> sink;
@@ -82,8 +84,10 @@ public final class Log {
      * 上限が足りていないと言える状態なら、続けて1度だけ注意を出す。
      *
      * <p>以前は {@code totalMemory() - freeMemory()}（＝まだ回収されていないものを含む占有量）を
-     * 「使用」として出していたが、上限を上げるほど大きく出る値で、足りているかの判断に使えなかった
-     * （{@code docs/ast-analysis-performance-qa.md} の Q8・Q9）。
+     * 「使用」として出していたが、上限を上げるほど大きく出る値で、足りているかの判断に使えなかった。
+     * 出すべきは GC に取られた時間の割合と GC 後の占有率で、それなら「足りない」と言える
+     * （{@code docs/ast-analysis-performance-qa.md} の Q8（フェーズごとのヒープのログは、何を出すべきか）・
+     * Q9（「ヒープが足りずに遅くなっている」を利用者に伝えるには、何を出せばよいか））。
      */
     public static void heap(String label) {
         HeapWatch.Phase phase = HeapWatch.endPhase();
@@ -109,14 +113,31 @@ public final class Log {
             Files.createDirectories(parent);
         }
         file = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
+        filePath = path;
     }
 
     /** ログファイルへの複写をやめて閉じる。付いていなければ何もしない */
     public static void detachFile() {
         if (file != null) {
             file.close();
+            if (file.checkError()) {
+                fileFailed();
+            }
             file = null;
+            filePath = null;
         }
+    }
+
+    /**
+     * ログファイルに書けなくなった（ディスクが一杯・フォルダが消された等）。{@link PrintWriter} は例外を飲み込んで
+     * {@link PrintWriter#checkError} に印を残すだけなので、黙って run.log が途切れないよう標準出力に 1 回だけ知らせ、
+     * 以降はファイルへの複写をやめる（標準出力へのログは続く）
+     */
+    private static void fileFailed() {
+        Path failed = filePath;
+        file = null;
+        filePath = null;
+        System.out.println(Messages.format("common.log.fileFailed", failed));
     }
 
     /**
@@ -147,6 +168,11 @@ public final class Log {
         if (file != null) {
             file.println(line);
             file.flush();
+            if (file.checkError()) {
+                // 書けなくなった。例外は出ないので、ここで気づいて知らせる
+                file.close();
+                fileFailed();
+            }
         }
     }
 

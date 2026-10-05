@@ -39,6 +39,11 @@ final class MavenPom {
     final List<Dependency> dependencies = new ArrayList<>();
     final List<String> modules = new ArrayList<>();
     final Coordinates relocation;    // 無ければ null
+    /**
+     * 読まなかったプロファイル（activeByDefault でない）のうち、依存を宣言しているもの（{@code id (件数)}）。
+     * そのプロファイルでビルドしている利用者には jar が欠けて見えるので、読む側（{@link MavenModels}）が警告に使う
+     */
+    final List<String> skippedProfilesWithDependencies = new ArrayList<>();
 
     private MavenPom(Path file, Element project) {
         this.file = file;
@@ -64,6 +69,14 @@ final class MavenPom {
                 Element activation = child(profile, "activation");
                 if (activation != null && "true".equals(text(activation, "activeByDefault"))) {
                     readInto(profile);
+                    continue;
+                }
+                // 読まないプロファイルでも、依存を宣言しているなら数えておく（黙って欠けると気づけない）
+                Element deps = child(profile, "dependencies");
+                int count = (deps == null) ? 0 : children(deps, "dependency").size();
+                if (count > 0) {
+                    String id = text(profile, "id");
+                    skippedProfilesWithDependencies.add((id.isEmpty() ? "?" : id) + " (" + count + ")");
                 }
             }
         }

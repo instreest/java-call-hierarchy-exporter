@@ -44,7 +44,13 @@ final class GradleBuild {
         final List<String> platforms = new ArrayList<>();
         final List<String> projectPaths = new ArrayList<>();
         final List<Path> files = new ArrayList<>();
+        /** 参考情報（ロックファイルを使った・settings.gradle の場所・未ビルドの他プロジェクト）。run.log にだけ出す */
         final List<String> notes = new ArrayList<>();
+        /**
+         * 利用者が確かめるべきこと（読めない宣言・無いファイル・カタログに無い参照・版の推定）。
+         * その宣言の jar が欠けうるので、{@link jche.util.Warnings} を通して warnings.txt にも載せる（Maven の読み手と同じ扱い）
+         */
+        final List<String> warnings = new ArrayList<>();
 
         void add(Dependency d) {
             external.putIfAbsent(d.managementKey(), d);
@@ -115,7 +121,7 @@ final class GradleBuild {
             }
             Path projectDir = build.projectDirs.getOrDefault(path, root.resolve(path.replace(':', '/').replaceFirst("^/", "")));
             if (!Files.isDirectory(projectDir)) {
-                all.notes.add(Messages.format("config.gradle.projectMissing", path, projectDir));
+                all.warnings.add(Messages.format("config.gradle.projectMissing", path, projectDir));
                 continue;
             }
             List<Path> classes = classFolders(projectDir);
@@ -136,7 +142,7 @@ final class GradleBuild {
             String[] p = gav.split(":");
             MavenProject bom = (p.length >= 3) ? models.fromRepository(p[0], p[1], p[2]) : null;
             if (bom == null) {
-                all.notes.add(Messages.format("config.gradle.platformMissing", gav));
+                all.warnings.add(Messages.format("config.gradle.platformMissing", gav));
                 continue;
             }
             for (Map.Entry<String, Dependency> e : bom.managed.entrySet()) {
@@ -149,7 +155,7 @@ final class GradleBuild {
             if (d.version().isEmpty() && !managed.containsKey(d.managementKey())) {
                 String latest = Versions.select("+", repos.versions(d.groupId(), d.artifactId()));
                 if (latest != null) {
-                    all.notes.add(Messages.format("config.gradle.noVersionUseLatest", d.ga(), latest));
+                    all.warnings.add(Messages.format("config.gradle.noVersionUseLatest", d.ga(), latest));
                     d = d.withVersion(latest);
                 }
             }
@@ -164,6 +170,7 @@ final class GradleBuild {
             result.entries.add(new DependencyCollector.Entry(f, f.getFileName().toString(), "files() / fileTree()"));
         }
         result.notes.addAll(all.notes);
+        result.warnings.addAll(all.warnings);
         return result;
     }
 
@@ -175,6 +182,7 @@ final class GradleBuild {
         into.projectPaths.addAll(from.projectPaths);
         into.files.addAll(from.files);
         into.notes.addAll(from.notes);
+        into.warnings.addAll(from.warnings);
     }
 
     // ---- ビルドファイルの読み取り ------------------------------------------------------------
@@ -239,7 +247,7 @@ final class GradleBuild {
                     if (!d.version().isEmpty()) {
                         out.platforms.add(d.groupId() + ":" + d.artifactId() + ":" + d.version());
                     } else {
-                        out.notes.add(Messages.format("config.gradle.platformNoVersion", line.trim()));
+                        out.warnings.add(Messages.format("config.gradle.platformNoVersion", line.trim()));
                     }
                 }
                 continue;
@@ -252,7 +260,7 @@ final class GradleBuild {
                     if (Files.exists(p)) {
                         out.files.add(p);
                     } else {
-                        out.notes.add(Messages.format("config.gradle.filesMissing", p));
+                        out.warnings.add(Messages.format("config.gradle.filesMissing", p));
                     }
                 }
                 continue;
@@ -267,14 +275,14 @@ final class GradleBuild {
                     if (Files.isDirectory(p)) {
                         out.files.addAll(jarsUnder(p));
                     } else {
-                        out.notes.add(Messages.format("config.gradle.fileTreeMissing", p));
+                        out.warnings.add(Messages.format("config.gradle.fileTreeMissing", p));
                     }
                 }
                 continue;
             }
             List<Dependency> found = notations(rest, dir, out, scope);
             if (found.isEmpty() && !rest.trim().isEmpty()) {
-                out.notes.add(Messages.format("config.gradle.unreadableDecl", line.trim()));
+                out.warnings.add(Messages.format("config.gradle.unreadableDecl", line.trim()));
             }
             for (Dependency d : found) {
                 out.add(d);
@@ -317,7 +325,7 @@ final class GradleBuild {
                     }
                 }
                 if (libs.isEmpty()) {
-                    out.notes.add(Messages.format("config.gradle.catalogMissing", ref.group(0)));
+                    out.warnings.add(Messages.format("config.gradle.catalogMissing", ref.group(0)));
                 }
                 for (GradleCatalog.Library lib : libs) {
                     found.add(dependency(lib.group(), lib.name(), lib.version(), "", "", scope));

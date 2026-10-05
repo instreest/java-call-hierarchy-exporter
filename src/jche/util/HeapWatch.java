@@ -20,7 +20,8 @@ import com.sun.management.GarbageCollectionNotificationInfo;
  * <h2>なぜ「占有量」だけでは分からないのか</h2>
  * {@link Log#heap} が出す占有量（{@code totalMemory() - freeMemory()}）は、まだ回収されていない
  * ものを含む「今ヒープに載っている量」で、上限を上げるほど大きく出る。足りているかどうかの
- * 判断には使えない（{@code docs/ast-analysis-performance-qa.md} の Q8）。
+ * 判断には使えないので、GC に取られた時間と GC 後の占有率を出す
+ * （{@code docs/ast-analysis-performance-qa.md} の Q8（フェーズごとのヒープのログは、何を出すべきか））。
  * 見るべきは次の3つで、どれも JVM が元々数えている値を読むだけなので、<b>測るための負荷は無い</b>。
  *
  * <pre>

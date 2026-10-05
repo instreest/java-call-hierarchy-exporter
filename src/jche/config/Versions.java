@@ -125,7 +125,14 @@ final class Versions {
         return 0;
     }
 
-    /** "1.2.3-beta-1" → [1, 2, 3, beta, 1]。数字と英字の境目でも区切る（"1.0rc1" → [1, 0, rc, 1]） */
+    /**
+     * "1.2.3-beta-1" → [1, 2, 3, beta, 1]。数字と英字の境目でも区切る（"1.0rc1" → [1, rc, 1]）。
+     *
+     * <p>修飾子の直前の "0" は落とす（"1.0.0-SNAPSHOT" → [1, snapshot]）。Maven の ComparableVersion と同じで、
+     * 落とさないと "1.0.0-SNAPSHOT" が [1, 0, 0, snapshot] となり、"1.0"（[1]）と 2 つ目の要素 "0" 対 ""（空）で
+     * 比べて数字のほうが新しいと判定され、スナップショットが正式版 "1.0" より新しい順になっていた。
+     * 末尾の "0" も同じく落とす（1.0 == 1.0.0）
+     */
     private static List<String> tokens(String version) {
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
@@ -133,27 +140,38 @@ final class Versions {
         for (char ch : version.trim().toLowerCase(Locale.ROOT).toCharArray()) {
             if (ch == '.' || ch == '-' || ch == '_') {
                 if (cur.length() > 0) {
-                    out.add(cur.toString());
+                    addToken(out, cur.toString());
                     cur.setLength(0);
                 }
                 continue;
             }
             boolean d = Character.isDigit(ch);
             if (cur.length() > 0 && d != digit) {
-                out.add(cur.toString());
+                addToken(out, cur.toString());
                 cur.setLength(0);
             }
             digit = d;
             cur.append(ch);
         }
         if (cur.length() > 0) {
-            out.add(cur.toString());
+            addToken(out, cur.toString());
         }
-        // 末尾の "0" や空は無いのと同じ（1.0 == 1.0.0）
+        dropTrailingZeros(out);
+        return out;
+    }
+
+    /** 要素を足す。修飾子（英字で始まる）の前の "0" は無いのと同じ（{@link #tokens}） */
+    private static void addToken(List<String> out, String token) {
+        if (!token.isEmpty() && !Character.isDigit(token.charAt(0))) {
+            dropTrailingZeros(out);
+        }
+        out.add(token);
+    }
+
+    private static void dropTrailingZeros(List<String> out) {
         while (!out.isEmpty() && out.get(out.size() - 1).equals("0")) {
             out.remove(out.size() - 1);
         }
-        return out;
     }
 
     private static int compareToken(String x, String y) {

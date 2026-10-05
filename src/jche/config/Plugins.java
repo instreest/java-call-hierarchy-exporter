@@ -33,9 +33,11 @@ public final class Plugins {
                 init(plugin, config);
                 out.add(plugin);
                 Log.info(Messages.format("config.plugin.loaded", className, type.getSimpleName()));
-            } catch (Exception e) {
+            } catch (Exception | LinkageError e) {
                 // 拡張の読み込み失敗は致命的ではないが、黙って無視すると
-                // 「設定したのに効いていない」ことに気づけないため必ず出力する
+                // 「設定したのに効いていない」ことに気づけないため必ず出力する。
+                // LinkageError（NoClassDefFoundError 等）は、拡張が使う jar を plugin.folders に置き忘れたときに
+                // 出る。Exception だけ捕まえていると、この 1 件で解析ごと落ちていた
                 Log.warn(Messages.format("config.plugin.loadFailed", className, e));
             }
         }

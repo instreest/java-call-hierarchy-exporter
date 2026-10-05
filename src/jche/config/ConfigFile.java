@@ -5,8 +5,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 
 /**
@@ -83,9 +86,23 @@ public final class ConfigFile {
     private ConfigFile() {
     }
 
-    /** ファイルを UTF-8 で読む */
+    /**
+     * ファイルを UTF-8 で読む。
+     * UTF-8 として読めないバイト列（Shift_JIS 等で保存したファイル）は {@link java.nio.charset.MalformedInputException}
+     * （{@link IOException} の一種。文言は "Input length = 1" だけなので、呼ぶ側が「UTF-8 で保存する」案内に言い換える）
+     */
     public static Properties read(Path file) throws IOException {
         return parse(Files.readAllLines(file, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * ファイルの項目を<b>書かれた順</b>に読む（表示用）。読み方は {@link #read} とまったく同じで、
+     * 同じ項目が 2 回あれば後の値が最初の位置に入る。{@link Properties} は順を持たないので、別に用意してある
+     */
+    public static Map<String, String> readOrdered(Path file) throws IOException {
+        Map<String, String> out = new LinkedHashMap<>();
+        parse(Files.readAllLines(file, StandardCharsets.UTF_8), out::put);
+        return out;
     }
 
     /** 文字列（ファイルの中身）を読む */
@@ -96,6 +113,12 @@ public final class ConfigFile {
     /** 行の一覧を読む。{@link Properties} にしているのは、拡張（{@code init(Properties, Path)}）に渡す形だから */
     public static Properties parse(List<String> lines) throws SyntaxException {
         Properties out = new Properties();
+        parse(lines, out::setProperty);
+        return out;
+    }
+
+    /** 行の一覧を読み、項目と値を書かれた順に {@code sink} へ渡す */
+    private static void parse(List<String> lines, BiConsumer<String, String> sink) throws SyntaxException {
         String currentKey = null;
         StringBuilder currentValue = null;
         boolean pending = false;  // 直前の内容行が \ で終わっている（次の内容行に続く）
@@ -112,7 +135,7 @@ public final class ConfigFile {
             if (trimmed.isEmpty()) {
                 // 空行は字下げによる続きを切る。\ で続けている途中なら読み飛ばす
                 if (!pending) {
-                    flush(out, currentKey, currentValue);
+                    flush(sink, currentKey, currentValue);
                     currentKey = null;
                     currentValue = null;
                 }
@@ -126,7 +149,7 @@ public final class ConfigFile {
                 currentValue.append(withoutTrailingBackslash(trimmed));
                 continue;
             }
-            flush(out, currentKey, currentValue);
+            flush(sink, currentKey, currentValue);
             currentKey = null;
             currentValue = null;
             int eq = trimmed.indexOf('=');
@@ -142,8 +165,7 @@ public final class ConfigFile {
             currentKey = key;
             currentValue = new StringBuilder(withoutTrailingBackslash(value));
         }
-        flush(out, currentKey, currentValue);
-        return out;
+        flush(sink, currentKey, currentValue);
     }
 
     /** 行末の {@code \}（続きの印）を除き、その前の空白も落とす */
@@ -151,9 +173,9 @@ public final class ConfigFile {
         return s.endsWith("\\") ? s.substring(0, s.length() - 1).trim() : s;
     }
 
-    private static void flush(Properties out, String key, StringBuilder value) {
+    private static void flush(BiConsumer<String, String> sink, String key, StringBuilder value) {
         if (key != null) {
-            out.setProperty(key, value.toString());
+            sink.accept(key, value.toString());
         }
     }
 }

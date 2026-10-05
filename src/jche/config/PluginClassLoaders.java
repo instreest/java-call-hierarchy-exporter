@@ -50,6 +50,7 @@ import jche.util.Messages;
  * 設定ごとの run.log と warnings.txt に載る。以前は JVM の中で使い回していたので、拡張を直しても
  * 解析サーバーを起動し直すまで古い拡張が動き続け（候補を狭めた古い拡張のせいで呼び出しが黙って落ちる）、
  * 2 つ目以降の設定には警告が出なかった。
+ * 使い終えた解析のクラスローダは {@link #close} で閉じ、jar のハンドルを持ち続けない。
  *
  * <h2>コンパイルしたクラスはメモリに持つ</h2>
  * {@code .java} は使い捨てのフォルダ（OS の一時フォルダ）へコンパイルし、できたクラスをメモリに読み込んでから
@@ -69,11 +70,38 @@ public final class PluginClassLoaders {
     /**
      * 同じ解析の中で 2 回作らないための覚え書き（ライブラリ呼び出し規則の拡張と具象クラスの候補の拡張が別々に読み込むため）。
      * 鍵は {@link Config} のインスタンスそのもの（{@code Config} は {@code equals} を持たないので同一性で比べる）で、
-     * 解析ごとに作り直される。弱参照なので、解析結果を手放せば一緒に消える
+     * 解析ごとに作り直される。弱参照なので、解析結果を手放せば一緒に消える。
+     * ただし jar のハンドルは GC を待たず {@link #close} で閉じる（下）
      */
-    private static final Map<Config, ClassLoader> CACHE = new WeakHashMap<>();
+    private static final Map<Config, PluginLoader> CACHE = new WeakHashMap<>();
 
     private PluginClassLoaders() {
+    }
+
+    /**
+     * その解析のクラスローダを閉じる（作っていなければ何もしない）。
+     *
+     * <p>{@link URLClassLoader} は plugin.folders の jar を開いたまま持つ。閉じないと、解析サーバーでは ANALYZE の
+     * たびにハンドルが積み上がり、Windows では拡張の jar を差し替えられない（開いているファイルは消せない）。
+     * 解析結果を使い終えたとき（{@code jche.AnalysisSnapshot#close}。CLI は CSV を書き終えたあと、
+     * 解析サーバーは次の結果に差し替えたとき）と、結果を作れなかったときに呼ぶ。
+     * 読み込み済みのクラスはそのまま動くが、閉じたあとに jar から新しいクラスやリソースは引けない。
+     * その結果の拡張は閉じた時点で用済みなので構わない
+     */
+    public static void close(Config config) {
+        PluginLoader loader;
+        synchronized (PluginClassLoaders.class) {
+            loader = CACHE.remove(config);
+        }
+        if (loader == null) {
+            return;
+        }
+        try {
+            loader.close();
+        } catch (IOException e) {
+            // 閉じられなくても解析の結果には関わらない。次の解析は新しいクラスローダを作る
+            Log.info(Messages.format("config.plugin.notClosed", e));
+        }
     }
 
     /**
@@ -85,16 +113,16 @@ public final class PluginClassLoaders {
         if (config.pluginFolders.isEmpty()) {
             return PluginClassLoaders.class.getClassLoader();
         }
-        ClassLoader cached = CACHE.get(config);
+        PluginLoader cached = CACHE.get(config);
         if (cached != null) {
             return cached;
         }
-        ClassLoader loader = build(config);
+        PluginLoader loader = build(config);
         CACHE.put(config, loader);
         return loader;
     }
 
-    private static ClassLoader build(Config config) {
+    private static PluginLoader build(Config config) {
         List<Path> jars = new ArrayList<>();
         List<Path> sources = new ArrayList<>();
         List<Path> classDirs = new ArrayList<>();
