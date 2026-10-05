@@ -5,7 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.IntPredicate;
+import java.util.function.ToIntFunction;
 
+import jche.cache.MethodRef;
 import jche.cache.ModifierTokens;
 import jche.cache.TypeFact;
 
@@ -35,7 +37,9 @@ import jche.cache.TypeFact;
  *       コンストラクタ・{@code super.m()} は {@link BindKind}（C 行の calleeMods から）が「静的束縛」と決め、
  *       {@link CallResolver} の段 0 で宣言のまま確定する（invokestatic / invokespecial に当たる呼び出し）。
  *       ただし {@link #implementationOf} をその型自身の private の宣言に対して引くことはあり、その場合は
- *       その宣言を返す（連鎖の先頭だけは private を飛ばさない）</li>
+ *       その宣言を返す（連鎖の先頭でも private を返すのは、それが呼び出し先そのものであるときだけ。
+ *       {@code class Sub extends Base} の両方が private の {@code m()} を持つとき、{@code Base#m()} を
+ *       {@code Sub} から引いても {@code Sub#m()} は別のメソッドなので返さない）</li>
  *   <li><b>C とその親クラスの連鎖に mR を上書きできる宣言があればそれ</b>（JVMS 5.4.5 の「上書きできる」）
  *       … {@link #search} の前半。{@link TypeHierarchy#classChain}（H 行の 7 列目）を根まで順に見る。
  *       「上書きできる」の判定は 3 つの材料の和:
@@ -61,10 +65,12 @@ import jche.cache.TypeFact;
  * O 行と H 行の 8 列目で補っている。漏れを疑うときは、この 3 つの材料のどれにも載らない形を探す
  * （docs/resolution-selection-design.md の対応表）。
  *
- * <h2>入口は 2 つ</h2>
+ * <h2>入口は 2 つ（と、解決の入口が 1 つ）</h2>
  * 呼び出し先のキーが分かるなら {@link #implementationOf}、シグネチャしか分からない（ライブラリ呼び出し規則・リフレクション）なら
  * {@link #implementationOfSignature}。どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見るので、
  * 別の引き方を足すと片方を取りこぼす（docs/jls-conformance-qa.md の Q6・Q7・Q21）。
+ * jar からの被参照（jche.external.ExternalUsageScanner#lookupRef）が「JVM の解決（JVMS 5.4.3.3）が結び付ける宣言」を
+ * 引くのは {@link #resolvedDeclaration}（選択ではなく解決。抽象でも止まる・private を飛ばさない・パッケージアクセスは見ない）。
  *
  * <h2>ここで決めないこと</h2>
  * <ul>
@@ -75,8 +81,10 @@ import jche.cache.TypeFact;
  * </ul>
  *
  * <p>「クラスの連鎖 → 最も特定的な親インターフェース」の順は docs/resolution-selection-design.md の 4 節が正本で、
- * 同じ順の写しが jche.analysis.ImplicitCalls#findNoArgMethod（JDT のバインディングを材料にする解決の層）と
- * jche.external.ExternalUsageScanner#inheritedFrom（被参照）にもある。順を変えるときは 3 か所を同時に直す（Issue #189）。
+ * 写しは 3 か所: {@link #search}（選択）、{@link #resolvedDeclaration}（jar からの被参照の解決。Issue #186 で
+ * jche.external.ExternalUsageScanner の別実装 inheritedFrom を置き換えた）、jche.analysis.ImplicitCalls#findNoArgMethod
+ * （JDT のバインディングを材料にする解決の層なのでここに寄せられない）。順を変えるときは 3 か所を同時に直す（Issue #189）。
+ * 親インターフェースの段（最も特定的な宣言の絞り込み）は前の 2 つで {@link #mostSpecificInterfaceDeclaration} が共通。
  */
 public final class MethodSelection {
 
@@ -359,7 +367,10 @@ public final class MethodSelection {
      *       本体を持つ宣言を採る。クラスのメソッドは、親インターフェースの default メソッドより常に勝つ
      *       （{@code class Impl extends Mid implements Api} で {@code Mid} の親 {@code Base} の {@code m()} が
      *       {@code Api} の default の {@code m()} より先）。その型より上の private メソッドは上書きも継承もされないので
-     *       飛ばす（JLS 8.4.8。その型自身の宣言は、private の呼び出し先を引くときのために飛ばさない）。
+     *       飛ばす（JLS 8.4.8）。その型自身の private の宣言も、それが呼び出し先そのもの（キーが同じ。private の呼び出し先を
+     *       その型から引いた形）か、シグネチャで引いている（リフレクション）ときだけ採る。別の private の同名メソッド
+     *       （{@code Base#m()} を引いたときの {@code Sub} の private な {@code m()}）は別のメソッドなので飛ばし、
+     *       親の段へ進む（親の private も継承されないので、結局は無し＝ -1 になる）。
      *       親クラスの static メソッドのうち継承されるもの（public・protected か、その型と同じパッケージ。{@link #inheritedBy}）は
      *       飛ばさない。インスタンスメソッドと同じシグネチャの static メソッドを継承するクラスはコンパイルできない
      *       （JLS 8.4.8.2）ので仮想呼び出しでは当たらず、当たるのはリフレクション（{@code Class.getMethod} は親クラスの
@@ -410,7 +421,8 @@ public final class MethodSelection {
                 return methods.idOf(ENUM_CLASS + "#" + sig);
             }
             int id = declarationIn(chain.get(i), calleeKey, sig, overriders, packageAccess);
-            if (id >= 0 && methods.hasBody(id) && (i == 0 || inheritedBy(typeFqn, id))) {
+            if (id >= 0 && methods.hasBody(id)
+                    && ((i == 0 && isCalleeOrNotPrivate(id, calleeKey)) || inheritedBy(typeFqn, id))) {
                 return lowestOverriderOf(chain, i, id, sig);
             }
             int inherited = inheritedImplementationIn(chain.get(i), calleeKey, sig);
@@ -418,10 +430,40 @@ public final class MethodSelection {
                 return lowestOverriderOf(chain, i, inherited, sig);
             }
         }
+        return mostSpecificInterfaceDeclaration(typeFqn,
+                t -> declarationIn(t, calleeKey, sig, overriders, packageAccess), false);
+    }
+
+    /**
+     * 連鎖の先頭（その型自身）の宣言 {@code id} を実装として採ってよいか。private でなければ常に、private なら
+     * それが呼び出し先そのもの（キーが同じ）か、シグネチャで引いている（{@code calleeKey} が null。リフレクション）
+     * ときだけ。{@code class Base { private void m() }} と {@code class Sub extends Base { private void m() }} で
+     * {@code Base#m()} を {@code Sub} から引くと、以前は別のメソッドである {@code Sub#m()} を返していた
+     * （{@code DataflowResolver#functionalReceiverImpl} から届く形）
+     */
+    private boolean isCalleeOrNotPrivate(int id, String calleeKey) {
+        return calleeKey == null || calleeKey.equals(methods.key(id))
+                || !ModifierTokens.has(methods.mods(id), "private");
+    }
+
+    /**
+     * 親インターフェースの段（{@link #search} と {@link #resolvedDeclaration} の後半で共通）。
+     * {@link TypeHierarchy#superinterfaces} の各型で {@code lookup} が返した宣言（-1 は無し）のうち private・static
+     * （継承されない。JLS 9.4.1）を除き、{@link TypeHierarchy#mostSpecific} で「最も特定的な」宣言に絞って 1 つ選ぶ。無ければ -1。
+     *
+     * <p>複数残る（JLS ではコンパイルエラーになる形か、jar の型の親が見えない形）ときの選び方は、本体を持つ宣言を先に、
+     * その中はソースにある宣言を jar の宣言（本体の有無が分からず、抽象のこともある）より先に、同じ扱いの中は
+     * {@code superinterfaces} の並び（近い順。同じ深さは名前順）の先頭。本体の無い宣言は、{@code acceptAbstract} のとき
+     * （解決。JVMS 5.4.3.3 は本体の有無を見ない）だけ、本体を持つ宣言が無ければ返す。選択（{@code acceptAbstract} が偽）では
+     * 抽象の宣言は「最も特定的」の判定にだけ加える（子インターフェースが default を抽象で消した形で、親の default を選ばない）
+     *
+     * @param lookup 親インターフェースの型 → その型の宣言（{@link #declarationIn} か {@link #resolvedIn}）
+     */
+    private int mostSpecificInterfaceDeclaration(String typeFqn, ToIntFunction<String> lookup, boolean acceptAbstract) {
         List<String> declaring = new ArrayList<>();
         IntArray found = new IntArray(2);
         for (String t : hierarchy.superinterfaces(typeFqn)) {
-            int id = declarationIn(t, calleeKey, sig, overriders, packageAccess);
+            int id = lookup.applyAsInt(t);
             if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
                     && !ModifierTokens.has(methods.mods(id), "static")) {
                 declaring.add(t);
@@ -432,16 +474,21 @@ public final class MethodSelection {
             return -1;
         }
         List<String> specific = hierarchy.mostSpecific(declaring);
+        // 本体はあるがソースに無い（jar の）宣言か、acceptAbstract なら本体の無い宣言のうち、先に並んだもの
         int fallback = -1;
         for (int i = 0; i < found.size(); i++) {
             int id = found.get(i);
-            if (!specific.contains(declaring.get(i)) || !methods.hasBody(id)) {
+            if (!specific.contains(declaring.get(i))) {
                 continue;
             }
-            if (methods.hasSource(id)) {
-                return id;
-            }
-            if (fallback < 0) {
+            if (methods.hasBody(id)) {
+                if (methods.hasSource(id)) {
+                    return id;
+                }
+                if (fallback < 0 || !methods.hasBody(fallback)) {
+                    fallback = id;
+                }
+            } else if (acceptAbstract && fallback < 0) {
                 fallback = id;
             }
         }
@@ -600,11 +647,21 @@ public final class MethodSelection {
      * {@code save(User)} は、{@code UserRepo.save(java.lang.Object)} のブリッジがその型にある）と、親クラスから継承した
      * メソッドが型引数を置き換えたインターフェースのメソッドを実装する組（H 行の 8 列目。ブリッジはその型にある）。
      * 参照の側の型が別の版に対してコンパイルされていると、ブリッジのディスクリプタで参照してくる（Issue #186）。
-     * パッケージアクセスは見ない（解決はディスクリプタの一致だけで、上書きの可否は選択の話）
+     * パッケージアクセスは見ない（解決はディスクリプタの一致だけで、上書きの可否は選択の話）。
+     *
+     * <p>コンストラクタ（{@code <init>}）と静的初期化子（{@code <clinit>}）は継承されないので、親へ辿らず
+     * その型自身の宣言だけを見る（JVMS 6.5 の invokespecial: 解決したインスタンス初期化メソッドの宣言したクラスが
+     * 参照の指すクラスと違えば NoSuchMethodError）。辿ると、{@code new Sub()} の参照（今のソースの {@code Sub} に
+     * 引数なしのコンストラクタが無い版違い）が親の {@code Base()} に INHERITED で結び付き、呼び出し側の
+     * IMPLICIT_CTOR の注記（生成箇所として残す形）に届かなかった
      */
     public int resolvedDeclaration(String typeFqn, String sig) {
         if (typeFqn == null || typeFqn.isEmpty() || sig == null) {
             return -1;
+        }
+        if (isInitializerSignature(sig)) {
+            int id = methods.idOf(typeFqn + "#" + sig);
+            return (id >= 0 && methods.hasSource(id)) ? id : -1;
         }
         IntArray overriders = overrides.overridersOfSignature(sig);
         for (String t : hierarchy.classChain(typeFqn)) {
@@ -613,34 +670,14 @@ public final class MethodSelection {
                 return id;
             }
         }
-        List<String> declaring = new ArrayList<>();
-        IntArray found = new IntArray(2);
-        for (String t : hierarchy.superinterfaces(typeFqn)) {
-            int id = resolvedIn(t, sig, overriders);
-            if (id >= 0 && !ModifierTokens.has(methods.mods(id), "private")
-                    && !ModifierTokens.has(methods.mods(id), "static")) {
-                declaring.add(t);
-                found.add(id);
-            }
-        }
-        if (found.size() == 0) {
-            return -1;
-        }
-        List<String> specific = hierarchy.mostSpecific(declaring);
-        int abstractOne = -1;
-        for (int i = 0; i < found.size(); i++) {
-            int id = found.get(i);
-            if (!specific.contains(declaring.get(i))) {
-                continue;
-            }
-            if (methods.hasBody(id)) {
-                return id;
-            }
-            if (abstractOne < 0) {
-                abstractOne = id;
-            }
-        }
-        return abstractOne;
+        return mostSpecificInterfaceDeclaration(typeFqn, t -> resolvedIn(t, sig, overriders), true);
+    }
+
+    /** シグネチャ（{@code 名前(引数)}）がコンストラクタ {@code <init>} か静的初期化子 {@code <clinit>} のものか */
+    private static boolean isInitializerSignature(String sig) {
+        int paren = sig.indexOf('(');
+        String name = (paren < 0) ? sig : sig.substring(0, paren);
+        return MethodRef.CONSTRUCTOR.equals(name) || MethodRef.STATIC_INITIALIZER.equals(name);
     }
 
     /**

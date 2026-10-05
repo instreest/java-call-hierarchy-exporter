@@ -422,7 +422,7 @@ public final class CallGraphBuilder {
      * H 行の型を、宣言したファイル（ブロック）とともに覚える。同じ型を別のファイルの H 行が宣言していれば、重なりとして
      * 警告する（{@link #warnDuplicateTypes}）。2 つの宣言に同じメソッドが無い（{@code Hid(int)} と {@code a()}、
      * 暗黙の {@code Hid()} と {@code b()}）と、{@link #takesDeclaration} では重なりに気づけなかった
-     * （docs/cache-unification-qa.md の Q72）
+     * （docs/cache-unification-qa.md の Q72（同じ型の 2 つの宣言に同じメソッドが無い））
      */
     private void noteTypeDeclaration(String typeFqn, String file) {
         if (file == null) {
@@ -451,7 +451,9 @@ public final class CallGraphBuilder {
      * （ここに来るのは両方を読んだとき。両方の H 行があり、同じメソッドの宣言は 1 つにまとまり、呼び出しは両方のものが出る）。
      * どちらになるかは一緒に解析したファイルの組み合わせで決まり、差分更新と全件解析とで変わりうる。文言は
      * それをそのまま伝える（「片方の呼び出しは出ない」とは言い切らない。{@code docs/cache-unification-qa.md} の
-     * Q61・Q68）。直し方は、2 つのファイルが同じフォルダにあっても違うフォルダにあっても通じるように書く（Q72）
+     * Q61（同じクラスが 2 つのソースフォルダにある）・Q68（名前の違う 2 つのファイルで同じ型を宣言））。
+     * 直し方は、2 つのファイルが同じフォルダにあっても違うフォルダにあっても通じるように書く
+     * （同 Q72（同じ型の 2 つの宣言に同じメソッドが無い））
      */
     private void warnDuplicateTypes() {
         // ファイルの組（パスの順に改行でつないだもの）-> 型（名前の順で最初のもの）。型ごとに、パスの順で最初のファイルと

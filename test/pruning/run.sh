@@ -4446,6 +4446,25 @@ package eu;
 
 public class UserRepo2 extends AbsRepo<User> { }
 EOF
+# コンストラクタは継承されない（JVMS 6.5 の invokespecial。参照の指すクラスの宣言でなければ NoSuchMethodError）。
+# 参照の側は引数なしで生成できた版の CSub（extstub。暗黙の CSub()）に対してコンパイルし、今のソースの CSub には
+# 引数ありのコンストラクタしか無く、親の CBase に引数なしの CBase() がある。参照 CSub.<init>() を親の CBase() に
+# INHERITED で結び付けず、IMPLICIT_CTOR（版違いの生成箇所）として残す
+cat > "$EXTU/src/eu/CBase.java" <<'EOF'
+package eu;
+
+public class CBase { public CBase() { System.out.println("base"); } }
+EOF
+cat > "$EXTU/src/eu/CSub.java" <<'EOF'
+package eu;
+
+public class CSub extends CBase { public CSub(int x) { super(); } }
+EOF
+cat > "$EXTU/extstub/eu/CSub.java" <<'EOF'
+package eu;
+
+public class CSub extends CBase { }
+EOF
 cat > "$EXTU/extsrc/ext/Client.java" <<'EOF'
 package ext;
 
@@ -4455,11 +4474,12 @@ public class Client {
     public static void callC3() { new eu.C3().s(); }
     public static void callRepo() { new eu.UserRepo().save(new eu.User()); }
     public static void callRepo2() { new eu.UserRepo2().save(new eu.User()); }
+    public static void newSub() { new eu.CSub(); }
 }
 EOF
-# src の UserRepo・UserRepo2 の代わりに extstub のものを渡す（ファイル名と違う名前の型は -sourcepath では見つからない）
+# src の UserRepo・UserRepo2・CSub の代わりに extstub のものを渡す（ファイル名と違う名前の型は -sourcepath では見つからない）
 if "$JAVAC_BIN" -nowarn -encoding UTF-8 -d "$EXTU/extcls" \
-        $(find "$EXTU/src" -name '*.java' ! -name UserRepo.java ! -name UserRepo2.java) \
+        $(find "$EXTU/src" -name '*.java' ! -name UserRepo.java ! -name UserRepo2.java ! -name CSub.java) \
         $(find "$EXTU/extstub" "$EXTU/extsrc" -name '*.java') \
         > "$EXTU/javac.log" 2>&1 \
         && rm -rf "$EXTU/extcls/eu" \
@@ -4485,6 +4505,15 @@ else
             grep "^at ext.$caller(" "$ECSV" | head -3
         fi
     done
+    # コンストラクタの参照は親へ辿らない。CSub.<init>() は今のソースに無いので IMPLICIT_CTOR（EXTERNAL_USAGE:IMPLICIT_CTOR）で残り、
+    # 親の CBase.CBase に INHERITED で結び付かない
+    if [ -n "$(ext_rows Client.newSub 'eu.CSub.CSub()' | grep 'EXTERNAL_USAGE:IMPLICIT_CTOR')" ] \
+            && [ -z "$(ext_rows Client.newSub CBase.CBase)" ]; then
+        ok "外部の jar からの被参照: Client.newSub -> CSub.CSub()（IMPLICIT_CTOR。コンストラクタは継承されないので CBase.CBase ではない）"
+    else
+        ng "外部の jar からの被参照: Client.newSub の参照 CSub.<init>() が IMPLICIT_CTOR になっていません（親の CBase.CBase に結び付けている）"
+        grep "^at ext.Client.newSub(" "$ECSV" | head -3
+    fi
 fi
 
 [ $fail = 0 ] && echo "PASS" || echo "FAIL"
