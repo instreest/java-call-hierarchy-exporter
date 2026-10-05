@@ -22,7 +22,7 @@
 | `[EXTERNAL]` | 呼び出し先が自プロジェクトの外 |
 | `[UNREACHABLE]` | 条件分岐の静的解析で、この経路では呼ばれないと分かった |
 | `[RESOLVED:*]` | 具象クラスをどう特定したか |
-| `[NOT_REACHED]` / `[EXCLUDED]` | `methods.csv` の `absentCause` だけで使う（そこへ至る呼び出しが出ていない／`exclude.packages` で除外） |
+| `[NOT_REACHED]` / `[EXCLUDED]` / `[CHA_OVERFLOW]` / `[ENTRY_NO_ROWS]` | `methods.csv` の `absentCause` だけで使う（そこへ至る呼び出しが出ていない／`exclude.packages` で除外／CHA の候補の上限より後ろで行にならなかった／起点だが呼び出し先の行が無い） |
 
 - 1つの注記は最大2パーツ（打ち切りの理由 / 絞り込みの結果）で、両方あれば ` / ` で繋ぐ
 - 同じタグを `call-hierarchy.csv` と `methods.csv` の両方で使う

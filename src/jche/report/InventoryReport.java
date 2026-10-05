@@ -6,6 +6,7 @@ import java.io.IOException;
 
 import jche.cache.RecvKind;
 import jche.config.Config;
+import jche.external.ExternalUsageScanner;
 import jche.graph.CallGraph;
 import jche.graph.CallResolver;
 import jche.graph.MethodTable;
@@ -35,6 +36,8 @@ public final class InventoryReport {
         long unreachable;
         long notInHierarchy;
         long prunedOut;
+        /** jar からの被参照の行があるメソッド（externalRefs が 1 以上） */
+        long externallyUsed;
         long constructors;
         /** ラムダの合成メソッド・static 初期化子・匿名クラスのメソッド（一覧の対象外） */
         long generated;
@@ -73,6 +76,11 @@ public final class InventoryReport {
      *   LEAF            呼び出し先が無い。末端処理
      *   NORMAL          上記以外
      * </pre>
+     * role はソースの中の呼び出し（inDegree / outDegree）だけで決める。jar からの被参照
+     * （{@code external.library.folders}）は最終列 externalRefs に件数で出し、1 件でもあれば inHierarchy を 1 にする
+     * （被参照の行は call-hierarchy.csv にあるので「1 行でも出た」に当たる）。role を書き換えないのは、
+     * role の意味を「ソースの中でどう呼ばれているか」の 1 つに保つため。ISOLATED で externalRefs が 1 以上なら
+     * 「ソースからは呼ばれないが jar からは呼ばれる」と読む。
      * コンストラクタ（{@code <init>}）は出力しない。call-hierarchy.csv 側でも
      * 行にしていないため、両方の一覧で扱いを揃える。
      *
@@ -84,9 +92,13 @@ public final class InventoryReport {
      * 具象クラスを1つに絞れなかった（または繋げなかった）呼び出しがいくつあり、その理由は何か」。
      * call-hierarchy.csv の注記と同じ判定を使っているので、
      * まずここで穴のあるメソッドを絞ってから階層を追う、という使い方ができる。
+     *
+     * @param external jar からの被参照の走査の結果（{@code external.library.folders} が無い実行では null）。
+     *                 methods.csv は被参照の行を書き終えてから出すので、ここで件数を列にできる
      */
     public static Stats writeMethods(CallGraph g, CallResolver resolver, Config config, int[] roots,
-                                     StreamingTreeWalker walker) throws IOException {
+                                     StreamingTreeWalker walker, ExternalUsageScanner.Stats external)
+            throws IOException {
         MethodTable methods = g.methods();
         Stats st = new Stats();
         int[] in = resolver.inDegrees();
@@ -94,17 +106,21 @@ public final class InventoryReport {
         WorkspaceScope scope = resolver.workspaceScope();
 
         try (BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding, config.outputBom)) {
+            // 列を足すときは最後に足す（既存の列の位置を読んでいる利用者の表・スクリプトを壊さない）
             w.write(String.join(Csv.DELIM, "method", "declaringType", "typeKind",
                     "file", "line", "hasBody", "inDegree", "outDegree", "role", "reachable",
-                    "unresolvedCalls", "unresolvedCause", "inHierarchy", "absentCause"));
+                    "unresolvedCalls", "unresolvedCause", "inHierarchy", "absentCause", "externalRefs"));
             w.newLine();
             // ソースが無いメソッド（jar内など）は一覧の対象外。
             // 呼ばれている事実は call-hierarchy.csv 側に残る。
             // 行順はソースの並び（ソースフォルダ順 → ファイル順 → 宣言行順）
             for (int id : SourceOrder.declaredMethodsInSourceOrder(g)) {
+                int externalRefs = (external == null) ? 0 : external.externalRefs(id);
+                // 呼び出し階層CSVに1行でも出たか。起点から辿った行のほか、jar からの被参照の行もそのファイルにある
+                boolean inTree = walker.inHierarchy(id) || externalRefs > 0;
                 // ワークスペースの他のプロジェクトのメソッドは、project.root に届くものと、呼び出し階層に出たもの
                 // （project.root から降りた先の実装）だけ（workspace.scope=callers）。階層に出た行は必ずここにも載せる
-                if (!scope.allows(id) && !walker.inHierarchy(id)) {
+                if (!scope.allows(id) && !inTree) {
                     continue;
                 }
                 // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
@@ -148,9 +164,11 @@ public final class InventoryReport {
                 if (un.count() > 0) {
                     st.withUnresolved++;
                 }
+                if (externalRefs > 0) {
+                    st.externallyUsed++;
+                }
                 // 呼び出し階層CSVに1行も出なかったメソッド。打ち切りで階層から
                 // 消えた部分木は、ここでしか見えない
-                boolean inTree = walker.inHierarchy(id);
                 String absent = "";
                 if (!inTree) {
                     st.notInHierarchy++;
@@ -173,7 +191,8 @@ public final class InventoryReport {
                         String.valueOf(un.count()),
                         Csv.esc(un.cause()),
                         inTree ? "1" : "0",
-                        Csv.esc(absent)));
+                        Csv.esc(absent),
+                        String.valueOf(externalRefs)));
                 w.newLine();
             }
         }

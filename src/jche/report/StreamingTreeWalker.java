@@ -134,12 +134,22 @@ public final class StreamingTreeWalker {
     static final byte ABSENT_NONE = 0;
     /** 条件分岐で打ち切った呼び出しから先にしかない（打ち切りで階層から消えた部分木） */
     static final byte ABSENT_PRUNED_SUBTREE = 1;
+    /**
+     * CHA の候補だったが、先頭 {@link Config#CHA_MAX_CANDIDATES} 件より後ろで行にならなかった。
+     * 行になった候補（{@link #ABSENT_CHA}）と違い、出力のどこにも名前が出ないので、一覧側で言い分ける
+     */
+    static final byte ABSENT_CHA_OVERFLOW = 2;
     /** 経路上で既に呼んでいるメソッドへ戻る辺だった */
-    static final byte ABSENT_CYCLE = 2;
+    static final byte ABSENT_CYCLE = 3;
     /** CHAで候補が複数のまま（候補は行になるが、その先へは降りない） */
-    static final byte ABSENT_CHA = 3;
+    static final byte ABSENT_CHA = 4;
     /** exclude.packages で除外された */
-    static final byte ABSENT_EXCLUDED = 4;
+    static final byte ABSENT_EXCLUDED = 5;
+    /**
+     * 起点だったが、呼び出し先の行を 1 行も書かなかった（呼び出し先が無い・全部 exclude.packages に当たる）。
+     * 起点は呼び出し元が無いので自分の行は無く、行を書いて初めて階層（先頭の列）に出る
+     */
+    static final byte ABSENT_ENTRY_NO_ROWS = 6;
 
     private final CallGraph graph;
     private final MethodTable methods;
@@ -186,6 +196,11 @@ public final class StreamingTreeWalker {
     private long declaredTypeHits;
     /** 条件分岐の静的解析で「この経路では呼ばれない」と判定して打ち切った件数 */
     private long prunedCalls;
+    /**
+     * max.depth で降りるのをやめた件数（{@code [UNEXPANDED:DEPTH]} の注記を付けた行の数）。
+     * 呼び出し先に辿るべき呼び出しがある行だけを数える（葉には付けない）
+     */
+    private long depthCutoffs;
     /** 絞れなかった呼び出しから作る、ライブラリ呼び出し規則のひな形 */
     private final RuleSuggestions suggestions = new RuleSuggestions();
 
@@ -297,6 +312,14 @@ public final class StreamingTreeWalker {
         return prunedCalls;
     }
 
+    /**
+     * max.depth に当たって降りなかった件数（{@code [UNEXPANDED:DEPTH]} の行の数）。
+     * 1 件でもあれば、その先の呼び出しは出力に無いので、利用者が max.depth を上げるか起点を絞るかを決める
+     */
+    public long depthCutoffs() {
+        return depthCutoffs;
+    }
+
     /** そのメソッドが階層CSVに1行でも出たか */
     boolean inHierarchy(int methodId) {
         return methodId >= 0 && methodId < inHierarchy.length && inHierarchy[methodId];
@@ -312,9 +335,11 @@ public final class StreamingTreeWalker {
     String absentCauseOf(int methodId) {
         byte cause = (methodId >= 0 && methodId < absentCause.length) ? absentCause[methodId] : ABSENT_NONE;
         return switch (cause) {
+            case ABSENT_ENTRY_NO_ROWS -> ENTRY_NO_ROWS_CAUSE;
             case ABSENT_EXCLUDED -> "[EXCLUDED] excluded by exclude.packages";
             case ABSENT_CHA -> UNEXPANDED + "CHA] not expanded (CHA candidate)";
             case ABSENT_CYCLE -> UNEXPANDED + "CYCLE] not expanded (cycle)";
+            case ABSENT_CHA_OVERFLOW -> CHA_OVERFLOW_CAUSE;
             case ABSENT_PRUNED_SUBTREE -> PRUNED_SUBTREE_CAUSE;
             // 呼び出し先として一度も見ていない = そこへ至る呼び出し自体が出力されていない
             // （深さ制限・行数上限の先、起点から辿り着かない）
@@ -336,6 +361,22 @@ public final class StreamingTreeWalker {
 
     /** 条件分岐の打ち切りが理由で階層CSVに出なかったことを表す文言 */
     static final String PRUNED_SUBTREE_CAUSE = "[UNREACHABLE] below a call pruned by a condition";
+    /**
+     * CHA の候補の上限（{@link Config#CHA_MAX_CANDIDATES}）より後ろで行にならなかったことを表す文言。
+     * 階層側の注記 {@code (only the first N are written as rows)} の裏返しで、名前の出なかった候補を一覧側で拾う
+     */
+    static final String CHA_OVERFLOW_CAUSE =
+            "[CHA_OVERFLOW] CHA candidate beyond the first " + Config.CHA_MAX_CANDIDATES + " was not written as a row";
+    /** 起点が呼び出し先の行を 1 行も書かなかったことを表す文言（{@link #ABSENT_ENTRY_NO_ROWS}） */
+    static final String ENTRY_NO_ROWS_CAUSE = "[ENTRY_NO_ROWS] entry point with no call rows";
+    /**
+     * max.rows で出力を打ち切ったことを示す行（階層の行の最後に 1 行だけ書く）の注記。
+     * CSV しか見ない読み手にも、ここで切れたことが分かるようにする（run.log と warnings.txt にも出る）
+     */
+    static final String MAX_ROWS_MARK = UNEXPANDED + "MAX_ROWS] output stopped: max.rows reached";
+    /** 同じく、行にならないノードを続けて通った数が max.rows に達したとき */
+    static final String MAX_SILENT_MARK = UNEXPANDED
+            + "MAX_ROWS] output stopped: max.rows reached by constructor calls and excluded methods passed without writing a row";
 
     /**
      * 打ち切った呼び出しの先にしか無いメソッドに印を付ける。
@@ -390,7 +431,16 @@ public final class StreamingTreeWalker {
             // 起点メソッドの引数も、そのオブジェクトの生成箇所も、経路の中に無いので分からない
             path[0].set(rootId, -1, null, null, null, null, null);
             path[0].mainSeen = scope.isMain(rootId);
+            long before = totalRows;
             descend(0);
+            // 起点は呼び出し元が無いので自分の行は無く、書いた行の先頭の列（起点）に出る。
+            // 1 行でも書いたなら階層に出た。1 行も書かなかった（呼び出し先が無い・全部除外）なら、
+            // 「そこへ至る呼び出しが出ていない」ではなく起点として空だったことを一覧側で言い分ける
+            if (totalRows > before) {
+                inHierarchy[entry] = true;
+            } else if (!isRowLimitReached()) {
+                markAbsent(entry, ABSENT_ENTRY_NO_ROWS);
+            }
             if (isRowLimitReached()) {
                 break;
             }
@@ -526,6 +576,12 @@ public final class StreamingTreeWalker {
                 if (expand && !cycle) {
                     descend(depth + 1);
                 }
+            }
+
+            // 上限より後ろの候補は行にならない。注記に件数は出るが名前は出ないので、
+            // 一覧（methods.csv の absentCause）で「この候補は上限で行にならなかった」と分かるようにする
+            for (int ti = limit; ti < targets.length; ti++) {
+                markAbsent(targets[ti], ABSENT_CHA_OVERFLOW);
             }
 
             // 呼び出し先が jar の中でも、規則で「渡した値を呼び戻す」と分かるものは
@@ -1024,8 +1080,11 @@ public final class StreamingTreeWalker {
             sb.append(EXTERNAL_MARK).append(" type guessed from an import (unverified)");
         } else if (!methods.hasSource(target)) {
             sb.append(EXTERNAL_MARK).append(" no source to follow");
-        } else if (depth + 1 >= maxDepth) {
+        } else if (depth + 1 >= maxDepth && !res.isMultiple() && graph.outDegree(target) > 0) {
+            // 深さの上限で降りなかった。呼び出しを持たない葉と、候補を並べただけで元々降りない行には付けない
+            // （「ここから先が出ていない」と読ませる注記なので、先が無い行に付けると打ち切りの数が水増しになる）
             sb.append(UNEXPANDED).append("DEPTH] depth limit (").append(maxDepth).append(") reached");
+            depthCutoffs++;
         }
 
         String detail;
@@ -1121,16 +1180,22 @@ public final class StreamingTreeWalker {
         return hiddenAncestors.contains(methodId);
     }
 
-    /** 出力行数か、行を書かずに続けて通ったノードの数（{@link #silentRun}）が max.rows に達したか */
-    private boolean isRowLimitReached() {
+    /**
+     * 出力行数か、行を書かずに続けて通ったノードの数（{@link #silentRun}）が max.rows に達したか。
+     * 初めて達したときに警告し、階層の行の最後に打ち切りの印の行（{@link #MAX_ROWS_MARK}）を 1 行書く。
+     * 以後の探索はこの判定で全部戻るので、印の行より後ろに階層の行は出ない
+     */
+    private boolean isRowLimitReached() throws IOException {
         if (config.maxRows <= 0 || (totalRows < config.maxRows && silentRun < config.maxRows)) {
             return false;
         }
         if (!limitWarned) {
             limitWarned = true;
-            Warnings.warn(Warnings.Topic.INCOMPLETE, (totalRows >= config.maxRows)
+            boolean byRows = totalRows >= config.maxRows;
+            Warnings.warn(Warnings.Topic.INCOMPLETE, byRows
                     ? Messages.format("report.walker.maxRows", config.maxRows)
                     : Messages.format("report.walker.maxSilentNodes", config.maxRows));
+            writer.writeStopRow(methods.shortLabel(rootId), byRows ? MAX_ROWS_MARK : MAX_SILENT_MARK);
         }
         return true;
     }

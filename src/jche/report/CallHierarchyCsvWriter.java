@@ -4,7 +4,9 @@ package jche.report;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 import jche.graph.MethodTable;
 
@@ -37,17 +39,36 @@ import jche.graph.MethodTable;
  * </ul>
  * 型解決に失敗した呼び出し（{@link #writeUnresolvedRow}）と外部jarからの被参照
  * （{@link #writeExternalUsageRow}）も同じファイルに出すが、列の詰め方が異なる。
+ *
+ * <p>書いている間は同じフォルダの一時ファイル（{@code call-hierarchy.csv.tmp}）に書き、全部書き終えた
+ * {@link #finish} で本来の名前に改名する（キャッシュの {@code analysis-cache.tsv.tmp} と同じ作り）。
+ * 途中で失敗した実行では {@link #close} が一時ファイルを消すので、書きかけの CSV が「完成した出力」の
+ * 名前で残ることは無い（残すと、途中までの行を全部だと思って影響調査をしてしまう）。
  */
 public final class CallHierarchyCsvWriter implements AutoCloseable {
 
     /** 型解決に失敗した行の起点の列（call-hierarchy の先頭）。起点が無いことを示す固定マーカー */
     static final String UNRESOLVED_ROOT = "(unresolved)";
+    /** 打ち切りの印の行の caller / callee 列。呼び出しではないことを示す固定マーカー */
+    static final String STOPPED_MARK = "(stopped)";
+    /** 打ち切りの印の行の resolved-by 列 */
+    static final String STOPPED_RESOLVED_BY = ResolvedBy.UNEXPANDED + "MAX_ROWS";
+    /** 書いている間の一時ファイルの接尾辞 */
+    static final String TEMP_SUFFIX = ".tmp";
 
     private final BufferedWriter writer;
     private final StringBuilder buf = new StringBuilder(512);
+    /** 本来の出力先 */
+    private final Path outputCsv;
+    /** 書いている間の一時ファイル */
+    private final Path tempCsv;
+    /** {@link #finish} で改名し終えたか。false のまま {@link #close} に来たら途中で失敗している */
+    private boolean finished;
 
     public CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom) throws IOException {
-        this.writer = Csv.writer(outputCsv, encoding, bom);
+        this.outputCsv = outputCsv;
+        this.tempCsv = outputCsv.resolveSibling(outputCsv.getFileName() + TEMP_SUFFIX);
+        this.writer = Csv.writer(tempCsv, encoding, bom);
         writer.write(String.join(Csv.DELIM,
                 "caller", "callee", "resolved-by", "depth", "call-hierarchy"));
         writer.newLine();
@@ -165,6 +186,28 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
     }
 
     /**
+     * 出力を打ち切った印の 1 行（max.rows）。階層の行の最後に 1 行だけ書く。
+     *
+     * 呼び出しの行ではないので caller / callee は固定マーカー、depth は 0（階層列は起点の 1 列だけ）。
+     * 起点の列には打ち切った時点で辿っていた起点を置き、どこまで出たかの手がかりにする。
+     * 注記は {@code [UNEXPANDED:MAX_ROWS]} で始まり、CSV しか見ない読み手にもここで切れたことが分かる
+     *
+     * @param root 打ち切った時点で辿っていた起点（短縮表記）
+     * @param note 打ち切りの注記（{@link StreamingTreeWalker#MAX_ROWS_MARK} 等）
+     */
+    void writeStopRow(String root, String note) throws IOException {
+        buf.setLength(0);
+        buf.append(Csv.esc(STOPPED_MARK)).append(Csv.DELIM);
+        buf.append(Csv.esc(STOPPED_MARK)).append(Csv.DELIM);
+        buf.append(Csv.esc(STOPPED_RESOLVED_BY)).append(Csv.DELIM);
+        buf.append(0).append(Csv.DELIM);
+        buf.append(Csv.esc(root));
+        buf.append(Csv.DELIM).append(Csv.esc(note));
+        writer.write(buf.toString());
+        writer.newLine();
+    }
+
+    /**
      * Java のスタックトレースと同じ "at バイナリ名.メソッド(ファイル:行)" 形式。
      *
      * typeFqn() はソース上の正規名（内部クラスも Outer.Inner のようにドット区切り）
@@ -201,8 +244,31 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         return "at " + binaryType + "." + method + "(" + where + ")";
     }
 
+    /**
+     * 全部書き終えた。一時ファイルを閉じて本来の名前に改名する。
+     * これを呼ばずに {@link #close} に来た実行（途中で失敗した）は一時ファイルを消す
+     */
+    public void finish() throws IOException {
+        writer.close();
+        Files.move(tempCsv, outputCsv, StandardCopyOption.REPLACE_EXISTING);
+        finished = true;
+    }
+
     @Override
     public void close() throws IOException {
-        writer.close();
+        if (finished) {
+            return;
+        }
+        try {
+            writer.close();
+        } finally {
+            // 書きかけの CSV を完成した名前で残さない。消せなくても、失敗した実行の後始末なので例外にはしない
+            // （失敗の原因のほうを warnings.txt に載せる）
+            try {
+                Files.deleteIfExists(tempCsv);
+            } catch (IOException ignored) {
+                // 一時ファイルが残るだけ（.tmp なので完成した出力とは取り違えない）
+            }
+        }
     }
 }

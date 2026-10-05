@@ -256,7 +256,7 @@ final class MessagesEn {
             "exporter.done", "Done ({0} ms)",
             "exporter.phase3", "=== Phase 3/3: output ===",
             "exporter.entryCount", "Entry points: {0}",
-            "exporter.entryCheck", "  * Check the entry.packages setting (package names, wildcards)",
+            "exporter.noEntries", "No entry point matched entry.packages, so call-hierarchy.csv has no hierarchy rows. Check the setting (package names, wildcards; see methods.csv for the packages that exist)",
             "exporter.entryNote1", "  * Entry candidates are \"methods with no caller\". Besides real entry points,",
             "exporter.entryNote2", "    dead code, tests and reflection-only methods land here too, so",
             "exporter.entryNote3", "    sort them out with the inDegree / outDegree / role columns of methods.csv.",
@@ -266,10 +266,9 @@ final class MessagesEn {
             "exporter.reflectionHits", "Reflection targets found (Class.forName / getMethod / Method.invoke / newInstance): {0}",
             "exporter.reflectionUnknown", "Reflection calls whose target could not be determined (class or method name is not a constant): {0}. Check those call sites by hand: the UNEXPANDED:REFLECTION rows in call-hierarchy.csv (unresolvedCause [UNEXPANDED:REFLECTION] target unknown in methods.csv)",
             "exporter.callbackUntraced", "Calls where a callback rule matched but the passed value could not be traced: {0}. Check those call sites by hand: the UNEXPANDED:CALLBACK rows in call-hierarchy.csv (unresolvedCause [UNEXPANDED:CALLBACK] rule matched in methods.csv)",
+            "exporter.depthCutoffs", "Calls not followed because the depth limit (max.depth={1}) was reached: {0}. The calls below them are not in the output (the [UNEXPANDED:DEPTH] rows in call-hierarchy.csv). Raise max.depth or narrow the entry points with entry.packages",
             "exporter.externalScan", "=== Scanning references from external jars ===",
-            "exporter.externalUnmatched", "* {0} reference(s) point at our own types but no method matched.",
-            "exporter.externalUnmatched2", "   The other side may have been built against an older version of the jar,",
-            "exporter.externalUnmatched3", "   so do not conclude \"unused\" without checking.",
+            "exporter.externalUnmatched", "{0} reference(s) from the external jars point at our own types but no method matched, so they are not in call-hierarchy.csv. The other side was probably built against another version of this source; do not conclude \"unused\" without checking (rebuild the jar against the current source, or compare the versions)",
             "exporter.methodsCsv", "Method list: {0}",
             "exporter.prunedOut", "  * {0} method(s) are missing from the hierarchy CSV because of condition pruning.",
             "exporter.prunedOut2", "     The inHierarchy / absentCause columns of methods.csv list them.",
@@ -627,6 +626,7 @@ final class MessagesEn {
             "external.nestingTooDeep", "Jars are nested too deep, so this one is skipped (up to {0} levels): {1}",
             "external.nestedJarUnreadable", "Cannot read a jar inside a jar (skipped): {0} ({1})",
             "external.folderMissing", "The entry in external.library.folders was not found: {0}",
+            "external.classFolderNotScanned", "The entry in external.library.folders contains .class files but no jar, so nothing was scanned (class folders are not scanned): {0}. Point it at the jar (or war / ear) of the other project, or build one",
         };
     }
 

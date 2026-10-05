@@ -111,7 +111,11 @@ at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,
 | `[EXCLUDED] excluded by exclude.packages` | `exclude.packages` で除外された |
 | `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
+| `[CHA_OVERFLOW] CHA candidate beyond the first 20 was not written as a row` | 絞れなかった呼び出しの候補だったが、行にする候補の上限（20 件）より後ろで行にならなかった |
+| `[ENTRY_NO_ROWS] entry point with no call rows` | 起点だったが、呼び出し先の行を 1 行も書かなかった（呼び出し先が無い・全部 `exclude.packages` に当たる）。起点は行を 1 行でも書けば `inHierarchy=1` |
 | `[NOT_REACHED] no caller row was emitted` | そこへ至る呼び出し自体が出ていない（`max.depth` / `max.rows` の先、起点から辿り着かない、デッドコード） |
+
+`inHierarchy` は、jar からの被参照の行（`external.library.folders`。`methods.csv` の最終列 `externalRefs` に件数）も数える。
 
 ## 仕組み（どこで何をしているか）
 

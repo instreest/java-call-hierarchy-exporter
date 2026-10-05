@@ -48,3 +48,26 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 
 設定の詳しい書き方（FatJar・war・ear の中の jar も開くこと、サブフォルダも見ること）は
 [config/jche.properties](../config/jche.properties) の `external.library.folders` のコメントにある。
+
+## methods.csv との対応
+
+被参照の行があるメソッドは、`methods.csv` の最終列 `externalRefs` にその行数が入り、`inHierarchy` が `1` になる
+（被参照の行は `call-hierarchy.csv` にあるので「1 行でも出た」に当たる）。`role` はソースの中の呼び出しだけで決めるので、
+`ISOLATED` のまま `externalRefs` が `1` 以上なら「ソースからは呼ばれないが、他の jar からは呼ばれる」と読む。
+`IMPLICIT_CTOR` の行はソース上の宣言に当たらないので数えない。
+
+## 検出できない形
+
+被参照は、class ファイルの命令が指す**受け手の静的型（owner）が自分の型**であるときだけ照合する。次の形は出ない。
+
+- **相手の jar の中で宣言したサブクラス経由の呼び出し**。相手が `class TheirSub extends OurBase` を持ち、
+  `theirSub.ourMethod()` と呼ぶと、命令の owner は `TheirSub`（相手の型）になるので、`OurBase.ourMethod` への
+  参照とは見なされない。相手の jar の中の `TheirSub` から `OurBase` への継承は読んでいない
+- **第三者のインターフェース経由の呼び出し**。自分の型が `java.lang.Runnable` や相手のインターフェースを実装していて、
+  相手がその型で受けて `r.run()` と呼ぶと、owner はそのインターフェースになるので同じく出ない
+- **クラスフォルダ**（`bin/` や `target/classes/` のように `.class` が直に置かれたフォルダ）は走査しない。
+  `external.library.folders` に `.class` だけで jar の無いフォルダを指すと、何も走査せず `warnings.txt` に載る。
+  相手の jar（war / ear も可）を指すか、jar に固めてから指す
+
+どれも「被参照が 0 件」を「使われていない」と読まないための注意点で、相手の jar の中の継承・実装まで読む対応は
+していない（相手のソースがワークスペースにあるなら `workspace.projects` で相手の呼び出し階層そのものを出せる）。

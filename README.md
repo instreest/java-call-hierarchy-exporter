@@ -269,11 +269,11 @@ Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿�
 「誰からも呼ばれていないのはどれか」「よく呼ばれている共通処理はどれか」を俯瞰するのに使います。
 
 ```csv
-method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
-OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,0,,1,
-OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
-OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause,externalRefs
+OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,,0
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,0,,1,,2
+OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted,0
+OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,,0
 ```
 
 | 列 | 内容 |
@@ -290,16 +290,19 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `reachable` | 起点からの呼び出しを辿って到達できるなら `1`、できないなら `0` |
 | `unresolvedCalls` | このメソッドの中で、具象クラスを 1 つに絞れなかった呼び出しの件数 |
 | `unresolvedCause` | その理由（下表）。複数ある場合は `;` 区切り |
-| `inHierarchy` | `call-hierarchy.csv` に 1 行でも出たなら `1`、出なかったなら `0` |
+| `inHierarchy` | `call-hierarchy.csv` に 1 行でも出たなら `1`、出なかったなら `0`。起点は、呼び出し先の行を 1 行でも書けば（その行の `call-hierarchy` の先頭の列に出るので）`1`。[jar からの被参照](#jar-からの被参照メソッド)の行も数える |
 | `absentCause` | 出なかった理由（下表）。`inHierarchy` が `1` なら空欄 |
+| `externalRefs` | [jar からの被参照](#jar-からの被参照メソッド)の行の数（`external.library.folders` を指定していないときは `0`）。`role` はソースの中の呼び出しだけで決めるので、`ISOLATED` でもこの列が `1` 以上なら「ソースからは呼ばれないが他の jar からは呼ばれる」 |
 
 | role | 意味 |
 |---|---|
 | `FRAMEWORK_ENTRY` | 規則でフレームワークが呼ぶと分かる入口（`main`、Servlet の `doGet`、`@Scheduled`、`@GetMapping`、`@Test` 等。[docs/library-call-rules.md](docs/library-call-rules.md)）。全体モードでは、ソースから呼ばれていても起点になる |
 | `ENTRY_CANDIDATE` | 呼び出し元が無く、上の規則にも当たらない。画面入口・バッチ・デッドコード・テスト・リフレクション経由が混ざるので仕分けが要る |
-| `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い |
+| `ISOLATED` | 呼び出し元も呼び出し先も無い。デッドコードの疑いが濃い（`externalRefs` が `0` のとき） |
 | `LEAF` | 呼び出し先が無い。末端処理 |
 | `NORMAL` | 上記以外 |
+
+`role` は `inDegree` / `outDegree`（ソースの中の呼び出し）だけで決めます。jar からの被参照は `externalRefs` 列で見てください。
 
 `unresolvedCause` は、絞れなかった呼び出しのレシーバがどこから来たかで決まり、次に何を調べればよいかの手がかりになります。
 タグは `call-hierarchy.csv` の[注記](#注記)と同じなので、一覧で見つけた呼び出しをそのまま階層側で `grep` して追えます。
@@ -327,6 +330,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
 | `[UNREACHABLE] below a call pruned by a condition` | 条件分岐の静的解析で打ち切った呼び出しから先にしかない（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[EXCLUDED] excluded by exclude.packages` | `exclude.packages` で除外された |
+| `[CHA_OVERFLOW] CHA candidate beyond the first 20 was not written as a row` | 実装を 1 つに絞れなかった呼び出しの候補だったが、行にする候補の上限（20 件）より後ろで行にならなかった。階層側の注記 `(only the first 20 are written as rows)` の行の候補 |
+| `[ENTRY_NO_ROWS] entry point with no call rows` | 起点だったが、呼び出し先の行を 1 行も書かなかった（呼び出し先が無い、または全部 `exclude.packages` に当たる）。起点は呼び出し元が無いので自分の行は無く、呼び出し先の行の先頭の列にだけ出る |
 | `[NOT_REACHED] no caller row was emitted` | そこへ至る呼び出し自体が出ていない（深さ制限・行数上限の先、起点から辿り着かない） |
 
 行はソースの並び順（ソースフォルダ順 → ファイルの相対パス順 → 宣言行順）で出ます。
@@ -357,7 +362,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | 注記 | 意味 |
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
-| `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達した |
+| `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達し、この呼び出し先の中の呼び出しへは降りなかった。呼び出しを持たない末端のメソッドと、候補を並べただけの行（元々降りない）には付かない。件数は run.log と `warnings.txt` にも出る |
+| `[UNEXPANDED:MAX_ROWS] output stopped: max.rows reached` | `max.rows` に達して出力を打ち切った印の行。階層の行の最後に 1 行だけ出る（`caller` / `callee` は `(stopped)`、`resolved-by` は `UNEXPANDED:MAX_ROWS`、`depth` は `0`、起点の列は打ち切った時点で辿っていた起点）。行を書かないまま続けて通ったノードの数で打ち切ったときは `… reached by constructor calls and excluded methods passed without writing a row` |
 | `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を 1 つに絞れなかった。候補は 1 件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
 | `[UNEXPANDED:REFLECTION] target unknown: class or method name is not a constant on this path` | リフレクション（`Method.invoke` / `newInstance`）の呼び出しで、クラス名・メソッド名が定数に畳めず、動くメソッドを 1 つも決められなかった。`callee` は jar の中の `Method.invoke` 等のままで、`exclude.packages` に当たっていても行を残す（`resolved-by` は `UNEXPANDED:REFLECTION`）。**その呼び出し箇所は手で確かめる**。件数は run.log と `warnings.txt` にも出る |
@@ -768,11 +774,11 @@ not blow up. Use it to get an overview of "which methods are never called" and "
 called a lot".
 
 ```csv
-method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause
-OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,
-OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,0,,1,
-OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
-OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,
+method,declaringType,typeKind,file,line,hasBody,inDegree,outDegree,role,reachable,unresolvedCalls,unresolvedCause,inHierarchy,absentCause,externalRefs
+OrderAction.execute(),jp.co.example.action.OrderAction,C,src/jp/co/example/action/OrderAction.java,45,1,0,1,ENTRY_CANDIDATE,1,0,,1,,0
+OrderService.findOrder(String),jp.co.example.service.OrderService,C,src/jp/co/example/service/OrderService.java,20,1,1,1,NORMAL,1,0,,1,,2
+OrderDao.selectById(long),jp.co.example.dao.OrderDao,I,src/jp/co/example/dao/OrderDao.java,8,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted,0
+OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example/dao/OrderDaoImpl.java,15,1,1,0,LEAF,1,0,,1,,0
 ```
 
 | Column | Content |
@@ -789,16 +795,19 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `reachable` | `1` if it can be reached by following calls from an entry point, `0` if not |
 | `unresolvedCalls` | How many calls inside this method could not be narrowed to a single concrete class |
 | `unresolvedCause` | Why (table below). Several are joined with `;` |
-| `inHierarchy` | `1` if it appeared in at least one row of `call-hierarchy.csv`, `0` if not |
+| `inHierarchy` | `1` if it appeared in at least one row of `call-hierarchy.csv`, `0` if not. An entry point is `1` once it wrote at least one callee row (it appears in the first `call-hierarchy` column of that row). Rows of [references from external jars](#methods-referenced-from-external-jars) count too |
 | `absentCause` | Why it did not appear (table below). Empty when `inHierarchy` is `1` |
+| `externalRefs` | The number of rows of [references from external jars](#methods-referenced-from-external-jars) (`0` when `external.library.folders` is not set). `role` is computed from the calls inside the source only, so an `ISOLATED` method with `1` or more here is "not called from the source, but called from another jar" |
 
 | role | Meaning |
 |---|---|
 | `FRAMEWORK_ENTRY` | An entry point a framework is known to call, by rule (`main`, a servlet's `doGet`, `@Scheduled`, `@GetMapping`, `@Test` and so on; [docs/library-call-rules.md](docs/library-call-rules.md)). In whole-project mode it is an entry point even when the source also calls it |
 | `ENTRY_CANDIDATE` | It has no caller and does not match a rule above. Screen entry points, batch jobs, dead code, tests and reflection-only methods are all mixed in here, so it needs sorting out |
-| `ISOLATED` | It has neither callers nor callees. A strong suspect for dead code |
+| `ISOLATED` | It has neither callers nor callees. A strong suspect for dead code (when `externalRefs` is `0`) |
 | `LEAF` | It has no callees. A leaf |
 | `NORMAL` | Anything else |
+
+`role` is decided by `inDegree` / `outDegree` (the calls inside the source) only. See the `externalRefs` column for references from jars.
 
 `unresolvedCause` is decided by where the receiver of the unresolved call came from, and it tells you what
 to look at next. The tags are the same as the [notes](#notes) in `call-hierarchy.csv`, so you can take a call
@@ -827,6 +836,8 @@ A subtree that disappeared from the hierarchy because of pruning is visible only
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | The edge goes back to a method already on the path |
 | `[UNREACHABLE] below a call pruned by a condition` | It exists only below a call that the static analysis of the conditions pruned (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[EXCLUDED] excluded by exclude.packages` | Excluded by `exclude.packages` |
+| `[CHA_OVERFLOW] CHA candidate beyond the first 20 was not written as a row` | It was a candidate of a call that could not be narrowed to one implementation, but it came after the limit of candidates written as rows (20), so it got no row. A candidate of a row with the note `(only the first 20 are written as rows)` |
+| `[ENTRY_NO_ROWS] entry point with no call rows` | It was an entry point but wrote no callee row (it has no callees, or all of them match `exclude.packages`). An entry point has no caller, so it has no row of its own and appears only in the first column of its callee rows |
 | `[NOT_REACHED] no caller row was emitted` | No call reaching it was emitted at all (beyond the depth or row limit, or not reachable from an entry point) |
 
 Rows come in source order (source folder order, then relative file path, then declaration line).
@@ -860,7 +871,8 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | Note | Meaning |
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | A call back to a method already on this path. It stops here |
-| `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` was reached |
+| `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` was reached, so the calls inside this callee were not followed. It is not attached to a leaf (a method with no calls) or to a row that only lists a candidate (which is never followed anyway). The count also appears in run.log and `warnings.txt` |
+| `[UNEXPANDED:MAX_ROWS] output stopped: max.rows reached` | The marker row that says the output was cut at `max.rows`. It is the last hierarchy row, and there is only one (`caller` / `callee` are `(stopped)`, `resolved-by` is `UNEXPANDED:MAX_ROWS`, `depth` is `0`, and the entry point column is the entry point being walked at the cut). When the cut came from the nodes passed in a row without writing a row, it reads `... reached by constructor calls and excluded methods passed without writing a row` |
 | `[UNEXPANDED:CHA] N candidates: {reason}` | The implementation could not be narrowed to one. Each candidate becomes a row, but nothing below them is followed (it would explode as candidates^depth). The reason is the same as in the `unresolvedCause` table above. Candidates excluded by `exclude.packages` are not written as rows, and their number is written as `(K excluded by exclude.packages and not written as rows)` (the declaration in a jar interface counts as a candidate because the jar may also implement it, so this often appears with the default `java.**` exclusion) |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | The argument types of `getMethod` (class literals) were not all available, so methods with the same name were taken as candidates |
 | `[UNEXPANDED:REFLECTION] target unknown: class or method name is not a constant on this path` | A reflection call (`Method.invoke` / `newInstance`) whose class or method name does not fold to a constant, so no method that runs could be determined. `callee` stays the `Method.invoke` and the like inside the jar, and the row is kept even when it matches `exclude.packages` (`resolved-by` is `UNEXPANDED:REFLECTION`). **Check that call site by hand**. The count also appears in run.log and `warnings.txt` |

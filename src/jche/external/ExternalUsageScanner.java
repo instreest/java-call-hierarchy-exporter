@@ -61,6 +61,16 @@ public final class ExternalUsageScanner {
         public long implicitCtors;
         public long unmatched;
         long usedMethods;
+        /** メソッドごとの被参照の行数（methods.csv の externalRefs 列）。走査しなかった実行では空 */
+        int[] refCount = new int[0];
+
+        /**
+         * そのメソッドを参照している被参照の行数（EXACT / INHERITED。IMPLICIT_CTOR はソース上の宣言に当たらないので
+         * 数えない）。methods.csv で「jar からだけ呼ばれているメソッド」を ISOLATED と取り違えないために使う
+         */
+        public int externalRefs(int methodId) {
+            return (methodId >= 0 && methodId < refCount.length) ? refCount[methodId] : 0;
+        }
 
         @Override
         public String toString() {
@@ -92,6 +102,7 @@ public final class ExternalUsageScanner {
         this.out = out;
         this.ourTypes = graph.hierarchy().typeNames();
         this.refCount = new int[methods.size()];
+        this.stats.refCount = this.refCount;
     }
 
     public static Stats scan(CallGraph graph, Config config, CallHierarchyCsvWriter out)
@@ -306,6 +317,10 @@ public final class ExternalUsageScanner {
      * war / ear もファイルとして受け付ける（中の jar と class を走査する）。
      * 並びはパス順に揃える。{@link Files#walk} の順はファイルシステム依存で、
      * jar が複数あると出力の行順が環境ごとに変わってしまうため。
+     *
+     * <p>クラスフォルダ（{@code .class} が直に置かれたフォルダ。相手のビルド出力 {@code bin/} や {@code target/classes/}）
+     * は走査しない。jar が 1 つも無く class だけがあるフォルダを指されたら、被参照が 0 件のまま「使われていない」と
+     * 読まれないよう、設定の項目として警告する（jar に固めて指してもらう）
      */
     private static List<Path> collectJars(List<Path> roots) throws IOException {
         Set<Path> out = new TreeSet<>();
@@ -313,9 +328,20 @@ public final class ExternalUsageScanner {
             if (Files.isRegularFile(r) && isArchiveName(r.toString())) {
                 out.add(r);
             } else if (Files.isDirectory(r)) {
+                boolean[] classSeen = {false};
+                int before = out.size();
                 try (Stream<Path> walk = Files.walk(r)) {
-                    walk.filter(p -> Files.isRegularFile(p) && isArchiveName(p.toString()))
-                            .forEach(out::add);
+                    walk.filter(Files::isRegularFile).forEach(p -> {
+                        String name = p.toString();
+                        if (isArchiveName(name)) {
+                            out.add(p);
+                        } else if (name.endsWith(".class")) {
+                            classSeen[0] = true;
+                        }
+                    });
+                }
+                if (out.size() == before && classSeen[0]) {
+                    Warnings.warn(Warnings.Topic.CONFIG, Messages.format("external.classFolderNotScanned", r));
                 }
             } else {
                 Warnings.warn(Warnings.Topic.CONFIG, Messages.format("external.folderMissing", r));

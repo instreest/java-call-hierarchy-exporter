@@ -115,7 +115,7 @@ public class CallHierarchyExporter {
      * 引数を省略したときの設定ファイル（作業ディレクトリからの相対）。
      *
      * 実際に使うのは {@link ConfigCatalog#defaultConfig}（{@code config/jche.properties} が無ければ
-     * 以前の名前の {@code config/jche.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
+     * 以前の名前の {@code config/config.properties}）。この定数は、どちらも無いときにメッセージへ出す名前でもある。
      */
     private static final String DEFAULT_CONFIG =
             ConfigCatalog.CONFIGS_DIR_NAME + "/" + ConfigCatalog.DEFAULT_CONFIG_NAME;
@@ -344,7 +344,9 @@ public class CallHierarchyExporter {
 
         Log.info(Messages.format("exporter.entryCount", entries.length));
         if (entries.length == 0 && !config.wholeProjectMode) {
-            Log.info(Messages.get("exporter.entryCheck"));
+            // entry.packages を指定したのに 1 つも当たらなかった。call-hierarchy.csv が空になるので、
+            // 設定の直しが要る（経過ではなく警告。warnings.txt の設定の項目に載せる）
+            Warnings.warn(Warnings.Topic.CONFIG, Messages.get("exporter.noEntries"));
         }
         if (config.wholeProjectMode) {
             Log.info(Messages.get("exporter.entryNote1"));
@@ -355,8 +357,11 @@ public class CallHierarchyExporter {
         long rows;
         // methods.csv は呼び出し階層を書いた後に出す。「階層CSVに1行も出なかったメソッド」
         // （打ち切りで消えた部分木など）を inHierarchy / absentCause 列に載せるため、
-        // 探索の結果が要る
+        // 探索の結果が要る。jar からの被参照も同じ理由で先に走査する（externalRefs 列）
         StreamingTreeWalker walker;
+        ExternalUsageScanner.Stats external = null;
+        // call-hierarchy.csv は一時ファイルに書き、全部書き終えた finish で本来の名前にする。
+        // 途中で失敗した実行では close が一時ファイルを消すので、書きかけの CSV が完成した名前で残らない
         try (CallHierarchyCsvWriter writer = new CallHierarchyCsvWriter(
                 config.outputCsv, config.outputEncoding, config.outputBom)) {
             walker = new StreamingTreeWalker(graph, resolver, config, writer);
@@ -384,6 +389,12 @@ public class CallHierarchyExporter {
                 Warnings.warn(Warnings.Topic.INCOMPLETE,
                         Messages.format("exporter.callbackUntraced", walker.callbackUntraced()));
             }
+            // max.depth で降りなかった呼び出しがある。その先の呼び出しは出力に無いので、上限を上げるか
+            // 起点を絞るかを利用者が決める（打ち切りなので warnings.txt の「途中で打ち切られた」に載せる）
+            if (walker.depthCutoffs() > 0) {
+                Warnings.warn(Warnings.Topic.INCOMPLETE,
+                        Messages.format("exporter.depthCutoffs", walker.depthCutoffs(), config.maxDepth));
+            }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
             rows += UnresolvedReport.write(graph, unresolved, writer);
@@ -391,19 +402,21 @@ public class CallHierarchyExporter {
             if (!config.externalLibraryFolders.isEmpty()) {
                 Log.blank();
                 Log.info(Messages.get("exporter.externalScan"));
-                ExternalUsageScanner.Stats ex = ExternalUsageScanner.scan(graph, config, writer);
-                Log.info(ex.toString());
-                rows += ex.hits + ex.implicitCtors;
-                if (ex.unmatched > 0) {
-                    Log.info(Messages.format("exporter.externalUnmatched", ex.unmatched));
-                    Log.info(Messages.get("exporter.externalUnmatched2"));
-                    Log.info(Messages.get("exporter.externalUnmatched3"));
+                external = ExternalUsageScanner.scan(graph, config, writer);
+                Log.info(external.toString());
+                rows += external.hits + external.implicitCtors;
+                if (external.unmatched > 0) {
+                    // 自分の型への参照なのにメソッドが一致しない＝相手の jar が別の版のソースでビルドされている。
+                    // その参照は被参照の行にならないので「使われていない」と読み違えうる。確認が要るので警告
+                    Warnings.warn(Warnings.Topic.INCOMPLETE,
+                            Messages.format("exporter.externalUnmatched", external.unmatched));
                 }
             }
+            writer.finish();
         }
 
         InventoryReport.Stats inventory =
-                InventoryReport.writeMethods(graph, resolver, config, entries, walker);
+                InventoryReport.writeMethods(graph, resolver, config, entries, walker, external);
         Log.info(inventory.toString());
         Log.info(Messages.format("exporter.methodsCsv", config.methodsCsv));
         if (inventory.prunedOut() > 0) {

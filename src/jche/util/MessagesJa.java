@@ -256,7 +256,7 @@ final class MessagesJa {
             "exporter.done", "完了 ({0} ms)",
             "exporter.phase3", "=== フェーズ3/3: 出力 ===",
             "exporter.entryCount", "エントリポイント数: {0}",
-            "exporter.entryCheck", "  ※ entry.packages の指定を確認してください（パッケージ名・ワイルドカード）",
+            "exporter.noEntries", "entry.packages に当たる起点が 1 つも無いため、call-hierarchy.csv に階層の行が出ません。指定（パッケージ名・ワイルドカード）を確認してください（存在するパッケージは methods.csv で分かります）",
             "exporter.entryNote1", "  ※ 起点候補は「呼び出し元が無いメソッド」です。画面入口のほかに",
             "exporter.entryNote2", "     デッドコード・テスト・リフレクション経由が混ざるため、",
             "exporter.entryNote3", "     methods.csv の inDegree / outDegree / role 列で仕分けてください。",
@@ -266,10 +266,9 @@ final class MessagesJa {
             "exporter.reflectionHits", "リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の呼び出し先を特定: {0} 件",
             "exporter.reflectionUnknown", "リフレクションの呼び出し先を決められなかった（クラス名・メソッド名が定数でない）: {0} 件。call-hierarchy.csv の UNEXPANDED:REFLECTION の行（methods.csv の unresolvedCause は [UNEXPANDED:REFLECTION] target unknown）の呼び出し箇所を手で確かめてください",
             "exporter.callbackUntraced", "呼び戻しの規則は当たったが、渡した値を追えなかった: {0} 件。call-hierarchy.csv の UNEXPANDED:CALLBACK の行（methods.csv の unresolvedCause は [UNEXPANDED:CALLBACK] rule matched）の呼び出し箇所を手で確かめてください",
+            "exporter.depthCutoffs", "深さの上限（max.depth={1}）に達して降りなかった呼び出し: {0} 件。その先の呼び出しは出力にありません（call-hierarchy.csv の [UNEXPANDED:DEPTH] の行）。max.depth を上げるか、entry.packages で起点を絞ってください",
             "exporter.externalScan", "=== 外部jarからの被参照スキャン ===",
-            "exporter.externalUnmatched", "※ 自分の型への参照なのにメソッドが一致しなかったものが {0} 件あります。",
-            "exporter.externalUnmatched2", "   相手が古い版のjarに対してビルドされている可能性があるため、",
-            "exporter.externalUnmatched3", "   「使われていない」と即断せず確認してください。",
+            "exporter.externalUnmatched", "外部 jar からの参照のうち、自分の型への参照なのにメソッドが一致しなかったものが {0} 件あり、call-hierarchy.csv に出ていません。相手がこのソースと別の版に対してビルドされている可能性が高いので、「使われていない」と即断せず確認してください（今のソースで相手の jar をビルドし直すか、版を突き合わせる）",
             "exporter.methodsCsv", "メソッド一覧: {0}",
             "exporter.prunedOut", "  ※ 条件分岐の打ち切りで階層CSVに出ないメソッドは {0} 件です。",
             "exporter.prunedOut2", "     methods.csv の inHierarchy / absentCause 列で一覧できます。",
@@ -627,6 +626,7 @@ final class MessagesJa {
             "external.nestingTooDeep", "jar の入れ子が深すぎるため読み飛ばします（{0} 段まで）: {1}",
             "external.nestedJarUnreadable", "jar 内の jar を読めません（スキップ）: {0} ({1})",
             "external.folderMissing", "external.library.folders の指定が見つかりません: {0}",
+            "external.classFolderNotScanned", "external.library.folders の指定に .class はあるが jar が無いため、何も走査しませんでした（クラスフォルダは走査しません）: {0}。相手プロジェクトの jar（war / ear も可）を指すか、jar に固めてください",
         };
     }
 

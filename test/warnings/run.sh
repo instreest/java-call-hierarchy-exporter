@@ -501,7 +501,53 @@ for kind in ctor excluded; do
     [ "$STATUS" -eq 0 ] && ok "dag_$kind: 解析が終わる" || ng "dag_$kind: 終了コードが $STATUS"
     check_invariant "dag_$kind"
     expect_in_warnings "dag_$kind" "The walk passed 1000 constructor calls and excluded methods (exclude.packages) in a row"
+    # CSV しか見ない読み手にも打ち切りが分かるよう、階層の行の最後に印の行を 1 行だけ書く
+    # （caller / callee は (stopped)、resolved-by は UNEXPANDED:MAX_ROWS、depth は 0）
+    if [ "$(grep -c -F '[UNEXPANDED:MAX_ROWS] output stopped: max.rows reached' "$OUT/call-hierarchy.csv" 2>/dev/null)" = 1 ] \
+            && tail -1 "$OUT/call-hierarchy.csv" | grep -q -E '^\(stopped\),\(stopped\),UNEXPANDED:MAX_ROWS,0,Main\.main,'; then
+        ok "dag_$kind: call-hierarchy.csv の最後に打ち切りの印の行がある"
+    else
+        ng "dag_$kind: call-hierarchy.csv に打ち切りの印の行が無い（または最後の行でない・2 行以上ある）"
+    fi
 done
+
+# 9b. 利用者が対処すべきことは warnings.txt に載せる（経過のログにとどめない）。
+#   - max.depth に達して降りなかった呼び出し: 「途中で打ち切られた」の項目に件数。注記 [UNEXPANDED:DEPTH] は
+#     呼び出し先に辿るべき呼び出しがある行にだけ付く（呼び出しを持たない葉には付けない）
+#   - entry.packages に当たる起点が無い: 「設定の指定先」の項目
+#   - external.library.folders にクラスフォルダ（.class だけで jar が無い）を指した: 同じ項目（クラスフォルダは走査しない）
+mkdir -p work/limits/src/p work/limits/classes/x
+printf '%s\n' 'package p; public class Main { public static void main(String[] a) { A.a(); } }' > work/limits/src/p/Main.java
+printf '%s\n' 'package p; public class A { public static void a() { B.b(); } }' > work/limits/src/p/A.java
+printf '%s\n' 'package p; public class B { public static void b() { C.c(); Leaf.x(); } }' > work/limits/src/p/B.java
+printf '%s\n' 'package p; public class C { public static void c() { Leaf.x(); } }' > work/limits/src/p/C.java
+printf '%s\n' 'package p; public class Leaf { public static void x() { } }' > work/limits/src/p/Leaf.java
+: > work/limits/classes/x/Dummy.class
+cat > work/limits/jche.properties <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+entry.packages=nosuch.**
+external.library.folders=classes
+max.depth=2
+output.folder=./out
+cache.folder=./.cache
+EOF
+analyze limits
+check_invariant limits
+expect_in_warnings limits "No entry point matched entry.packages"
+expect_in_warnings limits "contains .class files but no jar, so nothing was scanned"
+sed -i 's/^entry.packages=.*/entry.packages=p.Main/' work/limits/jche.properties
+analyze limits
+check_invariant limits
+expect_in_warnings limits "Calls not followed because the depth limit (max.depth=2) was reached: 1"
+# 深さ 2 の B.b は C.c と Leaf.x を呼ぶので注記が付く。同じ深さでも呼び出しを持たない葉には付けない
+if grep -q -E ',B\.b,RESOLVED:[A-Z_:]+,2,Main\.main,A\.a,B\.b,\[UNEXPANDED:DEPTH\] depth limit \(2\) reached$' "$OUT/call-hierarchy.csv" 2>/dev/null \
+        && [ "$(grep -c -F '[UNEXPANDED:DEPTH]' "$OUT/call-hierarchy.csv")" = 1 ]; then
+    ok "limits: [UNEXPANDED:DEPTH] は辿るべき呼び出しがある行にだけ付く"
+else
+    ng "limits: [UNEXPANDED:DEPTH] の付き方が期待と違う"; grep -F 'DEPTH' "$OUT/call-hierarchy.csv" 2>/dev/null | head -3
+fi
 
 # 行を書き進めている探索は、行にならないノードが行より多くても行数の上限まで止めない。
 # 既定の exclude.packages（java.**）に当たる JDK の呼び出しも読み飛ばし（行にならないノード）なので、
