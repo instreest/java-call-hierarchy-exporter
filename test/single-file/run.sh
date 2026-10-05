@@ -4,10 +4,12 @@
 #   bash test/single-file/run.sh
 #   JCHE_CP="依存jar..." bash test/single-file/run.sh   # jbang を使わず、PATH の javac / java（JDK 25）と与えた JDT の classpath で
 #
-# 見るのは 2 つ。1 ファイル版は本体（src/jche）と同期を取らない場合があるので、本体との一致
+# 見るのは 2 つ。1 ファイル版は本体（src/jche）と同期を取らないので、本体との一致
 # （生成し直した結果との一致・回帰テストの期待値との一致）は見ない（docs/single-file-qa.md の Q8）。
 #   1. ビルドできること … 本体と同じ引数（--release 17 -Xlint:all -Werror -Xdoclint:all,-missing）で警告ゼロでコンパイルできる
 #   2. 起動できること … --help が終了コード 0 で使い方を出す。知らないオプションは 2
+# 参考として、1 ファイル版の基にした本体のコミット（single-file/README.md）以降の src/jche のコミット数を
+# 「本体との差」として表示する（合否には関係しない）。
 set -uo pipefail
 cd "$(dirname "$0")"
 # 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールでログの文言が変わる）
@@ -15,6 +17,11 @@ export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 SINGLE="$ROOT/single-file/CallHierarchyExporterSingle.java"
 fail=0
+
+# --- 0. 本体との差（参考値。失敗にはしない） ---
+SINGLE_BASE=ec7727d   # 1 ファイル版の基にした本体のコミット（single-file/README.md と合わせる）
+diff_count=$(git -C "$ROOT" log --oneline "$SINGLE_BASE..HEAD" -- src/jche 2>/dev/null | wc -l | tr -d ' ')
+echo "  INFO 本体との差: ${diff_count:-?} コミット（$SINGLE_BASE 以降の src/jche）"
 
 if [ -n "${JCHE_CP:-}" ]; then
     CP="$JCHE_CP"
