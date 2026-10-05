@@ -20,6 +20,27 @@ public record MethodRef(String pkg, String typeFqn, String name, String paramSig
         paramSig = (paramSig == null) ? "" : paramSig;
     }
 
+    /**
+     * ラムダ本体の合成メソッド名 {@code lambda$囲みメソッド名$通し番号} から、囲みメソッドの名前（ソースに書いたメソッド名。
+     * コンストラクタ・フィールド初期化子は {@link #CONSTRUCTOR}、static 初期化子は {@link #STATIC_INITIALIZER}）を戻す。
+     * ラムダの合成名の付け方（{@code jche.analysis.LambdaNames#baseNameOf}）の逆。ラムダの名前の形でなければ null
+     */
+    public static String lambdaEnclosingName(String name) {
+        int last = name.lastIndexOf('$');
+        if (!name.startsWith("lambda$") || last <= "lambda$".length() - 1) {
+            return null;
+        }
+        String base = name.substring("lambda$".length(), last);
+        if (base.isEmpty()) {
+            return null;
+        }
+        return switch (base) {
+            case "new" -> CONSTRUCTOR;
+            case "static" -> STATIC_INITIALIZER;
+            default -> base;
+        };
+    }
+
     /** グラフ全体でメソッドを識別するキー: typeFqn#name(paramSig) */
     public String key() {
         return typeFqn + "#" + signature();

@@ -152,7 +152,7 @@ final class LambdaNames {
         }
     }
 
-    /** 合成メソッドの名前に使う囲みメソッド名。javac に合わせて &lt;init&gt; は new にする */
+    /** 合成メソッドの名前に使う囲みメソッド名。javac に合わせて &lt;init&gt; は new にする（逆は {@link MethodRef#lambdaEnclosingName}） */
     static String baseNameOf(MethodRef enclosing) {
         if (MethodRef.CONSTRUCTOR.equals(enclosing.name())) {
             return "new";

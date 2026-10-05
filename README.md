@@ -231,7 +231,7 @@ config/
 
 | 列 | 内容 |
 |---|---|
-| `caller` | 呼び出し元。Java のスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
+| `caller` | 呼び出し元。Java のスタックトレースと同じ形式。**呼び出し箇所**の行（複数行にまたがる連鎖は、その呼び出しの行）を指す。ラムダの本体の中の呼び出しは、ラムダを書いたメソッドとその行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excel のフィルタに使える |
 | `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。**どの行にも必ず入る** |
 | `depth` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
@@ -719,7 +719,7 @@ Besides missing dependency jars, a path in the config file that does not exist a
 
 | Column | Content |
 |---|---|
-| `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line |
+| `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line (for a call chain spread over several lines, the line of that call). A call inside a lambda body points at the method that wrote the lambda and the line inside the body |
 | `callee` | The callee, as **ClassName.methodName** (no arguments). Usable as an Excel filter |
 | `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). **Every row has one** |
 | `depth` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |

@@ -17,6 +17,7 @@ import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.ThisExpression;
 
 import jche.cache.CallEdgeFact;
@@ -55,7 +56,20 @@ final class CallSiteRecorder {
         this.guards = guards;
     }
 
+    /**
+     * 呼び出し箇所の行。javac は {@code メソッド呼び出し} の行を「{@code (} のある行」にする（JVM のスタックトレースの行）ので、
+     * 複数行にまたがる連鎖 {@code a\n.b()\n.c()} の {@code c} は式の先頭（{@code a} の行）ではなく {@code c} の行にする。
+     * 式の先頭にすると、連鎖の呼び出しが全部同じ行になり、貼り付けたスタックトレースとも合わない。
+     * AST に {@code (} のノードは無いので名前の末尾の位置で代える（{@code .c\n()} のような書き方でだけ 1 行ずれる）。
+     * {@code new} とコンストラクタ呼び出し（{@code this(...)} / {@code super(...)}）は javac も式の先頭の行なので、そのまま
+     */
     private int lineOf(ASTNode node) {
+        if (node instanceof MethodInvocation call) {
+            return cu.getLineNumber(call.getName().getStartPosition() + call.getName().getLength());
+        }
+        if (node instanceof SuperMethodInvocation call) {
+            return cu.getLineNumber(call.getName().getStartPosition() + call.getName().getLength());
+        }
         return cu.getLineNumber(node.getStartPosition());
     }
 

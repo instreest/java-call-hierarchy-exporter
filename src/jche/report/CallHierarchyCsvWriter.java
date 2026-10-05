@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 
+import jche.cache.MethodRef;
 import jche.graph.MethodTable;
 
 /**
@@ -71,7 +72,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.setLength(0);
 
         // caller: 呼び出し元が「このノードを呼んでいる行」を指すスタックトレース形式。
-        buf.append(Csv.esc(stackTrace(mt, path[depth - 1].shownId, path[depth].callLine)))
+        buf.append(Csv.esc(stackTrace(mt, path[depth - 1], path[depth].callLine)))
                 .append(Csv.DELIM);
 
         // callee: クラス名 + メソッド名（引数は付けない）。
@@ -171,6 +172,28 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      * ドットのままだと内部クラスのメソッドへのジャンプが解決できない。
      */
     static String stackTrace(MethodTable mt, int id, int line) {
+        return stackTrace(mt, id, mt.methodName(id), line);
+    }
+
+    /**
+     * 経路の 1 段が呼び出し元のとき、その段の {@code line} 行を指すスタックトレース。
+     *
+     * <p>畳んだラムダの段（{@link PathFrame#shownId} が {@link PathFrame#methodId} と違う段）では、{@code line} は
+     * ラムダ本体の中の行なので、ファイルも本体のあるファイルから取り、メソッド名はラムダを囲むメソッドにする。
+     * 表示用の {@code shownId} は、そのラムダを実行するメソッド（別のファイルの {@code Retry.run(Runnable)} など）に
+     * なりうるので、それにこの行番号を付けると、存在しない行や別のメソッドの行を指してしまう
+     */
+    static String stackTrace(MethodTable mt, PathFrame frame, int line) {
+        if (frame.methodId != frame.shownId && mt.isLambdaBody(frame.methodId)) {
+            String enclosing = MethodRef.lambdaEnclosingName(mt.methodName(frame.methodId));
+            if (enclosing != null) {
+                return stackTrace(mt, frame.methodId, enclosing, line);
+            }
+        }
+        return stackTrace(mt, frame.shownId, line);
+    }
+
+    private static String stackTrace(MethodTable mt, int id, String methodName, int line) {
         String file = mt.declFile(id);
         if (file == null || line < 0) {
             return mt.shortLabel(id) + " (unknown)";
@@ -181,7 +204,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         if (!pkg.isEmpty()) {
             binaryType = pkg + "." + binaryType;
         }
-        return stackTrace(binaryType, mt.methodName(id), fileName, line);
+        return stackTrace(binaryType, methodName, fileName, line);
     }
 
     /**

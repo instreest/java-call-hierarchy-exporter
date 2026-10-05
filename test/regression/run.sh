@@ -44,6 +44,11 @@
 #                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。以前の読み手は値を
 #                          その文字の手前で切って読み違えていた。expected/ は値を切り詰めずに読んだ正しい結果
 #                          （values/jche.properties の冒頭の説明）
+#   stacktrace           … call-hierarchy.csv の caller 列（Java のスタックトレース形式）が、JVM のスタックトレースと同じ
+#                          クラス（バイナリ名）・メソッド・ファイル・行を指すこと（stacktrace/project）。複数行にまたがる連鎖の各呼び出しの行、
+#                          別のファイルのクラスが実行するラムダの本体の行（ラムダを書いたメソッドとファイルを指す）、
+#                          内部・匿名・ローカルクラスのバイナリ名。jche.properties（expected/）→ 同じ設定でキャッシュを再利用 →
+#                          config-exclude.properties（ラムダを実行する側のパッケージを除外。expected-exclude/）の順に実行する
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
 #                          1 つ混ぜる）、設定ごとに出力フォルダができること、1 つが失敗しても残りが処理されて
 #                          終了コードが 1 になることを確認する。あわせて環境変数 JCHE_OUTPUT_DIR_FILE
@@ -59,7 +64,7 @@ cd "$(dirname "$0")"
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values multi"}
+CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values stacktrace multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -514,6 +519,21 @@ values_case() {
     compare_suggested values expected-nodataflow "3回目: ライブラリ呼び出し規則のひな形"
 }
 
+# caller 列（スタックトレース形式）の題材のケース（stacktrace/jche.properties の冒頭の説明）
+stacktrace_case() {
+    echo "== stacktrace =="
+    rm -rf stacktrace/.cache stacktrace/output stacktrace/run-*.log
+    run stacktrace jche.properties 1 "1回目: キャッシュ無し" || return
+    compare stacktrace expected "1回目: キャッシュ無し"
+    run stacktrace jche.properties 2 "2回目" || return
+    expect_reused stacktrace 2 "2回目: キャッシュを再利用"
+    compare stacktrace expected "2回目: キャッシュ再利用"
+    # ラムダを実行する側を除外した設定。キャッシュは同じものを再利用し、読み手の表示だけが変わる
+    run stacktrace config-exclude.properties 3 "3回目: ラムダを実行する側を除外" || return
+    expect_reused stacktrace 3 "3回目: キャッシュを再利用"
+    compare stacktrace expected-exclude "3回目: ラムダを実行する側を除外"
+}
+
 # ライブラリ呼び出し規則のひな形（call-rules-suggested.txt）が期待と同じこと（期待のフォルダに無ければ、出力にも無いこと）
 compare_suggested() {   # $1=case  $2=期待出力のフォルダ  $3=ラベル
     local out
@@ -638,6 +658,9 @@ for c in $CASES; do
     fi
     if [ "$c" = values ]; then
         values_case; continue
+    fi
+    if [ "$c" = stacktrace ]; then
+        stacktrace_case; continue
     fi
     echo "== $c =="
     rm -rf "$c/.cache" "$c/output" "$c"/run-*.log

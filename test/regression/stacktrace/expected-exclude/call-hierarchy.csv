@@ -1,0 +1,35 @@
+caller,callee,resolved-by,depth,root,call-hierarchy
+at st.Chain.run(Chain.java:30),Chain.third,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.third
+at st.Chain.run(Chain.java:29),Chain.second,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.second
+at st.Chain.run(Chain.java:28),Chain.first,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.first
+at st.Chain.run(Chain.java:27),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.run,Chain.make
+at st.Chain.run(Chain.java:32),Chain.second,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.second
+at st.Chain.run(Chain.java:31),Chain.first,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.first
+at st.Chain.run(Chain.java:31),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.run,Chain.make
+at st.Chain.run(Chain.java:34),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.run,Chain.make
+at st.Lambdas.<clinit>(Lambdas.java:50),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.<clinit>,Lambdas.name
+at st.Lambdas.viaOtherFile(Lambdas.java:21),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaOtherFile,Lambdas.work
+at st.Lambdas.viaOtherFile(Lambdas.java:21),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaOtherFile,Lambdas.work
+at st.Lambdas.nested(Lambdas.java:29),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.nested,Lambdas.work
+at st.Lambdas.nested(Lambdas.java:31),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.nested,Lambdas.name
+at st.Lambdas.nested(Lambdas.java:29),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.nested,Lambdas.work
+at st.Lambdas.nested(Lambdas.java:29),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.nested,Lambdas.work
+at st.Lambdas.nested(Lambdas.java:31),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.nested,Lambdas.name
+at st.Lambdas.viaSameFile(Lambdas.java:41),Lambdas.runHere,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaSameFile,Lambdas.runHere
+at st.Lambdas.viaSameFile(Lambdas.java:41),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,2,Lambdas.viaSameFile,Lambdas.runHere,Lambdas.work
+at st.Lambdas.viaSameFile(Lambdas.java:41),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaSameFile,Lambdas.work
+at st.Lambdas.viaSupplier(Lambdas.java:46),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaSupplier,Lambdas.name
+at st.Lambdas.viaSupplier(Lambdas.java:46),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaSupplier,Lambdas.name
+at st.Lambdas.<init>(Lambdas.java:52),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.useFields,Lambdas.work
+at st.Lambdas.<init>(Lambdas.java:52),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,2,Lambdas.useFields,Lambdas.Lambdas,Lambdas.work
+at st.Shapes.shapes(Shapes.java:44),Shapes$1Local.go,RESOLVED:NO_OVERRIDE,1,Shapes.shapes,Shapes$1Local.go
+at st.Shapes$1Local.go(Shapes.java:41),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,2,Shapes.shapes,Shapes$1Local.go,Shapes.leaf
+at st.Shapes.shapes(Shapes.java:45),Shapes$1.run,UNEXPANDED:LAMBDA,1,Shapes.shapes,Shapes$1.run,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
+at st.Shapes$1.run(Shapes.java:36),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,2,Shapes.shapes,Shapes$1.run,Shapes.leaf
+at st.Shapes.shapes(Shapes.java:46),Shapes.Nested.deep,RESOLVED:NO_OVERRIDE,1,Shapes.shapes,Shapes.Nested.deep
+at st.Shapes$Nested.deep(Shapes.java:12),Shapes.Nested.Deeper.x,RESOLVED:NO_OVERRIDE,2,Shapes.shapes,Shapes.Nested.deep,Shapes.Nested.Deeper.x
+at st.Shapes$Nested$Deeper.x(Shapes.java:17),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,3,Shapes.shapes,Shapes.Nested.deep,Shapes.Nested.Deeper.x,Shapes.leaf
+at st.Shapes.shapes(Shapes.java:47),Shapes$Kind$1.go,RESOLVED:SINGLE_IMPL,1,Shapes.shapes,Shapes$Kind$1.go
+at st.Shapes$Kind$1.go(Shapes.java:25),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,2,Shapes.shapes,Shapes$Kind$1.go,Shapes.leaf
+at st.Shapes.shapes(Shapes.java:48),Aux.secret,RESOLVED:NO_OVERRIDE,1,Shapes.shapes,Aux.secret
+at st.Aux.secret(Shapes.java:54),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,2,Shapes.shapes,Aux.secret,Shapes.leaf
