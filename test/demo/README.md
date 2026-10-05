@@ -8,7 +8,10 @@
 - `src/` … 解析対象のソース。`fx.app.Legacy` は存在しないライブラリを import しており、意図的にコンパイルできません
   - `src/fx/di/` … Spring による DI の解決（`SPRING_DI` / `SPRING_DI_QUALIFIER`）の確認用。
     フィールド注入・`@Qualifier` での指名・`@Bean` メソッドによる登録・Bean でない実装が候補から外れること・
-    Bean が抽象基底クラスから実装を継承する形を含みます
+    Bean が抽象基底クラスから実装を継承する形を含みます。
+    独自注釈 `@Audited`（`Ledger` の実装 `AuditedLedger` に付けてある）は既定では Bean の印にならず、
+    `spring.di.bean.annotations=Audited` と指定した回帰テストの `diannot` ケースでだけ `Billing` の注入先が
+    `AuditedLedger` に絞られます（`nodi` ケースは `spring.di.enabled=false` で、ここの解決がすべて CHA に戻ることを見ます）
   - `src/fx/dao/ItemDao.java` … 実装がコンパイル時に生成される型（`GENERATED_IMPL`）の確認用
   - `src/fx/lambda/Holder.java` … ラムダ／メソッド参照の解決（`DATAFLOW_LAMBDA`）の確認用。
     フィールドに保持・引数で受け渡し・ローカルのコレクションに詰めて拡張for文で回す形（いずれも追える）と、
@@ -55,7 +58,8 @@
 - `deps-src/` … `library.folders` に渡す依存 jar の元。`fx.app.Legacy` が import している `missing.lib` パッケージの型と、
   ソース側の `fx.dao.Dao` を実装する基底クラス `LibDao`（`fx.dao.LibBackedDao` がこれを継承する。jar があるときだけ
   `LibBackedDao` が `Dao` の実装として見え、`Dao#findById` の CHA 候補が 1 件増える）。
-  パッケージ名どおりの `missing/lib/` に置くと `.gitignore` の `lib/` に掛かるので、フォルダを作らず直下に置いている
+  パッケージ名どおりの `missing/lib/` に置くと、当時の `.gitignore` の `lib/`（どこにでも効く形）に掛かったので、フォルダを作らず直下に置いている
+  （今は `/lib/` と場所を決めてあるので掛からないが、並びはそのまま）
 - `deps/` … `deps-src/` をコンパイルして作った `missing-lib.jar`。回帰テストの `jarchange` ケースが
   「依存 jar を足す・外す」をこのフォルダの有無で再現する。`whole` / `entry` ケースでは渡さないので、
   `Legacy` は型解決に失敗したまま（意図どおり）

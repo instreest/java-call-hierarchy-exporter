@@ -3,22 +3,25 @@
 回帰テスト `test/regression/gradle` 用のマルチプロジェクト Gradle ビルドです。ツールは Gradle を実行せず、
 これらのファイルを読んで依存を集めます。
 
-- `settings.gradle` … `include 'core', 'app'`
+- `settings.gradle` … `include 'core', 'app', 'kts'`
 - `build.gradle` … `subprojects { apply plugin: 'java-library' ... }`（依存の宣言は無い）
 - `gradle.properties` … `greeterVersion=1.0`
 - `gradle/libs.versions.toml` … 版カタログ。`sample-util`（`libs.sample.util`）
 - `core/build.gradle` … `api "sample.deps:greeter:$greeterVersion"`（変数を `gradle.properties` で埋める形）
-- `app/build.gradle` … `implementation project(':core')` と `implementation libs.sample.util`（版カタログ）
+- `app/build.gradle` … `implementation project(':core')` と `implementation project(':kts')`
+- `kts/build.gradle.kts` … Kotlin DSL のサブプロジェクト。`api(libs.sample.util)`（版カタログ）。util の依存はここだけが
+  宣言するので、ツールが `.kts` を読めなければ `app` の `Strings.upper` が型解決に失敗して期待出力と食い違う
 - `app/.project`、`app/.classpath` … Eclipse（Buildship）で開いたときの形。`.project` の nature で Gradle の
   プロジェクトと分かり、`.classpath` の `kind="src"` からソースフォルダが分かる
 
 テストの `project.root` は `app` で、`source.folders` は空欄（`.classpath` から取る）です。
 ツールは `app/build.gradle` を読み、`project(':core')` から `core/build.gradle` の依存 greeter を、
-greeter の POM から推移的な依存 `core`（`sample.deps:core`）を、版カタログから `util` を集めます。
+greeter の POM から推移的な依存 `core`（`sample.deps:core`）を、`project(':kts')` から `kts/build.gradle.kts` の
+版カタログの依存 `util` を集めます。
 jar と POM はローカルリポジトリ（テストでは `library.repositories` で `test/localrepo` を指定）から探します。
 
-`core` プロジェクトのクラス自体は、Eclipse（Buildship）や Gradle でビルドした出力（`bin/main`、`build/classes/java/main`）が
-あるときだけ解決できます。このサンプルではビルドしていないのでログに注記が出ます。`app` のソースは `core` のクラスを使いません。
+`core` / `kts` プロジェクトのクラス自体は、Eclipse（Buildship）や Gradle でビルドした出力（`bin/main`、`build/classes/java/main`）が
+あるときだけ解決できます。このサンプルではビルドしていないのでログに注記が出ます。`app` のソースは `core` / `kts` のクラスを使いません。
 
 `src/main/java/sample/app/` のソースは `test/maven-demo` のものに `Strings.upper`（util）の呼び出しを足したものです
 （説明は `test/maven-demo/README.md`）。

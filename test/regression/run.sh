@@ -11,11 +11,20 @@
 #   novalues             … whole と同じ解析対象を dataflow.enabled=false（キャッシュの値の行を読まない）で。
 #                          実行の形は通常ケースと同じ。値が無いので具象クラスの解決は CHA まで、条件分岐の
 #                          打ち切りは起きない。キャッシュの形式を変えても、この指定の出力が変わらないことを見る
+#   nodi                 … whole と同じ解析対象を spring.di.enabled=false（DI コンテナの Bean 定義を読まない）で。
+#                          実行の形は通常ケースと同じ。whole で SPRING_DI / SPRING_DI_QUALIFIER に絞れる fx.di の
+#                          呼び出しが CHA の候補のまま（UNEXPANDED:CHA）になり、SPRING_DI の行が 1 つも出ないことを見る
+#   diannot              … whole と同じ解析対象を spring.di.bean.annotations=Audited（独自の注釈を Bean の印に足す）で。
+#                          whole では CHA の 2 候補のままの fx.di.Billing#bill の呼び出しが、独自注釈の付いた
+#                          AuditedLedger に絞られる（SPRING_DI）ことを見る。既定の印（@Service 等）はそのまま効く
+#   nobuiltin            … whole と同じ解析対象を call.rules.builtin=false（同梱のライブラリ呼び出し規則を使わない）で。
+#                          whole では Thread#start() → run() 等の同梱の規則で繋がる呼び戻し（RESOLVED:CALLBACK）が
+#                          繋がらないままになり、自前の規則（call-rules.txt）の分だけは whole と同じに効くことを見る
 #   jarchange            … 依存 jar 無し（config-before）→ 有り（config-after）→ 無し の順に実行し、
 #                          キャッシュを保ったまま jar の追加・削除が出力に反映されることを確認する
 #   maven / mavenmulti / gradle
 #                        … library.folders を空欄にして、test/maven-demo（pom.xml）、test/maven-multi
-#                          （マルチモジュール）、test/gradle-demo（build.gradle）のビルドファイルから依存 jar を
+#                          （マルチモジュール）、test/gradle-demo（build.gradle と Kotlin DSL の build.gradle.kts）のビルドファイルから依存 jar を
 #                          集める。jar は test/localrepo（library.repositories）から。ビルドツールは要らない。
 #                          実行の形は通常ケースと同じ
 #   plugin               … 拡張（インスタンス解析条件のプラグイン）とライブラリ呼び出し規則（種類 C）。拡張なし
@@ -67,7 +76,7 @@ cd "$(dirname "$0")"
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values workspace multi"}
+CASES=${CASES:-"whole entry novalues nodi diannot nobuiltin jarchange maven mavenmulti gradle plugin cacheblocks values workspace multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -100,6 +109,17 @@ expect_csv_contains() {   # $1=case  $2=ASCII の文字列  $3=ラベル
         echo "  OK   $1/call-hierarchy.csv ($3)"
     else
         echo "  DIFF $1/call-hierarchy.csv に「$2」がありません ($3)"; fail=1
+    fi
+}
+
+# 出力の CSV に、その文字列を含む行が無いこと（ASCII だけを見る）
+expect_csv_missing() {   # $1=case  $2=ASCII の文字列  $3=ラベル
+    local out
+    out=$(latest_output "$1")
+    if [ -n "$out" ] && ! LC_ALL=C grep -a -q -F -- "$2" "$out/call-hierarchy.csv"; then
+        echo "  OK   $1/call-hierarchy.csv ($3)"
+    else
+        echo "  DIFF $1/call-hierarchy.csv に「$2」があります ($3)"; fail=1
     fi
 }
 
@@ -705,7 +725,32 @@ for c in $CASES; do
         case "$c" in
             maven|mavenmulti|gradle)
                 expect_log_contains "$c" 1 "greeter-1.0.jar" "1回目: 直接の依存の jar を集めた"
-                expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた" ;;
+                expect_log_contains "$c" 1 "core-1.0.jar" "1回目: 推移的な依存の jar を集めた"
+                # gradle は util を Kotlin DSL のサブプロジェクト（kts/build.gradle.kts）だけが宣言する。
+                # .kts を読めなければ jar が集まらず、期待出力（Strings.upper の行）との比較でも落ちる
+                if [ "$c" = gradle ]; then
+                    expect_log_contains gradle 1 "util-1.0.jar" "1回目: build.gradle.kts の依存の jar を集めた"
+                fi ;;
+            # DI の Bean 定義を読まないので、whole で SPRING_DI に絞れていた呼び出しは CHA の候補のまま
+            nodi)
+                expect_csv_missing nodi "SPRING_DI" "1回目: SPRING_DI の行が無い"
+                expect_csv_contains nodi "Checkout.checkout,MockPayment.pay,[UNEXPANDED:CHA]" \
+                    "1回目: Bean でない実装も CHA の候補として行に出る" ;;
+            # 独自注釈を Bean の印に足したので、whole では CHA の 2 候補のままの呼び出しが Bean の実装に絞られる
+            diannot)
+                expect_csv_contains diannot "),AuditedLedger.post,RESOLVED:SPRING_DI,1,Billing.bill" \
+                    "1回目: 独自注釈の Bean に絞れる"
+                expect_csv_missing diannot "Billing.bill,PlainLedger.post" "1回目: Bean でない実装は候補から外れる"
+                expect_csv_contains diannot "),AbstractPayment.pay,RESOLVED:SPRING_DI,1,Checkout.checkout" \
+                    "1回目: 既定の印（@Service）はそのまま効く" ;;
+            # 同梱のライブラリ呼び出し規則を使わないので、Thread#start() → run() の呼び戻しは繋がらない。自前の規則の分は繋がる
+            nobuiltin)
+                expect_csv_missing nobuiltin "rule: Thread#start() calls run()" \
+                    "1回目: 同梱の規則（Thread#start）は効かない"
+                expect_csv_missing nobuiltin "Starter.viaThread,Starter.Job.run" \
+                    "1回目: Thread で起動する Runnable の run は繋がらない"
+                expect_csv_contains nobuiltin "rule: Dispatcher#submit(java.lang.Runnable) calls run()" \
+                    "1回目: 自前の規則（call-rules.txt）は効く" ;;
             # ライブラリ呼び出し規則が「効いたか」の知らせ。whole の 2 行はどちらも当たるので挙がってはならず、
             # entry の call-rules.txt はわざと当たらない行だけなので、そのまま挙がる
             whole)

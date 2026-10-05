@@ -60,7 +60,7 @@ Windows 版の回帰テスト（`regression/run.cmd`。CI の regression-windows
 
 | フォルダ | 何の題材か | 使う検査 |
 |---|---|---|
-| `demo/` | 解決経路をひととおり踏む小さなプロジェクト（多実装・ファクトリ・DI・リフレクション・ラムダ・生成される実装・意図的なコンパイルエラー） | `regression`（whole / entry / novalues / jarchange / cacheblocks / workspace）・`dataflow`・`cacheversion`・CI の action ジョブ |
+| `demo/` | 解決経路をひととおり踏む小さなプロジェクト（多実装・ファクトリ・DI・リフレクション・ラムダ・生成される実装・意図的なコンパイルエラー） | `regression`（whole / entry / novalues / nodi / diannot / nobuiltin / jarchange / cacheblocks / workspace）・`dataflow`・`cacheversion`・CI の action ジョブ |
 | `maven-demo/` | `pom.xml` から依存 jar を集める Maven プロジェクト | `regression/maven` |
 | `maven-multi/` | マルチモジュールの Maven プロジェクト（兄弟モジュール・親の `dependencyManagement`） | `regression/mavenmulti` |
 | `gradle-demo/` | マルチプロジェクトの Gradle ビルド（Buildship の `.classpath` も） | `regression/gradle` |

@@ -1,0 +1,40 @@
+# Dependabot の設定。依存の新しい版を毎週（月曜）調べて PR を作る。
+#
+# 対象は 4 つ。
+#   github-actions … .github/workflows/*.yml と action.yml が uses: で参照するアクション（actions/checkout 等）
+#   npm            … vscode-plugin/（package.json / package-lock.json。esbuild・TypeScript・@types/*）
+#   maven（/）      … pom.xml。Eclipse（m2e）が依存を解決するためだけのもの（本流は src/jche/*.java の //DEPS 行）
+#   maven（/eclipse-plugin）… eclipse-plugin/pom.xml。バンドルに同梱して子プロセスで使う JDT の版（<jdt.version>）
+#
+# JDT（org.eclipse.jdt.core 等）の版は、PR をそのまま取り込んでも壊れないよう、別の検査でさらに守ってある。
+#   test/pom/run.sh    … pom.xml の依存と src/jche/CallHierarchyExporter.java の //DEPS 行が集合として一致すること
+#   test/readme/run.sh … README に書いた JDT の版が //DEPS の版と同じこと
+#   test/plugin/run.sh … eclipse-plugin/pom.xml の <jdt.version> が //DEPS の版と同じこと（test/vscode/package.sh も同様）
+# つまり Dependabot が pom.xml だけを上げた PR は、//DEPS と README（と eclipse-plugin/pom.xml）を人が揃えるまで
+# CI（smoke.yml）が落ちる。これは意図したもので、JDT の版は 4 か所を同時に上げる（CONTRIBUTING.md の 4 節）。
+#
+# test/plugin-api/pom.xml は対象にしない。あれは「下限の Eclipse（4.17 / Java 11）でもプラグインが
+# コンパイルできるか」を見るために古い版へわざと固定してあるので、上げてはいけない。
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/vscode-plugin"
+    schedule:
+      interval: "weekly"
+
+  # JDT の版は //DEPS・README・eclipse-plugin/pom.xml と同時に上げる（上の説明。test/pom・test/readme が食い違いを検出する）
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # 同梱する JDT の版。//DEPS と同じでなければ test/plugin/run.sh が落ちる
+  - package-ecosystem: "maven"
+    directory: "/eclipse-plugin"
+    schedule:
+      interval: "weekly"

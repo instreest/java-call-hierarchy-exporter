@@ -1,6 +1,15 @@
 build/
-bin/
-lib/
+# bin/ と lib/ は場所を決めて除外する（どこにでも効く形だと、題材のパッケージ名やフォルダ名を
+# 「bin」「lib」にできない。test/localrepo/README.md・test/demo/README.md がその制約に触れている）。
+#   /bin/                  … ルートで javac した出力（README の `java -cp bin:lib/*`）
+#   /lib/                  … 利用者が Eclipse から集めた JDT の jar を置く場所
+#   /vscode-plugin/lib/    … vscode-plugin/scripts/collect-lib.sh が eclipse-plugin のビルドから集めるもの
+#   /test/*/*/bin/         … サンプル（test/gradle-demo/app）を Eclipse（Buildship）で開いたときの出力（bin/main）
+# eclipse-plugin/ の bin/ と lib/ は eclipse-plugin/.gitignore が除外する
+/bin/
+/lib/
+/vscode-plugin/lib/
+/test/*/*/bin/
 out/
 dist/
 
