@@ -20,7 +20,7 @@
 
 - 後半は `Resolution` のラベルそのもの。例外は `UNEXPANDED:LAMBDA` の 1 つだけ
 - 列と完全に重複する裸の `[RESOLVED:*]` は注記から落とす。注記に残る `[RESOLVED:*]` は
-  繋いだ契約を持つ `[RESOLVED:CALLBACK] 契約: …` だけ
+  繋いだ規則を持つ `[RESOLVED:CALLBACK] 規則: …` だけ
 - 新しい固定列は必ず `root` の左に入れる。`call-hierarchy` は可変長なので、後ろに足すと階層が途中で切れる
 
 ### Q1. なぜ注記だけでは足りなかったのか
@@ -67,7 +67,7 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 `UNEXPANDED:LAMBDA` と言い換える（注記 `[UNEXPANDED:LAMBDA] …` と同じ判定）。
 
 逆に、候補が複数のときの後半はラベルのままにした（`UNEXPANDED:CHA` /
-`UNEXPANDED:LOCAL_NEW_MULTI` / `UNEXPANDED:CONTRACT` …）。
+`UNEXPANDED:LOCAL_NEW_MULTI` / `UNEXPANDED:CALL_RULE` …）。
 注記は候補が複数ならどれも `[UNEXPANDED:CHA]` と書くが、列では
 「何を根拠に候補を集めたか」が分かるほうが、次に何を与えれば絞れるかの判断に使える。
 
@@ -105,7 +105,7 @@ Excel の数値フィルタにも空欄が混ざる。
 |---|---|
 | `[UNEXPANDED:CHA] N candidates: {reason}` | 候補の件数、レシーバの由来（次に調べる場所） |
 | `[UNEXPANDED:GENERATED] …: FQN is…` | 生成される実装の FQN |
-| `[RESOLVED:CALLBACK] contract: …` | 繋いだ契約の本文 |
+| `[RESOLVED:CALLBACK] rule: …` | 繋いだ規則の本文 |
 | `[UNREACHABLE] …condition '…' does not hold (…)` | 条件式と、この経路で分かっている値 |
 | `[UNEXPANDED:CYCLE]` / `[UNEXPANDED:DEPTH]` / `[EXTERNAL]` | 打ち切りの理由（解決方法とは別の軸なので列には入れない） |
 

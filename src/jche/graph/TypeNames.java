@@ -8,10 +8,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 契約表や拡張に書かれた型名を、解析対象の型の完全修飾名（FQN）に直す。
+ * ライブラリ呼び出し規則や拡張に書かれた型名を、解析対象の型の完全修飾名（FQN）に直す。
  *
  * <h2>なぜ要るか</h2>
- * 契約表の 1 行も拡張が返す候補も、これまでは FQN で書く必要があった。同じパッケージの型を
+ * ライブラリ呼び出し規則の 1 行も拡張が返す候補も、これまでは FQN で書く必要があった。同じパッケージの型を
  * 何十行も並べるのに毎回 FQN を書くのは手数が多く、書き間違えても「効かない」だけで終わる。
  * 単純名で書けるなら、そのほうが速いし読みやすい。
  *
@@ -70,7 +70,7 @@ public final class TypeNames {
     /**
      * 書かれた型名を FQN に直す。直せなければ書かれたまま返す。
      *
-     * @param name 契約表や拡張が返した型名。FQN でも単純名でもよい
+     * @param name ライブラリ呼び出し規則や拡張が返した型名。FQN でも単純名でもよい
      */
     public String toFqn(String name) {
         if (name == null || name.isEmpty() || hierarchy.contains(name)) {

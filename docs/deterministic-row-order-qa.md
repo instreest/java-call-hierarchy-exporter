@@ -286,7 +286,9 @@ Q1 の表は「同じ型の同名メソッドなので同じブロック内で�
 - `test/incremental` に `OneLine.java`（1 行の `a` / `b`）、`OneLineLambdas.java`（1 行の `pair` と 2 つのラムダ。
   `entry.packages` に足して起点にする）、それを呼ぶ `OneLineUser.java` を置き、`OneLineUser.java` だけを
   書き換えるケースを足した。差分更新と全件解析の `methods.csv` / `call-hierarchy.csv` / キャッシュが一致することに加え、
-  並びそのもの（`a`、`b` の順、起点が `pair` → 1 つ目 → 2 つ目の順）も見る。
+  並びそのもの（`a`、`b` の順。2 つのラムダの本体の呼び出しが `pair` の直下に `ready` → `make` の順）も見る。
+  （ラムダの合成メソッドを CSV に出さず起点にもしなくなってからは、起点の並びではなくこの並びで同着の順を見る。
+  [lambda-collapse-qa.md](lambda-collapse-qa.md)）
   同着を ID で決める元の `SourceOrder` に戻すと、両方の CSV が差分更新と全件解析で食い違って落ちる。
   片方の比較だけを戻すと、その CSV だけが落ちる
 - `test/server` に、1 行の宣言を持つ使い捨てのプロジェクトで `AT` を引くケースを足した。元のコードは

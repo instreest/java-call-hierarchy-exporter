@@ -6,12 +6,12 @@ public class DaoFactory {
         return null;
     }
 
-    /** キーを列挙型で受ける形。契約表には fxp.DaoKind.USER のように FQN で書く */
+    /** キーを列挙型で受ける形。ライブラリ呼び出し規則には fxp.DaoKind.USER のように FQN で書く */
     public static Dao get(DaoKind kind) {
         return null;
     }
 
-    /** キーを Class リテラルで受ける形。契約表には fxp.ReportDao.class のように .class を付けて書く */
+    /** キーを Class リテラルで受ける形。ライブラリ呼び出し規則には fxp.ReportDao.class のように .class を付けて書く */
     public static Dao get(Class<? extends Dao> type) {
         return null;
     }

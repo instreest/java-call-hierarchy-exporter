@@ -8,8 +8,8 @@ public class GenericMain {
         repo.save(new Order());   // 候補: OrderRepo.save と RawRepo.save の 2 件
         store.put(new Order());   // 候補: AbstractStore.put（本体あり）と OrderStore.put の 2 件
 
-        // 呼び戻しの契約（Iterable#forEach(Consumer) -> a0 : accept(java.lang.Object)）。
-        // 契約はシグネチャだけを名指しするので、型引数を具体化した OrderPrinter#accept(Order) は
+        // 呼び戻しの規則（Iterable#forEach(Consumer) -> a0 : accept(java.lang.Object)）。
+        // 規則はシグネチャだけを名指しするので、型引数を具体化した OrderPrinter#accept(Order) は
         // 上書き関係（O 行）を見ないと当たらない。RawPrinter は消去形と一致するので当たる
         orders.forEach(new OrderPrinter());
         orders.forEach(new RawPrinter());

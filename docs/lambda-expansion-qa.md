@@ -6,6 +6,8 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
 関連: [note-tags-qa.md](note-tags-qa.md)（`[UNEXPANDED:LAMBDA]` の注記と、当時できなかった理由）、
 [dataflow-facts-qa.md](dataflow-facts-qa.md)（値の追跡の枠組み）。
 
+関連: [lambda-collapse-qa.md](lambda-collapse-qa.md)（ラムダの合成メソッドを CSV に出さない判断）。
+
 ## 結論
 
 - ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）の**合成メソッド**にする。
@@ -23,7 +25,7 @@ Issue [#127](https://github.com/instreest/java-call-hierarchy-exporter/issues/12
   合成メソッドの番号は javac 21 と同じ後行順にし、enum 定数の引数の中は `lambda$static$N`（Q13。analysis v25）。
   式本体のラムダにも R 行を書き、`s.get()` の戻り値をラムダの return から追う（Q14）。
   M 行は、上書きの関係に無い2つの親から継承した同じ抽象メソッドの鍵でも書く（Q15。analysis v26）。
-  呼び戻しの契約に渡したメソッド参照も、参照先が仮想メソッドなら実装まで繋ぐ（Q16）。
+  呼び戻しの規則に渡したメソッド参照も、参照先が仮想メソッドなら実装まで繋ぐ（Q16）。
   インターフェースのフィールドの中のラムダは `lambda$static$N`（Q17。analysis v26）。
   型名で書いたメソッド参照の注記を `type name (unbound method reference)` にし、
   methods.csv の `unresolvedCause` の判定順を階層の注記と揃えた（Q18）
@@ -315,26 +317,26 @@ JDT の `getFunctionalInterfaceMethod` はこのうち 1 つ（ここでは `Clo
 
 M 行の中身が変わるので analysis の版を v26 に上げた（`test/demo` の `fx.lambda.TwoParents`）。
 
-### Q16. 呼び戻しの契約に渡したメソッド参照が、参照先の宣言に確定していた
+### Q16. 呼び戻しの規則に渡したメソッド参照が、参照先の宣言に確定していた
 
 Q12 で `r.run()` のような関数型インターフェース経由の呼び出しは直したが、jar の中から呼び戻される
-経路（`CallbackContracts`）は別に値を引いており、参照先の宣言をそのまま呼び戻し先にしていた。
+経路（`CallbackRules`）は別に値を引いており、参照先の宣言をそのまま呼び戻し先にしていた。
 
 ```java
 new Thread(this::hook).start();   // 子クラスが hook を上書きしていても CallbackRefs.hook だけ
 daos.forEach(Dao::describe);      // 本体の無い Dao.describe が RESOLVED:CALLBACK の葉になる
 ```
 
-呼び戻し先の決め方を `CallResolver.functionalResolution` と同じにした（`CallbackContracts.FunctionalLookup`
+呼び戻し先の決め方を `CallResolver.functionalResolution` と同じにした（`CallbackRules.FunctionalLookup`
 として渡す。決め方を 2 か所に持たないため）。束縛したレシーバの具象型が分かればその実装に確定し
 （`new Thread(dao::describe)` は `RESOLVED:CALLBACK`）、分からなければ上書き候補を全部出す。
 候補が複数の行は確定に見せないよう、`resolved-by` を `UNEXPANDED:CALLBACK`、注記を
-`[UNEXPANDED:CHA] N candidates: method reference to an overridable method contract: ...` にする。
+`[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: ...` にする。
 通常の CHA と同じく、候補の行からその先へは降りない（候補数^深さで爆発するため）。
 
 ただし**参照先の宣言が jar の中**（`list.forEach(Runnable::run)` の `Runnable#run`）なら、上書き候補は
-`Runnable` の全実装になる。これは契約表の「jar の型の全実装のような広い候補は出さない」
-（[callback-contracts.md](callback-contracts.md) の「追える条件」）に反するので、従来どおり辺を張らない。
+`Runnable` の全実装になる。これはライブラリ呼び出し規則の「jar の型の全実装のような広い候補は出さない」
+（[library-call-rules.md](library-call-rules.md) の「追える条件」）に反するので、従来どおり辺を張らない。
 参照を書いた箇所からの辺（`Main.lambdas → Starter.Job.run` の CHA）は別にあるので、本体の呼び出しは落ちない。
 
 `test/demo` の `fx.lambda.CallbackRefs`。
@@ -391,7 +393,7 @@ run((Job) () -> System.out.println("lambda"));                     // 動くの�
   （`CallGraph#hasFunctionalImpl`）を渡し、M 行のあるメソッドは `hasOverriders` を真にする。ラムダが実装し直している
   default の戻り値は、レシーバがそのラムダと分かるとき（`bodyOf` の関数型の枝）以外は使わない
 - **却下した案**。`MethodSelection#search` が抽象の宣言し直し（`Maker2#make`）で -1 を返す案は、`implementationOf` の
-  呼び手すべて（CHA・LOCAL_NEW・契約表・DI）に効き、「抽象の宣言で止まらず親へ進む」という JVMS 5.4.6 の写しを崩すので広すぎる。
+  呼び手すべて（CHA・LOCAL_NEW・ライブラリ呼び出し規則・DI）に効き、「抽象の宣言で止まらず親へ進む」という JVMS 5.4.6 の写しを崩すので広すぎる。
   M 行を読み手で補う（SAM の鍵から親の default を辿る）案は、上書きの判定を読み手にもう 1 つ持つことになるので採らない
   （判定は JDT の `isSubsignature` に任せる）
 - **検査**。`test/pruning` の `LamRedecl`（ラムダの本体へ `RESOLVED:DATAFLOW_LAMBDA` で繋ぐこと・default の戻り値で絞らないこと・

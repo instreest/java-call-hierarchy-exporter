@@ -103,10 +103,10 @@ jobs:
       - name: Single-file build test
         run: JCHE_CP="$JDT_CP" bash test/single-file/run.sh
 
-      # 同梱の契約表（JDK のコールバック・フレームワークの入口）。全行が parse でき、JDK の型は
+      # 同梱のライブラリ呼び出し規則（JDK のコールバック・フレームワークの入口）。全行が parse でき、JDK の型は
       # 宣言元と呼び戻すメソッドが実在すること。継承しているだけの型で書いた行は永久に当たらない
-      - name: Bundled contracts test (parse and JDK declaring types)
-        run: JCHE_CP="$JCHE_CLASSES:$JDT_CP" bash test/contracts/run.sh
+      - name: Bundled rules test (parse and JDK declaring types)
+        run: JCHE_CP="$JCHE_CLASSES:$JDT_CP" bash test/rules/run.sh
 
       # キャッシュの形式の版（CacheFormat.VERSION）の上げ忘れを捕まえる。決まった題材を全件解析した
       # キャッシュの事実の指紋を test/cacheversion/facts.txt に記録しておき、版・題材・環境が同じなのに

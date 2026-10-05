@@ -4,16 +4,16 @@ package jche.graph;
 import java.util.List;
 
 /**
- * 同梱の契約表: JDK のメソッドが、渡された値のどのメソッドを呼び戻すか（{@link CallbackContracts}）。
+ * 同梱のライブラリ呼び出し規則: JDK のメソッドが、渡された値のどのメソッドを呼び戻すか（{@link CallbackRules}）。
  *
  * 呼び出し先のキーは JDT のバインディングが返す<b>宣言型</b>で書く。{@code list.forEach(...)} は
  * {@code List} が {@code forEach} を上書きしていないので {@code java.lang.Iterable#forEach} に、
  * {@code executor.submit(...)} は {@code ExecutorService#submit} に解決される。
  * 上書きしていない型（{@code List#forEach}、{@code ExecutorService#execute}）で行を書いても
- * 永久に当たらない。宣言元は test/contracts/run.sh が実行中の JDK と照合する。
+ * 永久に当たらない。宣言元は test/rules/run.sh が実行中の JDK と照合する。
  *
  * 全部を網羅するのではなく、「呼び戻される」と言い切れて、実務で経路が切れて困るものに絞る。
- * 足りなければ行を足す（docs/callback-contracts-qa.md）。
+ * 足りなければ行を足す（docs/library-call-rules-qa.md）。
  */
 final class JdkCallbacks {
 

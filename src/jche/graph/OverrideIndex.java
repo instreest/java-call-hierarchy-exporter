@@ -34,7 +34,7 @@ public final class OverrideIndex {
     /**
      * 上書きされた側の<b>シグネチャ</b>（{@code name(paramSig)}） -> 上書きしている側のメソッドID。
      *
-     * 呼び戻しの契約表とリフレクションは、宣言している型を知らないままシグネチャだけで
+     * 呼び戻しのライブラリ呼び出し規則とリフレクションは、宣言している型を知らないままシグネチャだけで
      * 実装を引く（{@link MethodSelection#implementationOfSignature} 参照）。そちらのための索引
      */
     private final Map<String, IntArray> bySignature = new HashMap<>();
@@ -64,7 +64,7 @@ public final class OverrideIndex {
 
     /**
      * そのシグネチャの宣言を上書きしているメソッドの一覧。無ければ null。
-     * 宣言している型が分からない引き方（契約表・リフレクション）のための引き口
+     * 宣言している型が分からない引き方（ライブラリ呼び出し規則・リフレクション）のための引き口
      */
     public IntArray overridersOfSignature(String overriddenSignature) {
         return bySignature.get(overriddenSignature);

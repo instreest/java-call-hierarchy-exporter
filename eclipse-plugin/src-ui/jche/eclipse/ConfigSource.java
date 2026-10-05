@@ -21,7 +21,7 @@ import org.eclipse.jdt.core.IJavaProject;
  * <p>優先順位は次のとおりで、上から順に当てはまった1つを使う（{@link ProjectAnalysis#configSource()}）。
  * <ol>
  *   <li>{@link Kind#FILE} … 利用者がビューで選んだ設定ファイル</li>
- *   <li>{@link Kind#FILE} … プロジェクト直下の config.properties</li>
+ *   <li>{@link Kind#FILE} … プロジェクトの config/jche.properties（無ければ直下の jche.properties）</li>
  *   <li>{@link Kind#GENERATED} … Eclipse のプロジェクト構成から自動生成（{@link EclipseProjectConfig}）</li>
  * </ol>
  * つまり<b>設定ファイルが無くても解析できる</b>。あるときは書いてあるとおりに従う。

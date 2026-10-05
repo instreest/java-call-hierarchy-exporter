@@ -9,7 +9,7 @@ import fx.dao.OrderDaoImpl;
 /**
  * jar の中（JDK）を経由して自分のコードへ戻ってくる呼び出しを試すための題材（#136）。
  * {@code Thread#start()} や {@code ExecutorService#submit} は jar の中だが、
- * 「渡した Runnable の run を呼ぶ」という契約で繋ぐ。
+ * 「渡した Runnable の run を呼ぶ」という規則で繋ぐ。
  */
 public class Starter {
 
@@ -32,7 +32,7 @@ public class Starter {
         pool.shutdown();
     }
 
-    /** ローカル変数の Runnable を Thread に渡す（値の追跡と契約の組み合わせ） */
+    /** ローカル変数の Runnable を Thread に渡す（値の追跡と規則の組み合わせ） */
     public void viaVariable() {
         Runnable task = new Job(dao);
         new Thread(task).start();

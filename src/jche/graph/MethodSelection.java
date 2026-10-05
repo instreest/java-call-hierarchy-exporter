@@ -25,7 +25,7 @@ import jche.cache.TypeFact;
  *                       （JVMS 5.4.6。JLS では 15.12.4.4）。実行時の情報なのでキャッシュには無く、読み手が
  *                       H 行（親クラスの連鎖・継承した実装）・D 行（修飾子・本体の有無）・O 行（上書き）から
  *                       このクラスで毎回組み立てる。C の候補（どの実行時のクラスがありうるか）を数えるのは
- *                       {@link CallResolver} の段（CHA・LOCAL_NEW・値の追跡・DI・契約表）で、ここはその 1 つ 1 つの
+ *                       {@link CallResolver} の段（CHA・LOCAL_NEW・値の追跡・DI・ライブラリ呼び出し規則）で、ここはその 1 つ 1 つの
  *                       C について本体を返すだけである
  * </pre>
  *
@@ -62,7 +62,7 @@ import jche.cache.TypeFact;
  * （docs/resolution-selection-design.md の対応表）。
  *
  * <h2>入口は 2 つ</h2>
- * 呼び出し先のキーが分かるなら {@link #implementationOf}、シグネチャしか分からない（契約表・リフレクション）なら
+ * 呼び出し先のキーが分かるなら {@link #implementationOf}、シグネチャしか分からない（ライブラリ呼び出し規則・リフレクション）なら
  * {@link #implementationOfSignature}。どちらも「継承」と「型引数の置換」の 2 つの軸を 1 つの探索で見るので、
  * 別の引き方を足すと片方を取りこぼす（docs/jls-conformance-qa.md の Q6・Q7・Q21）。
  *
@@ -121,7 +121,7 @@ public final class MethodSelection {
      * 「実装なし（NO_IMPL）」や、実装が他に1つあるときの「別の実装に確定（SINGLE_IMPL）」になる。
      *
      * 呼び出し先の<b>キーが分かっている</b>ときの入口。段1のCHA・段2のLOCAL_NEW・
-     * 段3の契約と拡張・段4・段5はすべてここを通す。キーを持たない引き方は
+     * 段3の規則と拡張・段4・段5はすべてここを通す。キーを持たない引き方は
      * {@link #implementationOfSignature} を使う。
      */
     public int implementationOf(String typeFqn, int calleeId) {
@@ -334,10 +334,10 @@ public final class MethodSelection {
      * 呼び出し先のキー（宣言している型）が分からず、<b>シグネチャだけが分かっている</b>
      * ときの入口。使うのは 2 か所で、どちらも構造上それしか分からない。
      * <ul>
-     *   <li>呼び戻しの契約表（{@link CallbackContracts}）… 契約は
+     *   <li>呼び戻しのライブラリ呼び出し規則（{@link CallbackRules}）… 規則は
      *       {@code java.lang.Thread#start() -> c* : run()} のように
      *       「呼び戻されるメソッドのシグネチャ」だけを書く。{@code run()} を宣言している型
-     *       （{@code java.lang.Runnable}）は契約のどこにも現れないので、キーは作れない</li>
+     *       （{@code java.lang.Runnable}）は規則のどこにも現れないので、キーは作れない</li>
      *   <li>リフレクション（{@link DataflowResolver}）… {@code Method.invoke} の実引数から
      *       名前と引数型を組み立てるので、宣言している型は分からない</li>
      * </ul>
@@ -345,7 +345,7 @@ public final class MethodSelection {
      * キーで引く場合と違い、同じシグネチャに消去される別々のジェネリック型を 1 つの型が
      * 両方とも上書きしていると、どちらが選ばれるかは決まらない。ただしこれは
      * キーの照合（{@code 型#シグネチャ}）が元から持っている曖昧さと同じで、
-     * 契約表の仕組みがシグネチャで名指しする以上、ここで新たに生じるものではない。
+     * ライブラリ呼び出し規則の仕組みがシグネチャで名指しする以上、ここで新たに生じるものではない。
      */
     public int implementationOfSignature(String typeFqn, String sig) {
         return search(typeFqn, null, sig, overrides.overridersOfSignature(sig), null);

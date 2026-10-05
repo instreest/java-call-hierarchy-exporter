@@ -4,7 +4,7 @@ package jche.config;
 import java.util.ArrayList;
 import java.util.List;
 
-import jche.extension.ContractProvider;
+import jche.extension.RuleProvider;
 import jche.extension.TypeCandidateProvider;
 import jche.util.Log;
 import jche.util.Messages;
@@ -50,8 +50,8 @@ public final class Plugins {
         try {
             if (plugin instanceof TypeCandidateProvider provider) {
                 provider.init(config.raw, config.configDir);
-            } else if (plugin instanceof ContractProvider contracts) {
-                contracts.init(config.raw, config.configDir);
+            } else if (plugin instanceof RuleProvider rules) {
+                rules.init(config.raw, config.configDir);
             }
         } catch (RuntimeException e) {
             // 初期化に失敗した拡張は「設定が効いていない状態」で動くので、必ず知らせる

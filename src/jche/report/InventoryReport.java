@@ -11,6 +11,7 @@ import jche.graph.CallResolver;
 import jche.graph.MethodTable;
 import jche.graph.Resolution;
 import jche.graph.SourceOrder;
+import jche.graph.WorkspaceScope;
 import jche.util.Messages;
 
 /**
@@ -27,7 +28,7 @@ public final class InventoryReport {
     public static final class Stats {
         long methods;
         long entryCandidates;
-        /** 契約でフレームワークが呼ぶと分かった入口 */
+        /** 規則でフレームワークが呼ぶと分かった入口 */
         long frameworkEntries;
         long isolated;
         long leaves;
@@ -64,7 +65,7 @@ public final class InventoryReport {
      *
      * role の意味:
      * <pre>
-     *   FRAMEWORK_ENTRY 契約でフレームワークが呼ぶと分かる入口（main、Servlet、
+     *   FRAMEWORK_ENTRY 規則でフレームワークが呼ぶと分かる入口（main、Servlet、
      *                   &#64;Scheduled 等。jche.graph.FrameworkEntries）
      *   ENTRY_CANDIDATE 呼び出し元が無い。画面入口・バッチ・デッドコード・
      *                   テスト・リフレクション経由が混ざる（要仕分け）
@@ -90,6 +91,7 @@ public final class InventoryReport {
         Stats st = new Stats();
         int[] in = resolver.inDegrees();
         boolean[] reachable = resolver.reachableFrom(roots);
+        WorkspaceScope scope = resolver.workspaceScope();
 
         try (BufferedWriter w = Csv.writer(config.methodsCsv, config.outputEncoding, config.outputBom)) {
             w.write(String.join(Csv.DELIM, "method", "declaringType", "typeKind",
@@ -100,6 +102,11 @@ public final class InventoryReport {
             // 呼ばれている事実は call-hierarchy.csv 側に残る。
             // 行順はソースの並び（ソースフォルダ順 → ファイル順 → 宣言行順）
             for (int id : SourceOrder.declaredMethodsInSourceOrder(g)) {
+                // ワークスペースの他のプロジェクトのメソッドは、project.root に届くものと、呼び出し階層に出たもの
+                // （project.root から降りた先の実装）だけ（workspace.scope=callers）。階層に出た行は必ずここにも載せる
+                if (!scope.allows(id) && !walker.inHierarchy(id)) {
+                    continue;
+                }
                 // コンストラクタは call-hierarchy.csv でも行にしていないので揃える
                 if (methods.isConstructor(id)) {
                     st.constructors++;
@@ -118,7 +125,7 @@ public final class InventoryReport {
                 int out = g.outDegree(id);
                 String role;
                 if (resolver.frameworkEntries().isEntry(id)) {
-                    // 契約でフレームワークが呼ぶと分かる入口。呼び出し元の有無より
+                    // 規則でフレームワークが呼ぶと分かる入口。呼び出し元の有無より
                     // 「フレームワークが呼ぶ」事実の方が仕分けに効くので優先する
                     role = "FRAMEWORK_ENTRY";
                     st.frameworkEntries++;

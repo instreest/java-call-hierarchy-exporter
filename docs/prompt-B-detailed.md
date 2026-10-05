@@ -164,8 +164,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | 値 | 条件 |
 |---|---|
-| `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CONTRACT` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
-| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（契約で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
+| `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CALL_RULE` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
+| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（規則で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
 | `UNEXPANDED:LAMBDA` | 候補は1件だが、ラムダ／メソッド参照も同じインターフェースを実装しており未特定。ラベルをそのまま出すと確定に見えるのでこう言い換える |
 | `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED` / `OUTSIDE_METHOD`）。`depth` は `1` |
 | `EXTERNAL_USAGE:{照合の種類}` | 被参照スキャンの行（`EXACT` / `INHERITED` / `IMPLICIT_CTOR`）。`depth` は `1` |
@@ -184,11 +184,11 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}`。行にしない候補があれば数を後ろに足す（上限で切った `(only the first N are written as rows)`、除外した `(K excluded by exclude.packages and not written as rows)`） |
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
-| 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
-| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 契約: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
+| 追加 | 呼び出し先がライブラリ呼び出し規則（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 規則: …` で1行足して降りる（jar の中は読まない。docs/library-call-rules.md） |
+| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 規則: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
 
 1件に確定した呼び出しの注記は付けない（解決方法は `resolved-by` 列に出る）。
-注記に残る `[RESOLVED:*]` は、繋いだ契約という列に無い情報を持つ `[RESOLVED:CALLBACK] 契約: …` だけ。
+注記に残る `[RESOLVED:*]` は、繋いだ規則という列に無い情報を持つ `[RESOLVED:CALLBACK] 規則: …` だけ。
 
 注記は先頭に大文字のタグを置き、日本語の説明をその後ろに続ける。
 `[UNEXPANDED:*]` は「ここから先へ降りなかった」ことを表し、タグだけで辿り切れなかった箇所を
@@ -247,7 +247,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | `hasBody` | 本体を持つか（IFの抽象メソッドとdefaultメソッドの区別） |
 | `inDegree` | **具象クラスに解決した後の**被呼び出し数 |
 | `outDegree` | 呼び出し数 |
-| `role` | `FRAMEWORK_ENTRY`（契約でフレームワークが呼ぶと分かる入口。in に関係なく優先）/ `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
+| `role` | `FRAMEWORK_ENTRY`（規則でフレームワークが呼ぶと分かる入口。in に関係なく優先）/ `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
 | `reachable` | 起点集合から解決後のエッジで到達できるか |
 | `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`[UNEXPANDED:NO_IMPL] no implementation with a body in the source` / `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` / レシーバ由来） |
 
@@ -341,7 +341,7 @@ try-with-resources の `close()`、レコードパターンのアクセサ）も
 | 0 | `STATIC_BOUND:{PRIVATE,STATIC,FINAL_METHOD,FINAL_CLASS,CTOR,SUPER}` | 仮想ディスパッチされない呼び出し |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 宣言型自身（本体があれば）＋推移的サブタイプの同シグネチャ宣言を候補にし、1件なら確定。皆無なら `NO_IMPL` |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内でレシーバ変数に代入された `new` の型（フロー非依存） |
-| 3 | `CONTRACT` / 拡張のラベル | 契約表（種類 C）の行、次に `TypeCandidateProvider` が返した候補 |
+| 3 | `CALL_RULE` / 拡張のラベル | ライブラリ呼び出し規則（種類 C）の行、次に `TypeCandidateProvider` が返した候補 |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | レシーバの出所が `new` された型、またはファクトリの戻り値（経路に依存しないのでメモ化できる） |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | レシーバが DI の注入点のとき、候補を Bean だけに絞って 1 つに定まれば確定（下記） |
 | — | `DATAFLOW_PARAM` / `DATAFLOW_FIELD` | 経路上の実引数／コンストラクタ注入フィールドから特定（経路依存。探索中に判定し、CHAで候補が複数のときと、段5で絞ったときに試す） |
@@ -395,7 +395,7 @@ javac にツール自身のクラスパスを渡す）、`.class` / `.jar` と�
 拡張が動くのはグラフ構築時だけで、**キャッシュには何も書かない**。よって拡張やその設定を
 キャッシュのヘッダ行に入れる必要はなく、拡張を足しても外してもキャッシュはそのまま再利用できる。
 AST 走査中に利用者のコードを差し込む口は設けない（キャッシュの鍵が増え、読み口が
-契約表・証拠・ひな形の 3 つとずれるため）。読み取る材料を増やすのはツール本体の仕事で、
+ライブラリ呼び出し規則・証拠・ひな形の 3 つとずれるため）。読み取る材料を増やすのはツール本体の仕事で、
 「ファクトリの実引数の何をキーとして読むか」は 1 か所（後述の `FactoryCalls`）にまとめる。
 
 渡す証拠（`Hint`）は `kind` と `value` の 2 つ組。レシーバがファクトリメソッドの戻り値なら、
@@ -779,10 +779,10 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
 - 候補引きの入口は**呼び出し先の分かり方で2つだけ**にする。キーが分かるなら
   `implementationOf(型FQN, 呼び出し先ID)`、シグネチャしか分からないなら
   `implementationOfSignature(型FQN, シグネチャ)`。どちらも同じ探索を呼び、上書きの引き方だけが違う。
-  後者が要るのは、**呼び戻しの契約表とリフレクションは所有型を知らない**ため。
-  契約は `java.lang.Thread#start() -> c* : run()` のようにシグネチャだけを名指しし、
+  後者が要るのは、**呼び戻しのライブラリ呼び出し規則とリフレクションは所有型を知らない**ため。
+  規則は `java.lang.Thread#start() -> c* : run()` のようにシグネチャだけを名指しし、
   `run()` を宣言している `java.lang.Runnable` はどこにも現れない
-- 入口をこれ以上増やさない。段1（CHA）・段2（`LOCAL_NEW`）・段3（契約表と拡張）・
+- 入口をこれ以上増やさない。段1（CHA）・段2（`LOCAL_NEW`）・段3（ライブラリ呼び出し規則と拡張）・
   段4（dataflow）・段5（Spring DI）がそれぞれ別の関数を呼ぶ作りにすると、
   1か所だけ直したときに残りが静かに取りこぼす（`docs/inherited-impl-candidates-qa.md`、
   `docs/jls-conformance-qa.md` の Q7・Q21。実際に3度やった）
@@ -1247,7 +1247,7 @@ N  番号  kind  value  recv  args  argCount  staticRecv
    値グラフのノード 1 件（2.10）。1 つの式を 1 ノードとして 1 回だけ書き、参照はノード番号で行う。
    番号はブロック内の 0 始まりの連番で、recv（ノード番号。無ければ -1）と args（"位置=ノード番号" のカンマ区切り）は
    同じブロックの自分より前のノードを指す。入れ子を展開しないので深さの上限が要らない。
-   staticRecv はソースに書いたときのレシーバの型（宣言元と違うときだけ。契約表・拡張が「書いてある型」で指定できるように）
+   staticRecv はソースに書いたときのレシーバの型（宣言元と違うときだけ。ライブラリ呼び出し規則・拡張が「書いてある型」で指定できるように）
 G  ガード番号  op  subject  text  値1  値2 …
    呼び出し箇所を囲む条件のアトム 1 つにつき 1 行（EQ / NE は値 1 つ、IN / NI は 1 つ以上）。
    subject はノード番号（引数 A か定数 V のノードだけ）。値はコンパイル時定数の値そのもの（64 文字以内で制御文字を
