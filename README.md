@@ -435,7 +435,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 通し番号はスタックトレースに出る javac の番号と一致するとは限りません（[docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md) の Q13）。
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
+at fx.lambda.Holder.<init>(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
 ```
 
 ラムダを作った箇所からは、内部では必ず「生成した」1 本の辺を張ります。
@@ -933,7 +933,7 @@ The serial numbers do not always match the ones in stack traces
 ([docs/lambda-expansion-qa.md](docs/lambda-expansion-qa.md), Q13).
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
+at fx.lambda.Holder.<init>(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
 ```
 
 Internally there is always one "created it" edge out of the place that wrote the lambda. That is so the calls
