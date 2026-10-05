@@ -29,6 +29,7 @@ CONTRIBUTING.md に全部書いてあるが、静かに壊れる（テストが�
 - `java-call-hierarchy-exporter.cmd` を UTF-8 で保存した（MS932・CRLF のまま保存する）
 - コメントに `Q番号` や `Issue #番号` だけを書いて結論を書かなかった（結論を 1 文で書き、参照は補助にする）
 - 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を 3 か所のうち 1 か所だけ直した
-  （`MethodSelection#search`・`ImplicitCalls#findNoArgMethod`・`ExternalUsageScanner#inheritedFrom`）
+  （`MethodSelection#search`・`MethodSelection#resolvedDeclaration`（解決: 抽象でも止まる・private を飛ばさない・
+  パッケージアクセスは見ない）・`ImplicitCalls#findNoArgMethod`。jar からの被参照 `ExternalUsageScanner` は `resolvedDeclaration` に任せる）
 - 事実を JDT に一緒に渡すファイルの組み方（バッチ）に依存させた。差分更新が全件解析と静かに食い違う（`test/incremental` で見る）
 - `main` に直接 push した。作業ブランチで開発し PR でマージする。コミットメッセージは日本語で何を・なぜ

@@ -197,7 +197,7 @@ Supplier<Dao> s = () -> new UserDaoImpl(); s.get().describe();   // ラムダの
 | パッケージアクセスの上書き | パッケージアクセスのメソッドは同じパッケージの宣言からしか上書きされない（JLS 8.4.8.1）ので、別パッケージのサブクラスの同じシグネチャのメソッドは CHA の候補に入れない。同じパッケージで public / protected に広げた中間の宣言があれば、推移的な上書きとして候補に入れる |
 | 呼び出しを修飾する型 | CHA の候補は、メソッドを宣言した型ではなく**呼び出しを修飾する型**（JLS 13.1。受け手の式の静的な型、単純名なら囲む型）の部分型から引く。`Plain p; p.greet()`（`greet` は親インターフェース `Greeter` のデフォルトメソッド）の候補に、`Plain` の部分型でない `Greeter` の実装は入らない。修飾する型が jar の型のときは、jar の中の中間の型を経由した部分型を数え漏らしうるので、宣言した型から引く（多すぎる側） |
 | 条件の値 | 値を変えうるキャスト（JLS 5.1.3 の縮小、5.1.2 のうち精度を失う拡大、5.1.7 / 5.1.8）が挟まった式は**判定しない**。条件の両辺だけでなく、実引数・ローカル変数・戻り値の値も同じ規則で読む（コンパイル時定数は変換後の値）。`char` は数値昇格（JLS 5.6）に合わせて数値で持つ。浮動小数は表記が揺れるので拾わず、比べる両辺の片方でも `float` / `double` なら判定しない（整数の実引数は浮動小数の引数へ暗黙に拡大され、`int` → `float` などは精度を失うので、`f(16777217)` の `x == 16777216` は真になる。JLS 5.1.2・5.3）。数値リテラルの値は JDT の評価から取る（16 進の `0x80000000` は `-2147483648`。JLS 3.10.1）。`equals` は、比べる相手の静的な型が `String`・定数と同じ列挙型・定数を箱詰めした型（浮動小数を除く）のときだけ判定する（実行時の型が違えば表記が同じでも偽になるため）（`docs/value-safety-qa.md`） |
-| record・enum の暗黙メンバ | 正準コンストラクタは合成するが、**アクセサ（JLS 8.10.3）・`equals` / `hashCode` / `toString` と、enum の `values()` / `valueOf(String)`（JLS 8.9.3）は合成しない**。呼び出しは `[EXTERNAL] no source to follow` と出る。本体がソースに無いので辿る先は無いが、「ソースにある型なのに EXTERNAL」と見えるのは正確ではない |
+| record・enum の暗黙メンバ | 正準コンストラクタと、record の書かれなかった成分のアクセサ（JLS 8.10.3）は宣言（D 行）を合成する（`TypeContextTracker#synthesizeImplicitAccessors`。形式 v45。合成しないと `record R(String name) implements Named` で実装探索が親インターフェースの `default name()` に進んでしまう。Issue #177）。**`equals` / `hashCode` / `toString` と、enum の `values()` / `valueOf(String)`（JLS 8.9.3）は合成しない**。これらの呼び出しは `[EXTERNAL] no source to follow` と出る。本体がソースに無いので辿る先は無いが、「ソースにある型なのに EXTERNAL」と見えるのは正確ではない |
 | 起動の入口 | 名前が `main` で引数が `String[]` か無し、private でないメソッドを入口（`FRAMEWORK_ENTRY`）にする（JLS 12.1.4。インスタンスメソッドの `void main()` を含む）。JLS は戻り値が void であることも求めるが、D 行に戻り値の型が無いので見ない（多すぎる側） |
 | 準拠レベル | `source.level` を指定しなければ JDT が対応する最大版で読む。**プレビュー機能は有効にしない**ので、プレビュー段階の構文は構文エラーになる（`syntax errors` として件数が出る） |
 
@@ -268,19 +268,22 @@ return switch (key) {
 
 ## 10. ラムダ式・メソッド参照の追い方
 
-ラムダ式の本体は、javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
-**合成メソッド**として 1 つのノードにします（`methods.csv` には出しません）。
+ラムダ式の本体は、解析の内部では javac に似せた名前（`lambda$囲みメソッド名$通し番号`）を付けた
+**合成メソッド**として扱います。CSV には出ません（`methods.csv` にも `call-hierarchy.csv` にも）。
 static 初期化子・static フィールド・enum 定数の引数の中のラムダは `lambda$static$N` です。
 通し番号はスタックトレースに出る javac の番号と一致するとは限りません（[docs/lambda-expansion-qa.md](lambda-expansion-qa.md) の Q13）。
 
 ```csv
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
 ```
 
-ラムダを作った箇所からは、必ず「生成した」1 本の辺が出ます。
+ラムダを作った箇所からは、内部では必ず「生成した」1 本の辺を張ります。
 どこで実行されるか分からないラムダでも、本体の中の呼び出しが階層から落ちないようにするためです。
-実行箇所を特定できたときは、そちらからも同じノードに繋がります（`resolved-by` が `RESOLVED:DATAFLOW_LAMBDA`）。
+CSV にはラムダの合成メソッド（`lambda$…`）の行を出しません（ソースに書いていない、コンパイラが作る暗黙のメソッドだからです）。
+本体の中の呼び出しは、ラムダを実行するメソッド（ラムダを作ったメソッド、または引数で渡した先で `r.run()` するメソッド）の
+直下に出ます。`depth` 列と `call-hierarchy` 列にもラムダの段は入りません（Eclipse の呼び出し階層と同じ見え方）。
+同じ本体へ降りる辺（作った辺・規則の呼び戻し・`DATAFLOW_LAMBDA`）は 1 本の枝にまとめます
+（[lambda-collapse-qa.md](lambda-collapse-qa.md)）。
 
 実行箇所を特定できる形:
 
@@ -303,7 +306,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 - フィールドのコレクションに詰める形、詰める場所と回す場所が別メソッドの形
 - 同じ変数に複数のラムダが入りうる形（どれが実行されるか決められないので、絞りません）
 
-特定できない場合でも、生成の辺があるので本体の中の呼び出しは階層に出ます。
+特定できない場合でも、ラムダを作ったメソッドの直下に本体の中の呼び出しが出ます。
 
 ラムダが捕捉した囲みメソッドの引数（`(Dao dao) -> … () -> dao.describe()` の `dao`）の具象型は、
 ラムダを作ったメソッドの段でだけ当てます。引数で渡した先から本体へ降りたときは、その先の引数は

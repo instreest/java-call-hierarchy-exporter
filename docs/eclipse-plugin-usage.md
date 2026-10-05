@@ -301,7 +301,7 @@ printf 'HELLO\t1\nANALYZE\t/path/config/config.properties\nTREE\tcom.example.Foo
 
 ```bash
 bash test/plugin/run.sh          # 版・ID・クラスの実在、解析本体がバンドルに混ざっていないこと
-bash test/plugin-api/run.sh      # 古い Eclipse（4.6 相当）の jar と --release 8 でコンパイルできること
+bash test/plugin-api/run.sh      # 下限の Eclipse 4.17（JDT 3.23.0）の jar と --release 11 でコンパイルできること
 bash test/plugin-config/run.sh   # 自動生成した設定が、解析側と同じ読み方で読み戻せること
 bash test/plugin-nls/run.sh      # 文言が英語・日本語で出し分けられること（キーのそろい・UTF-8）
 bash test/plugin-client/run.sh   # 子プロセスを実際に起動して、プロトコルと木の組み直しを確認

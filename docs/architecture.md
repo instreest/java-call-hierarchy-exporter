@@ -2,8 +2,8 @@
 
 初めてコードを読む人が 10 分で全体をつかむための 1 枚。ここで場所をつかんだら、
 規則ごとの深い対応表は [resolution-selection-design.md](resolution-selection-design.md)、キャッシュの設計は
-[cache-design.md](cache-design.md)、用語は [glossary.md](glossary.md)、各パッケージの決まりと読む順は
-`src/jche/<パッケージ>/package-info.java` へ進む。
+[cache-design.md](cache-design.md)、用語は [glossary.md](glossary.md)、3 層（`analysis` / `cache` / `graph`）の決まりと読む順は
+`src/jche/{analysis,cache,graph}/package-info.java` へ進む（`package-info.java` があるのはこの 3 つだけ）。
 
 ## 1. 何をどう作っているか（3 フェーズと 3 層）
 
@@ -79,10 +79,12 @@ Eclipse / VSCode のプラグインは `jche.server.Server`（`--server`）を�
                           server ──────┘            └──── config        │         │
                                                                      report    external
    extension（利用者の拡張が import する唯一の公開 API。java.* 以外に依存しない）◀─ graph / builtin
+   framework（アノテーション処理で実装が生成される型の定義。GeneratedImpl）◀─ graph / report
    util（Log・Messages・Warnings・FileTree など。どこからでも）
 ```
 
 - `analysis`（書き手）と `graph`（読み手）は互いを参照せず、`cache` の record と形式（`CacheFormat`）だけを共有する
+- `framework` は生成される実装（Doma の `@Dao` など）の定義だけを持ち、`graph`（解決の段）と `report`（注記）が読む
 - `dataflow` は `graph` の上に乗るフェーズ 2b。`report` と `external` は `graph` を読むだけ
 - `extension` は利用者が書く拡張がコンパイル時に依存する API なので、互換を保ち `java.*` 以外を import しない
   （1 ファイル版でもここだけは本物のパッケージのまま写す）
@@ -91,7 +93,7 @@ Eclipse / VSCode のプラグインは `jche.server.Server`（`--server`）を�
 
 | パッケージ | 責務 | まず読むクラス |
 |---|---|---|
-| `jche` | 入口 3 つと結果の入れ物 | `Jche`、`CallHierarchyExporter`、`Exporter`、`AnalysisSnapshot` |
+| `jche` | 入口 3 つと結果の入れ物、ワークスペースの他プロジェクト（`workspace.projects`。相手の設定でフェーズ1 を走らせ、相手のキャッシュをフェーズ2 で名前で結合する） | `Jche`、`CallHierarchyExporter`、`Exporter`、`AnalysisSnapshot`、`WorkspaceProject` |
 | `jche.config` | 設定ファイルの読み取り、`project.root` からの自動判定、ビルドファイル（Maven / Gradle）から依存 jar を集める | `Config`、`ConfigFile`、`ProjectDetector`、`ProjectLayout`、`BuildFileClasspath`（→ `MavenBuild` / `GradleBuild`）、`ToolRoot`、`Plugins` |
 | `jche.analysis` | **解決**。JDT で AST を訪問し事実を集め、差分更新でキャッシュを書き直す | `CacheUpdater`、`StaleTypes`、`CallEdgeExtractor`、`FactVisitor`、`BindingNames`、`OverrideFacts`、`CallSiteRecorder`、`OriginTracker`、`ImplicitCalls`、`LibraryDiff`、`BlockWriter` |
 | `jche.cache` | **キャッシュ**。`analysis-cache.tsv` の形式と、行 1 つ 1 つの record。錠と一時ファイル | `CacheFormat`（形式の正本）、`FileAnalysis`、`CacheReader`、`CacheLock`、`TempFiles`、`CacheDump`（目で読める形に戻す道具） |

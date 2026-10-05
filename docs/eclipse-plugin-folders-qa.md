@@ -27,7 +27,7 @@
 ところがその中身は `project.root=.` だった。
 
 解析側の相対パスの起点は「**設定ファイルを置いたフォルダ**」である
-（[config/config.properties](../config/config.properties) 冒頭のコメント）。つまり `.` は
+（[config/jche.properties](../config/jche.properties) 冒頭のコメント。当時の名前は `config.properties`）。つまり `.` は
 解析対象のプロジェクトではなく、**この作業フォルダ自身**を指していた。作業フォルダには
 `generated-config.properties` しか無いので、その下の `source.folders`（`src/main/java` など）は
 どれも存在せず、`src/main/java` も `src` も `.classpath` も無いフォルダとして扱われて、
