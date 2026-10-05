@@ -10,6 +10,8 @@
 # 3. ValueStoreCheck  … 実際のプロジェクトを解析して組み上がった値の表（jche.graph.ValueStore / GuardTable）が、
 #    読み手の前提にしている決まり（子 < 親・項目の並び・葉と文字列の一意・頭は葉・型名が ':' を含まない など）を
 #    守っていること（ValueStoreCheck.java の説明）。表の大きさも 1 行ずつ出す
+# 4. VersionsCheck    … 依存の版の比較と選択（jche.config.Versions。パッケージの中だけで見えるので jche/config/ に置く）。
+#    修飾子の前の 0 を落として "1.0.0-SNAPSHOT" が "1.0" より古いこと（Maven の ComparableVersion と同じ順）
 #
 # 値の読み違いで呼び出しを落とさないことそのもの（振る舞い）は、test/pruning と test/regression（values を含む）が見る。
 # この検査だけでは振る舞いは守れない（読み手の分かれ道を 1 行ずつ壊す変異 96 個を 1 つも検出しない。
@@ -59,5 +61,6 @@ run_check() {   # $1=クラス名  $2..=引数
 run_check ResolveOrderCheck jche.properties
 run_check jche.graph.StoreUnitCheck
 run_check ValueStoreCheck
+run_check jche.config.VersionsCheck
 
 if [ $fail = 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

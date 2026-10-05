@@ -94,7 +94,7 @@
 
 ### `bash test/dataflow/run.sh`
 
-解決の決定性と値の表の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること（ResolveOrderCheck）。値の表を組む側を手で書き換えた行でたたく（StoreUnitCheck）。回帰テストの題材を解析して、組み上がった値の表が読み手の前提にしている決まり（子 < 親・項目の並び・葉と文字列の一意・頭は葉・型名が `:` を含まない など）を守ること（ValueStoreCheck）
+解決の決定性と値の表の検査。`test/demo` の全エッジを 3 通りの順で `CallResolver.resolve` して結果が一致すること（ResolveOrderCheck）。値の表を組む側を手で書き換えた行でたたく（StoreUnitCheck）。回帰テストの題材を解析して、組み上がった値の表が読み手の前提にしている決まり（子 < 親・項目の並び・葉と文字列の一意・頭は葉・型名が `:` を含まない など）を守ること（ValueStoreCheck）。あわせて、依存の版の比較と選択（`jche.config.Versions`）が Maven と同じ順になること（`1.0.0-SNAPSHOT` は `1.0` より古い。VersionsCheck）
 
 ### `bash test/conditions/run.sh`
 
