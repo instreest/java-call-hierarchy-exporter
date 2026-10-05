@@ -125,6 +125,7 @@ at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PAR
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.lambdas,UserDaoImpl.describe
+at fx.app.Main.lambdas(Main.java:119),Iterable.forEach,UNEXPANDED:CALLBACK,3,Main.main,Main.run,Main.lambdas,Iterable.forEach,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
 at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
@@ -266,8 +267,10 @@ at fx.lambda.Holder.viaForEach(Holder.java:51),OrderDaoImpl.findById,RESOLVED:DA
 at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Iterable.forEach,UNEXPANDED:CALLBACK,1,Holder.viaForEach,Iterable.forEach,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
 at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.LateTask.kick(LateTask.java:20),Thread.start,UNEXPANDED:CALLBACK,1,LateTask.kick,Thread.start,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
 at fx.lambda.Nested.viaNested(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Nested.viaNested,OrderDaoImpl.describe
 at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Redeclared.viaSuperInterface,OrderDaoImpl.describe
 at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:18),Redeclared.dispatch,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.dispatch
@@ -316,7 +319,9 @@ at fx.reflect.Target.run(Target.java:9),Target.step,RESOLVED:STATIC_BOUND:PRIVAT
 at fx.reflect.Invoker.invokeNamed(Invoker.java:39),Target.<clinit>,RESOLVED:REFLECTION_INIT,2,Invoker.viaParam,Invoker.invokeNamed,Target.<clinit>
 at fx.reflect.Invoker.viaParam(Invoker.java:34),Invoker.create,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.create
 at fx.reflect.Invoker.create(Invoker.java:43),Target.<clinit>,RESOLVED:REFLECTION_INIT,2,Invoker.viaParam,Invoker.create,Target.<clinit>
+at fx.reflect.Invoker.viaParam(Invoker.java:35),Constructor.newInstance,UNEXPANDED:REFLECTION,1,Invoker.viaParam,Constructor.newInstance,[EXTERNAL] no source to follow / [UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path
 at fx.reflect.Invoker.viaParam(Invoker.java:35),Invoker.classOf,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.classOf
+at fx.reflect.Invoker.unknown(Invoker.java:51),Method.invoke,UNEXPANDED:REFLECTION,1,Invoker.unknown,Method.invoke,[EXTERNAL] no source to follow / [UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path
 at fx.service.OrderService.<clinit>(OrderService.java:12),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,1,OrderService.<clinit>,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,2,OrderService.<clinit>,DaoFactory.create,DaoFactory.newUserDao
 at fx.app.Legacy.callRemote(Legacy.java:9),go,UNRESOLVED:BINDING_FAILED,1,(unresolved),go,type resolution failed (missing classpath / dynamic call / etc.)

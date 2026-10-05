@@ -30,3 +30,4 @@ at vals.Pipe.eq(Pipe.java:45),Pipe.hit,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.mainE
 at vals.Pipe.mainConst(Pipe.java:28),Pipe.konst,RESOLVED:STATIC_BOUND:STATIC,1,Pipe.mainConst,Pipe.konst
 at vals.Pipe.konst(Pipe.java:51),Pipe.hitConst,RESOLVED:STATIC_BOUND:STATIC,2,Pipe.mainConst,Pipe.konst,Pipe.hitConst
 at vals.Refl.main(Refl.java:24),Refl.run,RESOLVED:NO_OVERRIDE,1,Refl.main,Refl.run
+at vals.Refl.run(Refl.java:16),Method.invoke,UNEXPANDED:REFLECTION,2,Refl.main,Refl.run,Method.invoke,[EXTERNAL] no source to follow / [UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path

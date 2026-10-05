@@ -8,7 +8,7 @@ Main.noSource(Node),fx.app.Main,C,src/fx/app/Main.java,89,1,1,1,NORMAL,1,0,,1,
 Main.noImpl(Exporter),fx.app.Main,C,src/fx/app/Main.java,93,1,1,2,NORMAL,1,1,[UNEXPANDED:NO_IMPL] no implementation with a body in the source,1,
 Main.useParam(Dao),fx.app.Main,C,src/fx/app/Main.java,97,1,1,2,NORMAL,1,2,[UNEXPANDED:CHA] parameter (passed in from outside the method),1,
 Main.shapes(),fx.app.Main,C,src/fx/app/Main.java,102,1,1,4,NORMAL,1,1,[UNEXPANDED:CHA] local variable,1,
-Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,110,1,1,10,NORMAL,1,3,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference;[UNEXPANDED:CHA] type name (unbound method reference),1,
+Main.lambdas(Dao),fx.app.Main,C,src/fx/app/Main.java,110,1,1,10,NORMAL,1,4,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference;[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source;[UNEXPANDED:CHA] type name (unbound method reference),1,
 Main.anonymous(Dao),fx.app.Main,C,src/fx/app/Main.java,122,1,1,4,NORMAL,1,0,,1,
 Main$1LocalService.execute(),fx.app.Main$1LocalService,C,src/fx/app/Main.java,136,1,2,1,NORMAL,1,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),1,
 Feature.run(boolean),fx.branch.Feature,C,src/fx/branch/Feature.java,17,1,1,3,NORMAL,1,0,,1,
@@ -46,7 +46,7 @@ Dao.describe(),fx.dao.Dao,I,src/fx/dao/Dao.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REA
 DaoFactory.create(),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,6,1,3,1,NORMAL,1,0,,1,
 DaoFactory.newUserDao(),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,10,1,1,1,NORMAL,1,0,,1,
 DaoFactory.createEither(boolean),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,14,1,1,2,NORMAL,1,0,,1,
-DaoFactory.byName(String),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,21,1,2,3,NORMAL,1,0,,1,
+DaoFactory.byName(String),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,21,1,2,3,NORMAL,1,1,[UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path,1,
 DaoFactory.passThrough(Dao),fx.dao.DaoFactory,C,src/fx/dao/DaoFactory.java,25,1,1,0,LEAF,1,0,,1,
 ItemDao.selectById(long),fx.dao.ItemDao,I,src/fx/dao/ItemDao.java,15,0,2,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 ItemDao.selectFirst(),fx.dao.ItemDao,I,src/fx/dao/ItemDao.java,18,1,1,1,NORMAL,0,1,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma),0,[NOT_REACHED] no caller row was emitted
@@ -86,7 +86,7 @@ Dispatcher.submit(Runnable),fx.entry.Dispatcher,C,src/fx/entry/Dispatcher.java,1
 Jobs.nightly(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,16,1,1,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
 Jobs.onEvent(Object),fx.entry.Jobs,C,src/fx/entry/Jobs.java,22,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
 Jobs.list(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,28,1,1,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
-Jobs.custom(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,34,1,0,3,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
+Jobs.custom(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,34,1,0,3,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source,0,[NOT_REACHED] no caller row was emitted
 Jobs.internal(),fx.entry.Jobs,C,src/fx/entry/Jobs.java,38,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 SampleTest.runsJob(),fx.entry.SampleTest,C,src/fx/entry/SampleTest.java,9,1,0,2,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
 "WebEntry.doGet(HttpServletRequest,HttpServletResponse)",fx.entry.WebEntry,C,src/fx/entry/WebEntry.java,16,1,0,1,FRAMEWORK_ENTRY,0,0,,0,[NOT_REACHED] no caller row was emitted
@@ -130,7 +130,9 @@ Holder.viaField(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,29,1,0,1,ENTRY_CA
 Holder.viaParam(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,33,1,0,2,ENTRY_CANDIDATE,0,0,,0,[NOT_REACHED] no caller row was emitted
 Holder.runIt(Runnable),fx.lambda.Holder,C,src/fx/lambda/Holder.java,37,1,1,1,NORMAL,0,1,[UNEXPANDED:CHA] parameter (passed in from outside the method),0,[NOT_REACHED] no caller row was emitted
 Holder.viaCollection(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,41,1,0,7,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
-Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CHA] type name (unbound method reference),0,[NOT_REACHED] no caller row was emitted
+Holder.viaForEach(),fx.lambda.Holder,C,src/fx/lambda/Holder.java,49,1,0,5,ENTRY_CANDIDATE,0,2,[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source;[UNEXPANDED:CHA] type name (unbound method reference),0,[NOT_REACHED] no caller row was emitted
+LateTask.setTask(Runnable),fx.lambda.LateTask,C,src/fx/lambda/LateTask.java,14,1,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted
+LateTask.kick(),fx.lambda.LateTask,C,src/fx/lambda/LateTask.java,19,1,0,2,ENTRY_CANDIDATE,0,1,[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source,0,[NOT_REACHED] no caller row was emitted
 LoggingHandler.handle(String),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,11,1,1,1,NORMAL,0,0,,0,[NOT_REACHED] no caller row was emitted
 LoggingHandler.logged(),fx.lambda.LoggingHandler,C,src/fx/lambda/LoggingHandler.java,15,1,1,0,LEAF,0,0,,0,[NOT_REACHED] no caller row was emitted
 Nested.viaNested(),fx.lambda.Nested,C,src/fx/lambda/Nested.java,19,1,0,2,ENTRY_CANDIDATE,0,1,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference,0,[NOT_REACHED] no caller row was emitted
@@ -169,12 +171,12 @@ Invoker.byLiteral(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,9,1,1,4,NOR
 Invoker.byConstant(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,13,1,0,5,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Invoker.byClassLiteral(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,19,1,0,3,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 Invoker.byGetClass(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,23,1,0,4,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
-Invoker.nameOnly(Class[]),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,28,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] return value (factory method etc.),0,[NOT_REACHED] no caller row was emitted
-Invoker.viaParam(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,32,1,0,6,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
-"Invoker.invokeNamed(String,String)",fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,38,1,1,3,NORMAL,1,0,,1,
-Invoker.create(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,42,1,1,2,NORMAL,1,0,,1,
+Invoker.nameOnly(Class[]),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,28,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:REFLECTION] matched by name because argument types are unknown,0,[NOT_REACHED] no caller row was emitted
+Invoker.viaParam(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,32,1,0,6,ENTRY_CANDIDATE,1,1,[UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path,0,[NOT_REACHED] no caller row was emitted
+"Invoker.invokeNamed(String,String)",fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,38,1,1,3,NORMAL,1,1,[UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path,1,
+Invoker.create(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,42,1,1,2,NORMAL,1,1,[UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path,1,
 Invoker.classOf(),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,46,1,1,0,LEAF,1,0,,1,
-Invoker.unknown(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,50,1,0,3,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
+Invoker.unknown(String),fx.reflect.Invoker,C,src/fx/reflect/Invoker.java,50,1,0,3,ENTRY_CANDIDATE,1,1,[UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path,0,[NOT_REACHED] no caller row was emitted
 Target.run(),fx.reflect.Target,C,src/fx/reflect/Target.java,8,1,4,1,NORMAL,1,0,,1,
 Target.run(long),fx.reflect.Target,C,src/fx/reflect/Target.java,9,1,2,1,NORMAL,1,0,,1,
 "Target.run(String,int)",fx.reflect.Target,C,src/fx/reflect/Target.java,10,1,2,1,NORMAL,1,0,,1,
