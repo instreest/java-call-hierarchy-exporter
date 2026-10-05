@@ -41,7 +41,7 @@
 | `server/` | サーバーモード（`--server`）のプロトコル | `server` | — | regression |
 | `pom/` | `//DEPS` と `pom.xml` の依存の一致 | JDT の版 | — | pom |
 | `jbangw/` | `jbangw/` が本家から黙って変わっていないこと | `jbangw/` | — | jbangw |
-| `action/` | 複合アクションが依存 jar の警告を注釈とサマリに出すこと（jbang はスタブ） | `action.yml` / `.github/action/` | — | action |
+| `action/` | 複合アクションが依存 jar の警告を注釈とサマリに出すこと（jbang はスタブ） | `action.yml` / `.github/action/` | — | jbangw（action ジョブは複合アクションそのものを `uses: ./` で動かす） |
 | `plugin/` | Eclipse プラグインの定義（`plugin.xml` 等）がそろっていること | `eclipse-plugin/` | — | eclipse-plugin |
 | `plugin-api/` | Eclipse プラグインが下限の Eclipse 4.17 の jar と `--release 11` でコンパイルできること | `eclipse-plugin/` | Maven | eclipse-plugin |
 | `plugin-config/` | Eclipse プラグインが自動生成した設定を解析側が同じ読み方で読み戻せること | `EclipseProjectConfig` / `ConfigFile` | — | eclipse-plugin |
@@ -52,6 +52,9 @@
 
 `plugin*` のフォルダは **Eclipse プラグイン**の検査で、利用者が Java で書く拡張（`plugin.folders`）の検査ではない。
 拡張の検査は `regression/plugin` ケース（題材は `plugin-demo/`）にある。
+
+Windows 版の回帰テスト（`regression/run.cmd`。CI の regression-windows）が回すのはケースの一部
+（whole / entry / novalues / maven / mavenmulti / gradle / jarchange / plugin / multi）だけで、残りのケースは `run.sh` でしか見ない。
 
 ## 題材の一覧
 
