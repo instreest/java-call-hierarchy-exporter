@@ -35,7 +35,8 @@ import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
  *
  * <p>{@link #findNoArgMethod} の「クラスの連鎖 → 最も特定的な親インターフェース」の順は、選択の正本
  * jche.graph.MethodSelection#search（docs/resolution-selection-design.md の 4 節）の写しで、材料が JDT のバインディング
- * （こちらは解決の層）なので寄せられない。順を変えるときは jche.external.ExternalUsageScanner と合わせて 3 か所を同時に直す（Issue #189）。
+ * （こちらは解決の層）なので寄せられない。順を変えるときは jche.graph.MethodSelection#resolvedDeclaration（jar からの被参照の
+ * 解決。jche.external.ExternalUsageScanner#lookupRef が使う）と合わせて 3 か所を同時に直す（Issue #189）。
  */
 final class ImplicitCalls {
 
