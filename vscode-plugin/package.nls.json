@@ -17,6 +17,7 @@
   "command.jche.openLog.title": "Open the log",
   "command.jche.saveConfig.title": "Save the settings to jche.properties",
   "command.jche.selectConfig.title": "Choose a config file",
+  "command.jche.addWorkspaceProjects.title": "Add other workspace folders to workspace.projects (analyze them together)",
   "command.jche.filterText.title": "Filter text",
   "command.jche.filterOptions.title": "Filter settings (depth, tests, guesses, duplicates)",
   "command.jche.export.title": "Export this tree to CSV",

@@ -49,6 +49,7 @@
 | 証拠（hint） | `jche.extension.Hint`、`HintFact` | 拡張に渡す、呼び出し箇所の局所的な材料（ファクトリのキーなど） |
 | 起点（エントリ） | `EntryPoints`、設定の `entry.packages` | 呼び出し階層を辿り始めるメソッド。全体モードでは誰からも呼ばれていないメソッド |
 | 被参照 | `jche.external.ExternalUsageScanner`、`EXTERNAL_USAGE:*` | 外部 jar のクラスファイルから自分のメソッドが参照されている箇所 |
+| ワークスペースのプロジェクト | `WorkspaceProject`、設定の `workspace.projects`、`WorkspaceScope`（`workspace.scope`） | 一緒に解析する他のプロジェクト。相手自身の設定で解析したキャッシュを名前で結合し、呼び出し階層を相手の起点まで伸ばす。既定（`callers`）では自分のメソッドに届く経路だけを出す |
 
 ## 4. 値の追跡
 
