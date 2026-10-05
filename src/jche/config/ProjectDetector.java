@@ -2,14 +2,13 @@ package jche.config;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+
+import org.w3c.dom.Element;
 
 /**
  * project.root のフォルダを見るだけで分かること（ソースフォルダの候補、ビルドファイル、ソースの文字コード、
@@ -82,24 +81,28 @@ public final class ProjectDetector {
         return null;
     }
 
-    private static final Pattern POM_ENCODING =
-            Pattern.compile("<project\\.build\\.sourceEncoding>\\s*([^<\\s]+)\\s*</project\\.build\\.sourceEncoding>");
-
-    /** pom.xml の project.build.sourceEncoding。無ければ null */
+    /**
+     * pom.xml の {@code <properties>} の project.build.sourceEncoding。無ければ null。
+     *
+     * <p>XML として読む（{@link ProjectLayout#parseXml}。{@link MavenPom} と同じ読み方）。以前は UTF-8 で読んだ
+     * 文字列に正規表現を当てていたので、XML 宣言の文字コードが UTF-8 でない pom.xml で読み損ね、注釈に書かれた
+     * （コメントアウトした）値や、読まないプロファイルの中の値まで拾っていた。
+     * 親 POM からの継承はしない（決められなければ既定の UTF-8）
+     */
     public static String pomEncoding(Path pom) {
         if (!Files.isRegularFile(pom)) {
             return null;
         }
         try {
-            Matcher m = POM_ENCODING.matcher(Files.readString(pom, StandardCharsets.UTF_8));
-            if (!m.find()) {
+            Element properties = MavenPom.child(ProjectLayout.parseXml(pom).getDocumentElement(), "properties");
+            String enc = (properties == null) ? "" : MavenPom.text(properties, "project.build.sourceEncoding");
+            if (enc.isEmpty()) {
                 return null;
             }
-            String enc = m.group(1);
             // ${file.encoding} のようなプロパティ参照はここでは展開できない。そのまま返すと
             // Charset.forName で落ちるので「決められない」として既定（UTF-8）に倒す
             return (enc.contains("${") || !Charset.isSupported(enc)) ? null : enc;
-        } catch (IOException | RuntimeException e) {
+        } catch (Exception e) {
             return null;
         }
     }
