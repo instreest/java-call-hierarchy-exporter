@@ -92,7 +92,9 @@ if [ ! -s "$config_list" ]; then
     exit 1
 fi
 
-# キャッシュキー。ツール本体（//DEPS の版を含む）と JBang ラッパーが変わったら作り直す
+# JBang / JDT のキャッシュキー。JBang ラッパーと、ツール本体の //DEPS（JDT の版）・//JAVA（実行 JDK）の行が
+# 変わったら作り直す。ソース全体ではなくこの 2 種の行だけをハッシュするのは、本体を 1 行直すたびに
+# 依存 jar の取得（数分）が走らないようにするため。このリポジトリ自身の smoke.yml も同じ行から鍵を作る
 hash_files() {
     if command -v sha256sum > /dev/null 2>&1; then
         sha256sum "$@"
@@ -100,8 +102,9 @@ hash_files() {
         shasum -a 256 "$@"   # macOS には sha256sum が無い
     fi
 }
-cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$GITHUB_ACTION_PATH/src/jche/CallHierarchyExporter.java" \
-    | hash_files | cut -c1-16)
+deps_lines="$work/jbang-cache-key.txt"
+grep -E '^//(DEPS|JAVA) ' "$GITHUB_ACTION_PATH/src/jche/CallHierarchyExporter.java" > "$deps_lines" || true
+cache_key=$(hash_files "$GITHUB_ACTION_PATH/jbangw/jbang" "$deps_lines" | hash_files | cut -c1-16)
 
 # AST 解析キャッシュのキー。使う設定ファイルの内容（生成した場合は絶対パス込みで毎回同じになる）から作る。
 # 同じリポジトリの別ジョブが別の設定でこのアクションを呼んでも、互いのキャッシュを上書きしないようにするため。

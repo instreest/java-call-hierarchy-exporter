@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { findConfigFiles, generatedConfigText, materialize, resolveConfigSource } from '../src/config';
+import { codeExecutingKeys, findConfigFiles, generatedConfigText, materialize, resolveConfigSource } from '../src/config';
 
 function scratch(): string {
     return mkdtempSync(path.join(tmpdir(), 'jche-vscode-'));
@@ -60,4 +60,24 @@ test('明示された設定ファイルは最優先。無ければエラーに�
 test('生成する設定の中のバックスラッシュはそのまま（読み手はエスケープとして読まない）', () => {
     assert.match(generatedConfigText('C:\\work\\app'), /^project\.root=.*work\\app$/m);
     assert.doesNotMatch(generatedConfigText('C:\\work\\app'), /\\\\/);
+});
+
+test('Java を実行させる項目（plugin.folders / *.providers）を値のあるものだけ拾う', () => {
+    assert.deepEqual(codeExecutingKeys('project.root=.\nsource.folders=src\n'), []);
+    assert.deepEqual(codeExecutingKeys('plugin.folders=\nresolver.candidate.providers=\ncall.rules.providers= \n'), [],
+        '値が空なら拾わない（ひな形にキーだけ残っていることがある）');
+    assert.deepEqual(codeExecutingKeys('\uFEFF# plugin.folders=plugins\n!call.rules.providers=x\nproject.root=.\n'), [],
+        '注釈の行は拾わない。先頭の BOM は読み飛ばす');
+    assert.deepEqual(codeExecutingKeys('call.rules.providers=a.B\nplugin.folders = plugins \r\nproject.root=.\n'),
+        ['plugin.folders', 'call.rules.providers'], '並びは表の順。CRLF と = の前後の空白を許す');
+    assert.deepEqual(codeExecutingKeys('resolver.candidate.providers=jp.co.x.A,\\\n    jp.co.x.B\nproject.root=.\n'),
+        ['resolver.candidate.providers'], '行末の \\ で続く値');
+    assert.deepEqual(codeExecutingKeys('plugin.folders=\\\n    plugins\n'), ['plugin.folders'],
+        '1 行目が空でも、続きの行に値があれば拾う');
+    assert.deepEqual(codeExecutingKeys('plugin.folders=\n    plugins\n'), ['plugin.folders'],
+        '字下げだけの続き（\\ 無し）も本体と同じく値として読む');
+    assert.deepEqual(codeExecutingKeys('plugin.folders=\n\n    plugins\n'), [],
+        '空行を挟むと字下げの続きではない');
+    assert.deepEqual(codeExecutingKeys('plugin.folders=\\\n  resolver.candidate.providers=x\n'), ['resolver.candidate.providers'],
+        '項目=の形の行は、\\ の後ろでも字下げされていても新しい項目');
 });

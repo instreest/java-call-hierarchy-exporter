@@ -228,6 +228,7 @@ config/
 ```
 
 出力 CSV ファイルは UTF-8（BOM 付き）なので Excel で開けます。CSV の中身は、画面の表示言語に関わらず英語です。
+`=` `+` `-` `@` で始まるセル（`call-conditions.csv` の条件・期待値や、未解決の呼び出しの式）は Excel が数式として評価しないよう先頭に `'` を付けて引用符で囲みます。
 
 `warnings.txt` は、ビルドが通り依存 jar がすべて解決できている、というこのツールの前提が崩れているときだけできます。
 載るのは、依存 jar の不足・設定の指定先の欠け・コンパイルエラーのほか、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存 jar などです。
@@ -740,6 +741,7 @@ config/
 
 The CSV files are UTF-8 with a BOM, so Excel opens them directly. The content of the CSV is in English
 whatever the display language.
+A cell that starts with `=` `+` `-` `@` (a condition or expectation in `call-conditions.csv`, or the expression of an unresolved call) is prefixed with `'` and quoted so that Excel does not evaluate it as a formula.
 
 `warnings.txt` is created only when the tool's assumption — the sources build and all dependency jars are
 resolved — does not hold.

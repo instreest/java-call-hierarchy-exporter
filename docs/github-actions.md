@@ -323,6 +323,13 @@ CSV を後続のステップで読むだけでアーティファクトが要ら�
 依存の取得は「リポジトリ内の `pom.xml` / `build.gradle` が指す座標を、ランナーの設定で外部に問い合わせる」行為で、
 ビルドプラグインの実行も伴います。
 
+もう 1 つの例外は `config` 入力です。渡した設定ファイルに `plugin.folders` / `resolver.candidate.providers` /
+`call.rules.providers` があると、そのフォルダの Java をランナーで**コンパイルして実行**します
+（[instance-analysis-plugin.md](instance-analysis-plugin.md) の「安全性」）。`pull_request` のワークフローでフォークからの
+PR をチェックアウトし、リポジトリ内の設定ファイルを `config` に渡していると、フォーク側が書いた Java がその PR の権限で
+動くことになります。そうしたワークフローでは `config` にリポジトリ内のファイルを指さず入力から生成させるか、
+渡す設定ファイルの中身を確かめてから使ってください。
+
 ### `pull_request_target` では使わない
 
 `pull_request_target` はフォークからの PR に対して**ベースブランチの権限（シークレット・書き込みトークン）で**動きます。

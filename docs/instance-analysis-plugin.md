@@ -367,6 +367,17 @@ s.execute();            // ← 証拠が2件付く
 - 拡張の中で例外を投げても解析は止まりません。警告を出してその拡張を飛ばします
 - `resolver.candidate.providers` に複数書いた場合は、**先に候補を返した拡張が勝ちます**
 
+### 安全性
+
+`plugin.folders` は**コードの実行**です。そこに置かれた `.java` は解析のたびにコンパイルされ、
+`resolver.candidate.providers` / `call.rules.providers` に書いたクラスは解析と同じ JVM・同じ権限で動きます。
+つまり設定ファイルを書いた人が、解析を実行する PC で任意の Java を動かせます。
+信頼できないリポジトリの `jche.properties` をそのまま使わないでください（中身を読んで、`plugin.folders` と
+`*.providers` を外すか、自分の設定ファイルを別に用意する）。Eclipse / VSCode のプラグインは、プロジェクトで
+自動で見つけた設定ファイルにこれらの項目があると、解析の前に一度だけ確かめます。
+GitHub Actions で `config` 入力にリポジトリ内の設定ファイルを渡すときの注意は [github-actions.md](github-actions.md) の
+「セキュリティ上の注意」にあります。
+
 ---
 
 ## 効いているかを確かめる

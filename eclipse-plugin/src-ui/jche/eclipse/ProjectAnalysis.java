@@ -10,8 +10,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -23,6 +25,9 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.jdt.core.IJavaProject;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.ui.PlatformUI;
 
 import jche.eclipse.server.JavaLocator;
 import jche.eclipse.server.ServerConnection;
@@ -280,7 +285,148 @@ public final class ProjectAnalysis {
     /** 利用者が明示的に選んだ設定ファイル。null に戻すと自動判定に戻る */
     public void setConfigFile(IFile file) {
         this.configFile = file;
+        if (file != null && file.exists() && !codeExecutingKeys(file).isEmpty()) {
+            // 中身を見せたダイアログで自分で選んだのだから、そのファイルが指す Java の拡張は許可したことになる。
+            // 覚えておかないと、Eclipse を立ち上げ直して自動判定に戻ったときに断った答えが残る
+            JchePreferences.setExtensionsAllowed(project.getName(), true);
+        }
         service.fireChanged(this);
+    }
+
+    /**
+     * 設定ファイルの中で、Java を実行させる項目。{@code plugin.folders} のフォルダの {@code .java} は解析のたびに
+     * コンパイルされて動き、{@code resolver.candidate.providers} / {@code call.rules.providers} はそこから読み込む
+     * クラスの名前（本体の {@code jche.config.Plugins} / {@code PluginClassLoaders}）。
+     * つまり解析対象のプロジェクトに置かれた設定ファイルは、そのプロジェクトの Java を利用者の PC で動かせる
+     */
+    private static final String[] CODE_EXECUTING_KEYS = {
+        "plugin.folders", "resolver.candidate.providers", "call.rules.providers",
+    };
+
+    /**
+     * 設定ファイルの中の、値の入った {@link #CODE_EXECUTING_KEYS}（並びは表の順）。読めなければ空。
+     *
+     * <p>読み方は本体の {@code jche.config.ConfigFile} と同じ: 1 行に「項目=値」、{@code #} / {@code !} で始まる行は注釈、
+     * 行末の {@code \} か字下げで次の行へ続く（「項目=」の形の行は字下げされていても項目の行。空行は字下げの続きを切る）。
+     * 読めない行は本体が解析のときにエラーにするので、ここでは読み飛ばす。VSCode 版（{@code config.ts}）と同じ読み方
+     */
+    static List<String> codeExecutingKeys(IFile file) {
+        Map<String, String> values = new HashMap<>();
+        try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(file.getContents(true), StandardCharsets.UTF_8))) {
+            String currentKey = null;
+            StringBuilder currentValue = null;
+            boolean pending = false;    // 直前の内容行が \ で終わっている（次の内容行に続く）
+            String line;
+            boolean first = true;
+            while ((line = r.readLine()) != null) {
+                if (first && line.startsWith("\uFEFF")) {
+                    line = line.substring(1);
+                }
+                first = false;
+                String trimmed = line.trim();
+                if (trimmed.startsWith("#") || trimmed.startsWith("!")) {
+                    continue;
+                }
+                if (trimmed.isEmpty()) {
+                    if (!pending && currentKey != null) {
+                        values.put(currentKey, currentValue.toString());
+                        currentKey = null;
+                    }
+                    continue;
+                }
+                boolean indented = Character.isWhitespace(line.charAt(0));
+                boolean keyLike = line.matches("^\\s*[A-Za-z][A-Za-z0-9._-]*\\s*=.*$");
+                if (currentKey != null && !keyLike && (pending || indented)) {
+                    pending = trimmed.endsWith("\\");
+                    currentValue.append(withoutTrailingBackslash(trimmed));
+                    continue;
+                }
+                if (currentKey != null) {
+                    values.put(currentKey, currentValue.toString());
+                    currentKey = null;
+                }
+                int eq = trimmed.indexOf('=');
+                if (eq < 0) {
+                    continue;
+                }
+                String value = trimmed.substring(eq + 1).trim();
+                pending = value.endsWith("\\");
+                currentKey = trimmed.substring(0, eq).trim();
+                currentValue = new StringBuilder(withoutTrailingBackslash(value));
+            }
+            if (currentKey != null) {
+                values.put(currentKey, currentValue.toString());
+            }
+        } catch (CoreException | IOException | RuntimeException e) {
+            return new ArrayList<>();
+        }
+        List<String> found = new ArrayList<>();
+        for (String key : CODE_EXECUTING_KEYS) {
+            if (!values.getOrDefault(key, "").isEmpty()) {
+                found.add(key);
+            }
+        }
+        return found;
+    }
+
+    /** 行末の {@code \}（続きの印）を除き、その前の空白も落とす */
+    private static String withoutTrailingBackslash(String s) {
+        return s.endsWith("\\") ? s.substring(0, s.length() - 1).trim() : s;
+    }
+
+    /**
+     * 自動で拾った設定ファイルが Java の拡張を動かすなら、解析の前に一度だけ確かめる。
+     *
+     * <p>プロジェクトを開いて［解析］を押しただけで、そのプロジェクトに置かれた Java が動かないようにするため。
+     * 利用者が［解析に使う設定…］で自分で選んだファイル（{@link #configFile}）は問わない。
+     * 答えはプロジェクトごとに覚える（{@link JchePreferences#extensionsAllowed}）。閉じただけなら覚えず、次の解析でまた問う。
+     * 断ったときは解析を飛ばし、どうすれば許可できるかをバナー（失敗の理由）とログに残す
+     * （docs/eclipse-plugin-usage.md の 5 節）。
+     */
+    private boolean extensionsAllowed(ConfigSource source) {
+        IFile file = source.file();
+        if (source.kind() != ConfigSource.Kind.FILE || file == null || file.equals(configFile)) {
+            return true;
+        }
+        List<String> keys = codeExecutingKeys(file);
+        if (keys.isEmpty()) {
+            return true;
+        }
+        String keyList = String.join(", ", keys);
+        Boolean allowed = JchePreferences.extensionsAllowed(project.getName());
+        if (allowed == null) {
+            String folder = (file.getParent() == null) ? "" : file.getParent().getFullPath().toString();
+            int answer = askOnUiThread(Messages.format("extensions.confirm", source.label(), folder, keyList),
+                    Messages.get("extensions.allow"), Messages.get("extensions.deny"));
+            if (answer == 0 || answer == 1) {
+                allowed = Boolean.valueOf(answer == 0);
+                JchePreferences.setExtensionsAllowed(project.getName(), allowed.booleanValue());
+            } else {
+                allowed = Boolean.FALSE;    // 閉じただけ。今回は動かさないが、答えは覚えない
+            }
+        }
+        if (!allowed.booleanValue()) {
+            String reason = Messages.format("extensions.denied", source.label(), keyList);
+            errorMessage = reason;
+            ExporterConsole.getOrCreate().printlnError(reason);
+            AnalysisLog.get().println(project.getName(), reason);
+            service.fireChanged(this);
+            return false;
+        }
+        return true;
+    }
+
+    /** UI スレッドで問う（どのスレッドから呼ばれてもよい）。返るのは押したボタンの番号。閉じたら -1 */
+    private static int askOnUiThread(String message, String... buttons) {
+        int[] answer = { -1 };
+        Display display = PlatformUI.getWorkbench().getDisplay();
+        display.syncExec(() -> {
+            MessageDialog dialog = new MessageDialog(display.getActiveShell(), Messages.get("dialog.title"), null,
+                    message, MessageDialog.WARNING, buttons, 1);
+            answer[0] = dialog.open();
+        });
+        return answer[0];
     }
 
     /** プロジェクト内の設定ファイル候補（直下と config/ の *.properties。深くは探さない） */
@@ -493,6 +639,10 @@ public final class ProjectAnalysis {
     /** 利用者が明示的に指示した解析。解析が始まる契機はこれだけである */
     public void reanalyze() {
         cancel();
+        ConfigSource source = configSource();
+        if (source != null && !extensionsAllowed(source)) {
+            return;
+        }
         schedule();
     }
 

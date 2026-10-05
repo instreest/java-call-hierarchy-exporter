@@ -2,11 +2,24 @@ name: smoke
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+# ワークフローはリポジトリを読むだけ（成果物のアップロードとキャッシュは contents: read で足りる）。
+# GITHUB_TOKEN に書き込みを持たせない
+permissions:
+  contents: read
+
+# 同じブランチ（PR）に続けて push したら、走りかけの古い実行は止めて最新だけ走らせる
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   regression:
     runs-on: ubuntu-latest
+    # 実測は 20 分前後（regression・incremental・jls が大半）。倍の余裕
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
 
@@ -16,14 +29,25 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      # ラッパー（jbangw/jbang）は jbang 本体を ~/.jbang に、依存 jar を ~/.m2 に置く
+      # ~/.jbang と ~/.m2 のキャッシュキー。ツール本体の //DEPS（JDT の版）と //JAVA（実行 JDK）の行だけを
+      # ファイルに写してハッシュする。ソース全体をハッシュすると、本体を 1 行直すたびにキャッシュが作り直され、
+      # 依存 jar の取得（数分）が毎回走る。アクション側（.github/action/prepare.sh）も同じ行から鍵を作る
+      - name: Compute the dependency cache key
+        run: |
+          mkdir -p build
+          grep -E '^//(DEPS|JAVA) ' src/jche/CallHierarchyExporter.java > build/jbang-cache-key.txt
+          cat build/jbang-cache-key.txt
+
+      # ラッパー（jbangw/jbang）は jbang 本体を ~/.jbang に、依存 jar を ~/.m2 に置く。
+      # このキーで保存するのは regression ジョブだけ（vscode-plugin ジョブは restore のみ）。
+      # 先に終わるジョブが保存すると、その時点の中身（JDK 26 を取る前）でキーが埋まり、後から足せない
       - name: Cache jbang and dependencies
         uses: actions/cache@v5
         with:
           path: |
             ~/.jbang
             ~/.m2/repository
-          key: jbang-${{ hashFiles('jbangw/jbang', 'src/jche/CallHierarchyExporter.java') }}
+          key: jbang-${{ hashFiles('jbangw/jbang', 'build/jbang-cache-key.txt') }}
 
       # jbang が解決した JDT の jar を classpath にして、全ソースを警告ゼロでコンパイルできることを確認する。
       # jbang 自身がビルドしたスクリプトの jar（~/.jbang/cache/jars）は除く。残すと javac がそちらの class を使い、
@@ -183,6 +207,8 @@ jobs:
   # ブートストラップ経路そのものを検査対象に含めるため。
   regression-windows:
     runs-on: windows-latest
+    # 実測は 10 分前後（ラッパーのブートストラップと回帰テスト）。倍の余裕
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -298,6 +324,7 @@ jobs:
   # ~/.jbang のキャッシュはアクション自身が持つ（cache 入力）ので、ここでは actions/cache を書かない
   action:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -384,6 +411,7 @@ jobs:
   # 壊れた状態がキャッシュに残る。このジョブはキャッシュを使わない。
   jbangw:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -406,6 +434,7 @@ jobs:
   # regression ジョブとは別ジョブにしてあるのは、~/.m2 のキャッシュキーを jbang のものと混ぜないため。
   pom:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -431,6 +460,7 @@ jobs:
   # 6) バンドル jar が組み立てられること（解析本体は release 17、プラグインは release 11）
   eclipse-plugin:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -469,6 +499,7 @@ jobs:
   # 解析本体は regression ジョブと同じ手順（jbang で依存を解決してコンパイル）で用意する
   vscode-plugin:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -483,13 +514,25 @@ jobs:
           cache: npm
           cache-dependency-path: vscode-plugin/package-lock.json
 
-      - name: Cache jbang and dependencies
-        uses: actions/cache@v5
+      # ~/.jbang と ~/.m2 のキャッシュキー。ツール本体の //DEPS（JDT の版）と //JAVA（実行 JDK）の行だけを
+      # ファイルに写してハッシュする。ソース全体をハッシュすると、本体を 1 行直すたびにキャッシュが作り直され、
+      # 依存 jar の取得（数分）が毎回走る。アクション側（.github/action/prepare.sh）も同じ行から鍵を作る
+      - name: Compute the dependency cache key
+        run: |
+          mkdir -p build
+          grep -E '^//(DEPS|JAVA) ' src/jche/CallHierarchyExporter.java > build/jbang-cache-key.txt
+          cat build/jbang-cache-key.txt
+
+      # regression ジョブと同じキーで復元だけする（保存はしない）。このジョブは regression より先に終わるので、
+      # actions/cache で保存すると JDK 26（test/jls が取る）の無い ~/.jbang がこのキーで固まり、
+      # regression 側は同じキーへ保存し直せない。キャッシュの正本は regression ジョブ 1 つに寄せる
+      - name: Restore jbang and dependencies
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.jbang
             ~/.m2/repository
-          key: jbang-${{ hashFiles('jbangw/jbang', 'src/jche/CallHierarchyExporter.java') }}
+          key: jbang-${{ hashFiles('jbangw/jbang', 'build/jbang-cache-key.txt') }}
 
       - name: VSCode plugin client test
         run: bash test/vscode/run.sh
