@@ -17,6 +17,16 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%capabilities.untrustedWorkspaces.description%",
+      "restrictedConfigurations": [
+        "jche.configFile",
+        "jche.autoAnalyze"
+      ]
+    }
+  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -92,6 +102,11 @@
         "command": "jche.openDeclaration",
         "category": "%command.category%",
         "title": "%command.jche.openDeclaration.title%"
+      },
+      {
+        "command": "jche.openCallSite",
+        "category": "%command.category%",
+        "title": "%command.jche.openCallSite.title%"
       },
       {
         "command": "jche.openLog",
@@ -215,6 +230,10 @@
           "when": "false"
         },
         {
+          "command": "jche.openCallSite",
+          "when": "false"
+        },
+        {
           "command": "jche.cancel",
           "when": "jche.analyzing"
         },
@@ -234,13 +253,13 @@
         "jche.javaHome": {
           "type": "string",
           "default": "",
-          "scope": "machine-overridable",
+          "scope": "machine",
           "markdownDescription": "%configuration.jche.javaHome.description%"
         },
         "jche.libFolder": {
           "type": "string",
           "default": "",
-          "scope": "machine-overridable",
+          "scope": "machine",
           "markdownDescription": "%configuration.jche.libFolder.description%"
         },
         "jche.vmArguments": {
@@ -249,7 +268,7 @@
             "type": "string"
           },
           "default": [],
-          "scope": "machine-overridable",
+          "scope": "machine",
           "markdownDescription": "%configuration.jche.vmArguments.description%"
         },
         "jche.idleMinutes": {

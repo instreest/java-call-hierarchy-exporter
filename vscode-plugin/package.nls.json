@@ -1,5 +1,6 @@
 {
   "extension.description": "Analyzes the call hierarchy of a Java project in one pass and shows the caller tree and CSV for impact analysis",
+  "capabilities.untrustedWorkspaces.description": "In an untrusted workspace the extension does not read a config file from the folder (jche.configFile) and does not re-analyze on save (jche.autoAnalyze): a jche.properties in the repository can name Java extensions (plugin.folders) that the analysis compiles and runs. The JDK, the engine folder and the JVM arguments are machine settings, so a workspace cannot point them at files it contains.",
   "view.container.title": "Impact",
   "view.callers.name": "Impact (Call Hierarchy Exporter)",
   "view.callers.contextualTitle": "Impact (Call Hierarchy Exporter)",
@@ -14,6 +15,7 @@
   "command.jche.fieldAccess.title": "Which reads and writes of the field to show",
   "command.jche.setRoot.title": "Use this as the root",
   "command.jche.openDeclaration.title": "Open the declaration",
+  "command.jche.openCallSite.title": "Open the calling line",
   "command.jche.openLog.title": "Open the log",
   "command.jche.saveConfig.title": "Save the settings to jche.properties",
   "command.jche.selectConfig.title": "Choose a config file",

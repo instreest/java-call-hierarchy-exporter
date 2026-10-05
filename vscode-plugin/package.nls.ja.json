@@ -1,5 +1,6 @@
 {
   "extension.description": "Java プロジェクトの呼び出し階層を一括解析し、影響調査のための呼び出し元ツリーと CSV を出す",
+  "capabilities.untrustedWorkspaces.description": "信頼していないワークスペースでは、フォルダの中の設定ファイル（jche.configFile）を読まず、保存時の再解析（jche.autoAnalyze）もしません。リポジトリに置かれた jche.properties は、解析がコンパイルして実行する Java の拡張（plugin.folders）を指せるためです。JDK・解析本体のフォルダ・JVM 引数はマシン単位の設定で、ワークスペースの中のファイルを指させることはできません。",
   "view.container.title": "影響調査",
   "view.callers.name": "影響調査 (Call Hierarchy Exporter)",
   "view.callers.contextualTitle": "影響調査 (Call Hierarchy Exporter)",
@@ -14,6 +15,7 @@
   "command.jche.fieldAccess.title": "フィールドのどの読み書きを出すか",
   "command.jche.setRoot.title": "ここを起点にする",
   "command.jche.openDeclaration.title": "宣言を開く",
+  "command.jche.openCallSite.title": "呼び出している行を開く",
   "command.jche.openLog.title": "ログを開く",
   "command.jche.saveConfig.title": "設定を jche.properties に保存",
   "command.jche.selectConfig.title": "設定ファイルを選ぶ",

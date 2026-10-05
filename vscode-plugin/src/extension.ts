@@ -391,9 +391,10 @@ function fieldLabelOf(key: string): string {
     return hash < 0 ? key : `${key.substring(0, hash)}.${key.substring(hash + 1)}`;
 }
 
-export function deactivate(): void {
-    // 常駐している子プロセスを止める（CANCEL → SHUTDOWN → 応じなければ kill）
-    for (const session of sessions?.values() ?? []) {
-        session.dispose();
-    }
+export async function deactivate(): Promise<void> {
+    // 常駐している子プロセスを止める（CANCEL → SHUTDOWN → 応じなければ kill）。
+    // 止め終わるまで待って返す。待たずに返すと拡張ホストが先に終わり、子プロセスが残りうる。
+    // Session#dispose は context.subscriptions からこの後に呼ばれる（二度目の shutdown は何もしない）
+    await Promise.all([...(sessions?.values() ?? [])].map(
+        (session) => session.shutdown(t('session.reason.shutdown')).catch((e) => log.error(String(e)))));
 }
