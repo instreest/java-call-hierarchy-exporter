@@ -12,6 +12,9 @@
 #   - コンパイルエラー・構文エラーのファイルの一覧（上限まで）が、差分更新でも全件解析と同じこと
 #   - パッケージの宣言がフォルダと合わないファイルを、全件解析でも差分更新でも警告すること
 #   - 表示言語を日本語にすると日本語で書かれること
+#   - 設定ファイルの知らない項目名（綴りの誤り）を止めずに警告し、UTF-8 でない設定ファイルは案内して止まること
+#   - ビルドファイルの読み取りの案内（Maven の読まないプロファイル・${env.X} を展開しないこと・Gradle のロックファイルと
+#     読めない宣言）が warnings.txt に載ること
 # を確かめる。
 #
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
@@ -676,5 +679,83 @@ check_jdt_fail assertion src/p/Patterns.java "java.lang.AssertionError: Unexpect
 printf '\n// changed\n' >> work/assertion/src/p/A.java
 analyze assertion
 check_jdt_fail assertion src/p/Patterns.java "java.lang.AssertionError: Unexpected operand at stack top" 差分更新
+
+# 6. 設定ファイルの読み取りと、ビルドファイルの読み取りの案内（docs/config-file-format-qa.md の Q11・docs/build-tool-classpath.md）
+# 6-1. 知らない項目名（綴りの誤り）。止めずに警告し、綴りの近い項目名を添える。plugin. で始まる項目は拡張向けなので出さない
+make_project typo $'max.dept=10\nplugin.mapping.label=X'
+analyze typo
+check_invariant typo
+expect_in_warnings typo "Unknown item in the config file, ignored: max.dept (did you mean max.depth?)"
+[ -n "$OUT" ] && ! grep -q -F "plugin.mapping.label" "$OUT/warnings.txt" 2>/dev/null \
+    && ok "typo: plugin. で始まる項目は警告しない" || ng "typo: plugin. で始まる項目まで警告した"
+[ "$STATUS" = 0 ] && ok "typo: 知らない項目があっても実行は止めない（終了コード 0）" || ng "typo: 終了コード $STATUS"
+
+# 6-2. 拡張を書いた設定では、拡張が独自の項目を読むので、綴りの近い項目名があるものだけ警告する
+make_project ext $'resolver.candidate.providers=jche.builtin.TypeMappingProvider\nplugin.mapping.files=mapping.properties\ndemo.di.file=di.xml\noutput.encodng=UTF-8'
+: > work/ext/mapping.properties
+analyze ext
+check_invariant ext
+expect_in_warnings ext "output.encodng (did you mean output.encoding?)"
+[ -n "$OUT" ] && ! grep -q -F "demo.di.file" "$OUT/warnings.txt" 2>/dev/null \
+    && ok "ext: 拡張向けの独自の項目は警告しない" || ng "ext: 拡張向けの独自の項目まで警告した"
+
+# 6-3. UTF-8 でない設定ファイル（Shift_JIS の注釈）。「Input length = 1」ではなく、UTF-8 で保存する案内で止まる
+make_project sjis ""
+printf '# \x83\x65\x83\x58\x83\x67\n' >> work/sjis/jche.properties
+analyze sjis
+[ "$STATUS" != 0 ] && grep -q -F "it is not UTF-8. Save the file as UTF-8" work/sjis.console.log \
+    && ok "sjis: UTF-8 でない設定ファイルは UTF-8 で保存する案内で止まる" \
+    || ng "sjis: 案内が無い（work/sjis.console.log）"
+
+# 6-4. Maven: activeByDefault でないプロファイルが依存を宣言している（読まないので、プロファイル名と件数を知らせる）
+make_project profile ""
+sed -i 's#</project>#  <profiles><profile><id>extra</id><dependencies><dependency><groupId>sample.deps</groupId><artifactId>util</artifactId><version>1.0</version></dependency></dependencies></profile></profiles>\n</project>#' work/profile/pom.xml
+analyze profile
+check_invariant profile
+expect_in_warnings profile "profile(s) extra (1) declare dependencies"
+
+# 6-5. Maven: ${env.X} は展開しない（環境変数の値を run.log / warnings.txt に書かない。CI の成果物に漏れる）
+make_project env ""
+sed -i 's#</dependencies>#  <dependency><groupId>${env.JCHE_TEST_SECRET}</groupId><artifactId>hidden</artifactId><version>1.0</version></dependency>\n  </dependencies>#' work/env/pom.xml
+export JCHE_TEST_SECRET=hunter2-secret-value
+analyze env
+unset JCHE_TEST_SECRET
+check_invariant env
+expect_in_warnings env '${env.JCHE_TEST_SECRET}'
+[ -n "$OUT" ] && ! grep -r -q -F "hunter2-secret-value" "$OUT" 2>/dev/null \
+    && ok "env: 環境変数の値が出力フォルダに書かれない" || ng "env: 環境変数の値が出力フォルダに書かれた"
+
+# 6-6. Gradle: クラスパスの構成をロックしていない gradle.lockfile は使わず、build.gradle の宣言を読む（警告する）。
+#      読めない宣言・無いファイル（files()）も warnings.txt に載る（以前は run.log だけだった）
+make_gradle() {   # $1=フォルダ名。test/gradle-demo を複製し、core を解析対象にする
+    mkdir -p "work/$1"
+    cp -R "$ROOT/test/gradle-demo/." "work/$1/"
+    cat > "work/$1/jche.properties" <<EOF
+project.root=.
+source.folders=core/src/main/java
+library.repositories=$ROOT/test/localrepo
+source.encoding=UTF-8
+output.folder=./out
+cache.folder=./.cache
+EOF
+}
+make_gradle lockempty
+printf '# This is a Gradle generated file for dependency locking.\nempty=annotationProcessor\n' > work/lockempty/core/gradle.lockfile
+printf "dependencies {\n    implementation files('lib/missing.jar')\n}\n" >> work/lockempty/core/build.gradle
+analyze lockempty
+check_invariant lockempty
+expect_in_warnings lockempty "locks no classpath configuration"
+expect_in_warnings lockempty "The file in files() does not exist"
+grep -q -F "greeter-1.0.jar" "$OUT/run.log" 2>/dev/null \
+    && ok "lockempty: 宣言の依存（greeter）が集まる" || ng "lockempty: 宣言の依存が集まらない"
+
+# 6-7. Gradle: クラスパスの構成をロックした gradle.lockfile はそのまま使う（警告しない）
+make_gradle locked
+printf 'sample.deps:greeter:1.0=compileClasspath,runtimeClasspath\nempty=annotationProcessor\n' > work/locked/core/gradle.lockfile
+analyze locked
+check_invariant locked
+[ -n "$OUT" ] && [ ! -f "$OUT/warnings.txt" ] && ok "locked: ロックファイルを使う実行は警告しない" || ng "locked: 警告が出た"
+grep -q -F "gradle.lockfile is present" "$OUT/run.log" 2>/dev/null \
+    && ok "locked: ロックファイルから取った" || ng "locked: ロックファイルを使っていない"
 
 if [ "$fail" -eq 0 ]; then echo "PASS"; else echo "FAIL"; exit 1; fi

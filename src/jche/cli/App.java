@@ -2,6 +2,7 @@
 package jche.cli;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -83,7 +84,8 @@ public final class App {
             }
         } catch (Terminal.EndOfInput e) {
             return 0;
-        } catch (IOException e) {
+        } catch (IOException | UncheckedIOException e) {
+            // UncheckedIOException は Terminal#readLine（標準入力の失敗）。スタックトレースではなく 1 行で終える
             t.println("[ERROR] " + e);
             return 1;
         }
@@ -218,10 +220,18 @@ public final class App {
         }
     }
 
-    private void showConfig(Path config) throws IOException {
+    private void showConfig(Path config) {
         t.println();
         t.println(Messages.format("cli.select.showHeader", display(config)));
-        for (String line : ConfigCatalog.settingLines(config)) {
+        List<String> lines;
+        try {
+            lines = ConfigCatalog.settingLines(config);
+        } catch (IOException e) {
+            // 読めない設定（UTF-8 でない・読めない行）でも一覧に戻る。解析しようとすれば同じ理由で失敗として報告される
+            t.println("  " + Messages.format("cli.select.showFailed", e.getMessage()));
+            return;
+        }
+        for (String line : lines) {
             t.println("  " + line);
         }
         t.println(Messages.format("cli.select.showFooter", config));

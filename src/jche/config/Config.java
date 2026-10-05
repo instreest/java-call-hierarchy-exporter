@@ -3,6 +3,7 @@ package jche.config;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.MalformedInputException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,15 +13,18 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import org.eclipse.jdt.core.JavaCore;
 
 import jche.util.Messages;
 import jche.util.UserHome;
+import jche.util.Warnings;
 
 /**
  * 設定ファイル（jche.properties）の読み込み。
@@ -136,6 +140,11 @@ public final class Config {
 
     /** 拡張の init() に渡す。プロジェクト固有のキーを自由に読ませるため */
     public final Properties raw;
+    /**
+     * 読まれない項目（このクラスが読まず、拡張の接頭辞でもない）→ 綴りの近い項目名（無ければ空）。
+     * 構築では警告せず（warnings.txt を集め始める前なので）、{@link #warnUnknownKeys} で出す
+     */
+    public final Map<String, String> unknownKeys;
     public final List<String> candidateProviderClasses;
     /** 契約表のファイル（contracts.files。設定ファイルのフォルダからの相対） */
     public final List<Path> contractFiles;
@@ -252,8 +261,105 @@ public final class Config {
                     ? Messages.format("config.line.badKey", abs, e.lineNumber(), e.lineText())
                     : Messages.format("config.line.noSeparator", abs, e.lineNumber(), e.lineText());
             throw new IOException(message, e);
+        } catch (MalformedInputException e) {
+            // UTF-8 でないファイル（Shift_JIS で保存した等）。JDK の文言は "Input length = 1" だけで何をすればよいか分からない
+            throw new IOException(Messages.format("config.read.notUtf8", abs), e);
         } catch (IOException e) {
             throw new IOException(Messages.format("config.read.failed", abs, e.getMessage()), e);
+        }
+    }
+
+    /**
+     * このクラスが読む項目名。config/jche.properties（唯一の一覧）に並ぶ項目と同じで、
+     * 読む項目を足したらここにも足す。ここに無い項目は読まれないので、綴りの誤りを黙って無視しないよう
+     * {@link #warnUnknownKeys} が知らせる（{@code docs/config-file-format-qa.md} の Q11）
+     */
+    static final Set<String> KNOWN_KEYS = Set.of(
+            "project.root", "source.folders", "library.folders", "library.jars", "library.build.tool",
+            "library.repositories", "source.encoding", "external.library.folders", "source.level",
+            "entry.packages", "exclude.packages", "cache.enabled", "cache.folder", "max.depth", "max.rows",
+            "dataflow.enabled", "dataflow.max.depth", "spring.di.enabled", "spring.di.bean.annotations",
+            "plugin.folders", "resolver.candidate.providers", "contracts.files", "contracts.providers",
+            "contracts.builtin", "branch.pruning.enabled", "conditions.target", "output.encoding",
+            "output.folder", "message.language");
+
+    /**
+     * 拡張が読む項目の接頭辞（同梱の {@code jche.builtin.TypeMappingProvider} の {@code plugin.mapping.*} など）。
+     * このツールは読まないが知らない項目でもないので、警告しない
+     */
+    private static final String EXTENSION_KEY_PREFIX = "plugin.";
+
+    /**
+     * 読まれない項目（{@link #KNOWN_KEYS} に無く、拡張の接頭辞でもない）と、綴りの近い項目名（無ければ空）。
+     * 設定に書かれた順ではなく名前順。
+     *
+     * <p>拡張（resolver.candidate.providers / contracts.providers）を書いた設定では、拡張が {@code init(Properties, Path)} で
+     * 独自の項目（{@code demo.di.file} など）を読むので、知らない項目をすべて警告すると正しい設定に警告が出る。
+     * そのときは綴りの近い項目があるもの（誤りの疑いが濃いもの）だけに絞る
+     */
+    private static Map<String, String> unknownKeysOf(Properties p) {
+        boolean extensions = !splitList(p.getProperty("resolver.candidate.providers", "")).isEmpty()
+                || !splitList(p.getProperty("contracts.providers", "")).isEmpty();
+        List<String> keys = new ArrayList<>(p.stringPropertyNames());
+        keys.sort(null);
+        Map<String, String> out = new LinkedHashMap<>();
+        for (String key : keys) {
+            if (KNOWN_KEYS.contains(key) || key.startsWith(EXTENSION_KEY_PREFIX)) {
+                continue;
+            }
+            String nearest = nearestKnownKey(key);
+            if (nearest == null && extensions) {
+                continue;
+            }
+            out.put(key, (nearest == null) ? "" : nearest);
+        }
+        return out;
+    }
+
+    /** 綴りの近い項目名（編集距離が 2 以内。長い名前は 6 文字につき 1 まで許す）。無ければ null */
+    private static String nearestKnownKey(String key) {
+        String lower = key.toLowerCase(Locale.ROOT);
+        int limit = Math.max(2, lower.length() / 6);
+        String best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (String known : KNOWN_KEYS) {
+            int d = editDistance(lower, known);
+            if (d < bestDistance || (d == bestDistance && best != null && known.compareTo(best) < 0)) {
+                best = known;
+                bestDistance = d;
+            }
+        }
+        return (bestDistance <= limit) ? best : null;
+    }
+
+    /** レーベンシュタイン距離（1 文字の挿入・削除・置換の最少回数） */
+    static int editDistance(String a, String b) {
+        int[] prev = new int[b.length() + 1];
+        int[] cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) {
+            prev[j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int subst = prev[j - 1] + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1);
+                cur[j] = Math.min(Math.min(prev[j] + 1, cur[j - 1] + 1), subst);
+            }
+            int[] t = prev;
+            prev = cur;
+            cur = t;
+        }
+        return prev[b.length()];
+    }
+
+    /**
+     * 読まれない項目（{@link #unknownKeys}）を警告する。実行は止めない（書き足した項目で解析が動かなくなるより、
+     * 知らせて進むほうが穏当）。warnings.txt に載せるため、呼ぶ側は {@link Warnings#begin} のあとに呼ぶ
+     */
+    public void warnUnknownKeys() {
+        for (Map.Entry<String, String> e : unknownKeys.entrySet()) {
+            Warnings.warn(Warnings.Topic.CONFIG, Messages.format("config.unknownKey", e.getKey(),
+                    e.getValue().isEmpty() ? "" : Messages.format("config.unknownKey.suggest", e.getValue())));
         }
     }
 
@@ -273,6 +379,7 @@ public final class Config {
         Messages.applyConfigured(this.messageLanguage);
 
         rejectRemovedKeys(p);
+        this.unknownKeys = unknownKeysOf(p);
 
         // project.root は他の項目の起点そのものなので、設定ファイルのディレクトリの外を指してよい
         this.projectRoot = resolveFromConfigDir(require(p, "project.root"));
