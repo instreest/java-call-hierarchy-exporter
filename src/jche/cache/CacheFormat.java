@@ -301,7 +301,8 @@ import java.util.Set;
  *       参照するファイルも解析し直す（「宣言の連鎖」。docs/cache-unification-qa.md の Q83）。K 行そのものは差分更新では
  *       読み直さない（指紋の材料と、人が見るため）。旧キャッシュの I 行が変わった jar のパッケージ
  *       （か中身の分からないパッケージ）に触れていたファイルは、どの理由で選ばれたかに依らず、指紋に関わらず変わった型に
- *       する（jar の親の親から継承したものは指紋にも H 行にも現れない。Q84）。sealed な型かアノテーション型を宣言する
+ *       する（jar の親の親から継承したものは指紋にも H 行にも現れない。docs/cache-unification-qa.md の Q84（jar の変化で
+ *       解析し直したファイルの型））。sealed な型かアノテーション型を宣言する
  *       ファイルも同じ（許した部分型・メタ注釈の解決先・{@code @Repeatable} の入れ物の型は使う側の I 行に載らない）</li>
  *   <li>親の親の変化（継承したメンバー・親型）は（ソースの型の）子の利用者の I 行に載らない。変わった型の部分型
  *       （H 行の親型から作る索引で推移的に引く）も変わった型にして、それを参照するファイルも解析し直す（「親型の連鎖」）</li>
@@ -317,10 +318,12 @@ import java.util.Set;
  * パッケージとして、変わった jar のパッケージと同じ決まりで扱う（どの型を宣言しているかが分からないため）。
  * 依存 jar も同じ理由で解決結果を左右するので、L行と突き合わせて追加・変更・削除を検知し、
  * その jar のパッケージの型を参照するファイル（I行。オンデマンド import は名前の頭の部分でも当てる）を解析し直す。
- * jar が追加・変更されたときだけは、
- * 型解決に失敗していたファイル（F行のエラー数、U行の BINDING_FAILED）も解析し直す（無い型の名前は I 行に
- * 残らないので、パッケージでは当たらない。削除と並び替えは解決できる型を増やさないので、失敗していた型解決が
- * 成功に変わる理由にならない）。自分のパッケージが変わった jar のパッケージ（無名パッケージは
+ * 型解決に失敗していたファイル（F行のエラー数、U行の BINDING_FAILED）は、何かが変わった実行（ソース・jar の
+ * どれかの変更・追加・削除・並び替え）では名前を照合せず必ず解析し直す（v44 の決まり。
+ * {@code jche.analysis.CacheUpdater#reanalyzeDependents}）。無い型・見えない型の名前は I 行に残らないので
+ * パッケージでは当たらず、何が解決できるようになったかを名前の照合で決めるのは入れ忘れがそのまま静かな取りこぼしに
+ * なる（{@code docs/cache-unification-qa.md} の Q131（再解析の規則を粗くした））。
+ * 自分のパッケージが変わった jar のパッケージ（無名パッケージは
  * {@link LibraryFact#UNNAMED_PACKAGE}）にあれば、I 行に何かあるブロックを解析し直す（同じパッケージにできた型は
  * オンデマンド import・{@code java.lang} の型・完全修飾名の頭を隠す）。
  * L行の<b>並び順</b>も見る。jar の集合が同じでも、並びが変われば同名クラスの解決先が
@@ -515,9 +518,12 @@ public final class CacheFormat {
      *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
      *   <li>v45（続き）{@code super.m()} / {@code X.super.m()} / {@code super::m} の C 行に修飾する型（囲む型の親クラスか、名指しの
      *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
+     *   <li>v46 正準でないコンストラクタだけを書いた record（{@code record R(int x) { R() { this(0); } }}）にも、暗黙の
+     *       正準コンストラクタ（JLS 8.10.4）の D 行と暗黙の super() を合成する（以前は {@code this(0)} の C 行が D 行の無い
+     *       {@code R#<init>(int)} を指していた）</li>
      * </ul>
      */
-    public static final String VERSION = "jche-cache-v45";
+    public static final String VERSION = "jche-cache-v46";
 
     // 行の種別（各行の先頭1文字）
     public static final char ROW_SOURCES = 'T';
@@ -719,10 +725,12 @@ public final class CacheFormat {
      *       「変わった型」になり、使う側も解析し直す）、外したフォルダのファイルは消したファイルとして扱われる。
      *       同じ名前のファイルが 2 つのフォルダにある組（{@code jche.analysis.SameUnitFiles}）は今のソースの一覧から
      *       作るので、組の片方を足しても、もう片方を解析し直す。組の片方を外したときは、外したファイルの名前を
-     *       旧キャッシュのヘッダ行の一覧（{@link #foldersOf}）で求めて、残ったほうを解析し直す（Q71）</li>
+     *       旧キャッシュのヘッダ行の一覧（{@link #foldersOf}）で求めて、残ったほうを解析し直す
+     *       （{@code docs/cache-unification-qa.md} の Q71（同じ名前のファイルの片方を消すと））</li>
      * </ul>
      * ソースフォルダが変わったときは、JDT が今回のクラスパスを受け付けるかも確かめる（受け付けなければ旧キャッシュを
-     * 使わない。{@code jche.analysis.CacheUpdater}。Q73）。
+     * 使わない。{@code jche.analysis.CacheUpdater}。{@code docs/cache-unification-qa.md} の Q73（JDT が受け付けない
+     * ソースフォルダを足すと））。
      * docs/cache-unification-qa.md の Q58・Q67
      */
     public static boolean headerReusable(String written, String expected) {

@@ -307,6 +307,12 @@ final class TypeContextTracker {
      * 1つ存在する。匿名クラスは明示コンストラクタを書けない言語仕様のため、
      * 常にこちらに倒れる（曖昧さは生じない）。
      *
+     * record は、正準コンストラクタ（成分と同じ引数のもの）を書かなければ暗黙に宣言される（JLS 8.10.4）。
+     * 正準でないコンストラクタだけを書いた record（{@code record R(int x) { R() { this(0); } }}）では
+     * 「コンストラクタを書いたか」では見分けられず、以前は {@code R(int)} の D 行が無いまま
+     * {@code this(0)} の C 行がそれを指していた。書いたコンストラクタに正準のものが無ければ合成する
+     * （{@link #synthesizeImplicitCanonicalConstructor}）。
+     *
      * ただしインターフェース（アノテーション型を含む）にはコンストラクタが無い。
      * デフォルトコンストラクタはクラスにだけ暗黙に宣言される（JLS 8.8.9）もので、
      * インターフェースの本体にはコンストラクタを宣言できず（JLS 9.1.5）、インスタンスも作れない。
@@ -317,21 +323,29 @@ final class TypeContextTracker {
     private TypeContext buildTypeContext(ITypeBinding tb, List<?> bodyDeclarations, int declLine) {
         List<MethodRef> roots = new ArrayList<>();
         boolean anyConstructor = false;
+        // 書いたコンストラクタのバインディングの鍵（record の暗黙の正準コンストラクタを合成するかの判定に使う）
+        Set<String> writtenKeys = new HashSet<>();
         for (Object o : bodyDeclarations) {
             if (!(o instanceof MethodDeclaration md) || !md.isConstructor()) {
                 continue;
             }
             anyConstructor = true;
+            IMethodBinding mb = md.resolveBinding();
+            if (mb != null && mb.getKey() != null) {
+                writtenKeys.add(mb.getKey());
+            }
             if (delegatesToThis(md)) {
                 continue;
             }
-            MethodRef ref = names.toRef(md.resolveBinding());
+            MethodRef ref = names.toRef(mb);
             if (ref != null) {
                 roots.add(ref);
             }
         }
         if (!anyConstructor && (tb == null || !tb.isInterface())) {
             synthesizeImplicitConstructor(tb, declLine, roots);
+        } else if (anyConstructor && tb != null && tb.isRecord()) {
+            synthesizeImplicitCanonicalConstructor(tb, writtenKeys, declLine, roots);
         }
         synthesizeImplicitAccessors(tb, declLine);
         return new TypeContext(tb, roots, declLine);
@@ -377,16 +391,7 @@ final class TypeContextTracker {
         boolean synthesized = false;
         if (tb != null && tb.getDeclaredMethods() != null) {
             for (IMethodBinding m : tb.getDeclaredMethods()) {
-                if (!m.isConstructor()) {
-                    continue;
-                }
-                MethodRef ref = names.toRef(m);
-                if (ref != null) {
-                    roots.add(ref);
-                    out.declarations.add(new MethodDeclFact(ref, declLine, true,
-                            ModifierTokens.with(BindingNames.modifiersOf(m.getModifiers()),
-                                    ModifierTokens.IMPLICIT)));
-                    recordImplicitSuper(List.of(ref), tb, ref.paramSig(), declLine);
+                if (m.isConstructor() && synthesizeConstructor(m, tb, declLine, roots)) {
                     synthesized = true;
                 }
             }
@@ -399,6 +404,45 @@ final class TypeContextTracker {
                 recordImplicitSuper(List.of(implicit), tb, "", declLine);
             }
         }
+    }
+
+    /**
+     * record の暗黙に宣言された正準コンストラクタ（JLS 8.10.4）の D 行を合成する。コンストラクタを書いたが、
+     * そのどれも正準でない record（{@code record R(int x) { R() { this(0); } }}）のためのもの。
+     * バインディングにはコンパイラが合成した正準コンストラクタが載っているので、書いたコンストラクタ
+     * （{@code writtenKeys}。バインディングの鍵で比べる）に無いものを {@link #synthesizeConstructor} で合成する。
+     * record のコンストラクタで書かれていないのは暗黙の正準コンストラクタだけ（アクセサと同じく、ソースに本体が無い）。
+     * 合成しないと、{@code this(...)} の C 行と {@code new R(0)} の C 行が D 行の無い宣言を指す。
+     * コンストラクタを 1 つも書かない record は {@link #synthesizeImplicitConstructor} が同じ形で合成する
+     */
+    private void synthesizeImplicitCanonicalConstructor(ITypeBinding tb, Set<String> writtenKeys, int declLine,
+                                                        List<MethodRef> roots) {
+        if (tb.getDeclaredMethods() == null) {
+            return;
+        }
+        for (IMethodBinding m : tb.getDeclaredMethods()) {
+            if (m.isConstructor() && !writtenKeys.contains(m.getKey())) {
+                synthesizeConstructor(m, tb, declLine, roots);
+            }
+        }
+    }
+
+    /**
+     * バインディングにある（ソースに無い）コンストラクタ 1 つの D 行と暗黙の {@code super(...)} の辺を合成する。
+     * 修飾子はバインディングのものに implicit を添える
+     *
+     * @return 合成したら真。名前が取れなければ（{@link BindingNames#toRef} が null）偽
+     */
+    private boolean synthesizeConstructor(IMethodBinding m, ITypeBinding tb, int declLine, List<MethodRef> roots) {
+        MethodRef ref = names.toRef(m);
+        if (ref == null) {
+            return false;
+        }
+        roots.add(ref);
+        out.declarations.add(new MethodDeclFact(ref, declLine, true,
+                ModifierTokens.with(BindingNames.modifiersOf(m.getModifiers()), ModifierTokens.IMPLICIT)));
+        recordImplicitSuper(List.of(ref), tb, ref.paramSig(), declLine);
+        return true;
     }
 
     /**
