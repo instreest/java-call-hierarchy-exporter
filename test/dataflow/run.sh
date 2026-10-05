@@ -2,6 +2,7 @@
 # データフローの解決と値の表の検査。
 #
 #   bash test/dataflow/run.sh
+#   JCHE_CP="依存jar..." JCHE_CLASSES=build/classes bash test/dataflow/run.sh   # コンパイル済みのクラスを使う（CI）
 #
 # 1. ResolveOrderCheck … CallResolver.resolve の決定性（Issue #80）。test/demo を解析し、全エッジを
 #    「昇順 → 同じ resolver でもう一度昇順 → 新しい resolver で降順」の 3 通りで解決して、結果が一致することを見る
@@ -20,7 +21,8 @@
 #
 # ツール本体（src/）と検査プログラム（このフォルダの *.java。jche/ の下は src と同じパッケージに入れて
 # パッケージの中だけで見えるものを読む）を javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
-# （CI の lint と同じ経路。jbang 自身が作ったスクリプトの jar は除く）。
+# （CI の lint と同じ経路。jbang 自身が作ったスクリプトの jar は除く）。JCHE_CLASSES にコンパイル済みの
+# クラスフォルダを渡すと本体は再コンパイルせず、検査プログラムだけをそのクラスに対してコンパイルする（CI）。
 # キャッシュは .cache と work/ に、コンパイル結果は build にできる（どれもコミットしない）。
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -37,16 +39,26 @@ fi
 
 rm -rf build .cache output work
 mkdir -p work
-"$JAVA_HOME_25/bin/javac" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
-    -cp "$CP" -d build $(find "$ROOT/src" -name '*.java') \
-    $(find . -name '*.java' -not -path './build/*' -not -path './work/*') \
-    || { echo "  NG   コンパイルに失敗しました"; echo "FAIL"; exit 1; }
+if [ -z "${JCHE_CLASSES:-}" ]; then
+    "$JAVA_HOME_25/bin/javac" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
+        -cp "$CP" -d build $(find "$ROOT/src" -name '*.java') \
+        $(find . -name '*.java' -not -path './build/*' -not -path './work/*') \
+        || { echo "  NG   コンパイルに失敗しました"; echo "FAIL"; exit 1; }
+    CLASSES=build
+else
+    # 本体はコンパイル済み。検査プログラム（jche/ の下は本体と同じパッケージ）だけをそのクラスに対してコンパイルする
+    "$JAVA_HOME_25/bin/javac" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
+        -cp "$JCHE_CLASSES:$CP" -d build \
+        $(find . -name '*.java' -not -path './build/*' -not -path './work/*') \
+        || { echo "  NG   検査プログラムのコンパイルに失敗しました"; echo "FAIL"; exit 1; }
+    CLASSES="build:$JCHE_CLASSES"
+fi
 
 fail=0
 # 検査プログラムのログは work/<検査>.log に置き、結果の行（OK / NG とその続き）だけを出す
 run_check() {   # $1=クラス名  $2..=引数
     local name=$1; shift
-    "$JAVA_HOME_25/bin/java" -cp "build:$CP" "$name" "$@" > "work/$name.log" 2>&1
+    "$JAVA_HOME_25/bin/java" -cp "$CLASSES:$CP" "$name" "$@" > "work/$name.log" 2>&1
     local code=$?
     grep -a -E '^(OK|NG|  NG|     )' "work/$name.log"
     if [ $code != 0 ]; then

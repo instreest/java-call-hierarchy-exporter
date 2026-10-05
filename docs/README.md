@@ -114,6 +114,7 @@
 | [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため）、`var` の使い方の誤りを構文エラーに数えない理由（switch 式の検査（網羅していない・default が無い・switch 式の外への break など）も同じ。形式 v36。cache-unification-qa.md の Q63） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |
+| [ci-speed-qa.md](ci-speed-qa.md) | — | CI（`smoke.yml`）の所要時間を 12 分から 3 分前後に縮める。`test/incremental` を節に分けて `--shard K/N` で 4 ジョブに並列化、lint でコンパイルしたクラスをほかの検査に渡して再コンパイルを省く、回帰テストを `java -cp` で動かす。AppCDS を採らなかった理由 |
 | [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断。依存 jar の警告を英語・日本語どちらのログからも拾う（Q31） |
 | [actions-analysis-cache-qa.md](actions-analysis-cache-qa.md) | #79 | GitHub Actions で解析キャッシュを実行間で引き継ぐ |
 | [jpms-modularity-qa.md](jpms-modularity-qa.md) | — | JPMS でモジュール化するかの検討（結論: しない） |

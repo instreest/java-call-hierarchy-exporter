@@ -102,6 +102,10 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   古い JDK では通ってしまう検査がある（`dangling-doc-comments` は JDK 22 で入った）
 - ツールを動かす検査スクリプトは `JCHE_LANG=en` を輸出して言語を固定する。日本語への切り替えそのものは `test/nls/run.sh` が見る
 - テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）
+- 本体を動かす検査は単体で回すと本体を自分でコンパイルするが、CI はコンパイルを 1 回にして、できたクラスと JDT の classpath を
+  環境変数（`JCHE_CP` / `JCHE_CLASSES` / `JCHE_JAVA` ほか）で渡す。検査を足すときも同じ口を持たせる。
+  `test/incremental` は節に分かれていて `--shard K/N` で分けて回せる（CI は 4 ジョブで並列）。節をまたいで使う関数は囲みの外に置く
+  （`test/README.md` の「検査の決まり」、`docs/ci-speed-qa.md`）
 - 出力 CSV の期待値（`expected*/`）を更新するときは、差分を確認したうえで最新の `output/*/` からコピーする。
   理由なく期待値を書き換えて通さない
 - テストをスキップ・無効化して通すことはしない
