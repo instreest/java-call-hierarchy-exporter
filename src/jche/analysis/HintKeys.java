@@ -45,6 +45,6 @@ final class HintKeys {
             return "";
         }
         String key = binding.getKey();
-        return (key == null) ? "" : key.replaceAll("\\s", "_");
+        return (key == null) ? "" : BindingNames.blankToUnderscore(key);
     }
 }

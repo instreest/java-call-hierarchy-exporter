@@ -54,6 +54,34 @@ final class BindingNames {
         this.out = out;
     }
 
+    /**
+     * 空白類（{@code \s}。空白・タブ・改行など）を {@code _} に置き換える。キャッシュはタブ区切りなので、JDT の鍵を
+     * そのまま名前に使うときに通す（{@link #resolveTypeName}・{@link HintKeys#ofVariable}）。
+     * 呼び出しごとに正規表現を組み立てず（{@code String#replaceAll} は毎回 {@code Pattern.compile} する）、
+     * 空白類が無ければ元の文字列をそのまま返す
+     */
+    static String blankToUnderscore(String s) {
+        int i = 0;
+        while (i < s.length() && !isBlank(s.charAt(i))) {
+            i++;
+        }
+        if (i == s.length()) {
+            return s;
+        }
+        StringBuilder sb = new StringBuilder(s.length());
+        sb.append(s, 0, i);
+        for (; i < s.length(); i++) {
+            char c = s.charAt(i);
+            sb.append(isBlank(c) ? '_' : c);
+        }
+        return sb.toString();
+    }
+
+    /** 正規表現の {@code \s}（空白・タブ・改行・垂直タブ・改ページ・復帰）と同じ文字か */
+    private static boolean isBlank(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\u000B' || c == '\f' || c == '\r';
+    }
+
     /** 消去型（ジェネリクスの型引数を落とした型）。取れなければそのまま */
     static ITypeBinding erasureOf(ITypeBinding t) {
         ITypeBinding erased = t.getErasure();
@@ -376,7 +404,7 @@ final class BindingNames {
         if (n == null || n.isEmpty()) {
             String key = t.getKey();             // JDT内部の一意キー（最終手段）
             // キャッシュはタブ区切りのため、空白類が混ざると形式が壊れる
-            n = (key == null) ? null : key.replaceAll("\\s", "_");
+            n = (key == null) ? null : blankToUnderscore(key);
         }
         if (n == null || n.isEmpty()) {
             return null;
@@ -579,7 +607,8 @@ final class BindingNames {
             typeNameOf(erasureOf(t));
         }
         // 型引数も数える（List<Foo> の Foo）。a.foos() の型 List<Foo> の Foo は、ソースに名前が無いことがあり、
-        // Foo の親を変えると for (Bar b : a.foos()) や m(Collection<? extends Bar>) の解決が変わる（Q85）
+        // Foo の親を変えると for (Bar b : a.foos()) や m(Collection<? extends Bar>) の解決が変わる
+        // （docs/cache-unification-qa.md の Q85（型引数にだけ現れる型の変化））
         for (ITypeBinding a : t.getTypeArguments()) {
             noteReachedType(a, jdkToo);
         }
@@ -636,8 +665,29 @@ final class BindingNames {
         return new MethodRef(packageOf(erased), typeFqn, name, params.toString());
     }
 
+    /**
+     * 型のバインディング -> 推移的な親型（{@link #supertypesOf}）。1 ファイルの解析の間だけ持つ（バインディングは
+     * 同じバッチの中でだけ有効で、このインスタンスはファイルごとに作られる）。同じ型の親型は、メソッドの宣言ごと
+     * （{@link OverrideFacts}・{@link #noteCandidates}・{@link #noteInheritedSignatures}）に求め直していた。
+     * {@link #typeNames} と同じく、インスタンスの同一性で引く
+     */
+    private final Map<ITypeBinding, List<ITypeBinding>> supertypes = new IdentityHashMap<>();
+
+    /**
+     * 推移的な親型（型引数を具体化したまま。{@link #computeSupertypesOf}）。同じバインディングには覚えた一覧を返す。
+     * 返す一覧は変更できない
+     */
+    List<ITypeBinding> supertypesOf(ITypeBinding type) {
+        List<ITypeBinding> known = supertypes.get(type);
+        if (known == null) {
+            known = Collections.unmodifiableList(computeSupertypesOf(type));
+            supertypes.put(type, known);
+        }
+        return known;
+    }
+
     /** 推移的な親型（型引数を具体化したまま）。循環と多重継承で同じ型を2度辿らないよう鍵で覚える */
-    static List<ITypeBinding> supertypesOf(ITypeBinding type) {
+    private static List<ITypeBinding> computeSupertypesOf(ITypeBinding type) {
         List<ITypeBinding> out = new ArrayList<>(4);
         ArrayDeque<ITypeBinding> queue = new ArrayDeque<>();
         Set<String> seen = new HashSet<>();
