@@ -633,7 +633,7 @@ public final class CallGraphBuilder {
                     guardBuilder.global(values.guard()));
         }
         if (unresolved != null) {
-            // 一覧には、呼び出し元の記号が壊れていても行を捨てず、呼び出し元不明として出す（OUTSIDE_METHOD の行と同じ）。
+            // 一覧には、呼び出し元の記号が壊れていても行を捨てず、呼び出し元不明として出す（CALLER_UNRESOLVED の行と同じ）。
             // グラフの側はその行を警告して使わないので、ここで落とすと黙って消える
             UnresolvedCallFact r = UnresolvedCallFact.fromRowKeepingUnknownCaller(cols, symbols);
             // import 推定でエッジになっている行は、call-hierarchy.csv 側に

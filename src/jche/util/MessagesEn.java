@@ -618,7 +618,7 @@ final class MessagesEn {
         return new String[] {
             "external.notAClassFile", "Not a class file",
             "external.unknownConstantTag", "Unknown constant pool tag: {0}",
-            "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) implicit constructors={5} unmatched={6} own classes skipped={7}",
+            "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) missing no-arg constructors={5} unmatched={6} own classes skipped={7}",
             "external.summary.nested", " jars inside jars={0}",
             "external.jarCount", "External jars: {0}",
             "external.classFailed", "Class analysis failed (skipped): {0}",

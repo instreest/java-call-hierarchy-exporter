@@ -94,7 +94,7 @@ final class CallSiteRecorder {
             // 呼び出し元の型・コンストラクタ自体を特定できないケース
             // （型のバインディング解決に失敗した等）
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
-                    UnresolvedCallFact.OUTSIDE_METHOD, "", recvKind, lambdaDepth));
+                    UnresolvedCallFact.CALLER_UNRESOLVED, "", recvKind, lambdaDepth));
             addValues(values, recvKey, guard);
             return;
         }

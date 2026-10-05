@@ -383,7 +383,7 @@ public class CallHierarchyExporter {
                 Log.info(Messages.get("exporter.externalScan"));
                 ExternalUsageScanner.Stats ex = ExternalUsageScanner.scan(graph, config, writer);
                 Log.info(ex.toString());
-                rows += ex.hits + ex.implicitCtors;
+                rows += ex.hits + ex.missingNoArgCtors;
                 if (ex.unmatched > 0) {
                     Log.info(Messages.format("exporter.externalUnmatched", ex.unmatched));
                     Log.info(Messages.get("exporter.externalUnmatched2"));
