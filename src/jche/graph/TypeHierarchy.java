@@ -4,7 +4,6 @@ package jche.graph;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -22,22 +21,35 @@ import jche.cache.TypeFact;
 public final class TypeHierarchy {
 
     /**
-     * 親型 -> 子型。H 行の親型の並びなので、「直接の親」のほかに
-     * 「jar の型を経由して到達するソース上の親」も 1 段の親子として入る（{@link TypeFact#superTypes()}）。
-     * jar の型の親子（{@link #binarySupertypes}）も入るので、子型には jar の型も並ぶ（{@link #transitiveSubtypes} は
-     * ソース上の型だけを返す）
+     * 親型 -> 子型（組み立て中の形。{@link #sortForDeterminism} が名前順の {@link #directSubtypes} に写す）。
+     * H 行の親型の並びなので、「直接の親」のほかに「jar の型を経由して到達するソース上の親」も 1 段の親子として入る
+     * （{@link TypeFact#superTypes()}）。jar の型の親子（{@link #binarySupertypeLinks}）も入るので、子型には jar の型も並ぶ
+     * （{@link #transitiveSubtypes} はソース上の型だけを返す）。
+     * 集合で持つのは、よく使う親型（{@code java.util.List} など。H 行の 9 列目で多くの型が同じ組を書く）の子型の重複を
+     * O(1) で弾くため（List の contains で弾くと型の数の 2 乗になる）
      */
-    private final HashMap<String, List<String>> directSubtypes = new HashMap<>();
+    private final HashMap<String, LinkedHashSet<String>> subtypeLinks = new HashMap<>();
     /** 子型 -> 親型（同上。ソース上の型だけ）。具象型からメソッド実装を探すのに使う */
-    private final HashMap<String, List<String>> directSupertypes = new HashMap<>();
+    private final HashMap<String, LinkedHashSet<String>> supertypeLinks = new HashMap<>();
     /**
      * jar の型（ソースの無い型）-> その親型。H 行の 9 列目（{@link TypeFact#binarySupertypes()}。ソースの型から親型を辿って
      * 到達した jar の型の推移的な親型）から。jar の型には H 行が無いので、部分型（{@link #transitiveSubtypes}）と親子の
-     * 判定（{@link #isSubtypeOf}・{@link #mostSpecific}）にだけ使い、{@link #directSupertypes} には混ぜない
+     * 判定（{@link #isSubtypeOf}・{@link #mostSpecific}）にだけ使い、{@link #supertypeLinks} には混ぜない
      * （実装を探す並び {@link #classChain} / {@link #superinterfaces} は H 行の親型の並びのまま）
      */
-    private final HashMap<String, List<String>> binarySupertypes = new HashMap<>();
-    /** 型 -> 種別（I/A/C） */
+    private final HashMap<String, LinkedHashSet<String>> binarySupertypeLinks = new HashMap<>();
+    /**
+     * {@link #subtypeLinks} / {@link #supertypeLinks} / {@link #binarySupertypeLinks} を名前順の一覧にしたもの
+     * （問い合わせはこちらを読む）。{@link #sortForDeterminism} が作り、{@link #add} で捨てる（null）。
+     * 作る前に問い合わせがあれば、そのとき作る（{@link #ensureSorted}）
+     */
+    private HashMap<String, List<String>> directSubtypes;
+    private HashMap<String, List<String>> directSupertypes;
+    private HashMap<String, List<String>> binarySupertypes;
+    /**
+     * 型 -> 種別（I/A/C）。同じ型を 2 つのファイルが宣言していれば（{@link #add}）、読んだ順に依らないよう
+     * 綴りの小さいほう（{@code A}・{@code C}・{@code I} の順）を採る。{@link #typePackage}・{@link #typeAnnotations} も同じ
+     */
     private final HashMap<String, Character> typeKind = new HashMap<>();
     /** 型 -> パッケージ（H 行の 4 列目）。ソース上の型だけ */
     private final HashMap<String, String> typePackage = new HashMap<>();
@@ -66,13 +78,20 @@ public final class TypeHierarchy {
     private String[] indexedNames;
     private HashMap<String, Integer> indexByName;
 
+    /**
+     * H 行 1 つを足す。同じ型を 2 つのファイルが宣言していれば（ビルドの通らない状態。CallGraphBuilder が警告する）、
+     * どの値も読んだ順（キャッシュのブロックの並び＝差分更新で変わる）に依らないよう、綴りの小さいほうを採る
+     * （種別・パッケージ・アノテーション・親クラスの連鎖・継承した実装。親型の集合は両方の和）
+     */
     void add(TypeFact t) {
         indexedNames = null;
         indexByName = null;
-        typeKind.put(t.typeFqn(), t.kind());
-        typePackage.put(t.typeFqn(), t.pkg() == null ? "" : t.pkg());
+        directSubtypes = null;
+        directSupertypes = null;
+        binarySupertypes = null;
+        typeKind.merge(t.typeFqn(), t.kind(), (a, b) -> (a <= b) ? a : b);
+        typePackage.merge(t.typeFqn(), t.pkg() == null ? "" : t.pkg(), TypeHierarchy::smaller);
         if (!t.superclasses().isEmpty()) {
-            // 同じ型を 2 つのファイルが宣言していれば、読んだ順に依らないよう綴りの小さいほうを採る
             List<String> known = superclasses.get(t.typeFqn());
             if (known == null || String.join(",", t.superclasses()).compareTo(String.join(",", known)) < 0) {
                 superclasses.put(t.typeFqn(), List.copyOf(t.superclasses()));
@@ -85,11 +104,11 @@ public final class TypeHierarchy {
             }
         }
         if (!t.annotations().isEmpty()) {
-            typeAnnotations.put(t.typeFqn(), t.annotations());
+            typeAnnotations.merge(t.typeFqn(), t.annotations(), TypeHierarchy::smaller);
         }
         for (String sup : t.superTypes()) {
-            link(directSubtypes, sup, t.typeFqn());
-            link(directSupertypes, t.typeFqn(), sup);
+            link(subtypeLinks, sup, t.typeFqn());
+            link(supertypeLinks, t.typeFqn(), sup);
         }
         for (String edge : t.binarySupertypes()) {
             int gt = edge.indexOf('>');
@@ -98,16 +117,17 @@ public final class TypeHierarchy {
             }
             String child = edge.substring(0, gt);
             String parent = edge.substring(gt + 1);
-            link(directSubtypes, parent, child);
-            link(binarySupertypes, child, parent);
+            link(subtypeLinks, parent, child);
+            link(binarySupertypeLinks, child, parent);
         }
     }
 
-    private static void link(HashMap<String, List<String>> map, String from, String to) {
-        List<String> list = map.computeIfAbsent(from, k -> new ArrayList<>());
-        if (!list.contains(to)) {
-            list.add(to);
-        }
+    private static String smaller(String a, String b) {
+        return (a.compareTo(b) <= 0) ? a : b;
+    }
+
+    private static void link(HashMap<String, LinkedHashSet<String>> map, String from, String to) {
+        map.computeIfAbsent(from, k -> new LinkedHashSet<>()).add(to);
     }
 
     /**
@@ -116,19 +136,31 @@ public final class TypeHierarchy {
      * （＝出力の行順）が実行のたびに変わりうる
      */
     void sortForDeterminism() {
-        for (List<String> l : directSubtypes.values()) {
-            Collections.sort(l);
-        }
-        for (List<String> l : directSupertypes.values()) {
-            Collections.sort(l);
-        }
-        for (List<String> l : binarySupertypes.values()) {
-            Collections.sort(l);
-        }
+        directSubtypes = sorted(subtypeLinks);
+        directSupertypes = sorted(supertypeLinks);
+        binarySupertypes = sorted(binarySupertypeLinks);
         // 並べ替える前に引いた結果を残さない
         transitiveCache.clear();
         classChainCache.clear();
         superinterfaceCache.clear();
+    }
+
+    /** 組み立て中の集合を、名前順の一覧に写す */
+    private static HashMap<String, List<String>> sorted(HashMap<String, LinkedHashSet<String>> links) {
+        HashMap<String, List<String>> out = new HashMap<>(links.size() * 2);
+        for (var e : links.entrySet()) {
+            String[] names = e.getValue().toArray(new String[0]);
+            Arrays.sort(names);
+            out.put(e.getKey(), List.of(names));
+        }
+        return out;
+    }
+
+    /** 問い合わせの前に、名前順の一覧ができていることを保証する（{@link #add} の後は作り直す） */
+    private void ensureSorted() {
+        if (directSubtypes == null) {
+            sortForDeterminism();
+        }
     }
 
     /** ソース上に宣言のある型か */
@@ -207,6 +239,7 @@ public final class TypeHierarchy {
      * 親クラスとインターフェースの区別は無い。実際に動く実装を探す順は {@link #classChain}
      */
     public List<String> directSupertypes(String type) {
+        ensureSorted();
         List<String> sups = directSupertypes.get(type);
         return (sups == null) ? List.of() : sups;
     }
@@ -216,6 +249,7 @@ public final class TypeHierarchy {
      * ソースの型から親型を辿って到達した jar の型についてだけ分かる（それ以外の jar の型は空）
      */
     public List<String> binarySupertypesOf(String type) {
+        ensureSorted();
         List<String> sups = binarySupertypes.get(type);
         return (sups == null) ? List.of() : sups;
     }
@@ -335,6 +369,7 @@ public final class TypeHierarchy {
         if (cached != null) {
             return cached;
         }
+        ensureSorted();
         List<String> out = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         ArrayDeque<String> stack = new ArrayDeque<>();

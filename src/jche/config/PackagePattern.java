@@ -21,11 +21,17 @@ public final class PackagePattern {
     private final Kind kind;
     private final String value;
     private final String methodName;
+    /**
+     * {@code value + "."}（サブパッケージの判定に使う前置き）。{@link #matches} は走査の 1 宣言ごとに呼ばれるので、
+     * 呼ぶたびに連結しないよう作るときに 1 回だけ組む
+     */
+    private final String subpackagePrefix;
 
     private PackagePattern(Kind kind, String value, String methodName) {
         this.kind = kind;
         this.value = value;
         this.methodName = methodName;
+        this.subpackagePrefix = value + ".";
     }
 
     public static PackagePattern parse(String raw) {
@@ -57,7 +63,7 @@ public final class PackagePattern {
         return switch (kind) {
             // パッケージ名で判定するため、内部クラス（a.b.Outer.Inner）も正しく直下扱いになる
             case PACKAGE_DIRECT -> pkg.equals(value);
-            case PACKAGE_RECURSIVE -> pkg.equals(value) || pkg.startsWith(value + ".");
+            case PACKAGE_RECURSIVE -> pkg.equals(value) || pkg.startsWith(subpackagePrefix);
             case TYPE -> typeFqn.equals(value);
             case METHOD -> typeFqn.equals(value) && method.equals(methodName);
         };
