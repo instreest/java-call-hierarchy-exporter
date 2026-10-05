@@ -3,12 +3,12 @@
 // ---------------------------------------------------------------------------
 // java-call-hierarchy-exporter の 1 ファイル版（完全版）。
 //
-// このファイルは single-file/generate.sh が src/jche 配下の全ソース（166 ファイル）から
-// 機械的に生成したもの。手で編集しない。本体（src/jche）を直したら生成し直す
-// （test/single-file/run.sh が、生成し直していないことと、ビルド・実行できないことを検出する）。
+// src/jche 配下の全ソースから作った 1 ファイル版。本体（src/jche）と同期を取らない場合があり、
+// その目的に合わせて個別に更新する（docs/single-file-qa.md の Q8）。
+// test/single-file/run.sh が、ビルド・起動できないことを検出する。
 //
 // 本体の各ファイルのトップレベル型を、パッケージ jche の外側のクラス CallHierarchyExporterSingle の
-// 入れ子（static）にしてある。機能は本体と同じ（キャッシュ・差分更新・データフロー解析・被参照スキャン・
+// 入れ子（static）にしてある。作った時点の機能は本体と同じ（キャッシュ・差分更新・データフロー解析・被参照スキャン・
 // ビルドファイルからの依存解決・対話モード・サーバーモード）。違うのはクラス名だけで、
 //   - 同梱の拡張は設定に本体と同じ名前（jche.builtin.TypeMappingProvider）で書けば読み替える
 //   - 利用者が Java で書く拡張（plugin.folders）が import する jche.extension.* だけは入れ子にせず、
@@ -710,7 +710,7 @@ public final class CallHierarchyExporterSingle {
                     Log.info(Messages.get("exporter.externalScan"));
                     ExternalUsageScanner.Stats ex = ExternalUsageScanner.scan(graph, config, writer);
                     Log.info(ex.toString());
-                    rows += ex.hits + ex.missingNoArgCtors;
+                    rows += ex.hits + ex.implicitCtors;
                     if (ex.unmatched > 0) {
                         Log.info(Messages.format("exporter.externalUnmatched", ex.unmatched));
                         Log.info(Messages.get("exporter.externalUnmatched2"));
@@ -5675,7 +5675,7 @@ public final class CallHierarchyExporterSingle {
                 // 呼び出し元の型・コンストラクタ自体を特定できないケース
                 // （型のバインディング解決に失敗した等）
                 out.callSites.add(new UnresolvedCallFact(line, null, displayName,
-                        UnresolvedCallFact.CALLER_UNRESOLVED, "", recvKind, lambdaDepth));
+                        UnresolvedCallFact.OUTSIDE_METHOD, "", recvKind, lambdaDepth));
                 addValues(values, recvKey, guard);
                 return;
             }
@@ -14180,7 +14180,7 @@ public final class CallHierarchyExporterSingle {
      *                                                          （{@link #trailerFor}）。これが無い・数が合わない
      *                                                          キャッシュは途中で切れているとみなして捨てる
      * </pre>
-     * 呼び出し元が特定できない U 行（{@link UnresolvedCallFact#CALLER_UNRESOLVED}）の記号は {@code -1}。
+     * 呼び出し元が特定できない U 行（{@link UnresolvedCallFact#OUTSIDE_METHOD}）の記号は {@code -1}。
      * recv はノード番号（無ければ {@code -1}）、args は {@code 位置=ノード番号} のカンマ区切り、
      * guard は G 行のガード番号（無ければ {@code -1}）、hints はレシーバの変数に new だけが代入されている
      * ときの、その型の FQN のカンマ区切り（無ければ空。{@link CallSiteValues.Row#hints}）。
@@ -14475,11 +14475,9 @@ public final class CallHierarchyExporterSingle {
          *       （{@code docs/jls-conformance-qa.md}・{@code docs/cache-unification-qa.md}）</li>
          *   <li>v45（続き）{@code super.m()} / {@code X.super.m()} / {@code super::m} の C 行に修飾する型（囲む型の親クラスか、名指しの
          *       インターフェース）を書く。record の暗黙のアクセサの D 行を合成する（{@code docs/jls-conformance-qa.md} の Q42）</li>
-         *   <li>v46 呼び出し元を特定できない U 行の理由コードを {@code OUTSIDE_METHOD} から
-         *       {@link UnresolvedCallFact#CALLER_UNRESOLVED} に改めた（{@code docs/resolved-by-naming-qa.md} の Q1）</li>
          * </ul>
          */
-        public static final String VERSION = "jche-cache-v46";
+        public static final String VERSION = "jche-cache-v45";
 
         // 行の種別（各行の先頭1文字）
         public static final char ROW_SOURCES = 'T';
@@ -15640,7 +15638,7 @@ public final class CallHierarchyExporterSingle {
      */
     public sealed static interface CallSite permits CallEdgeFact, UnresolvedCallFact {
 
-        /** 呼び出し元。特定できなければ null（{@link UnresolvedCallFact#CALLER_UNRESOLVED}） */
+        /** 呼び出し元。特定できなければ null（{@link UnresolvedCallFact#OUTSIDE_METHOD}） */
         MethodRef caller();
 
         /**
@@ -17409,7 +17407,7 @@ public final class CallHierarchyExporterSingle {
      * @param line        呼び出し箇所の行
      * @param caller      呼び出し元。特定できなければ null
      * @param expression  ソースに書かれていた式（メソッド名）
-     * @param reason      理由コード（{@link #BINDING_FAILED} / {@link #CALLER_UNRESOLVED}）
+     * @param reason      理由コード（{@link #BINDING_FAILED} / {@link #OUTSIDE_METHOD}）
      * @param candidate   レシーバの単純名と一致する単一型 import のFQN（テキストからの推定）。無ければ空
      * @param recvKind    {@link CallEdgeFact#recvKind()} と同じ
      * @param lambdaDepth {@link CallEdgeFact#lambdaDepth()} と同じ
@@ -17423,13 +17421,8 @@ public final class CallHierarchyExporterSingle {
 
         /** 呼び出し先の型解決に失敗した */
         public static final String BINDING_FAILED = "BINDING_FAILED";
-        /**
-         * 呼び出し元（囲むメソッド・コンストラクタ・型）のバインディングを解決できず、呼び出し元を特定できない。
-         * フィールドの初期化子や初期化ブロックの呼び出しは &lt;init&gt; / &lt;clinit&gt; を呼び出し元にするので
-         * （JLS 12.4.2・12.5）、ここには来ない。以前の名前は OUTSIDE_METHOD で、「メソッドの外」と読めて
-         * 実態と合わなかった（docs/resolved-by-naming-qa.md の Q1）
-         */
-        public static final String CALLER_UNRESOLVED = "CALLER_UNRESOLVED";
+        /** 呼び出し元（囲みメソッド・型）を特定できない */
+        public static final String OUTSIDE_METHOD = "OUTSIDE_METHOD";
 
         public UnresolvedCallFact {
             candidate = (candidate == null) ? "" : candidate;
@@ -17472,7 +17465,7 @@ public final class CallHierarchyExporterSingle {
          *
          * <p>型解決できなかった呼び出しの一覧（{@code UnresolvedReport}）に出す行を拾うとき
          * （{@code CallGraphBuilder} のスキャン）に使う。呼び出し元が
-         * 分からなくても、ファイル・行・式・理由は出せるので、呼び出し元を特定できない U 行（{@link #CALLER_UNRESOLVED}）と
+         * 分からなくても、ファイル・行・式・理由は出せるので、呼び出し元の外の U 行（{@link #OUTSIDE_METHOD}）と
          * 同じく「呼び出し元不明」として出す（黙って消さない）。呼び出し元 null の行は
          * {@link #hasUsableCandidate()} が false なので、エッジにはならない
          *
@@ -18020,7 +18013,7 @@ public final class CallHierarchyExporterSingle {
     /**
      * 設定ファイルを対話で新しく作る。
      *
-     * 設定ファイルの「解析対象」の項目（project.root / source.folders / library.folders /
+     * README の Quick start で「書き換える」とされている項目（project.root / source.folders / library.folders /
      * source.encoding）と entry.packages だけを尋ね、残りは {@code config/jche.properties}（既定の設定
      * ファイル）をひな形にしてそのまま写す。ひな形の行を置き換える方式なので、全項目の説明コメントが
      * 新しいファイルにも残り、あとから他の項目を編集するときに config/jche.properties を見に行かなくて済む。
@@ -23279,7 +23272,7 @@ public final class CallHierarchyExporterSingle {
      *
      * 目印は {@code src/jche/CallHierarchyExporter.java}。次の順に探し、最初に見つかった場所を採る。
      * <ol>
-     *   <li>作業ディレクトリと、その上位。README・docs/cli.md の手順（jbang でも java 直接でも）はプロジェクト直下を
+     *   <li>作業ディレクトリと、その上位。README の手順（jbang でも java 直接でも）はプロジェクト直下を
      *       作業ディレクトリにして実行するので、ほとんどはここで決まる</li>
      *   <li>実行中のクラスの置き場所と、その上位。{@code java -cp bin} で動かしたときの {@code bin/} の親。
      *       jbang 経由では {@code ~/.jbang/cache/jars/} の下なので、ここでは見つからない</li>
@@ -24686,7 +24679,7 @@ public final class CallHierarchyExporterSingle {
             long classes;
             long selfClasses;
             public long hits;
-            public long missingNoArgCtors;
+            public long implicitCtors;
             public long unmatched;
             long usedMethods;
 
@@ -24694,7 +24687,7 @@ public final class CallHierarchyExporterSingle {
             public String toString() {
                 return Messages.format("external.summary", jars,
                         (nestedJars > 0) ? Messages.format("external.summary.nested", nestedJars) : "",
-                        classes, hits, usedMethods, missingNoArgCtors, unmatched, selfClasses);
+                        classes, hits, usedMethods, implicitCtors, unmatched, selfClasses);
             }
         }
 
@@ -24864,16 +24857,14 @@ public final class CallHierarchyExporterSingle {
                 // 照合される。ここに来るのは「相手jarのビルド時には引数なしで生成できたが、
                 // 今のソースにはそのコンストラクタが無い」形で、版違いの可能性が高い。
                 // 「誰がこのクラスを生成しているか」は影響調査で有用なので、行として残し注記で区別する。
-                // 以前の名前は IMPLICIT_CTOR で、JLS 8.8.9 の暗黙の（デフォルト）コンストラクタと読めて
-                // 逆の意味になっていた（そちらは EXACT。docs/resolved-by-naming-qa.md の Q2）。
                 // 引数付きの <init> が一致しないものは、内部クラス（外側インスタンスが引数に付く）や
                 // 版違いであり、生成箇所として表記できないので未照合に数える
                 String typeFqn = normalize(owner);
                 String simple = Names.simpleOf(typeFqn);
                 out.writeExternalUsageRow(caller,
                         typeFqn + "." + simple + "()", simple + "." + simple,
-                        jarName, "MISSING_NOARG_CTOR");
-                stats.missingNoArgCtors++;
+                        jarName, "IMPLICIT_CTOR");
+                stats.implicitCtors++;
             } else {
                 // 自分の型への参照なのに一致するメソッドが無い。
                 // 相手が古い版のjarに対してビルドされている可能性がある。
@@ -25077,23 +25068,16 @@ public final class CallHierarchyExporterSingle {
             return VIRTUAL;
         }
 
-        /**
-         * 段0 の解決ラベル。仕様の上で仮想呼び出しでないもの（JLS 15.12.3 の呼び出し方式 static / nonvirtual / super と
-         * コンストラクタ。JVMS では invokestatic / invokespecial）は "STATIC_BOUND:理由"、
-         * 仮想呼び出し（invokevirtual）だが上書きできないので選ばれる本体が 1 つに決まるもの（final メソッド・
-         * final クラスのメソッド。JLS 8.4.3.3・8.1.1.2）は "NOT_OVERRIDABLE:理由" として出力に残す。
-         * どちらも候補は呼び出し先の 1 件で扱いは同じで、名前だけを仕様に合わせて分ける
-         * （docs/resolved-by-naming-qa.md の Q3）
-         */
-        public static String label(char bindKind) {
+        /** 静的束縛と判定した理由。解決ラベル "STATIC_BOUND:理由" として出力に残す */
+        public static String staticBoundReason(char bindKind) {
             return switch (bindKind) {
-                case FINAL_METHOD -> Resolution.NOT_OVERRIDABLE_PREFIX + "FINAL_METHOD";
-                case FINAL_CLASS -> Resolution.NOT_OVERRIDABLE_PREFIX + "FINAL_CLASS";
-                case PRIVATE -> Resolution.STATIC_BOUND_PREFIX + "PRIVATE";
-                case STATIC -> Resolution.STATIC_BOUND_PREFIX + "STATIC";
-                case CONSTRUCTOR -> Resolution.STATIC_BOUND_PREFIX + "CTOR";
-                case SUPER -> Resolution.STATIC_BOUND_PREFIX + "SUPER";
-                default -> Resolution.STATIC_BOUND_PREFIX + "OTHER";
+                case PRIVATE -> "PRIVATE";
+                case STATIC -> "STATIC";
+                case FINAL_METHOD -> "FINAL_METHOD";
+                case FINAL_CLASS -> "FINAL_CLASS";
+                case CONSTRUCTOR -> "CTOR";
+                case SUPER -> "SUPER";
+                default -> "OTHER";
             };
         }
     }
@@ -26173,7 +26157,7 @@ public final class CallHierarchyExporterSingle {
                         guardBuilder.global(values.guard()));
             }
             if (unresolved != null) {
-                // 一覧には、呼び出し元の記号が壊れていても行を捨てず、呼び出し元不明として出す（CALLER_UNRESOLVED の行と同じ）。
+                // 一覧には、呼び出し元の記号が壊れていても行を捨てず、呼び出し元不明として出す（OUTSIDE_METHOD の行と同じ）。
                 // グラフの側はその行を警告して使わないので、ここで落とすと黙って消える
                 UnresolvedCallFact r = UnresolvedCallFact.fromRowKeepingUnknownCaller(cols, symbols);
                 // import 推定でエッジになっている行は、call-hierarchy.csv 側に
@@ -26555,8 +26539,7 @@ public final class CallHierarchyExporterSingle {
     /**
      * エッジ単位の解決パイプライン。呼び出し先の具象候補を求める。
      * <pre>
-     *   段0 STATIC_BOUND               仮想ディスパッチされない呼び出し（JLS 15.12.3 の static / nonvirtual / super）
-     *       NOT_OVERRIDABLE            仮想呼び出しだが上書きできない（final メソッド・final クラス）
+     *   段0 STATIC_BOUND               仮想ディスパッチされない呼び出し
      *   段1 NO_OVERRIDE / SINGLE_IMPL  オーバーライド候補が1つに定まる
      *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
      *   段3 CONTRACT / CUSTOM_*        利用者が与えた条件（契約表の種類 C → 拡張の順に尋ねる）
@@ -26729,7 +26712,7 @@ public final class CallHierarchyExporterSingle {
                 return Resolution.single(calleeId, Resolution.EXTERNAL_GUESS);
             }
 
-            // --- 段0: 静的束縛・上書きできないメソッド ---
+            // --- 段0: 静的束縛 ---
             if (bindKind != BindKind.VIRTUAL) {
                 // 既定では確定として扱うが、ここで打ち切ると拡張に到達せず
                 // 呼び出し階層が切れてしまう。opt-inした拡張には必ず声をかける。
@@ -26738,7 +26721,7 @@ public final class CallHierarchyExporterSingle {
                     return custom;
                 }
                 return Resolution.single(bindKind == BindKind.SUPER ? superTarget(edgeIndex, calleeId) : calleeId,
-                        BindKind.label(bindKind));
+                        Resolution.STATIC_BOUND_PREFIX + BindKind.staticBoundReason(bindKind));
             }
 
             // --- ラムダ／メソッド参照が渡ってきた呼び出し（経路に依らず決まる分） ---
@@ -31716,14 +31699,8 @@ public final class CallHierarchyExporterSingle {
      */
     public static record Resolution(int[] targets, String label) {
 
-        // --- 段0: 候補が呼び出し先の 1 件に決まる（{@link BindKind#label}） ---
-        /** 仮想呼び出しでない（JLS 15.12.3 の static / nonvirtual / super とコンストラクタ）。"STATIC_BOUND:理由" の形 */
+        // --- 段0: 静的束縛（"STATIC_BOUND:理由" の形） ---
         public static final String STATIC_BOUND_PREFIX = "STATIC_BOUND:";
-        /**
-         * 仮想呼び出しだが上書きできない（final メソッド・final クラスのメソッド）。"NOT_OVERRIDABLE:理由" の形。
-         * JLS 15.12.3 の呼び出し方式は virtual なので STATIC_BOUND とは呼ばない
-         */
-        public static final String NOT_OVERRIDABLE_PREFIX = "NOT_OVERRIDABLE:";
         // --- 段1: オーバーライド候補が1つに定まる ---
         public static final String NO_OVERRIDE = "NO_OVERRIDE";
         public static final String SINGLE_IMPL = "SINGLE_IMPL";
@@ -34454,7 +34431,7 @@ public final class CallHierarchyExporterSingle {
          * @param callee      参照されている自分のメソッド（callee列と同じ表記）
          * @param shortCallee 階層列に置く短縮表記
          * @param jarName     参照元のjar名
-         * @param note        照合の種類（EXACT / INHERITED / MISSING_NOARG_CTOR）
+         * @param note        照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
          */
         public void writeExternalUsageRow(String caller, String callee,
                                           String shortCallee, String jarName, String note)
@@ -35068,7 +35045,7 @@ public final class CallHierarchyExporterSingle {
         static final String UNEXPANDED = "UNEXPANDED:";
         /** 呼び出し先の型を特定できなかった行（U行）。後半は理由コード */
         static final String UNRESOLVED = "UNRESOLVED:";
-        /** 被参照スキャンの行。後半は照合の種類（EXACT / INHERITED / MISSING_NOARG_CTOR） */
+        /** 被参照スキャンの行。後半は照合の種類（EXACT / INHERITED / IMPLICIT_CTOR） */
         static final String EXTERNAL_USAGE = "EXTERNAL_USAGE:";
 
         /**
@@ -36067,8 +36044,8 @@ public final class CallHierarchyExporterSingle {
             if (UnresolvedCallFact.BINDING_FAILED.equals(code)) {
                 return "type resolution failed (missing classpath / dynamic call / etc.)";
             }
-            if (UnresolvedCallFact.CALLER_UNRESOLVED.equals(code)) {
-                return "caller unresolved (type resolution of the enclosing method or type failed)";
+            if (UnresolvedCallFact.OUTSIDE_METHOD.equals(code)) {
+                return "call from outside a method body";
             }
             return code;
         }
@@ -36316,7 +36293,6 @@ public final class CallHierarchyExporterSingle {
         public String reasonOf(int edgeIndex) {
             String label = labelOf(edgeIndex);
             if (label == null || label.isEmpty() || label.startsWith(Resolution.STATIC_BOUND_PREFIX)
-                    || label.startsWith(Resolution.NOT_OVERRIDABLE_PREFIX)
                     || Resolution.NO_OVERRIDE.equals(label)) {
                 return "";
             }
@@ -39308,7 +39284,7 @@ public final class CallHierarchyExporterSingle {
             return new String[] {
                 "external.notAClassFile", "Not a class file",
                 "external.unknownConstantTag", "Unknown constant pool tag: {0}",
-                "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) missing no-arg constructors={5} unmatched={6} own classes skipped={7}",
+                "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) implicit constructors={5} unmatched={6} own classes skipped={7}",
                 "external.summary.nested", " jars inside jars={0}",
                 "external.jarCount", "External jars: {0}",
                 "external.classFailed", "Class analysis failed (skipped): {0}",
@@ -39952,7 +39928,7 @@ public final class CallHierarchyExporterSingle {
             return new String[] {
                 "external.notAClassFile", "classファイルではありません",
                 "external.unknownConstantTag", "未知の定数プールタグ: {0}",
-                "external.summary", "jar={0}{1} クラス={2} 被参照={3}件（自分のメソッド {4} 個） 引数なしコンストラクタの欠け={5} 未照合={6} 自プロジェクトクラスを除外={7}",
+                "external.summary", "jar={0}{1} クラス={2} 被参照={3}件（自分のメソッド {4} 個） 暗黙コンストラクタ={5} 未照合={6} 自プロジェクトクラスを除外={7}",
                 "external.summary.nested", " jar内のjar={0}",
                 "external.jarCount", "外部jar: {0} 件",
                 "external.classFailed", "class解析に失敗（スキップ）: {0}",

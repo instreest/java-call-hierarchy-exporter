@@ -134,7 +134,7 @@ jp.co.xxx.action.UserAction#execute メソッド指定
 ### 4.1 `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -144,9 +144,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `caller` | 呼び出し元。`at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**。行番号は**呼び出し箇所**の行 | Eclipseの「Javaスタック・トレース・コンソール」に貼ると `(ファイル:行)` がリンクになりソースへ飛べる。内部クラスは `Outer$Inner`、コンストラクタは `<init>` で書く（コンソールが解釈する形式に合わせる） |
 | `callee` | 呼び出し先。**クラス単純名.メソッド名**（引数は付けない）。内部クラスは `Outer.Inner`、コンストラクタはクラス名 | Excelのフィルタで呼び出し先を選ぶための短い表記。引数を付けないのでオーバーロードは同じ表記にまとまる。行番号は混ぜない（フィルタの選択肢が散らばる） |
 | `resolved-by` | 解決方法。`接頭辞 + 段のラベル` で、**全ての行に必ず入れる**（下表） | 「どう特定したか・なぜ絞れなかったか」をフィルタできるようにする。注記は可変長列の末尾にあるためフィルタに使えない。`caller` → `callee` の1本の辺の性質なので `callee` の隣に置く |
-| `depth` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノード数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる。`root` / `call-hierarchy` と同じ「木のどこにあるか」の列なので3つ並べる |
-| `root` | 起点メソッド。`クラス単純名.メソッド名` | フィルタ用の短い表記 |
-| `call-hierarchy` | 起点の次のノードから現ノードまでを**1ノード1列**で展開（可変長・必ず最終列） | 階層をそのまま読む。ヘッダーとデータ行の列数は一致しなくてよい |
+| `depth` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノードのうち先頭の起点を除いた数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる。`call-hierarchy` と同じ「木のどこにあるか」の列なので並べる |
+| `call-hierarchy` | 起点から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列）。先頭の列が起点メソッド（`クラス単純名.メソッド名`）で、起点を別の見出しの列に分けない | 階層をそのまま読む。起点の列はフィルタ用の短い表記。見出しは先頭の 1 列にだけ付き、ヘッダーとデータ行の列数は一致しなくてよい |
 
 - 呼び出し1件につき1行。起点自身の行は出さない
 - 引数型の略名（`methods.csv` の `method` 列で使う）は `java.lang.String`→`String`、
@@ -164,8 +163,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | 値 | 条件 |
 |---|---|
-| `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CONTRACT` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
-| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（契約で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
+| `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CALL_RULE` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
+| `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（規則で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
 | `UNEXPANDED:LAMBDA` | 候補は1件だが、ラムダ／メソッド参照も同じインターフェースを実装しており未特定。ラベルをそのまま出すと確定に見えるのでこう言い換える |
 | `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED`＝呼び出し先の型を特定できない / `CALLER_UNRESOLVED`＝囲むメソッド・型の型解決に失敗して呼び出し元を特定できない）。`depth` は `1` |
 | `EXTERNAL_USAGE:{照合の種類}` | 被参照スキャンの行（`EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`）。`depth` は `1` |
@@ -184,11 +183,11 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}`。行にしない候補があれば数を後ろに足す（上限で切った `(only the first N are written as rows)`、除外した `(K excluded by exclude.packages and not written as rows)`） |
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
-| 追加 | 呼び出し先が契約表（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 契約: …` で1行足して降りる（jar の中は読まない。docs/callback-contracts.md） |
-| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 契約: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
+| 追加 | 呼び出し先がライブラリ呼び出し規則（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 規則: …` で1行足して降りる（jar の中は読まない。docs/library-call-rules.md） |
+| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 規則: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
 
 1件に確定した呼び出しの注記は付けない（解決方法は `resolved-by` 列に出る）。
-注記に残る `[RESOLVED:*]` は、繋いだ契約という列に無い情報を持つ `[RESOLVED:CALLBACK] 契約: …` だけ。
+注記に残る `[RESOLVED:*]` は、繋いだ規則という列に無い情報を持つ `[RESOLVED:CALLBACK] 規則: …` だけ。
 
 注記は先頭に大文字のタグを置き、日本語の説明をその後ろに続ける。
 `[UNEXPANDED:*]` は「ここから先へ降りなかった」ことを表し、タグだけで辿り切れなかった箇所を
@@ -204,13 +203,13 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
 `return`、引数なら呼び出し元、フィールドなら代入箇所とDI設定）。注記は失敗の報告ではなく
 次の調査手順として書く。
 
-さらに、同じファイルに性質の違う2種類の行を追記する。`root` 列で区別できる。
+さらに、同じファイルに性質の違う2種類の行を追記する。`call-hierarchy` の先頭の列（起点の列）で区別できる。
 
 - **型解決に失敗した呼び出し**: `caller` はスタックトレース形式、`callee` はソースに
-  書かれたメソッド名、`root` = `(unresolved)`、階層列にメソッド名、末尾に理由
+  書かれたメソッド名、`call-hierarchy` の先頭 = `(unresolved)`、階層列にメソッド名、末尾に理由
   `type resolution failed (missing classpath / dynamic call / etc.)`。**静かに消さないための行**
 - **外部jarからの被参照**（`external.library.folders` 指定時）: `caller` = 参照している側の
-  クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`root` = jar名（FatJar の中の jar なら
+  クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`call-hierarchy` の先頭 = jar名（FatJar の中の jar なら
   `外側.jar!/BOOT-INF/lib/中.jar` のように jar URL と同じ `!/` 区切りで場所まで）、階層列に短縮表記、
   末尾に `external-ref:EXACT`（そのクラスで宣言されているメソッド。合成した暗黙のデフォルトコンストラクタを
   含む）/ `external-ref:INHERITED`（親から継承したメソッド。**JVM がその参照を解決する宣言**（親クラスの連鎖を先に、
@@ -247,7 +246,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 | `hasBody` | 本体を持つか（IFの抽象メソッドとdefaultメソッドの区別） |
 | `inDegree` | **具象クラスに解決した後の**被呼び出し数 |
 | `outDegree` | 呼び出し数 |
-| `role` | `FRAMEWORK_ENTRY`（契約でフレームワークが呼ぶと分かる入口。in に関係なく優先）/ `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
+| `role` | `FRAMEWORK_ENTRY`（規則でフレームワークが呼ぶと分かる入口。in に関係なく優先）/ `ISOLATED`（in=0かつout=0）/ `ENTRY_CANDIDATE`（in=0）/ `LEAF`（out=0）/ `NORMAL` |
 | `reachable` | 起点集合から解決後のエッジで到達できるか |
 | `unresolvedCalls` / `unresolvedCause` | このメソッド内で具象クラスを1つに絞れなかった呼び出しの件数と理由（`;` 区切りで重複排除。`[UNEXPANDED:NO_IMPL] no implementation with a body in the source` / `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` / レシーバ由来） |
 
@@ -341,7 +340,7 @@ try-with-resources の `close()`、レコードパターンのアクセサ）も
 | 0 | `STATIC_BOUND:{PRIVATE,STATIC,CTOR,SUPER}` / `NOT_OVERRIDABLE:{FINAL_METHOD,FINAL_CLASS}` | 前者は仮想呼び出しでない呼び出し（JLS 15.12.3 の static / nonvirtual / super とコンストラクタ）。後者は仮想呼び出しだが上書きできない（JLS 8.4.3.3・8.1.1.2）。どちらも呼び出し先の 1 件で確定 |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 宣言型自身（本体があれば）＋推移的サブタイプの同シグネチャ宣言を候補にし、1件なら確定。皆無なら `NO_IMPL` |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内でレシーバ変数に代入された `new` の型（フロー非依存） |
-| 3 | `CONTRACT` / 拡張のラベル | 契約表（種類 C）の行、次に `TypeCandidateProvider` が返した候補 |
+| 3 | `CALL_RULE` / 拡張のラベル | ライブラリ呼び出し規則（種類 C）の行、次に `TypeCandidateProvider` が返した候補 |
 | 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | レシーバの出所が `new` された型、またはファクトリの戻り値（経路に依存しないのでメモ化できる） |
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | レシーバが DI の注入点のとき、候補を Bean だけに絞って 1 つに定まれば確定（下記） |
 | — | `DATAFLOW_PARAM` / `DATAFLOW_FIELD` | 経路上の実引数／コンストラクタ注入フィールドから特定（経路依存。探索中に判定し、CHAで候補が複数のときと、段5で絞ったときに試す） |
@@ -395,7 +394,7 @@ javac にツール自身のクラスパスを渡す）、`.class` / `.jar` と�
 拡張が動くのはグラフ構築時だけで、**キャッシュには何も書かない**。よって拡張やその設定を
 キャッシュのヘッダ行に入れる必要はなく、拡張を足しても外してもキャッシュはそのまま再利用できる。
 AST 走査中に利用者のコードを差し込む口は設けない（キャッシュの鍵が増え、読み口が
-契約表・証拠・ひな形の 3 つとずれるため）。読み取る材料を増やすのはツール本体の仕事で、
+ライブラリ呼び出し規則・証拠・ひな形の 3 つとずれるため）。読み取る材料を増やすのはツール本体の仕事で、
 「ファクトリの実引数の何をキーとして読むか」は 1 か所（後述の `FactoryCalls`）にまとめる。
 
 渡す証拠（`Hint`）は `kind` と `value` の 2 つ組。レシーバがファクトリメソッドの戻り値なら、
@@ -717,7 +716,7 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
 |---|---|---|
 | 内部ID・型階層の照合 | ソース上の正規名 | `jp.co.xxx.Outer.Inner` |
 | `callee` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
-| `root` / `call-hierarchy` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
+| `call-hierarchy` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
 | `caller` 列 | **バイナリ名** | `at jp.co.xxx.Outer$Inner.method(Foo.java:12)` |
 
 - メソッドのキーは `typeFqn#name(消去済み引数型FQN,...)` の1本。ID化・CHA・出所・被参照の
@@ -779,10 +778,10 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
 - 候補引きの入口は**呼び出し先の分かり方で2つだけ**にする。キーが分かるなら
   `implementationOf(型FQN, 呼び出し先ID)`、シグネチャしか分からないなら
   `implementationOfSignature(型FQN, シグネチャ)`。どちらも同じ探索を呼び、上書きの引き方だけが違う。
-  後者が要るのは、**呼び戻しの契約表とリフレクションは所有型を知らない**ため。
-  契約は `java.lang.Thread#start() -> c* : run()` のようにシグネチャだけを名指しし、
+  後者が要るのは、**呼び戻しのライブラリ呼び出し規則とリフレクションは所有型を知らない**ため。
+  規則は `java.lang.Thread#start() -> c* : run()` のようにシグネチャだけを名指しし、
   `run()` を宣言している `java.lang.Runnable` はどこにも現れない
-- 入口をこれ以上増やさない。段1（CHA）・段2（`LOCAL_NEW`）・段3（契約表と拡張）・
+- 入口をこれ以上増やさない。段1（CHA）・段2（`LOCAL_NEW`）・段3（ライブラリ呼び出し規則と拡張）・
   段4（dataflow）・段5（Spring DI）がそれぞれ別の関数を呼ぶ作りにすると、
   1か所だけ直したときに残りが静かに取りこぼす（`docs/inherited-impl-candidates-qa.md`、
   `docs/jls-conformance-qa.md` の Q7・Q21。実際に3度やった）
@@ -1247,7 +1246,7 @@ N  番号  kind  value  recv  args  argCount  staticRecv
    値グラフのノード 1 件（2.10）。1 つの式を 1 ノードとして 1 回だけ書き、参照はノード番号で行う。
    番号はブロック内の 0 始まりの連番で、recv（ノード番号。無ければ -1）と args（"位置=ノード番号" のカンマ区切り）は
    同じブロックの自分より前のノードを指す。入れ子を展開しないので深さの上限が要らない。
-   staticRecv はソースに書いたときのレシーバの型（宣言元と違うときだけ。契約表・拡張が「書いてある型」で指定できるように）
+   staticRecv はソースに書いたときのレシーバの型（宣言元と違うときだけ。ライブラリ呼び出し規則・拡張が「書いてある型」で指定できるように）
 G  ガード番号  op  subject  text  値1  値2 …
    呼び出し箇所を囲む条件のアトム 1 つにつき 1 行（EQ / NE は値 1 つ、IN / NI は 1 つ以上）。
    subject はノード番号（引数 A か定数 V のノードだけ）。値はコンパイル時定数の値そのもの（64 文字以内で制御文字を
@@ -2295,7 +2294,7 @@ jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring
 | `call-hierarchy.csv` に `<init>` が現れる列 | `caller` 列だけ |
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
 
-以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `root` 以降を書いたもので、
+以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `call-hierarchy` 以降を書いたもので、
 間の `resolved-by` / `depth` の 2 列（4.1）は紙面の都合で省いている。
 ただし 1 件に確定した行だけは、どの段で決まったかが期待値そのものなので、行末に
 `[RESOLVED:{ラベル}]` を付けて示す（**実際の出力ではこれは注記ではなく `resolved-by` 列に入る**。

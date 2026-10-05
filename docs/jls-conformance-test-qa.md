@@ -155,18 +155,18 @@ if (o instanceof Point(int x, int y)) { ... }   // ((Point) o).x() / .y()
 
 ## Q10. インスタンスの `main` を起動の入口にしていなかった（§12.1.4）
 
-直した。同梱の契約表は `static main(java.lang.String[])`（public static でそのシグネチャのメソッド）だったので、
+直した。同梱のライブラリ呼び出し規則は `static main(java.lang.String[])`（public static でそのシグネチャのメソッド）だったので、
 Java 25 で確定したインスタンスの main（コンパクトなソースファイルの `void main()` が典型）が
 `FRAMEWORK_ENTRY` にならなかった。
 
-契約表に `main` という行の形を足し、同梱の行をこれに置き換えた。名前が `main` で、引数が `String[]` か
+ライブラリ呼び出し規則に `main` という行の形を足し、同梱の行をこれに置き換えた。名前が `main` で、引数が `String[]` か
 無し、private でないメソッドを入口にする（static でもインスタンスでもよい）。起動器は 1 つのクラスで
 `main(String[])` を `main()` より優先するが、両方を入口にする（どちらが選ばれるかは起動したときに決まる）。
 インスタンスの main のために引数なしのコンストラクタがあるかまでは見ない。
 JLS 12.1.4 は戻り値が `void` であることも求める（「a void result」）が、D 行は戻り値の型を持たないので見ない。
 void でない `main` まで入口になるが、多すぎる側なので許した。
 
-従来の `static main(java.lang.String[])` の形は残してある（利用者の契約表に書かれていても意味は変わらない）。
+従来の `static main(java.lang.String[])` の形は残してある（利用者のライブラリ呼び出し規則に書かれていても意味は変わらない）。
 注記の文言も、従来の `public static main(String[])` では `static main(java.lang.String[])` のままにした。
 
 ## Q11. コンパクトなコンパイル単位のクラスを読んでいなかった（§7.3・§8.1.8）
@@ -218,7 +218,7 @@ O 行の上書き（型引数を具体化したもの）は JDT の `IMethodBind
 javac との突き合わせも節（＝パッケージ）ごとに 1 行出す。
 
 検査の種類は `call` / `nocall` / `callcount`（C 行）、`csv` / `nocsv`（call-hierarchy.csv の行と resolved-by）、
-`path` / `nopath`（root 列から call-hierarchy 列にかけてのノードの並び）、`decl` / `nodecl`（D 行と修飾子）、
+`path` / `nopath`（call-hierarchy 列のノードの並び。先頭が起点）、`decl` / `nodecl`（D 行と修飾子）、
 `type`（H 行）、`override`（O 行）、`role`（methods.csv）、`noerror`（F 行のエラー数）。
 
 `csv` と `path` を分けたのは、コンストラクタ（とその先が無いメソッド）への辺が call-hierarchy.csv の
@@ -309,7 +309,7 @@ C 行の qualifier の照合を足した。拡張 for 文の `iterator()`・try-
 | 資源が逆の順に閉じられる根拠を §14.20.3.1 とした | 順は §14.20.3。§14.20.3.1 は変換 | `FactVisitor`・`TryWithResources.java` |
 | ラムダ本体が呼ばれたときに実行されること・式本体の値を返すことを §15.27.2 とした | §15.27.4（実行時の評価）。§15.27.2 は本体の形と実質的 final | 既存の `FactVisitor`・`StreamingTreeWalker`・`docs/lambda-expansion-qa.md`・`expect.tsv` |
 | char と int の比較を「§5.6.2 二項数値昇格」とした | SE 14 で §5.6「Numeric Contexts」にまとめられ、§5.6.2 は無い | 既存の `OriginTracker`・`docs/branch-pruning.md`・`docs/jls-conformance-qa.md`・`docs/static-analysis-limits.md`・`test/demo` のコメント |
-| §12.1.4 の起動メソッドの条件から「戻り値が void」を落としていた | 「a void result」も条件（Q10） | `FrameworkEntries`・`docs/callback-contracts.md` |
+| §12.1.4 の起動メソッドの条件から「戻り値が void」を落としていた | 「a void result」も条件（Q10） | `FrameworkEntries`・`docs/library-call-rules.md` |
 
 `test/demo` のコメントの修正は行数を変えていないので、回帰テストの期待値は変わらない。
 

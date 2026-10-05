@@ -391,7 +391,7 @@ import java.util.Set;
  *       iterator() / hasNext() / next()、try-with-resources の close()、レコードパターンのアクセサ）も C 行にする</li>
  *   <li>N 行に「ソースに書いたときのレシーバの型」を持つ。
  *       {@code DaoFactory.get(...)} の {@code get} が親で宣言されていると、メソッドキーは
- *       親になる。利用者が契約表や拡張で指定するのはソースに書いてある型なので、
+ *       親になる。利用者がライブラリ呼び出し規則や拡張で指定するのはソースに書いてある型なので、
  *       違うときだけ書かれた型も残す（{@link jche.graph.FactoryCalls}）</li>
  *   <li>C行・U行に guard（呼び出し箇所を囲む条件分岐。{@link Guard}。中身は G 行）を持ち、
  *       コンパイル時定数の値を定数のノード（{@link Origin#CONST}）として記録する。

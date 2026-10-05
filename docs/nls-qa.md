@@ -26,7 +26,7 @@
 ### Q1. なぜ既定を英語にしたのか。このツールは日本語圏向けではないのか
 
 想定している利用者は日本語圏で、コメントもドキュメントも日本語である
-（[AGENTS.md](../AGENTS.md) の「コードの決まり」）。それでも**出す文言は英語を既定にした**。
+（[CONTRIBUTING.md](../CONTRIBUTING.md) の「コードの決まり」）。それでも**出す文言は英語を既定にした**。
 理由は Eclipse プラグインのときと同じで、**損をする人が少ない**からである。
 
 - 日本語を既定にすると、英語の環境で使う人には**読めない文字列**が出る。
@@ -80,9 +80,9 @@ Eclipse プラグインは `messages.properties` を `ResourceBundle` で読ん�
 - VSCode プラグインの配布物（`.vsix`）
 - GitHub Actions の複合アクション
 - **`javac -d <出力先>` で直接コンパイルしている検査スクリプト**
-  （当時は `test/cachetail` / `cachevalue` / `conditions` / `contracts` / `dataflow` / `incremental` / `server` の 7 本。
+  （当時は `test/cachetail` / `cachevalue` / `conditions` / `rules` / `dataflow` / `incremental` / `server` の 7 本。
   `test/cachetail` はその後キャッシュを 1 ファイルにしたときに無くなり、今は `cachevalue` / `cacheversion` / `conditions` /
-  `contracts` / `ctorbody` / `dataflow` / `incremental` / `jls` / `pruning` / `server` / `vscode` / `warnings` の 12 本）
+  `rules` / `ctorbody` / `dataflow` / `incremental` / `jls` / `pruning` / `server` / `vscode` / `warnings` の 12 本）
 
 properties にすると、このすべてに「リソースを一緒に配る」処理が要る。
 そして 1 か所でも漏れると、**例外も警告も出ずに画面にキー名（`!キー!`）が出るだけ**になる。
@@ -232,7 +232,7 @@ VSCode 拡張も同じで、`vscode.env.language` から決めた言語を
 
 読む相手が違うからである。文言は**利用者**が読み、コメントとドキュメントは
 **このリポジトリを触る人**が読む。後者は日本語で書くと決めてある
-（[AGENTS.md](../AGENTS.md)）。Eclipse プラグインのときと同じ切り分けである。
+（[CONTRIBUTING.md](../CONTRIBUTING.md)）。Eclipse プラグインのときと同じ切り分けである。
 
 コミットメッセージも日本語のまま。
 
@@ -241,7 +241,7 @@ VSCode 拡張も同じで、`vscode.env.language` から決めた言語を
 | もの | 状態 | 理由 |
 |---|---|---|
 | `docs/` | 日本語のまま | 量が桁違い。引用されている CSV の値だけは実際の出力（英語）に合わせた |
-| `README.md` | **対訳**（日本語が先、下に英語） | 最初に読まれる 1 枚なので、ここだけは両方を置いた。片方だけ直すと黙って食い違うので、必ず両方を直す（[AGENTS.md](../AGENTS.md) の「ドキュメントの決まり」） |
+| `README.md` | **対訳**（日本語が先、下に英語） | 最初に読まれる 1 枚なので、ここだけは両方を置いた。片方だけ直すと黙って食い違うので、必ず両方を直す（[CONTRIBUTING.md](../CONTRIBUTING.md) の「ドキュメントの決まり」） |
 | `config/config.properties` のコメント | 日本語のまま（`message.language` の項だけ英語を併記） | 設定を書く人向けの長い説明。訳すなら言語ごとのひな形を持つ形になる |
 | `action.yml` の入力の説明 | 日本語のまま | CI の利用者向け |
 | `single-file/` のログ | 本体と同じ（英語が既定、日本語を重ねる） | 当時はお試し版で日本語のままだったが、その後 `single-file/` は本体の全ソースから生成する完全版になり、`Messages` ごと入った（[single-file-qa.md](single-file-qa.md)） |
@@ -332,7 +332,7 @@ VSCode の表示言語に合わせるので、利用者が言語パックを入�
 表示言語に合わせて `ja-JP` / `en-GB` を選ぶ（どちらも 24 時間表記）。
 件数の桁区切り（`toLocaleString()`）は数の表記なので、動かしている環境の書式のままにしてある。
 
-### Q16. `contracts-suggested.txt` は英語で固定するのか、表示言語に合わせるのか
+### Q16. `call-rules-suggested.txt` は英語で固定するのか、表示言語に合わせるのか
 
 **表示言語に合わせる**（CSV のように英語で固定しない）。
 
@@ -341,9 +341,9 @@ VSCode の表示言語に合わせるので、利用者が言語パックを入�
 | 出力 | 何のために読むか | 言語 |
 |---|---|---|
 | `call-hierarchy.csv` / `methods.csv` / `call-conditions.csv` | 期待値との比較・Excel のフィルタ・他のツールへの受け渡し。**機械が読むデータ** | 英語で固定（Q6） |
-| `contracts-suggested.txt` | 「どの行を契約表に貼れば絞れるか」を人が選ぶための**案内文** | 表示言語 |
+| `call-rules-suggested.txt` | 「どの行をライブラリ呼び出し規則に貼れば絞れるか」を人が選ぶための**案内文** | 表示言語 |
 
-ひな形の中身のうち、貼る対象である契約の行（`fxp.Dao#find => ??`）は型名とシグネチャなので
+ひな形の中身のうち、貼る対象である規則の行（`fxp.Dao#find => ??`）は型名とシグネチャなので
 どの言語でも同じである。言語で変わるのは、その上下に付く `#` で始まる説明だけで、
 貼っても読み飛ばされるコメント行に収まっている。
 

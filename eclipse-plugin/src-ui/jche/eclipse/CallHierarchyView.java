@@ -670,11 +670,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         IProject project = (field.getResource() != null)
                 ? field.getResource().getProject() : field.getJavaProject().getProject();
-        AnalysisService service = JchePlugin.service();
-        if (service == null || project == null) {
+        ProjectAnalysis picked = analysisForMemberProject(project);
+        if (picked == null) {
             return;
         }
-        showField(service.analysisFor(project), field);
+        showField(picked, field);
     }
 
     /** ツールバーの［カーソル位置のメソッド］。コマンドと同じ道（{@link MethodPicker}）を通る */
@@ -688,11 +688,11 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         }
         IProject project = (method.getResource() != null)
                 ? method.getResource().getProject() : method.getJavaProject().getProject();
-        AnalysisService service = JchePlugin.service();
-        if (service == null || project == null) {
+        ProjectAnalysis picked = analysisForMemberProject(project);
+        if (picked == null) {
             return;
         }
-        showMethod(service.analysisFor(project), method);
+        showMethod(picked, method);
     }
 
     private void setDirection(boolean toCallers) {
@@ -755,7 +755,7 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
             String label = (source == null) ? Messages.get("config.unavailable") : source.label();
             configLabel.setText(Messages.format("view.configLabel", label));
             configLabel.setToolTipText(Messages.get("view.configLabelTip")
-                    + "\n\n" + environmentTooltip());
+                    + workspaceTooltip() + "\n\n" + environmentTooltip());
         }
         configLabel.getParent().layout();
     }
@@ -991,6 +991,53 @@ public class CallHierarchyView extends ViewPart implements AnalysisService.Liste
         if (data instanceof GridData) {
             ((GridData) data).exclude = !visible;
         }
+    }
+
+    /**
+     * 設定ファイルの {@code workspace.projects}（一緒に解析するワークスペースの他のプロジェクト）の件数と名前。
+     * 書いてあるのに見つからない指定は、その旨も出す（相手のプロジェクトが閉じている・場所が違う）。無ければ空
+     */
+    private String workspaceTooltip() {
+        if (analysis == null) {
+            return "";
+        }
+        List<WorkspaceProjectsConfig.Entry> entries = analysis.workspaceEntries();
+        if (entries.isEmpty()) {
+            return "";
+        }
+        List<String> names = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (WorkspaceProjectsConfig.Entry entry : entries) {
+            if (entry.project != null) {
+                names.add(entry.project.getName());
+            } else {
+                missing.add(entry.raw);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append('\n').append(Messages.format("tip.workspace", Integer.valueOf(entries.size()),
+                String.join(", ", names)));
+        if (!missing.isEmpty()) {
+            sb.append('\n').append(Messages.format("tip.workspaceMissing", String.join(", ", missing)));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * そのプロジェクトのメソッド・フィールドを引くのに使う解析。表示中の対象の設定ファイルの {@code workspace.projects}
+     * に入っているプロジェクト（一緒に解析した相手）なら、対象を切り替えずに表示中の解析結果から引く
+     * （相手のファイルも解析結果に入っている）。それ以外はそのプロジェクト自身の解析
+     */
+    ProjectAnalysis analysisForMemberProject(IProject project) {
+        AnalysisService service = JchePlugin.service();
+        if (service == null || project == null) {
+            return null;
+        }
+        if (analysis != null && !project.equals(analysis.project())
+                && analysis.workspaceProjects().contains(project)) {
+            return analysis;
+        }
+        return service.analysisFor(project);
     }
 
     /**

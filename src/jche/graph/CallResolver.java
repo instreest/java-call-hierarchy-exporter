@@ -24,7 +24,7 @@ import jche.util.Messages;
  *       NOT_OVERRIDABLE            仮想呼び出しだが上書きできない（final メソッド・final クラス）
  *   段1 NO_OVERRIDE / SINGLE_IMPL  オーバーライド候補が1つに定まる
  *   段2 LOCAL_NEW(_MULTI)          同一メソッド内で new された型
- *   段3 CONTRACT / CUSTOM_*        利用者が与えた条件（契約表の種類 C → 拡張の順に尋ねる）
+ *   段3 CALL_RULE / CUSTOM_*        利用者が与えた条件（ライブラリ呼び出し規則の種類 C → 拡張の順に尋ねる）
  *   段4 DATAFLOW_*                 ファクトリの戻り値等から特定（経路非依存の分）
  *   段5 SPRING_DI(_QUALIFIER)      DIコンテナのBean定義で候補を絞る
  *   段6 CHA                        候補が複数のまま（低確度）
@@ -42,12 +42,12 @@ public final class CallResolver {
     private final MethodTable methods;
     private final DataflowResolver dataflow;
     private final List<TypeCandidateProvider> providers;
-    /** ソースの外を経由して呼び戻される辺の契約表（無ければ空の表） */
-    private final CallbackContracts callbacks;
-    /** フレームワークが起点として呼ぶメソッドの契約表（無ければ空の表） */
+    /** ソースの外を経由して呼び戻される辺のライブラリ呼び出し規則（無ければ空の表） */
+    private final CallbackRules callbacks;
+    /** フレームワークが起点として呼ぶメソッドのライブラリ呼び出し規則（無ければ空の表） */
     private final FrameworkEntries frameworkEntries;
-    /** 「この宣言型はこの具象型」の契約表（無ければ空の表） */
-    private final TypeContracts typeContracts;
+    /** 「この宣言型はこの具象型」のライブラリ呼び出し規則（無ければ空の表） */
+    private final TypeRules typeRules;
 
     /** 段1の結果のメモ（メソッドIDごと。仮想呼び出しのみ対象） */
     private int[][] resolvedTargets;
@@ -74,39 +74,53 @@ public final class CallResolver {
     private final HashSet<String> warnedCandidates = new HashSet<>();
     /** 解決後の入次数。宣言型ではなく解決先に対して数える */
     private int[] inDegree;
+    /** ワークスペースの他のプロジェクトのメソッドを CSV に出す範囲（絞らなければ {@link WorkspaceScope#ALL}） */
+    private WorkspaceScope workspaceScope = WorkspaceScope.ALL;
 
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers) {
-        this(graph, dataflow, providers, CallbackContracts.jdk(graph, dataflow),
-                FrameworkEntries.bundled(graph), TypeContracts.empty());
+        this(graph, dataflow, providers, CallbackRules.jdk(graph, dataflow),
+                FrameworkEntries.bundled(graph), TypeRules.empty());
     }
 
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
-                        List<TypeCandidateProvider> providers, CallbackContracts callbacks,
-                        FrameworkEntries frameworkEntries, TypeContracts typeContracts) {
+                        List<TypeCandidateProvider> providers, CallbackRules callbacks,
+                        FrameworkEntries frameworkEntries, TypeRules typeRules) {
         this.graph = graph;
         this.methods = graph.methods;
         this.dataflow = dataflow;
         this.providers = providers;
         this.callbacks = callbacks;
         this.frameworkEntries = frameworkEntries;
-        this.typeContracts = typeContracts;
+        this.typeRules = typeRules;
     }
 
-    /** フレームワークが起点として呼ぶメソッドの契約表 */
+    /** フレームワークが起点として呼ぶメソッドのライブラリ呼び出し規則 */
     public FrameworkEntries frameworkEntries() {
         return frameworkEntries;
     }
 
     /**
-     * 契約表と拡張が「効いたか」を知らせる。CSV を書き終えたあとに 1 回だけ呼ぶ。
+     * ワークスペースの他のプロジェクトのメソッドを CSV に出す範囲。起点の選択・呼び出し階層の探索・methods.csv が見る。
+     * 解決（候補・データフロー・DI）には使わない（絞るのは出す行だけ。docs/workspace-callers-design.md の 3.4 節）
+     */
+    public WorkspaceScope workspaceScope() {
+        return workspaceScope;
+    }
+
+    public void setWorkspaceScope(WorkspaceScope scope) {
+        this.workspaceScope = (scope == null) ? WorkspaceScope.ALL : scope;
+    }
+
+    /**
+     * ライブラリ呼び出し規則と拡張が「効いたか」を知らせる。CSV を書き終えたあとに 1 回だけ呼ぶ。
      *
-     * <p>グラフ全体の走査が済んでいることが前提。呼び戻しの契約は {@link #inDegrees()} が全エッジ、
-     * 入口の契約は methods.csv の出力が全メソッドについて問い合わせるので、そこまで終わって初めて
+     * <p>グラフ全体の走査が済んでいることが前提。呼び戻しの規則は {@link #inDegrees()} が全エッジ、
+     * 入口の規則は methods.csv の出力が全メソッドについて問い合わせるので、そこまで終わって初めて
      * 「一度も当たらなかった」と言える。部分的にしか辿らない経路（解析サーバー）からは呼ばない。
      */
     public void reportUsage() {
-        ContractUsage.report(callbacks.usage(), frameworkEntries.usage(), typeContracts.usage());
+        RuleUsage.report(callbacks.usage(), frameworkEntries.usage(), typeRules.usage());
         for (TypeCandidateProvider provider : providers) {
             if (provider instanceof UsageReporter reporter) {
                 try {
@@ -121,16 +135,16 @@ public final class CallResolver {
     }
 
     /**
-     * その辺の呼び出し先（jar の中）が、契約で呼び戻すメソッド。無ければ空。
+     * その辺の呼び出し先（jar の中）が、規則で呼び戻すメソッド。無ければ空。
      *
      * 通常の解決（{@link #resolve}）とは別の候補として扱う。呼び出し先そのものの行は
      * そのまま出し、その次に呼び戻される側を {@link Resolution#CALLBACK} で並べる。
      *
      * @param ctx 経路で分かっていること。null なら経路に依らず決まるもの（new した型・ラムダ）だけ
      */
-    public List<CallbackContracts.Match> callbackTargets(int edgeIndex, DataflowContext ctx) {
+    public List<CallbackRules.Match> callbackTargets(int edgeIndex, DataflowContext ctx) {
         int callee = graph.calleeOf(edgeIndex);
-        if (!callbacks.hasContract(callee)) {
+        if (!callbacks.hasRule(callee)) {
             return List.of();
         }
         return callbacks.matchesOf(edgeIndex, ctx, this::functionalResolution);
@@ -243,12 +257,12 @@ public final class CallResolver {
                     fromNew.size() == 1 ? Resolution.LOCAL_NEW : Resolution.LOCAL_NEW_MULTI);
         }
 
-        // --- 段3: 契約表（種類 C）→ 拡張 ---
+        // --- 段3: ライブラリ呼び出し規則（種類 C）→ 拡張 ---
         // 表のほうを先に引く。食い違ったときに「どちらが効いたか」を追いやすいのは、
-        // 読み手が中身を見られる表のほう（docs/contracts-unification-design.md の §4）
-        Resolution fromContract = askTypeContracts(edgeIndex, calleeId, null);
-        if (fromContract != null) {
-            return fromContract;
+        // 読み手が中身を見られる表のほう（docs/call-rules-unification-design.md の §4）
+        Resolution fromRule = askTypeRules(edgeIndex, calleeId, null);
+        if (fromRule != null) {
+            return fromRule;
         }
         Resolution custom = askProviders(edgeIndex, calleeId, false, null);
         if (custom != null) {
@@ -291,15 +305,15 @@ public final class CallResolver {
         //   void run()            { helper("USER_DAO"); }     ← 呼び出し元では決まっている
         //   void helper(String k) { Factory.get(k).find(); }  ← ここは経路ごとに決まる
         //
-        // 既に 1 件に絞れているものはやり直さない。広い指定（型単位の契約など）で決まったものを
+        // 既に 1 件に絞れているものはやり直さない。広い指定（型単位の規則など）で決まったものを
         // 経路ごとに覆すと、同じ設定でも経路によって答えが変わり、読み手が追えなくなる
         if (res.isMultiple()) {
-            Resolution viaContract = askTypeContracts(edgeIndex, calleeId, ctx);
-            if (viaContract == null) {
-                viaContract = askProviders(edgeIndex, calleeId, false, ctx);
+            Resolution viaRule = askTypeRules(edgeIndex, calleeId, ctx);
+            if (viaRule == null) {
+                viaRule = askProviders(edgeIndex, calleeId, false, ctx);
             }
-            if (viaContract != null) {
-                res = viaContract;
+            if (viaRule != null) {
+                res = viaRule;
             }
         }
         // DI の段 5 で唯一の Bean に絞った呼び出しも、経路で実際に渡った値の具象型が分かればそちらを採る。
@@ -663,9 +677,9 @@ public final class CallResolver {
      * （Issue #192）がこれで経路ごとに 1 つに定まる。値を追った結果（{@code DATAFLOW_*}）より根拠は弱いので、
      * ラベルは {@link Resolution#DATAFLOW_DECLARED_TYPE} で言い分ける。
      *
-     * <p>絞るのは段 1 の候補が複数のまま（{@code CHA}）か、段 5（DI）で絞ったものだけ。契約表・拡張・{@code new} した型・
+     * <p>絞るのは段 1 の候補が複数のまま（{@code CHA}）か、段 5（DI）で絞ったものだけ。ライブラリ呼び出し規則・拡張・{@code new} した型・
      * リフレクションで集めた候補は、利用者が与えた条件や別の材料で決めたものなので、経路の宣言の型で覆さない
-     * （{@link #resolveOnPath} の契約表の扱いと同じ）。段 5 の結論が上限の部分型なら（矛盾しない）そのまま残し、
+     * （{@link #resolveOnPath} のライブラリ呼び出し規則の扱いと同じ）。段 5 の結論が上限の部分型なら（矛盾しない）そのまま残し、
      * 部分型でなければ（コンテナの Bean でない実装をその経路で渡している）経路の事実を採って上限の候補に置き換える
      * （docs/spring-di-qa.md の Q5）。候補が複数残れば、上限の型を起点に段 5 をもう一度引く（修飾する型と同じ扱い）。
      *
@@ -734,10 +748,10 @@ public final class CallResolver {
     }
 
     /**
-     * 契約表（種類 C）で具象型が決まるか見る。決まらなければ null。
+     * ライブラリ呼び出し規則（種類 C）で具象型が決まるか見る。決まらなければ null。
      *
      * <p>ファクトリ＋キーの行（C-3）は、レシーバの出所がファクトリの戻り値なら、そこに載っている
-     * 実引数の値で引く。フェーズAの証拠採取は要らない（{@link TypeContracts} の「C-3 のキーは
+     * 実引数の値で引く。フェーズAの証拠採取は要らない（{@link TypeRules} の「C-3 のキーは
      * どこから来るか」）。
      *
      * <p>{@code ctx} が null なら経路に依存しない分だけを決める（{@link #resolve} から）。
@@ -745,26 +759,26 @@ public final class CallResolver {
      * キーも値まで辿れる。
      *
      * <p>右辺の型を 1 つも採用できないとき（その型にも親にもその本体が無い）は候補を落として
-     * CHA に戻す。ここで警告は出さず、解析の最後に {@link ContractUsage} がまとめて挙げる
+     * CHA に戻す。ここで警告は出さず、解析の最後に {@link RuleUsage} がまとめて挙げる
      * （エッジごとに呼ばれるので、その場で出すと同じ行の警告が何度も並ぶ）。
      */
-    private Resolution askTypeContracts(int edgeIndex, int calleeId, DataflowContext ctx) {
-        if (typeContracts.isEmpty()) {
+    private Resolution askTypeRules(int edgeIndex, int calleeId, DataflowContext ctx) {
+        if (typeRules.isEmpty()) {
             return null;
         }
         // 引く順番は C-3（ファクトリ＋キー）→ C-2（型＋メソッド）→ C-1（型）。狭いほうが先
-        TypeContracts.Contract contract = dataflow.enabled()
-                ? typeContracts.matchFactory(graph.recvNode(edgeIndex), dataflow, ctx) : null;
-        if (contract == null) {
-            contract = typeContracts.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
+        TypeRules.Rule rule = dataflow.enabled()
+                ? typeRules.matchFactory(graph.recvNode(edgeIndex), dataflow, ctx) : null;
+        if (rule == null) {
+            rule = typeRules.matchFor(methods.typeFqn(calleeId), methods.signature(calleeId));
         }
-        if (contract == null) {
+        if (rule == null) {
             return null;
         }
         String sig = methods.signature(calleeId);
-        IntArray ids = new IntArray(contract.candidates().length);
-        for (String fqn : contract.candidates()) {
-            // 契約が指す型が自分で宣言していない（親から継承した）実装も拾う。拡張と同じ扱い
+        IntArray ids = new IntArray(rule.candidates().length);
+        for (String fqn : rule.candidates()) {
+            // 規則が指す型が自分で宣言していない（親から継承した）実装も拾う。拡張と同じ扱い
             int id = graph.selection().implementationOf(fqn, calleeId);
             if (id >= 0) {
                 ids.addIfAbsent(id);
@@ -773,8 +787,8 @@ public final class CallResolver {
         if (ids.isEmpty()) {
             return null;
         }
-        typeContracts.usage().markApplied(contract.row());
-        return new Resolution(ids.toArray(), Resolution.CONTRACT);
+        typeRules.usage().markApplied(rule.row());
+        return new Resolution(ids.toArray(), Resolution.CALL_RULE);
     }
 
     /**
@@ -839,7 +853,7 @@ public final class CallResolver {
      *
      * <p>キャッシュに載っている組み込みの証拠（C 行・U 行の hints 列。{@code NEW}）に加えて、<b>ファクトリに
      * 渡されたキーをデータフローから読んで足す</b>。キーは値グラフに載っているので、
-     * 呼び出し箇所を走査し直す必要が無い（契約表の種類 C と同じ読み口。{@link FactoryCalls}）。
+     * 呼び出し箇所を走査し直す必要が無い（ライブラリ呼び出し規則の種類 C と同じ読み口。{@link FactoryCalls}）。
      *
      * <p>「どのファクトリから来た値か」も {@link Hint#KIND_FACTORY} で渡すので、同じ型を返す
      * ファクトリが複数あって規則が違う場合も、拡張の中だけで場合分けできる。
@@ -914,9 +928,9 @@ public final class CallResolver {
                 for (int t : resolve(e).targets()) {
                     inDegree[t]++;
                 }
-                // 契約で呼び戻される側も「呼ばれている」。ここで数えないと
+                // 規則で呼び戻される側も「呼ばれている」。ここで数えないと
                 // Thread で起動する Runnable の run が ENTRY_CANDIDATE に混ざる
-                for (CallbackContracts.Match m : callbackTargets(e, null)) {
+                for (CallbackRules.Match m : callbackTargets(e, null)) {
                     inDegree[m.target()]++;
                 }
             }
@@ -943,7 +957,7 @@ public final class CallResolver {
                         queue.add(t);
                     }
                 }
-                for (CallbackContracts.Match m : callbackTargets(e, null)) {
+                for (CallbackRules.Match m : callbackTargets(e, null)) {
                     int t = m.target();
                     if (!seen[t]) {
                         seen[t] = true;

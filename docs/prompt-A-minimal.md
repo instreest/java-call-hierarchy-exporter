@@ -53,7 +53,7 @@ CSV 2本。**BOM付きUTF-8、カンマ区切り**（Excelでダブルクリッ�
 ### 3.1 呼び出し階層（`call-hierarchy.csv`）
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at a.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UNEXPANDED:CHA,2,OrderAction.execute,OrderService.findOrder,OrderDao.selectById,[UNEXPANDED:CHA] 3 candidates: field
 ```
@@ -76,11 +76,11 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UN
   「辿り切れなかった行だけ」を、段のラベルを覚えていなくても1回のフィルタで出せるようにするため。
   段を足したときは後半のラベルが増えるだけで、読み手のフィルタは変えなくて済みます
 - `depth` … 起点からの深さ（起点が `0`、その呼び出し先が `1`）。
-  **`call-hierarchy` 列に並ぶノード数と必ず一致させる**（一致していれば、可変長列がどこで
-  終わって注記がどこから始まるかを列数だけで判定できる）
-- `root` … 起点メソッド（`クラス単純名.メソッド名`）
-- `call-hierarchy` … 起点の次から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列。
-  ヘッダーとデータ行の列数は一致しなくてよい）
+  **`call-hierarchy` 列に並ぶノードのうち先頭の起点を除いた数と必ず一致させる**（一致していれば、
+  可変長列がどこで終わって注記がどこから始まるかを列数だけで判定できる）
+- `call-hierarchy` … 起点から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列）。先頭の列が
+  起点メソッド（`クラス単純名.メソッド名`）で、起点を別の見出しの列に分けない。見出しは先頭の 1 列にだけ付き、
+  ヘッダーとデータ行の列数は一致しなくてよい
 - 呼び出し1件につき1行、起点自身の行は出さない。**`new` そのものも行にしない**（「newしたこと」
   より「その中で何を呼ぶか」が知りたい）が、経路には積んでコンストラクタ内の呼び出しは出す
 
@@ -97,7 +97,7 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UN
 両方を同じ判定から作り、同じ行で食い違わないようにします。
 1件に確定した行に `[RESOLVED:ラベル]` のような注記を重ねて出す必要はありません（列で分かるため）。
 
-末尾に**型解決に失敗した呼び出し**も行として足す（`root` を `(unresolved)` にし、`resolved-by` を
+末尾に**型解決に失敗した呼び出し**も行として足す（`call-hierarchy` の先頭（起点の列）を `(unresolved)` にし、`resolved-by` を
 `UNRESOLVED:理由コード` にして区別。階層列には呼び出しの式を1つ置くので `depth` は `1`）。
 件数はログにも出し、多いときは依存jarの設定漏れが疑われる旨を出す。利用者が最もはまるのが
 依存jar不足で、**これがそれを検知する唯一の手掛かり**です。
@@ -378,5 +378,5 @@ Foo はソースに名前が無く、Foo の親を変えると `for (Bar b : a.f
 - **全ての行に `resolved-by` の値が入っている**（空欄が無い）。`UNEXPANDED:` で始まる行だけを
   選ぶと「そこから先へ降りなかった呼び出し」の一覧になり、`UNEXPANDED:CHA` の行の呼び出し箇所
   （`caller` と `callee` の組）の数が、ログの「絞れなかった呼び出し」の件数と合う
-- **全ての行で `depth` が `call-hierarchy` 列のノード数と一致する**（注記の有無に関わらず）
+- **全ての行で `depth` が `call-hierarchy` 列のノード数（先頭の起点を除く）と一致する**（注記の有無に関わらず）
 - 同じソースを Linux と Windows で解析して、両CSVが**行順まで**一致する

@@ -1,15 +1,15 @@
 # `resolved-by` / `depth` 列 — Q&A
 
-`call-hierarchy.csv` の `root` 列の左に、解決方法（`resolved-by`）と起点からの階層の深さ（`depth`）の
+`call-hierarchy.csv` の `call-hierarchy` 列（旧 `root` 列を含む）の左に、解決方法（`resolved-by`）と起点からの階層の深さ（`depth`）の
 2 列を足した判断を残す。
 関連: [note-tags-qa.md](note-tags-qa.md)（注記のタグ）、[callee-label-qa.md](callee-label-qa.md)（`callee` 列の表記）、
 [prompt-B-detailed.md](prompt-B-detailed.md) 4.1（列の仕様）。
 
 ## 結論
 
-- ヘッダーは `caller,callee,resolved-by,depth,root,call-hierarchy`
+- ヘッダーは `caller,callee,resolved-by,depth,call-hierarchy`（当初は `…,depth,root,call-hierarchy`。Q9 で `root` の見出しを `call-hierarchy` にした）
 - `resolved-by` は `接頭辞 + 解決の段のラベル`。接頭辞が確度、後半が手法
-- `depth` は起点を `0` とした深さ。**`call-hierarchy` 列に並ぶノード数と必ず一致する**
+- `depth` は起点を `0` とした深さ。**`call-hierarchy` 列に並ぶノードのうち、先頭の起点を除いた数と必ず一致する**
 
 | 接頭辞 | 意味 | 例 |
 |---|---|---|
@@ -20,8 +20,8 @@
 
 - 後半は `Resolution` のラベルそのもの。例外は `UNEXPANDED:LAMBDA` の 1 つだけ
 - 列と完全に重複する裸の `[RESOLVED:*]` は注記から落とす。注記に残る `[RESOLVED:*]` は
-  繋いだ契約を持つ `[RESOLVED:CALLBACK] 契約: …` だけ
-- 新しい固定列は必ず `root` の左に入れる。`call-hierarchy` は可変長なので、後ろに足すと階層が途中で切れる
+  繋いだ規則を持つ `[RESOLVED:CALLBACK] 規則: …` だけ
+- 新しい固定列は必ず `call-hierarchy` の左に入れる。`call-hierarchy` は可変長なので、後ろに足すと階層が途中で切れる
 
 ### Q1. なぜ注記だけでは足りなかったのか
 
@@ -33,7 +33,7 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 `STATIC_BOUND:PRIVATE` も `NO_OVERRIDE` も注記なしなので、
 「どう決まったか」を全行について見比べることが、そもそもできなかった。
 
-### Q2. なぜ `root` の左なのか。`call-hierarchy` の後ろではいけないのか
+### Q2. なぜ `call-hierarchy`（旧 `root`）の左なのか。`call-hierarchy` の後ろではいけないのか
 
 `call-hierarchy` は 1 ノード 1 列で伸びる可変長の列で、行ごとに列数が違う。
 その後ろに固定列を置くと、読み手は「どこで階層が終わって固定列が始まるか」を
@@ -67,7 +67,7 @@ Excel では列が行ごとにずれ、「解決できた行だけ」「CHA の�
 `UNEXPANDED:LAMBDA` と言い換える（注記 `[UNEXPANDED:LAMBDA] …` と同じ判定）。
 
 逆に、候補が複数のときの後半はラベルのままにした（`UNEXPANDED:CHA` /
-`UNEXPANDED:LOCAL_NEW_MULTI` / `UNEXPANDED:CONTRACT` …）。
+`UNEXPANDED:LOCAL_NEW_MULTI` / `UNEXPANDED:CALL_RULE` …）。
 注記は候補が複数ならどれも `[UNEXPANDED:CHA]` と書くが、列では
 「何を根拠に候補を集めたか」が分かるほうが、次に何を与えれば絞れるかの判断に使える。
 
@@ -105,7 +105,7 @@ Excel の数値フィルタにも空欄が混ざる。
 |---|---|
 | `[UNEXPANDED:CHA] N candidates: {reason}` | 候補の件数、レシーバの由来（次に調べる場所） |
 | `[UNEXPANDED:GENERATED] …: FQN is…` | 生成される実装の FQN |
-| `[RESOLVED:CALLBACK] contract: …` | 繋いだ契約の本文 |
+| `[RESOLVED:CALLBACK] rule: …` | 繋いだ規則の本文 |
 | `[UNREACHABLE] …condition '…' does not hold (…)` | 条件式と、この経路で分かっている値 |
 | `[UNEXPANDED:CYCLE]` / `[UNEXPANDED:DEPTH]` / `[EXTERNAL]` | 打ち切りの理由（解決方法とは別の軸なので列には入れない） |
 
@@ -140,3 +140,22 @@ prompt-B の 3.3 にあるケース別の期待行は、`resolved-by` / `depth` 
   `root-depth`（`root` 列と並ぶので前置きは要らない）
 - 変えたのは列名だけで、値（起点が `0`、その呼び出し先が `1`、`call-hierarchy` 列のノード数と一致）と列の位置は同じ。
   列名で `level` を参照していた利用者の Excel のフィルタや外部のスクリプトは直す必要がある
+
+### Q9. `root` 列の見出しを `call-hierarchy` にしたのはなぜか
+
+**起点は階層の先頭のノードで、別の概念の列ではないから。** 以前は起点（`root`）と、起点の次から現ノードまでの
+`call-hierarchy` を別の見出しの列にしていたが、Excel で読むと「入口」と「そこからの経路」が離れた 2 つの列に見え、
+経路は起点から始まるという実際の構造が見出しに出ていなかった。
+
+- 変えたのは**ヘッダーだけ**。データ行の列（`…,depth,起点,ノード1,ノード2,…`）と列の位置・値は同じで、
+  見出し `root` の列が `call-hierarchy` になり、ヘッダー末尾の旧 `call-hierarchy` は無くなった
+  （2 つ並べると同じ見出しが重なる。可変長の列は先頭の 1 列にだけ見出しが付き、ヘッダーとデータ行の列数が
+  一致しないのは前からの仕様）。ヘッダーは `caller,callee,resolved-by,depth,call-hierarchy` になった
+- 不変条件は「`depth` = `call-hierarchy` 列のノード数」から**「先頭の起点を除いた数」**に言い換えた。
+  値は変わらない。階層列の終わりが `5 + depth` 列目という計算も同じ
+- 型解決に失敗した行（`(unresolved)`）と被参照の行（jar 名）で起点の列に別の値を入れるのも同じ。
+  その列は `call-hierarchy` の先頭の列として読む
+- 見出し名の `root` で列を指していた利用者の Excel のフィルタ・外部スクリプトは `call-hierarchy` に直す。
+  列の位置は変わらないので、列番号で読んでいる側は影響を受けない
+- 却下: 見出しを `root` と `call-hierarchy` のままにして README の説明だけ直す案
+  （見出しが読み手の最初の手がかりなので、そこで食い違うと説明を読まない人に伝わらない）

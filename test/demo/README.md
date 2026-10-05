@@ -13,13 +13,13 @@
   - `src/fx/lambda/Holder.java` … ラムダ／メソッド参照の解決（`DATAFLOW_LAMBDA`）の確認用。
     フィールドに保持・引数で受け渡し・ローカルのコレクションに詰めて拡張for文で回す形（いずれも追える）と、
     `forEach` に渡す形（jar の中から呼ばれるので追えず `[UNEXPANDED:LAMBDA]` が残る）を含みます
-  - `src/fx/lambda/Starter.java` … jar の中から呼び戻される呼び出しを契約で繋ぐ（`CALLBACK`）の確認用。
+  - `src/fx/lambda/Starter.java` … jar の中から呼び戻される呼び出しを規則で繋ぐ（`CALLBACK`）の確認用。
     `Runnable` 実装クラスを `Thread` で起動・`Thread` の継承・ラムダを `ExecutorService` に渡す・
     ローカル変数経由の 4 形
   - `src/fx/entry/` … フレームワークが呼ぶ入口（`FRAMEWORK_ENTRY`）の確認用。`HttpServlet` の上書き・
     `@Scheduled` / `@EventListener` / `@GetMapping`（内部からも呼ばれる形）・`@Test`。
-    `@Endpoint` と `Dispatcher#submit` は自前のフレームワークの題材で、`test/regression/whole/contracts.txt` の
-    契約表を足したときだけ入口・呼び戻しになる（`entry` ケースは表を足していないので、ならない）
+    `@Endpoint` と `Dispatcher#submit` は自前のフレームワークの題材で、`test/regression/whole/call-rules.txt` の
+    ライブラリ呼び出し規則を足したときだけ入口・呼び戻しになる（`entry` ケースは表を足していないので、ならない）
   - `src/javax/servlet/http/`、`src/org/springframework/{scheduling,web,context/event}/`、`src/org/junit/` … 上記が使うスタブ
   - `src/fx/inherit/` … CHA の候補の数え方の確認用。インターフェースを実装するクラスが、そのインターフェースを
     実装していない親クラスから実装を継承する形（`PoliteGreeter extends BaseGreeter implements Greeter`）と、
@@ -29,7 +29,7 @@
     `Repo#save(java.lang.Object)` と食い違うので、上書き関係（O 行）を見ていないと候補から落ちる。
     継承の軸と重なる形（`OrderStore extends AbstractStore<Order>`）も含みます。
     `OrderPrinter implements Consumer<Order>` と `RawPrinter implements Consumer<Object>` は
-    呼び戻しの契約表（`Iterable#forEach` の `accept(java.lang.Object)`）が
+    呼び戻しのライブラリ呼び出し規則（`Iterable#forEach` の `accept(java.lang.Object)`）が
     シグネチャで名指しする側の確認用で、当たる実装と当たらない実装を並べてあります
     （`docs/jls-conformance-qa.md`）
   - `src/fx/ctor/` … 書かれていない `super()` が辺になるかの確認用（JLS 8.8.7 / 8.8.9）。

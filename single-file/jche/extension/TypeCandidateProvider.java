@@ -27,11 +27,9 @@ public interface TypeCandidateProvider {
 
     /**
      * 静的束縛（段0）と判定された呼び出しにも、この拡張を適用するか。
-     * 段0 には、仮想呼び出しでないもの（ラベル {@code STATIC_BOUND:*}）と、仮想呼び出しだが上書きできない
-     * final メソッド・final クラスのメソッド（ラベル {@code NOT_OVERRIDABLE:*}）の両方が入る。
      *
-     * Javaの言語仕様上は、private/static・コンストラクタ・super呼び出しは仮想ディスパッチされず、
-     * final・finalクラスのメソッドは上書きできないため、DIコンテナのプロキシ
+     * Javaの言語仕様上は、private/static/final・finalクラス・コンストラクタ・
+     * super呼び出しは仮想ディスパッチされないため、DIコンテナのプロキシ
      * （CGLIBはサブクラス生成、JDK動的プロキシはインターフェース実装）でも
      * 実行される本体は変わらない。よって既定では段0を確定として扱う。
      *

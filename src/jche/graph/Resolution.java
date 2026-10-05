@@ -35,10 +35,10 @@ public record Resolution(int[] targets, String label) {
     public static final String LOCAL_NEW_MULTI = "LOCAL_NEW_MULTI";
     // --- 段3: 利用者が与えた条件（拡張が返すラベルはここに並ばない。拡張の label() がそのまま出る） ---
     /**
-     * 利用者が契約表に書いた「この宣言型（またはこのメソッド）はこの具象型」で決めた
-     * （{@link TypeContracts}）。ツールの推測ではなく、人が与えた条件
+     * 利用者がライブラリ呼び出し規則に書いた「この宣言型（またはこのメソッド）はこの具象型」で決めた
+     * （{@link TypeRules}）。ツールの推測ではなく、人が与えた条件
      */
-    public static final String CONTRACT = "CONTRACT";
+    public static final String CALL_RULE = "CALL_RULE";
     // --- 段4: データフロー（"DATAFLOW_" で始まる。何を材料に決めたかで分ける） ---
     public static final String DATAFLOW_PREFIX = "DATAFLOW_";
     public static final String DATAFLOW_NEW = DATAFLOW_PREFIX + "NEW";
@@ -57,8 +57,8 @@ public record Resolution(int[] targets, String label) {
      */
     public static final String DATAFLOW_LAMBDA = DATAFLOW_PREFIX + "LAMBDA";
     /**
-     * ソースの外（JDK 等）のメソッドが、渡された値を呼び戻す契約で繋いだ
-     * （{@link CallbackContracts}）。jar の中を読んだわけではない
+     * ソースの外（JDK 等）のメソッドが、渡された値を呼び戻す規則で繋いだ
+     * （{@link CallbackRules}）。jar の中を読んだわけではない
      */
     public static final String CALLBACK = "CALLBACK";
     // --- 段5: DIコンテナ（Spring）のBean定義で絞る ---

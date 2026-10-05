@@ -40,7 +40,7 @@ final class CheckProjects {
     static final List<Project> ALL = List.of(
             new Project("demo", "test/dataflow/jche.properties"),
             new Project("jls", "test/jls/project/jche.properties"),
-            new Project("plugin", "test/regression/plugin/config-contracts.properties"),
+            new Project("plugin", "test/regression/plugin/config-call-rules.properties"),
             new Project("values", "test/regression/values/jche.properties"));
 
     private CheckProjects() {

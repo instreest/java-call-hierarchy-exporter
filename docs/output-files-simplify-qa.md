@@ -11,7 +11,7 @@
 - `BuildFileClasspath` は一覧をファイルに書かず、`Log.plain` で 1 行ずつログに書く。
   形は旧ファイルと同じタブ区切り（`path<TAB>coordinates<TAB>via`）で、先頭に字下げを付ける
 - 出力フォルダに残るのは `call-hierarchy.csv` / `methods.csv` / 設定ファイルの複製 / `run.log`、
-  条件付きで `call-conditions.csv` / `contracts-suggested.txt`
+  条件付きで `call-conditions.csv` / `call-rules-suggested.txt`
 - 一覧を書けなかったときの警告（`config.deps.listingFailed`）と、ファイルの場所を添える文言
   （`config.deps.collected.listing`）は要らなくなったので消した
 - 出力フォルダのファイルの役割を次のように分けた
@@ -21,7 +21,7 @@
   | `call-hierarchy.csv` / `methods.csv` | 毎回 | 成果物 |
   | 設定ファイルの複製 / `run.log` | 毎回 | 後から追うための記録（どの設定で何が動いたか、どこに何を保存したか。警告・エラーも含む） |
   | `warnings.txt` | `run.log` に `[WARN]` / `[ERROR]` が出た実行だけ | 確認してほしいことと対処の案内。**あったら開く**ファイル |
-  | `contracts-suggested.txt` / `call-conditions.csv` | 条件付き | 次の作業のための材料 |
+  | `call-rules-suggested.txt` / `call-conditions.csv` | 条件付き | 次の作業のための材料 |
 
 - `warnings.txt` の本体は `jche.util.Warnings`。`Log.warn` / `Log.error` の行を集め、典型（`Warnings.Topic`）に
   当たるものは「何が起きたか・影響・対処・該当」の項目に、それ以外は末尾の「その他の警告」に並べる
@@ -90,7 +90,7 @@ Eclipse / VSCode プラグインのコンソール（`Log.attachSink`）にも�
 超えた分は件数だけ書いて `run.log` を見てもらう）。典型だけを拾う作りにすると、新しく足した警告が黙って
 ファイルに載らなくなる（呼び出しを静かに落とさない、と同じ考え方）。
 
-裏返しに、対処の要らない経過を `Log.warn` で出してはいけない（AGENTS.md の「コードの決まり」に書いた）。
+裏返しに、対処の要らない経過を `Log.warn` で出してはいけない（CONTRIBUTING.md の「コードの決まり」に書いた）。
 
 ### Q5. 典型の項目は何にしたか。どう載せるか
 
@@ -107,8 +107,8 @@ Eclipse / VSCode プラグインのコンソール（`Log.attachSink`）にも�
 載せ方は、警告を出す箇所で `Log.warn(…)` の代わりに `Warnings.warn(Topic, …)` を呼ぶだけ。ログへの出方は変わらない。
 項目の説明（影響と対処）は文言の表（`exporter.warnings.<項目>.*`）に置き、明細には警告の文そのものを並べる。
 
-拡張・契約表・キャッシュの作り直しなど、使いこなす段階の機能の警告は典型にせず「その他の警告」に出す。
-それぞれの文に対処が書いてある（AGENTS.md の「ログは利用者が次に何をすればよいか分かる書き方にする」）。
+拡張・ライブラリ呼び出し規則・キャッシュの作り直しなど、使いこなす段階の機能の警告は典型にせず「その他の警告」に出す。
+それぞれの文に対処が書いてある（CONTRIBUTING.md の「ログは利用者が次に何をすればよいか分かる書き方にする」）。
 
 ### Q6. 「ビルドが通っていない」をどう判定するか
 
@@ -129,7 +129,7 @@ JDT が報告したエラー（`IProblem.isError()`）が 1 件でもあるフ�
 
 ### Q7. 表示言語・文字コード・名前
 
-- 表示言語に合わせる（英語が既定、日本語を選べば日本語）。人が読んで対処を選ぶ案内で、`contracts-suggested.txt` と
+- 表示言語に合わせる（英語が既定、日本語を選べば日本語）。人が読んで対処を選ぶ案内で、`call-rules-suggested.txt` と
   同じ扱い（`docs/nls-qa.md` の Q16）。CSV のように他のツールへ渡すデータではない
 - 文字コードは UTF-8（`run.log` と同じ）。`output.encoding` には従わない（CSV を Excel で開くための設定なので）
 - 名前は `warnings.txt`。エラー（実行の失敗）も載るが、初めての人が「何か言われている」と分かる素直な名前を選んだ
@@ -163,7 +163,7 @@ v42 の穴探し（`docs/cache-unification-qa.md` の「v42 の穴探し（形�
 
 **今の決まり: 案内は `Config` の読み方に合わせる。** `project.root` から読むのは `source.folders` / `library.folders` /
 `external.library.folders` の 3 つだけで、それ以外（`project.root` / `library.jars` / `output.folder` / `cache.folder` など。
-`library.repositories`・`contracts.files`・`plugin.folders` もこちら）は設定ファイルのフォルダから、と書く。
+`library.repositories`・`call.rules.files`・`plugin.folders` もこちら）は設定ファイルのフォルダから、と書く。
 `Config` の javadoc の一覧も同じにした。
 
 **却下した案**: `library.jars` を `project.root` から読むように変える。Eclipse プラグインは絶対パスを渡し、既存の設定は今の

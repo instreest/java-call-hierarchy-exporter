@@ -21,10 +21,12 @@ import jche.extension.TypeCandidateProvider;
 import jche.graph.CallGraph;
 import jche.graph.CallGraphBuilder;
 import jche.graph.CallResolver;
-import jche.graph.Contracts;
+import jche.graph.LibraryCallRules;
 import jche.graph.DataflowResolver;
+import jche.graph.InboundIndex;
 import jche.graph.SpringBeans;
 import jche.graph.UnresolvedCalls;
+import jche.graph.WorkspaceScope;
 import jche.util.HeapWatch;
 import jche.util.Log;
 import jche.util.RunControl;
@@ -83,38 +85,73 @@ public final class Exporter {
     private static AnalysisSnapshot analyzePhases(Config config, boolean collectUnresolved) throws Exception {
         ProjectLayout layout = new ProjectLayout(config);
         logAnalysisSettings(config, layout);
+        // 一緒に解析するワークスペースの他のプロジェクト。相手は相手自身の設定で解析し、キャッシュを名前で結合する
+        List<WorkspaceProject> workspace = WorkspaceProject.load(config);
+        if (!workspace.isEmpty()) {
+            List<String> names = new ArrayList<>();
+            for (WorkspaceProject ws : workspace) {
+                names.add(ws.name() + " (" + ws.config.projectRoot + ")");
+            }
+            Log.info(Messages.format("exporter.workspaceProjects", String.join(", ", names),
+                    config.workspaceScopeCallers ? "callers" : "all"));
+        }
 
         UnresolvedCalls unresolved = collectUnresolved ? new UnresolvedCalls(config.cacheFile) : null;
         try {
             // キャッシュを読み書きするあいだ（フェーズ1 とフェーズ2 のグラフの構築）は、同じキャッシュのフォルダを使う
-            // ほかの実行を待たせる（jche.cache.CacheLock。docs/cache-unification-qa.md の Q56）。
-            // try-with-resources にしないのは、錠を本体で使わないため（-Xlint:try が警告する）
-            int syntaxErrorFiles;
+            // ほかの実行を待たせる（jche.cache.CacheLock。docs/cache-unification-qa.md の Q56（同じフォルダの錠））。
+            // 相手のキャッシュも同じく錠を持って読み書きする。錠はパスの順に取る（2 つの実行が互いを相手に指しても、
+            // 同じ順で取れば行き違いにならない）
+            int syntaxErrorFiles = 0;
             CallGraph graph;
             String cacheStamp;
-            CacheLock lock = CacheLock.acquire(config.cacheFile);
+            List<CacheLock> locks = acquireLocks(config, workspace);
             try {
-                syntaxErrorFiles = analyzeSources(config, layout);
-                graph = buildGraph(config, layout, unresolved);
+                for (WorkspaceProject ws : workspace) {
+                    Log.blank();
+                    Log.info(Messages.format("exporter.workspaceProject", ws.name(), ws.config.projectRoot));
+                    logAnalysisSettings(ws.config, ws.layout);
+                    syntaxErrorFiles += analyzeSources(ws.config, ws.layout, ws.prefix);
+                }
+                if (!workspace.isEmpty()) {
+                    Log.blank();
+                    Log.info(Messages.format("exporter.workspaceProject", config.projectName, config.projectRoot));
+                }
+                syntaxErrorFiles += analyzeSources(config, layout, "");
+                graph = buildGraph(config, layout, workspace, unresolved);
                 // 錠を持っているうちに、グラフを組んだキャッシュの印を取る（ほかの実行に書き換えられる前）
                 cacheStamp = cacheStampOf(config.cacheFile);
+                for (WorkspaceProject ws : workspace) {
+                    ws.setCacheStamp(cacheStampOf(ws.config.cacheFile));
+                }
             } finally {
-                lock.close();
+                for (int i = locks.size() - 1; i >= 0; i--) {
+                    locks.get(i).close();
+                }
             }
             Log.info(Messages.format("exporter.graphCounts", graph.typeCount(), graph.methodCount(),
                     graph.edgeCount()));
             DataflowFacts facts = buildDataflowFacts(config, graph);
             DataflowResolver dataflow =
                     new DataflowResolver(graph, facts, config.dataflowEnabled, config.dataflowMaxDepth);
-            // 契約表の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
+            // ライブラリ呼び出し規則の読み込みとプラグインの初期化。件数では測れないので「やっている最中」だけを出す
             RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 0, 1);
-            Contracts.Loaded contracts = Contracts.load(config, graph, dataflow);
+            LibraryCallRules.Loaded rules = LibraryCallRules.load(config, graph, dataflow);
             CallResolver resolver = new CallResolver(graph, dataflow, loadProviders(config),
-                    contracts.callbacks(), contracts.entries(), contracts.types());
+                    rules.callbacks(), rules.entries(), rules.types());
             RunControl.progress(Messages.get("exporter.progress.resolvePrep"), 1, 1);
+            // 他のプロジェクトのメソッドを出す範囲（workspace.scope=callers）。解決後の辺の転置索引から、project.root に
+            // 届くメソッドの集合を 1 回求める。索引は解析サーバーもあとで使うので結果に渡す
+            InboundIndex inbound = null;
+            if (config.workspaceScopeCallers && !workspace.isEmpty()) {
+                inbound = InboundIndex.build(graph, resolver);
+                WorkspaceScope scope = WorkspaceScope.callers(graph, inbound, resolver);
+                resolver.setWorkspaceScope(scope);
+                Log.info(Messages.format("exporter.workspaceHidden", scope.hiddenCount()));
+            }
             Log.heap(Messages.get("exporter.heap.phase2"));
             return new AnalysisSnapshot(config, layout, graph, resolver, syntaxErrorFiles, unresolved,
-                    cacheStamp);
+                    cacheStamp, workspace, inbound);
         } catch (Exception | Error e) {
             // 結果を返せなかった。拾った行の一時ファイルは受け取る側がいないので、ここで消す
             if (unresolved != null) {
@@ -166,11 +203,43 @@ public final class Exporter {
     }
 
     /**
+     * キャッシュのフォルダの錠を、この実行自身とワークスペースの他のプロジェクトの全部について取る。
+     * 取る順はキャッシュのパスの順（どの実行も同じ順で取るので、互いに相手を待って止まることが無い）。
+     * 途中で取れなければ、それまでに取った錠を放してから失敗にする
+     */
+    private static List<CacheLock> acquireLocks(Config config, List<WorkspaceProject> workspace) throws IOException {
+        List<Path> files = new ArrayList<>();
+        files.add(config.cacheFile.toAbsolutePath().normalize());
+        for (WorkspaceProject ws : workspace) {
+            files.add(ws.config.cacheFile.toAbsolutePath().normalize());
+        }
+        files.sort(java.util.Comparator.comparing(Path::toString));
+        List<CacheLock> locks = new ArrayList<>();
+        try {
+            for (Path file : files) {
+                locks.add(CacheLock.acquire(file));
+            }
+        } catch (IOException | RuntimeException | Error e) {
+            for (int i = locks.size() - 1; i >= 0; i--) {
+                try {
+                    locks.get(i).close();
+                } catch (IOException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+            }
+            throw e;
+        }
+        return locks;
+    }
+
+    /**
      * フェーズ1: 解析とキャッシュ更新（1ファイルずつ書き出して破棄）。
      *
+     * @param pathPrefix 警告に出すファイルのパスの前置き（ワークスペースの他のプロジェクトなら {@link WorkspaceProject#prefix}。
+     *                   この実行自身なら空）
      * @return 構文エラーで本体を読めなかったファイル数（画面に出すため呼び出し側へ返す）
      */
-    private static int analyzeSources(Config config, ProjectLayout layout) throws Exception {
+    private static int analyzeSources(Config config, ProjectLayout layout, String pathPrefix) throws Exception {
         Log.blank();
         Log.info(Messages.get("exporter.phase1"));
         CachePhaseResult result = new CacheUpdater(layout, config).run();
@@ -180,8 +249,8 @@ public final class Exporter {
                         ? Messages.format("exporter.parseSummary.syntaxErrors", result.syntaxErrorFiles) : "",
                 (result.salvaged > 0)
                         ? Messages.format("exporter.parseSummary.salvaged", result.salvaged) : ""));
-        reportCompileErrors(result);
-        reportSyntaxErrors(config, result);
+        reportCompileErrors(result, pathPrefix);
+        reportSyntaxErrors(config, result, pathPrefix);
         if (result.unresolved > 0) {
             Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.unresolved", result.unresolved));
             Log.info(Messages.get("exporter.unresolved2"));
@@ -211,14 +280,14 @@ public final class Exporter {
      *       いまの JDT は 1.8 未満の source.level を受け付けず 1.8 として読むため、構文エラーになる）</li>
      * </ul>
      */
-    private static void reportSyntaxErrors(Config config, CachePhaseResult result) {
+    private static void reportSyntaxErrors(Config config, CachePhaseResult result, String pathPrefix) {
         if (result.syntaxErrorFiles == 0) {
             return;
         }
         Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors", result.syntaxErrorFiles));
         Warnings.warn(Warnings.Topic.BUILD, Messages.get("exporter.syntaxErrors2"));
         for (String path : result.syntaxErrorPaths) {
-            Warnings.warn(Warnings.Topic.BUILD, "   - " + path);
+            Warnings.warn(Warnings.Topic.BUILD, "   - " + pathPrefix + path);
         }
         if (result.syntaxErrorFiles > result.syntaxErrorPaths.size()) {
             Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors.more",
@@ -238,13 +307,13 @@ public final class Exporter {
      * （warnings.txt の「ソースにコンパイルエラーがある」の項目になる。{@code docs/output-files-simplify-qa.md} の Q6）。
      * 構文エラーはこの一部で、影響がより重いので {@link #reportSyntaxErrors} で別に言う。
      */
-    private static void reportCompileErrors(CachePhaseResult result) {
+    private static void reportCompileErrors(CachePhaseResult result, String pathPrefix) {
         if (result.compileErrorFiles == 0) {
             return;
         }
         Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.compileErrors", result.compileErrorFiles));
         for (String path : result.compileErrorPaths) {
-            Warnings.warn(Warnings.Topic.BUILD, "   - " + path);
+            Warnings.warn(Warnings.Topic.BUILD, "   - " + pathPrefix + path);
         }
         if (result.compileErrorFiles > result.compileErrorPaths.size()) {
             Warnings.warn(Warnings.Topic.BUILD, Messages.format("exporter.syntaxErrors.more",
@@ -270,7 +339,8 @@ public final class Exporter {
      *
      * @param unresolved 型解決に失敗した呼び出しの一覧に出す行を拾う先。拾わないなら null
      */
-    private static CallGraph buildGraph(Config config, ProjectLayout layout, UnresolvedCalls unresolved)
+    private static CallGraph buildGraph(Config config, ProjectLayout layout, List<WorkspaceProject> workspace,
+                                        UnresolvedCalls unresolved)
             throws Exception {
         Log.blank();
         Log.info(Messages.get("exporter.phase2"));
@@ -278,10 +348,17 @@ public final class Exporter {
         for (Path sourceFolder : layout.sourceFolders) {
             sourceFolderOrder.add(layout.relativeOf(sourceFolder));
         }
+        // 読むキャッシュは、この実行自身のものを先頭に、相手のものを設定の順に並べる（起点の並びもこの順）
+        List<CallGraphBuilder.Source> sources = new ArrayList<>();
+        sources.add(new CallGraphBuilder.Source(config.cacheFile, ""));
+        for (WorkspaceProject ws : workspace) {
+            sourceFolderOrder.addAll(ws.sourceFolderOrder());
+            sources.add(new CallGraphBuilder.Source(ws.config.cacheFile, ws.prefix));
+        }
         SpringBeans beans = SpringBeans.of(config.springDiEnabled, config.springDiAnnotations);
         // dataflow.enabled=false のときは値（値グラフ・戻り値・代入・証拠・呼び出し箇所の値）を読まない
         // （具象クラスの解決は CHA まで、条件分岐の打ち切りは起きない）
-        CallGraph graph = CallGraphBuilder.build(config.cacheFile, config.dataflowEnabled,
+        CallGraph graph = CallGraphBuilder.build(sources, config.dataflowEnabled,
                 sourceFolderOrder, beans, unresolved);
         if (beans.enabled()) {
             Log.info(Messages.format("exporter.diBeans", beans.beanCount(),

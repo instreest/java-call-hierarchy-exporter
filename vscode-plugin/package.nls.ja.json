@@ -17,6 +17,7 @@
   "command.jche.openLog.title": "ログを開く",
   "command.jche.saveConfig.title": "設定を jche.properties に保存",
   "command.jche.selectConfig.title": "設定ファイルを選ぶ",
+  "command.jche.addWorkspaceProjects.title": "ワークスペースの他のフォルダを workspace.projects に書き足す（一緒に解析する）",
   "command.jche.filterText.title": "絞り込み文字列",
   "command.jche.filterOptions.title": "フィルタ設定（深さ・テスト・推定・重複）",
   "command.jche.export.title": "この木を CSV に出す",
