@@ -209,7 +209,8 @@ import jche.util.Warnings;
  * 旧キャッシュの I 行（か解決できなかった名前）が変わった jar のパッケージ（か、解析に失敗したファイルの中身の分からない
  * パッケージ）に触れていたファイルの型は、指紋に関わらず、
  * どの理由で選ばれたか（ソースの変化にも触れていた・名前が当たった・同じ名前のファイルの組）にも関わらず
- * 「変わった型」に加える（jar の親の親から継承したものは指紋にも H 行にも現れない。Q84・Q89）。
+ * 「変わった型」に加える（jar の親の親から継承したものは指紋にも H 行にも現れない。docs/cache-unification-qa.md の
+ * Q84（jar の変化で解析し直したファイルの型）・Q89（jar の変化による連鎖をファイルごとに決める））。
  * sealed な型かアノテーション型を宣言するファイルも、解析し直したら指紋に関わらず「変わった型」に加える。使う側の
  * 事実（switch の網羅性・キャストと instanceof・注釈を付けられる場所と繰り返し）は、許した部分型（入れ子の sealed の
  * 先まで）の宣言やメタ注釈の解決先・{@code @Repeatable} の入れ物の型に依るが、それらの名前を書いているのは宣言した
@@ -238,7 +239,8 @@ import jche.util.Warnings;
  * F の宣言にも依存する。そこで、ある型が「変わった型」になったら、その部分型もすべて（推移的に）「変わった型」に
  * する。F が変われば E と D も変わった型になり、D を使う側を解析し直す。親が jar の型なら、その親（別の jar の型の
  * ことも）は H 行に無いので、書き手は名前にした型の頭（推移的な親型を型引数ごと・型引数の上限・関数型。
- * BindingNames#noteHeaderTypes。Q86）を I 行に載せ、差分更新は I 行が変わった jar に触れていたファイルの型を
+ * BindingNames#noteHeaderTypes。docs/cache-unification-qa.md の Q86（jar の型の親が変わると））を I 行に載せ、
+ * 差分更新は I 行が変わった jar に触れていたファイルの型を
  * 変わった型にする（上の「宣言の連鎖」）。H 行は消去した親しか持たないので、親型の型引数の変化もこの I 行で拾う。
  *
  * <p>部分型は、H 行の親型の列から作る部分型の索引（{@link StaleTypes#register}）で引く。索引には、旧キャッシュの
@@ -251,14 +253,18 @@ import jche.util.Warnings;
  * 以前は型の形（継承したものを含むメンバーの署名）の指紋を I 行に持ち、形が変わったときだけ連鎖させていたが、
  * 何を形に入れるか（私的メンバー・{@code java.*} の親型の上のメンバー）で取りこぼしが続いたので、やめた
  * （docs/cache-unification-qa.md の Q77）。形が拾っていた「選ばれなかったオーバーロードの引数の型」は、呼ぶ側の I 行に
- * 呼び出しの候補の引数の型として載せる（{@link BindingNames#noteCandidates}。Q78）。
+ * 呼び出しの候補の引数の型として載せる（{@link BindingNames#noteCandidates}。docs/cache-unification-qa.md の Q78
+ * （依存する型を「すべての式と型の節の型」の決まりに））。
  *
  * <h2>新しい型（前回は無かった型は、参照していた側の I 行に載らない。依存を 1 段で済ませられない場合の 3 つ目）</h2>
  * 前回どのブロックも宣言していなかった型（ソースを足した・消したファイルを戻した・既存のファイルに型を
  * 足した）は、次の 3 通りで、I 行に触れずに他のファイルの解決結果を変える。どれも<b>型かパッケージの単位</b>で当て、
- * 名前の一部（エラーの引数に現れた名前・単純名）は照合しない（docs/cache-unification-qa.md の Q131。以前は解決できなかった
- * 名前を I 行に書いて新しい型の名前と照合していたが、何を区切りにするか・何を拾うか（Q42・Q53・Q64・Q79・Q80・Q87・
- * Q91〜Q96）の入れ忘れがそのまま静かな取りこぼしになった）。
+ * 名前の一部（エラーの引数に現れた名前・単純名）は照合しない（docs/cache-unification-qa.md の Q131（再解析の規則を粗くした）。
+ * 以前は解決できなかった名前を I 行に書いて新しい型の名前と照合していたが、何を区切りにするか・何を拾うかの入れ忘れが
+ * そのまま静かな取りこぼしになった。同じファイルの Q42（無かった型のソースを足したとき）・Q53（見えなかった型を public に）・
+ * Q64（チェックアウトの場所のフォルダ名）・Q79（依存 jar が無いときの I 行）・Q80（完全修飾名の途中のパッケージ）・
+ * Q87（パッケージと同じ名前の型）・Q91（下のパッケージだけでできたパッケージの import）・Q92（package-info.java の隠蔽）・
+ * Q93（型 a.b とパッケージ a.b）・Q94（jar の無名パッケージ）・Q95（解析に失敗したファイルの型）・Q96（完全修飾名の頭の隠蔽））。
  * <ul>
  *   <li>無い型の名前（{@code Foo.run()}）には JDT がバインディングを返さないので、参照した側の依存には
  *       何も残らない。そのファイルは F 行のエラー数か U 行の BINDING_FAILED として型解決に失敗している。
@@ -270,7 +276,8 @@ import jche.util.Warnings;
  *       （{@code package-info.java}）は自分のパッケージが分からないので、どのパッケージの新しい型にも当てる</li>
  *   <li>パッケージと同じ名前の型（パッケージ {@code a.b} があるのに足したパッケージ {@code a} のクラス {@code b}）は、
  *       {@code a.b.C} の解決を変える（JLS 6.5.2・7.1）。I 行の型の名前の頭の部分が変わった型に当たるブロックも
- *       解析し直す（{@code StaleTypes#underChangedType}。Q87）。逆に、型 {@code a.b} があるところにパッケージ {@code a.b} が
+ *       解析し直す（{@code StaleTypes#underChangedType}。docs/cache-unification-qa.md の Q87（パッケージと同じ名前の型））。
+ *       逆に、型 {@code a.b} があるところにパッケージ {@code a.b} が
  *       できた・無くなった（jar のパッケージが変わった）ときは、型のファイルの「パッケージと衝突する」エラーが出る・消える。
  *       このエラーはバッチに依らない（JDT はフォルダと jar でパッケージがあるかを決める）ので、親のパッケージ {@code a}
  *       のブロックを解析し直す（{@link StaleTypes#collidesWithChangedPackage}）。オンデマンド import（{@code import a.*}）の
@@ -290,7 +297,8 @@ import jche.util.Warnings;
  * 新しい jar からは知れないためで、L 行にパッケージ一覧を残すのは jar が削除された後にも
  * 影響範囲を知るため（{@link LibraryDiff}）。jar の型が自分と同じパッケージにできたときは、新しい型と同じく
  * オンデマンド import・{@code java.lang} の型・完全修飾名の頭（{@code a.b.C} の {@code a}）を隠しうるので、自分の
- * パッケージが変わった jar のパッケージにあるブロックは、I 行に何かあれば解析し直す（Q54。{@link StaleTypes#touchesLibrary}）。
+ * パッケージが変わった jar のパッケージにあるブロックは、I 行に何かあれば解析し直す（docs/cache-unification-qa.md の
+ * Q54（jar が自分と同じパッケージに型を足したとき）。{@link StaleTypes#touchesLibrary}）。
  * 型のメンバーを持ち込む import（{@code import static org.lib.K.*}・
  * {@code import org.lib.Outer.*}）は I 行に {@code org.lib.K.*} と載るので、頭の部分が変わった jar のパッケージかでも当てる。
  * jar の無名パッケージのクラスは {@link LibraryFact#UNNAMED_PACKAGE} というパッケージとして扱い、点の無い型の名前が当たる。
@@ -1654,7 +1662,9 @@ public final class CacheUpdater {
             DepsIndex.Consumer select = (index, depsCsv) -> {
                 String rel = old.paths[index];
                 // jar（か中身の分からないパッケージ）に触れていたかは、ほかの理由で選ばれた（名前が当たった・ソースの変化にも
-                // 触れた・同じ名前のファイルの組として引き込まれた）ファイルでも見る。連鎖は選ばれた理由ではなくこれで決める（Q89）
+                // 触れた・同じ名前のファイルの組として引き込まれた）ファイルでも見る。連鎖は選ばれた理由ではなくこれで決める
+                // （理由で決めると、ソースの変化にも触れていたファイルの連鎖を落とす。docs/cache-unification-qa.md の Q89
+                // （jar の変化による連鎖をファイルごとに決める））
                 if (stale.touchesLibrary(depsCsv, old.packages[index])
                         || stale.touchesOpaque(depsCsv, old.packages[index])) {
                     writer.jarDriven.add(rel);

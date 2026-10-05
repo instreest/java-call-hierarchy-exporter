@@ -970,7 +970,8 @@ final class OriginTracker {
      * {@code this} のコンストラクタ実引数に見えて、誤った具象型に確定し、条件を誤って偽と判定する。
      * そこで修飾した読み取りは {@code F:} にしない（コンパイル時定数なら値だけは使う。{@link #constantOf}）。
      * 修飾の無い名前と {@code this.f} だけを {@code F:} にする（docs/value-safety-qa.md の Q19）。修飾した読み取りは
-     * 別の種別 {@code O:} にする（{@link #otherFieldOriginOf}。Q25）
+     * 別の種別 {@code O:} にする（{@code this} の値を当てずに、読み手がフィールドの代入先から絞れるように。
+     * {@link #otherFieldOriginOf}。docs/value-safety-qa.md の Q25（別のインスタンスのフィールドを値にしなくなって絞れなくなったもの））
      */
     private static boolean isInstanceField(IVariableBinding vb) {
         return vb.isField() && !vb.isEnumConstant() && !Modifier.isStatic(vb.getModifiers());
