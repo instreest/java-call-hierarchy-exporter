@@ -84,6 +84,7 @@ export const EN: Record<string, string> = {
     'jdk.cancelled': 'The download was cancelled',
     'jdk.tarFailed': 'Unpacking failed (cannot start tar): {0}',
     'jdk.extractFailed': 'Unpacking failed: {0}',
+    'jdk.notHttps': 'Download refused: the download was redirected to a URL that is not https: {0}',
     // --- label ---
     'label.direction.callers': 'Callers',
     'label.direction.callees': 'Callees',
@@ -151,6 +152,12 @@ export const EN: Record<string, string> = {
     'session.analyzed': 'Analysis finished: methods={0} edges={1}',
     'session.updating': 'Impact: updating {0}',
     'session.reason.shutdown': 'extension shutdown',
+    'session.extensions.confirm': 'The config file {0} compiles and runs Java extensions from {1} ({2}). Allow it?',
+    'session.extensions.detail': 'The extensions are Java sources or classes inside the analyzed folder, so allow it only for a repository you trust. The answer is remembered for this workspace; "Impact: Choose a config file" asks again.',
+    'session.extensions.allow': 'Allow',
+    'session.extensions.deny': 'Deny',
+    'session.extensions.denied': 'Skipped the analysis: the config file {0} compiles and runs Java extensions ({1}) and that is not allowed. To allow it, run "Impact: Choose a config file" and answer Allow, or set the jche.configFile setting to this file.',
+    'session.extensions.untrusted': 'Skipped the analysis: the workspace is not trusted and the config file {0} compiles and runs Java extensions ({1}). Trust the workspace (Manage Workspace Trust) to analyze with it.',
     // --- status ---
     'status.unanalyzed': 'Impact: not analyzed',
     'status.unanalyzed.detail': '{0} has not been analyzed yet',

@@ -170,6 +170,21 @@ app.Order.status   Order.java                            ← フィールド（�
 | `jche.autoAnalyze` | false | 保存から 3 秒静止したら裏で再解析する |
 | `jche.jdkDownload` | true | JDK が無いときに Adoptium からの取得を提案する。閉域では OFF |
 
+### 安全性
+
+`jche.javaHome`・`jche.libFolder`・`jche.vmArguments`・`jche.jdkDownload` は**マシン単位の設定**（`scope: machine`）で、
+ワークスペースやフォルダの `.vscode/settings.json` では効かない。リポジトリに置いた設定で、解析に使う `java`・解析本体の
+クラスパス・`-javaagent` 等の JVM 引数をそのリポジトリの中のファイルに向けられると、開いただけでそのコードが動くためである。
+ワークスペースを[信頼していない](https://code.visualstudio.com/docs/editor/workspace-trust)ときは、`jche.configFile` と `jche.autoAnalyze` の
+ワークスペース側の値を無視し、フォルダの中の設定ファイルが Java の拡張を指していれば解析しない。
+
+設定ファイルの `plugin.folders` / `resolver.candidate.providers` / `call.rules.providers` は、**解析対象のフォルダに置かれた
+Java をコンパイルして実行させる**項目である（[instance-analysis-plugin.md](instance-analysis-plugin.md) の「安全性」）。
+フォルダから自動で拾った設定ファイルにこれらが書かれているときは、最初の解析の前に一度だけ
+「この設定ファイルは … の Java の拡張をコンパイルして実行します。許可しますか？」と問い、答えをワークスペースに覚える。
+［許可しない］と答えると解析を飛ばし、右下の状態とログに許可のしかたを出す（「設定ファイルを選ぶ」で問い直すか、
+`jche.configFile` にそのファイルを指定する。利用者が `jche.configFile` で明示したファイルは問わない）。
+
 ## ビルド
 
 ```bash

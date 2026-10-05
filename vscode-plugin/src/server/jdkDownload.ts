@@ -119,6 +119,11 @@ async function download(url: string, target: string, progress?: DownloadProgress
         headers: { 'User-Agent': 'java-call-hierarchy-exporter' },
         signal: AbortSignal.timeout(10 * 60_000),
     });
+    // 転送の行き先が https でなければ受け取らない。取ってきたものをそのまま実行するので、
+    // 途中で平文（http）に落ちた経路からの中身を信用しない（Eclipse 版の JdkDownload と同じ）
+    if (!response.url.startsWith('https://')) {
+        throw new Error(t('jdk.notHttps', response.url));
+    }
     if (!response.ok || !response.body) {
         throw new Error(t('jdk.httpFailed', response.status, url));
     }

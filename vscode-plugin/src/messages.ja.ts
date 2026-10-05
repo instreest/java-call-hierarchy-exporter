@@ -84,6 +84,7 @@ export const JA: Record<string, string> = {
     'jdk.cancelled': '取得を中止しました',
     'jdk.tarFailed': '展開に失敗しました（tar を起動できません）: {0}',
     'jdk.extractFailed': '展開に失敗しました: {0}',
+    'jdk.notHttps': '取得をやめました。https でない URL へ転送されました: {0}',
     // --- label ---
     'label.direction.callers': '呼び出し元',
     'label.direction.callees': '呼び出し先',
@@ -151,6 +152,12 @@ export const JA: Record<string, string> = {
     'session.analyzed': '解析が終わりました: methods={0} edges={1}',
     'session.updating': '影響調査: {0} を更新中',
     'session.reason.shutdown': '拡張の終了',
+    'session.extensions.confirm': '設定ファイル {0} は、{1} にある Java の拡張（{2}）をコンパイルして実行します。許可しますか？',
+    'session.extensions.detail': '拡張は解析対象のフォルダの中にある Java のソースやクラスなので、信頼できるリポジトリのときだけ許可してください。答えはこのワークスペースに覚えます。「影響調査: 設定ファイルを選ぶ」で問い直します。',
+    'session.extensions.allow': '許可する',
+    'session.extensions.deny': '許可しない',
+    'session.extensions.denied': '解析を飛ばしました。設定ファイル {0} は Java の拡張（{1}）をコンパイルして実行しますが、許可されていません。許可するには「影響調査: 設定ファイルを選ぶ」を実行して［許可する］と答えるか、設定 jche.configFile にこのファイルを指定してください。',
+    'session.extensions.untrusted': '解析を飛ばしました。ワークスペースが信頼されておらず、設定ファイル {0} は Java の拡張（{1}）をコンパイルして実行します。この設定で解析するにはワークスペースを信頼してください（ワークスペースの信頼の管理）。',
     // --- status ---
     'status.unanalyzed': '影響調査: 未解析',
     'status.unanalyzed.detail': '{0} はまだ解析していません',

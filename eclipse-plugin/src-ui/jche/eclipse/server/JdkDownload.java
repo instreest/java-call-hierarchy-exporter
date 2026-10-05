@@ -135,6 +135,11 @@ public final class JdkDownload {
     }
 
     private static void download(String url, File target, Progress progress) throws IOException {
+        // https 以外からは受け取らない。取ってきたものをそのまま実行するので、転送（Location）の行き先が
+        // 平文（http）に落ちていても追わない（最初の URL も転送先も、ここを通る）
+        if (!url.regionMatches(true, 0, "https://", 0, "https://".length())) {
+            throw new IOException(Messages.format("download.notHttps", url));
+        }
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setInstanceFollowRedirects(true);
         connection.setConnectTimeout(30_000);
@@ -142,7 +147,8 @@ public final class JdkDownload {
         connection.setRequestProperty("User-Agent", "java-call-hierarchy-exporter");
         int status = connection.getResponseCode();
         if (status / 100 == 3) {
-            // Adoptium は実体の置き場所へ飛ばす。プロトコルが変わると自動では追わないので自分で追う
+            // Adoptium は実体の置き場所へ飛ばす。ホストが変わると自動では追わないので自分で追う
+            // （行き先が https であることは、再帰した先の冒頭で確かめる）
             String location = connection.getHeaderField("Location");
             connection.disconnect();
             if (location == null) {

@@ -9,7 +9,8 @@ import { t } from './messages';
  *
  * 優先順位は次のとおりで、上から順に当てはまった1つを使う（docs/vscode-plugin-design.md §3）。
  * 1. 利用者が設定（`jche.configFile`）で明示したファイル
- * 2. ワークスペースフォルダ直下の `jche.properties`（以前の名前の `config.properties` も。複数あれば呼び出し側が選ばせる）
+ * 2. ワークスペースフォルダ直下の `*.properties`（`jche.properties` を先頭に、次に以前の名前の `config.properties`、
+ *    ほかは名前順。`launcher.properties` は除く。複数あれば呼び出し側が選ばせる）
  * 3. どれも無ければ自動生成 … **`project.root` だけ**書いた最小の設定
  *
  * 自動生成で `source.folders` や `library.folders` を書かないのは意図的である。
@@ -85,6 +86,76 @@ export function resolveConfigSource(
         return { source: { kind: 'file', file: remembered } };
     }
     return { choices: candidates };
+}
+
+/**
+ * 設定ファイルの中の、**Java を実行させる項目**。
+ *
+ * `plugin.folders` のフォルダに置かれた `.java` は解析のたびにコンパイルされて動き、
+ * `resolver.candidate.providers` / `call.rules.providers` はそこから読み込むクラスの名前である
+ * （本体の `jche.config.Plugins` / `PluginClassLoaders`）。つまり解析対象のリポジトリに置かれた
+ * `jche.properties` は、そのリポジトリの Java を利用者の PC で動かせる。
+ * 利用者が明示した設定ではなく**フォルダから自動で拾った設定**にこれらがあるときは、
+ * 解析の前に一度だけ確かめる（`session.ts`）。
+ */
+export const CODE_EXECUTING_KEYS = ['plugin.folders', 'resolver.candidate.providers', 'call.rules.providers'] as const;
+
+/**
+ * 設定ファイルの中身から、値の入った {@link CODE_EXECUTING_KEYS} を返す（並びは表の順）。
+ *
+ * 読み方は本体の `jche.config.ConfigFile` と同じ: 1 行に `項目=値`、`#` / `!` で始まる行は注釈、
+ * 行末の `\` か字下げで次の行へ続く（`項目=` の形の行は字下げされていても項目の行。空行は字下げの続きを切る）。
+ * 読めない行（`=` が無い等）は本体が解析のときにエラーにするので、ここでは読み飛ばすだけでよい。
+ */
+export function codeExecutingKeys(text: string): string[] {
+    const values = new Map<string, string>();
+    let currentKey: string | undefined;
+    let currentValue = '';
+    let pending = false;    // 直前の内容行が \ で終わっている（次の内容行に続く）
+    const flush = () => {
+        if (currentKey !== undefined) {
+            values.set(currentKey, currentValue);
+        }
+        currentKey = undefined;
+        currentValue = '';
+    };
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+        const line = (i === 0) ? lines[i].replace(/^\uFEFF/, '') : lines[i];
+        const trimmed = line.trim();
+        if (trimmed.startsWith('#') || trimmed.startsWith('!')) {
+            continue;
+        }
+        if (trimmed === '') {
+            if (!pending) {
+                flush();
+            }
+            continue;
+        }
+        const indented = /^\s/.test(line);
+        const keyLike = /^\s*[A-Za-z][A-Za-z0-9._-]*\s*=/.test(line);
+        if (currentKey !== undefined && !keyLike && (pending || indented)) {
+            pending = trimmed.endsWith('\\');
+            currentValue += withoutTrailingBackslash(trimmed);
+            continue;
+        }
+        flush();
+        const eq = trimmed.indexOf('=');
+        if (eq < 0) {
+            continue;
+        }
+        const value = trimmed.substring(eq + 1).trim();
+        pending = value.endsWith('\\');
+        currentKey = trimmed.substring(0, eq).trim();
+        currentValue = withoutTrailingBackslash(value);
+    }
+    flush();
+    return CODE_EXECUTING_KEYS.filter((key) => (values.get(key) ?? '') !== '');
+}
+
+/** 行末の `\`（続きの印）を除き、その前の空白も落とす */
+function withoutTrailingBackslash(s: string): string {
+    return s.endsWith('\\') ? s.substring(0, s.length - 1).trim() : s;
 }
 
 /**

@@ -36,6 +36,12 @@ public final class JchePreferences {
     public static final String LOG_FOLDER = "analysis.logFolder";
     /** CSV の出力先。空なら {@link PluginFolders#defaultOutputRoot()} */
     public static final String OUTPUT_FOLDER = "analysis.outputFolder";
+    /**
+     * プロジェクトで見つけた設定ファイルが指す Java の拡張（plugin.folders など）を動かしてよいか。
+     * プロジェクトごとの答え（{@code true} / {@code false}。未回答なら空）で、キーはこの前置き＋プロジェクト名
+     * （{@link ProjectAnalysis#reanalyze()}）。設定画面には出さない
+     */
+    static final String EXTENSIONS_ALLOWED_PREFIX = "analysis.extensionsAllowed.";
 
     private JchePreferences() {
     }
@@ -56,6 +62,21 @@ public final class JchePreferences {
     private static IPreferenceStore store() {
         JchePlugin plugin = JchePlugin.getDefault();
         return (plugin == null) ? null : plugin.getPreferenceStore();
+    }
+
+    /** そのプロジェクトの設定ファイルが指す Java の拡張を動かしてよいか。未回答なら null */
+    static Boolean extensionsAllowed(String projectName) {
+        IPreferenceStore store = store();
+        String value = (store == null) ? "" : store.getString(EXTENSIONS_ALLOWED_PREFIX + projectName);
+        return value.isEmpty() ? null : Boolean.valueOf(value);
+    }
+
+    /** 答えを覚える */
+    static void setExtensionsAllowed(String projectName, boolean allowed) {
+        IPreferenceStore store = store();
+        if (store != null) {
+            store.setValue(EXTENSIONS_ALLOWED_PREFIX + projectName, String.valueOf(allowed));
+        }
     }
 
     private static String text(String key) {

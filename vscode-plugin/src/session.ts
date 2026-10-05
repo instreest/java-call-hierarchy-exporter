@@ -1,9 +1,9 @@
 // Copyright 2026 Inoue Kazuhiro (instreest). SPDX-License-Identifier: Apache-2.0
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { labelOf, materialize, resolveConfigSource, savedConfigText, type ConfigSource } from './config';
+import { codeExecutingKeys, labelOf, materialize, resolveConfigSource, savedConfigText, type ConfigSource } from './config';
 import type { Direction } from './labels';
 import { DEFAULT_TIMEOUT_MS, type ServerConnection } from './server/connection';
 import { chooseJava, findJavaIn, PREFERRED, type FoundJava } from './server/javaLocator';
@@ -108,7 +108,65 @@ export class Session implements vscode.Disposable {
             return undefined;
         }
         await this.context.workspaceState.update(this.rememberedKey(), picked.file);
+        // 設定ファイルを選び直したら、Java の拡張を動かしてよいかも問い直す（断った後に許可する道でもある）
+        await this.context.workspaceState.update(this.extensionsKey(), undefined);
         return { kind: 'file', file: picked.file };
+    }
+
+    private extensionsKey(): string {
+        return `extensionsAllowed:${this.folder.uri.toString()}`;
+    }
+
+    /**
+     * フォルダから自動で拾った設定ファイルが Java の拡張を動かすなら、解析の前に一度だけ確かめる。
+     *
+     * `plugin.folders` / `resolver.candidate.providers` / `call.rules.providers` は、解析対象のリポジトリに
+     * 置かれた Java を利用者の PC でコンパイルして実行させる（`config.ts` の `codeExecutingKeys`）。
+     * リポジトリを開いただけでそれが走らないよう、設定 `jche.configFile` で利用者が明示したファイル以外は
+     * 一度問い、答えをワークスペースに覚える（問い直すのは「設定ファイルを選ぶ」）。
+     * 信頼していないワークスペースでは問わずに断る（docs/vscode-plugin-usage.md の「安全性」）。
+     * 断ったときは解析を飛ばし、どうすれば許可できるかを状態とログに残す
+     */
+    private async allowedToRunExtensions(source: ConfigSource): Promise<boolean> {
+        if (source.kind !== 'file' || this.settings().get<string>('configFile', '').trim() !== '') {
+            return true;
+        }
+        let keys: string[];
+        try {
+            keys = codeExecutingKeys(await readFile(source.file, 'utf8'));
+        } catch {
+            return true;    // 読めないファイルは解析側がエラーにする
+        }
+        if (keys.length === 0) {
+            return true;
+        }
+        const label = labelOf(source, this.folder.uri.fsPath);
+        const keyList = keys.join(', ');
+        if (!vscode.workspace.isTrusted) {
+            return this.refuseExtensions(t('session.extensions.untrusted', label, keyList));
+        }
+        let allowed = this.context.workspaceState.get<boolean>(this.extensionsKey());
+        if (allowed === undefined) {
+            const allow = t('session.extensions.allow');
+            const answer = await vscode.window.showWarningMessage(
+                t('session.extensions.confirm', label, path.dirname(source.file), keyList),
+                { modal: true, detail: t('session.extensions.detail') },
+                allow, t('session.extensions.deny'));
+            if (answer === undefined) {
+                // 閉じただけなら覚えない（次の解析でまた問う）
+                return this.refuseExtensions(t('session.extensions.denied', label, keyList));
+            }
+            allowed = answer === allow;
+            await this.context.workspaceState.update(this.extensionsKey(), allowed);
+        }
+        return allowed || this.refuseExtensions(t('session.extensions.denied', label, keyList));
+    }
+
+    /** 拡張を動かさないので解析を飛ばす。理由は右下の状態（失敗）とログの両方に出す */
+    private refuseExtensions(reason: string): false {
+        this.log.warn(reason);
+        this.setState({ kind: 'failed', reason });
+        return false;
     }
 
     /** 自動生成の内容をワークスペースへ書き出す（細かく直したい人のため） */
@@ -266,7 +324,8 @@ export class Session implements vscode.Disposable {
         }
         const minutes = this.settings().get<number>('idleMinutes', 10);
         if (minutes > 0) {
-            this.idleTimer = setTimeout(() => void this.shutdown(t('session.reason.idle')), minutes * 60_000);
+            this.idleTimer = setTimeout(
+                () => this.shutdown(t('session.reason.idle')).catch((e) => this.logRejection(e)), minutes * 60_000);
         }
     }
 
@@ -280,6 +339,11 @@ export class Session implements vscode.Disposable {
             this.setState({ kind: 'failed', reason: t('session.serverExited') });
         }
         return response;
+    }
+
+    /** 待ち手のいない非同期処理の失敗をログに残す（握りつぶすと、止まった理由がどこにも出ない） */
+    private logRejection(e: unknown): void {
+        this.log.error(e instanceof Error ? e.message : String(e));
     }
 
     /** 子プロセスを止める。結果はキャッシュに残っているので、次は速い */
@@ -309,7 +373,7 @@ export class Session implements vscode.Disposable {
             return false;
         }
         const source = await this.configSource();
-        if (!source) {
+        if (!source || !(await this.allowedToRunExtensions(source))) {
             return false;
         }
         this.analyzing = true;
@@ -396,9 +460,9 @@ export class Session implements vscode.Disposable {
                 return;
             }
             // 自動のときは静かに（右下の細い進捗）。手動と違って通知は出さない
-            void vscode.window.withProgress(
+            vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Window, title: t('session.updating', this.folder.name) },
-                () => this.analyze());
+                () => this.analyze()).then(undefined, (e) => this.logRejection(e));
         }, 3_000);
     }
 
@@ -447,7 +511,8 @@ export class Session implements vscode.Disposable {
             clearTimeout(this.autoTimer);
         }
         this.watcher?.dispose();
-        void this.shutdown(t('session.reason.shutdown'));
+        // 拡張の終了時は deactivate() が先に shutdown を待っているので、ここでは二度目（何もしない）になる
+        this.shutdown(t('session.reason.shutdown')).catch((e) => this.logRejection(e));
         this.stateEmitter.dispose();
     }
 }
