@@ -88,6 +88,7 @@
 | [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `call-hierarchy`（旧 `root`）の左に足す。見出し `root` を `call-hierarchy` にまとめた経緯（Q9）も。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
+| [code-review-fixes-2-qa.md](code-review-fixes-2-qa.md) | — | 2 回目のコードレビューへの対応。繋げなかったリフレクション・呼び戻しの行（`UNEXPANDED:REFLECTION` / `UNEXPANDED:CALLBACK`）、起点の `inHierarchy` と `methods.csv` の最終列 `externalRefs`、warnings.txt に昇格した状態、record の暗黙の正準コンストラクタ（形式 v46）、`<init>` を継承で結び付けない、Gradle の lockfile の条件、知らない設定項目、1 ファイル版の `-single`、プラグインの安全性（設定の適用範囲・拡張の確認）、CSV の数式の前置、回帰ケース nodi / diannot / nobuiltin |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
 | [ast-analysis-performance-qa.md](ast-analysis-performance-qa.md) | — | AST 解析の性能とメモリ使用量の改善（何を計測して直したか、バッチのサイズ・並列化・仮想スレッドを採らなかった理由と実測値） |
 | [output-walk-limit-qa.md](output-walk-limit-qa.md) | — | 出力の探索が行にならないノード（コンストラクタ呼び出し・除外メソッドの読み飛ばし）だけの部分木で 0 行のまま終わらなくなる件。行を書かずに続けて通ったノードの数にも `max.rows` を掛ける（合計で数えると普通の出力が落ちた理由、まだ遅い形） |

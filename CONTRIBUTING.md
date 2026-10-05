@@ -86,6 +86,8 @@ bash test/regression/run.sh
 | `src/jche` のどこでも | lint（JDK 25）・`test/regression`。1 ファイル版（`single-file/`）は直さなくてよい（本体と同期を取らない場合がある） |
 | 書き手（`analysis` / `cache`）でキャッシュに入る事実が変わりうる | `CacheFormat.VERSION` を上げる（迷ったら上げる）→ `bash test/cacheversion/run.sh --update` で `facts.txt` を更新。`test/incremental` を回す |
 | 差分更新が見る依存を足した | `test/incremental` に全件解析との一致の検査を足す |
+| 出力 CSV の列を足した | `methods.csv` は**最後に足す**（列番号で読む利用者・検査を壊さない。`docs/code-review-fixes-2-qa.md` の Q4）。`call-hierarchy.csv` は最終列が可変長なので `call-hierarchy` の**左に足す**（6 節）。README の出力のリファレンスを日英両方で直し、`test/regression` の期待値を更新する |
+| 設定ファイルの項目を足した・改名した | `Config.KNOWN_KEYS` と `config/jche.properties` の両方に足す（知らない項目の警告が誤って出る。`docs/config-file-format-qa.md` の Q11）。解析対象に置かれた Java を動かす項目なら、プラグインの確認の一覧（`vscode-plugin/src/config.ts` の `CODE_EXECUTING_KEYS`・`eclipse-plugin` の `ProjectAnalysis#codeExecutingKeys`）にも足す |
 | 利用者に見せる文言を足した | `MessagesEn.java` と `MessagesJa.java` の同じ分野・同じ並び・同じキーに足す（`test/nls`）。起動コマンドは `msg <キー>`。Eclipse / VSCode プラグインは置き場所が別（下記） |
 | 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を変えた | 3 か所を同時に直す: `MethodSelection#search`（選択）・`MethodSelection#resolvedDeclaration`（解決。抽象でも止まる・private を飛ばさない・パッケージアクセスは見ない）・`ImplicitCalls#findNoArgMethod`。jar からの被参照（`ExternalUsageScanner`）は自前の写しを持たず `resolvedDeclaration` に任せる。正本は `docs/resolution-selection-design.md` の 4 節 |
 | JDT の版を上げた | `CallHierarchyExporter.java` と `Jche.java` の `//DEPS`、`pom.xml` の 3 か所と README（`test/pom`・`test/readme` が見る）。`bash test/cacheversion/run.sh --update` で記録だけ合わせる |
