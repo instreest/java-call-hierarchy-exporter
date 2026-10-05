@@ -49,6 +49,11 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
      .\java-call-hierarchy-exporter.cmd config\jche.properties
      ```
 
+     ```bash
+     # Linux / macOS
+     ./java-call-hierarchy-exporter.sh config/jche.properties
+     ```
+
    初回は JDK 25 や解析エンジンの Eclipse JDT などの取得の確認が出ます（取得するものと想定サイズが表示されます）。
    初回は取得と全件解析で時間がかかりますが、2 回目からは変更されたファイルだけを差分解析します。
 
@@ -169,7 +174,7 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 |---|---|
 | OS | Windows、Linux |
 | 事前に入れておくもの | なし。ツールを動かす JDK 25 と解析に使う Eclipse JDT（Eclipse の Java コンパイラ） は、初回に確認のうえ自動で取得します（通信量 約 165MB、ディスク 約 500MB）。ネットワークに出られない環境は[閉域ネットワークで使う](#ほかの使い方)を参照 |
-| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応している Java バージョンに対応します。最新版 3.46.0 では Java 8 ～ 26 に対応します。 |
+| 解析できるソース | Java のソース（`.java`）。解析エンジンの Eclipse JDT が対応している Java バージョンに対応します。このツールが使う版（`//DEPS` の 3.46.0）では Java 8 ～ 26 に対応します。 |
 | ビルドの構成 | Eclipse の `.classpath`、Maven（`pom.xml`）、Gradle（`build.gradle`）において宣言的に記載されたソースフォルダと依存 jar を自動で見つけて解析します |
 | 依存 jar | **手元に取得済みであること。** このツールは解析対象プロジェクトのビルドツールを実行せず、ネットワークからも取得しません。`~/.m2/repository` などのローカルリポジトリにある jar を使うので、事前に一度ビルドする（`mvn dependency:go-offline` など）か、コンパイル時および実行時の依存 jar を lib フォルダに保存して設定ファイルで指定する必要があります。|
 
@@ -189,6 +194,9 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
   Spring の DI は注釈（`@Autowired`・`@Component` など）だけを読みます
 - **ビルド時に生成されるソース（Lombok・アノテーション処理）は、`source.folders` に入っていなければ読めません。**
   そのときはコンパイルエラーとして `warnings.txt` に出ます
+- **`Object` 型の受け手に対する `toString()` / `equals()` / `hashCode()` の呼び出しは、部分型に広げません。**
+  型階層の表に `Object` の部分型は載せないためです（`TypeHierarchy`）。自分のクラスで `equals()` を上書きしていても、
+  そうした呼び出しの影響先としては出ません
 
 ---
 
@@ -468,6 +476,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest)). SPDX-License-Identifier: Apache-2.0
 
 初回に取得する Eclipse JDT は EPL-2.0、同梱の `jbangw/` は MIT です（[jbangw/README.md](jbangw/README.md)）。
+Eclipse プラグインと VSCode プラグインの配布物には Eclipse JDT（EPL-2.0）を同梱しています。
 
 ---
 
@@ -517,6 +526,11 @@ Open the result in Excel and filter it to find the impact surface of the method 
      ```bat
      rem Windows
      .\java-call-hierarchy-exporter.cmd config\jche.properties
+     ```
+
+     ```bash
+     # Linux / macOS
+     ./java-call-hierarchy-exporter.sh config/jche.properties
      ```
 
    On the first run it asks before downloading JDK 25, Eclipse JDT (the analysis engine) and the rest (it shows what
@@ -650,7 +664,7 @@ If you want to follow callers inside your IDE, the same analysis is also availab
 |---|---|
 | OS | Windows, Linux |
 | What to install first | Nothing. The JDK 25 that runs the tool and Eclipse JDT (Eclipse's Java compiler), which does the analysis, are downloaded on the first run, after asking you (about 165MB over the network, about 500MB on disk). For machines that cannot reach the network, see [Other ways to use it](#other-ways-to-use-it) |
-| Sources it can analyze | Java sources (`.java`). The supported Java versions are those supported by Eclipse JDT, the analysis engine. The latest release, 3.46.0, supports Java 8 to 26 |
+| Sources it can analyze | Java sources (`.java`). The supported Java versions are those supported by Eclipse JDT, the analysis engine. The version this tool uses (3.46.0 in `//DEPS`) supports Java 8 to 26 |
 | Build setups | The source folders and dependency jars declared in Eclipse's `.classpath`, Maven (`pom.xml`) or Gradle (`build.gradle`) are found automatically and analyzed |
 | Dependency jars | **They must already be on your machine.** The tool does not run the build tool of the project it analyzes and does not download them. It uses the jars in a local repository such as `~/.m2/repository`, so either build the project once first (`mvn dependency:go-offline` or similar), or save the compile-time and run-time dependency jars in a `lib` folder and point the config at it |
 
@@ -672,6 +686,9 @@ not remove the call: it lists the candidates or says it could not follow the cal
   appear. For Spring DI, only the annotations (`@Autowired`, `@Component` and so on) are read
 - **Sources generated at build time (Lombok, annotation processing) cannot be read unless they are in `source.folders`.**
   They then show up as compile errors in `warnings.txt`
+- **Calls to `toString()` / `equals()` / `hashCode()` on a receiver typed `Object` are not expanded to subtypes.**
+  The type hierarchy does not list the subtypes of `Object` (`TypeHierarchy`), so an `equals()` you override in your
+  own class is not reported as affected by such calls
 
 
 ---
@@ -967,3 +984,4 @@ The full list of shapes that can and cannot be followed is in section 10 of
 Copyright 2026 Inoue Kazuhiro ([@instreest](https://github.com/instreest)). SPDX-License-Identifier: Apache-2.0
 
 Eclipse JDT, downloaded on the first run, is under EPL-2.0, and the bundled `jbangw/` is under MIT ([jbangw/README.md](jbangw/README.md)).
+The Eclipse plugin and VSCode plugin distributions bundle Eclipse JDT (EPL-2.0).
