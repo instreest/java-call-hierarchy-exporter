@@ -34,14 +34,16 @@ java-call-hierarchy-exporter.sh / .cmd            起動コマンド。JDK・JBa
           │   └ jche.config.ProjectLayout         ソースフォルダと依存 jar の確定。library.folders が空欄なら
           │                                       BuildFileClasspath が pom.xml / build.gradle を読んでローカルリポジトリから集める
           ├ jche.Exporter.analyze                 フェーズ1・2。Eclipse / VSCode の解析サーバー（jche.server.Server）もここを呼ぶ
+          │   ├ jche.WorkspaceProject              ワークスペースの他のプロジェクト（workspace.projects）。相手の設定で
+          │   │                                     フェーズ1 を走らせ、相手のキャッシュをフェーズ2 で名前で結合する（docs/workspace-callers-design.md）
           │   ├ [フェーズ1] jche.analysis.CacheUpdater      旧キャッシュを読みながら新キャッシュを書くストリーミングマージ。
           │   │               ├ StaleTypes / LibraryDiff    どのファイルを解析し直すか（変わったファイル・その型を使うファイル・jar の変化）
           │   │               ├ CallEdgeExtractor           JDT に一緒に渡すファイルの組（バッチ）を作り、createASTs を呼ぶ
           │   │               │   └ FactVisitor             AST を訪問して事実を集める（CallSiteRecorder・OriginTracker・
           │   │               │                             TypeContextTracker・FieldFactCollector・ImplicitCalls・…に分担）
           │   │               └ BlockWriter                 1 ファイル分の事実（jche.cache.FileAnalysis）を 1 ブロックとして書く
-          │   ├ [フェーズ2] jche.graph.CallGraphBuilder     キャッシュを 1 回スキャンして CallGraph・MethodTable・TypeHierarchy・
-          │   │                                             OverrideIndex・ValueStore・GuardTable を組む
+          │   ├ [フェーズ2] jche.graph.CallGraphBuilder     キャッシュ（相手のものも）を 1 回スキャンして CallGraph・MethodTable・
+          │   │                                             TypeHierarchy・OverrideIndex・ValueStore・GuardTable を組む
           │   │             jche.dataflow.DataflowBuilder   フェーズ2b。ファクトリの戻り値など経路に依らない値をグラフ全体から一括で確定
           │   │             jche.graph.CallResolver         呼び出しごとに受け手の型の候補を絞る段（BindKind → 段 0〜6）。
           │   │               ├ DataflowResolver            値の表（ValueStore）と経路の値（Slot）から具象型を追う

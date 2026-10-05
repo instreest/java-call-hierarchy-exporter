@@ -53,6 +53,7 @@
 | [eclipse-plugin-ui-design.md](eclipse-plugin-ui-design.md) | 呼び出し元階層ビューの画面設計（状態の見せ方・フィルタ・操作）。いまの画面との差は冒頭の追補を見る |
 | [eclipse-plugin-features.md](eclipse-plugin-features.md) | Eclipse プラグインの機能一覧（入口・実装・値打ち・費用）。何を残し何をやめるかを決めるための棚卸し |
 | [vscode-plugin-design.md](vscode-plugin-design.md) | VSCode プラグインの設計案（未実装）。既存のサーバープロトコルの再利用、設定の自動生成、カーソル位置からメソッドを引く `AT` の追加 |
+| [workspace-callers-design.md](workspace-callers-design.md) | ワークスペースの他のプロジェクトからの被参照（`workspace.projects` / `workspace.scope`。段階 1 を実装済み）。jar の被参照（1 段）と解析の単位（`project.root` 1 つ）の現状、コードを変えずにできる回避策（共通の親フォルダを `project.root` にする）、相手を相手自身の設定で解析したキャッシュを名前で結合して呼び出し階層を相手の起点まで伸ばす設計（なぜ結合できるか・錠・パスの形・`callers` の絞り込み）、サーバーとプラグイン、未実装の段階（クラスフォルダの被参照・プラグインの自動生成）、迷ったこと |
 | [eclipse-pleiades-versions.md](eclipse-pleiades-versions.md) | Eclipse / JDT Core / Java / Pleiades の版の対応表と、プラグインの動作条件 |
 | [branch-pruning.md](branch-pruning.md) | 条件分岐による打ち切り（`branch.pruning.enabled`）。判定できる条件、打ち切りで階層から消えたメソッドを `methods.csv` で探す方法 |
 | [call-rules-unification-design.md](call-rules-unification-design.md) | 解決条件の指定をライブラリ呼び出し規則に一本化する設計（実装済み）。具象クラスの対応をライブラリ呼び出し規則の 1 行で書く「種類 C」、証拠をキャッシュの値グラフから引けること、旧来の `resolver.*` / `plugin.*` との互換 |
@@ -84,7 +85,7 @@
 | [inherited-impl-candidates-qa.md](inherited-impl-candidates-qa.md) | #131 | 段2（`LOCAL_NEW`）と段3（拡張）が、親から継承した実装を候補にできていなかった件。`implementationIn` への統一と、採用できなかった候補の警告 |
 | [lambda-collapse-qa.md](lambda-collapse-qa.md) | — | ラムダの合成メソッド（`lambda$…`）を CSV に出さず、本体の呼び出しを実行するメソッドの直下に出す判断。Eclipse の呼び出し階層との違い、段の差し替えの作り、同じ本体へ降りる辺のまとめ方、畳めない形、`entry.packages` で起点にしない理由、却下した案 |
 | [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの規則に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
-| [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `root` の左に足す。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
+| [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `call-hierarchy`（旧 `root`）の左に足す。見出し `root` を `call-hierarchy` にまとめた経緯（Q9）も。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
@@ -113,6 +114,7 @@
 | [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため）、`var` の使い方の誤りを構文エラーに数えない理由（switch 式の検査（網羅していない・default が無い・switch 式の外への break など）も同じ。形式 v36。cache-unification-qa.md の Q63） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |
+| [ci-speed-qa.md](ci-speed-qa.md) | — | CI（`smoke.yml`）の所要時間を 12 分から 3 分前後に縮める。`test/incremental` を節に分けて `--shard K/N` で 4 ジョブに並列化、lint でコンパイルしたクラスをほかの検査に渡して再コンパイルを省く、回帰テストを `java -cp` で動かす。AppCDS を採らなかった理由 |
 | [github-actions-qa.md](github-actions-qa.md) | #48 | 複合アクションとしての設計。入力から設定ファイルを生成する判断。依存 jar の警告を英語・日本語どちらのログからも拾う（Q31） |
 | [actions-analysis-cache-qa.md](actions-analysis-cache-qa.md) | #79 | GitHub Actions で解析キャッシュを実行間で引き継ぐ |
 | [jpms-modularity-qa.md](jpms-modularity-qa.md) | — | JPMS でモジュール化するかの検討（結論: しない） |

@@ -109,9 +109,21 @@ import jche.util.Warnings;
  */
 public final class CallGraphBuilder {
 
+    /**
+     * 読むキャッシュ 1 つ。{@code prefix} はそのキャッシュのブロックのパス（相手の project.root からの相対）に前置する、
+     * この実行の project.root からの相対パス（{@code ../app-batch/}。この実行自身のキャッシュは空）。
+     * ワークスペースの他のプロジェクトのキャッシュを名前で結合する（jche.WorkspaceProject）
+     */
+    public record Source(Path cacheFile, String prefix) {
+    }
+
     private final CallGraph graph = new CallGraph();
     private final MethodTable methods = graph.methods;
+    /** 読むキャッシュ（先頭がこの実行自身のもの。一時ファイルはその置き場所に作る） */
+    private final List<Source> sources;
     private final Path cacheFile;
+    /** いま読んでいるキャッシュ（警告の文言用） */
+    private Path currentCacheFile;
     /** 値（N・G・R・J 行と呼び出し箇所の値）を読むか（{@code dataflow.enabled}） */
     private final boolean readValues;
     /** 型解決に失敗した呼び出しの一覧に出す U 行の置き場。拾わないなら null（解析サーバー） */
@@ -136,8 +148,10 @@ public final class CallGraphBuilder {
     /** ブロックの外を指す番号に出会ったことを警告したか（1度だけ出す） */
     private boolean warnedAboutReference;
 
-    private CallGraphBuilder(Path cacheFile, boolean readValues, UnresolvedCalls unresolved) {
-        this.cacheFile = cacheFile;
+    private CallGraphBuilder(List<Source> sources, boolean readValues, UnresolvedCalls unresolved) {
+        this.sources = sources;
+        this.cacheFile = sources.get(0).cacheFile();
+        this.currentCacheFile = this.cacheFile;
         this.readValues = readValues;
         this.unresolved = unresolved;
     }
@@ -163,10 +177,32 @@ public final class CallGraphBuilder {
                                  List<String> sourceFolderOrder, SpringBeans beans,
                                  UnresolvedCalls unresolved)
             throws IOException {
-        CallGraphBuilder b = new CallGraphBuilder(cacheFile, readValues, unresolved);
+        return build(List.of(new Source(cacheFile, "")), readValues, sourceFolderOrder, beans, unresolved);
+    }
+
+    /**
+     * 複数のキャッシュ（この実行自身と、ワークスペースの他のプロジェクトのもの）を順に読んで 1 つのグラフに組む。
+     * メソッドと型は名前で結合する（記号表の 4 列・型の完全修飾名）。ブロックの中だけで通じる番号（記号表・値グラフ・
+     * 条件の表）はブロックごとに読み切るので、キャッシュをまたいで突き合わせるものは無い。
+     *
+     * @param sources           読むキャッシュ。先頭がこの実行自身のもの（{@code prefix} は空）。以降は結合する相手
+     *                          （ブロックのパスに {@code prefix} を前置する）
+     * @param sourceFolderOrder 起点の並び替えに使うソースフォルダの順（この実行の project.root からの相対パス。
+     *                          相手のフォルダは {@code prefix} 付き）
+     */
+    public static CallGraph build(List<Source> sources, boolean readValues,
+                                 List<String> sourceFolderOrder, SpringBeans beans,
+                                 UnresolvedCalls unresolved)
+            throws IOException {
+        CallGraphBuilder b = new CallGraphBuilder(sources, readValues, unresolved);
         b.graph.sourceFolderOrder = sourceFolderOrder;
+        List<String> prefixes = new ArrayList<>();
+        for (int i = 1; i < sources.size(); i++) {
+            prefixes.add(sources.get(i).prefix());
+        }
+        b.graph.workspacePrefixes = List.copyOf(prefixes);
         b.graph.beans = beans;
-        try (EdgeSpill spill = new EdgeSpill(cacheFile)) {
+        try (EdgeSpill spill = new EdgeSpill(b.cacheFile)) {
             b.scan(spill);
             RunControl.checkCancelled();
             // 値の表の構築にだけ使う索引とブロックの手元は、エッジ配列を確保する前に捨てる
@@ -184,10 +220,44 @@ public final class CallGraphBuilder {
 
     private void scan(EdgeSpill spill) throws IOException {
         String label = Messages.get("graph.progress.build");
-        long size = Files.size(cacheFile);
+        long total = 0;
+        for (Source source : sources) {
+            total += Files.size(source.cacheFile());
+        }
         // 進捗はブロックの切れ目で、読んだバイト数がおよそ 2% 進むごとに出す（解析サーバーは通知を 1 行ずつ送るため）
-        long step = Math.max(size / 50, 1L << 16);
-        long nextReport = 0;
+        long step = Math.max(total / 50, 1L << 16);
+        long base = 0;
+        for (Source source : sources) {
+            scanOne(source, spill, label, base, total, step);
+            base += Files.size(source.cacheFile());
+        }
+        RunControl.progress(label, total, total);
+        typeFiles.clear();
+        warnDuplicateTypes();
+        spill.finishWriting();
+        if (unresolved != null) {
+            unresolved.finishWriting();
+        }
+        graph.hierarchy.sortForDeterminism();
+        Log.info(Messages.format("graph.collected", graph.hierarchy.size(), methods.size(), edgeCount));
+        if (edgeCount > Integer.MAX_VALUE) {
+            throw new IOException(Messages.format("graph.tooManyEdges", edgeCount));
+        }
+    }
+
+    /**
+     * キャッシュ 1 つを読む。ブロックのパスには {@link Source#prefix} を前置する（相手のプロジェクトのファイルを、
+     * この実行の project.root からの相対パスで持つ）
+     *
+     * @param base  このキャッシュより前に読んだバイト数（進捗の起点）
+     * @param total 読むキャッシュの合計のバイト数
+     */
+    private void scanOne(Source source, EdgeSpill spill, String label, long base, long total, long step)
+            throws IOException {
+        Path cacheFile = source.cacheFile();
+        String prefix = source.prefix();
+        currentCacheFile = cacheFile;
+        long nextReport = base;
         try (CacheReader in = CacheReader.open(cacheFile)) {
             // フェーズ1 が書き終えたキャッシュか（形式の版・最終行の Z 行とブロック数）。書きかけ・別の形式のものを
             // 読んで組んだグラフは呼び出しが欠けているので、組まずに止める（下の checkComplete）
@@ -211,15 +281,15 @@ public final class CallGraphBuilder {
                         blocks++;
                         // 中止の受け付けと進捗はブロックの切れ目で（途中で抜けてもキャッシュは読むだけなので壊れない）
                         RunControl.checkCancelled();
-                        if (in.lineStart() >= nextReport) {
-                            RunControl.progress(label, in.lineStart(), size);
-                            nextReport = in.lineStart() + step;
+                        if (base + in.lineStart() >= nextReport) {
+                            RunControl.progress(label, base + in.lineStart(), total);
+                            nextReport = base + in.lineStart() + step;
                         }
                         // ファイル単位で完結する判定（フィールド注入）を、読み終えた前のブロックについて確定する。
                         // 代入（J行）はブロックの後ろにあるので、宣言（V行・D行）が揃ったこの時点で渡す
                         applyPendingAssigns();
                         flushFields();
-                        currentFile = in.filePath();
+                        currentFile = prefix + in.filePath();
                         symbols.clear();
                         nodes.clear();
                         guards.clear();
@@ -322,24 +392,12 @@ public final class CallGraphBuilder {
             }
             applyPendingAssigns();
             flushFields();
-            RunControl.progress(label, size, size);
-            typeFiles.clear();
-            warnDuplicateTypes();
             if (!headerOk || afterTrailer || trailer != blocks) {
                 // ふつうは起きない（フェーズ1 が書き終えたものを、同じキャッシュのフォルダの錠を持ったまま読む）。
                 // 起きたら、呼び出しの欠けたグラフで CSV を「成功」として書かないよう、ここで止める
                 throw new IOException(Messages.format("graph.cacheIncomplete", cacheFile, blocks,
                         (trailer < 0) ? "-" : String.valueOf(trailer)));
             }
-        }
-        spill.finishWriting();
-        if (unresolved != null) {
-            unresolved.finishWriting();
-        }
-        graph.hierarchy.sortForDeterminism();
-        Log.info(Messages.format("graph.collected", graph.hierarchy.size(), methods.size(), edgeCount));
-        if (edgeCount > Integer.MAX_VALUE) {
-            throw new IOException(Messages.format("graph.tooManyEdges", edgeCount));
         }
     }
 
@@ -525,9 +583,9 @@ public final class CallGraphBuilder {
     private void warnBadReference() {
         if (!warnedAboutReference) {
             warnedAboutReference = true;
-            Path dir = cacheFile.toAbsolutePath().getParent();
-            Log.warn(Messages.format("cache.badReference", cacheFile.getFileName(),
-                    (dir == null) ? cacheFile : dir));
+            Path dir = currentCacheFile.toAbsolutePath().getParent();
+            Log.warn(Messages.format("cache.badReference", currentCacheFile.getFileName(),
+                    (dir == null) ? currentCacheFile : dir));
         }
     }
 

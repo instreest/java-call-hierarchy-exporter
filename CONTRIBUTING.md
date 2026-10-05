@@ -102,6 +102,10 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   古い JDK では通ってしまう検査がある（`dangling-doc-comments` は JDK 22 で入った）
 - ツールを動かす検査スクリプトは `JCHE_LANG=en` を輸出して言語を固定する。日本語への切り替えそのものは `test/nls/run.sh` が見る
 - テストのシェルは UTF-8 ロケールで動かす（`LANG=C.UTF-8`）
+- 本体を動かす検査は単体で回すと本体を自分でコンパイルするが、CI はコンパイルを 1 回にして、できたクラスと JDT の classpath を
+  環境変数（`JCHE_CP` / `JCHE_CLASSES` / `JCHE_JAVA` ほか）で渡す。検査を足すときも同じ口を持たせる。
+  `test/incremental` は節に分かれていて `--shard K/N` で分けて回せる（CI は 4 ジョブで並列）。節をまたいで使う関数は囲みの外に置く
+  （`test/README.md` の「検査の決まり」、`docs/ci-speed-qa.md`）
 - 出力 CSV の期待値（`expected*/`）を更新するときは、差分を確認したうえで最新の `output/*/` からコピーする。
   理由なく期待値を書き換えて通さない
 - テストをスキップ・無効化して通すことはしない
@@ -162,9 +166,10 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   `**` は区切り文字をまたぐが 0 階層は含まないため、`**/*.java` だけでは同じフォルダ直下のファイルに当たらない
   （`cannot find symbol` になる）。直下ぶんの `*.java` を必ず併記する（`docs/entrypoint-package-qa.md`）
 - 出力の行順は環境に依存しない決定的な並びを保つ（`docs/deterministic-row-order-qa.md`）。ソート順を変えると期待値が全部変わる
-- `call-hierarchy.csv` に固定列を足すときは `root` の左に入れる。最終列の `call-hierarchy` は可変長なので、
-  後ろに足すと階層が途中で切れる。順は `caller,callee,resolved-by,depth,root,call-hierarchy` で、
-  `resolved-by` は注記と同じ判定から作り、`depth` は「`call-hierarchy` 列のノード数」と一致させる
+- `call-hierarchy.csv` に固定列を足すときは `call-hierarchy` の左に入れる。最終列の `call-hierarchy` は可変長なので、
+  後ろに足すと階層が途中で切れる。ヘッダーは `caller,callee,resolved-by,depth,call-hierarchy` で、`call-hierarchy` の
+  見出しは先頭の 1 列（起点）にだけ付き、2 ノード目以降の列には付かない。
+  `resolved-by` は注記と同じ判定から作り、`depth` は「`call-hierarchy` 列のノード数（先頭の起点を除く）」と一致させる
   （`docs/call-hierarchy-columns-qa.md`）
 - キャッシュの形式や鍵を変えるときは、古いキャッシュを安全に捨てる経路を用意する（`docs/cache-dependency-jars-qa.md`）
 - **キャッシュは 1 系統（1 ファイル `analysis-cache.tsv`）で、ファイルを分けない。** ソースファイル 1 つにつき

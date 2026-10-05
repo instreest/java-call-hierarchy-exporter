@@ -113,6 +113,11 @@ public final class CallGraph {
      * 例: "src/main/java"）。main/test 等のソースフォルダが混在して出力されるのを避けるために使う。
      */
     List<String> sourceFolderOrder = List.of();
+    /**
+     * ワークスペースの他のプロジェクトのファイルのパスの前置き（{@code ../app-batch/}。jche.WorkspaceProject の prefix）。
+     * 並びは設定の {@code workspace.projects} の順で、i 番目はプロジェクト番号 i+1（0 はこの実行の project.root）
+     */
+    List<String> workspacePrefixes = List.of();
 
     CallGraph() {
         // ラムダ・メソッド参照が実装し直しているメソッド（M 行）は、部分型の宣言を見るだけでは「別の本体へ振り分けられうる」
@@ -398,6 +403,32 @@ public final class CallGraph {
     public boolean hasFunctionalImpl(int calleeId) {
         return !functionalImpls.isEmpty()
                 && functionalImpls.contains(methods.typeFqn(calleeId) + "#" + methods.signature(calleeId));
+    }
+
+    /**
+     * そのメソッドを宣言したプロジェクトの番号。0 はこの実行の project.root、1 以降は設定の {@code workspace.projects} の
+     * 順（{@link #workspaceCount} まで）。ソースの無いメソッド（jar の中）は -1
+     */
+    public int projectOf(int methodId) {
+        return projectIndexOf(methods.declFile(methodId));
+    }
+
+    /** ファイルのパス（{@code jche.config.ProjectLayout#relativeOf} の綴り）が属するプロジェクトの番号。null なら -1 */
+    public int projectIndexOf(String declFile) {
+        if (declFile == null) {
+            return -1;
+        }
+        for (int i = 0; i < workspacePrefixes.size(); i++) {
+            if (declFile.startsWith(workspacePrefixes.get(i))) {
+                return i + 1;
+            }
+        }
+        return 0;
+    }
+
+    /** ワークスペースの他のプロジェクトの数 */
+    public int workspaceCount() {
+        return workspacePrefixes.size();
     }
 
     /**

@@ -1,4 +1,4 @@
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at st.Chain.run(Chain.java:30),Chain.third,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.third
 at st.Chain.run(Chain.java:29),Chain.second,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.second
 at st.Chain.run(Chain.java:28),Chain.first,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.first

@@ -73,6 +73,8 @@ public final class CallResolver {
     private final HashSet<String> warnedCandidates = new HashSet<>();
     /** 解決後の入次数。宣言型ではなく解決先に対して数える */
     private int[] inDegree;
+    /** ワークスペースの他のプロジェクトのメソッドを CSV に出す範囲（絞らなければ {@link WorkspaceScope#ALL}） */
+    private WorkspaceScope workspaceScope = WorkspaceScope.ALL;
 
     public CallResolver(CallGraph graph, DataflowResolver dataflow,
                         List<TypeCandidateProvider> providers) {
@@ -95,6 +97,18 @@ public final class CallResolver {
     /** フレームワークが起点として呼ぶメソッドのライブラリ呼び出し規則 */
     public FrameworkEntries frameworkEntries() {
         return frameworkEntries;
+    }
+
+    /**
+     * ワークスペースの他のプロジェクトのメソッドを CSV に出す範囲。起点の選択・呼び出し階層の探索・methods.csv が見る。
+     * 解決（候補・データフロー・DI）には使わない（絞るのは出す行だけ。docs/workspace-callers-design.md の 3.4 節）
+     */
+    public WorkspaceScope workspaceScope() {
+        return workspaceScope;
+    }
+
+    public void setWorkspaceScope(WorkspaceScope scope) {
+        this.workspaceScope = (scope == null) ? WorkspaceScope.ALL : scope;
     }
 
     /**

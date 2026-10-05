@@ -44,6 +44,14 @@
 #                          （dataflow.enabled=false。expected-nodataflow/）の順に実行する。以前の読み手は値を
 #                          その文字の手前で切って読み違えていた。expected/ は値を切り詰めずに読んだ正しい結果
 #                          （values/jche.properties の冒頭の説明）
+#   workspace            … ワークスペースの他のプロジェクト（test/workspace-demo。test/demo を相手の jar として解決する
+#                          .classpath だけのプロジェクト）のキャッシュを結合する（workspace.projects）。
+#                          フォルダの形（jche.properties。workspace.scope=callers。expected/）→ 同じ設定でキャッシュを
+#                          再利用（相手のキャッシュも）→ workspace.scope=all（config-all.properties。expected-all/。
+#                          相手の自分に届かない階層も出る）→ 相手を設定ファイルの形で指す（config-file.properties。
+#                          フォルダの形と同じ出力）の順に実行する。相手の起点（teamw.BatchMain.main）から test/demo の
+#                          メソッドまで階層が伸びること、相手にある実装（teamw.RemoteDao）が test/demo の CHA の候補に
+#                          入ること、相手のファイルの file 列が ../workspace-demo/ で始まることを期待値が持つ
 #   stacktrace           … call-hierarchy.csv の caller 列（Java のスタックトレース形式）が、JVM のスタックトレースと同じ
 #                          クラス（バイナリ名）・メソッド・ファイル・行を指すこと（stacktrace/project）。複数行にまたがる連鎖の各呼び出しの行、
 #                          別のファイルのクラスが実行するラムダの本体の行（ラムダを書いたメソッドとファイルを指す）、
@@ -64,7 +72,7 @@ cd "$(dirname "$0")"
 export JCHE_LANG=en
 ROOT=$(cd ../.. && pwd)
 JCHE_CMD=${JCHE_CMD:-"bash $ROOT/jbangw/jbang run $ROOT/src/jche/CallHierarchyExporter.java"}
-CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values stacktrace multi"}
+CASES=${CASES:-"whole entry novalues jarchange maven mavenmulti gradle plugin cacheblocks values workspace stacktrace multi"}
 fail=0
 
 latest_output() {   # $1=case  -> 最新の出力フォルダ（フォルダ名の先頭が日時なので、名前順の末尾）
@@ -646,9 +654,44 @@ plugin_case() {
     compare plugin expected-before "8回目: 採用できない規則は CHA に戻す（拡張なしと同じ出力）"
 }
 
+# 集計行（ソース解析: 再利用=N …）がログに複数ある（相手のプロジェクトの分とこの実行自身の分）とき、どれも再利用が 0 でないこと
+expect_all_reused() {   # $1=case  $2=何回目  $3=ラベル
+    local lines zero
+    lines=$(LC_ALL=C grep -a -c -E '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' "$1/run-$2.log")
+    zero=$(LC_ALL=C grep -a -E '=[0-9]+.*=[0-9]+.*=[0-9]+[[:space:]]*$' "$1/run-$2.log" | LC_ALL=C grep -c -E '^[^=]*=0([^0-9]|$)')
+    if [ "$lines" -ge 2 ] && [ "$zero" = 0 ]; then
+        echo "  OK   $1 ログ ($3)"
+    else
+        echo "  DIFF $1 ログ: 全プロジェクトでキャッシュが再利用されていません ($3): 集計行 $lines 本、再利用 0 が $zero 本"; fail=1
+    fi
+}
+
+workspace_case() {
+    echo "== workspace =="
+    rm -rf workspace/.cache workspace/output workspace/run-*.log ../workspace-demo/config/.cache
+    run workspace jche.properties 1 "1回目: フォルダの形" || return
+    expect_log_contains workspace 1 "workspace.scope=callers" "1回目: 相手のプロジェクトを読んだ"
+    expect_log_contains workspace 1 "do not reach the project" "1回目: 自分に届かない相手のメソッドを起点にしない"
+    expect_csv_contains workspace "BatchMain.main,BatchJob.run,AbstractDao.findById" \
+        "1回目: 相手の起点から test/demo のメソッドまで階層が伸びる"
+    expect_csv_contains workspace "Main.run,RemoteDao.findById" "1回目: 相手にある実装が CHA の候補に入る"
+    compare workspace expected "1回目: フォルダの形（workspace.scope=callers）"
+    run workspace jche.properties 2 "2回目: キャッシュ再利用" || return
+    expect_all_reused workspace 2 "2回目: 相手のキャッシュもこの実行自身のキャッシュも再利用"
+    compare workspace expected "2回目: キャッシュ再利用"
+    run workspace config-all.properties 3 "3回目: workspace.scope=all" || return
+    expect_csv_contains workspace "Unrelated.standalone" "3回目: 相手の自分に届かない階層も出る"
+    compare workspace expected-all "3回目: workspace.scope=all"
+    run workspace config-file.properties 4 "4回目: 設定ファイルの形" || return
+    compare workspace expected "4回目: 相手を設定ファイルの形で指しても同じ"
+}
+
 for c in $CASES; do
     if [ "$c" = multi ]; then
         multi_case; continue
+    fi
+    if [ "$c" = workspace ]; then
+        workspace_case; continue
     fi
     if [ "$c" = plugin ]; then
         plugin_case; continue

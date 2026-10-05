@@ -373,7 +373,7 @@ else
     path_in_csv() {
         awk -v p=",$1" 'index($0 ",", p ",") > 0 { found = 1 } END { exit !found }' "$ISCSV"
     }
-    has_path() {   # $1=root 列から続く呼び出し階層（カンマ区切り）  $2=説明
+    has_path() {   # $1=call-hierarchy 列（先頭が起点）の呼び出し階層（カンマ区切り）  $2=説明
         if path_in_csv "$1"; then ok "$2"; else ng "$2（$1 が call-hierarchy.csv に無い）"; fi
     }
     no_path() {
