@@ -49,10 +49,19 @@ public final class Csv {
     /**
      * CSV/TSVエスケープ。区切り文字がカンマ・タブのどちらであっても安全なように、
      * カンマ・タブ・ダブルクォート・改行のいずれかを含む場合はダブルクォートで囲む。
+     *
+     * <p>先頭が {@code =} {@code +} {@code -} {@code @} のセルは、Excel が数式として評価しうる
+     * （いわゆる CSV インジェクション。解析対象のソースに書かれた条件式がそのまま出力に載るので、
+     * 利用者が開く前に中身を選別できない）。そこで先頭に {@code '} を 1 つ付けて引用符で囲み、
+     * 文字列として表示させる。識別子はこれらの文字で始まらないので、影響するのは
+     * {@code call-conditions.csv} の条件・期待値の列と、未解決の呼び出しの式の列だけ。
      */
     public static String esc(String s) {
         if (s == null) {
             return "";
+        }
+        if (startsWithFormulaChar(s)) {
+            return "\"'" + s.replace("\"", "\"\"") + "\"";
         }
         if (s.indexOf(',') >= 0 || s.indexOf('\t') >= 0
                 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0
@@ -60,5 +69,14 @@ public final class Csv {
             return "\"" + s.replace("\"", "\"\"") + "\"";
         }
         return s;
+    }
+
+    /** 先頭の文字を Excel が数式の始まりとみなすか（{@code = + - @}） */
+    private static boolean startsWithFormulaChar(String s) {
+        if (s.isEmpty()) {
+            return false;
+        }
+        char c = s.charAt(0);
+        return c == '=' || c == '+' || c == '-' || c == '@';
     }
 }
