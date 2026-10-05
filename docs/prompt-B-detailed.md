@@ -134,7 +134,7 @@ jp.co.xxx.action.UserAction#execute メソッド指定
 ### 4.1 `call-hierarchy.csv` — 呼び出し階層
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -144,9 +144,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `caller` | 呼び出し元。`at バイナリ名.メソッド名(ファイル名:行)` の**Javaスタックトレース形式**。行番号は**呼び出し箇所**の行 | Eclipseの「Javaスタック・トレース・コンソール」に貼ると `(ファイル:行)` がリンクになりソースへ飛べる。内部クラスは `Outer$Inner`、コンストラクタは `<init>` で書く（コンソールが解釈する形式に合わせる） |
 | `callee` | 呼び出し先。**クラス単純名.メソッド名**（引数は付けない）。内部クラスは `Outer.Inner`、コンストラクタはクラス名 | Excelのフィルタで呼び出し先を選ぶための短い表記。引数を付けないのでオーバーロードは同じ表記にまとまる。行番号は混ぜない（フィルタの選択肢が散らばる） |
 | `resolved-by` | 解決方法。`接頭辞 + 段のラベル` で、**全ての行に必ず入れる**（下表） | 「どう特定したか・なぜ絞れなかったか」をフィルタできるようにする。注記は可変長列の末尾にあるためフィルタに使えない。`caller` → `callee` の1本の辺の性質なので `callee` の隣に置く |
-| `depth` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノード数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる。`root` / `call-hierarchy` と同じ「木のどこにあるか」の列なので3つ並べる |
-| `root` | 起点メソッド。`クラス単純名.メソッド名` | フィルタ用の短い表記 |
-| `call-hierarchy` | 起点の次のノードから現ノードまでを**1ノード1列**で展開（可変長・必ず最終列） | 階層をそのまま読む。ヘッダーとデータ行の列数は一致しなくてよい |
+| `depth` | 起点からの深さ。起点が `0`、その呼び出し先が `1`。`call-hierarchy` に並ぶノードのうち先頭の起点を除いた数と必ず一致させる | 深さで絞り込める。可変長列がどこで終わるか（注記がどこから始まるか）も列の数から分かる。`call-hierarchy` と同じ「木のどこにあるか」の列なので並べる |
+| `call-hierarchy` | 起点から現ノードまでを**1ノード1列**で展開（可変長・必ず最終列）。先頭の列が起点メソッド（`クラス単純名.メソッド名`）で、起点を別の見出しの列に分けない | 階層をそのまま読む。起点の列はフィルタ用の短い表記。見出しは先頭の 1 列にだけ付き、ヘッダーとデータ行の列数は一致しなくてよい |
 
 - 呼び出し1件につき1行。起点自身の行は出さない
 - 引数型の略名（`methods.csv` の `method` 列で使う）は `java.lang.String`→`String`、
@@ -204,13 +203,13 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
 `return`、引数なら呼び出し元、フィールドなら代入箇所とDI設定）。注記は失敗の報告ではなく
 次の調査手順として書く。
 
-さらに、同じファイルに性質の違う2種類の行を追記する。`root` 列で区別できる。
+さらに、同じファイルに性質の違う2種類の行を追記する。`call-hierarchy` の先頭の列（起点の列）で区別できる。
 
 - **型解決に失敗した呼び出し**: `caller` はスタックトレース形式、`callee` はソースに
-  書かれたメソッド名、`root` = `(unresolved)`、階層列にメソッド名、末尾に理由
+  書かれたメソッド名、`call-hierarchy` の先頭 = `(unresolved)`、階層列にメソッド名、末尾に理由
   `type resolution failed (missing classpath / dynamic call / etc.)`。**静かに消さないための行**
 - **外部jarからの被参照**（`external.library.folders` 指定時）: `caller` = 参照している側の
-  クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`root` = jar名（FatJar の中の jar なら
+  クラス名、`callee` = 自分のメソッド（callee列と同じ表記）、`call-hierarchy` の先頭 = jar名（FatJar の中の jar なら
   `外側.jar!/BOOT-INF/lib/中.jar` のように jar URL と同じ `!/` 区切りで場所まで）、階層列に短縮表記、
   末尾に `external-ref:EXACT`（そのクラスで宣言されているメソッド。合成した暗黙のデフォルトコンストラクタを
   含む）/ `external-ref:INHERITED`（親から継承したメソッド。**JVM がその参照を解決する宣言**（親クラスの連鎖を先に、
@@ -717,7 +716,7 @@ D行の `delegating` も落として `FieldFacts` の安全弁を無効にして
 |---|---|---|
 | 内部ID・型階層の照合 | ソース上の正規名 | `jp.co.xxx.Outer.Inner` |
 | `callee` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
-| `root` / `call-hierarchy` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
+| `call-hierarchy` 列 | 単純名.メソッド名 | `Outer.Inner.method` |
 | `caller` 列 | **バイナリ名** | `at jp.co.xxx.Outer$Inner.method(Foo.java:12)` |
 
 - メソッドのキーは `typeFqn#name(消去済み引数型FQN,...)` の1本。ID化・CHA・出所・被参照の
@@ -2295,7 +2294,7 @@ jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring
 | `call-hierarchy.csv` に `<init>` が現れる列 | `caller` 列だけ |
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
 
-以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `root` 以降を書いたもので、
+以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `call-hierarchy` 以降を書いたもので、
 間の `resolved-by` / `depth` の 2 列（4.1）は紙面の都合で省いている。
 ただし 1 件に確定した行だけは、どの段で決まったかが期待値そのものなので、行末に
 `[RESOLVED:{ラベル}]` を付けて示す（**実際の出力ではこれは注記ではなく `resolved-by` 列に入る**。

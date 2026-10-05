@@ -66,8 +66,8 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
 
 1. `call-hierarchy.csv` を Excel で開き、フィルタを付けます（データ → フィルター）
 2. **`callee` 列**で、改修するメソッドを `クラス名.メソッド名` で選びます（引数は付きません。オーバーロードは同じ名前になります）
-3. 残った行の **`root` 列**が、そのメソッドに届く入口（画面のアクション・バッチの `main`・API のハンドラなど）です。
-   **`caller` 列**が直接の呼び出し箇所（ファイルと行）、**`call-hierarchy` 列**が入口からそこまでの経路です
+3. 残った行の **`call-hierarchy` 列の先頭**（見出しのある列）が、そのメソッドに届く入口（画面のアクション・バッチの `main`・API のハンドラなど）です。
+   **`caller` 列**が直接の呼び出し箇所（ファイルと行）、**`call-hierarchy` 列**の先頭から右に並ぶのが入口からそこまでの経路です
 4. 改修するメソッドが `callee` に出ない、または入口が思ったより少ないときは、`methods.csv` の同じメソッドの `inHierarchy` を見ます。
    `0` なら出力に出ていないだけで、**影響が無いとは限りません**。理由は `absentCause` 列にあります（[methods.csv](#methodscsv--ソース上の全メソッドとその呼び出し状況)）
 
@@ -78,7 +78,7 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
 ### 1 行の読み方
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -89,8 +89,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `callee` | `OrderDaoImpl.selectById` | 呼ばれるメソッド |
 | `resolved-by` | `RESOLVED:SPRING_DI` | 呼び出し先をどう決めたか。`RESOLVED:` なら 1 つに決まった、`UNEXPANDED:` なら決めきれず候補を並べた |
 | `depth` | `2` | 入口から何段目の呼び出しか |
-| `root` | `OrderAction.execute` | 入口のメソッド |
-| `call-hierarchy` | `OrderService.findOrder,OrderDaoImpl.selectById` | 入口の次から `callee` までの経路（1 段が 1 列）。最後の列に補足（注記）が付くことがあります |
+| `call-hierarchy` | `OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById` | 入口から `callee` までの経路（1 段が 1 列）。先頭の列が入口のメソッドです。最後の列に補足（注記）が付くことがあります |
 
 <!-- sec:checking-the-calls-it-could-not-follow -->
 ### 辿り切れなかった呼び出しを確かめる
@@ -124,7 +123,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | 用語 | 意味 |
 |---|---|
-| 起点（`root`） | 呼び出しを辿り始めるメソッド。設定の `entry.packages` で指定します。空欄なら、ソースの中で呼び出し元の無いメソッドと、フレームワークが呼ぶと分かっているメソッド（`main`・`@GetMapping`・Servlet の `doGet` など）がすべて起点になります（全体モード） |
+| 起点（`call-hierarchy` 列の先頭） | 呼び出しを辿り始めるメソッド。設定の `entry.packages` で指定します。空欄なら、ソースの中で呼び出し元の無いメソッドと、フレームワークが呼ぶと分かっているメソッド（`main`・`@GetMapping`・Servlet の `doGet` など）がすべて起点になります（全体モード） |
 | 具象クラスの解決 | インターフェースや親クラスの型に対する呼び出しで、実際に動く実装クラスを決めること（[具象クラスの解決](#具象クラスの解決)） |
 | ライブラリ呼び出し規則 | ソースの外（JDK・フレームワーク）の振る舞いや、実装クラスの対応を書いた表（[docs/library-call-rules.md](docs/library-call-rules.md)） |
 | 注記 | `call-hierarchy` 列の最後に付く補足。大文字のタグで始まります（[注記](#注記)） |
@@ -235,9 +234,8 @@ config/
 | `caller` | 呼び出し元。Java のスタックトレースと同じ形式。**呼び出し箇所**の行を指す |
 | `callee` | 呼び出し先。**クラス名.メソッド名**（引数は付けない）。Excel のフィルタに使える |
 | `resolved-by` | 呼び出し先をどう特定したか、絞れなかった場合は候補をどう集めたか（下表）。**どの行にも必ず入る** |
-| `depth` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノード数と必ず一致する |
-| `root` | 起点メソッド。クラス名.メソッド名の形式で Excel のフィルタに使える |
-| `call-hierarchy` | 起点からの呼び出し先を 1 ノード 1 列で展開（**可変長**）。注記が付く場合は最後の要素になる（[注記](#注記)） |
+| `depth` | 起点からの階層の深さ（起点が `0`、その呼び出し先が `1`）。`call-hierarchy` に並ぶノードのうち、先頭の起点を除いた数と必ず一致する |
+| `call-hierarchy` | 起点からの経路を 1 ノード 1 列で展開（**可変長**）。見出しは先頭の 1 列だけに付く。先頭の列が起点メソッドで、クラス名.メソッド名の形式なので Excel のフィルタに使える。注記が付く場合は最後の要素になる（[注記](#注記)） |
 
 `resolved-by` は「接頭辞（確度）＋ 解決の段のラベル（手法）」の形です。
 
@@ -245,7 +243,7 @@ config/
 |---|---|
 | `RESOLVED:` | 呼び出し先を 1 件に確定した。後半が[どの決め方か](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
 | `UNEXPANDED:` | 1 件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
-| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`root` 列は `(unresolved)` |
+| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`call-hierarchy` の先頭の列は `(unresolved)` |
 | `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
 後半は解決の段のラベルそのものですが、1 つだけ例外があります。ラムダ式・メソッド参照が実装している
@@ -378,11 +376,11 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 自分のコードを呼んでいるほかのリポジトリの jar を設定ファイルの `external.library.folders` に指定すると、
 その jar からの参照が `call-hierarchy.csv` に追記されます（指定のしかたは [docs/external-usage.md](docs/external-usage.md)）。
-`caller` 列は参照している jar の中のメソッドと行、`root` 列は参照元の jar 名、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`depth` は `1` です。
+`caller` 列は参照している jar の中のメソッドと行、`call-hierarchy` の先頭の列は参照元の jar 名、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`depth` は `1` です。
 行番号は、相手の jar が行番号情報付きでビルドされていないと `(Unknown Source)` になります。
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```
@@ -542,9 +540,9 @@ Open the result in Excel and filter it to find the impact surface of the method 
 1. Open `call-hierarchy.csv` in Excel and turn on the filter (Data → Filter)
 2. In the **`callee` column**, pick the method you are changing, as `ClassName.methodName` (there are no
    arguments, so overloads share one name)
-3. The **`root` column** of the remaining rows lists the entry points that reach it (screen actions, a batch
+3. The **first cell of the `call-hierarchy` column** (the one with the header) of the remaining rows lists the entry points that reach it (screen actions, a batch
    job's `main`, API handlers and so on). The **`caller` column** is the call site itself (file and line), and
-   the **`call-hierarchy` column** is the path from the entry point
+   the cells of `call-hierarchy` from there to the right are the path from the entry point
 4. If the method you are changing does not appear in `callee`, or there are fewer entry points than you expected, look at
    `inHierarchy` for that method in `methods.csv`. `0` only means it is not in the output; **it does not mean nothing is
    affected**. The reason is in the `absentCause` column ([methods.csv](#methodscsv--every-method-in-the-source-and-how-it-is-called))
@@ -557,7 +555,7 @@ nothing below them is expanded.
 ### Reading one row
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at jp.co.example.action.OrderAction.execute(OrderAction.java:50),OrderService.findOrder,RESOLVED:NO_OVERRIDE,1,OrderAction.execute,OrderService.findOrder
 at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoImpl.selectById,RESOLVED:SPRING_DI,2,OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById
 ```
@@ -568,8 +566,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `callee` | `OrderDaoImpl.selectById` | The method being called |
 | `resolved-by` | `RESOLVED:SPRING_DI` | How the callee was decided. `RESOLVED:` means it was pinned down to one; `UNEXPANDED:` means it could not be, and the candidates are listed |
 | `depth` | `2` | How many calls away from the entry point it is |
-| `root` | `OrderAction.execute` | The entry point method |
-| `call-hierarchy` | `OrderService.findOrder,OrderDaoImpl.selectById` | The path from the step after the entry point to `callee` (one step per column). A note may follow in the last column |
+| `call-hierarchy` | `OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById` | The path from the entry point to `callee` (one step per column). The first column is the entry point method. A note may follow in the last column |
 
 <!-- sec:checking-the-calls-it-could-not-follow -->
 ### Checking the calls it could not follow
@@ -605,7 +602,7 @@ Copy a row of `call-hierarchy.csv` and paste it into Eclipse's "Java Stack Trace
 
 | Term | Meaning |
 |---|---|
-| Entry point (`root`) | The method the walk starts from. Set it with `entry.packages` in the config. When that is empty, every method in the source with no caller, plus every method a framework is known to call (`main`, `@GetMapping`, a servlet's `doGet` and so on), is an entry point (whole-project mode) |
+| Entry point (the first column of `call-hierarchy`) | The method the walk starts from. Set it with `entry.packages` in the config. When that is empty, every method in the source with no caller, plus every method a framework is known to call (`main`, `@GetMapping`, a servlet's `doGet` and so on), is an entry point (whole-project mode) |
 | Resolving concrete classes | For a call through an interface or parent class type, deciding which implementation class actually runs ([Resolving concrete classes](#resolving-concrete-classes)) |
 | library call rules | A table describing what happens outside your source (the JDK, frameworks), or which implementation class to use ([docs/library-call-rules.md](docs/library-call-rules.md)) |
 | Note | The remark at the end of the `call-hierarchy` column. It starts with an upper case tag ([Notes](#notes)) |
@@ -724,9 +721,8 @@ Besides missing dependency jars, a path in the config file that does not exist a
 | `caller` | The caller, in the same format as a Java stack trace. It points at the **call site** line |
 | `callee` | The callee, as **ClassName.methodName** (no arguments). Usable as an Excel filter |
 | `resolved-by` | How the callee was pinned down, or how the candidates were collected when it could not be narrowed (see below). **Every row has one** |
-| `depth` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy` |
-| `root` | The entry method, as ClassName.methodName. Usable as an Excel filter |
-| `call-hierarchy` | The path from the entry point, one node per column (**variable length**). When a note applies, it is the last element ([Notes](#notes)) |
+| `depth` | The depth from the entry point (the entry point is `0`, what it calls is `1`). It always matches the number of nodes listed in `call-hierarchy`, not counting the entry point at its start |
+| `call-hierarchy` | The path from the entry point, one node per column (**variable length**). The header sits on the first column only. That first column is the entry method, as ClassName.methodName, so it is usable as an Excel filter. When a note applies, it is the last element ([Notes](#notes)) |
 
 `resolved-by` is "a prefix (how certain it is) plus the label of the resolution step (how it was done)".
 
@@ -734,7 +730,7 @@ Besides missing dependency jars, a path in the config file that does not exist a
 |---|---|
 | `RESOLVED:` | The callee was pinned down to one. The second half says [how it was decided](#resolving-concrete-classes) (`RESOLVED:DATAFLOW_FIELD` and the like) |
 | `UNEXPANDED:` | It could not be narrowed to one, so candidates remain. The second half says how they were collected (`UNEXPANDED:CHA` and the like). There is a row per candidate, but nothing below them is followed |
-| `UNRESOLVED:` | A row for a call whose callee type could not be determined: `UNRESOLVED:BINDING_FAILED` (incomplete classpath, a dynamic call and so on) and `UNRESOLVED:OUTSIDE_METHOD` (a call from outside a method body). The `root` column is `(unresolved)` |
+| `UNRESOLVED:` | A row for a call whose callee type could not be determined: `UNRESOLVED:BINDING_FAILED` (incomplete classpath, a dynamic call and so on) and `UNRESOLVED:OUTSIDE_METHOD` (a call from outside a method body). The first column of `call-hierarchy` is `(unresolved)` |
 | `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 
 The second half is the label of the resolution step itself, with one exception. A call to a functional
@@ -873,12 +869,12 @@ The first is why the walk stopped (`[UNEXPANDED:CYCLE]`, `[UNEXPANDED:DEPTH]`, `
 Point `external.library.folders` in the config file at the jars of other repositories that call your code, and
 the references from those jars are appended to `call-hierarchy.csv` (how to set it up:
 [docs/external-usage.md](docs/external-usage.md), in Japanese).
-The `caller` column is the method and line inside the referencing jar, the `root` column is the name of that jar,
+The `caller` column is the method and line inside the referencing jar, the first column of `call-hierarchy` is the name of that jar,
 `resolved-by` starts with `EXTERNAL_USAGE:`, and `depth` is `1`.
 The line number is `(Unknown Source)` when the other jar was built without line number information.
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 ```

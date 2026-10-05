@@ -13,7 +13,7 @@ import jche.graph.MethodTable;
  *
  * ヘッダー:
  * <pre>
- *   caller,callee,resolved-by,depth,root,call-hierarchy...
+ *   caller,callee,resolved-by,depth,call-hierarchy...
  * </pre>
  * callee は「クラス名.メソッド名」。Excel のフィルタで呼び出し先を選びやすくする
  * ため、引数型は付けない（オーバーロードは同じ表記にまとまる）。
@@ -26,19 +26,21 @@ import jche.graph.MethodTable;
  *       性質なので callee の隣に置く。注記と違って必ず値が入るので、
  *       Excel のフィルタで確度・手法ごとに行を選べる</li>
  *   <li>depth は起点からの階層の深さ（起点が0、その呼び出し先が1）。
- *       call-hierarchy 列に並ぶノード数と必ず一致する。root・call-hierarchy と同じく
- *       「この行が木のどこにあるか」を表す列なので、その2つと並べる</li>
- *   <li>call-hierarchy 以降は起点の次のノードから現ノードまでを1ノード1列で
- *       展開するため、ヘッダー行とデータ行の列数は一致しない（意図した仕様）</li>
+ *       call-hierarchy 列に並ぶノードのうち、先頭の起点を除いた数と必ず一致する。
+ *       call-hierarchy と同じく「この行が木のどこにあるか」を表す列なので、並べる</li>
+ *   <li>call-hierarchy は起点から現ノードまでを1ノード1列で展開する。見出しは先頭の
+ *       1列（起点の列）にだけ付き、2ノード目以降の列には付かないため、ヘッダー行と
+ *       データ行の列数は一致しない（意図した仕様）。起点は階層の先頭のノードとして
+ *       扱う（見出しを別に立てない。docs/call-hierarchy-columns-qa.md の Q9）</li>
  *   <li>call-hierarchy より後ろに列を追加してはならない（行末マッチが壊れるため）。
- *       固定列を足すときは root の左に入れる（docs/call-hierarchy-columns-qa.md）</li>
+ *       固定列を足すときは call-hierarchy の左に入れる（docs/call-hierarchy-columns-qa.md）</li>
  * </ul>
  * 型解決に失敗した呼び出し（{@link #writeUnresolvedRow}）と外部jarからの被参照
  * （{@link #writeExternalUsageRow}）も同じファイルに出すが、列の詰め方が異なる。
  */
 public final class CallHierarchyCsvWriter implements AutoCloseable {
 
-    /** 型解決に失敗した行の root 列。起点が無いことを示す固定マーカー */
+    /** 型解決に失敗した行の起点の列（call-hierarchy の先頭）。起点が無いことを示す固定マーカー */
     static final String UNRESOLVED_ROOT = "(unresolved)";
 
     private final BufferedWriter writer;
@@ -47,7 +49,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
     public CallHierarchyCsvWriter(Path outputCsv, Charset encoding, boolean bom) throws IOException {
         this.writer = Csv.writer(outputCsv, encoding, bom);
         writer.write(String.join(Csv.DELIM,
-                "caller", "callee", "resolved-by", "depth", "root", "call-hierarchy"));
+                "caller", "callee", "resolved-by", "depth", "call-hierarchy"));
         writer.newLine();
     }
 
@@ -82,13 +84,13 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         // resolved-by: 解決方法。注記と違い、確定した呼び出しでも必ず値が入る
         buf.append(Csv.esc(path[depth].resolvedBy)).append(Csv.DELIM);
 
-        // depth: 起点からの深さ。call-hierarchy 列のノード数と一致する
+        // depth: 起点からの深さ。call-hierarchy 列のノード数（先頭の起点を除く）と一致する
         buf.append(depth).append(Csv.DELIM);
 
-        // root: 起点メソッド。これもフィルタで使えるよう短縮表記にする
+        // call-hierarchy の先頭: 起点メソッド。これもフィルタで使えるよう短縮表記にする
         buf.append(Csv.esc(mt.shortLabel(rootId)));
 
-        // call-hierarchy: 起点の次のノードから現ノードまでを1ノード1列で展開。
+        // call-hierarchy の続き: 起点の次のノードから現ノードまでを1ノード1列で展開。
         // 必ず最終列に置く（後ろに固定列を足すと可変長の階層が途中で切れるため）。
         for (int i = 1; i <= depth; i++) {
             buf.append(Csv.DELIM).append(Csv.esc(mt.shortLabel(path[i].shownId)));
@@ -105,8 +107,8 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      *
      * 呼び出し「元」はソース上のメソッドなので分かるが、呼び出し「先」の型が
      * 特定できていない。よって callee にはソースに書かれていた式（メソッド名）を
-     * そのまま置き、root には起点が無いことを示す固定マーカーを入れる。
-     * root でフィルタすれば、型解決に失敗した箇所だけをまとめて見られる。
+     * そのまま置き、call-hierarchy の先頭（起点の列）には起点が無いことを示す固定マーカーを入れる。
+     * その列でフィルタすれば、型解決に失敗した箇所だけをまとめて見られる。
      *
      * @param mt         呼び出し元の解決に使うメソッド表
      * @param callerId   呼び出し元メソッドのID。-1 なら特定できていない
@@ -125,7 +127,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.append(Csv.esc(expression)).append(Csv.DELIM);
         buf.append(Csv.esc(resolvedBy)).append(Csv.DELIM);
         // 階層は無いが、階層列には式を1つ置くので depth は1。
-        // 「depth = call-hierarchy 列のノード数」をどの種類の行でも保つ
+        // 「depth = call-hierarchy 列のノード数（先頭の起点を除く）」をどの種類の行でも保つ
         buf.append(1).append(Csv.DELIM);
         buf.append(Csv.esc(UNRESOLVED_ROOT));
         buf.append(Csv.DELIM).append(Csv.esc(expression));
@@ -138,7 +140,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      * 被参照スキャンの1行。呼び出し階層とは意味が違うため専用の詰め方をする。
      *
      * caller は呼び出し階層の行と同じスタックトレース形式（{@link #stackTrace(String, String, String, int)}）。
-     * 起点も呼び出し階層も無いので、root には「どのjarから参照されているか」を入れる。
+     * 起点も呼び出し階層も無いので、call-hierarchy の先頭（起点の列）には「どのjarから参照されているか」を入れる。
      *
      * @param caller      参照している側（外部jar内）。スタックトレース形式。命令列から辿れなかった
      *                    参照はクラス名だけ
