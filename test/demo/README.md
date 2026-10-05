@@ -8,7 +8,10 @@
 - `src/` … 解析対象のソース。`fx.app.Legacy` は存在しないライブラリを import しており、意図的にコンパイルできません
   - `src/fx/di/` … Spring による DI の解決（`SPRING_DI` / `SPRING_DI_QUALIFIER`）の確認用。
     フィールド注入・`@Qualifier` での指名・`@Bean` メソッドによる登録・Bean でない実装が候補から外れること・
-    Bean が抽象基底クラスから実装を継承する形を含みます
+    Bean が抽象基底クラスから実装を継承する形を含みます。
+    独自注釈 `@Audited`（`Ledger` の実装 `AuditedLedger` に付けてある）は既定では Bean の印にならず、
+    `spring.di.bean.annotations=Audited` と指定した回帰テストの `diannot` ケースでだけ `Billing` の注入先が
+    `AuditedLedger` に絞られます（`nodi` ケースは `spring.di.enabled=false` で、ここの解決がすべて CHA に戻ることを見ます）
   - `src/fx/dao/ItemDao.java` … 実装がコンパイル時に生成される型（`GENERATED_IMPL`）の確認用
   - `src/fx/lambda/Holder.java` … ラムダ／メソッド参照の解決（`DATAFLOW_LAMBDA`）の確認用。
     フィールドに保持・引数で受け渡し・ローカルのコレクションに詰めて拡張for文で回す形（いずれも追える）と、
