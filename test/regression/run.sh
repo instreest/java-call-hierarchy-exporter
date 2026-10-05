@@ -744,13 +744,18 @@ for c in $CASES; do
                 expect_csv_contains diannot "),AbstractPayment.pay,RESOLVED:SPRING_DI,1,Checkout.checkout" \
                     "1回目: 既定の印（@Service）はそのまま効く" ;;
             # 同梱のライブラリ呼び出し規則を使わないので、Thread#start() → run() の呼び戻しは繋がらない。自前の規則の分は繋がる
+            # （ラムダの段は畳むので、Dispatcher#submit に渡したラムダの本体の呼び出しが Jobs.custom の直下に出ることで見る）
             nobuiltin)
                 expect_csv_missing nobuiltin "rule: Thread#start() calls run()" \
                     "1回目: 同梱の規則（Thread#start）は効かない"
                 expect_csv_missing nobuiltin "Starter.viaThread,Starter.Job.run" \
                     "1回目: Thread で起動する Runnable の run は繋がらない"
-                expect_csv_contains nobuiltin "rule: Dispatcher#submit(java.lang.Runnable) calls run()" \
-                    "1回目: 自前の規則（call-rules.txt）は効く" ;;
+                expect_csv_contains nobuiltin "Jobs.custom(Jobs.java:35),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,1,Jobs.custom,OrderDaoImpl.findById" \
+                    "1回目: 自前の規則（call-rules.txt）の呼び戻しは効く"
+                expect_log_contains nobuiltin 1 "your custom rows 2/2 (callbacks 1/1, entries 1/1" \
+                    "1回目: 自前の規則は 2 行とも当たる"
+                expect_log_contains nobuiltin 1 "/ bundled 0 row(s)" \
+                    "1回目: 同梱の規則は 1 行も使っていない" ;;
             # ライブラリ呼び出し規則が「効いたか」の知らせ。whole の 2 行はどちらも当たるので挙がってはならず、
             # entry の call-rules.txt はわざと当たらない行だけなので、そのまま挙がる
             whole)

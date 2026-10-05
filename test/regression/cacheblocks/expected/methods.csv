@@ -70,15 +70,19 @@ AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong(),fx.deep.longnamed.
 AbstractPayment.pay(int),fx.di.AbstractPayment,A,src/fx/di/AbstractPayment.java,8,1,1,1,NORMAL,1,1,[UNEXPANDED:CHA] own class (this),1,,0
 AbstractPayment.record(int),fx.di.AbstractPayment,A,src/fx/di/AbstractPayment.java,12,1,1,0,LEAF,1,0,,1,,0
 AppConfig.clock(),fx.di.AppConfig,C,src/fx/di/AppConfig.java,12,1,0,1,ENTRY_CANDIDATE,1,0,,0,[ENTRY_NO_ROWS] entry point with no call rows,0
+AuditedLedger.post(int),fx.di.AuditedLedger,C,src/fx/di/AuditedLedger.java,9,1,1,0,LEAF,1,0,,1,,0
+Billing.bill(int),fx.di.Billing,C,src/fx/di/Billing.java,17,1,0,1,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] field,1,,0
 CardPayment.record(int),fx.di.CardPayment,C,src/fx/di/CardPayment.java,11,1,1,0,LEAF,1,0,,1,,0
 Checkout.checkout(int),fx.di.Checkout,C,src/fx/di/Checkout.java,14,1,0,1,ENTRY_CANDIDATE,1,0,,1,,0
 Clock.now(),fx.di.Clock,I,src/fx/di/Clock.java,6,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted,0
 FastNotice.send(),fx.di.FastNotice,C,src/fx/di/FastNotice.java,10,1,0,0,ISOLATED,1,0,,0,[ENTRY_NO_ROWS] entry point with no call rows,0
 FixedClock.now(),fx.di.FixedClock,C,src/fx/di/FixedClock.java,8,1,0,0,ISOLATED,1,0,,0,[ENTRY_NO_ROWS] entry point with no call rows,0
+Ledger.post(int),fx.di.Ledger,I,src/fx/di/Ledger.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted,0
 MockPayment.pay(int),fx.di.MockPayment,C,src/fx/di/MockPayment.java,8,1,0,0,ISOLATED,1,0,,0,[ENTRY_NO_ROWS] entry point with no call rows,0
 Notice.send(),fx.di.Notice,I,src/fx/di/Notice.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted,0
 NoticeSender.notifyUser(),fx.di.NoticeSender,C,src/fx/di/NoticeSender.java,16,1,0,1,ENTRY_CANDIDATE,1,0,,1,,0
 PaymentGateway.pay(int),fx.di.PaymentGateway,I,src/fx/di/PaymentGateway.java,7,0,0,0,ISOLATED,0,0,,0,[NOT_REACHED] no caller row was emitted,0
+PlainLedger.post(int),fx.di.PlainLedger,C,src/fx/di/PlainLedger.java,8,1,1,0,LEAF,1,0,,1,,0
 Scheduler.tick(),fx.di.Scheduler,C,src/fx/di/Scheduler.java,14,1,0,1,ENTRY_CANDIDATE,1,0,,1,,0
 SlowNotice.send(),fx.di.SlowNotice,C,src/fx/di/SlowNotice.java,10,1,1,0,LEAF,1,0,,1,,0
 SystemClock.now(),fx.di.SystemClock,C,src/fx/di/SystemClock.java,8,1,1,0,LEAF,1,0,,1,,0

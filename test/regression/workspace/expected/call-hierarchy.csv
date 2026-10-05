@@ -211,6 +211,8 @@ at fx.deep.Deep.deepReceiver(Deep.java:34),Holder.get,RESOLVED:NO_OVERRIDE,1,Dee
 at fx.deep.Deep.deepReceiver(Deep.java:34),Holder.get,RESOLVED:NO_OVERRIDE,1,Deep.deepReceiver,Holder.get
 at fx.deep.Deep.longClassName(Deep.java:43),AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping,RESOLVED:REFLECTION,1,Deep.longClassName,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping
 at fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping(AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java:8),AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong,RESOLVED:STATIC_BOUND:PRIVATE,2,Deep.longClassName,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong
+at fx.di.Billing.bill(Billing.java:18),AuditedLedger.post,UNEXPANDED:CHA,1,Billing.bill,AuditedLedger.post,[UNEXPANDED:CHA] 2 candidates: field
+at fx.di.Billing.bill(Billing.java:18),PlainLedger.post,UNEXPANDED:CHA,1,Billing.bill,PlainLedger.post,[UNEXPANDED:CHA] 2 candidates: field
 at fx.di.Checkout.checkout(Checkout.java:15),AbstractPayment.pay,RESOLVED:SPRING_DI,1,Checkout.checkout,AbstractPayment.pay
 at fx.di.AbstractPayment.pay(AbstractPayment.java:9),AbstractPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,AbstractPayment.record,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.di.AbstractPayment.pay(AbstractPayment.java:9),CardPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,CardPayment.record,[UNEXPANDED:CHA] 2 candidates: own class (this)

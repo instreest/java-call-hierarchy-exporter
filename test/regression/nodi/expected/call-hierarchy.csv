@@ -1,4 +1,4 @@
-﻿caller,callee,resolved-by,depth,root,call-hierarchy
+﻿caller,callee,resolved-by,depth,call-hierarchy
 at fx.app.Legacy.unusedDead(Legacy.java:14),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,1,Legacy.unusedDead,Legacy.callRemote
 at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,2,Legacy.unusedDead,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Main.<clinit>(Main.java:29),Counter.initialCount,RESOLVED:STATIC_BOUND:STATIC,1,Main.<clinit>,Counter.initialCount
@@ -34,12 +34,8 @@ at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UN
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:40),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse
 at fx.service.OrderService.recurse(OrderService.java:52),OrderService.recurse,RESOLVED:STATIC_BOUND:PRIVATE,5,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderService.recurse,OrderService.recurse,[UNEXPANDED:CYCLE] returns to a method already on this path
-at fx.service.OrderService.execute(OrderService.java:28),OrderService.lambda$execute$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.execute(OrderService.java:29),OrderService.lambda$execute$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.OrderService.lambda$execute$0(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.lambda$execute$0,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.service.OrderService.execute(OrderService.java:28),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,OrderService.execute,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.execute(OrderService.java:30),OrderService.helper,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,OrderService.execute,OrderService.helper
 at fx.service.OrderService.helper(OrderService.java:39),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.service.OrderService.helper(OrderService.java:39),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,OrderService.execute,OrderService.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
@@ -125,16 +121,11 @@ at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:S
 at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:STATIC_BOUND:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
 at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:111),Main.lambda$lambdas$0,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:112),Main.lambda$lambdas$0,RESOLVED:DATAFLOW_LAMBDA,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0
-at fx.app.Main.lambda$lambdas$0(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$0,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.app.Main.lambdas(Main.java:114),Main.lambda$lambdas$1,RESOLVED:STATIC_BOUND:PRIVATE,3,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1
-at fx.app.Main.lambda$lambdas$1(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,4,Main.main,Main.run,Main.lambdas,Main.lambda$lambdas$1,UserDaoImpl.describe
+at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.lambdas,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Main.main,Main.run,Main.lambdas,UserDaoImpl.describe
+at fx.app.Main.lambdas(Main.java:119),Iterable.forEach,UNEXPANDED:CALLBACK,3,Main.main,Main.run,Main.lambdas,Iterable.forEach,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
 at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
@@ -222,16 +213,10 @@ at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:
 at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Jobs.list,OrderDaoImpl.describe
 at fx.entry.Jobs.custom(Jobs.java:35),Dispatcher.submit,RESOLVED:NO_OVERRIDE,1,Jobs.custom,Dispatcher.submit
-at fx.entry.Jobs.custom(Jobs.java:35),Jobs.lambda$custom$0,RESOLVED:CALLBACK,1,Jobs.custom,Jobs.lambda$custom$0,[RESOLVED:CALLBACK] contract: Dispatcher#submit(java.lang.Runnable) calls run()
-at fx.entry.Jobs.lambda$custom$0(Jobs.java:35),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById
-at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.entry.Jobs.custom(Jobs.java:35),Jobs.lambda$custom$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Jobs.custom,Jobs.lambda$custom$0
-at fx.entry.Jobs.lambda$custom$0(Jobs.java:35),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById
-at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Jobs.custom,Jobs.lambda$custom$0,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.entry.Jobs.custom(Jobs.java:35),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,1,Jobs.custom,OrderDaoImpl.findById
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.entry.SampleTest.runsJob(SampleTest.java:10),Jobs.nightly,RESOLVED:NO_OVERRIDE,1,SampleTest.runsJob,Jobs.nightly
 at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,SampleTest.runsJob,Jobs.nightly,OrderDaoImpl.describe
 at fx.entry.Jobs.nightly(Jobs.java:18),Jobs.internal,RESOLVED:STATIC_BOUND:PRIVATE,2,SampleTest.runsJob,Jobs.nightly,Jobs.internal
@@ -246,108 +231,76 @@ at fx.generic.GenericMain.run(GenericMain.java:8),OrderRepo.save,UNEXPANDED:CHA,
 at fx.generic.GenericMain.run(GenericMain.java:8),RawRepo.save,UNEXPANDED:CHA,1,GenericMain.run,RawRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.generic.GenericMain.run(GenericMain.java:9),AbstractStore.put,UNEXPANDED:CHA,1,GenericMain.run,AbstractStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.generic.GenericMain.run(GenericMain.java:9),OrderStore.put,UNEXPANDED:CHA,1,GenericMain.run,OrderStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:14),OrderPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,OrderPrinter.accept,[RESOLVED:CALLBACK] contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.generic.GenericMain.run(GenericMain.java:14),OrderPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,OrderPrinter.accept,[RESOLVED:CALLBACK] rule: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
 at fx.generic.OrderPrinter.accept(OrderPrinter.java:17),OrderPrinter.printed,RESOLVED:NO_OVERRIDE,2,GenericMain.run,OrderPrinter.accept,OrderPrinter.printed
-at fx.generic.GenericMain.run(GenericMain.java:15),RawPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,RawPrinter.accept,[RESOLVED:CALLBACK] contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.generic.GenericMain.run(GenericMain.java:15),RawPrinter.accept,RESOLVED:CALLBACK,1,GenericMain.run,RawPrinter.accept,[RESOLVED:CALLBACK] rule: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
 at fx.generic.RawPrinter.accept(RawPrinter.java:10),RawPrinter.rawPrinted,RESOLVED:NO_OVERRIDE,2,GenericMain.run,RawPrinter.accept,RawPrinter.rawPrinted
 at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
-at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CALLBACK,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Thread#start() calls run()
-at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CALLBACK,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Thread#start() calls run()
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CALLBACK,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method rule: Thread#start() calls run()
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CALLBACK,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method rule: Thread#start() calls run()
 at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: own class (this)
 at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CALLBACK,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
-at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CALLBACK,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method contract: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CALLBACK,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method rule: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CALLBACK,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: method reference to an overridable method rule: Iterable#forEach(java.util.function.Consumer) calls accept(java.lang.Object)
 at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
-at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,RESOLVED:CALLBACK,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,RESOLVED:CALLBACK,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe,[RESOLVED:CALLBACK] rule: Thread#start() calls run()
 at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe
 at fx.lambda.Captured.viaCapture(Captured.java:23),Captured.captureOuter,RESOLVED:STATIC_BOUND:PRIVATE,1,Captured.viaCapture,Captured.captureOuter
 at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.runWithOther,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther
-at fx.lambda.Captured.runWithOther(Captured.java:31),Captured.lambda$captureOuter$0,RESOLVED:DATAFLOW_LAMBDA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0
-at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Captured.lambda$captureOuter$0,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.lambda$captureOuter$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.lambda$captureOuter$0
-at fx.lambda.Captured.lambda$captureOuter$0(Captured.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,3,Captured.viaCapture,Captured.captureOuter,Captured.lambda$captureOuter$0,OrderDaoImpl.describe
-at fx.lambda.Defaults.<clinit>(Defaults.java:11),Defaults.lambda$static$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Defaults.<clinit>,Defaults.lambda$static$0
-at fx.lambda.Defaults.lambda$static$0(Defaults.java:11),OrderDaoImpl.describe,RESOLVED:NO_OVERRIDE,2,Defaults.<clinit>,Defaults.lambda$static$0,OrderDaoImpl.describe
-at fx.lambda.Holder.<init>(Holder.java:27),Holder.lambda$new$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.Holder,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.Holder,Holder.lambda$new$0,OrderDaoImpl.describe
-at fx.lambda.Holder.viaField(Holder.java:30),Holder.lambda$new$0,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaField,Holder.lambda$new$0
-at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaField,Holder.lambda$new$0,OrderDaoImpl.describe
+at fx.lambda.Captured.runWithOther(Captured.java:27),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.lambda.Captured.runWithOther(Captured.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.lambda.Captured.captureOuter(Captured.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_PARAM,2,Captured.viaCapture,Captured.captureOuter,OrderDaoImpl.describe
+at fx.lambda.Defaults.<clinit>(Defaults.java:11),OrderDaoImpl.describe,RESOLVED:NO_OVERRIDE,1,Defaults.<clinit>,OrderDaoImpl.describe
+at fx.lambda.Holder.<init>(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.Holder,OrderDaoImpl.describe
+at fx.lambda.Holder.viaField(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaField,OrderDaoImpl.describe
 at fx.lambda.Holder.viaParam(Holder.java:34),Holder.runIt,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaParam,Holder.runIt
-at fx.lambda.Holder.runIt(Holder.java:38),Holder.lambda$viaParam$1,RESOLVED:DATAFLOW_LAMBDA,2,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1
-at fx.lambda.Holder.lambda$viaParam$1(Holder.java:34),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,3,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById
-at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,5,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,5,Holder.viaParam,Holder.runIt,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.Holder.viaParam(Holder.java:34),Holder.lambda$viaParam$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaParam,Holder.lambda$viaParam$1
-at fx.lambda.Holder.lambda$viaParam$1(Holder.java:34),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById
-at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.lambda$viaParam$1,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.Holder.viaCollection(Holder.java:43),Holder.lambda$viaCollection$2,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaCollection,Holder.lambda$viaCollection$2
-at fx.lambda.Holder.lambda$viaCollection$2(Holder.java:43),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaCollection,Holder.lambda$viaCollection$2,OrderDaoImpl.describe
-at fx.lambda.Holder.viaCollection(Holder.java:45),Holder.lambda$viaCollection$2,RESOLVED:DATAFLOW_LAMBDA,1,Holder.viaCollection,Holder.lambda$viaCollection$2
-at fx.lambda.Holder.lambda$viaCollection$2(Holder.java:43),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Holder.viaCollection,Holder.lambda$viaCollection$2,OrderDaoImpl.describe
-at fx.lambda.Holder.viaForEach(Holder.java:51),Holder.lambda$viaForEach$3,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaForEach,Holder.lambda$viaForEach$3
-at fx.lambda.Holder.lambda$viaForEach$3(Holder.java:51),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById
-at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaForEach,Holder.lambda$viaForEach$3,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.Holder.runIt(Holder.java:34),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,2,Holder.viaParam,Holder.runIt,OrderDaoImpl.findById
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaParam,Holder.runIt,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.runIt,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,4,Holder.viaParam,Holder.runIt,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.Holder.viaParam(Holder.java:34),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,1,Holder.viaParam,OrderDaoImpl.findById
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.Holder.viaCollection(Holder.java:43),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Holder.viaCollection,OrderDaoImpl.describe
+at fx.lambda.Holder.viaForEach(Holder.java:51),OrderDaoImpl.findById,RESOLVED:DATAFLOW_FIELD,1,Holder.viaForEach,OrderDaoImpl.findById
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,UNEXPANDED:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.lambda.Holder.viaForEach(Holder.java:52),Iterable.forEach,UNEXPANDED:CALLBACK,1,Holder.viaForEach,Iterable.forEach,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
 at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
 at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested.viaNested(Nested.java:20),Nested.lambda$viaNested$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.viaNested,Nested.lambda$viaNested$1
-at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
-at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
-at fx.lambda.Nested.lambda$viaNested$1(Nested.java:22),Nested.lambda$viaNested$0,RESOLVED:DATAFLOW_LAMBDA,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
-at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
-at fx.lambda.Nested.viaNested(Nested.java:24),Nested.lambda$viaNested$1,RESOLVED:DATAFLOW_LAMBDA,1,Nested.viaNested,Nested.lambda$viaNested$1
-at fx.lambda.Nested.lambda$viaNested$1(Nested.java:21),Nested.lambda$viaNested$0,RESOLVED:STATIC_BOUND:PRIVATE,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
-at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
-at fx.lambda.Nested.lambda$viaNested$1(Nested.java:22),Nested.lambda$viaNested$0,RESOLVED:DATAFLOW_LAMBDA,2,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0
-at fx.lambda.Nested.lambda$viaNested$0(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Nested.viaNested,Nested.lambda$viaNested$1,Nested.lambda$viaNested$0,OrderDaoImpl.describe
-at fx.lambda.Nested$Mode.<init>(Nested.java:31),Nested.Mode.lambda$static$0,RESOLVED:DATAFLOW_LAMBDA,2,Nested.Mode.<clinit>,Nested.Mode.Mode,Nested.Mode.lambda$static$0
-at fx.lambda.Nested$Mode.<clinit>(Nested.java:28),Nested.Mode.lambda$static$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Nested.Mode.<clinit>,Nested.Mode.lambda$static$0
-at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),Redeclared.lambda$viaSuperInterface$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.lambda$viaSuperInterface$0
-at fx.lambda.Redeclared.lambda$viaSuperInterface$0(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Redeclared.viaSuperInterface,Redeclared.lambda$viaSuperInterface$0,OrderDaoImpl.describe
+at fx.lambda.LateTask.kick(LateTask.java:20),Thread.start,UNEXPANDED:CALLBACK,1,LateTask.kick,Thread.start,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
+at fx.lambda.Nested.viaNested(Nested.java:21),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Nested.viaNested,OrderDaoImpl.describe
+at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Redeclared.viaSuperInterface,OrderDaoImpl.describe
 at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:18),Redeclared.dispatch,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.dispatch
-at fx.lambda.Redeclared.dispatch(Redeclared.java:22),Redeclared.lambda$viaSuperInterface$0,RESOLVED:DATAFLOW_LAMBDA,2,Redeclared.viaSuperInterface,Redeclared.dispatch,Redeclared.lambda$viaSuperInterface$0
-at fx.lambda.Redeclared.lambda$viaSuperInterface$0(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,Redeclared.viaSuperInterface,Redeclared.dispatch,Redeclared.lambda$viaSuperInterface$0,OrderDaoImpl.describe
+at fx.lambda.Redeclared.dispatch(Redeclared.java:17),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Redeclared.viaSuperInterface,Redeclared.dispatch,OrderDaoImpl.describe
 at fx.lambda.Refs.viaBoundRef(Refs.java:27),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Refs.viaBoundRef,OrderDaoImpl.describe
 at fx.lambda.Refs.viaBoundRef(Refs.java:28),OrderDaoImpl.describe,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaBoundRef,OrderDaoImpl.describe
 at fx.lambda.Refs.viaUnboundRef(Refs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.Refs.viaUnboundRef(Refs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
 at fx.lambda.Refs.viaUnboundRef(Refs.java:33),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
 at fx.lambda.Refs.viaUnboundRef(Refs.java:33),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.lambda.Refs.viaExprBody(Refs.java:37),Refs.lambda$viaExprBody$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Refs.viaExprBody,Refs.lambda$viaExprBody$0
 at fx.lambda.Refs.viaExprBody(Refs.java:38),UserDaoImpl.describe,RESOLVED:DATAFLOW_FACTORY,1,Refs.viaExprBody,UserDaoImpl.describe
-at fx.lambda.Refs.viaExprBody(Refs.java:38),Refs.lambda$viaExprBody$0,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaExprBody,Refs.lambda$viaExprBody$0
-at fx.lambda.Refs.viaBlockBody(Refs.java:42),Refs.lambda$viaBlockBody$1,RESOLVED:STATIC_BOUND:PRIVATE,1,Refs.viaBlockBody,Refs.lambda$viaBlockBody$1
 at fx.lambda.Refs.viaBlockBody(Refs.java:45),UserDaoImpl.describe,RESOLVED:DATAFLOW_FACTORY,1,Refs.viaBlockBody,UserDaoImpl.describe
-at fx.lambda.Refs.viaBlockBody(Refs.java:45),Refs.lambda$viaBlockBody$1,RESOLVED:DATAFLOW_LAMBDA,1,Refs.viaBlockBody,Refs.lambda$viaBlockBody$1
-at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter.viaThread(Starter.java:20),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaThread,Starter.Job.run,[RESOLVED:CALLBACK] rule: Thread#start() calls run()
 at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaThread,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Starter.viaSubclass(Starter.java:25),Starter.Worker.run,RESOLVED:CALLBACK,1,Starter.viaSubclass,Starter.Worker.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter.viaSubclass(Starter.java:25),Starter.Worker.run,RESOLVED:CALLBACK,1,Starter.viaSubclass,Starter.Worker.run,[RESOLVED:CALLBACK] rule: Thread#start() calls run()
 at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Starter.viaSubclass,Starter.Worker.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
 at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,UNEXPANDED:CHA,2,Starter.viaSubclass,Starter.Worker.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,RESOLVED:CALLBACK,1,Starter.viaExecutor,Starter.lambda$viaExecutor$0,[RESOLVED:CALLBACK] contract: ExecutorService#submit(java.util.concurrent.Callable) calls call()
-at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Starter.viaExecutor,Starter.lambda$viaExecutor$0,OrderDaoImpl.describe
-at fx.lambda.Starter.viaExecutor(Starter.java:31),Starter.lambda$viaExecutor$0,RESOLVED:STATIC_BOUND:PRIVATE,1,Starter.viaExecutor,Starter.lambda$viaExecutor$0
-at fx.lambda.Starter.lambda$viaExecutor$0(Starter.java:31),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,Starter.viaExecutor,Starter.lambda$viaExecutor$0,OrderDaoImpl.describe
-at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] contract: Thread#start() calls run()
+at fx.lambda.Starter.viaExecutor(Starter.java:31),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,Starter.viaExecutor,OrderDaoImpl.describe
+at fx.lambda.Starter.viaVariable(Starter.java:38),Starter.Job.run,RESOLVED:CALLBACK,1,Starter.viaVariable,Starter.Job.run,[RESOLVED:CALLBACK] rule: Thread#start() calls run()
 at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
 at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Starter.viaVariable,Starter.Job.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),TwoParents.lambda$viaDoor$0,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.lambda$viaDoor$0
-at fx.lambda.TwoParents.lambda$viaDoor$0(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,TwoParents.viaDoor,TwoParents.lambda$viaDoor$0,OrderDaoImpl.describe
+at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,1,TwoParents.viaDoor,OrderDaoImpl.describe
 at fx.lambda.TwoParents.viaDoor(TwoParents.java:17),TwoParents.viaOpener,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.viaOpener
-at fx.lambda.TwoParents.viaOpener(TwoParents.java:22),TwoParents.lambda$viaDoor$0,RESOLVED:DATAFLOW_LAMBDA,2,TwoParents.viaDoor,TwoParents.viaOpener,TwoParents.lambda$viaDoor$0
-at fx.lambda.TwoParents.lambda$viaDoor$0(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,TwoParents.viaDoor,TwoParents.viaOpener,TwoParents.lambda$viaDoor$0,OrderDaoImpl.describe
+at fx.lambda.TwoParents.viaOpener(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,TwoParents.viaDoor,TwoParents.viaOpener,OrderDaoImpl.describe
 at fx.lambda.TwoParents.viaDoor(TwoParents.java:18),TwoParents.viaCloser,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.viaCloser
-at fx.lambda.TwoParents.viaCloser(TwoParents.java:26),TwoParents.lambda$viaDoor$0,RESOLVED:DATAFLOW_LAMBDA,2,TwoParents.viaDoor,TwoParents.viaCloser,TwoParents.lambda$viaDoor$0
-at fx.lambda.TwoParents.lambda$viaDoor$0(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,3,TwoParents.viaDoor,TwoParents.viaCloser,TwoParents.lambda$viaDoor$0,OrderDaoImpl.describe
+at fx.lambda.TwoParents.viaCloser(TwoParents.java:16),OrderDaoImpl.describe,RESOLVED:DATAFLOW_FIELD,2,TwoParents.viaDoor,TwoParents.viaCloser,OrderDaoImpl.describe
 at fx.lambda.TwoParents.openAny(TwoParents.java:30),PlainOpener.act,UNEXPANDED:LAMBDA,1,TwoParents.openAny,PlainOpener.act,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
 at fx.lambda.PlainOpener.act(PlainOpener.java:12),PlainOpener.opened,RESOLVED:NO_OVERRIDE,2,TwoParents.openAny,PlainOpener.act,PlainOpener.opened
 at fx.model.Color.<init>(Color.java:14),Registry.register,RESOLVED:STATIC_BOUND:STATIC,3,Color.<clinit>,Color$1.Color$1,Color.Color,Registry.register
@@ -369,7 +322,9 @@ at fx.reflect.Target.run(Target.java:9),Target.step,RESOLVED:STATIC_BOUND:PRIVAT
 at fx.reflect.Invoker.invokeNamed(Invoker.java:39),Target.<clinit>,RESOLVED:REFLECTION_INIT,2,Invoker.viaParam,Invoker.invokeNamed,Target.<clinit>
 at fx.reflect.Invoker.viaParam(Invoker.java:34),Invoker.create,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.create
 at fx.reflect.Invoker.create(Invoker.java:43),Target.<clinit>,RESOLVED:REFLECTION_INIT,2,Invoker.viaParam,Invoker.create,Target.<clinit>
+at fx.reflect.Invoker.viaParam(Invoker.java:35),Constructor.newInstance,UNEXPANDED:REFLECTION,1,Invoker.viaParam,Constructor.newInstance,[EXTERNAL] no source to follow / [UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path
 at fx.reflect.Invoker.viaParam(Invoker.java:35),Invoker.classOf,RESOLVED:STATIC_BOUND:PRIVATE,1,Invoker.viaParam,Invoker.classOf
+at fx.reflect.Invoker.unknown(Invoker.java:51),Method.invoke,UNEXPANDED:REFLECTION,1,Invoker.unknown,Method.invoke,[EXTERNAL] no source to follow / [UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path
 at fx.service.OrderService.<clinit>(OrderService.java:12),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,1,OrderService.<clinit>,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,2,OrderService.<clinit>,DaoFactory.create,DaoFactory.newUserDao
 at fx.app.Legacy.callRemote(Legacy.java:9),go,UNRESOLVED:BINDING_FAILED,1,(unresolved),go,type resolution failed (missing classpath / dynamic call / etc.)
