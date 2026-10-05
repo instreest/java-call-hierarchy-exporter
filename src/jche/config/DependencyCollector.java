@@ -50,6 +50,11 @@ final class DependencyCollector {
         final List<String> unresolved = new ArrayList<>();
         /** 参考情報（ログにそのまま出す。リアクタの構成、ロックファイルを使ったこと等） */
         final List<String> notes = new ArrayList<>();
+        /**
+         * 利用者が確かめるべきこと（ビルドファイルの読めない宣言・無いファイル等。{@link GradleBuild.Declared#warnings}）。
+         * 読み手は warnings.txt に載せる（Maven の読み手が {@link MavenModels} で直接警告するのと同じ扱い）
+         */
+        final List<String> warnings = new ArrayList<>();
         int direct;
         int visited;
     }

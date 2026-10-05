@@ -53,6 +53,18 @@ Gradle のビルドファイルはプログラムなので、読めるのは宣�
   Eclipse や Maven / Gradle で一度依存を取得（ビルド）すればローカルリポジトリに入ります。このツールはダウンロードしません
 - 兄弟モジュールがビルドされていない（`target/classes` 等が無い）ときは、そのモジュールのソースも `source.folders` に
   含めてください。ソースから解決されます
+- `pom.xml` のプロファイルは `activeByDefault` のものだけ読みます。読まないプロファイルが依存を宣言していると
+  警告に出るので、そのプロファイルでビルドしているなら `library.folders` か `library.jars` で指定してください
+- `pom.xml` の `${env.X}`（環境変数）は展開しません。展開した座標は `run.log` と `warnings.txt` に載り、どちらも
+  CI の成果物として保存されるので、環境変数の値（認証情報や内部のホスト名）が出力に漏れるためです。
+  `${env.X}` を含む依存は「版が決まらない等で飛ばした依存」として書かれたままの文字列で一覧に出ます。
+  その jar は `library.jars` で指定してください
+- `gradle.lockfile` があっても、クラスパスの構成（`compileClasspath` / `runtimeClasspath`）がロックされていなければ
+  使わず、`build.gradle` の宣言を読みます（警告に出ます）。ロックファイルから取るには、その構成をロックして
+  `gradle dependencies --write-locks` で書き出してください
+- Gradle の読めない宣言・無いファイル（`files()` / `fileTree()`）・版カタログに無い参照・版を省いた依存の版の推定は
+  `warnings.txt` の「依存 jar」の項目にも載ります（`run.log` だけに出る参考情報は、ロックファイルを使ったこと・
+  `settings.gradle` の場所・未ビルドの `project(':x')`）
 
 ## 依存 jar やクラスフォルダを自分で指定するとき
 

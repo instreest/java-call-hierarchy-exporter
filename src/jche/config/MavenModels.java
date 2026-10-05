@@ -24,11 +24,15 @@ import jche.util.Warnings;
  *   <li>親の連鎖を辿る。relativePath（既定 ../pom.xml）にあって座標が一致すればそれ、
  *       無ければローカルリポジトリの POM。ネットワークには出ない</li>
  *   <li>プロパティを親から順に重ね、{@code ${...}} を展開する（project.* / pom.* / parent.* の組み込み、
- *       システムプロパティ、env.* も見る）</li>
+ *       システムプロパティも見る）</li>
  *   <li>dependencies と dependencyManagement を親から継承する（子が同じ鍵を持てば子が勝つ）</li>
  *   <li>dependencyManagement の import（BOM）をローカルリポジトリの POM から展開する</li>
  * </ul>
- * やらないこと: activeByDefault 以外のプロファイル、settings.xml のプロファイル、CLI の -D。
+ * やらないこと: activeByDefault 以外のプロファイル（依存を宣言しているものはプロジェクトの POM についてだけ警告する）、
+ * settings.xml のプロファイル、CLI の -D、そして<b>環境変数（{@code ${env.X}}）の展開</b>。
+ * 環境変数は展開しない。展開した座標は run.log と warnings.txt に載り、どちらも CI の成果物として
+ * 保存されるので、環境変数に入っている値（認証情報や内部のホスト名）が出力に漏れる。{@code ${env.X}} を含む依存は
+ * 「決まらない依存」として書かれたままの文字列で一覧に出る（{@code docs/build-tool-classpath.md}）。
  * 読んだ POM はファイルと座標の両方で覚えておき、同じ POM を何度も読まない。
  */
 final class MavenModels {
@@ -56,7 +60,15 @@ final class MavenModels {
         }
         MavenProject project = null;
         try {
-            project = build(MavenPom.read(key));
+            MavenPom pom = MavenPom.read(key);
+            if (!pom.skippedProfilesWithDependencies.isEmpty() && !inRepository(key)) {
+                // activeByDefault でないプロファイルは読まない（このクラスの javadoc）。そのプロファイルで
+                // ビルドしている利用者には依存 jar が黙って欠けるので、プロジェクト自身の POM についてだけ知らせる
+                // （ローカルリポジトリの POM の JDK / OS ごとのプロファイルは、ここで言っても利用者は何もできない）
+                warnOnce(Messages.format("config.maven.profilesSkipped", key,
+                        String.join(", ", pom.skippedProfilesWithDependencies)));
+            }
+            project = build(pom);
         } catch (IOException e) {
             warnOnce(e.getMessage());
         } finally {
@@ -253,8 +265,9 @@ final class MavenModels {
     }
 
     /**
-     * {@code ${name}} を展開する。プロパティ → システムプロパティ → env.* の順に探し、
-     * 分からないものはそのまま残す（呼ぶ側が「決まらない依存」として扱う）
+     * {@code ${name}} を展開する。プロパティ → システムプロパティの順に探し、
+     * 分からないものはそのまま残す（呼ぶ側が「決まらない依存」として扱う）。
+     * {@code env.*} は探さない（環境変数の値を run.log / warnings.txt に書かないため。クラスの javadoc）
      */
     static String interpolate(String s, Map<String, String> props) {
         if (s == null || s.indexOf("${") < 0) {
@@ -278,11 +291,8 @@ final class MavenModels {
                 }
                 String key = cur.substring(start + 2, end).trim();
                 String value = props.get(key);
-                if (value == null) {
+                if (value == null && !key.startsWith("env.")) {
                     value = System.getProperty(key);
-                }
-                if (value == null && key.startsWith("env.")) {
-                    value = System.getenv(key.substring(4));
                 }
                 out.append(cur, pos, start);
                 if (value == null || value.contains("${" + key + "}")) {
@@ -299,6 +309,16 @@ final class MavenModels {
             }
         }
         return cur;
+    }
+
+    /** ローカルリポジトリ（library.repositories か既定の場所）の下にある POM か */
+    private boolean inRepository(Path pomFile) {
+        for (Path root : repos.roots()) {
+            if (pomFile.startsWith(root.toAbsolutePath().normalize())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void warnOnce(String message) {

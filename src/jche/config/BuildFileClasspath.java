@@ -137,6 +137,16 @@ public final class BuildFileClasspath {
         for (String note : result.notes) {
             Log.info("    " + note);
         }
+        if (!result.warnings.isEmpty()) {
+            // 読めない宣言や無いファイルは、その jar が欠けたまま解析が進む。欠けた jar の一覧（下）と同じく
+            // warnings.txt の「依存 jar」の項目に載せる（Maven の読み手は MavenModels#warnOnce で直接載せている）
+            Warnings.warn(Warnings.Topic.DEPENDENCIES,
+                    Messages.format("config.deps.declarationProblems", result.warnings.size()));
+            for (String w : result.warnings) {
+                Log.info("      " + w);
+                Warnings.detail(Warnings.Topic.DEPENDENCIES, "  " + w);
+            }
+        }
         if (!result.missingJars.isEmpty()) {
             Warnings.warn(Warnings.Topic.DEPENDENCIES,
                     Messages.format("config.deps.missingJars", result.missingJars.size()));
