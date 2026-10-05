@@ -108,7 +108,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告。**行を書かずに続けて通ったノード**（行にしないコンストラクタ呼び出し・`exclude.packages` のメソッドの読み飛ばし。既定の `java.**` に当たる JDK の呼び出しも）の数にも同じ上限を掛ける（行を書くたびに数え直す。5.4） | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
-| `dataflow.max.depth` | `5` | 経路に依存する探索（引数で渡ってきたクラス名・リテラルを辿る）の段数。ファクトリの委譲は上限なく畳む | — |
+| `dataflow.max.depth` | `50` | 経路に依存する探索（引数で渡ってきたクラス名・リテラルを辿る）の段数。ファクトリの委譲は上限なく畳む | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
 | `output.folder` | `.`（設定ファイルと同じフォルダ） | 出力先の親フォルダ。この下に実行ごとの `<解析開始日時>_<プロジェクト名>/` を作る。CSV のファイル名は `call-hierarchy.csv` / `methods.csv` に固定 | 設定ファイル |
 
@@ -2234,7 +2234,7 @@ cache.folder=./.cache
 max.depth=50
 max.rows=5000000
 dataflow.enabled=true
-dataflow.max.depth=5
+dataflow.max.depth=50
 output.encoding=UTF-8-BOM
 output.folder=./output
 ```

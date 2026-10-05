@@ -155,7 +155,7 @@ public final class Config {
     public final boolean cacheEnabled;
     /** データフロー解析（ファクトリの戻り値・引数から具象クラスを特定）を使うか */
     public final boolean dataflowEnabled;
-    /** ファクトリの委譲（return create();）を何段まで辿るか */
+    /** 経路に依存する値の追跡（引数で渡ってきたクラス名・リテラル）を何段まで辿るか。既定 50 */
     public final int dataflowMaxDepth;
     /** DIコンテナ（Spring）のBean定義で候補を絞るか */
     public final boolean springDiEnabled;
@@ -324,7 +324,7 @@ public final class Config {
 
         this.cacheEnabled = Boolean.parseBoolean(p.getProperty("cache.enabled", "true").trim());
         this.dataflowEnabled = Boolean.parseBoolean(p.getProperty("dataflow.enabled", "true").trim());
-        this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 5);
+        this.dataflowMaxDepth = intOf(p, "dataflow.max.depth", 50);
         this.springDiEnabled = Boolean.parseBoolean(p.getProperty("spring.di.enabled", "true").trim());
         this.springDiAnnotations = splitList(p.getProperty("spring.di.bean.annotations", ""));
         this.branchPruningEnabled =
