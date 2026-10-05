@@ -57,12 +57,13 @@
 
 | フォルダ | 何の題材か | 使う検査 |
 |---|---|---|
-| `demo/` | 解決経路をひととおり踏む小さなプロジェクト（多実装・ファクトリ・DI・リフレクション・ラムダ・生成される実装・意図的なコンパイルエラー） | `regression`（whole / entry / novalues / jarchange / cacheblocks）・`dataflow`・`cacheversion`・CI の action ジョブ |
+| `demo/` | 解決経路をひととおり踏む小さなプロジェクト（多実装・ファクトリ・DI・リフレクション・ラムダ・生成される実装・意図的なコンパイルエラー） | `regression`（whole / entry / novalues / jarchange / cacheblocks / workspace）・`dataflow`・`cacheversion`・CI の action ジョブ |
 | `maven-demo/` | `pom.xml` から依存 jar を集める Maven プロジェクト | `regression/maven` |
 | `maven-multi/` | マルチモジュールの Maven プロジェクト（兄弟モジュール・親の `dependencyManagement`） | `regression/mavenmulti` |
 | `gradle-demo/` | マルチプロジェクトの Gradle ビルド（Buildship の `.classpath` も） | `regression/gradle` |
 | `localrepo/` | 上の 3 つが依存 jar と POM を探すローカルリポジトリ（`library.repositories`） | `regression/maven` / `mavenmulti` / `gradle` |
 | `localrepo-src/` | `localrepo/` の jar のソース（jar を作り直すときの元） | — |
+| `workspace-demo/` | `demo/` を相手の jar として解決する、`.classpath` だけ（`pom.xml` 無し）のプロジェクト。ワークスペースの他のプロジェクトのキャッシュの結合（`workspace.projects`）の題材 | `regression/workspace` |
 | `plugin-demo/` | ソースを読むだけでは具象クラスが決まらない呼び出しだけを集めたプロジェクト（拡張・ライブラリ呼び出し規則の題材） | `regression/plugin`・`dataflow` |
 | `jls/project/` | JLS の 1 節につき 1 ソース（パッケージ名が節番号） | `jls`・`dataflow`・`cacheversion` |
 | `incremental/src/` | 差分更新の検査が書き換える題材 | `incremental`・`cacheversion` |
