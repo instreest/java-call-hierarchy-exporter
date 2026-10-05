@@ -31,6 +31,9 @@ import jche.util.Messages;
  * 段1で確定するならそれが最も確実なので、証拠より先に採用する。
  * リフレクション（Method.invoke / Class.forName / newInstance）は段0の前に試す。
  * 呼び出し先はjar内のAPIなので静的束縛に見えるが、実際に動くのは名前で指定されたメソッド。
+ * 名前が定数に畳めず決められなかった invoke / newInstance は、静的束縛（jar の中の invoke 自身）に
+ * 倒すと既定の exclude.packages（java.**）で行ごと消えるので、{@link Resolution#REFLECTION_UNKNOWN} にして
+ * 「繋げなかった」ことを出力に残す（Class.forName は除く。{@link DataflowResolver#isReflectiveInvoker}）。
  *
  * 経路（呼び出し元から渡された引数・コンストラクタ実引数）に依存する分は
  * {@link #resolveOnPath} で、経路を歩く側（jche.report.StreamingTreeWalker）がもう一度試す。
@@ -149,11 +152,26 @@ public final class CallResolver {
         return callbacks.matchesOf(edgeIndex, ctx, this::functionalResolution);
     }
 
+    /**
+     * その辺の呼び出し先に呼び戻しの規則があるか。あるのに {@link #callbackTargets} が空なら、
+     * 規則は当たったが渡した値を追えなかった辺で、読み手はその事実を行にする
+     * （{@code jche.report.StreamingTreeWalker}・{@code jche.report.InventoryReport}）
+     */
+    public boolean hasCallbackRule(int edgeIndex) {
+        return callbacks.hasRule(graph.calleeOf(edgeIndex));
+    }
+
     public DataflowResolver dataflow() {
         return dataflow;
     }
 
-    /** 経路に依存しない解決。結果は決定的で、同じエッジには常に同じ結果を返す */
+    /**
+     * 経路に依存しない解決。結果は決定的で、同じエッジには常に同じ結果を返す。
+     *
+     * <p>返す {@link Resolution#targets()} はこのクラスがメモした配列そのもの（候補 1 件ならメソッドごとに
+     * 共有）なので、呼び出し側は書き換えない。複製しないのは、階層の展開で同じエッジが経路の数だけ現れるため
+     * （{@link Resolution} の説明）
+     */
     public Resolution resolve(int edgeIndex) {
         if (edgeTargets == null) {
             edgeTargets = new int[graph.edgeCount()][];
@@ -195,10 +213,23 @@ public final class CallResolver {
         char bindKind = graph.bindKindOf(edgeIndex);
 
         // --- リフレクション（出所のリテラル・クラスリテラル・レシーバの連鎖から決める） ---
-        if (dataflow.reflectiveKindOf(calleeId) != DataflowResolver.REFLECT_NONE) {
+        int reflectKind = dataflow.reflectiveKindOf(calleeId);
+        if (reflectKind != DataflowResolver.REFLECT_NONE) {
             Resolution reflective = dataflow.reflectiveResolution(edgeIndex, null);
             if (reflective != null) {
                 return reflective;
+            }
+            if (DataflowResolver.isReflectiveInvoker(reflectKind)) {
+                // 名前が定数に畳めず（設定・入力・文字列演算から来る値、または dataflow.enabled=false）、
+                // 動くメソッドを決められなかった。候補は宣言どおりの invoke / newInstance（jar の中）1 件のまま
+                // だが、静的束縛として返すと既定の exclude.packages（java.**）で行ごと消え、呼び出しが静かに落ちる。
+                // ラベルで区別し、読み手（StreamingTreeWalker・InventoryReport）が「繋げなかった」行と件数を出す。
+                // 経路の引数で名前が分かる形は resolveOnPath がもう一度試す。拡張には先に声をかける
+                Resolution custom = askProviders(edgeIndex, calleeId, bindKind != BindKind.VIRTUAL, null);
+                if (custom != null) {
+                    return custom;
+                }
+                return Resolution.single(calleeId, Resolution.REFLECTION_UNKNOWN);
             }
         }
 

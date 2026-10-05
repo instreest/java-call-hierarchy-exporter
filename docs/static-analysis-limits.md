@@ -58,7 +58,7 @@ public final class ServiceFactory {
 |---|---|---|---|
 | A | `key` に何が来るか | 手続き間の定数伝播 | **経路依存だが追える**。呼び出し元がリテラルを渡していれば確定する。値が外部（設定ファイル・DB・リクエスト）から来た時点で終わり |
 | B | 文字列からクラス名を算出 | 文字列解析 | **ここが本当の壁**。このツールは文字列の連結・加工を一切追わない |
-| C | `Class.forName(...).newInstance()` | パターン照合 | **最も簡単**。形が定型なので拾える（`OriginTracker.reflectiveOriginOf`） |
+| C | `Class.forName(...).newInstance()` | パターン照合 | **最も簡単**。形が定型なので拾える（`OriginTracker.reflectiveOriginOf`）。名前（A・B）が決まらなければ、`invoke` / `newInstance` の呼び出し先の行を `exclude.packages` に関わらず残し、注記 `[UNEXPANDED:REFLECTION] target unknown: class or method name could not be determined on this path` で知らせる（`resolved-by` は `UNEXPANDED:REFLECTION`。`methods.csv` の `unresolvedCause` も同じ文言。件数は run.log と `warnings.txt`）。`test/demo` の `fx.reflect.Invoker#unknown` がこの形 |
 | D | インスタンスプール | コンテナ解析 | **見た目ほど重要ではない**（[5節](#5-プールは実は問題ではない)） |
 
 ---
@@ -256,8 +256,8 @@ return switch (key) {
 | 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](spring-di-qa.md)） |
 | 6 | `CHA` | 候補が複数のまま（低確度） |
 | — | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
-| — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
+| — | `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたとき、および規則が当たったのに渡した値を追えず繋げなかったとき（呼び出し先の行を残す）は `UNEXPANDED:CALLBACK` |
+| — | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ）。`getMethod` の引数型が揃わず同名のメソッドを候補にしたとき、およびクラス名・メソッド名が定数に畳めず決められなかったとき（`REFLECTION_UNKNOWN`。呼び出し先の行を残す）は `UNEXPANDED:REFLECTION` |
 | — | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | — | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
@@ -318,7 +318,7 @@ at fx.lambda.Holder.lambda$new$0(Holder.java:27),OrderDaoImpl.describe,RESOLVED:
 | 問い | 答え |
 |---|---|
 | しきい値は何か | 値が**解析時に有限個の定数へ畳み込めるか**。動的機構の有無ではない |
-| リフレクションは壁か | いいえ。形が定型なので拾える |
+| リフレクションは壁か | いいえ。形が定型なので拾える。名前が畳めなければ `[UNEXPANDED:REFLECTION] target unknown` の行で知らせる（黙って落とさない） |
 | 何が本当の壁か | **文字列演算**と、**外部入力**（設定ファイル・DB・リクエスト） |
 | プールは壁か | 見た目ほどではない。メモ化なので、生成側が解ければ答えは同じ |
 | 限界は消せるか | 消せない（決定不能）。消せるのは**限界が見えないこと** |

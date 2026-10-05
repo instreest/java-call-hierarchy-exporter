@@ -81,7 +81,7 @@ public final class InventoryReport {
      * 見分けられるようにしている（付けないと、行番号以外まったく同じ行が並ぶ）。
      *
      * unresolvedCalls / unresolvedCause は「このメソッドの中に、
-     * 具象クラスを1つに絞れなかった呼び出しがいくつあり、その理由は何か」。
+     * 具象クラスを1つに絞れなかった（または繋げなかった）呼び出しがいくつあり、その理由は何か」。
      * call-hierarchy.csv の注記と同じ判定を使っているので、
      * まずここで穴のあるメソッドを絞ってから階層を追う、という使い方ができる。
      */
@@ -198,7 +198,14 @@ public final class InventoryReport {
             // 実装なしと同じなので数に入れる。ただし原因が違うので言い分ける
             boolean generated = res.isGeneratedImpl();
             boolean fnImpl = g.hasFunctionalImpl(g.calleeOf(e));
-            if (!multi && !noImpl && !generated && !fnImpl) {
+            // 繋げなかった呼び出しも「絞れなかった」側に数える（階層側では呼び出し先の行を除外に関わらず残す。
+            // StreamingTreeWalker#gapOf）。リフレクションは動くメソッドを決められなかったもの、呼び戻しは規則が
+            // 呼び出し先に当たったのに渡した値を追えなかったもの（候補が複数ならその時点で数えている）。
+            // 経路に依らない判定（ctx 無し）なので、階層側で経路の値から繋げた辺もここでは数に入る（CHA と同じ）
+            boolean reflectionUnknown = res.isReflectionUnknown();
+            boolean callbackUntraced = !multi && !reflectionUnknown && resolver.hasCallbackRule(e)
+                    && resolver.callbackTargets(e, null).isEmpty();
+            if (!multi && !noImpl && !generated && !fnImpl && !reflectionUnknown && !callbackUntraced) {
                 continue;
             }
             count++;
@@ -206,8 +213,14 @@ public final class InventoryReport {
             // 一覧と階層で別の名前で書くと、片方で見つけた呼び出しを
             // もう片方で追えなくなる。判定の順も注記（StreamingTreeWalker.noteFor）と揃える。
             // ラムダが実装しているメソッドはソース上に実装クラスが無くても（NO_IMPL でも）、
-            // 「実装が無い」のではなく「どのラムダが動くか未特定」なので LAMBDA を先に見る
-            String cause = fnImpl && !multi ? StreamingTreeWalker.CAUSE_LAMBDA
+            // 「実装が無い」のではなく「どのラムダが動くか未特定」なので LAMBDA を先に見る。
+            // リフレクションで名前だけで照合した候補は、レシーバの由来（戻り値）より
+            // 「引数型が分からない」ことが手がかりなので、階層側と同じ REFLECTION のタグにする
+            String cause = multi && Resolution.REFLECTION.equals(res.label())
+                            ? StreamingTreeWalker.CAUSE_REFLECTION_NAME_ONLY
+                    : reflectionUnknown ? StreamingTreeWalker.CAUSE_REFLECTION_UNKNOWN
+                    : callbackUntraced ? StreamingTreeWalker.CAUSE_CALLBACK_UNTRACED
+                    : fnImpl && !multi ? StreamingTreeWalker.CAUSE_LAMBDA
                     : noImpl ? StreamingTreeWalker.CAUSE_NO_IMPL
                     : generated ? StreamingTreeWalker.generatedCause(
                             res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length()))

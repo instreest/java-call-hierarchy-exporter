@@ -264,6 +264,8 @@ final class MessagesJa {
             "exporter.callbackHits", "jar の中から呼び戻されるメソッドを規則で繋いだ: {0} 件",
             "exporter.prunedCalls", "条件分岐の静的解析で「その経路では呼ばれない」と判定して打ち切り: {0} 件",
             "exporter.reflectionHits", "リフレクション（Class.forName / getMethod / Method.invoke / newInstance）の呼び出し先を特定: {0} 件",
+            "exporter.reflectionUnknown", "リフレクションの呼び出し先を決められなかった（クラス名・メソッド名が定数でない）: {0} 件。call-hierarchy.csv の UNEXPANDED:REFLECTION の行（methods.csv の unresolvedCause は [UNEXPANDED:REFLECTION] target unknown）の呼び出し箇所を手で確かめてください",
+            "exporter.callbackUntraced", "呼び戻しの規則は当たったが、渡した値を追えなかった: {0} 件。call-hierarchy.csv の UNEXPANDED:CALLBACK の行（methods.csv の unresolvedCause は [UNEXPANDED:CALLBACK] rule matched）の呼び出し箇所を手で確かめてください",
             "exporter.externalScan", "=== 外部jarからの被参照スキャン ===",
             "exporter.externalUnmatched", "※ 自分の型への参照なのにメソッドが一致しなかったものが {0} 件あります。",
             "exporter.externalUnmatched2", "   相手が古い版のjarに対してビルドされている可能性があるため、",

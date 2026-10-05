@@ -264,6 +264,8 @@ final class MessagesEn {
             "exporter.callbackHits", "Methods called back from inside a jar, connected through a rule: {0}",
             "exporter.prunedCalls", "Calls pruned because the static analysis of the conditions says they do not run on that path: {0}",
             "exporter.reflectionHits", "Reflection targets found (Class.forName / getMethod / Method.invoke / newInstance): {0}",
+            "exporter.reflectionUnknown", "Reflection calls whose target could not be determined (class or method name is not a constant): {0}. Check those call sites by hand: the UNEXPANDED:REFLECTION rows in call-hierarchy.csv (unresolvedCause [UNEXPANDED:REFLECTION] target unknown in methods.csv)",
+            "exporter.callbackUntraced", "Calls where a callback rule matched but the passed value could not be traced: {0}. Check those call sites by hand: the UNEXPANDED:CALLBACK rows in call-hierarchy.csv (unresolvedCause [UNEXPANDED:CALLBACK] rule matched in methods.csv)",
             "exporter.externalScan", "=== Scanning references from external jars ===",
             "exporter.externalUnmatched", "* {0} reference(s) point at our own types but no method matched.",
             "exporter.externalUnmatched2", "   The other side may have been built against an older version of the jar,",

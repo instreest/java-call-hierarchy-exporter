@@ -57,6 +57,9 @@ import jche.util.Names;
  * 追えないもの: 設定ファイル・DB・アノテーションから来る名前、
  * Method / Class オブジェクトをフィールドや別メソッドの引数で受け渡す形
  * （実引数・フィールド代入の値は入れ子を持たないため）。
+ * 追えなかった {@code invoke} / {@code newInstance} は黙って落とさず、{@link CallResolver} が
+ * {@link Resolution#REFLECTION_UNKNOWN} にして呼び出し階層に「繋げなかった」行を残す
+ * （{@link #isReflectiveInvoker}。{@code Class.forName} はクラス初期化を繋ぐだけなので対象にしない）。
  */
 public final class DataflowResolver {
 
@@ -606,6 +609,16 @@ public final class DataflowResolver {
 
     public int reflectiveKindOf(int methodId) {
         return facts.reflectKind(methodId);
+    }
+
+    /**
+     * 名前で指定したメソッド・コンストラクタを実際に呼ぶ種別か（{@code Method#invoke} / {@code Constructor#newInstance} /
+     * {@code Class#newInstance}）。これらは解決できなければ呼び出しが 1 本落ちるので、落ちたことを行にする。
+     * {@code Class.forName} はクラス初期化（static 初期化子）を繋ぐだけで、初期化子が無い型なら
+     * 名前が分かっていても解決は空になるため、「分からなかった」とは言えず対象にしない
+     */
+    public static boolean isReflectiveInvoker(int kind) {
+        return kind == REFLECT_INVOKE || kind == REFLECT_CLASS_NEW_INSTANCE || kind == REFLECT_CTOR_NEW_INSTANCE;
     }
 
     /**

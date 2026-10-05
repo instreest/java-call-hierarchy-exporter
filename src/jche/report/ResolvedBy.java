@@ -13,10 +13,13 @@ package jche.report;
  *   EXTERNAL_USAGE:EXACT         … 被参照スキャンの行
  * </pre>
  *
- * <p>後半は原則ラベルそのままだが、ラベルだけでは誤読させる1ケースだけ言い換える。
+ * <p>後半は原則ラベルそのままだが、ラベルだけでは誤読させるケースは言い換える。
  * ラムダ／メソッド参照が実装している関数型インターフェースの呼び出しは、
  * ソース上の実装が1件でも（ラベルは {@code SINGLE_IMPL} 等の確定系でも）
  * 実際にどれが走るかは未特定なので {@link #LAMBDA} を使う。
+ * 繋げなかった呼び出し（リフレクションの先が分からない {@code UNEXPANDED:REFLECTION}、呼び戻しの規則が当たったのに
+ * 渡した値を追えない {@code UNEXPANDED:CALLBACK}）は、呼び出し先が 1 件に見えても確定ではないので
+ * {@link #UNEXPANDED} に寄せる（{@code StreamingTreeWalker#gapOf}）。
  *
  * <p>注記（call-hierarchy 列の最後の要素）とは同じ判定から作るので、両者が食い違うことはない。
  * 列と完全に重複する裸の {@code [RESOLVED:*]} は注記に出さない

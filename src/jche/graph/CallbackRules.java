@@ -30,7 +30,9 @@ import jche.cache.Origin;
  * </ul>
  * 値の具象型は #127 のデータフロー（{@link DataflowResolver}）で決める。ラムダ／メソッド参照
  * （{@link Origin#FUNCTIONAL}）ならその本体、{@code new} した型ならその型の実装。
- * 分からなければ辺は張らない（jar の型の全実装を並べるような広い候補は出さない）。
+ * 分からなければ辺は張らない（jar の型の全実装を並べるような広い候補は出さない）。ただし黙って落とさず、
+ * 規則が呼び出し先に当たったのに {@link #matchesOf} が空なら、読み手が呼び出し先の行を除外に関わらず
+ * {@code UNEXPANDED:CALLBACK} で残す（{@code jche.report.StreamingTreeWalker#gapOf}）。
  */
 public final class CallbackRules {
 

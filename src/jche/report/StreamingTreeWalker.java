@@ -99,6 +99,25 @@ public final class StreamingTreeWalker {
      * 候補の由来（{@code [UNEXPANDED:CHA] N candidates: } に続ける）
      */
     static final String CALLBACK_METHOD_REF = "method reference to an overridable method";
+    /**
+     * リフレクションで、getMethod の引数型（クラスリテラル）が揃わず名前だけで照合したときの候補の由来
+     * （階層側は {@code [UNEXPANDED:REFLECTION] N candidates: } に続け、一覧側は {@link #CAUSE_REFLECTION_NAME_ONLY}）
+     */
+    static final String REFLECTION_NAME_ONLY = "matched by name because argument types are unknown";
+    static final String CAUSE_REFLECTION_NAME_ONLY = UNEXPANDED + "REFLECTION] " + REFLECTION_NAME_ONLY;
+    /**
+     * リフレクションの呼び出し（invoke / newInstance）で、クラス名・メソッド名が定数に畳めず動くメソッドを
+     * 1 つも決められなかった（{@link Resolution#REFLECTION_UNKNOWN}）。呼び出し先は jar の中の invoke 自身なので
+     * 普通なら exclude.packages で行にならないが、「繋げなかった」事実を残すために行にする
+     */
+    static final String CAUSE_REFLECTION_UNKNOWN =
+            UNEXPANDED + "REFLECTION] target unknown: class or method name could not be determined on this path";
+    /**
+     * 呼び戻しの規則は呼び出し先に当たったが、渡した値の具象型（またはラムダ）を追えず、呼び戻される側を
+     * 1 つも繋げなかった。同じく呼び出し先（jar の中）の行を除外に関わらず残す
+     */
+    static final String CAUSE_CALLBACK_UNTRACED =
+            UNEXPANDED + "CALLBACK] rule matched but the passed value could not be traced to a method in the source";
 
     /**
      * 実装がコンパイル時のアノテーション処理で生成される型の注記。
@@ -157,6 +176,10 @@ public final class StreamingTreeWalker {
     /** 規則（jar の中のメソッドが渡した値を呼び戻す）で繋いだ件数 */
     private long callbackHits;
     private long reflectionHits;
+    /** リフレクションの呼び出しで動くメソッドを決められず、「繋げなかった」行にした件数（{@link #CAUSE_REFLECTION_UNKNOWN}） */
+    private long reflectionUnknown;
+    /** 呼び戻しの規則が当たったのに渡した値を追えず、「繋げなかった」行にした件数（{@link #CAUSE_CALLBACK_UNTRACED}） */
+    private long callbackUntraced;
     private long fieldHits;
     private long newHits;
     /** 経路で渡ってきた値の宣言の型（実行時の型の上限）で 1 つに絞れた件数（{@link Resolution#DATAFLOW_DECLARED_TYPE}） */
@@ -246,6 +269,22 @@ public final class StreamingTreeWalker {
     /** 規則で呼び戻される側へ繋いだ件数 */
     public long callbackHits() {
         return callbackHits;
+    }
+
+    /**
+     * リフレクションの呼び出し（invoke / newInstance）で動くメソッドを決められなかった件数。
+     * 1 件でもあれば、その呼び出し箇所は手で確かめる必要がある（出力の {@code UNEXPANDED:REFLECTION} の行）
+     */
+    public long reflectionUnknown() {
+        return reflectionUnknown;
+    }
+
+    /**
+     * 呼び戻しの規則が当たったのに渡した値を追えなかった件数。
+     * 1 件でもあれば、その呼び出し箇所は手で確かめる必要がある（出力の {@code UNEXPANDED:CALLBACK} の行）
+     */
+    public long callbackUntraced() {
+        return callbackUntraced;
     }
 
     /** 絞れなかった呼び出しから作った、ライブラリ呼び出し規則のひな形 */
@@ -395,6 +434,12 @@ public final class StreamingTreeWalker {
                 suggestions.add(graph, dataflow, path[depth].context(), e, callerId,
                         declaredCallee, targets);
             }
+            // 呼び出し先が jar の中でも、規則で「渡した値を呼び戻す」と分かるものは、呼び出し先の行の次に
+            // 呼び戻される側を並べる（descendCallbacks）。ここで 1 回だけ引き、当たったのに繋げなかったか
+            // （gapOf）の判定にも使う。この経路で呼ばれない呼び出しは繋がない
+            List<CallbackRules.Match> callbacks = (unreachable == null)
+                    ? resolver.callbackTargets(e, path[depth].context()) : List.of();
+            String gap = gapOf(e, res, unreachable, callbacks);
             boolean expand = (targets.length == 1) && (unreachable == null);
             int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
 
@@ -423,7 +468,20 @@ public final class StreamingTreeWalker {
                 }
                 if (isExcluded(target)) {
                     markAbsent(target, ABSENT_EXCLUDED);
-                    // 除外対象のノード自身は出力しないが、その先は辿る。
+                    if (gap != null) {
+                        // 繋げなかった呼び出し（リフレクションの先が分からない・規則が当たったのに値を追えない）は、
+                        // 呼び出し先が除外対象（既定の java.** に当たる invoke や Thread.start）でも行にする。
+                        // 除外で消すと「ここで呼び出しが 1 本落ちた」ことが出力のどこにも残らない
+                        path[depth + 1].set(target, graph.callLineOf(e),
+                                noteFor(target, declaredCallee, res, depth, onCurrentPath(target, depth),
+                                        graph.recvKindOf(e), unreachable, gap),
+                                resolvedBy(target, declaredCallee, res, gap),
+                                targetParams, targetCtorArgs,
+                                (targetCtorArgs == null) ? null : methods.typeFqn(target));
+                        path[depth + 1].mainSeen = path[depth].mainSeen || scope.isMain(target);
+                        emit(depth + 1);
+                    }
+                    // 除外対象のノード自身は（上の行を除き）出力しないが、その先は辿る。
                     // 経路上（読み飛ばし中の除外メソッドを含む）へ戻る辺は循環なので降りない。
                     // この経路で呼ばれない呼び出しは、除外ノードの先も辿らない
                     if (unreachable == null && !onCurrentPath(target, depth)) {
@@ -440,8 +498,8 @@ public final class StreamingTreeWalker {
                 }
                 path[depth + 1].set(target, graph.callLineOf(e),
                         noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e),
-                                unreachable),
-                        resolvedBy(declaredCallee, res),
+                                unreachable, gap),
+                        resolvedBy(target, declaredCallee, res, gap),
                         targetParams, targetCtorArgs,
                         (targetCtorArgs == null) ? null : methods.typeFqn(target),
                         // ラムダの本体へ降りるとき、今の段が「そのラムダを生成したメソッド」なら
@@ -473,19 +531,44 @@ public final class StreamingTreeWalker {
             // 呼び出し先が jar の中でも、規則で「渡した値を呼び戻す」と分かるものは
             // その先へ繋ぐ（Thread#start → Runnable#run 等。docs/library-call-rules-qa.md）。
             // 呼び出し先自身の行はそのまま残し、その次に呼び戻される側を並べる
-            if (unreachable == null) {
-                descendCallbacks(depth, e, declaredCallee, collapsed);
-            }
+            descendCallbacks(depth, e, declaredCallee, callbacks, collapsed);
         }
+    }
+
+    /**
+     * その辺で「繋げなかった」ことを行に残すべき理由。無ければ null。
+     * <ul>
+     *   <li>{@link #CAUSE_REFLECTION_UNKNOWN} … リフレクションの呼び出しで動くメソッドを決められなかった
+     *       （{@link Resolution#REFLECTION_UNKNOWN}。経路の引数で名前が分かれば resolveOnPath が解決している）</li>
+     *   <li>{@link #CAUSE_CALLBACK_UNTRACED} … 呼び戻しの規則が呼び出し先に当たったのに、渡した値を追えず
+     *       1 件も繋げなかった。候補が複数の呼び出し（CHA）はその行自体が「絞れなかった」と言っているので対象にしない</li>
+     * </ul>
+     * どちらも、呼び出し先の行（jar の中の invoke や Thread.start）を exclude.packages に関わらず書き、
+     * resolved-by を {@code UNEXPANDED:REFLECTION} / {@code UNEXPANDED:CALLBACK} にする
+     * （呼び出し先にソースがあればその先へ降りるので、列は変えず注記だけ。{@link #resolvedBy}）。
+     * 件数は辺を通るたび（経路ごと）に数える（{@link #reflectionHits} 等と同じ数え方）
+     */
+    private String gapOf(int e, Resolution res, String unreachable, List<CallbackRules.Match> callbacks) {
+        if (res.isReflectionUnknown()) {
+            reflectionUnknown++;
+            return CAUSE_REFLECTION_UNKNOWN;
+        }
+        if (unreachable == null && !res.isMultiple() && callbacks.isEmpty() && resolver.hasCallbackRule(e)) {
+            callbackUntraced++;
+            return CAUSE_CALLBACK_UNTRACED;
+        }
+        return null;
     }
 
     /**
      * 規則で呼び戻されるメソッドを、その辺の追加の候補として出力し、降りる。
      * 通常の候補と同じく、除外・循環の扱いを通す
+     *
+     * @param matches その辺の規則で呼び戻されるメソッド（{@link CallResolver#callbackTargets}。呼ぶ側が 1 回だけ引く）
      */
-    private void descendCallbacks(int depth, int e, int declaredCallee, CollapseSeen collapsed)
-            throws IOException {
-        for (CallbackRules.Match match : resolver.callbackTargets(e, path[depth].context())) {
+    private void descendCallbacks(int depth, int e, int declaredCallee, List<CallbackRules.Match> matches,
+                                  CollapseSeen collapsed) throws IOException {
+        for (CallbackRules.Match match : matches) {
             if (isRowLimitReached()) {
                 return;
             }
@@ -512,8 +595,8 @@ public final class StreamingTreeWalker {
                 markAbsent(target, ABSENT_CHA);
             }
             Resolution res = Resolution.single(target, Resolution.CALLBACK);
-            String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null);
-            String resolvedBy = resolvedBy(declaredCallee, res);
+            String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null, null);
+            String resolvedBy = resolvedBy(target, declaredCallee, res, null);
             if (match.isMultiple()) {
                 // 渡した値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかった。
                 // 候補を全部並べたことを、通常の CHA と同じ言い方で残す（確定に見せない）
@@ -873,8 +956,21 @@ public final class StreamingTreeWalker {
      *
      * 判定の順序は {@link #noteFor} と同じにしてある。片方だけを直すと、
      * 同じ行の列と注記が食い違う（docs/call-hierarchy-columns-qa.md の Q3）。
+     *
+     * @param target 行にする呼び出し先
+     * @param gap    繋げなかった理由（{@link #gapOf}）。あれば、確定に見える段のラベル（STATIC_BOUND 等）ではなく
+     *               「繋げなかった」側の {@code UNEXPANDED:REFLECTION} / {@code UNEXPANDED:CALLBACK} にする。
+     *               ただし呼び出し先にソースがある（自前のフレームワークの API に規則を書いた形）ときは、その先へは
+     *               普通に降りるので列は呼び出し先の解決のままにし、繋げなかったことは注記だけで示す
+     *               （{@code UNEXPANDED:} は「その先へ降りなかった」の印なので、降りる行には付けない）
      */
-    private String resolvedBy(int declaredCallee, Resolution res) {
+    private String resolvedBy(int target, int declaredCallee, Resolution res, String gap) {
+        if (gap != null && !methods.hasSource(target)) {
+            // 呼び出し先（jar の中の invoke・Thread.start）は決まっているが、実際に動くメソッドへ繋げていない。
+            // 候補が複数の呼び出しは gapOf が対象にしないので、ここに来るのは 1 件に見える行だけ
+            return ResolvedBy.UNEXPANDED
+                    + (res.isReflectionUnknown() ? Resolution.REFLECTION : Resolution.CALLBACK);
+        }
         if (res.isMultiple()) {
             // 1件に絞れなかった。ラベルは「候補をどう集めたか」を表す
             // （CHA / LOCAL_NEW_MULTI / CALL_RULE / REFLECTION / 拡張のラベル）
@@ -905,10 +1001,12 @@ public final class StreamingTreeWalker {
      *
      * 解決方法そのものは resolved-by 列に出るので、注記には
      * <b>列に無い情報がある場合だけ</b>後半を付ける（候補の件数とレシーバの由来、
-     * 生成される実装のFQN、繋いだ規則）。
+     * 生成される実装のFQN、繋いだ規則、繋げなかった理由）。
+     *
+     * @param gap 繋げなかった理由（{@link #gapOf}）。無ければ null
      */
     private String noteFor(int target, int declaredCallee, Resolution res, int depth,
-                           boolean cycle, char recvKind, String unreachable) {
+                           boolean cycle, char recvKind, String unreachable, String gap) {
         StringBuilder sb = new StringBuilder();
         if (unreachable != null) {
             // 条件分岐の静的解析で、この経路では実行されないと分かった呼び出し。
@@ -933,8 +1031,7 @@ public final class StreamingTreeWalker {
         String detail;
         if (res.isMultiple() && Resolution.REFLECTION.equals(res.label())) {
             // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
-            detail = UNEXPANDED + "REFLECTION] " + res.targets().length
-                    + " candidates: matched by name because argument types are unknown";
+            detail = UNEXPANDED + "REFLECTION] " + res.targets().length + " candidates: " + REFLECTION_NAME_ONLY;
         } else if (res.isMultiple()) {
             // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる。
             // 候補数が上限を超えたときは、行にならなかった候補があることも書く。
@@ -956,6 +1053,11 @@ public final class StreamingTreeWalker {
                 Log.warn(Messages.format("report.walker.chaCandidateLimit", Config.CHA_MAX_CANDIDATES,
                         methods.fullSignature(declaredCallee)));
             }
+        } else if (gap != null) {
+            // 繋げなかった呼び出し（リフレクションの先が分からない・規則が当たったのに値を追えない）。
+            // resolved-by の UNEXPANDED:REFLECTION / UNEXPANDED:CALLBACK だけでは「候補を並べた」
+            // 形と区別が付かないので、理由を注記に書く（methods.csv の unresolvedCause と同じ文言）
+            detail = gap;
         } else if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
             // どのラムダが渡ってきたかまで分かった呼び出し。下の「未特定」とは逆の結論なので、
             // 先に判定する。解決方法は resolved-by 列に出るので注記は付けない

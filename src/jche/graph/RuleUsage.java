@@ -17,7 +17,9 @@ import jche.util.Messages;
  *
  * <p>同梱の表は「そのプロジェクトで使っていない機能の行」が当たらないのが普通
  * （{@code Timer} を使っていなければ {@code Timer} の行は当たらない）なので、効いた行数だけを
- * 数えて列挙はしない。列挙するのは利用者が足した行だけにする。
+ * 数えて列挙はしない。列挙するのは利用者が足した行だけにする。同梱の行が当たったのに繋げなかった辺は、
+ * ここでは知らせず、辺ごとに呼び出し階層の行（{@code UNEXPANDED:CALLBACK}）と件数の警告で見せる
+ * （{@code jche.report.StreamingTreeWalker#gapOf}）。
  *
  * <p>数え上げはグラフ全体の走査が終わってから読むこと。呼び戻しの規則は
  * {@link CallResolver#inDegrees()} が全エッジについて、入口の規則は methods.csv の出力が

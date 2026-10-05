@@ -246,9 +246,14 @@ config/
 | `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`call-hierarchy` の先頭の列は `(unresolved)` |
 | `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
-後半は解決の段のラベルそのものですが、1 つだけ例外があります。ラムダ式・メソッド参照が実装している
+後半は解決の段のラベルそのものですが、例外が 2 つあります。ラムダ式・メソッド参照が実装している
 関数型インターフェースの呼び出しは、ソース上の実装が 1 件でも（ラベルは `SINGLE_IMPL` 等の確定系でも）
-どれが実行されるかは未特定なので `UNEXPANDED:LAMBDA` になります。
+どれが実行されるかは未特定なので `UNEXPANDED:LAMBDA` になります。もう 1 つは**繋げなかった呼び出し**で、
+リフレクション（`Method.invoke` / `newInstance`）の先が決められなかった行は `UNEXPANDED:REFLECTION`、
+呼び戻しの規則が呼び出し先に当たったのに渡した値を追えなかった行は `UNEXPANDED:CALLBACK` になります。
+この 2 つは呼び出し先（jar の中の `Method.invoke` や `Thread.start`）が `exclude.packages` に当たっていても
+行を残します（除外で消すと、呼び出しが 1 本落ちたことがどこにも残らないため）。呼び出し先がソースにある
+自前の API（自分で規則を書いた形）なら、その先へは普通に降りるので `resolved-by` は変えず、注記だけで知らせます。
 
 Excel では `resolved-by` で「`UNEXPANDED:` で始まる行だけ」＝**辿り切れなかった呼び出し**、
 `depth` で「3 以下」＝**起点の近く**、のように絞り込めます。
@@ -309,6 +314,9 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | 中身を書いたクラスがソース上に 1 つも無い |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名)` | 実装がアノテーション処理でビルド時に生成される型（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` | その関数型インターフェースをラムダかメソッド参照が実装している |
+| `[UNEXPANDED:REFLECTION] matched by name because argument types are unknown` | リフレクションで `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
+| `[UNEXPANDED:REFLECTION] target unknown: class or method name is not a constant on this path` | リフレクション（`Method.invoke` / `newInstance`）の呼び出しで、クラス名・メソッド名が定数に畳めず（設定ファイル・入力・文字列演算から来る値、`dataflow.enabled=false`、または名前は分かるがその型がソースに無い）、動くメソッドを 1 つも決められなかった。**その呼び出し箇所は手で確かめる** |
+| `[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source` | 呼び戻しの規則（`Thread#start()` 等）は呼び出し先に当たったが、渡した値の具象型もラムダも追えず（後から差し替えるフィールドなど。[docs/library-call-rules.md](docs/library-call-rules.md) の「追える条件」）、呼び戻される側を 1 つも繋げなかった。**その呼び出し箇所は手で確かめる** |
 
 `absentCause` は、そのメソッドが `call-hierarchy.csv` に 1 行も出なかった理由です。
 打ち切りで階層から消えた部分木は、ここでしか見えません。
@@ -352,6 +360,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達した |
 | `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を 1 つに絞れなかった。候補は 1 件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
+| `[UNEXPANDED:REFLECTION] target unknown: class or method name is not a constant on this path` | リフレクション（`Method.invoke` / `newInstance`）の呼び出しで、クラス名・メソッド名が定数に畳めず、動くメソッドを 1 つも決められなかった。`callee` は jar の中の `Method.invoke` 等のままで、`exclude.packages` に当たっていても行を残す（`resolved-by` は `UNEXPANDED:REFLECTION`）。**その呼び出し箇所は手で確かめる**。件数は run.log と `warnings.txt` にも出る |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に 1 つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名): FQN is…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` | その関数型インターフェースをラムダかメソッド参照が実装しているが、この呼び出し箇所にどれが渡ってくるかは特定できなかった（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
@@ -360,6 +369,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という規則で繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。jar の中を読んだわけではない |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: …` | 同じく規則で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
+| `[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source` | 規則は呼び出し先に当たったが、渡した値の具象型もラムダも追えず、呼び戻される側を 1 つも繋げなかった。`callee` は jar の中の `Thread.start` 等のままで、`exclude.packages` に当たっていても行を残す（`resolved-by` は `UNEXPANDED:CALLBACK`）。**その呼び出し箇所は手で確かめる**。件数は run.log と `warnings.txt` にも出る |
 | `type resolution failed …` | 呼び出し先の型を特定できなかった行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
@@ -414,8 +424,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | `CHA` | 候補が複数のまま（低確度） |
 | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
-| `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
+| `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたとき、および規則が当たったのに渡した値を追えず繋げなかったとき（呼び出し先の行を残す）は `UNEXPANDED:CALLBACK` |
+| `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ）。`getMethod` の引数型が揃わず同名のメソッドを候補にしたとき、およびクラス名・メソッド名が定数に畳めず決められなかったとき（呼び出し先の行を残す）は `UNEXPANDED:REFLECTION` |
 | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
 
@@ -733,10 +743,16 @@ Besides missing dependency jars, a path in the config file that does not exist a
 | `UNRESOLVED:` | A row for a call whose callee type could not be determined: `UNRESOLVED:BINDING_FAILED` (incomplete classpath, a dynamic call and so on) and `UNRESOLVED:OUTSIDE_METHOD` (a call from outside a method body). The first column of `call-hierarchy` is `(unresolved)` |
 | `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 
-The second half is the label of the resolution step itself, with one exception. A call to a functional
+The second half is the label of the resolution step itself, with two exceptions. A call to a functional
 interface that a lambda or method reference implements becomes `UNEXPANDED:LAMBDA` even when there is a
 single implementation in the source (that is, even when the label is a definite one such as
-`SINGLE_IMPL`), because which one runs is still undetermined.
+`SINGLE_IMPL`), because which one runs is still undetermined. The other exception is a **call that could
+not be connected**: a reflection call (`Method.invoke` / `newInstance`) whose target could not be determined
+becomes `UNEXPANDED:REFLECTION`, and a call where a callback rule matched the callee but the passed value could
+not be traced becomes `UNEXPANDED:CALLBACK`. These two rows are kept even when the callee (`Method.invoke` or
+`Thread.start` inside a jar) matches `exclude.packages`, because dropping them would leave no trace that a
+call was lost. When the callee is your own API in the source (a rule you wrote yourself), the walk continues
+below it as usual, so `resolved-by` is left alone and only the note says so.
 
 In Excel you can filter on `resolved-by` for "rows starting with `UNEXPANDED:`" = **the calls that could
 not be followed to the end**, or on `depth` for "3 or less" = **near the entry point**.
@@ -798,6 +814,9 @@ you found in the list and `grep` for it on the hierarchy side.
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | No class in the source writes the body |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (framework)` | A type whose implementation is generated at build time by annotation processing (see [docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md)) |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference` | A lambda or method reference implements that functional interface |
+| `[UNEXPANDED:REFLECTION] matched by name because argument types are unknown` | Reflection where the argument types of `getMethod` (class literals) were not all available, so methods with the same name were taken as candidates |
+| `[UNEXPANDED:REFLECTION] target unknown: class or method name is not a constant on this path` | A reflection call (`Method.invoke` / `newInstance`) whose class or method name does not fold to a constant (a value from a config file or input, string operations, `dataflow.enabled=false`, or the name is known but that type is not in the source), so no method that runs could be determined. **Check that call site by hand** |
+| `[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source` | A callback rule (such as `Thread#start()`) matched the callee, but neither the concrete type nor a lambda could be traced for the passed value (a field assigned later, for example; see "what it can follow" in [docs/library-call-rules.md](docs/library-call-rules.md)), so nothing was connected. **Check that call site by hand** |
 
 `absentCause` is why the method never appeared in `call-hierarchy.csv`.
 A subtree that disappeared from the hierarchy because of pruning is visible only here.
@@ -844,6 +863,7 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` was reached |
 | `[UNEXPANDED:CHA] N candidates: {reason}` | The implementation could not be narrowed to one. Each candidate becomes a row, but nothing below them is followed (it would explode as candidates^depth). The reason is the same as in the `unresolvedCause` table above. Candidates excluded by `exclude.packages` are not written as rows, and their number is written as `(K excluded by exclude.packages and not written as rows)` (the declaration in a jar interface counts as a candidate because the jar may also implement it, so this often appears with the default `java.**` exclusion) |
 | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | The argument types of `getMethod` (class literals) were not all available, so methods with the same name were taken as candidates |
+| `[UNEXPANDED:REFLECTION] target unknown: class or method name is not a constant on this path` | A reflection call (`Method.invoke` / `newInstance`) whose class or method name does not fold to a constant, so no method that runs could be determined. `callee` stays the `Method.invoke` and the like inside the jar, and the row is kept even when it matches `exclude.packages` (`resolved-by` is `UNEXPANDED:REFLECTION`). **Check that call site by hand**. The count also appears in run.log and `warnings.txt` |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | There is an interface or abstract method declaration, but no class in the source writes the body. Unlike `[EXTERNAL]` (where the source simply cannot be read), the source was read and nothing was found, so suspect a missing `source.folders` entry or dead code |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (framework): FQN is...` | A call into a type whose implementation is generated at build time by annotation processing (see [docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md)) |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` | A lambda or method reference implements that functional interface, but which one arrives at this call site could not be determined (see [Lambdas and method references](#lambdas-and-method-references)) |
@@ -852,6 +872,7 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). The inside of the jar was not read |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: ...` | Also connected by a rule, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
+| `[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source` | The rule matched the callee, but neither the concrete type nor a lambda could be traced for the passed value, so nothing was connected. `callee` stays the `Thread.start` and the like inside the jar, and the row is kept even when it matches `exclude.packages` (`resolved-by` is `UNEXPANDED:CALLBACK`). **Check that call site by hand**. The count also appears in run.log and `warnings.txt` |
 | `type resolution failed ...` | A row for a call whose callee type could not be determined (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
 | `external-ref:EXACT` and the like | A row of the external reference scan ([below](#methods-referenced-from-external-jars)). Also a row of its own |
 
@@ -909,8 +930,8 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | The bean definitions of the DI container (Spring) narrowed it to one. `SPRING_DI_QUALIFIER` means the bean name from `@Qualifier` / `@Resource(name=...)` decided it ([docs/spring-di-qa.md](docs/spring-di-qa.md)) |
 | `CHA` | Several candidates remain (low confidence) |
 | `GENERATED_IMPL:name` | A type whose implementation is generated at compile time by annotation processing (a special case of `NO_IMPL`) |
-| `CALLBACK` | Connected across the inside of a jar by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, it is `UNEXPANDED:CALLBACK` |
-| `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` resolved to the method or constructor named through reflection / class initialization through `Class.forName` (connected to `<clinit>`) |
+| `CALLBACK` | Connected across the inside of a jar by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, and when the rule matched but the passed value could not be traced (the callee row is kept), it is `UNEXPANDED:CALLBACK` |
+| `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` resolved to the method or constructor named through reflection / class initialization through `Class.forName` (connected to `<clinit>`). When the argument types of `getMethod` were not all available and methods with the same name were taken as candidates, and when the class or method name does not fold to a constant so nothing could be determined (the callee row is kept), it is `UNEXPANDED:REFLECTION` |
 | `EXTERNAL_GUESS` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import` (**unverified**) |
 | `LAMBDA` | A lambda or method reference implements it and which one runs is undetermined. This is a rewording used only in the `resolved-by` column, and it always appears as `UNEXPANDED:LAMBDA` |
 

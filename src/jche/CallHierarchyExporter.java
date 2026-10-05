@@ -374,6 +374,16 @@ public class CallHierarchyExporter {
             if (walker.reflectionHits() > 0) {
                 Log.info(Messages.format("exporter.reflectionHits", walker.reflectionHits()));
             }
+            // 繋げなかった呼び出し（リフレクションの先が分からない・規則が当たったのに値を追えない）は、
+            // 利用者がその呼び出し箇所を手で確かめる必要があるので、経過ではなく警告（warnings.txt に載る）
+            if (walker.reflectionUnknown() > 0) {
+                Warnings.warn(Warnings.Topic.INCOMPLETE,
+                        Messages.format("exporter.reflectionUnknown", walker.reflectionUnknown()));
+            }
+            if (walker.callbackUntraced() > 0) {
+                Warnings.warn(Warnings.Topic.INCOMPLETE,
+                        Messages.format("exporter.callbackUntraced", walker.callbackUntraced()));
+            }
 
             // 型解決に失敗した呼び出しも、抜け落ちた事実が分かるよう行として残す
             rows += UnresolvedReport.write(graph, unresolved, writer);

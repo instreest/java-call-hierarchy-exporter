@@ -4,9 +4,14 @@ package jche.graph;
 /**
  * 1本のエッジの解決結果。呼び出し先の候補（メソッドID）と、どう決めたかのラベル。
  *
- * ラベルは call-hierarchy.csv の注記「解決:ラベル」として出る。
+ * ラベルは call-hierarchy.csv の {@code resolved-by} 列の後半（{@code RESOLVED:ラベル} / {@code UNEXPANDED:ラベル}）
+ * として出る（{@code jche.report.ResolvedBy}）。注記に出るのは列に無い情報だけ。
  *
- * @param targets 呼び出し先の候補。1件なら確定、複数ならCHA等で絞れなかった候補集合
+ * <p>{@code targets} は {@link CallResolver#resolve} がエッジごとにメモした配列（候補 1 件なら
+ * メソッドごとに共有した配列）をそのまま渡すので、<b>受け取った側は書き換えない</b>。複製しないのは、
+ * 階層の展開で同じエッジが経路の数だけ現れ、そのたびに配列を作るとエッジ数×経路数の割り当てになるため。
+ *
+ * @param targets 呼び出し先の候補。1件なら確定、複数ならCHA等で絞れなかった候補集合。書き換え不可
  * @param label   解決の根拠
  */
 public record Resolution(int[] targets, String label) {
@@ -68,6 +73,16 @@ public record Resolution(int[] targets, String label) {
     public static final String REFLECTION = "REFLECTION";
     /** Class.forName によるクラス初期化（static 初期化子へ繋ぐ） */
     public static final String REFLECTION_INIT = "REFLECTION_INIT";
+    /**
+     * リフレクションの呼び出し（{@code Method#invoke} / {@code Constructor#newInstance} / {@code Class#newInstance}）
+     * なのに、クラス名・メソッド名が定数に畳めず（設定ファイルや入力から来る値、文字列演算、
+     * {@code dataflow.enabled=false}）、動くメソッドを 1 つも決められなかった。候補は宣言どおりの呼び出し先
+     * （jar の中の {@code invoke} 等）1 件のままで、静的束縛として扱うと {@code exclude.packages} の既定
+     * （{@code java.**}）で行ごと消えるので、ラベルで区別して呼び出し階層に「繋げなかった」行を残す
+     * （{@code resolved-by} は {@code UNEXPANDED:REFLECTION}。{@code jche.report.StreamingTreeWalker}）。
+     * {@link #isReflection} には含めない（特定した件数に数えず、経路の値でもう一度試す対象にするため）
+     */
+    public static final String REFLECTION_UNKNOWN = "REFLECTION_UNKNOWN";
 
     public static Resolution single(int target, String label) {
         return new Resolution(new int[] {target}, label);
@@ -87,7 +102,13 @@ public record Resolution(int[] targets, String label) {
         return label.startsWith(GENERATED_IMPL_PREFIX);
     }
 
+    /** リフレクションで指定されたメソッド・コンストラクタ・クラス初期化を特定した（{@link #REFLECTION_UNKNOWN} は含まない） */
     public boolean isReflection() {
-        return label.startsWith(REFLECTION);
+        return REFLECTION.equals(label) || REFLECTION_INIT.equals(label);
+    }
+
+    /** リフレクションの呼び出しで、動くメソッドを 1 つも決められなかった */
+    public boolean isReflectionUnknown() {
+        return REFLECTION_UNKNOWN.equals(label);
     }
 }

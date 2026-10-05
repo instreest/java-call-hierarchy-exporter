@@ -6,7 +6,7 @@
 
 | 種類 | 何を決めるか | 出力 |
 |---|---|---|
-| **A. 呼び戻し** | 呼び出し箇所で渡した値のどれが、どのメソッドで呼び戻されるか | `call-hierarchy.csv` に `RESOLVED:CALLBACK` の行を足す |
+| **A. 呼び戻し** | 呼び出し箇所で渡した値のどれが、どのメソッドで呼び戻されるか | `call-hierarchy.csv` に `RESOLVED:CALLBACK` の行を足す（当たったのに繋げなければ `UNEXPANDED:CALLBACK` の行を残す） |
 | **B. 起点** | どのメソッドをフレームワークが入口として呼ぶか | `methods.csv` の `role` を `FRAMEWORK_ENTRY` にし、全体モードの起点に加える |
 | **C. 具象型** | 宣言型（またはその型のメソッド）を、どの実装に解決するか | `call-hierarchy.csv` の `resolved-by` が `RESOLVED:CALL_RULE` になり、その先へ降りる |
 
@@ -43,11 +43,21 @@ at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,UNEXPANDED:C
 | 上書きされうるメソッドへのメソッド参照で、具象型が分からない | `new Thread(this::hook).start()`、`daos.forEach(Dao::describe)` | 上書き候補を全部出す（`UNEXPANDED:CALLBACK`。参照先の宣言がソースにあるときだけ） |
 | ローカル変数に入れて渡す | `Runnable t = new Job(); new Thread(t).start();` | ○ |
 | 引数で受け取ったものを渡す | `void kick(Runnable r) { new Thread(r).start(); }` | 呼び出し元でその引数が分かる経路なら ○ |
-| `Runnable` 型のフィールド（出所が1つに定まらない） | `this.task` を後から差し替える | × |
-| `list.forEach(Runnable::run)` | 要素の `run` を呼ぶが、要素が何かは分からない。参照先の `Runnable#run` は jar の中なので、上書き候補は `Runnable` の全実装になる | × |
+| `Runnable` 型のフィールド（出所が1つに定まらない） | `this.task` を後から差し替える（`test/demo` の `fx.lambda.LateTask`） | ×（`UNEXPANDED:CALLBACK` の行で知らせる） |
+| `list.forEach(Runnable::run)` | 要素の `run` を呼ぶが、要素が何かは分からない。参照先の `Runnable#run` は jar の中なので、上書き候補は `Runnable` の全実装になる | ×（同上） |
+| `dataflow.enabled=false` | 値を読まないので、`new` した型もラムダも分からない | ×（同上） |
 
 分からないときは辺を張りません。`Runnable` の全実装を候補に並べるような広い候補は出しません
-（誤って絞るより、絞れないと分かる方が害が少ないため）。
+（誤って絞るより、絞れないと分かる方が害が少ないため）。ただし**黙って落としません**。規則が呼び出し先に当たったのに
+1 件も繋げなかった呼び出しは、呼び出し先（`Thread.start` 等）の行を `exclude.packages` に関わらず残し、
+注記 `[UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source` を付けます（`resolved-by` は
+`UNEXPANDED:CALLBACK`。呼び出し先がソースにある自前の API なら、その先へは普通に降りるので `resolved-by` はそのままで注記だけ）。
+`methods.csv` では `unresolvedCalls` に数え、同じ文言が `unresolvedCause` に出ます。件数は run.log に出て、1 件でもあれば
+`warnings.txt` にも載ります（その呼び出し箇所は手で確かめるものだからです）。
+
+```csv
+at fx.lambda.LateTask.kick(LateTask.java:20),Thread.start,UNEXPANDED:CALLBACK,1,LateTask.kick,Thread.start,[EXTERNAL] no source to follow / [UNEXPANDED:CALLBACK] rule matched but the passed value could not be traced to a method in the source
+```
 
 ### 同梱のライブラリ呼び出し規則（A）
 
