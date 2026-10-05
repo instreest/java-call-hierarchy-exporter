@@ -123,7 +123,7 @@ public final class Origin {
      * 呼び出しを<b>ソースに書いたときのレシーバの型</b>（FQN）。宣言元と違うときだけ付く。
      *
      * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
-     * メソッドキーは親になる。契約表や拡張で「ソースに書いてある型」を指定できるように、
+     * メソッドキーは親になる。ライブラリ呼び出し規則や拡張で「ソースに書いてある型」を指定できるように、
      * 書かれた型も持つ（{@link jche.graph.FactoryCalls}）
      */
     public static final String STATIC_RECV = "s";

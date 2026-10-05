@@ -91,16 +91,13 @@ public final class ProjectAnalysis {
     /**
      * 自動的に使う設定ファイル。前にあるものほど優先する。
      *
-     * 本体が設定を config/ に置くようになったので、そちらを先に見る。名前は jche.properties を
-     * 優先する。config.properties は解析対象のプロジェクトが自前の設定に使っていることがあり、
-     * それをこのツールの設定と取り違えないようにするため（既にこの名前で置いている人のために、
-     * 読む側では今までどおり候補に残す）。
+     * 本体が設定を config/ に置くようになったので、そちらを先に見る。名前は jche.properties だけで、以前の名前の
+     * config.properties は自動では見ない（解析対象のプロジェクトが自前の設定に使っていることがあり、それを
+     * このツールの設定と取り違えないようにするため。その名前で置いている人は［解析に使う設定…］で選べば使える）。
      */
     private static final String[] DEFAULT_CONFIG_PATHS = {
         PREFERRED_CONFIG_PATH,
-        "config/config.properties",
         "jche.properties",
-        "config.properties",
     };
 
     private final AnalysisService service;
@@ -116,6 +113,11 @@ public final class ProjectAnalysis {
     private volatile ServerResponse lastAnalysis;
     /** サーバーの素性（JDT の版・JVM の版・解析できる Java の上限） */
     private volatile ServerResponse serverInfo;
+
+    /** 設定ファイルの workspace.projects の読み取りの手元（ファイルと更新の印が同じなら読み直さない） */
+    private volatile List<WorkspaceProjectsConfig.Entry> workspaceEntries = new ArrayList<>();
+    private volatile IFile workspaceEntriesFile;
+    private volatile long workspaceEntriesStamp = -1;
 
     /** 解析後に変わったソースの、プロジェクトからの相対パス */
     private final Set<String> changedFiles = new TreeSet<>();
@@ -205,8 +207,8 @@ public final class ProjectAnalysis {
     /**
      * このツールの設定ファイルらしいか。
      *
-     * {@code config.properties} は解析対象のプロジェクトが自前の設定に使っていることがあるので、
-     * 名前だけで自動採用はしない（利用者が「使う設定ファイルを選ぶ…」で明示したものは、この判定を通さない）。
+     * 名前が {@code jche.properties} でも中身が別物（空のひな形・他のツールの設定）なら自動採用しない
+     * （利用者が「使う設定ファイルを選ぶ…」で明示したものは、この判定を通さない）。
      * 読めないときは false（誤って別物を掴むより、自動生成の設定で動くほうが害が小さい）。
      */
     private static boolean looksLikeJcheConfig(IFile file) {
@@ -235,6 +237,44 @@ public final class ProjectAnalysis {
             return false;
         }
         return false;
+    }
+
+    /**
+     * いまの設定ファイルの {@code workspace.projects}（一緒に解析するワークスペースの他のプロジェクト）。
+     * 自動生成の設定を使っているときは空（自動生成には入れない）。ファイルの更新の印が同じあいだは読み直さない
+     * （資源の変更のたびに呼ばれるため）。読めなければ空
+     */
+    public List<WorkspaceProjectsConfig.Entry> workspaceEntries() {
+        ConfigSource source = configSource();
+        if (source == null || source.kind() != ConfigSource.Kind.FILE) {
+            return new ArrayList<>();
+        }
+        IFile file = source.file();
+        long stamp = file.getModificationStamp();
+        if (file.equals(workspaceEntriesFile) && stamp == workspaceEntriesStamp) {
+            return workspaceEntries;
+        }
+        List<WorkspaceProjectsConfig.Entry> entries;
+        try {
+            entries = WorkspaceProjectsConfig.resolve(file);
+        } catch (CoreException | IOException | RuntimeException e) {
+            entries = new ArrayList<>();
+        }
+        workspaceEntries = entries;
+        workspaceEntriesFile = file;
+        workspaceEntriesStamp = stamp;
+        return entries;
+    }
+
+    /** {@link #workspaceEntries} のうち、ワークスペースのプロジェクトに結び付いたもの */
+    public List<IProject> workspaceProjects() {
+        List<IProject> out = new ArrayList<>();
+        for (WorkspaceProjectsConfig.Entry entry : workspaceEntries()) {
+            if (entry.project != null && !out.contains(entry.project)) {
+                out.add(entry.project);
+            }
+        }
+        return out;
     }
 
     /** 利用者が明示的に選んだ設定ファイル。null に戻すと自動判定に戻る */

@@ -6,7 +6,7 @@ import fx.dao.Dao;
 import fx.dao.OrderDaoImpl;
 
 /**
- * 呼び戻しの契約（{@code Thread#start()}・{@code Iterable#forEach}）に、上書き可能なメソッドへの
+ * 呼び戻しの規則（{@code Thread#start()}・{@code Iterable#forEach}）に、上書き可能なメソッドへの
  * メソッド参照を渡す形（JLS 15.13.3）。実際に動くのはレシーバの実行時クラスの実装なので、
  * 参照先の宣言だけに確定してはいけない。
  * <ul>

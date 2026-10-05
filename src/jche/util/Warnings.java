@@ -174,7 +174,7 @@ public final class Warnings {
         omitted.clear();
     }
 
-    /** ファイルの本文。表示言語で書く（人が読んで対処を選ぶ案内なので。contracts-suggested.txt と同じ扱い） */
+    /** ファイルの本文。表示言語で書く（人が読んで対処を選ぶ案内なので。call-rules-suggested.txt と同じ扱い） */
     private static String render() {
         String nl = System.lineSeparator();
         StringBuilder sb = new StringBuilder();

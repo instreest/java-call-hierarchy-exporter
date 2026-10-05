@@ -25,13 +25,13 @@
 | 段 0（静的束縛） | `BindKind`、`STATIC_BOUND:*` | private・static・final・コンストラクタ・`super` 呼び出し。仮想ディスパッチされないので宣言のまま確定 |
 | 段 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 上書きの候補が 1 つ / 本体を持つ実装がソースに無い |
 | 段 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同じメソッドの中で `new` された型 |
-| 段 3 | `CONTRACT`、拡張のラベル | 契約表（種類 C）・利用者の拡張が返した具象型 |
+| 段 3 | `CALL_RULE`、拡張のラベル | ライブラリ呼び出し規則（種類 C）・利用者の拡張が返した具象型 |
 | 段 4 | `DATAFLOW_NEW` / `DATAFLOW_FACTORY` | 値の追跡。`new` された型・ファクトリの戻り値 |
 | 経路ごと | `DATAFLOW_PARAM` / `DATAFLOW_FIELD` / `DATAFLOW_DECLARED_TYPE` / `DATAFLOW_LAMBDA` | 呼び出し元から渡された引数・コンストラクタ注入されたフィールド・宣言の型の上限・ラムダを経路上で追った結果。段の外（経路ごとに判定） |
 | 段 5 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で 1 つに定まった |
 | 段 6 | `CHA` | Class Hierarchy Analysis。型階層上の部分型をすべて候補にする（最も広い。低確度） |
 | CHA の起点 | `CallResolver#usableQualifier`、C 行の qualifier | 候補を数え始める型。呼び出しを修飾する型（JLS 13.1）で、宣言した型ではない |
-| その他 | `CALLBACK` / `REFLECTION` / `EXTERNAL_GUESS` / `GENERATED_IMPL:*` / `LAMBDA` | 契約で jar の中を跨いで繋いだ / リフレクション / import からの推定（未検証） / 生成される実装 / ラムダの実装（常に `UNEXPANDED:LAMBDA`） |
+| その他 | `CALLBACK` / `REFLECTION` / `EXTERNAL_GUESS` / `GENERATED_IMPL:*` / `LAMBDA` | 規則で jar の中を跨いで繋いだ / リフレクション / import からの推定（未検証） / 生成される実装 / ラムダの実装（常に `UNEXPANDED:LAMBDA`） |
 
 ## 3. 解決と選択の材料
 
@@ -44,11 +44,12 @@
 | 親クラスの連鎖（H 行の 7 列目） | `TypeHierarchy#classChain` | 直接の親クラスから根まで。実装探索の 1 段目の順 |
 | 継承した実装（H 行の 8 列目） | `MethodSelection#inheritedImplementationIn` | 親クラスから継承したメソッドが、型引数を置き換えた親インターフェースのメソッドを実装する組 |
 | 最も特定的（maximally-specific） | `TypeHierarchy#mostSpecific` | 親インターフェースの宣言のうち、より下位のもの。`default` の選び方（JLS 9.4.1） |
-| 契約表 | `Contracts`、`TypeContracts`（種類 C）、`CallbackContracts`（種類 A）、`FrameworkEntries`（種類 B） | ソースの外（JDK・フレームワーク）との約束を書いた表。呼び戻し・入口・具象型の対応（[library-call-rules.md](library-call-rules.md)） |
+| ライブラリ呼び出し規則 | `LibraryCallRules`、`TypeRules`（種類 C）、`CallbackRules`（種類 A）、`FrameworkEntries`（種類 B） | ソースの外（JDK・フレームワーク）との約束を書いた表。呼び戻し・入口・具象型の対応（[library-call-rules.md](library-call-rules.md)） |
 | 拡張（extension） | `jche.extension.TypeCandidateProvider`、設定の `plugin.folders`、`jche.config.Plugins` | 利用者が Java で書く差し込み口。**IDE のプラグイン（`eclipse-plugin/`・`vscode-plugin/`）とは別物** |
 | 証拠（hint） | `jche.extension.Hint`、`HintFact` | 拡張に渡す、呼び出し箇所の局所的な材料（ファクトリのキーなど） |
 | 起点（エントリ） | `EntryPoints`、設定の `entry.packages` | 呼び出し階層を辿り始めるメソッド。全体モードでは誰からも呼ばれていないメソッド |
 | 被参照 | `jche.external.ExternalUsageScanner`、`EXTERNAL_USAGE:*` | 外部 jar のクラスファイルから自分のメソッドが参照されている箇所 |
+| ワークスペースのプロジェクト | `WorkspaceProject`、設定の `workspace.projects`、`WorkspaceScope`（`workspace.scope`） | 一緒に解析する他のプロジェクト。相手自身の設定で解析したキャッシュを名前で結合し、呼び出し階層を相手の起点まで伸ばす。既定（`callers`）では自分のメソッドに届く経路だけを出す |
 
 ## 4. 値の追跡
 
@@ -113,10 +114,10 @@
 
 | 用語 | 場所 | 意味 |
 |---|---|---|
-| `call-hierarchy.csv` | `CallHierarchyCsvWriter` | 起点からの経路を 1 行ずつ。列は `caller,callee,resolved-by,depth,root,call-hierarchy`（最後は可変長） |
+| `call-hierarchy.csv` | `CallHierarchyCsvWriter` | 起点からの経路を 1 行ずつ。列は `caller,callee,resolved-by,depth,call-hierarchy`（最後は可変長。先頭のノードが起点） |
 | `methods.csv` | `InventoryReport` | ソース上の全メソッドの一覧と呼ばれ方（`inDegree`・`role`・`reachable`・`absentCause`…） |
-| 注記 | `call-hierarchy` 列の最後の要素、`[UNEXPANDED:*]` などのタグ | 列に無いこと（打ち切りの理由・候補の件数・繋いだ契約）だけを載せる。英語で固定 |
+| 注記 | `call-hierarchy` 列の最後の要素、`[UNEXPANDED:*]` などのタグ | 列に無いこと（打ち切りの理由・候補の件数・繋いだ規則）だけを載せる。英語で固定 |
 | `warnings.txt` | `jche.util.Warnings` | 確認してほしいことと対処。`Log.warn` / `Log.error` が 1 行でも出た実行でだけできる |
-| `contracts-suggested.txt` | `ContractSuggestions` | 絞れなかった呼び出しを 1 件に絞るための契約表のひな形。人が読む案内なので表示言語に合わせる |
+| `call-rules-suggested.txt` | `RuleSuggestions` | 絞れなかった呼び出しを 1 件に絞るためのライブラリ呼び出し規則のひな形。人が読む案内なので表示言語に合わせる |
 | `run.log` | `jche.util.Log` | 標準出力と同じ内容の実行ログ |
 | `call-conditions.csv` | `CallConditionsReport` | `conditions.target` を書いたときだけ追加で出る、呼び出しに効いている条件の一覧 |

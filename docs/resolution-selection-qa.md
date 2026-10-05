@@ -36,7 +36,7 @@ JVMS は呼び出しを、シンボリック参照を宣言に結び付ける**�
 `passesBinaryClass` / `hasOverriders` / `overridingImplementations`。どれも「型 C と宣言 mR から本体を返す」か、その派生
 （どの部分型から引いても mR のままか）で、JVMS 5.4.6 の問いに答えるもの。
 
-入れなかったのは `CallResolver` の段（CHA・LOCAL_NEW・値の追跡・契約表・DI）。これは「C としてありうる型はどれか」を
+入れなかったのは `CallResolver` の段（CHA・LOCAL_NEW・値の追跡・ライブラリ呼び出し規則・DI）。これは「C としてありうる型はどれか」を
 静的に近似する部分で、JVMS には無い（実行時なら受け手のオブジェクトを見れば済む）。選択の写しと混ぜると、
 「規定に合っているか」と「近似が粗いか」の区別がつかなくなる。`BindKind`（静的束縛の判定。命令の種類に当たる）も
 そのままにした。小さく、C 行の calleeMods だけから決まり、段 0 で使う場所が 1 つなので、動かす利益が無い。
@@ -108,7 +108,7 @@ static メソッド群（`writeBlock` と補助）も移した。ブロックを
 
 動きを変えないリファクタリングなので、既存の検査をすべて通した: `test/regression`・`test/cacheversion`（事実の指紋が同じ）・
 `test/dataflow`・`test/jls`・`test/pruning`・`test/incremental`・`test/ctorbody`・`test/conditions`・`test/warnings`・
-`test/cachevalue`・`test/contracts`・`test/pom`・`test/nls`・`test/server` と、JDK 25 の javac の lint（`-Xlint:all -Werror -Xdoclint:all,-missing`）。
+`test/cachevalue`・`test/rules`・`test/pom`・`test/nls`・`test/server` と、JDK 25 の javac の lint（`-Xlint:all -Werror -Xdoclint:all,-missing`）。
 
 ## Q10. 「クラスの連鎖 → 最も特定的な親インターフェース」の写しが 3 か所にある（#189）
 

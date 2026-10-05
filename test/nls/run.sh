@@ -248,21 +248,24 @@ fi
 
 # --- 6) 出力 CSV は言語で変わらない -----------------------------------------
 echo "== 6) 出力 CSV が言語で変わらないこと =="
+# JCHE_CP（JDT の classpath）・JCHE_JAVA_HOME・JCHE_CLASSES（コンパイル済みの本体）で差し替えられる。
+# CI は lint でコンパイルしたクラスを渡して再コンパイルを省く
 JBANG="bash $ROOT/jbangw/jbang"
-CP=$($JBANG info classpath "$ROOT/src/jche/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
-JAVA_HOME_25=$($JBANG jdk home 25)
+CP=${JCHE_CP:-$($JBANG info classpath "$ROOT/src/jche/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)}
+JAVA_HOME_25=${JCHE_JAVA_HOME:-$($JBANG jdk home 25)}
 if [ -z "$CP" ] || [ -z "$JAVA_HOME_25" ]; then
     fail "jbang から JDT の classpath または JDK 25 を取得できませんでした"
 else
     rm -rf build .cache output
-    if ! "$JAVA_HOME_25/bin/javac" --release 17 -nowarn -encoding UTF-8 \
+    CLASSES=${JCHE_CLASSES:-build}
+    if [ -z "${JCHE_CLASSES:-}" ] && ! "$JAVA_HOME_25/bin/javac" --release 17 -nowarn -encoding UTF-8 \
             -cp "$CP" -d build $(find "$SRC" -name '*.java') 2> "$WORK/javac2.log"; then
         fail "ツール本体をコンパイルできない"
         sed 's/^/       /' "$WORK/javac2.log" | head -10
     else
         latest() { ls -d output/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##'; }
         run_in() {   # $1=言語 -> 出力フォルダを $OUT に入れる
-            JCHE_LANG=$1 "$JAVA_HOME_25/bin/java" -Dstdout.encoding=UTF-8 -cp "build:$CP" \
+            JCHE_LANG=$1 "$JAVA_HOME_25/bin/java" -Dstdout.encoding=UTF-8 -cp "$CLASSES:$CP" \
                 jche.CallHierarchyExporter jche.properties > "$WORK/run-$1.log" 2>&1
             OUT=$(latest)
         }

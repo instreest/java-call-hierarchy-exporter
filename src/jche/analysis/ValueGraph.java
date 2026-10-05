@@ -296,7 +296,7 @@ final class ValueGraph {
      * 呼び出しを<b>ソースに書いたときのレシーバの型</b>。宣言元と同じか、分からなければ空文字。
      *
      * {@code DaoFactory.get(...)} の {@code get} が親の {@code BaseFactory} で宣言されていると、
-     * メソッドキーは親になる。利用者が契約表や拡張で指定するのはソースに書いてある型なので、
+     * メソッドキーは親になる。利用者がライブラリ呼び出し規則や拡張で指定するのはソースに書いてある型なので、
      * 違うときだけ書かれた型も残す（同じなら持たない。キャッシュを無駄に太らせないため）。
      */
     private String staticReceiverOf(MethodInvocation mi, String declaringFqn) {

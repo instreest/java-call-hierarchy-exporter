@@ -1,4 +1,4 @@
-﻿caller,callee,resolved-by,depth,root,call-hierarchy
+﻿caller,callee,resolved-by,depth,call-hierarchy
 at sample.app.App.main(App.java:6),Service.run,RESOLVED:NO_OVERRIDE,1,App.main,Service.run
 at sample.app.Service.run(Service.java:19),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,2,App.main,Service.run,Greeter.of,[EXTERNAL] no source to follow
 at sample.app.Service.run(Service.java:20),Formatter.wrap,RESOLVED:NO_OVERRIDE,2,App.main,Service.run,Formatter.wrap,[EXTERNAL] no source to follow

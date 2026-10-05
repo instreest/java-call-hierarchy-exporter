@@ -2,6 +2,7 @@
 # 呼び出しに効いている条件の一覧（設定ファイルの conditions.target）の検査。
 #
 #   bash test/conditions/run.sh
+#   JCHE_CP="依存jar..." JCHE_CLASSES=build/classes bash test/conditions/run.sh   # コンパイル済みのクラスを使う（CI）
 #
 # conditions.target は通常の解析を置き換えない。キャッシュの更新も CSV の出力も
 # これまでどおり行ったうえで、追加で call-conditions.csv を書く（docs/call-conditions.md）。
@@ -13,7 +14,8 @@
 #
 # 出力は日本語なので、文字コードを UTF-8 に固定して実行する（-Dstdout.encoding=UTF-8）。
 # ツール本体は javac でコンパイルし、jbang が用意した JDK 25 と JDT の jar で動かす
-# （test/dataflow/run.sh と同じ経路。jbang 自身が作ったスクリプトの jar は除く）。
+# （test/pruning/run.sh と同じ経路。jbang 自身が作ったスクリプトの jar は除く。
+# JCHE_CP / JCHE_CLASSES / JCHE_JAVA / JCHE_JAVAC で差し替えられ、CI は lint でコンパイルしたクラスを渡して再コンパイルを省く）。
 set -uo pipefail
 cd "$(dirname "$0")"
 # 文言の言語を固定する（既定は英語。固定しないと実行環境のロケールで照合が変わる）
@@ -22,23 +24,29 @@ ROOT=$(cd ../.. && pwd)
 JBANG="bash $ROOT/jbangw/jbang"
 fail=0
 
-CP=$($JBANG info classpath "$ROOT/src/jche/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)
-JAVA_HOME_25=$($JBANG jdk home 25)
-if [ -z "$CP" ] || [ -z "$JAVA_HOME_25" ]; then
-    echo "  NG   jbang から JDT の classpath または JDK 25 を取得できませんでした"; echo "FAIL"; exit 1
+CP=${JCHE_CP:-$($JBANG info classpath "$ROOT/src/jche/CallHierarchyExporter.java" | tr ':' '\n' | grep -v '/cache/jars/' | paste -sd:)}
+JAVA_BIN=${JCHE_JAVA:-"$($JBANG jdk home 25)/bin/java"}
+JAVAC_BIN=${JCHE_JAVAC:-"$($JBANG jdk home 25)/bin/javac"}
+if [ -z "$CP" ]; then
+    echo "  NG   jbang から JDT の classpath を取得できませんでした"; echo "FAIL"; exit 1
 fi
 
 rm -rf build .cache out case.properties
-"$JAVA_HOME_25/bin/javac" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
-    -cp "$CP" -d build $(find "$ROOT/src" -name '*.java') \
-    || { echo "  NG   コンパイルに失敗しました"; echo "FAIL"; exit 1; }
+if [ -z "${JCHE_CLASSES:-}" ]; then
+    "$JAVAC_BIN" --release 17 -Xlint:all -Werror -Xdoclint:all,-missing -encoding UTF-8 \
+        -cp "$CP" -d build $(find "$ROOT/src" -name '*.java') \
+        || { echo "  NG   コンパイルに失敗しました"; echo "FAIL"; exit 1; }
+    CLASSES=$PWD/build
+else
+    CLASSES=$JCHE_CLASSES
+fi
 
 latest_output() { ls -d out/*/ 2>/dev/null | sort | tail -1 | sed 's#/$##'; }
 
 run() {   # $1=conditions.target の値（空なら足さない） -> 出力は out.log、終了コードは $code
     cp base.properties case.properties
     [ -n "$1" ] && printf 'conditions.target=%s\n' "$1" >> case.properties
-    "$JAVA_HOME_25/bin/java" -Dstdout.encoding=UTF-8 -cp "build:$CP" jche.CallHierarchyExporter \
+    "$JAVA_BIN" -Dstdout.encoding=UTF-8 -cp "$CLASSES:$CP" jche.CallHierarchyExporter \
         case.properties > out.log 2>&1
     code=$?
     OUT=$(latest_output)

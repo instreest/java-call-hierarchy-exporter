@@ -20,10 +20,17 @@ public final class EntryPoints {
             return autoEntryPoints(g, resolver);
         }
         MethodTable methods = g.methods;
+        WorkspaceScope scope = resolver.workspaceScope();
         IntArray hits = new IntArray(256);
         for (int id = 0; id < methods.size(); id++) {
             if (!methods.hasSource(id)) {
                 continue;   // ソースが無いメソッドは起点にしない
+            }
+            if (!scope.allows(id)) {
+                continue;   // ワークスペースの他のプロジェクトの、project.root に届かないメソッド
+            }
+            if (methods.isLambdaBody(id)) {
+                continue;   // ラムダの本体は暗黙の合成メソッド。作ったメソッドの下に畳んで出るので起点にしない
             }
             if (PackagePattern.matchesAny(config.entryPatterns,
                     methods.pkg(id), methods.typeFqn(id), methods.methodName(id))) {
@@ -35,7 +42,7 @@ public final class EntryPoints {
 
     /**
      * 全体モードの起点。呼び出し元が1件も無く、ソース上に本体を持つメソッドと、
-     * 契約でフレームワークが呼ぶと分かるメソッド（{@link FrameworkEntries}）。
+     * 規則でフレームワークが呼ぶと分かるメソッド（{@link FrameworkEntries}）。
      *
      * これは「真の入口」ではない点に注意。実際には次のものが混ざる。
      * <ul>
@@ -51,11 +58,15 @@ public final class EntryPoints {
         int[] in = resolver.inDegrees();
         IntArray hits = new IntArray(256);
         FrameworkEntries framework = resolver.frameworkEntries();
+        WorkspaceScope scope = resolver.workspaceScope();
         for (int id = 0; id < methods.size(); id++) {
             if (!methods.hasSource(id) || !methods.hasBody(id)) {
                 continue;
             }
-            // 呼び出し元が無いもの。加えて、契約でフレームワークが呼ぶと分かるメソッドは
+            if (!scope.allows(id)) {
+                continue;   // ワークスペースの他のプロジェクトの、project.root に届かないメソッドは起点にしない
+            }
+            // 呼び出し元が無いもの。加えて、規則でフレームワークが呼ぶと分かるメソッドは
             // ソースから呼ばれていても起点にする（画面入口が内部からも呼ばれる形）
             if (in[id] == 0 || framework.isEntry(id)) {
                 hits.add(id);

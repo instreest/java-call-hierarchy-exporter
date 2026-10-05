@@ -7,8 +7,8 @@
 [branch-pruning-qa.md](branch-pruning-qa.md)（`[UNREACHABLE]` を出す条件）。
 
 > **その後の変更**: 解決方法は [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) で
-> `resolved-by` 列に移した。注記に残る `[RESOLVED:*]` は、繋いだ契約という列に無い情報を持つ
-> `[RESOLVED:CALLBACK] 契約: …` だけになっている。タグの考え方（下の Q1・Q2・Q3）は今も有効で、
+> `resolved-by` 列に移した。注記に残る `[RESOLVED:*]` は、繋いだ規則という列に無い情報を持つ
+> `[RESOLVED:CALLBACK] 規則: …` だけになっている。タグの考え方（下の Q1・Q2・Q3）は今も有効で、
 > 列の値もそのタグをそのまま使っている。
 
 ## 結論
