@@ -175,7 +175,7 @@ final class MessagesEn {
             "cli.env.menu.heap.default", "default",
             "cli.env.menu.jbangOpts", " 4) Extra jbang options     : {0}",
             "cli.env.menu.jbangOpts.none", "(none)",
-            "cli.env.menu.allowDownload", " 5) Downloading from the net: {0}",
+            "cli.env.menu.allowDownload", " 5) Downloading from the network: {0}",
             "cli.env.menu.extraKey", "    {0}={1} (added by hand; left untouched)",
             "cli.env.menu.back", " q) Back",
             "cli.env.menu.invalid", "  Enter 1-5 or q.",
