@@ -651,7 +651,8 @@ public final class StreamingTreeWalker {
                 markAbsent(target, ABSENT_CHA);
             }
             Resolution res = Resolution.single(target, Resolution.CALLBACK);
-            String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null, null);
+            String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null, null,
+                    match.isMultiple());
             String resolvedBy = resolvedBy(target, declaredCallee, res, null);
             if (match.isMultiple()) {
                 // 渡した値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかった。
@@ -1063,6 +1064,16 @@ public final class StreamingTreeWalker {
      */
     private String noteFor(int target, int declaredCallee, Resolution res, int depth,
                            boolean cycle, char recvKind, String unreachable, String gap) {
+        return noteFor(target, declaredCallee, res, depth, cycle, recvKind, unreachable, gap, res.isMultiple());
+    }
+
+    /**
+     * {@code candidatesOnly} は「候補を並べただけで、元々その先へ降りない行」か。通常の辺は {@code res.isMultiple()} と
+     * 同じだが、呼び戻し（{@link #descendCallbacks}）は候補が複数でも {@code res} を 1 件で作るので、呼び出し側が渡す。
+     * 深さの上限の注記と件数（{@code depthCutoffs}）を、降りなかった行にだけ付けるための区別
+     */
+    private String noteFor(int target, int declaredCallee, Resolution res, int depth,
+                           boolean cycle, char recvKind, String unreachable, String gap, boolean candidatesOnly) {
         StringBuilder sb = new StringBuilder();
         if (unreachable != null) {
             // 条件分岐の静的解析で、この経路では実行されないと分かった呼び出し。
@@ -1080,7 +1091,7 @@ public final class StreamingTreeWalker {
             sb.append(EXTERNAL_MARK).append(" type guessed from an import (unverified)");
         } else if (!methods.hasSource(target)) {
             sb.append(EXTERNAL_MARK).append(" no source to follow");
-        } else if (depth + 1 >= maxDepth && !res.isMultiple() && graph.outDegree(target) > 0) {
+        } else if (depth + 1 >= maxDepth && !candidatesOnly && graph.outDegree(target) > 0) {
             // 深さの上限で降りなかった。呼び出しを持たない葉と、候補を並べただけで元々降りない行には付けない
             // （「ここから先が出ていない」と読ませる注記なので、先が無い行に付けると打ち切りの数が水増しになる）
             sb.append(UNEXPANDED).append("DEPTH] depth limit (").append(maxDepth).append(") reached");

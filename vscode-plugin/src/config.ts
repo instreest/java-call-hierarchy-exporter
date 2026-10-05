@@ -9,8 +9,8 @@ import { t } from './messages';
  *
  * 優先順位は次のとおりで、上から順に当てはまった1つを使う（docs/vscode-plugin-design.md §3）。
  * 1. 利用者が設定（`jche.configFile`）で明示したファイル
- * 2. ワークスペースフォルダ直下の `*.properties`（`jche.properties` を先頭に、次に以前の名前の `config.properties`、
- *    ほかは名前順。`launcher.properties` は除く。複数あれば呼び出し側が選ばせる）
+ * 2. ワークスペースフォルダ直下の `*.properties`（`jche.properties` を先頭に、ほかは名前順。以前の名前の
+ *    `config.properties` に特別な扱いは無い。`launcher.properties` は除く。複数あれば呼び出し側が選ばせる）
  * 3. どれも無ければ自動生成 … **`project.root` だけ**書いた最小の設定
  *
  * 自動生成で `source.folders` や `library.folders` を書かないのは意図的である。

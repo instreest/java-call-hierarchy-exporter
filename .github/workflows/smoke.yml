@@ -10,15 +10,16 @@ on:
 permissions:
   contents: read
 
-# 同じブランチ（PR）に続けて push したら、走りかけの古い実行は止めて最新だけ走らせる
+# 同じブランチ（PR）に続けて push したら、走りかけの古い実行は止めて最新だけ走らせる。
+# main への push は止めない（続けてマージすると前のコミットの結果が残らなくなるため）
 concurrency:
   group: smoke-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   regression:
     runs-on: ubuntu-latest
-    # 実測は 20 分前後（regression・incremental・jls が大半）。倍の余裕
+    # 実測は 10 分前後（incremental を別ジョブに分けたあと。jls の JDK 26 取得と回帰テストが大半）。倍以上の余裕
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
@@ -164,6 +165,8 @@ jobs:
   # 本体のクラスは regression ジョブと同じ引数でコンパイルする（結果は同じなので、lint として数えるのは regression の側）
   incremental:
     runs-on: ubuntu-latest
+    # 1 シャードは数分（直列で約 9 分の 1/4）。倍以上の余裕
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -176,6 +179,12 @@ jobs:
           distribution: temurin
           java-version: '25'
 
+      # キャッシュキーは regression ジョブと同じ作り方（//DEPS と //JAVA の行だけをハッシュする）
+      - name: Compute the dependency cache key
+        run: |
+          mkdir -p build
+          grep -E '^//(DEPS|JAVA) ' src/jche/CallHierarchyExporter.java > build/jbang-cache-key.txt
+
       # regression ジョブと同じキーのキャッシュを読むだけ（restore）。保存は regression ジョブに任せる。
       # 同じキーには最初に終わったジョブしか保存できず、このジョブが先に保存すると test/jls のために
       # regression ジョブが取得する JDK 26（~/.jbang/cache/jdks）が入らないキャッシュが残り、以後の実行で毎回取得し直すことになる
@@ -185,7 +194,7 @@ jobs:
           path: |
             ~/.jbang
             ~/.m2/repository
-          key: jbang-${{ hashFiles('jbangw/jbang', 'src/jche/CallHierarchyExporter.java') }}
+          key: jbang-${{ hashFiles('jbangw/jbang', 'build/jbang-cache-key.txt') }}
 
       - name: Compile (same arguments as the lint step of the regression job)
         run: |
