@@ -130,6 +130,6 @@
 
 | ファイル | 内容 |
 |---|---|
-| [prompt-A-minimal.md](prompt-A-minimal.md) | 目的・出力の契約・後から直しやすい作りだけを渡し、設計は生成AIに任せるプロンプト（機能の再現は狙わない） |
+| [prompt-A-minimal.md](prompt-A-minimal.md) | 目的・出力の契約・後から直しやすい作りだけを渡し、設計は生成AIに任せるプロンプト（機能の再現は狙わない）。後から足す機能としてワークスペースの他のプロジェクトからの被参照（`workspace.projects`）の節を持つ |
 | [prompt-B-detailed.md](prompt-B-detailed.md) | AST 解析のはまりどころとテストケースまで含めた再実装プロンプト |
 | [feature-difficulty.md](feature-difficulty.md) | 機能ごとの実装難易度と参照実装の実装量（どのクラスを数えたかの内訳つき）、自分のプロジェクトでは省いてよい機能の目安 |
