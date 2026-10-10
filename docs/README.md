@@ -111,6 +111,7 @@
 | [field-callers-qa.md](field-callers-qa.md) | — | フィールドの呼び出し元（フィールドを読み書きしているメソッドと、その呼び出し元）を Eclipse・VSCode プラグインに足す。VSCode でカーソルの下のフィールドを引く `FIELDAT`、キャッシュの A 行を要求のたびに読む判断、キャッシュとグラフの食い違いの断り方、初期化子の扱い、今のキャッシュではできないこと |
 | [nls-qa.md](nls-qa.md) | — | ツール全体（解析ログ・対話モード・起動コマンド）を英語（既定）と日本語で出し分ける。文言を properties ではなく Java の表に置いた理由、言語の優先順位、**出力 CSV を訳さない**判断、文言なのにキャッシュの版を上げた 1 件、プラグインと解析ログの言語をそろえる仕組み、検査が何も見ていなかった件、1 つの JVM で設定を続けて読むときに空欄の言語を引き継がない |
 | [eclipse-plugin-java-floor-qa.md](eclipse-plugin-java-floor-qa.md) | — | プラグインの下限を Java 8 / Eclipse 4.6 から Java 11 / Eclipse 4.17 へ上げる。「解析対象の Java の版」と「Eclipse を動かす Java の版」を取り違えていた話、Java 8 対応が何を買って何を払っていたか |
+| [jdt-floor-qa.md](jdt-floor-qa.md) | — | 解析本体の JDT の下限を 3.28.0（Eclipse 2021-12。Java 17 まで解析可）にする。下限より新しい API 4 つを `JdtCompat` で名前で引く形にした理由と形、版ごとに名前で引く API がどれだけ増えるかの実測、古い JDT で読めなくなる文法と同じ結果になること、下限の検査（`test/jdt-floor`） |
 | [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため）、`var` の使い方の誤りを構文エラーに数えない理由（switch 式の検査（網羅していない・default が無い・switch 式の外への break など）も同じ。形式 v36。cache-unification-qa.md の Q63） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |

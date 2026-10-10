@@ -40,6 +40,7 @@
 | `nls/` | 文言（英語が既定・日本語を重ねる）のキーの一致と、CSV が言語で変わらないこと | `Messages*` / 文言を足した場所 | — | regression |
 | `server/` | サーバーモード（`--server`）のプロトコル | `server` | — | regression |
 | `pom/` | `//DEPS` と `pom.xml` の依存の一致 | JDT の版 | — | pom |
+| `jdt-floor/` | 本体が JDT の下限（3.28.0。Eclipse 2021-12）の jar だけでコンパイルでき、そのまま `regression/` の期待値と一致すること | `src/jche` で JDT の API を使うところ（`analysis` ほか）・`regression/` の題材 | Maven | jdt-floor |
 | `jbangw/` | `jbangw/` が本家から黙って変わっていないこと | `jbangw/` | — | jbangw |
 | `action/` | 複合アクションが依存 jar の警告を注釈とサマリに出すこと（jbang はスタブ） | `action.yml` / `.github/action/` | — | action |
 | `plugin/` | Eclipse プラグインの定義（`plugin.xml` 等）がそろっていること | `eclipse-plugin/` | — | eclipse-plugin |
@@ -150,6 +151,10 @@ README の日本語側と英語側の節の並び・節ごとの形（表の行�
 ### `bash test/pom/run.sh`
 
 `//DEPS` 行と `pom.xml` の依存が一致すること
+
+### `bash test/jdt-floor/run.sh`
+
+本体が JDT の下限（3.28.0。Eclipse 2021-12）でもコンパイルでき、今の JDT と同じ結果を出すこと。jar は `jdt-floor/pom.xml` で 2021-12 の版に固定してある（閉域ネットワークの手順が Eclipse から集める組と同じ）。その jar だけで本体をコンパイルし、`regression/run.sh` をそのまま回して期待値と比べる。ほかの検査は `//DEPS` の版でコンパイルするので、下限より新しい API を直接書いても気づけない。この検査だけが下限を守る（下限より新しい API は `jche.analysis.JdtCompat` を通す。`docs/jdt-floor-qa.md`）。`regression/` の題材は Java 17 までの文法に収める
 
 ### `bash test/action/run.sh`
 

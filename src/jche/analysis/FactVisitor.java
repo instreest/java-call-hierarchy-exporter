@@ -29,7 +29,6 @@ import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
-import org.eclipse.jdt.core.dom.ImplicitTypeDeclaration;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.LambdaExpression;
@@ -42,7 +41,6 @@ import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.RecordDeclaration;
-import org.eclipse.jdt.core.dom.RecordPattern;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
@@ -268,19 +266,23 @@ final class FactVisitor extends ASTVisitor {
      *
      * パッケージ宣言も型宣言も無いファイルのトップレベルのメソッド・フィールドは、ファイル名を
      * 名前に持つ final なクラスのメンバになる。JDT はこれを TypeDeclaration ではなく
-     * ImplicitTypeDeclaration として返すので、visit が無いと型階層（H 行）にも
+     * ImplicitTypeDeclaration として返すので、積まないと型階層（H 行）にも
      * 型コンテキストにも載らず、暗黙のデフォルトコンストラクタ（JLS 8.8.9）も合成されない。
      * 名前が無いので、宣言行はノードの開始位置で代える。
+     *
+     * <p>ImplicitTypeDeclaration は JDT の下限（{@value JdtCompat#FLOOR}）より新しいノードで、
+     * visit を上書きすると古い JDT ではコンパイルできない。そのため {@link #preVisit2} で積み、
+     * {@link #postVisit} で戻す（どちらも visit / endVisit と同じノードの前後で呼ばれる。{@link JdtCompat}）。
      */
-    @Override
-    public boolean visit(ImplicitTypeDeclaration node) {
+    private void enterImplicitType(AbstractTypeDeclaration node) {
         enterType(node.resolveBinding(), node.bodyDeclarations(), lineOf(node));
-        return true;
     }
 
     @Override
-    public void endVisit(ImplicitTypeDeclaration node) {
-        leaveType();
+    public void postVisit(ASTNode node) {
+        if (JdtCompat.isImplicitTypeDeclaration(node)) {
+            leaveType();
+        }
     }
 
     /** 匿名クラスも型階層に載せる。載せないとオーバーライド候補から漏れる */
@@ -869,15 +871,17 @@ final class FactVisitor extends ASTVisitor {
     /**
      * レコードパターン（JLS 14.30.2）。値がレコードパターンに一致するかは、各成分の値を
      * アクセサを呼んで取り出して判定する。成分のパターンが {@code _}（何にでも一致する）でも
-     * 取り出しは起きる。入れ子のパターンは、子の RecordPattern の visit がそれぞれ記録する。
+     * 取り出しは起きる。入れ子のパターンは、子の RecordPattern がそれぞれ記録する。
+     *
+     * <p>RecordPattern は JDT の下限（{@value JdtCompat#FLOOR}）より新しいノードなので、visit を上書きせず
+     * {@link #preVisit2} から呼ぶ（visit と同じく、そのノードの子より先に呼ばれる。{@link JdtCompat}）。
      */
-    @Override
-    public boolean visit(RecordPattern n) {
-        ITypeBinding type = (n.getPatternType() == null) ? null : n.getPatternType().resolveBinding();
+    private void recordPatternAccessors(ASTNode n) {
+        Type patternType = JdtCompat.recordPatternType(n);
+        ITypeBinding type = (patternType == null) ? null : patternType.resolveBinding();
         for (IMethodBinding accessor : ImplicitCalls.accessorsOf(type)) {
             recordImplicit(accessor, n, "", RecvKind.OTHER, CallValues.NONE, type);
         }
-        return true;
     }
 
     /**
@@ -1088,6 +1092,9 @@ final class FactVisitor extends ASTVisitor {
      * （{@code @Override}・{@code @Target}）も数える。同じパッケージに {@code Override} や {@code Target} という型を
      * 足すと、書いた名前がそちらに解決される（JLS 6.4.1）。差分更新は I 行の単純名でそれを見つけるので、数えないと
      * 解析し直さない。
+     *
+     * <p>JDT の下限（{@value JdtCompat#FLOOR}）より新しいノード（暗黙に宣言されたクラス・レコードパターン）の訪問も、
+     * visit を上書きできないのでここで振り分ける（{@link #enterImplicitType}・{@link #recordPatternAccessors}）
      */
     @Override
     public boolean preVisit2(ASTNode node) {
@@ -1103,6 +1110,11 @@ final class FactVisitor extends ASTVisitor {
             names.noteReachedType(e.resolveTypeBinding());
         } else if (node instanceof Type t) {
             names.noteReachedType(t.resolveBinding());
+        }
+        if (JdtCompat.isImplicitTypeDeclaration(node)) {
+            enterImplicitType((AbstractTypeDeclaration) node);
+        } else if (JdtCompat.isRecordPattern(node)) {
+            recordPatternAccessors(node);
         }
         return true;
     }

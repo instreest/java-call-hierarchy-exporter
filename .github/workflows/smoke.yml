@@ -421,6 +421,27 @@ jobs:
       - name: Compile with Maven
         run: mvn -B --no-transfer-progress compile
 
+  # 解析本体の JDT の下限（3.28.0。Eclipse 2021-12）の検査。
+  # 本体はそこにある JDT の jar に対してソースからコンパイルされる（閉域ネットワークの手順では Eclipse の jar）。
+  # ほかのジョブは //DEPS の版でコンパイルするので、下限より新しい JDT の API を直接書いても気づけない。
+  # ここだけが 2021-12 の版に固定した jar（test/jdt-floor/pom.xml）で本体をコンパイルし、test/regression を回す
+  # （docs/jdt-floor-qa.md）。期待値は JDK 25 で作るので、ツールを動かす JDK も 25。
+  # regression ジョブとは別ジョブにしてあるのは、~/.m2 のキャッシュキーを jbang のものと混ぜないため（pom ジョブと同じ）
+  jdt-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: test/jdt-floor/pom.xml
+
+      - name: Minimum JDT (3.28.0) compile and regression test
+        run: bash test/jdt-floor/run.sh
+
   # Eclipse プラグイン（eclipse-plugin/）の検査。
   # 1) 版・ID・クラスの実在、解析本体がバンドルのクラスパスに混ざっていないこと（ファイルを読むだけ）
   # 2) 下限の Eclipse（4.17 / 2020-09）の jar と --release 11 でプラグインがコンパイルできること。

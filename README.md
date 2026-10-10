@@ -139,7 +139,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | Eclipse の中で呼び出し元を辿る | [Eclipse プラグイン](docs/eclipse-plugin-usage.md) |
 | VSCode の中で呼び出し元を辿る | [VSCode プラグイン](docs/vscode-plugin-usage.md) |
 | GitHub Actions で解析して CSV をアーティファクトにする | リポジトリ直下の [`action.yml`](action.yml) を `uses:` で呼ぶ（[docs/github-actions.md](docs/github-actions.md)。そのまま写せるワークフローの例と、依存の取得・セキュリティ・保存量の注意） |
-| 閉域ネットワークで使う（ネットワークから取得しない） | Pleiades / Eclipse に入っている JDK と JDT の jar で動かす（[docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)） |
+| 閉域ネットワークで使う（ネットワークから取得しない） | Pleiades / Eclipse（2021-12 以降）に入っている JDK と JDT の jar で動かす（[docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)） |
 | 自分のコードを呼んでいる、ほかのチームの jar を調べる | 設定の `external.library.folders`（[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 | ワークスペースの他のプロジェクト（自分を呼んでいる側・自分が依存している側）のソースまで呼び出し階層を伸ばす | 設定の `workspace.projects`。相手は相手自身の設定で解析され、そのキャッシュを名前で結合する。既定では自分のメソッドに届く経路だけを出す（[docs/workspace-callers-design.md](docs/workspace-callers-design.md)） |
 | 決めきれなかった実装を 1 つに絞る | ライブラリ呼び出し規則を書く（[docs/library-call-rules.md](docs/library-call-rules.md)）。条件が複雑なら拡張を書く（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
@@ -620,7 +620,7 @@ The linked documents are in Japanese.
 | Follow callers inside Eclipse | The [Eclipse plugin](docs/eclipse-plugin-usage.md) |
 | Follow callers inside VSCode | The [VSCode plugin](docs/vscode-plugin-usage.md) |
 | Analyze in GitHub Actions and get the CSV as an artifact | Call [`action.yml`](action.yml) in the repository root with `uses:` ([docs/github-actions.md](docs/github-actions.md): a workflow you can copy as is, and notes on fetching dependencies, security and storage) |
-| Use it on an isolated network (no downloads) | Run it with the JDK and JDT jars that come with Pleiades / Eclipse ([docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)) |
+| Use it on an isolated network (no downloads) | Run it with the JDK and JDT jars that come with Pleiades / Eclipse (2021-12 or later) ([docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)) |
 | Find the jars of other teams that call your code | `external.library.folders` in the config ([Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 | Extend the call hierarchy into the sources of other workspace projects (the ones that call you, and the ones you depend on) | `workspace.projects` in the config. Each project is analyzed with its own config and its cache is joined by name. By default only the paths that reach your own methods are written ([docs/workspace-callers-design.md](docs/workspace-callers-design.md)) |
 | Narrow an implementation it could not decide down to one | Write library call rules ([docs/library-call-rules.md](docs/library-call-rules.md)), or an extension for complex conditions ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |

@@ -79,6 +79,12 @@ JavaSE-17（3.34.0〜）と上がっている。
 ログに出し、`source.level` がそれを超えるときは丸めた旨を表示する。古い Eclipse に入れた場合、
 入るけれども新しい文法のソースは解析できない、という状態になりうる。
 
+プラグインとは別に、**閉域ネットワークの手順（[cli.md](cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)）で
+Eclipse の JDT の jar を使って解析本体を動かす場合の下限は JDT Core 3.28.0（Eclipse 2021-12）**である。
+本体はその jar に対してコンパイルされ、それより古い JDT では Java 17 のソースを読めない。下限より新しい API は
+名前で引く形にしてあり、上の表の 2021-12 以降の JDT ならどれでもコンパイルできる
+（[jdt-floor-qa.md](jdt-floor-qa.md)。`test/jdt-floor/run.sh` が 3.28.0 で検査する）。
+
 ## Pleiades All in One との対応
 
 Pleiades All in One（Full Edition）は **Eclipse 実行用の JDK を同梱**しており、
