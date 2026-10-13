@@ -8,6 +8,9 @@ package jche;
 //       Maven Central の POM から自動で解決される。JDTの版を変えるときはここを書き換える。
 //         3.46.0 … JDK 17以上で動作。ソースは Java 26 まで解析可
 //         3.33.0 … JDK 11以上で動作。ソースは Java 19 まで解析可
+//         3.28.0 … 下限（Eclipse 2021-12）。ソースは Java 17 まで解析可
+//       下限より新しい JDT の API は jche.analysis.JdtCompat を通して名前で引く（直接書くと古い jar で
+//       コンパイルできない。test/jdt-floor/run.sh が 3.28.0 の jar で検査する。docs/jdt-floor-qa.md）。
 //       解析対象ソースのJavaバージョンは、この版とは別に設定ファイル（config/jche.properties）の
 //       source.level で指定する（未指定なら、この版が対応する最大値）。
 // JAVA: このツール自身を動かすJDK。25 に固定するのは、JDTが「自分が動いている

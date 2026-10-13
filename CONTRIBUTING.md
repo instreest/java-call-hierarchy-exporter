@@ -89,6 +89,7 @@ bash test/regression/run.sh
 | 利用者に見せる文言を足した | `MessagesEn.java` と `MessagesJa.java` の同じ分野・同じ並び・同じキーに足す（`test/nls`）。起動コマンドは `msg <キー>`。Eclipse / VSCode プラグインは置き場所が別（下記） |
 | 実装を探す順（親クラスの連鎖 → 最も特定的な親インターフェース）を変えた | 3 か所を同時に直す: `MethodSelection#search`・`ImplicitCalls#findNoArgMethod`・`ExternalUsageScanner#inheritedFrom`。正本は `docs/resolution-selection-design.md` の 4 節 |
 | JDT の版を上げた | `CallHierarchyExporter.java` と `Jche.java` の `//DEPS`、`pom.xml` の 3 か所と README（`test/pom`・`test/readme` が見る）。`bash test/cacheversion/run.sh --update` で記録だけ合わせる |
+| JDT の API を新しく使った（`analysis` ほか） | 下限（3.28.0）に無い API なら `jche.analysis.JdtCompat` に置いて名前で引く。`bash test/jdt-floor/run.sh` で下限の jar でもコンパイルでき、回帰テストが通ることを見る |
 | 機能を足した・設計判断をした | `docs/<機能>-qa.md` に Q&A を残し、`docs/README.md` の索引に 1 行足す |
 | README を直した | 日本語と英語（`# English` 以降）の両方を直す。節の印 `<!-- sec:ID -->` を両側で同じ並びに保つ。`bash test/readme/run.sh` で食い違いとリンク切れを見る |
 | 起動コマンドを改名した | `grep -rn` で旧名が残っていないことを確認する（src、docs、test、workflows、`.gitattributes`、`.gitignore`） |
@@ -160,6 +161,13 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   （`test/pom/run.sh` と `test/readme/run.sh` が検出する）。JDT の版と実行 JDK のメジャー版はキャッシュの鍵（ヘッダ行の `jdt=` / `jdk=`）に
   入っていて、変われば古いキャッシュは自動で捨てられるので、形式の版は上げなくてよい
   （`bash test/cacheversion/run.sh --update` で記録だけ合わせる）
+- **JDT の下限は 3.28.0（Eclipse 2021-12。Java 17 まで解析できる最初の版）。** 本体はそこにある JDT の jar に対して
+  ソースからコンパイルされる（jbang の `//DEPS` も、閉域ネットワークの手順で Eclipse の jar を集めて `javac` するときも）。
+  下限より新しい API（AST のノード・メソッド・`IProblem` の定数）をソースに直接書くと、古い jar ではコンパイルが通らない。
+  `jche.analysis.JdtCompat` に置いて名前で引き、無ければ「その構文を読めない JDT」として扱う。見つかったのに呼べないときは
+  止める（黙って無い扱いにすると、その構文の呼び出しが静かに落ちる）。新しいノードは `visit` を上書きできないので
+  `FactVisitor#preVisit2` / `postVisit` で振り分ける。下限を守るのは `test/jdt-floor/run.sh` だけで、`test/regression` の
+  題材は Java 17 までの文法に収める（`docs/jdt-floor-qa.md`）
 - 1 ファイル版（`single-file/`）は**本体と同期を取らない場合がある**。その目的に合わせて個別に更新するので、`src/jche` を直しても
   1 ファイル版を直す必要はない。ビルドできること・起動できることだけを `test/single-file/run.sh` が見る（`docs/single-file-qa.md` の Q8）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
