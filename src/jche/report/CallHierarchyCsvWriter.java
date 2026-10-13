@@ -147,7 +147,7 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      * @param callee      参照されている自分のメソッド（callee列と同じ表記）
      * @param shortCallee 階層列に置く短縮表記
      * @param jarName     参照元のjar名
-     * @param note        照合の種類（EXACT / INHERITED / IMPLICIT_CTOR）
+     * @param note        照合の種類（EXACT / INHERITED / MISSING_NOARG_CTOR）
      */
     public void writeExternalUsageRow(String caller, String callee,
                                       String shortCallee, String jarName, String note)

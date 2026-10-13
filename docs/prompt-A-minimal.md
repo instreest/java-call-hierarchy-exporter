@@ -153,7 +153,7 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UN
 
 | 段 | ラベル | 判定 | `resolved-by` |
 |---|---|---|---|
-| 0 | `STATIC_BOUND:理由` | private / static / final メソッド、finalクラス、コンストラクタ、`super`。仮想ディスパッチされない | `RESOLVED:STATIC_BOUND:理由` |
+| 0 | `STATIC_BOUND:理由` / `NOT_OVERRIDABLE:理由` | 前者は private / static メソッド、コンストラクタ、`super`（仮想呼び出しでない。JLS 15.12.3）。後者は final メソッド、finalクラスのメソッド（仮想呼び出しだが上書きできない） | `RESOLVED:STATIC_BOUND:理由` / `RESOLVED:NOT_OVERRIDABLE:理由` |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる。本体を持つ候補が皆無なら `NO_IMPL` | `RESOLVED:NO_OVERRIDE` / `RESOLVED:SINGLE_IMPL` / `UNEXPANDED:NO_IMPL` |
 | 2 | `CHA` | 候補が複数のまま。候補を1件ずつ行にし、**先へは降りない**（候補数^深さで爆発する） | `UNEXPANDED:CHA` |
 

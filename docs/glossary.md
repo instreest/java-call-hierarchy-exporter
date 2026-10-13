@@ -22,7 +22,7 @@
 
 | 用語 | コード上の名前 | 意味 |
 |---|---|---|
-| 段 0（静的束縛） | `BindKind`、`STATIC_BOUND:*` | private・static・final・コンストラクタ・`super` 呼び出し。仮想ディスパッチされないので宣言のまま確定 |
+| 段 0（静的束縛） | `BindKind`、`STATIC_BOUND:*`、`NOT_OVERRIDABLE:*` | `STATIC_BOUND:*` は private・static・コンストラクタ・`super` 呼び出し（仮想呼び出しでない。JLS 15.12.3）。`NOT_OVERRIDABLE:*` は final メソッド・final クラスのメソッド（仮想呼び出しだが上書きできない）。どちらも宣言のまま確定 |
 | 段 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 上書きの候補が 1 つ / 本体を持つ実装がソースに無い |
 | 段 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同じメソッドの中で `new` された型 |
 | 段 3 | `CALL_RULE`、拡張のラベル | ライブラリ呼び出し規則（種類 C）・利用者の拡張が返した具象型 |

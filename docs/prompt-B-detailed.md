@@ -166,8 +166,8 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CALL_RULE` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
 | `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（規則で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
 | `UNEXPANDED:LAMBDA` | 候補は1件だが、ラムダ／メソッド参照も同じインターフェースを実装しており未特定。ラベルをそのまま出すと確定に見えるのでこう言い換える |
-| `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED` / `OUTSIDE_METHOD`）。`depth` は `1` |
-| `EXTERNAL_USAGE:{照合の種類}` | 被参照スキャンの行（`EXACT` / `INHERITED` / `IMPLICIT_CTOR`）。`depth` は `1` |
+| `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED`＝呼び出し先の型を特定できない / `CALLER_UNRESOLVED`＝囲むメソッド・型の型解決に失敗して呼び出し元を特定できない）。`depth` は `1` |
+| `EXTERNAL_USAGE:{照合の種類}` | 被参照スキャンの行（`EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`）。`depth` は `1` |
 
 判定順は下の注記の後半グループと同じにする。別々に判定すると、同じ行の列と注記が食い違う。
 
@@ -214,7 +214,7 @@ grep で一括で拾えるようにする。`[EXTERNAL]`（呼び出し先が自
   末尾に `external-ref:EXACT`（そのクラスで宣言されているメソッド。合成した暗黙のデフォルトコンストラクタを
   含む）/ `external-ref:INHERITED`（親から継承したメソッド。**JVM がその参照を解決する宣言**（親クラスの連鎖を先に、
   無ければインターフェースの宣言のうち最も特定的なもの。インターフェースの `static`・`private` は除く。2.12）のメソッドとして出す）/
-  `external-ref:IMPLICIT_CTOR`（引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。
+  `external-ref:MISSING_NOARG_CTOR`（引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。
   版違いの可能性が高いが生成箇所として有用なので残す）
 
 **行順は環境（OS・ファイルシステム・キャッシュの状態）に依存させない。**
@@ -337,7 +337,7 @@ try-with-resources の `close()`、レコードパターンのアクセサ）も
 |---|---|---|
 | — | `REFLECTION` / `REFLECTION_INIT` | 呼び出し先が `Method.invoke` / `Class.newInstance` / `Constructor.newInstance` / `Class.forName` のとき、出所から実際に動くメソッドへ解決（下記）。段0より先に判定する（jar内のAPIなので静的束縛に見えるが、実際に動くのは名前で指定されたメソッド） |
 | — | `EXTERNAL_GUESS` | import推定。型階層情報が無いので常に単一 |
-| 0 | `STATIC_BOUND:{PRIVATE,STATIC,FINAL_METHOD,FINAL_CLASS,CTOR,SUPER}` | 仮想ディスパッチされない呼び出し |
+| 0 | `STATIC_BOUND:{PRIVATE,STATIC,CTOR,SUPER}` / `NOT_OVERRIDABLE:{FINAL_METHOD,FINAL_CLASS}` | 前者は仮想呼び出しでない呼び出し（JLS 15.12.3 の static / nonvirtual / super とコンストラクタ）。後者は仮想呼び出しだが上書きできない（JLS 8.4.3.3・8.1.1.2）。どちらも呼び出し先の 1 件で確定 |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 宣言型自身（本体があれば）＋推移的サブタイプの同シグネチャ宣言を候補にし、1件なら確定。皆無なら `NO_IMPL` |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内でレシーバ変数に代入された `new` の型（フロー非依存） |
 | 3 | `CALL_RULE` / 拡張のラベル | ライブラリ呼び出し規則（種類 C）の行、次に `TypeCandidateProvider` が返した候補 |
@@ -1034,7 +1034,7 @@ primitive・void・配列・`String` のメソッドの return は記録しな�
   （`private`・`static` を除く）のうち最も特定的なもの（ほかの宣言の型の親型で宣言したものを除く）を、本体を持つものを
   先に返す（JVM のメソッド解決と同じ。JVMS 5.4.3.3）
 - 暗黙のデフォルトコンストラクタは解析時に宣言として合成されているので `EXACT` で照合される。
-  `IMPLICIT_CTOR` は「引数なし `<init>` への参照で、ソース上に一致する宣言が無いもの」に限る
+  `MISSING_NOARG_CTOR` は「引数なし `<init>` への参照で、ソース上に一致する宣言が無いもの」に限る
   （相手の jar をビルドした時点では引数なしで生成できたが今は無い＝版違いの可能性）。
   それ以外の不一致（引数付きコンストラクタを含む）は未照合として数える
 - 自プロジェクトの型のclassは読み飛ばす（参照先でなく**参照している側**で判定）
@@ -1279,7 +1279,7 @@ C  呼び出し元の記号  呼び出し先の記号  callLine  calleeMods  rec
    recv / args: レシーバ・実引数のノード番号。guard: G 行のガード番号（無ければ -1）
    hints: レシーバの変数に new だけが代入されているときの、その型の FQN（カンマ区切り）
 U  line  呼び出し元の記号  expr  reason  candidate  recvKind  lambda  recv  args  guard  hints
-   reason: BINDING_FAILED / OUTSIDE_METHOD（呼び出し元を特定できない）
+   reason: BINDING_FAILED / CALLER_UNRESOLVED（囲むメソッド・型の型解決に失敗し、呼び出し元を特定できない）
    candidate: レシーバの単純名と一致する単一型 import のFQN（無ければ空）
 M  line  呼び出し元の記号  ifaceTypeFqn#method(paramSig)  kind
    ラムダ／メソッド参照の1箇所。kind: lambda / methodref / ctorref
@@ -2473,7 +2473,7 @@ at fx.Unit.<clinit>(Unit.java:4),Helper.ratio,Unit.<clinit>,Helper.ratio
 at fx.Unit.<clinit>(Unit.java:6),Helper.ratio,Unit.<clinit>,Helper.ratio
 ```
 検証観点: 定数の引数（4行）と static フィールド（6行）がどちらも `<clinit>` に帰属し、
-「メソッド本体の外」の型解決失敗にならない。
+呼び出し元を特定できない型解決失敗（`CALLER_UNRESOLVED`）にならない。
 
 ### T19 暗黙のデフォルトコンストラクタ・record
 ```
@@ -2569,7 +2569,7 @@ Registry.<clinit>(),fx.Registry,C,src/fx/Registry.java,3,1,1,1,NORMAL,1,0,
 
 ### T43 通常の jar と FatJar、EXACT / INHERITED、自プロジェクト jar の除外
 
-ログ: `外部jar: 2 件`、`jar=2 jar内のjar=2 クラス=2 被参照=12件（自分のメソッド 6 個） 暗黙コンストラクタ=0 未照合=0 自プロジェクトクラスを除外=11`。
+ログ: `外部jar: 2 件`、`jar=2 jar内のjar=2 クラス=2 被参照=12件（自分のメソッド 6 個） 引数なしコンストラクタの欠け=0 未照合=0 自プロジェクトクラスを除外=11`。
 `call-hierarchy.csv` は 136 行で、末尾に次の 12 行がこの順で出る（`app-boot.jar` が `ext-caller.jar` より
 パス順で先。同じ `ext.Caller` が FatJar の中と単体の両方から別々の行として出る）。
 

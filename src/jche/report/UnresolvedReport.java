@@ -170,8 +170,8 @@ public final class UnresolvedReport {
         if (UnresolvedCallFact.BINDING_FAILED.equals(code)) {
             return "type resolution failed (missing classpath / dynamic call / etc.)";
         }
-        if (UnresolvedCallFact.OUTSIDE_METHOD.equals(code)) {
-            return "call from outside a method body";
+        if (UnresolvedCallFact.CALLER_UNRESOLVED.equals(code)) {
+            return "caller unresolved (type resolution of the enclosing method or type failed)";
         }
         return code;
     }
