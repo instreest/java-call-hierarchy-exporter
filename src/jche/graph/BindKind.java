@@ -58,16 +58,23 @@ public final class BindKind {
         return VIRTUAL;
     }
 
-    /** 静的束縛と判定した理由。解決ラベル "STATIC_BOUND:理由" として出力に残す */
-    public static String staticBoundReason(char bindKind) {
+    /**
+     * 段0 の解決ラベル。仕様の上で仮想呼び出しでないもの（JLS 15.12.3 の呼び出し方式 static / nonvirtual / super と
+     * コンストラクタ。JVMS では invokestatic / invokespecial）は "STATIC_BOUND:理由"、
+     * 仮想呼び出し（invokevirtual）だが上書きできないので選ばれる本体が 1 つに決まるもの（final メソッド・
+     * final クラスのメソッド。JLS 8.4.3.3・8.1.1.2）は "NOT_OVERRIDABLE:理由" として出力に残す。
+     * どちらも候補は呼び出し先の 1 件で扱いは同じで、名前だけを仕様に合わせて分ける
+     * （docs/resolved-by-naming-qa.md の Q3）
+     */
+    public static String label(char bindKind) {
         return switch (bindKind) {
-            case PRIVATE -> "PRIVATE";
-            case STATIC -> "STATIC";
-            case FINAL_METHOD -> "FINAL_METHOD";
-            case FINAL_CLASS -> "FINAL_CLASS";
-            case CONSTRUCTOR -> "CTOR";
-            case SUPER -> "SUPER";
-            default -> "OTHER";
+            case FINAL_METHOD -> Resolution.NOT_OVERRIDABLE_PREFIX + "FINAL_METHOD";
+            case FINAL_CLASS -> Resolution.NOT_OVERRIDABLE_PREFIX + "FINAL_CLASS";
+            case PRIVATE -> Resolution.STATIC_BOUND_PREFIX + "PRIVATE";
+            case STATIC -> Resolution.STATIC_BOUND_PREFIX + "STATIC";
+            case CONSTRUCTOR -> Resolution.STATIC_BOUND_PREFIX + "CTOR";
+            case SUPER -> Resolution.STATIC_BOUND_PREFIX + "SUPER";
+            default -> Resolution.STATIC_BOUND_PREFIX + "OTHER";
         };
     }
 }

@@ -22,7 +22,7 @@
 
 | 用語 | コード上の名前 | 意味 |
 |---|---|---|
-| 段 0（静的束縛） | `BindKind`、`STATIC_BOUND:*` | private・static・final・コンストラクタ・`super` 呼び出し。仮想ディスパッチされないので宣言のまま確定 |
+| 段 0（静的束縛） | `BindKind`、`STATIC_BOUND:*`、`NOT_OVERRIDABLE:*` | `STATIC_BOUND:*` は private・static・コンストラクタ・`super` 呼び出し（仮想呼び出しでない。JLS 15.12.3）。`NOT_OVERRIDABLE:*` は final メソッド・final クラスのメソッド（仮想呼び出しだが上書きできない）。どちらも宣言のまま確定 |
 | 段 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | 上書きの候補が 1 つ / 本体を持つ実装がソースに無い |
 | 段 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同じメソッドの中で `new` された型 |
 | 段 3 | `CALL_RULE`、拡張のラベル | ライブラリ呼び出し規則（種類 C）・利用者の拡張が返した具象型 |
@@ -49,6 +49,7 @@
 | 証拠（hint） | `jche.extension.Hint`、`HintFact` | 拡張に渡す、呼び出し箇所の局所的な材料（ファクトリのキーなど） |
 | 起点（エントリ） | `EntryPoints`、設定の `entry.packages` | 呼び出し階層を辿り始めるメソッド。全体モードでは誰からも呼ばれていないメソッド |
 | 被参照 | `jche.external.ExternalUsageScanner`、`EXTERNAL_USAGE:*` | 外部 jar のクラスファイルから自分のメソッドが参照されている箇所 |
+| ワークスペースのプロジェクト | `WorkspaceProject`、設定の `workspace.projects`、`WorkspaceScope`（`workspace.scope`） | 一緒に解析する他のプロジェクト。相手自身の設定で解析したキャッシュを名前で結合し、呼び出し階層を相手の起点まで伸ばす。既定（`callers`）では自分のメソッドに届く経路だけを出す |
 
 ## 4. 値の追跡
 
@@ -113,7 +114,7 @@
 
 | 用語 | 場所 | 意味 |
 |---|---|---|
-| `call-hierarchy.csv` | `CallHierarchyCsvWriter` | 起点からの経路を 1 行ずつ。列は `caller,callee,resolved-by,depth,root,call-hierarchy`（最後は可変長） |
+| `call-hierarchy.csv` | `CallHierarchyCsvWriter` | 起点からの経路を 1 行ずつ。列は `caller,callee,resolved-by,depth,call-hierarchy`（最後は可変長。先頭のノードが起点） |
 | `methods.csv` | `InventoryReport` | ソース上の全メソッドの一覧と呼ばれ方（`inDegree`・`role`・`reachable`・`absentCause`…） |
 | 注記 | `call-hierarchy` 列の最後の要素、`[UNEXPANDED:*]` などのタグ | 列に無いこと（打ち切りの理由・候補の件数・繋いだ規則）だけを載せる。英語で固定 |
 | `warnings.txt` | `jche.util.Warnings` | 確認してほしいことと対処。`Log.warn` / `Log.error` が 1 行でも出た実行でだけできる |

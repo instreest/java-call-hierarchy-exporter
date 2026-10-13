@@ -218,7 +218,7 @@ O 行の上書き（型引数を具体化したもの）は JDT の `IMethodBind
 javac との突き合わせも節（＝パッケージ）ごとに 1 行出す。
 
 検査の種類は `call` / `nocall` / `callcount`（C 行）、`csv` / `nocsv`（call-hierarchy.csv の行と resolved-by）、
-`path` / `nopath`（root 列から call-hierarchy 列にかけてのノードの並び）、`decl` / `nodecl`（D 行と修飾子）、
+`path` / `nopath`（call-hierarchy 列のノードの並び。先頭が起点）、`decl` / `nodecl`（D 行と修飾子）、
 `type`（H 行）、`override`（O 行）、`role`（methods.csv）、`noerror`（F 行のエラー数）。
 
 `csv` と `path` を分けたのは、コンストラクタ（とその先が無いメソッド）への辺が call-hierarchy.csv の

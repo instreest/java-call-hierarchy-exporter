@@ -7,6 +7,7 @@ import { CallersView, openAt } from './view';
 import type { TreeNode } from './server/tree';
 import { toFieldAccess } from './filters';
 import { setLanguage, t } from './messages';
+import { entryFor, readWorkspaceProjects, rootOfEntry, writeWorkspaceProjects } from './workspaceProjects';
 
 /**
  * 拡張の入口。
@@ -66,6 +67,20 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         const folders = vscode.workspace.workspaceFolders ?? [];
         return folders.length === 1 ? sessionOf(folders[0]) : undefined;
+    };
+
+    /**
+     * そのフォルダのメソッド・フィールドを引くのに使うセッション。表示中の木のセッションの設定ファイルの
+     * `workspace.projects` に入っているフォルダ（一緒に解析した相手）なら、そのセッションのまま引く
+     * （相手のファイルも解析結果に入っている。相対パスはそのセッションのフォルダからの `../` 付きの形になる）
+     */
+    const sessionForMember = async (folder: vscode.WorkspaceFolder): Promise<Session> => {
+        const shown = view.currentRoot?.session;
+        if (shown && shown.folder.uri.toString() !== folder.uri.toString()
+                && (await shown.includesWorkspaceFolder(folder.uri.fsPath))) {
+            return shown;
+        }
+        return sessionOf(folder);
     };
 
     /** 解析するフォルダを決める。複数あれば選ばせる */
@@ -131,10 +146,10 @@ export function activate(context: vscode.ExtensionContext): void {
             vscode.window.showInformationMessage(t('command.outsideWorkspace'));
             return;
         }
-        const session = sessionOf(folder);
+        const session = await sessionForMember(folder);
         if (!session.isAnalyzed) {
             const answer = await vscode.window.showInformationMessage(
-                t('command.analyzeNow', folder.name),
+                t('command.analyzeNow', session.folder.name),
                 t('command.action.analyze'));
             if (answer !== t('command.action.analyze') || !(await analyze(session))) {
                 return;
@@ -143,7 +158,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (editor.document.isDirty) {
             log.warn(t('command.unsaved', editor.document.fileName));
         }
-        const relative = path.relative(folder.uri.fsPath, editor.document.uri.fsPath).split(path.sep).join('/');
+        const relative = path.relative(session.folder.uri.fsPath, editor.document.uri.fsPath).split(path.sep).join('/');
         const line = editor.selection.active.line + 1;    // サーバーは 1 始まり
         const at = await session.at(relative, line);
         if (!at.ok) {
@@ -196,10 +211,10 @@ export function activate(context: vscode.ExtensionContext): void {
             return;
         }
         const name = editor.document.getText(wordRange);
-        const session = sessionOf(folder);
+        const session = await sessionForMember(folder);
         if (!session.isAnalyzed) {
             const answer = await vscode.window.showInformationMessage(
-                t('command.analyzeNow', folder.name),
+                t('command.analyzeNow', session.folder.name),
                 t('command.action.analyze'));
             if (answer !== t('command.action.analyze') || !(await analyze(session))) {
                 return;
@@ -208,7 +223,7 @@ export function activate(context: vscode.ExtensionContext): void {
         if (editor.document.isDirty) {
             log.warn(t('command.unsaved', editor.document.fileName));
         }
-        const relative = path.relative(folder.uri.fsPath, editor.document.uri.fsPath).split(path.sep).join('/');
+        const relative = path.relative(session.folder.uri.fsPath, editor.document.uri.fsPath).split(path.sep).join('/');
         const found = await session.fieldAt(relative, position.line + 1, name);    // サーバーは 1 始まり
         if (!found.ok) {
             switch (found.reason) {
@@ -367,6 +382,12 @@ export function activate(context: vscode.ExtensionContext): void {
                 vscode.window.showInformationMessage(t('command.configSelected'));
             }
         }),
+        vscode.commands.registerCommand('jche.addWorkspaceProjects', async () => {
+            const session = await pickSession();
+            if (session) {
+                await addWorkspaceProjects(session);
+            }
+        }),
         vscode.window.onDidChangeActiveTextEditor(() => status.render(currentSession())),
         vscode.workspace.onDidChangeWorkspaceFolders((event) => {
             for (const removed of event.removed) {
@@ -383,6 +404,64 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
     );
     status.render(currentSession());
+}
+
+/**
+ * ワークスペースの他のフォルダを選ばせて、設定ファイルの `workspace.projects` に書き足す。
+ *
+ * 一緒に解析する相手は利用者が明示したものだけ（既定では相手を解析しない。ワークスペース全体の解析は
+ * 時間とメモリが増えるため）。VSCode は Eclipse のようにプロジェクト間の参照を知らないので、
+ * ワークスペースの他のフォルダをそのまま候補にして複数選択させる。解析は設定ファイルだけを読む
+ * （画面の状態では解析の範囲を変えない。docs/workspace-callers-design.md の Q11）。
+ * 既に書いてあるフォルダは最初から選ばれていて、外せば消える。ワークスペースのフォルダに結び付かない
+ * 手書きの指定は残す
+ */
+async function addWorkspaceProjects(session: Session): Promise<void> {
+    const others = (vscode.workspace.workspaceFolders ?? [])
+        .filter((f) => f.uri.toString() !== session.folder.uri.toString());
+    if (others.length === 0) {
+        vscode.window.showInformationMessage(t('workspace.noOtherFolders', session.folder.name));
+        return;
+    }
+    const configFile = await session.configFileForWorkspaceProjects();
+    if (!configFile) {
+        return;
+    }
+    const current = await readWorkspaceProjects(configFile);
+    const currentRoots = current.map((entry) => rootOfEntry(configFile, entry));
+    const rootOf = (folder: vscode.WorkspaceFolder): string => path.resolve(folder.uri.fsPath);
+    const isListed = (folder: vscode.WorkspaceFolder): boolean =>
+        currentRoots.some((root) => root !== undefined && path.resolve(root) === rootOf(folder));
+    type Item = vscode.QuickPickItem & { folder: vscode.WorkspaceFolder };
+    const items: Item[] = others.map((folder) => ({
+        label: folder.name, description: folder.uri.fsPath, picked: isListed(folder), folder,
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        title: t('workspace.pickTitle', session.folder.name),
+        placeHolder: t('workspace.pickPlaceholder'),
+    });
+    if (!picked) {
+        return;
+    }
+    const pickedRoots = new Set(picked.map((item) => rootOf(item.folder)));
+    const entries: string[] = [];
+    current.forEach((entry, i) => {
+        const root = currentRoots[i];
+        const listedFolder = root === undefined ? undefined : others.find((f) => rootOf(f) === path.resolve(root));
+        if (!listedFolder) {
+            entries.push(entry);                       // ワークスペースの外を指す指定。触らない
+        } else if (pickedRoots.delete(rootOf(listedFolder))) {
+            entries.push(entry);                       // 既にあって、まだ選ばれている
+        }
+    });
+    for (const item of picked) {
+        if (pickedRoots.has(rootOf(item.folder))) {
+            entries.push(entryFor(configFile, item.folder.uri.fsPath));
+        }
+    }
+    await writeWorkspaceProjects(configFile, entries);
+    vscode.window.showInformationMessage(t('workspace.written', entries.length, path.basename(configFile)));
 }
 
 /** フィールドのキー（`型FQN#フィールド名`）を、木の根の見出し（`型FQN.フィールド名`）にする。サーバーの根の行と同じ綴り */

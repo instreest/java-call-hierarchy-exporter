@@ -15,11 +15,11 @@ external.library.folders=./lib
 
 class ファイルの命令列を読むため、「どの jar・どのクラスの**どのメソッドの何行目**から参照しているか」まで分かります。
 `caller` 列は呼び出し階層の行と同じスタックトレース形式なので、Eclipse の Java スタック・トレース・コンソールに貼れば
-（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `root` 列には参照元の jar 名が入り、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`depth` は `1` です。
+（相手のソースがワークスペースにあれば）その行へ飛べます。起点も階層も無いので `call-hierarchy` の先頭の列（起点の列）には参照元の jar 名が入り、`resolved-by` は `EXTERNAL_USAGE:` で始まり、`depth` は `1` です。
 ラムダ式やメソッド参照（`Counter::bump`）からの参照も、それを書いた行として出ます。
 
 ```csv
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at teamb.NightJob.run(NightJob.java:15),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
 at teamb.NightJob.run(NightJob.java:14),OrderService.OrderService,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.OrderService,external-ref:EXACT
 at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EXACT,1,team-b-batch.jar,OrderService.findOrder,external-ref:EXACT
@@ -40,7 +40,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 |---|---|
 | `external-ref:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
 | `external-ref:INHERITED` | 親から継承したメソッドへの参照。JVM がその参照を解決する宣言（親クラスの連鎖を先に、無ければインターフェースの宣言のうち最も特定的なもの。インターフェースの `static`・`private` は除く）のメソッドとして出る |
-| `external-ref:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す |
+| `external-ref:MISSING_NOARG_CTOR` | 引数なしコンストラクタへの参照で、ソース上に一致する宣言が無いもの。暗黙のデフォルトコンストラクタは解析時に宣言として合成され `EXACT` で照合されるため、ここに来るのは「相手の jar をビルドした時点では引数なしで生成できたが、今のソースにはそのコンストラクタが無い」形、つまり版違いの可能性が高い。生成箇所として有用なので行として残す。以前の名前は `IMPLICIT_CTOR` で、JLS 8.8.9 の暗黙のコンストラクタ（こちらは `EXACT`）と取り違えやすかったので改めた（[resolved-by-naming-qa.md](resolved-by-naming-qa.md) の Q2） |
 
 自分の型を参照しているのに一致するメソッドが無いもの（引数付きのコンストラクタを含む）は、
 相手の jar が古い版に対してビルドされている可能性があります。件数のみ実行ログに出力されます。

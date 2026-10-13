@@ -18,6 +18,12 @@ final class PathFrame {
 
     int methodId;
     /**
+     * 根からこの段までの経路に project.root のメソッドがあるか。ワークスペースの他のプロジェクトのメソッドを
+     * CSV に出す範囲（{@link jche.graph.WorkspaceScope}）は、経路が project.root に届くまでの間だけ絞るので、
+     * これが真になった先は絞らない
+     */
+    boolean mainSeen;
+    /**
      * CSV の caller 列・call-hierarchy 列に出すメソッド。ふつうは {@link #methodId} と同じ。
      * ラムダの本体は段にしない（{@code StreamingTreeWalker#collapseInto}）ので、畳んだラムダの本体の段の
      * {@link #methodId} は合成メソッドのまま（辺を引くのに要る）で、これだけを囲みメソッドにする

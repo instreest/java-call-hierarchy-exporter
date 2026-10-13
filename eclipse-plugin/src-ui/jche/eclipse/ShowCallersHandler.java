@@ -35,13 +35,16 @@ public class ShowCallersHandler extends AbstractHandler {
         IProject project = method.getResource() != null
                 ? method.getResource().getProject()
                 : method.getJavaProject().getProject();
-        AnalysisService service = JchePlugin.service();
-        if (service == null || project == null) {
+        if (JchePlugin.service() == null || project == null) {
             return null;
         }
-        ProjectAnalysis analysis = service.analysisFor(project);
         try {
             CallHierarchyView view = (CallHierarchyView) page.showView(CallHierarchyView.VIEW_ID);
+            // 表示中の対象の workspace.projects に入っているプロジェクトなら、対象を切り替えずにその解析から引く
+            ProjectAnalysis analysis = view.analysisForMemberProject(project);
+            if (analysis == null) {
+                return null;
+            }
             view.showMethod(analysis, method);
         } catch (PartInitException e) {
             JchePlugin.log(IStatus.ERROR, Messages.get("view.openFailed"), e);

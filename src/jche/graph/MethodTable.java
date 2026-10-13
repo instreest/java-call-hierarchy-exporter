@@ -291,7 +291,7 @@ public final class MethodTable {
         return (dot >= 0) ? simple.substring(dot + 1) : simple;
     }
 
-    /** 単純クラス名.表示用メソッド名。call-hierarchy 列と root 列の表記 */
+    /** 単純クラス名.表示用メソッド名。call-hierarchy 列（先頭の起点も含む）の表記 */
     public String shortLabel(int id) {
         return simpleTypeName(id) + "." + displayMethodName(id);
     }

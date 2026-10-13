@@ -1,4 +1,4 @@
-caller,callee,resolved-by,depth,root,call-hierarchy
+caller,callee,resolved-by,depth,call-hierarchy
 at Kind.main(Kind.java:7),Kind.check,RESOLVED:STATIC_BOUND:STATIC,1,Kind.main,Kind.check
 at Kind.check(Kind.java:16),Kind.hitKind,RESOLVED:STATIC_BOUND:STATIC,2,Kind.main,Kind.check,Kind.hitKind
 at Kind.main(Kind.java:7),Kind.make,RESOLVED:STATIC_BOUND:STATIC,1,Kind.main,Kind.make

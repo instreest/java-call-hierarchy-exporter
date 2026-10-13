@@ -1,4 +1,4 @@
-﻿caller,callee,resolved-by,depth,root,call-hierarchy
+﻿caller,callee,resolved-by,depth,call-hierarchy
 at sample.multi.app.Main.main(Main.java:13),Core.hello,RESOLVED:STATIC_BOUND:STATIC,1,Main.main,Core.hello
 at sample.multi.core.Core.hello(Core.java:8),Greeter.greet,RESOLVED:NO_OVERRIDE,2,Main.main,Core.hello,Greeter.greet,[EXTERNAL] no source to follow
 at sample.multi.core.Core.hello(Core.java:8),Greeter.of,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Core.hello,Greeter.of,[EXTERNAL] no source to follow

@@ -51,7 +51,8 @@ export class StatusItem implements vscode.Disposable {
                 } else {
                     this.item.text = t('status.analyzed', time);
                     this.item.detail = t('status.analyzed.detail', session.folder.name,
-                        state.methods.toLocaleString(), state.edges.toLocaleString(), state.configLabel);
+                        state.methods.toLocaleString(), state.edges.toLocaleString(), state.configLabel)
+                        + (state.workspaceCount > 0 ? t('status.workspace', state.workspaceCount) : '');
                 }
                 this.item.command = { command: 'jche.analyze', title: t('status.action.reanalyze') };
                 return;

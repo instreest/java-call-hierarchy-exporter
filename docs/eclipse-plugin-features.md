@@ -57,6 +57,7 @@
 | 18 | Eclipse の構成から設定を自動生成 | （自動） | `EclipseProjectConfig` | **設定ファイルを書かずに使える**。導入の壁を下げた最大の要素 | **残す**（[eclipse-plugin-ui-qa.md](eclipse-plugin-ui-qa.md) の Q14） |
 | 19 | 設定ファイルを選ぶ／内容を見る | ［解析に使う設定…］ | `ConfigDialog` `ConfigSource` | 除外パッケージなどを効かせる。失敗したときに原因を見る | **残す**（同 Q5） |
 | 20 | 生成した設定をプロジェクトに保存 | ［解析に使う設定…］→［保存して編集］ | `ConfigDialog` | 自動生成から手書きへ移れる | 小。**残す** |
+| 20b | ワークスペースの参照元・依存先を `workspace.projects` に書き足す | ［解析に使う設定…］→［…を workspace.projects に書き足す…］ | `WorkspaceReferences` `WorkspaceProjectsDialog` `WorkspaceProjectsConfig` | 呼び出し元の木が相手のプロジェクトの起点まで伸び、相手にある実装が候補に入る。書くのは設定ファイルだけで、画面の状態では解析の範囲を変えない | 相手の分だけ解析が重くなるので、利用者が書いたときだけ。**足した**（[workspace-callers-design.md](workspace-callers-design.md) の Q11） |
 
 ## 4. 呼び出し階層を見る
 

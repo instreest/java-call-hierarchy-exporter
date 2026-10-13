@@ -33,11 +33,12 @@ export function labelOf(source: ConfigSource, workspaceRoot: string): string {
 }
 
 /**
- * フォルダ直下にある設定ファイルの候補。`jche.properties` を先頭に、次に以前の名前の `config.properties`、
- * ほかの `*.properties` は名前順（設定ファイルをプロジェクトごとに増やす使い方があるため）。
+ * フォルダ直下にある設定ファイルの候補。`jche.properties` を先頭に、ほかの `*.properties` は名前順
+ * （設定ファイルをプロジェクトごとに増やす使い方があるため）。以前の名前の `config.properties` に特別な
+ * 扱いは無い（解析対象のプロジェクトが自前の設定に使っていることがあるため。ほかの名前と同じく候補には並ぶ）。
  * `launcher.properties` は起動コマンドの設定なので除く。
  */
-const PREFERRED_NAMES = ['jche.properties', 'config.properties'];
+const PREFERRED_NAMES = ['jche.properties'];
 function nameRank(name: string): number {
     const i = PREFERRED_NAMES.indexOf(name);
     return i < 0 ? PREFERRED_NAMES.length : i;

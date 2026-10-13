@@ -188,6 +188,23 @@ public final class Config {
     /** 他チームのjar（自分のコードを呼んでいる側）。ファイルでもディレクトリでも可 */
     public final List<Path> externalLibraryFolders;
 
+    /**
+     * 一緒に解析するワークスペースの他のプロジェクト（{@code workspace.projects}）。各要素はそのプロジェクトの
+     * 設定ファイルか、プロジェクトのフォルダ（設定ファイルのフォルダからの相対パス、または絶対パス。project.root の外でよい）。
+     * 相手は<b>相手自身の設定（クラスパス・文字コード）で別々に解析</b>され、そのキャッシュをこの実行のグラフに
+     * 名前で結合する（{@link #forWorkspaceProject}。docs/workspace-callers-design.md）
+     */
+    public final List<Path> workspaceProjects;
+    /**
+     * {@code workspace.scope=callers}（既定）か。真なら、他のプロジェクトのメソッドは project.root のメソッドに届く経路の
+     * 上にあるものだけを CSV に出す。偽（{@code all}）なら絞らない
+     */
+    public final boolean workspaceScopeCallers;
+    /** このツールのプロジェクトフォルダ（cache.folder が空欄のときのキャッシュの置き場所の親）。相手の設定を組むのに要る */
+    public final Path toolRoot;
+    /** cache.folder に書かれた置き場所（絶対パス）。空欄なら null（{@link #toolRoot} の .cache/） */
+    private final Path cacheBase;
+
     /** output.folder（実行ごとのフォルダの親） */
     public final Path outputFolder;
     /** この実行の出力フォルダ。CSV・設定ファイルの複製・実行ログをここに置く */
@@ -330,8 +347,25 @@ public final class Config {
         this.branchPruningEnabled =
                 Boolean.parseBoolean(p.getProperty("branch.pruning.enabled", "true").trim());
         this.conditionsTarget = p.getProperty("conditions.target", "").trim();
-        this.cacheDir = cacheDirOf(p, toolRoot);
+        this.toolRoot = toolRoot.toAbsolutePath().normalize();
+        this.cacheBase = cacheBaseOf(p);
+        this.cacheDir = cacheDirOf();
         this.cacheFile = this.cacheDir.resolve(CACHE_FILE_NAME);
+
+        // 一緒に解析するワークスペースの他のプロジェクト。相手の設定ファイルかフォルダで、project.root と同じく
+        // 設定ファイルのフォルダからの相対（配下の制限なし。プロジェクトの外を指すのが普通）
+        this.workspaceProjects = new ArrayList<>();
+        for (String raw : splitList(p.getProperty("workspace.projects", ""))) {
+            this.workspaceProjects.add(resolveFromConfigDir(UserHome.expand(raw)));
+        }
+        String scope = p.getProperty("workspace.scope", "callers").trim();
+        if (scope.isEmpty()) {
+            scope = "callers";
+        }
+        if (!scope.equals("callers") && !scope.equals("all")) {
+            throw new IllegalArgumentException(Messages.format("config.workspace.badScope", scope));
+        }
+        this.workspaceScopeCallers = scope.equals("callers");
 
         // 被参照スキャンの対象は「解析対象プロジェクトの外の世界」なので、
         // ソースや依存jarと同じく project.root からの相対で書けるようにする
@@ -387,12 +421,55 @@ public final class Config {
      * cache.folder を指定したときも、その下にプロジェクト別のフォルダを切る（複数の設定が同じプロジェクトを
      * 指すなら同じキャッシュを共有し、別のプロジェクトなら混ざらない）
      */
-    private Path cacheDirOf(Properties p, Path toolRoot) {
+    private Path cacheDirOf() {
+        Path base = (cacheBase != null) ? cacheBase : toolRoot.resolve(DEFAULT_CACHE_DIR_NAME);
+        return base.resolve(projectName + "_" + shortHash(projectRoot.toString()));
+    }
+
+    /** cache.folder（設定ファイルのフォルダからの相対）。空欄なら null */
+    private Path cacheBaseOf(Properties p) {
         String cacheFolderRaw = p.getProperty("cache.folder", "").trim();
-        Path cacheBase = cacheFolderRaw.isEmpty()
-                ? toolRoot.toAbsolutePath().normalize().resolve(DEFAULT_CACHE_DIR_NAME)
-                : resolveUnderConfigDir("cache.folder", cacheFolderRaw);
-        return cacheBase.resolve(projectName + "_" + shortHash(projectRoot.toString()));
+        return cacheFolderRaw.isEmpty() ? null : resolveUnderConfigDir("cache.folder", cacheFolderRaw);
+    }
+
+    /**
+     * ワークスペースの他のプロジェクト（{@code workspace.projects} の 1 件）の設定を組む。
+     *
+     * <p>相手は相手自身の設定で解析する（クラスパスの和集合を作らない。docs/workspace-callers-design.md の 3.1 節）ので、
+     * 値が設定ファイルならそれをそのまま読む。フォルダなら {@code project.root} だけを書いた設定として読み、
+     * ソースフォルダ・依存 jar・文字コードは相手のフォルダの中身から決める（{@link ProjectDetector}・{@link ProjectLayout}）。
+     * フォルダの形では、キャッシュの置き場所（{@code cache.folder}）・ローカルリポジトリ・ビルドツールの指定だけを
+     * この設定から引き継ぐ（相手の設定に無いものを、この設定の決め方で補う）。
+     *
+     * <p>相手の設定ファイルの {@code message.language} は読み終えたら元に戻す（設定を読む副作用で表示言語が
+     * 切り替わらないように）。相手の {@code workspace.projects} は辿らない（相手の相手までは結合しない。
+     * 要るなら自分の設定に並べる）
+     *
+     * @param entry 設定ファイルかプロジェクトのフォルダ（{@link #workspaceProjects} の要素）
+     */
+    public Config forWorkspaceProject(Path entry) throws IOException {
+        try {
+            if (Files.isRegularFile(entry)) {
+                return new Config(entry, toolRoot, startedAt);
+            }
+            Properties p = new Properties();
+            p.setProperty("project.root", entry.toAbsolutePath().normalize().toString());
+            if (cacheBase != null) {
+                p.setProperty("cache.folder", cacheBase.toString());
+            }
+            if (!libraryRepositories.isEmpty()) {
+                List<String> repos = new ArrayList<>();
+                for (Path r : libraryRepositories) {
+                    repos.add(r.toString());
+                }
+                p.setProperty("library.repositories", String.join(",", repos));
+            }
+            p.setProperty("library.build.tool", libraryBuildTool);
+            p.setProperty("message.language", messageLanguage);
+            return new Config(p, entry, toolRoot, startedAt);
+        } finally {
+            Messages.applyConfigured(this.messageLanguage);
+        }
     }
 
     /** 文字コードの設定値。名前が不正なら、どの項目かが分かる例外にする（intOf と同じ流儀） */

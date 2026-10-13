@@ -7,7 +7,7 @@ package jche.cache;
  */
 public sealed interface CallSite permits CallEdgeFact, UnresolvedCallFact {
 
-    /** 呼び出し元。特定できなければ null（{@link UnresolvedCallFact#OUTSIDE_METHOD}） */
+    /** 呼び出し元。特定できなければ null（{@link UnresolvedCallFact#CALLER_UNRESOLVED}） */
     MethodRef caller();
 
     /**

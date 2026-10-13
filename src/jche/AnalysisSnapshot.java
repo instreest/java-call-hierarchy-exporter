@@ -2,6 +2,7 @@
 package jche;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import jche.config.Config;
 import jche.config.ProjectLayout;
@@ -30,11 +31,20 @@ public final class AnalysisSnapshot {
     private final int syntaxErrorFiles;
     private final UnresolvedCalls unresolvedCalls;
     private final String cacheStamp;
+    /** 一緒に解析したワークスペースの他のプロジェクト（設定に無ければ空） */
+    private final List<WorkspaceProject> workspace;
     private volatile InboundIndex inbound;
 
+    /**
+     * @param workspace 一緒に解析したワークスペースの他のプロジェクト
+     * @param inbound   作ってあれば転置索引（出す範囲の絞り込みで作ったもの）。無ければ null（要求されたときに作る）
+     */
     AnalysisSnapshot(Config config, ProjectLayout layout, CallGraph graph, CallResolver resolver,
-                     int syntaxErrorFiles, UnresolvedCalls unresolvedCalls, String cacheStamp) {
+                     int syntaxErrorFiles, UnresolvedCalls unresolvedCalls, String cacheStamp,
+                     List<WorkspaceProject> workspace, InboundIndex inbound) {
         this.cacheStamp = cacheStamp;
+        this.workspace = List.copyOf(workspace);
+        this.inbound = inbound;
         this.config = config;
         this.layout = layout;
         this.graph = graph;
@@ -74,6 +84,14 @@ public final class AnalysisSnapshot {
 
     public CallResolver resolver() {
         return resolver;
+    }
+
+    /**
+     * 一緒に解析したワークスペースの他のプロジェクト（設定の {@code workspace.projects} の順）。
+     * 相手のファイルはグラフの中では {@link WorkspaceProject#prefix} 付きの相対パスで持つ
+     */
+    public List<WorkspaceProject> workspace() {
+        return workspace;
     }
 
     /**

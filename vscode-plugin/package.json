@@ -110,6 +110,11 @@
         "title": "%command.jche.selectConfig.title%"
       },
       {
+        "command": "jche.addWorkspaceProjects",
+        "category": "%command.category%",
+        "title": "%command.jche.addWorkspaceProjects.title%"
+      },
+      {
         "command": "jche.filterText",
         "category": "%command.category%",
         "title": "%command.jche.filterText.title%",
@@ -191,6 +196,11 @@
           "command": "jche.saveConfig",
           "when": "view == jche.callers",
           "group": "config@2"
+        },
+        {
+          "command": "jche.addWorkspaceProjects",
+          "when": "view == jche.callers",
+          "group": "config@3"
         }
       ],
       "view/item/context": [
