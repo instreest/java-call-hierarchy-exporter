@@ -169,11 +169,16 @@ prompt-B の 3.3 にあるケース別の期待行は、`resolved-by` / `depth` 
 - **複数行にまたがる呼び出し**: 行番号を式の先頭（`a\n.b()\n.c()` の `a` の行）から取っていたので、連鎖の呼び出しが全部同じ行に
   なった。javac の行番号表は、メソッド呼び出しを `(` のある行にする。今はメソッド名の末尾の行から取る
   （`CallSiteRecorder#lineOf`。AST に `(` のノードが無いための代わりで、`.c\n()` のような書き方でだけ 1 行ずれる）。
-  `new` とコンストラクタ呼び出しは javac も式の先頭の行なので変えていない。書き手の変更なので `CacheFormat.VERSION` を v46 に上げた
+  `new` とコンストラクタ呼び出しは javac も式の先頭の行なので変えていない。書き手の変更なので `CacheFormat.VERSION` を v47 に上げた
 - **別のファイルのクラスが実行するラムダ**: 畳んだラムダの本体の中の呼び出しが、実行するメソッドの名前とファイルに本体の行を
   組み合わせて出ていた（`Retry.java:25`。そのファイルに 25 行目が無いこともある）。今は caller 列だけ、ラムダを書いた
-  メソッドとそのファイルから作る（`CallHierarchyCsvWriter#stackTrace(MethodTable, PathFrame, int)`。経緯は
-  [lambda-collapse-qa.md](lambda-collapse-qa.md) の Q2）
+  メソッドとそのファイルから作る（経緯は [lambda-collapse-qa.md](lambda-collapse-qa.md) の Q2）。
+  作り方は、表示用の `PathFrame#shownId` ではなくその段の本物のメソッド（畳んだ段ではラムダの本体）を
+  `CallHierarchyCsvWriter#stackTrace(MethodTable, int, int)` に渡し、そこでラムダの本体を書いたメソッドの名前に読み替える
+  （`MethodRef#lambdaEnclosingName`）。ラムダの本体の中の型解決に失敗した行と、ライブラリ呼び出し規則のひな形
+  （`call-rules-suggested.txt`）の呼び出し箇所も同じ入口を通すので、合成メソッドの名前（`lambda$…`）が出ず、
+  同じ呼び出し箇所が同じ表記になる（以前はこの 2 つに `lambda$viaRunner$0` が出ていた）。
+  合成名の付け方とその逆は `MethodRef#lambdaName` / `#lambdaEnclosingName` の 1 か所に置く
 
 直さなかったもの: ラムダ内の呼び出しの caller 列は、JVM の `lambda$main$0` ではなく囲むメソッド名のまま
 （ジャンプはファイル名と行で決まるので支障が無く、call-hierarchy 列でもラムダの合成メソッドを隠している設計と合わせるため）。

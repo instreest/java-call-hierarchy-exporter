@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  「本体が JDT の下限（3.28.0）でもコンパイルでき、同じ結果を出すか」を確かめるためだけの POM（test/jdt-floor/run.sh が使う）。
+  ここに並べているのは Eclipse 2021-12（4.22）の版である（Maven Central の公開日 2021-12-06〜08 で揃えた）。
+  配布物のビルドには使わない（本番の版は src/jche/CallHierarchyExporter.java の //DEPS 行）。
+
+  jar の組は、閉域ネットワークの手順（docs/cli.md の「閉域ネットワークで動かす」）が Eclipse の plugins から集めるものと同じ。
+  推移的な依存はすべて外して、版を固定する。jdt.core 3.28.0 の POM は依存を版の範囲（[3.x,4.0) など）で書いているので、
+  外さないと Maven はその時点の最新の platform の jar を選び、2021-12 の Eclipse には無い組み合わせを検査することになる。
+  3.28.0 の jdt.core はコンパイラ（後の org.eclipse.jdt.core.compiler.batch）を中に持っているので、その jar は無い。
+
+  なぜ 3.28.0 か（Java 17 まで解析できる最初の版で、下限より新しい API は 4 つだけ）は docs/jdt-floor-qa.md。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.github.instreest</groupId>
+  <artifactId>jche-jdt-floor</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.eclipse.jdt</groupId>
+      <artifactId>org.eclipse.jdt.core</artifactId>
+      <version>3.28.0</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.contenttype</artifactId>
+      <version>3.8.100</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.jobs</artifactId>
+      <version>3.12.0</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.resources</artifactId>
+      <version>3.16.0</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.core.runtime</artifactId>
+      <version>3.24.0</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.equinox.common</artifactId>
+      <version>3.15.100</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.equinox.preferences</artifactId>
+      <version>3.9.100</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.platform</groupId>
+      <artifactId>org.eclipse.osgi</artifactId>
+      <version>3.17.100</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.osgi</groupId>
+      <artifactId>org.osgi.service.prefs</artifactId>
+      <version>1.1.2</version>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+  </dependencies>
+</project>

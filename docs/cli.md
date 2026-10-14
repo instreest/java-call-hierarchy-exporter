@@ -224,6 +224,12 @@ rem Windows（コマンドプロンプト）
 `java` で起動します（起動コマンドも JBang も使いません）。
 jar のファイル名の版の部分は Eclipse の版によって変わるので、ワイルドカードでコピーします。
 
+使える Eclipse は **2021-12 以降**（JDT Core 3.28.0 以降）です。解析できるソースの Java の版は、その Eclipse の JDT が
+対応する版までです（2021-12 なら Java 17 まで。起動ログの「highest this JDT supports」に出ます）。それより新しい文法の
+ファイルは構文エラーとして `warnings.txt` に載ります。`org.eclipse.jdt.core.compiler.batch` は 2023-03 以降の Eclipse にだけ
+あります。それより前の Eclipse ではコンパイラが `org.eclipse.jdt.core` の中にあるので、この jar の `copy` が
+「指定されたファイルが見つかりません。」になっても構いません（[jdt-floor-qa.md](jdt-floor-qa.md)）。
+
 ```bat
 rem java-call-hierarchy-exporterをカレントディレクトリとしてください
 rem 環境に合わせて次の2行を書き換えてください

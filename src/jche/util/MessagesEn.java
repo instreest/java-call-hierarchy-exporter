@@ -509,6 +509,7 @@ final class MessagesEn {
             "analysis.stopped", "the Java parser stopped analyzing this file without saying why. This usually means that a class which a dependency jar refers to is missing (a jar, or a newer version of a jar, is missing from library.folders / library.jars). The calls in this file are not in the output. Add the missing jar",
             "analysis.stoppedBy", "the Java parser failed on this file with {0} and gave no reason. The calls in this file are not in the output. If a dependency jar is missing (the \"Dependency jars are not resolved\" item), add it and run again",
             "analysis.failedBy", "the Java parser failed on this file with {0}. The calls in this file are not in the output. This is usually caused by a compile error in this file (for example a record accessor whose type differs from the component); fix the error and run again. If the file builds, it is a defect of the Java parser",
+            "analysis.jdtApi", "the JDT method {0} exists but could not be called ({1}). The JDT jars on the classpath may have changed this API. Use the JDT version that the tool names (the //DEPS line of CallHierarchyExporter.java) and report the problem",
             "analysis.contextFiles", "{0} file(s) declare a top-level type whose name differs from the file name. They are given to the Java parser with every batch whose files can reach their package by name, so that their types are found whichever files are analyzed together",
             "analysis.packageMismatch", "{0} declares package {1}, but its folder corresponds to package {2}. The Java parser finds the types of such a file from other files only when it analyzes those files together with it, so calls to them can be missing or resolved to another type of the same name, and the result can differ between runs (for example between a full and an incremental analysis). Move the file to the folder of its package. If many files are listed, source.folders probably points one level too high or too low (for example src instead of src/main/java); fix source.folders",
             "analysis.packageMismatch.more", "More files declare a package that does not match their folder ({1} in total; only the first {0} are listed)",
@@ -618,7 +619,7 @@ final class MessagesEn {
         return new String[] {
             "external.notAClassFile", "Not a class file",
             "external.unknownConstantTag", "Unknown constant pool tag: {0}",
-            "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) implicit constructors={5} unmatched={6} own classes skipped={7}",
+            "external.summary", "jars={0}{1} classes={2} references={3} (to {4} of our own methods) missing no-arg constructors={5} unmatched={6} own classes skipped={7}",
             "external.summary.nested", " jars inside jars={0}",
             "external.jarCount", "External jars: {0}",
             "external.classFailed", "Class analysis failed (skipped): {0}",

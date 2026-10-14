@@ -35,7 +35,6 @@ import org.eclipse.jdt.core.dom.FileASTRequestor;
 import org.eclipse.jdt.core.dom.ImportDeclaration;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.QualifiedName;
@@ -200,7 +199,7 @@ public final class CallEdgeExtractor {
         Set<String> body = new HashSet<>();
         for (Object o : cu.imports()) {
             ImportDeclaration imp = (ImportDeclaration) o;
-            if (Modifier.isModule(imp.getModifiers())) {
+            if (JdtCompat.isModuleImport(imp)) {
                 continue;
             }
             String name = imp.getName().getFullyQualifiedName();
@@ -972,7 +971,7 @@ public final class CallEdgeExtractor {
                         public void acceptAST(String sourceFilePath, CompilationUnit cu) {
                             for (Object o : cu.imports()) {
                                 ImportDeclaration imp = (ImportDeclaration) o;
-                                if (Modifier.isModule(imp.getModifiers())) {
+                                if (JdtCompat.isModuleImport(imp)) {
                                     continue;
                                 }
                                 String path = imp.getName().getFullyQualifiedName().replace('.', '/');
@@ -1199,7 +1198,7 @@ public final class CallEdgeExtractor {
             case IProblem.VarLocalMultipleDeclarators, IProblem.VarLocalCannotBeArray,
                  IProblem.VarLocalReferencesItself, IProblem.VarLocalWithoutInitizalier,
                  IProblem.VarIsReserved, IProblem.VarIsReservedInFuture, IProblem.VarIsNotAllowedHere,
-                 IProblem.VarCannotBeMixedWithNonVarParams, IProblem.VarCannotBeUsedWithTypeArguments,
+                 IProblem.VarCannotBeMixedWithNonVarParams, JdtCompat.VAR_CANNOT_BE_USED_WITH_TYPE_ARGUMENTS,
                  IProblem.SwitchExpressionsYieldMissingDefaultCase,
                  IProblem.SwitchExpressionsYieldMissingEnumConstantCase,
                  IProblem.SwitchExpressionsBreakOutOfSwitchExpression,

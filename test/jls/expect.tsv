@@ -27,7 +27,7 @@
 7.3	compact-parse	noerror	src/CompactMain.java	-	-	コンパクトなコンパイル単位を誤りなく読める
 7.3	compact-default-ctor	decl	CompactMain#<init>()	implicit	-	暗黙に宣言されたクラスにもデフォルトコンストラクタがある（§8.8.9）
 7.3	compact-call	path	CompactMain.main > CompactMain.greet > CompactTarget.hello	-	-	トップレベルのメソッドどうしの呼び出しと、名前付きパッケージの型の呼び出し
-8.1.8	compact-final	csv	CompactMain.main	CompactMain.greet	RESOLVED:STATIC_BOUND:FINAL_CLASS	暗黙に宣言されたクラスは final なので上書きされない
+8.1.8	compact-final	csv	CompactMain.main	CompactMain.greet	RESOLVED:NOT_OVERRIDABLE:FINAL_CLASS	暗黙に宣言されたクラスは final なので上書きされない
 12.1.4	instance-main-entry	role	CompactMain.main()	FRAMEWORK_ENTRY	-	引数なしのインスタンスメソッド main() も起動の入口になる
 7.5.5	module-import-parse	noerror	src/jls/s07_05_05/ModuleImport.java	-	-	単一モジュールインポート宣言 import module java.base; を誤りなく読める
 7.5.5	module-import-types	call	jls.s07_05_05.ModuleImport#run()	jls.s07_05_05.Sink#use(java.util.List,java.util.function.Function)	-	モジュールインポートだけで見える型（List・Function）を引数に持つ呼び出し先のキーが作れる
@@ -97,7 +97,7 @@
 8.10.4.2	compact-canonical-body	path	Records.run > Range.Range > Sink.validate	-	-	コンパクトな正準コンストラクタの本体まで辿れる
 8.10.4	implicit-canonical	decl	jls.s08_10.Pair#<init>(java.lang.String,int)	implicit	-	正準コンストラクタを書かない record には成分と同じ引数の正準コンストラクタが暗黙に宣言される
 8.10.3	explicit-accessor	path	Records.run > Range.low > Sink.accessLow	-	-	明示的に宣言したアクセサの本体まで辿れる
-8.10	record-final	csv	jls.s08_10.Records.run	Range.low	RESOLVED:STATIC_BOUND:FINAL_CLASS	record は暗黙に final なのでアクセサは上書きされない
+8.10	record-final	csv	jls.s08_10.Records.run	Range.low	RESOLVED:NOT_OVERRIDABLE:FINAL_CLASS	record は暗黙に final なのでアクセサは上書きされない
 9.1.5	no-interface-ctor	nodecl	jls.s09_04.Greeter#<init>()	-	-	インターフェースの本体にコンストラクタは宣言できず、デフォルトコンストラクタもクラスだけ（§8.8.9）
 9.4.1	default-inherited	csv	jls.s09_04.Interfaces.run	Greeter.greet	-	上書きしないクラスの型で呼ぶと、継承したデフォルトメソッドが呼ばれる
 15.12.1	interface-super	csv	jls.s09_04.Polite.greet	Greeter.greet	RESOLVED:STATIC_BOUND:SUPER	TypeName.super.m() は親インターフェースのデフォルトメソッドを名指しで呼ぶ（仮想呼び出しではない）

@@ -36,7 +36,8 @@ import jche.cache.MethodRef;
  * （差分更新でファイルを解析し直しても変わらない）。
  *
  * <h2>名前の形</h2>
- * javac に似せて {@code lambda$囲みメソッド名$通し番号}。スタックトレースに現れる名前と
+ * javac に似せて {@code lambda$囲みメソッド名$通し番号}（作るのは {@link MethodRef#lambdaName}。CSV の caller 列は
+ * 逆の {@link MethodRef#lambdaEnclosingName} で囲みメソッドに戻すので、付け方はそこ 1 か所で変える）。スタックトレースに現れる名前と
  * 同じ形なので、読み手が結び付けやすい。ただし<b>番号の振り方は javac の版で変わる</b>ので、
  * 番号まで一致するとは限らない（docs/lambda-expansion-qa.md の Q13）。
  *
@@ -103,7 +104,7 @@ final class LambdaNames {
             }
             int index = counts.merge(enclosing.typeFqn(), 1, Integer::sum) - 1;
             names.put(node, new MethodRef(enclosing.pkg(), enclosing.typeFqn(),
-                    "lambda$" + baseNameOf(enclosing) + "$" + index, samRef.paramSig()));
+                    MethodRef.lambdaName(enclosing.name(), index), samRef.paramSig()));
         }
 
         /**
@@ -151,16 +152,4 @@ final class LambdaNames {
                     staticContext ? MethodRef.STATIC_INITIALIZER : MethodRef.CONSTRUCTOR, "");
         }
     }
-
-    /** 合成メソッドの名前に使う囲みメソッド名。javac に合わせて &lt;init&gt; は new にする（逆は {@link MethodRef#lambdaEnclosingName}） */
-    static String baseNameOf(MethodRef enclosing) {
-        if (MethodRef.CONSTRUCTOR.equals(enclosing.name())) {
-            return "new";
-        }
-        if (MethodRef.STATIC_INITIALIZER.equals(enclosing.name())) {
-            return "static";
-        }
-        return enclosing.name();
-    }
-
 }

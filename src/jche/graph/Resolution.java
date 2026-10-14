@@ -11,8 +11,14 @@ package jche.graph;
  */
 public record Resolution(int[] targets, String label) {
 
-    // --- 段0: 静的束縛（"STATIC_BOUND:理由" の形） ---
+    // --- 段0: 候補が呼び出し先の 1 件に決まる（{@link BindKind#label}） ---
+    /** 仮想呼び出しでない（JLS 15.12.3 の static / nonvirtual / super とコンストラクタ）。"STATIC_BOUND:理由" の形 */
     public static final String STATIC_BOUND_PREFIX = "STATIC_BOUND:";
+    /**
+     * 仮想呼び出しだが上書きできない（final メソッド・final クラスのメソッド）。"NOT_OVERRIDABLE:理由" の形。
+     * JLS 15.12.3 の呼び出し方式は virtual なので STATIC_BOUND とは呼ばない
+     */
+    public static final String NOT_OVERRIDABLE_PREFIX = "NOT_OVERRIDABLE:";
     // --- 段1: オーバーライド候補が1つに定まる ---
     public static final String NO_OVERRIDE = "NO_OVERRIDE";
     public static final String SINGLE_IMPL = "SINGLE_IMPL";

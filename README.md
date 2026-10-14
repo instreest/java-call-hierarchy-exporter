@@ -139,7 +139,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | Eclipse の中で呼び出し元を辿る | [Eclipse プラグイン](docs/eclipse-plugin-usage.md) |
 | VSCode の中で呼び出し元を辿る | [VSCode プラグイン](docs/vscode-plugin-usage.md) |
 | GitHub Actions で解析して CSV をアーティファクトにする | リポジトリ直下の [`action.yml`](action.yml) を `uses:` で呼ぶ（[docs/github-actions.md](docs/github-actions.md)。そのまま写せるワークフローの例と、依存の取得・セキュリティ・保存量の注意） |
-| 閉域ネットワークで使う（ネットワークから取得しない） | Pleiades / Eclipse に入っている JDK と JDT の jar で動かす（[docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)） |
+| 閉域ネットワークで使う（ネットワークから取得しない） | Pleiades / Eclipse（2021-12 以降）に入っている JDK と JDT の jar で動かす（[docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)） |
 | 自分のコードを呼んでいる、ほかのチームの jar を調べる | 設定の `external.library.folders`（[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 | ワークスペースの他のプロジェクト（自分を呼んでいる側・自分が依存している側）のソースまで呼び出し階層を伸ばす | 設定の `workspace.projects`。相手は相手自身の設定で解析され、そのキャッシュを名前で結合する。既定では自分のメソッドに届く経路だけを出す（[docs/workspace-callers-design.md](docs/workspace-callers-design.md)） |
 | 決めきれなかった実装を 1 つに絞る | ライブラリ呼び出し規則を書く（[docs/library-call-rules.md](docs/library-call-rules.md)）。条件が複雑なら拡張を書く（[docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)） |
@@ -243,8 +243,8 @@ config/
 |---|---|
 | `RESOLVED:` | 呼び出し先を 1 件に確定した。後半が[どの決め方か](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
 | `UNEXPANDED:` | 1 件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
-| `UNRESOLVED:` | 呼び出し先の型を特定できなかった行。`UNRESOLVED:BINDING_FAILED`（クラスパス不足・動的呼び出し等）と `UNRESOLVED:OUTSIDE_METHOD`（メソッド本体の外からの呼び出し）。`call-hierarchy` の先頭の列は `(unresolved)` |
-| `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
+| `UNRESOLVED:` | 型解決に失敗した呼び出しの行。`UNRESOLVED:BINDING_FAILED`（呼び出し先の型を特定できなかった。クラスパス不足・動的呼び出し等）と `UNRESOLVED:CALLER_UNRESOLVED`（呼び出しを囲むメソッド・型の型解決に失敗し、呼び出し元を特定できなかった。フィールドの初期化子・初期化ブロックの呼び出しは `<init>` / `<clinit>` からの呼び出しになるので、ここには来ない）。`call-hierarchy` の先頭の列は `(unresolved)` |
+| `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
 後半は解決の段のラベルそのものですが、1 つだけ例外があります。ラムダ式・メソッド参照が実装している
 関数型インターフェースの呼び出しは、ソース上の実装が 1 件でも（ラベルは `SINGLE_IMPL` 等の確定系でも）
@@ -360,7 +360,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という規則で繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。jar の中を読んだわけではない |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: …` | 同じく規則で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
-| `type resolution failed …` | 呼び出し先の型を特定できなかった行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
+| `type resolution failed …` / `caller unresolved …` | 型解決に失敗した呼び出しの行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
 1 つの注記は最大 2 つのパーツからなり、両方付くときは ` / ` で繋がります。
@@ -389,7 +389,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 |---|---|
 | `external-ref:EXACT` | そのクラスで宣言されているメソッド（暗黙のデフォルトコンストラクタを含む）への参照 |
 | `external-ref:INHERITED` | 親から継承したメソッドへの参照。JVM がその参照を解決する宣言のメソッドとして出る |
-| `external-ref:IMPLICIT_CTOR` | 引数なしコンストラクタへの参照で、今のソースに一致する宣言が無いもの。相手の jar が古い版に対してビルドされている可能性が高い |
+| `external-ref:MISSING_NOARG_CTOR` | 引数なしコンストラクタへの参照で、今のソースに一致する宣言が無いもの。相手の jar が古い版に対してビルドされている可能性が高い（暗黙のデフォルトコンストラクタへの参照は `EXACT`） |
 
 <!-- sec:resolving-concrete-classes -->
 ### 具象クラスの解決
@@ -400,7 +400,8 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 
 | ラベル | 決め方 |
 |---|---|
-| `STATIC_BOUND:*` | private / static / final メソッド、final クラス、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
+| `STATIC_BOUND:*` | 仮想呼び出しでない呼び出し（Java 言語仕様 15.12.3 の呼び出し方式 static / nonvirtual / super）。private・static メソッド、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` / `STATIC` / `CTOR` / `SUPER`） |
+| `NOT_OVERRIDABLE:*` | 仮想呼び出しだが上書きできないので、動く実装が呼び出し先の 1 つに決まる。final メソッドと final クラス（暗黙に final な record を含む）のメソッド（`NOT_OVERRIDABLE:FINAL_METHOD` / `FINAL_CLASS`） |
 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |
@@ -442,6 +443,9 @@ at fx.lambda.Holder.<init>(Holder.java:27),OrderDaoImpl.describe,RESOLVED:DATAFL
 CSV にはラムダの合成メソッド（`lambda$…`）の行を出しません。ソースに書いていない、コンパイラが作る暗黙のメソッドだからです。
 本体の中の呼び出しは、ラムダを実行するメソッド（ラムダを作ったメソッド、または引数で渡した先で `r.run()` するメソッド）の直下に出ます。
 `depth` 列と `call-hierarchy` 列にもラムダの段は入りません（Eclipse の呼び出し階層と同じ見え方）。
+ただし `caller` 列は、実行するメソッドではなく**ラムダを書いたメソッドとその行**を指します（呼び出し箇所が実際にあるのはそこなので、
+ソースへ飛べるように）。上の例は、フィールド初期化子に書いたラムダ（`Holder.java:27`。初期化子はコンストラクタ `<init>` で動く）を
+`viaField` が実行している行で、`caller` 列は `<init>`、`call-hierarchy` 列の直前の段は `viaField` になります。
 同じ本体へ降りる辺（作った辺・規則の呼び戻し・`DATAFLOW_LAMBDA`）は、1 本の枝にまとめます
 （[docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md)）。
 
@@ -620,7 +624,7 @@ The linked documents are in Japanese.
 | Follow callers inside Eclipse | The [Eclipse plugin](docs/eclipse-plugin-usage.md) |
 | Follow callers inside VSCode | The [VSCode plugin](docs/vscode-plugin-usage.md) |
 | Analyze in GitHub Actions and get the CSV as an artifact | Call [`action.yml`](action.yml) in the repository root with `uses:` ([docs/github-actions.md](docs/github-actions.md): a workflow you can copy as is, and notes on fetching dependencies, security and storage) |
-| Use it on an isolated network (no downloads) | Run it with the JDK and JDT jars that come with Pleiades / Eclipse ([docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)) |
+| Use it on an isolated network (no downloads) | Run it with the JDK and JDT jars that come with Pleiades / Eclipse (2021-12 or later) ([docs/cli.md](docs/cli.md#閉域ネットワークで動かすpleiadeseclipse-の-jar-を使う)) |
 | Find the jars of other teams that call your code | `external.library.folders` in the config ([Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 | Extend the call hierarchy into the sources of other workspace projects (the ones that call you, and the ones you depend on) | `workspace.projects` in the config. Each project is analyzed with its own config and its cache is joined by name. By default only the paths that reach your own methods are written ([docs/workspace-callers-design.md](docs/workspace-callers-design.md)) |
 | Narrow an implementation it could not decide down to one | Write library call rules ([docs/library-call-rules.md](docs/library-call-rules.md)), or an extension for complex conditions ([docs/instance-analysis-plugin.md](docs/instance-analysis-plugin.md)) |
@@ -730,8 +734,8 @@ Besides missing dependency jars, a path in the config file that does not exist a
 |---|---|
 | `RESOLVED:` | The callee was pinned down to one. The second half says [how it was decided](#resolving-concrete-classes) (`RESOLVED:DATAFLOW_FIELD` and the like) |
 | `UNEXPANDED:` | It could not be narrowed to one, so candidates remain. The second half says how they were collected (`UNEXPANDED:CHA` and the like). There is a row per candidate, but nothing below them is followed |
-| `UNRESOLVED:` | A row for a call whose callee type could not be determined: `UNRESOLVED:BINDING_FAILED` (incomplete classpath, a dynamic call and so on) and `UNRESOLVED:OUTSIDE_METHOD` (a call from outside a method body). The first column of `call-hierarchy` is `(unresolved)` |
-| `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `IMPLICIT_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
+| `UNRESOLVED:` | A row for a call whose types could not be resolved: `UNRESOLVED:BINDING_FAILED` (the callee type could not be determined: incomplete classpath, a dynamic call and so on) and `UNRESOLVED:CALLER_UNRESOLVED` (type resolution of the enclosing method or type failed, so the caller could not be determined; calls in field initializers and initializer blocks are calls from `<init>` / `<clinit>` and never land here). The first column of `call-hierarchy` is `(unresolved)` |
+| `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 
 The second half is the label of the resolution step itself, with one exception. A call to a functional
 interface that a lambda or method reference implements becomes `UNEXPANDED:LAMBDA` even when there is a
@@ -852,7 +856,7 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). The inside of the jar was not read |
 | `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: ...` | Also connected by a rule, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
-| `type resolution failed ...` | A row for a call whose callee type could not be determined (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
+| `type resolution failed ...` / `caller unresolved ...` | A row for a call whose types could not be resolved (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
 | `external-ref:EXACT` and the like | A row of the external reference scan ([below](#methods-referenced-from-external-jars)). Also a row of its own |
 
 A note has at most two parts, joined with ` / ` when both apply.
@@ -883,7 +887,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 |---|---|
 | `external-ref:EXACT` | A reference to a method declared by that class (including an implicit default constructor) |
 | `external-ref:INHERITED` | A reference to a method inherited from a parent. It appears as the method the JVM resolves the reference to |
-| `external-ref:IMPLICIT_CTOR` | A reference to a no-argument constructor with no matching declaration in today's source. The other jar was most likely built against an older version |
+| `external-ref:MISSING_NOARG_CTOR` | A reference to a no-argument constructor with no matching declaration in today's source. The other jar was most likely built against an older version (a reference to an implicit default constructor is `EXACT`) |
 
 <!-- sec:resolving-concrete-classes -->
 ### Resolving concrete classes
@@ -895,7 +899,8 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 
 | Label | How it was decided |
 |---|---|
-| `STATIC_BOUND:*` | private / static / final methods, final classes, constructors, super calls. The reason follows it (`STATIC_BOUND:PRIVATE` and the like) |
+| `STATIC_BOUND:*` | A call that is not a virtual call (invocation mode static / nonvirtual / super in section 15.12.3 of the Java Language Specification): private and static methods, constructors, super calls. The reason follows it (`STATIC_BOUND:PRIVATE` / `STATIC` / `CTOR` / `SUPER`) |
+| `NOT_OVERRIDABLE:*` | A virtual call that cannot be overridden, so the implementation that runs is the callee itself: final methods and methods of final classes (including records, which are implicitly final) (`NOT_OVERRIDABLE:FINAL_METHOD` / `FINAL_CLASS`) |
 | `NO_OVERRIDE` / `SINGLE_IMPL` | The override candidates narrow to one |
 | `NO_IMPL` | No implementation with a body exists in the source (it is left as the declaration) |
 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | A type `new`-ed inside the same method |
@@ -940,6 +945,10 @@ The CSV has no row for the synthetic lambda method (`lambda$...`): it is an impl
 creates, not something written in the source. The calls inside the body appear directly under the method that
 executes the lambda (the one that created it, or the one that calls `r.run()` after it is passed in as an argument).
 The `depth` and `call-hierarchy` columns have no lambda level either (the same view as Eclipse's call hierarchy).
+The `caller` column, however, points at **the method that wrote the lambda and the line inside it**, not at the method
+that executes it (that is where the call site really is, so you can jump to the source). In the example above, a lambda
+written in a field initializer (`Holder.java:27`; initializers run in the constructor `<init>`) is executed by `viaField`:
+the `caller` column says `<init>`, and the node just before it in the `call-hierarchy` column is `viaField`.
 Edges that reach the same body (the "created it" edge, a callback rule, `DATAFLOW_LAMBDA`) are written as one
 branch ([docs/lambda-collapse-qa.md](docs/lambda-collapse-qa.md), in Japanese).
 

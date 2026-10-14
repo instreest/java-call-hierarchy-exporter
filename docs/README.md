@@ -86,6 +86,7 @@
 | [lambda-collapse-qa.md](lambda-collapse-qa.md) | — | ラムダの合成メソッド（`lambda$…`）を CSV に出さず、本体の呼び出しを実行するメソッドの直下に出す判断。Eclipse の呼び出し階層との違い、段の差し替えの作り、同じ本体へ降りる辺のまとめ方、畳めない形、`entry.packages` で起点にしない理由、却下した案 |
 | [lambda-expansion-qa.md](lambda-expansion-qa.md) | #127 | ラムダ式の本体を合成メソッド（`lambda$...`）にして、関数型インターフェース経由の呼び出しを本体まで辿る。生成の辺を残す判断、捕捉した変数（`E:`）の扱い（生成したメソッドの段でだけ当てる）、追える形と追えない形、親インターフェースの型で受けた呼び出しにラムダを当てる M 行の鍵、メソッド参照の参照先が仮想メソッドのときの実装への繋ぎ方、javac 21 に合わせた通し番号（javac の版で振り方が違うこと）、式本体の戻り値、2 つの親から同じ抽象メソッドを継承した関数型インターフェース、呼び戻しの規則に渡したメソッド参照、インターフェースのフィールドの中のラムダの名前 |
 | [call-hierarchy-columns-qa.md](call-hierarchy-columns-qa.md) | — | `call-hierarchy.csv` に `depth`（起点からの深さ）と `resolved-by`（解決方法）の 2 列を `call-hierarchy`（旧 `root`）の左に足す。見出し `root` を `call-hierarchy` にまとめた経緯（Q9）も。値の語彙、ラベルをそのまま出さない 1 ケース、注記から落としたもの |
+| [resolved-by-naming-qa.md](resolved-by-naming-qa.md) | — | `resolved-by` の値のうち JLS / JVMS の用語と食い違っていた名前を改めた件（`OUTSIDE_METHOD` → `CALLER_UNRESOLVED`、`IMPLICIT_CTOR` → `MISSING_NOARG_CTOR`、final を `STATIC_BOUND` から `NOT_OVERRIDABLE` へ分ける） |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
@@ -111,6 +112,7 @@
 | [field-callers-qa.md](field-callers-qa.md) | — | フィールドの呼び出し元（フィールドを読み書きしているメソッドと、その呼び出し元）を Eclipse・VSCode プラグインに足す。VSCode でカーソルの下のフィールドを引く `FIELDAT`、キャッシュの A 行を要求のたびに読む判断、キャッシュとグラフの食い違いの断り方、初期化子の扱い、今のキャッシュではできないこと |
 | [nls-qa.md](nls-qa.md) | — | ツール全体（解析ログ・対話モード・起動コマンド）を英語（既定）と日本語で出し分ける。文言を properties ではなく Java の表に置いた理由、言語の優先順位、**出力 CSV を訳さない**判断、文言なのにキャッシュの版を上げた 1 件、プラグインと解析ログの言語をそろえる仕組み、検査が何も見ていなかった件、1 つの JVM で設定を続けて読むときに空欄の言語を引き継がない |
 | [eclipse-plugin-java-floor-qa.md](eclipse-plugin-java-floor-qa.md) | — | プラグインの下限を Java 8 / Eclipse 4.6 から Java 11 / Eclipse 4.17 へ上げる。「解析対象の Java の版」と「Eclipse を動かす Java の版」を取り違えていた話、Java 8 対応が何を買って何を払っていたか |
+| [jdt-floor-qa.md](jdt-floor-qa.md) | — | 解析本体の JDT の下限を 3.28.0（Eclipse 2021-12。Java 17 まで解析可）にする。下限より新しい API 4 つを `JdtCompat` で名前で引く形にした理由と形、版ごとに名前で引く API がどれだけ増えるかの実測、古い JDT で読めなくなる文法と同じ結果になること、下限の検査（`test/jdt-floor`） |
 | [syntax-error-report-qa.md](syntax-error-report-qa.md) | — | 構文エラーで読めなかったファイルを黙って落とさず報告する。型解決のエラーと分けて数える理由、キャッシュの F 行に持たせた理由（2回目以降も言い続けるため）、`var` の使い方の誤りを構文エラーに数えない理由（switch 式の検査（網羅していない・default が無い・switch 式の外への break など）も同じ。形式 v36。cache-unification-qa.md の Q63） |
 | [vscode-plugin-qa.md](vscode-plugin-qa.md) | — | VSCode プラグインの設計判断（VSCode の作法との折り合い、標準の呼び出し階層に相乗りしない理由、`AT` を足した理由と断り方、`.vsix` を手動で作るワークフロー） |
 | [eclipse-maven-qa.md](eclipse-maven-qa.md) | #39 | Eclipse（Pleiades）で開くための `pom.xml`。Gradle や jbang-eclipse を選ばなかった理由 |

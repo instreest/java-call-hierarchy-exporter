@@ -242,7 +242,7 @@ return switch (key) {
 
 | 段 | ラベル | 判定 |
 |---|---|---|
-| 0 | `STATIC_BOUND:*` | private / static / final メソッド、final クラス、コンストラクタ、super 呼び出し。理由が後ろに付く（`STATIC_BOUND:PRIVATE` 等） |
+| 0 | `STATIC_BOUND:*` / `NOT_OVERRIDABLE:*` | `STATIC_BOUND:*` は仮想呼び出しでないもの（JLS 15.12.3 の static / nonvirtual / super）: private / static メソッド、コンストラクタ、super 呼び出し。`NOT_OVERRIDABLE:*` は仮想呼び出しだが上書きできないもの: final メソッド、final クラスのメソッド。理由が後ろに付く（`STATIC_BOUND:PRIVATE`・`NOT_OVERRIDABLE:FINAL_CLASS` 等） |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` | オーバーライド候補が 1 つに定まる |
 | 1 | `NO_IMPL` | 本体を持つ実装がソース上に 1 つも無い（宣言のまま扱う） |
 | 2 | `LOCAL_NEW` / `LOCAL_NEW_MULTI` | 同一メソッド内で `new` された型 |

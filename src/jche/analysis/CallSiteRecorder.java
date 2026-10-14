@@ -64,13 +64,12 @@ final class CallSiteRecorder {
      * {@code new} とコンストラクタ呼び出し（{@code this(...)} / {@code super(...)}）は javac も式の先頭の行なので、そのまま
      */
     private int lineOf(ASTNode node) {
-        if (node instanceof MethodInvocation call) {
-            return cu.getLineNumber(call.getName().getStartPosition() + call.getName().getLength());
-        }
-        if (node instanceof SuperMethodInvocation call) {
-            return cu.getLineNumber(call.getName().getStartPosition() + call.getName().getLength());
-        }
-        return cu.getLineNumber(node.getStartPosition());
+        SimpleName name = (node instanceof MethodInvocation call) ? call.getName()
+                : (node instanceof SuperMethodInvocation call) ? call.getName()
+                : null;
+        return (name == null)
+                ? cu.getLineNumber(node.getStartPosition())
+                : cu.getLineNumber(name.getStartPosition() + name.getLength());
     }
 
     /**
@@ -108,7 +107,7 @@ final class CallSiteRecorder {
             // 呼び出し元の型・コンストラクタ自体を特定できないケース
             // （型のバインディング解決に失敗した等）
             out.callSites.add(new UnresolvedCallFact(line, null, displayName,
-                    UnresolvedCallFact.OUTSIDE_METHOD, "", recvKind, lambdaDepth));
+                    UnresolvedCallFact.CALLER_UNRESOLVED, "", recvKind, lambdaDepth));
             addValues(values, recvKey, guard);
             return;
         }

@@ -20,23 +20,47 @@ public record MethodRef(String pkg, String typeFqn, String name, String paramSig
         paramSig = (paramSig == null) ? "" : paramSig;
     }
 
+    /** ラムダ本体の合成メソッド名の接頭辞（{@link #lambdaName}） */
+    private static final String LAMBDA_PREFIX = "lambda$";
+    /** 合成名の中で {@link #CONSTRUCTOR} を表す語（javac に合わせる） */
+    private static final String LAMBDA_IN_CONSTRUCTOR = "new";
+    /** 合成名の中で {@link #STATIC_INITIALIZER} を表す語（javac に合わせる） */
+    private static final String LAMBDA_IN_STATIC_INITIALIZER = "static";
+
     /**
-     * ラムダ本体の合成メソッド名 {@code lambda$囲みメソッド名$通し番号} から、囲みメソッドの名前（ソースに書いたメソッド名。
-     * コンストラクタ・フィールド初期化子は {@link #CONSTRUCTOR}、static 初期化子は {@link #STATIC_INITIALIZER}）を戻す。
-     * ラムダの合成名の付け方（{@code jche.analysis.LambdaNames#baseNameOf}）の逆。ラムダの名前の形でなければ null
+     * ラムダ本体の合成メソッド名 {@code lambda$囲みメソッド名$通し番号}。javac に似せて、{@link #CONSTRUCTOR} は {@code new}、
+     * {@link #STATIC_INITIALIZER} は {@code static} と書く。名前の付け方と、その逆（{@link #lambdaEnclosingName}）を
+     * ここ 1 か所に置く。片方だけ変えると、CSV の caller 列がラムダを書いたメソッドを指せなくなる
+     *
+     * @param enclosingName 囲みメソッドの名前（{@link #CONSTRUCTOR} / {@link #STATIC_INITIALIZER} を含む）
+     * @param index         型ごとの通し番号
+     */
+    public static String lambdaName(String enclosingName, int index) {
+        String base = switch (enclosingName) {
+            case CONSTRUCTOR -> LAMBDA_IN_CONSTRUCTOR;
+            case STATIC_INITIALIZER -> LAMBDA_IN_STATIC_INITIALIZER;
+            default -> enclosingName;
+        };
+        return LAMBDA_PREFIX + base + "$" + index;
+    }
+
+    /**
+     * {@link #lambdaName} の逆。合成メソッド名から、囲みメソッドの名前（ソースに書いたメソッド名。コンストラクタ・
+     * フィールド初期化子は {@link #CONSTRUCTOR}、static 初期化子は {@link #STATIC_INITIALIZER}）を戻す。
+     * {@link #lambdaName} の形でなければ null
      */
     public static String lambdaEnclosingName(String name) {
         int last = name.lastIndexOf('$');
-        if (!name.startsWith("lambda$") || last <= "lambda$".length() - 1) {
+        if (!name.startsWith(LAMBDA_PREFIX) || last < LAMBDA_PREFIX.length()) {
             return null;
         }
-        String base = name.substring("lambda$".length(), last);
+        String base = name.substring(LAMBDA_PREFIX.length(), last);
         if (base.isEmpty()) {
             return null;
         }
         return switch (base) {
-            case "new" -> CONSTRUCTOR;
-            case "static" -> STATIC_INITIALIZER;
+            case LAMBDA_IN_CONSTRUCTOR -> CONSTRUCTOR;
+            case LAMBDA_IN_STATIC_INITIALIZER -> STATIC_INITIALIZER;
             default -> base;
         };
     }

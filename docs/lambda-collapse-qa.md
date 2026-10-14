@@ -33,6 +33,7 @@ Eclipse は「メソッド本体の範囲に書いてある呼び出しは、そ
 - 辺は合成メソッドから引くので `PathFrame#methodId` は合成メソッドのまま。CSV の callee 列・call-hierarchy 列に出すのは
   `PathFrame#shownId`（畳んだ段では今の段のメソッド）。caller 列だけは例外で、畳んだ段では shownId を使わず、
   ラムダを書いたメソッド（合成名 `lambda$囲み$N` の囲み。`MethodRef#lambdaEnclosingName`）と本体のファイルから作る
+  （型解決に失敗した行・ライブラリ呼び出し規則のひな形の呼び出し箇所も同じ）
   （下の「別のメソッドが実行するラムダ」）
 - 引数の環境と捕捉した値（`E:`）は本体の段のものを使うので、`DATAFLOW_PARAM` などの絞り込みは減らない。
   捕捉した値は、今の段がそのラムダを作ったメソッドのときだけ渡す（lambda-expansion-qa の Q10）

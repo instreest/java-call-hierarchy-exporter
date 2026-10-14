@@ -7,6 +7,10 @@ at st.Chain.run(Chain.java:32),Chain.second,RESOLVED:NO_OVERRIDE,1,Chain.run,Cha
 at st.Chain.run(Chain.java:31),Chain.first,RESOLVED:NO_OVERRIDE,1,Chain.run,Chain.first
 at st.Chain.run(Chain.java:31),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.run,Chain.make
 at st.Chain.run(Chain.java:34),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.run,Chain.make
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.DbStore.save,UNEXPANDED:CHA,1,LambdaSites.candidatesInside,LambdaSites.DbStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.FileStore.save,UNEXPANDED:CHA,1,LambdaSites.candidatesInside,LambdaSites.FileStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.DbStore.save,UNEXPANDED:CHA,1,LambdaSites.candidatesInside,LambdaSites.DbStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.FileStore.save,UNEXPANDED:CHA,1,LambdaSites.candidatesInside,LambdaSites.FileStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
 at st.Lambdas.<clinit>(Lambdas.java:50),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.<clinit>,Lambdas.name
 at st.Lambdas.viaOtherFile(Lambdas.java:21),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaOtherFile,Lambdas.work
 at st.Lambdas.viaOtherFile(Lambdas.java:21),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaOtherFile,Lambdas.work
@@ -33,3 +37,4 @@ at st.Shapes.shapes(Shapes.java:47),Shapes$Kind$1.go,RESOLVED:SINGLE_IMPL,1,Shap
 at st.Shapes$Kind$1.go(Shapes.java:25),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,2,Shapes.shapes,Shapes$Kind$1.go,Shapes.leaf
 at st.Shapes.shapes(Shapes.java:48),Aux.secret,RESOLVED:NO_OVERRIDE,1,Shapes.shapes,Aux.secret
 at st.Aux.secret(Shapes.java:54),Shapes.leaf,RESOLVED:STATIC_BOUND:STATIC,2,Shapes.shapes,Aux.secret,Shapes.leaf
+at st.LambdaSites.unresolvedInside(LambdaSites.java:28),call,UNRESOLVED:BINDING_FAILED,1,(unresolved),call,type resolution failed (missing classpath / dynamic call / etc.)

@@ -25,6 +25,9 @@
  *       （{@link jche.analysis.CallEdgeExtractor#analyzeBatch}）</li>
  *   <li><b>書く事実が変わる変更は {@link jche.cache.CacheFormat#VERSION} を上げる</b>（迷ったら上げる。
  *       上げ忘れは {@code test/cacheversion} が捕まえる）</li>
+ *   <li><b>JDT の下限（3.28.0）より新しい API はソースに直接書かない</b>。本体はそこにある JDT の jar に対して
+ *       コンパイルされるので、古い jar で動かす人（閉域ネットワークの手順）のところでコンパイルが通らなくなる。
+ *       {@link jche.analysis.JdtCompat} に置いて名前で引く（{@code test/jdt-floor} が下限の jar で検査する）</li>
  *   <li>差分更新（{@link jche.analysis.CacheUpdater}）は、I 行に載らない依存を {@link jche.analysis.StaleTypes} で拾う。
  *       依存を足したら {@code test/incremental} に全件解析との一致の検査を足す</li>
  * </ul>
@@ -45,6 +48,7 @@
  *     LambdaNames         ラムダの合成メソッドの名前
  *     OriginTracker / ValueGraph / GuardCollector / FieldFactCollector / FieldAccessRecorder   値と条件の事実
  *   LibraryDiff / ZipDirectory   依存 jar・クラスフォルダの指紋（L 行）
+ *   JdtVersion / JdtCompat       使っている JDT の版（キャッシュの鍵）と、下限（3.28.0）より新しい JDT の API
  * </pre>
  */
 package jche.analysis;

@@ -218,6 +218,10 @@ CASES=()
 #     via:<Class.method>:<期待>  経路（call-hierarchy 列。先頭が起点）に <Class.method> を通る行だけで <期待> を見る
 #                    （メソッド参照は、参照を書いたメソッドから参照先への辺も持つ。関数型インターフェースを
 #                    呼んだ側（run の c.accept）から降りた経路だけを見たいときに使う）
+#     under:<Class.method>:<期待>  call-hierarchy 列で呼び出し先の直前の段（＝木の親）が <Class.method> の行だけで
+#                    <期待> を見る（via: より強い。経路のどこかを通るだけでは足りず、直下に出ることを見る。
+#                    別のメソッドが実行するラムダの本体の呼び出しは、caller 列はラムダを書いたメソッドを指し、
+#                    木では実行するメソッドの直下に出るので、木の親はこれで見る）
 #   呼び出し元の Class には匿名・ローカルクラスの名前（Leak$1）も書ける。
 #   クラス名を / で始めると無名パッケージのクラスになる（/Kind なら work/src/Kind.java。呼び出し元も /Kind.m と書く）。
 #   /pq/PkgBase のようにパスを書けば pr 以外のパッケージのクラスも置ける（ソースの package 宣言はパスに合わせる）
@@ -3402,7 +3406,7 @@ expect_ listed GiRet.use GiBase.create "戻り値: 動く実装は親クラス�
 # default を抽象として宣言し直した子インターフェース（@FunctionalInterface）にラムダを渡す形（Issue #176）。
 # 親の型で受けた呼び出し（t.exec()・m.make()）の先は default の鍵で、そこで動くのはラムダ。書き手が M 行を default の鍵でも
 # 書かないと、ラムダの本体への辺が無く、default の戻り値（DaoA）で絞られて動く DaoB.find が落ちる
-case_ via:LamRedecl.run:listed LamRedecl LamRedecl.main LamRedecl.hit "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体（hit()）が、ラムダを実行するメソッド（run）の下に出る（caller 列はラムダを書いた main の行）" <<'EOF'
+case_ under:LamRedecl.run:listed LamRedecl LamRedecl.main LamRedecl.hit "default を抽象として宣言し直した LrJob のラムダを LrTask の型で呼ぶと、ラムダの本体（hit()）が、ラムダを実行するメソッド（run）の下に出る（caller 列はラムダを書いた main の行）" <<'EOF'
 package pr;
 
 interface LrTask { default void exec() { System.out.println("default"); } }
@@ -4028,7 +4032,7 @@ public class LamOther {
     static void hit() { System.out.println("h"); }
 }
 EOF
-expect_ via:LamOther.other:listed LamOther.viaOther LamOther.hit "同上（実際に実行するメソッド other の下にも出る。経路を落とさない。caller 列は other ではなく、ラムダを書いた viaOther の行）"
+expect_ under:LamOther.other:listed LamOther.viaOther LamOther.hit "同上（実際に実行するメソッド other の下にも出る。経路を落とさない。caller 列は other ではなく、ラムダを書いた viaOther の行）"
 
 case_ listed LamCycle LamCycle.rec LamCycle.rec "ラムダの中から囲みメソッドへ戻る再帰も行に出て、無限に辿らない（[UNEXPANDED:CYCLE]）" <<'EOF'
 package pr;
@@ -4100,6 +4104,15 @@ for c in "${CASES[@]}"; do
         expect=${rest#*:}
         rows=$(awk -F, -v m="$through" '{ for (i = 5; i <= NF; i++) if ($i == m) { print; next } }' <<< "$rows")
         label="$label（$through を通る経路）"
+    fi
+    if [ "${expect#under:}" != "$expect" ]; then
+        # under:<Class.method>:<期待> … call-hierarchy 列で呼び出し先の直前の段が <Class.method> の行だけで <期待> を見る。
+        # 列は caller,callee,resolved-by,depth,起点,ノード1,…,ノードdepth（＝呼び出し先）なので、直前の段は 4+depth 列目
+        rest=${expect#under:}
+        parent=${rest%%:*}
+        expect=${rest#*:}
+        rows=$(awk -F, -v m="$parent" '$4 ~ /^[0-9]+$/ && $(4 + $4) == m' <<< "$rows")
+        label="$label（木の親が $parent）"
     fi
     if [ "$expect" = absent ]; then
         if [ -z "$rows" ]; then

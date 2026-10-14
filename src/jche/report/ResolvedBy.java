@@ -30,7 +30,7 @@ final class ResolvedBy {
     static final String UNEXPANDED = "UNEXPANDED:";
     /** 呼び出し先の型を特定できなかった行（U行）。後半は理由コード */
     static final String UNRESOLVED = "UNRESOLVED:";
-    /** 被参照スキャンの行。後半は照合の種類（EXACT / INHERITED / IMPLICIT_CTOR） */
+    /** 被参照スキャンの行。後半は照合の種類（EXACT / INHERITED / MISSING_NOARG_CTOR） */
     static final String EXTERNAL_USAGE = "EXTERNAL_USAGE:";
 
     /**

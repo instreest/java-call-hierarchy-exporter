@@ -55,6 +55,7 @@
 #   stacktrace           … call-hierarchy.csv の caller 列（Java のスタックトレース形式）が、JVM のスタックトレースと同じ
 #                          クラス（バイナリ名）・メソッド・ファイル・行を指すこと（stacktrace/project）。複数行にまたがる連鎖の各呼び出しの行、
 #                          別のファイルのクラスが実行するラムダの本体の行（ラムダを書いたメソッドとファイルを指す）、
+#                          ラムダの本体の中の型解決に失敗した行とライブラリ呼び出し規則のひな形の呼び出し箇所（合成メソッドの名前を出さない）、
 #                          内部・匿名・ローカルクラスのバイナリ名。jche.properties（expected/）→ 同じ設定でキャッシュを再利用 →
 #                          config-exclude.properties（ラムダを実行する側のパッケージを除外。expected-exclude/）の順に実行する
 #   multi                … 最後に whole と entry の設定ファイルを 1 回の起動にまとめて渡し（存在しない設定も
@@ -533,6 +534,7 @@ stacktrace_case() {
     rm -rf stacktrace/.cache stacktrace/output stacktrace/run-*.log
     run stacktrace jche.properties 1 "1回目: キャッシュ無し" || return
     compare stacktrace expected "1回目: キャッシュ無し"
+    compare_suggested stacktrace expected "1回目: ライブラリ呼び出し規則のひな形の呼び出し箇所"
     run stacktrace jche.properties 2 "2回目" || return
     expect_reused stacktrace 2 "2回目: キャッシュを再利用"
     compare stacktrace expected "2回目: キャッシュ再利用"

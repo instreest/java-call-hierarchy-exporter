@@ -44,7 +44,7 @@
 | 入力 | jar / war / ear（FatJar の中の jar も）。`jche.external.ExternalUsageScanner#collectJars` がフォルダ配下の jar を集める |
 | 読み方 | class ファイルの定数プールと命令列（`ClassFileRefs`）。`invoke*` と `invokedynamic`（ラムダ・メソッド参照）から参照先と行番号を拾う |
 | 照合 | 参照先が **自分のソースの型**（H 行の型名 `graph.hierarchy().typeNames()`）なら、JVM の解決（`MethodSelection#resolvedDeclaration`）で宣言に結び付ける。自プロジェクトの class が混ざった jar は読み飛ばす |
-| 出力 | `call-hierarchy.csv` に直接書く（`CallHierarchyCsvWriter#writeExternalUsageRow`）。`caller` はスタックトレース形式、`root` は jar 名、`depth` は 1、`resolved-by` は `EXTERNAL_USAGE:…`、`call-hierarchy` の末尾は `external-ref:EXACT / INHERITED / IMPLICIT_CTOR` |
+| 出力 | `call-hierarchy.csv` に直接書く（`CallHierarchyCsvWriter#writeExternalUsageRow`）。`caller` はスタックトレース形式、`root` は jar 名、`depth` は 1、`resolved-by` は `EXTERNAL_USAGE:…`、`call-hierarchy` の末尾は `external-ref:EXACT / INHERITED / MISSING_NOARG_CTOR` |
 | 持たないもの | キャッシュ（毎回 jar を読む）、メモリ上のグラフ（ビューに出ない）、相手側の呼び出し階層（jar の中の呼び出し元の呼び出し元は辿らない） |
 
 「jar の中の呼び出し元の呼び出し元」を命令列から辿る拡張も理屈では書けるが、それは **ソース解析器をもう 1 つ
@@ -233,7 +233,7 @@ workspace.scope=callers
 ### 3.7 対応しないこと・限界
 
 - 相手が古い `bin` / jar に対して解析していると、相手の呼び出し先の名前が今のソースと合わず、辺がつながらない
-  （`external-ref:IMPLICIT_CTOR` と同じ性質の版ずれ）。相手の `bin` をビルドし直してから解析し直す。検出と案内は今後の課題
+  （`external-ref:MISSING_NOARG_CTOR` と同じ性質の版ずれ）。相手の `bin` をビルドし直してから解析し直す。検出と案内は今後の課題
 - 相手のキャッシュの鮮度は、この実行が相手のフェーズ 1 を走らせることで保つ。読むだけにする指定は無い
 - 相手の `workspace.projects` は辿らない（A ← B ← C の C は自分の設定に並べる）
 - 同じ完全修飾名の型を 2 つのプロジェクトに持つ形は警告して、並びで先（`project.root`）を採る
