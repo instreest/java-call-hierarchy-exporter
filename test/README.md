@@ -34,6 +34,7 @@
 | `jls/` | JLS SE 26 の節ごとの期待値と javac 26 のバイトコードとの突き合わせ | `analysis` / `graph` | JDK 26（jbang が取得） | regression |
 | `warnings/` | `warnings.txt` の有無と中身（正常時は作らない・対処が載る） | `Warnings` / `Log.warn` を出す場所 | — | regression |
 | `rules/` | 同梱のライブラリ呼び出し規則（`JdkCallbacks` / `BundledFrameworkEntries`）が parse でき JDK に実在すること | ライブラリ呼び出し規則 | — | regression |
+| `pattern/` | `entry.packages` / `exclude.packages` のパターン（途中の `*` / `**` を含む）が当たるべきものにだけ当たること | `PackagePattern` | — | regression |
 | `single-file/` | 1 ファイル版がビルドでき（本体と同じ lint）、起動できること。本体との一致は見ない | `single-file/` | — | regression |
 | `readme/` | README の日本語側と英語側の節の並び・形がそろい、アンカーが解決し、JDT の版が `//DEPS` と同じこと | `README.md`・docs から README へのリンク | — | jbangw |
 | `cli/` | 起動コマンドと対話モード（メニューへの答えをパイプで流す） | `cli` / `.sh` | — | regression |
@@ -147,6 +148,10 @@ README の日本語側と英語側の節の並び・節ごとの形（表の行�
 ### `bash test/rules/run.sh`
 
 同梱のライブラリ呼び出し規則（`JdkCallbacks` / `BundledFrameworkEntries`）の検査。全行が parse でき、JDK の型は宣言元と呼び戻すメソッドが実在すること（実行中の JDK と照合）
+
+### `bash test/pattern/run.sh`
+
+`entry.packages` / `exclude.packages` のパターン（`jche.config.PackagePattern`）の照合の検査。途中の `*`（任意の 1 階層。階層の一部なら `.` を含まない任意の文字列）・`**`（任意の 0 階層以上）と、従来の書き方（末尾の `.*` / `.**`・クラス指定・メソッド指定）について、当たる例と当たらない例を並べて見る
 
 ### `bash test/pom/run.sh`
 

@@ -123,7 +123,12 @@ jp.co.xxx.action.*                  そのパッケージ直下のクラス全�
 jp.co.xxx.action.**                 そのパッケージ配下（サブパッケージ含む）全部
 jp.co.xxx.action.UserAction         クラス指定（内部クラスは Outer.Inner）
 jp.co.xxx.action.UserAction#execute メソッド指定
+jp.co.*.dao.**                      途中の * は任意の 1 階層（jp.co.a.dao の配下。jp.co.dao・jp.co.a.b.dao は含まない）
+jp.co.**.dao.*                      途中の ** は任意の 0 階層以上（jp.co.dao・jp.co.a.b.dao の直下）
 ```
+
+`.` で区切った 1 階層の中の `*` は `.` を含まない任意の文字列（`*Impl` は Impl で終わる 1 階層）、階層全体が `**` なら
+任意の 0 階層以上に当たる。末尾の `.*` / `.**` より前（クラス・メソッド指定では `#` より前）に書ける。メソッド名には書けない。
 
 ## 4. 出力: 2つのCSV
 

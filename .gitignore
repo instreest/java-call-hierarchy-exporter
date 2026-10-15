@@ -120,6 +120,9 @@ target/
 # test/rules/run.sh（同梱のライブラリ呼び出し規則の検査）のコンパイル結果
 /test/rules/build/
 /test/rules/check/
+# test/pattern/run.sh（entry.packages / exclude.packages のパターンの照合の検査）のコンパイル結果
+/test/pattern/build/
+/test/pattern/check/
 
 # test/nls/run.sh（文言の検査）のコンパイル結果・キャッシュ・出力。
 # 英語と日本語で 2 回解析して、CSV が同じになることを見るためのもの
