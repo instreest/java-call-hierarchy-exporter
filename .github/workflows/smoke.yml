@@ -108,6 +108,11 @@ jobs:
       - name: Bundled rules test (parse and JDK declaring types)
         run: JCHE_CP="$JCHE_CLASSES:$JDT_CP" bash test/rules/run.sh
 
+      # entry.packages / exclude.packages のパターン（PackagePattern）の照合。途中の *（任意の 1 階層）・
+      # **（任意の 0 階層以上）と従来の書き方。照合を誤っても除外が効かない・効きすぎるだけで何も言わない
+      - name: Package pattern test (entry.packages / exclude.packages)
+        run: JCHE_CP="$JCHE_CLASSES:$JDT_CP" bash test/pattern/run.sh
+
       # キャッシュの形式の版（CacheFormat.VERSION）の上げ忘れを捕まえる。決まった題材を全件解析した
       # キャッシュの事実の指紋を test/cacheversion/facts.txt に記録しておき、版・題材・環境が同じなのに
       # 事実が変わったら落とす（迷ったら上げる。上げ忘れは検査で捕まえる）

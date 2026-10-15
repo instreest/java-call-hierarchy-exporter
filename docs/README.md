@@ -89,6 +89,7 @@
 | [resolved-by-naming-qa.md](resolved-by-naming-qa.md) | — | `resolved-by` の値のうち JLS / JVMS の用語と食い違っていた名前を改めた件（`OUTSIDE_METHOD` → `CALLER_UNRESOLVED`、`IMPLICIT_CTOR` → `MISSING_NOARG_CTOR`、final を `STATIC_BOUND` から `NOT_OVERRIDABLE` へ分ける） |
 | [note-tags-qa.md](note-tags-qa.md) | — | 注記に grep 用のタグ（`[UNEXPANDED:*]` / `[EXTERNAL]` / `[UNREACHABLE]` / `[RESOLVED:*]`）を付け、`methods.csv` の列とも揃える。`NO_IMPL` を階層に戻した判断、ラムダを展開できない理由、除外した CHA の候補の数を注記に書く |
 | [code-review-fixes-qa.md](code-review-fixes-qa.md) | — | コードレビューで見つかった正確性・性能・構造の問題への対応（CHA の継承実装、解決結果のメモ化、クラス分割） |
+| [package-pattern-wildcard-qa.md](package-pattern-wildcard-qa.md) | — | `entry.packages` / `exclude.packages` のパターンの途中に `*`（任意の 1 階層）・`**`（任意の 0 階層以上）を書けるようにした。階層単位で照合する理由、メソッド名に書けない理由、却下した案 |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
 | [ast-analysis-performance-qa.md](ast-analysis-performance-qa.md) | — | AST 解析の性能とメモリ使用量の改善（何を計測して直したか、バッチのサイズ・並列化・仮想スレッドを採らなかった理由と実測値） |
 | [output-walk-limit-qa.md](output-walk-limit-qa.md) | — | 出力の探索が行にならないノード（コンストラクタ呼び出し・除外メソッドの読み飛ばし）だけの部分木で 0 行のまま終わらなくなる件。行を書かずに続けて通ったノードの数にも `max.rows` を掛ける（合計で数えると普通の出力が落ちた理由、まだ遅い形） |
