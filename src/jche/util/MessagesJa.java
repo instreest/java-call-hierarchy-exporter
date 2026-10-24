@@ -394,6 +394,8 @@ final class MessagesJa {
             "config.mustBeUnderBase", "設定 {0} のパス '{1}' は {2}（{3}）の配下でなければなりません。キャッシュのキーと出力の file 列を {2} からの相対パスにするためです",
             "config.badBuildTool", "設定 library.build.tool の値が不正です: '{0}'（指定できる値: auto / maven / gradle / none）",
             "config.notAnInteger", "設定 {0} の値が整数ではありません: '{1}'",
+            "config.pattern.wildcardOnly", "{0} の指定 '{1}' は何にも当たりません。* や ** だけではパッケージを指せません。パッケージの配下全部なら jp.co.xxx.** のように書いてください",
+            "config.pattern.wildcardInMethod", "{0} の指定 '{1}' は何にも当たりません。メソッド名（# の後ろ）には * を書けません。メソッド名をそのまま書くか、クラスのメソッド全部なら # を付けずにクラスを書いてください",
             "config.missingRequired", "設定ファイルに必須項目がありません: {0}",
             "config.dep.missing", "{0}（{1}）",
             "config.dep.noVariable", "{0}:{1}（変数が展開できない。{2}）",

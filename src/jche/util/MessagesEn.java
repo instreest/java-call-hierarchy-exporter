@@ -394,6 +394,8 @@ final class MessagesEn {
             "config.mustBeUnderBase", "The path '{1}' of setting {0} must be inside {2} ({3}), because the cache key and the file column of the output are relative to {2}",
             "config.badBuildTool", "The value of setting library.build.tool is not valid: '{0}' (allowed values: auto / maven / gradle / none)",
             "config.notAnInteger", "The value of setting {0} is not an integer: '{1}'",
+            "config.pattern.wildcardOnly", "The pattern '{1}' in {0} matches nothing. A lone * or ** is not a package. To match everything below a package, write it like jp.co.xxx.**",
+            "config.pattern.wildcardInMethod", "The pattern '{1}' in {0} matches nothing. * cannot be used in a method name (after #). Write the method name in full, or use the class (without #) to cover all its methods",
             "config.missingRequired", "A required item is missing from the config file: {0}",
             "config.dep.missing", "{0} ({1})",
             "config.dep.noVariable", "{0}:{1} (a variable could not be expanded; {2})",

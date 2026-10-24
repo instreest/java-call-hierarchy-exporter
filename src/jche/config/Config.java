@@ -472,6 +472,31 @@ public final class Config {
         }
     }
 
+    /**
+     * entry.packages / exclude.packages のうち、何にも当たらない書き間違い（{@code *} だけ・メソッド名の {@code *}）の
+     * 警告の文言。黙って当たらないと、起点が 0 件になる・除外が効かないことに出力を見るまで気づけない。
+     * 設定を読む時点では run.log も warnings.txt もまだ無いので、ここでは出さず、解析の始めに
+     * {@link jche.Exporter} が出す（設定のフォルダの欠けと同じ場所）。
+     */
+    public List<String> patternWarnings() {
+        List<String> out = new ArrayList<>();
+        addPatternWarnings(out, "entry.packages", entryPatterns);
+        addPatternWarnings(out, "exclude.packages", excludePatterns);
+        return out;
+    }
+
+    private static void addPatternWarnings(List<String> out, String key, List<PackagePattern> patterns) {
+        for (PackagePattern pattern : patterns) {
+            if (pattern.problem() == null) {
+                continue;
+            }
+            out.add(switch (pattern.problem()) {
+                case WILDCARD_ONLY -> Messages.format("config.pattern.wildcardOnly", key, pattern.text());
+                case WILDCARD_IN_METHOD -> Messages.format("config.pattern.wildcardInMethod", key, pattern.text());
+            });
+        }
+    }
+
     /** 文字コードの設定値。名前が不正なら、どの項目かが分かる例外にする（intOf と同じ流儀） */
     private static Charset charsetOf(String key, String raw) {
         try {

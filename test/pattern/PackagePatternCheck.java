@@ -6,8 +6,9 @@ package jche.config;
  *
  * <p>パターンは文字列なので、照合を誤ってもコンパイルは通り、除外が「効かない」か「効きすぎる」だけで何も言わない。
  * 除外が効きすぎると呼び出しが静かに出なくなるので、当たる例と当たらない例の両方を並べて見る。
- * 途中の {@code *}（任意の 1 階層）・{@code **}（任意の 0 階層以上）と、従来の末尾の {@code .*} / {@code .**}・
- * クラス指定・メソッド指定が変わらないこと。
+ * 途中の {@code *}（任意の 1 階層）・{@code **}（任意の 0 階層以上）、クラス指定のワイルドカードが外側のクラス名を
+ * 飲み込まないこと、何にも当たらない書き間違いを {@code problem()} で知らせること、{@code *} を含まない指定が
+ * 以前の文字列の比較と同じ答えになること。
  */
 public final class PackagePatternCheck {
 
@@ -29,8 +30,8 @@ public final class PackagePatternCheck {
         no("jp.co.xxx.action.UserAction", "jp.co.xxx.action", "jp.co.xxx.action.UserActionX", "run");
         yes("jp.co.xxx.action.UserAction#execute", "jp.co.xxx.action", "jp.co.xxx.action.UserAction", "execute");
         no("jp.co.xxx.action.UserAction#execute", "jp.co.xxx.action", "jp.co.xxx.action.UserAction", "run");
-        // $ や . を正規表現として読まない
-        no("jp.co.x$y.**", "jp.co.xy", "jp.co.xy.A", "run");
+        yes("jp.co.xxx.action.Outer.Inner", "jp.co.xxx.action", "jp.co.xxx.action.Outer.Inner", "run");
+        no("jp.co.xxx.action.Outer.Inner", "jp.co.xxx.action", "jp.co.xxx.action.Outer", "run");
         yes("jp.co.x$y.*", "jp.co.x$y", "jp.co.x$y.A", "run");
 
         // ---- 途中の *（任意の 1 階層） ----
@@ -39,6 +40,12 @@ public final class PackagePatternCheck {
         no("jp.co.*.dao.**", "jp.co.dao", "jp.co.dao.UserDao", "find");
         no("jp.co.*.dao.**", "jp.co.a.b.dao", "jp.co.a.b.dao.UserDao", "find");
         no("jp.co.*.dao.**", "jp.co.a.daox", "jp.co.a.daox.UserDao", "find");
+        // 途中の * の後ろの $ + . を正規表現として読まない（Pattern.quote を通る形）
+        no("jp.co.*.x$y.**", "jp.co.a.xy", "jp.co.a.xy.A", "run");
+        yes("jp.co.*.x$y.**", "jp.co.a.x$y", "jp.co.a.x$y.A", "run");
+        no("jp.co.*x+y.**", "jp.co.xxy", "jp.co.xxy.A", "run");
+        yes("jp.co.*x+y.**", "jp.co.ax+y", "jp.co.ax+y.A", "run");
+        no("jp.co.a*.b.**", "jp.co.aXb", "jp.co.aXb.A", "run");
         no("jp.co.*.dao.**", "jp.co.a", "jp.co.a.Dao", "find");
         yes("jp.co.*.dao.*", "jp.co.a.dao", "jp.co.a.dao.UserDao", "find");
         no("jp.co.*.dao.*", "jp.co.a.dao.impl", "jp.co.a.dao.impl.UserDaoImpl", "find");
@@ -64,6 +71,38 @@ public final class PackagePatternCheck {
         yes("**.generated.**", "generated", "generated.A", "run");
         yes("**.generated.**", "jp.co.x.generated.y", "jp.co.x.generated.y.A", "run");
         no("**.generated.**", "jp.co.x.generatedx", "jp.co.x.generatedx.A", "run");
+        // ** を並べても同じ。深いパッケージでも照合が組み合わせで増えない
+        String deep = "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z.a1.b1.c1.d1";
+        no("**.**.**.**.**.**.zz.**", deep, deep + ".A", "run");
+        yes("**.**.**.**.**.**.x.**", deep, deep + ".A", "run");
+        yes("**.c.**.k.**.z.**.d1.*", deep, deep + ".A", "run");
+        no("**.c.**.k.**.z.**.c1.*", deep, deep + ".A", "run");
+
+        // ---- クラス指定のワイルドカードは外側のクラス名を飲み込まない ----
+        yes("jp.co.**.UserDao", "jp.co.app", "jp.co.app.UserDao", "find");
+        no("jp.co.**.UserDao", "jp.co.app", "jp.co.app.Outer.UserDao", "find");
+        yes("jp.co.**.Outer.UserDao", "jp.co.app", "jp.co.app.Outer.UserDao", "find");
+        yes("jp.co.*.*Impl", "jp.co.x", "jp.co.x.FooImpl", "find");
+        no("jp.co.*.*Impl", "jp.co", "jp.co.Outer.FooImpl", "find");
+        yes("jp.co.xxx.Outer.*Impl", "jp.co.xxx", "jp.co.xxx.Outer.FooImpl", "find");
+        no("jp.co.xxx.*.FooImpl", "jp.co.xxx", "jp.co.xxx.Outer.FooImpl", "find");
+        no("jp.co.**.UserDao#find", "jp.co.app", "jp.co.app.Outer.UserDao", "find");
+
+        // ---- 書き間違い: 何にも当たらず、problem で知らせる ----
+        no("*", "", "Main", "main");
+        no("**", "jp.co", "jp.co.A", "run");
+        no("**", "", "Main", "main");
+        problem("*", PackagePattern.Problem.WILDCARD_ONLY);
+        problem("**", PackagePattern.Problem.WILDCARD_ONLY);
+        no("jp.co.xxx.UserDao#get*", "jp.co.xxx", "jp.co.xxx.UserDao", "getName");
+        problem("jp.co.xxx.UserDao#get*", PackagePattern.Problem.WILDCARD_IN_METHOD);
+        problem("jp.co.*.dao.**", null);
+        problem("jp.co.xxx.UserDao#find", null);
+        problem("**.Main", null);
+
+        // ---- * を含まない指定は、以前の文字列の比較と同じ答えになる ----
+        sameAsLiteralCompare();
+
         // 無名パッケージ
         no("*.**", "", "Main", "main");
         yes("**.Main", "", "Main", "main");
@@ -71,6 +110,47 @@ public final class PackagePatternCheck {
         System.out.println("  検査した例: " + checked + "、問題: " + failures);
         if (failures > 0) {
             System.exit(1);
+        }
+    }
+
+    /** 以前の照合（* を含まない指定の文字列の比較）と、すべての組み合わせで同じ答えになること */
+    private static void sameAsLiteralCompare() {
+        String[] patterns = {"jp.co.a.*", "jp.co.a.**", "jp.co.*", "jp.co.**", "jp.co.a.A", "jp.co.a.Outer.Inner",
+            "jp.co.a.A#run", "jp.co.a.Outer.Inner#run", "jp.co.A", "jp.*", ".*", ".**", "Main", "Main#main", "jp.co.a"};
+        String[][] names = {
+            {"jp.co.a", "jp.co.a.A", "run"}, {"jp.co.a", "jp.co.a.Outer.Inner", "run"},
+            {"jp.co.a.b", "jp.co.a.b.A", "run"}, {"jp.co", "jp.co.A", "run"}, {"jp.co.ab", "jp.co.ab.A", "run"},
+            {"jp.co.a", "jp.co.a.A", "stop"}, {"", "Main", "main"}, {"jp", "jp.A", "run"}, {"jp.co", "jp.co.a", "run"},
+        };
+        for (String pattern : patterns) {
+            for (String[] n : names) {
+                expect(pattern, n[0], n[1], n[2], literalCompare(pattern, n[0], n[1], n[2]));
+            }
+        }
+    }
+
+    /** 途中のワイルドカードを入れる前の照合を写したもの */
+    private static boolean literalCompare(String s, String pkg, String type, String method) {
+        if (s.endsWith(".**")) {
+            String v = s.substring(0, s.length() - 3);
+            return pkg.equals(v) || pkg.startsWith(v + ".");
+        }
+        if (s.endsWith(".*")) {
+            return pkg.equals(s.substring(0, s.length() - 2));
+        }
+        int hash = s.indexOf('#');
+        if (hash >= 0) {
+            return type.equals(s.substring(0, hash)) && method.equals(s.substring(hash + 1));
+        }
+        return type.equals(s);
+    }
+
+    private static void problem(String pattern, PackagePattern.Problem want) {
+        checked++;
+        PackagePattern.Problem got = PackagePattern.parse(pattern).problem();
+        if (got != want) {
+            failures++;
+            System.out.println("  NG   " + pattern + " の problem が " + got + "（" + want + " のはず）");
         }
     }
 
