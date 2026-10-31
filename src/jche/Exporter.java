@@ -85,7 +85,7 @@ public final class Exporter {
     private static AnalysisSnapshot analyzePhases(Config config, boolean collectUnresolved) throws Exception {
         ProjectLayout layout = new ProjectLayout(config);
         for (String w : config.patternWarnings()) {
-            Warnings.warn(Warnings.Topic.CONFIG, w);
+            Warnings.warn(Warnings.Topic.PATTERN, w);
         }
         logAnalysisSettings(config, layout);
         // 一緒に解析するワークスペースの他のプロジェクト。相手は相手自身の設定で解析し、キャッシュを名前で結合する

@@ -7,7 +7,8 @@ package jche.config;
  * <p>パターンは文字列なので、照合を誤ってもコンパイルは通り、除外が「効かない」か「効きすぎる」だけで何も言わない。
  * 除外が効きすぎると呼び出しが静かに出なくなるので、当たる例と当たらない例の両方を並べて見る。
  * 途中の {@code *}（任意の 1 階層）・{@code **}（任意の 0 階層以上）、クラス指定のワイルドカードが外側のクラス名を
- * 飲み込まないこと、何にも当たらない書き間違いを {@code problem()} で知らせること、{@code *} を含まない指定が
+ * 飲み込まないこと、{@code *} が {@code $}（匿名クラス）をまたがないこと、何にも当たらない書き間違いを
+ * {@code problem()} で知らせること、{@code *} を含まない指定が
  * 以前の文字列の比較と同じ答えになること。
  */
 public final class PackagePatternCheck {
@@ -88,6 +89,14 @@ public final class PackagePatternCheck {
         no("jp.co.xxx.*.FooImpl", "jp.co.xxx", "jp.co.xxx.Outer.FooImpl", "find");
         no("jp.co.**.UserDao#find", "jp.co.app", "jp.co.app.Outer.UserDao", "find");
 
+        // ---- * は $ をまたがない（匿名クラス・ローカルクラスの名前 Outer$1 / Outer$1Local に当たらない） ----
+        yes("jp.co.x.Foo*", "jp.co.x", "jp.co.x.FooHelper", "run");
+        no("jp.co.x.Foo*", "jp.co.x", "jp.co.x.Foo$1", "run");
+        no("jp.co.x.Foo*", "jp.co.x", "jp.co.x.Foo$1Local", "run");
+        no("jp.co.x.*Local", "jp.co.x", "jp.co.x.Main$1Local", "run");
+        yes("jp.co.x.Foo$*", "jp.co.x", "jp.co.x.Foo$1", "run");
+        yes("jp.co.**.Foo$1", "jp.co.x", "jp.co.x.Foo$1", "run");
+
         // ---- 書き間違い: 何にも当たらず、problem で知らせる ----
         no("*", "", "Main", "main");
         no("**", "jp.co", "jp.co.A", "run");
@@ -96,6 +105,21 @@ public final class PackagePatternCheck {
         problem("**", PackagePattern.Problem.WILDCARD_ONLY);
         no("jp.co.xxx.UserDao#get*", "jp.co.xxx", "jp.co.xxx.UserDao", "getName");
         problem("jp.co.xxx.UserDao#get*", PackagePattern.Problem.WILDCARD_IN_METHOD);
+        // 文字の階層が 1 つも無い指定は、以前どおり何にも当たらない（全部に当たると出力が黙って空になる）
+        for (String w : new String[] {"*.*", "*.**", "**.*", "**.**", "*.*.**", "**#run", "*#run"}) {
+            problem(w, PackagePattern.Problem.WILDCARD_ONLY);
+            no(w, "jp.co", "jp.co.A", "run");
+            no(w, "", "Main", "run");
+        }
+        // クラス名の部分の ** は当たらない。書き間違いとして知らせる
+        problem("jp.co.app.**#execute", PackagePattern.Problem.WILDCARD_CLASS);
+        no("jp.co.app.**#execute", "jp.co.app", "jp.co.app.UserAction", "execute");
+        no("jp.co.app.**#execute", "jp.co.app.sub", "jp.co.app.sub.UserAction", "execute");
+        problem("jp.co.*#run", null);
+        yes("jp.co.*#run", "jp.co", "jp.co.Job", "run");
+        no("jp.co.*#run", "jp.co.x", "jp.co.x.Job", "run");
+        problem("jp.co.**.*Dao#find", null);
+        yes("jp.co.**.*Dao#find", "jp.co.a.b", "jp.co.a.b.UserDao", "find");
         problem("jp.co.*.dao.**", null);
         problem("jp.co.xxx.UserDao#find", null);
         problem("**.Main", null);
@@ -116,11 +140,13 @@ public final class PackagePatternCheck {
     /** 以前の照合（* を含まない指定の文字列の比較）と、すべての組み合わせで同じ答えになること */
     private static void sameAsLiteralCompare() {
         String[] patterns = {"jp.co.a.*", "jp.co.a.**", "jp.co.*", "jp.co.**", "jp.co.a.A", "jp.co.a.Outer.Inner",
-            "jp.co.a.A#run", "jp.co.a.Outer.Inner#run", "jp.co.A", "jp.*", ".*", ".**", "Main", "Main#main", "jp.co.a"};
+            "jp.co.a.A#run", "jp.co.a.Outer.Inner#run", "jp.co.A", "jp.*", ".*", ".**", "Main", "Main#main", "jp.co.a",
+            "jp.co.a.A$1", "jp.co.a.A$1#run", "jp..a.**", "#run"};
         String[][] names = {
             {"jp.co.a", "jp.co.a.A", "run"}, {"jp.co.a", "jp.co.a.Outer.Inner", "run"},
             {"jp.co.a.b", "jp.co.a.b.A", "run"}, {"jp.co", "jp.co.A", "run"}, {"jp.co.ab", "jp.co.ab.A", "run"},
             {"jp.co.a", "jp.co.a.A", "stop"}, {"", "Main", "main"}, {"jp", "jp.A", "run"}, {"jp.co", "jp.co.a", "run"},
+            {"jp.co.a", "jp.co.a.A$1", "run"}, {"jp..a", "jp..a.A", "run"}, {"jp..a.b", "jp..a.b.A", "run"},
         };
         for (String pattern : patterns) {
             for (String[] n : names) {
