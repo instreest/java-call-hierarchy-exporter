@@ -493,6 +493,7 @@ public final class Config {
             out.add(switch (pattern.problem()) {
                 case WILDCARD_ONLY -> Messages.format("config.pattern.wildcardOnly", key, pattern.text());
                 case WILDCARD_CLASS -> Messages.format("config.pattern.wildcardClass", key, pattern.text());
+                case WILDCARD_OUTER_CLASS -> Messages.format("config.pattern.wildcardOuterClass", key, pattern.text());
                 case WILDCARD_IN_METHOD -> Messages.format("config.pattern.wildcardInMethod", key, pattern.text());
             });
         }

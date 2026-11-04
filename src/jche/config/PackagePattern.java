@@ -37,6 +37,12 @@ import java.util.regex.Pattern;
  *   <li>クラス指定・メソッド指定の最後の階層が {@code **}（{@code jp.co.app.**#execute}）。{@code **} はクラス名に当たらない</li>
  *   <li>メソッド名（{@code #} の後ろ）の {@code *}。メソッド名はそのまま比べる</li>
  * </ul>
+ * 文字の階層が無いかどうか・最後の階層が {@code **} かどうかは、照合に使う階層（{@link Segment}）から決める
+ * （判定と照合で階層の読み方を 2 通り持つと、{@code ***} のような書き方で食い違う）。
+ *
+ * <p>途中の階層の {@code *} に大文字が混じる指定（{@code jp.co.**.*Outer.Inner}）は、外側のクラス名のつもりで書いた
+ * ことが多いが、クラス名の部分では {@code *} はいちばん内側にしか書けないので入れ子のクラスには当たらない。
+ * パッケージ名としては照合する（大文字のパッケージもありうる）が、{@link #problem()} で知らせる。
  */
 public final class PackagePattern {
 
@@ -44,17 +50,14 @@ public final class PackagePattern {
 
     /** 書き間違いと見て知らせるもの。{@link Config#patternWarnings()} が設定の項目名と一緒に警告の文言にする */
     public enum Problem {
-        /** 文字の階層が 1 つも無い（{@code *}・{@code **}・{@code *.**} など）。何にも当たらない */
+        /** 文字の階層が 1 つも無い（{@code *}・{@code **}・{@code *.**}・{@code ***} など）。何にも当たらない */
         WILDCARD_ONLY,
         /** クラス指定・メソッド指定の最後の階層が {@code **}。{@code **} はクラス名に当たらない */
         WILDCARD_CLASS,
         /** メソッド名に {@code *}。メソッド名はそのまま比べるので当たらない */
-        WILDCARD_IN_METHOD
-    }
-
-    /** 名前の末尾を過ぎた位置。階層の終わりの {@code .} の次と同じ扱いにするため、長さ + 1 で表す */
-    private static int pastEnd(String s) {
-        return s.length() + 1;
+        WILDCARD_IN_METHOD,
+        /** 途中の階層の {@code *} に大文字が混じる（外側のクラス名のつもり）。入れ子のクラスには当たらない（照合はする） */
+        WILDCARD_OUTER_CLASS
     }
 
     /** 書いたままの指定（前後の空白を除く）。警告に出す */
@@ -67,10 +70,10 @@ public final class PackagePattern {
     private final String methodName;
     private final Problem problem;
 
-    private PackagePattern(String text, Kind kind, String value, String methodName, Problem problem) {
+    private PackagePattern(String text, Kind kind, Segment[] segments, String methodName, Problem problem) {
         this.text = text;
         this.kind = kind;
-        this.segments = kind == Kind.NEVER ? new Segment[0] : compile(value);
+        this.segments = segments;
         int any = -1;
         for (int g = 0; g < segments.length && any < 0; g++) {
             if (segments[g].any()) {
@@ -100,28 +103,40 @@ public final class PackagePattern {
             method = hash >= 0 ? s.substring(hash + 1) : null;
             kind = hash >= 0 ? Kind.METHOD : Kind.TYPE;
         }
-        if (!value.isEmpty() && wildcardOnly(value)) {
-            // 以前は何にも当たらなかった（"*" や "**" という名前として比べていた）。全部に当たるように読み替えると、
-            // exclude.packages では出力が黙って空になる
-            return new PackagePattern(s, Kind.NEVER, value, null, Problem.WILDCARD_ONLY);
+        Segment[] segs = compile(value);
+        Problem problem = problemOf(kind, segs, method);
+        if (problem != null && problem != Problem.WILDCARD_OUTER_CLASS) {
+            return new PackagePattern(s, Kind.NEVER, segs, null, problem);
         }
-        if ((kind == Kind.TYPE || kind == Kind.METHOD) && (value.equals("**") || value.endsWith(".**"))) {
-            return new PackagePattern(s, Kind.NEVER, value, null, Problem.WILDCARD_CLASS);
-        }
-        if (method != null && method.indexOf('*') >= 0) {
-            return new PackagePattern(s, Kind.NEVER, value, null, Problem.WILDCARD_IN_METHOD);
-        }
-        return new PackagePattern(s, kind, value, method, null);
+        return new PackagePattern(s, kind, segs, method, problem);
     }
 
-    /** どの階層も * か ** だけか */
-    private static boolean wildcardOnly(String value) {
-        for (String part : value.split("\\.", -1)) {
-            if (!part.equals("*") && !part.equals("**")) {
-                return false;
+    /** 照合に使う階層から、書き間違いと見るものを決める。無ければ null */
+    private static Problem problemOf(Kind kind, Segment[] segs, String method) {
+        boolean wildcardOnly = segs.length > 0;
+        for (Segment seg : segs) {
+            wildcardOnly &= seg.wildcard();
+        }
+        if (wildcardOnly) {
+            // 以前は何にも当たらなかった（"*" や "**" という名前として比べていた）。全部に当たるように読み替えると、
+            // exclude.packages では出力が黙って空になる
+            return Problem.WILDCARD_ONLY;
+        }
+        boolean typeOrMethod = kind == Kind.TYPE || kind == Kind.METHOD;
+        if (typeOrMethod && segs.length > 0 && segs[segs.length - 1].any()) {
+            return Problem.WILDCARD_CLASS;
+        }
+        if (method != null && method.indexOf('*') >= 0) {
+            return Problem.WILDCARD_IN_METHOD;
+        }
+        if (typeOrMethod) {
+            for (int g = 0; g < segs.length - 1; g++) {
+                if (segs[g].globWithUpperCase()) {
+                    return Problem.WILDCARD_OUTER_CLASS;
+                }
             }
         }
-        return true;
+        return null;
     }
 
     public static List<PackagePattern> parseAll(List<String> raws) {
@@ -146,37 +161,46 @@ public final class PackagePattern {
 
     public static boolean matchesAny(List<PackagePattern> patterns,
                                      String pkg, String typeFqn, String method) {
+        if (patterns.isEmpty()) {
+            return false;
+        }
+        // 階層の数え上げ・始まりの位置はパターンごとではなく 1 回にする（出力のノードごと・辺ごとに呼ばれる）
+        Name name = new Name(pkg, typeFqn);
         for (PackagePattern p : patterns) {
-            if (p.matches(pkg, typeFqn, method)) {
+            if (p.matches(name, method)) {
                 return true;
             }
         }
         return false;
     }
 
-    /**
-     * 名前は分割せず、文字列の中の位置で階層を比べる（出力のノードごと・辺ごとに呼ばれるので、
-     * ** を含まない大半の指定では配列も部分文字列も作らない）。
-     */
     public boolean matches(String pkg, String typeFqn, String method) {
+        return matches(new Name(pkg, typeFqn), method);
+    }
+
+    /**
+     * 名前は分割せず、文字列の中の位置で階層を比べる。** を含まない大半の指定（既定の java.** など）では
+     * 配列も部分文字列も作らない。
+     */
+    private boolean matches(Name name, String method) {
         return switch (kind) {
             // パッケージ名で判定するため、内部クラス（a.b.Outer.Inner）も正しく直下扱いになる
-            case PACKAGE_DIRECT -> matchesPackage(pkg, false);
-            case PACKAGE_RECURSIVE -> matchesPackage(pkg, true);
-            case TYPE -> matchesType(pkg, typeFqn);
-            case METHOD -> method.equals(methodName) && matchesType(pkg, typeFqn);
+            case PACKAGE_DIRECT -> matchesPackage(name, false);
+            case PACKAGE_RECURSIVE -> matchesPackage(name, true);
+            case TYPE -> matchesType(name);
+            case METHOD -> method.equals(methodName) && matchesType(name);
             case NEVER -> false;
         };
     }
 
     /** パッケージがパターンに当たるか。recursive なら先頭の何階層かが当たればよい（末尾の .** と同じく、そのもの自身も含む） */
-    private boolean matchesPackage(String pkg, boolean recursive) {
+    private boolean matchesPackage(Name name, boolean recursive) {
+        String pkg = name.pkg;
         if (firstAny < 0) {
             int end = matchSequential(segments, 0, segments.length, pkg, start(pkg), -1);
             return recursive ? end >= 0 : end == pastEnd(pkg);
         }
-        int[] starts = levelStarts(pkg);
-        return matchesWithAny(segments, segments.length, pkg, starts, starts.length - 1, recursive);
+        return matchesWithAny(segments, segments.length, pkg, name.pkgStarts(), name.pkgCount(), recursive);
     }
 
     /**
@@ -184,9 +208,10 @@ public final class PackagePattern {
      * クラス名に、残りをパッケージに合わせる（ワイルドカードがパッケージを越えて外側のクラス名を飲み込まない）。
      * クラス名の部分では ** は当たらず、* はいちばん内側のクラス名にだけ書ける。
      */
-    private boolean matchesType(String pkg, String typeFqn) {
-        int pkgCount = levelCount(pkg);
-        int classCount = levelCount(typeFqn) - pkgCount;
+    private boolean matchesType(Name name) {
+        String typeFqn = name.typeFqn;
+        int pkgCount = name.pkgCount();
+        int classCount = name.typeCount() - pkgCount;
         int split = segments.length - classCount;
         if (classCount <= 0 || split < 0) {
             return false;
@@ -201,13 +226,18 @@ public final class PackagePattern {
         if (firstAny >= split) {
             return false;   // ** がクラス名の部分にある
         }
-        int[] starts = levelStarts(typeFqn);
+        int[] starts = name.typeStarts();
         // クラス名の部分は 1 対 1、パッケージの部分（FQN の先頭 pkgCount 階層）は ** を含む照合
         return matchSequential(segments, split, segments.length, typeFqn, starts[pkgCount], split) == pastEnd(typeFqn)
                 && matchesWithAny(segments, split, typeFqn, starts, pkgCount, false);
     }
 
     // ---- 階層ごとの照合 ----
+
+    /** 名前の末尾を過ぎた位置。階層の終わりの {@code .} の次と同じ扱いにするため、長さ + 1 で表す */
+    private static int pastEnd(String s) {
+        return s.length() + 1;
+    }
 
     /** 名前の最初の階層の位置。無名パッケージ（空文字）は階層 0 個なので、最初から末尾を過ぎている */
     private static int start(String s) {
@@ -225,9 +255,8 @@ public final class PackagePattern {
         return n;
     }
 
-    /** 各階層の始まりの位置。最後の要素は末尾を過ぎた位置（階層の数 + 1 個）。** を含む指定だけが使う */
-    private static int[] levelStarts(String s) {
-        int n = levelCount(s);
+    /** 各階層の始まりの位置。最後の要素は末尾を過ぎた位置（階層の数 + 1 個） */
+    private static int[] levelStarts(String s, int n) {
         int[] starts = new int[n + 1];
         int pos = 0;
         for (int k = 0; k < n; k++) {
@@ -237,6 +266,52 @@ public final class PackagePattern {
         }
         starts[n] = pastEnd(s);
         return starts;
+    }
+
+    /**
+     * 照合される名前。階層の数と始まりの位置は、要るパターンが初めて求めたときに 1 回だけ数える
+     * （matchesAny が名前 1 つにつき 1 つ作り、すべてのパターンで使い回す）。
+     */
+    private static final class Name {
+        final String pkg;
+        final String typeFqn;
+        private int pkgCount = -1;
+        private int typeCount = -1;
+        private int[] pkgStarts;
+        private int[] typeStarts;
+
+        Name(String pkg, String typeFqn) {
+            this.pkg = pkg;
+            this.typeFqn = typeFqn;
+        }
+
+        int pkgCount() {
+            if (pkgCount < 0) {
+                pkgCount = levelCount(pkg);
+            }
+            return pkgCount;
+        }
+
+        int typeCount() {
+            if (typeCount < 0) {
+                typeCount = levelCount(typeFqn);
+            }
+            return typeCount;
+        }
+
+        int[] pkgStarts() {
+            if (pkgStarts == null) {
+                pkgStarts = levelStarts(pkg, pkgCount());
+            }
+            return pkgStarts;
+        }
+
+        int[] typeStarts() {
+            if (typeStarts == null) {
+                typeStarts = levelStarts(typeFqn, typeCount());
+            }
+            return typeStarts;
+        }
     }
 
     /**
@@ -266,14 +341,14 @@ public final class PackagePattern {
      * segs[0, to) を s の先頭 n 階層（starts は各階層の始まり）に合わせる。recursive でなければ n 階層ちょうど、
      * recursive なら先頭の何階層かに当たればよい。
      * ** の後戻りは「パターンのここまでで名前のどこまで来られるか」の表を 1 段ずつ進めて数え、手数を
-     * パターンの階層数 × 名前の階層数に抑える（** を並べても組み合わせで増えない）。
+     * パターンの階層数 × 名前の階層数に抑える（** を並べても組み合わせで増えない）。表は 2 本を入れ替えて使う。
      */
     private static boolean matchesWithAny(Segment[] segs, int to, String s, int[] starts, int n, boolean recursive) {
         boolean[] reach = new boolean[n + 1];
+        boolean[] next = new boolean[n + 1];
         reach[0] = true;
         for (int g = 0; g < to; g++) {
             Segment seg = segs[g];
-            boolean[] next = new boolean[n + 1];
             if (seg.any()) {
                 boolean seen = false;
                 for (int k = 0; k <= n; k++) {
@@ -281,11 +356,14 @@ public final class PackagePattern {
                     next[k] = seen;
                 }
             } else {
+                next[0] = false;
                 for (int k = 0; k < n; k++) {
                     next[k + 1] = reach[k] && seg.matches(s, starts[k], starts[k + 1] - 1);
                 }
             }
+            boolean[] t = reach;
             reach = next;
+            next = t;
         }
         if (!recursive) {
             return reach[n];
@@ -298,21 +376,71 @@ public final class PackagePattern {
         return false;
     }
 
+    /** 1 階層の照合の形 */
+    private enum Form {
+        /** 階層全体が **。任意の 0 階層以上 */
+        ANY_LEVELS,
+        /** * を含まない。そのまま比べる */
+        LITERAL,
+        /** * だけ（*・*** など）。任意の 1 階層 */
+        STAR,
+        /** 文字 + *（Foo*） */
+        PREFIX,
+        /** * + 文字（*Impl） */
+        SUFFIX,
+        /** それ以外（a*b*c など）。正規表現で比べる */
+        REGEX
+    }
+
     /**
-     * 1 階層ぶんの照合。any は階層全体が ** で任意の 0 階層以上、text は * を含まない階層の文字、
-     * glob は階層の一部に * を含むときの照合（* だけの階層は任意の 1 階層）。
+     * 1 階層ぶんの照合。* は . と $ を含まない任意の文字列（$ をまたぐと匿名クラス Outer$1 に当たる）。
+     * よく書く形（* だけ・前方一致・後方一致）は正規表現を使わずに比べ、照合のたびに Matcher を作らない。
+     * text は LITERAL ならその文字、PREFIX / SUFFIX なら * を除いた文字、REGEX なら書いたままの階層。
      */
-    private record Segment(boolean any, String text, Pattern glob) {
+    private record Segment(Form form, String text, Pattern regex) {
+        boolean any() {
+            return form == Form.ANY_LEVELS;
+        }
+
         boolean literal() {
-            return text != null;
+            return form == Form.LITERAL;
+        }
+
+        /** * か ** だけでできている（文字が無い） */
+        boolean wildcard() {
+            return form == Form.ANY_LEVELS || form == Form.STAR;
+        }
+
+        /** 階層の一部に * を含み、文字に大文字が混じる（*Outer など。外側のクラス名のつもりで書いたもの） */
+        boolean globWithUpperCase() {
+            if (form != Form.PREFIX && form != Form.SUFFIX && form != Form.REGEX) {
+                return false;
+            }
+            for (int i = 0; i < text.length(); i++) {
+                if (Character.isUpperCase(text.charAt(i))) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /** s の [from, to) がこの階層に当たるか */
         boolean matches(String s, int from, int to) {
-            if (text != null) {
-                return to - from == text.length() && s.startsWith(text, from);
-            }
-            return glob.matcher(s).region(from, to).matches();
+            return switch (form) {
+                case ANY_LEVELS -> true;
+                case LITERAL -> to - from == text.length() && s.startsWith(text, from);
+                case STAR -> noDollar(s, from, to);
+                case PREFIX -> to - from >= text.length() && s.startsWith(text, from)
+                        && noDollar(s, from + text.length(), to);
+                case SUFFIX -> to - from >= text.length() && s.startsWith(text, to - text.length())
+                        && noDollar(s, from, to - text.length());
+                case REGEX -> regex.matcher(s).region(from, to).matches();
+            };
+        }
+
+        private static boolean noDollar(String s, int from, int to) {
+            int d = s.indexOf('$', from);
+            return d < 0 || d >= to;
         }
     }
 
@@ -322,33 +450,51 @@ public final class PackagePattern {
         }
         List<Segment> out = new ArrayList<>();
         for (String p : value.split("\\.", -1)) {
-            if (p.equals("**")) {
-                // 続く ** は 1 つと同じ。まとめておく
-                if (out.isEmpty() || !out.get(out.size() - 1).any()) {
-                    out.add(new Segment(true, null, null));
-                }
-                continue;
-            }
-            if (p.indexOf('*') < 0) {
-                out.add(new Segment(false, p, null));
-                continue;
-            }
-            // 階層の中の * は . と $ を含まない任意の文字列（$ をまたぐと匿名クラス Outer$1 に当たる）。
-            // ほかの文字はそのまま比べる（$ などを正規表現として読まない）
-            StringBuilder re = new StringBuilder();
-            int from = 0;
-            for (int star = p.indexOf('*'); star >= 0; star = p.indexOf('*', from)) {
-                if (star > from) {
-                    re.append(Pattern.quote(p.substring(from, star)));
-                }
-                re.append("[^.$]*");
-                from = star + 1;
-            }
-            if (from < p.length()) {
-                re.append(Pattern.quote(p.substring(from)));
-            }
-            out.add(new Segment(false, null, Pattern.compile(re.toString())));
+            out.add(segmentOf(p));
         }
-        return out.toArray(new Segment[0]);
+        // 続く ** は 1 つと同じ。まとめておく
+        List<Segment> merged = new ArrayList<>();
+        for (Segment seg : out) {
+            if (!(seg.any() && !merged.isEmpty() && merged.get(merged.size() - 1).any())) {
+                merged.add(seg);
+            }
+        }
+        return merged.toArray(new Segment[0]);
+    }
+
+    private static Segment segmentOf(String p) {
+        if (p.equals("**")) {
+            return new Segment(Form.ANY_LEVELS, null, null);
+        }
+        int star = p.indexOf('*');
+        if (star < 0) {
+            return new Segment(Form.LITERAL, p, null);
+        }
+        if (p.chars().allMatch(c -> c == '*')) {
+            return new Segment(Form.STAR, null, null);   // *** なども * と同じ任意の 1 階層
+        }
+        int stars = (int) p.chars().filter(c -> c == '*').count();
+        if (stars == 1 && star == p.length() - 1) {
+            return new Segment(Form.PREFIX, p.substring(0, star), null);
+        }
+        if (stars == 1 && star == 0) {
+            return new Segment(Form.SUFFIX, p.substring(1), null);
+        }
+        // * の続きは 1 つと同じ。ほかの文字はそのまま比べる（$ などを正規表現として読まない）
+        StringBuilder re = new StringBuilder();
+        int from = 0;
+        for (int s = p.indexOf('*'); s >= 0; s = p.indexOf('*', from)) {
+            if (s > from) {
+                re.append(Pattern.quote(p.substring(from, s)));
+            }
+            if (s == 0 || p.charAt(s - 1) != '*') {
+                re.append("[^.$]*");
+            }
+            from = s + 1;
+        }
+        if (from < p.length()) {
+            re.append(Pattern.quote(p.substring(from)));
+        }
+        return new Segment(Form.REGEX, p, Pattern.compile(re.toString()));
     }
 }

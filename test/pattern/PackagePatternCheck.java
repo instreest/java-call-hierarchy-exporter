@@ -96,6 +96,17 @@ public final class PackagePatternCheck {
         no("jp.co.x.*Local", "jp.co.x", "jp.co.x.Main$1Local", "run");
         yes("jp.co.x.Foo$*", "jp.co.x", "jp.co.x.Foo$1", "run");
         yes("jp.co.**.Foo$1", "jp.co.x", "jp.co.x.Foo$1", "run");
+        // 前方一致・後方一致・それ以外の形（正規表現）のどれでも $ をまたがない
+        no("jp.co.x.*1", "jp.co.x", "jp.co.x.Foo$1", "run");
+        yes("jp.co.x.*1", "jp.co.x", "jp.co.x.Foo1", "run");
+        no("jp.co.x.F*o*", "jp.co.x", "jp.co.x.Fo$1", "run");
+        yes("jp.co.x.F*o*", "jp.co.x", "jp.co.x.FxoY", "run");
+        yes("jp.co.x.Foo**", "jp.co.x", "jp.co.x.FooBar", "run");
+        no("jp.co.x.Foo**", "jp.co.x", "jp.co.x.Foo$1", "run");
+        yes("jp.co.x.F**r", "jp.co.x", "jp.co.x.FooBar", "run");
+        yes("jp.co.x.*$1", "jp.co.x", "jp.co.x.Foo$1", "run");
+        no("jp.co.x.Foo*", "jp.co.x", "jp.co.x.Fo", "run");
+        no("jp.co.x.*Impl", "jp.co.x", "jp.co.x.mpl", "run");
 
         // ---- 書き間違い: 何にも当たらず、problem で知らせる ----
         no("*", "", "Main", "main");
@@ -106,7 +117,8 @@ public final class PackagePatternCheck {
         no("jp.co.xxx.UserDao#get*", "jp.co.xxx", "jp.co.xxx.UserDao", "getName");
         problem("jp.co.xxx.UserDao#get*", PackagePattern.Problem.WILDCARD_IN_METHOD);
         // 文字の階層が 1 つも無い指定は、以前どおり何にも当たらない（全部に当たると出力が黙って空になる）
-        for (String w : new String[] {"*.*", "*.**", "**.*", "**.**", "*.*.**", "**#run", "*#run"}) {
+        for (String w : new String[] {"*.*", "*.**", "**.*", "**.**", "*.*.**", "**#run", "*#run",
+            "***", "***.**", "*.***", "****.*", "***#run"}) {
             problem(w, PackagePattern.Problem.WILDCARD_ONLY);
             no(w, "jp.co", "jp.co.A", "run");
             no(w, "", "Main", "run");
@@ -121,6 +133,14 @@ public final class PackagePatternCheck {
         problem("jp.co.**.*Dao#find", null);
         yes("jp.co.**.*Dao#find", "jp.co.a.b", "jp.co.a.b.UserDao", "find");
         problem("jp.co.*.dao.**", null);
+        // 途中の階層の * に大文字が混じる（外側のクラス名のつもり）: 知らせるが、パッケージ名としては照合する
+        problem("jp.co.**.*Outer.Inner", PackagePattern.Problem.WILDCARD_OUTER_CLASS);
+        no("jp.co.**.*Outer.Inner", "jp.co.a", "jp.co.a.FooOuter.Inner", "run");
+        yes("jp.co.**.*Outer.Inner", "jp.co.xOuter", "jp.co.xOuter.Inner", "run");
+        problem("jp.co.*.UserDao", null);
+        problem("jp.co.**.Outer.*Impl", null);
+        problem("jp.co.*Impl.**", null);
+        problem("jp.co.x.*Impl", null);
         problem("jp.co.xxx.UserDao#find", null);
         problem("**.Main", null);
 
