@@ -6,8 +6,8 @@
 # warnings.txt は「想定どおりの状態（ビルドが通り、依存 jar がすべて解決できている）で動かなかった」
 # 実行でだけ作る（docs/output-files-simplify-qa.md の Q3〜）。ここでは使い捨てのプロジェクトを作って、
 #   - 正常な状態では作らないこと
-#   - 典型の状態（依存 jar が無い・ローカルリポジトリが無い・設定の指定先が無い・コンパイルエラー・
-#     実行の失敗）で作り、該当の項目と明細が載ること
+#   - 典型の状態（依存 jar が無い・ローカルリポジトリが無い・設定の指定先が無い・entry.packages / exclude.packages の
+#     書き間違い・コンパイルエラー・実行の失敗）で作り、該当の項目と明細が載ること
 #   - どの実行でも「warnings.txt がある」⇔「run.log に [WARN] / [ERROR] の行がある」こと
 #   - コンパイルエラー・構文エラーのファイルの一覧（上限まで）が、差分更新でも全件解析と同じこと
 #   - パッケージの宣言がフォルダと合わないファイルを、全件解析でも差分更新でも警告すること
@@ -143,6 +143,22 @@ expect_in_warnings config "src/missing"
 # 対処の案内の相対パスの起点が、Config の読み方と合っていること。library.jars は設定ファイルのフォルダから読む
 # （Config#resolveFromConfigDir）のに、以前の案内は project.root からと書いていた
 expect_in_warnings config "source.folders / library.folders / external.library.folders from project.root, and the other items (project.root / library.jars /"
+
+# 4b. entry.packages / exclude.packages の書き間違い（何にも当たらない・見た目どおりに当たらない指定）。
+#     設定を読む時点では run.log も warnings.txt も無いので、解析の始めに Exporter が出す。設定の指定先の欠け
+#     （フォルダ・ファイルが無い）とは別の項目に載り、対処もパターンの書き直しを案内すること
+make_project pattern "exclude.packages=java.**,***.**,sample.**#run,sample.app.Util#co*,sample.**.*Outer.Inner"
+analyze pattern
+check_invariant pattern
+expect_in_warnings pattern "A pattern in entry.packages / exclude.packages matches nothing or not what it seems to say"
+expect_in_warnings pattern "The pattern '***.**' in exclude.packages matches nothing. A pattern made only of * and **"
+expect_in_warnings pattern "The pattern 'sample.**#run' in exclude.packages matches nothing. ** cannot stand for a class name"
+expect_in_warnings pattern "The pattern 'sample.app.Util#co*' in exclude.packages matches nothing. * cannot be used in a method name"
+expect_in_warnings pattern "The pattern 'sample.**.*Outer.Inner' in exclude.packages does not match nested classes"
+grep -q -F "A folder or file given in the config file was not found" "$OUT/warnings.txt" 2>/dev/null \
+    && ng "pattern: 書き間違いが設定の指定先の欠けの項目に載った" || ok "pattern: 設定の指定先の欠けの項目には載らない"
+grep -q -F "[WARN] The pattern 'sample.**#run'" "$OUT/run.log" 2>/dev/null \
+    && ok "pattern: run.log にも書き間違いの警告がある" || ng "pattern: run.log に書き間違いの警告が無い"
 
 # 5. コンパイルエラー（型が無い）と構文エラー
 make_project build ""
