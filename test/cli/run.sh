@@ -110,7 +110,13 @@ expect_refused() {   # $1=ログ  $2=終了コード  $3=ラベル
     expect_log "$1" "has to be downloaded from the network" "$3: 取得が必要なことを知らせた"
     expect_log "$1" "Download cancelled." "$3: 取得を取りやめた"
     expect_not_log "$1" "Downloading" "$3: 何も取得していない（ラッパーの Downloading が出ていない）"
-    if [ -z "$(ls -A "$NET_WORK/repo" 2> /dev/null)" ]; then ok "$3: 依存 jar の置き場所は空のまま"; else ng "$3: 依存 jar の置き場所に何かできた"; fi
+    # JBang 0.143.0 以降は、--offline で依存 jar の解決に失敗しただけでも Maven の解決器の錠のフォルダ（.locks）を
+    # 置き場所に作る。取得したものではないので数えない（それ以外のファイル・フォルダが 1 つでもあれば取得したとみなす）
+    if [ -z "$(find "$NET_WORK/repo" -mindepth 1 ! -path "$NET_WORK/repo/.locks" ! -path "$NET_WORK/repo/.locks/*" 2> /dev/null)" ]; then
+        ok "$3: 依存 jar の置き場所は空のまま"
+    else
+        ng "$3: 依存 jar の置き場所に何かできた"; find "$NET_WORK/repo" -mindepth 1 | head -5
+    fi
 }
 mkdir -p "$NET_WORK/repo"
 write_net_settings "$NET_WORK/jbang-missing" "" ""
