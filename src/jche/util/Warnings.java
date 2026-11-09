@@ -49,6 +49,8 @@ public final class Warnings {
         FAILED,
         /** 設定ファイルで指定したフォルダ・ファイルが無い */
         CONFIG,
+        /** entry.packages / exclude.packages の指定が何にも当たらない（書き間違い） */
+        PATTERN,
         /** 依存 jar が解決できていない */
         DEPENDENCIES,
         /** ソースにコンパイルエラーがある（ビルドが通らない） */
@@ -240,6 +242,7 @@ public final class Warnings {
         return switch (topic) {
             case FAILED -> Messages.get("exporter.warnings.failed.title");
             case CONFIG -> Messages.get("exporter.warnings.config.title");
+            case PATTERN -> Messages.get("exporter.warnings.pattern.title");
             case DEPENDENCIES -> Messages.get("exporter.warnings.deps.title");
             case BUILD -> Messages.get("exporter.warnings.build.title");
             case INCOMPLETE -> Messages.get("exporter.warnings.incomplete.title");
@@ -252,6 +255,7 @@ public final class Warnings {
             case FAILED -> List.of(Messages.get("exporter.warnings.failed.impact1"));
             case CONFIG -> List.of(Messages.get("exporter.warnings.config.impact1"),
                     Messages.get("exporter.warnings.config.impact2"));
+            case PATTERN -> List.of(Messages.get("exporter.warnings.pattern.impact1"));
             case DEPENDENCIES -> List.of(Messages.get("exporter.warnings.deps.impact1"),
                     Messages.get("exporter.warnings.deps.impact2"));
             case BUILD -> List.of(Messages.get("exporter.warnings.build.impact1"),
@@ -267,6 +271,7 @@ public final class Warnings {
                     Messages.get("exporter.warnings.failed.remedy2"));
             case CONFIG -> List.of(Messages.get("exporter.warnings.config.remedy1"),
                     Messages.get("exporter.warnings.config.remedy2"));
+            case PATTERN -> List.of(Messages.get("exporter.warnings.pattern.remedy1"));
             case DEPENDENCIES -> List.of(Messages.get("exporter.warnings.deps.remedy1"),
                     Messages.get("exporter.warnings.deps.remedy2"),
                     Messages.get("exporter.warnings.deps.remedy3"),
