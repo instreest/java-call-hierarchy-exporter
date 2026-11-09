@@ -87,7 +87,6 @@ Eclipse / VSCode のプラグインは `jche.server.Server`（`--server`）を�
 - `analysis`（書き手）と `graph`（読み手）は互いを参照せず、`cache` の record と形式（`CacheFormat`）だけを共有する
 - `dataflow` は `graph` の上に乗るフェーズ 2b。`report` と `external` は `graph` を読むだけ
 - `extension` は利用者が書く拡張がコンパイル時に依存する API なので、互換を保ち `java.*` 以外を import しない
-  （1 ファイル版でもここだけは本物のパッケージのまま写す）
 
 ## 5. パッケージと主要クラス
 

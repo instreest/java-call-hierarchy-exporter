@@ -45,7 +45,7 @@
   入口として残し、「CONTRIBUTING.md を読む」と書く
 
 残した AGENTS.md には、決まりの再掲を「静かに壊れるものだけ」に絞って置いた。全部を再掲すると二重管理になる。
-再掲するものの基準は「テストが赤くならない・後で気づく失敗」（キャッシュの版、対訳、MS932、1 ファイル版を本体に合わせて書き換えてしまうこと）。
+再掲するものの基準は「テストが赤くならない・後で気づく失敗」（キャッシュの版、対訳、MS932）。
 
 ## Q3. 全体図（architecture.md）を `package-info.java` や `resolution-selection-design.md` と別に置いたのはなぜか
 
@@ -80,14 +80,6 @@ README を宣言どおり（目的・Quick start・CSV の読み方）に絞る�
 対訳の食い違いを検出する）、この作業は main を取り込んでそれに合わせた。残り 10 パッケージの `package-info.java` は
 `src/jche` に触るので、文書だけの今回とは分け、次の段で行う。
 
-## Q6a. 1 ファイル版の扱いを途中で変えた
-
-見直しの時点では 1 ファイル版は `src/jche` から生成するもので、「`src/jche` を直したら生成し直す」が決まりだった。
-そのため当初は生成物に `.gitattributes` の `linguist-generated` を付け、エージェント向けの再掲にも「生成し直し忘れ」を入れていた。
-並行して main 側で生成の仕組みが廃止され、1 ファイル版は**本体と同期を取らない場合がある**ものになった
-（[single-file-qa.md](single-file-qa.md) の Q8）。手で個別に更新するものに `linguist-generated` を付けると本当の変更まで
-折りたたまれるので外し、CONTRIBUTING.md・AGENTS.md・test/README.md の記述を「本体に合わせて書き換えない」に改めた。
-
 ## Q7. 見送った案
 
 - **JUnit への移行**: 主な検査が「題材プロジェクトを解析して、期待値の CSV や全件解析の結果と比べる」形で、
@@ -96,7 +88,7 @@ README を宣言どおり（目的・Quick start・CSV の読み方）に絞る�
   `sourceDirectory` に波及する。得るものは「見慣れた形」だけ
 - **`docs/` の英訳**: 方針（[nls-qa.md](nls-qa.md) の Q12）どおり日本語のまま。索引の冒頭に英語の 1 行で「docs は日本語。使い方は
   README の英語側」とだけ書いた
-- **`jche` パッケージ名の変更**: 拡張 API `jche.extension` の互換と 1 ファイル版のクラス名に波及する
+- **`jche` パッケージ名の変更**: 拡張 API `jche.extension` の互換に波及する
 - **`Exporter` の改名（`Analysis` など）と `test/plugin*` の改名**: 効果はあるが `src/jche`・`smoke.yml`・文書に波及するので、
   文書だけの今回とは分けて判断する
 - **`test/run-all.sh`**: 各検査の前提（Node・Maven・JDK 26）が違い、全部を 1 回で回す形は CI の分け方と合わない。

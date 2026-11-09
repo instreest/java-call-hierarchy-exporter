@@ -439,4 +439,4 @@ Issue [#188](https://github.com/instreest/java-call-hierarchy-exporter/issues/18
   `ContractUsage` → `RuleUsage`、`ContractSuggestions` → `RuleSuggestions`
 - 文書: `callback-contracts*.md` → `library-call-rules*.md`、`contracts-unification-design.md` → `call-rules-unification-design.md`。
   過去の Q&A の本文の「契約」も「規則」に読み替えた
-- `single-file/`（本体と同期を取らない）は変えていない。キャッシュの形式は変えていない（コメントの文言だけ）
+- キャッシュの形式は変えていない（コメントの文言だけ）

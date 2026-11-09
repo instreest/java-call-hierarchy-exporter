@@ -51,7 +51,6 @@ bash test/regression/run.sh
 | `jche.config.Config` は 47 個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
 | コメント・文書は日本語、利用者に見せる文言は英語が既定 | 読む相手（このリポジトリを触る人）と、使う相手（画面・ログ・CSV を読む人）が違う。文言の置き場所は下の「コードの決まり」 |
 | `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF | cmd が画面のコードページで読むため（`docs/cli-app-qa.md` の Q15）。編集するときも MS932 のまま保存する |
-| `single-file/CallHierarchyExporterSingle.java`（4 万行）がコミットされている | 本体の全ソースを 1 ファイルにした版で、jar を集めて `javac` 1 回で動かす環境のためにある。**本体と同期を取らない場合がある**（その目的に合わせて個別に更新する）ので、`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8） |
 | パッケージ名が `jche`（逆 DNS でない） | JBang の単体ツールとして短い名前を選んだ。利用者の拡張が import する `jche.extension` の互換のため変えない |
 
 ## 3. どこに何があるか
@@ -65,7 +64,6 @@ bash test/regression/run.sh
 | `src/jche/util/Messages*.java` | 利用者に見せる文言。英語が既定で、日本語（`MessagesJa`）を重ねる。CSV のセルはここを通さず英語で固定（`docs/nls-qa.md`） |
 | `java-call-hierarchy-exporter.sh` / `.cmd` | リポジトリ直下の起動コマンド。引数なしで対話モード、設定ファイルを渡すと何も尋ねずに解析だけ行う（`docs/cli-noninteractive-qa.md`）。ネットワークからの取得（JBang / JDK / 依存 jar）だけは必ず確認する（`docs/network-download-confirm-qa.md`） |
 | `jbangw/` | JBang 本家のラッパースクリプトをそのまま同梱（MIT）。JBang のインストール不要 |
-| `single-file/` | 本体の全ソースを 1 ファイル `CallHierarchyExporterSingle.java`（パッケージ `jche`。各型を外側のクラスの入れ子にした完全版）にしたもの。利用者の拡張が import する `jche.extension` だけは本物のパッケージのまま `jche/extension/` に写す。**本体と同期を取らない場合がある**（その目的に合わせて個別に更新する）。`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8） |
 | `config/` | 設定ファイル置き場。`jche.properties` がひな形兼既定（以前の名前 `config.properties` も読む）。読み方は `src/jche/config/ConfigFile.java`（`Properties#load` ではない。バックスラッシュはそのまま、値の続きは行末の `\`（次の行が `項目=` なら捨てる）か字下げ。`docs/config-file-format-qa.md`） |
 | `action.yml` / `.github/action/` | 同じ解析を CI で動かす複合アクション |
 | `eclipse-plugin/` | Eclipse プラグイン。解析は別プロセス（`--server`）に任せ、画面だけを持つ（`docs/out-of-process-analysis-design.md`）。画面の文言は英語が既定で、日本語は `messages_ja.properties` に置く（`docs/eclipse-plugin-nls-qa.md`） |
@@ -83,7 +81,7 @@ bash test/regression/run.sh
 
 | 触ったもの | 忘れずにすること |
 |---|---|
-| `src/jche` のどこでも | lint（JDK 25）・`test/regression`。1 ファイル版（`single-file/`）は直さなくてよい（本体と同期を取らない場合がある） |
+| `src/jche` のどこでも | lint（JDK 25）・`test/regression` |
 | 書き手（`analysis` / `cache`）でキャッシュに入る事実が変わりうる | `CacheFormat.VERSION` を上げる（迷ったら上げる）→ `bash test/cacheversion/run.sh --update` で `facts.txt` を更新。`test/incremental` を回す |
 | 差分更新が見る依存を足した | `test/incremental` に全件解析との一致の検査を足す |
 | 利用者に見せる文言を足した | `MessagesEn.java` と `MessagesJa.java` の同じ分野・同じ並び・同じキーに足す（`test/nls`）。起動コマンドは `msg <キー>`。Eclipse / VSCode プラグインは置き場所が別（下記） |
@@ -168,8 +166,6 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   止める（黙って無い扱いにすると、その構文の呼び出しが静かに落ちる）。新しいノードは `visit` を上書きできないので
   `FactVisitor#preVisit2` / `postVisit` で振り分ける。下限を守るのは `test/jdt-floor/run.sh` だけで、`test/regression` の
   題材は Java 17 までの文法に収める（`docs/jdt-floor-qa.md`）
-- 1 ファイル版（`single-file/`）は**本体と同期を取らない場合がある**。その目的に合わせて個別に更新するので、`src/jche` を直しても
-  1 ファイル版を直す必要はない。ビルドできること・起動できることだけを `test/single-file/run.sh` が見る（`docs/single-file-qa.md` の Q8）
 - 両エントリポイントの `//SOURCES` は `*.java **/*.java`（スクリプトのあるフォルダ＝`src/jche/` からの相対）。
   `**` は区切り文字をまたぐが 0 階層は含まないため、`**/*.java` だけでは同じフォルダ直下のファイルに当たらない
   （`cannot find symbol` になる）。直下ぶんの `*.java` を必ず併記する（`docs/entrypoint-package-qa.md`）
