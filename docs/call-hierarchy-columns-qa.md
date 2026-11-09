@@ -109,7 +109,7 @@ Excel の数値フィルタにも空欄が混ざる。
 | `[UNREACHABLE] …condition '…' does not hold (…)` | 条件式と、この経路で分かっている値 |
 | `[UNEXPANDED:CYCLE]` / `[UNEXPANDED:DEPTH]` / `[EXTERNAL]` | 打ち切りの理由（解決方法とは別の軸なので列には入れない） |
 
-### Q7. 再実装用のプロンプトとお試し版（single-file）はどうしたか
+### Q7. 再実装用のプロンプトはどうしたか
 
 [prompt-B-detailed.md](prompt-B-detailed.md)（本体の仕様）と [prompt-A-minimal.md](prompt-A-minimal.md)
 （目的から設計させる版）は 2 列を含む形に更新した。prompt-A には列の仕様だけでなく、
@@ -120,14 +120,6 @@ Excel の数値フィルタにも空欄が混ざる。
 prompt-B の 3.3 にあるケース別の期待行は、`resolved-by` / `depth` の 2 列を省いた表記のままにし、
 その読み方を断り書きにした。1 件に確定した行だけは、どの段で決まったかが期待値そのものなので
 行末に `[RESOLVED:{ラベル}]` を残している（実際の出力では列に入る）。
-
-`single-file/`（お試し版）は追従させていない。あの版の `resolve()` は候補の配列だけを返し、
-段のラベルを持たない作りで、列を足すには解決の戻り値を変える改修が要る。
-「中心機能だけの 1 ファイル」という位置づけを優先し、
-[single-file/README.md](../single-file/README.md) に「この列は入っていない」と明記した。
-
-> その後、`single-file/` は本体の全ソースから生成する完全版になり、この 2 列も本体と同じに出る
-> （[single-file-qa.md](single-file-qa.md)）。
 
 ### Q8. 列名を `level` から `depth` に変えたのはなぜか。ほかの名前は考えたか
 

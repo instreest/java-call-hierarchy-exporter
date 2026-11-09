@@ -17,8 +17,6 @@ Java プロジェクト全体のメソッド呼び出し階層を、Eclipse JDT 
 
 CONTRIBUTING.md に全部書いてあるが、静かに壊れる（テストが赤くならない・後で気づく）ものだけをここに再掲する。
 
-- 1 ファイル版（`single-file/`）を本体（`src/jche`）に合わせて書き換えた。1 ファイル版は本体と同期を取らない場合があるもので、
-  その目的に合わせて個別に更新する。`src/jche` を直しても 1 ファイル版を直す必要はない（`docs/single-file-qa.md` の Q8）
 - 書き手（`analysis` / `cache`）を直してキャッシュに入る事実が変わりうるのに `CacheFormat.VERSION` を上げていない
   （迷ったら上げる。上げたら `bash test/cacheversion/run.sh --update`）
 - 利用者に見せる文言をソースに直接書いた。英語を `MessagesEn.java`、日本語を `MessagesJa.java` の同じキーに足す。

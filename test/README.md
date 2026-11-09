@@ -35,7 +35,6 @@
 | `warnings/` | `warnings.txt` の有無と中身（正常時は作らない・対処が載る） | `Warnings` / `Log.warn` を出す場所 | — | regression |
 | `rules/` | 同梱のライブラリ呼び出し規則（`JdkCallbacks` / `BundledFrameworkEntries`）が parse でき JDK に実在すること | ライブラリ呼び出し規則 | — | regression |
 | `pattern/` | `entry.packages` / `exclude.packages` のパターン（途中の `*` / `**` を含む）が当たるべきものにだけ当たること | `PackagePattern` | — | regression |
-| `single-file/` | 1 ファイル版がビルドでき（本体と同じ lint）、起動できること。本体との一致は見ない | `single-file/` | — | regression |
 | `readme/` | README の日本語側と英語側の節の並び・形がそろい、アンカーが解決し、JDT の版が `//DEPS` と同じこと | `README.md`・docs から README へのリンク | — | jbangw |
 | `cli/` | 起動コマンドと対話モード（メニューへの答えをパイプで流す） | `cli` / `.sh` | — | regression |
 | `nls/` | 文言（英語が既定・日本語を重ねる）のキーの一致と、CSV が言語で変わらないこと | `Messages*` / 文言を足した場所 | — | regression |
@@ -136,10 +135,6 @@ Java 言語仕様（JLS SE 26）への適合と javac との整合の検査。`t
 ### `bash test/cachevalue/run.sh`
 
 キャッシュの列の符号化（`joinRow` の `escape` / `CacheReader` の `unescape`。全列に同じ 1 つの規則）が往復し、行を壊さず、UTF-8 に書けること（対になっていないサロゲートも `\uXXXX` にする）。ヘッダ行のソースフォルダの一覧（`folders=`。`CacheFormat#foldersOf`）も往復すること。文字列のハッシュ（`FileHash.ofText`。長い定数の K 行・自分の宣言の指紋）が、対になっていないサロゲートだけが違う文字列を区別し、正しい文字列では UTF-8 のハッシュと同じこと
-
-### `bash test/single-file/run.sh`
-
-1 ファイル版（`single-file/`）の検査。本体と同じ lint の引数で警告ゼロでコンパイルできること、`--help` が 0・知らないオプションが 2 で終わること。本体と同期を取らない場合があるので、本体との一致は見ない（`docs/single-file-qa.md` の Q8）
 
 ### `bash test/readme/run.sh`
 
