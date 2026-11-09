@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 
+import jche.cache.MethodRef;
 import jche.graph.MethodTable;
 
 /**
@@ -73,7 +74,9 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         buf.setLength(0);
 
         // caller: 呼び出し元が「このノードを呼んでいる行」を指すスタックトレース形式。
-        buf.append(Csv.esc(stackTrace(mt, path[depth - 1].shownId, path[depth].callLine)))
+        // 表示用の shownId ではなく、その段の本物のメソッド（畳んだラムダの段ならラムダの本体）から作る。
+        // callLine はそのメソッドの中の行なので、ファイルとメソッドもそこから取らないと別の場所を指す
+        buf.append(Csv.esc(stackTrace(mt, path[depth - 1].methodId, path[depth].callLine)))
                 .append(Csv.DELIM);
 
         // callee: クラス名 + メソッド名（引数は付けない）。
@@ -171,11 +174,23 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
      * を返すが、実際のJVMスタックトレースやEclipseの「Javaスタック・トレース・
      * コンソール」が期待するのは内部クラスを $ で区切ったバイナリ名（Outer$Inner）。
      * ドットのままだと内部クラスのメソッドへのジャンプが解決できない。
+     *
+     * <p>ラムダの本体（合成メソッド）は、ラムダを書いたメソッドの名前にする
+     * （{@link MethodRef#lambdaEnclosingName}。ファイルと行は本体のもの＝ラムダを書いた場所）。合成メソッドの名前は
+     * ソースに無く CSV には出さない決まりで、呼び出し階層の行（畳んだラムダの段）・型解決に失敗した行・
+     * ライブラリ呼び出し規則のひな形（{@link RuleSuggestions}）のどれもここを通すので、同じ呼び出し箇所は同じ表記になる
      */
     static String stackTrace(MethodTable mt, int id, int line) {
+        String method = mt.methodName(id);
+        if (mt.isLambdaBody(id)) {
+            String enclosing = MethodRef.lambdaEnclosingName(method);
+            if (enclosing != null) {
+                method = enclosing;
+            }
+        }
         String file = mt.declFile(id);
         if (file == null || line < 0) {
-            return mt.shortLabel(id) + " (unknown)";
+            return unknownLocation(mt, id, method);
         }
         String fileName = file.substring(file.lastIndexOf('/') + 1);
         String pkg = mt.pkg(id);
@@ -183,7 +198,20 @@ public final class CallHierarchyCsvWriter implements AutoCloseable {
         if (!pkg.isEmpty()) {
             binaryType = pkg + "." + binaryType;
         }
-        return stackTrace(binaryType, mt.methodName(id), fileName, line);
+        return stackTrace(binaryType, method, fileName, line);
+    }
+
+    /**
+     * 位置が分からないときの表記（{@code 単純クラス名.メソッド (unknown)}）。ラムダの本体は、合成メソッドの名前を出さず
+     * ラムダを書いたメソッドの名前にする（コンストラクタは {@link MethodTable#shortLabel} と同じくクラスの単純名）
+     */
+    private static String unknownLocation(MethodTable mt, int id, String method) {
+        if (!mt.isLambdaBody(id)) {
+            return mt.shortLabel(id) + " (unknown)";
+        }
+        String simple = mt.simpleTypeName(id);
+        String shown = MethodRef.CONSTRUCTOR.equals(method) ? simple.substring(simple.lastIndexOf('.') + 1) : method;
+        return simple + "." + shown + " (unknown)";
     }
 
     /**
