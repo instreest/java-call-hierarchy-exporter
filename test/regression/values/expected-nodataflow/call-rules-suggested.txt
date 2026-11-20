@@ -1,5 +1,5 @@
 # A library call rules template built from the calls that could not be narrowed
-# ([UNEXPANDED:CHA] in call-hierarchy.csv). It is rebuilt on every run, so edits here do not survive.
+# ([CANDIDATE:CHA] / [UNEXPANDED:CHA] in call-hierarchy.csv). It is rebuilt on every run, so edits here do not survive.
 #
 # How to use
 #   1. Remove the leading # from a row that applies
@@ -8,7 +8,7 @@
 #
 # The syntax is described in docs/library-call-rules.md.
 # If every method of the type uses the same implementation, drop the method name and write "Type => concrete type".
-# If several candidates are fine, list them on the right separated by commas (they are then not expanded).
+# If several candidates are fine, list them on the right separated by commas (they are expanded only up to expand.max.candidates candidates).
 #
 # Template rows: 1
 

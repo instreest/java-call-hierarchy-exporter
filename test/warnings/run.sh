@@ -11,6 +11,8 @@
 #   - どの実行でも「warnings.txt がある」⇔「run.log に [WARN] / [ERROR] の行がある」こと
 #   - コンパイルエラー・構文エラーのファイルの一覧（上限まで）が、差分更新でも全件解析と同じこと
 #   - パッケージの宣言がフォルダと合わないファイルを、全件解析でも差分更新でも警告すること
+#   - 実行時のクラスの候補が expand.max.candidates を超えて展開しなかった呼び出しがあるときだけ作り、
+#     候補をすべて展開した実行では作らないこと
 #   - 表示言語を日本語にすると日本語で書かれること
 # を確かめる。
 #
@@ -571,6 +573,88 @@ for kind in jdk excluded ctor; do
         ng "busy_$kind: Leaf.x の行が ${ROWS:-0} 行（40 のはず）、または warnings.txt がある"
     fi
 done
+
+# 9b. 実行時のクラスの候補が複数のままの呼び出しは、候補の数が expand.max.candidates（既定 3）以下なら候補ごとに
+#     先へ展開し（resolved-by は CANDIDATE:）、超えたら候補を並べるだけで展開しない（UNEXPANDED:）。
+#     展開しなかった呼び出しがあるときだけ warnings.txt の項目に載せ、すべて展開した実行では warnings.txt を作らない
+#     （docs/candidate-expansion-qa.md）。Dao の実装は 2 つ、Svc の実装は 4 つ
+make_candidates() {   # $1=フォルダ名  $2=few（Dao だけを呼ぶ）/ many（Svc も呼ぶ）  $3=設定ファイルに足す行
+    local dir=work/$1 i
+    mkdir -p "$dir/src/p"
+    echo 'package p; public class Leaf { public static void x() { } public static void y() { } }' > "$dir/src/p/Leaf.java"
+    echo 'package p; public interface Dao { void find(); }' > "$dir/src/p/Dao.java"
+    echo 'package p; public interface Svc { void run(); }' > "$dir/src/p/Svc.java"
+    for i in 1 2; do
+        echo "package p; public class D$i implements Dao { public void find() { Leaf.x(); } }" > "$dir/src/p/D$i.java"
+    done
+    for i in 1 2 3 4; do
+        echo "package p; public class S$i implements Svc { public void run() { Leaf.y(); } }" > "$dir/src/p/S$i.java"
+    done
+    if [ "$2" = few ]; then
+        echo 'package p; public class Main { public void go(Dao d, Svc s) { d.find(); } }'
+    else
+        echo 'package p; public class Main { public void go(Dao d, Svc s) { d.find(); s.run(); s.run(); } }'
+    fi > "$dir/src/p/Main.java"
+    cat > "$dir/jche.properties" <<EOF
+project.root=.
+source.folders=src
+source.encoding=UTF-8
+output.folder=./out
+cache.folder=./.cache
+$3
+EOF
+}
+csv_has() {   # $1=ラベル  $2=call-hierarchy.csv の行に含むはずの文字列  $3=説明
+    grep -q -F -- "$2" "$OUT/call-hierarchy.csv" 2>/dev/null && ok "$1: $3" || ng "$1: $3（「$2」が無い）"
+}
+csv_lacks() {   # $1=ラベル  $2=call-hierarchy.csv に無いはずの文字列  $3=説明
+    grep -q -F -- "$2" "$OUT/call-hierarchy.csv" 2>/dev/null && ng "$1: $3（「$2」がある）" || ok "$1: $3"
+}
+CAND_TITLE="Some calls have too many runtime class candidates and were not expanded"
+
+# 候補が上限以下の呼び出しだけ: 候補をすべて展開し、warnings.txt は作らない
+make_candidates cand_few few ""
+analyze cand_few
+check_invariant cand_few
+[ -n "$OUT" ] && [ ! -f "$OUT/warnings.txt" ] \
+    && ok "cand_few: 候補をすべて展開した実行では warnings.txt を作らない" \
+    || ng "cand_few: 候補をすべて展開したのに warnings.txt がある（または出力が無い）"
+csv_has cand_few "D1.find,CANDIDATE:CHA,1,Main.go,D1.find,[CANDIDATE:CHA] 2 candidates: parameter" "候補の行は CANDIDATE:CHA"
+csv_has cand_few ",Main.go,D1.find,Leaf.x" "1 つ目の候補の先へ降りる"
+csv_has cand_few ",Main.go,D2.find,Leaf.x" "2 つ目の候補の先へ降りる"
+
+# 候補が上限を超える呼び出しがある: その呼び出しだけ展開せず、warnings.txt に載せる（上限以下の呼び出しは展開する）
+make_candidates cand_many many ""
+analyze cand_many
+check_invariant cand_many
+expect_in_warnings cand_many "$CAND_TITLE"
+expect_in_warnings cand_many "2 call site(s) to 1 method(s) have more than 3 runtime class candidates (expand.max.candidates)"
+expect_in_warnings cand_many "p.Svc.run() (4 candidates, 2 call site(s))"
+grep -q -F "p.Dao.find()" "$OUT/warnings.txt" 2>/dev/null \
+    && ng "cand_many: 展開した呼び出し（Dao.find）まで warnings.txt に載った" \
+    || ok "cand_many: 展開した呼び出しは warnings.txt に載らない"
+csv_has cand_many "S1.run,UNEXPANDED:CHA,1,Main.go,S1.run,[UNEXPANDED:CHA] 4 candidates: parameter" "上限を超えた候補の行は UNEXPANDED:CHA"
+csv_lacks cand_many ",Main.go,S1.run,Leaf.y" "上限を超えた候補の先へは降りない"
+csv_has cand_many ",Main.go,D2.find,Leaf.x" "同じ実行でも上限以下の呼び出しは展開する"
+
+# 上限を上げれば全部展開し、warnings.txt は作らない
+make_candidates cand_raised many "expand.max.candidates=4"
+analyze cand_raised
+check_invariant cand_raised
+[ -n "$OUT" ] && [ ! -f "$OUT/warnings.txt" ] \
+    && ok "cand_raised: 上限を上げてすべて展開した実行では warnings.txt を作らない" \
+    || ng "cand_raised: すべて展開したのに warnings.txt がある（または出力が無い）"
+csv_has cand_raised "S4.run,CANDIDATE:CHA,1,Main.go,S4.run,[CANDIDATE:CHA] 4 candidates: parameter" "候補の行は CANDIDATE:CHA"
+csv_has cand_raised ",Main.go,S4.run,Leaf.y" "4 つ目の候補の先へ降りる"
+
+# 1 以下にすると、候補が複数の呼び出しは展開しない（以前の動き）。展開しなかったので warnings.txt に載る
+make_candidates cand_off few "expand.max.candidates=1"
+analyze cand_off
+check_invariant cand_off
+expect_in_warnings cand_off "$CAND_TITLE"
+expect_in_warnings cand_off "p.Dao.find() (2 candidates, 1 call site(s))"
+csv_has cand_off "D1.find,UNEXPANDED:CHA,1,Main.go,D1.find,[UNEXPANDED:CHA] 2 candidates: parameter" "候補の行は UNEXPANDED:CHA"
+csv_lacks cand_off ",Main.go,D1.find,Leaf.x" "候補の先へは降りない"
 
 # 10. jar のクラス（q.Api）が参照するクラス（q.Missing）が無いとき、事実を集めるときの問い合わせが同じバッチの後ろの
 #    ファイル（app/B.java）のメソッドを先に解決させ、B の番で JDT が例外を投げて一括解析が落ちていた（「The batch analysis

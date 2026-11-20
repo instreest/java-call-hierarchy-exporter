@@ -1028,7 +1028,7 @@ public class NewLoopElem {
 EOF
 expect_ listed NewLoopElem.loop DaoA.find "同上（代入した new DaoA も残す）"
 
-case_ resolved:UNEXPANDED:LOCAL_NEW_MULTI NewCast NewCast.pick DaoB.find "キャストを挟んだ new（(Dao) new DaoB()）も new として数える（LOCAL_NEW_MULTI）" <<'EOF'
+case_ resolved:CANDIDATE:LOCAL_NEW_MULTI NewCast NewCast.pick DaoB.find "キャストを挟んだ new（(Dao) new DaoB()）も new として数える（LOCAL_NEW_MULTI）" <<'EOF'
 package pr;
 
 public class NewCast {
@@ -1040,7 +1040,7 @@ public class NewCast {
     }
 }
 EOF
-expect_ resolved:UNEXPANDED:LOCAL_NEW_MULTI NewCast.pick DaoA.find "同上（キャストの無い new DaoA）"
+expect_ resolved:CANDIDATE:LOCAL_NEW_MULTI NewCast.pick DaoA.find "同上（キャストの無い new DaoA）"
 
 case_ resolved:RESOLVED:LOCAL_NEW NewCastOne NewCastOne.one DaoA.find "対照: キャストを挟んだ new だけが代入されるローカル変数は LOCAL_NEW に絞る" <<'EOF'
 package pr;
@@ -1649,7 +1649,7 @@ expect_ absent SbKeep.run SkDaoB.find "同上（SkDaoB の行が無い）"
 # test/regression が残りの 16 個を検出する（TraceCheck があったときは 80 個）。検出しない 14 個とその理由
 # （同値・保守側に倒れるだけ・検出できていない 3 個）は docs/cache-unification-qa.md の Q16
 # ---------------------------------------------------------------------------
-case_ resolved:UNEXPANDED:REFLECTION ReflNullArg ReflNullArg.main ReflNullArg.take "getMethod の引数型に値の分からない実引数（null）があれば、引数の数（n=）まで見て型は分からないとし、名前の一致する take() と take(String) の両方を候補に残す" <<'EOF'
+case_ resolved:CANDIDATE:REFLECTION ReflNullArg ReflNullArg.main ReflNullArg.take "getMethod の引数型に値の分からない実引数（null）があれば、引数の数（n=）まで見て型は分からないとし、名前の一致する take() と take(String) の両方を候補に残す" <<'EOF'
 package pr;
 
 public class ReflNullArg {
@@ -3878,7 +3878,7 @@ public class DtWide {
 EOF
 expect_ listed DtWide.use DtB.find "同上（DtB.find も残る）"
 
-case_ resolved:UNEXPANDED:CHA DtSub DtSub.use DsB.find "上限の型（DsB）に部分型（DsBSub）があれば、候補はその 2 つに減るが CHA のまま（DsB.find は UNEXPANDED:CHA）" <<'EOF'
+case_ resolved:CANDIDATE:CHA DtSub DtSub.use DsB.find "上限の型（DsB）に部分型（DsBSub）があれば、候補はその 2 つに減るが CHA のまま（DsB.find は CANDIDATE:CHA。候補が expand.max.candidates 以下なので展開する）" <<'EOF'
 package pr;
 
 interface DsI { void find(); }

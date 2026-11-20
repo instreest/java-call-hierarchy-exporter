@@ -48,7 +48,7 @@ bash test/regression/run.sh
 | ソースは `src/jche` 直下（`src/main/java` ではない） | JBang の `//SOURCES` がスクリプトのあるフォルダからの相対で、`jche.config.ToolRoot` もこの置き場所（`src/jche/CallHierarchyExporter.java`）を目印にしている（`docs/entrypoint-package-qa.md`） |
 | テストは JUnit ではなく bash の `run.sh` と自前の `*Check.java` | 主な検査が「題材プロジェクトを解析して、期待値の CSV や全件解析の結果と比べる」形で、JUnit にしても速くも読みやすくもならない。依存ゼロ・実行 JDK 固定（JDK 25。JDT が実行 JVM のブートクラスパスを解析に使うので、版が違うと結果が変わる）の利点も保てる。一覧は [test/README.md](test/README.md) |
 | 実行 JDK は 25 に固定、言語機能は Java 17（`--release 17`） | 上と同じ理由で実行 JDK を固定する。言語レベルは古い環境（Pleiades 同梱の JDK 17）でもコンパイルできる下限 |
-| `jche.config.Config` は 47 個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
+| `jche.config.Config` は 48 個の `public final` フィールドで getter が無い | 設定ファイルを読んだ結果を持つ読み取り専用の不変の値オブジェクトで、読む側が包み直す値は無いので getter を置いていない。項目の意味の正本は `config/jche.properties` のコメントで、`Config` には複製しない |
 | コメント・文書は日本語、利用者に見せる文言は英語が既定 | 読む相手（このリポジトリを触る人）と、使う相手（画面・ログ・CSV を読む人）が違う。文言の置き場所は下の「コードの決まり」 |
 | `java-call-hierarchy-exporter.cmd` だけ MS932・CRLF | cmd が画面のコードページで読むため（`docs/cli-app-qa.md` の Q15）。編集するときも MS932 のまま保存する |
 | パッケージ名が `jche`（逆 DNS でない） | JBang の単体ツールとして短い名前を選んだ。利用者の拡張が import する `jche.extension` の互換のため変えない |
@@ -128,7 +128,9 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
   出力フォルダに `warnings.txt`（確認してほしいことの案内）ができ、その行が載る。逆に、対処の要らない
   経過を `Log.warn` で出さない（ファイルが出る＝想定と違う状態、という約束が崩れる）。
   初心者がつまずく典型（設定の指定先の欠け・依存 jar の不足・コンパイルエラー・打ち切り・失敗）に当たる警告は
-  `jche.util.Warnings.warn(Topic, …)` で出し、対処の説明の付いた項目に載せる（`docs/output-files-simplify-qa.md` の Q3〜）
+  `jche.util.Warnings.warn(Topic, …)` で出し、対処の説明の付いた項目に載せる（`docs/output-files-simplify-qa.md` の Q3〜）。
+  候補が多くて展開しなかった呼び出し（`expand.max.candidates` 超）も項目の 1 つで、候補をすべて展開した実行では出さない
+  （`docs/candidate-expansion-qa.md`）
 - **出力 CSV のセルは言語に関わらず英語**（注記・`unresolvedCause` / `absentCause`・`call-conditions.csv`・
   被参照の行・プラグインの `EXPORT`）。人向けの文章ではなく、期待値との比較・Excel のフィルタ・
   他のツールへの受け渡しに使う出力のデータだからである。注記にカンマを入れない
@@ -173,6 +175,8 @@ CI（`.github/workflows/smoke.yml`）と同じものを手元で実行できる�
 - `call-hierarchy.csv` に固定列を足すときは `call-hierarchy` の左に入れる。最終列の `call-hierarchy` は可変長なので、
   後ろに足すと階層が途中で切れる。ヘッダーは `caller,callee,resolved-by,depth,call-hierarchy` で、`call-hierarchy` の
   見出しは先頭の 1 列（起点）にだけ付き、2 ノード目以降の列には付かない。
+  `resolved-by` の接頭辞は `RESOLVED:`（1 件に確定）・`CANDIDATE:`（候補のまま、候補ごとに先へ降りた）・
+  `UNEXPANDED:`（候補のまま、降りなかった）で、候補のままの 2 つは候補の数と `expand.max.candidates` で分かれる。
   `resolved-by` は注記と同じ判定から作り、`depth` は「`call-hierarchy` 列のノード数（先頭の起点を除く）」と一致させる
   （`docs/call-hierarchy-columns-qa.md`）
 - キャッシュの形式や鍵を変えるときは、古いキャッシュを安全に捨てる経路を用意する（`docs/cache-dependency-jars-qa.md`）

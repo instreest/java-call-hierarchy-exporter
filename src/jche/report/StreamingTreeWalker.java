@@ -6,7 +6,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import jche.cache.ModifierTokens;
@@ -46,6 +48,8 @@ import jche.util.Warnings;
  *       {@code new} だけでつながるコンストラクタの連鎖など）が経路の数だけ辿られ、行数の上限に当たらないまま
  *       終わらなくなる。行を書くたびに数え直すので、行を書き進めている探索は行数の上限までしか止まらない
  *       （docs/output-walk-limit-qa.md）</li>
+ *   <li>expand.max.candidates … 候補が複数のままの呼び出しを、候補ごとに先へ降りる件数の上限。
+ *       超えた呼び出しは候補を行に並べるだけで降りず、探索の後に warnings.txt へ載せる</li>
  *   <li>循環検出 … 「現在の経路（rootからそのノードまでの祖先）」に同じメソッドが
  *       既にあれば、その辺を1行だけ出力してそこから先へは降りない。
  *       判定は経路単位なので、別の経路で同じ呼び出しが現れた場合は
@@ -82,6 +86,11 @@ public final class StreamingTreeWalker {
      * 打ち切りではあるが {@code UNEXPANDED} の配下には入れない。
      */
     static final String UNEXPANDED = "[UNEXPANDED:";
+    /**
+     * 1 件に絞れなかったが、候補の数が expand.max.candidates 以下なので候補ごとに先へ降りた行の印。
+     * 「降りなかった」ではないので {@code UNEXPANDED} の配下には入れない（{@link ResolvedBy#CANDIDATE} と対）
+     */
+    static final String CANDIDATE = "[CANDIDATE:";
     /** 自プロジェクトの外を指しているため辿れない辺の印 */
     static final String EXTERNAL_MARK = "[EXTERNAL]";
     /** 経路上で既に呼んでいるメソッドへ戻る辺の印 */
@@ -117,7 +126,7 @@ public final class StreamingTreeWalker {
     static final byte ABSENT_PRUNED_SUBTREE = 1;
     /** 経路上で既に呼んでいるメソッドへ戻る辺だった */
     static final byte ABSENT_CYCLE = 2;
-    /** CHAで候補が複数のまま（候補は行になるが、その先へは降りない） */
+    /** 候補が複数のままで、数が expand.max.candidates を超えた（候補は行になるが、その先へは降りない） */
     static final byte ABSENT_CHA = 3;
     /** exclude.packages で除外された */
     static final byte ABSENT_EXCLUDED = 4;
@@ -130,6 +139,11 @@ public final class StreamingTreeWalker {
     private final Config config;
     private final CallHierarchyCsvWriter writer;
     private final int maxDepth;
+    /**
+     * 候補が複数のままの呼び出しを、候補ごとに先へ降りる件数の上限（expand.max.candidates）。
+     * 候補の数がこれ以下なら全部の候補へ降り、超えたら候補を行に並べるだけで降りない（候補数^深さ で増えるため）
+     */
+    private final int expandMaxCandidates;
 
     /**
      * 畳んだラムダの本体を降りている間の、書いた行の覚え（{@link CollapseSeen#rowsOf}）。
@@ -186,6 +200,17 @@ public final class StreamingTreeWalker {
     private long silentRun;
     private boolean limitWarned;
     private boolean candidateLimitWarned;
+    /**
+     * 候補の数が expand.max.candidates を超えたために降りなかった呼び出し。呼び出し先（宣言）ごとに
+     * {候補の数の最大, 呼び出し箇所の数}。探索の後に warnings.txt へ載せる（{@link #warnUnexpandedCandidates}）。
+     * 並びは最初に出会った順（探索の順）なので決定的
+     */
+    private final Map<Integer, int[]> unexpandedCandidates = new LinkedHashMap<>();
+    /**
+     * 上の「呼び出し箇所の数」を、経路の数ではなく辺の数で数えるための覚え（呼び出し先と辺の組）。
+     * 1 本の辺が通常の候補と規則の呼び戻しの両方で数えられることがあるので、辺だけでは覚えない
+     */
+    private final Set<Long> unexpandedSites = new HashSet<>();
 
     /**
      * 階層CSVに1行でも出たメソッド。
@@ -210,6 +235,7 @@ public final class StreamingTreeWalker {
         this.config = config;
         this.writer = writer;
         this.maxDepth = (config.maxDepth > 0) ? config.maxDepth : DEPTH_HARD_CAP;
+        this.expandMaxCandidates = config.expandMaxCandidates;
         this.inHierarchy = new boolean[methods.size()];
         this.absentCause = new byte[methods.size()];
         this.path = new PathFrame[Math.max(2, this.maxDepth + 2)];
@@ -357,7 +383,41 @@ public final class StreamingTreeWalker {
             }
         }
         markPrunedSubtrees();
+        warnUnexpandedCandidates();
         return totalRows;
+    }
+
+    /** 候補の数が {@link #expandMaxCandidates} 以下（＝候補が複数でも、候補ごとに先へ降りる）か */
+    private boolean withinExpandLimit(int candidates) {
+        return candidates <= expandMaxCandidates;
+    }
+
+    /** 候補の数が上限を超えたために降りなかった呼び出しを覚える（条件や循環で降りなかったものは数えない） */
+    private void recordUnexpanded(int edgeIndex, int methodId, int candidates) {
+        int[] stat = unexpandedCandidates.computeIfAbsent(methodId, k -> new int[2]);
+        stat[0] = Math.max(stat[0], candidates);
+        if (unexpandedSites.add(((long) methodId << 32) | edgeIndex)) {
+            stat[1]++;
+        }
+    }
+
+    /**
+     * 候補の数が上限を超えたために降りなかった呼び出しがあれば、warnings.txt の項目に載せる。
+     * 候補を全部降りた実行では何も出さない（warnings.txt を作らない）。
+     * 行ごとに警告すると経路の数だけ出るので、探索の後に呼び出し先ごとにまとめる
+     */
+    private void warnUnexpandedCandidates() {
+        if (unexpandedCandidates.isEmpty()) {
+            return;
+        }
+        Warnings.warn(Warnings.Topic.CANDIDATES, Messages.format("report.walker.unexpandedCandidates",
+                unexpandedSites.size(), unexpandedCandidates.size(), expandMaxCandidates));
+        for (Map.Entry<Integer, int[]> en : unexpandedCandidates.entrySet()) {
+            String line = Messages.format("report.walker.unexpandedCandidate",
+                    methods.fullSignature(en.getKey()), en.getValue()[0], en.getValue()[1]);
+            Log.info("      " + line);
+            Warnings.detail(Warnings.Topic.CANDIDATES, "  " + line);
+        }
     }
 
     /** depth のノードから、その呼び出し先を辿る */
@@ -384,10 +444,12 @@ public final class StreamingTreeWalker {
                 prunedCalls++;
             }
 
-            // CHAで候補が複数になった呼び出しは、候補を1件ずつ行にして見せるが、
-            // そこから先へは降りない（候補数^深さ で爆発するため）。
-            // 並べる候補数にも上限を設ける
+            // 候補が複数になった呼び出しは、候補を1件ずつ行にする。候補の数が expand.max.candidates
+            // 以下なら候補ごとに先へも降りる。超えたら降りない（候補数^深さ で爆発するため）で、
+            // 並べる候補数にも上限を設け、降りなかったことを探索の後に知らせる
             int[] targets = res.targets();
+            boolean multi = targets.length > 1;
+            boolean within = withinExpandLimit(targets.length);
             // 絞れなかった呼び出しは、それを直すライブラリ呼び出し規則の行のひな形にしておく。
             // リフレクション（名前で照合）はライブラリ呼び出し規則では直せないので除く
             if (res.isMultiple() && unreachable == null
@@ -395,8 +457,11 @@ public final class StreamingTreeWalker {
                 suggestions.add(graph, dataflow, path[depth].context(), e, callerId,
                         declaredCallee, targets);
             }
-            boolean expand = (targets.length == 1) && (unreachable == null);
-            int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
+            boolean expand = (!multi || within) && (unreachable == null);
+            if (multi && !within && unreachable == null) {
+                recordUnexpanded(e, (declaredCallee >= 0) ? declaredCallee : targets[0], targets.length);
+            }
+            int limit = writtenCandidates(targets);
 
             for (int ti = 0; ti < limit; ti++) {
                 if (isRowLimitReached()) {
@@ -415,8 +480,8 @@ public final class StreamingTreeWalker {
                     prunedTargets.add(target);
                 }
                 // ラムダの本体は段にせず、その呼び出しを今の段の直下に出す。
-                // 条件で打ち切る呼び出しと候補を並べるだけの行は、事実を残すため行のまま出す
-                if (expand && unreachable == null && methods.isLambdaBody(target)
+                // 条件で打ち切る呼び出しと候補の行（降りる場合も）は、事実を残すため行のまま出す
+                if (expand && !multi && methods.isLambdaBody(target)
                         && !onCurrentPath(target, depth)) {
                     collapseInto(depth, target, targetParams, targetCtorArgs, collapsed);
                     continue;
@@ -435,7 +500,7 @@ public final class StreamingTreeWalker {
                 boolean cycle = onCurrentPath(target, depth);
                 if (cycle) {
                     markAbsent(target, ABSENT_CYCLE);
-                } else if (targets.length > 1) {
+                } else if (multi && !expand) {
                     markAbsent(target, ABSENT_CHA);
                 }
                 path[depth + 1].set(target, graph.callLineOf(e),
@@ -505,11 +570,16 @@ public final class StreamingTreeWalker {
                 }
                 continue;
             }
+            // 候補が複数でも、数が expand.max.candidates 以下なら通常の候補と同じく候補ごとに降りる
+            boolean within = withinExpandLimit(match.candidates());
             boolean cycle = onCurrentPath(target, depth);
             if (cycle) {
                 markAbsent(target, ABSENT_CYCLE);
-            } else if (match.isMultiple()) {
+            } else if (match.isMultiple() && !within) {
                 markAbsent(target, ABSENT_CHA);
+            }
+            if (match.isMultiple() && !within) {
+                recordUnexpanded(e, (declaredCallee >= 0) ? declaredCallee : target, match.candidates());
             }
             Resolution res = Resolution.single(target, Resolution.CALLBACK);
             String note = noteFor(target, declaredCallee, res, depth, cycle, graph.recvKindOf(e), null);
@@ -518,16 +588,17 @@ public final class StreamingTreeWalker {
                 // 渡した値が上書き可能なメソッドへのメソッド参照で、動く実装を1つに決められなかった。
                 // 候補を全部並べたことを、通常の CHA と同じ言い方で残す（確定に見せない）
                 note = note.replace("[RESOLVED:" + Resolution.CALLBACK + "]",
-                        UNEXPANDED + "CHA] " + match.candidates() + " candidates: " + CALLBACK_METHOD_REF);
-                resolvedBy = ResolvedBy.UNEXPANDED + Resolution.CALLBACK;
+                        (within ? CANDIDATE : UNEXPANDED) + "CHA] " + match.candidates() + " candidates: "
+                                + CALLBACK_METHOD_REF);
+                resolvedBy = (within ? ResolvedBy.CANDIDATE : ResolvedBy.UNEXPANDED) + Resolution.CALLBACK;
             }
             path[depth + 1].set(target, graph.callLineOf(e),
                     note + " rule: " + match.rule(), resolvedBy,
                     null, null, null, null);
             path[depth + 1].mainSeen = path[depth].mainSeen || scope.isMain(target);
             emit(depth + 1);
-            // 候補を並べただけの行は、通常の CHA と同じくその先へ降りない（候補数^深さ で爆発するため）
-            if (!cycle && !match.isMultiple()) {
+            // 上限を超えて候補を並べただけの行は、通常の CHA と同じくその先へ降りない（候補数^深さ で爆発するため）
+            if (!cycle && (!match.isMultiple() || within)) {
                 descend(depth + 1);
             }
         }
@@ -806,11 +877,17 @@ public final class StreamingTreeWalker {
     }
 
     /**
-     * 行にする範囲（先頭 {@link Config#CHA_MAX_CANDIDATES} 件）の候補のうち、
-     * exclude.packages で除外されて行にならないものの数
+     * 行にする候補の数。先へ降りる（候補の数が expand.max.candidates 以下）なら全部、
+     * 並べるだけなら先頭 {@link Config#CHA_MAX_CANDIDATES} 件まで
      */
+    private int writtenCandidates(int[] targets) {
+        return withinExpandLimit(targets.length)
+                ? targets.length : Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
+    }
+
+    /** 行にする範囲（{@link #writtenCandidates}）の候補のうち、exclude.packages で除外されて行にならないものの数 */
     private int excludedAmongWritten(int[] targets) {
-        int limit = Math.min(targets.length, Config.CHA_MAX_CANDIDATES);
+        int limit = writtenCandidates(targets);
         int excluded = 0;
         for (int i = 0; i < limit; i++) {
             if (isExcluded(targets[i])) {
@@ -877,8 +954,10 @@ public final class StreamingTreeWalker {
     private String resolvedBy(int declaredCallee, Resolution res) {
         if (res.isMultiple()) {
             // 1件に絞れなかった。ラベルは「候補をどう集めたか」を表す
-            // （CHA / LOCAL_NEW_MULTI / CALL_RULE / REFLECTION / 拡張のラベル）
-            return ResolvedBy.UNEXPANDED + res.label();
+            // （CHA / LOCAL_NEW_MULTI / CALL_RULE / REFLECTION / 拡張のラベル）。
+            // 接頭辞は候補の数で決まる（上限以下なら候補ごとに降りる CANDIDATE、超えたら降りない UNEXPANDED）
+            return (withinExpandLimit(res.targets().length) ? ResolvedBy.CANDIDATE : ResolvedBy.UNEXPANDED)
+                    + res.label();
         }
         if (Resolution.DATAFLOW_LAMBDA.equals(res.label())) {
             // どのラムダが渡ってきたかまで分かった。下の「未特定」とは逆の結論なので先に判定する
@@ -933,7 +1012,8 @@ public final class StreamingTreeWalker {
         String detail;
         if (res.isMultiple() && Resolution.REFLECTION.equals(res.label())) {
             // getMethod の引数型（クラスリテラル）が揃わず、名前だけで照合した
-            detail = UNEXPANDED + "REFLECTION] " + res.targets().length
+            detail = (withinExpandLimit(res.targets().length) ? CANDIDATE : UNEXPANDED)
+                    + "REFLECTION] " + res.targets().length
                     + " candidates: matched by name because argument types are unknown";
         } else if (res.isMultiple()) {
             // 「なぜ絞れないのか」まで出す。レシーバの由来で次に調べる場所が変わる。
@@ -944,14 +1024,18 @@ public final class StreamingTreeWalker {
             // jar のインターフェース（java.lang.Runnable 等）の宣言は「jar の中にも実装がありうる」
             // 候補として数に入る（MethodTable の hasBody の既定）ので、既定の除外（java.**）だけで
             // 「2 candidates」なのに行が1本しか無い、という形がよく起きる
+            // 候補の数が expand.max.candidates 以下なら、どの候補の行もその先へ降りている。
+            // 「降りなかった」の印（UNEXPANDED）ではなく「候補の 1 つ」の印（CANDIDATE）にする
             int n = res.targets().length;
+            int written = writtenCandidates(res.targets());
             int excluded = excludedAmongWritten(res.targets());
-            detail = UNEXPANDED + "CHA] " + n + " candidates: " + RecvKind.describe(recvKind)
-                    + ((n > Config.CHA_MAX_CANDIDATES)
-                            ? " (only the first " + Config.CHA_MAX_CANDIDATES + " are written as rows)" : "")
+            detail = (withinExpandLimit(n) ? CANDIDATE : UNEXPANDED)
+                    + "CHA] " + n + " candidates: " + RecvKind.describe(recvKind)
+                    + ((n > written)
+                            ? " (only the first " + written + " are written as rows)" : "")
                     + ((excluded > 0)
                             ? " (" + excluded + " excluded by exclude.packages and not written as rows)" : "");
-            if (n > Config.CHA_MAX_CANDIDATES && !candidateLimitWarned) {
+            if (n > written && !candidateLimitWarned) {
                 candidateLimitWarned = true;
                 Log.warn(Messages.format("report.walker.chaCandidateLimit", Config.CHA_MAX_CANDIDATES,
                         methods.fullSignature(declaredCallee)));

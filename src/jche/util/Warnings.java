@@ -56,7 +56,9 @@ public final class Warnings {
         /** ソースにコンパイルエラーがある（ビルドが通らない） */
         BUILD,
         /** 解析や出力が途中で打ち切られた */
-        INCOMPLETE
+        INCOMPLETE,
+        /** 実行時のクラスの候補が expand.max.candidates を超え、先へ展開しなかった呼び出しがある */
+        CANDIDATES
     }
 
     /** 書き先。null なら集めていない */
@@ -246,6 +248,7 @@ public final class Warnings {
             case DEPENDENCIES -> Messages.get("exporter.warnings.deps.title");
             case BUILD -> Messages.get("exporter.warnings.build.title");
             case INCOMPLETE -> Messages.get("exporter.warnings.incomplete.title");
+            case CANDIDATES -> Messages.get("exporter.warnings.candidates.title");
         };
     }
 
@@ -261,6 +264,8 @@ public final class Warnings {
             case BUILD -> List.of(Messages.get("exporter.warnings.build.impact1"),
                     Messages.get("exporter.warnings.build.impact2"));
             case INCOMPLETE -> List.of(Messages.get("exporter.warnings.incomplete.impact1"));
+            case CANDIDATES -> List.of(Messages.get("exporter.warnings.candidates.impact1"),
+                    Messages.get("exporter.warnings.candidates.impact2"));
         };
     }
 
@@ -285,6 +290,9 @@ public final class Warnings {
                     Messages.get("exporter.warnings.build.remedy7"));
             case INCOMPLETE -> List.of(Messages.get("exporter.warnings.incomplete.remedy1"),
                     Messages.get("exporter.warnings.incomplete.remedy2"));
+            case CANDIDATES -> List.of(Messages.get("exporter.warnings.candidates.remedy1"),
+                    Messages.get("exporter.warnings.candidates.remedy2"),
+                    Messages.get("exporter.warnings.candidates.remedy3"));
         };
     }
 }

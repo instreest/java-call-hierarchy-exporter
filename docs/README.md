@@ -92,6 +92,7 @@
 | [package-pattern-wildcard-qa.md](package-pattern-wildcard-qa.md) | — | `entry.packages` / `exclude.packages` のパターンの途中に `*`（任意の 1 階層）・`**`（任意の 0 階層以上）を書けるようにした。階層単位で照合する理由、クラス指定のワイルドカードが外側のクラス名に当たらない理由、`*` だけの指定とメソッド名の `*` を警告する理由、照合を 1 本にした理由、却下した案 |
 | [excluded-entry-promotion-qa.md](excluded-entry-promotion-qa.md) | #121 | 除外した呼び出し先の具象を絞れないと、実装側が入次数 0 になって起点に昇格する件。`java.lang.Object` を型階層に載せない判断と、利用者側の回避策 |
 | [ast-analysis-performance-qa.md](ast-analysis-performance-qa.md) | — | AST 解析の性能とメモリ使用量の改善（何を計測して直したか、バッチのサイズ・並列化・仮想スレッドを採らなかった理由と実測値） |
+| [candidate-expansion-qa.md](candidate-expansion-qa.md) | — | 実行時のクラスの候補が複数のままの呼び出しを、候補の数が `expand.max.candidates`（既定 3）以下なら候補ごとに展開する。展開した行の `CANDIDATE:`、展開しなかった呼び出しだけを `warnings.txt` に出す単位と理由 |
 | [output-walk-limit-qa.md](output-walk-limit-qa.md) | — | 出力の探索が行にならないノード（コンストラクタ呼び出し・除外メソッドの読み飛ばし）だけの部分木で 0 行のまま終わらなくなる件。行を書かずに続けて通ったノードの数にも `max.rows` を掛ける（合計で数えると普通の出力が落ちた理由、まだ遅い形） |
 | [cache-identity-qa.md](cache-identity-qa.md) | #102 #103 #104 | キャッシュの「同じファイルか」の判定をパス・サイズ・内容の指紋に統一する（更新時刻をやめる）。クラスパスの並び順の変化を検知する。jar の目次をファイルのバイトから読む・クラスフォルダの `.java` とシンボリックリンク（Q4）。サーバーモードの `SHUTDOWN` が実行中の解析を中止していた件、`CANCEL` がまだ始まっていない `ANALYZE` も止める（Q16） |
 | [cache-integrity-qa.md](cache-integrity-qa.md) | #97 #98 #99 #100 #101 | キャッシュが静かに嘘をつく 4 件（行がタブ・改行で割れる／コンパイル時定数の値が古いまま残る／文字コードが鍵に入っていない／壊れたキャッシュの扱い）と、中断した実行からの引き継ぎ |

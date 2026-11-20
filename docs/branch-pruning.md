@@ -109,7 +109,7 @@ at fx.branch.Feature.run(Feature.java:18),fx.branch.Feature.summary(),Main.main,
 |---|---|
 | `[UNREACHABLE] below a call pruned by a condition` | 条件分岐による打ち切りで階層から消えた。打ち切った呼び出し先から宣言上のエッジを辿って求めた範囲（別の経路で1行でも出たメソッドは含まない） |
 | `[EXCLUDED] excluded by exclude.packages` | `exclude.packages` で除外された |
-| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を1つに絞れず、候補として行にはなるがその先へ降りなかった |
+| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を1つに絞れず、候補の数が `expand.max.candidates` を超えたので、候補として行にはなるがその先へ降りなかった |
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
 | `[NOT_REACHED] no caller row was emitted` | そこへ至る呼び出し自体が出ていない（`max.depth` / `max.rows` の先、起点から辿り着かない、デッドコード） |
 
