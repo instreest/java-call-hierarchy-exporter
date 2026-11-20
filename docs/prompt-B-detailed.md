@@ -107,6 +107,7 @@ EclipseのGUIの「呼び出し階層」ビューは、コピーすると階層�
 | `cache.folder` | 空 | キャッシュの置き場所の親。空ならツール自身のプロジェクトフォルダの `.cache/`。指定してもその下にプロジェクト別のフォルダ `<名前>_<ハッシュ>` を切る | 設定ファイル |
 | `max.depth` | `50` | 呼び出し階層の深さ上限（0以下で無制限。ただし再帰の実効上限 512） | — |
 | `max.rows` | `5000000` | 出力行数の上限（0以下で無制限）。達したら打ち切って警告。**行を書かずに続けて通ったノード**（行にしないコンストラクタ呼び出し・`exclude.packages` のメソッドの読み飛ばし。既定の `java.**` に当たる JDK の呼び出しも）の数にも同じ上限を掛ける（行を書くたびに数え直す。5.4） | — |
+| `expand.max.candidates` | `3` | 実行時のクラスの候補が複数のまま 1 つに絞れなかった呼び出しを、候補ごとに先へ展開する件数の上限。候補の数がこの値以下なら全部の候補を展開し（`CANDIDATE:`）、超えたら候補を並べるだけで展開しない（`UNEXPANDED:`）。展開しなかった呼び出しがあるときだけ `warnings.txt` に一覧を出す。1 以下なら候補が複数の呼び出しは展開しない（5.4） | — |
 | `dataflow.enabled` | `true` | ファクトリの戻り値・引数・コンストラクタ注入から具象クラスを特定する解析と、リフレクション（`Class.forName` / `getMethod` / `Method.invoke` / `newInstance`）の解決を使う | — |
 | `dataflow.max.depth` | `5` | 経路に依存する探索（引数で渡ってきたクラス名・リテラルを辿る）の段数。ファクトリの委譲は上限なく畳む | — |
 | `output.encoding` | `UTF-8-BOM` | 出力CSVの文字コード。`MS932` も可。変換できない文字は `?` に置換（例外にしない） | — |
@@ -175,6 +176,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 値 | 条件 |
 |---|---|
 | `RESOLVED:{ラベル}` | 呼び出し先が1件に定まった。ラベルは解決の段のもの（`STATIC_BOUND:PRIVATE` / `NO_OVERRIDE` / `SINGLE_IMPL` / `LOCAL_NEW` / `CALL_RULE` / `DATAFLOW_*` / `SPRING_DI*` / `CALLBACK` / `REFLECTION*` / `EXTERNAL_GUESS` / 拡張のラベル） |
+| `CANDIDATE:{ラベル}` | 1件に絞れなかったが、候補の数が `expand.max.candidates` 以下なので候補ごとに先へ降りた（ラベルは下の `UNEXPANDED:` と同じく候補をどう集めたか。`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `CALLBACK` 等） |
 | `UNEXPANDED:{ラベル}` | 1件に絞れなかった（`CHA` / `LOCAL_NEW_MULTI` / `REFLECTION` / `NO_IMPL` / `GENERATED_IMPL:{名}` / `CALLBACK`（規則で呼び戻すメソッド参照の候補を並べた）等、候補をどう集めたかのラベル） |
 | `UNEXPANDED:LAMBDA` | 候補は1件だが、ラムダ／メソッド参照も同じインターフェースを実装しており未特定。ラベルをそのまま出すと確定に見えるのでこう言い換える |
 | `UNRESOLVED:{理由コード}` | 型解決に失敗した行（`BINDING_FAILED`＝呼び出し先の型を特定できない / `CALLER_UNRESOLVED`＝囲むメソッド・型の型解決に失敗して呼び出し元を特定できない）。`depth` は `1` |
@@ -193,9 +195,10 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 | 後半1 | 候補が複数で、ラベルが `REFLECTION`（`getMethod` の引数型が揃わず名前で照合） | `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` |
 | 後半2 | 候補が複数（上記以外） | `[UNEXPANDED:CHA] N candidates: {reason}`。行にしない候補があれば数を後ろに足す（上限で切った `(only the first N are written as rows)`、除外した `(K excluded by exclude.packages and not written as rows)`） |
 | 後半3 | 候補は1件だが、ラムダ／メソッド参照も実装している | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` |
+| 後半1・2 の補足 | 候補が複数で、その数が `expand.max.candidates` 以下（候補ごとに先へ降りる） | 後半1・2 のタグの `UNEXPANDED` を `CANDIDATE` にする（`[CANDIDATE:CHA] N candidates: {reason}`）。本文は同じ |
 | 後半4 | 本体を持つ実装が皆無（`NO_IMPL`） | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` |
 | 追加 | 呼び出し先がライブラリ呼び出し規則（`Thread#start() -> c* : run()` 等）に載っていて、渡した値の具象型が分かる | 呼び出し先の行の次に、呼び戻される側を `[RESOLVED:CALLBACK] 規則: …` で1行足して降りる（jar の中は読まない。docs/library-call-rules.md） |
-| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 規則: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
+| 追加 | 同上だが、渡した値が上書きされうるメソッドへのメソッド参照で、動く実装を1つに決められない（参照先の宣言がソースにあるときだけ） | 上書き候補を1件ずつ `[UNEXPANDED:CHA] N candidates: method reference to an overridable method 規則: …`（`resolved-by` は `UNEXPANDED:CALLBACK`）で足し、その先へは降りない（候補の数が `expand.max.candidates` 以下なら `[CANDIDATE:CHA]`・`CANDIDATE:CALLBACK` で、候補ごとに先へ降りる）。参照先の宣言が jar の中（`Runnable::run`）なら全実装になるので足さない |
 
 1件に確定した呼び出しの注記は付けない（解決方法は `resolved-by` 列に出る）。
 注記に残る `[RESOLVED:*]` は、繋いだ規則という列に無い情報を持つ `[RESOLVED:CALLBACK] 規則: …` だけ。
@@ -263,7 +266,7 @@ Service.exec(),fx.Service,C,src/fx/Service.java,10,1,1,2,NORMAL,1,1,フィール
 
 `unresolvedCause` のタグは `call-hierarchy.csv` の注記と同じものを使う。同じ「絞れなかった」を
 一覧と階層で別の名前で書くと、片方で見つけた呼び出しをもう片方で追えなくなる。
-レシーバ由来は `[UNEXPANDED:CHA] {reason}` の形にする。
+レシーバ由来は `[UNEXPANDED:CHA] {reason}` の形にする（候補の数が `expand.max.candidates` 以下の呼び出しは `[CANDIDATE:CHA] {reason}`）。
 
 出すのは「他から呼び出せる定義」。ソースの無いメソッド（jar内）、`<init>`、合成した `<clinit>`、ラムダの合成メソッド（`lambda$…`）、匿名クラス（`Outer$1`）のメソッドは出さない（匿名クラスはその場で親の定義を上書きした処理内容で、呼び出し階層で読む）。内部クラス・static なネストクラス・ローカルクラス（`Outer$1Local`）は名前を持つ定義なので出す。
 行順はソースの並び（ソースフォルダの指定順 → ファイルの相対パス順 → 宣言行順 → 同一行はファイルの中の宣言の順番
@@ -428,7 +431,10 @@ AST 走査中に利用者のコードを差し込む口は設けない（キャ�
   繋ぎ直すときはデータフローの環境（引数・コンストラクタ実引数）も除外ノードのものに差し替える。
   読み飛ばし中の除外メソッドも循環判定の祖先に含め、読み飛ばしの入れ子数にも深さ上限（512）を
   掛ける（除外パッケージ内の相互再帰でスタックオーバーフローにならないため）
-- CHA候補が複数なら候補を上限20件まで列挙し、先へは降りない
+- CHA候補が複数なら、候補の数が `expand.max.candidates`（既定 3）以下のときは候補を全部行にして候補ごとに先へ降りる
+  （`CANDIDATE:`。ラムダの本体が候補でも畳まず行にする）。超えたら候補を上限20件まで列挙し、先へは降りない（`UNEXPANDED:`）。
+  候補の数が上限を超えたために降りなかった呼び出しは、探索の後に呼び出し先ごと（候補の数・呼び出し箇所の数）にまとめて
+  `warnings.txt` に出す。全部の候補へ降りた実行では出さない
 - `max.depth` 到達で打ち切り、`max.rows` 到達で警告して全体を打ち切る。**行を書かずに続けて通ったノード**
   （行にしないコンストラクタ呼び出しと除外ノードの読み飛ばし）の数にも `max.rows` と同じ上限を掛け、越えたら警告して
   打ち切る（行を書くたびに 0 に戻す）。行にならないノードだけでつながる部分木（`C_i` のフィールド初期化子が `C_{i+1}` と
@@ -2243,6 +2249,7 @@ cache.enabled=true
 cache.folder=./.cache
 max.depth=50
 max.rows=5000000
+expand.max.candidates=1
 dataflow.enabled=true
 dataflow.max.depth=5
 output.encoding=UTF-8-BOM
@@ -2304,6 +2311,10 @@ jar --create --file extjars/app-boot.jar --no-compress -C /tmp/boot .   # Spring
 | ファイル先頭 | UTF-8 BOM（`EF BB BF`） |
 | `call-hierarchy.csv` に `<init>` が現れる列 | `caller` 列だけ |
 | `methods.csv` に `<init>` を含む行 | 0 行（`<clinit>` は出る） |
+
+この節と 3.3・3.4 の期待値は、候補が複数の呼び出しを展開しない設定（`expand.max.candidates=1`）で書いてある。
+既定（3）では、候補が 3 件以下の呼び出しの `[UNEXPANDED:CHA]` / `UNEXPANDED:` が `[CANDIDATE:CHA]` / `CANDIDATE:` になり、
+その候補の先の行が増える。
 
 以下、各ケースの期待行は `call-hierarchy.csv` の `caller` / `callee` と `call-hierarchy` 以降を書いたもので、
 間の `resolved-by` / `depth` の 2 列（4.1）は紙面の都合で省いている。

@@ -8,7 +8,8 @@ package jche.report;
  * 接頭辞が確度、後半が手法を表す。
  * <pre>
  *   RESOLVED:DATAFLOW_FIELD      … 呼び出し先を1件に確定した（手法はデータフロー・フィールド）
- *   UNEXPANDED:CHA               … 候補のまま絞れなかった（手法はCHA）
+ *   CANDIDATE:CHA                … 候補のまま絞れなかったが、候補ごとに先へ降りた（候補の数が expand.max.candidates 以下）
+ *   UNEXPANDED:CHA               … 候補のまま絞れず、先へ降りなかった（候補の数が expand.max.candidates を超えた）
  *   UNRESOLVED:BINDING_FAILED    … 型解決に失敗した行
  *   EXTERNAL_USAGE:EXACT         … 被参照スキャンの行
  * </pre>
@@ -26,6 +27,11 @@ final class ResolvedBy {
 
     /** 呼び出し先を1件に確定した */
     static final String RESOLVED = "RESOLVED:";
+    /**
+     * 候補のまま絞れなかったが、候補の数が expand.max.candidates 以下なので候補ごとに先へ降りた。
+     * 実際に動くのは候補のどれか（確度は {@link #RESOLVED} より低い）
+     */
+    static final String CANDIDATE = "CANDIDATE:";
     /** 候補のまま絞れず、そこから先へ降りなかった */
     static final String UNEXPANDED = "UNEXPANDED:";
     /** 呼び出し先の型を特定できなかった行（U行）。後半は理由コード */

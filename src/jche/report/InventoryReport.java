@@ -144,7 +144,7 @@ public final class InventoryReport {
                 if (!reachable[id]) {
                     st.unreachable++;
                 }
-                Unresolved un = unresolvedOf(g, resolver, id);
+                Unresolved un = unresolvedOf(g, resolver, id, config.expandMaxCandidates);
                 if (un.count() > 0) {
                     st.withUnresolved++;
                 }
@@ -187,7 +187,8 @@ public final class InventoryReport {
      * 判定は call-hierarchy.csv の注記と同じ resolve を使う。
      * 結果はメモ化されるので、階層展開と二重に解決コストがかかることはない。
      */
-    private static Unresolved unresolvedOf(CallGraph g, CallResolver resolver, int id) {
+    private static Unresolved unresolvedOf(CallGraph g, CallResolver resolver, int id,
+                                           int expandMaxCandidates) {
         int count = 0;
         StringBuilder causes = new StringBuilder();
         for (int e = g.edgeStart(id); e < g.edgeEnd(id); e++) {
@@ -211,7 +212,10 @@ public final class InventoryReport {
                     : noImpl ? StreamingTreeWalker.CAUSE_NO_IMPL
                     : generated ? StreamingTreeWalker.generatedCause(
                             res.label().substring(Resolution.GENERATED_IMPL_PREFIX.length()))
-                    : StreamingTreeWalker.UNEXPANDED + "CHA] " + RecvKind.describe(g.recvKindOf(e));
+                    // 候補の数が expand.max.candidates 以下なら、階層では候補ごとに先へ降りている（CANDIDATE）
+                    : ((res.targets().length <= expandMaxCandidates)
+                            ? StreamingTreeWalker.CANDIDATE : StreamingTreeWalker.UNEXPANDED)
+                            + "CHA] " + RecvKind.describe(g.recvKindOf(e));
             // 同じ理由は1回だけ並べる。件数はcount側で分かる
             if (causes.indexOf(cause) < 0) {
                 if (causes.length() > 0) {

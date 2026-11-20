@@ -9,10 +9,10 @@ at st.Chain.run(Chain.java:31),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.r
 at st.Chain.run(Chain.java:34),Chain.make,RESOLVED:STATIC_BOUND:STATIC,1,Chain.run,Chain.make
 at st.LambdaSites.unresolvedInside(LambdaSites.java:27),Retry.run,RESOLVED:STATIC_BOUND:STATIC,1,LambdaSites.unresolvedInside,Retry.run
 at st.LambdaSites.candidatesInside(LambdaSites.java:33),Retry.run,RESOLVED:STATIC_BOUND:STATIC,1,LambdaSites.candidatesInside,Retry.run
-at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.DbStore.save,UNEXPANDED:CHA,2,LambdaSites.candidatesInside,Retry.run,LambdaSites.DbStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.FileStore.save,UNEXPANDED:CHA,2,LambdaSites.candidatesInside,Retry.run,LambdaSites.FileStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.DbStore.save,UNEXPANDED:CHA,1,LambdaSites.candidatesInside,LambdaSites.DbStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.FileStore.save,UNEXPANDED:CHA,1,LambdaSites.candidatesInside,LambdaSites.FileStore.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.DbStore.save,CANDIDATE:CHA,2,LambdaSites.candidatesInside,Retry.run,LambdaSites.DbStore.save,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.FileStore.save,CANDIDATE:CHA,2,LambdaSites.candidatesInside,Retry.run,LambdaSites.FileStore.save,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.DbStore.save,CANDIDATE:CHA,1,LambdaSites.candidatesInside,LambdaSites.DbStore.save,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at st.LambdaSites.candidatesInside(LambdaSites.java:34),LambdaSites.FileStore.save,CANDIDATE:CHA,1,LambdaSites.candidatesInside,LambdaSites.FileStore.save,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at st.Lambdas.<clinit>(Lambdas.java:50),Lambdas.name,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.<clinit>,Lambdas.name
 at st.Lambdas.viaOtherFile(Lambdas.java:20),Retry.run,RESOLVED:STATIC_BOUND:STATIC,1,Lambdas.viaOtherFile,Retry.run
 at st.Lambdas.viaOtherFile(Lambdas.java:21),Lambdas.work,RESOLVED:STATIC_BOUND:STATIC,2,Lambdas.viaOtherFile,Retry.run,Lambdas.work

@@ -72,7 +72,7 @@ Java プロジェクト全体のメソッド呼び出し階層を一括で解析
    `0` なら出力に出ていないだけで、**影響が無いとは限りません**。理由は `absentCause` 列にあります（[methods.csv](#methodscsv--ソース上の全メソッドとその呼び出し状況)）
 
 インターフェース越しの呼び出しで実装を 1 つに決められなかったときは、候補の実装ごとに行が出ます。
-`callee` を実装クラスの名前で絞れば見つかります。複数候補がある場合は以降の呼び出し階層は展開しません。
+`callee` を実装クラスの名前で絞れば見つかります。候補が 3 件（設定の `expand.max.candidates`）以下なら、どの候補についても以降の呼び出し階層を展開します。それより多い場合は候補を並べるだけで展開せず、展開しなかった呼び出しの一覧が `warnings.txt` に出ます。
 
 <!-- sec:reading-one-row -->
 ### 1 行の読み方
@@ -87,7 +87,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 |---|---|---|
 | `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | 呼び出している場所。Java のスタックトレースと同じ形なので、Eclipse でソースに飛べます（[下記](#eclipse-でソースコードへジャンプする)） |
 | `callee` | `OrderDaoImpl.selectById` | 呼ばれるメソッド |
-| `resolved-by` | `RESOLVED:SPRING_DI` | 呼び出し先をどう決めたか。`RESOLVED:` なら 1 つに決まった、`UNEXPANDED:` なら決めきれず候補を並べた |
+| `resolved-by` | `RESOLVED:SPRING_DI` | 呼び出し先をどう決めたか。`RESOLVED:` なら 1 つに決まった、`CANDIDATE:` なら決めきれず候補をすべて辿った、`UNEXPANDED:` なら決めきれず候補を並べただけ |
 | `depth` | `2` | 入口から何段目の呼び出しか |
 | `call-hierarchy` | `OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById` | 入口から `callee` までの経路（1 段が 1 列）。先頭の列が入口のメソッドです。最後の列に補足（注記）が付くことがあります |
 
@@ -98,14 +98,15 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 
 | `resolved-by` | 意味 | どうするか |
 |---|---|---|
-| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補を並べた。**候補から先へは辿っていません** | 候補の先は辿っていないので、改修するメソッドがその先にあると、この起点からの行は出ません。改修するメソッドを呼んでいるメソッド（`caller` のメソッド）を `callee` 列で絞り直し、呼び出し元へ上に辿って起点を探します。絞り方を教えれば次から 1 つに決まります（出力フォルダの `call-rules-suggested.txt`、[docs/library-call-rules.md](docs/library-call-rules.md)） |
+| `CANDIDATE:…` | 実装を 1 つに決めきれなかったが、候補が少ない（`expand.max.candidates` 以下）ので、**どの候補も先へ辿っています** | 実際に動くのは候補のどれか 1 つです。その行より先の階層は「その候補が動く場合」の呼び出しとして読みます。絞り方を教えれば次から 1 つに決まります（出力フォルダの `call-rules-suggested.txt`） |
+| `UNEXPANDED:…` | 実装を 1 つに決めきれず、候補が多い（`expand.max.candidates` を超える）ので並べただけ。**候補から先へは辿っていません**（該当する呼び出しは `warnings.txt` に出ます） | 候補の先は辿っていないので、改修するメソッドがその先にあると、この起点からの行は出ません。改修するメソッドを呼んでいるメソッド（`caller` のメソッド）を `callee` 列で絞り直し、呼び出し元へ上に辿って起点を探します。絞り方を教えれば次から 1 つに決まります（出力フォルダの `call-rules-suggested.txt`、[docs/library-call-rules.md](docs/library-call-rules.md)） |
 | `UNRESOLVED:…` | 呼び出し先の型が分からなかった（多くは依存 jar の不足） | `warnings.txt` に従って依存 jar を揃えて実行し直します |
 | `RESOLVED:EXTERNAL_GUESS` | 型が分からず、`import` から型名を推定した。**推定が外れていることがある** | 呼び出し先をソースで確かめます。依存 jar を揃えれば推定は要らなくなります |
 
 `call-hierarchy` 列の最後に付く注記（`[EXTERNAL] no source to follow` など）は、そこで辿るのをやめた理由です。
 注記の一覧は[注記](#注記)にあります。
 
-候補の先を見たいときは、候補のクラスを設定ファイルの `entry.packages` に足して実行し直すと、その候補を起点にした行が出ます。
+`UNEXPANDED:` の候補の先を見たいときは、設定ファイルの `expand.max.candidates` を上げるか、候補のクラスを `entry.packages` に足して実行し直すと、その候補を起点にした行が出ます。
 
 <!-- sec:jumping-to-the-source-in-eclipse -->
 ### Eclipse でソースコードへジャンプする
@@ -199,7 +200,7 @@ IDE の中で呼び出し元を辿りたいときは、同じ解析を画面か�
 
 | 用語 | 意味 |
 |---|---|
-| CHA | Class Hierarchy Analysis。型の継承関係だけから実装の候補をすべて挙げる方法。ほかの方法で決めきれなかったときに使い、`UNEXPANDED:CHA` と書きます |
+| CHA | Class Hierarchy Analysis。型の継承関係だけから実装の候補をすべて挙げる方法。ほかの方法で決めきれなかったときに使い、`CANDIDATE:CHA`（候補が少なく、すべて辿った）か `UNEXPANDED:CHA`（候補が多く、辿らなかった）と書きます |
 | レシーバ | `dao.find()` の `dao` のように、メソッドを呼ばれる側の値 |
 
 <!-- sec:output-files -->
@@ -221,8 +222,8 @@ config/
 
 出力 CSV ファイルは UTF-8（BOM 付き）なので Excel で開けます。CSV の中身は、画面の表示言語に関わらず英語です。
 
-`warnings.txt` は、ビルドが通り依存 jar がすべて解決できている、というこのツールの前提が崩れているときだけできます。
-載るのは、依存 jar の不足・設定の指定先の欠け・コンパイルエラーのほか、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存 jar などです。
+`warnings.txt` は、ビルドが通り依存 jar がすべて解決できている、というこのツールの前提が崩れているときと、候補が多くて展開しなかった呼び出しがあるときだけできます（候補をすべて展開できた実行ではできません）。
+載るのは、依存 jar の不足・設定の指定先の欠け・コンパイルエラーのほか、実行時のクラスの候補が `expand.max.candidates` を超えて展開しなかった呼び出し、パッケージの宣言がフォルダと合わないファイル（`source.folders` の指定が 1 段ずれているときに多い）、Java のパーサが途中で止まって解析できなかったファイル、途中で打ち切った出力、解析サーバー（Eclipse・VS Code のプラグイン）の実行中に同じ更新時刻のまま上書きされた依存 jar などです。
 `run.log` は実行ごとに必ずできる経過の記録（どの設定で何が動いたか、どこに何を保存したか）です。
 
 
@@ -242,7 +243,8 @@ config/
 | 接頭辞 | 意味 |
 |---|---|
 | `RESOLVED:` | 呼び出し先を 1 件に確定した。後半が[どの決め方か](#具象クラスの解決)（`RESOLVED:DATAFLOW_FIELD` 等） |
-| `UNEXPANDED:` | 1 件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。行は候補ごとに出るが、その先へは降りない |
+| `CANDIDATE:` | 1 件に絞れず候補のままだが、候補の数が `expand.max.candidates`（既定 3）以下なので、候補ごとに行を出してその先へも降りた。後半が候補の集め方（`CANDIDATE:CHA` 等） |
+| `UNEXPANDED:` | 1 件に絞れず候補のまま。後半が候補の集め方（`UNEXPANDED:CHA` 等）。候補の数が `expand.max.candidates` を超えたので、行は候補ごとに出るが、その先へは降りない |
 | `UNRESOLVED:` | 型解決に失敗した呼び出しの行。`UNRESOLVED:BINDING_FAILED`（呼び出し先の型を特定できなかった。クラスパス不足・動的呼び出し等）と `UNRESOLVED:CALLER_UNRESOLVED`（呼び出しを囲むメソッド・型の型解決に失敗し、呼び出し元を特定できなかった。フィールドの初期化子・初期化ブロックの呼び出しは `<init>` / `<clinit>` からの呼び出しになるので、ここには来ない）。`call-hierarchy` の先頭の列は `(unresolved)` |
 | `EXTERNAL_USAGE:` | jar からの被参照の行（`EXTERNAL_USAGE:EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`。[jar からの被参照メソッド](#jar-からの被参照メソッド)） |
 
@@ -297,7 +299,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `NORMAL` | 上記以外 |
 
 `unresolvedCause` は、絞れなかった呼び出しのレシーバがどこから来たかで決まり、次に何を調べればよいかの手がかりになります。
-タグは `call-hierarchy.csv` の[注記](#注記)と同じなので、一覧で見つけた呼び出しをそのまま階層側で `grep` して追えます。
+タグは `call-hierarchy.csv` の[注記](#注記)と同じなので、一覧で見つけた呼び出しをそのまま階層側で `grep` して追えます。候補の数が `expand.max.candidates` 以下の呼び出し（階層では候補をすべて辿っている）は、下の `[UNEXPANDED:CHA]` が `[CANDIDATE:CHA]` になります。
 
 | unresolvedCause | 意味 |
 |---|---|
@@ -315,7 +317,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 | absentCause | 意味 |
 |---|---|
-| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を 1 つに絞れず、候補として行にはなるがその先へ降りなかった |
+| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | 実装を 1 つに絞れず、候補の数が `expand.max.candidates` を超えたので、候補として行にはなるがその先へ降りなかった |
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | 経路上で既に呼んでいるメソッドへ戻る辺だった |
 | `[UNREACHABLE] below a call pruned by a condition` | 条件分岐の静的解析で打ち切った呼び出しから先にしかない（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[EXCLUDED] excluded by exclude.packages` | `exclude.packages` で除外された |
@@ -342,6 +344,7 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | タグ | 意味 |
 |---|---|
 | `[UNEXPANDED:*]` | ここから先へ降りなかった。`grep '\[UNEXPANDED'` で辿り切れなかった箇所を一括で拾える |
+| `[CANDIDATE:*]` | 1 つに絞れなかった候補の 1 つ。候補が少ないので、どの候補も先へ降りている |
 | `[EXTERNAL]` | 呼び出し先が自プロジェクトの外。打ち切りではあるが性質が違うので `UNEXPANDED` には入れない |
 | `[UNREACHABLE]` | この経路では実行されないと分かった呼び出し |
 | `[RESOLVED:CALLBACK]` | 規則で繋いだ呼び出し。後ろに繋いだ規則が続く。注記に出る `[RESOLVED:*]` はこれだけ |
@@ -350,8 +353,9 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | この経路上で既に呼んでいるメソッドに戻る呼び出し。ここで打ち切る |
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` に達した |
-| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を 1 つに絞れなかった。候補は 1 件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
-| `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした |
+| `[CANDIDATE:CHA] N candidates: {reason}` | 実装を 1 つに絞れなかったが、候補の数 N が `expand.max.candidates`（既定 3）以下。候補は 1 件ずつ行になり、どの候補もその先へ降りる。理由と `exclude.packages` の扱いは下の `[UNEXPANDED:CHA]` と同じ |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | 実装を 1 つに絞れず、候補の数 N が `expand.max.candidates` を超えた。候補は 1 件ずつ行になるが、その先へは降りない（候補数^深さで爆発するため）。降りなかった呼び出しの一覧は `warnings.txt` に出る。理由は上の `unresolvedCause` の表と同じ。候補のうち `exclude.packages` で除外したものは行にせず、`(K excluded by exclude.packages and not written as rows)` と数を書く（jar のインターフェースの宣言は「jar の中にも実装がありうる」候補として数に入るので、既定の `java.**` の除外でよく付く） |
+| `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | `getMethod` の引数型（クラスリテラル）が揃わず、同名のメソッドを候補にした。候補の数が `expand.max.candidates` 以下なら `[CANDIDATE:REFLECTION]` で、どの候補も先へ降りる |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | インターフェースや抽象メソッドの宣言はあるが、中身を書いたクラスがソース上に 1 つも無い。`[EXTERNAL]`（ソースが読めないだけ）とは違い、読めた上で見つからない状態なので、`source.folders` の設定漏れかデッドコードを疑う |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (フレームワーク名): FQN is…` | 実装がアノテーション処理でビルド時に生成される型への呼び出し（[docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md) 参照） |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` | その関数型インターフェースをラムダかメソッド参照が実装しているが、この呼び出し箇所にどれが渡ってくるかは特定できなかった（[ラムダ式・メソッド参照](#ラムダ式メソッド参照)参照） |
@@ -359,13 +363,13 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 | `[EXTERNAL] type guessed from an import (unverified)` | クラスパス不足で型解決できず、`import` 文から型名を推定した。メソッドの実在やオーバーロードは未確認で、**推定が外れている可能性がある** |
 | `[UNREACHABLE] not called on this path: condition '…' does not hold (…)` | 呼び出しを囲む条件が、この経路では成立しないと分かった（[docs/branch-pruning.md](docs/branch-pruning.md) 参照） |
 | `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | 呼び出し先は jar の中だが、「渡した値のこのメソッドを呼び戻す」という規則で繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。jar の中を読んだわけではない |
-| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: …` | 同じく規則で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`） |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: …` | 同じく規則で繋いだが、渡したのが上書きされうるメソッドへのメソッド参照（`this::hook` 等）で、動く実装を 1 つに決められなかった。候補を 1 件ずつ行にし、その先へは降りない（`resolved-by` は `UNEXPANDED:CALLBACK`）。候補の数が `expand.max.candidates` 以下なら `[CANDIDATE:CHA]`（`resolved-by` は `CANDIDATE:CALLBACK`）で、どの候補も先へ降りる |
 | `type resolution failed …` / `caller unresolved …` | 型解決に失敗した呼び出しの行（`resolved-by` が `UNRESOLVED:`）。注記ではなく専用の行 |
 | `external-ref:EXACT` 等 | 被参照スキャンの行（[下記](#jar-からの被参照メソッド)）。同じく専用の行 |
 
 1 つの注記は最大 2 つのパーツからなり、両方付くときは ` / ` で繋がります。
 前半が打ち切りの理由（`[UNEXPANDED:CYCLE]`・`[UNEXPANDED:DEPTH]`・`[EXTERNAL]`・`[UNREACHABLE]`）、
-後半が絞り込みの結果（`[UNEXPANDED:CHA]` 等）です。
+後半が絞り込みの結果（`[CANDIDATE:CHA]`・`[UNEXPANDED:CHA]` 等）です。
 
 ```
 [UNEXPANDED:CYCLE] returns to a method already on this path / [UNEXPANDED:CHA] 5 candidates: field
@@ -395,7 +399,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 ### 具象クラスの解決
 
 インターフェースや親クラスの型に対する呼び出しで、実際に動く実装をどう決めたかを表すラベルです。
-`call-hierarchy.csv` の `resolved-by` 列の後半になります（1 件に確定したら `RESOLVED:`、候補のままなら `UNEXPANDED:` が頭に付く）。
+`call-hierarchy.csv` の `resolved-by` 列の後半になります（1 件に確定したら `RESOLVED:`、候補のままなら `CANDIDATE:`（候補をすべて辿った）か `UNEXPANDED:`（辿らなかった）が頭に付く）。
 ラベルを判定する順は [docs/static-analysis-limits.md の 9 節](docs/static-analysis-limits.md#9-解決の段具象クラスをどの順に決めるか)にあります。
 
 | ラベル | 決め方 |
@@ -415,7 +419,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | DI コンテナ（Spring）の Bean 定義で候補が 1 つに定まった。`SPRING_DI_QUALIFIER` は `@Qualifier` / `@Resource(name=...)` の Bean 名で定まった（[docs/spring-di-qa.md](docs/spring-di-qa.md)） |
 | `CHA` | 候補が複数のまま（低確度） |
 | `GENERATED_IMPL:名前` | 実装がコンパイル時のアノテーション処理で生成される型（`NO_IMPL` の特殊形） |
-| `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `UNEXPANDED:CALLBACK` |
+| `CALLBACK` | 「渡した値のこのメソッドを呼び戻す」という規則で jar の中を跨いで繋いだ（[docs/library-call-rules.md](docs/library-call-rules.md)）。渡したメソッド参照の実装を 1 つに決められず候補を並べたときは `CANDIDATE:CALLBACK` / `UNEXPANDED:CALLBACK` |
 | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` をリフレクションで指定されたメソッド・コンストラクタに解決した／`Class.forName` によるクラス初期化（`<clinit>` へ繋ぐ） |
 | `EXTERNAL_GUESS` | クラスパス不足で型解決できず、`import` から型名を推定した（**未検証**） |
 | `LAMBDA` | ラムダ／メソッド参照による実装があり、どれが実行されるかは未特定。`resolved-by` 列でだけ使う言い換えで、必ず `UNEXPANDED:LAMBDA` の形で出る |
@@ -552,8 +556,9 @@ Open the result in Excel and filter it to find the impact surface of the method 
    affected**. The reason is in the `absentCause` column ([methods.csv](#methodscsv--every-method-in-the-source-and-how-it-is-called))
 
 When a call through an interface could not be narrowed to one implementation, each candidate implementation gets
-its own row, so filtering `callee` by the implementation class name finds it. When there are several candidates,
-nothing below them is expanded.
+its own row, so filtering `callee` by the implementation class name finds it. With up to 3 candidates (`expand.max.candidates`
+in the config file) the hierarchy below every candidate is expanded. With more, the candidates are only listed, nothing below
+them is expanded, and the calls that were not expanded are listed in `warnings.txt`.
 
 <!-- sec:reading-one-row -->
 ### Reading one row
@@ -568,7 +573,7 @@ at jp.co.example.service.OrderService.findOrder(OrderService.java:25),OrderDaoIm
 |---|---|---|
 | `caller` | `at jp.co.example.service.OrderService.findOrder(OrderService.java:25)` | Where the call is made. It has the same shape as a Java stack trace, so Eclipse can jump to the source ([below](#jumping-to-the-source-in-eclipse)) |
 | `callee` | `OrderDaoImpl.selectById` | The method being called |
-| `resolved-by` | `RESOLVED:SPRING_DI` | How the callee was decided. `RESOLVED:` means it was pinned down to one; `UNEXPANDED:` means it could not be, and the candidates are listed |
+| `resolved-by` | `RESOLVED:SPRING_DI` | How the callee was decided. `RESOLVED:` means it was pinned down to one; `CANDIDATE:` means it could not be and every candidate was followed; `UNEXPANDED:` means it could not be and the candidates are only listed |
 | `depth` | `2` | How many calls away from the entry point it is |
 | `call-hierarchy` | `OrderAction.execute,OrderService.findOrder,OrderDaoImpl.selectById` | The path from the entry point to `callee` (one step per column). The first column is the entry point method. A note may follow in the last column |
 
@@ -580,14 +585,15 @@ eye during an impact analysis.
 
 | `resolved-by` | Meaning | What to do |
 |---|---|---|
-| `UNEXPANDED:…` | The implementation could not be narrowed to one, so the candidates are listed. **Nothing below the candidates is followed** | Nothing below a candidate is followed, so if the method you are changing lies below it, no row from this entry point reaches it. Filter the `callee` column again by the method that calls yours (the method in `caller`) and climb up through its callers to find the entry points. Once you tell the tool how to narrow it, the next run pins it down to one (`call-rules-suggested.txt` in the output folder; [docs/library-call-rules.md](docs/library-call-rules.md)) |
+| `CANDIDATE:…` | The implementation could not be narrowed to one, but there are few candidates (`expand.max.candidates` or fewer), so **every candidate is followed** | Only one of the candidates actually runs. Read the hierarchy below such a row as "the calls made if this candidate is the one that runs". Once you tell the tool how to narrow it, the next run pins it down to one (`call-rules-suggested.txt` in the output folder) |
+| `UNEXPANDED:…` | The implementation could not be narrowed to one and there are many candidates (more than `expand.max.candidates`), so they are only listed. **Nothing below the candidates is followed** (these calls are listed in `warnings.txt`) | Nothing below a candidate is followed, so if the method you are changing lies below it, no row from this entry point reaches it. Filter the `callee` column again by the method that calls yours (the method in `caller`) and climb up through its callers to find the entry points. Once you tell the tool how to narrow it, the next run pins it down to one (`call-rules-suggested.txt` in the output folder; [docs/library-call-rules.md](docs/library-call-rules.md)) |
 | `UNRESOLVED:…` | The type of the callee could not be determined (usually missing dependency jars) | Follow `warnings.txt` to supply the jars, and run again |
 | `RESOLVED:EXTERNAL_GUESS` | The type could not be determined, so its name was guessed from an `import`. **The guess may be wrong** | Check the callee in the source. Supplying the dependency jars makes the guess unnecessary |
 
 A note at the end of the `call-hierarchy` column (such as `[EXTERNAL] no source to follow`) says why the walk
 stopped there. All the notes are listed in [Notes](#notes).
 
-To see what lies below a candidate, add the candidate class to `entry.packages` in the config file and run again: rows
+To see what lies below an `UNEXPANDED:` candidate, raise `expand.max.candidates` in the config file, or add the candidate class to `entry.packages` and run again: rows
 starting from that candidate appear.
 
 <!-- sec:jumping-to-the-source-in-eclipse -->
@@ -688,7 +694,7 @@ The definition of everything in the output. For an impact analysis, [Reading the
 
 | Term | Meaning |
 |---|---|
-| CHA | Class Hierarchy Analysis: listing every candidate implementation from the type hierarchy alone. Used when nothing else could decide, and written as `UNEXPANDED:CHA` |
+| CHA | Class Hierarchy Analysis: listing every candidate implementation from the type hierarchy alone. Used when nothing else could decide, and written as `CANDIDATE:CHA` (few candidates, all followed) or `UNEXPANDED:CHA` (many candidates, not followed) |
 | Receiver | The value a method is called on, such as `dao` in `dao.find()` |
 
 <!-- sec:output-files -->
@@ -713,8 +719,8 @@ The CSV files are UTF-8 with a BOM, so Excel opens them directly. The content of
 whatever the display language.
 
 `warnings.txt` is created only when the tool's assumption — the sources build and all dependency jars are
-resolved — does not hold.
-Besides missing dependency jars, a path in the config file that does not exist and compile errors, it lists files whose package declaration does not match their folder (common when `source.folders` is one level off), files that the Java parser stopped on and could not analyze, output that stopped partway, and a dependency jar that was rewritten in place with the same modification time while the analysis server (the Eclipse or VS Code plugin) kept it open.
+resolved — does not hold, or when some call had too many candidates and was not expanded (a run that expanded every candidate does not create it).
+Besides missing dependency jars, a path in the config file that does not exist and compile errors, it lists calls whose runtime class had more candidates than `expand.max.candidates` and were not expanded, files whose package declaration does not match their folder (common when `source.folders` is one level off), files that the Java parser stopped on and could not analyze, output that stopped partway, and a dependency jar that was rewritten in place with the same modification time while the analysis server (the Eclipse or VS Code plugin) kept it open.
 `run.log` is created on every run as the record of what happened (what ran with which settings and where things were saved).
 
 <!-- sec:call-hierarchy-csv -->
@@ -733,7 +739,8 @@ Besides missing dependency jars, a path in the config file that does not exist a
 | Prefix | Meaning |
 |---|---|
 | `RESOLVED:` | The callee was pinned down to one. The second half says [how it was decided](#resolving-concrete-classes) (`RESOLVED:DATAFLOW_FIELD` and the like) |
-| `UNEXPANDED:` | It could not be narrowed to one, so candidates remain. The second half says how they were collected (`UNEXPANDED:CHA` and the like). There is a row per candidate, but nothing below them is followed |
+| `CANDIDATE:` | It could not be narrowed to one, so candidates remain, but there are `expand.max.candidates` (3 by default) or fewer of them, so there is a row per candidate and everything below each of them is followed too. The second half says how they were collected (`CANDIDATE:CHA` and the like) |
+| `UNEXPANDED:` | It could not be narrowed to one, so candidates remain. The second half says how they were collected (`UNEXPANDED:CHA` and the like). There are more candidates than `expand.max.candidates`, so there is a row per candidate, but nothing below them is followed |
 | `UNRESOLVED:` | A row for a call whose types could not be resolved: `UNRESOLVED:BINDING_FAILED` (the callee type could not be determined: incomplete classpath, a dynamic call and so on) and `UNRESOLVED:CALLER_UNRESOLVED` (type resolution of the enclosing method or type failed, so the caller could not be determined; calls in field initializers and initializer blocks are calls from `<init>` / `<clinit>` and never land here). The first column of `call-hierarchy` is `(unresolved)` |
 | `EXTERNAL_USAGE:` | A row of the external reference scan (`EXTERNAL_USAGE:EXACT` / `INHERITED` / `MISSING_NOARG_CTOR`; see [Methods referenced from external jars](#methods-referenced-from-external-jars)) |
 
@@ -790,7 +797,8 @@ OrderDaoImpl.selectById(long),jp.co.example.dao.OrderDaoImpl,C,src/jp/co/example
 
 `unresolvedCause` is decided by where the receiver of the unresolved call came from, and it tells you what
 to look at next. The tags are the same as the [notes](#notes) in `call-hierarchy.csv`, so you can take a call
-you found in the list and `grep` for it on the hierarchy side.
+you found in the list and `grep` for it on the hierarchy side. For a call with `expand.max.candidates` or fewer candidates
+(the hierarchy follows every candidate), `[UNEXPANDED:CHA]` below becomes `[CANDIDATE:CHA]`.
 
 | unresolvedCause | Meaning |
 |---|---|
@@ -808,7 +816,7 @@ A subtree that disappeared from the hierarchy because of pruning is visible only
 
 | absentCause | Meaning |
 |---|---|
-| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | The implementation could not be narrowed to one, so the candidates became rows but nothing below them was followed |
+| `[UNEXPANDED:CHA] not expanded (CHA candidate)` | The implementation could not be narrowed to one and there were more candidates than `expand.max.candidates`, so the candidates became rows but nothing below them was followed |
 | `[UNEXPANDED:CYCLE] not expanded (cycle)` | The edge goes back to a method already on the path |
 | `[UNREACHABLE] below a call pruned by a condition` | It exists only below a call that the static analysis of the conditions pruned (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[EXCLUDED] excluded by exclude.packages` | Excluded by `exclude.packages` |
@@ -838,6 +846,7 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | Tag | Meaning |
 |---|---|
 | `[UNEXPANDED:*]` | Nothing below this was followed. `grep '\[UNEXPANDED'` finds every place the walk stopped |
+| `[CANDIDATE:*]` | One of the candidates that could not be narrowed to one. There are few candidates, so everything below each of them is followed |
 | `[EXTERNAL]` | The callee is outside your own project. It is a stop too, but a different kind, so it is not under `UNEXPANDED` |
 | `[UNREACHABLE]` | A call that was shown not to run on this path |
 | `[RESOLVED:CALLBACK]` | A call connected by a rule; the rule itself follows it. This is the only `[RESOLVED:*]` that appears as a note |
@@ -846,8 +855,9 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 |---|---|
 | `[UNEXPANDED:CYCLE] returns to a method already on this path` | A call back to a method already on this path. It stops here |
 | `[UNEXPANDED:DEPTH] depth limit (N) reached` | `max.depth` was reached |
-| `[UNEXPANDED:CHA] N candidates: {reason}` | The implementation could not be narrowed to one. Each candidate becomes a row, but nothing below them is followed (it would explode as candidates^depth). The reason is the same as in the `unresolvedCause` table above. Candidates excluded by `exclude.packages` are not written as rows, and their number is written as `(K excluded by exclude.packages and not written as rows)` (the declaration in a jar interface counts as a candidate because the jar may also implement it, so this often appears with the default `java.**` exclusion) |
-| `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | The argument types of `getMethod` (class literals) were not all available, so methods with the same name were taken as candidates |
+| `[CANDIDATE:CHA] N candidates: {reason}` | The implementation could not be narrowed to one, but the number of candidates N is `expand.max.candidates` (3 by default) or fewer. Each candidate becomes a row and everything below each of them is followed. The reason and the handling of `exclude.packages` are the same as for `[UNEXPANDED:CHA]` below |
+| `[UNEXPANDED:CHA] N candidates: {reason}` | The implementation could not be narrowed to one and the number of candidates N is more than `expand.max.candidates`. Each candidate becomes a row, but nothing below them is followed (it would explode as candidates^depth). The calls that were not followed are listed in `warnings.txt`. The reason is the same as in the `unresolvedCause` table above. Candidates excluded by `exclude.packages` are not written as rows, and their number is written as `(K excluded by exclude.packages and not written as rows)` (the declaration in a jar interface counts as a candidate because the jar may also implement it, so this often appears with the default `java.**` exclusion) |
+| `[UNEXPANDED:REFLECTION] N candidates: matched by name because argument types are unknown` | The argument types of `getMethod` (class literals) were not all available, so methods with the same name were taken as candidates. With `expand.max.candidates` or fewer candidates it is `[CANDIDATE:REFLECTION]` and everything below each candidate is followed |
 | `[UNEXPANDED:NO_IMPL] no implementation with a body in the source` | There is an interface or abstract method declaration, but no class in the source writes the body. Unlike `[EXTERNAL]` (where the source simply cannot be read), the source was read and nothing was found, so suspect a missing `source.folders` entry or dead code |
 | `[UNEXPANDED:GENERATED] implementation is generated at compile time (framework): FQN is...` | A call into a type whose implementation is generated at build time by annotation processing (see [docs/doma-generated-impl-qa.md](docs/doma-generated-impl-qa.md)) |
 | `[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)` | A lambda or method reference implements that functional interface, but which one arrives at this call site could not be determined (see [Lambdas and method references](#lambdas-and-method-references)) |
@@ -855,13 +865,13 @@ A note starts with an upper case tag, so you can pick out a kind of note by grep
 | `[EXTERNAL] type guessed from an import (unverified)` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import`. Neither the method's existence nor the overload was checked, so **the guess may be wrong** |
 | `[UNREACHABLE] not called on this path: condition '...' does not hold (...)` | The condition around the call was shown not to hold on this path (see [docs/branch-pruning.md](docs/branch-pruning.md)) |
 | `[RESOLVED:CALLBACK] rule: Thread#start() calls run()` | The callee is inside a jar, but it was connected by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). The inside of the jar was not read |
-| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: ...` | Also connected by a rule, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`) |
+| `[UNEXPANDED:CHA] N candidates: method reference to an overridable method rule: ...` | Also connected by a rule, but what was passed is a method reference to a method that can be overridden (such as `this::hook`) and the implementation that runs could not be narrowed to one. Each candidate becomes a row and nothing below it is followed (`resolved-by` is `UNEXPANDED:CALLBACK`). With `expand.max.candidates` or fewer candidates it is `[CANDIDATE:CHA]` (`resolved-by` is `CANDIDATE:CALLBACK`) and everything below each candidate is followed |
 | `type resolution failed ...` / `caller unresolved ...` | A row for a call whose types could not be resolved (`resolved-by` is `UNRESOLVED:`). Not a note but a row of its own |
 | `external-ref:EXACT` and the like | A row of the external reference scan ([below](#methods-referenced-from-external-jars)). Also a row of its own |
 
 A note has at most two parts, joined with ` / ` when both apply.
 The first is why the walk stopped (`[UNEXPANDED:CYCLE]`, `[UNEXPANDED:DEPTH]`, `[EXTERNAL]`,
-`[UNREACHABLE]`) and the second is the result of narrowing (`[UNEXPANDED:CHA]` and so on).
+`[UNREACHABLE]`) and the second is the result of narrowing (`[CANDIDATE:CHA]`, `[UNEXPANDED:CHA]` and so on).
 
 ```
 [UNEXPANDED:CYCLE] returns to a method already on this path / [UNEXPANDED:CHA] 5 candidates: field
@@ -894,7 +904,7 @@ at teamb.NoDebugJob.run(Unknown Source),OrderService.findOrder,EXTERNAL_USAGE:EX
 
 For a call through an interface or parent class type, these labels say how the implementation that actually runs was decided.
 The label becomes the second half of the `resolved-by` column of `call-hierarchy.csv` (`RESOLVED:` is prefixed once it is
-pinned down to one, `UNEXPANDED:` while candidates remain). The order in which the labels are tried is in section 9 of
+pinned down to one; while candidates remain, `CANDIDATE:` if every candidate was followed or `UNEXPANDED:` if not). The order in which the labels are tried is in section 9 of
 [docs/static-analysis-limits.md](docs/static-analysis-limits.md#9-解決の段具象クラスをどの順に決めるか) (in Japanese).
 
 | Label | How it was decided |
@@ -914,7 +924,7 @@ pinned down to one, `UNEXPANDED:` while candidates remain). The order in which t
 | `SPRING_DI` / `SPRING_DI_QUALIFIER` | The bean definitions of the DI container (Spring) narrowed it to one. `SPRING_DI_QUALIFIER` means the bean name from `@Qualifier` / `@Resource(name=...)` decided it ([docs/spring-di-qa.md](docs/spring-di-qa.md)) |
 | `CHA` | Several candidates remain (low confidence) |
 | `GENERATED_IMPL:name` | A type whose implementation is generated at compile time by annotation processing (a special case of `NO_IMPL`) |
-| `CALLBACK` | Connected across the inside of a jar by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, it is `UNEXPANDED:CALLBACK` |
+| `CALLBACK` | Connected across the inside of a jar by the rule "it calls this method on the value you passed" ([docs/library-call-rules.md](docs/library-call-rules.md)). When the implementation behind a method reference that was passed could not be narrowed to one and the candidates are listed, it is `CANDIDATE:CALLBACK` / `UNEXPANDED:CALLBACK` |
 | `REFLECTION` / `REFLECTION_INIT` | `Method.invoke` / `newInstance` resolved to the method or constructor named through reflection / class initialization through `Class.forName` (connected to `<clinit>`) |
 | `EXTERNAL_GUESS` | The classpath was incomplete so the type could not be resolved, and the type name was guessed from an `import` (**unverified**) |
 | `LAMBDA` | A lambda or method reference implements it and which one runs is undetermined. This is a rewording used only in the `resolved-by` column, and it always appears as `UNEXPANDED:LAMBDA` |

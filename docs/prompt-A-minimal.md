@@ -69,6 +69,7 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UN
   | 接頭辞 | 意味 | 例 |
   |---|---|---|
   | `RESOLVED:` | 呼び出し先が1件に定まった | `RESOLVED:STATIC_BOUND:PRIVATE`、`RESOLVED:SINGLE_IMPL` |
+  | `CANDIDATE:` | 1件に絞れず候補のままだが、候補が少ない（既定 3 件以下）ので候補ごとに先へ降りた | `CANDIDATE:CHA` |
   | `UNEXPANDED:` | 1件に絞れず候補のまま（その先へは降りない） | `UNEXPANDED:CHA`、`UNEXPANDED:NO_IMPL` |
   | `UNRESOLVED:` | 型解決に失敗した行（下記） | `UNRESOLVED:BINDING_FAILED` |
 
@@ -90,6 +91,8 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UN
 外）、日本語の説明をその後ろに続けると grep で拾えます。
 最低限 `[UNEXPANDED:CYCLE]`（循環。打ち切る）、`[UNEXPANDED:DEPTH]`（深さ上限での打ち切り）、
 `[UNEXPANDED:CHA] N candidates: {reason}`（実装を1つに絞れず、候補を1件ずつ行にするが先へは降りない）の3種。
+候補が少ない（既定 3 件以下。設定 `expand.max.candidates`）呼び出しは、タグを `[CANDIDATE:CHA]` にして候補ごとに先へ降りる。
+降りなかった呼び出しがあるときだけ、その一覧を `warnings.txt` に出す。
 
 注記と `resolved-by` 列の役割は分けてください。**確定状況そのもの（どちらに転んだか・何が根拠か）は
 列**に置き、注記に書くのは**列に入らないこと**だけです——打ち切りの理由（循環・深さ上限・
@@ -155,7 +158,7 @@ at a.service.OrderService.findOrder(OrderService.java:25),OrderDao.selectById,UN
 |---|---|---|---|
 | 0 | `STATIC_BOUND:理由` / `NOT_OVERRIDABLE:理由` | 前者は private / static メソッド、コンストラクタ、`super`（仮想呼び出しでない。JLS 15.12.3）。後者は final メソッド、finalクラスのメソッド（仮想呼び出しだが上書きできない） | `RESOLVED:STATIC_BOUND:理由` / `RESOLVED:NOT_OVERRIDABLE:理由` |
 | 1 | `NO_OVERRIDE` / `SINGLE_IMPL` / `NO_IMPL` | オーバーライド候補が1つに定まる。本体を持つ候補が皆無なら `NO_IMPL` | `RESOLVED:NO_OVERRIDE` / `RESOLVED:SINGLE_IMPL` / `UNEXPANDED:NO_IMPL` |
-| 2 | `CHA` | 候補が複数のまま。候補を1件ずつ行にし、**先へは降りない**（候補数^深さで爆発する） | `UNEXPANDED:CHA` |
+| 2 | `CHA` | 候補が複数のまま。候補を1件ずつ行にする。候補が `expand.max.candidates`（既定 3）以下なら候補ごとに先へ降り、超えたら**先へは降りない**（候補数^深さで爆発する） | `CANDIDATE:CHA` / `UNEXPANDED:CHA` |
 
 **各段が返すラベルは、そのまま `resolved-by` 列の後半になります**（3.1）。
 段を足したら、その段のラベルがそのまま列の値として増えるだけにしてください。

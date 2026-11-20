@@ -5,16 +5,44 @@ at fx.app.Main.<clinit>(Main.java:29),Counter.initialCount,RESOLVED:STATIC_BOUND
 at fx.app.Main.main(Main.java:33),Main.run,RESOLVED:NO_OVERRIDE,1,Main.main,Main.run
 at fx.app.Main.run(Main.java:37),DaoFactory.create,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.create
 at fx.dao.DaoFactory.create(DaoFactory.java:7),DaoFactory.newUserDao,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,DaoFactory.create,DaoFactory.newUserDao
-at fx.app.Main.run(Main.java:38),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:38),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:39),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.app.Main.run(Main.java:39),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:38),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:38),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:39),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:39),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
 at fx.app.Main.run(Main.java:39),DaoFactory.createEither,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.createEither
-at fx.app.Main.run(Main.java:40),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.app.Main.run(Main.java:40),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:40),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:40),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
 at fx.app.Main.run(Main.java:40),DaoFactory.byName,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.byName
-at fx.app.Main.run(Main.java:41),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.app.Main.run(Main.java:41),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:41),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:41),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
 at fx.app.Main.run(Main.java:41),DaoFactory.passThrough,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,DaoFactory.passThrough
 at fx.app.Main.run(Main.java:44),Main$1.execute,UNEXPANDED:CHA,2,Main.main,Main.run,Main$1.execute,[UNEXPANDED:CHA] 5 candidates: local variable
 at fx.app.Main.run(Main.java:44),Main$1LocalService.execute,UNEXPANDED:CHA,2,Main.main,Main.run,Main$1LocalService.execute,[UNEXPANDED:CHA] 5 candidates: local variable
@@ -29,29 +57,57 @@ at fx.app.Main.run(Main.java:46),Notifier.execute,UNEXPANDED:CHA,2,Main.main,Mai
 at fx.app.Main.run(Main.java:46),OrderService.execute,UNEXPANDED:CHA,2,Main.main,Main.run,OrderService.execute,[UNEXPANDED:CHA] 5 candidates: local variable
 at fx.app.Main.run(Main.java:46),Repo.execute,UNEXPANDED:CHA,2,Main.main,Main.run,Repo.execute,[UNEXPANDED:CHA] 5 candidates: local variable
 at fx.app.Main.run(Main.java:48),Main.useParam,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.useParam
-at fx.app.Main.useParam(Main.java:98),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,Main.useParam,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.useParam(Main.java:98),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.useParam(Main.java:99),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.useParam(Main.java:99),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Main.useParam,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.run(Main.java:50),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:50),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:52),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:52),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:54),AbstractDao.findById,UNEXPANDED:CHA,2,Main.main,Main.run,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:54),OrderDaoImpl.findById,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:55),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
-at fx.app.Main.run(Main.java:55),UserDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Main.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: local variable
+at fx.app.Main.useParam(Main.java:98),AbstractDao.findById,CANDIDATE:CHA,3,Main.main,Main.run,Main.useParam,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,Main.useParam,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,Main.useParam,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.useParam,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.useParam(Main.java:98),OrderDaoImpl.findById,CANDIDATE:CHA,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,5,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,6,Main.main,Main.run,Main.useParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.useParam(Main.java:99),OrderDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Main.useParam,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.useParam(Main.java:99),UserDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Main.useParam,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.run(Main.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:52),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:52),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:54),AbstractDao.findById,CANDIDATE:CHA,2,Main.main,Main.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:54),OrderDaoImpl.findById,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.run(Main.java:55),OrderDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: local variable
+at fx.app.Main.run(Main.java:55),UserDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Main.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: local variable
 at fx.app.Main.run(Main.java:56),Main.noSource,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.noSource
 at fx.app.Main.noSource(Main.java:90),Node.getNodeName,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.noSource,Node.getNodeName,[EXTERNAL] no source to follow
 at fx.app.Main.run(Main.java:57),Main.noImpl,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.noImpl
 at fx.app.Main.noImpl(Main.java:94),Exporter.export,UNEXPANDED:NO_IMPL,3,Main.main,Main.run,Main.noImpl,Exporter.export,[UNEXPANDED:NO_IMPL] no implementation with a body in the source
 at fx.app.Main.noImpl(Main.java:94),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.noImpl,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.noImpl,Point.origin,Point.Point,Registry.register
-at fx.excluded.Helper.assist(Helper.java:8),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Helper.assist,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.excluded.Helper.assist(Helper.java:8),UserDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Helper.assist,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.excluded.Helper.assist(Helper.java:8),OrderDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Helper.assist,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.excluded.Helper.assist(Helper.java:8),UserDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Helper.assist,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.excluded.Helper.assist(Helper.java:9),AbstractDao.flush,RESOLVED:NOT_OVERRIDABLE:FINAL_METHOD,2,Main.main,Helper.assist,AbstractDao.flush
-at fx.app.Main.run(Main.java:61),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.app.Main.run(Main.java:61),UserDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Main.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:61),OrderDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:61),UserDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Main.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
 at fx.app.Main.run(Main.java:61),Chain.c1,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Chain.c1
 at fx.dao.Chain.c1(Chain.java:7),Chain.c2,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Chain.c1,Chain.c2
 at fx.dao.Chain.c2(Chain.java:8),Chain.c3,RESOLVED:STATIC_BOUND:STATIC,4,Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3
@@ -59,33 +115,51 @@ at fx.dao.Chain.c3(Chain.java:9),Chain.c4,RESOLVED:STATIC_BOUND:STATIC,5,Main.ma
 at fx.dao.Chain.c4(Chain.java:10),Chain.c5,RESOLVED:STATIC_BOUND:STATIC,6,Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3,Chain.c4,Chain.c5
 at fx.dao.Chain.c5(Chain.java:11),Chain.c6,RESOLVED:STATIC_BOUND:STATIC,7,Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3,Chain.c4,Chain.c5,Chain.c6
 at fx.dao.Chain.c6(Chain.java:12),Chain.c7,RESOLVED:STATIC_BOUND:STATIC,8,Main.main,Main.run,Chain.c1,Chain.c2,Chain.c3,Chain.c4,Chain.c5,Chain.c6,Chain.c7
-at fx.app.Main.run(Main.java:62),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Main.run,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.app.Main.run(Main.java:62),UserDaoImpl.describe,UNEXPANDED:CHA,2,Main.main,Main.run,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:62),OrderDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Main.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.app.Main.run(Main.java:62),UserDaoImpl.describe,CANDIDATE:CHA,2,Main.main,Main.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
 at fx.app.Main.run(Main.java:62),Chain.c6,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Chain.c6
 at fx.dao.Chain.c6(Chain.java:12),Chain.c7,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Chain.c6,Chain.c7
 at fx.app.Main.run(Main.java:63),Repo.execute,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Repo.execute
-at fx.service.Repo.execute(Repo.java:23),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.Repo.execute(Repo.java:23),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.service.Repo.<init>(Repo.java:18),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.Repo,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.service.Repo.<init>(Repo.java:18),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Repo.Repo,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.service.Repo.execute(Repo.java:23),OrderDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Repo.execute,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.service.Repo.execute(Repo.java:23),UserDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Repo.execute,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.service.Repo.<init>(Repo.java:18),OrderDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Repo.Repo,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.service.Repo.<init>(Repo.java:18),UserDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Repo.Repo,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.model.Base.<init>(Base.java:5),Base.init,RESOLVED:NO_OVERRIDE,4,Main.main,Main.run,Derived.Derived,Base.Base,Base.init
 at fx.model.Base.init(Base.java:9),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Derived.Derived,Base.Base,Base.init,Registry.register
 at fx.app.Main.run(Main.java:65),Invoker.byLiteral,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Invoker.byLiteral
 at fx.app.Main.run(Main.java:66),Main.shapes,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.shapes
-at fx.app.Main.shapes(Main.java:104),Color.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color.area,[UNEXPANDED:CHA] 3 candidates: local variable
-at fx.app.Main.shapes(Main.java:104),Point.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Point.area,[UNEXPANDED:CHA] 3 candidates: local variable
-at fx.app.Main.shapes(Main.java:104),Color$1.area,UNEXPANDED:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[UNEXPANDED:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:104),Color.area,CANDIDATE:CHA,3,Main.main,Main.run,Main.shapes,Color.area,[CANDIDATE:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:104),Point.area,CANDIDATE:CHA,3,Main.main,Main.run,Main.shapes,Point.area,[CANDIDATE:CHA] 3 candidates: local variable
+at fx.app.Main.shapes(Main.java:104),Color$1.area,CANDIDATE:CHA,3,Main.main,Main.run,Main.shapes,Color$1.area,[CANDIDATE:CHA] 3 candidates: local variable
 at fx.app.Main.shapes(Main.java:105),Point.origin,RESOLVED:STATIC_BOUND:STATIC,3,Main.main,Main.run,Main.shapes,Point.origin
 at fx.model.Point.<init>(Point.java:5),Registry.register,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.shapes,Point.origin,Point.Point,Registry.register
 at fx.app.Main.shapes(Main.java:106),Point.area,RESOLVED:NOT_OVERRIDABLE:FINAL_CLASS,3,Main.main,Main.run,Main.shapes,Point.area
 at fx.app.Main.shapes(Main.java:107),Color.code,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.shapes,Color.code
 at fx.app.Main.run(Main.java:67),Main.lambdas,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.lambdas
-at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambdas(Main.java:111),OrderDaoImpl.findById,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambdas(Main.java:114),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,UNEXPANDED:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.app.Main.lambdas(Main.java:111),AbstractDao.findById,CANDIDATE:CHA,3,Main.main,Main.run,Main.lambdas,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Main.main,Main.run,Main.lambdas,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.lambdas(Main.java:111),OrderDaoImpl.findById,CANDIDATE:CHA,3,Main.main,Main.run,Main.lambdas,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Main.main,Main.run,Main.lambdas,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,5,Main.main,Main.run,Main.lambdas,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,5,Main.main,Main.run,Main.lambdas,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,6,Main.main,Main.run,Main.lambdas,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.lambdas(Main.java:114),OrderDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Main.lambdas,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.lambdas(Main.java:114),UserDaoImpl.describe,CANDIDATE:CHA,3,Main.main,Main.run,Main.lambdas,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main.lambdas(Main.java:119),Starter.Job.run,CANDIDATE:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,4,Main.main,Main.run,Main.lambdas,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,5,Main.main,Main.run,Main.lambdas,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,5,Main.main,Main.run,Main.lambdas,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,6,Main.main,Main.run,Main.lambdas,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,4,Main.main,Main.run,Main.lambdas,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,5,Main.main,Main.run,Main.lambdas,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,6,Main.main,Main.run,Main.lambdas,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,6,Main.main,Main.run,Main.lambdas,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,7,Main.main,Main.run,Main.lambdas,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.app.Main.lambdas(Main.java:119),Starter.Worker.run,CANDIDATE:CHA,3,Main.main,Main.run,Main.lambdas,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,4,Main.main,Main.run,Main.lambdas,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,4,Main.main,Main.run,Main.lambdas,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.app.Main.run(Main.java:68),Counter.bump,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.bump
 at fx.util.Counter.<init>(Counter.java:8),Counter.initial,RESOLVED:STATIC_BOUND:PRIVATE,4,Main.main,Main.run,Counter.Counter,Counter.Counter,Counter.initial
 at fx.app.Main.run(Main.java:69),Counter.Inner.touch,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Counter.Inner.touch
@@ -104,8 +178,8 @@ at fx.app.Main.anonymous(Main.java:133),Notifier.execute,UNEXPANDED:CHA,3,Main.m
 at fx.app.Main.anonymous(Main.java:133),OrderService.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Main.anonymous,OrderService.execute,[UNEXPANDED:CHA] 5 candidates: local variable
 at fx.app.Main.anonymous(Main.java:133),Repo.execute,UNEXPANDED:CHA,3,Main.main,Main.run,Main.anonymous,Repo.execute,[UNEXPANDED:CHA] 5 candidates: local variable
 at fx.app.Main.anonymous(Main.java:140),Main$1LocalService.execute,RESOLVED:NO_OVERRIDE,3,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute
-at fx.app.Main$1LocalService.execute(Main.java:137),OrderDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.app.Main$1LocalService.execute(Main.java:137),UserDaoImpl.describe,UNEXPANDED:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1LocalService.execute(Main.java:137),OrderDaoImpl.describe,CANDIDATE:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.app.Main$1LocalService.execute(Main.java:137),UserDaoImpl.describe,CANDIDATE:CHA,4,Main.main,Main.run,Main.anonymous,Main$1LocalService.execute,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.app.Main.run(Main.java:74),Legacy.callRemote,RESOLVED:STATIC_BOUND:STATIC,2,Main.main,Main.run,Legacy.callRemote
 at fx.app.Legacy.callRemote(Legacy.java:8),RemoteClient.send,RESOLVED:EXTERNAL_GUESS,3,Main.main,Main.run,Legacy.callRemote,RemoteClient.send,[EXTERNAL] type guessed from an import (unverified)
 at fx.app.Main.run(Main.java:75),Main.branches,RESOLVED:NO_OVERRIDE,2,Main.main,Main.run,Main.branches
@@ -145,115 +219,265 @@ at fx.branch.Feature.full(Feature.java:94),Feature.trace,RESOLVED:NO_OVERRIDE,5,
 at fx.ctor.CtorBase.<init>(CtorBase.java:13),CtorBase.prepare,RESOLVED:NO_OVERRIDE,3,CtorMain.run,ImplicitSuper.ImplicitSuper,CtorBase.CtorBase,CtorBase.prepare
 at fx.ctor.CtorBase.<init>(CtorBase.java:13),CtorBase.prepare,RESOLVED:NO_OVERRIDE,3,CtorMain.run,DefaultCtor.DefaultCtor,CtorBase.CtorBase,CtorBase.prepare
 at fx.ctor.CtorBase.<init>(CtorBase.java:13),CtorBase.prepare,RESOLVED:NO_OVERRIDE,3,CtorMain.run,ExplicitSuper.ExplicitSuper,CtorBase.CtorBase,CtorBase.prepare
-at fx.dao.Dao.name(Dao.java:5),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.dao.Dao.name(Dao.java:5),UserDaoImpl.describe,UNEXPANDED:CHA,1,Dao.name,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: own class (this)
+at fx.dao.Dao.name(Dao.java:5),OrderDaoImpl.describe,CANDIDATE:CHA,1,Dao.name,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.Dao.name(Dao.java:5),UserDaoImpl.describe,CANDIDATE:CHA,1,Dao.name,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: own class (this)
 at fx.dao.ItemFinder.find(ItemFinder.java:13),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,1,ItemFinder.find,ItemDao.selectById,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): fx.dao.ItemDaoImpl is produced by annotation processing and has no source
 at fx.dao.ItemFinder.findFirst(ItemFinder.java:17),ItemDao.selectFirst,RESOLVED:NO_OVERRIDE,1,ItemFinder.findFirst,ItemDao.selectFirst
 at fx.dao.ItemDao.selectFirst(ItemDao.java:19),ItemDao.selectById,UNEXPANDED:GENERATED_IMPL:Doma,2,ItemFinder.findFirst,ItemDao.selectFirst,ItemDao.selectById,[UNEXPANDED:GENERATED] implementation is generated at compile time (Doma): fx.dao.ItemDaoImpl is produced by annotation processing and has no source
 at fx.deep.Deep.nestedArgument(Deep.java:20),Deep.use,RESOLVED:STATIC_BOUND:PRIVATE,1,Deep.nestedArgument,Deep.use
-at fx.deep.Deep.use(Deep.java:24),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Deep.nestedArgument,Deep.use,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.deep.Deep.use(Deep.java:24),UserDaoImpl.describe,UNEXPANDED:CHA,2,Deep.nestedArgument,Deep.use,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.deep.Deep.use(Deep.java:24),OrderDaoImpl.describe,CANDIDATE:CHA,2,Deep.nestedArgument,Deep.use,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.deep.Deep.use(Deep.java:24),UserDaoImpl.describe,CANDIDATE:CHA,2,Deep.nestedArgument,Deep.use,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.deep.Deep.nestedArgument(Deep.java:20),DaoFactory.byName,RESOLVED:STATIC_BOUND:STATIC,1,Deep.nestedArgument,DaoFactory.byName
 at fx.deep.Deep.deepReceiver(Deep.java:34),Holder.get,RESOLVED:NO_OVERRIDE,1,Deep.deepReceiver,Holder.get
 at fx.deep.Deep.deepReceiver(Deep.java:34),Holder.get,RESOLVED:NO_OVERRIDE,1,Deep.deepReceiver,Holder.get
 at fx.deep.longnamed.AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping(AnExtremelyLongTargetClassNameForTestingTheLengthLimit.java:8),AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong,RESOLVED:STATIC_BOUND:PRIVATE,1,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.ping,AnExtremelyLongTargetClassNameForTestingTheLengthLimit.pong
 at fx.di.Checkout.checkout(Checkout.java:15),AbstractPayment.pay,RESOLVED:SPRING_DI,1,Checkout.checkout,AbstractPayment.pay
-at fx.di.AbstractPayment.pay(AbstractPayment.java:9),AbstractPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,AbstractPayment.record,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.di.AbstractPayment.pay(AbstractPayment.java:9),CardPayment.record,UNEXPANDED:CHA,2,Checkout.checkout,AbstractPayment.pay,CardPayment.record,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),FastNotice.send,UNEXPANDED:CHA,1,NoticeSender.notifyUser,FastNotice.send,[UNEXPANDED:CHA] 2 candidates: field
-at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),SlowNotice.send,UNEXPANDED:CHA,1,NoticeSender.notifyUser,SlowNotice.send,[UNEXPANDED:CHA] 2 candidates: field
-at fx.di.Scheduler.tick(Scheduler.java:15),FixedClock.now,UNEXPANDED:CHA,1,Scheduler.tick,FixedClock.now,[UNEXPANDED:CHA] 2 candidates: field
-at fx.di.Scheduler.tick(Scheduler.java:15),SystemClock.now,UNEXPANDED:CHA,1,Scheduler.tick,SystemClock.now,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Jobs.nightly,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.nightly(Jobs.java:17),UserDaoImpl.describe,UNEXPANDED:CHA,1,Jobs.nightly,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.di.AbstractPayment.pay(AbstractPayment.java:9),AbstractPayment.record,CANDIDATE:CHA,2,Checkout.checkout,AbstractPayment.pay,AbstractPayment.record,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.di.AbstractPayment.pay(AbstractPayment.java:9),CardPayment.record,CANDIDATE:CHA,2,Checkout.checkout,AbstractPayment.pay,CardPayment.record,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),FastNotice.send,CANDIDATE:CHA,1,NoticeSender.notifyUser,FastNotice.send,[CANDIDATE:CHA] 2 candidates: field
+at fx.di.NoticeSender.notifyUser(NoticeSender.java:17),SlowNotice.send,CANDIDATE:CHA,1,NoticeSender.notifyUser,SlowNotice.send,[CANDIDATE:CHA] 2 candidates: field
+at fx.di.Scheduler.tick(Scheduler.java:15),FixedClock.now,CANDIDATE:CHA,1,Scheduler.tick,FixedClock.now,[CANDIDATE:CHA] 2 candidates: field
+at fx.di.Scheduler.tick(Scheduler.java:15),SystemClock.now,CANDIDATE:CHA,1,Scheduler.tick,SystemClock.now,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,CANDIDATE:CHA,1,Jobs.nightly,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.nightly(Jobs.java:17),UserDaoImpl.describe,CANDIDATE:CHA,1,Jobs.nightly,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.entry.Jobs.nightly(Jobs.java:18),Jobs.internal,RESOLVED:STATIC_BOUND:PRIVATE,1,Jobs.nightly,Jobs.internal
 at fx.entry.Jobs.internal(Jobs.java:39),Jobs.list,RESOLVED:NO_OVERRIDE,2,Jobs.nightly,Jobs.internal,Jobs.list
-at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,UNEXPANDED:CHA,3,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.list(Jobs.java:29),UserDaoImpl.describe,UNEXPANDED:CHA,3,Jobs.nightly,Jobs.internal,Jobs.list,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.onEvent(Jobs.java:23),AbstractDao.findById,UNEXPANDED:CHA,1,Jobs.onEvent,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.onEvent(Jobs.java:23),OrderDaoImpl.findById,UNEXPANDED:CHA,1,Jobs.onEvent,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Jobs.list,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.list(Jobs.java:29),UserDaoImpl.describe,UNEXPANDED:CHA,1,Jobs.list,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,CANDIDATE:CHA,3,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.list(Jobs.java:29),UserDaoImpl.describe,CANDIDATE:CHA,3,Jobs.nightly,Jobs.internal,Jobs.list,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.onEvent(Jobs.java:23),AbstractDao.findById,CANDIDATE:CHA,1,Jobs.onEvent,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,2,Jobs.onEvent,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,2,Jobs.onEvent,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,3,Jobs.onEvent,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.entry.Jobs.onEvent(Jobs.java:23),OrderDaoImpl.findById,CANDIDATE:CHA,1,Jobs.onEvent,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Jobs.onEvent,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,CANDIDATE:CHA,1,Jobs.list,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.list(Jobs.java:29),UserDaoImpl.describe,CANDIDATE:CHA,1,Jobs.list,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.entry.Jobs.custom(Jobs.java:35),Dispatcher.submit,RESOLVED:NO_OVERRIDE,1,Jobs.custom,Dispatcher.submit
-at fx.entry.Jobs.custom(Jobs.java:35),AbstractDao.findById,UNEXPANDED:CHA,1,Jobs.custom,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.custom(Jobs.java:35),OrderDaoImpl.findById,UNEXPANDED:CHA,1,Jobs.custom,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
+at fx.entry.Jobs.custom(Jobs.java:35),AbstractDao.findById,CANDIDATE:CHA,1,Jobs.custom,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,2,Jobs.custom,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,2,Jobs.custom,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,3,Jobs.custom,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.entry.Jobs.custom(Jobs.java:35),OrderDaoImpl.findById,CANDIDATE:CHA,1,Jobs.custom,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Jobs.custom,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
 at fx.entry.SampleTest.runsJob(SampleTest.java:10),Jobs.nightly,RESOLVED:NO_OVERRIDE,1,SampleTest.runsJob,Jobs.nightly
-at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,UNEXPANDED:CHA,2,SampleTest.runsJob,Jobs.nightly,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.nightly(Jobs.java:17),UserDaoImpl.describe,UNEXPANDED:CHA,2,SampleTest.runsJob,Jobs.nightly,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.entry.Jobs.nightly(Jobs.java:17),OrderDaoImpl.describe,CANDIDATE:CHA,2,SampleTest.runsJob,Jobs.nightly,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.nightly(Jobs.java:17),UserDaoImpl.describe,CANDIDATE:CHA,2,SampleTest.runsJob,Jobs.nightly,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.entry.Jobs.nightly(Jobs.java:18),Jobs.internal,RESOLVED:STATIC_BOUND:PRIVATE,2,SampleTest.runsJob,Jobs.nightly,Jobs.internal
 at fx.entry.Jobs.internal(Jobs.java:39),Jobs.list,RESOLVED:NO_OVERRIDE,3,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list
-at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,UNEXPANDED:CHA,4,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.Jobs.list(Jobs.java:29),UserDaoImpl.describe,UNEXPANDED:CHA,4,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.WebEntry.doGet(WebEntry.java:17),AbstractDao.findById,UNEXPANDED:CHA,1,WebEntry.doGet,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.WebEntry.doGet(WebEntry.java:17),OrderDaoImpl.findById,UNEXPANDED:CHA,1,WebEntry.doGet,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.WebEntry.helper(WebEntry.java:22),OrderDaoImpl.describe,UNEXPANDED:CHA,1,WebEntry.helper,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.entry.WebEntry.helper(WebEntry.java:22),UserDaoImpl.describe,UNEXPANDED:CHA,1,WebEntry.helper,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.generic.GenericMain.run(GenericMain.java:8),OrderRepo.save,UNEXPANDED:CHA,1,GenericMain.run,OrderRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:8),RawRepo.save,UNEXPANDED:CHA,1,GenericMain.run,RawRepo.save,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:9),AbstractStore.put,UNEXPANDED:CHA,1,GenericMain.run,AbstractStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.generic.GenericMain.run(GenericMain.java:9),OrderStore.put,UNEXPANDED:CHA,1,GenericMain.run,OrderStore.put,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,LoudGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,UNEXPANDED:CHA,1,InheritMain.run,BaseGreeter.greet,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.entry.Jobs.list(Jobs.java:29),OrderDaoImpl.describe,CANDIDATE:CHA,4,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.Jobs.list(Jobs.java:29),UserDaoImpl.describe,CANDIDATE:CHA,4,SampleTest.runsJob,Jobs.nightly,Jobs.internal,Jobs.list,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.WebEntry.doGet(WebEntry.java:17),AbstractDao.findById,CANDIDATE:CHA,1,WebEntry.doGet,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,2,WebEntry.doGet,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,2,WebEntry.doGet,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,3,WebEntry.doGet,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.entry.WebEntry.doGet(WebEntry.java:17),OrderDaoImpl.findById,CANDIDATE:CHA,1,WebEntry.doGet,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,WebEntry.doGet,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.entry.WebEntry.helper(WebEntry.java:22),OrderDaoImpl.describe,CANDIDATE:CHA,1,WebEntry.helper,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.entry.WebEntry.helper(WebEntry.java:22),UserDaoImpl.describe,CANDIDATE:CHA,1,WebEntry.helper,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.generic.GenericMain.run(GenericMain.java:8),OrderRepo.save,CANDIDATE:CHA,1,GenericMain.run,OrderRepo.save,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.OrderRepo.save(OrderRepo.java:8),OrderRepo.stored,RESOLVED:NO_OVERRIDE,2,GenericMain.run,OrderRepo.save,OrderRepo.stored
+at fx.generic.GenericMain.run(GenericMain.java:8),RawRepo.save,CANDIDATE:CHA,1,GenericMain.run,RawRepo.save,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.RawRepo.save(RawRepo.java:8),RawRepo.logged,RESOLVED:NO_OVERRIDE,2,GenericMain.run,RawRepo.save,RawRepo.logged
+at fx.generic.GenericMain.run(GenericMain.java:9),AbstractStore.put,CANDIDATE:CHA,1,GenericMain.run,AbstractStore.put,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.AbstractStore.put(AbstractStore.java:7),AbstractStore.fallback,RESOLVED:NO_OVERRIDE,2,GenericMain.run,AbstractStore.put,AbstractStore.fallback
+at fx.generic.GenericMain.run(GenericMain.java:9),OrderStore.put,CANDIDATE:CHA,1,GenericMain.run,OrderStore.put,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.generic.OrderStore.put(OrderStore.java:8),OrderStore.kept,RESOLVED:NO_OVERRIDE,2,GenericMain.run,OrderStore.put,OrderStore.kept
+at fx.inherit.InheritMain.run(InheritMain.java:6),LoudGreeter.greet,CANDIDATE:CHA,1,InheritMain.run,LoudGreeter.greet,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.inherit.InheritMain.run(InheritMain.java:6),BaseGreeter.greet,CANDIDATE:CHA,1,InheritMain.run,BaseGreeter.greet,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.inherit.InheritMain.run(InheritMain.java:7),OnlyImpl.m,RESOLVED:SINGLE_IMPL,1,InheritMain.run,OnlyImpl.m
-at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,CallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,UNEXPANDED:CHA,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[UNEXPANDED:CHA] 2 candidates: own class (this)
-at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
-at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
-at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),UserDaoImpl.describe,UNEXPANDED:CHA,1,CallbackRefs.viaBoundField,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),CallbackRefs.hook,CANDIDATE:CHA,1,CallbackRefs.viaThread,CallbackRefs.hook,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.lambda.CallbackRefs.hook(CallbackRefs.java:24),AbstractDao.findById,CANDIDATE:CHA,2,CallbackRefs.viaThread,CallbackRefs.hook,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,CallbackRefs.viaThread,CallbackRefs.hook,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,CallbackRefs.viaThread,CallbackRefs.hook,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,CallbackRefs.viaThread,CallbackRefs.hook,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.CallbackRefs.hook(CallbackRefs.java:24),OrderDaoImpl.findById,CANDIDATE:CHA,2,CallbackRefs.viaThread,CallbackRefs.hook,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,CallbackRefs.viaThread,CallbackRefs.hook,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,CallbackRefs.viaThread,CallbackRefs.hook,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,CallbackRefs.viaThread,CallbackRefs.hook,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,CallbackRefs.viaThread,CallbackRefs.hook,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.CallbackRefs.viaThread(CallbackRefs.java:28),LoudCallbackRefs.hook,CANDIDATE:CHA,1,CallbackRefs.viaThread,LoudCallbackRefs.hook,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.lambda.LoudCallbackRefs.hook(CallbackRefs.java:45),LoudCallbackRefs.loud,RESOLVED:NO_OVERRIDE,2,CallbackRefs.viaThread,LoudCallbackRefs.hook,LoudCallbackRefs.loud
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),OrderDaoImpl.describe,CANDIDATE:CHA,1,CallbackRefs.viaForEach,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.CallbackRefs.viaForEach(CallbackRefs.java:32),UserDaoImpl.describe,CANDIDATE:CHA,1,CallbackRefs.viaForEach,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),OrderDaoImpl.describe,CANDIDATE:CHA,1,CallbackRefs.viaBoundField,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.CallbackRefs.viaBoundField(CallbackRefs.java:36),UserDaoImpl.describe,CANDIDATE:CHA,1,CallbackRefs.viaBoundField,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.lambda.Captured.viaCapture(Captured.java:23),Captured.captureOuter,RESOLVED:STATIC_BOUND:PRIVATE,1,Captured.viaCapture,Captured.captureOuter
 at fx.lambda.Captured.captureOuter(Captured.java:27),Captured.runWithOther,RESOLVED:STATIC_BOUND:PRIVATE,2,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther
-at fx.lambda.Captured.runWithOther(Captured.java:31),Starter.Job.run,UNEXPANDED:CHA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Captured.runWithOther(Captured.java:31),Starter.Worker.run,UNEXPANDED:CHA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Captured.captureOuter(Captured.java:27),OrderDaoImpl.describe,UNEXPANDED:CHA,2,Captured.viaCapture,Captured.captureOuter,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
-at fx.lambda.Captured.captureOuter(Captured.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,2,Captured.viaCapture,Captured.captureOuter,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.lambda.Captured.runWithOther(Captured.java:31),Starter.Job.run,CANDIDATE:CHA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,5,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,5,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,6,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,5,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,6,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,6,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,7,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Captured.runWithOther(Captured.java:31),Starter.Worker.run,CANDIDATE:CHA,3,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,4,Captured.viaCapture,Captured.captureOuter,Captured.runWithOther,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Captured.captureOuter(Captured.java:27),OrderDaoImpl.describe,CANDIDATE:CHA,2,Captured.viaCapture,Captured.captureOuter,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
+at fx.lambda.Captured.captureOuter(Captured.java:27),UserDaoImpl.describe,CANDIDATE:CHA,2,Captured.viaCapture,Captured.captureOuter,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: parameter (passed in from outside the method)
 at fx.lambda.Defaults.<clinit>(Defaults.java:11),OrderDaoImpl.describe,RESOLVED:NO_OVERRIDE,1,Defaults.<clinit>,OrderDaoImpl.describe
-at fx.lambda.Holder.<init>(Holder.java:27),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Holder.Holder,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.<init>(Holder.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,1,Holder.Holder,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaField(Holder.java:30),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaField,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: field (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.viaField(Holder.java:30),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaField,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: field (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Holder.<init>(Holder.java:27),OrderDaoImpl.describe,CANDIDATE:CHA,1,Holder.Holder,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Holder.<init>(Holder.java:27),UserDaoImpl.describe,CANDIDATE:CHA,1,Holder.Holder,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Holder.viaField(Holder.java:30),Starter.Job.run,CANDIDATE:CHA,1,Holder.viaField,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: field (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Holder.viaField,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Holder.viaField,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Holder.viaField,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Holder.viaField,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Holder.viaField,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaField,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Holder.viaField,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Holder.viaField,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Holder.viaField,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaField(Holder.java:30),Starter.Worker.run,CANDIDATE:CHA,1,Holder.viaField,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: field (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,2,Holder.viaField,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,2,Holder.viaField,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.lambda.Holder.viaParam(Holder.java:34),Holder.runIt,RESOLVED:STATIC_BOUND:PRIVATE,1,Holder.viaParam,Holder.runIt
-at fx.lambda.Holder.runIt(Holder.java:38),Starter.Job.run,UNEXPANDED:CHA,2,Holder.viaParam,Holder.runIt,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.runIt(Holder.java:38),Starter.Worker.run,UNEXPANDED:CHA,2,Holder.viaParam,Holder.runIt,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.viaParam(Holder.java:34),AbstractDao.findById,UNEXPANDED:CHA,1,Holder.viaParam,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaParam(Holder.java:34),OrderDaoImpl.findById,UNEXPANDED:CHA,1,Holder.viaParam,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaCollection(Holder.java:43),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Holder.viaCollection,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaCollection(Holder.java:43),UserDaoImpl.describe,UNEXPANDED:CHA,1,Holder.viaCollection,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaCollection(Holder.java:45),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaCollection,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.viaCollection(Holder.java:45),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaCollection,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.viaForEach(Holder.java:51),AbstractDao.findById,UNEXPANDED:CHA,1,Holder.viaForEach,AbstractDao.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaForEach(Holder.java:51),OrderDaoImpl.findById,UNEXPANDED:CHA,1,Holder.viaForEach,OrderDaoImpl.findById,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Worker.run,UNEXPANDED:CHA,1,Holder.viaForEach,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested.viaNested(Nested.java:21),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Nested.viaNested,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Nested.viaNested(Nested.java:21),UserDaoImpl.describe,UNEXPANDED:CHA,1,Nested.viaNested,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Nested.viaNested(Nested.java:22),Starter.Job.run,UNEXPANDED:CHA,1,Nested.viaNested,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested.viaNested(Nested.java:22),Starter.Worker.run,UNEXPANDED:CHA,1,Nested.viaNested,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested.viaNested(Nested.java:24),Starter.Job.run,UNEXPANDED:CHA,1,Nested.viaNested,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested.viaNested(Nested.java:24),Starter.Worker.run,UNEXPANDED:CHA,1,Nested.viaNested,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested$Mode.<init>(Nested.java:31),Starter.Job.run,UNEXPANDED:CHA,2,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Nested$Mode.<init>(Nested.java:31),Starter.Worker.run,UNEXPANDED:CHA,2,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Redeclared.viaSuperInterface,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),UserDaoImpl.describe,UNEXPANDED:CHA,1,Redeclared.viaSuperInterface,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Holder.runIt(Holder.java:38),Starter.Job.run,CANDIDATE:CHA,2,Holder.viaParam,Holder.runIt,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,3,Holder.viaParam,Holder.runIt,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Holder.viaParam,Holder.runIt,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Holder.viaParam,Holder.runIt,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Holder.viaParam,Holder.runIt,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,3,Holder.viaParam,Holder.runIt,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Holder.viaParam,Holder.runIt,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,5,Holder.viaParam,Holder.runIt,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,5,Holder.viaParam,Holder.runIt,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,6,Holder.viaParam,Holder.runIt,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.runIt(Holder.java:38),Starter.Worker.run,CANDIDATE:CHA,2,Holder.viaParam,Holder.runIt,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,3,Holder.viaParam,Holder.runIt,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,3,Holder.viaParam,Holder.runIt,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Holder.viaParam(Holder.java:34),AbstractDao.findById,CANDIDATE:CHA,1,Holder.viaParam,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,2,Holder.viaParam,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,2,Holder.viaParam,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,3,Holder.viaParam,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaParam(Holder.java:34),OrderDaoImpl.findById,CANDIDATE:CHA,1,Holder.viaParam,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Holder.viaParam,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaCollection(Holder.java:43),OrderDaoImpl.describe,CANDIDATE:CHA,1,Holder.viaCollection,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Holder.viaCollection(Holder.java:43),UserDaoImpl.describe,CANDIDATE:CHA,1,Holder.viaCollection,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Holder.viaCollection(Holder.java:45),Starter.Job.run,CANDIDATE:CHA,1,Holder.viaCollection,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Holder.viaCollection,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Holder.viaCollection,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Holder.viaCollection,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Holder.viaCollection,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Holder.viaCollection,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaCollection,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Holder.viaCollection,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Holder.viaCollection,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Holder.viaCollection,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaCollection(Holder.java:45),Starter.Worker.run,CANDIDATE:CHA,1,Holder.viaCollection,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,2,Holder.viaCollection,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,2,Holder.viaCollection,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Holder.viaForEach(Holder.java:51),AbstractDao.findById,CANDIDATE:CHA,1,Holder.viaForEach,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,2,Holder.viaForEach,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,2,Holder.viaForEach,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,3,Holder.viaForEach,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaForEach(Holder.java:51),OrderDaoImpl.findById,CANDIDATE:CHA,1,Holder.viaForEach,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,2,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Holder.viaForEach,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Job.run,CANDIDATE:CHA,1,Holder.viaForEach,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Holder.viaForEach,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Holder.viaForEach,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Holder.viaForEach,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Holder.viaForEach,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Holder.viaForEach,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Holder.viaForEach,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Holder.viaForEach,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Holder.viaForEach,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Holder.viaForEach,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Holder.viaForEach(Holder.java:52),Starter.Worker.run,CANDIDATE:CHA,1,Holder.viaForEach,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: type name (unbound method reference) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,2,Holder.viaForEach,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,2,Holder.viaForEach,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Nested.viaNested(Nested.java:21),OrderDaoImpl.describe,CANDIDATE:CHA,1,Nested.viaNested,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Nested.viaNested(Nested.java:21),UserDaoImpl.describe,CANDIDATE:CHA,1,Nested.viaNested,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Nested.viaNested(Nested.java:22),Starter.Job.run,CANDIDATE:CHA,1,Nested.viaNested,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Nested.viaNested,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Nested.viaNested,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Nested.viaNested,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Nested.viaNested,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Nested.viaNested(Nested.java:22),Starter.Worker.run,CANDIDATE:CHA,1,Nested.viaNested,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,2,Nested.viaNested,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,2,Nested.viaNested,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Nested.viaNested(Nested.java:24),Starter.Job.run,CANDIDATE:CHA,1,Nested.viaNested,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Nested.viaNested,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Nested.viaNested,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Nested.viaNested,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Nested.viaNested,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Nested.viaNested,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Nested.viaNested(Nested.java:24),Starter.Worker.run,CANDIDATE:CHA,1,Nested.viaNested,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,2,Nested.viaNested,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,2,Nested.viaNested,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Nested$Mode.<init>(Nested.java:31),Starter.Job.run,CANDIDATE:CHA,2,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,3,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,3,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,4,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,5,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,5,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,6,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Nested$Mode.<init>(Nested.java:31),Starter.Worker.run,CANDIDATE:CHA,2,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: parameter (passed in from outside the method) (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,3,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,3,Nested.Mode.<clinit>,Nested.Mode.Mode,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),OrderDaoImpl.describe,CANDIDATE:CHA,1,Redeclared.viaSuperInterface,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:17),UserDaoImpl.describe,CANDIDATE:CHA,1,Redeclared.viaSuperInterface,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.lambda.Redeclared.viaSuperInterface(Redeclared.java:18),Redeclared.dispatch,RESOLVED:STATIC_BOUND:PRIVATE,1,Redeclared.viaSuperInterface,Redeclared.dispatch
 at fx.lambda.Redeclared.dispatch(Redeclared.java:22),LoggingHandler.handle,UNEXPANDED:LAMBDA,2,Redeclared.viaSuperInterface,Redeclared.dispatch,LoggingHandler.handle,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
 at fx.lambda.LoggingHandler.handle(LoggingHandler.java:12),LoggingHandler.logged,RESOLVED:NO_OVERRIDE,3,Redeclared.viaSuperInterface,Redeclared.dispatch,LoggingHandler.handle,LoggingHandler.logged
-at fx.lambda.Refs.viaBoundRef(Refs.java:27),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaBoundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Refs.viaBoundRef(Refs.java:27),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaBoundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Refs.viaBoundRef(Refs.java:28),Starter.Job.run,UNEXPANDED:CHA,1,Refs.viaBoundRef,Starter.Job.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Refs.viaBoundRef(Refs.java:28),Starter.Worker.run,UNEXPANDED:CHA,1,Refs.viaBoundRef,Starter.Worker.run,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Refs.viaUnboundRef(Refs.java:32),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
-at fx.lambda.Refs.viaUnboundRef(Refs.java:32),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: type name (unbound method reference)
-at fx.lambda.Refs.viaUnboundRef(Refs.java:33),OrderPrinter.accept,UNEXPANDED:CHA,1,Refs.viaUnboundRef,OrderPrinter.accept,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Refs.viaUnboundRef(Refs.java:33),RawPrinter.accept,UNEXPANDED:CHA,1,Refs.viaUnboundRef,RawPrinter.accept,[UNEXPANDED:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
-at fx.lambda.Refs.viaExprBody(Refs.java:38),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaExprBody,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.lambda.Refs.viaExprBody(Refs.java:38),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaExprBody,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.lambda.Refs.viaBlockBody(Refs.java:45),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaBlockBody,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.lambda.Refs.viaBlockBody(Refs.java:45),UserDaoImpl.describe,UNEXPANDED:CHA,1,Refs.viaBlockBody,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at fx.lambda.Starter.viaExecutor(Starter.java:31),OrderDaoImpl.describe,UNEXPANDED:CHA,1,Starter.viaExecutor,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.Starter.viaExecutor(Starter.java:31),UserDaoImpl.describe,UNEXPANDED:CHA,1,Starter.viaExecutor,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),OrderDaoImpl.describe,UNEXPANDED:CHA,1,TwoParents.viaDoor,OrderDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
-at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),UserDaoImpl.describe,UNEXPANDED:CHA,1,TwoParents.viaDoor,UserDaoImpl.describe,[UNEXPANDED:CHA] 2 candidates: field
+at fx.lambda.Refs.viaBoundRef(Refs.java:27),OrderDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaBoundRef,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Refs.viaBoundRef(Refs.java:27),UserDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaBoundRef,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Refs.viaBoundRef(Refs.java:28),Starter.Job.run,CANDIDATE:CHA,1,Refs.viaBoundRef,Starter.Job.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Job.run(Starter.java:50),AbstractDao.findById,CANDIDATE:CHA,2,Refs.viaBoundRef,Starter.Job.run,AbstractDao.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,3,Refs.viaBoundRef,Starter.Job.run,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,3,Refs.viaBoundRef,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,4,Refs.viaBoundRef,Starter.Job.run,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Starter$Job.run(Starter.java:50),OrderDaoImpl.findById,CANDIDATE:CHA,2,Refs.viaBoundRef,Starter.Job.run,OrderDaoImpl.findById,[CANDIDATE:CHA] 2 candidates: field
+at fx.dao.OrderDaoImpl.findById(OrderDaoImpl.java:17),AbstractDao.findById,RESOLVED:STATIC_BOUND:SUPER,3,Refs.viaBoundRef,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),OrderDaoImpl.load,CANDIDATE:CHA,4,Refs.viaBoundRef,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,OrderDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.AbstractDao.findById(AbstractDao.java:9),UserDaoImpl.load,CANDIDATE:CHA,4,Refs.viaBoundRef,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,[CANDIDATE:CHA] 2 candidates: own class (this)
+at fx.dao.UserDaoImpl.load(UserDaoImpl.java:8),AbstractDao.audit,RESOLVED:STATIC_BOUND:STATIC,5,Refs.viaBoundRef,Starter.Job.run,OrderDaoImpl.findById,AbstractDao.findById,UserDaoImpl.load,AbstractDao.audit
+at fx.lambda.Refs.viaBoundRef(Refs.java:28),Starter.Worker.run,CANDIDATE:CHA,1,Refs.viaBoundRef,Starter.Worker.run,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.lambda.Starter$Worker.run(Starter.java:63),OrderDaoImpl.describe,CANDIDATE:CHA,2,Refs.viaBoundRef,Starter.Worker.run,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter$Worker.run(Starter.java:63),UserDaoImpl.describe,CANDIDATE:CHA,2,Refs.viaBoundRef,Starter.Worker.run,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Refs.viaUnboundRef(Refs.java:32),OrderDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaUnboundRef,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.Refs.viaUnboundRef(Refs.java:32),UserDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaUnboundRef,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: type name (unbound method reference)
+at fx.lambda.Refs.viaUnboundRef(Refs.java:33),OrderPrinter.accept,CANDIDATE:CHA,1,Refs.viaUnboundRef,OrderPrinter.accept,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.generic.OrderPrinter.accept(OrderPrinter.java:17),OrderPrinter.printed,RESOLVED:NO_OVERRIDE,2,Refs.viaUnboundRef,OrderPrinter.accept,OrderPrinter.printed
+at fx.lambda.Refs.viaUnboundRef(Refs.java:33),RawPrinter.accept,CANDIDATE:CHA,1,Refs.viaUnboundRef,RawPrinter.accept,[CANDIDATE:CHA] 3 candidates: local variable (1 excluded by exclude.packages and not written as rows)
+at fx.generic.RawPrinter.accept(RawPrinter.java:10),RawPrinter.rawPrinted,RESOLVED:NO_OVERRIDE,2,Refs.viaUnboundRef,RawPrinter.accept,RawPrinter.rawPrinted
+at fx.lambda.Refs.viaExprBody(Refs.java:38),OrderDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaExprBody,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.lambda.Refs.viaExprBody(Refs.java:38),UserDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaExprBody,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.lambda.Refs.viaBlockBody(Refs.java:45),OrderDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaBlockBody,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.lambda.Refs.viaBlockBody(Refs.java:45),UserDaoImpl.describe,CANDIDATE:CHA,1,Refs.viaBlockBody,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at fx.lambda.Starter.viaExecutor(Starter.java:31),OrderDaoImpl.describe,CANDIDATE:CHA,1,Starter.viaExecutor,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.Starter.viaExecutor(Starter.java:31),UserDaoImpl.describe,CANDIDATE:CHA,1,Starter.viaExecutor,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),OrderDaoImpl.describe,CANDIDATE:CHA,1,TwoParents.viaDoor,OrderDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
+at fx.lambda.TwoParents.viaDoor(TwoParents.java:16),UserDaoImpl.describe,CANDIDATE:CHA,1,TwoParents.viaDoor,UserDaoImpl.describe,[CANDIDATE:CHA] 2 candidates: field
 at fx.lambda.TwoParents.viaDoor(TwoParents.java:17),TwoParents.viaOpener,RESOLVED:STATIC_BOUND:PRIVATE,1,TwoParents.viaDoor,TwoParents.viaOpener
 at fx.lambda.TwoParents.viaOpener(TwoParents.java:22),PlainOpener.act,UNEXPANDED:LAMBDA,2,TwoParents.viaDoor,TwoParents.viaOpener,PlainOpener.act,[UNEXPANDED:LAMBDA] implemented by a lambda/method reference (which one runs is undetermined)
 at fx.lambda.PlainOpener.act(PlainOpener.java:12),PlainOpener.opened,RESOLVED:NO_OVERRIDE,3,TwoParents.viaDoor,TwoParents.viaOpener,PlainOpener.act,PlainOpener.opened

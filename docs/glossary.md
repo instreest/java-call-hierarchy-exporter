@@ -60,6 +60,7 @@
 | 値の表 | `ValueStore`（読み手）、`ValueStoreBuilder`、`StringPool` | 値グラフをグラフ全体で通じる番号の列にしたもの。文字列に組み直さない |
 | 枠（slot） | `Slot`、`DataflowContext` | 経路の環境の 1 つの枠に入る、型付きの値（`long` 1 つ） |
 | 条件・ガード（G 行） | `Guard`、`GuardCollector`、`GuardTable`、`GuardEvaluator` | 呼び出し箇所を囲む条件分岐。この経路では成立しないと判定できれば打ち切る（`branch.pruning.enabled`） |
+| 候補の展開 | `expand.max.candidates`、`CANDIDATE:` / `UNEXPANDED:`、`StreamingTreeWalker` | 1 つに絞れなかった呼び出しを、候補の数が上限（既定 3）以下なら候補ごとに先へ降りること（`CANDIDATE:`）。超えたら候補を並べるだけで降りず（`UNEXPANDED:`）、`warnings.txt` に載せる |
 | 打ち切り | `[UNREACHABLE]`、`prunedCalls` | 条件が成立しない経路の呼び出しを階層から外すこと。誤って付けないことを `test/pruning` が守る |
 | 合成メソッド | `LambdaNames`、`lambda$囲みメソッド名$番号` | ラムダ式の本体を 1 つのノードにした、javac に似せた名前のメソッド |
 

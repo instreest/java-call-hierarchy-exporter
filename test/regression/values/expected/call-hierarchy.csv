@@ -12,8 +12,8 @@ at vals.Delim.parse(Delim.java:19),Delim.semicolon,RESOLVED:STATIC_BOUND:STATIC,
 at vals.Holder.main(Holder.java:29),Holder.run,RESOLVED:NO_OVERRIDE,1,Holder.main,Holder.run
 at vals.Holder.run(Holder.java:15),Holder.helper,RESOLVED:STATIC_BOUND:STATIC,2,Holder.main,Holder.run,Holder.helper
 at vals.Holder.helper(Holder.java:20),Holder.hitHolder,RESOLVED:STATIC_BOUND:STATIC,3,Holder.main,Holder.run,Holder.helper,Holder.hitHolder
-at vals.Keys.v5s(Keys.java:10),OrderDaoImpl.find,UNEXPANDED:CHA,1,Keys.v5s,OrderDaoImpl.find,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
-at vals.Keys.v5s(Keys.java:10),UserDaoImpl.find,UNEXPANDED:CHA,1,Keys.v5s,UserDaoImpl.find,[UNEXPANDED:CHA] 2 candidates: return value (factory method etc.)
+at vals.Keys.v5s(Keys.java:10),OrderDaoImpl.find,CANDIDATE:CHA,1,Keys.v5s,OrderDaoImpl.find,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
+at vals.Keys.v5s(Keys.java:10),UserDaoImpl.find,CANDIDATE:CHA,1,Keys.v5s,UserDaoImpl.find,[CANDIDATE:CHA] 2 candidates: return value (factory method etc.)
 at vals.Keys.v5s(Keys.java:10),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v5s,DaoFactory.get
 at vals.Keys.v5(Keys.java:14),OrderDaoImpl.find,RESOLVED:CALL_RULE,1,Keys.v5,OrderDaoImpl.find
 at vals.Keys.v5(Keys.java:14),DaoFactory.get,RESOLVED:STATIC_BOUND:STATIC,1,Keys.v5,DaoFactory.get

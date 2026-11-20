@@ -5,12 +5,12 @@ App.factoryCall(),fxp.App,C,src/fxp/App.java,20,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NO
 App.chainedCall(),fxp.App,C,src/fxp/App.java,25,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 App.injected(),fxp.App,C,src/fxp/App.java,29,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 App.inheritedImpl(),fxp.App,C,src/fxp/App.java,33,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
-App.enumKey(),fxp.App,C,src/fxp/App.java,38,1,0,2,ENTRY_CANDIDATE,1,1,[UNEXPANDED:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
+App.enumKey(),fxp.App,C,src/fxp/App.java,38,1,0,2,ENTRY_CANDIDATE,1,1,[CANDIDATE:CHA] local variable,0,[NOT_REACHED] no caller row was emitted
 App.classKey(),fxp.App,C,src/fxp/App.java,43,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 App.inheritedFactory(),fxp.App,C,src/fxp/App.java,48,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 App.otherFactory(),fxp.App,C,src/fxp/App.java,53,1,0,2,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
 App.viaParam(),fxp.App,C,src/fxp/App.java,58,1,0,1,ENTRY_CANDIDATE,1,0,,0,[NOT_REACHED] no caller row was emitted
-App.byKey(String),fxp.App,C,src/fxp/App.java,63,1,1,2,NORMAL,1,1,[UNEXPANDED:CHA] local variable,1,
+App.byKey(String),fxp.App,C,src/fxp/App.java,63,1,1,2,NORMAL,1,1,[CANDIDATE:CHA] local variable,1,
 BaseDaoFactory.pick(String),fxp.BaseDaoFactory,C,src/fxp/BaseDaoFactory.java,5,1,2,0,LEAF,1,0,,1,
 BillingService.run(),fxp.BillingService,C,src/fxp/BillingService.java,5,1,1,1,NORMAL,1,0,,1,
 BillingService.charge(),fxp.BillingService,C,src/fxp/BillingService.java,9,1,1,0,LEAF,1,0,,1,

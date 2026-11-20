@@ -50,7 +50,10 @@ import jche.util.UserHome;
  */
 public final class Config {
 
-    /** CHA候補を呼び出し階層で展開する際の候補数の上限 */
+    /**
+     * 候補が expand.max.candidates を超えて先へ降りない呼び出しで、行に並べる候補数の上限
+     * （降りる呼び出しは候補を全部行にする）
+     */
     public static final int CHA_MAX_CANDIDATES = 20;
     /**
      * キャッシュフォルダ内に置く、解析結果のキャッシュの名前（構造とバインディングと値の事実。
@@ -133,6 +136,11 @@ public final class Config {
     public final int maxDepth;
     /** 出力行数の上限（0以下で無制限） */
     public final long maxRows;
+    /**
+     * 実行時のクラスの候補が複数のままの呼び出しを、候補ごとに先へ展開する件数の上限（expand.max.candidates）。
+     * 候補の数がこれ以下なら全部の候補を展開し、超えたら展開しない。1 以下なら候補が複数の呼び出しは展開しない
+     */
+    public final int expandMaxCandidates;
 
     /** 拡張の init() に渡す。プロジェクト固有のキーを自由に読ませるため */
     public final Properties raw;
@@ -330,6 +338,7 @@ public final class Config {
 
         this.maxDepth = intOf(p, "max.depth", 50);
         this.maxRows = longOf(p, "max.rows", 5_000_000L);
+        this.expandMaxCandidates = intOf(p, "expand.max.candidates", 3);
 
         // 拡張は設定ファイルのひな形には載せていない。使う場合はこのキーを足せば読み込まれる
         this.candidateProviderClasses = splitList(p.getProperty("resolver.candidate.providers", ""));
